@@ -377,6 +377,11 @@
 			#clock-cells = <0>;
 		};
 
+		lpc@a01b0000 {
+			compatible = "hisilicon,low-pin-count";
+			reg = <0x0 0xa01b0000 0x0 0x1000>;
+		};
+
 		usb_ohci: ohci@a7030000 {
 			compatible = "generic-ohci";
 			reg = <0x0 0xa7030000 0x0 0x10000>;
