@@ -2212,9 +2212,442 @@ static bool pci_bus_wait_crs(struct pci_bus *bus, int devfn, u32 *l,
 	return true;
 }
 
+static int skip_bus_flag = 0;
+#define HOSTBRIGE_1620_NUM	48
+struct skip_bus_num {
+	char module_name[32];
+	char label[4];
+	int bus_num;
+	int dev_num;
+	int skip;
+} skip_1620_bus_num[HOSTBRIGE_1620_NUM] = {
+	/*chip 0*/
+	{
+		.module_name = "chip0_pcie",
+		.label = "a0",
+		.bus_num = 0,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_pcie_dma",
+		.label = "a1",
+		.bus_num = 0x7b,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_pcie_sdi",
+		.label = "a2",
+		.bus_num = 0x7b,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_USB",
+		.label = "a3",
+		.bus_num = 0x7a,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_hpre",
+		.label = "a4",
+		.bus_num = 0x78,
+		.dev_num = 0x0,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_rde",
+		.label = "a5",
+		.bus_num = 0x78,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_nic",
+		.label = "aa",
+		.bus_num = 0x7c,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_sas",
+		.label = "a6",
+		.bus_num = 0x74,
+		.dev_num = 0x02,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_sas1",
+		.label = "ab",
+		.bus_num = 0x74,
+		.dev_num = 0x04,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_sata",
+		.label = "a7",
+		.bus_num = 0x74,
+		.dev_num = 0x03,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_zip",
+		.label = "a8",
+		.bus_num = 0x74,
+		.dev_num = 0x0,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_sec",
+		.label = "a9",
+		.bus_num = 0x74,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+	/*chip 1*/
+	{
+		.module_name = "chip1_pcie",
+		.label = "b0",
+		.bus_num = 0x80,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip1_pcie_dma",
+		.label = "b1",
+		.bus_num = 0xbb,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip1_pcie_sdi",
+		.label = "b2",
+		.bus_num = 0xbb,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+	{
+		.module_name = "chip1_USB",
+		.label = "b3",
+		.bus_num = 0xba,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip1_hpre",
+		.label = "b4",
+		.bus_num = 0xb8,
+		.dev_num = 0x0,
+		.skip = 0
+	},
+	{
+		.module_name = "chip1_rde",
+		.label = "b5",
+		.bus_num = 0xb8,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+	{
+		.module_name = "chip1_nic",
+		.label = "ba",
+		.bus_num = 0xbc,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip1_sas",
+		.label = "b6",
+		.bus_num = 0xb4,
+		.dev_num = 0x02,
+		.skip = 0
+	},
+	{
+		.module_name = "chip1_sas1",
+		.label = "bb",
+		.bus_num = 0xb4,
+		.dev_num = 0x04,
+		.skip = 0
+	},
+	{
+		.module_name = "chip1_sata",
+		.label = "b7",
+		.bus_num = 0xb4,
+		.dev_num = 0x03,
+		.skip = 0
+	},
+	{
+		.module_name = "chip1_zip",
+		.label = "b8",
+		.bus_num = 0xb4,
+		.dev_num = 0x0,
+		.skip = 0
+	},
+	{
+		.module_name = "chip0_sec",
+		.label = "b9",
+		.bus_num = 0xb4,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+
+	/*chip 2*/
+	{
+		.module_name = "chip2_pcie",
+		.label = "c0",
+		.bus_num = 0xc0,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_pcie_dma",
+		.label = "c1",
+		.bus_num = 0xdb,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_pcie_sdi",
+		.label = "c2",
+		.bus_num = 0xdb,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_USB",
+		.label = "c3",
+		.bus_num = 0xda,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_hpre",
+		.label = "c4",
+		.bus_num = 0xd8,
+		.dev_num = 0x0,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_rde",
+		.label = "c5",
+		.bus_num = 0xd8,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_nic",
+		.label = "ca",
+		.bus_num = 0xdc,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_sas",
+		.label = "c6",
+		.bus_num = 0xd4,
+		.dev_num = 0x02,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_sas1",
+		.label = "cb",
+		.bus_num = 0xd4,
+		.dev_num = 0x04,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_sata",
+		.label = "c7",
+		.bus_num = 0xd4,
+		.dev_num = 0x03,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_zip",
+		.label = "c8",
+		.bus_num = 0xd4,
+		.dev_num = 0x0,
+		.skip = 0
+	},
+	{
+		.module_name = "chip2_sec",
+		.label = "c9",
+		.bus_num = 0xd4,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+
+	/*chip 3*/
+	{
+		.module_name = "chip3_pcie",
+		.label = "d0",
+		.bus_num = 0xe0,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_pcie_dma",
+		.label = "d1",
+		.bus_num = 0xfb,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_pcie_sdi",
+		.label = "d2",
+		.bus_num = 0xfb,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_USB",
+		.label = "d3",
+		.bus_num = 0xfa,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_hpre",
+		.label = "d4",
+		.bus_num = 0xf8,
+		.dev_num = 0x0,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_rde",
+		.label = "d5",
+		.bus_num = 0xf8,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_nic",
+		.label = "da",
+		.bus_num = 0xfc,
+		.dev_num = 0xff,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_sas",
+		.label = "d6",
+		.bus_num = 0xf4,
+		.dev_num = 0x02,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_sas1",
+		.label = "db",
+		.bus_num = 0xf4,
+		.dev_num = 0x04,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_sata",
+		.label = "d7",
+		.bus_num = 0xf4,
+		.dev_num = 0x03,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_zip",
+		.label = "d8",
+		.bus_num = 0xf4,
+		.dev_num = 0x0,
+		.skip = 0
+	},
+	{
+		.module_name = "chip3_sec",
+		.label = "d9",
+		.bus_num = 0xf4,
+		.dev_num = 0x1,
+		.skip = 0
+	},
+};
+
+static int is_skip_bus(int busno, int devno)
+{
+	int i;
+
+	/* record wether the busno has been matched in the for loop. */
+	int matched = 0;
+
+
+	for (i = 0; i < HOSTBRIGE_1620_NUM; i++) {
+		if (skip_1620_bus_num[i].bus_num == busno) {
+			char skip_line[16];
+
+			matched = 1;
+
+			if ((skip_1620_bus_num[i].dev_num == 0xff)
+			    || (skip_1620_bus_num[i].dev_num == (devno >> 3))) {
+
+				if (skip_1620_bus_num[i].skip) {
+					strcpy(skip_line, "skiped");
+				} else {
+					strcpy(skip_line, "not skip");
+				}
+
+				printk(KERN_INFO "qzf===> dev %x:%x(%s): %s\n",
+				       busno, devno,
+				       skip_1620_bus_num[i].module_name,
+				       skip_line);
+
+				return skip_1620_bus_num[i].skip;
+			}
+		}
+	}
+
+	/* the this bus matched before, skip or not is determined in
+	   the for loop, arrived here still, just skip it. Or not matched,
+	   that means it is a secondary bus, we must not skip. */
+	if (matched)
+		pr_info("qzf===> dev %x:%x (unknown): skipped\n", busno, devno);
+	return matched;
+}
+
+static int set_skip_bus(const char *label)
+{
+	int i;
+
+	for (i = 0; i < HOSTBRIGE_1620_NUM; i++) {
+		if (!strncmp(label, skip_1620_bus_num[i].label, 2)) {
+			skip_1620_bus_num[i].skip = 1;
+			break;
+		}
+	}
+
+	return 0;
+}
+
+static int __init pci_skip_bus(char *str)
+{
+	int i = 0;
+	const char *label_skip[] = {"a0", "a1", "a2", "a3", "a4", "a5",
+		"a6", "a7", "a8", "a9", "aa", "ab", "b0", "b1", "b2", "b3", "b4",
+		"b5", "b6", "b7", "b8", "b9", "ba", "bb", "c0", "c1", "c2", "c3",
+		"c4", "c5", "c6", "c7", "c8", "c9", "ca", "cb", "d0", "d1", "d2",
+		"d3", "d4", "d5", "d6", "d7", "d8", "d9", "da", "db", "ff"};
+
+	skip_bus_flag = 1;
+	while (strncmp(label_skip[i], "ff", 2)) {
+		if (strstr(str, label_skip[i]))
+			set_skip_bus(label_skip[i]);
+
+		i++;
+	}
+
+	return 0;
+}
+
+__setup("pci_skip_bus=", pci_skip_bus);
+
 bool pci_bus_generic_read_dev_vendor_id(struct pci_bus *bus, int devfn, u32 *l,
 					int timeout)
 {
+	if (skip_bus_flag && is_skip_bus(bus->number, devfn))
+		return false;
+
 	if (pci_bus_read_config_dword(bus, devfn, PCI_VENDOR_ID, l))
 		return false;
 
