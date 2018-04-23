@@ -298,6 +298,14 @@
 			#interrupt-cells = <2>;
 			num-pins = <10>;
 		};
+
+		mbigen_smmu_pcie_intc: intc_smmu_pcie {
+			msi-parent = <&its_dsa 0x40b0c>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			num-pins = <3>;
+		};
+
 	};
 
 	mbigen_dsa@c0080000 {
@@ -316,6 +324,13 @@
 			interrupt-controller;
 			#interrupt-cells = <2>;
 			num-pins = <128>;
+		};
+
+		mbigen_smmu_dsa_intc: intc_smmu_dsa {
+			msi-parent = <&its_dsa 0x40b20>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			num-pins = <3>;
 		};
 	};
 
@@ -343,6 +358,20 @@
 		hisilicon,broken-prefetch-cmd;
 		status = "disabled";
 	};
+
+        smmu1: smmu_dsa {
+                compatible = "arm,smmu-v3";
+                reg = <0x0 0xc0040000 0x0 0x20000>;
+                interrupt-parent  = <&mbigen_smmu_dsa_intc>;
+		interrupts = <733 1>,
+				<734 1>,
+				<735 1>;
+                interrupt-names = "eventq", "gerror", "priq";
+                #iommu-cells = <1>;
+                dma-coherent;
+                smmu-cb-memtype = <0x0 0x1>;
+                hisilicon,broken-prefetch-cmd;
+        };
 
 	soc {
 		compatible = "simple-bus";
@@ -448,6 +477,7 @@
 			reg-names = "ppe-base", "dsaf-base";
 			interrupt-parent = <&mbigen_dsaf0>;
 			subctrl-syscon = <&dsa_subctrl>;
+			iommus = <&smmu1 0x0>;
 			reset-field-offset = <0>;
 			interrupts =
 			<576 1>, <577 1>, <578 1>, <579 1>, <580 1>,
