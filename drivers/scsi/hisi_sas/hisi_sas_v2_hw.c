@@ -770,14 +770,15 @@ static u32 hisi_sas_phy_read32(struct hisi_hba *hisi_hba,
 
 /* This function needs to be protected from pre-emption. */
 static int
-slot_index_alloc_quirk_v2_hw(struct hisi_hba *hisi_hba, int *slot_idx,
-			     struct domain_device *device)
+slot_index_alloc_quirk_v2_hw(struct hisi_hba *hisi_hba,
+		struct domain_device *device)
 {
 	int sata_dev = dev_is_sata(device);
 	void *bitmap = hisi_hba->slot_index_tags;
 	struct hisi_sas_device *sas_dev = device->lldd_dev;
 	int sata_idx = sas_dev->sata_idx;
 	int start, end;
+	unsigned long flags;
 
 	if (!sata_dev) {
 		/*
@@ -801,6 +802,7 @@ slot_index_alloc_quirk_v2_hw(struct hisi_hba *hisi_hba, int *slot_idx,
 		end = 64 * (sata_idx + 2);
 	}
 
+	spin_lock_irqsave(&hisi_hba->lock, flags);
 	while (1) {
 		start = find_next_zero_bit(bitmap,
 					hisi_hba->slot_index_count, start);
@@ -815,8 +817,8 @@ slot_index_alloc_quirk_v2_hw(struct hisi_hba *hisi_hba, int *slot_idx,
 	}
 
 	set_bit(start, bitmap);
-	*slot_idx = start;
-	return 0;
+	spin_unlock_irqrestore(&hisi_hba->lock, flags);
+	return start;
 }
 
 static bool sata_index_alloc_v2_hw(struct hisi_hba *hisi_hba, int *idx)

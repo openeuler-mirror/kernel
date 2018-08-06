@@ -2146,6 +2146,7 @@ static struct scsi_host_template sht_v3_hw = {
 	.ioctl			= sas_ioctl,
 	.shost_attrs		= host_attrs,
 	.host_reset             = hisi_sas_host_reset,
+	.tag_alloc_policy	= BLK_TAG_ALLOC_RR,
 };
 
 static const struct hisi_sas_hw hisi_sas_v3_hw = {
@@ -2283,7 +2284,8 @@ hisi_sas_v3_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	shost->max_channel = 1;
 	shost->max_cmd_len = 16;
 	shost->sg_tablesize = min_t(u16, SG_ALL, HISI_SAS_SGE_PAGE_CNT);
-	shost->can_queue = hisi_hba->hw->max_command_entries;
+	shost->can_queue = hisi_hba->hw->max_command_entries -
+		HISI_SAS_RESERVED_IPTT_CNT;
 	shost->cmd_per_lun = hisi_hba->hw->max_command_entries;
 
 	sha->sas_ha_name = DRV_NAME;
