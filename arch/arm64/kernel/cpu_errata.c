@@ -467,6 +467,12 @@ out_printmsg:
 }
 #endif	/* CONFIG_ARM64_SSBD */
 
+static void __maybe_unused
+cpu_enable_cache_maint_trap(const struct arm64_cpu_capabilities *__unused)
+{
+	sysreg_clear_set(sctlr_el1, SCTLR_EL1_UCI, 0);
+}
+
 #ifdef CONFIG_ARM64_ERRATUM_1463225
 DEFINE_PER_CPU(int, __in_cortex_a76_erratum_1463225_wa);
 
