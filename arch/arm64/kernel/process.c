@@ -410,6 +410,9 @@ int copy_thread(unsigned long clone_flags, unsigned long stack_start,
 		if (system_uses_irq_prio_masking())
 			childregs->pmr_save = GIC_PRIO_IRQON;
 
+		if (arm64_get_ssbd_state() == ARM64_SSBD_FORCE_DISABLE)
+			childregs->pstate |= PSR_SSBS_BIT;
+
 		p->thread.cpu_context.x19 = stack_start;
 		p->thread.cpu_context.x20 = stk_sz;
 	}
