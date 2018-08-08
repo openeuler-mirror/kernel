@@ -449,6 +449,9 @@ static inline void sas_phy_disconnected(struct asd_sas_phy *phy)
 {
 	phy->oob_mode = OOB_NOT_CONNECTED;
 	phy->linkrate = SAS_LINK_RATE_UNKNOWN;
+
+	if (phy->phy)
+		phy->phy->negotiated_linkrate = SAS_LINK_RATE_UNKNOWN;
 }
 
 static inline unsigned int to_sas_gpio_od(int device, int bit)
