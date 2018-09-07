@@ -62,8 +62,9 @@ struct qm_info {
 	u32 qp_base;
 	u32 qp_num;
 	u32 free_qp;
-	struct qm_dma_buffer sqc, cqc, eqc, eqe;
+	struct qm_dma_buffer sqc, cqc, eqc, eqe, aeqc, aeqe;
 	u32 eq_head;
+	u32 aeq_head;
 	rwlock_t qps_lock;
 	unsigned long *qp_bitmap;
 	struct hisi_qp **qp_array;

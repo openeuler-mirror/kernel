@@ -19,6 +19,7 @@
 #define MAILBOX_CMD_SQC			0x0
 #define MAILBOX_CMD_CQC			0x1
 #define MAILBOX_CMD_EQC			0x2
+#define MAILBOX_CMD_AEQC		0x3
 #define MAILBOX_CMD_SQC_BT		0x4
 #define MAILBOX_CMD_CQC_BT		0x5
 
@@ -75,6 +76,10 @@
 #define EQC_HEAD_INDEX(eqc)		((eqc)->eq_head)
 #define EQC_TAIL_INDEX(eqc)		((eqc)->eq_tail)
 #define EQC_PHASE(eqc)			((((eqc)->dw6) >> 16) & 0x1)
+#define AEQC_HEAD_INDEX(aeqc)		((aeqc)->aeq_head)
+#define AEQC_TAIL_INDEX(aeqc)		((aeqc)->aeq_tail)
+#define AEQC_PHASE(aeqc)		((((aeqc)->dw6) >> 16) & 0x1)
+
 
 #define EQC_PHASE_BIT			0x00010000
 
@@ -86,6 +91,10 @@
 /* eqe shift */
 #define EQE_PHASE(eqe)			(((eqe)->dw0 >> 16) & 0x1)
 #define EQE_CQN(eqe)			(((eqe)->dw0) & 0xffff)
+
+/* eqe shift */
+#define AEQE_PHASE(aeqe)		(((aeqe)->dw0 >> 16) & 0x1)
+#define AEQE_TYPE(aeqe)		(((aeqe)->dw0 >> 17) & 0xf)
 
 #define QM_EQE_CQN_MASK			0xffff
 
@@ -133,6 +142,10 @@ struct cqe {
 };
 
 struct eqe {
+	__le32 dw0;
+};
+
+struct aeqe {
 	__le32 dw0;
 };
 
@@ -185,6 +198,16 @@ struct eqc {
 	__le32 dw6;
 };
 
+struct aeqc {
+	__le16 head;
+	__le16 tail;
+	__le32 base_l;
+	__le32 base_h;
+	__le32 dw3;
+	__le32 rsvd[2];
+	__le32 dw6;
+};
+
 struct mailbox {
 	__le16 w0;
 	__le16 queue_num;
@@ -205,6 +228,8 @@ struct doorbell {
 #define QM_CQC(p) QM_DMA_BUF(p, cqc)
 #define QM_EQC(p) QM_DMA_BUF(p, eqc)
 #define QM_EQE(p) QM_DMA_BUF(p, eqe)
+#define QM_AEQC(p) QM_DMA_BUF(p, aeqc)
+#define QM_AEQE(p) QM_DMA_BUF(p, aeqe)
 
 #define QP_SQE_DMA(qp) ((qp)->scqe.dma)
 #define QP_CQE(qp) ((struct cqe *)((qp)->scqe.addr + \
@@ -1226,10 +1251,26 @@ int hisi_qm_start(struct qm_info *qm)
 	if (ret)
 		goto err_with_eqe;
 
+	ret = qm_init_q_buffer(dev, sizeof(struct aeqc), &qm->aeqc);
+	if (ret)
+		goto err_with_eqe;
+
+	ret = qm_init_q_buffer(dev, sizeof(struct aeqe) * QM_Q_DEPTH,
+			       &qm->aeqe);
+	if (ret)
+		goto err_with_aeqc;
+	QM_AEQC(qm)->base_l = lower_32_bits(qm->aeqe.dma);
+	QM_AEQC(qm)->base_h = upper_32_bits(qm->aeqe.dma);
+	QM_AEQC(qm)->dw3 = 2 << MB_EQC_EQE_SHIFT;
+	QM_AEQC(qm)->dw6 = (QM_Q_DEPTH - 1) | (1 << MB_EQC_PHASE_SHIFT);
+	ret = qm_mb(qm, MAILBOX_CMD_AEQC, qm->aeqc.dma, 0, 0, 0);
+	if (ret)
+		goto err_with_aeqe;
+
 	qm->qp_bitmap = kcalloc(BITS_TO_LONGS(qm->qp_num), sizeof(long),
 				GFP_KERNEL);
 	if (!qm->qp_bitmap)
-		goto err_with_eqe;
+		goto err_with_aeqe;
 
 	qm->qp_array = kcalloc(qm->qp_num, sizeof(struct hisi_qp *),
 			       GFP_KERNEL);
@@ -1274,6 +1315,10 @@ err_with_qp_array:
 	kfree(qm->qp_array);
 err_with_bitmap:
 	kfree(qm->qp_bitmap);
+err_with_aeqe:
+	qm_uninit_q_buffer(dev, &qm->aeqe);
+err_with_aeqc:
+	qm_uninit_q_buffer(dev, &qm->aeqc);
 err_with_eqe:
 	qm_uninit_q_buffer(dev, &qm->eqe);
 err_with_eqc:
@@ -1298,6 +1343,8 @@ void hisi_qm_stop(struct qm_info *qm)
 	kfree(qm->qp_bitmap);
 	qm_uninit_q_buffer(dev, &qm->eqe);
 	qm_uninit_q_buffer(dev, &qm->eqc);
+	qm_uninit_q_buffer(dev, &qm->aeqe);
+	qm_uninit_q_buffer(dev, &qm->aeqc);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_stop);
 
