@@ -148,6 +148,7 @@ struct hisi_sas_phy {
 	u32		phy_type;
 	enum sas_linkrate	minimum_linkrate;
 	enum sas_linkrate	maximum_linkrate;
+	u32		code_error_count;
 };
 
 struct hisi_sas_port {

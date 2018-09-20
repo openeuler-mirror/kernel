@@ -177,11 +177,14 @@
 #define CHL_INT1_DMAC_RX_AXI_RD_ERR_OFF	22
 #define CHL_INT2			(PORT_BASE + 0x1bc)
 #define CHL_INT2_SL_IDAF_TOUT_CONF_OFF	0
+#define CHL_INT2_RX_DISP_ERR_OFF	28
+#define CHL_INT2_RX_CODE_ERR_OFF	29
 #define CHL_INT2_RX_INVLD_DW_OFF	30
 #define CHL_INT2_STP_LINK_TIMEOUT_OFF	31
 #define CHL_INT0_MSK			(PORT_BASE + 0x1c0)
 #define CHL_INT1_MSK			(PORT_BASE + 0x1c4)
 #define CHL_INT2_MSK			(PORT_BASE + 0x1c8)
+#define SAS_EC_INT_COAL_TIME		(PORT_BASE + 0x1cc)
 #define CHL_INT_COAL_EN			(PORT_BASE + 0x1d0)
 #define SAS_RX_TRAIN_TIMER		(PORT_BASE + 0x2a4)
 #define PHY_CTRL_RDY_MSK		(PORT_BASE + 0x2b0)
@@ -201,6 +204,7 @@
 #define ERR_CNT_DWS_LOST		(PORT_BASE + 0x380)
 #define ERR_CNT_RESET_PROB		(PORT_BASE + 0x384)
 #define ERR_CNT_INVLD_DW		(PORT_BASE + 0x390)
+#define ERR_CNT_CODE_ERR		(PORT_BASE + 0x394)
 #define ERR_CNT_DISP_ERR		(PORT_BASE + 0x398)
 
 #define DEFAULT_ITCT_HW		2048 /* reset value, not reprogrammed */
@@ -492,6 +496,8 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 		hisi_sas_phy_write32(hisi_hba, i, PHYCTRL_OOB_RESTART_MSK, 0x1);
 		hisi_sas_phy_write32(hisi_hba, i, STP_LINK_TIMER, 0x7f7a120);
 		hisi_sas_phy_write32(hisi_hba, i, CON_CFG_DRIVER, 0x2a0a01);
+		hisi_sas_phy_write32(hisi_hba, i, SAS_EC_INT_COAL_TIME,
+				     0x30f4240);
 
 		/* used for 12G negotiate */
 		hisi_sas_phy_write32(hisi_hba, i, COARSETUNE_TIME, 0x1e);
@@ -1392,6 +1398,9 @@ static void handle_chl_int2_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 	struct hisi_sas_phy *phy = &hisi_hba->phy[phy_no];
 	struct pci_dev *pci_dev = hisi_hba->pci_dev;
 	struct device *dev = hisi_hba->dev;
+	const u32 msk = BIT(CHL_INT2_RX_DISP_ERR_OFF) |
+			BIT(CHL_INT2_RX_CODE_ERR_OFF) |
+			BIT(CHL_INT2_RX_INVLD_DW_OFF);
 
 	irq_value &= ~irq_msk;
 	if (!irq_value)
@@ -1410,6 +1419,25 @@ static void handle_chl_int2_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 			 phy_no, reg_value);
 		if (reg_value & BIT(4))
 			hisi_sas_notify_phy_event(phy, HISI_PHYE_LINK_RESET);
+	}
+
+	if ((pci_dev->revision > 0x20) && (irq_value & msk)) {
+		struct asd_sas_phy *sas_phy = &phy->sas_phy;
+		struct sas_phy *sphy = sas_phy->phy;
+
+		hisi_hba->hw->get_events(hisi_hba, phy_no);
+
+		if (irq_value & BIT(CHL_INT2_RX_INVLD_DW_OFF))
+			dev_info(dev, "phy%d invalid dword cnt:   %u\n", phy_no,
+				 sphy->invalid_dword_count);
+
+		if (irq_value & BIT(CHL_INT2_RX_CODE_ERR_OFF))
+			dev_info(dev, "phy%d code violation cnt:  %u\n", phy_no,
+				 phy->code_error_count);
+
+		if (irq_value & BIT(CHL_INT2_RX_DISP_ERR_OFF))
+			dev_info(dev, "phy%d disparity error cnt: %u\n", phy_no,
+				 sphy->running_disparity_error_count);
 	}
 
 	if ((irq_value & BIT(CHL_INT2_RX_INVLD_DW_OFF)) &&
@@ -1971,7 +1999,10 @@ static void phy_get_events_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 	struct hisi_sas_phy *phy = &hisi_hba->phy[phy_no];
 	struct asd_sas_phy *sas_phy = &phy->sas_phy;
 	struct sas_phy *sphy = sas_phy->phy;
+	unsigned long flags;
 	u32 reg_value;
+
+	spin_lock_irqsave(&phy->lock, flags);
 
 	/* loss dword sync */
 	reg_value = hisi_sas_phy_read32(hisi_hba, phy_no, ERR_CNT_DWS_LOST);
@@ -1989,6 +2020,11 @@ static void phy_get_events_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 	reg_value = hisi_sas_phy_read32(hisi_hba, phy_no, ERR_CNT_DISP_ERR);
 	sphy->running_disparity_error_count += reg_value;
 
+	/* code violation error */
+	reg_value = hisi_sas_phy_read32(hisi_hba, phy_no, ERR_CNT_CODE_ERR);
+	phy->code_error_count += reg_value;
+
+	spin_unlock_irqrestore(&phy->lock, flags);
 }
 
 static int disable_host_v3_hw(struct hisi_hba *hisi_hba)
