@@ -2125,6 +2125,11 @@ static void wait_cmds_complete_timeout_v3_hw(struct hisi_hba *hisi_hba,
 	dev_dbg(dev, "wait commands complete %dms\n", time);
 }
 
+struct device_attribute *host_attrs_v3_hw[] = {
+	&dev_attr_phy_event_threshold,
+	NULL
+};
+
 static struct scsi_host_template sht_v3_hw = {
 	.name			= DRV_NAME,
 	.module			= THIS_MODULE,
@@ -2143,7 +2148,7 @@ static struct scsi_host_template sht_v3_hw = {
 	.eh_target_reset_handler = sas_eh_target_reset_handler,
 	.target_destroy		= sas_target_destroy,
 	.ioctl			= sas_ioctl,
-	.shost_attrs		= host_attrs,
+	.shost_attrs		= host_attrs_v3_hw,
 	.host_reset             = hisi_sas_host_reset,
 	.tag_alloc_policy	= BLK_TAG_ALLOC_RR,
 };
