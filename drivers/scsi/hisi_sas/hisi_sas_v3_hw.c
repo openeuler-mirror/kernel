@@ -42,6 +42,7 @@
 #define MAX_CON_TIME_LIMIT_TIME		0xa4
 #define BUS_INACTIVE_LIMIT_TIME		0xa8
 #define REJECT_TO_OPEN_LIMIT_TIME	0xac
+#define CQ_INT_CONVERGE_EN		0xb0
 #define CFG_AGING_TIME			0xbc
 #define HGC_DFX_CFG2			0xc0
 #define CFG_ABT_SET_QUERY_IPTT	0xd4
@@ -375,6 +376,9 @@ struct hisi_sas_err_record_v3 {
 	((fis.command == ATA_CMD_DEV_RESET) && \
 	((fis.control & ATA_SRST) != 0)))
 
+static bool hisi_sas_intr_conv;
+MODULE_PARM_DESC(intr_conv, "interrupt converge on or off:0 or 1(def=0)");
+
 static u32 hisi_sas_read32(struct hisi_hba *hisi_hba, u32 off)
 {
 	void __iomem *regs = hisi_hba->regs + off;
@@ -440,6 +444,8 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 	hisi_sas_write32(hisi_hba, INT_COAL_EN, 0x1);
 	hisi_sas_write32(hisi_hba, OQ_INT_COAL_TIME, 0x1);
 	hisi_sas_write32(hisi_hba, OQ_INT_COAL_CNT, 0x1);
+	hisi_sas_write32(hisi_hba, CQ_INT_CONVERGE_EN,
+			hisi_sas_intr_conv);
 	hisi_sas_write32(hisi_hba, OQ_INT_SRC, 0xffff);
 	hisi_sas_write32(hisi_hba, ENT_INT_SRC1, 0xffffffff);
 	hisi_sas_write32(hisi_hba, ENT_INT_SRC2, 0xffffffff);
@@ -1906,9 +1912,11 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 	for (i = 0; i < hisi_hba->queue_count; i++) {
 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
 		struct tasklet_struct *t = &cq->tasklet;
+		int nr = hisi_sas_intr_conv ? 16 : 16 + i;
+		unsigned long irqflags = hisi_sas_intr_conv ? IRQF_SHARED : 0;
 
-		rc = devm_request_irq(dev, pci_irq_vector(pdev, i+16),
-					  cq_interrupt_v3_hw, 0,
+		rc = devm_request_irq(dev, pci_irq_vector(pdev, nr),
+					  cq_interrupt_v3_hw, irqflags,
 					  DRV_NAME " cq", cq);
 		if (rc) {
 			dev_err(dev,
@@ -1926,8 +1934,9 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 free_cq_irqs:
 	for (k = 0; k < i; k++) {
 		struct hisi_sas_cq *cq = &hisi_hba->cq[k];
+		int nr = hisi_sas_intr_conv ? 16 : 16 + k;
 
-		free_irq(pci_irq_vector(pdev, k+16), cq);
+		free_irq(pci_irq_vector(pdev, nr), cq);
 	}
 	free_irq(pci_irq_vector(pdev, 11), hisi_hba);
 free_chnl_interrupt:
@@ -2125,8 +2134,16 @@ static void wait_cmds_complete_timeout_v3_hw(struct hisi_hba *hisi_hba,
 	dev_dbg(dev, "wait commands complete %dms\n", time);
 }
 
+static ssize_t intr_conv_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n", hisi_sas_intr_conv);
+}
+static DEVICE_ATTR_RO(intr_conv);
+
 struct device_attribute *host_attrs_v3_hw[] = {
 	&dev_attr_phy_event_threshold,
+	&dev_attr_intr_conv,
 	NULL
 };
 
@@ -2343,8 +2360,9 @@ hisi_sas_v3_destroy_irqs(struct pci_dev *pdev, struct hisi_hba *hisi_hba)
 	free_irq(pci_irq_vector(pdev, 11), hisi_hba);
 	for (i = 0; i < hisi_hba->queue_count; i++) {
 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
+		int nr = hisi_sas_intr_conv ? 16 : 16 + i;
 
-		free_irq(pci_irq_vector(pdev, i+16), cq);
+		free_irq(pci_irq_vector(pdev, nr), cq);
 	}
 	pci_free_irq_vectors(pdev);
 }
@@ -2666,6 +2684,7 @@ static struct pci_driver sas_v3_pci_driver = {
 };
 
 module_pci_driver(sas_v3_pci_driver);
+module_param_named(intr_conv, hisi_sas_intr_conv, bool, 0444);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("John Garry <john.garry@huawei.com>");
