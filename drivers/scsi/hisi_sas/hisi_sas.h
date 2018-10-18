@@ -506,6 +506,7 @@ struct hisi_sas_slot_dif_buf_table {
 
 extern bool hisi_sas_debugfs_enable;
 extern struct dentry *hisi_sas_dbg_dir;
+extern int skip_bus_flag;
 extern struct scsi_transport_template *hisi_sas_stt;
 extern void hisi_sas_stop_phys(struct hisi_hba *hisi_hba);
 extern int hisi_sas_alloc(struct hisi_hba *hisi_hba, struct Scsi_Host *shost);

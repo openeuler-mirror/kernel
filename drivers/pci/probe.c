@@ -2212,7 +2212,9 @@ static bool pci_bus_wait_crs(struct pci_bus *bus, int devfn, u32 *l,
 	return true;
 }
 
-static int skip_bus_flag = 0;
+int skip_bus_flag = 0;
+EXPORT_SYMBOL_GPL(skip_bus_flag);
+
 #define HOSTBRIGE_1620_NUM	48
 struct skip_bus_num {
 	char module_name[32];

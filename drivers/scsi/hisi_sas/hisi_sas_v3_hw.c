@@ -33,6 +33,7 @@
 #define SATA_INITI_D2H_STORE_ADDR_LO	0x60
 #define SATA_INITI_D2H_STORE_ADDR_HI	0x64
 #define CFG_MAX_TAG			0x68
+#define SAS_DMAC_OUTSTAND	0x6c
 #define HGC_SAS_TX_OPEN_FAIL_RETRY_CTRL	0x84
 #define HGC_SAS_TXFAIL_RETRY_CTRL	0x88
 #define HGC_GET_ITV_TIME		0x90
@@ -45,6 +46,7 @@
 #define CQ_INT_CONVERGE_EN		0xb0
 #define CFG_AGING_TIME			0xbc
 #define HGC_DFX_CFG2			0xc0
+#define CFG_1US_TIMER_TRSH              0xcc
 #define CFG_ABT_SET_QUERY_IPTT	0xd4
 #define CFG_SET_ABORTED_IPTT_OFF	0
 #define CFG_SET_ABORTED_IPTT_MSK	(0xfff << CFG_SET_ABORTED_IPTT_OFF)
@@ -153,6 +155,7 @@
 #define TX_HARDRST_MSK          (0x1 << TX_HARDRST_OFF)
 #define RX_IDAF_DWORD0			(PORT_BASE + 0xc4)
 #define RXOP_CHECK_CFG_H		(PORT_BASE + 0xfc)
+#define DONE_RECEVIED_TIME		(PORT_BASE + 0x11c)
 #define STP_LINK_TIMER			(PORT_BASE + 0x120)
 #define STP_LINK_TIMEOUT_STATE		(PORT_BASE + 0x124)
 #define CON_CFG_DRIVER			(PORT_BASE + 0x130)
@@ -499,6 +502,12 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 
 	hisi_sas_write32(hisi_hba, HYPER_STREAM_ID_EN_CFG, 1);
 
+	if (skip_bus_flag) {
+		hisi_sas_write32(hisi_hba, CFG_1US_TIMER_TRSH, 0x19);
+		hisi_sas_write32(hisi_hba, SAS_DMAC_OUTSTAND, 0x48);
+		hisi_sas_write32(hisi_hba, AXI_MASTER_CFG_BASE, 0x10000);
+	}
+
 	for (i = 0; i < hisi_hba->n_phy; i++) {
 		struct hisi_sas_phy *phy = &hisi_hba->phy[i];
 		struct asd_sas_phy *sas_phy = &phy->sas_phy;
@@ -514,9 +523,18 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 				hisi_sas_get_prog_phy_linkrate_mask(max) |
 				0x800;
 		}
-		hisi_sas_phy_write32(hisi_hba, i, PROG_PHY_LINK_RATE,
-			prog_phy_link_rate);
-		hisi_sas_phy_write32(hisi_hba, i, SAS_RX_TRAIN_TIMER, 0x13e80);
+
+		if (skip_bus_flag) {
+			hisi_sas_phy_write32(hisi_hba, i,
+					PROG_PHY_LINK_RATE, 0x801);
+		} else {
+			hisi_sas_phy_write32(hisi_hba, i,
+					PROG_PHY_LINK_RATE,
+					prog_phy_link_rate);
+			hisi_sas_phy_write32(hisi_hba, i,
+					SAS_RX_TRAIN_TIMER, 0x13e80);
+		}
+
 		hisi_sas_phy_write32(hisi_hba, i, CHL_INT0, 0xffffffff);
 		hisi_sas_phy_write32(hisi_hba, i, CHL_INT1, 0xffffffff);
 		hisi_sas_phy_write32(hisi_hba, i, CHL_INT2, 0xffffffff);
@@ -533,7 +551,20 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 		hisi_sas_phy_write32(hisi_hba, i, PHYCTRL_DWS_RESET_MSK, 0x0);
 		hisi_sas_phy_write32(hisi_hba, i, PHYCTRL_PHY_ENA_MSK, 0x0);
 		hisi_sas_phy_write32(hisi_hba, i, SL_RX_BCAST_CHK_MSK, 0x0);
-		hisi_sas_phy_write32(hisi_hba, i, PHYCTRL_OOB_RESTART_MSK, 0x1);
+
+		if (skip_bus_flag) {
+			hisi_sas_phy_write32(hisi_hba, i,
+					PHYCTRL_OOB_RESTART_MSK, 0x0);
+			hisi_sas_phy_write32(hisi_hba, i,
+					SAS_SSP_CON_TIMER_CFG, 0xa03e8);
+			hisi_sas_phy_write32(hisi_hba, i,
+					SAS_STP_CON_TIMER_CFG, 0xa03e8);
+			hisi_sas_phy_write32(hisi_hba, i,
+					DONE_RECEVIED_TIME, 0x100);
+		} else {
+			hisi_sas_phy_write32(hisi_hba, i,
+					PHYCTRL_OOB_RESTART_MSK, 0x1);
+		}
 		hisi_sas_phy_write32(hisi_hba, i, STP_LINK_TIMER, 0x7f7a120);
 		hisi_sas_phy_write32(hisi_hba, i, CON_CFG_DRIVER, 0x2a0a01);
 		hisi_sas_phy_write32(hisi_hba, i, SAS_EC_INT_COAL_TIME,
@@ -858,7 +889,11 @@ static void phy_hard_reset_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 
 static enum sas_linkrate phy_get_max_linkrate_v3_hw(void)
 {
-	return SAS_LINK_RATE_12_0_GBPS;
+
+	if (skip_bus_flag)
+		return SAS_LINK_RATE_1_5_GBPS;
+	else
+		return SAS_LINK_RATE_12_0_GBPS;
 }
 
 static void phys_init_v3_hw(struct hisi_hba *hisi_hba)
