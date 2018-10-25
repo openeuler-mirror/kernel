@@ -271,6 +271,11 @@ static inline unsigned char scsi_get_prot_op(struct scsi_cmnd *scmd)
 	return scmd->prot_op;
 }
 
+static inline bool scsi_prot_op_normal(struct scsi_cmnd *scmd)
+{
+	return scmd->prot_op == SCSI_PROT_NORMAL;
+}
+
 enum scsi_prot_flags {
 	SCSI_PROT_TRANSFER_PI		= 1 << 0,
 	SCSI_PROT_GUARD_CHECK		= 1 << 1,

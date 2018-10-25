@@ -889,7 +889,7 @@ qla2xxx_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 	}
 
 	if (!vha->flags.difdix_supported &&
-		scsi_get_prot_op(cmd) != SCSI_PROT_NORMAL) {
+		!scsi_prot_op_normal(cmd)) {
 			ql_dbg(ql_dbg_io, vha, 0x3004,
 			    "DIF Cap not reg, fail DIF capable cmd's:%p.\n",
 			    cmd);

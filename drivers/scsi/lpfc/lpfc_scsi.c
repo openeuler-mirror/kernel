@@ -4087,7 +4087,7 @@ lpfc_scsi_cmd_iocb_cmpl(struct lpfc_hba *phba, struct lpfc_iocbq *pIocbIn,
 			if ((lpfc_cmd->result == IOERR_RX_DMA_FAILED ||
 			     lpfc_cmd->result == IOERR_TX_DMA_FAILED) &&
 			     pIocbOut->iocb.unsli3.sli3_bg.bgstat) {
-				if (scsi_get_prot_op(cmd) != SCSI_PROT_NORMAL) {
+				if (!scsi_prot_op_normal(cmd)) {
 					/*
 					 * This is a response for a BG enabled
 					 * cmd. Parse BG error
@@ -4568,7 +4568,7 @@ lpfc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *cmnd)
 	}
 	ndlp = rdata->pnode;
 
-	if ((scsi_get_prot_op(cmnd) != SCSI_PROT_NORMAL) &&
+	if (!scsi_prot_op_normal(cmnd) &&
 		(!(phba->sli3_options & LPFC_SLI3_BG_ENABLED))) {
 
 		lpfc_printf_log(phba, KERN_ERR, LOG_BG,
@@ -4638,7 +4638,7 @@ lpfc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *cmnd)
 	lpfc_cmd->start_time = jiffies;
 	cmnd->host_scribble = (unsigned char *)lpfc_cmd;
 
-	if (scsi_get_prot_op(cmnd) != SCSI_PROT_NORMAL) {
+	if (!scsi_prot_op_normal(cmnd)) {
 		if (vport->phba->cfg_enable_bg) {
 			lpfc_printf_vlog(vport,
 					 KERN_INFO, LOG_SCSI_CMD,

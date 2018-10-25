@@ -526,14 +526,14 @@ int iser_reg_rdma_mem(struct iscsi_iser_task *task,
 	int err;
 
 	use_dma_key = mem->dma_nents == 1 && (all_imm || !iser_always_reg) &&
-		      scsi_get_prot_op(task->sc) == SCSI_PROT_NORMAL;
+		      scsi_prot_op_normal(task->sc);
 
 	if (!use_dma_key) {
 		desc = device->reg_ops->reg_desc_get(ib_conn);
 		reg->mem_h = desc;
 	}
 
-	if (scsi_get_prot_op(task->sc) == SCSI_PROT_NORMAL)
+	if (scsi_prot_op_normal(task->sc))
 		data_reg = reg;
 	else
 		data_reg = &task->desc.data_reg;
@@ -542,7 +542,7 @@ int iser_reg_rdma_mem(struct iscsi_iser_task *task,
 	if (unlikely(err))
 		goto err_reg;
 
-	if (scsi_get_prot_op(task->sc) != SCSI_PROT_NORMAL) {
+	if (!scsi_prot_op_normal(task->sc)) {
 		struct iser_mem_reg *prot_reg = &task->desc.prot_reg;
 
 		if (scsi_prot_sg_count(task->sc)) {

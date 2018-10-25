@@ -389,7 +389,7 @@ static int iscsi_prep_scsi_cmd_pdu(struct iscsi_task *task)
 			return rc;
 	}
 
-	if (scsi_get_prot_op(sc) != SCSI_PROT_NORMAL)
+	if (!scsi_prot_op_normal(sc))
 		task->protected = true;
 
 	transfer_length = scsi_transfer_length(sc);

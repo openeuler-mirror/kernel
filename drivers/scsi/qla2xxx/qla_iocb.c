@@ -1569,7 +1569,7 @@ qla24xx_dif_start_scsi(srb_t *sp)
 #define QDSS_GOT_Q_SPACE	BIT_0
 
 	/* Only process protection or >16 cdb in this routine */
-	if (scsi_get_prot_op(cmd) == SCSI_PROT_NORMAL) {
+	if (scsi_prot_op_normal(cmd)) {
 		if (cmd->cmd_len <= 16)
 			return qla24xx_start_scsi(sp);
 	}
@@ -1918,13 +1918,13 @@ qla2xxx_dif_start_scsi_mq(srb_t *sp)
 	}
 
 	if (!qpair->difdix_supported &&
-		scsi_get_prot_op(cmd) != SCSI_PROT_NORMAL) {
+		!scsi_prot_op_normal(cmd)) {
 		cmd->result = DID_NO_CONNECT << 16;
 		return QLA_INTERFACE_ERROR;
 	}
 
 	/* Only process protection or >16 cdb in this routine */
-	if (scsi_get_prot_op(cmd) == SCSI_PROT_NORMAL) {
+	if (scsi_prot_op_normal(cmd)) {
 		if (cmd->cmd_len <= 16)
 			return qla2xxx_start_scsi_mq(sp);
 	}
