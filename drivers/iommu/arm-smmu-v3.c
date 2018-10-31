@@ -587,7 +587,23 @@ struct arm_smmu_device {
 
 	struct arm_smmu_strtab_cfg	strtab_cfg;
 
-	u32				sync_count;
+	/*
+	 * The member "padding" is used to make sure the member "sync_count" to
+	 * be aligned at 8 bytes boundary, and 4 bytes padding memory followed.
+	 *
+	 * These are required by hi1620 and earlier of Hisilicon. Because the
+	 * ITS hardware on hi1620 and earlier will truncate the MSIAddress(Here
+	 * it's the address of "sync_count") to 8 bytes boundary first, then
+	 * write 32 bits MSIdata at offset 0, and 32 bits IMPDEF data at offset
+	 * 4. Without this workaround, the adjacent member maybe overwritten.
+	 *
+	 *                    |---4bytes---|---4bytes---|
+	 * MSIAddress & (~0x7):   MSIdata  | IMPDEF data|
+	 */
+	union {
+		u32			sync_count;
+		u64			padding;
+	};
 
 	/* IOMMU core code handle */
 	struct iommu_device		iommu;
