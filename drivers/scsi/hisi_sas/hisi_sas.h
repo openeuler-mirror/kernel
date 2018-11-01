@@ -55,6 +55,12 @@
 #define hisi_sas_sge_addr_mem(slot) hisi_sas_sge_addr(slot->buf)
 #define hisi_sas_sge_addr_dma(slot) hisi_sas_sge_addr(slot->buf_dma)
 
+#define hisi_sas_sge_dif_addr(buf) \
+	(buf + offsetof(struct hisi_sas_slot_dif_buf_table, \
+			sge_dif_page))
+#define hisi_sas_sge_dif_addr_mem(slot) hisi_sas_sge_dif_addr(slot->buf)
+#define hisi_sas_sge_dif_addr_dma(slot) hisi_sas_sge_dif_addr(slot->buf_dma)
+
 #define HISI_SAS_MAX_SSP_RESP_SZ (sizeof(struct ssp_frame_hdr) + 1024)
 #define HISI_SAS_MAX_SMP_RESP_SZ 1028
 #define HISI_SAS_MAX_STP_RESP_SZ 28
@@ -198,6 +204,7 @@ struct hisi_sas_slot {
 	struct sas_task *task;
 	struct hisi_sas_port	*port;
 	u64	n_elem;
+	u64	n_elem_dif;
 	int	dlvry_queue;
 	int	dlvry_queue_slot;
 	int	cmplt_queue;
@@ -325,6 +332,7 @@ struct hisi_hba {
 	u32 phy_state;
 	u32 intr_coal_ticks;	/* time of interrupt coalesce, unit:1us */
 	u32 intr_coal_count;	/* count of interrupt coalesce */
+	int enable_dix_dif;
 };
 
 /* Generic HW DMA host memory structures */
@@ -423,6 +431,11 @@ struct hisi_sas_sge_page {
 	struct hisi_sas_sge sge[HISI_SAS_SGE_PAGE_CNT];
 }  __aligned(16);
 
+#define HISI_SAS_SGE_DIF_PAGE_CNT   SG_CHUNK_SIZE
+struct hisi_sas_sge_dif_page {
+	struct hisi_sas_sge sge[HISI_SAS_SGE_DIF_PAGE_CNT];
+}  __aligned(16);
+
 struct hisi_sas_command_table_ssp {
 	struct ssp_frame_hdr hdr;
 	union {
@@ -451,6 +464,11 @@ struct hisi_sas_slot_buf_table {
 	struct hisi_sas_status_buffer status_buffer;
 	union hisi_sas_command_table command_header;
 	struct hisi_sas_sge_page sge_page;
+};
+
+struct hisi_sas_slot_dif_buf_table {
+	struct hisi_sas_slot_buf_table slot_buf;
+	struct hisi_sas_sge_dif_page sge_dif_page;
 };
 
 extern struct scsi_transport_template *hisi_sas_stt;
