@@ -2661,13 +2661,86 @@ static void hisi_sas_snapshot_iost_reg(struct hisi_hba *hisi_hba)
 	}
 }
 
+const char *hisi_sas_reg_name(int off,
+				int base_off,
+				const struct hisi_sas_debugfs_reg_lu *lu)
+{
+	for (; lu->name; lu++) {
+		if (off == lu->off - base_off)
+			return lu->name;
+	}
+
+	return NULL;
+}
+
+static void hisi_sas_print_reg(u32 *regs_val,
+				const void *ptr,
+				struct seq_file *s)
+{
+	const struct hisi_sas_debugfs_reg *reg = ptr;
+	int i;
+
+	for (i = 0; i < reg->count; i++) {
+		int off = i * 4;
+		const char *name = hisi_sas_reg_name(off,
+						reg->base_off,
+						reg->lu);
+
+		if (name)
+			seq_printf(s, "0x%08x 0x%08x %s\n",
+				off,
+				le32_to_cpu(regs_val[i]),
+				name);
+		else
+			seq_printf(s, "0x%08x 0x%08x\n",
+				off,
+				le32_to_cpu(regs_val[i]));
+	}
+}
+
+static int hisi_sas_debugfs_global_show(struct seq_file *s, void *p)
+{
+	struct hisi_hba *hisi_hba = s->private;
+	const struct hisi_sas_hw *hw = hisi_hba->hw;
+	const struct hisi_sas_debugfs_reg *reg_global = hw->debugfs_reg_global;
+
+	hisi_sas_print_reg((u32 *)hisi_hba->global_reg_debugfs, reg_global, s);
+
+	return 0;
+}
+
+static int hisi_sas_debugfs_global_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, hisi_sas_debugfs_global_show,
+			inode->i_private);
+}
+
+static const struct file_operations hisi_sas_debugfs_global_fops = {
+	.open = hisi_sas_debugfs_global_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+
 static void hisi_sas_create_folder_structure(struct hisi_hba *hisi_hba)
 {
 	struct dentry *dump_dentry;
+	struct dentry *dentry;
 
 	/* Create dump dir inside device dir */
 	dump_dentry = debugfs_create_dir("dump", hisi_hba->debugfs_dir);
 	if (!dump_dentry)
+		goto fail;
+
+	/* Create global dir and files */
+	dentry = debugfs_create_dir("global", dump_dentry);
+	if (!dentry)
+		goto fail;
+
+	if (!debugfs_create_file("global", 0400, dentry,
+				hisi_hba,
+				&hisi_sas_debugfs_global_fops))
 		goto fail;
 
 	return;
