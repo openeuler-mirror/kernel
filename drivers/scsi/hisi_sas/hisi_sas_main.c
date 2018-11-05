@@ -2851,6 +2851,57 @@ static const struct file_operations hisi_sas_debugfs_dq_fops = {
 	.owner = THIS_MODULE,
 };
 
+static int hisi_sas_show_row_64(struct seq_file *s,
+				int index,
+				int sz,
+				u64 *ptr)
+{
+	int i;
+
+	/* completion header size not fixed per HW version */
+	seq_printf(s, "index %04d:\n\t", index);
+	for (i = 1; i <= sz / 8; i++, ptr++) {
+		seq_printf(s, " 0x%016llx", le64_to_cpu(*ptr));
+		/* when print 4 character , new a line */
+		if (!(i % 4))
+			seq_puts(s, "\n\t");
+	}
+
+	seq_puts(s, "\n");
+
+	return 0;
+}
+
+static int hisi_sas_debugfs_iost_show(struct seq_file *s, void *p)
+{
+	struct hisi_hba *hisi_hba = s->private;
+	struct hisi_sas_iost *iost_debugfs = hisi_hba->iost_debugfs;
+	int i, ret, max_command_entries = hisi_hba->hw->max_command_entries;
+
+	for (i = 0; i < max_command_entries; i++, iost_debugfs++) {
+		ret = hisi_sas_show_row_64(s, i,
+					sizeof(*iost_debugfs),
+					(u64 *)iost_debugfs);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int hisi_sas_debugfs_iost_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, hisi_sas_debugfs_iost_show, inode->i_private);
+}
+
+static const struct file_operations hisi_sas_debugfs_iost_fops = {
+	.open = hisi_sas_debugfs_iost_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+
 static void hisi_sas_create_folder_structure(struct hisi_hba *hisi_hba)
 {
 	struct dentry *dump_dentry;
@@ -2915,6 +2966,16 @@ static void hisi_sas_create_folder_structure(struct hisi_hba *hisi_hba)
 					&hisi_sas_debugfs_dq_fops))
 			goto fail;
 	}
+
+	/* Create iost dir and files */
+	dentry = debugfs_create_dir("iost", dump_dentry);
+	if (!dentry)
+		goto fail;
+
+	if (!debugfs_create_file("iost", 0400, dentry,
+				hisi_hba,
+				&hisi_sas_debugfs_iost_fops))
+		goto fail;
 
 	return;
 fail:
