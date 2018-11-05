@@ -2902,6 +2902,36 @@ static const struct file_operations hisi_sas_debugfs_iost_fops = {
 	.owner = THIS_MODULE,
 };
 
+static int hisi_sas_debugfs_itct_show(struct seq_file *s, void *p)
+{
+	int i, ret;
+	struct hisi_hba *hisi_hba = s->private;
+	struct hisi_sas_itct *itct_debugfs = hisi_hba->itct_debugfs;
+
+	for (i = 0; i < HISI_SAS_MAX_ITCT_ENTRIES; i++, itct_debugfs++) {
+		ret = hisi_sas_show_row_64(s, i,
+					sizeof(*itct_debugfs),
+					(u64 *)itct_debugfs);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int hisi_sas_debugfs_itct_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, hisi_sas_debugfs_itct_show, inode->i_private);
+}
+
+static const struct file_operations hisi_sas_debugfs_itct_fops = {
+	.open = hisi_sas_debugfs_itct_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+
 static void hisi_sas_create_folder_structure(struct hisi_hba *hisi_hba)
 {
 	struct dentry *dump_dentry;
@@ -2975,6 +3005,16 @@ static void hisi_sas_create_folder_structure(struct hisi_hba *hisi_hba)
 	if (!debugfs_create_file("iost", 0400, dentry,
 				hisi_hba,
 				&hisi_sas_debugfs_iost_fops))
+		goto fail;
+
+	/* Create itct dir and files */
+	dentry = debugfs_create_dir("itct", dump_dentry);
+	if (!dentry)
+		goto fail;
+
+	if (!debugfs_create_file("itct", 0400, dentry,
+					hisi_hba,
+					&hisi_sas_debugfs_itct_fops))
 		goto fail;
 
 	return;
