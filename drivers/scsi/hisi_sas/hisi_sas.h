@@ -14,6 +14,7 @@
 
 #include <linux/acpi.h>
 #include <linux/clk.h>
+#include <linux/debugfs.h>
 #include <linux/dmapool.h>
 #include <linux/iopoll.h>
 #include <linux/lcm.h>
@@ -333,6 +334,8 @@ struct hisi_hba {
 	u32 intr_coal_ticks;	/* time of interrupt coalesce, unit:1us */
 	u32 intr_coal_count;	/* count of interrupt coalesce */
 	int enable_dix_dif;
+
+	struct dentry *debugfs_dir;
 };
 
 /* Generic HW DMA host memory structures */
@@ -471,6 +474,8 @@ struct hisi_sas_slot_dif_buf_table {
 	struct hisi_sas_sge_dif_page sge_dif_page;
 };
 
+extern bool hisi_sas_debugfs_enable;
+extern struct dentry *hisi_sas_dbg_dir;
 extern struct scsi_transport_template *hisi_sas_stt;
 extern void hisi_sas_stop_phys(struct hisi_hba *hisi_hba);
 extern int hisi_sas_alloc(struct hisi_hba *hisi_hba, struct Scsi_Host *shost);
@@ -504,4 +509,6 @@ extern void hisi_sas_release_tasks(struct hisi_hba *hisi_hba);
 extern u8 hisi_sas_get_prog_phy_linkrate_mask(enum sas_linkrate max);
 extern void hisi_sas_controller_reset_prepare(struct hisi_hba *hisi_hba);
 extern void hisi_sas_controller_reset_done(struct hisi_hba *hisi_hba);
+extern void hisi_sas_debugfs_init(struct hisi_hba *hisi_hba);
+extern void hisi_sas_debugfs_exit(struct hisi_hba *hisi_hba);
 #endif

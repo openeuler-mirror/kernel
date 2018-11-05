@@ -2584,6 +2584,9 @@ hisi_sas_v3_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		sha->sas_port[i] = &hisi_hba->port[i].sas_port;
 	}
 
+	if (hisi_sas_debugfs_enable)
+		hisi_sas_debugfs_init(hisi_hba);
+
 	rc = scsi_add_host(shost, dev);
 	if (rc)
 		goto err_out_ha;
@@ -2642,6 +2645,9 @@ static void hisi_sas_v3_remove(struct pci_dev *pdev)
 	struct sas_ha_struct *sha = dev_get_drvdata(dev);
 	struct hisi_hba *hisi_hba = sha->lldd_ha;
 	struct Scsi_Host *shost = sha->core.shost;
+
+	if (hisi_sas_debugfs_enable)
+		hisi_sas_debugfs_exit(hisi_hba);
 
 	if (timer_pending(&hisi_hba->timer))
 		del_timer(&hisi_hba->timer);
