@@ -2401,9 +2401,12 @@ static ssize_t intr_coal_count_store(struct device *dev,
 static DEVICE_ATTR_RW(intr_coal_count);
 
 static const struct hisi_sas_debugfs_reg debugfs_port_reg = {
+	.base_off = PORT_BASE,
+	.read_port_reg = hisi_sas_phy_read32,
 };
 
 static const struct hisi_sas_debugfs_reg debugfs_global_reg = {
+	.read_global_reg = hisi_sas_read32,
 };
 
 struct device_attribute *host_attrs_v3_hw[] = {

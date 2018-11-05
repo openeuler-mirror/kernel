@@ -225,6 +225,13 @@ struct hisi_sas_slot {
 
 struct hisi_sas_debugfs_reg {
 	int count;
+	int base_off;
+	union {
+		u32 (*read_global_reg)(struct hisi_hba *hisi_hba, u32 off);
+		u32 (*read_port_reg)(struct hisi_hba *hisi_hba,
+					int port,
+					u32 off);
+	};
 };
 
 struct hisi_sas_hw {
@@ -526,4 +533,5 @@ extern void hisi_sas_controller_reset_prepare(struct hisi_hba *hisi_hba);
 extern void hisi_sas_controller_reset_done(struct hisi_hba *hisi_hba);
 extern void hisi_sas_debugfs_init(struct hisi_hba *hisi_hba);
 extern void hisi_sas_debugfs_exit(struct hisi_hba *hisi_hba);
+extern void hisi_sas_snapshot_regs(struct hisi_hba *hisi_hba);
 #endif
