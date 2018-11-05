@@ -223,6 +223,10 @@ struct hisi_sas_slot {
 	int	idx;
 };
 
+struct hisi_sas_debugfs_reg {
+	int count;
+};
+
 struct hisi_sas_hw {
 	int (*hw_init)(struct hisi_hba *hisi_hba);
 	void (*setup_itct)(struct hisi_hba *hisi_hba,
@@ -267,6 +271,9 @@ struct hisi_sas_hw {
 	int max_command_entries;
 	int complete_hdr_size;
 	struct scsi_host_template *sht;
+
+	const struct hisi_sas_debugfs_reg *debugfs_reg_global;
+	const struct hisi_sas_debugfs_reg *debugfs_reg_port;
 };
 
 struct hisi_hba {
@@ -334,6 +341,14 @@ struct hisi_hba {
 	u32 intr_coal_ticks;	/* time of interrupt coalesce, unit:1us */
 	u32 intr_coal_count;	/* count of interrupt coalesce */
 	int enable_dix_dif;
+
+	/* debugfs memories */
+	void *global_reg_debugfs;
+	void *port_reg_debugfs[HISI_SAS_MAX_PHYS];
+	void *complete_hdr_debugfs[HISI_SAS_MAX_QUEUES];
+	struct hisi_sas_cmd_hdr	*cmd_hdr_debugfs[HISI_SAS_MAX_QUEUES];
+	struct hisi_sas_iost *iost_debugfs;
+	struct hisi_sas_itct *itct_debugfs;
 
 	struct dentry *debugfs_dir;
 };

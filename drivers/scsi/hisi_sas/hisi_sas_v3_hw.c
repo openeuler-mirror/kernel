@@ -2400,6 +2400,12 @@ static ssize_t intr_coal_count_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(intr_coal_count);
 
+static const struct hisi_sas_debugfs_reg debugfs_port_reg = {
+};
+
+static const struct hisi_sas_debugfs_reg debugfs_global_reg = {
+};
+
 struct device_attribute *host_attrs_v3_hw[] = {
 	&dev_attr_phy_event_threshold,
 	&dev_attr_intr_conv,
@@ -2459,6 +2465,8 @@ static const struct hisi_sas_hw hisi_sas_v3_hw = {
 	.get_events = phy_get_events_v3_hw,
 	.write_gpio = write_gpio_v3_hw,
 	.wait_cmds_complete_timeout = wait_cmds_complete_timeout_v3_hw,
+	.debugfs_reg_global = &debugfs_global_reg,
+	.debugfs_reg_port = &debugfs_port_reg,
 };
 
 static struct Scsi_Host *

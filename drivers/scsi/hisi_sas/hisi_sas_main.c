@@ -2576,10 +2576,85 @@ struct dentry *hisi_sas_dbg_dir;
 
 void hisi_sas_debugfs_init(struct hisi_hba *hisi_hba)
 {
+	int max_command_entries = hisi_hba->hw->max_command_entries;
 	struct device *dev = hisi_hba->dev;
+	int p, i, c, d;
+	size_t sz;
 
 	hisi_hba->debugfs_dir = debugfs_create_dir(dev_name(dev),
 						hisi_sas_dbg_dir);
+	if (!hisi_hba->debugfs_dir)
+		return;
+
+	/* Alloc buffer for global */
+	sz = hisi_hba->hw->debugfs_reg_global->count * 4;
+	hisi_hba->global_reg_debugfs =
+		devm_kmalloc(dev, sz, GFP_KERNEL);
+
+	if (!hisi_hba->global_reg_debugfs)
+		goto fail_global;
+
+	/* Alloc buffer for port */
+	sz = hisi_hba->hw->debugfs_reg_port->count * 4;
+	for (p = 0; p < hisi_hba->n_phy; p++) {
+		hisi_hba->port_reg_debugfs[p] =
+			devm_kmalloc(dev, sz, GFP_KERNEL);
+
+		if (!hisi_hba->port_reg_debugfs[p])
+			goto fail_port;
+	}
+
+	/* Alloc buffer for cq */
+	sz = hisi_hba->hw->complete_hdr_size * HISI_SAS_QUEUE_SLOTS;
+	for (c = 0; c < hisi_hba->queue_count; c++) {
+		hisi_hba->complete_hdr_debugfs[c] =
+			devm_kmalloc(dev, sz, GFP_KERNEL);
+
+		if (!hisi_hba->complete_hdr_debugfs[c])
+			goto fail_cq;
+	}
+
+	/* Alloc buffer for dq */
+	sz = hisi_hba->hw->complete_hdr_size * HISI_SAS_QUEUE_SLOTS;
+	for (d = 0; d < hisi_hba->queue_count; d++) {
+		hisi_hba->cmd_hdr_debugfs[d] =
+			devm_kmalloc(dev, sz, GFP_KERNEL);
+
+		if (!hisi_hba->cmd_hdr_debugfs[d])
+			goto fail_iost_dq;
+	}
+
+	/* Alloc buffer for iost */
+	sz = max_command_entries * sizeof(struct hisi_sas_iost);
+
+	hisi_hba->iost_debugfs = devm_kmalloc(dev, sz, GFP_KERNEL);
+	if (!hisi_hba->iost_debugfs)
+		goto fail_iost_dq;
+
+	/* Alloc buffer for itct */
+	/* New memory allocation must be locate before itct */
+	sz = HISI_SAS_MAX_ITCT_ENTRIES * sizeof(struct hisi_sas_itct);
+
+	hisi_hba->itct_debugfs = devm_kmalloc(dev, sz, GFP_KERNEL);
+	if (!hisi_hba->itct_debugfs)
+		goto fail_itct;
+
+	return;
+fail_itct:
+	devm_kfree(dev, hisi_hba->iost_debugfs);
+fail_iost_dq:
+	for (i = 0; i < d; i++)
+		devm_kfree(dev, hisi_hba->cmd_hdr_debugfs[i]);
+fail_cq:
+	for (i = 0; i < c; i++)
+		devm_kfree(dev, hisi_hba->complete_hdr_debugfs[i]);
+fail_port:
+	for (i = 0; i < p; i++)
+		devm_kfree(dev, hisi_hba->port_reg_debugfs[i]);
+	devm_kfree(dev, hisi_hba->global_reg_debugfs);
+fail_global:
+	debugfs_remove_recursive(hisi_hba->debugfs_dir);
+	dev_err(dev, "Dev: %s fail to init Debugfs!", dev_name(dev));
 }
 EXPORT_SYMBOL_GPL(hisi_sas_debugfs_init);
 
