@@ -365,6 +365,10 @@ static inline void qm_poll_qp(struct hisi_qp *qp, struct qm_info *qm)
 		qp->event_cb(qp);
 		qm_cq_head_update(qp);
 		cqe = QP_CQE(qp) + qp->qp_status.cq_head;
+	} else {
+		dma_rmb();
+		qm_cq_head_update(qp);
+		cqe = QP_CQE(qp) + qp->qp_status.cq_head;
 	}
 
 	qm_db(qm, qp->queue_id, DOORBELL_CMD_CQ, qp->qp_status.cq_head, 0);
@@ -393,9 +397,9 @@ static irqreturn_t qm_irq_thread(int irq, void *data)
 			eqe++;
 			qm->eq_head++;
 		}
-
-		qm_db(qm, 0, DOORBELL_CMD_EQ, qm->eq_head, 0);
 	}
+
+	qm_db(qm, 0, DOORBELL_CMD_EQ, qm->eq_head, 0);
 
 	return IRQ_HANDLED;
 }
