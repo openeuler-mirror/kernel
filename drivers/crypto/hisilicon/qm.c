@@ -995,6 +995,16 @@ static int hisi_qm_get_available_qnum(struct vfio_spimdev *spimdev)
 
 	return num;
 }
+static int qm_set_sqctype(struct hisi_qp *qp, u16 type)
+{
+	struct sqc *sqc;
+
+	sqc = QM_SQC(qp);
+	sqc->w13 = 0 << SQ_PRIORITY_SHIFT  |
+		   1 << SQ_ORDERS_SHIFT    |
+		   (type & SQ_TYPE_MASK) << SQ_TYPE_SHIFT;
+	return qm_mb(qp->qm, MAILBOX_CMD_SQC, qp->sqc.dma, qp->queue_id, 0, 0);
+}
 
 static long qm_ioctl(struct vfio_spimdev_queue *q, unsigned int cmd,
 		     unsigned long arg)
@@ -1049,6 +1059,9 @@ static long qm_ioctl(struct vfio_spimdev_queue *q, unsigned int cmd,
 		__free_pages(phys_to_page(phy), order);
 		qp->udma_buf.phy_addr = 0;
 
+		break;
+	case HACC_QM_SET_OPTYPE:
+		qm_set_sqctype(qp, (u16)(arg & 0xffff));
 		break;
 	default:
 		dev_err(spimdev->dev,

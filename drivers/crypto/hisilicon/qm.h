@@ -36,6 +36,8 @@
 #define QP_SQE_ADDR(qp) ((qp)->scqe.addr)
 #define _GET_DMA_PAGES		_IOW('d', 3, unsigned long long)
 #define _PUT_DMA_PAGES		_IOW('d', 4, unsigned long long)
+#define HACC_QM_SET_OPTYPE	_IOW('d', 5, unsigned long long)
+
 enum qm_type {
 	ZIP = 1,
 	HPRE,
