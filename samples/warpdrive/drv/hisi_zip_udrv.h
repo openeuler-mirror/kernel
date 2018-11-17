@@ -53,4 +53,6 @@ int hisi_zip_get_capa(struct wd_capa *capa);
 
 #define ZIP_GET_DMA_PAGES		_IOW('d', 3, unsigned long long)
 #define ZIP_PUT_DMA_PAGES		_IOW('d', 4, unsigned long long)
+#define HACC_QM_SET_OPTYPE		_IOW('d', 5, unsigned long long)
+
 #endif

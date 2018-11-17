@@ -15,6 +15,11 @@ struct vfio_wdev_comp_param {
 	__u32 alg;
 };
 
+enum wd_comp_op_type {
+	WD_COMPRESS,
+	WD_DECOMPRESS,
+};
+
 /* WD defines all the De-compressing algorithm names here */
 #define VFIO_WDEV_ZLIB			"zlib"
 #define VFIO_WDEV_GZIP			"gzip"

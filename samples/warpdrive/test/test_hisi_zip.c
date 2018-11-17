@@ -39,6 +39,7 @@ do {					\
 
 #define ZLIB 0
 #define GZIP 1
+
 #define CHUNK 65535
 #define TEST_MAX_THRD		8
 #define THR_2_CPUID(i)		(1 + (i) * 13)
@@ -48,7 +49,7 @@ static pthread_t request_release_q_thrds[TEST_MAX_THRD];
 static int thd_cpuid[TEST_MAX_THRD];
 static char exp_test;
 
-int hizip_deflate(FILE *source, FILE *dest,  int type)
+int hizip_deflate(FILE *source, FILE *dest,  int alg_type, int op_type)
 {
 	__u64 in, out;
 	struct wd_queue q, *queue;
@@ -72,15 +73,16 @@ int hizip_deflate(FILE *source, FILE *dest,  int type)
 	memset((void *)&msg, 0, sizeof(msg));
 	memset(&q, 0, sizeof(q));
 	q.container = -1;
-	if (type == ZLIB) {
+	if (alg_type == ZLIB) {
 		q.capa.alg = "zlib";
 		msg.dw9 = 2;
-	} else if (type == GZIP) {
+	} else if (alg_type == GZIP) {
 		msg.dw9 = 3;
 		q.capa.alg = "gzip";
 	}
 	q.capa.latency = 10;
 	q.capa.throughput = 0;
+	q.capa.flags = op_type;
 	ret = wd_request_queue(&q);
 	SYS_ERR_COND(ret, "wd_request q fail!");
 	fprintf(stderr, "q: node_id=%d, dma_flag=%d\n", q.node_id, q.dma_flag);
@@ -90,6 +92,7 @@ int hizip_deflate(FILE *source, FILE *dest,  int type)
 	q1.capa.latency = 10;
 	q1.capa.throughput = 0;
 	q1.container = -1;
+	q1.capa.flags = q.capa.flags;
 	ret = wd_request_queue(&q1);
 	SYS_ERR_COND(ret, "wd_request q1 fail!");
 	fprintf(stderr, "q1: node_id=%d, dma_flag=%d\n",
@@ -132,7 +135,10 @@ int hizip_deflate(FILE *source, FILE *dest,  int type)
 
 	msg.input_date_length = total_len;
 	msg.dest_avail_out = 0x800000;
-	in = (__u64)src;
+	if (op_type == WD_COMPRESS)
+		in = (__u64)src;
+	else
+		in = (__u64)src+2;
 	out = (__u64)dst;
 	msg.source_addr_l = in & 0xffffffff;
 	msg.source_addr_h = in >> 32;
@@ -175,8 +181,9 @@ recv_again:
 		goto test_q1;
 	}
 #endif
+	if (op_type == WD_COMPRESS)
+		fwrite(zip_head, 1, 2, dest);
 
-	fwrite(zip_head, 1, 2, dest);
 	fwrite((char *)out, 1, output_num, dest);
 	fclose(dest);
 
@@ -276,6 +283,7 @@ void  *test_devs_max_q(void)
 int main(int argc, char *argv[])
 {
 	int alg_type = 0;
+	int op_type = 0;
 	cpu_set_t mask;
 	int cpuid = 0, i, ret;
 
@@ -302,9 +310,13 @@ no_affinity:
 		goto EXIT;
 	}
 
-	if (!strcmp(argv[1], "-z"))
+	if (!strcmp(argv[1], "-z")) {
 		alg_type = ZLIB;
-	else if (!strcmp(argv[1], "-g")) {
+		op_type = WD_COMPRESS;
+	} else if (!strcmp(argv[1], "-zd")) {
+		alg_type = ZLIB;
+		op_type = WD_DECOMPRESS;
+	} else if (!strcmp(argv[1], "-g")) {
 		alg_type = GZIP;
 	} else if (!strcmp(argv[1], "-h")) {
 		fputs("[version]:1.0.2\n", stderr);
@@ -324,7 +336,7 @@ no_affinity:
 		goto EXIT;
 	}
 
-	hizip_deflate(stdin, stdout, alg_type);
+	hizip_deflate(stdin, stdout, alg_type, op_type);
 
 	/* To test the multiple threads feature */
 	if (cpuid == 0) {

@@ -260,6 +260,11 @@ int hisi_zip_set_queue_dio(struct wd_queue *q)
 	info->cqc_phase = 1;
 	info->is_sq_full = 0;
 
+	ret = ioctl(q->fd, HACC_QM_SET_OPTYPE, q->capa.flags);
+	if (ret < 0) {
+		fprintf(stderr, "HACC_QM_SET_OPTYPE ioctl fail!\n");
+		return ret;
+	}
 	ret = zip_get_dma_buf(q);
 	if (ret)
 		goto unmap_io;
