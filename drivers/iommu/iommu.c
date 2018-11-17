@@ -59,6 +59,9 @@ struct iommu_group {
 	int id;
 	struct iommu_domain *default_domain;
 	struct iommu_domain *domain;
+	atomic_t domain_shared_ref; /* Number of user of current domain.
+				     * The domain cannot be modified if ref > 0
+				     */
 };
 
 struct group_device {
@@ -392,6 +395,7 @@ struct iommu_group *iommu_group_alloc(void)
 		return ERR_PTR(ret);
 	}
 	group->id = ret;
+	atomic_set(&group->domain_shared_ref, 0);
 
 	ret = kobject_init_and_add(&group->kobj, &iommu_group_ktype,
 				   NULL, "%d", group->id);
@@ -524,6 +528,26 @@ int iommu_group_set_name(struct iommu_group *group, const char *name)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(iommu_group_set_name);
+
+struct iommu_domain *iommu_group_share_domain(struct iommu_group *group)
+{
+	/* the domain can be shared only when the default domain is used */
+	/* todo: more shareable check */
+	if (group->domain != group->default_domain)
+		return ERR_PTR(-EINVAL);
+
+	atomic_inc(&group->domain_shared_ref);
+	return group->domain;
+}
+EXPORT_SYMBOL_GPL(iommu_group_share_domain);
+
+struct iommu_domain *iommu_group_unshare_domain(struct iommu_group *group)
+{
+	atomic_dec(&group->domain_shared_ref);
+	WARN_ON(atomic_read(&group->domain_shared_ref) < 0);
+	return group->domain;
+}
+EXPORT_SYMBOL_GPL(iommu_group_unshare_domain);
 
 static int iommu_group_create_direct_mappings(struct iommu_group *group,
 					      struct device *dev)
@@ -1460,7 +1484,8 @@ static int __iommu_attach_group(struct iommu_domain *domain,
 {
 	int ret;
 
-	if (group->default_domain && group->domain != group->default_domain)
+	if ((group->default_domain && group->domain != group->default_domain) ||
+	     atomic_read(&group->domain_shared_ref) > 0)
 		return -EBUSY;
 
 	ret = __iommu_group_for_each_dev(group, domain,
@@ -1496,6 +1521,8 @@ static void __iommu_detach_group(struct iommu_domain *domain,
 				 struct iommu_group *group)
 {
 	int ret;
+
+	WARN_ON(atomic_read(&group->domain_shared_ref) > 0);
 
 	if (!group->default_domain) {
 		__iommu_group_for_each_dev(group, domain,
