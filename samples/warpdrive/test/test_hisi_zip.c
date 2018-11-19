@@ -49,7 +49,7 @@ static pthread_t request_release_q_thrds[TEST_MAX_THRD];
 static int thd_cpuid[TEST_MAX_THRD];
 static char exp_test;
 
-int hizip_deflate(FILE *source, FILE *dest,  int alg_type, int op_type)
+int hizip_comp_test(FILE *source, FILE *dest,  int alg_type, int op_type)
 {
 	__u64 in, out;
 	struct wd_queue q, *queue;
@@ -64,7 +64,9 @@ int hizip_deflate(FILE *source, FILE *dest,  int alg_type, int op_type)
 	float time;
 
 	/* add zlib compress head and write head + compressed date to a file */
-	char zip_head[2] = {0x78, 0x9c};
+	const char zip_head[2] = {0x78, 0x9c};
+	const char gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0,
+				    0x0, 0x0, 0x0, 0x0, 0x0, 0x03};
 
 #ifdef TEST_MORE
 	struct wd_queue q1;
@@ -133,17 +135,25 @@ int hizip_deflate(FILE *source, FILE *dest,  int alg_type, int op_type)
 	src = (char *)a;
 	dst = (char *)b;
 
-	msg.input_date_length = total_len;
-	msg.dest_avail_out = 0x800000;
 	if (op_type == WD_COMPRESS)
 		in = (__u64)src;
-	else
-		in = (__u64)src+2;
+	else {
+		if (alg_type == ZLIB) {
+			in = (__u64)src+2;
+			total_len -= 2;
+		} else {
+			in = (__u64)src+10;
+			total_len -= 10;
+		}
+	}
+
 	out = (__u64)dst;
 	msg.source_addr_l = in & 0xffffffff;
 	msg.source_addr_h = in >> 32;
 	msg.dest_addr_l = out & 0xffffffff;
 	msg.dest_addr_h = out >> 32;
+	msg.input_date_length = total_len;
+	msg.dest_avail_out = 0x800000;
 	queue = &q;
 test_q1:
 	gettimeofday(&start_tval, NULL);
@@ -181,8 +191,12 @@ recv_again:
 		goto test_q1;
 	}
 #endif
-	if (op_type == WD_COMPRESS)
-		fwrite(zip_head, 1, 2, dest);
+	if (op_type == WD_COMPRESS) {
+		if (alg_type == ZLIB)
+			fwrite(zip_head, 1, 2, dest);
+		else
+			fwrite(gzip_head, 1, 10, dest);
+	}
 
 	fwrite((char *)out, 1, output_num, dest);
 	fclose(dest);
@@ -279,13 +293,44 @@ void  *test_devs_max_q(void)
 	return NULL;
 }
 
+void multiple_thread_test(int cpuid)
+{
+	int i, ret;
+
+/* To test the multiple threads feature */
+	if (cpuid == 0) {
+		for (i = 0; i < TEST_MAX_THRD; i++) {
+			thd_cpuid[i] = THR_2_CPUID(i);
+			ret = pthread_create(&request_release_q_thrds[i], NULL,
+				  test_q_mng_thread, &thd_cpuid[i]);
+			if (ret) {
+				fprintf(stderr,
+				"\npthread_create %dth thread fail!", i);
+				return -1;
+			}
+		}
+		for (i = 0; i < TEST_MAX_THRD; i++) {
+			ret = pthread_join(request_release_q_thrds[i], NULL);
+			if (ret) {
+				fprintf(stderr,
+				"\npthread_join %dth thread fail!", i);
+				return -1;
+			}
+		}
+		while (exp_test < TEST_MAX_THRD)
+			usleep(10000);
+
+		test_devs_max_q();
+	}
+}
 
 int main(int argc, char *argv[])
 {
 	int alg_type = 0;
 	int op_type = 0;
 	cpu_set_t mask;
-	int cpuid = 0, i, ret;
+	int cmd = 0;
+	int cpuid = 0;
 
 	CPU_ZERO(&mask);
 	if (argv[2]) {
@@ -318,6 +363,12 @@ no_affinity:
 		op_type = WD_DECOMPRESS;
 	} else if (!strcmp(argv[1], "-g")) {
 		alg_type = GZIP;
+		op_type = WD_COMPRESS;
+	} else if (!strcmp(argv[1], "-gd")) {
+		alg_type = GZIP;
+		op_type = WD_DECOMPRESS;
+	} else if (!strcmp(argv[1], "-t")) {
+		cmd = 1;
 	} else if (!strcmp(argv[1], "-h")) {
 		fputs("[version]:1.0.2\n", stderr);
 		fputs("[usage]: ./test_hisi_zip [type] <src_file> dest_file\n",
@@ -331,37 +382,20 @@ no_affinity:
 		goto EXIT;
 	} else {
 		fputs("Unknow option\n", stderr);
-		fputs("<<use ./test_comp_iommu -h get more details>>\n",
+		fputs("<<use ./test_hisi_zip -h get more details>>\n",
 			stderr);
 		goto EXIT;
 	}
 
-	hizip_deflate(stdin, stdout, alg_type, op_type);
-
-	/* To test the multiple threads feature */
-	if (cpuid == 0) {
-		for (i = 0; i < TEST_MAX_THRD; i++) {
-			thd_cpuid[i] = THR_2_CPUID(i);
-			ret = pthread_create(&request_release_q_thrds[i], NULL,
-				  test_q_mng_thread, &thd_cpuid[i]);
-			if (ret) {
-				fprintf(stderr,
-				"\npthread_create %dth thread fail!", i);
-				return -1;
-			}
-		}
-		for (i = 0; i < TEST_MAX_THRD; i++) {
-			ret = pthread_join(request_release_q_thrds[i], NULL);
-			if (ret) {
-				fprintf(stderr,
-				"\npthread_join %dth thread fail!", i);
-				return -1;
-			}
-		}
-		while (exp_test < TEST_MAX_THRD)
-			usleep(10000);
-
-		test_devs_max_q();
+	switch (cmd) {
+	case 0:
+		hizip_comp_test(stdin, stdout, alg_type, op_type);
+		break;
+	case 1:
+		multiple_thread_test(cpuid);
+		break;
+	default:
+		fputs("default cmd!\n", stderr);
 	}
 
 EXIT:
