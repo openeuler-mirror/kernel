@@ -29,6 +29,48 @@
 LIST_HEAD(hisi_zip_list);
 DEFINE_MUTEX(hisi_zip_list_lock);
 
+static int pf_q_num_set(const char *val, const struct kernel_param *kp)
+{
+	struct pci_dev *pdev = pci_get_device(PCI_VENDOR_ID_HUAWEI, 0xa250,
+					      NULL);
+	u32 n, q_num;
+	u8 rev_id;
+	int ret;
+
+	if (unlikely(!pdev)) {
+		q_num = min_t(u32, HZIP_QUEUE_NUM_V1, HZIP_QUEUE_NUM_V2);
+		pr_info("No hisi zip found currently, suppose queue number is %d\n",
+			q_num);
+	} else {
+		rev_id = pdev->revision;
+		switch (rev_id) {
+		case 0x20:
+			q_num = HZIP_QUEUE_NUM_V1;
+			break;
+		case 0x21:
+			q_num = HZIP_QUEUE_NUM_V2;
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+
+	ret = kstrtou32(val, 10, &n);
+	if (ret != 0 || n > q_num)
+		return -EINVAL;
+
+	return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops pf_q_num_ops = {
+	.set = pf_q_num_set,
+	.get = param_get_int,
+};
+
+static u32 pf_q_num = HZIP_PF_DEF_Q_NUM;
+module_param_cb(pf_q_num, &pf_q_num_ops, &pf_q_num, 0444);
+MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 0-4096, v2 0-1024)");
+
 static const struct pci_device_id hisi_zip_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, 0xa250) },
 	{ 0, }
@@ -130,7 +172,7 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		hisi_zip_set_user_domain_and_cache(hisi_zip);
 
 		qm->qp_base = HZIP_PF_DEF_Q_BASE;
-		qm->qp_num = HZIP_PF_DEF_Q_NUM;
+		qm->qp_num = pf_q_num;
 		qm->free_qp = qm->qp_num;
 	}
 	ret = hisi_qm_start(qm);
