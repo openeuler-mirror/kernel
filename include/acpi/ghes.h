@@ -123,5 +123,8 @@ int ghes_notify_sea(void);
 #else
 static inline int ghes_notify_sea(void) { return -ENOENT; }
 #endif
+extern void ghes_arm_process_error(struct ghes *ghes,
+				   struct cper_sec_proc_arm *err);
+
 
 #endif /* GHES_H */

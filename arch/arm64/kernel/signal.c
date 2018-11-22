@@ -43,6 +43,7 @@
 #include <asm/signal32.h>
 #include <asm/traps.h>
 #include <asm/vdso.h>
+#include <asm/ras.h>
 
 /*
  * Do a signal return; undo the signal stack. These are aligned to 128-bit.
@@ -921,6 +922,12 @@ asmlinkage void do_notify_resume(struct pt_regs *regs,
 	 * Update the trace code with the current status.
 	 */
 	trace_hardirqs_off();
+
+#ifdef CONFIG_ARM64_ERR_RECOV
+		/* notify userspace of pending SEAs */
+		if (unlikely(thread_flags & _TIF_SEA_NOTIFY))
+			sea_notify_process();
+#endif /* CONFIG_ARM64_ERR_RECOV */
 
 	do {
 		/* Check valid user FS if needed */
