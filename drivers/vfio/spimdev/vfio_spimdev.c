@@ -7,7 +7,7 @@
 
 struct _mdev_pool_entry {
 	struct vfio_spimdev_queue *q;
-	bool is_free;
+	atomic_t is_free;
 };
 
 struct _spimdev {
@@ -76,7 +76,6 @@ static const struct vfio_iommu_driver_ops vfio_spimdev_iommu_ops = {
 
 static void _spimdev_get(struct _spimdev *dev)
 {
-	atomic_inc(&dev->ref);
 	dev->pid = current->pid;
 }
 
@@ -221,15 +220,12 @@ static ssize_t mdev_get_show(struct device *dev,
 	if (!spimdev)
 		return -ENODEV;
 	mdev_state = spimdev->mstate;
-	mutex_lock(&mdev_state->lock);
 	list_for_each_entry(mdev, &mdev_state->mdev_list, next) {
-		if (atomic_read(&mdev->ref))
+		if (atomic_cmpxchg(&mdev->ref, 0, 1))
 			continue;
 		_spimdev_get(mdev);
-		mutex_unlock(&mdev_state->lock);
 		return sprintf(buf, "%s_%d\n", mdev->mdev, mdev->group_id);
 	}
-	mutex_unlock(&mdev_state->lock);
 
 	return -ENODEV;
 }
@@ -346,7 +342,7 @@ static void *_mdev_create_qpool(struct vfio_spimdev *spimdev,
 		ret = spimdev->ops->get_queue(spimdev, alg, &pool[0].q);
 		if (ret < 0)
 			return NULL;
-		pool[0].is_free = true;
+		atomic_set(&pool[0].is_free, 1);
 
 		return pool;
 	} else if (spimdev->flags & VFIO_SPIMDEV_DIFF_ALG_QFLG) {
@@ -362,7 +358,7 @@ static void *_mdev_create_qpool(struct vfio_spimdev *spimdev,
 			ret = spimdev->ops->get_queue(spimdev, alg, &pool[i].q);
 			if (ret < 0)
 				goto create_pool_fail;
-			pool[i].is_free = true;
+			atomic_set(&pool[i].is_free, 1);
 		}
 		return pool;
 	} else
@@ -382,7 +378,7 @@ static void _mdev_destroy_qpool(struct vfio_spimdev *spimdev,
 	int i = 0;
 
 	/* all the pool queues should be free, while remove mdev */
-	while (pool[i].is_free && pool[i].q) {
+	while (atomic_read(&pool[i].is_free) && pool[i].q) {
 		spimdev->ops->put_queue(pool[i].q);
 		i++;
 	}
@@ -505,31 +501,29 @@ static int _get_queue_from_pool(struct mdev_device *mdev, const char *alg,
 	if (!spimdev)
 		return -ENODEV;
 	pool = smdev->pool;
-	mutex_lock(&smdev->lock);
 	if (spimdev->flags & VFIO_SPIMDEV_SAME_ALG_QFLG) {
-		if (pool[0].is_free) {
+		if (atomic_cmpxchg(&pool[0].is_free, 1, 0)) {
 			*q = pool[0].q;
-			pool[0].is_free = false;
-			mutex_unlock(&smdev->lock);
+			if (spimdev->ops->reset_queue)
+				(void)spimdev->ops->reset_queue(*q);
 
 			return 0;
 		}
-		mutex_unlock(&smdev->lock);
 		return -ENODEV;
 	}
 
 	groups = spimdev->mdev_fops.supported_type_groups;
 	while (groups[i]) {
-		if (pool[i].is_free && !strncmp(groups[i]->name, alg,
-		    strlen(alg))) {
+		if (atomic_cmpxchg(&pool[i].is_free, 1, 0) &&
+		    !strncmp(groups[i]->name, alg, strlen(alg))) {
 			*q = pool[i].q;
-			pool[i].is_free = false;
-			mutex_unlock(&smdev->lock);
+			if (spimdev->ops->reset_queue)
+				(void)spimdev->ops->reset_queue(*q);
+
 			return 0;
 		}
 		i++;
 	}
-	mutex_unlock(&smdev->lock);
 
 	return -ENODEV;
 }
@@ -553,39 +547,20 @@ static int _put_queue_to_pool(struct mdev_device *mdev,
 		return -ENODEV;
 	groups = spimdev->mdev_fops.supported_type_groups;
 	pool = smdev->pool;
-	mutex_lock(&smdev->lock);
 	if (spimdev->flags & VFIO_SPIMDEV_SAME_ALG_QFLG) {
-		if (pool[0].is_free) {
-			mutex_unlock(&smdev->lock);
-			return -EEXIST;
-		} else if (pool[0].q == q) {
-			pool[0].is_free = true;
-			if (spimdev->ops->reset_queue)
-				(void)spimdev->ops->reset_queue(q);
-			mutex_unlock(&smdev->lock);
-
+		if (pool[0].q == q && !atomic_cmpxchg(&pool[0].is_free, 0, 1))
 			return 0;
-		}
-		mutex_unlock(&smdev->lock);
 		return -EEXIST;
 	}
 	while (groups[i]) {
 		if (!strncmp(groups[i]->name, q->alg, strlen(q->alg))) {
-			if (pool[i].is_free) {
-				continue;
-			} else if (pool[i].q == q) {
-				pool[i].is_free = true;
-				if (spimdev->ops->reset_queue)
-					(void)spimdev->ops->reset_queue(q);
-				mutex_unlock(&smdev->lock);
-
+			if (pool[i].q == q && !atomic_cmpxchg(&pool[i].is_free,
+			    0, 1))
 				return 0;
-			}
 		}
 		i++;
 	}
 
-	mutex_unlock(&smdev->lock);
 	return -EINVAL;
 }
 
@@ -769,11 +744,6 @@ static int _vfio_mdevs_release(struct device *dev, void *data)
 
 static void vfio_spimdev_mdev_release(struct mdev_device *mdev)
 {
-	struct _spimdev *smdev;
-
-	smdev = mdev_get_drvdata(mdev);
-	if (!smdev)
-		return;
 	(void)class_for_each_device(spimdev_class, NULL, NULL,
 			_vfio_mdevs_release);
 }

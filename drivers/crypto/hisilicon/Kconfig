@@ -43,5 +43,10 @@ config CRYPTO_DEV_HISI_HPRE
 	tristate "Support for HISI HPRE Driver"
 	depends on ARM64 && CRYPTO_DEV_HISILICON
 	select CRYPTO_DEV_HISI_QM
+	select CRYPTO_DH
+	select CRYPTO_RSA
 	help
-	  Support for HiSilicon HIP08 HPRE Driver
+	  Support for HiSilicon HIP08 HPRE Engine
+
+	  To compile this as a module, choose M here: the module
+	  will be called hisi_hpre.

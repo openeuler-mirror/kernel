@@ -593,11 +593,11 @@ struct hisi_qp *hisi_qm_create_qp(struct qm_info *qm, u8 alg_type)
 		return ERR_PTR(-EBUSY);
 	}
 	set_bit(qp_index, qm->qp_bitmap);
+	qm->free_qp--;
 
 	qp = kzalloc(sizeof(*qp), GFP_KERNEL);
 	if (!qp) {
 		ret = -ENOMEM;
-		write_unlock(&qm->qps_lock);
 		goto err_with_bitset;
 	}
 
@@ -606,11 +606,11 @@ struct hisi_qp *hisi_qm_create_qp(struct qm_info *qm, u8 alg_type)
 	qp->alg_type = alg_type;
 	qm_init_qp_status(qp);
 	write_unlock(&qm->qps_lock);
-	qm->free_qp--;
 	return qp;
 
 err_with_bitset:
 	clear_bit(qp_index, qm->qp_bitmap);
+	write_unlock(&qm->qps_lock);
 
 	return ERR_PTR(ret);
 }
