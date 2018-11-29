@@ -187,7 +187,6 @@ err_with_qm_init:
 	hisi_qm_uninit(qm);
 err_with_hisi_zip:
 	hisi_zip_remove_from_list(hisi_zip);
-	kfree(hisi_zip);
 	return ret;
 }
 
@@ -199,7 +198,6 @@ static void hisi_zip_remove(struct pci_dev *pdev)
 	hisi_qm_stop(qm);
 	hisi_qm_uninit(qm);
 	hisi_zip_remove_from_list(hisi_zip);
-	kfree(hisi_zip);
 }
 
 static struct pci_driver hisi_zip_pci_driver = {
