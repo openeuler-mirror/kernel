@@ -54,7 +54,7 @@ void hns_rcb_wait_fbd_clean(struct hnae_queue **qs, int q_num, u32 flag)
 						 RCB_RING_TX_RING_FBDNUM_REG);
 		if (flag & RCB_INT_FLAG_RX)
 			fbd_num += dsaf_read_dev(qs[i],
-						 RCB_RING_RX_RING_FBDNUM_REG);
+				RCB_RING_RX_RING_FBDNUM_REG);
 		if (!fbd_num)
 			i++;
 		if (wait_cnt >= 10000)
@@ -63,7 +63,10 @@ void hns_rcb_wait_fbd_clean(struct hnae_queue **qs, int q_num, u32 flag)
 
 	if (i < q_num)
 		dev_err(qs[i]->handle->owner_dev,
-			"queue(%d) wait fbd(%d) clean fail!!\n", i, fbd_num);
+			"tx(1)/rx(2):%d, queue(%d) wait fbd(%d) clean fail!!\n",
+			flag,
+			i,
+			fbd_num);
 }
 
 int hns_rcb_wait_tx_ring_clean(struct hnae_queue *qs)

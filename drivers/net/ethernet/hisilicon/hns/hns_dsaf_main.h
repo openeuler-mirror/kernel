@@ -452,7 +452,7 @@ void hns_dsaf_get_strings(int stringset, u8 *data, int port,
 void hns_dsaf_get_regs(struct dsaf_device *ddev, u32 port, void *data);
 int hns_dsaf_get_regs_count(void);
 void hns_dsaf_set_promisc_mode(struct dsaf_device *dsaf_dev, u32 en);
-void hns_dsaf_set_promisc_tcam(struct dsaf_device *dsaf_dev,
+int hns_dsaf_set_promisc_tcam(struct dsaf_device *dsaf_dev,
 			       u32 port, bool enable);
 
 void hns_dsaf_get_rx_mac_pause_en(struct dsaf_device *dsaf_dev, int mac_id,
