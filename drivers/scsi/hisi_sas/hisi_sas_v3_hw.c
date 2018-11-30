@@ -2314,7 +2314,7 @@ static int write_gpio_v3_hw(struct hisi_hba *hisi_hba, u8 reg_type,
 	return 0;
 }
 
-static void wait_cmds_complete_timeout_v3_hw(struct hisi_hba *hisi_hba,
+static int wait_cmds_complete_timeout_v3_hw(struct hisi_hba *hisi_hba,
 					     int delay_ms, int timeout_ms)
 {
 	struct device *dev = hisi_hba->dev;
@@ -2329,7 +2329,12 @@ static void wait_cmds_complete_timeout_v3_hw(struct hisi_hba *hisi_hba,
 		msleep(delay_ms);
 	}
 
+	if (time >= timeout_ms)
+		return -ETIMEDOUT;
+
 	dev_dbg(dev, "wait commands complete %dms\n", time);
+
+	return 0;
 }
 
 static ssize_t intr_conv_show(struct device *dev,
@@ -2576,6 +2581,28 @@ static const struct hisi_sas_debugfs_reg debugfs_global_reg = {
 	.read_global_reg = hisi_sas_read32,
 };
 
+static void debugfs_snapshot_prepare_v3_hw(struct hisi_hba *hisi_hba)
+{
+	struct device *dev = hisi_hba->dev;
+
+	set_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
+
+	hisi_sas_write32(hisi_hba, DLVRY_QUEUE_ENABLE, 0);
+
+	if (wait_cmds_complete_timeout_v3_hw(hisi_hba, 100, 5000) == -ETIMEDOUT)
+		dev_dbg(dev, "Wait commands complete timeout!\n");
+
+	hisi_sas_kill_tasklets(hisi_hba);
+}
+
+static void debugfs_snapshot_restore_v3_hw(struct hisi_hba *hisi_hba)
+{
+	hisi_sas_write32(hisi_hba, DLVRY_QUEUE_ENABLE,
+			 (u32)((1ULL << hisi_hba->queue_count) - 1));
+
+	clear_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
+}
+
 struct device_attribute *host_attrs_v3_hw[] = {
 	&dev_attr_phy_event_threshold,
 	&dev_attr_intr_conv,
@@ -2637,6 +2664,8 @@ static const struct hisi_sas_hw hisi_sas_v3_hw = {
 	.wait_cmds_complete_timeout = wait_cmds_complete_timeout_v3_hw,
 	.debugfs_reg_global = &debugfs_global_reg,
 	.debugfs_reg_port = &debugfs_port_reg,
+	.snapshot_prepare = debugfs_snapshot_prepare_v3_hw,
+	.snapshot_restore = debugfs_snapshot_restore_v3_hw,
 };
 
 static struct Scsi_Host *
@@ -2654,6 +2683,7 @@ hisi_sas_shost_alloc_pci(struct pci_dev *pdev)
 	hisi_hba = shost_priv(shost);
 
 	INIT_WORK(&hisi_hba->rst_work, hisi_sas_rst_work_handler);
+	INIT_WORK(&hisi_hba->dfx_work, hisi_sas_dfx_work_handler);
 	hisi_hba->hw = &hisi_sas_v3_hw;
 	hisi_hba->pci_dev = pdev;
 	hisi_hba->dev = dev;

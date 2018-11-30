@@ -1519,7 +1519,7 @@ static int hisi_sas_controller_reset(struct hisi_hba *hisi_hba)
 	int rc;
 
 	if (hisi_sas_debugfs_enable && hisi_hba->itct_debugfs)
-		hisi_sas_snapshot_regs(hisi_hba);
+		queue_work(hisi_hba->wq, &hisi_hba->dfx_work);
 
 	if (!hisi_hba->hw->soft_reset)
 		return -1;
@@ -2359,6 +2359,15 @@ void hisi_sas_sync_rst_work_handler(struct work_struct *work)
 }
 EXPORT_SYMBOL_GPL(hisi_sas_sync_rst_work_handler);
 
+void hisi_sas_dfx_work_handler(struct work_struct *work)
+{
+	struct hisi_hba *hisi_hba =
+		container_of(work, struct hisi_hba, dfx_work);
+
+	hisi_sas_snapshot_regs(hisi_hba);
+}
+EXPORT_SYMBOL_GPL(hisi_sas_dfx_work_handler);
+
 int hisi_sas_get_fw_info(struct hisi_hba *hisi_hba)
 {
 	struct device *dev = hisi_hba->dev;
@@ -3016,6 +3025,8 @@ fail:
 
 void hisi_sas_snapshot_regs(struct hisi_hba *hisi_hba)
 {
+	hisi_hba->hw->snapshot_prepare(hisi_hba);
+
 	hisi_sas_snapshot_global_reg(hisi_hba);
 	hisi_sas_snapshot_port_reg(hisi_hba);
 	hisi_sas_snapshot_cq_reg(hisi_hba);
@@ -3024,6 +3035,8 @@ void hisi_sas_snapshot_regs(struct hisi_hba *hisi_hba)
 	hisi_sas_snapshot_iost_reg(hisi_hba);
 
 	hisi_sas_create_folder_structure(hisi_hba);
+
+	hisi_hba->hw->snapshot_restore(hisi_hba);
 }
 EXPORT_SYMBOL_GPL(hisi_sas_snapshot_regs);
 

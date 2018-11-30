@@ -281,8 +281,10 @@ struct hisi_sas_hw {
 	u32 (*get_phys_state)(struct hisi_hba *hisi_hba);
 	int (*write_gpio)(struct hisi_hba *hisi_hba, u8 reg_type,
 				u8 reg_index, u8 reg_count, u8 *write_data);
-	void (*wait_cmds_complete_timeout)(struct hisi_hba *hisi_hba,
+	int (*wait_cmds_complete_timeout)(struct hisi_hba *hisi_hba,
 					   int delay_ms, int timeout_ms);
+	void (*snapshot_prepare)(struct hisi_hba *hisi_hba);
+	void (*snapshot_restore)(struct hisi_hba *hisi_hba);
 	int max_command_entries;
 	int complete_hdr_size;
 	struct scsi_host_template *sht;
@@ -352,6 +354,7 @@ struct hisi_hba {
 	const struct hisi_sas_hw *hw;	/* Low level hw interface */
 	unsigned long sata_dev_bitmap[BITS_TO_LONGS(HISI_SAS_MAX_DEVICES)];
 	struct work_struct rst_work;
+	struct work_struct dfx_work;
 	u32 phy_state;
 	u32 intr_coal_ticks;	/* time of interrupt coalesce, unit:1us */
 	u32 intr_coal_count;	/* count of interrupt coalesce */
@@ -532,6 +535,7 @@ extern void hisi_sas_slot_task_free(struct hisi_hba *hisi_hba,
 				    struct hisi_sas_slot *slot);
 extern void hisi_sas_init_mem(struct hisi_hba *hisi_hba);
 extern void hisi_sas_rst_work_handler(struct work_struct *work);
+extern void hisi_sas_dfx_work_handler(struct work_struct *work);
 extern void hisi_sas_sync_rst_work_handler(struct work_struct *work);
 extern void hisi_sas_kill_tasklets(struct hisi_hba *hisi_hba);
 extern bool hisi_sas_notify_phy_event(struct hisi_sas_phy *phy,

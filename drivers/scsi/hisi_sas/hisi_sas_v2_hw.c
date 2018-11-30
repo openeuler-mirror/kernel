@@ -3532,7 +3532,7 @@ static int write_gpio_v2_hw(struct hisi_hba *hisi_hba, u8 reg_type,
 	return 0;
 }
 
-static void wait_cmds_complete_timeout_v2_hw(struct hisi_hba *hisi_hba,
+static int wait_cmds_complete_timeout_v2_hw(struct hisi_hba *hisi_hba,
 					     int delay_ms, int timeout_ms)
 {
 	struct device *dev = hisi_hba->dev;
@@ -3547,7 +3547,12 @@ static void wait_cmds_complete_timeout_v2_hw(struct hisi_hba *hisi_hba,
 		msleep(delay_ms);
 	}
 
+	if (time >= timeout_ms)
+		return -ETIMEDOUT;
+
 	dev_dbg(dev, "wait commands complete %dms\n", time);
+
+	return 0;
 }
 
 struct device_attribute *host_attrs_v2_hw[] = {
