@@ -117,9 +117,9 @@ static int hisi_hpre_set_user_domain_and_cache(struct hisi_hpre *hisi_hpre)
 static int hisi_hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct hisi_hpre *hisi_hpre;
-	struct qm_info *qm;
+	struct hisi_qm *qm;
+	enum qm_hw_ver rev_id;
 	int ret;
-	u8 rev_id = 0;
 	u32 val;
 
 	hisi_hpre = devm_kzalloc(&pdev->dev, sizeof(*hisi_hpre), GFP_KERNEL);
@@ -129,17 +129,24 @@ static int hisi_hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	pci_set_drvdata(pdev, hisi_hpre);
 	qm = &hisi_hpre->qm;
 	qm->pdev = pdev;
-	pci_read_config_byte(pdev, PCI_REVISION_ID, &rev_id);
-	if (rev_id == 0x20)
-		qm->ver = QM_HW_V1;
-	else if (rev_id == 0x21)
-		qm->ver = QM_HW_V2;
+
+	rev_id = hisi_qm_get_hw_version(qm);
+	if (rev_id < 0)
+		return rev_id;
+	qm->ver = rev_id;
+
 	qm->sqe_size = HPRE_SQE_SIZE;
-	ret = hisi_qm_init(qm, HPRE);
+	qm->type = HPRE;
+	ret = hisi_qm_init(qm);
 	if (ret)
 		goto err_with_hisi_hpre;
 
 #define HPRE_ADDR(offset) QM_ADDR(qm, offset)
+/*
+ * hi zaibo: Remove this in qm.h in upstream, so hack here to pass compiling,
+ * please fix it
+ */
+#define QM_ADDR(qm, off) ((qm)->io_base + off)
 
 	if (pdev->is_physfn) {
 		/* user domain */
@@ -204,15 +211,24 @@ static int hisi_hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		qm->free_qp = qm->qp_num;
 	}
 
-	ret = hisi_qm_start(qm);
+	/*
+	 * hi zaibo: Adding this new interface in upstream version,
+	 * so let use it
+	 */
+	ret = hisi_qm_mem_init(qm);
 	if (ret)
 		goto err_with_qm_init;
 
+	ret = hisi_qm_start(qm);
+	if (ret)
+		goto err_with_qm_mem_uninit;
+
 	return 0;
 
+err_with_qm_mem_uninit:
+	hisi_qm_mem_uninit(qm);
 err_with_qm_init:
 	hisi_qm_uninit(qm);
-
 err_with_hisi_hpre:
 	hisi_hpre_remove_from_list(hisi_hpre);
 
@@ -222,9 +238,10 @@ err_with_hisi_hpre:
 static void hisi_hpre_remove(struct pci_dev *pdev)
 {
 	struct hisi_hpre *hisi_hpre = pci_get_drvdata(pdev);
-	struct qm_info *qm = &hisi_hpre->qm;
+	struct hisi_qm *qm = &hisi_hpre->qm;
 
 	hisi_qm_stop(qm);
+	hisi_qm_mem_uninit(qm);
 	hisi_qm_uninit(qm);
 	hisi_hpre_remove_from_list(hisi_hpre);
 }

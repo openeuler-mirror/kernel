@@ -1,23 +1,25 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
+/* Copyright (c) 2018 Hisilicon Limited. */
 #ifndef HISI_ZIP_H
 #define HISI_ZIP_H
 
 #include <linux/list.h>
 #include "../qm.h"
 
-#define HZIP_SQE_SIZE			128
-#define HZIP_SQ_SIZE			(HZIP_SQE_SIZE * QM_Q_DEPTH)
-#define QM_CQ_SIZE			(QM_CQE_SIZE * QM_Q_DEPTH)
-#define HZIP_PF_DEF_Q_NUM		64
-#define HZIP_PF_DEF_Q_BASE		0
+#undef pr_fmt
+#define pr_fmt(fmt)	"hisi_zip: " fmt
+
+enum hisi_zip_error_type {
+	/* negative compression */
+	HZIP_NC_ERR = 0x0d,
+};
+
+struct hisi_zip_ctrl;
 
 struct hisi_zip {
-	struct qm_info qm;
+	struct hisi_qm qm;
 	struct list_head list;
-
-#ifdef CONFIG_CRYPTO_DEV_HISI_SPIMDEV
-	struct vfio_spimdev *spimdev;
-#endif
+	struct hisi_zip_ctrl *ctrl;
 };
 
 struct hisi_zip_sqe {
@@ -52,6 +54,7 @@ struct hisi_zip_sqe {
 	__u32 rsvd1[4];
 };
 
-extern struct list_head hisi_zip_list;
-
+struct hisi_zip *find_zip_device(int node);
+int hisi_zip_register_to_crypto(void);
+void hisi_zip_unregister_from_crypto(void);
 #endif

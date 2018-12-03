@@ -12,7 +12,7 @@
 #define HPRE_PF_DEF_Q_BASE		0
 
 struct hisi_hpre {
-	struct qm_info qm;
+	struct hisi_qm qm;
 	struct list_head list;
 
 #ifdef CONFIG_CRYPTO_DEV_HISI_SPIMDEV
