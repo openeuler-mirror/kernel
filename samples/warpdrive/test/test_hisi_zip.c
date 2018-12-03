@@ -80,6 +80,11 @@ int hizip_comp_test(FILE *source, FILE *dest,  int alg_type, int op_type)
 		fputs("invalid or incomplete deflate data!\n", stderr);
 		return ret;
 	}
+	if (total_len > 0x800000) {
+		ret = -EINVAL;
+		fputs("file size more than 8M!invalid input!\n", stderr);
+		return ret;
+	}
 #ifdef TEST_MORE
 	struct wd_queue q1;
 	static int q1_tested;
@@ -183,8 +188,9 @@ recv_again:
 	time = (float)((end_tval.tv_sec-start_tval.tv_sec) * 1000000 +
 		end_tval.tv_usec - start_tval.tv_usec);
 	output_num = recv_msg->produced;
-	if (output_num == 0) {
-		fprintf(stderr, "q%d compressing fail!\n", q1_tested);
+	if (output_num == 0 || output_num > 0x800000) {
+		fprintf(stderr, "q%d compressing fail!output_size =%d!\n",
+			q1_tested, output_num);
 		goto unshare_all;
 	}
 	fprintf(stderr, "q%d intput %dB output %dB,re_cnt=%d, %0.0fus!\n",
