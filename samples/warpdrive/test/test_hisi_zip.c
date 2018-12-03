@@ -67,7 +67,19 @@ int hizip_comp_test(FILE *source, FILE *dest,  int alg_type, int op_type)
 	const char zip_head[2] = {0x78, 0x9c};
 	const char gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0,
 				    0x0, 0x0, 0x0, 0x0, 0x0, 0x03};
+	fd = fileno(source);
+	if (fstat(fd, &s) < 0) {
+		close(fd);
+		ret = -EBADF;
+		SYS_ERR_COND(ret, "fd error!");
+	}
 
+	total_len = s.st_size;
+	if (!total_len) {
+		ret = -EINVAL;
+		fputs("invalid or incomplete deflate data!\n", stderr);
+		return ret;
+	}
 #ifdef TEST_MORE
 	struct wd_queue q1;
 	static int q1_tested;
@@ -100,11 +112,6 @@ int hizip_comp_test(FILE *source, FILE *dest,  int alg_type, int op_type)
 	fprintf(stderr, "q1: node_id=%d, dma_flag=%d\n",
 		q1.node_id, q1.dma_flag);
 #endif
-	fd = fileno(source);
-
-	fstat(fd, &s);
-	total_len = s.st_size;
-
 	file_msize = !(total_len % PAGE_SIZE) ? total_len :
 			(total_len / PAGE_SIZE + 1) * PAGE_SIZE;
 	/* mmap file and  DMA mapping */
@@ -139,10 +146,10 @@ int hizip_comp_test(FILE *source, FILE *dest,  int alg_type, int op_type)
 		in = (__u64)src;
 	else {
 		if (alg_type == ZLIB) {
-			in = (__u64)src+2;
+			in = (__u64)src + 2;
 			total_len -= 2;
 		} else {
-			in = (__u64)src+10;
+			in = (__u64)src + 10;
 			total_len -= 10;
 		}
 	}
