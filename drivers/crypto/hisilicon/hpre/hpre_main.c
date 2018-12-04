@@ -11,7 +11,9 @@
 #define HPRE_VF_NUM			63
 #define HPRE_QUEUE_NUM_V1		4096
 #define HPRE_QUEUE_NUM_V2		1024
-
+#define HPRE_CLUSTERS_NUM		4
+#define HPRE_CLUSTER_CORES		4
+#define HPRE_QM_ABNML_INT_MASK		0x100004
 #define HPRE_COMM_CNT_CLR_CE		0x0
 #define HPRE_FSM_MAX_CNT		0x301008
 #define HPRE_VFG_AXQOS			0x30100c
@@ -41,7 +43,6 @@
 #define HPRE_CORE_INI_CFG		0x302020
 #define HPRE_CORE_INI_STATUS		0x302080
 
-
 LIST_HEAD(hisi_hpre_list);
 DEFINE_MUTEX(hisi_hpre_list_lock);
 
@@ -68,8 +69,9 @@ static inline void hisi_hpre_remove_from_list(struct hisi_hpre *hisi_hpre)
 
 static int hisi_hpre_set_user_domain_and_cache(struct hisi_hpre *hisi_hpre)
 {
-	int ret;
+	int ret, i;
 	u32 val;
+	unsigned long offset;
 
 	writel(0x1, hisi_hpre->qm.io_base + HPRE_TYPES_ENB);
 	writel(0x0, hisi_hpre->qm.io_base + HPRE_VFG_AXQOS);
@@ -80,40 +82,33 @@ static int hisi_hpre_set_user_domain_and_cache(struct hisi_hpre *hisi_hpre)
 	writel(0x0, hisi_hpre->qm.io_base + HPRE_POISON_BYPASS);
 	writel(0x0, hisi_hpre->qm.io_base + HPRE_COMM_CNT_CLR_CE);
 	writel(0x0, hisi_hpre->qm.io_base + HPRE_ECC_BYPASS);
+
 #ifndef CONFIG_ARM_SMMU_V3
 	writel(0x1, hisi_hpre->qm.io_base + HPRE_ARUSR_CFG);
 	writel(0x1, hisi_hpre->qm.io_base + HPRE_AWUSR_CFG);
-#else
-	writel(0x203, hisi_hpre->qm.io_base + HPRE_ARUSR_CFG);
-	writel(0x203, hisi_hpre->qm.io_base + HPRE_AWUSR_CFG);
 #endif
 	writel(0x1, hisi_hpre->qm.io_base + HPRE_RDCHN_INI_CFG);
 	ret = readl_relaxed_poll_timeout(hisi_hpre->qm.io_base +
-			HPRE_RDCHN_INI_ST, val, val & BIT(0), 10, 1000);
+					 HPRE_RDCHN_INI_ST, val,
+					 val & BIT(0), 10, 1000);
 	if (ret) {
 		pr_err("\nHPRE:INI ST TIMEOUT");
 		return -ETIMEDOUT;
 	}
-	/* First cluster initiating */
-	writel(0xf, hisi_hpre->qm.io_base + HPRE_CORE_ENB);
-	writel(0x1, hisi_hpre->qm.io_base + HPRE_CORE_INI_CFG);
-	ret = readl_relaxed_poll_timeout(hisi_hpre->qm.io_base +
-					 HPRE_CORE_INI_STATUS,
-					 val, ((val & 0xf) == 0xf), 10, 1000);
-	if (ret) {
-		pr_err("\nHPRE:CLUSTER 1 INI ST STATUS timeout");
-		return -ETIMEDOUT;
-	}
-	/* Second cluster initiating, reg's address is 0x1000 more*/
-	/* writel(0xf, hpre->io_base + 0x1000 + HPRE_CORE_ENB);*/
-	writel(0x0, hisi_hpre->qm.io_base + 0x1000 + HPRE_CORE_ENB);
-	writel(0x1, hisi_hpre->qm.io_base + 0x1000 + HPRE_CORE_INI_CFG);
-	ret = readl_relaxed_poll_timeout(hisi_hpre->qm.io_base + 0x1000 +
-				    HPRE_CORE_INI_STATUS,
-				    val, ((val & 0xf) == 0xf), 10, 1000);
-	if (ret) {
-		pr_err("\nHPRE:CLUSTER 2 INI ST STATUS timeout");
-		return -ETIMEDOUT;
+	for (i = 0; i < HPRE_CLUSTERS_NUM; i++) {
+		offset = i * 0x1000;
+
+		/* clusters initiating */
+		writel(0xf, hisi_hpre->qm.io_base + offset + HPRE_CORE_ENB);
+		writel(0x1, hisi_hpre->qm.io_base + offset + HPRE_CORE_INI_CFG);
+		ret = readl_relaxed_poll_timeout(hisi_hpre->qm.io_base +
+						 offset + HPRE_CORE_INI_STATUS,
+						 val, ((val & 0xf) == 0xf),
+						 10, 1000);
+		if (ret) {
+			pr_err("\nHPRE:CLUSTER %d INI ST STATUS timeout!", i);
+			return -ETIMEDOUT;
+		}
 	}
 
 	return ret;
@@ -125,10 +120,7 @@ static int hisi_hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	struct qm_info *qm;
 	int ret;
 	u8 rev_id = 0;
-
-#ifdef CONFIG_ARM_SMMU_V3
 	u32 val;
-#endif
 
 	hisi_hpre = devm_kzalloc(&pdev->dev, sizeof(*hisi_hpre), GFP_KERNEL);
 	if (!hisi_hpre)
@@ -197,6 +189,10 @@ static int hisi_hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		writel_relaxed(0xffffffff,
 			HPRE_ADDR(QM_PEH_AXUSER_CFG_ENABLE));
 #endif
+		val = readl_relaxed(HPRE_ADDR(HPRE_QM_ABNML_INT_MASK));
+		val |= (1 << 6);
+		writel_relaxed(val, HPRE_ADDR(HPRE_QM_ABNML_INT_MASK));
+
 		ret = hisi_qm_mem_start(qm);
 		if (ret)
 			goto err_with_qm_init;
@@ -211,8 +207,6 @@ static int hisi_hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = hisi_qm_start(qm);
 	if (ret)
 		goto err_with_qm_init;
-
-	/* todo: exception irq handler register, ES did not support */
 
 	return 0;
 

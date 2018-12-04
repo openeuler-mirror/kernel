@@ -285,7 +285,7 @@ int hpre_set_queue_dio(struct wd_queue *q)
 		HPRE_SQE_SIZE * HPRE_EQ_DEPTH + HPRE_CQE_SIZE * HPRE_EQ_DEPTH,
 		PROT_READ | PROT_WRITE, MAP_SHARED, q->fd, 4096);
 	if (vaddr <= 0) {
-		ret = (intptr_t)vaddr;
+		ret = -EIO;
 		goto err_with_info;
 	}
 	info->sq_base = vaddr;
@@ -296,7 +296,7 @@ int hpre_set_queue_dio(struct wd_queue *q)
 	vaddr = mmap(NULL, HPRE_IOMEM_SIZE,
 		PROT_READ | PROT_WRITE, MAP_SHARED, q->fd, 0);
 	if (vaddr <= 0) {
-		ret = (intptr_t)vaddr;
+		ret = -EIO;
 		goto err_with_scq;
 	}
 
@@ -315,9 +315,17 @@ int hpre_set_queue_dio(struct wd_queue *q)
 	info->cqc_phase = 1;
 	info->is_sq_full = 0;
 
+	info->recv = malloc(HPRE_EQ_DEPTH * sizeof(struct wd_rsa_msg));
+	if (!info->recv) {
+		ret = -ENOMEM;
+		goto err_with_scq;
+	}
+	memset(info->recv, 0, HPRE_EQ_DEPTH * sizeof(struct wd_rsa_msg));
 	ret = hpre_init_cache_buf(q);
 	if (ret)
 		goto init_cache_fail;
+
+	return ret;
 
 init_cache_fail:
 	(void)hpre_uninit_cache_buf(q);
@@ -343,6 +351,7 @@ void hpre_unset_queue_dio(struct wd_queue *q)
 		       HPRE_IOMEM_SIZE);
 
 	munmap(info->sq_base, (HPRE_CQE_SIZE + HPRE_SQE_SIZE) * HPRE_EQ_DEPTH);
+	free(info->recv);
 	free(info);
 	q->priv = NULL;
 }

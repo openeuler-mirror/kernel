@@ -12,9 +12,6 @@
 
 #include "hpre.h"
 
-static DEFINE_MUTEX(algs_lock);
-static unsigned int active_devs;
-
 struct hpre_ctx;
 
 #define GET_DEV(ctx)		((ctx)->qp->qm->pdev->dev)
@@ -1035,25 +1032,15 @@ int hpre_algs_register(void)
 {
 	int ret = 0;
 
-	mutex_lock(&algs_lock);
-	if (++active_devs == 1) {
-		rsa.base.cra_flags = 0;
-		ret = crypto_register_akcipher(&rsa);
-		if (ret)
-			goto unlock;
-		ret = crypto_register_kpp(&dh);
-	}
-unlock:
-	mutex_unlock(&algs_lock);
-	return ret;
+	rsa.base.cra_flags = 0;
+	ret = crypto_register_akcipher(&rsa);
+	if (ret)
+		return ret;
+	return crypto_register_kpp(&dh);
 }
 
 void hpre_algs_unregister(void)
 {
-	mutex_lock(&algs_lock);
-	if (--active_devs == 0) {
-		crypto_unregister_akcipher(&rsa);
-		crypto_unregister_kpp(&dh);
-	}
-	mutex_unlock(&algs_lock);
+	crypto_unregister_akcipher(&rsa);
+	crypto_unregister_kpp(&dh);
 }

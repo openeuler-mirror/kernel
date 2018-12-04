@@ -17,8 +17,6 @@ static int key_bits = 4096;
 #define TEST_THRDS_NUM		dbg_thrd_num
 static pthread_t request_release_q_thrds[TEST_MAX_THRD];
 
-#define DEBUG_NOIOMMU
-
 #define ASIZE			(16 * 4096)
 
 #define SYS_ERR_COND(cond, msg)		\
@@ -136,14 +134,11 @@ void  *test_q_mng_thread(void *data)
 {
 	struct wd_queue q;
 	int ret;
-	int container;
 
-	container = *(int *)data;
 	memset(&q, 0, sizeof(q));
 	q.capa.alg = "rsa";
 	q.capa.throughput = 10;
 	q.capa.latency = 10;
-	q.container = container;
 	while (1) {
 		ret = wd_request_queue(&q);
 		if (ret) {
@@ -171,8 +166,6 @@ int main(int argc, char *argv[])
 	void *ctx = NULL;
 	struct wd_rsa_ctx_setup setup;
 	struct wd_rsa_op_data opdata;
-	int is_new_container = 0;
-	int container = 0;
 
 	if (argv[1]) {
 		key_bits = strtoul(argv[1], NULL, 10);
@@ -196,21 +189,10 @@ int main(int argc, char *argv[])
 		TEST_THRDS_NUM = strtoul(argv[4], NULL, 10);
 	else
 		TEST_THRDS_NUM = 0;
-	if (argv[5])
-		is_new_container = strtoul(argv[5], NULL, 10);
-	else
-		is_new_container = 0;
 	if (TEST_THRDS_NUM > TEST_MAX_THRD)
 		TEST_THRDS_NUM = TEST_MAX_THRD;
 	pkt_len = (RSA_KEY_BITS >> 3);
 
-	if (is_new_container) {
-		container = open("/dev/vfio/vfio", O_RDWR);
-		if (container < 0) {
-			WD_ERR("Create VFIO container fail!\n");
-			return -ENODEV;
-		}
-	}
 	memset(&q, 0, sizeof(q));
 	q.capa.alg = "rsa";
 	q.capa.throughput = 10;
@@ -218,7 +200,7 @@ int main(int argc, char *argv[])
 
 	for (i = 0; i < TEST_THRDS_NUM; i++) {
 		ret = pthread_create(&request_release_q_thrds[i], NULL,
-				     test_q_mng_thread, &container);
+				     test_q_mng_thread, NULL);
 		if (ret) {
 			printf("\npthread_create %dth thread fail!", i);
 			return -1;
@@ -257,11 +239,9 @@ int main(int argc, char *argv[])
 	/* set input rsa sample data */
 	for (i = 0; i < ASIZE / 8; i++)
 		*(__u32 *)(a + i * 4) = i;
-#ifndef DEBUG_NOIOMMU
 	ret = wd_mem_share(&q, a, ASIZE, 0);
 	SYS_ERR_COND(ret, "wd_mem_share err\n");
 	printf("WD dma map VA=IOVA=%p successfully!\n", a);
-#endif
 	src = a;
 	dst = (char *)a + (ASIZE / 2);
 
@@ -313,9 +293,7 @@ int main(int argc, char *argv[])
 
 alloc_msg_fail:
 	wd_del_rsa_ctx(ctx);
-#ifndef DEBUG_NOIOMMU
 	wd_mem_unshare(&q, a, ASIZE);
-#endif
 	munmap(a, ASIZE);
 release_q:
 	wd_release_queue(&q);
