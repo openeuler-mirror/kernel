@@ -369,6 +369,7 @@ struct hisi_hba {
 	struct hisi_sas_itct *itct_debugfs;
 
 	struct dentry *debugfs_dir;
+	struct dentry *dump_dentry;
 };
 
 /* Generic HW DMA host memory structures */

@@ -1517,8 +1517,9 @@ static int hisi_sas_controller_reset(struct hisi_hba *hisi_hba)
 	struct device *dev = hisi_hba->dev;
 	struct Scsi_Host *shost = hisi_hba->shost;
 	int rc;
-
-	if (hisi_sas_debugfs_enable && hisi_hba->itct_debugfs)
+	if (hisi_sas_debugfs_enable &&
+	    hisi_hba->itct_debugfs &&
+	    !hisi_hba->dump_dentry)
 		queue_work(hisi_hba->wq, &hisi_hba->dfx_work);
 
 	if (!hisi_hba->hw->soft_reset)
@@ -3018,6 +3019,7 @@ static void hisi_sas_create_folder_structure(struct hisi_hba *hisi_hba)
 					&hisi_sas_debugfs_itct_fops))
 		goto fail;
 
+	hisi_hba->dump_dentry = dump_dentry;
 	return;
 fail:
 	debugfs_remove_recursive(hisi_hba->debugfs_dir);
