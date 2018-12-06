@@ -126,7 +126,7 @@ static int hisi_hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!hisi_hpre)
 		return -ENOMEM;
 	hisi_hpre_add_to_list(hisi_hpre);
-
+	pci_set_drvdata(pdev, hisi_hpre);
 	qm = &hisi_hpre->qm;
 	qm->pdev = pdev;
 	pci_read_config_byte(pdev, PCI_REVISION_ID, &rev_id);
@@ -215,7 +215,6 @@ err_with_qm_init:
 
 err_with_hisi_hpre:
 	hisi_hpre_remove_from_list(hisi_hpre);
-	kfree(hisi_hpre);
 
 	return ret;
 }
@@ -228,7 +227,6 @@ static void hisi_hpre_remove(struct pci_dev *pdev)
 	hisi_qm_stop(qm);
 	hisi_qm_uninit(qm);
 	hisi_hpre_remove_from_list(hisi_hpre);
-	kfree(hisi_hpre);
 }
 
 static int hisi_hpre_pci_sriov_configure(struct pci_dev *pdev, int num_vfs)
