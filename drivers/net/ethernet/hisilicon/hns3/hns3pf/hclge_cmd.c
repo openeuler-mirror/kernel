@@ -24,15 +24,15 @@ static int hclge_ring_space(struct hclge_cmq_ring *ring)
 	return ring->desc_num - used - 1;
 }
 
-static int is_valid_csq_clean_head(struct hclge_cmq_ring *ring, int h)
+static int is_valid_csq_clean_head(struct hclge_cmq_ring *ring, int head)
 {
-	int u = ring->next_to_use;
-	int c = ring->next_to_clean;
+	int ntu = ring->next_to_use;
+	int ntc = ring->next_to_clean;
 
-	if (unlikely(h >= ring->desc_num))
-		return 0;
+	if (ntu > ntc)
+		return head >= ntc && head <= ntu;
 
-	return u > c ? (h > c && h <= u) : (h > c || h <= u);
+	return head >= ntc || head <= ntu;
 }
 
 static int hclge_alloc_cmd_desc(struct hclge_cmq_ring *ring)
@@ -148,9 +148,6 @@ static int hclge_cmd_csq_clean(struct hclge_hw *hw)
 		dev_warn(&hdev->pdev->dev, "wrong cmd head (%d, %d-%d)\n", head,
 			 csq->next_to_use, csq->next_to_clean);
 		dev_warn(&hdev->pdev->dev,
-			 "Disabling any further commands to IMP firmware\n");
-		set_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
-		dev_warn(&hdev->pdev->dev,
 			 "IMP firmware watchdog reset soon expected!\n");
 		return -EIO;
 	}
@@ -171,8 +168,12 @@ static bool hclge_is_special_opcode(u16 opcode)
 	/* these commands have several descriptors,
 	 * and use the first one to save opcode and return value
 	 */
-	u16 spec_opcode[3] = {HCLGE_OPC_STATS_64_BIT,
-		HCLGE_OPC_STATS_32_BIT, HCLGE_OPC_STATS_MAC};
+	u16 spec_opcode[] = {HCLGE_OPC_STATS_64_BIT,
+			     HCLGE_OPC_STATS_32_BIT,
+			     HCLGE_OPC_STATS_MAC,
+			     HCLGE_OPC_STATS_MAC_ALL,
+			     HCLGE_OPC_QUERY_32_BIT_REG,
+			     HCLGE_OPC_QUERY_64_BIT_REG};
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(spec_opcode); i++) {
@@ -260,6 +261,10 @@ int hclge_cmd_send(struct hclge_hw *hw, struct hclge_desc *desc, int num)
 
 			if (desc_ret == HCLGE_CMD_EXEC_SUCCESS)
 				retval = 0;
+			else if (desc_ret == HCLGE_CMD_NO_AUTH)
+				retval = -EPERM;
+			else if (desc_ret == HCLGE_CMD_NOT_SUPPORTED)
+				retval = -EOPNOTSUPP;
 			else
 				retval = -EIO;
 			hw->cmq.last_status = desc_ret;
@@ -350,10 +355,19 @@ int hclge_cmd_init(struct hclge_dev *hdev)
 	hdev->hw.cmq.crq.next_to_use = 0;
 
 	hclge_cmd_init_regs(&hdev->hw);
-	clear_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
 
 	spin_unlock_bh(&hdev->hw.cmq.crq.lock);
 	spin_unlock_bh(&hdev->hw.cmq.csq.lock);
+
+	clear_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
+
+	/* Check if there is new reset pending, because the higher level
+	 * reset may happen when lower level reset is being processed.
+	 */
+	if ((hclge_is_reset_pending(hdev))) {
+		set_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
+		return -EBUSY;
+	}
 
 	ret = hclge_cmd_query_firmware_version(&hdev->hw, &version);
 	if (ret) {
