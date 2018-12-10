@@ -6,6 +6,7 @@
 
 #include <linux/platform_device.h>
 #include <rdma/ib_umem.h>
+#include "roce_k_compat.h"
 #include "hns_roce_device.h"
 
 int hns_roce_db_map_user(struct hns_roce_ucontext *context, unsigned long virt,

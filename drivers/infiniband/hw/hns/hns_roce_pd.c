@@ -29,6 +29,7 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+#include "roce_k_compat.h"
 
 #include <linux/platform_device.h>
 #include <linux/pci.h>
@@ -37,12 +38,24 @@
 
 static int hns_roce_pd_alloc(struct hns_roce_dev *hr_dev, unsigned long *pdn)
 {
-	return hns_roce_bitmap_alloc(&hr_dev->pd_bitmap, pdn) ? -ENOMEM : 0;
+	return hns_roce_bitmap_alloc(&hr_dev->pd_bitmap, pdn);
 }
 
 static void hns_roce_pd_free(struct hns_roce_dev *hr_dev, unsigned long pdn)
 {
 	hns_roce_bitmap_free(&hr_dev->pd_bitmap, pdn, BITMAP_NO_RR);
+}
+
+static int hns_roce_xrcd_alloc(struct hns_roce_dev *hr_dev,
+			       unsigned long *xrcdn)
+{
+	return hns_roce_bitmap_alloc(&hr_dev->xrcd_bitmap, xrcdn);
+}
+
+static void hns_roce_xrcd_free(struct hns_roce_dev *hr_dev,
+			       unsigned long xrcdn)
+{
+	hns_roce_bitmap_free(&hr_dev->xrcd_bitmap, xrcdn, BITMAP_NO_RR);
 }
 
 int hns_roce_init_pd_table(struct hns_roce_dev *hr_dev)
@@ -55,6 +68,19 @@ int hns_roce_init_pd_table(struct hns_roce_dev *hr_dev)
 void hns_roce_cleanup_pd_table(struct hns_roce_dev *hr_dev)
 {
 	hns_roce_bitmap_cleanup(&hr_dev->pd_bitmap);
+}
+
+int hns_roce_init_xrcd_table(struct hns_roce_dev *hr_dev)
+{
+	return hns_roce_bitmap_init(&hr_dev->xrcd_bitmap,
+				    hr_dev->caps.num_xrcds,
+				    hr_dev->caps.num_xrcds - 1,
+				    hr_dev->caps.reserved_xrcds, 0);
+}
+
+void hns_roce_cleanup_xrcd_table(struct hns_roce_dev *hr_dev)
+{
+	hns_roce_bitmap_cleanup(&hr_dev->xrcd_bitmap);
 }
 
 struct ib_pd *hns_roce_alloc_pd(struct ib_device *ib_dev,
@@ -77,6 +103,7 @@ struct ib_pd *hns_roce_alloc_pd(struct ib_device *ib_dev,
 		return ERR_PTR(ret);
 	}
 
+#ifdef CONFIG_NEW_KERNEL
 	if (context) {
 		struct hns_roce_ib_alloc_pd_resp uresp = {.pdn = pd->pdn};
 
@@ -88,6 +115,17 @@ struct ib_pd *hns_roce_alloc_pd(struct ib_device *ib_dev,
 		}
 	}
 
+#else
+	if (context) {
+		if (ib_copy_to_udata(udata, &pd->pdn, sizeof(u64))) {
+			hns_roce_pd_free(to_hr_dev(ib_dev), pd->pdn);
+			dev_err(dev, "[alloc_pd]ib_copy_to_udata failed!\n");
+			kfree(pd);
+			return ERR_PTR(-EFAULT);
+		}
+	}
+
+#endif
 	return &pd->ibpd;
 }
 EXPORT_SYMBOL_GPL(hns_roce_alloc_pd);
@@ -100,6 +138,65 @@ int hns_roce_dealloc_pd(struct ib_pd *pd)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(hns_roce_dealloc_pd);
+
+struct ib_xrcd *hns_roce_ib_alloc_xrcd(struct ib_device *ib_dev,
+				       struct ib_ucontext *context,
+				       struct ib_udata *udata)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(ib_dev);
+	struct ib_cq_init_attr cq_attr = {};
+	struct hns_roce_xrcd *xrcd;
+	int ret;
+
+	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC))
+		return ERR_PTR(-EINVAL);
+
+	xrcd = kmalloc(sizeof(*xrcd), GFP_KERNEL);
+	if (!xrcd)
+		return ERR_PTR(-ENOMEM);
+
+	ret = hns_roce_xrcd_alloc(hr_dev, &xrcd->xrcdn);
+	if (ret) {
+		kfree(xrcd);
+		dev_err(hr_dev->dev,
+			"[alloc_xrcd]hns_roce_xrcd_alloc failed!\n");
+		return ERR_PTR(ret);
+	}
+
+	xrcd->pd = ib_alloc_pd(ib_dev, 0);
+	if (IS_ERR_OR_NULL(xrcd->pd)) {
+		ret = PTR_ERR(xrcd->pd);
+		goto err_dealloc_xrcd;
+	}
+
+	cq_attr.cqe = 1;
+	xrcd->cq = ib_create_cq(ib_dev, NULL, NULL, xrcd, &cq_attr);
+	if (IS_ERR_OR_NULL(xrcd->cq)) {
+		ret = PTR_ERR(xrcd->cq);
+		goto err_dealloc_pd;
+	}
+
+	return &xrcd->ibxrcd;
+
+err_dealloc_pd:
+	ib_dealloc_pd(xrcd->pd);
+
+err_dealloc_xrcd:
+	hns_roce_xrcd_free(hr_dev, xrcd->xrcdn);
+
+	kfree(xrcd);
+	return ERR_PTR(ret);
+}
+
+int hns_roce_ib_dealloc_xrcd(struct ib_xrcd *xrcd)
+{
+	ib_destroy_cq(to_hr_xrcd(xrcd)->cq);
+	ib_dealloc_pd(to_hr_xrcd(xrcd)->pd);
+	hns_roce_xrcd_free(to_hr_dev(xrcd->device), to_hr_xrcd(xrcd)->xrcdn);
+	kfree(xrcd);
+
+	return 0;
+}
 
 int hns_roce_uar_alloc(struct hns_roce_dev *hr_dev, struct hns_roce_uar *uar)
 {

@@ -30,9 +30,22 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+#include "roce_k_compat.h"
+
 #include <linux/acpi.h>
 #include <linux/of_platform.h>
 #include <linux/module.h>
+#include <linux/sched.h>
+#ifdef HAVE_LINUX_MM_H
+#include <linux/mm.h>
+#else
+#include <linux/sched/mm.h>
+#endif
+#ifdef HAVE_LINUX_SCHED_H
+#include <linux/sched.h>
+#else
+#include <linux/sched/task.h>
+#endif
 #include <rdma/ib_addr.h>
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
@@ -74,20 +87,33 @@ static int hns_roce_set_mac(struct hns_roce_dev *hr_dev, u8 port, u8 *addr)
 	return hr_dev->hw->set_mac(hr_dev, phy_port, addr);
 }
 
+#ifdef CONFIG_NEW_KERNEL
+#ifdef CONFIG_KERNEL_419
 static int hns_roce_add_gid(const struct ib_gid_attr *attr, void **context)
+#else
+static int hns_roce_add_gid(const union ib_gid *gid,
+			    const struct ib_gid_attr *attr, void **context)
+#endif
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(attr->device);
 	u8 port = attr->port_num - 1;
 	unsigned long flags;
 	int ret;
 
-	if (port >= hr_dev->caps.num_ports)
+	if (port >= hr_dev->caps.num_ports ||
+	    attr->index > hr_dev->caps.gid_table_len[port]) {
+		dev_err(hr_dev->dev, "add gid failed. port - %d, index - %d\n",
+			port, attr->index);
 		return -EINVAL;
+	}
 
 	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
-
+#ifdef CONFIG_KERNEL_419
 	ret = hr_dev->hw->set_gid(hr_dev, port, attr->index, &attr->gid, attr);
-
+#else
+	ret = hr_dev->hw->set_gid(hr_dev, port, attr->index,
+				  (union ib_gid *)gid, attr);
+#endif
 	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
 	return ret;
@@ -112,6 +138,55 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 
 	return ret;
 }
+#else
+static int hns_roce_add_gid(struct ib_device *device, u8 port_num,
+			    unsigned int index, const union ib_gid *gid,
+			    const struct ib_gid_attr *attr, void **context)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(device);
+	u8 port = port_num - 1;
+	unsigned long flags;
+	int ret;
+
+	if (port >= hr_dev->caps.num_ports ||
+	    index > hr_dev->caps.gid_table_len[port]) {
+		dev_err(hr_dev->dev, "add gid failed. port - %d, index - %d\n",
+			port, index);
+		return -EINVAL;
+	}
+
+	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
+
+	ret = hr_dev->hw->set_gid(hr_dev, port, index, (union ib_gid *)gid,
+				   attr);
+
+	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
+
+	return ret;
+}
+
+static int hns_roce_del_gid(struct ib_device *device, u8 port_num,
+			    unsigned int index, void **context)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(device);
+	struct ib_gid_attr zattr = { };
+	union ib_gid zgid = { {0} };
+	u8 port = port_num - 1;
+	unsigned long flags;
+	int ret;
+
+	if (port >= hr_dev->caps.num_ports)
+		return -EINVAL;
+
+	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
+
+	ret = hr_dev->hw->set_gid(hr_dev, port, index, &zgid, &zattr);
+
+	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
+
+	return ret;
+}
+#endif
 
 static int handle_en_event(struct hns_roce_dev *hr_dev, u8 port,
 			   unsigned long event)
@@ -196,6 +271,7 @@ static int hns_roce_query_device(struct ib_device *ib_dev,
 
 	memset(props, 0, sizeof(*props));
 
+	props->fw_ver = hr_dev->caps.fw_ver;
 	props->sys_image_guid = cpu_to_be64(hr_dev->sys_image_guid);
 	props->max_mr_size = (u64)(~(0ULL));
 	props->page_size_cap = hr_dev->caps.page_size_cap;
@@ -206,8 +282,14 @@ static int hns_roce_query_device(struct ib_device *ib_dev,
 	props->max_qp_wr = hr_dev->caps.max_wqes;
 	props->device_cap_flags = IB_DEVICE_PORT_ACTIVE_EVENT |
 				  IB_DEVICE_RC_RNR_NAK_GEN;
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC)
+		props->device_cap_flags |= IB_DEVICE_XRC;
+#ifdef CONFIG_KERNEL_419
 	props->max_send_sge = hr_dev->caps.max_sq_sg;
 	props->max_recv_sge = hr_dev->caps.max_rq_sg;
+#else
+	props->max_sge = min(hr_dev->caps.max_sq_sg, hr_dev->caps.max_rq_sg);
+#endif
 	props->max_sge_rd = 1;
 	props->max_cq = hr_dev->caps.num_cqs;
 	props->max_cqe = hr_dev->caps.max_cqes;
@@ -215,9 +297,25 @@ static int hns_roce_query_device(struct ib_device *ib_dev,
 	props->max_pd = hr_dev->caps.num_pds;
 	props->max_qp_rd_atom = hr_dev->caps.max_qp_dest_rdma;
 	props->max_qp_init_rd_atom = hr_dev->caps.max_qp_init_rdma;
-	props->atomic_cap = IB_ATOMIC_NONE;
+	props->atomic_cap = hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_ATOMIC ?
+			    IB_ATOMIC_HCA : IB_ATOMIC_NONE;
 	props->max_pkeys = 1;
 	props->local_ca_ack_delay = hr_dev->caps.local_ca_ack_delay;
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_SRQ) {
+		props->max_srq = hr_dev->caps.max_srqs;
+		props->max_srq_wr = hr_dev->caps.max_srq_wrs;
+		props->max_srq_sge = hr_dev->caps.max_srq_sges;
+	}
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_MW) {
+		props->max_mw = hr_dev->caps.num_mtpts;
+		props->device_cap_flags |= IB_DEVICE_MEM_WINDOW |
+					   IB_DEVICE_MEM_WINDOW_TYPE_2B;
+	}
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_FRMR)
+		props->device_cap_flags |= IB_DEVICE_MEM_MGT_EXTENSIONS;
 
 	return 0;
 }
@@ -290,6 +388,12 @@ static enum rdma_link_layer hns_roce_get_link_layer(struct ib_device *device,
 						    u8 port_num)
 {
 	return IB_LINK_LAYER_ETHERNET;
+}
+
+static int hns_roce_query_gid(struct ib_device *ib_dev, u8 port_num, int index,
+			      union ib_gid *gid)
+{
+	return 0;
 }
 
 static int hns_roce_query_pkey(struct ib_device *ib_dev, u8 port, u16 index,
@@ -434,12 +538,11 @@ static int hns_roce_mmap(struct ib_ucontext *context,
 				       to_hr_ucontext(context)->uar.pfn,
 				       PAGE_SIZE, vma->vm_page_prot))
 			return -EAGAIN;
-	} else if (vma->vm_pgoff == 1 && hr_dev->tptr_dma_addr &&
-		   hr_dev->tptr_size) {
-		/* vm_pgoff: 1 -- TPTR */
+	} else if (vma->vm_pgoff == 1 && hr_dev->uar2_dma_addr &&
+		   hr_dev->uar2_size) {
 		if (io_remap_pfn_range(vma, vma->vm_start,
-				       hr_dev->tptr_dma_addr >> PAGE_SHIFT,
-				       hr_dev->tptr_size,
+				       hr_dev->uar2_dma_addr >> PAGE_SHIFT,
+				       hr_dev->uar2_size,
 				       vma->vm_page_prot))
 			return -EAGAIN;
 	} else
@@ -508,7 +611,8 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 	spin_lock_init(&iboe->lock);
 
 	ib_dev = &hr_dev->ib_dev;
-	strlcpy(ib_dev->name, "hns_%d", IB_DEVICE_NAME_MAX);
+	if (!strlen(ib_dev->name))
+		strlcpy(ib_dev->name, "hns_%d", IB_DEVICE_NAME_MAX);
 
 	ib_dev->owner			= THIS_MODULE;
 	ib_dev->node_type		= RDMA_NODE_IB_CA;
@@ -532,11 +636,18 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 		(1ULL << IB_USER_VERBS_CMD_CREATE_QP) |
 		(1ULL << IB_USER_VERBS_CMD_MODIFY_QP) |
 		(1ULL << IB_USER_VERBS_CMD_QUERY_QP) |
-		(1ULL << IB_USER_VERBS_CMD_DESTROY_QP);
+		(1ULL << IB_USER_VERBS_CMD_DESTROY_QP) |
+		(1ULL << IB_USER_VERBS_CMD_CREATE_SRQ) |
+		(1ULL << IB_USER_VERBS_CMD_MODIFY_SRQ) |
+		(1ULL << IB_USER_VERBS_CMD_QUERY_SRQ) |
+		(1ULL << IB_USER_VERBS_CMD_DESTROY_SRQ) |
+		(1ULL << IB_USER_VERBS_CMD_POST_SRQ_RECV) |
+		(1ULL << IB_USER_VERBS_CMD_CREATE_XSRQ);
 
+#ifdef MODIFY_CQ_MASK
 	ib_dev->uverbs_ex_cmd_mask |=
 		(1ULL << IB_USER_VERBS_EX_CMD_MODIFY_CQ);
-
+#endif
 	/* HCA||device||port */
 	ib_dev->modify_device		= hns_roce_modify_device;
 	ib_dev->query_device		= hns_roce_query_device;
@@ -544,6 +655,7 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 	ib_dev->modify_port		= hns_roce_modify_port;
 	ib_dev->get_link_layer		= hns_roce_get_link_layer;
 	ib_dev->get_netdev		= hns_roce_get_netdev;
+	ib_dev->query_gid		= hns_roce_query_gid;
 	ib_dev->add_gid			= hns_roce_add_gid;
 	ib_dev->del_gid			= hns_roce_del_gid;
 	ib_dev->query_pkey		= hns_roce_query_pkey;
@@ -559,6 +671,12 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 	ib_dev->create_ah		= hns_roce_create_ah;
 	ib_dev->query_ah		= hns_roce_query_ah;
 	ib_dev->destroy_ah		= hns_roce_destroy_ah;
+	/* SRQ */
+	ib_dev->create_srq		= hns_roce_create_srq;
+	ib_dev->modify_srq		= hr_dev->hw->modify_srq;
+	ib_dev->query_srq		= hr_dev->hw->query_srq;
+	ib_dev->destroy_srq		= hns_roce_destroy_srq;
+	ib_dev->post_srq_recv		= hr_dev->hw->post_srq_recv;
 
 	/* QP */
 	ib_dev->create_qp		= hns_roce_create_qp;
@@ -584,11 +702,36 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 		ib_dev->uverbs_cmd_mask |= (1ULL << IB_USER_VERBS_CMD_REREG_MR);
 	}
 
+	/* MW */
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_MW) {
+		ib_dev->alloc_mw	= hns_roce_alloc_mw;
+		ib_dev->dealloc_mw	= hns_roce_dealloc_mw;
+		ib_dev->uverbs_cmd_mask |=
+					(1ULL << IB_USER_VERBS_CMD_ALLOC_MW) |
+					(1ULL << IB_USER_VERBS_CMD_DEALLOC_MW);
+	}
+
+	/* FRMR */
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_FRMR) {
+		ib_dev->alloc_mr		= hns_roce_alloc_mr;
+		ib_dev->map_mr_sg		= hns_roce_map_mr_sg;
+	}
+
 	/* OTHERS */
 	ib_dev->get_port_immutable	= hns_roce_port_immutable;
 	ib_dev->disassociate_ucontext	= hns_roce_disassociate_ucontext;
 
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC) {
+		ib_dev->alloc_xrcd	= hns_roce_ib_alloc_xrcd;
+		ib_dev->dealloc_xrcd	= hns_roce_ib_dealloc_xrcd;
+		ib_dev->uverbs_cmd_mask |=
+					(1ULL << IB_USER_VERBS_CMD_OPEN_XRCD) |
+					(1ULL << IB_USER_VERBS_CMD_CLOSE_XRCD);
+	}
+
+#ifdef CONFIG_NEW_KERNEL
 	ib_dev->driver_id = RDMA_DRIVER_HNS;
+#endif
 	ret = ib_register_device(ib_dev, NULL);
 	if (ret) {
 		dev_err(dev, "ib_register_device failed!\n");
@@ -689,7 +832,110 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 		goto err_unmap_trrl;
 	}
 
+	if (hr_dev->caps.scc_ctx_entry_sz) {
+		ret = hns_roce_init_hem_table(hr_dev,
+					      &hr_dev->qp_table.scc_ctx_table,
+					      HEM_TYPE_SCC_CTX,
+					      hr_dev->caps.scc_ctx_entry_sz,
+					      hr_dev->caps.num_qps, 1);
+		if (ret) {
+			dev_err(dev,
+			      "Failed to init SCC context memory, aborting.\n");
+			goto err_unmap_cq;
+		}
+	}
+
+	if (hr_dev->caps.qpc_timer_entry_sz) {
+		ret = hns_roce_init_hem_table(hr_dev,
+					      &hr_dev->qpc_timer_table.table,
+					      HEM_TYPE_QPC_TIMER,
+					      hr_dev->caps.qpc_timer_entry_sz,
+					      hr_dev->caps.num_qpc_timer, 1);
+		if (ret) {
+			dev_err(dev,
+			      "Failed to init QPC timer memory, aborting.\n");
+			goto err_unmap_ctx;
+		}
+	}
+
+	if (hr_dev->caps.cqc_timer_entry_sz) {
+		ret = hns_roce_init_hem_table(hr_dev,
+					      &hr_dev->cqc_timer_table.table,
+					      HEM_TYPE_CQC_TIMER,
+					      hr_dev->caps.cqc_timer_entry_sz,
+					      hr_dev->caps.num_cqc_timer, 1);
+		if (ret) {
+			dev_err(dev,
+			      "Failed to init CQC timer memory, aborting.\n");
+			goto err_unmap_qpc_timer;
+		}
+	}
+
+	if (hr_dev->caps.srqc_entry_sz) {
+		ret = hns_roce_init_hem_table(hr_dev, &hr_dev->srq_table.table,
+					      HEM_TYPE_SRQC,
+					      hr_dev->caps.srqc_entry_sz,
+					      hr_dev->caps.num_srqs, 1);
+		if (ret) {
+			dev_err(dev,
+			      "Failed to init SRQ context memory, aborting.\n");
+			goto err_unmap_cqc_timer;
+		}
+	}
+
+	if (hr_dev->caps.num_srqwqe_segs) {
+		ret = hns_roce_init_hem_table(hr_dev,
+					     &hr_dev->mr_table.mtt_srqwqe_table,
+					     HEM_TYPE_SRQWQE,
+					     hr_dev->caps.mtt_entry_sz,
+					     hr_dev->caps.num_srqwqe_segs, 1);
+		if (ret) {
+			dev_err(dev,
+				"Failed to init MTT srqwqe memory, aborting.\n");
+			goto err_unmap_srq;
+		}
+	}
+
+	if (hr_dev->caps.num_idx_segs) {
+		ret = hns_roce_init_hem_table(hr_dev,
+					      &hr_dev->mr_table.mtt_idx_table,
+					      HEM_TYPE_IDX,
+					      hr_dev->caps.idx_entry_sz,
+					      hr_dev->caps.num_idx_segs, 1);
+		if (ret) {
+			dev_err(dev,
+				"Failed to init MTT idx memory, aborting.\n");
+			goto err_unmap_srqwqe;
+		}
+	}
+
 	return 0;
+
+err_unmap_srqwqe:
+	if (hr_dev->caps.num_srqwqe_segs)
+		hns_roce_cleanup_hem_table(hr_dev,
+					   &hr_dev->mr_table.mtt_srqwqe_table);
+
+err_unmap_srq:
+	if (hr_dev->caps.srqc_entry_sz)
+		hns_roce_cleanup_hem_table(hr_dev, &hr_dev->srq_table.table);
+
+err_unmap_cqc_timer:
+	if (hr_dev->caps.cqc_timer_entry_sz)
+		hns_roce_cleanup_hem_table(hr_dev,
+					   &hr_dev->cqc_timer_table.table);
+err_unmap_qpc_timer:
+	if (hr_dev->caps.qpc_timer_entry_sz)
+		hns_roce_cleanup_hem_table(hr_dev,
+					   &hr_dev->qpc_timer_table.table);
+
+err_unmap_ctx:
+	if (hr_dev->caps.scc_ctx_entry_sz)
+		hns_roce_cleanup_hem_table(hr_dev,
+					   &hr_dev->qp_table.scc_ctx_table);
+
+err_unmap_cq:
+	hns_roce_cleanup_hem_table(hr_dev, &hr_dev->cq_table.table);
 
 err_unmap_trrl:
 	if (hr_dev->caps.trrl_entry_sz)
@@ -752,10 +998,18 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 		goto err_uar_alloc_free;
 	}
 
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC) {
+		ret = hns_roce_init_xrcd_table(hr_dev);
+		if (ret) {
+			dev_err(dev, "Failed to init protected domain table.\n");
+			goto err_pd_table_free;
+		}
+	}
+
 	ret = hns_roce_init_mr_table(hr_dev);
 	if (ret) {
 		dev_err(dev, "Failed to init memory region table.\n");
-		goto err_pd_table_free;
+		goto err_xrcd_table_free;
 	}
 
 	ret = hns_roce_init_cq_table(hr_dev);
@@ -770,13 +1024,30 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 		goto err_cq_table_free;
 	}
 
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_SRQ) {
+		ret = hns_roce_init_srq_table(hr_dev);
+		if (ret) {
+			dev_err(dev,
+				"Failed to init share receive queue table.\n");
+			goto err_qp_table_free;
+		}
+	}
+
 	return 0;
+
+err_qp_table_free:
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_SRQ)
+		hns_roce_cleanup_qp_table(hr_dev);
 
 err_cq_table_free:
 	hns_roce_cleanup_cq_table(hr_dev);
 
 err_mr_table_free:
 	hns_roce_cleanup_mr_table(hr_dev);
+
+err_xrcd_table_free:
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC)
+		hns_roce_cleanup_xrcd_table(hr_dev);
 
 err_pd_table_free:
 	hns_roce_cleanup_pd_table(hr_dev);
@@ -861,6 +1132,8 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 	if (ret)
 		goto error_failed_register_device;
 
+	(void)hns_roce_register_sysfs(hr_dev);
+
 	return 0;
 
 error_failed_register_device:
@@ -900,7 +1173,6 @@ EXPORT_SYMBOL_GPL(hns_roce_init);
 void hns_roce_exit(struct hns_roce_dev *hr_dev)
 {
 	hns_roce_unregister_device(hr_dev);
-
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
 	hns_roce_cleanup_bitmap(hr_dev);

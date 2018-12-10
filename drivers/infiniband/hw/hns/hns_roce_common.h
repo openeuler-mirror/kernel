@@ -33,6 +33,8 @@
 #ifndef _HNS_ROCE_COMMON_H
 #define _HNS_ROCE_COMMON_H
 
+#include "roce_k_compat.h"
+
 #ifndef assert
 #define assert(cond)
 #endif
@@ -375,9 +377,6 @@
 #define ROCEE_RX_CMQ_DEPTH_REG			0x07020
 #define ROCEE_RX_CMQ_TAIL_REG			0x07024
 #define ROCEE_RX_CMQ_HEAD_REG			0x07028
-
-#define ROCEE_VF_MB_CFG0_REG			0x40
-#define ROCEE_VF_MB_STATUS_REG			0x58
 
 #define ROCEE_VF_EQ_DB_CFG0_REG			0x238
 #define ROCEE_VF_EQ_DB_CFG1_REG			0x23C

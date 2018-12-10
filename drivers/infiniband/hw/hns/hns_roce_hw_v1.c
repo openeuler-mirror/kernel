@@ -43,6 +43,8 @@
 #include "hns_roce_hem.h"
 #include "hns_roce_hw_v1.h"
 
+static int loopback;
+
 static void set_data_seg(struct hns_roce_wqe_data_seg *dseg, struct ib_sge *sg)
 {
 	dseg->lkey = cpu_to_le32(sg->lkey);
@@ -58,9 +60,14 @@ static void set_raddr_seg(struct hns_roce_wqe_raddr_seg *rseg, u64 remote_addr,
 	rseg->len   = 0;
 }
 
+#ifdef CONFIG_KERNEL_419
 static int hns_roce_v1_post_send(struct ib_qp *ibqp,
 				 const struct ib_send_wr *wr,
 				 const struct ib_send_wr **bad_wr)
+#else
+static int hns_roce_v1_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
+				 struct ib_send_wr **bad_wr)
+#endif
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_ah *ah = to_hr_ah(ud_wr(wr)->ah);
@@ -347,9 +354,14 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_KERNEL_419
 static int hns_roce_v1_post_recv(struct ib_qp *ibqp,
 				 const struct ib_recv_wr *wr,
 				 const struct ib_recv_wr **bad_wr)
+#else
+static int hns_roce_v1_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
+				 struct ib_recv_wr **bad_wr)
+#endif
 {
 	int ret = 0;
 	int nreq = 0;
@@ -999,8 +1011,12 @@ static int hns_roce_v1_send_lp_wqe(struct hns_roce_qp *hr_qp)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(hr_qp->ibqp.device);
 	struct device *dev = &hr_dev->pdev->dev;
+#ifdef CONFIG_KERNEL_419
 	struct ib_send_wr send_wr;
 	const struct ib_send_wr *bad_wr;
+#else
+	struct ib_send_wr send_wr, *bad_wr;
+#endif
 	int ret;
 
 	memset(&send_wr, 0, sizeof(send_wr));
@@ -1398,8 +1414,8 @@ static int hns_roce_tptr_init(struct hns_roce_dev *hr_dev)
 	if (!tptr_buf->buf)
 		return -ENOMEM;
 
-	hr_dev->tptr_dma_addr = tptr_buf->map;
-	hr_dev->tptr_size = HNS_ROCE_V1_TPTR_BUF_SIZE;
+	hr_dev->uar2_dma_addr = tptr_buf->map;
+	hr_dev->uar2_size = HNS_ROCE_V1_TPTR_BUF_SIZE;
 
 	return 0;
 }
@@ -1480,15 +1496,22 @@ static int hns_roce_v1_reset(struct hns_roce_dev *hr_dev, bool dereset)
 		}
 		fwnode = &dsaf_node->fwnode;
 	} else if (is_acpi_device_node(dev->fwnode)) {
+#ifdef CONFIG_KERNEL_419
 		struct fwnode_reference_args args;
-
+#else
+		struct acpi_reference_args args;
+#endif
 		ret = acpi_node_get_property_reference(dev->fwnode,
 						       "dsaf-handle", 0, &args);
 		if (ret) {
 			dev_err(dev, "could not find dsaf-handle\n");
 			return ret;
 		}
+#ifdef CONFIG_KERNEL_419
 		fwnode = args.fwnode;
+#else
+		fwnode = acpi_fwnode_handle(args.adev);
+#endif
 	} else {
 		dev_err(dev, "cannot read data from DT or ACPI\n");
 		return -ENXIO;
@@ -1776,9 +1799,15 @@ static int hns_roce_v1_chk_mbox(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
+#ifdef CONFIG_KERNEL_419
 static int hns_roce_v1_set_gid(struct hns_roce_dev *hr_dev, u8 port,
 			       int gid_index, const union ib_gid *gid,
 			       const struct ib_gid_attr *attr)
+#else
+static int hns_roce_v1_set_gid(struct hns_roce_dev *hr_dev, u8 port,
+			       int gid_index, union ib_gid *gid,
+			       const struct ib_gid_attr *attr)
+#endif
 {
 	u32 *p = NULL;
 	u8 gid_idx = 0;
@@ -4917,14 +4946,24 @@ static int hns_roce_get_cfg(struct hns_roce_dev *hr_dev)
 				continue;
 			pdev = of_find_device_by_node(net_node);
 		} else if (is_acpi_device_node(dev->fwnode)) {
+#ifdef CONFIG_KERNEL_419
 			struct fwnode_reference_args args;
+#else
+			struct acpi_reference_args args;
+			struct fwnode_handle *fwnode;
+#endif
 
 			ret = acpi_node_get_property_reference(dev->fwnode,
 							       "eth-handle",
 							       i, &args);
 			if (ret)
 				continue;
+#ifdef CONFIG_KERNEL_419
 			pdev = hns_roce_find_pdev(args.fwnode);
+#else
+			fwnode = acpi_fwnode_handle(args.adev);
+			pdev = hns_roce_find_pdev(fwnode);
+#endif
 		} else {
 			dev_err(dev, "cannot read data from DT or ACPI\n");
 			return -ENXIO;
@@ -4954,7 +4993,7 @@ static int hns_roce_get_cfg(struct hns_roce_dev *hr_dev)
 
 	/* cmd issue mode: 0 is poll, 1 is event */
 	hr_dev->cmd_mod = 1;
-	hr_dev->loop_idc = 0;
+	hr_dev->loop_idc = loopback;
 	hr_dev->sdb_offset = ROCEE_DB_SQ_L_0_REG;
 	hr_dev->odb_offset = ROCEE_DB_OTHERS_L_0_REG;
 
@@ -5067,3 +5106,5 @@ MODULE_AUTHOR("Wei Hu <xavier.huwei@huawei.com>");
 MODULE_AUTHOR("Nenglong Zhao <zhaonenglong@hisilicon.com>");
 MODULE_AUTHOR("Lijun Ou <oulijun@huawei.com>");
 MODULE_DESCRIPTION("Hisilicon Hip06 Family RoCE Driver");
+module_param(loopback, int, 0444);
+MODULE_PARM_DESC(loopback, "default: 0");

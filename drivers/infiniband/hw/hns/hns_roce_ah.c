@@ -29,6 +29,7 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+#include "roce_k_compat.h"
 
 #include <linux/platform_device.h>
 #include <rdma/ib_addr.h>
@@ -44,42 +45,92 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 				 struct ib_udata *udata)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibpd->device);
-	const struct ib_gid_attr *gid_attr;
 	struct device *dev = hr_dev->dev;
+#ifdef CONFIG_KERNEL_419
+	const struct ib_gid_attr *gid_attr;
+#else
+	struct ib_gid_attr gid_attr;
+	union ib_gid sgid;
+	int ret;
+#endif
 	struct hns_roce_ah *ah;
 	u16 vlan_tag = 0xffff;
+	struct in6_addr in6;
 	const struct ib_global_route *grh = rdma_ah_read_grh(ah_attr);
+	bool vlan_en = false;
 
 	ah = kzalloc(sizeof(*ah), GFP_ATOMIC);
 	if (!ah)
 		return ERR_PTR(-ENOMEM);
 
-	/* Get mac address */
-	memcpy(ah->av.mac, ah_attr->roce.dmac, ETH_ALEN);
+	if (rdma_ah_get_ah_flags(ah_attr) & IB_AH_GRH) {
+		/* Get mac address */
+		memcpy(&in6, grh->dgid.raw, sizeof(grh->dgid.raw));
+		if (rdma_is_multicast_addr(&in6)) {
+			rdma_get_mcast_mac(&in6, ah->av.mac);
+		} else {
+			u8 *dmac = rdma_ah_retrieve_dmac(ah_attr);
 
-	gid_attr = ah_attr->grh.sgid_attr;
-	if (is_vlan_dev(gid_attr->ndev))
-		vlan_tag = vlan_dev_vlan_id(gid_attr->ndev);
+			if (!dmac) {
+				kfree(ah);
+				return ERR_PTR(-EINVAL);
+			}
+			memcpy(ah->av.mac, dmac, ETH_ALEN);
+		}
 
-	if (vlan_tag < 0x1000)
-		vlan_tag |= (rdma_ah_get_sl(ah_attr) &
-			     HNS_ROCE_VLAN_SL_BIT_MASK) <<
-			     HNS_ROCE_VLAN_SL_SHIFT;
+#ifdef CONFIG_KERNEL_419
+		gid_attr = ah_attr->grh.sgid_attr;
+		if (is_vlan_dev(gid_attr->ndev)) {
+			vlan_tag = vlan_dev_vlan_id(gid_attr->ndev);
+			vlan_en = true;
+		}
+#else
+		/* Get source gid */
+		ret = ib_get_cached_gid(ibpd->device,
+					rdma_ah_get_port_num(ah_attr),
+					grh->sgid_index, &sgid, &gid_attr);
+		if (ret) {
+			dev_err(dev, "get sgid failed! ret = %d\n", ret);
+			kfree(ah);
+			return ERR_PTR(ret);
+		}
 
-	ah->av.port_pd = cpu_to_be32(to_hr_pd(ibpd)->pdn |
-				     (rdma_ah_get_port_num(ah_attr) <<
-				     HNS_ROCE_PORT_NUM_SHIFT));
-	ah->av.gid_index = grh->sgid_index;
-	ah->av.vlan = cpu_to_le16(vlan_tag);
-	dev_dbg(dev, "gid_index = 0x%x,vlan = 0x%x\n", ah->av.gid_index,
-		ah->av.vlan);
+		if (gid_attr.ndev) {
+			if (is_vlan_dev(gid_attr.ndev)) {
+				vlan_tag = vlan_dev_vlan_id(gid_attr.ndev);
+				vlan_en = true;
+			}
+			dev_put(gid_attr.ndev);
+		}
+#endif
 
-	if (rdma_ah_get_static_rate(ah_attr))
-		ah->av.stat_rate = IB_RATE_10_GBPS;
+		if (vlan_tag < 0x1000)
+			vlan_tag |= (rdma_ah_get_sl(ah_attr) &
+				     HNS_ROCE_VLAN_SL_BIT_MASK) <<
+				     HNS_ROCE_VLAN_SL_SHIFT;
 
-	memcpy(ah->av.dgid, grh->dgid.raw, HNS_ROCE_GID_SIZE);
-	ah->av.sl_tclass_flowlabel = cpu_to_le32(rdma_ah_get_sl(ah_attr) <<
-						 HNS_ROCE_SL_SHIFT);
+		ah->av.port_pd = cpu_to_be32(to_hr_pd(ibpd)->pdn |
+					    (rdma_ah_get_port_num(ah_attr) <<
+					     HNS_ROCE_PORT_NUM_SHIFT));
+		ah->av.gid_index = grh->sgid_index;
+		ah->av.vlan = cpu_to_le16(vlan_tag);
+		ah->av.vlan_en = vlan_en;
+		dev_dbg(dev, "gid_index = 0x%x,vlan = 0x%x\n", ah->av.gid_index,
+			ah->av.vlan);
+
+		if (rdma_ah_get_static_rate(ah_attr))
+			ah->av.stat_rate = IB_RATE_10_GBPS;
+
+		memcpy(ah->av.dgid, grh->dgid.raw, HNS_ROCE_GID_SIZE);
+		ah->av.sl_tclass_flowlabel =
+				cpu_to_le32(rdma_ah_get_sl(ah_attr) <<
+					    HNS_ROCE_SL_SHIFT);
+		ah->av.sl_tclass_flowlabel |=
+				cpu_to_le32((grh->traffic_class <<
+					    HNS_ROCE_TCLASS_SHIFT) |
+					    grh->flow_label);
+		ah->av.hop_limit = grh->hop_limit;
+	}
 
 	return &ah->ibah;
 }
