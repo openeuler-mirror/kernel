@@ -22,7 +22,7 @@ struct hisi_zip_msg {
 	__u32 dw12; /* ... */
 	__u32 tag;
 	__u32 dest_avail_out;
-	__u32 rsvd0;
+	__u32 ctx_dw0;
 	__u32 comp_head_addr_l;
 	__u32 comp_head_addr_h;
 	__u32 source_addr_l;
@@ -35,7 +35,10 @@ struct hisi_zip_msg {
 	__u32 cipher_key1_addr_h;
 	__u32 cipher_key2_addr_l;
 	__u32 cipher_key2_addr_h;
-	__u32 rsvd1[4];
+	__u32 ctx_dw1;
+	__u32 ctx_dw2;
+	__u32 isize;
+	__u32 checksum;
 };
 
 struct hisi_acc_zip_sqc {

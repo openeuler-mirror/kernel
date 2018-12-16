@@ -6659,6 +6659,14 @@ S:	Maintained
 F:	drivers/infiniband/hw/hns/
 F:	Documentation/devicetree/bindings/infiniband/hisilicon-hns-roce.txt
 
+HISILICON WARPDRIVE USER
+M:	Zaibo Xu <xuzaibo@huawei.com>
+M:	Zhou Wang <wangzhou1@hisilicon.com>
+M:	Hao Fang <fanghao11@huawei.com>
+L:	linuxarm@huawei.com
+S:	Maintained
+F:	samples/warpdrive/
+
 HISILICON SAS Controller
 M:	John Garry <john.garry@huawei.com>
 W:	http://www.hisilicon.com

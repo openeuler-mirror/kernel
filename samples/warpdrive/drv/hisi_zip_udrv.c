@@ -138,7 +138,7 @@ static int hisi_zip_recv_sqe(struct hisi_zip_msg *sqe, struct wd_queue *q,
 	void *out, *dma_out = info->dma_buf;
 	struct hisi_zip_msg *umsg = info->req_cache[i];
 
-	if (status != 0 && status != 0x0d) {
+	if (status != 0 && status != 0x0d && status != 0x13) {
 		fprintf(stderr, "bad status (s=%d, t=%d)\n", status, type);
 		return -EIO;
 	}
