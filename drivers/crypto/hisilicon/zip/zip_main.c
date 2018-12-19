@@ -220,7 +220,7 @@ static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 	}
 
 	ret = kstrtou32(val, 10, &n);
-	if (ret != 0 || n > q_num)
+	if (ret != 0 || n > q_num || n == 0)
 		return -EINVAL;
 
 	return param_set_int(val, kp);
