@@ -2929,6 +2929,36 @@ void device_shutdown(void)
 	spin_unlock(&devices_kset->list_lock);
 }
 
+void device_shutdown_by_driver(char *drv_name)
+{
+	struct device *dev, *parent, *next;
+	int len = 0;
+
+	if (!drv_name)
+		return;
+
+	len = strlen(drv_name);
+	if (!len)
+		return;
+
+	wait_for_device_probe();
+	device_block_probing();
+
+	spin_lock(&devices_kset->list_lock);
+	list_for_each_entry_safe(dev, next, &devices_kset->list, kobj.entry) {
+		if (dev->driver && len == strlen(dev->driver->name) &&
+		    !strncmp(dev->driver->name, drv_name, len)) {
+			parent = get_device(dev->parent);
+			get_device(dev);
+			list_del(&dev->kobj.entry);
+			spin_unlock(&devices_kset->list_lock);
+			device_shutdown_one(dev, parent);
+			spin_lock(&devices_kset->list_lock);
+		}
+	}
+	spin_unlock(&devices_kset->list_lock);
+}
+
 /*
  * Device logging functions
  */
