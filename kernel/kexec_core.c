@@ -923,6 +923,39 @@ struct kimage *kexec_image;
 struct kimage *kexec_crash_image;
 int kexec_load_disabled;
 
+void kexec_device_shutdown(void)
+{
+	int len;
+	char *p = saved_command_line;
+
+	p = strstr(p, "kexec_shutdown_device=");
+	if (p) {
+		int i;
+		char c;
+		char drv_name[128];
+
+		memset(drv_name, 0, 128);
+		p += strlen("kexec_shutdown_device=");
+		c = *p;
+		i = 0;
+		while (c != '\0' && c != ' ') {
+			if (c != '\\' && i < 127) {
+				drv_name[i] = c;
+				i++;
+			} else if (drv_name[0] != '\0') {
+				pr_info("drv name:%s\n", drv_name);
+				device_shutdown_by_driver(drv_name);
+				memset(drv_name, 0, 128);
+				i = 0;
+			}
+			p++;
+			c = *p;
+		}
+		if (drv_name[0] != '\0')
+			device_shutdown_by_driver(drv_name);
+	}
+}
+
 /*
  * No panic_cpu check version of crash_kexec().  This function is called
  * only when panic_cpu holds the current CPU number; this is the only CPU
@@ -944,6 +977,8 @@ void __noclone __crash_kexec(struct pt_regs *regs)
 
 			crash_setup_regs(&fixed_regs, regs);
 			crash_save_vmcoreinfo();
+			if (!crash_kexec_post_notifiers)
+				kexec_device_shutdown();
 			machine_crash_shutdown(&fixed_regs);
 			machine_kexec(kexec_crash_image);
 		}
