@@ -113,6 +113,7 @@ struct hisi_qm {
 	const char *dev_name;
 	struct pci_dev *pdev;
 	void __iomem *io_base;
+	struct module *parent;
 	u32 sqe_size;
 	u32 qp_base;
 	u32 qp_num;

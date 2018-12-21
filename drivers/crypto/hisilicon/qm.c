@@ -1723,7 +1723,7 @@ static int qm_register_spimdev(struct hisi_qm *qm)
 	spimdev->iommu_type = VFIO_SPIMDEV_IOMMU;
 	spimdev->dma_flag = VFIO_SPIMDEV_DMA_PHY;
 #endif
-	spimdev->owner = THIS_MODULE;
+	spimdev->owner = qm->parent;
 	spimdev->name = qm->dev_name;
 	spimdev->dev = &pdev->dev;
 	spimdev->is_vf = pdev->is_virtfn;

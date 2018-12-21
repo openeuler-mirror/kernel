@@ -555,7 +555,7 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	qm = &hisi_zip->qm;
 	qm->pdev = pdev;
-
+	qm->parent = THIS_MODULE;
 	rev_id = hisi_qm_get_hw_version(qm);
 	if (rev_id < 0)
 		return rev_id;
