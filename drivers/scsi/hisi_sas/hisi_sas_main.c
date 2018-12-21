@@ -2778,8 +2778,8 @@ static int hisi_sas_cq_show_slot(struct seq_file *s,
 	struct hisi_sas_cq *cq = cq_ptr;
 	struct hisi_hba *hisi_hba = cq->hisi_hba;
 	void *complete_queue = hisi_hba->complete_hdr_debugfs[cq->id];
-	void *complete_hdr = complete_queue +
-			(hisi_hba->hw->complete_hdr_size * slot);
+	u64 offset = hisi_hba->hw->complete_hdr_size * slot;
+	void *complete_hdr = complete_queue + offset;
 
 	return hisi_sas_show_row_32(s, slot,
 				hisi_hba->hw->complete_hdr_size,
@@ -2819,8 +2819,8 @@ static int hisi_sas_dq_show_slot(struct seq_file *s,
 	struct hisi_sas_dq *dq = dq_ptr;
 	struct hisi_hba *hisi_hba = dq->hisi_hba;
 	void *cmd_queue = hisi_hba->cmd_hdr_debugfs[dq->id];
-	void *cmd_hdr = cmd_queue +
-		hisi_hba->hw->complete_hdr_size * slot;
+	u64 offset = hisi_hba->hw->complete_hdr_size * slot;
+	void *cmd_hdr = cmd_queue + offset;
 
 	return hisi_sas_show_row_32(s, slot,
 				sizeof(struct hisi_sas_cmd_hdr),
