@@ -2031,16 +2031,13 @@ struct spi_controller *__spi_alloc_controller(struct device *dev,
 }
 EXPORT_SYMBOL_GPL(__spi_alloc_controller);
 
-#ifdef CONFIG_OF
-static int of_spi_register_master(struct spi_controller *ctlr)
+static int __spi_register_controller(struct spi_controller *ctlr)
 {
 	int nb, i, *cs;
 	struct device_node *np = ctlr->dev.of_node;
+	struct gpio_desc *desc;
 
-	if (!np)
-		return 0;
-
-	nb = of_gpio_named_count(np, "cs-gpios");
+	nb = gpiod_count(&ctlr->dev, "cs");
 	ctlr->num_chipselect = max_t(int, nb, ctlr->num_chipselect);
 
 	/* Return error only for an incorrectly formed cs-gpios property */
@@ -2059,17 +2056,20 @@ static int of_spi_register_master(struct spi_controller *ctlr)
 	for (i = 0; i < ctlr->num_chipselect; i++)
 		cs[i] = -ENOENT;
 
-	for (i = 0; i < nb; i++)
-		cs[i] = of_get_named_gpio(np, "cs-gpios", i);
-
+	if (IS_ENABLED(CONFIG_OF) && np) {
+		for (i = 0; i < nb; i++)
+			cs[i] = of_get_named_gpio(np, "cs-gpios", i);
+	} else if (IS_ENABLED(CONFIG_ACPI) && ACPI_HANDLE(&ctlr->dev)) {
+		for (i = 0; i < nb; i++) {
+			desc = devm_gpiod_get_index(&ctlr->dev, "cs",
+						    i, GPIOD_ASIS);
+			if (IS_ERR(desc))
+				continue;
+			cs[i] = desc_to_gpio(desc);
+		}
+	}
 	return 0;
 }
-#else
-static int of_spi_register_master(struct spi_controller *ctlr)
-{
-	return 0;
-}
-#endif
 
 static int spi_controller_check_ops(struct spi_controller *ctlr)
 {
@@ -2133,7 +2133,7 @@ int spi_register_controller(struct spi_controller *ctlr)
 		return status;
 
 	if (!spi_controller_is_slave(ctlr)) {
-		status = of_spi_register_master(ctlr);
+		status = __spi_register_controller(ctlr);
 		if (status)
 			return status;
 	}
