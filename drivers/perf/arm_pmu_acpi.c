@@ -74,6 +74,82 @@ static void arm_pmu_acpi_unregister_irq(int cpu)
 	acpi_unregister_gsi(gsi);
 }
 
+static struct resource spe_resources[] = {
+	{
+		/* irq */
+		.flags          = IORESOURCE_IRQ,
+	}
+};
+
+static struct platform_device spe_dev = {
+	.name = "arm,spe-v1",
+	.id = -1,
+	.resource = spe_resources,
+	.num_resources = ARRAY_SIZE(spe_resources)
+};
+
+/*
+ * For lack of a better place lets just hook the
+ * normal PMU MADT walk and create a SPE device if
+ * we detect a recent MADT with a homogeneous PPI mapping
+ */
+static int arm_spe_acpi_parse_irqs(void)
+{
+	int cpu, ret, irq;
+	u32 flags, gsi;
+	bool first = true;
+
+	struct acpi_madt_generic_interrupt *gicc;
+
+	/*
+	 * sanity check all the GICC tables for the same interrupt number
+	 * for now we only support homogeneous ACPI/SPE machines.
+	 */
+	for_each_possible_cpu(cpu) {
+		gicc = acpi_cpu_get_madt_gicc(cpu);
+
+		if (gicc->header.length < ACPI_MADT_GICC_SPE)
+			return -ENODEV;
+
+		if (first) {
+			gsi = gicc->spe_overflow_interrupt;
+			if (!gsi)
+				return -ENODEV;
+			first = false;
+		} else if (gsi != gicc->spe_overflow_interrupt) {
+			pr_warn("ACPI: SPE must have homogeneous interrupts\n");
+			return -EINVAL;
+		}
+	}
+
+	irq = acpi_register_gsi(NULL, gsi, ACPI_LEVEL_SENSITIVE,
+				ACPI_ACTIVE_HIGH);
+	if (irq < 0) {
+		pr_warn("ACPI: SPE Unable to register interrupt: %d\n", gsi);
+		return irq;
+	}
+
+	/*
+	 * really we want SPE to behave like a normal ACPI device, with the
+	 * possibility of future power control methods, compatible flags/etc.
+	 * But we don't have that choice and acpi_add_single_object() and
+	 * acpi_create_platform_device() makes it hard to simulate that
+	 * functionality outside of DSDT.
+	 * Spinning this off as a platform device is the least evil
+	 * choice that gives us a normal driver module that can be
+	 * loaded/unloaded without a lot of overhead while keeping open the
+	 * possibility of future expansion via compatible alternative modules.
+	 */
+	spe_resources[0].start = irq;
+	ret = platform_device_register(&spe_dev);
+	if (ret < 0) {
+		pr_warn("ACPI: SPE: Unable to register device\n");
+		acpi_unregister_gsi(gsi);
+	}
+
+	return ret;
+}
+
 static int arm_pmu_acpi_parse_irqs(void)
 {
 	int irq, cpu, irq_cpu, err;
@@ -278,6 +354,8 @@ static int arm_pmu_acpi_init(void)
 
 	if (acpi_disabled)
 		return 0;
+
+	arm_spe_acpi_parse_irqs(); /* failures are expected */
 
 	ret = arm_pmu_acpi_parse_irqs();
 	if (ret)
