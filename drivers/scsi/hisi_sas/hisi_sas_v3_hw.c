@@ -1141,12 +1141,12 @@ static void prep_ssp_v3_hw(struct hisi_hba *hisi_hba,
 		dw1 |= 1 << CMD_HDR_FRAME_TYPE_OFF;
 		switch (scsi_cmnd->sc_data_direction) {
 		case DMA_TO_DEVICE:
-			has_data = 1;
 			dw1 |= DIR_TO_DEVICE << CMD_HDR_DIR_OFF;
+			has_data = 1;
 			break;
 		case DMA_FROM_DEVICE:
-			has_data = 1;
 			dw1 |= DIR_TO_INI << CMD_HDR_DIR_OFF;
+			has_data = 1;
 			break;
 		default:
 			dw1 &= ~CMD_HDR_DIR_MSK;
