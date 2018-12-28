@@ -1930,6 +1930,8 @@ static void sas_unregister_devs_sas_addr(struct domain_device *parent,
 				&parent->port->sas_port_del_list);
 		phy->port = NULL;
 	}
+	if (phy->phy)
+		phy->phy->negotiated_linkrate = SAS_LINK_RATE_UNKNOWN;
 }
 
 static int sas_discover_bfs_by_root_level(struct domain_device *root,
