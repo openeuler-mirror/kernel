@@ -2013,6 +2013,8 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id, bool last)
 {
 	struct expander_device *ex = &dev->ex_dev;
 	struct ex_phy *phy = &ex->ex_phy[phy_id];
+	struct asd_sas_port *port = dev->port;
+	struct asd_sas_phy *sas_phy;
 	enum sas_device_type type = SAS_PHY_UNUSED;
 	u8 sas_addr[8];
 	int res;
@@ -2060,7 +2062,14 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id, bool last)
 		    SAS_ADDR(phy->attached_sas_addr));
 	sas_unregister_devs_sas_addr(dev, phy_id, last);
 
-	return sas_discover_new(dev, phy_id);
+	/* force the next revalidation find this phy and bring it up */
+	phy->phy_change_count = -1;
+	ex->ex_change_count = -1;
+	sas_phy = container_of(port->phy_list.next, struct asd_sas_phy,
+			port_phy_el);
+	port->ha->notify_port_event(sas_phy, PORTE_BROADCAST_RCVD);
+
+	return 0;
 }
 
 /**
