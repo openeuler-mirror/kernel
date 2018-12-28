@@ -430,18 +430,29 @@ static enum sas_linkrate sas_find_min_pathway(struct domain_device *ddev)
 	return min_linkrate;
 }
 
+static inline void sas_ata_set_linkrate(struct domain_device *dev,
+				    int phy_num,
+				    enum sas_linkrate linkrate)
+{
+	struct sas_phy_linkrates rates;
+	int ret;
+
+	rates.minimum_linkrate = 0;
+	rates.maximum_linkrate = linkrate;
+	ret = sas_smp_phy_control(dev, phy_num, PHY_FUNC_LINK_RESET, &rates);
+
+	SAS_DPRINTK("ex %016llx phy%02d set max linkrate to %X %s\n",
+		    SAS_ADDR(dev->sas_addr), phy_num, linkrate,
+		    ret ? "failed" : "succeed");
+}
+
 static void sas_ata_check_pathway(void *data, async_cookie_t cookie)
 {
 	struct domain_device *dev = data;
-	struct domain_device *ddev = dev->parent;
-	struct sas_phy_linkrates rates;
+	struct expander_device *ex = &dev->ex_dev;
+	struct ex_phy *ex_phy;
 	enum sas_linkrate linkrate;
-	int ret;
-
-	if (!ddev) {
-		sas_put_device(dev);
-		return;
-	}
+	int i;
 
 	/*
 	 * According to Serial Attached SCSI - 1.1 (SAS-1.1):
@@ -454,20 +465,18 @@ static void sas_ata_check_pathway(void *data, async_cookie_t cookie)
 	 * initiator port.
 	 */
 
-	linkrate = sas_find_min_pathway(ddev);
+	linkrate = sas_find_min_pathway(dev);
 
-	if (dev->linkrate > linkrate) {
-		struct sas_phy *phy = sas_get_local_phy(dev);
+	for (i = 0; i < ex->num_phys; i++) {
+		ex_phy = &ex->ex_phy[i];
 
-		rates.minimum_linkrate = 0;
-		rates.maximum_linkrate = linkrate;
-		ret = sas_smp_phy_control(ddev, phy->number,
-			PHY_FUNC_LINK_RESET, &rates);
+		if (!ex_phy_is_sata(ex_phy))
+		      continue;
 
-		SAS_DPRINTK("ex %016llx phy%02d set max linkrate to %X %s\n",
-			    SAS_ADDR(ddev->sas_addr), phy->number, linkrate,
-			    ret ? "failed" : "succeed");
-		sas_put_local_phy(phy);
+		if (ex_phy->linkrate > linkrate) {
+			sas_ata_set_linkrate(dev, i, linkrate);
+			ex_phy->linkrate = linkrate;
+		}
 	}
 
 	sas_put_device(dev);
@@ -480,7 +489,8 @@ void sas_ata_check_topology(struct asd_sas_port *port)
 
 	spin_lock(&port->dev_list_lock);
 	list_for_each_entry(dev, &port->dev_list, dev_list_node) {
-		if (!dev_is_sata(dev))
+		if (dev->dev_type != SAS_EDGE_EXPANDER_DEVICE &&
+		    dev->dev_type != SAS_FANOUT_EXPANDER_DEVICE)
 			continue;
 
 		/* hold a reference since we may be

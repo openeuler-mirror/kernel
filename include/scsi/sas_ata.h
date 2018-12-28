@@ -36,6 +36,13 @@ static inline int dev_is_sata(struct domain_device *dev)
 	       dev->dev_type == SAS_SATA_PM_PORT || dev->dev_type == SAS_SATA_PENDING;
 }
 
+static inline int ex_phy_is_sata(struct ex_phy *phy)
+{
+	return ((phy->attached_tproto & SAS_PROTOCOL_STP) || phy->attached_sata_dev) &&
+		phy->attached_dev_type == SAS_END_DEVICE;
+
+}
+
 int sas_get_ata_info(struct domain_device *dev, struct ex_phy *phy);
 int sas_ata_init(struct domain_device *dev);
 void sas_ata_task_abort(struct sas_task *task);
