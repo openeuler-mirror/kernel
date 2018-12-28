@@ -532,6 +532,7 @@ static void sas_revalidate_domain(struct work_struct *work)
 	sas_destruct_devices(port);
 	sas_destruct_ports(port);
 	sas_probe_devices(port);
+	sas_ata_check_topology(port);
 }
 
 /* ---------- Events ---------- */

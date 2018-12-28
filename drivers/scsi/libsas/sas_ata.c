@@ -383,6 +383,119 @@ static int sas_ata_printk(const char *level, const struct domain_device *ddev,
 	return r;
 }
 
+static enum sas_linkrate sas_find_min_pathway(struct domain_device *ddev)
+{
+	enum sas_linkrate min_linkrate = SAS_LINK_RATE_12_0_GBPS;
+	struct domain_device *child;
+	struct expander_device *ex;
+	struct asd_sas_phy *phy;
+	int i;
+
+	child = ddev;
+	ddev = ddev->parent;
+
+	while (ddev) {
+		if (ddev->dev_type != SAS_EDGE_EXPANDER_DEVICE &&
+		    ddev->dev_type != SAS_FANOUT_EXPANDER_DEVICE)
+			break;
+
+		ex = &ddev->ex_dev;
+
+		for (i = 0; i < ex->num_phys; i++) {
+			struct ex_phy *phy = &ex->ex_phy[i];
+
+			if (phy->phy_state == PHY_VACANT ||
+			    phy->phy_state == PHY_NOT_PRESENT)
+				continue;
+
+			if (phy->linkrate < SAS_LINK_RATE_1_5_GBPS)
+				continue;
+
+			if (SAS_ADDR(phy->attached_sas_addr) == SAS_ADDR(child->sas_addr))
+				if (min_linkrate > phy->linkrate)
+					min_linkrate = phy->linkrate;
+		}
+
+		child = ddev;
+		ddev = ddev->parent;
+	}
+
+	/* check the direct attached phy linkrate */
+	list_for_each_entry(phy, &child->port->phy_list, port_phy_el) {
+		if (SAS_ADDR(phy->attached_sas_addr) == SAS_ADDR(child->sas_addr))
+			if (min_linkrate > phy->linkrate)
+				min_linkrate = phy->linkrate;
+	}
+
+	return min_linkrate;
+}
+
+static void sas_ata_check_pathway(void *data, async_cookie_t cookie)
+{
+	struct domain_device *dev = data;
+	struct domain_device *ddev = dev->parent;
+	struct sas_phy_linkrates rates;
+	enum sas_linkrate linkrate;
+	int ret;
+
+	if (!ddev) {
+		sas_put_device(dev);
+		return;
+	}
+
+	/*
+	 * According to Serial Attached SCSI - 1.1 (SAS-1.1):
+	 * If an expander phy attached to a SATA phy is using a physical link
+	 * rate greater than the maximum connection rate supported by the
+	 * pathway from an STP initiator port, a management application client
+	 * should use the SMP PHY CONTROL function (see 10.4.3.10) to set the
+	 * PROGRAMMED MAXIMUM PHYSICAL LINK RATE field of the expander phy to
+	 * the maximum connection rate supported by the pathway from that STP
+	 * initiator port.
+	 */
+
+	linkrate = sas_find_min_pathway(ddev);
+
+	if (dev->linkrate > linkrate) {
+		struct sas_phy *phy = sas_get_local_phy(dev);
+
+		rates.minimum_linkrate = 0;
+		rates.maximum_linkrate = linkrate;
+		ret = sas_smp_phy_control(ddev, phy->number,
+			PHY_FUNC_LINK_RESET, &rates);
+
+		SAS_DPRINTK("ex %016llx phy%02d set max linkrate to %X %s\n",
+			    SAS_ADDR(ddev->sas_addr), phy->number, linkrate,
+			    ret ? "failed" : "succeed");
+		sas_put_local_phy(phy);
+	}
+
+	sas_put_device(dev);
+}
+
+void sas_ata_check_topology(struct asd_sas_port *port)
+{
+	ASYNC_DOMAIN_EXCLUSIVE(async);
+	struct domain_device *dev;
+
+	spin_lock(&port->dev_list_lock);
+	list_for_each_entry(dev, &port->dev_list, dev_list_node) {
+		if (!dev_is_sata(dev))
+			continue;
+
+		/* hold a reference since we may be
+		 * racing with final remove
+		 */
+		kref_get(&dev->kref);
+
+		async_schedule_domain(sas_ata_check_pathway, dev, &async);
+	}
+	spin_unlock(&port->dev_list_lock);
+
+	async_synchronize_full_domain(&async);
+
+}
+
 static int sas_ata_hard_reset(struct ata_link *link, unsigned int *class,
 			      unsigned long deadline)
 {

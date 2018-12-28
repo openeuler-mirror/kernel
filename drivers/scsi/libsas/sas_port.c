@@ -194,6 +194,8 @@ static void sas_form_port(struct asd_sas_phy *phy)
 
 	sas_discover_event(phy->port, DISCE_DISCOVER_DOMAIN);
 	flush_workqueue(sas_ha->disco_q);
+
+	sas_ata_check_topology(port);
 }
 
 /**
