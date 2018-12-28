@@ -2053,9 +2053,37 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id, bool last)
 			action = ", needs recovery";
 		SAS_DPRINTK("ex %016llx phy 0x%x broadcast flutter%s\n",
 			    SAS_ADDR(dev->sas_addr), phy_id, action);
+
+		/* the phy attached address will be updated by sas_ex_phy_discover()
+		 * and sometimes become abnormal
+		 */
+		if (SAS_ADDR(phy->attached_sas_addr) != SAS_ADDR(sas_addr) ||
+		    SAS_ADDR(phy->attached_sas_addr) == 0) {
+			/* if attached_sas_addr become abnormal, we must set the
+			 * original address back so that the device can be unregistered
+			 */
+			memcpy(phy->attached_sas_addr, sas_addr, SAS_ADDR_SIZE);
+			SAS_DPRINTK("phy address(%016llx) abnormal, origin:%016llx\n",
+				    SAS_ADDR(phy->attached_sas_addr),
+				    SAS_ADDR(sas_addr));
+			goto unregister;
+		}
+
+
+		if (ata_dev) {
+			struct ata_device *adev = sas_to_ata_dev(ata_dev);
+			unsigned int class = ata_dev->sata_dev.class;
+			u16 *id = ata_dev->sata_dev.id;
+
+			/* to see if the disk is replaced with another one */
+			if (!ata_dev_same_device(adev, class, id))
+				goto unregister;
+		}
+
 		return res;
 	}
 
+unregister:
 	/* we always have to delete the old device when we went here */
 	SAS_DPRINTK("ex %016llx phy 0x%x replace %016llx\n",
 		    SAS_ADDR(dev->sas_addr), phy_id,

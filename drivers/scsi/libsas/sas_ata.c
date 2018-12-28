@@ -632,6 +632,22 @@ static int sas_get_ata_command_set(struct domain_device *dev)
 	return ata_dev_classify(&tf);
 }
 
+static void sas_ata_store_id(struct domain_device *dev)
+{
+	struct ata_device *ata_dev = sas_to_ata_dev(dev);
+	unsigned char model[ATA_ID_PROD_LEN + 1];
+	unsigned char serial[ATA_ID_SERNO_LEN + 1];
+
+	/* store the ata device's class and id */
+	memcpy(dev->sata_dev.id, ata_dev->id, ATA_ID_WORDS);
+	dev->sata_dev.class = ata_dev->class;
+
+	ata_id_c_string(ata_dev->id, model, ATA_ID_PROD, sizeof(model));
+	ata_id_c_string(ata_dev->id, serial, ATA_ID_SERNO, sizeof(serial));
+
+	sas_ata_printk(KERN_INFO, dev, "model:%s serial:%s\n", model, serial);
+}
+
 void sas_probe_sata(struct asd_sas_port *port)
 {
 	struct domain_device *dev, *n;
@@ -656,6 +672,8 @@ void sas_probe_sata(struct asd_sas_port *port)
 		 */
 		if (ata_dev_disabled(sas_to_ata_dev(dev)))
 			sas_fail_probe(dev, __func__, -ENODEV);
+		else
+			sas_ata_store_id(dev);
 	}
 
 }
