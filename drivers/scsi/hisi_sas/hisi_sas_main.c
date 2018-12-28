@@ -947,6 +947,10 @@ static void hisi_sas_do_release_task(struct hisi_hba *hisi_hba, struct sas_task 
 			~(SAS_TASK_STATE_PENDING | SAS_TASK_AT_INITIATOR);
 		task->task_state_flags |= SAS_TASK_STATE_DONE;
 		spin_unlock_irqrestore(&task->task_state_lock, flags);
+
+		if (slot->is_internal || (task->task_proto == SAS_PROTOCOL_SMP))
+			if (task->task_done)
+				task->task_done(task);
 	}
 
 	hisi_sas_slot_task_free(hisi_hba, task, slot);
