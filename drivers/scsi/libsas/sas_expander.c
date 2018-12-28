@@ -1113,8 +1113,6 @@ static int sas_ex_discover_dev(struct domain_device *dev, int phy_id)
 		 * will not treat the phy as flutter in the next
 		 * revalidation
 		 */
-		ex_phy->phy_state = PHY_VACANT;
-		ex_phy->attached_dev_type = SAS_PHY_UNUSED;
 		memset(ex_phy->attached_sas_addr, 0, SAS_ADDR_SIZE);
 	}
 
