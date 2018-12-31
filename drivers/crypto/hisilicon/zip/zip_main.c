@@ -530,6 +530,13 @@ failed_to_create:
 	return ret;
 }
 
+static void hisi_zip_debugfs_exit(struct hisi_zip *hisi_zip)
+{
+	struct hisi_qm *qm = &hisi_zip->qm;
+
+	debugfs_remove_recursive(qm->debug.debug_root);
+}
+
 static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct hisi_zip_ctrl *ctrl;
@@ -630,29 +637,6 @@ err_qm_uninit:
 err_remove_from_list:
 	hisi_zip_remove_from_list(hisi_zip);
 	return ret;
-}
-
-static void hisi_zip_debugfs_exit(struct hisi_zip *hisi_zip)
-{
-	struct hisi_qm *qm = &hisi_zip->qm;
-
-	debugfs_remove_recursive(qm->debug.debug_root);
-}
-
-static void hisi_zip_remove(struct pci_dev *pdev)
-{
-	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
-	struct hisi_qm *qm = &hisi_zip->qm;
-
-	hisi_zip_debugfs_exit(hisi_zip);
-	hisi_qm_stop(qm);
-	hisi_qm_mem_uninit(qm);
-
-	if (pdev->device == 0xa250)
-		hisi_zip_hw_error_set_state(hisi_zip, false);
-
-	hisi_qm_uninit(qm);
-	hisi_zip_remove_from_list(hisi_zip);
 }
 
 /* now we only support equal assignment */
@@ -757,6 +741,25 @@ static int hisi_zip_sriov_configure(struct pci_dev *pdev, int num_vfs)
 		return hisi_zip_sriov_disable(pdev);
 	else
 		return hisi_zip_sriov_enable(pdev, num_vfs);
+}
+
+static void hisi_zip_remove(struct pci_dev *pdev)
+{
+	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
+	struct hisi_qm *qm = &hisi_zip->qm;
+
+	if (qm->fun_type == QM_HW_PF && hisi_zip->ctrl->num_vfs != 0)
+		hisi_zip_sriov_disable(pdev);
+
+	hisi_zip_debugfs_exit(hisi_zip);
+	hisi_qm_stop(qm);
+	hisi_qm_mem_uninit(qm);
+
+	if (qm->fun_type == QM_HW_PF)
+		hisi_zip_hw_error_set_state(hisi_zip, false);
+
+	hisi_qm_uninit(qm);
+	hisi_zip_remove_from_list(hisi_zip);
 }
 
 static void hisi_zip_log_hw_error(struct hisi_zip *hisi_zip, u32 err_sts)
