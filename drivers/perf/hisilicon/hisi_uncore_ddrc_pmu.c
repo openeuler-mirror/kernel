@@ -384,20 +384,7 @@ static int hisi_ddrc_pmu_probe(struct platform_device *pdev)
 
 	name = devm_kasprintf(&pdev->dev, GFP_KERNEL, "hisi_sccl%u_ddrc%u",
 			      ddrc_pmu->sccl_id, ddrc_pmu->index_id);
-	ddrc_pmu->pmu = (struct pmu) {
-		.name		= name,
-		.task_ctx_nr	= perf_invalid_context,
-		.event_init	= hisi_uncore_pmu_event_init,
-		.pmu_enable	= hisi_uncore_pmu_enable,
-		.pmu_disable	= hisi_uncore_pmu_disable,
-		.add		= hisi_uncore_pmu_add,
-		.del		= hisi_uncore_pmu_del,
-		.start		= hisi_uncore_pmu_start,
-		.stop		= hisi_uncore_pmu_stop,
-		.read		= hisi_uncore_pmu_read,
-		.attr_groups	= hisi_ddrc_pmu_attr_groups,
-	};
-
+	HISI_INIT_PMU(&ddrc_pmu->pmu, name, hisi_ddrc_pmu_attr_groups);
 	ret = perf_pmu_register(&ddrc_pmu->pmu, name, -1);
 	if (ret) {
 		dev_err(ddrc_pmu->dev, "DDRC PMU register failed!\n");

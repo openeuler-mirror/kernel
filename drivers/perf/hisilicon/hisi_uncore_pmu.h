@@ -99,4 +99,21 @@ ssize_t hisi_cpumask_sysfs_show(struct device *dev,
 				struct device_attribute *attr, char *buf);
 int hisi_uncore_pmu_online_cpu(unsigned int cpu, struct hlist_node *node);
 int hisi_uncore_pmu_offline_cpu(unsigned int cpu, struct hlist_node *node);
+
+static inline void HISI_INIT_PMU(struct pmu *pmu, const char *name,
+			    const struct attribute_group **attr_groups)
+{
+	pmu->name		= name;
+	pmu->task_ctx_nr	= perf_invalid_context;
+	pmu->event_init		= hisi_uncore_pmu_event_init;
+	pmu->pmu_enable		= hisi_uncore_pmu_enable;
+	pmu->pmu_disable	= hisi_uncore_pmu_disable;
+	pmu->add		= hisi_uncore_pmu_add;
+	pmu->del		= hisi_uncore_pmu_del;
+	pmu->start		= hisi_uncore_pmu_start;
+	pmu->stop		= hisi_uncore_pmu_stop;
+	pmu->read		= hisi_uncore_pmu_read;
+	pmu->attr_groups	= attr_groups;
+}
+
 #endif /* __HISI_UNCORE_PMU_H__ */
