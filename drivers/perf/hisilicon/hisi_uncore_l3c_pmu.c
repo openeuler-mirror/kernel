@@ -44,7 +44,7 @@
 /*
  * Select the counter register offset using the counter index
  */
-static u32 hisi_l3c_pmu_get_counter_offset(int cntr_idx)
+static u32 hisi_l3c_pmu_get_counter_offset(u32 cntr_idx)
 {
 	return (L3C_CNTR0_LOWER + (cntr_idx * 8));
 }

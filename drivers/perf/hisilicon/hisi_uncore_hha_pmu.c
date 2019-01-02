@@ -45,7 +45,7 @@
  * Select the counter register offset using the counter index
  * each counter is 48-bits.
  */
-static u32 hisi_hha_pmu_get_counter_offset(int cntr_idx)
+static u32 hisi_hha_pmu_get_counter_offset(u32 cntr_idx)
 {
 	return (HHA_CNT0_LOWER + (cntr_idx * 8));
 }
