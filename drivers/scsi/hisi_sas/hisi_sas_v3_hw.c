@@ -2808,6 +2808,13 @@ hisi_sas_v3_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (hisi_sas_debugfs_enable)
 		hisi_sas_debugfs_init(hisi_hba);
 
+	if (hisi_hba->enable_dix_dif) {
+		scsi_host_set_prot(hisi_hba->shost,
+				enable_dix_dif);
+		scsi_host_set_guard(hisi_hba->shost,
+				SHOST_DIX_GUARD_CRC);
+	}
+
 	rc = scsi_add_host(shost, dev);
 	if (rc)
 		goto err_out_ha;
@@ -2819,13 +2826,6 @@ hisi_sas_v3_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	rc = hisi_hba->hw->hw_init(hisi_hba);
 	if (rc)
 		goto err_out_register_ha;
-
-	if (hisi_hba->enable_dix_dif) {
-		scsi_host_set_prot(hisi_hba->shost,
-				enable_dix_dif);
-		scsi_host_set_guard(hisi_hba->shost,
-				SHOST_DIX_GUARD_CRC);
-	}
 
 	scsi_scan_host(shost);
 
