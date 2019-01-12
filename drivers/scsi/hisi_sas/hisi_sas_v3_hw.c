@@ -405,6 +405,8 @@ struct hisi_sas_err_record_v3 {
 #define USR_DATA_BLOCK_SZ_MSK	(0x3 << USR_DATA_BLOCK_SZ_OFF)
 #define T10_CHK_MSK_OFF	    16
 
+#define HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW  16
+
 static bool hisi_sas_intr_conv;
 MODULE_PARM_DESC(intr_conv, "interrupt converge on or off:0 or 1(def=0)");
 
@@ -413,6 +415,11 @@ module_param(enable_dix_dif, int, 0444);
 MODULE_PARM_DESC(enable_dix_dif,
 		" Enable DIX/DIF:\n"
 		" 0 -- No DIF support.\n");
+
+static bool user_ctl_irq;
+module_param(user_ctl_irq, bool, 0444);
+MODULE_PARM_DESC(user_ctl_irq, "Enable user control irq affinity:\n"
+			       "default is auto-control irq affinity");
 
 static u32 hisi_sas_read32(struct hisi_hba *hisi_hba, u32 off)
 {
@@ -2123,9 +2130,19 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 	int vectors, rc;
 	int i, k;
 	int max_msi = HISI_SAS_MSI_COUNT_V3_HW;
+	struct irq_affinity desc = {
+		.pre_vectors = HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW,
+	};
 
-	vectors = pci_alloc_irq_vectors(hisi_hba->pci_dev, 1,
-					max_msi, PCI_IRQ_MSI);
+	if (user_ctl_irq) {
+		vectors = pci_alloc_irq_vectors(hisi_hba->pci_dev, 1,
+						max_msi, PCI_IRQ_MSI);
+	} else {
+		vectors = pci_alloc_irq_vectors_affinity(hisi_hba->pci_dev,
+				    max_msi, max_msi,
+				    PCI_IRQ_MSI | PCI_IRQ_AFFINITY, &desc);
+	}
+
 	if (vectors < max_msi) {
 		dev_err(dev, "could not allocate all msi (%d)\n", vectors);
 		return -ENOENT;
