@@ -23,6 +23,9 @@
 #define QM_MB_CMD_CQC_BT		0x5
 #define QM_MB_CMD_SQC_VFT_V2		0x6
 
+#define QM_CACHE_WB_START		0x204
+#define QM_CACHE_WB_DONE		0x208
+
 #define QM_MB_CMD_SEND_BASE		0x300
 #define QM_MB_EVENT_SHIFT		8
 #define QM_MB_BUSY_SHIFT		13
@@ -1412,6 +1415,18 @@ err_free_eqc:
 }
 EXPORT_SYMBOL_GPL(hisi_qm_mem_init);
 
+static void hisi_qm_cache_wb(struct hisi_qm *qm)
+{
+	int val;
+
+	if (qm->ver == QM_HW_V2) {
+		writel(0x1, qm->io_base + QM_CACHE_WB_START);
+		if (readl_relaxed_poll_timeout(qm->io_base + QM_CACHE_WB_DONE,
+					       val, val & BIT(0), 10, 1000))
+			dev_err(&qm->pdev->dev, "QM writeback cache fail!\n");
+	}
+}
+
 /**
  * hisi_qm_mem_uninit() - Uninit qm related memory.
  * @qm: The qm which we uninit memory for.
@@ -1422,6 +1437,7 @@ void hisi_qm_mem_uninit(struct hisi_qm *qm)
 {
 	struct device *dev = &qm->pdev->dev;
 
+	hisi_qm_cache_wb(qm);
 	qm_uninit_q_buffer(dev, &qm->cqc);
 	qm_uninit_q_buffer(dev, &qm->sqc);
 	kfree(qm->qp_array);
