@@ -96,7 +96,7 @@ static struct platform_device spe_dev = {
 static int arm_spe_acpi_parse_irqs(void)
 {
 	int cpu, ret, irq;
-	u32 flags, gsi;
+	u32 gsi = 0;
 	bool first = true;
 
 	struct acpi_madt_generic_interrupt *gicc;
