@@ -1866,7 +1866,7 @@ static int hisi_sas_query_task(struct sas_task *task)
 static int
 hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba, int device_id,
 				  struct sas_task *task, int abort_flag,
-				  int task_tag)
+				  int task_tag, struct hisi_sas_dq *dq)
 {
 	struct domain_device *device = task->dev;
 	struct hisi_sas_device *sas_dev = device->lldd_dev;
@@ -1875,7 +1875,6 @@ hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba, int device_id,
 	struct hisi_sas_slot *slot;
 	struct asd_sas_port *sas_port = device->port;
 	struct hisi_sas_cmd_hdr *cmd_hdr_base;
-	struct hisi_sas_dq *dq = sas_dev->dq;
 	int dlvry_queue_slot, dlvry_queue, n_elem = 0, rc, slot_idx;
 	unsigned long flags, flags_dq = 0;
 	int wr_q_index;
@@ -1947,18 +1946,19 @@ err_out:
 }
 
 /**
- * hisi_sas_internal_task_abort -- execute an internal
+ * _hisi_sas_internal_task_abort -- execute an internal
  * abort command for single IO command or a device
  * @hisi_hba: host controller struct
  * @device: domain device
  * @abort_flag: mode of operation, device or single IO
  * @tag: tag of IO to be aborted (only relevant to single
  *       IO mode)
+ * @dq: delivery queue for this internal abort command
  */
 static int
-hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
-			     struct domain_device *device,
-			     int abort_flag, int tag)
+_hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
+			      struct domain_device *device,
+			      int abort_flag, int tag, struct hisi_sas_dq *dq)
 {
 	struct sas_task *task;
 	struct hisi_sas_device *sas_dev = device->lldd_dev;
@@ -1986,7 +1986,7 @@ hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
 	add_timer(&task->slow_task->timer);
 
 	res = hisi_sas_internal_abort_task_exec(hisi_hba, sas_dev->device_id,
-						task, abort_flag, tag);
+						task, abort_flag, tag, dq);
 	if (res) {
 		del_timer(&task->slow_task->timer);
 		dev_err(dev, "internal task abort: executing internal task failed: %d\n",
@@ -2041,6 +2041,40 @@ exit:
 	sas_free_task(task);
 
 	return res;
+}
+
+static int
+hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
+			     struct domain_device *device,
+			     int abort_flag, int tag)
+{
+	struct hisi_sas_slot *slot;
+	struct device *dev = hisi_hba->dev;
+	struct hisi_sas_dq *dq;
+	int rc, i;
+
+	switch (abort_flag) {
+	case HISI_SAS_INT_ABT_CMD:
+		slot = &hisi_hba->slot_info[tag];
+		dq = &hisi_hba->dq[slot->dlvry_queue];
+		return _hisi_sas_internal_task_abort(hisi_hba, device,
+						     abort_flag, tag, dq);
+	case HISI_SAS_INT_ABT_DEV:
+		for (i = 0; i < hisi_hba->queue_count; i++) {
+			dq = &hisi_hba->dq[i];
+			rc = _hisi_sas_internal_task_abort(hisi_hba, device,
+							   abort_flag, tag, dq);
+			if (rc)
+				return rc;
+		}
+		break;
+	default:
+		dev_err(dev, "Unrecognised internal abort flag (%d)\n",
+			abort_flag);
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static void hisi_sas_port_formed(struct asd_sas_phy *sas_phy)
