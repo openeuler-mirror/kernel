@@ -507,7 +507,7 @@ extern struct dentry *hisi_sas_dbg_dir;
 extern int skip_bus_flag;
 extern struct scsi_transport_template *hisi_sas_stt;
 extern void hisi_sas_stop_phys(struct hisi_hba *hisi_hba);
-extern int hisi_sas_alloc(struct hisi_hba *hisi_hba, struct Scsi_Host *shost);
+extern int hisi_sas_alloc(struct hisi_hba *hisi_hba);
 extern void hisi_sas_free(struct hisi_hba *hisi_hba);
 extern u8 hisi_sas_get_ata_protocol(struct host_to_dev_fis *fis,
 				int direction);
