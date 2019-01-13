@@ -2138,6 +2138,26 @@ static irqreturn_t cq_interrupt_v3_hw(int irq_no, void *p)
 	return IRQ_HANDLED;
 }
 
+static void setup_reply_map_v3_hw(struct hisi_hba *hisi_hba)
+{
+	const struct cpumask *mask;
+	int queue, cpu;
+
+	for (queue = 0; queue < hisi_hba->queue_count; queue++) {
+		mask = pci_irq_get_affinity(hisi_hba->pci_dev, queue + 16);
+		if (!mask)
+			goto fallback;
+
+		for_each_cpu(cpu, mask)
+			hisi_hba->reply_map[cpu] = queue;
+	}
+	return;
+
+fallback:
+	for_each_possible_cpu(cpu)
+		hisi_hba->reply_map[cpu] = cpu % hisi_hba->queue_count;
+}
+
 static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 {
 	struct device *dev = hisi_hba->dev;
@@ -2156,6 +2176,7 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 		vectors = pci_alloc_irq_vectors_affinity(hisi_hba->pci_dev,
 				    max_msi, max_msi,
 				    PCI_IRQ_MSI | PCI_IRQ_AFFINITY, &desc);
+		setup_reply_map_v3_hw(hisi_hba);
 	}
 
 	if (vectors < max_msi) {
@@ -2774,6 +2795,7 @@ hisi_sas_shost_alloc_pci(struct pci_dev *pdev)
 	hisi_hba->shost = shost;
 	SHOST_TO_SAS_HA(shost) = &hisi_hba->sha;
 	hisi_hba->enable_dix_dif = enable_dix_dif;
+	hisi_hba->user_ctl_irq = user_ctl_irq;
 
 	timer_setup(&hisi_hba->timer, NULL, 0);
 

@@ -185,6 +185,7 @@ struct hisi_sas_device {
 	enum sas_device_type	dev_type;
 	int device_id;
 	int sata_idx;
+	spinlock_t lock;
 };
 
 struct hisi_sas_tmf_task {
@@ -207,6 +208,7 @@ struct hisi_sas_slot {
 	int	cmplt_queue_slot;
 	int	abort;
 	int	ready;
+	int	device_id;
 	void	*cmd_hdr;
 	dma_addr_t cmd_hdr_dma;
 	struct timer_list internal_abort_timer;
@@ -365,6 +367,9 @@ struct hisi_hba {
 
 	struct dentry *debugfs_dir;
 	struct dentry *dump_dentry;
+
+	bool user_ctl_irq;
+	unsigned int reply_map[NR_CPUS];
 };
 
 /* Generic HW DMA host memory structures */
