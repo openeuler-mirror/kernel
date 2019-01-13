@@ -721,6 +721,7 @@ static int hisi_sas_init_device(struct domain_device *device)
 	struct hisi_sas_tmf_task tmf_task;
 	int retry = HISI_SAS_SRST_ATA_DISK_CNT;
 	struct hisi_hba *hisi_hba = dev_to_hisi_hba(device);
+	struct sas_phy *local_phy;
 
 	switch (device->dev_type) {
 	case SAS_END_DEVICE:
@@ -736,6 +737,17 @@ static int hisi_sas_init_device(struct domain_device *device)
 	case SAS_SATA_PM:
 	case SAS_SATA_PM_PORT:
 	case SAS_SATA_PENDING:
+		/*
+		 * send HARD RESET to clear previous affiliation of
+		 * STP target port
+		 */
+		local_phy = sas_get_local_phy(device);
+		if (!scsi_is_sas_phy_local(local_phy)) {
+			sas_phy_reset(local_phy, 1);
+			msleep(2000);
+		}
+		sas_put_local_phy(local_phy);
+
 		while (retry-- > 0) {
 			rc = hisi_sas_softreset_ata_disk(device);
 			if (!rc)
