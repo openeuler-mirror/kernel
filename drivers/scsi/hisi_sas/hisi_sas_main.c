@@ -2560,7 +2560,7 @@ int hisi_sas_probe(struct platform_device *pdev,
 	arr_port = devm_kcalloc(dev, port_nr, sizeof(void *), GFP_KERNEL);
 	if (!arr_phy || !arr_port) {
 		rc = -ENOMEM;
-		goto err_out_ha;
+		goto err_out;
 	}
 
 	sha->sas_phy = arr_phy;
@@ -2596,7 +2596,7 @@ int hisi_sas_probe(struct platform_device *pdev,
 
 	rc = scsi_add_host(shost, &pdev->dev);
 	if (rc)
-		goto err_out_ha;
+		goto err_out;
 
 	rc = sas_register_ha(sha);
 	if (rc)
@@ -2612,7 +2612,7 @@ int hisi_sas_probe(struct platform_device *pdev,
 
 err_out_register_ha:
 	scsi_remove_host(shost);
-err_out_ha:
+err_out:
 	hisi_sas_free(hisi_hba);
 	scsi_host_put(shost);
 	return rc;
