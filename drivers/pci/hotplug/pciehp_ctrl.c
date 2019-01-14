@@ -227,6 +227,7 @@ void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 {
 	struct controller *ctrl = slot->ctrl;
 	bool present, link_active;
+	bool removal = SAFE_REMOVAL;
 
 	/*
 	 * If the slot is on and presence or link has changed, turn it off.
@@ -247,6 +248,7 @@ void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 			ctrl_info(ctrl, "Slot(%s): Card not present\n",
 				  slot_name(slot));
 		pciehp_disable_slot(slot, SURPRISE_REMOVAL);
+		removal = SURPRISE_REMOVAL;
 		break;
 	default:
 		mutex_unlock(&slot->lock);
@@ -255,6 +257,15 @@ void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 
 	/* Turn the slot on if it's occupied or link is up */
 	mutex_lock(&slot->lock);
+	/*
+	 * if surprise removal and power controller present is not implemented,
+	 * wait for at least 1 second before checking card present as
+	 * data link layer state changed (link down) event reported
+	 * prior to presence detect changed (card is not present).
+	 */
+	if (!removal && !POWER_CTRL(ctrl))
+		msleep(1000);
+
 	present = pciehp_card_present(ctrl);
 	link_active = pciehp_check_link_active(ctrl);
 	if (!present && !link_active) {
