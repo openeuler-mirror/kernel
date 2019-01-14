@@ -209,7 +209,6 @@ void panic(const char *fmt, ...)
 		 * kmsg_dump, we will need architecture dependent extra
 		 * works in addition to stopping other CPUs.
 		 */
-		kexec_device_shutdown();
 		crash_smp_send_stop();
 	}
 
