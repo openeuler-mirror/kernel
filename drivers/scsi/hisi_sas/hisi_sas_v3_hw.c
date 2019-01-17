@@ -1416,13 +1416,6 @@ static irqreturn_t phy_up_v3_hw(int phy_no, struct hisi_hba *hisi_hba)
 		res = IRQ_NONE;
 		goto end;
 	}
-	if (sas_phy->phy->minimum_linkrate > link_rate) {
-		dev_err(dev, "phydown: phy%d's min linkrete outof bound\n",
-			phy_no);
-		disable_phy_v3_hw(hisi_hba, phy_no);
-		res = IRQ_NONE;
-		goto end;
-	}
 
 	sas_phy->linkrate = link_rate;
 	phy->phy_type &= ~(PORT_TYPE_SAS | PORT_TYPE_SATA);
