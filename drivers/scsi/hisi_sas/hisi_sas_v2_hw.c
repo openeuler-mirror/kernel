@@ -2752,6 +2752,7 @@ static int phy_down_v2_hw(int phy_no, struct hisi_hba *hisi_hba)
 	struct hisi_sas_port *port = phy->port;
 	struct device *dev = hisi_hba->dev;
 
+	del_timer(&phy->timer);
 	hisi_sas_phy_write32(hisi_hba, phy_no, PHYCTRL_NOT_RDY_MSK, 1);
 
 	phy_state = hisi_sas_read32(hisi_hba, PHY_STATE);
@@ -2880,6 +2881,31 @@ static const struct hisi_sas_hw_error port_ecc_axi_error[] = {
 	},
 };
 
+#define WAIT_PHYUP_TIMEOUT_V2_HW 20
+static void wait_phyup_timedout_v2_hw(struct timer_list *t)
+{
+	struct hisi_sas_phy *phy = from_timer(phy, t, timer);
+	struct hisi_hba *hisi_hba = phy->hisi_hba;
+	struct device *dev = hisi_hba->dev;
+	int phy_no = phy->sas_phy.id;
+
+	dev_warn(dev, "phy%d wait phyup timeout, issuing link reset\n", phy_no);
+	hisi_sas_notify_phy_event(phy, HISI_PHYE_LINK_RESET);
+}
+
+static void phy_oob_ready_v2_hw(struct hisi_hba *hisi_hba, int phy_no)
+{
+	struct hisi_sas_phy *phy = &hisi_hba->phy[phy_no];
+	struct device *dev = hisi_hba->dev;
+
+	if (!timer_pending(&phy->timer)) {
+		dev_dbg(dev, "phy%d OOB ready\n", phy_no);
+		phy->timer.function = wait_phyup_timedout_v2_hw;
+		phy->timer.expires = jiffies + WAIT_PHYUP_TIMEOUT_V2_HW * HZ;
+		add_timer(&phy->timer);
+	}
+}
+
 static irqreturn_t int_chnl_int_v2_hw(int irq_no, void *p)
 {
 	struct hisi_hba *hisi_hba = p;
@@ -2939,6 +2965,9 @@ static irqreturn_t int_chnl_int_v2_hw(int irq_no, void *p)
 		if ((irq_msk & (1 << phy_no)) && irq_value0) {
 			if (irq_value0 & CHL_INT0_SL_RX_BCST_ACK_MSK)
 				phy_bcast_v2_hw(phy_no, hisi_hba);
+
+			if (irq_value0 & CHL_INT0_PHY_RDY_MSK)
+				phy_oob_ready_v2_hw(hisi_hba, phy_no);
 
 			hisi_sas_phy_write32(hisi_hba, phy_no,
 					CHL_INT0, irq_value0
@@ -3216,6 +3245,8 @@ static irqreturn_t sata_int_v2_hw(int irq_no, void *p)
 	u8 attached_sas_addr[SAS_ADDR_SIZE] = {0};
 	unsigned long flags;
 	int phy_no, offset;
+
+	del_timer(&phy->timer);
 
 	phy_no = sas_phy->id;
 	initial_fis = &hisi_hba->initial_fis[phy_no];
