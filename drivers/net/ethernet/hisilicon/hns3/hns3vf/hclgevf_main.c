@@ -209,6 +209,27 @@ static int hclgevf_get_tc_info(struct hclgevf_dev *hdev)
 	return 0;
 }
 
+static int hclgevf_get_port_base_vlan_filter_state(struct hclgevf_dev *hdev)
+{
+	struct hnae3_handle *nic = &hdev->nic;
+	u8 resp_msg;
+	int ret;
+
+	ret = hclgevf_send_mbx_msg(hdev, HCLGE_MBX_SET_VLAN,
+				   HCLGE_MBX_GET_PORT_BASE_VLAN_STATE,
+				   NULL, 0, true, &resp_msg, sizeof(u8));
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"VF request to get port base vlan state failed %d",
+			ret);
+		return ret;
+	}
+
+	nic->port_base_vlan_state = resp_msg;
+
+	return 0;
+}
+
 static int hclgevf_get_queue_info(struct hclgevf_dev *hdev)
 {
 #define HCLGEVF_TQPS_RSS_INFO_LEN	6
@@ -366,6 +387,21 @@ void hclgevf_update_link_status(struct hclgevf_dev *hdev, int link_state)
 			rclient->ops->link_status_change(rhandle, !!link_state);
 		hdev->hw.mac.link = link_state;
 	}
+}
+
+void hclgevf_update_link_mode(struct hclgevf_dev *hdev)
+{
+#define HCLGEVF_ADVERTISING 0
+#define HCLGEVF_SUPPORTED   1
+	u8 send_msg;
+	u8 resp_msg;
+
+	send_msg = HCLGEVF_ADVERTISING;
+	hclgevf_send_mbx_msg(hdev, HCLGE_MBX_GET_LINK_MODE, 0, &send_msg,
+			     sizeof(u8), false, &resp_msg, sizeof(u8));
+	send_msg = HCLGEVF_SUPPORTED;
+	hclgevf_send_mbx_msg(hdev, HCLGE_MBX_GET_LINK_MODE, 0, &send_msg,
+			     sizeof(u8), false, &resp_msg, sizeof(u8));
 }
 
 static int hclgevf_set_handle_info(struct hclgevf_dev *hdev)
@@ -569,12 +605,50 @@ static int hclgevf_set_rss_tc_mode(struct hclgevf_dev *hdev,  u16 rss_size)
 	return status;
 }
 
+/* for revision 0x20, vf shared the same rss config with pf */
+static int hclgevf_get_rss_hash_key(struct hclgevf_dev *hdev)
+{
+#define HCLGEVF_RSS_MBX_RESP_LEN	8
+
+	struct hclgevf_rss_cfg *rss_cfg = &hdev->rss_cfg;
+	u8 resp_msg[HCLGEVF_RSS_MBX_RESP_LEN];
+	u16 msg_num, hash_key_index;
+	u8 index;
+	int ret;
+
+	msg_num = (HCLGEVF_RSS_KEY_SIZE + HCLGEVF_RSS_MBX_RESP_LEN - 1) /
+			HCLGEVF_RSS_MBX_RESP_LEN;
+	for (index = 0; index < msg_num; index++) {
+		ret = hclgevf_send_mbx_msg(hdev, HCLGE_MBX_GET_RSS_KEY, 0,
+					   &index, sizeof(index),
+					   true, resp_msg,
+					   HCLGEVF_RSS_MBX_RESP_LEN);
+		if (ret) {
+			dev_err(&hdev->pdev->dev,
+				"VF get rss hash key from PF failed, ret=%d",
+				ret);
+			return ret;
+		}
+
+		hash_key_index = HCLGEVF_RSS_MBX_RESP_LEN * index;
+		if (index == msg_num - 1)
+			memcpy(&rss_cfg->rss_hash_key[hash_key_index],
+			       &resp_msg[0],
+			       HCLGEVF_RSS_KEY_SIZE - hash_key_index);
+		else
+			memcpy(&rss_cfg->rss_hash_key[hash_key_index],
+			       &resp_msg[0], HCLGEVF_RSS_MBX_RESP_LEN);
+	}
+
+	return 0;
+}
+
 static int hclgevf_get_rss(struct hnae3_handle *handle, u32 *indir, u8 *key,
 			   u8 *hfunc)
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
 	struct hclgevf_rss_cfg *rss_cfg = &hdev->rss_cfg;
-	int i;
+	int i, ret;
 
 	if (handle->pdev->revision >= HNAE3_REVISION_ID_21) {
 		/* Get hash algorithm */
@@ -596,6 +670,16 @@ static int hclgevf_get_rss(struct hnae3_handle *handle, u32 *indir, u8 *key,
 		if (key)
 			memcpy(key, rss_cfg->rss_hash_key,
 			       HCLGEVF_RSS_KEY_SIZE);
+	} else {
+		if (hfunc)
+			*hfunc = ETH_RSS_HASH_TOP;
+		if (key) {
+			ret = hclgevf_get_rss_hash_key(hdev);
+			if (ret)
+				return ret;
+			memcpy(key, rss_cfg->rss_hash_key,
+			       HCLGEVF_RSS_KEY_SIZE);
+		}
 	}
 
 	if (indir)
@@ -1650,6 +1734,8 @@ static void hclgevf_service_task(struct work_struct *work)
 	 */
 	hclgevf_request_link_info(hdev);
 
+	hclgevf_update_link_mode(hdev);
+
 	hclgevf_deferred_task_schedule(hdev);
 
 	clear_bit(HCLGEVF_STATE_SERVICE_SCHED, &hdev->state);
@@ -1730,7 +1816,10 @@ static int hclgevf_configure(struct hclgevf_dev *hdev)
 {
 	int ret;
 
-	hdev->hw.mac.media_type = HNAE3_MEDIA_TYPE_NONE;
+	/* get current port base vlan state from PF */
+	ret = hclgevf_get_port_base_vlan_filter_state(hdev);
+	if (ret)
+		return ret;
 
 	/* get queue configuration from PF */
 	ret = hclgevf_get_queue_info(hdev);
@@ -1884,6 +1973,8 @@ static int hclgevf_ae_start(struct hnae3_handle *handle)
 	hclgevf_reset_tqp_stats(handle);
 
 	hclgevf_request_link_info(hdev);
+
+	hclgevf_update_link_mode(hdev);
 
 	clear_bit(HCLGEVF_STATE_DOWN, &hdev->state);
 
@@ -2067,9 +2158,10 @@ static void hclgevf_misc_irq_uninit(struct hclgevf_dev *hdev)
 	hclgevf_free_vector(hdev, 0);
 }
 
-static int hclgevf_init_nic_client_instance(struct hnae3_client *client,
-					    struct hclgevf_dev *hdev)
+static int hclgevf_init_nic_client_instance(struct hnae3_ae_dev *ae_dev,
+					    struct hnae3_client *client)
 {
+	struct hclgevf_dev *hdev = ae_dev->priv;
 	int rst_cnt = hdev->reset_count;
 	int ret = 0;
 
@@ -2083,10 +2175,35 @@ static int hclgevf_init_nic_client_instance(struct hnae3_client *client,
 		clear_bit(HCLGEVF_STATE_NIC_REGISTERED, &hdev->state);
 
 		client->ops->uninit_instance(&hdev->nic, 0);
-		ret = -EBUSY;
+		return -EBUSY;
 	}
 
-	return ret;
+	hnae3_set_client_init_flag(client, ae_dev, 1);
+
+	return 0;
+}
+
+static int hclgevf_init_roce_client_instance(struct hnae3_ae_dev *ae_dev,
+					     struct hnae3_client *client)
+{
+	struct hclgevf_dev *hdev = ae_dev->priv;
+	int ret;
+
+	if (!hnae3_dev_roce_supported(hdev) || !hdev->roce_client ||
+	    !hdev->nic_client)
+		return 0;
+
+	ret = hclgevf_init_roce_base_info(hdev);
+	if (ret)
+		return ret;
+
+	ret = client->ops->init_instance(&hdev->roce);
+	if (ret)
+		return ret;
+
+	hnae3_set_client_init_flag(client, ae_dev, 1);
+
+	return 0;
 }
 
 static int hclgevf_init_client_instance(struct hnae3_client *client,
@@ -2100,25 +2217,15 @@ static int hclgevf_init_client_instance(struct hnae3_client *client,
 		hdev->nic_client = client;
 		hdev->nic.client = client;
 
-		ret = hclgevf_init_nic_client_instance(client, hdev);
+		ret = hclgevf_init_nic_client_instance(ae_dev, client);
 		if (ret)
 			goto clear_nic;
 
-		hnae3_set_client_init_flag(client, ae_dev, 1);
+		ret = hclgevf_init_roce_client_instance(ae_dev,
+							hdev->roce_client);
+		if (ret)
+			goto clear_roce;
 
-		if (hdev->roce_client && hnae3_dev_roce_supported(hdev)) {
-			struct hnae3_client *rc = hdev->roce_client;
-
-			ret = hclgevf_init_roce_base_info(hdev);
-			if (ret)
-				goto clear_roce;
-			ret = rc->ops->init_instance(&hdev->roce);
-			if (ret)
-				goto clear_roce;
-
-			hnae3_set_client_init_flag(hdev->roce_client, ae_dev,
-						   1);
-		}
 		break;
 	case HNAE3_CLIENT_UNIC:
 		hdev->nic_client = client;
@@ -2136,17 +2243,10 @@ static int hclgevf_init_client_instance(struct hnae3_client *client,
 			hdev->roce.client = client;
 		}
 
-		if (hdev->roce_client && hdev->nic_client) {
-			ret = hclgevf_init_roce_base_info(hdev);
-			if (ret)
-				goto clear_roce;
+		ret = hclgevf_init_roce_client_instance(ae_dev, client);
+		if (ret)
+			goto clear_roce;
 
-			ret = client->ops->init_instance(&hdev->roce);
-			if (ret)
-				goto clear_roce;
-		}
-
-		hnae3_set_client_init_flag(client, ae_dev, 1);
 		break;
 	default:
 		return -EINVAL;
@@ -2589,7 +2689,7 @@ void hclgevf_update_speed_duplex(struct hclgevf_dev *hdev, u32 speed,
 	hdev->hw.mac.duplex = duplex;
 }
 
-static int hclgevf_gro_en(struct hnae3_handle *handle, int enable)
+static int hclgevf_gro_en(struct hnae3_handle *handle, bool enable)
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
 
@@ -2603,6 +2703,16 @@ static void hclgevf_get_media_type(struct hnae3_handle *handle,
 
 	if (media_type)
 	        *media_type = hdev->hw.mac.media_type;
+}
+
+static void hclgevf_get_link_mode(struct hnae3_handle *handle,
+				  unsigned long *supported,
+				  unsigned long *advertising)
+{
+	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
+
+	*supported = hdev->hw.mac.supported;
+	*advertising = hdev->hw.mac.advertising;
 }
 
 static bool hclgevf_get_hw_reset_stat(struct hnae3_handle *handle)
@@ -2691,6 +2801,31 @@ static void hclgevf_get_regs(struct hnae3_handle *handle, u32 *version,
 	}
 }
 
+void hclgevf_update_port_base_vlan_info(struct hclgevf_dev *hdev, u16 state,
+					u8 *port_base_vlan_info, u8 data_size)
+{
+	struct hnae3_handle *nic = &hdev->nic;
+
+	rtnl_lock();
+	hclgevf_notify_client(hdev, HNAE3_DOWN_CLIENT);
+	rtnl_unlock();
+
+	// send msg to pf and wait update port base vlan info
+	hclgevf_send_mbx_msg(hdev, HCLGE_MBX_SET_VLAN,
+			     HCLGE_MBX_PORT_BASE_VLAN_CFG,
+			     port_base_vlan_info, data_size,
+			     false, NULL, 0);
+
+	if (state == HNAE3_PORT_BASE_VLAN_DISABLE)
+		nic->port_base_vlan_state = HNAE3_PORT_BASE_VLAN_DISABLE;
+	else
+		nic->port_base_vlan_state = HNAE3_PORT_BASE_VLAN_ENABLE;
+
+	rtnl_lock();
+	hclgevf_notify_client(hdev, HNAE3_UP_CLIENT);
+	rtnl_unlock();
+}
+
 static const struct hnae3_ae_ops hclgevf_ops = {
 	.init_ae_dev = hclgevf_init_ae_dev,
 	.uninit_ae_dev = hclgevf_uninit_ae_dev,
@@ -2743,6 +2878,7 @@ static const struct hnae3_ae_ops hclgevf_ops = {
 	.ae_dev_reset_cnt = hclgevf_ae_dev_reset_cnt,
 	.set_mtu = hclgevf_set_mtu,
 	.get_global_queue_id = hclgevf_get_qid_global,
+	.get_link_mode = hclgevf_get_link_mode,
 };
 
 static struct hnae3_ae_algo ae_algovf = {

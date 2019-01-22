@@ -482,7 +482,7 @@ static struct hclge_dbg_dfx_message hclge_dbg_rtc_reg[] = {
 
 	{true,	"CGE_IGU_AFIFO_DFX_1"},
 	{true,	"CGE_EGU_AFIFO_DFX_0"},
-	{true,	"CGE_IGU_AFIFO_DFX_1"},
+	{true,	"CGE_EGU_AFIFO_DFX_1"},
 	{false, "Reserved"},
 	{false, "Reserved"},
 	{false, "Reserved"},

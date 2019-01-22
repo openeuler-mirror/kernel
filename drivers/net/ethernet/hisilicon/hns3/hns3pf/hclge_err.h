@@ -79,6 +79,7 @@
 #define HCLGE_PPP_MPF_INT_ST3_MASK	GENMASK(5, 0)
 #define HCLGE_PPU_MPF_INT_ST3_MASK	GENMASK(7, 0)
 #define HCLGE_PPU_MPF_INT_ST2_MSIX_MASK	GENMASK(29, 28)
+#define HCLGE_PPU_PF_INT_RAS_MASK	0x18
 #define HCLGE_PPU_PF_INT_MSIX_MASK	0x27
 #define HCLGE_QCN_FIFO_INT_MASK		GENMASK(17, 0)
 #define HCLGE_QCN_ECC_INT_MASK		GENMASK(21, 0)
@@ -113,7 +114,50 @@ struct hclge_hw_error {
 	const char *msg;
 };
 
+struct hclge_bd_num {
+	u32 mpf_bd_num;
+	u32 pf_bd_num;
+	u32 max_bd_num;
+};
+
+extern const struct hclge_hw_error hclge_imp_tcm_ecc_int[];
+extern const struct hclge_hw_error hclge_cmdq_nic_mem_ecc_int[];
+extern const struct hclge_hw_error hclge_tqp_int_ecc_int[];
+extern const struct hclge_hw_error hclge_msix_sram_ecc_int[];
+extern const struct hclge_hw_error hclge_igu_int[];
+extern const struct hclge_hw_error hclge_igu_egu_tnl_int[];
+extern const struct hclge_hw_error hclge_ncsi_err_int[];
+extern const struct hclge_hw_error hclge_ppp_mpf_abnormal_int_st1[];
+extern const struct hclge_hw_error hclge_ppp_pf_abnormal_int[];
+extern const struct hclge_hw_error hclge_ppp_mpf_abnormal_int_st3[];
+extern const struct hclge_hw_error hclge_tm_sch_rint[];
+extern const struct hclge_hw_error hclge_qcn_fifo_rint[];
+extern const struct hclge_hw_error hclge_qcn_ecc_rint[];
+extern const struct hclge_hw_error hclge_mac_afifo_tnl_int[];
+extern const struct hclge_hw_error hclge_ppu_mpf_abnormal_int_st2[];
+extern const struct hclge_hw_error hclge_ppu_mpf_abnormal_int_st3[];
+extern const struct hclge_hw_error hclge_ppu_pf_abnormal_int[];
+extern const struct hclge_hw_error hclge_ssu_com_err_int[];
+extern const struct hclge_hw_error hclge_ssu_mem_ecc_err_int[];
+extern const struct hclge_hw_error hclge_ssu_port_based_err_int[];
+extern const struct hclge_hw_error hclge_ssu_fifo_overflow_int[];
+extern const struct hclge_hw_error hclge_ssu_ets_tcg_int[];
+extern const struct hclge_hw_error hclge_ssu_port_based_pf_int[];
+extern const struct hclge_hw_error hclge_rocee_qmm_ovf_err_int[];
+
 int hclge_hw_error_set_state(struct hclge_dev *hdev, bool state);
+int hclge_clear_all_ras_errors(struct hclge_dev *hdev);
 pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev);
 void hclge_handle_hw_msix_error(struct hclge_dev *hdev);
+int hclge_handle_rocee_ras_error(struct hnae3_ae_dev *ae_dev);
+void hclge_log_error(struct device *dev, char *reg,
+		     const struct hclge_hw_error *err,
+		     u32 err_sts);
+int hclge_query_error(struct hclge_dev *hdev, struct hclge_desc *desc,
+		      enum hclge_opcode_type opcode, int num);
+int hclge_clear_error(struct hclge_dev *hdev, struct hclge_desc *desc, int num);
+struct hclge_desc *hclge_query_bd_num(struct hclge_dev *hdev,
+				      struct hclge_bd_num *bd_num,
+				      enum hclge_opcode_type opcode);
+
 #endif

@@ -93,6 +93,8 @@ struct hclgevf_mac {
 	int link;
 	u8 duplex;
 	u32 speed;
+	u64 supported;
+	u64 advertising;
 };
 
 struct hclgevf_hw {
@@ -236,4 +238,7 @@ void hclgevf_update_speed_duplex(struct hclgevf_dev *hdev, u32 speed,
 				 u8 duplex);
 void hclgevf_reset_task_schedule(struct hclgevf_dev *hdev);
 void hclgevf_mbx_task_schedule(struct hclgevf_dev *hdev);
+void hclgevf_update_port_base_vlan_info(struct hclgevf_dev *hdev, u16 state,
+					u8 *port_base_vlan_info, u8 data_size);
+
 #endif

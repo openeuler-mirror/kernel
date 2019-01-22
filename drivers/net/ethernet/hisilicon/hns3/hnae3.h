@@ -146,6 +146,13 @@ enum hnae3_flr_state {
 	HNAE3_FLR_DONE,
 };
 
+enum hnae3_port_base_vlan_state {
+	HNAE3_PORT_BASE_VLAN_DISABLE,
+	HNAE3_PORT_BASE_VLAN_ENABLE,
+	HNAE3_PORT_BASE_VLAN_MODIFY,
+	HNAE3_PORT_BASE_VLAN_NOCHANGE,
+};
+
 struct hnae3_vector_info {
 	u8 __iomem *io_addr;
 	int vector;
@@ -459,7 +466,7 @@ struct hnae3_ae_ops {
 	bool (*get_hw_reset_stat)(struct hnae3_handle *handle);
 	bool (*ae_dev_resetting)(struct hnae3_handle *handle);
 	unsigned long (*ae_dev_reset_cnt)(struct hnae3_handle *handle);
-	int (*set_gro_en)(struct hnae3_handle *handle, int enable);
+	int (*set_gro_en)(struct hnae3_handle *handle, bool enable);
 	void (*enable_timer_task)(struct hnae3_handle *handle, bool enable);
 	int (*dbg_run_cmd)(struct hnae3_handle *handle, char *cmd_buf);
 	pci_ers_result_t (*handle_hw_ras_error)(struct hnae3_ae_dev *ae_dev);
@@ -581,6 +588,8 @@ struct hnae3_handle {
 	};
 
 	u32 numa_node_mask;	/* for multi-chip support */
+
+	enum hnae3_port_base_vlan_state port_base_vlan_state;
 
 	u8 netdev_flags;
 

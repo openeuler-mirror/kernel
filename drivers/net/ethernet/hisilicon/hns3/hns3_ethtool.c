@@ -470,7 +470,14 @@ static void hns3_get_stats(struct net_device *netdev,
 			   struct ethtool_stats *stats, u64 *data)
 {
 	struct hnae3_handle *h = hns3_get_handle(netdev);
+	struct hns3_nic_priv *priv = h->priv;
 	u64 *p = data;
+
+	if (!test_bit(HNS3_NIC_STATE_INITED, &priv->state) ||
+	    hns3_nic_resetting(netdev)) {
+		netdev_err(netdev, "dev resetting!");
+		return;
+	}
 
 	if (!h->ae_algo->ops->get_stats || !h->ae_algo->ops->update_stats) {
 		netdev_err(netdev, "could not get any statistics\n");
@@ -1077,7 +1084,7 @@ static void hns3_get_regs(struct net_device *netdev,
 {
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 
-	if (!h->ae_algo->ops->get_regs)
+	if (!h->ae_algo->ops->get_regs || !data)
 		return;
 
 	h->ae_algo->ops->get_regs(h, &cmd->version, data);
@@ -1096,11 +1103,13 @@ static int hns3_set_phys_id(struct net_device *netdev,
 
 struct ethtool_ops hns3vf_ethtool_ops = {
 	.get_drvinfo = hns3_get_drvinfo,
+	.get_link = hns3_get_link,
 	.get_ringparam = hns3_get_ringparam,
 	.set_ringparam = hns3_set_ringparam,
 	.get_strings = hns3_get_strings,
 	.get_ethtool_stats = hns3_get_stats,
 	.get_sset_count = hns3_get_sset_count,
+	.get_channels = hns3_get_channels,
 	.get_rxnfc = hns3_get_rxnfc,
 	.set_rxnfc = hns3_set_rxnfc,
 	.get_rxfh_key_size = hns3_get_rss_key_size,
@@ -1108,10 +1117,8 @@ struct ethtool_ops hns3vf_ethtool_ops = {
 	.get_rxfh = hns3_get_rss,
 	.set_rxfh = hns3_set_rss,
 	.get_link_ksettings = hns3_get_link_ksettings,
-	.get_channels = hns3_get_channels,
 	.get_coalesce = hns3_get_coalesce,
 	.set_coalesce = hns3_set_coalesce,
-	.get_link = hns3_get_link,
 	.get_regs_len = hns3_get_regs_len,
 	.get_regs = hns3_get_regs,
 };
@@ -1127,6 +1134,8 @@ struct ethtool_ops hns3_ethtool_ops = {
 	.get_strings = hns3_get_strings,
 	.get_ethtool_stats = hns3_get_stats,
 	.get_sset_count = hns3_get_sset_count,
+	.get_channels = hns3_get_channels,
+	.set_channels = hns3_set_channels,
 	.get_rxnfc = hns3_get_rxnfc,
 	.set_rxnfc = hns3_set_rxnfc,
 	.get_rxfh_key_size = hns3_get_rss_key_size,
@@ -1136,8 +1145,6 @@ struct ethtool_ops hns3_ethtool_ops = {
 	.get_link_ksettings = hns3_get_link_ksettings,
 	.set_link_ksettings = hns3_set_link_ksettings,
 	.nway_reset = hns3_nway_reset,
-	.get_channels = hns3_get_channels,
-	.set_channels = hns3_set_channels,
 	.get_coalesce = hns3_get_coalesce,
 	.set_coalesce = hns3_set_coalesce,
 	.get_regs_len = hns3_get_regs_len,

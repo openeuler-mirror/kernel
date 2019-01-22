@@ -22,6 +22,8 @@
 #include "hnae3.h"
 #include "hns3_enet.h"
 
+#define hns3_set_field(origin, shift, val)	((origin) |= ((val) << (shift)))
+
 static void hns3_clear_all_ring(struct hnae3_handle *h);
 static void hns3_force_clear_all_rx_ring(struct hnae3_handle *h);
 static void hns3_remove_hw_addr(struct net_device *netdev);
@@ -376,6 +378,29 @@ out_start_err:
 	return ret;
 }
 
+static void hns3_config_xps(struct hns3_nic_priv *priv)
+{
+	int i;
+
+	for (i = 0; i < priv->vector_num; i++) {
+		struct hns3_enet_tqp_vector *tqp_vector = &priv->tqp_vector[i];
+		struct hns3_enet_ring *ring = tqp_vector->tx_group.ring;
+
+		while (ring) {
+			int ret;
+
+			ret = netif_set_xps_queue(priv->netdev,
+						  &tqp_vector->affinity_mask,
+						  ring->tqp->tqp_index);
+			if (ret)
+				netdev_warn(priv->netdev,
+					    "set xps queue failed: %d", ret);
+
+			ring = ring->next;
+		}
+	}
+}
+
 static int hns3_nic_net_open(struct net_device *netdev)
 {
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
@@ -411,6 +436,7 @@ static int hns3_nic_net_open(struct net_device *netdev)
 	if (h->ae_algo->ops->enable_timer_task)
 		h->ae_algo->ops->enable_timer_task(priv->ae_handle, true);
 
+	hns3_config_xps(priv);
 	return 0;
 }
 
@@ -597,7 +623,7 @@ static int hns3_set_tso(struct sk_buff *skb, u32 *paylen,
 		return 0;
 
 	ret = skb_cow_head(skb, 0);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	l3.hdr = skb_network_header(skb);
@@ -641,7 +667,7 @@ static int hns3_set_tso(struct sk_buff *skb, u32 *paylen,
 
 	/* normal or tunnel packet*/
 	l4_offset = l4.hdr - skb->data;
-	hdr_len = (l4.tcp->doff * 4) + l4_offset;
+	hdr_len = (l4.tcp->doff << 2) + l4_offset;
 
 	/* remove payload length from inner pseudo checksum when tso*/
 	l4_paylen = skb->len - l4_offset;
@@ -650,8 +676,7 @@ static int hns3_set_tso(struct sk_buff *skb, u32 *paylen,
 
 	/* find the txbd field values */
 	*paylen = skb->len - hdr_len;
-	hnae3_set_bit(*type_cs_vlan_tso,
-		      HNS3_TXD_TSO_B, 1);
+	hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_TSO_B, 1);
 
 	/* get MSS for TSO */
 	*mss = skb_shinfo(skb)->gso_size;
@@ -730,21 +755,19 @@ static void hns3_set_l2l3l4_len(struct sk_buff *skb, u8 ol4_proto,
 
 	/* compute L2 header size for normal packet, defined in 2 Bytes */
 	l2_len = l3.hdr - skb->data;
-	hnae3_set_field(*type_cs_vlan_tso, HNS3_TXD_L2LEN_M,
-			HNS3_TXD_L2LEN_S, l2_len >> 1);
+	hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L2LEN_S, l2_len >> 1);
 
 	/* tunnel packet*/
 	if (skb->encapsulation) {
 		/* compute OL2 header size, defined in 2 Bytes */
 		ol2_len = l2_len;
-		hnae3_set_field(*ol_type_vlan_len_msec,
-				HNS3_TXD_L2LEN_M,
-				HNS3_TXD_L2LEN_S, ol2_len >> 1);
+		hns3_set_field(*ol_type_vlan_len_msec,
+			       HNS3_TXD_L2LEN_S, ol2_len >> 1);
 
 		/* compute OL3 header size, defined in 4 Bytes */
 		ol3_len = l4.hdr - l3.hdr;
-		hnae3_set_field(*ol_type_vlan_len_msec, HNS3_TXD_L3LEN_M,
-				HNS3_TXD_L3LEN_S, ol3_len >> 2);
+		hns3_set_field(*ol_type_vlan_len_msec, HNS3_TXD_L3LEN_S,
+			       ol3_len >> 2);
 
 		/* MAC in UDP, MAC in GRE (0x6558)*/
 		if ((ol4_proto == IPPROTO_UDP) || (ol4_proto == IPPROTO_GRE)) {
@@ -753,17 +776,16 @@ static void hns3_set_l2l3l4_len(struct sk_buff *skb, u8 ol4_proto,
 
 			/* compute OL4 header size, defined in 4 Bytes. */
 			ol4_len = l2_hdr - l4.hdr;
-			hnae3_set_field(*ol_type_vlan_len_msec,
-					HNS3_TXD_L4LEN_M, HNS3_TXD_L4LEN_S,
-					ol4_len >> 2);
+			hns3_set_field(*ol_type_vlan_len_msec,
+				       HNS3_TXD_L4LEN_S, ol4_len >> 2);
 
 			/* switch IP header ptr from outer to inner header */
 			l3.hdr = skb_inner_network_header(skb);
 
 			/* compute inner l2 header size, defined in 2 Bytes. */
 			l2_len = l3.hdr - l2_hdr;
-			hnae3_set_field(*type_cs_vlan_tso, HNS3_TXD_L2LEN_M,
-					HNS3_TXD_L2LEN_S, l2_len >> 1);
+			hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L2LEN_S,
+				       l2_len >> 1);
 		} else {
 			/* skb packet types not supported by hardware,
 			 * txbd len fild doesn't be filled.
@@ -779,24 +801,21 @@ static void hns3_set_l2l3l4_len(struct sk_buff *skb, u8 ol4_proto,
 
 	/* compute inner(/normal) L3 header size, defined in 4 Bytes */
 	l3_len = l4.hdr - l3.hdr;
-	hnae3_set_field(*type_cs_vlan_tso, HNS3_TXD_L3LEN_M,
-			HNS3_TXD_L3LEN_S, l3_len >> 2);
+	hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L3LEN_S, l3_len >> 2);
 
 	/* compute inner(/normal) L4 header size, defined in 4 Bytes */
 	switch (l4_proto) {
 	case IPPROTO_TCP:
-		hnae3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4LEN_M,
-				HNS3_TXD_L4LEN_S, l4.tcp->doff);
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4LEN_S,
+			       l4.tcp->doff);
 		break;
 	case IPPROTO_SCTP:
-		hnae3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4LEN_M,
-				HNS3_TXD_L4LEN_S,
-				(sizeof(struct sctphdr) >> 2));
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4LEN_S,
+			       (sizeof(struct sctphdr) >> 2));
 		break;
 	case IPPROTO_UDP:
-		hnae3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4LEN_M,
-				HNS3_TXD_L4LEN_S,
-				(sizeof(struct udphdr) >> 2));
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4LEN_S,
+			       (sizeof(struct udphdr) >> 2));
 		break;
 	default:
 		/* skb packet types not supported by hardware,
@@ -827,6 +846,44 @@ static bool hns3_tunnel_csum_bug(struct sk_buff *skb)
 	return true;
 }
 
+static int hns3_check_l4_proto(struct sk_buff *skb, u32 l4_proto,
+			       u32 *type_cs_vlan_tso)
+{
+	switch (l4_proto) {
+	case IPPROTO_TCP:
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4CS_B, 1);
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4T_S,
+			       HNS3_L4T_TCP);
+		break;
+	case IPPROTO_UDP:
+		if (hns3_tunnel_csum_bug(skb))
+			break;
+
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4CS_B, 1);
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4T_S,
+			       HNS3_L4T_UDP);
+		break;
+	case IPPROTO_SCTP:
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4CS_B, 1);
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L4T_S,
+			       HNS3_L4T_SCTP);
+		break;
+	default:
+		/* drop the skb tunnel packet if hardware don't support,
+		 * because hardware can't calculate csum when TSO.
+		 */
+		if (skb_is_gso(skb))
+			return -EDOM;
+
+		/* the stack computes the IP header already,
+		 * driver calculate l4 checksum when not TSO.
+		 */
+		skb_checksum_help(skb);
+	}
+
+	return 0;
+}
+
 static int hns3_set_l3l4_type_csum(struct sk_buff *skb, u8 ol4_proto,
 				   u8 il4_proto, u32 *type_cs_vlan_tso,
 				   u32 *ol_type_vlan_len_msec)
@@ -841,34 +898,30 @@ static int hns3_set_l3l4_type_csum(struct sk_buff *skb, u8 ol4_proto,
 		/* define outer network header type.*/
 		if (skb->protocol == htons(ETH_P_IP)) {
 			if (skb_is_gso(skb))
-				hnae3_set_field(*ol_type_vlan_len_msec,
-						HNS3_TXD_OL3T_M,
-						HNS3_TXD_OL3T_S,
-						HNS3_OL3T_IPV4_CSUM);
+				hns3_set_field(*ol_type_vlan_len_msec,
+					       HNS3_TXD_OL3T_S,
+					       HNS3_OL3T_IPV4_CSUM);
 			else
-				hnae3_set_field(*ol_type_vlan_len_msec,
-						HNS3_TXD_OL3T_M,
-						HNS3_TXD_OL3T_S,
-						HNS3_OL3T_IPV4_NO_CSUM);
+				hns3_set_field(*ol_type_vlan_len_msec,
+					       HNS3_TXD_OL3T_S,
+					       HNS3_OL3T_IPV4_NO_CSUM);
 
 		} else if (skb->protocol == htons(ETH_P_IPV6)) {
-			hnae3_set_field(*ol_type_vlan_len_msec, HNS3_TXD_OL3T_M,
-					HNS3_TXD_OL3T_S, HNS3_OL3T_IPV6);
+			hns3_set_field(*ol_type_vlan_len_msec, HNS3_TXD_OL3T_S,
+				       HNS3_OL3T_IPV6);
 		}
 
 		/* define tunnel type(OL4).*/
 		switch (l4_proto) {
 		case IPPROTO_UDP:
-			hnae3_set_field(*ol_type_vlan_len_msec,
-					HNS3_TXD_TUNTYPE_M,
-					HNS3_TXD_TUNTYPE_S,
-					HNS3_TUN_MAC_IN_UDP);
+			hns3_set_field(*ol_type_vlan_len_msec,
+				       HNS3_TXD_TUNTYPE_S,
+				       HNS3_TUN_MAC_IN_UDP);
 			break;
 		case IPPROTO_GRE:
-			hnae3_set_field(*ol_type_vlan_len_msec,
-					HNS3_TXD_TUNTYPE_M,
-					HNS3_TXD_TUNTYPE_S,
-					HNS3_TUN_NVGRE);
+			hns3_set_field(*ol_type_vlan_len_msec,
+				       HNS3_TXD_TUNTYPE_S,
+				       HNS3_TUN_NVGRE);
 			break;
 		default:
 			/* drop the skb tunnel packet if hardware don't support,
@@ -889,69 +942,27 @@ static int hns3_set_l3l4_type_csum(struct sk_buff *skb, u8 ol4_proto,
 	}
 
 	if (l3.v4->version == 4) {
-		hnae3_set_field(*type_cs_vlan_tso, HNS3_TXD_L3T_M,
-				HNS3_TXD_L3T_S, HNS3_L3T_IPV4);
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L3T_S,
+			       HNS3_L3T_IPV4);
 
 		/* the stack computes the IP header already, the only time we
 		 * need the hardware to recompute it is in the case of TSO.
 		 */
 		if (skb_is_gso(skb))
-			hnae3_set_bit(*type_cs_vlan_tso, HNS3_TXD_L3CS_B, 1);
+			hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L3CS_B, 1);
 	} else if (l3.v6->version == 6) {
-		hnae3_set_field(*type_cs_vlan_tso, HNS3_TXD_L3T_M,
-				HNS3_TXD_L3T_S, HNS3_L3T_IPV6);
+		hns3_set_field(*type_cs_vlan_tso, HNS3_TXD_L3T_S,
+			       HNS3_L3T_IPV6);
 	}
 
-	switch (l4_proto) {
-	case IPPROTO_TCP:
-		hnae3_set_bit(*type_cs_vlan_tso, HNS3_TXD_L4CS_B, 1);
-		hnae3_set_field(*type_cs_vlan_tso,
-				HNS3_TXD_L4T_M,
-				HNS3_TXD_L4T_S,
-				HNS3_L4T_TCP);
-		break;
-	case IPPROTO_UDP:
-		if (hns3_tunnel_csum_bug(skb))
-			break;
-
-		hnae3_set_bit(*type_cs_vlan_tso, HNS3_TXD_L4CS_B, 1);
-		hnae3_set_field(*type_cs_vlan_tso,
-				HNS3_TXD_L4T_M,
-				HNS3_TXD_L4T_S,
-				HNS3_L4T_UDP);
-		break;
-	case IPPROTO_SCTP:
-		hnae3_set_bit(*type_cs_vlan_tso, HNS3_TXD_L4CS_B, 1);
-		hnae3_set_field(*type_cs_vlan_tso,
-				HNS3_TXD_L4T_M,
-				HNS3_TXD_L4T_S,
-				HNS3_L4T_SCTP);
-		break;
-	default:
-		/* drop the skb tunnel packet if hardware don't support,
-		 * because hardware can't calculate csum when TSO.
-		 */
-		if (skb_is_gso(skb))
-			return -EDOM;
-
-		/* the stack computes the IP header already,
-		 * driver calculate l4 checksum when not TSO.
-		 */
-		skb_checksum_help(skb);
-		return 0;
-	}
-
-	return 0;
+	return hns3_check_l4_proto(skb, l4_proto, type_cs_vlan_tso);
 }
 
 static void hns3_set_txbd_baseinfo(u16 *bdtp_fe_sc_vld_ra_ri, int frag_end)
 {
 	/* Config bd buffer end */
-	hnae3_set_field(*bdtp_fe_sc_vld_ra_ri, HNS3_TXD_BDTYPE_M,
-			HNS3_TXD_BDTYPE_S, 0);
-	hnae3_set_bit(*bdtp_fe_sc_vld_ra_ri, HNS3_TXD_FE_B, !!frag_end);
-	hnae3_set_bit(*bdtp_fe_sc_vld_ra_ri, HNS3_TXD_VLD_B, 1);
-	hnae3_set_field(*bdtp_fe_sc_vld_ra_ri, HNS3_TXD_SC_M, HNS3_TXD_SC_S, 0);
+	hns3_set_field(*bdtp_fe_sc_vld_ra_ri, HNS3_TXD_FE_B, !!frag_end);
+	hns3_set_field(*bdtp_fe_sc_vld_ra_ri, HNS3_TXD_VLD_B, 1);
 }
 
 static int hns3_fill_desc_vtags(struct sk_buff *skb,
@@ -962,6 +973,8 @@ static int hns3_fill_desc_vtags(struct sk_buff *skb,
 				u16 *out_vtag)
 {
 #define HNS3_TX_VLAN_PRIO_SHIFT 13
+
+struct hnae3_handle *handle = tx_ring->tqp->handle;
 
 	if (skb->protocol == htons(ETH_P_8021Q) &&
 	    !(tx_ring->tqp->handle->kinfo.netdev->features &
@@ -984,8 +997,16 @@ static int hns3_fill_desc_vtags(struct sk_buff *skb,
 		 * and use inner_vtag in one tag case.
 		 */
 		if (skb->protocol == htons(ETH_P_8021Q)) {
-			hnae3_set_bit(*out_vlan_flag, HNS3_TXD_OVLAN_B, 1);
-			*out_vtag = vlan_tag;
+			if (handle->port_base_vlan_state ==
+			    HNAE3_PORT_BASE_VLAN_DISABLE){
+				hns3_set_field(*out_vlan_flag, HNS3_TXD_OVLAN_B,
+					       1);
+				*out_vtag = vlan_tag;
+			} else {
+				hns3_set_field(*inner_vlan_flag,
+					       HNS3_TXD_VLAN_B, 1);
+				*inner_vtag = vlan_tag;
+			}
 		} else {
 			hnae3_set_bit(*inner_vlan_flag, HNS3_TXD_VLAN_B, 1);
 			*inner_vtag = vlan_tag;
@@ -995,7 +1016,7 @@ static int hns3_fill_desc_vtags(struct sk_buff *skb,
 		int rc;
 
 		rc = skb_cow_head(skb, 0);
-		if (rc < 0)
+		if (unlikely(rc < 0))
 			return rc;
 		vhdr = (struct vlan_ethhdr *)skb->data;
 		vhdr->h_vlan_TCI |= cpu_to_be16((skb->priority & 0x7)
@@ -1012,26 +1033,21 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 	struct hns3_desc_cb *desc_cb = &ring->desc_cb[ring->next_to_use];
 	struct hns3_desc *desc = &ring->desc[ring->next_to_use];
 	struct device *dev = ring_to_dev(ring);
-	u32 ol_type_vlan_len_msec = 0;
 	u16 bdtp_fe_sc_vld_ra_ri = 0;
 	struct skb_frag_struct *frag;
 	unsigned int frag_buf_num;
-	u32 type_cs_vlan_tso = 0;
-	struct sk_buff *skb;
-	u16 inner_vtag = 0;
-	u16 out_vtag = 0;
-	unsigned int k;
-	int sizeoflast;
-	u32 paylen = 0;
+	int k, sizeoflast;
 	dma_addr_t dma;
-	u16 mss = 0;
-	u8 ol4_proto;
-	u8 il4_proto;
-	int ret;
 
 	if (type == DESC_TYPE_SKB) {
-		skb = (struct sk_buff *)priv;
-		paylen = skb->len;
+		struct sk_buff *skb = (struct sk_buff *)priv;
+		u32 ol_type_vlan_len_msec = 0;
+		u32 type_cs_vlan_tso = 0;
+		u32 paylen = skb->len;
+		u16 inner_vtag = 0;
+		u16 out_vtag = 0;
+		u16 mss = 0;
+		int ret;
 
 		ret = hns3_fill_desc_vtags(skb, ring, &type_cs_vlan_tso,
 					   &ol_type_vlan_len_msec,
@@ -1040,10 +1056,12 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 			return ret;
 
 		if (skb->ip_summed == CHECKSUM_PARTIAL) {
+			u8 ol4_proto, il4_proto;
+
 			skb_reset_mac_len(skb);
 
 			ret = hns3_get_l4_protocol(skb, &ol4_proto, &il4_proto);
-			if (ret)
+			if (unlikely(ret))
 				return ret;
 			hns3_set_l2l3l4_len(skb, ol4_proto, il4_proto,
 					    &type_cs_vlan_tso,
@@ -1051,12 +1069,12 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 			ret = hns3_set_l3l4_type_csum(skb, ol4_proto, il4_proto,
 						      &type_cs_vlan_tso,
 						      &ol_type_vlan_len_msec);
-			if (ret)
+			if (unlikely(ret))
 				return ret;
 
 			ret = hns3_set_tso(skb, &paylen, &mss,
 					   &type_cs_vlan_tso);
-			if (ret)
+			if (unlikely(ret))
 				return ret;
 		}
 
@@ -1076,15 +1094,15 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 		dma = skb_frag_dma_map(dev, frag, 0, size, DMA_TO_DEVICE);
 	}
 
-	if (dma_mapping_error(ring->dev, dma)) {
+	if (unlikely(dma_mapping_error(ring->dev, dma))) {
 		ring->stats.sw_err_cnt++;
 		return -ENOMEM;
 	}
 
 	desc_cb->length = size;
 
-	frag_buf_num = (size + HNS3_MAX_BD_SIZE - 1) / HNS3_MAX_BD_SIZE;
-	sizeoflast = size % HNS3_MAX_BD_SIZE;
+	frag_buf_num = (size + HNS3_MAX_BD_SIZE - 1) >> HNS3_MAX_BD_SIZE_OFFSET;
+	sizeoflast = size & HNS3_TX_LAST_SIZE_M;
 	sizeoflast = sizeoflast ? sizeoflast : HNS3_MAX_BD_SIZE;
 
 	/* When frag size is bigger than hardware limit, split this frag */
@@ -1126,12 +1144,10 @@ static bool hns3_check_skb_need_linearize(struct sk_buff *skb)
 
 		for (j = 0; j < 7; j++)
 			total_length +=
-				skb_frag_size(&skb_shinfo(skb)->frags[j]);
+				skb_frag_size(&skb_shinfo(skb)->frags[j + i]);
 
 		if (total_length < skb_shinfo(skb)->gso_size)
 			return true;
-
-		total_length = 0;
 	}
 
 	return false;
@@ -1150,15 +1166,16 @@ static int hns3_nic_maybe_stop_tso(struct sk_buff **out_skb, int *bnum,
 	int i;
 
 	size = skb_headlen(skb);
-	buf_num = (size + HNS3_MAX_BD_SIZE - 1) / HNS3_MAX_BD_SIZE;
+	buf_num = (size + HNS3_MAX_BD_SIZE - 1) >> HNS3_MAX_BD_SIZE_OFFSET;
 
 	frag_num = skb_shinfo(skb)->nr_frags;
 	for (i = 0; i < frag_num; i++) {
 		frag = &skb_shinfo(skb)->frags[i];
 		size = skb_frag_size(frag);
 		bdnum_for_frag =
-			(size + HNS3_MAX_BD_SIZE - 1) / HNS3_MAX_BD_SIZE;
-		if (bdnum_for_frag > HNS3_MAX_BD_PER_FRAG)
+			(size + HNS3_MAX_BD_SIZE - 1) >>
+			HNS3_MAX_BD_SIZE_OFFSET;
+		if (unlikely(bdnum_for_frag > HNS3_MAX_BD_PER_FRAG))
 			return -ENOMEM;
 
 		buf_num += bdnum_for_frag;
@@ -1168,7 +1185,8 @@ static int hns3_nic_maybe_stop_tso(struct sk_buff **out_skb, int *bnum,
 		if (!hns3_check_skb_need_linearize(skb))
 			goto out;
 
-		buf_num = (skb->len + HNS3_MAX_BD_SIZE - 1) / HNS3_MAX_BD_SIZE;
+		buf_num = (skb->len + HNS3_MAX_BD_SIZE - 1) >>
+			  HNS3_MAX_BD_SIZE_OFFSET;
 		if (ring_space(ring) < buf_num)
 			return -EBUSY;
 		/* manual split the send packet */
@@ -1198,7 +1216,8 @@ static int hns3_nic_maybe_stop_tx(struct sk_buff **out_skb, int *bnum,
 	buf_num = skb_shinfo(skb)->nr_frags + 1;
 
 	if (unlikely(buf_num > HNS3_MAX_BD_PER_FRAG)) {
-		buf_num = (skb->len + HNS3_MAX_BD_SIZE - 1) / HNS3_MAX_BD_SIZE;
+		buf_num = (skb->len + HNS3_MAX_BD_SIZE - 1) >>
+			  HNS3_MAX_BD_SIZE_OFFSET;
 		if (ring_space(ring) < buf_num)
 			return -EBUSY;
 		/* manual split the send packet */
@@ -1290,9 +1309,9 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 	next_to_use_head = ring->next_to_use;
 
-	ret = priv->ops.fill_desc(ring, skb, size, seg_num == 1 ? 1 : 0,
-				  DESC_TYPE_SKB);
-	if (ret)
+	ret = hns3_fill_desc(ring, skb, size, seg_num == 1 ? 1 : 0,
+			     DESC_TYPE_SKB);
+	if (unlikely(ret))
 		goto head_fill_err;
 
 	next_to_use_frag = ring->next_to_use;
@@ -1301,11 +1320,11 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 		frag = &skb_shinfo(skb)->frags[i - 1];
 		size = skb_frag_size(frag);
 
-		ret = priv->ops.fill_desc(ring, frag, size,
-					  seg_num - 1 == i ? 1 : 0,
-					  DESC_TYPE_PAGE);
+		ret = hns3_fill_desc(ring, frag, size,
+				     seg_num - 1 == i ? 1 : 0,
+				     DESC_TYPE_PAGE);
 
-		if (ret)
+		if (unlikely(ret))
 			goto frag_fill_err;
 	}
 
@@ -1382,6 +1401,7 @@ static int hns3_nic_set_features(struct net_device *netdev,
 	netdev_features_t changed = netdev->features ^ features;
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
 	struct hnae3_handle *h = priv->ae_handle;
+	bool enable;
 	int ret;
 
 	if (changed & (NETIF_F_TSO | NETIF_F_TSO6)) {
@@ -1393,10 +1413,8 @@ static int hns3_nic_set_features(struct net_device *netdev,
 
 #ifdef NETIF_F_GRO_HW
 	if (changed & (NETIF_F_GRO_HW) && h->ae_algo->ops->set_gro_en) {
-		if (features & NETIF_F_GRO_HW)
-			ret = h->ae_algo->ops->set_gro_en(h, true);
-		else
-			ret = h->ae_algo->ops->set_gro_en(h, false);
+		enable = !!(features & NETIF_F_GRO_HW);
+		ret = h->ae_algo->ops->set_gro_en(h, enable);
 		if (ret)
 			return ret;
 	}
@@ -1404,28 +1422,21 @@ static int hns3_nic_set_features(struct net_device *netdev,
 
 	if ((changed & NETIF_F_HW_VLAN_CTAG_FILTER) &&
 	    h->ae_algo->ops->enable_vlan_filter) {
-		if (features & NETIF_F_HW_VLAN_CTAG_FILTER)
-			h->ae_algo->ops->enable_vlan_filter(h, true);
-		else
-			h->ae_algo->ops->enable_vlan_filter(h, false);
+		enable = !!(features & NETIF_F_HW_VLAN_CTAG_FILTER);
+		h->ae_algo->ops->enable_vlan_filter(h, enable);
 	}
 
 	if ((changed & NETIF_F_HW_VLAN_CTAG_RX) &&
 	    h->ae_algo->ops->enable_hw_strip_rxvtag) {
-		if (features & NETIF_F_HW_VLAN_CTAG_RX)
-			ret = h->ae_algo->ops->enable_hw_strip_rxvtag(h, true);
-		else
-			ret = h->ae_algo->ops->enable_hw_strip_rxvtag(h, false);
-
+		enable = !!(features & NETIF_F_HW_VLAN_CTAG_RX);
+		ret = h->ae_algo->ops->enable_hw_strip_rxvtag(h, enable);
 		if (ret)
 			return ret;
 	}
 
 	if ((changed & NETIF_F_NTUPLE) && h->ae_algo->ops->enable_fd) {
-		if (features & NETIF_F_NTUPLE)
-			h->ae_algo->ops->enable_fd(h, true);
-		else
-			h->ae_algo->ops->enable_fd(h, false);
+		enable = !!(features & NETIF_F_NTUPLE);
+		h->ae_algo->ops->enable_fd(h, enable);
 	}
 
 	netdev->features = features;
@@ -2387,24 +2398,17 @@ static void hns3_rx_checksum(struct hns3_enet_ring *ring, struct sk_buff *skb,
 		return;
 
 	/* check if hardware has done checksum */
-	if (!hnae3_get_bit(bd_base_info, HNS3_RXD_L3L4P_B))
+	if (!(bd_base_info & BIT(HNS3_RXD_L3L4P_B)))
 		return;
 
-	if (unlikely(hnae3_get_bit(l234info, HNS3_RXD_L3E_B) ||
-		     hnae3_get_bit(l234info, HNS3_RXD_L4E_B) ||
-		     hnae3_get_bit(l234info, HNS3_RXD_OL3E_B) ||
-		     hnae3_get_bit(l234info, HNS3_RXD_OL4E_B))) {
+	if (unlikely(l234info & (BIT(HNS3_RXD_L3E_B) | BIT(HNS3_RXD_L4E_B) |
+	    BIT(HNS3_RXD_OL3E_B) | BIT(HNS3_RXD_OL4E_B)))) {
 		u64_stats_update_begin(&ring->syncp);
 		ring->stats.l3l4_csum_err++;
 		u64_stats_update_end(&ring->syncp);
 
 		return;
 	}
-
-	l3_type = hnae3_get_field(l234info, HNS3_RXD_L3ID_M,
-				  HNS3_RXD_L3ID_S);
-	l4_type = hnae3_get_field(l234info, HNS3_RXD_L4ID_M,
-				  HNS3_RXD_L4ID_S);
 
 	ol4_type = hnae3_get_field(l234info, HNS3_RXD_OL4ID_M,
 				   HNS3_RXD_OL4ID_S);
@@ -2413,6 +2417,11 @@ static void hns3_rx_checksum(struct hns3_enet_ring *ring, struct sk_buff *skb,
 	case HNS3_OL4_TYPE_NVGRE:
 		skb->csum_level = 1;
 	case HNS3_OL4_TYPE_NO_TUN:
+		l3_type = hnae3_get_field(l234info, HNS3_RXD_L3ID_M,
+					  HNS3_RXD_L3ID_S);
+		l4_type = hnae3_get_field(l234info, HNS3_RXD_L4ID_M,
+					  HNS3_RXD_L4ID_S);
+
 		/* Can checksum ipv4 or ipv6 + UDP/TCP/SCTP packets */
 		if ((l3_type == HNS3_L3_TYPE_IPV4 ||
 		     l3_type == HNS3_L3_TYPE_IPV6) &&
@@ -2438,6 +2447,7 @@ static bool hns3_parse_vlan_tag(struct hns3_enet_ring *ring,
 				struct hns3_desc *desc, u32 l234info,
 				u16 *vlan_tag)
 {
+	struct hnae3_handle *handle = ring->tqp->handle;
 	struct pci_dev *pdev = ring->tqp->handle->pdev;
 
 	if (pdev->revision == HNAE3_REVISION_ID_20) {
@@ -2450,14 +2460,37 @@ static bool hns3_parse_vlan_tag(struct hns3_enet_ring *ring,
 
 #define HNS3_STRP_OUTER_VLAN	0x1
 #define HNS3_STRP_INNER_VLAN	0x2
+#define HNS3_STRP_BOTH		0x3
 
+	/* Hardware always insert vlan tag into rx descriptor when
+	 * remove the tag from packet, driver needs to determin
+	 * reporting which tag to stack.
+	 */
 	switch (hnae3_get_field(l234info, HNS3_RXD_STRP_TAGP_M,
 				HNS3_RXD_STRP_TAGP_S)) {
 	case HNS3_STRP_OUTER_VLAN:
-		*vlan_tag = le16_to_cpu(desc->rx.ot_vlan_tag);
-		return true;
+		if (handle->port_base_vlan_state ==
+				HNAE3_PORT_BASE_VLAN_DISABLE) {
+			*vlan_tag = le16_to_cpu(desc->rx.ot_vlan_tag);
+			return true;
+		}
+
+		return false;
 	case HNS3_STRP_INNER_VLAN:
-		*vlan_tag = le16_to_cpu(desc->rx.vlan_tag);
+		if (handle->port_base_vlan_state ==
+				HNAE3_PORT_BASE_VLAN_DISABLE) {
+			*vlan_tag = le16_to_cpu(desc->rx.vlan_tag);
+			return true;
+		}
+
+		return false;
+	case HNS3_STRP_BOTH:
+		if (handle->port_base_vlan_state ==
+				HNAE3_PORT_BASE_VLAN_DISABLE)
+			*vlan_tag = le16_to_cpu(desc->rx.ot_vlan_tag);
+		else
+			*vlan_tag = le16_to_cpu(desc->rx.vlan_tag);
+
 		return true;
 	default:
 		return false;
@@ -2533,11 +2566,13 @@ static int hns3_add_frag(struct hns3_enet_ring *ring, struct hns3_desc *desc,
 		bd_base_info = le32_to_cpu(desc->rx.bd_base_info);
 	}
 
-	while (!hnae3_get_bit(bd_base_info, HNS3_RXD_FE_B)) {
+	while (!(bd_base_info & BIT(HNS3_RXD_FE_B))) {
 		desc = &ring->desc[ring->next_to_clean];
 		desc_cb = &ring->desc_cb[ring->next_to_clean];
 		bd_base_info = le32_to_cpu(desc->rx.bd_base_info);
-		if (!hnae3_get_bit(bd_base_info, HNS3_RXD_VLD_B))
+		/* make sure HW write desc complete */
+		rmb();
+		if (!(bd_base_info & BIT(HNS3_RXD_VLD_B)))
 			return -ENXIO;
 
 		if (unlikely(ring->frag_num >= MAX_SKB_FRAGS)) {
@@ -2627,11 +2662,37 @@ static void hns3_set_gro_param(struct sk_buff *skb, u32 l234info,
 						    HNS3_RXD_GRO_SIZE_S);
 }
 
+static int hns3_check_l2l3l4_info(struct hns3_enet_ring *ring,
+				  struct hns3_desc *desc, u32 l234info)
+{
+	enum hns3_pkt_l2t_type l2_frame_type;
+	struct sk_buff *skb = ring->skb;
+
+	if (unlikely(!desc->rx.pkt_len || (l234info & (BIT(HNS3_RXD_TRUNCAT_B) |
+		     BIT(HNS3_RXD_L2E_B))))) {
+		u64_stats_update_begin(&ring->syncp);
+		if (l234info & BIT(HNS3_RXD_L2E_B))
+			ring->stats.l2_err++;
+		else
+			ring->stats.err_pkt_len++;
+		u64_stats_update_end(&ring->syncp);
+
+		dev_kfree_skb_any(skb);
+		return -EFAULT;
+	}
+
+	l2_frame_type = hnae3_get_field(l234info, HNS3_RXD_DMAC_M,
+					HNS3_RXD_DMAC_S);
+	if (l2_frame_type == HNS3_L2_TYPE_MULTICAST)
+		ring->stats.rx_multicast++;
+
+	return 0;
+}
+
 static int hns3_handle_rx_bd(struct hns3_enet_ring *ring,
 			     struct sk_buff **out_skb)
 {
 	struct net_device *netdev = ring->tqp->handle->kinfo.netdev;
-	enum hns3_pkt_l2t_type l2_frame_type;
 	struct sk_buff *skb = ring->skb;
 	struct hns3_desc_cb *desc_cb;
 	struct hns3_desc *desc;
@@ -2649,7 +2710,7 @@ static int hns3_handle_rx_bd(struct hns3_enet_ring *ring,
 	bd_base_info = le32_to_cpu(desc->rx.bd_base_info);
 
 	/* Check valid BD */
-	if (unlikely(!hnae3_get_bit(bd_base_info, HNS3_RXD_VLD_B)))
+	if (unlikely(!(bd_base_info & BIT(HNS3_RXD_VLD_B))))
 		return -ENXIO;
 
 	if (!skb)
@@ -2705,38 +2766,9 @@ static int hns3_handle_rx_bd(struct hns3_enet_ring *ring,
 					       vlan_tag);
 	}
 
-	if (unlikely(!hnae3_get_bit(bd_base_info, HNS3_RXD_VLD_B))) {
-		u64_stats_update_begin(&ring->syncp);
-		ring->stats.non_vld_descs++;
-		u64_stats_update_end(&ring->syncp);
-
-		dev_kfree_skb_any(skb);
-		return -EINVAL;
-	}
-
-	if (unlikely((!desc->rx.pkt_len) ||
-		     hnae3_get_bit(l234info, HNS3_RXD_TRUNCAT_B))) {
-		u64_stats_update_begin(&ring->syncp);
-		ring->stats.err_pkt_len++;
-		u64_stats_update_end(&ring->syncp);
-
-		dev_kfree_skb_any(skb);
-		return -EFAULT;
-	}
-
-	if (unlikely(hnae3_get_bit(l234info, HNS3_RXD_L2E_B))) {
-		u64_stats_update_begin(&ring->syncp);
-		ring->stats.l2_err++;
-		u64_stats_update_end(&ring->syncp);
-
-		dev_kfree_skb_any(skb);
-		return -EFAULT;
-	}
-
-	l2_frame_type = hnae3_get_field(l234info, HNS3_RXD_DMAC_M,
-					HNS3_RXD_DMAC_S);
-	if (l2_frame_type == HNS3_L2_TYPE_MULTICAST)
-		ring->stats.rx_multicast++;
+	ret = hns3_check_l2l3l4_info(ring, desc, l234info);
+	if (ret)
+		return ret;
 
 	u64_stats_update_begin(&ring->syncp);
 	ring->stats.rx_pkts++;
@@ -2825,44 +2857,14 @@ out:
 	return recv_pkts;
 }
 
-static bool hns3_get_new_int_gl(struct hns3_enet_ring_group *ring_group)
+static enum hns3_flow_level_range hns3_get_new_flow_level(
+	struct hns3_enet_ring_group *ring_group,
+	enum hns3_flow_level_range new_flow_level,
+	int packets_per_msecs, int bytes_per_msecs)
 {
 	struct hns3_enet_tqp_vector *tqp_vector =
 					ring_group->ring->tqp_vector;
-	enum hns3_flow_level_range new_flow_level;
-	int packets_per_msecs;
-	int bytes_per_msecs;
-	u32 time_passed_ms;
-	u16 new_int_gl;
 
-	if (!ring_group->coal.int_gl || !tqp_vector->last_jiffies)
-		return false;
-
-	if (ring_group->total_packets == 0) {
-		ring_group->coal.int_gl = HNS3_INT_GL_50K;
-		ring_group->coal.flow_level = HNS3_FLOW_LOW;
-		return true;
-	}
-
-	/* Simple throttlerate management
-	 * 0-10MB/s   lower     (50000 ints/s)
-	 * 10-20MB/s   middle    (20000 ints/s)
-	 * 20-1249MB/s high      (18000 ints/s)
-	 * > 40000pps  ultra     (8000 ints/s)
-	 */
-	new_flow_level = ring_group->coal.flow_level;
-	new_int_gl = ring_group->coal.int_gl;
-	time_passed_ms =
-		jiffies_to_msecs(jiffies - tqp_vector->last_jiffies);
-
-	if (!time_passed_ms)
-		return false;
-
-	do_div(ring_group->total_packets, time_passed_ms);
-	packets_per_msecs = ring_group->total_packets;
-
-	do_div(ring_group->total_bytes, time_passed_ms);
-	bytes_per_msecs = ring_group->total_bytes;
 
 #define HNS3_RX_LOW_BYTE_RATE 10000
 #define HNS3_RX_MID_BYTE_RATE 20000
@@ -2892,6 +2894,51 @@ static bool hns3_get_new_int_gl(struct hns3_enet_ring_group *ring_group)
 	    &tqp_vector->rx_group == ring_group)
 		new_flow_level = HNS3_FLOW_ULTRA;
 
+	return new_flow_level;
+}
+
+static bool hns3_get_new_int_gl(struct hns3_enet_ring_group *ring_group)
+{
+	struct hns3_enet_tqp_vector *tqp_vector =
+					ring_group->ring->tqp_vector;
+	enum hns3_flow_level_range new_flow_level;
+	int packets_per_msecs;
+	int bytes_per_msecs;
+	u32 time_passed_ms;
+	u16 new_int_gl;
+
+	if (!tqp_vector->last_jiffies)
+		return false;
+
+	if (ring_group->total_packets == 0) {
+		ring_group->coal.int_gl = HNS3_INT_GL_50K;
+		ring_group->coal.flow_level = HNS3_FLOW_LOW;
+		return true;
+	}
+
+	/* Simple throttlerate management
+	 * 0-10MB/s   lower     (50000 ints/s)
+	 * 10-20MB/s   middle    (20000 ints/s)
+	 * 20-1249MB/s high      (18000 ints/s)
+	 * > 40000pps  ultra     (8000 ints/s)
+	 */
+	new_flow_level = ring_group->coal.flow_level;
+	new_int_gl = ring_group->coal.int_gl;
+	time_passed_ms =
+		jiffies_to_msecs(jiffies - tqp_vector->last_jiffies);
+
+	if (!time_passed_ms)
+		return false;
+
+	do_div(ring_group->total_packets, time_passed_ms);
+	packets_per_msecs = ring_group->total_packets;
+
+	do_div(ring_group->total_bytes, time_passed_ms);
+	bytes_per_msecs = ring_group->total_bytes;
+
+	new_flow_level = hns3_get_new_flow_level(ring_group, new_flow_level,
+						packets_per_msecs,
+						bytes_per_msecs);
 	switch (new_flow_level) {
 	case HNS3_FLOW_LOW:
 		new_int_gl = HNS3_INT_GL_50K;
@@ -2938,7 +2985,7 @@ static void hns3_update_new_int_gl(struct hns3_enet_tqp_vector *tqp_vector)
 	}
 
 	if (tx_group->coal.gl_adapt_enable) {
-		tx_update = hns3_get_new_int_gl(&tqp_vector->tx_group);
+		tx_update = hns3_get_new_int_gl(tx_group);
 		if (tx_update)
 			hns3_set_vector_coalesce_tx_gl(tqp_vector,
 						       tx_group->coal.int_gl);
@@ -3628,7 +3675,6 @@ static void hns3_nic_set_priv_ops(struct net_device *netdev)
 {
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
 
-	priv->ops.fill_desc = hns3_fill_desc;
 	if ((netdev->features & NETIF_F_TSO) ||
 	    (netdev->features & NETIF_F_TSO6))
 		priv->ops.maybe_stop_tx = hns3_nic_maybe_stop_tso;

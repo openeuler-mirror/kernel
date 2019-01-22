@@ -579,6 +579,24 @@ struct hclge_fd_ad_data {
 	u16 rule_id;
 };
 
+struct hclge_vport_mac_addr_cfg {
+	struct list_head node;
+	int vport_id;
+	int hd_tbl_status;
+	u8 mac_addr[ETH_ALEN];
+};
+
+enum HCLGE_MAC_ADDR_TYPE {
+	HCLGE_MAC_ADDR_UC,
+	HCLGE_MAC_ADDR_MC
+};
+
+struct hclge_vport_vlan_cfg {
+	struct list_head node;
+	int hd_tbl_status;
+	u16 vlan_id;
+};
+
 /* For each bit of TCAM entry, it uses a pair of 'x' and
  * 'y' to indicate which value to match, like below:
  * ----------------------------------
@@ -719,6 +737,10 @@ struct hclge_dev {
 	/* unicast mac vlan space shared by PF and its VFs */
 	u16 share_umv_size;
 	struct mutex umv_mutex; /* protect share_umv_size */
+
+	struct mutex vport_cfg_mutex;   /* Protect stored vf table */
+	struct list_head uc_mac_list;   /* Store VF unicast table */
+	struct list_head mc_mac_list;   /* Store VF multicast table */
 };
 
 /* VPort level vlan tag configuration for TX direction */
@@ -735,10 +757,11 @@ struct hclge_tx_vtag_cfg {
 
 /* VPort level vlan tag configuration for RX direction */
 struct hclge_rx_vtag_cfg {
-	bool strip_tag1_en;	/* Whether strip inner vlan tag */
-	bool strip_tag2_en;	/* Whether strip outer vlan tag */
-	bool vlan1_vlan_prionly;/* Inner VLAN Tag up to descriptor Enable */
-	bool vlan2_vlan_prionly;/* Outer VLAN Tag up to descriptor Enable */
+	u8 rx_vlan_offload_en;	/* Whether enable rx vlan offload */
+	u8 strip_tag1_en;	/* Whether strip inner vlan tag */
+	u8 strip_tag2_en;	/* Whether strip outer vlan tag */
+	u8 vlan1_vlan_prionly;	/* Inner VLAN Tag up to descriptor Enable */
+	u8 vlan2_vlan_prionly;	/* Outer VLAN Tag up to descriptor Enable */
 };
 
 struct hclge_rss_tuple_cfg {
@@ -757,6 +780,17 @@ enum HCLGE_VPORT_STATE {
 	HCLGE_VPORT_STATE_MAX
 };
 
+struct hclge_vlan_info {
+	u16 vlan_proto; /* sofar support 802.1Q only */
+	u16 qos;
+	u16 vlan_tag;
+};
+
+struct hclge_port_base_vlan_config {
+	u16 state;
+	struct hclge_vlan_info vlan_info;
+};
+
 struct hclge_vport {
 	u16 alloc_tqps;	/* Allocated Tx/Rx queues */
 
@@ -773,6 +807,8 @@ struct hclge_vport {
 	u16 bw_limit;		/* VSI BW Limit (0 = disabled) */
 	u8  dwrr;
 
+	struct list_head vlan_list;     /* Store VF vlan table */
+	struct hclge_port_base_vlan_config port_base_vlan_cfg;
 	struct hclge_tx_vtag_cfg  txvlan_cfg;
 	struct hclge_rx_vtag_cfg  rxvlan_cfg;
 
@@ -839,4 +875,17 @@ int hclge_vport_start(struct hclge_vport *vport);
 void hclge_vport_stop(struct hclge_vport *vport);
 int hclge_set_vport_mtu(struct hclge_vport *vport, int new_mtu);
 u16 hclge_covert_handle_qid_global(struct hnae3_handle *handle, u16 queue_id);
+void hclge_add_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
+			       enum HCLGE_MAC_ADDR_TYPE mac_type);
+void hclge_rm_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
+			      bool is_write_tbl,
+			      enum HCLGE_MAC_ADDR_TYPE mac_type);
+void hclge_rm_vport_all_mac_table(struct hclge_vport *vport, bool is_del_list,
+				  enum HCLGE_MAC_ADDR_TYPE mac_type);
+void hclge_rm_vport_all_vlan_table(struct hclge_vport *vport, bool is_del_list);
+int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
+				    struct hclge_vlan_info *vlan_info);
+int hclge_push_vf_port_base_vlan_info(struct hclge_vport *vport, u8 vfid,
+				      u16 state, u16 vlan_tag, u16 qos,
+				      u16 vlan_proto);
 #endif

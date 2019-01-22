@@ -523,7 +523,7 @@ static void hclge_dbg_dump_tm(struct hclge_dev *hdev)
 
 	nq_to_qs_map = (struct hclge_nq_to_qs_link_cmd *)desc.data;
 	dev_info(&hdev->pdev->dev, "NQ_TO_QS nq_id: %u\n", nq_to_qs_map->nq_id);
-	dev_info(&hdev->pdev->dev, "NQ_TO_QS qset_id: %u\n",
+	dev_info(&hdev->pdev->dev, "NQ_TO_QS qset_id: 0x%x\n",
 		 nq_to_qs_map->qset_id);
 
 	cmd = HCLGE_OPC_TM_PG_WEIGHT;
