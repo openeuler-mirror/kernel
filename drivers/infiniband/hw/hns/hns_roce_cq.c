@@ -308,6 +308,118 @@ static void hns_roce_ib_free_cq_buf(struct hns_roce_dev *hr_dev,
 			  &buf->hr_buf);
 }
 
+static int create_user_cq(struct hns_roce_dev *hr_dev,
+			  struct hns_roce_cq *hr_cq,
+			  struct ib_ucontext *context,
+			  struct ib_udata *udata,
+			  struct hns_roce_ib_create_cq_resp *resp,
+			  struct hns_roce_uar *uar,
+			  int cq_entries)
+{
+	struct hns_roce_ib_create_cq ucmd;
+	struct device *dev = hr_dev->dev;
+	int ret;
+
+	if (ib_copy_from_udata(&ucmd, udata, sizeof(ucmd))) {
+		dev_err(dev, "Failed to copy_from_udata.\n");
+		return -EFAULT;
+	}
+
+	/* Get user space address, write it into mtt table */
+	ret = hns_roce_ib_get_cq_umem(hr_dev, context, &hr_cq->hr_buf,
+				      &hr_cq->umem, ucmd.buf_addr,
+				      cq_entries);
+	if (ret) {
+		dev_err(dev, "Failed to get_cq_umem.\n");
+		return ret;
+	}
+
+	if ((hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB) &&
+	    (udata->outlen >= sizeof(*resp))) {
+		ret = hns_roce_db_map_user(to_hr_ucontext(context),
+					   ucmd.db_addr, &hr_cq->db);
+		if (ret) {
+			dev_err(dev, "cq record doorbell map failed!\n");
+			goto err_mtt;
+		}
+		hr_cq->db_en = 1;
+		resp->cap_flags |= HNS_ROCE_SUPPORT_CQ_RECORD_DB;
+	}
+
+	/* Get user space parameters */
+	uar = &to_hr_ucontext(context)->uar;
+
+	return 0;
+
+err_mtt:
+	hns_roce_mtt_cleanup(hr_dev, &hr_cq->hr_buf.hr_mtt);
+	ib_umem_release(hr_cq->umem);
+
+	return ret;
+}
+
+static int create_kernel_cq(struct hns_roce_dev *hr_dev,
+			    struct hns_roce_cq *hr_cq, struct hns_roce_uar *uar,
+			    int cq_entries)
+{
+	struct device *dev = hr_dev->dev;
+	int ret;
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB) {
+		ret = hns_roce_alloc_db(hr_dev, &hr_cq->db, 1);
+		if (ret)
+			return ret;
+
+		hr_cq->set_ci_db = hr_cq->db.db_record;
+		*hr_cq->set_ci_db = 0;
+		hr_cq->db_en = 1;
+	}
+
+	/* Init mmt table and write buff address to mtt table */
+	ret = hns_roce_ib_alloc_cq_buf(hr_dev, &hr_cq->hr_buf, cq_entries);
+	if (ret) {
+		dev_err(dev, "Failed to alloc_cq_buf.\n");
+		goto err_db;
+	}
+
+	uar = &hr_dev->priv_uar;
+	hr_cq->cq_db_l = hr_dev->reg_base + hr_dev->odb_offset +
+			 DB_REG_OFFSET * uar->index;
+
+	return 0;
+
+err_db:
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB)
+		hns_roce_free_db(hr_dev, &hr_cq->db);
+
+	return ret;
+}
+
+static void destroy_user_cq(struct hns_roce_dev *hr_dev,
+			    struct hns_roce_cq *hr_cq,
+			    struct ib_ucontext *context,
+			    struct ib_udata *udata,
+			    struct hns_roce_ib_create_cq_resp *resp)
+{
+	if ((hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB) &&
+	    (udata->outlen >= sizeof(*resp)))
+		hns_roce_db_unmap_user(to_hr_ucontext(context),
+				       &hr_cq->db);
+
+	hns_roce_mtt_cleanup(hr_dev, &hr_cq->hr_buf.hr_mtt);
+	ib_umem_release(hr_cq->umem);
+}
+
+static void destroy_kernel_cq(struct hns_roce_dev *hr_dev,
+			      struct hns_roce_cq *hr_cq)
+{
+	hns_roce_mtt_cleanup(hr_dev, &hr_cq->hr_buf.hr_mtt);
+	hns_roce_ib_free_cq_buf(hr_dev, &hr_cq->hr_buf, hr_cq->ib_cq.cqe);
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB)
+		hns_roce_free_db(hr_dev, &hr_cq->db);
+}
+
 struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 				    const struct ib_cq_init_attr *attr,
 				    struct ib_ucontext *context,
@@ -315,13 +427,14 @@ struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ib_dev);
 	struct device *dev = hr_dev->dev;
-	struct hns_roce_ib_create_cq ucmd;
 	struct hns_roce_ib_create_cq_resp resp = {};
 	struct hns_roce_cq *hr_cq = NULL;
 	struct hns_roce_uar *uar = NULL;
 	int vector = attr->comp_vector;
 	int cq_entries = attr->cqe;
 	int ret;
+
+	rdfx_func_cnt(hr_dev, RDFX_FUNC_CREATE_CQ);
 
 	if (cq_entries < 1 || cq_entries > hr_dev->caps.max_cqes) {
 		dev_err(dev, "Creat CQ failed. entries=%d, max=%d\n",
@@ -341,57 +454,18 @@ struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 	spin_lock_init(&hr_cq->lock);
 
 	if (context) {
-		if (ib_copy_from_udata(&ucmd, udata, sizeof(ucmd))) {
-			dev_err(dev, "Failed to copy_from_udata.\n");
-			ret = -EFAULT;
-			goto err_cq;
-		}
-
-		/* Get user space address, write it into mtt table */
-		ret = hns_roce_ib_get_cq_umem(hr_dev, context, &hr_cq->hr_buf,
-					      &hr_cq->umem, ucmd.buf_addr,
-					      cq_entries);
+		ret = create_user_cq(hr_dev, hr_cq, context, udata, &resp, uar,
+				     cq_entries);
 		if (ret) {
-			dev_err(dev, "Failed to get_cq_umem.\n");
+			dev_err(dev, "Create cq fail in user mode!\n");
 			goto err_cq;
 		}
-
-		if ((hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB) &&
-		    (udata->outlen >= sizeof(resp))) {
-			ret = hns_roce_db_map_user(to_hr_ucontext(context),
-						   ucmd.db_addr, &hr_cq->db);
-			if (ret) {
-				dev_err(dev, "cq record doorbell map failed!\n");
-				goto err_mtt;
-			}
-			hr_cq->db_en = 1;
-			resp.cap_flags |= HNS_ROCE_SUPPORT_CQ_RECORD_DB;
-		}
-
-		/* Get user space parameters */
-		uar = &to_hr_ucontext(context)->uar;
 	} else {
-		if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB) {
-			ret = hns_roce_alloc_db(hr_dev, &hr_cq->db, 1);
-			if (ret)
-				goto err_cq;
-
-			hr_cq->set_ci_db = hr_cq->db.db_record;
-			*hr_cq->set_ci_db = 0;
-			hr_cq->db_en = 1;
-		}
-
-		/* Init mmt table and write buff address to mtt table */
-		ret = hns_roce_ib_alloc_cq_buf(hr_dev, &hr_cq->hr_buf,
-					       cq_entries);
+		ret = create_kernel_cq(hr_dev, hr_cq, uar, cq_entries);
 		if (ret) {
-			dev_err(dev, "Failed to alloc_cq_buf.\n");
-			goto err_db;
+			dev_err(dev, "Create cq fail in user mode!\n");
+			goto err_cq;
 		}
-
-		uar = &hr_dev->priv_uar;
-		hr_cq->cq_db_l = hr_dev->reg_base + hr_dev->odb_offset +
-				DB_REG_OFFSET * uar->index;
 	}
 
 	/* Allocate cq index, fill cq_context */
@@ -423,28 +497,18 @@ struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 			goto err_cqc;
 	}
 
+	rdfx_alloc_cq_buf(hr_dev, hr_cq);
+
 	return &hr_cq->ib_cq;
 
 err_cqc:
 	hns_roce_free_cq(hr_dev, hr_cq);
 
 err_dbmap:
-	if (context && (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB) &&
-	    (udata->outlen >= sizeof(resp)))
-		hns_roce_db_unmap_user(to_hr_ucontext(context),
-				       &hr_cq->db);
-
-err_mtt:
-	hns_roce_mtt_cleanup(hr_dev, &hr_cq->hr_buf.hr_mtt);
 	if (context)
-		ib_umem_release(hr_cq->umem);
+		destroy_user_cq(hr_dev, hr_cq, context, udata, &resp);
 	else
-		hns_roce_ib_free_cq_buf(hr_dev, &hr_cq->hr_buf,
-					hr_cq->ib_cq.cqe);
-
-err_db:
-	if (!context && (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB))
-		hns_roce_free_db(hr_dev, &hr_cq->db);
+		destroy_kernel_cq(hr_dev, hr_cq);
 
 err_cq:
 	kfree(hr_cq);
@@ -457,6 +521,10 @@ int hns_roce_ib_destroy_cq(struct ib_cq *ib_cq)
 	struct hns_roce_dev *hr_dev = to_hr_dev(ib_cq->device);
 	struct hns_roce_cq *hr_cq = to_hr_cq(ib_cq);
 	int ret = 0;
+
+	rdfx_func_cnt(hr_dev, RDFX_FUNC_DESTROY_CQ);
+	rdfx_inc_dealloc_cq_cnt(hr_dev);
+	rdfx_free_cq_buff(hr_dev, hr_cq);
 
 	if (hr_dev->hw->destroy_cq) {
 		ret = hr_dev->hw->destroy_cq(ib_cq);

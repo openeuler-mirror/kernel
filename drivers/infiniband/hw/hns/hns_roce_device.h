@@ -496,7 +496,7 @@ struct hns_roce_idx_que {
 	u32				buf_size;
 	struct ib_umem			*umem;
 	struct hns_roce_mtt		mtt;
-	u64				*bitmap;
+	unsigned long			*bitmap;
 };
 
 struct hns_roce_srq {
@@ -654,8 +654,6 @@ struct hns_roce_qp {
 	u32			doorbell_qpn;
 	__le32			sq_signal_bits;
 	u32			sq_next_wqe;
-	int			sq_max_wqes_per_wr;
-	int			sq_spare_wqes;
 	struct hns_roce_wq	sq;
 
 	struct ib_umem		*umem;
@@ -919,6 +917,12 @@ struct hns_roce_stat {
 };
 
 struct hns_roce_dfx_hw {
+	int (*query_cqc_info)(struct hns_roce_dev *hr_dev, u32 cqn,
+			      int *buffer);
+	int (*query_qpc_info)(struct hns_roce_dev *hr_dev, u32 qpn,
+			      int *buffer);
+	int (*query_mpt_info)(struct hns_roce_dev *hr_dev, u32 key,
+			      int *buffer);
 	int (*query_cqc_stat)(struct hns_roce_dev *hr_dev,
 			      char *buf, int *desc);
 	int (*query_cmd_stat)(struct hns_roce_dev *hr_dev,
@@ -1072,6 +1076,7 @@ struct hns_roce_dev {
 	const struct hns_roce_hw *hw;
 	const struct hns_roce_dfx_hw *dfx;
 	void			*priv;
+	void			*dfx_priv;
 	struct workqueue_struct *irq_workq;
 	struct hns_roce_stat	hr_stat;
 	u32			func_num;
@@ -1257,8 +1262,6 @@ int hns_roce_modify_srq(struct ib_srq *ibsrq, struct ib_srq_attr *srq_attr,
 			struct ib_udata *udata);
 int hns_roce_destroy_srq(struct ib_srq *ibsrq);
 
-struct hns_roce_srq *hns_roce_srq_lookup(struct hns_roce_dev *hr_dev, u32 srqn);
-
 struct ib_qp *hns_roce_create_qp(struct ib_pd *ib_pd,
 				 struct ib_qp_init_attr *init_attr,
 				 struct ib_udata *udata);
@@ -1304,6 +1307,139 @@ void hns_roce_srq_event(struct hns_roce_dev *hr_dev, u32 srqn, int event_type);
 int hns_get_gid_index(struct hns_roce_dev *hr_dev, u8 port, int gid_index);
 int hns_roce_init(struct hns_roce_dev *hr_dev);
 void hns_roce_exit(struct hns_roce_dev *hr_dev);
+
+int hns_roce_fill_res_entry(struct sk_buff *msg,
+			    struct rdma_restrack_entry *res);
+
 int hns_roce_register_sysfs(struct hns_roce_dev *hr_dev);
 void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev);
+
+#ifdef CONFIG_INFINIBAND_HNS_DFX
+enum {
+	RDFX_FUNC_MODIFY_DEVICE,
+	RDFX_FUNC_QUERY_DEVICE,
+	RDFX_FUNC_QUERY_PORT,
+	RDFX_FUNC_MODIFY_PORT,
+	RDFX_FUNC_GET_LINK_LAYER,
+	RDFX_FUNC_GET_NETDEV,
+	RDFX_FUNC_QUERY_GID,
+	RDFX_FUNC_ADD_GID,
+	RDFX_FUNC_DEL_GID,
+	RDFX_FUNC_QUERY_PKEY,
+	RDFX_FUNC_ALLOC_UCONTEXT,
+	RDFX_FUNC_DEALLOC_UCONTEXT,
+	RDFX_FUNC_MMAP,
+	RDFX_FUNC_ALLOC_PD,
+	RDFX_FUNC_DEALLOC_PD,
+	RDFX_FUNC_CREATE_AH,
+	RDFX_FUNC_QUERY_AH,
+	RDFX_FUNC_DESTROY_AH,
+	RDFX_FUNC_CREATE_QP,
+	RDFX_FUNC_MODIFY_QP,
+	RDFX_FUNC_QUERY_QP,
+	RDFX_FUNC_DESTROY_QP,
+	RDFX_FUNC_POST_SEND,
+	RDFX_FUNC_POST_RECV,
+	RDFX_FUNC_CREATE_CQ,
+	RDFX_FUNC_MODIFY_CQ,
+	RDFX_FUNC_DESTROY_CQ,
+	RDFX_FUNC_REQ_NOTIFY_CQ,
+	RDFX_FUNC_POLL_CQ,
+	RDFX_FUNC_RESIZE_CQ,
+	RDFX_FUNC_GET_DMA_MR,
+	RDFX_FUNC_REG_USER_MR,
+	RDFX_FUNC_REREG_USER_MR,
+	RDFX_FUNC_DEREG_MR,
+	RDFX_FUNC_PORT_IMMUTABLE
+};
+void alloc_rdfx_info(struct hns_roce_dev *hr_dev);
+void rdfx_set_dev_name(struct hns_roce_dev *hr_dev);
+void free_rdfx_info(struct hns_roce_dev *hr_dev);
+void rdfx_func_cnt(struct hns_roce_dev *hr_dev, int func);
+void rdfx_inc_dealloc_qp_cnt(struct hns_roce_dev *hr_dev);
+void rdfx_inc_arm_cq_cnt(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
+			 enum ib_cq_notify_flags flags);
+void rdfx_inc_dereg_mr_cnt(struct hns_roce_dev *hr_dev);
+void rdfx_inc_sq_db_cnt(struct hns_roce_dev *hr_dev, u32 qpn);
+void rdfx_inc_rq_db_cnt(struct hns_roce_dev *hr_dev, u32 qpn);
+void rdfx_inc_ceqe_cnt(struct hns_roce_dev *hr_dev, int ceqn);
+void rdfx_inc_dealloc_cq_cnt(struct hns_roce_dev *hr_dev);
+struct rdfx_qp_info *rdfx_get_rdfx_qp(struct hns_roce_dev *hr_dev,
+				      unsigned long qpn);
+void rdfx_put_rdfx_qp(struct hns_roce_dev *hr_dev, unsigned long qpn);
+#ifndef CONFIG_INFINIBAND_HNS_DFX_ENHANCE
+void rdfx_release_rdfx_qp(struct hns_roce_dev *hr_dev, unsigned long qpn);
+#else
+#define rdfx_release_rdfx_qp(hr_dev, qpn)
+#endif
+struct rdfx_cq_info *rdfx_get_rdfx_cq(struct hns_roce_dev *hr_dev,
+				      unsigned long cqn);
+void rdfx_put_rdfx_cq(struct hns_roce_dev *hr_dev, unsigned long cqn);
+void rdfx_release_rdfx_cq(struct hns_roce_dev *hr_dev, unsigned long cqn);
+struct rdfx_ceq_info *rdfx_get_rdfx_ceq(struct hns_roce_dev *hr_dev,
+					unsigned long ceqn);
+void rdfx_put_rdfx_ceq(struct hns_roce_dev *hr_dev, unsigned long ceqn);
+void rdfx_release_rdfx_ceq(struct hns_roce_dev *hr_dev, unsigned long ceqn);
+void rdfx_alloc_rdfx_ceq(struct hns_roce_dev *hr_dev, unsigned long ceqn,
+			 unsigned int eq_cmd);
+void rdfx_alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq);
+void rdfx_free_cq_buff(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq);
+void rdfx_alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp);
+void rdfx_set_qp_attr(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+		      const struct ib_qp_attr *attr, int attr_mask,
+		      enum ib_qp_state new_state);
+void rdfx_alloc_rdfx_mr(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr);
+void rdfx_release_rdfx_mr(struct hns_roce_dev *hr_dev, unsigned long key);
+void rdfx_alloc_rdfx_pd(struct hns_roce_dev *hr_dev, struct hns_roce_pd *pd);
+void rdfx_release_rdfx_pd(struct hns_roce_dev *hr_dev, unsigned long pdn);
+
+#ifdef CONFIG_KERNEL_419
+void rdfx_cp_rq_wqe_buf(struct hns_roce_dev *hr_dev,
+			struct hns_roce_qp *hr_qp, int ind, void *wqe,
+			const struct ib_recv_wr *wr);
+
+#else
+void rdfx_cp_rq_wqe_buf(struct hns_roce_dev *hr_dev,
+			struct hns_roce_qp *hr_qp, int ind, void *wqe,
+			struct ib_recv_wr *wr);
+#endif
+void rdfx_cp_cqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
+		     void *cqe);
+void rdfx_set_rdfx_cq_ci(struct hns_roce_dev *hr_dev,
+			 struct hns_roce_cq *hr_cq);
+#else
+#define alloc_rdfx_info(hr_dev)
+#define rdfx_set_dev_name(hr_dev)
+#define free_rdfx_info(hr_dev)
+#define rdfx_func_cnt(hr_dev, func)
+#define rdfx_inc_dealloc_qp_cnt(hr_dev)
+#define rdfx_inc_arm_cq_cnt(hr_dev, hr_cq, flags)
+#define rdfx_inc_dereg_mr_cnt(hr_dev)
+#define rdfx_inc_sq_db_cnt(hr_dev, qpn)
+#define rdfx_inc_rq_db_cnt(hr_dev, qpn)
+#define rdfx_inc_ceqe_cnt(hr_dev, ceqn)
+#define rdfx_inc_dealloc_cq_cnt(hr_dev)
+#define rdfx_get_rdfx_qp(hr_dev, qpn)
+#define rdfx_put_rdfx_qp(hr_dev, qpn)
+#define rdfx_release_rdfx_qp(hr_dev, qpn)
+#define rdfx_get_rdfx_cq(hr_dev, cqn)
+#define rdfx_put_rdfx_cq(hr_dev, cqn)
+#define rdfx_release_rdfx_cq(hr_dev, cqn)
+#define rdfx_get_rdfx_ceq(hr_dev, ceqn)
+#define rdfx_put_rdfx_ceq(hr_dev, ceqn)
+#define rdfx_release_rdfx_ceq(hr_dev, ceqn)
+#define rdfx_alloc_rdfx_ceq(hr_dev, ceqn, eq_cmd)
+#define rdfx_alloc_cq_buf(hr_dev, hr_cq)
+#define rdfx_free_cq_buff(hr_dev, hr_cq)
+#define rdfx_alloc_qp_buf(hr_dev, hr_qp)
+#define rdfx_set_qp_attr(hr_dev, hr_qp, attr, attr_mask, new_state)
+#define rdfx_alloc_rdfx_mr(hr_dev, mr)
+#define rdfx_release_rdfx_mr(hr_dev, key)
+#define rdfx_alloc_rdfx_pd(hr_dev, pd)
+#define rdfx_release_rdfx_pd(hr_dev, pdn)
+#define rdfx_cp_rq_wqe_buf(hr_dev, hr_qp, ind, wqe, wr)
+#define rdfx_cp_cqe_buf(hr_dev, hr_cq, cqe)
+#define rdfx_set_rdfx_cq_ci(hr_dev, hr_cq)
+#endif
+
 #endif /* _HNS_ROCE_DEVICE_H */

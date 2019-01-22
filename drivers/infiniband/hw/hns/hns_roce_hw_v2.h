@@ -35,13 +35,14 @@
 
 #include <linux/bitops.h>
 
-#define HNS_ROCE_VF_QPC_BT_NUM(d) (d ? (256) : (8))
-#define HNS_ROCE_VF_SRQC_BT_NUM(d) (d ? (64) : (8))
-#define HNS_ROCE_VF_CQC_BT_NUM(d) (d ? (64) : (8))
-#define HNS_ROCE_VF_MPT_BT_NUM(d) (d ? (64) : (8))
-#define HNS_ROCE_VF_EQC_NUM(d) (d ? (64) : (8))
-#define HNS_ROCE_VF_SMAC_NUM(d) (d ? (32) : (8))
-#define HNS_ROCE_VF_SGID_NUM(d) (d ? (32) : (8))
+#define HNS_ROCE_VF_QPC_BT_NUM(d) (d ? (8) : (256))
+#define HNS_ROCE_VF_SCCC_BT_NUM(d) (d ? (8) : (64))
+#define HNS_ROCE_VF_SRQC_BT_NUM(d) (d ? (8) : (64))
+#define HNS_ROCE_VF_CQC_BT_NUM(d) (d ? (8) : (64))
+#define HNS_ROCE_VF_MPT_BT_NUM(d) (d ? (8) : (64))
+#define HNS_ROCE_VF_EQC_NUM(d) (d ? (8) : (64))
+#define HNS_ROCE_VF_SMAC_NUM(d) (d ? (8) : (32))
+#define HNS_ROCE_VF_SGID_NUM(d) (d ? (8) : (32))
 #define HNS_ROCE_VF_SL_NUM			8
 
 #define HNS_ROCE_V2_MAX_QP_NUM			0x100000
@@ -62,8 +63,8 @@
 #define HNS_ROCE_V2_MAX_SQ_INLINE		0x20
 #define HNS_ROCE_V2_UAR_NUM			256
 #define HNS_ROCE_V2_PHY_UAR_NUM			1
-#define HNS_ROCE_V2_MAX_IRQ_NUM(d) (d ? (65) : (3))
-#define HNS_ROCE_V2_COMP_VEC_NUM(d) (d ? (63) : (1))
+#define HNS_ROCE_V2_MAX_IRQ_NUM(d) (d ? (3) : (65))
+#define HNS_ROCE_V2_COMP_VEC_NUM(d) (d ? (1) : (63))
 #define HNS_ROCE_V2_AEQE_VEC_NUM		1
 #define HNS_ROCE_V2_ABNORMAL_VEC_NUM		1
 #define HNS_ROCE_V2_MAX_MTPT_NUM		0x100000
@@ -114,7 +115,7 @@
 #define HNS_ROCE_EQE_HOP_NUM			2
 #define HNS_ROCE_IDX_HOP_NUM			1
 
-#define HNS_ROCE_V2_GID_INDEX_NUM		256
+#define HNS_ROCE_V2_GID_INDEX_NUM(d)		(d ? (8) : (256))
 
 #define HNS_ROCE_V2_TABLE_CHUNK_SIZE		(1 << 18)
 
@@ -166,8 +167,8 @@
 
 #define HNS_ICL_SWITCH_CMD_ROCEE_SEL	BIT(HNS_ICL_SWITCH_CMD_ROCEE_SEL_SHIFT)
 
-#define CMD_CSQ_DESC_NUM (1024)
-#define CMD_CRQ_DESC_NUM (1024)
+#define CMD_CSQ_DESC_NUM 1024
+#define CMD_CRQ_DESC_NUM 1024
 
 enum {
 	NO_ARMED = 0x0,
@@ -682,6 +683,7 @@ struct hns_roce_v2_qp_context {
 #define	V2_QPC_BYTE_76_RQIE_S 28
 
 #define	V2_QPC_BYTE_76_RQ_VLAN_EN_S 30
+#define	V2_QPC_BYTE_76_RQ_RTY_TX_ERR_S 31
 #define	V2_QPC_BYTE_80_RX_CQN_S 0
 #define V2_QPC_BYTE_80_RX_CQN_M GENMASK(23, 0)
 
@@ -1463,7 +1465,8 @@ struct hns_roce_vf_res_b {
 	__le32 vf_smac_idx_num;
 	__le32 vf_sgid_idx_num;
 	__le32 vf_qid_idx_sl_num;
-	__le32 rsv[2];
+	__le32 vf_sccc_idx_num;
+	__le32 rsv1;
 };
 
 #define VF_RES_B_DATA_0_VF_ID_S 0
@@ -1486,6 +1489,13 @@ struct hns_roce_vf_res_b {
 
 #define VF_RES_B_DATA_3_VF_SL_NUM_S 16
 #define VF_RES_B_DATA_3_VF_SL_NUM_M GENMASK(19, 16)
+
+#define VF_RES_B_DATA_4_VF_SCCC_BT_IDX_S 0
+#define VF_RES_B_DATA_4_VF_SCCC_BT_IDX_M GENMASK(8, 0)
+
+#define VF_RES_B_DATA_4_VF_SCCC_BT_NUM_S 9
+#define VF_RES_B_DATA_4_VF_SCCC_BT_NUM_M GENMASK(17, 9)
+
 
 struct hns_roce_vf_switch {
 	__le32 rocee_sel;
@@ -1702,6 +1712,9 @@ struct hns_roce_eq_context {
 #define HNS_ROCE_V2_EQ_ARMED			1
 #define HNS_ROCE_V2_EQ_ALWAYS_ARMED		3
 
+#define HNS_ROCE_V2_EQ_DEFAULT_INTERVAL		0x10
+#define HNS_ROCE_V2_EQ_DEFAULT_BURST_NUM	0x10
+
 #define HNS_ROCE_EQ_INIT_EQE_CNT		0
 #define HNS_ROCE_EQ_INIT_PROD_IDX		0
 #define HNS_ROCE_EQ_INIT_REPORT_TIMER		0
@@ -1912,11 +1925,38 @@ int hns_roce_v2_query_cqc_stat(struct hns_roce_dev *hr_dev,
 int hns_roce_v2_modify_eq(struct hns_roce_dev *hr_dev,
 				 u16 eq_count, u16 eq_period, u16 type);
 
+int hns_roce_v2_query_cqc_info(struct hns_roce_dev *hr_dev, u32 cqn,
+			       int *buffer);
+int hns_roce_v2_query_qpc_info(struct hns_roce_dev *hr_dev, u32 qpn,
+			       int *buffer);
+int hns_roce_v2_query_mpt_info(struct hns_roce_dev *hr_dev, u32 key,
+			       int *buffer);
 void hns_roce_cmq_setup_basic_desc(struct hns_roce_cmq_desc *desc,
 				enum hns_roce_opcode_type opcode,
 				bool is_read);
 int hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 				struct hns_roce_cmq_desc *desc, int num);
+#ifdef CONFIG_INFINIBAND_HNS_DFX
+#ifdef CONFIG_KERNEL_419
+void rdfx_cp_sq_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
+			unsigned int ind, void *wqe,
+			struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
+			const struct ib_send_wr *wr);
+
+
+#else
+void rdfx_cp_sq_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
+			unsigned int ind, void *wqe,
+			struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
+			struct ib_send_wr *wr);
+#endif
+
+void rdfx_set_cqe_info(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
+		       struct hns_roce_v2_cqe *cqe);
+#else
+#define rdfx_set_cqe_info(hr_dev, hr_cq, cqe)
+#define rdfx_cp_sq_wqe_buf(hr_dev, qp, ind, wqe, rc_sq_wqe, wr)
+#endif
 
 #define HNS_ROCE_V2_SCC_CTX_DONE_S 0
 

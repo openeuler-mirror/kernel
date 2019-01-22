@@ -59,6 +59,8 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 	const struct ib_global_route *grh = rdma_ah_read_grh(ah_attr);
 	bool vlan_en = false;
 
+	rdfx_func_cnt(hr_dev, RDFX_FUNC_CREATE_AH);
+
 	ah = kzalloc(sizeof(*ah), GFP_ATOMIC);
 	if (!ah)
 		return ERR_PTR(-ENOMEM);
@@ -139,6 +141,8 @@ int hns_roce_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr)
 {
 	struct hns_roce_ah *ah = to_hr_ah(ibah);
 
+	rdfx_func_cnt(to_hr_dev(ibah->device), RDFX_FUNC_QUERY_AH);
+
 	memset(ah_attr, 0, sizeof(*ah_attr));
 
 	rdma_ah_set_sl(ah_attr, (le32_to_cpu(ah->av.sl_tclass_flowlabel) >>
@@ -159,6 +163,8 @@ int hns_roce_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr)
 
 int hns_roce_destroy_ah(struct ib_ah *ah)
 {
+	rdfx_func_cnt(to_hr_dev(ah->device), RDFX_FUNC_DESTROY_AH);
+
 	kfree(to_hr_ah(ah));
 
 	return 0;
