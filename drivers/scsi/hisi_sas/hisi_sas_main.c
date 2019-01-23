@@ -3064,10 +3064,47 @@ static void hisi_sas_debugfs_snapshot_regs(struct hisi_hba *hisi_hba)
 	hisi_sas_debugfs_snapshot_itct_reg(hisi_hba);
 	hisi_sas_debugfs_snapshot_iost_reg(hisi_hba);
 
-	hisi_sas_debugfs_create_files(hisi_hba);
+	/* Avoid re-create files here */
+	if (!hisi_hba->debugfs_dump_dentry)
+		hisi_sas_debugfs_create_files(hisi_hba);
 
 	hisi_hba->hw->snapshot_restore(hisi_hba);
 }
+
+static ssize_t hisi_sas_debugfs_trigger_dump_write(struct file *file,
+						   const char __user *user_buf,
+						   size_t count,
+						   loff_t *ppos)
+{
+	struct hisi_hba *hisi_hba = file->f_inode->i_private;
+	u8 buf[8];
+
+	/*
+	 * The code, which used for upstream, check
+	 * the value of debugfs_snapshot here.
+	 * If not 0, will return -EFAULT.
+	 * Keep manual dump as one time only
+	 */
+
+	/* Not allow to input more than 8 char */
+	if (count > 8)
+		return -EFAULT;
+
+	if (copy_from_user(buf, user_buf, count))
+		return -EFAULT;
+
+	if (buf[0] == '1')
+		queue_work(hisi_hba->wq, &hisi_hba->debugfs_work);
+	else
+		return -EFAULT;
+
+	return count;
+}
+
+static const struct file_operations hisi_sas_debugfs_trigger_dump_fops = {
+	.write = &hisi_sas_debugfs_trigger_dump_write,
+	.owner = THIS_MODULE,
+};
 
 void hisi_sas_debugfs_work_handler(struct work_struct *work)
 {
@@ -3090,6 +3127,11 @@ void hisi_sas_debugfs_init(struct hisi_hba *hisi_hba)
 
 	if (!hisi_hba->debugfs_dir)
 		return;
+
+	debugfs_create_file("trigger_dump", 0600,
+			    hisi_hba->debugfs_dir,
+			    hisi_hba,
+			    &hisi_sas_debugfs_trigger_dump_fops);
 
 	/* Alloc buffer for global */
 	sz = hisi_hba->hw->debugfs_reg_global->count * 4;
