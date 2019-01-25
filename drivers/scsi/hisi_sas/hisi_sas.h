@@ -233,9 +233,8 @@ struct hisi_sas_debugfs_reg {
 	int base_off;
 	union {
 		u32 (*read_global_reg)(struct hisi_hba *hisi_hba, u32 off);
-		u32 (*read_port_reg)(struct hisi_hba *hisi_hba,
-					int port,
-					u32 off);
+		u32 (*read_port_reg)(struct hisi_hba *hisi_hba, int port,
+				     u32 off);
 	};
 };
 
@@ -351,22 +350,22 @@ struct hisi_hba {
 	const struct hisi_sas_hw *hw;	/* Low level hw interface */
 	unsigned long sata_dev_bitmap[BITS_TO_LONGS(HISI_SAS_MAX_DEVICES)];
 	struct work_struct rst_work;
-	struct work_struct dfx_work;
+	struct work_struct debugfs_work;
 	u32 phy_state;
 	u32 intr_coal_ticks;	/* time of interrupt coalesce, unit:1us */
 	u32 intr_coal_count;	/* count of interrupt coalesce */
 	int enable_dix_dif;
 
 	/* debugfs memories */
-	void *global_reg_debugfs;
-	void *port_reg_debugfs[HISI_SAS_MAX_PHYS];
-	void *complete_hdr_debugfs[HISI_SAS_MAX_QUEUES];
-	struct hisi_sas_cmd_hdr	*cmd_hdr_debugfs[HISI_SAS_MAX_QUEUES];
-	struct hisi_sas_iost *iost_debugfs;
-	struct hisi_sas_itct *itct_debugfs;
+	void *debugfs_global_reg;
+	void *debugfs_port_reg[HISI_SAS_MAX_PHYS];
+	void *debugfs_complete_hdr[HISI_SAS_MAX_QUEUES];
+	struct hisi_sas_cmd_hdr	*debugfs_cmd_hdr[HISI_SAS_MAX_QUEUES];
+	struct hisi_sas_iost *debugfs_iost;
+	struct hisi_sas_itct *debugfs_itct;
 
 	struct dentry *debugfs_dir;
-	struct dentry *dump_dentry;
+	struct dentry *debugfs_dump_dentry;
 
 	bool user_ctl_irq;
 	unsigned int reply_map[NR_CPUS];
@@ -509,7 +508,7 @@ struct hisi_sas_slot_dif_buf_table {
 };
 
 extern bool hisi_sas_debugfs_enable;
-extern struct dentry *hisi_sas_dbg_dir;
+extern struct dentry *hisi_sas_debugfs_dir;
 extern int skip_bus_flag;
 extern struct scsi_transport_template *hisi_sas_stt;
 extern void hisi_sas_stop_phys(struct hisi_hba *hisi_hba);
@@ -536,7 +535,6 @@ extern void hisi_sas_slot_task_free(struct hisi_hba *hisi_hba,
 				    struct hisi_sas_slot *slot);
 extern void hisi_sas_init_mem(struct hisi_hba *hisi_hba);
 extern void hisi_sas_rst_work_handler(struct work_struct *work);
-extern void hisi_sas_dfx_work_handler(struct work_struct *work);
 extern void hisi_sas_sync_rst_work_handler(struct work_struct *work);
 extern void hisi_sas_kill_tasklets(struct hisi_hba *hisi_hba);
 extern bool hisi_sas_notify_phy_event(struct hisi_sas_phy *phy,
@@ -548,4 +546,5 @@ extern void hisi_sas_controller_reset_done(struct hisi_hba *hisi_hba);
 extern void hisi_sas_debugfs_init(struct hisi_hba *hisi_hba);
 extern void hisi_sas_debugfs_exit(struct hisi_hba *hisi_hba);
 extern void hisi_sas_snapshot_regs(struct hisi_hba *hisi_hba);
+extern void hisi_sas_debugfs_work_handler(struct work_struct *work);
 #endif

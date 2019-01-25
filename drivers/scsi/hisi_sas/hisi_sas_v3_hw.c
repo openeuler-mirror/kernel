@@ -2781,7 +2781,7 @@ hisi_sas_shost_alloc_pci(struct pci_dev *pdev)
 	hisi_hba = shost_priv(shost);
 
 	INIT_WORK(&hisi_hba->rst_work, hisi_sas_rst_work_handler);
-	INIT_WORK(&hisi_hba->dfx_work, hisi_sas_dfx_work_handler);
+	INIT_WORK(&hisi_hba->debugfs_work, hisi_sas_debugfs_work_handler);
 	hisi_hba->hw = &hisi_sas_v3_hw;
 	hisi_hba->pci_dev = pdev;
 	hisi_hba->dev = dev;
@@ -2953,8 +2953,7 @@ static void hisi_sas_v3_remove(struct pci_dev *pdev)
 	struct hisi_hba *hisi_hba = sha->lldd_ha;
 	struct Scsi_Host *shost = sha->core.shost;
 
-	if (hisi_sas_debugfs_enable)
-		hisi_sas_debugfs_exit(hisi_hba);
+	hisi_sas_debugfs_exit(hisi_hba);
 
 	if (timer_pending(&hisi_hba->timer))
 		del_timer(&hisi_hba->timer);
