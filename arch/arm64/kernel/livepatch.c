@@ -96,57 +96,6 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 	return args->ret;
 }
 
-#ifdef CONFIG_FUNCTION_GRAPH_TRACER
-static unsigned long klp_ftrace_graph_addr(unsigned long addr,
-		struct task_struct *tsk,
-		int *graph)
-{
-	unsigned long ret_addr = 0;
-	int index = tsk->curr_ret_stack;
-
-	if ((addr + 4) != (unsigned long)return_to_handler)
-		return ret_addr;
-
-	if (!tsk->ret_stack || index < *graph)
-		return ret_addr;
-
-	index -= *graph;
-	ret_addr = tsk->ret_stack[index].ret;
-
-	(*graph)++;
-	return ret_addr;
-}
-#else
-static unsigned long klp_ftrace_graph_addr(unsigned long addr,
-		struct task_struct *tsk,
-		int *graph)
-{
-	return 0;
-}
-#endif
-
-void notrace klp_walk_stackframe(struct stackframe *frame,
-		int (*fn)(struct stackframe *, void *),
-		struct task_struct *tsk, void *data)
-{
-	unsigned long addr;
-	int graph = 0;
-
-	while (1) {
-		int ret;
-
-		if (fn(frame, data))
-			break;
-		ret = unwind_frame(NULL, frame);
-		if (ret < 0)
-			break;
-
-		addr = klp_ftrace_graph_addr(frame->pc, tsk, &graph);
-		if (addr)
-			frame->pc = addr;
-	}
-}
-
 int klp_check_calltrace(struct klp_patch *patch, int enable)
 {
 	struct task_struct *g, *t;
@@ -162,8 +111,10 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 	do_each_thread(g, t) {
 		frame.fp = thread_saved_fp(t);
 		frame.pc = thread_saved_pc(t);
-		klp_walk_stackframe(&frame, klp_check_activeness_func,
-				t, &args);
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+		frame.graph = t->curr_ret_stack;
+#endif
+		walk_stackframe(t, &frame, klp_check_activeness_func, &args);
 		if (args.ret) {
 			ret = args.ret;
 			pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
