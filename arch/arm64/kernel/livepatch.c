@@ -77,6 +77,8 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
 			if (args->enable) {
+				if (func->force)
+					continue;
 				func_addr = func->old_addr;
 				func_size = func->old_size;
 			} else {
