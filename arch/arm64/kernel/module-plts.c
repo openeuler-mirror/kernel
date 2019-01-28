@@ -254,6 +254,19 @@ int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
 						sechdrs[i].sh_info, dstsec);
 	}
 
+#ifdef CONFIG_LIVEPATCH
+	for (i = 0; i < ehdr->e_shnum; i++) {
+		if (!strcmp(".livepatch.pltcount",
+		    secstrings + sechdrs[i].sh_name)) {
+			core_plts += sechdrs[i].sh_size;
+			sechdrs[i].sh_size = 0;
+			sechdrs[i].sh_type = SHT_NOBITS;
+			sechdrs[i].sh_flags = 0;
+			break;
+		}
+	}
+#endif
+
 	mod->arch.core.plt->sh_type = SHT_NOBITS;
 	mod->arch.core.plt->sh_flags = SHF_EXECINSTR | SHF_ALLOC;
 	mod->arch.core.plt->sh_addralign = L1_CACHE_BYTES;
