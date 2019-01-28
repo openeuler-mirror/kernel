@@ -33,6 +33,11 @@ struct mod_arch_specific {
 
 	/* for CONFIG_DYNAMIC_FTRACE */
 	struct plt_entry 	*ftrace_trampoline;
+
+#ifdef CONFIG_LIVEPATCH
+	struct plt_entry	*core_plts;
+	bool			have_plts;
+#endif
 };
 #endif
 
@@ -40,6 +45,9 @@ u64 module_emit_plt_entry(struct module *mod, void *loc, const Elf64_Rela *rela,
 			  Elf64_Sym *sym);
 
 u64 module_emit_veneer_for_adrp(struct module *mod, void *loc, u64 val);
+
+u64 livepatch_emit_plt_entry(struct module *mod, void *loc,
+			const Elf64_Rela *rela, Elf64_Sym *sym);
 
 #ifdef CONFIG_RANDOMIZE_BASE
 extern u64 module_alloc_base;

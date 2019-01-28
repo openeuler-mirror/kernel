@@ -2036,6 +2036,10 @@ static void module_disable_nx(const struct module *mod) { }
 #endif
 
 #ifdef CONFIG_LIVEPATCH
+void __weak klp_get_core_plts(struct module *mod)
+{
+}
+
 /*
  * Persist Elf information about a module. Copy the Elf header,
  * section header table, section string table, and symtab section
@@ -2083,6 +2087,8 @@ static int copy_module_elf(struct module *mod, struct load_info *info)
 	 */
 	mod->klp_info->sechdrs[symndx].sh_addr = \
 		(unsigned long) mod->core_kallsyms.symtab;
+
+	klp_get_core_plts(mod);
 
 	return 0;
 

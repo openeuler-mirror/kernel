@@ -42,6 +42,48 @@ u64 module_emit_plt_entry(struct module *mod, void *loc, const Elf64_Rela *rela,
 	return (u64)&plt[i];
 }
 
+#ifdef CONFIG_LIVEPATCH
+void klp_get_core_plts(struct module *mod)
+{
+	if (is_livepatch_module(mod) && mod->arch.have_plts)
+		mod->arch.core_plts = (struct plt_entry *)
+			mod->arch.core.plt->sh_addr;
+}
+
+u64 livepatch_emit_plt_entry(struct module *mod, void *loc,
+			const Elf64_Rela *rela, Elf64_Sym *sym)
+{
+	struct mod_plt_sec *pltsec = &mod->arch.core;
+	struct plt_entry *plt = (struct plt_entry *)mod->arch.core_plts;
+	int i = pltsec->plt_num_entries;
+	u64 val = sym->st_value + rela->r_addend;
+
+	plt[i] = get_plt_entry(val);
+
+	/*
+	 * Check if the entry we just created is a duplicate. Given that the
+	 * relocations are sorted, this will be the last entry we allocated.
+	 * (if one exists).
+	 */
+	if (i > 0 && plt_entries_equal(plt + i, plt + i - 1))
+		return (u64)&plt[i - 1];
+
+	pltsec->plt_num_entries++;
+	if (WARN_ON(pltsec->plt_num_entries > pltsec->plt_max_entries))
+		return 0;
+
+	return (u64)&plt[i];
+}
+#else
+u64 livepatch_emit_plt_entry(struct module *mod, void *loc,
+			const Elf64_Rela *rela, Elf64_Sym *sym)
+{
+	WARN(1, "Live patching support is disabled, but catch SHF_RELA_LIVEPATCH relocation\n");
+
+	return 0;
+}
+#endif /* #ifdef CONFIG_LIVEPATCH */
+
 #ifdef CONFIG_ARM64_ERRATUM_843419
 u64 module_emit_veneer_for_adrp(struct module *mod, void *loc, u64 val)
 {
@@ -265,6 +307,10 @@ int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
 			break;
 		}
 	}
+
+	if (mod->arch.core.plt)
+		mod->arch.have_plts = true;
+	mod->arch.core_plts = NULL;
 #endif
 
 	mod->arch.core.plt->sh_type = SHT_NOBITS;

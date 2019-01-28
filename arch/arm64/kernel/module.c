@@ -413,7 +413,13 @@ int apply_relocate_add(Elf64_Shdr *sechdrs,
 
 			if (IS_ENABLED(CONFIG_ARM64_MODULE_PLTS) &&
 			    ovf == -ERANGE) {
-				val = module_emit_plt_entry(me, loc, &rel[i], sym);
+				if (!(sechdrs[relsec].sh_flags
+					& SHF_RELA_LIVEPATCH))
+					val = module_emit_plt_entry(me,
+							loc, &rel[i], sym);
+				else
+					val = livepatch_emit_plt_entry(me,
+							loc, &rel[i], sym);
 				if (!val)
 					return -ENOEXEC;
 				ovf = reloc_insn_imm(RELOC_OP_PREL, loc, val, 2,
