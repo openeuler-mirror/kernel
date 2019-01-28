@@ -168,7 +168,7 @@ int arch_klp_patch_func(struct klp_func *func)
 
 	func_node = klp_find_func_node(func->old_addr);
 	if (!func_node) {
-		func_node = kzalloc(sizeof(*func_node), GFP_KERNEL);
+		func_node = kzalloc(sizeof(*func_node), GFP_ATOMIC);
 		if (!func_node)
 			return -ENOMEM;
 		memory_flag = 1;
