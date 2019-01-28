@@ -1,5 +1,5 @@
 obj-$(CONFIG_LIVEPATCH) += livepatch.o
-obj-$(CONFIG_LIVEPATCH_FTRACE) += transition.o
-obj-$(CONFIG_LIVEPATCH_FTRACE) += shadow.o
+obj-$(CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY) += transition.o
+obj-$(CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY) += shadow.o
 
 livepatch-objs := core.o patch.o

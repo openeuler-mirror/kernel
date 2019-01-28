@@ -206,7 +206,9 @@ static int klp_check_stack_func(struct klp_func *func,
 				struct stack_trace *trace)
 {
 	unsigned long func_addr, func_size, address;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	struct klp_ops *ops;
+#endif
 	int i;
 
 	for (i = 0; i < trace->nr_entries; i++) {
@@ -220,6 +222,7 @@ static int klp_check_stack_func(struct klp_func *func,
 			func_addr = (unsigned long)func->new_func;
 			func_size = func->new_size;
 		} else {
+#ifdef CONFIG_LIVEPATCH_FTRACE
 			/*
 			 * Check for the to-be-patched function
 			 * (the previous func).
@@ -238,6 +241,10 @@ static int klp_check_stack_func(struct klp_func *func,
 				func_addr = (unsigned long)prev->new_func;
 				func_size = prev->new_size;
 			}
+#else
+			func_addr = func->old_addr;
+			func_size = func->old_size;
+#endif
 		}
 
 		if (address >= func_addr && address < func_addr + func_size)

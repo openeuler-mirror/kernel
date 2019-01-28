@@ -83,7 +83,7 @@ struct klp_func {
 	struct list_head stack_node;
 	unsigned long old_size, new_size;
 	bool patched;
-#ifdef CONFIG_LIVEPATCH_FTRACE
+#ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 	bool transition;
 #endif
 };
@@ -181,7 +181,7 @@ int klp_disable_patch(struct klp_patch *);
 void arch_klp_init_object_loaded(struct klp_patch *patch,
 				 struct klp_object *obj);
 
-#ifdef CONFIG_LIVEPATCH_FTRACE
+#ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 /* Called from the module loader during module coming/going states */
 int klp_module_coming(struct module *mod);
 void klp_module_going(struct module *mod);
@@ -215,7 +215,7 @@ void *klp_shadow_get_or_alloc(void *obj, unsigned long id,
 void klp_shadow_free(void *obj, unsigned long id, klp_shadow_dtor_t dtor);
 void klp_shadow_free_all(unsigned long id, klp_shadow_dtor_t dtor);
 
-#else /* !CONFIG_LIVEPATCH_FTRACE */
+#else /* !CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY */
 
 static inline int klp_module_coming(struct module *mod) { return 0; }
 static inline void klp_module_going(struct module *mod) {}
