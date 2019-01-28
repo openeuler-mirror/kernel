@@ -35,6 +35,7 @@
 #include "patch.h"
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+
 #ifdef CONFIG_LIVEPATCH_FTRACE
 #include "transition.h"
 #endif
@@ -55,6 +56,13 @@ DEFINE_MUTEX(klp_mutex);
 static LIST_HEAD(klp_patches);
 
 static struct kobject *klp_root_kobj;
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+struct patch_data {
+	struct klp_patch        *patch;
+	atomic_t                cpu_count;
+};
+#endif
 
 static bool klp_is_module(struct klp_object *obj)
 {
@@ -356,20 +364,47 @@ static int disable_patch(struct klp_patch *patch)
 
 int klp_try_disable_patch(void *data)
 {
-	struct klp_patch *patch = data;
 	int ret = 0;
+	int flag = 0;
+	struct patch_data *pd = (struct patch_data *)data;
 
-	ret = klp_check_calltrace(patch, 0);
-	if (ret)
-		return ret;
+	if (atomic_inc_return(&pd->cpu_count) == 1) {
+		struct klp_patch *patch = pd->patch;
 
-	ret = disable_patch(patch);
+		ret = klp_check_calltrace(patch, 1);
+		if (ret) {
+			flag = 1;
+			atomic_inc(&pd->cpu_count);
+			return ret;
+		}
+		ret = disable_patch(patch);
+		if (ret) {
+			flag = 1;
+			atomic_inc(&pd->cpu_count);
+			return ret;
+		}
+		atomic_inc(&pd->cpu_count);
+	} else {
+		while (atomic_read(&pd->cpu_count) <= num_online_cpus())
+			cpu_relax();
+
+		if (!flag)
+			klp_smp_isb();
+	}
+
 	return ret;
 }
 
 static int __klp_disable_patch(struct klp_patch *patch)
 {
 	int ret;
+	struct patch_data patch_data = {
+		.patch = patch,
+		.cpu_count = ATOMIC_INIT(0),
+	};
+
+	if (WARN_ON(!patch->enabled))
+		return -EINVAL;
 
 #ifdef CONFIG_LIVEPATCH_STACK
 	/* enforce stacking: only the last enabled patch can be disabled */
@@ -380,7 +415,7 @@ static int __klp_disable_patch(struct klp_patch *patch)
 	}
 #endif
 
-	ret = stop_machine(klp_try_disable_patch, patch, NULL);
+	ret = stop_machine(klp_try_disable_patch, &patch_data, cpu_online_mask);
 
 	return ret;
 }
@@ -524,11 +559,6 @@ disable:
 	disable_patch(patch);
 	return ret;
 }
-
-struct patch_data {
-	struct klp_patch        *patch;
-	atomic_t                cpu_count;
-};
 
 int klp_try_enable_patch(void *data)
 {
