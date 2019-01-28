@@ -1056,6 +1056,34 @@ put:
 	return ret;
 }
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+static inline int klp_load_hook(struct klp_object *obj)
+{
+	struct klp_hook *hook;
+
+	if (!obj->hooks_load)
+		return 0;
+
+	for (hook = obj->hooks_load; hook->hook; hook++)
+		(*hook->hook)();
+
+	return 0;
+}
+
+static inline int klp_unload_hook(struct klp_object *obj)
+{
+	struct klp_hook *hook;
+
+	if (!obj->hooks_unload)
+		return 0;
+
+	for (hook = obj->hooks_unload; hook->hook; hook++)
+		(*hook->hook)();
+
+	return 0;
+}
+#endif
+
 static int klp_init_patch(struct klp_patch *patch)
 {
 	struct klp_object *obj;
@@ -1087,6 +1115,11 @@ static int klp_init_patch(struct klp_patch *patch)
 			goto free;
 	}
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	klp_for_each_object(patch, obj)
+		klp_load_hook(obj);
+#endif
+
 	list_add_tail(&patch->list, &klp_patches);
 
 	mutex_unlock(&klp_mutex);
@@ -1115,6 +1148,9 @@ free:
 int klp_unregister_patch(struct klp_patch *patch)
 {
 	int ret;
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	struct klp_object *obj;
+#endif
 
 	mutex_lock(&klp_mutex);
 
@@ -1129,6 +1165,11 @@ int klp_unregister_patch(struct klp_patch *patch)
 	}
 
 	klp_free_patch(patch);
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	klp_for_each_object(patch, obj)
+		klp_unload_hook(obj);
+#endif
 
 	mutex_unlock(&klp_mutex);
 
