@@ -297,17 +297,6 @@ int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
 	}
 
 #ifdef CONFIG_LIVEPATCH
-	for (i = 0; i < ehdr->e_shnum; i++) {
-		if (!strcmp(".livepatch.pltcount",
-		    secstrings + sechdrs[i].sh_name)) {
-			core_plts += sechdrs[i].sh_size;
-			sechdrs[i].sh_size = 0;
-			sechdrs[i].sh_type = SHT_NOBITS;
-			sechdrs[i].sh_flags = 0;
-			break;
-		}
-	}
-
 	if (mod->arch.core.plt)
 		mod->arch.have_plts = true;
 	mod->arch.core_plts = NULL;
