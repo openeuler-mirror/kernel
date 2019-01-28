@@ -916,13 +916,30 @@ static void klp_free_patch(struct klp_patch *patch)
 		list_del(&patch->list);
 }
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+int __weak arch_klp_func_can_patch(struct klp_func *func)
+{
+	return 0;
+}
+#endif
+
 static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 {
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	int ret;
+#endif
+
 	if (!func->old_name || !func->new_func)
 		return -EINVAL;
 
 	if (strlen(func->old_name) >= KSYM_NAME_LEN)
 		return -EINVAL;
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	ret = arch_klp_func_can_patch(func);
+	if (ret)
+		return ret;
+#endif
 
 	INIT_LIST_HEAD(&func->stack_node);
 	func->patched = false;
@@ -1015,17 +1032,18 @@ static int klp_init_object(struct klp_patch *patch, struct klp_object *obj)
 	if (ret)
 		goto put;
 
-	klp_for_each_func(obj, func) {
-		ret = klp_init_func(obj, func);
+	if (klp_is_object_loaded(obj)) {
+		ret = klp_init_object_loaded(patch, obj);
 		if (ret)
 			goto out;
 	}
 
-	if (klp_is_object_loaded(obj)) {
-		ret = klp_init_object_loaded(patch, obj);
+	klp_for_each_func(obj, func) {
+		ret = klp_init_func(obj, func);
 		if (ret)
 			goto free;
 	}
+
 
 	return 0;
 
