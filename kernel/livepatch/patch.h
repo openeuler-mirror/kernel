@@ -22,7 +22,12 @@
 struct klp_ops {
 	struct list_head node;
 	struct list_head func_stack;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	struct ftrace_ops fops;
+#else /* CONFIG_LIVEPATCH_WO_FTRACE */
+	struct list_head func_list;
+	unsigned long old_addr;
+#endif
 };
 
 struct klp_ops *klp_find_ops(unsigned long old_addr);

@@ -32,6 +32,7 @@
 #include "patch.h"
 #include "transition.h"
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static LIST_HEAD(klp_ops);
 
 struct klp_ops *klp_find_ops(unsigned long old_addr)
@@ -235,6 +236,38 @@ err:
 	kfree(ops);
 	return ret;
 }
+
+#else /* #ifdef CONFIG_LIVEPATCH_WO_FTRACE */
+
+static void klp_unpatch_func(struct klp_func *func)
+{
+	if (WARN_ON(!func->patched))
+		return;
+	if (WARN_ON(!func->old_addr))
+		return;
+
+	arch_klp_unpatch_func(func);
+
+	func->patched = false;
+}
+
+static inline int klp_patch_func(struct klp_func *func)
+{
+	int ret = 0;
+
+	if (WARN_ON(!func->old_addr))
+		return -EINVAL;
+
+	if (WARN_ON(func->patched))
+		return -EINVAL;
+
+	ret = arch_klp_patch_func(func);
+	if (!ret)
+		func->patched = true;
+
+	return ret;
+}
+#endif
 
 void klp_unpatch_object(struct klp_object *obj)
 {
