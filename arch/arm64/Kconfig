@@ -166,7 +166,7 @@ config ARM64
 	select SWIOTLB
 	select SYSCTL_EXCEPTION_TRACE
 	select THREAD_INFO_IN_TASK
-	select HAVE_LIVEPATCH_WO_FTRACE if !ARM64_ERRATUM_843419
+	select HAVE_LIVEPATCH_WO_FTRACE
 	help
 	  ARM 64-bit (AArch64) Linux support.
 
