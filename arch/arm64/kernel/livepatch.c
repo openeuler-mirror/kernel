@@ -109,7 +109,7 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 		.ret = 0
 	};
 
-	do_each_thread(g, t) {
+	for_each_process_thread(g, t) {
 		frame.fp = thread_saved_fp(t);
 		frame.pc = thread_saved_pc(t);
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
@@ -122,7 +122,7 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 			show_stack(t, NULL);
 			goto out;
 		}
-	} while_each_thread(g, t);
+	}
 
 out:
 	return ret;
