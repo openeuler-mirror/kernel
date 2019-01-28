@@ -39,6 +39,8 @@ int sdei_event_unregister(u32 event_num);
 int sdei_event_enable(u32 event_num);
 int sdei_event_disable(u32 event_num);
 int sdei_api_event_interrupt_bind(int hwirq);
+int sdei_api_event_disable(u32 event_num);
+int sdei_api_event_enable(u32 event_num);
 
 #ifdef CONFIG_ARM_SDE_INTERFACE
 /* For use by arch code when CPU hotplug notifiers are not appropriate. */
