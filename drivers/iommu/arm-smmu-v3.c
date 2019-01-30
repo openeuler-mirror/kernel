@@ -212,10 +212,12 @@
 #define STRTAB_SPLIT			8
 
 #define STRTAB_L1_DESC_DWORDS		1
+#define STRTAB_L1_DESC_SIZE		(STRTAB_L1_DESC_DWORDS << 3)
 #define STRTAB_L1_DESC_SPAN		GENMASK_ULL(4, 0)
 #define STRTAB_L1_DESC_L2PTR_MASK	GENMASK_ULL(51, 6)
 
 #define STRTAB_STE_DWORDS		8
+#define STRTAB_STE_SIZE			(STRTAB_STE_DWORDS << 3)
 #define STRTAB_STE_0_V			(1UL << 0)
 #define STRTAB_STE_0_CFG		GENMASK_ULL(3, 1)
 #define STRTAB_STE_0_CFG_ABORT		0
@@ -342,6 +344,9 @@
 #define EVTQ_MAX_SZ_SHIFT		7
 
 #define EVTQ_0_ID			GENMASK_ULL(7, 0)
+#define EVTQ_0_ID_C_BAD_STE		0x4
+#define EVTQ_0_SSV			GENMASK_ULL(11, 11)
+#define EVTQ_0_SID			GENMASK_ULL(63, 32)
 
 /* PRI queue */
 #define PRIQ_ENT_DWORDS			2
@@ -528,6 +533,7 @@ struct arm_smmu_strtab_ent {
 struct arm_smmu_strtab_cfg {
 	__le64				*strtab;
 	dma_addr_t			strtab_dma;
+	dma_addr_t			former_strtab_dma;
 	struct arm_smmu_strtab_l1_desc	*l1_desc;
 	unsigned int			num_l1_ents;
 
@@ -1282,6 +1288,62 @@ static int arm_smmu_init_dummy_l2_strtab(struct arm_smmu_device *smmu, u32 sid)
 	return __arm_smmu_init_l2_strtab(smmu, sid, &dummy_desc);
 }
 
+static __le64 *arm_smmu_get_step_for_sid(struct arm_smmu_device *smmu, u32 sid);
+
+static void arm_smmu_ste_abort_quirks(struct arm_smmu_device *smmu, u64 evt0)
+{
+	int i;
+	__le64 *dst, *src;
+	u64 val, paddr;
+	u32 sid = FIELD_GET(EVTQ_0_SID, evt0);
+	struct arm_smmu_strtab_cfg *cfg = &smmu->strtab_cfg;
+
+	/* SubStreamID is not support yet */
+	if (FIELD_GET(EVTQ_0_SSV, evt0))
+		return;
+
+	if (smmu->features & ARM_SMMU_FEAT_2_LVL_STRTAB) {
+		int idx, ret;
+
+		idx = (sid >> STRTAB_SPLIT) * STRTAB_L1_DESC_DWORDS;
+		if (!cfg->l1_desc[idx].l2ptr) {
+			ret = arm_smmu_init_l2_strtab(smmu, sid);
+			if (ret)
+				return;
+		}
+	}
+
+	dst = arm_smmu_get_step_for_sid(smmu, sid);
+	val = le64_to_cpu(dst[0]);
+	if (FIELD_GET(STRTAB_STE_0_CFG, val) != STRTAB_STE_0_CFG_ABORT)
+		return;
+
+	if (smmu->features & ARM_SMMU_FEAT_2_LVL_STRTAB) {
+		paddr = cfg->former_strtab_dma +
+			(sid >> STRTAB_SPLIT) * STRTAB_L1_DESC_SIZE;
+		src = ioremap(paddr, STRTAB_L1_DESC_SIZE);
+		if (!src)
+			return;
+
+		paddr = le64_to_cpu(*src) & STRTAB_L1_DESC_L2PTR_MASK;
+		iounmap(src);
+		paddr += (sid & ((1 << STRTAB_SPLIT) - 1)) * STRTAB_STE_SIZE;
+	} else {
+		paddr = cfg->former_strtab_dma + (sid * STRTAB_STE_SIZE);
+	}
+
+	src = ioremap(paddr, STRTAB_STE_SIZE);
+	if (!src)
+		return;
+
+	for (i = 1; i < STRTAB_STE_DWORDS; i++)
+		dst[i] = src[i];
+	arm_smmu_sync_ste_for_sid(smmu, sid);
+	dst[0] = src[0];
+	arm_smmu_sync_ste_for_sid(smmu, sid);
+	iounmap(src);
+}
+
 /* IRQ and event handlers */
 static irqreturn_t arm_smmu_evtq_thread(int irq, void *dev)
 {
@@ -1299,6 +1361,8 @@ static irqreturn_t arm_smmu_evtq_thread(int irq, void *dev)
 				dev_info(smmu->dev, "\t0x%016llx\n",
 					 (unsigned long long)evt[i]);
 
+			if ((id == EVTQ_0_ID_C_BAD_STE) && is_kdump_kernel())
+				arm_smmu_ste_abort_quirks(smmu, evt[0]);
 		}
 
 		/*
@@ -2502,6 +2566,7 @@ static int arm_smmu_device_reset(struct arm_smmu_device *smmu, bool bypass)
 {
 	int ret;
 	u32 reg, enables;
+	u64 reg64;
 	struct arm_smmu_cmdq_ent cmd;
 
 	/* Clear CR0 and sync (disables SMMU and queue processing) */
@@ -2529,6 +2594,10 @@ static int arm_smmu_device_reset(struct arm_smmu_device *smmu, bool bypass)
 	/* CR2 (random crap) */
 	reg = CR2_PTM | CR2_RECINVSID | CR2_E2H;
 	writel_relaxed(reg, smmu->base + ARM_SMMU_CR2);
+
+	/* save the former strtab base */
+	reg64 = readq_relaxed(smmu->base + ARM_SMMU_STRTAB_BASE);
+	smmu->strtab_cfg.former_strtab_dma = reg64 & STRTAB_BASE_ADDR_MASK;
 
 	/* Stream table */
 	writeq_relaxed(smmu->strtab_cfg.strtab_base,
