@@ -315,3 +315,12 @@ source "fs/nls/Kconfig"
 source "fs/dlm/Kconfig"
 
 endmenu
+
+config RESCTRL
+	bool "Support Memory Partitioning and Monitoring"
+	default n
+	depends on INTEL_RDT || MPAM
+	select KERNFS
+	help
+	  Memory Partitioning and Monitoring. More exactly Memory system
+	  performance resource Partitioning and Monitoring

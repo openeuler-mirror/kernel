@@ -742,6 +742,14 @@ config ARM64_ERR_RECOV
 
 	  Say Y if unsure.
 
+config MPAM
+	bool "Support Memory Partitioning and Monitoring"
+	default n
+	select RESCTRL
+	help
+	  Memory Partitioning and Monitoring. More exactly Memory system
+	  performance resource Partitioning and Monitoring
+
 # Common NUMA Features
 config NUMA
 	bool "Numa Memory Allocation and Scheduler Support"
