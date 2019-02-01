@@ -281,6 +281,8 @@ struct hisi_sas_hw {
 					   int delay_ms, int timeout_ms);
 	void (*snapshot_prepare)(struct hisi_hba *hisi_hba);
 	void (*snapshot_restore)(struct hisi_hba *hisi_hba);
+	const struct cpumask *(*get_managed_irq_aff)(struct hisi_hba
+			*hisi_hba, int queue);
 	int max_command_entries;
 	int complete_hdr_size;
 	struct scsi_host_template *sht;
@@ -369,6 +371,7 @@ struct hisi_hba {
 
 	bool user_ctl_irq;
 	unsigned int reply_map[NR_CPUS];
+	int nvecs;
 };
 
 /* Generic HW DMA host memory structures */

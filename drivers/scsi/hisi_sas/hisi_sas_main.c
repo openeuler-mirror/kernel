@@ -2088,7 +2088,23 @@ hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
 		return _hisi_sas_internal_task_abort(hisi_hba, device,
 						     abort_flag, tag, dq);
 	case HISI_SAS_INT_ABT_DEV:
-		for (i = 0; i < hisi_hba->queue_count; i++) {
+		for (i = 0; i < hisi_hba->nvecs; i++) {
+			const struct cpumask *mask = NULL;
+
+			if (hisi_hba->hw->get_managed_irq_aff)
+				mask = hisi_hba->hw->get_managed_irq_aff(
+						hisi_hba, i);
+			/*
+			 * The kernel will not permit unmanaged (MSI are
+			 * managed) IRQ affinity to offline CPUs, so
+			 * always issue internal abort on all queues
+			 * in this case.
+			 * For MSI interrupts, affinity may be set to
+			 * offline CPUs, so ensure that there's an online
+			 * CPU to handle the CQ interrupt.
+			 */
+			if (mask && !cpumask_intersects(cpu_online_mask, mask))
+				continue;
 			dq = &hisi_hba->dq[i];
 			rc = _hisi_sas_internal_task_abort(hisi_hba, device,
 							   abort_flag, tag, dq);
@@ -2171,7 +2187,7 @@ void hisi_sas_kill_tasklets(struct hisi_hba *hisi_hba)
 {
 	int i;
 
-	for (i = 0; i < hisi_hba->queue_count; i++) {
+	for (i = 0; i < hisi_hba->nvecs; i++) {
 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
 
 		tasklet_kill(&cq->tasklet);

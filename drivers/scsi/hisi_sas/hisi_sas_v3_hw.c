@@ -406,6 +406,7 @@ struct hisi_sas_err_record_v3 {
 #define T10_CHK_MSK_OFF	    16
 
 #define HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW  16
+#define HISI_SAS_MIN_VECTORS_V3_HW  17
 
 #define HISI_SAS_IS_RW_CMD(op) \
 	((op == READ_6) || (op == WRITE_6) || \
@@ -2131,16 +2132,15 @@ static irqreturn_t cq_interrupt_v3_hw(int irq_no, void *p)
 	return IRQ_HANDLED;
 }
 
-static void setup_reply_map_v3_hw(struct hisi_hba *hisi_hba)
+static void setup_reply_map_v3_hw(struct hisi_hba *hisi_hba, int nvecs)
 {
 	const struct cpumask *mask;
 	int queue, cpu;
 
-	for (queue = 0; queue < hisi_hba->queue_count; queue++) {
+	for (queue = 0; queue < nvecs; queue++) {
 		mask = pci_irq_get_affinity(hisi_hba->pci_dev, queue + 16);
 		if (!mask)
 			goto fallback;
-
 		for_each_cpu(cpu, mask)
 			hisi_hba->reply_map[cpu] = queue;
 	}
@@ -2167,16 +2167,21 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 						max_msi, PCI_IRQ_MSI);
 	} else {
 		vectors = pci_alloc_irq_vectors_affinity(hisi_hba->pci_dev,
-				    max_msi, max_msi,
-				    PCI_IRQ_MSI | PCI_IRQ_AFFINITY, &desc);
-		setup_reply_map_v3_hw(hisi_hba);
+				HISI_SAS_MIN_VECTORS_V3_HW,
+				max_msi,
+				PCI_IRQ_MSI |
+				PCI_IRQ_AFFINITY,
+				&desc);
+		setup_reply_map_v3_hw(hisi_hba, vectors -
+				      HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW);
 	}
 
-	if (vectors < max_msi) {
-		dev_err(dev, "could not allocate all msi (%d)\n", vectors);
+	if (vectors < HISI_SAS_MIN_VECTORS_V3_HW) {
+		dev_err(dev, "allocate msi (%d) not enough\n", vectors);
 		return -ENOENT;
 	}
 
+	hisi_hba->nvecs = vectors - HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW;
 	rc = devm_request_irq(dev, pci_irq_vector(pdev, 1),
 			      int_phy_up_down_bcast_v3_hw, 0,
 			      DRV_NAME " phy", hisi_hba);
@@ -2205,7 +2210,7 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 	}
 
 	/* Init tasklets for cq only */
-	for (i = 0; i < hisi_hba->queue_count; i++) {
+	for (i = 0; i < hisi_hba->nvecs; i++) {
 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
 		struct tasklet_struct *t = &cq->tasklet;
 		int nr = hisi_sas_intr_conv ? 16 : 16 + i;
@@ -2701,6 +2706,16 @@ static void debugfs_snapshot_restore_v3_hw(struct hisi_hba *hisi_hba)
 	clear_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
 }
 
+const struct cpumask *
+get_managed_irq_aff_v3_hw(struct hisi_hba *hisi_hba, int queue)
+{
+	if (user_ctl_irq)
+		return NULL;
+
+	return pci_irq_get_affinity(hisi_hba->pci_dev, queue +
+				    HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW);
+}
+
 struct device_attribute *host_attrs_v3_hw[] = {
 	&dev_attr_phy_event_threshold,
 	&dev_attr_intr_conv,
@@ -2764,6 +2779,7 @@ static const struct hisi_sas_hw hisi_sas_v3_hw = {
 	.debugfs_reg_port = &debugfs_port_reg,
 	.snapshot_prepare = debugfs_snapshot_prepare_v3_hw,
 	.snapshot_restore = debugfs_snapshot_restore_v3_hw,
+	.get_managed_irq_aff = get_managed_irq_aff_v3_hw,
 };
 
 static struct Scsi_Host *
@@ -2937,7 +2953,7 @@ hisi_sas_v3_destroy_irqs(struct pci_dev *pdev, struct hisi_hba *hisi_hba)
 	free_irq(pci_irq_vector(pdev, 1), hisi_hba);
 	free_irq(pci_irq_vector(pdev, 2), hisi_hba);
 	free_irq(pci_irq_vector(pdev, 11), hisi_hba);
-	for (i = 0; i < hisi_hba->queue_count; i++) {
+	for (i = 0; i < hisi_hba->nvecs; i++) {
 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
 		int nr = hisi_sas_intr_conv ? 16 : 16 + i;
 

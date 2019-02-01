@@ -3416,6 +3416,7 @@ static int interrupt_init_v2_hw(struct hisi_hba *hisi_hba)
 		tasklet_init(t, cq_tasklet_v2_hw, (unsigned long)cq);
 	}
 
+	hisi_hba->nvecs = hisi_hba->queue_count;
 	return 0;
 
 free_cq_int_irqs:
