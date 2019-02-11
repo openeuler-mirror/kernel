@@ -413,7 +413,7 @@ int klp_try_disable_patch(void *data)
 			return -EINVAL;
 		}
 
-		ret = klp_check_calltrace(patch, 1);
+		ret = klp_check_calltrace(patch, 0);
 		if (ret) {
 			flag = 1;
 			atomic_inc(&pd->cpu_count);
