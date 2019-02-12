@@ -127,10 +127,10 @@ static int klp_find_object_module(struct klp_object *obj)
 	 * until mod->exit() finishes. This is especially important for
 	 * patches that modify semantic of the functions.
 	 */
-#ifdef CONFIG_LIVEPATCH_FTRACE
+#ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 	if (mod && mod->klp_alive)
 		obj->mod = mod;
-#else
+#elif defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY)
 	if (!mod) {
 		pr_err("module '%s' not loaded\n", obj->name);
 		mutex_unlock(&module_mutex);
@@ -141,7 +141,7 @@ static int klp_find_object_module(struct klp_object *obj)
 	} else {
 		obj->mod = mod;
 	}
-#endif /* ifdef CONFIG_LIVEPATCH_FTRACE */
+#endif /* ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY */
 
 	mutex_unlock(&module_mutex);
 	return 0;
@@ -979,9 +979,10 @@ static void klp_free_objects_limited(struct klp_patch *patch,
 	struct klp_object *obj;
 
 	for (obj = patch->objs; obj->funcs && obj != limit; obj++) {
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 		if (klp_is_module(obj))
 			module_put(obj->mod);
-
+#endif
 		klp_free_funcs_limited(obj, NULL);
 		kobject_put(&obj->kobj);
 	}
@@ -1130,7 +1131,9 @@ free:
 out:
 	kobject_put(&obj->kobj);
 put:
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	module_put(obj->mod);
+#endif
 	return ret;
 }
 
