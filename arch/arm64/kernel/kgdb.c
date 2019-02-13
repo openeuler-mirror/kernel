@@ -25,6 +25,7 @@
 #include <linux/kgdb.h>
 #include <linux/kprobes.h>
 #include <linux/sched/task_stack.h>
+#include <linux/irqchip/arm-gic-v3.h>
 
 #include <asm/debug-monitors.h>
 #include <asm/insn.h>
@@ -291,6 +292,9 @@ static void kgdb_call_nmi_hook(void *ignored)
 
 void kgdb_roundup_cpus(unsigned long flags)
 {
+	if (gic_prio_masking_enabled())
+		gic_arch_enable_irqs();
+
 	local_irq_enable();
 	smp_call_function(kgdb_call_nmi_hook, NULL, 0);
 	local_irq_disable();
