@@ -146,11 +146,6 @@ struct gpio_irq_chip {
 	 */
 	unsigned int first;
 };
-
-static inline struct gpio_irq_chip *to_gpio_irq_chip(struct irq_chip *chip)
-{
-	return container_of(chip, struct gpio_irq_chip, chip);
-}
 #endif
 
 /**
