@@ -2752,7 +2752,7 @@ static int blk_mq_alloc_rq_maps(struct blk_mq_tag_set *set)
 
 static int blk_mq_update_queue_map(struct blk_mq_tag_set *set)
 {
-	if (set->ops->map_queues) {
+	if (set->ops->map_queues && !is_kdump_kernel()) {
 		/*
 		 * transport .map_queues is usually done in the following
 		 * way:
