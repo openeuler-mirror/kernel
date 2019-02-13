@@ -225,7 +225,6 @@ rpcrdma_conn_upcall(struct rdma_cm_id *id, struct rdma_cm_event *event)
 	struct rpcrdma_xprt *xprt = id->context;
 	struct rpcrdma_ia *ia = &xprt->rx_ia;
 	struct rpcrdma_ep *ep = &xprt->rx_ep;
-	int connstate = 0;
 
 	trace_xprtrdma_conn_upcall(xprt, event);
 	switch (event->event) {
@@ -259,28 +258,27 @@ rpcrdma_conn_upcall(struct rdma_cm_id *id, struct rdma_cm_event *event)
 		return 1;
 	case RDMA_CM_EVENT_ESTABLISHED:
 		++xprt->rx_xprt.connect_cookie;
-		connstate = 1;
+		ep->rep_connected = 1;
 		rpcrdma_update_connect_private(xprt, &event->param.conn);
 		goto connected;
 	case RDMA_CM_EVENT_CONNECT_ERROR:
-		connstate = -ENOTCONN;
+		ep->rep_connected = -ENOTCONN;
 		goto connected;
 	case RDMA_CM_EVENT_UNREACHABLE:
-		connstate = -ENETUNREACH;
+		ep->rep_connected = -ENETUNREACH;
 		goto connected;
 	case RDMA_CM_EVENT_REJECTED:
 		dprintk("rpcrdma: connection to %s:%s rejected: %s\n",
 			rpcrdma_addrstr(xprt), rpcrdma_portstr(xprt),
 			rdma_reject_msg(id, event->status));
-		connstate = -ECONNREFUSED;
+		ep->rep_connected = -ECONNREFUSED;
 		if (event->status == IB_CM_REJ_STALE_CONN)
-			connstate = -EAGAIN;
+			ep->rep_connected = -EAGAIN;
 		goto connected;
 	case RDMA_CM_EVENT_DISCONNECTED:
 		++xprt->rx_xprt.connect_cookie;
-		connstate = -ECONNABORTED;
+		ep->rep_connected = -ECONNABORTED;
 connected:
-		ep->rep_connected = connstate;
 		rpcrdma_conn_func(ep);
 		wake_up_all(&ep->rep_connect_wait);
 		/*FALLTHROUGH*/
