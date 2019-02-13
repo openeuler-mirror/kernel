@@ -2706,6 +2706,7 @@ query_info(const unsigned int xid, struct cifs_tcon *tcon,
 	int resp_buftype;
 	struct cifs_ses *ses = tcon->ses;
 	int flags = 0;
+	bool allocated = false;
 
 	cifs_dbg(FYI, "Query Info\n");
 
@@ -2745,14 +2746,21 @@ query_info(const unsigned int xid, struct cifs_tcon *tcon,
 					"Error %d allocating memory for acl\n",
 					rc);
 				*dlen = 0;
+				rc = -ENOMEM;
 				goto qinf_exit;
 			}
+			allocated = true;
 		}
 	}
 
 	rc = validate_and_copy_iov(le16_to_cpu(rsp->OutputBufferOffset),
 				   le32_to_cpu(rsp->OutputBufferLength),
 				   &rsp_iov, min_len, *data);
+	if (rc && allocated) {
+		kfree(*data);
+		*data = NULL;
+		*dlen = 0;
+	}
 
 qinf_exit:
 	SMB2_query_info_free(&rqst);
