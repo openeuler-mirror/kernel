@@ -62,6 +62,9 @@
 s64 memstart_addr __ro_after_init = -1;
 phys_addr_t arm64_dma_phys_limit __ro_after_init;
 
+struct res_mem res_mem[MAX_RES_REGIONS];
+int res_mem_count;
+
 #ifdef CONFIG_BLK_DEV_INITRD
 static int __init early_initrd(char *p)
 {
@@ -370,6 +373,70 @@ static void __init fdt_enforce_memory_region(void)
 	if (reg.size)
 		memblock_cap_memory_range(reg.base, reg.size);
 }
+
+static int __init parse_memmap_one(char *p)
+{
+	char *oldp;
+	phys_addr_t start_at, mem_size;
+	int ret;
+
+	if (!p)
+		return -EINVAL;
+
+	oldp = p;
+	mem_size = memparse(p, &p);
+	if (p == oldp)
+		return -EINVAL;
+
+	if (!mem_size)
+		return -EINVAL;
+
+	mem_size = PAGE_ALIGN(mem_size);
+
+	if (*p == '$') {
+		start_at = memparse(p+1, &p);
+		if (!IS_ALIGNED(start_at, SZ_2M)) {
+			pr_warn("cannot reserve memory: bad address is not 2MB aligned\n");
+			return -EINVAL;
+		}
+
+		if (!memblock_is_region_memory(start_at, mem_size)) {
+			pr_warn("cannot reserve memory: region is not meory\n");
+			return -EINVAL;
+		}
+
+		if (memblock_is_region_reserved(start_at, mem_size)) {
+			pr_warn("cannot reserve memory: region overlaps reserved memory\n");
+			return -EINVAL;
+		}
+
+		ret = memblock_reserve(start_at, mem_size);
+		if (!ret) {
+			res_mem[res_mem_count].base = start_at;
+			res_mem[res_mem_count].size = mem_size;
+			res_mem_count++;
+		} else
+			pr_warn("memmap memblock_reserve failed.\n");
+	}
+
+	return *p == '\0' ? 0 : -EINVAL;
+}
+
+static int __init parse_memmap_opt(char *str)
+{
+	while (str) {
+		char *k = strchr(str, ',');
+
+		if (k)
+			*k++ = 0;
+
+		parse_memmap_one(str);
+		str = k;
+	}
+
+	return 0;
+}
+early_param("memmap", parse_memmap_opt);
 
 void __init arm64_memblock_init(void)
 {

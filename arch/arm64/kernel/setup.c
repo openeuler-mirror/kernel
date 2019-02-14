@@ -63,6 +63,7 @@
 #include <asm/efi.h>
 #include <asm/xen/hypervisor.h>
 #include <asm/mmu_context.h>
+#include <asm/mmu.h>
 
 static int num_standard_resources;
 static struct resource *standard_resources;
@@ -208,8 +209,8 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 static void __init request_standard_resources(void)
 {
 	struct memblock_region *region;
-	struct resource *res;
-	unsigned long i = 0;
+	struct resource *res, *res_resources;
+	unsigned long i = 0, j = 0, res_count;
 
 	kernel_code.start   = __pa_symbol(_text);
 	kernel_code.end     = __pa_symbol(__init_begin - 1);
@@ -219,6 +220,16 @@ static void __init request_standard_resources(void)
 	num_standard_resources = memblock.memory.cnt;
 	standard_resources = alloc_bootmem_low(num_standard_resources *
 					       sizeof(*standard_resources));
+	res_resources = alloc_bootmem_low(res_mem_count *
+					       sizeof(struct resource));
+
+	for (res_count = 0; res_count < res_mem_count; res_count++) {
+		res_resources[res_count].name = "memmap reserved";
+		res_resources[res_count].flags = IORESOURCE_MEM;
+		res_resources[res_count].start = res_mem[res_count].base;
+		res_resources[res_count].end = res_resources[res_count].start +
+					       res_mem[res_count].size - 1;
+	}
 
 	for_each_memblock(memory, region) {
 		res = &standard_resources[i++];
@@ -246,6 +257,12 @@ static void __init request_standard_resources(void)
 		    crashk_res.end <= res->end)
 			request_resource(res, &crashk_res);
 #endif
+
+		for (; j < res_mem_count; j++) {
+			if (res_resources[j].start >= res->start &&
+			    res_resources[j].end <= res->end)
+				request_resource(res, &res_resources[j]);
+		}
 	}
 }
 

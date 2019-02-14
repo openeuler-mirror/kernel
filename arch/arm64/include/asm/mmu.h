@@ -31,6 +31,16 @@ typedef struct {
 	unsigned long	flags;
 } mm_context_t;
 
+#define MAX_RES_REGIONS	32
+
+struct res_mem {
+	phys_addr_t base;
+	phys_addr_t size;
+};
+
+extern struct res_mem res_mem[MAX_RES_REGIONS];
+extern int res_mem_count;
+
 /*
  * This macro is only used by the TLBI code, which cannot race with an
  * ASID change and therefore doesn't need to reload the counter using
