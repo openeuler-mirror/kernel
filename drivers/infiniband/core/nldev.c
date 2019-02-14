@@ -631,13 +631,13 @@ static int nldev_get_doit(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	nlmsg_end(msg, nlh);
 
-	put_device(&device->dev);
+	ib_device_put(device);
 	return rdma_nl_unicast(msg, NETLINK_CB(skb).portid);
 
 err_free:
 	nlmsg_free(msg);
 err:
-	put_device(&device->dev);
+	ib_device_put(device);
 	return err;
 }
 
@@ -721,14 +721,14 @@ static int nldev_port_get_doit(struct sk_buff *skb, struct nlmsghdr *nlh,
 		goto err_free;
 
 	nlmsg_end(msg, nlh);
-	put_device(&device->dev);
+	ib_device_put(device);
 
 	return rdma_nl_unicast(msg, NETLINK_CB(skb).portid);
 
 err_free:
 	nlmsg_free(msg);
 err:
-	put_device(&device->dev);
+	ib_device_put(device);
 	return err;
 }
 
@@ -785,7 +785,7 @@ static int nldev_port_get_dumpit(struct sk_buff *skb,
 	}
 
 out:
-	put_device(&device->dev);
+	ib_device_put(device);
 	cb->args[0] = idx;
 	return skb->len;
 }
@@ -824,13 +824,13 @@ static int nldev_res_get_doit(struct sk_buff *skb, struct nlmsghdr *nlh,
 		goto err_free;
 
 	nlmsg_end(msg, nlh);
-	put_device(&device->dev);
+	ib_device_put(device);
 	return rdma_nl_unicast(msg, NETLINK_CB(skb).portid);
 
 err_free:
 	nlmsg_free(msg);
 err:
-	put_device(&device->dev);
+	ib_device_put(device);
 	return ret;
 }
 
@@ -1023,7 +1023,7 @@ next:		idx++;
 	if (!filled)
 		goto err;
 
-	put_device(&device->dev);
+	ib_device_put(device);
 	return skb->len;
 
 res_err:
@@ -1034,7 +1034,7 @@ err:
 	nlmsg_cancel(skb, nlh);
 
 err_index:
-	put_device(&device->dev);
+	ib_device_put(device);
 	return ret;
 }
 
