@@ -924,6 +924,15 @@ static const struct net_device_ops mlx5e_netdev_ops_rep = {
 	.ndo_change_mtu          = mlx5e_change_rep_mtu,
 };
 
+bool mlx5e_eswitch_rep(struct net_device *netdev)
+{
+	if (netdev->netdev_ops == &mlx5e_netdev_ops_vf_rep ||
+	    netdev->netdev_ops == &mlx5e_netdev_ops_uplink_rep)
+		return true;
+
+	return false;
+}
+
 static void mlx5e_build_rep_params(struct mlx5_core_dev *mdev,
 				   struct mlx5e_params *params, u16 mtu)
 {
