@@ -133,7 +133,7 @@ ia64_rt_sigreturn (struct sigscratch *scr)
 		 */
 		retval = (long) &ia64_strace_leave_kernel;
 
-	if (!access_ok(VERIFY_READ, sc, sizeof(*sc)))
+	if (!access_ok(sc, sizeof(*sc)))
 		goto give_sigsegv;
 
 	if (GET_SIGSET(&set, &sc->sc_mask))
@@ -302,7 +302,7 @@ setup_frame(struct ksignal *ksig, sigset_t *set, struct sigscratch *scr)
 	}
 	frame = (void __user *) ((new_sp - sizeof(*frame)) & -STACK_ALIGN);
 
-	if (!access_ok(VERIFY_WRITE, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame))) {
 		return force_sigsegv_info(ksig->sig, frame);
 
 	err  = __put_user(ksig->sig, &frame->arg0);

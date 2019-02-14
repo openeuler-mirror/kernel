@@ -99,7 +99,7 @@ static bool write_ok_or_segv(unsigned long ptr, size_t size)
 	 * sig_on_uaccess_err, this could go away.
 	 */
 
-	if (!access_ok(VERIFY_WRITE, (void __user *)ptr, size)) {
+	if (!access_ok((void __user *)ptr, size)) {
 		siginfo_t info;
 		struct thread_struct *thread = &current->thread;
 
