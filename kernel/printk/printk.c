@@ -411,6 +411,7 @@ DECLARE_WAIT_QUEUE_HEAD(log_wait);
 static u64 syslog_seq;
 static u32 syslog_idx;
 static size_t syslog_partial;
+static bool syslog_time;
 
 /* index and sequence number of the first record stored in the buffer */
 static u64 log_first_seq;
@@ -1216,12 +1217,7 @@ module_param_named(time, printk_time, bool, S_IRUGO | S_IWUSR);
 
 static size_t print_time(u64 ts, char *buf)
 {
-	unsigned long rem_nsec;
-
-	if (!printk_time)
-		return 0;
-
-	rem_nsec = do_div(ts, 1000000000);
+	unsigned long rem_nsec = do_div(ts, 1000000000);
 
 	if (!buf)
 		return snprintf(NULL, 0, "[%5lu.000000] ", (unsigned long)ts);
@@ -1230,7 +1226,8 @@ static size_t print_time(u64 ts, char *buf)
 		       (unsigned long)ts, rem_nsec / 1000);
 }
 
-static size_t print_prefix(const struct printk_log *msg, bool syslog, char *buf)
+static size_t print_prefix(const struct printk_log *msg, bool syslog,
+			   bool time, char *buf)
 {
 	size_t len = 0;
 	unsigned int prefix = (msg->facility << 3) | msg->level;
@@ -1249,11 +1246,13 @@ static size_t print_prefix(const struct printk_log *msg, bool syslog, char *buf)
 		}
 	}
 
-	len += print_time(msg->ts_nsec, buf ? buf + len : NULL);
+	if (time)
+		len += print_time(msg->ts_nsec, buf ? buf + len : NULL);
 	return len;
 }
 
-static size_t msg_print_text(const struct printk_log *msg, bool syslog, char *buf, size_t size)
+static size_t msg_print_text(const struct printk_log *msg, bool syslog,
+			     bool time, char *buf, size_t size)
 {
 	const char *text = log_text(msg);
 	size_t text_size = msg->text_len;
@@ -1272,17 +1271,17 @@ static size_t msg_print_text(const struct printk_log *msg, bool syslog, char *bu
 		}
 
 		if (buf) {
-			if (print_prefix(msg, syslog, NULL) +
+			if (print_prefix(msg, syslog, time, NULL) +
 			    text_len + 1 >= size - len)
 				break;
 
-			len += print_prefix(msg, syslog, buf + len);
+			len += print_prefix(msg, syslog, time, buf + len);
 			memcpy(buf + len, text, text_len);
 			len += text_len;
 			buf[len++] = '\n';
 		} else {
 			/* SYSLOG_ACTION_* buffer size only calculation */
-			len += print_prefix(msg, syslog, NULL);
+			len += print_prefix(msg, syslog, time, NULL);
 			len += text_len;
 			len++;
 		}
@@ -1319,9 +1318,17 @@ static int syslog_print(char __user *buf, int size)
 			break;
 		}
 
+		/*
+		 * To keep reading/counting partial line consistent,
+		 * use printk_time value as of the beginning of a line.
+		 */
+		if (!syslog_partial)
+			syslog_time = printk_time;
+
 		skip = syslog_partial;
 		msg = log_from_idx(syslog_idx);
-		n = msg_print_text(msg, true, text, LOG_LINE_MAX + PREFIX_MAX);
+		n = msg_print_text(msg, true, syslog_time, text,
+				   LOG_LINE_MAX + PREFIX_MAX);
 		if (n - syslog_partial <= size) {
 			/* message fits into buffer, move forward */
 			syslog_idx = log_next(syslog_idx);
@@ -1361,11 +1368,13 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 	u64 next_seq;
 	u64 seq;
 	u32 idx;
+	bool time;
 
 	text = kmalloc(LOG_LINE_MAX + PREFIX_MAX, GFP_KERNEL);
 	if (!text)
 		return -ENOMEM;
 
+	time = printk_time;
 	logbuf_lock_irq();
 	/*
 	 * Find first record that fits, including all following records,
@@ -1376,7 +1385,7 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 	while (seq < log_next_seq) {
 		struct printk_log *msg = log_from_idx(idx);
 
-		len += msg_print_text(msg, true, NULL, 0);
+		len += msg_print_text(msg, true, time, NULL, 0);
 		idx = log_next(idx);
 		seq++;
 	}
@@ -1387,7 +1396,7 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 	while (len > size && seq < log_next_seq) {
 		struct printk_log *msg = log_from_idx(idx);
 
-		len -= msg_print_text(msg, true, NULL, 0);
+		len -= msg_print_text(msg, true, time, NULL, 0);
 		idx = log_next(idx);
 		seq++;
 	}
@@ -1398,14 +1407,9 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 	len = 0;
 	while (len >= 0 && seq < next_seq) {
 		struct printk_log *msg = log_from_idx(idx);
-		int textlen;
+		int textlen = msg_print_text(msg, true, time, text,
+					     LOG_LINE_MAX + PREFIX_MAX);
 
-		textlen = msg_print_text(msg, true, text,
-					 LOG_LINE_MAX + PREFIX_MAX);
-		if (textlen < 0) {
-			len = textlen;
-			break;
-		}
 		idx = log_next(idx);
 		seq++;
 
@@ -1529,11 +1533,14 @@ int do_syslog(int type, char __user *buf, int len, int source)
 		} else {
 			u64 seq = syslog_seq;
 			u32 idx = syslog_idx;
+			bool time = syslog_partial ? syslog_time : printk_time;
 
 			while (seq < log_next_seq) {
 				struct printk_log *msg = log_from_idx(idx);
 
-				error += msg_print_text(msg, true, NULL, 0);
+				error += msg_print_text(msg, true, time, NULL,
+							0);
+				time = printk_time;
 				idx = log_next(idx);
 				seq++;
 			}
@@ -2009,6 +2016,7 @@ EXPORT_SYMBOL(printk);
 
 #define LOG_LINE_MAX		0
 #define PREFIX_MAX		0
+#define printk_time		false
 
 static u64 syslog_seq;
 static u32 syslog_idx;
@@ -2031,8 +2039,8 @@ static void console_lock_spinning_enable(void) { }
 static int console_lock_spinning_disable_and_check(void) { return 0; }
 static void call_console_drivers(const char *ext_text, size_t ext_len,
 				 const char *text, size_t len) {}
-static size_t msg_print_text(const struct printk_log *msg,
-			     bool syslog, char *buf, size_t size) { return 0; }
+static size_t msg_print_text(const struct printk_log *msg, bool syslog,
+			     bool time, char *buf, size_t size) { return 0; }
 static bool suppress_message_printing(int level) { return false; }
 
 #endif /* CONFIG_PRINTK */
@@ -2383,8 +2391,7 @@ skip:
 
 		len += msg_print_text(msg,
 				console_msg_format & MSG_FORMAT_SYSLOG,
-				text + len,
-				sizeof(text) - len);
+				printk_time, text + len, sizeof(text) - len);
 		if (nr_ext_console_drivers) {
 			ext_len = msg_print_ext_header(ext_text,
 						sizeof(ext_text),
@@ -3108,7 +3115,7 @@ bool kmsg_dump_get_line_nolock(struct kmsg_dumper *dumper, bool syslog,
 		goto out;
 
 	msg = log_from_idx(dumper->cur_idx);
-	l = msg_print_text(msg, syslog, line, size);
+	l = msg_print_text(msg, syslog, printk_time, line, size);
 
 	dumper->cur_idx = log_next(dumper->cur_idx);
 	dumper->cur_seq++;
@@ -3179,6 +3186,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 	u32 next_idx;
 	size_t l = 0;
 	bool ret = false;
+	bool time = printk_time;
 
 	if (!dumper->active)
 		goto out;
@@ -3202,7 +3210,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 	while (seq < dumper->next_seq) {
 		struct printk_log *msg = log_from_idx(idx);
 
-		l += msg_print_text(msg, true, NULL, 0);
+		l += msg_print_text(msg, true, time, NULL, 0);
 		idx = log_next(idx);
 		seq++;
 	}
@@ -3213,7 +3221,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 	while (l > size && seq < dumper->next_seq) {
 		struct printk_log *msg = log_from_idx(idx);
 
-		l -= msg_print_text(msg, true, NULL, 0);
+		l -= msg_print_text(msg, true, time, NULL, 0);
 		idx = log_next(idx);
 		seq++;
 	}
@@ -3226,7 +3234,7 @@ bool kmsg_dump_get_buffer(struct kmsg_dumper *dumper, bool syslog,
 	while (seq < dumper->next_seq) {
 		struct printk_log *msg = log_from_idx(idx);
 
-		l += msg_print_text(msg, syslog, buf + l, size - l);
+		l += msg_print_text(msg, syslog, time, buf + l, size - l);
 		idx = log_next(idx);
 		seq++;
 	}
