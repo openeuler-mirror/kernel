@@ -639,6 +639,9 @@ static void qm_vft_data_cfg(struct hisi_qm *qm, enum vft_type type, u32 base,
 			      QM_SQC_VFT_VALID				|
 			      (u64)base << QM_SQC_VFT_START_SQN_SHIFT;
 			break;
+		case QM_HW_UNKNOWN:
+			dev_err(&qm->pdev->dev, "unsupport qm version\n");
+			return;
 		}
 		break;
 	case CQC_VFT:
@@ -652,6 +655,9 @@ static void qm_vft_data_cfg(struct hisi_qm *qm, enum vft_type type, u32 base,
 		case QM_HW_V2:
 			tmp = QM_CQC_VFT_VALID;
 			break;
+		case QM_HW_UNKNOWN:
+			dev_err(&qm->pdev->dev, "unsupport qm version\n");
+			return;
 		}
 		break;
 	}
