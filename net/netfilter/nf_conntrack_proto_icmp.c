@@ -25,11 +25,6 @@
 
 static const unsigned int nf_ct_icmp_timeout = 30*HZ;
 
-static inline struct nf_icmp_net *icmp_pernet(struct net *net)
-{
-	return &net->ct.nf_ct_proto.icmp;
-}
-
 static bool icmp_pkt_to_tuple(const struct sk_buff *skb, unsigned int dataoff,
 			      struct net *net, struct nf_conntrack_tuple *tuple)
 {
@@ -74,7 +69,7 @@ static bool icmp_invert_tuple(struct nf_conntrack_tuple *tuple,
 
 static unsigned int *icmp_get_timeouts(struct net *net)
 {
-	return &icmp_pernet(net)->timeout;
+	return &nf_icmp_pernet(net)->timeout;
 }
 
 /* Returns verdict for packet, or -1 for invalid. */
@@ -282,7 +277,7 @@ static int icmp_timeout_nlattr_to_obj(struct nlattr *tb[],
 				      struct net *net, void *data)
 {
 	unsigned int *timeout = data;
-	struct nf_icmp_net *in = icmp_pernet(net);
+	struct nf_icmp_net *in = nf_icmp_pernet(net);
 
 	if (tb[CTA_TIMEOUT_ICMP_TIMEOUT]) {
 		if (!timeout)
@@ -344,7 +339,7 @@ static int icmp_kmemdup_sysctl_table(struct nf_proto_net *pn,
 
 static int icmp_init_net(struct net *net, u_int16_t proto)
 {
-	struct nf_icmp_net *in = icmp_pernet(net);
+	struct nf_icmp_net *in = nf_icmp_pernet(net);
 	struct nf_proto_net *pn = &in->pn;
 
 	in->timeout = nf_ct_icmp_timeout;

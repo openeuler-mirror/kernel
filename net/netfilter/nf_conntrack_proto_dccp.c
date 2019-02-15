@@ -384,11 +384,6 @@ dccp_state_table[CT_DCCP_ROLE_MAX + 1][DCCP_PKT_SYNCACK + 1][CT_DCCP_MAX + 1] = 
 	},
 };
 
-static inline struct nf_dccp_net *dccp_pernet(struct net *net)
-{
-	return &net->ct.nf_ct_proto.dccp;
-}
-
 static bool dccp_new(struct nf_conn *ct, const struct sk_buff *skb,
 		     unsigned int dataoff)
 {
@@ -404,7 +399,7 @@ static bool dccp_new(struct nf_conn *ct, const struct sk_buff *skb,
 	state = dccp_state_table[CT_DCCP_ROLE_CLIENT][dh->dccph_type][CT_DCCP_NONE];
 	switch (state) {
 	default:
-		dn = dccp_pernet(net);
+		dn = nf_dccp_pernet(net);
 		if (dn->dccp_loose == 0) {
 			msg = "not picking up existing connection ";
 			goto out_invalid;
@@ -521,7 +516,7 @@ static int dccp_packet(struct nf_conn *ct, const struct sk_buff *skb,
 
 	timeouts = nf_ct_timeout_lookup(ct);
 	if (!timeouts)
-		timeouts = dccp_pernet(nf_ct_net(ct))->dccp_timeout;
+		timeouts = nf_dccp_pernet(nf_ct_net(ct))->dccp_timeout;
 	nf_ct_refresh_acct(ct, ctinfo, skb, timeouts[new_state]);
 
 	return NF_ACCEPT;
@@ -683,7 +678,7 @@ static int nlattr_to_dccp(struct nlattr *cda[], struct nf_conn *ct)
 static int dccp_timeout_nlattr_to_obj(struct nlattr *tb[],
 				      struct net *net, void *data)
 {
-	struct nf_dccp_net *dn = dccp_pernet(net);
+	struct nf_dccp_net *dn = nf_dccp_pernet(net);
 	unsigned int *timeouts = data;
 	int i;
 
@@ -816,7 +811,7 @@ static int dccp_kmemdup_sysctl_table(struct net *net, struct nf_proto_net *pn,
 
 static int dccp_init_net(struct net *net, u_int16_t proto)
 {
-	struct nf_dccp_net *dn = dccp_pernet(net);
+	struct nf_dccp_net *dn = nf_dccp_pernet(net);
 	struct nf_proto_net *pn = &dn->pn;
 
 	if (!pn->users) {
