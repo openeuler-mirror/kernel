@@ -1364,6 +1364,24 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one_hundred,
 	},
+	{
+		.procname       = "cache_reclaim_s",
+		.data           = &vm_cache_reclaim_s,
+		.maxlen         = sizeof(vm_cache_reclaim_s),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = &vm_cache_reclaim_s_min,
+		.extra2         = &vm_cache_reclaim_s_max,
+	},
+	{
+		.procname       = "cache_reclaim_weight",
+		.data           = &vm_cache_reclaim_weight,
+		.maxlen         = sizeof(vm_cache_reclaim_weight),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = &vm_cache_reclaim_weight_min,
+		.extra2         = &vm_cache_reclaim_weight_max,
+	},
 #ifdef CONFIG_HUGETLB_PAGE
 	{
 		.procname	= "nr_hugepages",

@@ -895,6 +895,26 @@ int add_to_page_cache_locked(struct page *page, struct address_space *mapping,
 }
 EXPORT_SYMBOL(add_to_page_cache_locked);
 
+/*
+ * Like add_to_page_cache_locked, but used to add newly allocated pages:
+ * the page is new, so we can just run __SetPageLocked() against it.
+ */
+int add_to_page_cache(struct page *page,
+		struct address_space *mapping, pgoff_t offset, gfp_t gfp_mask)
+{
+	int error;
+
+	if (vm_cache_limit_mbytes && page_cache_over_limit())
+		shrink_page_cache(gfp_mask);
+	__SetPageLocked(page);
+	error = add_to_page_cache_locked(page, mapping, offset, gfp_mask);
+	if (unlikely(error))
+		__ClearPageLocked(page);
+
+	return error;
+}
+EXPORT_SYMBOL(add_to_page_cache);
+
 int add_to_page_cache_lru(struct page *page, struct address_space *mapping,
 				pgoff_t offset, gfp_t gfp_mask)
 {

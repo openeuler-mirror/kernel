@@ -166,6 +166,20 @@ int vm_swappiness = 60;
  */
 unsigned long vm_total_pages;
 
+unsigned long vm_cache_limit_ratio;
+unsigned long vm_cache_limit_ratio_min;
+unsigned long vm_cache_limit_ratio_max;
+unsigned long vm_cache_limit_mbytes __read_mostly;
+unsigned long vm_cache_limit_mbytes_min;
+unsigned long vm_cache_limit_mbytes_max;
+int vm_cache_reclaim_s __read_mostly;
+int vm_cache_reclaim_s_min;
+int vm_cache_reclaim_s_max;
+int vm_cache_reclaim_weight __read_mostly;
+int vm_cache_reclaim_weight_min;
+int vm_cache_reclaim_weight_max;
+static DEFINE_PER_CPU(struct delayed_work, vmscan_work);
+
 static LIST_HEAD(shrinker_list);
 static DECLARE_RWSEM(shrinker_rwsem);
 
@@ -3513,6 +3527,9 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int classzone_idx)
 
 	count_vm_event(PAGEOUTRUN);
 
+	if (vm_cache_limit_mbytes && page_cache_over_limit())
+		shrink_page_cache(GFP_KERNEL);
+
 	do {
 		unsigned long nr_reclaimed = sc.nr_reclaimed;
 		bool raise_priority = true;
@@ -3895,6 +3912,74 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
 }
 #endif /* CONFIG_HIBERNATION */
 
+static unsigned long __shrink_page_cache(gfp_t mask)
+{
+	struct scan_control sc = {
+		.gfp_mask = current_gfp_context(mask),
+		.reclaim_idx = gfp_zone(mask),
+		.may_writepage = !laptop_mode,
+		.nr_to_reclaim = SWAP_CLUSTER_MAX *
+				 (unsigned long)vm_cache_reclaim_weight,
+		.may_unmap = 1,
+		.may_swap = 1,
+		.order = 0,
+		.priority = DEF_PRIORITY,
+		.target_mem_cgroup = NULL,
+		.nodemask = NULL,
+	};
+
+	struct zonelist *zonelist = node_zonelist(numa_node_id(), mask);
+
+	return do_try_to_free_pages(zonelist, &sc);
+}
+
+void shrink_page_cache(gfp_t mask)
+{
+	/* We reclaim the highmem zone too, it is useful for 32bit arch */
+	__shrink_page_cache(mask | __GFP_HIGHMEM);
+}
+
+static void shrink_page_cache_work(struct work_struct *w)
+{
+	struct delayed_work *work = to_delayed_work(w);
+
+	if (vm_cache_reclaim_s == 0) {
+		schedule_delayed_work(work, round_jiffies_relative(120 * HZ));
+		return;
+	}
+
+	shrink_page_cache(GFP_KERNEL);
+	schedule_delayed_work(work,
+		round_jiffies_relative((unsigned long)vm_cache_reclaim_s * HZ));
+}
+
+static void shrink_page_cache_init(void)
+{
+	int cpu;
+
+	vm_cache_limit_ratio = 0;
+	vm_cache_limit_ratio_min = 0;
+	vm_cache_limit_ratio_max = 100;
+	vm_cache_limit_mbytes = 0;
+	vm_cache_limit_mbytes_min = 0;
+	vm_cache_limit_mbytes_max = totalram_pages >> (20 - PAGE_SHIFT);
+	vm_cache_reclaim_s = 0;
+	vm_cache_reclaim_s_min = 0;
+	vm_cache_reclaim_s_max = 43200;
+	vm_cache_reclaim_weight = 1;
+	vm_cache_reclaim_weight_min = 1;
+	vm_cache_reclaim_weight_max = 100;
+
+	for_each_online_cpu(cpu) {
+		struct delayed_work *work = &per_cpu(vmscan_work, cpu);
+
+		INIT_DEFERRABLE_WORK(work, shrink_page_cache_work);
+		schedule_delayed_work_on(cpu, work,
+				__round_jiffies_relative(
+				(unsigned long)vm_cache_reclaim_s * HZ, cpu));
+	}
+}
+
 /* It's optimal to keep kswapds on the same CPUs as their memory, but
    not required for correctness.  So if the last cpu in a node goes
    away, we get changed to run anywhere: as the first one comes back,
@@ -3964,6 +4049,7 @@ static int __init kswapd_init(void)
 					"mm/vmscan:online", kswapd_cpu_online,
 					NULL);
 	WARN_ON(ret < 0);
+	shrink_page_cache_init();
 	return 0;
 }
 

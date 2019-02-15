@@ -8149,3 +8149,71 @@ bool set_hwpoison_free_buddy_page(struct page *page)
 	return hwpoisoned;
 }
 #endif
+
+unsigned long page_cache_over_limit(void)
+{
+	unsigned long lru_file, limit;
+
+	limit = vm_cache_limit_mbytes * ((1024 * 1024UL) / PAGE_SIZE);
+	lru_file = global_node_page_state(NR_ACTIVE_FILE)
+		 + global_node_page_state(NR_INACTIVE_FILE);
+	if (lru_file > limit)
+		return lru_file - limit;
+
+	return 0;
+}
+
+int cache_limit_ratio_sysctl_handler(struct ctl_table *table, int write,
+			void __user *buffer, size_t *length, loff_t *ppos)
+{
+	int ret;
+
+	/* totalram_page may be changed after early boot */
+	vm_cache_limit_mbytes_max = totalram_pages >> (20 - PAGE_SHIFT);
+
+	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
+	if (ret)
+		return ret;
+	if (write) {
+		vm_cache_limit_mbytes = totalram_pages
+				* vm_cache_limit_ratio / 100
+				* PAGE_SIZE / (1024 * 1024UL);
+		if (vm_cache_limit_ratio)
+			pr_warn("page cache limit set to %lu%%\n",
+				vm_cache_limit_ratio);
+		else
+			pr_warn("page cache limit off\n");
+		while (vm_cache_limit_mbytes && page_cache_over_limit())
+			shrink_page_cache(GFP_KERNEL);
+	}
+
+	return 0;
+}
+
+int cache_limit_mbytes_sysctl_handler(struct ctl_table *table, int write,
+			void __user *buffer, size_t *length, loff_t *ppos)
+{
+	int ret;
+
+	vm_cache_limit_mbytes_max = totalram_pages >> (20 - PAGE_SHIFT);
+
+	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
+	if (ret)
+		return ret;
+	if (write) {
+		vm_cache_limit_ratio = (vm_cache_limit_mbytes
+				* ((1024 * 1024UL) / PAGE_SIZE)
+				+ totalram_pages / 200)
+				* 100 / totalram_pages;
+		if (vm_cache_limit_mbytes)
+			pr_warn("page cache limit set to %luMB\n",
+				vm_cache_limit_mbytes);
+		else
+			pr_warn("page cache limit off\n");
+
+		while (vm_cache_limit_mbytes && page_cache_over_limit())
+			shrink_page_cache(GFP_KERNEL);
+	}
+
+	return 0;
+}
