@@ -144,7 +144,8 @@ static void tk_set_wall_to_mono(struct timekeeper *tk, struct timespec64 wtm)
 	tk->wall_to_monotonic = wtm;
 	set_normalized_timespec64(&tmp, -wtm.tv_sec, -wtm.tv_nsec);
 	tk->offs_real = timespec64_to_ktime(tmp);
-	tk->offs_tai = ktime_add(tk->offs_real, ktime_set(tk->tai_offset, 0));
+	tk->offs_tai = ktime_add_safe(tk->offs_real,
+				      ktime_set(tk->tai_offset, 0));
 }
 
 static inline void tk_update_sleep_time(struct timekeeper *tk, ktime_t delta)
