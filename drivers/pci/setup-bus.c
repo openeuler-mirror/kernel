@@ -773,6 +773,20 @@ static void pci_bridge_check_ranges(struct pci_bus *bus)
 			b_res[2].flags |= PCI_PREF_RANGE_TYPE_64;
 		}
 	}
+
+	/* double check if bridge does support 64 bit pref */
+	if (b_res[2].flags & IORESOURCE_MEM_64) {
+		u32 mem_base_hi, tmp;
+		pci_read_config_dword(bridge, PCI_PREF_BASE_UPPER32,
+					 &mem_base_hi);
+		pci_write_config_dword(bridge, PCI_PREF_BASE_UPPER32,
+					       0xffffffff);
+		pci_read_config_dword(bridge, PCI_PREF_BASE_UPPER32, &tmp);
+		if (!tmp)
+			b_res[2].flags &= ~IORESOURCE_MEM_64;
+		pci_write_config_dword(bridge, PCI_PREF_BASE_UPPER32,
+				       mem_base_hi);
+	}
 }
 
 /* Helper function for sizing routines: find first available
