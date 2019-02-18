@@ -3261,6 +3261,7 @@ int scsi_internal_device_unblock_nowait(struct scsi_device *sdev,
 		break;
 	case SDEV_CANCEL:
 	case SDEV_OFFLINE:
+	case SDEV_RUNNING:
 		break;
 	default:
 		return -EINVAL;
