@@ -19,6 +19,8 @@
 #define BT_DEBUG_ENABLE	1	/* Generic messages */
 #define BT_DEBUG_MSG	2	/* Prints all request/response buffers */
 #define BT_DEBUG_STATES	4	/* Verbose look at state changes */
+
+#define BT_BMC_ERROR_RETRY_MAX 3
 /*
  * BT_DEBUG_OFF must be zero to correspond to the default uninitialized
  * value
@@ -87,6 +89,7 @@ struct si_sm_data {
 	long		BT_CAP_req2rsp;
 	int		BT_CAP_retries;	/* Recommended retries */
 	int		init;
+	int		bmc_error_counter;
 };
 
 #define BT_CLR_WR_PTR	0x01	/* See IPMI 1.5 table 11.6.4 */
@@ -181,6 +184,8 @@ static unsigned int bt_init_data(struct si_sm_data *bt, struct si_sm_io *io)
 	bt->complete = BT_STATE_IDLE;	/* end here */
 	bt->BT_CAP_req2rsp = BT_NORMAL_TIMEOUT * USEC_PER_SEC;
 	bt->BT_CAP_retries = BT_NORMAL_RETRY_LIMIT;
+	bt->bmc_error_counter = 0;
+	/* BT_CAP_outreqs == zero is a flag to read BT Capabilities */
 	return 3; /* We claim 3 bytes of space; ought to check SPMI table */
 }
 
@@ -418,6 +423,20 @@ static enum si_sm_result error_recovery(struct si_sm_data *bt,
 	/* only during insmod */
 	else if (!bt->init) {
 		printk(KERN_WARNING "IPMI: BT reset (takes 5 secs)\n");
+		if ((cCode == IPMI_TIMEOUT_ERR) &&
+			(status & (BT_B_BUSY | BT_H2B_ATN)) &&
+			(bt->state == BT_STATE_XACTION_START)) {
+			if (bt->bmc_error_counter >= BT_BMC_ERROR_RETRY_MAX) {
+				pr_warn("IPMI: BT BMC maybe has been broken. status %s\n",
+					STATUS2TXT);
+				bt->bmc_error_counter = 0;
+				return SI_SM_HOSED;
+			}
+			pr_warn("IPMI: BT BMC maybe has been broken, %d retried.\n",
+				bt->bmc_error_counter);
+			bt->bmc_error_counter++;
+		}
+
 		bt->state = BT_STATE_RESET1;
 		return SI_SM_CALL_WITHOUT_DELAY;
 	}
