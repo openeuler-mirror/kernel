@@ -2266,7 +2266,41 @@ static void ata_dev_config_ncq_prio(struct ata_device *dev)
 		dev->flags &= ~ATA_DFLAG_NCQ_PRIO;
 		ata_dev_dbg(dev, "SATA page does not support priority\n");
 	}
+}
 
+static inline int ata_dev_config_aa(struct ata_device *dev, struct ata_port *ap,
+				 char **aa_desc)
+{
+	unsigned int err_mask;
+	char *desc;
+	u8 enable;
+
+	if (dev->horkage & ATA_HORKAGE_BROKEN_FPDMA_AA)
+		return 0;
+
+	if (!ata_id_has_fpdma_aa(dev->id))
+		return 0;
+
+	if (ap->flags & ATA_FLAG_FPDMA_AA) {
+		enable = SETFEATURES_SATA_ENABLE;
+		desc = "enable";
+	} else {
+		enable = SETFEATURES_SATA_DISABLE;
+		desc = "disalbe";
+	}
+
+	err_mask = ata_dev_set_feature(dev, enable, SATA_FPDMA_AA);
+	if (err_mask) {
+		ata_dev_err(dev, "failed to %s AA (error_mask=0x%x)\n",
+			    desc, err_mask);
+		if (err_mask != AC_ERR_DEV) {
+			dev->horkage |= ATA_HORKAGE_BROKEN_FPDMA_AA;
+			return -EIO;
+		}
+	} else
+		*aa_desc = ", AA";
+
+	return 0;
 }
 
 static int ata_dev_config_ncq(struct ata_device *dev,
@@ -2290,22 +2324,9 @@ static int ata_dev_config_ncq(struct ata_device *dev,
 		dev->flags |= ATA_DFLAG_NCQ;
 	}
 
-	if (!(dev->horkage & ATA_HORKAGE_BROKEN_FPDMA_AA) &&
-		(ap->flags & ATA_FLAG_FPDMA_AA) &&
-		ata_id_has_fpdma_aa(dev->id)) {
-		err_mask = ata_dev_set_feature(dev, SETFEATURES_SATA_ENABLE,
-			SATA_FPDMA_AA);
-		if (err_mask) {
-			ata_dev_err(dev,
-				    "failed to enable AA (error_mask=0x%x)\n",
-				    err_mask);
-			if (err_mask != AC_ERR_DEV) {
-				dev->horkage |= ATA_HORKAGE_BROKEN_FPDMA_AA;
-				return -EIO;
-			}
-		} else
-			aa_desc = ", AA";
-	}
+	err_mask = ata_dev_config_aa(dev, ap, &aa_desc);
+	if (err_mask)
+		return err_mask;
 
 	if (hdepth >= ddepth)
 		snprintf(desc, desc_sz, "NCQ (depth %d)%s", ddepth, aa_desc);
