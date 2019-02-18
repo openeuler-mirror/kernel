@@ -553,8 +553,6 @@ int blk_stack_limits(struct queue_limits *t, struct queue_limits *b,
 	t->max_sectors = min_not_zero(t->max_sectors, b->max_sectors);
 	t->max_hw_sectors = min_not_zero(t->max_hw_sectors, b->max_hw_sectors);
 	t->max_dev_sectors = min_not_zero(t->max_dev_sectors, b->max_dev_sectors);
-	t->max_write_same_sectors = min(t->max_write_same_sectors,
-					b->max_write_same_sectors);
 	t->max_write_zeroes_sectors = min(t->max_write_zeroes_sectors,
 					b->max_write_zeroes_sectors);
 	t->bounce_pfn = min_not_zero(t->bounce_pfn, b->bounce_pfn);
@@ -592,6 +590,14 @@ int blk_stack_limits(struct queue_limits *t, struct queue_limits *b,
 			ret = -1;
 		}
 	}
+
+	/* If logical block size is difference, forbid write same */
+	if (t->logical_block_size != b->logical_block_size &&
+	    t->max_write_same_sectors != UINT_MAX)
+		t->max_write_same_sectors = 0;
+	else
+		t->max_write_same_sectors = min(t->max_write_same_sectors,
+						b->max_write_same_sectors);
 
 	t->logical_block_size = max(t->logical_block_size,
 				    b->logical_block_size);
