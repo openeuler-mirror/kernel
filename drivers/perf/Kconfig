@@ -52,6 +52,15 @@ config ARM_PMU_ACPI
 	depends on ARM_PMU && ACPI
 	def_bool y
 
+config ARM_SMMU_V3_PMU
+	 bool "ARM SMMUv3 Performance Monitors Extension"
+	 depends on ARM64 && ACPI && ARM_SMMU_V3
+	   help
+	   Provides support for the SMMU version 3 performance monitor unit (PMU)
+	   on ARM-based systems.
+	   Adds the SMMU PMU into the perf events subsystem for
+	   monitoring SMMU performance events.
+
 config ARM_DSU_PMU
 	tristate "ARM DynamIQ Shared Unit (DSU) PMU"
 	depends on ARM64
