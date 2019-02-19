@@ -408,6 +408,18 @@ struct hisi_sas_err_record_v3 {
 #define HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW  16
 #define HISI_SAS_MIN_VECTORS_V3_HW  17
 
+#define NEXT_DQCQ_REG_OFF 0x14
+
+#define HISI_SAS_BAR_TO_IOMAP 5
+
+#define PCIDEV_REVISION_1620_ES 0x20
+#define PCIDEV_REVISION_1620_CS 0x21
+
+#define PCI_IRQ_PHY 1
+#define PCI_IRQ_CHANNEL 2
+#define PCI_IRQ_AXI_FATAL 11
+#define PCI_IRQ_CQ_BASE HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW
+
 #define HISI_SAS_IS_RW_CMD(op) \
 	((op == READ_6) || (op == WRITE_6) || \
 	 (op == READ_10) || (op == WRITE_10) || \
@@ -453,6 +465,7 @@ static void hisi_sas_write32(struct hisi_hba *hisi_hba, u32 off, u32 val)
 static void hisi_sas_phy_write32(struct hisi_hba *hisi_hba, int phy_no,
 				 u32 off, u32 val)
 {
+	/* Each reg of phy cost 0x400 bytes memory to save */
 	void __iomem *regs = hisi_hba->regs + (0x400 * phy_no) + off;
 
 	writel(val, regs);
@@ -461,6 +474,7 @@ static void hisi_sas_phy_write32(struct hisi_hba *hisi_hba, int phy_no,
 static u32 hisi_sas_phy_read32(struct hisi_hba *hisi_hba,
 				      int phy_no, u32 off)
 {
+	/* Each reg of phy cost 0x400 bytes memory to save */
 	void __iomem *regs = hisi_hba->regs + (0x400 * phy_no) + off;
 
 	return readl(regs);
@@ -502,7 +516,7 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 	hisi_sas_write32(hisi_hba, ENT_INT_SRC3, 0xffffffff);
 	hisi_sas_write32(hisi_hba, ENT_INT_SRC_MSK1, 0xfefefefe);
 	hisi_sas_write32(hisi_hba, ENT_INT_SRC_MSK2, 0xfefefefe);
-	if (pdev->revision >= 0x21)
+	if (pdev->revision >= PCIDEV_REVISION_1620_CS)
 		hisi_sas_write32(hisi_hba, ENT_INT_SRC_MSK3, 0xffff7aff);
 	else
 		hisi_sas_write32(hisi_hba, ENT_INT_SRC_MSK3, 0xfffe20ff);
@@ -554,7 +568,7 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 		hisi_sas_phy_write32(hisi_hba, i, CHL_INT1, 0xffffffff);
 		hisi_sas_phy_write32(hisi_hba, i, CHL_INT2, 0xffffffff);
 		hisi_sas_phy_write32(hisi_hba, i, RXOP_CHECK_CFG_H, 0x1000);
-		if (pdev->revision >= 0x21)
+		if (pdev->revision >= PCIDEV_REVISION_1620_CS)
 			hisi_sas_phy_write32(hisi_hba, i, CHL_INT1_MSK,
 					0xffffffff);
 		else
@@ -595,23 +609,29 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 	for (i = 0; i < hisi_hba->queue_count; i++) {
 		/* Delivery queue */
 		hisi_sas_write32(hisi_hba,
-				 DLVRY_Q_0_BASE_ADDR_HI + (i * 0x14),
+				 DLVRY_Q_0_BASE_ADDR_HI +
+				 (i * NEXT_DQCQ_REG_OFF),
 				 upper_32_bits(hisi_hba->cmd_hdr_dma[i]));
 
-		hisi_sas_write32(hisi_hba, DLVRY_Q_0_BASE_ADDR_LO + (i * 0x14),
+		hisi_sas_write32(hisi_hba, DLVRY_Q_0_BASE_ADDR_LO +
+				 (i * NEXT_DQCQ_REG_OFF),
 				 lower_32_bits(hisi_hba->cmd_hdr_dma[i]));
 
-		hisi_sas_write32(hisi_hba, DLVRY_Q_0_DEPTH + (i * 0x14),
+		hisi_sas_write32(hisi_hba, DLVRY_Q_0_DEPTH +
+				 (i * NEXT_DQCQ_REG_OFF),
 				 HISI_SAS_QUEUE_SLOTS);
 
 		/* Completion queue */
-		hisi_sas_write32(hisi_hba, COMPL_Q_0_BASE_ADDR_HI + (i * 0x14),
+		hisi_sas_write32(hisi_hba, COMPL_Q_0_BASE_ADDR_HI +
+				 (i * NEXT_DQCQ_REG_OFF),
 				 upper_32_bits(hisi_hba->complete_hdr_dma[i]));
 
-		hisi_sas_write32(hisi_hba, COMPL_Q_0_BASE_ADDR_LO + (i * 0x14),
+		hisi_sas_write32(hisi_hba, COMPL_Q_0_BASE_ADDR_LO +
+				 (i * NEXT_DQCQ_REG_OFF),
 				 lower_32_bits(hisi_hba->complete_hdr_dma[i]));
 
-		hisi_sas_write32(hisi_hba, COMPL_Q_0_DEPTH + (i * 0x14),
+		hisi_sas_write32(hisi_hba, COMPL_Q_0_DEPTH +
+				 (i * NEXT_DQCQ_REG_OFF),
 				 HISI_SAS_QUEUE_SLOTS);
 	}
 
@@ -809,11 +829,14 @@ static int reset_hw_v3_hw(struct hisi_hba *hisi_hba)
 
 	hisi_sas_write32(hisi_hba, DLVRY_QUEUE_ENABLE, 0);
 
-	/* Disable all of the PHYs */
+	/*
+	 * Disable all of the PHYs,
+	 * 50us delay is need for hw
+	 */
 	hisi_sas_stop_phys(hisi_hba);
 	udelay(50);
 
-	/* Ensure axi bus idle */
+	/* Ensure axi bus idle, with 20ms delay and 1s time out */
 	ret = hisi_sas_read32_poll_timeout(AXI_CFG, val, !val,
 					   20000, 1000000);
 	if (ret) {
@@ -848,6 +871,7 @@ static int hw_init_v3_hw(struct hisi_hba *hisi_hba)
 		return rc;
 	}
 
+	/* Delay 100ms to reset hw */
 	msleep(100);
 	init_reg_v3_hw(hisi_hba);
 
@@ -871,6 +895,7 @@ static void disable_phy_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 	cfg &= ~PHY_CFG_ENA_MSK;
 	hisi_sas_phy_write32(hisi_hba, phy_no, PHY_CFG, cfg);
 
+	/* Delay 50ms after disable phy to meet hw need */
 	mdelay(50);
 
 	state = hisi_sas_read32(hisi_hba, PHY_STATE);
@@ -898,6 +923,8 @@ static void phy_hard_reset_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 		hisi_sas_phy_write32(hisi_hba, phy_no, TXID_AUTO,
 					txid_auto | TX_HARDRST_MSK);
 	}
+
+	/* Delay 100ms after phy hard reset to meet hw need */
 	msleep(100);
 	start_phy_v3_hw(hisi_hba, phy_no);
 }
@@ -947,6 +974,7 @@ static int get_wideport_bitmap_v3_hw(struct hisi_hba *hisi_hba, int port_id)
 
 	for (i = 0; i < hisi_hba->n_phy; i++)
 		if (phy_state & BIT(i))
+			/* Each num ma of port cost 4 bit to save */
 			if (((phy_port_num_ma >> (i * 4)) & 0xf) == port_id)
 				bitmap |= BIT(i);
 
@@ -966,7 +994,8 @@ get_free_slot_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_dq *dq)
 
 	w = dq->wr_point;
 	r = hisi_sas_read32_relaxed(hisi_hba,
-				DLVRY_Q_0_RD_PTR + (queue * 0x14));
+				DLVRY_Q_0_RD_PTR +
+				(queue * NEXT_DQCQ_REG_OFF));
 	if (r == (w+1) % HISI_SAS_QUEUE_SLOTS) {
 		dev_warn(dev, "full queue=%d r=%d w=%d\n",
 				queue, r, w);
@@ -1001,7 +1030,9 @@ static void start_delivery_v3_hw(struct hisi_sas_dq *dq)
 	smp_rmb();
 	wp = (s2->dlvry_queue_slot + 1) % HISI_SAS_QUEUE_SLOTS;
 
-	hisi_sas_write32(hisi_hba, DLVRY_Q_0_WR_PTR + (dlvry_queue * 0x14), wp);
+	hisi_sas_write32(hisi_hba,
+			 DLVRY_Q_0_WR_PTR +
+			 (dlvry_queue * NEXT_DQCQ_REG_OFF), wp);
 }
 
 static void prep_prd_sge_v3_hw(struct hisi_hba *hisi_hba,
@@ -1062,6 +1093,11 @@ static void hisi_sas_fill_prot_v3_hw(struct scsi_cmnd *scsi_cmnd,
 	u32 prot_interval = scsi_prot_interval(scsi_cmnd);
 	u32 lbrt_chk_val;
 
+	/*
+	 * if interval of sector size equal to 4096,
+	 * lbrt_chk_val should divided by 8 for it
+	 * was base on 512.
+	 */
 	if (scsi_prot_interval(scsi_cmnd) == 4096)
 		lbrt_chk_val = (u32)(scsi_get_lba(scsi_cmnd) >> 3);
 	else
@@ -1109,6 +1145,7 @@ static void hisi_sas_fill_prot_v3_hw(struct scsi_cmnd *scsi_cmnd,
 		break;
 	}
 
+	/* Different Config base on interval of sector size */
 	switch (prot_interval) {
 	case 512:
 		break;
@@ -1154,13 +1191,13 @@ static void prep_ssp_v3_hw(struct hisi_hba *hisi_hba,
 	u32 dw1 = 0, dw2 = 0, len = 0, priority = !!tmf;
 
 	hdr->dw0 = cpu_to_le32((1 << CMD_HDR_RESP_REPORT_OFF) |
-			       (2 << CMD_HDR_TLR_CTRL_OFF) |
+			       (2 << CMD_HDR_TLR_CTRL_OFF) | /* no retransmit */
 			       (port->id << CMD_HDR_PORT_OFF) |
 			       (priority << CMD_HDR_PRIORITY_OFF) |
 			       (1 << CMD_HDR_CMD_OFF)); /* ssp */
 
 	if (tmf) {
-		dw1 |= 2 << CMD_HDR_FRAME_TYPE_OFF;
+		dw1 |= 2 << CMD_HDR_FRAME_TYPE_OFF; /* task frame */
 		dw1 |= DIR_NO_DATA << CMD_HDR_DIR_OFF;
 	} else {
 		dw1 = set_hdr_vdtl(&scsi_cmnd->cmnd[0]);
@@ -1183,6 +1220,10 @@ static void prep_ssp_v3_hw(struct hisi_hba *hisi_hba,
 	dw1 |= sas_dev->device_id << CMD_HDR_DEV_ID_OFF;
 	hdr->dw1 = cpu_to_le32(dw1);
 
+	/*
+	 * The unit of CMD Frame LEN is Dwords
+	 * Add extra 3 bytes to avoid Numerical loss after divided by 4
+	 */
 	dw2 = (((sizeof(struct ssp_command_iu) + sizeof(struct ssp_frame_hdr)
 	      + 3) / 4) << CMD_HDR_CFL_OFF) |
 	      ((HISI_SAS_MAX_SSP_RESP_SZ / 4) << CMD_HDR_MRFL_OFF) |
@@ -1208,9 +1249,17 @@ static void prep_ssp_v3_hw(struct hisi_hba *hisi_hba,
 
 	memcpy(buf_cmd, &task->ssp_task.LUN, 8);
 	if (!tmf) {
+		/*
+		 * Command frame
+		 * Reference: SAS Protocol Layer,see chapter: Transport layer
+		 */
 		buf_cmd[9] = ssp_task->task_attr | (ssp_task->task_prio << 3);
 		memcpy(buf_cmd + 12, scsi_cmnd->cmnd, scsi_cmnd->cmd_len);
 	} else {
+		/*
+		 * Task frame
+		 * Reference: SAS Protocol Layer,see chapter: Transport layer
+		 */
 		buf_cmd[10] = tmf->tmf;
 		switch (tmf->tmf) {
 		case TMF_ABORT_TASK:
@@ -1307,9 +1356,9 @@ static void prep_ata_v3_hw(struct hisi_hba *hisi_hba,
 
 	hdr->dw0 = cpu_to_le32(port->id << CMD_HDR_PORT_OFF);
 	if (parent_dev && DEV_IS_EXPANDER(parent_dev->dev_type))
-		hdr->dw0 |= cpu_to_le32(3 << CMD_HDR_CMD_OFF);
+		hdr->dw0 |= cpu_to_le32(3 << CMD_HDR_CMD_OFF); /* STP */
 	else
-		hdr->dw0 |= cpu_to_le32(4 << CMD_HDR_CMD_OFF);
+		hdr->dw0 |= cpu_to_le32(4 << CMD_HDR_CMD_OFF); /* SATA */
 
 	switch (task->data_dir) {
 	case DMA_TO_DEVICE:
@@ -1340,12 +1389,13 @@ static void prep_ata_v3_hw(struct hisi_hba *hisi_hba,
 
 	/* dw2 */
 	if (task->ata_task.use_ncq && hisi_sas_get_ncq_tag(task, &hdr_tag)) {
+		/* Reference: ATA-8 ACS */
 		task->ata_task.fis.sector_count |= (u8) (hdr_tag << 3);
 		dw2 |= hdr_tag << CMD_HDR_NCQ_TAG_OFF;
 	}
 
 	dw2 |= (HISI_SAS_MAX_STP_RESP_SZ / 4) << CMD_HDR_CFL_OFF |
-			2 << CMD_HDR_SG_MOD_OFF;
+			2 << CMD_HDR_SG_MOD_OFF; /* SGE mode */
 	hdr->dw2 = cpu_to_le32(dw2);
 
 	/* dw3 */
@@ -1407,6 +1457,7 @@ static irqreturn_t phy_up_v3_hw(int phy_no, struct hisi_hba *hisi_hba)
 	del_timer(&phy->timer);
 	hisi_sas_phy_write32(hisi_hba, phy_no, PHYCTRL_PHY_ENA_MSK, 1);
 
+	/* Port id store in 4 bits */
 	port_id = hisi_sas_read32(hisi_hba, PHY_PORT_NUM_MA);
 	port_id = (port_id >> (4 * phy_no)) & 0xf;
 	link_rate = hisi_sas_read32(hisi_hba, PHY_CONN_RATE);
@@ -1442,7 +1493,7 @@ static irqreturn_t phy_up_v3_hw(int phy_no, struct hisi_hba *hisi_hba)
 		}
 
 		sas_phy->oob_mode = SATA_OOB_MODE;
-		attached_sas_addr[0] = 0x50;
+		attached_sas_addr[0] = 0x50; /* sas address for SATA */
 		attached_sas_addr[7] = phy_no;
 		memcpy(sas_phy->attached_sas_addr,
 		       attached_sas_addr,
@@ -1459,6 +1510,7 @@ static irqreturn_t phy_up_v3_hw(int phy_no, struct hisi_hba *hisi_hba)
 			(struct sas_identify_frame *)frame_rcvd;
 
 		dev_info(dev, "phyup: phy%d link_rate=%d\n", phy_no, link_rate);
+		/* IDENTIFY Frame length: 7 Dwords, last Dwords reserved */
 		for (i = 0; i < 6; i++) {
 			u32 idaf = hisi_sas_phy_read32(hisi_hba, phy_no,
 					       RX_IDAF_DWORD0 + (i * 4));
@@ -1578,6 +1630,7 @@ static irqreturn_t int_phy_up_down_bcast_v3_hw(int irq_no, void *p)
 						res = IRQ_HANDLED;
 			}
 		}
+		/* Irq mask of each phy store in 4 bits */
 		irq_msk >>= 4;
 		phy_no++;
 	}
@@ -1655,11 +1708,13 @@ static void handle_chl_int2_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 
 		dev_warn(dev, "phy%d stp link timeout (0x%x)\n",
 			 phy_no, reg_value);
+		/* if time out is happened at state: L_RCVCHKRDY */
 		if (reg_value & BIT(4))
 			hisi_sas_notify_phy_event(phy, HISI_PHYE_LINK_RESET);
 	}
 
-	if ((pci_dev->revision > 0x20) && (irq_value & msk)) {
+	if (pci_dev->revision > PCIDEV_REVISION_1620_ES &&
+	    (irq_value & msk)) {
 		struct asd_sas_phy *sas_phy = &phy->sas_phy;
 		struct sas_phy *sphy = sas_phy->phy;
 
@@ -1679,10 +1734,11 @@ static void handle_chl_int2_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 	}
 
 	if ((irq_value & BIT(CHL_INT2_RX_INVLD_DW_OFF)) &&
-	    (pci_dev->revision == 0x20)) {
+	    (pci_dev->revision == PCIDEV_REVISION_1620_ES)) {
 		u32 reg_value;
 		int rc;
 
+		/* Delay: 1ms  timeout: 10ms */
 		rc = hisi_sas_read32_poll_timeout_atomic(
 				HILINK_ERR_DFX, reg_value,
 				!((reg_value >> 8) & BIT(phy_no)),
@@ -1737,7 +1793,10 @@ static irqreturn_t int_chnl_int_v3_hw(int irq_no, void *p)
 
 	irq_msk = hisi_sas_read32(hisi_hba, CHNL_INT_STATUS)
 				& 0xeeeeeeee;
-
+	/*
+	 * These three irqs mask save at high 3 bit, the last bit
+	 * is reserved. So we use 0xe to clear those after handle.
+	 */
 	while (irq_msk) {
 		if (irq_msk & (2 << (phy_no * 4)))
 			handle_chl_int0_v3_hw(hisi_hba, phy_no);
@@ -1847,7 +1906,7 @@ static irqreturn_t fatal_axi_int_v3_hw(int irq_no, void *p)
 			queue_work(hisi_hba->wq, &hisi_hba->rst_work);
 		}
 
-		if (pdev->revision < 0x21) {
+		if (pdev->revision < PCIDEV_REVISION_1620_CS) {
 			u32 reg_val;
 
 			reg_val = hisi_sas_read32(hisi_hba,
@@ -1981,7 +2040,7 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 		break;
 	}
 
-	/* check for erroneous completion */
+	/* check for erroneous completion, 0x3 means abnormal */
 	if ((complete_hdr->dw0 & CMPLT_HDR_CMPLT_MSK) == 0x3) {
 		u32 *error_info = hisi_sas_status_buf_addr_mem(slot);
 
@@ -2092,7 +2151,7 @@ static void cq_tasklet_v3_hw(unsigned long val)
 	complete_queue = hisi_hba->complete_hdr[queue];
 
 	wr_point = hisi_sas_read32(hisi_hba, COMPL_Q_0_WR_PTR +
-				   (0x14 * queue));
+				   (NEXT_DQCQ_REG_OFF * queue));
 
 	while (rd_point != wr_point) {
 		struct hisi_sas_complete_v3_hdr *complete_hdr;
@@ -2116,7 +2175,9 @@ static void cq_tasklet_v3_hw(unsigned long val)
 
 	/* update rd_point */
 	cq->rd_point = rd_point;
-	hisi_sas_write32(hisi_hba, COMPL_Q_0_RD_PTR + (0x14 * queue), rd_point);
+	hisi_sas_write32(hisi_hba,
+			 COMPL_Q_0_RD_PTR + (NEXT_DQCQ_REG_OFF * queue),
+			 rd_point);
 }
 
 static irqreturn_t cq_interrupt_v3_hw(int irq_no, void *p)
@@ -2138,7 +2199,9 @@ static void setup_reply_map_v3_hw(struct hisi_hba *hisi_hba, int nvecs)
 	int queue, cpu;
 
 	for (queue = 0; queue < nvecs; queue++) {
-		mask = pci_irq_get_affinity(hisi_hba->pci_dev, queue + 16);
+		mask = pci_irq_get_affinity(hisi_hba->pci_dev,
+					    queue +
+					    HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW);
 		if (!mask)
 			goto fallback;
 		for_each_cpu(cpu, mask)
@@ -2182,7 +2245,7 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 	}
 
 	hisi_hba->nvecs = vectors - HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW;
-	rc = devm_request_irq(dev, pci_irq_vector(pdev, 1),
+	rc = devm_request_irq(dev, pci_irq_vector(pdev, PCI_IRQ_PHY),
 			      int_phy_up_down_bcast_v3_hw, 0,
 			      DRV_NAME " phy", hisi_hba);
 	if (rc) {
@@ -2191,7 +2254,7 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 		goto free_irq_vectors;
 	}
 
-	rc = devm_request_irq(dev, pci_irq_vector(pdev, 2),
+	rc = devm_request_irq(dev, pci_irq_vector(pdev, PCI_IRQ_CHANNEL),
 			      int_chnl_int_v3_hw, 0,
 			      DRV_NAME " channel", hisi_hba);
 	if (rc) {
@@ -2200,7 +2263,7 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 		goto free_phy_irq;
 	}
 
-	rc = devm_request_irq(dev, pci_irq_vector(pdev, 11),
+	rc = devm_request_irq(dev, pci_irq_vector(pdev, PCI_IRQ_AXI_FATAL),
 			      fatal_axi_int_v3_hw, 0,
 			      DRV_NAME " fatal", hisi_hba);
 	if (rc) {
@@ -2213,7 +2276,8 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 	for (i = 0; i < hisi_hba->nvecs; i++) {
 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
 		struct tasklet_struct *t = &cq->tasklet;
-		int nr = hisi_sas_intr_conv ? 16 : 16 + i;
+		int nr = hisi_sas_intr_conv ? PCI_IRQ_CQ_BASE :
+					      PCI_IRQ_CQ_BASE + i;
 		unsigned long irqflags = hisi_sas_intr_conv ? IRQF_SHARED : 0;
 
 		rc = devm_request_irq(dev, pci_irq_vector(pdev, nr),
@@ -2227,7 +2291,7 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 			goto free_cq_irqs;
 		}
 
-		tasklet_init(t, cq_tasklet_v3_hw, (unsigned long)cq);
+		tasklet_init(t, cq_tasklet_v3_hw, (uintptr_t)cq);
 	}
 
 	return 0;
@@ -2235,15 +2299,16 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 free_cq_irqs:
 	for (k = 0; k < i; k++) {
 		struct hisi_sas_cq *cq = &hisi_hba->cq[k];
-		int nr = hisi_sas_intr_conv ? 16 : 16 + k;
+		int nr = hisi_sas_intr_conv ? PCI_IRQ_CQ_BASE :
+					      PCI_IRQ_CQ_BASE + k;
 
 		free_irq(pci_irq_vector(pdev, nr), cq);
 	}
-	free_irq(pci_irq_vector(pdev, 11), hisi_hba);
+	free_irq(pci_irq_vector(pdev, PCI_IRQ_AXI_FATAL), hisi_hba);
 free_chnl_interrupt:
-	free_irq(pci_irq_vector(pdev, 2), hisi_hba);
+	free_irq(pci_irq_vector(pdev, PCI_IRQ_CHANNEL), hisi_hba);
 free_phy_irq:
-	free_irq(pci_irq_vector(pdev, 1), hisi_hba);
+	free_irq(pci_irq_vector(pdev, PCI_IRQ_PHY), hisi_hba);
 free_irq_vectors:
 	pci_free_irq_vectors(pdev);
 	return rc;
@@ -2268,6 +2333,7 @@ static void phy_set_linkrate_v3_hw(struct hisi_hba *hisi_hba, int phy_no,
 		struct sas_phy_linkrates *r)
 {
 	enum sas_linkrate max = r->maximum_linkrate;
+	/* init OOB link rate as 1.5 Gbits */
 	u32 prog_phy_link_rate = 0x800;
 
 	prog_phy_link_rate |= hisi_sas_get_prog_phy_linkrate_mask(max);
@@ -2280,12 +2346,12 @@ static void interrupt_disable_v3_hw(struct hisi_hba *hisi_hba)
 	struct pci_dev *pdev = hisi_hba->pci_dev;
 	int i;
 
-	synchronize_irq(pci_irq_vector(pdev, 1));
-	synchronize_irq(pci_irq_vector(pdev, 2));
-	synchronize_irq(pci_irq_vector(pdev, 11));
+	synchronize_irq(pci_irq_vector(pdev, PCI_IRQ_PHY));
+	synchronize_irq(pci_irq_vector(pdev, PCI_IRQ_CHANNEL));
+	synchronize_irq(pci_irq_vector(pdev, PCI_IRQ_AXI_FATAL));
 	for (i = 0; i < hisi_hba->queue_count; i++) {
 		hisi_sas_write32(hisi_hba, OQ0_INT_SRC_MSK + 0x4 * i, 0x1);
-		synchronize_irq(pci_irq_vector(pdev, i + 16));
+		synchronize_irq(pci_irq_vector(pdev, i + PCI_IRQ_CQ_BASE));
 	}
 
 	hisi_sas_write32(hisi_hba, ENT_INT_SRC_MSK1, 0xffffffff);
@@ -2352,6 +2418,7 @@ static int disable_host_v3_hw(struct hisi_hba *hisi_hba)
 
 	hisi_sas_stop_phys(hisi_hba);
 
+	/* Delay 10ms after stop phys to meet hw need */
 	mdelay(10);
 
 	reg_val = hisi_sas_read32(hisi_hba, AXI_MASTER_CFG_BASE +
@@ -2360,7 +2427,7 @@ static int disable_host_v3_hw(struct hisi_hba *hisi_hba)
 	hisi_sas_write32(hisi_hba, AXI_MASTER_CFG_BASE +
 			 AM_CTRL_GLOBAL, reg_val);
 
-	/* wait until bus idle */
+	/* wait until bus idle, delay:10us, timeout:100us */
 	rc = hisi_sas_read32_poll_timeout(AXI_MASTER_CFG_BASE +
 					  AM_CURR_TRANS_RETURN, status,
 					  status == 0x3, 10, 100);
@@ -2397,6 +2464,10 @@ static int write_gpio_v3_hw(struct hisi_hba *hisi_hba, u8 reg_type,
 
 	switch (reg_type) {
 	case SAS_GPIO_REG_TX:
+	/*
+	 * One register of GPIO can control 4 phys
+	 * Add extra 3 bytes to avoid Numerical loss after divided by 4
+	 */
 		if ((reg_index + reg_count) > ((hisi_hba->n_phy + 3) / 4)) {
 			dev_err(dev, "write gpio: invalid reg range[%d, %d]\n",
 				reg_index, reg_index + reg_count - 1);
@@ -2456,7 +2527,7 @@ static void config_intr_coal_v3_hw(struct hisi_hba *hisi_hba)
 		hisi_sas_write32(hisi_hba, INT_COAL_EN, 0x1);
 		hisi_sas_write32(hisi_hba, OQ_INT_COAL_TIME, 0x1);
 		hisi_sas_write32(hisi_hba, OQ_INT_COAL_CNT, 0x1);
-	} else {
+	} else { /* intr coal */
 		hisi_sas_write32(hisi_hba, INT_COAL_EN, 0x3);
 		hisi_sas_write32(hisi_hba, OQ_INT_COAL_TIME,
 				hisi_hba->intr_coal_ticks);
@@ -2596,7 +2667,7 @@ static const struct hisi_sas_debugfs_reg_lu debugfs_port_reg_lu[] = {
 
 static const struct hisi_sas_debugfs_reg debugfs_port_reg = {
 	.lu = debugfs_port_reg_lu,
-	.count = 0x100,
+	.count = 0x100, /* number of port regs */
 	.base_off = PORT_BASE,
 	.read_port_reg = hisi_sas_phy_read32,
 };
@@ -2680,7 +2751,7 @@ static const struct hisi_sas_debugfs_reg_lu debugfs_global_reg_lu[] = {
 
 static const struct hisi_sas_debugfs_reg debugfs_global_reg = {
 	.lu = debugfs_global_reg_lu,
-	.count = 0x800,
+	.count = 0x800, /* number of global regs */
 	.read_global_reg = hisi_sas_read32,
 };
 
@@ -2692,6 +2763,7 @@ static void debugfs_snapshot_prepare_v3_hw(struct hisi_hba *hisi_hba)
 
 	hisi_sas_write32(hisi_hba, DLVRY_QUEUE_ENABLE, 0);
 
+	/* delay:100ms, timeout:5s */
 	if (wait_cmds_complete_timeout_v3_hw(hisi_hba, 100, 5000) == -ETIMEDOUT)
 		dev_dbg(dev, "Wait commands complete timeout!\n");
 
@@ -2864,7 +2936,7 @@ hisi_sas_v3_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	hisi_hba = shost_priv(shost);
 	dev_set_drvdata(dev, sha);
 
-	hisi_hba->regs = pcim_iomap(pdev, 5, 0);
+	hisi_hba->regs = pcim_iomap(pdev, HISI_SAS_BAR_TO_IOMAP, 0);
 	if (!hisi_hba->regs) {
 		dev_err(dev, "cannot map register.\n");
 		rc = -ENOMEM;
@@ -2889,6 +2961,7 @@ hisi_sas_v3_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	shost->max_id = HISI_SAS_MAX_DEVICES;
 	shost->max_lun = ~0;
 	shost->max_channel = 1;
+	/* shost support 16 bytes cmd len base on hw */
 	shost->max_cmd_len = 16;
 	shost->can_queue = hisi_hba->hw->max_command_entries -
 		HISI_SAS_RESERVED_IPTT_CNT;
@@ -2950,12 +3023,13 @@ hisi_sas_v3_destroy_irqs(struct pci_dev *pdev, struct hisi_hba *hisi_hba)
 {
 	int i;
 
-	free_irq(pci_irq_vector(pdev, 1), hisi_hba);
-	free_irq(pci_irq_vector(pdev, 2), hisi_hba);
-	free_irq(pci_irq_vector(pdev, 11), hisi_hba);
+	free_irq(pci_irq_vector(pdev, PCI_IRQ_PHY), hisi_hba);
+	free_irq(pci_irq_vector(pdev, PCI_IRQ_CHANNEL), hisi_hba);
+	free_irq(pci_irq_vector(pdev, PCI_IRQ_AXI_FATAL), hisi_hba);
 	for (i = 0; i < hisi_hba->nvecs; i++) {
 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
-		int nr = hisi_sas_intr_conv ? 16 : 16 + i;
+		int nr = hisi_sas_intr_conv ? PCI_IRQ_CQ_BASE :
+					      PCI_IRQ_CQ_BASE + i;
 
 		free_irq(pci_irq_vector(pdev, nr), cq);
 	}
@@ -3195,7 +3269,7 @@ static int hisi_sas_v3_suspend(struct pci_dev *pdev, pm_message_t state)
 	}
 
 	if (test_and_set_bit(HISI_SAS_RESET_BIT, &hisi_hba->flags))
-		return -1;
+		return -EPERM;
 
 	scsi_block_requests(shost);
 	set_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);

@@ -96,12 +96,11 @@ u8 hisi_sas_get_ata_protocol(struct host_to_dev_fis *fis, int direction)
 			return HISI_SAS_SATA_PROTOCOL_NONDATA;
 		}
 
-	default:
-	{
+	default: {
 		if (direction == DMA_NONE)
 			return HISI_SAS_SATA_PROTOCOL_NONDATA;
 		return HISI_SAS_SATA_PROTOCOL_PIO;
-	}
+		}
 	}
 }
 EXPORT_SYMBOL_GPL(hisi_sas_get_ata_protocol);
@@ -146,9 +145,14 @@ u8 hisi_sas_get_prog_phy_linkrate_mask(enum sas_linkrate max)
 {
 	u8 rate = 0;
 	int i;
+	enum sas_linkrate max_linkrate = max;
 
-	max -= SAS_LINK_RATE_1_5_GBPS;
-	for (i = 0; i <= max; i++)
+	/*
+	 * One bit represent one kind of link rate,
+	 * So we shift one rate to other by multiply 2.
+	 */
+	max_linkrate -= SAS_LINK_RATE_1_5_GBPS;
+	for (i = 0; i <= max_linkrate; i++)
 		rate |= 1 << (i * 2);
 	return rate;
 }
@@ -746,7 +750,7 @@ static int hisi_sas_init_device(struct domain_device *device)
 	case SAS_SATA_PENDING:
 		/*
 		 * send HARD RESET to clear previous affiliation of
-		 * STP target port
+		 * STP target port, sleep 2s after hard reset
 		 */
 		local_phy = sas_get_local_phy(device);
 		if (!scsi_is_sas_phy_local(local_phy)) {
@@ -831,6 +835,12 @@ int hisi_sas_slave_configure(struct scsi_device *sdev)
 
 	if (ret)
 		return ret;
+
+	/*
+	 * The queue depth for the sdev should be
+	 * set as 64 to avoid SAS_QUEUE_FULL error
+	 * in high-datarate aging tests
+	 */
 	if (!dev_is_sata(dev))
 		sas_change_queue_depth(sdev, 64);
 
@@ -1075,6 +1085,7 @@ static int hisi_sas_phy_set_linkrate(struct hisi_hba *hisi_hba, int phy_no,
 	sas_phy->phy->maximum_linkrate = max;
 	sas_phy->phy->minimum_linkrate = min;
 	hisi_hba->hw->phy_disable(hisi_hba, phy_no);
+	/* Sleep 100ms after disable phy to meet hw need */
 	msleep(100);
 	hisi_hba->hw->phy_set_linkrate(hisi_hba, phy_no, &_r);
 	hisi_hba->hw->phy_start(hisi_hba, phy_no);
@@ -1096,6 +1107,7 @@ static int hisi_sas_control_phy(struct asd_sas_phy *sas_phy, enum phy_func func,
 
 	case PHY_FUNC_LINK_RESET:
 		hisi_hba->hw->phy_disable(hisi_hba, phy_no);
+		/* Sleep 100ms after disable phy to meet hw need */
 		msleep(100);
 		hisi_hba->hw->phy_start(hisi_hba, phy_no);
 		break;
@@ -1272,7 +1284,7 @@ static void hisi_sas_fill_ata_reset_cmd(struct ata_device *dev,
 
 static int hisi_sas_softreset_ata_disk(struct domain_device *device)
 {
-	u8 fis[20] = {0};
+	struct host_to_dev_fis fis = {};
 	struct ata_port *ap = device->sata_dev.ap;
 	struct ata_link *link;
 	int rc = TMF_RESP_FUNC_FAILED;
@@ -1283,8 +1295,8 @@ static int hisi_sas_softreset_ata_disk(struct domain_device *device)
 	ata_for_each_link(link, ap, EDGE) {
 		int pmp = sata_srst_pmp(link);
 
-		hisi_sas_fill_ata_reset_cmd(link->device, 1, pmp, fis);
-		rc = hisi_sas_exec_internal_tmf_task(device, fis, s, NULL);
+		hisi_sas_fill_ata_reset_cmd(link->device, 1, pmp, (u8 *)&fis);
+		rc = hisi_sas_exec_internal_tmf_task(device, &fis, s, NULL);
 		if (rc != TMF_RESP_FUNC_COMPLETE)
 			break;
 	}
@@ -1293,8 +1305,9 @@ static int hisi_sas_softreset_ata_disk(struct domain_device *device)
 		ata_for_each_link(link, ap, EDGE) {
 			int pmp = sata_srst_pmp(link);
 
-			hisi_sas_fill_ata_reset_cmd(link->device, 0, pmp, fis);
-			rc = hisi_sas_exec_internal_tmf_task(device, fis,
+			hisi_sas_fill_ata_reset_cmd(link->device, 0,
+						    pmp, (u8 *)&fis);
+			rc = hisi_sas_exec_internal_tmf_task(device, &fis,
 							     s, NULL);
 			if (rc != TMF_RESP_FUNC_COMPLETE)
 				dev_err(dev, "ata disk de-reset failed\n");
@@ -1317,6 +1330,7 @@ static int hisi_sas_debug_issue_ssp_tmf(struct domain_device *device,
 	if (!(device->tproto & SAS_PROTOCOL_SSP))
 		return TMF_RESP_FUNC_ESUPP;
 
+	/* LUN is define as 8 bytes array at upper layer */
 	memcpy(ssp_task.LUN, lun, 8);
 
 	return hisi_sas_exec_internal_tmf_task(device, &ssp_task,
@@ -1432,10 +1446,10 @@ static void hisi_sas_send_ata_reset_each_phy(struct hisi_hba *hisi_hba,
 	struct ata_port *ap = device->sata_dev.ap;
 	struct device *dev = hisi_hba->dev;
 	int s = sizeof(struct host_to_dev_fis);
+	struct host_to_dev_fis fis = {};
 	int rc = TMF_RESP_FUNC_FAILED;
 	struct asd_sas_phy *sas_phy;
 	struct ata_link *link;
-	u8 fis[20] = {0};
 	u32 state;
 
 	state = hisi_hba->hw->get_phys_state(hisi_hba);
@@ -1447,8 +1461,9 @@ static void hisi_sas_send_ata_reset_each_phy(struct hisi_hba *hisi_hba,
 			int pmp = sata_srst_pmp(link);
 
 			tmf_task.phy_id = sas_phy->id;
-			hisi_sas_fill_ata_reset_cmd(link->device, 1, pmp, fis);
-			rc = hisi_sas_exec_internal_tmf_task(device, fis, s,
+			hisi_sas_fill_ata_reset_cmd(link->device, 1,
+						    pmp, (u8 *)&fis);
+			rc = hisi_sas_exec_internal_tmf_task(device, &fis, s,
 							     &tmf_task);
 			if (rc != TMF_RESP_FUNC_COMPLETE) {
 				dev_err(dev, "phy%d ata reset failed rc=%d\n",
@@ -1507,6 +1522,8 @@ void hisi_sas_controller_reset_prepare(struct hisi_hba *hisi_hba)
 	hisi_hba->phy_state = hisi_hba->hw->get_phys_state(hisi_hba);
 
 	scsi_block_requests(shost);
+
+	/* Delay: 100ms timeout: 5s */
 	hisi_hba->hw->wait_cmds_complete_timeout(hisi_hba, 100, 5000);
 
 	if (timer_pending(&hisi_hba->timer))
@@ -1523,6 +1540,7 @@ void hisi_sas_controller_reset_done(struct hisi_hba *hisi_hba)
 
 	/* Init and wait for PHYs to come up and all libsas event finished. */
 	hisi_hba->hw->phys_init(hisi_hba);
+	/* Sleep 1s to wait for phy up */
 	msleep(1000);
 	hisi_sas_refresh_port_id(hisi_hba);
 	clear_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
@@ -1550,10 +1568,10 @@ static int hisi_sas_controller_reset(struct hisi_hba *hisi_hba)
 		queue_work(hisi_hba->wq, &hisi_hba->debugfs_work);
 
 	if (!hisi_hba->hw->soft_reset)
-		return -1;
+		return -EINVAL;
 
 	if (test_and_set_bit(HISI_SAS_RESET_BIT, &hisi_hba->flags))
-		return -1;
+		return -EPERM;
 
 	dev_info(dev, "controller resetting...\n");
 	hisi_sas_controller_reset_prepare(hisi_hba);
@@ -1735,6 +1753,7 @@ static int hisi_sas_debug_I_T_nexus_reset(struct domain_device *device)
 	sas_put_local_phy(local_phy);
 
 	if (scsi_is_sas_phy_local(local_phy)) {
+		/* Wait for I_T reset complete, time out after 2s */
 		int ret = wait_for_completion_timeout(&phyreset, 2 * HZ);
 		unsigned long flags;
 
@@ -1747,6 +1766,7 @@ static int hisi_sas_debug_I_T_nexus_reset(struct domain_device *device)
 		if (!ret)
 			hisi_sas_phy_down(hisi_hba, sas_phy->id, 0);
 	} else
+		/* Sleep 2s to wait for I_T reset at expander env */
 		msleep(2000);
 
 	return rc;
@@ -1908,7 +1928,7 @@ hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba,
 		return -EINVAL;
 
 	if (!device->port)
-		return -1;
+		return -EPERM;
 
 	port = to_hisi_sas_port(sas_port);
 
@@ -2322,7 +2342,10 @@ int hisi_sas_alloc(struct hisi_hba *hisi_hba)
 	if (!hisi_hba->slot_info)
 		goto err_out;
 
-	/* roundup to avoid overly large block size */
+	/*
+	 * roundup to avoid overly large block size
+	 * 64 is a better setting after several repeated attempts
+	 */
 	max_command_entries_ru = roundup(max_command_entries, 64);
 	if (!hisi_hba->enable_dix_dif)
 		sz_slot_buf_ru = roundup(sizeof(
@@ -2594,6 +2617,7 @@ int hisi_sas_probe(struct platform_device *pdev,
 	shost->max_id = HISI_SAS_MAX_DEVICES;
 	shost->max_lun = ~0;
 	shost->max_channel = 1;
+	/* shost support 16 bytes cmd len base on hw */
 	shost->max_cmd_len = 16;
 	if (hisi_hba->hw->slot_index_alloc) {
 		shost->can_queue = hisi_hba->hw->max_command_entries;
@@ -2817,6 +2841,7 @@ static int hisi_sas_show_row_64(struct seq_file *s, int index,
 
 	/* completion header size not fixed per HW version */
 	seq_printf(s, "index %04d:\n\t", index);
+	/* Convert unit of sz to 8 bytes before compare */
 	for (i = 1; i <= sz / 8; i++, ptr++) {
 		seq_printf(s, " 0x%016llx", le64_to_cpu(*ptr));
 		if (!(i % 2))
@@ -2835,6 +2860,7 @@ static int hisi_sas_show_row_32(struct seq_file *s, int index,
 
 	/* completion header size not fixed per HW version */
 	seq_printf(s, "index %04d:\n\t", index);
+	/* Convert unit of sz to 4 bytes before compare */
 	for (i = 1; i <= sz / 4; i++, ptr++) {
 		seq_printf(s, " 0x%08x", le32_to_cpu(*ptr));
 		if (!(i % 4))
@@ -3005,7 +3031,7 @@ static void hisi_sas_debugfs_create_files(struct hisi_hba *hisi_hba)
 		goto fail;
 
 	for (p = 0; p < hisi_hba->n_phy; p++) {
-		snprintf(name, 256, "%d", p);
+		snprintf(name, sizeof(name), "%d", p);
 		if (!debugfs_create_file(name, 0400, dentry,
 					 &hisi_hba->phy[p],
 					 &hisi_sas_debugfs_port_fops))
@@ -3018,7 +3044,7 @@ static void hisi_sas_debugfs_create_files(struct hisi_hba *hisi_hba)
 		goto fail;
 
 	for (c = 0; c < hisi_hba->queue_count; c++) {
-		snprintf(name, 256, "%d", c);
+		snprintf(name, sizeof(name), "%d", c);
 
 		if (!debugfs_create_file(name, 0400, dentry,
 					 &hisi_hba->cq[c],
@@ -3032,7 +3058,7 @@ static void hisi_sas_debugfs_create_files(struct hisi_hba *hisi_hba)
 		goto fail;
 
 	for (d = 0; d < hisi_hba->queue_count; d++) {
-		snprintf(name, 256, "%d", d);
+		snprintf(name, sizeof(name), "%d", d);
 
 		if (!debugfs_create_file(name, 0400, dentry,
 					 &hisi_hba->dq[d],
@@ -3087,7 +3113,7 @@ static ssize_t hisi_sas_debugfs_trigger_dump_write(struct file *file,
 	 */
 
 	/* Not allow to input more than 8 char */
-	if (count > 8)
+	if (count > sizeof(buf))
 		return -EFAULT;
 
 	if (copy_from_user(buf, user_buf, count))
