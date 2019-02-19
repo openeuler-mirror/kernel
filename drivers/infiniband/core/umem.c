@@ -85,6 +85,7 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 	struct page **page_list;
 	struct vm_area_struct **vma_list;
 	unsigned long lock_limit;
+	unsigned long new_pinned;
 	unsigned long cur_base;
 	unsigned long npages;
 	int ret;
@@ -148,12 +149,13 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
 
 	down_write(&current->mm->mmap_sem);
-	current->mm->pinned_vm += npages;
-	if ((current->mm->pinned_vm > lock_limit) && !capable(CAP_IPC_LOCK)) {
+	if (check_add_overflow(current->mm->pinned_vm, npages, &new_pinned) ||
+	    (new_pinned > lock_limit && !capable(CAP_IPC_LOCK))) {
 		up_write(&current->mm->mmap_sem);
 		ret = -ENOMEM;
-		goto vma;
+		goto out;
 	}
+	current->mm->pinned_vm = new_pinned;
 	up_write(&current->mm->mmap_sem);
 
 	cur_base = addr & PAGE_MASK;
