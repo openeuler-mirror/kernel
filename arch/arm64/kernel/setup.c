@@ -210,7 +210,7 @@ static void __init request_standard_resources(void)
 {
 	struct memblock_region *region;
 	struct resource *res, *res_resources;
-	unsigned long i = 0, j = 0, res_count;
+	unsigned long i = 0, j, res_count;
 
 	kernel_code.start   = __pa_symbol(_text);
 	kernel_code.end     = __pa_symbol(__init_begin - 1);
@@ -258,7 +258,7 @@ static void __init request_standard_resources(void)
 			request_resource(res, &crashk_res);
 #endif
 
-		for (; j < res_mem_count; j++) {
+		for (j = 0; j < res_mem_count; j++) {
 			if (res_resources[j].start >= res->start &&
 			    res_resources[j].end <= res->end)
 				request_resource(res, &res_resources[j]);

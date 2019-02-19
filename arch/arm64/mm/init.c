@@ -400,16 +400,6 @@ static int __init parse_memmap_one(char *p)
 			return -EINVAL;
 		}
 
-		if (!memblock_is_region_memory(start_at, mem_size)) {
-			pr_warn("cannot reserve memory: region is not meory\n");
-			return -EINVAL;
-		}
-
-		if (memblock_is_region_reserved(start_at, mem_size)) {
-			pr_warn("cannot reserve memory: region overlaps reserved memory\n");
-			return -EINVAL;
-		}
-
 		ret = memblock_reserve(start_at, mem_size);
 		if (!ret) {
 			res_mem[res_mem_count].base = start_at;
@@ -417,7 +407,8 @@ static int __init parse_memmap_one(char *p)
 			res_mem_count++;
 		} else
 			pr_warn("memmap memblock_reserve failed.\n");
-	}
+	} else
+		pr_info("Unrecognized memmap option, please check the parameter.\n");
 
 	return *p == '\0' ? 0 : -EINVAL;
 }
