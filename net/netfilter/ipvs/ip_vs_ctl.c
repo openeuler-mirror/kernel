@@ -2223,34 +2223,22 @@ static int ip_vs_set_timeout(struct netns_ipvs *ipvs, struct ip_vs_timeout_user 
 #ifdef CONFIG_IP_VS_PROTO_TCP
 	if (u->tcp_timeout) {
 		pd = ip_vs_proto_data_get(ipvs, IPPROTO_TCP);
-		if (u->tcp_timeout >= INT_MAX / HZ) {
-			pd->timeout_table[IP_VS_TCP_S_ESTABLISHED] = INT_MAX;
-			printk(KERN_WARNING "tcp_timeout * HZ overflowed, use INT_MAX as tcp_timeout instead\n");
-		} else
-			pd->timeout_table[IP_VS_TCP_S_ESTABLISHED]
-				= u->tcp_timeout * HZ;
+		pd->timeout_table[IP_VS_TCP_S_ESTABLISHED]
+			= u->tcp_timeout * HZ;
 	}
 
 	if (u->tcp_fin_timeout) {
 		pd = ip_vs_proto_data_get(ipvs, IPPROTO_TCP);
-		if (u->tcp_fin_timeout >= INT_MAX / HZ) {
-			pd->timeout_table[IP_VS_TCP_S_FIN_WAIT] = INT_MAX;
-			printk(KERN_WARNING "tcp_fin_timeout * HZ overflowed, use INT_MAX as tcp_fin_timeout instead\n");
-		} else
-			pd->timeout_table[IP_VS_TCP_S_FIN_WAIT]
-				= u->tcp_fin_timeout * HZ;
+		pd->timeout_table[IP_VS_TCP_S_FIN_WAIT]
+			= u->tcp_fin_timeout * HZ;
 	}
 #endif
 
 #ifdef CONFIG_IP_VS_PROTO_UDP
 	if (u->udp_timeout) {
 		pd = ip_vs_proto_data_get(ipvs, IPPROTO_UDP);
-		if (u->udp_timeout >= INT_MAX / HZ) {
-			pd->timeout_table[IP_VS_UDP_S_NORMAL] = INT_MAX;
-			printk(KERN_WARNING "udp_timeout * HZ overflowed, use INT_MAX as udp_timeout instead\n");
-		} else
-			pd->timeout_table[IP_VS_UDP_S_NORMAL]
-				= u->udp_timeout * HZ;
+		pd->timeout_table[IP_VS_UDP_S_NORMAL]
+			= u->udp_timeout * HZ;
 	}
 #endif
 	return 0;
