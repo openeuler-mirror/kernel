@@ -2040,16 +2040,25 @@ static long do_io_getevents(aio_context_t ctx_id,
 		struct io_event __user *events,
 		struct timespec64 *ts)
 {
-	ktime_t until = ts ? timespec64_to_ktime(*ts) : KTIME_MAX;
 	struct kioctx *ioctx = lookup_ioctx(ctx_id);
 	long ret = -EINVAL;
 
 	if (likely(ioctx)) {
+		ktime_t until;
+
+		if (!ts)
+			until = KTIME_MAX;
+		else if (!timespec64_valid(ts))
+			goto out;
+		else
+			until = timespec64_to_ktime(*ts);
+
 		if (likely(min_nr <= nr && min_nr >= 0))
 			ret = read_events(ioctx, min_nr, nr, events, until);
 		percpu_ref_put(&ioctx->users);
 	}
 
+out:
 	return ret;
 }
 
