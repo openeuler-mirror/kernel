@@ -9,9 +9,42 @@
 
 #include "ipvlan.h"
 
+int sysctl_ipvlan_loop_qlen = 131072;
+int sysctl_ipvlan_loop_delay = 10;
 static int ipvlan_default_mode = IPVLAN_MODE_L3;
 module_param(ipvlan_default_mode, int, 0400);
 MODULE_PARM_DESC(ipvlan_default_mode, "set ipvlan default mode: 0 for l2, 1 for l3, 2 for l2e, 3 for l3s, others invalid now");
+
+static struct ctl_table_header *ipvlan_table_hrd;
+static struct ctl_table ipvlan_table[] = {
+	{
+		.procname	= "loop_delay",
+		.data		= &sysctl_ipvlan_loop_delay,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "loop_qlen",
+		.data		= &sysctl_ipvlan_loop_qlen,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{ }
+};
+
+static int ipvlan_sysctl_init(void)
+{
+	ipvlan_table_hrd = register_net_sysctl(&init_net,
+					       "net/ipvlan", ipvlan_table);
+	return !ipvlan_table_hrd ? -ENOMEM : 0;
+}
+
+static void ipvlan_sysctl_exit(void)
+{
+	unregister_net_sysctl_table(ipvlan_table_hrd);
+}
 
 static unsigned int ipvlan_netid __read_mostly;
 
@@ -223,6 +256,32 @@ static int ipvlan_init(struct net_device *dev)
 	return 0;
 }
 
+static void ipvlan_local_free_handler(struct timer_list *t)
+{
+	struct ipvl_dev *ipvlan = from_timer(ipvlan, t, local_free_timer);
+
+	skb_queue_purge(&ipvlan->local_xmit_queue);
+	ipvlan->local_packets_cached = 0;
+}
+
+static inline void ipvlan_local_init(struct net_device *dev)
+{
+	struct ipvl_dev *ipvlan = netdev_priv(dev);
+
+	ipvlan->local_packets_cached = 0;
+	skb_queue_head_init(&ipvlan->local_xmit_queue);
+	timer_setup(&ipvlan->local_free_timer,
+		    ipvlan_local_free_handler, 0);
+}
+
+static inline void ipvlan_local_uninit(struct net_device *dev)
+{
+	struct ipvl_dev *ipvlan = netdev_priv(dev);
+
+	del_timer(&ipvlan->local_free_timer);
+	skb_queue_purge(&ipvlan->local_xmit_queue);
+}
+
 static void ipvlan_uninit(struct net_device *dev)
 {
 	struct ipvl_dev *ipvlan = netdev_priv(dev);
@@ -249,6 +308,7 @@ static int ipvlan_open(struct net_device *dev)
 	else
 		dev->flags &= ~IFF_NOARP;
 
+	ipvlan_local_init(dev);
 	rcu_read_lock();
 	list_for_each_entry_rcu(addr, &ipvlan->addrs, anode)
 		ipvlan_ht_addr_add(ipvlan, addr);
@@ -268,6 +328,7 @@ static int ipvlan_stop(struct net_device *dev)
 
 	dev_uc_del(phy_dev, phy_dev->dev_addr);
 
+	ipvlan_local_uninit(dev);
 	rcu_read_lock();
 	list_for_each_entry_rcu(addr, &ipvlan->addrs, anode)
 		ipvlan_ht_addr_del(addr);
@@ -1098,6 +1159,9 @@ static int __init ipvlan_init_module(void)
 		goto error;
 	}
 
+	err = ipvlan_sysctl_init();
+	if (err < 0)
+		pr_err("ipvlan proc init failed, continue\n");
 	return 0;
 error:
 	unregister_inetaddr_notifier(&ipvlan_addr4_notifier_block);
@@ -1125,6 +1189,7 @@ static void __exit ipvlan_cleanup_module(void)
 	unregister_inet6addr_validator_notifier(
 	    &ipvlan_addr6_vtor_notifier_block);
 #endif
+	ipvlan_sysctl_exit();
 }
 
 module_init(ipvlan_init_module);
