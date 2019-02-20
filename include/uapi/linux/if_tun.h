@@ -22,7 +22,7 @@
 #include <linux/filter.h>
 
 /* Read queue size */
-#define TUN_READQ_SIZE	500
+#define TUN_READQ_SIZE	5000
 /* TUN device type flags: deprecated. Use IFF_TUN/IFF_TAP instead. */
 #define TUN_TUN_DEV 	IFF_TUN
 #define TUN_TAP_DEV	IFF_TAP
