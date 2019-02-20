@@ -183,7 +183,7 @@ struct hisi_sas_device {
 	struct hisi_sas_dq	*dq;
 	struct list_head	list;
 	enum sas_device_type	dev_type;
-	int device_id;
+	unsigned int device_id;
 	int sata_idx;
 	spinlock_t lock;
 };
@@ -255,8 +255,9 @@ struct hisi_sas_hw {
 	void (*prep_stp)(struct hisi_hba *hisi_hba,
 			struct hisi_sas_slot *slot);
 	void (*prep_abort)(struct hisi_hba *hisi_hba,
-			  struct hisi_sas_slot *slot,
-			  int device_id, int abort_flag, int tag_to_abort);
+			   struct hisi_sas_slot *slot,
+			   unsigned int device_id,
+			   int abort_flag, int tag_to_abort);
 	int (*slot_complete)(struct hisi_hba *hisi_hba,
 			     struct hisi_sas_slot *slot);
 	void (*phys_init)(struct hisi_hba *hisi_hba);

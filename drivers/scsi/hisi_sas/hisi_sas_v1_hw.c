@@ -928,9 +928,9 @@ static void start_delivery_v1_hw(struct hisi_sas_dq *dq)
 
 static void prep_prd_sge_v1_hw(struct hisi_hba *hisi_hba,
 			      struct hisi_sas_slot *slot,
-			      struct hisi_sas_cmd_hdr *hdr,
 			      struct scatterlist *scatter,
-			      int n_elem)
+			      u64 n_elem,
+			      struct hisi_sas_cmd_hdr *hdr)
 {
 	struct hisi_sas_sge_page *sge_page = hisi_sas_sge_addr_mem(slot);
 	struct scatterlist *sg;
@@ -999,9 +999,9 @@ static void prep_ssp_v1_hw(struct hisi_hba *hisi_hba,
 	struct sas_ssp_task *ssp_task = &task->ssp_task;
 	struct scsi_cmnd *scsi_cmnd = ssp_task->cmd;
 	struct hisi_sas_tmf_task *tmf = slot->tmf;
-	int has_data = 0, priority = !!tmf;
+	int has_data = 0;
 	u8 *buf_cmd, fburst = 0;
-	u32 dw1, dw2;
+	u32 dw1, dw2, priority = !!tmf;
 
 	/* create header */
 	hdr->dw0 = cpu_to_le32((1 << CMD_HDR_RESP_REPORT_OFF) |
@@ -1049,8 +1049,8 @@ static void prep_ssp_v1_hw(struct hisi_hba *hisi_hba,
 	hdr->transfer_tags = cpu_to_le32(slot->idx << CMD_HDR_IPTT_OFF);
 
 	if (has_data)
-		prep_prd_sge_v1_hw(hisi_hba, slot, hdr, task->scatter,
-					slot->n_elem);
+		prep_prd_sge_v1_hw(hisi_hba, slot, task->scatter,
+					slot->n_elem, hdr);
 
 	hdr->data_transfer_len = cpu_to_le32(task->total_xfer_len);
 	hdr->cmd_table_addr = cpu_to_le64(hisi_sas_cmd_hdr_addr_dma(slot));

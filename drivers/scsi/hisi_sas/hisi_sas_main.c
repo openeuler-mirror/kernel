@@ -301,7 +301,7 @@ static void hisi_sas_task_prep_ata(struct hisi_hba *hisi_hba,
 
 static void hisi_sas_task_prep_abort(struct hisi_hba *hisi_hba,
 		struct hisi_sas_slot *slot,
-		int device_id, int abort_flag, int tag_to_abort)
+		unsigned int device_id, int abort_flag, int tag_to_abort)
 {
 	hisi_hba->hw->prep_abort(hisi_hba, slot,
 			device_id, abort_flag, tag_to_abort);
@@ -446,9 +446,8 @@ err_out_dif_dma_unmap:
 }
 
 static int hisi_sas_task_prep(struct sas_task *task,
-			      struct hisi_sas_dq **dq_pointer,
 			      bool is_tmf, struct hisi_sas_tmf_task *tmf,
-			      int *pass)
+			      int *pass, struct hisi_sas_dq **dq_pointer)
 {
 	struct domain_device *device = task->dev;
 	struct hisi_hba *hisi_hba = dev_to_hisi_hba(device);
@@ -634,7 +633,7 @@ static int hisi_sas_task_exec(struct sas_task *task, gfp_t gfp_flags,
 	}
 
 	/* protect task_prep and start_delivery sequence */
-	rc = hisi_sas_task_prep(task, &dq, is_tmf, tmf, &pass);
+	rc = hisi_sas_task_prep(task, is_tmf, tmf, &pass, &dq);
 	if (rc)
 		dev_err(dev, "task exec: failed[%d]!\n", rc);
 
@@ -1889,7 +1888,8 @@ static int hisi_sas_query_task(struct sas_task *task)
 }
 
 static int
-hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba, int device_id,
+hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba,
+				  unsigned int device_id,
 				  struct sas_task *task, int abort_flag,
 				  int task_tag, struct hisi_sas_dq *dq)
 {

@@ -1692,9 +1692,9 @@ static void start_delivery_v2_hw(struct hisi_sas_dq *dq)
 
 static void prep_prd_sge_v2_hw(struct hisi_hba *hisi_hba,
 			      struct hisi_sas_slot *slot,
-			      struct hisi_sas_cmd_hdr *hdr,
 			      struct scatterlist *scatter,
-			      int n_elem)
+			      u64 n_elem,
+			      struct hisi_sas_cmd_hdr *hdr)
 {
 	struct hisi_sas_sge_page *sge_page = hisi_sas_sge_addr_mem(slot);
 	struct scatterlist *sg;
@@ -1764,9 +1764,9 @@ static void prep_ssp_v2_hw(struct hisi_hba *hisi_hba,
 	struct sas_ssp_task *ssp_task = &task->ssp_task;
 	struct scsi_cmnd *scsi_cmnd = ssp_task->cmd;
 	struct hisi_sas_tmf_task *tmf = slot->tmf;
-	int has_data = 0, priority = !!tmf;
+	int has_data = 0;
 	u8 *buf_cmd;
-	u32 dw1 = 0, dw2 = 0;
+	u32 dw1 = 0, dw2 = 0, priority = !!tmf;
 
 	hdr->dw0 = cpu_to_le32((1 << CMD_HDR_RESP_REPORT_OFF) |
 			       (2 << CMD_HDR_TLR_CTRL_OFF) |
@@ -1807,8 +1807,8 @@ static void prep_ssp_v2_hw(struct hisi_hba *hisi_hba,
 	hdr->transfer_tags = cpu_to_le32(slot->idx);
 
 	if (has_data)
-		prep_prd_sge_v2_hw(hisi_hba, slot, hdr, task->scatter,
-					slot->n_elem);
+		prep_prd_sge_v2_hw(hisi_hba, slot, task->scatter,
+					slot->n_elem, hdr);
 
 	hdr->data_transfer_len = cpu_to_le32(task->total_xfer_len);
 	hdr->cmd_table_addr = cpu_to_le64(hisi_sas_cmd_hdr_addr_dma(slot));
@@ -2523,8 +2523,8 @@ static void prep_ata_v2_hw(struct hisi_hba *hisi_hba,
 	struct hisi_sas_port *port = to_hisi_sas_port(sas_port);
 	struct hisi_sas_tmf_task *tmf = slot->tmf;
 	u8 *buf_cmd;
-	int has_data = 0, hdr_tag = 0;
-	u32 dw1 = 0, dw2 = 0;
+	int has_data = 0;
+	u32 dw1 = 0, dw2 = 0, hdr_tag = 0;
 
 	/* create header */
 	/* dw0 */
@@ -2578,8 +2578,8 @@ static void prep_ata_v2_hw(struct hisi_hba *hisi_hba,
 	hdr->transfer_tags = cpu_to_le32(slot->idx);
 
 	if (has_data)
-		prep_prd_sge_v2_hw(hisi_hba, slot, hdr, task->scatter,
-					slot->n_elem);
+		prep_prd_sge_v2_hw(hisi_hba, slot, task->scatter,
+					slot->n_elem, hdr);
 
 	hdr->data_transfer_len = cpu_to_le32(task->total_xfer_len);
 	hdr->cmd_table_addr = cpu_to_le64(hisi_sas_cmd_hdr_addr_dma(slot));
@@ -2629,7 +2629,7 @@ static void hisi_sas_internal_abort_quirk_timeout(struct timer_list *t)
 
 static void prep_abort_v2_hw(struct hisi_hba *hisi_hba,
 		struct hisi_sas_slot *slot,
-		int device_id, int abort_flag, int tag_to_abort)
+		unsigned int device_id, int abort_flag, int tag_to_abort)
 {
 	struct sas_task *task = slot->task;
 	struct domain_device *dev = task->dev;
