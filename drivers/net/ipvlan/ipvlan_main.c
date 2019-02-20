@@ -9,6 +9,10 @@
 
 #include "ipvlan.h"
 
+static int ipvlan_default_mode = IPVLAN_MODE_L3;
+module_param(ipvlan_default_mode, int, 0400);
+MODULE_PARM_DESC(ipvlan_default_mode, "set ipvlan default mode: 0 for l2, 1 for l3, 2 for l2e, 3 for l3s, others invalid now");
+
 static unsigned int ipvlan_netid __read_mostly;
 
 struct ipvlan_netns {
@@ -583,7 +587,7 @@ int ipvlan_link_new(struct net *src_net, struct net_device *dev,
 	struct ipvl_port *port;
 	struct net_device *phy_dev;
 	int err;
-	u16 mode = IPVLAN_MODE_L3;
+	u16 mode = ipvlan_default_mode;
 
 	if (!tb[IFLA_LINK])
 		return -EINVAL;
