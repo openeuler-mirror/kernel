@@ -824,8 +824,7 @@ static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun)
 	 * off to kill the perturbations it causes anyway.  Meanwhile,
 	 * this maintains functionality for boot and/or troubleshooting.
 	 */
-	if (rt_b == &root_task_group.rt_bandwidth)
-		span = cpu_online_mask;
+	span = cpu_online_mask;
 #endif
 	for_each_cpu(i, span) {
 		int enqueue = 0;
