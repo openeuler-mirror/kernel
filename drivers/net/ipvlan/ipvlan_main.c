@@ -1074,6 +1074,10 @@ static int __init ipvlan_init_module(void)
 {
 	int err;
 
+	if (ipvlan_default_mode >= IPVLAN_MODE_MAX ||
+	    ipvlan_default_mode < IPVLAN_MODE_L2)
+		return -EINVAL;
+
 	ipvlan_init_secret();
 	register_netdevice_notifier(&ipvlan_notifier_block);
 #if IS_ENABLED(CONFIG_IPV6)
