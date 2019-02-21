@@ -1409,7 +1409,7 @@ int mlx4_ib_send_to_wire(struct mlx4_ib_dev *dev, int slave, u8 port,
 
 	sqp_mad = (struct mlx4_mad_snd_buf *) (sqp->tx_ring[wire_tx_ix].buf.addr);
 	if (sqp->tx_ring[wire_tx_ix].ah)
-		rdma_destroy_ah(sqp->tx_ring[wire_tx_ix].ah);
+		mlx4_ib_destroy_ah(sqp->tx_ring[wire_tx_ix].ah);
 	sqp->tx_ring[wire_tx_ix].ah = ah;
 	ib_dma_sync_single_for_cpu(&dev->ib_dev,
 				   sqp->tx_ring[wire_tx_ix].buf.map,
@@ -1900,7 +1900,7 @@ static void mlx4_ib_sqp_comp_worker(struct work_struct *work)
 		if (wc.status == IB_WC_SUCCESS) {
 			switch (wc.opcode) {
 			case IB_WC_SEND:
-				rdma_destroy_ah(sqp->tx_ring[wc.wr_id &
+				mlx4_ib_destroy_ah(sqp->tx_ring[wc.wr_id &
 					      (MLX4_NUM_TUNNEL_BUFS - 1)].ah);
 				sqp->tx_ring[wc.wr_id & (MLX4_NUM_TUNNEL_BUFS - 1)].ah
 					= NULL;
@@ -1929,7 +1929,7 @@ static void mlx4_ib_sqp_comp_worker(struct work_struct *work)
 				 " status = %d, wrid = 0x%llx\n",
 				 ctx->slave, wc.status, wc.wr_id);
 			if (!MLX4_TUN_IS_RECV(wc.wr_id)) {
-				rdma_destroy_ah(sqp->tx_ring[wc.wr_id &
+				mlx4_ib_destroy_ah(sqp->tx_ring[wc.wr_id &
 					      (MLX4_NUM_TUNNEL_BUFS - 1)].ah);
 				sqp->tx_ring[wc.wr_id & (MLX4_NUM_TUNNEL_BUFS - 1)].ah
 					= NULL;
