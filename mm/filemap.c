@@ -895,6 +895,7 @@ int add_to_page_cache_locked(struct page *page, struct address_space *mapping,
 }
 EXPORT_SYMBOL(add_to_page_cache_locked);
 
+#ifdef CONFIG_SHRINK_PAGECACHE
 /*
  * Like add_to_page_cache_locked, but used to add newly allocated pages:
  * the page is new, so we can just run __SetPageLocked() against it.
@@ -914,6 +915,7 @@ int add_to_page_cache(struct page *page,
 	return error;
 }
 EXPORT_SYMBOL(add_to_page_cache);
+#endif
 
 int add_to_page_cache_lru(struct page *page, struct address_space *mapping,
 				pgoff_t offset, gfp_t gfp_mask)

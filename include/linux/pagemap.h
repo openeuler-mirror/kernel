@@ -613,8 +613,10 @@ static inline int fault_in_pages_readable(const char __user *uaddr, int size)
 	return 0;
 }
 
+#ifdef CONFIG_SHRINK_PAGECACHE
 int add_to_page_cache(struct page *page, struct address_space *mapping,
 				pgoff_t index, gfp_t gfp_mask);
+#endif
 int add_to_page_cache_locked(struct page *page, struct address_space *mapping,
 				pgoff_t index, gfp_t gfp_mask);
 int add_to_page_cache_lru(struct page *page, struct address_space *mapping,
@@ -624,6 +626,24 @@ extern void __delete_from_page_cache(struct page *page, void *shadow);
 int replace_page_cache_page(struct page *old, struct page *new, gfp_t gfp_mask);
 void delete_from_page_cache_batch(struct address_space *mapping,
 				  struct pagevec *pvec);
+#ifndef CONFIG_SHRINK_PAGECACHE
+/*
+ * Like add_to_page_cache_locked, but used to add newly allocated pages:
+ * the page is new, so we can just run __SetPageLocked() against it.
+ */
+static inline int add_to_page_cache(struct page *page,
+	struct address_space *mapping, pgoff_t offset, gfp_t gfp_mask)
+{
+	int error;
+
+	__SetPageLocked(page);
+	error = add_to_page_cache_locked(page, mapping, offset, gfp_mask);
+	if (unlikely(error))
+		__ClearPageLocked(page);
+
+	return error;
+}
+#endif
 
 static inline unsigned long dir_pages(struct inode *inode)
 {

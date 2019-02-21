@@ -8150,6 +8150,7 @@ bool set_hwpoison_free_buddy_page(struct page *page)
 }
 #endif
 
+#ifdef CONFIG_SHRINK_PAGECACHE
 unsigned long page_cache_over_limit(void)
 {
 	unsigned long lru_file, limit;
@@ -8217,3 +8218,4 @@ int cache_limit_mbytes_sysctl_handler(struct ctl_table *table, int write,
 
 	return 0;
 }
+#endif

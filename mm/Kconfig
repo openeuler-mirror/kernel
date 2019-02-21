@@ -479,6 +479,19 @@ config FRONTSWAP
 
 	  If unsure, say Y to enable frontswap.
 
+config SHRINK_PAGECACHE
+	bool "Enable background thread to shrink the page cache"
+	depends on MMU
+	default n
+	help
+	  SHRINK_PAGECACHE means that we do not want to keep the large number
+	  of page cache in the system, Even though it will greatly improve the
+	  performance of the machine. But it is asked by the user to keep the
+	  free memory as much as possible. Apparently, it will influence the
+	  informace. hence, we should switch off the option if it is not necessary.
+
+	  if unsure, say N to disable the SHRINK_PAGECACHE.
+
 config CMA
 	bool "Contiguous Memory Allocator"
 	depends on HAVE_MEMBLOCK && MMU

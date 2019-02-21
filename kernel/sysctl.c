@@ -1364,6 +1364,7 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one_hundred,
 	},
+#ifdef CONFIG_SHRINK_PAGECACHE
 	{
 		.procname       = "cache_reclaim_s",
 		.data           = &vm_cache_reclaim_s,
@@ -1382,6 +1383,7 @@ static struct ctl_table vm_table[] = {
 		.extra1         = &vm_cache_reclaim_weight_min,
 		.extra2         = &vm_cache_reclaim_weight_max,
 	},
+#endif
 #ifdef CONFIG_HUGETLB_PAGE
 	{
 		.procname	= "nr_hugepages",

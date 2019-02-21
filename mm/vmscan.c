@@ -166,6 +166,7 @@ int vm_swappiness = 60;
  */
 unsigned long vm_total_pages;
 
+#ifdef CONFIG_SHRINK_PAGECACHE
 unsigned long vm_cache_limit_ratio;
 unsigned long vm_cache_limit_ratio_min;
 unsigned long vm_cache_limit_ratio_max;
@@ -179,6 +180,7 @@ int vm_cache_reclaim_weight __read_mostly;
 int vm_cache_reclaim_weight_min;
 int vm_cache_reclaim_weight_max;
 static DEFINE_PER_CPU(struct delayed_work, vmscan_work);
+#endif
 
 static LIST_HEAD(shrinker_list);
 static DECLARE_RWSEM(shrinker_rwsem);
@@ -3517,8 +3519,10 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int classzone_idx)
 
 	count_vm_event(PAGEOUTRUN);
 
+#ifdef CONFIG_SHRINK_PAGECACHE
 	if (vm_cache_limit_mbytes && page_cache_over_limit())
 		shrink_page_cache(GFP_KERNEL);
+#endif
 
 	do {
 		unsigned long nr_reclaimed = sc.nr_reclaimed;
@@ -3902,6 +3906,7 @@ unsigned long shrink_all_memory(unsigned long nr_to_reclaim)
 }
 #endif /* CONFIG_HIBERNATION */
 
+#ifdef CONFIG_SHRINK_PAGECACHE
 static unsigned long __shrink_page_cache(gfp_t mask)
 {
 	struct scan_control sc = {
@@ -4013,6 +4018,7 @@ static int kswapd_cpu_down_prep(unsigned int cpu)
 
 	return 0;
 }
+#endif
 
 /* It's optimal to keep kswapds on the same CPUs as their memory, but
    not required for correctness.  So if the last cpu in a node goes
@@ -4079,12 +4085,19 @@ static int __init kswapd_init(void)
 	swap_setup();
 	for_each_node_state(nid, N_MEMORY)
  		kswapd_run(nid);
+#ifdef CONFIG_SHRINK_PAGECACHE
 	ret = cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN,
 					"mm/vmscan:online", kswapd_cpu_online,
 					kswapd_cpu_down_prep);
+#else
+	ret = cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN,
+					"mm/vmscan:online", kswapd_cpu_online,
+					NULL);
+#endif
 	WARN_ON(ret < 0);
+#ifdef CONFIG_SHRINK_PAGECACHE
 	shrink_page_cache_init();
-
+#endif
 	return 0;
 }
 
