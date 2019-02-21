@@ -27,6 +27,7 @@
 #include <linux/uaccess.h>
 #include <linux/shmem_fs.h>
 #include <linux/pipe_fs_i.h>
+#include <linux/kthread.h>
 
 #include <trace/events/module.h>
 
@@ -71,6 +72,15 @@ static int call_usermodehelper_exec_async(void *data)
 	spin_lock_irq(&current->sighand->siglock);
 	flush_signal_handlers(current, 1);
 	spin_unlock_irq(&current->sighand->siglock);
+
+	/*
+	 * Kthreadd can be restricted to a set of processors if the user wants
+	 * to protect other processors from OS latencies. If that has happened
+	 * then we do not want to disturb the other processors here either so we
+	 * start the usermode helper threads only on the processors allowed for
+	 * kthreadd.
+	 */
+	set_kthreadd_affinity();
 
 	/*
 	 * Our parent (unbound workqueue) runs with elevated scheduling
