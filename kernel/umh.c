@@ -28,6 +28,7 @@
 #include <linux/shmem_fs.h>
 #include <linux/pipe_fs_i.h>
 #include <linux/kthread.h>
+#include <linux/sched/sysctl.h>
 
 #include <trace/events/module.h>
 
@@ -38,6 +39,8 @@ static kernel_cap_t usermodehelper_bset = CAP_FULL_SET;
 static kernel_cap_t usermodehelper_inheritable = CAP_FULL_SET;
 static DEFINE_SPINLOCK(umh_sysctl_lock);
 static DECLARE_RWSEM(umhelper_sem);
+
+int __read_mostly sysctl_umh_affinity;
 
 static void call_usermodehelper_freeinfo(struct subprocess_info *info)
 {
@@ -80,7 +83,10 @@ static int call_usermodehelper_exec_async(void *data)
 	 * start the usermode helper threads only on the processors allowed for
 	 * kthreadd.
 	 */
-	set_kthreadd_affinity();
+	if (sysctl_umh_affinity)
+		set_kthreadd_affinity();
+	else
+		set_cpus_allowed_ptr(current, cpu_all_mask);
 
 	/*
 	 * Our parent (unbound workqueue) runs with elevated scheduling

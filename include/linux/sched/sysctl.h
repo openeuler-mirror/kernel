@@ -83,4 +83,5 @@ extern int sysctl_schedstats(struct ctl_table *table, int write,
 				 void __user *buffer, size_t *lenp,
 				 loff_t *ppos);
 
+extern int sysctl_umh_affinity;
 #endif /* _LINUX_SCHED_SYSCTL_H */
