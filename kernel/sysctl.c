@@ -1383,6 +1383,15 @@ static struct ctl_table vm_table[] = {
 		.extra1         = &vm_cache_reclaim_weight_min,
 		.extra2         = &vm_cache_reclaim_weight_max,
 	},
+	{
+		.procname	= "cache_reclaim_enable",
+		.data		= &vm_cache_reclaim_enable,
+		.maxlen		= sizeof(vm_cache_reclaim_enable),
+		.mode		= 0644,
+		.proc_handler	= cache_reclaim_enable_handler,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
 #endif
 #ifdef CONFIG_HUGETLB_PAGE
 	{

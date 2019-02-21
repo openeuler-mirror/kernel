@@ -179,6 +179,7 @@ int vm_cache_reclaim_s_max;
 int vm_cache_reclaim_weight __read_mostly;
 int vm_cache_reclaim_weight_min;
 int vm_cache_reclaim_weight_max;
+int vm_cache_reclaim_enable;
 static DEFINE_PER_CPU(struct delayed_work, vmscan_work);
 #endif
 
@@ -3942,14 +3943,22 @@ static void shrink_shepherd(struct work_struct *w)
 	for_each_online_cpu(cpu) {
 		struct delayed_work *work = &per_cpu(vmscan_work, cpu);
 
-		if (!delayed_work_pending(work))
+		if (!delayed_work_pending(work) && vm_cache_reclaim_enable)
 			queue_delayed_work_on(cpu, system_wq, work, 0);
 	}
 
 	put_online_cpus();
 
-	schedule_delayed_work(&shepherd,
-		round_jiffies_relative((unsigned long)vm_cache_reclaim_s * HZ));
+	/* we want all kernel thread to stop */
+	if (vm_cache_reclaim_enable) {
+		if (vm_cache_reclaim_s == 0)
+			schedule_delayed_work(&shepherd,
+				round_jiffies_relative(120 * HZ));
+		else
+			schedule_delayed_work(&shepherd,
+				round_jiffies_relative((unsigned long)
+				vm_cache_reclaim_s * HZ));
+	}
 }
 
 static void shrink_shepherd_timer(void)
@@ -3981,15 +3990,16 @@ static void shrink_page_cache_work(struct work_struct *w)
 	struct delayed_work *work = to_delayed_work(w);
 	unsigned long nr_pages;
 
-	if (vm_cache_reclaim_s == 0) {
-		queue_delayed_work_on(smp_processor_id(), system_wq,
-					work, round_jiffies_relative(120 * HZ));
+	/*
+	 * if vm_cache_reclaim_enable or vm_cache_reclaim_s is zero,
+	 * we do not shrink page cache again.
+	 */
+	if (vm_cache_reclaim_s == 0 || !vm_cache_reclaim_enable)
 		return;
-	}
 
 	/* It should wait more time if we hardly reclaim the page cache */
 	nr_pages = shrink_page_cache(GFP_KERNEL);
-	if (nr_pages < SWAP_CLUSTER_MAX)
+	if ((nr_pages < SWAP_CLUSTER_MAX) && vm_cache_reclaim_enable)
 		queue_delayed_work_on(smp_processor_id(), system_wq, work,
 			round_jiffies_relative(120 * HZ));
 }
@@ -4008,6 +4018,7 @@ static void shrink_page_cache_init(void)
 	vm_cache_reclaim_weight = 1;
 	vm_cache_reclaim_weight_min = 1;
 	vm_cache_reclaim_weight_max = 100;
+	vm_cache_reclaim_enable = 1;
 
 	shrink_shepherd_timer();
 }
@@ -4015,6 +4026,22 @@ static void shrink_page_cache_init(void)
 static int kswapd_cpu_down_prep(unsigned int cpu)
 {
 	cancel_delayed_work_sync(&per_cpu(vmscan_work, cpu));
+
+	return 0;
+}
+
+int cache_reclaim_enable_handler(struct ctl_table *table, int write,
+			void __user *buffer, size_t *length, loff_t *ppos)
+{
+	int ret;
+
+	ret = proc_dointvec_minmax(table, write, buffer, length, ppos);
+	if (ret)
+		return ret;
+
+	if (write)
+		schedule_delayed_work(&shepherd, round_jiffies_relative(
+			(unsigned long)vm_cache_reclaim_s * HZ));
 
 	return 0;
 }
