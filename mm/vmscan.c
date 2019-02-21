@@ -3923,30 +3923,74 @@ static unsigned long __shrink_page_cache(gfp_t mask)
 	return do_try_to_free_pages(zonelist, &sc);
 }
 
-void shrink_page_cache(gfp_t mask)
+
+static void shrink_page_cache_work(struct work_struct *w);
+static void shrink_shepherd(struct work_struct *w);
+static DECLARE_DEFERRABLE_WORK(shepherd, shrink_shepherd);
+
+static void shrink_shepherd(struct work_struct *w)
 {
+	int cpu;
+
+	get_online_cpus();
+
+	for_each_online_cpu(cpu) {
+		struct delayed_work *work = &per_cpu(vmscan_work, cpu);
+
+		if (!delayed_work_pending(work))
+			queue_delayed_work_on(cpu, system_wq, work, 0);
+	}
+
+	put_online_cpus();
+
+	schedule_delayed_work(&shepherd,
+		round_jiffies_relative((unsigned long)vm_cache_reclaim_s * HZ));
+}
+
+static void shrink_shepherd_timer(void)
+{
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		struct delayed_work *work = &per_cpu(vmscan_work, cpu);
+
+		INIT_DEFERRABLE_WORK(work, shrink_page_cache_work);
+	}
+
+	schedule_delayed_work(&shepherd,
+		round_jiffies_relative((unsigned long)vm_cache_reclaim_s * HZ));
+}
+
+unsigned long shrink_page_cache(gfp_t mask)
+{
+	unsigned long nr_pages;
+
 	/* We reclaim the highmem zone too, it is useful for 32bit arch */
-	__shrink_page_cache(mask | __GFP_HIGHMEM);
+	nr_pages = __shrink_page_cache(mask | __GFP_HIGHMEM);
+
+	return nr_pages;
 }
 
 static void shrink_page_cache_work(struct work_struct *w)
 {
 	struct delayed_work *work = to_delayed_work(w);
+	unsigned long nr_pages;
 
 	if (vm_cache_reclaim_s == 0) {
-		schedule_delayed_work(work, round_jiffies_relative(120 * HZ));
+		queue_delayed_work_on(smp_processor_id(), system_wq,
+					work, round_jiffies_relative(120 * HZ));
 		return;
 	}
 
-	shrink_page_cache(GFP_KERNEL);
-	schedule_delayed_work(work,
-		round_jiffies_relative((unsigned long)vm_cache_reclaim_s * HZ));
+	/* It should wait more time if we hardly reclaim the page cache */
+	nr_pages = shrink_page_cache(GFP_KERNEL);
+	if (nr_pages < SWAP_CLUSTER_MAX)
+		queue_delayed_work_on(smp_processor_id(), system_wq, work,
+			round_jiffies_relative(120 * HZ));
 }
 
 static void shrink_page_cache_init(void)
 {
-	int cpu;
-
 	vm_cache_limit_ratio = 0;
 	vm_cache_limit_ratio_min = 0;
 	vm_cache_limit_ratio_max = 100;
@@ -3960,14 +4004,14 @@ static void shrink_page_cache_init(void)
 	vm_cache_reclaim_weight_min = 1;
 	vm_cache_reclaim_weight_max = 100;
 
-	for_each_online_cpu(cpu) {
-		struct delayed_work *work = &per_cpu(vmscan_work, cpu);
+	shrink_shepherd_timer();
+}
 
-		INIT_DEFERRABLE_WORK(work, shrink_page_cache_work);
-		schedule_delayed_work_on(cpu, work,
-				__round_jiffies_relative(
-				(unsigned long)vm_cache_reclaim_s * HZ, cpu));
-	}
+static int kswapd_cpu_down_prep(unsigned int cpu)
+{
+	cancel_delayed_work_sync(&per_cpu(vmscan_work, cpu));
+
+	return 0;
 }
 
 /* It's optimal to keep kswapds on the same CPUs as their memory, but
@@ -4037,9 +4081,10 @@ static int __init kswapd_init(void)
  		kswapd_run(nid);
 	ret = cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN,
 					"mm/vmscan:online", kswapd_cpu_online,
-					NULL);
+					kswapd_cpu_down_prep);
 	WARN_ON(ret < 0);
 	shrink_page_cache_init();
+
 	return 0;
 }
 

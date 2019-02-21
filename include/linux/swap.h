@@ -380,7 +380,7 @@ extern int vm_cache_reclaim_weight;
 extern int vm_cache_reclaim_weight_min;
 extern int vm_cache_reclaim_weight_max;
 extern unsigned long page_cache_over_limit(void);
-extern void shrink_page_cache(gfp_t mask);
+extern unsigned long shrink_page_cache(gfp_t mask);
 extern int cache_limit_ratio_sysctl_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *length, loff_t *ppos);
 extern int cache_limit_mbytes_sysctl_handler(struct ctl_table *table, int write,
