@@ -86,7 +86,6 @@ struct si_sm_data {
 	enum bt_states	complete;	/* to divert the state machine */
 	long		BT_CAP_req2rsp;
 	int		BT_CAP_retries;	/* Recommended retries */
-	int		init;
 };
 
 #define BT_CLR_WR_PTR	0x01	/* See IPMI 1.5 table 11.6.4 */
@@ -415,8 +414,8 @@ static enum si_sm_result error_recovery(struct si_sm_data *bt,
 	if (!bt->nonzero_status)
 		printk(KERN_ERR "IPMI BT: stuck, try power cycle\n");
 
-	/* only during insmod */
-	else if (!bt->init) {
+	/* this is most likely during insmod */
+	else if (bt->seq <= (unsigned char)(bt->BT_CAP_retries & 0xFF)) {
 		printk(KERN_WARNING "IPMI: BT reset (takes 5 secs)\n");
 		bt->state = BT_STATE_RESET1;
 		return SI_SM_CALL_WITHOUT_DELAY;
@@ -561,10 +560,6 @@ static enum si_sm_result bt_event(struct si_sm_data *bt, long time)
 			BT_STATE_CHANGE(BT_STATE_READ_WAIT,
 					SI_SM_CALL_WITHOUT_DELAY);
 		bt->state = bt->complete;
-
-		if (!bt->init && bt->seq)
-			bt->init = 1;
-
 		return bt->state == BT_STATE_IDLE ?	/* where to next? */
 			SI_SM_TRANSACTION_COMPLETE :	/* normal */
 			SI_SM_CALL_WITHOUT_DELAY;	/* Startup magic */
