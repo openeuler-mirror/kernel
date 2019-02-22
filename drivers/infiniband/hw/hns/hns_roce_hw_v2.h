@@ -86,6 +86,7 @@
 #define HNS_ROCE_V2_SRQC_ENTRY_SZ		64
 #define HNS_ROCE_V2_MTPT_ENTRY_SZ		64
 #define HNS_ROCE_V2_MTT_ENTRY_SZ		64
+#define HNS_ROCE_V2_IDX_ENTRY_SZ		4
 #define HNS_ROCE_V2_CQE_ENTRY_SIZE		32
 #define HNS_ROCE_V2_SCC_CTX_ENTRY_SZ		32
 #define HNS_ROCE_V2_QPC_TIMER_ENTRY_SZ		4096
@@ -99,6 +100,8 @@
 
 /* Time out for hardware to complete reset */
 #define HNS_ROCE_V2_HW_RST_TIMEOUT		1000
+
+#define HNS_ROCE_V2_HW_RST_COMPLETION_WAIT	20
 
 /* The longest time for software reset process in NIC subsystem, if a timeout
  * occurs, it indicates that the network subsystem has encountered a serious
@@ -114,6 +117,7 @@
 #define HNS_ROCE_PBL_HOP_NUM			2
 #define HNS_ROCE_EQE_HOP_NUM			2
 #define HNS_ROCE_IDX_HOP_NUM			1
+#define HNS_ROCE_MEM_PAGE_SUPPORT_8K		2
 
 #define HNS_ROCE_V2_GID_INDEX_NUM(d)		(d ? (8) : (256))
 
@@ -401,10 +405,10 @@ struct hns_roce_srq_context {
 	__le32	byte_8_limit_wl;
 	__le32	byte_12_xrcd;
 	__le32	byte_16_pi_ci;
-	__le32	wqe_bt_ba;
+	__le32	wqe_bt_ba; /* Aligned with 8B, so store [:3] */
 	__le32	byte_24_wqe_bt_ba;
 	__le32	byte_28_rqws_pd;
-	__le32	idx_bt_ba;
+	__le32	idx_bt_ba; /* Aligned with 8B, so store [:3] */
 	__le32	rsv_idx_bt_ba;
 	__le32	idx_cur_blk_addr;
 	__le32	byte_44_idxbufpgsz_addr;
@@ -499,7 +503,7 @@ enum hns_roce_v2_qp_state {
 
 struct hns_roce_v2_qp_context {
 	__le32	byte_4_sqpn_tst;
-	__le32	wqe_sge_ba;
+	__le32	wqe_sge_ba; /* Aligned with 8B, so store [:3] */
 	__le32	byte_12_sq_hop;
 	__le32	byte_16_buf_ba_pg_sz;
 	__le32	byte_20_smac_sgid_idx;
@@ -527,7 +531,7 @@ struct hns_roce_v2_qp_context {
 	__le32	rx_rkey_pkt_info;
 	__le64	rx_va;
 	__le32	byte_132_trrl;
-	__le32	trrl_ba;
+	__le32	trrl_ba; /* Aligned with 64B, but store [:4] */
 	__le32	byte_140_raq;
 	__le32	byte_144_raq;
 	__le32	byte_148_raq;
@@ -544,7 +548,7 @@ struct hns_roce_v2_qp_context {
 	__le32	byte_192_ext_sge;
 	__le32	byte_196_sq_psn;
 	__le32	byte_200_sq_max;
-	__le32	irrl_ba;
+	__le32	irrl_ba; /* Aligned with 64B, so store [:6] */
 	__le32	byte_208_irrl;
 	__le32	byte_212_lsn;
 	__le32	sq_timer;
@@ -927,6 +931,10 @@ struct hns_roce_v2_qp_context {
 #define	V2_QPC_BYTE_256_SQ_FLUSH_IDX_S 16
 #define V2_QPC_BYTE_256_SQ_FLUSH_IDX_M GENMASK(31, 16)
 
+#define	V2_QP_RWE_S 1 /* rdma write enable */
+#define	V2_QP_RRE_S 2 /* rdma read enable */
+#define	V2_QP_ATE_S 3 /* rdma atomic enable */
+
 struct hns_roce_v2_cqe {
 	__le32	byte_4;
 	union {
@@ -1003,7 +1011,7 @@ struct hns_roce_v2_mpt_entry {
 	__le32	va_l;
 	__le32	va_h;
 	__le32	pbl_size;
-	__le32	pbl_ba_l;
+	__le32	pbl_ba_l; /* Aligned with 8B, so store [:3] */
 	__le32	byte_48_mode_ba;
 	__le32	pa0_l;
 	__le32	byte_56_pa0_h;
@@ -1284,6 +1292,18 @@ struct hns_roce_pf_func_num {
 #define FUNC_CLEAR_RST_FUN_DONE_S 0
 
 #define HNS_ROCE_V2_FUNC_CLEAR_TIMEOUT_MSECS	(512 * 100)
+#define HNS_ROCE_V2_READ_FUNC_CLEAR_FLAG_INTERVAL	40
+#define HNS_ROCE_V2_READ_FUNC_CLEAR_FLAG_FAIL_WAIT	20
+
+#define QUERY_PF_RES_CMDQ_DESC_NUM			2
+#define QUERY_PF_TIMER_RES_CMDQ_DESC_NUM		2
+#define ALLOC_VF_RES_CMDQ_DESC_NUM			2
+#define CONFIG_LLM_CMDQ_DESC_NUM			2
+
+/* TSQ and RAQ each account for 4B */
+#define QP_EX_DB_SIZE					8
+#define CQ_EX_DB_SIZE					4
+#define TIMEOUT_POLL_QUEUE_NUM				4
 
 struct hns_roce_cfg_llm_a {
 	__le32 base_addr_l;
@@ -1620,6 +1640,9 @@ struct hns_roce_cmq_desc {
 #define HNS_ROCE_HW_RUN_BIT_SHIFT	31
 #define HNS_ROCE_HW_MB_STATUS_MASK	0xFF
 
+#define HNS_ROCE_MB_TAG_S		8
+#define HNS_ROCE_MB_EVENT_EN_S		16
+
 struct hns_roce_v2_cmq_ring {
 	dma_addr_t desc_dma_addr;
 	struct hns_roce_cmq_desc *desc;
@@ -1654,7 +1677,7 @@ struct hns_roce_link_table {
 };
 
 struct hns_roce_link_table_entry {
-	u32 blk_ba0;
+	u32 blk_ba0; /* Aligned with 4KB regardless of kernel page size */
 	u32 blk_ba1_nxt_ptr;
 };
 #define HNS_ROCE_LINK_TABLE_BA1_S 0
@@ -1906,6 +1929,15 @@ struct rdfx_query_cnp_tx_cnt {
 	__le32 rsv[2];
 };
 
+#define HNS_ROCE_V2_SYSFS_BUF_MAX_SIZE		1024
+#define hns_roce_v2_sysfs_print(out, cur, fmt, ...) do {\
+		if (cur < HNS_ROCE_V2_SYSFS_BUF_MAX_SIZE) { \
+			cur += snprintf(out + cur, \
+				HNS_ROCE_V2_SYSFS_BUF_MAX_SIZE - cur,\
+				fmt, ##__VA_ARGS__); \
+		} \
+	} while (0)
+
 int hns_roce_v2_query_mpt_stat(struct hns_roce_dev *hr_dev,
 				char *buf, int *desc);
 int hns_roce_v2_query_srqc_stat(struct hns_roce_dev *hr_dev,
@@ -1936,6 +1968,7 @@ void hns_roce_cmq_setup_basic_desc(struct hns_roce_cmq_desc *desc,
 				bool is_read);
 int hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 				struct hns_roce_cmq_desc *desc, int num);
+
 #ifdef CONFIG_INFINIBAND_HNS_DFX
 #ifdef CONFIG_KERNEL_419
 void rdfx_cp_sq_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,

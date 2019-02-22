@@ -109,7 +109,8 @@ struct ib_pd *hns_roce_alloc_pd(struct ib_device *ib_dev,
 
 		if (ib_copy_to_udata(udata, &uresp, sizeof(uresp))) {
 			hns_roce_pd_free(to_hr_dev(ib_dev), pd->pdn);
-			dev_err(dev, "[alloc_pd]ib_copy_to_udata failed!\n");
+			dev_err(dev, "[alloc_pd]ib_copy_to_udata failed, pd - 0x%lx!\n",
+				pd->pdn);
 			kfree(pd);
 			return ERR_PTR(-EFAULT);
 		}
@@ -119,7 +120,8 @@ struct ib_pd *hns_roce_alloc_pd(struct ib_device *ib_dev,
 	if (context) {
 		if (ib_copy_to_udata(udata, &pd->pdn, sizeof(u64))) {
 			hns_roce_pd_free(to_hr_dev(ib_dev), pd->pdn);
-			dev_err(dev, "[alloc_pd]ib_copy_to_udata failed!\n");
+			dev_err(dev, "[alloc_pd]ib_copy_to_udata failed!, pd -0x%lx\n",
+				pd->pdn);
 			kfree(pd);
 			return ERR_PTR(-EFAULT);
 		}
@@ -207,7 +209,7 @@ int hns_roce_ib_dealloc_xrcd(struct ib_xrcd *xrcd)
 int hns_roce_uar_alloc(struct hns_roce_dev *hr_dev, struct hns_roce_uar *uar)
 {
 	struct resource *res;
-	int ret = 0;
+	int ret;
 
 	/* Using bitmap to manager UAR index */
 	ret = hns_roce_bitmap_alloc(&hr_dev->uar_table.bitmap, &uar->logic_idx);
@@ -228,8 +230,8 @@ int hns_roce_uar_alloc(struct hns_roce_dev *hr_dev, struct hns_roce_uar *uar)
 		}
 		uar->pfn = ((res->start) >> PAGE_SHIFT) + uar->index;
 	} else {
-		uar->pfn = ((pci_resource_start(hr_dev->pci_dev, 2))
-			   >> PAGE_SHIFT);
+		uar->pfn = ((pci_resource_start(hr_dev->pci_dev,
+			     HNS_ROCE_PCI_BAR_NR)) >> PAGE_SHIFT);
 	}
 
 	return 0;

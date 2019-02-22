@@ -77,10 +77,10 @@ static int hns_roce_set_mac(struct hns_roce_dev *hr_dev, u8 port, u8 *addr)
 	u8 phy_port;
 	u32 i = 0;
 
-	if (!memcmp(hr_dev->dev_addr[port], addr, MAC_ADDR_OCTET_NUM))
+	if (!memcmp(hr_dev->dev_addr[port], addr, ETH_ALEN))
 		return 0;
 
-	for (i = 0; i < MAC_ADDR_OCTET_NUM; i++)
+	for (i = 0; i < ETH_ALEN; i++)
 		hr_dev->dev_addr[port][i] = addr[i];
 
 	phy_port = hr_dev->iboe.phy_port[port];
@@ -114,6 +114,11 @@ static int hns_roce_add_gid(const union ib_gid *gid,
 	ret = hr_dev->hw->set_gid(hr_dev, port, attr->index,
 				  (union ib_gid *)gid, attr);
 #endif
+
+	if (ret)
+		dev_err(hr_dev->dev, "set gid failed(%d), index = %d", ret,
+			attr->index);
+
 	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
 	return ret;
@@ -127,12 +132,19 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 	unsigned long flags;
 	int ret;
 
-	if (port >= hr_dev->caps.num_ports)
+	if (port >= hr_dev->caps.num_ports) {
+		dev_err(hr_dev->dev,
+			"Port num %d id large than max port num %d.\n",
+			port, hr_dev->caps.num_ports);
 		return -EINVAL;
+	}
 
 	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
 
 	ret = hr_dev->hw->set_gid(hr_dev, port, attr->index, &zgid, &zattr);
+	if (ret)
+		dev_warn(hr_dev->dev, "del gid failed(%d), index = %d", ret,
+			 attr->index);
 
 	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
@@ -161,6 +173,9 @@ static int hns_roce_add_gid(struct ib_device *device, u8 port_num,
 
 	ret = hr_dev->hw->set_gid(hr_dev, port, index, (union ib_gid *)gid,
 				   attr);
+	if (ret)
+		dev_err(hr_dev->dev, "set gid failed(%d), index = %d",
+			ret, index);
 
 	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
@@ -179,12 +194,19 @@ static int hns_roce_del_gid(struct ib_device *device, u8 port_num,
 
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_DEL_GID);
 
-	if (port >= hr_dev->caps.num_ports)
+	if (port >= hr_dev->caps.num_ports) {
+		dev_err(hr_dev->dev,
+			"Port num %d id large than max port num %d.\n",
+			port, hr_dev->caps.num_ports);
 		return -EINVAL;
+	}
 
 	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
 
 	ret = hr_dev->hw->set_gid(hr_dev, port, index, &zgid, &zattr);
+	if (ret)
+		dev_warn(hr_dev->dev, "del gid failed(%d), index = %d", ret,
+			 index);
 
 	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
@@ -211,6 +233,9 @@ static int handle_en_event(struct hns_roce_dev *hr_dev, u8 port,
 	case NETDEV_REGISTER:
 	case NETDEV_CHANGEADDR:
 		ret = hns_roce_set_mac(hr_dev, port, netdev->dev_addr);
+		if (ret)
+			dev_err(dev, "set mac failed(%d), event = %ld\n",
+				ret, event);
 		break;
 	case NETDEV_DOWN:
 		/*
@@ -229,10 +254,10 @@ static int hns_roce_netdev_event(struct notifier_block *self,
 				 unsigned long event, void *ptr)
 {
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
-	struct hns_roce_ib_iboe *iboe = NULL;
-	struct hns_roce_dev *hr_dev = NULL;
-	u8 port = 0;
-	int ret = 0;
+	struct hns_roce_ib_iboe *iboe;
+	struct hns_roce_dev *hr_dev;
+	u8 port;
+	int ret;
 
 	hr_dev = container_of(self, struct hns_roce_dev, iboe.nb);
 	iboe = &hr_dev->iboe;
@@ -260,8 +285,11 @@ static int hns_roce_setup_mtu_mac(struct hns_roce_dev *hr_dev)
 					    hr_dev->caps.max_mtu);
 		ret = hns_roce_set_mac(hr_dev, i,
 				       hr_dev->iboe.netdevs[i]->dev_addr);
-		if (ret)
+		if (ret) {
+			dev_err(hr_dev->dev, "Port %d set mac failed(%d)\n",
+				i, ret);
 			return ret;
+		}
 	}
 
 	return 0;
@@ -361,7 +389,11 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_QUERY_PORT);
 
-	assert(port_num > 0);
+	if (port_num < 1) {
+		dev_err(dev, "invalid port num!\n");
+		return -EINVAL;
+	}
+
 	port = port_num - 1;
 
 	/* props being zeroed by the caller, avoid zeroing it here */
@@ -389,7 +421,8 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 	props->active_mtu = mtu ? min(props->max_mtu, mtu) : IB_MTU_256;
 	props->state = (netif_running(net_dev) && netif_carrier_ok(net_dev)) ?
 			IB_PORT_ACTIVE : IB_PORT_DOWN;
-	props->phys_state = (props->state == IB_PORT_ACTIVE) ? 5 : 3;
+	props->phys_state = (props->state == IB_PORT_ACTIVE) ?
+			     HNS_ROCE_PHY_LINKUP : HNS_ROCE_PHY_DISABLED;
 
 	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
@@ -452,13 +485,15 @@ static int hns_roce_modify_port(struct ib_device *ib_dev, u8 port_num, int mask,
 static struct ib_ucontext *hns_roce_alloc_ucontext(struct ib_device *ib_dev,
 						   struct ib_udata *udata)
 {
-	int ret = 0;
+	int ret;
 	struct hns_roce_ucontext *context;
 	struct hns_roce_ib_alloc_ucontext_resp resp = {};
 	struct hns_roce_dev *hr_dev = to_hr_dev(ib_dev);
 
-	if (!hr_dev->active)
+	if (!hr_dev->active) {
+		dev_err(hr_dev->dev, "alloc uncontext failed, hr_dev is not active\n");
 		return ERR_PTR(-EAGAIN);
+	}
 
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_ALLOC_UCONTEXT);
 
@@ -558,8 +593,10 @@ static int hns_roce_mmap(struct ib_ucontext *context,
 
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_MMAP);
 
-	if (((vma->vm_end - vma->vm_start) % PAGE_SIZE) != 0)
+	if (((vma->vm_end - vma->vm_start) % PAGE_SIZE) != 0) {
+		dev_err(hr_dev->dev, "mmap failed, unexpected vm area size.\n");
 		return -EINVAL;
+	}
 
 	if (vma->vm_pgoff == 0) {
 		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
@@ -574,8 +611,10 @@ static int hns_roce_mmap(struct ib_ucontext *context,
 				       hr_dev->uar2_size,
 				       vma->vm_page_prot))
 			return -EAGAIN;
-	} else
+	} else {
+		dev_err(hr_dev->dev, "mmap failed, vm_pgoff is unsupported.\n");
 		return -EINVAL;
+	}
 
 	return hns_roce_set_vma_data(vma, to_hr_ucontext(context));
 }
@@ -589,8 +628,11 @@ static int hns_roce_port_immutable(struct ib_device *ib_dev, u8 port_num,
 	rdfx_func_cnt(to_hr_dev(ib_dev), RDFX_FUNC_PORT_IMMUTABLE);
 
 	ret = ib_query_port(ib_dev, port_num, &attr);
-	if (ret)
+	if (ret) {
+		dev_err(to_hr_dev(ib_dev)->dev, "ib_query_port failed(%d)!\n",
+			ret);
 		return ret;
+	}
 
 	immutable->pkey_tbl_len = attr.pkey_tbl_len;
 	immutable->gid_tbl_len = attr.gid_tbl_len;
@@ -633,10 +675,10 @@ static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev)
 
 static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 {
-	int ret;
-	struct hns_roce_ib_iboe *iboe = NULL;
-	struct ib_device *ib_dev = NULL;
 	struct device *dev = hr_dev->dev;
+	struct hns_roce_ib_iboe *iboe;
+	struct ib_device *ib_dev;
+	int ret;
 
 	iboe = &hr_dev->iboe;
 	spin_lock_init(&iboe->lock);
@@ -772,7 +814,7 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 
 	ret = hns_roce_setup_mtu_mac(hr_dev);
 	if (ret) {
-		dev_err(dev, "setup_mtu_mac failed!\n");
+		dev_err(dev, "setup_mtu_mac failed, ret = %d\n", ret);
 		goto error_failed_setup_mtu_mac;
 	}
 
@@ -1014,45 +1056,46 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 
 	ret = hns_roce_init_uar_table(hr_dev);
 	if (ret) {
-		dev_err(dev, "Failed to initialize uar table. aborting\n");
+		dev_err(dev, "Failed to init uar table(%d). aborting\n", ret);
 		return ret;
 	}
 
 	ret = hns_roce_uar_alloc(hr_dev, &hr_dev->priv_uar);
 	if (ret) {
-		dev_err(dev, "Failed to allocate priv_uar.\n");
+		dev_err(dev, "Failed to allocate priv_uar(%d).\n", ret);
 		goto err_uar_table_free;
 	}
 
 	ret = hns_roce_init_pd_table(hr_dev);
 	if (ret) {
-		dev_err(dev, "Failed to init protected domain table.\n");
+		dev_err(dev, "Failed to init pd table(%d).\n", ret);
 		goto err_uar_alloc_free;
 	}
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC) {
 		ret = hns_roce_init_xrcd_table(hr_dev);
 		if (ret) {
-			dev_err(dev, "Failed to init protected domain table.\n");
+			dev_err(dev, "Failed to init xrcd table(%d).\n",
+				ret);
 			goto err_pd_table_free;
 		}
 	}
 
 	ret = hns_roce_init_mr_table(hr_dev);
 	if (ret) {
-		dev_err(dev, "Failed to init memory region table.\n");
+		dev_err(dev, "Failed to init mr table(%d).\n", ret);
 		goto err_xrcd_table_free;
 	}
 
 	ret = hns_roce_init_cq_table(hr_dev);
 	if (ret) {
-		dev_err(dev, "Failed to init completion queue table.\n");
+		dev_err(dev, "Failed to init cq table(%d).\n", ret);
 		goto err_mr_table_free;
 	}
 
 	ret = hns_roce_init_qp_table(hr_dev);
 	if (ret) {
-		dev_err(dev, "Failed to init queue pair table.\n");
+		dev_err(dev, "Failed to init qp table(%d).\n", ret);
 		goto err_cq_table_free;
 	}
 
@@ -1060,7 +1103,7 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 		ret = hns_roce_init_srq_table(hr_dev);
 		if (ret) {
 			dev_err(dev,
-				"Failed to init share receive queue table.\n");
+				"Failed to init srq table(%d).\n", ret);
 			goto err_qp_table_free;
 		}
 	}
@@ -1115,60 +1158,62 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 
 	ret = hns_roce_reset(hr_dev);
 	if (ret) {
-		dev_err(dev, "Reset RoCE engine failed!\n");
+		dev_err(dev, "Reset RoCE engine failed(%d)!\n", ret);
 		return ret;
 	}
 
 	if (hr_dev->hw->cmq_init) {
 		ret = hr_dev->hw->cmq_init(hr_dev);
 		if (ret) {
-			dev_err(dev, "Init RoCE Command Queue failed!\n");
+			dev_err(dev, "Init RoCE cmq failed(%d)!\n", ret);
 			goto error_failed_cmq_init;
 		}
 	}
 
 	ret = hr_dev->hw->hw_profile(hr_dev);
 	if (ret) {
-		dev_err(dev, "Get RoCE engine profile failed!\n");
+		dev_err(dev, "Get RoCE engine profile failed(%d)!\n", ret);
 		goto error_failed_cmd_init;
 	}
 
 	ret = hns_roce_cmd_init(hr_dev);
 	if (ret) {
-		dev_err(dev, "cmd init failed!\n");
+		dev_err(dev, "Cmd init failed(%d)!\n", ret);
 		goto error_failed_cmd_init;
 	}
 
 	ret = hr_dev->hw->init_eq(hr_dev);
 	if (ret) {
-		dev_err(dev, "eq init failed!\n");
+		dev_err(dev, "Eq init failed(%d)!\n", ret);
 		goto error_failed_eq_table;
 	}
 
 	if (hr_dev->cmd_mod) {
 		ret = hns_roce_cmd_use_events(hr_dev);
 		if (ret) {
-			dev_err(dev, "Switch to event-driven cmd failed!\n");
+			dev_err(dev, "Switch to event-driven cmd failed(%d)!\n",
+				ret);
 			goto error_failed_use_event;
 		}
 	}
 
 	ret = hns_roce_init_hem(hr_dev);
 	if (ret) {
-		dev_err(dev, "init HEM(Hardware Entry Memory) failed!\n");
+		dev_err(dev, "Init HEM(Hardware Entry Memory) failed(%d)!\n",
+			ret);
 		goto error_failed_init_hem;
 	}
 
 	ret = hns_roce_setup_hca(hr_dev);
 	if (ret) {
-		dev_err(dev, "setup hca failed!\n");
+		dev_err(dev, "Setup hca failed(%d)!\n", ret);
 		goto error_failed_setup_hca;
 	}
 
 	if (hr_dev->hw->hw_init) {
 		ret = hr_dev->hw->hw_init(hr_dev);
 		if (ret) {
-			dev_err(dev, "hw_init failed!\n");
+			dev_err(dev, "Hw_init failed!\n");
 			goto error_failed_engine_init;
 		}
 	}

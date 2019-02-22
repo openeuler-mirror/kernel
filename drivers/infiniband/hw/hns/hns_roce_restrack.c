@@ -443,8 +443,9 @@ static int hns_roce_fill_res_mr_entry(struct sk_buff *msg,
 {
 	struct ib_mr  *ib_mr = container_of(res, struct ib_mr, res);
 	struct hns_roce_dev *hr_dev = to_hr_dev(ib_mr->device);
+	struct hns_roce_mr *hr_mr = to_hr_mr(ib_mr);
 	struct hns_roce_v2_mpt_entry context;
-	int key = hr_dev->hr_stat.key;
+	int key = hr_mr->key;
 	struct nlattr *table_attr;
 	int ret;
 

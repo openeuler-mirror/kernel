@@ -113,16 +113,15 @@ void hns_roce_bitmap_free_range(struct hns_roce_bitmap *bitmap,
 				unsigned long obj, int cnt,
 				int rr)
 {
+	unsigned long base = obj & (bitmap->max + bitmap->reserved_top - 1);
 	int i;
-
-	obj &= bitmap->max + bitmap->reserved_top - 1;
 
 	spin_lock(&bitmap->lock);
 	for (i = 0; i < cnt; i++)
-		clear_bit(obj + i, bitmap->table);
+		clear_bit(base + i, bitmap->table);
 
 	if (!rr)
-		bitmap->last = min(bitmap->last, obj);
+		bitmap->last = min(bitmap->last, base);
 	bitmap->top = (bitmap->top + bitmap->max + bitmap->reserved_top)
 		       & bitmap->mask;
 	spin_unlock(&bitmap->lock);
@@ -186,7 +185,7 @@ int hns_roce_buf_alloc(struct hns_roce_dev *hr_dev, u32 size, u32 max_direct,
 	u32 page_size = 1 << page_shift;
 	u32 order;
 
-	/* SQ/RQ buf lease than one page, SQ + RQ = 8K */
+	/* buf for SQ/RQ both at lease one page, SQ + RQ is 2 pages */
 	if (size <= max_direct) {
 		buf->nbufs = 1;
 		/* Npages calculated by page_size */

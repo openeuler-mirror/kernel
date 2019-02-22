@@ -53,17 +53,15 @@ int hns_roce_v2_query_mpt_stat(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_v2_mpt_entry *mpt_ctx;
 	struct hns_roce_cmd_mailbox *mailbox;
+	int key = hr_dev->hr_stat.key;
+	int cur_len = 0;
+	char *out = buf;
 	u64 bt0_ba = 0;
 	u64 bt1_ba = 0;
 	int *mpt;
 	int ret;
 	int i;
-	char *buff;
-	int key = hr_dev->hr_stat.key;
 
-	buff = kmalloc(1024, GFP_KERNEL);
-	if (!buff)
-		return -ENOMEM;
 	mailbox = hns_roce_alloc_cmd_mailbox(hr_dev);
 	if (IS_ERR(mailbox))
 		return PTR_ERR(mailbox);
@@ -98,43 +96,41 @@ int hns_roce_v2_query_mpt_stat(struct hns_roce_dev *hr_dev,
 	else
 		goto err_mailbox;
 
-	*desc += sprintf(buff + *desc, "MPT(0x%x) BT0: 0x%llx\n", key, bt0_ba);
-	*desc += sprintf(buff + *desc, "MPT(0x%x) BT1: 0x%llx\n", key, bt1_ba);
+	hns_roce_v2_sysfs_print(out, cur_len,
+				"MPT(0x%x) BT0: 0x%llx\n", key, bt0_ba);
+	hns_roce_v2_sysfs_print(out, cur_len,
+				"MPT(0x%x) BT1: 0x%llx\n", key, bt1_ba);
 	mpt = (int *)mpt_ctx;
 	for (i = 0; i < (sizeof(*mpt_ctx) >> 2); i += 8) {
-		*desc += sprintf(buff + *desc,
+		hns_roce_v2_sysfs_print(out, cur_len,
 		 "MPT(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			key, *mpt, *(mpt + 1), *(mpt + 2),
 			*(mpt + 3), *(mpt + 4), *(mpt + 5),
 			*(mpt + 6), *(mpt + 7));
 		mpt += 8;
 	}
-	memcpy(buf, buff, *desc);
+	*desc += cur_len;
 
 err_mailbox:
 	kfree(mpt_ctx);
 err_cmd:
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
-	kfree(buff);
 
 	return ret;
 }
 int hns_roce_v2_query_srqc_stat(struct hns_roce_dev *hr_dev,
 				char *buf, int *desc)
 {
-	struct hns_roce_cmd_mailbox *mailbox;
 	struct hns_roce_srq_context *srq_context;
+	struct hns_roce_cmd_mailbox *mailbox;
+	int srqn = hr_dev->hr_stat.srqn;
+	int cur_len = 0;
+	char *out = buf;
 	u64 bt0_ba = 0;
 	u64 bt1_ba = 0;
 	int *srqc;
-	int ret;
 	int i = 0;
-	char *buff;
-	int srqn = hr_dev->hr_stat.srqn;
-
-	buff = kmalloc(1024, GFP_KERNEL);
-	if (!buff)
-		return -ENOMEM;
+	int ret;
 
 	mailbox = hns_roce_alloc_cmd_mailbox(hr_dev);
 	if (IS_ERR(mailbox))
@@ -162,26 +158,25 @@ int hns_roce_v2_query_srqc_stat(struct hns_roce_dev *hr_dev,
 	else
 		goto err_mailbox;
 
-	*desc += sprintf(buff + *desc,
-		 "SRQC(0x%x) BT0: 0x%llx\n", srqn, bt0_ba);
-	*desc += sprintf(buff + *desc,
-		 "SRQC(0x%x) BT1: 0x%llx\n", srqn, bt1_ba);
+	hns_roce_v2_sysfs_print(out, cur_len,
+				"SRQC(0x%x) BT0: 0x%llx\n", srqn, bt0_ba);
+	hns_roce_v2_sysfs_print(out, cur_len,
+				"SRQC(0x%x) BT1: 0x%llx\n", srqn, bt1_ba);
 	srqc = (int *)srq_context;
 	for (i = 0; i < (sizeof(*srq_context) >> 2); i += 8) {
-		*desc += sprintf(buff + *desc,
+		hns_roce_v2_sysfs_print(out, cur_len,
 		 "SRQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			srqn, *srqc, *(srqc + 1), *(srqc + 2),
 			*(srqc + 3), *(srqc + 4), *(srqc + 5),
 			*(srqc + 6), *(srqc + 7));
 		srqc += 8;
 	}
-	memcpy(buf, buff, *desc);
+	*desc += cur_len;
 
 err_mailbox:
 	kfree(srq_context);
 err_cmd:
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
-	kfree(buff);
 
 	return ret;
 }
@@ -190,17 +185,14 @@ int hns_roce_v2_query_qpc_stat(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_cmd_mailbox *mailbox;
 	struct hns_roce_v2_qp_context *qp_context;
+	int qpn = hr_dev->hr_stat.qpn;
+	int cur_len = 0;
+	char *out = buf;
 	u64 bt0_ba = 0;
 	u64 bt1_ba = 0;
 	int *qpc;
-	int ret;
 	int i = 0;
-	char *buff;
-	int qpn = hr_dev->hr_stat.qpn;
-
-	buff = kmalloc(1024, GFP_KERNEL);
-	if (!buff)
-		return -ENOMEM;
+	int ret;
 
 	mailbox = hns_roce_alloc_cmd_mailbox(hr_dev);
 	if (IS_ERR(mailbox))
@@ -236,24 +228,25 @@ int hns_roce_v2_query_qpc_stat(struct hns_roce_dev *hr_dev,
 	else
 		goto err_mailbox;
 
-	*desc += sprintf(buff + *desc, "QPC(0x%x) BT0: 0x%llx\n", qpn, bt0_ba);
-	*desc += sprintf(buff + *desc, "QPC(0x%x) BT1: 0x%llx\n", qpn, bt1_ba);
+	hns_roce_v2_sysfs_print(out, cur_len,
+				"QPC(0x%x) BT0: 0x%llx\n", qpn, bt0_ba);
+	hns_roce_v2_sysfs_print(out, cur_len,
+				"QPC(0x%x) BT1: 0x%llx\n", qpn, bt1_ba);
 	qpc = (int *)qp_context;
 	for (i = 0; i < (sizeof(*qp_context) >> 2); i += 8) {
-		*desc += sprintf(buff + *desc,
+		hns_roce_v2_sysfs_print(out, cur_len,
 			 "QPC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			qpn, *qpc, *(qpc + 1), *(qpc + 2),
 			*(qpc + 3), *(qpc + 4), *(qpc + 5),
 			*(qpc + 6), *(qpc + 7));
 		qpc += 8;
 	}
-	memcpy(buf, buff, *desc);
+	*desc += cur_len;
 
 err_mailbox:
 	kfree(qp_context);
 err_cmd:
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
-	kfree(buff);
 
 	return ret;
 }
@@ -261,24 +254,18 @@ err_cmd:
 int hns_roce_v2_query_aeqc_stat(struct hns_roce_dev *hr_dev,
 				char *buf, int *desc)
 {
-	struct hns_roce_cmd_mailbox *mailbox;
 	struct hns_roce_eq_context *eq_context;
+	struct hns_roce_cmd_mailbox *mailbox;
+	int aeqn = hr_dev->hr_stat.aeqn;
+	int cur_len = 0;
+	char *out = buf;
+	int i = 0;
 	int *aeqc;
 	int ret;
-	int i = 0;
-	char *buff;
-	int aeqn;
-
-	aeqn = hr_dev->hr_stat.aeqn;
-	buff = kmalloc(1024, GFP_KERNEL);
-	if (!buff)
-		return -ENOMEM;
 
 	mailbox = hns_roce_alloc_cmd_mailbox(hr_dev);
-	if (IS_ERR(mailbox)) {
-		ret = PTR_ERR(mailbox);
-		goto err_aeqc_buff;
-	}
+	if (IS_ERR(mailbox))
+		return PTR_ERR(mailbox);
 
 	eq_context = kzalloc(sizeof(*eq_context), GFP_KERNEL);
 	if (!eq_context) {
@@ -296,22 +283,19 @@ int hns_roce_v2_query_aeqc_stat(struct hns_roce_dev *hr_dev,
 
 	aeqc = (int *)eq_context;
 	for (i = 0; i < (sizeof(*eq_context) >> 2); i += 8) {
-		*desc += sprintf(buff + *desc,
+		hns_roce_v2_sysfs_print(out, cur_len,
 		 "AEQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			aeqn, *aeqc, *(aeqc + 1), *(aeqc + 2),
 			*(aeqc + 3), *(aeqc + 4), *(aeqc + 5),
 			*(aeqc + 6), *(aeqc + 7));
 		aeqc += 8;
 	}
-	memcpy(buf, buff, *desc);
+	*desc += cur_len;
 
 err_mailbox:
 	kfree(eq_context);
 err_context:
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
-
-err_aeqc_buff:
-	kfree(buff);
 
 	return ret;
 }
@@ -330,13 +314,11 @@ int hns_roce_v2_query_pkt_stat(struct hns_roce_dev *hr_dev,
 	struct hns_roce_cmq_desc desc_cnp_tx = {0};
 	struct rdfx_query_cnp_tx_cnt *resp_cnp_tx =
 			(struct rdfx_query_cnp_tx_cnt *)desc_cnp_tx.data;
+	int cur_len = 0;
+	char *out = buf;
 	int status;
 	int i;
-	char *buff;
 
-	buff = kmalloc(1024, GFP_KERNEL);
-	if (!buff)
-		return -ENOMEM;
 	for (i = 0; i < CMD_NUM_QUERY_PKT_CNT; i++) {
 		hns_roce_cmq_setup_basic_desc(&desc[i],
 			HNS_ROCE_OPC_QUEYR_PKT_CNT, true);
@@ -358,7 +340,7 @@ int hns_roce_v2_query_pkt_stat(struct hns_roce_dev *hr_dev,
 	if (status)
 		return status;
 
-	if (hr_dev->pci_dev->revision == 0x21) {
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
 		hns_roce_cmq_setup_basic_desc(&desc_cnp_rx,
 				HNS_ROCE_OPC_QUEYR_CNP_RX_CNT, true);
 		status = hns_roce_cmq_send(hr_dev, &desc_cnp_rx, 1);
@@ -372,71 +354,69 @@ int hns_roce_v2_query_pkt_stat(struct hns_roce_dev *hr_dev,
 			return status;
 	}
 
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "RX RC PKT : 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[0]->rc_pkt_num, resp_query[1]->rc_pkt_num,
 	 resp_query[2]->rc_pkt_num, resp_query[3]->rc_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "RX UC PKT : 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[0]->uc_pkt_num, resp_query[1]->uc_pkt_num,
 	 resp_query[2]->uc_pkt_num, resp_query[3]->uc_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "RX UD PKT : 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[0]->ud_pkt_num, resp_query[1]->ud_pkt_num,
 	 resp_query[2]->ud_pkt_num, resp_query[3]->ud_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "RX XRC PKT: 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	  resp_query[0]->xrc_pkt_num, resp_query[1]->xrc_pkt_num,
 	  resp_query[2]->xrc_pkt_num, resp_query[3]->xrc_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "RX ALL PKT: 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[0]->total_pkt_num, resp_query[1]->total_pkt_num,
 	 resp_query[2]->total_pkt_num, resp_query[3]->total_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	"RX ERR PKT: 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[0]->error_pkt_num, resp_query[1]->error_pkt_num,
 	 resp_query[2]->error_pkt_num, resp_query[3]->error_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "TX RC PKT : 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[4]->rc_pkt_num, resp_query[5]->rc_pkt_num,
 	 resp_query[6]->rc_pkt_num, resp_query[7]->rc_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "TX UC PKT : 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[4]->uc_pkt_num, resp_query[5]->uc_pkt_num,
 	 resp_query[6]->uc_pkt_num, resp_query[7]->uc_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "TX UD PKT : 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[4]->ud_pkt_num, resp_query[5]->ud_pkt_num,
 	 resp_query[6]->ud_pkt_num, resp_query[7]->ud_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "TX XRC PKT: 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[4]->xrc_pkt_num, resp_query[5]->xrc_pkt_num,
 	 resp_query[6]->xrc_pkt_num, resp_query[7]->xrc_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "TX ALL PKT: 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[4]->total_pkt_num, resp_query[5]->total_pkt_num,
 	 resp_query[6]->total_pkt_num, resp_query[7]->total_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "TX ERR PKT: 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_query[4]->error_pkt_num, resp_query[5]->error_pkt_num,
 	 resp_query[6]->error_pkt_num, resp_query[7]->error_pkt_num);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "CQE       : 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_cqe->port0_cqe, resp_cqe->port1_cqe,
 	 resp_cqe->port2_cqe, resp_cqe->port3_cqe);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 	 "CNP RX    : 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	 resp_cnp_rx->port0_cnp_rx, resp_cnp_rx->port1_cnp_rx,
 	 resp_cnp_rx->port2_cnp_rx, resp_cnp_rx->port3_cnp_rx);
-	*buff_size += sprintf(buff + *buff_size,
+	hns_roce_v2_sysfs_print(out, cur_len,
 		 "CNP TX    : 0x%08x  0x%08x  0x%08x  0x%08x\n",
 	       resp_cnp_tx->port0_cnp_tx, resp_cnp_tx->port1_cnp_tx,
 	       resp_cnp_tx->port2_cnp_tx, resp_cnp_tx->port3_cnp_tx);
 
-	memcpy(buf, buff, *buff_size);
-	kfree(buff);
+	*buff_size += cur_len;
 	return status;
-
 }
 
 int hns_roce_v2_query_ceqc_stat(struct hns_roce_dev *hr_dev,
@@ -444,21 +424,16 @@ int hns_roce_v2_query_ceqc_stat(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_cmd_mailbox *mailbox;
 	struct hns_roce_eq_context *eq_context;
-	int *ceqc;
-	int ret;
-	int i = 0;
-	char *buff;
 	int ceqn = hr_dev->hr_stat.ceqn;
+	int cur_len = 0;
+	char *out = buf;
+	int *ceqc;
+	int i = 0;
+	int ret;
 
-	buff = kmalloc(1024, GFP_KERNEL);
-	if (!buff)
-		return -ENOMEM;
 	mailbox = hns_roce_alloc_cmd_mailbox(hr_dev);
-
-	if (IS_ERR(mailbox)) {
-		ret = PTR_ERR(mailbox);
-		goto err_ceqc_buff;
-	}
+	if (IS_ERR(mailbox))
+		return PTR_ERR(mailbox);
 
 	eq_context = kzalloc(sizeof(*eq_context), GFP_KERNEL);
 	if (!eq_context) {
@@ -475,21 +450,18 @@ int hns_roce_v2_query_ceqc_stat(struct hns_roce_dev *hr_dev,
 		goto err_mailbox;
 	ceqc = (int *)eq_context;
 	for (i = 0; i < (sizeof(*eq_context) >> 2); i += 8) {
-		*desc += sprintf(buff + *desc,
+		hns_roce_v2_sysfs_print(out, cur_len,
 		 "CEQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			ceqn, *ceqc, *(ceqc + 1), *(ceqc + 2),
 			*(ceqc + 3), *(ceqc + 4), *(ceqc + 5),
 			*(ceqc + 6), *(ceqc + 7));
 		ceqc += 8;
 	}
-	memcpy(buf, buff, *desc);
+	*desc += cur_len;
 err_mailbox:
 	kfree(eq_context);
 err_context:
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
-
-err_ceqc_buff:
-	kfree(buff);
 
 	return ret;
 }
@@ -501,12 +473,10 @@ int hns_roce_v2_query_cmd_stat(struct hns_roce_dev *hr_dev,
 	struct hns_roce_query_mbdb_cnt *resp_cnt =
 				(struct hns_roce_query_mbdb_cnt *)desc_cnt.data;
 	struct hns_roce_cmq_desc desc_dfx;
+	int cur_len = 0;
+	char *out = buf;
 	int status;
-	char *buff;
 
-	buff = kmalloc(1024, GFP_KERNEL);
-	if (!buff)
-		return -ENOMEM;
 	hns_roce_cmq_setup_basic_desc(&desc_cnt,
 			HNS_ROCE_OPC_QUEYR_MBDB_CNT, true);
 	status = hns_roce_cmq_send(hr_dev, &desc_cnt, 1);
@@ -519,21 +489,19 @@ int hns_roce_v2_query_cmd_stat(struct hns_roce_dev *hr_dev,
 	if (status)
 		return status;
 
-
-	*desc += sprintf(buff + *desc, "MB ISSUE CNT   : 0x%08x\n",
-	       resp_cnt->mailbox_issue_cnt);
-	*desc += sprintf(buff + *desc, "MB EXEC CNT    : 0x%08x\n",
-	       resp_cnt->mailbox_exe_cnt);
-	*desc += sprintf(buff + *desc, "DB ISSUE CNT   : 0x%08x\n",
-	       resp_cnt->doorbell_issue_cnt);
-	*desc += sprintf(buff + *desc, "DB EXEC CNT    : 0x%08x\n",
-	       resp_cnt->doorbell_exe_cnt);
-	*desc += sprintf(buff + *desc, "EQDB ISSUE CNT : 0x%08x\n",
-	       resp_cnt->eq_doorbell_issue_cnt);
-	*desc += sprintf(buff + *desc, "EQDB EXEC CNT  : 0x%08x\n",
-	       resp_cnt->eq_doorbell_exe_cnt);
-	memcpy(buf, buff, *desc);
-	kfree(buff);
+	hns_roce_v2_sysfs_print(out, cur_len, "MB ISSUE CNT   : 0x%08x\n",
+				resp_cnt->mailbox_issue_cnt);
+	hns_roce_v2_sysfs_print(out, cur_len, "MB EXEC CNT    : 0x%08x\n",
+				resp_cnt->mailbox_exe_cnt);
+	hns_roce_v2_sysfs_print(out, cur_len, "DB ISSUE CNT   : 0x%08x\n",
+				resp_cnt->doorbell_issue_cnt);
+	hns_roce_v2_sysfs_print(out, cur_len, "DB EXEC CNT    : 0x%08x\n",
+				resp_cnt->doorbell_exe_cnt);
+	hns_roce_v2_sysfs_print(out, cur_len, "EQDB ISSUE CNT : 0x%08x\n",
+				resp_cnt->eq_doorbell_issue_cnt);
+	hns_roce_v2_sysfs_print(out, cur_len, "EQDB EXEC CNT  : 0x%08x\n",
+				resp_cnt->eq_doorbell_exe_cnt);
+	*desc += cur_len;
 	return status;
 }
 
@@ -583,11 +551,13 @@ int hns_roce_v2_query_cqc_stat(struct hns_roce_dev *hr_dev,
 				      char *buf, int *desc)
 {
 	struct hns_roce_v2_cq_context *cq_context;
+	int cqn = hr_dev->hr_stat.cqn;
+	int cur_len = 0;
+	char *out = buf;
 	u64 bt0_ba = 0;
 	u64 bt1_ba = 0;
 	int *cqc;
 	int i, ret;
-	int cqn = hr_dev->hr_stat.cqn;
 
 	cq_context = kzalloc(sizeof(*cq_context), GFP_KERNEL);
 	if (!cq_context)
@@ -596,18 +566,22 @@ int hns_roce_v2_query_cqc_stat(struct hns_roce_dev *hr_dev,
 	ret = hns_roce_v2_query_cqc(hr_dev, &bt0_ba, &bt1_ba, cqn, cq_context);
 	if (ret)
 		goto out;
-	*desc += sprintf(buf + *desc, "CQC(0x%x) BT0: 0x%llx\n", cqn, bt0_ba);
-	*desc += sprintf(buf + *desc, "CQC(0x%x) BT1: 0x%llx\n", cqn, bt1_ba);
+
+	hns_roce_v2_sysfs_print(out, cur_len,
+				"CQC(0x%x) BT0: 0x%llx\n", cqn, bt0_ba);
+	hns_roce_v2_sysfs_print(out, cur_len,
+				"CQC(0x%x) BT1: 0x%llx\n", cqn, bt1_ba);
 
 	cqc = (int *)cq_context;
 	for (i = 0; i < (sizeof(*cq_context) >> 2); i += 8) {
-		*desc += sprintf(buf + *desc,
+		hns_roce_v2_sysfs_print(out, cur_len,
 			 "CQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			cqn, *cqc, *(cqc + 1), *(cqc + 2),
 			*(cqc + 3), *(cqc + 4), *(cqc + 5),
 			*(cqc + 6), *(cqc + 7));
 		cqc += 8;
 	}
+	*desc += cur_len;
 out:
 	kfree(cq_context);
 	return ret;

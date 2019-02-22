@@ -825,7 +825,7 @@ static int hns_roce_v1_rsv_lp_qp(struct hns_roce_dev *hr_dev)
 		attr.dest_qp_num	= hr_qp->qpn;
 		memcpy(rdma_ah_retrieve_dmac(&attr.ah_attr),
 		       hr_dev->dev_addr[port],
-		       MAC_ADDR_OCTET_NUM);
+		       ETH_ALEN);
 
 		memcpy(&dgid.raw, &subnet_prefix, sizeof(u64));
 		memcpy(&dgid.raw[8], hr_dev->dev_addr[port], 3);
@@ -2482,7 +2482,7 @@ int hns_roce_v1_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 		return ret;
 }
 
-static int hns_roce_v1_clear_hem(struct hns_roce_dev *hr_dev,
+static void hns_roce_v1_clear_hem(struct hns_roce_dev *hr_dev,
 				 struct hns_roce_hem_table *table, int obj,
 				 int step_idx)
 {
@@ -2513,9 +2513,9 @@ static int hns_roce_v1_clear_hem(struct hns_roce_dev *hr_dev,
 		break;
 	case HEM_TYPE_SRQC:
 		dev_dbg(dev, "HEM_TYPE_SRQC not support.\n");
-		return -EINVAL;
+		return;
 	default:
-		return 0;
+		return;
 	}
 	roce_set_field(bt_cmd_val[1], ROCEE_BT_CMD_H_ROCEE_BT_CMD_IN_MDF_M,
 		ROCEE_BT_CMD_H_ROCEE_BT_CMD_IN_MDF_S, obj);
@@ -2533,7 +2533,7 @@ static int hns_roce_v1_clear_hem(struct hns_roce_dev *hr_dev,
 				dev_err(dev, "Write bt_cmd err,hw_sync is not zero.\n");
 				spin_unlock_irqrestore(&hr_dev->bt_cmd_lock,
 					flags);
-				return -EBUSY;
+				return;
 			}
 		} else {
 			break;
@@ -2548,7 +2548,7 @@ static int hns_roce_v1_clear_hem(struct hns_roce_dev *hr_dev,
 
 	spin_unlock_irqrestore(&hr_dev->bt_cmd_lock, flags);
 
-	return 0;
+	return;
 }
 
 static int hns_roce_v1_qp_modify(struct hns_roce_dev *hr_dev,

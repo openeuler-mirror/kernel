@@ -124,7 +124,8 @@ static int hns_roce_cq_alloc(struct hns_roce_dev *hr_dev, int nent,
 	/* Get CQC memory HEM(Hardware Entry Memory) table */
 	ret = hns_roce_table_get(hr_dev, &cq_table->table, hr_cq->cqn);
 	if (ret) {
-		dev_err(dev, "CQ alloc.Failed to get context mem.\n");
+		dev_err(dev, "CQ(0x%lx) alloc.Failed to get context mem(%d).\n",
+			hr_cq->cqn, ret);
 		goto err_out;
 	}
 
@@ -134,7 +135,8 @@ static int hns_roce_cq_alloc(struct hns_roce_dev *hr_dev, int nent,
 	ret = radix_tree_insert(&cq_table->tree, hr_cq->cqn, hr_cq);
 	spin_unlock_irq(&cq_table->lock);
 	if (ret) {
-		dev_err(dev, "CQ alloc.Failed to radix_tree_insert.\n");
+		dev_err(dev, "CQ(0x%lx) alloc.Failed to radix_tree_insert.\n",
+			hr_cq->cqn);
 		goto err_put;
 	}
 
@@ -152,7 +154,8 @@ static int hns_roce_cq_alloc(struct hns_roce_dev *hr_dev, int nent,
 	ret = hns_roce_sw2hw_cq(hr_dev, mailbox, hr_cq->cqn);
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
 	if (ret) {
-		dev_err(dev, "CQ alloc.Failed to cmd mailbox.\n");
+		dev_err(dev, "CQ(0x%lx) alloc.Failed to cmd mailbox(%d).\n",
+			hr_cq->cqn, ret);
 		goto err_radix;
 	}
 
@@ -246,12 +249,16 @@ static int hns_roce_ib_get_cq_umem(struct hns_roce_dev *hr_dev,
 				(*umem)->page_shift,
 				&buf->hr_mtt);
 	}
-	if (ret)
+	if (ret) {
+		dev_err(hr_dev->dev, "hns_roce_mtt_init error for create cq\n");
 		goto err_buf;
+	}
 
 	ret = hns_roce_ib_umem_write_mtt(hr_dev, &buf->hr_mtt, *umem);
-	if (ret)
+	if (ret) {
+		dev_err(hr_dev->dev, "hns_roce_ib_umem_write_mtt error for create cq\n");
 		goto err_mtt;
+	}
 
 	return 0;
 
@@ -282,12 +289,16 @@ static int hns_roce_ib_alloc_cq_buf(struct hns_roce_dev *hr_dev,
 
 	ret = hns_roce_mtt_init(hr_dev, buf->hr_buf.npages,
 				buf->hr_buf.page_shift, &buf->hr_mtt);
-	if (ret)
+	if (ret) {
+		dev_err(hr_dev->dev, "hns_roce_mtt_init error for kernel create cq\n");
 		goto err_buf;
+	}
 
 	ret = hns_roce_buf_write_mtt(hr_dev, &buf->hr_mtt, &buf->hr_buf);
-	if (ret)
+	if (ret) {
+		dev_err(hr_dev->dev, "hns_roce_ib_umem_write_mtt error for kernel create cq\n");
 		goto err_mtt;
+	}
 
 	return 0;
 
@@ -365,10 +376,19 @@ static int create_kernel_cq(struct hns_roce_dev *hr_dev,
 	struct device *dev = hr_dev->dev;
 	int ret;
 
+	hr_cq->workq =
+		create_singlethread_workqueue("hns_roce_cq_workqueue");
+	if (!hr_cq->workq) {
+		dev_err(dev, "Failed to create cq workqueue!\n");
+		return -ENOMEM;
+	}
+
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB) {
 		ret = hns_roce_alloc_db(hr_dev, &hr_cq->db, 1);
-		if (ret)
-			return ret;
+		if (ret) {
+			dev_err(dev, "Failed to alloc db for cq.\n");
+			goto err_workq;
+		}
 
 		hr_cq->set_ci_db = hr_cq->db.db_record;
 		*hr_cq->set_ci_db = 0;
@@ -378,7 +398,7 @@ static int create_kernel_cq(struct hns_roce_dev *hr_dev,
 	/* Init mmt table and write buff address to mtt table */
 	ret = hns_roce_ib_alloc_cq_buf(hr_dev, &hr_cq->hr_buf, cq_entries);
 	if (ret) {
-		dev_err(dev, "Failed to alloc_cq_buf.\n");
+		dev_err(dev, "Failed to alloc cq buf.\n");
 		goto err_db;
 	}
 
@@ -387,6 +407,9 @@ static int create_kernel_cq(struct hns_roce_dev *hr_dev,
 			 DB_REG_OFFSET * uar->index;
 
 	return 0;
+
+err_workq:
+	destroy_workqueue(hr_cq->workq);
 
 err_db:
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB)
@@ -457,13 +480,13 @@ struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 		ret = create_user_cq(hr_dev, hr_cq, context, udata, &resp, uar,
 				     cq_entries);
 		if (ret) {
-			dev_err(dev, "Create cq fail in user mode!\n");
+			dev_err(dev, "Failed to create cq for user mode!\n");
 			goto err_cq;
 		}
 	} else {
 		ret = create_kernel_cq(hr_dev, hr_cq, uar, cq_entries);
 		if (ret) {
-			dev_err(dev, "Create cq fail in user mode!\n");
+			dev_err(dev, "Failed to create cq for kernel mode!\n");
 			goto err_cq;
 		}
 	}
@@ -545,6 +568,9 @@ int hns_roce_ib_destroy_cq(struct ib_cq *ib_cq)
 						ib_cq->cqe);
 			if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB)
 				hns_roce_free_db(hr_dev, &hr_cq->db);
+
+			flush_workqueue(hr_cq->workq);
+			destroy_workqueue(hr_cq->workq);
 		}
 
 		kfree(hr_cq);
