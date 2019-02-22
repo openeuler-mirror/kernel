@@ -2046,12 +2046,14 @@ static long do_io_getevents(aio_context_t ctx_id,
 	if (likely(ioctx)) {
 		ktime_t until;
 
-		if (!ts)
+		if (!ts) {
 			until = KTIME_MAX;
-		else if (!timespec64_valid(ts))
+		} else if (!timespec64_valid(ts)) {
+			percpu_ref_put(&ioctx->users);
 			goto out;
-		else
+		} else {
 			until = timespec64_to_ktime(*ts);
+		}
 
 		if (likely(min_nr <= nr && min_nr >= 0))
 			ret = read_events(ioctx, min_nr, nr, events, until);
