@@ -308,34 +308,34 @@ int hclge_push_vf_port_base_vlan_info(struct hclge_vport *vport, u8 vfid,
 static int hclge_set_vf_vlan_cfg(struct hclge_vport *vport,
 				 struct hclge_mbx_vf_to_pf_cmd *mbx_req)
 {
+	struct hclge_vf_vlan_cfg *msg_cmd;
 	int status = 0;
 
-	if (mbx_req->msg[1] == HCLGE_MBX_VLAN_FILTER) {
+	msg_cmd = (struct hclge_vf_vlan_cfg *)mbx_req->msg;
+	if (msg_cmd->subcode == HCLGE_MBX_VLAN_FILTER) {
 		struct hnae3_handle *handle = &vport->nic;
 		u16 vlan, proto;
 		bool is_kill;
 
-		is_kill = !!mbx_req->msg[2];
-		memcpy(&vlan, &mbx_req->msg[3], sizeof(vlan));
-		memcpy(&proto, &mbx_req->msg[5], sizeof(proto));
+		is_kill = !!msg_cmd->is_kill;
+		vlan =  msg_cmd->vlan;
+		proto =  msg_cmd->proto;
 		status = hclge_set_vlan_filter(handle, cpu_to_be16(proto),
 					       vlan, is_kill);
-	} else if (mbx_req->msg[1] == HCLGE_MBX_VLAN_RX_OFF_CFG) {
+	} else if (msg_cmd->subcode == HCLGE_MBX_VLAN_RX_OFF_CFG) {
 		struct hnae3_handle *handle = &vport->nic;
-		bool en = mbx_req->msg[2] ? true : false;
+		bool en = msg_cmd->is_kill ? true : false;
 
 		status = hclge_en_hw_strip_rxvtag(handle, en);
-	} else if (mbx_req->msg[1] == HCLGE_MBX_PORT_BASE_VLAN_CFG) {
-		struct hclge_vlan_info vlan_info;
-		u16 state;
+	} else if (msg_cmd->subcode == HCLGE_MBX_PORT_BASE_VLAN_CFG) {
+		struct hclge_vlan_info *vlan_info;
+		u16 *state;
 
-		memcpy(&state, &mbx_req->msg[2], sizeof(u16));
-		memcpy(&vlan_info.vlan_tag, &mbx_req->msg[4], sizeof(u16));
-		memcpy(&vlan_info.qos, &mbx_req->msg[6], sizeof(u16));
-		memcpy(&vlan_info.vlan_proto, &mbx_req->msg[8], sizeof(u16));
-		status = hclge_update_port_base_vlan_cfg(vport, state,
-							 &vlan_info);
-	} else if (mbx_req->msg[1] == HCLGE_MBX_GET_PORT_BASE_VLAN_STATE) {
+		state = (u16 *)&mbx_req->msg[2];
+		vlan_info = (struct hclge_vlan_info *)&mbx_req->msg[4];
+		status = hclge_update_port_base_vlan_cfg(vport, *state,
+							 vlan_info);
+	} else if (msg_cmd->subcode == HCLGE_MBX_GET_PORT_BASE_VLAN_STATE) {
 		u8 state;
 
 		state = vport->port_base_vlan_cfg.state;
@@ -373,7 +373,7 @@ static int hclge_get_vf_tcinfo(struct hclge_vport *vport,
 		vf_tc_map |= BIT(i);
 
 	ret = hclge_gen_resp_to_vf(vport, mbx_req, 0, &vf_tc_map,
-				   sizeof(u8));
+				   sizeof(vf_tc_map));
 
 	return ret;
 }
@@ -410,24 +410,32 @@ static int hclge_get_vf_queue_depth(struct hclge_vport *vport,
 				    HCLGE_TQPS_DEPTH_INFO_LEN);
 }
 
+static int hclge_get_vf_media_type(struct hclge_vport *vport,
+				    struct hclge_mbx_vf_to_pf_cmd *mbx_req)
+{
+	struct hclge_dev *hdev = vport->back;
+	u8 resp_data;
+
+	resp_data = hdev->hw.mac.media_type;
+	return hclge_gen_resp_to_vf(vport, mbx_req, 0, &resp_data,
+				    sizeof(resp_data));
+}
+
 static int hclge_get_link_info(struct hclge_vport *vport,
 			       struct hclge_mbx_vf_to_pf_cmd *mbx_req)
 {
 	struct hclge_dev *hdev = vport->back;
 	u16 link_status;
-	u8 msg_data[10];
-	u16 media_type;
+	u8 msg_data[8];
 	u8 dest_vfid;
 	u16 duplex;
 
 	/* mac.link can only be 0 or 1 */
 	link_status = (u16)hdev->hw.mac.link;
 	duplex = hdev->hw.mac.duplex;
-	media_type = hdev->hw.mac.media_type;
 	memcpy(&msg_data[0], &link_status, sizeof(u16));
 	memcpy(&msg_data[2], &hdev->hw.mac.speed, sizeof(u32));
 	memcpy(&msg_data[6], &duplex, sizeof(u16));
-	memcpy(&msg_data[8], &media_type, sizeof(u16));
 	dest_vfid = mbx_req->mbx_src_vfid;
 
 	/* send this requested info to VF */
@@ -669,11 +677,13 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 					ret);
 			break;
 		case HCLGE_MBX_GET_VF_FLR_STATUS:
+			mutex_lock(&hdev->vport_cfg_mutex);
 			hclge_rm_vport_all_mac_table(vport, true,
 						     HCLGE_MAC_ADDR_UC);
 			hclge_rm_vport_all_mac_table(vport, true,
 						     HCLGE_MAC_ADDR_MC);
 			hclge_rm_vport_all_vlan_table(vport, true);
+			mutex_unlock(&hdev->vport_cfg_mutex);
 			break;
 		case HCLGE_MBX_GET_RSS_KEY:
 			ret = hclge_get_rss_key(vport, req);
@@ -683,6 +693,13 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 			break;
 		case HCLGE_MBX_GET_LINK_MODE:
 			hclge_get_vf_link_mode(vport, req);
+			break;
+		case HCLGE_MBX_GET_MEDIA_TYPE:
+			ret = hclge_get_vf_media_type(vport, req);
+			if (ret)
+				dev_err(&hdev->pdev->dev,
+					"PF fail(%d) to media type for VF\n",
+					ret);
 			break;
 		default:
 			dev_err(&hdev->pdev->dev,

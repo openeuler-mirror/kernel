@@ -41,6 +41,7 @@ enum hclge_cmd_return_status {
 	HCLGE_CMD_NO_AUTH	= 1,
 	HCLGE_CMD_NOT_SUPPORTED	= 2,
 	HCLGE_CMD_QUEUE_FULL	= 3,
+	HCLGE_CMD_QUEUE_ILLEGAL	= 10,
 };
 
 enum hclge_cmd_status {
@@ -318,16 +319,16 @@ struct hclge_ctrl_vector_chain_cmd {
 	u8 rsv;
 };
 
-#define HCLGE_TC_NUM		8
+#define HCLGE_MAX_TC_NUM		8
 #define HCLGE_TC0_PRI_BUF_EN_B	15 /* Bit 15 indicate enable or not */
 #define HCLGE_BUF_UNIT_S	7  /* Buf size is united by 128 bytes */
 struct hclge_tx_buff_alloc_cmd {
-	__le16 tx_pkt_buff[HCLGE_TC_NUM];
+	__le16 tx_pkt_buff[HCLGE_MAX_TC_NUM];
 	u8 tx_buff_rsv[8];
 };
 
 struct hclge_rx_priv_buff_cmd {
-	__le16 buf_num[HCLGE_TC_NUM];
+	__le16 buf_num[HCLGE_MAX_TC_NUM];
 	__le16 shared_buf;
 	u8 rsv[6];
 };
@@ -373,7 +374,6 @@ struct hclge_priv_buf {
 	u32 enable;	/* Enable TC private buffer or not */
 };
 
-#define HCLGE_MAX_TC_NUM	8
 struct hclge_shared_buf {
 	struct hclge_waterline self;
 	struct hclge_tc_thrd tc_thrd[HCLGE_MAX_TC_NUM];
@@ -620,6 +620,11 @@ enum hclge_mac_vlan_tbl_opcode {
 	HCLGE_MAC_VLAN_LKUP,    /* Lookup a entry through mac_vlan key */
 };
 
+enum hclge_mac_vlan_add_resp_code {
+	HCLGE_ADD_UC_OVERFLOW = 2,	/* ADD failed for UC overflow */
+	HCLGE_ADD_MC_OVERFLOW,		/* ADD failed for MC overflow */
+};
+
 #define HCLGE_MAC_VLAN_BIT0_EN_B	0
 #define HCLGE_MAC_VLAN_BIT1_EN_B	1
 #define HCLGE_MAC_EPORT_SW_EN_B		12
@@ -732,7 +737,9 @@ struct hclge_mac_ethertype_idx_rd_cmd {
 struct hclge_vlan_filter_ctrl_cmd {
 	u8 vlan_type;
 	u8 vlan_fe;
-	u8 rsv[22];
+	u8 rsv1[2];
+	u8 vf_id;
+	u8 rsv2[19];
 };
 
 struct hclge_vlan_filter_pf_cfg_cmd {
@@ -996,6 +1003,6 @@ enum hclge_cmd_status hclge_cmd_mdio_write(struct hclge_hw *hw,
 enum hclge_cmd_status hclge_cmd_mdio_read(struct hclge_hw *hw,
 					  struct hclge_desc *desc);
 
-void hclge_destroy_cmd_queue(struct hclge_hw *hw);
+void hclge_cmd_uninit(struct hclge_dev *hdev);
 int hclge_cmd_queue_init(struct hclge_dev *hdev);
 #endif

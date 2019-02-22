@@ -2,6 +2,7 @@
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
 #include <linux/etherdevice.h>
+#include <linux/marvell_phy.h>
 #include <linux/kernel.h>
 #include "kcompat.h"
 #include "hclge_cmd.h"
@@ -26,17 +27,6 @@ enum hclge_mdio_c22_op_seq {
 #define HCLGE_MDIO_PHYREG_M		(0x1f << HCLGE_MDIO_PHYREG_S)
 
 #define HCLGE_MDIO_STA_B		0
-
-struct hclge_mdio_cfg_cmd {
-	u8 ctrl_bit;
-	u8 phyid;
-	u8 phyad;
-	u8 rsvd;
-	__le16 reserve;
-	__le16 data_wr;
-	__le16 data_rd;
-	__le16 sta;
-};
 
 static int hclge_mdio_write(struct mii_bus *bus, int phyid, int regnum,
 			    u16 data)
@@ -119,6 +109,13 @@ static int hclge_mdio_read(struct mii_bus *bus, int phyid, int regnum)
 	return le16_to_cpu(mdio_cmd->data_rd);
 }
 
+static int hclge_phy_marvell_fixup(struct phy_device *phydev)
+{
+	phydev->dev_flags |= MARVELL_PHY_M1510_HNS3_LEDS;
+
+	return 0;
+}
+
 int hclge_mac_mdio_config(struct hclge_dev *hdev)
 {
 	struct hclge_mac *mac = &hdev->hw.mac;
@@ -162,6 +159,15 @@ int hclge_mac_mdio_config(struct hclge_dev *hdev)
 	mac->phydev = phydev;
 	mac->mdio_bus = mdio_bus;
 
+	/* register the PHY board fixup (for Marvell 88E1510) */
+	ret = phy_register_fixup_for_uid(MARVELL_PHY_ID_88E1510,
+					 MARVELL_PHY_ID_MASK,
+					 hclge_phy_marvell_fixup);
+	/* we can live without it, so just issue a warning */
+	if (ret)
+		dev_warn(&hdev->pdev->dev,
+			 "Cannot register PHY board fixup\n");
+
 	return 0;
 }
 
@@ -195,11 +201,29 @@ int hclge_mac_connect_phy(struct hnae3_handle *handle)
 	struct hclge_dev *hdev = vport->back;
 	struct net_device *netdev = hdev->vport[0].nic.netdev;
 	struct phy_device *phydev = hdev->hw.mac.phydev;
+#ifdef HAS_LINK_MODE_OPS
+	__ETHTOOL_DECLARE_LINK_MODE_MASK(mask) = { 0, };
+#endif
 	int ret;
 
 	if (!phydev)
 		return 0;
 
+#ifdef HAS_LINK_MODE_OPS
+	linkmode_clear_bit(ETHTOOL_LINK_MODE_FIBRE_BIT, phydev->supported);
+
+	ret = phy_connect_direct(netdev, phydev,
+				 hclge_mac_adjust_link,
+				 PHY_INTERFACE_MODE_SGMII);
+	if (ret) {
+		netdev_err(netdev, "phy_connect_direct err.\n");
+		return ret;
+	}
+
+	linkmode_copy(mask, hdev->hw.mac.supported);
+	linkmode_and(phydev->supported, phydev->supported, mask);
+	linkmode_copy(phydev->advertising, phydev->supported);
+#else
 	phydev->supported &= ~SUPPORTED_FIBRE;
 
 	ret = phy_connect_direct(netdev, phydev,
@@ -212,7 +236,7 @@ int hclge_mac_connect_phy(struct hnae3_handle *handle)
 
 	phydev->supported &= *hdev->hw.mac.supported;
 	phydev->advertising = phydev->supported;
-
+#endif
 	return 0;
 }
 
@@ -224,6 +248,9 @@ void hclge_mac_disconnect_phy(struct hnae3_handle *handle)
 
 	if (!phydev)
 		return;
+
+	phy_unregister_fixup_for_uid(MARVELL_PHY_ID_88E1510,
+				     MARVELL_PHY_ID_MASK);
 
 	phy_disconnect(phydev);
 }

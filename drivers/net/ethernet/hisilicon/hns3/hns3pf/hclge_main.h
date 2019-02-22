@@ -62,6 +62,9 @@
 #define HCLGE_DEFAULT_UMV_SPACE_PER_PF \
 	(HCLGE_UMV_TBL_SIZE / HCLGE_MAX_PF_NUM)
 
+#define HCLGE_VLAN_ID_B			160
+#define HCLGE_VLAN_BYTE_SIZE		8
+
 #define HCLGE_TQP_RESET_TRY_TIMES	10
 
 #define HCLGE_PHY_PAGE_MDIX		0
@@ -190,7 +193,7 @@ struct hclge_mac {
 	u8 autoneg;
 	u8 duplex;
 	u32 speed;
-	int link;	/* store the link status of mac & phy (if phy exit)*/
+	int link;	/* store the link status of mac & phy (if phy exit) */
 	struct phy_device *phydev;
 	struct mii_bus *mdio_bus;
 	phy_interface_t phy_if;
@@ -406,6 +409,7 @@ enum HCLGE_FD_KEY_TYPE {
 enum HCLGE_FD_STAGE {
 	HCLGE_FD_STAGE_1,
 	HCLGE_FD_STAGE_2,
+	MAX_STAGE_NUM,
 };
 
 /* OUTER_XXX indicates tuples in tunnel header of tunnel packet
@@ -460,7 +464,7 @@ enum HCLGE_FD_META_DATA {
 
 struct key_info {
 	u8 key_type;
-	u8 key_length;
+	u8 key_length;	/* use bit as unit */
 };
 
 static const struct key_info meta_data_key_info[] = {
@@ -534,18 +538,23 @@ struct hclge_fd_key_cfg {
 
 struct hclge_fd_cfg {
 	u8 fd_mode;
-	u16 max_key_length;
+	u16 max_key_length; /* use bit as unit */
 	u32 proto_support;
-	u32 rule_num[2]; /* rule entry number */
-	u16 cnt_num[2]; /* rule hit counter number */
-	struct hclge_fd_key_cfg key_cfg[2];
+	u32 rule_num[MAX_STAGE_NUM]; /* rule entry number */
+	u16 cnt_num[MAX_STAGE_NUM]; /* rule hit counter number */
+	struct hclge_fd_key_cfg key_cfg[MAX_STAGE_NUM];
 };
 
+#define IPV4_INDEX	3
+#define IPV6_SIZE	4
 struct hclge_fd_rule_tuples {
-	u8 src_mac[6];
-	u8 dst_mac[6];
-	u32 src_ip[4];
-	u32 dst_ip[4];
+	u8 src_mac[ETH_ALEN];
+	u8 dst_mac[ETH_ALEN];
+	/* Be compatible for ip address of both ipv4 and ipv6.
+	 * For ipv4 address, we store it in src/dst_ip[3].
+	 */
+	u32 src_ip[IPV6_SIZE];
+	u32 dst_ip[IPV6_SIZE];
 	u16 src_port;
 	u16 dst_port;
 	u16 vlan_tag1;
@@ -581,7 +590,6 @@ struct hclge_fd_ad_data {
 
 struct hclge_vport_mac_addr_cfg {
 	struct list_head node;
-	int vport_id;
 	int hd_tbl_status;
 	u8 mac_addr[ETH_ALEN];
 };
@@ -739,8 +747,6 @@ struct hclge_dev {
 	struct mutex umv_mutex; /* protect share_umv_size */
 
 	struct mutex vport_cfg_mutex;   /* Protect stored vf table */
-	struct list_head uc_mac_list;   /* Store VF unicast table */
-	struct list_head mc_mac_list;   /* Store VF multicast table */
 };
 
 /* VPort level vlan tag configuration for TX direction */
@@ -779,6 +785,17 @@ enum HCLGE_VPORT_STATE {
 	HCLGE_VPORT_STATE_ALIVE,
 	HCLGE_VPORT_STATE_MAX
 };
+
+#pragma pack(1)
+struct hclge_vf_vlan_cfg {
+	u8 mbx_cmd;
+	u8 subcode;
+	u8 is_kill;
+	u16 vlan;
+	u16 proto;
+};
+
+#pragma pack()
 
 struct hclge_vlan_info {
 	u16 vlan_proto; /* sofar support 802.1Q only */
@@ -822,6 +839,9 @@ struct hclge_vport {
 	unsigned long state;
 	unsigned long last_active_jiffies;
 	int mps; /* Max packet size */
+
+	struct list_head uc_mac_list;   /* Store VF unicast table */
+	struct list_head mc_mac_list;   /* Store VF multicast table */
 };
 
 void hclge_promisc_param_init(struct hclge_promisc_param *param, bool en_uc,

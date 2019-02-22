@@ -44,6 +44,7 @@ enum HCLGE_MBX_OPCODE {
 	HCLGE_MBX_LINK_STAT_MODE,	/* (PF -> VF) link mode has changed */
 	HCLGE_MBX_GET_LINK_MODE,	/* (VF -> PF) get the link mode of pf */
 	HLCGE_MBX_PUSH_VLAN_INFO,	/* (PF -> VF) push port base vlan */
+	HCLGE_MBX_GET_MEDIA_TYPE,       /* (VF -> PF) get media type */
 
 	HCLGE_MBX_GET_VF_FLR_STATUS = 200, /* (M7 -> PF) get vf flr status */
 };
@@ -68,7 +69,7 @@ enum hclge_mbx_vlan_cfg_subcode {
 };
 
 #define HCLGE_MBX_MAX_MSG_SIZE	16
-#define HCLGE_MBX_MAX_RESP_DATA_SIZE	16
+#define HCLGE_MBX_MAX_RESP_DATA_SIZE	8
 #define HCLGE_MBX_RING_MAP_BASIC_MSG_NUM	3
 #define HCLGE_MBX_RING_NODE_VARIABLE_NUM	3
 
@@ -86,6 +87,7 @@ struct hclge_mbx_vf_to_pf_cmd {
 	u8 rsv1[2];
 	u8 msg_len;
 	u8 rsv2[3];
+	/* msg[0] means opcode and msg[1] means sub opcode, other is msg data */
 	u8 msg[HCLGE_MBX_MAX_MSG_SIZE];
 };
 
@@ -94,6 +96,7 @@ struct hclge_mbx_pf_to_vf_cmd {
 	u8 rsv[3];
 	u8 msg_len;
 	u8 rsv1[3];
+	/* msg[0] means OPCODE, other is msg data */
 	u16 msg[8];
 };
 

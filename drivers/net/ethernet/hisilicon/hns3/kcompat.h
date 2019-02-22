@@ -378,5 +378,19 @@ static inline __must_check size_t array3_size(size_t a, size_t b, size_t c)
 #else
 #endif
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 4))
+
+#include <linux/bitmap.h>
+
+static inline void linkmode_set_bit(int nr, volatile unsigned long *addr)
+{
+	__set_bit(nr, addr);
+}
+
+#else
+
+#define HAS_LINK_MODE_OPS
+
+#endif
 
 #endif

@@ -43,6 +43,9 @@
 
 #define HCLGE_DBG_DFX_SSU_2_OFFSET 12
 
+#define HCLGE_DBG_SCAN_STEP        100
+#define HCLGE_DBG_PAUSE_TIME       50
+
 #pragma pack(1)
 
 struct hclge_checksum_cmd {

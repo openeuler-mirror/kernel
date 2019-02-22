@@ -80,7 +80,7 @@ const struct hclge_hw_error hclge_ppp_mpf_abnormal_int_st1[] = {
 	{ .int_msk = BIT(3), .msg = "umv_key_mem1_ecc_mbit_err" },
 	{ .int_msk = BIT(4), .msg = "umv_key_mem2_ecc_mbit_err" },
 	{ .int_msk = BIT(5), .msg = "umv_key_mem3_ecc_mbit_err" },
-	{ .int_msk = BIT(6), .msg = "umv_ad_mem_ecc_mbit_erre" },
+	{ .int_msk = BIT(6), .msg = "umv_ad_mem_ecc_mbit_err" },
 	{ .int_msk = BIT(7), .msg = "rss_tc_mode_mem_ecc_mbit_err" },
 	{ .int_msk = BIT(8), .msg = "rss_idt_mem0_ecc_mbit_err" },
 	{ .int_msk = BIT(9), .msg = "rss_idt_mem1_ecc_mbit_err" },
@@ -475,19 +475,19 @@ static int hclge_cmd_query_error(struct hclge_dev *hdev,
 				 enum hclge_err_int_type int_type)
 {
 	struct device *dev = &hdev->pdev->dev;
-	int num = 1;
+	int desc_num = 1;
 	int ret;
 
 	hclge_cmd_setup_basic_desc(&desc[0], cmd, true);
 	if (flag) {
 		desc[0].flag |= cpu_to_le16(flag);
 		hclge_cmd_setup_basic_desc(&desc[1], cmd, true);
-		num = 2;
+		desc_num = 2;
 	}
 	if (w_num)
 		desc[0].data[w_num] = cpu_to_le32(int_type);
 
-	ret = hclge_cmd_send(&hdev->hw, &desc[0], num);
+	ret = hclge_cmd_send(&hdev->hw, &desc[0], desc_num);
 	if (ret)
 		dev_err(dev, "query error cmd failed (%d)\n", ret);
 
@@ -718,7 +718,7 @@ static int hclge_config_ppu_error_interrupts(struct hclge_dev *hdev, u32 cmd,
 {
 	struct device *dev = &hdev->pdev->dev;
 	struct hclge_desc desc[2];
-	int num = 1;
+	int desc_num = 1;
 	int ret;
 
 	/* configure PPU error interrupts */
@@ -737,7 +737,7 @@ static int hclge_config_ppu_error_interrupts(struct hclge_dev *hdev, u32 cmd,
 		desc[1].data[1] = HCLGE_PPU_MPF_ABNORMAL_INT1_EN_MASK;
 		desc[1].data[2] = HCLGE_PPU_MPF_ABNORMAL_INT2_EN_MASK;
 		desc[1].data[3] |= HCLGE_PPU_MPF_ABNORMAL_INT3_EN_MASK;
-		num = 2;
+		desc_num = 2;
 	} else if (cmd == HCLGE_PPU_MPF_OTHER_INT_CMD) {
 		hclge_cmd_setup_basic_desc(&desc[0], cmd, false);
 		if (en)
@@ -755,7 +755,7 @@ static int hclge_config_ppu_error_interrupts(struct hclge_dev *hdev, u32 cmd,
 		return -EINVAL;
 	}
 
-	ret = hclge_cmd_send(&hdev->hw, &desc[0], num);
+	ret = hclge_cmd_send(&hdev->hw, &desc[0], desc_num);
 
 	return ret;
 }
@@ -940,8 +940,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 	desc_data = (__le32 *)&desc[3];
 	status = le32_to_cpu(*desc_data) & HCLGE_IGU_INT_MASK;
 	if (status)
-		hclge_log_error(dev, "IGU_INT_STS",
-				&hclge_igu_int[0], status);
+		hclge_log_error(dev, "IGU_INT_STS", &hclge_igu_int[0], status);
 
 	/* log PPP(Programmable Packet Process) errors */
 	desc_data = (__le32 *)&desc[4];
@@ -1167,8 +1166,7 @@ static int hclge_log_rocee_ovf_error(struct hclge_dev *hdev)
 	int ret;
 
 	/* read overflow error status */
-	ret = hclge_cmd_query_error(hdev, &desc[0],
-				    HCLGE_ROCEE_PF_RAS_INT_CMD,
+	ret = hclge_cmd_query_error(hdev, &desc[0], HCLGE_ROCEE_PF_RAS_INT_CMD,
 				    0, 0, 0);
 	if (ret) {
 		dev_err(dev, "failed(%d) to query ROCEE OVF error sts\n", ret);
@@ -1207,10 +1205,10 @@ static int hclge_log_rocee_ovf_error(struct hclge_dev *hdev)
 	return 0;
 }
 
-static int hclge_log_and_clear_rocee_ras_error(struct hclge_dev *hdev)
+static enum hnae3_reset_type
+hclge_log_and_clear_rocee_ras_error(struct hclge_dev *hdev)
 {
-	enum hnae3_reset_type reset_type = HNAE3_FUNC_RESET;
-	struct hnae3_ae_dev *ae_dev = hdev->ae_dev;
+	enum hnae3_reset_type reset_type = HNAE3_NONE_RESET;
 	struct device *dev = &hdev->pdev->dev;
 	struct hclge_desc desc[2];
 	unsigned int status;
@@ -1223,17 +1221,20 @@ static int hclge_log_and_clear_rocee_ras_error(struct hclge_dev *hdev)
 	if (ret) {
 		dev_err(dev, "failed(%d) to query ROCEE RAS INT SRC\n", ret);
 		/* reset everything for now */
-		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_GLOBAL_RESET);
-		return ret;
+		return HNAE3_GLOBAL_RESET;
 	}
 
 	status = le32_to_cpu(desc[0].data[0]);
 
-	if (status & HCLGE_ROCEE_RERR_INT_MASK)
+	if (status & HCLGE_ROCEE_RERR_INT_MASK) {
 		dev_warn(dev, "ROCEE RAS AXI rresp error\n");
+		return HNAE3_FUNC_RESET;
+	}
 
-	if (status & HCLGE_ROCEE_BERR_INT_MASK)
+	if (status & HCLGE_ROCEE_BERR_INT_MASK) {
 		dev_warn(dev, "ROCEE RAS AXI bresp error\n");
+		return HNAE3_FUNC_RESET;
+	}
 
 	if (status & HCLGE_ROCEE_ECC_INT_MASK) {
 		dev_warn(dev, "ROCEE RAS 2bit ECC error\n");
@@ -1245,9 +1246,9 @@ static int hclge_log_and_clear_rocee_ras_error(struct hclge_dev *hdev)
 		if (ret) {
 			dev_err(dev, "failed(%d) to process ovf error\n", ret);
 			/* reset everything for now */
-			HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_GLOBAL_RESET);
-			return ret;
+			return HNAE3_GLOBAL_RESET;
 		}
+		reset_type = HNAE3_FUNC_RESET;
 	}
 
 	/* clear error status */
@@ -1256,12 +1257,10 @@ static int hclge_log_and_clear_rocee_ras_error(struct hclge_dev *hdev)
 	if (ret) {
 		dev_err(dev, "failed(%d) to clear ROCEE RAS error\n", ret);
 		/* reset everything for now */
-		reset_type = HNAE3_GLOBAL_RESET;
+		return HNAE3_GLOBAL_RESET;
 	}
 
-	HCLGE_SET_DEFAULT_RESET_REQUEST(reset_type);
-
-	return ret;
+	return reset_type;
 }
 
 static int hclge_config_rocee_ras_interrupt(struct hclge_dev *hdev, bool en)
@@ -1293,13 +1292,18 @@ static int hclge_config_rocee_ras_interrupt(struct hclge_dev *hdev, bool en)
 
 int hclge_handle_rocee_ras_error(struct hnae3_ae_dev *ae_dev)
 {
+	enum hnae3_reset_type reset_type = HNAE3_NONE_RESET;
 	struct hclge_dev *hdev = ae_dev->priv;
 
 	if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) ||
 	    hdev->pdev->revision < 0x21)
-		return HNAE3_NONE_RESET;
+		return reset_type;
 
-	return hclge_log_and_clear_rocee_ras_error(hdev);
+	reset_type = hclge_log_and_clear_rocee_ras_error(hdev);
+	if (reset_type != HNAE3_NONE_RESET)
+		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_type);
+
+	return reset_type;
 }
 
 static const struct hclge_hw_blk hw_blk[] = {
@@ -1426,8 +1430,7 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 
 	ret = hclge_cmd_send(&hdev->hw, &desc[0], mpf_bd_num);
 	if (ret) {
-		dev_err(dev, "query all mpf msix int cmd failed (%d)\n",
-			ret);
+		dev_err(dev, "query all mpf msix int cmd failed (%d)\n", ret);
 		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_CORE_RESET);
 		goto msi_error;
 	}
@@ -1446,9 +1449,8 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 	status = le32_to_cpu(*(desc_data + 2)) &
 			HCLGE_PPU_MPF_INT_ST2_MSIX_MASK;
 	if (status) {
-		dev_warn(dev,
-			 "PPU_MPF_ABNORMAL_INT_ST2[28:29], err_status(0x%x)\n",
-			 status);
+		hclge_log_error(dev, "PPU_MPF_ABNORMAL_INT_ST2",
+				&hclge_ppu_mpf_abnormal_int_st2[0], status);
 		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_CORE_RESET);
 	}
 
@@ -1458,8 +1460,7 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 
 	ret = hclge_cmd_send(&hdev->hw, &desc[0], mpf_bd_num);
 	if (ret) {
-		dev_err(dev, "clear all mpf msix int cmd failed (%d)\n",
-			ret);
+		dev_err(dev, "clear all mpf msix int cmd failed (%d)\n", ret);
 		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_CORE_RESET);
 		goto msi_error;
 	}
@@ -1472,8 +1473,7 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 
 	ret = hclge_cmd_send(&hdev->hw, &desc[0], pf_bd_num);
 	if (ret) {
-		dev_err(dev, "query all pf msix int cmd failed (%d)\n",
-			ret);
+		dev_err(dev, "query all pf msix int cmd failed (%d)\n", ret);
 		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_CORE_RESET);
 		goto msi_error;
 	}
@@ -1506,8 +1506,7 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 
 	ret = hclge_cmd_send(&hdev->hw, &desc[0], pf_bd_num);
 	if (ret) {
-		dev_err(dev, "clear all pf msix int cmd failed (%d)\n",
-			ret);
+		dev_err(dev, "clear all pf msix int cmd failed (%d)\n", ret);
 		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_CORE_RESET);
 	}
 

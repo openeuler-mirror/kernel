@@ -209,12 +209,14 @@ static int hclge_cmd_check_retval(struct hclge_hw *hw,
 			retval = -EPERM;
 		else if (desc_ret == HCLGE_CMD_NOT_SUPPORTED)
 			retval = -EOPNOTSUPP;
+		else if (desc_ret == HCLGE_CMD_QUEUE_ILLEGAL)
+			retval = -ENXIO;
 		else
 			retval = -EIO;
 		hw->cmq.last_status = desc_ret;
 		(*ntc)++;
 		handle++;
-		if (*ntc == hw->cmq.csq.desc_num)
+		if (*ntc >= hw->cmq.csq.desc_num)
 			*ntc = 0;
 	}
 	return retval;
@@ -257,7 +259,7 @@ int hclge_cmd_send(struct hclge_hw *hw, struct hclge_desc *desc, int num)
 		desc_to_use = &hw->cmq.csq.desc[hw->cmq.csq.next_to_use];
 		*desc_to_use = desc[handle];
 		(hw->cmq.csq.next_to_use)++;
-		if (hw->cmq.csq.next_to_use == hw->cmq.csq.desc_num)
+		if (hw->cmq.csq.next_to_use >= hw->cmq.csq.desc_num)
 			hw->cmq.csq.next_to_use = 0;
 		handle++;
 	}
@@ -393,6 +395,20 @@ int hclge_cmd_init(struct hclge_dev *hdev)
 	return 0;
 }
 
+static void hclge_cmd_uninit_regs(struct hclge_hw *hw)
+{
+	hclge_write_dev(hw, HCLGE_NIC_CSQ_BASEADDR_L_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CSQ_BASEADDR_H_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CSQ_DEPTH_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CSQ_HEAD_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CSQ_TAIL_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CRQ_BASEADDR_L_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CRQ_BASEADDR_H_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CRQ_DEPTH_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CRQ_HEAD_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CRQ_TAIL_REG, 0);
+}
+
 static void hclge_destroy_queue(struct hclge_cmq_ring *ring)
 {
 	spin_lock(&ring->lock);
@@ -404,4 +420,16 @@ void hclge_destroy_cmd_queue(struct hclge_hw *hw)
 {
 	hclge_destroy_queue(&hw->cmq.csq);
 	hclge_destroy_queue(&hw->cmq.crq);
+}
+
+void hclge_cmd_uninit(struct hclge_dev *hdev)
+{
+	spin_lock_bh(&hdev->hw.cmq.csq.lock);
+	spin_lock_bh(&hdev->hw.cmq.crq.lock);
+	set_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
+	hclge_cmd_uninit_regs(&hdev->hw);
+	spin_unlock_bh(&hdev->hw.cmq.crq.lock);
+	spin_unlock_bh(&hdev->hw.cmq.csq.lock);
+
+	hclge_destroy_cmd_queue(&hdev->hw);
 }

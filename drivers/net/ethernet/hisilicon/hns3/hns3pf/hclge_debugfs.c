@@ -42,6 +42,8 @@ static void hclge_title_idx_print(struct hclge_dev *hdev, bool flag, int index,
 static int hclge_dbg_get_dfx_bd_num(struct hclge_dev *hdev, int offset)
 {
 	struct hclge_desc desc[4];
+	int entries_per_desc;
+	int index;
 	int ret;
 
 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_DFX_BD_NUM, true);
@@ -59,7 +61,9 @@ static int hclge_dbg_get_dfx_bd_num(struct hclge_dev *hdev, int offset)
 		return ret;
 	}
 
-	return (int)desc[offset / 6].data[offset % 6];
+	entries_per_desc = ARRAY_SIZE(desc[0].data);
+	index = offset % entries_per_desc;
+	return (int)desc[offset / entries_per_desc].data[index];
 }
 
 static int hclge_dbg_cmd_send(struct hclge_dev *hdev,
@@ -96,12 +100,13 @@ static void hclge_dbg_dump_reg_common(struct hclge_dev *hdev,
 {
 	struct hclge_desc *desc_src;
 	struct hclge_desc *desc;
+	int entries_per_desc;
 	int bd_num, buf_len;
 	int ret, i;
 	int index;
 	int max;
 
-	ret = kstrtouint(cmd_buf, 10, &index);
+	ret = kstrtouint(cmd_buf, 0, &index);
 	index = (ret != 0) ? 0 : index;
 
 	bd_num = hclge_dbg_get_dfx_bd_num(hdev, offset);
@@ -125,14 +130,18 @@ static void hclge_dbg_dump_reg_common(struct hclge_dev *hdev,
 		return;
 	}
 
-	max = (bd_num * 6) <= msg_num ? (bd_num * 6) : msg_num;
+	entries_per_desc = ARRAY_SIZE(desc->data);
+
+	max = (bd_num * entries_per_desc) <= msg_num ?
+		(bd_num * entries_per_desc) : msg_num;
 
 	desc = desc_src;
 	for (i = 0; i < max; i++) {
-		(((i / 6) > 0) && ((i % 6) == 0)) ? desc++ : desc;
+		((i > 0) && ((i % entries_per_desc) == 0)) ? desc++ : desc;
 		if (dfx_message->flag)
 			dev_info(&hdev->pdev->dev, "%s: 0x%x\n",
-				 dfx_message->message, desc->data[i % 6]);
+				 dfx_message->message,
+				 desc->data[i % entries_per_desc]);
 
 		dfx_message++;
 	}
@@ -244,92 +253,92 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, char *cmd_buf)
 {
 	int msg_num;
 
-	if (strncmp(&cmd_buf[9], "bios common", 11) == 0) {
+	if (strncmp(cmd_buf, "bios common", 11) == 0) {
 		msg_num = sizeof(hclge_dbg_bios_common_reg) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_bios_common_reg,
-					  &cmd_buf[21], msg_num,
-					  HCLGE_DBG_DFX_BIOS_OFFSET,
+					  &cmd_buf[sizeof("bios common")],
+					  msg_num, HCLGE_DBG_DFX_BIOS_OFFSET,
 					  HCLGE_OPC_DFX_BIOS_COMMON_REG);
-	} else if (strncmp(&cmd_buf[9], "ssu", 3) == 0) {
+	} else if (strncmp(cmd_buf, "ssu", 3) == 0) {
 		msg_num = sizeof(hclge_dbg_ssu_reg_0) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_ssu_reg_0,
-					  &cmd_buf[13], msg_num,
+					  &cmd_buf[sizeof("ssu")], msg_num,
 					  HCLGE_DBG_DFX_SSU_0_OFFSET,
 					  HCLGE_OPC_DFX_SSU_REG_0);
 
 		msg_num = sizeof(hclge_dbg_ssu_reg_1) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_ssu_reg_1,
-					  &cmd_buf[13], msg_num,
+					  &cmd_buf[sizeof("ssu")], msg_num,
 					  HCLGE_DBG_DFX_SSU_1_OFFSET,
 					  HCLGE_OPC_DFX_SSU_REG_1);
 
 		msg_num = sizeof(hclge_dbg_ssu_reg_2) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_ssu_reg_2,
-					  &cmd_buf[13], msg_num,
+					  &cmd_buf[sizeof("ssu")], msg_num,
 					  HCLGE_DBG_DFX_SSU_2_OFFSET,
 					  HCLGE_OPC_DFX_SSU_REG_2);
-	} else if (strncmp(&cmd_buf[9], "igu egu", 7) == 0) {
+	} else if (strncmp(cmd_buf, "igu egu", 7) == 0) {
 		msg_num = sizeof(hclge_dbg_igu_egu_reg) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_igu_egu_reg,
-					  &cmd_buf[17], msg_num,
+					  &cmd_buf[sizeof("igu egu")], msg_num,
 					  HCLGE_DBG_DFX_IGU_OFFSET,
 					  HCLGE_OPC_DFX_IGU_EGU_REG);
-	} else if (strncmp(&cmd_buf[9], "rpu", 3) == 0) {
+	} else if (strncmp(cmd_buf, "rpu", 3) == 0) {
 		msg_num = sizeof(hclge_dbg_rpu_reg_0) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_rpu_reg_0,
-					  &cmd_buf[13], msg_num,
+					  &cmd_buf[sizeof("rpu")], msg_num,
 					  HCLGE_DBG_DFX_RPU_0_OFFSET,
 					  HCLGE_OPC_DFX_RPU_REG_0);
 
 		msg_num = sizeof(hclge_dbg_rpu_reg_1) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_rpu_reg_1,
-					  &cmd_buf[13], msg_num,
+					  &cmd_buf[sizeof("rpu")], msg_num,
 					  HCLGE_DBG_DFX_RPU_1_OFFSET,
 					  HCLGE_OPC_DFX_RPU_REG_1);
-	} else if (strncmp(&cmd_buf[9], "ncsi", 4) == 0) {
+	} else if (strncmp(cmd_buf, "ncsi", 4) == 0) {
 		msg_num = sizeof(hclge_dbg_ncsi_reg) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_ncsi_reg,
-					  &cmd_buf[14], msg_num,
+					  &cmd_buf[sizeof("ncsi")], msg_num,
 					  HCLGE_DBG_DFX_NCSI_OFFSET,
 					  HCLGE_OPC_DFX_NCSI_REG);
-	} else if (strncmp(&cmd_buf[9], "rtc", 3) == 0) {
+	} else if (strncmp(cmd_buf, "rtc", 3) == 0) {
 		msg_num = sizeof(hclge_dbg_rtc_reg) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_rtc_reg,
-					  &cmd_buf[13], msg_num,
+					  &cmd_buf[sizeof("rtc")], msg_num,
 					  HCLGE_DBG_DFX_RTC_OFFSET,
 					  HCLGE_OPC_DFX_RTC_REG);
-	} else if (strncmp(&cmd_buf[9], "ppp", 3) == 0) {
+	} else if (strncmp(cmd_buf, "ppp", 3) == 0) {
 		msg_num = sizeof(hclge_dbg_ppp_reg) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_ppp_reg,
-					  &cmd_buf[13], msg_num,
+					  &cmd_buf[sizeof("ppp")], msg_num,
 					  HCLGE_DBG_DFX_PPP_OFFSET,
 					  HCLGE_OPC_DFX_PPP_REG);
-	} else if (strncmp(&cmd_buf[9], "rcb", 3) == 0) {
+	} else if (strncmp(cmd_buf, "rcb", 3) == 0) {
 		msg_num = sizeof(hclge_dbg_rcb_reg) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_rcb_reg,
-					  &cmd_buf[13], msg_num,
+					  &cmd_buf[sizeof("rcb")], msg_num,
 					  HCLGE_DBG_DFX_RCB_OFFSET,
 					  HCLGE_OPC_DFX_RCB_REG);
-	} else if (strncmp(&cmd_buf[9], "tqp", 3) == 0) {
+	} else if (strncmp(cmd_buf, "tqp", 3) == 0) {
 		msg_num = sizeof(hclge_dbg_tqp_reg) /
 			  sizeof(struct hclge_dbg_dfx_message);
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_tqp_reg,
-					  &cmd_buf[13], msg_num,
+					  &cmd_buf[sizeof("tqp")], msg_num,
 					  HCLGE_DBG_DFX_TQP_OFFSET,
 					  HCLGE_OPC_DFX_TQP_REG);
-	} else if (strncmp(&cmd_buf[9], "dcb", 3) == 0) {
-		hclge_dbg_dump_dcb(hdev, &cmd_buf[13]);
+	} else if (strncmp(cmd_buf, "dcb", 3) == 0) {
+		hclge_dbg_dump_dcb(hdev, &cmd_buf[sizeof("dcb")]);
 	} else {
 		dev_info(&hdev->pdev->dev, "unknown command\n");
 		return;
@@ -601,7 +610,7 @@ static void hclge_dbg_dump_tm_map(struct hclge_dev *hdev, char *cmd_buf)
 	int pri_id, ret;
 	u32 i;
 
-	ret = kstrtouint(&cmd_buf[12], 10, &queue_id);
+	ret = kstrtouint(cmd_buf, 0, &queue_id);
 	queue_id = (ret != 0) ? 0 : queue_id;
 
 	cmd = HCLGE_OPC_TM_NQ_TO_QS_LINK;
@@ -772,7 +781,7 @@ static void hclge_dbg_dump_qos_buf_cfg(struct hclge_dev *hdev)
 	dev_info(&hdev->pdev->dev, "dump qos buf cfg\n");
 
 	tx_buf_cmd = (struct hclge_tx_buff_alloc_cmd *)desc[0].data;
-	for (i = 0; i < HCLGE_TC_NUM; i++)
+	for (i = 0; i < HCLGE_MAX_TC_NUM; i++)
 		dev_info(&hdev->pdev->dev, "tx_packet_buf_tc_%d: 0x%x\n", i,
 			 tx_buf_cmd->tx_pkt_buff[i]);
 
@@ -784,7 +793,7 @@ static void hclge_dbg_dump_qos_buf_cfg(struct hclge_dev *hdev)
 
 	dev_info(&hdev->pdev->dev, "\n");
 	rx_buf_cmd = (struct hclge_rx_priv_buff_cmd *)desc[0].data;
-	for (i = 0; i < HCLGE_TC_NUM; i++)
+	for (i = 0; i < HCLGE_MAX_TC_NUM; i++)
 		dev_info(&hdev->pdev->dev, "rx_packet_buf_tc_%d: 0x%x\n", i,
 			 rx_buf_cmd->buf_num[i]);
 
@@ -893,8 +902,8 @@ static void hclge_dbg_dump_mac_table(struct hclge_dev *hdev)
 	mc_tbl_idx = 0;
 	for (i = 0; i < HCLGE_DBG_MAC_TBL_MAX; i++) {
 		/* Prevent long-term occupation of the command channel. */
-		if ((i % 100) == 0)
-			msleep(100);
+		if ((i % HCLGE_DBG_SCAN_STEP) == 0)
+			msleep(HCLGE_DBG_PAUSE_TIME);
 
 		hclge_cmd_setup_basic_desc(&desc[0], HCLGE_PPP_MAC_VLAN_IDX_RD,
 					   true);
@@ -919,6 +928,19 @@ static void hclge_dbg_dump_mac_table(struct hclge_dev *hdev)
 		if (mac_rd_cmd->resp_code)
 			continue;
 
+		if (mac_rd_cmd->entry_type == HCLGE_DBG_MAC_MC_TBL) {
+			mc_mac_tbl[mc_tbl_idx].index = i;
+			memcpy(mc_mac_tbl[mc_tbl_idx].mac_add,
+			       mac_rd_cmd->mac_add, 6);
+			memcpy(mc_mac_tbl[mc_tbl_idx].mg_vf_mb,
+			       desc[1].data, 24);
+			memcpy(&mc_mac_tbl[mc_tbl_idx].mg_vf_mb[24],
+			       desc[2].data, 8);
+			mc_tbl_idx++;
+
+			continue;
+		}
+
 		memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
 		snprintf(printf_buf, HCLGE_DBG_BUF_LEN,
 			 "|%04d  |%02x:%02x:%02x:%02x:%02x:%02x |",
@@ -941,17 +963,6 @@ static void hclge_dbg_dump_mac_table(struct hclge_dev *hdev)
 			 mac_rd_cmd->egress_port & HCLGE_DBG_MAC_TBL_E_PORT);
 
 		dev_info(&hdev->pdev->dev, "%s", printf_buf);
-
-		if (mac_rd_cmd->entry_type == HCLGE_DBG_MAC_MC_TBL) {
-			mc_mac_tbl[mc_tbl_idx].index = i;
-			memcpy(mc_mac_tbl[mc_tbl_idx].mac_add,
-			       mac_rd_cmd->mac_add, 6);
-			memcpy(mc_mac_tbl[mc_tbl_idx].mg_vf_mb,
-			       desc[1].data, 24);
-			memcpy(&mc_mac_tbl[mc_tbl_idx].mg_vf_mb[24],
-			       desc[2].data, 8);
-			mc_tbl_idx++;
-		}
 	}
 
 	if (mc_tbl_idx > 0) {
@@ -1028,7 +1039,7 @@ static void hclge_dbg_dump_port_vlan_table(struct hclge_dev *hdev)
 	u32 vlan_id;
 	int ret;
 
-	vlan_len = HCLGE_DBG_VLAN_ID_MAX / 8;
+	vlan_len = HCLGE_DBG_VLAN_ID_MAX / HCLGE_VLAN_BYTE_SIZE;
 	vlan_bitmap = kzalloc(vlan_len, GFP_KERNEL);
 	if (!vlan_bitmap) {
 		dev_err(&hdev->pdev->dev,
@@ -1038,15 +1049,15 @@ static void hclge_dbg_dump_port_vlan_table(struct hclge_dev *hdev)
 
 	for (vlan_id = 0; vlan_id < HCLGE_DBG_VLAN_ID_MAX; vlan_id++) {
 		/* Prevent long-term occupation of the command channel. */
-		if ((vlan_id % 100) == 0)
-			msleep(100);
+		if ((vlan_id % HCLGE_DBG_SCAN_STEP) == 0)
+			msleep(HCLGE_DBG_PAUSE_TIME);
 
 		hclge_cmd_setup_basic_desc(&desc,
 					   HCLGE_OPC_VLAN_FILTER_PF_CFG, true);
 
-		vlan_offset = vlan_id / 160;
-		vlan_byte = (vlan_id % 160) / 8;
-		vlan_byte_val = 1 << (vlan_id % 8);
+		vlan_offset = vlan_id / HCLGE_VLAN_ID_B;
+		vlan_byte = (vlan_id % HCLGE_VLAN_ID_B) / HCLGE_VLAN_BYTE_SIZE;
+		vlan_byte_val = 1 << (vlan_id % HCLGE_VLAN_BYTE_SIZE);
 
 		req = (struct hclge_vlan_filter_pf_cfg_cmd *)desc.data;
 		req->vlan_offset = vlan_offset;
@@ -1086,7 +1097,7 @@ static void hclge_dbg_dump_vf_vlan_table(struct hclge_dev *hdev, char *cmd_buf)
 	u16 vf_id;
 	int ret;
 
-	ret = kstrtou16(&cmd_buf[17], 10, &vf_id);
+	ret = kstrtou16(cmd_buf, 0, &vf_id);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"vf id failed. vf id max: %d\n", hdev->num_alloc_vfs);
@@ -1103,8 +1114,8 @@ static void hclge_dbg_dump_vf_vlan_table(struct hclge_dev *hdev, char *cmd_buf)
 
 	for (vlan_id = 0; vlan_id < HCLGE_DBG_VLAN_ID_MAX; vlan_id++) {
 		/* Prevent long-term occupation of the command channel. */
-		if ((vlan_id % 100) == 0)
-			msleep(100);
+		if ((vlan_id % HCLGE_DBG_SCAN_STEP) == 0)
+			msleep(HCLGE_DBG_PAUSE_TIME);
 
 		hclge_cmd_setup_basic_desc(&desc[0],
 					   HCLGE_OPC_VLAN_FILTER_VF_CFG, true);
@@ -1237,14 +1248,17 @@ static void hclge_dbg_fd_tcam_read(struct hclge_dev *hdev, u8 stage,
 	dev_info(&hdev->pdev->dev, " read result tcam key %s(%u):\n",
 		 sel_x ? "x" : "y", loc);
 
+	/* tcam_data0 ~ tcam_data1 */
 	req = (u32 *)req1->tcam_data;
 	for (i = 0; i < 2; i++)
 		dev_info(&hdev->pdev->dev, "%08x\n", *req++);
 
+	/* tcam_data2 ~ tcam_data7 */
 	req = (u32 *)req2->tcam_data;
 	for (i = 0; i < 6; i++)
 		dev_info(&hdev->pdev->dev, "%08x\n", *req++);
 
+	/* tcam_data8 ~ tcam_data12 */
 	req = (u32 *)req3->tcam_data;
 	for (i = 0; i < 5; i++)
 		dev_info(&hdev->pdev->dev, "%08x\n", *req++);
@@ -1272,7 +1286,7 @@ int hclge_dbg_run_cmd(struct  hnae3_handle *handle, char  *cmd_buf)
 	} else if (strncmp(cmd_buf, "dump tc", 7) == 0) {
 		hclge_dbg_dump_tc(hdev);
 	} else if (strncmp(cmd_buf, "dump tm map", 11) == 0) {
-		hclge_dbg_dump_tm_map(hdev, cmd_buf);
+		hclge_dbg_dump_tm_map(hdev, &cmd_buf[sizeof("dump tm map")]);
 	} else if (strncmp(cmd_buf, "dump tm", 7) == 0) {
 		hclge_dbg_dump_tm(hdev);
 	} else if (strncmp(cmd_buf, "dump checksum", 13) == 0) {
@@ -1288,11 +1302,13 @@ int hclge_dbg_run_cmd(struct  hnae3_handle *handle, char  *cmd_buf)
 	} else if (strncmp(cmd_buf, "dump port vlan tbl", 18) == 0) {
 		hclge_dbg_dump_port_vlan_table(hdev);
 	} else if (strncmp(cmd_buf, "dump vf vlan tbl", 16) == 0) {
-		hclge_dbg_dump_vf_vlan_table(hdev, cmd_buf);
+		int len = sizeof("dump vf vlan tbl");
+
+		hclge_dbg_dump_vf_vlan_table(hdev, &cmd_buf[len]);
 	} else if (strncmp(cmd_buf, "dump mng tbl", 12) == 0) {
 		hclge_dbg_dump_mng_table(hdev);
 	} else if (strncmp(cmd_buf, "dump reg", 8) == 0) {
-		hclge_dbg_dump_reg_cmd(hdev, cmd_buf);
+		hclge_dbg_dump_reg_cmd(hdev, &cmd_buf[sizeof("dump reg")]);
 	} else {
 		dev_info(&hdev->pdev->dev, "unknown command\n");
 		return -EINVAL;
