@@ -1638,6 +1638,8 @@ static __poll_t ep_send_events_proc(struct eventpoll *ep, struct list_head *head
 	 * Items cannot vanish during the loop because ep_scan_ready_list() is
 	 * holding "mtx" during this call.
 	 */
+	lockdep_assert_held(&ep->mtx);
+
 	for (esed->res = 0, uevent = esed->events;
 	     !list_empty(head) && esed->res < esed->maxevents;) {
 		epi = list_first_entry(head, struct epitem, rdllink);
