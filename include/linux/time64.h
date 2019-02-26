@@ -67,7 +67,7 @@ static inline struct timespec64 timespec64_add(struct timespec64 lhs,
 						struct timespec64 rhs)
 {
 	struct timespec64 ts_delta;
-	set_normalized_timespec64(&ts_delta, lhs.tv_sec + rhs.tv_sec,
+	set_normalized_timespec64(&ts_delta, (timeu64_t)lhs.tv_sec + rhs.tv_sec,
 				lhs.tv_nsec + rhs.tv_nsec);
 	return ts_delta;
 }
