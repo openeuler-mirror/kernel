@@ -484,11 +484,15 @@ static void hugetlbfs_evict_inode(struct inode *inode)
 {
 	struct resv_map *resv_map;
 
+	struct hugetlbfs_inode_info *info = HUGETLBFS_I(inode);
+
 	remove_inode_hugepages(inode, 0, LLONG_MAX);
-	resv_map = (struct resv_map *)inode->i_mapping->private_data;
+	resv_map = info->resv_map;
 	/* root inode doesn't have the resv_map, so we should check it */
-	if (resv_map)
+	if (resv_map) {
 		resv_map_release(&resv_map->refs);
+		info->resv_map = NULL;
+	}
 	clear_inode(inode);
 }
 
@@ -757,7 +761,7 @@ static struct inode *hugetlbfs_get_inode(struct super_block *sb,
 				&hugetlbfs_i_mmap_rwsem_key);
 		inode->i_mapping->a_ops = &hugetlbfs_aops;
 		inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
-		inode->i_mapping->private_data = resv_map;
+		info->resv_map = resv_map;
 		info->seals = F_SEAL_SEAL;
 		switch (mode & S_IFMT) {
 		default:
@@ -1025,6 +1029,7 @@ static struct inode *hugetlbfs_alloc_inode(struct super_block *sb)
 	 * private inode.  This simplifies hugetlbfs_destroy_inode.
 	 */
 	mpol_shared_policy_init(&p->policy, NULL);
+	p->resv_map = NULL;
 
 	return &p->vfs_inode;
 }
@@ -1039,6 +1044,7 @@ static void hugetlbfs_destroy_inode(struct inode *inode)
 {
 	hugetlbfs_inc_free_inodes(HUGETLBFS_SB(inode->i_sb));
 	mpol_free_shared_policy(&HUGETLBFS_I(inode)->policy);
+	HUGETLBFS_I(inode)->resv_map = NULL;
 	call_rcu(&inode->i_rcu, hugetlbfs_i_callback);
 }
 
