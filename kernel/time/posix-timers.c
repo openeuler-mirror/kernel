@@ -877,6 +877,14 @@ static int do_timer_settime(timer_t timer_id, int flags,
 	if (!timespec64_valid(&new_spec64->it_interval) ||
 	    !timespec64_valid(&new_spec64->it_value))
 		return -EINVAL;
+	if (new_spec64->it_interval.tv_sec >= KTIME_SEC_MAX) {
+		new_spec64->it_interval.tv_sec = KTIME_SEC_MAX;
+		new_spec64->it_interval.tv_nsec = 0;
+	}
+	if (new_spec64->it_value.tv_sec >= KTIME_SEC_MAX) {
+		new_spec64->it_value.tv_sec = KTIME_SEC_MAX;
+		new_spec64->it_value.tv_nsec = 0;
+	}
 
 	if (old_spec64)
 		memset(old_spec64, 0, sizeof(*old_spec64));
