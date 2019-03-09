@@ -1662,13 +1662,13 @@ static int aio_poll_wake(struct wait_queue_entry *wait, unsigned mode, int sync,
 	struct aio_kiocb *iocb = container_of(req, struct aio_kiocb, poll);
 	__poll_t mask = key_to_poll(key);
 
+	/* for instances that support it check for an event match first: */
+	if (mask && !(mask & req->events))
+		return 0;
+
 	req->woken = true;
 
-	/* for instances that support it check for an event match first: */
 	if (mask) {
-		if (!(mask & req->events))
-			return 0;
-
 		/* try to complete the iocb inline if we can: */
 		if (spin_trylock(&iocb->ki_ctx->ctx_lock)) {
 			list_del(&iocb->ki_list);
