@@ -1713,6 +1713,7 @@ static ssize_t aio_poll(struct aio_kiocb *aiocb, struct iocb *iocb)
 	struct kioctx *ctx = aiocb->ki_ctx;
 	struct poll_iocb *req = &aiocb->poll;
 	struct aio_poll_table apt;
+	bool async = false;
 	__poll_t mask;
 
 	/* reject any unknown events outside the normal event mask. */
@@ -1754,18 +1755,19 @@ static ssize_t aio_poll(struct aio_kiocb *aiocb, struct iocb *iocb)
 
 	spin_lock_irq(&ctx->ctx_lock);
 	spin_lock(&req->head->lock);
-	if (req->woken) {
-		/* wake_up context handles the rest */
-		mask = 0;
+	if (req->woken) {  /* already taken up by aio_poll_wake() */
+		async = true;
 		apt.error = 0;
-	} else if (mask || apt.error) {
-		/* if we get an error or a mask we are done */
-		WARN_ON_ONCE(list_empty(&req->wait.entry));
-		list_del_init(&req->wait.entry);
-	} else {
-		/* actually waiting for an event */
+	} else if (!mask && !apt.error) { /* actually waiting for an event */
 		list_add_tail(&aiocb->ki_list, &ctx->active_reqs);
 		aiocb->ki_cancel = aio_poll_cancel;
+		async = true;
+	} else { /* if we get an error or a mask we are done */
+		WARN_ON_ONCE(list_empty(&req->wait.entry));
+		list_del_init(&req->wait.entry);
+		/* no wakeup in the future either;
+		 * aiocb is ours to dispose of
+		 */
 	}
 	spin_unlock(&req->head->lock);
 	spin_unlock_irq(&ctx->ctx_lock);
@@ -1775,13 +1777,12 @@ out:
 	fput(req->file);
 	if (unlikely(apt.error)) {
 		fput(req->file);
-		return apt.error;
 	}
 
-	if (mask)
+	if (!async && !apt.error)
 		aio_poll_complete(aiocb, mask);
 	iocb_put(aiocb);
-	return 0;
+	return apt.error;
 }
 
 static int io_submit_one(struct kioctx *ctx, struct iocb __user *user_iocb,
