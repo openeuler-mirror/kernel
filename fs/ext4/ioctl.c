@@ -154,6 +154,8 @@ static long swap_inode_boot_loader(struct super_block *sb,
 		goto err_out;
 
 	/* Wait for all existing dio workers */
+	ext4_inode_block_unlocked_dio(inode);
+	ext4_inode_block_unlocked_dio(inode_bl);
 	inode_dio_wait(inode);
 	inode_dio_wait(inode_bl);
 
@@ -252,6 +254,8 @@ err_out1:
 err_out:
 	up_write(&EXT4_I(inode)->i_mmap_sem);
 journal_err_out:
+	ext4_inode_resume_unlocked_dio(inode);
+	ext4_inode_resume_unlocked_dio(inode_bl);
 	unlock_two_nondirectories(inode, inode_bl);
 	iput(inode_bl);
 	return err;
