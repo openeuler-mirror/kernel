@@ -765,9 +765,21 @@ store_state_field(struct device *dev, struct device_attribute *attr,
 
 	mutex_lock(&sdev->state_mutex);
 	ret = scsi_device_set_state(sdev, state);
+	/* If device use blk-mq, the device state changes to
+	 * SDEV_RUNNING, we need to run hw queue to avoid io hung.
+	 */
+	if ((ret == 0) && (state == SDEV_RUNNING) &&
+	    (sdev->request_queue->mq_ops != NULL))
+		goto out_run_hw_queue;
 	mutex_unlock(&sdev->state_mutex);
 
 	return ret == 0 ? count : -EINVAL;
+
+out_run_hw_queue:
+	mutex_unlock(&sdev->state_mutex);
+	blk_mq_run_hw_queues(sdev->request_queue, true);
+
+	return count;
 }
 
 static ssize_t
