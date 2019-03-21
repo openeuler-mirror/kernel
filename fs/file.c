@@ -18,6 +18,7 @@
 #include <linux/bitops.h>
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
+#include <linux/filescontrol.h>
 
 unsigned int sysctl_nr_open __read_mostly = 1024*1024;
 unsigned int sysctl_nr_open_min = BITS_PER_LONG;
@@ -293,6 +294,9 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 	new_fdt->open_fds = newf->open_fds_init;
 	new_fdt->full_fds_bits = newf->full_fds_bits_init;
 	new_fdt->fd = &newf->fd_array[0];
+#ifdef CONFIG_CGROUP_FILES
+	files_cgroup_assign(newf);
+#endif
 
 	spin_lock(&oldf->file_lock);
 	old_fdt = files_fdtable(oldf);
@@ -356,10 +360,29 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 	memset(new_fds, 0, (new_fdt->max_fds - open_files) * sizeof(struct file *));
 
 	rcu_assign_pointer(newf->fdt, new_fdt);
+#ifdef CONFIG_CGROUP_FILES
+	if (!files_cgroup_alloc_fd(newf, files_cgroup_count_fds(newf)))
+		return newf;
 
+/* could not get enough FD resources.  Need to clean up. */
+	new_fds = new_fdt->fd;
+	for (i = open_files; i != 0; i--) {
+		struct file *f = *new_fds++;
+
+		if (f)
+			fput(f);
+	}
+	if (new_fdt != &newf->fdtab)
+		__free_fdtable(new_fdt);
+	*errorp = -EMFILE;
+#else
 	return newf;
+#endif
 
 out_release:
+#ifdef CONFIG_CGROUP_FILES
+	files_cgroup_remove(newf);
+#endif
 	kmem_cache_free(files_cachep, newf);
 out:
 	return NULL;
@@ -385,6 +408,9 @@ static struct fdtable *close_files(struct files_struct * files)
 			if (set & 1) {
 				struct file * file = xchg(&fdt->fd[i], NULL);
 				if (file) {
+#ifdef CONFIG_CGROUP_FILES
+					files_cgroup_unalloc_fd(files, 1);
+#endif
 					filp_close(file, files);
 					cond_resched();
 				}
@@ -512,6 +538,12 @@ repeat:
 	 */
 	if (error)
 		goto repeat;
+#ifdef CONFIG_CGROUP_FILES
+	if (files_cgroup_alloc_fd(files, 1)) {
+		error = -EMFILE;
+		goto out;
+	}
+#endif
 
 	if (start <= files->next_fd)
 		files->next_fd = fd + 1;
@@ -549,6 +581,10 @@ EXPORT_SYMBOL(get_unused_fd_flags);
 static void __put_unused_fd(struct files_struct *files, unsigned int fd)
 {
 	struct fdtable *fdt = files_fdtable(files);
+#ifdef CONFIG_CGROUP_FILES
+	if (test_bit(fd, fdt->open_fds))
+		files_cgroup_unalloc_fd(files, 1);
+#endif
 	__clear_open_fd(fd, fdt);
 	if (fd < files->next_fd)
 		files->next_fd = fd;
@@ -810,6 +846,7 @@ static int do_dup2(struct files_struct *files,
 	struct file *file, unsigned fd, unsigned flags)
 __releases(&files->file_lock)
 {
+	int err;
 	struct file *tofree;
 	struct fdtable *fdt;
 
@@ -829,8 +866,16 @@ __releases(&files->file_lock)
 	 */
 	fdt = files_fdtable(files);
 	tofree = fdt->fd[fd];
-	if (!tofree && fd_is_open(fd, fdt))
-		goto Ebusy;
+	if (!tofree && fd_is_open(fd, fdt)) {
+		err = -EBUSY;
+		goto out;
+	}
+#ifdef CONFIG_CGROUP_FILES
+	if (!tofree && files_cgroup_alloc_fd(files, 1)) {
+		err = -EMFILE;
+		goto out;
+	}
+#endif
 	get_file(file);
 	rcu_assign_pointer(fdt->fd[fd], file);
 	__set_open_fd(fd, fdt);
@@ -845,9 +890,9 @@ __releases(&files->file_lock)
 
 	return fd;
 
-Ebusy:
+out:
 	spin_unlock(&files->file_lock);
-	return -EBUSY;
+	return err;
 }
 
 int replace_fd(unsigned fd, struct file *file, unsigned flags)
