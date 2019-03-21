@@ -35,6 +35,7 @@
 #include <linux/smp.h>
 #include <linux/seq_file.h>
 #include <linux/irq.h>
+#include <linux/nmi.h>
 #include <linux/irqchip/arm-gic-v3.h>
 #include <linux/percpu.h>
 #include <linux/clockchips.h>
@@ -83,7 +84,8 @@ enum ipi_msg_type {
 	IPI_CPU_CRASH_STOP,
 	IPI_TIMER,
 	IPI_IRQ_WORK,
-	IPI_WAKEUP
+	IPI_WAKEUP,
+	IPI_CPU_BACKTRACE
 };
 
 #ifdef CONFIG_HOTPLUG_CPU
@@ -782,6 +784,7 @@ static const char *ipi_types[NR_IPI] __tracepoint_string = {
 	S(IPI_TIMER, "Timer broadcast interrupts"),
 	S(IPI_IRQ_WORK, "IRQ work interrupts"),
 	S(IPI_WAKEUP, "CPU wake-up interrupts"),
+	S(IPI_CPU_BACKTRACE, "backtrace interrupts"),
 };
 
 static void smp_cross_call(const struct cpumask *target, unsigned int ipinr)
@@ -941,6 +944,12 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 		break;
 #endif
 
+	case IPI_CPU_BACKTRACE:
+		nmi_enter();
+		nmi_cpu_backtrace(regs);
+		nmi_exit();
+		break;
+
 	default:
 		pr_crit("CPU%u: Unknown IPI message 0x%x\n", cpu, ipinr);
 		break;
@@ -1061,4 +1070,40 @@ bool cpus_are_stuck_in_kernel(void)
 	bool smp_spin_tables = (num_possible_cpus() > 1 && !have_cpu_die());
 
 	return !!cpus_stuck_in_kernel || smp_spin_tables;
+}
+
+void ipi_set_nmi_prio(void __iomem *base, u8 prio)
+{
+	/*
+	 * Use writeb here may cause hardware error on D05,
+	 * aovid this problem by using writel.
+	 */
+
+	u32 offset = (IPI_CPU_BACKTRACE / 4) * 4;
+	u32 shift = (IPI_CPU_BACKTRACE % 4) * 8;
+	u32 prios = readl_relaxed(base + offset);
+
+	/* clean old priority */
+	prios &= ~(0xff << shift);
+	/* set new priority*/
+	prios |= (prio << offset);
+
+	writel_relaxed(prios, base + GICR_IPRIORITYR0 + offset);
+}
+
+static void raise_nmi(cpumask_t *mask)
+{
+	/*
+	 * Generate the backtrace directly if we are running in a
+	 * calling context that is not preemptible by the backtrace IPI.
+	 */
+	if (cpumask_test_cpu(smp_processor_id(), mask) && irqs_disabled())
+		nmi_cpu_backtrace(NULL);
+
+	smp_cross_call(mask, IPI_CPU_BACKTRACE);
+}
+
+void arch_trigger_cpumask_backtrace(const cpumask_t *mask, bool exclude_self)
+{
+	nmi_trigger_cpumask_backtrace(mask, exclude_self, raise_nmi);
 }

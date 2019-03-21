@@ -468,6 +468,16 @@ static inline void gic_handle_nmi(u32 irqnr, struct pt_regs *regs)
 {
 	int err;
 
+	if (unlikely(irqnr < 16)) {
+		gic_write_eoir(irqnr);
+		if (static_branch_likely(&supports_deactivate_key))
+			gic_write_dir(irqnr);
+#ifdef CONFIG_SMP
+		handle_IPI(irqnr, regs);
+#endif
+		return;
+	}
+
 	if (static_branch_likely(&supports_deactivate_key))
 		gic_write_eoir(irqnr);
 	/*
@@ -852,6 +862,9 @@ static void gic_cpu_init(void)
 	writel_relaxed(~0, rbase + GICR_IGROUPR0);
 
 	gic_cpu_config(rbase, gic_redist_wait_for_rwp);
+
+	if (gic_supports_nmi())
+		ipi_set_nmi_prio(rbase, GICD_INT_NMI_PRI);
 
 	/* initialise system registers */
 	gic_cpu_sys_reg_init();
@@ -1320,6 +1333,17 @@ static int __init gic_init_bases(void __iomem *dist_base,
 
 	gic_update_vlpi_properties();
 
+	/*
+	 * NMI backtrace DFX need check nmi support, this should be
+	 * called before enable NMI backtrace DFX.
+	 */
+	if (gic_prio_masking_enabled()) {
+		if (!gic_has_group0() || gic_dist_security_disabled())
+			gic_enable_nmi_support();
+		else
+			pr_warn("SCR_EL3.FIQ is cleared, cannot enable use of pseudo-NMIs\n");
+	}
+
 	gic_smp_init();
 	gic_dist_init();
 	gic_cpu_init();
@@ -1328,13 +1352,6 @@ static int __init gic_init_bases(void __iomem *dist_base,
 	if (gic_dist_supports_lpis()) {
 		its_init(handle, &gic_data.rdists, gic_data.domain);
 		its_cpu_init();
-	}
-
-	if (gic_prio_masking_enabled()) {
-		if (!gic_has_group0() || gic_dist_security_disabled())
-			gic_enable_nmi_support();
-		else
-			pr_warn("SCR_EL3.FIQ is cleared, cannot enable use of pseudo-NMIs\n");
 	}
 
 	return 0;
