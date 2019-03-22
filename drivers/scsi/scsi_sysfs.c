@@ -770,16 +770,10 @@ store_state_field(struct device *dev, struct device_attribute *attr,
 	 */
 	if ((ret == 0) && (state == SDEV_RUNNING) &&
 	    (sdev->request_queue->mq_ops != NULL))
-		goto out_run_hw_queue;
+		blk_mq_run_hw_queues(sdev->request_queue, true);
 	mutex_unlock(&sdev->state_mutex);
 
 	return ret == 0 ? count : -EINVAL;
-
-out_run_hw_queue:
-	mutex_unlock(&sdev->state_mutex);
-	blk_mq_run_hw_queues(sdev->request_queue, true);
-
-	return count;
 }
 
 static ssize_t
