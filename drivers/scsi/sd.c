@@ -1026,6 +1026,7 @@ static int sd_setup_read_write_cmnd(struct scsi_cmnd *SCpnt)
 	sector_t block = blk_rq_pos(rq);
 	sector_t threshold;
 	unsigned int this_count = blk_rq_sectors(rq);
+	unsigned int nr_blocks = sectors_to_logical(sdp, blk_rq_sectors(rq));
 	unsigned int dif, dix;
 	int ret;
 	unsigned char protect;
@@ -1216,6 +1217,10 @@ static int sd_setup_read_write_cmnd(struct scsi_cmnd *SCpnt)
 		SCpnt->cmnd[7] = (unsigned char) (this_count >> 8) & 0xff;
 		SCpnt->cmnd[8] = (unsigned char) this_count & 0xff;
 	} else {
+		/* Avoid that 0 blocks gets translated into 256 blocks. */
+		if (WARN_ON_ONCE(nr_blocks == 0))
+			return BLK_STS_IOERR;
+
 		if (unlikely(rq->cmd_flags & REQ_FUA)) {
 			/*
 			 * This happens only if this drive failed
