@@ -43,6 +43,7 @@
 #include <linux/of.h>
 #include <linux/irq_work.h>
 #include <linux/kexec.h>
+#include <linux/perf/arm_pmu.h>
 
 #include <asm/alternative.h>
 #include <asm/atomic.h>
@@ -1120,6 +1121,9 @@ __setup("hardlockup_cpu_freq=", hardlockup_cpu_freq_setup);
 
 u64 hw_nmi_get_sample_period(int watchdog_thresh)
 {
-	return hardlockup_cpu_freq * 1000 * watchdog_thresh;
+	if (!pmu_nmi_enable)
+		return 0;
+	else
+		return hardlockup_cpu_freq * 1000 * watchdog_thresh;
 }
 #endif
