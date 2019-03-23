@@ -65,7 +65,8 @@ struct scsi_host_template {
 	 *
 	 * Status: OPTIONAL
 	 */
-	int (* ioctl)(struct scsi_device *dev, int cmd, void __user *arg);
+	int (*ioctl)(struct scsi_device *dev, unsigned int cmd,
+		     void __user *arg);
 
 
 #ifdef CONFIG_COMPAT
@@ -75,7 +76,8 @@ struct scsi_host_template {
 	 *
 	 * Status: OPTIONAL
 	 */
-	int (* compat_ioctl)(struct scsi_device *dev, int cmd, void __user *arg);
+	int (*compat_ioctl)(struct scsi_device *dev, unsigned int cmd,
+			    void __user *arg);
 #endif
 
 	/*
