@@ -1382,7 +1382,7 @@ static struct ctl_table vm_table[] = {
 		.data           = &vm_cache_reclaim_s,
 		.maxlen         = sizeof(vm_cache_reclaim_s),
 		.mode           = 0644,
-		.proc_handler   = proc_dointvec_minmax,
+		.proc_handler   = cache_reclaim_sysctl_handler,
 		.extra1         = &vm_cache_reclaim_s_min,
 		.extra2         = &vm_cache_reclaim_s_max,
 	},

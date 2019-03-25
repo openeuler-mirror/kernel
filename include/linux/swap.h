@@ -389,6 +389,8 @@ extern int cache_limit_mbytes_sysctl_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *length, loff_t *ppos);
 extern int cache_reclaim_enable_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *length, loff_t *ppos);
+extern int cache_reclaim_sysctl_handler(struct ctl_table *table, int write,
+			void __user *buffer, size_t *length, loff_t *ppos);
 #endif
 
 #ifdef CONFIG_NUMA
