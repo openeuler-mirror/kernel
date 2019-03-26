@@ -961,7 +961,7 @@ static __always_inline void mm_clear_owner(struct mm_struct *mm,
 {
 #ifdef CONFIG_MEMCG
 	if (mm->owner == p)
-		mm->owner = NULL;
+		WRITE_ONCE(mm->owner, NULL);
 #endif
 }
 
