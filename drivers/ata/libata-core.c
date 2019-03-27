@@ -1665,6 +1665,13 @@ unsigned ata_exec_internal_sg(struct ata_device *dev,
 		 */
 		if (qc->flags & ATA_QCFLAG_ACTIVE) {
 			qc->err_mask |= AC_ERR_TIMEOUT;
+			qc->flags |= ATA_QCFLAG_FAILED;
+
+			spin_unlock_irqrestore(ap->lock, flags);
+			/* do post_internal_cmd */
+			if (ap->ops->post_internal_cmd)
+				ap->ops->post_internal_cmd(qc);
+			spin_lock_irqsave(ap->lock, flags);
 
 			if (ap->ops->error_handler)
 				ata_port_freeze(ap);
@@ -1679,9 +1686,10 @@ unsigned ata_exec_internal_sg(struct ata_device *dev,
 		spin_unlock_irqrestore(ap->lock, flags);
 	}
 
-	/* do post_internal_cmd */
-	if (ap->ops->post_internal_cmd)
-		ap->ops->post_internal_cmd(qc);
+	if (!(qc->err_mask & AC_ERR_TIMEOUT))
+		/* do post_internal_cmd */
+		if (ap->ops->post_internal_cmd)
+			ap->ops->post_internal_cmd(qc);
 
 	/* perform minimal error analysis */
 	if (qc->flags & ATA_QCFLAG_FAILED) {
