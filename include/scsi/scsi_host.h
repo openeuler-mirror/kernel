@@ -561,7 +561,7 @@ struct Scsi_Host {
 
 	unsigned int host_failed;	   /* commands that failed.
 					      protected by host_lock */
-	unsigned int host_eh_scheduled;    /* EH scheduled without command */
+	atomic_t host_eh_scheduled;    /* EH scheduled without command */
     
 	unsigned int host_no;  /* Used for IOCTL_GET_IDLUN, /proc/scsi et al. */
 

@@ -974,7 +974,7 @@ void ata_std_end_eh(struct ata_port *ap)
 {
 	struct Scsi_Host *host = ap->scsi_host;
 
-	host->host_eh_scheduled = 0;
+	atomic_dec(&host->host_eh_scheduled);
 }
 EXPORT_SYMBOL(ata_std_end_eh);
 

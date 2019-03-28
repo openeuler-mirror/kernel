@@ -348,7 +348,8 @@ static void scsi_dec_host_busy(struct Scsi_Host *shost)
 	atomic_dec(&shost->host_busy);
 	if (unlikely(scsi_host_in_recovery(shost))) {
 		spin_lock_irqsave(shost->host_lock, flags);
-		if (shost->host_failed || shost->host_eh_scheduled)
+		if (shost->host_failed ||
+		    atomic_read(&shost->host_eh_scheduled))
 			scsi_eh_wakeup(shost);
 		spin_unlock_irqrestore(shost->host_lock, flags);
 	}
