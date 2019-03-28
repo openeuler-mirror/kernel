@@ -1110,20 +1110,108 @@ void arch_trigger_cpumask_backtrace(const cpumask_t *mask, bool exclude_self)
 }
 
 #ifdef CONFIG_HARDLOCKUP_DETECTOR_PERF
-u64 hardlockup_cpu_freq;
+s64 hardlockup_cpu_freq;
+static DEFINE_PER_CPU(u64, cpu_freq_probed);
 
 static int __init hardlockup_cpu_freq_setup(char *str)
 {
-	hardlockup_cpu_freq = simple_strtoull(str, NULL, 0);
+	if (!strcasecmp(str, "auto"))
+		hardlockup_cpu_freq = -1;
+	else
+		hardlockup_cpu_freq = simple_strtoll(str, NULL, 0);
+
 	return 1;
 }
 __setup("hardlockup_cpu_freq=", hardlockup_cpu_freq_setup);
 
+static u64 arch_pmu_get_cycles(void)
+{
+	return read_sysreg(PMCCNTR_EL0);
+}
+
+static u64 arch_probe_cpu_freq(void)
+{
+	volatile int i;
+	u32 loop = 50000000;
+	u64 cycles_a, cycles_b;
+	u64 timer_a, timer_b;
+	u32 timer_hz = arch_timer_get_cntfrq();
+	struct perf_event *evt;
+	struct perf_event_attr timer_attr = {
+		.type		= PERF_TYPE_HARDWARE,
+		.config		= PERF_COUNT_HW_CPU_CYCLES,
+		.size		= sizeof(struct perf_event_attr),
+		.pinned		= 1,
+		.disabled	= 0,
+		.sample_period = 0xffffffffUL,
+	};
+
+	/* make sure the cycle counter is enabled */
+	evt = perf_event_create_kernel_counter(&timer_attr, smp_processor_id(),
+							NULL, NULL, NULL);
+	if (IS_ERR(evt))
+		return 0;
+
+	do {
+		timer_b = timer_a;
+
+		/* avoid dead loop here */
+		if (loop)
+			loop >>= 1;
+		else
+			break;
+
+		timer_a = arch_timer_read_counter();
+		cycles_a = arch_pmu_get_cycles();
+
+		for (i = 0; i < loop; i++)
+			;
+
+		timer_b = arch_timer_read_counter();
+		cycles_b = arch_pmu_get_cycles();
+	} while (cycles_b <= cycles_a);
+
+	perf_event_release_kernel(evt);
+	if (unlikely(timer_b == timer_a))
+		return 0;
+
+	return timer_hz * (cycles_b - cycles_a) / (timer_b - timer_a);
+}
+
+static u64 arch_get_cpu_freq(void)
+{
+	u64 cpu_freq;
+	unsigned int cpu = smp_processor_id();
+
+	cpu_freq = per_cpu(cpu_freq_probed, cpu);
+
+	if (!cpu_freq) {
+		cpu_freq = arch_probe_cpu_freq();
+		pr_info("NMI watchdog: CPU%u freq probed as %llu HZ.\n",
+				smp_processor_id(), cpu_freq);
+		if (!cpu_freq)
+			cpu_freq = -1;
+		per_cpu(cpu_freq_probed, cpu) = cpu_freq;
+	}
+
+	if (-1 == cpu_freq)
+		cpu_freq = 0;
+
+	return cpu_freq;
+}
+
 u64 hw_nmi_get_sample_period(int watchdog_thresh)
 {
+	u64 cpu_freq;
+
 	if (!pmu_nmi_enable)
 		return 0;
-	else
-		return hardlockup_cpu_freq * 1000 * watchdog_thresh;
+
+	if (hardlockup_cpu_freq < 0) {
+		cpu_freq = arch_get_cpu_freq();
+		return cpu_freq * watchdog_thresh;
+	}
+
+	return hardlockup_cpu_freq * 1000 * watchdog_thresh;
 }
 #endif
