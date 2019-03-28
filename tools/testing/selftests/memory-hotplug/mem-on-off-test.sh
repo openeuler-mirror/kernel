@@ -27,9 +27,12 @@ prerequisite()
 		exit $ksft_skip
 	fi
 
-	if ! grep -q 1 $SYSFS/devices/system/memory/memory*/removable; then
-		echo $msg no hot-pluggable memory >&2
-		exit $ksft_skip
+	if [ $(uname -m) != "aarch64" ]; then
+		if ! grep -q 1 $SYSFS/devices/system/memory/memory*/removable;\
+			then
+			echo $msg no hot-pluggable memory >&2
+			exit $ksft_skip
+		fi
 	fi
 }
 
