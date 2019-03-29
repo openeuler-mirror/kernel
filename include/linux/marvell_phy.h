@@ -32,6 +32,5 @@
 /* struct phy_device dev_flags definitions */
 #define MARVELL_PHY_M1145_FLAGS_RESISTANCE	0x00000001
 #define MARVELL_PHY_M1118_DNS323_LEDS		0x00000002
-#define MARVELL_PHY_M1510_HNS3_LEDS		0x00000004
 
 #endif /* _MARVELL_PHY_H */

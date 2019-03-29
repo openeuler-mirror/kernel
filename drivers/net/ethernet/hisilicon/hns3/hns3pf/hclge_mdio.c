@@ -109,13 +109,6 @@ static int hclge_mdio_read(struct mii_bus *bus, int phyid, int regnum)
 	return le16_to_cpu(mdio_cmd->data_rd);
 }
 
-static int hclge_phy_marvell_fixup(struct phy_device *phydev)
-{
-	phydev->dev_flags |= MARVELL_PHY_M1510_HNS3_LEDS;
-
-	return 0;
-}
-
 int hclge_mac_mdio_config(struct hclge_dev *hdev)
 {
 	struct hclge_mac *mac = &hdev->hw.mac;
@@ -158,15 +151,6 @@ int hclge_mac_mdio_config(struct hclge_dev *hdev)
 
 	mac->phydev = phydev;
 	mac->mdio_bus = mdio_bus;
-
-	/* register the PHY board fixup (for Marvell 88E1510) */
-	ret = phy_register_fixup_for_uid(MARVELL_PHY_ID_88E1510,
-					 MARVELL_PHY_ID_MASK,
-					 hclge_phy_marvell_fixup);
-	/* we can live without it, so just issue a warning */
-	if (ret)
-		dev_warn(&hdev->pdev->dev,
-			 "Cannot register PHY board fixup\n");
 
 	return 0;
 }
@@ -248,9 +232,6 @@ void hclge_mac_disconnect_phy(struct hnae3_handle *handle)
 
 	if (!phydev)
 		return;
-
-	phy_unregister_fixup_for_uid(MARVELL_PHY_ID_88E1510,
-				     MARVELL_PHY_ID_MASK);
 
 	phy_disconnect(phydev);
 }

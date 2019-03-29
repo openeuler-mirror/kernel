@@ -133,10 +133,6 @@
 #define MII_PHY_LED_CTRL	        16
 #define MII_88E1121_PHY_LED_DEF		0x0030
 #define MII_88E1510_PHY_LED_DEF		0x1177
-#define MII_88E1510_PHY_HNS3_LED_DEF	0x1040
-
-#define MII_88E1510_PHY_LED_POLARITY_CTRL	0x11
-#define MII_88E1510_PHY_HNS3_LED_POLARITY	0x4415
 
 #define MII_M1011_PHY_STATUS		0x11
 #define MII_M1011_PHY_STATUS_1000	0x8000
@@ -649,19 +645,12 @@ static void marvell_config_led(struct phy_device *phydev)
 		def_config = MII_88E1121_PHY_LED_DEF;
 		break;
 	/* Default PHY LED config:
-	 * For hns3:
-	 * LED[0] .. Link
-	 * LED[1] .. Activity
-	 * For others:
 	 * LED[0] .. 1000Mbps Link
 	 * LED[1] .. 100Mbps Link
 	 * LED[2] .. Blink, Activity
 	 */
 	case MARVELL_PHY_FAMILY_ID(MARVELL_PHY_ID_88E1510):
-		if (phydev->dev_flags & MARVELL_PHY_M1510_HNS3_LEDS)
-			def_config = MII_88E1510_PHY_HNS3_LED_DEF;
-		else
-			def_config = MII_88E1510_PHY_LED_DEF;
+		def_config = MII_88E1510_PHY_LED_DEF;
 		break;
 	default:
 		return;
@@ -671,14 +660,6 @@ static void marvell_config_led(struct phy_device *phydev)
 			      def_config);
 	if (err < 0)
 		pr_warn("Fail to config marvell phy LED.\n");
-
-	if (phydev->dev_flags & MARVELL_PHY_M1510_HNS3_LEDS) {
-		err = phy_write_paged(phydev, MII_MARVELL_LED_PAGE,
-				      MII_88E1510_PHY_LED_POLARITY_CTRL,
-				      MII_88E1510_PHY_HNS3_LED_POLARITY);
-		if (err < 0)
-			pr_warn("Fail to config marvell phy LED polarity.\n");
-	}
 }
 
 static int marvell_config_init(struct phy_device *phydev)
