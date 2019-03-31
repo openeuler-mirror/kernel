@@ -4049,14 +4049,14 @@ int cache_reclaim_enable_handler(struct ctl_table *table, int write,
 int cache_reclaim_sysctl_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *length, loff_t *ppos)
 {
-	int ret, cpu;
+	int ret;
 
 	ret = proc_dointvec_minmax(table, write, buffer, length, ppos);
 	if (ret)
 		return ret;
 
 	if (write)
-		mod_delayed_work_on(cpu, system_wq, &shepherd,
+		mod_delayed_work(system_wq, &shepherd,
 				round_jiffies_relative(
 				(unsigned long)vm_cache_reclaim_s * HZ));
 
