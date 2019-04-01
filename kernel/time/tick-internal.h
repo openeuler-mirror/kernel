@@ -4,6 +4,7 @@
  */
 #include <linux/hrtimer.h>
 #include <linux/tick.h>
+#include <linux/sched/nohz.h>
 
 #include "timekeeping.h"
 #include "tick-sched.h"
@@ -149,14 +150,12 @@ static inline void tick_nohz_init(void) { }
 #endif
 
 #ifdef CONFIG_NO_HZ_COMMON
-extern unsigned long tick_nohz_active;
 extern void timers_update_nohz(void);
 # ifdef CONFIG_SMP
 extern struct static_key_false timers_migration_enabled;
 # endif
 #else /* CONFIG_NO_HZ_COMMON */
 static inline void timers_update_nohz(void) { }
-#define tick_nohz_active (0)
 #endif
 
 DECLARE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases);

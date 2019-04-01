@@ -22,9 +22,11 @@ static inline void nohz_balance_enter_idle(int cpu) { }
 #endif
 
 #ifdef CONFIG_NO_HZ_COMMON
+extern unsigned long tick_nohz_active;
 void calc_load_nohz_start(void);
 void calc_load_nohz_stop(void);
 #else
+#define tick_nohz_active (0)
 static inline void calc_load_nohz_start(void) { }
 static inline void calc_load_nohz_stop(void) { }
 #endif /* CONFIG_NO_HZ_COMMON */

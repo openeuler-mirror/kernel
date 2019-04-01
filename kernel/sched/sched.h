@@ -919,6 +919,21 @@ struct rq {
 #endif
 };
 
+struct cputime {
+	u64 utime;
+	u64 stime;
+};
+
+struct rq_cputime {
+	raw_spinlock_t lock;
+	unsigned long long sum_idle_time;
+	unsigned long long last_entry_idle;
+	struct cputime cpu_prev_time;
+	struct cputime cpu_last_time;
+};
+
+DECLARE_PER_CPU(struct rq_cputime, rq_cputimes);
+
 static inline int cpu_of(struct rq *rq)
 {
 #ifdef CONFIG_SMP

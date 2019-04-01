@@ -186,4 +186,9 @@ static inline void prev_cputime_init(struct prev_cputime *prev)
 extern unsigned long long
 task_sched_runtime(struct task_struct *task);
 
+extern int use_sched_idle_time;
+extern int sched_idle_time_adjust(int cpu, u64 *utime, u64 *stime);
+extern unsigned long long sched_get_idle_time(int cpu);
+extern u64 get_idle_time(int cpu);
+
 #endif /* _LINUX_SCHED_CPUTIME_H */
