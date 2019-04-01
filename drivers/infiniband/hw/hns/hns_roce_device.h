@@ -293,6 +293,8 @@ enum hns_roce_hw_stats {
 	HW_STATS_QP_ACTIVE,
 	HW_STATS_QP_ACTIVE_MAX,
 	HW_STATS_MR_REREG,
+	HW_STATS_AEQE,
+	HW_STATS_CEQE,
 	HW_STATS_TOTAL
 };
 
@@ -1089,6 +1091,13 @@ struct hns_roce_hw {
 #endif
 };
 
+/* HW STATS cannot support EQ interrupt event,so add counter of dev for CI */
+enum {
+	HNS_ROCE_DFX_AEQE,
+	HNS_ROCE_DFX_CEQE,
+	HNS_ROCE_DFX_TOTAL
+};
+
 struct hns_roce_dev {
 	struct ib_device	ib_dev;
 	struct platform_device  *pdev;
@@ -1143,6 +1152,7 @@ struct hns_roce_dev {
 	struct workqueue_struct *irq_workq;
 	struct hns_roce_stat	hr_stat;
 	u32			func_num;
+	u64			dfx_count[HNS_ROCE_DFX_TOTAL];
 };
 
 static inline struct hns_roce_dev *to_hr_dev(struct ib_device *ib_dev)

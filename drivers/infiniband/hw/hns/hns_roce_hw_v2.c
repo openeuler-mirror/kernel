@@ -5375,6 +5375,7 @@ static int hns_roce_v2_aeq_int(struct hns_roce_dev *hr_dev,
 		eq->event_type = event_type;
 		eq->sub_type = sub_type;
 		++eq->cons_index;
+		hr_dev->dfx_count[HNS_ROCE_DFX_AEQE]++;
 		aeqe_found = 1;
 
 		ci_max = 2 * eq->entries - 1;
@@ -5454,6 +5455,7 @@ static int hns_roce_v2_ceq_int(struct hns_roce_dev *hr_dev,
 		hns_roce_cq_completion(hr_dev, cqn);
 
 		++eq->cons_index;
+		hr_dev->dfx_count[HNS_ROCE_DFX_CEQE]++;
 		ceqe_found = 1;
 
 		ci_max = 2 * eq->entries - 1;

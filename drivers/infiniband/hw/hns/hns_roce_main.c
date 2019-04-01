@@ -682,6 +682,8 @@ const char *hns_roce_hw_stats_name[] = {
 	"qp_active",
 	"qp_active_max",
 	"mr_rereg",
+	"aeqe",
+	"ceqe",
 };
 
 /**
@@ -756,6 +758,12 @@ static int hns_roce_get_hw_stats(struct ib_device *device,
 		table = hr_dev->qp_table.bitmap.table;
 		max = hr_dev->qp_table.bitmap.max;
 		stats->value[index] = find_last_bit(table, max);
+		break;
+	case HW_STATS_AEQE:
+		stats->value[index] = hr_dev->dfx_count[HNS_ROCE_DFX_AEQE];
+		break;
+	case HW_STATS_CEQE:
+		stats->value[index] = hr_dev->dfx_count[HNS_ROCE_DFX_CEQE];
 		break;
 	default:
 		break;
