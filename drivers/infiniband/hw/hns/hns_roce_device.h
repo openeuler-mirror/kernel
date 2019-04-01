@@ -753,6 +753,13 @@ struct hns_roce_qp {
 
 	struct ib_umem		*umem;
 	struct hns_roce_mtt	mtt;
+	struct hns_roce_mtr	mtr;
+
+	/* this define must less than HNS_ROCE_MAX_BT_REGION */
+#define HNS_ROCE_WQE_REGION_MAX	 3
+	struct hns_roce_buf_region regions[HNS_ROCE_WQE_REGION_MAX];
+	int			region_cnt;
+
 	u32			buff_size;
 	struct mutex		mutex;
 	u16			xrcdn;
@@ -969,6 +976,9 @@ struct hns_roce_caps {
 	u32		mtt_ba_pg_sz;
 	u32		mtt_buf_pg_sz;
 	u32		mtt_hop_num;
+	u32		wqe_sq_hop_num;
+	u32		wqe_sge_hop_num;
+	u32		wqe_rq_hop_num;
 	u32		scc_ctx_ba_pg_sz;
 	u32		scc_ctx_buf_pg_sz;
 	u32		scc_ctx_hop_num;
