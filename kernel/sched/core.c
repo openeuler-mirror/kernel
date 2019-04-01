@@ -5913,17 +5913,6 @@ static struct kmem_cache *task_group_cache __read_mostly;
 DECLARE_PER_CPU(cpumask_var_t, load_balance_mask);
 DECLARE_PER_CPU(cpumask_var_t, select_idle_mask);
 
-static __init void rq_cputime_init(void)
-{
-	int cpu;
-	struct rq_cputime *rq_cputime;
-
-	for_each_possible_cpu(cpu) {
-		rq_cputime = &per_cpu(rq_cputimes, cpu);
-		raw_spin_lock_init(&rq_cputime->lock);
-	}
-}
-
 void __init sched_init(void)
 {
 	int i, j;
@@ -6084,9 +6073,6 @@ void __init sched_init(void)
 	init_sched_fair_class();
 
 	init_schedstats();
-
-	if (use_sched_idle_time)
-		rq_cputime_init();
 
 	scheduler_running = 1;
 }

@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#include <linux/sched/cputime.h>
 
 #ifdef CONFIG_SCHEDSTATS
 
@@ -154,20 +153,6 @@ __sched_info_switch(struct rq *rq, struct task_struct *prev, struct task_struct 
 static inline void
 sched_info_switch(struct rq *rq, struct task_struct *prev, struct task_struct *next)
 {
-	if (use_sched_idle_time && !tick_nohz_active) {
-		struct rq *rq = task_rq(prev);
-		struct rq_cputime *rq_cputime = this_cpu_ptr(&rq_cputimes);
-		unsigned long long now = cpu_clock(cpu_of(rq)), delta = 0;
-
-		if (prev == rq->idle) {
-			delta = now - rq_cputime->last_entry_idle;
-			rq_cputime->sum_idle_time += delta;
-		}
-
-		if (next == rq->idle)
-			rq_cputime->last_entry_idle = now;
-	}
-
 	if (unlikely(sched_info_on()))
 		__sched_info_switch(rq, prev, next);
 }
