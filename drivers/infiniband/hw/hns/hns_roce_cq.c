@@ -522,6 +522,7 @@ struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 
 	rdfx_alloc_cq_buf(hr_dev, hr_cq);
 
+	hns_roce_inc_rdma_hw_stats(ib_dev, HW_STATS_CQ_ALLOC);
 	return &hr_cq->ib_cq;
 
 err_cqc:
@@ -548,6 +549,7 @@ int hns_roce_ib_destroy_cq(struct ib_cq *ib_cq)
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_DESTROY_CQ);
 	rdfx_inc_dealloc_cq_cnt(hr_dev);
 	rdfx_free_cq_buff(hr_dev, hr_cq);
+	hns_roce_inc_rdma_hw_stats(ib_cq->device, HW_STATS_CQ_DEALLOC);
 
 	if (hr_dev->hw->destroy_cq) {
 		ret = hr_dev->hw->destroy_cq(ib_cq);

@@ -664,6 +664,62 @@ static void hns_roce_disassociate_ucontext(struct ib_ucontext *ibcontext)
 	mutex_unlock(&context->vma_list_mutex);
 }
 
+const char *hns_roce_hw_stats_name[] = {
+	"pd_alloc",
+	"pd_dealloc",
+	"pd_active_max",
+	"mr_alloc",
+	"mr_dealloc",
+	"mr_active_max",
+	"cq_alloc",
+	"cq_dealloc",
+	"qp_alloc",
+	"qp_dealloc",
+};
+
+/**
+ *port 0:/sys/devices/../infiniband/hnsethX/hw_counters
+ *port 1:/sys/devices/../infiniband/hnsethX/ports/1/hw_counters
+ */
+static struct rdma_hw_stats *hns_roce_alloc_hw_stats(struct ib_device *device,
+						     u8 port_num)
+{
+	if (port_num != 0)
+		return NULL; /* nothing to do for port */
+
+	return rdma_alloc_hw_stats_struct(hns_roce_hw_stats_name,
+					  ARRAY_SIZE(hns_roce_hw_stats_name),
+					  RDMA_HW_STATS_DEFAULT_LIFESPAN);
+}
+static int hns_roce_get_hw_stats(struct ib_device *device,
+				 struct rdma_hw_stats *stats,
+				 u8 port, int index)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(device);
+	unsigned long *table;
+	unsigned long max;
+
+	if (port != 0)
+		return 0; /* nothing to do for port */
+
+	switch (index) {
+	case HW_STATS_PD_ACTIVE_MAX:
+		table = hr_dev->pd_bitmap.table;
+		max = hr_dev->pd_bitmap.max;
+		stats->value[index] = find_last_bit(table, max);
+		break;
+	case HW_STATS_MR_ACTIVE_MAX:
+		table = hr_dev->mr_table.mtpt_bitmap.table;
+		max = hr_dev->mr_table.mtpt_bitmap.max;
+		stats->value[index] = find_last_bit(table, max);
+		break;
+	default:
+		break;
+	}
+
+	return index;
+}
+
 static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_ib_iboe *iboe = &hr_dev->iboe;
@@ -794,6 +850,8 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 	ib_dev->get_port_immutable	= hns_roce_port_immutable;
 	ib_dev->disassociate_ucontext	= hns_roce_disassociate_ucontext;
 	ib_dev->res.fill_res_entry	= hns_roce_fill_res_entry;
+	ib_dev->alloc_hw_stats		= hns_roce_alloc_hw_stats;
+	ib_dev->get_hw_stats		= hns_roce_get_hw_stats;
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC) {
 		ib_dev->alloc_xrcd	= hns_roce_ib_alloc_xrcd;

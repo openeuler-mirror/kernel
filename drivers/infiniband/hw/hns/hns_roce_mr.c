@@ -1397,6 +1397,7 @@ int hns_roce_dereg_mr(struct ib_mr *ibmr)
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_DEREG_MR);
 	rdfx_inc_dereg_mr_cnt(hr_dev);
 	rdfx_release_rdfx_mr(hr_dev, mr->key);
+	hns_roce_inc_rdma_hw_stats(ibmr->device, HW_STATS_MR_DEALLOC);
 
 	if (hr_dev->hw->dereg_mr) {
 		ret = hr_dev->hw->dereg_mr(hr_dev, mr);
@@ -1455,6 +1456,7 @@ struct ib_mr *hns_roce_alloc_mr(struct ib_pd *pd, enum ib_mr_type mr_type,
 
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_REG_USER_MR);
 	rdfx_alloc_rdfx_mr(hr_dev, mr);
+	hns_roce_inc_rdma_hw_stats(pd->device, HW_STATS_MR_ALLOC);
 
 	return &mr->ibmr;
 

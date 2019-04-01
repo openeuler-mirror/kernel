@@ -1102,6 +1102,7 @@ struct ib_qp *hns_roce_create_qp(struct ib_pd *pd,
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_CREATE_QP);
 	rdfx_alloc_qp_buf(hr_dev, hr_qp);
 
+	hns_roce_inc_rdma_hw_stats(pd->device, HW_STATS_QP_ALLOC);
 	return &hr_qp->ibqp;
 }
 EXPORT_SYMBOL_GPL(hns_roce_create_qp);

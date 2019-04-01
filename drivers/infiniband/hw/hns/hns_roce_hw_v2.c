@@ -5026,6 +5026,7 @@ static int hns_roce_v2_destroy_qp(struct ib_qp *ibqp)
 	rdfx_inc_dealloc_qp_cnt(hr_dev);
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_DESTROY_QP);
 	rdfx_release_rdfx_qp(hr_dev, ibqp->qp_num);
+	hns_roce_inc_rdma_hw_stats(ibqp->device, HW_STATS_QP_DEALLOC);
 
 	ret = hns_roce_v2_destroy_qp_common(hr_dev, hr_qp, !!ibqp->pd->uobject);
 	if (ret) {

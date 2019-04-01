@@ -275,6 +275,25 @@ enum {
 	CMD_RST_PRC_EBUSY,
 };
 
+enum hns_roce_hw_stats {
+	HW_STATS_PD_ALLOC,
+	HW_STATS_PD_DEALLOC,
+	HW_STATS_PD_ACTIVE_MAX,
+	HW_STATS_MR_ALLOC,
+	HW_STATS_MR_DEALLOC,
+	HW_STATS_MR_ACTIVE_MAX,
+	HW_STATS_CQ_ALLOC,
+	HW_STATS_CQ_DEALLOC,
+	HW_STATS_QP_ALLOC,
+	HW_STATS_QP_DEALLOC
+};
+
+static inline void hns_roce_inc_rdma_hw_stats(struct ib_device *dev, int stats)
+{
+	if (dev->hw_stats)
+		dev->hw_stats->value[stats]++;
+}
+
 #define HNS_ROCE_CMD_SUCCESS			1
 
 #define HNS_ROCE_PORT_DOWN			0
