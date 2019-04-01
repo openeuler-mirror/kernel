@@ -9,7 +9,29 @@
 #include "hns_roce_device.h"
 #include "hns_roce_hw_v2.h"
 
-static int hns_roce_fill_cq(struct sk_buff *msg,
+static int hns_roce_fill_cq_dev_count(struct hns_roce_cq *hr_cq,
+			    struct sk_buff *msg,
+			    struct hns_roce_v2_cq_context *context)
+{
+	if (rdma_nl_put_driver_u32(msg, "send_cqe",
+				   hr_cq->counter[HNS_ROCE_CQ_SEND_CQE]))
+		goto err;
+
+	if (rdma_nl_put_driver_u32(msg, "recv_cqe",
+				   hr_cq->counter[HNS_ROCE_CQ_RECV_CQE]))
+		goto err;
+
+	if (rdma_nl_put_driver_u32(msg, "arm", hr_cq->arm_sn))
+		goto err;
+
+	return 0;
+
+err:
+	return -EMSGSIZE;
+}
+
+static int hns_roce_fill_cq(struct hns_roce_cq *hr_cq,
+			    struct sk_buff *msg,
 			    struct hns_roce_v2_cq_context *context)
 {
 	if (rdma_nl_put_driver_u32(msg, "state",
@@ -97,7 +119,7 @@ static int hns_roce_fill_cq(struct sk_buff *msg,
 				   V2_CQC_BYTE_64_SE_CQE_IDX_S)))
 		goto err;
 
-	return 0;
+	return hns_roce_fill_cq_dev_count(hr_cq, msg, context);
 
 err:
 	return -EMSGSIZE;
@@ -124,7 +146,7 @@ static int hns_roce_fill_res_cq_entry(struct sk_buff *msg,
 	if (!table_attr)
 		goto err;
 
-	if (hns_roce_fill_cq(msg, &context))
+	if (hns_roce_fill_cq(hr_cq, msg, &context))
 		goto err_cancel_table;
 
 	nla_nest_end(msg, table_attr);

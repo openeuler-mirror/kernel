@@ -3065,6 +3065,8 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 			wc->status = IB_WC_GENERAL_ERR;
 			break;
 		}
+
+		hr_cq->counter[HNS_ROCE_CQ_SEND_CQE]++;
 	} else {
 		/* RQ correspond to CQE */
 		wc->byte_len = le32_to_cpu(cqe->byte_cnt);
@@ -3140,6 +3142,8 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 		wc->network_hdr_type = roce_get_field(cqe->byte_28,
 						    V2_CQE_BYTE_28_PORT_TYPE_M,
 						    V2_CQE_BYTE_28_PORT_TYPE_S);
+
+		hr_cq->counter[HNS_ROCE_CQ_RECV_CQE]++;
 	}
 
 	return 0;
