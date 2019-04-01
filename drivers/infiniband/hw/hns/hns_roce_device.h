@@ -522,9 +522,9 @@ struct hns_roce_cq_buf {
 	struct hns_roce_mtt hr_mtt;
 };
 
-enum hns_roce_cq_dfx {
-	HNS_ROCE_CQ_SEND_CQE,
-	HNS_ROCE_CQ_RECV_CQE,
+enum hns_roce_cq_dfx_cnt {
+	HNS_ROCE_SQ_CQE,
+	HNS_ROCE_RQ_CQE,
 	HNS_ROCE_CQ_DFX_TOTAL
 };
 
@@ -550,7 +550,7 @@ struct hns_roce_cq {
 	atomic_t			refcount;
 	struct completion		free;
 	struct workqueue_struct		*workq;
-	u32				counter[HNS_ROCE_CQ_DFX_TOTAL];
+	u32				dfx_cnt[HNS_ROCE_CQ_DFX_TOTAL];
 };
 
 struct hns_roce_idx_que {

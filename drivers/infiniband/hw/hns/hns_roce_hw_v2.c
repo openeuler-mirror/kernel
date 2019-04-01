@@ -3079,7 +3079,7 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 			break;
 		}
 
-		hr_cq->counter[HNS_ROCE_CQ_SEND_CQE]++;
+		hr_cq->dfx_cnt[HNS_ROCE_SQ_CQE]++;
 	} else {
 		/* RQ correspond to CQE */
 		wc->byte_len = le32_to_cpu(cqe->byte_cnt);
@@ -3156,7 +3156,7 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 						    V2_CQE_BYTE_28_PORT_TYPE_M,
 						    V2_CQE_BYTE_28_PORT_TYPE_S);
 
-		hr_cq->counter[HNS_ROCE_CQ_RECV_CQE]++;
+		hr_cq->dfx_cnt[HNS_ROCE_RQ_CQE]++;
 	}
 
 	return 0;

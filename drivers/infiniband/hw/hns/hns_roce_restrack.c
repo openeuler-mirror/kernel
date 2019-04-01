@@ -14,11 +14,11 @@ static int hns_roce_fill_cq_dev_count(struct hns_roce_cq *hr_cq,
 			    struct hns_roce_v2_cq_context *context)
 {
 	if (rdma_nl_put_driver_u32(msg, "send_cqe",
-				   hr_cq->counter[HNS_ROCE_CQ_SEND_CQE]))
+				   hr_cq->dfx_cnt[HNS_ROCE_SQ_CQE]))
 		goto err;
 
 	if (rdma_nl_put_driver_u32(msg, "recv_cqe",
-				   hr_cq->counter[HNS_ROCE_CQ_RECV_CQE]))
+				   hr_cq->dfx_cnt[HNS_ROCE_RQ_CQE]))
 		goto err;
 
 	if (rdma_nl_put_driver_u32(msg, "arm", hr_cq->arm_sn))
