@@ -245,6 +245,16 @@ static int set_rwqe_data_seg(struct ib_qp *ibqp, struct ib_send_wr *wr,
 	return 0;
 }
 
+static void hns_roce_dfx_record_post_send_wqe(struct hns_roce_qp *qp,
+					  const struct ib_send_wr *wr)
+{
+	if (wr->send_flags & IB_SEND_INLINE)
+		qp->dfx_cnt[HNS_ROCE_QP_DFX_INLINE_WQE]++;
+
+	if (wr->send_flags & IB_SEND_SIGNALED)
+		qp->dfx_cnt[HNS_ROCE_QP_DFX_SIGNAL_WQE]++;
+}
+
 #ifdef CONFIG_KERNEL_419
 static int hns_roce_v2_post_send(struct ib_qp *ibqp,
 				 const struct ib_send_wr *wr,
@@ -587,6 +597,7 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			}
 
 			rdfx_cp_sq_wqe_buf(hr_dev, qp, ind, wqe, rc_sq_wqe, wr);
+			hns_roce_dfx_record_post_send_wqe(qp, wr);
 
 			ind++;
 		} else {
@@ -627,6 +638,7 @@ out:
 	}
 	rdfx_inc_sq_db_cnt(hr_dev, ibqp->qp_num);
 	rdfx_put_rdfx_qp(hr_dev, ibqp->qp_num);
+	qp->dfx_cnt[HNS_ROCE_QP_DFX_POST_SEND]++;
 
 	spin_unlock_irqrestore(&qp->sq.lock, flags);
 
@@ -730,6 +742,7 @@ out:
 	}
 
 	rdfx_put_rdfx_qp(hr_dev, hr_qp->qpn);
+	hr_qp->dfx_cnt[HNS_ROCE_QP_DFX_POST_RECV]++;
 
 	spin_unlock_irqrestore(&hr_qp->rq.lock, flags);
 
@@ -3351,7 +3364,7 @@ static void hns_roce_v2_clear_hem(struct hns_roce_dev *hr_dev,
 		dev_warn(dev, "Failed to clear HEM.\n");
 
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
-	return;
+
 }
 
 static int hns_roce_v2_qp_modify(struct hns_roce_dev *hr_dev,

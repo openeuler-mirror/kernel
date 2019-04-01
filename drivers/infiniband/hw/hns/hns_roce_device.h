@@ -706,6 +706,15 @@ struct hns_roce_rinl_buf {
 	u32			 wqe_cnt;
 };
 
+enum hns_roce_qp_dfx_cnt {
+	HNS_ROCE_QP_DFX_SIGNAL_WQE,
+	HNS_ROCE_QP_DFX_INLINE_WQE,
+	HNS_ROCE_QP_DFX_POST_SEND,
+	HNS_ROCE_QP_DFX_POST_RECV,
+	HNS_ROCE_QP_DFX_TOTAL
+};
+
+
 struct hns_roce_qp {
 	struct ib_qp		ibqp;
 	struct hns_roce_buf	hr_buf;
@@ -746,6 +755,7 @@ struct hns_roce_qp {
 	u32			next_sge;
 
 	struct hns_roce_rinl_buf rq_inl_buf;
+	u32			dfx_cnt[HNS_ROCE_QP_DFX_TOTAL];
 };
 
 struct hns_roce_sqp {
