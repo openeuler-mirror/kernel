@@ -675,6 +675,13 @@ const char *hns_roce_hw_stats_name[] = {
 	"cq_dealloc",
 	"qp_alloc",
 	"qp_dealloc",
+	"pd_active",
+	"mr_active",
+	"cq_active",
+	"cq_active_max",
+	"qp_active",
+	"qp_active_max",
+	"mr_rereg",
 };
 
 /**
@@ -684,6 +691,8 @@ const char *hns_roce_hw_stats_name[] = {
 static struct rdma_hw_stats *hns_roce_alloc_hw_stats(struct ib_device *device,
 						     u8 port_num)
 {
+	BUILD_BUG_ON(ARRAY_SIZE(hns_roce_hw_stats_name) != HW_STATS_TOTAL);
+
 	if (port_num != 0)
 		return NULL; /* nothing to do for port */
 
@@ -711,6 +720,41 @@ static int hns_roce_get_hw_stats(struct ib_device *device,
 	case HW_STATS_MR_ACTIVE_MAX:
 		table = hr_dev->mr_table.mtpt_bitmap.table;
 		max = hr_dev->mr_table.mtpt_bitmap.max;
+		stats->value[index] = find_last_bit(table, max);
+		break;
+	/* {noup} */
+	case HW_STATS_PD_ACTIVE:
+		table = hr_dev->pd_bitmap.table;
+		max = hr_dev->pd_bitmap.max;
+		stats->value[index] = bitmap_weight(table, max) -
+				      hr_dev->caps.reserved_pds;
+		break;
+	case HW_STATS_MR_ACTIVE:
+		table = hr_dev->mr_table.mtpt_bitmap.table;
+		max = hr_dev->mr_table.mtpt_bitmap.max;
+		stats->value[index] = bitmap_weight(table, max) -
+				      hr_dev->caps.reserved_mrws;
+		break;
+	case HW_STATS_CQ_ACTIVE:
+		table = hr_dev->cq_table.bitmap.table;
+		max = hr_dev->cq_table.bitmap.max;
+		stats->value[index] = bitmap_weight(table, max) -
+				      hr_dev->caps.reserved_cqs;
+		break;
+	case HW_STATS_CQ_ACTIVE_MAX:
+		table = hr_dev->cq_table.bitmap.table;
+		max = hr_dev->cq_table.bitmap.max;
+		stats->value[index] = find_last_bit(table, max);
+		break;
+	case HW_STATS_QP_ACTIVE:
+		table = hr_dev->qp_table.bitmap.table;
+		max = hr_dev->qp_table.bitmap.max;
+		stats->value[index] = bitmap_weight(table, max) -
+				      hr_dev->caps.reserved_qps;
+		break;
+	case HW_STATS_QP_ACTIVE_MAX:
+		table = hr_dev->qp_table.bitmap.table;
+		max = hr_dev->qp_table.bitmap.max;
 		stats->value[index] = find_last_bit(table, max);
 		break;
 	default:

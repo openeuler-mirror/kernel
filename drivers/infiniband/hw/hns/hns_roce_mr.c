@@ -1327,6 +1327,7 @@ int hns_roce_rereg_user_mr(struct ib_mr *ibmr, int flags, u64 start, u64 length,
 	int ret;
 
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_REREG_USER_MR);
+	hns_roce_inc_rdma_hw_stats(ibmr->device, HW_STATS_MR_REREG);
 
 	if (!mr->enabled)
 		return -EINVAL;

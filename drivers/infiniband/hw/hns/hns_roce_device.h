@@ -285,7 +285,15 @@ enum hns_roce_hw_stats {
 	HW_STATS_CQ_ALLOC,
 	HW_STATS_CQ_DEALLOC,
 	HW_STATS_QP_ALLOC,
-	HW_STATS_QP_DEALLOC
+	HW_STATS_QP_DEALLOC,
+	HW_STATS_PD_ACTIVE,
+	HW_STATS_MR_ACTIVE,
+	HW_STATS_CQ_ACTIVE,
+	HW_STATS_CQ_ACTIVE_MAX,
+	HW_STATS_QP_ACTIVE,
+	HW_STATS_QP_ACTIVE_MAX,
+	HW_STATS_MR_REREG,
+	HW_STATS_TOTAL
 };
 
 static inline void hns_roce_inc_rdma_hw_stats(struct ib_device *dev, int stats)
