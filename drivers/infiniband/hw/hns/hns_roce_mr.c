@@ -1350,21 +1350,20 @@ int hns_roce_rereg_user_mr(struct ib_mr *ibmr, int flags, u64 start, u64 length,
 
 	mr->enabled = 0;
 
-	if (flags & IB_MR_REREG_PD) {
+	if (flags & IB_MR_REREG_PD)
 		pdn = to_hr_pd(pd)->pdn;
-
-		ret = hr_dev->hw->rereg_write_mtpt(hr_dev, mr, flags, pdn,
-						   mr_access_flags, virt_addr,
-						   length, mailbox->buf);
-		if (ret)
-			goto free_cmd_mbox;
-	}
 
 	if (flags & IB_MR_REREG_TRANS) {
 		ret = rereg_mr_trans(ibmr, flags,
 				     start, length,
 				     virt_addr, mr_access_flags,
 				     mailbox, pdn);
+		if (ret)
+			goto free_cmd_mbox;
+	} else {
+		ret = hr_dev->hw->rereg_write_mtpt(hr_dev, mr, flags, pdn,
+						   mr_access_flags, virt_addr,
+						   length, mailbox->buf);
 		if (ret)
 			goto free_cmd_mbox;
 	}
