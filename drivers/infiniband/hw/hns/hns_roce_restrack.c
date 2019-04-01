@@ -337,6 +337,54 @@ err:
 	return -EMSGSIZE;
 }
 
+static int hns_roce_qp_fill_ext(struct hns_roce_qp *hr_qp, struct sk_buff *msg,
+				struct hns_roce_v2_qp_context *context)
+{
+	if (rdma_nl_put_driver_u32(msg, "st",
+				   roce_get_field(context->byte_60_qpst_tempid,
+						  V2_QPC_BYTE_60_QP_ST_M,
+						  V2_QPC_BYTE_60_QP_ST_S)))
+		goto err;
+
+	if (rdma_nl_put_driver_u32(msg, "pdn",
+				   roce_get_field(context->byte_16_buf_ba_pg_sz,
+						  V2_QPC_BYTE_16_PD_M,
+						  V2_QPC_BYTE_16_PD_S)))
+		goto err;
+
+	if (rdma_nl_put_driver_u32(msg, "rre",
+				   roce_get_bit(context->byte_76_srqn_op_en,
+						V2_QPC_BYTE_76_RRE_S)))
+		goto err;
+
+	if (rdma_nl_put_driver_u32(msg, "rwe",
+				   roce_get_bit(context->byte_76_srqn_op_en,
+						V2_QPC_BYTE_76_RWE_S)))
+		goto err;
+
+	if (rdma_nl_put_driver_u32(msg, "ate",
+				   roce_get_bit(context->byte_76_srqn_op_en,
+						V2_QPC_BYTE_76_ATE_S)))
+		goto err;
+
+	if (rdma_nl_put_driver_u32(msg, "max_ird",
+				   roce_get_field(context->byte_208_irrl,
+						  V2_QPC_BYTE_208_SR_MAX_M,
+						  V2_QPC_BYTE_208_SR_MAX_S)))
+		goto err;
+
+	if (rdma_nl_put_driver_u32(msg, "max_ord",
+				   roce_get_field(context->byte_140_raq,
+						  V2_QPC_BYTE_140_RR_MAX_M,
+						  V2_QPC_BYTE_140_RR_MAX_S)))
+		goto err;
+
+	return 0;
+
+err:
+	return -EMSGSIZE;
+}
+
 static int hns_roce_fill_qp(struct hns_roce_qp *hr_qp, struct sk_buff *msg,
 			    struct hns_roce_v2_qp_context *context)
 {
@@ -389,6 +437,9 @@ static int hns_roce_fill_qp(struct hns_roce_qp *hr_qp, struct sk_buff *msg,
 				   context->byte_256_sqflush_rqcqe,
 				   V2_QPC_BYTE_256_SQ_FLUSH_IDX_M,
 				   V2_QPC_BYTE_256_SQ_FLUSH_IDX_S)))
+		goto err;
+
+	if (hns_roce_qp_fill_ext(hr_qp, msg, context))
 		goto err;
 
 	if (hns_roce_qp_fill_rq(hr_qp, msg, context))
