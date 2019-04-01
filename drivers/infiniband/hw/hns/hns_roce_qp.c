@@ -326,9 +326,6 @@ void hns_roce_qp_free(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 	wait_for_completion(&hr_qp->free);
 
 	if ((hr_qp->ibqp.qp_type) != IB_QPT_GSI) {
-		if (hr_dev->caps.scc_ctx_entry_sz)
-			hns_roce_table_put(hr_dev, &qp_table->scc_ctx_table,
-					   hr_qp->qpn);
 		if (hr_dev->caps.trrl_entry_sz)
 			hns_roce_table_put(hr_dev, &qp_table->trrl_table,
 					   hr_qp->qpn);
