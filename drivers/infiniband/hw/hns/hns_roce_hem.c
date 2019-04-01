@@ -1284,7 +1284,7 @@ int hns_roce_hem_list_calc_root_ba(const struct hns_roce_buf_region *regions,
 	int i;
 
 	for (i = 0; i < region_cnt; i++) {
-		r = &regions[i];
+		r = (struct hns_roce_buf_region *)&regions[i];
 		if (r->hopnum > 1) {
 			step = hem_list_calc_ba_range(r->hopnum, 1, unit);
 			if (step > 0)
@@ -1348,7 +1348,7 @@ static int hem_list_alloc_mid_bt(struct hns_roce_dev *hr_dev,
 		}
 
 		start_aligned = (distance / step) * step + r->offset;
-		end = min(start_aligned + step - 1, max_ofs);
+		end = min_t(int, start_aligned + step - 1, max_ofs);
 		cur = hem_list_alloc_item(hr_dev, start_aligned, end, unit,
 					  true, level);
 		if (!cur) {
@@ -1541,7 +1541,7 @@ void hns_roce_hem_list_release(struct hns_roce_dev *hr_dev,
 
 	hem_list_free_all(hr_dev, &hem_list->root_bt, true);
 	INIT_LIST_HEAD(&hem_list->btm_bt);
-	hem_list->root_ba = NULL;
+	hem_list->root_ba = 0;
 }
 
 void hns_roce_hem_list_init(struct hns_roce_hem_list *hem_list,
