@@ -4059,7 +4059,7 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	roce_set_field(context->byte_16_buf_ba_pg_sz,
 		       V2_QPC_BYTE_16_WQE_SGE_BA_PG_SZ_M,
 		       V2_QPC_BYTE_16_WQE_SGE_BA_PG_SZ_S,
-		       hr_dev->caps.mtt_ba_pg_sz + PG_SHIFT_OFFSET);
+		       hr_qp->wqe_bt_pg_shift + PG_SHIFT_OFFSET);
 	roce_set_field(qpc_mask->byte_16_buf_ba_pg_sz,
 		       V2_QPC_BYTE_16_WQE_SGE_BA_PG_SZ_M,
 		       V2_QPC_BYTE_16_WQE_SGE_BA_PG_SZ_S, 0);

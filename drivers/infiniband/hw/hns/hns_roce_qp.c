@@ -580,6 +580,30 @@ static int split_wqe_buf_region(struct hns_roce_dev *hr_dev,
 	return region_cnt;
 }
 
+static int calc_wqe_bt_page_shift(struct hns_roce_dev *hr_dev,
+				  struct hns_roce_buf_region *regions,
+				  int region_cnt)
+{
+	int bt_pg_shift;
+	int ba_num;
+	int ret;
+
+	bt_pg_shift = PAGE_SHIFT + hr_dev->caps.mtt_ba_pg_sz;
+
+	/* all root ba entries must in one bt page */
+	do {
+		ba_num = (1 << bt_pg_shift) / BA_BYTE_LEN;
+		ret = hns_roce_hem_list_calc_root_ba(regions, region_cnt,
+						     ba_num);
+		if (ret <= ba_num)
+			break;
+
+		bt_pg_shift++;
+	} while (ret > ba_num);
+
+	return bt_pg_shift - PAGE_SHIFT;
+}
+
 static int set_extend_sge_param(struct hns_roce_dev *hr_dev,
 				struct hns_roce_qp *hr_qp)
 {
@@ -973,7 +997,9 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 		}
 	}
 
-	hns_roce_mtr_init(&hr_qp->mtr, PAGE_SHIFT + hr_dev->caps.mtt_ba_pg_sz,
+	hr_qp->wqe_bt_pg_shift = calc_wqe_bt_page_shift(hr_dev, hr_qp->regions,
+							hr_qp->region_cnt);
+	hns_roce_mtr_init(&hr_qp->mtr, PAGE_SHIFT + hr_qp->wqe_bt_pg_shift,
 			  page_shift);
 	ret = hns_roce_mtr_attach(hr_dev, &hr_qp->mtr, buf_list,
 				  hr_qp->regions, hr_qp->region_cnt);
