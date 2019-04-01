@@ -1224,6 +1224,7 @@ struct ib_mr *hns_roce_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 
 	rdfx_func_cnt(to_hr_dev(pd->device), RDFX_FUNC_REG_USER_MR);
 	rdfx_alloc_rdfx_mr(to_hr_dev(pd->device), mr);
+	hns_roce_inc_rdma_hw_stats(pd->device, HW_STATS_MR_ALLOC);
 
 	return &mr->ibmr;
 
