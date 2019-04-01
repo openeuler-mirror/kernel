@@ -587,10 +587,9 @@ out:
 	return ret;
 }
 
-int hns_roce_v2_modify_eq(struct hns_roce_dev *hr_dev,
+int hns_roce_v2_modify_eq(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq,
 			  u16 eq_count, u16 eq_period, u16 type)
 {
-	struct hns_roce_eq *eq = hr_dev->eq_table.eq;
 	struct hns_roce_eq_context *eqc;
 	struct hns_roce_eq_context *eqc_mask;
 	struct hns_roce_cmd_mailbox *mailbox;

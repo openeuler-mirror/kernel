@@ -303,7 +303,7 @@ static ssize_t coalesce_maxcnt_store(struct device *dev,
 {
 	struct hns_roce_dev *hr_dev = container_of(dev, struct hns_roce_dev,
 						   ib_dev.dev);
-	struct hns_roce_eq *eq = hr_dev->eq_table.eq;
+	struct hns_roce_eq *eq;
 	u32 int_maxcnt;
 	int ceq_num;
 	int i;
@@ -322,11 +322,10 @@ static ssize_t coalesce_maxcnt_store(struct device *dev,
 		return -EINVAL;
 	}
 
-	eq->eq_max_cnt = int_maxcnt;
-
 	for (i = 0; i < ceq_num; i++) {
-		eq->eqn = i;
-		ret = hr_dev->dfx->modify_eq(hr_dev, eq->eq_max_cnt, 0,
+		eq = &hr_dev->eq_table.eq[i];
+		eq->eq_max_cnt = int_maxcnt;
+		ret = hr_dev->dfx->modify_eq(hr_dev, eq, eq->eq_max_cnt, 0,
 					    HNS_ROCE_EQ_MAXCNT_MASK);
 		if (ret) {
 			dev_err(dev, "eqc modify failed, eq_num=%d\n", eq->eqn);
@@ -353,7 +352,7 @@ static ssize_t coalesce_period_store(struct device *dev,
 {
 	struct hns_roce_dev *hr_dev = container_of(dev, struct hns_roce_dev,
 						   ib_dev.dev);
-	struct hns_roce_eq *eq = hr_dev->eq_table.eq;
+	struct hns_roce_eq *eq;
 	u32 int_period;
 	int ceq_num;
 	int i;
@@ -372,11 +371,10 @@ static ssize_t coalesce_period_store(struct device *dev,
 		return -EINVAL;
 	}
 
-	eq->eq_period = int_period;
-
 	for (i = 0; i < ceq_num; i++) {
-		eq->eqn = i;
-		ret = hr_dev->dfx->modify_eq(hr_dev, 0, eq->eq_period,
+		eq = &hr_dev->eq_table.eq[i];
+		eq->eq_period = int_period;
+		ret = hr_dev->dfx->modify_eq(hr_dev, eq, 0, eq->eq_period,
 					    HNS_ROCE_EQ_PERIOD_MASK);
 		if (ret) {
 			dev_err(dev, "eqc modify failed, eq_num=%d\n", eq->eqn);

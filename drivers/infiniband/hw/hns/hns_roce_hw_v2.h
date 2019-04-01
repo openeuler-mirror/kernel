@@ -1954,7 +1954,7 @@ int hns_roce_v2_query_cmd_stat(struct hns_roce_dev *hr_dev,
 				char *buf, int *desc);
 int hns_roce_v2_query_cqc_stat(struct hns_roce_dev *hr_dev,
 				char *buf, int *desc);
-int hns_roce_v2_modify_eq(struct hns_roce_dev *hr_dev,
+int hns_roce_v2_modify_eq(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq,
 				 u16 eq_count, u16 eq_period, u16 type);
 
 int hns_roce_v2_query_cqc_info(struct hns_roce_dev *hr_dev, u32 cqn,

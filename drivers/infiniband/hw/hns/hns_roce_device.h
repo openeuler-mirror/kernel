@@ -1055,7 +1055,7 @@ struct hns_roce_dfx_hw {
 			      char *buf, int *desc);
 	int (*query_ceqc_stat)(struct hns_roce_dev *hr_dev,
 			      char *buf, int *desc);
-	int (*modify_eq)(struct hns_roce_dev *hr_dev,
+	int (*modify_eq)(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq,
 			 u16 eq_count, u16 eq_period, u16 type);
 
 };
