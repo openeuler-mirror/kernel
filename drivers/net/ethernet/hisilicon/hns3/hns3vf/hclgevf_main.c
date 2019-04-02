@@ -1475,6 +1475,8 @@ err_reset:
 	 */
 	hclgevf_cmd_init(hdev);
 	dev_err(&hdev->pdev->dev, "failed to reset VF\n");
+	if (hclgevf_is_reset_pending(hdev))
+		hclgevf_reset_task_schedule(hdev);
 
 	return ret;
 }
@@ -2022,8 +2024,9 @@ static void hclgevf_ae_stop(struct hnae3_handle *handle)
 
 	set_bit(HCLGEVF_STATE_DOWN, &hdev->state);
 
-	for (i = 0; i < handle->kinfo.num_tqps; i++)
-		hclgevf_reset_tqp(handle, i);
+	if (!test_bit(HCLGEVF_STATE_RST_HANDLING, &hdev->state))
+		for (i = 0; i < handle->kinfo.num_tqps; i++)
+			hclgevf_reset_tqp(handle, i);
 
 	hclgevf_reset_tqp_stats(handle);
 	hclgevf_update_link_status(hdev, 0);
