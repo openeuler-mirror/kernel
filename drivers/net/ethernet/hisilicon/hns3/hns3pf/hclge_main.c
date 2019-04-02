@@ -3208,12 +3208,13 @@ static void hclge_service_task(struct work_struct *work)
 	hclge_update_speed_duplex(hdev);
 	hclge_update_link_status(hdev);
 	hclge_update_vport_alive(hdev);
-	hclge_service_complete(hdev);
 
 	if (hdev->fd_arfs_expire_timer >= HCLGE_FD_ARFS_EXPIRE_TIMER_INTERVAL) {
 		hclge_rfs_filter_expire(hdev);
 		hdev->fd_arfs_expire_timer = 0;
 	}
+
+	hclge_service_complete(hdev);
 }
 
 struct hclge_vport *hclge_get_vport(struct hnae3_handle *handle)
@@ -5362,7 +5363,6 @@ static void hclge_fd_get_flow_tuples(const struct flow_keys *fkeys,
 {
 	tuples->ether_proto = be16_to_cpu(fkeys->basic.n_proto);
 	tuples->ip_proto = fkeys->basic.ip_proto;
-	tuples->src_port = be16_to_cpu(fkeys->ports.src);
 	tuples->dst_port = be16_to_cpu(fkeys->ports.dst);
 
 	if (fkeys->basic.n_proto == htons(ETH_P_IP)) {
@@ -5399,7 +5399,8 @@ static void hclge_fd_build_arfs_rule(const struct hclge_fd_rule_tuples *tuples,
 				     struct hclge_fd_rule *rule)
 {
 	rule->unused_tuple = BIT(INNER_SRC_MAC) | BIT(INNER_DST_MAC) |
-			     BIT(INNER_VLAN_TAG_FST) | BIT(INNER_IP_TOS);
+			     BIT(INNER_VLAN_TAG_FST) | BIT(INNER_IP_TOS) |
+			     BIT(INNER_SRC_PORT);
 	rule->action = 0;
 	rule->vf_id = 0;
 	rule->rule_type = HCLGE_FD_ARFS_ACTIVE;
