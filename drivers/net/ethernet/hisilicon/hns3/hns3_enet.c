@@ -2515,6 +2515,7 @@ static void hns3_gro_receive(struct hns3_enet_ring *ring, struct sk_buff *skb)
 static void hns3_rx_checksum(struct hns3_enet_ring *ring, struct sk_buff *skb,
 			     u32 l234info, u32 bd_base_info)
 {
+	struct net_device *netdev = ring->tqp->handle->kinfo.netdev;
 	int l3_type, l4_type;
 	int ol4_type;
 
@@ -2528,6 +2529,9 @@ static void hns3_rx_checksum(struct hns3_enet_ring *ring, struct sk_buff *skb,
 	skb->ip_summed = CHECKSUM_NONE;
 
 	skb_checksum_none_assert(skb);
+
+	if (!(netdev->features & NETIF_F_RXCSUM))
+		return;
 
 	/* check if hardware has done checksum */
 	if (!(bd_base_info & BIT(HNS3_RXD_L3L4P_B)))
