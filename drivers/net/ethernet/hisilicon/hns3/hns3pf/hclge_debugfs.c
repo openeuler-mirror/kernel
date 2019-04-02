@@ -1005,7 +1005,6 @@ static void hclge_dbg_dump_ncl_config(struct hclge_dev *hdev, char *cmd_buf)
 		return;
 	}
 
-	dev_info(&hdev->pdev->dev, "dump NCL_CONFIG\n");
 	dev_info(&hdev->pdev->dev, "offset |    data\n");
 
 	while (length > 0) {
