@@ -1475,8 +1475,12 @@ static bool  hclge_is_rx_buf_ok(struct hclge_dev *hdev,
 
 	aligned_mps = roundup(hdev->mps, HCLGE_BUF_SIZE_UNIT);
 
-	shared_buf_min = HCLGE_BUF_MUL_BY * aligned_mps +
-				hdev->dv_buf_size;
+	if (hnae3_dev_dcb_supported(hdev))
+		shared_buf_min = HCLGE_BUF_MUL_BY * aligned_mps +
+					hdev->dv_buf_size;
+	else
+		shared_buf_min = aligned_mps + HCLGE_NON_DCB_ADDITIONAL_BUF
+					+ hdev->dv_buf_size;
 
 	shared_buf_tc = tc_num * aligned_mps + aligned_mps;
 	shared_std = roundup(max_t(u32, shared_buf_min, shared_buf_tc),
@@ -1488,19 +1492,32 @@ static bool  hclge_is_rx_buf_ok(struct hclge_dev *hdev,
 
 	shared_buf = rounddown(rx_all - rx_priv, HCLGE_BUF_SIZE_UNIT);
 	buf_alloc->s_buf.buf_size = shared_buf;
-	buf_alloc->s_buf.self.high = shared_buf - hdev->dv_buf_size;
-	buf_alloc->s_buf.self.low = buf_alloc->s_buf.self.high
+	if (hnae3_dev_dcb_supported(hdev)) {
+		buf_alloc->s_buf.self.high = shared_buf - hdev->dv_buf_size;
+		buf_alloc->s_buf.self.low = buf_alloc->s_buf.self.high
 			- roundup(aligned_mps / HCLGE_BUF_DIV_BY,
 				  HCLGE_BUF_SIZE_UNIT);
+	} else {
+		buf_alloc->s_buf.self.high = aligned_mps +
+						HCLGE_NON_DCB_ADDITIONAL_BUF;
+		buf_alloc->s_buf.self.low =
+			roundup(aligned_mps / HCLGE_BUF_DIV_BY,
+				HCLGE_BUF_SIZE_UNIT);
+	}
 
-	if (tc_num)
-		hi_thrd = (shared_buf - hdev->dv_buf_size) / tc_num;
-	else
-		hi_thrd = shared_buf - hdev->dv_buf_size;
+	if (hnae3_dev_dcb_supported(hdev)) {
+		if (tc_num)
+			hi_thrd = (shared_buf - hdev->dv_buf_size) / tc_num;
+		else
+			hi_thrd = shared_buf - hdev->dv_buf_size;
 
-	hi_thrd = max_t(u32, hi_thrd, HCLGE_BUF_MUL_BY * aligned_mps);
-	hi_thrd = rounddown(hi_thrd, HCLGE_BUF_SIZE_UNIT);
-	lo_thrd = hi_thrd - aligned_mps / HCLGE_BUF_DIV_BY;
+		hi_thrd = max_t(u32, hi_thrd, HCLGE_BUF_MUL_BY * aligned_mps);
+		hi_thrd = rounddown(hi_thrd, HCLGE_BUF_SIZE_UNIT);
+		lo_thrd = hi_thrd - aligned_mps / HCLGE_BUF_DIV_BY;
+	} else {
+		lo_thrd = 0;
+		hi_thrd = aligned_mps;
+	}
 
 	for (i = 0; i < HCLGE_MAX_TC_NUM; i++) {
 		buf_alloc->s_buf.tc_thrd[i].low = lo_thrd;
