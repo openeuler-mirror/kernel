@@ -7634,7 +7634,10 @@ static void hclge_set_flowctrl_adv(struct hclge_dev *hdev, u32 rx_en, u32 tx_en)
 
 	if (!phydev)
 		return;
+#ifdef HAS_LINK_MODE_OPS
+	phy_set_asym_pause(phydev, rx_en, tx_en);
 
+#else
 	phydev->advertising &= ~(ADVERTISED_Pause | ADVERTISED_Asym_Pause);
 
 	if (rx_en)
@@ -7642,6 +7645,7 @@ static void hclge_set_flowctrl_adv(struct hclge_dev *hdev, u32 rx_en, u32 tx_en)
 
 	if (tx_en)
 		phydev->advertising ^= ADVERTISED_Asym_Pause;
+#endif
 }
 
 static int hclge_cfg_pauseparam(struct hclge_dev *hdev, u32 rx_en, u32 tx_en)
@@ -7682,12 +7686,15 @@ int hclge_cfg_flowctrl(struct hclge_dev *hdev)
 
 	if (!phydev->link || !phydev->autoneg)
 		return 0;
-
+#ifdef HAS_LINK_MODE_OPS
+	local_advertising = linkmode_adv_to_lcl_adv_t(phydev->advertising);
+#else
 	if (phydev->advertising & ADVERTISED_Pause)
 		local_advertising = ADVERTISE_PAUSE_CAP;
 
 	if (phydev->advertising & ADVERTISED_Asym_Pause)
 		local_advertising |= ADVERTISE_PAUSE_ASYM;
+#endif
 
 	if (phydev->pause)
 		remote_advertising = LPA_PAUSE_CAP;
