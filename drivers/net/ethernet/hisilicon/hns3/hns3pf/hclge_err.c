@@ -643,7 +643,7 @@ enum hnae3_reset_type hclge_log_error(struct device *dev, char *reg,
 			dev_warn(dev, "%s %s found [error status=0x%x]\n",
 				 reg, err->msg, err_sts);
 			if (err->reset_level != HNAE3_NONE_RESET &&
-			    err->reset_level > reset_level) {
+			    err->reset_level >= reset_level) {
 				reset_level = err->reset_level;
 				need_reset = true;
 			}
