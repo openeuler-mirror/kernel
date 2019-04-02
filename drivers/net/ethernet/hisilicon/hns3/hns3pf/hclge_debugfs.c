@@ -906,7 +906,7 @@ static void hclge_dbg_fd_tcam_read(struct hclge_dev *hdev, u8 stage,
 		dev_info(&hdev->pdev->dev, "%08x\n", *req++);
 }
 
-static void hclge_dbg_fd_tcam(struct  hclge_dev *hdev)
+static void hclge_dbg_fd_tcam(struct hclge_dev *hdev)
 {
 	u32 i;
 
@@ -981,7 +981,63 @@ void hclge_dbg_get_m7_stats_info(struct hclge_dev *hdev)
 	kfree(desc_src);
 }
 
-int hclge_dbg_run_cmd(struct  hnae3_handle *handle, char  *cmd_buf)
+static void hclge_dbg_dump_ncl_config(struct hclge_dev *hdev, char *cmd_buf)
+{
+#define HCLGE_MAX_NCL_CONFIG_OFFSET 4096
+#define HCLGE_MAX_NCL_CONFIG_LENGTH (20 + 24 * 4)
+
+	struct hclge_desc desc[5];
+	int offset, length;
+	int bd_num = 5;
+	u32 lineno;
+	int data0;
+	int i, j;
+	int ret;
+
+	ret = sscanf(cmd_buf, "%x %x", &offset, &length);
+	if (ret != 2 || offset >= HCLGE_MAX_NCL_CONFIG_OFFSET ||
+	    length > HCLGE_MAX_NCL_CONFIG_OFFSET - offset) {
+		dev_err(&hdev->pdev->dev, "Invalid offset or length.\n");
+		return;
+	}
+	if (offset < 0 || length < 0) {
+		dev_err(&hdev->pdev->dev, "Negative offset or length.\n");
+		return;
+	}
+
+	dev_info(&hdev->pdev->dev, "dump NCL_CONFIG\n");
+	dev_info(&hdev->pdev->dev, "offset |    data\n");
+
+	while (length > 0) {
+		data0 = offset;
+		if (length >= HCLGE_MAX_NCL_CONFIG_LENGTH)
+			data0 |= HCLGE_MAX_NCL_CONFIG_LENGTH << 16;
+		else
+			data0 |= length << 16;
+		ret = hclge_dbg_cmd_send(hdev, desc, data0, bd_num,
+					 HCLGE_OPC_QUERY_NCL_CONFIG);
+		if (ret)
+			return;
+
+		lineno = offset;
+		for (i = 0; i < bd_num; i++) {
+			for (j = 0; j < 6; j++) {
+				if (i == 0 && j == 0)
+					continue;
+
+				dev_info(&hdev->pdev->dev, "0x%04x | 0x%08x\n",
+					 lineno, desc[i].data[j]);
+				lineno += sizeof(u32);
+				length -= sizeof(u32);
+				if (length <= 0)
+					return;
+			}
+		}
+		offset += HCLGE_MAX_NCL_CONFIG_LENGTH;
+	}
+}
+
+int hclge_dbg_run_cmd(struct hnae3_handle *handle, char *cmd_buf)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -1008,6 +1064,9 @@ int hclge_dbg_run_cmd(struct  hnae3_handle *handle, char  *cmd_buf)
 		hclge_dbg_dump_rst_info(hdev);
 	} else if (strncmp(cmd_buf, "dump m7 info", 12) == 0) {
 		hclge_dbg_get_m7_stats_info(hdev);
+	} else if (strncmp(cmd_buf, "dump ncl_config", 15) == 0) {
+		hclge_dbg_dump_ncl_config(hdev,
+					  &cmd_buf[sizeof("dump ncl_config")]);
 	} else {
 		dev_info(&hdev->pdev->dev, "unknown command\n");
 		return -EINVAL;
