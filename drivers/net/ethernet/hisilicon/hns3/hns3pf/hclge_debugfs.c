@@ -981,27 +981,38 @@ void hclge_dbg_get_m7_stats_info(struct hclge_dev *hdev)
 	kfree(desc_src);
 }
 
+/* hclge_dbg_dump_ncl_config: print specified range of NCL_CONFIG file
+ * @hdev: pointer to struct hclge_dev
+ * @cmd_buf: string that contains offset and length
+ */
 static void hclge_dbg_dump_ncl_config(struct hclge_dev *hdev, char *cmd_buf)
 {
-#define HCLGE_MAX_NCL_CONFIG_OFFSET 4096
-#define HCLGE_MAX_NCL_CONFIG_LENGTH (20 + 24 * 4)
+#define HCLGE_MAX_NCL_CONFIG_OFFSET	16384
+#define HCLGE_MAX_NCL_CONFIG_LENGTH	(20 + 24 * 4)
+#define HCLGE_CMD_NCL_CONFIG_BD_NUM	5
+#define HCLGE_CMD_DATA_NUM		6
 
-	struct hclge_desc desc[5];
-	int offset, length;
-	int bd_num = 5;
-	u32 lineno;
+	struct hclge_desc desc[HCLGE_CMD_NCL_CONFIG_BD_NUM];
+	int bd_num = HCLGE_CMD_NCL_CONFIG_BD_NUM;
+	int offset;
+	int length;
 	int data0;
-	int i, j;
 	int ret;
+	int i;
+	int j;
 
 	ret = sscanf(cmd_buf, "%x %x", &offset, &length);
-	if (ret != 2 || offset >= HCLGE_MAX_NCL_CONFIG_OFFSET ||
-	    length > HCLGE_MAX_NCL_CONFIG_OFFSET - offset) {
-		dev_err(&hdev->pdev->dev, "Invalid offset or length.\n");
+	if (ret != 2) {
+		dev_err(&hdev->pdev->dev,
+			"Too few parameters, num = %d.\n", ret);
 		return;
 	}
-	if (offset < 0 || length < 0) {
-		dev_err(&hdev->pdev->dev, "Negative offset or length.\n");
+
+	if (offset < 0 || offset >= HCLGE_MAX_NCL_CONFIG_OFFSET ||
+	    length <= 0 || length > HCLGE_MAX_NCL_CONFIG_OFFSET - offset) {
+		dev_err(&hdev->pdev->dev,
+			"Invalid input, offset = %d, length = %d.\n",
+			offset, length);
 		return;
 	}
 
@@ -1013,26 +1024,26 @@ static void hclge_dbg_dump_ncl_config(struct hclge_dev *hdev, char *cmd_buf)
 			data0 |= HCLGE_MAX_NCL_CONFIG_LENGTH << 16;
 		else
 			data0 |= length << 16;
+
 		ret = hclge_dbg_cmd_send(hdev, desc, data0, bd_num,
 					 HCLGE_OPC_QUERY_NCL_CONFIG);
 		if (ret)
 			return;
 
-		lineno = offset;
 		for (i = 0; i < bd_num; i++) {
-			for (j = 0; j < 6; j++) {
+			for (j = 0; j < HCLGE_CMD_DATA_NUM; j++) {
 				if (i == 0 && j == 0)
 					continue;
 
 				dev_info(&hdev->pdev->dev, "0x%04x | 0x%08x\n",
-					 lineno, desc[i].data[j]);
-				lineno += sizeof(u32);
+					 offset,
+					 le32_to_cpu(desc[i].data[j]));
+				offset += sizeof(u32);
 				length -= sizeof(u32);
 				if (length <= 0)
 					return;
 			}
 		}
-		offset += HCLGE_MAX_NCL_CONFIG_LENGTH;
 	}
 }
 
