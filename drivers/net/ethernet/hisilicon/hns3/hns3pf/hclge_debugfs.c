@@ -9,36 +9,6 @@
 #include "hclge_tm.h"
 #include "hnae3.h"
 
-static void hclge_print(struct hclge_dev *hdev, bool flag, char *true_buf,
-			char *false_buf)
-{
-	if (flag)
-		dev_info(&hdev->pdev->dev, "%s\n", true_buf);
-	else
-		dev_info(&hdev->pdev->dev, "%s\n", false_buf);
-}
-
-static void hclge_title_print(struct hclge_dev *hdev, bool flag,
-			      char *title_buf, char *true_buf, char *false_buf)
-{
-	if (flag)
-		dev_info(&hdev->pdev->dev, "%s: %s\n", title_buf, true_buf);
-	else
-		dev_info(&hdev->pdev->dev, "%s: %s\n", title_buf, false_buf);
-}
-
-static void hclge_title_idx_print(struct hclge_dev *hdev, bool flag, int index,
-				  char *title_buf, char *true_buf,
-				  char *false_buf)
-{
-	if (flag)
-		dev_info(&hdev->pdev->dev, "%s(%d): %s\n", title_buf, index,
-			 true_buf);
-	else
-		dev_info(&hdev->pdev->dev, "%s(%d): %s\n", title_buf, index,
-			 false_buf);
-}
-
 static int hclge_dbg_get_dfx_bd_num(struct hclge_dev *hdev, int offset)
 {
 	struct hclge_desc desc[4];
@@ -345,33 +315,16 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, char *cmd_buf)
 	}
 }
 
-static void hclge_dbg_dump_promisc_cfg(struct hclge_dev *hdev, char *cmd_buf)
+static void hclge_title_idx_print(struct hclge_dev *hdev, bool flag, int index,
+				  char *title_buf, char *true_buf,
+				  char *false_buf)
 {
-	struct hclge_promisc_cfg_cmd *req;
-	struct hclge_desc desc;
-	u16 vf_id;
-	int ret;
-
-	ret = kstrtou16(&cmd_buf[13], 10, &vf_id);
-	if (ret)
-		vf_id = 0;
-
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_PROMISC_MODE, true);
-	req = (struct hclge_promisc_cfg_cmd *)desc.data;
-	req->vf_id = (u8)vf_id;
-
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
-	if (ret) {
-		dev_err(&hdev->pdev->dev,
-			"dump promisc mode fail, status is %d.\n", ret);
-		return;
-	}
-
-	dev_info(&hdev->pdev->dev, "vf(%u) promisc mode\n", req->vf_id);
-
-	hclge_print(hdev, req->flag & BIT(1), "uc: enable", "uc: disable");
-	hclge_print(hdev, req->flag & BIT(2), "mc: enable", "mc: disable");
-	hclge_print(hdev, req->flag & BIT(3), "bc: enable", "bc: disable");
+	if (flag)
+		dev_info(&hdev->pdev->dev, "%s(%d): %s\n", title_buf, index,
+			 true_buf);
+	else
+		dev_info(&hdev->pdev->dev, "%s(%d): %s\n", title_buf, index,
+			 false_buf);
 }
 
 static void hclge_dbg_dump_tc(struct hclge_dev *hdev)
@@ -678,37 +631,6 @@ err_tm_map_cmd_send:
 		cmd, ret);
 }
 
-static void hclge_dbg_dump_checksum(struct hclge_dev *hdev)
-{
-	struct hclge_checksum_cmd *checksum;
-	struct hclge_desc desc;
-	int ret;
-
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_CHECKSUM_EN, true);
-
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
-	if (ret) {
-		dev_err(&hdev->pdev->dev, "dump checksum fail, status is %d.\n",
-			ret);
-		return;
-	}
-
-	checksum = (struct hclge_checksum_cmd *)desc.data;
-	dev_info(&hdev->pdev->dev, "dump checksum\n");
-	hclge_title_print(hdev, checksum->outer & BIT(0),
-			  "outer_l3", "enable", "disable");
-	hclge_title_print(hdev, checksum->outer & BIT(1),
-			  "outer_udp", "enable", "disable");
-	hclge_title_print(hdev, checksum->inner & BIT(0),
-			  "inner_l3", "enable", "disable");
-	hclge_title_print(hdev, checksum->inner & BIT(1),
-			  "inner_tcp", "enable", "disable");
-	hclge_title_print(hdev, checksum->inner & BIT(2),
-			  "inner_udp", "enable", "disable");
-	hclge_title_print(hdev, checksum->inner & BIT(3),
-			  "inner_sctp", "enable", "disable");
-}
-
 static void hclge_dbg_dump_qos_pause_cfg(struct hclge_dev *hdev)
 {
 	struct hclge_cfg_pause_param_cmd *pause_param;
@@ -873,286 +795,6 @@ err_qos_cmd_send:
 		"dump qos buf cfg fail(0x%x), status is %d\n", cmd, ret);
 }
 
-static void hclge_dbg_dump_mac_table(struct hclge_dev *hdev)
-{
-	struct hclge_mac_vlan_idx_rd_cmd *mac_rd_cmd;
-	struct hclge_mac_vlan_idx_rd_mc *mc_mac_tbl;
-	char printf_buf[HCLGE_DBG_BUF_LEN];
-	struct hclge_desc desc[3];
-	u32 mc_tbl_idx, i;
-	int ret, len;
-	int j;
-
-	len = sizeof(struct hclge_mac_vlan_idx_rd_mc) * HCLGE_DBG_MAC_TBL_MAX;
-	mc_mac_tbl = kzalloc(len, GFP_KERNEL);
-	if (!mc_mac_tbl) {
-		dev_err(&hdev->pdev->dev, "mc_mac_tbl alloc memory failed\n");
-		return;
-	}
-
-	memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
-	dev_info(&hdev->pdev->dev, "Unicast tab:\n");
-	strncat(printf_buf, "|index |mac_addr          |vlan_id |VMDq1 |",
-		HCLGE_DBG_BUF_LEN - 1);
-	strncat(printf_buf, "U_M |mac_en |in_port |E_type |E_Port\n",
-		HCLGE_DBG_BUF_LEN - strlen(printf_buf) - 1);
-
-	dev_info(&hdev->pdev->dev, "%s", printf_buf);
-
-	mc_tbl_idx = 0;
-	for (i = 0; i < HCLGE_DBG_MAC_TBL_MAX; i++) {
-		/* Prevent long-term occupation of the command channel. */
-		if ((i % HCLGE_DBG_SCAN_STEP) == 0)
-			msleep(HCLGE_DBG_PAUSE_TIME);
-
-		hclge_cmd_setup_basic_desc(&desc[0], HCLGE_PPP_MAC_VLAN_IDX_RD,
-					   true);
-		desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
-		hclge_cmd_setup_basic_desc(&desc[1], HCLGE_PPP_MAC_VLAN_IDX_RD,
-					   true);
-		desc[1].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
-		hclge_cmd_setup_basic_desc(&desc[2], HCLGE_PPP_MAC_VLAN_IDX_RD,
-					   true);
-
-		mac_rd_cmd = (struct hclge_mac_vlan_idx_rd_cmd *)desc[0].data;
-
-		mac_rd_cmd->index = cpu_to_le32(i);
-		ret = hclge_cmd_send(&hdev->hw, desc, 3);
-		if (ret) {
-			dev_err(&hdev->pdev->dev,
-				"call hclge_cmd_send fail, ret = %d\n", ret);
-			kfree(mc_mac_tbl);
-			return;
-		}
-
-		if (mac_rd_cmd->resp_code)
-			continue;
-
-		if (mac_rd_cmd->entry_type == HCLGE_DBG_MAC_MC_TBL) {
-			mc_mac_tbl[mc_tbl_idx].index = i;
-			memcpy(mc_mac_tbl[mc_tbl_idx].mac_add,
-			       mac_rd_cmd->mac_add, 6);
-			memcpy(mc_mac_tbl[mc_tbl_idx].mg_vf_mb,
-			       desc[1].data, 24);
-			memcpy(&mc_mac_tbl[mc_tbl_idx].mg_vf_mb[24],
-			       desc[2].data, 8);
-			mc_tbl_idx++;
-
-			continue;
-		}
-
-		memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
-		snprintf(printf_buf, HCLGE_DBG_BUF_LEN,
-			 "|%04d  |%02x:%02x:%02x:%02x:%02x:%02x |",
-			 i, mac_rd_cmd->mac_add[0], mac_rd_cmd->mac_add[1],
-			 mac_rd_cmd->mac_add[2], mac_rd_cmd->mac_add[3],
-			 mac_rd_cmd->mac_add[4], mac_rd_cmd->mac_add[5]);
-
-		snprintf(printf_buf + strlen(printf_buf),
-			 HCLGE_DBG_BUF_LEN - strlen(printf_buf),
-			 "%04u    |%d     |%d   |%d      |%u       |",
-			 mac_rd_cmd->vlan_tag,
-			 mac_rd_cmd->entry_type && HCLGE_DBG_MAC_TBL_EN_TYPE,
-			 mac_rd_cmd->entry_type && HCLGE_DBG_MAC_TBL_MC_TYPE,
-			 mac_rd_cmd->mc_mac_en && HCLGE_DBG_MAC_TBL_MAC_EN,
-			 mac_rd_cmd->port & HCLGE_DBG_MAC_TBL_IN_PORT);
-		snprintf(printf_buf + strlen(printf_buf),
-			 HCLGE_DBG_BUF_LEN - strlen(printf_buf),
-			 "%d      |%04x\n",
-			 mac_rd_cmd->egress_port && HCLGE_DBG_MAC_TBL_E_PORT_B,
-			 mac_rd_cmd->egress_port & HCLGE_DBG_MAC_TBL_E_PORT);
-
-		dev_info(&hdev->pdev->dev, "%s", printf_buf);
-	}
-
-	if (mc_tbl_idx > 0) {
-		dev_info(&hdev->pdev->dev,
-			 "Multicast tab: entry number = %u\n", mc_tbl_idx);
-		memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
-		strncat(printf_buf, "|index |mac_addr          |UM_MC_RDATA\n",
-			HCLGE_DBG_BUF_LEN - 1);
-		dev_info(&hdev->pdev->dev, "%s", printf_buf);
-	}
-
-	for (i = 0; i < mc_tbl_idx; i++) {
-		memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
-		snprintf(printf_buf, HCLGE_DBG_BUF_LEN,
-			 "|%04u  |%02x:%02x:%02x:%02x:%02x:%02x |",
-			 mc_mac_tbl[i].index, mc_mac_tbl[i].mac_add[0],
-			 mc_mac_tbl[i].mac_add[1], mc_mac_tbl[i].mac_add[2],
-			 mc_mac_tbl[i].mac_add[3], mc_mac_tbl[i].mac_add[4],
-			 mc_mac_tbl[i].mac_add[5]);
-
-		for (j = 31; j >= 3; j -= 4)
-			snprintf(printf_buf + strlen(printf_buf),
-				 HCLGE_DBG_BUF_LEN - strlen(printf_buf),
-				 "%02x%02x%02x%02x:", mc_mac_tbl[i].mg_vf_mb[j],
-				 mc_mac_tbl[i].mg_vf_mb[j - 1],
-				 mc_mac_tbl[i].mg_vf_mb[j - 2],
-				 mc_mac_tbl[i].mg_vf_mb[j - 3]);
-
-		printf_buf[strlen(printf_buf) - 1] = '\n';
-		dev_info(&hdev->pdev->dev, "%s", printf_buf);
-	}
-
-	kfree(mc_mac_tbl);
-}
-
-static void hclge_dbg_print_vlan_table(struct hclge_dev *hdev, u32 vlan_max,
-					u32 *vlan_bitmap)
-{
-	char printf_buf[HCLGE_DBG_BUF_LEN];
-	u32 vlan_id;
-	bool flag;
-	int i;
-
-	for (vlan_id = 0; vlan_id < vlan_max / 32; vlan_id += 8) {
-		memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
-		snprintf(printf_buf, HCLGE_DBG_BUF_LEN,
-			 "%04d | ", vlan_id * 32);
-		flag = false;
-
-		for (i = 7; i >= 0; i--) {
-			snprintf(printf_buf + strlen(printf_buf),
-				 HCLGE_DBG_BUF_LEN - strlen(printf_buf),
-				 "%08x:", vlan_bitmap[(u32)(vlan_id + i)]);
-
-			if (vlan_bitmap[(u32)(vlan_id + i)] > 0)
-				flag = true;
-		}
-
-		printf_buf[strlen(printf_buf) - 1] = '\n';
-		if (flag)
-			dev_info(&hdev->pdev->dev, "%s", printf_buf);
-	}
-}
-
-static void hclge_dbg_dump_port_vlan_table(struct hclge_dev *hdev)
-{
-	struct hclge_vlan_filter_pf_cfg_cmd *req;
-	struct hclge_desc desc;
-	u32 *vlan_bitmap;
-	u8 vlan_byte_val;
-	u8 vlan_offset;
-	u8 vlan_byte;
-	int vlan_len;
-	u32 vlan_id;
-	int ret;
-
-	vlan_len = HCLGE_DBG_VLAN_ID_MAX / HCLGE_VLAN_BYTE_SIZE;
-	vlan_bitmap = kzalloc(vlan_len, GFP_KERNEL);
-	if (!vlan_bitmap) {
-		dev_err(&hdev->pdev->dev,
-			"port vlan table alloc memory failed\n");
-		return;
-	}
-
-	for (vlan_id = 0; vlan_id < HCLGE_DBG_VLAN_ID_MAX; vlan_id++) {
-		/* Prevent long-term occupation of the command channel. */
-		if ((vlan_id % HCLGE_DBG_SCAN_STEP) == 0)
-			msleep(HCLGE_DBG_PAUSE_TIME);
-
-		hclge_cmd_setup_basic_desc(&desc,
-					   HCLGE_OPC_VLAN_FILTER_PF_CFG, true);
-
-		vlan_offset = vlan_id / HCLGE_VLAN_ID_B;
-		vlan_byte = (vlan_id % HCLGE_VLAN_ID_B) / HCLGE_VLAN_BYTE_SIZE;
-		vlan_byte_val = 1 << (vlan_id % HCLGE_VLAN_BYTE_SIZE);
-
-		req = (struct hclge_vlan_filter_pf_cfg_cmd *)desc.data;
-		req->vlan_offset = vlan_offset;
-		req->vlan_offset_bitmap[vlan_byte] = vlan_byte_val;
-
-		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
-		if (ret) {
-			dev_err(&hdev->pdev->dev,
-				"call hclge_cmd_send fail, ret = %d\n", ret);
-			kfree(vlan_bitmap);
-			return;
-		}
-
-		if (req->vlan_cfg != 0)
-			continue;
-
-		vlan_bitmap[(u32)(vlan_id / 32)] |= 1 << (vlan_id % 32);
-	}
-
-	dev_info(&hdev->pdev->dev, "vlan | port filter bitMap:\n");
-
-	hclge_dbg_print_vlan_table(hdev, HCLGE_DBG_VLAN_ID_MAX, vlan_bitmap);
-
-	kfree(vlan_bitmap);
-}
-
-static void hclge_dbg_dump_vf_vlan_table(struct hclge_dev *hdev, char *cmd_buf)
-{
-	struct hclge_vlan_filter_vf_cfg_cmd *req0;
-	struct hclge_vlan_filter_vf_cfg_cmd *req1;
-	struct hclge_desc desc[2];
-	u32 *vlan_bitmap;
-	u8 vf_byte_val;
-	u8 vf_bitmap;
-	int vlan_len;
-	u32 vlan_id;
-	u16 vf_id;
-	int ret;
-
-	ret = kstrtou16(cmd_buf, 0, &vf_id);
-	if (ret) {
-		dev_err(&hdev->pdev->dev,
-			"vf id failed. vf id max: %d\n", hdev->num_alloc_vfs);
-		return;
-	}
-
-	vlan_len = HCLGE_DBG_VLAN_ID_MAX / 8;
-	vlan_bitmap = kzalloc(vlan_len, GFP_KERNEL);
-	if (!vlan_bitmap) {
-		dev_err(&hdev->pdev->dev,
-			"port vlan table alloc memory failed\n");
-		return;
-	}
-
-	for (vlan_id = 0; vlan_id < HCLGE_DBG_VLAN_ID_MAX; vlan_id++) {
-		/* Prevent long-term occupation of the command channel. */
-		if ((vlan_id % HCLGE_DBG_SCAN_STEP) == 0)
-			msleep(HCLGE_DBG_PAUSE_TIME);
-
-		hclge_cmd_setup_basic_desc(&desc[0],
-					   HCLGE_OPC_VLAN_FILTER_VF_CFG, true);
-		desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
-		hclge_cmd_setup_basic_desc(&desc[1],
-					   HCLGE_OPC_VLAN_FILTER_VF_CFG, true);
-
-		req0 = (struct hclge_vlan_filter_vf_cfg_cmd *)desc[0].data;
-		req1 = (struct hclge_vlan_filter_vf_cfg_cmd *)desc[1].data;
-		req0->vlan_id = cpu_to_le16(vlan_id);
-
-		ret = hclge_cmd_send(&hdev->hw, desc, 2);
-		if (ret) {
-			dev_err(&hdev->pdev->dev,
-				"call hclge_cmd_send fail, ret = %d\n", ret);
-			kfree(vlan_bitmap);
-			return;
-		}
-
-		if (vf_id < 128)
-			vf_bitmap = req0->vf_bitmap[vf_id / 8];
-		else
-			vf_bitmap = req1->vf_bitmap[(vf_id - 128) / 8];
-
-		vf_byte_val = 1 << (vf_id % 8);
-
-		if (vf_bitmap & vf_byte_val)
-			vlan_bitmap[(u32)(vlan_id / 32)] |= 1 << (vlan_id % 32);
-	}
-
-	dev_info(&hdev->pdev->dev, "vlan | vf filter bitMap:\n");
-
-	hclge_dbg_print_vlan_table(hdev, HCLGE_DBG_VLAN_ID_MAX, vlan_bitmap);
-
-	kfree(vlan_bitmap);
-}
-
 static void hclge_dbg_dump_mng_table(struct hclge_dev *hdev)
 {
 	struct hclge_mac_ethertype_idx_rd_cmd *req0;
@@ -1281,30 +923,18 @@ int hclge_dbg_run_cmd(struct  hnae3_handle *handle, char  *cmd_buf)
 
 	if (strncmp(cmd_buf, "dump fd tcam", 12) == 0) {
 		hclge_dbg_fd_tcam(hdev);
-	} else if (strncmp(cmd_buf, "dump promisc", 12) == 0) {
-		hclge_dbg_dump_promisc_cfg(hdev, cmd_buf);
 	} else if (strncmp(cmd_buf, "dump tc", 7) == 0) {
 		hclge_dbg_dump_tc(hdev);
 	} else if (strncmp(cmd_buf, "dump tm map", 11) == 0) {
 		hclge_dbg_dump_tm_map(hdev, &cmd_buf[sizeof("dump tm map")]);
 	} else if (strncmp(cmd_buf, "dump tm", 7) == 0) {
 		hclge_dbg_dump_tm(hdev);
-	} else if (strncmp(cmd_buf, "dump checksum", 13) == 0) {
-		hclge_dbg_dump_checksum(hdev);
 	} else if (strncmp(cmd_buf, "dump qos pause cfg", 18) == 0) {
 		hclge_dbg_dump_qos_pause_cfg(hdev);
 	} else if (strncmp(cmd_buf, "dump qos pri map", 16) == 0) {
 		hclge_dbg_dump_qos_pri_map(hdev);
 	} else if (strncmp(cmd_buf, "dump qos buf cfg", 16) == 0) {
 		hclge_dbg_dump_qos_buf_cfg(hdev);
-	} else if (strncmp(cmd_buf, "dump mac tbl", 12) == 0) {
-		hclge_dbg_dump_mac_table(hdev);
-	} else if (strncmp(cmd_buf, "dump port vlan tbl", 18) == 0) {
-		hclge_dbg_dump_port_vlan_table(hdev);
-	} else if (strncmp(cmd_buf, "dump vf vlan tbl", 16) == 0) {
-		int len = sizeof("dump vf vlan tbl");
-
-		hclge_dbg_dump_vf_vlan_table(hdev, &cmd_buf[len]);
 	} else if (strncmp(cmd_buf, "dump mng tbl", 12) == 0) {
 		hclge_dbg_dump_mng_table(hdev);
 	} else if (strncmp(cmd_buf, "dump reg", 8) == 0) {
