@@ -2470,6 +2470,13 @@ static int hclgevf_reset_hdev(struct hclgevf_dev *hdev)
 			dev_err(&pdev->dev, "Enable tso fail, ret =%d\n", ret);
 			return ret;
 		}
+
+		ret = hclgevf_set_promisc_mode(hdev, true);
+		if (ret) {
+			dev_err(&pdev->dev,
+				"Enable promisc mode fail, ret =%d\n", ret);
+			return ret;
+		}
 	}
 
 	/* Initialize RSS for this VF */
