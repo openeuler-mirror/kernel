@@ -167,10 +167,10 @@ static int hns3_nic_init_irq(struct hns3_nic_priv *priv)
 					hns3_nic_irq_affinity_notify;
 		tqp_vectors->affinity_notify.release =
 					hns3_nic_irq_affinity_release;
-		irq_set_affinity_notifier(tqp_vectors->vector_irq,
-					  &tqp_vectors->affinity_notify);
 		irq_set_affinity_hint(tqp_vectors->vector_irq,
 				      &tqp_vectors->affinity_mask);
+		irq_set_affinity_notifier(tqp_vectors->vector_irq,
+					  &tqp_vectors->affinity_notify);
 
 		tqp_vectors->irq_init_flag = HNS3_VECTOR_INITED;
 	}
