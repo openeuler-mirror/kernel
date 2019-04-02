@@ -1495,9 +1495,7 @@ static bool  hclge_is_rx_buf_ok(struct hclge_dev *hdev,
 	} else {
 		buf_alloc->s_buf.self.high = aligned_mps +
 						HCLGE_NON_DCB_ADDITIONAL_BUF;
-		buf_alloc->s_buf.self.low =
-			roundup(aligned_mps / HCLGE_BUF_DIV_BY,
-				HCLGE_BUF_SIZE_UNIT);
+		buf_alloc->s_buf.self.low = aligned_mps;
 	}
 
 	if (hnae3_dev_dcb_supported(hdev)) {
@@ -1510,8 +1508,8 @@ static bool  hclge_is_rx_buf_ok(struct hclge_dev *hdev,
 		hi_thrd = rounddown(hi_thrd, HCLGE_BUF_SIZE_UNIT);
 		lo_thrd = hi_thrd - aligned_mps / HCLGE_BUF_DIV_BY;
 	} else {
-		lo_thrd = 0;
-		hi_thrd = aligned_mps;
+		hi_thrd = aligned_mps + HCLGE_NON_DCB_ADDITIONAL_BUF;
+		lo_thrd = aligned_mps;
 	}
 
 	for (i = 0; i < HCLGE_MAX_TC_NUM; i++) {
