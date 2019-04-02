@@ -15,6 +15,7 @@
 #include <linux/sctp.h>
 #include <linux/vermagic.h>
 #include <net/gre.h>
+#include <net/ip6_checksum.h>
 #include <net/pkt_cls.h>
 #include <net/tcp.h>
 #include <net/vxlan.h>
@@ -2454,6 +2455,62 @@ static void hns3_nic_reuse_page(struct sk_buff *skb, int i,
 	}
 }
 
+#ifdef CONFIG_INET
+static void hns3_gro_ip_csum(struct sk_buff *skb)
+{
+	const struct iphdr *iph = ip_hdr(skb);
+	struct tcphdr *th;
+
+	skb_set_transport_header(skb, sizeof(struct iphdr));
+	th = tcp_hdr(skb);
+
+	th->check = ~tcp_v4_check(skb->len - skb_transport_offset(skb),
+				  iph->saddr, iph->daddr, 0);
+}
+
+static void hns3_gro_ipv6_csum(struct sk_buff *skb)
+{
+	struct ipv6hdr *iph = ipv6_hdr(skb);
+	struct tcphdr *th;
+
+	skb_set_transport_header(skb, sizeof(struct ipv6hdr));
+	th = tcp_hdr(skb);
+
+	th->check = ~tcp_v6_check(skb->len - skb_transport_offset(skb),
+				  &iph->saddr, &iph->daddr, 0);
+}
+
+static void hns3_gro_csum(struct sk_buff *skb,
+			  void (*gro_func)(struct sk_buff *))
+{
+	skb_reset_network_header(skb);
+	gro_func(skb);
+	tcp_gro_complete(skb);
+}
+#endif
+
+static void hns3_gro_receive(struct hns3_enet_ring *ring, struct sk_buff *skb)
+{
+	struct net_device *netdev = ring->tqp->handle->kinfo.netdev;
+
+#ifdef CONFIG_INET
+	if (skb_shinfo(skb)->gso_size) {
+		switch (be16_to_cpu(skb->protocol)) {
+		case ETH_P_IP:
+			hns3_gro_csum(skb, hns3_gro_ip_csum);
+			break;
+		case ETH_P_IPV6:
+			hns3_gro_csum(skb, hns3_gro_ipv6_csum);
+			break;
+		default:
+			netdev_err(netdev,
+				   "Error: FW GRO supports only IPv4/IPv6, not 0x%04x\n",
+				   be16_to_cpu(skb->protocol));
+		}
+	}
+#endif
+}
+
 static void hns3_rx_checksum(struct hns3_enet_ring *ring, struct sk_buff *skb,
 			     struct hns3_desc *desc)
 {
@@ -2462,6 +2519,13 @@ static void hns3_rx_checksum(struct hns3_enet_ring *ring, struct sk_buff *skb,
 	u32 bd_base_info;
 	int ol4_type;
 	u32 l234info;
+
+	/* If enable HW GRO, HW will do the Csum check */
+	if (skb_shinfo(skb)->gso_size) {
+		hns3_gro_receive(ring, skb);
+		skb->ip_summed = CHECKSUM_UNNECESSARY;
+		return;
+	}
 
 	bd_base_info = le32_to_cpu(desc->rx.bd_base_info);
 	l234info = le32_to_cpu(desc->rx.l234_info);
@@ -2855,13 +2919,7 @@ static int hns3_handle_rx_bd(struct hns3_enet_ring *ring,
 	/* This is needed in order to enable forwarding support */
 	hns3_set_gro_param(skb, l234info, bd_base_info);
 
-	/* If enable HW GRO, HW will do the Csum check */
-	if (skb_shinfo(skb)->gso_size) {
-		tcp_gro_complete(skb);
-		skb->ip_summed = CHECKSUM_UNNECESSARY;
-	} else {
-		hns3_rx_checksum(ring, skb, desc);
-	}
+	hns3_rx_checksum(ring, skb, desc);
 
 	skb_record_rx_queue(skb, ring->tqp->tqp_index);
 	hns3_set_rx_skb_rss_type(ring, skb);
