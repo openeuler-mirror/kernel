@@ -629,7 +629,7 @@ unsigned long long sched_get_idle_time(int cpu)
 {
 	struct rq_cputime *rt = &per_cpu(rq_cputimes, cpu);
 
-	if (is_idle_task(curr_task(cpu)))
+	if (cpu_curr(cpu) == idle_task(cpu))
 		return rt->sum_idle_time + cpu_clock(cpu) - rt->last_entry_idle;
 	else
 		return rt->sum_idle_time;
