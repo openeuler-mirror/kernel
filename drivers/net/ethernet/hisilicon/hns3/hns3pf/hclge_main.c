@@ -36,6 +36,7 @@
 static int hclge_set_mac_mtu(struct hclge_dev *hdev, int new_mps);
 static int hclge_init_vlan_config(struct hclge_dev *hdev);
 static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev);
+static bool hclge_get_hw_reset_stat(struct hnae3_handle *handle);
 static int hclge_set_umv_space(struct hclge_dev *hdev, u16 space_size,
 			       u16 *allocated_size, bool is_alloc);
 static void hclge_add_vport_vlan_table(struct hclge_vport *vport, u16 vlan_id,
@@ -2364,8 +2365,11 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 	}
 
 	/* check for vector0 msix event source */
-	if (msix_src_reg & HCLGE_VECTOR0_REG_MSIX_MASK)
+	if (msix_src_reg & HCLGE_VECTOR0_REG_MSIX_MASK) {
+		dev_info(&hdev->pdev->dev, "received event 0x%x\n",
+			 msix_src_reg);
 		return HCLGE_VECTOR0_EVENT_ERR;
+	}
 
 	/* check for vector0 mailbox(=CMDQ RX) event source */
 	if (BIT(HCLGE_VECTOR0_RX_CMDQ_INT_B) & cmdq_src_reg) {
@@ -2374,6 +2378,9 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 		return HCLGE_VECTOR0_EVENT_MBX;
 	}
 
+	/* print other vector0 event source */
+	dev_info(&hdev->pdev->dev, "cmdq_src_reg:0x%x, msix_src_reg:0x%x\n",
+		 cmdq_src_reg, msix_src_reg);
 	return HCLGE_VECTOR0_EVENT_OTHER;
 }
 
@@ -2705,8 +2712,14 @@ int hclge_func_reset_cmd(struct hclge_dev *hdev, int func_id)
 
 static void hclge_do_reset(struct hclge_dev *hdev)
 {
+	struct hnae3_handle *handle = &hdev->vport[0].nic;
 	struct pci_dev *pdev = hdev->pdev;
 	u32 val;
+
+	if (hclge_get_hw_reset_stat(handle)) {
+		dev_err(&pdev->dev, "Hardware reset not finished\n");
+		return;
+	}
 
 	switch (hdev->reset_type) {
 	case HNAE3_GLOBAL_RESET:
@@ -2819,6 +2832,8 @@ static int hclge_reset_prepare_down(struct hclge_dev *hdev)
 
 static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 {
+#define HCLGE_RESET_SYNC_TIME 100
+
 	u32 reg_val;
 	int ret = 0;
 
@@ -2827,7 +2842,7 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 		/* There is no mechanism for PF to know if VF has stopped IO
 		 * for now, just wait 100 ms for VF to stop IO
 		 */
-		msleep(100);
+		msleep(HCLGE_RESET_SYNC_TIME);
 		ret = hclge_func_reset_cmd(hdev, 0);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
@@ -2847,7 +2862,7 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 		/* There is no mechanism for PF to know if VF has stopped IO
 		 * for now, just wait 100 ms for VF to stop IO
 		 */
-		msleep(100);
+		msleep(HCLGE_RESET_SYNC_TIME);
 		set_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
 		set_bit(HNAE3_FLR_DOWN, &hdev->flr_state);
 		hdev->rst_stats.flr_rst_cnt++;
@@ -2861,6 +2876,10 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 		break;
 	}
 
+	/* inform hardware that preparatory work is done */
+	msleep(HCLGE_RESET_SYNC_TIME);
+	hclge_write_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG,
+			HCLGE_NIC_CMQ_ENABLE);
 	dev_info(&hdev->pdev->dev, "prepare wait ok\n");
 
 	return ret;
