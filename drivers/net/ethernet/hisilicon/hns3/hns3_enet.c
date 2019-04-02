@@ -4002,12 +4002,13 @@ static int hns3_recover_hw_addr(struct net_device *ndev)
 	struct netdev_hw_addr *ha, *tmp;
 	int ret = 0;
 
+	netif_addr_lock_bh(ndev);
 	/* go through and sync uc_addr entries to the device */
 	list = &ndev->uc;
 	list_for_each_entry_safe(ha, tmp, &list->list, list) {
 		ret = hns3_nic_uc_sync(ndev, ha->addr);
 		if (ret)
-			return ret;
+			goto out;
 	}
 
 	/* go through and sync mc_addr entries to the device */
@@ -4016,9 +4017,11 @@ static int hns3_recover_hw_addr(struct net_device *ndev)
 		if (ha->refcount > 1) {
 			ret = hns3_nic_mc_sync(ndev, ha->addr);
 			if (ret)
-				return ret;
+				goto out;
 		}
 
+out:
+	netif_addr_unlock_bh(ndev);
 	return ret;
 }
 
@@ -4029,6 +4032,7 @@ static void hns3_remove_hw_addr(struct net_device *netdev)
 
 	hns3_nic_uc_unsync(netdev, netdev->dev_addr);
 
+	netif_addr_lock_bh(netdev);
 	list = &netdev->uc;
 	list_for_each_entry_safe(ha, tmp, &list->list, list)
 		hns3_nic_uc_unsync(netdev, ha->addr);
@@ -4038,6 +4042,8 @@ static void hns3_remove_hw_addr(struct net_device *netdev)
 	list_for_each_entry_safe(ha, tmp, &list->list, list)
 		if (ha->refcount > 1)
 			hns3_nic_mc_unsync(netdev, ha->addr);
+
+	netif_addr_unlock_bh(netdev);
 }
 
 static void hns3_clear_tx_ring(struct hns3_enet_ring *ring)
