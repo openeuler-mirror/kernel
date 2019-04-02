@@ -2916,6 +2916,9 @@ static int hns3_handle_rx_bd(struct hns3_enet_ring *ring,
 
 	ring->tqp_vector->rx_group.total_bytes += skb->len;
 
+	/* Do update ip stack process */
+	skb->protocol = eth_type_trans(skb, netdev);
+
 	/* This is needed in order to enable forwarding support */
 	hns3_set_gro_param(skb, l234info, bd_base_info);
 
@@ -2932,7 +2935,6 @@ int hns3_clean_rx_ring(struct hns3_enet_ring *ring, int budget,
 		       void (*rx_fn)(struct hns3_enet_ring *, struct sk_buff *))
 {
 #define RCB_NOF_ALLOC_RX_BUFF_ONCE 16
-	struct net_device *netdev = ring->tqp->handle->kinfo.netdev;
 	int recv_pkts, recv_bds, clean_count, err;
 	int unused_count = hns3_desc_unused(ring) - ring->pending_buf;
 	struct sk_buff *skb = ring->skb;
@@ -2969,8 +2971,6 @@ int hns3_clean_rx_ring(struct hns3_enet_ring *ring, int budget,
 			continue;
 		}
 
-		/* Do update ip stack process */
-		skb->protocol = eth_type_trans(skb, netdev);
 		rx_fn(ring, skb);
 		recv_bds += ring->pending_buf;
 		clean_count += ring->pending_buf;
