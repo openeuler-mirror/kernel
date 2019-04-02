@@ -145,12 +145,27 @@ EXPORT_SYMBOL(hnae3_register_client);
 
 void hnae3_unregister_client(struct hnae3_client *client)
 {
+	struct hnae3_client *client_tmp;
 	struct hnae3_ae_dev *ae_dev;
+	bool flag = false;
 
 	if (!client)
 		return;
 
 	mutex_lock(&hnae3_common_lock);
+	/* one system should only have one client for every type */
+	list_for_each_entry(client_tmp, &hnae3_client_list, node) {
+		if (client_tmp->type == client->type) {
+			flag = true;
+			break;
+		}
+	}
+
+	if (!flag) {
+		mutex_unlock(&hnae3_common_lock);
+		return;
+	}
+
 	/* un-initialize the client on every matched port */
 	list_for_each_entry(ae_dev, &hnae3_ae_dev_list, node) {
 		hnae3_match_n_instantiate(client, ae_dev, false);
