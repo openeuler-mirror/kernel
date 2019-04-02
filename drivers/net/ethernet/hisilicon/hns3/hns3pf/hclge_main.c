@@ -2134,7 +2134,8 @@ static int hclge_mac_init(struct hclge_dev *hdev)
 
 static void hclge_mbx_task_schedule(struct hclge_dev *hdev)
 {
-	if (!test_and_set_bit(HCLGE_STATE_MBX_SERVICE_SCHED, &hdev->state))
+	if (!test_and_set_bit(HCLGE_STATE_MBX_SERVICE_SCHED, &hdev->state) &&
+	    !test_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state))
 		schedule_work(&hdev->mbx_service_task);
 }
 
@@ -3047,7 +3048,8 @@ static void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle)
 	 */
 	if (!handle)
 		handle = &hdev->vport[0].nic;
-	if (time_before(jiffies, (hdev->last_reset_time + 12 * HZ)))
+	if (time_before(jiffies, (hdev->last_reset_time +
+				  HCLGE_RESET_INTERVAL)))
 		return;
 	else if (hdev->default_reset_request)
 		hdev->reset_level =
@@ -5840,7 +5842,8 @@ static void hclge_ae_stop(struct hnae3_handle *handle)
 	hclge_mac_stop_phy(hdev);
 
 	for (i = 0; i < handle->kinfo.num_tqps; i++)
-		hclge_reset_tqp(handle, i);
+		if (hclge_reset_tqp(handle, i))
+			return;
 
 	/* reset tqp stats */
 	hclge_reset_tqp_stats(handle);

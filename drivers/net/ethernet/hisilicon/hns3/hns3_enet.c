@@ -3561,6 +3561,7 @@ err:
 	}
 
 	devm_kfree(&pdev->dev, priv->ring_data);
+	priv->ring_data = NULL;
 	return ret;
 }
 
@@ -4323,13 +4324,15 @@ static int hns3_reset_notify_init_enet(struct hnae3_handle *handle)
 	ret = hns3_client_start(handle);
 	if (ret) {
 		dev_err(priv->dev, "hns3_client_start fail! ret=%d\n", ret);
-		goto err_uninit_vector;
+		goto err_uninit_ring;
 	}
 
 	set_bit(HNS3_NIC_STATE_INITED, &priv->state);
 
 	return 0;
 
+err_uninit_ring:
+	hns3_uninit_all_ring(priv);
 err_uninit_vector:
 	hns3_nic_uninit_vector_data(priv);
 err_dealloc_vector:
@@ -4373,7 +4376,7 @@ static int hns3_reset_notify_uninit_enet(struct hnae3_handle *handle)
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
 	int ret;
 
-	if (!test_bit(HNS3_NIC_STATE_INITED, &priv->state)) {
+	if (!test_and_clear_bit(HNS3_NIC_STATE_INITED, &priv->state)) {
 		netdev_warn(netdev, "already uninitialized\n");
 		return 0;
 	}
@@ -4393,8 +4396,6 @@ static int hns3_reset_notify_uninit_enet(struct hnae3_handle *handle)
 		netdev_err(netdev, "uninit ring error\n");
 
 	hns3_put_ring_config(priv);
-
-	clear_bit(HNS3_NIC_STATE_INITED, &priv->state);
 
 	return ret;
 }

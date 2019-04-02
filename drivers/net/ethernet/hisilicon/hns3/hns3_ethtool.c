@@ -484,7 +484,7 @@ static void hns3_get_stats(struct net_device *netdev,
 
 	if (!test_bit(HNS3_NIC_STATE_INITED, &priv->state) ||
 	    hns3_nic_resetting(netdev)) {
-		netdev_err(netdev, "dev resetting!");
+		netdev_err(netdev, "dev resetting, could not get stats\n");
 		return;
 	}
 

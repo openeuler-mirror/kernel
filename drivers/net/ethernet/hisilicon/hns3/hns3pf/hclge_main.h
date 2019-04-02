@@ -627,6 +627,8 @@ struct hclge_rst_stats {
 	u32 reset_cnt;		/* the number of reset has been done */
 };
 
+#define HCLGE_RESET_INTERVAL	(12 * HZ)
+
 /* For each bit of TCAM entry, it uses a pair of 'x' and
  * 'y' to indicate which value to match, like below:
  * ----------------------------------
