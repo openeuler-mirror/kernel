@@ -518,6 +518,7 @@ static const struct key_info tuple_key_info[] = {
 
 /* assigned by firmware, the real filter number for each pf may be less */
 #define MAX_FD_FILTER_NUM	4096
+#define HCLGE_FD_ARFS_EXPIRE_TIMER_INTERVAL	5
 
 enum HCLGE_FD_ACTIVE_RULE_TYPE {
 	HCLGE_FD_RULE_NONE,
@@ -583,6 +584,7 @@ struct hclge_fd_rule {
 	u16 queue_id;
 	u16 location;
 	u16 flow_id;	/* only used for arfs */
+	enum HCLGE_FD_ACTIVE_RULE_TYPE rule_type;
 };
 
 struct hclge_fd_ad_data {
@@ -746,6 +748,7 @@ struct hclge_dev {
 	struct hlist_head fd_rule_list;
 	spinlock_t fd_rule_lock; /* protec fd_rule_list */
 	u16 hclge_fd_rule_num;
+	u16 fd_arfs_expire_timer;
 	unsigned long fd_bmap[BITS_TO_LONGS(MAX_FD_FILTER_NUM)];
 	enum HCLGE_FD_ACTIVE_RULE_TYPE fd_active_type;
 	u8 fd_en;

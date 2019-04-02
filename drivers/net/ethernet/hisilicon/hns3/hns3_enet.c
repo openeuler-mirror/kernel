@@ -333,44 +333,6 @@ static void hns3_tqp_disable(struct hnae3_queue *tqp)
 	hns3_write_dev(tqp, HNS3_RING_EN_REG, rcb_reg);
 }
 
-static void hns3_enable_service_task(struct hns3_nic_priv *priv, bool enable)
-{
-	if (enable) {
-		mod_timer(&priv->service_timer, jiffies + HZ * 5);
-	} else {
-		del_timer_sync(&priv->service_timer);
-		cancel_work_sync(&priv->service_task);
-	}
-}
-
-static void hns3_task_schedule(struct hns3_nic_priv *priv)
-{
-	if (!test_bit(HNS3_NIC_STATE_RESETTING, &priv->state) &&
-	    !test_bit(HNS3_NIC_STATE_DOWN, &priv->state))
-		(void)schedule_work(&priv->service_task);
-}
-
-static void hns3_service_timer(struct timer_list *t)
-{
-	struct hns3_nic_priv *priv = from_timer(priv, t, service_timer);
-
-	mod_timer(&priv->service_timer, jiffies + HZ * 5);
-	hns3_task_schedule(priv);
-}
-
-static void hns3_service_task(struct work_struct *work)
-{
-	struct hns3_nic_priv *priv =
-		container_of(work, struct hns3_nic_priv, service_task);
-	struct hnae3_handle *h = priv->ae_handle;
-
-#ifdef CONFIG_RFS_ACCEL
-	if (!test_bit(HNS3_NIC_STATE_DOWN, &priv->state))
-		if (h->ae_algo->ops->rfs_filter_expire)
-			h->ae_algo->ops->rfs_filter_expire(h);
-#endif
-}
-
 static int hns3_set_rx_cpu_rmap(struct hnae3_handle *h)
 {
 #ifdef CONFIG_RFS_ACCEL
@@ -516,8 +478,6 @@ static int hns3_nic_net_open(struct net_device *netdev)
 	if (h->ae_algo->ops->enable_timer_task)
 		h->ae_algo->ops->enable_timer_task(priv->ae_handle, true);
 
-	hns3_enable_service_task(priv, true);
-
 	hns3_config_xps(priv);
 	return 0;
 }
@@ -557,8 +517,6 @@ static int hns3_nic_net_stop(struct net_device *netdev)
 
 	if (test_and_set_bit(HNS3_NIC_STATE_DOWN, &priv->state))
 		return 0;
-
-	hns3_enable_service_task(priv, false);
 
 	ops = priv->ae_handle->ae_algo->ops;
 	if (ops->enable_timer_task)
@@ -3838,9 +3796,6 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	hns3_dcbnl_setup(handle);
 
 	hns3_dbg_init(handle);
-
-	timer_setup(&priv->service_timer, hns3_service_timer, 0);
-	INIT_WORK(&priv->service_task, hns3_service_task);
 
 #ifdef HAVE_NETDEVICE_MIN_MAX_MTU
 	/* MTU range: (ETH_MIN_MTU(kernel default) - 9702) */
