@@ -425,15 +425,15 @@ const struct hclge_hw_error hclge_ppu_mpf_abnormal_int_st3[] = {
 
 const struct hclge_hw_error hclge_ppu_pf_abnormal_int[] = {
 	{ .int_msk = BIT(0), .msg = "over_8bd_no_fe",
-	  .reset_level = HNAE3_NONE_RESET },
+	  .reset_level = HNAE3_FUNC_RESET },
 	{ .int_msk = BIT(1), .msg = "tso_mss_cmp_min_err",
 	  .reset_level = HNAE3_NONE_RESET },
 	{ .int_msk = BIT(2), .msg = "tso_mss_cmp_max_err",
 	  .reset_level = HNAE3_NONE_RESET },
 	{ .int_msk = BIT(3), .msg = "tx_rd_fbd_poison",
-	  .reset_level = HNAE3_NONE_RESET },
+	  .reset_level = HNAE3_FUNC_RESET },
 	{ .int_msk = BIT(4), .msg = "rx_rd_ebd_poison",
-	  .reset_level = HNAE3_NONE_RESET },
+	  .reset_level = HNAE3_FUNC_RESET },
 	{ .int_msk = BIT(5), .msg = "buf_wait_timeout",
 	  .reset_level = HNAE3_NONE_RESET },
 	{ /* sentinel */ }
