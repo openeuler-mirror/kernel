@@ -1392,9 +1392,11 @@ static int hclgevf_reset_prepare_wait(struct hclgevf_dev *hdev)
 	case HNAE3_VF_FUNC_RESET:
 		ret = hclgevf_send_mbx_msg(hdev, HCLGE_MBX_RESET, 0, NULL,
 					   0, true, NULL, 0);
+		hdev->rst_stats.vf_func_rst_cnt++;
 		break;
 	case HNAE3_FLR_RESET:
 		set_bit(HNAE3_FLR_DOWN, &hdev->flr_state);
+		hdev->rst_stats.flr_rst_cnt++;
 		break;
 	default:
 		break;
@@ -1417,8 +1419,7 @@ static int hclgevf_reset(struct hclgevf_dev *hdev)
 	 * know if device is undergoing reset
 	 */
 	ae_dev->reset_type = hdev->reset_type;
-	hdev->reset_count++;
-
+	hdev->rst_stats.rst_cnt++;
 	rtnl_lock();
 
 	/* bring down the nic to stop any ongoing TX/RX */
@@ -1462,6 +1463,7 @@ static int hclgevf_reset(struct hclgevf_dev *hdev)
 	rtnl_unlock();
 
 	ae_dev->reset_type = HNAE3_NONE_RESET;
+	hdev->rst_stats.rst_done_cnt++;
 
 	return ret;
 err_reset_lock:
@@ -1795,6 +1797,7 @@ static enum hclgevf_evt_cause hclgevf_check_evt_cause(struct hclgevf_dev *hdev,
 		set_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state);
 		cmdq_src_reg &= ~BIT(HCLGEVF_VECTOR0_RST_INT_B);
 		*clearval = cmdq_src_reg;
+		hdev->rst_stats.vf_rst_cnt++;
 		return HCLGEVF_VECTOR0_EVENT_RST;
 	}
 
@@ -2193,7 +2196,7 @@ static int hclgevf_init_nic_client_instance(struct hnae3_ae_dev *ae_dev,
 					    struct hnae3_client *client)
 {
 	struct hclgevf_dev *hdev = ae_dev->priv;
-	int rst_cnt = hdev->reset_count;
+	int rst_cnt = hdev->rst_stats.rst_cnt;
 	int ret = 0;
 
 	ret = client->ops->init_instance(&hdev->nic);
@@ -2202,7 +2205,7 @@ static int hclgevf_init_nic_client_instance(struct hnae3_ae_dev *ae_dev,
 
 	set_bit(HCLGEVF_STATE_NIC_REGISTERED, &hdev->state);
 	if (test_bit(HCLGEVF_STATE_RST_HANDLING, &hdev->state) ||
-	    rst_cnt != hdev->reset_count) {
+	    rst_cnt != hdev->rst_stats.rst_cnt) {
 		clear_bit(HCLGEVF_STATE_NIC_REGISTERED, &hdev->state);
 
 		client->ops->uninit_instance(&hdev->nic, 0);
@@ -2771,7 +2774,7 @@ static unsigned long hclgevf_ae_dev_reset_cnt(struct hnae3_handle *handle)
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
 
-	return hdev->reset_count;
+	return hdev->rst_stats.rst_cnt;
 }
 
 #define MAX_SEPARATE_NUM	4
