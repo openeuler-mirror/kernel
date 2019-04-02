@@ -1502,17 +1502,12 @@ hclge_log_and_clear_rocee_ras_error(struct hclge_dev *hdev)
 
 	if (status & HCLGE_ROCEE_RERR_INT_MASK) {
 		dev_warn(dev, "ROCEE RAS AXI rresp error\n");
-		return HNAE3_FUNC_RESET;
+		reset_type = HNAE3_FUNC_RESET;
 	}
 
 	if (status & HCLGE_ROCEE_BERR_INT_MASK) {
 		dev_warn(dev, "ROCEE RAS AXI bresp error\n");
-		return HNAE3_FUNC_RESET;
-	}
-
-	if (status & HCLGE_ROCEE_ECC_INT_MASK) {
-		dev_warn(dev, "ROCEE RAS 2bit ECC error\n");
-		reset_type = HNAE3_GLOBAL_RESET;
+		reset_type = HNAE3_FUNC_RESET;
 	}
 
 	if (status & HCLGE_ROCEE_OVF_INT_MASK) {
@@ -1522,7 +1517,11 @@ hclge_log_and_clear_rocee_ras_error(struct hclge_dev *hdev)
 			/* reset everything for now */
 			return HNAE3_GLOBAL_RESET;
 		}
-		reset_type = HNAE3_FUNC_RESET;
+	}
+
+	if (status & HCLGE_ROCEE_ECC_INT_MASK) {
+		dev_warn(dev, "ROCEE RAS 2bit ECC error\n");
+		reset_type = HNAE3_GLOBAL_RESET;
 	}
 
 	/* clear error status */
