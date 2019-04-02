@@ -1384,7 +1384,7 @@ static int hclge_tx_buffer_alloc(struct hclge_dev *hdev,
 	return ret;
 }
 
-static int hclge_get_tc_num(struct hclge_dev *hdev)
+static u32 hclge_get_tc_num(struct hclge_dev *hdev)
 {
 	int i, cnt = 0;
 
@@ -1457,20 +1457,16 @@ static bool  hclge_is_rx_buf_ok(struct hclge_dev *hdev,
 				struct hclge_pkt_buf_alloc *buf_alloc,
 				u32 rx_all)
 {
-	u32 shared_buf_min, shared_buf_tc, shared_std;
-	int tc_num = hclge_get_tc_num(hdev);
+	u32 shared_buf_min, shared_buf_tc, shared_std, hi_thrd, lo_thrd;
+	u32 tc_num = hclge_get_tc_num(hdev);
 	u32 shared_buf, aligned_mps;
 	u32 rx_priv;
 	int i;
 
 	aligned_mps = roundup(hdev->mps, HCLGE_BUF_SIZE_UNIT);
 
-	if (hnae3_dev_dcb_supported(hdev))
-		shared_buf_min = HCLGE_BUF_MUL_BY * aligned_mps +
-					hdev->dv_buf_size;
-	else
-		shared_buf_min = aligned_mps + HCLGE_NON_DCB_ADDITIONAL_BUF
-					+ hdev->dv_buf_size;
+	shared_buf_min = HCLGE_BUF_MUL_BY * aligned_mps +
+				hdev->dv_buf_size;
 
 	shared_buf_tc = tc_num * aligned_mps + aligned_mps;
 	shared_std = roundup(max_t(u32, shared_buf_min, shared_buf_tc),
@@ -1482,23 +1478,23 @@ static bool  hclge_is_rx_buf_ok(struct hclge_dev *hdev,
 
 	shared_buf = rounddown(rx_all - rx_priv, HCLGE_BUF_SIZE_UNIT);
 	buf_alloc->s_buf.buf_size = shared_buf;
-	if (hnae3_dev_dcb_supported(hdev)) {
-		buf_alloc->s_buf.self.high = shared_buf - hdev->dv_buf_size;
-		buf_alloc->s_buf.self.low = buf_alloc->s_buf.self.high
+	buf_alloc->s_buf.self.high = shared_buf - hdev->dv_buf_size;
+	buf_alloc->s_buf.self.low = buf_alloc->s_buf.self.high
 			- roundup(aligned_mps / HCLGE_BUF_DIV_BY,
 				  HCLGE_BUF_SIZE_UNIT);
-	} else {
-		buf_alloc->s_buf.self.high = aligned_mps +
-						HCLGE_NON_DCB_ADDITIONAL_BUF;
-		buf_alloc->s_buf.self.low =
-			roundup(aligned_mps / HCLGE_BUF_DIV_BY,
-				HCLGE_BUF_SIZE_UNIT);
-	}
+
+	if (tc_num)
+		hi_thrd = (shared_buf - hdev->dv_buf_size) / tc_num;
+	else
+		hi_thrd = shared_buf - hdev->dv_buf_size;
+
+	hi_thrd = max_t(u32, hi_thrd, HCLGE_BUF_MUL_BY * aligned_mps);
+	hi_thrd = rounddown(hi_thrd, HCLGE_BUF_SIZE_UNIT);
+	lo_thrd = hi_thrd - aligned_mps / HCLGE_BUF_DIV_BY;
 
 	for (i = 0; i < HCLGE_MAX_TC_NUM; i++) {
-		buf_alloc->s_buf.tc_thrd[i].low = aligned_mps;
-		buf_alloc->s_buf.tc_thrd[i].high = HCLGE_BUF_MUL_BY *
-							aligned_mps;
+		buf_alloc->s_buf.tc_thrd[i].low = lo_thrd;
+		buf_alloc->s_buf.tc_thrd[i].high = hi_thrd;
 	}
 
 	return true;
