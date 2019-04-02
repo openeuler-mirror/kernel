@@ -31,6 +31,7 @@
 #define HCLGE_BUF_SIZE_UNIT	256
 #define HCLGE_BUF_MUL_BY	2
 #define HCLGE_BUF_DIV_BY	2
+
 #define HCLGE_RESET_MAX_FAIL_CNT	5
 
 static int hclge_set_mac_mtu(struct hclge_dev *hdev, int new_mps);
@@ -2128,8 +2129,8 @@ static int hclge_mac_init(struct hclge_dev *hdev)
 
 static void hclge_mbx_task_schedule(struct hclge_dev *hdev)
 {
-	if (!test_and_set_bit(HCLGE_STATE_MBX_SERVICE_SCHED, &hdev->state) &&
-	    !test_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state))
+	if (!test_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state) &&
+	    !test_and_set_bit(HCLGE_STATE_MBX_SERVICE_SCHED, &hdev->state))
 		schedule_work(&hdev->mbx_service_task);
 }
 
@@ -2359,8 +2360,8 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 
 	/* check for vector0 msix event source */
 	if (msix_src_reg & HCLGE_VECTOR0_REG_MSIX_MASK) {
-		dev_info(&hdev->pdev->dev, "received event 0x%x\n",
-			 msix_src_reg);
+		dev_dbg(&hdev->pdev->dev, "received event 0x%x\n",
+			msix_src_reg);
 		return HCLGE_VECTOR0_EVENT_ERR;
 	}
 
@@ -2372,8 +2373,8 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 	}
 
 	/* print other vector0 event source */
-	dev_info(&hdev->pdev->dev, "cmdq_src_reg:0x%x, msix_src_reg:0x%x\n",
-		 cmdq_src_reg, msix_src_reg);
+	dev_dbg(&hdev->pdev->dev, "cmdq_src_reg:0x%x, msix_src_reg:0x%x\n",
+		cmdq_src_reg, msix_src_reg);
 	return HCLGE_VECTOR0_EVENT_OTHER;
 }
 
@@ -2710,7 +2711,8 @@ static void hclge_do_reset(struct hclge_dev *hdev)
 	u32 val;
 
 	if (hclge_get_hw_reset_stat(handle)) {
-		dev_err(&pdev->dev, "Hardware reset not finished\n");
+		dev_info(&pdev->dev, "ongoing hardware reset:0x%x\n",
+			 hclge_read_dev(&hdev->hw, HCLGE_FUN_RST_ING));
 		return;
 	}
 
@@ -2880,7 +2882,7 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 
 static bool hclge_reset_err_handle(struct hclge_dev *hdev, bool is_timeout)
 {
-#define RESET_UPGRADE_DELAY_SEC 12
+	struct hnae3_handle *handle = handle = &hdev->vport[0].nic;
 
 	if (hdev->reset_pending) {
 		dev_info(&hdev->pdev->dev, "Reset pending %lu\n",
@@ -2906,13 +2908,16 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev, bool is_timeout)
 		dev_info(&hdev->pdev->dev, "Upgrade reset level\n");
 		hclge_clear_reset_cause(hdev);
 		mod_timer(&hdev->reset_timer,
-			  jiffies + RESET_UPGRADE_DELAY_SEC * HZ);
+			  jiffies + HCLGE_RESET_INTERVAL * HZ);
 
 		return false;
 	}
 
 	hclge_clear_reset_cause(hdev);
-	dev_err(&hdev->pdev->dev, "Reset fail!\n");
+
+	if (handle && handle->ae_algo->ops->reset_fail)
+		handle->ae_algo->ops->reset_fail(handle);
+
 	return false;
 }
 
@@ -2961,7 +2966,6 @@ static void hclge_reset(struct hclge_dev *hdev)
 	/* Initialize ae_dev reset status as well, in case enet layer wants to
 	 * know if device is undergoing reset
 	 */
-	hdev->rst_stats.reset_cnt++;
 	ae_dev->reset_type = hdev->reset_type;
 	/* perform reset of the stack & ae device for a client */
 	ret = hclge_notify_roce_client(hdev, HNAE3_DOWN_CLIENT);
@@ -2987,6 +2991,8 @@ static void hclge_reset(struct hclge_dev *hdev)
 		is_timeout = true;
 		goto err_reset;
 	}
+
+	hdev->rst_stats.reset_cnt++;
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_UNINIT_CLIENT);
 	if (ret)
@@ -3099,6 +3105,19 @@ static void hclge_reset_timer(struct timer_list *t)
 	hclge_reset_event(hdev->pdev, NULL);
 }
 
+bool hclge_reset_fail(struct hnae3_handle *handle)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+
+	if (hdev->reset_fail_cnt >= HCLGE_RESET_MAX_FAIL_CNT) {
+		dev_err(&hdev->pdev->dev, "Reset fail!\n");
+		return true;
+	}
+
+	return false;
+}
+
 static void hclge_reset_subtask(struct hclge_dev *hdev)
 {
 	/* check if there is any ongoing reset in the hardware. This status can
@@ -3141,14 +3160,6 @@ static void hclge_reset_service_task(struct work_struct *work)
 	hclge_reset_subtask(hdev);
 
 	clear_bit(HCLGE_STATE_RST_HANDLING, &hdev->state);
-}
-
-bool hclge_reset_fail(struct hnae3_handle *handle)
-{
-	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev = vport->back;
-
-	return hdev->reset_fail_cnt >= HCLGE_RESET_MAX_FAIL_CNT;
 }
 
 static void hclge_mailbox_service_task(struct work_struct *work)

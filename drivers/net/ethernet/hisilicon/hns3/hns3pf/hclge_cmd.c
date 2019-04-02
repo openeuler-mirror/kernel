@@ -358,7 +358,7 @@ int hclge_cmd_init(struct hclge_dev *hdev)
 	int ret;
 
 	spin_lock_bh(&hdev->hw.cmq.csq.lock);
-	spin_lock_bh(&hdev->hw.cmq.crq.lock);
+	spin_lock(&hdev->hw.cmq.crq.lock);
 
 	hdev->hw.cmq.csq.next_to_clean = 0;
 	hdev->hw.cmq.csq.next_to_use = 0;
@@ -367,7 +367,7 @@ int hclge_cmd_init(struct hclge_dev *hdev)
 
 	hclge_cmd_init_regs(&hdev->hw);
 
-	spin_unlock_bh(&hdev->hw.cmq.crq.lock);
+	spin_unlock(&hdev->hw.cmq.crq.lock);
 	spin_unlock_bh(&hdev->hw.cmq.csq.lock);
 
 	clear_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
@@ -429,10 +429,10 @@ void hclge_destroy_cmd_queue(struct hclge_hw *hw)
 void hclge_cmd_uninit(struct hclge_dev *hdev)
 {
 	spin_lock_bh(&hdev->hw.cmq.csq.lock);
-	spin_lock_bh(&hdev->hw.cmq.crq.lock);
+	spin_lock(&hdev->hw.cmq.crq.lock);
 	set_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
 	hclge_cmd_uninit_regs(&hdev->hw);
-	spin_unlock_bh(&hdev->hw.cmq.crq.lock);
+	spin_unlock(&hdev->hw.cmq.crq.lock);
 	spin_unlock_bh(&hdev->hw.cmq.csq.lock);
 
 	hclge_destroy_cmd_queue(&hdev->hw);

@@ -335,7 +335,7 @@ int hclgevf_cmd_init(struct hclgevf_dev *hdev)
 	int ret;
 
 	spin_lock_bh(&hdev->hw.cmq.csq.lock);
-	spin_lock_bh(&hdev->hw.cmq.crq.lock);
+	spin_lock(&hdev->hw.cmq.crq.lock);
 
 	/* initialize the pointers of async rx queue of mailbox */
 	hdev->arq.hdev = hdev;
@@ -349,7 +349,7 @@ int hclgevf_cmd_init(struct hclgevf_dev *hdev)
 
 	hclgevf_cmd_init_regs(&hdev->hw);
 
-	spin_unlock_bh(&hdev->hw.cmq.crq.lock);
+	spin_unlock(&hdev->hw.cmq.crq.lock);
 	spin_unlock_bh(&hdev->hw.cmq.csq.lock);
 
 	clear_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state);
@@ -398,10 +398,10 @@ static void hclgevf_cmd_uninit_regs(struct hclgevf_hw *hw)
 void hclgevf_cmd_uninit(struct hclgevf_dev *hdev)
 {
 	spin_lock_bh(&hdev->hw.cmq.csq.lock);
-	spin_lock_bh(&hdev->hw.cmq.crq.lock);
+	spin_lock(&hdev->hw.cmq.crq.lock);
 	clear_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state);
 	hclgevf_cmd_uninit_regs(&hdev->hw);
-	spin_unlock_bh(&hdev->hw.cmq.crq.lock);
+	spin_unlock(&hdev->hw.cmq.crq.lock);
 	spin_unlock_bh(&hdev->hw.cmq.csq.lock);
 	hclgevf_free_cmd_desc(&hdev->hw.cmq.csq);
 	hclgevf_free_cmd_desc(&hdev->hw.cmq.crq);
