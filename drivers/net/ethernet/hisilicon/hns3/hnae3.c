@@ -23,9 +23,6 @@ static bool hnae3_client_match(enum hnae3_client_type client_type,
 					     client_type == HNAE3_CLIENT_ROCE))
 		return true;
 
-	if (dev_type == HNAE3_DEV_UNIC && client_type == HNAE3_CLIENT_UNIC)
-		return true;
-
 	return false;
 }
 
@@ -38,9 +35,6 @@ void hnae3_set_client_init_flag(struct hnae3_client *client,
 	switch (client->type) {
 	case HNAE3_CLIENT_KNIC:
 		hnae3_set_bit(ae_dev->flag, HNAE3_KNIC_CLIENT_INITED_B, inited);
-		break;
-	case HNAE3_CLIENT_UNIC:
-		hnae3_set_bit(ae_dev->flag, HNAE3_UNIC_CLIENT_INITED_B, inited);
 		break;
 	case HNAE3_CLIENT_ROCE:
 		hnae3_set_bit(ae_dev->flag, HNAE3_ROCE_CLIENT_INITED_B, inited);
@@ -60,10 +54,6 @@ static int hnae3_get_client_init_flag(struct hnae3_client *client,
 	case HNAE3_CLIENT_KNIC:
 		inited = hnae3_get_bit(ae_dev->flag,
 				       HNAE3_KNIC_CLIENT_INITED_B);
-		break;
-	case HNAE3_CLIENT_UNIC:
-		inited = hnae3_get_bit(ae_dev->flag,
-				       HNAE3_UNIC_CLIENT_INITED_B);
 		break;
 	case HNAE3_CLIENT_ROCE:
 		inited = hnae3_get_bit(ae_dev->flag,

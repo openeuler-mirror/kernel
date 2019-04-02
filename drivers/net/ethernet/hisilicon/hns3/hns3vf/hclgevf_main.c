@@ -2299,16 +2299,6 @@ static int hclgevf_init_client_instance(struct hnae3_client *client,
 			goto clear_roce;
 
 		break;
-	case HNAE3_CLIENT_UNIC:
-		hdev->nic_client = client;
-		hdev->nic.client = client;
-
-		ret = client->ops->init_instance(&hdev->nic);
-		if (ret)
-			goto clear_nic;
-
-		hnae3_set_client_init_flag(client, ae_dev, 1);
-		break;
 	case HNAE3_CLIENT_ROCE:
 		if (hnae3_dev_roce_supported(hdev)) {
 			hdev->roce_client = client;
