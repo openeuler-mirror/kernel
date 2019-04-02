@@ -600,6 +600,9 @@ struct hnae3_handle {
 	u8 netdev_flags;
 
 	struct dentry *hnae3_dbgfs;
+
+	/* Network interface message level enabled bits */
+	u32 msg_enable;
 };
 
 #define hnae3_set_field(origin, mask, shift, val) \

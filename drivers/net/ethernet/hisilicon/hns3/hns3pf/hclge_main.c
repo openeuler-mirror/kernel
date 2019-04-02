@@ -7863,6 +7863,39 @@ static void hclge_get_mdix_mode(struct hnae3_handle *handle,
 		*tp_mdix = ETH_TP_MDI;
 }
 
+static void hclge_info_show(struct hclge_dev *hdev)
+{
+	dev_info(&hdev->pdev->dev, "PF info begin:\n");
+
+	dev_info(&hdev->pdev->dev, "Task queue pairs numbers: %d\n",
+		 hdev->num_tqps);
+	dev_info(&hdev->pdev->dev, "Desc num per TX queue: %d\n",
+		 hdev->num_tx_desc);
+	dev_info(&hdev->pdev->dev, "Desc num per RX queue: %d\n",
+		 hdev->num_rx_desc);
+	dev_info(&hdev->pdev->dev, "Numbers of vports: %d\n",
+		 hdev->num_alloc_vport);
+	dev_info(&hdev->pdev->dev, "Numbers of vmdp vports: %d\n",
+		 hdev->num_vmdq_vport);
+	dev_info(&hdev->pdev->dev, "Numbers of VF for this PF: %d\n",
+		 hdev->num_req_vfs);
+	dev_info(&hdev->pdev->dev, "HW tc map: %d\n", hdev->hw_tc_map);
+	dev_info(&hdev->pdev->dev, "Total buffer size for TX/RX: %d\n",
+		 hdev->pkt_buf_size);
+	dev_info(&hdev->pdev->dev, "TX buffer size for each TC: %d\n",
+		 hdev->tx_buf_size);
+	dev_info(&hdev->pdev->dev, "DV buffer size for each TC: %d\n",
+		 hdev->dv_buf_size);
+	dev_info(&hdev->pdev->dev, "This is %s PF\n",
+		 hdev->flag & HCLGE_FLAG_MAIN ? "main" : "not main");
+	dev_info(&hdev->pdev->dev, "DCB %s\n",
+		 hdev->flag & HCLGE_FLAG_DCB_ENABLE ? "enable" : "disable");
+	dev_info(&hdev->pdev->dev, "MQPRIO %s\n",
+		 hdev->flag & HCLGE_FLAG_MQPRIO_ENABLE ? "enable" : "disable");
+
+	dev_info(&hdev->pdev->dev, "PF info end.\n");
+}
+
 static int hclge_init_nic_client_instance(struct hnae3_ae_dev *ae_dev,
 					  struct hclge_vport *vport)
 {
@@ -7886,6 +7919,9 @@ static int hclge_init_nic_client_instance(struct hnae3_ae_dev *ae_dev,
 	}
 
 	hnae3_set_client_init_flag(client, ae_dev, 1);
+
+	if (netif_msg_drv(&hdev->vport->nic))
+		hclge_info_show(hdev);
 
 	return 0;
 }

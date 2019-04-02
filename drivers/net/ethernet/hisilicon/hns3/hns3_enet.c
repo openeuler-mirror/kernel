@@ -37,6 +37,13 @@ const char hns3_driver_string[] =
 const char hns3_copyright[] = "Copyright (c) 2017 Huawei Corporation.";
 struct hnae3_client client;
 
+static int debug = -1;
+module_param(debug, int, 0);
+MODULE_PARM_DESC(debug, " Network interface message level setting");
+
+#define DEFAULT_MSG_LEVEL (NETIF_MSG_PROBE | NETIF_MSG_LINK | \
+			   NETIF_MSG_IFDOWN | NETIF_MSG_IFUP)
+
 /* hns3_pci_tbl - PCI Device ID Table
  *
  * Last entry must be all 0s
@@ -3778,6 +3785,25 @@ static void hns3_client_stop(struct hnae3_handle *handle)
 	handle->ae_algo->ops->client_stop(handle);
 }
 
+static void hns3_info_show(struct hns3_nic_priv *priv)
+{
+	dev_info(priv->dev, "MAC address: %pM\n", priv->netdev->dev_addr);
+	dev_info(priv->dev, "Task queue pairs numbers: %d\n",
+		 priv->ae_handle->kinfo.num_tqps);
+	dev_info(priv->dev, "RSS size: %d\n", priv->ae_handle->kinfo.rss_size);
+	dev_info(priv->dev, "Allocated RSS size: %d\n",
+		 priv->ae_handle->kinfo.req_rss_size);
+	dev_info(priv->dev, "RX buffer length: %d\n",
+		 priv->ae_handle->kinfo.rx_buf_len);
+	dev_info(priv->dev, "Desc num per TX queue: %d\n",
+		 priv->ae_handle->kinfo.num_tx_desc);
+	dev_info(priv->dev, "Desc num per RX queue: %d\n",
+		 priv->ae_handle->kinfo.num_rx_desc);
+	dev_info(priv->dev, "Total number of enabled TCs: %d\n",
+		 priv->ae_handle->kinfo.num_tc);
+	dev_info(priv->dev, "Max mtu size: %d\n", priv->netdev->max_mtu);
+}
+
 static int hns3_client_init(struct hnae3_handle *handle)
 {
 	struct pci_dev *pdev = handle->pdev;
@@ -3798,6 +3824,8 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	priv->ae_handle = handle;
 	priv->tx_timeout_count = 0;
 	set_bit(HNS3_NIC_STATE_DOWN, &priv->state);
+
+	handle->msg_enable = netif_msg_init(debug, DEFAULT_MSG_LEVEL);
 
 	handle->kinfo.netdev = netdev;
 	handle->priv = (void *)priv;
@@ -3866,6 +3894,9 @@ static int hns3_client_init(struct hnae3_handle *handle)
 #endif
 
 	set_bit(HNS3_NIC_STATE_INITED, &priv->state);
+
+	if (netif_msg_drv(handle))
+		hns3_info_show(priv);
 
 	return ret;
 
@@ -3941,11 +3972,13 @@ static void hns3_link_status_change(struct hnae3_handle *handle, bool linkup)
 	if (linkup) {
 		netif_carrier_on(netdev);
 		netif_tx_wake_all_queues(netdev);
-		netdev_info(netdev, "link up\n");
+		if (netif_msg_link(handle))
+			netdev_info(netdev, "link up\n");
 	} else {
 		netif_carrier_off(netdev);
 		netif_tx_stop_all_queues(netdev);
-		netdev_info(netdev, "link down\n");
+		if (netif_msg_link(handle))
+			netdev_info(netdev, "link down\n");
 	}
 }
 

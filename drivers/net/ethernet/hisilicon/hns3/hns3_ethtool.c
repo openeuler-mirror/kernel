@@ -1108,6 +1108,20 @@ static int hns3_set_phys_id(struct net_device *netdev,
 	return h->ae_algo->ops->set_led_id(h, state);
 }
 
+static u32 hns3_get_msglevel(struct net_device *netdev)
+{
+	struct hnae3_handle *h = hns3_get_handle(netdev);
+
+	return h->msg_enable;
+}
+
+static void hns3_set_msglevel(struct net_device *netdev, u32 msg_level)
+{
+	struct hnae3_handle *h = hns3_get_handle(netdev);
+
+	h->msg_enable = msg_level;
+}
+
 struct ethtool_ops hns3vf_ethtool_ops = {
 	.get_drvinfo = hns3_get_drvinfo,
 	.get_link = hns3_get_link,
@@ -1128,6 +1142,8 @@ struct ethtool_ops hns3vf_ethtool_ops = {
 	.set_coalesce = hns3_set_coalesce,
 	.get_regs_len = hns3_get_regs_len,
 	.get_regs = hns3_get_regs,
+	.get_msglevel = hns3_get_msglevel,
+	.set_msglevel = hns3_set_msglevel,
 };
 
 struct ethtool_ops hns3_ethtool_ops = {
@@ -1157,6 +1173,8 @@ struct ethtool_ops hns3_ethtool_ops = {
 	.get_regs_len = hns3_get_regs_len,
 	.get_regs = hns3_get_regs,
 	.set_phys_id = hns3_set_phys_id,
+	.get_msglevel = hns3_get_msglevel,
+	.set_msglevel = hns3_set_msglevel,
 };
 
 void hns3_ethtool_set_ops(struct net_device *netdev)
