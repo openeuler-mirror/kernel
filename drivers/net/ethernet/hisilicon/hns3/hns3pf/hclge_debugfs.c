@@ -934,6 +934,53 @@ static void hclge_dbg_dump_rst_info(struct hclge_dev *hdev)
 		 hdev->rst_stats.reset_cnt);
 }
 
+void hclge_dbg_get_m7_stats_info(struct hclge_dev *hdev)
+{
+	struct hclge_desc *desc_src, *desc_tmp;
+	struct hclge_desc desc;
+	u32 bd_num, buf_len;
+	int ret, i;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_M7_STATS_BD, true);
+
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"hclge_cmd_send fail, status is %d.\n", ret);
+		return;
+	}
+
+	bd_num = desc.data[0];
+
+	buf_len	 = sizeof(struct hclge_desc) * bd_num;
+	desc_src = kzalloc(buf_len, GFP_ATOMIC);
+	if (!desc_src) {
+		dev_err(&hdev->pdev->dev, "call kzalloc failed\n");
+		return;
+	}
+
+	desc_tmp = desc_src;
+	ret  = hclge_dbg_cmd_send(hdev, desc_tmp, 0, bd_num,
+				  HCLGE_OPC_M7_STATS_INFO);
+	if (ret != HCLGE_CMD_EXEC_SUCCESS) {
+		kfree(desc_src);
+		return;
+	}
+
+	for (i = 0; i < bd_num; i++) {
+		dev_info(&hdev->pdev->dev, "0x%08x  0x%08x  0x%08x\n",
+			 desc_tmp->data[0], desc_tmp->data[1],
+			 desc_tmp->data[2]);
+		dev_info(&hdev->pdev->dev, "0x%08x  0x%08x  0x%08x\n",
+			 desc_tmp->data[3], desc_tmp->data[4],
+			 desc_tmp->data[5]);
+
+		desc_tmp++;
+	}
+
+	kfree(desc_src);
+}
+
 int hclge_dbg_run_cmd(struct  hnae3_handle *handle, char  *cmd_buf)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
@@ -959,6 +1006,8 @@ int hclge_dbg_run_cmd(struct  hnae3_handle *handle, char  *cmd_buf)
 		hclge_dbg_dump_reg_cmd(hdev, &cmd_buf[sizeof("dump reg")]);
 	} else if (strncmp(cmd_buf, "dump reset info", 15) == 0) {
 		hclge_dbg_dump_rst_info(hdev);
+	} else if (strncmp(cmd_buf, "dump m7 info", 12) == 0) {
+		hclge_dbg_get_m7_stats_info(hdev);
 	} else {
 		dev_info(&hdev->pdev->dev, "unknown command\n");
 		return -EINVAL;

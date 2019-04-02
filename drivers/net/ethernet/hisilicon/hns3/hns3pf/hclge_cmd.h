@@ -243,6 +243,10 @@ enum hclge_opcode_type {
 	/* Led command */
 	HCLGE_OPC_LED_STATUS_CFG	= 0xB000,
 
+	/* M7 stats command */
+	HCLGE_OPC_M7_STATS_BD		= 0x7012,
+	HCLGE_OPC_M7_STATS_INFO		= 0x7013,
+
 	/* SFP command */
 	HCLGE_OPC_SFP_GET_SPEED		= 0x7104,
 
