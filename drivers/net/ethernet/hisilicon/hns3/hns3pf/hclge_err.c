@@ -1356,7 +1356,7 @@ static int hclge_handle_pf_ras_error(struct hclge_dev *hdev,
 	return ret;
 }
 
-static int hclge_handle_all_ras_errors(struct hclge_dev *hdev)
+int hclge_handle_all_ras_errors(struct hclge_dev *hdev)
 {
 	struct hclge_bd_num bd_num;
 	struct hclge_desc *desc;

@@ -157,6 +157,7 @@ int hclge_hw_error_set_state(struct hclge_dev *hdev, bool state);
 int hclge_clear_all_ras_errors(struct hclge_dev *hdev);
 pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev);
 void hclge_handle_hw_msix_error(struct hclge_dev *hdev);
+int hclge_handle_all_ras_errors(struct hclge_dev *hdev);
 int hclge_handle_rocee_ras_error(struct hnae3_ae_dev *ae_dev);
 enum hnae3_reset_type hclge_log_error(struct device *dev, char *reg,
 				      const struct hclge_hw_error *err,
