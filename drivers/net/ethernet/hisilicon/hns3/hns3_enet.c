@@ -1220,38 +1220,53 @@ static bool hns3_check_skb_need_linearize(struct sk_buff *skb)
 	return false;
 }
 
-static int hns3_nic_maybe_stop_tso(struct sk_buff **out_skb, int *bnum,
-				   struct hns3_enet_ring *ring)
+static int hns3_nic_bd_num(struct sk_buff *skb)
 {
-	struct sk_buff *skb = *out_skb;
-	struct sk_buff *new_skb = NULL;
-	struct skb_frag_struct *frag;
-	int bdnum_for_frag;
-	int frag_num;
-	int buf_num;
-	int size;
-	int i;
+	int size = skb_headlen(skb);
+	int i, bd_num;
 
-	size = skb_headlen(skb);
-	buf_num = hns3_tx_bd_count(size);
+	/* if the total len is within the max bd limit */
+	if (likely(skb->len <= HNS3_MAX_BD_SIZE))
+		return skb_shinfo(skb)->nr_frags + 1;
 
-	frag_num = skb_shinfo(skb)->nr_frags;
-	for (i = 0; i < frag_num; i++) {
-		frag = &skb_shinfo(skb)->frags[i];
+	bd_num = (size + HNS3_MAX_BD_SIZE - 1) >> HNS3_MAX_BD_SIZE_OFFSET;
+
+	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+		struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[i];
+		int frag_bd_num;
+
 		size = skb_frag_size(frag);
-		bdnum_for_frag = hns3_tx_bd_count(size);
-		if (unlikely(bdnum_for_frag > HNS3_MAX_BD_PER_FRAG))
+		frag_bd_num = (size + HNS3_MAX_BD_SIZE - 1) >>
+				HNS3_MAX_BD_SIZE_OFFSET;
+
+		if (unlikely(frag_bd_num > HNS3_MAX_BD_PER_FRAG))
 			return -ENOMEM;
 
-		buf_num += bdnum_for_frag;
+		bd_num += frag_bd_num;
 	}
 
-	if (unlikely(buf_num > HNS3_MAX_BD_PER_FRAG)) {
-		if (!hns3_check_skb_need_linearize(skb))
+	return bd_num;
+}
+
+static int hns3_nic_maybe_stop_tx(struct hns3_enet_ring *ring,
+				  struct sk_buff **out_skb)
+{
+	struct sk_buff *skb = *out_skb;
+	int bd_num;
+
+	bd_num = hns3_nic_bd_num(skb);
+	if (bd_num < 0)
+		return bd_num;
+
+	if (unlikely(bd_num > HNS3_MAX_BD_PER_FRAG)) {
+		struct sk_buff *new_skb;
+
+		if (skb_is_gso(skb) && !hns3_check_skb_need_linearize(skb))
 			goto out;
 
-		buf_num = hns3_tx_bd_count(skb->len);
-		if (ring_space(ring) < buf_num)
+		bd_num = (skb->len + HNS3_MAX_BD_SIZE - 1) >>
+			  HNS3_MAX_BD_SIZE_OFFSET;
+		if (unlikely(ring_space(ring) < bd_num))
 			return -EBUSY;
 		/* manual split the send packet */
 		new_skb = skb_copy(skb, GFP_ATOMIC);
@@ -1259,44 +1274,17 @@ static int hns3_nic_maybe_stop_tso(struct sk_buff **out_skb, int *bnum,
 			return -ENOMEM;
 		dev_kfree_skb_any(skb);
 		*out_skb = new_skb;
+
+		u64_stats_update_begin(&ring->syncp);
+		ring->stats.tx_copy++;
+		u64_stats_update_end(&ring->syncp);
 	}
 
 out:
-	if (unlikely(ring_space(ring) < buf_num))
+	if (unlikely(ring_space(ring) < bd_num))
 		return -EBUSY;
 
-	*bnum = buf_num;
-	return 0;
-}
-
-static int hns3_nic_maybe_stop_tx(struct sk_buff **out_skb, int *bnum,
-				  struct hns3_enet_ring *ring)
-{
-	struct sk_buff *skb = *out_skb;
-	struct sk_buff *new_skb = NULL;
-	int buf_num;
-
-	/* No. of segments (plus a header) */
-	buf_num = skb_shinfo(skb)->nr_frags + 1;
-
-	if (unlikely(buf_num > HNS3_MAX_BD_PER_FRAG)) {
-		buf_num = hns3_tx_bd_count(skb->len);
-		if (ring_space(ring) < buf_num)
-			return -EBUSY;
-		/* manual split the send packet */
-		new_skb = skb_copy(skb, GFP_ATOMIC);
-		if (!new_skb)
-			return -ENOMEM;
-		dev_kfree_skb_any(skb);
-		*out_skb = new_skb;
-	}
-
-	if (unlikely(ring_space(ring) < buf_num))
-		return -EBUSY;
-
-	*bnum = buf_num;
-
-	return 0;
+	return bd_num;
 }
 
 static void hns3_clear_desc(struct hns3_enet_ring *ring, int next_to_use_orig)
@@ -1347,22 +1335,23 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 	/* Prefetch the data used later */
 	prefetch(skb->data);
 
-	switch (priv->ops.maybe_stop_tx(&skb, &buf_num, ring)) {
-	case -EBUSY:
-		u64_stats_update_begin(&ring->syncp);
-		ring->stats.tx_busy++;
-		u64_stats_update_end(&ring->syncp);
+	buf_num = hns3_nic_maybe_stop_tx(ring, &skb);
+	if (unlikely(buf_num < 0)) {
+		if (buf_num == -EBUSY) {
+			u64_stats_update_begin(&ring->syncp);
+			ring->stats.tx_busy++;
+			u64_stats_update_end(&ring->syncp);
+			goto out_net_tx_busy;
+		} else if (buf_num == -ENOMEM) {
+			u64_stats_update_begin(&ring->syncp);
+			ring->stats.sw_err_cnt++;
+			u64_stats_update_end(&ring->syncp);
+			netdev_err(netdev, "no memory to xmit!\n");
+			goto out_err_tx_ok;
+		}
 
-		goto out_net_tx_busy;
-	case -ENOMEM:
-		u64_stats_update_begin(&ring->syncp);
-		ring->stats.sw_err_cnt++;
-		u64_stats_update_end(&ring->syncp);
-		netdev_err(netdev, "no memory to xmit!\n");
-
+		netdev_err(netdev, "xmit error: %d!\n", buf_num);
 		goto out_err_tx_ok;
-	default:
-		break;
 	}
 
 	/* No. of segments (plus a header) */
@@ -1466,13 +1455,6 @@ static int hns3_nic_set_features(struct net_device *netdev,
 	struct hnae3_handle *h = priv->ae_handle;
 	bool enable;
 	int ret;
-
-	if (changed & (NETIF_F_TSO | NETIF_F_TSO6)) {
-		if (features & (NETIF_F_TSO | NETIF_F_TSO6))
-			priv->ops.maybe_stop_tx = hns3_nic_maybe_stop_tso;
-		else
-			priv->ops.maybe_stop_tx = hns3_nic_maybe_stop_tx;
-	}
 
 #ifdef NETIF_F_GRO_HW
 	if (changed & (NETIF_F_GRO_HW) && h->ae_algo->ops->set_gro_en) {
@@ -3767,17 +3749,6 @@ static void hns3_del_all_fd_rules(struct net_device *netdev, bool clear_list)
 		h->ae_algo->ops->del_all_fd_entries(h, clear_list);
 }
 
-static void hns3_nic_set_priv_ops(struct net_device *netdev)
-{
-	struct hns3_nic_priv *priv = netdev_priv(netdev);
-
-	if ((netdev->features & NETIF_F_TSO) ||
-	    (netdev->features & NETIF_F_TSO6))
-		priv->ops.maybe_stop_tx = hns3_nic_maybe_stop_tso;
-	else
-		priv->ops.maybe_stop_tx = hns3_nic_maybe_stop_tx;
-}
-
 static int hns3_client_start(struct hnae3_handle *handle)
 {
 	if (!handle->ae_algo->ops->client_start)
@@ -3844,7 +3815,6 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	netdev->netdev_ops = &hns3_nic_netdev_ops;
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 	hns3_ethtool_set_ops(netdev);
-	hns3_nic_set_priv_ops(netdev);
 
 	/* Carrier off reporting is important to ethtool even BEFORE open */
 	netif_carrier_off(netdev);
