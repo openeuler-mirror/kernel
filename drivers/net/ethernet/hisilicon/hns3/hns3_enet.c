@@ -4,6 +4,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/etherdevice.h>
 #include <linux/interrupt.h>
+#include <linux/cpu_rmap.h>
 #include <linux/if_vlan.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
@@ -332,6 +333,85 @@ static void hns3_tqp_disable(struct hnae3_queue *tqp)
 	hns3_write_dev(tqp, HNS3_RING_EN_REG, rcb_reg);
 }
 
+static void hns3_enable_service_task(struct hns3_nic_priv *priv, bool enable)
+{
+	if (enable) {
+		mod_timer(&priv->service_timer, jiffies + HZ * 5);
+	} else {
+		del_timer_sync(&priv->service_timer);
+		cancel_work_sync(&priv->service_task);
+	}
+}
+
+static void hns3_task_schedule(struct hns3_nic_priv *priv)
+{
+	if (!test_bit(HNS3_NIC_STATE_RESETTING, &priv->state) &&
+	    !test_bit(HNS3_NIC_STATE_DOWN, &priv->state))
+		(void)schedule_work(&priv->service_task);
+}
+
+static void hns3_service_timer(struct timer_list *t)
+{
+	struct hns3_nic_priv *priv = from_timer(priv, t, service_timer);
+
+	mod_timer(&priv->service_timer, jiffies + HZ * 5);
+	hns3_task_schedule(priv);
+}
+
+static void hns3_service_task(struct work_struct *work)
+{
+	struct hns3_nic_priv *priv =
+		container_of(work, struct hns3_nic_priv, service_task);
+	struct hnae3_handle *h = priv->ae_handle;
+
+#ifdef CONFIG_RFS_ACCEL
+	if (!test_bit(HNS3_NIC_STATE_DOWN, &priv->state))
+		if (h->ae_algo->ops->rfs_filter_expire)
+			h->ae_algo->ops->rfs_filter_expire(h);
+#endif
+}
+
+static int hns3_set_rx_cpu_rmap(struct hnae3_handle *h)
+{
+#ifdef CONFIG_RFS_ACCEL
+	struct net_device *netdev = h->kinfo.netdev;
+	struct hns3_nic_priv *priv = netdev_priv(netdev);
+	struct hns3_enet_tqp_vector *tqp_vector;
+	int i, ret;
+
+	if (!netdev->rx_cpu_rmap) {
+		netdev->rx_cpu_rmap = alloc_irq_cpu_rmap(h->kinfo.num_tqps);
+		if (!netdev->rx_cpu_rmap)
+			return -ENOMEM;
+	}
+
+	for (i = 0; i < h->kinfo.num_tqps; i++) {
+		tqp_vector =
+			priv->ring_data[i + h->kinfo.num_tqps].ring->tqp_vector;
+		ret = irq_cpu_rmap_add(netdev->rx_cpu_rmap,
+				       tqp_vector->vector_irq);
+		if (ret) {
+			free_irq_cpu_rmap(netdev->rx_cpu_rmap);
+			netdev->rx_cpu_rmap = NULL;
+			return ret;
+		}
+	}
+#endif
+	return 0;
+}
+
+static void hns3_free_rx_cpu_rmap(struct hnae3_handle *h)
+{
+#ifdef CONFIG_RFS_ACCEL
+	struct net_device *netdev = h->kinfo.netdev;
+
+	if (netdev->rx_cpu_rmap) {
+		free_irq_cpu_rmap(netdev->rx_cpu_rmap);
+		netdev->rx_cpu_rmap = NULL;
+	}
+#endif
+}
+
 static int hns3_nic_net_up(struct net_device *netdev)
 {
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
@@ -425,12 +505,18 @@ static int hns3_nic_net_open(struct net_device *netdev)
 		return ret;
 	}
 
+	ret = hns3_set_rx_cpu_rmap(h);
+	if (ret)
+		netdev_warn(netdev, "set rx cpu rmap fail, ret=%d!\n", ret);
+
 	kinfo = &h->kinfo;
 	for (i = 0; i < HNAE3_MAX_USER_PRIO; i++)
 		netdev_set_prio_tc_map(netdev, i, kinfo->prio_tc[i]);
 
 	if (h->ae_algo->ops->enable_timer_task)
 		h->ae_algo->ops->enable_timer_task(priv->ae_handle, true);
+
+	hns3_enable_service_task(priv, true);
 
 	hns3_config_xps(priv);
 	return 0;
@@ -442,6 +528,8 @@ static void hns3_nic_net_down(struct net_device *netdev)
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 	const struct hnae3_ae_ops *ops;
 	int i;
+
+	hns3_free_rx_cpu_rmap(h);
 
 	/* disable vectors */
 	for (i = 0; i < priv->vector_num; i++)
@@ -469,6 +557,8 @@ static int hns3_nic_net_stop(struct net_device *netdev)
 
 	if (test_and_set_bit(HNS3_NIC_STATE_DOWN, &priv->state))
 		return 0;
+
+	hns3_enable_service_task(priv, false);
 
 	ops = priv->ae_handle->ae_algo->ops;
 	if (ops->enable_timer_task)
@@ -1727,6 +1817,33 @@ static void hns3_nic_net_timeout(struct net_device *ndev)
 		h->ae_algo->ops->reset_event(h->pdev, h);
 }
 
+#ifdef CONFIG_RFS_ACCEL
+static int hns3_rx_flow_steer(struct net_device *dev, const struct sk_buff *skb,
+			      u16 rxq_index, u32 flow_id)
+{
+	struct hnae3_handle *h = hns3_get_handle(dev);
+	struct flow_keys fkeys;
+
+	if (skb->encapsulation)
+		return -EPROTONOSUPPORT;
+
+	if (!skb_flow_dissect_flow_keys(skb, &fkeys, 0))
+		return -EPROTONOSUPPORT;
+
+	if ((fkeys.basic.n_proto != htons(ETH_P_IP) &&
+	     fkeys.basic.n_proto != htons(ETH_P_IPV6)) ||
+	    (fkeys.basic.ip_proto != IPPROTO_TCP &&
+	     fkeys.basic.ip_proto != IPPROTO_UDP))
+		return -EPROTONOSUPPORT;
+
+	if (h->ae_algo->ops->add_arfs_entry)
+		return h->ae_algo->ops->add_arfs_entry(h, rxq_index, flow_id,
+						       &fkeys);
+
+	return -EOPNOTSUPP;
+}
+#endif
+
 struct net_device_ops hns3_nic_netdev_ops = {
 	.ndo_open		= hns3_nic_net_open,
 	.ndo_stop		= hns3_nic_net_stop,
@@ -1744,6 +1861,10 @@ struct net_device_ops hns3_nic_netdev_ops = {
 	.ndo_vlan_rx_add_vid	= hns3_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid	= hns3_vlan_rx_kill_vid,
 	.ndo_set_vf_vlan	= hns3_ndo_set_vf_vlan,
+#ifdef CONFIG_RFS_ACCEL
+	.ndo_rx_flow_steer	= hns3_rx_flow_steer,
+#endif
+
 };
 
 static bool hns3_is_phys_func(struct pci_dev *pdev)
@@ -3743,6 +3864,9 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	hns3_dcbnl_setup(handle);
 
 	hns3_dbg_init(handle);
+
+	timer_setup(&priv->service_timer, hns3_service_timer, 0);
+	INIT_WORK(&priv->service_task, hns3_service_task);
 
 #ifdef HAVE_NETDEVICE_MIN_MAX_MTU
 	/* MTU range: (ETH_MIN_MTU(kernel default) - 9702) */
