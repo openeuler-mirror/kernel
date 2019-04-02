@@ -1776,7 +1776,7 @@ bool hns3_get_tx_timeo_queue_info(struct net_device *ndev)
 
 	netdev_info(ndev,
 		    "BD_NUM: 0x%x HW_HEAD: 0x%x, HW_TAIL: 0x%x, BD_ERR: 0x%x, INT: 0x%x\n",
-		    bd_num, hw_tail, hw_tail, bd_err,
+		    bd_num, hw_head, hw_tail, bd_err,
 		    readl(tx_ring->tqp_vector->mask_addr));
 	netdev_info(ndev,
 		    "RING_EN: 0x%x, TC: 0x%x, FBD_NUM: 0x%x FBD_OFT: 0x%x, EBD_NUM: 0x%x, EBD_OFT: 0x%x\n",
