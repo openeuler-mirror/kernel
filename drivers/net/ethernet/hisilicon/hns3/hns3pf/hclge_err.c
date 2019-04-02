@@ -1087,13 +1087,6 @@ static int hclge_config_ssu_hw_err_int(struct hclge_dev *hdev, bool en)
 	return ret;
 }
 
-#define HCLGE_SET_DEFAULT_RESET_REQUEST(reset_type) \
-	do { \
-		if (ae_dev->ops->set_default_reset_request) \
-			ae_dev->ops->set_default_reset_request(ae_dev, \
-							       reset_type); \
-	} while (0)
-
 /* hclge_handle_mpf_ras_error: handle all main PF RAS errors
  * @hdev: pointer to struct hclge_dev
  * @desc: descriptor for describing the command

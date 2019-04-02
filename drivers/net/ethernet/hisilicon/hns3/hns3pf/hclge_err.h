@@ -146,6 +146,13 @@ extern const struct hclge_hw_error hclge_ssu_ets_tcg_int[];
 extern const struct hclge_hw_error hclge_ssu_port_based_pf_int[];
 extern const struct hclge_hw_error hclge_rocee_qmm_ovf_err_int[];
 
+#define HCLGE_SET_DEFAULT_RESET_REQUEST(reset_type) \
+	do { \
+		if (ae_dev->ops->set_default_reset_request) \
+			ae_dev->ops->set_default_reset_request(ae_dev, \
+							       reset_type); \
+	} while (0)
+
 int hclge_hw_error_set_state(struct hclge_dev *hdev, bool state);
 int hclge_clear_all_ras_errors(struct hclge_dev *hdev);
 pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev);

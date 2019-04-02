@@ -2746,8 +2746,8 @@ static void hclge_do_reset(struct hclge_dev *hdev)
 	}
 }
 
-static enum hnae3_reset_type hclge_get_reset_level(struct hclge_dev *hdev,
-						   unsigned long *addr)
+enum hnae3_reset_type hclge_get_reset_level(struct hclge_dev *hdev,
+					    unsigned long *addr)
 {
 	enum hnae3_reset_type rst_level = HNAE3_NONE_RESET;
 
