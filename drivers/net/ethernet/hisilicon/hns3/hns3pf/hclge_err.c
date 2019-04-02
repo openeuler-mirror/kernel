@@ -1685,8 +1685,6 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 	if (ret) {
 		dev_err(dev, "fail(%d) to query msix int status bd num\n",
 			ret);
-		/*attempt to recover send cmd failure by requesting core reset*/
-		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_CORE_RESET);
 		return;
 	}
 
@@ -1706,7 +1704,6 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 	ret = hclge_cmd_send(&hdev->hw, &desc[0], mpf_bd_num);
 	if (ret) {
 		dev_err(dev, "query all mpf msix int cmd failed (%d)\n", ret);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_CORE_RESET);
 		goto msi_error;
 	}
 
@@ -1739,7 +1736,6 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 	ret = hclge_cmd_send(&hdev->hw, &desc[0], mpf_bd_num);
 	if (ret) {
 		dev_err(dev, "clear all mpf msix int cmd failed (%d)\n", ret);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_GLOBAL_RESET);
 		goto msi_error;
 	}
 
@@ -1752,7 +1748,6 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 	ret = hclge_cmd_send(&hdev->hw, &desc[0], pf_bd_num);
 	if (ret) {
 		dev_err(dev, "query all pf msix int cmd failed (%d)\n", ret);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_GLOBAL_RESET);
 		goto msi_error;
 	}
 
@@ -1791,10 +1786,8 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 
 	ret = hclge_cmd_send(&hdev->hw, &desc[0], pf_bd_num);
-	if (ret) {
+	if (ret)
 		dev_err(dev, "clear all pf msix int cmd failed (%d)\n", ret);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_CORE_RESET);
-	}
 
 msi_error:
 	kfree(desc);
