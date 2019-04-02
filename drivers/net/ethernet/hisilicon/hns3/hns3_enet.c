@@ -2513,13 +2513,10 @@ static void hns3_gro_receive(struct hns3_enet_ring *ring, struct sk_buff *skb)
 }
 
 static void hns3_rx_checksum(struct hns3_enet_ring *ring, struct sk_buff *skb,
-			     struct hns3_desc *desc)
+			     u32 l234info, u32 bd_base_info)
 {
-	struct net_device *netdev = ring->tqp->handle->kinfo.netdev;
 	int l3_type, l4_type;
-	u32 bd_base_info;
 	int ol4_type;
-	u32 l234info;
 
 	/* If enable HW GRO, HW will do the Csum check */
 	if (skb_shinfo(skb)->gso_size) {
@@ -2528,15 +2525,9 @@ static void hns3_rx_checksum(struct hns3_enet_ring *ring, struct sk_buff *skb,
 		return;
 	}
 
-	bd_base_info = le32_to_cpu(desc->rx.bd_base_info);
-	l234info = le32_to_cpu(desc->rx.l234_info);
-
 	skb->ip_summed = CHECKSUM_NONE;
 
 	skb_checksum_none_assert(skb);
-
-	if (!(netdev->features & NETIF_F_RXCSUM))
-		return;
 
 	/* check if hardware has done checksum */
 	if (!(bd_base_info & BIT(HNS3_RXD_L3L4P_B)))
@@ -2923,7 +2914,7 @@ static int hns3_handle_rx_bd(struct hns3_enet_ring *ring,
 	/* This is needed in order to enable forwarding support */
 	hns3_set_gro_param(skb, l234info, bd_base_info);
 
-	hns3_rx_checksum(ring, skb, desc);
+	hns3_rx_checksum(ring, skb, l234info, bd_base_info);
 
 	skb_record_rx_queue(skb, ring->tqp->tqp_index);
 	hns3_set_rx_skb_rss_type(ring, skb);
