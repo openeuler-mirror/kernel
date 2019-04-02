@@ -24,7 +24,7 @@
 #include "hns3_enet.h"
 
 #define hns3_set_field(origin, shift, val)	((origin) |= ((val) << (shift)))
-#define hns3_tx_bd_count(S) (((S) + HNS3_MAX_BD_SIZE - 1) / HNS3_MAX_BD_SIZE)
+#define hns3_tx_bd_count(S)		DIV_ROUND_UP(S, HNS3_MAX_BD_SIZE)
 
 static void hns3_clear_all_ring(struct hnae3_handle *h);
 static void hns3_force_clear_all_rx_ring(struct hnae3_handle *h);
@@ -1229,15 +1229,14 @@ static int hns3_nic_bd_num(struct sk_buff *skb)
 	if (likely(skb->len <= HNS3_MAX_BD_SIZE))
 		return skb_shinfo(skb)->nr_frags + 1;
 
-	bd_num = (size + HNS3_MAX_BD_SIZE - 1) >> HNS3_MAX_BD_SIZE_OFFSET;
+	bd_num = hns3_tx_bd_count(size);
 
 	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
 		struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[i];
 		int frag_bd_num;
 
 		size = skb_frag_size(frag);
-		frag_bd_num = (size + HNS3_MAX_BD_SIZE - 1) >>
-				HNS3_MAX_BD_SIZE_OFFSET;
+		frag_bd_num = hns3_tx_bd_count(size);
 
 		if (unlikely(frag_bd_num > HNS3_MAX_BD_PER_FRAG))
 			return -ENOMEM;
@@ -1264,8 +1263,7 @@ static int hns3_nic_maybe_stop_tx(struct hns3_enet_ring *ring,
 		if (skb_is_gso(skb) && !hns3_check_skb_need_linearize(skb))
 			goto out;
 
-		bd_num = (skb->len + HNS3_MAX_BD_SIZE - 1) >>
-			  HNS3_MAX_BD_SIZE_OFFSET;
+		bd_num = hns3_tx_bd_count(skb->len);
 		if (unlikely(ring_space(ring) < bd_num))
 			return -EBUSY;
 		/* manual split the send packet */
