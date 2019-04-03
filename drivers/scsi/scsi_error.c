@@ -88,7 +88,7 @@ void scsi_schedule_eh(struct Scsi_Host *shost)
 
 	if (scsi_host_set_state(shost, SHOST_RECOVERY) == 0 ||
 	    scsi_host_set_state(shost, SHOST_CANCEL_RECOVERY) == 0) {
-		atomic_inc(&shost->host_eh_scheduled);
+		shost->host_eh_scheduled++;
 		scsi_eh_wakeup(shost);
 	}
 
@@ -2029,7 +2029,7 @@ static void scsi_restart_operations(struct Scsi_Host *shost)
 	 * pending commands complete.
 	 */
 	spin_lock_irqsave(shost->host_lock, flags);
-	if (atomic_read(&shost->host_eh_scheduled))
+	if (shost->host_eh_scheduled)
 		if (scsi_host_set_state(shost, SHOST_RECOVERY))
 			WARN_ON(scsi_host_set_state(shost, SHOST_CANCEL_RECOVERY));
 	spin_unlock_irqrestore(shost->host_lock, flags);
@@ -2165,8 +2165,7 @@ int scsi_error_handler(void *data)
 		if (kthread_should_stop())
 			break;
 
-		if ((shost->host_failed == 0 &&
-		     atomic_read(&shost->host_eh_scheduled) == 0) ||
+		if ((shost->host_failed == 0 && shost->host_eh_scheduled == 0) ||
 		    shost->host_failed != scsi_host_busy(shost)) {
 			SCSI_LOG_ERROR_RECOVERY(1,
 				shost_printk(KERN_INFO, shost,
@@ -2180,8 +2179,7 @@ int scsi_error_handler(void *data)
 		SCSI_LOG_ERROR_RECOVERY(1,
 			shost_printk(KERN_INFO, shost,
 				     "scsi_eh_%d: waking up %d/%d/%d\n",
-				     shost->host_no,
-				     atomic_read(&shost->host_eh_scheduled),
+				     shost->host_no, shost->host_eh_scheduled,
 				     shost->host_failed,
 				     scsi_host_busy(shost)));
 

@@ -1805,9 +1805,17 @@ static void ahci_error_intr(struct ata_port *ap, u32 irq_stat)
 
 	/* okay, let's hand over to EH */
 
-	if (irq_stat & PORT_IRQ_FREEZE)
+	if (irq_stat & PORT_IRQ_FREEZE) {
+		/*
+		 * EH already running, this may happen if the port is
+		 * thawed in the EH. But we cannot freeze it again
+		 * otherwise the port will never be thawed.
+		 */
+		if (ap->pflags & (ATA_PFLAG_EH_PENDING |
+			ATA_PFLAG_EH_IN_PROGRESS))
+			return;
 		ata_port_freeze(ap);
-	else if (fbs_need_dec) {
+	} else if (fbs_need_dec) {
 		ata_link_abort(link);
 		ahci_fbs_dec_intr(ap);
 	} else

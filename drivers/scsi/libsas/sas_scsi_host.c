@@ -492,7 +492,7 @@ int sas_eh_abort_handler(struct scsi_cmnd *cmd)
 
 	spin_lock_irqsave(host->host_lock, flags);
 	/* We cannot do async aborts for SATA devices */
-	if (dev_is_sata(dev) && !atomic_read(&host->host_eh_scheduled)) {
+	if (dev_is_sata(dev) && !host->host_eh_scheduled) {
 		spin_unlock_irqrestore(host->host_lock, flags);
 		return FAILED;
 	}
@@ -792,7 +792,7 @@ out:
 	/* check if any new eh work was scheduled during the last run */
 	spin_lock_irq(&ha->lock);
 	if (ha->eh_active == 0) {
-		atomic_set(&shost->host_eh_scheduled, 0);
+		shost->host_eh_scheduled = 0;
 		retry = false;
 	}
 	spin_unlock_irq(&ha->lock);
