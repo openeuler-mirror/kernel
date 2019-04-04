@@ -491,8 +491,7 @@ static inline void gic_handle_nmi(u32 irqnr, struct pt_regs *regs)
 		gic_deactivate_unhandled(irqnr);
 }
 
-static asmlinkage void __exception_irq_entry notrace
-gic_handle_irq(struct pt_regs *regs)
+static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
 {
 	u32 irqnr;
 
