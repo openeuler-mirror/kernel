@@ -578,8 +578,9 @@ static long hugetlbfs_fallocate(struct file *file, int mode, loff_t offset,
 	 * For this range, start is rounded down and end is rounded up
 	 * as well as being converted to page offsets.
 	 */
-	start = offset >> hpage_shift;
-	end = (offset + len + hpage_size - 1) >> hpage_shift;
+	start = (unsigned long long)offset >> hpage_shift;
+	end = ((unsigned long long)(offset + len + hpage_size) - 1)
+			>> hpage_shift;
 
 	inode_lock(inode);
 
