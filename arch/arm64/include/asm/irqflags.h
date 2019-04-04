@@ -76,8 +76,7 @@ static inline unsigned long arch_local_save_flags(void)
 	 * The asm is logically equivalent to:
 	 *
 	 * if (system_uses_irq_prio_masking())
-	 *	flags = (daif_bits & PSR_I_BIT) ?
-	 *			GIC_PRIO_IRQOFF :
+	 *	flags = (daif_bits << 32) |
 	 *			read_sysreg_s(SYS_ICC_PMR_EL1);
 	 * else
 	 *	flags = daif_bits;
@@ -87,11 +86,11 @@ static inline unsigned long arch_local_save_flags(void)
 			"nop\n"
 			"nop",
 			"mrs_s	%0, " __stringify(SYS_ICC_PMR_EL1) "\n"
-			"ands	%1, %1, " __stringify(PSR_I_BIT) "\n"
-			"csel	%0, %0, %2, eq",
+			"lsl	%1, %1, #32\n"
+			"orr	%0, %0, %1",
 			ARM64_HAS_IRQ_PRIO_MASKING)
 		: "=&r" (flags), "+r" (daif_bits)
-		: "r" ((unsigned long) GIC_PRIO_IRQOFF)
+		:
 		: "memory");
 
 	return flags;
@@ -119,8 +118,8 @@ static inline void arch_local_irq_restore(unsigned long flags)
 			"msr_s	" __stringify(SYS_ICC_PMR_EL1) ", %0\n"
 			"dsb	sy",
 			ARM64_HAS_IRQ_PRIO_MASKING)
-		: "+r" (flags)
 		:
+		: "r" ((int)flags)
 		: "memory");
 }
 
@@ -130,12 +129,14 @@ static inline int arch_irqs_disabled_flags(unsigned long flags)
 
 	asm volatile(ALTERNATIVE(
 			"and	%w0, %w1, #" __stringify(PSR_I_BIT) "\n"
+			"nop\n"
 			"nop",
+			"and	%w0, %w2, #" __stringify(PSR_I_BIT) "\n"
 			"cmp	%w1, #" __stringify(GIC_PRIO_IRQOFF) "\n"
-			"cset	%w0, ls",
+			"cinc	%w0, %w0, ls",
 			ARM64_HAS_IRQ_PRIO_MASKING)
 		: "=&r" (res)
-		: "r" ((int) flags)
+		: "r" ((int) flags), "r" (flags >> 32)
 		: "memory");
 
 	return res;
