@@ -218,10 +218,10 @@ static void __init request_standard_resources(void)
 	kernel_data.end     = __pa_symbol(_end - 1);
 
 	num_standard_resources = memblock.memory.cnt;
-	standard_resources = alloc_bootmem_low(num_standard_resources *
-					       sizeof(*standard_resources));
-	res_resources = alloc_bootmem_low(res_mem_count *
-					       sizeof(struct resource));
+	standard_resources = alloc_bootmem(num_standard_resources *
+					   sizeof(*standard_resources));
+	res_resources = alloc_bootmem(res_mem_count *
+				      sizeof(struct resource));
 
 	for (res_count = 0; res_count < res_mem_count; res_count++) {
 		res_resources[res_count].name = "memmap reserved";
