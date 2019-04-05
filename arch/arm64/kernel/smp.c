@@ -1087,7 +1087,7 @@ void ipi_set_nmi_prio(void __iomem *base, u8 prio)
 	/* clean old priority */
 	prios &= ~(0xff << shift);
 	/* set new priority*/
-	prios |= (prio << offset);
+	prios |= (prio << shift);
 
 	writel_relaxed(prios, base + GICR_IPRIORITYR0 + offset);
 }
