@@ -156,6 +156,8 @@ static inline u32 gic_read_rpr(void)
 #define gits_write_vpendbaser(v, c)	writeq_relaxed(v, c)
 #define gits_read_vpendbaser(c)		readq_relaxed(c)
 
+bool gic_supports_pseudo_nmis(void);
+
 static inline bool gic_prio_masking_enabled(void)
 {
 	return system_uses_irq_prio_masking();

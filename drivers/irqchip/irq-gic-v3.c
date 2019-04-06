@@ -263,6 +263,11 @@ static inline bool gic_supports_nmi(void)
 	       static_branch_likely(&supports_pseudo_nmis);
 }
 
+bool gic_supports_pseudo_nmis(void)
+{
+	return gic_supports_nmi();
+}
+
 static int gic_irq_set_irqchip_state(struct irq_data *d,
 				     enum irqchip_irq_state which, bool val)
 {

@@ -946,9 +946,19 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 #endif
 
 	case IPI_CPU_BACKTRACE:
-		nmi_enter();
+		if (gic_supports_pseudo_nmis()) {
+			nmi_enter();
+		} else {
+			printk_nmi_enter();
+			irq_enter();
+		}
 		nmi_cpu_backtrace(regs);
-		nmi_exit();
+		if (gic_supports_pseudo_nmis()) {
+			nmi_exit();
+		} else {
+			irq_exit();
+			printk_nmi_exit();
+		}
 		break;
 
 	default:
