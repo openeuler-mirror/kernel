@@ -174,5 +174,16 @@ static inline void gic_arch_enable_irqs(void)
 	asm volatile ("msr daifclr, #2" : : : "memory");
 }
 
+static inline void gic_arch_disable_irqs(void)
+{
+	asm volatile ("msr daifset, #2" : : : "memory");
+}
+
+static inline void gic_arch_restore_irqs(unsigned long flags)
+{
+	if (gic_supports_pseudo_nmis())
+		asm volatile ("msr	daif, %0" : : "r" (flags >> 32)
+					: "memory");
+}
 #endif /* __ASSEMBLY__ */
 #endif /* __ASM_ARCH_GICV3_H */
