@@ -1262,66 +1262,44 @@ static int sd_setup_read_write_cmnd(struct scsi_cmnd *SCpnt)
 static int sd_init_command(struct scsi_cmnd *cmd)
 {
 	struct request *rq = cmd->request;
-	struct scsi_disk *sdkp = NULL;
-	int ret = 0;
 
 	switch (req_op(rq)) {
 	case REQ_OP_DISCARD:
 		switch (scsi_disk(rq->rq_disk)->provisioning_mode) {
 		case SD_LBP_UNMAP:
-			ret = sd_setup_unmap_cmnd(cmd);
-			break;
+			return sd_setup_unmap_cmnd(cmd);
 		case SD_LBP_WS16:
-			ret = sd_setup_write_same16_cmnd(cmd, true);
-			break;
+			return sd_setup_write_same16_cmnd(cmd, true);
 		case SD_LBP_WS10:
-			ret = sd_setup_write_same10_cmnd(cmd, true);
-			break;
+			return sd_setup_write_same10_cmnd(cmd, true);
 		case SD_LBP_ZERO:
-			ret = sd_setup_write_same10_cmnd(cmd, false);
-			break;
+			return sd_setup_write_same10_cmnd(cmd, false);
 		default:
-			ret = BLKPREP_INVALID;
-			break;
+			return BLKPREP_INVALID;
 		}
-		break;
 	case REQ_OP_WRITE_ZEROES:
-		ret = sd_setup_write_zeroes_cmnd(cmd);
-		break;
+		return sd_setup_write_zeroes_cmnd(cmd);
 	case REQ_OP_WRITE_SAME:
-		ret = sd_setup_write_same_cmnd(cmd);
-		break;
+		return sd_setup_write_same_cmnd(cmd);
 	case REQ_OP_FLUSH:
-		ret = sd_setup_flush_cmnd(cmd);
-		break;
+		return sd_setup_flush_cmnd(cmd);
 	case REQ_OP_READ:
 	case REQ_OP_WRITE:
-		ret = sd_setup_read_write_cmnd(cmd);
-		break;
+		return sd_setup_read_write_cmnd(cmd);
 	case REQ_OP_ZONE_REPORT:
-		ret = sd_zbc_setup_report_cmnd(cmd);
-		break;
+		return sd_zbc_setup_report_cmnd(cmd);
 	case REQ_OP_ZONE_RESET:
-		ret = sd_zbc_setup_reset_cmnd(cmd);
-		break;
+		return sd_zbc_setup_reset_cmnd(cmd);
 	default:
 		WARN_ON_ONCE(1);
-		ret = BLKPREP_KILL;
-		break;
+		return BLKPREP_KILL;
 	}
-	if (!ret) {
-		sdkp = scsi_disk(rq->rq_disk);
-		get_device(&sdkp->dev);
-	}
-
-	return ret;
 }
 
 static void sd_uninit_command(struct scsi_cmnd *SCpnt)
 {
 	struct request *rq = SCpnt->request;
 	u8 *cmnd;
-	struct scsi_disk *sdkp;
 
 	if (rq->rq_flags & RQF_SPECIAL_PAYLOAD)
 		mempool_free(rq->special_vec.bv_page, sd_page_pool);
@@ -1332,8 +1310,6 @@ static void sd_uninit_command(struct scsi_cmnd *SCpnt)
 		SCpnt->cmd_len = 0;
 		mempool_free(cmnd, sd_cdb_pool);
 	}
-	sdkp = scsi_disk(rq->rq_disk);
-	put_device(&sdkp->dev);
 }
 
 /**
