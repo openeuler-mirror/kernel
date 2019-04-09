@@ -182,7 +182,7 @@ static int hns_roce_v1_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			roce_set_field(ud_sq_wqe->u32_36,
 				       UD_SEND_WQE_U32_36_FLOW_LABEL_M,
 				       UD_SEND_WQE_U32_36_FLOW_LABEL_S,
-				       ah->av.sl_tclass_flowlabel &
+				       le32_to_cpu(ah->av.sl_tclass_flowlabel) &
 				       HNS_ROCE_FLOW_LABEL_MASK);
 			roce_set_field(ud_sq_wqe->u32_36,
 				      UD_SEND_WQE_U32_36_PRIORITY_M,
@@ -202,7 +202,7 @@ static int hns_roce_v1_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			roce_set_field(ud_sq_wqe->u32_40,
 				       UD_SEND_WQE_U32_40_TRAFFIC_CLASS_M,
 				       UD_SEND_WQE_U32_40_TRAFFIC_CLASS_S,
-				       ah->av.sl_tclass_flowlabel >>
+				      le32_to_cpu(ah->av.sl_tclass_flowlabel) >>
 				       HNS_ROCE_TCLASS_SHIFT);
 
 			memcpy(&ud_sq_wqe->dgid[0], &ah->av.dgid[0], GID_LEN);
@@ -783,7 +783,7 @@ static int hns_roce_v1_rsv_lp_qp(struct hns_roce_dev *hr_dev)
 	rdma_ah_set_grh(&attr.ah_attr, NULL, 0, 0, 1, 0);
 	rdma_ah_set_static_rate(&attr.ah_attr, 3);
 
-	subnet_prefix = cpu_to_be64(0xfe80000000000000LL);
+	subnet_prefix = 0xfe80000000000000LL;
 	for (i = 0; i < HNS_ROCE_V1_RESV_QP; i++) {
 		phy_port = (i >= HNS_ROCE_MAX_PORTS) ? (i - 2) :
 				(i % HNS_ROCE_MAX_PORTS);
@@ -2541,7 +2541,7 @@ static void hns_roce_v1_clear_hem(struct hns_roce_dev *hr_dev,
 		msleep(HW_SYNC_SLEEP_TIME_INTERVAL);
 	}
 
-	bt_cmd_val[0] = (__le32)bt_ba;
+	bt_cmd_val[0] = cpu_to_le32(bt_ba);
 	roce_set_field(bt_cmd_val[1], ROCEE_BT_CMD_H_ROCEE_BT_CMD_BA_H_M,
 		ROCEE_BT_CMD_H_ROCEE_BT_CMD_BA_H_S, bt_ba >> 32);
 	hns_roce_write64_k(bt_cmd_val, hr_dev->reg_base + ROCEE_BT_CMD_L_REG);
@@ -3635,7 +3635,7 @@ static int hns_roce_v1_q_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr,
 	qp_attr->retry_cnt = roce_get_field(context->qpc_bytes_148,
 			     QP_CONTEXT_QPC_BYTES_148_RETRY_COUNT_M,
 			     QP_CONTEXT_QPC_BYTES_148_RETRY_COUNT_S);
-	qp_attr->rnr_retry = (u8)context->rnr_retry;
+	qp_attr->rnr_retry = le32_to_cpu(context->rnr_retry);
 
 done:
 	qp_attr->cur_qp_state = qp_attr->qp_state;
@@ -3691,7 +3691,8 @@ static void hns_roce_check_sdb_status(struct hns_roce_dev *hr_dev,
 
 	old_send_tmp = (__le32 *)old_send;
 	old_retry_tmp = (__le32 *)old_retry;
-	if (!roce_get_bit(*tsp_st, ROCEE_CNT_CLR_CE_CNT_CLR_CE_S)) {
+	tmp = cpu_to_le32(*tsp_st);
+	if (!roce_get_bit(tmp, ROCEE_CNT_CLR_CE_CNT_CLR_CE_S)) {
 		old_cnt = roce_get_field(*old_send_tmp,
 					 ROCEE_SDB_SEND_PTR_SDB_SEND_PTR_M,
 					 ROCEE_SDB_SEND_PTR_SDB_SEND_PTR_S) +

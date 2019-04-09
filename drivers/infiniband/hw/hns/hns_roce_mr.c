@@ -1473,7 +1473,7 @@ static int hns_roce_set_page(struct ib_mr *ibmr, u64 addr)
 {
 	struct hns_roce_mr *mr = to_hr_mr(ibmr);
 
-	mr->pbl_buf[mr->npages++] = cpu_to_le64(addr);
+	mr->pbl_buf[mr->npages++] = addr;
 
 	return 0;
 }

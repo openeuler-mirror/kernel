@@ -800,7 +800,7 @@ enum {
 };
 
 struct hns_roce_ceqe {
-	u32			comp;
+	__le32			comp;
 };
 
 struct hns_roce_aeqe {

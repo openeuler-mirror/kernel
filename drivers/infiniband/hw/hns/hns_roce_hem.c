@@ -371,9 +371,9 @@ static int hns_roce_set_hem(struct hns_roce_dev *hr_dev,
 	unsigned long flags;
 	struct hns_roce_hem_iter iter;
 	void __iomem *bt_cmd;
-	u32 bt_cmd_h_val = 0;
-	u32 bt_cmd_val[2];
-	u32 bt_cmd_l = 0;
+	__le32 bt_cmd_h_val = 0;
+	__le32 bt_cmd_val[2];
+	__le32 bt_cmd_l = 0;
 	u64 bt_ba = 0;
 	int ret = 0;
 
@@ -431,7 +431,7 @@ static int hns_roce_set_hem(struct hns_roce_dev *hr_dev,
 			mdelay(HW_SYNC_SLEEP_TIME_INTERVAL);
 		}
 
-		bt_cmd_l = (u32)bt_ba;
+		bt_cmd_l = cpu_to_le32(bt_ba);
 		roce_set_field(bt_cmd_h_val, ROCEE_BT_CMD_H_ROCEE_BT_CMD_BA_H_M,
 			       ROCEE_BT_CMD_H_ROCEE_BT_CMD_BA_H_S,
 			       bt_ba >> BT_BA_SHIFT);

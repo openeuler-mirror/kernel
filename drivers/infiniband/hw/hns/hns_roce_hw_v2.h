@@ -1677,8 +1677,8 @@ struct hns_roce_link_table {
 };
 
 struct hns_roce_link_table_entry {
-	u32 blk_ba0; /* Aligned with 4KB regardless of kernel page size */
-	u32 blk_ba1_nxt_ptr;
+	__le32 blk_ba0; /* Aligned with 4KB regardless of kernel page size */
+	__le32 blk_ba1_nxt_ptr;
 };
 #define HNS_ROCE_LINK_TABLE_BA1_S 0
 #define HNS_ROCE_LINK_TABLE_BA1_M GENMASK(19, 0)

@@ -987,7 +987,7 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 	if (sqpn)
 		hr_qp->doorbell_qpn = 1;
 	else
-		hr_qp->doorbell_qpn = cpu_to_le64(hr_qp->qpn);
+		hr_qp->doorbell_qpn = (u32)(hr_qp->qpn);
 
 	if (ib_pd->uobject && (udata->outlen >= sizeof(resp))) {
 		ret = ib_copy_to_udata(udata, &resp, sizeof(resp));
