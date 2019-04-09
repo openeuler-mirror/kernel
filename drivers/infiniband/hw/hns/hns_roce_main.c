@@ -1301,9 +1301,9 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 	if (hr_dev->cmd_mod) {
 		ret = hns_roce_cmd_use_events(hr_dev);
 		if (ret) {
-			dev_err(dev, "Switch to event-driven cmd failed(%d)!\n",
-				ret);
-			goto error_failed_use_event;
+			dev_warn(dev,
+				 "Cmd event  mode failed, set back to poll!\n");
+			hns_roce_cmd_use_polling(hr_dev);
 		}
 	}
 
@@ -1320,12 +1320,10 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 		goto error_failed_setup_hca;
 	}
 
-	if (hr_dev->hw->hw_init) {
-		ret = hr_dev->hw->hw_init(hr_dev);
-		if (ret) {
-			dev_err(dev, "Hw_init failed!\n");
-			goto error_failed_engine_init;
-		}
+	ret = hr_dev->hw->hw_init(hr_dev);
+	if (ret) {
+		dev_err(dev, "Hw_init failed!\n");
+		goto error_failed_engine_init;
 	}
 
 	ret = hns_roce_register_device(hr_dev);
@@ -1347,10 +1345,8 @@ error_failed_setup_hca:
 	hns_roce_cleanup_hem(hr_dev);
 
 error_failed_init_hem:
-	if (hr_dev->cmd_mod)
-		hns_roce_cmd_use_polling(hr_dev);
-
-error_failed_use_event:
+	if (hr_dev->cmd.use_events)
+		kfree(hr_dev->cmd.context);
 	hr_dev->hw->cleanup_eq(hr_dev);
 
 error_failed_eq_table:
@@ -1378,8 +1374,10 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev)
 	hns_roce_cleanup_bitmap(hr_dev);
 	hns_roce_cleanup_hem(hr_dev);
 
-	if (hr_dev->cmd_mod)
+	if (hr_dev->cmd_mod) {
+		kfree(hr_dev->cmd.context);
 		hns_roce_cmd_use_polling(hr_dev);
+	}
 
 	hr_dev->hw->cleanup_eq(hr_dev);
 	hns_roce_cmd_cleanup(hr_dev);
