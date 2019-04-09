@@ -62,8 +62,7 @@ static void flush_work_handle(struct work_struct *work)
 	kfree(flush_work);
 }
 
-void init_flush_work(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
-		     struct hns_roce_cq *cq, enum queue_type type)
+void init_flush_work(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 {
 	struct hns_roce_flush_work *flush_work;
 
@@ -72,19 +71,9 @@ void init_flush_work(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
 		return;
 
 	flush_work->hr_dev = hr_dev;
-	flush_work->hr_qp = qp;
+	flush_work->hr_qp = hr_qp;
 	INIT_WORK(&flush_work->work, flush_work_handle);
-	switch (type) {
-	case HNS_ROCE_SQ:
-		queue_work(qp->sq.workq, &flush_work->work);
-		break;
-	case HNS_ROCE_RQ:
-		queue_work(qp->rq.workq, &flush_work->work);
-		break;
-	case HNS_ROCE_CQ:
-		queue_work(cq->workq, &flush_work->work);
-		break;
-	}
+	queue_work(hr_dev->flush_workq, &flush_work->work);
 }
 EXPORT_SYMBOL_GPL(init_flush_work);
 
@@ -110,7 +99,7 @@ void hns_roce_qp_event(struct hns_roce_dev *hr_dev, u32 qpn, int event_type)
 	if (event_type == HNS_ROCE_EVENT_TYPE_WQ_CATAS_ERROR ||
 	    event_type == HNS_ROCE_EVENT_TYPE_INV_REQ_LOCAL_WQ_ERROR ||
 	    event_type == HNS_ROCE_EVENT_TYPE_LOCAL_WQ_ACCESS_ERROR)
-		init_flush_work(hr_dev, qp, NULL, HNS_ROCE_SQ);
+		init_flush_work(hr_dev, qp);
 
 	qp->event(qp, (enum hns_roce_event)event_type);
 
@@ -726,35 +715,6 @@ static int hns_roce_qp_has_rq(struct ib_qp_init_attr *attr)
 	return 1;
 }
 
-static void destroy_qp_workqueue(struct hns_roce_qp *hr_qp)
-{
-	destroy_workqueue(hr_qp->rq.workq);
-	destroy_workqueue(hr_qp->sq.workq);
-}
-
-static int create_qp_workqueue(struct hns_roce_dev *hr_dev,
-			       struct hns_roce_qp *hr_qp)
-{
-	struct device *dev = hr_dev->dev;
-
-	hr_qp->sq.workq =
-		create_singlethread_workqueue("hns_roce_sq_workqueue");
-	if (!hr_qp->sq.workq) {
-		dev_err(dev, "Failed to create sq workqueue!\n");
-		return -ENOMEM;
-	}
-
-	hr_qp->rq.workq =
-		create_singlethread_workqueue("hns_roce_rq_workqueue");
-	if (!hr_qp->rq.workq) {
-		dev_err(dev, "Failed to create rq workqueue!\n");
-		destroy_workqueue(hr_qp->sq.workq);
-		return -ENOMEM;
-	}
-
-	return 0;
-}
-
 static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 				     struct ib_pd *ib_pd,
 				     struct ib_qp_init_attr *init_attr,
@@ -1143,18 +1103,11 @@ struct ib_qp *hns_roce_create_qp(struct ib_pd *pd,
 		if (!hr_qp)
 			return ERR_PTR(-ENOMEM);
 
-		ret = create_qp_workqueue(hr_dev, hr_qp);
-		if (ret) {
-			kfree(hr_qp);
-			return ERR_PTR(ret);
-		}
-
 		ret = hns_roce_create_qp_common(hr_dev, pd, init_attr, udata, 0,
 						hr_qp);
 		if (ret) {
 			dev_err(dev, "Create RC QP 0x%06lx failed(%d)\n",
 				hr_qp->qpn, ret);
-			destroy_qp_workqueue(hr_qp);
 			kfree(hr_qp);
 			return ERR_PTR(ret);
 		}

@@ -634,7 +634,7 @@ out:
 		qp->next_sge = sge_ind;
 
 		if (qp->state == IB_QPS_ERR)
-			init_flush_work(hr_dev, qp, NULL, HNS_ROCE_SQ);
+			init_flush_work(hr_dev, qp);
 	}
 	rdfx_inc_sq_db_cnt(hr_dev, ibqp->qp_num);
 	rdfx_put_rdfx_qp(hr_dev, ibqp->qp_num);
@@ -736,7 +736,7 @@ out:
 		*hr_qp->rdb.db_record = hr_qp->rq.head & 0xffff;
 
 		if (hr_qp->state == IB_QPS_ERR)
-			init_flush_work(hr_dev, hr_qp, NULL, HNS_ROCE_RQ);
+			init_flush_work(hr_dev, hr_qp);
 
 		rdfx_inc_rq_db_cnt(hr_dev, hr_qp->qpn);
 	}
@@ -3018,7 +3018,7 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 	    wc->status != IB_WC_WR_FLUSH_ERR) {
 		dev_err(hr_dev->dev, "error cqe status is: 0x%x\n",
 			status & HNS_ROCE_V2_CQE_STATUS_MASK);
-		init_flush_work(hr_dev, *cur_qp, hr_cq, HNS_ROCE_CQ);
+		init_flush_work(hr_dev, *cur_qp);
 		return 0;
 	}
 
@@ -5082,15 +5082,10 @@ static int hns_roce_v2_destroy_qp(struct ib_qp *ibqp)
 		return ret;
 	}
 
-	if (hr_qp->ibqp.qp_type == IB_QPT_GSI) {
+	if (hr_qp->ibqp.qp_type == IB_QPT_GSI)
 		kfree(hr_to_hr_sqp(hr_qp));
-	} else {
-		flush_workqueue(hr_qp->rq.workq);
-		destroy_workqueue(hr_qp->rq.workq);
-		flush_workqueue(hr_qp->sq.workq);
-		destroy_workqueue(hr_qp->sq.workq);
+	else
 		kfree(hr_qp);
-	}
 
 	return 0;
 }
@@ -6387,6 +6382,29 @@ static void hns_roce_v2_cleanup_eq_table(struct hns_roce_dev *hr_dev)
 	destroy_workqueue(hr_dev->irq_workq);
 }
 
+static int hns_roce_v2_create_workq(struct hns_roce_dev *hr_dev)
+{
+	char workq_name[HNS_ROCE_WORKQ_NAME_LEN];
+	struct device *dev = hr_dev->dev;
+
+	snprintf(workq_name, HNS_ROCE_WORKQ_NAME_LEN - 1, "%s_flush_wq",
+		 hr_dev->ib_dev.name);
+
+	hr_dev->flush_workq = create_singlethread_workqueue(workq_name);
+	if (!hr_dev->flush_workq) {
+		dev_err(dev, "Failed to create flush workqueue!\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void hns_roce_v2_destroy_workq(struct hns_roce_dev *hr_dev)
+{
+	flush_workqueue(hr_dev->flush_workq);
+	destroy_workqueue(hr_dev->flush_workq);
+}
+
 static void hns_roce_v2_write_srqc(struct hns_roce_dev *hr_dev,
 				   struct hns_roce_srq *srq, u32 pdn, u16 xrcd,
 				   u32 cqn, void *mb_buf, u64 *mtts_wqe,
@@ -6724,6 +6742,8 @@ static const struct hns_roce_hw hns_roce_hw_v2 = {
 	.poll_cq = hns_roce_v2_poll_cq,
 	.init_eq = hns_roce_v2_init_eq_table,
 	.cleanup_eq = hns_roce_v2_cleanup_eq_table,
+	.create_workq = hns_roce_v2_create_workq,
+	.destroy_workq = hns_roce_v2_destroy_workq,
 	.write_srqc = hns_roce_v2_write_srqc,
 	.modify_srq = hns_roce_v2_modify_srq,
 	.query_srq = hns_roce_v2_query_srq,

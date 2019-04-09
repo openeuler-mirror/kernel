@@ -71,6 +71,8 @@
 #define HNS_ROCE_CQE_WCMD_EMPTY_BIT		0x2
 #define HNS_ROCE_MIN_CQE_CNT			16
 
+#define HNS_ROCE_WORKQ_NAME_LEN			32
+
 #define HNS_ROCE_MAX_IRQ_NUM			128
 
 #define HNS_ROCE_SGE_IN_WQE			2
@@ -153,12 +155,6 @@ enum hns_roce_qp_state {
 	HNS_ROCE_QP_STATE_SQD,
 	HNS_ROCE_QP_STATE_ERR,
 	HNS_ROCE_QP_NUM_STATE,
-};
-
-enum queue_type {
-	HNS_ROCE_SQ,
-	HNS_ROCE_RQ,
-	HNS_ROCE_CQ,
 };
 
 enum hns_roce_event {
@@ -490,7 +486,6 @@ struct hns_roce_wq {
 	u32		head;
 	u32		tail;
 	void __iomem	*db_reg_l;
-	struct workqueue_struct *workq;
 };
 
 struct hns_roce_sge {
@@ -572,7 +567,6 @@ struct hns_roce_cq {
 	u32				vector;
 	atomic_t			refcount;
 	struct completion		free;
-	struct workqueue_struct		*workq;
 	u32				dfx_cnt[HNS_ROCE_CQ_DFX_TOTAL];
 };
 
@@ -1124,6 +1118,8 @@ struct hns_roce_hw {
 	int (*modify_cq)(struct ib_cq *cq, u16 cq_count, u16 cq_period);
 	int (*init_eq)(struct hns_roce_dev *hr_dev);
 	void (*cleanup_eq)(struct hns_roce_dev *hr_dev);
+	int (*create_workq)(struct hns_roce_dev *hr_dev);
+	void (*destroy_workq)(struct hns_roce_dev *hr_dev);
 	void (*write_srqc)(struct hns_roce_dev *hr_dev,
 			   struct hns_roce_srq *srq, u32 pdn, u16 xrcd, u32 cqn,
 			   void *mb_buf, u64 *mtts_wqe, u64 *mtts_idx,
@@ -1201,6 +1197,7 @@ struct hns_roce_dev {
 	void			*priv;
 	void			*dfx_priv;
 	struct workqueue_struct *irq_workq;
+	struct workqueue_struct *flush_workq;
 	struct hns_roce_stat	hr_stat;
 	u32			func_num;
 	u64			dfx_cnt[HNS_ROCE_DFX_TOTAL];
@@ -1416,8 +1413,7 @@ struct ib_qp *hns_roce_create_qp(struct ib_pd *ib_pd,
 				 struct ib_udata *udata);
 int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		       int attr_mask, struct ib_udata *udata);
-void init_flush_work(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
-			    struct hns_roce_cq *cq, enum queue_type type);
+void init_flush_work(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp);
 void *get_recv_wqe(struct hns_roce_qp *hr_qp, int n);
 void *get_send_wqe(struct hns_roce_qp *hr_qp, int n);
 void *get_send_extend_sge(struct hns_roce_qp *hr_qp, int n);

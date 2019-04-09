@@ -376,18 +376,11 @@ static int create_kernel_cq(struct hns_roce_dev *hr_dev,
 	struct device *dev = hr_dev->dev;
 	int ret;
 
-	hr_cq->workq =
-		create_singlethread_workqueue("hns_roce_cq_workqueue");
-	if (!hr_cq->workq) {
-		dev_err(dev, "Failed to create cq workqueue!\n");
-		return -ENOMEM;
-	}
-
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB) {
 		ret = hns_roce_alloc_db(hr_dev, &hr_cq->db, 1);
 		if (ret) {
 			dev_err(dev, "Failed to alloc db for cq.\n");
-			goto err_workq;
+			return ret;
 		}
 
 		hr_cq->set_ci_db = hr_cq->db.db_record;
@@ -407,9 +400,6 @@ static int create_kernel_cq(struct hns_roce_dev *hr_dev,
 			 DB_REG_OFFSET * uar->index;
 
 	return 0;
-
-err_workq:
-	destroy_workqueue(hr_cq->workq);
 
 err_db:
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB)
@@ -570,9 +560,6 @@ int hns_roce_ib_destroy_cq(struct ib_cq *ib_cq)
 						ib_cq->cqe);
 			if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB)
 				hns_roce_free_db(hr_dev, &hr_cq->db);
-
-			flush_workqueue(hr_cq->workq);
-			destroy_workqueue(hr_cq->workq);
 		}
 
 		kfree(hr_cq);
