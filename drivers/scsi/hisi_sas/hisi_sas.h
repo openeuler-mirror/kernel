@@ -18,6 +18,7 @@
 #include <linux/dmapool.h>
 #include <linux/iopoll.h>
 #include <linux/lcm.h>
+#include <linux/libata.h>
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
@@ -81,6 +82,11 @@ struct hisi_hba;
 enum {
 	PORT_TYPE_SAS = (1U << 1),
 	PORT_TYPE_SATA = (1U << 0),
+};
+
+enum dev_status {
+	HISI_SAS_DEV_INIT,
+	HISI_SAS_DEV_NORMAL,
 };
 
 enum {
@@ -186,6 +192,7 @@ struct hisi_sas_device {
 	unsigned int device_id;
 	int sata_idx;
 	spinlock_t lock;
+	enum dev_status dev_status;
 };
 
 struct hisi_sas_tmf_task {
