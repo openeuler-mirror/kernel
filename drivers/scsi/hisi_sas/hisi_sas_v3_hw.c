@@ -131,6 +131,7 @@
 #define PHY_CTRL_RESET_MSK		(0x1 << PHY_CTRL_RESET_OFF)
 #define CMD_HDR_PIR_OFF			8
 #define CMD_HDR_PIR_MSK			(0x1 << CMD_HDR_PIR_OFF)
+#define SERDES_CFG			(PORT_BASE + 0x1c)
 #define SL_CFG				(PORT_BASE + 0x84)
 #define AIP_LIMIT			(PORT_BASE + 0x90)
 #define SL_CONTROL			(PORT_BASE + 0x94)
@@ -557,6 +558,7 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 					SAS_RX_TRAIN_TIMER, 0x13e80);
 		}
 
+		hisi_sas_phy_write32(hisi_hba, i, SERDES_CFG, 0xffc00);
 		hisi_sas_phy_write32(hisi_hba, i, CHL_INT0, 0xffffffff);
 		hisi_sas_phy_write32(hisi_hba, i, CHL_INT1, 0xffffffff);
 		hisi_sas_phy_write32(hisi_hba, i, CHL_INT2, 0xffffffff);
