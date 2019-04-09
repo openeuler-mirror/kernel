@@ -960,7 +960,7 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 	if (hns_roce_check_whether_mhop(hr_dev, HEM_TYPE_CQE)) {
 		ret = hns_roce_init_hem_table(hr_dev,
 				      &hr_dev->mr_table.mtt_cqe_table,
-				      HEM_TYPE_CQE, hr_dev->caps.cq_entry_sz,
+				      HEM_TYPE_CQE, hr_dev->caps.mtt_entry_sz,
 				      hr_dev->caps.num_cqe_segs, 1);
 		if (ret) {
 			dev_err(dev, "Failed to init MTT CQE context memory, aborting.\n");
