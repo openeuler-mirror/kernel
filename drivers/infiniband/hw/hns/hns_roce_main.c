@@ -1377,10 +1377,11 @@ EXPORT_SYMBOL_GPL(hns_roce_init);
 
 void hns_roce_exit(struct hns_roce_dev *hr_dev)
 {
+	hns_roce_unregister_device(hr_dev);
+
 	if (hr_dev->hw->destroy_workq)
 		hr_dev->hw->destroy_workq(hr_dev);
 
-	hns_roce_unregister_device(hr_dev);
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
 	hns_roce_cleanup_bitmap(hr_dev);
