@@ -115,6 +115,7 @@ static struct pid_namespace *create_pid_namespace(struct user_namespace *user_ns
 	ns->user_ns = get_user_ns(user_ns);
 	ns->ucounts = ucounts;
 	ns->pid_allocated = PIDNS_ADDING;
+	ns->pid_max = parent_pid_ns->pid_max;
 	INIT_WORK(&ns->proc_work, proc_cleanup_work);
 
 	return ns;
@@ -289,7 +290,6 @@ static int pid_ns_ctl_handler(struct ctl_table *table, int write,
 	return ret;
 }
 
-extern int pid_max;
 static int zero = 0;
 static struct ctl_table pid_ns_ctl_table[] = {
 	{
@@ -298,7 +298,7 @@ static struct ctl_table pid_ns_ctl_table[] = {
 		.mode = 0666, /* permissions are checked in the handler */
 		.proc_handler = pid_ns_ctl_handler,
 		.extra1 = &zero,
-		.extra2 = &pid_max,
+		.extra2 = &init_pid_ns.pid_max,
 	},
 	{ }
 };

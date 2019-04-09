@@ -55,12 +55,10 @@ struct pid init_struct_pid = {
 	}, }
 };
 
-int pid_max = PID_MAX_DEFAULT;
-
 #define RESERVED_PIDS		300
 
-int pid_max_min = RESERVED_PIDS + 1;
-int pid_max_max = PID_MAX_LIMIT;
+static int pid_max_min = RESERVED_PIDS + 1;
+static int pid_max_max = PID_MAX_LIMIT;
 
 /*
  * PID-map pages start out as NULL, they get allocated upon
@@ -190,7 +188,8 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 		 * a partially initialized PID (see below).
 		 */
 		nr = idr_alloc_cyclic(&tmp->idr, NULL, pid_min,
-				      pid_max, GFP_ATOMIC);
+				      task_active_pid_ns(current)->pid_max,
+				      GFP_ATOMIC);
 		spin_unlock_irq(&pidmap_lock);
 		idr_preload_end();
 
@@ -451,8 +450,36 @@ struct pid *find_ge_pid(int nr, struct pid_namespace *ns)
 	return idr_get_next(&ns->idr, &nr);
 }
 
+static int proc_dointvec_pidmax(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ctl_table tmp;
+
+	tmp = *table;
+	tmp.data = &current->nsproxy->pid_ns_for_children->pid_max;
+
+	return proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
+}
+
+static struct ctl_table pid_ctl_table[] = {
+	{
+		.procname	= "pid_max",
+		.data		= &init_pid_ns.pid_max,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_pidmax,
+		.extra1		= &pid_max_min,
+		.extra2		= &pid_max_max,
+	},
+	{}
+};
+
+static struct ctl_path pid_kern_path[] = { { .procname = "kernel" }, {} };
+
 void __init pid_idr_init(void)
 {
+	int pid_max = init_pid_ns.pid_max;
+
 	/* Verify no one has done anything silly: */
 	BUILD_BUG_ON(PID_MAX_LIMIT >= PIDNS_ADDING);
 
@@ -463,8 +490,12 @@ void __init pid_idr_init(void)
 				PIDS_PER_CPU_MIN * num_possible_cpus());
 	pr_info("pid_max: default: %u minimum: %u\n", pid_max, pid_max_min);
 
+	init_pid_ns.pid_max = pid_max;
+
 	idr_init(&init_pid_ns.idr);
 
 	init_pid_ns.pid_cachep = KMEM_CACHE(pid,
 			SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_ACCOUNT);
+
+	register_sysctl_paths(pid_kern_path, pid_ctl_table);
 }

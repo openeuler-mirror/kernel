@@ -43,6 +43,7 @@ struct pid_namespace {
 	struct work_struct proc_work;
 	kgid_t pid_gid;
 	int hide_pid;
+	int pid_max;
 	int reboot;	/* group exit code if this pidns was rebooted */
 	struct ns_common ns;
 } __randomize_layout;
