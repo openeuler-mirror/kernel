@@ -304,11 +304,11 @@ struct hns3_desc_cb {
 	/* priv data for the desc, e.g. skb when use with ip stack*/
 	void *priv;
 	u32 page_offset;
-	u32 reuse_flag;
-
 	u32 length;     /* length of the buffer */
 
-       /* desc type, used by the ring user to mark the type of the priv data */
+	u16 reuse_flag;
+
+	/* desc type, used by the ring user to mark the type of the priv data */
 	u16 type;
 };
 
