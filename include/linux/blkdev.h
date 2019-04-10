@@ -392,6 +392,15 @@ struct queue_limits {
 	unsigned char		cluster;
 	unsigned char		raid_partial_stripes_expensive;
 	enum blk_zoned_model	zoned;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 };
 
 #ifdef CONFIG_BLK_DEV_ZONED
@@ -1797,6 +1806,9 @@ struct blk_integrity_profile {
 	integrity_processing_fn		*generate_fn;
 	integrity_processing_fn		*verify_fn;
 	const char			*name;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 extern void blk_integrity_register(struct gendisk *, struct blk_integrity *);
@@ -1989,6 +2001,11 @@ struct block_device_operations {
 	void (*swap_slot_free_notify) (struct block_device *, unsigned long);
 	struct module *owner;
 	const struct pr_ops *pr_ops;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 extern int __blkdev_driver_ioctl(struct block_device *, fmode_t, unsigned int,
