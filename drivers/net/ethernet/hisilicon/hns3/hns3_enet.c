@@ -2822,7 +2822,7 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb,
 
 	/* This is needed in order to enable forwarding support */
 	ret = hns3_set_gro_and_checksum(ring, skb, l234info, bd_base_info);
-	if (ret) {
+	if (unlikely(ret)) {
 		u64_stats_update_begin(&ring->syncp);
 		ring->stats.rx_err_cnt++;
 		u64_stats_update_end(&ring->syncp);
@@ -2893,7 +2893,7 @@ static int hns3_handle_rx_bd(struct hns3_enet_ring *ring,
 	}
 
 	ret = hns3_handle_bdinfo(ring, skb, desc);
-	if (ret) {
+	if (unlikely(ret)) {
 		dev_kfree_skb_any(skb);
 		return ret;
 	}
