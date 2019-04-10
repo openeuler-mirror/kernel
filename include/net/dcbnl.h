@@ -19,6 +19,7 @@
 #ifndef __NET_DCBNL_H__
 #define __NET_DCBNL_H__
 
+#include <linux/kabi.h>
 #include <linux/dcbnl.h>
 
 struct dcb_app_type {
@@ -118,6 +119,22 @@ struct dcbnl_rtnl_ops {
 	/* buffer settings */
 	int (*dcbnl_getbuffer)(struct net_device *, struct dcbnl_buffer *);
 	int (*dcbnl_setbuffer)(struct net_device *, struct dcbnl_buffer *);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
+	KABI_RESERVE(9)
+	KABI_RESERVE(10)
+	KABI_RESERVE(11)
+	KABI_RESERVE(12)
+	KABI_RESERVE(13)
+	KABI_RESERVE(14)
+	KABI_RESERVE(15)
 };
 
 #endif /* __NET_DCBNL_H__ */

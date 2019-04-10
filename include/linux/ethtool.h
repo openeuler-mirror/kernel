@@ -13,6 +13,7 @@
 #ifndef _LINUX_ETHTOOL_H
 #define _LINUX_ETHTOOL_H
 
+#include <linux/kabi.h>
 #include <linux/bitmap.h>
 #include <linux/compat.h>
 #include <uapi/linux/ethtool.h>
@@ -412,5 +413,38 @@ struct ethtool_ops {
 				      struct ethtool_fecparam *);
 	void	(*get_ethtool_phy_stats)(struct net_device *,
 					 struct ethtool_stats *, u64 *);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
+	KABI_RESERVE(9)
+	KABI_RESERVE(10)
+	KABI_RESERVE(11)
+	KABI_RESERVE(12)
+	KABI_RESERVE(13)
+	KABI_RESERVE(14)
+	KABI_RESERVE(15)
+	KABI_RESERVE(16)
+	KABI_RESERVE(17)
+	KABI_RESERVE(18)
+	KABI_RESERVE(19)
+	KABI_RESERVE(20)
+	KABI_RESERVE(21)
+	KABI_RESERVE(22)
+	KABI_RESERVE(23)
+	KABI_RESERVE(24)
+	KABI_RESERVE(25)
+	KABI_RESERVE(26)
+	KABI_RESERVE(27)
+	KABI_RESERVE(28)
+	KABI_RESERVE(29)
+	KABI_RESERVE(30)
+	KABI_RESERVE(31)
+	KABI_RESERVE(32)
 };
 #endif /* _LINUX_ETHTOOL_H */

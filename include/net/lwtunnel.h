@@ -2,6 +2,7 @@
 #ifndef __NET_LWTUNNEL_H
 #define __NET_LWTUNNEL_H 1
 
+#include <linux/kabi.h>
 #include <linux/lwtunnel.h>
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
@@ -30,6 +31,11 @@ struct lwtunnel_state {
 	int		(*orig_output)(struct net *net, struct sock *sk, struct sk_buff *skb);
 	int		(*orig_input)(struct sk_buff *);
 	struct		rcu_head rcu;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 	__u8            data[0];
 };
 

@@ -25,6 +25,7 @@
 #ifndef _LINUX_NETDEVICE_H
 #define _LINUX_NETDEVICE_H
 
+#include <linux/kabi.h>
 #include <linux/timer.h>
 #include <linux/bug.h>
 #include <linux/delay.h>
@@ -274,6 +275,10 @@ struct header_ops {
 				const struct net_device *dev,
 				const unsigned char *haddr);
 	bool	(*validate)(const char *ll_header, unsigned int len);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
 };
 
 /* These flag bits are private to the generic network queueing
@@ -339,6 +344,14 @@ struct napi_struct {
 	struct list_head	dev_list;
 	struct hlist_node	napi_hash_node;
 	unsigned int		napi_id;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
 };
 
 enum {
@@ -598,6 +611,15 @@ struct netdev_queue {
 #ifdef CONFIG_BQL
 	struct dql		dql;
 #endif
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 } ____cacheline_aligned_in_smp;
 
 extern int sysctl_fb_tunnels_only_for_init_net;
@@ -712,6 +734,15 @@ struct netdev_rx_queue {
 	struct kobject			kobj;
 	struct net_device		*dev;
 	struct xdp_rxq_info		xdp_rxq;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 } ____cacheline_aligned_in_smp;
 
 /*
@@ -888,6 +919,14 @@ struct xfrmdev_ops {
 	bool	(*xdo_dev_offload_ok) (struct sk_buff *skb,
 				       struct xfrm_state *x);
 	void	(*xdo_dev_state_advance_esn) (struct xfrm_state *x);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
 };
 #endif
 
@@ -910,6 +949,14 @@ struct tlsdev_ops {
 			    enum tls_offload_ctx_dir direction);
 	void (*tls_dev_resync_rx)(struct net_device *netdev,
 				  struct sock *sk, u32 seq, u64 rcd_sn);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
 };
 #endif
 
@@ -1410,6 +1457,54 @@ struct net_device_ops {
 						u32 flags);
 	int			(*ndo_xsk_async_xmit)(struct net_device *dev,
 						      u32 queue_id);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
+	KABI_RESERVE(9)
+	KABI_RESERVE(10)
+	KABI_RESERVE(11)
+	KABI_RESERVE(12)
+	KABI_RESERVE(13)
+	KABI_RESERVE(14)
+	KABI_RESERVE(15)
+	KABI_RESERVE(16)
+	KABI_RESERVE(17)
+	KABI_RESERVE(18)
+	KABI_RESERVE(19)
+	KABI_RESERVE(20)
+	KABI_RESERVE(21)
+	KABI_RESERVE(22)
+	KABI_RESERVE(23)
+	KABI_RESERVE(24)
+	KABI_RESERVE(25)
+	KABI_RESERVE(26)
+	KABI_RESERVE(27)
+	KABI_RESERVE(28)
+	KABI_RESERVE(29)
+	KABI_RESERVE(30)
+	KABI_RESERVE(31)
+	KABI_RESERVE(32)
+	KABI_RESERVE(33)
+	KABI_RESERVE(34)
+	KABI_RESERVE(35)
+	KABI_RESERVE(36)
+	KABI_RESERVE(37)
+	KABI_RESERVE(38)
+	KABI_RESERVE(39)
+	KABI_RESERVE(40)
+	KABI_RESERVE(41)
+	KABI_RESERVE(42)
+	KABI_RESERVE(43)
+	KABI_RESERVE(44)
+	KABI_RESERVE(45)
+	KABI_RESERVE(46)
+	KABI_RESERVE(47)
 };
 
 /**
@@ -2020,6 +2115,37 @@ struct net_device {
 	struct lock_class_key	*qdisc_running_key;
 	bool			proto_down;
 	unsigned		wol_enabled:1;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
+	KABI_RESERVE(9)
+	KABI_RESERVE(10)
+	KABI_RESERVE(11)
+	KABI_RESERVE(12)
+	KABI_RESERVE(13)
+	KABI_RESERVE(14)
+	KABI_RESERVE(15)
+	KABI_RESERVE(16)
+	KABI_RESERVE(17)
+	KABI_RESERVE(18)
+	KABI_RESERVE(19)
+	KABI_RESERVE(20)
+	KABI_RESERVE(21)
+	KABI_RESERVE(22)
+	KABI_RESERVE(23)
+	KABI_RESERVE(24)
+	KABI_RESERVE(25)
+	KABI_RESERVE(26)
+	KABI_RESERVE(27)
+	KABI_RESERVE(28)
+	KABI_RESERVE(29)
+	KABI_RESERVE(30)
 };
 #define to_net_dev(d) container_of(d, struct net_device, dev)
 
@@ -2335,6 +2461,11 @@ struct packet_type {
 					    struct sock *sk);
 	void			*af_packet_priv;
 	struct list_head	list;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 struct offload_callbacks {

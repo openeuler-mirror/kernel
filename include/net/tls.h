@@ -34,6 +34,7 @@
 #ifndef _TLS_OFFLOAD_H
 #define _TLS_OFFLOAD_H
 
+#include <linux/kabi.h>
 #include <linux/types.h>
 #include <asm/byteorder.h>
 #include <linux/crypto.h>
@@ -175,6 +176,11 @@ struct cipher_context {
 	char *iv;
 	u16 rec_seq_size;
 	char *rec_seq;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 union tls_crypto_context {

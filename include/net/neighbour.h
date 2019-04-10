@@ -2,6 +2,7 @@
 #ifndef _NET_NEIGHBOUR_H
 #define _NET_NEIGHBOUR_H
 
+#include <linux/kabi.h>
 #include <linux/neighbour.h>
 
 /*
@@ -156,6 +157,9 @@ struct neighbour {
 	const struct neigh_ops	*ops;
 	struct rcu_head		rcu;
 	struct net_device	*dev;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 	u8			primary_key[0];
 } __randomize_layout;
 

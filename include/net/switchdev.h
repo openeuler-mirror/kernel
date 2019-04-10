@@ -11,6 +11,7 @@
 #ifndef _LINUX_SWITCHDEV_H_
 #define _LINUX_SWITCHDEV_H_
 
+#include <linux/kabi.h>
 #include <linux/netdevice.h>
 #include <linux/notifier.h>
 #include <linux/list.h>
@@ -85,6 +86,11 @@ struct switchdev_obj {
 	u32 flags;
 	void *complete_priv;
 	void (*complete)(struct net_device *dev, int err, void *priv);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /* SWITCHDEV_OBJ_ID_PORT_VLAN */
@@ -137,6 +143,14 @@ struct switchdev_ops {
 					  struct switchdev_trans *trans);
 	int	(*switchdev_port_obj_del)(struct net_device *dev,
 					  const struct switchdev_obj *obj);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
 };
 
 enum switchdev_notifier_type {

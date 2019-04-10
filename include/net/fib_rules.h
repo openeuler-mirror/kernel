@@ -2,6 +2,7 @@
 #ifndef __NET_FIB_RULES_H
 #define __NET_FIB_RULES_H
 
+#include <linux/kabi.h>
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <linux/netdevice.h>
@@ -43,6 +44,15 @@ struct fib_rule {
 	struct fib_rule_port_range	sport_range;
 	struct fib_rule_port_range	dport_range;
 	struct rcu_head		rcu;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 };
 
 struct fib_lookup_arg {

@@ -2,6 +2,7 @@
 #ifndef __NET_GENERIC_NETLINK_H
 #define __NET_GENERIC_NETLINK_H
 
+#include <linux/kabi.h>
 #include <linux/genetlink.h>
 #include <net/netlink.h>
 #include <net/net_namespace.h>
@@ -71,6 +72,15 @@ struct genl_family {
 	unsigned int		n_mcgrps;
 	unsigned int		mcgrp_offset;	/* private */
 	struct module		*module;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 };
 
 struct nlattr **genl_family_attrbuf(const struct genl_family *family);
@@ -141,6 +151,14 @@ struct genl_ops {
 	u8			cmd;
 	u8			internal_flags;
 	u8			flags;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
 };
 
 int genl_register_family(struct genl_family *family);
