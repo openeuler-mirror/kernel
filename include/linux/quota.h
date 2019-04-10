@@ -32,6 +32,7 @@
 #ifndef _LINUX_QUOTA_
 #define _LINUX_QUOTA_
 
+#include <linux/kabi.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/rwsem.h>
@@ -316,6 +317,9 @@ struct quota_format_ops {
 	int (*commit_dqblk)(struct dquot *dquot);	/* Write structure for one user */
 	int (*release_dqblk)(struct dquot *dquot);	/* Called when last reference to dquot is being dropped */
 	int (*get_next_id)(struct super_block *sb, struct kqid *qid);	/* Get next ID with existing structure in the quota file */
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /* Operations working with dquots */
@@ -335,6 +339,9 @@ struct dquot_operations {
 	int (*get_inode_usage) (struct inode *, qsize_t *);
 	/* Get next ID with active quota structure */
 	int (*get_next_id) (struct super_block *sb, struct kqid *qid);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct path;
@@ -438,6 +445,11 @@ struct quotactl_ops {
 	int (*set_dqblk)(struct super_block *, struct kqid, struct qc_dqblk *);
 	int (*get_state)(struct super_block *, struct qc_state *);
 	int (*rm_xquota)(struct super_block *, unsigned int);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 struct quota_format_type {

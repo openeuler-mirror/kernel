@@ -2,6 +2,7 @@
 #ifndef __LINUX_STACKTRACE_H
 #define __LINUX_STACKTRACE_H
 
+#include <linux/kabi.h>
 #include <linux/types.h>
 
 struct task_struct;
@@ -12,6 +13,9 @@ struct stack_trace {
 	unsigned int nr_entries, max_entries;
 	unsigned long *entries;
 	int skip;	/* input argument: How many entries to skip */
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 extern void save_stack_trace(struct stack_trace *trace);
