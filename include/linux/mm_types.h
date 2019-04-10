@@ -4,6 +4,7 @@
 
 #include <linux/mm_types_task.h>
 
+#include <linux/kabi.h>
 #include <linux/auxvec.h>
 #include <linux/list.h>
 #include <linux/spinlock.h>
@@ -323,6 +324,11 @@ struct vm_area_struct {
 	struct mempolicy *vm_policy;	/* NUMA policy for the VMA */
 #endif
 	struct vm_userfaultfd_ctx vm_userfaultfd_ctx;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 } __randomize_layout;
 
 struct core_thread {
@@ -492,6 +498,15 @@ struct mm_struct {
 		struct hmm *hmm;
 #endif
 	} __randomize_layout;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 
 	/*
 	 * The mm_cpumask needs to be at the end of mm_struct, because it

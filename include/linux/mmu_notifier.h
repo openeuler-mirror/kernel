@@ -2,6 +2,7 @@
 #ifndef _LINUX_MMU_NOTIFIER_H
 #define _LINUX_MMU_NOTIFIER_H
 
+#include <linux/kabi.h>
 #include <linux/types.h>
 #include <linux/list.h>
 #include <linux/spinlock.h>
@@ -188,6 +189,11 @@ struct mmu_notifier_ops {
 	 */
 	void (*invalidate_range)(struct mmu_notifier *mn, struct mm_struct *mm,
 				 unsigned long start, unsigned long end);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /*
@@ -204,6 +210,9 @@ struct mmu_notifier_ops {
 struct mmu_notifier {
 	struct hlist_node hlist;
 	const struct mmu_notifier_ops *ops;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 static inline int mm_has_notifiers(struct mm_struct *mm)

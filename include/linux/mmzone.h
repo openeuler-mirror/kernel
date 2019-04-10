@@ -5,6 +5,7 @@
 #ifndef __ASSEMBLY__
 #ifndef __GENERATING_BOUNDS_H
 
+#include <linux/kabi.h>
 #include <linux/spinlock.h>
 #include <linux/list.h>
 #include <linux/wait.h>
@@ -506,6 +507,9 @@ struct zone {
 	/* Zone statistics */
 	atomic_long_t		vm_stat[NR_VM_ZONE_STAT_ITEMS];
 	atomic_long_t		vm_numa_stat[NR_VM_NUMA_STAT_ITEMS];
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 } ____cacheline_internodealigned_in_smp;
 
 enum pgdat_flags {
@@ -712,6 +716,9 @@ typedef struct pglist_data {
 	/* Per-node vmstats */
 	struct per_cpu_nodestat __percpu *per_cpu_nodestats;
 	atomic_long_t		vm_stat[NR_VM_NODE_STAT_ITEMS];
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 } pg_data_t;
 
 #define node_present_pages(nid)	(NODE_DATA(nid)->node_present_pages)

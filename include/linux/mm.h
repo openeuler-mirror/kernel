@@ -6,6 +6,7 @@
 
 #ifdef __KERNEL__
 
+#include <linux/kabi.h>
 #include <linux/mmdebug.h>
 #include <linux/gfp.h>
 #include <linux/bug.h>
@@ -450,6 +451,11 @@ struct vm_operations_struct {
 	 */
 	struct page *(*find_special_page)(struct vm_area_struct *vma,
 					  unsigned long addr);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 static inline void vma_init(struct vm_area_struct *vma, struct mm_struct *mm)
