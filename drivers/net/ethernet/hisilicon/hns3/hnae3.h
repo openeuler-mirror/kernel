@@ -478,6 +478,8 @@ struct hnae3_ae_ops {
 	int (*send_cmdq)(struct hnae3_handle *handle, void *data, int num);
 	int (*test_cmdq)(struct hnae3_handle *handle, void *data, int *len);
 	int (*ecc_handle)(struct hnae3_ae_dev *ae_dev);
+	int (*priv_ops)(struct hnae3_handle *handle, int opcode,
+			void *data, int length);
 #endif
 };
 
