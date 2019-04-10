@@ -1663,10 +1663,10 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
-void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
+int hclge_handle_hw_msix_error(struct hclge_dev *hdev,
+			       unsigned long *reset_requests)
 {
 	struct device *dev = &hdev->pdev->dev;
-	struct hnae3_ae_dev *ae_dev = hdev->ae_dev;
 	u32 mpf_bd_num, pf_bd_num, bd_num;
 	enum hnae3_reset_type reset_level;
 	struct hclge_desc desc_bd;
@@ -1682,7 +1682,7 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 	if (ret) {
 		dev_err(dev, "fail(%d) to query msix int status bd num\n",
 			ret);
-		return;
+		return ret;
 	}
 
 	mpf_bd_num = le32_to_cpu(desc_bd.data[0]);
@@ -1691,7 +1691,7 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 
 	desc = kcalloc(bd_num, sizeof(struct hclge_desc), GFP_KERNEL);
 	if (!desc)
-		return;
+		goto out;
 
 	/* query all main PF MSIx errors */
 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_QUERY_CLEAR_ALL_MPF_MSIX_INT,
@@ -1711,10 +1711,10 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 		reset_level = hclge_log_error(dev, "MAC_AFIFO_TNL_INT_R",
 					      &hclge_mac_afifo_tnl_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, reset_requests);
 	}
 
-	/* log PPU(RCB) errors */
+	/* log PPU(RCB) MPF errors */
 	desc_data = (__le32 *)&desc[5];
 	status = le32_to_cpu(*(desc_data + 2)) &
 			HCLGE_PPU_MPF_INT_ST2_MSIX_MASK;
@@ -1723,7 +1723,7 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 			hclge_log_error(dev, "PPU_MPF_ABNORMAL_INT_ST2",
 					&hclge_ppu_mpf_abnormal_int_st2[0],
 					status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, reset_requests);
 	}
 
 	/* clear all main PF MSIx errors */
@@ -1754,7 +1754,7 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 		reset_level = hclge_log_error(dev, "SSU_PORT_BASED_ERR_INT",
 					      &hclge_ssu_port_based_pf_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, reset_requests);
 	}
 
 	/* read and log PPP PF errors */
@@ -1764,18 +1764,17 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 		reset_level = hclge_log_error(dev, "PPP_PF_ABNORMAL_INT_ST0",
 					      &hclge_ppp_pf_abnormal_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, reset_requests);
 	}
 
-
-	/* PPU(RCB) PF errors */
+	/* log PPU(RCB) PF errors */
 	desc_data = (__le32 *)&desc[3];
 	status = le32_to_cpu(*desc_data) & HCLGE_PPU_PF_INT_MSIX_MASK;
 	if (status) {
 		reset_level = hclge_log_error(dev, "PPU_PF_ABNORMAL_INT_ST",
 					      &hclge_ppu_pf_abnormal_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, reset_requests);
 	}
 
 	/* clear all PF MSIx errors */
@@ -1788,5 +1787,6 @@ void hclge_handle_hw_msix_error(struct hclge_dev *hdev)
 
 msi_error:
 	kfree(desc);
+out:
+	return ret;
 }
-
