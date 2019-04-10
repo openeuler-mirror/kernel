@@ -8629,6 +8629,7 @@ static int hclge_get_32_bit_regs(struct hclge_dev *hdev, u32 regs_num,
 	struct hclge_desc *desc;
 	u32 *reg_val = data;
 	__le32 *desc_data;
+	int nodata_num;
 	int cmd_num;
 	int i, k, n;
 	int ret;
@@ -8636,7 +8637,8 @@ static int hclge_get_32_bit_regs(struct hclge_dev *hdev, u32 regs_num,
 	if (regs_num == 0)
 		return 0;
 
-	cmd_num = DIV_ROUND_UP(regs_num + HCLGE_32_BIT_DESC_NODATA_LEN,
+	nodata_num = HCLGE_32_BIT_DESC_NODATA_LEN;
+	cmd_num = DIV_ROUND_UP(regs_num + nodata_num,
 			       HCLGE_32_BIT_REG_RTN_DATANUM);
 	desc = kcalloc(cmd_num, sizeof(struct hclge_desc), GFP_KERNEL);
 	if (!desc)
@@ -8654,8 +8656,7 @@ static int hclge_get_32_bit_regs(struct hclge_dev *hdev, u32 regs_num,
 	for (i = 0; i < cmd_num; i++) {
 		if (i == 0) {
 			desc_data = (__le32 *)(&desc[i].data[0]);
-			n = HCLGE_32_BIT_REG_RTN_DATANUM -
-			    HCLGE_32_BIT_DESC_NODATA_LEN;
+			n = HCLGE_32_BIT_REG_RTN_DATANUM - nodata_num;
 		} else {
 			desc_data = (__le32 *)(&desc[i]);
 			n = HCLGE_32_BIT_REG_RTN_DATANUM;
@@ -8682,6 +8683,7 @@ static int hclge_get_64_bit_regs(struct hclge_dev *hdev, u32 regs_num,
 	struct hclge_desc *desc;
 	u64 *reg_val = data;
 	__le64 *desc_data;
+	int nodata_len;
 	int cmd_num;
 	int i, k, n;
 	int ret;
@@ -8689,7 +8691,8 @@ static int hclge_get_64_bit_regs(struct hclge_dev *hdev, u32 regs_num,
 	if (regs_num == 0)
 		return 0;
 
-	cmd_num = DIV_ROUND_UP(regs_num + HCLGE_64_BIT_DESC_NODATA_LEN,
+	nodata_len = HCLGE_64_BIT_DESC_NODATA_LEN;
+	cmd_num = DIV_ROUND_UP(regs_num + nodata_len,
 			       HCLGE_64_BIT_REG_RTN_DATANUM);
 	desc = kcalloc(cmd_num, sizeof(struct hclge_desc), GFP_KERNEL);
 	if (!desc)
@@ -8707,8 +8710,7 @@ static int hclge_get_64_bit_regs(struct hclge_dev *hdev, u32 regs_num,
 	for (i = 0; i < cmd_num; i++) {
 		if (i == 0) {
 			desc_data = (__le64 *)(&desc[i].data[0]);
-			n = HCLGE_64_BIT_REG_RTN_DATANUM -
-			    HCLGE_64_BIT_DESC_NODATA_LEN;
+			n = HCLGE_64_BIT_REG_RTN_DATANUM - nodata_len;
 		} else {
 			desc_data = (__le64 *)(&desc[i]);
 			n = HCLGE_64_BIT_REG_RTN_DATANUM;
