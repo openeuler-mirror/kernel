@@ -1781,6 +1781,9 @@ bool hns3_get_tx_timeo_queue_info(struct net_device *ndev)
 		    "RING_EN: 0x%x, TC: 0x%x, FBD_NUM: 0x%x FBD_OFT: 0x%x, EBD_NUM: 0x%x, EBD_OFT: 0x%x\n",
 		    ring_en, tc, fbd_num, fbd_oft, ebd_num, ebd_oft);
 
+	if ((hw_tail == hw_head) && (priv->tx_timeout_count % 2))
+		return false;
+
 	return true;
 }
 
