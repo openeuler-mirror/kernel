@@ -433,12 +433,6 @@ static int hclgevf_set_handle_info(struct hclgevf_dev *hdev)
 	nic->numa_node_mask = hdev->numa_node_mask;
 	nic->flags |= HNAE3_SUPPORT_VF;
 
-	if (hdev->ae_dev->dev_type != HNAE3_DEV_KNIC) {
-		dev_err(&hdev->pdev->dev, "unsupported device type %d\n",
-			hdev->ae_dev->dev_type);
-		return -EINVAL;
-	}
-
 	ret = hclgevf_knic_setup(hdev);
 	if (ret)
 		dev_err(&hdev->pdev->dev, "VF knic setup failed %d\n",

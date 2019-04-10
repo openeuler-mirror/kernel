@@ -16,11 +16,10 @@ static LIST_HEAD(hnae3_ae_dev_list);
  */
 static DEFINE_MUTEX(hnae3_common_lock);
 
-static bool hnae3_client_match(enum hnae3_client_type client_type,
-			       enum hnae3_dev_type dev_type)
+static bool hnae3_client_match(enum hnae3_client_type client_type)
 {
-	if ((dev_type == HNAE3_DEV_KNIC) && (client_type == HNAE3_CLIENT_KNIC ||
-					     client_type == HNAE3_CLIENT_ROCE))
+	if (client_type == HNAE3_CLIENT_KNIC ||
+	    client_type == HNAE3_CLIENT_ROCE)
 		return true;
 
 	return false;
@@ -72,7 +71,7 @@ static int hnae3_init_client_instance(struct hnae3_client *client,
 	int ret;
 
 	/* check if this client matches the type of ae_dev */
-	if (!(hnae3_client_match(client->type, ae_dev->dev_type) &&
+	if (!(hnae3_client_match(client->type) &&
 	      hnae3_get_bit(ae_dev->flag, HNAE3_DEV_INITED_B))) {
 		return 0;
 	}
@@ -89,7 +88,7 @@ static void hnae3_uninit_client_instance(struct hnae3_client *client,
 					 struct hnae3_ae_dev *ae_dev)
 {
 	/* check if this client matches the type of ae_dev */
-	if (!(hnae3_client_match(client->type, ae_dev->dev_type) &&
+	if (!(hnae3_client_match(client->type) &&
 	      hnae3_get_bit(ae_dev->flag, HNAE3_DEV_INITED_B)))
 		return;
 

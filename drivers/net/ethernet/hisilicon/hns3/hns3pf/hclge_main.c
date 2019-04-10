@@ -1274,18 +1274,12 @@ static int hclge_vport_setup(struct hclge_vport *vport, u16 num_tqps)
 	nic->ae_algo = &ae_algo;
 	nic->numa_node_mask = hdev->numa_node_mask;
 
-	if (hdev->ae_dev->dev_type == HNAE3_DEV_KNIC) {
-		ret = hclge_knic_setup(vport, num_tqps,
-				       hdev->num_tx_desc, hdev->num_rx_desc);
+	ret = hclge_knic_setup(vport, num_tqps,
+			       hdev->num_tx_desc, hdev->num_rx_desc);
+	if (ret)
+		dev_err(&hdev->pdev->dev, "knic setup failed %d\n", ret);
 
-		if (ret) {
-			dev_err(&hdev->pdev->dev, "knic setup failed %d\n",
-				ret);
-			return ret;
-		}
-	}
-
-	return 0;
+	return ret;
 }
 
 static int hclge_alloc_vport(struct hclge_dev *hdev)

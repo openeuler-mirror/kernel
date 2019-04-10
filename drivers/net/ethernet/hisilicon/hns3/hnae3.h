@@ -104,10 +104,6 @@ enum hnae3_client_type {
 	HNAE3_CLIENT_ROCE,
 };
 
-enum hnae3_dev_type {
-	HNAE3_DEV_KNIC,
-};
-
 /* mac media type */
 enum hnae3_media_type {
 	HNAE3_MEDIA_TYPE_UNKNOWN,
@@ -198,7 +194,6 @@ struct hnae3_ae_dev {
 	u32 flag;
 	/* workaround to stop multiple reset happening */
 	u8 override_pci_need_reset;
-	enum hnae3_dev_type dev_type;
 	enum hnae3_reset_type reset_type;
 	void *priv;
 };
