@@ -2885,8 +2885,8 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev, bool is_timeout)
 
 	hclge_clear_reset_cause(hdev);
 
-	if (handle && handle->ae_algo->ops->reset_fail)
-		handle->ae_algo->ops->reset_fail(handle);
+	if (handle && handle->ae_algo->ops->reset_done)
+		handle->ae_algo->ops->reset_done(handle, false);
 
 	return false;
 }
@@ -3005,9 +3005,10 @@ static void hclge_reset(struct hclge_dev *hdev)
 	hdev->reset_fail_cnt = 0;
 	hdev->rst_stats.reset_done_cnt++;
 	ae_dev->reset_type = HNAE3_NONE_RESET;
+	del_timer(&hdev->reset_timer);
 
-	if (handle && handle->ae_algo->ops->reset_fail)
-		handle->ae_algo->ops->reset_fail(handle);
+	if (handle && handle->ae_algo->ops->reset_done)
+		handle->ae_algo->ops->reset_done(handle, true);
 
 	return;
 
@@ -3079,17 +3080,15 @@ static void hclge_reset_timer(struct timer_list *t)
 	hclge_reset_event(hdev->pdev, NULL);
 }
 
-bool hclge_reset_fail(struct hnae3_handle *handle)
+bool hclge_reset_done(struct hnae3_handle *handle, bool done)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 
-	if (hdev->reset_fail_cnt >= HCLGE_RESET_MAX_FAIL_CNT) {
+	if (hdev->reset_fail_cnt >= HCLGE_RESET_MAX_FAIL_CNT)
 		dev_err(&hdev->pdev->dev, "Reset fail!\n");
-		return false;
-	}
 
-	return true;
+	return done;
 }
 
 static void hclge_reset_subtask(struct hclge_dev *hdev)
@@ -8927,7 +8926,7 @@ struct hnae3_ae_ops hclge_ops = {
 	.get_global_queue_id = hclge_covert_handle_qid_global,
 	.mac_connect_phy = hclge_mac_connect_phy,
 	.mac_disconnect_phy = hclge_mac_disconnect_phy,
-	.reset_fail = hclge_reset_fail,
+	.reset_done = hclge_reset_done,
 	.restore_vlan_table = hclge_restore_vlan_table,
 };
 

@@ -477,7 +477,7 @@ struct hnae3_ae_ops {
 	u16 (*get_global_queue_id)(struct hnae3_handle *handle, u16 queue_id);
 	int (*mac_connect_phy)(struct hnae3_handle *handle);
 	void (*mac_disconnect_phy)(struct hnae3_handle *handle);
-	bool (*reset_fail)(struct hnae3_handle *handle);
+	bool (*reset_done)(struct hnae3_handle *handle, bool done);
 	void (*restore_vlan_table)(struct hnae3_handle *handle);
 #ifdef CONFIG_HNS3_TEST
 	int (*send_cmdq)(struct hnae3_handle *handle, void *data, int num);
