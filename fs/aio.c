@@ -1747,12 +1747,6 @@ static ssize_t aio_poll(struct aio_kiocb *aiocb, struct iocb *iocb)
 	/* one for removal from waitqueue, one for this function */
 	refcount_set(&aiocb->ki_refcnt, 2);
 
-	/*
-	 * file may be released by aio_poll_wake() if an expected event
-	 * is triggered immediately after the return of vfs_poll(), so
-	 * an extra reference is needed here to prevent use-after-free.
-	 */
-	get_file(req->file);
 	mask = vfs_poll(req->file, &apt.pt) & req->events;
 	if (unlikely(!req->head)) {
 		/* we did not manage to set up a waitqueue, done */
@@ -1779,8 +1773,6 @@ static ssize_t aio_poll(struct aio_kiocb *aiocb, struct iocb *iocb)
 	spin_unlock_irq(&ctx->ctx_lock);
 
 out:
-	/* release the extra reference for vfs_poll() */
-	fput(req->file);
 	if (unlikely(apt.error)) {
 		fput(req->file);
 	}
