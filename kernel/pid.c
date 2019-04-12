@@ -74,6 +74,7 @@ struct pid_namespace init_pid_ns = {
 	.child_reaper = &init_task,
 	.user_ns = &init_user_ns,
 	.ns.inum = PROC_PID_INIT_INO,
+	.pid_max = PID_MAX_DEFAULT,
 #ifdef CONFIG_PID_NS
 	.ns.ops = &pidns_operations,
 #endif
