@@ -2921,9 +2921,9 @@ void reweight_task(struct task_struct *p, int prio)
  *
  * hence icky!
  */
-static long calc_group_shares(struct cfs_rq *cfs_rq)
+static unsigned long calc_group_shares(struct cfs_rq *cfs_rq)
 {
-	long tg_weight, tg_shares, load, shares;
+	unsigned long tg_weight, tg_shares, load, shares;
 	struct task_group *tg = cfs_rq->tg;
 
 	tg_shares = READ_ONCE(tg->shares);
@@ -2952,7 +2952,7 @@ static long calc_group_shares(struct cfs_rq *cfs_rq)
 	 * case no task is runnable on a CPU MIN_SHARES=2 should be returned
 	 * instead of 0.
 	 */
-	return clamp_t(long, shares, MIN_SHARES, tg_shares);
+	return clamp_t(unsigned long, shares, MIN_SHARES, tg_shares);
 }
 
 /*
@@ -2982,9 +2982,9 @@ static long calc_group_shares(struct cfs_rq *cfs_rq)
  * Where these max() serve both to use the 'instant' values to fix the slow
  * from-idle and avoid the /0 on to-idle, similar to (6).
  */
-static long calc_group_runnable(struct cfs_rq *cfs_rq, long shares)
+static unsigned long calc_group_runnable(struct cfs_rq *cfs_rq, long shares)
 {
-	long runnable, load_avg;
+	unsigned long runnable, load_avg;
 
 	load_avg = max(cfs_rq->avg.load_avg,
 		       scale_load_down(cfs_rq->load.weight));
@@ -2996,7 +2996,7 @@ static long calc_group_runnable(struct cfs_rq *cfs_rq, long shares)
 	if (load_avg)
 		runnable /= load_avg;
 
-	return clamp_t(long, runnable, MIN_SHARES, shares);
+	return clamp_t(unsigned long, runnable, MIN_SHARES, shares);
 }
 #endif /* CONFIG_SMP */
 
@@ -3009,7 +3009,7 @@ static inline int throttled_hierarchy(struct cfs_rq *cfs_rq);
 static void update_cfs_group(struct sched_entity *se)
 {
 	struct cfs_rq *gcfs_rq = group_cfs_rq(se);
-	long shares, runnable;
+	unsigned long shares, runnable;
 
 	if (!gcfs_rq)
 		return;
