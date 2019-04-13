@@ -1201,26 +1201,6 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 	return 0;
 }
 
-/* HW need every continuous 7 buffer data larger than MSS */
-static bool hns3_check_skb_need_linearize(struct sk_buff *skb)
-{
-	int i;
-
-	for (i = 0; i < skb_shinfo(skb)->nr_frags - 7; i++) {
-		int total_length = 0;
-		int j;
-
-		for (j = 0; j < 7; j++)
-			total_length +=
-				skb_frag_size(&skb_shinfo(skb)->frags[j + i]);
-
-		if (total_length < skb_shinfo(skb)->gso_size)
-			return true;
-	}
-
-	return false;
-}
-
 static int hns3_nic_bd_num(struct sk_buff *skb)
 {
 	int size = skb_headlen(skb);
@@ -1248,6 +1228,47 @@ static int hns3_nic_bd_num(struct sk_buff *skb)
 	return bd_num;
 }
 
+static int hns3_gso_hdr_len(struct sk_buff *skb)
+{
+	if (!skb->encapsulation)
+		return skb_transport_offset(skb) + tcp_hdrlen(skb);
+
+	return skb_inner_transport_offset(skb) + inner_tcp_hdrlen(skb);
+}
+
+/* HW need every continuous 8 buffer data to be larger than MSS,
+ * we simplify it by ensuring skb_headlen + the first continuous
+ * 7 frags to to be larger than gso header len + mss, and the remaining
+ * continuous 7 frags to be larger than MSS except the last 7 frags.
+ */
+static bool hns3_skb_need_linearized(struct sk_buff *skb)
+{
+	int bd_limit = HNS3_MAX_BD_PER_FRAG - 1;
+	int tot_len = 0;
+	int i;
+
+	for (i = 0; i < bd_limit; i++)
+		tot_len += skb_frag_size(&skb_shinfo(skb)->frags[i]);
+
+	/* ensure headlen + the first 7 frags is greater than mss + header
+	 * and the first 7 frags is greater than mss.
+	 */
+	if (((tot_len + skb_headlen(skb)) < (skb_shinfo(skb)->gso_size +
+	    hns3_gso_hdr_len(skb))) || (tot_len < skb_shinfo(skb)->gso_size))
+		return true;
+
+	/* ensure the remaining continuous 7 buffer is greater than mss */
+	for (i = 0; i < (skb_shinfo(skb)->nr_frags - bd_limit - 1); i++) {
+		tot_len -= skb_frag_size(&skb_shinfo(skb)->frags[i]);
+		tot_len += skb_frag_size(&skb_shinfo(skb)->frags[i + bd_limit]);
+
+		if (tot_len < skb_shinfo(skb)->gso_size)
+			return true;
+	}
+
+	return false;
+}
+
 static int hns3_nic_maybe_stop_tx(struct hns3_enet_ring *ring,
 				  struct sk_buff **out_skb)
 {
@@ -1261,7 +1282,7 @@ static int hns3_nic_maybe_stop_tx(struct hns3_enet_ring *ring,
 	if (unlikely(bd_num > HNS3_MAX_BD_PER_FRAG)) {
 		struct sk_buff *new_skb;
 
-		if (skb_is_gso(skb) && !hns3_check_skb_need_linearize(skb))
+		if (skb_is_gso(skb) && !hns3_skb_need_linearized(skb))
 			goto out;
 
 		bd_num = hns3_tx_bd_count(skb->len);
