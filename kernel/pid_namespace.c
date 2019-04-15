@@ -283,6 +283,8 @@ static int pid_ns_ctl_handler(struct ctl_table *table, int write,
 	next = idr_get_cursor(&pid_ns->idr) - 1;
 
 	tmp.data = &next;
+	tmp.extra2 = &pid_ns->pid_max;
+
 	ret = proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
 	if (!ret && write)
 		idr_set_cursor(&pid_ns->idr, next + 1);

@@ -40,6 +40,7 @@
 #include <linux/proc_fs.h>
 #include <linux/sched/task.h>
 #include <linux/idr.h>
+#include <linux/kmemleak.h>
 
 struct pid init_struct_pid = {
 	.count 		= ATOMIC_INIT(1),
@@ -189,7 +190,7 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 		 * a partially initialized PID (see below).
 		 */
 		nr = idr_alloc_cyclic(&tmp->idr, NULL, pid_min,
-				      task_active_pid_ns(current)->pid_max,
+				      tmp->pid_max,
 				      GFP_ATOMIC);
 		spin_unlock_irq(&pidmap_lock);
 		idr_preload_end();
@@ -457,7 +458,7 @@ static int proc_dointvec_pidmax(struct ctl_table *table, int write,
 	struct ctl_table tmp;
 
 	tmp = *table;
-	tmp.data = &current->nsproxy->pid_ns_for_children->pid_max;
+	tmp.data = &task_active_pid_ns(current)->pid_max;
 
 	return proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
 }
@@ -479,6 +480,7 @@ static struct ctl_path pid_kern_path[] = { { .procname = "kernel" }, {} };
 
 void __init pid_idr_init(void)
 {
+	struct ctl_table_header *hdr;
 	int pid_max = init_pid_ns.pid_max;
 
 	/* Verify no one has done anything silly: */
@@ -498,5 +500,6 @@ void __init pid_idr_init(void)
 	init_pid_ns.pid_cachep = KMEM_CACHE(pid,
 			SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_ACCOUNT);
 
-	register_sysctl_paths(pid_kern_path, pid_ctl_table);
+	hdr = register_sysctl_paths(pid_kern_path, pid_ctl_table);
+	kmemleak_not_leak(hdr);
 }
