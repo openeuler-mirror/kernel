@@ -2018,7 +2018,7 @@ static u64 numa_get_avg_runtime(struct task_struct *p, u64 *period)
 		*period = now - p->last_task_numa_placement;
 
 		/* Avoid backward, and prevent potential divide error */
-		if (*period < 0)
+		if ((s64)*period < 0)
 			*period = 0;
 	} else {
 		delta = p->se.avg.load_sum;
