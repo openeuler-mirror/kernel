@@ -5535,6 +5535,7 @@ static irqreturn_t hns_roce_v2_msix_interrupt_abn(int irq, void *dev_id)
 {
 	struct hns_roce_dev *hr_dev = dev_id;
 	struct device *dev = hr_dev->dev;
+	unsigned long reset_level = 0;
 	int int_work = 0;
 	__le32 int_st;
 	__le32 int_en;
@@ -5555,9 +5556,10 @@ static irqreturn_t hns_roce_v2_msix_interrupt_abn(int irq, void *dev_id)
 			   le32_to_cpu(int_st));
 
 		/* Set reset level for the following reset_event() call */
-		if (ops->set_default_reset_request)
-			ops->set_default_reset_request(ae_dev,
-						       HNAE3_FUNC_RESET);
+		if (ops->set_default_reset_request) {
+			set_bit(HNAE3_FUNC_RESET, &reset_level);
+			ops->set_default_reset_request(ae_dev, &reset_level);
+		}
 
 		if (ops->reset_event)
 			ops->reset_event(pdev, NULL);
