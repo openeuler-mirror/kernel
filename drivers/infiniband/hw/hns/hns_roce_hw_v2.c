@@ -3989,8 +3989,9 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	count = hns_roce_mtr_find(hr_dev, &hr_qp->mtr,
 				  hr_qp->rq.offset / page_size, mtts,
 				  MTT_MIN_COUNT, &wqe_sge_ba);
-	if (!check_wqe_rq_mtt_count(hr_dev, hr_qp, count, page_size))
-		return -EINVAL;
+	if (!ibqp->srq)
+		if (!check_wqe_rq_mtt_count(hr_dev, hr_qp, count, page_size))
+			return -EINVAL;
 
 	/* Search IRRL's mtts */
 	mtts_2 = hns_roce_table_find(hr_dev, &hr_dev->qp_table.irrl_table,
