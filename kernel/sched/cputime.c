@@ -51,6 +51,7 @@ void irqtime_account_irq(struct task_struct *curr)
 	struct irqtime *irqtime = this_cpu_ptr(&cpu_irqtime);
 	s64 delta;
 	int cpu;
+	struct rq *rq = this_rq();
 
 	if (!sched_clock_irqtime)
 		return;
@@ -65,10 +66,15 @@ void irqtime_account_irq(struct task_struct *curr)
 	 * in that case, so as not to confuse scheduler with a special task
 	 * that do not consume any time, but still wants to run.
 	 */
-	if (hardirq_count())
+	if (hardirq_count()) {
 		irqtime_account_delta(irqtime, delta, CPUTIME_IRQ);
-	else if (in_serving_softirq() && curr != this_cpu_ksoftirqd())
+		if (curr == rq->idle)
+			kcpustat_this_cpu->cpustat[CPUTIME_IRQ_IDLE] += delta;
+	} else if (in_serving_softirq() && curr != this_cpu_ksoftirqd()) {
 		irqtime_account_delta(irqtime, delta, CPUTIME_SOFTIRQ);
+		if (curr == rq->idle)
+			kcpustat_this_cpu->cpustat[CPUTIME_SOFTIRQ_IDLE] += delta;
+	}
 }
 EXPORT_SYMBOL_GPL(irqtime_account_irq);
 
@@ -583,11 +589,18 @@ int sched_idle_time_adjust(int cpu, u64 *utime, u64 *stime)
 	struct rq_cputime *rq_cputime = &per_cpu(rq_cputimes, cpu);
 	struct cputime *prev = &rq_cputime->cpu_prev_time;
 	struct cputime *last = &rq_cputime->cpu_last_time;
-	u64 ut, st, delta, delta_ut, delta_st;
+	u64 ut, st, hi = 0, si = 0, delta, delta_ut, delta_st;
 
 	raw_spin_lock(&rq_cputime->lock);
 
-	delta = cpu_clock(cpu) - get_idle_time(cpu)
+#ifdef CONFIG_IRQ_TIME_ACCOUNTING
+	if (sched_clock_irqtime) {
+		hi = kcpustat_cpu(cpu).cpustat[CPUTIME_IRQ];
+		si = kcpustat_cpu(cpu).cpustat[CPUTIME_SOFTIRQ];
+	}
+#endif /* CONFIG_IRQ_TIME_ACCOUNTING */
+
+	delta = cpu_clock(cpu) - get_idle_time(cpu) - (hi + si)
 		- (prev->utime + prev->stime);
 
 	ut = kcpustat_cpu(cpu).cpustat[CPUTIME_USER];
@@ -628,11 +641,21 @@ out:
 unsigned long long sched_get_idle_time(int cpu)
 {
 	struct rq_cputime *rt = &per_cpu(rq_cputimes, cpu);
+	u64 hi = 0, si = 0;
+
+#ifdef CONFIG_IRQ_TIME_ACCOUNTING
+	if (sched_clock_irqtime) {
+		hi = kcpustat_cpu(cpu).cpustat[CPUTIME_IRQ_IDLE];
+		si = kcpustat_cpu(cpu).cpustat[CPUTIME_SOFTIRQ_IDLE];
+	}
+#endif /* CONFIG_IRQ_TIME_ACCOUNTING */
 
 	if (cpu_curr(cpu) == idle_task(cpu))
-		return rt->sum_idle_time + cpu_clock(cpu) - rt->last_entry_idle;
+		return rt->sum_idle_time +
+		       cpu_clock(cpu) - rt->last_entry_idle -
+		       hi - si;
 	else
-		return rt->sum_idle_time;
+		return rt->sum_idle_time - hi - si;
 }
 
 /*
