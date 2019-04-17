@@ -63,6 +63,10 @@
 
 #define KEXEC_CORE_NOTE_NAME	CRASH_CORE_NOTE_NAME
 
+#ifndef CRASH_ALIGN
+#define CRASH_ALIGN SZ_128M
+#endif
+
 /*
  * This structure is used to hold the arguments that are used when loading
  * kernel binaries.
@@ -273,6 +277,7 @@ extern void __crash_kexec(struct pt_regs *);
 extern void crash_kexec(struct pt_regs *);
 int kexec_should_crash(struct task_struct *);
 int kexec_crash_loaded(void);
+int __init reserve_crashkernel_low(void);
 void crash_save_cpu(struct pt_regs *regs, int cpu);
 extern int kimage_crash_copy_vmcoreinfo(struct kimage *image);
 
