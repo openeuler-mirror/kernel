@@ -129,6 +129,14 @@ struct rq *task_rq_lock(struct task_struct *p, struct rq_flags *rf)
 /*
  * RQ-clock updating methods:
  */
+bool account_irqtime_to_task __read_mostly;
+static int __init setup_account_irqtime(char *str)
+{
+	account_irqtime_to_task = true;
+
+	return 0;
+}
+__setup("account-irqtime-to-task", setup_account_irqtime);
 
 static void update_rq_clock_task(struct rq *rq, s64 delta)
 {
@@ -139,6 +147,9 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
 	s64 __maybe_unused steal = 0, irq_delta = 0;
 
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
+	if (account_irqtime_to_task)
+		goto out;
+
 	irq_delta = irq_time_read(cpu_of(rq)) - rq->prev_irq_time;
 
 	/*
@@ -161,6 +172,8 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
 
 	rq->prev_irq_time += irq_delta;
 	delta -= irq_delta;
+
+out:
 #endif
 #ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING
 	if (static_key_false((&paravirt_steal_rq_enabled))) {
