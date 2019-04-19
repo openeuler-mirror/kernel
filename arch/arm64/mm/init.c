@@ -83,10 +83,14 @@ static int __init early_initrd(char *p)
 early_param("initrd", early_initrd);
 #endif
 
-#ifdef CONFIG_KEXEC_CORE
+/* The main usage of linux,usable-memory-range is for crash dump kernel.
+ * Originally, the number of usable-memory regions is one. Now crash dump
+ * kernel support at most two crash kernel regions, low_region and high
+ * region.
+ */
+#define MAX_USABLE_RANGES	2
 
-/* at most two crash kernel regions, low_region and high_region */
-#define CRASH_MAX_USABLE_RANGES	2
+#ifdef CONFIG_KEXEC_CORE
 
 /*
  * reserve_crashkernel() - reserves memory for crash kernel
@@ -383,7 +387,7 @@ static int __init early_init_dt_scan_usablemem(unsigned long node,
 		if (memblock_add_range(usablemem, base, size, NUMA_NO_NODE,
 				       MEMBLOCK_NONE))
 			return 0;
-		if (++nr >= CRASH_MAX_USABLE_RANGES)
+		if (++nr >= MAX_USABLE_RANGES)
 			break;
 	}
 
@@ -392,9 +396,9 @@ static int __init early_init_dt_scan_usablemem(unsigned long node,
 
 static void __init fdt_enforce_memory_region(void)
 {
-	struct memblock_region usable_regions[CRASH_MAX_USABLE_RANGES];
+	struct memblock_region usable_regions[MAX_USABLE_RANGES];
 	struct memblock_type usablemem = {
-		.max = CRASH_MAX_USABLE_RANGES,
+		.max = MAX_USABLE_RANGES,
 		.regions = usable_regions,
 	};
 
