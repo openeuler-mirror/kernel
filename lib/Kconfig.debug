@@ -843,7 +843,7 @@ choice
 
 config SDEI_WATCHDOG
 	bool "SDEI NMI Watchdog support"
-	depends on ARM_SDE_INTERFACE
+	depends on ARM_SDE_INTERFACE && !HARDLOCKUP_CHECK_TIMESTAMP
 	select HAVE_HARDLOCKUP_DETECTOR_ARCH
 
 config PMU_WATCHDOG
