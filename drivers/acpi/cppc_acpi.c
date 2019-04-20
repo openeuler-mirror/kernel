@@ -1050,36 +1050,6 @@ static int cpc_write(int cpu, struct cpc_register_resource *reg_res, u64 val)
 	return ret_val;
 }
 
-#ifdef CONFIG_HISILICON_CPPC_CPUFREQ_WORKAROUND
-/*
- * We reuse the desired performance register to store the real performance
- * calculated by the platform.
- */
-u64 hisi_cppc_get_real_perf(unsigned int cpunum)
-{
-	int pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpunum);
-	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpunum);
-	struct cpc_register_resource *desired_reg;
-	u64 desired_perf;
-	int ret;
-
-	/*
-	 * Make sure that the platform has finished the frequency adjustment
-	 * and has written the real performance into the desired performance
-	 * register.
-	 */
-	ret = check_pcc_chan(pcc_ss_id, false);
-	if (ret)
-		return 0;
-
-	desired_reg = &cpc_desc->cpc_regs[DESIRED_PERF];
-	cpc_read(cpunum, desired_reg, &desired_perf);
-
-	return desired_perf;
-}
-EXPORT_SYMBOL_GPL(hisi_cppc_get_real_perf);
-#endif
-
 /**
  * cppc_get_perf_caps - Get a CPUs performance capabilities.
  * @cpunum: CPU from which to get capabilities info.

@@ -33,16 +33,6 @@
 /* Offest in the DMI processor structure for the max frequency */
 #define DMI_PROCESSOR_MAX_SPEED  0x14
 
-struct cppc_workaround_info {
-	char oem_id[ACPI_OEM_ID_SIZE +1];
-	char oem_table_id[ACPI_OEM_TABLE_ID_SIZE + 1];
-	u32 oem_revision;
-	unsigned int (*get_rate)(unsigned int cpu);
-};
-
-/* CPPC workaround for get_rate callback */
-unsigned int (*cppc_wa_get_rate)(unsigned int cpu);
-
 /*
  * These structs contain information parsed from per CPU
  * ACPI _CPC structures.
@@ -344,9 +334,6 @@ static unsigned int cppc_cpufreq_get_rate(unsigned int cpunum)
 	struct cppc_cpudata *cpu = all_cpu_data[cpunum];
 	int ret;
 
-	if (cppc_wa_get_rate)
-		return cppc_wa_get_rate(cpunum);
-
 	ret = cppc_get_perf_ctrs(cpunum, &fb_ctrs_t0);
 	if (ret)
 		return ret;
@@ -369,61 +356,6 @@ static struct cpufreq_driver cppc_cpufreq_driver = {
 	.stop_cpu = cppc_cpufreq_stop_cpu,
 	.name = "cppc_cpufreq",
 };
-
-#ifdef CONFIG_HISILICON_CPPC_CPUFREQ_WORKAROUND
-/*
- * When the platform does not support delivered performance counter or
- * reference performance counter, it can calculate the performance using the
- * platform specific mechanism. We reuse the desired performance register to
- * store the real performance calculated by the platform.
- */
-static unsigned int hisi_cppc_cpufreq_get_rate(unsigned int cpunum)
-{
-	struct cppc_cpudata *cpu = all_cpu_data[cpunum];
-	u64 desired_perf = hisi_cppc_get_real_perf(cpunum);
-
-	return cppc_cpufreq_perf_to_khz(cpu, desired_perf);
-}
-#endif
-
-static struct cppc_workaround_info wa_info[] = {
-#ifdef CONFIG_HISILICON_CPPC_CPUFREQ_WORKAROUND
-	{
-		.oem_id		= "HISI  ",
-		.oem_table_id	= "HIP07   ",
-		.oem_revision	= 0,
-		.get_rate = hisi_cppc_cpufreq_get_rate,
-	}, {
-		.oem_id		= "HISI  ",
-		.oem_table_id	= "HIP08   ",
-		.oem_revision	= 0,
-		.get_rate = hisi_cppc_cpufreq_get_rate,
-	},
-#endif
-	{}
-};
-
-static int cppc_check_workaround(void)
-{
-	struct acpi_table_header *tbl;
-	acpi_status status = AE_OK;
-	int i;
-
-	status = acpi_get_table(ACPI_SIG_PCCT, 0, &tbl);
-	if (ACPI_FAILURE(status) || !tbl)
-		return -EINVAL;
-
-	for (i = 0; i < ARRAY_SIZE(wa_info) - 1; i++) {
-		if (!memcmp(wa_info[i].oem_id, tbl->oem_id, ACPI_OEM_ID_SIZE) &&
-		    !memcmp(wa_info[i].oem_table_id, tbl->oem_table_id, ACPI_OEM_TABLE_ID_SIZE) &&
-		    wa_info[i].oem_revision == tbl->oem_revision) {
-			cppc_wa_get_rate = wa_info[i].get_rate;
-			return 0;
-		}
-	}
-
-	return -EINVAL;
-}
 
 static int __init cppc_cpufreq_init(void)
 {
@@ -453,8 +385,6 @@ static int __init cppc_cpufreq_init(void)
 		pr_debug("Error parsing PSD data. Aborting cpufreq registration.\n");
 		goto out;
 	}
-
-	cppc_check_workaround();
 
 	ret = cpufreq_register_driver(&cppc_cpufreq_driver);
 	if (ret)

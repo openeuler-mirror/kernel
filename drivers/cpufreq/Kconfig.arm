@@ -18,13 +18,6 @@ config ACPI_CPPC_CPUFREQ
 
 	  If in doubt, say N.
 
-config HISILICON_CPPC_CPUFREQ_WORKAROUND
-	bool "Workaround for Hisilicon CPPC Cpufreq"
-	default y
-	depends on ACPI_CPPC_CPUFREQ && ARM64
-	help
-	  This option enables a workaround for Hisilicon CPPC Cpufreq.
-
 config ARM_ARMADA_37XX_CPUFREQ
 	tristate "Armada 37xx CPUFreq support"
 	depends on ARCH_MVEBU && CPUFREQ_DT

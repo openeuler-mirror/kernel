@@ -142,8 +142,4 @@ extern int cppc_get_perf_caps(int cpu, struct cppc_perf_caps *caps);
 extern int acpi_get_psd_map(struct cppc_cpudata **);
 extern unsigned int cppc_get_transition_latency(int cpu);
 
-#ifdef CONFIG_HISILICON_CPPC_CPUFREQ_WORKAROUND
-u64 hisi_cppc_get_real_perf(unsigned int cpunum);
-#endif
-
 #endif /* _CPPC_ACPI_H*/
