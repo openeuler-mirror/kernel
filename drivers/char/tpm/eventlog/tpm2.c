@@ -37,7 +37,7 @@
  *
  * Returns size of the event. If it is an invalid event, returns 0.
  */
-static int calc_tpm2_event_size(struct tcg_pcr_event2 *event,
+static size_t calc_tpm2_event_size(struct tcg_pcr_event2 *event,
 				struct tcg_pcr_event *event_header)
 {
 	struct tcg_efi_specid_event *efispecid;
