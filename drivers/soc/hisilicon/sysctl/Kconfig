@@ -1,0 +1,4 @@
+config SOC_HISILICON_SYSCTL
+	tristate
+	depends on ACPI_APEI_GHES
+	default m
