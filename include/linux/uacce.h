@@ -50,14 +50,14 @@ struct uacce_ops {
 
 	int (*get_available_instances)(struct uacce *uacce);
 	int (*get_queue)(struct uacce *uacce, unsigned long arg,
-			  struct uacce_queue **q);
+			struct uacce_queue **q);
 	void (*put_queue)(struct uacce_queue *q);
 	int (*start_queue)(struct uacce_queue *q);
 	void (*stop_queue)(struct uacce_queue *q);
 	int (*is_q_updated)(struct uacce_queue *q);
 	void (*mask_notify)(struct uacce_queue *q, int event_mask);
 	int (*mmap)(struct uacce_queue *q, struct vm_area_struct *vma,
-		     struct uacce_qfile_region *qfr);
+			struct uacce_qfile_region *qfr);
 	int (*reset)(struct uacce *uacce);
 	int (*reset_queue)(struct uacce_queue *q);
 	long (*ioctl)(struct uacce_queue *q, unsigned int cmd,

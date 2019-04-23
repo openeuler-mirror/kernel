@@ -302,6 +302,7 @@ static struct uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 	/* mmap to user space */
 	if (flags & UACCE_QFRF_MMAP) {
 		if (flags & UACCE_QFRF_DMA) {
+
 			/* dma_mmap_coherent() requires vm_pgoff as 0
 			 * restore vm_pfoff to initial value for mmap()
 			 */
@@ -312,8 +313,9 @@ static struct uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 						qfr->dma,
 						qfr->nr_pages << PAGE_SHIFT);
 			vma->vm_pgoff = vm_pgoff;
-		} else
+		} else {
 			ret = uacce_queue_mmap_qfr(q, qfr, vma);
+		}
 
 		if (ret)
 			goto err_with_mapped_qfr;
@@ -520,13 +522,13 @@ static int uacce_dev_open_check(struct uacce *uacce)
 	if (uacce->ops->flags & (UACCE_DEV_PASID | UACCE_DEV_NOIOMMU))
 		return 0;
 
-	if (atomic_cmpxchg(&uacce->state, UACCE_ST_INIT, UACCE_ST_OPENNED)
-	    != UACCE_ST_INIT) {
+	if (atomic_cmpxchg(&uacce->state, UACCE_ST_INIT, UACCE_ST_OPENNED) !=
+	    UACCE_ST_INIT) {
 		dev_info(&uacce->dev, "this device can be openned only once\n");
 		return -EBUSY;
 	}
 
-	dev_dbg(&uacce->dev, "state switch to OPENNED");
+	dev_dbg(&uacce->dev, "state switch to OPENNED!\n");
 
 	return 0;
 }
@@ -603,16 +605,16 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 		return -EINVAL;
 
 	ret = uacce_dev_open_check(uacce);
-
-#ifdef CONFIG_IOMMU_SVA
-	if (uacce->ops->flags & UACCE_DEV_PASID)
-		ret = iommu_sva_bind_device(uacce->pdev, current->mm, &pasid,
-					    IOMMU_SVA_FEAT_IOPF, NULL);
-#endif
-
 	if (ret)
 		return ret;
-
+#ifdef CONFIG_IOMMU_SVA
+	if (uacce->ops->flags & UACCE_DEV_PASID) {
+		ret = iommu_sva_bind_device(uacce->pdev, current->mm, &pasid,
+					    IOMMU_SVA_FEAT_IOPF, NULL);
+		if (ret)
+			return ret;
+	}
+#endif
 	ret = uacce->ops->get_queue(uacce, pasid, &q);
 	if (ret < 0)
 		return ret;
@@ -992,7 +994,7 @@ static int uacce_default_get_available_instances(struct uacce *uacce)
 
 static int uacce_default_start_queue(struct uacce_queue *q)
 {
-	dev_dbg(&q->uacce->dev, "fake start queue");
+	dev_dbg(&q->uacce->dev, "fake start queue\n");
 	return 0;
 }
 
@@ -1119,8 +1121,9 @@ static void uacce_unset_iommu_domain(struct uacce *uacce)
 	if (domain) {
 		iommu_detach_device(domain, uacce->pdev);
 		iommu_domain_free(domain);
-	} else
+	} else {
 		dev_err(&uacce->dev, "bug: no domain attached to device\n");
+	}
 }
 #endif
 
@@ -1184,7 +1187,7 @@ int uacce_register(struct uacce *uacce)
 #endif
 	}
 
-	dev_dbg(&uacce->dev, "uacce state initialized to INIT");
+	dev_dbg(&uacce->dev, "uacce state initialized to INIT\n");
 	atomic_set(&uacce->state, UACCE_ST_INIT);
 	mutex_unlock(&uacce_mutex);
 	return 0;
