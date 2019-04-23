@@ -14,13 +14,22 @@
 #define GZIP_HEAD_FEXTRA_BIT			BIT(2)
 #define GZIP_HEAD_FNAME_BIT			BIT(3)
 #define GZIP_HEAD_FCOMMENT_BIT			BIT(4)
+#define GZIP_HEAD_FHCRC_SIZE			2
 
 #define GZIP_HEAD_FLG_SHIFT			3
 #define GZIP_HEAD_FEXTRA_SHIFT			10
 #define GZIP_HEAD_FEXTRA_XLEN			2
 
-const u8 zlib_head[2] = {0x78, 0x9c};
-const u8 gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x03};
+#define HZIP_ZLIB_HEAD_SIZE			2
+#define HZIP_GZIP_HEAD_SIZE			10
+#define HZIP_CTX_Q_NUM				2
+#define HZIP_ALG_PRIORITY			300
+
+#define HZIP_BD_STATUS_M			GENMASK(7, 0)
+
+const u8 zlib_head[HZIP_ZLIB_HEAD_SIZE] = {0x78, 0x9c};
+const u8 gzip_head[HZIP_GZIP_HEAD_SIZE] = {0x1f, 0x8b, 0x08, 0x0, 0x0, 0x0,
+					   0x0, 0x0, 0x0, 0x03};
 
 #define COMP_NAME_TO_TYPE(alg_name)					\
 	(!strcmp((alg_name), "zlib-deflate") ? HZIP_ALG_TYPE_ZLIB :	\
@@ -50,7 +59,7 @@ struct hisi_zip_qp_ctx {
 struct hisi_zip_ctx {
 #define QPC_COMP	0
 #define QPC_DECOMP	1
-	struct hisi_zip_qp_ctx qp_ctx[2];
+	struct hisi_zip_qp_ctx qp_ctx[HZIP_CTX_Q_NUM];
 };
 
 static void hisi_zip_fill_sqe(struct hisi_zip_sqe *sqe,
@@ -165,7 +174,7 @@ static int hisi_zip_alloc_comp_ctx(struct crypto_tfm *tfm)
 	}
 	qm = &hisi_zip->qm;
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < HZIP_CTX_Q_NUM; i++) {
 	/* it is just happen that 0 is compress, 1 is decompress on alg_type */
 		ret = hisi_zip_create_qp(qm, &hisi_zip_ctx->qp_ctx[i], i,
 					 req_type);
@@ -246,7 +255,7 @@ static int hisi_zip_compress_data_output(struct hisi_zip_qp_ctx *qp_ctx,
 {
 	struct hisi_qp *qp = qp_ctx->qp;
 	struct hisi_zip_sqe *zip_sqe = hisi_zip_get_writeback_sqe(qp);
-	u32 status = zip_sqe->dw3 & 0xff;
+	u32 status = zip_sqe->dw3 & HZIP_BD_STATUS_M;
 	u8 head_size = TO_HEAD_SIZE(qp->req_type);
 
 	if (status != 0 && status != HZIP_NC_ERR) {
@@ -323,7 +332,7 @@ static u32 get_gzip_head_size(const u8 *src)
 	if (head_flg & GZIP_HEAD_FCOMMENT_BIT)
 		size += get_comment_field_size(src + size);
 	if (head_flg & GZIP_HEAD_FHCRC_BIT)
-		size += 2;
+		size += GZIP_HEAD_FHCRC_SIZE;
 
 	return size;
 }
@@ -346,7 +355,7 @@ static int hisi_zip_decompress_data_output(struct hisi_zip_qp_ctx *qp_ctx,
 {
 	struct hisi_qp *qp = qp_ctx->qp;
 	struct hisi_zip_sqe *zip_sqe = hisi_zip_get_writeback_sqe(qp);
-	u32 status = zip_sqe->dw3 & 0xff;
+	u32 status = zip_sqe->dw3 & HZIP_BD_STATUS_M;
 
 	if (status != 0) {
 		dev_err(&qp->qm->pdev->dev, "Decompression fail in qp%u!\n",
@@ -401,7 +410,7 @@ static struct crypto_alg hisi_zip_zlib = {
 	.cra_name		= "zlib-deflate",
 	.cra_flags		= CRYPTO_ALG_TYPE_COMPRESS,
 	.cra_ctxsize		= sizeof(struct hisi_zip_ctx),
-	.cra_priority           = 300,
+	.cra_priority           = HZIP_ALG_PRIORITY,
 	.cra_module		= THIS_MODULE,
 	.cra_init		= hisi_zip_alloc_comp_ctx,
 	.cra_exit		= hisi_zip_free_comp_ctx,
@@ -417,7 +426,7 @@ static struct crypto_alg hisi_zip_gzip = {
 	.cra_name		= "gzip",
 	.cra_flags		= CRYPTO_ALG_TYPE_COMPRESS,
 	.cra_ctxsize		= sizeof(struct hisi_zip_ctx),
-	.cra_priority           = 300,
+	.cra_priority           = HZIP_ALG_PRIORITY,
 	.cra_module		= THIS_MODULE,
 	.cra_init		= hisi_zip_alloc_comp_ctx,
 	.cra_exit		= hisi_zip_free_comp_ctx,

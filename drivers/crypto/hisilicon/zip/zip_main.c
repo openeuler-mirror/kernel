@@ -81,6 +81,9 @@
 #define HZIP_SOFT_CTRL_CNT_CLR_CE	0x301000
 #define SOFT_CTRL_CNT_CLR_CE_BIT	BIT(0)
 
+#define HZIP_NUMA_DISTANCE		100
+#define HZIP_BUF_SIZE			20
+
 static const char hisi_zip_name[] = "hisi_zip";
 static struct dentry *hzip_debugfs_root;
 LIST_HEAD(hisi_zip_list);
@@ -91,7 +94,7 @@ struct hisi_zip *find_zip_device(int node)
 	struct hisi_zip *ret = NULL;
 #ifdef CONFIG_NUMA
 	struct hisi_zip *hisi_zip;
-	int min_distance = 100;
+	int min_distance = HZIP_NUMA_DISTANCE;
 	struct device *dev;
 
 	mutex_lock(&hisi_zip_list_lock);
@@ -410,7 +413,7 @@ static ssize_t ctrl_debug_read(struct file *filp, char __user *buf,
 			     size_t count, loff_t *pos)
 {
 	struct ctrl_debug_file *file = filp->private_data;
-	char tbuf[20];
+	char tbuf[HZIP_BUF_SIZE];
 	u32 val;
 	int ret;
 
@@ -435,17 +438,17 @@ static ssize_t ctrl_debug_write(struct file *filp, const char __user *buf,
 			      size_t count, loff_t *pos)
 {
 	struct ctrl_debug_file *file = filp->private_data;
-	char tbuf[20];
+	char tbuf[HZIP_BUF_SIZE];
 	unsigned long val;
 	int len, ret;
 
 	if (*pos != 0)
 		return 0;
 
-	if (count >= 20)
+	if (count >= HZIP_BUF_SIZE)
 		return -ENOSPC;
 
-	len = simple_write_to_buffer(tbuf, 20 - 1, pos, buf, count);
+	len = simple_write_to_buffer(tbuf, HZIP_BUF_SIZE - 1, pos, buf, count);
 	if (len < 0)
 		return len;
 
@@ -492,7 +495,7 @@ static int hisi_zip_core_debug_init(struct hisi_zip_ctrl *ctrl)
 	struct device *dev = &qm->pdev->dev;
 	struct debugfs_regset32 *regset;
 	struct dentry *tmp_d, *tmp;
-	char buf[20];
+	char buf[HZIP_BUF_SIZE];
 	int i;
 
 	for (i = 0; i < HZIP_CORE_NUM; i++) {
