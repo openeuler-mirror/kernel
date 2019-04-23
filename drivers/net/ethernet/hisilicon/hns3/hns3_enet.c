@@ -2970,7 +2970,7 @@ int hns3_clean_rx_ring(struct hns3_enet_ring *ring, int budget,
 {
 #define RCB_NOF_ALLOC_RX_BUFF_ONCE 16
 	int recv_pkts, recv_bds, clean_count, err;
-	int unused_count = hns3_desc_unused(ring) - ring->pending_buf;
+	int unused_count = hns3_desc_unused(ring);
 	struct sk_buff *skb = ring->skb;
 	int num;
 
@@ -2978,7 +2978,8 @@ int hns3_clean_rx_ring(struct hns3_enet_ring *ring, int budget,
 	rmb(); /* Make sure num taken effect before the other data is touched */
 
 	recv_pkts = 0, recv_bds = 0, clean_count = 0;
-	num = num - unused_count - ring->pending_buf;
+	num -= unused_count;
+	unused_count -= ring->pending_buf;
 
 	while (recv_pkts < budget && recv_bds < num) {
 		/* Reuse or realloc buffers */
