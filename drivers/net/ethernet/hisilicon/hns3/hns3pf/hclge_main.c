@@ -484,7 +484,7 @@ static u8 *hclge_tqps_get_strings(struct hnae3_handle *handle, u8 *data)
 	return buff;
 }
 
-static u64 *hclge_comm_get_stats(void *comm_stats,
+static u64 *hclge_comm_get_stats(const void *comm_stats,
 				 const struct hclge_comm_stats_str strs[],
 				 int size, u64 *data)
 {
@@ -1549,7 +1549,8 @@ static int hclge_tx_buffer_alloc(struct hclge_dev *hdev,
 
 static u32 hclge_get_tc_num(struct hclge_dev *hdev)
 {
-	int i, cnt = 0;
+	u32 cnt = 0;
+	int i;
 
 	for (i = 0; i < HCLGE_MAX_TC_NUM; i++)
 		if (hdev->hw_tc_map & BIT(i))
