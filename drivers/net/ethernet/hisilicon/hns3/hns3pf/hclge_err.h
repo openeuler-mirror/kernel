@@ -153,9 +153,9 @@ int hclge_handle_hw_msix_error(struct hclge_dev *hdev,
 			       unsigned long *reset_requests);
 int hclge_handle_all_ras_errors(struct hclge_dev *hdev);
 int hclge_handle_rocee_ras_error(struct hnae3_ae_dev *ae_dev);
-enum hnae3_reset_type hclge_log_error(struct device *dev, char *reg,
-				      const struct hclge_hw_error *err,
-				      u32 err_sts);
+void hclge_log_error(struct device *dev, char *reg,
+		     const struct hclge_hw_error *err,
+		     u32 err_sts, unsigned long *reset_requests);
 int hclge_query_error(struct hclge_dev *hdev, struct hclge_desc *desc,
 		      enum hclge_opcode_type opcode, int num);
 int hclge_clear_error(struct hclge_dev *hdev, struct hclge_desc *desc, int num);
