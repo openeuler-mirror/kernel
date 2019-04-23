@@ -18,12 +18,27 @@
 #define HZIP_QUEUE_NUM_V1		4096
 #define HZIP_QUEUE_NUM_V2		1024
 
+#define HZIP_CLOCK_GATE_CTRL		0x301004
+#define COMP0_ENABLE			BIT(0)
+#define COMP1_ENABLE			BIT(1)
+#define DECOMP0_ENABLE			BIT(2)
+#define DECOMP1_ENABLE			BIT(3)
+#define DECOMP2_ENABLE			BIT(4)
+#define DECOMP3_ENABLE			BIT(5)
+#define DECOMP4_ENABLE			BIT(6)
+#define DECOMP5_ENABLE			BIT(7)
+#define ALL_COMP_DECOMP_EN		(COMP0_ENABLE | COMP1_ENABLE | \
+					 DECOMP0_ENABLE | DECOMP1_ENABLE | \
+					 DECOMP2_ENABLE | DECOMP3_ENABLE | \
+					 DECOMP4_ENABLE | DECOMP5_ENABLE)
+#define DECOMP_CHECK_ENABLE		BIT(16)
 #define HZIP_FSM_MAX_CNT		0x301008
 
 #define HZIP_PORT_ARCA_CHE_0		0x301040
 #define HZIP_PORT_ARCA_CHE_1		0x301044
 #define HZIP_PORT_AWCA_CHE_0		0x301060
 #define HZIP_PORT_AWCA_CHE_1		0x301064
+#define CACHE_ALL_EN			0xffffffff
 
 #define HZIP_BD_RUSER_32_63		0x301110
 #define HZIP_SGL_RUSER_32_63		0x30111c
@@ -198,8 +213,8 @@ static struct debugfs_reg32 hzip_dfx_regs[] = {
 
 static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 {
-	struct pci_dev *pdev = pci_get_device(PCI_VENDOR_ID_HUAWEI, 0xa250,
-					      NULL);
+	struct pci_dev *pdev = pci_get_device(PCI_VENDOR_ID_HUAWEI,
+					      PCI_DEVICE_ID_ZIP_PF, NULL);
 	u32 n, q_num;
 	u8 rev_id;
 	int ret;
@@ -239,14 +254,14 @@ static const struct kernel_param_ops pf_q_num_ops = {
 
 static u32 pf_q_num = HZIP_PF_DEF_Q_NUM;
 module_param_cb(pf_q_num, &pf_q_num_ops, &pf_q_num, 0444);
-MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 0-4096, v2 0-1024)");
+MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 1-4096, v2 1-1024)");
 
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param(uacce_mode, int, 0444);
 
 static const struct pci_device_id hisi_zip_dev_ids[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, 0xa250) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, 0xa251) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_ZIP_PF) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_ZIP_VF) },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, hisi_zip_dev_ids);
@@ -268,55 +283,56 @@ static inline void hisi_zip_remove_from_list(struct hisi_zip *hisi_zip)
 static void hisi_zip_set_user_domain_and_cache(struct hisi_zip *hisi_zip)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
-	u32 val;
 
 	/* qm user domain */
-	writel(0x40001070, hisi_zip->qm.io_base + QM_ARUSER_M_CFG_1);
-	writel(0xfffffffe, hisi_zip->qm.io_base + QM_ARUSER_M_CFG_ENABLE);
-	writel(0x40001070, hisi_zip->qm.io_base + QM_AWUSER_M_CFG_1);
-	writel(0xfffffffe, hisi_zip->qm.io_base + QM_AWUSER_M_CFG_ENABLE);
-	writel(0xffffffff, hisi_zip->qm.io_base + QM_WUSER_M_CFG_ENABLE);
-
-	val = readl(hisi_zip->qm.io_base + QM_PEH_AXUSER_CFG);
-	val |= (1 << 11);
-	writel(val, hisi_zip->qm.io_base + QM_PEH_AXUSER_CFG);
+	writel(AXUSER_BASE, hisi_zip->qm.io_base + QM_ARUSER_M_CFG_1);
+	writel(ARUSER_M_CFG_ENABLE, hisi_zip->qm.io_base +
+		QM_ARUSER_M_CFG_ENABLE);
+	writel(AXUSER_BASE, hisi_zip->qm.io_base + QM_AWUSER_M_CFG_1);
+	writel(AWUSER_M_CFG_ENABLE, hisi_zip->qm.io_base +
+		QM_AWUSER_M_CFG_ENABLE);
+	writel(WUSER_M_CFG_ENABLE, hisi_zip->qm.io_base +
+		QM_WUSER_M_CFG_ENABLE);
 
 	/* qm cache */
-	writel(0xffff,     hisi_zip->qm.io_base + QM_AXI_M_CFG);
-	writel(0xffffffff, hisi_zip->qm.io_base + QM_AXI_M_CFG_ENABLE);
-	writel(0xffffffff, hisi_zip->qm.io_base + QM_PEH_AXUSER_CFG_ENABLE);
+	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_0);
+	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_1);
+	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_0);
+	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_1);
 
 	/* cache */
-	writel(0xffffffff, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_0);
-	writel(0xffffffff, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_1);
-	writel(0xffffffff, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_0);
-	writel(0xffffffff, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_1);
-	/* user domain configurations */
+	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_0);
+	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_1);
+	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_0);
+	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_1);
 
-	writel(0x40001070, hisi_zip->qm.io_base + HZIP_BD_RUSER_32_63);
-	writel(0x40001070, hisi_zip->qm.io_base + HZIP_SGL_RUSER_32_63);
-	writel(0x40001070, hisi_zip->qm.io_base + HZIP_BD_WUSER_32_63);
+	/* user domain configurations */
+	writel(AXUSER_BASE, hisi_zip->qm.io_base + HZIP_BD_RUSER_32_63);
+	writel(AXUSER_BASE, hisi_zip->qm.io_base + HZIP_SGL_RUSER_32_63);
+	writel(AXUSER_BASE, hisi_zip->qm.io_base + HZIP_BD_WUSER_32_63);
 
 	if (qm->use_sva) {
-		writel(0x40001071, hisi_zip->qm.io_base +
-				HZIP_DATA_RUSER_32_63);
-		writel(0x40001071, hisi_zip->qm.io_base +
-				HZIP_DATA_WUSER_32_63);
+		writel(AXUSER_BASE | AXUSER_SSV, hisi_zip->qm.io_base +
+			HZIP_DATA_RUSER_32_63);
+		writel(AXUSER_BASE | AXUSER_SSV, hisi_zip->qm.io_base +
+			HZIP_DATA_WUSER_32_63);
 	} else {
-		writel(0x40001070, hisi_zip->qm.io_base +
-				HZIP_DATA_RUSER_32_63);
-		writel(0x40001070, hisi_zip->qm.io_base +
-				HZIP_DATA_WUSER_32_63);
+		writel(AXUSER_BASE, hisi_zip->qm.io_base +
+			HZIP_DATA_RUSER_32_63);
+		writel(AXUSER_BASE, hisi_zip->qm.io_base +
+			HZIP_DATA_WUSER_32_63);
+
 	}
 
-	/* fsm count */
-	writel(0xfffffff, hisi_zip->qm.io_base + HZIP_FSM_MAX_CNT);
-
 	/* let's open all compression/decompression cores */
-	writel(0x100ff, hisi_zip->qm.io_base + 0x301004);
-
+	writel(DECOMP_CHECK_ENABLE | ALL_COMP_DECOMP_EN,
+		hisi_zip->qm.io_base + HZIP_CLOCK_GATE_CTRL);
 	/* enable sqc,cqc writeback */
-	writel(0x1833, hisi_zip->qm.io_base + QM_CACHE_CTL);
+	writel(SQC_CACHE_ENABLE | CQC_CACHE_ENABLE | SQC_CACHE_WB_ENABLE |
+		CQC_CACHE_WB_ENABLE | FIELD_PREP(SQC_CACHE_WB_THRD, 1) |
+		FIELD_PREP(CQC_CACHE_WB_THRD, 1),
+		hisi_zip->qm.io_base + QM_CACHE_CTL);
+
 }
 
 static void hisi_zip_hw_error_set_state(struct hisi_zip *hisi_zip, bool state)
@@ -541,7 +557,7 @@ static int hisi_zip_debugfs_init(struct hisi_zip *hisi_zip)
 	if (ret)
 		goto failed_to_create;
 
-	if (qm->pdev->device == 0xa250) {
+	if (qm->fun_type == QM_HW_PF) {
 		hisi_zip->ctrl->debug_root = dev_d;
 		ret = hisi_zip_ctrl_debug_init(hisi_zip->ctrl);
 		if (ret)
@@ -626,7 +642,8 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	qm->sqe_size = HZIP_SQE_SIZE;
 	qm->dev_name = hisi_zip_name;
-	qm->fun_type = (pdev->device == 0xa250) ? QM_HW_PF : QM_HW_VF;
+	qm->fun_type = (pdev->device == PCI_DEVICE_ID_ZIP_PF) ? QM_HW_PF :
+								QM_HW_VF;
 	qm->algs = "zlib\ngzip\n";
 
 	switch (uacce_mode) {

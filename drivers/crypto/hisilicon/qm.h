@@ -3,6 +3,7 @@
 #ifndef HISI_ACC_QM_H
 #define HISI_ACC_QM_H
 
+#include <linux/bitfield.h>
 #include <linux/dmapool.h>
 #include <linux/iopoll.h>
 #include <linux/module.h>
@@ -18,17 +19,40 @@
 
 /* qm user domain */
 #define QM_ARUSER_M_CFG_1		0x100088
+#define AXUSER_SNOOP_ENABLE		BIT(30)
+#define AXUSER_CMD_TYPE			GENMASK(14, 12)
+#define AXUSER_CMD_SMMU_NORMAL		1
+#define AXUSER_NS			BIT(6)
+#define AXUSER_NO			BIT(5)
+#define AXUSER_FP			BIT(4)
+#define AXUSER_SSV			BIT(0)
+#define AXUSER_BASE			(AXUSER_SNOOP_ENABLE |		\
+					FIELD_PREP(AXUSER_CMD_TYPE,	\
+					AXUSER_CMD_SMMU_NORMAL) |	\
+					AXUSER_NS | AXUSER_NO | AXUSER_FP)
 #define QM_ARUSER_M_CFG_ENABLE		0x100090
+#define ARUSER_M_CFG_ENABLE		0xfffffffe
 #define QM_AWUSER_M_CFG_1		0x100098
 #define QM_AWUSER_M_CFG_ENABLE		0x1000a0
+#define AWUSER_M_CFG_ENABLE		0xfffffffe
 #define QM_WUSER_M_CFG_ENABLE		0x1000a8
+#define WUSER_M_CFG_ENABLE		0xffffffff
 
 /* qm cache */
 #define QM_CACHE_CTL			0x100050
+#define SQC_CACHE_ENABLE		BIT(0)
+#define CQC_CACHE_ENABLE		BIT(1)
+#define SQC_CACHE_WB_ENABLE		BIT(4)
+#define SQC_CACHE_WB_THRD		GENMASK(10, 5)
+#define CQC_CACHE_WB_ENABLE		BIT(11)
+#define CQC_CACHE_WB_THRD		GENMASK(17, 12)
 #define QM_AXI_M_CFG			0x1000ac
+#define AXI_M_CFG			0xffff
 #define QM_AXI_M_CFG_ENABLE		0x1000b0
+#define AXI_M_CFG_ENABLE		0xffffffff
 #define QM_PEH_AXUSER_CFG		0x1000cc
 #define QM_PEH_AXUSER_CFG_ENABLE	0x1000d0
+#define PEH_AXUSER_CFG_ENABLE		0xffffffff
 
 #define QM_DFX_MB_CNT_VF		0x104010
 #define QM_DFX_DB_CNT_VF		0x104020

@@ -15,6 +15,10 @@
 #define GZIP_HEAD_FNAME_BIT			BIT(3)
 #define GZIP_HEAD_FCOMMENT_BIT			BIT(4)
 
+#define GZIP_HEAD_FLG_SHIFT			3
+#define GZIP_HEAD_FEXTRA_SHIFT			10
+#define GZIP_HEAD_FEXTRA_XLEN			2
+
 const u8 zlib_head[2] = {0x78, 0x9c};
 const u8 gzip_head[10] = {0x1f, 0x8b, 0x08, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x03};
 
@@ -294,7 +298,7 @@ static int hisi_zip_compress(struct crypto_tfm *tfm, const u8 *src,
 
 static u16 get_extra_field_size(const u8 *start)
 {
-	return *((u16 *)start) + 2;
+	return *((u16 *)start) + GZIP_HEAD_FEXTRA_XLEN;
 }
 
 static u32 get_name_field_size(const u8 *start)
@@ -309,8 +313,8 @@ static u32 get_comment_field_size(const u8 *start)
 
 static u32 get_gzip_head_size(const u8 *src)
 {
-	u8 head_flg = *(src + 3);
-	u32 size = 10;
+	u8 head_flg = *(src + GZIP_HEAD_FLG_SHIFT);
+	u32 size = GZIP_HEAD_FEXTRA_SHIFT;
 
 	if (head_flg & GZIP_HEAD_FEXTRA_BIT)
 		size += get_extra_field_size(src + size);
