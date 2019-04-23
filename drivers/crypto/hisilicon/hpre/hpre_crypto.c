@@ -180,7 +180,7 @@ static struct hisi_qp *hpre_get_qp(void)
 		return ERR_PTR(-ENODEV);
 	}
 	ret = hisi_qm_start_qp(qp, 0);
-	if (ret) {
+	if (ret < 0) {
 		hisi_qm_release_qp(qp);
 		dev_err(&hpre->qm.pdev->dev, "Can not start qp!\n");
 		return ERR_PTR(-EINVAL);
@@ -191,7 +191,7 @@ static struct hisi_qp *hpre_get_qp(void)
 
 static int _hw_data_init(struct hpre_asym_request *hpre_req,
 			 struct scatterlist *data, unsigned int len,
-			 int is_src)
+			 int is_src, int is_dh)
 {
 	struct hpre_sqe *msg = &hpre_req->req;
 	struct hpre_ctx *ctx = hpre_req->ctx;
@@ -199,8 +199,11 @@ static int _hw_data_init(struct hpre_asym_request *hpre_req,
 	enum dma_data_direction dma_dir;
 	dma_addr_t tmp;
 	char *ptr;
+	int shift;
 
-	if (sg_is_last(data) && len == ctx->key_sz) {
+	/* when the data is dh's source, we should format it */
+	if ((sg_is_last(data) && len == ctx->key_sz) &&
+	    ((is_dh && !is_src) || !is_dh)) {
 		if (is_src) {
 			hpre_req->src_align = NULL;
 			dma_dir = DMA_TO_DEVICE;
@@ -215,7 +218,9 @@ static int _hw_data_init(struct hpre_asym_request *hpre_req,
 			return -ENOMEM;
 		}
 	} else {
-		int shift = ctx->key_sz - len;
+		shift = ctx->key_sz - len;
+		if (shift < 0)
+			return -EINVAL;
 
 		ptr = dma_alloc_coherent(dev, ctx->key_sz, &tmp, GFP_KERNEL);
 		if (unlikely(!ptr)) {
@@ -224,6 +229,8 @@ static int _hw_data_init(struct hpre_asym_request *hpre_req,
 		}
 		if (is_src) {
 			scatterwalk_map_and_copy(ptr + shift, data, 0, len, 0);
+			if (is_dh)
+				(void)hpre_bn_format(ptr, ctx->key_sz);
 			hpre_req->src_align = ptr;
 		} else {
 			hpre_req->dst_align = ptr;
@@ -417,12 +424,11 @@ static int hpre_dh_compute_value(struct kpp_request *req)
 	if (ret)
 		return ret;
 	if (req->src) {
-		(void)hpre_bn_format(sg_virt(req->src), ctx->key_sz);
-		ret = _hw_data_init(hpre_req, req->src, req->src_len, 1);
+		ret = _hw_data_init(hpre_req, req->src, req->src_len, 1, 1);
 		if (ret)
 			goto clear_all;
 	}
-	ret = _hw_data_init(hpre_req, req->dst, req->dst_len, 0);
+	ret = _hw_data_init(hpre_req, req->dst, req->dst_len, 0, 1);
 	if (ret)
 		goto clear_all;
 	if (ctx->crt_g2_mode && !req->src)
@@ -620,10 +626,10 @@ static int hpre_rsa_enc(struct akcipher_request *req)
 	msg->alg = HPRE_ALG_NC_NCRT;
 	msg->low_key = lower_32_bits(ctx->rsa.dma_pubkey);
 	msg->hi_key = upper_32_bits(ctx->rsa.dma_pubkey);
-	ret = _hw_data_init(hpre_req, req->src, req->src_len, 1);
+	ret = _hw_data_init(hpre_req, req->src, req->src_len, 1, 0);
 	if (ret)
 		goto clear_all;
-	ret = _hw_data_init(hpre_req, req->dst, req->dst_len, 0);
+	ret = _hw_data_init(hpre_req, req->dst, req->dst_len, 0, 0);
 	if (ret)
 		goto clear_all;
 	do {
@@ -669,10 +675,10 @@ static int hpre_rsa_dec(struct akcipher_request *req)
 		msg->hi_key = upper_32_bits(ctx->rsa.dma_prikey);
 		msg->alg = HPRE_ALG_NC_NCRT;
 	}
-	ret = _hw_data_init(hpre_req, req->src, req->src_len, 1);
+	ret = _hw_data_init(hpre_req, req->src, req->src_len, 1, 0);
 	if (ret)
 		goto clear_all;
-	ret = _hw_data_init(hpre_req, req->dst, req->dst_len, 0);
+	ret = _hw_data_init(hpre_req, req->dst, req->dst_len, 0, 0);
 	if (ret)
 		goto clear_all;
 

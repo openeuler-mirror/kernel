@@ -148,7 +148,8 @@ struct hpre_debugfs_file {
 #define HPRE_DEBUGFS_FILE_NUM	(HPRE_DEBUG_FILE_NUM + HPRE_CLUSTERS_NUM - 1)
 
 /*
- * One HPRE controller has one PF and multiple VFs, some global configurations
+ * One HPRE controller has one PF and multiple VFs,
+ * some global configurations
  * which PF has need this structure.
  *
  * Just relevant for PF.
@@ -534,6 +535,9 @@ static int hpre_create_debugfs_file(struct hpre_ctrl *ctrl, struct dentry *dir,
 		file_dir = dir;
 	else
 		file_dir = ctrl->debug_root;
+
+	if (type > HPRE_DEBUG_FILE_NUM)
+		return -EINVAL;
 
 	spin_lock_init(&ctrl->files[indx].lock);
 	ctrl->files[indx].ctrl = ctrl;
@@ -1026,7 +1030,7 @@ static int hpre_soft_reset(struct hpre *hpre)
 	if (ACPI_HANDLE(dev)) {
 		acpi_status s;
 
-		s = acpi_evaluate_object(ACPI_HANDLE(dev), "ZRST", NULL, NULL);
+		s = acpi_evaluate_object(ACPI_HANDLE(dev), "HRST", NULL, NULL);
 		if (ACPI_FAILURE(s)) {
 			dev_err(dev, "Controller reset fails\n");
 			return -EIO;
