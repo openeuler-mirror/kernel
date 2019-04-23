@@ -250,6 +250,7 @@ static int cpld_set_led_id_acpi(struct hns_mac_cb *mac_cb,
 }
 
 #define RESET_REQ_OR_DREQ 1
+#define DSAF_RESET_REQ_VAL 0xfffff
 
 static void hns_dsaf_acpi_srst_by_port(struct dsaf_device *dsaf_dev, u8 op_type,
 				       u32 port_type, u32 port, u32 val)
@@ -284,16 +285,39 @@ static void hns_dsaf_rst(struct dsaf_device *dsaf_dev, bool dereset)
 	u32 xbar_reg_addr;
 	u32 nt_reg_addr;
 
-	if (!dereset) {
-		xbar_reg_addr = DSAF_SUB_SC_XBAR_RESET_REQ_REG;
-		nt_reg_addr = DSAF_SUB_SC_NT_RESET_REQ_REG;
-	} else {
-		xbar_reg_addr = DSAF_SUB_SC_XBAR_RESET_DREQ_REG;
-		nt_reg_addr = DSAF_SUB_SC_NT_RESET_DREQ_REG;
-	}
+	if (AE_IS_VER1(dsaf_dev->dsaf_ver)) {
+		if (!dereset) {
+			xbar_reg_addr = DSAF_SUB_SC_XBAR_RESET_REQ_REG;
+			nt_reg_addr = DSAF_SUB_SC_NT_RESET_REQ_REG;
+		} else {
+			xbar_reg_addr = DSAF_SUB_SC_XBAR_RESET_DREQ_REG;
+			nt_reg_addr = DSAF_SUB_SC_NT_RESET_DREQ_REG;
+		}
 
-	dsaf_write_sub(dsaf_dev, xbar_reg_addr, RESET_REQ_OR_DREQ);
-	dsaf_write_sub(dsaf_dev, nt_reg_addr, RESET_REQ_OR_DREQ);
+		dsaf_write_reg(dsaf_dev->sc_base, xbar_reg_addr,
+			       RESET_REQ_OR_DREQ);
+		dsaf_write_reg(dsaf_dev->sc_base, nt_reg_addr,
+			       RESET_REQ_OR_DREQ);
+	} else {
+		if (!dereset) {
+			xbar_reg_addr = DSAF_SUB_SC_DSAF_RESET_REQ_REG;
+			nt_reg_addr = DSAF_SUB_SC_DSAF_CLK_DIS_REG;
+		} else {
+			xbar_reg_addr = DSAF_SUB_SC_DSAF_RESET_DREQ_REG;
+			nt_reg_addr = DSAF_SUB_SC_DSAF_CLK_EN_REG;
+		}
+
+		dsaf_write_reg(dsaf_dev->sc_base, xbar_reg_addr,
+			       DSAF_RESET_REQ_VAL);
+		mdelay(10);
+
+		/*enable com_st and xbar_com bits for init register first*/
+		if (!dereset)
+			dsaf_write_reg(dsaf_dev->sc_base, nt_reg_addr,
+				       DSAF_RESET_REQ_VAL);
+		else
+			dsaf_write_reg(dsaf_dev->sc_base, nt_reg_addr, 3 << 18);
+	}
 }
 
 static void hns_dsaf_rst_acpi(struct dsaf_device *dsaf_dev, bool dereset)
