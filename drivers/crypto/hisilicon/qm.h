@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
+#include <linux/uaccess.h>
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 #include <linux/uacce.h>

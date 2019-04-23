@@ -8,7 +8,6 @@
 #include <linux/irqreturn.h>
 #include <linux/log2.h>
 #include <linux/seq_file.h>
-#include <linux/uacce.h>
 #include "qm.h"
 #include "qm_usr_if.h"
 
@@ -1495,10 +1494,21 @@ static int qm_set_sqctype(struct uacce_queue *q, u16 type)
 static long hisi_qm_uacce_ioctl(struct uacce_queue *q, unsigned int cmd,
 				unsigned long arg)
 {
-	if (cmd == UACCE_CMD_QM_SET_OPTYPE)
-		return qm_set_sqctype(q, (u16)arg);
+	struct hisi_qp *qp = (struct hisi_qp *)q->priv;
+	struct hisi_qp_ctx qp_ctx;
 
-	return -EINVAL;
+	if (cmd == UACCE_CMD_QM_SET_QP_CTX) {
+		if (copy_from_user(&qp_ctx, (struct hisi_qp_ctx *)arg,
+			sizeof(struct hisi_qp_ctx)))
+			return -EFAULT;
+		qm_set_sqctype(q, qp_ctx.qc_type);
+		qp_ctx.id = qp->qp_id;
+
+		if (copy_to_user((struct hisi_qp_ctx *)arg, &qp_ctx,
+			sizeof(struct hisi_qp_ctx)))
+			return -EFAULT;
+	}
+	return 0;
 }
 
 /*
