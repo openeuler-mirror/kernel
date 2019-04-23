@@ -193,6 +193,10 @@ int hclge_mac_connect_phy(struct hnae3_handle *handle)
 	if (!phydev)
 		return 0;
 
+#ifdef MARVELL_PHY_M1510_HNS3_LEDS
+	phydev->dev_flags |= MARVELL_PHY_M1510_HNS3_LEDS;
+#endif
+
 #ifdef HAS_LINK_MODE_OPS
 	linkmode_clear_bit(ETHTOOL_LINK_MODE_FIBRE_BIT, phydev->supported);
 
