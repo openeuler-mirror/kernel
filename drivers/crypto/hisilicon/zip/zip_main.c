@@ -928,15 +928,15 @@ static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 	struct pci_dev *pdev = qm->pdev;
 	int ret;
 
+	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
+		dev_warn(&pdev->dev, "Failed to set reset flag!");
+		return -EBUSY;
+	}
+
 	ret = hisi_qm_stop(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return ret;
-	}
-
-	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
-		dev_warn(&pdev->dev, "Failed to set reset flag!");
-		return -EPERM;
 	}
 
 	return 0;

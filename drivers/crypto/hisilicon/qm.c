@@ -1266,8 +1266,7 @@ EXPORT_SYMBOL_GPL(hisi_qm_start_qp);
  * hisi_qm_stop_qp() - Stop a qp in qm.
  * @qp: The qp we want to stop.
  *
- * This function is reverse of hisi_qm_start_qp. Return 0 if successful,
- * return -EBUSY if stopping failed as there are tasks remaining in hardware.
+ * This function is reverse of hisi_qm_start_qp. Return 0 if successful.
  */
 int hisi_qm_stop_qp(struct hisi_qp *qp)
 {
@@ -1282,8 +1281,8 @@ int hisi_qm_stop_qp(struct hisi_qp *qp)
 		i++;
 		msleep(WAIT_PERIOD);
 		if (i == MAX_WAIT_COUNTS) {
-			dev_err(dev, "Cannot drain out data for stopping, force to stop!\n");
-			return -EBUSY;
+			dev_info(dev, "Cannot drain out data for stopping, force to stop!\n");
+			return 0;
 		}
 	}
 
