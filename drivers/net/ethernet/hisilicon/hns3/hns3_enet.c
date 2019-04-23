@@ -2814,6 +2814,8 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb,
 	struct net_device *netdev = ring->tqp->handle->kinfo.netdev;
 	u32 bd_base_info = le32_to_cpu(desc->rx.bd_base_info);
 	u32 l234info = le32_to_cpu(desc->rx.l234_info);
+	enum hns3_pkt_l2t_type l2_frame_type;
+	unsigned int len;
 	int ret;
 
 	/* Based on hw strategy, the tag offloaded will be stored at
@@ -2848,6 +2850,8 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb,
 		return -EFAULT;
 	}
 
+	len = skb->len;
+
 	/* Do update ip stack process */
 	skb->protocol = eth_type_trans(skb, netdev);
 
@@ -2860,13 +2864,25 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb,
 		return ret;
 	}
 
+	l2_frame_type = hnae3_get_field(l234info, HNS3_RXD_DMAC_M,
+					HNS3_RXD_DMAC_S);
+
+	u64_stats_update_begin(&ring->syncp);
+	ring->stats.rx_pkts++;
+	ring->stats.rx_bytes += len;
+
+	if (l2_frame_type == HNS3_L2_TYPE_MULTICAST)
+		ring->stats.rx_multicast++;
+
+	u64_stats_update_end(&ring->syncp);
+
+	ring->tqp_vector->rx_group.total_bytes += len;
 	return 0;
 }
 
 static int hns3_handle_rx_bd(struct hns3_enet_ring *ring,
 			     struct sk_buff **out_skb)
 {
-	enum hns3_pkt_l2t_type l2_frame_type;
 	struct sk_buff *skb = ring->skb;
 	struct hns3_desc_cb *desc_cb;
 	struct hns3_desc *desc;
@@ -2928,20 +2944,6 @@ static int hns3_handle_rx_bd(struct hns3_enet_ring *ring,
 		dev_kfree_skb_any(skb);
 		return ret;
 	}
-
-	l2_frame_type = hnae3_get_field(le32_to_cpu(desc->rx.l234_info),
-					HNS3_RXD_DMAC_M, HNS3_RXD_DMAC_S);
-
-	u64_stats_update_begin(&ring->syncp);
-	ring->stats.rx_pkts++;
-	ring->stats.rx_bytes += skb->len;
-
-	if (l2_frame_type == HNS3_L2_TYPE_MULTICAST)
-		ring->stats.rx_multicast++;
-
-	u64_stats_update_end(&ring->syncp);
-
-	ring->tqp_vector->rx_group.total_bytes += skb->len;
 
 	skb_record_rx_queue(skb, ring->tqp->tqp_index);
 	hns3_set_rx_skb_rss_type(ring, skb);
