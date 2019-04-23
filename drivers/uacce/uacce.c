@@ -576,6 +576,7 @@ static int uacce_queue_drain(struct uacce_queue *q)
 	if (atomic_dec_and_test(&uacce->ref))
 		atomic_set(&uacce->state, UACCE_ST_INIT);
 
+	module_put(uacce->pdev->driver->owner);
 	return 0;
 }
 
@@ -604,20 +605,22 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	if (!uacce->ops->get_queue)
 		return -EINVAL;
 
+	if (!try_module_get(uacce->pdev->driver->owner))
+		return -ENODEV;
 	ret = uacce_dev_open_check(uacce);
 	if (ret)
-		return ret;
+		goto open_err;
 #ifdef CONFIG_IOMMU_SVA
 	if (uacce->ops->flags & UACCE_DEV_PASID) {
 		ret = iommu_sva_bind_device(uacce->pdev, current->mm, &pasid,
 					    IOMMU_SVA_FEAT_IOPF, NULL);
 		if (ret)
-			return ret;
+			goto open_err;
 	}
 #endif
 	ret = uacce->ops->get_queue(uacce, pasid, &q);
 	if (ret < 0)
-		return ret;
+		goto open_err;
 
 	atomic_inc(&uacce->ref);
 	q->pasid = pasid;
@@ -629,6 +632,9 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	filep->private_data = q;
 
 	return 0;
+open_err:
+	module_put(uacce->pdev->driver->owner);
+	return ret;
 }
 
 static int uacce_fops_release(struct inode *inode, struct file *filep)
