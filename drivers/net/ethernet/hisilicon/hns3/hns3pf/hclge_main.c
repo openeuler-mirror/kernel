@@ -915,7 +915,7 @@ static void hclge_convert_setting_kr(struct hclge_mac *mac, u8 speed_ability)
 static void hclge_convert_setting_fec(struct hclge_mac *mac)
 {
 	linkmode_clear_bit(ETHTOOL_LINK_MODE_FEC_BASER_BIT, mac->supported);
-	linkmode_clear_bit(ETHTOOL_LINK_MODE_FEC_BASER_BIT, mac->supported);
+	linkmode_clear_bit(ETHTOOL_LINK_MODE_FEC_RS_BIT, mac->supported);
 
 	switch (mac->speed) {
 	case HCLGE_MAC_SPEED_10G:
@@ -956,11 +956,10 @@ static void hclge_parse_fiber_link_mode(struct hclge_dev *hdev,
 				 mac->supported);
 
 	hclge_convert_setting_sr(mac, speed_ability);
-	if (hdev->pdev->revision >= 0x21) {
-		hclge_convert_setting_lr(mac, speed_ability);
-		hclge_convert_setting_cr(mac, speed_ability);
+	hclge_convert_setting_lr(mac, speed_ability);
+	hclge_convert_setting_cr(mac, speed_ability);
+	if (hdev->pdev->revision >= 0x21)
 		hclge_convert_setting_fec(mac);
-	}
 
 	linkmode_set_bit(ETHTOOL_LINK_MODE_FIBRE_BIT, mac->supported);
 	linkmode_set_bit(ETHTOOL_LINK_MODE_Pause_BIT, mac->supported);
@@ -2237,10 +2236,14 @@ static int hclge_set_autoneg(struct hnae3_handle *handle, bool enable)
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 
-	if (!hdev->hw.mac.support_autoneg && enable) {
-		dev_err(&hdev->pdev->dev,
-			"autoneg is not supported by current port\n");
-		return -EOPNOTSUPP;
+	if (!hdev->hw.mac.support_autoneg) {
+		if (enable) {
+			dev_err(&hdev->pdev->dev,
+				"autoneg is not supported by current port\n");
+			return -EOPNOTSUPP;
+		} else {
+			return 0;
+		}
 	}
 
 	return hclge_set_autoneg_en(hdev, enable);

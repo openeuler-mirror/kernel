@@ -2786,7 +2786,7 @@ static void hclgevf_get_media_type(struct hnae3_handle *handle, u8 *media_type,
 		*media_type = hdev->hw.mac.media_type;
 
 	if (module_type)
-		*media_type = hdev->hw.mac.module_type;
+		*module_type = hdev->hw.mac.module_type;
 }
 
 static void hclgevf_get_link_mode(struct hnae3_handle *handle,
