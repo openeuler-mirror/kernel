@@ -7,6 +7,7 @@
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/dma-direction.h>
+#include "kcompat.h"
 #include "hclge_cmd.h"
 #include "hnae3.h"
 #include "hclge_main.h"

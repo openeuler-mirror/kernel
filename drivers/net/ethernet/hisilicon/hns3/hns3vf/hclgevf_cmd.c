@@ -7,6 +7,7 @@
 #include <linux/err.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
+#include "kcompat.h"
 #include "hclgevf_cmd.h"
 #include "hclgevf_main.h"
 #include "hnae3.h"
