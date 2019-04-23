@@ -1488,6 +1488,13 @@ static int hns_nic_net_open(struct net_device *ndev)
 		return ret;
 	}
 
+	/**
+	 * The MAC is not XGE, we select fixed xmit queue. Mac0 select tx1,
+	 * mac1 select tx2, and so on.
+	 */
+	if (!(h->if_support & SUPPORTED_10000baseKR_Full))
+		priv->tx_queue = h->eport_id + 1;
+
 	ret = hns_nic_net_up(ndev);
 	if (ret) {
 		netdev_err(ndev,
@@ -2028,6 +2035,10 @@ hns_nic_select_queue(struct net_device *ndev, struct sk_buff *skb,
 	if (!AE_IS_VER1(priv->enet_ver) &&
 	    is_multicast_ether_addr(eth_hdr->h_dest))
 		return 0;
+
+	/* if netdev init select queue, apply it. */
+	if (priv->tx_queue)
+		return priv->tx_queue;
 
 	ring = hns_calc_tx_ring_idx(priv, skb);
 	if (ring != INVALID_TX_RING)

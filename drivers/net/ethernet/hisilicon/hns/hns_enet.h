@@ -82,6 +82,8 @@ struct hns_nic_priv {
 	struct work_struct service_task;
 
 	struct notifier_block notifier_block;
+
+	u16 tx_queue;
 };
 
 #define tx_ring_data(priv, idx) ((priv)->ring_data[idx])
