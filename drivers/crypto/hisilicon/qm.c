@@ -470,11 +470,10 @@ static irqreturn_t qm_irq(int irq, void *data)
 
 	if (readl(qm->io_base + QM_VF_EQ_INT_SOURCE))
 		return IRQ_WAKE_THREAD;
-	else {
-		dev_err(&qm->pdev->dev, "invalid int source\n");
-		qm_db(qm, 0, QM_DOORBELL_CMD_EQ, qm->status.eq_head, 0);
-		return IRQ_NONE;
-	}
+
+	dev_err(&qm->pdev->dev, "invalid int source\n");
+	qm_db(qm, 0, QM_DOORBELL_CMD_EQ, qm->status.eq_head, 0);
+	return IRQ_NONE;
 }
 
 static irqreturn_t qm_aeq_irq(int irq, void *data)
@@ -952,32 +951,33 @@ static void qm_log_hw_error(struct hisi_qm *qm, u32 error_status)
 	u32 reg_val, type, vf_num;
 
 	while (err->msg) {
-		if (err->int_msk & error_status)
+		if (err->int_msk & error_status) {
 			dev_warn(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
 
-		if (error_status & QM_DB_TIMEOUT) {
-			reg_val = readl(qm->io_base + QM_ABNORMAL_INF01);
-			type = (reg_val & QM_DB_TIMEOUT_TYPE) >>
-				QM_DB_TIMEOUT_TYPE_SHIFT;
-			vf_num = reg_val & QM_DB_TIMEOUT_VF;
-			dev_warn(dev, "qm %s doorbell timeout in function %u\n",
-				 qm_db_timeout[type], vf_num);
+			if (err->int_msk & QM_DB_TIMEOUT) {
+				reg_val = readl(qm->io_base +
+					  QM_ABNORMAL_INF01);
+				type = (reg_val & QM_DB_TIMEOUT_TYPE) >>
+					QM_DB_TIMEOUT_TYPE_SHIFT;
+				vf_num = reg_val & QM_DB_TIMEOUT_VF;
+				dev_warn(dev, "qm %s doorbell timeout in function %u\n",
+					 qm_db_timeout[type], vf_num);
+			} else if (err->int_msk & QM_OF_FIFO_OF) {
+				reg_val = readl(qm->io_base +
+					  QM_ABNORMAL_INF00);
+				type = (reg_val & QM_FIFO_OVERFLOW_TYPE) >>
+					QM_FIFO_OVERFLOW_TYPE_SHIFT;
+				vf_num = reg_val & QM_FIFO_OVERFLOW_VF;
+
+				if (type < ARRAY_SIZE(qm_fifo_overflow))
+					dev_warn(dev, "qm %s fifo overflow in function %u\n",
+						 qm_fifo_overflow[type],
+						 vf_num);
+				else
+					dev_err(dev, "unknown error type\n");
+			}
 		}
-
-		if (error_status & QM_OF_FIFO_OF) {
-			reg_val = readl(qm->io_base + QM_ABNORMAL_INF00);
-			type = (reg_val & QM_FIFO_OVERFLOW_TYPE) >>
-				QM_FIFO_OVERFLOW_TYPE_SHIFT;
-			vf_num = reg_val & QM_FIFO_OVERFLOW_VF;
-
-			if (type < ARRAY_SIZE(qm_fifo_overflow))
-				dev_warn(dev, "qm %s fifo overflow in function %u\n",
-					 qm_fifo_overflow[type], vf_num);
-			else
-				dev_err(dev, "unknown error type\n");
-		}
-
 		err++;
 	}
 }

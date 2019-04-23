@@ -933,7 +933,7 @@ static void hpre_log_hw_error(struct hpre *hpre, u32 err_sts)
 		if (err->int_msk & err_sts) {
 			dev_warn(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
-			if (err->int_msk & HPRE_HAC_INT_CLUSTER1 & err_sts)
+			if (err->int_msk & HPRE_HAC_INT_CLUSTER1)
 				dev_warn(dev, "hpre cluster1 shb timeout.\n");
 			else if (err->int_msk & HPRE_HAC_INT_CLUSTER2 & err_sts)
 				dev_warn(dev, "hpre cluster2 shb timeout.\n");

@@ -854,7 +854,7 @@ static void hisi_zip_log_hw_error(struct hisi_zip *hisi_zip, u32 err_sts)
 			dev_warn(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
 
-			if (HZIP_CORE_INT_STATUS_M_ECC & err_sts) {
+			if (err->int_msk & HZIP_CORE_INT_STATUS_M_ECC) {
 				err_val = readl(hisi_zip->qm.io_base +
 						HZIP_CORE_SRAM_ECC_ERR_INFO);
 				dev_warn(dev, "hisi-zip multi ecc sram num=0x%x\n",
