@@ -393,6 +393,11 @@ static int hns3_nic_net_up(struct net_device *netdev)
 	if (ret)
 		return ret;
 
+	/* the device can work without cpu rmap, only aRFS needs it */
+	ret = hns3_set_rx_cpu_rmap(h);
+	if (ret)
+		netdev_warn(netdev, "set rx cpu rmap fail, ret=%d!\n", ret);
+
 	/* get irq resource for all vectors */
 	ret = hns3_nic_init_irq(priv);
 	if (ret) {
@@ -475,10 +480,6 @@ static int hns3_nic_net_open(struct net_device *netdev)
 		return ret;
 	}
 
-	ret = hns3_set_rx_cpu_rmap(h);
-	if (ret)
-		netdev_warn(netdev, "set rx cpu rmap fail, ret=%d!\n", ret);
-
 	kinfo = &h->kinfo;
 	for (i = 0; i < HNAE3_MAX_USER_PRIO; i++)
 		netdev_set_prio_tc_map(netdev, i, kinfo->prio_tc[i]);
@@ -497,8 +498,6 @@ static void hns3_nic_net_down(struct net_device *netdev)
 	const struct hnae3_ae_ops *ops;
 	int i;
 
-	hns3_free_rx_cpu_rmap(h);
-
 	/* disable vectors */
 	for (i = 0; i < priv->vector_num; i++)
 		hns3_vector_disable(&priv->tqp_vector[i]);
@@ -511,6 +510,8 @@ static void hns3_nic_net_down(struct net_device *netdev)
 	ops = priv->ae_handle->ae_algo->ops;
 	if (ops->stop)
 		ops->stop(priv->ae_handle);
+
+	hns3_free_rx_cpu_rmap(h);
 
 	/* free irq resources */
 	hns3_nic_uninit_irq(priv);
