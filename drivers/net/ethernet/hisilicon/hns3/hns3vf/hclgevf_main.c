@@ -1334,7 +1334,7 @@ static int hclgevf_reset_wait(struct hclgevf_dev *hdev)
 					 (val & HCLGEVF_VF_RST_ING_BIT),
 					 HCLGEVF_RESET_WAIT_US,
 					 HCLGEVF_RESET_WAIT_TIMEOUT_US);
-		val = hclgevf_read_dev(&hdev->hw, HCLGEVF_RST_ING);
+		val = hclgevf_read_dev(&hdev->hw, HCLGEVF_VF_RST_ING);
 		hclgevf_write_dev(&hdev->hw, HCLGEVF_VF_RST_ING,
 				  val & ~HCLGEVF_VF_RST_ING_BIT);
 	} else {
