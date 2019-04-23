@@ -2049,15 +2049,20 @@ static pci_ers_result_t hns3_slot_reset(struct pci_dev *pdev)
 {
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
 	struct device *dev = &pdev->dev;
+	enum hnae3_reset_type reset_type;
 
-	dev_info(dev, "requesting reset due to PCI error\n");
-
-	/* request the reset, and let the hclge to determine
-	 * which reset level should be done
-	 */
+	/* request the reset */
 	if (ae_dev->ops->reset_event) {
-		if (!ae_dev->override_pci_need_reset)
-			ae_dev->ops->reset_event(pdev, NULL);
+		if (!ae_dev->override_pci_need_reset) {
+			reset_type =
+				ae_dev->ops->set_default_reset_request(ae_dev,
+						&ae_dev->hw_err_reset_req);
+			if (reset_type != HNAE3_NONE_RESET) {
+				dev_info(dev,
+					 "requesting reset due to PCI error\n");
+					 ae_dev->ops->reset_event(pdev, NULL);
+			}
+		}
 		return PCI_ERS_RESULT_RECOVERED;
 	}
 

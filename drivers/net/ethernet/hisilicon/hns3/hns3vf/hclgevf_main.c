@@ -1548,12 +1548,18 @@ static void hclgevf_reset_event(struct pci_dev *pdev,
 	hdev->last_reset_time = jiffies;
 }
 
-static void hclgevf_set_def_reset_request(struct hnae3_ae_dev *ae_dev,
-					  enum hnae3_reset_type rst_type)
+static enum hnae3_reset_type
+	hclgevf_set_def_reset_request(struct hnae3_ae_dev *ae_dev,
+				      unsigned long *rst_type)
 {
 	struct hclgevf_dev *hdev = ae_dev->priv;
+	enum hnae3_reset_type reset_type;
 
-	set_bit(rst_type, &hdev->default_reset_request);
+	reset_type = hclgevf_get_reset_level(hdev, rst_type);
+	if (reset_type != HNAE3_NONE_RESET)
+		set_bit(reset_type, &hdev->default_reset_request);
+
+	return reset_type;
 }
 
 static void hclgevf_flr_prepare(struct hnae3_ae_dev *ae_dev)

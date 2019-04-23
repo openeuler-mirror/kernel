@@ -1120,7 +1120,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "IMP_TCM_ECC_INT_STS",
 					      &hclge_imp_tcm_ecc_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	status = le32_to_cpu(desc[0].data[1]);
@@ -1128,20 +1128,18 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "CMDQ_MEM_ECC_INT_STS",
 					      &hclge_cmdq_nic_mem_ecc_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
-	if ((le32_to_cpu(desc[0].data[2])) & BIT(0)) {
+	if ((le32_to_cpu(desc[0].data[2])) & BIT(0))
 		dev_warn(dev, "imp_rd_data_poison_err found\n");
-		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_NONE_RESET);
-	}
 
 	status = le32_to_cpu(desc[0].data[3]);
 	if (status) {
 		reset_level = hclge_log_error(dev, "TQP_INT_ECC_INT_STS",
 					      &hclge_tqp_int_ecc_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	status = le32_to_cpu(desc[0].data[4]);
@@ -1149,7 +1147,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "MSIX_ECC_INT_STS",
 					      &hclge_msix_sram_ecc_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* log SSU(Storage Switch Unit) errors */
@@ -1159,14 +1157,14 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "SSU_ECC_MULTI_BIT_INT_0",
 					      &hclge_ssu_mem_ecc_err_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	status = le32_to_cpu(*(desc_data + 3)) & BIT(0);
 	if (status) {
 		dev_warn(dev, "SSU_ECC_MULTI_BIT_INT_1 ssu_mem32_ecc_mbit_err found [error status=0x%x]\n",
 			 status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_GLOBAL_RESET);
+		set_bit(HNAE3_GLOBAL_RESET, &ae_dev->hw_err_reset_req);
 	}
 
 	status = le32_to_cpu(*(desc_data + 4)) & HCLGE_SSU_COMMON_ERR_INT_MASK;
@@ -1174,7 +1172,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "SSU_COMMON_ERR_INT",
 					      &hclge_ssu_com_err_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* log IGU(Ingress Unit) errors */
@@ -1183,7 +1181,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 	if (status) {
 		reset_level = hclge_log_error(dev, "IGU_INT_STS",
 					      &hclge_igu_int[0], status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* log PPP(Programmable Packet Process) errors */
@@ -1194,7 +1192,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 			hclge_log_error(dev, "PPP_MPF_ABNORMAL_INT_ST1",
 					&hclge_ppp_mpf_abnormal_int_st1[0],
 					status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	status = le32_to_cpu(*(desc_data + 3)) & HCLGE_PPP_MPF_INT_ST3_MASK;
@@ -1203,7 +1201,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 			hclge_log_error(dev, "PPP_MPF_ABNORMAL_INT_ST3",
 					&hclge_ppp_mpf_abnormal_int_st3[0],
 					status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* log PPU(RCB) errors */
@@ -1212,7 +1210,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 	if (status) {
 		dev_warn(dev, "PPU_MPF_ABNORMAL_INT_ST1 %s found\n",
 			 "rpu_rx_pkt_ecc_mbit_err");
-		HCLGE_SET_DEFAULT_RESET_REQUEST(HNAE3_GLOBAL_RESET);
+		set_bit(HNAE3_GLOBAL_RESET, &ae_dev->hw_err_reset_req);
 	}
 
 	status = le32_to_cpu(*(desc_data + 2));
@@ -1221,7 +1219,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 			hclge_log_error(dev, "PPU_MPF_ABNORMAL_INT_ST2",
 					&hclge_ppu_mpf_abnormal_int_st2[0],
 					status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	status = le32_to_cpu(*(desc_data + 3)) & HCLGE_PPU_MPF_INT_ST3_MASK;
@@ -1230,7 +1228,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 			hclge_log_error(dev, "PPU_MPF_ABNORMAL_INT_ST3",
 					&hclge_ppu_mpf_abnormal_int_st3[0],
 					status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* log TM(Traffic Manager) errors */
@@ -1239,7 +1237,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 	if (status) {
 		reset_level = hclge_log_error(dev, "TM_SCH_RINT",
 					      &hclge_tm_sch_rint[0], status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* log QCN(Quantized Congestion Control) errors */
@@ -1248,7 +1246,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 	if (status) {
 		reset_level = hclge_log_error(dev, "QCN_FIFO_RINT",
 					      &hclge_qcn_fifo_rint[0], status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	status = le32_to_cpu(*(desc_data + 1)) & HCLGE_QCN_ECC_INT_MASK;
@@ -1256,7 +1254,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "QCN_ECC_RINT",
 					      &hclge_qcn_ecc_rint[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* log NCSI errors */
@@ -1265,7 +1263,7 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 	if (status) {
 		reset_level = hclge_log_error(dev, "NCSI_ECC_INT_RPT",
 					      &hclge_ncsi_err_int[0], status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* clear all main PF RAS errors */
@@ -1309,7 +1307,7 @@ static int hclge_handle_pf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "SSU_PORT_BASED_ERR_INT",
 					      &hclge_ssu_port_based_err_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	status = le32_to_cpu(desc[0].data[1]);
@@ -1317,7 +1315,7 @@ static int hclge_handle_pf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "SSU_FIFO_OVERFLOW_INT",
 					      &hclge_ssu_fifo_overflow_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	status = le32_to_cpu(desc[0].data[2]);
@@ -1325,7 +1323,7 @@ static int hclge_handle_pf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "SSU_ETS_TCG_INT",
 					      &hclge_ssu_ets_tcg_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* log IGU(Ingress Unit) EGU(Egress Unit) TNL errors */
@@ -1335,7 +1333,7 @@ static int hclge_handle_pf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "IGU_EGU_TNL_INT_STS",
 					      &hclge_igu_egu_tnl_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* log PPU(RCB) errors */
@@ -1345,7 +1343,7 @@ static int hclge_handle_pf_ras_error(struct hclge_dev *hdev,
 		reset_level = hclge_log_error(dev, "PPU_PF_ABNORMAL_INT_ST0",
 					      &hclge_ppu_pf_abnormal_int[0],
 					      status);
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_level);
+		set_bit(reset_level, &ae_dev->hw_err_reset_req);
 	}
 
 	/* clear all PF RAS errors */
@@ -1567,7 +1565,7 @@ int hclge_handle_rocee_ras_error(struct hnae3_ae_dev *ae_dev)
 
 	reset_type = hclge_log_and_clear_rocee_ras_error(hdev);
 	if (reset_type != HNAE3_NONE_RESET)
-		HCLGE_SET_DEFAULT_RESET_REQUEST(reset_type);
+		set_bit(reset_type, &ae_dev->hw_err_reset_req);
 
 	return reset_type;
 }
@@ -1633,6 +1631,10 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 	u32 status;
 
 	status = hclge_read_dev(&hdev->hw, HCLGE_RAS_PF_OTHER_INT_STS_REG);
+
+	if (status & HCLGE_RAS_REG_NFE_MASK ||
+	    status & HCLGE_RAS_REG_ROCEE_ERR_MASK)
+		ae_dev->hw_err_reset_req = 0;
 
 	/* Handling Non-fatal HNS RAS errors */
 	if (status & HCLGE_RAS_REG_NFE_MASK) {

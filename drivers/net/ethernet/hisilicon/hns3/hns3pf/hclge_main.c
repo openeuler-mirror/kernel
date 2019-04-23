@@ -3083,12 +3083,18 @@ static void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle)
 		hdev->reset_level++;
 }
 
-static void hclge_set_def_reset_request(struct hnae3_ae_dev *ae_dev,
-					enum hnae3_reset_type rst_type)
+static enum hnae3_reset_type
+	hclge_set_def_reset_request(struct hnae3_ae_dev *ae_dev,
+				    unsigned long *rst_type)
 {
 	struct hclge_dev *hdev = ae_dev->priv;
+	enum hnae3_reset_type reset_type;
 
-	set_bit(rst_type, &hdev->default_reset_request);
+	reset_type = hclge_get_reset_level(hdev, rst_type);
+	if (reset_type != HNAE3_NONE_RESET)
+		set_bit(reset_type, &hdev->default_reset_request);
+
+	return reset_type;
 }
 
 static void hclge_reset_timer(struct timer_list *t)
