@@ -541,10 +541,8 @@ static int uacce_queue_drain(struct uacce_queue *q)
 	int i;
 	bool is_to_free_region;
 
-	if (!q) {
-		pr_err("uacce drain queue null!\n");
+	if (!q)
 		return -EINVAL;
-	}
 	uacce = q->uacce;
 	if (atomic_read(&uacce->state) == UACCE_ST_STARTED &&
 	    uacce->ops->stop_queue)
