@@ -919,7 +919,13 @@ static void hclge_convert_setting_fec(struct hclge_mac *mac)
 
 	switch (mac->speed) {
 	case HCLGE_MAC_SPEED_10G:
+	case HCLGE_MAC_SPEED_40G:
+		linkmode_set_bit(ETHTOOL_LINK_MODE_FEC_BASER_BIT,
+				 mac->supported);
+		mac->fec_ability = BIT(HNAE3_FEC_BASER) | BIT(HNAE3_FEC_AUTO);
+		break;
 	case HCLGE_MAC_SPEED_25G:
+	case HCLGE_MAC_SPEED_50G:
 		linkmode_set_bit(ETHTOOL_LINK_MODE_FEC_BASER_BIT,
 				 mac->supported);
 		linkmode_set_bit(ETHTOOL_LINK_MODE_FEC_RS_BIT,
@@ -928,12 +934,6 @@ static void hclge_convert_setting_fec(struct hclge_mac *mac)
 			BIT(HNAE3_FEC_BASER) | BIT(HNAE3_FEC_RS) |
 			BIT(HNAE3_FEC_AUTO);
 		break;
-	case HCLGE_MAC_SPEED_40G:
-		linkmode_set_bit(ETHTOOL_LINK_MODE_FEC_BASER_BIT,
-				 mac->supported);
-		mac->fec_ability = BIT(HNAE3_FEC_BASER) | BIT(HNAE3_FEC_AUTO);
-		break;
-	case HCLGE_MAC_SPEED_50G:
 	case HCLGE_MAC_SPEED_100G:
 		linkmode_set_bit(ETHTOOL_LINK_MODE_FEC_RS_BIT, mac->supported);
 		mac->fec_ability = BIT(HNAE3_FEC_RS) | BIT(HNAE3_FEC_AUTO);
@@ -988,7 +988,8 @@ static void hclge_parse_backplane_link_mode(struct hclge_dev *hdev,
 
 #ifdef HAVE_ETHTOOL_CONVERT_U32_AND_LINK_MODE
 	hclge_convert_setting_kr(mac, speed_ability);
-	hclge_convert_setting_fec(mac);
+	if (hdev->pdev->revision >= 0x21)
+		hclge_convert_setting_fec(mac);
 #else
 	if (speed_ability & HCLGE_SUPPORT_1G_BIT)
 		linkmode_set_bit(ETHTOOL_LINK_MODE_1000baseKX_Full_BIT,
