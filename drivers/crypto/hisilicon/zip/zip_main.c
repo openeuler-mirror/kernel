@@ -1116,34 +1116,29 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 	int i, ret;
 
 	if (pdev->is_physfn) {
-		hisi_qm_clear_queues(qm);
-
 		hisi_zip_set_user_domain_and_cache(hisi_zip);
 		hisi_zip_hw_error_init(hisi_zip);
-
-		ret = hisi_qm_start(qm);
-		if (ret) {
-			dev_err(dev, "Failed to start QM!\n");
-			return;
-		}
-
-		for (i = 0; i < qm->qp_num; i++) {
-			qp = qm->qp_array[i];
-			if (qp) {
-				ret = hisi_qm_start_qp(qp, 0);
-				if (ret < 0) {
-					dev_err(dev, "Start qp%d failed\n", i);
-					return;
-				}
-			}
-		}
-
 		if (hisi_zip->ctrl->num_vfs)
 			hisi_zip_vf_q_assign(hisi_zip,
 					     hisi_zip->ctrl->num_vfs);
-
-		dev_info(dev, "FLR reset complete\n");
 	}
+	hisi_qm_clear_queues(qm);
+	ret = hisi_qm_start(qm);
+	if (ret) {
+		dev_err(dev, "Failed to start QM!\n");
+		return;
+	}
+	for (i = 0; i < qm->qp_num; i++) {
+		qp = qm->qp_array[i];
+		if (qp) {
+			ret = hisi_qm_start_qp(qp, 0);
+			if (ret < 0) {
+				dev_err(dev, "Start qp%d failed\n", i);
+				return;
+			}
+		}
+	}
+	dev_info(dev, "FLR reset complete\n");
 }
 
 static const struct pci_error_handlers hisi_zip_err_handler = {

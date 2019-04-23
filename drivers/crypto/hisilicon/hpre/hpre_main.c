@@ -1190,31 +1190,30 @@ static void hpre_reset_done(struct pci_dev *pdev)
 	int i, ret;
 
 	if (pdev->is_physfn) {
-		hisi_qm_clear_queues(qm);
 		ret = hpre_set_user_domain_and_cache(hpre);
 		if (ret)
 			return;
 		hpre_hw_err_init(hpre);
-		ret = hisi_qm_start(qm);
-		if (ret) {
-			dev_err(dev, "Failed to start QM!\n");
-			return;
-		}
-		for (i = 0; i < qm->qp_num; i++) {
-			qp = qm->qp_array[i];
-			if (qp) {
-				ret = hisi_qm_start_qp(qp, 0);
-				if (ret < 0) {
-					dev_err(dev, "Start qp%d failed\n", i);
-					return;
-				}
-			}
-		}
 		if (hpre->ctrl->num_vfs)
 			hpre_vf_q_assign(hpre, hpre->ctrl->num_vfs);
-
-		dev_info(dev, "FLR reset complete\n");
 	}
+	hisi_qm_clear_queues(qm);
+	ret = hisi_qm_start(qm);
+	if (ret) {
+		dev_err(dev, "Failed to start QM!\n");
+		return;
+	}
+	for (i = 0; i < qm->qp_num; i++) {
+		qp = qm->qp_array[i];
+		if (qp) {
+			ret = hisi_qm_start_qp(qp, 0);
+			if (ret < 0) {
+				dev_err(dev, "Start qp%d failed\n", i);
+				return;
+			}
+		}
+	}
+	dev_info(dev, "FLR reset complete\n");
 }
 
 static void hpre_remove(struct pci_dev *pdev)
