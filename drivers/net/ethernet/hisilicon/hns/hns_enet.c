@@ -37,6 +37,8 @@
 #define SKB_TMP_LEN(SKB) \
 	(((SKB)->transport_header - (SKB)->mac_header) + tcp_hdrlen(SKB))
 
+#define INVALID_TX_RING    0xffff
+
 static void fill_v2_desc_hw(struct hnae_ring *ring, void *priv, int size,
 			    int send_sz, dma_addr_t dma, int frag_end,
 			    int buf_num, enum hns_desc_type type, int mtu)
@@ -1958,6 +1960,61 @@ static void hns_nic_get_stats64(struct net_device *ndev,
 	stats->tx_compressed = ndev->stats.tx_compressed;
 }
 
+static u32 hns_calc_tx_rss(u32 sip, u32 dip, u32 sport, u32 dport, u32 *rss_key)
+{
+	u32 rss = 0;
+	int i;
+	u32 port;
+
+	port = (sport << 16) | dport;
+
+	for (i = 0; i < 32; i++)
+		if (sip & (1 << (31 - i)))
+			rss ^= (rss_key[9] << i) |
+				(u32)((u64)rss_key[8] >> (32 - i));
+
+	for (i = 0; i < 32; i++)
+		if (dip & (1 << (31 - i)))
+			rss ^= (rss_key[8] << i) |
+				(u32)((u64)rss_key[7] >> (32 - i));
+
+	for (i = 0; i < 32; i++)
+		if (port & (1 << (31 - i)))
+			rss ^= (rss_key[7] << i) |
+				(u32)((u64)rss_key[6] >> (32 - i));
+
+	return rss;
+}
+
+/* if tcp or udp, then calc tx ring index */
+static u16 hns_calc_tx_ring_idx(struct hns_nic_priv *priv,
+				struct sk_buff *skb)
+{
+	struct hnae_handle *handle;
+	struct iphdr *iphdr;
+	struct tcphdr *tcphdr;
+	u32 rss;
+	int protocol;
+	u16 ring = INVALID_TX_RING;
+
+	if (skb->protocol == htons(ETH_P_IP)) {
+		iphdr = ip_hdr(skb);
+		protocol = iphdr->protocol;
+		if (protocol == IPPROTO_TCP) {
+			/* because tcp and udp dest and src port is same */
+			tcphdr = tcp_hdr(skb);
+			handle = priv->ae_handle;
+			rss = hns_calc_tx_rss(ntohl(iphdr->daddr),
+					      ntohl(iphdr->saddr),
+					      ntohs(tcphdr->dest),
+					      ntohs(tcphdr->source),
+					      handle->rss_key);
+			ring = handle->rss_indir_table[rss & 0xff] & 0xf;
+		}
+	}
+
+	return ring;
+}
 static u16
 hns_nic_select_queue(struct net_device *ndev, struct sk_buff *skb,
 		     struct net_device *sb_dev,
@@ -1965,11 +2022,16 @@ hns_nic_select_queue(struct net_device *ndev, struct sk_buff *skb,
 {
 	struct ethhdr *eth_hdr = (struct ethhdr *)skb->data;
 	struct hns_nic_priv *priv = netdev_priv(ndev);
+	u16 ring;
 
 	/* fix hardware broadcast/multicast packets queue loopback */
 	if (!AE_IS_VER1(priv->enet_ver) &&
 	    is_multicast_ether_addr(eth_hdr->h_dest))
 		return 0;
+
+	ring = hns_calc_tx_ring_idx(priv, skb);
+	if (ring != INVALID_TX_RING)
+		return ring;
 	else
 		return fallback(ndev, skb, NULL);
 }

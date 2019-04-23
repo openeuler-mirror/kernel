@@ -80,6 +80,7 @@ static struct hnae_handle *hns_ae_get_handle(struct hnae_ae_dev *dev,
 	struct hnae_handle *ae_handle;
 	struct ring_pair_cb *ring_pair_cb;
 	struct hnae_vf_cb *vf_cb;
+	struct hns_ppe_cb *ppe_cb;
 
 	dsaf_dev = hns_ae_get_dsaf_dev(dev);
 
@@ -128,12 +129,16 @@ static struct hnae_handle *hns_ae_get_handle(struct hnae_ae_dev *dev,
 	vf_cb->port_index = port_id;
 	vf_cb->mac_cb = dsaf_dev->mac_cb[port_id];
 
+	ppe_cb = hns_get_ppe_cb(ae_handle);
+
 	ae_handle->phy_if = vf_cb->mac_cb->phy_if;
 	ae_handle->phy_dev = vf_cb->mac_cb->phy_dev;
 	ae_handle->if_support = vf_cb->mac_cb->if_support;
 	ae_handle->port_type = vf_cb->mac_cb->mac_type;
 	ae_handle->media_type = vf_cb->mac_cb->media_type;
 	ae_handle->dport_id = port_id;
+	ae_handle->rss_key = ppe_cb->rss_key;
+	ae_handle->rss_indir_table = ppe_cb->rss_indir_table;
 
 	return ae_handle;
 vf_id_err:

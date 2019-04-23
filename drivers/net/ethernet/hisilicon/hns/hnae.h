@@ -564,6 +564,8 @@ struct hnae_handle {
 	u32 coal_ring_idx;
 	u32 eport_id;
 	u32 dport_id;	/* v2 tx bd should fill the dport_id */
+	u32 *rss_key;
+	u32 *rss_indir_table;
 	bool coal_adapt_en;
 	enum hnae_port_type port_type;
 	enum hnae_media_type media_type;
