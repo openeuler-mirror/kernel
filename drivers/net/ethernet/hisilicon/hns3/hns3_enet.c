@@ -1026,7 +1026,7 @@ static int hns3_fill_desc_vtags(struct sk_buff *skb,
 {
 #define HNS3_TX_VLAN_PRIO_SHIFT 13
 
-struct hnae3_handle *handle = tx_ring->tqp->handle;
+	struct hnae3_handle *handle = tx_ring->tqp->handle;
 
 	/* By hw limitation, if port base insert vlan enabled, only one vlan
 	 * header is allowed in skb; otherwise it will cause ras error.
@@ -2557,7 +2557,8 @@ static void hns3_rx_checksum(struct hns3_enet_ring *ring, struct sk_buff *skb,
 		return;
 
 	if (unlikely(l234info & (BIT(HNS3_RXD_L3E_B) | BIT(HNS3_RXD_L4E_B) |
-	    BIT(HNS3_RXD_OL3E_B) | BIT(HNS3_RXD_OL4E_B)))) {
+				 BIT(HNS3_RXD_OL3E_B) |
+				 BIT(HNS3_RXD_OL4E_B)))) {
 		u64_stats_update_begin(&ring->syncp);
 		ring->stats.l3l4_csum_err++;
 		u64_stats_update_end(&ring->syncp);
@@ -2571,6 +2572,7 @@ static void hns3_rx_checksum(struct hns3_enet_ring *ring, struct sk_buff *skb,
 	case HNS3_OL4_TYPE_MAC_IN_UDP:
 	case HNS3_OL4_TYPE_NVGRE:
 		skb->csum_level = 1;
+		/* fall through */
 	case HNS3_OL4_TYPE_NO_TUN:
 		l3_type = hnae3_get_field(l234info, HNS3_RXD_L3ID_M,
 					  HNS3_RXD_L3ID_S);
@@ -2655,6 +2657,7 @@ static bool hns3_parse_vlan_tag(struct hns3_enet_ring *ring,
 static int hns3_alloc_skb(struct hns3_enet_ring *ring, int length,
 			  unsigned char *va)
 {
+#define HNS3_NEED_ADD_FRAG	1
 	struct hns3_desc_cb *desc_cb = &ring->desc_cb[ring->next_to_clean];
 	struct net_device *netdev = ring->tqp->handle->kinfo.netdev;
 	struct sk_buff *skb;
@@ -2687,18 +2690,18 @@ static int hns3_alloc_skb(struct hns3_enet_ring *ring, int length,
 
 		ring_ptr_move_fw(ring, next_to_clean);
 		return 0;
-	} else {
-		u64_stats_update_begin(&ring->syncp);
-		ring->stats.seg_pkt_cnt++;
-		u64_stats_update_end(&ring->syncp);
-
-		ring->pull_len = eth_get_headlen(va, HNS3_RX_HEAD_SIZE);
-		__skb_put(skb, ring->pull_len);
-		hns3_nic_reuse_page(skb, ring->frag_num++, ring, ring->pull_len,
-				    desc_cb);
-		ring_ptr_move_fw(ring, next_to_clean);
-		return 1;
 	}
+	u64_stats_update_begin(&ring->syncp);
+	ring->stats.seg_pkt_cnt++;
+	u64_stats_update_end(&ring->syncp);
+
+	ring->pull_len = eth_get_headlen(va, HNS3_RX_HEAD_SIZE);
+	__skb_put(skb, ring->pull_len);
+	hns3_nic_reuse_page(skb, ring->frag_num++, ring, ring->pull_len,
+			    desc_cb);
+	ring_ptr_move_fw(ring, next_to_clean);
+
+	return HNS3_NEED_ADD_FRAG;
 }
 
 static int hns3_add_frag(struct hns3_enet_ring *ring, struct hns3_desc *desc,
@@ -2710,12 +2713,15 @@ static int hns3_add_frag(struct hns3_enet_ring *ring, struct hns3_desc *desc,
 	struct hns3_desc_cb *desc_cb;
 	struct hns3_desc *pre_desc;
 	u32 bd_base_info;
-	int ntc;
+	int pre_bd;
 
+	/* if there is pending bd, the SW param next_to_clean has moved
+	 * to next and the next is NULL
+	 */
 	if (pending) {
-		ntc = (ring->next_to_clean - 1 + ring->desc_num) %
+		pre_bd  = (ring->next_to_clean - 1 + ring->desc_num) %
 		      ring->desc_num;
-		pre_desc = &ring->desc[ntc];
+		pre_desc = &ring->desc[pre_bd];
 		bd_base_info = le32_to_cpu(pre_desc->rx.bd_base_info);
 	} else {
 		bd_base_info = le32_to_cpu(desc->rx.bd_base_info);
@@ -2764,20 +2770,6 @@ static int hns3_add_frag(struct hns3_enet_ring *ring, struct hns3_desc *desc,
 	return 0;
 }
 
-static void hns3_set_rx_skb_rss_type(struct hns3_enet_ring *ring,
-				     struct sk_buff *skb, u32 rss_hash)
-{
-	struct hnae3_handle *handle = ring->tqp->handle;
-	enum pkt_hash_types rss_type;
-
-	if (rss_hash)
-		rss_type = handle->kinfo.rss_type;
-	else
-		rss_type = PKT_HASH_TYPE_NONE;
-
-	skb_set_hash(skb, rss_hash, rss_type);
-}
-
 static int hns3_set_gro_and_checksum(struct hns3_enet_ring *ring,
 				     struct sk_buff *skb, u32 l234info,
 				     u32 bd_base_info)
@@ -2787,15 +2779,12 @@ static int hns3_set_gro_and_checksum(struct hns3_enet_ring *ring,
 
 	gro_count = hnae3_get_field(l234info, HNS3_RXD_GRO_COUNT_M,
 				    HNS3_RXD_GRO_COUNT_S);
-	/* if there is no HE GRO, do not set gro params */
+	/* if there is no HW GRO, do not set gro params */
 	if (!gro_count) {
 		hns3_rx_checksum(ring, skb, l234info, bd_base_info);
 		return 0;
 	}
 
-	/* tcp_gro_complete() will copy NAPI_GRO_CB(skb)->count
-	 * to skb_shinfo(skb)->gso_segs
-	 */
 	NAPI_GRO_CB(skb)->count = gro_count;
 
 	l3_type = hnae3_get_field(l234info, HNS3_RXD_L3ID_M, HNS3_RXD_L3ID_S);
@@ -2811,6 +2800,20 @@ static int hns3_set_gro_and_checksum(struct hns3_enet_ring *ring,
 						    HNS3_RXD_GRO_SIZE_S);
 
 	return  hns3_gro_complete(skb);
+}
+
+static void hns3_set_rx_skb_rss_type(struct hns3_enet_ring *ring,
+				     struct sk_buff *skb, u32 rss_hash)
+{
+	struct hnae3_handle *handle = ring->tqp->handle;
+	enum pkt_hash_types rss_type;
+
+	if (rss_hash)
+		rss_type = handle->kinfo.rss_type;
+	else
+		rss_type = PKT_HASH_TYPE_NONE;
+
+	skb_set_hash(skb, rss_hash, rss_type);
 }
 
 static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb)
@@ -2853,7 +2856,7 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb)
 	}
 
 	if (unlikely(!desc->rx.pkt_len || (l234info & (BIT(HNS3_RXD_TRUNCAT_B) |
-		     BIT(HNS3_RXD_L2E_B))))) {
+				  BIT(HNS3_RXD_L2E_B))))) {
 		u64_stats_update_begin(&ring->syncp);
 		if (l234info & BIT(HNS3_RXD_L2E_B))
 			ring->stats.l2_err++;
@@ -2940,17 +2943,24 @@ static int hns3_handle_rx_bd(struct hns3_enet_ring *ring,
 		if (ret < 0) /* alloc buffer fail */
 			return ret;
 		if (ret > 0) { /* need add frag */
-			ret = hns3_add_frag(ring, desc, &skb, 0);
+			ret = hns3_add_frag(ring, desc, &skb, false);
 			if (ret)
 				return ret;
 
+			/* As the head data may be changed when GRO enable, copy
+			 * the head data in after other data rx completed
+			 */
 			memcpy(skb->data, ring->va,
 			       ALIGN(ring->pull_len, sizeof(long)));
 		}
 	} else {
-		ret = hns3_add_frag(ring, desc, &skb, 1);
+		ret = hns3_add_frag(ring, desc, &skb, true);
 		if (ret)
 			return ret;
+
+		/* As the head data may be changed when GRO enable, copy
+		 * the head data in after other data rx completed
+		 */
 		memcpy(skb->data, ring->va,
 		       ALIGN(ring->pull_len, sizeof(long)));
 	}
@@ -2998,7 +3008,7 @@ int hns3_clean_rx_ring(struct hns3_enet_ring *ring, int budget,
 		if (unlikely(!skb)) /* This fault cannot be repaired */
 			goto out;
 
-		if (err == -ENXIO) {
+		if (err == -ENXIO) { /* Do not get FE for the packet */
 			goto out;
 		} else if (unlikely(err)) {  /* Do jump the err */
 			recv_bds += ring->pending_buf;
