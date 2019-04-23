@@ -59,7 +59,7 @@
 #define HPRE_HAC_SOURCE_INT		0x301600
 #define MASTER_GLOBAL_CTRL_SHUTDOWN	1
 #define MASTER_TRANS_RETURN_RW		3
-#define HPRE_MASTER_TRANS_RETURN	0x301500
+#define HPRE_MASTER_TRANS_RETURN	0x300150
 #define HPRE_MASTER_GLOBAL_CTRL		0x300000
 #define HPRE_CLSTR_ADDR_INTRVL		0x1000
 #define HPRE_CLUSTER_INQURY		0x100
@@ -1009,14 +1009,15 @@ static int hpre_controller_reset_prepare(struct hpre *hpre)
 	struct pci_dev *pdev = qm->pdev;
 	int ret;
 
+	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
+		dev_warn(&pdev->dev, "Failed to set reset flag!");
+		return -EBUSY;
+	}
+
 	ret = hisi_qm_stop(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return ret;
-	}
-	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
-		dev_warn(&pdev->dev, "Failed to set reset flag!");
-		return -EPERM;
 	}
 
 	return 0;
