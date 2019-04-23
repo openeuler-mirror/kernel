@@ -957,17 +957,17 @@ static void qm_log_hw_error(struct hisi_qm *qm, u32 error_status)
 
 			if (err->int_msk & QM_DB_TIMEOUT) {
 				reg_val = readl(qm->io_base +
-					  QM_ABNORMAL_INF01);
+						QM_ABNORMAL_INF01);
 				type = (reg_val & QM_DB_TIMEOUT_TYPE) >>
-					QM_DB_TIMEOUT_TYPE_SHIFT;
+				       QM_DB_TIMEOUT_TYPE_SHIFT;
 				vf_num = reg_val & QM_DB_TIMEOUT_VF;
 				dev_warn(dev, "qm %s doorbell timeout in function %u\n",
 					 qm_db_timeout[type], vf_num);
 			} else if (err->int_msk & QM_OF_FIFO_OF) {
 				reg_val = readl(qm->io_base +
-					  QM_ABNORMAL_INF00);
+						QM_ABNORMAL_INF00);
 				type = (reg_val & QM_FIFO_OVERFLOW_TYPE) >>
-					QM_FIFO_OVERFLOW_TYPE_SHIFT;
+				       QM_FIFO_OVERFLOW_TYPE_SHIFT;
 				vf_num = reg_val & QM_FIFO_OVERFLOW_VF;
 
 				if (type < ARRAY_SIZE(qm_fifo_overflow))

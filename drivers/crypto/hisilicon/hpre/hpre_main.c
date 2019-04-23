@@ -53,8 +53,6 @@
 #define HPRE_CORE_INI_STATUS (HPRE_CLSTR_BASE + HPRE_CORE_INI_STATUS_OFFSET)
 #define HPRE_HAC_ECC1_CNT		0x301a04
 #define HPRE_HAC_ECC2_CNT		0x301a08
-#define HPRE_HAC_INT_CLUSTER1		BIT(6)
-#define HPRE_HAC_INT_CLUSTER2		BIT(7)
 #define HPRE_HAC_INT_STATUS		0x301800
 #define HPRE_HAC_SOURCE_INT		0x301600
 #define MASTER_GLOBAL_CTRL_SHUTDOWN	1
@@ -934,14 +932,9 @@ static void hpre_log_hw_error(struct hpre *hpre, u32 err_sts)
 	struct device *dev = &hpre->qm.pdev->dev;
 
 	while (err->msg) {
-		if (err->int_msk & err_sts) {
+		if (err->int_msk & err_sts)
 			dev_warn(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
-			if (err->int_msk & HPRE_HAC_INT_CLUSTER1)
-				dev_warn(dev, "hpre cluster1 shb timeout.\n");
-			else if (err->int_msk & HPRE_HAC_INT_CLUSTER2)
-				dev_warn(dev, "hpre cluster2 shb timeout.\n");
-		}
 		err++;
 	}
 }
