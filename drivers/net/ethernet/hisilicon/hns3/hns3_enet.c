@@ -1773,15 +1773,15 @@ bool hns3_get_tx_timeo_queue_info(struct net_device *ndev)
 		    tx_ring->stats.seg_pkt_cnt, tx_ring->stats.tx_err_cnt,
 		    tx_ring->stats.restart_queue, tx_ring->stats.tx_busy);
 
-	if (h->ae_algo->ops->update_stats &&
-	    h->ae_algo->ops->get_mac_pause_stats) {
-		u64 tx_pause_cnt, rx_pause_cnt;
+	/* When mac received many pause frames continuous, it's unable to send
+	 * packets, which may cause tx timeout
+	 */
+	if (h->ae_algo->ops->get_mac_stats) {
+		struct hns3_mac_stats mac_stats;
 
-		h->ae_algo->ops->update_stats(h, &ndev->stats);
-		h->ae_algo->ops->get_mac_pause_stats(h, &tx_pause_cnt,
-						     &rx_pause_cnt);
+		h->ae_algo->ops->get_mac_stats(h, &mac_stats);
 		netdev_info(ndev, "tx_pause_cnt: %llu, rx_pause_cnt: %llu\n",
-			    tx_pause_cnt, rx_pause_cnt);
+			    mac_stats.tx_pause_cnt, mac_stats.rx_pause_cnt);
 	}
 
 	hw_head = readl_relaxed(tx_ring->tqp->io_base +

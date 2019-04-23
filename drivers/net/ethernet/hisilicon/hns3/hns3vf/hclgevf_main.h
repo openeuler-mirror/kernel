@@ -170,11 +170,11 @@ struct hclgevf_misc_vector {
 };
 
 struct hclgevf_rst_stats {
-	unsigned long rst_cnt;	/* the number of reset has been done */
+	u32 rst_cnt;		/* the number of all reset */
 	u32 vf_func_rst_cnt;		/* the number of VF function reset */
 	u32 flr_rst_cnt;		/* the number of FLR */
 	u32 vf_rst_cnt;			/* the number of VF reset */
-	u32 rst_done_cnt;		/* the number of reset has completed */
+	u32 rst_done_cnt;		/* the number of sucessful reset */
 };
 
 struct hclgevf_dev {
