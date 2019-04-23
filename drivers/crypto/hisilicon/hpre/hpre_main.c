@@ -115,7 +115,7 @@ struct hpre_hw_error {
 	const char *msg;
 };
 
-static const struct hpre_hw_error hpre_hw_error[] = {
+static const struct hpre_hw_error hpre_hw_errors[] = {
 	{ .int_msk = BIT(0), .msg = "hpre_ecc_1bitt_err" },
 	{ .int_msk = BIT(1), .msg = "hpre_ecc_2bit_err" },
 	{ .int_msk = BIT(2), .msg = "hpre_data_wr_err" },
@@ -926,7 +926,7 @@ static int hpre_sriov_configure(struct pci_dev *pdev, int num_vfs)
 
 static void hpre_log_hw_error(struct hpre *hpre, u32 err_sts)
 {
-	const struct hpre_hw_error *err = hpre_hw_error;
+	const struct hpre_hw_error *err = hpre_hw_errors;
 	struct device *dev = &hpre->qm.pdev->dev;
 	u32 err_val;
 
@@ -971,13 +971,7 @@ static pci_ers_result_t hpre_hw_error_handle(struct hpre *hpre)
 static pci_ers_result_t hpre_process_hw_error(struct pci_dev *pdev)
 {
 	struct hpre *hpre = pci_get_drvdata(pdev);
-	struct device *dev = &pdev->dev;
 	pci_ers_result_t qm_ret, hpre_ret, ret;
-
-	if (!hpre) {
-		dev_err(dev, "Can't recover hpre-error at dev init\n");
-		return PCI_ERS_RESULT_NONE;
-	}
 
 	/* log qm error */
 	qm_ret = hisi_qm_hw_error_handle(&hpre->qm);
@@ -1171,7 +1165,7 @@ static void hpre_reset_prepare(struct pci_dev *pdev)
 
 	ret = hisi_qm_stop(qm);
 	if (ret) {
-		dev_err(&pdev->dev, "Failed to stop QM!\n");
+		dev_err(dev, "Failed to stop QM!\n");
 		return;
 	}
 	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
