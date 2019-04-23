@@ -78,6 +78,12 @@
 #define _BD_USR_MASK			0x3
 #define _CLUSTER_CORE_MASK		0xf
 
+/* function index:
+ * 1 for hpre bypass mode,
+ * 2 for RDE bypass mode;
+ */
+#define HPRE_VIA_MSI_DSM	1
+
 enum {
 	HPRE_CORE0,
 	HPRE_CORE1,
@@ -148,8 +154,7 @@ struct hpre_debugfs_file {
 #define HPRE_DEBUGFS_FILE_NUM	(HPRE_DEBUG_FILE_NUM + HPRE_CLUSTERS_NUM - 1)
 
 /*
- * One HPRE controller has one PF and multiple VFs,
- * some global configurations
+ * One HPRE controller has one PF and multiple VFs, some global configurations
  * which PF has need this structure.
  *
  * Just relevant for PF.
@@ -297,6 +302,30 @@ static void hpre_pasid_enable(struct hisi_qm *qm)
 	writel_relaxed(val, HPRE_ADDR(HPRE_DATA_WUSER_CFG));
 }
 
+static int hpre_cfg_by_dsm(struct hisi_qm *qm)
+{
+	struct device *dev = &qm->pdev->dev;
+	union acpi_object *obj;
+	guid_t guid;
+
+	if (guid_parse("b06b81ab-0134-4a45-9b0c-483447b95fa7", &guid)) {
+		dev_err(dev, "Hpre GUID failed\n");
+		return -EINVAL;
+	}
+
+	/* Switch over to MSI handling due to non-standard PCI implementation */
+	obj = acpi_evaluate_dsm(ACPI_HANDLE(dev), &guid,
+				0, HPRE_VIA_MSI_DSM, NULL);
+	if (!obj) {
+		dev_err(dev, "evaluate _DSM failed\n");
+		return -EIO;
+	}
+
+	ACPI_FREE(obj);
+
+	return 0;
+}
+
 static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 {
 	int ret, i;
@@ -349,6 +378,10 @@ static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 			return -ETIMEDOUT;
 		}
 	}
+
+	ret = hpre_cfg_by_dsm(qm);
+	if (ret)
+		pr_err("acpi_evaluate_dsm err.\n");
 
 	return ret;
 }
