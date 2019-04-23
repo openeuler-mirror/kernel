@@ -1028,6 +1028,14 @@ static int hns3_fill_desc_vtags(struct sk_buff *skb,
 
 struct hnae3_handle *handle = tx_ring->tqp->handle;
 
+	/* By hw limitation, if port base insert vlan enabled, only one vlan
+	 * header is allowed in skb; otherwise it will cause ras error.
+	 */
+	if (unlikely(skb_vlan_tagged_multi(skb) &&
+		     handle->port_base_vlan_state ==
+		     HNAE3_PORT_BASE_VLAN_ENABLE))
+		return -EINVAL;
+
 	if (skb->protocol == htons(ETH_P_8021Q) &&
 	    !(tx_ring->tqp->handle->kinfo.netdev->features &
 	    NETIF_F_HW_VLAN_CTAG_TX)) {
