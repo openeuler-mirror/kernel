@@ -1034,7 +1034,8 @@ struct hisi_qp *hisi_qm_create_qp(struct hisi_qm *qm, u8 alg_type)
 	/* allocate qp dma memory, uacce uses dus region for this */
 	if (qm->use_dma_api) {
 		qp->qdma.size = qm->sqe_size * QM_Q_DEPTH +
-				sizeof(struct cqe) * QM_Q_DEPTH,
+				sizeof(struct cqe) * QM_Q_DEPTH;
+		qp->qdma.size = PAGE_ALIGN(qp->qdma.size);
 		qp->qdma.va = dma_alloc_coherent(dev, qp->qdma.size,
 						 &qp->qdma.dma,
 						 GFP_KERNEL | __GFP_ZERO);
