@@ -1678,12 +1678,9 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
 	struct device *dev = &pdev->dev;
-	int with_dma_mem = 0;
 
-	if (qm->qdma.va)
-		with_dma_mem = 1;
-
-	if (with_dma_mem) {
+	/* qm hardware buffer free on put_queue if no dma api */
+	if (qm->use_dma_api && qm->qdma.va) {
 		hisi_qm_cache_wb(qm);
 		dma_free_coherent(dev, qm->qdma.size,
 				  qm->qdma.va, qm->qdma.dma);
