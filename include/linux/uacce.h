@@ -95,6 +95,7 @@ struct uacce {
 	struct device dev;
 	void *priv;
 	atomic_t state;
+	atomic_t ref;
 	int prot;
 };
 

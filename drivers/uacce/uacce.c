@@ -575,7 +575,9 @@ static int uacce_queue_drain(struct uacce_queue *q)
 		uacce->ops->put_queue(q);
 
 	dev_dbg(&uacce->dev, "uacce state switch to INIT\n");
-	atomic_set(&uacce->state, UACCE_ST_INIT);
+	if (atomic_dec_and_test(&uacce->ref))
+		atomic_set(&uacce->state, UACCE_ST_INIT);
+
 	return 0;
 }
 
@@ -619,6 +621,7 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	if (ret < 0)
 		return ret;
 
+	atomic_inc(&uacce->ref);
 	q->pasid = pasid;
 	q->uacce = uacce;
 	q->mm = current->mm;
@@ -1189,6 +1192,7 @@ int uacce_register(struct uacce *uacce)
 
 	dev_dbg(&uacce->dev, "uacce state initialized to INIT\n");
 	atomic_set(&uacce->state, UACCE_ST_INIT);
+	atomic_set(&uacce->ref, 0);
 	mutex_unlock(&uacce_mutex);
 	return 0;
 
