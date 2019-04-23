@@ -78,6 +78,8 @@
 #define QM_HW_VER1_ID			0x20
 #define QM_HW_VER2_ID			0x21
 
+#define PCI_BAR_2			2
+
 enum qm_state {
 	QM_RESET,
 };
