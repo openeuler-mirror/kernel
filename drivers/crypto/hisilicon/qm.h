@@ -206,6 +206,14 @@ struct qm_dma {
 	size_t size;
 };
 
+struct hisi_qm_status {
+	u32 eq_head;
+	bool eqc_phase;
+	u32 aeq_head;
+	bool aeqc_phase;
+	unsigned long flags;
+};
+
 struct hisi_qm {
 	enum qm_hw_ver ver;
 	enum qm_fun_type fun_type;
@@ -215,24 +223,18 @@ struct hisi_qm {
 	u32 sqe_size;
 	u32 qp_base;
 	u32 qp_num;
-	unsigned long flags;
 
 	struct qm_dma qdma;
 	struct qm_sqc *sqc;
 	struct qm_cqc *cqc;
-	struct qm_eqc *eqc;
 	struct qm_eqe *eqe;
-	struct qm_aeqc *aeqc;
 	struct qm_aeqe *aeqe;
 	dma_addr_t sqc_dma;
 	dma_addr_t cqc_dma;
-	dma_addr_t eqc_dma;
 	dma_addr_t eqe_dma;
-	dma_addr_t aeqc_dma;
 	dma_addr_t aeqe_dma;
 
-	u32 eq_head;
-	u32 aeq_head;
+	struct hisi_qm_status status;
 
 	rwlock_t qps_lock;
 	unsigned long *qp_bitmap;
@@ -256,6 +258,8 @@ struct hisi_qm {
 	resource_size_t phys_base;
 	resource_size_t size;
 	struct uacce uacce;
+	void *reserve;
+	dma_addr_t reserve_dma;
 #endif
 };
 
@@ -278,12 +282,8 @@ struct hisi_qp {
 	u8 req_type;
 
 	struct qm_dma qdma;
-	struct qm_sqc *sqc;
-	struct qm_cqc *cqc;
 	void *sqe;
 	struct qm_cqe *cqe;
-	dma_addr_t sqc_dma;
-	dma_addr_t cqc_dma;
 	dma_addr_t sqe_dma;
 	dma_addr_t cqe_dma;
 

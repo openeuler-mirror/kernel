@@ -1014,7 +1014,7 @@ static int hpre_controller_reset_prepare(struct hpre *hpre)
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return ret;
 	}
-	if (test_and_set_bit(QM_RESET, &qm->flags)) {
+	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
 		dev_warn(&pdev->dev, "Failed to set reset flag!");
 		return -EPERM;
 	}
@@ -1134,7 +1134,7 @@ static int hpre_controller_reset(struct hpre *hpre)
 	if (ret)
 		return ret;
 	dev_info(dev, "Controller reset complete\n");
-	clear_bit(QM_RESET, &hpre->qm.flags);
+	clear_bit(QM_RESET, &hpre->qm.status.flags);
 
 	return 0;
 }
@@ -1173,7 +1173,7 @@ static void hpre_reset_prepare(struct pci_dev *pdev)
 		dev_err(&pdev->dev, "Failed to stop QM!\n");
 		return;
 	}
-	if (test_and_set_bit(QM_RESET, &qm->flags)) {
+	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
 		dev_warn(dev, "Failed to set reset flag!");
 		return;
 	}
