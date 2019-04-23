@@ -185,14 +185,23 @@ enum HCLGE_MAC_DUPLEX {
 	HCLGE_MAC_FULL
 };
 
+#define QUERY_SFP_SPEED		0
+#define QUERY_ACTIVE_SPEED	1
+
 struct hclge_mac {
 	u8 phy_addr;
 	u8 flag;
-	u8 media_type;
+	u8 media_type;	/* port media type, e.g. fibre/copper/backplane */
 	u8 mac_addr[ETH_ALEN];
 	u8 autoneg;
 	u8 duplex;
+	u8 support_autoneg;
+	u8 speed_type;	/* 0: sfp speed, 1: active speed */
 	u32 speed;
+	u32 speed_ability; /* speed ability supported by current media */
+	u32 module_type; /* sub media type, e.g. kr/cr/sr/lr */
+	u32 fec_mode;
+	u32 fec_ability;
 	int link;	/* store the link status of mac & phy (if phy exit) */
 	struct phy_device *phydev;
 	struct mii_bus *mdio_bus;
