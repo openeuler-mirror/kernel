@@ -116,7 +116,7 @@ static int hpre_alloc_req_id(struct hpre_ctx *ctx)
 	id = find_first_zero_bit(ctx->req_bitmap, QM_Q_DEPTH);
 	if (id >= QM_Q_DEPTH) {
 		spin_unlock_irqrestore(&ctx->req_lock, flags);
-		pr_err("\nno free req id!");
+		pr_err("nno free req id!\n");
 		return -EBUSY;
 	}
 	set_bit(id, ctx->req_bitmap);
@@ -296,8 +296,6 @@ static int _alg_res_post_hf(struct hpre_ctx *ctx, struct hpre_sqe *sqe,
 
 static int _ctx_init(struct hpre_ctx *ctx, struct hisi_qp *qp, int qlen)
 {
-	int ret = -ENOMEM;
-
 	if (!ctx || !qp || qlen < 0)
 		return -EINVAL;
 
@@ -305,12 +303,12 @@ static int _ctx_init(struct hpre_ctx *ctx, struct hisi_qp *qp, int qlen)
 	ctx->req_bitmap = kcalloc(BITS_TO_LONGS(qlen), sizeof(long),
 				  GFP_KERNEL);
 	if (!ctx->req_bitmap)
-		return ret;
+		return -ENOMEM;
 	ctx->qp = qp;
 	ctx->req_list = kcalloc(qlen, sizeof(void *), GFP_KERNEL);
 	if (!ctx->req_list) {
 		kfree(ctx->req_bitmap);
-		return ret;
+		return -ENOMEM;
 	}
 	ctx->key_sz = 0;
 	ctx->crt_g2_mode = false;
@@ -348,7 +346,7 @@ void hpre_alg_cb(struct hisi_qp *qp, void *_resp)
 	struct hpre_sqe *sqe = _resp;
 	struct hpre_asym_request *areq;
 	struct hpre_ctx *ctx = qp->qp_ctx;
-	int id = (int)sqe->tag;
+	u32 id = sqe->tag;
 
 	areq = ctx->req_list[id];
 	areq->cb(ctx, _resp);
@@ -407,6 +405,7 @@ static int hpre_msg_comm_set(struct hpre_ctx *ctx, void *req, int is_rsa)
 	if (req_id < 0)
 		return -EBUSY;
 	msg->tag = (u16)req_id;
+
 	return 0;
 }
 
@@ -436,7 +435,7 @@ static int hpre_dh_compute_value(struct kpp_request *req)
 	else
 		msg->alg = HPRE_ALG_DH;
 	do {
-		ret = hisi_qp_send(ctx->qp, (void *)msg);
+		ret = hisi_qp_send(ctx->qp, msg);
 	} while (ret == -EBUSY && ctr++ < HPRE_TRY_SEND_TIMES);
 
 	if (!ret)
@@ -464,6 +463,7 @@ static int hpre_dh_check_params_length(unsigned int key_sz)
 	case _HPRE_DH_GRP16:
 		return 0;
 	}
+
 	return -EINVAL;
 }
 
@@ -633,7 +633,7 @@ static int hpre_rsa_enc(struct akcipher_request *req)
 	if (ret)
 		goto clear_all;
 	do {
-		ret = hisi_qp_send(ctx->qp, (void *)msg);
+		ret = hisi_qp_send(ctx->qp, msg);
 	} while (ret == -EBUSY && ctr++ < HPRE_TRY_SEND_TIMES);
 
 	if (!ret)
@@ -683,7 +683,7 @@ static int hpre_rsa_dec(struct akcipher_request *req)
 		goto clear_all;
 
 	do {
-		ret = hisi_qp_send(ctx->qp, (void *)msg);
+		ret = hisi_qp_send(ctx->qp, msg);
 	} while (ret == -EBUSY && ctr++ < HPRE_TRY_SEND_TIMES);
 
 	if (!ret)
@@ -696,7 +696,7 @@ clear_all:
 }
 
 static int hpre_rsa_set_n(struct hpre_ctx *ctx, const char *value,
-			 size_t vlen, bool private)
+			  size_t vlen, bool private)
 {
 	const char *ptr = value;
 	int ret = -EINVAL;
@@ -760,7 +760,6 @@ static int hpre_rsa_set_d(struct hpre_ctx *ctx, const char *value,
 			  size_t vlen)
 {
 	const char *ptr = value;
-	int ret = -EINVAL;
 
 	while (!*ptr && vlen) {
 		ptr++;
@@ -774,7 +773,7 @@ static int hpre_rsa_set_d(struct hpre_ctx *ctx, const char *value,
 	return 0;
 err:
 	ctx->rsa.prikey = NULL;
-	return ret;
+	return -EINVAL;
 }
 
 static void hpre_rsa_drop_leading_zeros(const char **ptr, unsigned int *len)
@@ -786,7 +785,7 @@ static void hpre_rsa_drop_leading_zeros(const char **ptr, unsigned int *len)
 }
 
 static int hpre_crt_para_get(char *para, const char *raw,
-			unsigned int raw_sz, unsigned int para_size)
+			     unsigned int raw_sz, unsigned int para_size)
 {
 	const char *ptr = raw;
 	unsigned int len = raw_sz;
@@ -814,31 +813,31 @@ static int hpre_rsa_setkey_crt(struct hpre_ctx *ctx, struct rsa_key *rsa_key)
 
 	/* dq */
 	ret = hpre_crt_para_get(ctx->rsa.crt_prikey, rsa_key->dq,
-			rsa_key->dq_sz, hlf_ksz);
+				rsa_key->dq_sz, hlf_ksz);
 	if (ret)
 		goto free_key;
 
 	/* dp */
 	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + hlf_ksz, rsa_key->dp,
-			rsa_key->dp_sz, hlf_ksz);
+				rsa_key->dp_sz, hlf_ksz);
 	if (ret)
 		goto free_key;
 
 	/* q */
 	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + hlf_ksz * _CRT_Q,
-			rsa_key->q, rsa_key->q_sz, hlf_ksz);
+				rsa_key->q, rsa_key->q_sz, hlf_ksz);
 	if (ret)
 		goto free_key;
 
 	/* p */
 	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + hlf_ksz * _CRT_P,
-			rsa_key->p, rsa_key->p_sz, hlf_ksz);
+				rsa_key->p, rsa_key->p_sz, hlf_ksz);
 	if (ret)
 		goto free_key;
 
 	/* qinv */
 	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + hlf_ksz * _CRT_INV,
-			rsa_key->qinv, rsa_key->qinv_sz, hlf_ksz);
+				rsa_key->qinv, rsa_key->qinv_sz, hlf_ksz);
 	if (ret)
 		goto free_key;
 	ctx->crt_g2_mode = true;
@@ -867,7 +866,7 @@ static void hpre_rsa_clear_ctx(struct hpre_ctx *ctx, int is_exit)
 	if (ctx->rsa.crt_prikey) {
 		memset(ctx->rsa.crt_prikey, '\0', half_key_sz * _CRT_PRMS);
 		dma_free_coherent(dev, half_key_sz * _CRT_PRMS,
-				ctx->rsa.crt_prikey, ctx->rsa.dma_crt_prikey);
+				  ctx->rsa.crt_prikey, ctx->rsa.dma_crt_prikey);
 		ctx->rsa.crt_prikey = NULL;
 	}
 	if (ctx->rsa.prikey) {
@@ -947,6 +946,7 @@ static int hpre_rsa_setprivkey(struct crypto_akcipher *tfm, const void *key,
 	ret = crypto_akcipher_set_priv_key(ctx->rsa.soft_tfm, key, keylen);
 	if (ret)
 		return ret;
+
 	return hpre_rsa_setkey(ctx, key, keylen, true);
 }
 
@@ -956,6 +956,7 @@ static unsigned int hpre_rsa_max_size(struct crypto_akcipher *tfm)
 
 	if (ctx->rsa.soft_tfm && ctx->key_sz == HPRE_RSA_INVLD_KEY_SZ)
 		return crypto_akcipher_maxsize(ctx->rsa.soft_tfm);
+
 	return ctx->key_sz;
 }
 
@@ -1026,6 +1027,7 @@ int hpre_algs_register(void)
 	ret = crypto_register_akcipher(&rsa);
 	if (ret)
 		return ret;
+
 	return crypto_register_kpp(&dh);
 }
 

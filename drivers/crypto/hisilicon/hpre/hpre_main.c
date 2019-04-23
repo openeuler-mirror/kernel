@@ -241,7 +241,7 @@ static const struct kernel_param_ops pf_q_num_ops = {
 
 static u32 pf_q_num = HPRE_PF_DEF_Q_NUM;
 module_param_cb(pf_q_num, &pf_q_num_ops, &pf_q_num, 0444);
-MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 0-4096, v2 0-1024)");
+MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 1-4096, v2 1-1024)");
 
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param(uacce_mode, int, 0444);
@@ -561,7 +561,7 @@ static int hpre_pf_comm_regs_debugfs_init(struct hpre_ctrl *ctrl)
 
 	regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
 	if (!regset)
-		return -ENOENT;
+		return -ENOMEM;
 
 	regset->regs = hpre_com_dfx_regs;
 	regset->nregs = ARRAY_SIZE(hpre_com_dfx_regs);
@@ -593,7 +593,7 @@ static int hpre_cluster_debugfs_init(struct hpre_ctrl *ctrl)
 
 		regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
 		if (!regset)
-			return -ENOENT;
+			return -ENOMEM;
 
 		regset->regs = hpre_cluster_dfx_regs;
 		regset->nregs = ARRAY_SIZE(hpre_cluster_dfx_regs);
@@ -746,6 +746,7 @@ static int hpre_pf_probe_init(struct hpre *hpre)
 	if (ret)
 		return ret;
 	hpre_hw_err_init(hpre);
+
 	return 0;
 }
 
@@ -831,6 +832,7 @@ static int hpre_clear_vft_config(struct hpre *hpre)
 			return ret;
 	}
 	ctrl->num_vfs = 0;
+
 	return 0;
 }
 
@@ -871,7 +873,7 @@ static int hpre_sriov_disable(struct pci_dev *pdev)
 
 	if (pci_vfs_assigned(pdev)) {
 		dev_err(&pdev->dev,
-		"Can't disable VFs while VFs are assigned!\n");
+		"Failed to disable VFs while VFs are assigned!\n");
 
 		return -EPERM;
 	}
@@ -983,6 +985,7 @@ static int hpre_controller_reset_prepare(struct hpre *hpre)
 		dev_warn(&pdev->dev, "Failed to set reset flag!");
 		return -EPERM;
 	}
+
 	return 0;
 }
 
@@ -1058,7 +1061,7 @@ static int hpre_controller_reset_done(struct hpre *hpre)
 	ret = hisi_qm_start(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to start QM!\n");
-		return -EPERM;
+		return ret;
 	}
 	for (i = 0; i < qm->qp_num; i++) {
 		qp = qm->qp_array[i];
@@ -1066,7 +1069,7 @@ static int hpre_controller_reset_done(struct hpre *hpre)
 			ret = hisi_qm_start_qp(qp, 0);
 			if (ret < 0) {
 				dev_err(&pdev->dev, "Start qp%d failed\n", i);
-				return -EPERM;
+				return ret;
 			}
 		}
 	}
@@ -1134,7 +1137,7 @@ static void hpre_reset_prepare(struct pci_dev *pdev)
 
 	ret = hisi_qm_stop(qm);
 	if (ret) {
-		dev_err(&pdev->dev, "Fails to stop QM!\n");
+		dev_err(&pdev->dev, "Failed to stop QM!\n");
 		return;
 	}
 	if (test_and_set_bit(QM_RESET, &qm->flags)) {
@@ -1258,6 +1261,7 @@ fail_to_register_algs:
 	pci_unregister_driver(&hpre_pci_driver);
 fail_to_register_pci:
 	hpre_unregister_debugfs();
+
 	return ret;
 }
 
