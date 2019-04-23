@@ -372,7 +372,7 @@ static long uacce_cmd_share_qfr(struct uacce_queue *tgt, int fd)
 	if (filep->f_op != &uacce_fops)
 		goto out_with_fd;
 
-	src = (struct uacce_queue *)filep->private_data;
+	src = filep->private_data;
 	if (!src)
 		goto out_with_fd;
 
@@ -476,7 +476,7 @@ static long uacce_get_ss_dma(struct uacce_queue *q, void __user *arg)
 static long
 uacce_fops_unl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 {
-	struct uacce_queue *q = (struct uacce_queue *)filep->private_data;
+	struct uacce_queue *q = filep->private_data;
 	struct uacce *uacce = q->uacce;
 
 	switch (cmd) {
@@ -531,6 +531,63 @@ static int uacce_dev_open_check(struct uacce *uacce)
 	return 0;
 }
 
+/* To be fixed: only drain queue relatives */
+static int uacce_queue_drain(struct uacce_queue *q)
+{
+	struct uacce_qfile_region *qfr;
+	struct uacce *uacce;
+	int i;
+	bool is_to_free_region;
+
+	if (!q) {
+		pr_err("uacce drain queue null!\n");
+		return -EINVAL;
+	}
+	uacce = q->uacce;
+	if (atomic_read(&uacce->state) == UACCE_ST_STARTED &&
+	    uacce->ops->stop_queue)
+		uacce->ops->stop_queue(q);
+
+	for (i = 0; i < UACCE_QFRT_MAX; i++) {
+		qfr = q->qfrs[i];
+		if (!qfr)
+			continue;
+
+		is_to_free_region = false;
+		uacce_queue_unmap_qfr(q, qfr);
+		if (i == UACCE_QFRT_SS) {
+			list_del(&q->list);
+			if (list_empty(&qfr->qs))
+				is_to_free_region = true;
+		} else
+			is_to_free_region = true;
+
+		if (is_to_free_region)
+			uacce_destroy_region(q, qfr);
+	}
+#ifdef CONFIG_IOMMU_SVA
+	if (uacce->ops->flags & UACCE_DEV_SVA)
+		iommu_sva_unbind_device(uacce->pdev, q->pasid);
+#endif
+	if (uacce->ops->put_queue)
+		uacce->ops->put_queue(q);
+
+	dev_dbg(&uacce->dev, "uacce state switch to INIT\n");
+	atomic_set(&uacce->state, UACCE_ST_INIT);
+	return 0;
+}
+
+/* While user space releases a queue, all the relatives on the queue
+ * should be released imediately by this flush.
+ */
+static int uacce_fops_flush(struct file *filep, fl_owner_t id)
+{
+	struct uacce_queue *q = filep->private_data;
+
+	filep->private_data = NULL;
+	return uacce_queue_drain(q);
+}
+
 static int uacce_fops_open(struct inode *inode, struct file *filep)
 {
 	struct uacce_queue *q;
@@ -573,61 +630,16 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 
 static int uacce_fops_release(struct inode *inode, struct file *filep)
 {
-	struct uacce_queue *q = (struct uacce_queue *)filep->private_data;
-	struct uacce_qfile_region *qfr;
-	struct uacce *uacce;
-	int i;
-	bool is_to_free_region;
-	int free_pages = 0;
+	struct uacce_queue *q = filep->private_data;
 
-	uacce = q->uacce;
+	/* task has put the queue */
+	if (!q)
+		return 0;
 
-	if (atomic_read(&uacce->state) == UACCE_ST_STARTED &&
-	    uacce->ops->stop_queue)
-		uacce->ops->stop_queue(q);
-
-	uacce_qs_wlock();
-
-	for (i = 0; i < UACCE_QFRT_MAX; i++) {
-		qfr = q->qfrs[i];
-		if (!qfr)
-			continue;
-
-		is_to_free_region = false;
-		uacce_queue_unmap_qfr(q, qfr);
-		if (i == UACCE_QFRT_SS) {
-			list_del(&q->list);
-			if (list_empty(&qfr->qs))
-				is_to_free_region = true;
-		} else
-			is_to_free_region = true;
-
-		if (is_to_free_region) {
-			free_pages += qfr->nr_pages;
-			uacce_destroy_region(q, qfr);
-		}
-
-		qfr = NULL;
-	}
-
-	uacce_qs_wunlock();
-
-	if (current->mm == q->mm) {
-		down_write(&q->mm->mmap_sem);
-		q->mm->data_vm -= free_pages;
-		up_write(&q->mm->mmap_sem);
-	}
-#ifdef CONFIG_IOMMU_SVA
-	if (uacce->ops->flags & UACCE_DEV_SVA)
-		iommu_sva_unbind_device(uacce->pdev, q->pasid);
-#endif
-
-	if (uacce->ops->put_queue)
-		uacce->ops->put_queue(q);
-
-	dev_dbg(&uacce->dev, "uacce state switch to INIT\n");
-	atomic_set(&uacce->state, UACCE_ST_INIT);
-	return 0;
+	/* As user space exception(without release queue), it will fall into
+	 * this logic as the task exits to prevent hardware resources leaking
+	 */
+	return uacce_queue_drain(q);
 }
 
 static enum uacce_qfrt
@@ -703,28 +715,22 @@ uacce_get_region_type(struct uacce *uacce, struct vm_area_struct *vma)
 
 static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 {
-	struct uacce_queue *q = (struct uacce_queue *)filep->private_data;
+	struct uacce_queue *q = filep->private_data;
 	struct uacce *uacce = q->uacce;
-	enum uacce_qfrt type = uacce_get_region_type(uacce, vma);
+	enum uacce_qfrt type;
 	struct uacce_qfile_region *qfr;
 	int flags = 0, ret;
 
-	dev_dbg(&uacce->dev, "mmap q file(t=%s, off=%lx, start=%lx, end=%lx)\n",
-		qfrt_str[type], vma->vm_pgoff, vma->vm_start, vma->vm_end);
-
+	type = uacce_get_region_type(uacce, vma);
 	if (type == UACCE_QFRT_INVALID)
 		return -EINVAL;
+
+	dev_dbg(&uacce->dev, "mmap q file(t=%s, off=%lx, start=%lx, end=%lx)\n",
+		 qfrt_str[type], vma->vm_pgoff, vma->vm_start, vma->vm_end);
 
 	vma->vm_flags |= VM_DONTCOPY | VM_DONTEXPAND;
 
 	uacce_qs_wlock();
-
-	/* fixme: if the region need no pages, we don't need to check it */
-	if (q->mm->data_vm + vma_pages(vma) >
-			rlimit(RLIMIT_DATA) >> PAGE_SHIFT) {
-		ret = -ENOMEM;
-		goto out_with_lock;
-	}
 
 	if (q->qfrs[type]) {
 		ret = -EBUSY;
@@ -787,9 +793,6 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 
 	uacce_qs_wunlock();
 
-	if (qfr->pages)
-		q->mm->data_vm += qfr->nr_pages;
-
 	return 0;
 
  out_with_lock:
@@ -799,7 +802,7 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 
 static __poll_t uacce_fops_poll(struct file *file, poll_table *wait)
 {
-	struct uacce_queue *q = (struct uacce_queue *)file->private_data;
+	struct uacce_queue *q = file->private_data;
 	struct uacce *uacce = q->uacce;
 
 	poll_wait(file, &q->wait, wait);
@@ -812,6 +815,7 @@ static __poll_t uacce_fops_poll(struct file *file, poll_table *wait)
 static const struct file_operations uacce_fops = {
 	.owner = THIS_MODULE,
 	.open = uacce_fops_open,
+	.flush = uacce_fops_flush,
 	.release = uacce_fops_release,
 	.unlocked_ioctl = uacce_fops_unl_ioctl,
 #ifdef CONFIG_COMPAT
