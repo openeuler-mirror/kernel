@@ -120,7 +120,6 @@ static void _queue_work(struct dummy_hw_queue *hwq)
 			(unsigned long)hwq->reg->ring[hwq->tail].src_addr,
 			hwq->reg->ring[hwq->tail].size,
 			hwq->reg->ring[hwq->tail].ret);
-		hwq->reg->ring[hwq->tail].ret = 0;
 		hwq->tail = (hwq->tail+1)%bd_num;
 	}
 

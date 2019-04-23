@@ -1040,7 +1040,7 @@ static int uacce_set_iommu_domain(struct uacce *uacce)
 	struct iommu_domain *domain;
 	struct iommu_group *group;
 	struct device *dev = uacce->pdev;
-	bool resv_msi, msi_remap;
+	bool resv_msi;
 	phys_addr_t resv_msi_base = 0;
 	int ret;
 
@@ -1082,16 +1082,14 @@ static int uacce_set_iommu_domain(struct uacce *uacce)
 	resv_msi = uacce_iommu_has_sw_msi(group, &resv_msi_base);
 	iommu_group_put(group);
 
-	msi_remap = irq_domain_check_msi_remap() ||
-	    iommu_capable(dev->bus, IOMMU_CAP_INTR_REMAP);
-
-	if (!msi_remap) {
-		dev_warn(dev, "No interrupt remapping support!");
-		ret = -EPERM;
-		goto err_with_domain;
-	}
-
 	if (resv_msi) {
+		if (!irq_domain_check_msi_remap() &&
+			!iommu_capable(dev->bus, IOMMU_CAP_INTR_REMAP)) {
+			dev_warn(dev, "No interrupt remapping support!");
+			ret = -EPERM;
+			goto err_with_domain;
+		}
+
 		dev_dbg(dev, "Set resv msi %llx on iommu domain\n",
 			(u64) resv_msi_base);
 		ret = iommu_get_msi_cookie(domain, resv_msi_base);

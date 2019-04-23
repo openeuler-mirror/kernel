@@ -17,3 +17,21 @@ config WD_DUMMY_DEV
 	  Support for WarpDrive test driver with devices (NOT for upstream).
 
 	  If you don't know what to do here, say N.
+
+config WD_DUMMY_V1
+	tristate "Support for WrapDrive Dummy Device V1"
+	depends on WD_DUMMY_DEV
+	help
+	  Support for WarpDrive test driver (NOT for upstream).
+	  The device is simulated with os
+
+	  If you don't know what to do here, say N.
+
+config WD_DUMMY_V2
+	tristate "Support for WrapDrive Dummy Device V2"
+	depends on WD_DUMMY_DEV
+	help
+	  Support for WarpDrive test driver (NOT for upstream).
+	  The device is simulated with qemu
+
+	  If you don't know what to do here, say N.
