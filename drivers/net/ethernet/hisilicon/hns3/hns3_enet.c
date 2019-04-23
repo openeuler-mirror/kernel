@@ -1881,7 +1881,7 @@ struct net_device_ops hns3_nic_netdev_ops = {
 
 };
 
-static bool hns3_is_phys_func(struct pci_dev *pdev)
+bool hns3_is_phys_func(struct pci_dev *pdev)
 {
 	u32 dev_id = pdev->device;
 
