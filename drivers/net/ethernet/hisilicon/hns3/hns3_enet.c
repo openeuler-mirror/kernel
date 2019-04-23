@@ -1236,7 +1236,7 @@ static int hns3_nic_bd_num(struct sk_buff *skb)
 	return bd_num;
 }
 
-static int hns3_gso_hdr_len(struct sk_buff *skb)
+static unsigned int hns3_gso_hdr_len(struct sk_buff *skb)
 {
 	if (!skb->encapsulation)
 		return skb_transport_offset(skb) + tcp_hdrlen(skb);
@@ -1252,7 +1252,7 @@ static int hns3_gso_hdr_len(struct sk_buff *skb)
 static bool hns3_skb_need_linearized(struct sk_buff *skb)
 {
 	int bd_limit = HNS3_MAX_BD_PER_FRAG - 1;
-	int tot_len = 0;
+	unsigned int tot_len = 0;
 	int i;
 
 	for (i = 0; i < bd_limit; i++)
