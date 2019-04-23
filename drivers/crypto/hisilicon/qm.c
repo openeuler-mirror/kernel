@@ -157,8 +157,6 @@
 #define WAIT_PERIOD			20
 #define MAX_WAIT_COUNTS			3
 
-#define QM_MAX_Q_NUM_V2			1024
-
 #define QM_MK_CQC_DW3_V1(hop_num, pg_sz, buf_sz, cqe_sz) \
 	(((hop_num) << QM_CQ_HOP_NUM_SHIFT)	| \
 	((pg_sz) << QM_CQ_PAGE_SIZE_SHIFT)	| \
@@ -1814,7 +1812,7 @@ EXPORT_SYMBOL_GPL(hisi_qm_get_vft);
  * @number: The number of queues in vft.
  *
  * This function is alway called in PF driver, it is used to assign queues
- * among PF and VFs.
+ * among PF and VFs. Number is zero means invalid corresponding entry.
  *
  * Assign queues A~B to PF: hisi_qm_set_vft(qm, 0, A, B - A + 1)
  * Assign queues A~B to VF: hisi_qm_set_vft(qm, 2, A, B - A + 1)
@@ -1823,9 +1821,12 @@ EXPORT_SYMBOL_GPL(hisi_qm_get_vft);
 int hisi_qm_set_vft(struct hisi_qm *qm, u32 fun_num, u32 base,
 		    u32 number)
 {
-	if (base >= QM_MAX_Q_NUM_V2 || number > QM_MAX_Q_NUM_V2 ||
-	    (base + number) > QM_MAX_Q_NUM_V2)
+	u32 max_q_num = qm->ctrl_q_num;
+
+	if (base >= max_q_num || number > max_q_num ||
+	    (base + number) > max_q_num)
 		return -EINVAL;
+
 	return qm_set_sqc_cqc_vft(qm, fun_num, base, number);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_set_vft);

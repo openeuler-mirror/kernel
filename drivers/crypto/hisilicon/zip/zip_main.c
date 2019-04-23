@@ -160,7 +160,6 @@ struct ctrl_debug_file {
  * Just relevant for PF.
  */
 struct hisi_zip_ctrl {
-	u32 ctrl_q_num;
 	u32 num_vfs;
 	struct hisi_zip *hisi_zip;
 	struct dentry *debug_root;
@@ -603,11 +602,11 @@ static int hisi_zip_pf_probe_init(struct hisi_zip *hisi_zip)
 
 	switch (qm->ver) {
 	case QM_HW_V1:
-		ctrl->ctrl_q_num = HZIP_QUEUE_NUM_V1;
+		qm->ctrl_q_num = HZIP_QUEUE_NUM_V1;
 		break;
 
 	case QM_HW_V2:
-		ctrl->ctrl_q_num = HZIP_QUEUE_NUM_V2;
+		qm->ctrl_q_num = HZIP_QUEUE_NUM_V2;
 		break;
 
 	default:
@@ -721,7 +720,6 @@ err_remove_from_list:
 /* now we only support equal assignment */
 static int hisi_zip_vf_q_assign(struct hisi_zip *hisi_zip, int num_vfs)
 {
-	struct hisi_zip_ctrl *ctrl = hisi_zip->ctrl;
 	struct hisi_qm *qm = &hisi_zip->qm;
 	u32 qp_num = qm->qp_num;
 	u32 q_base = qp_num;
@@ -731,7 +729,8 @@ static int hisi_zip_vf_q_assign(struct hisi_zip *hisi_zip, int num_vfs)
 	if (!num_vfs)
 		return -EINVAL;
 
-	remain_q_num = ctrl->ctrl_q_num - qp_num;
+	remain_q_num = qm->ctrl_q_num - qp_num;
+	/* If remain queues not enough, return error. */
 	if (remain_q_num < num_vfs)
 		return -EINVAL;
 

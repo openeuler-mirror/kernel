@@ -223,6 +223,7 @@ struct hisi_qm {
 	u32 sqe_size;
 	u32 qp_base;
 	u32 qp_num;
+	u32 ctrl_q_num;
 
 	struct qm_dma qdma;
 	struct qm_sqc *sqc;

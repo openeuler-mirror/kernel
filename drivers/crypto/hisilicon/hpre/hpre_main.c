@@ -158,7 +158,6 @@ struct hpre_debugfs_file {
  * Just relevant for PF.
  */
 struct hpre_ctrl {
-	u32 ctrl_q_num;
 	u32 num_vfs;
 	struct hpre *hpre;
 	struct dentry *debug_root;
@@ -767,11 +766,11 @@ static int hpre_pf_probe_init(struct hpre *hpre)
 	ctrl->hpre = hpre;
 	switch (qm->ver) {
 	case QM_HW_V1:
-		ctrl->ctrl_q_num = HPRE_QUEUE_NUM_V1;
+		qm->ctrl_q_num = HPRE_QUEUE_NUM_V1;
 		break;
 
 	case QM_HW_V2:
-		ctrl->ctrl_q_num = HPRE_QUEUE_NUM_V2;
+		qm->ctrl_q_num = HPRE_QUEUE_NUM_V2;
 		break;
 
 	default:
@@ -831,7 +830,6 @@ err_with_qm_init:
 
 static int hpre_vf_q_assign(struct hpre *hpre, int num_vfs)
 {
-	struct hpre_ctrl *ctrl = hpre->ctrl;
 	struct hisi_qm *qm = &hpre->qm;
 	u32 qp_num = qm->qp_num;
 	u32 q_base = qp_num;
@@ -841,7 +839,8 @@ static int hpre_vf_q_assign(struct hpre *hpre, int num_vfs)
 	if (!num_vfs)
 		return -EINVAL;
 
-	remain_q_num = ctrl->ctrl_q_num - qp_num;
+	remain_q_num = qm->ctrl_q_num - qp_num;
+	/* If remain queues not enough, return error. */
 	if (remain_q_num < num_vfs)
 		return -EINVAL;
 
