@@ -732,8 +732,10 @@ static int hisi_zip_vf_q_assign(struct hisi_zip *hisi_zip, int num_vfs)
 		return -EINVAL;
 
 	remain_q_num = ctrl->ctrl_q_num - qp_num;
-	q_num = remain_q_num / num_vfs;
+	if (remain_q_num < num_vfs)
+		return -EINVAL;
 
+	q_num = remain_q_num / num_vfs;
 	for (i = 1; i <= num_vfs; i++) {
 		if (i == num_vfs)
 			q_num += remain_q_num % num_vfs;

@@ -157,6 +157,8 @@
 #define WAIT_PERIOD			20
 #define MAX_WAIT_COUNTS			3
 
+#define QM_MAX_Q_NUM_V2			1024
+
 #define QM_MK_CQC_DW3_V1(hop_num, pg_sz, buf_sz, cqe_sz) \
 	(((hop_num) << QM_CQ_HOP_NUM_SHIFT)	| \
 	((pg_sz) << QM_CQ_PAGE_SIZE_SHIFT)	| \
@@ -601,40 +603,42 @@ static void qm_vft_data_cfg(struct hisi_qm *qm, enum vft_type type, u32 base,
 {
 	u64 tmp = 0;
 
-	switch (type) {
-	case SQC_VFT:
-		switch (qm->ver) {
-		case QM_HW_V1:
-			tmp = QM_SQC_VFT_BUF_SIZE			|
-			      QM_SQC_VFT_SQC_SIZE			|
-			      QM_SQC_VFT_INDEX_NUMBER			|
-			      QM_SQC_VFT_VALID				|
-			      (u64)base << QM_SQC_VFT_START_SQN_SHIFT;
+	if (number > 0) {
+		switch (type) {
+		case SQC_VFT:
+			switch (qm->ver) {
+			case QM_HW_V1:
+				tmp = QM_SQC_VFT_BUF_SIZE |
+				      QM_SQC_VFT_SQC_SIZE |
+				      QM_SQC_VFT_INDEX_NUMBER |
+				      QM_SQC_VFT_VALID |
+				      (u64)base << QM_SQC_VFT_START_SQN_SHIFT;
+				break;
+			case QM_HW_V2:
+				tmp = (u64)base << QM_SQC_VFT_START_SQN_SHIFT |
+				      QM_SQC_VFT_VALID |
+				      (u64)(number - 1) << QM_SQC_VFT_SQN_SHIFT;
+				break;
+			case QM_HW_UNKNOWN:
+				break;
+			}
 			break;
-		case QM_HW_V2:
-			tmp = (u64)(number - 1) << QM_SQC_VFT_SQN_SHIFT	|
-			      QM_SQC_VFT_VALID				|
-			      (u64)base << QM_SQC_VFT_START_SQN_SHIFT;
-			break;
-		case QM_HW_UNKNOWN:
+		case CQC_VFT:
+			switch (qm->ver) {
+			case QM_HW_V1:
+				tmp = QM_CQC_VFT_BUF_SIZE |
+				      QM_CQC_VFT_SQC_SIZE |
+				      QM_CQC_VFT_INDEX_NUMBER |
+				      QM_CQC_VFT_VALID;
+				break;
+			case QM_HW_V2:
+				tmp = QM_CQC_VFT_VALID;
+				break;
+			case QM_HW_UNKNOWN:
+				break;
+			}
 			break;
 		}
-		break;
-	case CQC_VFT:
-		switch (qm->ver) {
-		case QM_HW_V1:
-			tmp = QM_CQC_VFT_BUF_SIZE			|
-			      QM_CQC_VFT_SQC_SIZE			|
-			      QM_CQC_VFT_INDEX_NUMBER			|
-			      QM_CQC_VFT_VALID;
-			break;
-		case QM_HW_V2:
-			tmp = QM_CQC_VFT_VALID;
-			break;
-		case QM_HW_UNKNOWN:
-			break;
-		}
-		break;
 	}
 
 	writel(lower_32_bits(tmp), qm->io_base + QM_VFT_CFG_DATA_L);
@@ -693,7 +697,8 @@ static int qm_get_vft_v2(struct hisi_qm *qm, u32 *base, u32 *number)
 	sqc_vft = readl(qm->io_base + QM_MB_CMD_DATA_ADDR_L) |
 		  ((u64)readl(qm->io_base + QM_MB_CMD_DATA_ADDR_H) << 32);
 	*base = QM_SQC_VFT_BASE_MASK_V2 & (sqc_vft >> QM_SQC_VFT_BASE_SHIFT_V2);
-	*number = QM_SQC_VFT_NUM_MASK_v2 & (sqc_vft >> QM_SQC_VFT_NUM_SHIFT_V2);
+	*number = (QM_SQC_VFT_NUM_MASK_v2 &
+		  (sqc_vft >> QM_SQC_VFT_NUM_SHIFT_V2)) + 1;
 
 	return 0;
 }
@@ -1818,6 +1823,9 @@ EXPORT_SYMBOL_GPL(hisi_qm_get_vft);
 int hisi_qm_set_vft(struct hisi_qm *qm, u32 fun_num, u32 base,
 		    u32 number)
 {
+	if (base >= QM_MAX_Q_NUM_V2 || number > QM_MAX_Q_NUM_V2 ||
+	    (base + number) > QM_MAX_Q_NUM_V2)
+		return -EINVAL;
 	return qm_set_sqc_cqc_vft(qm, fun_num, base, number);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_set_vft);

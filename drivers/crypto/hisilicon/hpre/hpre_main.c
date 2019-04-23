@@ -840,7 +840,11 @@ static int hpre_vf_q_assign(struct hpre *hpre, int num_vfs)
 
 	if (!num_vfs)
 		return -EINVAL;
+
 	remain_q_num = ctrl->ctrl_q_num - qp_num;
+	if (remain_q_num < num_vfs)
+		return -EINVAL;
+
 	q_num = remain_q_num / num_vfs;
 	for (i = 1; i <= num_vfs; i++) {
 		if (i == num_vfs)
