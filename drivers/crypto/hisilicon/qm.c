@@ -436,8 +436,10 @@ static irqreturn_t qm_irq_thread(int irq, void *data)
 	struct hisi_qm *qm = data;
 	struct qm_eqe *eqe = qm->eqe + qm->status.eq_head;
 	struct hisi_qp *qp;
+	int num = 0;
 
 	while (QM_EQE_PHASE(eqe) == qm->status.eqc_phase) {
+		num++;
 		qp = qm_to_hisi_qp(qm, eqe);
 		if (qp)
 			qm_poll_qp(qp, qm);
@@ -449,6 +451,11 @@ static irqreturn_t qm_irq_thread(int irq, void *data)
 		} else {
 			eqe++;
 			qm->status.eq_head++;
+		}
+
+		if (num == QM_Q_DEPTH / 2 - 1) {
+			qm_db(qm, 0, QM_DOORBELL_CMD_EQ, qm->status.eq_head, 0);
+			return IRQ_HANDLED;
 		}
 	}
 
@@ -606,7 +613,7 @@ static void qm_vft_data_cfg(struct hisi_qm *qm, enum vft_type type, u32 base,
 			      (u64)base << QM_SQC_VFT_START_SQN_SHIFT;
 			break;
 		case QM_HW_V2:
-			tmp = (u64)number << QM_SQC_VFT_SQN_SHIFT	|
+			tmp = (u64)(number - 1) << QM_SQC_VFT_SQN_SHIFT	|
 			      QM_SQC_VFT_VALID				|
 			      (u64)base << QM_SQC_VFT_START_SQN_SHIFT;
 			break;
@@ -1975,11 +1982,7 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 		return ret;
 
 	writel(0x0, qm->io_base + QM_VF_EQ_INT_MASK);
-	/*
-	 * fixme: when running 64 queue at same time, aeq irq will be triggered,
-	 *         however, tasks are working well.
-	 */
-	//writel(0x0, qm->io_base + QM_VF_AEQ_INT_MASK);
+	writel(0x0, qm->io_base + QM_VF_AEQ_INT_MASK);
 
 	return 0;
 }
