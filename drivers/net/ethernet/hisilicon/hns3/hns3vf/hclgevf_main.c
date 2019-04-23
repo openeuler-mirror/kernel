@@ -1327,10 +1327,22 @@ static int hclgevf_reset_wait(struct hclgevf_dev *hdev)
 						HCLGEVF_RESET_WAIT_US,
 						HCLGEVF_RESET_WAIT_CNT);
 
-	ret = readl_poll_timeout(hdev->hw.io_base + HCLGEVF_RST_ING, val,
-				 !(val & HCLGEVF_RST_ING_BITS),
-				 HCLGEVF_RESET_WAIT_US,
-				 HCLGEVF_RESET_WAIT_TIMEOUT_US);
+	if (hdev->reset_type == HNAE3_VF_RESET) {
+		ret = readl_poll_timeout(hdev->hw.io_base +
+					 HCLGEVF_VF_RST_ING, val,
+					 (val & HCLGEVF_VF_RST_ING_BIT),
+					 HCLGEVF_RESET_WAIT_US,
+					 HCLGEVF_RESET_WAIT_TIMEOUT_US);
+		val = hclgevf_read_dev(&hdev->hw, HCLGEVF_RST_ING);
+		hclgevf_write_dev(&hdev->hw, HCLGEVF_VF_RST_ING,
+				  val & ~HCLGEVF_VF_RST_ING_BIT);
+	} else {
+		ret = readl_poll_timeout(hdev->hw.io_base +
+					 HCLGEVF_RST_ING, val,
+					 !(val & HCLGEVF_RST_ING_BITS),
+					 HCLGEVF_RESET_WAIT_US,
+					 HCLGEVF_RESET_WAIT_TIMEOUT_US);
+	}
 
 	/* hardware completion status should be available by this time */
 	if (ret) {

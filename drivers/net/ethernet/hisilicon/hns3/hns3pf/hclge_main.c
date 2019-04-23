@@ -2435,9 +2435,10 @@ static irqreturn_t hclge_misc_irq_handle(int irq, void *data)
 		break;
 	}
 
+	hclge_clear_event_cause(hdev, event_cause, clearval);
+
 	/* clear the source of interrupt if it is not cause by reset */
 	if (event_cause == HCLGE_VECTOR0_EVENT_MBX) {
-		hclge_clear_event_cause(hdev, event_cause, clearval);
 		hclge_enable_vector(&hdev->misc_vector, true);
 	}
 
@@ -2763,22 +2764,21 @@ enum hnae3_reset_type hclge_get_reset_level(struct hclge_dev *hdev,
 
 static void hclge_clear_reset_cause(struct hclge_dev *hdev)
 {
-	u32 clearval = 0;
+	bool irq_en = false;
 
 	switch (hdev->reset_type) {
 	case HNAE3_IMP_RESET:
-		clearval = BIT(HCLGE_VECTOR0_IMPRESET_INT_B);
+		/* fall through */
 	case HNAE3_GLOBAL_RESET:
-		clearval |= BIT(HCLGE_VECTOR0_GLOBALRESET_INT_B);
+		irq_en = true;
 		break;
 	default:
 		break;
 	}
 
-	if (!clearval)
+	if (!irq_en)
 		return;
 
-	hclge_write_dev(&hdev->hw, HCLGE_MISC_RESET_STS_REG, clearval);
 	hclge_enable_vector(&hdev->misc_vector, true);
 }
 
@@ -2895,6 +2895,18 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev, bool is_timeout)
 	return false;
 }
 
+static int hclge_set_rst_done(struct hclge_dev *hdev)
+{
+	struct hclge_pf_rst_done_cmd *req;
+	struct hclge_desc desc;
+
+	req = (struct hclge_pf_rst_done_cmd *)desc.data;
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_PF_RST_DONE, false);
+	req->pf_rst_done |= HCLGE_PF_RESET_DONE_BIT;
+
+	return hclge_cmd_send(&hdev->hw, &desc, 1);
+}
+
 static int hclge_reset_prepare_up(struct hclge_dev *hdev)
 {
 	int ret = 0;
@@ -2904,6 +2916,11 @@ static int hclge_reset_prepare_up(struct hclge_dev *hdev)
 		/* fall through */
 	case HNAE3_FLR_RESET:
 		ret = hclge_set_all_vf_rst(hdev, false);
+		break;
+	case HNAE3_GLOBAL_RESET:
+		/* fall through */
+	case HNAE3_IMP_RESET:
+		hclge_set_rst_done(hdev);
 		break;
 	default:
 		break;
@@ -8121,12 +8138,12 @@ static void hclge_state_uninit(struct hclge_dev *hdev)
 
 	if (hdev->service_timer.function)
 		del_timer_sync(&hdev->service_timer);
-	if (hdev->reset_timer.function)
-		del_timer_sync(&hdev->reset_timer);
 	if (hdev->service_task.func)
 		cancel_work_sync(&hdev->service_task);
 	if (hdev->rst_service_task.func)
 		cancel_work_sync(&hdev->rst_service_task);
+	if (hdev->reset_timer.function)
+		del_timer_sync(&hdev->reset_timer);
 	if (hdev->mbx_service_task.func)
 		cancel_work_sync(&hdev->mbx_service_task);
 }
