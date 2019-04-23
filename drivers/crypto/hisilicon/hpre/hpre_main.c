@@ -705,8 +705,12 @@ static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	enum qm_hw_ver rev_id;
 
 	rev_id = hisi_qm_get_hw_version(pdev);
-	if (rev_id < 0)
+	if (rev_id < 0) {
 		return -ENODEV;
+	} else if (rev_id == QM_HW_V1) {
+		dev_warn(&pdev->dev, "HPRE version 1 is not supported!\n");
+		return -EINVAL;
+	}
 	qm->pdev = pdev;
 	qm->ver = rev_id;
 	qm->sqe_size = HPRE_SQE_SIZE;
