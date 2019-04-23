@@ -1064,30 +1064,35 @@ static int uacce_set_iommu_domain(struct uacce *uacce)
 	 * We don't support multiple register for the same dev in RFC version ,
 	 * will add it in formal version
 	 */
-	ret = class_for_each_device(uacce_class, NULL, uacce->pdev,
-				    uacce_dev_match);
-	if (ret)
+	ret = class_for_each_device(uacce_class, NULL, dev, uacce_dev_match);
+	if (ret) {
+		dev_err(dev, "no matching device in uacce class!\n");
 		return ret;
+	}
 
 	/* allocate and attach a unmanged domain */
-	domain = iommu_domain_alloc(uacce->pdev->bus);
+	domain = iommu_domain_alloc(dev->bus);
 	if (!domain) {
-		dev_dbg(&uacce->dev, "cannot get domain for iommu\n");
+		dev_err(dev, "fail to allocate domain on its bus\n");
 		return -ENODEV;
 	}
 
-	ret = iommu_attach_device(domain, uacce->pdev);
-	if (ret)
+	ret = iommu_attach_device(domain, dev);
+	if (ret) {
+		dev_err(dev, "iommu attach device failing!\n");
 		goto err_with_domain;
+	}
 
 	if (iommu_capable(dev->bus, IOMMU_CAP_CACHE_COHERENCY)) {
 		uacce->prot |= IOMMU_CACHE;
 		dev_dbg(dev, "Enable uacce with c-coherent capa\n");
-	} else
+	} else {
 		dev_dbg(dev, "Enable uacce without c-coherent capa\n");
+	}
 
 	group = iommu_group_get(dev);
 	if (!group) {
+		dev_err(dev, "fail to get iommu group!\n");
 		ret = -EINVAL;
 		goto err_with_domain;
 	}
@@ -1098,16 +1103,18 @@ static int uacce_set_iommu_domain(struct uacce *uacce)
 	if (resv_msi) {
 		if (!irq_domain_check_msi_remap() &&
 			!iommu_capable(dev->bus, IOMMU_CAP_INTR_REMAP)) {
-			dev_warn(dev, "No interrupt remapping support!");
+			dev_err(dev, "No interrupt remapping support!\n");
 			ret = -EPERM;
 			goto err_with_domain;
 		}
 
-		dev_dbg(dev, "Set resv msi %llx on iommu domain\n",
+		dev_dbg(dev, "Set resv msi %llx on iommu domain!\n",
 			(u64) resv_msi_base);
 		ret = iommu_get_msi_cookie(domain, resv_msi_base);
-		if (ret)
+		if (ret) {
+			dev_err(dev, "fail to get msi cookie from domain!\n");
 			goto err_with_domain;
+		}
 	}
 
 	return 0;
@@ -1120,16 +1127,17 @@ static int uacce_set_iommu_domain(struct uacce *uacce)
 static void uacce_unset_iommu_domain(struct uacce *uacce)
 {
 	struct iommu_domain *domain;
+	struct device *dev = uacce->pdev;
 
 	if (uacce->ops->flags & UACCE_DEV_NOIOMMU)
 		return;
 
-	domain = iommu_get_domain_for_dev(uacce->pdev);
+	domain = iommu_get_domain_for_dev(dev);
 	if (domain) {
-		iommu_detach_device(domain, uacce->pdev);
+		iommu_detach_device(domain, dev);
 		iommu_domain_free(domain);
 	} else {
-		dev_err(&uacce->dev, "bug: no domain attached to device\n");
+		dev_err(dev, "no domain attached to device\n");
 	}
 }
 #endif
@@ -1141,15 +1149,16 @@ static void uacce_unset_iommu_domain(struct uacce *uacce)
 int uacce_register(struct uacce *uacce)
 {
 	int ret;
+	struct device *dev = uacce->pdev;
 
 	if (!uacce->pdev) {
-		pr_debug("uacce parent device not set\n");
+		pr_err("uacce parent device not set\n");
 		return -ENODEV;
 	}
 
 	if (uacce->ops->flags & UACCE_DEV_NOIOMMU) {
 		add_taint(TAINT_CRAP, LOCKDEP_STILL_OK);
-		dev_warn(uacce->pdev, "device register to noiommu mode, "
+		dev_warn(dev, "register to noiommu mode, "
 			 "this may export kernel data to user space and "
 			 "open the kernel for user attacked");
 	}
@@ -1157,7 +1166,7 @@ int uacce_register(struct uacce *uacce)
 	/* if dev support fault-from-dev, it should support pasid */
 	if ((uacce->ops->flags & UACCE_DEV_FAULT_FROM_DEV) &&
 	    !(uacce->ops->flags & UACCE_DEV_PASID)) {
-		dev_warn(&uacce->dev, "SVM/SAV device should support PASID\n");
+		dev_warn(dev, "SVM/SAV device should support PASID\n");
 		return -EINVAL;
 	}
 
@@ -1177,14 +1186,17 @@ int uacce_register(struct uacce *uacce)
 	mutex_lock(&uacce_mutex);
 
 	ret = uacce_create_chrdev(uacce);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "uacce creates cdev fail!\n");
 		goto err_with_lock;
+	}
 
 	if (uacce->ops->flags & UACCE_DEV_PASID) {
 #ifdef CONFIG_IOMMU_SVA
 		ret = iommu_sva_init_device(uacce->pdev, IOMMU_SVA_FEAT_IOPF,
 					    0, 0, NULL);
 		if (ret) {
+			dev_err(dev, "uacce sva init fail!\n");
 			uacce_destroy_chrdev(uacce);
 			goto err_with_lock;
 		}
@@ -1194,7 +1206,7 @@ int uacce_register(struct uacce *uacce)
 #endif
 	}
 
-	dev_dbg(&uacce->dev, "uacce state initialized to INIT\n");
+	dev_dbg(dev, "uacce state initialized to INIT\n");
 	atomic_set(&uacce->state, UACCE_ST_INIT);
 	atomic_set(&uacce->ref, 0);
 	mutex_unlock(&uacce_mutex);
