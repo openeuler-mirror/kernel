@@ -4,3 +4,4 @@ obj-$(CONFIG_CRYPTO_DEV_HISI_QM) += qm.o
 obj-$(CONFIG_CRYPTO_DEV_HISI_ZIP) += zip/
 obj-$(CONFIG_CRYPTO_DEV_HISI_HPRE) += hpre/
 obj-$(CONFIG_CRYPTO_DEV_HISI_SEC2) += sec2/
+obj-$(CONFIG_CRYPTO_DEV_HISI_RDE) += rde/
