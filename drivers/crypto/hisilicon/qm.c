@@ -1531,6 +1531,11 @@ static int qm_register_uacce(struct hisi_qm *qm)
 	uacce->ops = &uacce_qm_ops;
 	uacce->algs = qm->algs;
 
+	if (qm->ver == QM_HW_V1)
+		uacce->ops->api_ver = HISI_QM_API_VER_BASE;
+	else
+		uacce->ops->api_ver = HISI_QM_API_VER2_BASE;
+
 	if (qm->use_dma_api) {
 		/*
 		 * Noiommu, SVA, and crypto-only modes are all using dma api.
@@ -1540,7 +1545,6 @@ static int qm_register_uacce(struct hisi_qm *qm)
 		if (qm->use_sva) {
 			uacce->ops->flags = UACCE_DEV_SVA |
 					    UACCE_DEV_DRVMAP_DUS;
-			uacce->ops->api_ver = HISI_QM_API_VER_BASE;
 		} else {
 
 			uacce->ops->flags = UACCE_DEV_NOIOMMU |
@@ -1552,11 +1556,6 @@ static int qm_register_uacce(struct hisi_qm *qm)
 				uacce->ops->api_ver = HISI_QM_API_VER2_BASE
 						UACCE_API_VER_NOIOMMU_SUBFIX;
 		}
-	} else {
-		if (qm->ver == QM_HW_V1)
-			uacce->ops->api_ver = HISI_QM_API_VER_BASE;
-		else
-			uacce->ops->api_ver = HISI_QM_API_VER2_BASE;
 	}
 
 	for (i = 0; i < UACCE_QFRT_MAX; i++)
