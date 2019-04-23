@@ -47,6 +47,9 @@
 #define HCLGE_NCSI_ERR_INT_TYPE	0x9
 #define HCLGE_MAC_COMMON_ERR_INT_EN		0x107FF
 #define HCLGE_MAC_COMMON_ERR_INT_EN_MASK	0x107FF
+#define HCLGE_MAC_TNL_INT_EN			GENMASK(7, 0)
+#define HCLGE_MAC_TNL_INT_EN_MASK		GENMASK(7, 0)
+#define HCLGE_MAC_TNL_INT_CLR			GENMASK(7, 0)
 #define HCLGE_PPU_MPF_ABNORMAL_INT0_EN		GENMASK(31, 0)
 #define HCLGE_PPU_MPF_ABNORMAL_INT0_EN_MASK	GENMASK(31, 0)
 #define HCLGE_PPU_MPF_ABNORMAL_INT1_EN		GENMASK(31, 0)
@@ -146,6 +149,7 @@ extern const struct hclge_hw_error hclge_ssu_ets_tcg_int[];
 extern const struct hclge_hw_error hclge_ssu_port_based_pf_int[];
 extern const struct hclge_hw_error hclge_rocee_qmm_ovf_err_int[];
 
+int hclge_config_mac_tnl_int(struct hclge_dev *hdev, bool en);
 int hclge_hw_error_set_state(struct hclge_dev *hdev, bool state);
 int hclge_clear_all_ras_errors(struct hclge_dev *hdev);
 pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev);
@@ -162,5 +166,4 @@ int hclge_clear_error(struct hclge_dev *hdev, struct hclge_desc *desc, int num);
 struct hclge_desc *hclge_query_bd_num(struct hclge_dev *hdev,
 				      struct hclge_bd_num *bd_num,
 				      enum hclge_opcode_type opcode);
-
 #endif
