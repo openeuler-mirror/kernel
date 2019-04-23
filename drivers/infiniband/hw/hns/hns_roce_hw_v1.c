@@ -2526,19 +2526,18 @@ static void hns_roce_v1_clear_hem(struct hns_roce_dev *hr_dev,
 
 	bt_cmd = hr_dev->reg_base + ROCEE_BT_CMD_H_REG;
 
-	end = msecs_to_jiffies(HW_SYNC_TIMEOUT_MSECS) + jiffies;
-	while (1) {
-		if (readl(bt_cmd) >> BT_CMD_SYNC_SHIFT) {
-			if (!(time_before(jiffies, end))) {
-				dev_err(dev, "Write bt_cmd err,hw_sync is not zero.\n");
-				spin_unlock_irqrestore(&hr_dev->bt_cmd_lock,
-					flags);
-				return;
-			}
-		} else {
+	end = HW_SYNC_TIMEOUT_MSECS;
+	while (end > 0) {
+		if (!(readl(bt_cmd) >> BT_CMD_SYNC_SHIFT))
 			break;
-		}
-		msleep(HW_SYNC_SLEEP_TIME_INTERVAL);
+
+		mdelay(HW_SYNC_SLEEP_TIME_INTERVAL);
+		end -= HW_SYNC_SLEEP_TIME_INTERVAL;
+	}
+	if (end <= 0) {
+		dev_err(dev, "Write bt_cmd err,hw_sync is not zero.\n");
+		spin_unlock_irqrestore(&hr_dev->bt_cmd_lock, flags);
+		return;
 	}
 
 	bt_cmd_val[0] = cpu_to_le32(bt_ba);
