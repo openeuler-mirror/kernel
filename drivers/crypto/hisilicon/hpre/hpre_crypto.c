@@ -175,7 +175,7 @@ static struct hisi_qp *hpre_get_qp(void)
 		return ERR_PTR(-ENODEV);
 	}
 	qp = hisi_qm_create_qp(&hpre->qm, 0);
-	if (!qp) {
+	if (IS_ERR(qp)) {
 		dev_err(&hpre->qm.pdev->dev, "Can not create qp!\n");
 		return ERR_PTR(-ENODEV);
 	}
