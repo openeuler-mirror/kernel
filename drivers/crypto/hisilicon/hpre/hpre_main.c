@@ -233,7 +233,7 @@ static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 
 #define _TO_DECIMAL	10
 	ret = kstrtou32(val, _TO_DECIMAL, &n);
-	if (ret != 0 || n > q_num)
+	if (ret != 0 || n == 0 || n > q_num)
 		return -EINVAL;
 
 	return param_set_int(val, kp);
