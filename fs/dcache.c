@@ -318,6 +318,8 @@ static inline void __d_set_inode_and_type(struct dentry *dentry,
 	unsigned flags;
 
 	dentry->d_inode = inode;
+	/* paired with smp_rmb() in lookup_fast() */
+	smp_wmb();
 	flags = READ_ONCE(dentry->d_flags);
 	flags &= ~(DCACHE_ENTRY_TYPE | DCACHE_FALLTHRU);
 	flags |= type_flags;

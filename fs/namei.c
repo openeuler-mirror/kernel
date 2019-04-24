@@ -1630,6 +1630,13 @@ static int lookup_fast(struct nameidata *nd,
 		return -ENOENT;
 	}
 
+	/*
+	 * Paired with smp_wmb() in __d_set_inode_and_type() to ensure
+	 * d_backing_inode is not NULL after the checking of d_flags
+	 * in d_is_negative() completes.
+	 */
+	smp_rmb();
+
 	path->mnt = mnt;
 	path->dentry = dentry;
 	err = follow_managed(path, nd);
