@@ -540,11 +540,11 @@ static int hisi_rde_pf_probe_init(struct hisi_rde *hisi_rde)
 
 	switch (qm->ver) {
 	case QM_HW_V1:
-		ctrl->ctrl_q_num = HRDE_QUEUE_NUM_V1;
+		qm->ctrl_q_num = HRDE_QUEUE_NUM_V1;
 		break;
 
 	case QM_HW_V2:
-		ctrl->ctrl_q_num = HRDE_QUEUE_NUM_V2;
+		qm->ctrl_q_num = HRDE_QUEUE_NUM_V2;
 		break;
 
 	default:

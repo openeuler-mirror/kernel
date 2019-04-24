@@ -806,11 +806,11 @@ static int hisi_sec_pf_probe_init(struct hisi_sec *hisi_sec)
 
 	switch (qm->ver) {
 	case QM_HW_V1:
-		ctrl->ctrl_q_num = HSEC_QUEUE_NUM_V1;
+		qm->ctrl_q_num = HSEC_QUEUE_NUM_V1;
 		break;
 
 	case QM_HW_V2:
-		ctrl->ctrl_q_num = HSEC_QUEUE_NUM_V2;
+		qm->ctrl_q_num = HSEC_QUEUE_NUM_V2;
 		break;
 
 	default:
