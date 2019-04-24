@@ -263,6 +263,11 @@ int ima_appraise_measurement(enum ima_hooks func,
 		hash_start = 1;
 		/* fall through */
 	case IMA_XATTR_DIGEST:
+		if (rc < IMA_DIGEST_SIZE) {
+			cause = "invalid-hash";
+			status = INTEGRITY_FAIL;
+			break;
+		}
 		if (iint->flags & IMA_DIGSIG_REQUIRED) {
 			cause = "IMA-signature-required";
 			status = INTEGRITY_FAIL;
