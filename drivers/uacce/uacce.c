@@ -635,7 +635,6 @@ static int uacce_fops_flush(struct file *filep, fl_owner_t id)
 {
 	struct uacce_queue *q = filep->private_data;
 	struct uacce *uacce = q->uacce;
-	filep->private_data = NULL;
 
 	/*
 	 * It is different between CI and kernel-dev here, so delete list
@@ -647,6 +646,9 @@ static int uacce_fops_flush(struct file *filep, fl_owner_t id)
 	mutex_lock(&uacce->q_lock);
 	list_del(&q->q_dev);
 	mutex_unlock(&uacce->q_lock);
+
+	/* filep->private_date is still used by above uacce_fops_fasync */
+	filep->private_data = NULL;
 
 	return uacce_queue_drain(q);
 }
