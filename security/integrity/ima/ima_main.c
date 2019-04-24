@@ -288,6 +288,9 @@ static int process_measurement(struct file *file, const struct cred *cred,
 	if (!pathbuf)	/* ima_rdwr_violation possibly pre-fetched */
 		pathname = ima_d_path(&file->f_path, &pathbuf, filename);
 
+	if (!pathname || strlen(pathname) > IMA_EVENT_NAME_LEN_MAX)
+		pathname = file->f_path.dentry->d_name.name;
+
 	if (action & IMA_MEASURE)
 		ima_store_measurement(iint, file, pathname,
 				      xattr_value, xattr_len, pcr);
