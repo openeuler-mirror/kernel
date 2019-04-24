@@ -38,7 +38,7 @@ int ima_appraise = IMA_APPRAISE_ENFORCE;
 int ima_appraise;
 #endif
 
-int ima_hash_algo = HASH_ALGO_SHA1;
+int ima_hash_algo = HASH_ALGO_SHA256;
 static int hash_setup_done;
 
 static int __init hash_setup(char *str)

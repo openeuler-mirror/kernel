@@ -658,7 +658,8 @@ static void __init ima_pcrread(int idx, u8 *pcr)
 static int __init ima_calc_boot_aggregate_tfm(char *digest,
 					      struct crypto_shash *tfm)
 {
-	u8 pcr_i[TPM_DIGEST_SIZE];
+	/*to be compatible with tpm1.2 ,make sure the content is not arbitrary*/
+	u8 pcr_i[IMA_DIGEST_SIZE] = {0};
 	int rc, i;
 	SHASH_DESC_ON_STACK(shash, tfm);
 

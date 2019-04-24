@@ -38,7 +38,7 @@ static DEFINE_MUTEX(mutex);
 
 static unsigned long evm_set_key_flags;
 
-static char * const evm_hmac = "hmac(sha1)";
+static char * const evm_hmac = "hmac(sha256)";
 
 /**
  * evm_set_key() - set EVM HMAC key from the kernel
