@@ -15,7 +15,6 @@
 #include "hpre.h"
 
 #define HPRE_VF_NUM			63
-#define HPRE_QUEUE_NUM_V1		4096
 #define HPRE_QUEUE_NUM_V2		1024
 #define HPRE_QM_ABNML_INT_MASK		0x100004
 #define HPRE_CTRL_CNT_CLR_CE_BIT	BIT(0)
@@ -211,21 +210,15 @@ static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 		return -EINVAL;
 	pdev = pci_get_device(PCI_VENDOR_ID_HUAWEI, HPRE_PCI_DEVICE_ID, NULL);
 	if (unlikely(!pdev)) {
-		q_num = min_t(u32, HPRE_QUEUE_NUM_V1, HPRE_QUEUE_NUM_V2);
+		q_num = HPRE_QUEUE_NUM_V2;
 		pr_info("No device found currently, suppose queue number is %d\n",
 			q_num);
 	} else {
 		rev_id = pdev->revision;
-		switch (rev_id) {
-		case QM_HW_VER1_ID:
-			q_num = HPRE_QUEUE_NUM_V1;
-			break;
-		case QM_HW_VER2_ID:
+		if (rev_id == QM_HW_VER2_ID)
 			q_num = HPRE_QUEUE_NUM_V2;
-			break;
-		default:
+		else
 			return -EINVAL;
-		}
 	}
 
 #define _TO_DECIMAL	10
@@ -243,7 +236,7 @@ static const struct kernel_param_ops pf_q_num_ops = {
 
 static u32 pf_q_num = HPRE_PF_DEF_Q_NUM;
 module_param_cb(pf_q_num, &pf_q_num_ops, &pf_q_num, 0444);
-MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 1-4096, v2 1-1024)");
+MODULE_PARM_DESC(pf_q_num, "Number of queues in PF of CS(1-1024)");
 
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param(uacce_mode, int, 0444);
