@@ -331,8 +331,8 @@ static struct uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 						qfr->nr_pages << PAGE_SHIFT,
 						&qfr->dma, GFP_KERNEL);
 		if (!qfr->kaddr) {
-			goto err_with_qfr;
 			ret = -ENOMEM;
+			goto err_with_qfr;
 		}
 	} else {
 		dev_dbg(uacce->pdev, "allocate %d pages\n", qfr->nr_pages);
@@ -996,7 +996,7 @@ uacce_dev_show_algorithms(struct device *dev,
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
-	return sprintf(buf, uacce->algs);
+	return sprintf(buf, "%s", uacce->algs);
 }
 
 static DEVICE_ATTR(algorithms, S_IRUGO, uacce_dev_show_algorithms, NULL);

@@ -372,6 +372,7 @@ static int hpre_msg_comm_set(struct hpre_ctx *ctx, void *req, int is_rsa)
 	struct kpp_request *kreq = req;
 	struct akcipher_request *akreq = req;
 	int req_id;
+	void *tmp;
 
 	if (!req || !ctx)
 		return -EINVAL;
@@ -380,7 +381,8 @@ static int hpre_msg_comm_set(struct hpre_ctx *ctx, void *req, int is_rsa)
 			akreq->dst_len = ctx->key_sz;
 			return -EOVERFLOW;
 		}
-		h_req = PTR_ALIGN(akcipher_request_ctx(akreq), HPRE_ALIGN_SZ);
+		tmp = akcipher_request_ctx(akreq);
+		h_req = PTR_ALIGN(tmp, HPRE_ALIGN_SZ);
 		h_req->cb = _rsa_cb;
 		h_req->areq.rsa = akreq;
 		msg = &h_req->req;
@@ -390,7 +392,8 @@ static int hpre_msg_comm_set(struct hpre_ctx *ctx, void *req, int is_rsa)
 			kreq->dst_len = ctx->key_sz;
 			return -EOVERFLOW;
 		}
-		h_req = PTR_ALIGN(kpp_request_ctx(kreq), HPRE_ALIGN_SZ);
+		tmp = kpp_request_ctx(kreq);
+		h_req = PTR_ALIGN(tmp, HPRE_ALIGN_SZ);
 		h_req->cb = _dh_cb;
 		h_req->areq.dh = kreq;
 		msg = &h_req->req;
@@ -413,8 +416,8 @@ static int hpre_dh_compute_value(struct kpp_request *req)
 {
 	struct crypto_kpp *tfm = crypto_kpp_reqtfm(req);
 	struct hpre_ctx *ctx = kpp_tfm_ctx(tfm);
-	struct hpre_asym_request *hpre_req =
-		PTR_ALIGN(kpp_request_ctx(req), HPRE_ALIGN_SZ);
+	void *tmp = kpp_request_ctx(req);
+	struct hpre_asym_request *hpre_req = PTR_ALIGN(tmp, HPRE_ALIGN_SZ);
 	struct hpre_sqe *msg = &hpre_req->req;
 	int ret;
 	int ctr = 0;
@@ -606,8 +609,8 @@ static int hpre_rsa_enc(struct akcipher_request *req)
 {
 	struct crypto_akcipher *tfm = crypto_akcipher_reqtfm(req);
 	struct hpre_ctx *ctx = akcipher_tfm_ctx(tfm);
-	struct hpre_asym_request *hpre_req =
-		PTR_ALIGN(akcipher_request_ctx(req), HPRE_ALIGN_SZ);
+	void *tmp = akcipher_request_ctx(req);
+	struct hpre_asym_request *hpre_req = PTR_ALIGN(tmp, HPRE_ALIGN_SZ);
 	struct hpre_sqe *msg = &hpre_req->req;
 	int ret;
 	int ctr = 0;
@@ -649,8 +652,8 @@ static int hpre_rsa_dec(struct akcipher_request *req)
 {
 	struct crypto_akcipher *tfm = crypto_akcipher_reqtfm(req);
 	struct hpre_ctx *ctx = akcipher_tfm_ctx(tfm);
-	struct hpre_asym_request *hpre_req =
-		PTR_ALIGN(akcipher_request_ctx(req), HPRE_ALIGN_SZ);
+	void *tmp = akcipher_request_ctx(req);
+	struct hpre_asym_request *hpre_req = PTR_ALIGN(tmp, HPRE_ALIGN_SZ);
 	struct hpre_sqe *msg = &hpre_req->req;
 	int ret;
 	int ctr = 0;
