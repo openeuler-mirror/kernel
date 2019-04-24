@@ -739,10 +739,8 @@ static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	if (pdev->is_physfn) {
 		qm->qp_base = HPRE_PF_DEF_Q_BASE;
 		qm->qp_num = pf_q_num;
-	} else if (qm->fun_type == QM_HW_VF && qm->ver == QM_HW_V1) {
-		qm->qp_base = HPRE_PF_DEF_Q_NUM;
-		qm->qp_num = HPRE_QUEUE_NUM_V1 - HPRE_PF_DEF_Q_NUM;
 	}
+
 	return 0;
 }
 
@@ -764,18 +762,11 @@ static int hpre_pf_probe_init(struct hpre *hpre)
 		return -ENOMEM;
 	hpre->ctrl = ctrl;
 	ctrl->hpre = hpre;
-	switch (qm->ver) {
-	case QM_HW_V1:
-		qm->ctrl_q_num = HPRE_QUEUE_NUM_V1;
-		break;
-
-	case QM_HW_V2:
+	if (qm->ver == QM_HW_V2)
 		qm->ctrl_q_num = HPRE_QUEUE_NUM_V2;
-		break;
-
-	default:
+	else
 		return -EINVAL;
-	}
+
 	ret = hpre_set_user_domain_and_cache(hpre);
 	if (ret)
 		return ret;
