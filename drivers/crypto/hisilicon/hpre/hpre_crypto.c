@@ -579,7 +579,7 @@ static void _rsa_cb(struct hpre_ctx *ctx, void *resp)
 	akcipher_request_complete(areq, ret);
 }
 
-static unsigned long hpre_rsa_key_size_check(unsigned int len)
+static int hpre_rsa_key_size_check(unsigned int len)
 {
 	unsigned int bitslen = len << HPRE_BITS_2_BYTES_SHIFT;
 
@@ -599,7 +599,7 @@ static unsigned long hpre_rsa_key_size_check(unsigned int len)
 		return 0;
 	default:
 		return -1;
-	};
+	}
 }
 
 static int hpre_rsa_enc(struct akcipher_request *req)

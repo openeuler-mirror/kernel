@@ -277,7 +277,7 @@ uacce_queue_mmap_qfr(struct uacce_queue *q,
 			page_ref_count(qfr->pages[0]));
 	for (i = 0; i < qfr->nr_pages; i++) {
 		get_page(qfr->pages[i]);
-		ret = remap_pfn_range(vma, vma->vm_start + (i << PAGE_SHIFT),
+		ret = remap_pfn_range(vma, vma->vm_start + i * PAGE_SIZE,
 				      page_to_pfn(qfr->pages[i]), PAGE_SIZE,
 				      vma->vm_page_prot);
 		if (ret)
@@ -294,8 +294,7 @@ uacce_queue_mmap_qfr(struct uacce_queue *q,
 
 static struct uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 						struct vm_area_struct *vma,
-						enum uacce_qfrt type,
-						int flags)
+						enum uacce_qfrt type, u32 flags)
 {
 	struct uacce_qfile_region *qfr;
 	struct uacce *uacce = q->uacce;
@@ -491,7 +490,7 @@ static int uacce_start_queue(struct uacce_queue *q)
 
  err_with_vmap:
 	for (j = i; j >= 0; j--) {
-		qfr = q->qfrs[i];
+		qfr = q->qfrs[j];
 		if (qfr && qfr->kaddr) {
 			vunmap(qfr->kaddr);
 			qfr->kaddr = NULL;
@@ -801,7 +800,8 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 	struct uacce *uacce = q->uacce;
 	enum uacce_qfrt type;
 	struct uacce_qfile_region *qfr;
-	int flags = 0, ret;
+	unsigned int flags = 0;
+	int ret;
 
 	type = uacce_get_region_type(uacce, vma);
 	if (type == UACCE_QFRT_INVALID)

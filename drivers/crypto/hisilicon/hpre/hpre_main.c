@@ -566,7 +566,7 @@ static int hpre_create_debugfs_file(struct hpre_ctrl *ctrl, struct dentry *dir,
 	else
 		file_dir = ctrl->debug_root;
 
-	if (type > HPRE_DEBUG_FILE_NUM)
+	if (type >= HPRE_DEBUG_FILE_NUM)
 		return -EINVAL;
 
 	spin_lock_init(&ctrl->files[indx].lock);
