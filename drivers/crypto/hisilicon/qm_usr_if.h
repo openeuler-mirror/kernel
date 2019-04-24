@@ -8,10 +8,11 @@
 #define QM_Q_DEPTH			1024
 
 /* page number for queue file region */
-#define QM_DOORBELL_PAGE_NR	1
+#define QM_DOORBELL_PAGE_NR		1
 
 
-#define QM_DOORBELL_OFFSET      0x340
+#define QM_DOORBELL_OFFSET		0x340
+#define QM_V2_DOORBELL_OFFSET		0x1000
 
 struct cqe {
 	__le32 rsvd0;
