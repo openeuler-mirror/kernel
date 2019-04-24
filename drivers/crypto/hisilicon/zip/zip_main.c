@@ -718,7 +718,7 @@ err_remove_from_list:
 }
 
 /* now we only support equal assignment */
-static int hisi_zip_vf_q_assign(struct hisi_zip *hisi_zip, int num_vfs)
+static int hisi_zip_vf_q_assign(struct hisi_zip *hisi_zip, u32 num_vfs)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
 	u32 qp_num = qm->qp_num;

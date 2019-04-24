@@ -255,7 +255,7 @@ static int qm_wait_mb_ready(struct hisi_qm *qm)
 }
 
 /* 128 bit should be wrote to hardware at one time to trigger a mailbox */
-static void qm_mb_write(struct hisi_qm *qm, void *src)
+static void qm_mb_write(struct hisi_qm *qm, const void *src)
 {
 	void __iomem *fun_base = qm->io_base + QM_MB_CMD_SEND_BASE;
 	unsigned long tmp0 = 0, tmp1 = 0;
@@ -646,7 +646,8 @@ static void qm_vft_data_cfg(struct hisi_qm *qm, enum vft_type type, u32 base,
 static int qm_set_vft_common(struct hisi_qm *qm, enum vft_type type,
 			     u32 fun_num, u32 base, u32 number)
 {
-	int val, ret;
+	int ret;
+	unsigned int val;
 
 	ret = readl_relaxed_poll_timeout(qm->io_base + QM_VFT_CFG_RDY, val,
 					 val & BIT(0), POLL_PERIOD,
@@ -1305,7 +1306,7 @@ EXPORT_SYMBOL_GPL(hisi_qm_stop_qp);
  * This function will return -EBUSY if qp is currently full, and -EAGAIN
  * if qp related qm is resetting.
  */
-int hisi_qp_send(struct hisi_qp *qp, void *msg)
+int hisi_qp_send(struct hisi_qp *qp, const void *msg)
 {
 	struct hisi_qp_status *qp_status = &qp->qp_status;
 	u16 sq_tail = qp_status->sq_tail;
@@ -1358,7 +1359,7 @@ EXPORT_SYMBOL_GPL(hisi_qp_wait);
 
 static void hisi_qm_cache_wb(struct hisi_qm *qm)
 {
-	int val;
+	unsigned int val;
 
 	if (qm->ver == QM_HW_V2) {
 		writel(0x1, qm->io_base + QM_CACHE_WB_START);
@@ -2243,7 +2244,7 @@ void hisi_qm_clear_queues(struct hisi_qm *qm)
 	struct hisi_qp *qp;
 	int i;
 
-	for (i = 0; i < qm->qp_num; i++, qp++) {
+	for (i = 0; i < qm->qp_num; i++) {
 		qp = qm->qp_array[i];
 		if (qp) {
 			memset(qp->qdma.va, 0, qp->qdma.size);
