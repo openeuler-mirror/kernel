@@ -376,13 +376,13 @@ static int trusted_tpm_send(unsigned char *cmd, size_t buflen)
  */
 static int pcrlock(const int pcrnum)
 {
-	unsigned char hash[SHA1_DIGEST_SIZE];
+	unsigned char hash[SHA256_DIGEST_SIZE];
 	int ret;
 
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
-	ret = tpm_get_random(NULL, hash, SHA1_DIGEST_SIZE);
-	if (ret != SHA1_DIGEST_SIZE)
+	ret = tpm_get_random(NULL, hash, SHA256_DIGEST_SIZE);
+	if (ret != SHA256_DIGEST_SIZE)
 		return ret;
 	return tpm_pcr_extend(NULL, pcrnum, hash) ? -EINVAL : 0;
 }
