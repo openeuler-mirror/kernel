@@ -940,6 +940,11 @@ static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 		return ret;
 	}
 
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		uacce_reset_prepare(&qm->uacce);
+#endif
+
 	return 0;
 }
 
@@ -1033,6 +1038,11 @@ static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 
 	/* Clear VF MSE bit */
 	hisi_zip_set_mse(hisi_zip, 1);
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		uacce_reset_done(&qm->uacce);
+#endif
 
 	return 0;
 }
