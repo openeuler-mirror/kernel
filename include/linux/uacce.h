@@ -4,6 +4,7 @@
 
 #include <linux/cdev.h>
 #include <linux/device.h>
+#include <linux/fs.h>
 #include <linux/list.h>
 #include <linux/iommu.h>
 #include <uapi/linux/uacce.h>
@@ -76,11 +77,15 @@ struct uacce_queue {
 	struct mm_struct *mm;
 
 	struct uacce_qfile_region *qfrs[UACCE_QFRT_MAX];
+
+	struct fasync_struct *async_queue;
+	struct list_head q_dev;
 };
 
-#define	UACCE_ST_INIT 0
-#define UACCE_ST_OPENNED 1
-#define UACCE_ST_STARTED 2
+#define UACCE_ST_INIT		0
+#define UACCE_ST_OPENNED	1
+#define UACCE_ST_STARTED	2
+#define UACCE_ST_RST		3
 
 struct uacce {
 	const char *name;
@@ -97,11 +102,15 @@ struct uacce {
 	atomic_t state;
 	atomic_t ref;
 	int prot;
+	struct mutex q_lock;
+	struct list_head qs;
 };
 
 int uacce_register(struct uacce *uacce);
 void uacce_unregister(struct uacce *uacce);
 void uacce_wake_up(struct uacce_queue *q);
+void uacce_reset_prepare(struct uacce *uacce);
+void uacce_reset_done(struct uacce *uacce);
 const char *uacce_qfrt_str(struct uacce_qfile_region *qfr);
 
 #endif

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 #include <linux/compat.h>
+#include <linux/delay.h>
 #include <linux/dma-iommu.h>
 #include <linux/dma-mapping.h>
 #include <linux/file.h>
@@ -42,6 +43,7 @@ static DEFINE_RWLOCK(uacce_qs_lock);
 #endif
 
 static const struct file_operations uacce_fops;
+static int uacce_fops_fasync(int fd, struct file *file, int mode);
 
 /* match with enum uacce_qfrt */
 static const char *const qfrt_str[] = {
@@ -62,6 +64,52 @@ const char *uacce_qfrt_str(struct uacce_qfile_region *qfr)
 	return qfrt_str[type];
 }
 EXPORT_SYMBOL_GPL(uacce_qfrt_str);
+
+/**
+ * uacce_reset_prepare - notify users uacce will be reset and release queues.
+ * @uacce: the uacce which will be reset.
+ *
+ * This function walks all uacce_queues and sends signal to processes which
+ * are using these uacce_queues. Before a hardware which driver is registered
+ * to uacce framework resets, this function can be used to send a signal to
+ * userspace.
+ */
+void uacce_reset_prepare(struct uacce *uacce)
+{
+	struct uacce_queue *q;
+
+	atomic_set(&uacce->state, UACCE_ST_RST);
+
+	mutex_lock(&uacce->q_lock);
+
+	if (list_empty(&uacce->qs)) {
+		mutex_unlock(&uacce->q_lock);
+		return;
+	}
+
+	list_for_each_entry(q, &uacce->qs, q_dev) {
+		kill_fasync(&q->async_queue, SIGIO, POLL_IN);
+	}
+
+	mutex_unlock(&uacce->q_lock);
+
+	/* make sure above single been handled */
+	mdelay(10);
+}
+EXPORT_SYMBOL_GPL(uacce_reset_prepare);
+
+/**
+ * uacce_reset_done - Set uacce as normal state.
+ * @uacce: the uacce which reset is done.
+ *
+ * This function set uacce as normal state, after this uacce can be opened
+ * again.
+ */
+void uacce_reset_done(struct uacce *uacce)
+{
+	atomic_set(&uacce->state, UACCE_ST_INIT);
+}
+EXPORT_SYMBOL_GPL(uacce_reset_done);
 
 /**
  * uacce_wake_up - Wake up the process who is waiting this queue
@@ -586,8 +634,20 @@ static int uacce_queue_drain(struct uacce_queue *q)
 static int uacce_fops_flush(struct file *filep, fl_owner_t id)
 {
 	struct uacce_queue *q = filep->private_data;
-
+	struct uacce *uacce = q->uacce;
 	filep->private_data = NULL;
+
+	/*
+	 * It is different between CI and kernel-dev here, so delete list
+	 * entry in flush callback and release callback. After flush is called
+	 * uacce_queue will be NULL, and same code will not be called in
+	 * release, so it is safe.
+	 */
+	uacce_fops_fasync(-1, filep, 0);
+	mutex_lock(&uacce->q_lock);
+	list_del(&q->q_dev);
+	mutex_unlock(&uacce->q_lock);
+
 	return uacce_queue_drain(q);
 }
 
@@ -601,6 +661,9 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	uacce = idr_find(&uacce_idr, iminor(inode));
 	if (!uacce)
 		return -ENODEV;
+
+	if (atomic_read(&uacce->state) == UACCE_ST_RST)
+		return -EINVAL;
 
 	if (!uacce->ops->get_queue)
 		return -EINVAL;
@@ -630,6 +693,9 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	INIT_LIST_HEAD(&q->list);
 	init_waitqueue_head(&q->wait);
 	filep->private_data = q;
+	mutex_lock(&uacce->q_lock);
+	list_add(&q->q_dev, &uacce->qs);
+	mutex_unlock(&uacce->q_lock);
 
 	return 0;
 open_err:
@@ -644,6 +710,11 @@ static int uacce_fops_release(struct inode *inode, struct file *filep)
 	/* task has put the queue */
 	if (!q)
 		return 0;
+
+	uacce_fops_fasync(-1, filep, 0);
+	mutex_lock(&q->uacce->q_lock);
+	list_del(&q->q_dev);
+	mutex_unlock(&q->uacce->q_lock);
 
 	/* As user space exception(without release queue), it will fall into
 	 * this logic as the task exits to prevent hardware resources leaking
@@ -821,6 +892,13 @@ static __poll_t uacce_fops_poll(struct file *file, poll_table *wait)
 	return 0;
 }
 
+static int uacce_fops_fasync(int fd, struct file *file, int mode)
+{
+	struct uacce_queue *q = file->private_data;
+
+	return fasync_helper(fd, file, mode, &q->async_queue);
+}
+
 static const struct file_operations uacce_fops = {
 	.owner = THIS_MODULE,
 	.open = uacce_fops_open,
@@ -832,6 +910,7 @@ static const struct file_operations uacce_fops = {
 #endif
 	.mmap = uacce_fops_mmap,
 	.poll = uacce_fops_poll,
+	.fasync = uacce_fops_fasync,
 };
 
 #define UACCE_FROM_CDEV_ATTR(dev) container_of(dev, struct uacce, dev)
@@ -1214,6 +1293,8 @@ int uacce_register(struct uacce *uacce)
 	dev_dbg(dev, "uacce state initialized to INIT\n");
 	atomic_set(&uacce->state, UACCE_ST_INIT);
 	atomic_set(&uacce->ref, 0);
+	INIT_LIST_HEAD(&uacce->qs);
+	mutex_init(&uacce->q_lock);
 	mutex_unlock(&uacce_mutex);
 	return 0;
 
