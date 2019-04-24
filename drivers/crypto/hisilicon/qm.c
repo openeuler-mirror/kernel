@@ -1590,8 +1590,6 @@ static long hisi_qm_uacce_ioctl(struct uacce_queue *q, unsigned int cmd,
  * available
  */
 static struct uacce_ops uacce_qm_ops = {
-	.owner = THIS_MODULE,
-	.flags = 0,
 	.get_available_instances = hisi_qm_get_available_instances,
 	.get_queue = hisi_qm_uacce_get_queue,
 	.put_queue = hisi_qm_uacce_put_queue,
@@ -1616,9 +1614,9 @@ static int qm_register_uacce(struct hisi_qm *qm)
 	uacce->algs = qm->algs;
 
 	if (qm->ver == QM_HW_V1)
-		uacce->ops->api_ver = HISI_QM_API_VER_BASE;
+		uacce->api_ver = HISI_QM_API_VER_BASE;
 	else
-		uacce->ops->api_ver = HISI_QM_API_VER2_BASE;
+		uacce->api_ver = HISI_QM_API_VER2_BASE;
 
 	if (qm->use_dma_api) {
 		/*
@@ -1627,23 +1625,22 @@ static int qm_register_uacce(struct hisi_qm *qm)
 		 * by ourself with the UACCE_DEV_DRVMAP_DUS flag.
 		 */
 		if (qm->use_sva) {
-			uacce->ops->flags = UACCE_DEV_SVA |
-					    UACCE_DEV_DRVMAP_DUS;
+			uacce->flags = UACCE_DEV_SVA | UACCE_DEV_DRVMAP_DUS;
 		} else {
 
-			uacce->ops->flags = UACCE_DEV_NOIOMMU |
-					    UACCE_DEV_DRVMAP_DUS;
+			uacce->flags = UACCE_DEV_NOIOMMU |
+				       UACCE_DEV_DRVMAP_DUS;
 			if (qm->ver == QM_HW_V1)
-				uacce->ops->api_ver = HISI_QM_API_VER_BASE
-						  UACCE_API_VER_NOIOMMU_SUBFIX;
+				uacce->api_ver = HISI_QM_API_VER_BASE
+						 UACCE_API_VER_NOIOMMU_SUBFIX;
 			else
-				uacce->ops->api_ver = HISI_QM_API_VER2_BASE
-						UACCE_API_VER_NOIOMMU_SUBFIX;
+				uacce->api_ver = HISI_QM_API_VER2_BASE
+						 UACCE_API_VER_NOIOMMU_SUBFIX;
 		}
 	}
 
 	for (i = 0; i < UACCE_QFRT_MAX; i++)
-		uacce->ops->qf_pg_start[i] = UACCE_QFR_NA;
+		uacce->qf_pg_start[i] = UACCE_QFR_NA;
 
 
 	return uacce_register(uacce);
@@ -1969,10 +1966,9 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	/* check if the size exceed the DKO boundary */
 	if (qm->use_uacce && !qm->use_dma_api) {
-		WARN_ON(qm->uacce.ops->qf_pg_start[UACCE_QFRT_DKO] ==
-		    UACCE_QFR_NA);
-		dko_size = qm->uacce.ops->qf_pg_start[UACCE_QFRT_DUS] -
-			   qm->uacce.ops->qf_pg_start[UACCE_QFRT_DKO];
+		WARN_ON(qm->uacce.qf_pg_start[UACCE_QFRT_DKO] == UACCE_QFR_NA);
+		dko_size = qm->uacce.qf_pg_start[UACCE_QFRT_DUS] -
+			   qm->uacce.qf_pg_start[UACCE_QFRT_DKO];
 		dko_size <<= PAGE_SHIFT;
 		dev_dbg(&qm->pdev->dev,
 			"kernel-only buffer used (0x%lx/0x%lx)\n", off,
@@ -2010,7 +2006,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 	struct device *dev = &qm->pdev->dev;
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
-	struct uacce_ops *ops = qm->uacce.ops;
+	struct uacce *uacce = &qm->uacce;
 	unsigned long dus_page_nr = 0;
 	unsigned long dko_page_nr = 0;
 	unsigned long mmio_page_nr;
@@ -2043,17 +2039,19 @@ int hisi_qm_start(struct hisi_qm *qm)
 	else
 		mmio_page_nr = QM_DOORBELL_PAGE_NR;
 	if (qm->use_uacce && qm->use_dma_api) {
-		ops->qf_pg_start[UACCE_QFRT_MMIO] = 0;
-		ops->qf_pg_start[UACCE_QFRT_DKO]  = UACCE_QFR_NA;
-		ops->qf_pg_start[UACCE_QFRT_DUS]  = mmio_page_nr;
-		ops->qf_pg_start[UACCE_QFRT_SS]   = mmio_page_nr + dus_page_nr;
+		uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
+		uacce->qf_pg_start[UACCE_QFRT_DKO]  = UACCE_QFR_NA;
+		uacce->qf_pg_start[UACCE_QFRT_DUS]  = mmio_page_nr;
+		uacce->qf_pg_start[UACCE_QFRT_SS]   = mmio_page_nr +
+						      dus_page_nr;
 	} else if (qm->use_uacce) {
-		ops->qf_pg_start[UACCE_QFRT_MMIO] = 0;
-		ops->qf_pg_start[UACCE_QFRT_DKO]  = mmio_page_nr;
-		ops->qf_pg_start[UACCE_QFRT_DUS]  = mmio_page_nr + dko_page_nr;
-		ops->qf_pg_start[UACCE_QFRT_SS]   = mmio_page_nr +
-						    dko_page_nr +
-						    dus_page_nr;
+		uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
+		uacce->qf_pg_start[UACCE_QFRT_DKO]  = mmio_page_nr;
+		uacce->qf_pg_start[UACCE_QFRT_DUS]  = mmio_page_nr +
+						      dko_page_nr;
+		uacce->qf_pg_start[UACCE_QFRT_SS]   = mmio_page_nr +
+						      dko_page_nr +
+						      dus_page_nr;
 	}
 #endif
 

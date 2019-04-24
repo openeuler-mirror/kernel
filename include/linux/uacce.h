@@ -44,11 +44,6 @@ struct uacce_qfile_region {
  * @ioctl:   ioctl for user space users of the queue
  */
 struct uacce_ops {
-	struct module *owner;
-	const char *api_ver;
-	int flags;
-	unsigned long qf_pg_start[UACCE_QFRT_MAX];
-
 	int (*get_available_instances)(struct uacce *uacce);
 	int (*get_queue)(struct uacce *uacce, unsigned long arg,
 			struct uacce_queue **q);
@@ -91,6 +86,9 @@ struct uacce {
 	const char *name;
 	const char *drv_name;
 	const char *algs;
+	const char *api_ver;
+	int flags;
+	unsigned long qf_pg_start[UACCE_QFRT_MAX];
 	int status;
 	struct uacce_ops *ops;
 	struct device *pdev;

@@ -337,11 +337,6 @@ static int dummy_wd2_get_available_instances(struct uacce *uacce)
 }
 
 static struct uacce_ops dummy_wd2_ops = {
-	.owner = THIS_MODULE,
-	.api_ver = "dummy_v2",
-	.qf_pg_start = {0, UACCE_QFR_NA, 1, 2},
-	.flags = 0,
-
 	.get_queue = dummy_wd2_get_queue,
 	.put_queue = dummy_wd2_put_queue,
 	.start_queue = dummy_wd2_start_queue,

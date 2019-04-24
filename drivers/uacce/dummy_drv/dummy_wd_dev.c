@@ -280,11 +280,6 @@ static int dummy_get_available_instances(struct uacce *uacce)
 }
 
 static struct uacce_ops dummy_ops = {
-	.owner = THIS_MODULE,
-	.api_ver = "dummy_v1",
-	.qf_pg_start = { 0, UACCE_QFR_NA, UACCE_QFR_NA, 1 },
-	.flags = UACCE_DEV_NOIOMMU,
-
 	.get_queue = dummy_get_queue,
 	.put_queue = dummy_put_queue,
 	.start_queue = dummy_start_queue,
