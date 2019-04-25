@@ -1641,6 +1641,9 @@ static int hns3_vlan_rx_add_vid(struct net_device *netdev,
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 	int ret = -EIO;
 
+	if (hns3_nic_resetting(netdev))
+		return -EBUSY;
+
 	if (h->ae_algo->ops->set_vlan_filter)
 		ret = h->ae_algo->ops->set_vlan_filter(h, proto, vid, false);
 
@@ -1652,6 +1655,9 @@ static int hns3_vlan_rx_kill_vid(struct net_device *netdev,
 {
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 	int ret = -EIO;
+
+	if (hns3_nic_resetting(netdev))
+		return -EBUSY;
 
 	if (h->ae_algo->ops->set_vlan_filter)
 		ret = h->ae_algo->ops->set_vlan_filter(h, proto, vid, true);
@@ -1673,6 +1679,9 @@ static int hns3_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan,
 #ifndef IFLA_VF_VLAN_INFO_MAX
 	__be16 vlan_proto = htons(ETH_P_8021Q);
 #endif
+
+	if (hns3_nic_resetting(netdev))
+		return -EBUSY;
 
 	if (h->ae_algo->ops->set_vf_vlan_filter)
 		ret = h->ae_algo->ops->set_vf_vlan_filter(h, vf, vlan,
