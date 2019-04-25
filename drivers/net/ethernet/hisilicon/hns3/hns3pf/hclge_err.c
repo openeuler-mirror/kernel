@@ -1355,49 +1355,6 @@ int hclge_handle_all_ras_errors(struct hclge_dev *hdev)
 	return ret;
 }
 
-int hclge_clear_all_ras_errors(struct hclge_dev *hdev)
-{
-	struct hclge_bd_num bd_num;
-	struct hclge_desc *desc;
-	int ret;
-
-	/* query the number of registers in the RAS int status */
-	desc = hclge_query_bd_num(hdev, &bd_num,
-				  HCLGE_QUERY_RAS_INT_STS_BD_NUM);
-	if (!desc)
-		return -ENOMEM;
-
-	/* query all main PF RAS errors */
-	ret = hclge_query_error(hdev, desc, HCLGE_QUERY_CLEAR_MPF_RAS_INT,
-				bd_num.mpf_bd_num);
-	if (ret) {
-		kfree(desc);
-		return ret;
-	}
-
-	/* clear all main PF RAS errors */
-	ret = hclge_clear_error(hdev, desc, bd_num.mpf_bd_num);
-	if (ret) {
-		kfree(desc);
-		return ret;
-	}
-
-	memset(desc, 0, bd_num.max_bd_num * sizeof(struct hclge_desc));
-	/* query all PF RAS errors */
-	ret = hclge_query_error(hdev, desc, HCLGE_QUERY_CLEAR_PF_RAS_INT,
-				bd_num.pf_bd_num);
-	if (ret) {
-		kfree(desc);
-		return ret;
-	}
-
-	/* clear all PF RAS errors */
-	ret = hclge_clear_error(hdev, desc, bd_num.pf_bd_num);
-
-	kfree(desc);
-	return ret;
-}
-
 static int hclge_log_rocee_ovf_error(struct hclge_dev *hdev)
 {
 	struct device *dev = &hdev->pdev->dev;
@@ -1501,7 +1458,7 @@ hclge_log_and_clear_rocee_ras_error(struct hclge_dev *hdev)
 	return reset_type;
 }
 
-static int hclge_config_rocee_ras_interrupt(struct hclge_dev *hdev, bool en)
+int hclge_config_rocee_ras_interrupt(struct hclge_dev *hdev, bool en)
 {
 	struct device *dev = &hdev->pdev->dev;
 	struct hclge_desc desc;
@@ -1576,10 +1533,9 @@ static const struct hclge_hw_blk hw_blk[] = {
 	{ /* sentinel */ }
 };
 
-int hclge_hw_error_set_state(struct hclge_dev *hdev, bool state)
+int hclge_config_nic_hw_error(struct hclge_dev *hdev, bool state)
 {
 	const struct hclge_hw_blk *module = hw_blk;
-	struct device *dev = &hdev->pdev->dev;
 	int ret = 0;
 
 	while (module->name) {
@@ -1591,10 +1547,6 @@ int hclge_hw_error_set_state(struct hclge_dev *hdev, bool state)
 		module++;
 	}
 
-	ret = hclge_config_rocee_ras_interrupt(hdev, state);
-	if (ret)
-		dev_err(dev, "fail(%d) to configure ROCEE err int\n", ret);
-
 	return ret;
 }
 
@@ -1603,6 +1555,12 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct device *dev = &hdev->pdev->dev;
 	u32 status;
+
+	if (!test_bit(HCLGE_STATE_SERVICE_INITED, &hdev->state)) {
+		dev_err(dev,
+			"Can't recover - RAS error reported during dev init\n");
+		return PCI_ERS_RESULT_NONE;
+	}
 
 	status = hclge_read_dev(&hdev->hw, HCLGE_RAS_PF_OTHER_INT_STS_REG);
 
@@ -1640,8 +1598,8 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
-int hclge_handle_hw_msix_error(struct hclge_dev *hdev,
-			       unsigned long *reset_requests)
+static int hclge_handle_all_hw_msix_error(struct hclge_dev *hdev,
+					  unsigned long *reset_requests)
 {
 	struct hclge_mac_tnl_stats mac_tnl_stats;
 	struct device *dev = &hdev->pdev->dev;
@@ -1780,4 +1738,42 @@ msi_error:
 	kfree(desc);
 out:
 	return ret;
+}
+
+int hclge_handle_hw_msix_error(struct hclge_dev *hdev,
+			       unsigned long *reset_requests)
+{
+	struct device *dev = &hdev->pdev->dev;
+
+	if (!test_bit(HCLGE_STATE_SERVICE_INITED, &hdev->state)) {
+		dev_err(dev,
+			"Can't handle - MSIx error reported during dev init\n");
+		return 0;
+	}
+
+	return hclge_handle_all_hw_msix_error(hdev, reset_requests);
+}
+
+void hclge_handle_all_hns_hw_errors(struct hnae3_ae_dev *ae_dev)
+{
+	struct hclge_dev *hdev = ae_dev->priv;
+	struct device *dev = &hdev->pdev->dev;
+	u32 status;
+
+	ae_dev->hw_err_reset_req = 0;
+	status = hclge_read_dev(&hdev->hw, HCLGE_RAS_PF_OTHER_INT_STS_REG);
+
+	/* Handle Non-fatal HNS RAS errors */
+	if (status & HCLGE_RAS_REG_NFE_MASK) {
+		dev_warn(dev, "HNS hw error(RAS) identified during init\n");
+		hclge_handle_all_ras_errors(hdev);
+	}
+
+	/* Handle HNS hw errors reported through msix  */
+	status = hclge_read_dev(&hdev->hw,
+				HCLGE_VECTOR0_PF_OTHER_INT_STS_REG);
+	if (status & HCLGE_VECTOR0_REG_MSIX_MASK) {
+		dev_warn(dev, "HNS hw error(MSIx) identified during init\n");
+		hclge_handle_all_hw_msix_error(hdev, &ae_dev->hw_err_reset_req);
+	}
 }
