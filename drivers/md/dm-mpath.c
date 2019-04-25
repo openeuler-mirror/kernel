@@ -554,8 +554,26 @@ static int multipath_clone_and_map(struct dm_target *ti, struct request *rq,
 	return DM_MAPIO_REMAPPED;
 }
 
-static void multipath_release_clone(struct request *clone)
+static void multipath_release_clone(struct request *clone,
+			union map_info *map_context,
+			enum dm_rq_status clone_status)
 {
+	struct dm_mpath_io *mpio;
+	struct pgpath *pgpath;
+
+	if (clone_status != DM_CLONE_RQ_OK && map_context) {
+		mpio = get_mpio(map_context);
+		pgpath = mpio->pgpath;
+
+		if (pgpath) {
+			struct path_selector *ps = &pgpath->pg->ps;
+
+			if (ps->type->end_io)
+				ps->type->end_io(ps, &pgpath->path,
+						mpio->nr_bytes);
+		}
+	}
+
 	blk_put_request(clone);
 }
 
