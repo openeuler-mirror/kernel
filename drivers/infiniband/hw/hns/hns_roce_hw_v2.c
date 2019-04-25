@@ -6795,9 +6795,6 @@ static int hns_roce_hw_v2_get_cfg(struct hns_roce_dev *hr_dev,
 		hr_dev->irq[i] = pci_irq_vector(handle->pdev,
 						i + handle->rinfo.base_vector);
 
-	snprintf(hr_dev->ib_dev.name, IB_DEVICE_NAME_MAX, "hns%s",
-		 handle->rinfo.netdev->name);
-
 	/* cmd issue mode: 0 is poll, 1 is event */
 	hr_dev->cmd_mod = 1;
 	hr_dev->loop_idc = loopback;
