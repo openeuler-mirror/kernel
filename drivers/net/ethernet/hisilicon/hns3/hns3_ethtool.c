@@ -943,7 +943,12 @@ static int hns3_nway_reset(struct net_device *netdev)
 	if (!netif_running(netdev))
 		return 0;
 
-	if (!ops->get_autoneg || !ops->set_autoneg)
+	if (hns3_nic_resetting(netdev)) {
+		netdev_err(netdev, "dev resetting!");
+		return -EBUSY;
+	}
+
+	if (!ops->get_autoneg || !ops->restart_autoneg)
 		return -EOPNOTSUPP;
 
 	autoneg = ops->get_autoneg(handle);
@@ -959,7 +964,7 @@ static int hns3_nway_reset(struct net_device *netdev)
 	if (handle->pdev->revision == 0x20)
 		return -EOPNOTSUPP;
 
-	return ops->set_autoneg(handle, true);
+	return ops->restart_autoneg(handle);
 }
 
 static void hns3_get_channels(struct net_device *netdev,
