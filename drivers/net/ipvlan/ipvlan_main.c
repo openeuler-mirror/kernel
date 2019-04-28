@@ -9,6 +9,9 @@
 
 #include "ipvlan.h"
 
+static int one = 1;
+static int delay_max = 100;
+
 int sysctl_ipvlan_loop_qlen = 131072;
 int sysctl_ipvlan_loop_delay = 10;
 static int ipvlan_default_mode = IPVLAN_MODE_L3;
@@ -22,7 +25,9 @@ static struct ctl_table ipvlan_table[] = {
 		.data		= &sysctl_ipvlan_loop_delay,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = &one,
+		.extra2         = &delay_max,
 	},
 	{
 		.procname	= "loop_qlen",
