@@ -2136,7 +2136,8 @@ static int hclge_cfg_mac_speed_dup_hw(struct hclge_dev *hdev, int speed,
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CONFIG_SPEED_DUP, false);
 
-	hnae3_set_bit(req->speed_dup, HCLGE_CFG_DUPLEX_B, !!duplex);
+	if (duplex)
+		hnae3_set_bit(req->speed_dup, HCLGE_CFG_DUPLEX_B, 1);
 
 	switch (speed) {
 	case HCLGE_MAC_SPEED_10M:
@@ -6508,7 +6509,9 @@ static int hclge_set_umv_space(struct hclge_dev *hdev, u16 space_size,
 
 	req = (struct hclge_umv_spc_alc_cmd *)desc.data;
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_MAC_VLAN_ALLOCATE, false);
-	hnae3_set_bit(req->allocate, HCLGE_UMV_SPC_ALC_B, !is_alloc);
+	if (!is_alloc)
+		hnae3_set_bit(req->allocate, HCLGE_UMV_SPC_ALC_B, 1);
+
 	req->space_size = cpu_to_le32(space_size);
 
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
