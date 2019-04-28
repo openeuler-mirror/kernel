@@ -417,7 +417,7 @@ struct hns3_enet_ring {
 	 */
 	int next_to_clean;
 
-	int pull_len;
+	u32 pull_len;
 	u32 frag_num;
 	unsigned char *va;
 
