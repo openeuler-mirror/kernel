@@ -7082,7 +7082,7 @@ static void hclge_enable_vlan_filter(struct hnae3_handle *handle, bool enable)
 		handle->netdev_flags &= ~HNAE3_VLAN_FLTR;
 }
 
-static int hclge_set_vf_vlan_common(struct hclge_dev *hdev, int vfid,
+static int hclge_set_vf_vlan_common(struct hclge_dev *hdev, u16 vfid,
 				    bool is_kill, u16 vlan, u8 qos,
 				    __be16 proto)
 {
