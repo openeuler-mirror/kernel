@@ -1962,8 +1962,11 @@ call_transmit(struct rpc_task *task)
 			/* Was the error nonfatal? */
 			if (task->tk_status == -EAGAIN)
 				rpc_delay(task, HZ >> 4);
-			else if (task->tk_status == -EKEYEXPIRED)
+			else if (task->tk_status == -EKEYEXPIRED &&
+				 task->tk_cred_retry) {
+				task->tk_cred_retry--;
 				task->tk_action = call_refresh;
+			}
 			else
 				rpc_exit(task, task->tk_status);
 			return;
