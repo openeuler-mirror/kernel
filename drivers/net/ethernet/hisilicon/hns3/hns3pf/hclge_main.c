@@ -1247,7 +1247,7 @@ static int hclge_configure(struct hclge_dev *hdev)
 }
 
 static int hclge_config_tso(struct hclge_dev *hdev, int tso_mss_min,
-			    int tso_mss_max)
+			    unsigned int tso_mss_max)
 {
 	struct hclge_cfg_tso_status_cmd *req;
 	struct hclge_desc desc;
@@ -2414,7 +2414,7 @@ static int hclge_get_mac_link_status(struct hclge_dev *hdev)
 
 static int hclge_get_mac_phy_link(struct hclge_dev *hdev)
 {
-	int mac_state;
+	unsigned int mac_state;
 	int link_stat;
 
 	if (test_bit(HCLGE_STATE_DOWN, &hdev->state))
@@ -3622,8 +3622,8 @@ static int hclge_set_rss_algo_key(struct hclge_dev *hdev,
 				  const u8 hfunc, const u8 *key)
 {
 	struct hclge_rss_config_cmd *req;
+	unsigned int key_offset = 0;
 	struct hclge_desc desc;
-	int key_offset = 0;
 	int key_counts;
 	int key_size;
 	int ret;
@@ -6063,7 +6063,8 @@ static int hclge_tqp_enable(struct hclge_dev *hdev, int tqp_id,
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_COM_TQP_QUEUE, false);
 	req->tqp_id = cpu_to_le16(tqp_id & HCLGE_RING_ID_MASK);
 	req->stream_id = cpu_to_le16(stream_id);
-	req->enable |= enable << HCLGE_TQP_ENABLE_B;
+	if (enable)
+		req->enable |= 1U << HCLGE_TQP_ENABLE_B;
 
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret)
@@ -8237,7 +8238,8 @@ static void hclge_get_mdix_mode(struct hnae3_handle *handle,
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 	struct phy_device *phydev = hdev->hw.mac.phydev;
-	int mdix_ctrl, mdix, retval, is_resolved;
+	int mdix_ctrl, mdix, is_resolved;
+	unsigned int retval;
 
 	if (!phydev) {
 		*tp_mdix_ctrl = ETH_TP_MDI_INVALID;

@@ -65,8 +65,8 @@ static int hclge_dbg_cmd_send(struct hclge_dev *hdev,
 
 static void hclge_dbg_dump_reg_common(struct hclge_dev *hdev,
 				      struct hclge_dbg_dfx_message *dfx_message,
-				      char *cmd_buf, int msg_num, int offset,
-				      enum hclge_opcode_type cmd)
+				      const char *cmd_buf, int msg_num,
+				      int offset, enum hclge_opcode_type cmd)
 {
 	struct hclge_desc *desc_src;
 	struct hclge_desc *desc;
@@ -119,7 +119,7 @@ static void hclge_dbg_dump_reg_common(struct hclge_dev *hdev,
 	kfree(desc_src);
 }
 
-static void hclge_dbg_dump_dcb(struct hclge_dev *hdev, char *cmd_buf)
+static void hclge_dbg_dump_dcb(struct hclge_dev *hdev, const char *cmd_buf)
 {
 	struct device *dev = &hdev->pdev->dev;
 	struct hclge_dbg_bitmap_cmd *bitmap;
@@ -549,7 +549,8 @@ err_tm_cmd_send:
 		cmd, ret);
 }
 
-static void hclge_dbg_dump_tm_map(struct hclge_dev *hdev, char *cmd_buf)
+static void hclge_dbg_dump_tm_map(struct hclge_dev *hdev,
+				  const char *cmd_buf)
 {
 	struct hclge_bp_to_qs_map_cmd *bp_to_qs_map_cmd;
 	struct hclge_nq_to_qs_link_cmd *nq_to_qs_map;
@@ -1013,7 +1014,8 @@ static void hclge_ncl_config_data_print(struct hclge_dev *hdev,
  * @hdev: pointer to struct hclge_dev
  * @cmd_buf: string that contains offset and length
  */
-static void hclge_dbg_dump_ncl_config(struct hclge_dev *hdev, char *cmd_buf)
+static void hclge_dbg_dump_ncl_config(struct hclge_dev *hdev,
+				      const char *cmd_buf)
 {
 #define HCLGE_MAX_NCL_CONFIG_OFFSET	16384
 #define HCLGE_MAX_NCL_CONFIG_LENGTH	(20 + 24 * 4)

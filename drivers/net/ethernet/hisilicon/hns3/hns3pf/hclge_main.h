@@ -881,7 +881,7 @@ struct hclge_vport {
 
 	u16 used_umv_num;
 
-	int vport_id;
+	u16 vport_id;
 	struct hclge_dev *back;  /* Back reference to associated dev */
 	struct hnae3_handle nic;
 	struct hnae3_handle roce;

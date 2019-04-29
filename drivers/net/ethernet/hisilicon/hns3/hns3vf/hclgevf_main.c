@@ -502,8 +502,8 @@ static int hclgevf_set_rss_algo_key(struct hclgevf_dev *hdev,
 				    const u8 hfunc, const u8 *key)
 {
 	struct hclgevf_rss_config_cmd *req;
+	unsigned int key_offset = 0;
 	struct hclgevf_desc desc;
-	int key_offset = 0;
 	int key_counts;
 	int key_size;
 	int ret;
@@ -1106,7 +1106,8 @@ static int hclgevf_tqp_enable(struct hclgevf_dev *hdev, int tqp_id,
 				     false);
 	req->tqp_id = cpu_to_le16(tqp_id & HCLGEVF_RING_ID_MASK);
 	req->stream_id = cpu_to_le16(stream_id);
-	req->enable |= enable << HCLGEVF_TQP_ENABLE_B;
+	if (enable)
+		req->enable |= 1U << HCLGEVF_TQP_ENABLE_B;
 
 	status = hclgevf_cmd_send(&hdev->hw, &desc, 1);
 	if (status)
