@@ -1331,12 +1331,9 @@ static int hclgevf_reset_wait(struct hclgevf_dev *hdev)
 	if (hdev->reset_type == HNAE3_VF_RESET) {
 		ret = readl_poll_timeout(hdev->hw.io_base +
 					 HCLGEVF_VF_RST_ING, val,
-					 (val & HCLGEVF_VF_RST_ING_BIT),
+					 !(val & HCLGEVF_VF_RST_ING_BIT),
 					 HCLGEVF_RESET_WAIT_US,
 					 HCLGEVF_RESET_WAIT_TIMEOUT_US);
-		val = hclgevf_read_dev(&hdev->hw, HCLGEVF_VF_RST_ING);
-		hclgevf_write_dev(&hdev->hw, HCLGEVF_VF_RST_ING,
-				  val & ~HCLGEVF_VF_RST_ING_BIT);
 	} else {
 		ret = readl_poll_timeout(hdev->hw.io_base +
 					 HCLGEVF_RST_ING, val,
@@ -1801,7 +1798,7 @@ static void hclgevf_clear_event_cause(struct hclgevf_dev *hdev, u32 regclr)
 static enum hclgevf_evt_cause hclgevf_check_evt_cause(struct hclgevf_dev *hdev,
 						      u32 *clearval)
 {
-	u32 cmdq_src_reg, rst_ing_reg;
+	u32 val, cmdq_src_reg, rst_ing_reg;
 
 	/* fetch the events from their corresponding regs */
 	cmdq_src_reg = hclgevf_read_dev(&hdev->hw,
@@ -1817,6 +1814,9 @@ static enum hclgevf_evt_cause hclgevf_check_evt_cause(struct hclgevf_dev *hdev,
 		cmdq_src_reg &= ~BIT(HCLGEVF_VECTOR0_RST_INT_B);
 		*clearval = cmdq_src_reg;
 		hdev->rst_stats.vf_rst_cnt++;
+		val = hclgevf_read_dev(&hdev->hw, HCLGEVF_VF_RST_ING);
+		hclgevf_write_dev(&hdev->hw, HCLGEVF_VF_RST_ING,
+				  val | HCLGEVF_VF_RST_ING_BIT);
 		return HCLGEVF_VECTOR0_EVENT_RST;
 	}
 
