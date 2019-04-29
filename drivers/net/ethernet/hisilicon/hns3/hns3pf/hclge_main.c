@@ -1861,7 +1861,7 @@ static int hclge_only_alloc_priv_buff(struct hclge_dev *hdev,
 	}
 
 	buf_alloc->s_buf.buf_size = 0;
-	dev_info(&hdev->pdev->dev, "Only private buffer: %d!\n", rx_priv);
+
 	return true;
 }
 
