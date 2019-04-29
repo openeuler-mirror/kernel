@@ -5,6 +5,35 @@
 #include "hclge_mbx.h"
 #include "hnae3.h"
 
+static const struct errno_respcode_map err_code_map[] = {
+	{0, 0},
+	{1, -EPERM},
+	{2, -ENOENT},
+	{5, -EIO},
+	{11, -EAGAIN},
+	{12, -ENOMEM},
+	{16, -EBUSY},
+	{22, -EINVAL},
+	{28, -ENOSPC},
+	{95, -EOPNOTSUPP},
+};
+
+static u16 hclge_errno_to_resp(int errno)
+{
+#define UNKNOWN_ERR	0xFFFF
+
+	u32 i;
+
+	for (i = 0;
+	     i < sizeof(err_code_map) / sizeof(struct errno_respcode_map);
+	     i++) {
+		if (err_code_map[i].errno == errno)
+			return err_code_map[i].resp_code;
+	}
+
+	return UNKNOWN_ERR;
+}
+
 /* hclge_gen_resp_to_vf: used to generate a synchronous response to VF when PF
  * receives a mailbox message from VF.
  * @vport: pointer to struct hclge_vport
@@ -35,11 +64,10 @@ static int hclge_gen_resp_to_vf(struct hclge_vport *vport,
 
 	resp_pf_to_vf->dest_vfid = vf_to_pf_req->mbx_src_vfid;
 	resp_pf_to_vf->msg_len = vf_to_pf_req->msg_len;
-
 	resp_pf_to_vf->msg[0] = HCLGE_MBX_PF_VF_RESP;
 	resp_pf_to_vf->msg[1] = vf_to_pf_req->msg[0];
 	resp_pf_to_vf->msg[2] = vf_to_pf_req->msg[1];
-	resp_pf_to_vf->msg[3] = (resp_status == 0) ? 0 : 1;
+	resp_pf_to_vf->msg[3] = hclge_errno_to_resp(resp_status);
 
 	if (resp_data && resp_data_len > 0)
 		memcpy(&resp_pf_to_vf->msg[4], resp_data, resp_data_len);

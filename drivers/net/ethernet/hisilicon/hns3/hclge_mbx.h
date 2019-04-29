@@ -81,6 +81,11 @@ struct hclgevf_mbx_resp_status {
 	u8 additional_info[HCLGE_MBX_MAX_RESP_DATA_SIZE];
 };
 
+struct errno_respcode_map {
+	u16 resp_code;
+	int errno;
+};
+
 struct hclge_mbx_vf_to_pf_cmd {
 	u8 rsv;
 	u8 mbx_src_vfid; /* Auto filled by IMP */

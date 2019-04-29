@@ -5,6 +5,33 @@
 #include "hclgevf_main.h"
 #include "hnae3.h"
 
+static const struct errno_respcode_map err_code_map[] = {
+	{0, 0},
+	{1, -EPERM},
+	{2, -ENOENT},
+	{5, -EIO},
+	{11, -EAGAIN},
+	{12, -ENOMEM},
+	{16, -EBUSY},
+	{22, -EINVAL},
+	{28, -ENOSPC},
+	{95, -EOPNOTSUPP},
+};
+
+static int hclgevf_resp_to_errno(u16 resp_code)
+{
+	u32 i;
+
+	for (i = 0;
+	     i < sizeof(err_code_map) / sizeof(struct errno_respcode_map);
+	     i++) {
+		if (err_code_map[i].resp_code == resp_code)
+			return err_code_map[i].errno;
+	}
+
+	return -EIO;
+}
+
 static void hclgevf_reset_mbx_resp_status(struct hclgevf_dev *hdev)
 {
 	/* this function should be called with mbx_resp.mbx_mutex held
@@ -192,7 +219,7 @@ void hclgevf_mbx_handler(struct hclgevf_dev *hdev)
 
 			resp->origin_mbx_msg = (req->msg[1] << 16);
 			resp->origin_mbx_msg |= req->msg[2];
-			resp->resp_status = req->msg[3];
+			resp->resp_status = hclgevf_resp_to_errno(req->msg[3]);
 
 			temp = (u8 *)&req->msg[4];
 			for (i = 0; i < HCLGE_MBX_MAX_RESP_DATA_SIZE; i++) {
