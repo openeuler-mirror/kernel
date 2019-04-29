@@ -886,7 +886,7 @@ static struct domain_device *sas_ex_discover_end_dev(
 	list_del(&child->dev_list_node);
 	spin_unlock_irq(&parent->port->dev_list_lock);
  out_free:
-	list_add_tail(&phy->port->del_list, &parent->port->sas_port_del_list);
+	sas_port_delete(phy->port);
  out_err:
 	phy->port = NULL;
 	sas_put_device(child);
