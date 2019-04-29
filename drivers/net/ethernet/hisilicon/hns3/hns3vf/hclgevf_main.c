@@ -344,7 +344,7 @@ static int hclgevf_knic_setup(struct hclgevf_dev *hdev)
 	struct hnae3_handle *nic = &hdev->nic;
 	struct hnae3_knic_private_info *kinfo;
 	u16 new_tqps = hdev->num_tqps;
-	int i;
+	unsigned int i;
 
 	kinfo = &nic->kinfo;
 	kinfo->num_tc = 0;
@@ -590,7 +590,7 @@ static int hclgevf_set_rss_tc_mode(struct hclgevf_dev *hdev,  u16 rss_size)
 	struct hclgevf_desc desc;
 	u16 roundup_size;
 	int status;
-	int i;
+	unsigned int i;
 
 	req = (struct hclgevf_rss_tc_mode_cmd *)desc.data;
 

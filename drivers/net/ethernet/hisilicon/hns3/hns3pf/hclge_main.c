@@ -1054,7 +1054,7 @@ static void hclge_parse_cfg(struct hclge_cfg *cfg, struct hclge_desc *desc)
 	struct hclge_cfg_param_cmd *req;
 	u64 mac_addr_tmp_high;
 	u64 mac_addr_tmp;
-	int i;
+	unsigned int i;
 
 	req = (struct hclge_cfg_param_cmd *)desc[0].data;
 
@@ -1116,7 +1116,8 @@ static int hclge_get_cfg(struct hclge_dev *hdev, struct hclge_cfg *hcfg)
 {
 	struct hclge_desc desc[HCLGE_PF_CFG_DESC_NUM];
 	struct hclge_cfg_param_cmd *req;
-	int i, ret;
+	unsigned int i;
+	int ret;
 
 	for (i = 0; i < HCLGE_PF_CFG_DESC_NUM; i++) {
 		u32 offset = 0;
@@ -1181,7 +1182,8 @@ static void hclge_init_kdump_kernel_config(struct hclge_dev *hdev)
 static int hclge_configure(struct hclge_dev *hdev)
 {
 	struct hclge_cfg cfg;
-	int ret, i;
+	unsigned int i;
+	int ret;
 
 	ret = hclge_get_cfg(hdev, &cfg);
 	if (ret) {
@@ -1553,8 +1555,8 @@ static int hclge_tx_buffer_alloc(struct hclge_dev *hdev,
 
 static u32 hclge_get_tc_num(struct hclge_dev *hdev)
 {
+	unsigned int i;
 	u32 cnt = 0;
-	int i;
 
 	for (i = 0; i < HCLGE_MAX_TC_NUM; i++)
 		if (hdev->hw_tc_map & BIT(i))
@@ -1567,7 +1569,8 @@ static int hclge_get_pfc_priv_num(struct hclge_dev *hdev,
 				  struct hclge_pkt_buf_alloc *buf_alloc)
 {
 	struct hclge_priv_buf *priv;
-	int i, cnt = 0;
+	unsigned int i;
+	int cnt = 0;
 
 	for (i = 0; i < HCLGE_MAX_TC_NUM; i++) {
 		priv = &buf_alloc->priv_buf[i];
@@ -1584,7 +1587,8 @@ static int hclge_get_no_pfc_priv_num(struct hclge_dev *hdev,
 				     struct hclge_pkt_buf_alloc *buf_alloc)
 {
 	struct hclge_priv_buf *priv;
-	int i, cnt = 0;
+	unsigned int i;
+	int cnt = 0;
 
 	for (i = 0; i < HCLGE_MAX_TC_NUM; i++) {
 		priv = &buf_alloc->priv_buf[i];
@@ -1714,7 +1718,7 @@ static bool hclge_rx_buf_calc_all(struct hclge_dev *hdev, bool max,
 {
 	u32 rx_all = hdev->pkt_buf_size - hclge_get_tx_buff_alloced(buf_alloc);
 	u32 aligned_mps = round_up(hdev->mps, HCLGE_BUF_SIZE_UNIT);
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < HCLGE_MAX_TC_NUM; i++) {
 		struct hclge_priv_buf *priv = &buf_alloc->priv_buf[i];
@@ -1755,9 +1759,10 @@ static bool hclge_drop_nopfc_buf_till_fit(struct hclge_dev *hdev,
 	/* let the last to be cleared first */
 	for (i = HCLGE_MAX_TC_NUM - 1; i >= 0; i--) {
 		struct hclge_priv_buf *priv = &buf_alloc->priv_buf[i];
+		unsigned int mask = BIT((unsigned int)i);
 
-		if (hdev->hw_tc_map & BIT(i) &&
-		    !(hdev->tm_info.hw_pfc_map & BIT(i))) {
+		if (hdev->hw_tc_map & mask &&
+		    !(hdev->tm_info.hw_pfc_map & mask)) {
 			/* Clear the no pfc TC private buffer */
 			priv->wl.low = 0;
 			priv->wl.high = 0;
@@ -1784,9 +1789,10 @@ static bool hclge_drop_pfc_buf_till_fit(struct hclge_dev *hdev,
 	/* let the last to be cleared first */
 	for (i = HCLGE_MAX_TC_NUM - 1; i >= 0; i--) {
 		struct hclge_priv_buf *priv = &buf_alloc->priv_buf[i];
+		unsigned int mask = BIT((unsigned int)i);
 
-		if (hdev->hw_tc_map & BIT(i) &&
-		    hdev->tm_info.hw_pfc_map & BIT(i)) {
+		if (hdev->hw_tc_map & mask &&
+		    hdev->tm_info.hw_pfc_map & mask) {
 			/* Reduce the number of pfc TC with private buffer */
 			priv->wl.low = 0;
 			priv->enable = 0;
@@ -4005,7 +4011,8 @@ int hclge_rss_init_hw(struct hclge_dev *hdev)
 	u16 tc_valid[HCLGE_MAX_TC_NUM];
 	u16 tc_size[HCLGE_MAX_TC_NUM];
 	u16 roundup_size;
-	int i, ret;
+	unsigned int i;
+	int ret;
 
 	ret = hclge_set_rss_indir_table(hdev, rss_indir);
 	if (ret)
@@ -4616,7 +4623,7 @@ static void hclge_fd_convert_meta_data(struct hclge_fd_key_cfg *key_cfg,
 {
 	u32 tuple_bit, meta_data = 0, tmp_x, tmp_y, port_number;
 	u8 cur_pos = 0, tuple_size, shift_bits;
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < MAX_META_DATA; i++) {
 		tuple_size = meta_data_key_info[i].key_length;
@@ -4658,7 +4665,8 @@ static int hclge_config_key(struct hclge_dev *hdev, u8 stage,
 	struct hclge_fd_key_cfg *key_cfg = &hdev->fd_cfg.key_cfg[stage];
 	u8 key_x[MAX_KEY_BYTES], key_y[MAX_KEY_BYTES];
 	u8 *cur_key_x, *cur_key_y;
-	int i, ret, tuple_size;
+	unsigned int i;
+	int ret, tuple_size;
 	u8 meta_data_region;
 
 	memset(key_x, 0, sizeof(key_x));
@@ -8943,7 +8951,8 @@ static int hclge_set_channels(struct hnae3_handle *handle, u32 new_tqps_num,
 	u16 tc_size[HCLGE_MAX_TC_NUM];
 	u16 roundup_size;
 	u32 *rss_indir;
-	int ret, i;
+	unsigned int i;
+	int ret;
 
 	kinfo->req_rss_size = new_tqps_num;
 
