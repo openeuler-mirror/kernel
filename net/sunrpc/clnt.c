@@ -1754,11 +1754,8 @@ rpc_xdr_encode(struct rpc_task *task)
 		     req->rq_rcvsize);
 
 	p = rpc_encode_header(task);
-	if (p == NULL) {
-		printk(KERN_INFO "RPC: couldn't encode RPC header, exit EIO\n");
-		rpc_exit(task, -EIO);
+	if (p == NULL)
 		return;
-	}
 
 	encode = task->tk_msg.rpc_proc->p_encode;
 	if (encode == NULL)
@@ -1965,6 +1962,8 @@ call_transmit(struct rpc_task *task)
 			/* Was the error nonfatal? */
 			if (task->tk_status == -EAGAIN)
 				rpc_delay(task, HZ >> 4);
+			else if (task->tk_status == -EKEYEXPIRED)
+				task->tk_action = call_refresh;
 			else
 				rpc_exit(task, task->tk_status);
 			return;
@@ -2338,7 +2337,8 @@ rpc_encode_header(struct rpc_task *task)
 	*p++ = htonl(clnt->cl_vers);	/* program version */
 	*p++ = htonl(task->tk_msg.rpc_proc->p_proc);	/* procedure */
 	p = rpcauth_marshcred(task, p);
-	req->rq_slen = xdr_adjust_iovec(&req->rq_svec[0], p);
+	if (p)
+		req->rq_slen = xdr_adjust_iovec(&req->rq_svec[0], p);
 	return p;
 }
 
