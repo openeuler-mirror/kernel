@@ -219,7 +219,7 @@ static void hclge_dbg_dump_dcb(struct hclge_dev *hdev, const char *cmd_buf)
 	dev_info(dev, "IGU_TX_PRI_MAP_TC_CFG: 0x%x\n", desc[0].data[5]);
 }
 
-static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, char *cmd_buf)
+static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 {
 	int msg_num;
 
