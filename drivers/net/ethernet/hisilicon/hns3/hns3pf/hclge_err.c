@@ -662,16 +662,6 @@ int hclge_clear_error(struct hclge_dev *hdev, struct hclge_desc *desc, int num)
 	return hclge_cmd_send(&hdev->hw, &desc[0], num);
 }
 
-static int hclge_clear_mac_tnl_int(struct hclge_dev *hdev)
-{
-	struct hclge_desc desc;
-
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CLEAR_MAC_TNL_INT, false);
-	desc.data[0] = cpu_to_le32(HCLGE_MAC_TNL_INT_CLR);
-
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
-}
-
 struct hclge_desc *hclge_query_bd_num(struct hclge_dev *hdev,
 				      struct hclge_bd_num *bd_num,
 				      enum hclge_opcode_type opcode)
@@ -734,6 +724,16 @@ static int hclge_cmd_query_error(struct hclge_dev *hdev,
 		dev_err(dev, "query error cmd failed (%d)\n", ret);
 
 	return ret;
+}
+
+static int hclge_clear_mac_tnl_int(struct hclge_dev *hdev)
+{
+	struct hclge_desc desc;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CLEAR_MAC_TNL_INT, false);
+	desc.data[0] = cpu_to_le32(HCLGE_MAC_TNL_INT_CLR);
+
+	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
 static int hclge_config_common_hw_err_int(struct hclge_dev *hdev, bool en)
