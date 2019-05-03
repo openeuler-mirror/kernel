@@ -1438,6 +1438,7 @@ static int aio_prep_rw(struct kiocb *req, const struct iocb *iocb)
 	int ret;
 
 	req->ki_complete = aio_complete_rw;
+	req->private = NULL;
 	req->ki_pos = iocb->aio_offset;
 	req->ki_flags = iocb_flags(req->ki_filp);
 	if (iocb->aio_flags & IOCB_FLAG_RESFD)
