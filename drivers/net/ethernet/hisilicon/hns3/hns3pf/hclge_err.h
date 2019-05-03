@@ -161,9 +161,6 @@ int hclge_handle_rocee_ras_error(struct hnae3_ae_dev *ae_dev);
 void hclge_log_error(struct device *dev, char *reg,
 		     const struct hclge_hw_error *err,
 		     u32 err_sts, unsigned long *reset_requests);
-int hclge_query_error(struct hclge_dev *hdev, struct hclge_desc *desc,
-		      enum hclge_opcode_type opcode, int num);
-int hclge_clear_error(struct hclge_dev *hdev, struct hclge_desc *desc, int num);
 struct hclge_desc *hclge_query_bd_num(struct hclge_dev *hdev,
 				      struct hclge_bd_num *bd_num,
 				      enum hclge_opcode_type opcode);
