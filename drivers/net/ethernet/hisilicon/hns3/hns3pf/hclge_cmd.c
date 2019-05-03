@@ -183,44 +183,39 @@ static bool hclge_is_special_opcode(u16 opcode)
 	return false;
 }
 
-static int hclge_cmd_check_retval(struct hclge_hw *hw,
-					     struct hclge_desc *desc,
-					     int num, int *ntc)
+static int hclge_cmd_check_retval(struct hclge_hw *hw, struct hclge_desc *desc,
+				  int num, int ntc)
 {
-	struct hclge_desc *desc_to_use;
 	u16 opcode, desc_ret;
-	int handle = 0;
-	int retval = 0;
+	int handle;
+	int retval;
 
 	opcode = le16_to_cpu(desc[0].opcode);
-	while (handle < num) {
-		desc_to_use = &hw->cmq.csq.desc[*ntc];
-		desc[handle] = *desc_to_use;
-
-		if (likely(!hclge_is_special_opcode(opcode)))
-			desc_ret = le16_to_cpu(desc[handle].retval);
-		else
-			desc_ret = le16_to_cpu(desc[0].retval);
-
-		if (desc_ret == HCLGE_CMD_EXEC_SUCCESS)
-			retval = 0;
-		else if (desc_ret == HCLGE_CMD_NO_AUTH)
-			retval = -EPERM;
-		else if (desc_ret == HCLGE_CMD_NOT_SUPPORTED)
-			retval = -EOPNOTSUPP;
-		else if (desc_ret == HCLGE_CMD_QUEUE_ILLEGAL)
-			retval = -ENXIO;
-		else
-			retval = -EIO;
-		hw->cmq.last_status = desc_ret;
-		(*ntc)++;
-		handle++;
-		if (*ntc >= hw->cmq.csq.desc_num)
-			*ntc = 0;
+	for (handle = 0; handle < num; handle++) {
+		desc[handle] = hw->cmq.csq.desc[ntc];
+		ntc++;
+		if (ntc >= hw->cmq.csq.desc_num)
+			ntc = 0;
 	}
+	if (likely(!hclge_is_special_opcode(opcode)))
+		desc_ret = le16_to_cpu(desc[num - 1].retval);
+	else
+		desc_ret = le16_to_cpu(desc[0].retval);
+
+	if (desc_ret == HCLGE_CMD_EXEC_SUCCESS)
+		retval = 0;
+	else if (desc_ret == HCLGE_CMD_NO_AUTH)
+		retval = -EPERM;
+	else if (desc_ret == HCLGE_CMD_NOT_SUPPORTED)
+		retval = -EOPNOTSUPP;
+	else if (desc_ret == HCLGE_CMD_QUEUE_ILLEGAL)
+		retval = -ENXIO;
+	else
+		retval = -EIO;
+	hw->cmq.last_status = desc_ret;
+
 	return retval;
 }
-
 
 /**
  * hclge_cmd_send - send command to command queue
@@ -284,7 +279,7 @@ int hclge_cmd_send(struct hclge_hw *hw, struct hclge_desc *desc, int num)
 	if (!complete) {
 		retval = -EAGAIN;
 	} else {
-		retval = hclge_cmd_check_retval(hw, desc, num, &ntc);
+		retval = hclge_cmd_check_retval(hw, desc, num, ntc);
 	}
 
 	/* Clean the command send queue */
