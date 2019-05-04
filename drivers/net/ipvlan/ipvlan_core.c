@@ -796,8 +796,9 @@ static int ipvlan_xmit_mode_l2e(struct sk_buff *skb, struct net_device *dev)
 					return NET_XMIT_DROP;
 				}
 
-				if (unlikely(ipvlan_l2e_local_xmit_event(ipvlan,
-									 &skb)))
+				if (unlikely((dev->features &
+					(NETIF_F_GSO | NETIF_F_TSO)) &&
+				    ipvlan_l2e_local_xmit_event(ipvlan, &skb)))
 					return NET_XMIT_DROP;
 				return ipvlan_rcv_frame(addr, &skb, true);
 			}
