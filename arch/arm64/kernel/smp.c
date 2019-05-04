@@ -1092,7 +1092,7 @@ void ipi_set_nmi_prio(void __iomem *base, u8 prio)
 
 	u32 offset = (IPI_CPU_BACKTRACE / 4) * 4;
 	u32 shift = (IPI_CPU_BACKTRACE % 4) * 8;
-	u32 prios = readl_relaxed(base + offset);
+	u32 prios = readl_relaxed(base + GICR_IPRIORITYR0 + offset);
 
 	/* clean old priority */
 	prios &= ~(0xff << shift);
