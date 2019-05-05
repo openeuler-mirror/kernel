@@ -293,18 +293,16 @@ struct cgroup_subsys files_cgrp_subsys = {
 	.dfl_cftypes = files,
 };
 
+/*
+ * It could race against cgroup migration of current task, and
+ * using task_get_css() to get a valid css.
+ */
 void files_cgroup_assign(struct files_struct *files)
 {
-	struct task_struct *tsk = current;
 	struct cgroup_subsys_state *css;
-	struct cgroup *cgrp;
 
-	task_lock(tsk);
-	cgrp = task_cgroup(tsk, files_cgrp_id);
-	css = cgroup_subsys_state(cgrp, files_cgrp_id);
-	css_get(css);
+	css = task_get_css(current, files_cgrp_id);
 	files->files_cgroup = container_of(css, struct files_cgroup, css);
-	task_unlock(tsk);
 }
 
 void files_cgroup_remove(struct files_struct *files)
