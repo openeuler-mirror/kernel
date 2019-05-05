@@ -1093,7 +1093,7 @@ static int hclgevf_set_promisc_mode(struct hclgevf_dev *hdev, bool en_bc_pmc)
 	return hclgevf_cmd_set_promisc_mode(hdev, en_bc_pmc);
 }
 
-static int hclgevf_tqp_enable(struct hclgevf_dev *hdev, int tqp_id,
+static int hclgevf_tqp_enable(struct hclgevf_dev *hdev, unsigned int tqp_id,
 			      int stream_id, bool enable)
 {
 	struct hclgevf_cfg_com_tqp_queue_cmd *req;

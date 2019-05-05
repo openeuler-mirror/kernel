@@ -44,7 +44,7 @@ static int hclge_mdio_write(struct mii_bus *bus, int phyid, int regnum,
 	mdio_cmd = (struct hclge_mdio_cfg_cmd *)desc.data;
 
 	hnae3_set_field(mdio_cmd->phyid, HCLGE_MDIO_PHYID_M,
-			HCLGE_MDIO_PHYID_S, phyid);
+			HCLGE_MDIO_PHYID_S, (u32)phyid);
 	hnae3_set_field(mdio_cmd->phyad, HCLGE_MDIO_PHYREG_M,
 			HCLGE_MDIO_PHYREG_S, (u32)regnum);
 
@@ -82,7 +82,7 @@ static int hclge_mdio_read(struct mii_bus *bus, int phyid, int regnum)
 	mdio_cmd = (struct hclge_mdio_cfg_cmd *)desc.data;
 
 	hnae3_set_field(mdio_cmd->phyid, HCLGE_MDIO_PHYID_M,
-			HCLGE_MDIO_PHYID_S, phyid);
+			HCLGE_MDIO_PHYID_S, (u32)phyid);
 	hnae3_set_field(mdio_cmd->phyad, HCLGE_MDIO_PHYREG_M,
 			HCLGE_MDIO_PHYREG_S, (u32)regnum);
 

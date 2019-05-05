@@ -1249,7 +1249,7 @@ static int hclge_configure(struct hclge_dev *hdev)
 	return ret;
 }
 
-static int hclge_config_tso(struct hclge_dev *hdev, int tso_mss_min,
+static int hclge_config_tso(struct hclge_dev *hdev, unsigned int tso_mss_min,
 			    unsigned int tso_mss_max)
 {
 	struct hclge_cfg_tso_status_cmd *req;
@@ -6111,7 +6111,7 @@ static int hclge_set_serdes_loopback(struct hclge_dev *hdev, bool en,
 	return -EBUSY;
 }
 
-static int hclge_tqp_enable(struct hclge_dev *hdev, int tqp_id,
+static int hclge_tqp_enable(struct hclge_dev *hdev, unsigned int tqp_id,
 			    int stream_id, bool enable)
 {
 	struct hclge_desc desc;
