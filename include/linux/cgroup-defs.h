@@ -569,12 +569,6 @@ struct cftype {
 	ssize_t (*write)(struct kernfs_open_file *of,
 			 char *buf, size_t nbytes, loff_t off);
 
-	int (*read_seq_string)(struct cgroup *cont, struct cftype *cft,
-			       struct seq_file *m);
-
-	int (*write_string)(struct cgroup *cgrp, struct cftype *cft,
-			    const char *buffer);
-
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lock_class_key	lockdep_key;
 #endif
@@ -673,7 +667,7 @@ struct cgroup_subsys {
 	 */
 	struct cftype *dfl_cftypes;	/* for the default hierarchy */
 	struct cftype *legacy_cftypes;	/* for the legacy hierarchies */
-	struct cftype *base_cftypes;
+
 	/*
 	 * A subsystem may depend on other subsystems.  When such subsystem
 	 * is enabled on a cgroup, the depended-upon subsystems are enabled
