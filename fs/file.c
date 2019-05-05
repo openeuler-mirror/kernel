@@ -364,7 +364,7 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 	if (!files_cgroup_alloc_fd(newf, files_cgroup_count_fds(newf)))
 		return newf;
 
-/* could not get enough FD resources.  Need to clean up. */
+	/* could not get enough FD resources.  Need to clean up. */
 	new_fds = new_fdt->fd;
 	for (i = open_files; i != 0; i--) {
 		struct file *f = *new_fds++;

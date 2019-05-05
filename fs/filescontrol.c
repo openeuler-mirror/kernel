@@ -91,7 +91,7 @@ u64 files_cgroup_count_fds(struct files_struct *files)
 {
 	int i;
 	struct fdtable *fdt;
-	int retval = 0;
+	unsigned int retval = 0;
 
 	fdt = files_fdtable(files);
 	for (i = 0; i < DIV_ROUND_UP(fdt->max_fds, BITS_PER_LONG); i++)
@@ -99,6 +99,11 @@ u64 files_cgroup_count_fds(struct files_struct *files)
 	return retval;
 }
 
+/*
+ * cgroup core uses cgroup_threadgroup_rwsem to ensure
+ * the task will not exit and task->files will not be NULL
+ * during the migration of cgroup.
+ */
 static u64 files_in_taskset(struct cgroup_taskset *tset)
 {
 	struct task_struct *task;
@@ -109,10 +114,15 @@ static u64 files_in_taskset(struct cgroup_taskset *tset)
 		if (!thread_group_leader(task))
 			continue;
 
-		task_lock(task);
+		/*
+		 * use file_lock to ensure fd will not be created or destroyed,
+		 * and the fd table will not be expanded.
+		 */
+		spin_lock(&task->files->file_lock);
 		files += files_cgroup_count_fds(task->files);
-		task_unlock(task);
+		spin_unlock(&task->files->file_lock);
 	}
+
 	return files;
 }
 
