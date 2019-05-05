@@ -1828,7 +1828,7 @@ static int hclge_only_alloc_priv_buff(struct hclge_dev *hdev,
 	u32 tc_num = hclge_get_tc_num(hdev);
 	u32 half_mps = hdev->mps >> 1;
 	u32 min_rx_priv;
-	int i;
+	unsigned int i;
 
 	if (tc_num)
 		rx_priv = rx_priv / tc_num;
