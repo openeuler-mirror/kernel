@@ -1587,6 +1587,21 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
+static int hclge_clear_hw_msix_error(struct hclge_dev *hdev,
+				     struct hclge_desc *desc, bool is_mpf,
+				     u32 bd_num)
+{
+	if (is_mpf)
+		desc[0].opcode =
+			cpu_to_le16(HCLGE_QUERY_CLEAR_ALL_MPF_MSIX_INT);
+	else
+		desc[0].opcode = cpu_to_le16(HCLGE_QUERY_CLEAR_ALL_PF_MSIX_INT);
+
+	desc[0].flag = cpu_to_le16(HCLGE_CMD_FLAG_NO_INTR | HCLGE_CMD_FLAG_IN);
+
+	return hclge_cmd_send(&hdev->hw, &desc[0], bd_num);
+}
+
 static int hclge_handle_all_hw_msix_error(struct hclge_dev *hdev,
 					  unsigned long *reset_requests)
 {
@@ -1644,8 +1659,7 @@ static int hclge_handle_all_hw_msix_error(struct hclge_dev *hdev,
 				status, reset_requests);
 
 	/* clear all main PF MSIx errors */
-	hclge_cmd_reuse_desc(&desc[0], false);
-	ret = hclge_cmd_send(&hdev->hw, &desc[0], mpf_bd_num);
+	ret = hclge_clear_hw_msix_error(hdev, desc, true, mpf_bd_num);
 	if (ret) {
 		dev_err(dev, "clear all mpf msix int cmd failed (%d)\n", ret);
 		goto msi_error;
@@ -1685,8 +1699,7 @@ static int hclge_handle_all_hw_msix_error(struct hclge_dev *hdev,
 				status, reset_requests);
 
 	/* clear all PF MSIx errors */
-	hclge_cmd_reuse_desc(&desc[0], false);
-	ret = hclge_cmd_send(&hdev->hw, &desc[0], pf_bd_num);
+	ret = hclge_clear_hw_msix_error(hdev, desc, false, pf_bd_num);
 	if (ret)
 		dev_err(dev, "clear all pf msix int cmd failed (%d)\n", ret);
 
@@ -1737,12 +1750,55 @@ int hclge_handle_hw_msix_error(struct hclge_dev *hdev,
 
 void hclge_handle_all_hns_hw_errors(struct hnae3_ae_dev *ae_dev)
 {
+#define HCLGE_DESC_NO_DATA_LEN 8
+
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct device *dev = &hdev->pdev->dev;
+	u32 mpf_bd_num, pf_bd_num, bd_num;
+	struct hclge_desc desc_bd;
+	struct hclge_desc *desc;
 	u32 status;
+	int ret;
 
 	ae_dev->hw_err_reset_req = 0;
 	status = hclge_read_dev(&hdev->hw, HCLGE_RAS_PF_OTHER_INT_STS_REG);
+
+	/* query the number of bds for the MSIx int status */
+	hclge_cmd_setup_basic_desc(&desc_bd, HCLGE_QUERY_MSIX_INT_STS_BD_NUM,
+				   true);
+	ret = hclge_cmd_send(&hdev->hw, &desc_bd, 1);
+	if (ret) {
+		dev_err(dev, "fail(%d) to query msix int status bd num\n",
+			ret);
+		return;
+	}
+
+	mpf_bd_num = le32_to_cpu(desc_bd.data[0]);
+	pf_bd_num = le32_to_cpu(desc_bd.data[1]);
+	bd_num = max_t(u32, mpf_bd_num, pf_bd_num);
+
+	desc = kcalloc(bd_num, sizeof(struct hclge_desc), GFP_KERNEL);
+	if (!desc)
+		return;
+
+	/* Clear HNS hw errors reported through msix  */
+	memset(&desc[0].data[0], 0xFF, mpf_bd_num * sizeof(struct hclge_desc) -
+	       HCLGE_DESC_NO_DATA_LEN);
+	ret = hclge_clear_hw_msix_error(hdev, desc, true, mpf_bd_num);
+	if (ret) {
+		dev_err(dev, "fail(%d) to clear mpf msix int during init\n",
+			ret);
+		goto msi_error;
+	}
+
+	memset(&desc[0].data[0], 0xFF, pf_bd_num * sizeof(struct hclge_desc) -
+	       HCLGE_DESC_NO_DATA_LEN);
+	ret = hclge_clear_hw_msix_error(hdev, desc, false, pf_bd_num);
+	if (ret) {
+		dev_err(dev, "fail(%d) to clear pf msix int during init\n",
+			ret);
+		goto msi_error;
+	}
 
 	/* Handle Non-fatal HNS RAS errors */
 	if (status & HCLGE_RAS_REG_NFE_MASK) {
@@ -1750,11 +1806,6 @@ void hclge_handle_all_hns_hw_errors(struct hnae3_ae_dev *ae_dev)
 		hclge_handle_all_ras_errors(hdev);
 	}
 
-	/* Handle HNS hw errors reported through msix  */
-	status = hclge_read_dev(&hdev->hw,
-				HCLGE_VECTOR0_PF_OTHER_INT_STS_REG);
-	if (status & HCLGE_VECTOR0_REG_MSIX_MASK) {
-		dev_warn(dev, "HNS hw error(MSIx) identified during init\n");
-		hclge_handle_all_hw_msix_error(hdev, &ae_dev->hw_err_reset_req);
-	}
+msi_error:
+	kfree(desc);
 }

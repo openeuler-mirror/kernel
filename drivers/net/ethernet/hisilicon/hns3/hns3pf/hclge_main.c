@@ -3259,6 +3259,7 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev, bool is_timeout)
 
 		dev_info(&hdev->pdev->dev, "Upgrade reset level\n");
 		hclge_clear_reset_cause(hdev);
+		set_bit(HNAE3_GLOBAL_RESET, &hdev->default_reset_request);
 		mod_timer(&hdev->reset_timer,
 			  jiffies + HCLGE_RESET_INTERVAL * HZ);
 
@@ -3480,8 +3481,7 @@ static void hclge_reset_timer(struct timer_list *t)
 	struct hclge_dev *hdev = from_timer(hdev, t, reset_timer);
 
 	dev_info(&hdev->pdev->dev,
-		 "triggering global reset in reset timer\n");
-	set_bit(HNAE3_GLOBAL_RESET, &hdev->default_reset_request);
+		 "triggering reset in reset timer\n");
 	hclge_reset_event(hdev->pdev, NULL);
 }
 
@@ -8799,6 +8799,14 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 
 	/* Log and clear the hw errors those already occurred */
 	hclge_handle_all_hns_hw_errors(ae_dev);
+	/* request delayed reset for the error recovery because an immediate
+	 * global reset on a PF affecting pending initialization of other PFs
+	 */
+	if (ae_dev->hw_err_reset_req) {
+		hclge_set_def_reset_request(ae_dev, &ae_dev->hw_err_reset_req);
+		mod_timer(&hdev->reset_timer,
+			  jiffies + HCLGE_RESET_INTERVAL);
+	}
 
 	/* Enable MISC vector(vector0) */
 	hclge_enable_vector(&hdev->misc_vector, true);
@@ -8927,7 +8935,7 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 	if (hdev->roce_client) {
 		ret = hclge_config_rocee_ras_interrupt(hdev, true);
 		if (ret) {
-			dev_err(&ae_dev->pdev->dev,
+			dev_err(&pdev->dev,
 				"fail(%d) to re-enable roce ras interrupts\n",
 				ret);
 			return ret;
@@ -9392,18 +9400,18 @@ struct hnae3_ae_ops hclge_ops = {
 	.restore_fd_rules = hclge_restore_fd_entries,
 	.enable_fd = hclge_enable_fd,
 	.add_arfs_entry = hclge_add_fd_entry_by_arfs,
+	.dbg_run_cmd = hclge_dbg_run_cmd,
+	.handle_hw_ras_error = hclge_handle_hw_ras_error,
 	.get_hw_reset_stat = hclge_get_hw_reset_stat,
 	.ae_dev_resetting = hclge_ae_dev_resetting,
 	.ae_dev_reset_cnt = hclge_ae_dev_reset_cnt,
 	.set_gro_en = hclge_gro_en,
-	.enable_timer_task = hclge_enable_timer_task,
-	.dbg_run_cmd = hclge_dbg_run_cmd,
-	.handle_hw_ras_error = hclge_handle_hw_ras_error,
 	.get_global_queue_id = hclge_covert_handle_qid_global,
+	.enable_timer_task = hclge_enable_timer_task,
 	.mac_connect_phy = hclge_mac_connect_phy,
 	.mac_disconnect_phy = hclge_mac_disconnect_phy,
-	.reset_done = hclge_reset_done,
 	.restore_vlan_table = hclge_restore_vlan_table,
+	.reset_done = hclge_reset_done,
 };
 
 struct hnae3_ae_algo ae_algo = {
