@@ -1619,9 +1619,6 @@ static int hns3_vlan_rx_kill_vid(struct net_device *netdev,
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 	int ret = -EIO;
 
-	if (hns3_nic_resetting(netdev))
-		return -EBUSY;
-
 	if (h->ae_algo->ops->set_vlan_filter)
 		ret = h->ae_algo->ops->set_vlan_filter(h, proto, vid, true);
 
