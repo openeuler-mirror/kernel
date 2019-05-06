@@ -1326,11 +1326,11 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 			u64_stats_update_begin(&ring->syncp);
 			ring->stats.sw_err_cnt++;
 			u64_stats_update_end(&ring->syncp);
-			netdev_err(netdev, "no memory to xmit!\n");
-			goto out_err_tx_ok;
 		}
 
-		netdev_err(netdev, "xmit error: %d!\n", buf_num);
+		if (net_ratelimit())
+			netdev_err(netdev, "xmit error: %d!\n", buf_num);
+
 		goto out_err_tx_ok;
 	}
 
