@@ -2721,8 +2721,8 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 
 	/* check for vector0 msix event source */
 	if (msix_src_reg & HCLGE_VECTOR0_REG_MSIX_MASK) {
-		dev_dbg(&hdev->pdev->dev, "received event 0x%x\n",
-			msix_src_reg);
+		dev_info(&hdev->pdev->dev, "received event 0x%x\n",
+			 msix_src_reg);
 		return HCLGE_VECTOR0_EVENT_ERR;
 	}
 
@@ -2734,8 +2734,8 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 	}
 
 	/* print other vector0 event source */
-	dev_dbg(&hdev->pdev->dev, "cmdq_src_reg:0x%x, msix_src_reg:0x%x\n",
-		cmdq_src_reg, msix_src_reg);
+	dev_info(&hdev->pdev->dev, "cmdq_src_reg:0x%x, msix_src_reg:0x%x\n",
+		 cmdq_src_reg, msix_src_reg);
 	return HCLGE_VECTOR0_EVENT_OTHER;
 }
 
