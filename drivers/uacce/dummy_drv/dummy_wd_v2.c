@@ -106,8 +106,8 @@ static bool dummy_wd2_iommu_capable(enum iommu_cap cap)
 	}
 }
 
-static struct iommu_domain *dummy_wd2_iommu_domain_alloc(unsigned
-							 iommu_domain_type);
+static struct iommu_domain *dummy_wd2_iommu_domain_alloc(
+		unsigned int iommu_domain_type);
 static void dummy_wd2_iommu_domain_free(struct iommu_domain *domain);
 
 static int dummy_wd2_iommu_attach_dev(struct iommu_domain *domain,
@@ -152,9 +152,11 @@ static int dummy_wd2_iommu_map(struct iommu_domain *domain, unsigned long iova,
 			dev_dbg(&d->hw->dummy_wd2_dev,
 				"iommu_map %d asid=%lld, %llx=>%llx\n", i,
 				d->hw->pt[i].asid,
-				d->hw->pt[i].iova, d->hw->pt[i].pa);
+				d->hw->pt[i].iova,
+				d->hw->pt[i].pa);
 			/* flush to hardware */
-			writeq(MAX_PT_ENTRIES, d->hw->io_base + DUMMY2_IO_PTSZ);
+			writeq(MAX_PT_ENTRIES,
+			       d->hw->io_base + DUMMY2_IO_PTSZ);
 			return 0;
 		}
 	}
@@ -176,10 +178,12 @@ static size_t dummy_wd2_iommu_unmap(struct iommu_domain *domain,
 			dev_dbg(&d->hw->dummy_wd2_dev,
 				"iommu_unmap %d asid=%lld, %llx=>%llx\n", i,
 				d->hw->pt[i].asid,
-				d->hw->pt[i].iova, d->hw->pt[i].pa);
+				d->hw->pt[i].iova,
+				d->hw->pt[i].pa);
 			d->hw->pt[i].asid = (uint64_t)-1;
 			/* flush to hardware */
-			writeq(MAX_PT_ENTRIES, d->hw->io_base + DUMMY2_IO_PTSZ);
+			writeq(MAX_PT_ENTRIES,
+			       d->hw->io_base + DUMMY2_IO_PTSZ);
 			return DUMMY2_DMA_PAGE_SIZE;
 		}
 	}
@@ -198,11 +202,11 @@ static struct iommu_ops dummy_wd2_iommu_ops = {
 	.pgsize_bitmap = SZ_4K,
 };
 
-static struct iommu_domain *dummy_wd2_iommu_domain_alloc(unsigned
-							 iommu_domain_type)
+static struct iommu_domain *dummy_wd2_iommu_domain_alloc(
+		unsigned int iommu_domain_type)
 {
-	struct dummy_wd2_iommu_domain *domain =
-	    kzalloc(sizeof(struct iommu_domain), GFP_KERNEL);
+	struct dummy_wd2_iommu_domain *domain = kzalloc(
+		sizeof(struct iommu_domain), GFP_KERNEL);
 
 	if (domain)
 		domain->domain.ops = &dummy_wd2_iommu_ops;
@@ -217,10 +221,10 @@ static void dummy_wd2_iommu_domain_free(struct iommu_domain *domain)
 }
 
 static struct bus_type dummy_wd2_bus_type = {
-	.name = "dummy_wd2_bus",
-	.probe = dummy_wd2_bus_probe,
-	.remove = dummy_wd2_bus_remove,
-	.iommu_ops = &dummy_wd2_iommu_ops,
+	.name		= "dummy_wd2_bus",
+	.probe		= dummy_wd2_bus_probe,
+	.remove		= dummy_wd2_bus_remove,
+	.iommu_ops	= &dummy_wd2_iommu_ops,
 };
 
 static int dummy_wd2_is_q_updated(struct uacce_queue *q)
@@ -229,7 +233,7 @@ static int dummy_wd2_is_q_updated(struct uacce_queue *q)
 }
 
 static int dummy_wd2_get_queue(struct uacce *uacce, unsigned long arg,
-			       struct uacce_queue **q)
+			   struct uacce_queue **q)
 {
 	int i;
 	struct dummy_wd2_hw *hw = (struct dummy_wd2_hw *)uacce->priv;
@@ -262,7 +266,7 @@ static void dummy_wd2_put_queue(struct uacce_queue *q)
 }
 
 static int dummy_wd2_mmap(struct uacce_queue *q, struct vm_area_struct *vma,
-			  struct uacce_qfile_region *qfr)
+		      struct uacce_qfile_region *qfr)
 {
 	struct dummy_wd2_hw_queue *hwq = (struct dummy_wd2_hw_queue *)q->priv;
 
@@ -271,7 +275,7 @@ static int dummy_wd2_mmap(struct uacce_queue *q, struct vm_area_struct *vma,
 		return -EINVAL;
 
 	return remap_pfn_range(vma, vma->vm_start,
-			       (u64) hwq->db_pa >> PAGE_SHIFT,
+			       (u64)hwq->db_pa >> PAGE_SHIFT,
 			       DUMMY2_DMA_PAGE_SIZE,
 			       pgprot_noncached(vma->vm_page_prot));
 }
@@ -378,8 +382,8 @@ static int dummy_wd2_probe(struct platform_device *pdev)
 		return PTR_ERR(hw->io_base);
 
 	hw->pt = dmam_alloc_coherent(dev,
-				     sizeof(struct pt_entry) * MAX_PT_ENTRIES,
-				     &hw->pt_dma, GFP_KERNEL);
+			sizeof(struct pt_entry) * MAX_PT_ENTRIES,
+			&hw->pt_dma, GFP_KERNEL);
 	if (!hw->pt)
 		return -ENOMEM;
 
@@ -393,7 +397,7 @@ static int dummy_wd2_probe(struct platform_device *pdev)
 	}
 
 	dev_info(dev, "v2 device (%llx, %llx), header: %llx\n",
-		 (u64) hw->pt, hw->pt_dma, readq(hw->io_base + DUMMY2_IO_TAG));
+		 (u64)hw->pt, hw->pt_dma, readq(hw->io_base + DUMMY2_IO_TAG));
 
 	/* set page tables */
 	writeq(hw->pt_dma, hw->io_base + DUMMY2_IO_PTPA);
@@ -401,9 +405,9 @@ static int dummy_wd2_probe(struct platform_device *pdev)
 	for (i = 0; i < RING_NUM; i++) {
 		hw->qs[i].used = false;
 		hw->qs[i].db_pa = (void __iomem *)res->start +
-		    ((i + 1) << DUMMY2_DMA_PAGE_SHIFT);
+			((i+1)<<DUMMY2_DMA_PAGE_SHIFT);
 		hw->qs[i].ring_io_base = hw->io_base + DUMMY2_IO_RING_BEGIN +
-		    sizeof(struct ring_io) * i;
+			sizeof(struct ring_io) * i;
 		hw->qs[i].hw = hw;
 		hw->qs[i].q.priv = &hw->qs[i];
 	}
@@ -447,6 +451,13 @@ static int dummy_wd2_probe(struct platform_device *pdev)
 	uacce->ops = &dummy_wd2_ops;
 	uacce->drv_name = DUMMY2_WD;
 	uacce->algs = "memcpy\n";
+	uacce->api_ver = "dummy_v2";
+	uacce->flags = 0;
+	uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
+	uacce->qf_pg_start[UACCE_QFRT_DKO] = UACCE_QFR_NA;
+	uacce->qf_pg_start[UACCE_QFRT_DUS] = 1;
+	uacce->qf_pg_start[UACCE_QFRT_SS] = 2;
+
 	ret = uacce_register(uacce);
 	if (ret) {
 		dev_warn(uacce->pdev, "uacce register fail %d\n", ret);
@@ -455,9 +466,9 @@ static int dummy_wd2_probe(struct platform_device *pdev)
 
 	return 0;
 
- err_with_group:
+err_with_group:
 	iommu_group_put(hw->iommu_group);
- err_with_device:
+err_with_device:
 	put_device(&hw->dummy_wd2_dev);
 	return ret;
 }
@@ -471,11 +482,11 @@ static int dummy_wd2_remove(struct platform_device *pdev)
 }
 
 static struct platform_driver dummy_wd2_pdrv = {
-	.probe = dummy_wd2_probe,
-	.remove = dummy_wd2_remove,
-	.driver = {
-		   .name = DUMMY2_WD,
-		   },
+	.probe		= dummy_wd2_probe,
+	.remove		= dummy_wd2_remove,
+	.driver		= {
+		.name		= DUMMY2_WD,
+	},
 };
 
 static int __init dummy_wd2_init(void)

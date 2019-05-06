@@ -189,52 +189,81 @@ static struct hisi_qp *hpre_get_qp(void)
 	return qp;
 }
 
+static int _get_data_dma_addr(struct hpre_asym_request *hpre_req,
+			      struct scatterlist *data, unsigned int len,
+			      int is_src, dma_addr_t *tmp)
+{
+	enum dma_data_direction dma_dir;
+	struct hpre_ctx *ctx = hpre_req->ctx;
+	struct device *dev = &GET_DEV(ctx);
+
+	if (is_src) {
+		hpre_req->src_align = NULL;
+		dma_dir = DMA_TO_DEVICE;
+	} else {
+		hpre_req->dst_align = NULL;
+		dma_dir = DMA_FROM_DEVICE;
+	}
+	*tmp = dma_map_single(dev, sg_virt(data),
+			      len, dma_dir);
+	if (unlikely(dma_mapping_error(dev, *tmp))) {
+		dev_err(dev, "dma map data err!\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static int _cp_data_to_dma_buf(struct hpre_asym_request *hpre_req,
+			       struct scatterlist *data, unsigned int len,
+			       int is_src, int is_dh, dma_addr_t *tmp)
+{
+	struct hpre_ctx *ctx = hpre_req->ctx;
+	struct device *dev = &GET_DEV(ctx);
+	char *ptr;
+	int shift;
+
+	shift = ctx->key_sz - len;
+	if (shift < 0)
+		return -EINVAL;
+
+	ptr = dma_alloc_coherent(dev, ctx->key_sz, tmp, GFP_KERNEL);
+	if (unlikely(!ptr)) {
+		dev_err(dev, "dma alloc data err!\n");
+		return -ENOMEM;
+	}
+	if (is_src) {
+		scatterwalk_map_and_copy(ptr + shift, data, 0, len, 0);
+		if (is_dh)
+			(void)hpre_bn_format(ptr, ctx->key_sz);
+		hpre_req->src_align = ptr;
+	} else {
+		hpre_req->dst_align = ptr;
+	}
+
+	return 0;
+}
+
 static int _hw_data_init(struct hpre_asym_request *hpre_req,
 			 struct scatterlist *data, unsigned int len,
 			 int is_src, int is_dh)
 {
 	struct hpre_sqe *msg = &hpre_req->req;
 	struct hpre_ctx *ctx = hpre_req->ctx;
-	struct device *dev = &GET_DEV(ctx);
-	enum dma_data_direction dma_dir;
 	dma_addr_t tmp;
-	char *ptr;
-	int shift;
+	int ret;
 
 	/* when the data is dh's source, we should format it */
 	if ((sg_is_last(data) && len == ctx->key_sz) &&
 	    ((is_dh && !is_src) || !is_dh)) {
-		if (is_src) {
-			hpre_req->src_align = NULL;
-			dma_dir = DMA_TO_DEVICE;
-		} else {
-			hpre_req->dst_align = NULL;
-			dma_dir = DMA_FROM_DEVICE;
-		}
-		tmp = dma_map_single(dev, sg_virt(data),
-				     len, dma_dir);
-		if (unlikely(dma_mapping_error(dev, tmp))) {
-			dev_err(dev, "\ndma map data err!");
-			return -ENOMEM;
-		}
+		ret = _get_data_dma_addr(hpre_req, data, len, is_src, &tmp);
+		if (ret)
+			return ret;
 	} else {
-		shift = ctx->key_sz - len;
-		if (shift < 0)
-			return -EINVAL;
-
-		ptr = dma_alloc_coherent(dev, ctx->key_sz, &tmp, GFP_KERNEL);
-		if (unlikely(!ptr)) {
-			dev_err(dev, "\ndma alloc data err!");
-			return -ENOMEM;
-		}
-		if (is_src) {
-			scatterwalk_map_and_copy(ptr + shift, data, 0, len, 0);
-			if (is_dh)
-				(void)hpre_bn_format(ptr, ctx->key_sz);
-			hpre_req->src_align = ptr;
-		} else {
-			hpre_req->dst_align = ptr;
-		}
+		ret = _cp_data_to_dma_buf(hpre_req, data, len,
+					is_src, is_dh, &tmp);
+		if (ret)
+			return ret;
 	}
 	if (is_src) {
 		msg->low_in = lower_32_bits(tmp);
@@ -807,6 +836,7 @@ static int hpre_rsa_setkey_crt(struct hpre_ctx *ctx, struct rsa_key *rsa_key)
 	struct device *dev = &GET_DEV(ctx);
 	unsigned int hlf_ksz = ctx->key_sz >> 1;
 	int ret;
+	u64 offset;
 
 	ctx->rsa.crt_prikey = dma_alloc_coherent(dev, hlf_ksz * _CRT_PRMS,
 						 &ctx->rsa.dma_crt_prikey,
@@ -821,25 +851,29 @@ static int hpre_rsa_setkey_crt(struct hpre_ctx *ctx, struct rsa_key *rsa_key)
 		goto free_key;
 
 	/* dp */
-	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + hlf_ksz, rsa_key->dp,
+	offset = hlf_ksz;
+	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset, rsa_key->dp,
 				rsa_key->dp_sz, hlf_ksz);
 	if (ret)
 		goto free_key;
 
 	/* q */
-	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + hlf_ksz * _CRT_Q,
+	offset = hlf_ksz * _CRT_Q;
+	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset,
 				rsa_key->q, rsa_key->q_sz, hlf_ksz);
 	if (ret)
 		goto free_key;
 
 	/* p */
-	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + hlf_ksz * _CRT_P,
+	offset = hlf_ksz * _CRT_P;
+	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset,
 				rsa_key->p, rsa_key->p_sz, hlf_ksz);
 	if (ret)
 		goto free_key;
 
 	/* qinv */
-	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + hlf_ksz * _CRT_INV,
+	offset = hlf_ksz * _CRT_INV;
+	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset,
 				rsa_key->qinv, rsa_key->qinv_sz, hlf_ksz);
 	if (ret)
 		goto free_key;

@@ -89,23 +89,61 @@ static struct dentry *hzip_debugfs_root;
 LIST_HEAD(hisi_zip_list);
 DEFINE_MUTEX(hisi_zip_list_lock);
 
+struct hisi_zip_resource {
+	struct hisi_zip *hzip;
+	int distance;
+	struct list_head list;
+};
+
+static void free_list(struct list_head *head)
+{
+	struct hisi_zip_resource *res, *tmp;
+
+	list_for_each_entry_safe(res, tmp, head, list) {
+		list_del(&res->list);
+		kfree(res);
+	}
+}
+
 struct hisi_zip *find_zip_device(int node)
 {
 	struct hisi_zip *ret = NULL;
 #ifdef CONFIG_NUMA
+	struct hisi_zip_resource *res, *tmp;
 	struct hisi_zip *hisi_zip;
-	int min_distance = HZIP_NUMA_DISTANCE;
+	struct list_head *n;
 	struct device *dev;
+	LIST_HEAD(head);
 
 	mutex_lock(&hisi_zip_list_lock);
 
 	list_for_each_entry(hisi_zip, &hisi_zip_list, list) {
+		res = kzalloc(sizeof(*res), GFP_KERNEL);
+		if (!res)
+			goto err;
+
 		dev = &hisi_zip->qm.pdev->dev;
-		if (node_distance(dev->numa_node, node) < min_distance) {
-			ret = hisi_zip;
-			min_distance = node_distance(dev->numa_node, node);
+		res->hzip = hisi_zip;
+		res->distance = node_distance(dev->numa_node, node);
+
+		n = &head;
+		list_for_each_entry(tmp, &head, list) {
+			if (res->distance < tmp->distance) {
+				n = &tmp->list;
+				break;
+			}
+		}
+		list_add_tail(&res->list, n);
+	}
+
+	list_for_each_entry(tmp, &head, list) {
+		if (hisi_qm_get_free_qp_num(&tmp->hzip->qm)) {
+			ret = tmp->hzip;
+			break;
 		}
 	}
+
+	free_list(&head);
 #else
 	mutex_lock(&hisi_zip_list_lock);
 
@@ -114,6 +152,10 @@ struct hisi_zip *find_zip_device(int node)
 	mutex_unlock(&hisi_zip_list_lock);
 
 	return ret;
+
+err:
+	free_list(&head);
+	return NULL;
 }
 
 struct hisi_zip_hw_error {
@@ -289,18 +331,18 @@ static void hisi_zip_set_user_domain_and_cache(struct hisi_zip *hisi_zip)
 	/* qm user domain */
 	writel(AXUSER_BASE, hisi_zip->qm.io_base + QM_ARUSER_M_CFG_1);
 	writel(ARUSER_M_CFG_ENABLE, hisi_zip->qm.io_base +
-		QM_ARUSER_M_CFG_ENABLE);
+	       QM_ARUSER_M_CFG_ENABLE);
 	writel(AXUSER_BASE, hisi_zip->qm.io_base + QM_AWUSER_M_CFG_1);
 	writel(AWUSER_M_CFG_ENABLE, hisi_zip->qm.io_base +
-		QM_AWUSER_M_CFG_ENABLE);
+	       QM_AWUSER_M_CFG_ENABLE);
 	writel(WUSER_M_CFG_ENABLE, hisi_zip->qm.io_base +
-		QM_WUSER_M_CFG_ENABLE);
+	       QM_WUSER_M_CFG_ENABLE);
 
 	/* qm cache */
-	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_0);
-	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_1);
-	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_0);
-	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_1);
+	writel(AXI_M_CFG, hisi_zip->qm.io_base + QM_AXI_M_CFG);
+	writel(AXI_M_CFG_ENABLE, hisi_zip->qm.io_base + QM_AXI_M_CFG_ENABLE);
+	writel(PEH_AXUSER_CFG_ENABLE, hisi_zip->qm.io_base +
+	       QM_PEH_AXUSER_CFG_ENABLE);
 
 	/* cache */
 	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_0);
@@ -315,26 +357,25 @@ static void hisi_zip_set_user_domain_and_cache(struct hisi_zip *hisi_zip)
 
 	if (qm->use_sva) {
 		writel(AXUSER_BASE | AXUSER_SSV, hisi_zip->qm.io_base +
-			HZIP_DATA_RUSER_32_63);
+		       HZIP_DATA_RUSER_32_63);
 		writel(AXUSER_BASE | AXUSER_SSV, hisi_zip->qm.io_base +
-			HZIP_DATA_WUSER_32_63);
+		       HZIP_DATA_WUSER_32_63);
 	} else {
 		writel(AXUSER_BASE, hisi_zip->qm.io_base +
-			HZIP_DATA_RUSER_32_63);
+		       HZIP_DATA_RUSER_32_63);
 		writel(AXUSER_BASE, hisi_zip->qm.io_base +
-			HZIP_DATA_WUSER_32_63);
-
+		       HZIP_DATA_WUSER_32_63);
 	}
 
 	/* let's open all compression/decompression cores */
 	writel(DECOMP_CHECK_ENABLE | ALL_COMP_DECOMP_EN,
-		hisi_zip->qm.io_base + HZIP_CLOCK_GATE_CTRL);
+	       hisi_zip->qm.io_base + HZIP_CLOCK_GATE_CTRL);
+
 	/* enable sqc,cqc writeback */
 	writel(SQC_CACHE_ENABLE | CQC_CACHE_ENABLE | SQC_CACHE_WB_ENABLE |
-		CQC_CACHE_WB_ENABLE | FIELD_PREP(SQC_CACHE_WB_THRD, 1) |
-		FIELD_PREP(CQC_CACHE_WB_THRD, 1),
-		hisi_zip->qm.io_base + QM_CACHE_CTL);
-
+	       CQC_CACHE_WB_ENABLE | FIELD_PREP(SQC_CACHE_WB_THRD, 1) |
+	       FIELD_PREP(CQC_CACHE_WB_THRD, 1),
+	       hisi_zip->qm.io_base + QM_CACHE_CTL);
 }
 
 static void hisi_zip_hw_error_set_state(struct hisi_zip *hisi_zip, bool state)

@@ -233,7 +233,7 @@ int queue_worker(void *data)
 	do {
 		_queue_work(hwq);
 		schedule_timeout_interruptible(
-				msecs_to_jiffies(QUEUE_YEILD_MS));
+			msecs_to_jiffies(QUEUE_YEILD_MS));
 	} while (!kthread_should_stop());
 	hwq->work_thread = NULL;
 
@@ -321,6 +321,12 @@ static int dummy_wd_probe(struct platform_device *pdev)
 	uacce->ops = &dummy_ops;
 	uacce->drv_name = DUMMY_WD;
 	uacce->algs = "memcpy\n";
+	uacce->api_ver = "dummy_v1";
+	uacce->flags = UACCE_DEV_NOIOMMU;
+	uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
+	uacce->qf_pg_start[UACCE_QFRT_DKO] = UACCE_QFR_NA;
+	uacce->qf_pg_start[UACCE_QFRT_DUS] = UACCE_QFR_NA;
+	uacce->qf_pg_start[UACCE_QFRT_SS] = 1;
 
 #ifdef CONFIG_NUMA
 	/*

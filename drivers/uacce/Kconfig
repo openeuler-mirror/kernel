@@ -12,7 +12,6 @@ menuconfig UACCE
 
 config WD_DUMMY_DEV
 	tristate "Support for WrapDrive Dummy Device"
-	depends on ARM64
 	depends on UACCE
 	help
 	  Support for WarpDrive test driver with devices (NOT for upstream).

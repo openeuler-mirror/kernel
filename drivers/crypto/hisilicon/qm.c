@@ -60,7 +60,7 @@
 #define QM_QC_CQE_SIZE			4
 
 /* eqc shift */
-#define QM_EQC_EQE_SHIFT		12
+#define QM_EQE_AEQE_SIZE		(2UL << 12)
 #define QM_EQC_PHASE_SHIFT		16
 
 #define QM_EQE_PHASE(eqe)		(((eqe)->dw0 >> 16) & 0x1)
@@ -1124,18 +1124,14 @@ void hisi_qm_release_qp(struct hisi_qp *qp)
 }
 EXPORT_SYMBOL_GPL(hisi_qm_release_qp);
 
-static int qm_qp_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
+static int qm_sq_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 {
 	struct hisi_qm *qm = qp->qm;
 	struct device *dev = &qm->pdev->dev;
 	enum qm_hw_ver ver = qm->ver;
 	struct qm_sqc *sqc;
-	struct qm_cqc *cqc;
 	dma_addr_t sqc_dma;
-	dma_addr_t cqc_dma;
 	int ret;
-
-	qm_init_qp_status(qp);
 
 	if (qm->use_dma_api) {
 		sqc = kzalloc(sizeof(struct qm_sqc), GFP_KERNEL);
@@ -1171,8 +1167,18 @@ static int qm_qp_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 	} else {
 		memset(sqc, 0, sizeof(struct qm_sqc));
 	}
-	if (ret)
-		return ret;
+
+	return ret;
+}
+
+static int qm_cq_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
+{
+	struct hisi_qm *qm = qp->qm;
+	struct device *dev = &qm->pdev->dev;
+	enum qm_hw_ver ver = qm->ver;
+	struct qm_cqc *cqc;
+	dma_addr_t cqc_dma;
+	int ret;
 
 	if (qm->use_dma_api) {
 		cqc = kzalloc(sizeof(struct qm_cqc), GFP_KERNEL);
@@ -1210,6 +1216,19 @@ static int qm_qp_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 	}
 
 	return ret;
+}
+
+static int qm_qp_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
+{
+	int ret;
+
+	qm_init_qp_status(qp);
+
+	ret = qm_sq_ctx_cfg(qp, qp_id, pasid);
+	if (ret)
+		return ret;
+
+	return qm_cq_ctx_cfg(qp, qp_id, pasid);
 }
 
 /**
@@ -1371,15 +1390,8 @@ static void hisi_qm_cache_wb(struct hisi_qm *qm)
 	}
 }
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
-static void qm_qp_event_notifier(struct hisi_qp *qp)
+int hisi_qm_get_free_qp_num(struct hisi_qm *qm)
 {
-	uacce_wake_up(qp->uacce_q);
-}
-
-static int hisi_qm_get_available_instances(struct uacce *uacce)
-{
-	struct hisi_qm *qm = uacce->priv;
 	int i, ret;
 
 	read_lock(&qm->qps_lock);
@@ -1392,6 +1404,18 @@ static int hisi_qm_get_available_instances(struct uacce *uacce)
 		ret = (ret == qm->qp_num) ? 1 : 0;
 
 	return ret;
+}
+EXPORT_SYMBOL_GPL(hisi_qm_get_free_qp_num);
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
+static void qm_qp_event_notifier(struct hisi_qp *qp)
+{
+	uacce_wake_up(qp->uacce_q);
+}
+
+static int hisi_qm_get_available_instances(struct uacce *uacce)
+{
+	return hisi_qm_get_free_qp_num(uacce->priv);
 }
 
 static int hisi_qm_uacce_get_queue(struct uacce *uacce, unsigned long arg,
@@ -1871,6 +1895,8 @@ static int qm_eq_ctx_cfg(struct hisi_qm *qm)
 
 	eqc->base_l = lower_32_bits(qm->eqe_dma);
 	eqc->base_h = upper_32_bits(qm->eqe_dma);
+	if (qm->ver == QM_HW_V1)
+		eqc->dw3 = QM_EQE_AEQE_SIZE;
 	eqc->dw6 = (QM_Q_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT);
 	ret = qm_mb(qm, QM_MB_CMD_EQC, eqc_dma, 0, 0, 0);
 	if (qm->use_dma_api) {

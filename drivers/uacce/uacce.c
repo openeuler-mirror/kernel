@@ -25,7 +25,7 @@
 static struct class *uacce_class;
 static DEFINE_IDR(uacce_idr);
 static dev_t uacce_devt;
-static DEFINE_MUTEX(uacce_mutex);	/* mutex to protect uacce */
+static DEFINE_MUTEX(uacce_mutex); /* mutex to protect uacce */
 
 /* lock to protect all queues management */
 #ifdef CONFIG_UACCE_FIX_MMAP
@@ -122,8 +122,8 @@ void uacce_wake_up(struct uacce_queue *q)
 }
 EXPORT_SYMBOL_GPL(uacce_wake_up);
 
-static inline int
-uacce_iommu_map_qfr(struct uacce_queue *q, struct uacce_qfile_region *qfr)
+static inline int uacce_iommu_map_qfr(struct uacce_queue *q,
+				      struct uacce_qfile_region *qfr)
 {
 	struct device *dev = q->uacce->pdev;
 	struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
@@ -145,7 +145,7 @@ uacce_iommu_map_qfr(struct uacce_queue *q, struct uacce_qfile_region *qfr)
 
 	return 0;
 
- err_with_map_pages:
+err_with_map_pages:
 	for (j = i - 1; j >= 0; j--) {
 		iommu_unmap(domain, qfr->iova + j * PAGE_SIZE, PAGE_SIZE);
 		put_page(qfr->pages[j]);
@@ -153,8 +153,8 @@ uacce_iommu_map_qfr(struct uacce_queue *q, struct uacce_qfile_region *qfr)
 	return ret;
 }
 
-static inline void
-uacce_iommu_unmap_qfr(struct uacce_queue *q, struct uacce_qfile_region *qfr)
+static inline void uacce_iommu_unmap_qfr(struct uacce_queue *q,
+					 struct uacce_qfile_region *qfr)
 {
 	struct device *dev = q->uacce->pdev;
 	struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
@@ -169,8 +169,8 @@ uacce_iommu_unmap_qfr(struct uacce_queue *q, struct uacce_qfile_region *qfr)
 	}
 }
 
-static int
-uacce_queue_map_qfr(struct uacce_queue *q, struct uacce_qfile_region *qfr)
+static int uacce_queue_map_qfr(struct uacce_queue *q,
+			       struct uacce_qfile_region *qfr)
 {
 	if (!(qfr->flags & UACCE_QFRF_MAP) || (qfr->flags & UACCE_QFRF_DMA))
 		return 0;
@@ -181,8 +181,8 @@ uacce_queue_map_qfr(struct uacce_queue *q, struct uacce_qfile_region *qfr)
 	return uacce_iommu_map_qfr(q, qfr);
 }
 
-static void
-uacce_queue_unmap_qfr(struct uacce_queue *q, struct uacce_qfile_region *qfr)
+static void uacce_queue_unmap_qfr(struct uacce_queue *q,
+				  struct uacce_qfile_region *qfr)
 {
 	if (!(qfr->flags & UACCE_QFRF_MAP) || (qfr->flags & UACCE_QFRF_DMA))
 		return;
@@ -221,7 +221,7 @@ static vm_fault_t uacce_shm_vm_fault(struct vm_fault *vmf)
 	vmf->page = qfr->pages[page_offset];
 	ret = 0;
 
- out:
+out:
 	uacce_qs_runlock();
 	return ret;
 }
@@ -247,7 +247,7 @@ static int uacce_qfr_alloc_pages(struct uacce_qfile_region *qfr)
 
 	return 0;
 
- err_with_pages:
+err_with_pages:
 	for (j = i - 1; j >= 0; j--)
 		put_page(qfr->pages[j]);
 
@@ -265,9 +265,9 @@ static void uacce_qfr_free_pages(struct uacce_qfile_region *qfr)
 	kfree(qfr->pages);
 }
 
-static inline int
-uacce_queue_mmap_qfr(struct uacce_queue *q,
-		     struct uacce_qfile_region *qfr, struct vm_area_struct *vma)
+static inline int uacce_queue_mmap_qfr(struct uacce_queue *q,
+				       struct uacce_qfile_region *qfr,
+				       struct vm_area_struct *vma)
 {
 #ifdef CONFIG_UACCE_FIX_MMAP
 	int i, ret;
@@ -293,8 +293,8 @@ uacce_queue_mmap_qfr(struct uacce_queue *q,
 }
 
 static struct uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
-						struct vm_area_struct *vma,
-						enum uacce_qfrt type, u32 flags)
+					struct vm_area_struct *vma,
+					enum uacce_qfrt type, u32 flags)
 {
 	struct uacce_qfile_region *qfr;
 	struct uacce *uacce = q->uacce;
@@ -327,9 +327,9 @@ static struct uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 	/* allocate memory */
 	if (flags & UACCE_QFRF_DMA) {
 		dev_dbg(uacce->pdev, "allocate dma %d pages\n", qfr->nr_pages);
-		qfr->kaddr = dma_alloc_coherent(uacce->pdev,
-						qfr->nr_pages << PAGE_SHIFT,
-						&qfr->dma, GFP_KERNEL);
+		qfr->kaddr = dma_alloc_coherent(uacce->pdev, qfr->nr_pages <<
+						PAGE_SHIFT, &qfr->dma,
+						GFP_KERNEL);
 		if (!qfr->kaddr) {
 			ret = -ENOMEM;
 			goto err_with_qfr;
@@ -370,23 +370,23 @@ static struct uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 
 	return qfr;
 
- err_with_mapped_qfr:
+err_with_mapped_qfr:
 	uacce_queue_unmap_qfr(q, qfr);
- err_with_pages:
+err_with_pages:
 	if (flags & UACCE_QFRF_DMA)
 		dma_free_coherent(uacce->pdev, qfr->nr_pages << PAGE_SHIFT,
 				  qfr->kaddr, qfr->dma);
 	else
 		uacce_qfr_free_pages(qfr);
- err_with_qfr:
+err_with_qfr:
 	kfree(qfr);
 
 	return ERR_PTR(ret);
 }
 
 /* we assume you have uacce_queue_unmap_qfr(q, qfr) from all related queues */
-static void
-uacce_destroy_region(struct uacce_queue *q, struct uacce_qfile_region *qfr)
+static void uacce_destroy_region(struct uacce_queue *q,
+				 struct uacce_qfile_region *qfr)
 {
 	struct uacce *uacce = q->uacce;
 
@@ -444,9 +444,9 @@ static long uacce_cmd_share_qfr(struct uacce_queue *tgt, int fd)
 	list_add(&tgt->list, &src->qfrs[UACCE_QFRT_SS]->qs);
 	ret = 0;
 
- out_with_lock:
+out_with_lock:
 	uacce_qs_wunlock();
- out_with_fd:
+out_with_fd:
 	fput(filep);
 	return ret;
 }
@@ -464,9 +464,8 @@ static int uacce_start_queue(struct uacce_queue *q)
 	for (i = 0; i < UACCE_QFRT_MAX; i++) {
 		qfr = q->qfrs[i];
 		if (qfr && (qfr->flags & UACCE_QFRF_KMAP) && !qfr->kaddr) {
-			qfr->kaddr =
-			    vmap(qfr->pages, qfr->nr_pages, VM_MAP,
-				 PAGE_KERNEL);
+			qfr->kaddr = vmap(qfr->pages, qfr->nr_pages, VM_MAP,
+					  PAGE_KERNEL);
 			if (!qfr->kaddr) {
 				ret = -ENOMEM;
 				dev_dbg(dev, "fail to kmap %s qfr(%d pages)\n",
@@ -488,7 +487,7 @@ static int uacce_start_queue(struct uacce_queue *q)
 	atomic_set(&q->uacce->state, UACCE_ST_STARTED);
 	return 0;
 
- err_with_vmap:
+err_with_vmap:
 	for (j = i; j >= 0; j--) {
 		qfr = q->qfrs[j];
 		if (qfr && qfr->kaddr) {
@@ -522,8 +521,8 @@ static long uacce_get_ss_dma(struct uacce_queue *q, void __user *arg)
 	return ret;
 }
 
-static long
-uacce_fops_unl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
+static long uacce_fops_unl_ioctl(struct file *filep,
+				 unsigned int cmd, unsigned long arg)
 {
 	struct uacce_queue *q = filep->private_data;
 	struct uacce *uacce = q->uacce;
@@ -548,8 +547,8 @@ uacce_fops_unl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 }
 
 #ifdef CONFIG_COMPAT
-static long
-uacce_fops_compat_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
+static long uacce_fops_compat_ioctl(struct file *filep,
+				   unsigned int cmd, unsigned long arg)
 {
 	arg = (unsigned long)compat_ptr(arg);
 	return uacce_fops_unl_ioctl(filep, cmd, arg);
@@ -635,6 +634,10 @@ static int uacce_fops_flush(struct file *filep, fl_owner_t id)
 	struct uacce_queue *q = filep->private_data;
 	struct uacce *uacce = q->uacce;
 
+	if (UACCE_ST_INIT ==
+	    atomic_cmpxchg(&q->status, UACCE_ST_OPENNED, UACCE_ST_INIT))
+		return 0;
+
 	/*
 	 * It is different between CI and kernel-dev here, so delete list
 	 * entry in flush callback and release callback. After flush is called
@@ -645,9 +648,6 @@ static int uacce_fops_flush(struct file *filep, fl_owner_t id)
 	mutex_lock(&uacce->q_lock);
 	list_del(&q->q_dev);
 	mutex_unlock(&uacce->q_lock);
-
-	/* filep->private_date is still used by above uacce_fops_fasync */
-	filep->private_data = NULL;
 
 	return uacce_queue_drain(q);
 }
@@ -687,6 +687,7 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 		goto open_err;
 
 	atomic_inc(&uacce->ref);
+	atomic_set(&q->status, UACCE_ST_OPENNED);
 	q->pasid = pasid;
 	q->uacce = uacce;
 	q->mm = current->mm;
@@ -708,8 +709,8 @@ static int uacce_fops_release(struct inode *inode, struct file *filep)
 {
 	struct uacce_queue *q = filep->private_data;
 
-	/* task has put the queue */
-	if (!q)
+	if (UACCE_ST_INIT ==
+	    atomic_cmpxchg(&q->status, UACCE_ST_OPENNED, UACCE_ST_INIT))
 		return 0;
 
 	uacce_fops_fasync(-1, filep, 0);
@@ -723,8 +724,8 @@ static int uacce_fops_release(struct inode *inode, struct file *filep)
 	return uacce_queue_drain(q);
 }
 
-static enum uacce_qfrt
-uacce_get_region_type(struct uacce *uacce, struct vm_area_struct *vma)
+static enum uacce_qfrt uacce_get_region_type(struct uacce *uacce,
+					     struct vm_area_struct *vma)
 {
 	enum uacce_qfrt type = UACCE_QFRT_MAX;
 	int i;
@@ -781,8 +782,7 @@ uacce_get_region_type(struct uacce *uacce, struct vm_area_struct *vma)
 
 		if (vma_pages(vma) !=
 		    next_start - uacce->qf_pg_start[type]) {
-			dev_err(&uacce->dev,
-				"invalid mmap size "
+			dev_err(&uacce->dev, "invalid mmap size "
 				"(%ld vs %ld pages) for region %s.\n",
 				vma_pages(vma),
 				next_start - uacce->qf_pg_start[type],
@@ -877,7 +877,7 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 
 	return 0;
 
- out_with_lock:
+out_with_lock:
 	uacce_qs_wunlock();
 	return ret;
 }
@@ -902,44 +902,42 @@ static int uacce_fops_fasync(int fd, struct file *file, int mode)
 }
 
 static const struct file_operations uacce_fops = {
-	.owner = THIS_MODULE,
-	.open = uacce_fops_open,
-	.flush = uacce_fops_flush,
-	.release = uacce_fops_release,
-	.unlocked_ioctl = uacce_fops_unl_ioctl,
+	.owner		= THIS_MODULE,
+	.open		= uacce_fops_open,
+	.flush		= uacce_fops_flush,
+	.release	= uacce_fops_release,
+	.unlocked_ioctl	= uacce_fops_unl_ioctl,
 #ifdef CONFIG_COMPAT
-	.compat_ioctl = uacce_fops_compat_ioctl,
+	.compat_ioctl	= uacce_fops_compat_ioctl,
 #endif
-	.mmap = uacce_fops_mmap,
-	.poll = uacce_fops_poll,
-	.fasync = uacce_fops_fasync,
+	.mmap		= uacce_fops_mmap,
+	.poll		= uacce_fops_poll,
+	.fasync		= uacce_fops_fasync,
 };
 
 #define UACCE_FROM_CDEV_ATTR(dev) container_of(dev, struct uacce, dev)
 
-static ssize_t
-uacce_dev_show_id(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t uacce_dev_show_id(struct device *dev,
+				 struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
 	return sprintf(buf, "%d\n", uacce->dev_id);
 }
-
 static DEVICE_ATTR(id, S_IRUGO, uacce_dev_show_id, NULL);
 
-static ssize_t
-uacce_dev_show_api(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t uacce_dev_show_api(struct device *dev,
+				  struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
 	return sprintf(buf, "%s\n", uacce->api_ver);
 }
-
 static DEVICE_ATTR(api, S_IRUGO, uacce_dev_show_api, NULL);
 
-static ssize_t
-uacce_dev_show_numa_distance(struct device *dev,
-			     struct device_attribute *attr, char *buf)
+static ssize_t uacce_dev_show_numa_distance(struct device *dev,
+					    struct device_attribute *attr,
+					    char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 	int distance = 0;
@@ -949,12 +947,11 @@ uacce_dev_show_numa_distance(struct device *dev,
 #endif
 	return sprintf(buf, "%d\n", abs(distance));
 }
-
 static DEVICE_ATTR(numa_distance, S_IRUGO, uacce_dev_show_numa_distance, NULL);
 
-static ssize_t
-uacce_dev_show_node_id(struct device *dev,
-		       struct device_attribute *attr, char *buf)
+static ssize_t uacce_dev_show_node_id(struct device *dev,
+				      struct device_attribute *attr,
+				      char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 	int node_id = -1;
@@ -964,46 +961,42 @@ uacce_dev_show_node_id(struct device *dev,
 #endif
 	return sprintf(buf, "%d\n", node_id);
 }
-
 static DEVICE_ATTR(node_id, S_IRUGO, uacce_dev_show_node_id, NULL);
 
-static ssize_t
-uacce_dev_show_flags(struct device *dev,
-		     struct device_attribute *attr, char *buf)
+static ssize_t uacce_dev_show_flags(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
 	return sprintf(buf, "%d\n", uacce->flags);
 }
-
 static DEVICE_ATTR(flags, S_IRUGO, uacce_dev_show_flags, NULL);
 
-static ssize_t
-uacce_dev_show_available_instances(struct device *dev,
-				   struct device_attribute *attr, char *buf)
+static ssize_t uacce_dev_show_available_instances(struct device *dev,
+						  struct device_attribute *attr,
+						  char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
 	return sprintf(buf, "%d\n", uacce->ops->get_available_instances(uacce));
 }
-
 static DEVICE_ATTR(available_instances, S_IRUGO,
 		   uacce_dev_show_available_instances, NULL);
 
-static ssize_t
-uacce_dev_show_algorithms(struct device *dev,
-			  struct device_attribute *attr, char *buf)
+static ssize_t uacce_dev_show_algorithms(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
 	return sprintf(buf, "%s", uacce->algs);
 }
-
 static DEVICE_ATTR(algorithms, S_IRUGO, uacce_dev_show_algorithms, NULL);
 
 static ssize_t uacce_dev_show_qfrs_offset(struct device *dev,
-					struct device_attribute *attr,
-					char *buf)
+					  struct device_attribute *attr,
+					  char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 	int i, ret;
@@ -1036,8 +1029,8 @@ static struct attribute *uacce_dev_attrs[] = {
 };
 
 static const struct attribute_group uacce_dev_attr_group = {
-	.name = UACCE_DEV_ATTRS,
-	.attrs = uacce_dev_attrs,
+	.name	= UACCE_DEV_ATTRS,
+	.attrs	= uacce_dev_attrs,
 };
 
 static const struct attribute_group *uacce_dev_attr_groups[] = {
@@ -1069,7 +1062,7 @@ static int uacce_create_chrdev(struct uacce *uacce)
 	dev_dbg(&uacce->dev, "create uacce minior=%d\n", uacce->dev_id);
 	return 0;
 
- err_with_idr:
+err_with_idr:
 	idr_remove(&uacce_idr, uacce->dev_id);
 	return ret;
 }
@@ -1101,8 +1094,8 @@ static int uacce_dev_match(struct device *dev, void *data)
 }
 
 /* Borrowed from VFIO */
-static bool
-uacce_iommu_has_sw_msi(struct iommu_group *group, phys_addr_t *base)
+static bool uacce_iommu_has_sw_msi(struct iommu_group *group,
+				   phys_addr_t *base)
 {
 	struct list_head group_resv_regions;
 	struct iommu_resv_region *region, *next;
@@ -1130,7 +1123,7 @@ uacce_iommu_has_sw_msi(struct iommu_group *group, phys_addr_t *base)
 		}
 	}
 	list_for_each_entry_safe(region, next, &group_resv_regions, list)
-	    kfree(region);
+		kfree(region);
 	return ret;
 }
 
@@ -1188,14 +1181,14 @@ static int uacce_set_iommu_domain(struct uacce *uacce)
 
 	if (resv_msi) {
 		if (!irq_domain_check_msi_remap() &&
-			!iommu_capable(dev->bus, IOMMU_CAP_INTR_REMAP)) {
+		    !iommu_capable(dev->bus, IOMMU_CAP_INTR_REMAP)) {
 			dev_err(dev, "No interrupt remapping support!\n");
 			ret = -EPERM;
 			goto err_with_domain;
 		}
 
 		dev_dbg(dev, "Set resv msi %llx on iommu domain!\n",
-			(u64) resv_msi_base);
+			(u64)resv_msi_base);
 		ret = iommu_get_msi_cookie(domain, resv_msi_base);
 		if (ret) {
 			dev_err(dev, "fail to get msi cookie from domain!\n");
@@ -1205,7 +1198,7 @@ static int uacce_set_iommu_domain(struct uacce *uacce)
 
 	return 0;
 
- err_with_domain:
+err_with_domain:
 	iommu_domain_free(domain);
 	return ret;
 }
@@ -1237,22 +1230,20 @@ int uacce_register(struct uacce *uacce)
 	int ret;
 	struct device *dev = uacce->pdev;
 
-	if (!uacce->pdev) {
+	if (!dev) {
 		pr_err("uacce parent device not set\n");
 		return -ENODEV;
 	}
 
 	if (uacce->flags & UACCE_DEV_NOIOMMU) {
 		add_taint(TAINT_CRAP, LOCKDEP_STILL_OK);
-		dev_warn(dev, "register to noiommu mode, "
-			 "this may export kernel data to user space and "
-			 "open the kernel for user attacked");
+		dev_warn(dev, "register to noiommu mode, this may be attacked\n");
 	}
 
 	/* if dev support fault-from-dev, it should support pasid */
 	if ((uacce->flags & UACCE_DEV_FAULT_FROM_DEV) &&
 	    !(uacce->flags & UACCE_DEV_PASID)) {
-		dev_warn(dev, "SVM/SAV device should support PASID\n");
+		dev_err(dev, "SVM/SVA device should support PASID\n");
 		return -EINVAL;
 	}
 
@@ -1261,7 +1252,7 @@ int uacce_register(struct uacce *uacce)
 
 	if (!uacce->ops->get_available_instances)
 		uacce->ops->get_available_instances =
-		    uacce_default_get_available_instances;
+			uacce_default_get_available_instances;
 
 #ifndef CONFIG_IOMMU_SVA
 	ret = uacce_set_iommu_domain(uacce);
@@ -1287,8 +1278,7 @@ int uacce_register(struct uacce *uacce)
 			goto err_with_lock;
 		}
 #else
-		uacce->flags &=
-		    ~(UACCE_DEV_FAULT_FROM_DEV | UACCE_DEV_PASID);
+		uacce->flags &= ~(UACCE_DEV_FAULT_FROM_DEV | UACCE_DEV_PASID);
 #endif
 	}
 
@@ -1300,7 +1290,7 @@ int uacce_register(struct uacce *uacce)
 	mutex_unlock(&uacce_mutex);
 	return 0;
 
- err_with_lock:
+err_with_lock:
 	mutex_unlock(&uacce_mutex);
 	return ret;
 }
@@ -1348,9 +1338,9 @@ static int __init uacce_init(void)
 
 	return 0;
 
- err_with_class:
+err_with_class:
 	class_destroy(uacce_class);
- err:
+err:
 	return ret;
 }
 
