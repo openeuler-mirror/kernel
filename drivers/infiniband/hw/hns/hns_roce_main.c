@@ -664,7 +664,7 @@ static void hns_roce_disassociate_ucontext(struct ib_ucontext *ibcontext)
 	mutex_unlock(&context->vma_list_mutex);
 }
 
-const char *hns_roce_hw_stats_name[] = {
+static const char * const hns_roce_hw_stats_name[] = {
 	"pd_alloc",
 	"pd_dealloc",
 	"pd_active_max",
@@ -681,6 +681,10 @@ const char *hns_roce_hw_stats_name[] = {
 	"cq_active_max",
 	"qp_active",
 	"qp_active_max",
+	"srq_active",
+	"srq_active_max",
+	"uar_active",
+	"uar_active_max",
 	"mr_rereg",
 	"aeqe",
 	"ceqe",
@@ -702,7 +706,7 @@ static struct rdma_hw_stats *hns_roce_alloc_hw_stats(struct ib_device *device,
 					  ARRAY_SIZE(hns_roce_hw_stats_name),
 					  RDMA_HW_STATS_DEFAULT_LIFESPAN);
 }
-static int hns_roce_get_hw_stats(struct ib_device *device,
+static int hns_roce_get_hw_stats_for_armci(struct ib_device *device,
 				 struct rdma_hw_stats *stats,
 				 u8 port, int index)
 {
@@ -710,21 +714,7 @@ static int hns_roce_get_hw_stats(struct ib_device *device,
 	unsigned long *table;
 	unsigned long max;
 
-	if (port != 0)
-		return 0; /* nothing to do for port */
-
 	switch (index) {
-	case HW_STATS_PD_ACTIVE_MAX:
-		table = hr_dev->pd_bitmap.table;
-		max = hr_dev->pd_bitmap.max;
-		stats->value[index] = find_last_bit(table, max);
-		break;
-	case HW_STATS_MR_ACTIVE_MAX:
-		table = hr_dev->mr_table.mtpt_bitmap.table;
-		max = hr_dev->mr_table.mtpt_bitmap.max;
-		stats->value[index] = find_last_bit(table, max);
-		break;
-	/* {noup} */
 	case HW_STATS_PD_ACTIVE:
 		table = hr_dev->pd_bitmap.table;
 		max = hr_dev->pd_bitmap.max;
@@ -759,6 +749,27 @@ static int hns_roce_get_hw_stats(struct ib_device *device,
 		max = hr_dev->qp_table.bitmap.max;
 		stats->value[index] = find_last_bit(table, max);
 		break;
+	case HW_STATS_SRQ_ACTIVE:
+		table = hr_dev->srq_table.bitmap.table;
+		max = hr_dev->srq_table.bitmap.max;
+		stats->value[index] = bitmap_weight(table, max) -
+				      hr_dev->caps.reserved_srqs;
+		break;
+	case HW_STATS_SRQ_ACTIVE_MAX:
+		table = hr_dev->srq_table.bitmap.table;
+		max = hr_dev->srq_table.bitmap.max;
+		stats->value[index] = find_last_bit(table, max);
+		break;
+	case HW_STATS_UAR_ACTIVE:
+		table = hr_dev->uar_table.bitmap.table;
+		max = hr_dev->uar_table.bitmap.max;
+		stats->value[index] = bitmap_weight(table, max);
+		break;
+	case HW_STATS_UAR_ACTIVE_MAX:
+		table = hr_dev->uar_table.bitmap.table;
+		max = hr_dev->uar_table.bitmap.max;
+		stats->value[index] = find_last_bit(table, max);
+		break;
 	case HW_STATS_AEQE:
 		stats->value[index] = hr_dev->dfx_cnt[HNS_ROCE_DFX_AEQE];
 		break;
@@ -771,6 +782,37 @@ static int hns_roce_get_hw_stats(struct ib_device *device,
 
 	return index;
 }
+
+static int hns_roce_get_hw_stats(struct ib_device *device,
+				 struct rdma_hw_stats *stats,
+				 u8 port, int index)
+{
+	struct hns_roce_dev *hr_dev = to_hr_dev(device);
+	unsigned long *table;
+	unsigned long max;
+
+	if (port != 0)
+		return 0; /* nothing to do for port */
+
+	switch (index) {
+	case HW_STATS_PD_ACTIVE_MAX:
+		table = hr_dev->pd_bitmap.table;
+		max = hr_dev->pd_bitmap.max;
+		stats->value[index] = find_last_bit(table, max);
+		break;
+	case HW_STATS_MR_ACTIVE_MAX:
+		table = hr_dev->mr_table.mtpt_bitmap.table;
+		max = hr_dev->mr_table.mtpt_bitmap.max;
+		stats->value[index] = find_last_bit(table, max);
+		break;
+	default:
+		hns_roce_get_hw_stats_for_armci(device, stats, port, index);
+		break;
+	}
+
+	return index;
+}
+
 
 static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev)
 {
