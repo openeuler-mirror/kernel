@@ -1080,7 +1080,7 @@ static void hclge_dbg_dump_mac_tnl_status(struct hclge_dev *hdev)
 	}
 }
 
-int hclge_dbg_run_cmd(struct hnae3_handle *handle, char *cmd_buf)
+int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
