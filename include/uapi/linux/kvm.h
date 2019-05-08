@@ -974,7 +974,8 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_ARM_INJECT_SERROR_ESR 158
 #define KVM_CAP_MSR_PLATFORM_INFO 159
 #define KVM_CAP_ARM_VM_IPA_SIZE 165 /* returns maximum IPA bits for a VM */
-#define KVM_CAP_MANUAL_DIRTY_LOG_PROTECT 166
+#define KVM_CAP_MANUAL_DIRTY_LOG_PROTECT 166 /* Obsolete */
+#define KVM_CAP_MANUAL_DIRTY_LOG_PROTECT2 168
 #define KVM_CAP_ARM_IRQ_LINE_LAYOUT_2 174
 
 #define KVM_CAP_ARM_CPU_FEATURE 555
@@ -1435,7 +1436,7 @@ struct kvm_enc_region {
 #define KVM_GET_NESTED_STATE         _IOWR(KVMIO, 0xbe, struct kvm_nested_state)
 #define KVM_SET_NESTED_STATE         _IOW(KVMIO,  0xbf, struct kvm_nested_state)
 
-/* Available with KVM_CAP_MANUAL_DIRTY_LOG_PROTECT */
+/* Available with KVM_CAP_MANUAL_DIRTY_LOG_PROTECT_2 */
 #define KVM_CLEAR_DIRTY_LOG          _IOWR(KVMIO, 0xc0, struct kvm_clear_dirty_log)
 
 /* Secure Encrypted Virtualization command */
