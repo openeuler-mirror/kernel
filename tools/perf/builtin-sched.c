@@ -1771,7 +1771,8 @@ static int perf_sched__process_comm(struct perf_tool *tool __maybe_unused,
 	return 0;
 }
 
-static int perf_sched__read_events(struct perf_sched *sched)
+static int __perf_sched__read_events(struct perf_sched *sched,
+					struct perf_session *session)
 {
 	const struct perf_evsel_str_handler handlers[] = {
 		{ "sched:sched_switch",	      process_sched_switch_event, },
@@ -1780,32 +1781,17 @@ static int perf_sched__read_events(struct perf_sched *sched)
 		{ "sched:sched_wakeup_new",   process_sched_wakeup_event, },
 		{ "sched:sched_migrate_task", process_sched_migrate_task_event, },
 	};
-	struct perf_session *session;
-	struct perf_data data = {
-		.file      = {
-			.path = input_name,
-		},
-		.mode      = PERF_DATA_MODE_READ,
-		.force     = sched->force,
-	};
-	int rc = -1;
-
-	session = perf_session__new(&data, false, &sched->tool);
-	if (session == NULL) {
-		pr_debug("No Memory for session\n");
-		return -1;
-	}
 
 	symbol__init(&session->header.env);
 
 	if (perf_session__set_tracepoints_handlers(session, handlers))
-		goto out_delete;
+		return -1;
 
 	if (perf_session__has_traces(session, "record -R")) {
 		int err = perf_session__process_events(session);
 		if (err) {
 			pr_err("Failed to process events, error %d", err);
-			goto out_delete;
+			return -1;
 		}
 
 		sched->nr_events      = session->evlist->stats.nr_events[0];
@@ -1813,9 +1799,30 @@ static int perf_sched__read_events(struct perf_sched *sched)
 		sched->nr_lost_chunks = session->evlist->stats.nr_events[PERF_RECORD_LOST];
 	}
 
-	rc = 0;
-out_delete:
+	return 0;
+}
+
+static int perf_sched__read_events(struct perf_sched *sched)
+{
+	struct perf_session *session;
+	struct perf_data data = {
+		.file      = {
+			.path  = input_name,
+		},
+		.mode  = PERF_DATA_MODE_READ,
+		.force = sched->force,
+	};
+	int rc;
+
+	session = perf_session__new(&data, false, &sched->tool);
+	if (session == NULL) {
+		pr_debug("No Memory for session\n");
+		return -1;
+	}
+
+	rc = __perf_sched__read_events(sched, session);
 	perf_session__delete(session);
+
 	return rc;
 }
 
@@ -3129,12 +3136,27 @@ static void perf_sched__merge_lat(struct perf_sched *sched)
 
 static int perf_sched__lat(struct perf_sched *sched)
 {
+	struct perf_session *session;
+	struct perf_data data = {
+		.file      = {
+			.path  = input_name,
+		},
+		.mode  = PERF_DATA_MODE_READ,
+		.force = sched->force,
+	};
 	struct rb_node *next;
+	int rc = -1;
 
 	setup_pager();
 
-	if (perf_sched__read_events(sched))
+	session = perf_session__new(&data, false, &sched->tool);
+	if (session == NULL) {
+		pr_debug("No Memory for session\n");
 		return -1;
+	}
+
+	if (__perf_sched__read_events(sched, session))
+		goto out_delete;
 
 	perf_sched__merge_lat(sched);
 	perf_sched__sort_lat(sched);
@@ -3163,7 +3185,10 @@ static int perf_sched__lat(struct perf_sched *sched)
 	print_bad_events(sched);
 	printf("\n");
 
-	return 0;
+	rc = 0;
+out_delete:
+	perf_session__delete(session);
+	return rc;
 }
 
 static int setup_map_cpus(struct perf_sched *sched)
