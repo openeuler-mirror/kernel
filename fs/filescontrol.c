@@ -26,7 +26,7 @@
 #include <linux/fdtable.h>
 #include <linux/sched/signal.h>
 
-#define FILES_MAX ULLONG_MAX
+#define FILES_MAX D_COUNT_MAX
 #define FILES_MAX_STR "max"
 
 
