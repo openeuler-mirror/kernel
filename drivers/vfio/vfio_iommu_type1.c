@@ -41,7 +41,6 @@
 #include <linux/notifier.h>
 #include <linux/dma-iommu.h>
 #include <linux/irqdomain.h>
-#include <linux/vfio_spimdev.h>
 
 #define DRIVER_VERSION  "0.2"
 #define DRIVER_AUTHOR   "Alex Williamson <alex.williamson@redhat.com>"
@@ -96,8 +95,6 @@ struct vfio_dma {
 };
 
 struct vfio_group {
-	/* iommu_group of mdev's parent device */
-	struct iommu_group	*parent_group;
 	struct iommu_group	*iommu_group;
 	struct list_head	next;
 };
@@ -1343,109 +1340,6 @@ static bool vfio_iommu_has_sw_msi(struct iommu_group *group, phys_addr_t *base)
 	return ret;
 }
 
-/* return 0 if the device is not spimdev.
- * return 1 if the device is spimdev, the data will be updated with parent
- * device's group.
- * return -errno if other error.
- */
-static int vfio_spimdev_type(struct device *dev, void *data)
-{
-	struct iommu_group **group = data;
-	struct iommu_group *pgroup;
-	int (*spimdev_mdev)(struct device *dev);
-	struct device *pdev;
-	int ret = 1;
-
-	/* vfio_spimdev module is not configurated */
-	spimdev_mdev = symbol_get(vfio_spimdev_is_spimdev);
-	if (!spimdev_mdev)
-		return 0;
-
-	/* check if it belongs to vfio_spimdev device */
-	if (!spimdev_mdev(dev)) {
-		ret = 0;
-		goto get_exit;
-	}
-
-	pdev = dev->parent;
-	pgroup = iommu_group_get(pdev);
-	if (!pgroup) {
-		ret = -ENODEV;
-		goto get_exit;
-	}
-
-	if (group) {
-		/* check if all parent devices is the same */
-		if (*group && *group != pgroup)
-			ret = -ENODEV;
-		else
-			*group = pgroup;
-	}
-
-	iommu_group_put(pgroup);
-
-get_exit:
-	symbol_put(vfio_spimdev_is_spimdev);
-
-	return ret;
-}
-
-/* return 0 or -errno */
-static int vfio_spimdev_bus(struct device *dev, void *data)
-{
-	struct bus_type **bus = data;
-
-	if (!dev->bus)
-		return -ENODEV;
-
-	/* ensure all devices has the same bus_type */
-	if (*bus && *bus != dev->bus)
-		return -EINVAL;
-
-	*bus = dev->bus;
-	return 0;
-}
-
-/* return 0 means it is not spi group, 1 means it is, or -EXXX for error */
-static int vfio_iommu_type1_attach_spigroup(struct vfio_domain *domain,
-					    struct vfio_group *group,
-					    struct iommu_group *iommu_group)
-{
-	int ret;
-	struct bus_type *pbus = NULL;
-	struct iommu_group *pgroup = NULL;
-
-	ret = iommu_group_for_each_dev(iommu_group, &pgroup,
-				       vfio_spimdev_type);
-	if (ret < 0)
-		goto out;
-	else if (ret > 0) {
-		domain->domain = iommu_group_share_domain(pgroup);
-		if (IS_ERR(domain->domain))
-			goto out;
-		ret = iommu_group_for_each_dev(pgroup, &pbus,
-				       vfio_spimdev_bus);
-		if (ret < 0)
-			goto err_with_share_domain;
-
-		if (pbus && iommu_capable(pbus, IOMMU_CAP_CACHE_COHERENCY))
-			domain->prot |= IOMMU_CACHE;
-
-		group->parent_group = pgroup;
-		INIT_LIST_HEAD(&domain->group_list);
-		list_add(&group->next, &domain->group_list);
-
-		return 1;
-	}
-
-	return 0;
-
-err_with_share_domain:
-	iommu_group_unshare_domain(pgroup);
-out:
-	return ret;
-}
-
 static int vfio_iommu_type1_attach_group(void *iommu_data,
 					 struct iommu_group *iommu_group)
 {
@@ -1454,8 +1348,8 @@ static int vfio_iommu_type1_attach_group(void *iommu_data,
 	struct vfio_domain *domain, *d;
 	struct bus_type *bus = NULL, *mdev_bus;
 	int ret;
-	bool resv_msi = false, msi_remap;
-	phys_addr_t resv_msi_base = 0;
+	bool resv_msi, msi_remap;
+	phys_addr_t resv_msi_base;
 
 	mutex_lock(&iommu->lock);
 
@@ -1492,14 +1386,6 @@ static int vfio_iommu_type1_attach_group(void *iommu_data,
 	if (mdev_bus) {
 		if ((bus == mdev_bus) && !iommu_present(bus)) {
 			symbol_put(mdev_bus_type);
-
-			ret = vfio_iommu_type1_attach_spigroup(domain, group,
-					iommu_group);
-			if (ret < 0)
-				goto out_free;
-			else if (ret > 0)
-				goto replay_check;
-
 			if (!iommu->external_domain) {
 				INIT_LIST_HEAD(&domain->group_list);
 				iommu->external_domain = domain;
@@ -1578,13 +1464,12 @@ static int vfio_iommu_type1_attach_group(void *iommu_data,
 
 	vfio_test_domain_fgsp(domain);
 
-replay_check:
 	/* replay mappings on new domains */
 	ret = vfio_iommu_replay(iommu, domain);
 	if (ret)
 		goto out_detach;
 
-	if (!group->parent_group && resv_msi) {
+	if (resv_msi) {
 		ret = iommu_get_msi_cookie(domain->domain, resv_msi_base);
 		if (ret)
 			goto out_detach;
@@ -1597,13 +1482,9 @@ replay_check:
 	return 0;
 
 out_detach:
-	if (!group->parent_group)
-		iommu_detach_group(domain->domain, iommu_group);
+	iommu_detach_group(domain->domain, iommu_group);
 out_domain:
-	if (group->parent_group)
-		iommu_group_unshare_domain(group->parent_group);
-	else
-		iommu_domain_free(domain->domain);
+	iommu_domain_free(domain->domain);
 out_free:
 	kfree(domain);
 	kfree(group);
@@ -1659,25 +1540,12 @@ static void vfio_sanity_check_pfn_list(struct vfio_iommu *iommu)
 	WARN_ON(iommu->notifier.head);
 }
 
-static void vfio_iommu_undo(struct vfio_iommu *iommu,
-			    struct iommu_domain *domain)
-{
-	struct rb_node *n = rb_first(&iommu->dma_list);
-	struct vfio_dma *dma;
-
-	for (; n; n = rb_next(n)) {
-		dma = rb_entry(n, struct vfio_dma, node);
-		iommu_unmap(domain, dma->iova, dma->size);
-	}
-}
-
 static void vfio_iommu_type1_detach_group(void *iommu_data,
 					  struct iommu_group *iommu_group)
 {
 	struct vfio_iommu *iommu = iommu_data;
 	struct vfio_domain *domain;
 	struct vfio_group *group;
-	struct iommu_domain *sdomain = NULL;
 
 	mutex_lock(&iommu->lock);
 
@@ -1705,12 +1573,7 @@ static void vfio_iommu_type1_detach_group(void *iommu_data,
 		if (!group)
 			continue;
 
-		if (group->parent_group)
-			sdomain = iommu_group_unshare_domain(
-					group->parent_group);
-		else
-			iommu_detach_group(domain->domain, iommu_group);
-
+		iommu_detach_group(domain->domain, iommu_group);
 		list_del(&group->next);
 		kfree(group);
 		/*
@@ -1727,10 +1590,7 @@ static void vfio_iommu_type1_detach_group(void *iommu_data,
 				else
 					vfio_iommu_unmap_unpin_reaccount(iommu);
 			}
-			if (domain->domain != sdomain)
-				iommu_domain_free(domain->domain);
-			else
-				vfio_iommu_undo(iommu, sdomain);
+			iommu_domain_free(domain->domain);
 			list_del(&domain->next);
 			kfree(domain);
 		}
