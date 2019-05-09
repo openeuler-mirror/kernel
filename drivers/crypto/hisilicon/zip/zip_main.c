@@ -695,7 +695,7 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		qm->use_uacce = false;
 		break;
 	case UACCE_MODE_UACCE:
-#ifdef CONFIG_IOMMU_SVA
+#ifdef CONFIG_IOMMU_SVA2
 		qm->use_dma_api = true;
 		qm->use_sva = true;
 #else
@@ -1236,7 +1236,7 @@ static int __init hisi_zip_init(void)
 		goto err_pci;
 	}
 
-#ifndef CONFIG_IOMMU_SVA
+#ifndef CONFIG_IOMMU_SVA2
 	if (uacce_mode == UACCE_MODE_UACCE)
 		return 0;
 #endif
@@ -1259,7 +1259,7 @@ err_pci:
 
 static void __exit hisi_zip_exit(void)
 {
-#ifndef CONFIG_IOMMU_SVA
+#ifndef CONFIG_IOMMU_SVA2
 	if (uacce_mode != UACCE_MODE_UACCE)
 		hisi_zip_unregister_from_crypto();
 #else

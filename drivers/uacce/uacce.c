@@ -611,7 +611,7 @@ static int uacce_queue_drain(struct uacce_queue *q)
 		if (is_to_free_region)
 			uacce_destroy_region(q, qfr);
 	}
-#ifdef CONFIG_IOMMU_SVA
+#ifdef CONFIG_IOMMU_SVA2
 	if (uacce->flags & UACCE_DEV_SVA)
 		iommu_sva_unbind_device(uacce->pdev, q->pasid);
 #endif
@@ -674,7 +674,7 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	ret = uacce_dev_open_check(uacce);
 	if (ret)
 		goto open_err;
-#ifdef CONFIG_IOMMU_SVA
+#ifdef CONFIG_IOMMU_SVA2
 	if (uacce->flags & UACCE_DEV_PASID) {
 		ret = iommu_sva_bind_device(uacce->pdev, current->mm, &pasid,
 					    IOMMU_SVA_FEAT_IOPF, NULL);
@@ -1084,7 +1084,7 @@ static int uacce_default_start_queue(struct uacce_queue *q)
 	return 0;
 }
 
-#ifndef CONFIG_IOMMU_SVA
+#ifndef CONFIG_IOMMU_SVA2
 static int uacce_dev_match(struct device *dev, void *data)
 {
 	if (dev->parent == data)
@@ -1254,7 +1254,7 @@ int uacce_register(struct uacce *uacce)
 		uacce->ops->get_available_instances =
 			uacce_default_get_available_instances;
 
-#ifndef CONFIG_IOMMU_SVA
+#ifndef CONFIG_IOMMU_SVA2
 	ret = uacce_set_iommu_domain(uacce);
 	if (ret)
 		return ret;
@@ -1269,7 +1269,7 @@ int uacce_register(struct uacce *uacce)
 	}
 
 	if (uacce->flags & UACCE_DEV_PASID) {
-#ifdef CONFIG_IOMMU_SVA
+#ifdef CONFIG_IOMMU_SVA2
 		ret = iommu_sva_init_device(uacce->pdev, IOMMU_SVA_FEAT_IOPF,
 					    0, 0, NULL);
 		if (ret) {
@@ -1307,7 +1307,7 @@ void uacce_unregister(struct uacce *uacce)
 {
 	mutex_lock(&uacce_mutex);
 
-#ifdef CONFIG_IOMMU_SVA
+#ifdef CONFIG_IOMMU_SVA2
 	iommu_sva_shutdown_device(uacce->pdev);
 #else
 	uacce_unset_iommu_domain(uacce);

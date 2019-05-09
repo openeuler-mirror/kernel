@@ -578,7 +578,7 @@ static int hisi_rde_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		qm->use_uacce = false;
 		break;
 	case UACCE_MODE_UACCE:
-#ifdef CONFIG_IOMMU_SVA
+#ifdef CONFIG_IOMMU_SVA2
 		qm->use_dma_api = true;
 		qm->use_sva = true;
 #else
@@ -1015,7 +1015,7 @@ static int __init hisi_rde_init(void)
 		pr_err("Failed to register pci driver.\n");
 		goto err_pci;
 	}
-#ifndef CONFIG_IOMMU_SVA
+#ifndef CONFIG_IOMMU_SVA2
 	if (uacce_mode == UACCE_MODE_UACCE)
 		return 0;
 #endif
