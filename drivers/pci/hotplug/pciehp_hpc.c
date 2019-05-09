@@ -659,7 +659,17 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 	if (events & PCI_EXP_SLTSTA_ABP) {
 		ctrl_info(ctrl, "Slot(%s): Attention button pressed\n",
 			  slot_name(slot));
-		pciehp_handle_button_press(slot);
+		if (!test_and_set_bit(0, &slot_being_removed_rescanned))
+			pciehp_handle_button_press(slot);
+		else {
+			if (slot->state == BLINKINGOFF_STATE ||
+					slot->state == BLINKINGON_STATE)
+				pciehp_handle_button_press(slot);
+			else
+				ctrl_info(ctrl, "Slot(%s): Slot operation failed because a remove or"
+					  " rescan operation is under processing, please try later!\n",
+					  slot_name(slot));
+		}
 	}
 
 	/* Check Power Fault Detected */
@@ -675,10 +685,46 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 	 * or Data Link Layer State Changed events.
 	 */
 	down_read(&ctrl->reset_lock);
-	if (events & DISABLE_SLOT)
-		pciehp_handle_disable_request(slot);
-	else if (events & (PCI_EXP_SLTSTA_PDC | PCI_EXP_SLTSTA_DLLSC))
-		pciehp_handle_presence_or_link_change(slot, events);
+	if (events & DISABLE_SLOT) {
+		if (!test_and_set_bit(0, &slot_being_removed_rescanned))
+			pciehp_handle_disable_request(slot);
+		else {
+			if (slot->state == BLINKINGOFF_STATE ||
+					slot->state == BLINKINGON_STATE)
+				pciehp_handle_disable_request(slot);
+			else {
+				/*
+				 * we use the work_struct private data to store
+				 * the event type
+				 */
+				atomic_long_set(&slot->work.work.data,
+						DISABLE_SLOT);
+				schedule_delayed_work(&slot->work, 3 * HZ);
+			}
+		}
+	} else if (events & (PCI_EXP_SLTSTA_PDC | PCI_EXP_SLTSTA_DLLSC)) {
+		if (!test_and_set_bit(0, &slot_being_removed_rescanned))
+			pciehp_handle_presence_or_link_change(slot, events);
+		else {
+			if (slot->state == BLINKINGOFF_STATE ||
+					slot->state == BLINKINGON_STATE)
+				pciehp_handle_presence_or_link_change(slot,
+						events);
+			else {
+				/*
+				 * When we are removing or rescanning through
+				 * sysfs, suprise link down/up happens. So we
+				 * will handle this event 3 seconds later.
+				 */
+				ctrl_info(ctrl, "Slot(%s): Surprise link down/up in remove or rescan process!\n",
+						slot_name(slot));
+				atomic_long_set(&slot->work.work.data,
+						events & (PCI_EXP_SLTSTA_PDC |
+							PCI_EXP_SLTSTA_DLLSC));
+				schedule_delayed_work(&slot->work, 3 * HZ);
+			}
+		}
+	}
 	up_read(&ctrl->reset_lock);
 
 	pci_config_pm_runtime_put(pdev);

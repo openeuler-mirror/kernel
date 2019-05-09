@@ -913,6 +913,9 @@ extern struct bus_type pci_bus_type;
 /* Do NOT directly access these two variables, unless you are arch-specific PCI
  * code, or PCI core code. */
 extern struct list_head pci_root_buses;	/* List of all known PCI buses */
+
+extern unsigned long slot_being_removed_rescanned;
+
 /* Some device drivers need know if PCI is initiated */
 int no_pci_devices(void);
 

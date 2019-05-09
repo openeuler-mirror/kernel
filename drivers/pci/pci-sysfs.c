@@ -474,8 +474,16 @@ static ssize_t remove_store(struct device *dev, struct device_attribute *attr,
 	if (kstrtoul(buf, 0, &val) < 0)
 		return -EINVAL;
 
+	if (test_and_set_bit(0, &slot_being_removed_rescanned)) {
+		pr_info("Slot is being removed or rescanned, please try later!\n");
+		return -EINVAL;
+	}
+
 	if (val && device_remove_file_self(dev, attr))
 		pci_stop_and_remove_bus_device_locked(to_pci_dev(dev));
+
+	slot_being_removed_rescanned = 0;
+
 	return count;
 }
 static struct device_attribute dev_remove_attr = __ATTR(remove,

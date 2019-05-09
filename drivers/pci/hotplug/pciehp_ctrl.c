@@ -145,6 +145,8 @@ void pciehp_queue_pushbutton_work(struct work_struct *work)
 {
 	struct slot *p_slot = container_of(work, struct slot, work.work);
 	struct controller *ctrl = p_slot->ctrl;
+	int events = atomic_long_read(&work->data) & (PCI_EXP_SLTSTA_PDC |
+			PCI_EXP_SLTSTA_DLLSC | DISABLE_SLOT);
 
 	mutex_lock(&p_slot->lock);
 	switch (p_slot->state) {
@@ -155,6 +157,12 @@ void pciehp_queue_pushbutton_work(struct work_struct *work)
 		pciehp_request(ctrl, PCI_EXP_SLTSTA_PDC);
 		break;
 	default:
+		if (events) {
+			atomic_or(events, &ctrl->pending_events);
+			if (!pciehp_poll_mode)
+				irq_wake_thread(ctrl->pcie->irq, ctrl);
+		} else
+			slot_being_removed_rescanned = 0;
 		break;
 	}
 	mutex_unlock(&p_slot->lock);
@@ -180,6 +188,7 @@ void pciehp_handle_button_press(struct slot *p_slot)
 		/* blink green LED and turn off amber */
 		pciehp_green_led_blink(p_slot);
 		pciehp_set_attention_status(p_slot, 0);
+		atomic_long_set(&p_slot->work.work.data, 0);
 		schedule_delayed_work(&p_slot->work, 5 * HZ);
 		break;
 	case BLINKINGOFF_STATE:
@@ -201,10 +210,12 @@ void pciehp_handle_button_press(struct slot *p_slot)
 		pciehp_set_attention_status(p_slot, 0);
 		ctrl_info(ctrl, "Slot(%s): Action canceled due to button press\n",
 			  slot_name(p_slot));
+		slot_being_removed_rescanned = 0;
 		break;
 	default:
 		ctrl_err(ctrl, "Slot(%s): Ignoring invalid state %#x\n",
 			 slot_name(p_slot), p_slot->state);
+		slot_being_removed_rescanned = 0;
 		break;
 	}
 	mutex_unlock(&p_slot->lock);
@@ -225,6 +236,7 @@ void pciehp_handle_disable_request(struct slot *slot)
 	mutex_unlock(&slot->lock);
 
 	ctrl->request_result = pciehp_disable_slot(slot, SAFE_REMOVAL);
+	slot_being_removed_rescanned = 0;
 }
 
 void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
@@ -274,6 +286,7 @@ void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 	link_active = pciehp_check_link_active(ctrl);
 	if (!present && !link_active) {
 		mutex_unlock(&slot->lock);
+		slot_being_removed_rescanned = 0;
 		return;
 	}
 
@@ -296,6 +309,7 @@ void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 		mutex_unlock(&slot->lock);
 		break;
 	}
+	slot_being_removed_rescanned = 0;
 }
 
 static int __pciehp_enable_slot(struct slot *p_slot)
