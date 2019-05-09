@@ -182,18 +182,16 @@ static int _mdev_get(struct wd_dev_info *wd_info)
 
 	if (strlen(wd_info->group_id) > 0)
 		return 0;
-	if (wd_info->mdev_fd == 0) {
-		memset(mdev_info, '\0', SYS_VAL_SIZE);
-		val = _get_dir_attr_str(wd_info->attr_path, SPIMDEV_MDEV_GET,
-					mdev_info);
-		if (val <= 0)
-			return -ENODEV;
-		mdev_info[val - 1] = '\0';
-		memcpy(wd_info->mdev_name, mdev_info, UUID_STR_SZ);
-		wd_info->mdev_name[UUID_STR_SZ] = '\0';
-		strncpy(wd_info->group_id, &mdev_info[UUID_STR_SZ + 1],
-			SYS_VAL_SIZE);
-	}
+	memset(mdev_info, '\0', SYS_VAL_SIZE);
+	val = _get_dir_attr_str(wd_info->attr_path, SPIMDEV_MDEV_GET,
+			mdev_info);
+	if (val <= 0)
+		return val;
+	mdev_info[val - 1] = '\0';
+	memcpy(wd_info->mdev_name, mdev_info, UUID_STR_SZ);
+	wd_info->mdev_name[UUID_STR_SZ] = '\0';
+	strncpy(wd_info->group_id, &mdev_info[UUID_STR_SZ + 1],
+		SYS_VAL_SIZE);
 
 	return 0;
 }
@@ -253,6 +251,10 @@ static int _get_wd_alg_info(struct wd_dev_info *dinfo, struct wd_capa *capa)
 			goto no_alg_exit;
 		}
 		if (capa && __capa_check(ainfo, capa) < 0)
+			goto no_alg_exit;
+		ainfo->available_instances =
+		_get_dir_attr_int(ainfo->algo_path, "available_instances");
+		if (ainfo->available_instances < 0)
 			goto no_alg_exit;
 		ainfo->type =
 		_get_dir_attr_int(ainfo->algo_path, "type");
@@ -382,8 +384,7 @@ static int _find_available_res(struct wd_capa *capa)
 				alg = alg->next;
 				continue;
 			}
-			if (_mdev_get(dinfo))
-				return -ENODEV;
+
 			return 1;
 		}
 	}
@@ -529,10 +530,8 @@ check_next_alg:
 		}
 #if (defined(HAVE_NUMA) & HAVE_NUMA)
 		ret = _get_dev_numa_distance(dinfo);
-		if (ret < 0) {
-			WD_ERR("Fail to get numa info on %s\n", dinfo->name);
+		if (ret < 0)
 			return ret;
-		}
 		if (ret > q->numa_dis) {
 			if (!TAILQ_NEXT(dinfo, next)) {
 				q->numa_dis++;
@@ -549,10 +548,8 @@ check_next_alg:
 			q->fd = ioctl(q->mdev,
 				      VFIO_SPIMDEV_CMD_GET_Q,
 				      (unsigned long)q->type);
-			if (q->fd < 0) {
-				WD_ERR("No available Q on %s\n", dinfo->name);
+			if (q->fd < 0)
 				continue;
-			}
 		} else {
 			ret = _get_mdev_group(q, dinfo);
 			if (ret) {
@@ -702,16 +699,21 @@ static void _put_vfio_facility(struct wd_queue *q)
 		}
 	}
 #endif
-	/* I think we can leave these clear work to do_exit of process */
 	if (!__atomic_load_n(&dinfo->ref, __ATOMIC_ACQUIRE)) {
-		if (q->group > 0)
-			;
-		if (q->mdev > 0)
-			;
+		if (q->mdev > 0) {
+			dinfo->mdev_fd = 0;
+			close(q->mdev);
+		}
+		if (q->group > 0) {
+			dinfo->group_fd = 0;
+			close(q->group);
+		}
 	}
 	if (q->container > 0 &&
-	     !__atomic_sub_fetch(&container.ref, 1, __ATOMIC_ACQUIRE))
-		;
+	     !__atomic_sub_fetch(&container.ref, 1, __ATOMIC_ACQUIRE)) {
+		close(q->container);
+		container.container = 0;
+	}
 }
 
 int _get_queue(struct wd_queue *q)
@@ -751,19 +753,19 @@ int wd_request_queue(struct wd_queue *q)
 	}
 	ret = _get_vfio_facility(q);
 	if (ret) {
-		wd_unspinlock(&_wd_pmutex);
 		WD_ERR("Fail to get VFIO facility!\n");
 		goto out_with_mdev;
 	}
-	wd_unspinlock(&_wd_pmutex);
 	ret = _get_queue(q);
 	if (ret) {
 		WD_ERR("Fail to get queue!\n");
 		goto out_with_mdev;
 	}
+	wd_unspinlock(&_wd_pmutex);
 	ret = drv_open(q);
 	if (ret) {
 		WD_ERR("Driver queue init fail!\n");
+		wd_spinlock(&_wd_pmutex);
 		goto out_with_queue;
 	}
 	return ret;
@@ -771,7 +773,6 @@ int wd_request_queue(struct wd_queue *q)
 out_with_queue:
 	_put_queue(q);
 out_with_mdev:
-	wd_spinlock(&_wd_pmutex);
 	_put_algo_mdev(q);
 	_put_vfio_facility(q);
 	wd_unspinlock(&_wd_pmutex);
@@ -782,8 +783,8 @@ out_with_mdev:
 void wd_release_queue(struct wd_queue *q)
 {
 	drv_close(q);
-	_put_queue(q);
 	wd_spinlock(&_wd_pmutex);
+	_put_queue(q);
 	_put_algo_mdev(q);
 	_put_vfio_facility(q);
 	wd_unspinlock(&_wd_pmutex);
