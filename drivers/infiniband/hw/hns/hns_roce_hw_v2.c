@@ -790,9 +790,11 @@ static int hns_roce_v2_cmd_hw_resetting(struct hns_roce_dev *hr_dev,
 	 * reschedule soft reset process once again.
 	 */
 	hr_dev->dis_db = true;
-	end = msecs_to_jiffies(HNS_ROCE_V2_HW_RST_TIMEOUT) + jiffies;
-	while (ops->get_hw_reset_stat(handle) && time_before(jiffies, end))
+	end = HNS_ROCE_V2_HW_RST_TIMEOUT;
+	while (ops->get_hw_reset_stat(handle) && end) {
 		udelay(1);
+		end -= 1;
+	}
 
 	if (!ops->get_hw_reset_stat(handle))
 		hr_dev->is_reset = true;
@@ -818,10 +820,12 @@ static int hns_roce_v2_cmd_sw_resetting(struct hns_roce_dev *hr_dev)
 	 * wait until hardware reset finished, we should exit with error.
 	 */
 	hr_dev->dis_db = true;
-	end = msecs_to_jiffies(HNS_ROCE_V2_HW_RST_TIMEOUT) + jiffies;
+	end = HNS_ROCE_V2_HW_RST_TIMEOUT;
 	while (ops->ae_dev_reset_cnt(handle) == hr_dev->reset_cnt &&
-	       time_before(jiffies, end))
+	       end) {
 		udelay(1);
+		end -= 1;
+	}
 
 	if (ops->ae_dev_reset_cnt(handle) != hr_dev->reset_cnt)
 		hr_dev->is_reset = true;
@@ -1228,8 +1232,8 @@ static void hns_roce_func_clr_rst_prc(struct hns_roce_dev *hr_dev, int retval,
 
 		dev_warn(hr_dev->dev,
 			 "Func clear is pending, device in resetting state.\n");
-		end = msecs_to_jiffies(HNS_ROCE_V2_HW_RST_TIMEOUT) + jiffies;
-		while (time_before(jiffies, end)) {
+		end = HNS_ROCE_V2_HW_RST_TIMEOUT;
+		while (end) {
 			if (!ops->get_hw_reset_stat(handle)) {
 				hr_dev->is_reset = true;
 				dev_info(hr_dev->dev,
@@ -1237,6 +1241,7 @@ static void hns_roce_func_clr_rst_prc(struct hns_roce_dev *hr_dev, int retval,
 				return;
 			}
 			msleep(HNS_ROCE_V2_HW_RST_COMPLETION_WAIT);
+			end -= HNS_ROCE_V2_HW_RST_COMPLETION_WAIT;
 		}
 
 		dev_warn(hr_dev->dev, "Func clear failed.\n");
@@ -1245,8 +1250,8 @@ static void hns_roce_func_clr_rst_prc(struct hns_roce_dev *hr_dev, int retval,
 
 		dev_warn(hr_dev->dev,
 			 "Func clear is pending, device in resetting state.\n");
-		end = msecs_to_jiffies(HNS_ROCE_V2_HW_RST_TIMEOUT) + jiffies;
-		while (time_before(jiffies, end)) {
+		end = HNS_ROCE_V2_HW_RST_TIMEOUT;
+		while (end) {
 			if (ops->ae_dev_reset_cnt(handle) !=
 			    hr_dev->reset_cnt) {
 				hr_dev->is_reset = true;
@@ -1255,6 +1260,7 @@ static void hns_roce_func_clr_rst_prc(struct hns_roce_dev *hr_dev, int retval,
 				return;
 			}
 			msleep(HNS_ROCE_V2_HW_RST_COMPLETION_WAIT);
+			end -= HNS_ROCE_V2_HW_RST_COMPLETION_WAIT;
 		}
 
 		dev_warn(hr_dev->dev, "Func clear failed because of unfinished sw reset\n");
@@ -1309,12 +1315,13 @@ static void hns_roce_clear_func(struct hns_roce_dev *hr_dev, int vf_id)
 		goto out;
 	}
 
-	end = msecs_to_jiffies(HNS_ROCE_V2_FUNC_CLEAR_TIMEOUT_MSECS) + jiffies;
-
 	msleep(HNS_ROCE_V2_READ_FUNC_CLEAR_FLAG_INTERVAL);
-	while (time_before(jiffies, end)) {
+	end = HNS_ROCE_V2_FUNC_CLEAR_TIMEOUT_MSECS;
+	while (end) {
 		if (hns_roce_func_clr_chk_rst(hr_dev))
 			goto out;
+		msleep(HNS_ROCE_V2_READ_FUNC_CLEAR_FLAG_FAIL_WAIT);
+		end -= HNS_ROCE_V2_READ_FUNC_CLEAR_FLAG_FAIL_WAIT;
 
 		hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_FUNC_CLEAR,
 					      true);
@@ -1322,7 +1329,6 @@ static void hns_roce_clear_func(struct hns_roce_dev *hr_dev, int vf_id)
 
 		ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 		if (ret) {
-			msleep(HNS_ROCE_V2_READ_FUNC_CLEAR_FLAG_FAIL_WAIT);
 			continue;
 		}
 
@@ -6912,9 +6918,11 @@ tail_chk_err:
 	 * encountered a serious error and cannot be recovered from the reset
 	 * processing.
 	 */
-	end = msecs_to_jiffies(HNS_ROCE_V2_RST_PRC_MAX_TIME) + jiffies;
-	while (ops->ae_dev_resetting(handle) && time_before(jiffies, end))
+	end = HNS_ROCE_V2_RST_PRC_MAX_TIME;
+	while (ops->ae_dev_resetting(handle) && end) {
 		msleep(20);
+		end -= 20;
+	}
 
 	if (!ops->ae_dev_resetting(handle))
 		dev_info(&handle->pdev->dev, "Device completed reset.\n");
@@ -6956,10 +6964,12 @@ static void hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
 	if (ops->ae_dev_resetting(handle)) {
 		dev_warn(&handle->pdev->dev,
 			 "Device is busy in resetting state. waiting.\n");
-		end = msecs_to_jiffies(HNS_ROCE_V2_RST_PRC_MAX_TIME) + jiffies;
+		end = HNS_ROCE_V2_RST_PRC_MAX_TIME;
 		while (ops->ae_dev_resetting(handle) &&
-		       time_before(jiffies, end))
+		       end) {
 			msleep(20);
+			end -= 20;
+		}
 
 		if (!ops->ae_dev_resetting(handle))
 			dev_info(&handle->pdev->dev,
