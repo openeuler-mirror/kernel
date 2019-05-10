@@ -790,7 +790,7 @@ static int hns_roce_v2_cmd_hw_resetting(struct hns_roce_dev *hr_dev,
 	 * reschedule soft reset process once again.
 	 */
 	hr_dev->dis_db = true;
-	end = HNS_ROCE_V2_HW_RST_TIMEOUT;
+	end = HNS_ROCE_V2_HW_RST_TIMEOUT*1000;
 	while (ops->get_hw_reset_stat(handle) && end) {
 		udelay(1);
 		end -= 1;
@@ -820,7 +820,7 @@ static int hns_roce_v2_cmd_sw_resetting(struct hns_roce_dev *hr_dev)
 	 * wait until hardware reset finished, we should exit with error.
 	 */
 	hr_dev->dis_db = true;
-	end = HNS_ROCE_V2_HW_RST_TIMEOUT;
+	end = HNS_ROCE_V2_HW_RST_TIMEOUT*1000;
 	while (ops->ae_dev_reset_cnt(handle) == hr_dev->reset_cnt &&
 	       end) {
 		udelay(1);
