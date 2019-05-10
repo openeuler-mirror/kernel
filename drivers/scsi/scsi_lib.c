@@ -346,6 +346,11 @@ static void scsi_dec_host_busy(struct Scsi_Host *shost)
 
 	rcu_read_lock();
 	atomic_dec(&shost->host_busy);
+	/*
+	 * We have to order host_busy dec above and test of the shost_state
+	 * below outside the host_lock.
+	 */
+	smp_mb__after_atomic();
 	if (unlikely(scsi_host_in_recovery(shost))) {
 		spin_lock_irqsave(shost->host_lock, flags);
 		if (shost->host_failed || shost->host_eh_scheduled)

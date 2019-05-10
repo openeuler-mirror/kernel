@@ -88,6 +88,13 @@ void scsi_schedule_eh(struct Scsi_Host *shost)
 
 	if (scsi_host_set_state(shost, SHOST_RECOVERY) == 0 ||
 	    scsi_host_set_state(shost, SHOST_CANCEL_RECOVERY) == 0) {
+		/*
+		 * We have to order shost_state store above and test of
+		 * the host_busy(scsi_eh_wakeup will test it), because
+		 * scsi_dec_host_busy accesses these variables without
+		 * host_lock.
+		 */
+		smp_mb__before_atomic();
 		shost->host_eh_scheduled++;
 		scsi_eh_wakeup(shost);
 	}
