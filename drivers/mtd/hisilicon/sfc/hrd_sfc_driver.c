@@ -223,7 +223,7 @@ static int hisi_sfc_remove(struct platform_device *pdev)
 }
 
 static const struct acpi_device_id sfc_acpi_match[] = {
-	{"HISI0173", 0},
+	{"HISI0343", 0},
 	{}
 };
 
