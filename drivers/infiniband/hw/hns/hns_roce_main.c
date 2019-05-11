@@ -55,6 +55,8 @@
 #include <rdma/hns-abi.h>
 #include "hns_roce_hem.h"
 
+static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
+			       struct ib_port_attr *props);
 /**
  * hns_get_gid_index - Get gid index.
  * @hr_dev: pointer to structure hns_roce_dev.
@@ -214,11 +216,26 @@ static int hns_roce_del_gid(struct ib_device *device, u8 port_num,
 }
 #endif
 
+static int get_port_state(struct ib_device *ib_dev, u8 port_num,
+			  enum ib_port_state *state)
+{
+	struct ib_port_attr props;
+	int ret;
+
+	memset(&props, 0, sizeof(props));
+	ret = hns_roce_query_port(ib_dev, port_num, &props);
+	if (!ret)
+		*state = props.state;
+	return ret;
+}
+
 static int handle_en_event(struct hns_roce_dev *hr_dev, u8 port,
-			   unsigned long event)
+			   unsigned long dev_event)
 {
 	struct device *dev = hr_dev->dev;
 	struct net_device *netdev;
+	struct ib_event event = { };
+	enum ib_port_state port_state;
 	int ret = 0;
 
 	netdev = hr_dev->iboe.netdevs[port];
@@ -227,23 +244,48 @@ static int handle_en_event(struct hns_roce_dev *hr_dev, u8 port,
 		return -ENODEV;
 	}
 
-	switch (event) {
-	case NETDEV_UP:
-	case NETDEV_CHANGE:
+	switch (dev_event) {
 	case NETDEV_REGISTER:
 	case NETDEV_CHANGEADDR:
 		ret = hns_roce_set_mac(hr_dev, port, netdev->dev_addr);
 		if (ret)
-			dev_err(dev, "set mac failed(%d), event = %ld\n",
-				ret, event);
+			dev_err(dev, "set mac failed(%d), event = 0x%x\n", ret,
+				(u32)dev_event);
 		break;
+	case NETDEV_UP:
+	case NETDEV_CHANGE:
+		ret = hns_roce_set_mac(hr_dev, port, netdev->dev_addr);
+		if (ret)
+			dev_err(dev, "set mac failed(%d), event = 0x%x\n", ret,
+				(u32)dev_event);
 	case NETDEV_DOWN:
+		if (get_port_state(&hr_dev->ib_dev, 1, &port_state))
+			return NOTIFY_DONE;
+
+		if (hr_dev->iboe.last_port_state[port] == (u8)port_state)
+			return NOTIFY_DONE;
+
+		hr_dev->iboe.last_port_state[port] = (u8)port_state;
+		event.device = &hr_dev->ib_dev;
+		if (port_state == IB_PORT_DOWN)
+			event.event = IB_EVENT_PORT_ERR;
+		else if (port_state == IB_PORT_ACTIVE)
+			event.event = IB_EVENT_PORT_ACTIVE;
+		else
+			return NOTIFY_DONE;
+
+		event.element.port_num = 1;
+		ib_dispatch_event(&event);
+		dev_info(dev, "report ib event: %d\n", event.event);
 		/*
 		 * In v1 engine, only support all ports closed together.
 		 */
 		break;
+	case NETDEV_UNREGISTER:
+		break;
+
 	default:
-		dev_dbg(dev, "NETDEV event = 0x%x!\n", (u32)(event));
+		dev_dbg(dev, "NETDEV event = 0x%x!\n", (u32)(dev_event));
 		break;
 	}
 
@@ -274,20 +316,20 @@ static int hns_roce_netdev_event(struct notifier_block *self,
 	return NOTIFY_DONE;
 }
 
-static int hns_roce_setup_mtu_mac(struct hns_roce_dev *hr_dev)
+static int hns_roce_setup_mtu_mac_state(struct hns_roce_dev *hr_dev)
 {
 	int ret;
 	u8 i;
 
 	for (i = 0; i < hr_dev->caps.num_ports; i++) {
+		hr_dev->iboe.last_port_state[i] = IB_PORT_ACTIVE;
 		if (hr_dev->hw->set_mtu)
 			hr_dev->hw->set_mtu(hr_dev, hr_dev->iboe.phy_port[i],
 					    hr_dev->caps.max_mtu);
 		ret = hns_roce_set_mac(hr_dev, i,
 				       hr_dev->iboe.netdevs[i]->dev_addr);
 		if (ret) {
-			dev_err(hr_dev->dev, "Port %d set mac failed(%d)\n",
-				i, ret);
+			dev_err(hr_dev->dev, "set mac failed(%d)\n", ret);
 			return ret;
 		}
 	}
@@ -964,23 +1006,24 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 		return ret;
 	}
 
-	ret = hns_roce_setup_mtu_mac(hr_dev);
+	ret = hns_roce_setup_mtu_mac_state(hr_dev);
 	if (ret) {
-		dev_err(dev, "setup_mtu_mac failed, ret = %d\n", ret);
-		goto error_failed_setup_mtu_mac;
+		dev_err(dev, "setup_mtu_mac_state failed, ret = %d\n", ret);
+		goto error_failed_setup_mtu_mac_state;
 	}
 
 	iboe->nb.notifier_call = hns_roce_netdev_event;
 	ret = register_netdevice_notifier(&iboe->nb);
 	if (ret) {
+		iboe->nb.notifier_call = NULL;
 		dev_err(dev, "register_netdevice_notifier failed!\n");
-		goto error_failed_setup_mtu_mac;
+		goto error_failed_setup_mtu_mac_state;
 	}
 
 	hr_dev->active = true;
 	return 0;
 
-error_failed_setup_mtu_mac:
+error_failed_setup_mtu_mac_state:
 	ib_unregister_device(ib_dev);
 
 	return ret;

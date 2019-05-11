@@ -796,6 +796,7 @@ struct hns_roce_ib_iboe {
 	struct net_device      *netdevs[HNS_ROCE_MAX_PORTS];
 	struct notifier_block	nb;
 	u8			phy_port[HNS_ROCE_MAX_PORTS];
+	u8			last_port_state[HNS_ROCE_MAX_PORTS];
 };
 
 enum {
