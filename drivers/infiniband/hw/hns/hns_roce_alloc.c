@@ -63,7 +63,7 @@ int hns_roce_bitmap_alloc(struct hns_roce_bitmap *bitmap, unsigned long *obj)
 
 	return ret;
 }
-
+EXPORT_SYMBOL_GPL(hns_roce_bitmap_alloc);
 void hns_roce_bitmap_free(struct hns_roce_bitmap *bitmap, unsigned long obj,
 			  int rr)
 {

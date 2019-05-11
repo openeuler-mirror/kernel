@@ -43,10 +43,11 @@
 #include "hns_roce_test.h"
 #endif
 
-static u32 hw_index_to_key(unsigned long ind)
+u32 hw_index_to_key(unsigned long ind)
 {
 	return (u32)(ind >> 24) | (ind << 8);
 }
+EXPORT_SYMBOL_GPL(hw_index_to_key);
 
 unsigned long key_to_hw_index(u32 key)
 {
@@ -576,7 +577,7 @@ err_kcalloc_bt_l1:
 	return -ENOMEM;
 }
 
-static int hns_roce_mr_alloc(struct hns_roce_dev *hr_dev, u32 pd, u64 iova,
+int hns_roce_mr_alloc(struct hns_roce_dev *hr_dev, u32 pd, u64 iova,
 			     u64 size, u32 access, int npages,
 			     struct hns_roce_mr *mr)
 {
@@ -621,6 +622,7 @@ static int hns_roce_mr_alloc(struct hns_roce_dev *hr_dev, u32 pd, u64 iova,
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(hns_roce_mr_alloc);
 
 static void hns_roce_mhop_free(struct hns_roce_dev *hr_dev,
 			       struct hns_roce_mr *mr)
@@ -704,7 +706,7 @@ static void hns_roce_mhop_free(struct hns_roce_dev *hr_dev,
 	}
 }
 
-static void hns_roce_mr_free(struct hns_roce_dev *hr_dev,
+void hns_roce_mr_free(struct hns_roce_dev *hr_dev,
 			     struct hns_roce_mr *mr)
 {
 	struct device *dev = hr_dev->dev;
@@ -737,8 +739,9 @@ static void hns_roce_mr_free(struct hns_roce_dev *hr_dev,
 	hns_roce_bitmap_free(&hr_dev->mr_table.mtpt_bitmap,
 			     key_to_hw_index(mr->key), BITMAP_NO_RR);
 }
+EXPORT_SYMBOL_GPL(hns_roce_mr_free);
 
-static int hns_roce_mr_enable(struct hns_roce_dev *hr_dev,
+int hns_roce_mr_enable(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_mr *mr)
 {
 	int ret;
@@ -789,6 +792,7 @@ err_table:
 	hns_roce_table_put(hr_dev, &mr_table->mtpt_table, mtpt_idx);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(hns_roce_mr_enable);
 
 static int hns_roce_write_mtt_chunk(struct hns_roce_dev *hr_dev,
 				    struct hns_roce_mtt *mtt, u32 start_index,
@@ -1108,7 +1112,7 @@ out:
 	return ret;
 }
 
-static int hns_roce_ib_umem_write_mr(struct hns_roce_dev *hr_dev,
+int hns_roce_ib_umem_write_mr(struct hns_roce_dev *hr_dev,
 				     struct hns_roce_mr *mr,
 				     struct ib_umem *umem)
 {
@@ -1154,6 +1158,7 @@ static int hns_roce_ib_umem_write_mr(struct hns_roce_dev *hr_dev,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(hns_roce_ib_umem_write_mr);
 
 struct ib_mr *hns_roce_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 				   u64 virt_addr, int access_flags,

@@ -106,6 +106,7 @@
 #define MR_TYPE_MR				0x00
 #define MR_TYPE_FRMR				0x01
 #define MR_TYPE_DMA				0x03
+#define MR_TYPE_UMM				0x04
 
 #define PKEY_ID					0xffff
 #define GUID_LEN				8
@@ -1466,6 +1467,17 @@ int hns_roce_fill_res_entry(struct sk_buff *msg,
 int hns_roce_register_sysfs(struct hns_roce_dev *hr_dev);
 void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev);
 
+u32 hw_index_to_key(unsigned long ind);
+int hns_roce_mr_enable(struct hns_roce_dev *hr_dev,
+			      struct hns_roce_mr *mr);
+void hns_roce_mr_free(struct hns_roce_dev *hr_dev,
+			     struct hns_roce_mr *mr);
+int hns_roce_ib_umem_write_mr(struct hns_roce_dev *hr_dev,
+				     struct hns_roce_mr *mr,
+				     struct ib_umem *umem);
+int hns_roce_mr_alloc(struct hns_roce_dev *hr_dev, u32 pd, u64 iova,
+			     u64 size, u32 access, int npages,
+			     struct hns_roce_mr *mr);
 enum hns_phy_state {
 	HNS_ROCE_PHY_SLEEP		= 1,
 	HNS_ROCE_PHY_POLLING		= 2,
@@ -1512,7 +1524,9 @@ enum {
 	RDFX_FUNC_REG_USER_MR,
 	RDFX_FUNC_REREG_USER_MR,
 	RDFX_FUNC_DEREG_MR,
-	RDFX_FUNC_PORT_IMMUTABLE
+	RDFX_FUNC_PORT_IMMUTABLE,
+	RDFX_FUNC_REG_UMM_MR,
+	RDFX_FUNC_DEREG_UMM_MR,
 };
 void alloc_rdfx_info(struct hns_roce_dev *hr_dev);
 void rdfx_set_dev_name(struct hns_roce_dev *hr_dev);

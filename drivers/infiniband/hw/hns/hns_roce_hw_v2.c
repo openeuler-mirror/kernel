@@ -2459,10 +2459,17 @@ found:
 	mpt_entry->pa1_l = cpu_to_le32(lower_32_bits(pages[1]));
 	roce_set_field(mpt_entry->byte_64_buf_pa1, V2_MPT_BYTE_64_PA1_H_M,
 		       V2_MPT_BYTE_64_PA1_H_S, upper_32_bits(pages[1]));
-	roce_set_field(mpt_entry->byte_64_buf_pa1,
-		       V2_MPT_BYTE_64_PBL_BUF_PG_SZ_M,
-		       V2_MPT_BYTE_64_PBL_BUF_PG_SZ_S,
-		       mr->pbl_buf_pg_sz + PG_SHIFT_OFFSET);
+
+	if (mr->type != MR_TYPE_UMM)
+		roce_set_field(mpt_entry->byte_64_buf_pa1,
+			       V2_MPT_BYTE_64_PBL_BUF_PG_SZ_M,
+			       V2_MPT_BYTE_64_PBL_BUF_PG_SZ_S,
+			       mr->pbl_buf_pg_sz + PG_SHIFT_OFFSET);
+	else
+		roce_set_field(mpt_entry->byte_64_buf_pa1,
+			       V2_MPT_BYTE_64_PBL_BUF_PG_SZ_M,
+			       V2_MPT_BYTE_64_PBL_BUF_PG_SZ_S,
+			       mr->pbl_buf_pg_sz + mr->umem->page_shift - 12);
 
 	free_page((unsigned long)pages);
 
@@ -2505,7 +2512,7 @@ static int hns_roce_v2_write_mtpt(void *mb_buf, struct hns_roce_mr *mr,
 		     (mr->access & IB_ACCESS_LOCAL_WRITE ? 1 : 0));
 
 	roce_set_bit(mpt_entry->byte_12_mw_pa, V2_MPT_BYTE_12_PA_S,
-		     mr->type == MR_TYPE_MR ? 0 : 1);
+		   (mr->type == MR_TYPE_MR || mr->type == MR_TYPE_UMM) ? 0 : 1);
 	roce_set_bit(mpt_entry->byte_12_mw_pa, V2_MPT_BYTE_12_INNER_PA_VLD_S,
 		     1);
 
