@@ -1624,13 +1624,13 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 
 	res = __blkdev_get(bdev, mode, 0);
 
+	mutex_lock(&bdev->bd_mutex);
+	spin_lock(&bdev_lock);
+
 	if (whole) {
 		struct gendisk *disk = whole->bd_disk;
 
 		/* finish claiming */
-		mutex_lock(&bdev->bd_mutex);
-		spin_lock(&bdev_lock);
-
 		if (!res) {
 			BUG_ON(!bd_may_claim(bdev, whole, holder));
 			/*
@@ -1667,6 +1667,22 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 
 		mutex_unlock(&bdev->bd_mutex);
 		bdput(whole);
+	} else {
+		if (!res && (mode & FMODE_WRITE) && bdev->bd_holders) {
+			char name[BDEVNAME_SIZE];
+
+			/*
+			 * Open an exclusive opened device for write may
+			 * probability corrupt the device, such as a
+			 * mounted file system, give a hint here.
+			 */
+			pr_info_ratelimited("VFS: Open an exclusive opened "
+				    "block device for write %s [%d %s].\n",
+				    bdevname(bdev, name), current->pid,
+				    current->comm);
+		}
+		spin_unlock(&bdev_lock);
+		mutex_unlock(&bdev->bd_mutex);
 	}
 
 	return res;
