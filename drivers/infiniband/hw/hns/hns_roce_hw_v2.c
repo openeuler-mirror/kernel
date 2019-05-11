@@ -1398,7 +1398,7 @@ static int hns_roce_config_global_param(struct hns_roce_dev *hr_dev)
 	memset(req, 0, sizeof(*req));
 	roce_set_field(req->time_cfg_udp_port,
 		       CFG_GLOBAL_PARAM_DATA_0_ROCEE_TIME_1US_CFG_M,
-		       CFG_GLOBAL_PARAM_DATA_0_ROCEE_TIME_1US_CFG_S, 0x3e8);
+		       CFG_GLOBAL_PARAM_DATA_0_ROCEE_TIME_1US_CFG_S, 0);
 	roce_set_field(req->time_cfg_udp_port,
 		       CFG_GLOBAL_PARAM_DATA_0_ROCEE_UDP_PORT_M,
 		       CFG_GLOBAL_PARAM_DATA_0_ROCEE_UDP_PORT_S, 0x12b7);
@@ -2833,12 +2833,19 @@ static void hns_roce_v2_write_cqc(struct hns_roce_dev *hr_dev,
 		       ((u32)hr_cq->db.dma) >> 1);
 	cq_context->db_record_addr = cpu_to_le32(hr_cq->db.dma >> 32);
 
+	if (cq_period * HNS_ROCE_CLOCK_ADJUST > 0xFFFF) {
+		dev_info(hr_dev->dev, "config cq_period param out of range. config value is 0x%x, adjusted to 65.\n",
+			cq_period);
+		cq_period = HNS_ROCE_MAX_CQ_PERIOD;
+	}
+
 	roce_set_field(cq_context->byte_56_cqe_period_maxcnt,
 		       V2_CQC_BYTE_56_CQ_MAX_CNT_M,
 		       V2_CQC_BYTE_56_CQ_MAX_CNT_S, cq_max_cnt);
 	roce_set_field(cq_context->byte_56_cqe_period_maxcnt,
-		       V2_CQC_BYTE_56_CQ_PERIOD_M,
-		       V2_CQC_BYTE_56_CQ_PERIOD_S, cq_period);
+			   V2_CQC_BYTE_56_CQ_PERIOD_M,
+		       V2_CQC_BYTE_56_CQ_PERIOD_S,
+		       cq_period * HNS_ROCE_CLOCK_ADJUST);
 }
 
 static int hns_roce_v2_req_notify_cq(struct ib_cq *ibcq,
@@ -4584,15 +4591,15 @@ static int hns_roce_v2_set_opt_fields(struct ib_qp *ibqp,
 	}
 
 	if (attr_mask & IB_QP_TIMEOUT) {
-		if (attr->timeout < 31) {
+		if (attr->timeout < 21) {
 			roce_set_field(context->byte_28_at_fl,
 				       V2_QPC_BYTE_28_AT_M, V2_QPC_BYTE_28_AT_S,
-				       attr->timeout);
+				       attr->timeout + 10);
 			roce_set_field(qpc_mask->byte_28_at_fl,
 				       V2_QPC_BYTE_28_AT_M, V2_QPC_BYTE_28_AT_S,
 				       0);
 		} else
-			dev_warn(dev, "Local ACK timeout shall be 0 to 30.\n");
+			dev_warn(dev, "Local ACK timeout shall be 0 to 20.\n");
 	}
 
 	if (attr_mask & IB_QP_RETRY_CNT) {
@@ -4697,15 +4704,12 @@ static int hns_roce_v2_set_opt_fields(struct ib_qp *ibqp,
 	if (attr_mask & (IB_QP_ACCESS_FLAGS | IB_QP_MAX_DEST_RD_ATOMIC))
 		set_access_flags(hr_qp, context, qpc_mask, attr, attr_mask);
 
-	if (attr_mask & IB_QP_MIN_RNR_TIMER) {
-		roce_set_field(context->byte_80_rnr_rx_cqn,
-			       V2_QPC_BYTE_80_MIN_RNR_TIME_M,
-			       V2_QPC_BYTE_80_MIN_RNR_TIME_S,
-			       attr->min_rnr_timer);
-		roce_set_field(qpc_mask->byte_80_rnr_rx_cqn,
-			       V2_QPC_BYTE_80_MIN_RNR_TIME_M,
-			       V2_QPC_BYTE_80_MIN_RNR_TIME_S, 0);
-	}
+	roce_set_field(context->byte_80_rnr_rx_cqn,
+		       V2_QPC_BYTE_80_MIN_RNR_TIME_M,
+		       V2_QPC_BYTE_80_MIN_RNR_TIME_S, 1);
+	roce_set_field(qpc_mask->byte_80_rnr_rx_cqn,
+		       V2_QPC_BYTE_80_MIN_RNR_TIME_M,
+		       V2_QPC_BYTE_80_MIN_RNR_TIME_S, 0);
 
 	/* RC&UC required attr */
 	if (attr_mask & IB_QP_RQ_PSN) {
@@ -5203,9 +5207,15 @@ static int hns_roce_v2_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period)
 	roce_set_field(cqc_mask->byte_56_cqe_period_maxcnt,
 		       V2_CQC_BYTE_56_CQ_MAX_CNT_M, V2_CQC_BYTE_56_CQ_MAX_CNT_S,
 		       0);
+
+	if (cq_period * HNS_ROCE_CLOCK_ADJUST > 0xFFFF) {
+		dev_info(hr_dev->dev, "config cq_period param out of range. config value is 0x%x, adjusted to 65.\n",
+			cq_period);
+		cq_period = HNS_ROCE_MAX_CQ_PERIOD;
+	}
 	roce_set_field(cq_context->byte_56_cqe_period_maxcnt,
 		       V2_CQC_BYTE_56_CQ_PERIOD_M, V2_CQC_BYTE_56_CQ_PERIOD_S,
-		       cq_period);
+		       cq_period * HNS_ROCE_CLOCK_ADJUST);
 	roce_set_field(cqc_mask->byte_56_cqe_period_maxcnt,
 		       V2_CQC_BYTE_56_CQ_PERIOD_M, V2_CQC_BYTE_56_CQ_PERIOD_S,
 		       0);
@@ -5782,6 +5792,11 @@ static void hns_roce_config_eqc(struct hns_roce_dev *hr_dev,
 #ifdef CONFIG_INFINIBAND_HNS_TEST
 	test_set_eq_param(eq->type_flag, &eq_period, &eq_max_cnt, &eq_arm_st);
 #endif
+	if (eq_period * HNS_ROCE_CLOCK_ADJUST > 0xFFFF) {
+		dev_info(hr_dev->dev, "config eq_period param out of range. config value is 0x%x, adjusted to 65.\n",
+			eq_period);
+		eq_period = HNS_ROCE_MAX_CQ_PERIOD;
+	}
 
 	/* init eqc */
 	eq->doorbell = hr_dev->reg_base + ROCEE_VF_EQ_DB_CFG0_REG;
@@ -5794,7 +5809,7 @@ static void hns_roce_config_eqc(struct hns_roce_dev *hr_dev,
 	eq->eqe_buf_pg_sz = hr_dev->caps.eqe_buf_pg_sz;
 	eq->shift = ilog2((unsigned int)eq->entries);
 	eq->eq_max_cnt = eq_max_cnt;
-	eq->eq_period = eq_period;
+	eq->eq_period = eq_period * HNS_ROCE_CLOCK_ADJUST;
 	eq->arm_st = eq_arm_st;
 
 	if (!eq->hop_num)

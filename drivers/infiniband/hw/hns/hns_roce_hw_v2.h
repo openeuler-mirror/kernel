@@ -35,6 +35,9 @@
 
 #include <linux/bitops.h>
 
+#define HNS_ROCE_CLOCK_ADJUST	1000
+#define HNS_ROCE_MAX_CQ_PERIOD	65
+
 #define HNS_ROCE_VF_QPC_BT_NUM(d) (d ? (8) : (256))
 #define HNS_ROCE_VF_SCCC_BT_NUM(d) (d ? (8) : (64))
 #define HNS_ROCE_VF_SRQC_BT_NUM(d) (d ? (8) : (64))
