@@ -4357,7 +4357,7 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 		       V2_QPC_BYTE_212_CHECK_FLG_S, 0);
 
 	roce_set_field(context->byte_212_lsn, V2_QPC_BYTE_212_LSN_M,
-		       V2_QPC_BYTE_212_LSN_S, 0x100);
+		       V2_QPC_BYTE_212_LSN_S, 0);
 	roce_set_field(qpc_mask->byte_212_lsn, V2_QPC_BYTE_212_LSN_M,
 		       V2_QPC_BYTE_212_LSN_S, 0);
 
