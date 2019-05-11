@@ -262,8 +262,11 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	int i;
 	u32 insns[LJMP_INSN_SIZE];
 #endif
+
 	func_node = klp_find_func_node(func->old_addr);
-	BUG_ON(!func_node);
+	if (WARN_ON(!func_node))
+		return;
+
 	pc = func_node->old_addr;
 	if (list_is_singular(&func_node->func_stack)) {
 #ifdef CONFIG_ARM64_MODULE_PLTS
@@ -288,7 +291,9 @@ void arch_klp_unpatch_func(struct klp_func *func)
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 					struct klp_func, stack_node);
-		BUG_ON(!next_func);
+		if (WARN_ON(!next_func))
+			return;
+
 		new_addr = (unsigned long)next_func->new_func;
 #ifdef CONFIG_ARM64_MODULE_PLTS
 		if (offset_in_range(pc, new_addr, SZ_128M)) {
