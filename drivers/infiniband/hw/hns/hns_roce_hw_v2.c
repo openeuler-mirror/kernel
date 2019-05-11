@@ -1090,6 +1090,9 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 		handle++;
 	}
 
+	/* Memory barrier */
+	wmb();
+
 	/* Write to hardware */
 	roce_write(hr_dev, ROCEE_TX_CMQ_TAIL_REG, csq->next_to_use);
 
