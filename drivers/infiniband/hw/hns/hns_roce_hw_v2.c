@@ -51,7 +51,6 @@
 #include "hns_hw_v2_test.h"
 #endif
 static int loopback;
-static int dcqcn;
 static int is_d;
 
 static void set_data_seg_v2(struct hns_roce_v2_wqe_data_seg *dseg,
@@ -1868,13 +1867,11 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 		caps->cqc_timer_buf_pg_sz = 0;
 		caps->cqc_timer_hop_num   = HNS_ROCE_HOP_NUM_0;
 
-		if (dcqcn == 1) {
-			caps->flags |= HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL;
-			caps->scc_ctx_entry_sz	= HNS_ROCE_V2_SCC_CTX_ENTRY_SZ;
-			caps->scc_ctx_ba_pg_sz	= 0;
-			caps->scc_ctx_buf_pg_sz = 0;
-			caps->scc_ctx_hop_num	= HNS_ROCE_SCC_CTX_HOP_NUM;
-		}
+		caps->flags |= HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL;
+		caps->scc_ctx_entry_sz	= HNS_ROCE_V2_SCC_CTX_ENTRY_SZ;
+		caps->scc_ctx_ba_pg_sz	= 0;
+		caps->scc_ctx_buf_pg_sz = 0;
+		caps->scc_ctx_hop_num	= HNS_ROCE_SCC_CTX_HOP_NUM;
 	}
 
 	ret = hns_roce_v2_set_bt(hr_dev);
@@ -7134,7 +7131,5 @@ MODULE_AUTHOR("Shaobo Xu <xushaobo2@huawei.com>");
 MODULE_DESCRIPTION("Hisilicon Hip08 Family RoCE Driver");
 module_param(loopback, int, 0444);
 MODULE_PARM_DESC(loopback, "default: 0");
-module_param(dcqcn, int, 0444);
-MODULE_PARM_DESC(dcqcn, "default: 0");
 module_param(is_d, int, 0444);
 MODULE_PARM_DESC(is_d, "default: 0");
