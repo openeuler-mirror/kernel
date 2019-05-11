@@ -3513,6 +3513,8 @@ static void modify_qp_reset_to_init(struct ib_qp *ibqp,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	struct hns_roce_cq *send_cq, *recv_cq;
+	struct net_device *net_dev = hr_dev->iboe.netdevs[hr_qp->port];
+	u32 temp_id = 0;
 
 	hns_roce_get_cqs(ibqp, &send_cq, &recv_cq);
 	/*
@@ -3600,6 +3602,9 @@ static void modify_qp_reset_to_init(struct ib_qp *ibqp,
 	roce_set_bit(qpc_mask->byte_56_dqpn_err, V2_QPC_BYTE_56_RQ_TX_ERR_S, 0);
 	roce_set_bit(qpc_mask->byte_56_dqpn_err, V2_QPC_BYTE_56_RQ_RX_ERR_S, 0);
 
+	sscanf(net_dev->name, "eth%u", &temp_id);
+	roce_set_field(context->byte_60_qpst_tempid, V2_QPC_BYTE_60_TEMPID_M,
+		       V2_QPC_BYTE_60_TEMPID_S, temp_id);
 	roce_set_field(qpc_mask->byte_60_qpst_tempid, V2_QPC_BYTE_60_TEMPID_M,
 		       V2_QPC_BYTE_60_TEMPID_S, 0);
 
