@@ -1563,6 +1563,8 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 	bdev->bd_openers++;
 	if (for_part)
 		bdev->bd_part_count++;
+	if (mode & FMODE_WRITE)
+		bdev->bd_write_openers++;
 	mutex_unlock(&bdev->bd_mutex);
 	disk_unblock_events(disk);
 	/* only one opener holds refs to the module and disk */
@@ -1611,6 +1613,7 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 {
 	struct block_device *whole = NULL;
 	int res;
+	char name[BDEVNAME_SIZE];
 
 	WARN_ON_ONCE((mode & FMODE_EXCL) && !holder);
 
@@ -1629,6 +1632,19 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 
 	if (whole) {
 		struct gendisk *disk = whole->bd_disk;
+
+		/*
+		 * Open an write opened block device exclusively, the
+		 * writing process may probability corrupt the device,
+		 * such as a mounted file system, give a hint here.
+		 */
+		if (!res && (bdev->bd_write_openers >
+		    ((mode & FMODE_WRITE) ? 1 : 0)) && !bdev->bd_holders) {
+			pr_info_ratelimited("VFS: Open an write opened "
+				"block device exclusively %s [%d %s].\n",
+				bdevname(bdev, name), current->pid,
+				current->comm);
+		}
 
 		/* finish claiming */
 		if (!res) {
@@ -1669,8 +1685,6 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 		bdput(whole);
 	} else {
 		if (!res && (mode & FMODE_WRITE) && bdev->bd_holders) {
-			char name[BDEVNAME_SIZE];
-
 			/*
 			 * Open an exclusive opened device for write may
 			 * probability corrupt the device, such as a
@@ -1805,6 +1819,8 @@ static void __blkdev_put(struct block_device *bdev, fmode_t mode, int for_part)
 	struct block_device *victim = NULL;
 
 	mutex_lock_nested(&bdev->bd_mutex, for_part);
+	if (mode & FMODE_WRITE)
+		bdev->bd_write_openers--;
 	if (for_part)
 		bdev->bd_part_count--;
 

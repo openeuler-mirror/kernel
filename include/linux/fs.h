@@ -455,6 +455,7 @@ struct request_queue;
 struct block_device {
 	dev_t			bd_dev;  /* not a kdev_t - it's a search key */
 	int			bd_openers;
+	int			bd_write_openers;
 	struct inode *		bd_inode;	/* will die */
 	struct super_block *	bd_super;
 	struct mutex		bd_mutex;	/* open/close mutex */
