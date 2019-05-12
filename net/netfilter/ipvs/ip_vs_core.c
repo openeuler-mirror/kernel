@@ -2288,6 +2288,7 @@ static void __net_exit __ip_vs_cleanup(struct net *net)
 	ip_vs_control_net_cleanup(ipvs);
 	ip_vs_estimator_net_cleanup(ipvs);
 	IP_VS_DBG(2, "ipvs netns %d released\n", ipvs->gen);
+	rcu_barrier();
 	net->ipvs = NULL;
 }
 
