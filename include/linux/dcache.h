@@ -84,6 +84,7 @@ extern struct dentry_stat_t dentry_stat;
 # endif
 #endif
 
+#define NEG_DENTRY_LIMIT 16384
 #define d_lock	d_lockref.lock
 
 struct dentry {
@@ -119,6 +120,8 @@ struct dentry {
 	 	struct rcu_head d_rcu;
 	} d_u;
 
+	/* negative dentry under this dentry, if it's dir */
+	atomic_t d_neg_dnum;
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 } __randomize_layout;
@@ -225,6 +228,7 @@ struct dentry_operations {
 
 #define DCACHE_PAR_LOOKUP		0x10000000 /* being looked up (with parent locked shared) */
 #define DCACHE_DENTRY_CURSOR		0x20000000
+#define DCACHE_NEGATIVE_ACCOUNT		0x40000000
 
 extern seqlock_t rename_lock;
 
