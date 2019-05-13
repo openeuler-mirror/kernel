@@ -632,7 +632,11 @@ static int uacce_queue_drain(struct uacce_queue *q)
 static int uacce_fops_flush(struct file *filep, fl_owner_t id)
 {
 	struct uacce_queue *q = filep->private_data;
-	struct uacce *uacce = q->uacce;
+	struct uacce *uacce;
+
+	if (!q)
+		return 0;
+	uacce = q->uacce;
 
 	if (UACCE_ST_INIT ==
 	    atomic_cmpxchg(&q->status, UACCE_ST_OPENNED, UACCE_ST_INIT))
@@ -648,6 +652,7 @@ static int uacce_fops_flush(struct file *filep, fl_owner_t id)
 	mutex_lock(&uacce->q_lock);
 	list_del(&q->q_dev);
 	mutex_unlock(&uacce->q_lock);
+	filep->private_data = NULL;
 
 	return uacce_queue_drain(q);
 }
@@ -708,6 +713,9 @@ open_err:
 static int uacce_fops_release(struct inode *inode, struct file *filep)
 {
 	struct uacce_queue *q = filep->private_data;
+
+	if (!q)
+		return 0;
 
 	if (UACCE_ST_INIT ==
 	    atomic_cmpxchg(&q->status, UACCE_ST_OPENNED, UACCE_ST_INIT))
