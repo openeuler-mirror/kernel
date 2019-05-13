@@ -133,6 +133,7 @@ enum hnae3_fec_mode {
 	HNAE3_FEC_AUTO = 0,
 	HNAE3_FEC_BASER,
 	HNAE3_FEC_RS,
+	HNAE3_FEC_USER_DEF,
 };
 
 enum hnae3_reset_notify_type {

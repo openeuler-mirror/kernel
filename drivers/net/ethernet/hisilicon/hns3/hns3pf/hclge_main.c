@@ -2377,13 +2377,19 @@ static int hclge_set_fec(struct hnae3_handle *handle, u32 fec_mode)
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_mac *mac = &hdev->hw.mac;
+	int ret;
 
 	if (fec_mode && !(mac->fec_ability & fec_mode)) {
 		dev_err(&hdev->pdev->dev, "unsupported fec mode\n");
 		return -EINVAL;
 	}
 
-	return hclge_set_fec_hw(hdev, fec_mode);
+	ret = hclge_set_fec_hw(hdev, fec_mode);
+	if (ret)
+		return ret;
+
+	mac->user_fec_mode = fec_mode | BIT(HNAE3_FEC_USER_DEF);
+	return 0;
 }
 
 static void hclge_get_fec(struct hnae3_handle *handle, u8 *fec_ability,
@@ -2415,6 +2421,15 @@ static int hclge_mac_init(struct hclge_dev *hdev)
 	}
 
 	mac->link = 0;
+
+	if (mac->user_fec_mode & BIT(HNAE3_FEC_USER_DEF)) {
+		ret = hclge_set_fec_hw(hdev, mac->user_fec_mode);
+		if (ret) {
+			dev_err(&hdev->pdev->dev,
+				"Fec mode init fail, ret = %d\n", ret);
+			return ret;
+		}
+	}
 
 	ret = hclge_set_mac_mtu(hdev, hdev->mps);
 	if (ret) {

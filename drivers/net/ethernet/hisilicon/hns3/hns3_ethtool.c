@@ -687,7 +687,7 @@ static int hns3_check_ksettings_param(struct net_device *netdev,
 	}
 
 	if (ops->check_port_speed) {
-		ret = ops->check_port_speed(handle, speed);
+		ret = ops->check_port_speed(handle, cmd->base.speed);
 		if (ret) {
 			netdev_err(netdev, "unsupported speed\n");
 			return ret;
