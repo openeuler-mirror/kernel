@@ -39,6 +39,7 @@
 #include <linux/freezer.h>
 #include <linux/oom.h>
 #include <linux/numa.h>
+#include <linux/mempolicy.h>
 
 #include <asm/tlbflush.h>
 #include "internal.h"
@@ -2456,6 +2457,9 @@ int ksm_madvise(struct vm_area_struct *vma, unsigned long start,
 			return 0;		/* just ignore the advice */
 
 		if (vma_is_dax(vma))
+			return 0;
+
+		if (is_cdm_vma(vma))
 			return 0;
 
 #ifdef VM_SAO
