@@ -1931,7 +1931,7 @@ static int qm_eq_ctx_cfg(struct hisi_qm *qm)
 	if (qm->use_dma_api) {
 		dma_unmap_single(dev, aeqc_dma, sizeof(struct qm_aeqc),
 				 DMA_TO_DEVICE);
-		kfree(eqc);
+		kfree(aeqc);
 	} else {
 		memset(aeqc, 0, sizeof(struct qm_aeqc));
 	}
