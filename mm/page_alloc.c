@@ -4335,7 +4335,11 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 	ac->nodemask = nodemask;
 	ac->migratetype = gfpflags_to_migratetype(gfp_mask);
 
+#ifdef CONFIG_COHERENT_DEVICE
+	if (cpusets_enabled() && !(*alloc_mask & __GFP_THISNODE)) {
+#else
 	if (cpusets_enabled()) {
+#endif
 		*alloc_mask |= __GFP_HARDWALL;
 		if (!ac->nodemask)
 			ac->nodemask = &cpuset_current_mems_allowed;
