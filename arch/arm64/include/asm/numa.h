@@ -19,6 +19,9 @@ extern bool numa_off;
 extern cpumask_var_t node_to_cpumask_map[MAX_NUMNODES];
 void numa_clear_node(unsigned int cpu);
 
+#ifdef CONFIG_COHERENT_DEVICE
+extern nodemask_t cdmmask;
+#endif
 #ifdef CONFIG_DEBUG_PER_CPU_MAPS
 const struct cpumask *cpumask_of_node(int node);
 #else
