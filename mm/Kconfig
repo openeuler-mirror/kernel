@@ -142,6 +142,14 @@ config HAVE_GENERIC_GUP
 config ARCH_DISCARD_MEMBLOCK
 	bool
 
+config COHERENT_DEVICE
+	bool "coherent device memory"
+	def_bool n
+	depends on CPUSETS && ARM64
+	help
+	  Enable coherent device memory (CDM) support.
+
+
 config NO_BOOTMEM
 	bool
 
