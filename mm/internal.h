@@ -485,6 +485,10 @@ unsigned long reclaim_clean_pages_from_list(struct zone *zone,
 #define ALLOC_CPUSET		0x40 /* check for correct cpuset */
 #define ALLOC_CMA		0x80 /* allow allocations from CMA areas */
 
+#ifdef CONFIG_COHERENT_DEVICE
+#define ALLOC_CDM		0x100
+#endif
+
 enum ttu_flags;
 struct tlbflush_unmap_batch;
 
