@@ -6325,6 +6325,8 @@ static int hns_roce_v2_init_eq_table(struct hns_roce_dev *hr_dev)
 	struct hns_roce_eq_table *eq_table = &hr_dev->eq_table;
 	struct device *dev = hr_dev->dev;
 	struct hns_roce_eq *eq;
+	static int dev_id = 0;
+	char queue_name[30];
 	unsigned int eq_cmd;
 	int irq_num;
 	int eq_num;
@@ -6388,8 +6390,10 @@ static int hns_roce_v2_init_eq_table(struct hns_roce_dev *hr_dev)
 		goto err_request_irq_fail;
 	}
 
+	snprintf(queue_name, 29, "hns_roce_%d_irq_wq", dev_id);
+	dev_id++;
 	hr_dev->irq_workq =
-		create_singlethread_workqueue("hns_roce_irq_workqueue");
+		create_singlethread_workqueue(queue_name);
 	if (!hr_dev->irq_workq) {
 		dev_err(dev, "Create irq workqueue failed!\n");
 		ret = -ENOMEM;
