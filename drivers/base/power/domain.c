@@ -2355,7 +2355,7 @@ struct device *genpd_dev_pm_attach_by_id(struct device *dev,
 
 	ret = device_register(genpd_dev);
 	if (ret) {
-		kfree(genpd_dev);
+		put_device(genpd_dev);
 		return ERR_PTR(ret);
 	}
 
