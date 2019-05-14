@@ -7,7 +7,6 @@
  */
 
 #include <linux/acpi.h>
-#include <linux/arch_topology.h>
 #include <linux/cpu.h>
 #include <linux/cpufreq.h>
 #include <linux/device.h>
@@ -30,7 +29,6 @@ void arch_set_freq_scale(struct cpumask *cpus, unsigned long cur_freq,
 		per_cpu(freq_scale, i) = scale;
 }
 
-static DEFINE_MUTEX(cpu_scale_mutex);
 DEFINE_PER_CPU(unsigned long, cpu_scale) = SCHED_CAPACITY_SCALE;
 
 void topology_set_cpu_scale(unsigned int cpu, unsigned long capacity)
@@ -47,35 +45,7 @@ static ssize_t cpu_capacity_show(struct device *dev,
 	return sprintf(buf, "%lu\n", topology_get_cpu_scale(NULL, cpu->dev.id));
 }
 
-static ssize_t cpu_capacity_store(struct device *dev,
-				  struct device_attribute *attr,
-				  const char *buf,
-				  size_t count)
-{
-	struct cpu *cpu = container_of(dev, struct cpu, dev);
-	int this_cpu = cpu->dev.id;
-	int i;
-	unsigned long new_capacity;
-	ssize_t ret;
-
-	if (!count)
-		return 0;
-
-	ret = kstrtoul(buf, 0, &new_capacity);
-	if (ret)
-		return ret;
-	if (new_capacity > SCHED_CAPACITY_SCALE)
-		return -EINVAL;
-
-	mutex_lock(&cpu_scale_mutex);
-	for_each_cpu(i, &cpu_topology[this_cpu].core_sibling)
-		topology_set_cpu_scale(i, new_capacity);
-	mutex_unlock(&cpu_scale_mutex);
-
-	return count;
-}
-
-static DEVICE_ATTR_RW(cpu_capacity);
+static DEVICE_ATTR_RO(cpu_capacity);
 
 static int register_cpu_capacity_sysctl(void)
 {
@@ -116,7 +86,6 @@ void topology_normalize_cpu_scale(void)
 		return;
 
 	pr_debug("cpu_capacity: capacity_scale=%u\n", capacity_scale);
-	mutex_lock(&cpu_scale_mutex);
 	for_each_possible_cpu(cpu) {
 		pr_debug("cpu_capacity: cpu=%d raw_capacity=%u\n",
 			 cpu, raw_capacity[cpu]);
@@ -126,7 +95,6 @@ void topology_normalize_cpu_scale(void)
 		pr_debug("cpu_capacity: CPU%d cpu_capacity=%lu\n",
 			cpu, topology_get_cpu_scale(NULL, cpu));
 	}
-	mutex_unlock(&cpu_scale_mutex);
 }
 
 bool __init topology_parse_cpu_capacity(struct device_node *cpu_node, int cpu)
