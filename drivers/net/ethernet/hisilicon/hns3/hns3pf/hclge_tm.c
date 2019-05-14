@@ -597,8 +597,10 @@ static void hclge_tm_tc_info_init(struct hclge_dev *hdev)
 		hdev->tm_info.prio_tc[i] =
 			(i >= hdev->tm_info.num_tc) ? 0 : i;
 
-	/* DCB is enabled if we have more than 1 TC */
-	if (hdev->tm_info.num_tc > 1)
+	/* DCB is enabled if we have more than 1 TC or pfc_en is
+	 * non-zero.
+	 */
+	if (hdev->tm_info.num_tc > 1 || hdev->tm_info.pfc_en)
 		hdev->flag |= HCLGE_FLAG_DCB_ENABLE;
 	else
 		hdev->flag &= ~HCLGE_FLAG_DCB_ENABLE;
