@@ -2234,7 +2234,8 @@ static void genpd_dev_pm_sync(struct device *dev)
 }
 
 static int __genpd_dev_pm_attach(struct device *dev, struct device_node *np,
-				 unsigned int index, bool power_on)
+				 struct device *base_dev, unsigned int index,
+				 bool power_on)
 {
 	struct of_phandle_args pd_args;
 	struct generic_pm_domain *pd;
@@ -2252,7 +2253,7 @@ static int __genpd_dev_pm_attach(struct device *dev, struct device_node *np,
 		mutex_unlock(&gpd_list_lock);
 		dev_dbg(dev, "%s() failed to find PM domain: %ld\n",
 			__func__, PTR_ERR(pd));
-		return driver_deferred_probe_check_state(dev);
+		return driver_deferred_probe_check_state(base_dev);
 	}
 
 	dev_dbg(dev, "adding to PM domain %s\n", pd->name);
@@ -2308,7 +2309,7 @@ int genpd_dev_pm_attach(struct device *dev)
 				       "#power-domain-cells") != 1)
 		return 0;
 
-	return __genpd_dev_pm_attach(dev, dev->of_node, 0, true);
+	return __genpd_dev_pm_attach(dev, dev->of_node, dev, 0, true);
 }
 EXPORT_SYMBOL_GPL(genpd_dev_pm_attach);
 
@@ -2360,7 +2361,7 @@ struct device *genpd_dev_pm_attach_by_id(struct device *dev,
 	}
 
 	/* Try to attach the device to the PM domain at the specified index. */
-	ret = __genpd_dev_pm_attach(genpd_dev, dev->of_node, index, false);
+	ret = __genpd_dev_pm_attach(genpd_dev, dev->of_node, dev, index, false);
 	if (ret < 1) {
 		device_unregister(genpd_dev);
 		return ret ? ERR_PTR(ret) : NULL;
