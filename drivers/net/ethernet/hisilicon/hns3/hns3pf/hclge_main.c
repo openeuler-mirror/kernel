@@ -3113,23 +3113,6 @@ enum hnae3_reset_type hclge_get_reset_level(struct hclge_dev *hdev,
 {
 	enum hnae3_reset_type rst_level = HNAE3_NONE_RESET;
 
-	/* first, resolve any unknown reset type to the known type(s) */
-	if (test_bit(HNAE3_UNKNOWN_RESET, addr)) {
-		/* we will intentionally ignore any errors from this function
-		 *  as we will end up in *some* reset request in any case
-		 */
-		hclge_handle_hw_msix_error(hdev, addr);
-		clear_bit(HNAE3_UNKNOWN_RESET, addr);
-		/* We defered the clearing of the error event which caused
-		 * interrupt since it was not posssible to do that in
-		 * interrupt context (and this is the reason we introduced
-		 * new UNKNOWN reset type). Now, the errors have been
-		 * handled and cleared in hardware we can safely enable
-		 * interrupts. This is an exception to the norm.
-		 */
-		hclge_enable_vector(&hdev->misc_vector, true);
-	}
-
 	/* return the highest priority reset level amongst all */
 	if (test_bit(HNAE3_IMP_RESET, addr)) {
 		rst_level = HNAE3_IMP_RESET;
@@ -3535,15 +3518,39 @@ static void hclge_reset_subtask(struct hclge_dev *hdev)
 	hdev->reset_type = HNAE3_NONE_RESET;
 }
 
+static void hclge_misc_err_recovery(struct hclge_dev *hdev)
+{
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
+	u32 msix_sts_reg;
+
+	msix_sts_reg = hclge_read_dev(&hdev->hw,
+				      HCLGE_VECTOR0_PF_OTHER_INT_STS_REG);
+
+	if (msix_sts_reg & HCLGE_VECTOR0_REG_MSIX_MASK) {
+		hclge_handle_hw_msix_error(hdev, &hdev->default_reset_request);
+		if (hdev->default_reset_request)
+			if (ae_dev->ops->reset_event)
+				ae_dev->ops->reset_event(hdev->pdev, NULL);
+	}
+
+	clear_bit(HNAE3_UNKNOWN_RESET, &hdev->reset_request);
+	hclge_enable_vector(&hdev->misc_vector, true);
+}
+
 static void hclge_reset_service_task(struct work_struct *work)
 {
 	struct hclge_dev *hdev =
 		container_of(work, struct hclge_dev, rst_service_task);
 
+	clear_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state);
+
+	if (test_bit(HNAE3_UNKNOWN_RESET, &hdev->reset_request)) {
+		hclge_misc_err_recovery(hdev);
+		return;
+	}
+
 	if (test_and_set_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
 		return;
-
-	clear_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state);
 
 	hclge_reset_subtask(hdev);
 
