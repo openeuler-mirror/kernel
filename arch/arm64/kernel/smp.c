@@ -914,7 +914,10 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 	case IPI_CPU_CRASH_STOP:
 		if (IS_ENABLED(CONFIG_KEXEC_CORE)) {
-			irq_enter();
+			if (gic_supports_pseudo_nmis())
+				nmi_enter();
+			else
+				irq_enter();
 			ipi_cpu_crash_stop(cpu, regs);
 
 			unreachable();
@@ -1083,15 +1086,15 @@ bool cpus_are_stuck_in_kernel(void)
 	return !!cpus_stuck_in_kernel || smp_spin_tables;
 }
 
-void ipi_set_nmi_prio(void __iomem *base, u8 prio)
+static void __ipi_set_nmi_prio(void __iomem *base, u8 prio, int ipinr)
 {
 	/*
 	 * Use writeb here may cause hardware error on D05,
 	 * aovid this problem by using writel.
 	 */
 
-	u32 offset = (IPI_CPU_BACKTRACE / 4) * 4;
-	u32 shift = (IPI_CPU_BACKTRACE % 4) * 8;
+	u32 offset = (ipinr / 4) * 4;
+	u32 shift = (ipinr % 4) * 8;
 	u32 prios = readl_relaxed(base + GICR_IPRIORITYR0 + offset);
 
 	/* clean old priority */
@@ -1100,6 +1103,12 @@ void ipi_set_nmi_prio(void __iomem *base, u8 prio)
 	prios |= (prio << shift);
 
 	writel_relaxed(prios, base + GICR_IPRIORITYR0 + offset);
+}
+
+void ipi_set_nmi_prio(void __iomem *base, u8 prio)
+{
+	__ipi_set_nmi_prio(base, prio, IPI_CPU_BACKTRACE);
+	__ipi_set_nmi_prio(base, prio, IPI_CPU_CRASH_STOP);
 }
 
 static void raise_nmi(cpumask_t *mask)
