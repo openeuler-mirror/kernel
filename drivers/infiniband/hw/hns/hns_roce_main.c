@@ -556,7 +556,7 @@ static struct ib_ucontext *hns_roce_alloc_ucontext(struct ib_device *ib_dev,
 		mutex_init(&context->page_mutex);
 	}
 
-	ret = ib_copy_to_udata(udata, &resp, sizeof(resp));
+	ret = ib_copy_to_udata(udata, &resp, min(udata->outlen, sizeof(resp)));
 	if (ret)
 		goto error_fail_copy_to_udata;
 

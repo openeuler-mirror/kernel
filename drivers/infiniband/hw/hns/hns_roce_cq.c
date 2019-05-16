@@ -505,7 +505,7 @@ struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 
 	if (context) {
 		resp.cqn = hr_cq->cqn;
-		ret = ib_copy_to_udata(udata, &resp, sizeof(resp));
+		ret = ib_copy_to_udata(udata, &resp, min(udata->outlen, sizeof(resp)));
 		if (ret)
 			goto err_cqc;
 	}

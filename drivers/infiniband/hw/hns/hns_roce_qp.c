@@ -988,8 +988,8 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 	else
 		hr_qp->doorbell_qpn = (u32)(hr_qp->qpn);
 
-	if (ib_pd->uobject && (udata->outlen >= sizeof(resp))) {
-		ret = ib_copy_to_udata(udata, &resp, sizeof(resp));
+	if (ib_pd->uobject) {
+		ret = ib_copy_to_udata(udata, &resp, min(udata->outlen, sizeof(resp)));
 		if (ret)
 			goto err_qp;
 	}
