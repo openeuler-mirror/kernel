@@ -2795,7 +2795,7 @@ static int e100_set_features(struct net_device *netdev,
 
 	netdev->features = features;
 	e100_exec_cb(nic, NULL, e100_configure);
-	return 0;
+	return 1;
 }
 
 static const struct net_device_ops e100_netdev_ops = {
