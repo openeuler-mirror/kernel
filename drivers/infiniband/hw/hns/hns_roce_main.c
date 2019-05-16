@@ -1489,7 +1489,5 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev)
 EXPORT_SYMBOL_GPL(hns_roce_exit);
 
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_AUTHOR("Wei Hu <xavier.huwei@huawei.com>");
-MODULE_AUTHOR("Nenglong Zhao <zhaonenglong@hisilicon.com>");
-MODULE_AUTHOR("Lijun Ou <oulijun@huawei.com>");
+MODULE_AUTHOR("Huawei Tech. Co., Ltd.");
 MODULE_DESCRIPTION("HNS RoCE Driver");

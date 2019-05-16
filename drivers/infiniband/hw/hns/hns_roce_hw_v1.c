@@ -5103,9 +5103,7 @@ static struct platform_driver hns_roce_driver = {
 module_platform_driver(hns_roce_driver);
 
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_AUTHOR("Wei Hu <xavier.huwei@huawei.com>");
-MODULE_AUTHOR("Nenglong Zhao <zhaonenglong@hisilicon.com>");
-MODULE_AUTHOR("Lijun Ou <oulijun@huawei.com>");
+MODULE_AUTHOR("Huawei Tech. Co., Ltd.");
 MODULE_DESCRIPTION("Hisilicon Hip06 Family RoCE Driver");
 module_param(loopback, int, 0444);
 MODULE_PARM_DESC(loopback, "default: 0");

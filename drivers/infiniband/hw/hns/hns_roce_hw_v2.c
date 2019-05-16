@@ -7159,9 +7159,7 @@ module_init(hns_roce_hw_v2_init);
 module_exit(hns_roce_hw_v2_exit);
 
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_AUTHOR("Wei Hu <xavier.huwei@huawei.com>");
-MODULE_AUTHOR("Lijun Ou <oulijun@huawei.com>");
-MODULE_AUTHOR("Shaobo Xu <xushaobo2@huawei.com>");
+MODULE_AUTHOR("Huawei Tech. Co., Ltd.");
 MODULE_DESCRIPTION("Hisilicon Hip08 Family RoCE Driver");
 module_param(loopback, int, 0444);
 MODULE_PARM_DESC(loopback, "default: 0");
