@@ -3987,6 +3987,9 @@ static bool check_wqe_rq_mtt_count(struct hns_roce_dev *hr_dev,
 {
 	struct device *dev = hr_dev->dev;
 
+	if (hr_qp->rq.wqe_cnt < 1)
+		return true;
+
 	if (mtt_cnt < 1) {
 		dev_err(dev, "qp(0x%lx) rqwqe buf ba find failed\n",
 			hr_qp->qpn);
@@ -4268,7 +4271,7 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 		return -EINVAL;
 	}
 
-	if (hr_qp->sge.offset) {
+	if (hr_qp->sge.sge_cnt > 0) {
 		page_size = 1 << (hr_dev->caps.mtt_buf_pg_sz + PAGE_SHIFT);
 		count = hns_roce_mtr_find(hr_dev, &hr_qp->mtr,
 					  hr_qp->sge.offset / page_size,
