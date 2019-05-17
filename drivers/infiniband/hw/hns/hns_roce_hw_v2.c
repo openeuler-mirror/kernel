@@ -2784,7 +2784,7 @@ static void hns_roce_v2_write_cqc(struct hns_roce_dev *hr_dev,
 	roce_set_field(cq_context->byte_4_pg_ceqn, V2_CQC_BYTE_4_CQ_ST_M,
 		       V2_CQC_BYTE_4_CQ_ST_S, V2_CQ_STATE_VALID);
 	roce_set_field(cq_context->byte_4_pg_ceqn, V2_CQC_BYTE_4_ARM_ST_M,
-		       V2_CQC_BYTE_4_ARM_ST_S, REG_NXT_CEQE);
+		       V2_CQC_BYTE_4_ARM_ST_S, NO_ARMED);
 	roce_set_field(cq_context->byte_4_pg_ceqn, V2_CQC_BYTE_4_SHIFT_M,
 		       V2_CQC_BYTE_4_SHIFT_S, ilog2((unsigned int)nent));
 	roce_set_field(cq_context->byte_4_pg_ceqn, V2_CQC_BYTE_4_CEQN_M,
