@@ -62,11 +62,14 @@ struct arm_smmu_cd {
 #define pasid_entry_to_cd(entry) \
 	container_of((entry), struct arm_smmu_cd, entry)
 
+struct arm_smmu_cd_table {
+	__le64				*ptr;
+	dma_addr_t			ptr_dma;
+};
+
 struct arm_smmu_cd_tables {
 	struct iommu_pasid_table	pasid;
-
-	void				*ptr;
-	dma_addr_t			ptr_dma;
+	struct arm_smmu_cd_table	table;
 };
 
 #define pasid_to_cd_tables(pasid_table) \
@@ -76,6 +79,36 @@ struct arm_smmu_cd_tables {
 	pasid_to_cd_tables(iommu_pasid_table_ops_to_table(ops))
 
 static DEFINE_IDA(asid_ida);
+
+static int arm_smmu_alloc_cd_leaf_table(struct device *dev,
+					struct arm_smmu_cd_table *desc,
+					size_t num_entries)
+{
+	size_t size = num_entries * (CTXDESC_CD_DWORDS << 3);
+
+	desc->ptr = dmam_alloc_coherent(dev, size, &desc->ptr_dma,
+					GFP_ATOMIC | __GFP_ZERO);
+	if (!desc->ptr) {
+		dev_warn(dev, "failed to allocate context descriptor table\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void arm_smmu_free_cd_leaf_table(struct device *dev,
+					struct arm_smmu_cd_table *desc,
+					size_t num_entries)
+{
+	size_t size = num_entries * (CTXDESC_CD_DWORDS << 3);
+
+	dmam_free_coherent(dev, size, desc->ptr, desc->ptr_dma);
+}
+
+static __le64 *arm_smmu_get_cd_ptr(struct arm_smmu_cd_tables *tbl, u32 ssid)
+{
+	return tbl->table.ptr + ssid * CTXDESC_CD_DWORDS;
+}
 
 static u64 arm_smmu_cpu_tcr_to_cd(u64 tcr)
 {
@@ -95,34 +128,74 @@ static u64 arm_smmu_cpu_tcr_to_cd(u64 tcr)
 	return val;
 }
 
-static void arm_smmu_write_ctx_desc(struct arm_smmu_cd_tables *tbl,
-				    struct arm_smmu_cd *cd)
+static int arm_smmu_write_ctx_desc(struct arm_smmu_cd_tables *tbl, int ssid,
+				   struct arm_smmu_cd *cd)
 {
 	u64 val;
-	__u64 *cdptr = tbl->ptr;
+	bool cd_live;
+	__le64 *cdptr = arm_smmu_get_cd_ptr(tbl, ssid);
 	struct arm_smmu_context_cfg *cfg = &tbl->pasid.cfg.arm_smmu;
 
 	/*
-	 * We don't need to issue any invalidation here, as we'll invalidate
-	 * the STE when installing the new entry anyway.
+	 * This function handles the following cases:
+	 *
+	 * (1) Install primary CD, for normal DMA traffic (SSID = 0).
+	 * (2) Install a secondary CD, for SID+SSID traffic, followed by an
+	 *     invalidation.
+	 * (3) Update ASID of primary CD. This is allowed by atomically writing
+	 *     the first 64 bits of the CD, followed by invalidation of the old
+	 *     entry and mappings.
+	 * (4) Remove a secondary CD and invalidate it.
 	 */
-	val = arm_smmu_cpu_tcr_to_cd(cd->tcr) |
+
+	if (!cdptr)
+		return -ENOMEM;
+
+	val = le64_to_cpu(cdptr[0]);
+	cd_live = !!(val & CTXDESC_CD_0_V);
+
+	if (!cd) { /* (4) */
+		cdptr[0] = 0;
+	} else if (cd_live) { /* (3) */
+		val &= ~CTXDESC_CD_0_ASID;
+		val |= FIELD_PREP(CTXDESC_CD_0_ASID, cd->entry.tag);
+
+		cdptr[0] = cpu_to_le64(val);
+		/*
+		 * Until CD+TLB invalidation, both ASIDs may be used for tagging
+		 * this substream's traffic
+		 */
+	} else { /* (1) and (2) */
+		cdptr[1] = cpu_to_le64(cd->ttbr & CTXDESC_CD_1_TTB0_MASK);
+		cdptr[2] = 0;
+		cdptr[3] = cpu_to_le64(cd->mair);
+
+		/*
+		 * STE is live, and the SMMU might fetch this CD at any
+		 * time. Ensure it observes the rest of the CD before we
+		 * enable it.
+		 */
+		iommu_pasid_flush(&tbl->pasid, ssid, true);
+
+
+		val = arm_smmu_cpu_tcr_to_cd(cd->tcr) |
 #ifdef __BIG_ENDIAN
-	      CTXDESC_CD_0_ENDI |
+		      CTXDESC_CD_0_ENDI |
 #endif
-	      CTXDESC_CD_0_R | CTXDESC_CD_0_A | CTXDESC_CD_0_ASET |
-	      CTXDESC_CD_0_AA64 | FIELD_PREP(CTXDESC_CD_0_ASID, cd->entry.tag) |
-	      CTXDESC_CD_0_V;
+		      CTXDESC_CD_0_R | CTXDESC_CD_0_A | CTXDESC_CD_0_ASET |
+		      CTXDESC_CD_0_AA64 |
+		      FIELD_PREP(CTXDESC_CD_0_ASID, cd->entry.tag) |
+		      CTXDESC_CD_0_V;
 
-	if (cfg->stall)
-		val |= CTXDESC_CD_0_S;
+		if (cfg->stall)
+			val |= CTXDESC_CD_0_S;
 
-	cdptr[0] = cpu_to_le64(val);
+		cdptr[0] = cpu_to_le64(val);
+	}
 
-	val = cd->ttbr & CTXDESC_CD_1_TTB0_MASK;
-	cdptr[1] = cpu_to_le64(val);
+	iommu_pasid_flush(&tbl->pasid, ssid, true);
 
-	cdptr[3] = cpu_to_le64(cd->mair);
+	return 0;
 }
 
 static void arm_smmu_free_cd(struct iommu_pasid_entry *entry)
@@ -191,8 +264,10 @@ static int arm_smmu_set_cd(struct iommu_pasid_table_ops *ops, int pasid,
 	struct arm_smmu_cd_tables *tbl = pasid_ops_to_tables(ops);
 	struct arm_smmu_cd *cd = pasid_entry_to_cd(entry);
 
-	arm_smmu_write_ctx_desc(tbl, cd);
-	return 0;
+	if (WARN_ON(pasid > (1 << tbl->pasid.cfg.order)))
+		return -EINVAL;
+
+	return arm_smmu_write_ctx_desc(tbl, pasid, cd);
 }
 
 static void arm_smmu_clear_cd(struct iommu_pasid_table_ops *ops, int pasid,
@@ -200,30 +275,26 @@ static void arm_smmu_clear_cd(struct iommu_pasid_table_ops *ops, int pasid,
 {
 	struct arm_smmu_cd_tables *tbl = pasid_ops_to_tables(ops);
 
-	arm_smmu_write_ctx_desc(tbl, NULL);
+	if (WARN_ON(pasid > (1 << tbl->pasid.cfg.order)))
+		return;
+
+	arm_smmu_write_ctx_desc(tbl, pasid, NULL);
 }
 
 static struct iommu_pasid_table *
 arm_smmu_alloc_cd_tables(struct iommu_pasid_table_cfg *cfg, void *cookie)
 {
+	int ret;
 	struct arm_smmu_cd_tables *tbl;
 	struct device *dev = cfg->iommu_dev;
-
-	if (cfg->order) {
-		/* TODO: support SSID */
-		return NULL;
-	}
 
 	tbl = devm_kzalloc(dev, sizeof(*tbl), GFP_KERNEL);
 	if (!tbl)
 		return NULL;
 
-	tbl->ptr = dmam_alloc_coherent(dev, CTXDESC_CD_DWORDS << 3,
-				       &tbl->ptr_dma, GFP_KERNEL | __GFP_ZERO);
-	if (!tbl->ptr) {
-		dev_warn(dev, "failed to allocate context descriptor\n");
+	ret = arm_smmu_alloc_cd_leaf_table(dev, &tbl->table, 1 << cfg->order);
+	if (ret)
 		goto err_free_tbl;
-	}
 
 	tbl->pasid.ops = (struct iommu_pasid_table_ops) {
 		.alloc_priv_entry	= arm_smmu_alloc_priv_cd,
@@ -231,7 +302,8 @@ arm_smmu_alloc_cd_tables(struct iommu_pasid_table_cfg *cfg, void *cookie)
 		.set_entry		= arm_smmu_set_cd,
 		.clear_entry		= arm_smmu_clear_cd,
 	};
-	cfg->base = tbl->ptr_dma;
+	cfg->base			= tbl->table.ptr_dma;
+	cfg->arm_smmu.s1fmt		= ARM_SMMU_S1FMT_LINEAR;
 
 	return &tbl->pasid;
 
@@ -247,8 +319,7 @@ static void arm_smmu_free_cd_tables(struct iommu_pasid_table *pasid_table)
 	struct device *dev = cfg->iommu_dev;
 	struct arm_smmu_cd_tables *tbl = pasid_to_cd_tables(pasid_table);
 
-	dmam_free_coherent(dev, CTXDESC_CD_DWORDS << 3,
-			   tbl->ptr, tbl->ptr_dma);
+	arm_smmu_free_cd_leaf_table(dev, &tbl->table, 1 << cfg->order);
 	devm_kfree(dev, tbl);
 }
 

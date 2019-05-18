@@ -78,10 +78,17 @@ struct iommu_pasid_sync_ops {
  * SMMU properties:
  * @stall: devices attached to the domain are allowed to stall.
  * @asid_bits: number of ASID bits supported by the SMMU
+ *
+ * @s1fmt: PASID table format, chosen by the allocator.
  */
 struct arm_smmu_context_cfg {
 	u8				stall:1;
 	u8				asid_bits;
+
+#define ARM_SMMU_S1FMT_LINEAR		0x0
+#define ARM_SMMU_S1FMT_4K_L2		0x1
+#define ARM_SMMU_S1FMT_64K_L2		0x2
+	u8				s1fmt;
 };
 
 /**
