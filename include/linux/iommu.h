@@ -372,6 +372,7 @@ enum iommu_fault_reason {
  * @iommu_private: used by the IOMMU driver for storing fault-specific
  *                 data. Users should not modify this field before
  *                 sending the fault response.
+ * @expire: time limit in jiffies will wait for page response
  */
 struct iommu_fault_event {
 	struct list_head list;
@@ -385,6 +386,7 @@ struct iommu_fault_event {
 	u32 prot;
 	u64 device_private;
 	u64 iommu_private;
+	u64 expire;
 };
 
 /**
@@ -392,11 +394,13 @@ struct iommu_fault_event {
  * @dev_fault_handler: Callback function to handle IOMMU faults at device level
  * @data: handler private data
  * @faults: holds the pending faults which needs response, e.g. page response.
+ * @timer: track page request pending time limit
  * @lock: protect pending PRQ event list
  */
 struct iommu_fault_param {
 	iommu_dev_fault_handler_t handler;
 	struct list_head faults;
+	struct timer_list timer;
 	struct mutex lock;
 	void *data;
 };
