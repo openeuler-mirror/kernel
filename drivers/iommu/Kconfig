@@ -98,6 +98,7 @@ config IOMMU_DMA
 config IOMMU_SVA
 	bool
 	select IOMMU_API
+	select MMU_NOTIFIER
 
 config FSL_PAMU
 	bool "Freescale IOMMU support"
