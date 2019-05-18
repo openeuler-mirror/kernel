@@ -1009,6 +1009,7 @@ extern int __iommu_sva_bind_device(struct device *dev, struct mm_struct *mm,
 extern int __iommu_sva_unbind_device(struct device *dev, int pasid);
 extern void __iommu_sva_unbind_dev_all(struct device *dev);
 
+extern struct mm_struct *iommu_sva_find(int pasid);
 #else /* CONFIG_IOMMU_SVA */
 static inline int iommu_sva_device_init(struct device *dev,
 					unsigned long features,
@@ -1037,6 +1038,11 @@ static inline int __iommu_sva_unbind_device(struct device *dev, int pasid)
 
 static inline void __iommu_sva_unbind_dev_all(struct device *dev)
 {
+}
+
+static inline struct mm_struct *iommu_sva_find(int pasid)
+{
+	return NULL;
 }
 #endif /* CONFIG_IOMMU_SVA */
 
