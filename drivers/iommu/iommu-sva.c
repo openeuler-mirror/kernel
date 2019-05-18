@@ -93,6 +93,8 @@ int iommu_sva_device_shutdown(struct device *dev)
 	if (!domain)
 		return -ENODEV;
 
+	__iommu_sva_unbind_dev_all(dev);
+
 	mutex_lock(&dev->iommu_param->lock);
 	param = dev->iommu_param->sva_param;
 	dev->iommu_param->sva_param = NULL;
@@ -108,3 +110,28 @@ int iommu_sva_device_shutdown(struct device *dev)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(iommu_sva_device_shutdown);
+
+int __iommu_sva_bind_device(struct device *dev, struct mm_struct *mm,
+			    int *pasid, unsigned long flags, void *drvdata)
+{
+	return -ENOSYS; /* TODO */
+}
+EXPORT_SYMBOL_GPL(__iommu_sva_bind_device);
+
+int __iommu_sva_unbind_device(struct device *dev, int pasid)
+{
+	return -ENOSYS; /* TODO */
+}
+EXPORT_SYMBOL_GPL(__iommu_sva_unbind_device);
+
+/**
+ * __iommu_sva_unbind_dev_all() - Detach all address spaces from this device
+ * @dev: the device
+ *
+ * When detaching @device from a domain, IOMMU drivers should use this helper.
+ */
+void __iommu_sva_unbind_dev_all(struct device *dev)
+{
+	/* TODO */
+}
+EXPORT_SYMBOL_GPL(__iommu_sva_unbind_dev_all);
