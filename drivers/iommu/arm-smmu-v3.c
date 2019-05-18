@@ -32,6 +32,7 @@
 #include <linux/interrupt.h>
 #include <linux/iommu.h>
 #include <linux/iopoll.h>
+#include <linux/mmu_context.h>
 #include <linux/module.h>
 #include <linux/msi.h>
 #include <linux/of.h>
@@ -40,6 +41,7 @@
 #include <linux/of_platform.h>
 #include <linux/pci.h>
 #include <linux/platform_device.h>
+#include <linux/sched/mm.h>
 
 #include <linux/amba/bus.h>
 
@@ -624,6 +626,11 @@ struct arm_smmu_domain {
 	spinlock_t			devices_lock;
 };
 
+struct arm_smmu_mm {
+	struct io_mm			io_mm;
+	struct iommu_pasid_entry	*cd;
+};
+
 struct arm_smmu_option_prop {
 	u32 opt;
 	const char *prop;
@@ -648,6 +655,11 @@ static inline void __iomem *arm_smmu_page1_fixup(unsigned long offset,
 static struct arm_smmu_domain *to_smmu_domain(struct iommu_domain *dom)
 {
 	return container_of(dom, struct arm_smmu_domain, domain);
+}
+
+static struct arm_smmu_mm *to_smmu_mm(struct io_mm *io_mm)
+{
+	return container_of(io_mm, struct arm_smmu_mm, io_mm);
 }
 
 static void parse_driver_options(struct arm_smmu_device *smmu)
@@ -1873,6 +1885,8 @@ static void arm_smmu_detach_dev(struct device *dev)
 	struct arm_smmu_domain *smmu_domain = master->domain;
 
 	if (smmu_domain) {
+		__iommu_sva_unbind_dev_all(dev);
+
 		spin_lock_irqsave(&smmu_domain->devices_lock, flags);
 		list_del(&master->list);
 		spin_unlock_irqrestore(&smmu_domain->devices_lock, flags);
@@ -1996,6 +2010,111 @@ arm_smmu_iova_to_phys(struct iommu_domain *domain, dma_addr_t iova)
 		return 0;
 
 	return ops->iova_to_phys(ops, iova);
+}
+
+static int arm_smmu_sva_init(struct device *dev, struct iommu_sva_param *param)
+{
+	struct arm_smmu_master_data *master = dev->iommu_fwspec->iommu_priv;
+
+	/* SSID support is mandatory for the moment */
+	if (!master->ssid_bits)
+		return -EINVAL;
+
+	if (param->features)
+		return -EINVAL;
+
+	if (!param->max_pasid)
+		param->max_pasid = 0xfffffU;
+
+	/* SSID support in the SMMU requires at least one SSID bit */
+	param->min_pasid = max(param->min_pasid, 1U);
+	param->max_pasid = min(param->max_pasid, (1U << master->ssid_bits) - 1);
+
+	return 0;
+}
+
+static void arm_smmu_sva_shutdown(struct device *dev,
+				  struct iommu_sva_param *param)
+{
+}
+
+static struct io_mm *arm_smmu_mm_alloc(struct iommu_domain *domain,
+				       struct mm_struct *mm,
+				       unsigned long flags)
+{
+	struct arm_smmu_mm *smmu_mm;
+	struct iommu_pasid_entry *cd;
+	struct iommu_pasid_table_ops *ops;
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+
+	if (smmu_domain->stage != ARM_SMMU_DOMAIN_S1)
+		return NULL;
+
+	smmu_mm = kzalloc(sizeof(*smmu_mm), GFP_KERNEL);
+	if (!smmu_mm)
+		return NULL;
+
+	ops = smmu_domain->s1_cfg.ops;
+	cd = ops->alloc_shared_entry(ops, mm);
+	if (IS_ERR(cd)) {
+		kfree(smmu_mm);
+		return ERR_CAST(cd);
+	}
+
+	smmu_mm->cd = cd;
+	return &smmu_mm->io_mm;
+}
+
+static void arm_smmu_mm_free(struct io_mm *io_mm)
+{
+	struct arm_smmu_mm *smmu_mm = to_smmu_mm(io_mm);
+
+	iommu_free_pasid_entry(smmu_mm->cd);
+	kfree(smmu_mm);
+}
+
+static int arm_smmu_mm_attach(struct iommu_domain *domain, struct device *dev,
+			      struct io_mm *io_mm, bool attach_domain)
+{
+	struct arm_smmu_mm *smmu_mm = to_smmu_mm(io_mm);
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	struct iommu_pasid_table_ops *ops = smmu_domain->s1_cfg.ops;
+	struct arm_smmu_master_data *master = dev->iommu_fwspec->iommu_priv;
+
+	if (smmu_domain->stage != ARM_SMMU_DOMAIN_S1)
+		return -EINVAL;
+
+	if (!(master->smmu->features & ARM_SMMU_FEAT_SVA))
+		return -ENODEV;
+
+	if (!attach_domain)
+		return 0;
+
+	return ops->set_entry(ops, io_mm->pasid, smmu_mm->cd);
+}
+
+static void arm_smmu_mm_detach(struct iommu_domain *domain, struct device *dev,
+			       struct io_mm *io_mm, bool detach_domain)
+{
+	struct arm_smmu_mm *smmu_mm = to_smmu_mm(io_mm);
+	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
+	struct iommu_pasid_table_ops *ops = smmu_domain->s1_cfg.ops;
+
+	if (detach_domain)
+		ops->clear_entry(ops, io_mm->pasid, smmu_mm->cd);
+
+	/* TODO: Invalidate ATC. */
+	/* TODO: Invalidate all mappings if last and not DVM. */
+}
+
+static void arm_smmu_mm_invalidate(struct iommu_domain *domain,
+				   struct device *dev, struct io_mm *io_mm,
+				   unsigned long iova, size_t size)
+{
+	/*
+	 * TODO: Invalidate ATC.
+	 * TODO: Invalidate mapping if not DVM
+	 */
 }
 
 static struct platform_driver arm_smmu_driver;
@@ -2227,6 +2346,13 @@ static struct iommu_ops arm_smmu_ops = {
 	.domain_alloc		= arm_smmu_domain_alloc,
 	.domain_free		= arm_smmu_domain_free,
 	.attach_dev		= arm_smmu_attach_dev,
+	.sva_device_init	= arm_smmu_sva_init,
+	.sva_device_shutdown	= arm_smmu_sva_shutdown,
+	.mm_alloc		= arm_smmu_mm_alloc,
+	.mm_free		= arm_smmu_mm_free,
+	.mm_attach		= arm_smmu_mm_attach,
+	.mm_detach		= arm_smmu_mm_detach,
+	.mm_invalidate		= arm_smmu_mm_invalidate,
 	.map			= arm_smmu_map,
 	.unmap			= arm_smmu_unmap,
 	.flush_iotlb_all	= arm_smmu_flush_iotlb_all,
