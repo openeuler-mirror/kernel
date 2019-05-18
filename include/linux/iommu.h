@@ -458,10 +458,19 @@ struct iommu_fault_param {
 };
 
 /**
+ * iopf_queue_flush_t - Flush low-level page fault queue
+ *
+ * Report all faults currently pending in the low-level page fault queue
+ */
+struct iopf_queue;
+typedef int (*iopf_queue_flush_t)(void *cookie, struct device *dev);
+
+/**
  * struct iommu_param - collection of per-device IOMMU data
  *
  * @fault_param: IOMMU detected device fault reporting data
  * @sva_param: SVA parameters
+ * @iopf_param: I/O Page Fault queue and data
  *
  * TODO: migrate other per device data pointers under iommu_dev_data, e.g.
  *	struct iommu_group	*iommu_group;
@@ -471,6 +480,7 @@ struct iommu_param {
 	struct mutex lock;
 	struct iommu_fault_param *fault_param;
 	struct iommu_sva_param *sva_param;
+	struct iopf_device_param *iopf_param;
 };
 
 int  iommu_device_register(struct iommu_device *iommu);
@@ -869,6 +879,12 @@ static inline int iommu_report_device_fault(struct device *dev,
 	return 0;
 }
 
+static inline int iommu_page_response(struct device *dev,
+				      struct page_response_msg *msg)
+{
+	return -ENODEV;
+}
+
 static inline int iommu_group_id(struct iommu_group *group)
 {
 	return -ENODEV;
@@ -1045,6 +1061,48 @@ static inline struct mm_struct *iommu_sva_find(int pasid)
 	return NULL;
 }
 #endif /* CONFIG_IOMMU_SVA */
+
+#ifdef CONFIG_IOMMU_PAGE_FAULT
+extern int iommu_queue_iopf(struct iommu_fault_event *evt, void *cookie);
+
+extern int iopf_queue_add_device(struct iopf_queue *queue, struct device *dev);
+extern int iopf_queue_remove_device(struct device *dev);
+extern int iopf_queue_flush_dev(struct device *dev);
+extern struct iopf_queue *
+iopf_queue_alloc(const char *name, iopf_queue_flush_t flush, void *cookie);
+extern void iopf_queue_free(struct iopf_queue *queue);
+#else /* CONFIG_IOMMU_PAGE_FAULT */
+static inline int iommu_queue_iopf(struct iommu_fault_event *evt, void *cookie)
+{
+	return -ENODEV;
+}
+
+static inline int iopf_queue_add_device(struct iopf_queue *queue,
+					struct device *dev)
+{
+	return -ENODEV;
+}
+
+static inline int iopf_queue_remove_device(struct device *dev)
+{
+	return -ENODEV;
+}
+
+static inline int iopf_queue_flush_dev(struct device *dev)
+{
+	return -ENODEV;
+}
+
+static inline struct iopf_queue *
+iopf_queue_alloc(const char *name, iopf_queue_flush_t flush, void *cookie)
+{
+	return NULL;
+}
+
+static inline void iopf_queue_free(struct iopf_queue *queue)
+{
+}
+#endif /* CONFIG_IOMMU_PAGE_FAULT */
 
 #ifdef CONFIG_IOMMU_DEBUGFS
 extern	struct dentry *iommu_debugfs_dir;
