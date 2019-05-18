@@ -60,6 +60,13 @@ config IOMMU_IO_PGTABLE_ARMV7S_SELFTEST
 
 endmenu
 
+menu "Generic PASID table support"
+
+config IOMMU_PASID_TABLE
+	bool
+
+endmenu
+
 config IOMMU_DEBUGFS
 	bool "Export IOMMU internals in DebugFS"
 	depends on DEBUG_FS
