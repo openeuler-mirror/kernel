@@ -2925,24 +2925,19 @@ static int arm_smmu_add_device(struct device *dev)
 	if (ret)
 		goto err_disable_ats;
 
-	ret = arm_smmu_insert_master(smmu, master);
-	if (ret)
-		goto err_unlink;
-
 	group = iommu_group_get_for_dev(dev);
 	if (IS_ERR(group)) {
 		ret = PTR_ERR(group);
 		goto err_remove_master;
 	}
 
+	arm_smmu_insert_master(smmu, master);
 	iommu_group_put(group);
 
 	return 0;
 
 err_remove_master:
 	arm_smmu_remove_master(smmu, master);
-
-err_unlink:
 	iommu_device_unlink(&smmu->iommu, dev);
 
 err_disable_ats:
