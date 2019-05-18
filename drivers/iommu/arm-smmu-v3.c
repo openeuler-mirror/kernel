@@ -304,6 +304,11 @@
 #define CMDQ_PRI_1_GRPID		GENMASK_ULL(8, 0)
 #define CMDQ_PRI_1_RESP			GENMASK_ULL(13, 12)
 
+#define CMDQ_RESUME_0_SID		GENMASK_ULL(63, 32)
+#define CMDQ_RESUME_0_ACTION_RETRY	(1UL << 12)
+#define CMDQ_RESUME_0_ACTION_ABORT	(1UL << 13)
+#define CMDQ_RESUME_1_STAG		GENMASK_ULL(15, 0)
+
 #define CMDQ_SYNC_0_CS			GENMASK_ULL(13, 12)
 #define CMDQ_SYNC_0_CS_NONE		0
 #define CMDQ_SYNC_0_CS_IRQ		1
@@ -319,8 +324,25 @@
 
 #define EVTQ_0_ID			GENMASK_ULL(7, 0)
 #define EVTQ_0_ID_C_BAD_STE		0x4
+
+#define EVT_ID_TRANSLATION_FAULT	0x10
+#define EVT_ID_ADDR_SIZE_FAULT		0x11
+#define EVT_ID_ACCESS_FAULT		0x12
+#define EVT_ID_PERMISSION_FAULT		0x13
+
 #define EVTQ_0_SSV			GENMASK_ULL(11, 11)
+#define EVTQ_0_SSID			GENMASK_ULL(31, 12)
 #define EVTQ_0_SID			GENMASK_ULL(63, 32)
+#define EVTQ_1_STAG			GENMASK_ULL(15, 0)
+#define EVTQ_1_STALL			(1UL << 31)
+#define EVTQ_1_PRIV			(1UL << 33)
+#define EVTQ_1_EXEC			(1UL << 34)
+#define EVTQ_1_READ			(1UL << 35)
+#define EVTQ_1_S2			(1UL << 39)
+#define EVTQ_1_CLASS			GENMASK_ULL(41, 40)
+#define EVTQ_1_TT_READ			(1UL << 44)
+#define EVTQ_2_ADDR			GENMASK_ULL(63, 0)
+#define EVTQ_3_IPA			GENMASK_ULL(51, 12)
 
 /* PRI queue */
 #define PRIQ_ENT_DWORDS			2
@@ -432,6 +454,13 @@ struct arm_smmu_cmdq_ent {
 			enum pri_resp		resp;
 		} pri;
 
+		#define CMDQ_OP_RESUME		0x44
+		struct {
+			u32			sid;
+			u16			stag;
+			enum page_response_code	resp;
+		} resume;
+
 		#define CMDQ_OP_CMD_SYNC	0x46
 		struct {
 			u32			msidata;
@@ -505,6 +534,8 @@ struct arm_smmu_strtab_ent {
 	bool				assigned;
 	struct arm_smmu_s1_cfg		*s1_cfg;
 	struct arm_smmu_s2_cfg		*s2_cfg;
+
+	bool				can_stall;
 };
 
 struct arm_smmu_strtab_cfg {
@@ -882,6 +913,21 @@ static int arm_smmu_cmdq_build_cmd(u64 *cmd, struct arm_smmu_cmdq_ent *ent)
 		}
 		cmd[1] |= FIELD_PREP(CMDQ_PRI_1_RESP, ent->pri.resp);
 		break;
+	case CMDQ_OP_RESUME:
+		cmd[0] |= FIELD_PREP(CMDQ_RESUME_0_SID, ent->resume.sid);
+		cmd[1] |= FIELD_PREP(CMDQ_RESUME_1_STAG, ent->resume.stag);
+		switch (ent->resume.resp) {
+		case IOMMU_PAGE_RESP_INVALID:
+		case IOMMU_PAGE_RESP_FAILURE:
+			cmd[0] |= CMDQ_RESUME_0_ACTION_ABORT;
+			break;
+		case IOMMU_PAGE_RESP_SUCCESS:
+			cmd[0] |= CMDQ_RESUME_0_ACTION_RETRY;
+			break;
+		default:
+			return -EINVAL;
+		}
+		break;
 	case CMDQ_OP_CMD_SYNC:
 		if (ent->sync.msiaddr)
 			cmd[0] |= FIELD_PREP(CMDQ_SYNC_0_CS, CMDQ_SYNC_0_CS_IRQ);
@@ -1058,6 +1104,34 @@ static void arm_smmu_cmdq_issue_sync(struct arm_smmu_device *smmu)
 		dev_err_ratelimited(smmu->dev, "CMD_SYNC timeout\n");
 }
 
+static int arm_smmu_page_response(struct device *dev,
+				  struct page_response_msg *resp)
+{
+	int sid = dev->iommu_fwspec->ids[0];
+	struct arm_smmu_cmdq_ent cmd = {0};
+	struct arm_smmu_master_data *master = dev->iommu_fwspec->iommu_priv;
+
+	if (master->ste.can_stall) {
+		cmd.opcode		= CMDQ_OP_RESUME;
+		cmd.resume.sid		= sid;
+		cmd.resume.stag		= resp->page_req_group_id;
+		cmd.resume.resp		= resp->resp_code;
+	} else {
+		/* TODO: put PRI response here */
+		return -ENODEV;
+	}
+
+	arm_smmu_cmdq_issue_cmd(master->smmu, &cmd);
+	/*
+	 * Don't send a SYNC, it doesn't do anything for RESUME or PRI_RESP.
+	 * RESUME consumption guarantees that the stalled transaction will be
+	 * terminated... at some point in the future. PRI_RESP is fire and
+	 * forget.
+	 */
+
+	return 0;
+}
+
 /* Stream table manipulation functions */
 static void
 arm_smmu_write_strtab_l1_desc(__le64 *dst, struct arm_smmu_strtab_l1_desc *desc)
@@ -1179,7 +1253,8 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_device *smmu, u32 sid,
 			 FIELD_PREP(STRTAB_STE_1_STRW, strw));
 
 		if (smmu->features & ARM_SMMU_FEAT_STALLS &&
-		   !(smmu->features & ARM_SMMU_FEAT_STALL_FORCE))
+		   !(smmu->features & ARM_SMMU_FEAT_STALL_FORCE) &&
+		   !ste->can_stall)
 			dst[1] |= cpu_to_le64(STRTAB_STE_1_S1STALLD);
 
 		val |= (ste->s1_cfg->tables.base & STRTAB_STE_0_S1CTXPTR_MASK) |
@@ -1331,10 +1406,111 @@ static void arm_smmu_ste_abort_quirks(struct arm_smmu_device *smmu, u64 evt0)
 	iounmap(src);
 }
 
+static struct arm_smmu_master_data *
+arm_smmu_find_master(struct arm_smmu_device *smmu, u32 sid)
+{
+	struct rb_node *node;
+	struct arm_smmu_stream *stream;
+	struct arm_smmu_master_data *master = NULL;
+
+	mutex_lock(&smmu->streams_mutex);
+	node = smmu->streams.rb_node;
+	while (node) {
+		stream = rb_entry(node, struct arm_smmu_stream, node);
+		if (stream->id < sid) {
+			node = node->rb_right;
+		} else if (stream->id > sid) {
+			node = node->rb_left;
+		} else {
+			master = stream->master;
+			break;
+		}
+	}
+	mutex_unlock(&smmu->streams_mutex);
+
+	return master;
+}
+
+static int arm_smmu_handle_evt(struct arm_smmu_device *smmu, u64 *evt)
+{
+	int ret;
+	struct arm_smmu_master_data *master;
+	u8 type = FIELD_GET(EVTQ_0_ID, evt[0]);
+	u32 sid = FIELD_GET(EVTQ_0_SID, evt[0]);
+
+	struct iommu_fault_event fault = {
+		.page_req_group_id	= FIELD_GET(EVTQ_1_STAG, evt[1]),
+		.addr			= FIELD_GET(EVTQ_2_ADDR, evt[2]),
+		.last_req		= true,
+	};
+
+	switch (type) {
+	case EVT_ID_TRANSLATION_FAULT:
+	case EVT_ID_ADDR_SIZE_FAULT:
+	case EVT_ID_ACCESS_FAULT:
+		fault.reason = IOMMU_FAULT_REASON_PTE_FETCH;
+		break;
+	case EVT_ID_PERMISSION_FAULT:
+		fault.reason = IOMMU_FAULT_REASON_PERMISSION;
+		break;
+	default:
+		/* TODO: report other unrecoverable faults. */
+		return -EFAULT;
+	}
+
+	/* Stage-2 is always pinned at the moment */
+	if (evt[1] & EVTQ_1_S2)
+		return -EFAULT;
+
+	master = arm_smmu_find_master(smmu, sid);
+	if (!master)
+		return -EINVAL;
+
+	/*
+	 * The domain is valid until the fault returns, because detach() flushes
+	 * the fault queue.
+	 */
+	if (evt[1] & EVTQ_1_STALL)
+		fault.type = IOMMU_FAULT_PAGE_REQ;
+	else
+		fault.type = IOMMU_FAULT_DMA_UNRECOV;
+
+	if (evt[1] & EVTQ_1_READ)
+		fault.prot |= IOMMU_FAULT_READ;
+	else
+		fault.prot |= IOMMU_FAULT_WRITE;
+
+	if (evt[1] & EVTQ_1_EXEC)
+		fault.prot |= IOMMU_FAULT_EXEC;
+
+	if (evt[1] & EVTQ_1_PRIV)
+		fault.prot |= IOMMU_FAULT_PRIV;
+
+	if (evt[0] & EVTQ_0_SSV) {
+		fault.pasid_valid = true;
+		fault.pasid = FIELD_GET(EVTQ_0_SSID, evt[0]);
+	}
+
+	ret = iommu_report_device_fault(master->dev, &fault);
+	if (ret && fault.type == IOMMU_FAULT_PAGE_REQ) {
+		/* Nobody cared, abort the access */
+		struct page_response_msg resp = {
+			.addr			= fault.addr,
+			.pasid			= fault.pasid,
+			.pasid_present		= fault.pasid_valid,
+			.page_req_group_id	= fault.page_req_group_id,
+			.resp_code		= IOMMU_PAGE_RESP_FAILURE,
+		};
+		arm_smmu_page_response(master->dev, &resp);
+	}
+
+	return ret;
+}
+
 /* IRQ and event handlers */
 static irqreturn_t arm_smmu_evtq_thread(int irq, void *dev)
 {
-	int i;
+	int i, ret;
 	int num_handled = 0;
 	struct arm_smmu_device *smmu = dev;
 	struct arm_smmu_queue *q = &smmu->evtq.q;
@@ -1346,11 +1522,18 @@ static irqreturn_t arm_smmu_evtq_thread(int irq, void *dev)
 		while (!queue_remove_raw(q, evt)) {
 			u8 id = FIELD_GET(EVTQ_0_ID, evt[0]);
 
+			spin_unlock(&q->wq.lock);
+			ret = arm_smmu_handle_evt(smmu, evt);
+			spin_lock(&q->wq.lock);
+
 			if (++num_handled == queue_size) {
 				q->batch++;
 				wake_up_all_locked(&q->wq);
 				num_handled = 0;
 			}
+
+			if (!ret)
+				continue;
 
 			dev_info(smmu->dev, "event 0x%02x received:\n", id);
 			for (i = 0; i < ARRAY_SIZE(evt); ++i)
@@ -1487,7 +1670,9 @@ static int arm_smmu_flush_queues(void *cookie, struct device *dev)
 
 	if (dev) {
 		master = dev->iommu_fwspec->iommu_priv;
-		/* TODO: add support for PRI and Stall */
+		if (master->ste.can_stall)
+			arm_smmu_flush_queue(smmu, &smmu->evtq.q, "evtq");
+		/* TODO: add support for PRI */
 		return 0;
 	}
 
@@ -1808,7 +1993,8 @@ static int arm_smmu_domain_finalise_s1(struct arm_smmu_domain *smmu_domain,
 		.sync			= &arm_smmu_ctx_sync,
 		.arm_smmu = {
 			.stall		= !!(smmu->features &
-					  ARM_SMMU_FEAT_STALL_FORCE),
+					  ARM_SMMU_FEAT_STALL_FORCE) ||
+					  master->ste.can_stall,
 			.asid_bits	= smmu->asid_bits,
 			.hw_access	= !!(smmu->features & ARM_SMMU_FEAT_HA),
 			.hw_dirty	= !!(smmu->features & ARM_SMMU_FEAT_HD),
@@ -2370,6 +2556,11 @@ static int arm_smmu_add_device(struct device *dev)
 
 	master->ssid_bits = min(smmu->ssid_bits, fwspec->num_pasid_bits);
 
+	if (fwspec->can_stall && smmu->features & ARM_SMMU_FEAT_STALLS) {
+		master->can_fault = true;
+		master->ste.can_stall = true;
+	}
+
 	ret = iommu_device_link(&smmu->iommu, dev);
 	if (ret)
 		goto err_free_master;
@@ -2557,6 +2748,7 @@ static struct iommu_ops arm_smmu_ops = {
 	.mm_attach		= arm_smmu_mm_attach,
 	.mm_detach		= arm_smmu_mm_detach,
 	.mm_invalidate		= arm_smmu_mm_invalidate,
+	.page_response		= arm_smmu_page_response,
 	.map			= arm_smmu_map,
 	.unmap			= arm_smmu_unmap,
 	.flush_iotlb_all	= arm_smmu_flush_iotlb_all,
