@@ -442,6 +442,8 @@ static void iommu_notifier_release(struct mmu_notifier *mn,
 			dev_WARN(bond->dev, "possible leak of PASID %u",
 				 io_mm->pasid);
 
+		iopf_queue_flush_dev(bond->dev);
+
 		spin_lock(&iommu_sva_lock);
 		next = list_next_entry(bond, mm_head);
 
@@ -519,6 +521,9 @@ static struct mmu_notifier_ops iommu_mmu_notifier = {
  * description. Setting @max_pasid to a non-zero value smaller than this limit
  * overrides it.
  *
+ * If the device should support recoverable I/O Page Faults (e.g. PCI PRI), the
+ * IOMMU_SVA_FEAT_IOPF feature must be requested.
+ *
  * If the driver intends to share process address spaces, it should pass a valid
  * @mm_exit handler. Otherwise @mm_exit can be NULL. After @mm_exit returns, the
  * device must not issue any more transaction with the PASID given as argument.
@@ -547,12 +552,21 @@ int iommu_sva_device_init(struct device *dev, unsigned long features,
 	if (!domain || !domain->ops->sva_device_init)
 		return -ENODEV;
 
-	if (features)
+	if (features & ~IOMMU_SVA_FEAT_IOPF)
 		return -EINVAL;
 
+	if (features & IOMMU_SVA_FEAT_IOPF) {
+		ret = iommu_register_device_fault_handler(dev, iommu_queue_iopf,
+							  dev);
+		if (ret)
+			return ret;
+	}
+
 	param = kzalloc(sizeof(*param), GFP_KERNEL);
-	if (!param)
-		return -ENOMEM;
+	if (!param) {
+		ret = -ENOMEM;
+		goto err_remove_handler;
+	}
 
 	param->features		= features;
 	param->max_pasid	= max_pasid;
@@ -585,6 +599,9 @@ err_device_shutdown:
 err_free_param:
 	kfree(param);
 
+err_remove_handler:
+	iommu_unregister_device_fault_handler(dev);
+
 	return ret;
 }
 EXPORT_SYMBOL_GPL(iommu_sva_device_init);
@@ -594,7 +611,8 @@ EXPORT_SYMBOL_GPL(iommu_sva_device_init);
  * @dev: the device
  *
  * Disable SVA. Device driver should ensure that the device isn't performing any
- * DMA while this function is running.
+ * DMA while this function is running. In addition all faults should have been
+ * flushed to the IOMMU.
  */
 int iommu_sva_device_shutdown(struct device *dev)
 {
@@ -617,6 +635,8 @@ int iommu_sva_device_shutdown(struct device *dev)
 		domain->ops->sva_device_shutdown(dev, param);
 
 	kfree(param);
+
+	iommu_unregister_device_fault_handler(dev);
 
 	return 0;
 }
@@ -695,6 +715,12 @@ int __iommu_sva_unbind_device(struct device *dev, int pasid)
 	if (!param || WARN_ON(!domain))
 		return -EINVAL;
 
+	/*
+	 * Caller stopped the device from issuing PASIDs, now make sure they are
+	 * out of the fault queue.
+	 */
+	iopf_queue_flush_dev(dev);
+
 	/* spin_lock_irq matches the one in wait_event_lock_irq */
 	spin_lock_irq(&iommu_sva_lock);
 	list_for_each_entry(bond, &param->mm_list, dev_head) {
@@ -721,6 +747,8 @@ void __iommu_sva_unbind_dev_all(struct device *dev)
 {
 	struct iommu_sva_param *param;
 	struct iommu_bond *bond, *next;
+
+	iopf_queue_flush_dev(dev);
 
 	/*
 	 * io_mm_detach_locked might wait, so we shouldn't call it with the dev

@@ -2365,9 +2365,9 @@ EXPORT_SYMBOL_GPL(iommu_fwspec_add_ids);
  * iommu_sva_device_init() must be called first, to initialize the required SVA
  * features. @flags is a subset of these features.
  *
- * The caller must pin down using get_user_pages*() all mappings shared with the
- * device. mlock() isn't sufficient, as it doesn't prevent minor page faults
- * (e.g. copy-on-write).
+ * If IOMMU_SVA_FEAT_IOPF isn't requested, the caller must pin down using
+ * get_user_pages*() all mappings shared with the device. mlock() isn't
+ * sufficient, as it doesn't prevent minor page faults (e.g. copy-on-write).
  *
  * On success, 0 is returned and @pasid contains a valid ID. Otherwise, an error
  * is returned.
