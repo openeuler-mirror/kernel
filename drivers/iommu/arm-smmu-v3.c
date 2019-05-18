@@ -454,6 +454,10 @@ struct arm_smmu_queue {
 
 	u32 __iomem			*prod_reg;
 	u32 __iomem			*cons_reg;
+
+	/* Event and PRI */
+	u64				batch;
+	wait_queue_head_t		wq;
 };
 
 struct arm_smmu_cmdq {
@@ -589,6 +593,8 @@ struct arm_smmu_device {
 
 	/* IOMMU core code handle */
 	struct iommu_device		iommu;
+
+	struct iopf_queue		*iopf_queue;
 };
 
 /* SMMU private data for each master */
@@ -601,6 +607,7 @@ struct arm_smmu_master_data {
 
 	struct device			*dev;
 	size_t				ssid_bits;
+	bool				can_fault;
 };
 
 /* SMMU private data for an IOMMU domain */
@@ -1318,13 +1325,22 @@ static void arm_smmu_ste_abort_quirks(struct arm_smmu_device *smmu, u64 evt0)
 static irqreturn_t arm_smmu_evtq_thread(int irq, void *dev)
 {
 	int i;
+	int num_handled = 0;
 	struct arm_smmu_device *smmu = dev;
 	struct arm_smmu_queue *q = &smmu->evtq.q;
+	size_t queue_size = 1 << q->max_n_shift;
 	u64 evt[EVTQ_ENT_DWORDS];
 
+	spin_lock(&q->wq.lock);
 	do {
 		while (!queue_remove_raw(q, evt)) {
 			u8 id = FIELD_GET(EVTQ_0_ID, evt[0]);
+
+			if (++num_handled == queue_size) {
+				q->batch++;
+				wake_up_all_locked(&q->wq);
+				num_handled = 0;
+			}
 
 			dev_info(smmu->dev, "event 0x%02x received:\n", id);
 			for (i = 0; i < ARRAY_SIZE(evt); ++i)
@@ -1345,6 +1361,11 @@ static irqreturn_t arm_smmu_evtq_thread(int irq, void *dev)
 
 	/* Sync our overflow flag, as we believe we're up to speed */
 	q->cons = Q_OVF(q, q->prod) | Q_WRP(q, q->cons) | Q_IDX(q, q->cons);
+
+	q->batch++;
+	wake_up_all_locked(&q->wq);
+	spin_unlock(&q->wq.lock);
+
 	return IRQ_HANDLED;
 }
 
@@ -1388,13 +1409,24 @@ static void arm_smmu_handle_ppr(struct arm_smmu_device *smmu, u64 *evt)
 
 static irqreturn_t arm_smmu_priq_thread(int irq, void *dev)
 {
+	int num_handled = 0;
 	struct arm_smmu_device *smmu = dev;
 	struct arm_smmu_queue *q = &smmu->priq.q;
+	size_t queue_size = 1 << q->max_n_shift;
 	u64 evt[PRIQ_ENT_DWORDS];
 
+	spin_lock(&q->wq.lock);
 	do {
-		while (!queue_remove_raw(q, evt))
+		while (!queue_remove_raw(q, evt)) {
+			spin_unlock(&q->wq.lock);
 			arm_smmu_handle_ppr(smmu, evt);
+			spin_lock(&q->wq.lock);
+			if (++num_handled == queue_size) {
+				q->batch++;
+				wake_up_all_locked(&q->wq);
+				num_handled = 0;
+			}
+		}
 
 		if (queue_sync_prod(q) == -EOVERFLOW)
 			dev_err(smmu->dev, "PRIQ overflow detected -- requests lost\n");
@@ -1403,7 +1435,59 @@ static irqreturn_t arm_smmu_priq_thread(int irq, void *dev)
 	/* Sync our overflow flag, as we believe we're up to speed */
 	q->cons = Q_OVF(q, q->prod) | Q_WRP(q, q->cons) | Q_IDX(q, q->cons);
 	writel(q->cons, q->cons_reg);
+
+	q->batch++;
+	wake_up_all_locked(&q->wq);
+	spin_unlock(&q->wq.lock);
+
 	return IRQ_HANDLED;
+}
+
+/*
+ * arm_smmu_flush_queue - wait until all events/PPRs currently in the queue have
+ * been consumed.
+ *
+ * Wait until the queue thread finished a batch, or until the queue is empty.
+ * Note that we don't handle overflows on q->batch. If it occurs, just wait for
+ * the queue to be empty.
+ */
+static int arm_smmu_flush_queue(struct arm_smmu_device *smmu,
+				struct arm_smmu_queue *q, const char *name)
+{
+	int ret;
+	u64 batch;
+
+	spin_lock(&q->wq.lock);
+	if (queue_sync_prod(q) == -EOVERFLOW)
+		dev_err(smmu->dev, "%s overflow detected -- requests lost\n",
+			name);
+
+	batch = q->batch;
+	ret = wait_event_interruptible_locked(q->wq, queue_empty(q) ||
+					      q->batch >= batch + 2);
+	spin_unlock(&q->wq.lock);
+
+	return ret;
+}
+
+static int arm_smmu_flush_queues(void *cookie, struct device *dev)
+{
+	struct arm_smmu_master_data *master;
+	struct arm_smmu_device *smmu = cookie;
+
+	if (dev) {
+		master = dev->iommu_fwspec->iommu_priv;
+		/* TODO: add support for PRI and Stall */
+		return 0;
+	}
+
+	/* No target device, flush all queues. */
+	if (smmu->features & ARM_SMMU_FEAT_STALLS)
+		arm_smmu_flush_queue(smmu, &smmu->evtq.q, "evtq");
+	if (smmu->features & ARM_SMMU_FEAT_PRI)
+		arm_smmu_flush_queue(smmu, &smmu->priq.q, "priq");
+
+	return 0;
 }
 
 static int arm_smmu_device_disable(struct arm_smmu_device *smmu);
@@ -2020,14 +2104,23 @@ arm_smmu_iova_to_phys(struct iommu_domain *domain, dma_addr_t iova)
 
 static int arm_smmu_sva_init(struct device *dev, struct iommu_sva_param *param)
 {
+	int ret;
 	struct arm_smmu_master_data *master = dev->iommu_fwspec->iommu_priv;
 
 	/* SSID support is mandatory for the moment */
 	if (!master->ssid_bits)
 		return -EINVAL;
 
-	if (param->features)
+	if (param->features & ~IOMMU_SVA_FEAT_IOPF)
 		return -EINVAL;
+
+	if (param->features & IOMMU_SVA_FEAT_IOPF) {
+		if (!master->can_fault)
+			return -EINVAL;
+		ret = iopf_queue_add_device(master->smmu->iopf_queue, dev);
+		if (ret)
+			return ret;
+	}
 
 	if (!param->max_pasid)
 		param->max_pasid = 0xfffffU;
@@ -2042,6 +2135,7 @@ static int arm_smmu_sva_init(struct device *dev, struct iommu_sva_param *param)
 static void arm_smmu_sva_shutdown(struct device *dev,
 				  struct iommu_sva_param *param)
 {
+	iopf_queue_remove_device(dev);
 }
 
 static struct io_mm *arm_smmu_mm_alloc(struct iommu_domain *domain,
@@ -2219,6 +2313,7 @@ static void arm_smmu_remove_device(struct device *dev)
 
 	master = fwspec->iommu_priv;
 	smmu = master->smmu;
+	iopf_queue_remove_device(dev);
 	if (master && master->ste.assigned)
 		arm_smmu_detach_dev(dev);
 	iommu_group_remove_device(dev);
@@ -2400,6 +2495,10 @@ static int arm_smmu_init_one_queue(struct arm_smmu_device *smmu,
 	q->q_base |= FIELD_PREP(Q_BASE_LOG2SIZE, q->max_n_shift);
 
 	q->prod = q->cons = 0;
+
+	init_waitqueue_head(&q->wq);
+	q->batch = 0;
+
 	return 0;
 }
 
@@ -3329,6 +3428,14 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
+	if (smmu->features & (ARM_SMMU_FEAT_STALLS | ARM_SMMU_FEAT_PRI)) {
+		smmu->iopf_queue = iopf_queue_alloc(dev_name(dev),
+						    arm_smmu_flush_queues,
+						    smmu);
+		if (!smmu->iopf_queue)
+			return -ENOMEM;
+	}
+
 	/* And we're up. Go go go! */
 	ret = iommu_device_sysfs_add(&smmu->iommu, dev, NULL,
 				     "smmu3.%pa", &ioaddr);
@@ -3371,6 +3478,7 @@ static int arm_smmu_device_remove(struct platform_device *pdev)
 {
 	struct arm_smmu_device *smmu = platform_get_drvdata(pdev);
 
+	iopf_queue_free(smmu->iopf_queue);
 	arm_smmu_device_disable(smmu);
 
 	return 0;
