@@ -1085,12 +1085,23 @@ const struct iommu_ops *iort_iommu_configure(struct device *dev)
 			return NULL;
 
 		do {
+			u32 sid;
 			parent = iort_node_map_platform_id(node, &streamid,
 							   IORT_IOMMU_TYPE,
 							   i++);
 
 			if (parent)
 				err = iort_iommu_xlate(dev, parent, streamid);
+
+			if (!acpi_dev_prop_read_single(ACPI_COMPANION(dev),
+					"streamid", DEV_PROP_U32, &sid)) {
+				err = iommu_fwspec_add_ids(dev, &sid, 1);
+				if (err)
+					dev_info(dev, "failed to add ids\n");
+				dev->iommu_fwspec->can_stall = true;
+				dev->iommu_fwspec->num_pasid_bits = 0x10;
+			}
+
 		} while (parent && !err);
 	}
 
