@@ -679,9 +679,10 @@ int __iommu_sva_bind_device(struct device *dev, struct mm_struct *mm,
 	}
 	spin_unlock(&iommu_sva_lock);
 
-	if (bond)
-		return -EEXIST;
-
+	if (bond) {
+		*pasid = bond->io_mm->pasid;
+		return ret;
+	}
 	/* Require identical features within an io_mm for now */
 	if (io_mm && (flags != io_mm->flags)) {
 		io_mm_put(io_mm);
