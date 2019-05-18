@@ -303,6 +303,7 @@ static void io_mm_detach_locked(struct iommu_bond *bond)
  * @dev: the device
  * @features: bitmask of features that need to be initialized
  * @max_pasid: max PASID value supported by the device
+ * @mm_exit: callback to notify the device driver of an mm exiting
  *
  * Users of the bind()/unbind() API must call this function to initialize all
  * features required for SVA.
@@ -313,13 +314,20 @@ static void io_mm_detach_locked(struct iommu_bond *bond)
  * description. Setting @max_pasid to a non-zero value smaller than this limit
  * overrides it.
  *
+ * If the driver intends to share process address spaces, it should pass a valid
+ * @mm_exit handler. Otherwise @mm_exit can be NULL. After @mm_exit returns, the
+ * device must not issue any more transaction with the PASID given as argument.
+ * The handler gets an opaque pointer corresponding to the drvdata passed as
+ * argument of bind().
+ *
  * The device should not be performing any DMA while this function is running,
  * otherwise the behavior is undefined.
  *
  * Return 0 if initialization succeeded, or an error.
  */
 int iommu_sva_device_init(struct device *dev, unsigned long features,
-			  unsigned int max_pasid)
+			  unsigned int max_pasid,
+			  iommu_mm_exit_handler_t mm_exit)
 {
 	int ret;
 	struct iommu_sva_param *param;
@@ -337,6 +345,7 @@ int iommu_sva_device_init(struct device *dev, unsigned long features,
 
 	param->features		= features;
 	param->max_pasid	= max_pasid;
+	param->mm_exit		= mm_exit;
 	INIT_LIST_HEAD(&param->mm_list);
 
 	/*
