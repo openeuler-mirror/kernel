@@ -65,6 +65,16 @@ menu "Generic PASID table support"
 config IOMMU_PASID_TABLE
 	bool
 
+config ARM_SMMU_V3_CONTEXT
+	bool "ARM SMMU v3 Context Descriptor tables"
+	select IOMMU_PASID_TABLE
+	depends on ARM64
+	help
+	  Enable support for ARM SMMU v3 Context Descriptor tables, used for
+	  DMA and PASID support.
+
+	  If unsure, say N here.
+
 endmenu
 
 config IOMMU_DEBUGFS
@@ -365,6 +375,7 @@ config ARM_SMMU_V3
 	depends on ARM64
 	select IOMMU_API
 	select IOMMU_IO_PGTABLE_LPAE
+	select ARM_SMMU_V3_CONTEXT
 	select GENERIC_MSI_IRQ_DOMAIN
 	help
 	  Support for implementations of the ARM System MMU architecture

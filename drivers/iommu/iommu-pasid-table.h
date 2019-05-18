@@ -14,6 +14,7 @@
 struct mm_struct;
 
 enum iommu_pasid_table_fmt {
+	PASID_TABLE_ARM_SMMU_V3,
 	PASID_TABLE_NUM_FMTS,
 };
 
@@ -72,6 +73,18 @@ struct iommu_pasid_sync_ops {
 };
 
 /**
+ * arm_smmu_context_cfg - PASID table configuration for ARM SMMU v3
+ *
+ * SMMU properties:
+ * @stall: devices attached to the domain are allowed to stall.
+ * @asid_bits: number of ASID bits supported by the SMMU
+ */
+struct arm_smmu_context_cfg {
+	u8				stall:1;
+	u8				asid_bits;
+};
+
+/**
  * struct iommu_pasid_table_cfg - Configuration data for a set of PASID tables.
  *
  * @iommu_dev device performing the DMA table walks
@@ -85,6 +98,11 @@ struct iommu_pasid_table_cfg {
 	size_t					order;
 	const struct iommu_pasid_sync_ops	*sync;
 	dma_addr_t				base;
+
+	/* Low-level data specific to the IOMMU */
+	union {
+		struct arm_smmu_context_cfg	arm_smmu;
+	};
 };
 
 struct iommu_pasid_table_ops *
@@ -142,5 +160,7 @@ static inline void iommu_pasid_flush_tlbs(struct iommu_pasid_table *table,
 {
 	table->cfg.sync->tlb_flush(table->cookie, pasid, entry);
 }
+
+extern struct iommu_pasid_init_fns arm_smmu_v3_pasid_init_fns;
 
 #endif /* __IOMMU_PASID_TABLE_H */

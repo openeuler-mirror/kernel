@@ -11,6 +11,7 @@
 
 static const struct iommu_pasid_init_fns *
 pasid_table_init_fns[PASID_TABLE_NUM_FMTS] = {
+	[PASID_TABLE_ARM_SMMU_V3] = &arm_smmu_v3_pasid_init_fns,
 };
 
 struct iommu_pasid_table_ops *
