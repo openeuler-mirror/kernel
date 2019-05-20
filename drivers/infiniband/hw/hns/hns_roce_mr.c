@@ -1313,6 +1313,8 @@ static int rereg_mr_trans(struct ib_mr *ibmr, int flags,
 		goto release_umem;
 	}
 
+	return 0;
+
 release_umem:
 	ib_umem_release(mr->umem);
 	return ret;
