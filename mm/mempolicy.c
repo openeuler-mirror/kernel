@@ -178,7 +178,7 @@ static inline void clr_vm_cdm(struct vm_area_struct *vma)
 static void mark_vma_cdm(nodemask_t *nmask,
 		struct page *page, struct vm_area_struct *vma)
 {
-	if (!page)
+	if (!page || !vma)
 		return;
 
 	if (vma->vm_flags & VM_CDM)
