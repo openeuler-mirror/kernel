@@ -763,8 +763,8 @@ static int mbind_range(struct mm_struct *mm, unsigned long start,
 		vmstart = max(start, vma->vm_start);
 		vmend   = min(end, vma->vm_end);
 
-		if ((new_pol->mode == MPOL_BIND)
-			&& nodemask_has_cdm(new_pol->v.nodes))
+		if (new_pol && (new_pol->mode == MPOL_BIND) &&
+		    nodemask_has_cdm(new_pol->v.nodes))
 			set_vm_cdm(vma);
 
 		if (mpol_equal(vma_policy(vma), new_pol))
