@@ -184,8 +184,6 @@ struct iommu_resv_region {
 	enum iommu_resv_type	type;
 };
 
-#ifdef CONFIG_IOMMU_API
-
 /**
  * enum page_response_code - Return status of fault handlers, telling the IOMMU
  * driver how to proceed with the fault.
@@ -201,19 +199,6 @@ enum page_response_code {
 	IOMMU_PAGE_RESP_SUCCESS = 0,
 	IOMMU_PAGE_RESP_INVALID,
 	IOMMU_PAGE_RESP_FAILURE,
-};
-
-/**
- * enum page_request_handle_t - Return page request/response handler status
- *
- * @IOMMU_FAULT_STATUS_HANDLED: Stop processing the fault, and do not send a
- *	reply to the device.
- * @IOMMU_FAULT_STATUS_CONTINUE: Fault was not handled. Call the next handler,
- *	or terminate.
- */
-enum page_request_handle_t {
-	IOMMU_PAGE_RESP_HANDLED = 0,
-	IOMMU_PAGE_RESP_CONTINUE,
 };
 
 /**
@@ -233,6 +218,29 @@ struct page_response_msg {
 	u32 pasid_present:1;
 	u32 page_req_group_id;
 	u64 private_data;
+};
+
+/**
+ * iopf_queue_flush_t - Flush low-level page fault queue
+ *
+ * Report all faults currently pending in the low-level page fault queue
+ */
+struct iopf_queue;
+typedef int (*iopf_queue_flush_t)(void *cookie, struct device *dev);
+
+#ifdef CONFIG_IOMMU_API
+
+/**
+ * enum page_request_handle_t - Return page request/response handler status
+ *
+ * @IOMMU_FAULT_STATUS_HANDLED: Stop processing the fault, and do not send a
+ *	reply to the device.
+ * @IOMMU_FAULT_STATUS_CONTINUE: Fault was not handled. Call the next handler,
+ *	or terminate.
+ */
+enum page_request_handle_t {
+	IOMMU_PAGE_RESP_HANDLED = 0,
+	IOMMU_PAGE_RESP_CONTINUE,
 };
 
 struct iommu_sva_param {
@@ -458,14 +466,6 @@ struct iommu_fault_param {
 	struct mutex lock;
 	void *data;
 };
-
-/**
- * iopf_queue_flush_t - Flush low-level page fault queue
- *
- * Report all faults currently pending in the low-level page fault queue
- */
-struct iopf_queue;
-typedef int (*iopf_queue_flush_t)(void *cookie, struct device *dev);
 
 /**
  * struct iommu_param - collection of per-device IOMMU data

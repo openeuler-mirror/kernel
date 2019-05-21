@@ -1030,6 +1030,7 @@ void iort_dma_setup(struct device *dev, u64 *dma_addr, u64 *dma_size)
 	dev_dbg(dev, "dma_pfn_offset(%#08llx)\n", offset);
 }
 
+#ifdef CONFIG_IOMMU_SVA
 static bool iort_pci_rc_supports_ats(struct acpi_iort_node *node)
 {
 	struct acpi_iort_root_complex *pci_rc;
@@ -1037,6 +1038,7 @@ static bool iort_pci_rc_supports_ats(struct acpi_iort_node *node)
 	pci_rc = (struct acpi_iort_root_complex *)node->node_data;
 	return pci_rc->ats_attribute & ACPI_IORT_ATS_SUPPORTED;
 }
+#endif
 
 /**
  * iort_iommu_configure - Set-up IOMMU configuration for a device.
@@ -1073,9 +1075,10 @@ const struct iommu_ops *iort_iommu_configure(struct device *dev)
 		info.node = node;
 		err = pci_for_each_dma_alias(to_pci_dev(dev),
 					     iort_pci_iommu_init, &info);
-
+#ifdef CONFIG_IOMMU_SVA
 		if (!err && !iort_pci_rc_supports_ats(node))
 			dev->iommu_fwspec->flags |= IOMMU_FWSPEC_PCI_NO_ATS;
+#endif
 	} else {
 		int i = 0;
 
@@ -1085,7 +1088,9 @@ const struct iommu_ops *iort_iommu_configure(struct device *dev)
 			return NULL;
 
 		do {
+#ifdef CONFIG_IOMMU_SVA
 			u32 sid;
+#endif
 			parent = iort_node_map_platform_id(node, &streamid,
 							   IORT_IOMMU_TYPE,
 							   i++);
@@ -1093,6 +1098,7 @@ const struct iommu_ops *iort_iommu_configure(struct device *dev)
 			if (parent)
 				err = iort_iommu_xlate(dev, parent, streamid);
 
+#ifdef CONFIG_IOMMU_SVA
 			if (!acpi_dev_prop_read_single(ACPI_COMPANION(dev),
 					"streamid", DEV_PROP_U32, &sid)) {
 				err = iommu_fwspec_add_ids(dev, &sid, 1);
@@ -1101,6 +1107,7 @@ const struct iommu_ops *iort_iommu_configure(struct device *dev)
 				dev->iommu_fwspec->can_stall = true;
 				dev->iommu_fwspec->num_pasid_bits = 0x10;
 			}
+#endif
 
 		} while (parent && !err);
 	}
