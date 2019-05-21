@@ -1373,7 +1373,9 @@ static int hclge_log_rocee_axi_error(struct hclge_dev *hdev)
 		 le32_to_cpu(desc[1].data[0]), le32_to_cpu(desc[1].data[1]),
 		 le32_to_cpu(desc[1].data[2]), le32_to_cpu(desc[1].data[3]),
 		 le32_to_cpu(desc[1].data[4]), le32_to_cpu(desc[1].data[5]));
-	dev_info(dev, "AXI3: %08X\n", le32_to_cpu(desc[2].data[0]));
+	dev_info(dev, "AXI3: %08X %08X %08X %08X\n",
+		 le32_to_cpu(desc[2].data[0]), le32_to_cpu(desc[2].data[1]),
+		 le32_to_cpu(desc[2].data[2]), le32_to_cpu(desc[2].data[3]));
 
 	return 0;
 }
