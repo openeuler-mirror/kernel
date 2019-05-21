@@ -99,7 +99,6 @@ static int hns_roce_add_gid(const union ib_gid *gid,
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(attr->device);
 	u8 port = attr->port_num - 1;
-	unsigned long flags;
 	int ret;
 
 	if (port >= hr_dev->caps.num_ports ||
@@ -109,7 +108,6 @@ static int hns_roce_add_gid(const union ib_gid *gid,
 		return -EINVAL;
 	}
 
-	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
 #ifdef CONFIG_KERNEL_419
 	ret = hr_dev->hw->set_gid(hr_dev, port, attr->index, &attr->gid, attr);
 #else
@@ -120,8 +118,6 @@ static int hns_roce_add_gid(const union ib_gid *gid,
 	if (ret)
 		dev_err(hr_dev->dev, "set gid failed(%d), index = %d", ret,
 			attr->index);
-
-	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
 	return ret;
 }

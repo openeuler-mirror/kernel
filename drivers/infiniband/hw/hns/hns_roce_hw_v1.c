@@ -1812,8 +1812,11 @@ static int hns_roce_v1_set_gid(struct hns_roce_dev *hr_dev, u8 port,
 {
 	u32 *p = NULL;
 	u8 gid_idx = 0;
+	unsigned long flags;
 
 	gid_idx = hns_get_gid_index(hr_dev, port, gid_index);
+
+	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
 
 	p = (u32 *)&gid->raw[0];
 	roce_raw_write(*p, hr_dev->reg_base + ROCEE_PORT_GID_L_0_REG +
@@ -1830,6 +1833,8 @@ static int hns_roce_v1_set_gid(struct hns_roce_dev *hr_dev, u8 port,
 	p = (u32 *)&gid->raw[0xc];
 	roce_raw_write(*p, hr_dev->reg_base + ROCEE_PORT_GID_H_0_REG +
 		       (HNS_ROCE_V1_GID_NUM * gid_idx));
+
+	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
 	return 0;
 }
