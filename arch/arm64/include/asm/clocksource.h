@@ -4,6 +4,7 @@
 
 struct arch_clocksource_data {
 	bool vdso_direct;	/* Usable for direct VDSO access? */
+	bool vdso_fix;		/* Need avoid the clock bug in VDSO? */
 };
 
 #endif

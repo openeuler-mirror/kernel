@@ -224,6 +224,7 @@ void update_vsyscall(struct timekeeper *tk)
 	smp_wmb();
 
 	vdso_data->use_syscall			= use_syscall;
+	vdso_data->vdso_fix			= tk->tkr_mono.clock->archdata.vdso_fix;
 	vdso_data->xtime_coarse_sec		= tk->xtime_sec;
 	vdso_data->xtime_coarse_nsec		= tk->tkr_mono.xtime_nsec >>
 							tk->tkr_mono.shift;

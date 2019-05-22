@@ -38,6 +38,7 @@ struct vdso_data {
 	__u32 tz_minuteswest;	/* Whacky timezone stuff */
 	__u32 tz_dsttime;
 	__u32 use_syscall;
+	__u32 vdso_fix;		/* Avoid the clock bug in VDSO */
 };
 
 #endif /* !__ASSEMBLY__ */
