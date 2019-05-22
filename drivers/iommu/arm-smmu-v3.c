@@ -1349,55 +1349,33 @@ static void arm_smmu_init_bypass_stes(u64 *strtab, unsigned int nent)
 	}
 }
 
-static int __arm_smmu_init_l2_strtab(struct arm_smmu_device *smmu, u32 sid,
-				     struct arm_smmu_strtab_l1_desc *desc)
-{
-	void *strtab;
-	struct arm_smmu_strtab_cfg *cfg = &smmu->strtab_cfg;
-
-	strtab = &cfg->strtab[(sid >> STRTAB_SPLIT) * STRTAB_L1_DESC_DWORDS];
-
-	if (!desc->l2ptr) {
-		size_t size;
-
-		size = 1 << (STRTAB_SPLIT + ilog2(STRTAB_STE_DWORDS) + 3);
-		desc->l2ptr = dmam_alloc_coherent(smmu->dev, size,
-						  &desc->l2ptr_dma,
-						  GFP_KERNEL | __GFP_ZERO);
-		if (!desc->l2ptr) {
-			dev_err(smmu->dev,
-				"failed to allocate l2 stream table for SID %u\n",
-				sid);
-			return -ENOMEM;
-		}
-
-		desc->span = STRTAB_SPLIT + 1;
-		arm_smmu_init_bypass_stes(desc->l2ptr, 1 << STRTAB_SPLIT);
-	}
-
-	arm_smmu_write_strtab_l1_desc(strtab, desc);
-	return 0;
-}
-
 static int arm_smmu_init_l2_strtab(struct arm_smmu_device *smmu, u32 sid)
 {
-	int ret;
+	size_t size;
+	void *strtab;
 	struct arm_smmu_strtab_cfg *cfg = &smmu->strtab_cfg;
 	struct arm_smmu_strtab_l1_desc *desc = &cfg->l1_desc[sid >> STRTAB_SPLIT];
 
-	ret = __arm_smmu_init_l2_strtab(smmu, sid, desc);
-	if (ret)
-		return ret;
+	if (desc->l2ptr)
+		return 0;
 
+	size = 1 << (STRTAB_SPLIT + ilog2(STRTAB_STE_DWORDS) + 3);
+	strtab = &cfg->strtab[(sid >> STRTAB_SPLIT) * STRTAB_L1_DESC_DWORDS];
+
+	desc->span = STRTAB_SPLIT + 1;
+	desc->l2ptr = dmam_alloc_coherent(smmu->dev, size, &desc->l2ptr_dma,
+					  GFP_KERNEL | __GFP_ZERO);
+	if (!desc->l2ptr) {
+		dev_err(smmu->dev,
+			"failed to allocate l2 stream table for SID %u\n",
+			sid);
+		return -ENOMEM;
+	}
+
+	arm_smmu_init_bypass_stes(desc->l2ptr, 1 << STRTAB_SPLIT);
+	arm_smmu_write_strtab_l1_desc(strtab, desc);
 	arm_smmu_sync_std_for_sid(smmu, sid);
 	return 0;
-}
-
-static int arm_smmu_init_dummy_l2_strtab(struct arm_smmu_device *smmu, u32 sid)
-{
-	static struct arm_smmu_strtab_l1_desc dummy_desc;
-
-	return __arm_smmu_init_l2_strtab(smmu, sid, &dummy_desc);
 }
 
 static struct arm_smmu_master_data *
@@ -3136,12 +3114,8 @@ static int arm_smmu_init_l1_strtab(struct arm_smmu_device *smmu)
 	}
 
 	for (i = 0; i < cfg->num_l1_ents; ++i) {
-		if (is_kdump_kernel()) {
-			arm_smmu_init_dummy_l2_strtab(smmu, i << STRTAB_SPLIT);
-		} else {
-			arm_smmu_write_strtab_l1_desc(strtab, &cfg->l1_desc[i]);
-			strtab += STRTAB_L1_DESC_DWORDS << 3;
-		}
+		arm_smmu_write_strtab_l1_desc(strtab, &cfg->l1_desc[i]);
+		strtab += STRTAB_L1_DESC_DWORDS << 3;
 	}
 
 	return 0;
@@ -3460,8 +3434,11 @@ static int arm_smmu_device_reset(struct arm_smmu_device *smmu, bool bypass)
 	/* Clear CR0 and sync (disables SMMU and queue processing) */
 	reg = readl_relaxed(smmu->base + ARM_SMMU_CR0);
 	if (reg & CR0_SMMUEN) {
-		if (is_kdump_kernel())
+		if (is_kdump_kernel()) {
 			arm_smmu_update_gbpa(smmu, GBPA_ABORT, 0);
+			arm_smmu_device_disable(smmu);
+			return -EBUSY;
+		}
 
 		dev_warn(smmu->dev, "SMMU currently enabled! Resetting...\n");
 	}
@@ -3957,13 +3934,6 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 	struct arm_smmu_device *smmu;
 	struct device *dev = &pdev->dev;
 	bool bypass;
-
-	/*
-	 * Force to disable bypass for kdump kernel, abort all incoming
-	 * transactions from the unknown devices.
-	 */
-	if (is_kdump_kernel())
-		disable_bypass = 1;
 
 	smmu = devm_kzalloc(dev, sizeof(*smmu), GFP_KERNEL);
 	if (!smmu) {
