@@ -7892,11 +7892,11 @@ static void hclge_sync_vlan_filter(struct hclge_dev *hdev)
 			ret = hclge_set_vlan_filter_hw(hdev, htons(ETH_P_8021Q),
 						       vport->vport_id, vlan_id,
 						       0, true);
-			if (!ret || ret == -EINVAL) {
-				clear_bit(vlan_id, vport->vlan_del_fail_bmap);
-				hclge_rm_vport_vlan_table(vport, vlan_id,
-							  false);
-			}
+			if (ret && ret != -EINVAL)
+				return;
+
+			clear_bit(vlan_id, vport->vlan_del_fail_bmap);
+			hclge_rm_vport_vlan_table(vport, vlan_id, false);
 
 			sync_cnt++;
 			if (sync_cnt >= HCLGE_MAX_SYNC_COUNT)
