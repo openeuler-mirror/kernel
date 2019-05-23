@@ -791,7 +791,7 @@ struct hclge_dev {
 	u16 priv_umv_size;
 	/* unicast mac vlan space shared by PF and its VFs */
 	u16 share_umv_size;
-	struct mutex umv_mutex; /* protect share_umv_size */
+	spinlock_t umv_lock; /* protect share_umv_size */
 
 	struct mutex vport_cfg_mutex;   /* Protect stored vf table */
 

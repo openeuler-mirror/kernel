@@ -42,8 +42,6 @@ static int hclge_init_vlan_config(struct hclge_dev *hdev);
 static void hclge_sync_vlan_filter(struct hclge_dev *hdev);
 static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev);
 static bool hclge_get_hw_reset_stat(struct hnae3_handle *handle);
-static int hclge_set_umv_space(struct hclge_dev *hdev, u16 space_size,
-			       u16 *allocated_size, bool is_alloc);
 static void hclge_add_vport_vlan_table(struct hclge_vport *vport, u16 vlan_id,
 				       bool writen_to_tbl);
 static void hclge_rm_vport_vlan_table(struct hclge_vport *vport, u16 vlan_id,
@@ -6549,50 +6547,6 @@ static int hclge_add_mac_vlan_tbl(struct hclge_vport *vport,
 	return cfg_status;
 }
 
-static int hclge_init_umv_space(struct hclge_dev *hdev)
-{
-	u16 allocated_size = 0;
-	int ret;
-
-	ret = hclge_set_umv_space(hdev, hdev->wanted_umv_size, &allocated_size,
-				  true);
-	if (ret)
-		return ret;
-
-	if (allocated_size < hdev->wanted_umv_size)
-		dev_warn(&hdev->pdev->dev,
-			 "Alloc umv space failed, want %d, get %d\n",
-			 hdev->wanted_umv_size, allocated_size);
-
-	mutex_init(&hdev->umv_mutex);
-	hdev->max_umv_size = allocated_size;
-	/* divide max_umv_size by (hdev->num_req_vfs + 2), in order to
-	 * preserve some unicast mac vlan table entries shared by pf
-	 * and its vfs.
-	 */
-	hdev->priv_umv_size = hdev->max_umv_size / (hdev->num_req_vfs + 2);
-	hdev->share_umv_size = hdev->priv_umv_size +
-			hdev->max_umv_size % (hdev->num_req_vfs + 2);
-
-	return 0;
-}
-
-static int hclge_uninit_umv_space(struct hclge_dev *hdev)
-{
-	int ret;
-
-	if (hdev->max_umv_size > 0) {
-		ret = hclge_set_umv_space(hdev, hdev->max_umv_size, NULL,
-					  false);
-		if (ret)
-			return ret;
-		hdev->max_umv_size = 0;
-	}
-	mutex_destroy(&hdev->umv_mutex);
-
-	return 0;
-}
-
 static int hclge_set_umv_space(struct hclge_dev *hdev, u16 space_size,
 			       u16 *allocated_size, bool is_alloc)
 {
@@ -6621,6 +6575,30 @@ static int hclge_set_umv_space(struct hclge_dev *hdev, u16 space_size,
 	return 0;
 }
 
+static int hclge_init_umv_space(struct hclge_dev *hdev)
+{
+	u16 allocated_size = 0;
+	int ret;
+
+	ret = hclge_set_umv_space(hdev, hdev->wanted_umv_size, &allocated_size,
+				  true);
+	if (ret)
+		return ret;
+
+	if (allocated_size < hdev->wanted_umv_size)
+		dev_warn(&hdev->pdev->dev,
+			 "Alloc umv space failed, want %d, get %d\n",
+			 hdev->wanted_umv_size, allocated_size);
+
+	spin_lock_init(&hdev->umv_lock);
+	hdev->max_umv_size = allocated_size;
+	hdev->priv_umv_size = hdev->max_umv_size / (hdev->num_alloc_vport + 1);
+	hdev->share_umv_size = hdev->priv_umv_size +
+			hdev->max_umv_size % (hdev->num_alloc_vport + 1);
+
+	return 0;
+}
+
 static void hclge_reset_umv_space(struct hclge_dev *hdev)
 {
 	struct hclge_vport *vport;
@@ -6631,10 +6609,10 @@ static void hclge_reset_umv_space(struct hclge_dev *hdev)
 		vport->used_umv_num = 0;
 	}
 
-	mutex_lock(&hdev->umv_mutex);
+	spin_lock(&hdev->umv_lock);
 	hdev->share_umv_size = hdev->priv_umv_size +
-			hdev->max_umv_size % (hdev->num_req_vfs + 2);
-	mutex_unlock(&hdev->umv_mutex);
+			hdev->max_umv_size % (hdev->num_alloc_vport + 1);
+	spin_unlock(&hdev->umv_lock);
 }
 
 static bool hclge_is_umv_space_full(struct hclge_vport *vport)
@@ -6642,10 +6620,10 @@ static bool hclge_is_umv_space_full(struct hclge_vport *vport)
 	struct hclge_dev *hdev = vport->back;
 	bool is_full;
 
-	mutex_lock(&hdev->umv_mutex);
+	spin_lock(&hdev->umv_lock);
 	is_full = (vport->used_umv_num >= hdev->priv_umv_size &&
 		   hdev->share_umv_size == 0);
-	mutex_unlock(&hdev->umv_mutex);
+	spin_unlock(&hdev->umv_lock);
 
 	return is_full;
 }
@@ -6654,7 +6632,7 @@ static void hclge_update_umv_space(struct hclge_vport *vport, bool is_free)
 {
 	struct hclge_dev *hdev = vport->back;
 
-	mutex_lock(&hdev->umv_mutex);
+	spin_lock(&hdev->umv_lock);
 	if (is_free) {
 		if (vport->used_umv_num > hdev->priv_umv_size)
 			hdev->share_umv_size++;
@@ -6663,11 +6641,11 @@ static void hclge_update_umv_space(struct hclge_vport *vport, bool is_free)
 			vport->used_umv_num--;
 	} else {
 		if (vport->used_umv_num >= hdev->priv_umv_size &&
-			hdev->share_umv_size > 0)
+		    hdev->share_umv_size > 0)
 			hdev->share_umv_size--;
 		vport->used_umv_num++;
 	}
-	mutex_unlock(&hdev->umv_mutex);
+	spin_unlock(&hdev->umv_lock);
 }
 
 static int hclge_add_uc_addr(struct hnae3_handle *handle,
@@ -9000,8 +8978,6 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 
 	if (mac->phydev)
 		mdiobus_unregister(mac->mdio_bus);
-
-	hclge_uninit_umv_space(hdev);
 
 	/* Disable MISC vector(vector0) */
 	hclge_enable_vector(&hdev->misc_vector, false);
