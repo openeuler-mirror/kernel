@@ -2448,7 +2448,7 @@ static void hclge_mbx_task_schedule(struct hclge_dev *hdev)
 {
 	if (!test_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state) &&
 	    !test_and_set_bit(HCLGE_STATE_MBX_SERVICE_SCHED, &hdev->state))
-		schedule_work(&hdev->mbx_service_task);
+		queue_work(system_unbound_wq, &hdev->mbx_service_task);
 }
 
 static void hclge_reset_task_schedule(struct hclge_dev *hdev)
