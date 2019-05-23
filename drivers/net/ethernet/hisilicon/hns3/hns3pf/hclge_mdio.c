@@ -215,6 +215,13 @@ int hclge_mac_connect_phy(struct hnae3_handle *handle)
 	linkmode_copy(mask, hdev->hw.mac.supported);
 	linkmode_and(phydev->supported, phydev->supported, mask);
 	linkmode_copy(phydev->advertising, phydev->supported);
+
+	/* supported flag is Pause and Asym Pause, but default advertising
+	 * should be rx on, tx on, so need clear Asym Pause in advertising
+	 * flag
+	 */
+	linkmode_clear_bit(ETHTOOL_LINK_MODE_Asym_Pause_BIT,
+			   phydev->advertising);
 #else
 	phydev->supported &= ~SUPPORTED_FIBRE;
 
