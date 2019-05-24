@@ -7223,12 +7223,13 @@ static int hclge_set_vf_vlan_common(struct hclge_dev *hdev, u16 vfid,
 		if (!req0->resp_code)
 			return 0;
 
-		if (req0->resp_code == HCLGE_VF_VLAN_DEL_NO_FOUND) {
-			dev_warn(&hdev->pdev->dev,
-				 "vlan %d filter is not in vf vlan table\n",
-				 vlan);
+		/* vf vlan filter is disabled when vf vlan table is full,
+		 * then new vlan id will not be added into vf vlan table.
+		 * Just return 0 without warning, avoid massive verbose
+		 * print logs when unload.
+		 */
+		if (req0->resp_code == HCLGE_VF_VLAN_DEL_NO_FOUND)
 			return 0;
-		}
 
 		dev_err(&hdev->pdev->dev,
 			"Kill vf vlan filter fail, ret =%d.\n",
@@ -7323,11 +7324,20 @@ int hclge_set_vlan_filter(struct hnae3_handle *handle, __be16 proto,
 	bool writen_to_tbl = false;
 	int ret = 0;
 
+	/* When device is resetting, firmware is unable to handle
+	 * mailbox. Just record the vlan id, and remove it after
+	 * reset finished.
+	 */
+	if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) && is_kill) {
+		set_bit(vlan_id, vport->vlan_del_fail_bmap);
+		return -EBUSY;
+	}
+
 	/* when port base vlan enabled, we use port base vlan as the vlan
 	 * filter condition. In this case, we don't update vlan filter table
 	 * when user add new vlan or remove exist vlan, just update the vport
 	 * vlan list. The vlan id in vlan list will be writen in vlan filter
-	 * table until port base vlan disabled
+	 * table until port base vlan disabled.
 	 */
 	if (handle->port_base_vlan_state == HNAE3_PORT_BASE_VLAN_DISABLE) {
 		ret = hclge_set_vlan_filter_hw(hdev, proto, vport->vport_id,
@@ -7344,9 +7354,8 @@ int hclge_set_vlan_filter(struct hnae3_handle *handle, __be16 proto,
 	} else if (is_kill) {
 		/* when remove hw vlan filter failed, record the vlan id,
 		 * and try to remove it from hw later, to be consistence
-		 * with stack
+		 * with stack.
 		 */
-		hclge_rm_vport_vlan_table(vport, vlan_id, false);
 		set_bit(vlan_id, vport->vlan_del_fail_bmap);
 	}
 	return ret;
@@ -7883,8 +7892,11 @@ static void hclge_sync_vlan_filter(struct hclge_dev *hdev)
 			ret = hclge_set_vlan_filter_hw(hdev, htons(ETH_P_8021Q),
 						       vport->vport_id, vlan_id,
 						       0, true);
-			if (!ret || ret == -EINVAL)
+			if (!ret || ret == -EINVAL) {
 				clear_bit(vlan_id, vport->vlan_del_fail_bmap);
+				hclge_rm_vport_vlan_table(vport, vlan_id,
+							  false);
+			}
 
 			sync_cnt++;
 			if (sync_cnt >= HCLGE_MAX_SYNC_COUNT)
