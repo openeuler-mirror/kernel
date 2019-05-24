@@ -3142,11 +3142,15 @@ enum hnae3_reset_type hclge_get_reset_level(struct hclge_dev *hdev,
 static void hclge_clear_reset_cause(struct hclge_dev *hdev)
 {
 	bool irq_en = false;
+	u32 clearval = 0;
 
 	switch (hdev->reset_type) {
 	case HNAE3_IMP_RESET:
-		/* fall through */
+		clearval = BIT(HCLGE_VECTOR0_IMPRESET_INT_B);
+		irq_en = true;
+		break;
 	case HNAE3_GLOBAL_RESET:
+		clearval = BIT(HCLGE_VECTOR0_GLOBALRESET_INT_B);
 		irq_en = true;
 		break;
 	default:
@@ -3155,6 +3159,13 @@ static void hclge_clear_reset_cause(struct hclge_dev *hdev)
 
 	if (!irq_en)
 		return;
+
+	/* For revision 0x20, the reset interrupt source
+	 * can only be cleared after hardware reset done
+	 */
+	if (hdev->pdev->revision == 0x20)
+		hclge_write_dev(&hdev->hw, HCLGE_MISC_RESET_STS_REG,
+				clearval);
 
 	hclge_enable_vector(&hdev->misc_vector, true);
 }
