@@ -2735,8 +2735,6 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 
 	/* check for vector0 msix event source */
 	if (msix_src_reg & HCLGE_VECTOR0_REG_MSIX_MASK) {
-		dev_info(&hdev->pdev->dev, "received event 0x%x\n",
-			 msix_src_reg);
 		*clearval = msix_src_reg;
 		return HCLGE_VECTOR0_EVENT_ERR;
 	}
@@ -3524,13 +3522,20 @@ static void hclge_reset_subtask(struct hclge_dev *hdev)
 static void hclge_misc_err_recovery(struct hclge_dev *hdev)
 {
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
+	struct device *dev = &hdev->pdev->dev;
 	u32 msix_sts_reg;
+	int ret;
 
 	msix_sts_reg = hclge_read_dev(&hdev->hw,
 				      HCLGE_VECTOR0_PF_OTHER_INT_STS_REG);
 
 	if (msix_sts_reg & HCLGE_VECTOR0_REG_MSIX_MASK) {
-		hclge_handle_hw_msix_error(hdev, &hdev->default_reset_request);
+		ret = hclge_handle_hw_msix_error(hdev,
+						 &hdev->default_reset_request);
+		if (ret)
+			dev_info(dev, "received msix interrupt 0x%x\n",
+				 msix_sts_reg);
+
 		if (hdev->default_reset_request)
 			if (ae_dev->ops->reset_event)
 				ae_dev->ops->reset_event(hdev->pdev, NULL);
