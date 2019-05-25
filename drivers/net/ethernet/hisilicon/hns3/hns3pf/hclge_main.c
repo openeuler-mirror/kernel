@@ -3271,7 +3271,7 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev, bool is_timeout)
 		hclge_clear_reset_cause(hdev);
 		set_bit(HNAE3_GLOBAL_RESET, &hdev->default_reset_request);
 		mod_timer(&hdev->reset_timer,
-			  jiffies + HCLGE_RESET_INTERVAL * HZ);
+			  jiffies + HCLGE_RESET_INTERVAL);
 
 		return false;
 	}
