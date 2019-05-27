@@ -2458,10 +2458,10 @@ int ksm_madvise(struct vm_area_struct *vma, unsigned long start,
 
 		if (vma_is_dax(vma))
 			return 0;
-
+#ifdef CONFIG_COHERENT_DEVICE
 		if (is_cdm_vma(vma))
 			return 0;
-
+#endif
 #ifdef VM_SAO
 		if (*vm_flags & VM_SAO)
 			return 0;

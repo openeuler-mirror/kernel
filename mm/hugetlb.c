@@ -890,9 +890,10 @@ static struct page *dequeue_huge_page_nodemask(struct hstate *h, gfp_t gfp_mask,
 	int node = -1;
 	bool mbind_cdmnode = false;
 
+#ifdef CONFIG_COHERENT_DEVICE
 	if (is_cdm_node(nid) && mpol != NULL && mpol->mode == MPOL_BIND)
 		mbind_cdmnode = true;
-
+#endif
 	zonelist = node_zonelist(nid, gfp_mask);
 
 retry_cpuset:

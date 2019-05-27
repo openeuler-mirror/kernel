@@ -145,10 +145,9 @@ config ARCH_DISCARD_MEMBLOCK
 config COHERENT_DEVICE
 	bool "coherent device memory"
 	def_bool n
-	depends on CPUSETS && ARM64
+	depends on CPUSETS && ARM64 && NUMA
 	help
 	  Enable coherent device memory (CDM) support.
-
 
 config NO_BOOTMEM
 	bool
