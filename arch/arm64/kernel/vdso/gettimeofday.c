@@ -81,7 +81,7 @@ static notrace int clock_getres_fallback(clockid_t _clkid,
 	return ret;
 }
 
-static notrace u32 vdso_read_begin(const struct vdso_data *vd)
+static notrace u32 vdso_read_begin(struct vdso_data *vd)
 {
 	u32 seq;
 
@@ -98,7 +98,7 @@ static notrace u32 vdso_read_begin(const struct vdso_data *vd)
 	return seq;
 }
 
-static notrace u32 vdso_read_retry(const struct vdso_data *vd, u32 start)
+static notrace u32 vdso_read_retry(struct vdso_data *vd, u32 start)
 {
 	u32 seq;
 
@@ -123,12 +123,32 @@ static notrace u64 get_clock_shifted_nsec(u64 cycle_last, u64 mult)
 	res = res - cycle_last;
 	/* We can only guarantee 56 bits of precision. */
 	res &= ~(0xff00ull<<48);
+
 	return res * mult;
 }
 
+/*
+ * Fake address dependency from the value computed from the counter
+ * register to subsequent data page accesses so that the sequence
+ * locking also orders the read of the counter.
+ */
+static notrace struct vdso_data *arch_counter_vdso_data_ordering(struct vdso_data *vd, u64 res)
+{
+	struct vdso_data *vd_res = vd;
+	u64	tmp;
+
+	asm	volatile(
+	"	and		%0, %1, xzr\n"	\
+	"	add		%2, %2, %0\n" 	\
+	: "=r"	(tmp)				\
+	: "r"(res), "r"(vd_res));
+
+	return vd_res;
+}
 
 /* Code size doesn't matter (vdso is 4k/16k/64k anyway) and this is faster. */
-static __always_inline notrace int do_realtime(const struct vdso_data *vd,
+
+static __always_inline notrace int do_realtime(struct vdso_data *vd,
 					       struct timespec *ts)
 {
 	u32 seq, cs_mono_mult, cs_shift;
@@ -148,9 +168,10 @@ static __always_inline notrace int do_realtime(const struct vdso_data *vd,
 		sec = vd->xtime_clock_sec;
 		ns = vd->xtime_clock_nsec;
 
+		ns += get_clock_shifted_nsec(cycle_last, cs_mono_mult);
+		vd = arch_counter_vdso_data_ordering(vd, ns);
 	} while (unlikely(vdso_read_retry(vd, seq)));
 
-	ns += get_clock_shifted_nsec(cycle_last, cs_mono_mult);
 	ns >>= cs_shift;
 	ts->tv_sec = sec + __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
 	ts->tv_nsec = ns;
@@ -158,7 +179,7 @@ static __always_inline notrace int do_realtime(const struct vdso_data *vd,
 	return 0;
 }
 
-static notrace int do_monotonic(const struct vdso_data *vd,
+static notrace int do_monotonic(struct vdso_data *vd,
 				struct timespec *ts)
 {
 	u32 seq, cs_mono_mult, cs_shift;
@@ -181,9 +202,10 @@ static notrace int do_monotonic(const struct vdso_data *vd,
 		sec += vd->wtm_clock_sec;
 		ns += vd->wtm_clock_nsec << cs_shift;
 
+		ns += get_clock_shifted_nsec(cycle_last, cs_mono_mult);
+		vd = arch_counter_vdso_data_ordering(vd, ns);
 	} while (unlikely(vdso_read_retry(vd, seq)));
 
-	ns += get_clock_shifted_nsec(cycle_last, cs_mono_mult);
 	ns >>= cs_shift;
 
 	ts->tv_sec = sec + __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
@@ -192,7 +214,7 @@ static notrace int do_monotonic(const struct vdso_data *vd,
 	return 0;
 }
 
-static notrace int do_monotonic_raw(const struct vdso_data *vd,
+static notrace int do_monotonic_raw(struct vdso_data *vd,
 				    struct timespec *ts)
 {
 	u32 seq, cs_raw_mult, cs_shift;
@@ -212,9 +234,10 @@ static notrace int do_monotonic_raw(const struct vdso_data *vd,
 		sec = vd->raw_time_sec;
 		ns = vd->raw_time_nsec;
 
+		ns += get_clock_shifted_nsec(cycle_last, cs_raw_mult);
+		vd = arch_counter_vdso_data_ordering(vd, ns);
 	} while (unlikely(vdso_read_retry(vd, seq)));
 
-	ns += get_clock_shifted_nsec(cycle_last, cs_raw_mult);
 	ns >>= cs_shift;
 	ts->tv_sec = sec + __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
 	ts->tv_nsec = ns;
@@ -223,7 +246,7 @@ static notrace int do_monotonic_raw(const struct vdso_data *vd,
 }
 
 
-static notrace void do_realtime_coarse(const struct vdso_data *vd,
+static notrace void do_realtime_coarse(struct vdso_data *vd,
 				       struct timespec *ts)
 {
 	u32 seq;
@@ -241,7 +264,7 @@ static notrace void do_realtime_coarse(const struct vdso_data *vd,
 	ts->tv_nsec = ns;
 }
 
-static notrace void do_monotonic_coarse(const struct vdso_data *vd,
+static notrace void do_monotonic_coarse(struct vdso_data *vd,
 					struct timespec *ts)
 {
 	u32 seq;
@@ -267,7 +290,7 @@ static notrace void do_monotonic_coarse(const struct vdso_data *vd,
 
 notrace int __kernel_clock_gettime(clockid_t clock, struct timespec *ts)
 {
-	const struct vdso_data *vd = &_vdso_data;
+	struct vdso_data *vd = &_vdso_data;
 
 	switch (clock) {
 	case CLOCK_REALTIME:
@@ -301,7 +324,7 @@ fallback:
 
 notrace int __kernel_gettimeofday(struct timeval *tv, struct timezone *tz)
 {
-	const struct vdso_data *vd = &_vdso_data;
+	struct vdso_data *vd = &_vdso_data;
 
 	if (likely(tv != NULL)) {
 		struct timespec ts;
