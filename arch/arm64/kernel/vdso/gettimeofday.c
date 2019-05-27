@@ -112,24 +112,13 @@ static notrace u32 vdso_read_retry(const struct vdso_data *vd, u32 start)
  * Returns the clock delta, in nanoseconds left-shifted by the clock
  * shift.
  */
-static notrace u64 get_clock_shifted_nsec(u64 cycle_last, u64 mult, bool vdso_fix)
+static notrace u64 get_clock_shifted_nsec(u64 cycle_last, u64 mult)
 {
 	u64 res;
 
 	/* Read the virtual counter. */
 	isb();
 	asm volatile("mrs %0, cntvct_el0" : "=r" (res) :: "memory");
-	if (vdso_fix) {
-		u64 new;
-		int retries = 50;
-
-		asm volatile("mrs %0, cntvct_el0" : "=r" (new) :: "memory");
-		while (unlikely((new - res) >> 5) && retries) {
-			asm volatile("mrs %0, cntvct_el0" : "=r" (res) :: "memory");
-			asm volatile("mrs %0, cntvct_el0" : "=r" (new) :: "memory");
-			retries--;
-		}
-	}
 
 	res = res - cycle_last;
 	/* We can only guarantee 56 bits of precision. */
@@ -161,7 +150,7 @@ static __always_inline notrace int do_realtime(const struct vdso_data *vd,
 
 	} while (unlikely(vdso_read_retry(vd, seq)));
 
-	ns += get_clock_shifted_nsec(cycle_last, cs_mono_mult, vd->vdso_fix);
+	ns += get_clock_shifted_nsec(cycle_last, cs_mono_mult);
 	ns >>= cs_shift;
 	ts->tv_sec = sec + __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
 	ts->tv_nsec = ns;
@@ -194,7 +183,7 @@ static notrace int do_monotonic(const struct vdso_data *vd,
 
 	} while (unlikely(vdso_read_retry(vd, seq)));
 
-	ns += get_clock_shifted_nsec(cycle_last, cs_mono_mult, vd->vdso_fix);
+	ns += get_clock_shifted_nsec(cycle_last, cs_mono_mult);
 	ns >>= cs_shift;
 
 	ts->tv_sec = sec + __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
@@ -225,7 +214,7 @@ static notrace int do_monotonic_raw(const struct vdso_data *vd,
 
 	} while (unlikely(vdso_read_retry(vd, seq)));
 
-	ns += get_clock_shifted_nsec(cycle_last, cs_raw_mult, vd->vdso_fix);
+	ns += get_clock_shifted_nsec(cycle_last, cs_raw_mult);
 	ns >>= cs_shift;
 	ts->tv_sec = sec + __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
 	ts->tv_nsec = ns;
