@@ -76,7 +76,6 @@ static bool arch_timer_c3stop;
 static bool arch_timer_mem_use_virtual;
 static bool arch_counter_suspend_stop;
 static bool vdso_default = true;
-static bool vdso_fix = false;
 
 static cpumask_t evtstrm_available = CPU_MASK_NONE;
 static bool evtstrm_enable = IS_ENABLED(CONFIG_ARM_ARCH_TIMER_EVTSTREAM);
@@ -551,10 +550,8 @@ void arch_timer_enable_workaround(const struct arch_timer_erratum_workaround *wa
 	 * change both the default value and the vdso itself.
 	 */
 	if (wa->read_cntvct_el0) {
-		clocksource_counter.archdata.vdso_direct = true;
-		clocksource_counter.archdata.vdso_fix = true;
-		vdso_default = true;
-		vdso_fix = true;
+		clocksource_counter.archdata.vdso_direct = false;
+		vdso_default = false;
 	}
 }
 
@@ -858,7 +855,7 @@ static void arch_counter_set_user_access(void)
 	 * need to be workaround. The vdso may have been already
 	 * disabled though.
 	 */
-	if (arch_timer_this_cpu_has_cntvct_wa() && !vdso_fix)
+	if (arch_timer_this_cpu_has_cntvct_wa())
 		pr_info("CPU%d: Trapping CNTVCT access\n", smp_processor_id());
 	else
 		cntkctl |= ARCH_TIMER_USR_VCT_ACCESS_EN;
@@ -993,7 +990,6 @@ static void __init arch_counter_register(unsigned type)
 			arch_timer_read_counter = arch_counter_get_cntpct;
 
 		clocksource_counter.archdata.vdso_direct = vdso_default;
-		clocksource_counter.archdata.vdso_fix = vdso_fix;
 	} else {
 		arch_timer_read_counter = arch_counter_get_cntvct_mem;
 	}
