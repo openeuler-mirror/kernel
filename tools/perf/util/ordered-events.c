@@ -294,7 +294,8 @@ int ordered_events__flush(struct ordered_events *oe, enum oe_flush how)
 	return err;
 }
 
-void ordered_events__init(struct ordered_events *oe, ordered_events__deliver_t deliver)
+void ordered_events__init(struct ordered_events *oe, ordered_events__deliver_t deliver,
+			  void *data)
 {
 	INIT_LIST_HEAD(&oe->events);
 	INIT_LIST_HEAD(&oe->cache);
@@ -302,6 +303,7 @@ void ordered_events__init(struct ordered_events *oe, ordered_events__deliver_t d
 	oe->max_alloc_size = (u64) -1;
 	oe->cur_alloc_size = 0;
 	oe->deliver	   = deliver;
+	oe->data	   = data;
 }
 
 void ordered_events__free(struct ordered_events *oe)
@@ -322,5 +324,5 @@ void ordered_events__reinit(struct ordered_events *oe)
 
 	ordered_events__free(oe);
 	memset(oe, '\0', sizeof(*oe));
-	ordered_events__init(oe, old_deliver);
+	ordered_events__init(oe, old_deliver, oe->data);
 }
