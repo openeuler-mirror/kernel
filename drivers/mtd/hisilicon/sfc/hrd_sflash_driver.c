@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+
 /*
  * Copyright (C) 2019 Hisilicon Limited, All Rights Reserved.
  *
@@ -78,23 +78,16 @@ struct mtd_info *sflash_probe(struct map_info *map, struct resource *sfc_regres)
 	struct SFC_SFLASH_INFO *sflash;
 	unsigned long flags = 0, sflash_in_irq = 0;
 
-	DB_LOCAL(pr_info("\nINFO: entering %s", __func__));
-
+	DB_LOCAL(pr_info("[SFC] INFO: entering %s\n", __func__));
 	mtd = kmalloc(sizeof(*mtd), GFP_KERNEL);
-
 	if (!mtd) {
-		pr_err(KERN_NOTICE
-			   "\nERROR: %s - Failed to allocate memory for mtd structure",
-			   __func__);
+		pr_err("ERROR: %s - Failed to allocate memory for mtd structure\n", __func__);
 		return NULL;
 	}
 
 	sflash = kmalloc(sizeof(struct SFC_SFLASH_INFO), GFP_KERNEL);
-
 	if (!sflash) {
-		pr_err(KERN_NOTICE
-			   "\nERROR: %s - Failed to allocate memory for sflash structure",
-			   __func__);
+		pr_err("[SFC] ERROR: %s - Failed to allocate memory for sflash structure\n", __func__);
 		kfree(mtd);
 		return NULL;
 	}
@@ -103,13 +96,10 @@ struct mtd_info *sflash_probe(struct map_info *map, struct resource *sfc_regres)
 	memset(sflash, 0, sizeof(*sflash));
 
 	DB_LOCAL(pr_info
-		 ("\nINFO: %s - Base address %llx\n", __func__, map->phys));
-
+		 ("[SFC] INFO: %s - Base address %llx\n", __func__, map->phys));
 	sflash->baseAddr = (u64) ioremap(map->phys, map->size);
-
 	if (!sflash->baseAddr) {
-		pr_err(KERN_NOTICE
-			   "\nERROR: %s - map flash error\r\n", __func__);
+		pr_err("[SFC] ERROR: %s - map flash error\n", __func__);
 		goto exit0;
 	}
 
@@ -117,27 +107,22 @@ struct mtd_info *sflash_probe(struct map_info *map, struct resource *sfc_regres)
 		(u64) ioremap_nocache(sfc_regres->start, resource_size(sfc_regres));
 
 	if (!sflash->sfc_reg_base) {
-		pr_err(KERN_NOTICE
-			   "\nERROR: %s - map register error\r\n", __func__);
+		pr_err("[SFC] ERROR: %s - map register error\n", __func__);
 
 		goto exit1;
 	}
 
 	mutex_init(&sflash->lock);
-
-	sflash->index = INVALID_DEVICE_NUMBER;	/* will be detected in init */
+	sflash->index = INVALID_DEVICE_NUMBER;
 	sflash_disable_irqs(flags, sflash_in_irq);
 
 	if (hrd_sflash_init(sflash) != HRD_OK) {
 		sflash_enable_irqs(flags, sflash_in_irq);
-		pr_err(KERN_NOTICE
-			   "ERROR: %s - Failed to initialize the SFlash.",
-			   __func__);
+		pr_err("[SFC] ERROR: %s - Failed to initialize the SFlash.\n", __func__);
 		goto exit2;
 	}
 
 	sflash_enable_irqs(flags, sflash_in_irq);
-
 	mtd->erasesize = sflash->sectorSize;
 	mtd->size = (u64) sflash->sectorSize * (u64) sflash->sectorNumber;
 	mtd->priv = map;
@@ -160,21 +145,21 @@ struct mtd_info *sflash_probe(struct map_info *map, struct resource *sfc_regres)
 	map->fldrv_priv = sflash;
 
 	DB_LOCAL(pr_info
-		 ("\nINFO: %s - Detected SFlash device (size 0x%llx)", __func__,
+		 ("[SFC] INFO: %s - Detected SFlash device (size 0x%llx)\n", __func__,
 		  mtd->size));
 	DB_LOCAL(pr_info
-		 ("\n Base Address : 0x%llx", sflash->baseAddr));
+		 ("[SFC] Base Address : 0x%llx\n", sflash->baseAddr));
 	DB_LOCAL(pr_info
-		 ("\n Manufacturer ID : 0x%02x",
+		 ("[SFC] Manufacturer ID : 0x%02x\n",
 		  sflash->manufacturerId));
 	DB_LOCAL(pr_info
-		 ("\n Device ID : 0x%04x", sflash->deviceId));
+		 ("[SFC] Device ID : 0x%04x\n", sflash->deviceId));
 	DB_LOCAL(pr_info
-		 ("\n Sector Size : 0x%x", sflash->sectorSize));
+		 ("[SFC] Sector Size : 0x%x\n", sflash->sectorSize));
 	DB_LOCAL(pr_info
-		 ("\n Sector Number : %d", sflash->sectorNumber));
+		 ("[SFC] Sector Number : %d\n", sflash->sectorNumber));
 
-	pr_info("SPI Serial flash detected @ 0x%08llx, %dKB (%dsec x %dKB)\n",
+	pr_info("[SFC] detected @ 0x%08llx, %dKB (%dsec x %dKB)\n",
 		sflash->baseAddr,
 		((sflash->sectorNumber * sflash->sectorSize) / 1024),
 		sflash->sectorNumber, (sflash->sectorSize / 1024));
@@ -204,7 +189,7 @@ void sflash_destroy(struct mtd_info *mtd)
 	struct map_info *map = mtd->priv;
 	struct SFC_SFLASH_INFO *sflash = map->fldrv_priv;
 
-	DB_LOCAL(pr_info("\nINFO: %s called", __func__));
+	DB_LOCAL(pr_info("[SFC] INFO: %s called\n", __func__));
 
 	if (sflash->baseAddr != 0)
 		iounmap((void *)sflash->baseAddr);
@@ -227,7 +212,7 @@ static int sflash_read(struct mtd_info *mtd, loff_t from, size_t len,
 	*retlen = 0;
 
 	DB_LOCAL(pr_info
-		 ("\nINFO: %s - offset %08x, len %d", __func__, offset,
+		 ("[SFC] INFO: %s - offset %08x, len %d\n", __func__, offset,
 		  (int)len));
 
 	mutex_lock(&sflash->lock);
@@ -237,12 +222,8 @@ static int sflash_read(struct mtd_info *mtd, loff_t from, size_t len,
 		ret = SFC_RegModeRead(sflash, offset, (u8 *) buf, (u32) len);
 		break;
 
-	case SFC_BUS_RW_MODE:
-		ret = SFC_BusModeRead(sflash, offset, (u8 *) buf, (u32) len);
-		break;
-
 	default:
-		pr_err(KERN_NOTICE "\nERROR: %s - rw mode error", __func__);
+		pr_err("[SFC] ERROR: %s - rw mode error\n", __func__);
 		ret = -1;
 
 	}
@@ -250,16 +231,14 @@ static int sflash_read(struct mtd_info *mtd, loff_t from, size_t len,
 	if (ret != HRD_OK) {
 
 		mutex_unlock(&sflash->lock);
-		pr_err(KERN_NOTICE "\nERROR: %s - Failed to read block",
-			   __func__);
+		pr_err("[SFC] ERROR: %s - Failed to read block\n", __func__);
 		return -1;
 	}
 
 	mutex_unlock(&sflash->lock);
-
 	*retlen = len;
 
-	DB_LOCAL(pr_info(" - OK"));
+	DB_LOCAL(pr_info(" [SFC] - OK\n"));
 	return 0;
 }
 
@@ -273,7 +252,7 @@ static int sflash_write(struct mtd_info *mtd, loff_t to, size_t len,
 
 	*retlen = 0;
 
-	DB_LOCAL(pr_info("\nINFO: %s-offset %08x, len %d",
+	DB_LOCAL(pr_info("[SFC] INFO: %s-offset %08x, len %d\n",
 			 __func__, offset, (u32) len));
 
 	mutex_lock(&sflash->lock);
@@ -282,20 +261,15 @@ static int sflash_write(struct mtd_info *mtd, loff_t to, size_t len,
 	case SFC_REGISTER_RW_MODE:
 		ret = SFC_RegModeWrite(sflash, offset, buf, (u32) len);
 		break;
-
-	case SFC_BUS_RW_MODE:
-		ret = SFC_BusModeWrite(sflash, offset, buf, (u32) len);
-		break;
-
 	default:
-		pr_err(KERN_NOTICE "\nERROR: %s - rw mode error", __func__);
+		pr_err("[SFC] ERROR: %s - rw mode error\n", __func__);
 		ret = -1;
 	}
 
 	if (ret != HRD_OK) {
 
 		mutex_unlock(&sflash->lock);
-		pr_err(KERN_NOTICE "\nERROR: %s - Failed to write block",
+		pr_err("[SFC] ERROR: %s - Failed to write block\n",
 			   __func__);
 		return -1;
 	}
@@ -304,7 +278,7 @@ static int sflash_write(struct mtd_info *mtd, loff_t to, size_t len,
 
 	*retlen = len;
 
-	DB_LOCAL(pr_info(" - OK"));
+	DB_LOCAL(pr_info("[SFC] - OK"));
 	return 0;
 
 }
@@ -319,35 +293,29 @@ static int sflash_erase(struct mtd_info *mtd, struct erase_info *instr)
 	u64 i;
 
 	DB_LOCAL(pr_info
-		 ("\nINFO: %s - Addr %08llx, len %lld", __func__, instr->addr,
+		 ("[SFC] INFO: %s - Addr %08llx, len %lld\n", __func__, instr->addr,
 		  instr->len));
 
 	if (!sflash) {
-		pr_err("\nError: sflash is NULL");
+		pr_err("[SFC] Error: sflash is NULL\n");
 		return -EINVAL;
 	}
 
 	if (instr->addr & (mtd->erasesize - 1)) {
-		pr_err("\nError: %s - Erase address not sector alligned",
+		pr_err("[SFC] Error: %s - Erase address not sector alligned\n",
 			   __func__);
 		return -EINVAL;
 	}
 
 	if (instr->len & (mtd->erasesize - 1)) {
-		pr_err("\nError: %s - Erase length is not sector alligned",
+		pr_err("[SFC] Error: %s - Erase length is not sector alligned\n",
 			   __func__);
 		return -EINVAL;
 	}
 
 	if (instr->len + instr->addr > mtd->size) {
-		pr_err("\nError: %s - Erase exceeded flash size", __func__);
+		pr_err("[SFC] Error: %s - Erase exceeded flash size\n", __func__);
 		return -EINVAL;
-	}
-
-	if (0 != SFC_ControllerAddrModeSet(sflash)) {
-		pr_err("\nError: %s - SFC_ControllerAddrModeSet %d failed",
-			   __func__, sflash->addr_mode);
-		return -1;
 	}
 
 	{
@@ -357,9 +325,11 @@ static int sflash_erase(struct mtd_info *mtd, struct erase_info *instr)
 		do_div(lsec, 4 * 1024);
 
 		if (fsec < lsec) {
-			pr_info("\nINFO: %s - for 4K from sector %lld to %lld",
+			pr_info("[SFC] INFO: %s - for 4K from sector %lld to %lld\n",
 				__func__, fsec, lsec - 1);
 			mutex_lock(&sflash->lock);
+
+			SFC_CheckErr(sflash);
 
 			for (i = fsec; i < lsec; i++) {
 				if (SFC_BlockErase
@@ -368,7 +338,7 @@ static int sflash_erase(struct mtd_info *mtd, struct erase_info *instr)
 
 					mutex_unlock(&sflash->lock);
 					pr_err
-						("\nError: %s - mvSFlashSectorErase on sector %lld",
+						("[SFC] Error: %s - mvSFlashSectorErase on sector %lld\n",
 						 __func__, i);
 					return -1;
 				}
@@ -384,7 +354,7 @@ static int sflash_erase(struct mtd_info *mtd, struct erase_info *instr)
 	do_div(lsec, mtd->erasesize);
 	lsec = (fsec + lsec);
 
-	DB_LOCAL(pr_info("\nINFO: %s - from sector %u to %u", __func__, fsec,
+	DB_LOCAL(pr_info("[SFC] INFO: %s - from sector %u to %u\n", __func__, fsec,
 			 lsec - 1));
 
 	mutex_lock(&sflash->lock);
@@ -395,7 +365,7 @@ static int sflash_erase(struct mtd_info *mtd, struct erase_info *instr)
 
 			mutex_unlock(&sflash->lock);
 			pr_err
-				("\nError: %s - mvSFlashSectorErase on sector %lld",
+				("[SFC] Error: %s - mvSFlashSectorErase on sector %lld\n",
 				 __func__, i);
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 16, 0)
 			instr->fail_addr = ((u32) i) * mtd->erasesize;
@@ -421,7 +391,7 @@ static int sflash_lock(struct mtd_info *mtd, loff_t ofs, uint64_t len)
 	struct map_info *map = mtd->priv;
 	struct SFC_SFLASH_INFO *sflash = map->fldrv_priv;
 
-	DB_LOCAL(pr_info("\nINFO: %s called", __func__));
+	DB_LOCAL(pr_info("[SFC] INFO: %s called\n", __func__));
 
 	mutex_lock(&sflash->lock);
 	ret = SFC_WPSet(sflash, 1);
@@ -436,7 +406,7 @@ static int sflash_unlock(struct mtd_info *mtd, loff_t ofs, uint64_t len)
 	struct map_info *map = mtd->priv;
 	struct SFC_SFLASH_INFO *sflash = map->fldrv_priv;
 
-	pr_info("\nINFO: %s called", __func__);
+	pr_info("[SFC] INFO: %s called\n", __func__);
 
 	mutex_lock(&sflash->lock);
 	ret = SFC_WPSet(sflash, 0);
@@ -447,28 +417,28 @@ static int sflash_unlock(struct mtd_info *mtd, loff_t ofs, uint64_t len)
 
 static void sflash_sync(struct mtd_info *mtd)
 {
-	DB_LOCAL(pr_info("\nINFO: %s called - DUMMY", __func__));
+	DB_LOCAL(pr_info("[SFC] INFO: %s called - DUMMY\n", __func__));
 }
 
 static int sflash_suspend(struct mtd_info *mtd)
 {
-	DB_LOCAL(pr_info("\nINFO: %s called - DUMMY()", __func__));
+	DB_LOCAL(pr_info("[SFC] INFO: %s called - DUMMY()\n", __func__));
 	return 0;
 }
 
 static void sflash_resume(struct mtd_info *mtd)
 {
-	DB_LOCAL(pr_info("\nINFO: %s called - DUMMY", __func__));
+	DB_LOCAL(pr_info("[SFC] INFO: %s called - DUMMY\n", __func__));
 }
 
 static int sflash_block_isbad(struct mtd_info *mtd, loff_t ofs)
 {
-	DB_LOCAL(pr_info("\nINFO: %s called - DUMMY", __func__));
+	DB_LOCAL(pr_info("[SFC] INFO: %s called - DUMMY\n", __func__));
 	return 0;
 }
 
 static int sflash_block_markbad(struct mtd_info *mtd, loff_t ofs)
 {
-	DB_LOCAL(pr_info("\nINFO: %s called - DUMMY", __func__));
+	DB_LOCAL(pr_info("[SFC] INFO: %s called - DUMMY\n", __func__));
 	return 0;
 }

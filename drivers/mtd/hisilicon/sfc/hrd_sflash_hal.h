@@ -131,7 +131,7 @@
 #define DATABUFFER6	CMD_DATABUF(6)
 #define DATABUFFER7	CMD_DATABUF(7)
 #define DATABUFFER8	CMD_DATABUF(8)
-#define SFC_HARD_BUF_LEN (64)
+#define SFC_HARD_BUF_LEN (256)
 
 /* GLOBAL_CONFIG */
 #define RD_DELAY 3
@@ -201,19 +201,14 @@ union UN_SFC_CMD_CONFIG {
 	unsigned int u32;
 };
 
-extern u32 SFC_ControllerInit(u64 sfc_reg_base);
+extern s32 SFC_CheckErr(struct SFC_SFLASH_INFO *sflash);
 extern s32 SFC_RegModeRead(struct SFC_SFLASH_INFO *sflash, u32 offset,
 			   u8 *pucDest, u32 ulReadLen);
-extern s32 SFC_BusModeRead(struct SFC_SFLASH_INFO *sflash, u32 offset,
-			   u8 *pucDest, u32 ulReadLen);
 extern s32 SFC_RegModeWrite(struct SFC_SFLASH_INFO *sflash, u32 offset,
-				const u8 *pucSrc, u32 ulWriteLen);
-extern s32 SFC_BusModeWrite(struct SFC_SFLASH_INFO *sflash, u32 offset,
 				const u8 *pucSrc, u32 ulWriteLen);
 extern s32 SFC_SPIFlashIdGet(struct SFC_SFLASH_INFO *pFlinfo,
 				 u8 *pulManuId, u16 *pulDevId, u8 *pcfi_len,
 				 u8 *psec_arch, u8 *pfid);
-extern s32 SFC_ControllerAddrModeSet(struct SFC_SFLASH_INFO *pFlinfo);
 extern s32 SFC_BlockErase(struct SFC_SFLASH_INFO *sflash, u32 ulAddr,
 			  u32 ErCmd);
 extern int hrd_sflash_init(struct SFC_SFLASH_INFO *pFlinfo);
