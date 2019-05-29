@@ -699,7 +699,12 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 				 */
 				atomic_long_set(&slot->work.work.data,
 						DISABLE_SLOT);
-				schedule_delayed_work(&slot->work, 3 * HZ);
+				/*
+				 * If 'work.timer' is pending, schedule the work will
+				 * cause BUG_ON().
+				 */
+				if (!timer_pending(&slot->work.timer))
+					schedule_delayed_work(&slot->work, 3 * HZ);
 			}
 		}
 	} else if (events & (PCI_EXP_SLTSTA_PDC | PCI_EXP_SLTSTA_DLLSC)) {
@@ -721,7 +726,8 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 				atomic_long_set(&slot->work.work.data,
 						events & (PCI_EXP_SLTSTA_PDC |
 							PCI_EXP_SLTSTA_DLLSC));
-				schedule_delayed_work(&slot->work, 3 * HZ);
+				if (!timer_pending(&slot->work.timer))
+					schedule_delayed_work(&slot->work, 3 * HZ);
 			}
 		}
 	}
