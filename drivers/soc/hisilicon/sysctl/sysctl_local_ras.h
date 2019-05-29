@@ -21,8 +21,19 @@
 
 enum sysctl_bios_err {
 	MODULE_LPC_ERR = 9,
-	MODULE_USB2_ERR = 14,
-	MODULE_USB3_ERR = 15,
+	MODULE_SAS_ERR = 15,
+	MODULE_USB_ERR = 17,
+};
+
+enum sysctl_sub_usb_err {
+	MODULE_USB0_ERR = 0,
+	MODULE_USB1_ERR,
+	MODULE_USB2_ERR,
+};
+
+enum sysctl_sub_sas_err {
+	MODULE_SAS0_ERR = 0,
+	MODULE_SAS1_ERR,
 };
 
 struct sysctl_validation_bits {

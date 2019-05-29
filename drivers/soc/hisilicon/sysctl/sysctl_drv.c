@@ -50,6 +50,10 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #define DEBUG
 
+#define	SYSCTL_DRIVER_VERSION "1.7.8.0"
+/* debug?a1? */
+unsigned int g_sysctrl_debug;
+
 /* sysctrl reg base address */
 struct his_hllc_priv {
 	void __iomem *hllc_base[CHIP_ID_NUM_MAX][HLLC_NUM_MAX];
@@ -62,7 +66,7 @@ struct his_hllc_priv {
 
 struct his_hllc_priv hip_hllc_priv;
 
-static void his_sysctrl_reg_rd(void __iomem *addr, u32 reg, unsigned int *val)
+static void his_sysctrl_reg_rd(const void __iomem *addr, u32 reg, unsigned int *val)
 {
 	*val = readl(addr + reg);
 }
@@ -70,6 +74,16 @@ static void his_sysctrl_reg_rd(void __iomem *addr, u32 reg, unsigned int *val)
 static void his_sysctrl_reg_wr(void __iomem *addr, u32 reg, unsigned int val)
 {
 	writel(val, addr + reg);
+}
+
+int hisi_sysctl_print_debug(u32 print_debug_en)
+{
+	if (print_debug_en)
+		g_sysctrl_debug = 0x1;
+	else
+		g_sysctrl_debug = 0x0;
+
+	return 0;
 }
 
 int his_hllc_init(void)
@@ -81,46 +95,52 @@ int his_hllc_init(void)
 	u32 chip_ver;
 	u64 chip_module_base;
 	void __iomem *chip_ver_addr;
-	void __iomem *chip_ver_base;
 
-	chip_ver_base = ioremap(0xd7d00000, (u64)0x10000);
-	chip_ver_addr = chip_ver_base + 0x8;
+	pr_info("[INFO] %s start.\n", __func__);
 
-	chip_ver = readl(chip_ver_addr);
-	if ((chip_ver & CHIP_VERSION_MASK) == CHIP_VERSION_ES) {
-		chip_module_base = HLLC_CHIP_MODULE_ES;
-	} else if ((chip_ver & CHIP_VERSION_MASK) == CHIP_VERSION_CS) {
-		chip_module_base = HLLC_CHIP_MODULE_CS;
-	} else {
-		pr_err("%s: chip_ver[%u] is ERR.\n", __func__, chip_ver);
-		if (chip_ver_base)
-			iounmap((void *)chip_ver_base);
+	chip_ver_addr = ioremap(0x20107E238, (u64)4);
+	if (!chip_ver_addr) {
+		pr_err("[ERROR] %s chip_ver_base is error.\n", __func__);
 		return ERR_FAILED;
 	}
 
+	chip_ver = readl(chip_ver_addr);
+	chip_ver = chip_ver>>28;
+	if (chip_ver == CHIP_VERSION_ES) {
+		pr_info("[sysctl hllc] chip is es\n");
+		chip_module_base = HLLC_CHIP_MODULE_ES;
+	} else {
+		chip_module_base = HLLC_CHIP_MODULE_CS;
+		pr_info("[sysctl hllc] chip is cs\n");
+	}
+
+	pr_info("[sysctl hllc] chip ver=%x\n", chip_ver);
 	for (chip_id = 0; chip_id < CHIP_ID_NUM_MAX; chip_id++) {
 		for (hllc_num = 0; hllc_num < HLLC_NUM_MAX; hllc_num++) {
 			addr = (u64)chip_id * chip_module_base + HLLC0_REG_BASE + (u64)hllc_num * 0x10000;
 			hip_hllc_priv.hllc_base[chip_id][hllc_num] = ioremap(addr, (u64)0x10000);
 
-			debug_sysctrl_print("hllc_base:%p\n",
+			debug_sysctrl_print("[DBG] hllc_base: %p.\n",
 				hip_hllc_priv.hllc_base[chip_id][hllc_num]);
 
 			addr = (u64)chip_id * chip_module_base + PCS0_REG_BASE + (u64)hllc_num * 0x10000;
 			hip_hllc_priv.pcs_base[chip_id][hllc_num] = ioremap(addr, (u64)0x10000);
 
-			debug_sysctrl_print("hllc_base:%p\n",
-				hip_hllc_priv.hllc_base[chip_id][hllc_num]);
+			debug_sysctrl_print("[DBG] pcs_base: %p.\n",
+				hip_hllc_priv.pcs_base[chip_id][hllc_num]);
 		}
 
 		addr = (u64)chip_id * chip_module_base + PA_REG_BASE;
 		hip_hllc_priv.pa_base[chip_id] = ioremap(addr, (u64)0x10000);
 
+		debug_sysctrl_print("[DBG] pa_base: %p.\n",
+			hip_hllc_priv.pa_base[chip_id]);
+
 		addr = (u64)chip_id * chip_module_base + PM_REG_BASE;
 		hip_hllc_priv.pm_base[chip_id] = ioremap(addr, (u64)0x10000);
 
-		debug_sysctrl_print("pa_base:%p\n",
-			hip_hllc_priv.pa_base[chip_id]);
+		debug_sysctrl_print("[DBG] pm_base: %p.\n",
+			hip_hllc_priv.pm_base[chip_id]);
 
 		for (ddrc_num = 0; ddrc_num < DDRC_CH_NUM_MAX; ddrc_num++) {
 			addr = (u64)chip_id * chip_module_base + DDRC0_TB_REG_BASE + (u64)ddrc_num * 0x10000;
@@ -128,15 +148,15 @@ int his_hllc_init(void)
 			addr = (u64)chip_id * chip_module_base + DDRC0_TA_REG_BASE + (u64)ddrc_num * 0x10000;
 			hip_hllc_priv.ddrc_ta_base[chip_id][ddrc_num] = ioremap(addr, (u64)0x10000);
 
-			debug_sysctrl_print("ddrc_tb_base:%p\n",
+			debug_sysctrl_print("[DBG] ddrc_tb_base: %p.\n",
 				hip_hllc_priv.ddrc_tb_base[chip_id][ddrc_num]);
-			debug_sysctrl_print("ddrc_ta_base:%p\n",
+			debug_sysctrl_print("[DBG] ddrc_ta_base: %p.\n",
 				hip_hllc_priv.ddrc_ta_base[chip_id][ddrc_num]);
 		}
 
 	}
 
-	iounmap((void *)chip_ver_base);
+	iounmap((void *)chip_ver_addr);
 
 	return ERR_OK;
 }
@@ -926,9 +946,8 @@ int sysctl_pmbus_write(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 bu
 	static void __iomem *base;
 
 	if (CHIP_ID_NUM_MAX <= chip_id
-		|| 0x4 < data_len
-		|| 0x0 == data_len) {
-		pr_err("[sysctl pmbus]write chip_id range[0x0-0x3] or data_len range[0x1-0x4] is err!\n");
+		|| 0x4 < data_len) {
+		pr_err("[sysctl pmbus]write chip_id range[0x0-0x3] or data_len range[0x0-0x4] is err!\n");
 		return ERR_PARAM;
 	}
 
@@ -937,15 +956,16 @@ int sysctl_pmbus_write(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 bu
 	his_sysctrl_reg_wr(base, I2C_INTR_RAW_OFFSET, 0x3ffff);
 
 	his_sysctrl_reg_wr(base, 0x0810, (2 << 8) | slave_addr);
-	his_sysctrl_reg_wr(base, 0x0810, addr);
+	if (data_len != 0) {
+		his_sysctrl_reg_wr(base, 0x0810, addr);
 
-	for (i = 0; i < data_len - 1; i++) {
-		his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, 0xff & (buf >> (i*8)));
+		for (i = 0; i < data_len - 1; i++)
+			his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, 0xff & (buf >> (i*8)));
+
+		his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, (4 << 8) | (0xff & (buf >> (i*8))));
+	} else {
+		his_sysctrl_reg_wr(base, 0x0810, (4 << 8) | addr);
 	}
-
-	i++;
-
-	his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, (4 << 8) | (0xff & (buf >> (i*8))));
 
 	/*poll untill send done*/
 	for (;;) {
@@ -1234,7 +1254,7 @@ int hip_sysctrl_probe(void)
 	ret = his_hllc_init();
 
 	if (ret != ERR_OK) {
-		pr_err("sysctrl init fail, ret:[0x%x]\n", ret);
+		pr_err("[ERROR] his_hllc_init fail, ret:[0x%x].\n", ret);
 		return ret;
 	}
 
@@ -1248,7 +1268,7 @@ int hip_sysctrl_remove(void)
 	ret = his_hllc_deinit();
 
 	if (ret != ERR_OK) {
-		pr_err("sysctrl deinit fail, ret:[0x%x]\n", ret);
+		pr_err("[ERROR] his hllc deinit fail, ret:[0x%x].\n", ret);
 		return ret;
 	}
 
@@ -1263,7 +1283,7 @@ static int __init his_sysctrl_init(void)
 
 	(void)hip_sysctl_local_ras_init();
 
-	pr_info("insmod sysctrl success\n");
+	pr_info("[INFO] insmod sysctrl success.\n");
 
 	return ret;
 }
@@ -1274,7 +1294,7 @@ static void __exit his_sysctrl_exit(void)
 
 	(void)hip_sysctl_local_ras_exit();
 
-	pr_info("rmmod sysctrl success\n");
+	pr_info("[INFO] rmmod sysctrl success.\n");
 
 	return;
 }
@@ -1292,11 +1312,15 @@ EXPORT_SYMBOL(hip_sysctrl_remove);
 EXPORT_SYMBOL(sysctl_cpu_voltage_read);
 EXPORT_SYMBOL(hi_vrd_info_get);
 EXPORT_SYMBOL(sysctl_cpu_voltage_adjust);
+EXPORT_SYMBOL(sysctl_pmbus_write);
+EXPORT_SYMBOL(sysctl_pmbus_read);
+EXPORT_SYMBOL(InitPmbus);
+EXPORT_SYMBOL(DeInitPmbus);
 
 module_init(his_sysctrl_init);
 module_exit(his_sysctrl_exit);
 
 MODULE_DESCRIPTION("sysctrl for hisillicon platform");
-MODULE_VERSION("1.02");
+MODULE_VERSION(SYSCTL_DRIVER_VERSION);
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("platform:hip-sysctl");

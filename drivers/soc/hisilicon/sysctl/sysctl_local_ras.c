@@ -41,7 +41,7 @@
 static LIST_HEAD(hisi_ghes_list);
 static DEFINE_MUTEX(hisi_ghes_mutex);
 
-#define GHES_ESTATUS_MAX_SIZE 65536
+#define HISI_GHES_ESTATUS_MAX_SIZE 65536
 
 /* Platform Memory */
 #define CPER_SEC_PLATFORM_sysctl_LOCAL_RAS \
@@ -69,37 +69,39 @@ static int sysctl_lpc_init(void)
 	u32 chip_ver;
 	u64 chip_module_base;
 	void __iomem *chip_ver_addr;
-	void __iomem *chip_ver_base;
 
-	chip_ver_base = ioremap(0xd7d00000, (u64)0x10000);
-	if (!chip_ver_base) {
-		pr_err("%s: chip_ver_base is error.\n", __func__);
+	pr_info("[INFO] %s start.\n", __func__);
+
+	chip_ver_addr = ioremap(0x20107E238, (u64)4);
+	if (!chip_ver_addr) {
+		pr_err("[ERROR] %s chip_ver_base is error.\n", __func__);
 		return ERR_FAILED;
 	}
-	chip_ver_addr = chip_ver_base + 0x8;
 
 	chip_ver = readl(chip_ver_addr);
-	if ((chip_ver & CHIP_VERSION_MASK) == CHIP_VERSION_ES) {
+	chip_ver = chip_ver>>28;
+	if (chip_ver == CHIP_VERSION_ES) {
+		pr_info("[sysctl lpc] chip is es\n");
 		chip_module_base = HLLC_CHIP_MODULE_ES;
-	} else if ((chip_ver & CHIP_VERSION_MASK) == CHIP_VERSION_CS) {
-		chip_module_base = HLLC_CHIP_MODULE_CS;
 	} else {
-		pr_err("%s: chip_ver[%u] is ERR.\n", __func__, chip_ver);
-		iounmap((void *)chip_ver_base);
-		return ERR_FAILED;
+		chip_module_base = HLLC_CHIP_MODULE_CS;
+		pr_info("[sysctl lpc] chip is cs\n");
 	}
 
+	pr_info("[sysctl lpc] chip ver=%x\n", chip_ver);
 	for (chip_id = 0; chip_id < CHIP_ID_NUM_MAX; chip_id++) {
 			addr = (u64)chip_id * chip_module_base + SUBCTRL_REG_BASE;
 			sysctl_subctrl_lpc_priv[chip_id] = ioremap(addr, (u64)0x10000);
-			debug_sysctrl_print("subctl lpc_reset addr:%p\n", sysctl_subctrl_lpc_priv[chip_id]);
+			debug_sysctrl_print("[DBG] subctl lpc reset addr of chip[%d]: %p.\n",
+				chip_id, sysctl_subctrl_lpc_priv[chip_id]);
 
 			lpc_addr = (u64)chip_id * chip_module_base + LPC_REG_BASE;
 			sysctl_lpc_priv[chip_id] = ioremap(lpc_addr, (u64)0x10000);
-			debug_sysctrl_print("lpc mem access ctrl addr:%p\n", sysctl_lpc_priv[chip_id]);
+			debug_sysctrl_print("[DBG] lpc mem access ctrl addr of chip[%d]: %p.\n",
+				chip_id, sysctl_lpc_priv[chip_id]);
 	}
 
-	iounmap((void *)chip_ver_base);
+	iounmap((void *)chip_ver_addr);
 
 	return ERR_OK;
 }
@@ -143,6 +145,9 @@ static int sysctl_lpc_mem_access_open(u8 chip_id)
 {
    void __iomem *addr;
 
+   if (!sysctl_lpc_priv[chip_id])
+	return ERR_PARAM;
+
    addr = sysctl_lpc_priv[chip_id] + LPC_MEM_ACCESS_OFFSET;
    writel(0x0, addr);
 
@@ -167,40 +172,55 @@ static int sysctl_correlation_reg_report(const struct sysctl_local_ras_cper *ras
 {
 	switch (ras_cper->module_id) {
 	case MODULE_LPC_ERR:
-		pr_err("SYSCTL RAS lpc correlation_reg info");
+		pr_info("[INFO] SYSCTL RAS lpc correlation_reg info:\n");
 		break;
-
-	case MODULE_USB2_ERR:
-		pr_err("SYSCTL RAS usb2 correlation_reg info");
+	case MODULE_USB_ERR:
+		if (ras_cper->sub_mod_id == MODULE_USB0_ERR) {
+			pr_info("[INFO] SYSCTL RAS usb0 correlation_reg info:\n");
+		} else if (ras_cper->sub_mod_id == MODULE_USB1_ERR) {
+			pr_info("[INFO] SYSCTL RAS usb1 correlation_reg info:\n");
+		} else if (ras_cper->sub_mod_id == MODULE_USB2_ERR) {
+			pr_info("[INFO] SYSCTL RAS usb2 correlation_reg info:\n");
+		} else {
+			pr_err("[ERROR] SYSCTL RAS usb sub_module_id[0x%x] is error.\n",
+				ras_cper->sub_mod_id);
+			return -1;
+		}
 		break;
-
-	case MODULE_USB3_ERR:
-		pr_err("SYSCTL RAS usb3 correlation_reg info");
+	case MODULE_SAS_ERR:
+		if (ras_cper->sub_mod_id == MODULE_SAS0_ERR) {
+			pr_info("[INFO] SYSCTL RAS sas0 correlation_reg info:\n");
+		} else if (ras_cper->sub_mod_id == MODULE_SAS1_ERR) {
+			pr_info("[INFO] SYSCTL RAS sas1 correlation_reg info:\n");
+		} else {
+			pr_err("[ERROR] SYSCTL RAS sas sub_module_id[0x%x] is error.\n",
+				ras_cper->sub_mod_id);
+			return -1;
+		}
 		break;
-
 	default:
-		pr_err("SYSCTL RAS module_id[0x%x] correlation_reg info",
+		pr_err("[ERROR] SYSCTL RAS module_id[0x%x] is error.\n",
 			ras_cper->module_id);
 		return -1;
 	}
 
-	pr_err("SYSCTL RAS socket_id %x",
+	pr_info("[INFO] SYSCTL RAS socket_id: %x.\n",
 		ras_cper->socket_id);
-	pr_err("SYSCTL RAS nimbus_id %x",
+	pr_info("[INFO] SYSCTL RAS nimbus_id: %x.\n",
 		ras_cper->nimbus_id);
-	pr_err("SYSCTL RAS err_misc0 %x",
+	pr_info("[INFO] SYSCTL RAS err_misc0: %x.\n",
 		ras_cper->err_misc0);
-	pr_err("SYSCTL RAS err_misc1 %x",
+	pr_info("[INFO] SYSCTL RAS err_misc1: %x.\n",
 		ras_cper->err_misc1);
-	pr_err("SYSCTL RAS err_misc2 %x",
+	pr_info("[INFO] SYSCTL RAS err_misc2: %x.\n",
 		ras_cper->err_misc2);
-	pr_err("SYSCTL RAS err_misc3 %x",
+	pr_info("[INFO] SYSCTL RAS err_misc3: %x.\n",
 		ras_cper->err_misc3);
-	pr_err("SYSCTL RAS err_misc4 %x",
+	pr_info("[INFO] SYSCTL RAS err_misc4: %x.\n",
 		ras_cper->err_misc4);
-	pr_err("SYSCTL RAS err_addrl %x",
+	pr_info("[INFO] SYSCTL RAS err_addrl: %x.\n",
 		ras_cper->err_addrl);
-	pr_err("SYSCTL RAS err_addrh %x",
+	pr_info("[INFO] SYSCTL RAS err_addrh: %x.\n",
 		ras_cper->err_addrh);
 
 	return 0;
@@ -215,33 +235,51 @@ static int sysctl_do_recovery(const struct sysctl_local_ras_cper *ras_cper)
 		sysctl_lpc_irq_cnt++;
 
 		sysctl_lpc_reset(ras_cper->socket_id);
-		pr_err("SYSCTL RAS lpc of chip[%d] reset", ras_cper->socket_id);
-		pr_err("SYSCTL RAS sysctl_lpc_irq_cnt[%d]", sysctl_lpc_irq_cnt);
+		pr_info("[INFO] SYSCTL RAS lpc of chip[%d] reset.\n", ras_cper->socket_id);
+		pr_info("[INFO] SYSCTL RAS sysctl_lpc_irq_cnt[%d].\n", sysctl_lpc_irq_cnt);
 		udelay((unsigned long)20);
 
 		if (sysctl_lpc_irq_cnt <= LPC_IRQ_CNT_MAX) {
 			sysctl_lpc_unreset(ras_cper->socket_id);
-			pr_err("SYSCTL RAS lpc of chip[%d] unreset",
+			pr_info("[INFO] SYSCTL RAS lpc of chip[%d] unreset.\n",
 				ras_cper->socket_id);
 
 			sysctl_lpc_mem_access_open(ras_cper->socket_id);
-			pr_err("SYSCTL RAS lpc of chip[%d] mem access open",
+			pr_info("[INFO] SYSCTL RAS lpc of chip[%d] mem access open.\n",
 				ras_cper->socket_id);
 		} else {
-			pr_err("SYSCTL RAS lpc of chip[%d] unreset 3 times, which won't unreset",
-				ras_cper->socket_id);
+			pr_err("[ERROR] SYSCTL RAS lpc of chip[%d] unreset %d times, won't unreset.\n",
+				ras_cper->socket_id, LPC_IRQ_CNT_MAX);
 		}
 		break;
-	case MODULE_USB2_ERR:
-		pr_err("SYSCTL RAS usb2 err %d", ret);
+	case MODULE_USB_ERR:
+		if (ras_cper->sub_mod_id == MODULE_USB0_ERR) {
+			pr_info("[INFO] SYSCTL RAS usb0 error.\n");
+		} else if (ras_cper->sub_mod_id == MODULE_USB1_ERR) {
+			pr_info("[INFO] SYSCTL RAS usb1 error.\n");
+		} else if (ras_cper->sub_mod_id == MODULE_USB2_ERR) {
+			pr_info("[INFO] SYSCTL RAS usb2 error.\n");
+		} else {
+			pr_err("[ERROR] SYSCTL RAS usb sub_module_id[0x%x] is error.\n",
+				ras_cper->sub_mod_id);
+			return ret;
+		}
 		break;
-	case MODULE_USB3_ERR:
-		pr_err("SYSCTL RAS usb3 err %d", ret);
+	case MODULE_SAS_ERR:
+		if (ras_cper->sub_mod_id == MODULE_SAS0_ERR) {
+			pr_info("[INFO] SYSCTL RAS sas0 error.\n");
+		} else if (ras_cper->sub_mod_id == MODULE_SAS1_ERR) {
+			pr_info("[INFO] SYSCTL RAS sas1 error.\n");
+		} else {
+			pr_err("[ERROR] SYSCTL RAS sas sub_module_id[0x%x] is error.\n",
+				ras_cper->sub_mod_id);
+			return ret;
+		}
 		break;
 	default:
-		pr_err("SYSCTL RAS err module_id[0x%x]  not process in sysctl\n",
+		pr_err("[ERROR] SYSCTL RAS module_id[0x%x] is error, has not match process in sysctl.\n",
 			ras_cper->module_id);
-		return 0;
+		return ret;
 	}
 
 	(void)sysctl_correlation_reg_report(ras_cper);
@@ -259,248 +297,250 @@ static int sysctl_hest_hisi_parse_ghes_count(struct acpi_hest_header *hest_hdr, 
 	return 0;
 }
 
-static struct ghes *sysctl_ghes_new(struct acpi_hest_generic *generic)
+static struct ghes *sysctl_ghes_new(struct acpi_hest_generic *sysctl_generic)
 {
-	struct ghes *ghes;
-	size_t error_block_length;
-	int rc = 0;
+	struct ghes *sysctl_ghes;
+	size_t err_block_length = 0;
+	int ret = 0;
 
-	ghes = kzalloc(sizeof(*ghes), GFP_KERNEL);
-	if (!ghes)
+	sysctl_ghes = kzalloc(sizeof(*sysctl_ghes), GFP_KERNEL);
+	if (!sysctl_ghes)
 		return ERR_PTR((long)-ENOMEM);
 
-	ghes->generic = generic;
-	if (is_hest_type_generic_v2(ghes)) {
-		rc = map_gen_v2(ghes);
-		if (rc)
+	sysctl_ghes->generic = sysctl_generic;
+	if (is_hest_type_generic_v2(sysctl_ghes)) {
+		ret = map_gen_v2(sysctl_ghes);
+		if (ret)
 			goto err_free;
 	}
 
-	rc = apei_map_generic_address(&generic->error_status_address);
-	if (rc)
+	ret = apei_map_generic_address(&sysctl_generic->error_status_address);
+	if (ret)
 		goto err_unmap_read_ack_addr;
 
-	error_block_length = generic->error_block_length;
-	if (error_block_length > GHES_ESTATUS_MAX_SIZE) {
+	err_block_length = sysctl_generic->error_block_length;
+	if (err_block_length > HISI_GHES_ESTATUS_MAX_SIZE) {
 		pr_err("SYSCTL RAS Error status block length is too long: %u for "
 				"generic hardware error source: %d.\n",
-				(u32)error_block_length, generic->header.source_id);
-		error_block_length = GHES_ESTATUS_MAX_SIZE;
+				(u32)err_block_length, sysctl_generic->header.source_id);
+		err_block_length = HISI_GHES_ESTATUS_MAX_SIZE;
 	}
 
-	ghes->estatus = (struct acpi_hest_generic_status *)kmalloc(error_block_length, GFP_KERNEL);
-	if (!ghes->estatus) {
-		rc = -ENOMEM;
+	sysctl_ghes->estatus = (struct acpi_hest_generic_status *)kmalloc(err_block_length, GFP_KERNEL);
+	if (!sysctl_ghes->estatus) {
+		ret = -ENOMEM;
 		goto err_unmap_status_addr;
 	}
 
-	return ghes;
+	return sysctl_ghes;
 
 err_unmap_status_addr:
-	apei_unmap_generic_address(&generic->error_status_address);
+	apei_unmap_generic_address(&sysctl_generic->error_status_address);
 
 err_unmap_read_ack_addr:
-	if (is_hest_type_generic_v2(ghes))
-		unmap_gen_v2(ghes);
+	if (is_hest_type_generic_v2(sysctl_ghes))
+		unmap_gen_v2(sysctl_ghes);
 err_free:
-	kfree(ghes);
-	return ERR_PTR((long)rc);
+	kfree(sysctl_ghes);
+	return ERR_PTR((long)ret);
 }
 
 static int sysctl_hest_hisi_parse_ghes(struct acpi_hest_header *hest_hdr, void *data)
 {
-	struct acpi_hest_generic *generic;
-	struct ghes *ghes;
+	struct acpi_hest_generic *sysctl_generic;
+	struct ghes *sysctl_ghes;
 	(void)data;
 
-	generic = container_of(hest_hdr, struct acpi_hest_generic, header);
-	if (!generic->enabled)
+	sysctl_generic = container_of(hest_hdr, struct acpi_hest_generic, header);
+	if (!sysctl_generic->enabled)
 		return 0;
 
-	debug_sysctrl_print("SYSCTL RAS HISILICON Error : ghes source id = %x\n",
+	debug_sysctrl_print("[DBG] SYSCTL RAS ghes source id: %x.\n",
 		hest_hdr->source_id);
-	debug_sysctrl_print("SYSCTL RAS HISILICON Error : ghes error_block_length = %x\n",
-		generic->error_block_length);
-	debug_sysctrl_print("SYSCTL RAS HISILICON Error : ghes notify type = %x\n",
-		generic->notify.type);
+	debug_sysctrl_print("[DBG] SYSCTL RAS ghes error_block_length: %x.\n",
+		sysctl_generic->error_block_length);
+	debug_sysctrl_print("[DBG] SYSCTL RAS ghes notify type: %x.\n",
+		sysctl_generic->notify.type);
 
-	ghes = sysctl_ghes_new(generic);
-	if (!ghes)
+	sysctl_ghes = sysctl_ghes_new(sysctl_generic);
+	if (!sysctl_ghes) {
+		pr_err("[ERROR] SYSCTL RAS sysctl_ghes is null.\n");
 		return -ENOMEM;
+	}
 
 	mutex_lock(&hisi_ghes_mutex);
-	list_add_rcu(&ghes->list, &hisi_ghes_list);
+	list_add_rcu(&sysctl_ghes->list, &hisi_ghes_list);
 	mutex_unlock(&hisi_ghes_mutex);
 
 	return 0;
 }
 
-static int sysctl_ghes_read_estatus(struct ghes *ghes, int silent)
+static int sysctl_ghes_read_estatus(struct ghes *sysctl_ghes, int silent)
 {
-	struct acpi_hest_generic *g = ghes->generic;
+	struct acpi_hest_generic *g = sysctl_ghes->generic;
 	phys_addr_t buf_paddr;
-	u32 error_block_length;
+	u32 err_block_length = 0;
 	u32 len;
-	int rc = 0;
+	int ret = 0;
 
-	rc = apei_read(&buf_paddr, &g->error_status_address);
-	if (rc) {
+	ret = apei_read(&buf_paddr, &g->error_status_address);
+	if (ret) {
 		if (!silent && printk_ratelimit()) {
-			pr_err("SYSCTL RAS Failed to read error status block address for hardware error source: %d.\n",
-			g->header.source_id);
+			pr_err("[ERROR] SYSCTL RAS apei_read fail, source_id: %d.\n",
+				g->header.source_id);
 		}
 
-		pr_err("SYSCTL RAS apei_read rc: %d.\n", rc);
+		pr_err("[ERROR] SYSCTL RAS apei_read fail, ret: %d.\n", ret);
 		return -EIO;
 	}
 
 	if (!buf_paddr) {
-		pr_err("SYSCTL RAS buf_paddr is null.\n");
+		pr_err("[ERROR] SYSCTL RAS buf_paddr is null.\n");
 		return -ENOENT;
 	}
 
-	error_block_length = g->error_block_length;
-	if (error_block_length > GHES_ESTATUS_MAX_SIZE) {
-		pr_err("SYSCTL RAS error_block_length: %u, source_id: %d.\n",
-			error_block_length, g->header.source_id);
-		error_block_length = GHES_ESTATUS_MAX_SIZE;
+	err_block_length = g->error_block_length;
+	if (err_block_length > HISI_GHES_ESTATUS_MAX_SIZE) {
+		pr_info("[INFO] SYSCTL RAS error_block_length: %u, source_id: %d.\n",
+			err_block_length, g->header.source_id);
+		err_block_length = HISI_GHES_ESTATUS_MAX_SIZE;
 	}
-	ghes->estatus = ioremap_wc(buf_paddr, error_block_length);
+	sysctl_ghes->estatus = ioremap_wc(buf_paddr, err_block_length);
 
-	if (!ghes->estatus) {
-		pr_err("SYSCTL RAS ghes->estatus is null.\n");
-		goto err_release_estatus;
+	if (!sysctl_ghes->estatus) {
+		pr_err("[ERROR] SYSCTL RAS sysctl_ghes->estatus is null.\n");
+		goto error_release_estatus;
 	}
 
-	if (!ghes->estatus->block_status) {
-		pr_err("SYSCTL RAS ghes->estatus->block_status is 0.\n");
-		iounmap(ghes->estatus);
+	if (!sysctl_ghes->estatus->block_status) {
+		pr_err("[ERROR] SYSCTL RAS sysctl_ghes->estatus->block_status is 0.\n");
+		iounmap(sysctl_ghes->estatus);
 		return -ENOENT;
 	}
 
-	ghes->buffer_paddr = buf_paddr;
-	ghes->flags |= GHES_TO_CLEAR;
+	sysctl_ghes->buffer_paddr = buf_paddr;
+	sysctl_ghes->flags |= GHES_TO_CLEAR;
 
-	rc = -EIO;
-	len = cper_estatus_len(ghes->estatus);
-	if (len < sizeof(*ghes->estatus)) {
-		pr_err("SYSCTL RAS len[%d] less than sizeof(*ghes->estatus)[%ld].\n",
-			len, sizeof(*ghes->estatus));
-		goto err_read_block;
+	ret = -EIO;
+	len = cper_estatus_len(sysctl_ghes->estatus);
+	if (len < sizeof(*sysctl_ghes->estatus)) {
+		pr_err("[ERROR] SYSCTL RAS len[%d] less than sizeof(*ghes->estatus)[%ld].\n",
+			len, sizeof(*sysctl_ghes->estatus));
+		goto error_read_block;
 	}
 
-	if (len > ghes->generic->error_block_length) {
-		pr_err("SYSCTL RAS len[%d] more than error_block_length[%d].\n",
-			len, ghes->generic->error_block_length);
-		goto err_read_block;
+	if (len > sysctl_ghes->generic->error_block_length) {
+		pr_err("[ERROR] SYSCTL RAS len[%d] more than error_block_length[%d].\n",
+			len, sysctl_ghes->generic->error_block_length);
+		goto error_read_block;
 	}
 
-	if (cper_estatus_check_header(ghes->estatus)) {
-		pr_err("SYSCTL RAS cper_estatus_check_header fail.\n");
-		goto err_read_block;
+	if (cper_estatus_check_header(sysctl_ghes->estatus)) {
+		pr_err("[ERROR] SYSCTL RAS cper_estatus_check_header fail.\n");
+		goto error_read_block;
 	}
 
-	pr_err("SYSCTL RAS HISILICON Error : ghes source id is %d\n",
+	pr_info("[INFO] SYSCTL RAS HISILICON Error : ghes source id is %d.\n",
 		g->header.source_id);
-	pr_err("SYSCTL RAS HISILICON Error : error status addr is 0x%llx\n",
+	pr_info("[INFO] SYSCTL RAS HISILICON Error : error status addr is 0x%llx.\n",
 		buf_paddr);
-	pr_err("SYSCTL RAS HISILICON Error : data_length = %d.\n",
-		ghes->estatus->data_length);
-	pr_err("SYSCTL RAS HISILICON Error : severity = %d.\n",
-		ghes->estatus->error_severity);
+	pr_info("[INFO] SYSCTL RAS HISILICON Error : data_length is %d.\n",
+		sysctl_ghes->estatus->data_length);
+	pr_info("[INFO] SYSCTL RAS HISILICON Error : severity is %d.\n",
+		sysctl_ghes->estatus->error_severity);
 
-	if (cper_estatus_check(ghes->estatus)) {
-		pr_err("SYSCTL RAS cper_estatus_check fail.\n");
-		goto err_read_block;
+	if (cper_estatus_check(sysctl_ghes->estatus)) {
+		pr_err("[ERROR] SYSCTL RAS cper_estatus_check fail.\n");
+		goto error_read_block;
 	}
 
-	rc = 0;
-	return rc;
+	ret = 0;
+	return ret;
 
-err_read_block:
-	pr_err("SYSCTL RAS ghes error status block read error\n");
-	iounmap(ghes->estatus);
+error_read_block:
+	pr_err("[ERROR] SYSCTL RAS info of ghes error status block is error.\n");
+	iounmap(sysctl_ghes->estatus);
 
-	pr_err("SYSCTL RAS Failed to read error status block!\n");
-err_release_estatus:
-	pr_err("error ioremap, release memory\n");
-	return rc;
+	pr_err("[ERROR] SYSCTL RAS read error status block fail.\n");
+error_release_estatus:
+	pr_err("[ERROR] ioremap_wc fail, release_estatus.\n");
+	return ret;
 }
 
-void sysctl_ghes_clear_estatus(struct ghes *ghes)
+void sysctl_ghes_clear_estatus(struct ghes *sysctl_ghes)
 {
-		ghes->estatus->block_status = 0;
-		if (!(ghes->flags & GHES_TO_CLEAR))
+		sysctl_ghes->estatus->block_status = 0;
+		if (!(sysctl_ghes->flags & GHES_TO_CLEAR))
 				return;
 
-		ghes->flags &= ~GHES_TO_CLEAR;
+		sysctl_ghes->flags &= ~GHES_TO_CLEAR;
 }
 
-static void sysctl_ghes_do_proc(struct ghes *ghes,
-			 struct acpi_hest_generic_status *estatus)
+static void sysctl_ghes_do_proc(struct ghes *sysctl_ghes,
+			 struct acpi_hest_generic_status *sysct_estatus)
 {
 
 	struct acpi_hest_generic_data *gdata = NULL;
 	guid_t *sec_type;
 	struct sysctl_local_ras_cper *ras_cper;
 	struct cper_sec_proc_arm *arm_ras_cper;
-	(void)ghes;
+	(void)sysctl_ghes;
 
-	apei_estatus_for_each_section(estatus, gdata) {
+	apei_estatus_for_each_section(sysct_estatus, gdata) {
 		sec_type = (guid_t *)gdata->section_type;
 
 		if (guid_equal(sec_type, &CPER_SEC_PLATFORM_sysctl_LOCAL_RAS)) {
 			ras_cper = acpi_hest_get_payload(gdata);
 			(void)sysctl_do_recovery(ras_cper);
-
 		} else if (guid_equal(sec_type, &CPER_SEC_PROC_ARM)) {
 			arm_ras_cper = acpi_hest_get_payload(gdata);
 			if (arm_ras_cper->err_info_num != 1) {
-				pr_err("SYSCTL RAS ERR: err_info_num[0x%x] is err.\n",
+				pr_err("[ERROR] SYSCTL RAS err_info_num[0x%x] is error.\n",
 					arm_ras_cper->err_info_num);
 				return;
 			}
 		}
 
-		cper_estatus_print("SYSCTL RAS HISILICON Error : ",
-			ghes->estatus);
+		cper_estatus_print("[INFO] SYSCTL RAS HISILICON Error : ",
+			sysctl_ghes->estatus);
 	}
 	return;
 }
 
-static int sysctl_ghes_proc(struct ghes *ghes)
+static int sysctl_ghes_proc(struct ghes *sysctl_ghes)
 {
-	int rc = 0;
+	int ret = 0;
 
-	rc = sysctl_ghes_read_estatus(ghes, 0);
-	if (rc)
-		return rc;
+	ret = sysctl_ghes_read_estatus(sysctl_ghes, 0);
+	if (ret)
+		return ret;
 
-	sysctl_ghes_do_proc(ghes, ghes->estatus);
+	sysctl_ghes_do_proc(sysctl_ghes, sysctl_ghes->estatus);
 
-	if (ghes->estatus)
-		iounmap(ghes->estatus);
+	if (sysctl_ghes->estatus)
+		iounmap(sysctl_ghes->estatus);
 
-	return rc;
+	return ret;
 }
 
 static int sysctl_hisi_error_handler(struct work_struct *work)
 {
 
 	int ret = 0;
-	struct ghes *ghes;
+	struct ghes *sysctl_ghes;
 	(void)work;
 
-	pr_err("SYSCTL RAS HISILICON Error : handler start.\n");
+	pr_info("[INFO] SYSCTL RAS %s start.\n", __func__);
+
 	rcu_read_lock();
-	list_for_each_entry_rcu(ghes, &hisi_ghes_list, list) {
-		if (!sysctl_ghes_proc(ghes))
+	list_for_each_entry_rcu(sysctl_ghes, &hisi_ghes_list, list) {
+		if (!sysctl_ghes_proc(sysctl_ghes))
 			ret = NOTIFY_OK;
 	}
 	rcu_read_unlock();
 
-	pr_err("SYSCTL RAS ghes_proc %d", ret);
-	pr_err("SYSCTL RAS HISILICON Error : handler end.\n");
+	pr_info("[INFO] SYSCTL RAS sysctl_ghes_proc ret: %d.\n", ret);
+	pr_info("[INFO] SYSCTL RAS %s end.\n", __func__);
 
 	return ret;
 
@@ -509,30 +549,29 @@ static int sysctl_hisi_error_handler(struct work_struct *work)
 /*acpi hisi hest init*/
 static void sysctl_acpi_hisi_hest_init(void)
 {
-	int rc;
+	int ret;
 	unsigned int ghes_count = 0;
 
-	debug_sysctrl_print("SYSCTL RAS sysctl_acpi_hisi_hest_init start\n");
+	debug_sysctrl_print("[DBG] SYSCTL RAS %s start.\n", __func__);
 
 	if (hest_disable) {
-		pr_err("SYSCTL RAS Table parsing disabled.\n");
+		pr_err("[ERROR] SYSCTL RAS Table parsing disabled.\n");
 		return;
 	}
 
-	rc = apei_hest_parse(sysctl_hest_hisi_parse_ghes_count, &ghes_count);
-	if (rc) {
-		pr_err("SYSCTL RAS hest_hisi_parse_ghes_count faile.\n");
+	ret = apei_hest_parse(sysctl_hest_hisi_parse_ghes_count, &ghes_count);
+	if (ret) {
+		pr_err("[ERROR] SYSCTL RAS hest_hisi_parse_ghes_count fail.\n");
 		return;
 	}
+	debug_sysctrl_print("[DBG] SYSCTL RAS Get ghes count: %d.\n", ghes_count);
 
-	debug_sysctrl_print("SYSCTL RAS Get ghes count = %d\n", ghes_count);
-
-	rc = apei_hest_parse(sysctl_hest_hisi_parse_ghes, &ghes_count);
-	if (rc) {
-		pr_err("SYSCTL RAS hest_hisi_parse_ghes faile.\n");
+	ret = apei_hest_parse(sysctl_hest_hisi_parse_ghes, &ghes_count);
+	if (ret) {
+		pr_err("[ERROR] SYSCTL RAS hest_hisi_parse_ghes fail.\n");
 		return;
 	}
-	debug_sysctrl_print("SYSCTL RAS sysctl_acpi_hisi_hest_init end\n");
+	debug_sysctrl_print("[DBG] SYSCTL RAS sysctl_acpi_hisi_hest_init end.\n");
 
 	return;
 }
@@ -575,5 +614,5 @@ void hip_sysctl_local_ras_exit(void)
 
 	unregister_acpi_hed_notifier(&sysctl_ghes_hisi_notifier_hed);
 
-	pr_err(KERN_INFO "Goodbye test.\n");
+	pr_info("[INFO] hip sysctl local ras exit.\n");
 }

@@ -76,9 +76,7 @@
 #define HLLC_INTLV_MODE_3P1		  0x5
 #define HLLC_INTLV_MODE_3P2		  0x6
 
-#define CHIP_VERSION_MASK (0xff)
-#define CHIP_VERSION_ES (0x20)
-#define CHIP_VERSION_CS (0x21)
+#define CHIP_VERSION_ES (0x1)
 #define HLLC_CHIP_MODULE_ES (0x400000000000)
 #define HLLC_CHIP_MODULE_CS (0x200000000000)
 #define HLLC_NUM_MAX (0x3)
@@ -152,13 +150,13 @@
 #define STATUS_RPT_OFFSET 0x0AA4
 #define STATUS_ERR_RPT_OFFSET 0x0AA8
 
-#define SYSCTL_DEBUG_LEVEL 0
+extern unsigned int g_sysctrl_debug;
 
-#if (SYSCTL_DEBUG_LEVEL == 0)
-#define debug_sysctrl_print(fmt...)
-#else
-#define debug_sysctrl_print(fmt...) printk(fmt)
-#endif
+#define debug_sysctrl_print(fmt...) \
+do { \
+	if (g_sysctrl_debug) \
+		printk(fmt); \
+} while (0)
 
 typedef struct {
 	unsigned char hllc_enable;
