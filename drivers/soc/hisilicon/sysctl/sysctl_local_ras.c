@@ -409,6 +409,7 @@ static int sysctl_ghes_read_estatus(struct ghes *sysctl_ghes, int silent)
 
 	if (!sysctl_ghes->estatus) {
 		pr_err("[ERROR] SYSCTL RAS sysctl_ghes->estatus is null.\n");
+		ret = -ENOENT;
 		goto error_release_estatus;
 	}
 
@@ -517,8 +518,7 @@ static int sysctl_ghes_proc(struct ghes *sysctl_ghes)
 
 	sysctl_ghes_do_proc(sysctl_ghes, sysctl_ghes->estatus);
 
-	if (sysctl_ghes->estatus)
-		iounmap(sysctl_ghes->estatus);
+	iounmap(sysctl_ghes->estatus);
 
 	return ret;
 }
@@ -608,10 +608,23 @@ int hip_sysctl_local_ras_init(void)
 	return ret;
 }
 
+static void his_ghes_list_free(void)
+{
+	struct ghes *sysctl_ghes;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(sysctl_ghes, &hisi_ghes_list, list) {
+		if (sysctl_ghes)
+			kfree(sysctl_ghes);
+	}
+	rcu_read_unlock();
+}
+
 void hip_sysctl_local_ras_exit(void)
 {
-	sysctl_lpc_deinit();
 
+	sysctl_lpc_deinit();
+	his_ghes_list_free();
 	unregister_acpi_hed_notifier(&sysctl_ghes_hisi_notifier_hed);
 
 	pr_info("[INFO] hip sysctl local ras exit.\n");
