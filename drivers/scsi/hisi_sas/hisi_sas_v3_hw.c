@@ -2251,6 +2251,40 @@ slot_err_v3_hw(struct hisi_hba *hisi_hba, struct sas_task *task,
 	}
 }
 
+static int hisi_sas_get_sense_data(struct ssp_response_iu *iu,
+	struct hisi_sas_sense_data *sense_data)
+{
+	int rc = 0;
+
+	switch (iu->resp_data[0]) {
+	case 0x70:
+	case 0x71: {
+		if (iu->sense_data_len > 13) {
+			sense_data->sense_key = (iu->resp_data[2] & 0xF);
+			sense_data->add_sense_code = iu->resp_data[12];
+			sense_data->add_sense_code_qua = iu->resp_data[13];
+		} else
+			rc = -1;
+		break;
+	}
+	case 0x72:
+	case 0x73: {
+		if (iu->sense_data_len > 4) {
+			sense_data->sense_key = (iu->resp_data[1] & 0xF);
+			sense_data->add_sense_code = iu->resp_data[2];
+			sense_data->add_sense_code_qua = iu->resp_data[3];
+		} else
+			rc = -1;
+		break;
+	}
+	default:
+		rc = -2;
+		break;
+	}
+
+	return rc;
+}
+
 static int
 slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 {
@@ -2330,6 +2364,27 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 				complete_hdr->act, complete_hdr->dw3,
 				error_info[0], error_info[1],
 				error_info[2], error_info[3]);
+
+		if ((error_info[3] & RX_DATA_LEN_UNDERFLOW_MSK) &&
+			(task->task_proto == SAS_PROTOCOL_SSP)) {
+			/*print detail sense info when data underflow happened*/
+			int rc;
+			struct hisi_sas_sense_data sense_data;
+			struct ssp_response_iu *iu =
+				hisi_sas_status_buf_addr_mem(slot) +
+				sizeof(struct hisi_sas_err_record);
+			rc = hisi_sas_get_sense_data(iu, &sense_data);
+
+			if (!rc)
+				dev_info(dev, "data underflow, rsp_code:0x%x, sensekey:0x%x, ASC:0x%x, ASCQ:0x%x.\n",
+					iu->resp_data[0],
+					sense_data.sense_key,
+					sense_data.add_sense_code,
+					sense_data.add_sense_code_qua);
+			else
+				dev_info(dev, "data underflow without sense, rsp_code:0x%x, rc:%d.\n",
+					iu->resp_data[0], rc);
+		}
 		if (unlikely(slot->abort))
 			return ts->stat;
 		goto out;
