@@ -969,7 +969,6 @@ static void hclge_parse_fiber_link_mode(struct hclge_dev *hdev,
 	linkmode_set_bit(ETHTOOL_LINK_MODE_FIBRE_BIT, mac->supported);
 	linkmode_set_bit(ETHTOOL_LINK_MODE_Pause_BIT, mac->supported);
 	linkmode_set_bit(ETHTOOL_LINK_MODE_FEC_NONE_BIT, mac->supported);
-	linkmode_copy(mac->advertising, mac->supported);
 #else
 	unsigned long *supported = hdev->hw.mac.supported;
 
@@ -1005,7 +1004,6 @@ static void hclge_parse_backplane_link_mode(struct hclge_dev *hdev,
 #endif
 	linkmode_set_bit(ETHTOOL_LINK_MODE_Backplane_BIT, mac->supported);
 	linkmode_set_bit(ETHTOOL_LINK_MODE_Pause_BIT, mac->supported);
-	linkmode_copy(mac->advertising, mac->supported);
 }
 
 static void hclge_parse_copper_link_mode(struct hclge_dev *hdev,
@@ -2346,6 +2344,17 @@ static int hclge_restart_autoneg(struct hnae3_handle *handle)
 	return hclge_notify_client(hdev, HNAE3_UP_CLIENT);
 }
 
+static int hclge_halt_autoneg(struct hnae3_handle *handle, bool halt)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+
+	if (hdev->hw.mac.support_autoneg && hdev->hw.mac.autoneg)
+		return hclge_set_autoneg_en(hdev, !halt);
+
+	return 0;
+}
+
 static int hclge_set_fec_hw(struct hclge_dev *hdev, u32 fec_mode)
 {
 	struct hclge_config_fec_cmd *req;
@@ -2417,6 +2426,15 @@ static int hclge_mac_init(struct hclge_dev *hdev)
 		dev_err(&hdev->pdev->dev,
 			"Config mac speed dup fail ret=%d\n", ret);
 		return ret;
+	}
+
+	if (hdev->hw.mac.support_autoneg) {
+		ret = hclge_set_autoneg_en(hdev, hdev->hw.mac.autoneg);
+		if (ret) {
+			dev_err(&hdev->pdev->dev,
+				"Config mac autoneg fail ret=%d\n", ret);
+			return ret;
+		}
 	}
 
 	mac->link = 0;
@@ -2552,12 +2570,14 @@ static void hclge_update_port_capability(struct hclge_mac *mac)
 	else if (mac->media_type == HNAE3_MEDIA_TYPE_COPPER)
 		mac->module_type = HNAE3_MODULE_TYPE_TP;
 
-	if (mac->autoneg == AUTONEG_ENABLE)
+	if (mac->support_autoneg) {
 		linkmode_set_bit(ETHTOOL_LINK_MODE_Autoneg_BIT, mac->supported);
-	else
+		linkmode_copy(mac->advertising, mac->supported);
+	} else {
 		linkmode_clear_bit(ETHTOOL_LINK_MODE_Autoneg_BIT,
 				   mac->supported);
-	linkmode_copy(mac->advertising, mac->supported);
+		linkmode_zero(mac->advertising);
+	}
 }
 
 static int hclge_get_sfp_speed(struct hclge_dev *hdev, u32 *speed)
@@ -2606,10 +2626,10 @@ static int hclge_get_sfp_info(struct hclge_dev *hdev, struct hclge_mac *mac)
 
 	mac->speed_type = resp->query_type;
 	mac->speed = le32_to_cpu(resp->speed);
-	/* if speed_type is insistent with query_type, it means the
-	 * firmware version is too old, do not update these params,
+	/* if resp->speed_ability is 0, it means it's an old version
+	 * firmware, do not update these params
 	 */
-	if (mac->speed_type == QUERY_ACTIVE_SPEED) {
+	if (resp->speed_ability) {
 		mac->module_type = le32_to_cpu(resp->module_type);
 		mac->speed_ability = le32_to_cpu(resp->speed_ability);
 		mac->autoneg = resp->autoneg;
@@ -2618,6 +2638,8 @@ static int hclge_get_sfp_info(struct hclge_dev *hdev, struct hclge_mac *mac)
 			mac->fec_mode = 0;
 		else
 			mac->fec_mode = BIT(resp->active_fec);
+	} else {
+		mac->speed_type = QUERY_SFP_SPEED;
 	}
 
 	return 0;
@@ -9416,6 +9438,7 @@ struct hnae3_ae_ops hclge_ops = {
 	.set_autoneg = hclge_set_autoneg,
 	.get_autoneg = hclge_get_autoneg,
 	.restart_autoneg = hclge_restart_autoneg,
+	.halt_autoneg = hclge_halt_autoneg,
 	.get_pauseparam = hclge_get_pauseparam,
 	.set_pauseparam = hclge_set_pauseparam,
 	.set_mtu = hclge_set_mtu,

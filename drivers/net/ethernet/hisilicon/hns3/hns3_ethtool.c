@@ -329,6 +329,13 @@ static void hns3_self_test(struct net_device *ndev,
 	if (if_running)
 		ndev->netdev_ops->ndo_stop(ndev);
 
+	/* Tell firmware to stop mac autoneg before loopback test start,
+	 * otherwise loopback test may be failed when the port is still
+	 * negotiating.
+	 */
+	if (h->ae_algo->ops->halt_autoneg)
+		h->ae_algo->ops->halt_autoneg(h, true);
+
 	set_bit(HNS3_NIC_STATE_TESTING, &priv->state);
 
 	for (i = 0; i < HNS3_SELF_TEST_TPYE_NUM; i++) {
@@ -351,6 +358,8 @@ static void hns3_self_test(struct net_device *ndev,
 
 	clear_bit(HNS3_NIC_STATE_TESTING, &priv->state);
 
+	if (h->ae_algo->ops->halt_autoneg)
+		h->ae_algo->ops->halt_autoneg(h, false);
 	if (if_running)
 		ndev->netdev_ops->ndo_open(ndev);
 }

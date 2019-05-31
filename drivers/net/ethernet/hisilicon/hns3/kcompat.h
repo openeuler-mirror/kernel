@@ -397,6 +397,11 @@ static inline void linkmode_clear_bit(int nr, volatile unsigned long *addr)
 	__clear_bit(nr, addr);
 }
 
+static inline void linkmode_zero(unsigned long *dst)
+{
+	bitmap_zero(dst, __ETHTOOL_LINK_MODE_MASK_NBITS);
+}
+
 #else
 
 #define HAS_LINK_MODE_OPS

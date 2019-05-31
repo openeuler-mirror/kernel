@@ -271,6 +271,8 @@ struct hnae3_ae_dev {
  *   get auto autonegotiation of pause frame use
  * restart_autoneg()
  *   restart autonegotiation
+ * halt_autoneg()
+ *   halt/resume autonegotiation when autonegotiation on
  * get_coalesce_usecs()
  *   get usecs to delay a TX interrupt after a packet is sent
  * get_rx_max_coalesced_frames()
@@ -390,6 +392,7 @@ struct hnae3_ae_ops {
 	int (*set_autoneg)(struct hnae3_handle *handle, bool enable);
 	int (*get_autoneg)(struct hnae3_handle *handle);
 	int (*restart_autoneg)(struct hnae3_handle *handle);
+	int (*halt_autoneg)(struct hnae3_handle *handle, bool halt);
 
 	void (*get_coalesce_usecs)(struct hnae3_handle *handle,
 				   u32 *tx_usecs, u32 *rx_usecs);
