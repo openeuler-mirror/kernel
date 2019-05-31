@@ -2051,7 +2051,7 @@ static void fatal_ecc_int_v3_hw(struct hisi_hba *hisi_hba)
 	u32 irq_value, irq_msk;
 
 	irq_msk = hisi_sas_read32(hisi_hba, SAS_ECC_INTR_MSK);
-	hisi_sas_write32(hisi_hba, SAS_ECC_INTR_MSK, irq_msk | 0xffffffff);
+	hisi_sas_write32(hisi_hba, SAS_ECC_INTR_MSK, 0xffffffff);
 
 	irq_value = hisi_sas_read32(hisi_hba, SAS_ECC_INTR);
 	if (irq_value)
