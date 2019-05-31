@@ -164,7 +164,6 @@ struct mtd_info *sflash_probe(struct map_info *map, struct resource *sfc_regres)
 		((sflash->sectorNumber * sflash->sectorSize) / 1024),
 		sflash->sectorNumber, (sflash->sectorSize / 1024));
 
-	__module_get(THIS_MODULE);
 	return mtd;
 
  exit0:

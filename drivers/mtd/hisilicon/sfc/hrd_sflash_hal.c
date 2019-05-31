@@ -999,7 +999,7 @@ static s32 SFC_RegWordAlignRead(struct SFC_SFLASH_INFO *sflash,
 	}
 
 	for (i = 0; i < ulDataCnt; i++) {
-		pulData[i] = SFC_RegisterRead(sflash->sfc_reg_base + DATABUFFER1 + 4*i);
+		pulData[i] = SFC_RegisterRead(sflash->sfc_reg_base + DATABUFFER1 + (u32)(4*i));
 	}
 
 	return ulRet;
@@ -1069,7 +1069,7 @@ static s32 SFC_RegWordAlignWrite(struct SFC_SFLASH_INFO *sflash,
 	ulDataCnt = ulWriteLen>>2;
 	for (i = 0; i < ulDataCnt; i++) {
 
-		SFC_RegisterWrite(sflash->sfc_reg_base + DATABUFFER1+4*i, ulData[i]);
+		SFC_RegisterWrite(sflash->sfc_reg_base + DATABUFFER1 + (u32)(4*i), ulData[i]);
 	}
 	SFC_RegisterWrite(sflash->sfc_reg_base + CMD_ADDR, ulOffsetAddr);
 

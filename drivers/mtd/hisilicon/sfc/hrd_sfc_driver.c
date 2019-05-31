@@ -27,9 +27,8 @@
 #include <linux/acpi.h>
 #include "hrdCommon.h"
 #include "hrd_sflash_driver.h"
-#include "hrd_sflash_hal.h"
 
-#define	SFC_DRIVER_VERSION	"1.7.8.0"
+#define	SFC_DRIVER_VERSION	"1.7.9.0"
 
 static const char *sflashMtdList[] = { "sflash", NULL };
 
@@ -147,6 +146,10 @@ static unsigned int flash_map_init(struct platform_device *pdev)
 	sfc_regres = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	flash_iores = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 
+	if (!sfc_regres || !flash_iores) {
+		return -EFAULT;
+	}
+
 	if (sfc_regres->end <= sfc_regres->start) {
 		pr_err("ERROR: sfc register error\n");
 		return -EFAULT;
@@ -193,7 +196,6 @@ static void __exit flash_map_exit(struct platform_device *pdev)
 	for (i = 0; i < host->mapsNum; i++) {
 		if (host->maps[i].mtdInfo) {
 			(void)mtd_device_unregister(host->maps[i].mtdInfo);
-			map_destroy(host->maps[i].mtdInfo);
 		}
 
 		if (host->maps[i].mapInfo.virt) {
@@ -201,7 +203,7 @@ static void __exit flash_map_exit(struct platform_device *pdev)
 			host->maps[i].mapInfo.virt = 0;
 		}
 
-		   if (host->maps[i].mtdInfo) {
+		if (host->maps[i].mtdInfo) {
 			sflash_destroy(host->maps[i].mtdInfo);
 		}
 	}
