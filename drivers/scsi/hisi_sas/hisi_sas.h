@@ -245,6 +245,28 @@ struct hisi_sas_debugfs_reg {
 	};
 };
 
+enum {
+	HISI_SAS_BIST_LOOPBACK_MODE_DIGITAL = 0,
+	HISI_SAS_BIST_LOOPBACK_MODE_SERDES,
+	HISI_SAS_BIST_LOOPBACK_MODE_REMOTE,
+};
+
+enum {
+	HISI_SAS_BIST_CODE_MODE_PRBS7 = 0,
+	HISI_SAS_BIST_CODE_MODE_PRBS23,
+	HISI_SAS_BIST_CODE_MODE_PRBS31,
+	HISI_SAS_BIST_CODE_MODE_JTPAT,
+	HISI_SAS_BIST_CODE_MODE_CJTPAT,
+	HISI_SAS_BIST_CODE_MODE_SCRAMBED_0,
+	HISI_SAS_BIST_CODE_MODE_TRAIN,
+	HISI_SAS_BIST_CODE_MODE_TRAIN_DONE,
+	HISI_SAS_BIST_CODE_MODE_HFTP,
+	HISI_SAS_BIST_CODE_MODE_MFTP,
+	HISI_SAS_BIST_CODE_MODE_LFTP,
+	HISI_SAS_BIST_CODE_MODE_FIXED_DATA,
+};
+
+
 struct hisi_sas_hw {
 	int (*hw_init)(struct hisi_hba *hisi_hba);
 	void (*setup_itct)(struct hisi_hba *hisi_hba,
@@ -297,6 +319,7 @@ struct hisi_sas_hw {
 
 	const struct hisi_sas_debugfs_reg *debugfs_reg_global;
 	const struct hisi_sas_debugfs_reg *debugfs_reg_port;
+	int (*set_bist)(struct hisi_hba *hisi_hba, bool enable);
 };
 
 struct hisi_hba {
@@ -364,6 +387,14 @@ struct hisi_hba {
 	u32 phy_state;
 	u32 intr_coal_ticks;	/* time of interrupt coalesce, unit:1us */
 	u32 intr_coal_count;	/* count of interrupt coalesce */
+	/* bist */
+	int bist_loopback_linkrate;
+	int bist_loopback_code_mode;
+	int bist_loopback_phy_id;
+	int bist_loopback_mode;
+	u32 bist_loopback_cnt;
+	int bist_loopback_enable;
+
 	int enable_dix_dif;
 
 	/* debugfs memories */
@@ -376,6 +407,7 @@ struct hisi_hba {
 
 	struct dentry *debugfs_dir;
 	struct dentry *debugfs_dump_dentry;
+	struct dentry *debugfs_bist_dentry;
 
 	bool user_ctl_irq;
 	unsigned int reply_map[NR_CPUS];

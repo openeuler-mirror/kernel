@@ -196,12 +196,28 @@
 #define PHY_CFG_PHY_RST_OFF		3
 #define PHY_CFG_PHY_RST_MSK		(0x1 << PHY_CFG_PHY_RST_OFF)
 #define PROG_PHY_LINK_RATE		(PORT_BASE + 0x8)
+#define CFG_PROG_PHY_LINK_RATE_OFF	8
+#define CFG_PROG_PHY_LINK_RATE_MSK	(0xf << CFG_PROG_PHY_LINK_RATE_OFF)
 #define PHY_CTRL			(PORT_BASE + 0x14)
 #define PHY_CTRL_RESET_OFF		0
 #define PHY_CTRL_RESET_MSK		(0x1 << PHY_CTRL_RESET_OFF)
 #define CMD_HDR_PIR_OFF			8
 #define CMD_HDR_PIR_MSK			(0x1 << CMD_HDR_PIR_OFF)
 #define SERDES_CFG			(PORT_BASE + 0x1c)
+#define CFG_ALOS_CHK_DISABLE_OFF	9
+#define CFG_ALOS_CHK_DISABLE_MSK	(0x1 << CFG_ALOS_CHK_DISABLE_OFF)
+#define SAS_PHY_BIST_CTRL		(PORT_BASE + 0x2c)
+#define CFG_BIST_MODE_SEL_OFF		0
+#define CFG_BIST_MODE_SEL_MSK		(0xf << CFG_BIST_MODE_SEL_OFF)
+#define CFG_LOOP_TEST_MODE_OFF		14
+#define CFG_LOOP_TEST_MODE_MSK		(0x3 << CFG_LOOP_TEST_MODE_OFF)
+#define CFG_RX_BIST_EN_OFF		16
+#define CFG_RX_BIST_EN_MSK		(0x1 << CFG_RX_BIST_EN_OFF)
+#define CFG_TX_BIST_EN_OFF		17
+#define CFG_TX_BIST_EN_MSK		(0x1 << CFG_TX_BIST_EN_OFF)
+#define CFG_BIST_TEST_OFF		18
+#define CFG_BIST_TEST_MSK		(0x1 << CFG_BIST_TEST_OFF)
+#define SAS_BIST_ERR_CNT		(PORT_BASE + 0x38)
 #define SL_CFG				(PORT_BASE + 0x84)
 #define AIP_LIMIT			(PORT_BASE + 0x90)
 #define SL_CONTROL			(PORT_BASE + 0x94)
@@ -3031,6 +3047,106 @@ static void debugfs_snapshot_restore_v3_hw(struct hisi_hba *hisi_hba)
 	clear_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
 }
 
+static void hisi_sas_phy_enable(struct hisi_hba *hisi_hba,
+	u32 phy_id, const u32 phy_state)
+{
+	u32 phy_val = 0;
+	u32 temp = 0;
+
+	phy_val = hisi_sas_phy_read32(hisi_hba, phy_id, PHY_CFG);
+	temp = (phy_val & (~PHY_CFG_ENA_MSK)) | (phy_state << PHY_CFG_ENA_OFF);
+	hisi_sas_phy_write32(hisi_hba, phy_id, PHY_CFG, temp);
+}
+
+static void hisi_sas_bist_test_prep_v3_hw(struct hisi_hba *hisi_hba)
+{
+	u32 reg_val;
+	int phy_id = hisi_hba->bist_loopback_phy_id;
+
+	/* disable PHY */
+	hisi_sas_phy_enable(hisi_hba, phy_id, 0);
+
+	/* disable ALOS */
+	reg_val = hisi_sas_phy_read32(hisi_hba, phy_id, SERDES_CFG);
+	reg_val |= CFG_ALOS_CHK_DISABLE_MSK;
+	hisi_sas_phy_write32(hisi_hba, phy_id, SERDES_CFG, reg_val);
+}
+
+static void hisi_sas_bist_test_restore_v3_hw(struct hisi_hba *hisi_hba)
+{
+	u32 reg_val;
+	int phy_id = hisi_hba->bist_loopback_phy_id;
+
+	/* disable loopback */
+	reg_val = hisi_sas_phy_read32(hisi_hba, phy_id, SAS_PHY_BIST_CTRL);
+	reg_val &= ~(CFG_RX_BIST_EN_MSK | CFG_TX_BIST_EN_MSK |
+		     CFG_BIST_TEST_MSK);
+	hisi_sas_phy_write32(hisi_hba, phy_id, SAS_PHY_BIST_CTRL, reg_val);
+
+	/* enable ALOS*/
+	reg_val = hisi_sas_phy_read32(hisi_hba, phy_id, SERDES_CFG);
+	reg_val &= ~CFG_ALOS_CHK_DISABLE_MSK;
+	hisi_sas_phy_write32(hisi_hba, phy_id, SERDES_CFG, reg_val);
+
+	/* enable PHY */
+	hisi_sas_phy_enable(hisi_hba, phy_id, 1);
+}
+
+static int debugfs_set_bist_v3_hw(struct hisi_hba *hisi_hba, bool enable)
+{
+	u32 reg_val, mode_tmp;
+	u32 linkrate = hisi_hba->bist_loopback_linkrate;
+	u32 phy_id = hisi_hba->bist_loopback_phy_id;
+	u32 code_mode = hisi_hba->bist_loopback_code_mode;
+	u32 path_mode = hisi_hba->bist_loopback_mode;
+
+	pr_err("linkrate=%d phy_id=%d code_mode=%d path_mode=%d\n", linkrate,
+			phy_id, code_mode, path_mode);
+	mode_tmp = path_mode ? 2 : 1;
+	if (enable) {
+		/* some preparations before bist test */
+		hisi_sas_bist_test_prep_v3_hw(hisi_hba);
+
+		/* set linkrate of bit test*/
+		reg_val = hisi_sas_phy_read32(hisi_hba, phy_id,
+					      PROG_PHY_LINK_RATE);
+		reg_val &= ~CFG_PROG_PHY_LINK_RATE_MSK;
+		reg_val |= (linkrate << CFG_PROG_PHY_LINK_RATE_OFF);
+		hisi_sas_phy_write32(hisi_hba, phy_id,
+				     PROG_PHY_LINK_RATE, reg_val);
+
+		/* set code mode of bit test */
+		reg_val = hisi_sas_phy_read32(hisi_hba, phy_id,
+					      SAS_PHY_BIST_CTRL);
+		reg_val &= ~(CFG_BIST_MODE_SEL_MSK |
+				CFG_LOOP_TEST_MODE_MSK |
+				CFG_RX_BIST_EN_MSK |
+				CFG_TX_BIST_EN_MSK |
+				CFG_BIST_TEST_MSK);
+		reg_val |= ((code_mode << CFG_BIST_MODE_SEL_OFF) |
+			    (mode_tmp << CFG_LOOP_TEST_MODE_OFF) |
+			    CFG_BIST_TEST_MSK);
+		hisi_sas_phy_write32(hisi_hba, phy_id,
+				     SAS_PHY_BIST_CTRL, reg_val);
+
+		mdelay(100);
+		reg_val |= (CFG_RX_BIST_EN_MSK | CFG_TX_BIST_EN_MSK);
+		hisi_sas_phy_write32(hisi_hba, phy_id,
+				     SAS_PHY_BIST_CTRL, reg_val);
+
+		/* clear error bit */
+		mdelay(100);
+		hisi_sas_phy_read32(hisi_hba, phy_id, SAS_BIST_ERR_CNT);
+	} else {
+		/* disable bist test and recover it */
+		hisi_hba->bist_loopback_cnt += hisi_sas_phy_read32(hisi_hba,
+				phy_id, SAS_BIST_ERR_CNT);
+		hisi_sas_bist_test_restore_v3_hw(hisi_hba);
+	}
+
+	return 0;
+}
+
 const struct cpumask *
 get_managed_irq_aff_v3_hw(struct hisi_hba *hisi_hba, int queue)
 {
@@ -3104,6 +3220,7 @@ static const struct hisi_sas_hw hisi_sas_v3_hw = {
 	.debugfs_reg_port = &debugfs_port_reg,
 	.snapshot_prepare = debugfs_snapshot_prepare_v3_hw,
 	.snapshot_restore = debugfs_snapshot_restore_v3_hw,
+	.set_bist = debugfs_set_bist_v3_hw,
 	.get_managed_irq_aff = get_managed_irq_aff_v3_hw,
 };
 

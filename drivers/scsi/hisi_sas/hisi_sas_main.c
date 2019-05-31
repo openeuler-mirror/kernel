@@ -2857,6 +2857,388 @@ static const struct file_operations hisi_sas_debugfs_global_fops = {
 	.owner = THIS_MODULE,
 };
 
+static struct {
+	int		value;
+	char		*name;
+} hisi_sas_debugfs_loop_linkrate[] = {
+	{ SAS_LINK_RATE_1_5_GBPS,		"1.5 Gbit" },
+	{ SAS_LINK_RATE_3_0_GBPS,		"3.0 Gbit" },
+	{ SAS_LINK_RATE_6_0_GBPS,	"6.0 Gbit" },
+	{ SAS_LINK_RATE_12_0_GBPS,	"12.0 Gbit"},
+};
+
+static int hisi_sas_debugfs_bist_linkrate_show(struct seq_file *s, void *p)
+{
+	struct hisi_hba *hisi_hba = s->private;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(hisi_sas_debugfs_loop_linkrate); i++) {
+		int match = (hisi_hba->bist_loopback_linkrate ==
+			     hisi_sas_debugfs_loop_linkrate[i].value);
+
+		seq_printf(s, "%s%s%s ", match ? "[" : "",
+			   hisi_sas_debugfs_loop_linkrate[i].name,
+			   match ? "]" : "");
+	}
+	seq_puts(s, "\n");
+
+	return 0;
+}
+
+ssize_t hisi_sas_debugfs_bist_linkrate_write(struct file *filp,
+					 const char __user *buf,
+					 size_t count, loff_t *ppos)
+{
+	struct seq_file *m = filp->private_data;
+	struct hisi_hba *hisi_hba = m->private;
+	char kbuf[16] = {}, *pkbuf;
+	bool found = false;
+	int i;
+
+	if (hisi_hba->bist_loopback_enable)
+		return -EINVAL;
+
+	if (count >= sizeof(kbuf))
+		return -EINVAL;
+
+	if (copy_from_user(kbuf, buf, count))
+		return -EINVAL;
+
+	pkbuf = strstrip(kbuf);
+
+	for (i = 0; i < ARRAY_SIZE(hisi_sas_debugfs_loop_linkrate); i++) {
+		if (!strncmp(hisi_sas_debugfs_loop_linkrate[i].name,
+			pkbuf, 16)) {
+			hisi_hba->bist_loopback_linkrate =
+				hisi_sas_debugfs_loop_linkrate[i].value;
+			found = true;
+			break;
+		}
+	}
+
+	if (!found) {
+		dev_err(hisi_hba->dev, "unknown mode\n");
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static int hisi_sas_debugfs_bist_linkrate_open(struct inode *inode,
+					   struct file *filp)
+{
+	return single_open(filp, hisi_sas_debugfs_bist_linkrate_show,
+			   inode->i_private);
+}
+
+static const struct file_operations hisi_sas_debugfs_bist_linkrate_ops = {
+	.open = hisi_sas_debugfs_bist_linkrate_open,
+	.read = seq_read,
+	.write = hisi_sas_debugfs_bist_linkrate_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+
+static struct {
+	int		value;
+	char		*name;
+} hisi_sas_debugfs_loop_code_mode[] = {
+	{ HISI_SAS_BIST_CODE_MODE_PRBS7,    "PRBS7" },
+	{ HISI_SAS_BIST_CODE_MODE_PRBS23,    "PRBS23" },
+	{ HISI_SAS_BIST_CODE_MODE_PRBS31,    "PRBS31" },
+	{ HISI_SAS_BIST_CODE_MODE_JTPAT,    "JTPAT" },
+	{ HISI_SAS_BIST_CODE_MODE_CJTPAT,    "CJTPAT" },
+	{ HISI_SAS_BIST_CODE_MODE_SCRAMBED_0,    "SCRAMBED_0" },
+	{ HISI_SAS_BIST_CODE_MODE_TRAIN,    "TRAIN" },
+	{ HISI_SAS_BIST_CODE_MODE_TRAIN_DONE,    "TRAIN_DONE" },
+	{ HISI_SAS_BIST_CODE_MODE_HFTP,    "HFTP" },
+	{ HISI_SAS_BIST_CODE_MODE_MFTP,    "MFTP" },
+	{ HISI_SAS_BIST_CODE_MODE_LFTP,    "LFTP" },
+	{ HISI_SAS_BIST_CODE_MODE_FIXED_DATA,    "FIXED_DATA" },
+};
+
+static int hisi_sas_debugfs_bist_code_mode_show(struct seq_file *s, void *p)
+{
+	struct hisi_hba *hisi_hba = s->private;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(hisi_sas_debugfs_loop_code_mode); i++) {
+		int match = (hisi_hba->bist_loopback_code_mode ==
+			     hisi_sas_debugfs_loop_code_mode[i].value);
+
+		seq_printf(s, "%s%s%s ", match ? "[" : "",
+			   hisi_sas_debugfs_loop_code_mode[i].name,
+			   match ? "]" : "");
+	}
+	seq_puts(s, "\n");
+
+	return 0;
+}
+
+ssize_t hisi_sas_debugfs_bist_code_mode_write(struct file *filp,
+					 const char __user *buf,
+					 size_t count, loff_t *ppos)
+{
+	struct seq_file *m = filp->private_data;
+	struct hisi_hba *hisi_hba = m->private;
+	char kbuf[16] = {}, *pkbuf;
+	bool found = false;
+	int i;
+
+	if (hisi_hba->bist_loopback_enable)
+		return -EINVAL;
+
+	if (count >= sizeof(kbuf))
+		return -EINVAL;
+
+	if (copy_from_user(kbuf, buf, count))
+		return -EINVAL;
+
+	pkbuf = strstrip(kbuf);
+
+	for (i = 0; i < ARRAY_SIZE(hisi_sas_debugfs_loop_code_mode); i++) {
+		if (!strncmp(hisi_sas_debugfs_loop_code_mode[i].name,
+			pkbuf, 16)) {
+			hisi_hba->bist_loopback_code_mode =
+				hisi_sas_debugfs_loop_code_mode[i].value;
+			found = true;
+			break;
+		}
+	}
+
+	if (!found) {
+		dev_err(hisi_hba->dev, "unknown mode\n");
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static int hisi_sas_debugfs_bist_code_mode_open(struct inode *inode,
+					   struct file *filp)
+{
+	return single_open(filp, hisi_sas_debugfs_bist_code_mode_show,
+			   inode->i_private);
+}
+
+static const struct file_operations hisi_sas_debugfs_bist_code_mode_ops = {
+	.open = hisi_sas_debugfs_bist_code_mode_open,
+	.read = seq_read,
+	.write = hisi_sas_debugfs_bist_code_mode_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+
+ssize_t hisi_sas_debugfs_bist_phy_write(struct file *filp,
+					const char __user *buf,
+					size_t count, loff_t *ppos)
+{
+	struct seq_file *m = filp->private_data;
+	struct hisi_hba *hisi_hba = m->private;
+	char kbuf[16] = {}, *pkbuf;
+	int val, phy;
+
+	if (hisi_hba->bist_loopback_enable)
+		return -EINVAL;
+
+	if (count >= sizeof(kbuf))
+		return -EINVAL;
+
+	if (copy_from_user(kbuf, buf, count))
+		return -EINVAL;
+
+	pkbuf = strstrip(kbuf);
+
+	val = kstrtoint(pkbuf, 0, &phy);
+	if (val < 0)
+		return val;
+
+	if (phy >= hisi_hba->n_phy) {
+		dev_err(hisi_hba->dev, "phy index %d exceeds limit\n", phy);
+		return -EINVAL;
+	}
+
+	hisi_hba->bist_loopback_phy_id = phy;
+
+	return count;
+}
+
+static int hisi_sas_debugfs_bist_phy_show(struct seq_file *s, void *p)
+{
+	struct hisi_hba *hisi_hba = s->private;
+
+	seq_printf(s, "%d\n", hisi_hba->bist_loopback_phy_id);
+
+	return 0;
+}
+
+static int hisi_sas_debugfs_bist_phy_open(struct inode *inode,
+					  struct file *filp)
+{
+	return single_open(filp, hisi_sas_debugfs_bist_phy_show,
+			   inode->i_private);
+}
+
+static const struct file_operations hisi_sas_debugfs_bist_phy_ops = {
+	.open = hisi_sas_debugfs_bist_phy_open,
+	.read = seq_read,
+	.write = hisi_sas_debugfs_bist_phy_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+
+static struct {
+	int		value;
+	char		*name;
+} hisi_sas_debugfs_loop_modes[] = {
+	{ HISI_SAS_BIST_LOOPBACK_MODE_DIGITAL,		"digial" },
+	{ HISI_SAS_BIST_LOOPBACK_MODE_SERDES,		"serdes" },
+	{ HISI_SAS_BIST_LOOPBACK_MODE_REMOTE,	"remote" },
+};
+
+static int hisi_sas_debugfs_bist_mode_show(struct seq_file *s, void *p)
+{
+	struct hisi_hba *hisi_hba = s->private;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(hisi_sas_debugfs_loop_modes); i++) {
+		int match = (hisi_hba->bist_loopback_mode ==
+			     hisi_sas_debugfs_loop_modes[i].value);
+
+		seq_printf(s, "%s%s%s ", match ? "[" : "",
+			   hisi_sas_debugfs_loop_modes[i].name,
+			   match ? "]" : "");
+	}
+	seq_puts(s, "\n");
+
+	return 0;
+}
+
+ssize_t hisi_sas_debugfs_bist_mode_write(struct file *filp,
+					 const char __user *buf,
+					 size_t count, loff_t *ppos)
+{
+	struct seq_file *m = filp->private_data;
+	struct hisi_hba *hisi_hba = m->private;
+	char kbuf[16] = {}, *pkbuf;
+	bool found = false;
+	int i;
+
+	if (hisi_hba->bist_loopback_enable)
+		return -EINVAL;
+
+	if (count >= sizeof(kbuf))
+		return -EINVAL;
+
+	if (copy_from_user(kbuf, buf, count))
+		return -EINVAL;
+
+	pkbuf = strstrip(kbuf);
+
+	for (i = 0; i < ARRAY_SIZE(hisi_sas_debugfs_loop_modes); i++) {
+		if (!strncmp(hisi_sas_debugfs_loop_modes[i].name, pkbuf, 16)) {
+			hisi_hba->bist_loopback_mode =
+				hisi_sas_debugfs_loop_modes[i].value;
+			found = true;
+			break;
+		}
+	}
+
+	if (!found) {
+		dev_err(hisi_hba->dev, "unknown mode\n");
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static int hisi_sas_debugfs_bist_mode_open(struct inode *inode,
+					   struct file *filp)
+{
+	return single_open(filp, hisi_sas_debugfs_bist_mode_show,
+			   inode->i_private);
+}
+
+static const struct file_operations hisi_sas_debugfs_bist_mode_ops = {
+	.open = hisi_sas_debugfs_bist_mode_open,
+	.read = seq_read,
+	.write = hisi_sas_debugfs_bist_mode_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+
+ssize_t hisi_sas_debugfs_bist_enable_write(struct file *filp,
+					   const char __user *buf,
+					   size_t count, loff_t *ppos)
+{
+	struct seq_file *m = filp->private_data;
+	struct hisi_hba *hisi_hba = m->private;
+	char kbuf[16] = {}, *pkbuf;
+	int val;
+	unsigned int enable;
+
+	if (count >= sizeof(kbuf))
+		return -EINVAL;
+
+	if (copy_from_user(kbuf, buf, count))
+		return -EINVAL;
+
+	pkbuf = strstrip(kbuf);
+
+	val = kstrtoint(pkbuf, 0, &enable);
+	if (val < 0)
+		return val;
+
+	if (enable > 1) {
+		dev_err(hisi_hba->dev, "must be 0 or 1\n");
+		return -EINVAL;
+	}
+
+	if (enable == hisi_hba->bist_loopback_enable)
+		return count;
+
+	if (!hisi_hba->hw->set_bist)
+		return -EPERM;
+
+	val = hisi_hba->hw->set_bist(hisi_hba, (bool)enable);
+	if (val < 0)
+		return val;
+
+	hisi_hba->bist_loopback_enable = enable;
+
+	return count;
+}
+
+static int hisi_sas_debugfs_bist_enable_show(struct seq_file *s, void *p)
+{
+	struct hisi_hba *hisi_hba = s->private;
+
+	seq_printf(s, "%d\n", hisi_hba->bist_loopback_enable);
+
+	return 0;
+}
+
+static int hisi_sas_debugfs_bist_enable_open(struct inode *inode,
+					     struct file *filp)
+{
+	return single_open(filp, hisi_sas_debugfs_bist_enable_show,
+			   inode->i_private);
+}
+
+static const struct file_operations hisi_sas_debugfs_bist_enable_ops = {
+	.open = hisi_sas_debugfs_bist_enable_open,
+	.read = seq_read,
+	.write = hisi_sas_debugfs_bist_enable_write,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.owner = THIS_MODULE,
+};
+
+
 static int hisi_sas_debugfs_port_show(struct seq_file *s, void *p)
 {
 	struct hisi_sas_phy *phy = s->private;
@@ -3207,6 +3589,38 @@ void hisi_sas_debugfs_init(struct hisi_hba *hisi_hba)
 			    hisi_hba->debugfs_dir,
 			    hisi_hba,
 			    &hisi_sas_debugfs_trigger_dump_fops);
+	/* create bist structures */
+	hisi_hba->debugfs_bist_dentry = debugfs_create_dir("bist",
+						hisi_hba->debugfs_dir);
+	if (!hisi_hba->debugfs_bist_dentry)
+		goto fail_global;
+
+	if (!debugfs_create_file("link_rate", 0644,
+				 hisi_hba->debugfs_bist_dentry, hisi_hba,
+				 &hisi_sas_debugfs_bist_linkrate_ops))
+		goto fail_global;
+
+	if (!debugfs_create_file("code_mode", 0644,
+				 hisi_hba->debugfs_bist_dentry, hisi_hba,
+				 &hisi_sas_debugfs_bist_code_mode_ops))
+		goto fail_global;
+
+	if (!debugfs_create_file("phy_id", 0644, hisi_hba->debugfs_bist_dentry,
+				 hisi_hba, &hisi_sas_debugfs_bist_phy_ops))
+		goto fail_global;
+
+	if (!debugfs_create_u32("cnt", 0644, hisi_hba->debugfs_bist_dentry,
+			&hisi_hba->bist_loopback_cnt))
+		goto fail_global;
+
+	if (!debugfs_create_file("loopback mode", 0400,
+				 hisi_hba->debugfs_bist_dentry,
+				 hisi_hba, &hisi_sas_debugfs_bist_mode_ops))
+		goto fail_global;
+
+	if (!debugfs_create_file("enable", 0644, hisi_hba->debugfs_bist_dentry,
+				 hisi_hba, &hisi_sas_debugfs_bist_enable_ops))
+		goto fail_global;
 
 	/* Alloc buffer for global */
 	sz = hisi_hba->hw->debugfs_reg_global->count * 4;
