@@ -1047,12 +1047,13 @@ static void hisi_sas_dev_gone(struct domain_device *device)
 	struct hisi_sas_device *sas_dev = device->lldd_dev;
 	struct hisi_hba *hisi_hba = dev_to_hisi_hba(device);
 	struct device *dev = hisi_hba->dev;
+	int rc = 0;
 
 	dev_info(dev, "dev[%d:%x] is gone\n",
 		 sas_dev->device_id, sas_dev->dev_type);
 
 	if (!test_bit(HISI_SAS_RESET_BIT, &hisi_hba->flags)) {
-		hisi_sas_internal_task_abort(hisi_hba, device,
+		rc = hisi_sas_internal_task_abort(hisi_hba, device,
 				     HISI_SAS_INT_ABT_DEV, 0);
 
 		hisi_sas_dereg_device(hisi_hba, device);
@@ -1070,6 +1071,10 @@ static void hisi_sas_dev_gone(struct domain_device *device)
 	if (hisi_hba->hw->free_device)
 		hisi_hba->hw->free_device(sas_dev);
 	sas_dev->dev_type = SAS_PHY_UNUSED;
+	if (rc == -EIO) {
+		dev_err(dev, "internal abort timeout for dev gone.\n");
+		queue_work(hisi_hba->wq, &hisi_hba->rst_work);
+	}
 }
 
 static int hisi_sas_queue_command(struct sas_task *task, gfp_t gfp_flags)
