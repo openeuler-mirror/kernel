@@ -509,6 +509,13 @@ struct hisi_sas_err_record_v3 {
 #define PCI_IRQ_AXI_FATAL 11
 #define PCI_IRQ_CQ_BASE HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW
 
+#define HISI_SAS_IS_RW_CMD(op) \
+	((op == READ_6) || (op == WRITE_6) || \
+	(op == READ_10) || (op == WRITE_10) || \
+	(op == READ_12) || (op == WRITE_12) || \
+	(op == READ_16) || (op == WRITE_16) || \
+	(op == READ_32) || (op == WRITE_32))
+
 enum {
 	DSM_FUNC_ERR_HANDLE_MSI = 0,
 };
@@ -1306,6 +1313,10 @@ static void prep_ssp_v3_hw(struct hisi_hba *hisi_hba,
 		dw1 |= 2 << CMD_HDR_FRAME_TYPE_OFF; /* task frame */
 		dw1 |= DIR_NO_DATA << CMD_HDR_DIR_OFF;
 	} else {
+		if (!HISI_SAS_IS_RW_CMD(scsi_cmnd->cmnd[0]))
+			dw1 = 0 << CMD_HDR_VDTL_OFF;
+		else
+			dw1 = 1 << CMD_HDR_VDTL_OFF;
 		dw1 |= 1 << CMD_HDR_FRAME_TYPE_OFF;
 		switch (scsi_cmnd->sc_data_direction) {
 		case DMA_TO_DEVICE:
@@ -2217,12 +2228,12 @@ slot_err_v3_hw(struct hisi_hba *hisi_hba, struct sas_task *task,
 
 	switch (task->task_proto) {
 	case SAS_PROTOCOL_SSP:
-		if (dma_rx_err_type & RX_DATA_LEN_UNDERFLOW_MSK) {
-			ts->residual = trans_tx_fail_type;
-			ts->stat = SAS_DATA_UNDERRUN;
-		} else if (complete_hdr->dw3 & CMPLT_HDR_IO_IN_TARGET_MSK) {
+		if (complete_hdr->dw3 & CMPLT_HDR_IO_IN_TARGET_MSK) {
 			ts->stat = SAS_QUEUE_FULL;
 			slot->abort = 1;
+		} else if (dma_rx_err_type & RX_DATA_LEN_UNDERFLOW_MSK) {
+			ts->residual = trans_tx_fail_type;
+			ts->stat = SAS_DATA_UNDERRUN;
 		} else {
 			ts->stat = SAS_OPEN_REJECT;
 			ts->open_rej_reason = SAS_OREJ_RSVD_RETRY;
@@ -2231,12 +2242,12 @@ slot_err_v3_hw(struct hisi_hba *hisi_hba, struct sas_task *task,
 	case SAS_PROTOCOL_SATA:
 	case SAS_PROTOCOL_STP:
 	case SAS_PROTOCOL_SATA | SAS_PROTOCOL_STP:
-		if (dma_rx_err_type & RX_DATA_LEN_UNDERFLOW_MSK) {
-			ts->residual = trans_tx_fail_type;
-			ts->stat = SAS_DATA_UNDERRUN;
-		} else if (complete_hdr->dw3 & CMPLT_HDR_IO_IN_TARGET_MSK) {
+		if (complete_hdr->dw3 & CMPLT_HDR_IO_IN_TARGET_MSK) {
 			ts->stat = SAS_PHY_DOWN;
 			slot->abort = 1;
+		} else if (dma_rx_err_type & RX_DATA_LEN_UNDERFLOW_MSK) {
+			ts->residual = trans_tx_fail_type;
+			ts->stat = SAS_DATA_UNDERRUN;
 		} else {
 			ts->stat = SAS_OPEN_REJECT;
 			ts->open_rej_reason = SAS_OREJ_RSVD_RETRY;
