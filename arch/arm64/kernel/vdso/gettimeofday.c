@@ -347,12 +347,13 @@ notrace int __kernel_gettimeofday(struct timeval *tv, struct timezone *tz)
 
 int __kernel_clock_getres(clockid_t clock_id, struct timespec *res)
 {
+	struct vdso_data *vd = &_vdso_data;
 	u64 ns;
 
 	if (clock_id == CLOCK_REALTIME ||
 	    clock_id == CLOCK_MONOTONIC ||
 	    clock_id == CLOCK_MONOTONIC_RAW)
-		ns = MONOTONIC_RES_NSEC;
+		ns = vd->hrtimer_res;
 	else if (clock_id == CLOCK_REALTIME_COARSE ||
 		 clock_id == CLOCK_MONOTONIC_COARSE)
 		ns = LOW_RES_NSEC;
