@@ -1252,13 +1252,17 @@ unsigned long __init_memblock memblock_next_valid_pfn(unsigned long pfn)
 		if (pfn >= start_pfn && pfn < end_pfn)
 			return pfn;
 
-		early_region_idx++;
+		/* try slow path */
+		if (++early_region_idx == type->cnt)
+			goto slow_path;
+
 		next_start_pfn = PFN_DOWN(regions[early_region_idx].base);
 
 		if (pfn >= end_pfn && pfn <= next_start_pfn)
 			return next_start_pfn;
 	}
 
+slow_path:
 	/* slow path, do the binary searching */
 	do {
 		mid = (right + left) / 2;
