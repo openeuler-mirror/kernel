@@ -381,7 +381,7 @@ static int create_kernel_srq(struct ib_pd *pd, struct hns_roce_srq *srq,
 		dev_err(hr_dev->dev, "write mtt error for idx que\n");
 		goto err_kernel_idx_buf;
 	}
-	srq->wrid = kvmalloc_array(srq->max, sizeof(u64), GFP_KERNEL);
+	srq->wrid = kcalloc(srq->max, sizeof(u64), GFP_KERNEL);
 	if (!srq->wrid) {
 		ret = -ENOMEM;
 		goto err_kernel_idx_buf;
@@ -418,7 +418,7 @@ static void destroy_user_srq(struct hns_roce_dev *hr_dev,
 static void destroy_kernel_srq(struct hns_roce_dev *hr_dev,
 			       struct hns_roce_srq *srq, int srq_buf_size)
 {
-	kvfree(srq->wrid);
+	kfree(srq->wrid);
 	hns_roce_mtt_cleanup(hr_dev, &srq->idx_que.mtt);
 	hns_roce_buf_free(hr_dev, srq->idx_que.buf_size, &srq->idx_que.idx_buf);
 	kfree(srq->idx_que.bitmap);
@@ -530,7 +530,7 @@ int hns_roce_destroy_srq(struct ib_srq *ibsrq)
 		ib_umem_release(srq->idx_que.umem);
 		ib_umem_release(srq->umem);
 	} else {
-		kvfree(srq->wrid);
+		kfree(srq->wrid);
 		hns_roce_buf_free(hr_dev, srq->max << srq->wqe_shift,
 				  &srq->buf);
 	}

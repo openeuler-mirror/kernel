@@ -33,7 +33,6 @@
 #include "roce_k_compat.h"
 
 #include <linux/platform_device.h>
-#include <linux/vmalloc.h>
 #include "hns_roce_device.h"
 #include <rdma/ib_umem.h>
 
@@ -343,7 +342,7 @@ void hns_roce_free_buf_list(dma_addr_t **bufs, int region_cnt)
 
 	for (i = 0; i < region_cnt; i++) {
 		if (bufs[i]) {
-			kvfree(bufs[i]);
+			kfree(bufs[i]);
 			bufs[i] = NULL;
 		}
 	}
@@ -357,7 +356,7 @@ int hns_roce_alloc_buf_list(struct hns_roce_buf_region *regions,
 
 	for (i = 0; i < region_cnt; i++) {
 		r = &regions[i];
-		bufs[i] = kvcalloc(r->count, sizeof(dma_addr_t), GFP_KERNEL);
+		bufs[i] = kcalloc(r->count, sizeof(dma_addr_t), GFP_KERNEL);
 		if (!bufs[i])
 			goto err_alloc;
 	}
