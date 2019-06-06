@@ -556,9 +556,8 @@ static void handle_tx_copy(struct vhost_net *net, struct socket *sock)
 	size_t len, total_len = 0;
 	int err;
 	int sent_pkts = 0;
-	bool next_round = false;
 
-	do {
+	for (;;) {
 		bool busyloop_intr = false;
 
 		head = get_tx_bufs(net, nvq, &msg, &out, &in, &len,
@@ -599,10 +598,11 @@ static void handle_tx_copy(struct vhost_net *net, struct socket *sock)
 				 err, len);
 		if (++nvq->done_idx >= VHOST_NET_BATCH)
 			vhost_net_signal_used(nvq);
-	} while (!(next_round = vhost_exceeds_weight(++sent_pkts, total_len)));
-
-	if (next_round)
-		vhost_poll_queue(&vq->poll);
+		if (vhost_exceeds_weight(++sent_pkts, total_len)) {
+			vhost_poll_queue(&vq->poll);
+			break;
+		}
+	}
 
 	vhost_net_signal_used(nvq);
 }
@@ -625,9 +625,8 @@ static void handle_tx_zerocopy(struct vhost_net *net, struct socket *sock)
 	struct vhost_net_ubuf_ref *uninitialized_var(ubufs);
 	bool zcopy_used;
 	int sent_pkts = 0;
-	bool next_round = false;
 
-	do {
+	for (;;) {
 		bool busyloop_intr;
 
 		/* Release DMAs done buffers first */
@@ -702,10 +701,11 @@ static void handle_tx_zerocopy(struct vhost_net *net, struct socket *sock)
 		else
 			vhost_zerocopy_signal_used(net, vq);
 		vhost_net_tx_packet(net);
-	} while (!(next_round = vhost_exceeds_weight(++sent_pkts, total_len)));
-
-	if (next_round)
-		vhost_poll_queue(&vq->poll);
+		if (unlikely(vhost_exceeds_weight(++sent_pkts, total_len))) {
+			vhost_poll_queue(&vq->poll);
+			break;
+		}
+	}
 }
 
 /* Expects to be always run from workqueue - which acts as
@@ -922,7 +922,6 @@ static void handle_rx(struct vhost_net *net)
 	struct iov_iter fixup;
 	__virtio16 num_buffers;
 	int recv_pkts = 0;
-	bool next_round = false;
 
 	mutex_lock_nested(&vq->mutex, 0);
 	sock = vq->private_data;
@@ -942,11 +941,8 @@ static void handle_rx(struct vhost_net *net)
 		vq->log : NULL;
 	mergeable = vhost_has_feature(vq, VIRTIO_NET_F_MRG_RXBUF);
 
-	do {
-		sock_len = vhost_net_rx_peek_head_len(net, sock->sk,
-						      &busyloop_intr);
-		if (!sock_len)
-			break;
+	while ((sock_len = vhost_net_rx_peek_head_len(net, sock->sk,
+						      &busyloop_intr))) {
 		sock_len += sock_hlen;
 		vhost_len = sock_len + vhost_hlen;
 		headcount = get_rx_bufs(vq, vq->heads + nvq->done_idx,
@@ -1031,9 +1027,12 @@ static void handle_rx(struct vhost_net *net)
 			vhost_log_write(vq, vq_log, log, vhost_len,
 					vq->iov, in);
 		total_len += vhost_len;
-	} while (!(next_round = vhost_exceeds_weight(++recv_pkts, total_len)));
-
-	if (unlikely(busyloop_intr || next_round))
+		if (unlikely(vhost_exceeds_weight(++recv_pkts, total_len))) {
+			vhost_poll_queue(&vq->poll);
+			goto out;
+		}
+	}
+	if (unlikely(busyloop_intr))
 		vhost_poll_queue(&vq->poll);
 	else
 		vhost_net_enable_vq(net, vq);
