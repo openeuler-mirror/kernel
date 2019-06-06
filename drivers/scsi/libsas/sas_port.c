@@ -215,8 +215,6 @@ void sas_deform_port(struct asd_sas_phy *phy, int gone)
 	struct domain_device *dev;
 	unsigned long flags;
 
-	phy->phy->negotiated_linkrate = SAS_LINK_RATE_UNKNOWN;
-
 	if (!port)
 		return;		  /* done by a phy event */
 
