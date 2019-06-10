@@ -2945,8 +2945,8 @@ static int hclge_notify_roce_client(struct hclge_dev *hdev,
 	int ret = 0;
 	u16 i;
 
-	if (!client)
-	        return 0;
+	if (!test_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state) || !client)
+		return 0;
 
 	if (!client->ops->reset_notify)
 	        return -EOPNOTSUPP;
@@ -3052,7 +3052,7 @@ int hclge_set_all_vf_rst(struct hclge_dev *hdev, bool reset)
 		ret = hclge_set_vf_rst(hdev, vport->vport_id, reset);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
-				"set vf(%d) rst failded %d!\n",
+				"set vf(%d) rst failed %d!\n",
 				vport->vport_id, ret);
 			return ret;
 		}
@@ -3067,7 +3067,7 @@ int hclge_set_all_vf_rst(struct hclge_dev *hdev, bool reset)
 		ret = hclge_inform_reset_assert_to_vf(vport);
 		if (ret)
 			dev_warn(&hdev->pdev->dev,
-				 "inform reset to vf(%d) failded %d!\n",
+				 "inform reset to vf(%d) failed %d!\n",
 				 vport->vport_id, ret);
 	}
 
@@ -3099,8 +3099,10 @@ static void hclge_do_reset(struct hclge_dev *hdev)
 	u32 val;
 
 	if (hclge_get_hw_reset_stat(handle)) {
-		dev_info(&pdev->dev, "ongoing hardware reset:0x%x\n",
-			 hclge_read_dev(&hdev->hw, HCLGE_FUN_RST_ING));
+		dev_info(&pdev->dev, "Hardware reset not finish\n");
+		dev_info(&pdev->dev, "func_rst_reg:0x%x, global_rst_reg:0x%x\n",
+			 hclge_read_dev(&hdev->hw, HCLGE_FUN_RST_ING),
+			 hclge_read_dev(&hdev->hw, HCLGE_GLOBAL_RESET_REG));
 		return;
 	}
 
@@ -3415,13 +3417,14 @@ static void hclge_reset(struct hclge_dev *hdev)
 	rtnl_unlock();
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_INIT_CLIENT);
-	/* ignore RoCE notify error if it fails HCLGE_RESET_MAX_FAIL_CNT -1
+	/* ignore RoCE notify error if it fails HCLGE_RESET_MAX_FAIL_CNT - 1
 	 * times
 	 */
 	if (ret && hdev->reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT - 1)
 		goto err_reset;
 
 	rtnl_lock();
+
 	ret = hclge_notify_client(hdev, HNAE3_UP_CLIENT);
 	if (ret)
 		goto err_reset_lock;
@@ -8465,6 +8468,7 @@ static int hclge_init_roce_client_instance(struct hnae3_ae_dev *ae_dev,
 {
 	struct hnae3_client *client = vport->roce.client;
 	struct hclge_dev *hdev = ae_dev->priv;
+	int rst_cnt = hdev->rst_stats.reset_cnt;
 	int ret;
 
 	if (!hnae3_dev_roce_supported(hdev) || !hdev->roce_client ||
@@ -8479,6 +8483,13 @@ static int hclge_init_roce_client_instance(struct hnae3_ae_dev *ae_dev,
 	if (ret)
 		return ret;
 
+	set_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);
+	if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) ||
+	    rst_cnt != hdev->rst_stats.reset_cnt) {
+		clear_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);
+		goto init_roce_err;
+	}
+
 	hnae3_set_client_init_flag(client, ae_dev, 1);
 
 	/* Enable roce ras interrupts */
@@ -8488,6 +8499,11 @@ static int hclge_init_roce_client_instance(struct hnae3_ae_dev *ae_dev,
 			"fail(%d) to enable roce ras interrupts\n", ret);
 
 	return ret;
+
+init_roce_err:
+	hdev->roce_client->ops->uninit_instance(&vport->roce, 0);
+
+	return -EBUSY;
 }
 
 static int hclge_init_client_instance(struct hnae3_client *client,
@@ -8551,6 +8567,7 @@ static void hclge_uninit_client_instance(struct hnae3_client *client,
 	for (i = 0; i < hdev->num_vmdq_vport + 1; i++) {
 		vport = &hdev->vport[i];
 		if (hdev->roce_client) {
+			clear_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);
 			hdev->roce_client->ops->uninit_instance(&vport->roce,
 								0);
 			hdev->roce_client = NULL;
