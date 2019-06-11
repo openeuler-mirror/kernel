@@ -8442,23 +8442,28 @@ static int hclge_init_nic_client_instance(struct hnae3_ae_dev *ae_dev,
 	set_bit(HCLGE_STATE_NIC_REGISTERED, &hdev->state);
 	if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) ||
 	    rst_cnt != hdev->rst_stats.reset_cnt) {
-		clear_bit(HCLGE_STATE_NIC_REGISTERED,
-			  &hdev->state);
+		ret = -EBUSY;
+		goto init_nic_err;
+	}
 
-		client->ops->uninit_instance(&vport->nic, 0);
-		return  -EBUSY;
+	/* Enable nic hw error interrupts */
+	ret = hclge_config_nic_hw_error(hdev, true);
+	if (ret) {
+		dev_err(&ae_dev->pdev->dev,
+			"fail(%d) to enable hw error interrupts\n", ret);
+		goto init_nic_err;
 	}
 
 	hnae3_set_client_init_flag(client, ae_dev, 1);
 
-	/* Enable nic hw error interrupts */
-	ret = hclge_config_nic_hw_error(hdev, true);
-	if (ret)
-		dev_err(&ae_dev->pdev->dev,
-			"fail(%d) to enable hw error interrupts\n", ret);
-
 	if (netif_msg_drv(&hdev->vport->nic))
 		hclge_info_show(hdev);
+
+	return ret;
+
+init_nic_err:
+	clear_bit(HCLGE_STATE_NIC_REGISTERED, &hdev->state);
+	client->ops->uninit_instance(&vport->nic, 0);
 
 	return ret;
 }
@@ -8486,24 +8491,27 @@ static int hclge_init_roce_client_instance(struct hnae3_ae_dev *ae_dev,
 	set_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);
 	if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) ||
 	    rst_cnt != hdev->rst_stats.reset_cnt) {
-		clear_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);
+		ret = -EBUSY;
+		goto init_roce_err;
+	}
+
+	/* Enable roce ras interrupts */
+	ret = hclge_config_rocee_ras_interrupt(hdev, true);
+	if (ret) {
+		dev_err(&ae_dev->pdev->dev,
+			"fail(%d) to enable roce ras interrupts\n", ret);
 		goto init_roce_err;
 	}
 
 	hnae3_set_client_init_flag(client, ae_dev, 1);
 
-	/* Enable roce ras interrupts */
-	ret = hclge_config_rocee_ras_interrupt(hdev, true);
-	if (ret)
-		dev_err(&ae_dev->pdev->dev,
-			"fail(%d) to enable roce ras interrupts\n", ret);
-
 	return ret;
 
 init_roce_err:
+	clear_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);
 	hdev->roce_client->ops->uninit_instance(&vport->roce, 0);
 
-	return -EBUSY;
+	return ret;
 }
 
 static int hclge_init_client_instance(struct hnae3_client *client,
