@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <linux/kernel.h>
+#include <linux/perf_event.h>
 
 #include "../perf.h"
 #include "build-id.h"
