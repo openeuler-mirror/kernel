@@ -8463,6 +8463,9 @@ static int hclge_init_nic_client_instance(struct hnae3_ae_dev *ae_dev,
 
 init_nic_err:
 	clear_bit(HCLGE_STATE_NIC_REGISTERED, &hdev->state);
+	while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+		msleep(HCLGE_WAIT_RESET_DONE);
+
 	client->ops->uninit_instance(&vport->nic, 0);
 
 	return ret;
@@ -8509,6 +8512,9 @@ static int hclge_init_roce_client_instance(struct hnae3_ae_dev *ae_dev,
 
 init_roce_err:
 	clear_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);
+	while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+		msleep(HCLGE_WAIT_RESET_DONE);
+
 	hdev->roce_client->ops->uninit_instance(&vport->roce, 0);
 
 	return ret;
@@ -8576,6 +8582,9 @@ static void hclge_uninit_client_instance(struct hnae3_client *client,
 		vport = &hdev->vport[i];
 		if (hdev->roce_client) {
 			clear_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);
+			while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+				msleep(HCLGE_WAIT_RESET_DONE);
+
 			hdev->roce_client->ops->uninit_instance(&vport->roce,
 								0);
 			hdev->roce_client = NULL;
@@ -8585,6 +8594,8 @@ static void hclge_uninit_client_instance(struct hnae3_client *client,
 			return;
 		if (hdev->nic_client && client->ops->uninit_instance) {
 			clear_bit(HCLGE_STATE_NIC_REGISTERED, &hdev->state);
+			while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+				msleep(HCLGE_WAIT_RESET_DONE);
 
 			client->ops->uninit_instance(&vport->nic, 0);
 			hdev->nic_client = NULL;

@@ -646,6 +646,7 @@ struct hclge_mac_tnl_stats {
 };
 
 #define HCLGE_RESET_INTERVAL	(12 * HZ)
+#define HCLGE_WAIT_RESET_DONE	100
 
 /* For each bit of TCAM entry, it uses a pair of 'x' and
  * 'y' to indicate which value to match, like below:
