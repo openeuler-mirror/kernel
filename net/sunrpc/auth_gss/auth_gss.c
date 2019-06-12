@@ -1920,6 +1920,15 @@ out:
 }
 
 static inline int
+gss_unwrap_resp_auth(struct rpc_cred *cred)
+{
+	struct rpc_auth *auth = cred->cr_auth;
+
+	auth->au_rslack = auth->au_verfsize;
+	return 0;
+}
+
+static inline int
 gss_unwrap_resp_integ(struct rpc_cred *cred, struct gss_cl_ctx *ctx,
 		struct rpc_rqst *rqstp, __be32 **p)
 {
@@ -1930,6 +1939,7 @@ gss_unwrap_resp_integ(struct rpc_cred *cred, struct gss_cl_ctx *ctx,
 	u32 integ_len;
 	u32 maj_stat;
 	int status = -EIO;
+	struct rpc_auth *auth = cred->cr_auth;
 
 	integ_len = ntohl(*(*p)++);
 	if (integ_len & 3)
@@ -1953,6 +1963,8 @@ gss_unwrap_resp_integ(struct rpc_cred *cred, struct gss_cl_ctx *ctx,
 		clear_bit(RPCAUTH_CRED_UPTODATE, &cred->cr_flags);
 	if (maj_stat != GSS_S_COMPLETE)
 		return status;
+
+	auth->au_rslack = auth->au_verfsize + 2 + 1 + XDR_QUADLEN(mic.len);
 	return 0;
 }
 
@@ -1965,6 +1977,8 @@ gss_unwrap_resp_priv(struct rpc_cred *cred, struct gss_cl_ctx *ctx,
 	u32 opaque_len;
 	u32 maj_stat;
 	int status = -EIO;
+	unsigned int savedlen = rcv_buf->len;
+	struct rpc_auth *auth = cred->cr_auth;
 
 	opaque_len = ntohl(*(*p)++);
 	offset = (u8 *)(*p) - (u8 *)rcv_buf->head[0].iov_base;
@@ -1980,6 +1994,8 @@ gss_unwrap_resp_priv(struct rpc_cred *cred, struct gss_cl_ctx *ctx,
 		return status;
 	if (ntohl(*(*p)++) != rqstp->rq_seqno)
 		return status;
+
+	auth->au_rslack = auth->au_verfsize + 2 + XDR_QUADLEN(savedlen - rcv_buf->len);
 
 	return 0;
 }
@@ -2002,15 +2018,13 @@ gss_unwrap_resp(struct rpc_task *task,
 	struct gss_cred *gss_cred = container_of(cred, struct gss_cred,
 			gc_base);
 	struct gss_cl_ctx *ctx = gss_cred_get_ctx(cred);
-	__be32		*savedp = p;
-	struct kvec	*head = ((struct rpc_rqst *)rqstp)->rq_rcv_buf.head;
-	int		savedlen = head->iov_len;
 	int             status = -EIO;
 
 	if (ctx->gc_proc != RPC_GSS_PROC_DATA)
 		goto out_decode;
 	switch (gss_cred->gc_service) {
 	case RPC_GSS_SVC_NONE:
+		status = gss_unwrap_resp_auth(cred);
 		break;
 	case RPC_GSS_SVC_INTEGRITY:
 		status = gss_unwrap_resp_integ(cred, ctx, rqstp, &p);
@@ -2023,9 +2037,6 @@ gss_unwrap_resp(struct rpc_task *task,
 			goto out;
 		break;
 	}
-	/* take into account extra slack for integrity and privacy cases: */
-	cred->cr_auth->au_rslack = cred->cr_auth->au_verfsize + (p - savedp)
-						+ (savedlen - head->iov_len);
 out_decode:
 	status = gss_unwrap_req_decode(decode, rqstp, p, obj);
 out:
