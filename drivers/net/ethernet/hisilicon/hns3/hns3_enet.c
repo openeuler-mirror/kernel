@@ -466,6 +466,10 @@ static int hns3_nic_net_open(struct net_device *netdev)
 		h->ae_algo->ops->enable_timer_task(priv->ae_handle, true);
 
 	hns3_config_xps(priv);
+
+	if (netif_msg_ifup(h))
+		netdev_info(netdev, "net open\n");
+
 	return 0;
 }
 
@@ -505,10 +509,14 @@ static void hns3_nic_net_down(struct net_device *netdev)
 static int hns3_nic_net_stop(struct net_device *netdev)
 {
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
+	struct hnae3_handle *h = hns3_get_handle(netdev);
 	const struct hnae3_ae_ops *ops;
 
 	if (test_and_set_bit(HNS3_NIC_STATE_DOWN, &priv->state))
 		return 0;
+
+	if (netif_msg_ifdown(h))
+		netdev_info(netdev, "net stop\n");
 
 	ops = priv->ae_handle->ae_algo->ops;
 	if (ops->enable_timer_task)
@@ -1576,6 +1584,9 @@ static int hns3_setup_tc(struct net_device *netdev, void *type_data)
 	h = hns3_get_handle(netdev);
 	kinfo = &h->kinfo;
 
+	if (netif_msg_ifdown(h))
+		netdev_info(netdev, "setup tc: num_tc=%d\n", tc);
+
 	return (kinfo->dcb_ops && kinfo->dcb_ops->setup_tc) ?
 		kinfo->dcb_ops->setup_tc(h, tc, prio_tc) : -EOPNOTSUPP;
 }
@@ -1641,6 +1652,11 @@ static int hns3_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan,
 	if (hns3_nic_resetting(netdev))
 		return -EBUSY;
 
+	if (netif_msg_ifdown(h))
+		netdev_info(netdev,
+			    "set vf vlan: vf=%d, vlan=%d, qos=%d, vlan_proto=%d\n",
+			    vf, vlan, qos, vlan_proto);
+
 	if (h->ae_algo->ops->set_vf_vlan_filter)
 		ret = h->ae_algo->ops->set_vf_vlan_filter(h, vf, vlan,
 							  qos, vlan_proto);
@@ -1658,6 +1674,10 @@ static int hns3_nic_change_mtu(struct net_device *netdev, int new_mtu)
 
 	if (!h->ae_algo->ops->set_mtu)
 		return -EOPNOTSUPP;
+
+	if (netif_msg_ifdown(h))
+		netdev_info(netdev, "change mtu from %d to %d\n",
+			    netdev->mtu, new_mtu);
 
 	ret = h->ae_algo->ops->set_mtu(h, new_mtu);
 	if (ret)
@@ -4477,6 +4497,11 @@ int hns3_set_channels(struct net_device *netdev,
 
 	if (kinfo->rss_size == new_tqp_num)
 		return 0;
+
+	if (netif_msg_ifdown(h))
+		netdev_info(netdev,
+			    "set channels: tqp_num=%d, rxfh=%d\n",
+			    new_tqp_num, rxfh_configured);
 
 	ret = hns3_reset_notify(h, HNAE3_DOWN_CLIENT);
 	if (ret)

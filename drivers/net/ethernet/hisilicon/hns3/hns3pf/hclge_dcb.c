@@ -200,6 +200,7 @@ static int hclge_client_setup_tc(struct hclge_dev *hdev)
 static int hclge_ieee_setets(struct hnae3_handle *h, struct ieee_ets *ets)
 {
 	struct hclge_vport *vport = hclge_get_vport(h);
+	struct net_device *netdev = h->kinfo.netdev;
 	struct hclge_dev *hdev = vport->back;
 	bool map_changed = false;
 	u8 num_tc = 0;
@@ -214,6 +215,9 @@ static int hclge_ieee_setets(struct hnae3_handle *h, struct ieee_ets *ets)
 		return ret;
 
 	if (map_changed) {
+		if (netif_msg_ifdown(h))
+			netdev_info(netdev, "set ets\n");
+
 		ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
 		if (ret)
 			return ret;
@@ -299,6 +303,7 @@ static int hclge_ieee_getpfc(struct hnae3_handle *h, struct ieee_pfc *pfc)
 static int hclge_ieee_setpfc(struct hnae3_handle *h, struct ieee_pfc *pfc)
 {
 	struct hclge_vport *vport = hclge_get_vport(h);
+	struct net_device *netdev = h->kinfo.netdev;
 	struct hclge_dev *hdev = vport->back;
 	u8 i, j, pfc_map, *prio_tc;
 	int ret;
@@ -324,6 +329,11 @@ static int hclge_ieee_setpfc(struct hnae3_handle *h, struct ieee_pfc *pfc)
 
 	hdev->tm_info.hw_pfc_map = pfc_map;
 	hdev->tm_info.pfc_en = pfc->pfc_en;
+
+	if (netif_msg_ifdown(h))
+		netdev_info(netdev,
+			    "set pfc: pfc_en=%d, pfc_map=%d, num_tc=%d\n",
+			    pfc->pfc_en, pfc_map, hdev->tm_info.num_tc);
 
 	hclge_tm_schd_info_update(hdev, hdev->tm_info.num_tc);
 
@@ -359,13 +369,20 @@ static u8 hclge_getdcbx(struct hnae3_handle *h)
 static u8 hclge_setdcbx(struct hnae3_handle *h, u8 mode)
 {
 	struct hclge_vport *vport = hclge_get_vport(h);
+	struct net_device *netdev = h->kinfo.netdev;
 	struct hclge_dev *hdev = vport->back;
+
+	if (netif_msg_drv(h))
+		netdev_info(netdev, "set dcbx: mode=%d\n", mode);
 
 	/* No support for LLD_MANAGED modes or CEE */
 	if ((mode & DCB_CAP_DCBX_LLD_MANAGED) ||
 	    (mode & DCB_CAP_DCBX_VER_CEE) ||
 	    !(mode & DCB_CAP_DCBX_HOST))
 		return 1;
+
+	if (hdev->dcbx_cap == mode)
+		return 0;
 
 	hdev->dcbx_cap = mode;
 
