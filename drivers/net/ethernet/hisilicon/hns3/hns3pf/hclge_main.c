@@ -1242,6 +1242,12 @@ static int hclge_configure(struct hclge_dev *hdev)
 
 	hclge_init_kdump_kernel_config(hdev);
 
+	/* Set the init affinity based on pci func number */
+	i = cpumask_weight(cpumask_of_node(dev_to_node(&hdev->pdev->dev)));
+	i = i ? PCI_FUNC(hdev->pdev->devfn) % i : 0;
+	cpumask_set_cpu(cpumask_local_spread(i, dev_to_node(&hdev->pdev->dev)),
+			&hdev->affinity_mask);
+
 	return ret;
 }
 
@@ -2465,14 +2471,16 @@ static void hclge_mbx_task_schedule(struct hclge_dev *hdev)
 {
 	if (!test_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state) &&
 	    !test_and_set_bit(HCLGE_STATE_MBX_SERVICE_SCHED, &hdev->state))
-		queue_work(system_unbound_wq, &hdev->mbx_service_task);
+		queue_work_on(cpumask_first(&hdev->affinity_mask), system_wq,
+			      &hdev->mbx_service_task);
 }
 
 static void hclge_reset_task_schedule(struct hclge_dev *hdev)
 {
 	if (!test_bit(HCLGE_STATE_REMOVING, &hdev->state) &&
 	    !test_and_set_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state))
-		schedule_work(&hdev->rst_service_task);
+		queue_work_on(cpumask_first(&hdev->affinity_mask), system_wq,
+			      &hdev->rst_service_task);
 }
 
 static void hclge_task_schedule(struct hclge_dev *hdev)
@@ -2480,7 +2488,8 @@ static void hclge_task_schedule(struct hclge_dev *hdev)
 	if (!test_bit(HCLGE_STATE_DOWN, &hdev->state) &&
 	    !test_bit(HCLGE_STATE_REMOVING, &hdev->state) &&
 	    !test_and_set_bit(HCLGE_STATE_SERVICE_SCHED, &hdev->state))
-		(void)schedule_work(&hdev->service_task);
+		queue_work_on(cpumask_first(&hdev->affinity_mask), system_wq,
+			      &hdev->service_task);
 }
 
 static int hclge_get_mac_link_status(struct hclge_dev *hdev)
@@ -2886,6 +2895,22 @@ static void hclge_get_misc_vector(struct hclge_dev *hdev)
 	hdev->num_msi_used += 1;
 }
 
+static void hclge_irq_affinity_notify(struct irq_affinity_notify *notify,
+				      const cpumask_t *mask)
+{
+	struct hclge_dev *hdev = container_of(notify, struct hclge_dev,
+					      affinity_notify);
+
+	cpumask_copy(&hdev->affinity_mask, mask);
+	del_timer(&hdev->service_timer);
+	hdev->service_timer.expires = jiffies + HZ;
+	add_timer_on(&hdev->service_timer, cpumask_first(&hdev->affinity_mask));
+}
+
+static void hclge_irq_affinity_release(struct kref *ref)
+{
+}
+
 static int hclge_misc_irq_init(struct hclge_dev *hdev)
 {
 	int ret;
@@ -2899,13 +2924,24 @@ static int hclge_misc_irq_init(struct hclge_dev *hdev)
 		hclge_free_vector(hdev, 0);
 		dev_err(&hdev->pdev->dev, "request misc irq(%d) fail\n",
 			hdev->misc_vector.vector_irq);
+		return ret;
 	}
 
-	return ret;
+	irq_set_affinity_hint(hdev->misc_vector.vector_irq,
+			      &hdev->affinity_mask);
+
+	hdev->affinity_notify.notify = hclge_irq_affinity_notify;
+	hdev->affinity_notify.release = hclge_irq_affinity_release;
+	irq_set_affinity_notifier(hdev->misc_vector.vector_irq,
+				  &hdev->affinity_notify);
+
+	return 0;
 }
 
 static void hclge_misc_irq_uninit(struct hclge_dev *hdev)
 {
+	irq_set_affinity_notifier(hdev->misc_vector.vector_irq, NULL);
+	irq_set_affinity_hint(hdev->misc_vector.vector_irq, NULL);
 	free_irq(hdev->misc_vector.vector_irq, hdev);
 	hclge_free_vector(hdev, 0);
 }
@@ -6257,7 +6293,10 @@ static void hclge_enable_timer_task(struct hnae3_handle *handle, bool enable)
 	struct hclge_dev *hdev = vport->back;
 
 	if (enable) {
-		mod_timer(&hdev->service_timer, jiffies + HZ);
+		del_timer(&hdev->service_timer);
+		hdev->service_timer.expires = jiffies + HZ;
+		add_timer_on(&hdev->service_timer,
+			     cpumask_first(&hdev->affinity_mask));
 	} else {
 		del_timer_sync(&hdev->service_timer);
 		cancel_work_sync(&hdev->service_task);
