@@ -717,6 +717,8 @@ static int hns3_set_tso(struct sk_buff *skb, u32 *paylen,
 	/* get MSS for TSO */
 	*mss = skb_shinfo(skb)->gso_size;
 
+	trace_hns3_tso(skb);
+
 	return 0;
 }
 
@@ -1235,10 +1237,10 @@ static int hns3_nic_maybe_stop_tx(struct hns3_enet_ring *ring,
 	if (unlikely(bd_num > HNS3_MAX_BD_PER_FRAG)) {
 		struct sk_buff *new_skb;
 
-		if (skb_is_gso(skb) && !hns3_skb_need_linearized(skb))
+		if (skb_is_gso(skb) && !hns3_skb_need_linearized(skb)) {
+			trace_hns3_over_8bd(skb);
 			goto out;
-
-		trace_hns3_over_8bd(skb);
+		}
 
 		bd_num = hns3_tx_bd_count(skb->len);
 		if (unlikely(ring_space(ring) < bd_num))
@@ -2506,6 +2508,9 @@ static int hns3_gro_complete(struct sk_buff *skb, u32 l234info)
 	skb->csum_start = (unsigned char *)th - skb->head;
 	skb->csum_offset = offsetof(struct tcphdr, check);
 	skb->ip_summed = CHECKSUM_PARTIAL;
+
+	trace_hns3_gro(skb);
+
 	return 0;
 }
 
