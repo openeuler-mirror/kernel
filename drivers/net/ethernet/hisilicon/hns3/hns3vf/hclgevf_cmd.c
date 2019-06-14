@@ -224,6 +224,7 @@ static int hclgevf_cmd_convert_err_code(u16 desc_ret)
 int hclgevf_cmd_send(struct hclgevf_hw *hw, struct hclgevf_desc *desc, int num)
 {
 	struct hclgevf_dev *hdev = (struct hclgevf_dev *)hw->hdev;
+	struct hclgevf_cmq_ring *csq = &hw->cmq.csq;
 	struct hclgevf_desc *desc_to_use;
 	bool complete = false;
 	u32 timeout = 0;
@@ -235,8 +236,17 @@ int hclgevf_cmd_send(struct hclgevf_hw *hw, struct hclgevf_desc *desc, int num)
 
 	spin_lock_bh(&hw->cmq.csq.lock);
 
-	if (num > hclgevf_ring_space(&hw->cmq.csq) ||
-	    test_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state)) {
+	if (test_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state)) {
+		spin_unlock_bh(&hw->cmq.csq.lock);
+		return -EBUSY;
+	}
+
+	if (num > hclgevf_ring_space(&hw->cmq.csq)) {
+		/* If CMDQ ring is full, SW HEAD and HW HEAD may be different,
+		 * need update the SW HEAD pointer csq->next_to_clean
+		 */
+		csq->next_to_clean = hclgevf_read_dev(hw,
+						      HCLGEVF_NIC_CSQ_HEAD_REG);
 		spin_unlock_bh(&hw->cmq.csq.lock);
 		return -EBUSY;
 	}
@@ -295,7 +305,7 @@ int hclgevf_cmd_send(struct hclgevf_hw *hw, struct hclgevf_desc *desc, int num)
 	}
 
 	if (!complete)
-		status = -EAGAIN;
+		status = -EBADE;
 
 	/* Clean the command send queue */
 	handle = hclgevf_cmd_csq_clean(hw);
