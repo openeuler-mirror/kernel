@@ -3168,10 +3168,11 @@ static void hclge_do_reset(struct hclge_dev *hdev)
 	}
 }
 
-enum hnae3_reset_type hclge_get_reset_level(struct hclge_dev *hdev,
+enum hnae3_reset_type hclge_get_reset_level(struct hnae3_ae_dev *ae_dev,
 					    unsigned long *addr)
 {
 	enum hnae3_reset_type rst_level = HNAE3_NONE_RESET;
+	struct hclge_dev *hdev = ae_dev->priv;
 
 	/* return the highest priority reset level amongst all */
 	if (test_bit(HNAE3_IMP_RESET, addr)) {
@@ -3516,7 +3517,7 @@ static void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle)
 		return;
 	else if (hdev->default_reset_request)
 		hdev->reset_level =
-			hclge_get_reset_level(hdev,
+			hclge_get_reset_level(ae_dev,
 					      &hdev->default_reset_request);
 	else if (time_after(jiffies, (hdev->last_reset_time + 4 * 5 * HZ)))
 		hdev->reset_level = HNAE3_FUNC_RESET;
@@ -3532,18 +3533,12 @@ static void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle)
 		hdev->reset_level++;
 }
 
-static enum hnae3_reset_type
-	hclge_set_def_reset_request(struct hnae3_ae_dev *ae_dev,
-				    unsigned long *rst_type)
+static void hclge_set_def_reset_request(struct hnae3_ae_dev *ae_dev,
+					enum hnae3_reset_type rst_type)
 {
 	struct hclge_dev *hdev = ae_dev->priv;
-	enum hnae3_reset_type reset_type;
 
-	reset_type = hclge_get_reset_level(hdev, rst_type);
-	if (reset_type != HNAE3_NONE_RESET)
-		set_bit(reset_type, &hdev->default_reset_request);
-
-	return reset_type;
+	set_bit(rst_type, &hdev->default_reset_request);
 }
 
 static void hclge_reset_timer(struct timer_list *t)
@@ -3568,6 +3563,8 @@ bool hclge_reset_done(struct hnae3_handle *handle, bool done)
 
 static void hclge_reset_subtask(struct hclge_dev *hdev)
 {
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
+
 	/* check if there is any ongoing reset in the hardware. This status can
 	 * be checked from reset_pending. If there is then, we need to wait for
 	 * hardware to complete reset.
@@ -3578,12 +3575,12 @@ static void hclge_reset_subtask(struct hclge_dev *hdev)
 	 *       now.
 	 */
 	hdev->last_reset_time = jiffies;
-	hdev->reset_type = hclge_get_reset_level(hdev, &hdev->reset_pending);
+	hdev->reset_type = hclge_get_reset_level(ae_dev, &hdev->reset_pending);
 	if (hdev->reset_type != HNAE3_NONE_RESET)
 		hclge_reset(hdev);
 
 	/* check if we got any *new* reset requests to be honored */
-	hdev->reset_type = hclge_get_reset_level(hdev, &hdev->reset_request);
+	hdev->reset_type = hclge_get_reset_level(ae_dev, &hdev->reset_request);
 	if (hdev->reset_type != HNAE3_NONE_RESET)
 		hclge_do_reset(hdev);
 
@@ -8946,11 +8943,16 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 
 	/* Log and clear the hw errors those already occurred */
 	hclge_handle_all_hns_hw_errors(ae_dev);
+
 	/* request delayed reset for the error recovery because an immediate
 	 * global reset on a PF affecting pending initialization of other PFs
 	 */
 	if (ae_dev->hw_err_reset_req) {
-		hclge_set_def_reset_request(ae_dev, &ae_dev->hw_err_reset_req);
+		enum hnae3_reset_type reset_level;
+
+		reset_level = hclge_get_reset_level(ae_dev,
+						    &ae_dev->hw_err_reset_req);
+		hclge_set_def_reset_request(ae_dev, reset_level);
 		mod_timer(&hdev->reset_timer,
 			  jiffies + HCLGE_RESET_INTERVAL);
 	}
@@ -9529,6 +9531,7 @@ struct hnae3_ae_ops hclge_ops = {
 	.set_vf_vlan_filter = hclge_set_vf_vlan_filter,
 	.enable_hw_strip_rxvtag = hclge_en_hw_strip_rxvtag,
 	.reset_event = hclge_reset_event,
+	.get_reset_level = hclge_get_reset_level,
 	.set_default_reset_request = hclge_set_def_reset_request,
 	.get_tqps_and_rss_info = hclge_get_tqps_and_rss_info,
 	.set_channels = hclge_set_channels,

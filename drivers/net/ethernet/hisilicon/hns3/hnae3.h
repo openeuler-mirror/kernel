@@ -470,9 +470,10 @@ struct hnae3_ae_ops {
 				  u16 vlan, u8 qos, __be16 proto);
 	int (*enable_hw_strip_rxvtag)(struct hnae3_handle *handle, bool enable);
 	void (*reset_event)(struct pci_dev *pdev, struct hnae3_handle *handle);
-	enum hnae3_reset_type
-		(*set_default_reset_request)(struct hnae3_ae_dev *ae_dev,
-					     unsigned long *rst_type);
+	enum hnae3_reset_type (*get_reset_level)(struct hnae3_ae_dev *ae_dev,
+						 unsigned long *addr);
+	void (*set_default_reset_request)(struct hnae3_ae_dev *ae_dev,
+					  enum hnae3_reset_type rst_type);
 	void (*get_channels)(struct hnae3_handle *handle,
 			     struct ethtool_channels *ch);
 	void (*get_tqps_and_rss_info)(struct hnae3_handle *h,

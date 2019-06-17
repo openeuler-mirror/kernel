@@ -2020,24 +2020,23 @@ static pci_ers_result_t hns3_error_detected(struct pci_dev *pdev,
 static pci_ers_result_t hns3_slot_reset(struct pci_dev *pdev)
 {
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
-	struct device *dev = &pdev->dev;
+	const struct hnae3_ae_ops *ops = ae_dev->ops;
 	enum hnae3_reset_type reset_type;
+	struct device *dev = &pdev->dev;
 
 	if (!ae_dev || !ae_dev->ops)
 		return PCI_ERS_RESULT_NONE;
 
 	/* request the reset */
-	if (ae_dev->ops->reset_event) {
+	if (ops->reset_event) {
 		if (!ae_dev->override_pci_need_reset) {
-			reset_type =
-				ae_dev->ops->set_default_reset_request(ae_dev,
+			reset_type = ops->get_reset_level(ae_dev,
 						&ae_dev->hw_err_reset_req);
-			if (reset_type != HNAE3_NONE_RESET) {
-				dev_info(dev,
-					 "requesting reset due to PCI error\n");
-					 ae_dev->ops->reset_event(pdev, NULL);
-			}
+			ops->set_default_reset_request(ae_dev, reset_type);
+			dev_info(dev, "requesting reset due to PCI error\n");
+			ops->reset_event(pdev, NULL);
 		}
+
 		return PCI_ERS_RESULT_RECOVERED;
 	}
 

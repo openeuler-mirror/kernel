@@ -965,6 +965,6 @@ int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
 int hclge_push_vf_port_base_vlan_info(struct hclge_vport *vport, u8 vfid,
 				      u16 state, u16 vlan_tag, u16 qos,
 				      u16 vlan_proto);
-enum hnae3_reset_type hclge_get_reset_level(struct hclge_dev *hdev,
+enum hnae3_reset_type hclge_get_reset_level(struct hnae3_ae_dev *ae_dev,
 					    unsigned long *addr);
 #endif
