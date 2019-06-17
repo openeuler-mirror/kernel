@@ -1610,6 +1610,8 @@ int SFC_WPSet(struct SFC_SFLASH_INFO *sflash, BOOL val)
 	ret = SFC_GetDeviceId(sflash, &device_id);
 	retval_if_fail(ret, "[SFC] Failed to get the SFlash ID!\n");
 
+	sflash->manufacturerId = device_id;
+
 	ret = SFC_WaitFlashIdle(sflash);
 
 	if (HRD_OK != ret) {
