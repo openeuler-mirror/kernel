@@ -129,6 +129,56 @@ static void dbs_freq_increase(struct cpufreq_policy *policy, unsigned int freq)
 			CPUFREQ_RELATION_L : CPUFREQ_RELATION_H);
 }
 
+/* the value is in kHz */
+#define CPU_FREQ_400M (400*1000)
+#define CPU_FREQ_600M (600*1000)
+#define CPU_FREQ_800M (800*1000)
+#define CPU_FREQ_900M (900*1000)
+
+static unsigned int get_next_powersave_first_freq(unsigned int load,
+					struct cpufreq_policy *policy)
+{
+	unsigned int freq_next, min_f, max_f;
+	static unsigned int freq_pre;
+	static bool flag;
+
+	min_f = policy->cpuinfo.min_freq;
+	max_f = policy->cpuinfo.max_freq;
+
+	if (load <= 40) {
+		/* next freq will maintain 90% cpu load */
+		freq_next = (load * policy->cur / 100) * 10 / 9;
+		if (freq_next < CPU_FREQ_400M)
+			freq_next = CPU_FREQ_400M;
+
+		freq_pre = freq_next;
+		flag = true;
+		return freq_next;
+	}
+
+	if (flag && load <= 90) {
+		freq_next = freq_pre;
+	} else {
+		if (load > 95)
+			freq_next = min_f + load * (max_f - min_f) / 100;
+		else if (load > 90 && (policy->cur >= CPU_FREQ_400M
+					&& policy->cur < CPU_FREQ_600M))
+			freq_next = CPU_FREQ_600M;
+		else if (load > 90 && (policy->cur >= CPU_FREQ_600M
+					&& policy->cur < CPU_FREQ_800M))
+			freq_next = CPU_FREQ_800M;
+		else if (load > 90 && (policy->cur >= CPU_FREQ_800M
+					&& policy->cur < CPU_FREQ_900M))
+			freq_next = CPU_FREQ_900M;
+		else
+			freq_next = min_f + load * (max_f - min_f) / 100;
+
+		flag = false;
+	}
+
+	return freq_next;
+}
+
 /*
  * Every sampling_rate, we check, if current idle time is less than 20%
  * (default), then we try to increase frequency. Else, we adjust the frequency
@@ -153,10 +203,15 @@ static void od_update(struct cpufreq_policy *policy)
 	} else {
 		/* Calculate the next frequency proportional to load */
 		unsigned int freq_next, min_f, max_f;
+		extern bool powersave_first;
 
-		min_f = policy->cpuinfo.min_freq;
-		max_f = policy->cpuinfo.max_freq;
-		freq_next = min_f + load * (max_f - min_f) / 100;
+		if (likely(!powersave_first)) {
+			min_f = policy->cpuinfo.min_freq;
+			max_f = policy->cpuinfo.max_freq;
+			freq_next = min_f + load * (max_f - min_f) / 100;
+		} else {
+			freq_next = get_next_powersave_first_freq(load, policy);
+		}
 
 		/* No longer fully busy, reset rate_mult */
 		policy_dbs->rate_mult = 1;

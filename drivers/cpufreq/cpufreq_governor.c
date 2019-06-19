@@ -114,12 +114,23 @@ void gov_update_cpu_data(struct dbs_data *dbs_data)
 }
 EXPORT_SYMBOL_GPL(gov_update_cpu_data);
 
+struct cpumask cpus_for_counting_load;
+bool powersave_first;
+EXPORT_SYMBOL_GPL(powersave_first);
+
+static int __init enable_powersave_first(char *str)
+{
+	powersave_first = true;
+	return 0;
+}
+early_param("powersave_first_for_ondemand", enable_powersave_first);
+
 unsigned int dbs_update(struct cpufreq_policy *policy)
 {
 	struct policy_dbs_info *policy_dbs = policy->governor_data;
 	struct dbs_data *dbs_data = policy_dbs->dbs_data;
 	unsigned int ignore_nice = dbs_data->ignore_nice_load;
-	unsigned int max_load = 0, idle_periods = UINT_MAX;
+	unsigned int max_load = 0, idle_periods = UINT_MAX, total_load = 0;
 	unsigned int sampling_rate, io_busy, j;
 
 	/*
@@ -136,8 +147,13 @@ unsigned int dbs_update(struct cpufreq_policy *policy)
 	 */
 	io_busy = dbs_data->io_is_busy;
 
+	if (unlikely(powersave_first))
+		cpumask_copy(&cpus_for_counting_load, cpu_online_mask);
+	else
+		cpumask_copy(&cpus_for_counting_load, policy->cpus);
+
 	/* Get Absolute Load */
-	for_each_cpu(j, policy->cpus) {
+	for_each_cpu(j, &cpus_for_counting_load) {
 		struct cpu_dbs_info *j_cdbs = &per_cpu(cpu_dbs, j);
 		u64 update_time, cur_idle_time;
 		unsigned int idle_time, time_elapsed;
@@ -222,13 +238,18 @@ unsigned int dbs_update(struct cpufreq_policy *policy)
 				idle_periods = periods;
 		}
 
+		total_load += load;
+
 		if (load > max_load)
 			max_load = load;
 	}
 
 	policy_dbs->idle_periods = idle_periods;
 
-	return max_load;
+	if (unlikely(powersave_first))
+		return total_load / cpumask_weight(cpu_online_mask);
+	else
+		return max_load;
 }
 EXPORT_SYMBOL_GPL(dbs_update);
 
