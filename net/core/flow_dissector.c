@@ -785,6 +785,10 @@ proto_again:
 		    skb && skb_vlan_tag_present(skb)) {
 			proto = skb->protocol;
 		} else {
+			if (dissector_vlan == FLOW_DISSECTOR_KEY_MAX &&
+			    nhoff > sizeof(*vlan))
+				nhoff -=  sizeof(*vlan);
+
 			vlan = __skb_header_pointer(skb, nhoff, sizeof(_vlan),
 						    data, hlen, &_vlan);
 			if (!vlan) {
