@@ -335,7 +335,7 @@ static int hclge_ieee_setpfc(struct hnae3_handle *h, struct ieee_pfc *pfc)
 			    "set pfc: pfc_en=%d, pfc_map=%d, num_tc=%d\n",
 			    pfc->pfc_en, pfc_map, hdev->tm_info.num_tc);
 
-	hclge_tm_schd_info_update(hdev, hdev->tm_info.num_tc);
+	hclge_tm_pfc_info_update(hdev);
 
 	ret = hclge_pause_setup_hw(hdev, false);
 	if (ret)
