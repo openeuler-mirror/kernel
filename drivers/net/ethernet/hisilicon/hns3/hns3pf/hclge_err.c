@@ -1366,16 +1366,16 @@ static int hclge_log_rocee_axi_error(struct hclge_dev *hdev)
 	}
 
 	dev_err(dev, "AXI1: %08X %08X %08X %08X %08X %08X\n",
-		 le32_to_cpu(desc[0].data[0]), le32_to_cpu(desc[0].data[1]),
-		 le32_to_cpu(desc[0].data[2]), le32_to_cpu(desc[0].data[3]),
-		 le32_to_cpu(desc[0].data[4]), le32_to_cpu(desc[0].data[5]));
+		le32_to_cpu(desc[0].data[0]), le32_to_cpu(desc[0].data[1]),
+		le32_to_cpu(desc[0].data[2]), le32_to_cpu(desc[0].data[3]),
+		le32_to_cpu(desc[0].data[4]), le32_to_cpu(desc[0].data[5]));
 	dev_err(dev, "AXI2: %08X %08X %08X %08X %08X %08X\n",
-		 le32_to_cpu(desc[1].data[0]), le32_to_cpu(desc[1].data[1]),
-		 le32_to_cpu(desc[1].data[2]), le32_to_cpu(desc[1].data[3]),
-		 le32_to_cpu(desc[1].data[4]), le32_to_cpu(desc[1].data[5]));
+		le32_to_cpu(desc[1].data[0]), le32_to_cpu(desc[1].data[1]),
+		le32_to_cpu(desc[1].data[2]), le32_to_cpu(desc[1].data[3]),
+		le32_to_cpu(desc[1].data[4]), le32_to_cpu(desc[1].data[5]));
 	dev_err(dev, "AXI3: %08X %08X %08X %08X\n",
-		 le32_to_cpu(desc[2].data[0]), le32_to_cpu(desc[2].data[1]),
-		 le32_to_cpu(desc[2].data[2]), le32_to_cpu(desc[2].data[3]));
+		le32_to_cpu(desc[2].data[0]), le32_to_cpu(desc[2].data[1]),
+		le32_to_cpu(desc[2].data[2]), le32_to_cpu(desc[2].data[3]));
 
 	return 0;
 }
@@ -1395,11 +1395,11 @@ static int hclge_log_rocee_ecc_error(struct hclge_dev *hdev)
 	}
 
 	dev_err(dev, "ECC1: %08X %08X %08X %08X %08X %08X\n",
-		 le32_to_cpu(desc[0].data[0]), le32_to_cpu(desc[0].data[1]),
-		 le32_to_cpu(desc[0].data[2]), le32_to_cpu(desc[0].data[3]),
-		 le32_to_cpu(desc[0].data[4]), le32_to_cpu(desc[0].data[5]));
+		le32_to_cpu(desc[0].data[0]), le32_to_cpu(desc[0].data[1]),
+		le32_to_cpu(desc[0].data[2]), le32_to_cpu(desc[0].data[3]),
+		le32_to_cpu(desc[0].data[4]), le32_to_cpu(desc[0].data[5]));
 	dev_err(dev, "ECC2: %08X %08X %08X\n", le32_to_cpu(desc[1].data[0]),
-		 le32_to_cpu(desc[1].data[1]), le32_to_cpu(desc[1].data[2]));
+		le32_to_cpu(desc[1].data[1]), le32_to_cpu(desc[1].data[2]));
 
 	return 0;
 }
@@ -1429,8 +1429,8 @@ static int hclge_log_rocee_ovf_error(struct hclge_dev *hdev)
 		while (err->msg) {
 			if (err->int_msk == err_sts) {
 				dev_err(dev, "%s [error status=0x%x] found\n",
-					 err->msg,
-					 le32_to_cpu(desc[0].data[0]));
+					err->msg,
+					le32_to_cpu(desc[0].data[0]));
 				break;
 			}
 			err++;
@@ -1439,12 +1439,12 @@ static int hclge_log_rocee_ovf_error(struct hclge_dev *hdev)
 
 	if (le32_to_cpu(desc[0].data[1]) & HCLGE_ROCEE_OVF_ERR_INT_MASK) {
 		dev_err(dev, "ROCEE TSP OVF [error status=0x%x] found\n",
-			 le32_to_cpu(desc[0].data[1]));
+			le32_to_cpu(desc[0].data[1]));
 	}
 
 	if (le32_to_cpu(desc[0].data[2]) & HCLGE_ROCEE_OVF_ERR_INT_MASK) {
 		dev_err(dev, "ROCEE SCC OVF [error status=0x%x] found\n",
-			 le32_to_cpu(desc[0].data[2]));
+			le32_to_cpu(desc[0].data[2]));
 	}
 
 	return 0;
