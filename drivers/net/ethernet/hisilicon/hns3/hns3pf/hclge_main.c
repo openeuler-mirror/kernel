@@ -3399,7 +3399,7 @@ static int hclge_reset_stack(struct hclge_dev *hdev)
 
 static void hclge_reset(struct hclge_dev *hdev)
 {
-	struct hnae3_handle *handle = handle = &hdev->vport[0].nic;
+	struct hnae3_handle *handle = &hdev->vport[0].nic;
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 	bool is_timeout = false;
 	int ret;
