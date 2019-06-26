@@ -1435,8 +1435,8 @@ error_failed_setup_hca:
 	hns_roce_cleanup_hem(hr_dev);
 
 error_failed_init_hem:
-	if (hr_dev->cmd.use_events)
-		kfree(hr_dev->cmd.context);
+	if (hr_dev->cmd_mod)
+		hns_roce_cmd_use_polling(hr_dev);
 	hr_dev->hw->cleanup_eq(hr_dev);
 
 error_failed_eq_table:
@@ -1468,10 +1468,8 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev)
 	hns_roce_cleanup_bitmap(hr_dev);
 	hns_roce_cleanup_hem(hr_dev);
 
-	if (hr_dev->cmd_mod) {
-		kfree(hr_dev->cmd.context);
+	if (hr_dev->cmd_mod)
 		hns_roce_cmd_use_polling(hr_dev);
-	}
 
 	hr_dev->hw->cleanup_eq(hr_dev);
 	hns_roce_cmd_cleanup(hr_dev);

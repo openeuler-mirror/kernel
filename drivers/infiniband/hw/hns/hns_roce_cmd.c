@@ -261,7 +261,10 @@ void hns_roce_cmd_use_polling(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_cmdq *hr_cmd = &hr_dev->cmd;
 
-	hr_cmd->use_events = 0;
+	if (hr_cmd->use_events) {
+		kfree(hr_cmd->context);
+		hr_cmd->use_events = 0;
+	}
 }
 
 struct hns_roce_cmd_mailbox
