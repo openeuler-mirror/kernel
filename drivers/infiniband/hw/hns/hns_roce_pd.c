@@ -127,10 +127,12 @@ struct ib_pd *hns_roce_alloc_pd(struct ib_device *ib_dev,
 		}
 	}
 
+#endif
+
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_ALLOC_PD);
 	rdfx_alloc_rdfx_pd(hr_dev, pd);
-#endif
 	hns_roce_inc_rdma_hw_stats(ib_dev, HW_STATS_PD_ALLOC);
+
 	return &pd->ibpd;
 }
 EXPORT_SYMBOL_GPL(hns_roce_alloc_pd);
