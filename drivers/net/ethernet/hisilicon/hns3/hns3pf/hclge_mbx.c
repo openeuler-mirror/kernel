@@ -582,6 +582,7 @@ static bool hclge_cmd_crq_empty(struct hclge_hw *hw)
 void hclge_mbx_handler(struct hclge_dev *hdev)
 {
 	struct hclge_cmq_ring *crq = &hdev->hw.cmq.crq;
+	struct hnae3_ae_dev *ae_dev = hdev->ae_dev;
 	struct hclge_mbx_vf_to_pf_cmd *req;
 	struct hclge_vport *vport;
 	struct hclge_desc *desc;
@@ -732,6 +733,11 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 				dev_err(&hdev->pdev->dev,
 					"PF fail(%d) to media type for VF\n",
 					ret);
+			break;
+		case HCLGE_MBX_NCSI_ERROR:
+			ae_dev->ops->set_default_reset_request(ae_dev, HNAE3_GLOBAL_RESET);
+			dev_warn(&hdev->pdev->dev, "requesting reset due to NCSI error\n");
+			ae_dev->ops->reset_event(hdev->pdev, NULL);
 			break;
 		default:
 			dev_err(&hdev->pdev->dev,
