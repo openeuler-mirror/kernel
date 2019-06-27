@@ -2546,18 +2546,17 @@ static int hclge_get_mac_phy_link(struct hclge_dev *hdev)
 	return !!link_stat;
 }
 
-static void hclge_update_link_status(struct hclge_dev *hdev)
+void hclge_link_status_change(struct hclge_dev *hdev, int state)
 {
 	struct hnae3_client *rclient = hdev->roce_client;
 	struct hnae3_client *client = hdev->nic_client;
 	struct hnae3_handle *rhandle;
 	struct hnae3_handle *handle;
-	int state;
 	int i;
 
 	if (!client)
 		return;
-	state = hclge_get_mac_phy_link(hdev);
+
 	if (state != hdev->hw.mac.link) {
 		for (i = 0; i < hdev->num_vmdq_vport + 1; i++) {
 			handle = &hdev->vport[i].nic;
@@ -2570,6 +2569,15 @@ static void hclge_update_link_status(struct hclge_dev *hdev)
 		}
 		hdev->hw.mac.link = state;
 	}
+}
+
+static void hclge_update_link_status(struct hclge_dev *hdev)
+{
+	int state;
+
+	state = hclge_get_mac_phy_link(hdev);
+
+	hclge_link_status_change(hdev, state);
 }
 
 static void hclge_update_port_capability(struct hclge_mac *mac)
@@ -6465,7 +6473,9 @@ static void hclge_ae_stop(struct hnae3_handle *handle)
 	hclge_reset_tqp_stats(handle);
 	del_timer_sync(&hdev->service_timer);
 	cancel_work_sync(&hdev->service_task);
-	hclge_update_link_status(hdev);
+
+	if (!test_bit(HCLGE_STATE_LINK_CHANGE_REPORT_EN, &hdev->state))
+		hclge_update_link_status(hdev);
 }
 
 int hclge_vport_start(struct hclge_vport *vport)

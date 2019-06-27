@@ -572,6 +572,44 @@ static int hclge_get_rss_key(struct hclge_vport *vport,
 				    HCLGE_RSS_MBX_RESP_LEN);
 }
 
+static void hclge_link_fail_parse(struct hclge_dev *hdev, u8 link_fail_code)
+{
+	switch (link_fail_code) {
+	case HCLGE_LF_REF_CLOCK_LOST:
+		dev_warn(&hdev->pdev->dev, "Reference clock lost!\n");
+		break;
+	case HCLGE_LF_XSFP_TX_DISABLE:
+		dev_warn(&hdev->pdev->dev, "SFP tx is disabled!\n");
+		break;
+	case HCLGE_LF_XSFP_ABSENT:
+		dev_warn(&hdev->pdev->dev, "SFP is absent!\n");
+		break;
+	default:
+		break;
+	}
+}
+
+static void hclge_handle_link_change_event(struct hclge_dev *hdev,
+					   struct hclge_mbx_vf_to_pf_cmd *req)
+{
+#define LINK_STATUS_OFFSET	1
+#define LINK_FAIL_CODE_OFFSET	2
+
+	struct phy_device *phydev = hdev->hw.mac.phydev;
+	int link_status = req->msg[LINK_STATUS_OFFSET];
+
+	if (phydev) {
+		if (phydev->state == PHY_RUNNING)
+			link_status = link_status & phydev->link;
+		else
+			link_status = 0;
+	}
+
+	hclge_link_status_change(hdev, link_status);
+	if (!link_status)
+		hclge_link_fail_parse(hdev, req->msg[LINK_FAIL_CODE_OFFSET]);
+}
+
 static bool hclge_cmd_crq_empty(struct hclge_hw *hw)
 {
 	u32 tail = hclge_read_dev(hw, HCLGE_NIC_CRQ_TAIL_REG);
@@ -738,6 +776,9 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 			ae_dev->ops->set_default_reset_request(ae_dev, HNAE3_GLOBAL_RESET);
 			dev_warn(&hdev->pdev->dev, "requesting reset due to NCSI error\n");
 			ae_dev->ops->reset_event(hdev->pdev, NULL);
+			break;
+		case HCLGE_MBX_PUSH_LINK_STATUS:
+			hclge_handle_link_change_event(hdev, req);
 			break;
 		default:
 			dev_err(&hdev->pdev->dev,

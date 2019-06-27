@@ -158,6 +158,7 @@ enum HCLGE_DEV_STATE {
 	HCLGE_STATE_MBX_HANDLING,
 	HCLGE_STATE_STATISTICS_UPDATING,
 	HCLGE_STATE_CMD_DISABLE,
+	HCLGE_STATE_LINK_CHANGE_REPORT_EN,
 	HCLGE_STATE_MAX
 };
 
@@ -247,6 +248,13 @@ enum hclge_fc_mode {
 	HCLGE_FC_FULL,
 	HCLGE_FC_PFC,
 	HCLGE_FC_DEFAULT
+};
+
+enum hclge_link_fail_code {
+	HCLGE_LF_NORMAL,
+	HCLGE_LF_REF_CLOCK_LOST,
+	HCLGE_LF_XSFP_TX_DISABLE,
+	HCLGE_LF_XSFP_ABSENT,
 };
 
 #define HCLGE_PG_NUM		4
@@ -967,4 +975,5 @@ int hclge_push_vf_port_base_vlan_info(struct hclge_vport *vport, u8 vfid,
 				      u16 vlan_proto);
 enum hnae3_reset_type hclge_get_reset_level(struct hnae3_ae_dev *ae_dev,
 					    unsigned long *addr);
+void hclge_link_status_change(struct hclge_dev *hdev, int state);
 #endif

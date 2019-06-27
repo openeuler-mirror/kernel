@@ -382,6 +382,20 @@ err_csq:
 	return ret;
 }
 
+static int hclge_firmware_compat_config(struct hclge_dev *hdev)
+{
+	struct hclge_firmware_compat_cmd *req;
+	struct hclge_desc desc;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_M7_COMPAT_CFG, false);
+
+	req = (struct hclge_firmware_compat_cmd *)desc.data;
+	hnae3_set_bit(req->compat, HCLGE_LINK_EVENT_REPORT_EN_B, 1);
+	hnae3_set_bit(req->compat, HCLGE_NCSI_ERROR_REPORT_EN_B, 1);
+
+	return hclge_cmd_send(&hdev->hw, &desc, 1);
+}
+
 int hclge_cmd_init(struct hclge_dev *hdev)
 {
 	u32 version;
@@ -419,6 +433,14 @@ int hclge_cmd_init(struct hclge_dev *hdev)
 	hdev->fw_version = version;
 
 	dev_info(&hdev->pdev->dev, "The firmware version is %08x\n", version);
+
+	/* ask the firmware to enable some features, driver can work without
+	 * it.
+	 */
+	clear_bit(HCLGE_STATE_LINK_CHANGE_REPORT_EN, &hdev->state);
+	ret = hclge_firmware_compat_config(hdev);
+	if (!ret)
+		set_bit(HCLGE_STATE_LINK_CHANGE_REPORT_EN, &hdev->state);
 
 	return 0;
 
