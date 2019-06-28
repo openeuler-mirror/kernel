@@ -39,6 +39,22 @@
 
 #define HCLGE_LINK_STATUS_MS	10
 
+/* Get DFX BD number offset */
+enum hclge_dfx_reg_offset {
+	HCLGE_DFX_BIOS_BD_OFFSET = 1,
+	HCLGE_DFX_SSU_0_BD_OFFSET,
+	HCLGE_DFX_SSU_1_BD_OFFSET,
+	HCLGE_DFX_IGU_BD_OFFSET,
+	HCLGE_DFX_RPU_0_BD_OFFSET,
+	HCLGE_DFX_RPU_1_BD_OFFSET,
+	HCLGE_DFX_NCSI_BD_OFFSET,
+	HCLGE_DFX_RTC_BD_OFFSET,
+	HCLGE_DFX_PPP_BD_OFFSET,
+	HCLGE_DFX_RCB_BD_OFFSET,
+	HCLGE_DFX_TQP_BD_OFFSET,
+	HCLGE_DFX_SSU_2_BD_OFFSET
+};
+
 static int hclge_set_mac_mtu(struct hclge_dev *hdev, int new_mps);
 static int hclge_init_vlan_config(struct hclge_dev *hdev);
 static void hclge_sync_vlan_filter(struct hclge_dev *hdev);
@@ -66,6 +82,62 @@ static const struct pci_device_id ae_algo_pci_tbl[] = {
 };
 
 MODULE_DEVICE_TABLE(pci, ae_algo_pci_tbl);
+
+static const u32 cmdq_reg_addr_list[] = {HCLGE_CMDQ_TX_ADDR_L_REG,
+					 HCLGE_CMDQ_TX_ADDR_H_REG,
+					 HCLGE_CMDQ_TX_DEPTH_REG,
+					 HCLGE_CMDQ_TX_TAIL_REG,
+					 HCLGE_CMDQ_TX_HEAD_REG,
+					 HCLGE_CMDQ_RX_ADDR_L_REG,
+					 HCLGE_CMDQ_RX_ADDR_H_REG,
+					 HCLGE_CMDQ_RX_DEPTH_REG,
+					 HCLGE_CMDQ_RX_TAIL_REG,
+					 HCLGE_CMDQ_RX_HEAD_REG,
+					 HCLGE_VECTOR0_CMDQ_SRC_REG,
+					 HCLGE_CMDQ_INTR_STS_REG,
+					 HCLGE_CMDQ_INTR_EN_REG,
+					 HCLGE_CMDQ_INTR_GEN_REG};
+
+static const u32 common_reg_addr_list[] = {HCLGE_MISC_VECTOR_REG_BASE,
+					   HCLGE_VECTOR0_OTER_EN_REG,
+					   HCLGE_MISC_RESET_STS_REG,
+					   HCLGE_MISC_VECTOR_INT_STS,
+					   HCLGE_GLOBAL_RESET_REG,
+					   HCLGE_FUN_RST_ING,
+					   HCLGE_GRO_EN_REG};
+
+static const u32 ring_reg_addr_list[] = {HCLGE_RING_RX_ADDR_L_REG,
+					 HCLGE_RING_RX_ADDR_H_REG,
+					 HCLGE_RING_RX_BD_NUM_REG,
+					 HCLGE_RING_RX_BD_LENGTH_REG,
+					 HCLGE_RING_RX_MERGE_EN_REG,
+					 HCLGE_RING_RX_TAIL_REG,
+					 HCLGE_RING_RX_HEAD_REG,
+					 HCLGE_RING_RX_FBD_NUM_REG,
+					 HCLGE_RING_RX_OFFSET_REG,
+					 HCLGE_RING_RX_FBD_OFFSET_REG,
+					 HCLGE_RING_RX_STASH_REG,
+					 HCLGE_RING_RX_BD_ERR_REG,
+					 HCLGE_RING_TX_ADDR_L_REG,
+					 HCLGE_RING_TX_ADDR_H_REG,
+					 HCLGE_RING_TX_BD_NUM_REG,
+					 HCLGE_RING_TX_PRIORITY_REG,
+					 HCLGE_RING_TX_TC_REG,
+					 HCLGE_RING_TX_MERGE_EN_REG,
+					 HCLGE_RING_TX_TAIL_REG,
+					 HCLGE_RING_TX_HEAD_REG,
+					 HCLGE_RING_TX_FBD_NUM_REG,
+					 HCLGE_RING_TX_OFFSET_REG,
+					 HCLGE_RING_TX_EBD_NUM_REG,
+					 HCLGE_RING_TX_EBD_OFFSET_REG,
+					 HCLGE_RING_TX_BD_ERR_REG,
+					 HCLGE_RING_EN_REG};
+
+static const u32 tqp_intr_reg_addr_list[] = {HCLGE_TQP_INTR_CTRL_REG,
+					     HCLGE_TQP_INTR_GL0_REG,
+					     HCLGE_TQP_INTR_GL1_REG,
+					     HCLGE_TQP_INTR_GL2_REG,
+					     HCLGE_TQP_INTR_RL_REG};
 
 static const char hns3_nic_test_strs[][ETH_GSTRING_LEN] = {
 	"App    Loopback test",
@@ -262,6 +334,36 @@ static const u8 hclge_hash_key[] = {
 	0xD0, 0xCA, 0x2B, 0xCB, 0xAE, 0x7B, 0x30, 0xB4,
 	0x77, 0xCB, 0x2D, 0xA3, 0x80, 0x30, 0xF2, 0x0C,
 	0x6A, 0x42, 0xB7, 0x3B, 0xBE, 0xAC, 0x01, 0xFA
+};
+
+static const enum hclge_dfx_reg_offset hclge_dfx_bd_offset_list[] = {
+	HCLGE_DFX_BIOS_BD_OFFSET,
+	HCLGE_DFX_SSU_0_BD_OFFSET,
+	HCLGE_DFX_SSU_1_BD_OFFSET,
+	HCLGE_DFX_IGU_BD_OFFSET,
+	HCLGE_DFX_RPU_0_BD_OFFSET,
+	HCLGE_DFX_RPU_1_BD_OFFSET,
+	HCLGE_DFX_NCSI_BD_OFFSET,
+	HCLGE_DFX_RTC_BD_OFFSET,
+	HCLGE_DFX_PPP_BD_OFFSET,
+	HCLGE_DFX_RCB_BD_OFFSET,
+	HCLGE_DFX_TQP_BD_OFFSET,
+	HCLGE_DFX_SSU_2_BD_OFFSET
+};
+
+static const enum hclge_opcode_type hclge_dfx_reg_opcode_list[] = {
+	HCLGE_OPC_DFX_BIOS_COMMON_REG,
+	HCLGE_OPC_DFX_SSU_REG_0,
+	HCLGE_OPC_DFX_SSU_REG_1,
+	HCLGE_OPC_DFX_IGU_EGU_REG,
+	HCLGE_OPC_DFX_RPU_REG_0,
+	HCLGE_OPC_DFX_RPU_REG_1,
+	HCLGE_OPC_DFX_NCSI_REG,
+	HCLGE_OPC_DFX_RTC_REG,
+	HCLGE_OPC_DFX_PPP_REG,
+	HCLGE_OPC_DFX_RCB_REG,
+	HCLGE_OPC_DFX_TQP_REG,
+	HCLGE_OPC_DFX_SSU_REG_2
 };
 
 static int hclge_mac_update_stats_defective(struct hclge_dev *hdev)
@@ -9486,30 +9588,267 @@ static int hclge_get_64_bit_regs(struct hclge_dev *hdev, u32 regs_num,
 	return 0;
 }
 
+#define MAX_SEPARATE_NUM	4
+#define SEPARATOR_VALUE		0xFDFCFBFA
+#define REG_NUM_PER_LINE	4
+#define REG_LEN_PER_LINE	(REG_NUM_PER_LINE * sizeof(u32))
+#define REG_SEPARATOR_LINE	1
+#define REG_NUM_REMAIN_MASK	3
+#define BD_LIST_MAX_NUM		30
+
+static int hclge_get_dfx_reg_bd_num(struct hclge_dev *hdev,
+				    int *bd_num_list,
+				    u32 type_num)
+{
+	u32 entries_per_desc, desc_index, index, i;
+	enum hclge_dfx_reg_offset offset;
+	struct hclge_desc desc[4];
+	int ret;
+
+	/*prepare 4 commands to query DFX BD number*/
+	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_DFX_BD_NUM, true);
+	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+	hclge_cmd_setup_basic_desc(&desc[1], HCLGE_OPC_DFX_BD_NUM, true);
+	desc[1].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+	hclge_cmd_setup_basic_desc(&desc[2], HCLGE_OPC_DFX_BD_NUM, true);
+	desc[2].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+	hclge_cmd_setup_basic_desc(&desc[3], HCLGE_OPC_DFX_BD_NUM, true);
+
+	ret = hclge_cmd_send(&hdev->hw, desc, 4);
+	if (ret != HCLGE_CMD_EXEC_SUCCESS) {
+		dev_err(&hdev->pdev->dev,
+			"Query dfx bd num fail, status is %d.\n", ret);
+		return ret;
+	}
+
+	entries_per_desc = ARRAY_SIZE(desc[0].data);
+	for (i = 0; i < type_num; i++) {
+		offset = hclge_dfx_bd_offset_list[i];
+		index = offset % entries_per_desc;
+		desc_index = offset / entries_per_desc;
+		bd_num_list[i] = le32_to_cpu(desc[desc_index].data[index]);
+	}
+
+	return ret;
+}
+
+static int hclge_dfx_reg_cmd_send(struct hclge_dev *hdev,
+				  struct hclge_desc *desc_src, int bd_num,
+				  enum hclge_opcode_type cmd)
+{
+	struct hclge_desc *desc = desc_src;
+	int i, ret;
+
+	hclge_cmd_setup_basic_desc(desc, cmd, true);
+	for (i = 1; i < bd_num; i++) {
+		desc->flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+		desc++;
+		hclge_cmd_setup_basic_desc(desc, cmd, true);
+	}
+
+	desc = desc_src;
+	ret = hclge_cmd_send(&hdev->hw, desc, bd_num);
+	if (ret)
+		dev_err(&hdev->pdev->dev,
+			"Query dfx reg cmd(0x%x) send fail, status is %d.\n",
+			cmd, ret);
+
+	return ret;
+}
+
+static int hclge_dfx_reg_fetch_data(struct hclge_desc *desc_src, int bd_num,
+				    void *data)
+{
+	int entries_per_desc, reg_num, separator_num, desc_index, index, i;
+	struct hclge_desc *desc = desc_src;
+	u32 *reg = data;
+
+	entries_per_desc = ARRAY_SIZE(desc->data);
+	reg_num = entries_per_desc * bd_num;
+	separator_num = REG_NUM_PER_LINE - (reg_num & REG_NUM_REMAIN_MASK);
+	for (i = 0; i < reg_num; i++) {
+		index = i % entries_per_desc;
+		desc_index = i / entries_per_desc;
+		*reg++ = le32_to_cpu(desc[desc_index].data[index]);
+	}
+	for (i = 0; i < separator_num; i++)
+		*reg++ = SEPARATOR_VALUE;
+
+	return reg_num + separator_num;
+}
+
+static int hclge_get_dfx_reg_len(struct hclge_dev *hdev, int *len)
+{
+	u32 dfx_reg_type_num = ARRAY_SIZE(hclge_dfx_bd_offset_list);
+	int data_len_per_desc, data_len, bd_num, len_per_line, i;
+	int bd_num_list[BD_LIST_MAX_NUM];
+	int ret;
+
+	ret = hclge_get_dfx_reg_bd_num(hdev, bd_num_list, dfx_reg_type_num);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"Get dfx reg bd num fail, status is %d.\n", ret);
+		return -EOPNOTSUPP;
+	}
+
+	data_len_per_desc = FIELD_SIZEOF(struct hclge_desc, data);
+	*len = 0;
+	len_per_line = REG_LEN_PER_LINE;
+	for (i = 0; i < dfx_reg_type_num; i++) {
+		bd_num = bd_num_list[i];
+		data_len = data_len_per_desc * bd_num;
+		*len += (data_len / len_per_line + 1) * len_per_line;
+	}
+
+	return ret;
+}
+
+static int hclge_get_dfx_reg(struct hclge_dev *hdev, void *data)
+{
+	u32 dfx_reg_type_num = ARRAY_SIZE(hclge_dfx_bd_offset_list);
+	int bd_num, bd_num_max, buf_len, i;
+	int bd_num_list[BD_LIST_MAX_NUM];
+	struct hclge_desc *desc_src;
+	u32 *reg = data;
+	int ret;
+
+	ret = hclge_get_dfx_reg_bd_num(hdev, bd_num_list, dfx_reg_type_num);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"Get dfx reg bd num fail, status is %d.\n", ret);
+		return -EOPNOTSUPP;
+	}
+
+	bd_num_max = bd_num_list[0];
+	for (i = 1; i < dfx_reg_type_num; i++)
+		bd_num_max = max(bd_num_max, bd_num_list[i]);
+
+	buf_len = sizeof(*desc_src) * bd_num_max;
+	desc_src = kzalloc(buf_len, GFP_KERNEL);
+	if (!desc_src) {
+		dev_err(&hdev->pdev->dev, "call kzalloc failed\n");
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < dfx_reg_type_num; i++) {
+		bd_num = bd_num_list[i];
+		ret = hclge_dfx_reg_cmd_send(hdev, desc_src, bd_num,
+					     hclge_dfx_reg_opcode_list[i]);
+		if (ret) {
+			dev_err(&hdev->pdev->dev,
+				"Get dfx reg fail, status is %d.\n", ret);
+			break;
+		}
+
+		reg += hclge_dfx_reg_fetch_data(desc_src, bd_num, reg);
+	}
+
+	kfree(desc_src);
+	return ret;
+}
+
+static int hclge_fetch_pf_reg(struct hclge_dev *hdev, void *data,
+			      struct hnae3_knic_private_info *kinfo)
+{
+	int i, j, reg_num, separator_num;
+	int data_num_sum;
+	u32 *reg = data;
+
+	/* fetching per-PF registers valus from PF PCIe register space */
+	reg_num = sizeof(cmdq_reg_addr_list) / sizeof(u32);
+	separator_num = MAX_SEPARATE_NUM - (reg_num & REG_NUM_REMAIN_MASK);
+	for (i = 0; i < reg_num; i++)
+		*reg++ = hclge_read_dev(&hdev->hw, cmdq_reg_addr_list[i]);
+	for (i = 0; i < separator_num; i++)
+		*reg++ = SEPARATOR_VALUE;
+	data_num_sum = reg_num + separator_num;
+
+	reg_num = sizeof(common_reg_addr_list) / sizeof(u32);
+	separator_num = MAX_SEPARATE_NUM - (reg_num & REG_NUM_REMAIN_MASK);
+	for (i = 0; i < reg_num; i++)
+		*reg++ = hclge_read_dev(&hdev->hw, common_reg_addr_list[i]);
+	for (i = 0; i < separator_num; i++)
+		*reg++ = SEPARATOR_VALUE;
+	data_num_sum += reg_num + separator_num;
+
+	reg_num = sizeof(ring_reg_addr_list) / sizeof(u32);
+	separator_num = MAX_SEPARATE_NUM - (reg_num & REG_NUM_REMAIN_MASK);
+	for (j = 0; j < kinfo->num_tqps; j++) {
+		for (i = 0; i < reg_num; i++)
+			*reg++ = hclge_read_dev(&hdev->hw,
+						ring_reg_addr_list[i] +
+						0x200 * j);
+		for (i = 0; i < separator_num; i++)
+			*reg++ = SEPARATOR_VALUE;
+	}
+	data_num_sum += (reg_num + separator_num) * kinfo->num_tqps;
+
+	reg_num = sizeof(tqp_intr_reg_addr_list) / sizeof(u32);
+	separator_num = MAX_SEPARATE_NUM - (reg_num & REG_NUM_REMAIN_MASK);
+	for (j = 0; j < hdev->num_msi_used - 1; j++) {
+		for (i = 0; i < reg_num; i++)
+			*reg++ = hclge_read_dev(&hdev->hw,
+						tqp_intr_reg_addr_list[i] +
+						4 * j);
+		for (i = 0; i < separator_num; i++)
+			*reg++ = SEPARATOR_VALUE;
+	}
+	data_num_sum += (reg_num + separator_num) * (hdev->num_msi_used - 1);
+
+	return data_num_sum;
+}
+
 static int hclge_get_regs_len(struct hnae3_handle *handle)
 {
+	int cmdq_lines, common_lines, ring_lines, tqp_intr_lines;
+	struct hnae3_knic_private_info *kinfo = &handle->kinfo;
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
-	u32 regs_num_32_bit, regs_num_64_bit;
+	int regs_num_32_bit, regs_num_64_bit, dfx_regs_len;
+	int regs_lines_32_bit, regs_lines_64_bit;
 	int ret;
 
 	ret = hclge_get_regs_num(hdev, &regs_num_32_bit, &regs_num_64_bit);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Get register number failed, ret = %d.\n", ret);
-		return 0;
+		return -EOPNOTSUPP;
 	}
 
-	return regs_num_32_bit * sizeof(u32) + regs_num_64_bit * sizeof(u64);
+	ret = hclge_get_dfx_reg_len(hdev, &dfx_regs_len);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"Get dfx reg len failed, ret = %d.\n", ret);
+		return -EOPNOTSUPP;
+	}
+
+	cmdq_lines = sizeof(cmdq_reg_addr_list) / REG_LEN_PER_LINE +
+		REG_SEPARATOR_LINE;
+	common_lines = sizeof(common_reg_addr_list) / REG_LEN_PER_LINE +
+		REG_SEPARATOR_LINE;
+	ring_lines = sizeof(ring_reg_addr_list) / REG_LEN_PER_LINE +
+		REG_SEPARATOR_LINE;
+	tqp_intr_lines = sizeof(tqp_intr_reg_addr_list) / REG_LEN_PER_LINE +
+		REG_SEPARATOR_LINE;
+	regs_lines_32_bit = regs_num_32_bit * sizeof(u32) / REG_LEN_PER_LINE +
+		REG_SEPARATOR_LINE;
+	regs_lines_64_bit = regs_num_64_bit * sizeof(u64) / REG_LEN_PER_LINE +
+		REG_SEPARATOR_LINE;
+
+	return (cmdq_lines + common_lines + ring_lines * kinfo->num_tqps +
+		tqp_intr_lines * (hdev->num_msi_used - 1) + regs_lines_32_bit +
+		regs_lines_64_bit) * REG_LEN_PER_LINE + dfx_regs_len;
 }
 
 static void hclge_get_regs(struct hnae3_handle *handle, u32 *version,
 			   void *data)
 {
+	struct hnae3_knic_private_info *kinfo = &handle->kinfo;
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 	u32 regs_num_32_bit, regs_num_64_bit;
-	int ret;
+	int i, reg_num, separator_num, ret;
+	u32 *reg = data;
 
 	*version = hdev->fw_version;
 
@@ -9520,18 +9859,36 @@ static void hclge_get_regs(struct hnae3_handle *handle, u32 *version,
 		return;
 	}
 
-	ret = hclge_get_32_bit_regs(hdev, regs_num_32_bit, data);
+	reg += hclge_fetch_pf_reg(hdev, reg, kinfo);
+
+	ret = hclge_get_32_bit_regs(hdev, regs_num_32_bit, reg);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Get 32 bit register failed, ret = %d.\n", ret);
 		return;
 	}
+	reg_num = regs_num_32_bit;
+	reg += reg_num;
+	separator_num = MAX_SEPARATE_NUM - (reg_num & REG_NUM_REMAIN_MASK);
+	for (i = 0; i < separator_num; i++)
+		*reg++ = SEPARATOR_VALUE;
 
-	data = (u32 *)data + regs_num_32_bit;
-	ret = hclge_get_64_bit_regs(hdev, regs_num_64_bit, data);
-	if (ret)
+	ret = hclge_get_64_bit_regs(hdev, regs_num_64_bit, reg);
+	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Get 64 bit register failed, ret = %d.\n", ret);
+		return;
+	}
+	reg_num = regs_num_64_bit * 2;
+	reg += reg_num;
+	separator_num = MAX_SEPARATE_NUM - (reg_num & REG_NUM_REMAIN_MASK);
+	for (i = 0; i < separator_num; i++)
+		*reg++ = SEPARATOR_VALUE;
+
+	ret = hclge_get_dfx_reg(hdev, reg);
+	if (ret)
+		dev_err(&hdev->pdev->dev,
+			"Get dfx register failed, ret = %d.\n", ret);
 }
 
 static int hclge_set_led_status(struct hclge_dev *hdev, u8 locate_led_status)
