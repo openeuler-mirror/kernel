@@ -3337,7 +3337,7 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev, bool is_timeout)
 	} else if (hdev->reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT) {
 		hdev->reset_fail_cnt++;
 
-		if (is_timeout) {
+		if (hdev->reset_type == HNAE3_IMP_RESET || is_timeout) {
 			set_bit(hdev->reset_type, &hdev->reset_pending);
 			dev_info(&hdev->pdev->dev,
 				 "re-schedule to wait for hw reset done\n");
@@ -3354,6 +3354,8 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev, bool is_timeout)
 	}
 
 	hclge_clear_reset_cause(hdev);
+	hclge_write_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG,
+			HCLGE_NIC_CMQ_ENABLE);
 
 	if (handle && handle->ae_algo->ops->reset_done)
 		handle->ae_algo->ops->reset_done(handle, false);
