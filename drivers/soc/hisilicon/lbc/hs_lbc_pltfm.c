@@ -31,6 +31,8 @@
 
 #include "hs_lbc_pltfm.h"
 
+#define	LBC_DRIVER_VERSION	"1.8.3.0"
+
 struct hisi_lbc_dev lbc_dev = {0};
 
 static void lbc_set_cs_base_addr(unsigned int index, unsigned int cs_base_addr)
@@ -327,7 +329,7 @@ static int hisi_lbc_cs_init(struct platform_device *pdev)
 	unsigned int index;
 	unsigned int width;
 	unsigned int shift;
-	struct resource *cs_base;
+	struct resource *cs_base = NULL;
 
 	if (has_acpi_companion(lbc_dev.dev)) {
 		/* get cs index */
@@ -393,7 +395,7 @@ static int hisi_lbc_cs_init(struct platform_device *pdev)
 static int hisi_lbc_probe(struct platform_device *pdev)
 {
 	int ret;
-	struct resource *regs_base;
+	struct resource *regs_base = NULL;
 
 	dev_info(&pdev->dev, "hisi_lbc_probe prob\n");
 
@@ -406,14 +408,20 @@ static int hisi_lbc_probe(struct platform_device *pdev)
 
 	/* get resource num */
 	regs_base = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	lbc_dev.regs_base = devm_ioremap_resource(&pdev->dev, regs_base);
 
-	if (IS_ERR(lbc_dev.regs_base))
+	if (!lbc_dev.is_reg_remaped) {
+
+		lbc_dev.regs_base = devm_ioremap_resource(&pdev->dev, regs_base);
+		lbc_dev.is_reg_remaped = 1;
+	}
+
+	if (IS_ERR(lbc_dev.regs_base)) {
+		dev_err(&pdev->dev, "ERROR: regbase\n");
 		return (int)PTR_ERR(lbc_dev.regs_base);
+	}
 
 	/* localbus cs init */
 	ret = hisi_lbc_cs_init(pdev);
-
 	if (ret) {
 		dev_err(&pdev->dev, "Localbus cs init failed\n");
 		return -1;
@@ -473,5 +481,5 @@ module_exit(hisi_lbc_exit_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Huawei Tech. Co., Ltd.");
-MODULE_VERSION("1.02");
+MODULE_VERSION(LBC_DRIVER_VERSION);
 MODULE_DESCRIPTION("LBC driver for linux");

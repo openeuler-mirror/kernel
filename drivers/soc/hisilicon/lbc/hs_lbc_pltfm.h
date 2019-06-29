@@ -13,7 +13,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http:
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef _HS_LBC_PLTFM_H_
@@ -104,6 +104,7 @@ struct hisi_lbc_cs {
 };
 
 struct hisi_lbc_dev {
+	unsigned char is_reg_remaped;
 	struct device *dev;
 	void __iomem *regs_base;	  /* localbus regs base addr*/
 	struct hisi_lbc_cs cs[LBC_CS_MAX_NUM];
