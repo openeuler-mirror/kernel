@@ -2528,27 +2528,6 @@ static irqreturn_t cq_interrupt_v3_hw(int irq_no, void *p)
 	return IRQ_HANDLED;
 }
 
-static void setup_reply_map_v3_hw(struct hisi_hba *hisi_hba, int nvecs)
-{
-	const struct cpumask *mask;
-	int queue, cpu;
-
-	for (queue = 0; queue < nvecs; queue++) {
-		mask = pci_irq_get_affinity(hisi_hba->pci_dev,
-					    queue +
-					    HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW);
-		if (!mask)
-			goto fallback;
-		for_each_cpu(cpu, mask)
-			hisi_hba->reply_map[cpu] = queue;
-	}
-	return;
-
-fallback:
-	for_each_possible_cpu(cpu)
-		hisi_hba->reply_map[cpu] = cpu % hisi_hba->queue_count;
-}
-
 static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 {
 	struct device *dev = hisi_hba->dev;
@@ -2570,8 +2549,6 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 				PCI_IRQ_MSI |
 				PCI_IRQ_AFFINITY,
 				&desc);
-		setup_reply_map_v3_hw(hisi_hba, vectors -
-				      HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW);
 	}
 
 	if (vectors < HISI_SAS_MIN_VECTORS_V3_HW) {

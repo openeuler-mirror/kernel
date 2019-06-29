@@ -467,7 +467,10 @@ static int hisi_sas_task_prep(struct sas_task *task,
 	struct hisi_sas_dq *dq;
 	unsigned long flags;
 	int wr_q_index;
-	unsigned int dq_index = hisi_hba->reply_map[raw_smp_processor_id()];
+	unsigned int curr_node_id = numa_node_id();
+	unsigned int dq_index =
+		(hisi_hba->dq_idx[curr_node_id] % hisi_hba->dq_num_per_node) +
+		(hisi_hba->dq_num_per_node * curr_node_id);
 
 	if (DEV_IS_GONE(sas_dev)) {
 		if (sas_dev)
@@ -584,6 +587,7 @@ static int hisi_sas_task_prep(struct sas_task *task,
 	spin_unlock_irqrestore(&task->task_state_lock, flags);
 
 	++(*pass);
+	++hisi_hba->dq_idx[curr_node_id];
 	WRITE_ONCE(slot->ready, 1);
 
 	return 0;
@@ -2328,6 +2332,11 @@ int hisi_sas_alloc(struct hisi_hba *hisi_hba)
 
 	sema_init(&hisi_hba->sem, 1);
 	spin_lock_init(&hisi_hba->lock);
+	hisi_hba->dq_num_per_node = hisi_hba->queue_count/num_online_nodes();
+
+	for (i = 0; i < NR_CPUS; i++)
+		hisi_hba->dq_idx[i] = 0;
+
 	for (i = 0; i < hisi_hba->n_phy; i++) {
 		hisi_sas_phy_init(hisi_hba, i);
 		hisi_hba->port[i].port_attached = 0;

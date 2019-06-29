@@ -410,8 +410,9 @@ struct hisi_hba {
 	struct dentry *debugfs_bist_dentry;
 
 	bool user_ctl_irq;
-	unsigned int reply_map[NR_CPUS];
+	unsigned int dq_idx[NR_CPUS];
 	int nvecs;
+	unsigned int dq_num_per_node;
 };
 
 /* Generic HW DMA host memory structures */
