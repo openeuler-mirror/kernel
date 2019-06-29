@@ -74,8 +74,8 @@ static int sflash_block_markbad(struct mtd_info *mtd, loff_t ofs);
 
 struct mtd_info *sflash_probe(struct map_info *map, struct resource *sfc_regres)
 {
-	struct mtd_info *mtd;
-	struct SFC_SFLASH_INFO *sflash;
+	struct mtd_info *mtd = NULL;
+	struct SFC_SFLASH_INFO *sflash = NULL;
 	unsigned long flags = 0, sflash_in_irq = 0;
 
 	DB_LOCAL(pr_info("[SFC] INFO: entering %s\n", __func__));

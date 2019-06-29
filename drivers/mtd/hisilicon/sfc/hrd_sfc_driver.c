@@ -28,7 +28,7 @@
 #include "hrdCommon.h"
 #include "hrd_sflash_driver.h"
 
-#define	SFC_DRIVER_VERSION	"1.7.9.0"
+#define	SFC_DRIVER_VERSION	"1.8.3.0"
 
 static const char *sflashMtdList[] = { "sflash", NULL };
 
@@ -132,9 +132,9 @@ static unsigned int flash_map_init(struct platform_device *pdev)
 	u32 i;
 	u32 mapsNum;
 	struct device *dev = &pdev->dev;
-	struct resource *sfc_regres;
-	struct resource *flash_iores;
-	struct sfc_host *host;
+	struct resource *sfc_regres = NULL;
+	struct resource *flash_iores = NULL;
+	struct sfc_host *host = NULL;
 
 	pr_info("SFC Driver\n");
 	host = devm_kzalloc(dev, sizeof(struct sfc_host), GFP_KERNEL);

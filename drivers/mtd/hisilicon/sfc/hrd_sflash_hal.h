@@ -89,6 +89,8 @@
 #define SPI_FLASH_DEV_SIZE 0x2000000
 #define SPI_REG_END_ADDR (0x500)
 
+#define SFC_OP_ERR_MASK (0x1EC)
+
 /* SFC REG */
 #define GLOBAL_CONFIG (0x0100)
 #define TIMING (0x0110)

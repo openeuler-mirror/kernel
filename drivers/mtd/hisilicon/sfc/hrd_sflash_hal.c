@@ -690,6 +690,22 @@ s32 SFC_ClearInt(u64 reg_addr)
 	return 0;
 }
 
+/*Judging sfc whether something is wrong */
+static bool SFC_IsOpErr(u64 reg_addr)
+{
+	u32 IntStatus;
+
+	IntStatus = SFC_RegisterRead(reg_addr + (u32) INTRAWSTATUS);
+
+	if ((0 != (IntStatus & SFC_OP_ERR_MASK))) {
+		pr_err("[SFC_IsOpErr] ERROR:  Int status=%x not cleared, clear\r\n", IntStatus);
+		SFC_RegisterWrite(reg_addr + INTCLEAR, INT_MASK);
+		return true;
+	}
+
+	return false;
+}
+
 s32 SFC_WaitInt(u64 reg_addr)
 {
 	u32 ulRegValue;
@@ -947,6 +963,11 @@ s32 SFC_BlockErase(struct SFC_SFLASH_INFO *sflash, u32 ulAddr, u32 ErCmd)
 		goto rel;
 	}
 
+	if (SFC_IsOpErr(sflash->sfc_reg_base)) {
+		ulRet = HRD_ERR;
+		goto rel;
+	}
+
 	ulRet = SFC_CheckBusy(sflash, WAIT_MAX_COUNT);
 
 	if (HRD_OK != ulRet) {
@@ -956,7 +977,7 @@ s32 SFC_BlockErase(struct SFC_SFLASH_INFO *sflash, u32 ulAddr, u32 ErCmd)
 
  rel:
 	SFC_FlashUnlock(sflash);
-	return HRD_OK;
+	return ulRet;
 
 }
 
@@ -998,6 +1019,9 @@ static s32 SFC_RegWordAlignRead(struct SFC_SFLASH_INFO *sflash,
 		return ulRet;
 	}
 
+	if (SFC_IsOpErr(sflash->sfc_reg_base))
+		return HRD_ERR;
+
 	for (i = 0; i < ulDataCnt; i++) {
 		pulData[i] = SFC_RegisterRead(sflash->sfc_reg_base + DATABUFFER1 + (u32)(4*i));
 	}
@@ -1035,6 +1059,9 @@ static s32 SFC_RegByteRead(struct SFC_SFLASH_INFO *sflash,
 		pr_err("[SFC] [%s %d]: SFC_WaitInt fail\n", __func__, __LINE__);
 		return ulRet;
 	}
+
+	if (SFC_IsOpErr(sflash->sfc_reg_base))
+		return HRD_ERR;
 
 	*pucData = SFC_RegisterRead(sflash->sfc_reg_base + DATABUFFER1) & 0xff;
 
@@ -1090,6 +1117,11 @@ static s32 SFC_RegWordAlignWrite(struct SFC_SFLASH_INFO *sflash,
 		goto rel;
 	}
 
+	if (SFC_IsOpErr(sflash->sfc_reg_base)) {
+		ulRet = HRD_ERR;
+		goto rel;
+	}
+
 	SFC_RegisterWrite(sflash->sfc_reg_base + CMD_INS,
 			  sflash->sflash_dev_params.ucOpcodeRDSR);
 
@@ -1135,6 +1167,11 @@ static s32 SFC_RegByteWrite(struct SFC_SFLASH_INFO *sflash,
 
 	if (HRD_OK != ulRet) {
 		pr_err("[SFC] [%s %d]: wait int failed\r\n", __func__, __LINE__);
+		goto rel;
+	}
+
+	if (SFC_IsOpErr(sflash->sfc_reg_base)) {
+		ulRet = HRD_ERR;
 		goto rel;
 	}
 
@@ -1214,6 +1251,9 @@ s32 SFC_RegModeWrite(struct SFC_SFLASH_INFO *sflash,
 		}
 	}
 
+	if (SFC_IsOpErr(sflash->sfc_reg_base))
+		return HRD_ERR;
+
 	return HRD_OK;
 }
 
@@ -1223,6 +1263,7 @@ s32 SFC_RegModeRead(struct SFC_SFLASH_INFO *sflash,
 	u32 i;
 	u32 ulRemain;
 	u32 ulAlignLen;
+	s32 ret = HRD_OK;
 
 	/* pr_info("SFC_RegModeRead call\n"); */
 
@@ -1242,22 +1283,22 @@ s32 SFC_RegModeRead(struct SFC_SFLASH_INFO *sflash,
 	ulAlignLen = ulReadLen - ulRemain;
 
 	for (i = 0; i < ulAlignLen; i += SFC_HARD_BUF_LEN) {
-		(void)SFC_RegWordAlignRead(sflash, offset + i,
+		ret = SFC_RegWordAlignRead(sflash, offset + i,
 					  (u32 *) (pucDest + i), SFC_HARD_BUF_LEN);
 	}
 
 	if (ulRemain >= 4) {
 
-		(void)SFC_RegWordAlignRead(sflash, offset + i,
+		ret = SFC_RegWordAlignRead(sflash, offset + i,
 					  (u32 *) (pucDest + i), ulRemain&(~0x3));
 		i += ulRemain&(~0x3);
 	}
 
 	for (; i < ulReadLen; i++) {
-		(void)SFC_RegByteRead(sflash, offset + i, pucDest + i);
+		ret = SFC_RegByteRead(sflash, offset + i, pucDest + i);
 	}
 
-	return HRD_OK;
+	return ret;
 }
 
 s32 SFC_CheckCmdExcStatus(struct SFC_SFLASH_INFO *sflash)
