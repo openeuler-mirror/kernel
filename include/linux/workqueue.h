@@ -125,6 +125,8 @@ struct delayed_work {
 	/* target workqueue and CPU ->timer uses to queue ->work */
 	struct workqueue_struct *wq;
 	int cpu;
+	/* delayed_work private data, only used in pciehp now */
+	unsigned long data;
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)

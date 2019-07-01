@@ -693,18 +693,22 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 					slot->state == BLINKINGON_STATE)
 				pciehp_handle_disable_request(slot);
 			else {
+				ctrl_info(ctrl, "Slot(%s): DISABLE_SLOT event in remove or rescan process!\n",
+						slot_name(slot));
 				/*
 				 * we use the work_struct private data to store
 				 * the event type
 				 */
-				atomic_long_set(&slot->work.work.data,
-						DISABLE_SLOT);
+				slot->work.data = DISABLE_SLOT;
 				/*
 				 * If 'work.timer' is pending, schedule the work will
 				 * cause BUG_ON().
 				 */
 				if (!timer_pending(&slot->work.timer))
 					schedule_delayed_work(&slot->work, 3 * HZ);
+				else
+					ctrl_info(ctrl, "Slot(%s): Didn't schedule delayed_work because timer is pending!\n",
+						slot_name(slot));
 			}
 		}
 	} else if (events & (PCI_EXP_SLTSTA_PDC | PCI_EXP_SLTSTA_DLLSC)) {
@@ -723,11 +727,12 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 				 */
 				ctrl_info(ctrl, "Slot(%s): Surprise link down/up in remove or rescan process!\n",
 						slot_name(slot));
-				atomic_long_set(&slot->work.work.data,
-						events & (PCI_EXP_SLTSTA_PDC |
-							PCI_EXP_SLTSTA_DLLSC));
+				slot->work.data = events & (PCI_EXP_SLTSTA_PDC | PCI_EXP_SLTSTA_DLLSC);
 				if (!timer_pending(&slot->work.timer))
 					schedule_delayed_work(&slot->work, 3 * HZ);
+				else
+					ctrl_info(ctrl, "Slot(%s): Didn't schedule delayed_work because timer is pending!\n",
+						slot_name(slot));
 			}
 		}
 	}
