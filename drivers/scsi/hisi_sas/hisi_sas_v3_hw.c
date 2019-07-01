@@ -211,6 +211,8 @@
 #define CFG_BIST_MODE_SEL_MSK		(0xf << CFG_BIST_MODE_SEL_OFF)
 #define CFG_LOOP_TEST_MODE_OFF		14
 #define CFG_LOOP_TEST_MODE_MSK		(0x3 << CFG_LOOP_TEST_MODE_OFF)
+#define SAS_PHY_BIST_CODE		(PORT_BASE + 0x30)
+#define SAS_PHY_BIST_CODE1		(PORT_BASE + 0x34)
 #define CFG_RX_BIST_EN_OFF		16
 #define CFG_RX_BIST_EN_MSK		(0x1 << CFG_RX_BIST_EN_OFF)
 #define CFG_TX_BIST_EN_OFF		17
@@ -3131,6 +3133,14 @@ static void hisi_sas_bist_test_restore_v3_hw(struct hisi_hba *hisi_hba)
 	reg_val &= ~CFG_ALOS_CHK_DISABLE_MSK;
 	hisi_sas_phy_write32(hisi_hba, phy_id, SERDES_CFG, reg_val);
 
+	/*restore the linkrate*/
+	reg_val = hisi_sas_phy_read32(hisi_hba, phy_id, PROG_PHY_LINK_RATE);
+	/* init OOB link rate as 1.5 Gbits */
+	reg_val &= ~CFG_PROG_PHY_LINK_RATE_MSK;
+	reg_val |= (0x800 << CFG_PROG_PHY_LINK_RATE_OFF);
+	hisi_sas_phy_write32(hisi_hba, phy_id,
+		PROG_PHY_LINK_RATE, reg_val);
+
 	/* enable PHY */
 	hisi_sas_phy_enable(hisi_hba, phy_id, 1);
 }
@@ -3171,6 +3181,12 @@ static int debugfs_set_bist_v3_hw(struct hisi_hba *hisi_hba, bool enable)
 			    CFG_BIST_TEST_MSK);
 		hisi_sas_phy_write32(hisi_hba, phy_id,
 				     SAS_PHY_BIST_CTRL, reg_val);
+
+		/*set the bist init data*/
+		hisi_sas_phy_write32(hisi_hba, phy_id,
+			SAS_PHY_BIST_CODE, 0x1);
+		hisi_sas_phy_write32(hisi_hba, phy_id,
+			SAS_PHY_BIST_CODE1, 0x80);
 
 		mdelay(100);
 		reg_val |= (CFG_RX_BIST_EN_MSK | CFG_TX_BIST_EN_MSK);

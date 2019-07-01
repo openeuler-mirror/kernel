@@ -3627,7 +3627,7 @@ void hisi_sas_debugfs_init(struct hisi_hba *hisi_hba)
 			&hisi_hba->bist_loopback_cnt))
 		goto fail_global;
 
-	if (!debugfs_create_file("loopback mode", 0400,
+	if (!debugfs_create_file("loopback_mode", 0400,
 				 hisi_hba->debugfs_bist_dentry,
 				 hisi_hba, &hisi_sas_debugfs_bist_mode_ops))
 		goto fail_global;
