@@ -2615,7 +2615,7 @@ static int hclge_get_mac_link_status(struct hclge_dev *hdev)
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "get link status cmd failed %d\n",
 			ret);
-		return ret;
+		return 0;
 	}
 
 	req = (struct hclge_link_status_cmd *)desc.data;
