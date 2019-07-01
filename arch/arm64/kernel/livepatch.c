@@ -344,3 +344,42 @@ int arch_klp_func_can_patch(struct klp_func *func)
 }
 #endif /* #ifdef CONFIG_ARM64_MODULE_PLTS */
 #endif
+
+
+/* Apply per-object alternatives. Based on arm64 module_finalize() */
+void arch_klp_init_object_loaded(struct klp_patch *patch,
+				 struct klp_object *obj)
+{
+	int cnt;
+	struct klp_modinfo *info;
+	Elf_Shdr *s, *alt = NULL;
+	void *aseg;
+	const char *objname;
+	char sec_objname[MODULE_NAME_LEN];
+	char secname[KSYM_NAME_LEN];
+
+	info = patch->mod->klp_info;
+	objname = obj->name ? obj->name : "vmlinux";
+
+	/* See livepatch core code for BUILD_BUG_ON() explanation */
+	BUILD_BUG_ON(MODULE_NAME_LEN < 56 || KSYM_NAME_LEN != 128);
+
+	for (s = info->sechdrs; s < info->sechdrs + info->hdr.e_shnum; s++) {
+		/* Apply per-object .klp.arch sections */
+		cnt = sscanf(info->secstrings + s->sh_name,
+			     ".klp.arch.%55[^.].%127s",
+			     sec_objname, secname);
+
+		if (cnt != 2)
+			continue;
+		if (strcmp(sec_objname, objname))
+			continue;
+		if (!strcmp(".altinstructions", secname))
+			alt = s;
+	}
+
+	if (alt) {
+		aseg = (void *) alt->sh_addr;
+		apply_alternatives_module(aseg, alt->sh_size);
+	}
+}
