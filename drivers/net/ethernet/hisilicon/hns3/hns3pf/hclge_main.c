@@ -9596,13 +9596,8 @@ static int hclge_get_64_bit_regs(struct hclge_dev *hdev, u32 regs_num,
 #define REG_NUM_REMAIN_MASK	3
 #define BD_LIST_MAX_NUM		30
 
-static int hclge_get_dfx_reg_bd_num(struct hclge_dev *hdev,
-				    int *bd_num_list,
-				    u32 type_num)
+int hclge_query_bd_num_cmd_send(struct hclge_dev *hdev, struct hclge_desc *desc)
 {
-	u32 entries_per_desc, desc_index, index, i;
-	enum hclge_dfx_reg_offset offset;
-	struct hclge_desc desc[4];
 	int ret;
 
 	/*prepare 4 commands to query DFX BD number*/
@@ -9615,9 +9610,23 @@ static int hclge_get_dfx_reg_bd_num(struct hclge_dev *hdev,
 	hclge_cmd_setup_basic_desc(&desc[3], HCLGE_OPC_DFX_BD_NUM, true);
 
 	ret = hclge_cmd_send(&hdev->hw, desc, 4);
+
+	return ret;
+}
+
+static int hclge_get_dfx_reg_bd_num(struct hclge_dev *hdev,
+				    int *bd_num_list,
+				    u32 type_num)
+{
+	u32 entries_per_desc, desc_index, index, i;
+	enum hclge_dfx_reg_offset offset;
+	struct hclge_desc desc[4];
+	int ret;
+
+	ret = hclge_query_bd_num_cmd_send(hdev, desc);
 	if (ret != HCLGE_CMD_EXEC_SUCCESS) {
 		dev_err(&hdev->pdev->dev,
-			"Query dfx bd num fail, status is %d.\n", ret);
+			"Get dfx bd num fail, status is %d.\n", ret);
 		return ret;
 	}
 

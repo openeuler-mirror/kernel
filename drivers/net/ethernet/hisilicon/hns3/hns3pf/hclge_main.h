@@ -1032,4 +1032,6 @@ int hclge_push_vf_port_base_vlan_info(struct hclge_vport *vport, u8 vfid,
 enum hnae3_reset_type hclge_get_reset_level(struct hnae3_ae_dev *ae_dev,
 					    unsigned long *addr);
 void hclge_link_status_change(struct hclge_dev *hdev, int state);
+int hclge_query_bd_num_cmd_send(struct hclge_dev *hdev,
+				struct hclge_desc *desc);
 #endif
