@@ -545,11 +545,15 @@ static void hns3_get_drvinfo(struct net_device *netdev,
 	fw_version = priv->ae_handle->ae_algo->ops->get_fw_version(h);
 
 	snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version),
-		 "%d.%d.%d.%d",
-		 hnae3_get_field(fw_version, 0xFF000000, 24),
-		 hnae3_get_field(fw_version, 0x00FF0000, 16),
-		 hnae3_get_field(fw_version, 0x0000FF00, 8),
-		 hnae3_get_field(fw_version, 0x000000FF, 0));
+		 "%lu.%lu.%lu.%lu",
+		 hnae3_get_field(fw_version, HNAE3_FW_VERSION_BYTE3_MASK,
+				 HNAE3_FW_VERSION_BYTE3_SHIFT),
+		 hnae3_get_field(fw_version, HNAE3_FW_VERSION_BYTE2_MASK,
+				 HNAE3_FW_VERSION_BYTE2_SHIFT),
+		 hnae3_get_field(fw_version, HNAE3_FW_VERSION_BYTE1_MASK,
+				 HNAE3_FW_VERSION_BYTE1_SHIFT),
+		 hnae3_get_field(fw_version, HNAE3_FW_VERSION_BYTE0_MASK,
+				 HNAE3_FW_VERSION_BYTE0_SHIFT));
 }
 
 static u32 hns3_get_link(struct net_device *netdev)
