@@ -40,20 +40,18 @@
 #define HCLGE_LINK_STATUS_MS	10
 
 /* Get DFX BD number offset */
-enum hclge_dfx_reg_offset {
-	HCLGE_DFX_BIOS_BD_OFFSET = 1,
-	HCLGE_DFX_SSU_0_BD_OFFSET,
-	HCLGE_DFX_SSU_1_BD_OFFSET,
-	HCLGE_DFX_IGU_BD_OFFSET,
-	HCLGE_DFX_RPU_0_BD_OFFSET,
-	HCLGE_DFX_RPU_1_BD_OFFSET,
-	HCLGE_DFX_NCSI_BD_OFFSET,
-	HCLGE_DFX_RTC_BD_OFFSET,
-	HCLGE_DFX_PPP_BD_OFFSET,
-	HCLGE_DFX_RCB_BD_OFFSET,
-	HCLGE_DFX_TQP_BD_OFFSET,
-	HCLGE_DFX_SSU_2_BD_OFFSET
-};
+#define HCLGE_DFX_BIOS_BD_OFFSET        1
+#define HCLGE_DFX_SSU_0_BD_OFFSET       2
+#define HCLGE_DFX_SSU_1_BD_OFFSET       3
+#define HCLGE_DFX_IGU_BD_OFFSET         4
+#define HCLGE_DFX_RPU_0_BD_OFFSET       5
+#define HCLGE_DFX_RPU_1_BD_OFFSET       6
+#define HCLGE_DFX_NCSI_BD_OFFSET        7
+#define HCLGE_DFX_RTC_BD_OFFSET         8
+#define HCLGE_DFX_PPP_BD_OFFSET         9
+#define HCLGE_DFX_RCB_BD_OFFSET         10
+#define HCLGE_DFX_TQP_BD_OFFSET         11
+#define HCLGE_DFX_SSU_2_BD_OFFSET       12
 
 static int hclge_set_mac_mtu(struct hclge_dev *hdev, int new_mps);
 static int hclge_init_vlan_config(struct hclge_dev *hdev);
@@ -336,7 +334,7 @@ static const u8 hclge_hash_key[] = {
 	0x6A, 0x42, 0xB7, 0x3B, 0xBE, 0xAC, 0x01, 0xFA
 };
 
-static const enum hclge_dfx_reg_offset hclge_dfx_bd_offset_list[] = {
+static const u32 hclge_dfx_bd_offset_list[] = {
 	HCLGE_DFX_BIOS_BD_OFFSET,
 	HCLGE_DFX_SSU_0_BD_OFFSET,
 	HCLGE_DFX_SSU_1_BD_OFFSET,
@@ -9618,8 +9616,7 @@ static int hclge_get_dfx_reg_bd_num(struct hclge_dev *hdev,
 				    int *bd_num_list,
 				    u32 type_num)
 {
-	u32 entries_per_desc, desc_index, index, i;
-	enum hclge_dfx_reg_offset offset;
+	u32 entries_per_desc, desc_index, index, offset, i;
 	struct hclge_desc desc[4];
 	int ret;
 
