@@ -3019,13 +3019,30 @@ static void hclge_irq_affinity_notify(struct irq_affinity_notify *notify,
 					      affinity_notify);
 
 	cpumask_copy(&hdev->affinity_mask, mask);
-	del_timer(&hdev->service_timer);
+	del_timer_sync(&hdev->service_timer);
 	hdev->service_timer.expires = jiffies + HZ;
 	add_timer_on(&hdev->service_timer, cpumask_first(&hdev->affinity_mask));
 }
 
 static void hclge_irq_affinity_release(struct kref *ref)
 {
+}
+
+static void hclge_misc_affinity_setup(struct hclge_dev *hdev)
+{
+	irq_set_affinity_hint(hdev->misc_vector.vector_irq,
+			      &hdev->affinity_mask);
+
+	hdev->affinity_notify.notify = hclge_irq_affinity_notify;
+	hdev->affinity_notify.release = hclge_irq_affinity_release;
+	irq_set_affinity_notifier(hdev->misc_vector.vector_irq,
+				  &hdev->affinity_notify);
+}
+
+static void hclge_misc_affinity_teardown(struct hclge_dev *hdev)
+{
+	irq_set_affinity_notifier(hdev->misc_vector.vector_irq, NULL);
+	irq_set_affinity_hint(hdev->misc_vector.vector_irq, NULL);
 }
 
 static int hclge_misc_irq_init(struct hclge_dev *hdev)
@@ -3041,24 +3058,13 @@ static int hclge_misc_irq_init(struct hclge_dev *hdev)
 		hclge_free_vector(hdev, 0);
 		dev_err(&hdev->pdev->dev, "request misc irq(%d) fail\n",
 			hdev->misc_vector.vector_irq);
-		return ret;
 	}
 
-	irq_set_affinity_hint(hdev->misc_vector.vector_irq,
-			      &hdev->affinity_mask);
-
-	hdev->affinity_notify.notify = hclge_irq_affinity_notify;
-	hdev->affinity_notify.release = hclge_irq_affinity_release;
-	irq_set_affinity_notifier(hdev->misc_vector.vector_irq,
-				  &hdev->affinity_notify);
-
-	return 0;
+	return ret;
 }
 
 static void hclge_misc_irq_uninit(struct hclge_dev *hdev)
 {
-	irq_set_affinity_notifier(hdev->misc_vector.vector_irq, NULL);
-	irq_set_affinity_hint(hdev->misc_vector.vector_irq, NULL);
 	free_irq(hdev->misc_vector.vector_irq, hdev);
 	hclge_free_vector(hdev, 0);
 }
@@ -6514,7 +6520,7 @@ static void hclge_enable_timer_task(struct hnae3_handle *handle, bool enable)
 	struct hclge_dev *hdev = vport->back;
 
 	if (enable) {
-		del_timer(&hdev->service_timer);
+		del_timer_sync(&hdev->service_timer);
 		hdev->service_timer.expires = jiffies + HZ;
 		add_timer_on(&hdev->service_timer,
 			     cpumask_first(&hdev->affinity_mask));
@@ -9164,6 +9170,11 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 	INIT_WORK(&hdev->rst_service_task, hclge_reset_service_task);
 	INIT_WORK(&hdev->mbx_service_task, hclge_mailbox_service_task);
 
+	/* Setup affinity after service timer setup because add_timer_on
+	 * is called in affinity notify.
+	 */
+	hclge_misc_affinity_setup(hdev);
+
 	hclge_clear_all_event_cause(hdev);
 	hclge_clear_resetting_state(hdev);
 
@@ -9330,6 +9341,7 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct hclge_mac *mac = &hdev->hw.mac;
 
+	hclge_misc_affinity_teardown(hdev);
 	hclge_state_uninit(hdev);
 
 	if (mac->phydev)
