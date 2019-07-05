@@ -60,6 +60,8 @@ static void flush_work_handle(struct work_struct *work)
 		dev_err(dev, "Modify qp to err for flush cqe fail(%d)\n", ret);
 
 	kfree(flush_work);
+	if (atomic_dec_and_test(&hr_qp->refcount))
+		complete(&hr_qp->free);
 }
 
 void init_flush_work(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
@@ -73,6 +75,7 @@ void init_flush_work(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 	flush_work->hr_dev = hr_dev;
 	flush_work->hr_qp = hr_qp;
 	INIT_WORK(&flush_work->work, flush_work_handle);
+	atomic_inc(&hr_qp->refcount);
 	queue_work(hr_dev->flush_workq, &flush_work->work);
 }
 EXPORT_SYMBOL_GPL(init_flush_work);
