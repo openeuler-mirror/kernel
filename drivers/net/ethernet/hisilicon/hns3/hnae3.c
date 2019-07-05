@@ -104,7 +104,7 @@ int hnae3_register_client(struct hnae3_client *client)
 {
 	struct hnae3_client *client_tmp;
 	struct hnae3_ae_dev *ae_dev;
-	int ret = 0;
+	int ret;
 
 	if (!client)
 		return -ENODEV;
@@ -179,7 +179,7 @@ void hnae3_register_ae_algo(struct hnae3_ae_algo *ae_algo)
 	const struct pci_device_id *id;
 	struct hnae3_ae_dev *ae_dev;
 	struct hnae3_client *client;
-	int ret = 0;
+	int ret;
 
 	if (!ae_algo)
 		return;
@@ -273,7 +273,7 @@ int hnae3_register_ae_dev(struct hnae3_ae_dev *ae_dev)
 	const struct pci_device_id *id;
 	struct hnae3_ae_algo *ae_algo;
 	struct hnae3_client *client;
-	int ret = 0;
+	int ret;
 
 	if (!ae_dev)
 		return -ENODEV;

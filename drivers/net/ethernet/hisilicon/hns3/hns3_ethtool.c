@@ -140,6 +140,7 @@ static int hns3_lp_down(struct net_device *ndev, enum hnae3_loop loop_mode)
 
 static void hns3_lp_setup_skb(struct sk_buff *skb)
 {
+#define	HNS3_NIC_LB_DST_MAC_ADDR	0x1f
 	struct net_device *ndev = skb->dev;
 	unsigned char *packet;
 	struct ethhdr *ethh;
@@ -161,7 +162,7 @@ static void hns3_lp_setup_skb(struct sk_buff *skb)
 	 * before the packet reaches mac or serdes, which will defect
 	 * the purpose of mac or serdes selftest.
 	 */
-	ethh->h_dest[5] += 0x1f;
+	ethh->h_dest[5] += HNS3_NIC_LB_DST_MAC_ADDR;
 	eth_zero_addr(ethh->h_source);
 	ethh->h_proto = htons(ETH_P_ARP);
 	skb_reset_mac_header(skb);
@@ -624,7 +625,7 @@ static void hns3_get_ksettings(struct hnae3_handle *h,
 					     &cmd->base.speed,
 					     &cmd->base.duplex);
 
-	/* 2.get link mode*/
+	/* 2.get link mode */
 	if (ops->get_link_mode)
 		ops->get_link_mode(h,
 				   cmd->link_modes.supported,
@@ -740,7 +741,7 @@ static int hns3_set_link_ksettings(struct net_device *netdev,
 {
 	struct hnae3_handle *handle = hns3_get_handle(netdev);
 	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
-	int ret = 0;
+	int ret;
 
 	/* Chip don't support this mode. */
 	if (cmd->base.speed == SPEED_1000 && cmd->base.duplex == DUPLEX_HALF)

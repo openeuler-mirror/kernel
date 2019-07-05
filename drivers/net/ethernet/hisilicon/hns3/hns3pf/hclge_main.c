@@ -2860,9 +2860,9 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 	 * defer the processing of the mailbox events. Since, we would have not
 	 * cleared RX CMDQ event this time we would receive again another
 	 * interrupt from H/W just for the mailbox.
+	 *
+	 * check for vector0 reset event sources
 	 */
-
-	/* check for vector0 reset event sources */
 	if (BIT(HCLGE_VECTOR0_IMPRESET_INT_B) & rst_src_reg) {
 		dev_info(&hdev->pdev->dev, "IMP reset interrupt\n");
 		set_bit(HNAE3_IMP_RESET, &hdev->reset_pending);
@@ -3099,7 +3099,7 @@ int hclge_notify_client(struct hclge_dev *hdev,
 
 
 static int hclge_notify_roce_client(struct hclge_dev *hdev,
-	                            enum hnae3_reset_notify_type type)
+				    enum hnae3_reset_notify_type type)
 {
 	struct hnae3_client *client = hdev->roce_client;
 	int ret = 0;
@@ -3109,7 +3109,7 @@ static int hclge_notify_roce_client(struct hclge_dev *hdev,
 		return 0;
 
 	if (!client->ops->reset_notify)
-	        return -EOPNOTSUPP;
+		return -EOPNOTSUPP;
 
 	for (i = 0; i < hdev->num_vmdq_vport + 1; i++) {
 		struct hnae3_handle *handle = &hdev->vport[i].roce;
@@ -3124,7 +3124,7 @@ static int hclge_notify_roce_client(struct hclge_dev *hdev,
 	}
 
 	return ret;
- }
+}
 
 
 static int hclge_reset_wait(struct hclge_dev *hdev)
@@ -7470,7 +7470,7 @@ static void hclge_enable_vlan_filter(struct hnae3_handle *handle, bool enable)
 }
 
 static int hclge_set_vf_vlan_common(struct hclge_dev *hdev, u16 vfid,
-				    bool is_kill, u16 vlan, u8 qos,
+				    bool is_kill, u16 vlan,
 				    __be16 proto)
 {
 #define HCLGE_MAX_VF_BYTES  16
@@ -7581,7 +7581,7 @@ static int hclge_set_port_vlan_filter(struct hclge_dev *hdev, __be16 proto,
 }
 
 static int hclge_set_vlan_filter_hw(struct hclge_dev *hdev, __be16 proto,
-				    u16 vport_id, u16 vlan_id, u8 qos,
+				    u16 vport_id, u16 vlan_id,
 				    bool is_kill)
 {
 	u16 vport_idx, vport_num = 0;
@@ -7591,7 +7591,7 @@ static int hclge_set_vlan_filter_hw(struct hclge_dev *hdev, __be16 proto,
 		return 0;
 
 	ret = hclge_set_vf_vlan_common(hdev, vport_id, is_kill, vlan_id,
-				       0, proto);
+				       proto);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Set %d vport vlan filter config fail, ret =%d.\n",
@@ -7654,7 +7654,7 @@ int hclge_set_vlan_filter(struct hnae3_handle *handle, __be16 proto,
 	 */
 	if (handle->port_base_vlan_state == HNAE3_PORT_BASE_VLAN_DISABLE) {
 		ret = hclge_set_vlan_filter_hw(hdev, proto, vport->vport_id,
-					       vlan_id, 0, is_kill);
+					       vlan_id, is_kill);
 		writen_to_tbl = true;
 	}
 
@@ -7920,7 +7920,7 @@ static void hclge_add_vport_all_vlan_table(struct hclge_vport *vport)
 			hclge_set_vlan_filter_hw(hdev,
 						 htons(ETH_P_8021Q),
 						 vport->vport_id,
-						 vlan->vlan_id, 0,
+						 vlan->vlan_id,
 						 false);
 
 		vlan->hd_tbl_status = true;
@@ -7939,7 +7939,7 @@ static void hclge_rm_vport_vlan_table(struct hclge_vport *vport, u16 vlan_id,
 				hclge_set_vlan_filter_hw(hdev,
 							 htons(ETH_P_8021Q),
 							 vport->vport_id,
-							 vlan_id, 0,
+							 vlan_id,
 							 true);
 
 			list_del(&vlan->node);
@@ -7959,7 +7959,7 @@ void hclge_rm_vport_all_vlan_table(struct hclge_vport *vport, bool is_del_list)
 			hclge_set_vlan_filter_hw(hdev,
 						 htons(ETH_P_8021Q),
 						 vport->vport_id,
-						 vlan->vlan_id, 0,
+						 vlan->vlan_id,
 						 true);
 
 		vlan->hd_tbl_status = false;
@@ -8006,7 +8006,7 @@ void hclge_restore_vlan_table(struct hnae3_handle *handle)
 
 		if (state != HNAE3_PORT_BASE_VLAN_DISABLE) {
 			hclge_set_vlan_filter_hw(hdev, htons(vlan_proto),
-						 vport->vport_id, vlan_id, qos,
+						 vport->vport_id, vlan_id,
 						 false);
 			continue;
 		}
@@ -8016,7 +8016,7 @@ void hclge_restore_vlan_table(struct hnae3_handle *handle)
 				hclge_set_vlan_filter_hw(hdev,
 							 htons(ETH_P_8021Q),
 							 vport->vport_id,
-							 vlan->vlan_id, 0,
+							 vlan->vlan_id,
 							 false);
 		}
 	}
@@ -8056,14 +8056,14 @@ static int hclge_update_vlan_filter_entries(struct hclge_vport *vport,
 						 htons(new_info->vlan_proto),
 						 vport->vport_id,
 						 new_info->vlan_tag,
-						 new_info->qos, false);
+						 false);
 
 	} else {
 		ret = hclge_set_vlan_filter_hw(hdev,
 					       htons(old_info->vlan_proto),
 					       vport->vport_id,
 					       old_info->vlan_tag,
-					       old_info->qos, true);
+					       true);
 		if (ret)
 			return ret;
 
@@ -8090,10 +8090,10 @@ int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
 		hclge_set_vlan_filter_hw(hdev, old_vlan_info->vlan_proto,
 					 vport->vport_id,
 					 old_vlan_info->vlan_tag,
-					 old_vlan_info->qos, true);
+					 true);
 		hclge_set_vlan_filter_hw(hdev, vlan_info->vlan_proto,
 					 vport->vport_id, vlan_info->vlan_tag,
-					 vlan_info->qos, false);
+					 false);
 		goto update;
 	}
 
@@ -8204,7 +8204,7 @@ static void hclge_sync_vlan_filter(struct hclge_dev *hdev)
 		while (vlan_id != VLAN_N_VID) {
 			ret = hclge_set_vlan_filter_hw(hdev, htons(ETH_P_8021Q),
 						       vport->vport_id, vlan_id,
-						       0, true);
+						       true);
 			if (ret && ret != -EINVAL)
 				return;
 

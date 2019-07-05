@@ -301,7 +301,7 @@ struct hns3_desc_cb {
 	dma_addr_t dma; /* dma address of this desc */
 	void *buf;      /* cpu addr for a desc */
 
-	/* priv data for the desc, e.g. skb when use with ip stack*/
+	/* priv data for the desc, e.g. skb when use with ip stack */
 	void *priv;
 	u32 page_offset;
 	u32 length;     /* length of the buffer */

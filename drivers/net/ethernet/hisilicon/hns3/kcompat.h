@@ -182,7 +182,8 @@ struct tc_mqprio_qopt_offload {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0))
 
 #define is_signed_type(type)       (((type)(-1)) < (type)1)
-#define __type_half_max(type) ((type)1 << (8*sizeof(type) - 1 - is_signed_type(type)))
+#define __type_half_max(type) ((type)1 << (8*sizeof(type) - 1 \
+			      - is_signed_type(type)))
 #define type_max(T) ((T)((__type_half_max(T) - 1) + __type_half_max(T)))
 #define type_min(T) ((T)((T)-type_max(T)-(T)1))
 

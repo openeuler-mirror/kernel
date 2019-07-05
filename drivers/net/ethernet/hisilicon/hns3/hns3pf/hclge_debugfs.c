@@ -99,7 +99,8 @@ static void hclge_dbg_dump_reg_common(struct hclge_dev *hdev,
 
 	desc = desc_src;
 	for (i = 0; i < max; i++) {
-		((i > 0) && ((i % entries_per_desc) == 0)) ? desc++ : desc;
+		if (i > 0 && (i % entries_per_desc) == 0)
+			desc++;
 		if (dfx_message->flag)
 			dev_info(&hdev->pdev->dev, "%s: 0x%x\n",
 				 dfx_message->message,
@@ -733,7 +734,8 @@ static void hclge_dbg_dump_qos_buf_cfg(struct hclge_dev *hdev)
 	rx_priv_wl = (struct hclge_rx_priv_wl_buf *)desc[1].data;
 	for (i = 0; i < HCLGE_TC_NUM_ONE_DESC; i++)
 		dev_info(&hdev->pdev->dev,
-			 "rx_priv_wl_tc_%d: high: 0x%x, low: 0x%x\n", i + 4,
+			 "rx_priv_wl_tc_%d: high: 0x%x, low: 0x%x\n",
+			 i + HCLGE_TC_NUM_ONE_DESC,
 			 rx_priv_wl->tc_wl[i].high, rx_priv_wl->tc_wl[i].low);
 
 	cmd = HCLGE_OPC_RX_COM_THRD_ALLOC;
@@ -755,7 +757,8 @@ static void hclge_dbg_dump_qos_buf_cfg(struct hclge_dev *hdev)
 	rx_com_thrd = (struct hclge_rx_com_thrd *)desc[1].data;
 	for (i = 0; i < HCLGE_TC_NUM_ONE_DESC; i++)
 		dev_info(&hdev->pdev->dev,
-			 "rx_com_thrd_tc_%d: high: 0x%x, low: 0x%x\n", i + 4,
+			 "rx_com_thrd_tc_%d: high: 0x%x, low: 0x%x\n",
+			 i + HCLGE_TC_NUM_ONE_DESC,
 			 rx_com_thrd->com_thrd[i].high,
 			 rx_com_thrd->com_thrd[i].low);
 
@@ -825,9 +828,9 @@ static void hclge_dbg_dump_mng_table(struct hclge_dev *hdev)
 		memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
 		snprintf(printf_buf, HCLGE_DBG_BUF_LEN,
 			 "%02u   |%02x:%02x:%02x:%02x:%02x:%02x|",
-			 req0->index, req0->mac_add[0], req0->mac_add[1],
-			 req0->mac_add[2], req0->mac_add[3], req0->mac_add[4],
-			 req0->mac_add[5]);
+			 req0->index, req0->mac_addr[0], req0->mac_addr[1],
+			 req0->mac_addr[2], req0->mac_addr[3],
+			 req0->mac_addr[4], req0->mac_addr[5]);
 
 		snprintf(printf_buf + strlen(printf_buf),
 			 HCLGE_DBG_BUF_LEN - strlen(printf_buf),

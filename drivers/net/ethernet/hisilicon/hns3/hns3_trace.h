@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /* Copyright (c) 2018-2019 Hisilicon Limited. */
 
+/* This must be outside ifdef _HNS3_TRACE_H */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM hns3
 
@@ -55,12 +56,12 @@ DEFINE_EVENT(hns3_skb_template, hns3_over_8bd,
 	TP_ARGS(skb));
 
 DEFINE_EVENT(hns3_skb_template, hns3_gro,
-        TP_PROTO(struct sk_buff *skb),
-        TP_ARGS(skb));
+	TP_PROTO(struct sk_buff *skb),
+	TP_ARGS(skb));
 
 DEFINE_EVENT(hns3_skb_template, hns3_tso,
-        TP_PROTO(struct sk_buff *skb),
-        TP_ARGS(skb));
+	TP_PROTO(struct sk_buff *skb),
+	TP_ARGS(skb));
 
 TRACE_EVENT(hns3_tx_desc,
 	TP_PROTO(struct hns3_enet_ring *ring),

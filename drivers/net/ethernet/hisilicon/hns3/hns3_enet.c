@@ -226,9 +226,9 @@ static void hns3_vector_gl_rl_init(struct hns3_enet_tqp_vector *tqp_vector,
 	/* initialize the configuration for interrupt coalescing.
 	 * 1. GL (Interrupt Gap Limiter)
 	 * 2. RL (Interrupt Rate Limiter)
+	 *
+	 * Default: enable interrupt coalescing self-adaptive and GL
 	 */
-
-	/* Default: enable interrupt coalescing self-adaptive and GL */
 	tqp_vector->tx_group.coal.gl_adapt_enable = 1;
 	tqp_vector->rx_group.coal.gl_adapt_enable = 1;
 
@@ -1019,7 +1019,7 @@ static int hns3_fill_desc_vtags(struct sk_buff *skb,
 		 */
 		if (skb->protocol == htons(ETH_P_8021Q)) {
 			if (handle->port_base_vlan_state ==
-			    HNAE3_PORT_BASE_VLAN_DISABLE){
+			    HNAE3_PORT_BASE_VLAN_DISABLE) {
 				hns3_set_field(*out_vlan_flag, HNS3_TXD_OVLAN_B,
 					       1);
 				*out_vtag = vlan_tag;

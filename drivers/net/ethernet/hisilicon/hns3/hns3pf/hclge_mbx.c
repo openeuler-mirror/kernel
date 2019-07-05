@@ -506,7 +506,7 @@ static void hclge_mbx_reset_vf_queue(struct hclge_vport *vport,
 
 	hclge_reset_vf_queue(vport, queue_id);
 
-	/* send response msg to VF after queue reset complete*/
+	/* send response msg to VF after queue reset complete */
 	hclge_gen_resp_to_vf(vport, mbx_req, 0, NULL, 0);
 }
 
@@ -551,7 +551,8 @@ static int hclge_get_queue_id_in_pf(struct hclge_vport *vport,
 	qid_in_pf = hclge_covert_handle_qid_global(&vport->nic, queue_id);
 	memcpy(resp_data, &qid_in_pf, sizeof(qid_in_pf));
 
-	return hclge_gen_resp_to_vf(vport, mbx_req, 0, resp_data, 2);
+	return hclge_gen_resp_to_vf(vport, mbx_req, 0, resp_data,
+				    sizeof(resp_data));
 }
 
 static int hclge_get_rss_key(struct hclge_vport *vport,
@@ -773,8 +774,10 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 					ret);
 			break;
 		case HCLGE_MBX_NCSI_ERROR:
-			ae_dev->ops->set_default_reset_request(ae_dev, HNAE3_GLOBAL_RESET);
-			dev_warn(&hdev->pdev->dev, "requesting reset due to NCSI error\n");
+			ae_dev->ops->set_default_reset_request(ae_dev,
+							HNAE3_GLOBAL_RESET);
+			dev_warn(&hdev->pdev->dev,
+				 "requesting reset due to NCSI error\n");
 			ae_dev->ops->reset_event(hdev->pdev, NULL);
 			break;
 		case HCLGE_MBX_PUSH_LINK_STATUS:

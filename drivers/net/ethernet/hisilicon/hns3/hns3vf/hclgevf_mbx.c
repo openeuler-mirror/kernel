@@ -316,7 +316,7 @@ void hclgevf_mbx_async_handler(struct hclgevf_dev *hdev)
 		case HCLGE_MBX_LINK_STAT_MODE:
 			idx = (u8)le16_to_cpu(msg_q[1]);
 			if (idx)
-				memcpy(&hdev->hw.mac.supported , &msg_q[2],
+				memcpy(&hdev->hw.mac.supported, &msg_q[2],
 				       sizeof(unsigned long));
 			else
 				memcpy(&hdev->hw.mac.advertising, &msg_q[2],

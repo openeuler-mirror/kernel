@@ -5,6 +5,7 @@
 #define __HCLGE_CMD_H
 #include <linux/types.h>
 #include <linux/io.h>
+#include <linux/etherdevice.h>
 
 #define HCLGE_CMDQ_TX_TIMEOUT		30000
 
@@ -752,7 +753,7 @@ struct hclge_mac_vlan_idx_rd_cmd {
 	u8	rsv0;
 	u8	resp_code;
 	__le16  vlan_tag;
-	u8      mac_add[6];
+	u8      mac_addr[ETH_ALEN];
 	__le16  port;
 	u8	entry_type;
 	u8	mc_mac_en;
@@ -766,7 +767,7 @@ struct hclge_mac_ethertype_idx_rd_cmd {
 	u8	flags;
 	u8	resp_code;
 	__le16  vlan_tag;
-	u8      mac_add[6];
+	u8      mac_addr[ETH_ALEN];
 	__le16  index;
 	__le16	ethter_type;
 	__le16  egress_port;
