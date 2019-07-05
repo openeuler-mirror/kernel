@@ -908,6 +908,9 @@ static struct hns3_enet_ring *hns3_backup_ringparam(struct hns3_nic_priv *priv)
 static int hns3_check_ringparam(struct net_device *ndev,
 				struct ethtool_ringparam *param)
 {
+	if (hns3_nic_resetting(ndev))
+		return -EBUSY;
+
 	if (param->rx_mini_pending || param->rx_jumbo_pending)
 		return -EINVAL;
 
@@ -975,7 +978,7 @@ static int hns3_set_ringparam(struct net_device *ndev,
 			memcpy(priv->ring_data[i].ring, &tmp_rings[i],
 			       sizeof(struct hns3_enet_ring));
 	} else {
-		for (i = 0; i < h->kinfo.num_tqps; i++)
+		for (i = 0; i < h->kinfo.num_tqps * 2; i++)
 			hns3_fini_ring(&tmp_rings[i]);
 	}
 
