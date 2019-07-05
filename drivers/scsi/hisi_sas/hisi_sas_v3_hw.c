@@ -1091,6 +1091,21 @@ static void sl_notify_ssp_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 	hisi_sas_phy_write32(hisi_hba, phy_no, SL_CONTROL, sl_control);
 }
 
+void ssp_notify_work_handler(struct work_struct *work)
+{
+	struct hisi_hba *hisi_hba =
+		container_of(work, struct hisi_hba, notify_work);
+	int i;
+
+	for (i = 0; i < HISI_SAS_MAX_PHYS; i++) {
+		if (hisi_hba->phy[i].need_notify) {
+			sl_notify_ssp_v3_hw(hisi_hba, i);
+			hisi_hba->phy[i].need_notify = 0;
+		}
+	}
+}
+
+
 static int get_wideport_bitmap_v3_hw(struct hisi_hba *hisi_hba, int port_id)
 {
 	int i, bitmap = 0;
@@ -2298,6 +2313,27 @@ static int hisi_sas_get_sense_data(struct ssp_response_iu *iu,
 	return rc;
 }
 
+static int ssp_need_spin_up(struct hisi_sas_slot *slot)
+{
+	int rc;
+	struct hisi_sas_sense_data sense_data;
+	struct ssp_response_iu *iu =
+		hisi_sas_status_buf_addr_mem(slot) +
+		sizeof(struct hisi_sas_err_record);
+	rc = hisi_sas_get_sense_data(iu, &sense_data);
+
+	/*
+	 * if the SAS disk response with ASC=04h,
+	 * ASCQ=11h, host should send NOTIFY primitive.
+	 */
+	if (rc == 0 &&
+		sense_data.add_sense_code == 0x4 &&
+		sense_data.add_sense_code_qua == 0x11)
+		return 1;
+
+	return 0;
+}
+
 static int
 slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 {
@@ -2366,17 +2402,19 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 	/* check for erroneous completion, 0x3 means abnormal */
 	if ((complete_hdr->dw0 & CMPLT_HDR_CMPLT_MSK) == 0x3) {
 		u32 *error_info = hisi_sas_status_buf_addr_mem(slot);
+		u32 device_id = (complete_hdr->dw1 & 0xffff0000) >> 16;
+		struct hisi_sas_itct *itct = &hisi_hba->itct[device_id];
 
 		slot_err_v3_hw(hisi_hba, task, slot);
-		if (ts->stat != SAS_DATA_UNDERRUN)
-			dev_info(dev, "erroneous completion iptt=%d task=%p dev id=%d "
-				"CQ hdr: 0x%x 0x%x 0x%x 0x%x "
-				"Error info: 0x%x 0x%x 0x%x 0x%x\n",
-				slot->idx, task, sas_dev->device_id,
-				complete_hdr->dw0, complete_hdr->dw1,
-				complete_hdr->act, complete_hdr->dw3,
-				error_info[0], error_info[1],
-				error_info[2], error_info[3]);
+		dev_info(dev, "erroneous completion iptt=%d task=%p dev id=%d sas_addr=0x%llx "
+			"CQ hdr: 0x%x 0x%x 0x%x 0x%x "
+			"Error info: 0x%x 0x%x 0x%x 0x%x\n",
+			slot->idx, task, sas_dev->device_id,
+			itct->sas_addr,
+			complete_hdr->dw0, complete_hdr->dw1,
+			complete_hdr->act, complete_hdr->dw3,
+			error_info[0], error_info[1],
+			error_info[2], error_info[3]);
 
 		if ((error_info[3] & RX_DATA_LEN_UNDERFLOW_MSK) &&
 			(task->task_proto == SAS_PROTOCOL_SSP)) {
@@ -2410,6 +2448,17 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 			sizeof(struct hisi_sas_err_record);
 
 		sas_ssp_task_response(dev, task, iu);
+		if ((!(device->parent &&
+				DEV_IS_EXPANDER(device->parent->dev_type))) &&
+			ssp_need_spin_up(slot)) {
+			int phy_no;
+
+			dev_info(dev, "disk not ready ,need send NOTIFY primitive, phy_id:%d\n",
+				device->phy->identify.phy_identifier);
+			phy_no = device->phy->identify.phy_identifier;
+			hisi_hba->phy[phy_no].need_notify = 1;
+			queue_work(hisi_hba->wq, &hisi_hba->notify_work);
+		}
 		break;
 	}
 	case SAS_PROTOCOL_SMP: {
@@ -3299,6 +3348,7 @@ hisi_sas_shost_alloc_pci(struct pci_dev *pdev)
 
 	INIT_WORK(&hisi_hba->rst_work, hisi_sas_rst_work_handler);
 	INIT_WORK(&hisi_hba->debugfs_work, hisi_sas_debugfs_work_handler);
+	INIT_WORK(&hisi_hba->notify_work, ssp_notify_work_handler);
 	hisi_hba->hw = &hisi_sas_v3_hw;
 	hisi_hba->pci_dev = pdev;
 	hisi_hba->dev = dev;

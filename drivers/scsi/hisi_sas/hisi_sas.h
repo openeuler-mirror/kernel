@@ -154,7 +154,8 @@ struct hisi_sas_phy {
 	u8		frame_rcvd[32];
 	u8		phy_attached;
 	u8		in_reset;
-	u8		reserved[2];
+	u8		need_notify;
+	u8		reserved;
 	u32		phy_type;
 	enum sas_linkrate	minimum_linkrate;
 	enum sas_linkrate	maximum_linkrate;
@@ -384,6 +385,7 @@ struct hisi_hba {
 	unsigned long sata_dev_bitmap[BITS_TO_LONGS(HISI_SAS_MAX_DEVICES)];
 	struct work_struct rst_work;
 	struct work_struct debugfs_work;
+	struct work_struct notify_work;
 	u32 phy_state;
 	u32 intr_coal_ticks;	/* time of interrupt coalesce, unit:1us */
 	u32 intr_coal_count;	/* count of interrupt coalesce */
