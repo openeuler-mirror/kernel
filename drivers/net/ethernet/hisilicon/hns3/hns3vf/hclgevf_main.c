@@ -249,6 +249,12 @@ static int hclgevf_get_queue_info(struct hclgevf_dev *hdev)
 	memcpy(&hdev->rss_size_max, &resp_msg[2], sizeof(u16));
 	memcpy(&hdev->rx_buf_len, &resp_msg[4], sizeof(u16));
 
+	/* if irq is not enough, let tqps have the same value of irqs,
+	 * to make sure one irq just bind to one tqp, this can improve
+	 * the performance
+	 */
+	hdev->num_tqps = min(hdev->num_msi_left, hdev->num_tqps);
+
 	return 0;
 }
 
@@ -2193,7 +2199,7 @@ static int hclgevf_init_msi(struct hclgevf_dev *hdev)
 	int vectors;
 	int i;
 
-	if (hnae3_get_bit(hdev->ae_dev->flag, HNAE3_DEV_SUPPORT_ROCE_B))
+	if (hnae3_dev_roce_supported(hdev))
 		vectors = pci_alloc_irq_vectors(pdev,
 						hdev->roce_base_msix_offset + 1,
 						hdev->num_msi,
@@ -2214,7 +2220,18 @@ static int hclgevf_init_msi(struct hclgevf_dev *hdev)
 			 hdev->num_msi, vectors);
 
 	hdev->num_msi = vectors;
+
+	/* num_msi_left means the vector number of nic.
+	 * 1. if not support RoCE, roce_base_msix_offset is 0, the num_msi_left
+	 * equals to vectors.
+	 * 2. if support RoCE, roce_base_msix_offset means the vector number of
+	 * nic, so num_msi_left equals to roce_base_msix_offset.
+	 */
 	hdev->num_msi_left = vectors;
+	if (hnae3_dev_roce_supported(hdev))
+		hdev->num_msi_left = min(hdev->num_msi_left,
+					 hdev->roce_base_msix_offset);
+
 	hdev->base_msi_vector = pdev->irq;
 	hdev->roce_base_vector = pdev->irq + hdev->roce_base_msix_offset;
 
@@ -2489,7 +2506,7 @@ static int hclgevf_query_vf_resource(struct hclgevf_dev *hdev)
 
 	req = (struct hclgevf_query_res_cmd *)desc.data;
 
-	if (hnae3_get_bit(hdev->ae_dev->flag, HNAE3_DEV_SUPPORT_ROCE_B)) {
+	if (hnae3_dev_roce_supported(hdev)) {
 		hdev->roce_base_msix_offset =
 		hnae3_get_field(__le16_to_cpu(req->msixcap_localid_ba_rocee),
 				HCLGEVF_MSIX_OFT_ROCEE_M,

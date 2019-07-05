@@ -1553,13 +1553,20 @@ static int hclge_vport_setup(struct hclge_vport *vport, u16 num_tqps)
 {
 	struct hnae3_handle *nic = &vport->nic;
 	struct hclge_dev *hdev = vport->back;
+	u16 alloc_tqps;
 	int ret;
 
 	nic->pdev = hdev->pdev;
 	nic->ae_algo = &ae_algo;
 	nic->numa_node_mask = hdev->numa_node_mask;
 
-	ret = hclge_knic_setup(vport, num_tqps,
+	/* if irq is not enough, let tqps have the same value of irqs,
+	 * to make sure one irq just bind to one tqp, this can improve
+	 * the performance
+	 */
+	alloc_tqps = min(hdev->num_msi_left, num_tqps);
+
+	ret = hclge_knic_setup(vport, alloc_tqps,
 			       hdev->num_tx_desc, hdev->num_rx_desc);
 	if (ret)
 		dev_err(&hdev->pdev->dev, "knic setup failed %d\n", ret);
@@ -2269,7 +2276,18 @@ static int hclge_init_msi(struct hclge_dev *hdev)
 			 hdev->num_msi, vectors);
 
 	hdev->num_msi = vectors;
+
+	/* num_msi_left means the vector number of nic.
+	 * 1. if not support RoCE, roce_base_msix_offset is 0, the num_msi_left
+	 * equals to vectors.
+	 * 2. if support RoCE, roce_base_msix_offset means the vector number of
+	 * nic, so num_msi_left equals to roce_base_msix_offset.
+	 */
 	hdev->num_msi_left = vectors;
+	if (hnae3_dev_roce_supported(hdev))
+		hdev->num_msi_left = min(hdev->num_msi_left,
+					 hdev->roce_base_msix_offset);
+
 	hdev->base_msi_vector = pdev->irq;
 	hdev->roce_base_vector = hdev->base_msi_vector +
 				hdev->roce_base_msix_offset;
