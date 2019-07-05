@@ -967,11 +967,18 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 
 		hr_qp->sq.wrid = kcalloc(hr_qp->sq.wqe_cnt, sizeof(u64),
 					       GFP_KERNEL);
-		hr_qp->rq.wrid = kcalloc(hr_qp->rq.wqe_cnt, sizeof(u64),
-					       GFP_KERNEL);
-		if (!hr_qp->sq.wrid || !hr_qp->rq.wrid) {
+		if (ZERO_OR_NULL_PTR(hr_qp->sq.wrid)) {
 			ret = -ENOMEM;
-			goto err_wrid;
+			goto err_get_bufs;
+		}
+
+		if (hr_qp->rq.wqe_cnt) {
+			hr_qp->rq.wrid = kcalloc(hr_qp->rq.wqe_cnt, sizeof(u64),
+						 GFP_KERNEL);
+			if (ZERO_OR_NULL_PTR(hr_qp->rq.wrid)) {
+				ret = -ENOMEM;
+				goto err_sq_wrid;
+			}
 		}
 	}
 
@@ -1060,8 +1067,8 @@ err_wrid:
 					to_hr_ucontext(ib_pd->uobject->context),
 					&hr_qp->rdb);
 	} else {
-		kfree(hr_qp->sq.wrid);
-		kfree(hr_qp->rq.wrid);
+		if (hr_qp->rq.wqe_cnt)
+			kfree(hr_qp->rq.wrid);
 	}
 
 err_sq_dbmap:
@@ -1073,6 +1080,9 @@ err_sq_dbmap:
 			hns_roce_db_unmap_user(
 					to_hr_ucontext(ib_pd->uobject->context),
 					&hr_qp->sdb);
+err_sq_wrid:
+	if (!ib_pd->uobject)
+		kfree(hr_qp->sq.wrid);
 
 err_get_bufs:
 	hns_roce_free_buf_list(buf_list, hr_qp->region_cnt);
