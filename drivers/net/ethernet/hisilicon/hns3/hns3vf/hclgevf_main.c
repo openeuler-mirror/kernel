@@ -253,7 +253,9 @@ static int hclgevf_get_queue_info(struct hclgevf_dev *hdev)
 	 * to make sure one irq just bind to one tqp, this can improve
 	 * the performance
 	 */
-	hdev->num_tqps = min(hdev->num_msi_left, hdev->num_tqps);
+	hdev->num_tqps = min_t(u16, hdev->roce_base_msix_offset - 1,
+			       hdev->num_tqps);
+	hdev->rss_size_max = min_t(u16, hdev->num_tqps, hdev->rss_size_max);
 
 	return 0;
 }
@@ -2220,17 +2222,7 @@ static int hclgevf_init_msi(struct hclgevf_dev *hdev)
 			 hdev->num_msi, vectors);
 
 	hdev->num_msi = vectors;
-
-	/* num_msi_left means the vector number of nic.
-	 * 1. if not support RoCE, roce_base_msix_offset is 0, the num_msi_left
-	 * equals to vectors.
-	 * 2. if support RoCE, roce_base_msix_offset means the vector number of
-	 * nic, so num_msi_left equals to roce_base_msix_offset.
-	 */
 	hdev->num_msi_left = vectors;
-	if (hnae3_dev_roce_supported(hdev))
-		hdev->num_msi_left = min(hdev->num_msi_left,
-					 hdev->roce_base_msix_offset);
 
 	hdev->base_msi_vector = pdev->irq;
 	hdev->roce_base_vector = pdev->irq + hdev->roce_base_msix_offset;
