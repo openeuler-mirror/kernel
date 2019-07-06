@@ -1068,7 +1068,7 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 	spin_lock_bh(&csq->lock);
 
 	if (num > hns_roce_cmq_space(csq)) {
-		dev_err(hr_dev->dev, "cmq num(%d) is out of space %p\n",
+		dev_err(hr_dev->dev, "cmq num(%d) is out of space %pK\n",
 			 num, csq);
 		spin_unlock_bh(&csq->lock);
 		return -EBUSY;
