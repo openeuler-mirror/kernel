@@ -5525,7 +5525,6 @@ static struct hns_roce_ceqe *next_ceqe_sw_v2(struct hns_roce_eq *eq)
 static int hns_roce_v2_ceq_int(struct hns_roce_dev *hr_dev,
 			       struct hns_roce_eq *eq)
 {
-	struct device *dev = hr_dev->dev;
 	struct hns_roce_ceqe *ceqe;
 	int ceqe_found = 0;
 	u32 ci_max;
@@ -5549,10 +5548,8 @@ static int hns_roce_v2_ceq_int(struct hns_roce_dev *hr_dev,
 		ceqe_found = 1;
 
 		ci_max = 2 * eq->entries - 1;
-		if (eq->cons_index > ci_max) {
-			dev_info(dev, "ceq cons_index overflow, set back to 0.\n");
+		if (eq->cons_index > ci_max)
 			eq->cons_index = 0;
-		}
 
 		rdfx_inc_ceqe_cnt(hr_dev, eq->eqn);
 	}
