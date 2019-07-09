@@ -11,6 +11,9 @@
 
 static int one = 1;
 static int delay_max = 100;
+/* set loop queue length from 0 to 10 big packets(65536) */
+static int qlen_min;
+static int qlen_max = 655360;
 
 int sysctl_ipvlan_loop_qlen = 131072;
 int sysctl_ipvlan_loop_delay = 10;
@@ -34,7 +37,9 @@ static struct ctl_table ipvlan_table[] = {
 		.data		= &sysctl_ipvlan_loop_qlen,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = &qlen_min,
+		.extra2         = &qlen_max,
 	},
 	{ }
 };
