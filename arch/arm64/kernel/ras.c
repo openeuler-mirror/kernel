@@ -97,8 +97,8 @@ void sea_notify_process(void)
 		pfn = si->paddr >> PAGE_SHIFT;
 
 
-		pr_err("Uncorrected hardware memory error in user-access at %llx\n",
-			si->paddr);
+		pr_err("Uncorrected hardware memory error in user-access at %pK\n",
+			(void *)si->paddr);
 		/*
 		 * We must call memory_failure() here even if the current process is
 		 * doomed. We still need to mark the page as poisoned and alert any
