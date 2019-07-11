@@ -1322,7 +1322,7 @@ int hisi_qm_stop_qp(struct hisi_qp *qp)
 		msleep(WAIT_PERIOD);
 		if (i == MAX_WAIT_COUNTS) {
 			dev_info(dev, "Cannot drain out data for stopping, force to stop!\n");
-			return 0;
+			break;
 		}
 	}
 
