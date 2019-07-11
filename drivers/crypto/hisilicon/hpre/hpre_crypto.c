@@ -89,24 +89,6 @@ struct hpre_asym_request {
 
 static void _rsa_cb(struct hpre_ctx *ctx, void *resp);
 
-void hpre_bn_format(void *buff, int len)
-{
-	int i = len - 1;
-	int j;
-	unsigned char *buf = buff;
-
-	while (!buf[i] && i >= 0)
-		i--;
-	if (i == len - 1)
-		return;
-	for (j = len - 1; j >= 0; j--, i--) {
-		if (i >= 0)
-			buf[j] = buf[i];
-		else
-			buf[j] = 0;
-	}
-}
-
 static int hpre_alloc_req_id(struct hpre_ctx *ctx)
 {
 	int id;
@@ -234,7 +216,6 @@ static int _cp_data_to_dma_buf(struct hpre_asym_request *hpre_req,
 	}
 	if (is_src) {
 		scatterwalk_map_and_copy(ptr + shift, data, 0, len, 0);
-		(void)hpre_bn_format(ptr, ctx->key_sz);
 		hpre_req->src_align = ptr;
 	} else {
 		hpre_req->dst_align = ptr;
@@ -260,7 +241,7 @@ static int _hw_data_init(struct hpre_asym_request *hpre_req,
 			return ret;
 	} else {
 		ret = _cp_data_to_dma_buf(hpre_req, data, len,
-					is_src, is_dh, &tmp);
+					  is_src, is_dh, &tmp);
 		if (ret)
 			return ret;
 	}
@@ -513,7 +494,6 @@ static int hpre_dh_set_params(struct hpre_ctx *ctx, struct dh *params)
 	if (!ctx->dh.xa_p)
 		return -ENOMEM;
 	memcpy(ctx->dh.xa_p + sz, params->p, sz);
-	hpre_bn_format((unsigned char *)ctx->dh.xa_p + sz, sz);
 
 	/* If g equals 2 don't copy it */
 	if (params->g_size == 1 && *(char *)params->g == _DH_G_FLAG) {
@@ -526,7 +506,6 @@ static int hpre_dh_set_params(struct hpre_ctx *ctx, struct dh *params)
 		return -ENOMEM;
 	memcpy(ctx->dh.g + (sz - params->g_size), params->g,
 	       params->g_size);
-	hpre_bn_format(ctx->dh.g, ctx->key_sz);
 
 	return 0;
 }
@@ -567,7 +546,6 @@ static int hpre_dh_set_secret(struct crypto_kpp *tfm, const void *buf,
 
 	memcpy(ctx->dh.xa_p + (ctx->key_sz - params.key_size), params.key,
 	       params.key_size);
-	hpre_bn_format((unsigned char *)ctx->dh.xa_p, ctx->key_sz);
 
 	return 0;
 
@@ -754,11 +732,8 @@ static int hpre_rsa_set_n(struct hpre_ctx *ctx, const char *value,
 	if (!ctx->rsa.pubkey)
 		return -ENOMEM;
 	memcpy(ctx->rsa.pubkey + vlen, ptr, vlen);
-	hpre_bn_format((unsigned char *)ctx->rsa.pubkey + vlen, vlen);
-	if (ctx->rsa.prikey) {
+	if (ctx->rsa.prikey)
 		memcpy(ctx->rsa.prikey + vlen, ptr, vlen);
-		hpre_bn_format((unsigned char *)ctx->rsa.prikey + vlen, vlen);
-	}
 
 	return 0;
 err:
@@ -781,8 +756,7 @@ static int hpre_rsa_set_e(struct hpre_ctx *ctx, const char *value,
 		return -EINVAL;
 	}
 
-	memcpy(ctx->rsa.pubkey, ptr, vlen);
-	hpre_bn_format((unsigned char *)ctx->rsa.pubkey, ctx->key_sz);
+	memcpy(ctx->rsa.pubkey + ctx->key_sz - vlen, ptr, vlen);
 
 	return 0;
 }
@@ -799,8 +773,7 @@ static int hpre_rsa_set_d(struct hpre_ctx *ctx, const char *value,
 	if (!ctx->key_sz || !vlen || vlen > ctx->key_sz)
 		goto err;
 
-	memcpy(ctx->rsa.prikey, ptr, vlen);
-	hpre_bn_format((unsigned char *)ctx->rsa.prikey, ctx->key_sz);
+	memcpy(ctx->rsa.prikey + ctx->key_sz - vlen, ptr, vlen);
 	return 0;
 err:
 	ctx->rsa.prikey = NULL;
@@ -825,8 +798,7 @@ static int hpre_crt_para_get(char *para, const char *raw,
 	if (!len)
 		return -EINVAL;
 
-	memcpy(para, ptr, len);
-	hpre_bn_format(para, para_size);
+	memcpy(para + para_size - len, ptr, len);
 
 	return 0;
 }
