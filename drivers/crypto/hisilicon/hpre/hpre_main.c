@@ -1194,71 +1194,25 @@ static pci_ers_result_t hpre_slot_reset(struct pci_dev *pdev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
+#ifdef CONFIG_CRYPTO_QM_UACCE
 static void hpre_reset_prepare(struct pci_dev *pdev)
 {
 	struct hpre *hpre = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hpre->qm;
-	struct device *dev = &pdev->dev;
-	int ret;
 
-	ret = hisi_qm_stop(qm);
-	if (ret) {
-		dev_err(dev, "Failed to stop QM!\n");
-		return;
-	}
-	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
-		dev_warn(dev, "Failed to set reset flag!");
-		return;
-	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce)
 		uacce_reset_prepare(&qm->uacce);
-#endif
-
-	dev_info(dev, "FLR resetting...\n");
 }
 
 static void hpre_reset_done(struct pci_dev *pdev)
 {
 	struct hpre *hpre = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hpre->qm;
-	struct device *dev = &pdev->dev;
-	struct hisi_qp *qp;
-	int i, ret;
 
-	if (pdev->is_physfn) {
-		ret = hpre_set_user_domain_and_cache(hpre);
-		if (ret)
-			return;
-		hpre_hw_err_init(hpre);
-		if (hpre->ctrl->num_vfs)
-			hpre_vf_q_assign(hpre, hpre->ctrl->num_vfs);
-	}
-	hisi_qm_clear_queues(qm);
-	ret = hisi_qm_start(qm);
-	if (ret) {
-		dev_err(dev, "Failed to start QM!\n");
-		return;
-	}
-	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
-		if (qp) {
-			ret = hisi_qm_start_qp(qp, 0);
-			if (ret < 0) {
-				dev_err(dev, "Start qp%d failed\n", i);
-				return;
-			}
-		}
-	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce)
 		uacce_reset_done(&qm->uacce);
-#endif
-
-	dev_info(dev, "FLR reset complete\n");
 }
+#endif
 
 static void hpre_remove(struct pci_dev *pdev)
 {
@@ -1286,8 +1240,10 @@ static void hpre_remove(struct pci_dev *pdev)
 static const struct pci_error_handlers hpre_err_handler = {
 	.error_detected		= hpre_error_detected,
 	.slot_reset		= hpre_slot_reset,
+#ifdef CONFIG_CRYPTO_QM_UACCE
 	.reset_prepare		= hpre_reset_prepare,
 	.reset_done		= hpre_reset_done,
+#endif
 };
 
 static struct pci_driver hpre_pci_driver = {
