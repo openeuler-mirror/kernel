@@ -1067,7 +1067,8 @@ struct hisi_qp *hisi_qm_create_qp(struct hisi_qm *qm, u8 alg_type)
 	qp_id = find_first_zero_bit(qm->qp_bitmap, qm->qp_num);
 	if (qp_id >= qm->qp_num) {
 		write_unlock(&qm->qps_lock);
-		dev_info(&qm->pdev->dev, "QM all queues are busy!\n");
+		dev_info_ratelimited(&qm->pdev->dev, "QM all queues are busy!\n");
+
 		ret = -EBUSY;
 		goto err_free_qp;
 	}
