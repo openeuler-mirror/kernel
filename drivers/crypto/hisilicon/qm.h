@@ -317,6 +317,7 @@ int hisi_qp_wait(struct hisi_qp *qp);
 int hisi_qm_get_free_qp_num(struct hisi_qm *qm);
 int hisi_qm_get_vft(struct hisi_qm *qm, u32 *base, u32 *number);
 int hisi_qm_set_vft(struct hisi_qm *qm, u32 fun_num, u32 base, u32 number);
+void hisi_qm_cnt_regs_clear(struct hisi_qm *qm);
 int hisi_qm_debug_init(struct hisi_qm *qm);
 void hisi_qm_hw_error_init(struct hisi_qm *qm, u32 ce, u32 nfe, u32 fe,
 			   u32 msi);

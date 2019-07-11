@@ -850,11 +850,9 @@ struct qm_dfx_registers {
 };
 
 static struct qm_dfx_registers qm_dfx_regs[] = {
-	{"QM_DFX_FUNS_ACTIVE_ST         ",  0x200ull},
+	/* these regs are read clear */
 	{"QM_ECC_1BIT_CNT               ",  0x104000ull},
-	{"QM_ECC_1BIT_INF               ",  0x104004ull},
 	{"QM_ECC_MBIT_CNT               ",  0x104008ull},
-	{"QM_ECC_MBIT_INF               ",  0x10400cull},
 	{"QM_DFX_MB_CNT                 ",  0x104018ull},
 	{"QM_DFX_DB_CNT                 ",  0x104028ull},
 	{"QM_DFX_SQE_CNT                ",  0x104038ull},
@@ -862,10 +860,14 @@ static struct qm_dfx_registers qm_dfx_regs[] = {
 	{"QM_DFX_SEND_SQE_TO_ACC_CNT    ",  0x104050ull},
 	{"QM_DFX_WB_SQE_FROM_ACC_CNT    ",  0x104058ull},
 	{"QM_DFX_ACC_FINISH_CNT         ",  0x104060ull},
+	{"QM_DFX_CQE_ERR_CNT            ",  0x1040b4ull},
+
+	{"QM_DFX_FUNS_ACTIVE_ST         ",  0x200ull},
+	{"QM_ECC_1BIT_INF               ",  0x104004ull},
+	{"QM_ECC_MBIT_INF               ",  0x10400cull},
 	{"QM_DFX_ACC_RDY_VLD0           ",  0x1040a0ull},
 	{"QM_DFX_ACC_RDY_VLD1           ",  0x1040a4ull},
 	{"QM_DFX_AXI_RDY_VLD            ",  0x1040a8ull},
-	{"QM_DFX_CQE_ERR_CNT            ",  0x1040b4ull},
 	{"QM_DFX_FF_ST0                 ",  0x1040c8ull},
 	{"QM_DFX_FF_ST1                 ",  0x1040ccull},
 	{"QM_DFX_FF_ST2                 ",  0x1040d0ull},
@@ -2209,6 +2211,34 @@ int hisi_qm_stop(struct hisi_qm *qm)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(hisi_qm_stop);
+
+/**
+ * hisi_qm_cnt_regs_clear() - clear qm cnt regs.
+ * @qm: The qm for which we want to clear
+ */
+void hisi_qm_cnt_regs_clear(struct hisi_qm *qm)
+{
+	struct qm_dfx_registers *regs;
+	int i;
+
+	/* clear current_q */
+	writel(0x0, qm->io_base + QM_DFX_SQE_CNT_VF_SQN);
+	writel(0x0, qm->io_base + QM_DFX_CQE_CNT_VF_CQN);
+
+	/* clear regs, these cnt regs are read_clear */
+	writel(0x1, qm->io_base + QM_DFX_CNT_CLR_CE);
+
+	regs = qm_dfx_regs;
+#define CNT_CYC_REGS_NUM		10
+	for (i = 0; i < CNT_CYC_REGS_NUM; i++) {
+		readl(qm->io_base + regs->reg_offset);
+		regs++;
+	}
+
+	/* clear clear_enable */
+	writel(0x0, qm->io_base + QM_DFX_CNT_CLR_CE);
+}
+EXPORT_SYMBOL_GPL(hisi_qm_cnt_regs_clear);
 
 /**
  * hisi_qm_debug_init() - Initialize qm related debugfs files.

@@ -406,6 +406,28 @@ static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 	return ret;
 }
 
+/* hpre_cnt_regs_clear() - clear the hpre cnt regs */
+static void hpre_cnt_regs_clear(struct hisi_qm *qm)
+{
+	unsigned long offset;
+	int i;
+
+	/* clear current_qm */
+	writel(0x0, qm->io_base + QM_DFX_MB_CNT_VF);
+	writel(0x0, qm->io_base + QM_DFX_DB_CNT_VF);
+
+	/* clear clusterX/cluster_ctrl */
+	for (i = 0; i < HPRE_CLUSTERS_NUM; i++) {
+		offset = HPRE_CLSTR_BASE + i * HPRE_CLSTR_ADDR_INTRVL;
+		writel(0x0, qm->io_base + offset + HPRE_CLUSTER_INQURY);
+	}
+
+	/* clear rdclr_en */
+	writel(0x0, qm->io_base + HPRE_CTRL_CNT_CLR_CE);
+
+	hisi_qm_cnt_regs_clear(qm);
+}
+
 static void hpre_hw_error_set_state(struct hpre *hpre, bool state)
 {
 	struct hisi_qm *qm = &hpre->qm;
@@ -817,6 +839,7 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return ret;
 
 	if (pdev->is_physfn) {
+		hpre_cnt_regs_clear(qm);
 		ret = hpre_pf_probe_init(hpre);
 		if (ret)
 			goto err_with_qm_init;
@@ -1240,6 +1263,9 @@ static void hpre_remove(struct pci_dev *pdev)
 		}
 	}
 #endif
+	if (qm->fun_type == QM_HW_PF)
+		hpre_cnt_regs_clear(qm);
+
 	hpre_debugfs_exit(hpre);
 	hisi_qm_stop(qm);
 	if (qm->fun_type == QM_HW_PF)
