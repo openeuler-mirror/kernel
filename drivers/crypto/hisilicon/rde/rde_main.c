@@ -62,6 +62,8 @@
 
 #define HRDE_FSM_MAX_CNT		0x310280
 #define HRDE_QM_IDEL_STATUS				0x1040e4
+#define HRDE_QM_PEH_DFX_INFO0			0x1000fc
+#define PEH_MSI_MASK_SHIFT		0x90
 #define HRDE_MASTER_GLOBAL_CTRL		0x300000
 #define MASTER_GLOBAL_CTRL_SHUTDOWN	0x1
 #define HRDE_MASTER_TRANS_RETURN		0x300150
@@ -158,8 +160,6 @@ struct ctrl_debug_file {
  * Just relevant for PF.
  */
 struct hisi_rde_ctrl {
-	u32 ctrl_q_num;
-	u32 num_vfs;
 	struct hisi_rde *hisi_rde;
 	struct dentry *debug_root;
 	struct ctrl_debug_file files[HRDE_DEBUG_FILE_NUM];
@@ -262,75 +262,6 @@ static inline void hisi_rde_remove_from_list(struct hisi_rde *hisi_rde)
 	mutex_unlock(&hisi_rde_list_lock);
 }
 
-static void hisi_rde_engine_init(struct hisi_rde *hisi_rde)
-{
-	writel(DFX_CTRL0, hisi_rde->qm.io_base + HRDE_DFX_CTRL_0);
-	readl(hisi_rde->qm.io_base + HRDE_ECC_ERR);
-	readl(hisi_rde->qm.io_base + HRDE_ECC_ERR_CNT);
-	readl(hisi_rde->qm.io_base + HRDE_OP_DONE_CNT);
-	readl(hisi_rde->qm.io_base + HRDE_OP_ERR_CNT);
-	readl(hisi_rde->qm.io_base + HRDE_OP_ABORT_CNT);
-	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_FIFO_STAT_0);
-	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_INT_SOURCE);
-	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_DFX_STAT_7);
-	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_DFX_STAT_8);
-
-	/*usr domain */
-	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_AWUSER_BD_1);
-	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_BD_1);
-	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_AWUSER_DAT_1);
-	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_DAT_1);
-	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_SGL_1);
-	/*rde cache */
-	writel(AWCACHE, hisi_rde->qm.io_base + HRDE_AWCACHE);
-	writel(ARCACHE, hisi_rde->qm.io_base + HRDE_ARCACHE);
-
-	/*rde chn enable + outstangding config */
-	writel(CHN_CFG, hisi_rde->qm.io_base + HRDE_CFG);
-}
-
-static void hisi_rde_set_user_domain_and_cache(struct hisi_rde *hisi_rde)
-{
-	/* qm user domain */
-	writel(AXUSER_BASE, hisi_rde->qm.io_base + QM_ARUSER_M_CFG_1);
-	writel(ARUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
-	       QM_ARUSER_M_CFG_ENABLE);
-	writel(AXUSER_BASE, hisi_rde->qm.io_base + QM_AWUSER_M_CFG_1);
-	writel(AWUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
-	       QM_AWUSER_M_CFG_ENABLE);
-	writel(WUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
-	       QM_WUSER_M_CFG_ENABLE);
-
-	/* qm cache */
-	writel(AXI_M_CFG, hisi_rde->qm.io_base + QM_AXI_M_CFG);
-	writel(AXI_M_CFG_ENABLE, hisi_rde->qm.io_base + QM_AXI_M_CFG_ENABLE);
-	writel(PEH_AXUSER_CFG_ENABLE, hisi_rde->qm.io_base +
-	       QM_PEH_AXUSER_CFG_ENABLE);
-
-	writel(CACHE_CTL, hisi_rde->qm.io_base + QM_CACHE_CTL);
-
-	hisi_rde_engine_init(hisi_rde);
-}
-
-static void hisi_rde_hw_error_set_state(struct hisi_rde *hisi_rde, bool state)
-{
-	u32 ras_msk = (HRDE_RAS_CE_MSK | HRDE_RAS_NFE_MSK);
-
-	/*
-	 * if enable RDE hw error interrupts, bd prefetch should bd
-	 * masked,otherwise ras int will misreport
-	 */
-	if (state) {
-		writel(HRDE_RAS_ENABLE,
-		       hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
-		writel((HRDE_INT_ENABLE | BIT(8)),
-		       hisi_rde->qm.io_base + HRDE_INT_MSK);
-	} else {
-		writel(ras_msk, hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
-		writel(HRDE_INT_DISABLE, hisi_rde->qm.io_base + HRDE_INT_MSK);
-	}
-}
-
 static inline struct hisi_qm *file_to_qm(struct ctrl_debug_file *file)
 {
 	struct hisi_rde *hisi_rde = file->ctrl->hisi_rde;
@@ -348,11 +279,9 @@ static u32 current_qm_read(struct ctrl_debug_file *file)
 static int current_qm_write(struct ctrl_debug_file *file, u32 val)
 {
 	struct hisi_qm *qm = file_to_qm(file);
-	struct hisi_rde_ctrl *ctrl = file->ctrl;
 
-	if (val > ctrl->num_vfs) {
-		pr_err("function id should be smaller than %d\n",
-		       ctrl->num_vfs);
+	if (val > 0) {
+		pr_err("function id should be smaller than 0.\n");
 		return -EINVAL;
 	}
 
@@ -450,9 +379,8 @@ static int hisi_rde_chn_debug_init(struct hisi_rde_ctrl *ctrl)
 	regset->nregs = ARRAY_SIZE(hrde_dfx_regs);
 	regset->base = qm->io_base + HRDE_COM_OFFSET;
 
-	tmp =
-	    debugfs_create_regset32("rde_chn_dfx_regs", 0444, ctrl->debug_root,
-				    regset);
+	tmp = debugfs_create_regset32("rde_chn_dfx_regs",
+		0444, ctrl->debug_root, regset);
 	if (!tmp)
 		return -ENOENT;
 
@@ -516,12 +444,79 @@ static void hisi_rde_debugfs_exit(struct hisi_rde *hisi_rde)
 	debugfs_remove_recursive(qm->debug.debug_root);
 }
 
+static void hisi_rde_engine_init(struct hisi_rde *hisi_rde)
+{
+	writel(DFX_CTRL0, hisi_rde->qm.io_base + HRDE_DFX_CTRL_0);
+	readl(hisi_rde->qm.io_base + HRDE_ECC_ERR);
+	readl(hisi_rde->qm.io_base + HRDE_ECC_ERR_CNT);
+	readl(hisi_rde->qm.io_base + HRDE_OP_DONE_CNT);
+	readl(hisi_rde->qm.io_base + HRDE_OP_ERR_CNT);
+	readl(hisi_rde->qm.io_base + HRDE_OP_ABORT_CNT);
+	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_FIFO_STAT_0);
+	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_INT_SOURCE);
+	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_DFX_STAT_7);
+	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_DFX_STAT_8);
+
+	/*usr domain */
+	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_AWUSER_BD_1);
+	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_BD_1);
+	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_AWUSER_DAT_1);
+	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_DAT_1);
+	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_SGL_1);
+	/*rde cache */
+	writel(AWCACHE, hisi_rde->qm.io_base + HRDE_AWCACHE);
+	writel(ARCACHE, hisi_rde->qm.io_base + HRDE_ARCACHE);
+
+	/*rde chn enable + outstangding config */
+	writel(CHN_CFG, hisi_rde->qm.io_base + HRDE_CFG);
+}
+
+static void hisi_rde_set_user_domain_and_cache(struct hisi_rde *hisi_rde)
+{
+	/* qm user domain */
+	writel(AXUSER_BASE, hisi_rde->qm.io_base + QM_ARUSER_M_CFG_1);
+	writel(ARUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
+	       QM_ARUSER_M_CFG_ENABLE);
+	writel(AXUSER_BASE, hisi_rde->qm.io_base + QM_AWUSER_M_CFG_1);
+	writel(AWUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
+	       QM_AWUSER_M_CFG_ENABLE);
+	writel(WUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
+	       QM_WUSER_M_CFG_ENABLE);
+
+	/* qm cache */
+	writel(AXI_M_CFG, hisi_rde->qm.io_base + QM_AXI_M_CFG);
+	writel(AXI_M_CFG_ENABLE, hisi_rde->qm.io_base + QM_AXI_M_CFG_ENABLE);
+	writel(PEH_AXUSER_CFG_ENABLE, hisi_rde->qm.io_base +
+	       QM_PEH_AXUSER_CFG_ENABLE);
+
+	writel(CACHE_CTL, hisi_rde->qm.io_base + QM_CACHE_CTL);
+
+	hisi_rde_engine_init(hisi_rde);
+}
+
+static void hisi_rde_hw_error_set_state(struct hisi_rde *hisi_rde, bool state)
+{
+	u32 ras_msk = (HRDE_RAS_CE_MSK | HRDE_RAS_NFE_MSK);
+
+	/*
+	 * if enable RDE hw error interrupts, bd prefetch should bd
+	 * masked,otherwise ras int will misreport
+	 */
+	if (state) {
+		writel(HRDE_RAS_ENABLE,
+		       hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
+		writel((HRDE_INT_ENABLE | BIT(8)),
+		       hisi_rde->qm.io_base + HRDE_INT_MSK);
+	} else {
+		writel(ras_msk, hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
+		writel(HRDE_INT_DISABLE, hisi_rde->qm.io_base + HRDE_INT_MSK);
+	}
+}
+
 static void hisi_rde_hw_error_init(struct hisi_rde *hisi_rde)
 {
 	hisi_qm_hw_error_init(&hisi_rde->qm, QM_BASE_CE,
-			      QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT |
-			      QM_SQ_CQ_VF_INVALID | QM_CQ_VF_INVALID |
-			      QM_SQ_VF_INVALID | QM_DB_RANDOM_INVALID, 0, 0);
+			      QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT, 0, 0);
 	hisi_rde_hw_error_set_state(hisi_rde, true);
 }
 
@@ -536,7 +531,6 @@ static int hisi_rde_pf_probe_init(struct hisi_rde *hisi_rde)
 
 	hisi_rde->ctrl = ctrl;
 	ctrl->hisi_rde = hisi_rde;
-	ctrl->num_vfs = 0;
 
 	switch (qm->ver) {
 	case QM_HW_V1:
@@ -570,7 +564,7 @@ static int hisi_rde_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	qm->sqe_size = HRDE_SQE_SIZE;
 	qm->dev_name = hisi_rde_name;
 	qm->fun_type = QM_HW_PF;
-	qm->algs = "rde\nraid\n";
+	qm->algs = "rde\n";
 
 	switch (uacce_mode) {
 	case UACCE_MODE_NOUACCE:
@@ -649,34 +643,6 @@ static int hisi_rde_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	return ret;
 }
 
-/* now we only support equal assignment */
-static int hisi_rde_vf_q_assign(struct hisi_rde *hisi_rde, int num_vfs)
-{
-	struct hisi_rde_ctrl *ctrl = hisi_rde->ctrl;
-	struct hisi_qm *qm = &hisi_rde->qm;
-	u32 qp_num = qm->qp_num;
-	u32 q_base = qp_num;
-	u32 q_num, remain_q_num, i;
-	int ret;
-
-	if (!num_vfs)
-		return -EINVAL;
-
-	remain_q_num = ctrl->ctrl_q_num - qp_num;
-	q_num = remain_q_num / num_vfs;
-
-	for (i = 1; i <= num_vfs; i++) {
-		if (i == num_vfs)
-			q_num += remain_q_num % num_vfs;
-		ret = hisi_qm_set_vft(qm, i, q_base, q_num);
-		if (ret)
-			return ret;
-		q_base += q_num;
-	}
-
-	return 0;
-}
-
 static void hisi_rde_remove(struct pci_dev *pdev)
 {
 	struct hisi_rde *hisi_rde = pci_get_drvdata(pdev);
@@ -689,7 +655,7 @@ static void hisi_rde_remove(struct pci_dev *pdev)
 	hisi_qm_uninit(qm);
 }
 
-static void hisi_rde_log_hw_error(struct hisi_rde *hisi_rde, u32 err_sts)
+static void hisi_rde_hw_error_log(struct hisi_rde *hisi_rde, u32 err_sts)
 {
 	const struct hisi_rde_hw_error *err = rde_hw_error;
 	struct device *dev = &hisi_rde->qm.pdev->dev;
@@ -699,13 +665,7 @@ static void hisi_rde_log_hw_error(struct hisi_rde *hisi_rde, u32 err_sts)
 		if (err->int_msk & err_sts) {
 			dev_warn(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
-			if (HRDE_ECC_1BIT_ERR & err_sts) {
-				err_val =
-				    (readl(hisi_rde->qm.io_base + HRDE_ERR_CNT)
-				     >> HRDE_ECC_1BIT_SHIFT);
-				dev_warn(dev, "rde ecc 1bit sram num=0x%x\n",
-					 err_val);
-			}
+
 			if (HRDE_ECC_2BIT_ERR & err_sts) {
 				err_val =
 				    (readl(hisi_rde->qm.io_base + HRDE_ERR_CNT)
@@ -718,7 +678,7 @@ static void hisi_rde_log_hw_error(struct hisi_rde *hisi_rde, u32 err_sts)
 	}
 }
 
-static pci_ers_result_t hisi_rde_handle_hw_error(struct hisi_rde *hisi_rde)
+static pci_ers_result_t hisi_rde_hw_error_handle(struct hisi_rde *hisi_rde)
 {
 	u32 err_sts;
 
@@ -727,7 +687,7 @@ static pci_ers_result_t hisi_rde_handle_hw_error(struct hisi_rde *hisi_rde)
 	/* read err sts */
 	err_sts = readl(hisi_rde->qm.io_base + HRDE_INT_STATUS);
 	if (err_sts) {
-		hisi_rde_log_hw_error(hisi_rde, err_sts);
+		hisi_rde_hw_error_log(hisi_rde, err_sts);
 
 		/* clear error interrupts */
 		writel(err_sts, hisi_rde->qm.io_base + HRDE_INT_SOURCE);
@@ -737,7 +697,7 @@ static pci_ers_result_t hisi_rde_handle_hw_error(struct hisi_rde *hisi_rde)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
-static pci_ers_result_t hisi_rde_process_hw_error(struct pci_dev *pdev)
+static pci_ers_result_t hisi_rde_hw_error_process(struct pci_dev *pdev)
 {
 	struct hisi_rde *hisi_rde = pci_get_drvdata(pdev);
 	struct device *dev = &pdev->dev;
@@ -752,25 +712,12 @@ static pci_ers_result_t hisi_rde_process_hw_error(struct pci_dev *pdev)
 	qm_ret = hisi_qm_hw_error_handle(&hisi_rde->qm);
 
 	/* log rde error */
-	rde_ret = hisi_rde_handle_hw_error(hisi_rde);
+	rde_ret = hisi_rde_hw_error_handle(hisi_rde);
 	ret = (qm_ret == PCI_ERS_RESULT_NEED_RESET ||
 	       rde_ret == PCI_ERS_RESULT_NEED_RESET) ?
 	    PCI_ERS_RESULT_NEED_RESET : PCI_ERS_RESULT_RECOVERED;
 
 	return ret;
-}
-
-static pci_ers_result_t hisi_rde_error_detected(struct pci_dev *pdev,
-						pci_channel_state_t state)
-{
-	if (pdev->is_virtfn)
-		return PCI_ERS_RESULT_NONE;
-
-	dev_info(&pdev->dev, "PCI error detected, state(=%d)!!\n", state);
-	if (state == pci_channel_io_perm_failure)
-		return PCI_ERS_RESULT_DISCONNECT;
-
-	return hisi_rde_process_hw_error(pdev);
 }
 
 static int hisi_rde_controller_reset_prepare(struct hisi_rde *hisi_rde)
@@ -790,6 +737,31 @@ static int hisi_rde_controller_reset_prepare(struct hisi_rde *hisi_rde)
 		return -EPERM;
 	}
 
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		uacce_reset_prepare(&qm->uacce);
+#endif
+
+	return 0;
+}
+
+static int hisi_rde_set_peh_msi(struct hisi_rde *hisi_rde, bool set)
+{
+	struct pci_dev *pdev = hisi_rde->qm.pdev;
+	u32 val;
+
+	if (set) {
+		(void)pci_write_config_dword(pdev, PEH_MSI_MASK_SHIFT, 0);
+	} else {
+		(void)pci_write_config_dword(pdev,
+			PEH_MSI_MASK_SHIFT, GENMASK(31, 0));
+		usleep_range(1000, 2000);
+		val = readl_relaxed(hisi_rde->qm.io_base +
+			HRDE_QM_PEH_DFX_INFO0);
+		if (val)
+			return -EFAULT;
+	}
+
 	return 0;
 }
 
@@ -800,6 +772,12 @@ static int hisi_rde_soft_reset(struct hisi_rde *hisi_rde)
 	int ret;
 	u32 val;
 
+	/*PEH MSI set*/
+	ret = hisi_rde_set_peh_msi(hisi_rde, false);
+	if (ret) {
+		dev_emerg(dev, "chip is wrong! Please reset system.\n");
+		return ret;
+	}
 	/* OOO register set and check */
 	writel(MASTER_GLOBAL_CTRL_SHUTDOWN,
 	       hisi_rde->qm.io_base + HRDE_MASTER_GLOBAL_CTRL);
@@ -818,7 +796,7 @@ static int hisi_rde_soft_reset(struct hisi_rde *hisi_rde)
 	if (ACPI_HANDLE(dev)) {
 		acpi_status s;
 
-		s = acpi_evaluate_object(ACPI_HANDLE(dev), "ZRST", NULL, NULL);
+		s = acpi_evaluate_object(ACPI_HANDLE(dev), "RRST", NULL, NULL);
 		if (ACPI_FAILURE(s)) {
 			dev_err(dev, "Controller reset fails\n");
 			return -EIO;
@@ -842,6 +820,7 @@ static int hisi_rde_controller_reset_done(struct hisi_rde *hisi_rde)
 
 	hisi_rde_set_user_domain_and_cache(hisi_rde);
 	hisi_rde_hw_error_init(hisi_rde);
+	(void)hisi_rde_set_peh_msi(hisi_rde, true);
 
 	ret = hisi_qm_start(qm);
 	if (ret) {
@@ -860,8 +839,10 @@ static int hisi_rde_controller_reset_done(struct hisi_rde *hisi_rde)
 		}
 	}
 
-	if (hisi_rde->ctrl->num_vfs)
-		hisi_rde_vf_q_assign(hisi_rde, hisi_rde->ctrl->num_vfs);
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		uacce_reset_done(&qm->uacce);
+#endif
 
 	return 0;
 }
@@ -893,93 +874,40 @@ static int hisi_rde_controller_reset(struct hisi_rde *hisi_rde)
 	return 0;
 }
 
-static pci_ers_result_t hisi_rde_slot_reset(struct pci_dev *pdev)
+static int hisi_rde_ras_proc(struct pci_dev *pdev)
 {
 	struct hisi_rde *hisi_rde = pci_get_drvdata(pdev);
-	int ret;
+	struct device *dev = &pdev->dev;
+	pci_ers_result_t ret;
+	int col_ret;
 
-	if (pdev->is_virtfn)
-		return PCI_ERS_RESULT_RECOVERED;
+	if (!hisi_rde) {
+		dev_err(dev, "Can't recover rde-error at dev init\n");
+		return -ENODEV;
+	}
 
-	dev_info(&pdev->dev, "Requesting reset due to PCI error\n");
+	ret = hisi_rde_hw_error_process(pdev);
+	if (ret == PCI_ERS_RESULT_NEED_RESET) {
+		col_ret = hisi_rde_controller_reset(hisi_rde);
+		if (col_ret)
+			return ret;
+	}
 
-	pci_cleanup_aer_uncorrect_error_status(pdev);
+	return 0;
+}
 
-	/* reset rde controller */
-	ret = hisi_rde_controller_reset(hisi_rde);
-	if (ret) {
-		dev_warn(&pdev->dev, "hisi_rde controller reset failed (%d)\n",
-			 ret);
+static pci_ers_result_t hisi_rde_error_detected(struct pci_dev *pdev,
+						pci_channel_state_t state)
+{
+	dev_info(&pdev->dev, "PCI error detected, state(=%d)!!\n", state);
+	if (state == pci_channel_io_perm_failure)
 		return PCI_ERS_RESULT_DISCONNECT;
-	}
 
-	return PCI_ERS_RESULT_RECOVERED;
-}
-
-static void hisi_rde_reset_prepare(struct pci_dev *pdev)
-{
-	struct hisi_rde *hisi_rde = pci_get_drvdata(pdev);
-	struct hisi_qm *qm = &hisi_rde->qm;
-	struct device *dev = &pdev->dev;
-	int ret;
-
-	ret = hisi_qm_stop(qm);
-	if (ret) {
-		dev_err(&pdev->dev, "Fails to stop QM!\n");
-		return;
-	}
-
-	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
-		dev_warn(dev, "Failed to set reset flag!");
-		return;
-	}
-
-	dev_info(dev, "FLR resetting...\n");
-}
-
-static void hisi_rde_reset_done(struct pci_dev *pdev)
-{
-	struct hisi_rde *hisi_rde = pci_get_drvdata(pdev);
-	struct hisi_qm *qm = &hisi_rde->qm;
-	struct device *dev = &pdev->dev;
-	struct hisi_qp *qp;
-	int i, ret;
-
-	if (pdev->is_physfn) {
-		hisi_qm_clear_queues(qm);
-
-		hisi_rde_set_user_domain_and_cache(hisi_rde);
-		hisi_rde_hw_error_init(hisi_rde);
-
-		ret = hisi_qm_start(qm);
-		if (ret) {
-			dev_err(dev, "Failed to start QM!\n");
-			return;
-		}
-
-		for (i = 0; i < qm->qp_num; i++) {
-			qp = qm->qp_array[i];
-			if (qp) {
-				ret = hisi_qm_start_qp(qp, 0);
-				if (ret < 0) {
-					dev_err(dev, "Start qp%d failed\n", i);
-					return;
-				}
-			}
-		}
-
-		if (hisi_rde->ctrl->num_vfs)
-			hisi_rde_vf_q_assign(hisi_rde, hisi_rde->ctrl->num_vfs);
-
-		dev_info(dev, "FLR reset complete\n");
-	}
+	return hisi_rde_ras_proc(pdev);
 }
 
 static const struct pci_error_handlers hisi_rde_err_handler = {
 	.error_detected = hisi_rde_error_detected,
-	.slot_reset = hisi_rde_slot_reset,
-	.reset_prepare = hisi_rde_reset_prepare,
-	.reset_done = hisi_rde_reset_done,
 };
 
 static struct pci_driver hisi_rde_pci_driver = {
@@ -987,6 +915,7 @@ static struct pci_driver hisi_rde_pci_driver = {
 	.id_table = hisi_rde_dev_ids,
 	.probe = hisi_rde_probe,
 	.remove = hisi_rde_remove,
+	.err_handler	= &hisi_rde_err_handler, //todo,just for compile
 };
 
 static void hisi_rde_register_debugfs(void)
