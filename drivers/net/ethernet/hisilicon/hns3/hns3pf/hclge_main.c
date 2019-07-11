@@ -3365,6 +3365,7 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 {
 #define HCLGE_RESET_SYNC_TIME 100
 
+	struct hnae3_handle *handle = handle = &hdev->vport[0].nic;
 	u32 reg_val;
 	int ret = 0;
 
@@ -3399,6 +3400,8 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 		hdev->rst_stats.flr_rst_cnt++;
 		break;
 	case HNAE3_IMP_RESET:
+		if (handle && handle->ae_algo->ops->handle_imp_error)
+			handle->ae_algo->ops->handle_imp_error(handle);
 		reg_val = hclge_read_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG);
 		hclge_write_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG,
 				BIT(HCLGE_VECTOR0_IMP_RESET_INT_B) | reg_val);
@@ -3638,6 +3641,9 @@ static void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle)
 	else if (time_after(jiffies, (hdev->last_reset_time + 4 * 5 * HZ)))
 		hdev->reset_level = HNAE3_FUNC_RESET;
 
+	if (hdev->ppu_poison_ras_err)
+		hdev->ppu_poison_ras_err = false;
+
 	dev_info(&hdev->pdev->dev, "received reset event , reset type is %d",
 		 hdev->reset_level);
 
@@ -3677,6 +3683,27 @@ bool hclge_reset_done(struct hnae3_handle *handle, bool done)
 	return done;
 }
 
+void hclge_handle_imp_error(struct hnae3_handle *handle)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+	u32 reg_val;
+
+	if (test_and_clear_bit(HCLGE_IMP_RD_POISON, &hdev->imp_err_state)) {
+		dev_err(&hdev->pdev->dev, "Detected IMP RD poison!\n");
+		reg_val = hclge_read_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG) &
+			  ~BIT(HCLGE_VECTOR0_IMP_RD_POISON_B);
+		hclge_write_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG, reg_val);
+	}
+
+	if (test_and_clear_bit(HCLGE_IMP_CMDQ_ERROR, &hdev->imp_err_state)) {
+		dev_err(&hdev->pdev->dev, "Detected IMP CMDQ error!\n");
+		reg_val = hclge_read_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG) &
+			  ~BIT(HCLGE_VECTOR0_IMP_CMDQ_ERR_B);
+		hclge_write_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG, reg_val);
+	}
+}
+
 static void hclge_reset_subtask(struct hclge_dev *hdev)
 {
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
@@ -3692,6 +3719,7 @@ static void hclge_reset_subtask(struct hclge_dev *hdev)
 	 */
 	hdev->last_reset_time = jiffies;
 	hdev->reset_type = hclge_get_reset_level(ae_dev, &hdev->reset_pending);
+
 	if (hdev->reset_type != HNAE3_NONE_RESET)
 		hclge_reset(hdev);
 
@@ -10050,6 +10078,7 @@ struct hnae3_ae_ops hclge_ops = {
 	.mac_disconnect_phy = hclge_mac_disconnect_phy,
 	.restore_vlan_table = hclge_restore_vlan_table,
 	.reset_done = hclge_reset_done,
+	.handle_imp_error = hclge_handle_imp_error,
 };
 
 struct hnae3_ae_algo ae_algo = {

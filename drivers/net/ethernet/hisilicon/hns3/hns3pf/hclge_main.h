@@ -181,6 +181,8 @@ enum HLCGE_PORT_TYPE {
 #define HCLGE_VECTOR0_RX_CMDQ_INT_B	1
 
 #define HCLGE_VECTOR0_IMP_RESET_INT_B	1
+#define HCLGE_VECTOR0_IMP_RD_POISON_B	4
+#define HCLGE_VECTOR0_IMP_CMDQ_ERR_B	5
 
 #define HCLGE_MAC_DEFAULT_FRAME \
 	(ETH_HLEN + ETH_FCS_LEN + 2 * VLAN_HLEN + ETH_DATA_LEN)
@@ -687,6 +689,11 @@ enum HCLGE_MAC_ADDR_TYPE {
 	HCLGE_MAC_ADDR_MC
 };
 
+enum HCLGE_IMP_ERR_TYPE {
+	HCLGE_IMP_RD_POISON,
+	HCLGE_IMP_CMDQ_ERROR,
+};
+
 struct hclge_vport_vlan_cfg {
 	struct list_head node;
 	int hd_tbl_status;
@@ -776,6 +783,8 @@ struct hclge_dev {
 	u8 tc_num_last_time;
 	enum hclge_fc_mode fc_mode_last_time;
 	bool support_sfp_query;
+	bool ppu_poison_ras_err;
+	unsigned long imp_err_state;
 
 #define HCLGE_FLAG_TC_BASE_SCH_MODE		1
 #define HCLGE_FLAG_VNET_BASE_SCH_MODE		2
