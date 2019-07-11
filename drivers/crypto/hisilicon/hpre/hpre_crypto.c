@@ -421,6 +421,7 @@ static int hpre_msg_comm_set(struct hpre_ctx *ctx, void *req, int is_rsa)
 	return 0;
 }
 
+#ifdef CONFIG_CRYPTO_DH
 static int hpre_dh_compute_value(struct kpp_request *req)
 {
 	struct crypto_kpp *tfm = crypto_kpp_reqtfm(req);
@@ -574,6 +575,7 @@ static void hpre_dh_exit_tfm(struct crypto_kpp *tfm)
 
 	hpre_dh_clear_ctx(ctx, 1);
 }
+#endif
 
 static void _rsa_cb(struct hpre_ctx *ctx, void *resp)
 {
@@ -886,6 +888,23 @@ static void hpre_rsa_clear_ctx(struct hpre_ctx *ctx, int is_exit)
 
 	_ctx_clear(ctx, is_exit);
 }
+/**
+ * the kernel before or after 4.17,
+ * the sample of pkcs1pad_rsa_tv_template is deferent,
+ * we should judge it is CRT or not,
+ * regardless of the kernel version,
+ * CRT: return true,  N-CRT: return false .
+ */
+static bool hpre_is_crt_key(struct rsa_key *key)
+{
+	u16 len = key->p_sz + key->q_sz + key->dp_sz + key->dq_sz +
+		  key->qinv_sz;
+#define LEN_OF_NCRT_PARA	5
+	if (len <= LEN_OF_NCRT_PARA)
+		return false;
+	else
+		return true;
+}
 
 static int hpre_rsa_setkey(struct hpre_ctx *ctx, const void *key,
 			   unsigned int keylen, bool private)
@@ -910,7 +929,8 @@ static int hpre_rsa_setkey(struct hpre_ctx *ctx, const void *key,
 		ret = hpre_rsa_set_d(ctx, rsa_key.d, rsa_key.d_sz);
 		if (ret < 0)
 			goto free;
-		hpre_rsa_setkey_crt(ctx, &rsa_key);
+		if (hpre_is_crt_key(&rsa_key))
+			hpre_rsa_setkey_crt(ctx, &rsa_key);
 	}
 	ret = hpre_rsa_set_e(ctx, rsa_key.e, rsa_key.e_sz);
 	if (ret < 0)
@@ -1010,6 +1030,7 @@ static struct akcipher_alg rsa = {
 	},
 };
 
+#ifdef CONFIG_CRYPTO_DH
 static struct kpp_alg dh = {
 	.set_secret = hpre_dh_set_secret,
 	.generate_public_key = hpre_dh_compute_value,
@@ -1026,6 +1047,7 @@ static struct kpp_alg dh = {
 		.cra_ctxsize = sizeof(struct hpre_ctx),
 	},
 };
+#endif
 
 int hpre_algs_register(void)
 {
@@ -1036,11 +1058,17 @@ int hpre_algs_register(void)
 	if (ret)
 		return ret;
 
+#ifdef CONFIG_CRYPTO_DH
 	return crypto_register_kpp(&dh);
+#else
+	return ret;
+#endif
 }
 
 void hpre_algs_unregister(void)
 {
 	crypto_unregister_akcipher(&rsa);
+#ifdef CONFIG_CRYPTO_DH
 	crypto_unregister_kpp(&dh);
+#endif
 }
