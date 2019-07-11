@@ -192,7 +192,7 @@ static struct debugfs_reg32 hpre_com_dfx_regs[] = {
 	{"RAS_INT_WIDTH       ",  HPRE_RAS_WIDTH_CFG},
 	{"POISON_BYPASS       ",  HPRE_POISON_BYPASS},
 	{"BD_ARUSER               ",  HPRE_BD_ARUSR_CFG},
-	{"BD_AWUSER               ",  HPRE_BD_ARUSR_CFG},
+	{"BD_AWUSER               ",  HPRE_BD_AWUSR_CFG},
 	{"DATA_ARUSER            ",  HPRE_DATA_RUSER_CFG},
 	{"DATA_AWUSER           ",  HPRE_DATA_WUSER_CFG},
 	{"INT_STATUS               ",  HPRE_INT_STATUS},
