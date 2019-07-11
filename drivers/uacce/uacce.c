@@ -44,6 +44,7 @@ static DEFINE_RWLOCK(uacce_qs_lock);
 
 static const struct file_operations uacce_fops;
 static int uacce_fops_fasync(int fd, struct file *file, int mode);
+static int uacce_put_queue(struct file *filep);
 
 /* match with enum uacce_qfrt */
 static const char *const qfrt_str[] = {
@@ -540,6 +541,9 @@ static long uacce_fops_unl_ioctl(struct file *filep,
 	case UACCE_CMD_GET_SS_DMA:
 		return uacce_get_ss_dma(q, (void __user *)arg);
 
+	case UACCE_CMD_PUT_Q:
+		return uacce_put_queue(filep);
+
 	default:
 		if (uacce->ops->ioctl)
 			return uacce->ops->ioctl(q, cmd, arg);
@@ -630,9 +634,9 @@ static int uacce_queue_drain(struct uacce_queue *q)
 }
 
 /* While user space releases a queue, all the relatives on the queue
- * should be released imediately by this flush.
+ * should be released imediately by this putting.
  */
-static int uacce_fops_flush(struct file *filep, fl_owner_t id)
+static int uacce_put_queue(struct file *filep)
 {
 	struct uacce_queue *q = filep->private_data;
 	struct uacce *uacce;
@@ -645,12 +649,6 @@ static int uacce_fops_flush(struct file *filep, fl_owner_t id)
 	    atomic_cmpxchg(&q->status, UACCE_ST_OPENNED, UACCE_ST_INIT))
 		return 0;
 
-	/*
-	 * It is different between CI and kernel-dev here, so delete list
-	 * entry in flush callback and release callback. After flush is called
-	 * uacce_queue will be NULL, and same code will not be called in
-	 * release, so it is safe.
-	 */
 	uacce_fops_fasync(-1, filep, 0);
 	mutex_lock(&uacce->q_lock);
 	list_del(&q->q_dev);
@@ -915,7 +913,6 @@ static int uacce_fops_fasync(int fd, struct file *file, int mode)
 static const struct file_operations uacce_fops = {
 	.owner		= THIS_MODULE,
 	.open		= uacce_fops_open,
-	.flush		= uacce_fops_flush,
 	.release	= uacce_fops_release,
 	.unlocked_ioctl	= uacce_fops_unl_ioctl,
 #ifdef CONFIG_COMPAT
