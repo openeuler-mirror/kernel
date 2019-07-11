@@ -707,13 +707,17 @@ out:
 		roce_set_field(sq_db.parameter, V2_DB_PARAMETER_SL_M,
 			       V2_DB_PARAMETER_SL_S, qp->sl);
 
-		hns_roce_write64(hr_dev, (__le32 *)&sq_db, qp->sq.db_reg_l);
+		/* when qp is err, stop to write db */
+		if (qp->state == IB_QPS_ERR) {
+			if (qp_lock)
+				init_flush_work(hr_dev, qp);
+		} else {
+			hns_roce_write64(hr_dev, (__le32 *)&sq_db,
+					 qp->sq.db_reg_l);
+		}
 
 		qp->sq_next_wqe = ind;
 		qp->next_sge = sge_ind;
-
-		if (qp->state == IB_QPS_ERR)
-			init_flush_work(hr_dev, qp);
 	}
 	rdfx_inc_sq_db_cnt(hr_dev, ibqp->qp_num);
 	rdfx_put_rdfx_qp(hr_dev, ibqp->qp_num);
@@ -812,10 +816,13 @@ out:
 		/* Memory barrier */
 		wmb();
 
-		*hr_qp->rdb.db_record = hr_qp->rq.head & 0xffff;
-
-		if (hr_qp->state == IB_QPS_ERR)
-			init_flush_work(hr_dev, hr_qp);
+		/* when qp is err, stop to write record db */
+		if (hr_qp->state == IB_QPS_ERR) {
+			if (qp_lock)
+				init_flush_work(hr_dev, hr_qp);
+		} else {
+			*hr_qp->rdb.db_record = hr_qp->rq.head & 0xffff;
+		}
 
 		rdfx_inc_rq_db_cnt(hr_dev, hr_qp->qpn);
 	}
@@ -2317,11 +2324,6 @@ static int hns_roce_mbox_post(struct hns_roce_dev *hr_dev, u64 in_param,
 {
 	struct hns_roce_cmq_desc desc;
 	struct hns_roce_post_mbox *mb = (struct hns_roce_post_mbox *)desc.data;
-	struct hns_roce_qp *qp;
-	unsigned long sq_flags;
-	unsigned long rq_flags;
-	int to_be_err_state = false;
-	int ret;
 
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_POST_MB, false);
 
@@ -2332,23 +2334,7 @@ static int hns_roce_mbox_post(struct hns_roce_dev *hr_dev, u64 in_param,
 	mb->cmd_tag = in_modifier << HNS_ROCE_MB_TAG_S | op;
 	mb->token_event_en = event << HNS_ROCE_MB_EVENT_EN_S | token;
 
-	qp = __hns_roce_qp_lookup(hr_dev, in_modifier);
-
-	if (qp && !qp->ibqp.uobject &&
-	    (qp->attr_mask & IB_QP_STATE) && qp->next_state == IB_QPS_ERR) {
-		spin_lock_irqsave(&qp->sq.lock, sq_flags);
-		spin_lock_irqsave(&qp->rq.lock, rq_flags);
-		to_be_err_state = true;
-	}
-
-	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
-
-	if (to_be_err_state) {
-		spin_unlock_irqrestore(&qp->rq.lock, rq_flags);
-		spin_unlock_irqrestore(&qp->sq.lock, sq_flags);
-	}
-
-	return ret;
+	return hns_roce_cmq_send(hr_dev, &desc, 1);
 }
 
 static int hns_roce_v2_post_mbox(struct hns_roce_dev *hr_dev, u64 in_param,
@@ -3132,7 +3118,9 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 	    wc->status != IB_WC_WR_FLUSH_ERR) {
 		dev_err(hr_dev->dev, "error cqe status is: 0x%x\n",
 			status & HNS_ROCE_V2_CQE_STATUS_MASK);
-		init_flush_work(hr_dev, *cur_qp);
+		if (qp_lock)
+			init_flush_work(hr_dev, *cur_qp);
+
 		return 0;
 	}
 
@@ -4867,6 +4855,8 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 	struct hns_roce_v2_qp_context *context = &cmd_qpc[0];
 	struct hns_roce_v2_qp_context *qpc_mask = &cmd_qpc[1];
 	struct device *dev = hr_dev->dev;
+	unsigned long sq_flags = 0;
+	unsigned long rq_flags = 0;
 	int ret;
 
 	/*
@@ -4894,24 +4884,40 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 	if (ret)
 		goto out;
 
+	/* When locks are used for post verbs, flush cqe should be enabled */
+	if (qp_lock)
+		hr_qp->flush_en = 1;
+
+	/* Ensure that the value of flush_en can be read correctly later */
+	rmb();
+
 	/* When QP state is err, SQ and RQ WQE should be flushed */
 	if (new_state == IB_QPS_ERR) {
+		v2_spin_lock_irqsave(qp_lock, &hr_qp->sq.lock, &sq_flags);
 		roce_set_field(context->byte_160_sq_ci_pi,
 			       V2_QPC_BYTE_160_SQ_PRODUCER_IDX_M,
 			       V2_QPC_BYTE_160_SQ_PRODUCER_IDX_S,
 			       hr_qp->sq.head);
-		roce_set_field(qpc_mask->byte_160_sq_ci_pi,
+		if (hr_qp->flush_en == 1)
+			roce_set_field(qpc_mask->byte_160_sq_ci_pi,
 			       V2_QPC_BYTE_160_SQ_PRODUCER_IDX_M,
 			       V2_QPC_BYTE_160_SQ_PRODUCER_IDX_S, 0);
 
+		hr_qp->state = IB_QPS_ERR;
+		v2_spin_unlock_irqrestore(qp_lock, &hr_qp->sq.lock, &sq_flags);
 		if (!ibqp->srq) {
+			v2_spin_lock_irqsave(qp_lock, &hr_qp->rq.lock,
+					     &rq_flags);
 			roce_set_field(context->byte_84_rq_ci_pi,
 			       V2_QPC_BYTE_84_RQ_PRODUCER_IDX_M,
 			       V2_QPC_BYTE_84_RQ_PRODUCER_IDX_S,
 			       hr_qp->rq.head);
-			roce_set_field(qpc_mask->byte_84_rq_ci_pi,
-			       V2_QPC_BYTE_84_RQ_PRODUCER_IDX_M,
-			       V2_QPC_BYTE_84_RQ_PRODUCER_IDX_S, 0);
+			if (hr_qp->flush_en == 1)
+				roce_set_field(qpc_mask->byte_84_rq_ci_pi,
+					V2_QPC_BYTE_84_RQ_PRODUCER_IDX_M,
+					V2_QPC_BYTE_84_RQ_PRODUCER_IDX_S, 0);
+			v2_spin_unlock_irqrestore(qp_lock, &hr_qp->rq.lock,
+						  &rq_flags);
 		}
 	}
 

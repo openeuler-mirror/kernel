@@ -768,6 +768,7 @@ struct hns_roce_qp {
 	u8			sl;
 	u8			resp_depth;
 	u8			state;
+	u8			flush_en;
 	u8			next_state;	/* record for flush cqe */
 	int			attr_mask;	/* record for flush cqe */
 	u32			access_flags;

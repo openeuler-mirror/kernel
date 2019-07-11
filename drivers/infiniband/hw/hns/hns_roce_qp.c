@@ -54,6 +54,7 @@ static void flush_work_handle(struct work_struct *work)
 
 	attr_mask = IB_QP_STATE;
 	attr.qp_state = IB_QPS_ERR;
+	hr_qp->flush_en = 1;
 
 	ret = hns_roce_modify_qp(&hr_qp->ibqp, &attr, attr_mask, NULL);
 	if (ret)
@@ -101,8 +102,10 @@ void hns_roce_qp_event(struct hns_roce_dev *hr_dev, u32 qpn, int event_type)
 
 	if (event_type == HNS_ROCE_EVENT_TYPE_WQ_CATAS_ERROR ||
 	    event_type == HNS_ROCE_EVENT_TYPE_INV_REQ_LOCAL_WQ_ERROR ||
-	    event_type == HNS_ROCE_EVENT_TYPE_LOCAL_WQ_ACCESS_ERROR)
+	    event_type == HNS_ROCE_EVENT_TYPE_LOCAL_WQ_ACCESS_ERROR) {
+		qp->state = IB_QPS_ERR;
 		init_flush_work(hr_dev, qp);
+	}
 
 	qp->event(qp, (enum hns_roce_event)event_type);
 
