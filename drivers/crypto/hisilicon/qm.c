@@ -924,7 +924,7 @@ static int qm_create_debugfs_file(struct hisi_qm *qm, enum qm_debug_file index)
 
 	tmp = debugfs_create_file(qm_debug_file_name[index], 0600, qm_d, file,
 				  &qm_debug_fops);
-	if (!tmp)
+	if (IS_ERR(tmp))
 		return -ENOENT;
 
 	file->index = index;
@@ -1756,10 +1756,6 @@ int hisi_qm_init(struct hisi_qm *qm)
 		goto err_iounmap;
 	pci_set_master(pdev);
 
-	if (!qm->ops->get_irq_num) {
-		ret = -EPERM;
-		goto err_iounmap;
-	}
 	num_vec = qm->ops->get_irq_num(qm);
 	ret = pci_alloc_irq_vectors(pdev, num_vec, num_vec, PCI_IRQ_MSI);
 	if (ret < 0) {
@@ -2229,7 +2225,7 @@ int hisi_qm_debug_init(struct hisi_qm *qm)
 	int i, ret;
 
 	qm_d = debugfs_create_dir("qm", qm->debug.debug_root);
-	if (!qm_d)
+	if (IS_ERR(qm_d))
 		return -ENOENT;
 	qm->debug.qm_d = qm_d;
 
@@ -2243,7 +2239,7 @@ int hisi_qm_debug_init(struct hisi_qm *qm)
 
 	qm_regs = debugfs_create_file("qm_regs", 0444, qm->debug.qm_d, qm,
 				      &qm_regs_fops);
-	if (!qm_regs) {
+	if (IS_ERR(qm_regs)) {
 		ret = -ENOENT;
 		goto failed_to_create;
 	}
@@ -2284,7 +2280,7 @@ void hisi_qm_hw_error_init(struct hisi_qm *qm, u32 ce, u32 nfe, u32 fe,
 		return;
 	}
 
-	return qm->ops->hw_error_init(qm, ce, nfe, fe, msi);
+	qm->ops->hw_error_init(qm, ce, nfe, fe, msi);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_hw_error_init);
 
