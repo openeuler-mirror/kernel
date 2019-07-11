@@ -281,6 +281,7 @@ struct hisi_qp {
 	u32 qp_id;
 	u8 alg_type;
 	u8 req_type;
+	u8 c_flag;
 
 	struct qm_dma qdma;
 	void *sqe;

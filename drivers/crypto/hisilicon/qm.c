@@ -1101,6 +1101,7 @@ struct hisi_qp *hisi_qm_create_qp(struct hisi_qm *qm, u8 alg_type)
 
 	qp->qp_id = qp_id;
 	qp->alg_type = alg_type;
+	qp->c_flag = 1;
 	init_completion(&qp->completion);
 
 	return qp;
@@ -1221,7 +1222,7 @@ static int qm_cq_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 		cqc->dw3 = QM_MK_CQC_DW3_V2(QM_QC_CQE_SIZE);
 		cqc->w8 = 0; /* rand_qc */
 	}
-	cqc->dw6 = 1 << QM_CQ_PHASE_SHIFT | 1 << QM_CQ_FLAG_SHIFT;
+	cqc->dw6 = 1 << QM_CQ_PHASE_SHIFT | qp->c_flag << QM_CQ_FLAG_SHIFT;
 
 	ret = qm_mb(qm, QM_MB_CMD_CQC, cqc_dma, qp_id, 0, 0);
 	if (qm->use_dma_api) {
@@ -1620,7 +1621,7 @@ static long hisi_qm_uacce_ioctl(struct uacce_queue *q, unsigned int cmd,
 
 		qm_set_sqctype(q, qp_ctx.qc_type);
 		qp_ctx.id = qp->qp_id;
-
+		qp->c_flag = 0;
 		if (copy_to_user((void __user *)arg, &qp_ctx,
 				 sizeof(struct hisi_qp_ctx)))
 			return -EFAULT;
