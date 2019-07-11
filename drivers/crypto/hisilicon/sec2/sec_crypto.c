@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 #include <linux/crypto.h>
 #include <linux/dma-mapping.h>
+#include <linux/atomic.h>
 
 #include <crypto/aes.h>
 #include <crypto/algapi.h>
@@ -15,9 +16,9 @@
 #define SEC_ASYNC
 #define SEC_INVLD_REQ_ID -1
 
-#define SEC_DEBUG_LOG
+#define SEC_DEBUG
 
-#ifdef SEC_DEBUG_LOG
+#ifdef SEC_DEBUG
 #define dbg(msg, ...) pr_info(msg, ##__VA_ARGS__)
 #else
 #define dbg(msg, ...)
@@ -35,14 +36,17 @@ struct hisi_sec_cipher_req {
 };
 
 struct hisi_sec_ctx;
+struct hisi_sec_qp_ctx;
 
 struct hisi_sec_req {
 	struct hisi_sec_sqe sec_sqe;
 	struct hisi_sec_ctx *ctx;
+	struct hisi_sec_qp_ctx *qp_ctx;
 	struct skcipher_request *sk_req;
 	struct hisi_sec_cipher_req c_req;
 	int err;
 	int req_id;
+	bool fake_busy;
 };
 
 struct hisi_sec_cipher_ctx {
@@ -53,13 +57,24 @@ struct hisi_sec_cipher_ctx {
 	u8 c_key_len;
 };
 
-struct hisi_sec_ctx {
+struct hisi_sec_qp_ctx {
 	struct hisi_qp *qp;
-	struct hisi_sec *sec;
-	struct device *sec_dev;
 	struct hisi_sec_req **req_list;
 	unsigned long *req_bitmap;
 	spinlock_t req_lock;
+	atomic_t req_cnt;
+};
+
+struct hisi_sec_ctx {
+	struct hisi_sec_qp_ctx *qp_ctx;
+	struct hisi_sec *sec;
+	struct device *sec_dev;
+	atomic_t thread_cnt;
+	int max_thread_cnt;
+	int req_fake_limit;
+	int req_limit;
+	int q_num;
+	atomic_t q_id;
 	struct hisi_sec_cipher_ctx c_ctx;
 };
 
@@ -106,24 +121,31 @@ static void sec_sg_unmap(struct device *dev,
 	acc_sg_buf_unmap(dev, sk_req->src, creq->c_in, creq->c_in_dma, pool);
 }
 
-static int hisi_sec_alloc_req_id(struct hisi_sec_req *req)
+static int hisi_sec_alloc_req_id(struct hisi_sec_req *req,
+	struct hisi_sec_qp_ctx *qp_ctx)
 {
 	struct hisi_sec_ctx *ctx = req->ctx;
 	int req_id;
 	unsigned long flags;
 
-	spin_lock_irqsave(&ctx->req_lock, flags);
-	req_id = find_first_zero_bit(ctx->req_bitmap, QM_Q_DEPTH);
-	if (req_id >= QM_Q_DEPTH) {
-		spin_unlock_irqrestore(&ctx->req_lock, flags);
+	spin_lock_irqsave(&qp_ctx->req_lock, flags);
+	req_id = find_first_zero_bit(qp_ctx->req_bitmap, ctx->req_limit);
+	if (req_id >= ctx->req_limit) {
+		spin_unlock_irqrestore(&qp_ctx->req_lock, flags);
+		dump_data((uint8_t *)qp_ctx->req_bitmap, ctx->req_limit / 8);
+		pr_info("[%s][%d] used[%d]\n", __func__, __LINE__,
+			atomic_read(&qp_ctx->qp->qp_status.used));
 		dev_err(ctx->sec_dev, "no free req id\n");
-		return -EBUSY;
+		pr_info("[%s][%d] max_thread_cnt[%d]\n", __func__, __LINE__,
+			ctx->max_thread_cnt);
+		return -ENOBUFS;
 	}
-	set_bit(req_id, ctx->req_bitmap);
-	spin_unlock_irqrestore(&ctx->req_lock, flags);
+	set_bit(req_id, qp_ctx->req_bitmap);
+	spin_unlock_irqrestore(&qp_ctx->req_lock, flags);
 
-	ctx->req_list[req_id] = req;
+	qp_ctx->req_list[req_id] = req;
 	req->req_id = req_id;
+	req->qp_ctx = qp_ctx;
 
 	return 0;
 }
@@ -132,6 +154,7 @@ static void hisi_sec_free_req_id(struct hisi_sec_req *req)
 {
 	struct hisi_sec_ctx *ctx = req->ctx;
 	int req_id = req->req_id;
+	struct hisi_sec_qp_ctx *qp_ctx = req->qp_ctx;
 	unsigned long flags;
 
 	if (req_id < 0) {
@@ -140,45 +163,70 @@ static void hisi_sec_free_req_id(struct hisi_sec_req *req)
 	}
 
 	req->req_id = SEC_INVLD_REQ_ID;
-	ctx->req_list[req_id] = NULL;
+	qp_ctx->req_list[req_id] = NULL;
 
-	spin_lock_irqsave(&ctx->req_lock, flags);
-	bitmap_clear(ctx->req_bitmap, req_id, 1);
-	spin_unlock_irqrestore(&ctx->req_lock, flags);
+	spin_lock_irqsave(&qp_ctx->req_lock, flags);
+	clear_bit(req_id, qp_ctx->req_bitmap);
+	atomic_dec(&qp_ctx->req_cnt);
+	spin_unlock_irqrestore(&qp_ctx->req_lock, flags);
 }
 
-static int hisi_sec_create_qp(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
-			      int alg_type, int req_type)
+static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
+			      int qp_ctx_id, int alg_type, int req_type)
 {
 	struct hisi_qp *qp;
+	struct hisi_sec_qp_ctx *qp_ctx;
 	int ret;
 
 	qp = hisi_qm_create_qp(qm, alg_type);
 	if (IS_ERR(qp))
 		return PTR_ERR(qp);
 
+	qp_ctx = &ctx->qp_ctx[qp_ctx_id];
 	qp->req_type = req_type;
-	qp->qp_ctx = ctx;
+	qp->qp_ctx = qp_ctx;
 #ifdef SEC_ASYNC
 	qp->req_cb = sec_cipher_cb;
 #endif
-	ctx->qp = qp;
+	qp_ctx->qp = qp;
+
+	spin_lock_init(&qp_ctx->req_lock);
+	atomic_set(&qp_ctx->req_cnt, 0);
+
+	qp_ctx->req_bitmap = kcalloc(BITS_TO_LONGS(QM_Q_DEPTH), sizeof(long),
+				  GFP_KERNEL);
+	if (!qp_ctx->req_bitmap) {
+		ret = -ENOMEM;
+		goto err_qm_release_qp;
+	}
+
+	qp_ctx->req_list = kcalloc(QM_Q_DEPTH, sizeof(void *), GFP_KERNEL);
+	if (!qp_ctx->req_list) {
+		ret = -ENOMEM;
+		goto err_free_req_bitmap;
+	}
 
 	ret = hisi_qm_start_qp(qp, 0);
 	if (ret < 0)
-		goto err_qm_release_qp;
+		goto err_free_req_list;
 
 	return 0;
 
+err_free_req_list:
+	kfree(qp_ctx->req_list);
+err_free_req_bitmap:
+	kfree(qp_ctx->req_bitmap);
 err_qm_release_qp:
 	hisi_qm_release_qp(qp);
 	return ret;
 }
 
-static void hisi_sec_release_qp(struct hisi_sec_ctx *ctx)
+static void hisi_sec_release_qp_ctx(struct hisi_sec_qp_ctx *qp_ctx)
 {
-	hisi_qm_stop_qp(ctx->qp);
-	hisi_qm_release_qp(ctx->qp);
+	hisi_qm_stop_qp(qp_ctx->qp);
+	kfree(qp_ctx->req_bitmap);
+	kfree(qp_ctx->req_list);
+	hisi_qm_release_qp(qp_ctx->qp);
 }
 
 static int __hisi_sec_ctx_init(struct hisi_sec_ctx *ctx, int qlen)
@@ -186,17 +234,11 @@ static int __hisi_sec_ctx_init(struct hisi_sec_ctx *ctx, int qlen)
 	if (!ctx || qlen < 0)
 		return -EINVAL;
 
-	spin_lock_init(&ctx->req_lock);
-	ctx->req_bitmap = kcalloc(BITS_TO_LONGS(qlen), sizeof(long),
-				  GFP_KERNEL);
-	if (!ctx->req_bitmap)
-		return -ENOMEM;
-
-	ctx->req_list = kcalloc(qlen, sizeof(void *), GFP_KERNEL);
-	if (!ctx->req_list) {
-		kfree(ctx->req_bitmap);
-		return -ENOMEM;
-	}
+	ctx->req_limit = qlen;
+	ctx->req_fake_limit = qlen / 2;
+	atomic_set(&ctx->thread_cnt, 0);
+	ctx->max_thread_cnt = 0;
+	atomic_set(&ctx->q_id, 0);
 
 	return 0;
 }
@@ -207,7 +249,7 @@ static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
 	struct hisi_qm *qm;
 	struct hisi_sec_cipher_ctx *c_ctx;
 	struct hisi_sec *sec;
-	int ret;
+	int i, ret;
 
 	crypto_skcipher_set_reqsize(tfm, sizeof(struct hisi_sec_req));
 
@@ -221,9 +263,17 @@ static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
 	qm = &sec->qm;
 	ctx->sec_dev = &qm->pdev->dev;
 
-	ret = hisi_sec_create_qp(qm, ctx, 0, 0);
-	if (ret)
-		return ret;
+	ctx->q_num = sec->ctx_q_num;
+	ctx->qp_ctx = kcalloc(ctx->q_num, sizeof(struct hisi_sec_qp_ctx),
+		GFP_KERNEL);
+	if (!ctx->qp_ctx)
+		return -ENOMEM;
+
+	for (i = 0; i < ctx->q_num; i++) {
+		ret = hisi_sec_create_qp_ctx(qm, ctx, i, 0, 0);
+		if (ret)
+			goto err_sec_release_qp_ctx;
+	}
 
 	c_ctx = &ctx->c_ctx;
 	c_ctx->c_key = dma_alloc_coherent(ctx->sec_dev,
@@ -231,13 +281,17 @@ static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
 
 	if (!ctx->c_ctx.c_key) {
 		ret = -ENOMEM;
-		goto err_sec_release_qp;
+		goto err_sec_release_qp_ctx;
 	}
 
 	return __hisi_sec_ctx_init(ctx, QM_Q_DEPTH);
 
-err_sec_release_qp:
-	hisi_sec_release_qp(ctx);
+err_sec_release_qp_ctx:
+	i = i - 1;
+	for (; i >= 0; i--)
+		hisi_sec_release_qp_ctx(&ctx->qp_ctx[i]);
+
+	kfree(ctx->qp_ctx);
 	return ret;
 }
 
@@ -245,6 +299,7 @@ static void hisi_sec_cipher_ctx_exit(struct crypto_skcipher *tfm)
 {
 	struct hisi_sec_ctx *ctx = crypto_skcipher_ctx(tfm);
 	struct hisi_sec_cipher_ctx *c_ctx;
+	int i = 0;
 
 	c_ctx = &ctx->c_ctx;
 
@@ -254,13 +309,10 @@ static void hisi_sec_cipher_ctx_exit(struct crypto_skcipher *tfm)
 		c_ctx->c_key = NULL;
 	}
 
-	kfree(ctx->req_bitmap);
-	ctx->req_bitmap = NULL;
+	for (i = 0; i < ctx->q_num; i++)
+		hisi_sec_release_qp_ctx(&ctx->qp_ctx[i]);
 
-	kfree(ctx->req_list);
-	ctx->req_list = NULL;
-
-	hisi_sec_release_qp(ctx);
+	kfree(ctx->qp_ctx);
 }
 
 static int sec_alloc_cipher_req(struct hisi_sec_req *req)
@@ -298,12 +350,13 @@ static void sec_cipher_cb(struct hisi_qp *qp, void *resp)
 {
 	struct hisi_sec_sqe *sec_sqe = (struct hisi_sec_sqe *)resp;
 	u32 req_id = sec_sqe->type2.tag;
-	struct hisi_sec_ctx *ctx = qp->qp_ctx;
-	struct dma_pool *pool = ctx->sec->sgl_pool;
+	struct hisi_sec_qp_ctx *qp_ctx = qp->qp_ctx;
+	struct dma_pool *pool;
 	struct hisi_sec_req *req;
 	int ret = 0;
 
-	req = ctx->req_list[req_id];
+	req = qp_ctx->req_list[req_id];
+	pool = req->ctx->sec->sgl_pool;
 
 	if (sec_sqe->type2.done != 0x1 || sec_sqe->type2.flag != 0x2) {
 		ret = sec_sqe->type2.error_type;
@@ -317,6 +370,11 @@ static void sec_cipher_cb(struct hisi_qp *qp, void *resp)
 	sec_free_cipher_req(req);
 
 	hisi_sec_free_req_id(req);
+
+	if (req->fake_busy) {
+		req->sk_req->base.complete(&req->sk_req->base, -EINPROGRESS);
+		req->fake_busy = 0;
+	}
 
 	req->sk_req->base.complete(&req->sk_req->base, ret);
 }
@@ -459,13 +517,21 @@ static int sec_skcipher_crypto(struct skcipher_request *sk_req,
 	struct hisi_sec_ctx *ctx = crypto_skcipher_ctx(atfm);
 	struct hisi_sec_req *req = skcipher_request_ctx(sk_req);
 	struct hisi_sec_sqe *sec_sqe = &req->sec_sqe;
-	struct hisi_qp *qp = ctx->qp;
-	struct device *dev = &qp->qm->pdev->dev;
+	struct device *dev = ctx->sec_dev;
 	struct hisi_sec_cipher_req *c_req = &req->c_req;
 	struct dma_pool *pool = ctx->sec->sgl_pool;
+	struct hisi_sec_qp_ctx *qp_ctx;
+	unsigned long flags;
+	int req_cnt;
+	int thread_cnt;
+	int issue_id;
 
 	if (!sk_req->src || !sk_req->dst || !sk_req->cryptlen)
 		return -EINVAL;
+
+	thread_cnt = atomic_inc_return(&ctx->thread_cnt);
+	if (thread_cnt > ctx->max_thread_cnt)
+		ctx->max_thread_cnt = thread_cnt;
 
 	req->sk_req = sk_req;
 	req->ctx    = ctx;
@@ -475,6 +541,7 @@ static int sec_skcipher_crypto(struct skcipher_request *sk_req,
 	ret = sec_alloc_cipher_req(req);
 	if (ret) {
 		dev_err(dev, "sec alloc cipher request failed\n");
+		atomic_dec(&ctx->thread_cnt);
 		return ret;
 	}
 
@@ -512,35 +579,64 @@ static int sec_skcipher_crypto(struct skcipher_request *sk_req,
 	} else
 		memcpy(c_req->c_ivin, sk_req->iv, crypto_skcipher_ivsize(atfm));
 
+	/* get issue_id */
+	issue_id = atomic_fetch_inc(&ctx->q_id) % ctx->q_num;
+	if (issue_id % ctx->q_num == 0 && ctx->q_id.counter > ctx->q_num)
+		atomic_sub(ctx->q_num, &ctx->q_id);
+
+	qp_ctx = &ctx->qp_ctx[issue_id];
 #ifdef SEC_ASYNC
-	ret = hisi_sec_alloc_req_id(req);
+	ret = hisi_sec_alloc_req_id(req, qp_ctx);
 	if (ret) {
 		dev_err(dev, "sec alloc req id failed\n");
 		goto err_unmap_dst_sg;
 	}
+
+	req->fake_busy = 0;
+
+	req_cnt = atomic_inc_return(&qp_ctx->req_cnt);
+	if (req_cnt >= ctx->req_fake_limit)
+		req->fake_busy = 1;
+
 	sec_sqe->type2.tag = req->req_id;
 #endif
+	spin_lock_irqsave(&qp_ctx->req_lock, flags);
+	ret = hisi_qp_send(qp_ctx->qp, sec_sqe);
+	spin_unlock_irqrestore(&qp_ctx->req_lock, flags);
 
-	ret = hisi_qp_send(qp, sec_sqe);
 	if (ret < 0) {
-		dev_err(dev, "hisi_qp_send failed\n");
+#ifdef SEC_ASYNC
+		if (ret == -EBUSY)
+			ret = -ENOBUFS;
+		goto err_free_req_id;
+#else
 		goto err_unmap_dst_sg;
+#endif
 	}
 
 #ifdef SEC_ASYNC
-	ret = -EINPROGRESS;
+	if (req_cnt >= ctx->req_fake_limit)
+		ret = -EBUSY;
+	else
+		ret = -EINPROGRESS;
 #else
-	ret = hisi_qp_wait(qp);
+	ret = hisi_qp_wait(qp_ctx->qp);
 	if (ret < 0)
 		goto err_unmap_dst_sg;
 
 	sec_update_iv(req, sk_req->iv);
 	sec_sg_unmap(dev, sk_req, c_req, pool);
+
 	sec_free_cipher_req(req);
 #endif
 
+	atomic_dec(&ctx->thread_cnt);
 	return ret;
 
+#ifdef SEC_ASYNC
+err_free_req_id:
+	hisi_sec_free_req_id(req);
+#endif
 err_unmap_dst_sg:
 	if (sk_req->dst != sk_req->src)
 		acc_sg_buf_unmap(dev, sk_req->dst,
@@ -551,6 +647,7 @@ err_unmap_src_sg:
 err_free_cipher_req:
 	sec_free_cipher_req(req);
 
+	atomic_dec(&ctx->thread_cnt);
 	return ret;
 }
 

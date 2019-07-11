@@ -16,11 +16,6 @@ enum sec_endian {
 	SEC_64BE
 };
 
-enum hisi_sec_error_type {
-	/* negative compression */
-	HSEC_NC_ERR = 0x0d,
-};
-
 struct hisi_sec_ctrl;
 
 struct hisi_sec {
@@ -28,6 +23,7 @@ struct hisi_sec {
 	struct list_head list;
 	struct hisi_sec_ctrl *ctrl;
 	struct dma_pool *sgl_pool;
+	int ctx_q_num;
 };
 
 struct hisi_sec *find_sec_device(int node);

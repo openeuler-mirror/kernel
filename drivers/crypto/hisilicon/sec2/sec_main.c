@@ -339,15 +339,15 @@ static struct debugfs_reg32 hsec_dfx_regs[] = {
 	{"HSEC_ECC_1BIT_INFO             ",  0x301C04},
 	{"HSEC_ECC_2BIT_CNT              ",  0x301C10},
 	{"HSEC_ECC_2BIT_INFO             ",  0x301C14},
-	{"HSEC_ECC_BD_SAA0               ",  0x301C20},
-	{"HSEC_ECC_BD_SAA1               ",  0x301C24},
-	{"HSEC_ECC_BD_SAA2               ",  0x301C28},
-	{"HSEC_ECC_BD_SAA3               ",  0x301C2C},
-	{"HSEC_ECC_BD_SAA4               ",  0x301C30},
-	{"HSEC_ECC_BD_SAA5               ",  0x301C34},
-	{"HSEC_ECC_BD_SAA6               ",  0x301C38},
-	{"HSEC_ECC_BD_SAA7               ",  0x301C3C},
-	{"HSEC_ECC_BD_SAA8               ",  0x301C40},
+	{"HSEC_BD_SAA0                   ",  0x301C20},
+	{"HSEC_BD_SAA1                   ",  0x301C24},
+	{"HSEC_BD_SAA2                   ",  0x301C28},
+	{"HSEC_BD_SAA3                   ",  0x301C2C},
+	{"HSEC_BD_SAA4                   ",  0x301C30},
+	{"HSEC_BD_SAA5                   ",  0x301C34},
+	{"HSEC_BD_SAA6                   ",  0x301C38},
+	{"HSEC_BD_SAA7                   ",  0x301C3C},
+	{"HSEC_BD_SAA8                   ",  0x301C40},
 };
 
 static int pf_q_num_set(const char *val, const struct kernel_param *kp)
@@ -401,6 +401,9 @@ module_param(uacce_mode, int, 0444);
 
 static int enable_sm4_ctr;
 module_param(enable_sm4_ctr, int, 0444);
+
+static int ctx_q_num = 64;
+module_param(ctx_q_num, int, 0444);
 
 static const struct pci_device_id hisi_sec_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_SEC_PF) },
@@ -838,6 +841,8 @@ static int hisi_sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	hisi_sec->sgl_pool = acc_create_sgl_pool(&pdev->dev, "hsec-sgl");
 	if (!hisi_sec->sgl_pool)
 		return -ENOMEM;
+
+	hisi_sec->ctx_q_num = ctx_q_num;
 
 	qm = &hisi_sec->qm;
 	qm->pdev = pdev;

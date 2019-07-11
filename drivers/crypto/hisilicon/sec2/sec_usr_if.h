@@ -188,8 +188,4 @@ enum C_ALG {
 	SM4 = 0x3,
 };
 
-#define SEG_MAX_SGE_SIZE (8 * 1024 * 1024)
-#define SEC_MAX_SGE_NUM	255
-#define SEC_MAX_SGL_NUM	256
-
 #endif
