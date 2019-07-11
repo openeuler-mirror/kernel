@@ -92,6 +92,7 @@
 
 #define HZIP_NUMA_DISTANCE		100
 #define HZIP_BUF_SIZE			20
+#define FORMAT_DECIMAL			10
 
 static const char hisi_zip_name[] = "hisi_zip";
 static struct dentry *hzip_debugfs_root;
@@ -304,13 +305,33 @@ static const struct kernel_param_ops pf_q_num_ops = {
 	.set = pf_q_num_set,
 	.get = param_get_int,
 };
+static int uacce_mode_set(const char *val, const struct kernel_param *kp)
+{
+	u32 n;
+	int ret;
+
+	if (!val)
+		return -EINVAL;
+
+	ret = kstrtou32(val, FORMAT_DECIMAL, &n);
+	if (ret != 0 || n > UACCE_MODE_NOIOMMU)
+		return -EINVAL;
+
+	return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops uacce_mode_ops = {
+	.set = uacce_mode_set,
+	.get = param_get_int,
+};
 
 static u32 pf_q_num = HZIP_PF_DEF_Q_NUM;
 module_param_cb(pf_q_num, &pf_q_num_ops, &pf_q_num, 0444);
 MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 1-4096, v2 1-1024)");
 
 static int uacce_mode = UACCE_MODE_NOUACCE;
-module_param(uacce_mode, int, 0444);
+module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
+MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
 
 static const struct pci_device_id hisi_zip_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_ZIP_PF) },
