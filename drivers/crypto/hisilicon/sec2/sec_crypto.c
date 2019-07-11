@@ -143,11 +143,7 @@ static int hisi_sec_alloc_req_id(struct hisi_sec_req *req,
 	if (req_id >= ctx->req_limit) {
 		spin_unlock_irqrestore(&qp_ctx->req_lock, flags);
 		dump_data((uint8_t *)qp_ctx->req_bitmap, ctx->req_limit / 8);
-		pr_info("[%s][%d] used[%d]\n", __func__, __LINE__,
-			atomic_read(&qp_ctx->qp->qp_status.used));
 		dev_err(ctx->sec_dev, "no free req id\n");
-		pr_info("[%s][%d] max_thread_cnt[%d]\n", __func__, __LINE__,
-			ctx->max_thread_cnt);
 		return -ENOBUFS;
 	}
 	set_bit(req_id, qp_ctx->req_bitmap);

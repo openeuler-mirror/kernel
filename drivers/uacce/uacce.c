@@ -26,7 +26,6 @@
 static struct class *uacce_class;
 static DEFINE_IDR(uacce_idr);
 static dev_t uacce_devt;
-static DEFINE_MUTEX(uacce_mutex); /* mutex to protect uacce */
 
 /* lock to protect all queues management */
 #ifdef CONFIG_UACCE_FIX_MMAP
@@ -47,7 +46,7 @@ static DEFINE_RWLOCK(uacce_qs_lock);
 
 static const struct file_operations uacce_fops;
 static int uacce_fops_fasync(int fd, struct file *file, int mode);
-static int uacce_put_queue(struct file *filep);
+static long uacce_put_queue(struct uacce_queue *q);
 
 /* match with enum uacce_qfrt */
 static const char *const qfrt_str[] = {
@@ -70,50 +69,29 @@ const char *uacce_qfrt_str(struct uacce_qfile_region *qfr)
 EXPORT_SYMBOL_GPL(uacce_qfrt_str);
 
 /**
- * uacce_reset_prepare - notify users uacce will be reset and release queues.
- * @uacce: the uacce which will be reset.
+ * uacce_send_sig_to_client - notify users uacce_queue should be released.
+ * @q: the uacce_queue which will be stopped.
  *
- * This function walks all uacce_queues and sends signal to processes which
- * are using these uacce_queues. Before a hardware which driver is registered
- * to uacce framework resets, this function can be used to send a signal to
- * userspace.
+ * This function sends signal to process which is using uacce_queue.
+ *
+ * Note: This function can be called in low level driver, which may bring a race
+ *       with uacce_fops_release. The problem is this function may be called
+ *       when q is NULL. Low level driver should avoid this by locking hardware
+ *       queue pool and check if there is related hardware queue before calling
+ *       this function.
+ *
+ *       And from view of uacce_queue state, uacce_queue state does not be
+ *       changed. Operation of queue should also be protected by low level
+ *       driver.
  */
-void uacce_reset_prepare(struct uacce *uacce)
+void uacce_send_sig_to_client(struct uacce_queue *q)
 {
-	struct uacce_queue *q;
-
-	atomic_set(&uacce->state, UACCE_ST_RST);
-
-	mutex_lock(&uacce->q_lock);
-
-	if (list_empty(&uacce->qs)) {
-		mutex_unlock(&uacce->q_lock);
+	if (!q)
 		return;
-	}
 
-	list_for_each_entry(q, &uacce->qs, q_dev) {
-		kill_fasync(&q->async_queue, SIGIO, POLL_IN);
-	}
-
-	mutex_unlock(&uacce->q_lock);
-
-	/* make sure above single been handled */
-	mdelay(UACCE_RESET_DELAY_MS);
+	kill_fasync(&q->async_queue, SIGIO, POLL_IN);
 }
-EXPORT_SYMBOL_GPL(uacce_reset_prepare);
-
-/**
- * uacce_reset_done - Set uacce as normal state.
- * @uacce: the uacce which reset is done.
- *
- * This function set uacce as normal state, after this uacce can be opened
- * again.
- */
-void uacce_reset_done(struct uacce *uacce)
-{
-	atomic_set(&uacce->state, UACCE_ST_INIT);
-}
-EXPORT_SYMBOL_GPL(uacce_reset_done);
+EXPORT_SYMBOL_GPL(uacce_send_sig_to_client);
 
 /**
  * uacce_wake_up - Wake up the process who is waiting this queue
@@ -125,6 +103,82 @@ void uacce_wake_up(struct uacce_queue *q)
 	wake_up_interruptible(&q->wait);
 }
 EXPORT_SYMBOL_GPL(uacce_wake_up);
+
+static bool uacce_q_avail_ioctl(struct uacce_queue *q, unsigned int cmd)
+{
+	enum uacce_q_state state = q->state;
+	bool avail = false;
+
+	switch (state) {
+	case UACCE_Q_INIT:
+		switch (cmd) {
+		case UACCE_CMD_SHARE_SVAS:
+		case UACCE_CMD_GET_SS_DMA:
+		case UACCE_CMD_PUT_Q:
+			avail = true;
+			break;
+		case UACCE_CMD_START:
+			if (q->qfrs[UACCE_QFRT_MMIO] &&
+			    q->qfrs[UACCE_QFRT_DUS])
+				avail = true;
+			break;
+		/* acc specific ioctl */
+		default:
+			avail = true;
+		}
+		break;
+	case UACCE_Q_STARTED:
+		switch (cmd) {
+		case UACCE_CMD_SHARE_SVAS:
+		case UACCE_CMD_GET_SS_DMA:
+		case UACCE_CMD_PUT_Q:
+			avail = true;
+			break;
+		case UACCE_CMD_START:
+			break;
+		default:
+			avail = true;
+		}
+		break;
+	case UACCE_Q_ZOMBIE:
+		break;
+	default:
+		break;
+	}
+
+	return avail;
+}
+
+static bool uacce_q_avail_mmap(struct uacce_queue *q, unsigned int type)
+{
+	enum uacce_q_state state = q->state;
+	bool avail = false;
+
+	switch (state) {
+	case UACCE_Q_INIT:
+		avail = true;
+		break;
+	case UACCE_Q_STARTED:
+		switch (type) {
+		case UACCE_QFRT_DKO:
+		/* fix me: ss map should be done before start queue */
+		case UACCE_QFRT_SS:
+			avail = true;
+			break;
+		case UACCE_QFRT_MMIO:
+		case UACCE_QFRT_DUS:
+		default:
+			break;
+		}
+		break;
+	case UACCE_Q_ZOMBIE:
+		break;
+	default:
+		break;
+	}
+
+	return avail;
+}
 
 static inline int uacce_iommu_map_qfr(struct uacce_queue *q,
 				      struct uacce_qfile_region *qfr)
@@ -439,20 +493,17 @@ static long uacce_cmd_share_qfr(struct uacce_queue *tgt, int fd)
 	dev_dbg(&src->uacce->dev, "share ss with %s\n",
 		dev_name(&tgt->uacce->dev));
 
-	uacce_qs_wlock();
 	if (!src->qfrs[UACCE_QFRT_SS] || tgt->qfrs[UACCE_QFRT_SS])
-		goto out_with_lock;
+		goto out_with_fd;
 
 	ret = uacce_queue_map_qfr(tgt, src->qfrs[UACCE_QFRT_SS]);
 	if (ret)
-		goto out_with_lock;
+		goto out_with_fd;
 
 	tgt->qfrs[UACCE_QFRT_SS] = src->qfrs[UACCE_QFRT_SS];
 	list_add(&tgt->list, &src->qfrs[UACCE_QFRT_SS]->qs);
 	ret = 0;
 
-out_with_lock:
-	uacce_qs_wunlock();
 out_with_fd:
 	fput(filep);
 	return ret;
@@ -460,9 +511,9 @@ out_with_fd:
 
 static int uacce_start_queue(struct uacce_queue *q)
 {
-	int ret, i, j;
-	struct uacce_qfile_region *qfr;
 	struct device *dev = &q->uacce->dev;
+	struct uacce_qfile_region *qfr;
+	int ret, i, j;
 
 	/*
 	 * map KMAP qfr to kernel
@@ -490,8 +541,9 @@ static int uacce_start_queue(struct uacce_queue *q)
 	if (ret < 0)
 		goto err_with_vmap;
 
-	dev_dbg(&q->uacce->dev, "uacce state switch to STARTED\n");
-	atomic_set(&q->uacce->state, UACCE_ST_STARTED);
+	dev_dbg(&q->uacce->dev, "uacce queue state switch to STARTED\n");
+	q->state = UACCE_Q_STARTED;
+
 	return 0;
 
 err_with_vmap:
@@ -505,55 +557,78 @@ err_with_vmap:
 	return ret;
 }
 
-static long uacce_get_ss_dma(struct uacce_queue *q, void __user *arg)
+static long uacce_get_ss_dma(struct uacce_queue *q, unsigned long *arg)
 {
 	struct uacce *uacce = q->uacce;
-	long ret = 0;
 	unsigned long dma = 0;
 
 	if (!(uacce->flags & UACCE_DEV_NOIOMMU))
 		return -EINVAL;
 
-	uacce_qs_wlock();
 	if (q->qfrs[UACCE_QFRT_SS]) {
 		dma = (unsigned long)(q->qfrs[UACCE_QFRT_SS]->dma);
 		dev_dbg(&uacce->dev, "%s(%lx)\n", __func__, dma);
-	} else
-		ret = -EINVAL;
-	uacce_qs_wunlock();
+	} else {
+		return -EINVAL;
+	}
 
-	if (copy_to_user(arg, &dma, sizeof(dma)))
-		ret = -EFAULT;
+	*arg = dma;
 
-	return ret;
+	return 0;
 }
 
 static long uacce_fops_unl_ioctl(struct file *filep,
 				 unsigned int cmd, unsigned long arg)
 {
-	struct uacce_queue *q = filep->private_data;
-	struct uacce *uacce = q->uacce;
+	struct uacce_queue *q;
+	struct uacce *uacce;
+	unsigned long dma = 0;
+	long ret = 0;
+
+	uacce_qs_wlock();
+
+	if (unlikely(!filep->private_data)) {
+		uacce_qs_wunlock();
+		return -EBADF;
+	}
+	q = filep->private_data;
+	uacce = q->uacce;
+
+	if (!uacce_q_avail_ioctl(q, cmd)) {
+		uacce_qs_wunlock();
+		return -EINVAL;
+	}
 
 	switch (cmd) {
 	case UACCE_CMD_SHARE_SVAS:
-		return uacce_cmd_share_qfr(q, arg);
-
+		ret = uacce_cmd_share_qfr(q, arg);
+		break;
 	case UACCE_CMD_START:
-		return uacce_start_queue(q);
-
+		ret = uacce_start_queue(q);
+		break;
 	case UACCE_CMD_GET_SS_DMA:
-		return uacce_get_ss_dma(q, (void __user *)arg);
-
+		ret = uacce_get_ss_dma(q, &dma);
+		break;
 	case UACCE_CMD_PUT_Q:
-		return uacce_put_queue(filep);
-
+		ret = uacce_put_queue(q);
+		break;
 	default:
+		uacce_qs_wunlock();
 		if (uacce->ops->ioctl)
+			/* This is not protected by uacce_qs_lock */
 			return uacce->ops->ioctl(q, cmd, arg);
 
 		dev_err(&uacce->dev, "ioctl cmd (%d) is not supported!\n", cmd);
 		return -EINVAL;
 	}
+
+	uacce_qs_wunlock();
+
+	if (cmd == UACCE_CMD_GET_SS_DMA && !ret)
+		if (copy_to_user((void __user *)arg, &dma, sizeof(dma)))
+			ret = -EFAULT;
+
+	return ret;
 }
 
 #ifdef CONFIG_COMPAT
@@ -577,30 +652,24 @@ static int uacce_dev_open_check(struct uacce *uacce)
 	 */
 	if (uacce->flags & (UACCE_DEV_PASID | UACCE_DEV_NOIOMMU))
 		return 0;
+	else {
+		if (!atomic_read(&uacce->ref))
+			return 0;
 
-	if (atomic_cmpxchg(&uacce->state, UACCE_ST_INIT, UACCE_ST_OPENNED) !=
-	    UACCE_ST_INIT) {
 		dev_info(&uacce->dev, "this device can be openned only once\n");
 		return -EBUSY;
 	}
-
-	dev_dbg(&uacce->dev, "state switch to OPENNED!\n");
-
-	return 0;
 }
 
 /* To be fixed: only drain queue relatives */
 static int uacce_queue_drain(struct uacce_queue *q)
 {
+	struct uacce *uacce = q->uacce;
 	struct uacce_qfile_region *qfr;
-	struct uacce *uacce;
-	int i;
 	bool is_to_free_region;
+	int i;
 
-	if (!q)
-		return -EINVAL;
-	uacce = q->uacce;
-	if (atomic_read(&uacce->state) == UACCE_ST_STARTED &&
+	if ((q->state == UACCE_Q_INIT || q->state == UACCE_Q_STARTED) &&
 	    uacce->ops->stop_queue)
 		uacce->ops->stop_queue(q);
 
@@ -625,40 +694,46 @@ static int uacce_queue_drain(struct uacce_queue *q)
 	if (uacce->flags & UACCE_DEV_SVA)
 		iommu_sva_unbind_device(uacce->pdev, q->pasid);
 #endif
-	if (uacce->ops->put_queue)
+	if ((q->state == UACCE_Q_INIT || q->state == UACCE_Q_STARTED) &&
+	     uacce->ops->put_queue)
 		uacce->ops->put_queue(q);
 
-	dev_dbg(&uacce->dev, "uacce state switch to INIT\n");
-	if (atomic_dec_and_test(&uacce->ref))
-		atomic_set(&uacce->state, UACCE_ST_INIT);
+	/*
+	 * Put_queue above just put hardware queue, but not free uacce_q.
+	 *
+	 * Put_queue(and stop_queue) is used to support UACCE_PUT_QUEUE
+	 * ioctl, UACCE_PUT_QUEUE is defined only to put low level hardware
+	 * queue, after UACCE_PUT_QUEUE ioctl, uacce_queue enters into zombie
+	 * state. So uacce_queue can only be freed here.
+	 */
+	kfree(q);
+	atomic_dec(&uacce->ref);
 
-	module_put(uacce->pdev->driver->owner);
 	return 0;
 }
 
-/* While user space releases a queue, all the relatives on the queue
+/*
+ * While user space releases a queue, all the relatives on the queue
  * should be released imediately by this putting.
  */
-static int uacce_put_queue(struct file *filep)
+static long uacce_put_queue(struct uacce_queue *q)
 {
-	struct uacce_queue *q = filep->private_data;
-	struct uacce *uacce;
+	struct uacce *uacce = q->uacce;
 
-	if (!q)
-		return 0;
-	uacce = q->uacce;
+	/*
+	 * To do: we should vm_munmap mmio and dus regions, currently we munmap
+	 * mmio and dus region before put queue.
+	 */
 
-	if (UACCE_ST_INIT ==
-	    atomic_cmpxchg(&q->status, UACCE_ST_OPENNED, UACCE_ST_INIT))
-		return 0;
+	if (uacce->ops->stop_queue)
+		uacce->ops->stop_queue(q);
 
-	uacce_fops_fasync(-1, filep, 0);
-	mutex_lock(&uacce->q_lock);
-	list_del(&q->q_dev);
-	mutex_unlock(&uacce->q_lock);
-	filep->private_data = NULL;
+	if (uacce->ops->put_queue)
+		uacce->ops->put_queue(q);
 
-	return uacce_queue_drain(q);
+	q->state = UACCE_Q_ZOMBIE;
+
+	return 0;
 }
 
 static int uacce_fops_open(struct inode *inode, struct file *filep)
@@ -672,9 +747,6 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	if (!uacce)
 		return -ENODEV;
 
-	if (atomic_read(&uacce->state) == UACCE_ST_RST)
-		return -EINVAL;
-
 	if (!uacce->ops->get_queue)
 		return -EINVAL;
 
@@ -682,21 +754,23 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 		return -ENODEV;
 	ret = uacce_dev_open_check(uacce);
 	if (ret)
-		goto open_err;
+		goto err_open;
 #ifdef CONFIG_IOMMU_SVA2
 	if (uacce->flags & UACCE_DEV_PASID) {
 		ret = iommu_sva_bind_device(uacce->pdev, current->mm, &pasid,
 					    IOMMU_SVA_FEAT_IOPF, NULL);
 		if (ret)
-			goto open_err;
+			goto err_open;
 	}
 #endif
-	ret = uacce->ops->get_queue(uacce, pasid, &q);
-	if (ret < 0)
-		goto open_err;
+	uacce_qs_wlock();
 
-	atomic_inc(&uacce->ref);
-	atomic_set(&q->status, UACCE_ST_OPENNED);
+	ret = uacce->ops->get_queue(uacce, pasid, &q);
+	if (ret < 0) {
+		uacce_qs_wunlock();
+		goto err_unbind;
+	}
+
 	q->pasid = pasid;
 	q->uacce = uacce;
 	q->mm = current->mm;
@@ -704,36 +778,51 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	INIT_LIST_HEAD(&q->list);
 	init_waitqueue_head(&q->wait);
 	filep->private_data = q;
-	mutex_lock(&uacce->q_lock);
-	list_add(&q->q_dev, &uacce->qs);
-	mutex_unlock(&uacce->q_lock);
+	q->state = UACCE_Q_INIT;
+	atomic_inc(&uacce->ref);
+
+	uacce_qs_wunlock();
 
 	return 0;
-open_err:
+
+err_unbind:
+#ifdef CONFIG_IOMMU_SVA2
+	if (uacce->flags & UACCE_DEV_PASID)
+		iommu_sva_unbind_device(uacce->pdev, pasid);
+#endif
+err_open:
 	module_put(uacce->pdev->driver->owner);
 	return ret;
 }
 
 static int uacce_fops_release(struct inode *inode, struct file *filep)
 {
-	struct uacce_queue *q = filep->private_data;
+	struct uacce_queue *q;
+	struct uacce *uacce;
+	int ret = 0;
 
-	if (!q)
-		return 0;
-
-	if (UACCE_ST_INIT ==
-	    atomic_cmpxchg(&q->status, UACCE_ST_OPENNED, UACCE_ST_INIT))
-		return 0;
+	uacce_qs_wlock();
 
 	uacce_fops_fasync(-1, filep, 0);
-	mutex_lock(&q->uacce->q_lock);
-	list_del(&q->q_dev);
-	mutex_unlock(&q->uacce->q_lock);
 
-	/* As user space exception(without release queue), it will fall into
-	 * this logic as the task exits to prevent hardware resources leaking
-	 */
-	return uacce_queue_drain(q);
+	q = filep->private_data;
+	if (q) {
+		uacce = q->uacce;
+		/*
+		 * As user space exception(without release queue), it will
+		 * fall into this logic as the task exits to prevent hardware
+		 * resources leaking.
+		 */
+		ret = uacce_queue_drain(q);
+		filep->private_data = NULL;
+	}
+
+	uacce_qs_wunlock();
+
+	if (q)
+		module_put(uacce->pdev->driver->owner);
+
+	return ret;
 }
 
 static enum uacce_qfrt uacce_get_region_type(struct uacce *uacce,
@@ -808,26 +897,40 @@ static enum uacce_qfrt uacce_get_region_type(struct uacce *uacce,
 
 static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 {
-	struct uacce_queue *q = filep->private_data;
-	struct uacce *uacce = q->uacce;
+	struct uacce_queue *q;
+	struct uacce *uacce;
 	enum uacce_qfrt type;
 	struct uacce_qfile_region *qfr;
 	unsigned int flags = 0;
 	int ret;
 
-	type = uacce_get_region_type(uacce, vma);
-	if (type == UACCE_QFRT_INVALID)
-		return -EINVAL;
-
-	dev_dbg(&uacce->dev, "mmap q file(t=%s, off=%lx, start=%lx, end=%lx)\n",
-		 qfrt_str[type], vma->vm_pgoff, vma->vm_start, vma->vm_end);
-
 	vma->vm_flags |= VM_DONTCOPY | VM_DONTEXPAND;
 
 	uacce_qs_wlock();
 
+	if (unlikely(!filep->private_data)) {
+		uacce_qs_wunlock();
+		return -EBADF;
+	}
+	q = filep->private_data;
+	uacce = q->uacce;
+	type = uacce_get_region_type(uacce, vma);
+
+	dev_dbg(&uacce->dev, "mmap q file(t=%s, off=%lx, start=%lx, end=%lx)\n",
+		 qfrt_str[type], vma->vm_pgoff, vma->vm_start, vma->vm_end);
+
+	if (type == UACCE_QFRT_INVALID) {
+		ret = -EINVAL;
+		goto out_with_lock;
+	}
+
 	if (q->qfrs[type]) {
 		ret = -EBUSY;
+		goto out_with_lock;
+	}
+
+	if (!uacce_q_avail_mmap(q, type)) {
+		ret = -EINVAL;
 		goto out_with_lock;
 	}
 
@@ -837,11 +940,6 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 		break;
 
 	case UACCE_QFRT_SS:
-		if (atomic_read(&uacce->state) != UACCE_ST_STARTED) {
-			ret = -EINVAL;
-			goto out_with_lock;
-		}
-
 		flags = UACCE_QFRF_MAP | UACCE_QFRF_MMAP;
 
 		if (uacce->flags & UACCE_DEV_NOIOMMU)
@@ -896,14 +994,27 @@ out_with_lock:
 
 static __poll_t uacce_fops_poll(struct file *file, poll_table *wait)
 {
-	struct uacce_queue *q = file->private_data;
-	struct uacce *uacce = q->uacce;
+	struct uacce_queue *q;
+	struct uacce *uacce;
+	int ret = 0;
+
+	uacce_qs_wlock();
+
+	if (unlikely(!file->private_data)) {
+		uacce_qs_wunlock();
+		ret = EPOLLERR;
+		return ret;
+	}
+	q = file->private_data;
+	uacce = q->uacce;
 
 	poll_wait(file, &q->wait, wait);
 	if (uacce->ops->is_q_updated && uacce->ops->is_q_updated(q))
-		return EPOLLIN | EPOLLRDNORM;
+		ret = EPOLLIN | EPOLLRDNORM;
 
-	return 0;
+	uacce_qs_wunlock();
+
+	return ret;
 }
 
 static int uacce_fops_fasync(int fd, struct file *file, int mode)
@@ -1049,6 +1160,8 @@ static const struct attribute_group *uacce_dev_attr_groups[] = {
 	NULL
 };
 
+static void uacce_dev_release(struct device *dev) {}
+
 static int uacce_create_chrdev(struct uacce *uacce)
 {
 	int ret;
@@ -1065,6 +1178,7 @@ static int uacce_create_chrdev(struct uacce *uacce)
 	uacce->dev.class = uacce_class;
 	uacce->dev.groups = uacce_dev_attr_groups;
 	uacce->dev.parent = uacce->pdev;
+	uacce->dev.release = uacce_dev_release;
 	dev_set_name(&uacce->dev, "%s-%d", uacce->drv_name, uacce->dev_id);
 	ret = cdev_device_add(&uacce->cdev, &uacce->dev);
 	if (ret)
@@ -1081,6 +1195,8 @@ err_with_idr:
 static void uacce_destroy_chrdev(struct uacce *uacce)
 {
 	cdev_device_del(&uacce->cdev, &uacce->dev);
+	put_device(&uacce->dev);
+	memset(&uacce->dev, 0, sizeof(struct device));
 	idr_remove(&uacce_idr, uacce->dev_id);
 }
 
@@ -1233,13 +1349,13 @@ static void uacce_unset_iommu_domain(struct uacce *uacce)
 #endif
 
 /**
- *	uacce_register - register an accelerator
- *	@uacce: the accelerator structure
+ * uacce_register - register an accelerator
+ * @uacce: the accelerator structure
  */
 int uacce_register(struct uacce *uacce)
 {
-	int ret;
 	struct device *dev = uacce->pdev;
+	int ret;
 
 	if (!dev) {
 		pr_err("uacce parent device not set\n");
@@ -1271,12 +1387,10 @@ int uacce_register(struct uacce *uacce)
 		return ret;
 #endif
 
-	mutex_lock(&uacce_mutex);
-
 	ret = uacce_create_chrdev(uacce);
 	if (ret) {
 		dev_err(dev, "uacce creates cdev fail!\n");
-		goto err_with_lock;
+		return ret;
 	}
 
 	if (uacce->flags & UACCE_DEV_PASID) {
@@ -1286,24 +1400,17 @@ int uacce_register(struct uacce *uacce)
 		if (ret) {
 			dev_err(dev, "uacce sva init fail!\n");
 			uacce_destroy_chrdev(uacce);
-			goto err_with_lock;
+			return ret;
 		}
 #else
 		uacce->flags &= ~(UACCE_DEV_FAULT_FROM_DEV | UACCE_DEV_PASID);
 #endif
 	}
 
-	dev_dbg(dev, "uacce state initialized to INIT\n");
-	atomic_set(&uacce->state, UACCE_ST_INIT);
+	dev_dbg(&uacce->dev, "register to uacce!\n");
 	atomic_set(&uacce->ref, 0);
-	INIT_LIST_HEAD(&uacce->qs);
-	mutex_init(&uacce->q_lock);
-	mutex_unlock(&uacce_mutex);
-	return 0;
 
-err_with_lock:
-	mutex_unlock(&uacce_mutex);
-	return ret;
+	return 0;
 }
 EXPORT_SYMBOL_GPL(uacce_register);
 
@@ -1314,9 +1421,12 @@ EXPORT_SYMBOL_GPL(uacce_register);
  * Unregister an accelerator that wat previously successully registered with
  * uacce_register().
  */
-void uacce_unregister(struct uacce *uacce)
+int uacce_unregister(struct uacce *uacce)
 {
-	mutex_lock(&uacce_mutex);
+	if (atomic_read(&uacce->ref) > 0) {
+		printk_ratelimited("Fail to unregister uacce, please close all uacce queues!\n");
+		return -EAGAIN;
+	}
 
 #ifdef CONFIG_IOMMU_SVA2
 	iommu_sva_shutdown_device(uacce->pdev);
@@ -1326,7 +1436,7 @@ void uacce_unregister(struct uacce *uacce)
 
 	uacce_destroy_chrdev(uacce);
 
-	mutex_unlock(&uacce_mutex);
+	return 0;
 }
 EXPORT_SYMBOL_GPL(uacce_unregister);
 

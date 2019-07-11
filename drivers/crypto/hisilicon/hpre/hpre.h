@@ -23,10 +23,15 @@
 
 struct hpre_ctrl;
 
+enum hpre_status {
+	HPRE_RESET,
+};
+
 struct hpre {
 	struct hisi_qm qm;
 	struct list_head list;
 	struct hpre_ctrl *ctrl;
+	unsigned long status;
 };
 
 enum hpre_alg_type {

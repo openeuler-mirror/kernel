@@ -87,12 +87,23 @@
 
 #define PCI_BAR_2			2
 
+enum qm_stop_reason {
+	QM_NORMAL,
+	QM_SOFT_RESET,
+	QM_FLR,
+};
 enum qm_state {
-	QM_RESET,
+	QM_INIT = 0,
+	QM_START,
+	QM_CLOSE,
+	QM_STOP,
 };
 
 enum qp_state {
+	QP_INIT = 1,
+	QP_START,
 	QP_STOP,
+	QP_CLOSE,
 };
 
 enum qm_hw_ver {
@@ -217,7 +228,8 @@ struct hisi_qm_status {
 	bool eqc_phase;
 	u32 aeq_head;
 	bool aeqc_phase;
-	unsigned long flags;
+	atomic_t flags;
+	int stop_reason;
 };
 
 struct hisi_qm {
@@ -243,7 +255,7 @@ struct hisi_qm {
 
 	struct hisi_qm_status status;
 
-	rwlock_t qps_lock;
+	struct rw_semaphore qps_lock;
 	unsigned long *qp_bitmap;
 	struct hisi_qp **qp_array;
 
@@ -276,7 +288,7 @@ struct hisi_qp_status {
 	u16 sq_head;
 	u16 cq_head;
 	bool cqc_phase;
-	unsigned long flags;
+	atomic_t flags;
 };
 
 struct hisi_qp_ops {
@@ -303,6 +315,7 @@ struct hisi_qp {
 	void (*event_cb)(struct hisi_qp *qp);
 
 	struct hisi_qm *qm;
+	bool is_resetting;
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	u16 pasid;
@@ -314,7 +327,7 @@ int hisi_qm_init(struct hisi_qm *qm);
 void hisi_qm_uninit(struct hisi_qm *qm);
 int hisi_qm_frozen(struct hisi_qm *qm);
 int hisi_qm_start(struct hisi_qm *qm);
-int hisi_qm_stop(struct hisi_qm *qm);
+int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r);
 struct hisi_qp *hisi_qm_create_qp(struct hisi_qm *qm, u8 alg_type);
 int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg);
 int hisi_qm_stop_qp(struct hisi_qp *qp);
@@ -331,4 +344,5 @@ void hisi_qm_hw_error_init(struct hisi_qm *qm, u32 ce, u32 nfe, u32 fe,
 int hisi_qm_hw_error_handle(struct hisi_qm *qm);
 void hisi_qm_clear_queues(struct hisi_qm *qm);
 enum qm_hw_ver hisi_qm_get_hw_version(struct pci_dev *pdev);
+int hisi_qm_restart(struct hisi_qm *qm);
 #endif

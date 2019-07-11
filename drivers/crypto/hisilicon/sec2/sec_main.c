@@ -252,6 +252,7 @@
 #define SEC_CHAIN_ABN_WR_LEN 0x318
 
 #define SEC_CHAIN_ABN_LEN 128UL
+#define FORMAT_DECIMAL			10
 
 static const char hisi_sec_name[] = "hisi_sec";
 static struct dentry *hsec_debugfs_root;
@@ -401,12 +402,33 @@ static const struct kernel_param_ops pf_q_num_ops = {
 	.get = param_get_int,
 };
 
+static int uacce_mode_set(const char *val, const struct kernel_param *kp)
+{
+	u32 n;
+	int ret;
+
+	if (!val)
+		return -EINVAL;
+
+	ret = kstrtou32(val, FORMAT_DECIMAL, &n);
+	if (ret != 0 || n > UACCE_MODE_NOIOMMU)
+		return -EINVAL;
+
+	return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops uacce_mode_ops = {
+	.set = uacce_mode_set,
+	.get = param_get_int,
+};
+
 static u32 pf_q_num = HSEC_PF_DEF_Q_NUM;
 module_param_cb(pf_q_num, &pf_q_num_ops, &pf_q_num, 0444);
 MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 0-4096, v2 0-1024)");
 
 static int uacce_mode = UACCE_MODE_NOUACCE;
-module_param(uacce_mode, int, 0444);
+module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
+MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
 
 static int enable_sm4_ctr;
 module_param(enable_sm4_ctr, int, 0444);
@@ -590,12 +612,21 @@ static int current_qm_write(struct ctrl_debug_file *file, u32 val)
 {
 	struct hisi_qm *qm = file_to_qm(file);
 	struct hisi_sec_ctrl *ctrl = file->ctrl;
+	u32 tmp;
 
 	if (val > ctrl->num_vfs)
 		return -EINVAL;
 
 	writel(val, qm->io_base + QM_DFX_MB_CNT_VF);
 	writel(val, qm->io_base + QM_DFX_DB_CNT_VF);
+
+	tmp = val |
+	      (readl(qm->io_base + QM_DFX_SQE_CNT_VF_SQN) & QM_VF_CNT_MASK);
+	writel(tmp, qm->io_base + QM_DFX_SQE_CNT_VF_SQN);
+
+	tmp = val |
+	      (readl(qm->io_base + QM_DFX_CQE_CNT_VF_CQN) & QM_VF_CNT_MASK);
+	writel(tmp, qm->io_base + QM_DFX_CQE_CNT_VF_CQN);
 
 	return 0;
 }
@@ -1047,7 +1078,7 @@ static void hisi_sec_remove(struct pci_dev *pdev)
 		hisi_sec_sriov_disable(pdev);
 
 	hisi_sec_debugfs_exit(hisi_sec);
-	hisi_qm_stop(qm);
+	hisi_qm_stop(qm, QM_NORMAL);
 
 	if (qm->fun_type == QM_HW_PF) {
 		hisi_sec_hw_error_set_state(hisi_sec, false);
@@ -1066,17 +1097,17 @@ static void hisi_sec_log_hw_error(struct hisi_sec *hisi_sec, u32 err_sts)
 
 	while (err->msg) {
 		if (err->int_msk & err_sts) {
-			dev_warn(dev, "%s [error status=0x%x] found\n",
+			dev_err(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
 
 			if (HSEC_CORE_INT_STATUS_M_ECC & err_sts) {
 				err_val = readl(hisi_sec->qm.io_base +
 						HSEC_CORE_SRAM_ECC_ERR_INFO);
-				dev_warn(dev,
+				dev_err(dev,
 					 "hisi-sec multi ecc sram num=0x%x\n",
 					 ((err_val >> SRAM_ECC_ERR_NUM_SHIFT) &
 					  0xFF));
-				dev_warn(dev,
+				dev_err(dev,
 					 "hisi-sec multi ecc sram addr=0x%x\n",
 					 (err_val >> SRAM_ECC_ERR_ADDR_SHIFT));
 			}
@@ -1139,23 +1170,97 @@ static pci_ers_result_t hisi_sec_error_detected(struct pci_dev *pdev,
 	return hisi_sec_process_hw_error(pdev);
 }
 
+static int hisi_sec_reset_prepare_rdy(struct hisi_sec *hisi_sec)
+{
+	int delay = 1;
+	u32 flag = 1;
+	int ret = 0;
+
+#define RESET_WAIT_TIMEOUT 20000
+
+	while (flag) {
+		flag = 0;
+		if (delay > RESET_WAIT_TIMEOUT) {
+			ret = -EBUSY;
+			break;
+		}
+
+		msleep(delay);
+		delay *= 2;
+
+		if (test_and_set_bit(HISI_SEC_RESET, &hisi_sec->status))
+			flag = 1;
+	}
+
+	return ret;
+}
+
+static int hisi_sec_vf_reset_prepare(struct pci_dev *pdev,
+				     enum qm_stop_reason stop_reason)
+{
+	struct hisi_sec *hisi_sec;
+	struct pci_dev *dev;
+	struct hisi_qm *qm;
+	int ret = 0;
+
+	mutex_lock(&hisi_sec_list_lock);
+	if (pdev->is_physfn) {
+		list_for_each_entry(hisi_sec, &hisi_sec_list, list) {
+			dev = hisi_sec->qm.pdev;
+			if (dev == pdev)
+				continue;
+
+			if (pci_physfn(dev) == pdev) {
+				qm = &hisi_sec->qm;
+
+				ret = hisi_qm_stop(qm, stop_reason);
+				if (ret)
+					goto prepare_fail;
+			}
+		}
+	}
+
+prepare_fail:
+	mutex_unlock(&hisi_sec_list_lock);
+	return ret;
+}
+
 static int hisi_sec_controller_reset_prepare(struct hisi_sec *hisi_sec)
 {
 	struct hisi_qm *qm = &hisi_sec->qm;
 	struct pci_dev *pdev = qm->pdev;
+	int retry = 0;
 	int ret;
 
-	ret = hisi_qm_stop(qm);
+	ret = hisi_sec_reset_prepare_rdy(hisi_sec);
+	if (ret) {
+		dev_err(&pdev->dev, "Controller reset not ready!\n");
+		return ret;
+	}
+
+	ret = hisi_sec_vf_reset_prepare(pdev, QM_SOFT_RESET);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to stop VFs!\n");
+		return ret;
+	}
+
+	ret = hisi_qm_stop(qm, QM_SOFT_RESET);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return ret;
 	}
 
-	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
-		dev_warn(&pdev->dev, "Failed to set reset flag!");
-		return -EPERM;
-	}
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	/* wait 10s for uacce_queue to release */
+	while (retry++ < 1000) {
+		msleep(20);
+		if (!uacce_unregister(&qm->uacce))
+			break;
 
+		if (retry == 1000)
+			return -EBUSY;
+	}
+#endif
 	return 0;
 }
 
@@ -1201,8 +1306,7 @@ static int hisi_sec_soft_reset(struct hisi_sec *hisi_sec)
 	/* The reset related sub-control registers are not in PCI BAR */
 	if (ACPI_HANDLE(dev)) {
 		acpi_status s;
-
-		s = acpi_evaluate_object(ACPI_HANDLE(dev), "ZRST", NULL, NULL);
+		s = acpi_evaluate_object(ACPI_HANDLE(dev), "SRST", NULL, NULL);
 		if (ACPI_FAILURE(s)) {
 			dev_err(dev, "Controller reset fails\n");
 			return -EIO;
@@ -1213,6 +1317,34 @@ static int hisi_sec_soft_reset(struct hisi_sec *hisi_sec)
 	}
 
 	return 0;
+}
+
+static int hisi_sec_vf_reset_done(struct pci_dev *pdev)
+{
+	struct hisi_sec *hisi_sec;
+	struct pci_dev *dev;
+	struct hisi_qm *qm;
+	int ret = 0;
+
+	mutex_lock(&hisi_sec_list_lock);
+	list_for_each_entry(hisi_sec, &hisi_sec_list, list) {
+		dev = hisi_sec->qm.pdev;
+		if (dev == pdev)
+			continue;
+
+		if (pci_physfn(dev) == pdev) {
+			qm = &hisi_sec->qm;
+
+			hisi_qm_clear_queues(qm);
+			ret = hisi_qm_restart(qm);
+			if (ret)
+				goto reset_fail;
+		}
+	}
+
+reset_fail:
+	mutex_unlock(&hisi_sec_list_lock);
+	return ret;
 }
 
 static int hisi_sec_controller_reset_done(struct hisi_sec *hisi_sec)
@@ -1227,7 +1359,7 @@ static int hisi_sec_controller_reset_done(struct hisi_sec *hisi_sec)
 	hisi_sec_set_user_domain_and_cache(hisi_sec);
 	hisi_sec_hw_error_init(hisi_sec);
 
-	ret = hisi_qm_start(qm);
+	ret = hisi_qm_restart(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to start QM!\n");
 		return -EPERM;
@@ -1249,6 +1381,17 @@ static int hisi_sec_controller_reset_done(struct hisi_sec *hisi_sec)
 
 	/* Clear VF MSE bit */
 	hisi_sec_set_mse(hisi_sec, 1);
+
+	ret = hisi_sec_vf_reset_done(pdev);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to start VFs!\n");
+		return -EPERM;
+	}
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		uacce_register(&qm->uacce);
+#endif
 
 	return 0;
 }
@@ -1274,8 +1417,8 @@ static int hisi_sec_controller_reset(struct hisi_sec *hisi_sec)
 	if (ret)
 		return ret;
 
+	clear_bit(HISI_SEC_RESET, &hisi_sec->status);
 	dev_info(dev, "Controller reset complete\n");
-	clear_bit(QM_RESET, &hisi_sec->qm.status.flags);
 
 	return 0;
 }
@@ -1303,6 +1446,30 @@ static pci_ers_result_t hisi_sec_slot_reset(struct pci_dev *pdev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
+static void hisi_sec_flr_prepare_rdy(struct pci_dev *pdev)
+{
+	struct pci_dev *pf_pdev = pci_physfn(pdev);
+	struct hisi_sec *hisi_sec = pci_get_drvdata(pf_pdev);
+	int delay = 1;
+	u32 flag = 1;
+
+#define FLR_WAIT_TIMEOUT 60000
+#define FLR_DELAY_INC 2000
+
+	while (flag) {
+		flag = 0;
+		msleep(delay);
+		if (delay > FLR_WAIT_TIMEOUT) {
+			flag = 1;
+			delay = 1;
+			dev_err(&pdev->dev, "Device error, please exit FLR!\n");
+		} else if (test_and_set_bit(HISI_SEC_RESET, &hisi_sec->status))
+			flag = 1;
+
+		delay += FLR_DELAY_INC;
+	}
+}
+
 static void hisi_sec_reset_prepare(struct pci_dev *pdev)
 {
 	struct hisi_sec *hisi_sec = pci_get_drvdata(pdev);
@@ -1310,18 +1477,29 @@ static void hisi_sec_reset_prepare(struct pci_dev *pdev)
 	struct device *dev = &pdev->dev;
 	int ret;
 
-	ret = hisi_qm_stop(qm);
+	hisi_sec_flr_prepare_rdy(pdev);
+
+	ret = hisi_sec_vf_reset_prepare(pdev, QM_FLR);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to prepare reset!\n");
+		return;
+	}
+
+	ret = hisi_qm_stop(qm, QM_FLR);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return;
 	}
 
-	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
-		dev_warn(dev, "Failed to set reset flag!");
-		return;
-	}
-
 	dev_info(dev, "FLR resetting...\n");
+}
+
+static void hisi_sec_flr_reset_complete(struct pci_dev *pdev)
+{
+	struct pci_dev *pf_pdev = pci_physfn(pdev);
+	struct hisi_sec *hisi_sec = pci_get_drvdata(pf_pdev);
+
+	clear_bit(HISI_SEC_RESET, &hisi_sec->status);
 }
 
 static void hisi_sec_reset_done(struct pci_dev *pdev)
@@ -1329,37 +1507,26 @@ static void hisi_sec_reset_done(struct pci_dev *pdev)
 	struct hisi_sec *hisi_sec = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hisi_sec->qm;
 	struct device *dev = &pdev->dev;
-	struct hisi_qp *qp;
-	int i, ret;
+	int ret;
+
+	hisi_qm_clear_queues(qm);
+	ret = hisi_qm_restart(qm);
+	if (ret) {
+		dev_err(dev, "Failed to start QM!\n");
+		return;
+	}
 
 	if (pdev->is_physfn) {
-		hisi_qm_clear_queues(qm);
-
 		hisi_sec_set_user_domain_and_cache(hisi_sec);
 		hisi_sec_hw_error_init(hisi_sec);
-
-		ret = hisi_qm_start(qm);
-		if (ret) {
-			dev_err(dev, "Failed to start QM!\n");
-			return;
-		}
-
-		for (i = 0; i < qm->qp_num; i++) {
-			qp = qm->qp_array[i];
-			if (qp) {
-				ret = hisi_qm_start_qp(qp, 0);
-				if (ret < 0) {
-					dev_err(dev, "Start qp%d failed\n", i);
-					return;
-				}
-			}
-		}
-
 		if (hisi_sec->ctrl->num_vfs)
 			hisi_sec_vf_q_assign(hisi_sec, hisi_sec->ctrl->num_vfs);
 
-		dev_info(dev, "FLR reset complete\n");
+		hisi_sec_vf_reset_done(pdev);
 	}
+	hisi_sec_flr_reset_complete(pdev);
+
+	dev_info(dev, "FLR reset complete\n");
 }
 
 static const struct pci_error_handlers hisi_sec_err_handler = {

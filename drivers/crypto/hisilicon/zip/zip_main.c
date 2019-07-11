@@ -75,6 +75,10 @@
 #define HZIP_CORE_INT_STATUS		0x3010AC
 #define HZIP_CORE_INT_STATUS_M_ECC	BIT(1)
 #define HZIP_CORE_SRAM_ECC_ERR_INFO	0x301148
+#define HZIP_CORE_INT_RAS_CE_ENB    0x301160
+#define HZIP_CORE_INT_RAS_NFE_ENB    0x301164
+#define HZIP_CORE_INT_RAS_FE_ENB        0x301168
+#define HZIP_CORE_INT_RAS_NFE_ENABLE		0x7FE
 #define SRAM_ECC_ERR_NUM_SHIFT		16
 #define SRAM_ECC_ERR_ADDR_SHIFT		24
 #define HZIP_CORE_INT_DISABLE		0x000007FF
@@ -93,7 +97,8 @@
 #define HZIP_NUMA_DISTANCE		100
 #define HZIP_BUF_SIZE			20
 #define FORMAT_DECIMAL			10
-
+#define HZIP_REG_RD_INTVRL_US          10
+#define HZIP_REG_RD_TMOUT_US           1000
 
 static const char hisi_zip_name[] = "hisi_zip";
 static struct dentry *hzip_debugfs_root;
@@ -421,6 +426,12 @@ static void hisi_zip_hw_error_set_state(struct hisi_zip *hisi_zip, bool state)
 			 qm->ver);
 		return;
 	}
+
+	/* configure error type */
+	writel(0x1, hisi_zip->qm.io_base + HZIP_CORE_INT_RAS_CE_ENB);
+	writel(0x0, hisi_zip->qm.io_base + HZIP_CORE_INT_RAS_FE_ENB);
+	writel(HZIP_CORE_INT_RAS_NFE_ENABLE,
+		hisi_zip->qm.io_base + HZIP_CORE_INT_RAS_NFE_ENB);
 
 	if (state) {
 		/* clear ZIP hw error source if having */
@@ -923,7 +934,7 @@ static void hisi_zip_remove(struct pci_dev *pdev)
 		hisi_zip_sriov_disable(pdev);
 
 	hisi_zip_debugfs_exit(hisi_zip);
-	hisi_qm_stop(qm);
+	hisi_qm_stop(qm, QM_NORMAL);
 
 	if (qm->fun_type == QM_HW_PF)
 		hisi_zip_hw_error_set_state(hisi_zip, false);
@@ -1017,12 +1028,12 @@ static int hisi_zip_reset_prepare_rdy(struct hisi_zip *hisi_zip)
 	u32 flag = 1;
 	int ret = 0;
 
-#define TIMEOUT_VF 20000
+#define RESET_WAIT_TIMEOUT 20000
 
 	while (flag) {
 		flag = 0;
-		if (delay > TIMEOUT_VF) {
-			ret = -ENOTTY;
+		if (delay > RESET_WAIT_TIMEOUT) {
+			ret = -EBUSY;
 			break;
 		}
 
@@ -1036,7 +1047,8 @@ static int hisi_zip_reset_prepare_rdy(struct hisi_zip *hisi_zip)
 	return ret;
 }
 
-static int hisi_zip_vf_reset_prepare(struct pci_dev *pdev)
+static int hisi_zip_vf_reset_prepare(struct pci_dev *pdev,
+				     enum qm_stop_reason stop_reason)
 {
 	struct hisi_zip *hisi_zip;
 	struct pci_dev *dev;
@@ -1053,8 +1065,7 @@ static int hisi_zip_vf_reset_prepare(struct pci_dev *pdev)
 			if (pci_physfn(dev) == pdev) {
 				qm = &hisi_zip->qm;
 
-				set_bit(QM_RESET, &qm->status.flags);
-				ret = hisi_qm_stop(qm);
+				ret = hisi_qm_stop(qm, stop_reason);
 				if (ret)
 					goto prepare_fail;
 			}
@@ -1064,13 +1075,13 @@ static int hisi_zip_vf_reset_prepare(struct pci_dev *pdev)
 prepare_fail:
 	mutex_unlock(&hisi_zip_list_lock);
 	return ret;
-
 }
 
 static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
 	struct pci_dev *pdev = qm->pdev;
+	int retry = 0;
 	int ret;
 
 	ret = hisi_zip_reset_prepare_rdy(hisi_zip);
@@ -1079,22 +1090,28 @@ static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 		return ret;
 	}
 
-	ret = hisi_zip_vf_reset_prepare(pdev);
+	ret = hisi_zip_vf_reset_prepare(pdev, QM_SOFT_RESET);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to stop VFs!\n");
 		return ret;
 	}
 
-	set_bit(QM_RESET, &qm->status.flags);
-	ret = hisi_qm_stop(qm);
+	ret = hisi_qm_stop(qm, QM_SOFT_RESET);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return ret;
 	}
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce)
-		uacce_reset_prepare(&qm->uacce);
+	/* wait 10s for uacce_queue to release */
+	while (retry++ < 1000) {
+		msleep(20);
+		if (!uacce_unregister(&qm->uacce))
+			break;
+
+		if (retry == 1000)
+			return -EBUSY;
+	}
 #endif
 
 	return 0;
@@ -1132,8 +1149,9 @@ static int hisi_zip_soft_reset(struct hisi_zip *hisi_zip)
 	/* If bus lock, reset chip */
 	ret = readl_relaxed_poll_timeout(hisi_zip->qm.io_base +
 					 HZIP_MASTER_TRANS_RETURN, val,
-					 (val == MASTER_TRANS_RETURN_RW), 10,
-					 1000);
+					 (val == MASTER_TRANS_RETURN_RW),
+					 HZIP_REG_RD_INTVRL_US,
+					 HZIP_REG_RD_TMOUT_US);
 	if (ret) {
 		dev_emerg(dev, "Bus lock! Please reset system.\n");
 		return ret;
@@ -1160,10 +1178,8 @@ static int hisi_zip_vf_reset_done(struct pci_dev *pdev)
 {
 	struct hisi_zip *hisi_zip;
 	struct pci_dev *dev;
-	struct hisi_qp *qp;
 	struct hisi_qm *qm;
 	int ret = 0;
-	int i;
 
 	mutex_lock(&hisi_zip_list_lock);
 	list_for_each_entry(hisi_zip, &hisi_zip_list, list) {
@@ -1175,20 +1191,9 @@ static int hisi_zip_vf_reset_done(struct pci_dev *pdev)
 			qm = &hisi_zip->qm;
 
 			hisi_qm_clear_queues(qm);
-			ret = hisi_qm_start(qm);
+			ret = hisi_qm_restart(qm);
 			if (ret)
 				goto reset_fail;
-
-			for (i = 0; i < qm->qp_num; i++) {
-				qp = qm->qp_array[i];
-				if (qp) {
-					ret = hisi_qm_start_qp(qp, 0);
-					if (ret < 0)
-						goto reset_fail;
-				}
-			}
-
-			clear_bit(QM_RESET, &qm->status.flags);
 		}
 	}
 
@@ -1201,29 +1206,17 @@ static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
 	struct pci_dev *pdev = qm->pdev;
-	struct hisi_qp *qp;
-	int i, ret;
+	int ret;
 
 	hisi_qm_clear_queues(qm);
 
 	hisi_zip_set_user_domain_and_cache(hisi_zip);
 	hisi_zip_hw_error_init(hisi_zip);
 
-	ret = hisi_qm_start(qm);
+	ret = hisi_qm_restart(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to start QM!\n");
 		return -EPERM;
-	}
-
-	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
-		if (qp) {
-			ret = hisi_qm_start_qp(qp, 0);
-			if (ret < 0) {
-				dev_err(&pdev->dev, "Start qp%d failed\n", i);
-				return -EPERM;
-			}
-		}
 	}
 
 	if (hisi_zip->ctrl->num_vfs)
@@ -1239,7 +1232,7 @@ static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce)
-		uacce_reset_done(&qm->uacce);
+		uacce_register(&qm->uacce);
 #endif
 
 	return 0;
@@ -1267,7 +1260,6 @@ static int hisi_zip_controller_reset(struct hisi_zip *hisi_zip)
 	if (ret)
 		return ret;
 
-	clear_bit(QM_RESET, &qm->status.flags);
 	clear_bit(HISI_ZIP_RESET, &hisi_zip->status);
 
 	dev_info(dev, "Controller reset complete\n");
@@ -1305,20 +1297,20 @@ static void hisi_zip_flr_prepare_rdy(struct pci_dev *pdev)
 	int delay = 1;
 	u32 flag = 1;
 
-#define TIMEOUT 60000
-#define DELAY_INC 2000
+#define FLR_WAIT_TIMEOUT 60000
+#define FLR_DELAY_INC 2000
 
 	while (flag) {
 		flag = 0;
 		msleep(delay);
-		if (delay > TIMEOUT) {
+		if (delay > FLR_WAIT_TIMEOUT) {
 			flag = 1;
 			delay = 1;
 			dev_err(&pdev->dev, "Device error, please exit FLR!\n");
 		} else if (test_and_set_bit(HISI_ZIP_RESET, &hisi_zip->status))
 			flag = 1;
 
-		delay += DELAY_INC;
+		delay += FLR_DELAY_INC;
 	}
 }
 
@@ -1331,23 +1323,17 @@ static void hisi_zip_reset_prepare(struct pci_dev *pdev)
 
 	hisi_zip_flr_prepare_rdy(pdev);
 
-	ret = hisi_zip_vf_reset_prepare(pdev);
+	ret = hisi_zip_vf_reset_prepare(pdev, QM_FLR);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to prepare reset!\n");
 		return;
 	}
 
-	set_bit(QM_RESET, &qm->status.flags);
-	ret = hisi_qm_stop(qm);
+	ret = hisi_qm_stop(qm, QM_FLR);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return;
 	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce)
-		uacce_reset_prepare(&qm->uacce);
-#endif
 
 	dev_info(dev, "FLR resetting...\n");
 }
@@ -1365,25 +1351,13 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hisi_zip->qm;
 	struct device *dev = &pdev->dev;
-	struct hisi_qp *qp;
-	int i, ret;
+	int ret;
 
 	hisi_qm_clear_queues(qm);
-	ret = hisi_qm_start(qm);
+	ret = hisi_qm_restart(qm);
 	if (ret) {
 		dev_err(dev, "Failed to start QM!\n");
 		return;
-	}
-
-	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
-		if (qp) {
-			ret = hisi_qm_start_qp(qp, 0);
-			if (ret < 0) {
-				dev_err(dev, "Start qp%d failed\n", i);
-				return;
-			}
-		}
 	}
 
 	if (pdev->is_physfn) {
@@ -1395,11 +1369,6 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 		hisi_zip_vf_reset_done(pdev);
 	}
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce)
-		uacce_reset_done(&qm->uacce);
-#endif
-	clear_bit(QM_RESET, &qm->status.flags);
 	hisi_zip_flr_reset_complete(pdev);
 
 	dev_info(dev, "FLR reset complete\n");

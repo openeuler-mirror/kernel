@@ -526,6 +526,9 @@ static void hpre_dh_clear_ctx(struct hpre_ctx *ctx, int is_exit)
 	unsigned int sz = ctx->key_sz;
 	struct device *dev = &GET_DEV(ctx);
 
+	if (is_exit)
+		hisi_qm_stop_qp(ctx->qp);
+
 	if (ctx->dh.g) {
 		dma_free_coherent(dev, sz, ctx->dh.g, ctx->dh.dma_g);
 		ctx->dh.g = NULL;
@@ -877,6 +880,9 @@ static void hpre_rsa_clear_ctx(struct hpre_ctx *ctx, int is_exit)
 {
 	unsigned int half_key_sz = ctx->key_sz >> 1;
 	struct device *dev = &GET_DEV(ctx);
+
+	if (is_exit)
+		hisi_qm_stop_qp(ctx->qp);
 
 	if (ctx->rsa.pubkey) {
 		dma_free_coherent(dev, ctx->key_sz << 1,

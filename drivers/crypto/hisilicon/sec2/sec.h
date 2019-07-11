@@ -28,12 +28,17 @@ enum sec_endian {
 
 struct hisi_sec_ctrl;
 
+enum hisi_sec_status {
+	HISI_SEC_RESET,
+};
+
 struct hisi_sec {
 	struct hisi_qm qm;
 	struct list_head list;
 	struct hisi_sec_ctrl *ctrl;
 	struct dma_pool *sgl_pool;
 	int ctx_q_num;
+	unsigned long status;
 };
 
 struct hisi_sec *find_sec_device(int node);

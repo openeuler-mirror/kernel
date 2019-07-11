@@ -61,6 +61,13 @@ struct uacce_ops {
 		      unsigned long arg);
 };
 
+enum uacce_q_state {
+	UACCE_Q_INIT,
+	UACCE_Q_STARTED,
+	UACCE_Q_ZOMBIE,
+	UACCE_Q_CLOSED,
+};
+
 struct uacce_queue {
 	struct uacce *uacce;
 	__u32 flags;
@@ -76,13 +83,8 @@ struct uacce_queue {
 	struct uacce_qfile_region *qfrs[UACCE_QFRT_MAX];
 
 	struct fasync_struct *async_queue;
-	struct list_head q_dev;
+	enum uacce_q_state state;
 };
-
-#define UACCE_ST_INIT		0
-#define UACCE_ST_OPENNED	1
-#define UACCE_ST_STARTED	2
-#define UACCE_ST_RST		3
 
 struct uacce {
 	const char *name;
@@ -99,18 +101,14 @@ struct uacce {
 	struct cdev cdev;
 	struct device dev;
 	void *priv;
-	atomic_t state;
 	atomic_t ref;
 	int prot;
-	struct mutex q_lock;
-	struct list_head qs;
 };
 
 int uacce_register(struct uacce *uacce);
-void uacce_unregister(struct uacce *uacce);
+int uacce_unregister(struct uacce *uacce);
 void uacce_wake_up(struct uacce_queue *q);
-void uacce_reset_prepare(struct uacce *uacce);
-void uacce_reset_done(struct uacce *uacce);
 const char *uacce_qfrt_str(struct uacce_qfile_region *qfr);
+void uacce_send_sig_to_client(struct uacce_queue *q);
 
 #endif

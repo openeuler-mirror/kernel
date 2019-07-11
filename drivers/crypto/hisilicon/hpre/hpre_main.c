@@ -1078,26 +1078,96 @@ static pci_ers_result_t hpre_error_detected(struct pci_dev *pdev,
 	return hpre_process_hw_error(pdev);
 }
 
+static int hpre_reset_prepare_rdy(struct hpre *hpre)
+{
+	int delay = 1;
+	u32 flag = 1;
+	int ret = 0;
+
+#define TIMEOUT_VF 20000
+
+	while (flag) {
+		flag = 0;
+		if (delay > TIMEOUT_VF) {
+			ret = -EBUSY;
+			break;
+		}
+
+		msleep(delay);
+		delay *= 2;
+
+		if (test_and_set_bit(HPRE_RESET, &hpre->status))
+			flag = 1;
+	}
+
+	return ret;
+}
+
+static int hpre_vf_reset_prepare(struct pci_dev *pdev,
+				     enum qm_stop_reason stop_reason)
+{
+	struct pci_dev *dev;
+	struct hisi_qm *qm;
+	struct hpre *hpre;
+	int ret = 0;
+
+	mutex_lock(&hpre_list_lock);
+	if (pdev->is_physfn) {
+		list_for_each_entry(hpre, &hpre_list, list) {
+			dev = hpre->qm.pdev;
+			if (dev == pdev)
+				continue;
+
+			if (pci_physfn(dev) == pdev) {
+				qm = &hpre->qm;
+
+				ret = hisi_qm_stop(qm, stop_reason);
+				if (ret)
+					goto prepare_fail;
+			}
+		}
+	}
+
+prepare_fail:
+	mutex_unlock(&hpre_list_lock);
+	return ret;
+}
+
 static int hpre_controller_reset_prepare(struct hpre *hpre)
 {
 	struct hisi_qm *qm = &hpre->qm;
 	struct pci_dev *pdev = qm->pdev;
+	int retry = 0;
 	int ret;
 
-	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
-		dev_warn(&pdev->dev, "Failed to set reset flag!");
-		return -EBUSY;
+	ret = hpre_reset_prepare_rdy(hpre);
+	if (ret) {
+		dev_err(&pdev->dev, "Controller reset not ready!\n");
+		return ret;
 	}
 
-	ret = hisi_qm_stop(qm);
+	ret = hpre_vf_reset_prepare(pdev, QM_SOFT_RESET);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to stop VFs!\n");
+		return ret;
+	}
+
+	ret = hisi_qm_stop(qm, QM_SOFT_RESET);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return ret;
 	}
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce)
-		uacce_reset_prepare(&qm->uacce);
+	/* wait 10s for uacce_queue to release */
+	while (retry++ < 1000) {
+		msleep(20);
+		if (!uacce_unregister(&qm->uacce))
+			break;
+
+		if (retry == 1000)
+			return -EBUSY;
+	}
 #endif
 
 	return 0;
@@ -1160,42 +1230,67 @@ static int hpre_soft_reset(struct hpre *hpre)
 	return 0;
 }
 
+static int hpre_vf_reset_done(struct pci_dev *pdev)
+{
+	struct pci_dev *dev;
+	struct hisi_qm *qm;
+	struct hpre *hpre;
+	int ret = 0;
+
+	mutex_lock(&hpre_list_lock);
+	list_for_each_entry(hpre, &hpre_list, list) {
+		dev = hpre->qm.pdev;
+		if (dev == pdev)
+			continue;
+
+		if (pci_physfn(dev) == pdev) {
+			qm = &hpre->qm;
+
+			hisi_qm_clear_queues(qm);
+			ret = hisi_qm_restart(qm);
+			if (ret)
+				goto reset_fail;
+		}
+	}
+
+reset_fail:
+	mutex_unlock(&hpre_list_lock);
+	return ret;
+}
+
 static int hpre_controller_reset_done(struct hpre *hpre)
 {
 	struct hisi_qm *qm = &hpre->qm;
 	struct pci_dev *pdev = qm->pdev;
-	struct hisi_qp *qp;
-	int i, ret;
+	int ret;
 
 	hisi_qm_clear_queues(qm);
 	ret = hpre_set_user_domain_and_cache(hpre);
 	if (ret)
 		return ret;
 	hpre_hw_err_init(hpre);
-	ret = hisi_qm_start(qm);
+
+	ret = hisi_qm_restart(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to start QM!\n");
 		return ret;
 	}
-	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
-		if (qp) {
-			ret = hisi_qm_start_qp(qp, 0);
-			if (ret < 0) {
-				dev_err(&pdev->dev, "Start qp%d failed\n", i);
-				return ret;
-			}
-		}
-	}
+
 	if (hpre->ctrl->num_vfs)
 		hpre_vf_q_assign(hpre, hpre->ctrl->num_vfs);
 
 	/* Clear VF MSE bit */
 	hpre_set_mse(hpre, 1);
 
+	ret = hpre_vf_reset_done(pdev);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to start VFs!\n");
+		return -EPERM;
+	}
+
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce)
-		uacce_reset_done(&qm->uacce);
+		uacce_register(&qm->uacce);
 #endif
 
 	return 0;
@@ -1207,9 +1302,11 @@ static int hpre_controller_reset(struct hpre *hpre)
 	int ret;
 
 	dev_info(dev, "Controller resetting...\n");
+
 	ret = hpre_controller_reset_prepare(hpre);
 	if (ret)
 		return ret;
+
 	ret = hpre_soft_reset(hpre);
 	if (ret) {
 		dev_err(dev, "Controller reset failed (%d)\n", ret);
@@ -1219,8 +1316,9 @@ static int hpre_controller_reset(struct hpre *hpre)
 	ret = hpre_controller_reset_done(hpre);
 	if (ret)
 		return ret;
+
+	clear_bit(HPRE_RESET, &hpre->status);
 	dev_info(dev, "Controller reset complete\n");
-	clear_bit(QM_RESET, &hpre->qm.status.flags);
 
 	return 0;
 }
@@ -1247,25 +1345,87 @@ static pci_ers_result_t hpre_slot_reset(struct pci_dev *pdev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
+static void hpre_flr_prepare_rdy(struct pci_dev *pdev)
+{
+	struct pci_dev *pf_pdev = pci_physfn(pdev);
+	struct hpre *hpre = pci_get_drvdata(pf_pdev);
+	int delay = 1;
+	u32 flag = 1;
+
+#define TIMEOUT 60000
+#define DELAY_INC 2000
+
+	while (flag) {
+		flag = 0;
+		msleep(delay);
+		if (delay > TIMEOUT) {
+			flag = 1;
+			delay = 1;
+			dev_err(&pdev->dev, "Device error, please exit FLR!\n");
+		} else if (test_and_set_bit(HPRE_RESET, &hpre->status))
+			flag = 1;
+
+		delay += DELAY_INC;
+	}
+}
+
 static void hpre_reset_prepare(struct pci_dev *pdev)
 {
 	struct hpre *hpre = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hpre->qm;
+	struct device *dev = &pdev->dev;
+	int ret;
 
-	if (qm->use_uacce)
-		uacce_reset_prepare(&qm->uacce);
+	hpre_flr_prepare_rdy(pdev);
+
+	ret = hpre_vf_reset_prepare(pdev, QM_FLR);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to prepare reset!\n");
+		return;
+	}
+
+	ret = hisi_qm_stop(qm, QM_FLR);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to stop QM!\n");
+		return;
+	}
+
+	dev_info(dev, "FLR resetting...\n");
+}
+
+static void hpre_flr_reset_complete(struct pci_dev *pdev)
+{
+	struct pci_dev *pf_pdev = pci_physfn(pdev);
+	struct hpre *hpre = pci_get_drvdata(pf_pdev);
+
+	clear_bit(HPRE_RESET, &hpre->status);
 }
 
 static void hpre_reset_done(struct pci_dev *pdev)
 {
 	struct hpre *hpre = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hpre->qm;
+	struct device *dev = &pdev->dev;
+	int ret;
 
-	if (qm->use_uacce)
-		uacce_reset_done(&qm->uacce);
+	hisi_qm_clear_queues(qm);
+	ret = hisi_qm_restart(qm);
+	if (ret) {
+		dev_err(dev, "Failed to start QM!\n");
+		return;
+	}
+
+	if (pdev->is_physfn) {
+		hpre_set_user_domain_and_cache(hpre);
+		hpre_hw_err_init(hpre);
+		if (hpre->ctrl->num_vfs)
+			hpre_vf_q_assign(hpre, hpre->ctrl->num_vfs);
+		hpre_vf_reset_done(pdev);
+	}
+	hpre_flr_reset_complete(pdev);
+
+	dev_info(dev, "FLR reset complete\n");
 }
-#endif
 
 static void hpre_remove(struct pci_dev *pdev)
 {
@@ -1287,7 +1447,7 @@ static void hpre_remove(struct pci_dev *pdev)
 		hpre_cnt_regs_clear(qm);
 
 	hpre_debugfs_exit(hpre);
-	hisi_qm_stop(qm);
+	hisi_qm_stop(qm, QM_NORMAL);
 	if (qm->fun_type == QM_HW_PF)
 		hpre_hw_error_set_state(hpre, false);
 	hisi_qm_uninit(qm);

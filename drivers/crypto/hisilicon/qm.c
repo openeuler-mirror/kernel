@@ -153,7 +153,7 @@
 #define TASK_TIMEOUT			10000
 
 #define WAIT_PERIOD			20
-#define MAX_WAIT_COUNTS			3
+#define MAX_WAIT_COUNTS			1000
 
 #define CURRENT_Q_MASK			0x0000ffff
 
@@ -243,6 +243,88 @@ static const char * const qm_db_timeout[] = {
 static const char * const qm_fifo_overflow[] = {
 	"cq", "eq", "aeq",
 };
+
+static const char * const qm_s[] = {
+	"init", "start", "close", "stop",
+};
+
+static const char * const qp_s[] = {
+	"none", "init", "start", "stop", "close",
+};
+
+static bool qm_avail_state(struct hisi_qm *qm, enum qm_state new)
+{
+	enum qm_state curr = atomic_read(&qm->status.flags);
+	bool avail = false;
+
+	switch (curr) {
+	case QM_INIT:
+		if (new == QM_START || new == QM_CLOSE)
+			avail = true;
+		break;
+	case QM_START:
+		if (new == QM_STOP)
+			avail = true;
+		break;
+	case QM_STOP:
+		if (new == QM_CLOSE || new == QM_START)
+			avail = true;
+		break;
+	default:
+		break;
+	}
+	dev_dbg(&qm->pdev->dev, "change qm state from %s to %s\n",
+		qm_s[curr], qm_s[new]);
+	if (!avail)
+		dev_warn(&qm->pdev->dev, "Can not change qm state from %s to %s\n",
+			 qm_s[curr], qm_s[new]);
+	return avail;
+}
+
+static bool qm_qp_avail_state(struct hisi_qm *qm, struct hisi_qp *qp,
+			      enum qp_state new)
+{
+	enum qm_state qm_curr = atomic_read(&qm->status.flags);
+	enum qp_state qp_curr = 0;
+	bool avail = false;
+
+	if (qp)
+		qp_curr = atomic_read(&qp->qp_status.flags);
+
+	switch (new) {
+	case QP_INIT:
+		if (qm_curr == QM_START)
+			avail = true;
+		break;
+	case QP_START:
+		if ((qm_curr == QM_START && qp_curr == QP_INIT) ||
+		    (qm_curr == QM_START && qp_curr == QP_STOP))
+			avail = true;
+		break;
+	case QP_STOP:
+		if (qm_curr == QM_START && qp_curr == QP_START)
+			avail = true;
+		break;
+	case QP_CLOSE:
+		if ((qm_curr == QM_START && qp_curr == QP_INIT) ||
+		    (qm_curr == QM_START && qp_curr == QP_STOP) ||
+		    (qm_curr == QM_STOP && qp_curr == QP_STOP)  ||
+		    (qm_curr == QM_STOP && qp_curr == QP_INIT))
+			avail = true;
+		break;
+	default:
+		break;
+	}
+
+	dev_dbg(&qm->pdev->dev, "change qp state from %s to %s in QM %s\n",
+		qp_s[qp_curr], qp_s[new], qm_s[qm_curr]);
+
+	if (!avail)
+		dev_warn(&qm->pdev->dev,
+			 "Can not change qp state from %s to %s in QM %s\n",
+			 qp_s[qp_curr], qp_s[new], qm_s[qm_curr]);
+	return avail;
+}
 
 /* return 0 mailbox ready, -ETIMEDOUT hardware timeout */
 static int qm_wait_mb_ready(struct hisi_qm *qm)
@@ -374,14 +456,7 @@ static u32 qm_get_irq_num_v2(struct hisi_qm *qm)
 
 static struct hisi_qp *qm_to_hisi_qp(struct hisi_qm *qm, struct qm_eqe *eqe)
 {
-	u16 cqn = eqe->dw0 & QM_EQE_CQN_MASK;
-	struct hisi_qp *qp;
-
-	read_lock(&qm->qps_lock);
-	qp = qm->qp_array[cqn];
-	read_unlock(&qm->qps_lock);
-
-	return qp;
+	return qm->qp_array[eqe->dw0 & QM_EQE_CQN_MASK];
 }
 
 static void qm_sq_head_update(struct hisi_qp *qp)
@@ -606,7 +681,7 @@ static void qm_init_qp_status(struct hisi_qp *qp)
 	qp_status->sq_head = 0;
 	qp_status->cq_head = 0;
 	qp_status->cqc_phase = 1;
-	qp_status->flags = 0;
+	atomic_set(&qp_status->flags, 0);
 }
 
 static void qm_vft_data_cfg(struct hisi_qm *qm, enum vft_type type, u32 base,
@@ -1052,29 +1127,22 @@ static void *qm_get_avail_sqe(struct hisi_qp *qp)
 	return qp->sqe + sq_tail * qp->qm->sqe_size;
 }
 
-/**
- * hisi_qm_create_qp() - Create a queue pair from qm.
- * @qm: The qm we create a qp from.
- * @alg_type: Accelerator specific algorithm type in sqc.
- *
- * return created qp, -EBUSY if all qps in qm allocated, -ENOMEM if allocating
- * qp memory fails.
- */
-struct hisi_qp *hisi_qm_create_qp(struct hisi_qm *qm, u8 alg_type)
+static struct hisi_qp *hisi_qm_create_qp_lockless(struct hisi_qm *qm,
+						  u8 alg_type)
 {
 	struct device *dev = &qm->pdev->dev;
 	struct hisi_qp *qp;
 	int qp_id, ret;
 
+	if (!qm_qp_avail_state(qm, NULL, QP_INIT))
+		return ERR_PTR(-EPERM);
+
 	qp = kzalloc(sizeof(*qp), GFP_KERNEL);
 	if (!qp)
 		return ERR_PTR(-ENOMEM);
 
-	write_lock(&qm->qps_lock);
-
 	qp_id = find_first_zero_bit(qm->qp_bitmap, qm->qp_num);
 	if (qp_id >= qm->qp_num) {
-		write_unlock(&qm->qps_lock);
 		dev_info_ratelimited(&qm->pdev->dev, "QM all queues are busy!\n");
 
 		ret = -EBUSY;
@@ -1082,9 +1150,6 @@ struct hisi_qp *hisi_qm_create_qp(struct hisi_qm *qm, u8 alg_type)
 	}
 	set_bit(qp_id, qm->qp_bitmap);
 	qm->qp_array[qp_id] = qp;
-
-	write_unlock(&qm->qps_lock);
-
 	qp->qm = qm;
 
 	/* allocate qp dma memory, uacce uses dus region for this */
@@ -1108,17 +1173,35 @@ struct hisi_qp *hisi_qm_create_qp(struct hisi_qm *qm, u8 alg_type)
 	qp->alg_type = alg_type;
 	qp->c_flag = 1;
 	init_completion(&qp->completion);
+	atomic_set(&qp->qp_status.flags, QP_INIT);
 
 	return qp;
 
 err_clear_bit:
-	write_lock(&qm->qps_lock);
 	qm->qp_array[qp_id] = NULL;
 	clear_bit(qp_id, qm->qp_bitmap);
-	write_unlock(&qm->qps_lock);
 err_free_qp:
 	kfree(qp);
 	return ERR_PTR(ret);
+}
+
+/**
+ * hisi_qm_create_qp() - Create a queue pair from qm.
+ * @qm: The qm we create a qp from.
+ * @alg_type: Accelerator specific algorithm type in sqc.
+ *
+ * return created qp, -EBUSY if all qps in qm allocated, -ENOMEM if allocating
+ * qp memory fails.
+ */
+struct hisi_qp *hisi_qm_create_qp(struct hisi_qm *qm, u8 alg_type)
+{
+	struct hisi_qp *qp;
+
+	down_write(&qm->qps_lock);
+	qp = hisi_qm_create_qp_lockless(qm, alg_type);
+	up_write(&qm->qps_lock);
+
+	return qp;
 }
 EXPORT_SYMBOL_GPL(hisi_qm_create_qp);
 
@@ -1134,16 +1217,20 @@ void hisi_qm_release_qp(struct hisi_qp *qp)
 	struct qm_dma *qdma = &qp->qdma;
 	struct device *dev = &qm->pdev->dev;
 
+	down_write(&qm->qps_lock);
+	if (!qm_qp_avail_state(qm, qp, QP_CLOSE)) {
+		up_write(&qm->qps_lock);
+		return;
+	}
 	if (qm->use_dma_api && qdma->va)
 		dma_free_coherent(dev, qdma->size, qdma->va, qdma->dma);
 
-	write_lock(&qm->qps_lock);
 	dev_dbg(dev, "release qp %d\n", qp->qp_id);
 	qm->qp_array[qp->qp_id] = NULL;
 	clear_bit(qp->qp_id, qm->qp_bitmap);
-	write_unlock(&qm->qps_lock);
 
 	kfree(qp);
+	up_write(&qm->qps_lock);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_release_qp);
 
@@ -1254,15 +1341,7 @@ static int qm_qp_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 	return qm_cq_ctx_cfg(qp, qp_id, pasid);
 }
 
-/**
- * hisi_qm_start_qp() - Start a qp into running.
- * @qp: The qp we want to start to run.
- * @arg: Accelerator specific argument.
- *
- * After this function, qp can receive request from user. Return qp_id if
- * successful, Return -EBUSY if failed.
- */
-int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg)
+static int hisi_qm_start_qp_lockless(struct hisi_qp *qp, unsigned long arg)
 {
 	struct hisi_qm *qm = qp->qm;
 	struct device *dev = &qm->pdev->dev;
@@ -1271,6 +1350,8 @@ int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg)
 	int pasid = arg;
 	size_t off = 0;
 	int ret;
+	if (!qm_qp_avail_state(qm, qp, QP_START))
+		return -EPERM;
 
 #define QP_INIT_BUF(qp, type, size) do { \
 	(qp)->type = ((qp)->qdma.va + (off)); \
@@ -1302,11 +1383,59 @@ int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg)
 	ret = qm_qp_ctx_cfg(qp, qp_id, pasid);
 	if (ret)
 		return ret;
+	atomic_set(&qp->qp_status.flags, QP_START);
 	dev_dbg(dev, "queue %d started\n", qp_id);
 
 	return qp_id;
 }
+
+/**
+ * hisi_qm_start_qp() - Start a qp into running.
+ * @qp: The qp we want to start to run.
+ * @arg: Accelerator specific argument.
+ *
+ * After this function, qp can receive request from user. Return qp_id if
+ * successful, Return -EBUSY if failed.
+ */
+int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg)
+{
+	struct hisi_qm *qm = qp->qm;
+	int ret;
+
+	down_write(&qm->qps_lock);
+	ret = hisi_qm_start_qp_lockless(qp, arg);
+	up_write(&qm->qps_lock);
+
+	return ret;
+}
 EXPORT_SYMBOL_GPL(hisi_qm_start_qp);
+
+static int hisi_qm_stop_qp_lockless(struct hisi_qp *qp)
+{
+	struct device *dev = &qp->qm->pdev->dev;
+	int i = 0;
+
+	/* it is stopped */
+	if (atomic_read(&qp->qp_status.flags) == QP_STOP)
+		return 0;
+	if (!qm_qp_avail_state(qp->qm, qp, QP_STOP))
+		return -EPERM;
+
+	atomic_set(&qp->qp_status.flags, QP_STOP);
+
+	while (atomic_read(&qp->qp_status.used)) {
+		i++;
+		msleep(WAIT_PERIOD);
+		if (i == MAX_WAIT_COUNTS) {
+			dev_err(dev, "Cannot drain out data for stopping, system may hang up!!!\n");
+			break;
+		}
+	}
+
+	dev_dbg(dev, "stop queue %u!", qp->qp_id);
+
+	return 0;
+}
 
 /**
  * hisi_qm_stop_qp() - Stop a qp in qm.
@@ -1316,27 +1445,13 @@ EXPORT_SYMBOL_GPL(hisi_qm_start_qp);
  */
 int hisi_qm_stop_qp(struct hisi_qp *qp)
 {
-	struct device *dev = &qp->qm->pdev->dev;
-	int i = 0;
+	int ret;
 
-	/* it is stopped */
-	if (test_bit(QP_STOP, &qp->qp_status.flags))
-		return 0;
+	down_write(&qp->qm->qps_lock);
+	ret = hisi_qm_stop_qp_lockless(qp);
+	up_write(&qp->qm->qps_lock);
 
-	while (atomic_read(&qp->qp_status.used)) {
-		i++;
-		msleep(WAIT_PERIOD);
-		if (i == MAX_WAIT_COUNTS) {
-			dev_info(dev, "Cannot drain out data for stopping, force to stop!\n");
-			break;
-		}
-	}
-
-	set_bit(QP_STOP, &qp->qp_status.flags);
-
-	dev_dbg(dev, "stop queue %u!", qp->qp_id);
-
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(hisi_qm_stop_qp);
 
@@ -1348,7 +1463,12 @@ EXPORT_SYMBOL_GPL(hisi_qm_stop_qp);
  * This function will return -EBUSY if qp is currently full, and -EAGAIN
  * if qp related qm is resetting.
  *
- * Note: Do not support concurrent call of this function.
+ * Note: This function may run with qm_irq_thread and ACC reset at same time.
+ *       It has no race with qm_irq_thread. However, during hisi_qp_send, ACC
+ *       reset may happen, we have no lock here considering performance. This
+ *       causes current qm_db sending fail or can not receive sended sqe. QM
+ *       sync/async receive function should handle the error sqe. ACC reset
+ *       done function should clear used sqe to 0.
  */
 int hisi_qp_send(struct hisi_qp *qp, const void *msg)
 {
@@ -1357,8 +1477,8 @@ int hisi_qp_send(struct hisi_qp *qp, const void *msg)
 	u16 sq_tail_next = (sq_tail + 1) % QM_Q_DEPTH;
 	void *sqe = qm_get_avail_sqe(qp);
 
-	if (unlikely(test_bit(QP_STOP, &qp->qp_status.flags) ||
-		     test_bit(QM_RESET, &qp->qm->status.flags))) {
+	if (unlikely(atomic_read(&qp->qp_status.flags) == QP_STOP ||
+		     atomic_read(&qp->qm->status.flags) == QM_STOP)) {
 		dev_info(&qp->qm->pdev->dev, "QM resetting...\n");
 		return -EAGAIN;
 	}
@@ -1416,11 +1536,11 @@ int hisi_qm_get_free_qp_num(struct hisi_qm *qm)
 {
 	int i, ret;
 
-	read_lock(&qm->qps_lock);
+	down_read(&qm->qps_lock);
 	for (i = 0, ret = 0; i < qm->qp_num; i++)
 		if (!qm->qp_array[i])
 			ret++;
-	read_unlock(&qm->qps_lock);
+	up_read(&qm->qps_lock);
 
 	if (!qm->use_dma_api)
 		ret = (ret == qm->qp_num) ? 1 : 0;
@@ -1440,6 +1560,17 @@ static int hisi_qm_get_available_instances(struct uacce *uacce)
 	return hisi_qm_get_free_qp_num(uacce->priv);
 }
 
+static void hisi_qm_send_signals(struct hisi_qm *qm)
+{
+	struct hisi_qp *qp;
+	int i;
+
+	for (i = 0; i < qm->qp_num; i++) {
+		qp = qm->qp_array[i];
+		if (qp && qp->uacce_q)
+			uacce_send_sig_to_client(qp->uacce_q);
+	}
+}
 static int hisi_qm_uacce_get_queue(struct uacce *uacce, unsigned long arg,
 				   struct uacce_queue **q)
 {
@@ -1448,12 +1579,16 @@ static int hisi_qm_uacce_get_queue(struct uacce *uacce, unsigned long arg,
 	struct uacce_queue *wd_q;
 	u8 alg_type = 0;
 
-	qp = hisi_qm_create_qp(qm, alg_type);
-	if (IS_ERR(qp))
+	down_write(&qm->qps_lock);
+	qp = hisi_qm_create_qp_lockless(qm, alg_type);
+	if (IS_ERR(qp)) {
+		up_write(&qm->qps_lock);
 		return PTR_ERR(qp);
+	}
 
 	wd_q = kzalloc(sizeof(struct uacce_queue), GFP_KERNEL);
 	if (!wd_q) {
+		up_write(&qm->qps_lock);
 		hisi_qm_release_qp(qp);
 		return -ENOMEM;
 	}
@@ -1464,7 +1599,9 @@ static int hisi_qm_uacce_get_queue(struct uacce *uacce, unsigned long arg,
 	qp->uacce_q = wd_q;
 	qp->event_cb = qm_qp_event_notifier;
 	qp->pasid = arg;
+	init_waitqueue_head(&wd_q->wait);
 
+	up_write(&qm->qps_lock);
 	return 0;
 }
 
@@ -1484,7 +1621,6 @@ static void hisi_qm_uacce_put_queue(struct uacce_queue *q)
 
 	/* need to stop hardware, but can not support in v1 */
 	hisi_qm_release_qp(qp);
-	kfree(q);
 }
 
 /* map sq/cq/doorbell to user space */
@@ -1573,7 +1709,7 @@ static int hisi_qm_uacce_start_queue(struct uacce_queue *q)
 
 	ret = hisi_qm_start_qp(qp, qp->pasid);
 	if (ret && !qm->use_dma_api)
-		hisi_qm_stop(qm);
+		hisi_qm_stop(qm, QM_NORMAL);
 
 	return ret;
 }
@@ -1586,7 +1722,7 @@ static void hisi_qm_uacce_stop_queue(struct uacce_queue *q)
 	hisi_qm_stop_qp(qp);
 
 	if (!qm->use_dma_api) {
-		hisi_qm_stop(qm);
+		hisi_qm_stop(qm, QM_NORMAL);
 		/*
 		 * In uacce_mode=1, we flush qm sqc here.
 		 * In uacce_fops_release, the working flow is stop_queue ->
@@ -1602,9 +1738,9 @@ static int qm_set_sqctype(struct uacce_queue *q, u16 type)
 	struct hisi_qm *qm = q->uacce->priv;
 	struct hisi_qp *qp = q->priv;
 
-	write_lock(&qm->qps_lock);
+	down_write(&qm->qps_lock);
 	qp->alg_type = type;
-	write_unlock(&qm->qps_lock);
+	up_write(&qm->qps_lock);
 
 	return 0;
 }
@@ -1773,7 +1909,8 @@ int hisi_qm_init(struct hisi_qm *qm)
 		goto err_free_irq_vectors;
 
 	mutex_init(&qm->mailbox_lock);
-	rwlock_init(&qm->qps_lock);
+	init_rwsem(&qm->qps_lock);
+	atomic_set(&qm->status.flags, QM_INIT);
 
 	dev_dbg(dev, "init qm %s with %s\n",
 		pdev->is_physfn ? "pf" : "vf",
@@ -1805,6 +1942,11 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 	struct pci_dev *pdev = qm->pdev;
 	struct device *dev = &pdev->dev;
 
+	down_write(&qm->qps_lock);
+	if (!qm_avail_state(qm, QM_CLOSE)) {
+		up_write(&qm->qps_lock);
+		return;
+	}
 	/* qm hardware buffer free on put_queue if no dma api */
 	if (qm->use_dma_api && qm->qdma.va) {
 		hisi_qm_cache_wb(qm);
@@ -1823,6 +1965,7 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 	if (qm->use_uacce)
 		uacce_unregister(&qm->uacce);
 #endif
+	up_write(&qm->qps_lock);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_uninit);
 
@@ -1837,7 +1980,7 @@ int hisi_qm_frozen(struct hisi_qm *qm)
 {
 	int ret, i;
 
-	write_lock(&qm->qps_lock);
+	down_write(&qm->qps_lock);
 	for (i = 0, ret = 0; i < qm->qp_num; i++)
 		if (!qm->qp_array[i])
 			ret++;
@@ -1845,10 +1988,10 @@ int hisi_qm_frozen(struct hisi_qm *qm)
 	if (ret == qm->qp_num) {
 		bitmap_set(qm->qp_bitmap, 0, qm->qp_num);
 	} else {
-		write_unlock(&qm->qps_lock);
+		up_write(&qm->qps_lock);
 		return -EBUSY;
 	}
-	write_unlock(&qm->qps_lock);
+	up_write(&qm->qps_lock);
 
 	return 0;
 }
@@ -2072,6 +2215,39 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 	return 0;
 }
 
+/* restart stopped qm and qps in reset flow */
+int hisi_qm_restart(struct hisi_qm *qm)
+{
+	struct device *dev = &qm->pdev->dev;
+	struct hisi_qp *qp;
+	int ret, i;
+
+	ret = hisi_qm_start(qm);
+	if (ret < 0)
+		return ret;
+
+	down_write(&qm->qps_lock);
+	for (i = 0; i < qm->qp_num; i++) {
+		qp = qm->qp_array[i];
+
+		if (qp && atomic_read(&qp->qp_status.flags) == QP_STOP &&
+		    qp->is_resetting == true) {
+			ret = hisi_qm_start_qp_lockless(qp, 0);
+			if (ret < 0) {
+				dev_err(dev, "Failed to start qp%d!\n", i);
+
+				up_write(&qm->qps_lock);
+				return ret;
+			}
+			qp->is_resetting = false;
+		}
+	}
+	up_write(&qm->qps_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(hisi_qm_restart);
+
 /**
  * hisi_qm_start() - start qm
  * @qm: The qm to be started.
@@ -2087,7 +2263,17 @@ int hisi_qm_start(struct hisi_qm *qm)
 	unsigned long dus_page_nr = 0;
 	unsigned long dko_page_nr = 0;
 	unsigned long mmio_page_nr;
+#endif
+	int ret = 0;
 
+	down_write(&qm->qps_lock);
+
+	if (!qm_avail_state(qm, QM_START)) {
+		up_write(&qm->qps_lock);
+		return -EPERM;
+	}
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce) {
 		dus_page_nr = (PAGE_SIZE - 1 + qm->sqe_size * QM_Q_DEPTH +
 			       sizeof(struct cqe) * QM_Q_DEPTH) >> PAGE_SHIFT;
@@ -2105,7 +2291,8 @@ int hisi_qm_start(struct hisi_qm *qm)
 
 	if (!qm->qp_num) {
 		dev_err(dev, "qp_num should not be 0\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_unlock;
 	}
 
 	/* reset qfr definition */
@@ -2138,8 +2325,10 @@ int hisi_qm_start(struct hisi_qm *qm)
 		qm->qp_array = devm_kcalloc(dev, qm->qp_num,
 					    sizeof(struct hisi_qp *),
 					    GFP_KERNEL);
-		if (!qm->qp_bitmap || !qm->qp_array)
-			return -ENOMEM;
+		if (!qm->qp_bitmap || !qm->qp_array) {
+			ret = -ENOMEM;
+			goto err_unlock;
+		}
 	}
 
 	if (!qm->use_dma_api) {
@@ -2148,6 +2337,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 		 * mapped
 		 */
 		dev_dbg(&qm->pdev->dev, "qm delay start\n");
+		up_write(&qm->qps_lock);
 		return 0;
 	} else if (!qm->qdma.va) {
 		qm->qdma.size = QMC_ALIGN(sizeof(struct qm_eqe) * QM_EQ_DEPTH) +
@@ -2159,13 +2349,43 @@ int hisi_qm_start(struct hisi_qm *qm)
 						 GFP_KERNEL | __GFP_ZERO);
 		dev_dbg(dev, "allocate qm dma buf(va=%p, dma=%pad, size=%lx)\n",
 			qm->qdma.va, &qm->qdma.dma, qm->qdma.size);
-		if (!qm->qdma.va)
-			return -ENOMEM;
+		if (!qm->qdma.va) {
+			ret = -ENOMEM;
+			goto err_unlock;
+		}
 	}
 
-	return __hisi_qm_start(qm);
+	ret = __hisi_qm_start(qm);
+	if (!ret)
+		atomic_set(&qm->status.flags, QM_START);
+err_unlock:
+	up_write(&qm->qps_lock);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(hisi_qm_start);
+
+/* Stop started qps in reset flow */
+static int qm_stop_started_qp(struct hisi_qm *qm)
+{
+	struct device *dev = &qm->pdev->dev;
+	struct hisi_qp *qp;
+	int i, ret;
+
+	for (i = 0; i < qm->qp_num; i++) {
+		qp = qm->qp_array[i];
+		if (qp && atomic_read(&qp->qp_status.flags) == QP_START) {
+			ret = hisi_qm_stop_qp_lockless(qp);
+			if (ret < 0) {
+				dev_err(dev, "Failed to stop qp%d!\n", i);
+				return ret;
+			}
+
+			qp->is_resetting = true;
+		}
+	}
+
+	return 0;
+}
 
 /**
  * hisi_qm_stop() - Stop a qm.
@@ -2175,46 +2395,50 @@ EXPORT_SYMBOL_GPL(hisi_qm_start);
  * Related resources are not released at this state, we can use hisi_qm_start
  * to let qm start again.
  */
-int hisi_qm_stop(struct hisi_qm *qm)
+int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 {
-	struct device *dev;
-	struct hisi_qp *qp;
-	int ret, i;
+	struct device *dev = &qm->pdev->dev;
+	int ret = 0;
 
-	pr_debug("hisi_qm stop\n");
+	down_write(&qm->qps_lock);
 
-	if (!qm || !qm->pdev) {
-		WARN_ON(1);
-		return -EINVAL;
+	qm->status.stop_reason = r;
+
+	if (!qm_avail_state(qm, QM_STOP)) {
+		up_write(&qm->qps_lock);
+		ret = -EPERM;
+		goto err_unlock;
 	}
 
-	dev = &qm->pdev->dev;
+	if (qm->status.stop_reason == QM_SOFT_RESET ||
+	    qm->status.stop_reason == QM_FLR) {
+		ret = qm_stop_started_qp(qm);
+		if (ret < 0) {
+			up_write(&qm->qps_lock);
+			goto err_unlock;
+		}
+#ifdef CONFIG_CRYPTO_QM_UACCE
+		hisi_qm_send_signals(qm);
+#endif
+	}
 
 	/* Mask eq and aeq irq */
 	writel(0x1, qm->io_base + QM_VF_EQ_INT_MASK);
 	writel(0x1, qm->io_base + QM_VF_AEQ_INT_MASK);
 
-	/* Stop all qps belong to this qm */
-	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
-		if (qp) {
-			ret = hisi_qm_stop_qp(qp);
-			if (ret < 0) {
-				dev_err(dev, "Failed to stop qp%d!\n", i);
-				return -EBUSY;
-			}
-		}
-	}
-
 	if (qm->fun_type == QM_HW_PF) {
 		ret = hisi_qm_set_vft(qm, 0, 0, 0);
 		if (ret) {
 			dev_err(dev, "Failed to set vft!\n");
-			return -EBUSY;
+			ret = -EBUSY;
+			goto err_unlock;
 		}
 	}
 
-	return 0;
+	atomic_set(&qm->status.flags, QM_STOP);
+err_unlock:
+	up_write(&qm->qps_lock);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(hisi_qm_stop);
 
