@@ -1190,6 +1190,11 @@ static void hpre_reset_prepare(struct pci_dev *pdev)
 		return;
 	}
 
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		uacce_reset_prepare(&qm->uacce);
+#endif
+
 	dev_info(dev, "FLR resetting...\n");
 }
 
@@ -1225,6 +1230,12 @@ static void hpre_reset_done(struct pci_dev *pdev)
 			}
 		}
 	}
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		uacce_reset_done(&qm->uacce);
+#endif
+
 	dev_info(dev, "FLR reset complete\n");
 }
 

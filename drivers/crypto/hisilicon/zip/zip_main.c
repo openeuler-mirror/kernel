@@ -1206,6 +1206,11 @@ static void hisi_zip_reset_prepare(struct pci_dev *pdev)
 
 	hisi_zip_vf_flr_reset_prepare(pdev);
 
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		uacce_reset_prepare(&qm->uacce);
+#endif
+
 	dev_info(dev, "FLR resetting...\n");
 }
 
@@ -1252,6 +1257,10 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 
 	hisi_zip_vf_flr_reset_done(pdev);
 
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		uacce_reset_done(&qm->uacce);
+#endif
 	dev_info(dev, "FLR reset complete\n");
 }
 
