@@ -86,7 +86,6 @@ enum qm_state {
 
 enum qp_state {
 	QP_STOP,
-	QP_FULL,
 };
 
 enum qm_hw_ver {

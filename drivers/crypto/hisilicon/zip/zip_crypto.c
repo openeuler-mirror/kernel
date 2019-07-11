@@ -244,8 +244,6 @@ static void hisi_zip_copy_data_from_buffer(struct hisi_zip_qp_ctx *qp_ctx,
 	else
 		qp->qp_status.sq_head++;
 
-	if (unlikely(test_bit(QP_FULL, &qp->qp_status.flags)))
-		clear_bit(QP_FULL, &qp->qp_status.flags);
 }
 
 static int hisi_zip_compress_data_output(struct hisi_zip_qp_ctx *qp_ctx,

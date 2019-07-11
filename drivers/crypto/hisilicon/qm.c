@@ -390,9 +390,6 @@ static void qm_sq_head_update(struct hisi_qp *qp)
 		qp->qp_status.sq_head = 0;
 	else
 		qp->qp_status.sq_head++;
-
-	if (unlikely(test_bit(QP_FULL, &qp->qp_status.flags)))
-		clear_bit(QP_FULL, &qp->qp_status.flags);
 }
 
 static void qm_cq_head_update(struct hisi_qp *qp)
@@ -1041,7 +1038,7 @@ static void *qm_get_avail_sqe(struct hisi_qp *qp)
 	struct hisi_qp_status *qp_status = &qp->qp_status;
 	u16 sq_tail = qp_status->sq_tail;
 
-	if (unlikely(test_bit(QP_FULL, &qp->qp_status.flags)))
+	if (unlikely(atomic_read(&qp->qp_status.used) == QM_Q_DEPTH))
 		return NULL;
 
 	return qp->sqe + sq_tail * qp->qm->sqe_size;
@@ -1341,6 +1338,8 @@ EXPORT_SYMBOL_GPL(hisi_qm_stop_qp);
  *
  * This function will return -EBUSY if qp is currently full, and -EAGAIN
  * if qp related qm is resetting.
+ *
+ * Note: Do not support concurrent call of this function.
  */
 int hisi_qp_send(struct hisi_qp *qp, const void *msg)
 {
@@ -1362,10 +1361,7 @@ int hisi_qp_send(struct hisi_qp *qp, const void *msg)
 
 	qm_db(qp->qm, qp->qp_id, QM_DOORBELL_CMD_SQ, sq_tail_next, 0);
 	atomic_inc(&qp->qp_status.used);
-
 	qp_status->sq_tail = sq_tail_next;
-	if (qp_status->sq_tail == qp_status->sq_head)
-		set_bit(QP_FULL, &qp->qp_status.flags);
 
 	return 0;
 }
