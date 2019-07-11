@@ -1246,6 +1246,7 @@ static void hpre_remove(struct pci_dev *pdev)
 	int ret;
 
 	hpre_remove_from_list(hpre);
+#ifdef CONFIG_PCI_IOV
 	if (qm->fun_type == QM_HW_PF && hpre->ctrl->num_vfs != 0) {
 		ret = hpre_sriov_disable(pdev);
 		if (ret) {
@@ -1253,6 +1254,7 @@ static void hpre_remove(struct pci_dev *pdev)
 			return;
 		}
 	}
+#endif
 	hpre_debugfs_exit(hpre);
 	hisi_qm_stop(qm);
 	if (qm->fun_type == QM_HW_PF)

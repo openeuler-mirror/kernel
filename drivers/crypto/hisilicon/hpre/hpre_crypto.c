@@ -234,8 +234,7 @@ static int _cp_data_to_dma_buf(struct hpre_asym_request *hpre_req,
 	}
 	if (is_src) {
 		scatterwalk_map_and_copy(ptr + shift, data, 0, len, 0);
-		if (is_dh)
-			(void)hpre_bn_format(ptr, ctx->key_sz);
+		(void)hpre_bn_format(ptr, ctx->key_sz);
 		hpre_req->src_align = ptr;
 	} else {
 		hpre_req->dst_align = ptr;
