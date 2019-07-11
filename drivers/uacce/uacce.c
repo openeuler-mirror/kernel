@@ -233,8 +233,8 @@ static int uacce_queue_map_qfr(struct uacce_queue *q,
 	if (!(qfr->flags & UACCE_QFRF_MAP) || (qfr->flags & UACCE_QFRF_DMA))
 		return 0;
 
-	dev_dbg(&q->uacce->dev, "queue map %s qfr(npage=%d, iova=%lx)\n",
-		uacce_qfrt_str(qfr), qfr->nr_pages, qfr->iova);
+	dev_dbg(&q->uacce->dev, "queue map %s qfr(npage=%d, iova=%pK)\n",
+		uacce_qfrt_str(qfr), qfr->nr_pages, (void *)qfr->iova);
 
 	return uacce_iommu_map_qfr(q, qfr);
 }
@@ -245,8 +245,8 @@ static void uacce_queue_unmap_qfr(struct uacce_queue *q,
 	if (!(qfr->flags & UACCE_QFRF_MAP) || (qfr->flags & UACCE_QFRF_DMA))
 		return;
 
-	dev_dbg(&q->uacce->dev, "queue map %s qfr(npage=%d, iova=%lx)\n",
-		uacce_qfrt_str(qfr), qfr->nr_pages, qfr->iova);
+	dev_dbg(&q->uacce->dev, "queue map %s qfr(npage=%d, iova=%pK)\n",
+		uacce_qfrt_str(qfr), qfr->nr_pages, (void *)qfr->iova);
 
 	uacce_iommu_unmap_qfr(q, qfr);
 }
@@ -449,8 +449,8 @@ static void uacce_destroy_region(struct uacce_queue *q,
 	struct uacce *uacce = q->uacce;
 
 	if (qfr->flags & UACCE_QFRF_DMA) {
-		dev_dbg(uacce->pdev, "free dma qfr %s (kaddr=%lx, dma=%llx)\n",
-			uacce_qfrt_str(qfr), (unsigned long)qfr->kaddr,
+		dev_dbg(uacce->pdev, "free dma qfr %s (kaddr=%pK, dma=%llx)\n",
+			uacce_qfrt_str(qfr), qfr->kaddr,
 			qfr->dma);
 		if (current->mm)
 			vm_munmap((unsigned long)qfr->iova,
@@ -531,9 +531,9 @@ static int uacce_start_queue(struct uacce_queue *q)
 				goto err_with_vmap;
 			}
 
-			dev_dbg(dev, "kernel vmap %s qfr(%d pages) to %lx\n",
+			dev_dbg(dev, "kernel vmap %s qfr(%d pages) to %pK\n",
 				uacce_qfrt_str(qfr), qfr->nr_pages,
-				(unsigned long)qfr->kaddr);
+				qfr->kaddr);
 		}
 	}
 
@@ -567,7 +567,7 @@ static long uacce_get_ss_dma(struct uacce_queue *q, unsigned long *arg)
 
 	if (q->qfrs[UACCE_QFRT_SS]) {
 		dma = (unsigned long)(q->qfrs[UACCE_QFRT_SS]->dma);
-		dev_dbg(&uacce->dev, "%s(%lx)\n", __func__, dma);
+		dev_dbg(&uacce->dev, "%s(%lx).\n", __func__, dma);
 	} else {
 		return -EINVAL;
 	}
@@ -916,8 +916,9 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 	uacce = q->uacce;
 	type = uacce_get_region_type(uacce, vma);
 
-	dev_dbg(&uacce->dev, "mmap q file(t=%s, off=%lx, start=%lx, end=%lx)\n",
-		 qfrt_str[type], vma->vm_pgoff, vma->vm_start, vma->vm_end);
+	dev_dbg(&uacce->dev, "mmap q file(t=%s, off=%lx, start=%pK, end=%pK)\n",
+		 qfrt_str[type], vma->vm_pgoff,
+		(void *)vma->vm_start, (void *)vma->vm_end);
 
 	if (type == UACCE_QFRT_INVALID) {
 		ret = -EINVAL;

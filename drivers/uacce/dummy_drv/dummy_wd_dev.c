@@ -116,9 +116,9 @@ static void _queue_work(struct dummy_hw_queue *hwq)
 				 hwq->reg->ring[hwq->tail].tgt_addr,
 				 hwq->reg->ring[hwq->tail].src_addr,
 				 hwq->reg->ring[hwq->tail].size);
-		dev_dbg(dev, "memcpy(%lx, %lx, %ld) = %d",
-			(unsigned long)hwq->reg->ring[hwq->tail].tgt_addr,
-			(unsigned long)hwq->reg->ring[hwq->tail].src_addr,
+		dev_dbg(dev, "memcpy(%pK, %pK, %ld) = %d",
+			hwq->reg->ring[hwq->tail].tgt_addr,
+			hwq->reg->ring[hwq->tail].src_addr,
 			hwq->reg->ring[hwq->tail].size,
 			hwq->reg->ring[hwq->tail].ret);
 		hwq->tail = (hwq->tail+1)%bd_num;

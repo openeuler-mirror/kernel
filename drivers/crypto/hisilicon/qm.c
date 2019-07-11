@@ -1165,7 +1165,7 @@ static struct hisi_qp *hisi_qm_create_qp_lockless(struct hisi_qm *qm,
 			goto err_clear_bit;
 		}
 
-		dev_dbg(dev, "allocate qp dma buf(va=%p, dma=%pad, size=%lx)\n",
+		dev_dbg(dev, "allocate qp dma buf(va=%pK, dma=%pad, size=%lx)\n",
 			qp->qdma.va, &qp->qdma.dma, qp->qdma.size);
 	}
 
@@ -1374,11 +1374,11 @@ static int hisi_qm_start_qp_lockless(struct hisi_qp *qp, unsigned long arg)
 	QP_INIT_BUF(qp, cqe, sizeof(struct cqe) * QM_Q_DEPTH);
 
 	dev_dbg(dev, "init qp buffer(v%d):\n"
-		     " sqe	(%lx, %lx)\n"
-		     " cqe	(%lx, %lx)\n",
+		     " sqe	(%pK, %lx)\n"
+		     " cqe	(%pK, %lx)\n",
 		     ver,
-		     (unsigned long)qp->sqe, (unsigned long)qp->sqe_dma,
-		     (unsigned long)qp->cqe, (unsigned long)qp->cqe_dma);
+		     qp->sqe, (unsigned long)qp->sqe_dma,
+		     qp->cqe, (unsigned long)qp->cqe_dma);
 
 	ret = qm_qp_ctx_cfg(qp, qp_id, pasid);
 	if (ret)
@@ -1695,8 +1695,8 @@ static int hisi_qm_uacce_start_queue(struct uacce_queue *q)
 		qm->qdma.va = q->qfrs[UACCE_QFRT_DKO]->kaddr;
 		qm->qdma.size = q->qfrs[UACCE_QFRT_DKO]->nr_pages >> PAGE_SHIFT;
 		dev_dbg(&q->uacce->dev,
-			"use dko space: va=%lx, dma=%lx, size=%llx\n",
-			(unsigned long)qm->qdma.va, (unsigned long)qm->qdma.dma,
+			"use dko space: va=%pK, dma=%lx, size=%llx\n",
+			qm->qdma.va, (unsigned long)qm->qdma.dma,
 			qm->size);
 		ret = __hisi_qm_start(qm);
 		if (ret)
@@ -2174,14 +2174,14 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 	off += PAGE_SIZE;
 
 	dev_dbg(dev, "init qm buffer:\n"
-		     " eqe	(%lx, %lx)\n"
-		     " aeqe	(%lx, %lx)\n"
-		     " sqc	(%lx, %lx)\n"
-		     " cqc	(%lx, %lx)\n",
-		     (unsigned long)qm->eqe, (unsigned long)qm->eqe_dma,
-		     (unsigned long)qm->aeqe, (unsigned long)qm->aeqe_dma,
-		     (unsigned long)qm->sqc, (unsigned long)qm->sqc_dma,
-		     (unsigned long)qm->cqc, (unsigned long)qm->cqc_dma);
+		     " eqe	(%pK, %lx)\n"
+		     " aeqe	(%pK, %lx)\n"
+		     " sqc	(%pK, %lx)\n"
+		     " cqc	(%pK, %lx)\n",
+		     qm->eqe, (unsigned long)qm->eqe_dma,
+		     qm->aeqe, (unsigned long)qm->aeqe_dma,
+		     qm->sqc, (unsigned long)qm->sqc_dma,
+		     qm->cqc, (unsigned long)qm->cqc_dma);
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	/* check if the size exceed the DKO boundary */
@@ -2347,7 +2347,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 		qm->qdma.va = dma_alloc_coherent(dev, qm->qdma.size,
 						 &qm->qdma.dma,
 						 GFP_KERNEL | __GFP_ZERO);
-		dev_dbg(dev, "allocate qm dma buf(va=%p, dma=%pad, size=%lx)\n",
+		dev_dbg(dev, "allocate qm dma buf(va=%pK, dma=%pad, size=%lx)\n",
 			qm->qdma.va, &qm->qdma.dma, qm->qdma.size);
 		if (!qm->qdma.va) {
 			ret = -ENOMEM;
