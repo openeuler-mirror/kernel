@@ -739,7 +739,7 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 	up_read(&ctrl->reset_lock);
 
 	pci_config_pm_runtime_put(pdev);
-	wake_up(&ctrl->requester);
+	complete(&ctrl->requester);
 	return IRQ_HANDLED;
 }
 
@@ -953,7 +953,7 @@ struct controller *pcie_init(struct pcie_device *dev)
 	ctrl->slot_cap = slot_cap;
 	mutex_init(&ctrl->ctrl_lock);
 	init_rwsem(&ctrl->reset_lock);
-	init_waitqueue_head(&ctrl->requester);
+	init_completion(&ctrl->requester);
 	init_waitqueue_head(&ctrl->queue);
 	dbg_ctrl(ctrl);
 

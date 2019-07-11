@@ -126,7 +126,7 @@ struct controller {
 	unsigned int power_fault_detected;
 	atomic_t pending_events;
 	int request_result;
-	wait_queue_head_t requester;
+	struct completion requester;
 };
 
 /**
