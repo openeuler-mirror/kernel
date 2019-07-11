@@ -59,7 +59,7 @@
 #define HPRE_RAS_CE_ENB			0x301410
 #define HPRE_HAC_RAS_CE_ENABLE		0x3f
 #define HPRE_RAS_NFE_ENB		0x301414
-#define HPRE_HAC_RAS_NFE_ENABLE		0xc0
+#define HPRE_HAC_RAS_NFE_ENABLE		0x3fffc0
 #define HPRE_RAS_FE_ENB			0x301418
 #define HPRE_HAC_RAS_FE_ENABLE		0
 
@@ -469,12 +469,21 @@ static int current_qm_write(struct hpre_debugfs_file *file, u32 val)
 {
 	struct hisi_qm *qm = file_to_qm(file);
 	struct hpre_ctrl *ctrl = file->ctrl;
+	u32 tmp;
 
 	if (val > ctrl->num_vfs)
 		return -EINVAL;
 
 	writel(val, qm->io_base + QM_DFX_MB_CNT_VF);
 	writel(val, qm->io_base + QM_DFX_DB_CNT_VF);
+
+	tmp = val |
+	      (readl(qm->io_base + QM_DFX_SQE_CNT_VF_SQN) & QM_VF_CNT_MASK);
+	writel(tmp, qm->io_base + QM_DFX_SQE_CNT_VF_SQN);
+
+	tmp = val |
+	      (readl(qm->io_base + QM_DFX_CQE_CNT_VF_CQN) & QM_VF_CNT_MASK);
+	writel(tmp, qm->io_base + QM_DFX_CQE_CNT_VF_CQN);
 
 	return  0;
 }

@@ -58,6 +58,9 @@
 #define QM_DFX_MB_CNT_VF		0x104010
 #define QM_DFX_DB_CNT_VF		0x104020
 
+#define QM_DFX_SQE_CNT_VF_SQN		0x104030
+#define QM_DFX_CQE_CNT_VF_CQN		0x104040
+
 #define QM_AXI_RRESP			BIT(0)
 #define QM_AXI_BRESP			BIT(1)
 #define QM_ECC_MBIT			BIT(2)
@@ -78,6 +81,9 @@
 #define QM_BASE_CE			QM_ECC_1BIT
 #define QM_HW_VER1_ID			0x20
 #define QM_HW_VER2_ID			0x21
+
+#define QM_DFX_QN_SHIFT			16
+#define QM_VF_CNT_MASK			0xffffffc0
 
 #define PCI_BAR_2			2
 

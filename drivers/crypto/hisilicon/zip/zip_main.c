@@ -94,6 +94,7 @@
 #define HZIP_BUF_SIZE			20
 #define FORMAT_DECIMAL			10
 
+
 static const char hisi_zip_name[] = "hisi_zip";
 static struct dentry *hzip_debugfs_root;
 LIST_HEAD(hisi_zip_list);
@@ -452,12 +453,21 @@ static int current_qm_write(struct ctrl_debug_file *file, u32 val)
 {
 	struct hisi_qm *qm = file_to_qm(file);
 	struct hisi_zip_ctrl *ctrl = file->ctrl;
+	u32 tmp;
 
 	if (val > ctrl->num_vfs)
 		return -EINVAL;
 
 	writel(val, qm->io_base + QM_DFX_MB_CNT_VF);
 	writel(val, qm->io_base + QM_DFX_DB_CNT_VF);
+
+	tmp = val |
+	      (readl(qm->io_base + QM_DFX_SQE_CNT_VF_SQN) & QM_VF_CNT_MASK);
+	writel(tmp, qm->io_base + QM_DFX_SQE_CNT_VF_SQN);
+
+	tmp = val |
+	      (readl(qm->io_base + QM_DFX_CQE_CNT_VF_CQN) & QM_VF_CNT_MASK);
+	writel(tmp, qm->io_base + QM_DFX_CQE_CNT_VF_CQN);
 
 	return  0;
 }

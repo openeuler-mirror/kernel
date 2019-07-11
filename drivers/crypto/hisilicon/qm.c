@@ -106,8 +106,6 @@
 #define QM_SQC_VFT_NUM_SHIFT_V2		45
 #define QM_SQC_VFT_NUM_MASK_v2		0x3ff
 
-#define QM_DFX_SQE_CNT_VF_SQN		0x104030
-#define QM_DFX_CQE_CNT_VF_CQN		0x104040
 #define QM_DFX_CNT_CLR_CE		0x100118
 
 #define QM_ABNORMAL_INT_SOURCE		0x100000
@@ -156,6 +154,8 @@
 
 #define WAIT_PERIOD			20
 #define MAX_WAIT_COUNTS			3
+
+#define CURRENT_Q_MASK			0x0000ffff
 
 #define QM_MK_CQC_DW3_V1(hop_num, pg_sz, buf_sz, cqe_sz) \
 	(((hop_num) << QM_CQ_HOP_NUM_SHIFT)	| \
@@ -726,18 +726,24 @@ static u32 current_q_read(struct debugfs_file *file)
 {
 	struct hisi_qm *qm = file_to_qm(file);
 
-	return readl(qm->io_base + QM_DFX_SQE_CNT_VF_SQN);
+	return (readl(qm->io_base + QM_DFX_SQE_CNT_VF_SQN) >> QM_DFX_QN_SHIFT);
 }
 
 static int current_q_write(struct debugfs_file *file, u32 val)
 {
 	struct hisi_qm *qm = file_to_qm(file);
+	u32 tmp;
 
 	if (val >= qm->qp_num)
 		return -EINVAL;
 
-	writel(val, qm->io_base + QM_DFX_SQE_CNT_VF_SQN);
-	writel(val, qm->io_base + QM_DFX_CQE_CNT_VF_CQN);
+	tmp = val << QM_DFX_QN_SHIFT |
+	      (readl(qm->io_base + QM_DFX_SQE_CNT_VF_SQN) & CURRENT_Q_MASK);
+	writel(tmp, qm->io_base + QM_DFX_SQE_CNT_VF_SQN);
+
+	tmp = val << QM_DFX_QN_SHIFT |
+	      (readl(qm->io_base + QM_DFX_CQE_CNT_VF_CQN) & CURRENT_Q_MASK);
+	writel(tmp, qm->io_base + QM_DFX_CQE_CNT_VF_CQN);
 
 	return 0;
 }
