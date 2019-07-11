@@ -73,6 +73,7 @@
 #define _QM_VFG_AX_MASK			0xff
 #define _BD_USR_MASK			0x3
 #define _CLUSTER_CORE_MASK		0xf
+#define _TO_DECIMAL			10
 
 /* function index:
  * 1 for hpre bypass mode,
@@ -220,7 +221,6 @@ static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 			return -EINVAL;
 	}
 
-#define _TO_DECIMAL	10
 	ret = kstrtou32(val, _TO_DECIMAL, &n);
 	if (ret != 0 || n == 0 || n > q_num)
 		return -EINVAL;
@@ -233,12 +233,33 @@ static const struct kernel_param_ops pf_q_num_ops = {
 	.get = param_get_int,
 };
 
+static int uacce_mode_set(const char *val, const struct kernel_param *kp)
+{
+	u32 n;
+	int ret;
+
+	if (!val)
+		return -EINVAL;
+
+	ret = kstrtou32(val, _TO_DECIMAL, &n);
+	if (ret != 0 || n > 2)
+		return -EINVAL;
+
+	return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops uacce_mode_ops = {
+	.set = uacce_mode_set,
+	.get = param_get_int,
+};
+
 static u32 pf_q_num = HPRE_PF_DEF_Q_NUM;
 module_param_cb(pf_q_num, &pf_q_num_ops, &pf_q_num, 0444);
 MODULE_PARM_DESC(pf_q_num, "Number of queues in PF of CS(1-1024)");
 
 static int uacce_mode = UACCE_MODE_NOUACCE;
-module_param(uacce_mode, int, 0444);
+module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
+MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
 static inline void hpre_add_to_list(struct hpre *hpre)
 {
 	mutex_lock(&hpre_list_lock);
