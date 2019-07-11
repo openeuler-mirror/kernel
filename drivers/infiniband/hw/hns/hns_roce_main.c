@@ -127,7 +127,6 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 	struct hns_roce_dev *hr_dev = to_hr_dev(attr->device);
 	struct ib_gid_attr zattr = { };
 	u8 port = attr->port_num - 1;
-	unsigned long flags;
 	int ret;
 
 	if (port >= hr_dev->caps.num_ports) {
@@ -137,14 +136,10 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 		return -EINVAL;
 	}
 
-	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
-
 	ret = hr_dev->hw->set_gid(hr_dev, port, attr->index, &zgid, &zattr);
 	if (ret)
 		dev_warn(hr_dev->dev, "del gid failed(%d), index = %d", ret,
 			 attr->index);
-
-	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
 	return ret;
 }
@@ -155,7 +150,6 @@ static int hns_roce_add_gid(struct ib_device *device, u8 port_num,
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(device);
 	u8 port = port_num - 1;
-	unsigned long flags;
 	int ret;
 
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_ADD_GID);
@@ -167,15 +161,11 @@ static int hns_roce_add_gid(struct ib_device *device, u8 port_num,
 		return -EINVAL;
 	}
 
-	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
-
 	ret = hr_dev->hw->set_gid(hr_dev, port, index, (union ib_gid *)gid,
 				   attr);
 	if (ret)
 		dev_err(hr_dev->dev, "set gid failed(%d), index = %d",
 			ret, index);
-
-	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
 	return ret;
 }
@@ -187,7 +177,6 @@ static int hns_roce_del_gid(struct ib_device *device, u8 port_num,
 	struct ib_gid_attr zattr = { };
 	union ib_gid zgid = { {0} };
 	u8 port = port_num - 1;
-	unsigned long flags;
 	int ret;
 
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_DEL_GID);
@@ -199,14 +188,10 @@ static int hns_roce_del_gid(struct ib_device *device, u8 port_num,
 		return -EINVAL;
 	}
 
-	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
-
 	ret = hr_dev->hw->set_gid(hr_dev, port, index, &zgid, &zattr);
 	if (ret)
 		dev_warn(hr_dev->dev, "del gid failed(%d), index = %d", ret,
 			 index);
-
-	spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
 	return ret;
 }
