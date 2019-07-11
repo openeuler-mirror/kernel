@@ -408,7 +408,6 @@ static void qm_cq_head_update(struct hisi_qp *qp)
 static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 {
 	struct qm_cqe *cqe;
-	int cqe_num = 0;
 
 	if (qp->event_cb)
 		qp->event_cb(qp);
@@ -417,17 +416,19 @@ static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 
 		if (qp->req_cb) {
 			while (QM_CQE_PHASE(cqe) == qp->qp_status.cqc_phase) {
-				cqe_num++;
 				dma_rmb();
 				qp->req_cb(qp, qp->sqe + qm->sqe_size *
 					   cqe->sq_head);
-				qm_sq_head_update(qp);
 				qm_cq_head_update(qp);
 				cqe = qp->cqe + qp->qp_status.cq_head;
+				qm_db(qm, qp->qp_id, QM_DOORBELL_CMD_CQ,
+				      qp->qp_status.cq_head, 0);
+				qm_sq_head_update(qp);
 				atomic_dec(&qp->qp_status.used);
-				if (cqe_num >= QM_Q_DEPTH / 2 - 1)
-					break;
 			}
+			/* set c_flag */
+			qm_db(qm, qp->qp_id, QM_DOORBELL_CMD_CQ,
+			      qp->qp_status.cq_head, 1);
 		} else {
 			if (QM_CQE_PHASE(cqe) == qp->qp_status.cqc_phase) {
 				dma_rmb();
@@ -435,16 +436,15 @@ static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 				complete(&qp->completion);
 				qm_cq_head_update(qp);
 				cqe = qp->cqe + qp->qp_status.cq_head;
+				qm_db(qm, qp->qp_id, QM_DOORBELL_CMD_CQ,
+				      qp->qp_status.cq_head, 0);
+				/* set c_flag */
+				qm_db(qm, qp->qp_id, QM_DOORBELL_CMD_CQ,
+				      qp->qp_status.cq_head, 1);
 				atomic_dec(&qp->qp_status.used);
 			}
 		}
 
-		qm_db(qm, qp->qp_id, QM_DOORBELL_CMD_CQ,
-		      qp->qp_status.cq_head, 0);
-
-		/* set c_flag */
-		qm_db(qm, qp->qp_id, QM_DOORBELL_CMD_CQ,
-		      qp->qp_status.cq_head, 1);
 	}
 }
 
@@ -461,7 +461,7 @@ static irqreturn_t qm_irq_thread(int irq, void *data)
 		if (qp)
 			qm_poll_qp(qp, qm);
 
-		if (qm->status.eq_head == QM_Q_DEPTH - 1) {
+		if (qm->status.eq_head == QM_EQ_DEPTH - 1) {
 			qm->status.eqc_phase = !qm->status.eqc_phase;
 			eqe = qm->eqe;
 			qm->status.eq_head = 0;
@@ -1946,7 +1946,7 @@ static int qm_eq_ctx_cfg(struct hisi_qm *qm)
 	eqc->base_h = upper_32_bits(qm->eqe_dma);
 	if (qm->ver == QM_HW_V1)
 		eqc->dw3 = QM_EQE_AEQE_SIZE;
-	eqc->dw6 = (QM_Q_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT);
+	eqc->dw6 = (QM_EQ_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT);
 	ret = qm_mb(qm, QM_MB_CMD_EQC, eqc_dma, 0, 0, 0);
 	if (qm->use_dma_api) {
 		dma_unmap_single(dev, eqc_dma, sizeof(struct qm_eqc),
@@ -2020,7 +2020,7 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 			return ret;
 	}
 
-	QM_INIT_BUF(qm, eqe, QM_Q_DEPTH);
+	QM_INIT_BUF(qm, eqe, QM_EQ_DEPTH);
 	QM_INIT_BUF(qm, aeqe, QM_Q_DEPTH);
 	QM_INIT_BUF(qm, sqc, qm->qp_num);
 	QM_INIT_BUF(qm, cqc, qm->qp_num);
@@ -2091,7 +2091,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 		dus_page_nr = (PAGE_SIZE - 1 + qm->sqe_size * QM_Q_DEPTH +
 			       sizeof(struct cqe) * QM_Q_DEPTH) >> PAGE_SHIFT;
 		dko_page_nr = (PAGE_SIZE - 1 +
-			QMC_ALIGN(sizeof(struct qm_eqe) * QM_Q_DEPTH) +
+			QMC_ALIGN(sizeof(struct qm_eqe) * QM_EQ_DEPTH) +
 			QMC_ALIGN(sizeof(struct qm_aeqe) * QM_Q_DEPTH) +
 			QMC_ALIGN(sizeof(struct qm_sqc) * qm->qp_num) +
 			QMC_ALIGN(sizeof(struct qm_cqc) * qm->qp_num) +
@@ -2149,7 +2149,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 		dev_dbg(&qm->pdev->dev, "qm delay start\n");
 		return 0;
 	} else if (!qm->qdma.va) {
-		qm->qdma.size = QMC_ALIGN(sizeof(struct qm_eqe) * QM_Q_DEPTH) +
+		qm->qdma.size = QMC_ALIGN(sizeof(struct qm_eqe) * QM_EQ_DEPTH) +
 				QMC_ALIGN(sizeof(struct qm_aeqe) * QM_Q_DEPTH) +
 				QMC_ALIGN(sizeof(struct qm_sqc) * qm->qp_num) +
 				QMC_ALIGN(sizeof(struct qm_cqc) * qm->qp_num);

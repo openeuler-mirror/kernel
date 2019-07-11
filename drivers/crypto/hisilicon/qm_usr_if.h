@@ -6,6 +6,7 @@
 
 /* default queue depth for sq/cq/eq */
 #define QM_Q_DEPTH			1024
+#define QM_EQ_DEPTH			(1024 * 2)
 
 /* page number for queue file region */
 #define QM_DOORBELL_PAGE_NR		1
