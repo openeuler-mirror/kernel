@@ -3,11 +3,12 @@
 
 #ifndef __HCLGE_CMD_H
 #define __HCLGE_CMD_H
+#include <linux/etherdevice.h>
 #include <linux/types.h>
 #include <linux/io.h>
-#include <linux/etherdevice.h>
 
 #define HCLGE_CMDQ_TX_TIMEOUT		30000
+#define HCLGE_DESC_DATA_LEN		6
 
 struct hclge_dev;
 struct hclge_desc {
@@ -19,7 +20,7 @@ struct hclge_desc {
 	__le16 flag;
 	__le16 retval;
 	__le16 rsv;
-	__le32 data[6];
+	__le32 data[HCLGE_DESC_DATA_LEN];
 };
 
 struct hclge_cmq_ring {
@@ -431,8 +432,10 @@ struct hclge_rx_pkt_buf_cmd {
 #define HCLGE_PF_MAC_NUM_MASK	0x3
 #define HCLGE_PF_STATE_MAIN	BIT(HCLGE_PF_STATE_MAIN_B)
 #define HCLGE_PF_STATE_DONE	BIT(HCLGE_PF_STATE_DONE_B)
+#define HCLGE_VF_RST_STATUS_CMD	4
+
 struct hclge_func_status_cmd {
-	__le32  vf_rst_state[4];
+	__le32  vf_rst_state[HCLGE_VF_RST_STATUS_CMD];
 	u8 pf_state;
 	u8 mac_id;
 	u8 rsv1;
@@ -487,11 +490,12 @@ struct hclge_pf_res_cmd {
 #define HCLGE_CFG_SPEED_ABILITY_M	GENMASK(7, 0)
 #define HCLGE_CFG_UMV_TBL_SPACE_S	16
 #define HCLGE_CFG_UMV_TBL_SPACE_M	GENMASK(31, 16)
+#define HCLGE_CFG_CMD_CNT		4
 
 struct hclge_cfg_param_cmd {
 	__le32 offset;
 	__le32 rsv;
-	__le32 param[4];
+	__le32 param[HCLGE_CFG_CMD_CNT];
 };
 
 #define HCLGE_MAC_MODE		0x0
@@ -788,12 +792,16 @@ struct hclge_vlan_filter_ctrl_cmd {
 	u8 rsv2[19];
 };
 
+#define	HCLGE_VLAN_OFFSET_BITMAP	20
+
 struct hclge_vlan_filter_pf_cfg_cmd {
 	u8 vlan_offset;
 	u8 vlan_cfg;
 	u8 rsv[2];
-	u8 vlan_offset_bitmap[20];
+	u8 vlan_offset_bitmap[HCLGE_VLAN_OFFSET_BITMAP];
 };
+
+#define HCLGE_MAX_VF_BYTES  16
 
 struct hclge_vlan_filter_vf_cfg_cmd {
 	__le16 vlan_id;
@@ -801,7 +809,7 @@ struct hclge_vlan_filter_vf_cfg_cmd {
 	u8  rsv;
 	u8  vlan_cfg;
 	u8  rsv1[3];
-	u8  vf_bitmap[16];
+	u8  vf_bitmap[HCLGE_MAX_VF_BYTES];
 };
 
 #define HCLGE_ACCEPT_TAG1_B		0
@@ -811,6 +819,7 @@ struct hclge_vlan_filter_vf_cfg_cmd {
 #define HCLGE_CFG_NIC_ROCE_SEL_B	4
 #define HCLGE_ACCEPT_TAG2_B		5
 #define HCLGE_ACCEPT_UNTAG2_B		6
+#define HCLGE_VF_NUM_PER_BYTE		8
 
 struct hclge_vport_vtag_tx_cfg_cmd {
 	u8 vport_vlan_cfg;
@@ -818,7 +827,7 @@ struct hclge_vport_vtag_tx_cfg_cmd {
 	u8 rsv1[2];
 	__le16 def_vlan_tag1;
 	__le16 def_vlan_tag2;
-	u8 vf_bitmap[8];
+	u8 vf_bitmap[HCLGE_VF_NUM_PER_BYTE];
 	u8 rsv2[8];
 };
 
@@ -830,7 +839,7 @@ struct hclge_vport_vtag_rx_cfg_cmd {
 	u8 vport_vlan_cfg;
 	u8 vf_offset;
 	u8 rsv1[6];
-	u8 vf_bitmap[8];
+	u8 vf_bitmap[HCLGE_VF_NUM_PER_BYTE];
 	u8 rsv2[8];
 };
 
@@ -911,6 +920,13 @@ struct hclge_serdes_lb_cmd {
 	u8 result;
 	u8 rsv[21];
 };
+
+struct hclge_dbg_reg_common_msg {
+	int msg_num;
+	int offset;
+	enum hclge_opcode_type cmd;
+};
+
 
 #define HCLGE_DEFAULT_TX_BUF		0x4000	 /* 16k  bytes */
 #define HCLGE_TOTAL_PKT_BUF		0x108000 /* 1.03125M bytes */

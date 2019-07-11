@@ -64,9 +64,11 @@ struct hclge_dbg_bitmap_cmd {
 	};
 };
 
+#define	HCLGE_DBG_MAX_DFX_MSG_LEN	60
+
 struct hclge_dbg_dfx_message {
 	int flag;
-	char message[60];
+	char message[HCLGE_DBG_MAX_DFX_MSG_LEN];
 };
 
 #pragma pack()

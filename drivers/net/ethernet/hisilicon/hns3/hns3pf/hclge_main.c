@@ -7491,7 +7491,6 @@ static int hclge_set_vf_vlan_common(struct hclge_dev *hdev, u16 vfid,
 				    bool is_kill, u16 vlan,
 				    __be16 proto)
 {
-#define HCLGE_MAX_VF_BYTES  16
 	struct hclge_vlan_filter_vf_cfg_cmd *req0;
 	struct hclge_vlan_filter_vf_cfg_cmd *req1;
 	struct hclge_desc desc[2];
@@ -9645,7 +9644,7 @@ static int hclge_get_dfx_reg_bd_num(struct hclge_dev *hdev,
 				    u32 type_num)
 {
 	u32 entries_per_desc, desc_index, index, offset, i;
-	struct hclge_desc desc[4];
+	struct hclge_desc desc[HCLGE_GET_DFX_REG_TYPE_CNT];
 	int ret;
 
 	ret = hclge_query_bd_num_cmd_send(hdev, desc);

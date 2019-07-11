@@ -980,10 +980,7 @@ static void hns3_set_txbd_baseinfo(u16 *bdtp_fe_sc_vld_ra_ri, int frag_end)
 
 static int hns3_fill_desc_vtags(struct sk_buff *skb,
 				struct hns3_enet_ring *tx_ring,
-				u32 *inner_vlan_flag,
-				u32 *out_vlan_flag,
-				u16 *inner_vtag,
-				u16 *out_vtag)
+				struct vlan_flag *vflags)
 {
 #define HNS3_TX_VLAN_PRIO_SHIFT 13
 
@@ -1020,17 +1017,18 @@ static int hns3_fill_desc_vtags(struct sk_buff *skb,
 		if (skb->protocol == htons(ETH_P_8021Q)) {
 			if (handle->port_base_vlan_state ==
 			    HNAE3_PORT_BASE_VLAN_DISABLE) {
-				hns3_set_field(*out_vlan_flag, HNS3_TXD_OVLAN_B,
-					       1);
-				*out_vtag = vlan_tag;
+				hns3_set_field(vflags->ol_type_vlan_len_msec,
+					       HNS3_TXD_OVLAN_B, 1);
+				vflags->out_vtag = vlan_tag;
 			} else {
-				hns3_set_field(*inner_vlan_flag,
+				hns3_set_field(vflags->type_cs_vlan_tso,
 					       HNS3_TXD_VLAN_B, 1);
-				*inner_vtag = vlan_tag;
+				vflags->inner_vtag = vlan_tag;
 			}
 		} else {
-			hnae3_set_bit(*inner_vlan_flag, HNS3_TXD_VLAN_B, 1);
-			*inner_vtag = vlan_tag;
+			hnae3_set_bit(vflags->type_cs_vlan_tso,
+				      HNS3_TXD_VLAN_B, 1);
+			vflags->inner_vtag = vlan_tag;
 		}
 	} else if (skb->protocol == htons(ETH_P_8021Q)) {
 		struct vlan_ethhdr *vhdr;
@@ -1062,18 +1060,18 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 
 	if (type == DESC_TYPE_SKB) {
 		struct sk_buff *skb = (struct sk_buff *)priv;
-		u32 ol_type_vlan_len_msec = 0;
-		u32 type_cs_vlan_tso = 0;
+		struct vlan_flag vflags;
 		u32 paylen = skb->len;
-		u16 inner_vtag = 0;
-		u16 out_vtag = 0;
 		u16 mss = 0;
 		int ret;
 
-		ret = hns3_fill_desc_vtags(skb, ring, &type_cs_vlan_tso,
-					   &ol_type_vlan_len_msec,
-					   &inner_vtag, &out_vtag);
-		if (unlikely(ret))
+		vflags.ol_type_vlan_len_msec = 0;
+		vflags.type_cs_vlan_tso = 0;
+		vflags.inner_vtag = 0;
+		vflags.out_vtag = 0;
+
+
+		ret = hns3_fill_desc_vtags(skb, ring, &vflags);
 			return ret;
 
 		if (skb->ip_summed == CHECKSUM_PARTIAL) {
@@ -1086,25 +1084,26 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 				return ret;
 
 			ret = hns3_set_l2l3l4(skb, ol4_proto, il4_proto,
-					      &type_cs_vlan_tso,
-					      &ol_type_vlan_len_msec);
+					      &vflags.type_cs_vlan_tso,
+					      &vflags.ol_type_vlan_len_msec);
 			if (unlikely(ret))
 				return ret;
 
 			ret = hns3_set_tso(skb, &paylen, &mss,
-					   &type_cs_vlan_tso);
+					   &vflags.type_cs_vlan_tso);
 			if (unlikely(ret))
 				return ret;
 		}
 
 		/* Set txbd */
 		desc->tx.ol_type_vlan_len_msec =
-			cpu_to_le32(ol_type_vlan_len_msec);
-		desc->tx.type_cs_vlan_tso_len =	cpu_to_le32(type_cs_vlan_tso);
+			cpu_to_le32(vflags.ol_type_vlan_len_msec);
+		desc->tx.type_cs_vlan_tso_len =	cpu_to_le32(
+			vflags.type_cs_vlan_tso);
 		desc->tx.paylen = cpu_to_le32(paylen);
 		desc->tx.mss = cpu_to_le16(mss);
-		desc->tx.vlan_tag = cpu_to_le16(inner_vtag);
-		desc->tx.outer_vlan_tag = cpu_to_le16(out_vtag);
+		desc->tx.vlan_tag = cpu_to_le16(vflags.inner_vtag);
+		desc->tx.outer_vlan_tag = cpu_to_le16(vflags.out_vtag);
 
 		dma = dma_map_single(dev, skb->data, size, DMA_TO_DEVICE);
 	} else {
@@ -4258,8 +4257,8 @@ int hns3_nic_reset_all_ring(struct hnae3_handle *h)
 static void hns3_store_coal(struct hns3_nic_priv *priv)
 {
 	/* ethtool only support setting and querying one coal
-	 * configuation for now, so save the vector 0' coal
-	 * configuation here in order to restore it.
+	 * configuration for now, so save the vector 0' coal
+	 * configuration here in order to restore it.
 	 */
 	memcpy(&priv->tx_coal, &priv->tqp_vector[0].tx_group.coal,
 	       sizeof(struct hns3_enet_coalesce));

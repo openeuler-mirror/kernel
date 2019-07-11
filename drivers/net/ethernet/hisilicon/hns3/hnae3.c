@@ -104,7 +104,6 @@ int hnae3_register_client(struct hnae3_client *client)
 {
 	struct hnae3_client *client_tmp;
 	struct hnae3_ae_dev *ae_dev;
-	int ret;
 
 	if (!client)
 		return -ENODEV;
@@ -123,7 +122,8 @@ int hnae3_register_client(struct hnae3_client *client)
 		/* if the client could not be initialized on current port, for
 		 * any error reasons, move on to next available port
 		 */
-		ret = hnae3_init_client_instance(client, ae_dev);
+		int ret = hnae3_init_client_instance(client, ae_dev);
+
 		if (ret)
 			dev_err(&ae_dev->pdev->dev,
 				"match and instantiation failed for port, ret = %d\n",

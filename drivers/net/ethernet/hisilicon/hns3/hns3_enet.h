@@ -614,6 +614,13 @@ static inline bool hns3_nic_resetting(struct net_device *netdev)
 	return test_bit(HNS3_NIC_STATE_RESETTING, &priv->state);
 }
 
+struct vlan_flag {
+	u32 type_cs_vlan_tso;
+	u32 ol_type_vlan_len_msec;
+	u16 inner_vtag;
+	u16 out_vtag;
+};
+
 #define hns3_write_dev(a, reg, value) \
 	hns3_write_reg((a)->io_base, (reg), (value))
 
