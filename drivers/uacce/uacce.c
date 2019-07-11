@@ -491,7 +491,7 @@ static int uacce_start_queue(struct uacce_queue *q)
 	return 0;
 
 err_with_vmap:
-	for (j = i; j >= 0; j--) {
+	for (j = i - 1; j >= 0; j--) {
 		qfr = q->qfrs[j];
 		if (qfr && qfr->kaddr) {
 			vunmap(qfr->kaddr);
