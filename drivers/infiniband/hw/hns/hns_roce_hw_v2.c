@@ -133,23 +133,6 @@ static void set_frmr_seg(struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
 }
 
 #ifdef CONFIG_KERNEL_419
-static void set_atomic_seg(struct hns_roce_wqe_atomic_seg *aseg,
-			   const struct ib_atomic_wr *wr)
-#else
-static void set_atomic_seg(struct hns_roce_wqe_atomic_seg *aseg,
-			   struct ib_atomic_wr *wr)
-#endif
-{
-	if (wr->wr.opcode == IB_WR_ATOMIC_CMP_AND_SWP) {
-		aseg->fetchadd_swap_data = cpu_to_le64(wr->swap);
-		aseg->cmp_data  = cpu_to_le64(wr->compare_add);
-	} else {
-		aseg->fetchadd_swap_data = cpu_to_le64(wr->compare_add);
-		aseg->cmp_data  = 0;
-	}
-}
-
-#ifdef CONFIG_KERNEL_419
 static void set_extend_sge(struct hns_roce_qp *qp, const struct ib_send_wr *wr,
 			   unsigned int *sge_ind)
 #else
@@ -201,6 +184,70 @@ static void set_extend_sge(struct hns_roce_qp *qp, struct ib_send_wr *wr,
 	}
 }
 
+static void set_extend_atomic_seg(struct hns_roce_qp *qp, u32 sge_num,
+				  unsigned int *sge_ind, u64 data)
+{
+	u64 *ext_seg;
+	int i;
+
+	for (i = 0; i < sge_num; i += 2, (*sge_ind)++) {
+		ext_seg = get_send_extend_sge(qp,
+			(*sge_ind) & (qp->sge.sge_cnt - 1));
+		*ext_seg = data ? cpu_to_le64(*(uint64_t *)(uintptr_t)
+			(data + i * 8)) : 0;
+		*(ext_seg + 1) = data ? cpu_to_le64(*(uint64_t *)(uintptr_t)
+			(data + (i + 1) * 8)) : 0;
+	}
+}
+
+#ifdef CONFIG_KERNEL_419
+static int set_atomic_seg(struct ib_qp *ibqp, const struct ib_send_wr *wr,
+				  struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
+				  void *wqe, unsigned int *sge_ind)
+#else
+static int set_atomic_seg(struct ib_qp *ibqp, struct ib_send_wr *wr,
+				  struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
+				  void *wqe, unsigned int *sge_ind)
+#endif
+{
+	struct hns_roce_qp *qp = to_hr_qp(ibqp);
+	struct hns_roce_wqe_atomic_seg *aseg;
+	u32 sge_num = (rc_sq_wqe->msg_len >> 3);
+
+	wqe += sizeof(struct hns_roce_v2_wqe_data_seg);
+	aseg = wqe;
+
+	if ((sge_num == 2) || (sge_num == 4) || (sge_num == 8)) {
+		aseg->fetchadd_swap_data = 0;
+		aseg->cmp_data = 0;
+		if (wr->opcode == IB_WR_ATOMIC_CMP_AND_SWP) {
+			set_extend_atomic_seg(qp, sge_num, sge_ind,
+				atomic_wr(wr)->swap);
+			set_extend_atomic_seg(qp, sge_num, sge_ind,
+				atomic_wr(wr)->compare_add);
+		} else {
+			set_extend_atomic_seg(qp, sge_num, sge_ind,
+				atomic_wr(wr)->compare_add);
+			set_extend_atomic_seg(qp, sge_num, sge_ind, 0);
+		}
+		return 0;
+	} else if (sge_num == 1) {
+		if (wr->opcode == IB_WR_ATOMIC_CMP_AND_SWP) {
+			aseg->fetchadd_swap_data =
+				cpu_to_le64(atomic_wr(wr)->swap);
+			aseg->cmp_data =
+				cpu_to_le64(atomic_wr(wr)->compare_add);
+		} else {
+			aseg->fetchadd_swap_data =
+				cpu_to_le64(atomic_wr(wr)->compare_add);
+			aseg->cmp_data = 0;
+		}
+		return 0;
+	} else {
+		return -EINVAL;
+	}
+
+}
 #ifdef CONFIG_KERNEL_419
 static int set_rwqe_data_seg(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 			     struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
@@ -610,8 +657,12 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			    wr->opcode == IB_WR_ATOMIC_FETCH_AND_ADD) {
 				dseg = wqe;
 				set_data_seg_v2(dseg, wr->sg_list);
-				wqe += sizeof(struct hns_roce_v2_wqe_data_seg);
-				set_atomic_seg(wqe, atomic_wr(wr));
+				ret = set_atomic_seg(ibqp, wr, rc_sq_wqe, wqe,
+							&sge_ind);
+				if (ret) {
+					*bad_wr = wr;
+					goto out;
+				}
 				roce_set_field(rc_sq_wqe->byte_16,
 					       V2_RC_SEND_WQE_BYTE_16_SGE_NUM_M,
 					       V2_RC_SEND_WQE_BYTE_16_SGE_NUM_S,
@@ -1815,7 +1866,7 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 	caps->max_srq_desc_sz	= HNS_ROCE_V2_MAX_SRQ_DESC_SZ;
 	caps->qpc_entry_sz	= HNS_ROCE_V2_QPC_ENTRY_SZ;
 	caps->irrl_entry_sz	= HNS_ROCE_V2_IRRL_ENTRY_SZ;
-	caps->trrl_entry_sz	= HNS_ROCE_V2_TRRL_ENTRY_SZ;
+	caps->trrl_entry_sz	= HNS_ROCE_V2_EXT_ATOMIC_TRRL_ENTRY_SZ;
 	caps->cqc_entry_sz	= HNS_ROCE_V2_CQC_ENTRY_SZ;
 	caps->srqc_entry_sz	= HNS_ROCE_V2_SRQC_ENTRY_SZ;
 	caps->mtpt_entry_sz	= HNS_ROCE_V2_MTPT_ENTRY_SZ;
@@ -3120,19 +3171,19 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 			break;
 		case HNS_ROCE_SQ_OPCODE_ATOMIC_COMP_AND_SWAP:
 			wc->opcode = IB_WC_COMP_SWAP;
-			wc->byte_len  = 8;
+			wc->byte_len  = le32_to_cpu(cqe->byte_cnt);
 			break;
 		case HNS_ROCE_SQ_OPCODE_ATOMIC_FETCH_AND_ADD:
 			wc->opcode = IB_WC_FETCH_ADD;
-			wc->byte_len  = 8;
+			wc->byte_len  = le32_to_cpu(cqe->byte_cnt);
 			break;
 		case HNS_ROCE_SQ_OPCODE_ATOMIC_MASK_COMP_AND_SWAP:
 			wc->opcode = IB_WC_MASKED_COMP_SWAP;
-			wc->byte_len  = 8;
+			wc->byte_len  = le32_to_cpu(cqe->byte_cnt);
 			break;
 		case HNS_ROCE_SQ_OPCODE_ATOMIC_MASK_FETCH_AND_ADD:
 			wc->opcode = IB_WC_MASKED_FETCH_ADD;
-			wc->byte_len  = 8;
+			wc->byte_len  = le32_to_cpu(cqe->byte_cnt);
 			break;
 		case HNS_ROCE_SQ_OPCODE_FAST_REG_WR:
 			wc->opcode = IB_WC_REG_MR;
@@ -3490,6 +3541,10 @@ static void set_access_flags(struct hns_roce_qp *hr_qp,
 	roce_set_bit(context->byte_76_srqn_op_en, V2_QPC_BYTE_76_ATE_S,
 		     !!(access_flags & IB_ACCESS_REMOTE_ATOMIC));
 	roce_set_bit(qpc_mask->byte_76_srqn_op_en, V2_QPC_BYTE_76_ATE_S, 0);
+
+	roce_set_bit(context->byte_76_srqn_op_en, V2_QPC_BYTE_76_EXT_ATE_S,
+		     !!(access_flags & IB_ACCESS_REMOTE_ATOMIC));
+	roce_set_bit(qpc_mask->byte_76_srqn_op_en, V2_QPC_BYTE_76_EXT_ATE_S, 0);
 }
 
 static inline enum ib_qp_state to_ib_qp_st(enum hns_roce_v2_qp_state state)
@@ -3951,6 +4006,13 @@ static void modify_qp_init_to_init(struct ib_qp *ibqp,
 			     IB_ACCESS_REMOTE_ATOMIC));
 		roce_set_bit(qpc_mask->byte_76_srqn_op_en, V2_QPC_BYTE_76_ATE_S,
 			     0);
+
+		roce_set_bit(context->byte_76_srqn_op_en,
+			     V2_QPC_BYTE_76_EXT_ATE_S,
+			     !!(attr->qp_access_flags &
+			     IB_ACCESS_REMOTE_ATOMIC));
+		roce_set_bit(qpc_mask->byte_76_srqn_op_en,
+			     V2_QPC_BYTE_76_EXT_ATE_S, 0);
 	} else {
 		roce_set_bit(context->byte_76_srqn_op_en, V2_QPC_BYTE_76_RRE_S,
 			     !!(hr_qp->access_flags & IB_ACCESS_REMOTE_READ));
@@ -3965,6 +4027,13 @@ static void modify_qp_init_to_init(struct ib_qp *ibqp,
 		roce_set_bit(context->byte_76_srqn_op_en, V2_QPC_BYTE_76_ATE_S,
 			     !!(hr_qp->access_flags & IB_ACCESS_REMOTE_ATOMIC));
 		roce_set_bit(qpc_mask->byte_76_srqn_op_en, V2_QPC_BYTE_76_ATE_S,
+			     0);
+
+		roce_set_bit(context->byte_76_srqn_op_en,
+			     V2_QPC_BYTE_76_EXT_ATE_S,
+			     !!(hr_qp->access_flags & IB_ACCESS_REMOTE_ATOMIC));
+		roce_set_bit(qpc_mask->byte_76_srqn_op_en,
+			     V2_QPC_BYTE_76_EXT_ATE_S,
 			     0);
 	}
 
