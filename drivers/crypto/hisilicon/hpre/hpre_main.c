@@ -4,7 +4,6 @@
 #include <linux/bitops.h>
 #include <linux/debugfs.h>
 #include <linux/io.h>
-#include <linux/bitops.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -858,9 +857,9 @@ static int hpre_clear_vft_config(struct hpre *hpre)
 	return 0;
 }
 
+#ifdef CONFIG_PCI_IOV
 static int hpre_sriov_enable(struct pci_dev *pdev, int max_vfs)
 {
-#ifdef CONFIG_PCI_IOV
 	struct hpre *hpre = pci_get_drvdata(pdev);
 	int pre_existing_vfs, num_vfs, ret;
 
@@ -884,9 +883,31 @@ static int hpre_sriov_enable(struct pci_dev *pdev, int max_vfs)
 		return ret;
 	}
 	return num_vfs;
-#else
-	return 0;
-#endif
+}
+
+static int hpre_try_frozen_vfs(struct pci_dev *pdev)
+{
+	int ret = 0;
+	struct hpre *hpre, *vf_hpre;
+	struct pci_dev *dev;
+
+	/* Try to frozen all the VFs as disable SRIOV */
+	mutex_lock(&hpre_list_lock);
+	list_for_each_entry(hpre, &hpre_list, list) {
+		dev = hpre->qm.pdev;
+		if (dev == pdev)
+			continue;
+		if (pci_physfn(dev) == pdev) {
+			vf_hpre = pci_get_drvdata(dev);
+			ret = hisi_qm_frozen(&vf_hpre->qm);
+			if (ret)
+				goto frozen_fail;
+		}
+	}
+
+frozen_fail:
+	mutex_unlock(&hpre_list_lock);
+	return ret;
 }
 
 static int hpre_sriov_disable(struct pci_dev *pdev)
@@ -898,6 +919,16 @@ static int hpre_sriov_disable(struct pci_dev *pdev)
 		"Failed to disable VFs while VFs are assigned!\n");
 
 		return -EPERM;
+	}
+
+	/* While VF is in used, SRIOV cannot be disabled.
+	 * However, there is a risk that the behavior is uncertain if the
+	 * device is in hardware resetting.
+	 */
+	if (hpre_try_frozen_vfs(pdev)) {
+		dev_err(&pdev->dev,
+			"Uacce user space task is using its VF!\n");
+		return -EBUSY;
 	}
 
 	/* remove in hpre_pci_driver will be called to free VF resources */
@@ -912,6 +943,7 @@ static int hpre_sriov_configure(struct pci_dev *pdev, int num_vfs)
 	else
 		return hpre_sriov_enable(pdev, num_vfs);
 }
+#endif
 
 static void hpre_log_hw_error(struct hpre *hpre, u32 err_sts)
 {
@@ -1229,7 +1261,9 @@ static struct pci_driver hpre_pci_driver = {
 	.id_table		= hpre_dev_ids,
 	.probe			= hpre_probe,
 	.remove			= hpre_remove,
+#ifdef CONFIG_PCI_IOV
 	.sriov_configure	= hpre_sriov_configure,
+#endif
 	.err_handler		= &hpre_err_handler,
 };
 

@@ -1826,6 +1826,34 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 EXPORT_SYMBOL_GPL(hisi_qm_uninit);
 
 /**
+ * hisi_qm_frozen() - Try to froze QM to cut continuous queue request. If
+ * there is user on the QM, return failure without doing anything.
+ * @qm: The qm needed to be fronzen.
+ *
+ * This function frozes QM, then we can do SRIOV disabling.
+ */
+int hisi_qm_frozen(struct hisi_qm *qm)
+{
+	int ret, i;
+
+	write_lock(&qm->qps_lock);
+	for (i = 0, ret = 0; i < qm->qp_num; i++)
+		if (!qm->qp_array[i])
+			ret++;
+
+	if (ret == qm->qp_num) {
+		bitmap_set(qm->qp_bitmap, 0, qm->qp_num);
+	} else {
+		write_unlock(&qm->qps_lock);
+		return -EBUSY;
+	}
+	write_unlock(&qm->qps_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(hisi_qm_frozen);
+
+/**
  * hisi_qm_get_vft() - Get vft from a qm.
  * @qm: The qm we want to get its vft.
  * @base: The base number of queue in vft.
