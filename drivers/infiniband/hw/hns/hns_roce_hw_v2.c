@@ -2440,7 +2440,7 @@ static int set_mtpt_pbl(struct hns_roce_v2_mpt_entry *mpt_entry,
 
 	i = 0;
 	for_each_sg(mr->umem->sg_head.sgl, sg, mr->umem->nmap, entry) {
-		len = sg_dma_len(sg) >> PAGE_SHIFT;
+		len = sg_dma_len(sg) >> mr->umem->page_shift;
 		for (j = 0; j < len; ++j) {
 			page_addr = sg_dma_address(sg) +
 				(j << mr->umem->page_shift);

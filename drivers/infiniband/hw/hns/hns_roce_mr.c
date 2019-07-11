@@ -1128,7 +1128,7 @@ int hns_roce_ib_umem_write_mr(struct hns_roce_dev *hr_dev,
 
 	pbl_bt_sz = 1 << (hr_dev->caps.pbl_ba_pg_sz + PAGE_SHIFT);
 	for_each_sg(umem->sg_head.sgl, sg, umem->nmap, entry) {
-		len = sg_dma_len(sg) >> PAGE_SHIFT;
+		len = sg_dma_len(sg) >> umem->page_shift;
 		for (k = 0; k < len; ++k) {
 			page_addr = sg_dma_address(sg) +
 				    (k << umem->page_shift);
