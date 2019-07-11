@@ -1465,13 +1465,17 @@ static int hisi_qm_uacce_get_queue(struct uacce *uacce, unsigned long arg,
 
 static void hisi_qm_uacce_put_queue(struct uacce_queue *q)
 {
+	struct hisi_qm *qm = q->uacce->priv;
 	struct hisi_qp *qp = q->priv;
 
-	/*
-	 * As put_queue is only called in uacce_mode=1, and only one queue can
-	 * be used in this mode. we flush all sqc cache back in put queue.
-	 */
-	hisi_qm_cache_wb(qp->qm);
+	if (!qm->use_dma_api) {
+		/*
+		 * As put_queue is only called in uacce_mode=1, and only one
+		 * queue can be used in this mode. we flush all sqc cache back
+		 * in put queue.
+		 */
+		hisi_qm_cache_wb(qp->qm);
+	}
 
 	/* need to stop hardware, but can not support in v1 */
 	hisi_qm_release_qp(qp);
