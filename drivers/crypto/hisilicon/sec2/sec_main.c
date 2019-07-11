@@ -17,6 +17,8 @@
 #define HSEC_VF_NUM			63
 #define HSEC_QUEUE_NUM_V1		4096
 #define HSEC_QUEUE_NUM_V2		1024
+#define PCI_DEVICE_ID_SEC_PF    0xa255
+#define PCI_DEVICE_ID_SEC_VF    0xa256
 
 #define HSEC_COMMON_REG_OFF	0x1000
 
@@ -39,18 +41,19 @@
 #define HSEC_MASTER_TRANS_RETURN	0x300150
 #define MASTER_TRANS_RETURN_RW		0x3
 
-#define HSEC_CORE_INT_SOURCE		0x3010A0
-#define HSEC_CORE_INT_MASK		0x3010A4
-#define HSEC_CORE_INT_STATUS		0x3010AC
+#define HSEC_CORE_INT_SOURCE		0x301010
+#define HSEC_CORE_INT_MASK		    0x301000
+#define HSEC_CORE_INT_STATUS		0x301008
 #define HSEC_CORE_INT_STATUS_M_ECC	BIT(1)
 #define HSEC_CORE_SRAM_ECC_ERR_INFO	0x301148
 #define SRAM_ECC_ERR_NUM_SHIFT		16
 #define SRAM_ECC_ERR_ADDR_SHIFT		24
-#define HSEC_CORE_INT_DISABLE		0x000007FF
-#define HSEC_COMP_CORE_NUM		2
-#define HSEC_DECOMP_CORE_NUM		6
-#define HSEC_CORE_NUM			(HSEC_COMP_CORE_NUM + \
-					 HSEC_DECOMP_CORE_NUM)
+#define HSEC_CORE_INT_DISABLE		0x000001FF
+
+#define HSEC_SM4_CTR_ENABLE_REG     0X301380
+#define HSEC_SM4_CTR_ENABLE_MSK     0XEFFFFFFF
+#define HSEC_SM4_CTR_DISABLE_MSK     0XFFFFFFFF
+
 #define HSEC_SQE_SIZE			128
 #define HSEC_SQ_SIZE			(HSEC_SQE_SIZE * QM_Q_DEPTH)
 #define HSEC_PF_DEF_Q_NUM		64
@@ -324,57 +327,33 @@ struct hisi_sec_ctrl {
 	struct ctrl_debug_file files[HSEC_DEBUG_FILE_NUM];
 };
 
-enum {
-	HSEC_COMP_CORE0,
-	HSEC_COMP_CORE1,
-	HSEC_DECOMP_CORE0,
-	HSEC_DECOMP_CORE1,
-	HSEC_DECOMP_CORE2,
-	HSEC_DECOMP_CORE3,
-	HSEC_DECOMP_CORE4,
-	HSEC_DECOMP_CORE5,
-};
-
-static const u64 core_offsets[] = {
-	[HSEC_COMP_CORE0] = 0x302000,
-	[HSEC_COMP_CORE1] = 0x303000,
-	[HSEC_DECOMP_CORE0] = 0x304000,
-	[HSEC_DECOMP_CORE1] = 0x305000,
-	[HSEC_DECOMP_CORE2] = 0x306000,
-	[HSEC_DECOMP_CORE3] = 0x307000,
-	[HSEC_DECOMP_CORE4] = 0x308000,
-	[HSEC_DECOMP_CORE5] = 0x309000,
-};
-
 static struct debugfs_reg32 hsec_dfx_regs[] = {
-	{"HSEC_GET_BD_NUM                ", 0x00ull},
-	{"HSEC_GET_RIGHT_BD              ", 0x04ull},
-	{"HSEC_GET_ERROR_BD              ", 0x08ull},
-	{"HSEC_DONE_BD_NUM               ", 0x0cull},
-	{"HSEC_WORK_CYCLE                ", 0x10ull},
-	{"HSEC_IDLE_CYCLE                ", 0x18ull},
-	{"HSEC_MAX_DELAY                 ", 0x20ull},
-	{"HSEC_MIN_DELAY                 ", 0x24ull},
-	{"HSEC_AVG_DELAY                 ", 0x28ull},
-	{"HSEC_MEM_VISIBLE_DATA          ", 0x30ull},
-	{"HSEC_MEM_VISIBLE_ADDR          ", 0x34ull},
-	{"HSEC_COMSUMED_BYTE             ", 0x38ull},
-	{"HSEC_PRODUCED_BYTE             ", 0x40ull},
-	{"HSEC_COMP_INF                  ", 0x70ull},
-	{"HSEC_PRE_OUT                   ", 0x78ull},
-	{"HSEC_BD_RD                     ", 0x7cull},
-	{"HSEC_BD_WR                     ", 0x80ull},
-	{"HSEC_GET_BD_AXI_ERR_NUM        ", 0x84ull},
-	{"HSEC_GET_BD_PARSE_ERR_NUM      ", 0x88ull},
-	{"HSEC_ADD_BD_AXI_ERR_NUM        ", 0x8cull},
-	{"HSEC_DECOMP_STF_RELOAD_CURR_ST ", 0x94ull},
-	{"HSEC_DECOMP_LZ77_CURR_ST       ", 0x9cull},
+	{"SEC_PF_ABNORMAL_INT_SOURCE     ",  0x301010},
+	{"HSEC_BD_LATENCY_MIN            ",  0x301600},
+	{"HSEC_BD_LATENCY_MAX            ",  0x301608},
+	{"HSEC_BD_LATENCY_AVG            ",  0x30160C},
+	{"HSEC_BD_NUM_IN_SAA0            ",  0x301670},
+	{"HSEC_BD_NUM_IN_SAA1            ",  0x301674},
+	{"HSEC_BD_NUM_IN_SEC             ",  0x301680},
+	{"HSEC_ECC_1BIT_CNT              ",  0x301C00},
+	{"HSEC_ECC_1BIT_INFO             ",  0x301C04},
+	{"HSEC_ECC_2BIT_CNT              ",  0x301C10},
+	{"HSEC_ECC_2BIT_INFO             ",  0x301C14},
+	{"HSEC_ECC_BD_SAA0               ",  0x301C20},
+	{"HSEC_ECC_BD_SAA1               ",  0x301C24},
+	{"HSEC_ECC_BD_SAA2               ",  0x301C28},
+	{"HSEC_ECC_BD_SAA3               ",  0x301C2C},
+	{"HSEC_ECC_BD_SAA4               ",  0x301C30},
+	{"HSEC_ECC_BD_SAA5               ",  0x301C34},
+	{"HSEC_ECC_BD_SAA6               ",  0x301C38},
+	{"HSEC_ECC_BD_SAA7               ",  0x301C3C},
+	{"HSEC_ECC_BD_SAA8               ",  0x301C40},
 };
 
 static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 {
-	struct pci_dev *pdev = pci_get_device(PCI_VENDOR_ID_HUAWEI, 0xa250,
-					      NULL);
+	struct pci_dev *pdev = pci_get_device(PCI_VENDOR_ID_HUAWEI,
+						  PCI_DEVICE_ID_SEC_PF, NULL);
 	u32 n, q_num;
 	u8 rev_id;
 	int ret;
@@ -420,12 +399,14 @@ MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 0-4096, v2 0-1024)");
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param(uacce_mode, int, 0444);
 
-static const struct pci_device_id hisi_sec_dev_ids[] = {
-	{PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, 0xa255)},
-	{PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, 0xa256)},
-	{0,}
-};
+static int enable_sm4_ctr;
+module_param(enable_sm4_ctr, int, 0444);
 
+static const struct pci_device_id hisi_sec_dev_ids[] = {
+	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_SEC_PF) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_SEC_VF) },
+	{ 0, }
+};
 MODULE_DEVICE_TABLE(pci, hisi_sec_dev_ids);
 
 static inline void hisi_sec_add_to_list(struct hisi_sec *hisi_sec)
@@ -473,10 +454,8 @@ static int sec_engine_init(struct hisi_sec *hisi_sec)
 	int ret;
 	u32 reg;
 	struct hisi_qm *qm = &hisi_sec->qm;
-	void *base =
-	    qm->io_base + SEC_ENGINE_PF_CFG_OFF + SEC_ACC_COMMON_REG_OFF;
-
-	pr_info("base[%llx]\n", (u64) base);
+	void *base = qm->io_base + SEC_ENGINE_PF_CFG_OFF +
+			SEC_ACC_COMMON_REG_OFF;
 
 	writel_relaxed(0x1, base + SEC_MEM_START_INIT_REG);
 	ret = readl_relaxed_poll_timeout(base +
@@ -491,8 +470,6 @@ static int sec_engine_init(struct hisi_sec *hisi_sec)
 	reg |= (0x1 << SEC_TRNG_EN_SHIFT);
 	writel_relaxed(reg, base + SEC_CONTROL_REG);
 
-	// todo: JUST SUPPORT SMMU
-	// if (sec_dev->smmu_normal) {
 	reg = readl_relaxed(base + SEC_INTERFACE_USER_CTRL0_REG);
 	reg |= SEC_USER0_SMMU_NORMAL;
 	writel_relaxed(reg, base + SEC_INTERFACE_USER_CTRL0_REG);
@@ -500,20 +477,11 @@ static int sec_engine_init(struct hisi_sec *hisi_sec)
 	reg = readl_relaxed(base + SEC_INTERFACE_USER_CTRL1_REG);
 	reg |= SEC_USER1_SMMU_NORMAL;
 	writel_relaxed(reg, base + SEC_INTERFACE_USER_CTRL1_REG);
-	// } else {
-	//      reg = readl_relaxed(base + SEC_INTERFACE_USER_CTRL0_REG);
-	//      reg &= ~SEC_USER0_SMMU_NORMAL;
-	//      writel_relaxed(reg, base + SEC_INTERFACE_USER_CTRL0_REG);
-
-	//      reg = readl_relaxed(base + SEC_INTERFACE_USER_CTRL1_REG);
-	//      reg &= ~SEC_USER1_SMMU_NORMAL;
-	//      writel_relaxed(reg, base + SEC_INTERFACE_USER_CTRL1_REG);
-	// }
 
 	writel_relaxed(0xfffff7fd, base + SEC_BD_ERR_CHK_EN_REG(1));
 	writel_relaxed(0xffffbfff, base + SEC_BD_ERR_CHK_EN_REG(3));
 
-	/*enable abnormal int */
+	/* enable abnormal int */
 	writel_relaxed(SEC_PF_INT_MSK, base + SEC_PF_ABNORMAL_INT_ENABLE_REG);
 	writel_relaxed(SEC_RAS_CE_ENB_MSK, base + SEC_RAS_CE_ENABLE_REG);
 	writel_relaxed(SEC_RAS_FE_ENB_MSK, base + SEC_RAS_FE_ENABLE_REG);
@@ -528,7 +496,21 @@ static int sec_engine_init(struct hisi_sec *hisi_sec)
 	reg = readl_relaxed(base + SEC_CONTROL_REG);
 	reg |= sec_get_endian(hisi_sec);
 	writel_relaxed(reg, base + SEC_CONTROL_REG);
+
+	if (enable_sm4_ctr)
+		writel_relaxed(HSEC_SM4_CTR_ENABLE_MSK,
+			qm->io_base + HSEC_SM4_CTR_ENABLE_REG);
+
 	return 0;
+}
+
+static void hisi_sec_disable_sm4_ctr(struct hisi_sec *hisi_sec)
+{
+	struct hisi_qm *qm = &hisi_sec->qm;
+
+	if (enable_sm4_ctr)
+		writel_relaxed(HSEC_SM4_CTR_DISABLE_MSK,
+			qm->io_base + HSEC_SM4_CTR_ENABLE_REG);
 }
 
 static void hisi_sec_set_user_domain_and_cache(struct hisi_sec *hisi_sec)
@@ -558,7 +540,24 @@ static void hisi_sec_set_user_domain_and_cache(struct hisi_sec *hisi_sec)
 
 static void hisi_sec_hw_error_set_state(struct hisi_sec *hisi_sec, bool state)
 {
+	struct hisi_qm *qm = &hisi_sec->qm;
 
+	if (qm->ver == QM_HW_V1) {
+		writel(HSEC_CORE_INT_DISABLE, qm->io_base + HSEC_CORE_INT_MASK);
+		dev_info(&qm->pdev->dev, "SEC v%d does not support hw error handle\n",
+			 qm->ver);
+		return;
+	}
+
+
+	if (state) {
+		/* enable SEC hw error interrupts */
+		writel(0, hisi_sec->qm.io_base + HSEC_CORE_INT_MASK);
+	} else {
+		/* disable SEC hw error interrupts */
+		writel(HSEC_CORE_INT_DISABLE,
+		       hisi_sec->qm.io_base + HSEC_CORE_INT_MASK);
+	}
 }
 
 static inline struct hisi_qm *file_to_qm(struct ctrl_debug_file *file)
@@ -699,30 +698,24 @@ static int hisi_sec_core_debug_init(struct hisi_sec_ctrl *ctrl)
 	struct debugfs_regset32 *regset;
 	struct dentry *tmp_d, *tmp;
 	char buf[20];
-	int i;
 
-	for (i = 0; i < HSEC_CORE_NUM; i++) {
-		if (i < HSEC_COMP_CORE_NUM)
-			sprintf(buf, "comp_core%d", i);
-		else
-			sprintf(buf, "decomp_core%d", i - HSEC_COMP_CORE_NUM);
+	sprintf(buf, "hisi_sec_dfx");
 
-		tmp_d = debugfs_create_dir(buf, ctrl->debug_root);
-		if (!tmp_d)
-			return -ENOENT;
+	tmp_d = debugfs_create_dir(buf, ctrl->debug_root);
+	if (!tmp_d)
+		return -ENOENT;
 
-		regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
-		if (!regset)
-			return -ENOENT;
+	regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
+	if (!regset)
+		return -ENOENT;
 
-		regset->regs = hsec_dfx_regs;
-		regset->nregs = ARRAY_SIZE(hsec_dfx_regs);
-		regset->base = qm->io_base + core_offsets[i];
+	regset->regs = hsec_dfx_regs;
+	regset->nregs = ARRAY_SIZE(hsec_dfx_regs);
+	regset->base = qm->io_base;
 
-		tmp = debugfs_create_regset32("regs", 0444, tmp_d, regset);
-		if (!tmp)
-			return -ENOENT;
-	}
+	tmp = debugfs_create_regset32("regs", 0444, tmp_d, regset);
+	if (!tmp)
+		return -ENOENT;
 
 	return 0;
 }
@@ -763,7 +756,7 @@ static int hisi_sec_debugfs_init(struct hisi_sec *hisi_sec)
 	if (ret)
 		goto failed_to_create;
 
-	if (qm->pdev->device == 0xa250) {
+	if (qm->pdev->device == PCI_DEVICE_ID_SEC_PF) {
 		hisi_sec->ctrl->debug_root = dev_d;
 		ret = hisi_sec_ctrl_debug_init(hisi_sec->ctrl);
 		if (ret)
@@ -841,6 +834,10 @@ static int hisi_sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	pci_set_drvdata(pdev, hisi_sec);
 
 	hisi_sec_add_to_list(hisi_sec);
+
+	hisi_sec->sgl_pool = acc_create_sgl_pool(&pdev->dev, "hsec-sgl");
+	if (!hisi_sec->sgl_pool)
+		return -ENOMEM;
 
 	qm = &hisi_sec->qm;
 	qm->pdev = pdev;
@@ -1038,8 +1035,10 @@ static void hisi_sec_remove(struct pci_dev *pdev)
 	hisi_sec_debugfs_exit(hisi_sec);
 	hisi_qm_stop(qm);
 
-	if (qm->fun_type == QM_HW_PF)
+	if (qm->fun_type == QM_HW_PF) {
 		hisi_sec_hw_error_set_state(hisi_sec, false);
+		hisi_sec_disable_sm4_ctr(hisi_sec);
+	}
 
 	hisi_qm_uninit(qm);
 	hisi_sec_remove_from_list(hisi_sec);

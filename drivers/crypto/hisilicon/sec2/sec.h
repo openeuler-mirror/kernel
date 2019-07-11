@@ -4,6 +4,7 @@
 
 #include <linux/list.h>
 #include "../qm.h"
+#include "../sgl.h"
 #include "sec_usr_if.h"
 
 #undef pr_fmt
@@ -26,6 +27,7 @@ struct hisi_sec {
 	struct hisi_qm qm;
 	struct list_head list;
 	struct hisi_sec_ctrl *ctrl;
+	struct dma_pool *sgl_pool;
 };
 
 struct hisi_sec *find_sec_device(int node);

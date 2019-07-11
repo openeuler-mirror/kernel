@@ -12,7 +12,7 @@
 #ifndef HISI_SEC_CRYPTO_H
 #define HISI_SEC_CRYPTO_H
 
-#define SEC_MAX_IV_SIZE 16
+#define SEC_IV_SIZE 16
 #define SEC_MAX_KEY_SIZE 64
 
 int hisi_sec_register_to_crypto(void);

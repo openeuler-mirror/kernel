@@ -192,27 +192,4 @@ enum C_ALG {
 #define SEC_MAX_SGE_NUM	255
 #define SEC_MAX_SGL_NUM	256
 
-struct sgl_entry {
-	char *buf;
-	void *pageCtrl;
-	u32 len;
-	u32 pad;
-	u32 pad0;
-	u32 pad1;
-};
-
-struct sgl {
-	struct sgl *next;
-	u16 entrySumInChain;
-	u16 entrySumInSgl;
-	u16 entryNumInSgl;
-	u8 pad0[2];
-	u64 serialNum;
-	u32 flag;
-	u32 cpuid;
-	u8 pad1[8];
-	u8 reserve[24];
-	struct sgl_entry entry[SEC_MAX_SGE_NUM];
-};
-
 #endif
