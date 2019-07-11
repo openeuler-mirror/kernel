@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright (c) 2018 Hisilicon Limited. */
+/* Copyright (c) 2018-2019 HiSilicon Limited. */
 #include <asm/page.h>
 #include <linux/bitmap.h>
 #include <linux/debugfs.h>

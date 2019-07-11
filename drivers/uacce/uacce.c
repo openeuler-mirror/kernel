@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
+/* Copyright (c) 2018 HiSilicon Limited. */
 #include <linux/compat.h>
 #include <linux/delay.h>
 #include <linux/dma-iommu.h>
@@ -1364,6 +1365,6 @@ static __exit void uacce_exit(void)
 subsys_initcall(uacce_init);
 module_exit(uacce_exit);
 
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Hisilicon Tech. Co., Ltd.");
+MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("HiSilicon Tech. Co., Ltd.");
 MODULE_DESCRIPTION("Accelerator interface for Userland applications");

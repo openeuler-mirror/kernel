@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
+/* Copyright (c) 2018-2019 HiSilicon Limited. */
 #ifndef HISI_QM_USR_IF_H
 #define HISI_QM_USR_IF_H
 

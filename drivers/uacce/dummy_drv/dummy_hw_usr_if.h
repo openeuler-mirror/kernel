@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
+/* Copyright (c) 2018-2019 HiSilicon Limited. */
 /*
  * This file defines the dummy hardware/driver interface between the user and
  * kernel space

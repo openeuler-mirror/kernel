@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0+
+/* Copyright (c) 2018-2019 HiSilicon Limited. */
 /**
  * This module is used to test the framework of WarpDrive.
  *
@@ -516,4 +517,4 @@ module_init(dummy_wd2_init);
 module_exit(dummy_wd2_exit);
 
 MODULE_AUTHOR("Kenneth Lee<liguozhu@hisilicon.com>");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");

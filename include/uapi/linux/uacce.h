@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
+/* Copyright (c) 2018-2019 HiSilicon Limited. */
 #ifndef _UAPIUUACCE_H
 #define _UAPIUUACCE_H
 
