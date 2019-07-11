@@ -964,15 +964,41 @@ static pci_ers_result_t hisi_zip_error_detected(struct pci_dev *pdev,
 	return hisi_zip_process_hw_error(pdev);
 }
 
+static int hisi_zip_vf_reset_prepare(struct hisi_qm *qm)
+{
+	int delay = 1;
+	u32 flag = 1;
+	int ret = 0;
+
+#define TIMEOUT_VF 20000
+
+	while (flag) {
+		flag = 0;
+		if (delay > TIMEOUT_VF) {
+			ret = -ENOTTY;
+			break;
+		}
+
+		msleep(delay);
+		delay *= 2;
+
+		if (test_and_set_bit(QM_RESET, &qm->status.flags))
+			flag = 1;
+	}
+
+	return ret;
+}
+
 static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
 	struct pci_dev *pdev = qm->pdev;
 	int ret;
 
-	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
-		dev_warn(&pdev->dev, "Failed to set reset flag!");
-		return -EBUSY;
+	ret = hisi_zip_vf_reset_prepare(qm);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to set controller reset flag!\n");
+		return ret;
 	}
 
 	ret = hisi_qm_stop(qm);
@@ -1090,7 +1116,8 @@ static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 
 static int hisi_zip_controller_reset(struct hisi_zip *hisi_zip)
 {
-	struct device *dev = &hisi_zip->qm.pdev->dev;
+	struct hisi_qm *qm = &hisi_zip->qm;
+	struct device *dev = &qm->pdev->dev;
 	int ret;
 
 	dev_info(dev, "Controller resetting...\n");
@@ -1110,9 +1137,10 @@ static int hisi_zip_controller_reset(struct hisi_zip *hisi_zip)
 		return ret;
 
 	dev_info(dev, "Controller reset complete\n");
-	clear_bit(QM_RESET, &hisi_zip->qm.status.flags);
 
-	return 0;
+	clear_bit(QM_RESET, &qm->status.flags);
+
+	return ret;
 }
 
 static pci_ers_result_t hisi_zip_slot_reset(struct pci_dev *pdev)
@@ -1138,6 +1166,31 @@ static pci_ers_result_t hisi_zip_slot_reset(struct pci_dev *pdev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
+static void hisi_zip_vf_flr_reset_prepare(struct pci_dev *pdev)
+{
+	int delay = 1;
+	u32 flag = 1;
+	struct pci_dev *pf_pdev = pci_physfn(pdev);
+	struct hisi_zip *hisi_zip = pci_get_drvdata(pf_pdev);
+	struct hisi_qm *qm = &hisi_zip->qm;
+
+#define TIMEOUT 60000
+#define DELAY_INC 2000
+
+	while (flag) {
+		flag = 0;
+		msleep(delay);
+		if (delay > TIMEOUT) {
+			flag = 1;
+			delay = 1;
+			dev_err(&pdev->dev, "Device error, please exit FLR!\n");
+		} else if (test_and_set_bit(QM_RESET, &qm->status.flags))
+			flag = 1;
+
+		delay += DELAY_INC;
+	}
+}
+
 static void hisi_zip_reset_prepare(struct pci_dev *pdev)
 {
 	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
@@ -1151,12 +1204,18 @@ static void hisi_zip_reset_prepare(struct pci_dev *pdev)
 		return;
 	}
 
-	if (test_and_set_bit(QM_RESET, &qm->status.flags)) {
-		dev_warn(dev, "Failed to set reset flag!");
-		return;
-	}
+	hisi_zip_vf_flr_reset_prepare(pdev);
 
 	dev_info(dev, "FLR resetting...\n");
+}
+
+static void hisi_zip_vf_flr_reset_done(struct pci_dev *pdev)
+{
+	struct pci_dev *pf_pdev = pci_physfn(pdev);
+	struct hisi_zip *hisi_zip = pci_get_drvdata(pf_pdev);
+	struct hisi_qm *qm = &hisi_zip->qm;
+
+	clear_bit(QM_RESET, &qm->status.flags);
 }
 
 static void hisi_zip_reset_done(struct pci_dev *pdev)
@@ -1190,6 +1249,9 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 			}
 		}
 	}
+
+	hisi_zip_vf_flr_reset_done(pdev);
+
 	dev_info(dev, "FLR reset complete\n");
 }
 
