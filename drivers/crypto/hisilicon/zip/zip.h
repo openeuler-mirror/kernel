@@ -17,10 +17,15 @@ enum hisi_zip_error_type {
 
 struct hisi_zip_ctrl;
 
+enum hisi_zip_status {
+	HISI_ZIP_RESET,
+};
+
 struct hisi_zip {
 	struct hisi_qm qm;
 	struct list_head list;
 	struct hisi_zip_ctrl *ctrl;
+	unsigned long status;
 };
 
 struct hisi_zip *find_zip_device(int node);

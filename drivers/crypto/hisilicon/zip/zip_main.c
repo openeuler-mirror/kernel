@@ -679,6 +679,7 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	hisi_zip_add_to_list(hisi_zip);
 
+	hisi_zip->status = 0;
 	qm = &hisi_zip->qm;
 	qm->pdev = pdev;
 	qm->ver = rev_id;
@@ -964,7 +965,7 @@ static pci_ers_result_t hisi_zip_error_detected(struct pci_dev *pdev,
 	return hisi_zip_process_hw_error(pdev);
 }
 
-static int hisi_zip_vf_reset_prepare(struct hisi_qm *qm)
+static int hisi_zip_reset_prepare_rdy(struct hisi_zip *hisi_zip)
 {
 	int delay = 1;
 	u32 flag = 1;
@@ -982,11 +983,42 @@ static int hisi_zip_vf_reset_prepare(struct hisi_qm *qm)
 		msleep(delay);
 		delay *= 2;
 
-		if (test_and_set_bit(QM_RESET, &qm->status.flags))
+		if (test_and_set_bit(HISI_ZIP_RESET, &hisi_zip->status))
 			flag = 1;
 	}
 
 	return ret;
+}
+
+static int hisi_zip_vf_reset_prepare(struct pci_dev *pdev)
+{
+	struct hisi_zip *hisi_zip;
+	struct pci_dev *dev;
+	struct hisi_qm *qm;
+	int ret = 0;
+
+	mutex_lock(&hisi_zip_list_lock);
+	if (pdev->is_physfn) {
+		list_for_each_entry(hisi_zip, &hisi_zip_list, list) {
+			dev = hisi_zip->qm.pdev;
+			if (dev == pdev)
+				continue;
+
+			if (pci_physfn(dev) == pdev) {
+				qm = &hisi_zip->qm;
+
+				set_bit(QM_RESET, &qm->status.flags);
+				ret = hisi_qm_stop(qm);
+				if (ret)
+					goto prepare_fail;
+			}
+		}
+	}
+
+prepare_fail:
+	mutex_unlock(&hisi_zip_list_lock);
+	return ret;
+
 }
 
 static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
@@ -995,12 +1027,19 @@ static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 	struct pci_dev *pdev = qm->pdev;
 	int ret;
 
-	ret = hisi_zip_vf_reset_prepare(qm);
+	ret = hisi_zip_reset_prepare_rdy(hisi_zip);
 	if (ret) {
-		dev_err(&pdev->dev, "Fails to set controller reset flag!\n");
+		dev_err(&pdev->dev, "Controller reset not ready!\n");
 		return ret;
 	}
 
+	ret = hisi_zip_vf_reset_prepare(pdev);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to stop VFs!\n");
+		return ret;
+	}
+
+	set_bit(QM_RESET, &qm->status.flags);
 	ret = hisi_qm_stop(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
@@ -1071,6 +1110,47 @@ static int hisi_zip_soft_reset(struct hisi_zip *hisi_zip)
 	return 0;
 }
 
+static int hisi_zip_vf_reset_done(struct pci_dev *pdev)
+{
+	struct hisi_zip *hisi_zip;
+	struct pci_dev *dev;
+	struct hisi_qp *qp;
+	struct hisi_qm *qm;
+	int ret = 0;
+	int i;
+
+	mutex_lock(&hisi_zip_list_lock);
+	list_for_each_entry(hisi_zip, &hisi_zip_list, list) {
+		dev = hisi_zip->qm.pdev;
+		if (dev == pdev)
+			continue;
+
+		if (pci_physfn(dev) == pdev) {
+			qm = &hisi_zip->qm;
+
+			hisi_qm_clear_queues(qm);
+			ret = hisi_qm_start(qm);
+			if (ret)
+				goto reset_fail;
+
+			for (i = 0; i < qm->qp_num; i++) {
+				qp = qm->qp_array[i];
+				if (qp) {
+					ret = hisi_qm_start_qp(qp, 0);
+					if (ret < 0)
+						goto reset_fail;
+				}
+			}
+
+			clear_bit(QM_RESET, &qm->status.flags);
+		}
+	}
+
+reset_fail:
+	mutex_unlock(&hisi_zip_list_lock);
+	return ret;
+}
+
 static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
@@ -1105,6 +1185,11 @@ static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 
 	/* Clear VF MSE bit */
 	hisi_zip_set_mse(hisi_zip, 1);
+	ret = hisi_zip_vf_reset_done(pdev);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to start VFs!\n");
+		return -EPERM;
+	}
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce)
@@ -1136,9 +1221,10 @@ static int hisi_zip_controller_reset(struct hisi_zip *hisi_zip)
 	if (ret)
 		return ret;
 
-	dev_info(dev, "Controller reset complete\n");
-
 	clear_bit(QM_RESET, &qm->status.flags);
+	clear_bit(HISI_ZIP_RESET, &hisi_zip->status);
+
+	dev_info(dev, "Controller reset complete\n");
 
 	return ret;
 }
@@ -1166,13 +1252,12 @@ static pci_ers_result_t hisi_zip_slot_reset(struct pci_dev *pdev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
-static void hisi_zip_vf_flr_reset_prepare(struct pci_dev *pdev)
+static void hisi_zip_flr_prepare_rdy(struct pci_dev *pdev)
 {
-	int delay = 1;
-	u32 flag = 1;
 	struct pci_dev *pf_pdev = pci_physfn(pdev);
 	struct hisi_zip *hisi_zip = pci_get_drvdata(pf_pdev);
-	struct hisi_qm *qm = &hisi_zip->qm;
+	int delay = 1;
+	u32 flag = 1;
 
 #define TIMEOUT 60000
 #define DELAY_INC 2000
@@ -1184,7 +1269,7 @@ static void hisi_zip_vf_flr_reset_prepare(struct pci_dev *pdev)
 			flag = 1;
 			delay = 1;
 			dev_err(&pdev->dev, "Device error, please exit FLR!\n");
-		} else if (test_and_set_bit(QM_RESET, &qm->status.flags))
+		} else if (test_and_set_bit(HISI_ZIP_RESET, &hisi_zip->status))
 			flag = 1;
 
 		delay += DELAY_INC;
@@ -1198,13 +1283,20 @@ static void hisi_zip_reset_prepare(struct pci_dev *pdev)
 	struct device *dev = &pdev->dev;
 	int ret;
 
+	hisi_zip_flr_prepare_rdy(pdev);
+
+	ret = hisi_zip_vf_reset_prepare(pdev);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to prepare reset!\n");
+		return;
+	}
+
+	set_bit(QM_RESET, &qm->status.flags);
 	ret = hisi_qm_stop(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return;
 	}
-
-	hisi_zip_vf_flr_reset_prepare(pdev);
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce)
@@ -1214,13 +1306,12 @@ static void hisi_zip_reset_prepare(struct pci_dev *pdev)
 	dev_info(dev, "FLR resetting...\n");
 }
 
-static void hisi_zip_vf_flr_reset_done(struct pci_dev *pdev)
+static void hisi_zip_flr_reset_complete(struct pci_dev *pdev)
 {
 	struct pci_dev *pf_pdev = pci_physfn(pdev);
 	struct hisi_zip *hisi_zip = pci_get_drvdata(pf_pdev);
-	struct hisi_qm *qm = &hisi_zip->qm;
 
-	clear_bit(QM_RESET, &qm->status.flags);
+	clear_bit(HISI_ZIP_RESET, &hisi_zip->status);
 }
 
 static void hisi_zip_reset_done(struct pci_dev *pdev)
@@ -1231,19 +1322,13 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 	struct hisi_qp *qp;
 	int i, ret;
 
-	if (pdev->is_physfn) {
-		hisi_zip_set_user_domain_and_cache(hisi_zip);
-		hisi_zip_hw_error_init(hisi_zip);
-		if (hisi_zip->ctrl->num_vfs)
-			hisi_zip_vf_q_assign(hisi_zip,
-					     hisi_zip->ctrl->num_vfs);
-	}
 	hisi_qm_clear_queues(qm);
 	ret = hisi_qm_start(qm);
 	if (ret) {
 		dev_err(dev, "Failed to start QM!\n");
 		return;
 	}
+
 	for (i = 0; i < qm->qp_num; i++) {
 		qp = qm->qp_array[i];
 		if (qp) {
@@ -1255,12 +1340,22 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 		}
 	}
 
-	hisi_zip_vf_flr_reset_done(pdev);
+	if (pdev->is_physfn) {
+		hisi_zip_set_user_domain_and_cache(hisi_zip);
+		hisi_zip_hw_error_init(hisi_zip);
+		if (hisi_zip->ctrl->num_vfs)
+			hisi_zip_vf_q_assign(hisi_zip,
+				hisi_zip->ctrl->num_vfs);
+		hisi_zip_vf_reset_done(pdev);
+	}
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce)
 		uacce_reset_done(&qm->uacce);
 #endif
+	clear_bit(QM_RESET, &qm->status.flags);
+	hisi_zip_flr_reset_complete(pdev);
+
 	dev_info(dev, "FLR reset complete\n");
 }
 

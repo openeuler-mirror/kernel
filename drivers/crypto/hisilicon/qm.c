@@ -102,7 +102,7 @@
 #define QM_CQC_VFT_VALID		(1ULL << 28)
 
 #define QM_SQC_VFT_BASE_SHIFT_V2	28
-#define QM_SQC_VFT_BASE_MASK_V2		0x3f
+#define QM_SQC_VFT_BASE_MASK_V2		0x3ff
 #define QM_SQC_VFT_NUM_SHIFT_V2		45
 #define QM_SQC_VFT_NUM_MASK_v2		0x3ff
 
@@ -2314,14 +2314,11 @@ void hisi_qm_clear_queues(struct hisi_qm *qm)
 
 	for (i = 0; i < qm->qp_num; i++) {
 		qp = qm->qp_array[i];
-		if (qp) {
+		if (qp)
 			memset(qp->qdma.va, 0, qp->qdma.size);
-			memset(&qp->qp_status, 0, sizeof(qp->qp_status));
-		}
 	}
 
 	memset(qm->qdma.va, 0, qm->qdma.size);
-	memset(&qm->status, 0, sizeof(qm->status));
 }
 EXPORT_SYMBOL_GPL(hisi_qm_clear_queues);
 
