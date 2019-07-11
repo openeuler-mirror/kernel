@@ -384,6 +384,17 @@ static struct hisi_qp *qm_to_hisi_qp(struct hisi_qm *qm, struct qm_eqe *eqe)
 	return qp;
 }
 
+static void qm_sq_head_update(struct hisi_qp *qp)
+{
+	if (qp->qp_status.sq_head == QM_Q_DEPTH - 1)
+		qp->qp_status.sq_head = 0;
+	else
+		qp->qp_status.sq_head++;
+
+	if (unlikely(test_bit(QP_FULL, &qp->qp_status.flags)))
+		clear_bit(QP_FULL, &qp->qp_status.flags);
+}
+
 static void qm_cq_head_update(struct hisi_qp *qp)
 {
 	if (qp->qp_status.cq_head == QM_Q_DEPTH - 1) {
@@ -397,6 +408,7 @@ static void qm_cq_head_update(struct hisi_qp *qp)
 static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 {
 	struct qm_cqe *cqe;
+	int cqe_num = 0;
 
 	if (qp->event_cb)
 		qp->event_cb(qp);
@@ -405,16 +417,21 @@ static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 
 		if (qp->req_cb) {
 			while (QM_CQE_PHASE(cqe) == qp->qp_status.cqc_phase) {
+				cqe_num++;
 				dma_rmb();
 				qp->req_cb(qp, qp->sqe + qm->sqe_size *
 					   cqe->sq_head);
+				qm_sq_head_update(qp);
 				qm_cq_head_update(qp);
 				cqe = qp->cqe + qp->qp_status.cq_head;
 				atomic_dec(&qp->qp_status.used);
+				if (cqe_num >= QM_Q_DEPTH / 2 - 1)
+					break;
 			}
 		} else {
 			if (QM_CQE_PHASE(cqe) == qp->qp_status.cqc_phase) {
 				dma_rmb();
+				qm_sq_head_update(qp);
 				complete(&qp->completion);
 				qm_cq_head_update(qp);
 				cqe = qp->cqe + qp->qp_status.cq_head;
@@ -436,10 +453,10 @@ static irqreturn_t qm_irq_thread(int irq, void *data)
 	struct hisi_qm *qm = data;
 	struct qm_eqe *eqe = qm->eqe + qm->status.eq_head;
 	struct hisi_qp *qp;
-	int num = 0;
+	int eqe_num = 0;
 
 	while (QM_EQE_PHASE(eqe) == qm->status.eqc_phase) {
-		num++;
+		eqe_num++;
 		qp = qm_to_hisi_qp(qm, eqe);
 		if (qp)
 			qm_poll_qp(qp, qm);
@@ -453,9 +470,9 @@ static irqreturn_t qm_irq_thread(int irq, void *data)
 			qm->status.eq_head++;
 		}
 
-		if (num == QM_Q_DEPTH / 2 - 1) {
+		if (eqe_num == QM_Q_DEPTH / 2 - 1) {
+			eqe_num = 0;
 			qm_db(qm, 0, QM_DOORBELL_CMD_EQ, qm->status.eq_head, 0);
-			return IRQ_HANDLED;
 		}
 	}
 

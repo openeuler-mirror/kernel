@@ -236,18 +236,8 @@ static void hisi_zip_copy_data_from_buffer(struct hisi_zip_qp_ctx *qp_ctx,
 	struct hisi_zip_buffer *buffer = &qp_ctx->buffer;
 	struct hisi_qp *qp = qp_ctx->qp;
 	struct hisi_zip_sqe *zip_sqe = hisi_zip_get_writeback_sqe(qp);
-	u16 sq_head;
 
 	memcpy(dst, buffer->output, zip_sqe->produced);
-
-	sq_head = qp->qp_status.sq_head;
-	if (sq_head == QM_Q_DEPTH - 1)
-		qp->qp_status.sq_head = 0;
-	else
-		qp->qp_status.sq_head++;
-
-	if (unlikely(test_bit(QP_FULL, &qp->qp_status.flags)))
-		clear_bit(QP_FULL, &qp->qp_status.flags);
 }
 
 static int hisi_zip_compress_data_output(struct hisi_zip_qp_ctx *qp_ctx,
