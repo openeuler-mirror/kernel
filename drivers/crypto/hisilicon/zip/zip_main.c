@@ -930,16 +930,16 @@ static void hisi_zip_log_hw_error(struct hisi_zip *hisi_zip, u32 err_sts)
 
 	while (err->msg) {
 		if (err->int_msk & err_sts) {
-			dev_warn(dev, "%s [error status=0x%x] found\n",
+			dev_err(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
 
 			if (err->int_msk & HZIP_CORE_INT_STATUS_M_ECC) {
 				err_val = readl(hisi_zip->qm.io_base +
 						HZIP_CORE_SRAM_ECC_ERR_INFO);
-				dev_warn(dev, "hisi-zip multi ecc sram num=0x%x\n",
+				dev_err(dev, "hisi-zip multi ecc sram num=0x%x\n",
 					 ((err_val >> SRAM_ECC_ERR_NUM_SHIFT) &
 					  0xFF));
-				dev_warn(dev, "hisi-zip multi ecc sram addr=0x%x\n",
+				dev_err(dev, "hisi-zip multi ecc sram addr=0x%x\n",
 					 (err_val >> SRAM_ECC_ERR_ADDR_SHIFT));
 			}
 		}
@@ -1280,7 +1280,7 @@ static pci_ers_result_t hisi_zip_slot_reset(struct pci_dev *pdev)
 	/* reset zip controller */
 	ret = hisi_zip_controller_reset(hisi_zip);
 	if (ret) {
-		dev_warn(&pdev->dev, "hisi_zip controller reset failed (%d)\n",
+		dev_err(&pdev->dev, "hisi_zip controller reset failed (%d)\n",
 			 ret);
 		return PCI_ERS_RESULT_DISCONNECT;
 	}

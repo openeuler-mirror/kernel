@@ -56,6 +56,13 @@
 #define HPRE_CORE_HTBT_WARN_OFFSET	0x8c
 #define HPRE_CORE_IS_SCHD_OFFSET	0x90
 
+#define HPRE_RAS_CE_ENB			0x301410
+#define HPRE_HAC_RAS_CE_ENABLE		0x3f
+#define HPRE_RAS_NFE_ENB		0x301414
+#define HPRE_HAC_RAS_NFE_ENABLE		0xc0
+#define HPRE_RAS_FE_ENB			0x301418
+#define HPRE_HAC_RAS_FE_ENABLE		0
+
 #define HPRE_CORE_ENB		(HPRE_CLSTR_BASE + HPRE_CORE_EN_OFFSET)
 #define HPRE_CORE_INI_CFG	(HPRE_CLSTR_BASE + HPRE_CORE_INI_CFG_OFFSET)
 #define HPRE_CORE_INI_STATUS (HPRE_CLSTR_BASE + HPRE_CORE_INI_STATUS_OFFSET)
@@ -432,12 +439,16 @@ static void hpre_hw_error_set_state(struct hpre *hpre, bool state)
 {
 	struct hisi_qm *qm = &hpre->qm;
 
-	if (state)
+	if (state) {
 		/* enable hpre hw error interrupts */
 		writel(HPRE_CORE_INT_ENABLE, qm->io_base + HPRE_INT_MASK);
-	else
+		writel(HPRE_HAC_RAS_CE_ENABLE, qm->io_base + HPRE_RAS_CE_ENB);
+		writel(HPRE_HAC_RAS_NFE_ENABLE, qm->io_base + HPRE_RAS_NFE_ENB);
+		writel(HPRE_HAC_RAS_FE_ENABLE, qm->io_base + HPRE_RAS_FE_ENB);
+	} else {
 		/* disable hpre hw error interrupts */
 		writel(HPRE_CORE_INT_DISABLE, qm->io_base + HPRE_INT_MASK);
+	}
 }
 
 static inline struct hisi_qm *file_to_qm(struct hpre_debugfs_file *file)
@@ -1006,7 +1017,7 @@ static void hpre_log_hw_error(struct hpre *hpre, u32 err_sts)
 
 	while (err->msg) {
 		if (err->int_msk & err_sts)
-			dev_warn(dev, "%s [error status=0x%x] found\n",
+			dev_err(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
 		err++;
 	}
@@ -1219,7 +1230,7 @@ static pci_ers_result_t hpre_slot_reset(struct pci_dev *pdev)
 	/* reset hpre controller */
 	ret = hpre_controller_reset(hpre);
 	if (ret) {
-		dev_warn(&pdev->dev, "hpre controller reset failed (%d)\n",
+		dev_err(&pdev->dev, "hpre controller reset failed (%d)\n",
 			ret);
 		return PCI_ERS_RESULT_DISCONNECT;
 	}

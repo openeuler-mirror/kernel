@@ -535,7 +535,7 @@ static irqreturn_t qm_abnormal_irq(int irq, void *data)
 
 	while (err->msg) {
 		if (err->int_msk & error_status)
-			dev_warn(dev, "%s [error status=0x%x] found\n",
+			dev_err(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
 
 		err++;
@@ -971,7 +971,7 @@ static void qm_log_hw_error(struct hisi_qm *qm, u32 error_status)
 
 	while (err->msg) {
 		if (err->int_msk & error_status) {
-			dev_warn(dev, "%s [error status=0x%x] found\n",
+			dev_err(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
 
 			if (err->int_msk & QM_DB_TIMEOUT) {
@@ -980,7 +980,7 @@ static void qm_log_hw_error(struct hisi_qm *qm, u32 error_status)
 				type = (reg_val & QM_DB_TIMEOUT_TYPE) >>
 				       QM_DB_TIMEOUT_TYPE_SHIFT;
 				vf_num = reg_val & QM_DB_TIMEOUT_VF;
-				dev_warn(dev, "qm %s doorbell timeout in function %u\n",
+				dev_err(dev, "qm %s doorbell timeout in function %u\n",
 					 qm_db_timeout[type], vf_num);
 			} else if (err->int_msk & QM_OF_FIFO_OF) {
 				reg_val = readl(qm->io_base +
@@ -990,7 +990,7 @@ static void qm_log_hw_error(struct hisi_qm *qm, u32 error_status)
 				vf_num = reg_val & QM_FIFO_OVERFLOW_VF;
 
 				if (type < ARRAY_SIZE(qm_fifo_overflow))
-					dev_warn(dev, "qm %s fifo overflow in function %u\n",
+					dev_err(dev, "qm %s fifo overflow in function %u\n",
 						 qm_fifo_overflow[type],
 						 vf_num);
 				else
@@ -1517,7 +1517,7 @@ static int hisi_qm_uacce_mmap(struct uacce_queue *q,
 	case UACCE_QFRT_DUS:
 		if (qm->use_dma_api) {
 			if (sz != qp->qdma.size) {
-				dev_warn(dev, "wrong queue size %ld vs %ld\n",
+				dev_err(dev, "wrong queue size %ld vs %ld\n",
 					 sz, qp->qdma.size);
 				return -EINVAL;
 			}
