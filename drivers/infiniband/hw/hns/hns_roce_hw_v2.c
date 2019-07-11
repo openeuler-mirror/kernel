@@ -221,11 +221,6 @@ static int set_rwqe_data_seg(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				}
 			}
 		} else {
-			roce_set_field(rc_sq_wqe->byte_20,
-				     V2_RC_SEND_WQE_BYTE_20_MSG_START_SGE_IDX_M,
-				     V2_RC_SEND_WQE_BYTE_20_MSG_START_SGE_IDX_S,
-				     (*sge_ind) & (qp->sge.sge_cnt - 1));
-
 			for (i = 0; i < HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE; i++) {
 				if (likely(wr->sg_list[i].length)) {
 					set_data_seg_v2(dseg, wr->sg_list + i);
@@ -578,6 +573,10 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				       V2_RC_SEND_WQE_BYTE_4_OPCODE_M,
 				       V2_RC_SEND_WQE_BYTE_4_OPCODE_S, hr_op);
 
+			roce_set_field(rc_sq_wqe->byte_20,
+				     V2_RC_SEND_WQE_BYTE_20_MSG_START_SGE_IDX_M,
+				     V2_RC_SEND_WQE_BYTE_20_MSG_START_SGE_IDX_S,
+				     sge_ind & (qp->sge.sge_cnt - 1));
 			if (wr->opcode == IB_WR_ATOMIC_CMP_AND_SWP ||
 			    wr->opcode == IB_WR_ATOMIC_FETCH_AND_ADD) {
 				dseg = wqe;
