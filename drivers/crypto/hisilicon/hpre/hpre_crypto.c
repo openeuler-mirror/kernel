@@ -24,7 +24,7 @@ struct hpre_ctx;
 #define _CRT_INV			4
 #define _DH_G_FLAG		0x02
 #define HPRE_TRY_SEND_TIMES	100
-#define HPRE_INVLD_REQ_ID		-1
+#define HPRE_INVLD_REQ_ID		(-1)
 #define GET_DEV(ctx)		((ctx)->qp->qm->pdev->dev)
 
 #define BITS64_MERGE(low_32, high_32)	(((u64)(low_32)) | \
@@ -198,7 +198,7 @@ static int _get_data_dma_addr(struct hpre_asym_request *hpre_req,
 
 static int _cp_data_to_dma_buf(struct hpre_asym_request *hpre_req,
 			       struct scatterlist *data, unsigned int len,
-			       int is_src, int is_dh, dma_addr_t *tmp)
+			       int is_src, dma_addr_t *tmp)
 {
 	struct hpre_ctx *ctx = hpre_req->ctx;
 	struct device *dev = &GET_DEV(ctx);
@@ -241,7 +241,7 @@ static int _hw_data_init(struct hpre_asym_request *hpre_req,
 			return ret;
 	} else {
 		ret = _cp_data_to_dma_buf(hpre_req, data, len,
-					  is_src, is_dh, &tmp);
+					  is_src, &tmp);
 		if (ret)
 			return ret;
 	}

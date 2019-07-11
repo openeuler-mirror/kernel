@@ -42,6 +42,8 @@ static DEFINE_RWLOCK(uacce_qs_lock);
 #define uacce_qs_wunlock() write_unlock_irq(&uacce_qs_lock)
 #endif
 
+#define UACCE_RESET_DELAY_MS        10
+
 static const struct file_operations uacce_fops;
 static int uacce_fops_fasync(int fd, struct file *file, int mode);
 static int uacce_put_queue(struct file *filep);
@@ -95,7 +97,7 @@ void uacce_reset_prepare(struct uacce *uacce)
 	mutex_unlock(&uacce->q_lock);
 
 	/* make sure above single been handled */
-	mdelay(10);
+	mdelay(UACCE_RESET_DELAY_MS);
 }
 EXPORT_SYMBOL_GPL(uacce_reset_prepare);
 

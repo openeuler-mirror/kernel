@@ -242,7 +242,7 @@ static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 		return -EINVAL;
 
 	ret = kstrtou32(val, _TO_DECIMAL, &n);
-	if (ret != 0 || n > 2)
+	if (ret != 0 || n > UACCE_MODE_NOIOMMU)
 		return -EINVAL;
 
 	return param_set_int(val, kp);
