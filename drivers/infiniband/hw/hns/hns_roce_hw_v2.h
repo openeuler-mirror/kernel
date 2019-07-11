@@ -122,7 +122,7 @@
 #define HNS_ROCE_IDX_HOP_NUM			1
 #define HNS_ROCE_MEM_PAGE_SUPPORT_8K		2
 
-#define HNS_ROCE_V2_GID_INDEX_NUM(d)		(d ? (8) : (256))
+#define HNS_ROCE_V2_GID_INDEX_NUM		32
 
 #define HNS_ROCE_V2_TABLE_CHUNK_SIZE		(1 << 18)
 

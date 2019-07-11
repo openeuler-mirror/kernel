@@ -1873,7 +1873,7 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 				  HNS_ROCE_CAP_FLAG_RECORD_DB |
 				  HNS_ROCE_CAP_FLAG_SQ_RECORD_DB;
 	caps->pkey_table_len[0] = 1;
-	caps->gid_table_len[0] = HNS_ROCE_V2_GID_INDEX_NUM(d);
+	caps->gid_table_len[0] = HNS_ROCE_V2_GID_INDEX_NUM;
 	caps->ceqe_depth	= HNS_ROCE_V2_COMP_EQE_NUM;
 	caps->aeqe_depth	= HNS_ROCE_V2_ASYNC_EQE_NUM;
 	caps->local_ca_ack_delay = 0;
