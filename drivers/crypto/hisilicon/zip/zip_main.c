@@ -371,6 +371,8 @@ static void hisi_zip_set_user_domain_and_cache(struct hisi_zip *hisi_zip)
 	/* qm cache */
 	writel(AXI_M_CFG, hisi_zip->qm.io_base + QM_AXI_M_CFG);
 	writel(AXI_M_CFG_ENABLE, hisi_zip->qm.io_base + QM_AXI_M_CFG_ENABLE);
+	/* disable FLR triggered by BME(bus master enable) */
+	writel(PEH_AXUSER_CFG, hisi_zip->qm.io_base + QM_PEH_AXUSER_CFG);
 	writel(PEH_AXUSER_CFG_ENABLE, hisi_zip->qm.io_base +
 	       QM_PEH_AXUSER_CFG_ENABLE);
 
@@ -419,13 +421,17 @@ static void hisi_zip_hw_error_set_state(struct hisi_zip *hisi_zip, bool state)
 		return;
 	}
 
-	if (state)
+	if (state) {
+		/* clear ZIP hw error source if having */
+		writel(HZIP_CORE_INT_DISABLE, hisi_zip->qm.io_base +
+					      HZIP_CORE_INT_SOURCE);
 		/* enable ZIP hw error interrupts */
 		writel(0, hisi_zip->qm.io_base + HZIP_CORE_INT_MASK);
-	else
+	} else {
 		/* disable ZIP hw error interrupts */
 		writel(HZIP_CORE_INT_DISABLE,
 		       hisi_zip->qm.io_base + HZIP_CORE_INT_MASK);
+	}
 }
 
 static inline struct hisi_qm *file_to_qm(struct ctrl_debug_file *file)
