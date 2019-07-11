@@ -432,7 +432,6 @@ static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 		} else {
 			if (QM_CQE_PHASE(cqe) == qp->qp_status.cqc_phase) {
 				dma_rmb();
-				qm_sq_head_update(qp);
 				complete(&qp->completion);
 				qm_cq_head_update(qp);
 				cqe = qp->cqe + qp->qp_status.cq_head;
