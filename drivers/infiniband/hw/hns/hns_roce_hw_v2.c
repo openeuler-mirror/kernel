@@ -53,6 +53,35 @@
 static int loopback;
 static int is_d;
 
+static bool qp_lock = true;
+static bool cq_lock = true;
+
+static inline void v2_spin_lock_irqsave(bool has_lock, spinlock_t *lock,
+					unsigned long *flags)
+{
+	if (likely(has_lock))
+		spin_lock_irqsave(lock, *flags);
+}
+
+static inline void v2_spin_unlock_irqrestore(bool has_lock, spinlock_t *lock,
+					     unsigned long *flags)
+{
+	if (likely(has_lock))
+		spin_unlock_irqrestore(lock, *flags);
+}
+
+static inline void v2_spin_lock_irq(bool has_lock, spinlock_t *lock)
+{
+	if (likely(has_lock))
+		spin_lock_irq(lock);
+}
+
+static inline void v2_spin_unlock_irq(bool has_lock, spinlock_t *lock)
+{
+	if (likely(has_lock))
+		spin_unlock_irq(lock);
+}
+
 static void set_data_seg_v2(struct hns_roce_v2_wqe_data_seg *dseg,
 			    struct ib_sge *sg)
 {
@@ -269,7 +298,7 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 	struct hns_roce_v2_db sq_db;
 	unsigned int sge_ind;
 	unsigned int owner_bit;
-	unsigned long flags;
+	unsigned long flags = 0;
 	unsigned int ind;
 	void *wqe = NULL;
 	u32 tmp_len;
@@ -298,7 +327,7 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 		return -EINVAL;
 	}
 
-	spin_lock_irqsave(&qp->sq.lock, flags);
+	v2_spin_lock_irqsave(qp_lock, &qp->sq.lock, &flags);
 	ind = qp->sq_next_wqe;
 	sge_ind = qp->next_sge;
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_POST_SEND);
@@ -601,7 +630,8 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 		} else {
 			dev_err(dev, "Illegal qp(0x%x) type:0x%x\n",
 				ibqp->qp_num, ibqp->qp_type);
-			spin_unlock_irqrestore(&qp->sq.lock, flags);
+			v2_spin_unlock_irqrestore(qp_lock, &qp->sq.lock,
+						  &flags);
 			*bad_wr = wr;
 			return -EOPNOTSUPP;
 		}
@@ -638,7 +668,7 @@ out:
 	rdfx_put_rdfx_qp(hr_dev, ibqp->qp_num);
 	qp->dfx_cnt[HNS_ROCE_QP_DFX_POST_SEND]++;
 
-	spin_unlock_irqrestore(&qp->sq.lock, flags);
+	v2_spin_unlock_irqrestore(qp_lock, &qp->sq.lock, &flags);
 
 	return ret;
 }
@@ -657,18 +687,18 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 	struct hns_roce_v2_wqe_data_seg *dseg;
 	struct hns_roce_rinl_sge *sge_list;
 	struct device *dev = hr_dev->dev;
-	unsigned long flags;
+	unsigned long flags = 0;
 	void *wqe = NULL;
 	int ret = 0;
 	int nreq;
 	int ind;
 	int i;
 
-	spin_lock_irqsave(&hr_qp->rq.lock, flags);
+	v2_spin_lock_irqsave(qp_lock, &hr_qp->rq.lock, &flags);
 	ind = hr_qp->rq.head & (hr_qp->rq.wqe_cnt - 1);
 
 	if (hr_qp->state == IB_QPS_RESET) {
-		spin_unlock_irqrestore(&hr_qp->rq.lock, flags);
+		v2_spin_unlock_irqrestore(qp_lock, &hr_qp->rq.lock, &flags);
 		*bad_wr = wr;
 		return -EINVAL;
 	}
@@ -742,7 +772,7 @@ out:
 	rdfx_put_rdfx_qp(hr_dev, hr_qp->qpn);
 	hr_qp->dfx_cnt[HNS_ROCE_QP_DFX_POST_RECV]++;
 
-	spin_unlock_irqrestore(&hr_qp->rq.lock, flags);
+	v2_spin_unlock_irqrestore(qp_lock, &hr_qp->rq.lock, &flags);
 
 	return ret;
 }
@@ -2760,9 +2790,9 @@ static void __hns_roce_v2_cq_clean(struct hns_roce_cq *hr_cq, u32 qpn,
 static void hns_roce_v2_cq_clean(struct hns_roce_cq *hr_cq, u32 qpn,
 				 struct hns_roce_srq *srq)
 {
-	spin_lock_irq(&hr_cq->lock);
+	v2_spin_lock_irq(cq_lock, &hr_cq->lock);
 	__hns_roce_v2_cq_clean(hr_cq, qpn, srq);
-	spin_unlock_irq(&hr_cq->lock);
+	v2_spin_unlock_irq(cq_lock, &hr_cq->lock);
 }
 
 static void hns_roce_v2_write_cqc(struct hns_roce_dev *hr_dev,
@@ -3204,10 +3234,10 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 {
 	struct hns_roce_cq *hr_cq = to_hr_cq(ibcq);
 	struct hns_roce_qp *cur_qp = NULL;
-	unsigned long flags;
+	unsigned long flags = 0;
 	int npolled;
 
-	spin_lock_irqsave(&hr_cq->lock, flags);
+	v2_spin_lock_irqsave(cq_lock, &hr_cq->lock, &flags);
 
 	rdfx_func_cnt(to_hr_dev(ibcq->device), RDFX_FUNC_POLL_CQ);
 	rdfx_get_rdfx_cq(to_hr_dev(ibcq->device), hr_cq->cqn);
@@ -3233,7 +3263,7 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 	rdfx_set_rdfx_cq_ci(to_hr_dev(ibcq->device), hr_cq);
 	rdfx_put_rdfx_cq(to_hr_dev(ibcq->device), hr_cq->cqn);
 
-	spin_unlock_irqrestore(&hr_cq->lock, flags);
+	v2_spin_unlock_irqrestore(cq_lock, &hr_cq->lock, &flags);
 
 	return npolled;
 }
@@ -5054,7 +5084,8 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 
 	hns_roce_get_cqs(&hr_qp->ibqp, &send_cq, &recv_cq);
 
-	hns_roce_lock_cqs(send_cq, recv_cq);
+	if (cq_lock)
+		hns_roce_lock_cqs(send_cq, recv_cq);
 
 	if (!is_user) {
 		__hns_roce_v2_cq_clean(recv_cq, hr_qp->qpn, hr_qp->ibqp.srq ?
@@ -5065,7 +5096,8 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 
 	hns_roce_qp_remove(hr_dev, hr_qp);
 
-	hns_roce_unlock_cqs(send_cq, recv_cq);
+	if (cq_lock)
+		hns_roce_unlock_cqs(send_cq, recv_cq);
 
 	hns_roce_qp_free(hr_dev, hr_qp);
 
@@ -7163,3 +7195,7 @@ module_param(loopback, int, 0444);
 MODULE_PARM_DESC(loopback, "default: 0");
 module_param(is_d, int, 0444);
 MODULE_PARM_DESC(is_d, "default: 0");
+module_param(qp_lock, bool, 0444);
+MODULE_PARM_DESC(qp_lock, "default: true");
+module_param(cq_lock, bool, 0444);
+MODULE_PARM_DESC(cq_lock, "default: true");
