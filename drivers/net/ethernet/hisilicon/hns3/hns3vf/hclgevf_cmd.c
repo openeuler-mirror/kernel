@@ -125,6 +125,20 @@ static void hclgevf_cmd_init_regs(struct hclgevf_hw *hw)
 	hclgevf_cmd_config_regs(&hw->cmq.crq);
 }
 
+static void hclgevf_cmd_clear_regs(struct hclgevf_hw *hw)
+{
+	hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_BASEADDR_L_REG, 0);
+	hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_BASEADDR_H_REG, 0);
+	hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_DEPTH_REG, 0);
+	hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_HEAD_REG, 0);
+	hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_TAIL_REG, 0);
+	hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_BASEADDR_L_REG, 0);
+	hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_BASEADDR_H_REG, 0);
+	hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_DEPTH_REG, 0);
+	hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_HEAD_REG, 0);
+	hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_TAIL_REG, 0);
+}
+
 static int hclgevf_alloc_cmd_desc(struct hclgevf_cmq_ring *ring)
 {
 	int size = ring->desc_num * sizeof(struct hclgevf_desc);
@@ -344,6 +358,11 @@ int hclgevf_cmd_queue_init(struct hclgevf_dev *hdev)
 	spin_lock_init(&hdev->hw.cmq.csq.lock);
 	spin_lock_init(&hdev->hw.cmq.crq.lock);
 
+	/* clear up all command register,
+	 * in case there are some residual values
+	 */
+	hclgevf_cmd_clear_regs(&hdev->hw);
+
 	hdev->hw.cmq.tx_timeout = HCLGEVF_CMDQ_TX_TIMEOUT;
 	hdev->hw.cmq.csq.desc_num = HCLGEVF_NIC_CMQ_DESC_NUM;
 	hdev->hw.cmq.crq.desc_num = HCLGEVF_NIC_CMQ_DESC_NUM;
@@ -427,26 +446,12 @@ err_cmd_init:
 	return ret;
 }
 
-static void hclgevf_cmd_uninit_regs(struct hclgevf_hw *hw)
-{
-	hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_BASEADDR_L_REG, 0);
-	hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_BASEADDR_H_REG, 0);
-	hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_DEPTH_REG, 0);
-	hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_HEAD_REG, 0);
-	hclgevf_write_dev(hw, HCLGEVF_NIC_CSQ_TAIL_REG, 0);
-	hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_BASEADDR_L_REG, 0);
-	hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_BASEADDR_H_REG, 0);
-	hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_DEPTH_REG, 0);
-	hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_HEAD_REG, 0);
-	hclgevf_write_dev(hw, HCLGEVF_NIC_CRQ_TAIL_REG, 0);
-}
-
 void hclgevf_cmd_uninit(struct hclgevf_dev *hdev)
 {
 	spin_lock_bh(&hdev->hw.cmq.csq.lock);
 	spin_lock(&hdev->hw.cmq.crq.lock);
 	set_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state);
-	hclgevf_cmd_uninit_regs(&hdev->hw);
+	hclgevf_cmd_clear_regs(&hdev->hw);
 	spin_unlock(&hdev->hw.cmq.crq.lock);
 	spin_unlock_bh(&hdev->hw.cmq.csq.lock);
 	hclgevf_free_cmd_desc(&hdev->hw.cmq.csq);

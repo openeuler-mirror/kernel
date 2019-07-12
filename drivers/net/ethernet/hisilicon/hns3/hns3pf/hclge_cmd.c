@@ -127,6 +127,20 @@ static void hclge_cmd_config_regs(struct hclge_cmq_ring *ring)
 	}
 }
 
+static void hclge_cmd_clear_regs(struct hclge_hw *hw)
+{
+	hclge_write_dev(hw, HCLGE_NIC_CSQ_BASEADDR_L_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CSQ_BASEADDR_H_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CSQ_DEPTH_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CSQ_HEAD_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CSQ_TAIL_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CRQ_BASEADDR_L_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CRQ_BASEADDR_H_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CRQ_DEPTH_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CRQ_HEAD_REG, 0);
+	hclge_write_dev(hw, HCLGE_NIC_CRQ_TAIL_REG, 0);
+}
+
 static void hclge_cmd_init_regs(struct hclge_hw *hw)
 {
 	hclge_cmd_config_regs(&hw->cmq.csq);
@@ -353,6 +367,11 @@ int hclge_cmd_queue_init(struct hclge_dev *hdev)
 	spin_lock_init(&hdev->hw.cmq.csq.lock);
 	spin_lock_init(&hdev->hw.cmq.crq.lock);
 
+	/* clear up all command register,
+	 * in case there are some residual values
+	 */
+	hclge_cmd_clear_regs(&hdev->hw);
+
 	/* Setup the queue entries for use cmd queue */
 	hdev->hw.cmq.csq.desc_num = HCLGE_NIC_CMQ_DESC_NUM;
 	hdev->hw.cmq.crq.desc_num = HCLGE_NIC_CMQ_DESC_NUM;
@@ -457,20 +476,6 @@ err_cmd_init:
 	return ret;
 }
 
-static void hclge_cmd_uninit_regs(struct hclge_hw *hw)
-{
-	hclge_write_dev(hw, HCLGE_NIC_CSQ_BASEADDR_L_REG, 0);
-	hclge_write_dev(hw, HCLGE_NIC_CSQ_BASEADDR_H_REG, 0);
-	hclge_write_dev(hw, HCLGE_NIC_CSQ_DEPTH_REG, 0);
-	hclge_write_dev(hw, HCLGE_NIC_CSQ_HEAD_REG, 0);
-	hclge_write_dev(hw, HCLGE_NIC_CSQ_TAIL_REG, 0);
-	hclge_write_dev(hw, HCLGE_NIC_CRQ_BASEADDR_L_REG, 0);
-	hclge_write_dev(hw, HCLGE_NIC_CRQ_BASEADDR_H_REG, 0);
-	hclge_write_dev(hw, HCLGE_NIC_CRQ_DEPTH_REG, 0);
-	hclge_write_dev(hw, HCLGE_NIC_CRQ_HEAD_REG, 0);
-	hclge_write_dev(hw, HCLGE_NIC_CRQ_TAIL_REG, 0);
-}
-
 static void hclge_destroy_queue(struct hclge_cmq_ring *ring)
 {
 	spin_lock(&ring->lock);
@@ -489,7 +494,7 @@ void hclge_cmd_uninit(struct hclge_dev *hdev)
 	spin_lock_bh(&hdev->hw.cmq.csq.lock);
 	spin_lock(&hdev->hw.cmq.crq.lock);
 	set_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
-	hclge_cmd_uninit_regs(&hdev->hw);
+	hclge_cmd_clear_regs(&hdev->hw);
 	spin_unlock(&hdev->hw.cmq.crq.lock);
 	spin_unlock_bh(&hdev->hw.cmq.csq.lock);
 
