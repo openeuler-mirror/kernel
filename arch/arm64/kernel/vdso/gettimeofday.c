@@ -29,6 +29,7 @@
 #include <linux/hrtimer.h>
 
 extern struct vdso_data _vdso_data;
+DECLARE_STATIC_KEY_FALSE(vdso_fix);
 
 static notrace int gettimeofday_fallback(struct timeval *_tv,
 					 struct timezone *_tz)
@@ -119,6 +120,17 @@ static notrace u64 get_clock_shifted_nsec(u64 cycle_last, u64 mult)
 	/* Read the virtual counter. */
 	isb();
 	asm volatile("mrs %0, cntvct_el0" : "=r" (res) :: "memory");
+	if (static_branch_unlikely(&vdso_fix)) {
+		u64 new;
+		int retries = 50;
+
+		asm volatile("mrs %0, cntvct_el0" : "=r" (new) :: "memory");
+		while (unlikely((new - res) >> 5) && retries) {
+			asm volatile("mrs %0, cntvct_el0" : "=r" (res) :: "memory");
+			asm volatile("mrs %0, cntvct_el0" : "=r" (new) :: "memory");
+			retries--;
+		}
+	}
 
 	res = res - cycle_last;
 	/* We can only guarantee 56 bits of precision. */
