@@ -5908,7 +5908,6 @@ static void hns_roce_config_eqc(struct hns_roce_dev *hr_dev,
 	eq->cons_index = 0;
 	eq->over_ignore = HNS_ROCE_V2_EQ_OVER_IGNORE_0;
 	eq->coalesce = HNS_ROCE_V2_EQ_COALESCE_0;
-	eq->arm_st = HNS_ROCE_V2_EQ_ALWAYS_ARMED;
 	eq->eqe_ba_pg_sz = hr_dev->caps.eqe_ba_pg_sz;
 	eq->eqe_buf_pg_sz = hr_dev->caps.eqe_buf_pg_sz;
 	eq->shift = ilog2((unsigned int)eq->entries);
