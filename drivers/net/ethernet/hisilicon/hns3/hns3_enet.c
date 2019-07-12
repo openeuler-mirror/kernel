@@ -1070,7 +1070,6 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 		vflags.inner_vtag = 0;
 		vflags.out_vtag = 0;
 
-
 		ret = hns3_fill_desc_vtags(skb, ring, &vflags);
 			return ret;
 

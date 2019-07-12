@@ -927,7 +927,6 @@ struct hclge_dbg_reg_common_msg {
 	enum hclge_opcode_type cmd;
 };
 
-
 #define HCLGE_DEFAULT_TX_BUF		0x4000	 /* 16k  bytes */
 #define HCLGE_TOTAL_PKT_BUF		0x108000 /* 1.03125M bytes */
 #define HCLGE_DEFAULT_DV		0xA000	 /* 40k byte */

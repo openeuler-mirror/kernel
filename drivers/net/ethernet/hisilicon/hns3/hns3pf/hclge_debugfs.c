@@ -63,7 +63,7 @@ static void hclge_dbg_dump_reg_common(struct hclge_dev *hdev,
 	int bd_num, buf_len;
 	int ret, i;
 	int index;
-	int max;
+	int min_num;
 
 	ret = kstrtouint(cmd_buf, 0, &index);
 	index = (ret != 0) ? 0 : index;
@@ -91,10 +91,10 @@ static void hclge_dbg_dump_reg_common(struct hclge_dev *hdev,
 
 	entries_per_desc = ARRAY_SIZE(desc->data);
 
-	max = (bd_num * entries_per_desc, reg_msg->msg_num);
+	min_num = min(bd_num * entries_per_desc, reg_msg->msg_num);
 
 	desc = desc_src;
-	for (i = 0; i < max; i++) {
+	for (i = 0; i < min_num; i++) {
 		if (i > 0 && (i % entries_per_desc) == 0)
 			desc++;
 		if (dfx_message->flag)
