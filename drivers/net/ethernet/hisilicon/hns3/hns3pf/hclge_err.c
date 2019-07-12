@@ -637,8 +637,8 @@ void hclge_log_error(struct device *dev, char *reg,
 {
 	while (err->msg) {
 		if (err->int_msk & err_sts) {
-			dev_warn(dev, "%s %s found [error status=0x%x]\n",
-				 reg, err->msg, err_sts);
+			dev_err(dev, "%s %s found [error status=0x%x]\n",
+				reg, err->msg, err_sts);
 			if (err->reset_level &&
 			    err->reset_level != HNAE3_NONE_RESET)
 				set_bit(err->reset_level, reset_requests);
@@ -1164,8 +1164,8 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 
 	status = le32_to_cpu(*(desc_data + 3)) & BIT(0);
 	if (status) {
-		dev_warn(dev, "SSU_ECC_MULTI_BIT_INT_1 ssu_mem32_ecc_mbit_err found [error status=0x%x]\n",
-			 status);
+		dev_err(dev, "SSU_ECC_MULTI_BIT_INT_1 ssu_mem32_ecc_mbit_err found [error status=0x%x]\n",
+			status);
 		set_bit(HNAE3_GLOBAL_RESET, &ae_dev->hw_err_reset_req);
 	}
 
@@ -1201,8 +1201,8 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 	desc_data = (__le32 *)&desc[5];
 	status = le32_to_cpu(*(desc_data + 1));
 	if (status) {
-		dev_warn(dev, "PPU_MPF_ABNORMAL_INT_ST1 %s found\n",
-			 "rpu_rx_pkt_ecc_mbit_err");
+		dev_err(dev, "PPU_MPF_ABNORMAL_INT_ST1 %s found\n",
+			"rpu_rx_pkt_ecc_mbit_err");
 		set_bit(HNAE3_GLOBAL_RESET, &ae_dev->hw_err_reset_req);
 	}
 
@@ -1643,9 +1643,9 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 
 	/* Handling Non-fatal HNS RAS errors */
 	if (status & HCLGE_RAS_REG_NFE_MASK) {
-		dev_warn(dev,
-			 "HNS Non-Fatal RAS error(status=0x%x) identified\n",
-			 status);
+		dev_err(dev,
+			"HNS Non-Fatal RAS error(status=0x%x) identified\n",
+			status);
 		ret = hclge_handle_all_ras_errors(hdev);
 		if (ret) {
 			ret = hclge_check_imp_poison_err(hdev);
@@ -1661,7 +1661,7 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 	}
 
 	if (status & HCLGE_RAS_REG_ROCEE_ERR_MASK) {
-		dev_warn(dev, "ROCEE uncorrected RAS error identified\n");
+		dev_err(dev, "ROCEE uncorrected RAS error identified\n");
 		hclge_handle_rocee_ras_error(ae_dev);
 	}
 
@@ -1741,8 +1741,8 @@ static void hclge_handle_over_8bd_err(struct hclge_dev *hdev,
 		return;
 	}
 
-	dev_warn(dev, "PPU_PF_ABNORMAL_INT_ST over_8bd_no_fe found, vf_id(%d), queue_id(%d)\n",
-		 vf_id, q_id);
+	dev_err(dev, "PPU_PF_ABNORMAL_INT_ST over_8bd_no_fe found, vf_id(%d), queue_id(%d)\n",
+		vf_id, q_id);
 
 	if (vf_id) {
 		if (vf_id >= hdev->num_alloc_vport) {
@@ -1759,8 +1759,8 @@ static void hclge_handle_over_8bd_err(struct hclge_dev *hdev,
 
 		ret = hclge_inform_reset_assert_to_vf(&hdev->vport[vf_id]);
 		if (ret)
-			dev_warn(dev, "inform reset to vf(%d) failed %d!\n",
-				 hdev->vport->vport_id, ret);
+			dev_err(dev, "inform reset to vf(%d) failed %d!\n",
+				hdev->vport->vport_id, ret);
 	} else {
 		set_bit(HNAE3_FUNC_RESET, reset_requests);
 	}
@@ -1806,8 +1806,8 @@ static int hclge_handle_mpf_msix_error(struct hclge_dev *hdev,
 	status = le32_to_cpu(*(desc_data + 2)) &
 			HCLGE_PPU_MPF_INT_ST2_MSIX_MASK;
 	if (status)
-		dev_warn(dev, "PPU_MPF_ABNORMAL_INT_ST2 rx_q_search_miss found [dfx status=0x%x\n]",
-			 status);
+		dev_err(dev, "PPU_MPF_ABNORMAL_INT_ST2 rx_q_search_miss found [dfx status=0x%x\n]",
+			status);
 
 	/* clear all main PF MSIx errors */
 	ret = hclge_clear_hw_msix_error(hdev, desc, true, mpf_bd_num);
@@ -2017,7 +2017,7 @@ void hclge_handle_all_hns_hw_errors(struct hnae3_ae_dev *ae_dev)
 
 	/* Handle Non-fatal HNS RAS errors */
 	if (status & HCLGE_RAS_REG_NFE_MASK) {
-		dev_warn(dev, "HNS hw error(RAS) identified during init\n");
+		dev_err(dev, "HNS hw error(RAS) identified during init\n");
 		hclge_handle_all_ras_errors(hdev);
 	}
 
