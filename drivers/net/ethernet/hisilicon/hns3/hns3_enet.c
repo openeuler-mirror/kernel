@@ -1071,6 +1071,7 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 		vflags.out_vtag = 0;
 
 		ret = hns3_fill_desc_vtags(skb, ring, &vflags);
+		if (unlikely(ret))
 			return ret;
 
 		if (skb->ip_summed == CHECKSUM_PARTIAL) {
@@ -1097,8 +1098,8 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 		/* Set txbd */
 		desc->tx.ol_type_vlan_len_msec =
 			cpu_to_le32(vflags.ol_type_vlan_len_msec);
-		desc->tx.type_cs_vlan_tso_len =	cpu_to_le32(
-			vflags.type_cs_vlan_tso);
+		desc->tx.type_cs_vlan_tso_len =
+			cpu_to_le32(vflags.type_cs_vlan_tso);
 		desc->tx.paylen = cpu_to_le32(paylen);
 		desc->tx.mss = cpu_to_le16(mss);
 		desc->tx.vlan_tag = cpu_to_le16(vflags.inner_vtag);
