@@ -2600,7 +2600,7 @@ static void hclge_reset_task_schedule(struct hclge_dev *hdev)
 			      &hdev->rst_service_task);
 }
 
-static void hclge_task_schedule(struct hclge_dev *hdev)
+void hclge_task_schedule(struct hclge_dev *hdev, unsigned long delay_time)
 {
 	if (!test_bit(HCLGE_STATE_DOWN, &hdev->state) &&
 	    !test_bit(HCLGE_STATE_REMOVING, &hdev->state) &&
@@ -2609,7 +2609,7 @@ static void hclge_task_schedule(struct hclge_dev *hdev)
 		hdev->fd_arfs_expire_timer++;
 		mod_delayed_work_on(cpumask_first(&hdev->affinity_mask),
 				    system_wq, &hdev->service_task,
-				    round_jiffies_relative(HZ));
+				    round_jiffies_relative(delay_time));
 	}
 }
 
@@ -2658,16 +2658,19 @@ static int hclge_get_mac_phy_link(struct hclge_dev *hdev)
 	return !!link_stat;
 }
 
-void hclge_link_status_change(struct hclge_dev *hdev, int state)
+static void hclge_update_link_status(struct hclge_dev *hdev)
 {
 	struct hnae3_client *rclient = hdev->roce_client;
 	struct hnae3_client *client = hdev->nic_client;
 	struct hnae3_handle *rhandle;
 	struct hnae3_handle *handle;
+	int state;
 	int i;
 
 	if (!client)
 		return;
+
+	state = hclge_get_mac_phy_link(hdev);
 
 	if (state != hdev->hw.mac.link) {
 		for (i = 0; i < hdev->num_vmdq_vport + 1; i++) {
@@ -2681,15 +2684,6 @@ void hclge_link_status_change(struct hclge_dev *hdev, int state)
 		}
 		hdev->hw.mac.link = state;
 	}
-}
-
-static void hclge_update_link_status(struct hclge_dev *hdev)
-{
-	int state;
-
-	state = hclge_get_mac_phy_link(hdev);
-
-	hclge_link_status_change(hdev, state);
 }
 
 static void hclge_update_port_capability(struct hclge_mac *mac)
@@ -3834,7 +3828,7 @@ static void hclge_service_task(struct work_struct *work)
 		hdev->fd_arfs_expire_timer = 0;
 	}
 
-	hclge_task_schedule(hdev);
+	hclge_task_schedule(hdev, HZ);
 }
 
 struct hclge_vport *hclge_get_vport(struct hnae3_handle *handle)
@@ -6541,7 +6535,7 @@ static void hclge_enable_timer_task(struct hnae3_handle *handle, bool enable)
 	struct hclge_dev *hdev = vport->back;
 
 	if (enable) {
-		hclge_task_schedule(hdev);
+		hclge_task_schedule(hdev, HZ);
 	} else {
 		/* Set the DOWN flag here to disable the service to be
 		 * scheduled again

@@ -596,17 +596,11 @@ static void hclge_handle_link_change_event(struct hclge_dev *hdev,
 #define LINK_STATUS_OFFSET	1
 #define LINK_FAIL_CODE_OFFSET	2
 
-	struct phy_device *phydev = hdev->hw.mac.phydev;
 	int link_status = req->msg[LINK_STATUS_OFFSET];
 
-	if (phydev) {
-		if (phydev->state == PHY_RUNNING)
-			link_status = link_status & phydev->link;
-		else
-			link_status = 0;
-	}
+	clear_bit(HCLGE_STATE_SERVICE_SCHED, &hdev->state);
+	hclge_task_schedule(hdev, 0);
 
-	hclge_link_status_change(hdev, link_status);
 	if (!link_status)
 		hclge_link_fail_parse(hdev, req->msg[LINK_FAIL_CODE_OFFSET]);
 }
