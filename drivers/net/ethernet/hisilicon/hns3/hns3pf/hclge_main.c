@@ -3461,6 +3461,7 @@ static int hclge_set_rst_done(struct hclge_dev *hdev)
 
 static int hclge_reset_prepare_up(struct hclge_dev *hdev)
 {
+	u32 reg_val;
 	int ret = 0;
 
 	switch (hdev->reset_type) {
@@ -3477,6 +3478,11 @@ static int hclge_reset_prepare_up(struct hclge_dev *hdev)
 	default:
 		break;
 	}
+
+	/* clear handshake status with IMP */
+	reg_val = hclge_read_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG) &
+		  ~HCLGE_NIC_CMQ_ENABLE;
+	hclge_write_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG, reg_val);
 
 	return ret;
 }

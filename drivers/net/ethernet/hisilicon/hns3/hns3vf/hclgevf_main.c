@@ -1412,6 +1412,7 @@ static int hclgevf_reset_wait(struct hclgevf_dev *hdev)
 
 static int hclgevf_reset_stack(struct hclgevf_dev *hdev)
 {
+	u32 reg_val;
 	int ret;
 
 	/* uninitialize the nic client */
@@ -1436,6 +1437,10 @@ static int hclgevf_reset_stack(struct hclgevf_dev *hdev)
 	if (ret)
 		return ret;
 
+	/* clear handshake status with IMP */
+	reg_val = hclgevf_read_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG) &
+		  ~HCLGEVF_NIC_CMQ_ENABLE;
+	hclgevf_write_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG, reg_val);
 
 	return 0;
 }
@@ -1473,11 +1478,9 @@ static int hclgevf_reset_prepare_wait(struct hclgevf_dev *hdev)
 
 static void hclgevf_reset_err_handle(struct hclgevf_dev *hdev)
 {
-	/* When VF reset failed, only the higher level reset asserted by PF
-	 * can restore it, so re-initialize the command queue to receive
-	 * this higher reset event.
-	 */
-	hclgevf_cmd_init(hdev);
+	/* recover handshake status with IMP when reset fail */
+	hclgevf_write_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG,
+			  HCLGEVF_NIC_CMQ_ENABLE);
 	hdev->rst_stats.rst_fail_cnt++;
 	dev_err(&hdev->pdev->dev, "failed to reset VF(%d)\n",
 		hdev->rst_stats.rst_fail_cnt);
@@ -1488,9 +1491,6 @@ static void hclgevf_reset_err_handle(struct hclgevf_dev *hdev)
 	if (hclgevf_is_reset_pending(hdev)) {
 		set_bit(HCLGEVF_RESET_PENDING, &hdev->reset_state);
 		hclgevf_reset_task_schedule(hdev);
-	} else {
-		hclgevf_write_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG,
-				  HCLGEVF_NIC_CMQ_ENABLE);
 	}
 }
 
