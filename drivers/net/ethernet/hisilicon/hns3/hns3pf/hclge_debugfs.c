@@ -212,6 +212,7 @@ static void hclge_dbg_dump_dcb(struct hclge_dev *hdev, const char *cmd_buf)
 	dev_info(dev, "MAC_PFC_PRI_EN: 0x%x\n", desc[0].data[3]);
 	dev_info(dev, "IGU_PRI_MAP_TC_CFG: 0x%x\n", desc[0].data[4]);
 	dev_info(dev, "IGU_TX_PRI_MAP_TC_CFG: 0x%x\n", desc[0].data[5]);
+	return;
 
 err_dcb_cmd_send:
 	dev_err(&hdev->pdev->dev, "dump dcb fail(0x%x), ret = %d\n",
@@ -365,6 +366,12 @@ static void hclge_dbg_dump_tc(struct hclge_dev *hdev)
 	struct hclge_desc desc;
 	int i, ret;
 
+	if (!hnae3_dev_dcb_supported(hdev)) {
+		dev_info(&hdev->pdev->dev,
+			 "Only DCB-supported dev supports tc\n");
+		return;
+	}
+
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_ETS_TC_WEIGHT, true);
 
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
@@ -448,6 +455,12 @@ static void hclge_dbg_dump_tm_pg(struct hclge_dev *hdev)
 		goto err_tm_pg_cmd_send;
 
 	dev_info(&hdev->pdev->dev, "QS_SCH qs_id: %u\n", desc.data[0]);
+
+	if (!hnae3_dev_dcb_supported(hdev)) {
+		dev_info(&hdev->pdev->dev,
+			 "Only DCB-supported dev supports tm mapping\n");
+		return;
+	}
 
 	cmd = HCLGE_OPC_TM_BP_TO_QSET_MAPPING;
 	hclge_cmd_setup_basic_desc(&desc, cmd, true);
@@ -630,6 +643,12 @@ static void hclge_dbg_dump_tm_map(struct hclge_dev *hdev,
 	dev_info(&hdev->pdev->dev, "%04d     | %04d    | %02d     | %02d\n",
 		 queue_id, qset_id, pri_id, tc_id);
 
+	if (!hnae3_dev_dcb_supported(hdev)) {
+		dev_info(&hdev->pdev->dev,
+			 "Only DCB-supported dev supports tm mapping\n");
+		return;
+	}
+
 	cmd = HCLGE_OPC_TM_BP_TO_QSET_MAPPING;
 	bp_to_qs_map_cmd = (struct hclge_bp_to_qs_map_cmd *)desc.data;
 	for (group_id = 0; group_id < 32; group_id++) {
@@ -756,6 +775,34 @@ static void hclge_dbg_dump_qos_buf_cfg(struct hclge_dev *hdev)
 	dev_info(&hdev->pdev->dev, "rx_share_buf: 0x%x\n",
 		 rx_buf_cmd->shared_buf);
 
+	cmd = HCLGE_OPC_RX_COM_WL_ALLOC;
+	hclge_cmd_setup_basic_desc(desc, cmd, true);
+	ret = hclge_cmd_send(&hdev->hw, desc, 1);
+	if (ret)
+		goto err_qos_cmd_send;
+
+	rx_com_wl = (struct hclge_rx_com_wl *)desc[0].data;
+	dev_info(&hdev->pdev->dev, "\n");
+	dev_info(&hdev->pdev->dev, "rx_com_wl: high: 0x%x, low: 0x%x\n",
+		 rx_com_wl->com_wl.high, rx_com_wl->com_wl.low);
+
+	cmd = HCLGE_OPC_RX_GBL_PKT_CNT;
+	hclge_cmd_setup_basic_desc(desc, cmd, true);
+	ret = hclge_cmd_send(&hdev->hw, desc, 1);
+	if (ret)
+		goto err_qos_cmd_send;
+
+	rx_packet_cnt = (struct hclge_rx_com_wl *)desc[0].data;
+	dev_info(&hdev->pdev->dev,
+		 "rx_global_packet_cnt: high: 0x%x, low: 0x%x\n",
+		 rx_packet_cnt->com_wl.high, rx_packet_cnt->com_wl.low);
+	dev_info(&hdev->pdev->dev, "\n");
+
+	if (!hnae3_dev_dcb_supported(hdev)) {
+		dev_info(&hdev->pdev->dev,
+			 "Only DCB-supported dev supports rx priv wl\n");
+		return;
+	}
 	cmd = HCLGE_OPC_RX_PRIV_WL_ALLOC;
 	hclge_cmd_setup_basic_desc(&desc[0], cmd, true);
 	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
@@ -764,7 +811,6 @@ static void hclge_dbg_dump_qos_buf_cfg(struct hclge_dev *hdev)
 	if (ret)
 		goto err_qos_cmd_send;
 
-	dev_info(&hdev->pdev->dev, "\n");
 	rx_priv_wl = (struct hclge_rx_priv_wl_buf *)desc[0].data;
 	for (i = 0; i < HCLGE_TC_NUM_ONE_DESC; i++)
 		dev_info(&hdev->pdev->dev,
@@ -801,29 +847,6 @@ static void hclge_dbg_dump_qos_buf_cfg(struct hclge_dev *hdev)
 			 i + HCLGE_TC_NUM_ONE_DESC,
 			 rx_com_thrd->com_thrd[i].high,
 			 rx_com_thrd->com_thrd[i].low);
-
-	cmd = HCLGE_OPC_RX_COM_WL_ALLOC;
-	hclge_cmd_setup_basic_desc(desc, cmd, true);
-	ret = hclge_cmd_send(&hdev->hw, desc, 1);
-	if (ret)
-		goto err_qos_cmd_send;
-
-	rx_com_wl = (struct hclge_rx_com_wl *)desc[0].data;
-	dev_info(&hdev->pdev->dev, "\n");
-	dev_info(&hdev->pdev->dev, "rx_com_wl: high: 0x%x, low: 0x%x\n",
-		 rx_com_wl->com_wl.high, rx_com_wl->com_wl.low);
-
-	cmd = HCLGE_OPC_RX_GBL_PKT_CNT;
-	hclge_cmd_setup_basic_desc(desc, cmd, true);
-	ret = hclge_cmd_send(&hdev->hw, desc, 1);
-	if (ret)
-		goto err_qos_cmd_send;
-
-	rx_packet_cnt = (struct hclge_rx_com_wl *)desc[0].data;
-	dev_info(&hdev->pdev->dev,
-		 "rx_global_packet_cnt: high: 0x%x, low: 0x%x\n",
-		 rx_packet_cnt->com_wl.high, rx_packet_cnt->com_wl.low);
-
 	return;
 
 err_qos_cmd_send:
