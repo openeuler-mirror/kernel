@@ -392,6 +392,7 @@ static int pciehp_disable_slot(struct slot *slot, bool safe_removal)
 int pciehp_sysfs_enable_slot(struct slot *p_slot)
 {
 	struct controller *ctrl = p_slot->ctrl;
+	struct pci_dev *pdev = ctrl->pcie->port;
 
 	mutex_lock(&p_slot->lock);
 	switch (p_slot->state) {
@@ -403,9 +404,12 @@ int pciehp_sysfs_enable_slot(struct slot *p_slot)
 		 * card before the thread wakes up, so initialize to -ENODEV.
 		 */
 		ctrl->request_result = -ENODEV;
-		pciehp_request(ctrl, PCI_EXP_SLTSTA_PDC);
-		wait_event(ctrl->requester,
-			   !atomic_read(&ctrl->pending_events));
+		pci_config_pm_runtime_get(pdev);
+		down_read(&ctrl->reset_lock);
+		pciehp_handle_presence_or_link_change(p_slot,
+				PCI_EXP_SLTSTA_PDC);
+		up_read(&ctrl->reset_lock);
+		pci_config_pm_runtime_put(pdev);
 		return ctrl->request_result;
 	case POWERON_STATE:
 		ctrl_info(ctrl, "Slot(%s): Already in powering on state\n",
@@ -430,15 +434,25 @@ int pciehp_sysfs_enable_slot(struct slot *p_slot)
 int pciehp_sysfs_disable_slot(struct slot *p_slot)
 {
 	struct controller *ctrl = p_slot->ctrl;
+	struct pci_dev *pdev = ctrl->pcie->port;
+
+	if (test_and_set_bit(0, &slot_being_removed_rescanned)) {
+		ctrl_info(ctrl, "Slot(%s): Slot is being removed or rescanned, please try later!\n",
+			  slot_name(p_slot));
+		return -EINVAL;
+	}
 
 	mutex_lock(&p_slot->lock);
 	switch (p_slot->state) {
 	case BLINKINGOFF_STATE:
 	case ON_STATE:
 		mutex_unlock(&p_slot->lock);
-		pciehp_request(ctrl, DISABLE_SLOT);
-		wait_event(ctrl->requester,
-			   !atomic_read(&ctrl->pending_events));
+		pci_config_pm_runtime_get(pdev);
+		down_read(&ctrl->reset_lock);
+		pciehp_handle_disable_request(p_slot);
+		up_read(&ctrl->reset_lock);
+		pci_config_pm_runtime_put(pdev);
+		slot_being_removed_rescanned = 0;
 		return ctrl->request_result;
 	case POWEROFF_STATE:
 		ctrl_info(ctrl, "Slot(%s): Already in powering off state\n",
@@ -456,6 +470,8 @@ int pciehp_sysfs_disable_slot(struct slot *p_slot)
 		break;
 	}
 	mutex_unlock(&p_slot->lock);
+
+	slot_being_removed_rescanned = 0;
 
 	return -ENODEV;
 }
