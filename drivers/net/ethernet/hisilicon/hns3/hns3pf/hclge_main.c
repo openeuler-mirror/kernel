@@ -3365,7 +3365,7 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 {
 #define HCLGE_RESET_SYNC_TIME 100
 
-	struct hnae3_handle *handle = handle = &hdev->vport[0].nic;
+	struct hnae3_handle *handle = &hdev->vport[0].nic;
 	u32 reg_val;
 	int ret = 0;
 
