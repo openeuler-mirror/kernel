@@ -403,9 +403,9 @@ int pciehp_sysfs_enable_slot(struct slot *p_slot)
 		 * card before the thread wakes up, so initialize to -ENODEV.
 		 */
 		ctrl->request_result = -ENODEV;
-		reinit_completion(&ctrl->requester);
 		pciehp_request(ctrl, PCI_EXP_SLTSTA_PDC);
-		wait_for_completion(&ctrl->requester);
+		wait_event(ctrl->requester,
+			   !atomic_read(&ctrl->pending_events));
 		return ctrl->request_result;
 	case POWERON_STATE:
 		ctrl_info(ctrl, "Slot(%s): Already in powering on state\n",
@@ -436,9 +436,9 @@ int pciehp_sysfs_disable_slot(struct slot *p_slot)
 	case BLINKINGOFF_STATE:
 	case ON_STATE:
 		mutex_unlock(&p_slot->lock);
-		reinit_completion(&ctrl->requester);
 		pciehp_request(ctrl, DISABLE_SLOT);
-		wait_for_completion(&ctrl->requester);
+		wait_event(ctrl->requester,
+			   !atomic_read(&ctrl->pending_events));
 		return ctrl->request_result;
 	case POWEROFF_STATE:
 		ctrl_info(ctrl, "Slot(%s): Already in powering off state\n",
