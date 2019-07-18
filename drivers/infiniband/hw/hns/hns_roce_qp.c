@@ -382,7 +382,8 @@ static int hns_roce_set_rq_size(struct hns_roce_dev *hr_dev,
 		}
 
 		max_cnt = max(1U, cap->max_recv_sge);
-		hr_qp->rq.max_gs = roundup_pow_of_two(max_cnt);
+		hr_qp->rq.max_gs = roundup_pow_of_two(max_cnt +
+						      HNS_ROCE_RESERVED_SGE);
 		if (hr_dev->caps.max_rq_sg <= HNS_ROCE_MAX_SGE_NUM)
 			hr_qp->rq.wqe_shift =
 					ilog2(hr_dev->caps.max_rq_desc_sz);
@@ -393,7 +394,7 @@ static int hns_roce_set_rq_size(struct hns_roce_dev *hr_dev,
 	}
 
 	cap->max_recv_wr = hr_qp->rq.max_post = hr_qp->rq.wqe_cnt;
-	cap->max_recv_sge = hr_qp->rq.max_gs;
+	cap->max_recv_sge = hr_qp->rq.max_gs - HNS_ROCE_RESERVED_SGE;
 
 	return 0;
 }

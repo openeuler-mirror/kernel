@@ -450,7 +450,7 @@ struct ib_srq *hns_roce_create_srq(struct ib_pd *pd,
 	spin_lock_init(&srq->lock);
 
 	srq->max = roundup_pow_of_two(srq_init_attr->attr.max_wr + 1);
-	srq->max_gs = srq_init_attr->attr.max_sge;
+	srq->max_gs = srq_init_attr->attr.max_sge + HNS_ROCE_RESERVED_SGE;
 
 	srq_desc_size = max(HNS_ROCE_SGE_SIZE, HNS_ROCE_SGE_SIZE * srq->max_gs);
 

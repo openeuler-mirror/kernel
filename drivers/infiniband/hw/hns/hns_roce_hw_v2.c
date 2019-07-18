@@ -769,8 +769,8 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 			goto out;
 		}
 
-		if (unlikely(wr->num_sge > hr_qp->rq.max_gs)) {
-			dev_err(dev, "rq:num_sge=%d > qp->rq.max_gs=%d\n",
+		if (unlikely(wr->num_sge >= hr_qp->rq.max_gs)) {
+			dev_err(dev, "rq:num_sge=%d >= qp->rq.max_gs=%d\n",
 				wr->num_sge, hr_qp->rq.max_gs);
 			ret = -EINVAL;
 			*bad_wr = wr;
@@ -786,9 +786,10 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 			dseg++;
 		}
 
-		if (i < hr_qp->rq.max_gs) {
+		if (wr->num_sge < hr_qp->rq.max_gs) {
 			dseg->lkey = cpu_to_le32(HNS_ROCE_INVALID_LKEY);
 			dseg->addr = 0;
+			dseg->len = HNS_ROCE_INVALID_SGE_LENGTH;
 		}
 
 		/* rq support inline data */
@@ -6794,7 +6795,7 @@ static int hns_roce_v2_post_srq_recv(struct ib_srq *ibsrq,
 
 	ind = srq->head & (srq->max - 1);
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
-		if (unlikely(wr->num_sge > srq->max_gs)) {
+		if (unlikely(wr->num_sge >= srq->max_gs)) {
 			dev_err(hr_dev->dev,
 				"srq(0x%lx) wr sge num(%d) exceed the max num %d.\n",
 				srq->srqn, wr->num_sge, srq->max_gs);
@@ -6822,10 +6823,10 @@ static int hns_roce_v2_post_srq_recv(struct ib_srq *ibsrq,
 			dseg[i].addr	= cpu_to_le64(wr->sg_list[i].addr);
 		}
 
-		if (i < srq->max_gs) {
-			dseg[i].len	= 0;
-			dseg[i].lkey	= cpu_to_le32(0x100);
-			dseg[i].addr	= 0;
+		if (wr->num_sge < srq->max_gs) {
+			dseg[i].len = cpu_to_le32(HNS_ROCE_INVALID_SGE_LENGTH);
+			dseg[i].lkey = cpu_to_le32(HNS_ROCE_INVALID_LKEY);
+			dseg[i].addr = 0;
 		}
 
 		srq->wrid[wqe_idx] = wr->wr_id;

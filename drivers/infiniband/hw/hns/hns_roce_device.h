@@ -73,6 +73,8 @@
 
 #define HNS_ROCE_WORKQ_NAME_LEN			32
 
+#define HNS_ROCE_RESERVED_SGE			1
+
 #define HNS_ROCE_MAX_IRQ_NUM			128
 
 #define HNS_ROCE_SGE_IN_WQE			2
