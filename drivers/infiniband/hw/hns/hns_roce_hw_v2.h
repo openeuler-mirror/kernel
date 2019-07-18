@@ -306,6 +306,7 @@ enum hns_roce_cmd_return_status {
 	CMD_NO_AUTH		= 1,
 	CMD_NOT_EXEC		= 2,
 	CMD_QUEUE_FULL		= 3,
+	CMD_EXEC_TIMEOUT	= 8,
 };
 
 enum hns_roce_sgid_type {

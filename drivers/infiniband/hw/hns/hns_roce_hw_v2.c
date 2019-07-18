@@ -1208,9 +1208,12 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 			desc_ret = le16_to_cpu(desc[handle].retval);
 			if (desc_ret == CMD_EXEC_SUCCESS)
 				ret = 0;
-			else
+			else if (desc_ret == CMD_EXEC_TIMEOUT) {
+				priv->cmq.last_status = desc_ret;
+				ret = -ETIME;
+			} else
 				ret = -EIO;
-			priv->cmq.last_status = desc_ret;
+
 			ntc++;
 			handle++;
 			if (ntc == csq->desc_num)
