@@ -2390,7 +2390,6 @@ int hisi_sas_alloc(struct hisi_hba *hisi_hba)
 					     GFP_KERNEL);
 	if (!hisi_hba->itct)
 		goto err_out;
-	memset(hisi_hba->itct, 0, s);
 
 	hisi_hba->slot_info = devm_kcalloc(dev, max_command_entries,
 					   sizeof(struct hisi_sas_slot),
@@ -2417,8 +2416,7 @@ int hisi_sas_alloc(struct hisi_hba *hisi_hba)
 		dma_addr_t buf_dma;
 		int slot_index = i * slots_per_blk;
 
-		buf = dmam_alloc_coherent(dev, s, &buf_dma, GFP_KERNEL |
-					  __GFP_ZERO);
+		buf = dmam_alloc_coherent(dev, s, &buf_dma, GFP_KERNEL);
 		if (!buf)
 			goto err_out;
 
@@ -2467,7 +2465,6 @@ int hisi_sas_alloc(struct hisi_hba *hisi_hba)
 					GFP_KERNEL);
 	if (!hisi_hba->sata_breakpoint)
 		goto err_out;
-	hisi_sas_init_mem(hisi_hba);
 
 	hisi_sas_slot_index_init(hisi_hba);
 	hisi_hba->last_slot_index = hisi_hba->hw->max_command_entries -
