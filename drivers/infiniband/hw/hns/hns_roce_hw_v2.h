@@ -38,14 +38,14 @@
 #define HNS_ROCE_CLOCK_ADJUST	1000
 #define HNS_ROCE_MAX_CQ_PERIOD	65
 
-#define HNS_ROCE_VF_QPC_BT_NUM(d) (d ? (8) : (256))
-#define HNS_ROCE_VF_SCCC_BT_NUM(d) (d ? (8) : (64))
-#define HNS_ROCE_VF_SRQC_BT_NUM(d) (d ? (8) : (64))
-#define HNS_ROCE_VF_CQC_BT_NUM(d) (d ? (8) : (64))
-#define HNS_ROCE_VF_MPT_BT_NUM(d) (d ? (8) : (64))
-#define HNS_ROCE_VF_EQC_NUM(d) (d ? (8) : (64))
-#define HNS_ROCE_VF_SMAC_NUM(d) (d ? (8) : (32))
-#define HNS_ROCE_VF_SGID_NUM(d) (d ? (8) : (32))
+#define HNS_ROCE_VF_QPC_BT_NUM			256
+#define HNS_ROCE_VF_SCCC_BT_NUM			64
+#define HNS_ROCE_VF_SRQC_BT_NUM			64
+#define HNS_ROCE_VF_CQC_BT_NUM			64
+#define HNS_ROCE_VF_MPT_BT_NUM			64
+#define HNS_ROCE_VF_EQC_NUM			64
+#define HNS_ROCE_VF_SMAC_NUM			32
+#define HNS_ROCE_VF_SGID_NUM			32
 #define HNS_ROCE_VF_SL_NUM			8
 
 #define HNS_ROCE_V2_MAX_QP_NUM			0x100000
@@ -67,8 +67,8 @@
 #define HNS_ROCE_V2_MAX_SQ_INLINE		0x20
 #define HNS_ROCE_V2_UAR_NUM			256
 #define HNS_ROCE_V2_PHY_UAR_NUM			1
-#define HNS_ROCE_V2_MAX_IRQ_NUM(d) (d ? (3) : (65))
-#define HNS_ROCE_V2_COMP_VEC_NUM(d) (d ? (1) : (63))
+#define HNS_ROCE_V2_MAX_IRQ_NUM			65
+#define HNS_ROCE_V2_COMP_VEC_NUM		63
 #define HNS_ROCE_V2_AEQE_VEC_NUM		1
 #define HNS_ROCE_V2_ABNORMAL_VEC_NUM		1
 #define HNS_ROCE_V2_MAX_MTPT_NUM		0x100000

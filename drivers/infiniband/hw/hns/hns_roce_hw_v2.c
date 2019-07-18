@@ -51,7 +51,6 @@
 #include "hns_hw_v2_test.h"
 #endif
 static int loopback;
-static int is_d;
 
 static bool qp_lock = true;
 static bool cq_lock = true;
@@ -1613,10 +1612,8 @@ static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 	struct hns_roce_cmq_desc desc[ALLOC_VF_RES_CMDQ_DESC_NUM];
 	struct hns_roce_vf_res_a *req_a;
 	struct hns_roce_vf_res_b *req_b;
-	int d;
 	int i;
 
-	d = is_d;
 	req_a = (struct hns_roce_vf_res_a *)desc[0].data;
 	req_b = (struct hns_roce_vf_res_b *)desc[1].data;
 	memset(req_a, 0, sizeof(*req_a));
@@ -1637,7 +1634,7 @@ static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 			roce_set_field(req_a->vf_qpc_bt_idx_num,
 				       VF_RES_A_DATA_1_VF_QPC_BT_NUM_M,
 				       VF_RES_A_DATA_1_VF_QPC_BT_NUM_S,
-				       HNS_ROCE_VF_QPC_BT_NUM(d));
+				       HNS_ROCE_VF_QPC_BT_NUM);
 
 			roce_set_field(req_a->vf_srqc_bt_idx_num,
 				       VF_RES_A_DATA_2_VF_SRQC_BT_IDX_M,
@@ -1645,7 +1642,7 @@ static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 			roce_set_field(req_a->vf_srqc_bt_idx_num,
 				       VF_RES_A_DATA_2_VF_SRQC_BT_NUM_M,
 				       VF_RES_A_DATA_2_VF_SRQC_BT_NUM_S,
-				       HNS_ROCE_VF_SRQC_BT_NUM(d));
+				       HNS_ROCE_VF_SRQC_BT_NUM);
 
 			roce_set_field(req_a->vf_cqc_bt_idx_num,
 				       VF_RES_A_DATA_3_VF_CQC_BT_IDX_M,
@@ -1653,7 +1650,7 @@ static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 			roce_set_field(req_a->vf_cqc_bt_idx_num,
 				       VF_RES_A_DATA_3_VF_CQC_BT_NUM_M,
 				       VF_RES_A_DATA_3_VF_CQC_BT_NUM_S,
-				       HNS_ROCE_VF_CQC_BT_NUM(d));
+				       HNS_ROCE_VF_CQC_BT_NUM);
 
 			roce_set_field(req_a->vf_mpt_bt_idx_num,
 				       VF_RES_A_DATA_4_VF_MPT_BT_IDX_M,
@@ -1661,7 +1658,7 @@ static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 			roce_set_field(req_a->vf_mpt_bt_idx_num,
 				       VF_RES_A_DATA_4_VF_MPT_BT_NUM_M,
 				       VF_RES_A_DATA_4_VF_MPT_BT_NUM_S,
-				       HNS_ROCE_VF_MPT_BT_NUM(d));
+				       HNS_ROCE_VF_MPT_BT_NUM);
 
 			roce_set_field(req_a->vf_eqc_bt_idx_num,
 				       VF_RES_A_DATA_5_VF_EQC_IDX_M,
@@ -1669,7 +1666,7 @@ static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 			roce_set_field(req_a->vf_eqc_bt_idx_num,
 				       VF_RES_A_DATA_5_VF_EQC_NUM_M,
 				       VF_RES_A_DATA_5_VF_EQC_NUM_S,
-				       HNS_ROCE_VF_EQC_NUM(d));
+				       HNS_ROCE_VF_EQC_NUM);
 		} else {
 			roce_set_field(req_b->vf_smac_idx_num,
 				       VF_RES_B_DATA_1_VF_SMAC_IDX_M,
@@ -1677,7 +1674,7 @@ static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 			roce_set_field(req_b->vf_smac_idx_num,
 				       VF_RES_B_DATA_1_VF_SMAC_NUM_M,
 				       VF_RES_B_DATA_1_VF_SMAC_NUM_S,
-				       HNS_ROCE_VF_SMAC_NUM(d));
+				       HNS_ROCE_VF_SMAC_NUM);
 
 			roce_set_field(req_b->vf_sgid_idx_num,
 				       VF_RES_B_DATA_2_VF_SGID_IDX_M,
@@ -1685,7 +1682,7 @@ static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 			roce_set_field(req_b->vf_sgid_idx_num,
 				       VF_RES_B_DATA_2_VF_SGID_NUM_M,
 				       VF_RES_B_DATA_2_VF_SGID_NUM_S,
-				       HNS_ROCE_VF_SGID_NUM(d));
+				       HNS_ROCE_VF_SGID_NUM);
 
 			roce_set_field(req_b->vf_qid_idx_sl_num,
 				       VF_RES_B_DATA_3_VF_QID_IDX_M,
@@ -1701,7 +1698,7 @@ static int hns_roce_alloc_vf_resource(struct hns_roce_dev *hr_dev)
 			roce_set_field(req_b->vf_sccc_idx_num,
 				       VF_RES_B_DATA_4_VF_SCCC_BT_NUM_M,
 				       VF_RES_B_DATA_4_VF_SCCC_BT_NUM_S,
-				       HNS_ROCE_VF_SCCC_BT_NUM(d));
+				       HNS_ROCE_VF_SCCC_BT_NUM);
 		}
 	}
 
@@ -1782,7 +1779,6 @@ static int hns_roce_v2_set_bt(struct hns_roce_dev *hr_dev)
 static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_caps *caps = &hr_dev->caps;
-	int d = is_d;
 	int ret;
 
 	ret = hns_roce_cmq_query_hw_info(hr_dev);
@@ -1861,7 +1857,7 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 	caps->num_uars		= HNS_ROCE_V2_UAR_NUM;
 	caps->phy_num_uars	= HNS_ROCE_V2_PHY_UAR_NUM;
 	caps->num_aeq_vectors	= HNS_ROCE_V2_AEQE_VEC_NUM;
-	caps->num_comp_vectors	= HNS_ROCE_V2_COMP_VEC_NUM(d);
+	caps->num_comp_vectors	= HNS_ROCE_V2_COMP_VEC_NUM;
 	caps->num_other_vectors	= HNS_ROCE_V2_ABNORMAL_VEC_NUM;
 	caps->num_mtpts		= HNS_ROCE_V2_MAX_MTPT_NUM;
 	caps->num_mtt_segs	= HNS_ROCE_V2_MAX_MTT_SEGS;
@@ -6928,7 +6924,6 @@ static int hns_roce_hw_v2_get_cfg(struct hns_roce_dev *hr_dev,
 				  struct hnae3_handle *handle)
 {
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
-	int d;
 	int i;
 
 	hr_dev->hw = &hns_roce_hw_v2;
@@ -6941,12 +6936,11 @@ static int hns_roce_hw_v2_get_cfg(struct hns_roce_dev *hr_dev,
 	hr_dev->caps.num_ports = 1;
 	hr_dev->iboe.netdevs[0] = handle->rinfo.netdev;
 	hr_dev->iboe.phy_port[0] = 0;
-	d = is_d;
 
 	addrconf_addr_eui48((u8 *)&hr_dev->ib_dev.node_guid,
 			    hr_dev->iboe.netdevs[0]->dev_addr);
 
-	for (i = 0; i < HNS_ROCE_V2_MAX_IRQ_NUM(d); i++)
+	for (i = 0; i < HNS_ROCE_V2_MAX_IRQ_NUM; i++)
 		hr_dev->irq[i] = pci_irq_vector(handle->pdev,
 						i + handle->rinfo.base_vector);
 
@@ -7267,8 +7261,6 @@ MODULE_AUTHOR("Huawei Tech. Co., Ltd.");
 MODULE_DESCRIPTION("Hisilicon Hip08 Family RoCE Driver");
 module_param(loopback, int, 0444);
 MODULE_PARM_DESC(loopback, "default: 0");
-module_param(is_d, int, 0444);
-MODULE_PARM_DESC(is_d, "default: 0");
 module_param(qp_lock, bool, 0444);
 MODULE_PARM_DESC(qp_lock, "default: true");
 module_param(cq_lock, bool, 0444);
