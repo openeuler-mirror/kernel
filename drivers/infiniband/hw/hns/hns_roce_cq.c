@@ -465,6 +465,8 @@ struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 	cq_entries = roundup_pow_of_two((unsigned int)cq_entries);
 	hr_cq->ib_cq.cqe = cq_entries - 1;
 	spin_lock_init(&hr_cq->lock);
+	INIT_LIST_HEAD(&hr_cq->sq_list);
+	INIT_LIST_HEAD(&hr_cq->rq_list);
 
 	if (context) {
 		ret = create_user_cq(hr_dev, hr_cq, context, udata, &resp, uar,

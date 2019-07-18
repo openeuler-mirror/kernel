@@ -770,6 +770,31 @@ static void hns_roce_free_recv_inline_buffer(struct hns_roce_qp *hr_qp)
 	kfree(hr_qp->rq_inl_buf.wqe_list);
 }
 
+static void hns_roce_add_cq_to_qp(struct hns_roce_dev *hr_dev,
+				  struct hns_roce_qp *hr_qp,
+				  struct ib_cq *send_cq, struct ib_cq *recv_cq)
+{
+	struct hns_roce_cq *hr_send_cq, *hr_recv_cq;
+	unsigned long flags;
+
+	if (hr_dev->hw_rev != HNS_ROCE_HW_VER1) {
+		hr_send_cq = send_cq ? to_hr_cq(send_cq) : NULL;
+		hr_recv_cq = recv_cq ? to_hr_cq(recv_cq) : NULL;
+
+		spin_lock_irqsave(&hr_dev->qp_lock, flags);
+		hns_roce_lock_cqs(hr_send_cq, hr_recv_cq);
+
+		list_add_tail(&hr_qp->qp_entry, &hr_dev->qp_list);
+		if (hr_send_cq)
+			list_add_tail(&hr_qp->scq_entry, &hr_send_cq->sq_list);
+		if (hr_recv_cq)
+			list_add_tail(&hr_qp->rcq_entry, &hr_recv_cq->rq_list);
+
+		hns_roce_unlock_cqs(hr_send_cq, hr_recv_cq);
+		spin_unlock_irqrestore(&hr_dev->qp_lock, flags);
+	}
+}
+
 static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 				     struct ib_pd *ib_pd,
 				     struct ib_qp_init_attr *init_attr,
@@ -1044,6 +1069,9 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 	}
 
 	hr_qp->event = hns_roce_ib_qp_event;
+	hns_roce_add_cq_to_qp(hr_dev, hr_qp, init_attr->send_cq,
+			      init_attr->recv_cq);
+
 	hns_roce_free_buf_list(buf_list, hr_qp->region_cnt);
 
 	return 0;

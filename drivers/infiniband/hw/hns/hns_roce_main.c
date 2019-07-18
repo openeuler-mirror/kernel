@@ -1325,6 +1325,55 @@ int hns_roce_reset(struct hns_roce_dev *hr_dev)
 	return 0;
 }
 
+static void hns_roce_find_armed_cq(struct list_head *cq_list, struct ib_cq *cq)
+{
+	struct hns_roce_cq *hr_cq = to_hr_cq(cq);
+	unsigned long flags;
+
+	spin_lock_irqsave(&hr_cq->lock, flags);
+	if (hr_cq->comp && cq->comp_handler) {
+		if (!hr_cq->comp_state) {
+			hr_cq->comp_state = 1;
+			list_add_tail(&hr_cq->comp_entry, cq_list);
+		}
+	}
+	spin_unlock_irqrestore(&hr_cq->lock, flags);
+}
+
+/*
+ * We need set device state before handle device err. So, sq/rq lock will be
+ * effect to return error or involve cq.
+ */
+void hns_roce_handle_device_err(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_qp *hr_qp;
+	struct hns_roce_cq *hr_cq;
+	struct list_head cq_list;
+	unsigned long flags_qp;
+	unsigned long flags;
+
+	INIT_LIST_HEAD(&cq_list);
+
+	spin_lock_irqsave(&hr_dev->qp_lock, flags);
+	list_for_each_entry(hr_qp, &hr_dev->qp_list, qp_entry) {
+		spin_lock_irqsave(&hr_qp->sq.lock, flags_qp);
+		if (hr_qp->sq.tail != hr_qp->sq.head)
+			hns_roce_find_armed_cq(&cq_list, hr_qp->ibqp.send_cq);
+		spin_unlock_irqrestore(&hr_qp->sq.lock, flags_qp);
+
+		spin_lock_irqsave(&hr_qp->rq.lock, flags_qp);
+		if ((!hr_qp->ibqp.srq) && (hr_qp->rq.tail != hr_qp->rq.head))
+			hns_roce_find_armed_cq(&cq_list, hr_qp->ibqp.recv_cq);
+		spin_unlock_irqrestore(&hr_qp->rq.lock, flags_qp);
+	}
+
+	list_for_each_entry(hr_cq, &cq_list, comp_entry)
+		hr_cq->comp(hr_cq);
+
+	spin_unlock_irqrestore(&hr_dev->qp_lock, flags);
+}
+EXPORT_SYMBOL_GPL(hns_roce_handle_device_err);
+
 int hns_roce_init(struct hns_roce_dev *hr_dev)
 {
 	int ret;
@@ -1391,6 +1440,9 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 		dev_err(dev, "Hw_init failed!\n");
 		goto error_failed_engine_init;
 	}
+
+	INIT_LIST_HEAD(&hr_dev->qp_list);
+	spin_lock_init(&hr_dev->qp_lock);
 
 	ret = hns_roce_register_device(hr_dev);
 	if (ret)

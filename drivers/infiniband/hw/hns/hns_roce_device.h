@@ -574,6 +574,10 @@ struct hns_roce_cq {
 	u32				vector;
 	atomic_t			refcount;
 	struct completion		free;
+	struct list_head		sq_list;
+	struct list_head		rq_list;
+	int				comp_state;
+	struct list_head		comp_entry;
 	u32				dfx_cnt[HNS_ROCE_CQ_DFX_TOTAL];
 };
 
@@ -706,6 +710,7 @@ struct hns_roce_cmdq {
 	 */
 	u8			use_events;
 	u8			toggle;
+	int			state;
 };
 
 struct hns_roce_cmd_mailbox {
@@ -788,6 +793,9 @@ struct hns_roce_qp {
 	u32			next_sge;
 
 	struct hns_roce_rinl_buf rq_inl_buf;
+	struct list_head	qp_entry;
+	struct list_head	rcq_entry;
+	struct list_head	scq_entry;
 	u32			dfx_cnt[HNS_ROCE_QP_DFX_TOTAL];
 };
 
@@ -1063,6 +1071,17 @@ struct hns_roce_dfx_hw {
 
 };
 
+enum {
+	HNS_ROCE_CMDQ_NORMAL,
+	HNS_ROCE_CMDQ_TIMEOUT,
+};
+
+enum hns_roce_device_state {
+	HNS_ROCE_DEVICE_STATE_INITED,
+	HNS_ROCE_DEVICE_STATE_RST_DOWN,
+	HNS_ROCE_DEVICE_STATE_UNINIT,
+};
+
 struct hns_roce_hw {
 	int (*reset)(struct hns_roce_dev *hr_dev, bool enable);
 	int (*cmq_init)(struct hns_roce_dev *hr_dev);
@@ -1168,6 +1187,9 @@ struct hns_roce_dev {
 	bool			dis_db;
 	unsigned long		reset_cnt;
 	struct hns_roce_ib_iboe iboe;
+	enum hns_roce_device_state state;
+	struct list_head	qp_list;
+	spinlock_t		qp_lock;
 
 	struct list_head        pgdir_list;
 	struct mutex            pgdir_mutex;
@@ -1461,6 +1483,7 @@ void hns_roce_cq_event(struct hns_roce_dev *hr_dev, u32 cqn, int event_type);
 void hns_roce_qp_event(struct hns_roce_dev *hr_dev, u32 qpn, int event_type);
 void hns_roce_srq_event(struct hns_roce_dev *hr_dev, u32 srqn, int event_type);
 int hns_get_gid_index(struct hns_roce_dev *hr_dev, u8 port, int gid_index);
+void hns_roce_handle_device_err(struct hns_roce_dev *hr_dev);
 int hns_roce_init(struct hns_roce_dev *hr_dev);
 void hns_roce_exit(struct hns_roce_dev *hr_dev);
 

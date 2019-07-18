@@ -374,10 +374,18 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 	}
 
 	v2_spin_lock_irqsave(qp_lock, &qp->sq.lock, &flags);
-	ind = qp->sq_next_wqe;
-	sge_ind = qp->next_sge;
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_POST_SEND);
 	rdfx_get_rdfx_qp(hr_dev, ibqp->qp_num);
+
+	if (hr_dev->state >= HNS_ROCE_DEVICE_STATE_RST_DOWN) {
+		*bad_wr = wr;
+		ret = -EIO;
+		nreq = 0;
+		goto out;
+	}
+
+	ind = qp->sq_next_wqe;
+	sge_ind = qp->next_sge;
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		if (hns_roce_wq_overflow(&qp->sq, nreq, qp->ibqp.send_cq)) {
@@ -749,6 +757,14 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 	int i;
 
 	v2_spin_lock_irqsave(qp_lock, &hr_qp->rq.lock, &flags);
+
+	if (hr_dev->state >= HNS_ROCE_DEVICE_STATE_RST_DOWN) {
+		*bad_wr = wr;
+		ret = -EIO;
+		nreq = 0;
+		goto out;
+	}
+
 	ind = hr_qp->rq.head & (hr_qp->rq.wqe_cnt - 1);
 
 	if (hr_qp->state == IB_QPS_RESET) {
@@ -2989,6 +3005,51 @@ static int hns_roce_handle_recv_inl_wqe(struct hns_roce_v2_cqe *cqe,
 	return 0;
 }
 
+static void sw_comp(struct hns_roce_qp *hr_qp, int num_entries,
+			 struct ib_wc *wc, int *npolled, struct hns_roce_wq *wq)
+{
+	unsigned int left;
+	int np;
+	int i;
+
+	left = wq->head - wq->tail;
+	np = *npolled;
+
+	if (left == 0)
+		return;
+
+	for (i = 0; i < left && np < num_entries; i++) {
+		wc->wr_id = wq->wrid[wq->tail & (wq->wqe_cnt - 1)];
+		wc->status = IB_WC_WR_FLUSH_ERR;
+		wc->vendor_err = 0;
+		wc->qp = &hr_qp->ibqp;
+		wq->tail++;
+		np++;
+		wc++;
+	}
+	*npolled = np;
+}
+
+static void hns_roce_v2_poll_sw_cq(struct hns_roce_cq *hr_cq, int num_entries,
+				   struct ib_wc *wc, int *npolled)
+{
+	struct hns_roce_qp *hr_qp;
+
+	*npolled = 0;
+
+	list_for_each_entry(hr_qp, &hr_cq->sq_list, scq_entry) {
+		sw_comp(hr_qp, num_entries, wc + *npolled, npolled, &hr_qp->sq);
+		if (*npolled >= num_entries)
+			return;
+	}
+
+	list_for_each_entry(hr_qp, &hr_cq->rq_list, rcq_entry) {
+		sw_comp(hr_qp, num_entries, wc + *npolled, npolled, &hr_qp->rq);
+		if (*npolled >= num_entries)
+			return;
+	}
+}
+
 static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 				struct hns_roce_qp **cur_qp, struct ib_wc *wc)
 {
@@ -3271,6 +3332,7 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 			       struct ib_wc *wc)
 {
+	struct hns_roce_dev *hr_dev = to_hr_dev(ibcq->device);
 	struct hns_roce_cq *hr_cq = to_hr_cq(ibcq);
 	struct hns_roce_qp *cur_qp = NULL;
 	unsigned long flags = 0;
@@ -3278,17 +3340,22 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 
 	v2_spin_lock_irqsave(cq_lock, &hr_cq->lock, &flags);
 
-	rdfx_func_cnt(to_hr_dev(ibcq->device), RDFX_FUNC_POLL_CQ);
-	rdfx_get_rdfx_cq(to_hr_dev(ibcq->device), hr_cq->cqn);
+	rdfx_func_cnt(hr_dev, RDFX_FUNC_POLL_CQ);
+	rdfx_get_rdfx_cq(hr_dev, hr_cq->cqn);
+
+	if (hr_dev->state == HNS_ROCE_DEVICE_STATE_UNINIT) {
+		hns_roce_v2_poll_sw_cq(hr_cq, num_entries, wc, &npolled);
+		goto out;
+	}
 
 	for (npolled = 0; npolled < num_entries; ++npolled) {
-		rdfx_cp_cqe_buf(to_hr_dev(ibcq->device), hr_cq,
+		rdfx_cp_cqe_buf(hr_dev, hr_cq,
 				get_sw_cqe_v2(hr_cq, hr_cq->cons_index));
 
 		if (hns_roce_v2_poll_one(hr_cq, &cur_qp, wc + npolled))
 			break;
 
-		rdfx_set_cqe_info(to_hr_dev(ibcq->device), hr_cq,
+		rdfx_set_cqe_info(hr_dev, hr_cq,
 				get_cqe_v2(hr_cq, (hr_cq->cons_index - 1) &
 						(hr_cq->ib_cq.cqe)));
 	}
@@ -3299,9 +3366,10 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 		hns_roce_v2_cq_set_ci(hr_cq, hr_cq->cons_index);
 	}
 
-	rdfx_set_rdfx_cq_ci(to_hr_dev(ibcq->device), hr_cq);
-	rdfx_put_rdfx_cq(to_hr_dev(ibcq->device), hr_cq->cqn);
+	rdfx_set_rdfx_cq_ci(hr_dev, hr_cq);
 
+out:
+	rdfx_put_rdfx_cq(hr_dev, hr_cq->cqn);
 	v2_spin_unlock_irqrestore(cq_lock, &hr_cq->lock, &flags);
 
 	return npolled;
@@ -3574,12 +3642,12 @@ static void hns_roce_get_cqs(struct ib_qp *ibqp, struct hns_roce_cq **send_cq,
 		*recv_cq = *send_cq;
 		break;
 	case IB_QPT_XRC_INI:
-		*send_cq = to_hr_cq(ibqp->send_cq);
+		*send_cq = ibqp->send_cq ? to_hr_cq(ibqp->send_cq) : NULL;
 		*recv_cq = *send_cq;
 		break;
 	default:
-		*send_cq = to_hr_cq(ibqp->send_cq);
-		*recv_cq = to_hr_cq(ibqp->recv_cq);
+		*send_cq = ibqp->send_cq ? to_hr_cq(ibqp->send_cq) : NULL;
+		*recv_cq = ibqp->recv_cq ? to_hr_cq(ibqp->recv_cq) : NULL;
 		break;
 	}
 }
@@ -5143,7 +5211,8 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_cq *send_cq, *recv_cq;
 	struct device *dev = hr_dev->dev;
-	int ret = 0;
+	unsigned long flags;
+	int ret;
 
 	if (hr_qp->ibqp.qp_type == IB_QPT_RC && hr_qp->state != IB_QPS_RESET) {
 		/* Modify qp to reset before destroying qp */
@@ -5157,8 +5226,14 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 
 	hns_roce_get_cqs(&hr_qp->ibqp, &send_cq, &recv_cq);
 
+	spin_lock_irqsave(&hr_dev->qp_lock, flags);
 	if (cq_lock)
 		hns_roce_lock_cqs(send_cq, recv_cq);
+	list_del(&hr_qp->qp_entry);
+	if (send_cq)
+		list_del(&hr_qp->scq_entry);
+	if (recv_cq)
+		list_del(&hr_qp->rcq_entry);
 
 	if (!is_user) {
 		__hns_roce_v2_cq_clean(recv_cq, hr_qp->qpn, hr_qp->ibqp.srq ?
@@ -5171,6 +5246,7 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 
 	if (cq_lock)
 		hns_roce_unlock_cqs(send_cq, recv_cq);
+	spin_unlock_irqrestore(&hr_dev->qp_lock, flags);
 
 	hns_roce_qp_free(hr_dev, hr_qp);
 
@@ -7006,6 +7082,9 @@ static void __hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
 		return;
 
 	handle->priv = NULL;
+
+	hr_dev->state = HNS_ROCE_DEVICE_STATE_UNINIT;
+
 	hns_roce_exit(hr_dev);
 	kfree(hr_dev->priv);
 	ib_dealloc_device(&hr_dev->ib_dev);
@@ -7140,7 +7219,6 @@ static void hns_roce_hw_v2_reset_notify_usr(struct hns_roce_dev *hr_dev)
 static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
 {
 	struct hns_roce_dev *hr_dev = (struct hns_roce_dev *)handle->priv;
-	struct ib_event event;
 
 	if (handle->rinfo.instance_state != HNS_ROCE_STATE_INITED) {
 		set_bit(HNS_ROCE_RST_DIRECT_RETURN, &handle->rinfo.state);
@@ -7158,10 +7236,8 @@ static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
 	hr_dev->dis_db = true;
 	hns_roce_hw_v2_reset_notify_usr(hr_dev);
 
-	event.event = IB_EVENT_DEVICE_FATAL;
-	event.device = &hr_dev->ib_dev;
-	event.element.port_num = 1;
-	ib_dispatch_event(&event);
+	hr_dev->state = HNS_ROCE_DEVICE_STATE_RST_DOWN;
+	hns_roce_handle_device_err(hr_dev);
 
 	return 0;
 }
