@@ -707,8 +707,8 @@ static int hclge_cmd_query_error(struct hclge_dev *hdev,
 static int hclge_check_imp_poison_err(struct hclge_dev *hdev)
 {
 	struct device *dev = &hdev->pdev->dev;
-	int ras_status;
 	int ret = false;
+	u32 ras_status;
 
 	ras_status = hclge_read_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG);
 	if (ras_status & HCLGE_RAS_IMP_RD_POISON_MASK) {
