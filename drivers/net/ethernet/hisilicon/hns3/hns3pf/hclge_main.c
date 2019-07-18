@@ -3413,7 +3413,7 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 	return ret;
 }
 
-static bool hclge_reset_err_handle(struct hclge_dev *hdev, bool is_timeout)
+static bool hclge_reset_err_handle(struct hclge_dev *hdev)
 {
 	struct hnae3_handle *handle = handle = &hdev->vport[0].nic;
 
@@ -3430,21 +3430,11 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev, bool is_timeout)
 		return false;
 	} else if (hdev->reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT) {
 		hdev->reset_fail_cnt++;
-
-		if (hdev->reset_type == HNAE3_IMP_RESET || is_timeout) {
-			set_bit(hdev->reset_type, &hdev->reset_pending);
-			dev_info(&hdev->pdev->dev,
-				 "re-schedule to wait for hw reset done\n");
-			return true;
-		}
-
-		dev_info(&hdev->pdev->dev, "Upgrade reset level\n");
-		hclge_clear_reset_cause(hdev);
-		set_bit(HNAE3_GLOBAL_RESET, &hdev->default_reset_request);
-		mod_timer(&hdev->reset_timer,
-			  jiffies + HCLGE_RESET_INTERVAL);
-
-		return false;
+		set_bit(hdev->reset_type, &hdev->reset_pending);
+		dev_info(&hdev->pdev->dev,
+			 "re-schedule reset task(%d)\n",
+			 hdev->reset_fail_cnt);
+		return true;
 	}
 
 	hclge_clear_reset_cause(hdev);
@@ -3514,7 +3504,6 @@ static void hclge_reset(struct hclge_dev *hdev)
 {
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
-	bool is_timeout = false;
 	int ret;
 
 	/* Initialize ae_dev reset status as well, in case enet layer wants to
@@ -3541,10 +3530,8 @@ static void hclge_reset(struct hclge_dev *hdev)
 	if (ret)
 		goto err_reset;
 
-	if (hclge_reset_wait(hdev)) {
-		is_timeout = true;
+	if (hclge_reset_wait(hdev))
 		goto err_reset;
-	}
 
 	hdev->rst_stats.reset_cnt++;
 
@@ -3599,7 +3586,7 @@ static void hclge_reset(struct hclge_dev *hdev)
 err_reset_lock:
 	rtnl_unlock();
 err_reset:
-	if (hclge_reset_err_handle(hdev, is_timeout))
+	if (hclge_reset_err_handle(hdev))
 		hclge_reset_task_schedule(hdev);
 }
 
