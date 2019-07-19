@@ -2965,7 +2965,7 @@ static irqreturn_t hclge_misc_irq_handle(int irq, void *data)
 
 	hclge_clear_event_cause(hdev, event_cause, clearval);
 
-	/* clear the source of interrupt if it is not cause by reset */
+	/* enable interrupt if it is not cause by reset */
 	if (!clearval ||
 	    event_cause == HCLGE_VECTOR0_EVENT_MBX) {
 		hclge_enable_vector(&hdev->misc_vector, true);
@@ -3309,23 +3309,20 @@ enum hnae3_reset_type hclge_get_reset_level(struct hnae3_ae_dev *ae_dev,
 
 static void hclge_clear_reset_cause(struct hclge_dev *hdev)
 {
-	bool irq_en = false;
 	u32 clearval = 0;
 
 	switch (hdev->reset_type) {
 	case HNAE3_IMP_RESET:
 		clearval = BIT(HCLGE_VECTOR0_IMPRESET_INT_B);
-		irq_en = true;
 		break;
 	case HNAE3_GLOBAL_RESET:
 		clearval = BIT(HCLGE_VECTOR0_GLOBALRESET_INT_B);
-		irq_en = true;
 		break;
 	default:
 		break;
 	}
 
-	if (!irq_en)
+	if (!clearval)
 		return;
 
 	/* For revision 0x20, the reset interrupt source
@@ -3473,7 +3470,7 @@ static int hclge_reset_prepare_up(struct hclge_dev *hdev)
 	case HNAE3_GLOBAL_RESET:
 		/* fall through */
 	case HNAE3_IMP_RESET:
-		hclge_set_rst_done(hdev);
+		ret = hclge_set_rst_done(hdev);
 		break;
 	default:
 		break;

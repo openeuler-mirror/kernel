@@ -116,13 +116,6 @@ struct hclge_vf_rst_cmd {
 	u8 rsv[22];
 };
 
-struct hclge_pf_rst_done_cmd {
-	u8 pf_rst_done;
-	u8 rsv[23];
-};
-
-#define HCLGE_PF_RESET_DONE_BIT		BIT(0)
-
 /* used by VF to store the received Async responses from PF */
 struct hclgevf_mbx_arq_ring {
 #define HCLGE_MBX_MAX_ARQ_MSG_SIZE	8

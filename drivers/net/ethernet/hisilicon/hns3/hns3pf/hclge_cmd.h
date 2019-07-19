@@ -910,6 +910,13 @@ struct hclge_reset_cmd {
 	u8 rsv[22];
 };
 
+#define HCLGE_PF_RESET_DONE_BIT		BIT(0)
+
+struct hclge_pf_rst_done_cmd {
+	u8 pf_rst_done;
+	u8 rsv[23];
+};
+
 #define HCLGE_CMD_SERDES_SERIAL_INNER_LOOP_B	BIT(0)
 #define HCLGE_CMD_SERDES_PARALLEL_INNER_LOOP_B	BIT(2)
 #define HCLGE_CMD_SERDES_DONE_B			BIT(0)
