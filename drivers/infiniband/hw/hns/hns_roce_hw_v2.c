@@ -6951,7 +6951,7 @@ static int hns_roce_hw_v2_get_cfg(struct hns_roce_dev *hr_dev,
 						i + handle->rinfo.base_vector);
 
 	/* cmd issue mode: 0 is poll, 1 is event */
-	hr_dev->cmd_mod = 1;
+	hr_dev->cmd_mod = 0;
 	hr_dev->loop_idc = loopback;
 
 	hr_dev->reset_cnt = handle->ae_algo->ops->ae_dev_reset_cnt(handle);
