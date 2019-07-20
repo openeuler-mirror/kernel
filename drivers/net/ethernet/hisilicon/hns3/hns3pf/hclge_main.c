@@ -2609,7 +2609,7 @@ void hclge_task_schedule(struct hclge_dev *hdev, unsigned long delay_time)
 		hdev->fd_arfs_expire_timer++;
 		mod_delayed_work_on(cpumask_first(&hdev->affinity_mask),
 				    system_wq, &hdev->service_task,
-				    round_jiffies_relative(delay_time));
+				    delay_time);
 	}
 }
 
@@ -2755,7 +2755,6 @@ static int hclge_get_sfp_info(struct hclge_dev *hdev, struct hclge_mac *mac)
 		return ret;
 	}
 
-	mac->speed_type = resp->query_type;
 	mac->speed = le32_to_cpu(resp->speed);
 	/* if resp->speed_ability is 0, it means it's an old version
 	 * firmware, do not update these params
@@ -3818,7 +3817,7 @@ static void hclge_service_task(struct work_struct *work)
 		hdev->fd_arfs_expire_timer = 0;
 	}
 
-	hclge_task_schedule(hdev, HZ);
+	hclge_task_schedule(hdev, round_jiffies_relative(HZ));
 }
 
 struct hclge_vport *hclge_get_vport(struct hnae3_handle *handle)
@@ -6525,7 +6524,7 @@ static void hclge_enable_timer_task(struct hnae3_handle *handle, bool enable)
 	struct hclge_dev *hdev = vport->back;
 
 	if (enable) {
-		hclge_task_schedule(hdev, HZ);
+		hclge_task_schedule(hdev, round_jiffies_relative(HZ));
 	} else {
 		/* Set the DOWN flag here to disable the service to be
 		 * scheduled again
@@ -6570,6 +6569,7 @@ static void hclge_ae_stop(struct hnae3_handle *handle)
 	if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) &&
 	    hdev->reset_type != HNAE3_FUNC_RESET) {
 		hclge_mac_stop_phy(hdev);
+		hclge_update_link_status(hdev);
 		return;
 	}
 
@@ -6585,8 +6585,7 @@ static void hclge_ae_stop(struct hnae3_handle *handle)
 	/* reset tqp stats */
 	hclge_reset_tqp_stats(handle);
 
-	if (!test_bit(HCLGE_STATE_LINK_CHANGE_REPORT_EN, &hdev->state))
-		hclge_update_link_status(hdev);
+	hclge_update_link_status(hdev);
 }
 
 int hclge_vport_start(struct hclge_vport *vport)

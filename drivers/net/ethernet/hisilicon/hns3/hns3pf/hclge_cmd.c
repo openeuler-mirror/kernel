@@ -403,6 +403,7 @@ err_csq:
 	return ret;
 }
 
+/* ask the firmware to enable some features, driver can work without it. */
 static int hclge_firmware_compat_config(struct hclge_dev *hdev)
 {
 	struct hclge_firmware_compat_cmd *req;
@@ -466,10 +467,10 @@ int hclge_cmd_init(struct hclge_dev *hdev)
 	/* ask the firmware to enable some features, driver can work without
 	 * it.
 	 */
-	clear_bit(HCLGE_STATE_LINK_CHANGE_REPORT_EN, &hdev->state);
 	ret = hclge_firmware_compat_config(hdev);
-	if (!ret)
-		set_bit(HCLGE_STATE_LINK_CHANGE_REPORT_EN, &hdev->state);
+	if (ret)
+		dev_warn(&hdev->pdev->dev,
+			 "Firmware compatible features are not enabled.\n");
 
 	return 0;
 
