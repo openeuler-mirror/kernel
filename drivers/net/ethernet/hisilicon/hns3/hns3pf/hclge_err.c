@@ -1142,6 +1142,9 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 				&hclge_cmdq_nic_mem_ecc_int[0], status,
 				&ae_dev->hw_err_reset_req);
 
+	if ((le32_to_cpu(desc[0].data[2])) & BIT(0))
+		dev_warn(dev, "imp_rd_data_poison_err found\n");
+
 	status = le32_to_cpu(desc[0].data[3]);
 	if (status)
 		hclge_log_error(dev, "TQP_INT_ECC_INT_STS",
