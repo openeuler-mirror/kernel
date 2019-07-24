@@ -33,6 +33,12 @@
 #define hns3_set_field(origin, shift, val)	((origin) |= ((val) << (shift)))
 #define hns3_tx_bd_count(S)		DIV_ROUND_UP(S, HNS3_MAX_BD_SIZE)
 
+#define hns3_rl_err(fmt, ...)						\
+	do {								\
+		if (net_ratelimit())					\
+			netdev_err(fmt, ##__VA_ARGS__);			\
+	} while (0)
+
 static void hns3_clear_all_ring(struct hnae3_handle *h, bool force);
 static void hns3_remove_hw_addr(struct net_device *netdev);
 
@@ -1050,6 +1056,9 @@ static int hns3_fill_skb_desc(struct hns3_enet_ring *ring,
 
 	ret = hns3_handle_vtags(ring, skb);
 	if (unlikely(ret < 0)) {
+		u64_stats_update_begin(&ring->syncp);
+		ring->stats.tx_vlan_err++;
+		u64_stats_update_end(&ring->syncp);
 		return ret;
 	} else if (ret == HNS3_INNER_VLAN_TAG) {
 		inner_vtag = skb_vlan_tag_get(skb);
@@ -1070,19 +1079,31 @@ static int hns3_fill_skb_desc(struct hns3_enet_ring *ring,
 		skb_reset_mac_len(skb);
 
 		ret = hns3_get_l4_protocol(skb, &ol4_proto, &il4_proto);
-		if (unlikely(ret))
+		if (unlikely(ret)) {
+			u64_stats_update_begin(&ring->syncp);
+			ring->stats.tx_l4_proto_err++;
+			u64_stats_update_end(&ring->syncp);
 			return ret;
+		}
 
 		ret = hns3_set_l2l3l4(skb, ol4_proto, il4_proto,
 				      &type_cs_vlan_tso,
 				      &ol_type_vlan_len_msec);
-		if (unlikely(ret))
+		if (unlikely(ret)) {
+			u64_stats_update_begin(&ring->syncp);
+			ring->stats.tx_l2l3l4_err++;
+			u64_stats_update_end(&ring->syncp);
 			return ret;
+		}
 
 		ret = hns3_set_tso(skb, &paylen, &mss,
 				   &type_cs_vlan_tso);
-		if (unlikely(ret))
+		if (unlikely(ret)) {
+			u64_stats_update_begin(&ring->syncp);
+			ring->stats.tx_tso_err++;
+			u64_stats_update_end(&ring->syncp);
 			return ret;
+		}
 	}
 
 	/* Set txbd */
@@ -1124,7 +1145,9 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 	}
 
 	if (unlikely(dma_mapping_error(dev, dma))) {
+		u64_stats_update_begin(&ring->syncp);
 		ring->stats.sw_err_cnt++;
+		u64_stats_update_end(&ring->syncp);
 		return -ENOMEM;
 	}
 
@@ -1355,9 +1378,7 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 			u64_stats_update_end(&ring->syncp);
 		}
 
-		if (net_ratelimit())
-			netdev_err(netdev, "xmit error: %d!\n", buf_num);
-
+		hns3_rl_err(netdev, "xmit error: %d!\n", buf_num);
 		goto out_err_tx_ok;
 	}
 
@@ -1534,7 +1555,15 @@ static struct rtnl_link_stats64 *hns3_nic_get_stats64(struct net_device *netdev,
 			tx_bytes += ring->stats.tx_bytes;
 			tx_pkts += ring->stats.tx_pkts;
 			tx_drop += ring->stats.sw_err_cnt;
+			tx_drop += ring->stats.tx_vlan_err;
+			tx_drop += ring->stats.tx_l4_proto_err;
+			tx_drop += ring->stats.tx_l2l3l4_err;
+			tx_drop += ring->stats.tx_tso_err;
 			tx_errors += ring->stats.sw_err_cnt;
+			tx_errors += ring->stats.tx_vlan_err;
+			tx_errors += ring->stats.tx_l4_proto_err;
+			tx_errors += ring->stats.tx_l2l3l4_err;
+			tx_errors += ring->stats.tx_tso_err;
 		} while (u64_stats_fetch_retry_irq(&ring->syncp, start));
 
 		/* fetch the rx stats */
@@ -2448,8 +2477,9 @@ static void hns3_nic_alloc_rx_buffers(struct hns3_enet_ring *ring,
 				ring->stats.sw_err_cnt++;
 				u64_stats_update_end(&ring->syncp);
 
-				netdev_err(ring->tqp->handle->kinfo.netdev,
-					   "hnae reserve buffer map failed.\n");
+				hns3_rl_err(ring->tqp_vector->napi.dev,
+					    "alloc rx buffer failed: %d\n",
+					    ret);
 				break;
 			}
 			hns3_replace_buffer(ring, ring->next_to_use, &res_cbs);
@@ -2534,9 +2564,9 @@ static int hns3_gro_complete(struct sk_buff *skb, u32 l234info)
 		th->check = ~tcp_v6_check(skb->len - depth, &iph->saddr,
 					  &iph->daddr, 0);
 	} else {
-		netdev_err(skb->dev,
-			   "Error: FW GRO supports only IPv4/IPv6, not 0x%04x, depth: %d\n",
-			   be16_to_cpu(type), depth);
+		hns3_rl_err(skb->dev,
+			    "Error: FW GRO supports only IPv4/IPv6, not 0x%04x, depth: %d\n",
+			    be16_to_cpu(type), depth);
 		return -EFAULT;
 	}
 
@@ -2683,7 +2713,7 @@ static int hns3_alloc_skb(struct hns3_enet_ring *ring, unsigned int length,
 	ring->skb = napi_alloc_skb(&ring->tqp_vector->napi, HNS3_RX_HEAD_SIZE);
 	skb = ring->skb;
 	if (unlikely(!skb)) {
-		netdev_err(netdev, "alloc rx skb fail\n");
+		hns3_rl_err(netdev, "alloc rx skb fail\n");
 
 		u64_stats_update_begin(&ring->syncp);
 		ring->stats.sw_err_cnt++;
@@ -2759,8 +2789,8 @@ static int hns3_add_frag(struct hns3_enet_ring *ring, struct hns3_desc *desc,
 			new_skb = napi_alloc_skb(&ring->tqp_vector->napi,
 						 HNS3_RX_HEAD_SIZE);
 			if (unlikely(!new_skb)) {
-				netdev_err(ring->tqp->handle->kinfo.netdev,
-					   "alloc rx skb frag fail\n");
+				hns3_rl_err(ring->tqp_vector->napi.dev,
+					    "alloc rx fraglist skb fail\n");
 				return -ENXIO;
 			}
 			ring->frag_num = 0;
