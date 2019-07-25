@@ -113,7 +113,7 @@ static void hclge_cmd_config_regs(struct hclge_cmq_ring *ring)
 		hclge_write_dev(hw, HCLGE_NIC_CSQ_BASEADDR_H_REG,
 				upper_32_bits(dma));
 		reg_val = hclge_read_dev(hw, HCLGE_NIC_CSQ_DEPTH_REG);
-		reg_val &= HCLGE_NIC_CMQ_ENABLE;
+		reg_val &= HCLGE_NIC_SW_RST_RDY;
 		reg_val |= ring->desc_num >> HCLGE_NIC_CMQ_DESC_NUM_S;
 		hclge_write_dev(hw, HCLGE_NIC_CSQ_DEPTH_REG, reg_val);
 		hclge_write_dev(hw, HCLGE_NIC_CSQ_HEAD_REG, 0);

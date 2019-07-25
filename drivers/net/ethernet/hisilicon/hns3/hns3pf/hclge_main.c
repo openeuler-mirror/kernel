@@ -3351,6 +3351,19 @@ static int hclge_reset_prepare_down(struct hclge_dev *hdev)
 	return ret;
 }
 
+static void hclge_reset_handshake(struct hclge_dev *hdev, bool enable)
+{
+	u32 reg_val;
+
+	reg_val = hclge_read_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG);
+	if (enable)
+		reg_val |= HCLGE_NIC_SW_RST_RDY;
+	else
+		reg_val &= ~HCLGE_NIC_SW_RST_RDY;
+
+	hclge_write_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG, reg_val);
+}
+
 static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 {
 #define HCLGE_RESET_SYNC_TIME 100
@@ -3402,8 +3415,7 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 
 	/* inform hardware that preparatory work is done */
 	msleep(HCLGE_RESET_SYNC_TIME);
-	hclge_write_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG,
-			HCLGE_NIC_CMQ_ENABLE);
+	hclge_reset_handshake(hdev, true);
 	dev_info(&hdev->pdev->dev, "prepare wait ok\n");
 
 	return ret;
@@ -3434,8 +3446,9 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev)
 	}
 
 	hclge_clear_reset_cause(hdev);
-	hclge_write_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG,
-			HCLGE_NIC_CMQ_ENABLE);
+
+	/* recover the handshake status when reset fail */
+	hclge_reset_handshake(hdev, true);
 
 	if (handle && handle->ae_algo->ops->reset_done)
 		handle->ae_algo->ops->reset_done(handle, false);
@@ -3457,7 +3470,6 @@ static int hclge_set_rst_done(struct hclge_dev *hdev)
 
 static int hclge_reset_prepare_up(struct hclge_dev *hdev)
 {
-	u32 reg_val;
 	int ret = 0;
 
 	switch (hdev->reset_type) {
@@ -3475,10 +3487,8 @@ static int hclge_reset_prepare_up(struct hclge_dev *hdev)
 		break;
 	}
 
-	/* clear handshake status with IMP */
-	reg_val = hclge_read_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG) &
-		  ~HCLGE_NIC_CMQ_ENABLE;
-	hclge_write_dev(&hdev->hw, HCLGE_NIC_CSQ_DEPTH_REG, reg_val);
+	/* clear up the handshake status after re-initialize done */
+	hclge_reset_handshake(hdev, false);
 
 	return ret;
 }

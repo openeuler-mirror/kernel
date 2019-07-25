@@ -1408,9 +1408,22 @@ static int hclgevf_reset_wait(struct hclgevf_dev *hdev)
 	return 0;
 }
 
-static int hclgevf_reset_stack(struct hclgevf_dev *hdev)
+static void hclgevf_reset_handshake(struct hclgevf_dev *hdev, bool enable)
 {
 	u32 reg_val;
+
+	reg_val = hclgevf_read_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG);
+	if (enable)
+		reg_val |= HCLGEVF_NIC_SW_RST_RDY;
+	else
+		reg_val &= ~HCLGEVF_NIC_SW_RST_RDY;
+
+	hclgevf_write_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG,
+			  reg_val);
+}
+
+static int hclgevf_reset_stack(struct hclgevf_dev *hdev)
+{
 	int ret;
 
 	/* uninitialize the nic client */
@@ -1436,9 +1449,7 @@ static int hclgevf_reset_stack(struct hclgevf_dev *hdev)
 		return ret;
 
 	/* clear handshake status with IMP */
-	reg_val = hclgevf_read_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG) &
-		  ~HCLGEVF_NIC_CMQ_ENABLE;
-	hclgevf_write_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG, reg_val);
+	hclgevf_reset_handshake(hdev, false);
 
 	return 0;
 }
@@ -1466,8 +1477,7 @@ static int hclgevf_reset_prepare_wait(struct hclgevf_dev *hdev)
 	set_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state);
 	/* imform hardware that preparatory work is done */
 	msleep(HCLGEVF_RESET_SYNC_TIME);
-	hclgevf_write_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG,
-			  HCLGEVF_NIC_CMQ_ENABLE);
+	hclgevf_reset_handshake(hdev, true);
 	dev_info(&hdev->pdev->dev, "prepare reset(%d) wait done, ret:%d\n",
 		 hdev->reset_type, ret);
 
@@ -1477,8 +1487,7 @@ static int hclgevf_reset_prepare_wait(struct hclgevf_dev *hdev)
 static void hclgevf_reset_err_handle(struct hclgevf_dev *hdev)
 {
 	/* recover handshake status with IMP when reset fail */
-	hclgevf_write_dev(&hdev->hw, HCLGEVF_NIC_CSQ_DEPTH_REG,
-			  HCLGEVF_NIC_CMQ_ENABLE);
+	hclgevf_reset_handshake(hdev, true);
 	hdev->rst_stats.rst_fail_cnt++;
 	dev_err(&hdev->pdev->dev, "failed to reset VF(%d)\n",
 		hdev->rst_stats.rst_fail_cnt);
