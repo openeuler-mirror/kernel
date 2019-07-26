@@ -200,6 +200,10 @@ enum flag_bits {
 				 * it didn't fail, so don't use FailFast
 				 * any more for metadata
 				 */
+	WantRemove,		/* Before set conf->mirrors[i] as NULL,
+				 * we set the bit first, avoiding access the
+				 * conf->mirrors[i] after it set NULL.
+				 */
 };
 
 static inline int is_badblock(struct md_rdev *rdev, sector_t s, int sectors,
