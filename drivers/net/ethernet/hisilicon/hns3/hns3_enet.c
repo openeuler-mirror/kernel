@@ -1298,10 +1298,10 @@ static int hns3_nic_maybe_stop_tx(struct hns3_enet_ring *ring,
 		dev_kfree_skb_any(skb);
 		*out_skb = new_skb;
 
-		bd_num = hns3_nic_bd_num(skb);
-		if ((skb_is_gso(skb) && bd_num > HNS3_MAX_BD_NUM_TSO) ||
-		    (!skb_is_gso(skb) && bd_num > HNS3_MAX_BD_NUM_NORMAL)) {
-			trace_hns3_over_8bd(skb);
+		bd_num = hns3_nic_bd_num(new_skb);
+		if ((skb_is_gso(new_skb) && bd_num > HNS3_MAX_BD_NUM_TSO) ||
+		    (!skb_is_gso(new_skb) && bd_num > HNS3_MAX_BD_NUM_NORMAL)) {
+			trace_hns3_over_8bd(new_skb);
 			return -ENOMEM;
 		}
 
