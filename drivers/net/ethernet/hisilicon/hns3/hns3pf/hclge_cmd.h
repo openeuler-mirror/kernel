@@ -228,6 +228,9 @@ enum hclge_opcode_type {
 	HCLGE_OPC_MAC_ETHTYPE_ADD	    = 0x1010,
 	HCLGE_OPC_MAC_ETHTYPE_REMOVE	= 0x1011,
 
+	/* MAC VLAN commands */
+	HCLGE_OPC_MAC_VLAN_SWITCH_PARAM	= 0x1033,
+
 	/* VLAN commands */
 	HCLGE_OPC_VLAN_FILTER_CTRL	    = 0x1100,
 	HCLGE_OPC_VLAN_FILTER_PF_CFG	= 0x1101,
@@ -810,6 +813,19 @@ struct hclge_vlan_filter_vf_cfg_cmd {
 	u8  vlan_cfg;
 	u8  rsv1[3];
 	u8  vf_bitmap[HCLGE_MAX_VF_BYTES];
+};
+
+struct hclge_mac_vlan_switch_cmd {
+	u8 roce_sel;
+	u8 rsv1[3];
+	__le32 func_id;
+	u8 swich_param;
+	u8 rsv2[15];
+};
+
+enum hclge_mac_vlan_cfg_sel {
+	HCLGE_MAC_VLAN_NIC_SEL = 0,
+	HCLGE_MAC_VLAN_ROCE_SEL,
 };
 
 #define HCLGE_ACCEPT_TAG1_B		0

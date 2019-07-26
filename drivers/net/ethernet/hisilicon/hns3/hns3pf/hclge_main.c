@@ -3712,6 +3712,42 @@ void hclge_handle_imp_error(struct hnae3_handle *handle)
 	}
 }
 
+static int hclge_config_ssu_loopback(struct hnae3_handle *handle,
+				     bool enable)
+{
+#define HCLGE_ALLOW_LOOPBACK_PKTS 0x2
+
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_mac_vlan_switch_cmd *req;
+	struct hclge_dev *hdev = vport->back;
+	struct hclge_desc desc;
+	int ret;
+
+	req = (struct hclge_mac_vlan_switch_cmd *)desc.data;
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_MAC_VLAN_SWITCH_PARAM,
+				   true);
+	req->roce_sel = HCLGE_MAC_VLAN_NIC_SEL;
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"query mac vlan switch parameter fail, ret = %d\n",
+			ret);
+		return ret;
+	}
+
+	hclge_cmd_reuse_desc(&desc, false);
+	if (enable)
+		req->swich_param |= HCLGE_ALLOW_LOOPBACK_PKTS;
+	else
+		req->swich_param &= (~HCLGE_ALLOW_LOOPBACK_PKTS);
+
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret)
+		dev_err(&hdev->pdev->dev,
+			"set mac vlan switch parameter fail, ret = %d\n", ret);
+	return ret;
+}
+
 static void hclge_reset_subtask(struct hclge_dev *hdev)
 {
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
@@ -6494,6 +6530,17 @@ static int hclge_set_loopback(struct hnae3_handle *handle,
 	struct hclge_dev *hdev = vport->back;
 	int ret = 0;
 	int i;
+
+	/* Loopback can be enabled in three places: SSU, MAC, and serdes. By
+	 * default, SSU loopback is enabled, so if the SMAC and the DMAC are
+	 * the same, the packets are looped back in the SSU. If SSU loopback
+	 * is disabled, packets can reach MAC even if SMAC is the same as DMAC.
+	 */
+	if (hdev->pdev->revision >= 0x21) {
+		ret = hclge_config_ssu_loopback(handle, !en);
+		if (ret)
+			return ret;
+	}
 
 	switch (loop_mode) {
 	case HNAE3_LOOP_APP:
