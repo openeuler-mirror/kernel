@@ -3037,13 +3037,13 @@ static void hns_roce_v2_poll_sw_cq(struct hns_roce_cq *hr_cq, int num_entries,
 
 	*npolled = 0;
 
-	list_for_each_entry(hr_qp, &hr_cq->sq_list, scq_entry) {
+	list_for_each_entry(hr_qp, &hr_cq->sq_list, send_list) {
 		sw_comp(hr_qp, num_entries, wc + *npolled, npolled, &hr_qp->sq);
 		if (*npolled >= num_entries)
 			return;
 	}
 
-	list_for_each_entry(hr_qp, &hr_cq->rq_list, rcq_entry) {
+	list_for_each_entry(hr_qp, &hr_cq->rq_list, recv_list) {
 		sw_comp(hr_qp, num_entries, wc + *npolled, npolled, &hr_qp->rq);
 		if (*npolled >= num_entries)
 			return;
@@ -5229,11 +5229,11 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 	spin_lock_irqsave(&hr_dev->qp_lock, flags);
 	if (cq_lock)
 		hns_roce_lock_cqs(send_cq, recv_cq);
-	list_del(&hr_qp->qp_entry);
+	list_del(&hr_qp->list);
 	if (send_cq)
-		list_del(&hr_qp->scq_entry);
+		list_del(&hr_qp->send_list);
 	if (recv_cq)
-		list_del(&hr_qp->rcq_entry);
+		list_del(&hr_qp->recv_list);
 
 	if (!is_user) {
 		__hns_roce_v2_cq_clean(recv_cq, hr_qp->qpn, hr_qp->ibqp.srq ?

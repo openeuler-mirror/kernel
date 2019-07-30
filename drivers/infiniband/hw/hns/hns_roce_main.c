@@ -1334,7 +1334,7 @@ static void hns_roce_find_armed_cq(struct list_head *cq_list, struct ib_cq *cq)
 	if (hr_cq->comp && cq->comp_handler) {
 		if (!hr_cq->comp_state) {
 			hr_cq->comp_state = 1;
-			list_add_tail(&hr_cq->comp_entry, cq_list);
+			list_add_tail(&hr_cq->list, cq_list);
 		}
 	}
 	spin_unlock_irqrestore(&hr_cq->lock, flags);
@@ -1355,7 +1355,7 @@ void hns_roce_handle_device_err(struct hns_roce_dev *hr_dev)
 	INIT_LIST_HEAD(&cq_list);
 
 	spin_lock_irqsave(&hr_dev->qp_lock, flags);
-	list_for_each_entry(hr_qp, &hr_dev->qp_list, qp_entry) {
+	list_for_each_entry(hr_qp, &hr_dev->qp_list, list) {
 		spin_lock_irqsave(&hr_qp->sq.lock, flags_qp);
 		if (hr_qp->sq.tail != hr_qp->sq.head)
 			hns_roce_find_armed_cq(&cq_list, hr_qp->ibqp.send_cq);
@@ -1367,7 +1367,7 @@ void hns_roce_handle_device_err(struct hns_roce_dev *hr_dev)
 		spin_unlock_irqrestore(&hr_qp->rq.lock, flags_qp);
 	}
 
-	list_for_each_entry(hr_cq, &cq_list, comp_entry)
+	list_for_each_entry(hr_cq, &cq_list, list)
 		hr_cq->comp(hr_cq);
 
 	spin_unlock_irqrestore(&hr_dev->qp_lock, flags);

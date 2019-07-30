@@ -574,10 +574,10 @@ struct hns_roce_cq {
 	u32				vector;
 	atomic_t			refcount;
 	struct completion		free;
-	struct list_head		sq_list;
-	struct list_head		rq_list;
+	struct list_head		sq_list; /* list of all send cqs */
+	struct list_head		rq_list; /* list of all recv cqs */
 	int				comp_state;
-	struct list_head		comp_entry;
+	struct list_head		list; /* all armed cps are on a list */
 	u32				dfx_cnt[HNS_ROCE_CQ_DFX_TOTAL];
 };
 
@@ -793,9 +793,9 @@ struct hns_roce_qp {
 	u32			next_sge;
 
 	struct hns_roce_rinl_buf rq_inl_buf;
-	struct list_head	qp_entry;
-	struct list_head	rcq_entry;
-	struct list_head	scq_entry;
+	struct list_head	list;	/* all qps are on a list */
+	struct list_head	recv_list;	/* all recv cqs are on a list */
+	struct list_head	send_list;	/* all send cqs are on a list */
 	u32			dfx_cnt[HNS_ROCE_QP_DFX_TOTAL];
 };
 
@@ -1188,8 +1188,8 @@ struct hns_roce_dev {
 	unsigned long		reset_cnt;
 	struct hns_roce_ib_iboe iboe;
 	enum hns_roce_device_state state;
-	struct list_head	qp_list;
-	spinlock_t		qp_lock;
+	struct list_head	qp_list; /* list of all qps on this dev */
+	spinlock_t		qp_lock; /* protect qp_list */
 
 	struct list_head        pgdir_list;
 	struct mutex            pgdir_mutex;

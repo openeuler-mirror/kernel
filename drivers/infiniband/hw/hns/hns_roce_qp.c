@@ -784,11 +784,11 @@ static void hns_roce_add_cq_to_qp(struct hns_roce_dev *hr_dev,
 		spin_lock_irqsave(&hr_dev->qp_lock, flags);
 		hns_roce_lock_cqs(hr_send_cq, hr_recv_cq);
 
-		list_add_tail(&hr_qp->qp_entry, &hr_dev->qp_list);
+		list_add_tail(&hr_qp->list, &hr_dev->qp_list);
 		if (hr_send_cq)
-			list_add_tail(&hr_qp->scq_entry, &hr_send_cq->sq_list);
+			list_add_tail(&hr_qp->send_list, &hr_send_cq->sq_list);
 		if (hr_recv_cq)
-			list_add_tail(&hr_qp->rcq_entry, &hr_recv_cq->rq_list);
+			list_add_tail(&hr_qp->recv_list, &hr_recv_cq->rq_list);
 
 		hns_roce_unlock_cqs(hr_send_cq, hr_recv_cq);
 		spin_unlock_irqrestore(&hr_dev->qp_lock, flags);
