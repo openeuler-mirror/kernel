@@ -232,6 +232,7 @@ enum {
 	HNS_ROCE_CAP_FLAG_FRMR			= BIT(8),
 	HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL		= BIT(9),
 	HNS_ROCE_CAP_FLAG_ATOMIC		= BIT(10),
+	HNS_ROCE_CAP_FLAG_UD			= BIT(11),
 };
 
 enum hns_roce_mtt_type {
@@ -668,7 +669,7 @@ struct hns_roce_av {
 	u8          dgid[HNS_ROCE_GID_SIZE];
 	u8          mac[ETH_ALEN];
 	__le16      vlan;
-	bool	    vlan_en;
+	u8	    vlan_en;
 };
 
 struct hns_roce_ah {

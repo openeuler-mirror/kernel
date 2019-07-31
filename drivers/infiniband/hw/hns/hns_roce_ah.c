@@ -32,6 +32,7 @@
 #include "roce_k_compat.h"
 
 #include <linux/platform_device.h>
+#include <rdma/hns-abi.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_cache.h>
 #include "hns_roce_device.h"
@@ -45,9 +46,11 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 				 struct ib_udata *udata)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibpd->device);
+	struct hns_roce_ib_create_ah_resp resp = {};
 	struct device *dev = hr_dev->dev;
 #ifdef CONFIG_KERNEL_419
 	const struct ib_gid_attr *gid_attr;
+	int ret = 0;
 #else
 	struct ib_gid_attr gid_attr;
 	union ib_gid sgid;
@@ -57,7 +60,7 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 	u16 vlan_tag = 0xffff;
 	struct in6_addr in6;
 	const struct ib_global_route *grh = rdma_ah_read_grh(ah_attr);
-	bool vlan_en = false;
+	u8 vlan_en = 0;
 
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_CREATE_AH);
 
@@ -84,7 +87,7 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 		gid_attr = ah_attr->grh.sgid_attr;
 		if (is_vlan_dev(gid_attr->ndev)) {
 			vlan_tag = vlan_dev_vlan_id(gid_attr->ndev);
-			vlan_en = true;
+			vlan_en = 1;
 		}
 #else
 		/* Get source gid */
@@ -100,7 +103,7 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 		if (gid_attr.ndev) {
 			if (is_vlan_dev(gid_attr.ndev)) {
 				vlan_tag = vlan_dev_vlan_id(gid_attr.ndev);
-				vlan_en = true;
+				vlan_en = 1;
 			}
 			dev_put(gid_attr.ndev);
 		}
@@ -132,6 +135,18 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 					    HNS_ROCE_TCLASS_SHIFT) |
 					    grh->flow_label);
 		ah->av.hop_limit = grh->hop_limit;
+	}
+
+	if (udata) {
+		memcpy(resp.dmac, ah_attr->roce.dmac, ETH_ALEN);
+		resp.vlan = vlan_tag;
+		resp.vlan_en = vlan_en;
+		ret = ib_copy_to_udata(udata, &resp,
+				       min(udata->outlen, sizeof(resp)));
+		if (ret) {
+			kfree(ah);
+			return ERR_PTR(ret);
+		}
 	}
 
 	return &ah->ibah;

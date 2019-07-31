@@ -1961,7 +1961,8 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 		caps->flags |= (HNS_ROCE_CAP_FLAG_XRC | HNS_ROCE_CAP_FLAG_SRQ |
 				HNS_ROCE_CAP_FLAG_MW |
 				HNS_ROCE_CAP_FLAG_FRMR |
-				HNS_ROCE_CAP_FLAG_ATOMIC);
+				HNS_ROCE_CAP_FLAG_ATOMIC) |
+				HNS_ROCE_CAP_FLAG_UD;
 		caps->num_qpc_timer	  = HNS_ROCE_V2_MAX_QPC_TIMER_NUM;
 		caps->num_cqc_timer	  = HNS_ROCE_V2_MAX_CQC_TIMER_NUM;
 		caps->qpc_timer_entry_sz  = HNS_ROCE_V2_QPC_TIMER_ENTRY_SZ;
