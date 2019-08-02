@@ -5308,7 +5308,7 @@ static int hns_roce_v2_destroy_qp(struct ib_qp *ibqp)
 	else
 		kfree(hr_qp);
 
-	return ret;
+	return 0;
 }
 
 static int hns_roce_v2_qp_flow_control_init(struct hns_roce_dev *hr_dev,
