@@ -242,6 +242,9 @@ int hclge_mac_connect_phy(struct hnae3_handle *handle)
 	 */
 	phydev->advertising &= ~ADVERTISED_Asym_Pause;
 #endif
+
+	phy_attached_info(phydev);
+
 	return 0;
 }
 
