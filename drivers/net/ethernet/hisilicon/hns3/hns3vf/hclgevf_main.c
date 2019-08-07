@@ -1896,7 +1896,19 @@ static enum hclgevf_evt_cause hclgevf_check_evt_cause(struct hclgevf_dev *hdev,
 
 	/* check for vector0 mailbox(=CMDQ RX) event source */
 	if (BIT(HCLGEVF_VECTOR0_RX_CMDQ_INT_B) & cmdq_stat_reg) {
-		*clearval = ~(1U << HCLGEVF_VECTOR0_RX_CMDQ_INT_B);
+		/* for revision 0x21, clearing interrupt is writing bit 0
+		 * to the clear register, writing bit 1 means to keep the
+		 * old value.
+		 * for revision 0x20, the clear register is a read & write
+		 * register, so we should just write 0 to the bit we are
+		 * handling, and keep other bits as cmdq_stat_reg.
+		 */
+		if (hdev->pdev->revision >= 0x21)
+			*clearval = ~(1U << HCLGEVF_VECTOR0_RX_CMDQ_INT_B);
+		else
+			*clearval = cmdq_stat_reg &
+				    ~BIT(HCLGEVF_VECTOR0_RX_CMDQ_INT_B);
+
 		return HCLGEVF_VECTOR0_EVENT_MBX;
 	}
 
