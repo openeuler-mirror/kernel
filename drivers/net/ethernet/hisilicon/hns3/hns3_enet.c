@@ -1212,7 +1212,7 @@ static unsigned int hns3_nic_bd_num(struct sk_buff *skb)
 
 	/* if the total len is within the max bd limit */
 	if (likely(skb->len <= HNS3_MAX_BD_SIZE))
-		return skb_shinfo(skb)->nr_frags + 1;
+		return (unsigned int)(skb_shinfo(skb)->nr_frags + 1);
 
 	bd_num = hns3_tx_bd_count(skb_headlen(skb));
 
