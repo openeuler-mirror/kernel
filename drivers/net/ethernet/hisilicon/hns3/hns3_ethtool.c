@@ -1390,6 +1390,7 @@ static const struct ethtool_ops hns3vf_ethtool_ops = {
 	.get_strings = hns3_get_strings,
 	.get_ethtool_stats = hns3_get_stats,
 	.get_sset_count = hns3_get_sset_count,
+	.set_channels = hns3_set_channels,
 	.get_channels = hns3_get_channels,
 	.get_rxnfc = hns3_get_rxnfc,
 	.set_rxnfc = hns3_set_rxnfc,
