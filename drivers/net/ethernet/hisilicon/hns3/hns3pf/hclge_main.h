@@ -969,6 +969,8 @@ struct hclge_vport {
 
 	unsigned long state;
 	unsigned long last_active_jiffies;
+	int link_state;
+	u8 mac[ETH_ALEN];
 	int mps; /* Max packet size */
 
 	struct list_head uc_mac_list;   /* Store VF unicast table */

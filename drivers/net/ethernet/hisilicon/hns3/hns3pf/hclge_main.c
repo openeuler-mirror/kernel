@@ -1612,6 +1612,7 @@ static int hclge_alloc_vport(struct hclge_dev *hdev)
 	for (i = 0; i < num_vport; i++) {
 		vport->back = hdev;
 		vport->vport_id = i;
+		vport->link_state = IFLA_VF_LINK_STATE_AUTO;
 		vport->mps = HCLGE_MAC_DEFAULT_FRAME;
 		vport->port_base_vlan_cfg.state = HNAE3_PORT_BASE_VLAN_DISABLE;
 		vport->rxvlan_cfg.rx_vlan_offload_en = true;
@@ -2828,6 +2829,39 @@ static int hclge_get_status(struct hnae3_handle *handle)
 	hclge_update_link_status(hdev);
 
 	return hdev->hw.mac.link;
+}
+
+static int hclge_get_vf_config(struct hnae3_handle *handle, int vf,
+			       struct ifla_vf_info *ivf)
+{
+#define HCLGE_VF_VPORT_START_NUM	1
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+
+	if (vf < 0 || vf >= hdev->num_alloc_vport - HCLGE_VF_VPORT_START_NUM)
+		return -EINVAL;
+
+	/* vf start from 1 in vport */
+	vf += HCLGE_VF_VPORT_START_NUM;
+	ivf->vf = vf;
+	ivf->linkstate = hdev->vport[vf].link_state;
+	ether_addr_copy(ivf->mac, hdev->vport[vf].mac);
+
+	return 0;
+}
+
+static int hclge_set_vf_link_state(struct hnae3_handle *handle, int vf,
+				   int link_state)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+
+	if (vf <= 0 || vf >= hdev->num_alloc_vport)
+		return -EINVAL;
+
+	hdev->vport[vf].link_state = link_state;
+
+	return 0;
 }
 
 static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
@@ -10185,6 +10219,8 @@ struct hnae3_ae_ops hclge_ops = {
 	.restore_vlan_table = hclge_restore_vlan_table,
 	.reset_done = hclge_reset_done,
 	.handle_imp_error = hclge_handle_imp_error,
+	.get_vf_config = hclge_get_vf_config,
+	.set_vf_link_state = hclge_set_vf_link_state,
 };
 
 struct hnae3_ae_algo ae_algo = {

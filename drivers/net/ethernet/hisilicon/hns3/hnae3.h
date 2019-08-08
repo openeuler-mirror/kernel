@@ -533,6 +533,10 @@ struct hnae3_ae_ops {
 	int (*priv_ops)(struct hnae3_handle *handle, int opcode,
 			void *data, int length);
 #endif
+	int (*get_vf_config)(struct hnae3_handle *handle, int vf,
+			     struct ifla_vf_info *ivf);
+	int (*set_vf_link_state)(struct hnae3_handle *handle, int vf,
+				 int link_state);
 };
 
 struct hnae3_dcb_ops {
