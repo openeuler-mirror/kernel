@@ -822,12 +822,24 @@ struct hclge_vlan_filter_vf_cfg_cmd {
 	u8  vf_bitmap[HCLGE_MAX_VF_BYTES];
 };
 
+#define HCLGE_SWITCH_ANTI_SPOOF_B	0U
+#define HCLGE_SWITCH_ALW_LPBK_B		1U
+#define HCLGE_SWITCH_ALW_LCL_LPBK_B	2U
+#define HCLGE_SWITCH_ALW_DST_OVRD_B	3U
+#define HCLGE_SWITCH_NO_MASK		0x0
+#define HCLGE_SWITCH_ANTI_SPOOF_MASK	0x0E
+#define HCLGE_SWITCH_ALW_LPBK_MASK	0x0D
+#define HCLGE_SWITCH_ALW_LCL_LPBK_MASK	0x0B
+#define HCLGE_SWITCH_LW_DST_OVRD_MASK	0x07
+
 struct hclge_mac_vlan_switch_cmd {
 	u8 roce_sel;
 	u8 rsv1[3];
 	__le32 func_id;
-	u8 swich_param;
-	u8 rsv2[15];
+	u8 switch_param;
+	u8 rsv2[3];
+	u8 param_mask;
+	u8 rsv3[11];
 };
 
 enum hclge_mac_vlan_cfg_sel {
