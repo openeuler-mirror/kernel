@@ -32,8 +32,10 @@ struct hisi_sec_sqe_type1 {
 	__u32 c_mode:4;
 	__u32 c_alg:4;
 	__u32 rsvd4:12;
-	__u32 dw4;
-	__u32 dw5;
+	__u32 auth_gran_size:24;
+	__u32:8;
+	__u32 cipher_gran_size:24;
+	__u32:8;
 	__u32 auth_src_offset:16;
 	__u32 cipher_src_offset:16;
 	__u32 gran_num:16;
@@ -177,25 +179,40 @@ struct hisi_sec_sqe {
 	__u32 mac_addr_type:3;
 	__u32 rsvd0:8;
 	union {
-		struct hisi_sec_sqe_type1 type1;	/* storage sence */
-		struct hisi_sec_sqe_type2 type2;	/* the other sence */
+		struct hisi_sec_sqe_type1 type1;
+		struct hisi_sec_sqe_type2 type2;
 	};
 };
 
-enum C_MODE {
-	ECB = 0x0,
-	CBC = 0x1,
-	CTR = 0x4,
-	CCM = 0x5,
-	GCM = 0x6,
-	XTS = 0x7,
+enum C_ALG {
+	C_ALG_DES  = 0x0,
+	C_ALG_3DES = 0x1,
+	C_ALG_AES  = 0x2,
+	C_ALG_SM4  = 0x3,
 };
 
-enum C_ALG {
-	DES = 0x0,
-	TRIPLEDES = 0x1,
-	AES = 0x2,
-	SM4 = 0x3,
+enum C_MODE {
+	C_MODE_ECB    = 0x0,
+	C_MODE_CBC    = 0x1,
+	C_MODE_CTR    = 0x4,
+	C_MODE_CCM    = 0x5,
+	C_MODE_GCM    = 0x6,
+	C_MODE_XTS    = 0x7,
+	C_MODE_CBC_CS = 0x9,
+};
+
+enum CKEY_LEN {
+	CKEY_LEN_128_BIT = 0x0,
+	CKEY_LEN_192_BIT = 0x1,
+	CKEY_LEN_256_BIT = 0x2,
+	CKEY_LEN_DES     = 0x1,
+	CKEY_LEN_3DES_3KEY = 0x1,
+	CKEY_LEN_3DES_2KEY = 0x3,
+};
+
+enum {
+	BD_TYPE1 = 0x1,
+	BD_TYPE2 = 0x2,
 };
 
 #endif

@@ -32,12 +32,27 @@ enum hisi_sec_status {
 	HISI_SEC_RESET,
 };
 
+struct hisi_sec_dfx {
+	u64 send_cnt;
+	u64 recv_cnt;
+	u64 get_task_cnt;
+	u64 put_task_cnt;
+	u64 gran_task_cnt;
+	u64 thread_cnt;
+	u64 fake_busy_cnt;
+	u64 busy_comp_cnt;
+	u64 sec_ctrl;
+};
+
 struct hisi_sec {
 	struct hisi_qm qm;
 	struct list_head list;
+	struct hisi_sec_dfx sec_dfx;
 	struct hisi_sec_ctrl *ctrl;
 	struct dma_pool *sgl_pool;
 	int ctx_q_num;
+	int fusion_limit;
+	int fusion_tmout_usec;
 	unsigned long status;
 };
 
