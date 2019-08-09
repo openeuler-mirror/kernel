@@ -446,6 +446,10 @@ static void hisi_sec_cipher_ctx_exit(struct crypto_skcipher *tfm)
 		hisi_sec_release_qp_ctx(&ctx->qp_ctx[i]);
 
 	kfree(ctx->qp_ctx);
+
+	mutex_lock(ctx->sec->hisi_sec_list_lock);
+	ctx->sec->q_ref -= ctx->sec->ctx_q_num;
+	mutex_unlock(ctx->sec->hisi_sec_list_lock);
 }
 
 static void hisi_sec_req_cb(struct hisi_qp *qp, void *resp)

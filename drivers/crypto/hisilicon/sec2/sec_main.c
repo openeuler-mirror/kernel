@@ -100,28 +100,68 @@
 static const char hisi_sec_name[] = "hisi_sec";
 static atomic_t hisi_sec_ref = {0};
 static struct dentry *hsec_debugfs_root;
+static u32 pf_q_num = HSEC_PF_DEF_Q_NUM;
+static struct workqueue_struct *sec_wq;
+
 LIST_HEAD(hisi_sec_list);
 DEFINE_MUTEX(hisi_sec_list_lock);
 
-static struct workqueue_struct *sec_wq;
+struct hisi_sec_resource {
+	struct hisi_sec *hsec;
+	int distance;
+	struct list_head list;
+};
+
+static void free_list(struct list_head *head)
+{
+	struct hisi_sec_resource *res, *tmp;
+
+	list_for_each_entry_safe(res, tmp, head, list) {
+		list_del(&res->list);
+		kfree(res);
+	}
+}
 
 struct hisi_sec *find_sec_device(int node)
 {
 	struct hisi_sec *ret = NULL;
 #ifdef CONFIG_NUMA
+	struct hisi_sec_resource *res, *tmp;
 	struct hisi_sec *hisi_sec;
-	int min_distance = 100;
+	struct list_head *n;
 	struct device *dev;
+	LIST_HEAD(head);
 
 	mutex_lock(&hisi_sec_list_lock);
 
 	list_for_each_entry(hisi_sec, &hisi_sec_list, list) {
+		res = kzalloc(sizeof(*res), GFP_KERNEL);
+		if (!res)
+			goto err;
+
 		dev = &hisi_sec->qm.pdev->dev;
-		if (node_distance(dev->numa_node, node) < min_distance) {
-			ret = hisi_sec;
-			min_distance = node_distance(dev->numa_node, node);
+		res->hsec = hisi_sec;
+		res->distance = node_distance(dev->numa_node, node);
+
+		n = &head;
+		list_for_each_entry(tmp, &head, list) {
+			if (res->distance < tmp->distance) {
+				n = &tmp->list;
+				break;
+			}
+		}
+		list_add_tail(&res->list, n);
+	}
+
+	list_for_each_entry(tmp, &head, list) {
+		if (tmp->hsec->q_ref + tmp->hsec->ctx_q_num <= pf_q_num) {
+			tmp->hsec->q_ref += tmp->hsec->ctx_q_num;
+			ret = tmp->hsec;
+			break;
 		}
 	}
+
+	free_list(&head);
 #else
 	mutex_lock(&hisi_sec_list_lock);
 
@@ -130,6 +170,10 @@ struct hisi_sec *find_sec_device(int node)
 	mutex_unlock(&hisi_sec_list_lock);
 
 	return ret;
+
+err:
+	free_list(&head);
+	return NULL;
 }
 
 struct hisi_sec_hw_error {
@@ -267,7 +311,6 @@ static const struct kernel_param_ops uacce_mode_ops = {
 	.get = param_get_int,
 };
 
-static u32 pf_q_num = HSEC_PF_DEF_Q_NUM;
 module_param_cb(pf_q_num, &pf_q_num_ops, &pf_q_num, 0444);
 MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 0-4096, v2 0-1024)");
 
@@ -837,6 +880,8 @@ static int hisi_sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	pci_set_drvdata(pdev, hisi_sec);
 
 	hisi_sec_add_to_list(hisi_sec);
+
+	hisi_sec->hisi_sec_list_lock = &hisi_sec_list_lock;
 
 	hisi_sec->sgl_pool = acc_create_sgl_pool(&pdev->dev, "hsec-sgl");
 	if (!hisi_sec->sgl_pool)

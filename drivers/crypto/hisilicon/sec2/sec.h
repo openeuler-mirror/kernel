@@ -50,6 +50,8 @@ struct hisi_sec {
 	struct hisi_sec_dfx sec_dfx;
 	struct hisi_sec_ctrl *ctrl;
 	struct dma_pool *sgl_pool;
+	struct mutex *hisi_sec_list_lock;
+	int q_ref;
 	int ctx_q_num;
 	int fusion_limit;
 	int fusion_tmout_usec;
