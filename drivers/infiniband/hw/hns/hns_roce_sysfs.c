@@ -78,7 +78,7 @@ static ssize_t cqc_show(struct device *dev,
 
 	ret = hr_dev->dfx->query_cqc_stat(hr_dev, buf, &count);
 	if (ret) {
-		dev_err(dev, "pkt query failed");
+		dev_err(dev, "cqc query failed");
 		return -EBUSY;
 	}
 
@@ -112,7 +112,7 @@ static ssize_t pkt_show(struct device *dev,
 
 	ret = hr_dev->dfx->query_pkt_stat(hr_dev, buf, &count);
 	if (ret) {
-		dev_err(dev, "cmd query failed");
+		dev_err(dev, "pkt query failed");
 		return -EBUSY;
 	}
 
@@ -180,7 +180,7 @@ static ssize_t aeqc_show(struct device *dev, struct device_attribute *attr,
 
 	ret = hr_dev->dfx->query_aeqc_stat(hr_dev, buf, &count);
 	if (ret) {
-		dev_err(dev, "ceqc query failed");
+		dev_err(dev, "aeqc query failed");
 		return -EBUSY;
 	}
 
@@ -214,7 +214,7 @@ static ssize_t qpc_show(struct device *dev, struct device_attribute *attr,
 	ret = hr_dev->dfx->query_qpc_stat(hr_dev,
 				    buf, &count);
 	if (ret) {
-		dev_err(dev, "ceqc query failed");
+		dev_err(dev, "qpc query failed");
 		return -EBUSY;
 	}
 
@@ -247,7 +247,7 @@ static ssize_t srqc_show(struct device *dev, struct device_attribute *attr,
 
 	ret = hr_dev->dfx->query_srqc_stat(hr_dev, buf, &count);
 	if (ret) {
-		dev_err(dev, "ceqc query failed");
+		dev_err(dev, "srqc query failed");
 		return -EBUSY;
 	}
 
@@ -280,7 +280,7 @@ static ssize_t mpt_show(struct device *dev, struct device_attribute *attr,
 
 	ret = hr_dev->dfx->query_mpt_stat(hr_dev, buf, &count);
 	if (ret) {
-		dev_err(dev, "ceqc query failed");
+		dev_err(dev, "mpt query failed");
 		return -EBUSY;
 	}
 
