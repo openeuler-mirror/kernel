@@ -439,9 +439,6 @@ static void uacce_destroy_region(struct uacce_queue *q,
 		dev_dbg(uacce->pdev, "free dma qfr %s (kaddr=%pK, dma=%llx)\n",
 			uacce_qfrt_str(qfr), qfr->kaddr,
 			qfr->dma);
-		if (current->mm)
-			vm_munmap((unsigned long)qfr->iova,
-				  qfr->nr_pages << PAGE_SHIFT);
 		dma_free_coherent(uacce->pdev, qfr->nr_pages << PAGE_SHIFT,
 				  qfr->kaddr, qfr->dma);
 	} else if (qfr->pages) {
