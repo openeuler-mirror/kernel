@@ -6,33 +6,6 @@
 #include <linux/delay.h>
 #include "./sgl.h"
 
-#define ACC_SGL_SGE_NR_MIN	1
-#define ACC_SGL_SGE_NR_MAX	255
-#define ACC_SGL_SGE_NR		64
-#define ACC_SGL_NR_MAX		256
-#define ACC_SGL_ALIGN_SIZE	64
-
-struct acc_hw_sge {
-	dma_addr_t buf;
-	void *page_ctrl;
-	__le32 len;
-	__le32 pad;
-	__le32 pad0;
-	__le32 pad1;
-};
-
-/* use default sgl head size 64B */
-struct acc_hw_sgl {
-	dma_addr_t next_dma;
-	__le16 entry_sum_in_chain;
-	__le16 entry_sum_in_sgl;
-	__le16 entry_length_in_sgl;
-	__le16 pad0;
-	__le64 pad1[5];
-	struct acc_hw_sgl *next;
-	struct acc_hw_sge sge_entries[ACC_SGL_SGE_NR];
-} __aligned(1);
-
 /**
  * acc_create_sgl_pool() - Create a hw sgl pool.
  * @dev: The device which hw sgl pool belongs to.
@@ -224,6 +197,111 @@ void acc_sg_buf_unmap(struct device *dev, struct scatterlist *sgl,
 	dma_unmap_sg(dev, sgl, sg_n, DMA_BIDIRECTIONAL);
 }
 EXPORT_SYMBOL_GPL(acc_sg_buf_unmap);
+
+/**
+ * acc_alloc_multi_sgl - Alloc multi hw_sgl at once.
+ * @dev: The device which hw sgl belongs to.
+ * @hw_sgl: The address of hw sgl.
+ * @hw_sgl_dma: The dma address of hw sgl
+ * @sge_num: The sge num in hw_sgl.
+ */
+struct acc_hw_sgl *acc_alloc_multi_sgl(struct device *dev,
+	dma_addr_t *hw_sgl_dma, int sgl_num)
+{
+	if (!dev || !hw_sgl_dma || !sgl_num)
+		return NULL;
+
+	return dma_alloc_coherent(dev, sgl_num * sizeof(struct acc_hw_sgl),
+		hw_sgl_dma, GFP_KERNEL | __GFP_ZERO);
+}
+EXPORT_SYMBOL_GPL(acc_alloc_multi_sgl);
+
+/**
+ * acc_free_multi_sgl - Free multi hw_sgl at once.
+ * @dev: The device which hw sgl belongs to.
+ * @hw_sgl: The address of hw sgl.
+ * @hw_sgl_dma: The dma address of hw sgl
+ * @sge_num: The sge num in hw_sgl.
+ */
+void acc_free_multi_sgl(struct device *dev, struct acc_hw_sgl *hw_sgl,
+	dma_addr_t hw_sgl_dma, int sgl_num)
+{
+	if (!dev || !hw_sgl || !hw_sgl_dma || !sgl_num)
+		return;
+
+	dma_free_coherent(dev, sgl_num * sizeof(struct acc_hw_sgl), hw_sgl,
+		hw_sgl_dma);
+}
+EXPORT_SYMBOL_GPL(acc_free_multi_sgl);
+
+/**
+ * acc_sg_buf_map_to_hw_sgl - Map a scatterlist to a hw sgl.
+ * @dev: The device which hw sgl belongs to.
+ * @sgl: Scatterlist which will be mapped to hw sgl.
+ * @hw_sgl: The address of hw sgl.
+ * @sge_num: The sge num in hw_sgl.
+ */
+int acc_sg_buf_map_v2(struct device *dev, struct scatterlist *sgl,
+	struct acc_hw_sgl *hw_sgl, int sge_num)
+{
+	struct acc_hw_sgl *curr_hw_sgl;
+	struct acc_hw_sge *curr_hw_sge;
+	struct scatterlist *sg;
+	int sg_n = sg_nents(sgl);
+	int i, ret;
+
+	if (!dev || !sgl || !hw_sgl || sge_num < sg_n)
+		return -EINVAL;
+
+	ret = dma_map_sg(dev, sgl, sg_n, DMA_BIDIRECTIONAL);
+	if (!ret)
+		return -EINVAL;
+
+	curr_hw_sgl = hw_sgl;
+	curr_hw_sgl->entry_length_in_sgl = ACC_SGL_SGE_NR;
+	curr_hw_sgl->entry_sum_in_sgl = 0;
+
+	curr_hw_sge = curr_hw_sgl->sge_entries;
+
+	for_each_sg(sgl, sg, sg_n, i) {
+		if (unlikely(!has_empty_sge(curr_hw_sgl))) {
+			curr_hw_sgl = curr_hw_sgl->next;
+			curr_hw_sgl->entry_length_in_sgl = ACC_SGL_SGE_NR;
+			curr_hw_sgl->entry_sum_in_sgl = 0;
+
+			curr_hw_sge = curr_hw_sgl->sge_entries;
+		}
+
+		__sg_map_to_hw_sg(sg, curr_hw_sge);
+
+		inc_hw_sgl_sge(curr_hw_sgl);
+		curr_hw_sge++;
+	}
+
+	update_hw_sgl_sum_sge(hw_sgl,
+		(sge_num + ACC_SGL_SGE_NR - 1) & (~(ACC_SGL_SGE_NR - 1)));
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(acc_sg_buf_map_v2);
+
+/**
+ * acc_sg_buf_unmap_v2() - unmap all sgl.
+ * @dev: The device which hw sgl belongs to.
+ * @sgl: Related scatterlist.
+ *
+ * This function unmap all sgl.
+ */
+void acc_sg_buf_unmap_v2(struct device *dev, struct scatterlist *sgl)
+{
+	int sg_n = sg_nents(sgl);
+
+	if (!dev || !sgl)
+		return;
+
+	dma_unmap_sg(dev, sgl, sg_n, DMA_BIDIRECTIONAL);
+}
+EXPORT_SYMBOL_GPL(acc_sg_buf_unmap_v2);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zhou Wang <wangzhou1@hisilicon.com>");

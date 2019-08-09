@@ -327,7 +327,7 @@ module_param(ctx_q_num, int, 0444);
 static int fusion_limit = 64;
 module_param(fusion_limit, int, 0444);
 
-static int fusion_tmout_usec = 500;
+static int fusion_tmout_usec = 100;
 module_param(fusion_tmout_usec, int, 0444);
 
 static const struct pci_device_id hisi_sec_dev_ids[] = {
@@ -764,7 +764,8 @@ static void hisi_sec_debugfs_exit(struct hisi_sec *hisi_sec)
 static void hisi_sec_hw_error_init(struct hisi_sec *hisi_sec)
 {
 	hisi_qm_hw_error_init(&hisi_sec->qm, QM_BASE_CE,
-			      QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT, 0,
+			      QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT
+			      | QM_ACC_WB_NOT_READY_TIMEOUT, 0,
 			      QM_DB_RANDOM_INVALID);
 	hisi_sec_hw_error_set_state(hisi_sec, true);
 }

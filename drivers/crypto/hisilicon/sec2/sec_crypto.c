@@ -32,16 +32,12 @@
 #define SEC_DES3_2KEY_SIZE (2 * DES_KEY_SIZE)
 #define SEC_DES3_3KEY_SIZE (3 * DES_KEY_SIZE)
 
-// #define USE_DM_CRYPT_OPTIMIZE
+/* if modify dm-crypt to transparent LBA, use the below macro
+ * #define USE_DM_CRYPT_OPTIMIZE
+ */
+
+#define BUF_MAP_NUM 64
 #define SEC_FUSION_BD
-
-#define SEC_DEBUG
-
-#ifdef SEC_DEBUG
-#define dbg(msg, ...) pr_err(msg, ##__VA_ARGS__)
-#else
-#define dbg(msg, ...)
-#endif
 
 enum {
 	SEC_NO_FUSION = 0x0,
@@ -88,6 +84,18 @@ struct geniv_req_info {
 	u8 *integrity_metadata;
 };
 
+struct cipher_res {
+	struct skcipher_request_ctx **sk_reqs;
+	u8 *c_ivin;
+	dma_addr_t c_ivin_dma;
+	struct acc_hw_sgl *c_in;
+	dma_addr_t c_in_dma;
+	struct acc_hw_sgl *c_out;
+	dma_addr_t c_out_dma;
+	struct scatterlist *src;
+	struct scatterlist *dst;
+};
+
 struct hisi_sec_cipher_req {
 	struct acc_hw_sgl *c_in;
 	dma_addr_t c_in_dma;
@@ -122,8 +130,11 @@ struct hisi_sec_req {
 
 struct hisi_sec_req_op {
 	int fusion_type;
-	int (*alloc)(struct hisi_sec_ctx *ctx, struct hisi_sec_req *req);
-	int (*free)(struct hisi_sec_ctx *ctx, struct hisi_sec_req *req);
+	int (*get_res)(struct hisi_sec_ctx *ctx, struct hisi_sec_req *req);
+	int (*queue_alloc)(struct hisi_sec_ctx *ctx,
+		struct hisi_sec_qp_ctx *qp_ctx);
+	int (*queue_free)(struct hisi_sec_ctx *ctx,
+		struct hisi_sec_qp_ctx *qp_ctx);
 	int (*buf_map)(struct hisi_sec_ctx *ctx, struct hisi_sec_req *req);
 	int (*buf_unmap)(struct hisi_sec_ctx *ctx, struct hisi_sec_req *req);
 	int (*do_transfer)(struct hisi_sec_ctx *ctx, struct hisi_sec_req *req);
@@ -147,6 +158,7 @@ struct hisi_sec_qp_ctx {
 	struct hisi_sec_req **req_list;
 	struct hisi_sec_req *fusion_req;
 	unsigned long *req_bitmap;
+	void *priv_req_res;
 	spinlock_t req_lock;
 	atomic_t req_cnt;
 	struct hisi_sec_sqe *sqe_list;
@@ -170,7 +182,6 @@ struct hisi_sec_ctx {
 	struct hisi_sec_cipher_ctx c_ctx;
 	int fusion_tmout_usec;
 	int fusion_limit;
-	u64 fusion_cnt;
 	bool is_fusion;
 };
 
@@ -205,19 +216,15 @@ static int hisi_sec_alloc_req_id(struct hisi_sec_req *req,
 	return 0;
 }
 
-static void hisi_sec_free_req_id(struct hisi_sec_req *req)
+static void hisi_sec_free_req_id(struct hisi_sec_qp_ctx *qp_ctx, int req_id)
 {
-	struct hisi_sec_ctx *ctx = req->ctx;
-	int req_id = req->req_id;
-	struct hisi_sec_qp_ctx *qp_ctx = req->qp_ctx;
 	unsigned long flags;
 
 	if (req_id < 0) {
-		dev_err(ctx->sec_dev, "invalid req id %d\n", req_id);
+		pr_err("invalid req id %d\n", req_id);
 		return;
 	}
 
-	req->req_id = SEC_INVLD_REQ_ID;
 	qp_ctx->req_list[req_id] = NULL;
 
 	spin_lock_irqsave(&qp_ctx->req_lock, flags);
@@ -275,8 +282,7 @@ void qp_ctx_work_delayed_process(struct work_struct *work)
 err_unmap_req:
 	ctx->req_op->buf_unmap(ctx, req);
 err_free_req:
-	ctx->req_op->free(ctx, req);
-	hisi_sec_free_req_id(req);
+	hisi_sec_free_req_id(qp_ctx, req->req_id);
 	atomic_dec(&ctx->thread_cnt);
 }
 
@@ -324,17 +330,21 @@ static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
 		goto err_free_req_list;
 	}
 
-	ret = hisi_qm_start_qp(qp, 0);
-	if (ret < 0)
+	ret = ctx->req_op->queue_alloc(ctx, qp_ctx);
+	if (ret)
 		goto err_free_sqe_list;
 
-	if (ctx->fusion_limit > 1 && ctx->fusion_tmout_usec) {
-		INIT_DELAYED_WORK(&qp_ctx->work, qp_ctx_work_delayed_process);
-		qp_ctx->work_cnt = 0;
-	}
+	ret = hisi_qm_start_qp(qp, 0);
+	if (ret < 0)
+		goto err_queue_free;
+
+	INIT_DELAYED_WORK(&qp_ctx->work, qp_ctx_work_delayed_process);
+	qp_ctx->work_cnt = 0;
 
 	return 0;
 
+err_queue_free:
+	ctx->req_op->queue_free(ctx, qp_ctx);
 err_free_sqe_list:
 	kfree(qp_ctx->sqe_list);
 err_free_req_list:
@@ -346,9 +356,11 @@ err_qm_release_qp:
 	return ret;
 }
 
-static void hisi_sec_release_qp_ctx(struct hisi_sec_qp_ctx *qp_ctx)
+static void hisi_sec_release_qp_ctx(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_qp_ctx *qp_ctx)
 {
 	hisi_qm_stop_qp(qp_ctx->qp);
+	ctx->req_op->queue_free(ctx, qp_ctx);
 	kfree(qp_ctx->req_bitmap);
 	kfree(qp_ctx->req_list);
 	kfree(qp_ctx->sqe_list);
@@ -398,10 +410,13 @@ static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
 		return -ENOMEM;
 	}
 
-	ctx->fusion_tmout_usec = sec->fusion_tmout_usec;
-	ctx->fusion_limit = sec->fusion_limit;
-	ctx->fusion_cnt = 0;
-	ctx->is_fusion = 0;
+	if (ctx->is_fusion) {
+		ctx->fusion_tmout_usec = sec->fusion_tmout_usec;
+		ctx->fusion_limit = sec->fusion_limit;
+	} else {
+		ctx->fusion_tmout_usec = 0;
+		ctx->fusion_limit = 1;
+	}
 
 	for (i = 0; i < ctx->q_num; i++) {
 		ret = hisi_sec_create_qp_ctx(qm, ctx, i, 0, 0);
@@ -422,7 +437,7 @@ static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
 
 err_sec_release_qp_ctx:
 	for (i = i - 1; i >= 0; i--)
-		hisi_sec_release_qp_ctx(&ctx->qp_ctx[i]);
+		hisi_sec_release_qp_ctx(ctx, &ctx->qp_ctx[i]);
 
 	kfree(ctx->qp_ctx);
 	return ret;
@@ -443,13 +458,107 @@ static void hisi_sec_cipher_ctx_exit(struct crypto_skcipher *tfm)
 	}
 
 	for (i = 0; i < ctx->q_num; i++)
-		hisi_sec_release_qp_ctx(&ctx->qp_ctx[i]);
+		hisi_sec_release_qp_ctx(ctx, &ctx->qp_ctx[i]);
 
 	kfree(ctx->qp_ctx);
 
 	mutex_lock(ctx->sec->hisi_sec_list_lock);
 	ctx->sec->q_ref -= ctx->sec->ctx_q_num;
 	mutex_unlock(ctx->sec->hisi_sec_list_lock);
+}
+
+static int hisi_sec_skcipher_get_res(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_req *req);
+static int hisi_sec_skcipher_queue_alloc(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_qp_ctx *qp_ctx);
+static int hisi_sec_skcipher_queue_free(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_qp_ctx *qp_ctx);
+static int hisi_sec_skcipher_buf_map(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_req *req);
+static int hisi_sec_skcipher_buf_unmap(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_req *req);
+static int hisi_sec_skcipher_copy_iv(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_req *req);
+static int hisi_sec_skcipher_copy_iv_dmcrypt(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_req *req);
+static int hisi_sec_skcipher_bd_fill_base(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_req *req);
+static int hisi_sec_skcipher_bd_fill_storage(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_req *req);
+static int hisi_sec_skcipher_bd_fill_multi_iv(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_req *req);
+static int hisi_sec_bd_send_asyn(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_req *req);
+static int hisi_sec_skcipher_callback(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_req *req);
+
+struct hisi_sec_req_op sec_req_ops_tbl[] = {
+	{
+		.fusion_type = SEC_NO_FUSION,
+		.get_res     = hisi_sec_skcipher_get_res,
+		.queue_alloc = hisi_sec_skcipher_queue_alloc,
+		.queue_free  = hisi_sec_skcipher_queue_free,
+		.buf_map     = hisi_sec_skcipher_buf_map,
+		.buf_unmap   = hisi_sec_skcipher_buf_unmap,
+		.do_transfer = hisi_sec_skcipher_copy_iv,
+		.bd_fill     = hisi_sec_skcipher_bd_fill_base,
+		.bd_send     = hisi_sec_bd_send_asyn,
+		.callback    = hisi_sec_skcipher_callback,
+	}, {
+		.fusion_type = SEC_NO_FUSION,
+		.get_res     = hisi_sec_skcipher_get_res,
+		.queue_alloc = hisi_sec_skcipher_queue_alloc,
+		.queue_free  = hisi_sec_skcipher_queue_free,
+		.buf_map     = hisi_sec_skcipher_buf_map,
+		.buf_unmap   = hisi_sec_skcipher_buf_unmap,
+		.do_transfer = hisi_sec_skcipher_copy_iv_dmcrypt,
+		.bd_fill     = hisi_sec_skcipher_bd_fill_storage,
+		.bd_send     = hisi_sec_bd_send_asyn,
+		.callback    = hisi_sec_skcipher_callback,
+	}, {
+		.fusion_type = SEC_IV_FUSION,
+		.get_res     = hisi_sec_skcipher_get_res,
+		.queue_alloc = hisi_sec_skcipher_queue_alloc,
+		.queue_free  = hisi_sec_skcipher_queue_free,
+		.buf_map     = hisi_sec_skcipher_buf_map,
+		.buf_unmap   = hisi_sec_skcipher_buf_unmap,
+		.do_transfer = hisi_sec_skcipher_copy_iv,
+		.bd_fill     = hisi_sec_skcipher_bd_fill_multi_iv,
+		.bd_send     = hisi_sec_bd_send_asyn,
+		.callback    = hisi_sec_skcipher_callback,
+	}
+};
+
+static int hisi_sec_cipher_ctx_init_alg(struct crypto_skcipher *tfm)
+{
+	struct hisi_sec_ctx *ctx = crypto_skcipher_ctx(tfm);
+
+	ctx->req_op        = &sec_req_ops_tbl[SEC_OPS_SKCIPHER_ALG];
+	ctx->is_fusion     = ctx->req_op->fusion_type;
+
+	return hisi_sec_cipher_ctx_init(tfm);
+}
+
+#ifdef USE_DM_CRYPT_OPTIMIZE
+static int hisi_sec_cipher_ctx_init_dm_crypt(struct crypto_skcipher *tfm)
+{
+	struct hisi_sec_ctx *ctx = crypto_skcipher_ctx(tfm);
+
+	ctx->req_op        = &sec_req_ops_tbl[SEC_OPS_DMCRYPT];
+	ctx->is_fusion     = ctx->req_op->fusion_type;
+
+	return hisi_sec_cipher_ctx_init(tfm);
+}
+#endif
+
+static int hisi_sec_cipher_ctx_init_multi_iv(struct crypto_skcipher *tfm)
+{
+	struct hisi_sec_ctx *ctx = crypto_skcipher_ctx(tfm);
+
+	ctx->req_op        = &sec_req_ops_tbl[SEC_OPS_MULTI_IV];
+	ctx->is_fusion     = ctx->req_op->fusion_type;
+
+	return hisi_sec_cipher_ctx_init(tfm);
 }
 
 static void hisi_sec_req_cb(struct hisi_qp *qp, void *resp)
@@ -667,39 +776,138 @@ static int hisi_sec_get_async_ret(int ret, int req_cnt, int req_fake_limit)
 	return ret;
 }
 
-static int hisi_sec_skcipher_alloc(struct hisi_sec_ctx *ctx,
+static int hisi_sec_skcipher_get_res(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_req *req)
 {
 	struct hisi_sec_cipher_req *c_req = &req->c_req;
-	struct device *sec_dev = ctx->sec_dev;
+	struct hisi_sec_qp_ctx *qp_ctx = req->qp_ctx;
+	struct cipher_res *c_res = (struct cipher_res *)qp_ctx->priv_req_res;
+	int req_id = req->req_id;
 
-	c_req->c_ivin = dma_alloc_coherent(sec_dev,
-		SEC_IV_SIZE * ctx->fusion_limit, &c_req->c_ivin_dma,
-		GFP_ATOMIC);
-
-	if (!c_req->c_ivin)
-		return -ENOMEM;
-
-	req->priv = kcalloc(ctx->fusion_limit, sizeof(void *),
-		GFP_ATOMIC);
-	if (!req->priv) {
-		dma_free_coherent(sec_dev, SEC_IV_SIZE * ctx->fusion_limit,
-			c_req->c_ivin, c_req->c_ivin_dma);
-		return -ENOMEM;
-	}
+	c_req->c_in = c_res[req_id].c_in;
+	c_req->c_in_dma = c_res[req_id].c_in_dma;
+	c_req->c_out = c_res[req_id].c_out;
+	c_req->c_out_dma = c_res[req_id].c_out_dma;
+	c_req->c_ivin = c_res[req_id].c_ivin;
+	c_req->c_ivin_dma = c_res[req_id].c_ivin_dma;
+	req->priv = (void **)c_res[req_id].sk_reqs;
+	c_req->src = c_res[req_id].src;
+	c_req->dst = c_res[req_id].dst;
 
 	return 0;
 }
 
-static int hisi_sec_skcipher_free(struct hisi_sec_ctx *ctx,
-	struct hisi_sec_req *req)
+static int hisi_sec_skcipher_queue_alloc(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_qp_ctx *qp_ctx)
 {
-	struct hisi_sec_cipher_req *c_req = &req->c_req;
-	struct device *sec_dev = req->ctx->sec_dev;
+	struct cipher_res *c_res;
+	int req_num = ctx->fusion_limit;
+	int alloc_num = QM_Q_DEPTH * ctx->fusion_limit;
+	int buf_map_num = QM_Q_DEPTH * BUF_MAP_NUM;
+	struct device *sec_dev = ctx->sec_dev;
+	int i, ret;
 
-	kfree(req->priv);
-	dma_free_coherent(sec_dev, SEC_IV_SIZE * ctx->fusion_limit,
-		c_req->c_ivin, c_req->c_ivin_dma);
+	c_res = kcalloc(QM_Q_DEPTH, sizeof(struct cipher_res), GFP_KERNEL);
+	if (!c_res)
+		return -ENOMEM;
+
+	qp_ctx->priv_req_res = (void *)c_res;
+
+	c_res[0].sk_reqs = kcalloc(alloc_num,
+		sizeof(struct skcipher_request_ctx *), GFP_KERNEL);
+	if (!c_res[0].sk_reqs) {
+		ret = -ENOMEM;
+		goto err_free_c_res;
+	}
+
+	c_res[0].c_ivin = dma_alloc_coherent(sec_dev,
+		SEC_IV_SIZE * alloc_num, &c_res[0].c_ivin_dma, GFP_KERNEL);
+	if (!c_res[0].c_ivin) {
+		ret = -ENOMEM;
+		goto err_free_sk_reqs;
+	}
+
+	c_res[0].src = kcalloc(buf_map_num, sizeof(struct scatterlist),
+		GFP_KERNEL);
+	if (!c_res[0].src) {
+		ret = -ENOMEM;
+		goto err_free_c_ivin;
+	}
+
+	c_res[0].dst = kcalloc(buf_map_num, sizeof(struct scatterlist),
+		GFP_KERNEL);
+	if (!c_res[0].dst) {
+		ret = -ENOMEM;
+		goto err_free_src;
+	}
+
+	c_res[0].c_in = acc_alloc_multi_sgl(sec_dev, &c_res[0].c_in_dma,
+		QM_Q_DEPTH);
+	if (!c_res[0].c_in) {
+		ret = -ENOMEM;
+		goto err_free_dst;
+	}
+
+	c_res[0].c_out = acc_alloc_multi_sgl(sec_dev, &c_res[0].c_out_dma,
+		QM_Q_DEPTH);
+	if (!c_res[0].c_out) {
+		ret = -ENOMEM;
+		goto err_free_c_in;
+	}
+
+	for (i = 1; i < QM_Q_DEPTH; i++) {
+		c_res[i].sk_reqs     = c_res[0].sk_reqs + i * req_num;
+		c_res[i].c_ivin      = c_res[0].c_ivin
+			+ i * req_num * SEC_IV_SIZE;
+		c_res[i].c_ivin_dma  = c_res[0].c_ivin_dma
+			+ i * req_num * SEC_IV_SIZE;
+		c_res[i].src         = c_res[0].src       + i * req_num;
+		c_res[i].dst         = c_res[0].dst       + i * req_num;
+		c_res[i].c_in        = c_res[0].c_in      + i;
+		c_res[i].c_in_dma    = c_res[0].c_in_dma
+			+ i * sizeof(struct acc_hw_sgl);
+		c_res[i].c_out       = c_res[0].c_out     + i;
+		c_res[i].c_out_dma   = c_res[0].c_out_dma
+			+ i * sizeof(struct acc_hw_sgl);
+	}
+
+	return 0;
+
+err_free_c_in:
+	acc_free_multi_sgl(sec_dev, c_res[0].c_in, c_res[0].c_in_dma,
+		QM_Q_DEPTH);
+err_free_dst:
+	kfree(c_res[0].dst);
+err_free_src:
+	kfree(c_res[0].src);
+err_free_c_ivin:
+	dma_free_coherent(sec_dev, SEC_IV_SIZE * alloc_num, c_res[0].c_ivin,
+		c_res[0].c_ivin_dma);
+err_free_sk_reqs:
+	kfree(c_res[0].sk_reqs);
+err_free_c_res:
+	kfree(c_res);
+
+	return ret;
+}
+
+static int hisi_sec_skcipher_queue_free(struct hisi_sec_ctx *ctx,
+	struct hisi_sec_qp_ctx *qp_ctx)
+{
+	struct cipher_res *c_res = (struct cipher_res *)qp_ctx->priv_req_res;
+	struct device *sec_dev = ctx->sec_dev;
+	int alloc_num = QM_Q_DEPTH * ctx->fusion_limit;
+
+	acc_free_multi_sgl(sec_dev, c_res[0].c_out, c_res[0].c_out_dma,
+		QM_Q_DEPTH);
+	acc_free_multi_sgl(sec_dev, c_res[0].c_in, c_res[0].c_in_dma,
+		QM_Q_DEPTH);
+	kfree(c_res[0].dst);
+	kfree(c_res[0].src);
+	dma_free_coherent(sec_dev, SEC_IV_SIZE * alloc_num, c_res[0].c_ivin,
+		c_res[0].c_ivin_dma);
+	kfree(c_res[0].sk_reqs);
+	kfree(c_res);
 
 	return 0;
 }
@@ -709,92 +917,68 @@ static int hisi_sec_skcipher_buf_map(struct hisi_sec_ctx *ctx,
 {
 	struct hisi_sec_cipher_req *c_req = &req->c_req;
 	struct device *dev = ctx->sec_dev;
-	struct dma_pool *pool = ctx->sec->sgl_pool;
-	struct skcipher_request *sk_req =
-		(struct skcipher_request *)req->priv[0];
 	struct skcipher_request *sk_next;
+	int src_nents, copyed_src_nents = 0, src_nents_sum = 0;
+	int dst_nents, copyed_dst_nents = 0, dst_nents_sum = 0;
 	int i, ret = 0;
 
-	c_req->src = sk_req->src;
-	c_req->dst = sk_req->dst;
-
-	if (ctx->is_fusion && req->fusion_num > 1) {
-		int src_nents, copyed_src_nents = 0, src_nents_sum = 0;
-		int dst_nents, copyed_dst_nents = 0, dst_nents_sum = 0;
-		int sg_size = sizeof(struct scatterlist);
-
-		for (i = 0; i < req->fusion_num; i++) {
-			sk_next = (struct skcipher_request *)req->priv[i];
-			if (sk_next == NULL) {
-				dev_err(ctx->sec_dev, "nullptr at [%d]\n", i);
-				return -EFAULT;
-			}
-			src_nents_sum += sg_nents(sk_next->src);
-			dst_nents_sum += sg_nents(sk_next->dst);
-			if (sk_next->src == sk_next->dst) {
-				dev_err(ctx->sec_dev, "err: src == dst\n");
-				return -EFAULT;
-			}
+	for (i = 0; i < req->fusion_num; i++) {
+		sk_next = (struct skcipher_request *)req->priv[i];
+		if (sk_next == NULL) {
+			dev_err(ctx->sec_dev, "nullptr at [%d]\n", i);
+			return -EFAULT;
 		}
-
-		c_req->src = kcalloc(src_nents_sum, sg_size, GFP_KERNEL);
-		if (ZERO_OR_NULL_PTR(c_req->src))
-			return -ENOMEM;
-
-		c_req->dst = kcalloc(dst_nents_sum, sg_size, GFP_KERNEL);
-		if (ZERO_OR_NULL_PTR(c_req->dst))
-			return -ENOMEM;
-
-
-		for (i = 0; i < req->fusion_num; i++) {
-			sk_next = (struct skcipher_request *)req->priv[i];
-			src_nents = sg_nents(sk_next->src);
-			dst_nents = sg_nents(sk_next->dst);
-			if (i != req->fusion_num - 1) {
-				sg_unmark_end(&sk_next->src[src_nents - 1]);
-				sg_unmark_end(&sk_next->dst[dst_nents - 1]);
-			}
-
-			memcpy(c_req->src + copyed_src_nents, sk_next->src,
-				src_nents * sg_size);
-			memcpy(c_req->dst + copyed_dst_nents, sk_next->dst,
-				dst_nents * sg_size);
-
-			copyed_src_nents += src_nents;
-			copyed_dst_nents += dst_nents;
+		src_nents_sum += sg_nents(sk_next->src);
+		dst_nents_sum += sg_nents(sk_next->dst);
+		if (sk_next->src == sk_next->dst && i > 0) {
+			dev_err(ctx->sec_dev, "err: src == dst\n");
+			return -EFAULT;
 		}
-		/* ensure copy of sg already done */
-		mb();
 	}
 
-	c_req->c_in = acc_sg_buf_map_to_hw_sgl(dev, c_req->src, pool,
-		&c_req->c_in_dma);
-	if (IS_ERR(c_req->c_in)) {
-		ret = PTR_ERR(c_req->c_in);
-		goto err_free_sg_table;
+	if (src_nents_sum > BUF_MAP_NUM || dst_nents_sum > BUF_MAP_NUM) {
+		dev_err(ctx->sec_dev, "src[%d] or dst[%d] bigger than %d\n",
+			src_nents_sum, dst_nents_sum, BUF_MAP_NUM);
+		return -ENOBUFS;
 	}
+
+	for (i = 0; i < req->fusion_num; i++) {
+		sk_next = (struct skcipher_request *)req->priv[i];
+		src_nents = sg_nents(sk_next->src);
+		dst_nents = sg_nents(sk_next->dst);
+
+		if (i != req->fusion_num - 1) {
+			sg_unmark_end(&sk_next->src[src_nents - 1]);
+			sg_unmark_end(&sk_next->dst[dst_nents - 1]);
+		}
+
+		memcpy(c_req->src + copyed_src_nents, sk_next->src,
+			src_nents * sizeof(struct scatterlist));
+		memcpy(c_req->dst + copyed_dst_nents, sk_next->dst,
+			dst_nents * sizeof(struct scatterlist));
+
+		copyed_src_nents += src_nents;
+		copyed_dst_nents += dst_nents;
+	}
+
+	ret = acc_sg_buf_map_v2(dev, c_req->src, c_req->c_in, src_nents_sum);
+	if (ret)
+		return ret;
 
 	if (c_req->dst == c_req->src) {
 		c_req->c_out = c_req->c_in;
 		c_req->c_out_dma = c_req->c_in_dma;
 	} else {
-		c_req->c_out = acc_sg_buf_map_to_hw_sgl(dev, c_req->dst, pool,
-			&c_req->c_out_dma);
-		if (IS_ERR(c_req->c_out)) {
-			ret = PTR_ERR(c_req->c_out);
+		ret = acc_sg_buf_map_v2(dev, c_req->dst, c_req->c_out,
+			dst_nents_sum);
+		if (ret)
 			goto err_unmap_src;
-		}
 	}
 
 	return 0;
 
 err_unmap_src:
-	acc_sg_buf_unmap(dev, c_req->src, c_req->c_in, c_req->c_in_dma, pool);
-err_free_sg_table:
-	if (ctx->is_fusion && req->fusion_num > 1) {
-		kfree(c_req->src);
-		kfree(c_req->dst);
-	}
+	acc_sg_buf_unmap_v2(dev, c_req->src);
 
 	return ret;
 }
@@ -804,18 +988,11 @@ static int hisi_sec_skcipher_buf_unmap(struct hisi_sec_ctx *ctx,
 {
 	struct hisi_sec_cipher_req *c_req = &req->c_req;
 	struct device *dev = ctx->sec_dev;
-	struct dma_pool *pool = ctx->sec->sgl_pool;
 
 	if (c_req->dst != c_req->src)
-		acc_sg_buf_unmap(dev, c_req->dst, c_req->c_out,
-			c_req->c_out_dma, pool);
+		acc_sg_buf_unmap_v2(dev, c_req->src);
 
-	acc_sg_buf_unmap(dev, c_req->src, c_req->c_in, c_req->c_in_dma, pool);
-
-	if (ctx->is_fusion && req->fusion_num > 1) {
-		kfree(c_req->src);
-		kfree(c_req->dst);
-	}
+	acc_sg_buf_unmap_v2(dev, c_req->dst);
 
 	return 0;
 }
@@ -1001,21 +1178,16 @@ static int hisi_sec_skcipher_complete(struct hisi_sec_ctx *ctx,
 	else
 		req_fusion_num = req->fusion_num;
 
-	/* ensure data already writeback */
-	mb();
-
 	for (i = 0; i < req_fusion_num; i++)
 		sk_reqs[i]->base.complete(&sk_reqs[i]->base, err_code);
 
 	/* free sk_reqs if this request is completed */
-	if (err_code != -EINPROGRESS) {
+	if (err_code != -EINPROGRESS)
 		__sync_add_and_fetch(&ctx->sec->sec_dfx.put_task_cnt,
 			req_fusion_num);
-		kfree(sk_reqs);
-	} else {
+	else
 		__sync_add_and_fetch(&ctx->sec->sec_dfx.busy_comp_cnt,
 			req_fusion_num);
-	}
 
 	return 0;
 }
@@ -1023,18 +1195,15 @@ static int hisi_sec_skcipher_complete(struct hisi_sec_ctx *ctx,
 static int hisi_sec_skcipher_callback(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_req *req)
 {
-	struct hisi_sec_cipher_req *c_req = &req->c_req;
-	struct device *sec_dev = req->ctx->sec_dev;
-
-	dma_free_coherent(sec_dev, SEC_IV_SIZE * ctx->fusion_limit,
-		c_req->c_ivin, c_req->c_ivin_dma);
-
-	hisi_sec_free_req_id(req);
+	struct hisi_sec_qp_ctx *qp_ctx = req->qp_ctx;
+	int req_id = req->req_id;
 
 	if (__sync_bool_compare_and_swap(&req->fake_busy, 1, 0))
 		hisi_sec_skcipher_complete(ctx, req, -EINPROGRESS);
 
 	hisi_sec_skcipher_complete(ctx, req, req->err_type);
+
+	hisi_sec_free_req_id(qp_ctx, req_id);
 
 	return 0;
 }
@@ -1109,6 +1278,7 @@ static struct hisi_sec_req *sec_request_alloc(struct hisi_sec_ctx *ctx,
 		if (req->fusion_num == ctx->fusion_limit) {
 			*fusion_send = 1;
 			qp_ctx->fusion_req = NULL;
+			cancel_delayed_work(&qp_ctx->work);
 		}
 		spin_unlock_irqrestore(&qp_ctx->req_lock, flags);
 		return req;
@@ -1132,9 +1302,9 @@ static struct hisi_sec_req *sec_request_alloc(struct hisi_sec_ctx *ctx,
 		__sync_add_and_fetch(&ctx->sec->sec_dfx.fake_busy_cnt, 1);
 	}
 
-	ret = ctx->req_op->alloc(ctx, req);
+	ret = ctx->req_op->get_res(ctx, req);
 	if (ret) {
-		dev_err(ctx->sec_dev, "req_op alloc failed\n");
+		dev_err(ctx->sec_dev, "req_op get_res failed\n");
 		spin_unlock_irqrestore(&qp_ctx->req_lock, flags);
 		goto err_free_req_id;
 	}
@@ -1150,16 +1320,16 @@ static struct hisi_sec_req *sec_request_alloc(struct hisi_sec_ctx *ctx,
 	if (ctx->is_fusion && *fusion_send == 0) {
 		if (ctx->sec->qm.wq)
 			queue_delayed_work(ctx->sec->qm.wq, &qp_ctx->work,
-				nsecs_to_jiffies(ctx->fusion_tmout_usec));
+				usecs_to_jiffies(ctx->fusion_tmout_usec));
 		else
 			schedule_delayed_work(&qp_ctx->work,
-				nsecs_to_jiffies(ctx->fusion_tmout_usec));
+				usecs_to_jiffies(ctx->fusion_tmout_usec));
 	}
 
 	return req;
 
 err_free_req_id:
-	hisi_sec_free_req_id(req);
+	hisi_sec_free_req_id(qp_ctx, req->req_id);
 	return NULL;
 }
 
@@ -1234,48 +1404,12 @@ static int sec_io_proc(struct hisi_sec_ctx *ctx, struct hisi_sec_req *in_req)
 err_unmap_req:
 	ctx->req_op->buf_unmap(ctx, req);
 err_free_req:
-	ctx->req_op->free(ctx, req);
-	hisi_sec_free_req_id(req);
+	hisi_sec_free_req_id(req->qp_ctx, req->req_id);
 	atomic_dec(&ctx->thread_cnt);
 	return ret;
 }
 
-struct hisi_sec_req_op sec_req_ops_tbl[] = {
-	{
-		.fusion_type = SEC_NO_FUSION,
-		.alloc       = hisi_sec_skcipher_alloc,
-		.free        = hisi_sec_skcipher_free,
-		.buf_map     = hisi_sec_skcipher_buf_map,
-		.buf_unmap   = hisi_sec_skcipher_buf_unmap,
-		.do_transfer = hisi_sec_skcipher_copy_iv,
-		.bd_fill     = hisi_sec_skcipher_bd_fill_base,
-		.bd_send     = hisi_sec_bd_send_asyn,
-		.callback    = hisi_sec_skcipher_callback,
-	}, {
-		.fusion_type = SEC_NO_FUSION,
-		.alloc       = hisi_sec_skcipher_alloc,
-		.free        = hisi_sec_skcipher_free,
-		.buf_map     = hisi_sec_skcipher_buf_map,
-		.buf_unmap   = hisi_sec_skcipher_buf_unmap,
-		.do_transfer = hisi_sec_skcipher_copy_iv_dmcrypt,
-		.bd_fill     = hisi_sec_skcipher_bd_fill_storage,
-		.bd_send     = hisi_sec_bd_send_asyn,
-		.callback    = hisi_sec_skcipher_callback,
-	}, {
-		.fusion_type = SEC_IV_FUSION,
-		.alloc       = hisi_sec_skcipher_alloc,
-		.free        = hisi_sec_skcipher_free,
-		.buf_map     = hisi_sec_skcipher_buf_map,
-		.buf_unmap   = hisi_sec_skcipher_buf_unmap,
-		.do_transfer = hisi_sec_skcipher_copy_iv,
-		.bd_fill     = hisi_sec_skcipher_bd_fill_multi_iv,
-		.bd_send     = hisi_sec_bd_send_asyn,
-		.callback    = hisi_sec_skcipher_callback,
-	}
-};
-
-static int sec_skcipher_crypto(struct skcipher_request *sk_req,
-			bool encrypt, enum SEC_REQ_OPS_TYPE req_ops_type)
+static int sec_skcipher_crypto(struct skcipher_request *sk_req, bool encrypt)
 {
 	struct crypto_skcipher *atfm = crypto_skcipher_reqtfm(sk_req);
 	struct hisi_sec_ctx *ctx = crypto_skcipher_ctx(atfm);
@@ -1287,31 +1421,22 @@ static int sec_skcipher_crypto(struct skcipher_request *sk_req,
 	req->c_req.sk_req  = sk_req;
 	req->c_req.encrypt = encrypt;
 	req->ctx           = ctx;
-	ctx->req_op        = &sec_req_ops_tbl[req_ops_type];
-	ctx->is_fusion     = ctx->req_op->fusion_type;
 
 	return sec_io_proc(ctx, req);
 }
 
-#define SEC_SKCIPHER_GEN_CRYPT(suffix, encrypt, fusion_type)	\
-static int sec_skcipher_##suffix(struct skcipher_request *req)	\
-{								\
-	return sec_skcipher_crypto(req, encrypt, fusion_type);	\
+static int sec_skcipher_encrypt(struct skcipher_request *sk_req)
+{
+	return sec_skcipher_crypto(sk_req, true);
 }
 
-SEC_SKCIPHER_GEN_CRYPT(alg_encrypt, true, SEC_OPS_SKCIPHER_ALG)
-SEC_SKCIPHER_GEN_CRYPT(alg_decrypt, false, SEC_OPS_SKCIPHER_ALG)
-
-#ifdef USE_DM_CRYPT_OPTIMIZE
-SEC_SKCIPHER_GEN_CRYPT(dm_encrypt, true, SEC_OPS_DMCRYPT)
-SEC_SKCIPHER_GEN_CRYPT(dm_decrypt, false, SEC_OPS_DMCRYPT)
-#endif
-
-SEC_SKCIPHER_GEN_CRYPT(fusion_encrypt, true, SEC_OPS_MULTI_IV)
-SEC_SKCIPHER_GEN_CRYPT(fusion_decrypt, false, SEC_OPS_MULTI_IV)
+static int sec_skcipher_decrypt(struct skcipher_request *sk_req)
+{
+	return sec_skcipher_crypto(sk_req, false);
+}
 
 #define SEC_SKCIPHER_GEN_ALG(sec_cra_name, sec_set_key, sec_min_key_size, \
-	sec_max_key_size, sec_decrypt, sec_encrypt, blk_size, iv_size)\
+	sec_max_key_size, hisi_sec_cipher_ctx_init_func, blk_size, iv_size)\
 {\
 	.base = {\
 		.cra_name = sec_cra_name,\
@@ -1323,11 +1448,11 @@ SEC_SKCIPHER_GEN_CRYPT(fusion_decrypt, false, SEC_OPS_MULTI_IV)
 		.cra_alignmask = 0,\
 		.cra_module = THIS_MODULE,\
 	},\
-	.init = hisi_sec_cipher_ctx_init,\
+	.init = hisi_sec_cipher_ctx_init_func,\
 	.exit = hisi_sec_cipher_ctx_exit,\
 	.setkey = sec_set_key,\
-	.decrypt = sec_decrypt,\
-	.encrypt = sec_encrypt,\
+	.decrypt = sec_skcipher_decrypt,\
+	.encrypt = sec_skcipher_encrypt,\
 	.min_keysize = sec_min_key_size,\
 	.max_keysize = sec_max_key_size,\
 	.ivsize = iv_size,\
@@ -1336,18 +1461,17 @@ SEC_SKCIPHER_GEN_CRYPT(fusion_decrypt, false, SEC_OPS_MULTI_IV)
 #define SEC_SKCIPHER_NORMAL_ALG(name, key_func, min_key_size, \
 	max_key_size, blk_size, iv_size) \
 	SEC_SKCIPHER_GEN_ALG(name, key_func, min_key_size, max_key_size, \
-	sec_skcipher_alg_decrypt, sec_skcipher_alg_encrypt, blk_size, iv_size)
+	hisi_sec_cipher_ctx_init_alg, blk_size, iv_size)
 
 #define SEC_SKCIPHER_DM_ALG(name, key_func, min_key_size, \
 	max_key_size, blk_size, iv_size) \
 	SEC_SKCIPHER_GEN_ALG(name, key_func, min_key_size, max_key_size, \
-	sec_skcipher_dm_decrypt, sec_skcipher_dm_encrypt, blk_size, iv_size)
+	hisi_sec_cipher_ctx_init_dm_crypt, blk_size, iv_size)
 
 #define SEC_SKCIPHER_FUSION_ALG(name, key_func, min_key_size, \
 	max_key_size, blk_size, iv_size) \
 	SEC_SKCIPHER_GEN_ALG(name, key_func, min_key_size, max_key_size, \
-	sec_skcipher_fusion_decrypt, sec_skcipher_fusion_encrypt, blk_size, \
-	iv_size)
+	hisi_sec_cipher_ctx_init_multi_iv, blk_size, iv_size)
 
 static struct skcipher_alg sec_algs[] = {
 	SEC_SKCIPHER_NORMAL_ALG("ecb(aes)", sec_setkey_aes_ecb,
