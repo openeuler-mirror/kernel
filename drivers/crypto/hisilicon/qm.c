@@ -353,7 +353,7 @@ static void qm_mb_write(struct hisi_qm *qm, const void *src)
 }
 
 static int qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
-		 bool op, bool event)
+		 bool op)
 {
 	struct qm_mailbox mailbox;
 	int ret = 0;
@@ -362,7 +362,6 @@ static int qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
 		cmd, dma_addr);
 
 	mailbox.w0 = cmd |
-		     (event ? 0x1 << QM_MB_EVENT_SHIFT : 0) |
 		     (op ? 0x1 << QM_MB_OP_SHIFT : 0) |
 		     (0x1 << QM_MB_BUSY_SHIFT);
 	mailbox.queue_num = queue;
@@ -794,7 +793,7 @@ static int qm_get_vft_v2(struct hisi_qm *qm, u32 *base, u32 *number)
 	u64 sqc_vft;
 	int ret;
 
-	ret = qm_mb(qm, QM_MB_CMD_SQC_VFT_V2, 0, 0, 1, 0);
+	ret = qm_mb(qm, QM_MB_CMD_SQC_VFT_V2, 0, 0, 1);
 	if (ret)
 		return ret;
 
@@ -1067,35 +1066,35 @@ static void qm_log_hw_error(struct hisi_qm *qm, u32 error_status)
 	struct device *dev = &qm->pdev->dev;
 	u32 reg_val, type, vf_num;
 
-	while (err->msg) {
-		if (err->int_msk & error_status) {
-			dev_err(dev, "%s [error status=0x%x] found\n",
-				 err->msg, err->int_msk);
+	while ((err++)->msg) {
+		if (!(err->int_msk & error_status))
+			continue;
 
-			if (err->int_msk & QM_DB_TIMEOUT) {
-				reg_val = readl(qm->io_base +
-						QM_ABNORMAL_INF01);
-				type = (reg_val & QM_DB_TIMEOUT_TYPE) >>
-				       QM_DB_TIMEOUT_TYPE_SHIFT;
-				vf_num = reg_val & QM_DB_TIMEOUT_VF;
-				dev_err(dev, "qm %s doorbell timeout in function %u\n",
-					 qm_db_timeout[type], vf_num);
-			} else if (err->int_msk & QM_OF_FIFO_OF) {
-				reg_val = readl(qm->io_base +
-						QM_ABNORMAL_INF00);
-				type = (reg_val & QM_FIFO_OVERFLOW_TYPE) >>
-				       QM_FIFO_OVERFLOW_TYPE_SHIFT;
-				vf_num = reg_val & QM_FIFO_OVERFLOW_VF;
+		dev_err(dev, "%s [error status=0x%x] found\n",
+			 err->msg, err->int_msk);
 
-				if (type < ARRAY_SIZE(qm_fifo_overflow))
-					dev_err(dev, "qm %s fifo overflow in function %u\n",
-						 qm_fifo_overflow[type],
-						 vf_num);
-				else
-					dev_err(dev, "unknown error type\n");
-			}
+		if (err->int_msk & QM_DB_TIMEOUT) {
+			reg_val = readl(qm->io_base +
+					QM_ABNORMAL_INF01);
+			type = (reg_val & QM_DB_TIMEOUT_TYPE) >>
+			       QM_DB_TIMEOUT_TYPE_SHIFT;
+			vf_num = reg_val & QM_DB_TIMEOUT_VF;
+			dev_err(dev, "qm %s doorbell timeout in function %u\n",
+				 qm_db_timeout[type], vf_num);
+		} else if (err->int_msk & QM_OF_FIFO_OF) {
+			reg_val = readl(qm->io_base +
+					QM_ABNORMAL_INF00);
+			type = (reg_val & QM_FIFO_OVERFLOW_TYPE) >>
+			       QM_FIFO_OVERFLOW_TYPE_SHIFT;
+			vf_num = reg_val & QM_FIFO_OVERFLOW_VF;
+
+			if (type < ARRAY_SIZE(qm_fifo_overflow))
+				dev_err(dev, "qm %s fifo overflow in function %u\n",
+					 qm_fifo_overflow[type],
+					 vf_num);
+			else
+				dev_err(dev, "unknown error type\n");
 		}
-		err++;
 	}
 }
 
@@ -1287,7 +1286,7 @@ static int qm_sq_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 	sqc->cq_num = qp_id;
 	sqc->w13 = QM_MK_SQC_W13(0, 1, qp->alg_type);
 
-	ret = qm_mb(qm, QM_MB_CMD_SQC, sqc_dma, qp_id, 0, 0);
+	ret = qm_mb(qm, QM_MB_CMD_SQC, sqc_dma, qp_id, 0);
 	if (qm->use_dma_api) {
 		dma_unmap_single(dev, sqc_dma, sizeof(struct qm_sqc),
 				 DMA_TO_DEVICE);
@@ -1334,7 +1333,7 @@ static int qm_cq_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 	}
 	cqc->dw6 = 1 << QM_CQ_PHASE_SHIFT | qp->c_flag << QM_CQ_FLAG_SHIFT;
 
-	ret = qm_mb(qm, QM_MB_CMD_CQC, cqc_dma, qp_id, 0, 0);
+	ret = qm_mb(qm, QM_MB_CMD_CQC, cqc_dma, qp_id, 0);
 	if (qm->use_dma_api) {
 		dma_unmap_single(dev, cqc_dma, sizeof(struct qm_cqc),
 				 DMA_TO_DEVICE);
@@ -2096,12 +2095,8 @@ static int qm_eq_ctx_cfg(struct hisi_qm *qm)
 {
 	struct device *dev = &qm->pdev->dev;
 	struct qm_eqc *eqc;
-	struct qm_aeqc *aeqc;
 	dma_addr_t eqc_dma;
-	dma_addr_t aeqc_dma;
 	int ret;
-
-	qm_init_eq_aeq_status(qm);
 
 	if (qm->use_dma_api) {
 		eqc = kzalloc(sizeof(struct qm_eqc), GFP_KERNEL);
@@ -2123,16 +2118,23 @@ static int qm_eq_ctx_cfg(struct hisi_qm *qm)
 	if (qm->ver == QM_HW_V1)
 		eqc->dw3 = QM_EQE_AEQE_SIZE;
 	eqc->dw6 = (QM_EQ_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT);
-	ret = qm_mb(qm, QM_MB_CMD_EQC, eqc_dma, 0, 0, 0);
+	ret = qm_mb(qm, QM_MB_CMD_EQC, eqc_dma, 0, 0);
 	if (qm->use_dma_api) {
 		dma_unmap_single(dev, eqc_dma, sizeof(struct qm_eqc),
 				 DMA_TO_DEVICE);
 		kfree(eqc);
-	} else {
+	} else
 		memset(eqc, 0, sizeof(struct qm_eqc));
-	}
-	if (ret)
-		return ret;
+
+	return ret;
+}
+
+static int qm_aeq_ctx_cfg(struct hisi_qm *qm)
+{
+	struct device *dev = &qm->pdev->dev;
+	struct qm_aeqc *aeqc;
+	dma_addr_t aeqc_dma;
+	int ret;
 
 	if (qm->use_dma_api) {
 		aeqc = kzalloc(sizeof(struct qm_aeqc), GFP_KERNEL);
@@ -2152,16 +2154,31 @@ static int qm_eq_ctx_cfg(struct hisi_qm *qm)
 	aeqc->base_l = lower_32_bits(qm->aeqe_dma);
 	aeqc->base_h = upper_32_bits(qm->aeqe_dma);
 	aeqc->dw6 = (QM_Q_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT);
-	ret = qm_mb(qm, QM_MB_CMD_AEQC, aeqc_dma, 0, 0, 0);
+	ret = qm_mb(qm, QM_MB_CMD_AEQC, aeqc_dma, 0, 0);
 	if (qm->use_dma_api) {
 		dma_unmap_single(dev, aeqc_dma, sizeof(struct qm_aeqc),
 				 DMA_TO_DEVICE);
 		kfree(aeqc);
-	} else {
+	} else
 		memset(aeqc, 0, sizeof(struct qm_aeqc));
-	}
 
 	return ret;
+}
+
+static int qm_eq_aeq_ctx_cfg(struct hisi_qm *qm)
+{
+	struct device *dev = &qm->pdev->dev;
+	int ret;
+
+	qm_init_eq_aeq_status(qm);
+
+	ret = qm_eq_ctx_cfg(qm);
+	if (ret) {
+		dev_err(dev, "Set eqc failed!\n");
+		return ret;
+	}
+
+	return qm_aeq_ctx_cfg(qm);
 }
 
 static int __hisi_qm_start(struct hisi_qm *qm)
@@ -2229,15 +2246,15 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 			return -EINVAL;
 	}
 #endif
-	ret = qm_eq_ctx_cfg(qm);
+	ret = qm_eq_aeq_ctx_cfg(qm);
 	if (ret)
 		return ret;
 
-	ret = qm_mb(qm, QM_MB_CMD_SQC_BT, qm->sqc_dma, 0, 0, 0);
+	ret = qm_mb(qm, QM_MB_CMD_SQC_BT, qm->sqc_dma, 0, 0);
 	if (ret)
 		return ret;
 
-	ret = qm_mb(qm, QM_MB_CMD_CQC_BT, qm->cqc_dma, 0, 0, 0);
+	ret = qm_mb(qm, QM_MB_CMD_CQC_BT, qm->cqc_dma, 0, 0);
 	if (ret)
 		return ret;
 
@@ -2296,7 +2313,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 	unsigned long dko_page_nr = 0;
 	unsigned long mmio_page_nr;
 #endif
-	int ret = 0;
+	int ret;
 
 	down_write(&qm->qps_lock);
 
