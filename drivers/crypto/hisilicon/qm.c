@@ -1841,6 +1841,22 @@ static int qm_register_uacce(struct hisi_qm *qm)
 	uacce->ops = &uacce_qm_ops;
 	uacce->algs = qm->algs;
 
+	if (uacce->is_vf) {
+		struct uacce *pf_uacce;
+		struct device *pf_dev = &(pci_physfn(pdev)->dev);
+
+		/* VF uses PF's isoalte data */
+		pf_uacce = dev_to_uacce(pf_dev);
+		if (!pf_uacce) {
+			dev_err(&pdev->dev, "fail to PF device\n");
+			return -ENODEV;
+		}
+
+		uacce->isolate = &pf_uacce->isolate_data;
+	} else {
+		uacce->isolate = &uacce->isolate_data;
+	}
+
 	if (qm->ver == QM_HW_V1)
 		uacce->api_ver = HISI_QM_API_VER_BASE;
 	else

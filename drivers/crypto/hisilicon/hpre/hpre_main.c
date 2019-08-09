@@ -1170,6 +1170,16 @@ static int hpre_controller_reset_prepare(struct hpre *hpre)
 		return ret;
 	}
 
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce) {
+		ret = uacce_hw_err_isolate(&qm->uacce);
+		if (ret) {
+			dev_err(&pdev->dev, "Fails to isolate hw err!\n");
+			return ret;
+		}
+	}
+#endif
+
 	return 0;
 }
 

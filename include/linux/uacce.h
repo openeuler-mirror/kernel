@@ -19,6 +19,17 @@ struct uacce;
 #define UACCE_QFRF_DMA		BIT(3)	/* use dma api for the region */
 #define UACCE_QFRF_SELFMT	BIT(4)	/* self maintained qfr */
 
+struct uacce_hw_err {
+	struct list_head list;
+	unsigned long long tick_stamp;
+};
+
+struct uacce_err_isolate {
+	struct list_head hw_errs;
+	u32 hw_err_isolate_hz;	/* user cfg freq which triggers isolation */
+	atomic_t is_isolate;
+};
+
 struct uacce_qfile_region {
 	enum uacce_qfrt type;
 	unsigned long iova;	/* iova share between user and device space */
@@ -47,7 +58,7 @@ struct uacce_qfile_region {
 struct uacce_ops {
 	int (*get_available_instances)(struct uacce *uacce);
 	int (*get_queue)(struct uacce *uacce, unsigned long arg,
-	     struct uacce_queue **q);
+			struct uacce_queue **q);
 	void (*put_queue)(struct uacce_queue *q);
 	int (*start_queue)(struct uacce_queue *q);
 	void (*stop_queue)(struct uacce_queue *q);
@@ -81,13 +92,9 @@ struct uacce_queue {
 	void *priv;
 	wait_queue_head_t wait;
 	int pasid;
-
 	struct list_head list; /* as list for as->qs */
-
 	struct mm_struct *mm;
-
 	struct uacce_qfile_region *qfrs[UACCE_QFRT_MAX];
-
 	struct fasync_struct *async_queue;
 	enum uacce_q_state state;
 };
@@ -97,9 +104,9 @@ struct uacce {
 	const char *drv_name;
 	const char *algs;
 	const char *api_ver;
-	unsigned int flags;
 	unsigned long qf_pg_start[UACCE_QFRT_MAX];
 	int status;
+	unsigned int flags;
 	struct uacce_ops *ops;
 	struct device *pdev;
 	bool is_vf;
@@ -109,6 +116,8 @@ struct uacce {
 	void *priv;
 	atomic_t ref;
 	int prot;
+	struct uacce_err_isolate isolate_data;
+	struct uacce_err_isolate *isolate;
 };
 
 int uacce_register(struct uacce *uacce);
@@ -116,5 +125,7 @@ int uacce_unregister(struct uacce *uacce);
 void uacce_wake_up(struct uacce_queue *q);
 const char *uacce_qfrt_str(struct uacce_qfile_region *qfr);
 void uacce_q_set_hw_reset(struct uacce_queue *q);
+struct uacce *dev_to_uacce(struct device *dev);
+int uacce_hw_err_isolate(struct uacce *uacce);
 
 #endif

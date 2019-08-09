@@ -43,6 +43,7 @@ static DEFINE_RWLOCK(uacce_qs_lock);
 #endif
 
 #define UACCE_RESET_DELAY_MS        10
+#define UACCE_FROM_CDEV_ATTR(dev) container_of(dev, struct uacce, dev)
 
 static const struct file_operations uacce_fops;
 static int uacce_fops_fasync(int fd, struct file *file, int mode);
@@ -68,6 +69,90 @@ void uacce_q_set_hw_reset(struct uacce_queue *q)
 	mb();
 }
 EXPORT_SYMBOL_GPL(uacce_q_set_hw_reset);
+
+static int cdev_get(struct device *dev, void *data)
+{
+	struct uacce *uacce;
+	struct device **t_dev = data;
+
+	uacce = UACCE_FROM_CDEV_ATTR(dev);
+	if (uacce->pdev == *t_dev) {
+		*t_dev = dev;
+		return 1;
+	}
+
+	return 0;
+}
+
+/**
+ * dev_to_uacce - Get structure uacce from its device
+ * @dev the device
+ */
+struct uacce *dev_to_uacce(struct device *dev)
+{
+	struct device **tdev = &dev;
+	int ret;
+
+	ret = class_for_each_device(uacce_class, NULL, tdev, cdev_get);
+	if (ret) {
+		dev = *tdev;
+		return UACCE_FROM_CDEV_ATTR(dev);
+	}
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(dev_to_uacce);
+
+/**
+ * uacce_hw_err_isolate - Try to isolate the uacce device with its VFs
+ * according to user's configuration of isolation strategy. Warning: this
+ * API should be called while there is no user on the device, or the users
+ * on this device are suspended by slot resetting preparation of PCI AER.
+ * @uacce the uacce device
+ */
+int uacce_hw_err_isolate(struct uacce *uacce)
+{
+	struct uacce_err_isolate *isolate = uacce->isolate;
+	struct uacce_hw_err *err, *tmp, *hw_err;
+	u32 count = 0;
+
+#define SECONDS_PER_HOUR	3600
+
+	/* all the hw errs are processed by PF driver */
+	if (uacce->is_vf || atomic_read(&isolate->is_isolate) ||
+		!isolate->hw_err_isolate_hz)
+		return 0;
+
+	hw_err = kzalloc(sizeof(*hw_err), GFP_ATOMIC);
+	if (!hw_err)
+		return -ENOMEM;
+	hw_err->tick_stamp = jiffies;
+	list_for_each_entry_safe(err, tmp, &isolate->hw_errs, list) {
+		if ((hw_err->tick_stamp - err->tick_stamp) / HZ >
+		    SECONDS_PER_HOUR) {
+			list_del(&err->list);
+			kfree(err);
+		} else {
+			count++;
+		}
+	}
+	list_add(&hw_err->list, &isolate->hw_errs);
+
+	if (count >= isolate->hw_err_isolate_hz)
+		atomic_set(&isolate->is_isolate, 1);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(uacce_hw_err_isolate);
+
+void uacce_hw_err_destroy(struct uacce *uacce)
+{
+	struct uacce_hw_err *err, *tmp;
+
+	list_for_each_entry_safe(err, tmp, &uacce->isolate_data.hw_errs, list) {
+		list_del(&err->list);
+		kfree(err);
+	}
+}
 
 const char *uacce_qfrt_str(struct uacce_qfile_region *qfr)
 {
@@ -1029,27 +1114,25 @@ static const struct file_operations uacce_fops = {
 	.fasync		= uacce_fops_fasync,
 };
 
-#define UACCE_FROM_CDEV_ATTR(dev) container_of(dev, struct uacce, dev)
-
-static ssize_t uacce_dev_show_id(struct device *dev,
+static ssize_t id_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
 	return sprintf(buf, "%d\n", uacce->dev_id);
 }
-static DEVICE_ATTR(id, S_IRUGO, uacce_dev_show_id, NULL);
+static DEVICE_ATTR_RO(id);
 
-static ssize_t uacce_dev_show_api(struct device *dev,
+static ssize_t api_show(struct device *dev,
 				  struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
 	return sprintf(buf, "%s\n", uacce->api_ver);
 }
-static DEVICE_ATTR(api, S_IRUGO, uacce_dev_show_api, NULL);
+static DEVICE_ATTR_RO(api);
 
-static ssize_t uacce_dev_show_numa_distance(struct device *dev,
+static ssize_t numa_distance_show(struct device *dev,
 					    struct device_attribute *attr,
 					    char *buf)
 {
@@ -1061,9 +1144,9 @@ static ssize_t uacce_dev_show_numa_distance(struct device *dev,
 #endif
 	return sprintf(buf, "%d\n", abs(distance));
 }
-static DEVICE_ATTR(numa_distance, S_IRUGO, uacce_dev_show_numa_distance, NULL);
+static DEVICE_ATTR_RO(numa_distance);
 
-static ssize_t uacce_dev_show_node_id(struct device *dev,
+static ssize_t node_id_show(struct device *dev,
 				      struct device_attribute *attr,
 				      char *buf)
 {
@@ -1075,9 +1158,9 @@ static ssize_t uacce_dev_show_node_id(struct device *dev,
 #endif
 	return sprintf(buf, "%d\n", node_id);
 }
-static DEVICE_ATTR(node_id, S_IRUGO, uacce_dev_show_node_id, NULL);
+static DEVICE_ATTR_RO(node_id);
 
-static ssize_t uacce_dev_show_flags(struct device *dev,
+static ssize_t flags_show(struct device *dev,
 				    struct device_attribute *attr,
 				    char *buf)
 {
@@ -1085,9 +1168,9 @@ static ssize_t uacce_dev_show_flags(struct device *dev,
 
 	return sprintf(buf, "%d\n", uacce->flags);
 }
-static DEVICE_ATTR(flags, S_IRUGO, uacce_dev_show_flags, NULL);
+static DEVICE_ATTR_RO(flags);
 
-static ssize_t uacce_dev_show_available_instances(struct device *dev,
+static ssize_t available_instances_show(struct device *dev,
 						  struct device_attribute *attr,
 						  char *buf)
 {
@@ -1095,10 +1178,9 @@ static ssize_t uacce_dev_show_available_instances(struct device *dev,
 
 	return sprintf(buf, "%d\n", uacce->ops->get_available_instances(uacce));
 }
-static DEVICE_ATTR(available_instances, S_IRUGO,
-		   uacce_dev_show_available_instances, NULL);
+static DEVICE_ATTR_RO(available_instances);
 
-static ssize_t uacce_dev_show_algorithms(struct device *dev,
+static ssize_t algorithms_show(struct device *dev,
 					 struct device_attribute *attr,
 					 char *buf)
 {
@@ -1106,9 +1188,9 @@ static ssize_t uacce_dev_show_algorithms(struct device *dev,
 
 	return sprintf(buf, "%s", uacce->algs);
 }
-static DEVICE_ATTR(algorithms, S_IRUGO, uacce_dev_show_algorithms, NULL);
+static DEVICE_ATTR_RO(algorithms);
 
-static ssize_t uacce_dev_show_qfrs_offset(struct device *dev,
+static ssize_t qfrs_offset_show(struct device *dev,
 					  struct device_attribute *attr,
 					  char *buf)
 {
@@ -1128,7 +1210,50 @@ static ssize_t uacce_dev_show_qfrs_offset(struct device *dev,
 
 	return ret;
 }
-static DEVICE_ATTR(qfrs_offset, S_IRUGO, uacce_dev_show_qfrs_offset, NULL);
+static DEVICE_ATTR_RO(qfrs_offset);
+
+static ssize_t isolate_show(struct device *dev,
+				      struct device_attribute *attr,
+				      char *buf)
+{
+	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
+
+	return sprintf(buf, "%d\n", atomic_read(&uacce->isolate->is_isolate));
+}
+static DEVICE_ATTR_RO(isolate);
+
+static ssize_t isolate_strategy_show(struct device *dev,
+					   struct device_attribute *attr,
+					   char *buf)
+{
+	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
+
+	return sprintf(buf, "%u\n", uacce->isolate->hw_err_isolate_hz);
+}
+
+static ssize_t isolate_strategy_store(struct device *dev,
+					    struct device_attribute *attr,
+					    const char *buf, size_t count)
+{
+	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
+	unsigned long val;
+
+	/* must be set by PF */
+	if (uacce->is_vf)
+		return -EINVAL;
+
+	if (kstrtoul(buf, 0, &val) < 0)
+		return -EINVAL;
+
+	if (atomic_read(&uacce->ref))
+		return -EBUSY;
+
+	uacce->isolate->hw_err_isolate_hz = val;
+
+	return count;
+}
+static DEVICE_ATTR_RW(isolate_strategy);
+
 
 static ssize_t dev_state_show(struct device *dev,
 				    struct device_attribute *attr, char *buf)
@@ -1148,6 +1273,8 @@ static struct attribute *uacce_dev_attrs[] = {
 	&dev_attr_available_instances.attr,
 	&dev_attr_algorithms.attr,
 	&dev_attr_qfrs_offset.attr,
+	&dev_attr_isolate.attr,
+	&dev_attr_isolate_strategy.attr,
 	&dev_attr_dev_state.attr,
 	NULL,
 };
@@ -1411,6 +1538,7 @@ int uacce_register(struct uacce *uacce)
 
 	dev_dbg(&uacce->dev, "register to uacce!\n");
 	atomic_set(&uacce->ref, 0);
+	INIT_LIST_HEAD(&uacce->isolate_data.hw_errs);
 
 	return 0;
 }
@@ -1435,7 +1563,7 @@ int uacce_unregister(struct uacce *uacce)
 #else
 	uacce_unset_iommu_domain(uacce);
 #endif
-
+	uacce_hw_err_destroy(uacce);
 	uacce_destroy_chrdev(uacce);
 
 	return 0;
