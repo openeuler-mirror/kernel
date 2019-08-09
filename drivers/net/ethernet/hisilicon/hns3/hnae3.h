@@ -358,6 +358,8 @@ struct hnae3_ae_dev {
  *   Enable/disable HW GRO
  * add_arfs_entry
  *   Check the 5-tuples of flow, and create flow director rule
+ * set_vf_spoofchk
+ *   Enable/disable spoof check for specified vf
  */
 struct hnae3_ae_ops {
 	int (*init_ae_dev)(struct hnae3_ae_dev *ae_dev);
@@ -526,6 +528,8 @@ struct hnae3_ae_ops {
 	bool (*reset_done)(struct hnae3_handle *handle, bool done);
 	void (*restore_vlan_table)(struct hnae3_handle *handle);
 	void (*handle_imp_error)(struct hnae3_handle *handle);
+	int (*set_vf_spoofchk)(struct hnae3_handle *handle, int vf,
+			       bool enable);
 #ifdef CONFIG_HNS3_TEST
 	int (*send_cmdq)(struct hnae3_handle *handle, void *data, int num);
 	int (*test_cmdq)(struct hnae3_handle *handle, void *data, int *len);

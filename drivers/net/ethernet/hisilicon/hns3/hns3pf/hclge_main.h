@@ -975,6 +975,8 @@ struct hclge_vport {
 	u8 mac[ETH_ALEN];
 	int mps; /* Max packet size */
 
+	u32 spoofchk;
+
 	struct list_head uc_mac_list;   /* Store VF unicast table */
 	struct list_head mc_mac_list;   /* Store VF multicast table */
 };
