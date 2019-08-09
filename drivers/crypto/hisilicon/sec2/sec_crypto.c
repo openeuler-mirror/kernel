@@ -1097,7 +1097,7 @@ static struct hisi_sec_req *sec_request_alloc(struct hisi_sec_ctx *ctx,
 
 		*fake_busy = req->fake_busy;
 		__sync_add_and_fetch(&ctx->sec->sec_dfx.fake_busy_cnt,
-			fake_busy);
+			*fake_busy);
 
 		req->priv[req->fusion_num] = in_req->c_req.sk_req;
 		req->fusion_num++;

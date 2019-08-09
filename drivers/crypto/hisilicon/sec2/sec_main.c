@@ -1149,7 +1149,6 @@ static int hisi_sec_controller_reset_prepare(struct hisi_sec *hisi_sec)
 {
 	struct hisi_qm *qm = &hisi_sec->qm;
 	struct pci_dev *pdev = qm->pdev;
-	int retry = 0;
 	int ret;
 
 	ret = hisi_sec_reset_prepare_rdy(hisi_sec);
@@ -1170,17 +1169,6 @@ static int hisi_sec_controller_reset_prepare(struct hisi_sec *hisi_sec)
 		return ret;
 	}
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	/* wait 10s for uacce_queue to release */
-	while (retry++ < 1000) {
-		msleep(20);
-		if (!uacce_unregister(&qm->uacce))
-			break;
-
-		if (retry == 1000)
-			return -EBUSY;
-	}
-#endif
 	return 0;
 }
 
@@ -1272,8 +1260,7 @@ static int hisi_sec_controller_reset_done(struct hisi_sec *hisi_sec)
 {
 	struct hisi_qm *qm = &hisi_sec->qm;
 	struct pci_dev *pdev = qm->pdev;
-	struct hisi_qp *qp;
-	int i, ret;
+	int ret;
 
 	hisi_qm_clear_queues(qm);
 
@@ -1284,17 +1271,6 @@ static int hisi_sec_controller_reset_done(struct hisi_sec *hisi_sec)
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to start QM!\n");
 		return -EPERM;
-	}
-
-	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
-		if (qp) {
-			ret = hisi_qm_start_qp(qp, 0);
-			if (ret < 0) {
-				dev_err(&pdev->dev, "Start qp%d failed\n", i);
-				return -EPERM;
-			}
-		}
 	}
 
 	if (hisi_sec->ctrl->num_vfs)
@@ -1308,11 +1284,6 @@ static int hisi_sec_controller_reset_done(struct hisi_sec *hisi_sec)
 		dev_err(&pdev->dev, "Failed to start VFs!\n");
 		return -EPERM;
 	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce)
-		uacce_register(&qm->uacce);
-#endif
 
 	return 0;
 }
