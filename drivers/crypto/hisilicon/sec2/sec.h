@@ -20,6 +20,9 @@
 #undef pr_fmt
 #define pr_fmt(fmt)	"hisi_sec: " fmt
 
+#define FUSION_LIMIT_DEF 1
+#define FUSION_TMOUT_NSEC_DEF (400 * 1000)
+
 enum sec_endian {
 	SEC_LE = 0,
 	SEC_32BE,
@@ -34,6 +37,8 @@ enum hisi_sec_status {
 
 struct hisi_sec_dfx {
 	u64 send_cnt;
+	u64 send_by_tmout;
+	u64 send_by_full;
 	u64 recv_cnt;
 	u64 get_task_cnt;
 	u64 put_task_cnt;
@@ -54,7 +59,7 @@ struct hisi_sec {
 	int q_ref;
 	int ctx_q_num;
 	int fusion_limit;
-	int fusion_tmout_usec;
+	int fusion_tmout_nsec;
 	unsigned long status;
 };
 

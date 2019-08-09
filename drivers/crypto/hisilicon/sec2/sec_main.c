@@ -173,6 +173,7 @@ struct hisi_sec *find_sec_device(int node)
 
 err:
 	free_list(&head);
+	mutex_unlock(&hisi_sec_list_lock);
 	return NULL;
 }
 
@@ -324,11 +325,11 @@ module_param(enable_sm4_ctr, int, 0444);
 static int ctx_q_num = 64;
 module_param(ctx_q_num, int, 0444);
 
-static int fusion_limit = 64;
+static int fusion_limit = FUSION_LIMIT_DEF;
 module_param(fusion_limit, int, 0444);
 
-static int fusion_tmout_usec = 100;
-module_param(fusion_tmout_usec, int, 0444);
+static int fusion_tmout_nsec = FUSION_TMOUT_NSEC_DEF;
+module_param(fusion_tmout_nsec, int, 0444);
 
 static const struct pci_device_id hisi_sec_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_SEC_PF) },
@@ -668,6 +669,16 @@ static int hisi_sec_core_debug_init(struct hisi_sec_ctrl *ctrl)
 	if (!tmp)
 		return -ENOENT;
 
+	tmp = debugfs_create_u64("send_by_tmout", 0444, tmp_d,
+		&dfx->send_by_tmout);
+	if (!tmp)
+		return -ENOENT;
+
+	tmp = debugfs_create_u64("send_by_full", 0444, tmp_d,
+		&dfx->send_by_full);
+	if (!tmp)
+		return -ENOENT;
+
 	tmp = debugfs_create_u64("recv_cnt", 0444, tmp_d, &dfx->recv_cnt);
 	if (!tmp)
 		return -ENOENT;
@@ -892,7 +903,8 @@ static int hisi_sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	hisi_sec->ctx_q_num = ctx_q_num;
 	hisi_sec->fusion_limit = fusion_limit;
-	hisi_sec->fusion_tmout_usec = fusion_tmout_usec;
+
+	hisi_sec->fusion_tmout_nsec = fusion_tmout_nsec;
 
 	qm = &hisi_sec->qm;
 
@@ -1507,7 +1519,7 @@ static int __init hisi_sec_init(void)
 
 	if (!sec_wq) {
 		pr_err("Fallied to alloc workqueue\n");
-		return PTR_ERR(sec_wq);
+		return -ENOMEM;
 	}
 
 	hisi_sec_register_debugfs();
@@ -1565,3 +1577,4 @@ module_exit(hisi_sec_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zhang Wei <zhangwei375@huawei.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon SEC accelerator");
+

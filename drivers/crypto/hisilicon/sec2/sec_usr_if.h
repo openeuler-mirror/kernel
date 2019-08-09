@@ -184,35 +184,4 @@ struct hisi_sec_sqe {
 	};
 };
 
-enum C_ALG {
-	C_ALG_DES  = 0x0,
-	C_ALG_3DES = 0x1,
-	C_ALG_AES  = 0x2,
-	C_ALG_SM4  = 0x3,
-};
-
-enum C_MODE {
-	C_MODE_ECB    = 0x0,
-	C_MODE_CBC    = 0x1,
-	C_MODE_CTR    = 0x4,
-	C_MODE_CCM    = 0x5,
-	C_MODE_GCM    = 0x6,
-	C_MODE_XTS    = 0x7,
-	C_MODE_CBC_CS = 0x9,
-};
-
-enum CKEY_LEN {
-	CKEY_LEN_128_BIT = 0x0,
-	CKEY_LEN_192_BIT = 0x1,
-	CKEY_LEN_256_BIT = 0x2,
-	CKEY_LEN_DES     = 0x1,
-	CKEY_LEN_3DES_3KEY = 0x1,
-	CKEY_LEN_3DES_2KEY = 0x3,
-};
-
-enum {
-	BD_TYPE1 = 0x1,
-	BD_TYPE2 = 0x2,
-};
-
 #endif
