@@ -208,11 +208,22 @@ EXPORT_SYMBOL_GPL(acc_sg_buf_unmap);
 struct acc_hw_sgl *acc_alloc_multi_sgl(struct device *dev,
 	dma_addr_t *hw_sgl_dma, int sgl_num)
 {
+	struct acc_hw_sgl *hw_sgl;
+	int i;
+
 	if (!dev || !hw_sgl_dma || !sgl_num)
 		return NULL;
 
-	return dma_alloc_coherent(dev, sgl_num * sizeof(struct acc_hw_sgl),
+	hw_sgl = dma_alloc_coherent(dev, sgl_num * sizeof(struct acc_hw_sgl),
 		hw_sgl_dma, GFP_KERNEL | __GFP_ZERO);
+
+	for (i = 1; i < sgl_num; i++) {
+		hw_sgl[i-1].next = &hw_sgl[i];
+		hw_sgl[i-1].next_dma = (*hw_sgl_dma)
+			+ i * sizeof(struct acc_hw_sgl);
+	}
+
+	return hw_sgl;
 }
 EXPORT_SYMBOL_GPL(acc_alloc_multi_sgl);
 
@@ -279,7 +290,7 @@ int acc_sg_buf_map_v2(struct device *dev, struct scatterlist *sgl,
 	}
 
 	update_hw_sgl_sum_sge(hw_sgl,
-		(sge_num + ACC_SGL_SGE_NR - 1) & (~(ACC_SGL_SGE_NR - 1)));
+		((u16)sge_num + ACC_SGL_SGE_NR - 1) & (~(ACC_SGL_SGE_NR - 1)));
 
 	return 0;
 }
