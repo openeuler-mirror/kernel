@@ -1578,7 +1578,7 @@ static int hisi_qm_get_available_instances(struct uacce *uacce)
 	return hisi_qm_get_free_qp_num(uacce->priv);
 }
 
-static void hisi_qm_send_signals(struct hisi_qm *qm)
+static void hisi_qm_set_hw_reset(struct hisi_qm *qm)
 {
 	struct hisi_qp *qp;
 	int i;
@@ -1586,9 +1586,10 @@ static void hisi_qm_send_signals(struct hisi_qm *qm)
 	for (i = 0; i < qm->qp_num; i++) {
 		qp = qm->qp_array[i];
 		if (qp && qp->uacce_q)
-			uacce_send_sig_to_client(qp->uacce_q);
+			uacce_q_set_hw_reset(qp->uacce_q);
 	}
 }
+
 static int hisi_qm_uacce_get_queue(struct uacce *uacce, unsigned long arg,
 				   struct uacce_queue **q)
 {
@@ -1790,6 +1791,18 @@ static long hisi_qm_uacce_ioctl(struct uacce_queue *q, unsigned int cmd,
 	return 0;
 }
 
+static enum uacce_dev_state hisi_qm_get_state(struct uacce *uacce)
+{
+	struct hisi_qm *qm = uacce->priv;
+	enum qm_state curr;
+
+	curr = atomic_read(&qm->status.flags);
+	if (curr == QM_STOP)
+		return UACCE_DEV_ERR;
+	else
+		return UACCE_DEV_NORMAL;
+}
+
 /*
  * the device is set the UACCE_DEV_SVA, but it will be cut if SVA patch is not
  * available
@@ -1802,6 +1815,7 @@ static struct uacce_ops uacce_qm_ops = {
 	.stop_queue = hisi_qm_uacce_stop_queue,
 	.mmap = hisi_qm_uacce_mmap,
 	.ioctl = hisi_qm_uacce_ioctl,
+	.get_dev_state = hisi_qm_get_state,
 };
 
 static int qm_register_uacce(struct hisi_qm *qm)
@@ -2324,16 +2338,21 @@ int hisi_qm_start(struct hisi_qm *qm)
 		uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
 		uacce->qf_pg_start[UACCE_QFRT_DKO]  = UACCE_QFR_NA;
 		uacce->qf_pg_start[UACCE_QFRT_DUS]  = mmio_page_nr;
-		uacce->qf_pg_start[UACCE_QFRT_SS]   = mmio_page_nr +
+		uacce->qf_pg_start[UACCE_QFRT_DS]   = mmio_page_nr +
 						      dus_page_nr;
+		uacce->qf_pg_start[UACCE_QFRT_SS]   = mmio_page_nr +
+						      dus_page_nr + 1;
 	} else if (qm->use_uacce) {
 		uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
 		uacce->qf_pg_start[UACCE_QFRT_DKO]  = mmio_page_nr;
 		uacce->qf_pg_start[UACCE_QFRT_DUS]  = mmio_page_nr +
 						      dko_page_nr;
-		uacce->qf_pg_start[UACCE_QFRT_SS]   = mmio_page_nr +
+		uacce->qf_pg_start[UACCE_QFRT_DS]   = mmio_page_nr +
 						      dko_page_nr +
 						      dus_page_nr;
+		uacce->qf_pg_start[UACCE_QFRT_SS]   = mmio_page_nr +
+						      dko_page_nr +
+						      dus_page_nr + 1;
 	}
 #endif
 
@@ -2436,7 +2455,7 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 			goto err_unlock;
 		}
 #ifdef CONFIG_CRYPTO_QM_UACCE
-		hisi_qm_send_signals(qm);
+		hisi_qm_set_hw_reset(qm);
 #endif
 	}
 

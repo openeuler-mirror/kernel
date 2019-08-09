@@ -1137,7 +1137,6 @@ static int hpre_controller_reset_prepare(struct hpre *hpre)
 {
 	struct hisi_qm *qm = &hpre->qm;
 	struct pci_dev *pdev = qm->pdev;
-	int retry = 0;
 	int ret;
 
 	ret = hpre_reset_prepare_rdy(hpre);
@@ -1157,18 +1156,6 @@ static int hpre_controller_reset_prepare(struct hpre *hpre)
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return ret;
 	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	/* wait 10s for uacce_queue to release */
-	while (retry++ < 1000) {
-		msleep(20);
-		if (!uacce_unregister(&qm->uacce))
-			break;
-
-		if (retry == 1000)
-			return -EBUSY;
-	}
-#endif
 
 	return 0;
 }
@@ -1287,11 +1274,6 @@ static int hpre_controller_reset_done(struct hpre *hpre)
 		dev_err(&pdev->dev, "Failed to start VFs!\n");
 		return -EPERM;
 	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce)
-		uacce_register(&qm->uacce);
-#endif
 
 	return 0;
 }

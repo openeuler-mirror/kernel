@@ -1081,7 +1081,6 @@ static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
 	struct pci_dev *pdev = qm->pdev;
-	int retry = 0;
 	int ret;
 
 	ret = hisi_zip_reset_prepare_rdy(hisi_zip);
@@ -1101,18 +1100,6 @@ static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 		dev_err(&pdev->dev, "Fails to stop QM!\n");
 		return ret;
 	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	/* wait 10s for uacce_queue to release */
-	while (retry++ < 1000) {
-		msleep(20);
-		if (!uacce_unregister(&qm->uacce))
-			break;
-
-		if (retry == 1000)
-			return -EBUSY;
-	}
-#endif
 
 	return 0;
 }
@@ -1229,11 +1216,6 @@ static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 		dev_err(&pdev->dev, "Failed to start VFs!\n");
 		return -EPERM;
 	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce)
-		uacce_register(&qm->uacce);
-#endif
 
 	return 0;
 }

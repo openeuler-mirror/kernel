@@ -53,9 +53,21 @@ static const char *const qfrt_str[] = {
 	"mmio",
 	"dko",
 	"dus",
+	"ds",
 	"ss",
 	"invalid"
 };
+
+void uacce_q_set_hw_reset(struct uacce_queue *q)
+{
+	struct uacce_qfile_region *qfr = q->qfrs[UACCE_QFRT_DS];
+
+	*(u32 *)qfr->kaddr = 1;
+
+	/* make sure setup is completed */
+	mb();
+}
+EXPORT_SYMBOL_GPL(uacce_q_set_hw_reset);
 
 const char *uacce_qfrt_str(struct uacce_qfile_region *qfr)
 {
@@ -67,31 +79,6 @@ const char *uacce_qfrt_str(struct uacce_qfile_region *qfr)
 	return qfrt_str[type];
 }
 EXPORT_SYMBOL_GPL(uacce_qfrt_str);
-
-/**
- * uacce_send_sig_to_client - notify users uacce_queue should be released.
- * @q: the uacce_queue which will be stopped.
- *
- * This function sends signal to process which is using uacce_queue.
- *
- * Note: This function can be called in low level driver, which may bring a race
- *       with uacce_fops_release. The problem is this function may be called
- *       when q is NULL. Low level driver should avoid this by locking hardware
- *       queue pool and check if there is related hardware queue before calling
- *       this function.
- *
- *       And from view of uacce_queue state, uacce_queue state does not be
- *       changed. Operation of queue should also be protected by low level
- *       driver.
- */
-void uacce_send_sig_to_client(struct uacce_queue *q)
-{
-	if (!q)
-		return;
-
-	kill_fasync(&q->async_queue, SIGIO, POLL_IN);
-}
-EXPORT_SYMBOL_GPL(uacce_send_sig_to_client);
 
 /**
  * uacce_wake_up - Wake up the process who is waiting this queue
@@ -856,6 +843,9 @@ static enum uacce_qfrt uacce_get_region_type(struct uacce *uacce,
 	case UACCE_QFRT_DUS:
 		break;
 
+	case UACCE_QFRT_DS:
+		break;
+
 	case UACCE_QFRT_SS:
 		/* todo: this can be valid to protect the process space */
 		if (uacce->flags & UACCE_DEV_FAULT_FROM_DEV)
@@ -965,6 +955,10 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 			flags |= UACCE_QFRF_KMAP;
 		if (q->uacce->flags & UACCE_DEV_NOIOMMU)
 			flags |= UACCE_QFRF_DMA;
+		break;
+
+	case UACCE_QFRT_DS:
+		flags = UACCE_QFRF_KMAP | UACCE_QFRF_MMAP;
 		break;
 
 	default:
@@ -1139,6 +1133,15 @@ static ssize_t uacce_dev_show_qfrs_offset(struct device *dev,
 }
 static DEVICE_ATTR(qfrs_offset, S_IRUGO, uacce_dev_show_qfrs_offset, NULL);
 
+static ssize_t dev_state_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
+
+	return sprintf(buf, "%d\n", uacce->ops->get_dev_state(uacce));
+}
+static DEVICE_ATTR_RO(dev_state);
+
 static struct attribute *uacce_dev_attrs[] = {
 	&dev_attr_id.attr,
 	&dev_attr_api.attr,
@@ -1148,6 +1151,7 @@ static struct attribute *uacce_dev_attrs[] = {
 	&dev_attr_available_instances.attr,
 	&dev_attr_algorithms.attr,
 	&dev_attr_qfrs_offset.attr,
+	&dev_attr_dev_state.attr,
 	NULL,
 };
 

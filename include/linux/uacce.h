@@ -59,6 +59,12 @@ struct uacce_ops {
 	int (*reset_queue)(struct uacce_queue *q);
 	long (*ioctl)(struct uacce_queue *q, unsigned int cmd,
 		      unsigned long arg);
+	enum uacce_dev_state (*get_dev_state)(struct uacce *uacce);
+};
+
+enum uacce_dev_state {
+	UACCE_DEV_ERR = -1,
+	UACCE_DEV_NORMAL,
 };
 
 enum uacce_q_state {
@@ -109,6 +115,6 @@ int uacce_register(struct uacce *uacce);
 int uacce_unregister(struct uacce *uacce);
 void uacce_wake_up(struct uacce_queue *q);
 const char *uacce_qfrt_str(struct uacce_qfile_region *qfr);
-void uacce_send_sig_to_client(struct uacce_queue *q);
+void uacce_q_set_hw_reset(struct uacce_queue *q);
 
 #endif
