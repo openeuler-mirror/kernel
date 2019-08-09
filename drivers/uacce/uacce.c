@@ -1054,7 +1054,7 @@ static __poll_t uacce_fops_poll(struct file *file, poll_table *wait)
 {
 	struct uacce_queue *q;
 	struct uacce *uacce;
-	int ret = 0;
+	__poll_t ret = 0;
 
 	uacce_qs_wlock();
 
@@ -1217,7 +1217,7 @@ static ssize_t isolate_strategy_store(struct device *dev,
 					    const char *buf, size_t count)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
-	unsigned long val;
+	unsigned long val = 0;
 
 	/* must be set by PF */
 	if (uacce->is_vf)
