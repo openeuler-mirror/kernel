@@ -49,106 +49,87 @@ static DEFINE_MUTEX(hisi_ghes_mutex);
 		   0xFD, 0x1D, 0xC5, 0xF7, 0xC5)
 
 #define SUBCTRL_REG_BASE (0x000201070000)
-#define SUBCTRL_LPC_RESET_OFFSET (0xa58)
-#define SUBCTRL_LPC_UNRESET_OFFSET (0xa5c)
+#define SUBCTRL_TDH_RESET_OFFSET (0xa58)
+#define SUBCTRL_TDH_UNRESET_OFFSET (0xa5c)
 
-#define LPC_REG_BASE (0x000201190000)
-#define LPC_MEM_ACCESS_OFFSET (0x140)
+#define TDH_REG_BASE (0x000201190000)
+#define TDH_MEM_ACCESS_OFFSET (0x140)
 
-#define LPC_IRQ_CNT_MAX (0x1000)
+#define TDH_IRQ_CNT_MAX (0x1000)
 
-static u32 sysctl_lpc_irq_cnt;
-static void __iomem *sysctl_subctrl_lpc_priv[CHIP_ID_NUM_MAX];
-static void __iomem *sysctl_lpc_priv[CHIP_ID_NUM_MAX];
+static u32 sysctl_tdh_irq_cnt;
+static void __iomem *sysctl_subctrl_tdh_priv[CHIP_ID_NUM_MAX];
+static void __iomem *sysctl_tdh_priv[CHIP_ID_NUM_MAX];
 
-static int sysctl_lpc_init(void)
+static int sysctl_tdh_init(void)
 {
 	u32 chip_id;
 	u64 addr;
-	u64 lpc_addr;
-	u32 chip_ver;
+	u64 tdh_addr;
 	u64 chip_module_base;
-	void __iomem *chip_ver_addr;
 
 	pr_info("[INFO] %s start.\n", __func__);
 
-	chip_ver_addr = ioremap(0x20107E238, (u64)4);
-	if (!chip_ver_addr) {
-		pr_err("[ERROR] %s chip_ver_base is error.\n", __func__);
-		return ERR_FAILED;
-	}
+	chip_module_base = get_chip_base();
 
-	chip_ver = readl(chip_ver_addr);
-	chip_ver = chip_ver>>28;
-	if (chip_ver == CHIP_VERSION_ES) {
-		pr_info("[sysctl lpc] chip is es\n");
-		chip_module_base = HLLC_CHIP_MODULE_ES;
-	} else {
-		chip_module_base = HLLC_CHIP_MODULE_CS;
-		pr_info("[sysctl lpc] chip is cs\n");
-	}
-
-	pr_info("[sysctl lpc] chip ver=%x\n", chip_ver);
 	for (chip_id = 0; chip_id < CHIP_ID_NUM_MAX; chip_id++) {
 			addr = (u64)chip_id * chip_module_base + SUBCTRL_REG_BASE;
-			sysctl_subctrl_lpc_priv[chip_id] = ioremap(addr, (u64)0x10000);
-			debug_sysctrl_print("[DBG] subctl lpc reset addr of chip[%d]: %p.\n",
-				chip_id, sysctl_subctrl_lpc_priv[chip_id]);
+			sysctl_subctrl_tdh_priv[chip_id] = ioremap(addr, (u64)0x10000);
+			debug_sysctrl_print("[DBG] subctl tdh reset addr of chip[%d]: %pK.\n",
+				chip_id, sysctl_subctrl_tdh_priv[chip_id]);
 
-			lpc_addr = (u64)chip_id * chip_module_base + LPC_REG_BASE;
-			sysctl_lpc_priv[chip_id] = ioremap(lpc_addr, (u64)0x10000);
-			debug_sysctrl_print("[DBG] lpc mem access ctrl addr of chip[%d]: %p.\n",
-				chip_id, sysctl_lpc_priv[chip_id]);
+			tdh_addr = (u64)chip_id * chip_module_base + TDH_REG_BASE;
+			sysctl_tdh_priv[chip_id] = ioremap(tdh_addr, (u64)0x10000);
+			debug_sysctrl_print("[DBG] tdh mem access ctrl addr of chip[%d]: %pK.\n",
+				chip_id, sysctl_tdh_priv[chip_id]);
 	}
-
-	iounmap((void *)chip_ver_addr);
 
 	return ERR_OK;
 }
 
-static int sysctl_lpc_deinit(void)
+static int sysctl_tdh_deinit(void)
 {
 	u8 chip_id;
 
 	for (chip_id = 0; chip_id < CHIP_ID_NUM_MAX; chip_id++) {
-		if (sysctl_subctrl_lpc_priv[chip_id])
-			iounmap((void *)sysctl_subctrl_lpc_priv[chip_id]);
+		if (sysctl_subctrl_tdh_priv[chip_id])
+			iounmap((void *)sysctl_subctrl_tdh_priv[chip_id]);
 
-		if (sysctl_lpc_priv[chip_id])
-			iounmap((void *)sysctl_lpc_priv[chip_id]);
+		if (sysctl_tdh_priv[chip_id])
+			iounmap((void *)sysctl_tdh_priv[chip_id]);
 	}
 
 	return ERR_OK;
 }
 
-static int sysctl_lpc_reset(u8 chip_id)
+static int sysctl_tdh_reset(u8 chip_id)
 {
 	void __iomem *addr;
 
-	addr = sysctl_subctrl_lpc_priv[chip_id] + SUBCTRL_LPC_RESET_OFFSET;
+	addr = sysctl_subctrl_tdh_priv[chip_id] + SUBCTRL_TDH_RESET_OFFSET;
 	writel(0x3, addr);
 
 	return ERR_OK;
 }
 
-static int sysctl_lpc_unreset(u8 chip_id)
+static int sysctl_tdh_unreset(u8 chip_id)
 {
 	void __iomem *addr;
 
-	addr = sysctl_subctrl_lpc_priv[chip_id] + SUBCTRL_LPC_UNRESET_OFFSET;
+	addr = sysctl_subctrl_tdh_priv[chip_id] + SUBCTRL_TDH_UNRESET_OFFSET;
 	writel(0x3, addr);
 
 	return ERR_OK;
 }
 
-static int sysctl_lpc_mem_access_open(u8 chip_id)
+static int sysctl_tdh_mem_access_open(u8 chip_id)
 {
    void __iomem *addr;
 
-   if (!sysctl_lpc_priv[chip_id])
+   if (!sysctl_tdh_priv[chip_id])
 	return ERR_PARAM;
 
-   addr = sysctl_lpc_priv[chip_id] + LPC_MEM_ACCESS_OFFSET;
+   addr = sysctl_tdh_priv[chip_id] + TDH_MEM_ACCESS_OFFSET;
    writel(0x0, addr);
 
    return ERR_OK;
@@ -171,8 +152,8 @@ static void unmap_gen_v2(const struct ghes *ghes)
 static int sysctl_correlation_reg_report(const struct sysctl_local_ras_cper *ras_cper)
 {
 	switch (ras_cper->module_id) {
-	case MODULE_LPC_ERR:
-		pr_info("[INFO] SYSCTL RAS lpc correlation_reg info:\n");
+	case MODULE_TDH_ERR:
+		pr_info("[INFO] SYSCTL RAS tdh correlation_reg info:\n");
 		break;
 	case MODULE_USB_ERR:
 		if (ras_cper->sub_mod_id == MODULE_USB0_ERR) {
@@ -187,16 +168,8 @@ static int sysctl_correlation_reg_report(const struct sysctl_local_ras_cper *ras
 			return -1;
 		}
 		break;
-	case MODULE_SAS_ERR:
-		if (ras_cper->sub_mod_id == MODULE_SAS0_ERR) {
-			pr_info("[INFO] SYSCTL RAS sas0 correlation_reg info:\n");
-		} else if (ras_cper->sub_mod_id == MODULE_SAS1_ERR) {
-			pr_info("[INFO] SYSCTL RAS sas1 correlation_reg info:\n");
-		} else {
-			pr_err("[ERROR] SYSCTL RAS sas sub_module_id[0x%x] is error.\n",
-				ras_cper->sub_mod_id);
-			return -1;
-		}
+	case MODULE_SATA_ERR:
+		pr_info("[INFO] SYSCTL RAS sata correlation_reg info:\n");
 		break;
 	default:
 		pr_err("[ERROR] SYSCTL RAS module_id[0x%x] is error.\n",
@@ -231,25 +204,25 @@ static int sysctl_do_recovery(const struct sysctl_local_ras_cper *ras_cper)
 	int ret = 0;
 
 	switch (ras_cper->module_id) {
-	case MODULE_LPC_ERR:
-		sysctl_lpc_irq_cnt++;
+	case MODULE_TDH_ERR:
+		sysctl_tdh_irq_cnt++;
 
-		sysctl_lpc_reset(ras_cper->socket_id);
-		pr_info("[INFO] SYSCTL RAS lpc of chip[%d] reset.\n", ras_cper->socket_id);
-		pr_info("[INFO] SYSCTL RAS sysctl_lpc_irq_cnt[%d].\n", sysctl_lpc_irq_cnt);
+		sysctl_tdh_reset(ras_cper->socket_id);
+		pr_info("[INFO] SYSCTL RAS tdh of chip[%d] reset.\n", ras_cper->socket_id);
+		pr_info("[INFO] SYSCTL RAS sysctl_tdh_irq_cnt[%d].\n", sysctl_tdh_irq_cnt);
 		udelay((unsigned long)20);
 
-		if (sysctl_lpc_irq_cnt <= LPC_IRQ_CNT_MAX) {
-			sysctl_lpc_unreset(ras_cper->socket_id);
-			pr_info("[INFO] SYSCTL RAS lpc of chip[%d] unreset.\n",
+		if (sysctl_tdh_irq_cnt <= TDH_IRQ_CNT_MAX) {
+			sysctl_tdh_unreset(ras_cper->socket_id);
+			pr_info("[INFO] SYSCTL RAS tdh of chip[%d] unreset.\n",
 				ras_cper->socket_id);
 
-			sysctl_lpc_mem_access_open(ras_cper->socket_id);
-			pr_info("[INFO] SYSCTL RAS lpc of chip[%d] mem access open.\n",
+			sysctl_tdh_mem_access_open(ras_cper->socket_id);
+			pr_info("[INFO] SYSCTL RAS tdh of chip[%d] mem access open.\n",
 				ras_cper->socket_id);
 		} else {
-			pr_err("[ERROR] SYSCTL RAS lpc of chip[%d] unreset %d times, won't unreset.\n",
-				ras_cper->socket_id, LPC_IRQ_CNT_MAX);
+			pr_err("[ERROR] SYSCTL RAS tdh of chip[%d] unreset %d times, won't unreset.\n",
+				ras_cper->socket_id, TDH_IRQ_CNT_MAX);
 		}
 		break;
 	case MODULE_USB_ERR:
@@ -265,16 +238,8 @@ static int sysctl_do_recovery(const struct sysctl_local_ras_cper *ras_cper)
 			return ret;
 		}
 		break;
-	case MODULE_SAS_ERR:
-		if (ras_cper->sub_mod_id == MODULE_SAS0_ERR) {
-			pr_info("[INFO] SYSCTL RAS sas0 error.\n");
-		} else if (ras_cper->sub_mod_id == MODULE_SAS1_ERR) {
-			pr_info("[INFO] SYSCTL RAS sas1 error.\n");
-		} else {
-			pr_err("[ERROR] SYSCTL RAS sas sub_module_id[0x%x] is error.\n",
-				ras_cper->sub_mod_id);
-			return ret;
-		}
+	case MODULE_SATA_ERR:
+		pr_info("[INFO] SYSCTL RAS sata error.\n");
 		break;
 	default:
 		pr_err("[ERROR] SYSCTL RAS module_id[0x%x] is error, has not match process in sysctl.\n",
@@ -348,7 +313,7 @@ err_free:
 static int sysctl_hest_hisi_parse_ghes(struct acpi_hest_header *hest_hdr, void *data)
 {
 	struct acpi_hest_generic *sysctl_generic;
-	struct ghes *sysctl_ghes;
+	struct ghes *sysctl_ghes = NULL;
 	(void)data;
 
 	sysctl_generic = container_of(hest_hdr, struct acpi_hest_generic, header);
@@ -414,7 +379,6 @@ static int sysctl_ghes_read_estatus(struct ghes *sysctl_ghes, int silent)
 	}
 
 	if (!sysctl_ghes->estatus->block_status) {
-		pr_err("[ERROR] SYSCTL RAS sysctl_ghes->estatus->block_status is 0.\n");
 		iounmap(sysctl_ghes->estatus);
 		return -ENOENT;
 	}
@@ -482,9 +446,9 @@ static void sysctl_ghes_do_proc(struct ghes *sysctl_ghes,
 {
 
 	struct acpi_hest_generic_data *gdata = NULL;
-	guid_t *sec_type;
-	struct sysctl_local_ras_cper *ras_cper;
-	struct cper_sec_proc_arm *arm_ras_cper;
+	guid_t *sec_type = NULL;
+	struct sysctl_local_ras_cper *ras_cper = NULL;
+	struct cper_sec_proc_arm *arm_ras_cper = NULL;
 	(void)sysctl_ghes;
 
 	apei_estatus_for_each_section(sysct_estatus, gdata) {
@@ -527,7 +491,7 @@ static int sysctl_hisi_error_handler(struct work_struct *work)
 {
 
 	int ret = 0;
-	struct ghes *sysctl_ghes;
+	struct ghes *sysctl_ghes = NULL;
 	(void)work;
 
 	pr_info("[INFO] SYSCTL RAS %s start.\n", __func__);
@@ -597,20 +561,20 @@ int hip_sysctl_local_ras_init(void)
 {
 	int ret;
 
-	sysctl_lpc_init();
+	sysctl_tdh_init();
 
 	sysctl_acpi_hisi_hest_init();
 
 	ret = register_acpi_hed_notifier(&sysctl_ghes_hisi_notifier_hed);
 
-	sysctl_lpc_mem_access_open(0);
+	sysctl_tdh_mem_access_open(0);
 
 	return ret;
 }
 
 static void his_ghes_list_free(void)
 {
-	struct ghes *sysctl_ghes;
+	struct ghes *sysctl_ghes = NULL;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(sysctl_ghes, &hisi_ghes_list, list) {
@@ -623,7 +587,7 @@ static void his_ghes_list_free(void)
 void hip_sysctl_local_ras_exit(void)
 {
 
-	sysctl_lpc_deinit();
+	sysctl_tdh_deinit();
 	his_ghes_list_free();
 	unregister_acpi_hed_notifier(&sysctl_ghes_hisi_notifier_hed);
 

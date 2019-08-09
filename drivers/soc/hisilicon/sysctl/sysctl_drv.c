@@ -50,8 +50,10 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #define DEBUG
 
-#define	SYSCTL_DRIVER_VERSION "1.7.8.0"
-/* debug?a1? */
+#define	SYSCTL_DRIVER_VERSION "1.8.8.0"
+
+#define CHIP_VER_BASE (0x20107E238)
+
 unsigned int g_sysctrl_debug;
 
 /* sysctrl reg base address */
@@ -86,60 +88,72 @@ int hisi_sysctl_print_debug(u32 print_debug_en)
 	return 0;
 }
 
-int his_hllc_init(void)
+u64 get_chip_base(void)
 {
-	u32 hllc_num;
-	u32 chip_id;
-	u32 ddrc_num;
-	u64 addr;
 	u32 chip_ver;
-	u64 chip_module_base;
 	void __iomem *chip_ver_addr;
+	u64 chip_module_base;
 
-	pr_info("[INFO] %s start.\n", __func__);
-
-	chip_ver_addr = ioremap(0x20107E238, (u64)4);
+	chip_ver_addr = ioremap(CHIP_VER_BASE, (u64)4);
 	if (!chip_ver_addr) {
-		pr_err("[ERROR] %s chip_ver_base is error.\n", __func__);
+		pr_err("sysctl [ERROR] %s chip_ver_base is error.\n", __func__);
 		return ERR_FAILED;
 	}
 
 	chip_ver = readl(chip_ver_addr);
 	chip_ver = chip_ver>>28;
 	if (chip_ver == CHIP_VERSION_ES) {
-		pr_info("[sysctl hllc] chip is es\n");
+		pr_info("sysctl [INFO] chip is es\n");
 		chip_module_base = HLLC_CHIP_MODULE_ES;
 	} else {
 		chip_module_base = HLLC_CHIP_MODULE_CS;
-		pr_info("[sysctl hllc] chip is cs\n");
+		pr_info("sysctl [INFO] chip is cs\n");
 	}
 
-	pr_info("[sysctl hllc] chip ver=%x\n", chip_ver);
+	iounmap((void *)chip_ver_addr);
+
+	pr_info("sysctl [INFO] chip ver=%x\n", chip_ver);
+
+	return chip_module_base;
+}
+
+int his_hllc_init(void)
+{
+	u32 hllc_num;
+	u32 chip_id;
+	u32 ddrc_num;
+	u64 addr;
+	u64 chip_module_base;
+
+	pr_info("[INFO] %s start.\n", __func__);
+
+	chip_module_base = get_chip_base();
+
 	for (chip_id = 0; chip_id < CHIP_ID_NUM_MAX; chip_id++) {
 		for (hllc_num = 0; hllc_num < HLLC_NUM_MAX; hllc_num++) {
 			addr = (u64)chip_id * chip_module_base + HLLC0_REG_BASE + (u64)hllc_num * 0x10000;
 			hip_hllc_priv.hllc_base[chip_id][hllc_num] = ioremap(addr, (u64)0x10000);
 
-			debug_sysctrl_print("[DBG] hllc_base: %p.\n",
+			debug_sysctrl_print("[DBG] hllc_base: %pK.\n",
 				hip_hllc_priv.hllc_base[chip_id][hllc_num]);
 
 			addr = (u64)chip_id * chip_module_base + PCS0_REG_BASE + (u64)hllc_num * 0x10000;
 			hip_hllc_priv.pcs_base[chip_id][hllc_num] = ioremap(addr, (u64)0x10000);
 
-			debug_sysctrl_print("[DBG] pcs_base: %p.\n",
+			debug_sysctrl_print("[DBG] pcs_base: %pK.\n",
 				hip_hllc_priv.pcs_base[chip_id][hllc_num]);
 		}
 
 		addr = (u64)chip_id * chip_module_base + PA_REG_BASE;
 		hip_hllc_priv.pa_base[chip_id] = ioremap(addr, (u64)0x10000);
 
-		debug_sysctrl_print("[DBG] pa_base: %p.\n",
+		debug_sysctrl_print("[DBG] pa_base: %pK.\n",
 			hip_hllc_priv.pa_base[chip_id]);
 
 		addr = (u64)chip_id * chip_module_base + PM_REG_BASE;
 		hip_hllc_priv.pm_base[chip_id] = ioremap(addr, (u64)0x10000);
 
-		debug_sysctrl_print("[DBG] pm_base: %p.\n",
+		debug_sysctrl_print("[DBG] pm_base: %pK.\n",
 			hip_hllc_priv.pm_base[chip_id]);
 
 		for (ddrc_num = 0; ddrc_num < DDRC_CH_NUM_MAX; ddrc_num++) {
@@ -148,15 +162,13 @@ int his_hllc_init(void)
 			addr = (u64)chip_id * chip_module_base + DDRC0_TA_REG_BASE + (u64)ddrc_num * 0x10000;
 			hip_hllc_priv.ddrc_ta_base[chip_id][ddrc_num] = ioremap(addr, (u64)0x10000);
 
-			debug_sysctrl_print("[DBG] ddrc_tb_base: %p.\n",
+			debug_sysctrl_print("[DBG] ddrc_tb_base: %pK.\n",
 				hip_hllc_priv.ddrc_tb_base[chip_id][ddrc_num]);
-			debug_sysctrl_print("[DBG] ddrc_ta_base: %p.\n",
+			debug_sysctrl_print("[DBG] ddrc_ta_base: %pK.\n",
 				hip_hllc_priv.ddrc_ta_base[chip_id][ddrc_num]);
 		}
 
 	}
-
-	iounmap((void *)chip_ver_addr);
 
 	return ERR_OK;
 }
@@ -217,7 +229,7 @@ int hisi_sysctl_get_intlv_mode_cfg(u8 chip_id, u8 *intlv_mode_cfg)
 	addr = hip_hllc_priv.pa_base[chip_id] + PA_PA_GLOBAL_CFG_REG;
 	pa_global_cfg.u32 = readl(addr);
 
-	debug_sysctrl_print("addr:%p, val:0x%x.\n",
+	debug_sysctrl_print("addr:%pK, val:0x%x.\n",
 		addr, pa_global_cfg.u32);
 
 	*intlv_mode_cfg = (u8)pa_global_cfg.bits.intlv_mode_cfg;
@@ -247,7 +259,7 @@ int hisi_sysctl_get_hllc_enable_cfg(u8 chip_id, u8 intlv_mode_cfg, u8 *hllc_eanb
 		addr = hip_hllc_priv.pa_base[chip_id] + PA_PA_GLOBAL_CFG_REG;
 		pa_global_cfg.u32 = readl(addr);
 
-		debug_sysctrl_print("addr:%p, val:0x%x.\n",
+		debug_sysctrl_print("addr:%pK, val:0x%x.\n",
 			addr, pa_global_cfg.u32);
 
 		*hllc_eanble_cfg = (u8)pa_global_cfg.bits.hydra_port_en_cfg;
@@ -403,7 +415,7 @@ int hisi_sysctl_get_hllc_crc_ecc(u8 chip_id, hllc_crc_ecc_info *hllc_crc_ecc)
 		addr = hip_hllc_priv.hllc_base[chip_id][hllc_num] + HLLC_HLLC_REGS_HLLC_PHY_RX_FLIT_CRC_ERR_CNT_REG;
 		phy_rx_flit_crc_err_cnt = readl(addr);
 
-		debug_sysctrl_print("addr:%p, crc_err_cnt:0x%x.\n",
+		debug_sysctrl_print("addr:%pK, crc_err_cnt:0x%x.\n",
 			addr, phy_rx_flit_crc_err_cnt);
 
 		hllc_crc_ecc->hllc_crc_ecc[hllc_num] = phy_rx_flit_crc_err_cnt;
@@ -461,7 +473,7 @@ int hisi_sysctl_get_hllc_link_status(u8 chip_id, hllc_link_sta_info *hllc_link_s
 			addr = hip_hllc_priv.pcs_base[chip_id][hllc_num] + HLLC_HLLC_PCS_PCS_TX_TRAINING_STS_0_REG + lane_num * 4;
 			pcs_tx_training_sts.u32 = readl(addr);
 
-			debug_sysctrl_print("addr:%p, val:0x%x.\n",
+			debug_sysctrl_print("addr:%pK, val:0x%x.\n",
 				addr, pcs_tx_training_sts.u32);
 
 			hllc_link_status &= pcs_tx_training_sts.bits.tx_training_succeed;
@@ -504,7 +516,7 @@ int hisi_sysctl_set_hllc_mem_ecc(u8 chip_id, u8 hllc_id, u8 hllc_ch_bitmap, u8 e
 	hllc_inject_ecc_type.bits.inject_ecc_err_type = ecc_err_type & 0x3;
 	writel(hllc_inject_ecc_type.u32, addr);
 
-	debug_sysctrl_print("addr:%p, val:0x%x.\n",
+	debug_sysctrl_print("addr:%pK, val:0x%x.\n",
 		addr, hllc_inject_ecc_type.u32);
 
 	addr = hip_hllc_priv.hllc_base[chip_id][hllc_id] + HLLC_HLLC_REGS_HLLC_INJECT_ECC_EN_REG;
@@ -512,7 +524,7 @@ int hisi_sysctl_set_hllc_mem_ecc(u8 chip_id, u8 hllc_id, u8 hllc_ch_bitmap, u8 e
 	hllc_inject_ecc_en.bits.hydra_tx_inject_ecc_err_en = hllc_ch_bitmap & 0x7;
 	writel(hllc_inject_ecc_en.u32, addr);
 
-	debug_sysctrl_print("addr:%p, val:0x%x.\n",
+	debug_sysctrl_print("addr:%pK, val:0x%x.\n",
 		addr, hllc_inject_ecc_en.u32);
 
 	debug_sysctrl_print("%s: set_hllc_mem_ecc success\n", __func__);
@@ -546,13 +558,13 @@ int hisi_sysctl_get_hllc_mem_ecc(u8 chip_id, u8 hllc_id, hllc_mem_ecc_info *hllc
 	addr = hip_hllc_priv.hllc_base[chip_id][hllc_id] + HLLC_HLLC_RAS_HLLC_ERR_MISC1H_REG;
 	hllc_ras_err_misc1h.u32 = readl(addr);
 	hllc_mem_ecc->u32 = hllc_ras_err_misc1h.u32 & 0x7f;
-	debug_sysctrl_print("addr:%p, val:0x%x.\n",
+	debug_sysctrl_print("addr:%pK, val:0x%x.\n",
 		addr, hllc_ras_err_misc1h.u32);
 
 	addr = hip_hllc_priv.hllc_base[chip_id][hllc_id] + HLLC_HLLC_RAS_HLLC_ERR_MISC1L_REG;
 	hllc_ras_err_misc1l.u32 = readl(addr);
 	hllc_mem_ecc->u32 |= (hllc_ras_err_misc1l.u32 & 0x7f) << 0x7;
-	debug_sysctrl_print("addr:%p, val:0x%x.\n",
+	debug_sysctrl_print("addr:%pK, val:0x%x.\n",
 		addr, hllc_ras_err_misc1l.u32);
 
 	debug_sysctrl_print("hllc_mem_ecc:0x%x.\n",
@@ -602,7 +614,7 @@ int hisi_sysctl_clr_ddrc_mem_ecc(u8 chip_id, u8 totem, u8 ddrc_ch_id, u32 rasc_c
 	ddrc_rasc_cfg_clr.u32 = rasc_cfg_clr;
 	writel(ddrc_rasc_cfg_clr.u32, addr_ecc_clr);
 
-	debug_sysctrl_print("addr:%p, val:0x%x.\n",
+	debug_sysctrl_print("addr:%pK, val:0x%x.\n",
 		addr_ecc_clr, ddrc_rasc_cfg_clr.u32);
 
 	return ret;
@@ -652,7 +664,7 @@ int hisi_sysctl_get_ddrc_mem_ecc(u8 chip_id, u8 totem, u8 ddrc_ch_id, u8 rank_id
 		addr_ecc_cfg_ecc = hip_hllc_priv.ddrc_tb_base[chip_id][ddrc_ch_id] + DMC_DMC_DDRC_CFG_ECC_REG;
 	}
 
-	debug_sysctrl_print("addr_ecc_cfg_info_rnk:%p.\n",
+	debug_sysctrl_print("addr_ecc_cfg_info_rnk:%pK.\n",
 		addr_ecc_cfg_info_rnk);
 
 	memset(&ddrc_rasc_cfg_info_rnk, 0, sizeof(ddrc_rasc_u_cfg_info_rnk));
@@ -661,9 +673,9 @@ int hisi_sysctl_get_ddrc_mem_ecc(u8 chip_id, u8 totem, u8 ddrc_ch_id, u8 rank_id
 
 	ddrc_rasc_his_ha_rankcnt_inf.u32 = readl(addr_ecc_cnt);
 	ddrc_mem_ecc->ddrc_mem_secc = ddrc_rasc_his_ha_rankcnt_inf.u32;
-	debug_sysctrl_print("addr:%p, ddrc_serr_cnt.funnel_corr_cnt:0x%x.\n",
+	debug_sysctrl_print("addr:%pK, ddrc_serr_cnt.funnel_corr_cnt:0x%x.\n",
 		addr_ecc_cnt, ddrc_rasc_his_ha_rankcnt_inf.bits.ha_rnk_funnel_corr_cnt);
-	debug_sysctrl_print("addr:%p, ddrc_serr_cnt.corr_cnt:0x%x.\n",
+	debug_sysctrl_print("addr:%pK, ddrc_serr_cnt.corr_cnt:0x%x.\n",
 		addr_ecc_cnt, ddrc_rasc_his_ha_rankcnt_inf.bits.ha_rnk_corr_cnt);
 
 	dmc_ddrc_cfg_ecc.u32 = readl(addr_ecc_cfg_ecc);
@@ -673,7 +685,7 @@ int hisi_sysctl_get_ddrc_mem_ecc(u8 chip_id, u8 totem, u8 ddrc_ch_id, u8 rank_id
 		ddrc_mem_ecc->ddrc_mem_secc_en = 0x0;
 	}
 
-	debug_sysctrl_print("addr:%p, dmc_ddrc_cfg_ecc:0x%x.\n",
+	debug_sysctrl_print("addr:%pK, dmc_ddrc_cfg_ecc:0x%x.\n",
 		addr_ecc_cfg_ecc, dmc_ddrc_cfg_ecc.u32);
 
 	debug_sysctrl_print("%s: get_ddrc_mem_ecc success\n",

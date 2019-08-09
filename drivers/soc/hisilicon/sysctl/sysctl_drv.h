@@ -230,4 +230,6 @@ enum {
 	CPU_VOUT_MODE_MAX,
 };
 
+u64 get_chip_base(void);
+
 #endif /* _HIS_SYSCTL_H_ */
