@@ -416,6 +416,20 @@ static void hisi_zip_set_user_domain_and_cache(struct hisi_zip *hisi_zip)
 	       hisi_zip->qm.io_base + QM_CACHE_CTL);
 }
 
+/* hisi_zip_cnt_regs_clear() - clear the hpre cnt regs */
+static void hisi_zip_cnt_regs_clear(struct hisi_qm *qm)
+{
+	/* clear current_qm */
+	writel(0x0, qm->io_base + QM_DFX_MB_CNT_VF);
+	writel(0x0, qm->io_base + QM_DFX_DB_CNT_VF);
+
+	/* clear rdclr_en */
+	writel(0x0, qm->io_base + HZIP_SOFT_CTRL_CNT_CLR_CE);
+
+	hisi_qm_cnt_regs_clear(qm);
+}
+
+
 static void hisi_zip_hw_error_set_state(struct hisi_zip *hisi_zip, bool state)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
@@ -777,6 +791,7 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	if (qm->fun_type == QM_HW_PF) {
+		hisi_zip_cnt_regs_clear(qm);
 		ret = hisi_zip_pf_probe_init(hisi_zip);
 		if (ret)
 			goto err_remove_from_list;
@@ -932,6 +947,9 @@ static void hisi_zip_remove(struct pci_dev *pdev)
 
 	if (qm->fun_type == QM_HW_PF && hisi_zip->ctrl->num_vfs != 0)
 		hisi_zip_sriov_disable(pdev);
+
+	if (qm->fun_type == QM_HW_PF)
+		hisi_zip_cnt_regs_clear(qm);
 
 	hisi_zip_debugfs_exit(hisi_zip);
 	hisi_qm_stop(qm, QM_NORMAL);
