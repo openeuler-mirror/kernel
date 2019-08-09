@@ -519,7 +519,15 @@ static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 	}
 }
 
-static irqreturn_t qm_irq_thread(int irq, void *data)
+static void qp_work_process(struct work_struct *work)
+{
+	struct hisi_qp *qp;
+
+	qp = container_of(work, struct hisi_qp, work);
+	qm_poll_qp(qp, qp->qm);
+}
+
+static irqreturn_t do_qm_irq(int irq, void *data)
 {
 	struct hisi_qm *qm = data;
 	struct qm_eqe *eqe = qm->eqe + qm->status.eq_head;
@@ -529,8 +537,12 @@ static irqreturn_t qm_irq_thread(int irq, void *data)
 	while (QM_EQE_PHASE(eqe) == qm->status.eqc_phase) {
 		eqe_num++;
 		qp = qm_to_hisi_qp(qm, eqe);
-		if (qp)
-			qm_poll_qp(qp, qm);
+		if (qp) {
+			if (qm->wq)
+				queue_work(qm->wq, &qp->work);
+			else
+				schedule_work(&qp->work);
+		}
 
 		if (qm->status.eq_head == QM_EQ_DEPTH - 1) {
 			qm->status.eqc_phase = !qm->status.eqc_phase;
@@ -557,7 +569,7 @@ static irqreturn_t qm_irq(int irq, void *data)
 	struct hisi_qm *qm = data;
 
 	if (readl(qm->io_base + QM_VF_EQ_INT_SOURCE))
-		return IRQ_WAKE_THREAD;
+		return do_qm_irq(irq, data);
 
 	dev_err(&qm->pdev->dev, "invalid int source\n");
 	qm_db(qm, 0, QM_DOORBELL_CMD_EQ, qm->status.eq_head, 0);
@@ -604,6 +616,11 @@ static irqreturn_t qm_abnormal_irq(int irq, void *data)
 	struct device *dev = &qm->pdev->dev;
 	u32 error_status, tmp;
 
+	if (qm->abnormal_fix) {
+		qm->abnormal_fix(qm);
+		return IRQ_HANDLED;
+	}
+
 	/* read err sts */
 	tmp = readl(qm->io_base + QM_ABNORMAL_INT_STATUS);
 	error_status = qm->msi_mask & tmp;
@@ -627,8 +644,8 @@ static int qm_irq_register(struct hisi_qm *qm)
 	struct pci_dev *pdev = qm->pdev;
 	int ret;
 
-	ret = request_threaded_irq(pci_irq_vector(pdev, QM_EQ_EVENT_IRQ_VECTOR),
-				   qm_irq, qm_irq_thread, IRQF_SHARED,
+	ret = request_irq(pci_irq_vector(pdev, QM_EQ_EVENT_IRQ_VECTOR),
+				   qm_irq, IRQF_SHARED,
 				   qm->dev_name, qm);
 	if (ret)
 		return ret;
@@ -1172,6 +1189,7 @@ static struct hisi_qp *hisi_qm_create_qp_lockless(struct hisi_qm *qm,
 	qp->qp_id = qp_id;
 	qp->alg_type = alg_type;
 	qp->c_flag = 1;
+	INIT_WORK(&qp->work, qp_work_process);
 	init_completion(&qp->completion);
 	atomic_set(&qp->qp_status.flags, QP_INIT);
 

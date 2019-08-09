@@ -280,6 +280,9 @@ struct hisi_qm {
 	void *reserve;
 	dma_addr_t reserve_dma;
 #endif
+	struct workqueue_struct *wq;
+	/* design for module not support aer, such as rde */
+	int (*abnormal_fix)(struct hisi_qm *qm);
 };
 
 struct hisi_qp_status {
@@ -321,6 +324,7 @@ struct hisi_qp {
 	u16 pasid;
 	struct uacce_queue *uacce_q;
 #endif
+	struct work_struct work;
 };
 
 int hisi_qm_init(struct hisi_qm *qm);
