@@ -1,4 +1,3 @@
 config MTD_HISILICON_SFC
 	tristate
-depends on SOC_HISILICON_LBC
 	default m
