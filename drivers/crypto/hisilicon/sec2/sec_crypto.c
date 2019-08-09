@@ -200,13 +200,13 @@ static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
 	atomic_set(&qp_ctx->req_cnt, 0);
 
 	qp_ctx->req_bitmap = kcalloc(BITS_TO_LONGS(QM_Q_DEPTH), sizeof(long),
-				  GFP_KERNEL);
+				  GFP_ATOMIC);
 	if (!qp_ctx->req_bitmap) {
 		ret = -ENOMEM;
 		goto err_qm_release_qp;
 	}
 
-	qp_ctx->req_list = kcalloc(QM_Q_DEPTH, sizeof(void *), GFP_KERNEL);
+	qp_ctx->req_list = kcalloc(QM_Q_DEPTH, sizeof(void *), GFP_ATOMIC);
 	if (!qp_ctx->req_list) {
 		ret = -ENOMEM;
 		goto err_free_req_bitmap;

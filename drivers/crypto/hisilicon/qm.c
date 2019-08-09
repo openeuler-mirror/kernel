@@ -2339,10 +2339,10 @@ int hisi_qm_start(struct hisi_qm *qm)
 
 	if (!qm->qp_bitmap) {
 		qm->qp_bitmap = devm_kcalloc(dev, BITS_TO_LONGS(qm->qp_num),
-					     sizeof(long), GFP_KERNEL);
+					     sizeof(long), GFP_ATOMIC);
 		qm->qp_array = devm_kcalloc(dev, qm->qp_num,
 					    sizeof(struct hisi_qp *),
-					    GFP_KERNEL);
+					    GFP_ATOMIC);
 		if (!qm->qp_bitmap || !qm->qp_array) {
 			ret = -ENOMEM;
 			goto err_unlock;
@@ -2364,7 +2364,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 				QMC_ALIGN(sizeof(struct qm_cqc) * qm->qp_num);
 		qm->qdma.va = dma_alloc_coherent(dev, qm->qdma.size,
 						 &qm->qdma.dma,
-						 GFP_KERNEL | __GFP_ZERO);
+						 GFP_ATOMIC | __GFP_ZERO);
 		dev_dbg(dev, "allocate qm dma buf(va=%pK, dma=%pad, size=%lx)\n",
 			qm->qdma.va, &qm->qdma.dma, qm->qdma.size);
 		if (!qm->qdma.va) {
