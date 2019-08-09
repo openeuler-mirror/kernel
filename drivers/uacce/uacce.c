@@ -54,21 +54,9 @@ static const char *const qfrt_str[] = {
 	"mmio",
 	"dko",
 	"dus",
-	"ds",
 	"ss",
 	"invalid"
 };
-
-void uacce_q_set_hw_reset(struct uacce_queue *q)
-{
-	struct uacce_qfile_region *qfr = q->qfrs[UACCE_QFRT_DS];
-
-	*(u32 *)qfr->kaddr = 1;
-
-	/* make sure setup is completed */
-	mb();
-}
-EXPORT_SYMBOL_GPL(uacce_q_set_hw_reset);
 
 static int cdev_get(struct device *dev, void *data)
 {
@@ -925,9 +913,6 @@ static enum uacce_qfrt uacce_get_region_type(struct uacce *uacce,
 	case UACCE_QFRT_DUS:
 		break;
 
-	case UACCE_QFRT_DS:
-		break;
-
 	case UACCE_QFRT_SS:
 		/* todo: this can be valid to protect the process space */
 		if (uacce->flags & UACCE_DEV_FAULT_FROM_DEV)
@@ -1037,10 +1022,6 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 			flags |= UACCE_QFRF_KMAP;
 		if (q->uacce->flags & UACCE_DEV_NOIOMMU)
 			flags |= UACCE_QFRF_DMA;
-		break;
-
-	case UACCE_QFRT_DS:
-		flags = UACCE_QFRF_KMAP | UACCE_QFRF_MMAP;
 		break;
 
 	default:

@@ -1182,7 +1182,8 @@ static struct hisi_qp *hisi_qm_create_qp_nolock(struct hisi_qm *qm,
 	if (qm->use_dma_api) {
 		qp->qdma.size = qm->sqe_size * QM_Q_DEPTH +
 				sizeof(struct cqe) * QM_Q_DEPTH;
-		qp->qdma.size = PAGE_ALIGN(qp->qdma.size);
+		/* one more page for device or qp statuses */
+		qp->qdma.size = PAGE_ALIGN(qp->qdma.size) + PAGE_SIZE;
 		qp->qdma.va = dma_alloc_coherent(dev, qp->qdma.size,
 						 &qp->qdma.dma,
 						 GFP_KERNEL);
@@ -1590,12 +1591,19 @@ static int hisi_qm_get_available_instances(struct uacce *uacce)
 static void hisi_qm_set_hw_reset(struct hisi_qm *qm)
 {
 	struct hisi_qp *qp;
+	u32 *addr;
 	int i;
 
 	for (i = 0; i < qm->qp_num; i++) {
 		qp = qm->qp_array[i];
-		if (qp && qp->uacce_q)
-			uacce_q_set_hw_reset(qp->uacce_q);
+		if (qp) {
+			/* Use last 32 bits of DUS to save reset status. */
+			addr = (u32 *)(qp->qdma.va + qp->qdma.size) - 1;
+			*addr = 1;
+
+			/* make sure setup is completed */
+			mb();
+		}
 	}
 }
 
@@ -2353,8 +2361,10 @@ int hisi_qm_start(struct hisi_qm *qm)
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce) {
+		/* Add one more page for device or qp status */
 		dus_page_nr = (PAGE_SIZE - 1 + qm->sqe_size * QM_Q_DEPTH +
-			       sizeof(struct cqe) * QM_Q_DEPTH) >> PAGE_SHIFT;
+			       sizeof(struct cqe) * QM_Q_DEPTH + PAGE_SIZE) >>
+			       PAGE_SHIFT;
 		dko_page_nr = (PAGE_SIZE - 1 +
 			QMC_ALIGN(sizeof(struct qm_eqe) * QM_EQ_DEPTH) +
 			QMC_ALIGN(sizeof(struct qm_aeqe) * QM_Q_DEPTH) +
@@ -2384,21 +2394,16 @@ int hisi_qm_start(struct hisi_qm *qm)
 		uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
 		uacce->qf_pg_start[UACCE_QFRT_DKO]  = UACCE_QFR_NA;
 		uacce->qf_pg_start[UACCE_QFRT_DUS]  = mmio_page_nr;
-		uacce->qf_pg_start[UACCE_QFRT_DS]   = mmio_page_nr +
-						      dus_page_nr;
 		uacce->qf_pg_start[UACCE_QFRT_SS]   = mmio_page_nr +
-						      dus_page_nr + 1;
+						      dus_page_nr;
 	} else if (qm->use_uacce) {
 		uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
 		uacce->qf_pg_start[UACCE_QFRT_DKO]  = mmio_page_nr;
 		uacce->qf_pg_start[UACCE_QFRT_DUS]  = mmio_page_nr +
 						      dko_page_nr;
-		uacce->qf_pg_start[UACCE_QFRT_DS]   = mmio_page_nr +
-						      dko_page_nr +
-						      dus_page_nr;
 		uacce->qf_pg_start[UACCE_QFRT_SS]   = mmio_page_nr +
 						      dko_page_nr +
-						      dus_page_nr + 1;
+						      dus_page_nr;
 	}
 #endif
 
