@@ -484,15 +484,18 @@ static int current_qm_write(struct ctrl_debug_file *file, u32 val)
 	if (val > ctrl->num_vfs)
 		return -EINVAL;
 
-	/* According PF or VF Dev ID to calculation the curr_qm_qp_num */
-	vfq_num = (qm->ctrl_q_num - qm->qp_num) / ctrl->num_vfs;
+	/* According PF or VF Dev ID to calculation curr_qm_qp_num and store */
 	if (val == 0) {
 		qm->debug.curr_qm_qp_num = qm->qp_num;
-	} else if (val == ctrl->num_vfs) {
-		qm->debug.curr_qm_qp_num = qm->ctrl_q_num - qm->qp_num -
-				(ctrl->num_vfs - 1) * vfq_num;
 	} else {
-		qm->debug.curr_qm_qp_num = vfq_num;
+		vfq_num = (qm->ctrl_q_num - qm->qp_num) / ctrl->num_vfs;
+		if (val == ctrl->num_vfs) {
+			qm->debug.curr_qm_qp_num =
+				qm->ctrl_q_num - qm->qp_num -
+				(ctrl->num_vfs - 1) * vfq_num;
+		} else {
+			qm->debug.curr_qm_qp_num = vfq_num;
+		}
 	}
 
 	writel(val, qm->io_base + QM_DFX_MB_CNT_VF);
