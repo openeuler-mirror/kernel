@@ -130,6 +130,7 @@ struct debugfs_file {
 };
 
 struct qm_debug {
+	u32 curr_qm_qp_num;
 	struct dentry *debug_root;
 	struct dentry *qm_d;
 	struct debugfs_file files[DEBUG_FILE_NUM];

@@ -416,7 +416,7 @@ static void hisi_zip_set_user_domain_and_cache(struct hisi_zip *hisi_zip)
 	       hisi_zip->qm.io_base + QM_CACHE_CTL);
 }
 
-/* hisi_zip_cnt_regs_clear() - clear the hpre cnt regs */
+/* hisi_zip_cnt_regs_clear() - clear the zip cnt regs */
 static void hisi_zip_cnt_regs_clear(struct hisi_qm *qm)
 {
 	/* clear current_qm */
@@ -478,10 +478,22 @@ static int current_qm_write(struct ctrl_debug_file *file, u32 val)
 {
 	struct hisi_qm *qm = file_to_qm(file);
 	struct hisi_zip_ctrl *ctrl = file->ctrl;
+	u32 vfq_num;
 	u32 tmp;
 
 	if (val > ctrl->num_vfs)
 		return -EINVAL;
+
+	/* According PF or VF Dev ID to calculation the curr_qm_qp_num */
+	vfq_num = (qm->ctrl_q_num - qm->qp_num) / ctrl->num_vfs;
+	if (val == 0) {
+		qm->debug.curr_qm_qp_num = qm->qp_num;
+	} else if (val == ctrl->num_vfs) {
+		qm->debug.curr_qm_qp_num = qm->ctrl_q_num - qm->qp_num -
+				(ctrl->num_vfs - 1) * vfq_num;
+	} else {
+		qm->debug.curr_qm_qp_num = vfq_num;
+	}
 
 	writel(val, qm->io_base + QM_DFX_MB_CNT_VF);
 	writel(val, qm->io_base + QM_DFX_DB_CNT_VF);
@@ -798,6 +810,7 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 		qm->qp_base = HZIP_PF_DEF_Q_BASE;
 		qm->qp_num = pf_q_num;
+		qm->debug.curr_qm_qp_num = pf_q_num;
 	} else if (qm->fun_type == QM_HW_VF) {
 		/*
 		 * have no way to get qm configure in VM in v1 hardware,
@@ -948,9 +961,10 @@ static void hisi_zip_remove(struct pci_dev *pdev)
 	if (qm->fun_type == QM_HW_PF && hisi_zip->ctrl->num_vfs != 0)
 		hisi_zip_sriov_disable(pdev);
 
-	if (qm->fun_type == QM_HW_PF)
+	if (qm->fun_type == QM_HW_PF) {
 		hisi_zip_cnt_regs_clear(qm);
-
+		qm->debug.curr_qm_qp_num = 0;
+	}
 	hisi_zip_debugfs_exit(hisi_zip);
 	hisi_qm_stop(qm, QM_NORMAL);
 

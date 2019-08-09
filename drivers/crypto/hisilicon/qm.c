@@ -825,7 +825,7 @@ static int current_q_write(struct debugfs_file *file, u32 val)
 	struct hisi_qm *qm = file_to_qm(file);
 	u32 tmp;
 
-	if (val >= qm->qp_num)
+	if (val >= qm->debug.curr_qm_qp_num)
 		return -EINVAL;
 
 	tmp = val << QM_DFX_QN_SHIFT |

@@ -469,10 +469,22 @@ static int current_qm_write(struct hpre_debugfs_file *file, u32 val)
 {
 	struct hisi_qm *qm = file_to_qm(file);
 	struct hpre_ctrl *ctrl = file->ctrl;
+	u32 vfq_num;
 	u32 tmp;
 
 	if (val > ctrl->num_vfs)
 		return -EINVAL;
+
+	/* According PF or VF Dev ID to calculation the curr_qm_qp_num */
+	vfq_num = (qm->ctrl_q_num - qm->qp_num) / ctrl->num_vfs;
+	if (val == 0) {
+		qm->debug.curr_qm_qp_num = qm->qp_num;
+	} else if (val == ctrl->num_vfs) {
+		qm->debug.curr_qm_qp_num = qm->ctrl_q_num - qm->qp_num -
+				(ctrl->num_vfs - 1) * vfq_num;
+	} else {
+		qm->debug.curr_qm_qp_num = vfq_num;
+	}
 
 	writel(val, qm->io_base + QM_DFX_MB_CNT_VF);
 	writel(val, qm->io_base + QM_DFX_DB_CNT_VF);
@@ -804,6 +816,7 @@ static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	if (pdev->is_physfn) {
 		qm->qp_base = HPRE_PF_DEF_Q_BASE;
 		qm->qp_num = pf_q_num;
+		qm->debug.curr_qm_qp_num = pf_q_num;
 	}
 
 	return 0;
@@ -1425,9 +1438,10 @@ static void hpre_remove(struct pci_dev *pdev)
 		}
 	}
 #endif
-	if (qm->fun_type == QM_HW_PF)
+	if (qm->fun_type == QM_HW_PF) {
 		hpre_cnt_regs_clear(qm);
-
+		qm->debug.curr_qm_qp_num = 0;
+	}
 	hpre_debugfs_exit(hpre);
 	hisi_qm_stop(qm, QM_NORMAL);
 	if (qm->fun_type == QM_HW_PF)
