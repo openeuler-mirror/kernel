@@ -1766,7 +1766,7 @@ static int hisi_sas_debug_I_T_nexus_reset(struct domain_device *device)
 	struct sas_phy *local_phy = sas_get_local_phy(device);
 	struct hisi_sas_device *sas_dev = device->lldd_dev;
 	int rc, reset_type = (sas_dev->dev_status == HISI_SAS_DEV_INIT ||
-			      !dev_is_sata(device)) ? 1 : 0;
+			      !dev_is_sata(device)) ? true : false;
 	struct hisi_hba *hisi_hba = dev_to_hisi_hba(device);
 	struct sas_ha_struct *sas_ha = &hisi_hba->sha;
 	DECLARE_COMPLETION_ONSTACK(phyreset);
@@ -1856,7 +1856,7 @@ static int hisi_sas_lu_reset(struct domain_device *device, u8 *lun)
 
 		phy = sas_get_local_phy(device);
 
-		rc = sas_phy_reset(phy, 1);
+		rc = sas_phy_reset(phy, true);
 
 		if (rc == 0)
 			hisi_sas_release_task(hisi_hba, device);
