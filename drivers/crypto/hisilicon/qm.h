@@ -120,6 +120,7 @@ enum qm_fun_type {
 enum qm_debug_file {
 	CURRENT_Q,
 	CLEAR_ENABLE,
+	QM_STATE,
 	DEBUG_FILE_NUM,
 };
 
@@ -282,6 +283,7 @@ struct hisi_qm {
 	dma_addr_t reserve_dma;
 #endif
 	struct workqueue_struct *wq;
+	struct work_struct work;
 	/* design for module not support aer, such as rde */
 	int (*abnormal_fix)(struct hisi_qm *qm);
 };
@@ -325,7 +327,6 @@ struct hisi_qp {
 	u16 pasid;
 	struct uacce_queue *uacce_q;
 #endif
-	struct work_struct work;
 };
 
 int hisi_qm_init(struct hisi_qm *qm);

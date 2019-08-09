@@ -107,6 +107,7 @@
 #define QM_SQC_VFT_NUM_MASK_v2		0x3ff
 
 #define QM_DFX_CNT_CLR_CE		0x100118
+#define QM_IN_IDLE_ST_REG        0x1040e4
 
 #define QM_ABNORMAL_INT_SOURCE		0x100000
 #define QM_ABNORMAL_INT_MASK		0x100004
@@ -212,6 +213,7 @@ struct hisi_qm_hw_ops {
 static const char * const qm_debug_file_name[] = {
 	[CURRENT_Q]    = "current_q",
 	[CLEAR_ENABLE] = "clear_enable",
+	[QM_STATE] = "qm_state",
 };
 
 struct hisi_qm_hw_error {
@@ -518,17 +520,9 @@ static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 	}
 }
 
-static void qp_work_process(struct work_struct *work)
+static void qm_work_process(struct work_struct *work)
 {
-	struct hisi_qp *qp;
-
-	qp = container_of(work, struct hisi_qp, work);
-	qm_poll_qp(qp, qp->qm);
-}
-
-static irqreturn_t do_qm_irq(int irq, void *data)
-{
-	struct hisi_qm *qm = data;
+	struct hisi_qm *qm = container_of(work, struct hisi_qm, work);
 	struct qm_eqe *eqe = qm->eqe + qm->status.eq_head;
 	struct hisi_qp *qp;
 	int eqe_num = 0;
@@ -536,12 +530,8 @@ static irqreturn_t do_qm_irq(int irq, void *data)
 	while (QM_EQE_PHASE(eqe) == qm->status.eqc_phase) {
 		eqe_num++;
 		qp = qm_to_hisi_qp(qm, eqe);
-		if (qp) {
-			if (qm->wq)
-				queue_work(qm->wq, &qp->work);
-			else
-				schedule_work(&qp->work);
-		}
+		if (qp)
+			qm_poll_qp(qp, qm);
 
 		if (qm->status.eq_head == QM_EQ_DEPTH - 1) {
 			qm->status.eqc_phase = !qm->status.eqc_phase;
@@ -559,6 +549,16 @@ static irqreturn_t do_qm_irq(int irq, void *data)
 	}
 
 	qm_db(qm, 0, QM_DOORBELL_CMD_EQ, qm->status.eq_head, 0);
+}
+
+static irqreturn_t do_qm_irq(int irq, void *data)
+{
+	struct hisi_qm *qm = (struct hisi_qm *)data;
+
+	if (qm->wq)
+		queue_work(qm->wq, &qm->work);
+	else
+		schedule_work(&qm->work);
 
 	return IRQ_HANDLED;
 }
@@ -859,6 +859,13 @@ static int clear_enable_write(struct debugfs_file *file, u32 rd_clr_ctrl)
 	return 0;
 }
 
+static u32 qm_state_read(struct debugfs_file *file)
+{
+	struct hisi_qm *qm = file_to_qm(file);
+
+	return readl(qm->io_base + QM_IN_IDLE_ST_REG);
+}
+
 static ssize_t qm_debug_read(struct file *filp, char __user *buf,
 			     size_t count, loff_t *pos)
 {
@@ -875,6 +882,9 @@ static ssize_t qm_debug_read(struct file *filp, char __user *buf,
 		break;
 	case CLEAR_ENABLE:
 		val = clear_enable_read(file);
+		break;
+	case QM_STATE:
+		val = qm_state_read(file);
 		break;
 	default:
 		mutex_unlock(&file->lock);
@@ -1188,7 +1198,6 @@ static struct hisi_qp *hisi_qm_create_qp_nolock(struct hisi_qm *qm,
 	qp->qp_id = qp_id;
 	qp->alg_type = alg_type;
 	qp->c_flag = 1;
-	INIT_WORK(&qp->work, qp_work_process);
 	init_completion(&qp->completion);
 	atomic_set(&qp->qp_status.flags, QP_INIT);
 
@@ -1945,6 +1954,7 @@ int hisi_qm_init(struct hisi_qm *qm)
 	mutex_init(&qm->mailbox_lock);
 	init_rwsem(&qm->qps_lock);
 	atomic_set(&qm->status.flags, QM_INIT);
+	INIT_WORK(&qm->work, qm_work_process);
 
 	dev_dbg(dev, "init qm %s with %s\n",
 		pdev->is_physfn ? "pf" : "vf",
