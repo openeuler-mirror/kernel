@@ -697,7 +697,6 @@ static void qm_init_qp_status(struct hisi_qp *qp)
 	qp_status->sq_head = 0;
 	qp_status->cq_head = 0;
 	qp_status->cqc_phase = 1;
-	atomic_set(&qp_status->flags, 0);
 }
 
 static void qm_vft_data_cfg(struct hisi_qm *qm, enum vft_type type, u32 base,

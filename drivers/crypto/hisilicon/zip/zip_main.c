@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Copyright (c) 2018-2019 HiSilicon Limited.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- */
+/* Copyright (c) 2018-2019 HiSilicon Limited. */
 
 #include <linux/acpi.h>
 #include <linux/aer.h>
@@ -36,18 +28,18 @@
 #define DECOMP3_ENABLE			BIT(5)
 #define DECOMP4_ENABLE			BIT(6)
 #define DECOMP5_ENABLE			BIT(7)
-#define ALL_COMP_DECOMP_EN		(COMP0_ENABLE | COMP1_ENABLE | \
+#define HZIP_ALL_COMP_DECOMP_EN		(COMP0_ENABLE | COMP1_ENABLE | \
 					 DECOMP0_ENABLE | DECOMP1_ENABLE | \
 					 DECOMP2_ENABLE | DECOMP3_ENABLE | \
 					 DECOMP4_ENABLE | DECOMP5_ENABLE)
-#define DECOMP_CHECK_ENABLE		BIT(16)
+#define HZIP_DECOMP_CHECK_ENABLE	BIT(16)
 #define HZIP_FSM_MAX_CNT		0x301008
 
 #define HZIP_PORT_ARCA_CHE_0		0x301040
 #define HZIP_PORT_ARCA_CHE_1		0x301044
 #define HZIP_PORT_AWCA_CHE_0		0x301060
 #define HZIP_PORT_AWCA_CHE_1		0x301064
-#define CACHE_ALL_EN			0xffffffff
+#define HZIP_CACHE_ALL_EN		0xffffffff
 
 #define HZIP_BD_RUSER_32_63		0x301110
 #define HZIP_SGL_RUSER_32_63		0x30111c
@@ -57,9 +49,9 @@
 
 #define HZIP_QM_IDEL_STATUS		0x3040e4
 #define HZIP_MASTER_GLOBAL_CTRL		0x300000
-#define MASTER_GLOBAL_CTRL_SHUTDOWN	0x1
+#define HZIP_MASTER_GLOBAL_CTRL_SHUTDOWN	0x1
 #define HZIP_MASTER_TRANS_RETURN	0x300150
-#define MASTER_TRANS_RETURN_RW		0x3
+#define HZIP_MASTER_TRANS_RETURN_RW	0x3
 
 #define HZIP_CORE_DEBUG_COMP_0		0x302000
 #define HZIP_CORE_DEBUG_COMP_1		0x303000
@@ -75,12 +67,12 @@
 #define HZIP_CORE_INT_STATUS		0x3010AC
 #define HZIP_CORE_INT_STATUS_M_ECC	BIT(1)
 #define HZIP_CORE_SRAM_ECC_ERR_INFO	0x301148
-#define HZIP_CORE_INT_RAS_CE_ENB    0x301160
-#define HZIP_CORE_INT_RAS_NFE_ENB    0x301164
+#define HZIP_CORE_INT_RAS_CE_ENB	0x301160
+#define HZIP_CORE_INT_RAS_NFE_ENB	0x301164
 #define HZIP_CORE_INT_RAS_FE_ENB        0x301168
-#define HZIP_CORE_INT_RAS_NFE_ENABLE		0x7FE
-#define SRAM_ECC_ERR_NUM_SHIFT		16
-#define SRAM_ECC_ERR_ADDR_SHIFT		24
+#define HZIP_CORE_INT_RAS_NFE_ENABLE	0x7FE
+#define HZIP_SRAM_ECC_ERR_NUM_SHIFT	16
+#define HZIP_SRAM_ECC_ERR_ADDR_SHIFT	24
 #define HZIP_CORE_INT_DISABLE		0x000007FF
 #define HZIP_COMP_CORE_NUM		2
 #define HZIP_DECOMP_CORE_NUM		6
@@ -92,13 +84,16 @@
 #define HZIP_PF_DEF_Q_BASE		0
 
 #define HZIP_SOFT_CTRL_CNT_CLR_CE	0x301000
-#define SOFT_CTRL_CNT_CLR_CE_BIT	BIT(0)
+#define HZIP_SOFT_CTRL_CNT_CLR_CE_BIT	BIT(0)
 
+#define HZIP_MSE_ENABLE			1
+#define HZIP_MSE_DISABLE		0
 #define HZIP_NUMA_DISTANCE		100
 #define HZIP_BUF_SIZE			20
 #define FORMAT_DECIMAL			10
-#define HZIP_REG_RD_INTVRL_US          10
-#define HZIP_REG_RD_TMOUT_US           1000
+#define HZIP_REG_RD_INTVRL_US		10
+#define HZIP_REG_RD_TMOUT_US		1000
+#define HZIP_RESET_WAIT_TIMEOUT		400
 
 static const char hisi_zip_name[] = "hisi_zip";
 static struct dentry *hzip_debugfs_root;
@@ -171,6 +166,7 @@ struct hisi_zip *find_zip_device(int node)
 
 err:
 	free_list(&head);
+	mutex_unlock(&hisi_zip_list_lock);
 	return NULL;
 }
 
@@ -383,10 +379,10 @@ static void hisi_zip_set_user_domain_and_cache(struct hisi_zip *hisi_zip)
 	       QM_PEH_AXUSER_CFG_ENABLE);
 
 	/* cache */
-	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_0);
-	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_1);
-	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_0);
-	writel(CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_1);
+	writel(HZIP_CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_0);
+	writel(HZIP_CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_1);
+	writel(HZIP_CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_0);
+	writel(HZIP_CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_1);
 
 	/* user domain configurations */
 	writel(AXUSER_BASE, hisi_zip->qm.io_base + HZIP_BD_RUSER_32_63);
@@ -406,7 +402,7 @@ static void hisi_zip_set_user_domain_and_cache(struct hisi_zip *hisi_zip)
 	}
 
 	/* let's open all compression/decompression cores */
-	writel(DECOMP_CHECK_ENABLE | ALL_COMP_DECOMP_EN,
+	writel(HZIP_DECOMP_CHECK_ENABLE | HZIP_ALL_COMP_DECOMP_EN,
 	       hisi_zip->qm.io_base + HZIP_CLOCK_GATE_CTRL);
 
 	/* enable sqc,cqc writeback */
@@ -517,7 +513,7 @@ static u32 clear_enable_read(struct ctrl_debug_file *file)
 	struct hisi_qm *qm = file_to_qm(file);
 
 	return readl(qm->io_base + HZIP_SOFT_CTRL_CNT_CLR_CE) &
-	       SOFT_CTRL_CNT_CLR_CE_BIT;
+		     HZIP_SOFT_CTRL_CNT_CLR_CE_BIT;
 }
 
 static int clear_enable_write(struct ctrl_debug_file *file, u32 val)
@@ -529,13 +525,13 @@ static int clear_enable_write(struct ctrl_debug_file *file, u32 val)
 		return -EINVAL;
 
 	tmp = (readl(qm->io_base + HZIP_SOFT_CTRL_CNT_CLR_CE) &
-	       ~SOFT_CTRL_CNT_CLR_CE_BIT) | val;
+	       ~HZIP_SOFT_CTRL_CNT_CLR_CE_BIT) | val;
 	writel(tmp, qm->io_base + HZIP_SOFT_CTRL_CNT_CLR_CE);
 
 	return  0;
 }
 
-static ssize_t ctrl_debug_read(struct file *filp, char __user *buf,
+static ssize_t hisi_zip_ctrl_debug_read(struct file *filp, char __user *buf,
 			     size_t count, loff_t *pos)
 {
 	struct ctrl_debug_file *file = filp->private_data;
@@ -543,7 +539,7 @@ static ssize_t ctrl_debug_read(struct file *filp, char __user *buf,
 	u32 val;
 	int ret;
 
-	spin_lock_irq(&file->lock);
+	spin_lock(&file->lock);
 	switch (file->index) {
 	case HZIP_CURRENT_QM:
 		val = current_qm_read(file);
@@ -552,16 +548,17 @@ static ssize_t ctrl_debug_read(struct file *filp, char __user *buf,
 		val = clear_enable_read(file);
 		break;
 	default:
-		spin_unlock_irq(&file->lock);
+		spin_unlock(&file->lock);
 		return -EINVAL;
 	}
-	spin_unlock_irq(&file->lock);
+	spin_unlock(&file->lock);
 	ret = sprintf(tbuf, "%u\n", val);
 	return simple_read_from_buffer(buf, count, pos, tbuf, ret);
 }
 
-static ssize_t ctrl_debug_write(struct file *filp, const char __user *buf,
-			      size_t count, loff_t *pos)
+static ssize_t hisi_zip_ctrl_debug_write(struct file *filp,
+					 const char __user *buf,
+					 size_t count, loff_t *pos)
 {
 	struct ctrl_debug_file *file = filp->private_data;
 	char tbuf[HZIP_BUF_SIZE];
@@ -582,7 +579,7 @@ static ssize_t ctrl_debug_write(struct file *filp, const char __user *buf,
 	if (kstrtoul(tbuf, 0, &val))
 		return -EFAULT;
 
-	spin_lock_irq(&file->lock);
+	spin_lock(&file->lock);
 	switch (file->index) {
 	case HZIP_CURRENT_QM:
 		ret = current_qm_write(file, val);
@@ -598,20 +595,20 @@ static ssize_t ctrl_debug_write(struct file *filp, const char __user *buf,
 		ret = -EINVAL;
 		goto err_input;
 	}
-	spin_unlock_irq(&file->lock);
+	spin_unlock(&file->lock);
 
 	return count;
 
 err_input:
-	spin_unlock_irq(&file->lock);
+	spin_unlock(&file->lock);
 	return ret;
 }
 
 static const struct file_operations ctrl_debug_fops = {
 	.owner = THIS_MODULE,
 	.open = simple_open,
-	.read = ctrl_debug_read,
-	.write = ctrl_debug_write,
+	.read = hisi_zip_ctrl_debug_read,
+	.write = hisi_zip_ctrl_debug_write,
 };
 
 static int hisi_zip_core_debug_init(struct hisi_zip_ctrl *ctrl)
@@ -787,6 +784,7 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		qm->use_sva = true;
 #else
 		qm->use_dma_api = false;
+		qm->use_sva = false;
 #endif
 		qm->use_uacce = true;
 		break;
@@ -825,9 +823,12 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		if (qm->ver == QM_HW_V1) {
 			qm->qp_base = HZIP_PF_DEF_Q_NUM;
 			qm->qp_num = HZIP_QUEUE_NUM_V1 - HZIP_PF_DEF_Q_NUM;
-		} else if (qm->ver == QM_HW_V2)
+		} else if (qm->ver == QM_HW_V2) {
 			/* v2 starts to support get vft by mailbox */
-			hisi_qm_get_vft(qm, &qm->qp_base, &qm->qp_num);
+			ret = hisi_qm_get_vft(qm, &qm->qp_base, &qm->qp_num);
+			if (ret)
+				goto err_remove_from_list;
+		}
 	}
 
 	ret = hisi_qm_start(qm);
@@ -993,10 +994,12 @@ static void hisi_zip_log_hw_error(struct hisi_zip *hisi_zip, u32 err_sts)
 				err_val = readl(hisi_zip->qm.io_base +
 						HZIP_CORE_SRAM_ECC_ERR_INFO);
 				dev_err(dev, "hisi-zip multi ecc sram num=0x%x\n",
-					 ((err_val >> SRAM_ECC_ERR_NUM_SHIFT) &
-					  0xFF));
+					 ((err_val >>
+					   HZIP_SRAM_ECC_ERR_NUM_SHIFT) &
+					   0xFF));
 				dev_err(dev, "hisi-zip multi ecc sram addr=0x%x\n",
-					 (err_val >> SRAM_ECC_ERR_ADDR_SHIFT));
+					 (err_val >>
+					  HZIP_SRAM_ECC_ERR_ADDR_SHIFT));
 			}
 		}
 		err++;
@@ -1057,35 +1060,25 @@ static pci_ers_result_t hisi_zip_error_detected(struct pci_dev *pdev,
 	return hisi_zip_process_hw_error(pdev);
 }
 
-static int hisi_zip_reset_prepare_rdy(struct hisi_zip *hisi_zip)
+static int hisi_zip_reset_prepare_ready(struct hisi_zip *hisi_zip)
 {
-	int delay = 1;
-	u32 flag = 1;
-	int ret = 0;
+	struct pci_dev *pdev = hisi_zip->qm.pdev;
+	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
+	int delay = 0;
 
-#define RESET_WAIT_TIMEOUT 20000
-
-	while (flag) {
-		flag = 0;
-		if (delay > RESET_WAIT_TIMEOUT) {
-			ret = -EBUSY;
-			break;
-		}
-
-		msleep(delay);
-		delay *= 2;
-
-		if (test_and_set_bit(HISI_ZIP_RESET, &hisi_zip->status))
-			flag = 1;
+	while (test_and_set_bit(HISI_ZIP_RESET, &zip->status)) {
+		msleep(++delay);
+		if (delay > HZIP_RESET_WAIT_TIMEOUT)
+			return -EBUSY;
 	}
 
-	return ret;
+	return 0;
 }
 
-static int hisi_zip_vf_reset_prepare(struct pci_dev *pdev,
+static int hisi_zip_vf_reset_prepare(struct hisi_zip *hisi_zip,
 				     enum qm_stop_reason stop_reason)
 {
-	struct hisi_zip *hisi_zip;
+	struct pci_dev *pdev = hisi_zip->qm.pdev;
 	struct pci_dev *dev;
 	struct hisi_qm *qm;
 	int ret = 0;
@@ -1115,24 +1108,24 @@ prepare_fail:
 static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
-	struct pci_dev *pdev = qm->pdev;
+	struct device *dev = &qm->pdev->dev;
 	int ret;
 
-	ret = hisi_zip_reset_prepare_rdy(hisi_zip);
+	ret = hisi_zip_reset_prepare_ready(hisi_zip);
 	if (ret) {
-		dev_err(&pdev->dev, "Controller reset not ready!\n");
+		dev_err(dev, "Controller reset not ready!\n");
 		return ret;
 	}
 
-	ret = hisi_zip_vf_reset_prepare(pdev, QM_SOFT_RESET);
+	ret = hisi_zip_vf_reset_prepare(hisi_zip, QM_SOFT_RESET);
 	if (ret) {
-		dev_err(&pdev->dev, "Fails to stop VFs!\n");
+		dev_err(dev, "Fails to stop VFs!\n");
 		return ret;
 	}
 
 	ret = hisi_qm_stop(qm, QM_SOFT_RESET);
 	if (ret) {
-		dev_err(&pdev->dev, "Fails to stop QM!\n");
+		dev_err(dev, "Fails to stop QM!\n");
 		return ret;
 	}
 
@@ -1140,7 +1133,7 @@ static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 	if (qm->use_uacce) {
 		ret = uacce_hw_err_isolate(&qm->uacce);
 		if (ret) {
-			dev_err(&pdev->dev, "Fails to isolate hw err!\n");
+			dev_err(dev, "Fails to isolate hw err!\n");
 			return ret;
 		}
 	}
@@ -1172,16 +1165,16 @@ static int hisi_zip_soft_reset(struct hisi_zip *hisi_zip)
 	u32 val;
 
 	/* Set VF MSE bit */
-	hisi_zip_set_mse(hisi_zip, 0);
+	hisi_zip_set_mse(hisi_zip, HZIP_MSE_DISABLE);
 
 	/* OOO register set and check */
-	writel(MASTER_GLOBAL_CTRL_SHUTDOWN,
+	writel(HZIP_MASTER_GLOBAL_CTRL_SHUTDOWN,
 	       hisi_zip->qm.io_base + HZIP_MASTER_GLOBAL_CTRL);
 
 	/* If bus lock, reset chip */
 	ret = readl_relaxed_poll_timeout(hisi_zip->qm.io_base +
 					 HZIP_MASTER_TRANS_RETURN, val,
-					 (val == MASTER_TRANS_RETURN_RW),
+					 (val == HZIP_MASTER_TRANS_RETURN_RW),
 					 HZIP_REG_RD_INTVRL_US,
 					 HZIP_REG_RD_TMOUT_US);
 	if (ret) {
@@ -1206,9 +1199,9 @@ static int hisi_zip_soft_reset(struct hisi_zip *hisi_zip)
 	return 0;
 }
 
-static int hisi_zip_vf_reset_done(struct pci_dev *pdev)
+static int hisi_zip_vf_reset_done(struct hisi_zip *hisi_zip)
 {
-	struct hisi_zip *hisi_zip;
+	struct pci_dev *pdev = hisi_zip->qm.pdev;
 	struct pci_dev *dev;
 	struct hisi_qm *qm;
 	int ret = 0;
@@ -1237,7 +1230,7 @@ reset_fail:
 static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
-	struct pci_dev *pdev = qm->pdev;
+	struct device *dev = &qm->pdev->dev;
 	int ret;
 
 	hisi_qm_clear_queues(qm);
@@ -1247,18 +1240,24 @@ static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 
 	ret = hisi_qm_restart(qm);
 	if (ret) {
-		dev_err(&pdev->dev, "Failed to start QM!\n");
+		dev_err(dev, "Failed to start QM!\n");
 		return -EPERM;
 	}
 
-	if (hisi_zip->ctrl->num_vfs)
-		hisi_zip_vf_q_assign(hisi_zip, hisi_zip->ctrl->num_vfs);
+	if (hisi_zip->ctrl->num_vfs) {
+		ret = hisi_zip_vf_q_assign(hisi_zip, hisi_zip->ctrl->num_vfs);
+		if (ret) {
+			dev_err(dev, "Failed to assign vf queues!\n");
+			return ret;
+		}
+	}
 
 	/* Clear VF MSE bit */
-	hisi_zip_set_mse(hisi_zip, 1);
-	ret = hisi_zip_vf_reset_done(pdev);
+	hisi_zip_set_mse(hisi_zip, HZIP_MSE_ENABLE);
+
+	ret = hisi_zip_vf_reset_done(hisi_zip);
 	if (ret) {
-		dev_err(&pdev->dev, "Failed to start VFs!\n");
+		dev_err(dev, "Failed to start VFs!\n");
 		return -EPERM;
 	}
 
@@ -1317,30 +1316,6 @@ static pci_ers_result_t hisi_zip_slot_reset(struct pci_dev *pdev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
-static void hisi_zip_flr_prepare_rdy(struct pci_dev *pdev)
-{
-	struct pci_dev *pf_pdev = pci_physfn(pdev);
-	struct hisi_zip *hisi_zip = pci_get_drvdata(pf_pdev);
-	int delay = 1;
-	u32 flag = 1;
-
-#define FLR_WAIT_TIMEOUT 60000
-#define FLR_DELAY_INC 2000
-
-	while (flag) {
-		flag = 0;
-		msleep(delay);
-		if (delay > FLR_WAIT_TIMEOUT) {
-			flag = 1;
-			delay = 1;
-			dev_err(&pdev->dev, "Device error, please exit FLR!\n");
-		} else if (test_and_set_bit(HISI_ZIP_RESET, &hisi_zip->status))
-			flag = 1;
-
-		delay += FLR_DELAY_INC;
-	}
-}
-
 static void hisi_zip_reset_prepare(struct pci_dev *pdev)
 {
 	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
@@ -1348,29 +1323,33 @@ static void hisi_zip_reset_prepare(struct pci_dev *pdev)
 	struct device *dev = &pdev->dev;
 	int ret;
 
-	hisi_zip_flr_prepare_rdy(pdev);
-
-	ret = hisi_zip_vf_reset_prepare(pdev, QM_FLR);
+	ret = hisi_zip_reset_prepare_ready(hisi_zip);
 	if (ret) {
-		dev_err(&pdev->dev, "Fails to prepare reset!\n");
+		dev_err(dev, "FLR not ready!\n");
+		return;
+	}
+
+	ret = hisi_zip_vf_reset_prepare(hisi_zip, QM_FLR);
+	if (ret) {
+		dev_err(dev, "Fails to prepare reset!\n");
 		return;
 	}
 
 	ret = hisi_qm_stop(qm, QM_FLR);
 	if (ret) {
-		dev_err(&pdev->dev, "Fails to stop QM!\n");
+		dev_err(dev, "Fails to stop QM!\n");
 		return;
 	}
 
 	dev_info(dev, "FLR resetting...\n");
 }
 
-static void hisi_zip_flr_reset_complete(struct pci_dev *pdev)
+static void hisi_zip_flr_reset_complete(struct hisi_zip *hisi_zip)
 {
-	struct pci_dev *pf_pdev = pci_physfn(pdev);
-	struct hisi_zip *hisi_zip = pci_get_drvdata(pf_pdev);
+	struct pci_dev *pdev = hisi_zip->qm.pdev;
+	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
 
-	clear_bit(HISI_ZIP_RESET, &hisi_zip->status);
+	clear_bit(HISI_ZIP_RESET, &zip->status);
 }
 
 static void hisi_zip_reset_done(struct pci_dev *pdev)
@@ -1393,10 +1372,10 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 		if (hisi_zip->ctrl->num_vfs)
 			hisi_zip_vf_q_assign(hisi_zip,
 				hisi_zip->ctrl->num_vfs);
-		hisi_zip_vf_reset_done(pdev);
+		hisi_zip_vf_reset_done(hisi_zip);
 	}
 
-	hisi_zip_flr_reset_complete(pdev);
+	hisi_zip_flr_reset_complete(hisi_zip);
 
 	dev_info(dev, "FLR reset complete\n");
 }
