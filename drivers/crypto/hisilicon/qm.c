@@ -1143,8 +1143,8 @@ static void *qm_get_avail_sqe(struct hisi_qp *qp)
 	return qp->sqe + sq_tail * qp->qm->sqe_size;
 }
 
-static struct hisi_qp *hisi_qm_create_qp_lockless(struct hisi_qm *qm,
-						  u8 alg_type)
+static struct hisi_qp *hisi_qm_create_qp_nolock(struct hisi_qm *qm,
+						u8 alg_type)
 {
 	struct device *dev = &qm->pdev->dev;
 	struct hisi_qp *qp;
@@ -1215,7 +1215,7 @@ struct hisi_qp *hisi_qm_create_qp(struct hisi_qm *qm, u8 alg_type)
 	struct hisi_qp *qp;
 
 	down_write(&qm->qps_lock);
-	qp = hisi_qm_create_qp_lockless(qm, alg_type);
+	qp = hisi_qm_create_qp_nolock(qm, alg_type);
 	up_write(&qm->qps_lock);
 
 	return qp;
@@ -1358,7 +1358,7 @@ static int qm_qp_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 	return qm_cq_ctx_cfg(qp, qp_id, pasid);
 }
 
-static int hisi_qm_start_qp_lockless(struct hisi_qp *qp, unsigned long arg)
+static int hisi_qm_start_qp_nolock(struct hisi_qp *qp, unsigned long arg)
 {
 	struct hisi_qm *qm = qp->qm;
 	struct device *dev = &qm->pdev->dev;
@@ -1367,6 +1367,7 @@ static int hisi_qm_start_qp_lockless(struct hisi_qp *qp, unsigned long arg)
 	int pasid = arg;
 	size_t off = 0;
 	int ret;
+
 	if (!qm_qp_avail_state(qm, qp, QP_START))
 		return -EPERM;
 
@@ -1420,14 +1421,14 @@ int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg)
 	int ret;
 
 	down_write(&qm->qps_lock);
-	ret = hisi_qm_start_qp_lockless(qp, arg);
+	ret = hisi_qm_start_qp_nolock(qp, arg);
 	up_write(&qm->qps_lock);
 
 	return ret;
 }
 EXPORT_SYMBOL_GPL(hisi_qm_start_qp);
 
-static int hisi_qm_stop_qp_lockless(struct hisi_qp *qp)
+static int hisi_qm_stop_qp_nolock(struct hisi_qp *qp)
 {
 	struct device *dev = &qp->qm->pdev->dev;
 	int i = 0;
@@ -1465,7 +1466,7 @@ int hisi_qm_stop_qp(struct hisi_qp *qp)
 	int ret;
 
 	down_write(&qp->qm->qps_lock);
-	ret = hisi_qm_stop_qp_lockless(qp);
+	ret = hisi_qm_stop_qp_nolock(qp);
 	up_write(&qp->qm->qps_lock);
 
 	return ret;
@@ -1598,7 +1599,7 @@ static int hisi_qm_uacce_get_queue(struct uacce *uacce, unsigned long arg,
 	u8 alg_type = 0;
 
 	down_write(&qm->qps_lock);
-	qp = hisi_qm_create_qp_lockless(qm, alg_type);
+	qp = hisi_qm_create_qp_nolock(qm, alg_type);
 	if (IS_ERR(qp)) {
 		up_write(&qm->qps_lock);
 		return PTR_ERR(qp);
@@ -1924,8 +1925,10 @@ int hisi_qm_init(struct hisi_qm *qm)
 	}
 
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
-	if (ret < 0)
+	if (ret < 0) {
+		dev_err(dev, "Failed to set 64 bit dma mask %d", ret);
 		goto err_iounmap;
+	}
 	pci_set_master(pdev);
 
 	num_vec = qm->ops->get_irq_num(qm);
@@ -2009,14 +2012,14 @@ EXPORT_SYMBOL_GPL(hisi_qm_uninit);
  */
 int hisi_qm_frozen(struct hisi_qm *qm)
 {
-	int ret, i;
+	int count, i;
 
 	down_write(&qm->qps_lock);
-	for (i = 0, ret = 0; i < qm->qp_num; i++)
+	for (i = 0, count = 0; i < qm->qp_num; i++)
 		if (!qm->qp_array[i])
-			ret++;
+			count++;
 
-	if (ret == qm->qp_num) {
+	if (count == qm->qp_num) {
 		bitmap_set(qm->qp_bitmap, 0, qm->qp_num);
 	} else {
 		up_write(&qm->qps_lock);
@@ -2281,7 +2284,7 @@ int hisi_qm_restart(struct hisi_qm *qm)
 
 		if (qp && atomic_read(&qp->qp_status.flags) == QP_STOP &&
 		    qp->is_resetting == true) {
-			ret = hisi_qm_start_qp_lockless(qp, 0);
+			ret = hisi_qm_start_qp_nolock(qp, 0);
 			if (ret < 0) {
 				dev_err(dev, "Failed to start qp%d!\n", i);
 
@@ -2428,7 +2431,7 @@ static int qm_stop_started_qp(struct hisi_qm *qm)
 	for (i = 0; i < qm->qp_num; i++) {
 		qp = qm->qp_array[i];
 		if (qp && atomic_read(&qp->qp_status.flags) == QP_START) {
-			ret = hisi_qm_stop_qp_lockless(qp);
+			ret = hisi_qm_stop_qp_nolock(qp);
 			if (ret < 0) {
 				dev_err(dev, "Failed to stop qp%d!\n", i);
 				return ret;
@@ -2444,6 +2447,7 @@ static int qm_stop_started_qp(struct hisi_qm *qm)
 /**
  * hisi_qm_stop() - Stop a qm.
  * @qm: The qm which will be stopped.
+ * @r: The reason to stop qm.
  *
  * This function stops qm and its qps, then qm can not accept request.
  * Related resources are not released at this state, we can use hisi_qm_start
@@ -2459,7 +2463,6 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 	qm->status.stop_reason = r;
 
 	if (!qm_avail_state(qm, QM_STOP)) {
-		up_write(&qm->qps_lock);
 		ret = -EPERM;
 		goto err_unlock;
 	}
@@ -2467,10 +2470,8 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 	if (qm->status.stop_reason == QM_SOFT_RESET ||
 	    qm->status.stop_reason == QM_FLR) {
 		ret = qm_stop_started_qp(qm);
-		if (ret < 0) {
-			up_write(&qm->qps_lock);
+		if (ret < 0)
 			goto err_unlock;
-		}
 #ifdef CONFIG_CRYPTO_QM_UACCE
 		hisi_qm_set_hw_reset(qm);
 #endif
@@ -2629,7 +2630,8 @@ void hisi_qm_clear_queues(struct hisi_qm *qm)
 	for (i = 0; i < qm->qp_num; i++) {
 		qp = qm->qp_array[i];
 		if (qp)
-			memset(qp->qdma.va, 0, qp->qdma.size);
+			/* device state use the last page */
+			memset(qp->qdma.va, 0, qp->qdma.size - PAGE_SIZE);
 	}
 
 	memset(qm->qdma.va, 0, qm->qdma.size);
