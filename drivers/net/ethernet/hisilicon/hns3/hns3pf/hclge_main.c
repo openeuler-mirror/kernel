@@ -6619,9 +6619,9 @@ static int hclge_set_loopback(struct hnae3_handle *handle,
 	 * is disabled, packets can reach MAC even if SMAC is the same as DMAC.
 	 */
 	if (hdev->pdev->revision >= 0x21) {
-		value = en ? 0 : ~BIT(HCLGE_SWITCH_ALW_LCL_LPBK_B);
+		value = en ? 0 : BIT(HCLGE_SWITCH_ALW_LPBK_B);
 		ret = hclge_config_switch_param(hdev, PF_VPORT_ID, value,
-						HCLGE_SWITCH_ALW_LCL_LPBK_MASK);
+						HCLGE_SWITCH_ALW_LPBK_MASK);
 		if (ret)
 			return ret;
 	}
