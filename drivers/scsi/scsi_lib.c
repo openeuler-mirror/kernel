@@ -208,7 +208,13 @@ static void __scsi_queue_insert(struct scsi_cmnd *cmd, int reason, bool unbusy)
 	}
 	spin_lock_irqsave(q->queue_lock, flags);
 	blk_requeue_request(q, cmd->request);
-	kblockd_schedule_work(&device->requeue_work);
+	/*
+	 * need to get q_usage_counter which will be
+	 * put in scsi_requeue_run_queue.
+	 */
+	percpu_ref_get(&q->q_usage_counter);
+	if (!kblockd_schedule_work(&device->requeue_work))
+		percpu_ref_put(&q->q_usage_counter);
 	spin_unlock_irqrestore(q->queue_lock, flags);
 }
 
@@ -553,6 +559,11 @@ void scsi_requeue_run_queue(struct work_struct *work)
 	sdev = container_of(work, struct scsi_device, requeue_work);
 	q = sdev->request_queue;
 	scsi_run_queue(q);
+	/*
+	 * need to put q_usage_counter which is got in
+	 * scsi_end_request or __scsi_queue_insert.
+	 */
+	percpu_ref_put(&q->q_usage_counter);
 }
 
 /*
@@ -718,12 +729,13 @@ static bool scsi_end_request(struct request *req, blk_status_t error,
 		__blk_mq_end_request(req, error);
 
 		if (scsi_target(sdev)->single_lun ||
-		    !list_empty(&sdev->host->starved_list))
-			kblockd_schedule_work(&sdev->requeue_work);
-		else
+		    !list_empty(&sdev->host->starved_list)) {
+			if (!kblockd_schedule_work(&sdev->requeue_work))
+				percpu_ref_put(&q->q_usage_counter);
+		} else {
 			blk_mq_run_hw_queues(q, true);
-
-		percpu_ref_put(&q->q_usage_counter);
+			percpu_ref_put(&q->q_usage_counter);
+		}
 	} else {
 		unsigned long flags;
 
