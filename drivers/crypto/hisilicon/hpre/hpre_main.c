@@ -801,7 +801,7 @@ static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		qm->use_uacce = false;
 		break;
 	case UACCE_MODE_UACCE:
-#ifdef CONFIG_IOMMU_SVA2
+#ifdef CONFIG_IOMMU_SVA
 		qm->use_dma_api = true;
 		qm->use_sva = true;
 #else
@@ -1507,7 +1507,7 @@ static int __init hpre_init(void)
 		pr_err("hpre: can't register hisi hpre driver.\n");
 		goto fail_to_register_pci;
 	}
-#ifndef CONFIG_IOMMU_SVA2
+#ifndef CONFIG_IOMMU_SVA
 	if (uacce_mode == UACCE_MODE_UACCE)
 		return 0;
 #endif
@@ -1528,7 +1528,7 @@ fail_to_register_pci:
 
 static void __exit hpre_exit(void)
 {
-#ifndef CONFIG_IOMMU_SVA2
+#ifndef CONFIG_IOMMU_SVA
 	if (uacce_mode != UACCE_MODE_UACCE)
 		hpre_algs_unregister();
 #else

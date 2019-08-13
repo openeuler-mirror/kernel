@@ -173,9 +173,9 @@
 	(((hop_num) << QM_SQ_HOP_NUM_SHIFT)	| \
 	((pg_sz) << QM_SQ_PAGE_SIZE_SHIFT)	| \
 	((buf_sz) << QM_SQ_BUF_SIZE_SHIFT)	| \
-	(ilog2(sqe_sz) << QM_SQ_SQE_SIZE_SHIFT))
+	((u32)ilog2(sqe_sz) << QM_SQ_SQE_SIZE_SHIFT))
 #define QM_MK_SQC_DW3_V2(sqe_sz) \
-	((QM_Q_DEPTH - 1) | (ilog2(sqe_sz) << QM_SQ_SQE_SIZE_SHIFT))
+	((QM_Q_DEPTH - 1) | ((u32)ilog2(sqe_sz) << QM_SQ_SQE_SIZE_SHIFT))
 
 #define INIT_QC_COMMON(qc, base, pasid) do {	\
 	(qc)->head = 0;				\
@@ -1171,7 +1171,6 @@ static struct hisi_qp *hisi_qm_create_qp_nolock(struct hisi_qm *qm,
 	qp_id = find_first_zero_bit(qm->qp_bitmap, qm->qp_num);
 	if (qp_id >= qm->qp_num) {
 		dev_info_ratelimited(&qm->pdev->dev, "QM all queues are busy!\n");
-
 		ret = -EBUSY;
 		goto err_free_qp;
 	}

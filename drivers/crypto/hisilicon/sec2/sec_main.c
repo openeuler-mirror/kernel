@@ -823,7 +823,7 @@ static int hisi_sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		qm->use_uacce = false;
 		break;
 	case UACCE_MODE_UACCE:
-#ifdef CONFIG_IOMMU_SVA2
+#ifdef CONFIG_IOMMU_SVA
 		qm->use_dma_api = true;
 		qm->use_sva = true;
 #else
@@ -1516,7 +1516,7 @@ static int __init hisi_sec_init(void)
 		pr_err("Failed to register pci driver.\n");
 		goto err_pci;
 	}
-#ifndef CONFIG_IOMMU_SVA2
+#ifndef CONFIG_IOMMU_SVA
 	if (uacce_mode == UACCE_MODE_UACCE)
 		return 0;
 #endif
@@ -1546,7 +1546,7 @@ static int __init hisi_sec_init(void)
 
 static void __exit hisi_sec_exit(void)
 {
-#ifndef CONFIG_IOMMU_SVA2
+#ifndef CONFIG_IOMMU_SVA
 	if (uacce_mode != UACCE_MODE_UACCE)
 		hisi_sec_unregister_from_crypto();
 #else

@@ -867,7 +867,8 @@ static int hpre_rsa_setkey_crt(struct hpre_ctx *ctx, struct rsa_key *rsa_key)
 
 	return 0;
 free_key:
-	memset(ctx->rsa.crt_prikey + hlf_ksz * _CRT_PRMS, '\0', hlf_ksz);
+	offset = hlf_ksz * _CRT_PRMS;
+	memset(ctx->rsa.crt_prikey + offset, '\0', hlf_ksz);
 	dma_free_coherent(dev, hlf_ksz * _CRT_PRMS, ctx->rsa.crt_prikey,
 			  ctx->rsa.dma_crt_prikey);
 	ctx->rsa.crt_prikey = NULL;
