@@ -10,6 +10,7 @@
 #ifndef _LINUX_KTASK_H
 #define _LINUX_KTASK_H
 
+#include <linux/list.h>
 #include <linux/mm.h>
 #include <linux/types.h>
 
@@ -23,9 +24,14 @@
  * @kn_nid: NUMA node id to run threads on
  */
 struct ktask_node {
-	void		*kn_start;
-	size_t		kn_task_size;
-	int		kn_nid;
+	void			*kn_start;
+	size_t			kn_task_size;
+	int			kn_nid;
+
+	/* Private fields below - do not touch these. */
+	void			*kn_position;
+	size_t			kn_remaining_size;
+	struct list_head	kn_failed_works;
 };
 
 /**
@@ -42,6 +48,14 @@ struct ktask_node {
  * KTASK_RETURN_SUCCESS or a client-specific nonzero error code.
  */
 typedef int (*ktask_thread_func)(void *start, void *end, void *arg);
+
+/**
+ * typedef ktask_undo_func
+ *
+ * The same as ktask_thread_func, with the exception that it must always
+ * succeed, so it doesn't return anything.
+ */
+typedef void (*ktask_undo_func)(void *start, void *end, void *arg);
 
 /**
  * typedef ktask_iter_func
@@ -77,6 +91,11 @@ void *ktask_iter_range(void *position, size_t size);
  *
  * @kc_thread_func: A thread function that completes one chunk of the task per
  *                  call.
+ * @kc_undo_func: A function that undoes one chunk of the task per call.
+ *                If non-NULL and error(s) occur during the task, this is
+ *                called on all successfully completed chunks of work.  The
+ *                chunk(s) in which failure occurs should be handled in
+ *                kc_thread_func.
  * @kc_func_arg: An argument to be passed to the thread and undo functions.
  * @kc_iter_func: An iterator function to advance the iterator by some number
  *                   of task-specific units.
@@ -90,6 +109,7 @@ void *ktask_iter_range(void *position, size_t size);
 struct ktask_ctl {
 	/* Required arguments set with DEFINE_KTASK_CTL. */
 	ktask_thread_func	kc_thread_func;
+	ktask_undo_func		kc_undo_func;
 	void			*kc_func_arg;
 	size_t			kc_min_chunk_size;
 
@@ -101,6 +121,7 @@ struct ktask_ctl {
 #define KTASK_CTL_INITIALIZER(thread_func, func_arg, min_chunk_size)	     \
 	{								     \
 		.kc_thread_func = (ktask_thread_func)(thread_func),	     \
+		.kc_undo_func = NULL,					     \
 		.kc_func_arg = (func_arg),				     \
 		.kc_min_chunk_size = (min_chunk_size),			     \
 		.kc_iter_func = (ktask_iter_range),			     \
@@ -131,6 +152,15 @@ struct ktask_ctl {
  */
 #define ktask_ctl_set_iter_func(ctl, iter_func)				\
 	((ctl)->kc_iter_func = (ktask_iter_func)(iter_func))
+
+/**
+ * ktask_ctl_set_undo_func - Designate an undo function to unwind from error
+ *
+ * @ctl:  A control structure containing information about the task.
+ * @undo_func:  Undoes a piece of the task.
+ */
+#define ktask_ctl_set_undo_func(ctl, undo_func)				\
+	((ctl)->kc_undo_func = (ktask_undo_func)(undo_func))
 
 /**
  * ktask_ctl_set_max_threads - Set a task-specific maximum number of threads
