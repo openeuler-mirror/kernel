@@ -6626,6 +6626,14 @@ W:	http://www.hisilicon.com
 S:	Maintained
 F:	drivers/net/ethernet/hisilicon/hns3/
 
+HISILICON NETWORK SUBSYSTEM 3 CAE DRIVER (HNS3_CAE)
+M:      Weiwei Deng <dengweiwei@huawei.com>
+M:      Zhaohui Zhong <zhongzhaohui@huawei.com>
+S:      Maintained
+F:      drivers/net/ethernet/hisilicon/hns3/hns-customer/
+F:      drivers/net/ethernet/hisilicon/hns3/hns3_cae/
+F:      drivers/net/ethernet/hisilicon/hns3/Makefile
+
 HISILICON LPC BUS DRIVER
 M:	john.garry@huawei.com
 W:	http://www.hisilicon.com
