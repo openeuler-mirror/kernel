@@ -16,7 +16,6 @@
 
 #include <linux/cpu.h>
 #include <linux/cpumask.h>
-#include <linux/completion.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
@@ -24,6 +23,7 @@
 #include <linux/mutex.h>
 #include <linux/printk.h>
 #include <linux/random.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
@@ -41,6 +41,11 @@ static size_t *ktask_rlim_node_max;
 #define	KTASK_CPUFRAC_NUMER	4
 #define	KTASK_CPUFRAC_DENOM	5
 
+enum ktask_work_flags {
+	KTASK_WORK_FINISHED	= 1,
+	KTASK_WORK_UNDO		= 2,
+};
+
 /* Used to pass ktask data to the workqueue API. */
 struct ktask_work {
 	struct work_struct	kw_work;
@@ -53,6 +58,7 @@ struct ktask_work {
 	void			*kw_error_end;
 	/* ktask_free_works, kn_failed_works linkage */
 	struct list_head	kw_list;
+	enum ktask_work_flags	kw_flags;
 };
 
 static LIST_HEAD(ktask_free_works);
@@ -68,10 +74,7 @@ struct ktask_task {
 	struct ktask_node	*kt_nodes;
 	size_t			kt_nr_nodes;
 	size_t			kt_nr_nodes_left;
-	size_t			kt_nworks;
-	size_t			kt_nworks_fini;
 	int			kt_error; /* first error from thread_func */
-	struct completion	kt_ktask_done;
 };
 
 /*
@@ -97,6 +100,7 @@ static void ktask_init_work(struct ktask_work *kw, struct ktask_task *kt,
 	kw->kw_task = kt;
 	kw->kw_ktask_node_i = ktask_node_i;
 	kw->kw_queue_nid = queue_nid;
+	kw->kw_flags = 0;
 }
 
 static void ktask_queue_work(struct ktask_work *kw)
@@ -171,7 +175,6 @@ static void ktask_thread(struct work_struct *work)
 	struct ktask_task  *kt = kw->kw_task;
 	struct ktask_ctl   *kc = &kt->kt_ctl;
 	struct ktask_node  *kn = &kt->kt_nodes[kw->kw_ktask_node_i];
-	bool               done;
 
 	mutex_lock(&kt->kt_mutex);
 
@@ -239,6 +242,7 @@ static void ktask_thread(struct work_struct *work)
 			 * about where this thread failed for ktask_undo.
 			 */
 			if (kc->kc_undo_func) {
+				kw->kw_flags |= KTASK_WORK_UNDO;
 				list_move(&kw->kw_list, &kn->kn_failed_works);
 				kw->kw_error_start = position;
 				kw->kw_error_offset = position_offset;
@@ -250,13 +254,8 @@ static void ktask_thread(struct work_struct *work)
 	WARN_ON(kt->kt_nr_nodes_left > 0 &&
 		kt->kt_error == KTASK_RETURN_SUCCESS);
 
-	++kt->kt_nworks_fini;
-	WARN_ON(kt->kt_nworks_fini > kt->kt_nworks);
-	done = (kt->kt_nworks_fini == kt->kt_nworks);
+	kw->kw_flags |= KTASK_WORK_FINISHED;
 	mutex_unlock(&kt->kt_mutex);
-
-	if (done)
-		complete(&kt->kt_ktask_done);
 }
 
 /*
@@ -294,7 +293,7 @@ static size_t ktask_chunk_size(size_t task_size, size_t min_chunk_size,
  */
 static size_t ktask_init_works(struct ktask_node *nodes, size_t nr_nodes,
 			       struct ktask_task *kt,
-			       struct list_head *works_list)
+			       struct list_head *unfinished_works)
 {
 	size_t i, nr_works, nr_works_check;
 	size_t min_chunk_size = kt->kt_ctl.kc_min_chunk_size;
@@ -342,7 +341,7 @@ static size_t ktask_init_works(struct ktask_node *nodes, size_t nr_nodes,
 		WARN_ON(list_empty(&ktask_free_works));
 		kw = list_first_entry(&ktask_free_works, struct ktask_work,
 				      kw_list);
-		list_move_tail(&kw->kw_list, works_list);
+		list_move_tail(&kw->kw_list, unfinished_works);
 		ktask_init_work(kw, kt, ktask_node_i, queue_nid);
 
 		++ktask_rlim_cur;
@@ -355,14 +354,14 @@ static size_t ktask_init_works(struct ktask_node *nodes, size_t nr_nodes,
 
 static void ktask_fini_works(struct ktask_task *kt,
 			     struct ktask_work *stack_work,
-			     struct list_head *works_list)
+			     struct list_head *finished_works)
 {
 	struct ktask_work *work, *next;
 
 	spin_lock(&ktask_rlim_lock);
 
 	/* Put the works back on the free list, adjusting rlimits. */
-	list_for_each_entry_safe(work, next, works_list, kw_list) {
+	list_for_each_entry_safe(work, next, finished_works, kw_list) {
 		if (work == stack_work) {
 			/* On this thread's stack, so not subject to rlimits. */
 			list_del(&work->kw_list);
@@ -393,7 +392,7 @@ static int ktask_error_cmp(void *unused, struct list_head *a,
 }
 
 static void ktask_undo(struct ktask_node *nodes, size_t nr_nodes,
-		       struct ktask_ctl *ctl, struct list_head *works_list)
+		       struct ktask_ctl *ctl, struct list_head *finished_works)
 {
 	size_t i;
 
@@ -424,7 +423,8 @@ static void ktask_undo(struct ktask_node *nodes, size_t nr_nodes,
 
 			if (failed_work) {
 				undo_pos = failed_work->kw_error_end;
-				list_move(&failed_work->kw_list, works_list);
+				list_move(&failed_work->kw_list,
+					  finished_works);
 			} else {
 				undo_pos = undo_end;
 			}
@@ -433,20 +433,46 @@ static void ktask_undo(struct ktask_node *nodes, size_t nr_nodes,
 	}
 }
 
+static void ktask_wait_for_completion(struct ktask_task *kt,
+				      struct list_head *unfinished_works,
+				      struct list_head *finished_works)
+{
+	struct ktask_work *work;
+
+	mutex_lock(&kt->kt_mutex);
+	while (!list_empty(unfinished_works)) {
+		work = list_first_entry(unfinished_works, struct ktask_work,
+					kw_list);
+		if (!(work->kw_flags & KTASK_WORK_FINISHED)) {
+			mutex_unlock(&kt->kt_mutex);
+			flush_work_at_nice(&work->kw_work, task_nice(current));
+			mutex_lock(&kt->kt_mutex);
+			WARN_ON_ONCE(!(work->kw_flags & KTASK_WORK_FINISHED));
+		}
+		/*
+		 * Leave works used in ktask_undo on kn->kn_failed_works.
+		 * ktask_undo will move them to finished_works.
+		 */
+		if (!(work->kw_flags & KTASK_WORK_UNDO))
+			list_move(&work->kw_list, finished_works);
+	}
+	mutex_unlock(&kt->kt_mutex);
+}
+
 int ktask_run_numa(struct ktask_node *nodes, size_t nr_nodes,
 		   struct ktask_ctl *ctl)
 {
-	size_t i;
+	size_t i, nr_works;
 	struct ktask_work kw;
 	struct ktask_work *work;
-	LIST_HEAD(works_list);
+	LIST_HEAD(unfinished_works);
+	LIST_HEAD(finished_works);
 	struct ktask_task kt = {
 		.kt_ctl             = *ctl,
 		.kt_total_size      = 0,
 		.kt_nodes           = nodes,
 		.kt_nr_nodes        = nr_nodes,
 		.kt_nr_nodes_left   = nr_nodes,
-		.kt_nworks_fini     = 0,
 		.kt_error           = KTASK_RETURN_SUCCESS,
 	};
 
@@ -465,14 +491,12 @@ int ktask_run_numa(struct ktask_node *nodes, size_t nr_nodes,
 		return KTASK_RETURN_SUCCESS;
 
 	mutex_init(&kt.kt_mutex);
-	init_completion(&kt.kt_ktask_done);
 
-	kt.kt_nworks = ktask_init_works(nodes, nr_nodes, &kt, &works_list);
+	nr_works = ktask_init_works(nodes, nr_nodes, &kt, &unfinished_works);
 	kt.kt_chunk_size = ktask_chunk_size(kt.kt_total_size,
-					    ctl->kc_min_chunk_size,
-					    kt.kt_nworks);
+					    ctl->kc_min_chunk_size, nr_works);
 
-	list_for_each_entry(work, &works_list, kw_list)
+	list_for_each_entry(work, &unfinished_works, kw_list)
 		ktask_queue_work(work);
 
 	/* Use the current thread, which saves starting a workqueue worker. */
@@ -480,13 +504,12 @@ int ktask_run_numa(struct ktask_node *nodes, size_t nr_nodes,
 	INIT_LIST_HEAD(&kw.kw_list);
 	ktask_thread(&kw.kw_work);
 
-	/* Wait for all the jobs to finish. */
-	wait_for_completion(&kt.kt_ktask_done);
+	ktask_wait_for_completion(&kt, &unfinished_works, &finished_works);
 
 	if (kt.kt_error && ctl->kc_undo_func)
-		ktask_undo(nodes, nr_nodes, ctl, &works_list);
+		ktask_undo(nodes, nr_nodes, ctl, &finished_works);
 
-	ktask_fini_works(&kt, &kw, &works_list);
+	ktask_fini_works(&kt, &kw, &finished_works);
 	mutex_destroy(&kt.kt_mutex);
 
 	return kt.kt_error;

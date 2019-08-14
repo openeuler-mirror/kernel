@@ -79,6 +79,7 @@ enum {
 	WORKER_CPU_INTENSIVE	= 1 << 6,	/* cpu intensive */
 	WORKER_UNBOUND		= 1 << 7,	/* worker is unbound */
 	WORKER_REBOUND		= 1 << 8,	/* worker was rebound */
+	WORKER_NICED		= 1 << 9,	/* worker's nice was adjusted */
 
 	WORKER_NOT_RUNNING	= WORKER_PREP | WORKER_CPU_INTENSIVE |
 				  WORKER_UNBOUND | WORKER_REBOUND,
@@ -2184,6 +2185,18 @@ __acquires(&pool->lock)
 	if (unlikely(cpu_intensive))
 		worker_clr_flags(worker, WORKER_CPU_INTENSIVE);
 
+	/*
+	 * worker's nice level was adjusted (see flush_work_at_nice).  Use the
+	 * work's color to distinguish between the work that sets the nice
+	 * level (== NO_COLOR) and the work for which the adjustment was made
+	 * (!= NO_COLOR) to avoid prematurely restoring the nice level.
+	 */
+	if (unlikely(worker->flags & WORKER_NICED &&
+		     work_color != WORK_NO_COLOR)) {
+		set_user_nice(worker->task, worker->pool->attrs->nice);
+		worker_clr_flags(worker, WORKER_NICED);
+	}
+
 	/* we're done with it, release */
 	hash_del(&worker->hentry);
 	worker->current_work = NULL;
@@ -2846,8 +2859,53 @@ reflush:
 }
 EXPORT_SYMBOL_GPL(drain_workqueue);
 
+struct nice_work {
+	struct work_struct work;
+	long nice;
+};
+
+static void nice_work_func(struct work_struct *work)
+{
+	struct nice_work *nw = container_of(work, struct nice_work, work);
+	struct worker *worker = current_wq_worker();
+
+	if (WARN_ON_ONCE(!worker))
+		return;
+
+	set_user_nice(current, nw->nice);
+	worker->flags |= WORKER_NICED;
+}
+
+/**
+ * insert_nice_work - insert a nice_work into a pwq
+ * @pwq: pwq to insert nice_work into
+ * @nice_work: nice_work to insert
+ * @target: target work to attach @nice_work to
+ *
+ * @nice_work is linked to @target such that @target starts executing only
+ * after @nice_work finishes execution.
+ *
+ * @nice_work's only job is to ensure @target's assigned worker runs at the
+ * nice level contained in @nice_work.
+ *
+ * CONTEXT:
+ * spin_lock_irq(pool->lock).
+ */
+static void insert_nice_work(struct pool_workqueue *pwq,
+			     struct nice_work *nice_work,
+			     struct work_struct *target)
+{
+	/* see comment above similar code in insert_wq_barrier */
+	INIT_WORK_ONSTACK(&nice_work->work, nice_work_func);
+	__set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(&nice_work->work));
+
+	debug_work_activate(&nice_work->work);
+	insert_work(pwq, &nice_work->work, &target->entry,
+		    work_color_to_flags(WORK_NO_COLOR) | WORK_STRUCT_LINKED);
+}
+
 static bool start_flush_work(struct work_struct *work, struct wq_barrier *barr,
-			     bool from_cancel)
+			     struct nice_work *nice_work, int flags)
 {
 	struct worker *worker = NULL;
 	struct worker_pool *pool;
@@ -2868,11 +2926,19 @@ static bool start_flush_work(struct work_struct *work, struct wq_barrier *barr,
 	if (pwq) {
 		if (unlikely(pwq->pool != pool))
 			goto already_gone;
+
+		/* not yet started, insert linked work before work */
+		if (unlikely(flags & WORK_FLUSH_AT_NICE))
+			insert_nice_work(pwq, nice_work, work);
 	} else {
 		worker = find_worker_executing_work(pool, work);
 		if (!worker)
 			goto already_gone;
 		pwq = worker->current_pwq;
+		if (unlikely(flags & WORK_FLUSH_AT_NICE)) {
+			set_user_nice(worker->task, nice_work->nice);
+			worker->flags |= WORKER_NICED;
+		}
 	}
 
 	check_flush_dependency(pwq->wq, work);
@@ -2889,7 +2955,7 @@ static bool start_flush_work(struct work_struct *work, struct wq_barrier *barr,
 	 * workqueues the deadlock happens when the rescuer stalls, blocking
 	 * forward progress.
 	 */
-	if (!from_cancel &&
+	if (!(flags & WORK_FLUSH_FROM_CANCEL) &&
 	    (pwq->wq->saved_max_active == 1 || pwq->wq->rescuer)) {
 		lock_map_acquire(&pwq->wq->lockdep_map);
 		lock_map_release(&pwq->wq->lockdep_map);
@@ -2901,9 +2967,10 @@ already_gone:
 	return false;
 }
 
-static bool __flush_work(struct work_struct *work, bool from_cancel)
+static bool __flush_work(struct work_struct *work, int flags, long nice)
 {
 	struct wq_barrier barr;
+	struct nice_work nice_work;
 
 	if (WARN_ON(!wq_online))
 		return false;
@@ -2911,12 +2978,15 @@ static bool __flush_work(struct work_struct *work, bool from_cancel)
 	if (WARN_ON(!work->func))
 		return false;
 
-	if (!from_cancel) {
+	if (!(flags & WORK_FLUSH_FROM_CANCEL)) {
 		lock_map_acquire(&work->lockdep_map);
 		lock_map_release(&work->lockdep_map);
 	}
 
-	if (start_flush_work(work, &barr, from_cancel)) {
+	if (unlikely(flags & WORK_FLUSH_AT_NICE))
+		nice_work.nice = nice;
+
+	if (start_flush_work(work, &barr, &nice_work, flags)) {
 		wait_for_completion(&barr.done);
 		destroy_work_on_stack(&barr.work);
 		return true;
@@ -2938,9 +3008,31 @@ static bool __flush_work(struct work_struct *work, bool from_cancel)
  */
 bool flush_work(struct work_struct *work)
 {
-	return __flush_work(work, false);
+	return __flush_work(work, 0, 0);
 }
 EXPORT_SYMBOL_GPL(flush_work);
+
+/**
+ * flush_work_at_nice - set a work's nice level and wait for it to finish
+ * @work: the target work
+ * @nice: nice level @work's assigned worker should run at
+ *
+ * Makes @work's assigned worker run at @nice for the duration of @work.
+ * Waits until @work has finished execution.  @work is guaranteed to be idle
+ * on return if it hasn't been requeued since flush started.
+ *
+ * Avoids priority inversion where a high priority task queues @work on a
+ * workqueue with low priority workers and may wait indefinitely for @work's
+ * completion.  That task can will its priority to @work.
+ *
+ * Return:
+ * %true if flush_work_at_nice() waited for the work to finish execution,
+ * %false if it was already idle.
+ */
+bool flush_work_at_nice(struct work_struct *work, long nice)
+{
+	return __flush_work(work, WORK_FLUSH_AT_NICE, nice);
+}
 
 struct cwt_wait {
 	wait_queue_entry_t		wait;
@@ -3004,7 +3096,7 @@ static bool __cancel_work_timer(struct work_struct *work, bool is_dwork)
 	 * isn't executing.
 	 */
 	if (wq_online)
-		__flush_work(work, true);
+		__flush_work(work, WORK_FLUSH_FROM_CANCEL, 0);
 
 	clear_work_data(work);
 

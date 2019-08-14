@@ -96,6 +96,10 @@ enum {
 	WORK_BUSY_PENDING	= 1 << 0,
 	WORK_BUSY_RUNNING	= 1 << 1,
 
+	/* flags for flush_work and similar functions */
+	WORK_FLUSH_FROM_CANCEL  = 1 << 0,
+	WORK_FLUSH_AT_NICE      = 1 << 1,
+
 	/* maximum string length for set_worker_desc() */
 	WORKER_DESC_LEN		= 24,
 };
@@ -490,6 +494,7 @@ extern int schedule_on_each_cpu(work_func_t func);
 int execute_in_process_context(work_func_t fn, struct execute_work *);
 
 extern bool flush_work(struct work_struct *work);
+extern bool flush_work_at_nice(struct work_struct *work, long nice);
 extern bool cancel_work_sync(struct work_struct *work);
 
 extern bool flush_delayed_work(struct delayed_work *dwork);
