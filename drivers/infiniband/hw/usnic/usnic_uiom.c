@@ -60,7 +60,7 @@ static void usnic_uiom_reg_account(struct work_struct *work)
 						struct usnic_uiom_reg, work);
 
 	down_write(&umem->mm->mmap_sem);
-	umem->mm->locked_vm -= umem->diff;
+	atomic_long_sub(umem->diff, &umem->mm->locked_vm);
 	up_write(&umem->mm->mmap_sem);
 	mmput(umem->mm);
 	kfree(umem);
