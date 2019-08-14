@@ -7,8 +7,6 @@
 typedef int (*hns3_priv_func)(struct net_device *, void *);
 hns3_priv_func hns3_ioctl;
 
-#define VERSION_NUMBER "$FULL_VERSION"
-
 #ifndef LINUX_VERSION_CODE
 #include <linux/version.h>
 #else

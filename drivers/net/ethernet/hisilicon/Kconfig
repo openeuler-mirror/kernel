@@ -123,6 +123,16 @@ config HNS3_ENET
 	  family of SoCs. This module depends upon HNAE3 driver to access the HNAE3
 	  devices and their associated operations.
 
+config HNS3_CAE
+	tristate "Hisilicon HNS3 configuration & analysis & enhancement Support"
+	default m
+	depends on HNS3_HCLGE && HNS3_ENET
+	help
+	  This selects the Configuration, Analysis and Enhancement Support for HNS3 Driver
+	  (e.g. SFP management, self-adaptive port speed and DFX). It is supposed to
+	  support upcoming User Mode Tool (i.e. hiarmtool) developed by Huawei.
+	  This module depends upon HNS3_HCLGE and HNS3 driver.
+
 endif #HNS3
 
 endif # NET_VENDOR_HISILICON

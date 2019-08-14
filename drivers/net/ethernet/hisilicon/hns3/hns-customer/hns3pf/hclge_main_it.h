@@ -7,7 +7,7 @@
 extern struct hnae3_ae_algo ae_algo;
 extern struct hnae3_ae_ops hclge_ops;
 
-enum hnae3_reset_type_custom {
+enum hnae3_event_type_custom {
 	HNAE3_VF_RESET_CUSTOM,
 	HNAE3_VF_FUNC_RESET_CUSTOM,
 	HNAE3_VF_PF_FUNC_RESET_CUSTOM,
@@ -20,17 +20,20 @@ enum hnae3_reset_type_custom {
 	HNAE3_NONE_RESET_CUSTOM,
 	HNAE3_PORT_FAULT,
 	HNAE3_RESET_DONE_CUSTOM,
+	HNAE3_FUNC_RESET_FAIL_CUSTOM,
+	HNAE3_GLOBAL_RESET_FAIL_CUSTOM,
+	HNAE3_IMP_RESET_FAIL_CUSTOM,
+	HNAE3_PPU_POISON_CUSTOM,
+	HNAE3_IMP_RD_POISON_CUSTOM,
 };
-
-#ifdef CONFIG_EXT_TEST
 
 /**
  * nic_event_fn_t - nic event handler prototype
  * @netdev:	net device
- * @hnae3_reset_type_custom:	nic device event type
+ * @hnae3_event_type_custom:	nic device event type
  */
 typedef void (*nic_event_fn_t) (struct net_device *netdev,
-				enum hnae3_reset_type_custom);
+				enum hnae3_event_type_custom);
 
 /**
  * nic_register_event - register for nic event listening
@@ -46,7 +49,5 @@ int nic_register_event(nic_event_fn_t event_call);
 int nic_unregister_event(void);
 
 void nic_call_event(struct net_device *netdev,
-		    enum hnae3_reset_type_custom event_t);
-#endif
-
+		    enum hnae3_event_type_custom event_t);
 #endif
