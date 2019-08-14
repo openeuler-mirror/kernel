@@ -36,6 +36,7 @@
 #include <linux/magic.h>
 #include <linux/migrate.h>
 #include <linux/uio.h>
+#include <linux/ktask.h>
 
 #include <linux/uaccess.h>
 
@@ -76,11 +77,16 @@ static const match_table_t tokens = {
 };
 
 #ifdef CONFIG_NUMA
-static inline void hugetlb_set_vma_policy(struct vm_area_struct *vma,
-					struct inode *inode, pgoff_t index)
+static inline struct shared_policy *hugetlb_get_shared_policy(
+							struct inode *inode)
 {
-	vma->vm_policy = mpol_shared_policy_lookup(&HUGETLBFS_I(inode)->policy,
-							index);
+	return &HUGETLBFS_I(inode)->policy;
+}
+
+static inline void hugetlb_set_vma_policy(struct vm_area_struct *vma,
+				struct shared_policy *policy, pgoff_t index)
+{
+	vma->vm_policy = mpol_shared_policy_lookup(policy, index);
 }
 
 static inline void hugetlb_drop_vma_policy(struct vm_area_struct *vma)
@@ -88,8 +94,14 @@ static inline void hugetlb_drop_vma_policy(struct vm_area_struct *vma)
 	mpol_cond_put(vma->vm_policy);
 }
 #else
+static inline struct shared_policy *hugetlb_get_shared_policy(
+							struct inode *inode)
+{
+	return NULL;
+}
+
 static inline void hugetlb_set_vma_policy(struct vm_area_struct *vma,
-					struct inode *inode, pgoff_t index)
+				struct shared_policy *policy, pgoff_t index)
 {
 }
 
@@ -553,20 +565,30 @@ static long hugetlbfs_punch_hole(struct inode *inode, loff_t offset, loff_t len)
 	return 0;
 }
 
+struct hf_args {
+	struct file		*file;
+	struct task_struct	*parent_task;
+	struct mm_struct	*mm;
+	struct shared_policy	*shared_policy;
+	struct hstate		*hstate;
+	struct address_space	*mapping;
+	int			error;
+};
+
+static int hugetlbfs_fallocate_chunk(pgoff_t start, pgoff_t end,
+				     struct hf_args *args);
+
 static long hugetlbfs_fallocate(struct file *file, int mode, loff_t offset,
 				loff_t len)
 {
 	struct inode *inode = file_inode(file);
 	struct hugetlbfs_inode_info *info = HUGETLBFS_I(inode);
-	struct address_space *mapping = inode->i_mapping;
 	struct hstate *h = hstate_inode(inode);
-	struct vm_area_struct pseudo_vma;
-	struct mm_struct *mm = current->mm;
 	loff_t hpage_size = huge_page_size(h);
 	unsigned long hpage_shift = huge_page_shift(h);
-	pgoff_t start, index, end;
+	pgoff_t start, end;
+	struct hf_args hf_args;
 	int error;
-	u32 hash;
 
 	if (mode & ~(FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE))
 		return -EOPNOTSUPP;
@@ -595,16 +617,66 @@ static long hugetlbfs_fallocate(struct file *file, int mode, loff_t offset,
 		goto out;
 	}
 
+	hf_args.file = file;
+	hf_args.parent_task = current;
+	hf_args.mm = current->mm;
+	hf_args.shared_policy = hugetlb_get_shared_policy(inode);
+	hf_args.hstate = h;
+	hf_args.mapping = inode->i_mapping;
+	hf_args.error = 0;
+
+	if (unlikely(hstate_is_gigantic(h))) {
+		/*
+		 * Use multiple threads in clear_gigantic_page instead of here,
+		 * so just do a 1-threaded hugetlbfs_fallocate_chunk.
+		 */
+		error = hugetlbfs_fallocate_chunk(start, end, &hf_args);
+	} else {
+		DEFINE_KTASK_CTL(ctl, hugetlbfs_fallocate_chunk,
+				 &hf_args, KTASK_PMD_MINCHUNK);
+
+		error = ktask_run((void *)start, end - start, &ctl);
+	}
+
+	if (error != KTASK_RETURN_SUCCESS && hf_args.error != -EINTR)
+		goto out;
+
+	if (!(mode & FALLOC_FL_KEEP_SIZE) && offset + len > inode->i_size)
+		i_size_write(inode, offset + len);
+	inode->i_ctime = current_time(inode);
+out:
+	inode_unlock(inode);
+	return error;
+}
+
+static int hugetlbfs_fallocate_chunk(pgoff_t start, pgoff_t end,
+				     struct hf_args *args)
+{
+	struct file		*file		= args->file;
+	struct task_struct	*parent_task	= args->parent_task;
+	struct mm_struct	*mm		= args->mm;
+	struct shared_policy	*shared_policy	= args->shared_policy;
+	struct hstate		*h		= args->hstate;
+	struct address_space	*mapping	= args->mapping;
+	int			error		= 0;
+	pgoff_t			index;
+	struct vm_area_struct	pseudo_vma;
+	loff_t			hpage_size;
+	u32			hash;
+
+	hpage_size = huge_page_size(h);
+
 	/*
 	 * Initialize a pseudo vma as this is required by the huge page
 	 * allocation routines.  If NUMA is configured, use page index
-	 * as input to create an allocation policy.
+	 * as input to create an allocation policy.  Each thread gets its
+	 * own pseudo vma because mempolicies can differ by page.
 	 */
 	vma_init(&pseudo_vma, mm);
 	pseudo_vma.vm_flags = (VM_HUGETLB | VM_MAYSHARE | VM_SHARED);
 	pseudo_vma.vm_file = file;
 
-	for (index = start; index < end; index++) {
+	for (index = start; index < end; ++index) {
 		/*
 		 * This is supposed to be the vaddr where the page is being
 		 * faulted in, but we have no vaddr here.
@@ -619,13 +691,13 @@ static long hugetlbfs_fallocate(struct file *file, int mode, loff_t offset,
 		 * fallocate(2) manpage permits EINTR; we may have been
 		 * interrupted because we are using up too much memory.
 		 */
-		if (signal_pending(current)) {
+		if (signal_pending(parent_task) || signal_pending(current)) {
 			error = -EINTR;
-			break;
+			goto err;
 		}
 
 		/* Set numa allocation policy based on index */
-		hugetlb_set_vma_policy(&pseudo_vma, inode, index);
+		hugetlb_set_vma_policy(&pseudo_vma, shared_policy, index);
 
 		/* addr is the offset within the file (zero based) */
 		addr = index * hpage_size;
@@ -649,7 +721,7 @@ static long hugetlbfs_fallocate(struct file *file, int mode, loff_t offset,
 		if (IS_ERR(page)) {
 			mutex_unlock(&hugetlb_fault_mutex_table[hash]);
 			error = PTR_ERR(page);
-			goto out;
+			goto err;
 		}
 		clear_huge_page(page, addr, pages_per_huge_page(h));
 		__SetPageUptodate(page);
@@ -657,7 +729,7 @@ static long hugetlbfs_fallocate(struct file *file, int mode, loff_t offset,
 		if (unlikely(error)) {
 			put_page(page);
 			mutex_unlock(&hugetlb_fault_mutex_table[hash]);
-			goto out;
+			goto err;
 		}
 
 		mutex_unlock(&hugetlb_fault_mutex_table[hash]);
@@ -670,11 +742,11 @@ static long hugetlbfs_fallocate(struct file *file, int mode, loff_t offset,
 		put_page(page);
 	}
 
-	if (!(mode & FALLOC_FL_KEEP_SIZE) && offset + len > inode->i_size)
-		i_size_write(inode, offset + len);
-	inode->i_ctime = current_time(inode);
-out:
-	inode_unlock(inode);
+	return KTASK_RETURN_SUCCESS;
+
+err:
+	args->error = error;
+
 	return error;
 }
 
