@@ -575,6 +575,18 @@ void __init ktask_init(void)
 		goto alloc_fail;
 	}
 
+	/*
+	 * All ktask worker threads have the lowest priority on the system so
+	 * they don't disturb other workloads.
+	 */
+	attrs->nice = MAX_NICE;
+
+	ret = apply_workqueue_attrs(ktask_wq, attrs);
+	if (ret != 0) {
+		pr_warn("disabled (couldn't apply attrs to ktask_wq)");
+		goto apply_fail;
+	}
+
 	attrs->no_numa = true;
 
 	ret = apply_workqueue_attrs(ktask_nonuma_wq, attrs);
