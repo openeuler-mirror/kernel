@@ -1215,7 +1215,6 @@ static int hisi_zip_vf_reset_done(struct hisi_zip *hisi_zip)
 		if (pci_physfn(dev) == pdev) {
 			qm = &hisi_zip->qm;
 
-			hisi_qm_clear_queues(qm);
 			ret = hisi_qm_restart(qm);
 			if (ret)
 				goto reset_fail;
@@ -1232,8 +1231,6 @@ static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 	struct hisi_qm *qm = &hisi_zip->qm;
 	struct device *dev = &qm->pdev->dev;
 	int ret;
-
-	hisi_qm_clear_queues(qm);
 
 	hisi_zip_set_user_domain_and_cache(hisi_zip);
 	hisi_zip_hw_error_init(hisi_zip);
@@ -1359,7 +1356,6 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 	struct device *dev = &pdev->dev;
 	int ret;
 
-	hisi_qm_clear_queues(qm);
 	ret = hisi_qm_restart(qm);
 	if (ret) {
 		dev_err(dev, "Failed to start QM!\n");

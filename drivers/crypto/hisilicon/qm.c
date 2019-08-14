@@ -2521,6 +2521,7 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 		}
 	}
 
+	hisi_qm_clear_queues(qm);
 	atomic_set(&qm->status.flags, QM_STOP);
 err_unlock:
 	up_write(&qm->qps_lock);
