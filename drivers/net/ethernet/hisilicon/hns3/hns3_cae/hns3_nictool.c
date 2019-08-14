@@ -61,7 +61,10 @@
 #define HCLGE_OPC_DCQCN_TEMPLATE_CFG	0x7014
 #define HCLGE_OPC_DCQCN_GET_MSG_CNT		0x7017
 
-#define HNAE_DRIVER_VERSION "1.8.10.0"
+#define HNAE_DRIVER_VERSION "1.8.10.1"
+
+#define MAX_MSG_OUT_SIZE	(1024U * 2048U)
+#define MAX_MSG_IN_SIZE		(1024U * 2048U)
 
 struct hclge_chs_param {
 	u8 outer_en;
@@ -110,9 +113,14 @@ static int alloc_buff_in(struct msg_module *nt_msg, u32 in_size, void **buf_in)
 	if (!in_size)
 		return 0;
 
+	if (in_size > MAX_MSG_IN_SIZE) {
+		pr_err("msg in size(%u) more than %u\n",
+		       in_size, MAX_MSG_IN_SIZE);
+		return -ENOMEM;
+	}
+
 	msg_buf = kzalloc((unsigned long)in_size, GFP_KERNEL);
 	*buf_in = msg_buf;
-
 	if (ZERO_OR_NULL_PTR(*buf_in)) {
 		pr_err("alloc buf_in failed\n");
 		return -ENOMEM;
@@ -140,8 +148,13 @@ static int alloc_buff_out(u32 out_size, void **buf_out)
 	if (!out_size)
 		return 0;
 
-	*buf_out = kzalloc((unsigned long)out_size, GFP_KERNEL);
+	if (out_size > MAX_MSG_OUT_SIZE) {
+		pr_err("msg out size(%u) more than %u\n",
+		       out_size, MAX_MSG_OUT_SIZE);
+		return -ENOMEM;
+	}
 
+	*buf_out = kzalloc((unsigned long)out_size, GFP_KERNEL);
 	if (ZERO_OR_NULL_PTR(*buf_out)) {
 		pr_err("alloc buf_out failed\n");
 		return -ENOMEM;
@@ -427,10 +440,7 @@ static int get_fw_ver(struct hns3_nic_priv *nic_dev, void *buf_in, u16 in_size,
 	hdev = vport->back;
 	out_buf = (struct firmware_ver_param *)buf_out;
 
-	if (!handle)
-		return -EFAULT;
-
-	if (!hdev)
+	if (!handle || !hdev)
 		return -EFAULT;
 
 	if (hns_test_get_commit_id(handle, out_buf->commit_id,
