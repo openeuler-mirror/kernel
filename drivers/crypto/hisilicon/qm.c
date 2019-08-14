@@ -1019,6 +1019,7 @@ static const struct file_operations qm_regs_fops = {
 	.owner = THIS_MODULE,
 	.open = qm_regs_open,
 	.read = seq_read,
+	.release = single_release,
 };
 
 static int qm_create_debugfs_file(struct hisi_qm *qm, enum qm_debug_file index)
@@ -1674,13 +1675,14 @@ static int hisi_qm_uacce_mmap(struct uacce_queue *q,
 
 	switch (qfr->type) {
 	case UACCE_QFRT_MMIO:
-
-		/* Try to mmap corresponding pages size region */
-		if (qm->ver == QM_HW_V2)
-			WARN_ON(sz > PAGE_SIZE * (QM_DOORBELL_PAGE_NR +
-				QM_V2_DOORBELL_OFFSET / PAGE_SIZE));
-		else
-			WARN_ON(sz > PAGE_SIZE * QM_DOORBELL_PAGE_NR);
+		if (qm->ver == QM_HW_V2) {
+			if (WARN_ON(sz > PAGE_SIZE * (QM_DOORBELL_PAGE_NR +
+				QM_V2_DOORBELL_OFFSET / PAGE_SIZE)))
+				return -EINVAL;
+		} else {
+			if (WARN_ON(sz > PAGE_SIZE * QM_DOORBELL_PAGE_NR))
+				return -EINVAL;
+		}
 
 		vma->vm_flags |= VM_IO;
 

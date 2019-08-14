@@ -495,6 +495,10 @@ static int hpre_dh_set_params(struct hpre_ctx *ctx, struct dh *params)
 	struct device *dev = &GET_DEV(ctx);
 	unsigned int sz;
 
+#define _HPRE_DH_MAX_P_SZ	512
+	if (params->p_size > _HPRE_DH_MAX_P_SZ)
+		return -EINVAL;
+
 	if (hpre_dh_check_params_length(params->p_size <<
 		HPRE_BITS_2_BYTES_SHIFT))
 		return -EINVAL;
