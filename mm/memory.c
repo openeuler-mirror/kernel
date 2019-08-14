@@ -4489,7 +4489,7 @@ void clear_huge_page(struct page *page,
 		struct ktask_node node = {0, pages_per_huge_page,
 					  page_to_nid(page)};
 		DEFINE_KTASK_CTL(ctl, clear_gigantic_page_chunk, &args,
-				 KTASK_MEM_CHUNK);
+				 KTASK_PTE_MINCHUNK);
 
 		ktask_run_numa(&node, 1, &ctl);
 		return;
