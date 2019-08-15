@@ -54,7 +54,7 @@ static inline void _kc_csum_replace_by_diff(__sum16 *sum, __wsum diff)
 #undef phy_ethtool_ksettings_get
 #define phy_ethtool_ksettings_get _kc_phy_ethtool_ksettings_get
 
-/* Hi1980 IO目前没有外挂phy, 所以此处phy相关接口暂时屏蔽 */
+/* Hi1980 IO have no external phy devices, so just return not support */
 static inline int _kc_phy_ethtool_ksettings_get(struct phy_device *phydev,
 			      const struct ethtool_link_ksettings *cmd)
 {
