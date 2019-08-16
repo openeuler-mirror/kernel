@@ -6321,7 +6321,7 @@ static int hclge_config_switch_param(struct hclge_dev *hdev, int vfid, u8 value,
 {
 	struct hclge_mac_vlan_switch_cmd *req;
 	struct hclge_desc desc;
-	int func_id;
+	u32 func_id;
 	int ret;
 
 	func_id = hclge_get_port_number(HOST_PORT, 0, vfid, 0);
