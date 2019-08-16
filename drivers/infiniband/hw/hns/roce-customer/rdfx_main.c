@@ -36,7 +36,6 @@ const struct file_operations chr_ops = {
 static const struct rdfx_dev_id rdfx_dev_tbl[] = {
 	{.name = "hisi_",	.ops = NULL},
 	{.name = "hns",	.ops = &rdfx_ops_hw_v2},
-	{},
 };
 
 /*
@@ -55,7 +54,7 @@ int parg_getopt(char *input, char *optstring, char *parg)
 	if (input == NULL || optstring == NULL)
 		return -EINVAL;
 	_input = kmalloc(strlen(input) + 1, GFP_KERNEL);
-	if (!_input)
+	if (ZERO_OR_NULL_PTR(_input))
 		return -ENOMEM;
 	strcpy(_input, input);
 	_optstring[0] = '-';
@@ -129,7 +128,7 @@ int str_to_ll(char *p_buf, unsigned long long *pll_val, unsigned int *num)
 
 	arr = kzalloc(sizeof(unsigned long long) *
 				SYSFS_MAX_PARA, GFP_KERNEL);
-	if (!arr)
+	if (ZERO_OR_NULL_PTR(arr))
 		return -ENOMEM;
 
 	p = strtok(p_buf, delim);
@@ -231,10 +230,9 @@ static int rdfx_info_init(struct ib_device *ib_dev, int i)
 
 	for (j = 0; j < sizeof(rdfx_dev_tbl)/sizeof(struct rdfx_dev_id); j++) {
 		if (!memcmp(rdfx_dev_tbl[j].name, ib_dev->name,
-		    strlen(rdfx_dev_tbl[j].name))) {
-			if (rdfx_dev_tbl[j].ops)
-				rdfx_top_info_list[i].rdfx =
-					rdfx_dev_tbl[j].ops->get_dfx(ib_dev);
+		    strlen(rdfx_dev_tbl[j].name)) && rdfx_dev_tbl[j].ops) {
+			rdfx_top_info_list[i].rdfx =
+				rdfx_dev_tbl[j].ops->get_dfx(ib_dev);
 			(rdfx_top_info_list[i].rdfx)->ops = rdfx_dev_tbl[j].ops;
 			(rdfx_top_info_list[i].rdfx)->drv_dev = drv_device;
 
@@ -269,11 +267,12 @@ static void rdfx_add_device(struct ib_device *ib_dev)
 	}
 
 	rdfx_top_info_list[i].dev = ib_dev;
-	pr_info("rdfx add ib device(%p), idx - %d, name - %s\n",
+	pr_info("rdfx add ib device(%pK), idx - %d, name - %s\n",
 		ib_dev, i, ib_dev->name);
 	ret = rdfx_info_init(ib_dev, i);
 	if (ret) {
 		pr_err("rdfx info init failed\n");
+		rdfx_top_info_list[i].dev = NULL;
 		return;
 	}
 
@@ -291,7 +290,7 @@ static void rdfx_remove_device(struct ib_device *ib_dev, void *client_data)
 	for (i = 0; i < MAX_IB_DEV; i++) {
 		if (rdfx_top_info_list[i].dev &&
 		    (rdfx_top_info_list[i].dev == ib_dev)) {
-			pr_info("rdfx rm ib device(%p), idx - %d, name - %s\n",
+			pr_info("rdfx rm ib device(%pK), idx - %d, name - %s\n",
 				ib_dev, i, ib_dev->name);
 			ops = (rdfx_top_info_list[i].rdfx)->ops;
 			ops->del_sysfs(rdfx_top_info_list[i].rdfx);

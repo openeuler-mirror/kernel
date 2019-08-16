@@ -365,8 +365,8 @@ static int rdfx_v2_ceqc_store(const char *p_buf, struct rdfx_info *rdfx)
 		return PTR_ERR(mailbox);
 
 	eq_context = kzalloc(sizeof(*eq_context), GFP_KERNEL);
-	if (!eq_context) {
-		//pr_info("alloc mailbox mem for ceqc failed\n");
+	if (ZERO_OR_NULL_PTR(eq_context)) {
+		pr_info("alloc mailbox mem for ceqc failed\n");
 		ret = -ENOMEM;
 		goto err_context;
 	}
@@ -383,8 +383,7 @@ static int rdfx_v2_ceqc_store(const char *p_buf, struct rdfx_info *rdfx)
 	pr_info("************** CEQC INFO ***************\n");
 	eqc = (int *)eq_context;
 	for (i = 0; i < (sizeof(*eq_context) >> 2); i += 8) {
-		pr_info(
-			"CEQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		pr_info("CEQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			ceqn, *eqc, *(eqc + 1), *(eqc + 2),
 			*(eqc + 3), *(eqc + 4), *(eqc + 5),
 			*(eqc + 6), *(eqc + 7));
@@ -427,8 +426,8 @@ static int rdfx_v2_aeqc_store(const char *p_buf, struct rdfx_info *rdfx)
 		return PTR_ERR(mailbox);
 
 	eq_context = kzalloc(sizeof(*eq_context), GFP_KERNEL);
-	if (!eq_context) {
-		//pr_info("alloc mailbox mem for ceqc failed\n");
+	if (ZERO_OR_NULL_PTR(eq_context)) {
+		pr_info("alloc mailbox mem for aeqc failed\n");
 		ret = -ENOMEM;
 		goto err_context;
 	}
@@ -445,8 +444,7 @@ static int rdfx_v2_aeqc_store(const char *p_buf, struct rdfx_info *rdfx)
 	pr_info("**************  AEQC INFO ***************\n");
 	eqc = (int *)eq_context;
 	for (i = 0; i < (sizeof(*eq_context) >> 2); i += 8) {
-		pr_info(
-			"AEQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		pr_info("AEQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			aeqn, *eqc, *(eqc + 1), *(eqc + 2),
 			*(eqc + 3), *(eqc + 4), *(eqc + 5),
 			*(eqc + 6), *(eqc + 7));
@@ -511,8 +509,8 @@ static int rdfx_v2_qpc_store(const char *p_buf, struct rdfx_info *rdfx)
 	}
 
 	qp_context = kzalloc(sizeof(*qp_context), GFP_KERNEL);
-	if (!qp_context) {
-		//pr_info("alloc mailbox mem for qpc failed\n");
+	if (ZERO_OR_NULL_PTR(qp_context)) {
+		pr_info("alloc mailbox mem for qpc failed\n");
 		ret = -ENOMEM;
 		goto err_cmd;
 	}
@@ -532,8 +530,7 @@ static int rdfx_v2_qpc_store(const char *p_buf, struct rdfx_info *rdfx)
 	pr_info("QPC(0x%x) BT1: 0x%llx\n", qpn, bt1_ba);
 	qpc = (int *)qp_context;
 	for (i = 0; i < (sizeof(*qp_context) >> 2); i += 8) {
-		pr_info(
-			"QPC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		pr_info("QPC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			qpn, *qpc, *(qpc + 1), *(qpc + 2),
 			*(qpc + 3), *(qpc + 4), *(qpc + 5),
 			*(qpc + 6), *(qpc + 7));
@@ -598,8 +595,8 @@ static int rdfx_v2_cqc_store(const char *p_buf, struct rdfx_info *rdfx)
 	}
 
 	cq_context = kzalloc(sizeof(*cq_context), GFP_KERNEL);
-	if (!cq_context) {
-		//pr_info("alloc mailbox mem for cqc failed\n");
+	if (ZERO_OR_NULL_PTR(cq_context)) {
+		pr_info("alloc mailbox mem for cqc failed\n");
 		ret = -ENOMEM;
 		goto err_cmd;
 	}
@@ -619,8 +616,7 @@ static int rdfx_v2_cqc_store(const char *p_buf, struct rdfx_info *rdfx)
 	pr_info("CQC(0x%x) BT1: 0x%llx\n", cqn, bt1_ba);
 	cqc = (int *)cq_context;
 	for (i = 0; i < (sizeof(*cq_context) >> 2); i += 8) {
-		pr_info(
-			"CQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		pr_info("CQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			cqn, *cqc, *(cqc + 1), *(cqc + 2),
 			*(cqc + 3), *(cqc + 4), *(cqc + 5),
 			*(cqc + 6), *(cqc + 7));
@@ -685,8 +681,8 @@ static int rdfx_v2_srqc_store(const char *p_buf, struct rdfx_info *rdfx)
 	}
 
 	srq_context = kzalloc(sizeof(*srq_context), GFP_KERNEL);
-	if (!srq_context) {
-		//pr_info("alloc mailbox mem for srqc failed\n");
+	if (ZERO_OR_NULL_PTR(srq_context)) {
+		pr_info("alloc mailbox mem for srqc failed\n");
 		ret = -ENOMEM;
 		goto err_cmd;
 	}
@@ -706,8 +702,7 @@ static int rdfx_v2_srqc_store(const char *p_buf, struct rdfx_info *rdfx)
 	pr_info("SRQC(0x%x) BT1: 0x%llx\n", srqn, bt1_ba);
 	srqc = (int *)srq_context;
 	for (i = 0; i < (sizeof(*srq_context) >> 2); i += 8) {
-		pr_info(
-			"SRQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		pr_info("SRQC(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			srqn, *srqc, *(srqc + 1), *(srqc + 2),
 			*(srqc + 3), *(srqc + 4), *(srqc + 5),
 			*(srqc + 6), *(srqc + 7));
@@ -772,8 +767,8 @@ static int rdfx_v2_mpt_store(const char *p_buf, struct rdfx_info *rdfx)
 	}
 
 	mpt_ctx = kzalloc(sizeof(*mpt_ctx), GFP_KERNEL);
-	if (!mpt_ctx) {
-		//pr_info("alloc mailbox mem for cqc failed\n");
+	if (ZERO_OR_NULL_PTR(mpt_ctx)) {
+		pr_info("alloc mailbox mem for mpt failed\n");
 		ret = -ENOMEM;
 		goto err_cmd;
 	}
@@ -793,8 +788,7 @@ static int rdfx_v2_mpt_store(const char *p_buf, struct rdfx_info *rdfx)
 	pr_info("MPT(0x%x) BT1: 0x%llx\n", key, bt1_ba);
 	mpt = (int *)mpt_ctx;
 	for (i = 0; i < (sizeof(*mpt_ctx) >> 2); i += 8) {
-		pr_info(
-			"MPT(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
+		pr_info("MPT(0x%x): %08x %08x %08x %08x %08x %08x %08x %08x\n",
 			key, *mpt, *(mpt + 1), *(mpt + 2),
 			*(mpt + 3), *(mpt + 4), *(mpt + 5),
 			*(mpt + 6), *(mpt + 7));

@@ -11,7 +11,7 @@
 
 unsigned int hr_fc_print;
 module_param(hr_fc_print, uint, 0644);
-MODULE_PARM_DESC(hr_fc_print, "enable func call prin");
+MODULE_PARM_DESC(hr_fc_print, "enable function call print");
 
 static struct rdfx_qp_info *rdfx_find_rdfx_qp(struct rdfx_info *rdfx,
 					      unsigned long qpn);
@@ -85,7 +85,7 @@ void alloc_rdfx_info(struct hns_roce_dev *hr_dev)
 	struct rdfx_info *rdfx;
 
 	rdfx = kzalloc(sizeof(*rdfx), GFP_KERNEL);
-	if (!rdfx)
+	if (ZERO_OR_NULL_PTR(rdfx))
 		return;
 
 	hr_dev->dfx_priv = rdfx;
@@ -621,7 +621,7 @@ void rdfx_alloc_rdfx_ceq(struct hns_roce_dev *hr_dev, unsigned long ceqn,
 
 	if (eq_cmd == HNS_ROCE_CMD_CREATE_CEQC) {
 		rdfx_ceq = kzalloc(sizeof(struct rdfx_ceq_info), GFP_KERNEL);
-		if (!rdfx_ceq)
+		if (ZERO_OR_NULL_PTR(rdfx_ceq))
 			return;
 
 		rdfx_ceq->ceqn = ceqn;
@@ -647,7 +647,7 @@ void rdfx_alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 	cq_entries = hr_cq->cq_depth;
 
 	dfx_cq_buf = kzalloc(sizeof(struct hns_roce_buf), GFP_KERNEL);
-	if (!dfx_cq_buf)
+	if (ZERO_OR_NULL_PTR(dfx_cq_buf))
 		return;
 
 	page_shift = PAGE_SHIFT + hr_dev->caps.cqe_buf_pg_sz;
@@ -664,7 +664,7 @@ void rdfx_alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 #endif
 
 	rdfx_cq = kzalloc(sizeof(*rdfx_cq), GFP_KERNEL);
-	if (!rdfx_cq)
+	if (ZERO_OR_NULL_PTR(rdfx_cq))
 		goto err_buf;
 
 	rdfx_cq->buf = dfx_cq_buf;
@@ -707,7 +707,7 @@ void rdfx_alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 	unsigned long flags;
 
 	dfx_qp_buf = kzalloc(sizeof(struct hns_roce_buf), GFP_KERNEL);
-	if (!dfx_qp_buf)
+	if (ZERO_OR_NULL_PTR(dfx_qp_buf))
 		return;
 
 	page_shift = PAGE_SHIFT + hr_dev->caps.mtt_buf_pg_sz;
@@ -721,7 +721,7 @@ void rdfx_alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 	}
 
 	rdfx_qp = kzalloc(sizeof(*rdfx_qp), GFP_KERNEL);
-	if (!rdfx_qp) {
+	if (ZERO_OR_NULL_PTR(rdfx_qp)) {
 		hns_roce_buf_free(hr_dev, hr_qp->buff_size, dfx_qp_buf);
 		kfree(dfx_qp_buf);
 		return;
@@ -788,7 +788,7 @@ void rdfx_alloc_rdfx_mr(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr)
 	unsigned long flags;
 
 	rdfx_mr = kzalloc(sizeof(*rdfx_mr), GFP_KERNEL);
-	if (!rdfx_mr)
+	if (ZERO_OR_NULL_PTR(rdfx_mr))
 		return;
 
 	rdfx_mr->pd = mr->pd;
@@ -853,7 +853,7 @@ void rdfx_alloc_rdfx_pd(struct hns_roce_dev *hr_dev, struct hns_roce_pd *pd)
 	unsigned long flags;
 
 	rdfx_pd = kzalloc(sizeof(struct rdfx_pd_info), GFP_KERNEL);
-	if (!rdfx_pd)
+	if (ZERO_OR_NULL_PTR(rdfx_pd))
 		return;
 
 	rdfx_pd->pdn = pd->pdn;
@@ -971,7 +971,7 @@ void rdfx_cp_sq_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
 		memcpy(dfx_qp_buf, dfx_hns_wqe_sge, (wr->num_sge - 2) *
 		    sizeof(struct hns_roce_v2_wqe_data_seg));
 
-	if (wr->opcode <= IB_WR_MASKED_ATOMIC_FETCH_AND_ADD)
+	if (wr->opcode <= IB_WR_REG_SIG_MR)
 		atomic_inc(&(sq->sq_wqe_cnt[wr->opcode]));
 	else
 		dev_err(hr_dev->dev, "Error opcode - %d while post send.\n",
