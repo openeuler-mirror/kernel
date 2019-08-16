@@ -47,7 +47,6 @@ static DEFINE_RWLOCK(uacce_qs_lock);
 #define UACCE_FROM_CDEV_ATTR(dev) container_of(dev, struct uacce, dev)
 
 static const struct file_operations uacce_fops;
-static int uacce_fops_fasync(int fd, struct file *file, int mode);
 static long uacce_put_queue(struct uacce_queue *q);
 
 /* match with enum uacce_qfrt */
@@ -1014,6 +1013,7 @@ static int uacce_get_queue(struct uacce *uacce, struct file *filep)
 	struct uacce_queue *q;
 	int ret;
 	int pasid = 0;
+
 #ifdef CONFIG_IOMMU_SVA2
 	if (uacce->flags & UACCE_DEV_PASID) {
 		ret = iommu_sva_bind_device(uacce->pdev, current->mm, &pasid,
@@ -1022,7 +1022,6 @@ static int uacce_get_queue(struct uacce *uacce, struct file *filep)
 			dev_err(uacce->pdev, "iommu SVA binds fail!\n");
 			module_put(uacce->pdev->driver->owner);
 			return ret;
-
 		}
 	}
 #endif
@@ -1084,8 +1083,11 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 	}
 
 	ret = uacce_get_queue(uacce, filep);
-	if (!ret)
+	if (ret) {
+		dev_err(uacce->pdev, "uacce get queue fail!\n");
 		return ret;
+	}
+
 	return 0;
 }
 
@@ -1096,8 +1098,6 @@ static int uacce_fops_release(struct inode *inode, struct file *filep)
 	int ret = 0;
 
 	uacce_qs_wlock();
-
-	uacce_fops_fasync(-1, filep, 0);
 
 	q = filep->private_data;
 	if (q) {
@@ -1315,13 +1315,6 @@ static __poll_t uacce_fops_poll(struct file *file, poll_table *wait)
 	return ret;
 }
 
-static int uacce_fops_fasync(int fd, struct file *file, int mode)
-{
-	struct uacce_queue *q = file->private_data;
-
-	return fasync_helper(fd, file, mode, &q->async_queue);
-}
-
 static const struct file_operations uacce_fops = {
 	.owner		= THIS_MODULE,
 	.open		= uacce_fops_open,
@@ -1332,7 +1325,6 @@ static const struct file_operations uacce_fops = {
 #endif
 	.mmap		= uacce_fops_mmap,
 	.poll		= uacce_fops_poll,
-	.fasync		= uacce_fops_fasync,
 };
 
 static ssize_t id_show(struct device *dev,
@@ -1460,11 +1452,16 @@ static ssize_t isolate_strategy_store(struct device *dev,
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 	unsigned long val = 0;
 
+#define MAX_ISOLATE_STRATEGY	65535
+
 	/* must be set by PF */
 	if (uacce->is_vf)
 		return -EINVAL;
 
 	if (kstrtoul(buf, 0, &val) < 0)
+		return -EINVAL;
+
+	if (val > MAX_ISOLATE_STRATEGY)
 		return -EINVAL;
 
 	if (atomic_read(&uacce->ref))
@@ -1714,13 +1711,18 @@ int uacce_register(struct uacce *uacce)
 
 	if (uacce->flags & UACCE_DEV_NOIOMMU) {
 		add_taint(TAINT_CRAP, LOCKDEP_STILL_OK);
-		dev_warn(dev, "register to noiommu mode, this may be attacked\n");
+		dev_warn(dev, "register to noiommu mode, it's not safe for kernel\n");
 	}
 
 	/* if dev support fault-from-dev, it should support pasid */
 	if ((uacce->flags & UACCE_DEV_FAULT_FROM_DEV) &&
 	    !(uacce->flags & UACCE_DEV_PASID)) {
 		dev_err(dev, "SVM/SVA device should support PASID\n");
+		return -EINVAL;
+	}
+
+	if (!uacce->ops) {
+		dev_err(dev, "uacce ops is null\n");
 		return -EINVAL;
 	}
 
