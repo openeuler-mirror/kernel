@@ -36,9 +36,9 @@
 
 #define HZIP_BD_STATUS_M			GENMASK(7, 0)
 
-const u8 zlib_head[HZIP_ZLIB_HEAD_SIZE] = {0x78, 0x9c};
-const u8 gzip_head[HZIP_GZIP_HEAD_SIZE] = {0x1f, 0x8b, 0x08, 0x0, 0x0, 0x0,
-					   0x0, 0x0, 0x0, 0x03};
+static const u8 zlib_head[HZIP_ZLIB_HEAD_SIZE] = {0x78, 0x9c};
+static const u8 gzip_head[HZIP_GZIP_HEAD_SIZE] = {0x1f, 0x8b, 0x08, 0x0, 0x0,
+						  0x0, 0x0, 0x0, 0x0, 0x03};
 
 #define COMP_NAME_TO_TYPE(alg_name)					\
 	(!strcmp((alg_name), "zlib-deflate") ? HZIP_ALG_TYPE_ZLIB :	\
@@ -50,7 +50,7 @@ const u8 gzip_head[HZIP_GZIP_HEAD_SIZE] = {0x1f, 0x8b, 0x08, 0x0, 0x0, 0x0,
 
 #define TO_HEAD(req_type)						\
 	(((req_type) == HZIP_ALG_TYPE_ZLIB) ? zlib_head :		\
-	 ((req_type) == HZIP_ALG_TYPE_GZIP) ? gzip_head : 0)		\
+	 ((req_type) == HZIP_ALG_TYPE_GZIP) ? gzip_head : NULL)		\
 
 struct hisi_zip_buffer {
 	u8 *input;

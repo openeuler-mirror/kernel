@@ -97,8 +97,8 @@
 
 static const char hisi_zip_name[] = "hisi_zip";
 static struct dentry *hzip_debugfs_root;
-LIST_HEAD(hisi_zip_list);
-DEFINE_MUTEX(hisi_zip_list_lock);
+static LIST_HEAD(hisi_zip_list);
+static DEFINE_MUTEX(hisi_zip_list_lock);
 
 struct hisi_zip_resource {
 	struct hisi_zip *hzip;

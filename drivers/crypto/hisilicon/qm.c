@@ -55,7 +55,7 @@
 #define QM_CQ_PHASE_SHIFT		0
 #define QM_CQ_FLAG_SHIFT		1
 
-#define QM_CQE_PHASE(cqe)		((cqe)->w7 & 0x1)
+#define QM_CQE_PHASE(cqe)		(le16_to_cpu((cqe)->w7) & 0x1)
 
 #define QM_QC_CQE_SIZE			4
 
@@ -63,10 +63,10 @@
 #define QM_EQE_AEQE_SIZE		(2UL << 12)
 #define QM_EQC_PHASE_SHIFT		16
 
-#define QM_EQE_PHASE(eqe)		(((eqe)->dw0 >> 16) & 0x1)
+#define QM_EQE_PHASE(eqe)		((le32_to_cpu((eqe)->dw0) >> 16) & 0x1)
 #define QM_EQE_CQN_MASK			0xffff
 
-#define QM_AEQE_PHASE(aeqe)		(((aeqe)->dw0 >> 16) & 0x1)
+#define QM_AEQE_PHASE(aeqe)		((le32_to_cpu((aeqe)->dw0) >> 16) & 0x1)
 #define QM_AEQE_TYPE_SHIFT		17
 
 #define QM_DOORBELL_CMD_SQ		0
@@ -177,17 +177,17 @@
 #define QM_MK_SQC_DW3_V2(sqe_sz) \
 	((QM_Q_DEPTH - 1) | ((u32)ilog2(sqe_sz) << QM_SQ_SQE_SIZE_SHIFT))
 
-#define INIT_QC_COMMON(qc, base, pasid) do {	\
-	(qc)->head = 0;				\
-	(qc)->tail = 0;				\
-	(qc)->base_l = lower_32_bits(base);	\
-	(qc)->base_h = upper_32_bits(base);	\
-	(qc)->dw3 = 0;				\
-	(qc)->w8 = 0;				\
-	(qc)->rsvd0 = 0;			\
-	(qc)->pasid = pasid;			\
-	(qc)->w11 = 0;				\
-	(qc)->rsvd1 = 0;			\
+#define INIT_QC_COMMON(qc, base, pasid) do {			\
+	(qc)->head = 0;						\
+	(qc)->tail = 0;						\
+	(qc)->base_l = cpu_to_le32(lower_32_bits(base));	\
+	(qc)->base_h = cpu_to_le32(upper_32_bits(base));	\
+	(qc)->dw3 = 0;						\
+	(qc)->w8 = 0;						\
+	(qc)->rsvd0 = 0;					\
+	(qc)->pasid = cpu_to_le16(pasid);			\
+	(qc)->w11 = 0;						\
+	(qc)->rsvd1 = 0;					\
 } while (0)
 
 #define QMC_ALIGN(sz) ALIGN(sz, 32)
@@ -363,12 +363,12 @@ static int qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
 	dev_dbg(&qm->pdev->dev, "QM mailbox request to q%u: %u-%llx\n", queue,
 		cmd, dma_addr);
 
-	mailbox.w0 = cmd |
+	mailbox.w0 = cpu_to_le16(cmd |
 		     (op ? 0x1 << QM_MB_OP_SHIFT : 0) |
-		     (0x1 << QM_MB_BUSY_SHIFT);
-	mailbox.queue_num = queue;
-	mailbox.base_l = lower_32_bits(dma_addr);
-	mailbox.base_h = upper_32_bits(dma_addr);
+		     (0x1 << QM_MB_BUSY_SHIFT));
+	mailbox.queue_num = cpu_to_le16(queue);
+	mailbox.base_l = cpu_to_le32(lower_32_bits(dma_addr));
+	mailbox.base_h = cpu_to_le32(upper_32_bits(dma_addr));
 	mailbox.rsvd = 0;
 
 	mutex_lock(&qm->mailbox_lock);
@@ -457,7 +457,7 @@ static u32 qm_get_irq_num_v2(struct hisi_qm *qm)
 
 static struct hisi_qp *qm_to_hisi_qp(struct hisi_qm *qm, struct qm_eqe *eqe)
 {
-	return qm->qp_array[eqe->dw0 & QM_EQE_CQN_MASK];
+	return qm->qp_array[le32_to_cpu(eqe->dw0) & QM_EQE_CQN_MASK];
 }
 
 static void qm_sq_head_update(struct hisi_qp *qp)
@@ -491,7 +491,7 @@ static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 			while (QM_CQE_PHASE(cqe) == qp->qp_status.cqc_phase) {
 				dma_rmb();
 				qp->req_cb(qp, qp->sqe + qm->sqe_size *
-					   cqe->sq_head);
+					   le16_to_cpu(cqe->sq_head));
 				qm_cq_head_update(qp);
 				cqe = qp->cqe + qp->qp_status.cq_head;
 				qm_db(qm, qp->qp_id, QM_DOORBELL_CMD_CQ,
@@ -585,7 +585,7 @@ static irqreturn_t qm_aeq_irq(int irq, void *data)
 		return IRQ_NONE;
 
 	while (QM_AEQE_PHASE(aeqe) == qm->status.aeqc_phase) {
-		type = aeqe->dw0 >> QM_AEQE_TYPE_SHIFT;
+		type = le32_to_cpu(aeqe->dw0) >> QM_AEQE_TYPE_SHIFT;
 		if (type < ARRAY_SIZE(qm_fifo_overflow))
 			dev_err(&qm->pdev->dev, "%s overflow\n",
 				qm_fifo_overflow[type]);
@@ -696,7 +696,7 @@ static void qm_init_qp_status(struct hisi_qp *qp)
 	qp_status->sq_tail = 0;
 	qp_status->sq_head = 0;
 	qp_status->cq_head = 0;
-	qp_status->cqc_phase = 1;
+	qp_status->cqc_phase = true;
 }
 
 static void qm_vft_data_cfg(struct hisi_qm *qm, enum vft_type type, u32 base,
@@ -1288,14 +1288,14 @@ static int qm_sq_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 
 	INIT_QC_COMMON(sqc, qp->sqe_dma, pasid);
 	if (ver == QM_HW_V1) {
-		sqc->dw3 = QM_MK_SQC_DW3_V1(0, 0, 0, qm->sqe_size);
-		sqc->w8 = QM_Q_DEPTH - 1;
+		sqc->dw3 = cpu_to_le32(QM_MK_SQC_DW3_V1(0, 0, 0, qm->sqe_size));
+		sqc->w8 = cpu_to_le16(QM_Q_DEPTH - 1);
 	} else if (ver == QM_HW_V2) {
-		sqc->dw3 = QM_MK_SQC_DW3_V2(qm->sqe_size);
+		sqc->dw3 = cpu_to_le32(QM_MK_SQC_DW3_V2(qm->sqe_size));
 		sqc->w8 = 0; /* rand_qc */
 	}
-	sqc->cq_num = qp_id;
-	sqc->w13 = QM_MK_SQC_W13(0, 1, qp->alg_type);
+	sqc->cq_num = cpu_to_le16(qp_id);
+	sqc->w13 = cpu_to_le16(QM_MK_SQC_W13(0, 1, qp->alg_type));
 
 	ret = qm_mb(qm, QM_MB_CMD_SQC, sqc_dma, qp_id, 0);
 	if (qm->use_dma_api) {
@@ -1336,13 +1336,15 @@ static int qm_cq_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 
 	INIT_QC_COMMON(cqc, qp->cqe_dma, pasid);
 	if (ver == QM_HW_V1) {
-		cqc->dw3 = QM_MK_CQC_DW3_V1(0, 0, 0, QM_QC_CQE_SIZE);
-		cqc->w8 = QM_Q_DEPTH - 1;
+		cqc->dw3 = cpu_to_le32(QM_MK_CQC_DW3_V1(0, 0, 0,
+							QM_QC_CQE_SIZE));
+		cqc->w8 = cpu_to_le16(QM_Q_DEPTH - 1);
 	} else if (ver == QM_HW_V2) {
-		cqc->dw3 = QM_MK_CQC_DW3_V2(QM_QC_CQE_SIZE);
+		cqc->dw3 = cpu_to_le32(QM_MK_CQC_DW3_V2(QM_QC_CQE_SIZE));
 		cqc->w8 = 0; /* rand_qc */
 	}
-	cqc->dw6 = 1 << QM_CQ_PHASE_SHIFT | qp->c_flag << QM_CQ_FLAG_SHIFT;
+	cqc->dw6 = cpu_to_le32(1 << QM_CQ_PHASE_SHIFT |
+			       qp->c_flag << QM_CQ_FLAG_SHIFT);
 
 	ret = qm_mb(qm, QM_MB_CMD_CQC, cqc_dma, qp_id, 0);
 	if (qm->use_dma_api) {
@@ -2126,8 +2128,8 @@ static void qm_init_eq_aeq_status(struct hisi_qm *qm)
 
 	status->eq_head = 0;
 	status->aeq_head = 0;
-	status->eqc_phase = 1;
-	status->aeqc_phase = 1;
+	status->eqc_phase = true;
+	status->aeqc_phase = true;
 }
 
 static int qm_eq_ctx_cfg(struct hisi_qm *qm)
@@ -2152,11 +2154,11 @@ static int qm_eq_ctx_cfg(struct hisi_qm *qm)
 		eqc_dma = qm->reserve_dma;
 	}
 
-	eqc->base_l = lower_32_bits(qm->eqe_dma);
-	eqc->base_h = upper_32_bits(qm->eqe_dma);
+	eqc->base_l = cpu_to_le32(lower_32_bits(qm->eqe_dma));
+	eqc->base_h = cpu_to_le32(upper_32_bits(qm->eqe_dma));
 	if (qm->ver == QM_HW_V1)
 		eqc->dw3 = QM_EQE_AEQE_SIZE;
-	eqc->dw6 = (QM_EQ_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT);
+	eqc->dw6 = cpu_to_le32((QM_EQ_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT));
 	ret = qm_mb(qm, QM_MB_CMD_EQC, eqc_dma, 0, 0);
 	if (qm->use_dma_api) {
 		dma_unmap_single(dev, eqc_dma, sizeof(struct qm_eqc),
@@ -2190,9 +2192,9 @@ static int qm_aeq_ctx_cfg(struct hisi_qm *qm)
 		aeqc_dma = qm->reserve_dma;
 	}
 
-	aeqc->base_l = lower_32_bits(qm->aeqe_dma);
-	aeqc->base_h = upper_32_bits(qm->aeqe_dma);
-	aeqc->dw6 = (QM_Q_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT);
+	aeqc->base_l = cpu_to_le32(lower_32_bits(qm->aeqe_dma));
+	aeqc->base_h = cpu_to_le32(upper_32_bits(qm->aeqe_dma));
+	aeqc->dw6 = cpu_to_le32((QM_Q_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT));
 	ret = qm_mb(qm, QM_MB_CMD_AEQC, aeqc_dma, 0, 0);
 	if (qm->use_dma_api) {
 		dma_unmap_single(dev, aeqc_dma, sizeof(struct qm_aeqc),
@@ -2319,7 +2321,7 @@ int hisi_qm_restart(struct hisi_qm *qm)
 		qp = qm->qp_array[i];
 
 		if (qp && atomic_read(&qp->qp_status.flags) == QP_STOP &&
-		    qp->is_resetting == true) {
+		    qp->is_resetting) {
 			ret = hisi_qm_start_qp_nolock(qp, 0);
 			if (ret < 0) {
 				dev_err(dev, "Failed to start qp%d!\n", i);
