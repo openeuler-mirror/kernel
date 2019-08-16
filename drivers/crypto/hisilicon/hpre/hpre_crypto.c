@@ -748,8 +748,14 @@ static int hpre_rsa_set_n(struct hpre_ctx *ctx, const char *value,
 	ctx->rsa.pubkey = dma_alloc_coherent(&GET_DEV(ctx), vlen << 1,
 					     &ctx->rsa.dma_pubkey,
 					     GFP_KERNEL);
-	if (!ctx->rsa.pubkey)
+	if (!ctx->rsa.pubkey) {
+		if (ctx->rsa.prikey) {
+			dma_free_coherent(&GET_DEV(ctx), vlen << 1,
+					ctx->rsa.prikey, ctx->rsa.dma_prikey);
+			ctx->rsa.prikey = NULL;
+		}
 		return -ENOMEM;
+	}
 	memcpy(ctx->rsa.pubkey + vlen, ptr, vlen);
 	if (ctx->rsa.prikey)
 		memcpy(ctx->rsa.prikey + vlen, ptr, vlen);
@@ -1016,7 +1022,7 @@ static int hpre_rsa_init_tfm(struct crypto_akcipher *tfm)
 	ctx->rsa.soft_tfm = crypto_alloc_akcipher("rsa-generic", 0, 0);
 	if (IS_ERR(ctx->rsa.soft_tfm)) {
 		pr_err("Can not alloc_akcipher!\n");
-		return PTR_ERR(tfm);
+		return PTR_ERR(ctx->rsa.soft_tfm);
 	}
 
 	return hpre_ctx_init(ctx);

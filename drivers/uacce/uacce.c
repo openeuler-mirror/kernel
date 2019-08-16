@@ -479,8 +479,10 @@ static void uacce_sort_dma_buffers(struct uacce_dma_slice *list, int low,
 		return;
 
 	pilot = get_sort_base(list, low, high, tmp);
-	if (pilot < 0)
+	if (pilot < 0) {
+		kfree(idx_list);
 		return;
+	}
 	if (pilot > low + 1) {
 		idx_list[top++] = low;
 		idx_list[top++] = pilot - 1;
@@ -595,6 +597,38 @@ DMA_MMAP_FAIL:
 	return ret;
 }
 
+static int uacce_mmap_region(u32 flags, struct uacce_queue *q,
+				struct vm_area_struct *vma,
+				struct uacce_qfile_region *qfr)
+{
+	struct uacce *uacce = q->uacce;
+	int ret;
+
+	if (flags & UACCE_QFRF_SELFMT)
+		return uacce->ops->mmap(q, vma, qfr);
+
+	/* map to device */
+	if (!(flags & UACCE_QFRF_SELFMT)) {
+		ret = uacce_queue_map_qfr(q, qfr);
+		if (ret)
+			return ret;
+	}
+
+	/* mmap to user space */
+	if (flags & UACCE_QFRF_MMAP) {
+		if (flags & UACCE_QFRF_DMA)
+			ret = uacce_mmap_dma_buffers(q, vma);
+		else
+			ret = uacce_queue_mmap_qfr(q, qfr, vma);
+		if (ret) {
+			uacce_queue_unmap_qfr(q, qfr);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 static struct
 uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 					struct vm_area_struct *vma,
@@ -606,7 +640,7 @@ uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 
 	qfr = kzalloc(sizeof(*qfr), GFP_ATOMIC);
 	if (!qfr)
-		return ERR_PTR(-ENOMEM);
+		return ERR_PTR(ret);
 
 	qfr->type = type;
 	qfr->flags = flags;
@@ -620,21 +654,14 @@ uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 	if (vma->vm_flags & VM_WRITE)
 		qfr->prot |= IOMMU_WRITE;
 
-	if (flags & UACCE_QFRF_SELFMT) {
-		ret = uacce->ops->mmap(q, vma, qfr);
-		if (ret) {
-			dev_err(uacce->pdev, "uacce driver mmap fail!\n");
-			goto err_with_qfr;
-		}
-		return qfr;
-	}
-
 	/* allocate memory */
 	if (flags & UACCE_QFRF_DMA) {
 		ret = uacce_alloc_dma_buffers(q, vma);
-		if (ret)
-			goto err_with_pages;
-	} else {
+		if (ret) {
+			uacce_free_dma_buffers(q);
+			goto err_with_qfr;
+		}
+	} else if (!(flags & UACCE_QFRF_SELFMT)) {
 		ret = uacce_qfr_alloc_pages(qfr);
 		if (ret) {
 			dev_err(uacce->pdev, "alloc page fail!\n");
@@ -642,29 +669,18 @@ uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 		}
 	}
 
-	/* map to device */
-	ret = uacce_queue_map_qfr(q, qfr);
-	if (ret)
+	ret = uacce_mmap_region(flags, q, vma, qfr);
+	if (ret) {
+		dev_err(uacce->pdev, "uacce mmap region fail!\n");
 		goto err_with_pages;
-
-	/* mmap to user space */
-	if (flags & UACCE_QFRF_MMAP) {
-		if (flags & UACCE_QFRF_DMA)
-			ret = uacce_mmap_dma_buffers(q, vma);
-		else
-			ret = uacce_queue_mmap_qfr(q, qfr, vma);
-		if (ret)
-			goto err_with_mapped_qfr;
 	}
 
 	return qfr;
 
-err_with_mapped_qfr:
-	uacce_queue_unmap_qfr(q, qfr);
 err_with_pages:
 	if (flags & UACCE_QFRF_DMA)
 		uacce_free_dma_buffers(q);
-	else
+	else if (!(flags & UACCE_QFRF_SELFMT))
 		uacce_qfr_free_pages(qfr);
 err_with_qfr:
 	kfree(qfr);
@@ -993,11 +1009,56 @@ static long uacce_put_queue(struct uacce_queue *q)
 	return 0;
 }
 
-static int uacce_fops_open(struct inode *inode, struct file *filep)
+static int uacce_get_queue(struct uacce *uacce, struct file *filep)
 {
 	struct uacce_queue *q;
-	struct uacce *uacce;
+	int ret;
 	int pasid = 0;
+#ifdef CONFIG_IOMMU_SVA2
+	if (uacce->flags & UACCE_DEV_PASID) {
+		ret = iommu_sva_bind_device(uacce->pdev, current->mm, &pasid,
+					    IOMMU_SVA_FEAT_IOPF, NULL);
+		if (ret) {
+			dev_err(uacce->pdev, "iommu SVA binds fail!\n");
+			module_put(uacce->pdev->driver->owner);
+			return ret;
+
+		}
+	}
+#endif
+	uacce_qs_wlock();
+
+	ret = uacce->ops->get_queue(uacce, pasid, &q);
+	if (ret < 0) {
+		uacce_qs_wunlock();
+		goto err_unbind;
+	}
+	q->pasid = pasid;
+	q->uacce = uacce;
+	q->mm = current->mm;
+	memset(q->qfrs, 0, sizeof(q->qfrs));
+	INIT_LIST_HEAD(&q->list);
+	init_waitqueue_head(&q->wait);
+	q->state = UACCE_Q_INIT;
+	filep->private_data = q;
+	atomic_inc(&uacce->ref);
+
+	uacce_qs_wunlock();
+
+	return 0;
+
+err_unbind:
+#ifdef CONFIG_IOMMU_SVA2
+	if (uacce->flags & UACCE_DEV_PASID)
+		iommu_sva_unbind_device(uacce->pdev, pasid);
+#endif
+	module_put(uacce->pdev->driver->owner);
+	return ret;
+}
+
+static int uacce_fops_open(struct inode *inode, struct file *filep)
+{
+	struct uacce *uacce;
 	int ret;
 
 	uacce = idr_find(&uacce_idr, iminor(inode));
@@ -1017,47 +1078,15 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 		return -ENODEV;
 	}
 	ret = uacce_dev_open_check(uacce);
-	if (ret)
-		goto err_open;
-#ifdef CONFIG_IOMMU_SVA2
-	if (uacce->flags & UACCE_DEV_PASID) {
-		ret = iommu_sva_bind_device(uacce->pdev, current->mm, &pasid,
-					    IOMMU_SVA_FEAT_IOPF, NULL);
-		if (ret) {
-			dev_err(uacce->pdev, "iommu SVA binds fail!\n");
-			goto err_open;
-		}
+	if (ret) {
+		module_put(uacce->pdev->driver->owner);
+		return ret;
 	}
-#endif
-	uacce_qs_wlock();
 
-	ret = uacce->ops->get_queue(uacce, pasid, &q);
-	if (ret < 0) {
-		uacce_qs_wunlock();
-		goto err_unbind;
-	}
-	q->pasid = pasid;
-	q->uacce = uacce;
-	q->mm = current->mm;
-	memset(q->qfrs, 0, sizeof(q->qfrs));
-	INIT_LIST_HEAD(&q->list);
-	init_waitqueue_head(&q->wait);
-	filep->private_data = q;
-	q->state = UACCE_Q_INIT;
-	atomic_inc(&uacce->ref);
-
-	uacce_qs_wunlock();
-
+	ret = uacce_get_queue(uacce, filep);
+	if (!ret)
+		return ret;
 	return 0;
-
-err_unbind:
-#ifdef CONFIG_IOMMU_SVA2
-	if (uacce->flags & UACCE_DEV_PASID)
-		iommu_sva_unbind_device(uacce->pdev, pasid);
-#endif
-err_open:
-	module_put(uacce->pdev->driver->owner);
-	return ret;
 }
 
 static int uacce_fops_release(struct inode *inode, struct file *filep)
