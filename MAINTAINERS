@@ -6665,6 +6665,12 @@ S:	Maintained
 F:	drivers/infiniband/hw/hns/
 F:	Documentation/devicetree/bindings/infiniband/hisilicon-hns-roce.txt
 
+HISILICON ROCE DFX DRIVER
+M:	Huang Dongdong <hdd.huang@huawei.com>
+S:	Maintained
+F:	drivers/infiniband/hw/hns/Makefile
+F:	drivers/infiniband/hw/hns/roce-customer/
+
 HISILICON WARPDRIVE USER
 M:	Zaibo Xu <xuzaibo@huawei.com>
 M:	Zhou Wang <wangzhou1@hisilicon.com>

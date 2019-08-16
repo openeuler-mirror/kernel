@@ -29,3 +29,22 @@ config INFINIBAND_HNS_HIP08
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called hns-roce-hw-v2.
+
+config INFINIBAND_HNS_DFX
+	tristate "Hisilicon Hip08 Family RoCE DFX support"
+	depends on INFINIBAND_HNS_HIP08
+	help
+	  RoCE DFX driver support for Hisilicon RoCE engine in Hisilicon Hip08
+	  SoC.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called hns-roce-cae.
+
+config INFINIBAND_HNS_TEST
+	tristate "Hisilicon Hip08 Family RoCE test support"
+	depends on INFINIBAND_HNS_HIP08
+	help
+	  This option provides the ability to adjust some parameters of roce
+	  driver for debugging.
+
+	  To turn this feature on, choose M here.
