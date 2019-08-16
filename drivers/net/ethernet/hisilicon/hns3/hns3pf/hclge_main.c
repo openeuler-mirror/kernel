@@ -3754,7 +3754,7 @@ static void hclge_reset_timer(struct timer_list *t)
 	hclge_reset_event(hdev->pdev, NULL);
 }
 
-bool hclge_reset_done(struct hnae3_handle *handle, bool done)
+static bool hclge_reset_done(struct hnae3_handle *handle, bool done)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -3765,7 +3765,7 @@ bool hclge_reset_done(struct hnae3_handle *handle, bool done)
 	return done;
 }
 
-void hclge_handle_imp_error(struct hnae3_handle *handle)
+static void hclge_handle_imp_error(struct hnae3_handle *handle)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
