@@ -224,8 +224,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 	struct hclge_dbg_reg_common_msg reg_msg;
 
 	if (strncmp(cmd_buf, "bios common", 11) == 0) {
-		reg_msg.msg_num = sizeof(hclge_dbg_bios_common_reg) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_bios_common_reg);
 		reg_msg.offset = HCLGE_DBG_DFX_BIOS_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_BIOS_COMMON_REG;
 
@@ -234,8 +233,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &reg_msg);
 
 	} else if (strncmp(cmd_buf, "ssu", 3) == 0) {
-		reg_msg.msg_num = sizeof(hclge_dbg_ssu_reg_0) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_ssu_reg_0);
 		reg_msg.offset = HCLGE_DBG_DFX_SSU_0_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_SSU_REG_0;
 
@@ -243,8 +241,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &cmd_buf[sizeof("ssu")],
 					  &reg_msg);
 
-		reg_msg.msg_num = sizeof(hclge_dbg_ssu_reg_1) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_ssu_reg_1);
 		reg_msg.offset = HCLGE_DBG_DFX_SSU_1_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_SSU_REG_1;
 
@@ -252,8 +249,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &cmd_buf[sizeof("ssu")],
 					  &reg_msg);
 
-		reg_msg.msg_num = sizeof(hclge_dbg_ssu_reg_2) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_ssu_reg_2);
 		reg_msg.offset = HCLGE_DBG_DFX_SSU_2_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_SSU_REG_2;
 
@@ -262,8 +258,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &reg_msg);
 
 	} else if (strncmp(cmd_buf, "igu egu", 7) == 0) {
-		reg_msg.msg_num = sizeof(hclge_dbg_igu_egu_reg) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_igu_egu_reg);
 		reg_msg.offset = HCLGE_DBG_DFX_IGU_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_IGU_EGU_REG;
 
@@ -272,8 +267,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &reg_msg);
 
 	} else if (strncmp(cmd_buf, "rpu", 3) == 0) {
-		reg_msg.msg_num = sizeof(hclge_dbg_rpu_reg_0) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_rpu_reg_0);
 		reg_msg.offset = HCLGE_DBG_DFX_RPU_0_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_RPU_REG_0;
 
@@ -281,8 +275,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &cmd_buf[sizeof("rpu")],
 					  &reg_msg);
 
-		reg_msg.msg_num = sizeof(hclge_dbg_rpu_reg_1) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_rpu_reg_1);
 		reg_msg.offset = HCLGE_DBG_DFX_RPU_1_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_RPU_REG_1;
 
@@ -291,8 +284,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &reg_msg);
 
 	} else if (strncmp(cmd_buf, "ncsi", 4) == 0) {
-		reg_msg.msg_num = sizeof(hclge_dbg_ncsi_reg) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_ncsi_reg);
 		reg_msg.offset = HCLGE_DBG_DFX_NCSI_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_NCSI_REG;
 
@@ -301,8 +293,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &reg_msg);
 
 	} else if (strncmp(cmd_buf, "rtc", 3) == 0) {
-		reg_msg.msg_num = sizeof(hclge_dbg_rtc_reg) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_rtc_reg);
 		reg_msg.offset = HCLGE_DBG_DFX_RTC_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_RTC_REG;
 
@@ -311,8 +302,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &reg_msg);
 
 	} else if (strncmp(cmd_buf, "ppp", 3) == 0) {
-		reg_msg.msg_num = sizeof(hclge_dbg_ppp_reg) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_ppp_reg);
 		reg_msg.offset = HCLGE_DBG_DFX_PPP_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_PPP_REG;
 
@@ -321,8 +311,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &reg_msg);
 
 	} else if (strncmp(cmd_buf, "rcb", 3) == 0) {
-		reg_msg.msg_num = sizeof(hclge_dbg_rcb_reg) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_rcb_reg);
 		reg_msg.offset = HCLGE_DBG_DFX_RCB_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_RCB_REG;
 
@@ -331,8 +320,7 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 					  &reg_msg);
 
 	} else if (strncmp(cmd_buf, "tqp", 3) == 0) {
-		reg_msg.msg_num = sizeof(hclge_dbg_tqp_reg) /
-				  sizeof(struct hclge_dbg_dfx_message);
+		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_tqp_reg);
 		reg_msg.offset = HCLGE_DBG_DFX_TQP_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_TQP_REG;
 
