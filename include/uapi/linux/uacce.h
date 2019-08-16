@@ -53,4 +53,9 @@ enum uacce_qfrt {
 };
 #define UACCE_QFRT_INVALID UACCE_QFRT_MAX
 
+/* Pass DMA SS region slice size by granularity 64KB */
+#define UACCE_GRAN_SIZE			0x10000ull
+#define UACCE_GRAN_SHIFT		16
+#define UACCE_GRAN_NUM_MASK		0xfffull
+
 #endif

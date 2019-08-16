@@ -30,6 +30,13 @@ struct uacce_err_isolate {
 	atomic_t is_isolate;
 };
 
+struct uacce_dma_slice {
+	void *kaddr;	/* kernel address for ss */
+	dma_addr_t dma;	/* dma address, if created by dma api */
+	u32 size;	/* Size of this dma slice */
+	u32 total_num;	/* Total slices in this dma list */
+};
+
 struct uacce_qfile_region {
 	enum uacce_qfrt type;
 	unsigned long iova;	/* iova share between user and device space */
@@ -38,8 +45,8 @@ struct uacce_qfile_region {
 	int prot;
 	unsigned int flags;
 	struct list_head qs;	/* qs sharing the same region, for ss */
-	void *kaddr;		/* kernel addr, for dko */
-	dma_addr_t dma;		/* dma address, if created by dma api */
+	void *kaddr;		/* kernel address for dko */
+	struct uacce_dma_slice *dma_list;
 };
 
 /**
