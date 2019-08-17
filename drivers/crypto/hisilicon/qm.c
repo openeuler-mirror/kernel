@@ -2157,7 +2157,7 @@ static int qm_eq_ctx_cfg(struct hisi_qm *qm)
 	eqc->base_l = cpu_to_le32(lower_32_bits(qm->eqe_dma));
 	eqc->base_h = cpu_to_le32(upper_32_bits(qm->eqe_dma));
 	if (qm->ver == QM_HW_V1)
-		eqc->dw3 = QM_EQE_AEQE_SIZE;
+		eqc->dw3 = cpu_to_le32(QM_EQE_AEQE_SIZE);
 	eqc->dw6 = cpu_to_le32((QM_EQ_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT));
 	ret = qm_mb(qm, QM_MB_CMD_EQC, eqc_dma, 0, 0);
 	if (qm->use_dma_api) {
