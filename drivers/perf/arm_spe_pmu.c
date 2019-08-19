@@ -1176,13 +1176,7 @@ static const struct of_device_id arm_spe_pmu_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, arm_spe_pmu_of_match);
 
-static const struct platform_device_id arm_spe_match[] = {
-	{ "arm,spe-v1", 0},
-	{ }
-};
-MODULE_DEVICE_TABLE(platform, arm_spe_match);
-
-static int arm_spe_pmu_device_probe(struct platform_device *pdev)
+static int arm_spe_pmu_device_dt_probe(struct platform_device *pdev)
 {
 	int ret;
 	struct arm_spe_pmu *spe_pmu;
@@ -1242,12 +1236,11 @@ static int arm_spe_pmu_device_remove(struct platform_device *pdev)
 }
 
 static struct platform_driver arm_spe_pmu_driver = {
-	.id_table = arm_spe_match,
 	.driver	= {
 		.name		= DRVNAME,
 		.of_match_table	= of_match_ptr(arm_spe_pmu_of_match),
 	},
-	.probe	= arm_spe_pmu_device_probe,
+	.probe	= arm_spe_pmu_device_dt_probe,
 	.remove	= arm_spe_pmu_device_remove,
 };
 
