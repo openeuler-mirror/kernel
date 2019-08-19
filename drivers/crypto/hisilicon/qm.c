@@ -349,7 +349,7 @@ static void qm_mb_write(struct hisi_qm *qm, const void *src)
 		     "dsb sy\n"
 		     : "=&r" (tmp0),
 		       "=&r" (tmp1),
-		       "+Q" (*((char *)fun_base))
+		       "+Q" (*((char __iomem *)fun_base))
 		     : "Q" (*((char *)src))
 		     : "memory");
 }
