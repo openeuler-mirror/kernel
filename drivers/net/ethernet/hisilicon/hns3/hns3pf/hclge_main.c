@@ -66,6 +66,8 @@ static void hclge_rm_vport_vlan_table(struct hclge_vport *vport, u16 vlan_id,
 				      bool is_write_tbl);
 static void hclge_rfs_filter_expire(struct hclge_dev *hdev);
 static void hclge_clear_arfs_rules(struct hnae3_handle *handle);
+static int hclge_set_default_loopback(struct hclge_dev *hdev);
+
 
 struct hnae3_ae_algo ae_algo;
 
@@ -2578,6 +2580,10 @@ static int hclge_mac_init(struct hclge_dev *hdev)
 		dev_err(&hdev->pdev->dev, "set mtu failed ret=%d\n", ret);
 		return ret;
 	}
+
+	ret = hclge_set_default_loopback(hdev);
+	if (ret)
+		return ret;
 
 	ret = hclge_buffer_alloc(hdev);
 	if (ret)
@@ -6433,7 +6439,7 @@ static int hclge_set_app_loopback(struct hclge_dev *hdev, bool en)
 	return ret;
 }
 
-static int hclge_set_serdes_loopback(struct hclge_dev *hdev, bool en,
+static int hclge_cfg_serdes_loopback(struct hclge_dev *hdev, bool en,
 				     enum hnae3_loop loop_mode)
 {
 #define HCLGE_SERDES_RETRY_MS	10
@@ -6494,6 +6500,17 @@ static int hclge_set_serdes_loopback(struct hclge_dev *hdev, bool en,
 		dev_err(&hdev->pdev->dev, "serdes loopback set failed in fw\n");
 		return -EIO;
 	}
+	return ret;
+}
+
+static int hclge_set_serdes_loopback(struct hclge_dev *hdev, bool en,
+				     enum hnae3_loop loop_mode)
+{
+	int ret;
+
+	ret = hclge_cfg_serdes_loopback(hdev, en, loop_mode);
+	if (ret)
+		return ret;
 
 	hclge_cfg_mac_mode(hdev, en);
 
@@ -6637,6 +6654,22 @@ static int hclge_set_loopback(struct hnae3_handle *handle,
 	}
 
 	return 0;
+}
+
+static int hclge_set_default_loopback(struct hclge_dev *hdev)
+{
+	int ret;
+
+	ret = hclge_set_app_loopback(hdev, false);
+	if (ret)
+		return ret;
+
+	ret = hclge_cfg_serdes_loopback(hdev, false, HNAE3_LOOP_SERIAL_SERDES);
+	if (ret)
+		return ret;
+
+	return hclge_cfg_serdes_loopback(hdev, false,
+					 HNAE3_LOOP_PARALLEL_SERDES);
 }
 
 static void hclge_reset_tqp_stats(struct hnae3_handle *handle)
