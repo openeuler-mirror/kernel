@@ -1916,6 +1916,23 @@ static int hns3_nic_set_vf_link_state(struct net_device *ndev, int vf,
 	return h->ae_algo->ops->set_vf_link_state(h, vf, link_state);
 }
 
+static int hns3_nic_set_vf_mac(struct net_device *netdev, int vf_id, u8 *mac)
+{
+	struct hnae3_handle *h = hns3_get_handle(netdev);
+
+	if (!h->ae_algo->ops->set_vf_mac)
+		return -EOPNOTSUPP;
+
+	if (is_broadcast_ether_addr(mac) ||
+	    is_multicast_ether_addr(mac)) {
+		netdev_err(netdev,
+			   "Set VF MAC error! invalid mac:%pM.\n", mac);
+		return -EINVAL;
+	}
+
+	return h->ae_algo->ops->set_vf_mac(h, vf_id, mac);
+}
+
 struct net_device_ops hns3_nic_netdev_ops = {
 	.ndo_open		= hns3_nic_net_open,
 	.ndo_stop		= hns3_nic_net_stop,
@@ -1939,6 +1956,7 @@ struct net_device_ops hns3_nic_netdev_ops = {
 #endif
 	.ndo_get_vf_config	= hns3_nic_get_vf_config,
 	.ndo_set_vf_link_state	= hns3_nic_set_vf_link_state,
+	.ndo_set_vf_mac		= hns3_nic_set_vf_mac,
 
 };
 
@@ -3868,14 +3886,14 @@ int hns3_uninit_all_ring(struct hns3_nic_priv *priv)
 }
 
 /* Set mac addr if it is configured. or leave it to the AE driver */
-static int hns3_init_mac_addr(struct net_device *netdev, bool init)
+static int hns3_init_mac_addr(struct net_device *netdev)
 {
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
 	struct hnae3_handle *h = priv->ae_handle;
 	u8 mac_addr_temp[ETH_ALEN];
 	int ret = 0;
 
-	if (h->ae_algo->ops->get_mac_addr && init) {
+	if (h->ae_algo->ops->get_mac_addr) {
 		h->ae_algo->ops->get_mac_addr(h, mac_addr_temp);
 		ether_addr_copy(netdev->dev_addr, mac_addr_temp);
 	}
@@ -3988,7 +4006,7 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	handle->kinfo.netdev = netdev;
 	handle->priv = (void *)priv;
 
-	hns3_init_mac_addr(netdev, true);
+	hns3_init_mac_addr(netdev);
 
 	hns3_set_default_feature(netdev);
 
@@ -4467,7 +4485,7 @@ static int hns3_reset_notify_restore_enet(struct hnae3_handle *handle)
 	bool vlan_filter_enable;
 	int ret = 0;
 
-	ret = hns3_init_mac_addr(netdev, false);
+	ret = hns3_init_mac_addr(netdev);
 	if (ret)
 		return ret;
 

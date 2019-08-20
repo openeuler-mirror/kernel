@@ -260,21 +260,18 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 						 false, HCLGE_MAC_ADDR_UC);
 			hclge_add_vport_mac_table(vport, mac_addr,
 						  HCLGE_MAC_ADDR_UC);
-			ether_addr_copy(vport->mac, mac_addr);
 		}
 	} else if (mbx_req->msg[1] == HCLGE_MBX_MAC_VLAN_UC_ADD) {
 		status = hclge_add_uc_addr_common(vport, mac_addr);
 		if (!status) {
 			hclge_add_vport_mac_table(vport, mac_addr,
 						  HCLGE_MAC_ADDR_UC);
-			ether_addr_copy(vport->mac, mac_addr);
 		}
 	} else if (mbx_req->msg[1] == HCLGE_MBX_MAC_VLAN_UC_REMOVE) {
 		status = hclge_rm_uc_addr_common(vport, mac_addr);
 		if (!status) {
 			hclge_rm_vport_mac_table(vport, mac_addr,
 						 false, HCLGE_MAC_ADDR_UC);
-			eth_zero_addr(vport->mac);
 		}
 	} else {
 		dev_err(&hdev->pdev->dev,
@@ -431,6 +428,13 @@ static int hclge_get_vf_queue_info(struct hclge_vport *vport,
 
 	return hclge_gen_resp_to_vf(vport, mbx_req, 0, resp_data,
 				    HCLGE_TQPS_RSS_INFO_LEN);
+}
+
+static int hclge_get_vf_mac_addr(struct hclge_vport *vport,
+				 struct hclge_mbx_vf_to_pf_cmd *mbx_req)
+{
+	return hclge_gen_resp_to_vf(vport, mbx_req, 0, vport->mac,
+				    ETH_ALEN);
 }
 
 static int hclge_get_vf_queue_depth(struct hclge_vport *vport,
@@ -787,6 +791,13 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 			if (ret)
 				dev_err(&hdev->pdev->dev,
 					"PF fail(%d) to media type for VF\n",
+					ret);
+			break;
+		case HCLGE_MBX_GET_MAC_ADDR:
+			ret = hclge_get_vf_mac_addr(vport, req);
+			if (ret)
+				dev_err(&hdev->pdev->dev,
+					"PF failed(%d) to get MAC for VF\n",
 					ret);
 			break;
 		case HCLGE_MBX_NCSI_ERROR:

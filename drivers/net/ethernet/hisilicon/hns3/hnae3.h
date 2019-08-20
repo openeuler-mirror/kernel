@@ -541,6 +541,7 @@ struct hnae3_ae_ops {
 			     struct ifla_vf_info *ivf);
 	int (*set_vf_link_state)(struct hnae3_handle *handle, int vf,
 				 int link_state);
+	int (*set_vf_mac)(struct hnae3_handle *handle, int vf, u8 *p);
 };
 
 struct hnae3_dcb_ops {

@@ -2843,8 +2843,12 @@ static struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf)
 {
 #define HCLGE_VF_VPORT_START_NUM	1
 
-	if (vf < 0 || vf >= pci_num_vf(hdev->pdev))
+	if (vf < 0 || vf >= pci_num_vf(hdev->pdev)) {
+		dev_err(&hdev->pdev->dev,
+			"Out-of-range(1 < vfid < %d) or Invalid VF(=%d) specified.\n",
+			pci_num_vf(hdev->pdev), vf);
 		return NULL;
+	}
 
 	/* vf start from 1 in vport */
 	vf += HCLGE_VF_VPORT_START_NUM;
@@ -2880,6 +2884,31 @@ static int hclge_set_vf_link_state(struct hnae3_handle *handle, int vf,
 		return -EINVAL;
 
 	vport->link_state = link_state;
+
+	return 0;
+}
+
+static int hclge_set_vf_mac(struct hnae3_handle *handle, int vf,
+			    u8 *mac_addr)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+
+	vport = hclge_get_vf_vport(hdev, vf);
+	if (!vport)
+		return -EINVAL;
+
+	if (ether_addr_equal(mac_addr, vport->mac)) {
+		dev_info(&hdev->pdev->dev,
+			 "Specified MAC(=%pM) is same as before, no change committed!\n",
+			 vport->mac);
+		return 0;
+	}
+
+	ether_addr_copy(vport->mac, mac_addr);
+	dev_info(&hdev->pdev->dev,
+		 "VF %d has been set to %pM. Please reload/reset VF\n",
+		 vf, vport->mac);
 
 	return 0;
 }
@@ -10368,6 +10397,7 @@ struct hnae3_ae_ops hclge_ops = {
 	.get_vf_config = hclge_get_vf_config,
 	.set_vf_link_state = hclge_set_vf_link_state,
 	.set_vf_spoofchk = hclge_set_vf_spoofchk,
+	.set_vf_mac = hclge_set_vf_mac,
 };
 
 struct hnae3_ae_algo ae_algo = {
