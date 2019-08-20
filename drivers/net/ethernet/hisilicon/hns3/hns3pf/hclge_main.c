@@ -55,6 +55,8 @@
 #define HCLGE_DFX_TQP_BD_OFFSET         11
 #define HCLGE_DFX_SSU_2_BD_OFFSET       12
 
+#define HCLGE_VF_VPORT_START_NUM	1
+
 static int hclge_set_mac_mtu(struct hclge_dev *hdev, int new_mps);
 static int hclge_init_vlan_config(struct hclge_dev *hdev);
 static void hclge_sync_vlan_filter(struct hclge_dev *hdev);
@@ -2837,19 +2839,28 @@ static int hclge_get_status(struct hnae3_handle *handle)
 	return hdev->hw.mac.link;
 }
 
-static int hclge_get_vf_config(struct hnae3_handle *handle, int vf,
-			       struct ifla_vf_info *ivf)
+static struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf)
 {
 #define HCLGE_VF_VPORT_START_NUM	1
-	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev = vport->back;
 
-	if (vf < 0 || vf >= hdev->num_alloc_vport - HCLGE_VF_VPORT_START_NUM)
-		return -EINVAL;
+	if (vf < 0 || vf >= pci_num_vf(hdev->pdev))
+		return NULL;
 
 	/* vf start from 1 in vport */
 	vf += HCLGE_VF_VPORT_START_NUM;
-	vport = &hdev->vport[vf];
+	return &hdev->vport[vf];
+}
+
+static int hclge_get_vf_config(struct hnae3_handle *handle, int vf,
+			       struct ifla_vf_info *ivf)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+
+	vport = hclge_get_vf_vport(hdev, vf);
+	if (!vport)
+		return -EINVAL;
+
 	ivf->vf = vf;
 	ivf->linkstate = vport->link_state;
 	ivf->spoofchk = vport->spoofchk;
@@ -2864,10 +2875,11 @@ static int hclge_set_vf_link_state(struct hnae3_handle *handle, int vf,
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 
-	if (vf <= 0 || vf >= hdev->num_alloc_vport)
+	vport = hclge_get_vf_vport(hdev, vf);
+	if (!vport)
 		return -EINVAL;
 
-	hdev->vport[vf].link_state = link_state;
+	vport->link_state = link_state;
 
 	return 0;
 }
