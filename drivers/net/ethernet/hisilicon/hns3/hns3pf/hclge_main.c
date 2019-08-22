@@ -9498,17 +9498,17 @@ static int hclge_set_vf_spoofchk(struct hnae3_handle *handle, int vf,
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
+	u32 new_spoofchk = enable ? 1 : 0;
 	int ret;
 
 	if (hdev->pdev->revision == 0x20)
 		return -EOPNOTSUPP;
 
-	if (vf < 0 || vf >= hdev->num_alloc_vfs)
+	vport = hclge_get_vf_vport(hdev, vf);
+	if (!vport)
 		return -EINVAL;
 
-	vport = &hdev->vport[vf];
-
-	if (vport->spoofchk == enable)
+	if (vport->spoofchk == new_spoofchk)
 		return 0;
 
 	if (enable && test_bit(vf, hdev->vf_vlan_full))
@@ -9524,7 +9524,7 @@ static int hclge_set_vf_spoofchk(struct hnae3_handle *handle, int vf,
 	if (ret)
 		return ret;
 
-	vport->spoofchk = enable;
+	vport->spoofchk = new_spoofchk;
 	return 0;
 }
 
