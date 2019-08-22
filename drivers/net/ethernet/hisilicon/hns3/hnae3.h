@@ -537,6 +537,8 @@ struct hnae3_ae_ops {
 	void (*handle_imp_error)(struct hnae3_handle *handle);
 	int (*set_vf_spoofchk)(struct hnae3_handle *handle, int vf,
 			       bool enable);
+	int (*set_vf_rate)(struct hnae3_handle *handle, int vf,
+			   int min_tx_rate, int max_tx_rate, bool force);
 #ifdef CONFIG_HNS3_TEST
 	int (*send_cmdq)(struct hnae3_handle *handle, void *data, int num);
 	int (*test_cmdq)(struct hnae3_handle *handle, void *data, int *len);
