@@ -28,6 +28,7 @@
 #include <linux/smp.h>
 #include <linux/serial_core.h>
 
+#include <acpi/processor.h>
 #include <asm/cputype.h>
 #include <asm/cpu_ops.h>
 #include <asm/pgtable.h>
@@ -261,3 +262,31 @@ pgprot_t __acpi_get_mem_attribute(phys_addr_t addr)
 		return __pgprot(PROT_NORMAL_NC);
 	return __pgprot(PROT_DEVICE_nGnRnE);
 }
+
+int acpi_map_cpu(acpi_handle handle, phys_cpuid_t physid, u32 acpi_id,
+		 int *pcpu)
+{
+	int cpu, nid;
+
+	cpu = acpi_map_cpuid(physid, acpi_id);
+	nid = acpi_get_node(handle);
+	if (nid != NUMA_NO_NODE) {
+		set_cpu_numa_node(cpu, nid);
+		numa_add_cpu(cpu);
+	}
+
+	*pcpu = cpu;
+	set_cpu_present(cpu, true);
+
+	return 0;
+}
+EXPORT_SYMBOL(acpi_map_cpu);
+
+int acpi_unmap_cpu(int cpu)
+{
+	set_cpu_present(cpu, false);
+	numa_clear_node(cpu);
+
+	return 0;
+}
+EXPORT_SYMBOL(acpi_unmap_cpu);
