@@ -915,10 +915,8 @@ struct hns_roce_caps {
 	int             reserved_qps;
 	int		num_qpc_timer;
 	int		num_cqc_timer;
-	u32		max_srq_sg;
 	int		num_srqs;
 	u32		max_wqes;
-	u32		max_srqs;
 	u32		max_srq_wrs;
 	u32		max_srq_sges;
 	u32		max_sq_desc_sz;
@@ -932,7 +930,6 @@ struct hns_roce_caps {
 	u32		min_wqes;
 	int		reserved_cqs;
 	int		reserved_srqs;
-	u32		max_srqwqes;
 	int		num_aeq_vectors;
 	int		num_comp_vectors;
 	int		num_other_vectors;
@@ -1018,6 +1015,12 @@ struct hns_roce_caps {
 	u32		tpq_buf_pg_sz;
 	u32		chunk_sz;	/* chunk size in non multihop mode*/
 	u64		flags;
+	u16		default_ceq_max_cnt;
+	u16		default_ceq_period;
+	u16		default_aeq_max_cnt;
+	u16		default_aeq_period;
+	u16		default_aeq_arm_st;
+	u16		default_ceq_arm_st;
 };
 
 struct hns_roce_work {
