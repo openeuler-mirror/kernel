@@ -31,6 +31,7 @@ obj-$(CONFIG_PCIE_TANGO_SMP8759) += pcie-tango.o
 obj-$(CONFIG_VMD) += vmd.o
 # pcie-hisi.o quirks are needed even without CONFIG_PCIE_DW
 obj-y				+= dwc/
+obj-y += hisi-pcie-customer/
 
 
 # The following drivers are for devices that use the generic ACPI

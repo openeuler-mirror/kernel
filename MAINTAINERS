@@ -11355,6 +11355,11 @@ S:	Maintained
 F:	Documentation/devicetree/bindings/pci/hisilicon-histb-pcie.txt
 F:	drivers/pci/controller/dwc/pcie-histb.c
 
+PCIE DFX DRIVER FOR HISILICON
+M:	Liu Yanshi <liuyanshi@huawei.com>
+S:	Maintained
+F:	drivers/pci/controller/hisi-pcie-customer/
+
 PCIE DRIVER FOR MEDIATEK
 M:	Ryder Lee <ryder.lee@mediatek.com>
 L:	linux-pci@vger.kernel.org

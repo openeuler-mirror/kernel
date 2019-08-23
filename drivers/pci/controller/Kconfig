@@ -279,4 +279,5 @@ config VMD
 	  module will be called vmd.
 
 source "drivers/pci/controller/dwc/Kconfig"
+source "drivers/pci/controller/hisi-pcie-customer/Kconfig"
 endmenu
