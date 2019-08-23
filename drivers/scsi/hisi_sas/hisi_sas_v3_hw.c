@@ -2586,6 +2586,7 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 	int vectors, rc;
 	int i, k;
 	int max_msi = HISI_SAS_MSI_COUNT_V3_HW;
+	int max_dq_num, online_numa_num;
 	struct irq_affinity desc = {
 		.pre_vectors = HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW,
 	};
@@ -2608,6 +2609,15 @@ static int interrupt_init_v3_hw(struct hisi_hba *hisi_hba)
 	}
 
 	hisi_hba->nvecs = vectors - HISI_SAS_CQ_INT_BASE_VECTORS_V3_HW;
+	max_dq_num = (hisi_hba->nvecs < hisi_hba->queue_count) ?
+		hisi_hba->nvecs : hisi_hba->queue_count;
+	online_numa_num = num_online_nodes();
+	dev_info(dev, "vectors nvecs:%d, online_numa:%d\n",
+		hisi_hba->nvecs, online_numa_num);
+	if (max_dq_num > online_numa_num)
+		hisi_hba->dq_num_per_node = max_dq_num / online_numa_num;
+	else
+		hisi_hba->dq_num_per_node = 1;
 	rc = devm_request_irq(dev, pci_irq_vector(pdev, PCI_IRQ_PHY),
 			      int_phy_up_down_bcast_v3_hw, 0,
 			      DRV_NAME " phy", hisi_hba);

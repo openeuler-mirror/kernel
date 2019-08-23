@@ -2335,7 +2335,6 @@ int hisi_sas_alloc(struct hisi_hba *hisi_hba)
 
 	sema_init(&hisi_hba->sem, 1);
 	spin_lock_init(&hisi_hba->lock);
-	hisi_hba->dq_num_per_node = hisi_hba->queue_count/num_online_nodes();
 
 	for (i = 0; i < NR_CPUS; i++)
 		hisi_hba->dq_idx[i] = 0;
