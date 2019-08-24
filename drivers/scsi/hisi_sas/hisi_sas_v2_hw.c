@@ -3420,6 +3420,7 @@ static int interrupt_init_v2_hw(struct hisi_hba *hisi_hba)
 	}
 
 	hisi_hba->nvecs = hisi_hba->queue_count;
+	hisi_hba->dq_num_per_node = hisi_hba->queue_count / num_online_nodes();
 	return 0;
 
 free_cq_int_irqs:
