@@ -330,7 +330,8 @@ void ext4_release_system_zone(struct super_block *sb)
 {
 	struct ext4_system_blocks *system_blks;
 
-	system_blks = rcu_dereference(EXT4_SB(sb)->system_blks);
+	system_blks = rcu_dereference_protected(EXT4_SB(sb)->system_blks,
+					lockdep_is_held(&sb->s_umount));
 	rcu_assign_pointer(EXT4_SB(sb)->system_blks, NULL);
 
 	if (system_blks)
