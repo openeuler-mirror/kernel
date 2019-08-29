@@ -1274,6 +1274,9 @@ int pci_save_state(struct pci_dev *dev)
 	/* XXX: 100% dword access ok here? */
 	for (i = 0; i < 16; i++)
 		pci_read_config_dword(dev, i * 4, &dev->saved_config_space[i]);
+	if (dev->hdr_type == PCI_HEADER_TYPE_BRIDGE)
+		dev->saved_config_space[PCI_BRIDGE_CONTROL / 4] &=
+			~(PCI_BRIDGE_CTL_BUS_RESET << 16);
 	dev->state_saved = true;
 
 	i = pci_save_pcie_state(dev);
