@@ -146,6 +146,7 @@ void pciehp_queue_pushbutton_work(struct work_struct *work)
 	struct slot *p_slot = container_of(work, struct slot, work.work);
 	struct controller *ctrl = p_slot->ctrl;
 	int events = p_slot->work.data;
+	struct pci_dev *rpdev = ctrl_dev(ctrl)->rpdev;
 
 	mutex_lock(&p_slot->lock);
 	switch (p_slot->state) {
@@ -160,8 +161,11 @@ void pciehp_queue_pushbutton_work(struct work_struct *work)
 			atomic_or(events, &ctrl->pending_events);
 			if (!pciehp_poll_mode)
 				irq_wake_thread(ctrl->pcie->irq, ctrl);
-		} else
-			slot_being_removed_rescanned = 0;
+		} else {
+			if (rpdev)
+				clear_bit(0,
+					  &rpdev->slot_being_removed_rescanned);
+		}
 		break;
 	}
 	mutex_unlock(&p_slot->lock);
@@ -170,6 +174,7 @@ void pciehp_queue_pushbutton_work(struct work_struct *work)
 void pciehp_handle_button_press(struct slot *p_slot)
 {
 	struct controller *ctrl = p_slot->ctrl;
+	struct pci_dev *rpdev = ctrl_dev(ctrl)->rpdev;
 
 	mutex_lock(&p_slot->lock);
 	switch (p_slot->state) {
@@ -209,12 +214,14 @@ void pciehp_handle_button_press(struct slot *p_slot)
 		pciehp_set_attention_status(p_slot, 0);
 		ctrl_info(ctrl, "Slot(%s): Action canceled due to button press\n",
 			  slot_name(p_slot));
-		slot_being_removed_rescanned = 0;
+		if (rpdev)
+			clear_bit(0, &rpdev->slot_being_removed_rescanned);
 		break;
 	default:
 		ctrl_err(ctrl, "Slot(%s): Ignoring invalid state %#x\n",
 			 slot_name(p_slot), p_slot->state);
-		slot_being_removed_rescanned = 0;
+		if (rpdev)
+			clear_bit(0, &rpdev->slot_being_removed_rescanned);
 		break;
 	}
 	mutex_unlock(&p_slot->lock);
@@ -223,6 +230,7 @@ void pciehp_handle_button_press(struct slot *p_slot)
 void pciehp_handle_disable_request(struct slot *slot)
 {
 	struct controller *ctrl = slot->ctrl;
+	struct pci_dev *rpdev = ctrl_dev(ctrl)->rpdev;
 
 	mutex_lock(&slot->lock);
 	switch (slot->state) {
@@ -235,7 +243,8 @@ void pciehp_handle_disable_request(struct slot *slot)
 	mutex_unlock(&slot->lock);
 
 	ctrl->request_result = pciehp_disable_slot(slot, SAFE_REMOVAL);
-	slot_being_removed_rescanned = 0;
+	if (rpdev)
+		clear_bit(0, &rpdev->slot_being_removed_rescanned);
 }
 
 void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
@@ -243,6 +252,7 @@ void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 	struct controller *ctrl = slot->ctrl;
 	bool present, link_active;
 	bool removal = SAFE_REMOVAL;
+	struct pci_dev *rpdev = ctrl_dev(ctrl)->rpdev;
 
 	/*
 	 * If the slot is on and presence or link has changed, turn it off.
@@ -285,7 +295,8 @@ void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 	link_active = pciehp_check_link_active(ctrl);
 	if (!present && !link_active) {
 		mutex_unlock(&slot->lock);
-		slot_being_removed_rescanned = 0;
+		if (rpdev)
+			clear_bit(0, &rpdev->slot_being_removed_rescanned);
 		return;
 	}
 
@@ -308,7 +319,8 @@ void pciehp_handle_presence_or_link_change(struct slot *slot, u32 events)
 		mutex_unlock(&slot->lock);
 		break;
 	}
-	slot_being_removed_rescanned = 0;
+	if (rpdev)
+		clear_bit(0, &rpdev->slot_being_removed_rescanned);
 }
 
 static int __pciehp_enable_slot(struct slot *p_slot)
@@ -435,8 +447,10 @@ int pciehp_sysfs_disable_slot(struct slot *p_slot)
 {
 	struct controller *ctrl = p_slot->ctrl;
 	struct pci_dev *pdev = ctrl->pcie->port;
+	struct pci_dev *rpdev = pdev->rpdev;
 
-	if (test_and_set_bit(0, &slot_being_removed_rescanned)) {
+	if (rpdev && test_and_set_bit(0,
+				&rpdev->slot_being_removed_rescanned)) {
 		ctrl_info(ctrl, "Slot(%s): Slot is being removed or rescanned, please try later!\n",
 			  slot_name(p_slot));
 		return -EINVAL;
@@ -452,7 +466,8 @@ int pciehp_sysfs_disable_slot(struct slot *p_slot)
 		pciehp_handle_disable_request(p_slot);
 		up_read(&ctrl->reset_lock);
 		pci_config_pm_runtime_put(pdev);
-		slot_being_removed_rescanned = 0;
+		if (rpdev)
+			clear_bit(0, &rpdev->slot_being_removed_rescanned);
 		return ctrl->request_result;
 	case POWEROFF_STATE:
 		ctrl_info(ctrl, "Slot(%s): Already in powering off state\n",
@@ -471,7 +486,8 @@ int pciehp_sysfs_disable_slot(struct slot *p_slot)
 	}
 	mutex_unlock(&p_slot->lock);
 
-	slot_being_removed_rescanned = 0;
+	if (rpdev)
+		clear_bit(0, &rpdev->slot_being_removed_rescanned);
 
 	return -ENODEV;
 }

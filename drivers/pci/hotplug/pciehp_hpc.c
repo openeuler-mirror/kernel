@@ -27,11 +27,6 @@
 #include "../pci.h"
 #include "pciehp.h"
 
-static inline struct pci_dev *ctrl_dev(struct controller *ctrl)
-{
-	return ctrl->pcie->port;
-}
-
 static irqreturn_t pciehp_isr(int irq, void *dev_id);
 static irqreturn_t pciehp_ist(int irq, void *dev_id);
 static int pciehp_poll(void *data);
@@ -632,6 +627,7 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 {
 	struct controller *ctrl = (struct controller *)dev_id;
 	struct pci_dev *pdev = ctrl_dev(ctrl);
+	struct pci_dev *rpdev = pdev->rpdev;
 	struct slot *slot = ctrl->slot;
 	irqreturn_t ret;
 	u32 events;
@@ -659,7 +655,8 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 	if (events & PCI_EXP_SLTSTA_ABP) {
 		ctrl_info(ctrl, "Slot(%s): Attention button pressed\n",
 			  slot_name(slot));
-		if (!test_and_set_bit(0, &slot_being_removed_rescanned))
+		if (!rpdev || (rpdev && !test_and_set_bit(0,
+					&rpdev->slot_being_removed_rescanned)))
 			pciehp_handle_button_press(slot);
 		else {
 			if (slot->state == BLINKINGOFF_STATE ||
@@ -686,7 +683,8 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 	 */
 	down_read(&ctrl->reset_lock);
 	if (events & DISABLE_SLOT) {
-		if (!test_and_set_bit(0, &slot_being_removed_rescanned))
+		if (!rpdev || (rpdev && !test_and_set_bit(0,
+					&rpdev->slot_being_removed_rescanned)))
 			pciehp_handle_disable_request(slot);
 		else {
 			if (slot->state == BLINKINGOFF_STATE ||
@@ -712,7 +710,8 @@ static irqreturn_t pciehp_ist(int irq, void *dev_id)
 			}
 		}
 	} else if (events & (PCI_EXP_SLTSTA_PDC | PCI_EXP_SLTSTA_DLLSC)) {
-		if (!test_and_set_bit(0, &slot_being_removed_rescanned))
+		if (!rpdev || (rpdev && !test_and_set_bit(0,
+					&rpdev->slot_being_removed_rescanned)))
 			pciehp_handle_presence_or_link_change(slot, events);
 		else {
 			if (slot->state == BLINKINGOFF_STATE ||

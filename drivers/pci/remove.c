@@ -3,11 +3,6 @@
 #include <linux/module.h>
 #include "pci.h"
 
-/*
- * When a slot is being removed/rescanned, this flag is set.
- */
-unsigned long slot_being_removed_rescanned;
-
 static void pci_free_resources(struct pci_dev *dev)
 {
 	int i;

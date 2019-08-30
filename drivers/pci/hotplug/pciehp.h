@@ -213,4 +213,9 @@ static inline const char *slot_name(struct slot *slot)
 	return hotplug_slot_name(slot->hotplug_slot);
 }
 
+static inline struct pci_dev *ctrl_dev(struct controller *ctrl)
+{
+	return ctrl->pcie->port;
+}
+
 #endif				/* _PCIEHP_H */
