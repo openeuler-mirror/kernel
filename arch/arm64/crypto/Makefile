@@ -33,9 +33,6 @@ obj-$(CONFIG_CRYPTO_CRCT10DIF_ARM64_CE) += crct10dif-ce.o
 crct10dif-ce-y := crct10dif-neon-asm_64.o crct10dif-neon_glue.o
 AFLAGS_crct10dif-neon-asm_64.o := -march=armv8-a+crypto
 
-obj-$(CONFIG_CRYPTO_CRC32_ARM64_CE) += crc32-ce.o
-crc32-ce-y:= crc32-ce-core.o crc32-ce-glue.o
-
 obj-$(CONFIG_CRYPTO_AES_ARM64_CE) += aes-ce-cipher.o
 aes-ce-cipher-y := aes-ce-core.o aes-ce-glue.o
 
