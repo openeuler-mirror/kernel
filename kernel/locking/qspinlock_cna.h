@@ -50,6 +50,15 @@ static DEFINE_PER_CPU(u32, seed);
 #define INTRA_NODE_HANDOFF_PROB_ARG 0x10000
 
 /*
+ * Controls the probability for enabling the scan of the main queue when
+ * the secondary queue is empty. The chosen value reduces the amount of
+ * unnecessary shuffling of threads between the two waiting queues when
+ * the contention is low, while responding fast enough and enabling
+ * the shuffling when the contention is high.
+ */
+#define SHUFFLE_REDUCTION_PROB_ARG  0x80
+
+/*
  * Return false with probability 1 / @range.
  * @range must be a power of 2.
  */
@@ -169,6 +178,16 @@ static inline void cna_pass_mcs_lock(struct mcs_spinlock *node,
 	u64 val = 1;
 
 	/*
+	 * Limit thread shuffling when the secondary queue is empty.
+	 * This copes with the overhead the shuffling creates when the
+	 * lock is only lightly contended, and threads do not stay
+	 * in the secondary queue long enough to reap the benefit of moving
+	 * them there.
+	 */
+	if (node->locked <= 1 && probably(SHUFFLE_REDUCTION_PROB_ARG))
+		goto pass_lock;
+
+	/*
 	 * Try to pass the lock to a thread running on the same node.
 	 * For long-term fairness, search for such a thread with high
 	 * probability rather than always.
@@ -194,5 +213,6 @@ static inline void cna_pass_mcs_lock(struct mcs_spinlock *node,
 		 * in the main queue.
 		 */
 
+pass_lock:
 	arch_mcs_spin_unlock_contended(var, val);
 }
