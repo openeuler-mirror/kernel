@@ -312,6 +312,11 @@ void __init setup_arch(char **cmdline_p)
 	early_ioremap_init();
 
 	setup_machine_fdt(__fdt_pointer);
+	/*
+	 * Initialise the static keys early as they may be enabled by the
+	 * early param code.
+	 */
+	jump_label_init();
 
 	parse_early_param();
 
