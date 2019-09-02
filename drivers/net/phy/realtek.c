@@ -291,6 +291,7 @@ static struct phy_driver realtek_drvs[] = {
 		.resume		= genphy_resume,
 		.read_page	= rtl821x_read_page,
 		.write_page	= rtl821x_write_page,
+		.set_loopback   = genphy_loopback,
 	}, {
 		.phy_id		= 0x001cc961,
 		.name		= "RTL8366RB Gigabit Ethernet",
