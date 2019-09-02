@@ -9606,7 +9606,7 @@ static int hclge_set_vf_trust(struct hnae3_handle *handle, int vf, bool enable)
 
 	/* Disable promisc mode for VF if it is not trusted any more. */
 	if (!enable && vport->promisc_enable) {
-		en_bc_pmc = hdev->pdev->revision == 0x20 ? false : true;
+		en_bc_pmc = hdev->pdev->revision != 0x20;
 		ret = hclge_set_vport_promisc_mode(vport, false, false,
 						   en_bc_pmc);
 		if (ret)

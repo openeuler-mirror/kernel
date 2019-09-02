@@ -1143,7 +1143,7 @@ static int hclgevf_set_promisc_mode(struct hnae3_handle *handle, bool en_uc_pmc,
 	struct pci_dev *pdev = hdev->pdev;
 	bool en_bc_pmc;
 
-	en_bc_pmc = pdev->revision == 0x20 ? false : true;
+	en_bc_pmc = pdev->revision != 0x20;
 
 	return hclgevf_cmd_set_promisc_mode(hdev, en_uc_pmc, en_mc_pmc,
 					    en_bc_pmc);
