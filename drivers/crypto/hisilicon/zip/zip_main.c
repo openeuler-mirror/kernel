@@ -89,7 +89,7 @@
 #define HZIP_MSE_ENABLE			1
 #define HZIP_MSE_DISABLE		0
 #define HZIP_NUMA_DISTANCE		100
-#define HZIP_BUF_SIZE			20
+#define HZIP_BUF_SIZE			22
 #define FORMAT_DECIMAL			10
 #define HZIP_REG_RD_INTVRL_US		10
 #define HZIP_REG_RD_TMOUT_US		1000
@@ -278,17 +278,17 @@ static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 	if (!val)
 		return -EINVAL;
 
-	if (unlikely(!pdev)) {
+	if (!pdev) {
 		q_num = min_t(u32, HZIP_QUEUE_NUM_V1, HZIP_QUEUE_NUM_V2);
 		pr_info("No device found currently, suppose queue number is %d\n",
 			q_num);
 	} else {
 		rev_id = pdev->revision;
 		switch (rev_id) {
-		case QM_HW_VER1_ID:
+		case QM_HW_V1:
 			q_num = HZIP_QUEUE_NUM_V1;
 			break;
-		case QM_HW_VER2_ID:
+		case QM_HW_V2:
 			q_num = HZIP_QUEUE_NUM_V2;
 			break;
 		default:
@@ -412,9 +412,11 @@ static void hisi_zip_set_user_domain_and_cache(struct hisi_zip *hisi_zip)
 	       hisi_zip->qm.io_base + QM_CACHE_CTL);
 }
 
-/* hisi_zip_cnt_regs_clear() - clear the zip cnt regs */
-static void hisi_zip_cnt_regs_clear(struct hisi_qm *qm)
+/* hisi_zip_debug_regs_clear() - clear the zip debug regs */
+static void hisi_zip_debug_regs_clear(struct hisi_zip *hisi_zip)
 {
+	struct hisi_qm *qm = &hisi_zip->qm;
+
 	/* clear current_qm */
 	writel(0x0, qm->io_base + QM_DFX_MB_CNT_VF);
 	writel(0x0, qm->io_base + QM_DFX_DB_CNT_VF);
@@ -422,7 +424,7 @@ static void hisi_zip_cnt_regs_clear(struct hisi_qm *qm)
 	/* clear rdclr_en */
 	writel(0x0, qm->io_base + HZIP_SOFT_CTRL_CNT_CLR_CE);
 
-	hisi_qm_cnt_regs_clear(qm);
+	hisi_qm_debug_regs_clear(qm);
 }
 
 
@@ -702,6 +704,11 @@ static void hisi_zip_debugfs_exit(struct hisi_zip *hisi_zip)
 	struct hisi_qm *qm = &hisi_zip->qm;
 
 	debugfs_remove_recursive(qm->debug.debug_root);
+
+	if (qm->fun_type == QM_HW_PF) {
+		hisi_zip_debug_regs_clear(hisi_zip);
+		qm->debug.curr_qm_qp_num = 0;
+	}
 }
 
 static void hisi_zip_hw_error_init(struct hisi_zip *hisi_zip)
@@ -739,6 +746,7 @@ static int hisi_zip_pf_probe_init(struct hisi_zip *hisi_zip)
 
 	hisi_zip_set_user_domain_and_cache(hisi_zip);
 	hisi_zip_hw_error_init(hisi_zip);
+	hisi_zip_debug_regs_clear(hisi_zip);
 
 	return 0;
 }
@@ -804,7 +812,6 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	if (qm->fun_type == QM_HW_PF) {
-		hisi_zip_cnt_regs_clear(qm);
 		ret = hisi_zip_pf_probe_init(hisi_zip);
 		if (ret)
 			goto err_remove_from_list;
@@ -965,10 +972,6 @@ static void hisi_zip_remove(struct pci_dev *pdev)
 	if (qm->fun_type == QM_HW_PF && hisi_zip->ctrl->num_vfs != 0)
 		hisi_zip_sriov_disable(pdev);
 
-	if (qm->fun_type == QM_HW_PF) {
-		hisi_zip_cnt_regs_clear(qm);
-		qm->debug.curr_qm_qp_num = 0;
-	}
 	hisi_zip_debugfs_exit(hisi_zip);
 	hisi_qm_stop(qm, QM_NORMAL);
 
@@ -1036,10 +1039,8 @@ static pci_ers_result_t hisi_zip_process_hw_error(struct pci_dev *pdev)
 		return PCI_ERS_RESULT_NONE;
 	}
 
-	/* log qm error */
 	qm_ret = hisi_qm_hw_error_handle(&hisi_zip->qm);
 
-	/* log zip error */
 	zip_ret = hisi_zip_hw_error_handle(hisi_zip);
 
 	return (qm_ret == PCI_ERS_RESULT_NEED_RESET ||
@@ -1302,7 +1303,6 @@ static pci_ers_result_t hisi_zip_slot_reset(struct pci_dev *pdev)
 
 	pci_cleanup_aer_uncorrect_error_status(pdev);
 
-	/* reset zip controller */
 	ret = hisi_zip_controller_reset(hisi_zip);
 	if (ret) {
 		dev_err(&pdev->dev, "hisi_zip controller reset failed (%d)\n",

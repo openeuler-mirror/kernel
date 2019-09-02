@@ -79,8 +79,6 @@
 			 QM_ACC_GET_TASK_TIMEOUT | QM_DB_TIMEOUT | \
 			 QM_OF_FIFO_OF)
 #define QM_BASE_CE			QM_ECC_1BIT
-#define QM_HW_VER1_ID			0x20
-#define QM_HW_VER2_ID			0x21
 
 #define QM_DFX_QN_SHIFT			16
 #define QM_VF_CNT_MASK			0xffffffc0
@@ -108,8 +106,8 @@ enum qp_state {
 
 enum qm_hw_ver {
 	QM_HW_UNKNOWN = -1,
-	QM_HW_V1 = 1,
-	QM_HW_V2,
+	QM_HW_V1 = 0x20,
+	QM_HW_V2 = 0x21,
 };
 
 enum qm_fun_type {
@@ -343,7 +341,7 @@ int hisi_qp_wait(struct hisi_qp *qp);
 int hisi_qm_get_free_qp_num(struct hisi_qm *qm);
 int hisi_qm_get_vft(struct hisi_qm *qm, u32 *base, u32 *number);
 int hisi_qm_set_vft(struct hisi_qm *qm, u32 fun_num, u32 base, u32 number);
-void hisi_qm_cnt_regs_clear(struct hisi_qm *qm);
+void hisi_qm_debug_regs_clear(struct hisi_qm *qm);
 int hisi_qm_debug_init(struct hisi_qm *qm);
 void hisi_qm_hw_error_init(struct hisi_qm *qm, u32 ce, u32 nfe, u32 fe,
 			   u32 msi);

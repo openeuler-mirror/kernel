@@ -31,7 +31,6 @@
 
 #define HZIP_ZLIB_HEAD_SIZE			2
 #define HZIP_GZIP_HEAD_SIZE			10
-#define HZIP_CTX_Q_NUM				2
 #define HZIP_ALG_PRIORITY			300
 
 #define HZIP_BD_STATUS_M			GENMASK(7, 0)
@@ -52,6 +51,12 @@ static const u8 gzip_head[HZIP_GZIP_HEAD_SIZE] = {0x1f, 0x8b, 0x08, 0x0, 0x0,
 	(((req_type) == HZIP_ALG_TYPE_ZLIB) ? zlib_head :		\
 	 ((req_type) == HZIP_ALG_TYPE_GZIP) ? gzip_head : NULL)		\
 
+enum {
+	HZIP_QPC_COMP,
+	HZIP_QPC_DECOMP,
+	HZIP_CTX_Q_NUM
+};
+
 struct hisi_zip_buffer {
 	u8 *input;
 	dma_addr_t input_dma;
@@ -66,8 +71,6 @@ struct hisi_zip_qp_ctx {
 };
 
 struct hisi_zip_ctx {
-#define QPC_COMP	0
-#define QPC_DECOMP	1
 	struct hisi_zip_qp_ctx qp_ctx[HZIP_CTX_Q_NUM];
 };
 
@@ -284,7 +287,7 @@ static int hisi_zip_compress(struct crypto_tfm *tfm, const u8 *src,
 			     unsigned int slen, u8 *dst, unsigned int *dlen)
 {
 	struct hisi_zip_ctx *hisi_zip_ctx = crypto_tfm_ctx(tfm);
-	struct hisi_zip_qp_ctx *qp_ctx = &hisi_zip_ctx->qp_ctx[QPC_COMP];
+	struct hisi_zip_qp_ctx *qp_ctx = &hisi_zip_ctx->qp_ctx[HZIP_QPC_COMP];
 	struct hisi_qp *qp = qp_ctx->qp;
 	struct hisi_zip_sqe *zip_sqe = &qp_ctx->zip_sqe;
 	int ret;
@@ -382,7 +385,7 @@ static int hisi_zip_decompress(struct crypto_tfm *tfm, const u8 *src,
 			       unsigned int slen, u8 *dst, unsigned int *dlen)
 {
 	struct hisi_zip_ctx *hisi_zip_ctx = crypto_tfm_ctx(tfm);
-	struct hisi_zip_qp_ctx *qp_ctx = &hisi_zip_ctx->qp_ctx[QPC_DECOMP];
+	struct hisi_zip_qp_ctx *qp_ctx = &hisi_zip_ctx->qp_ctx[HZIP_QPC_DECOMP];
 	struct hisi_qp *qp = qp_ctx->qp;
 	struct hisi_zip_sqe *zip_sqe = &qp_ctx->zip_sqe;
 	u16 size;

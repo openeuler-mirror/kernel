@@ -269,10 +269,10 @@ static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 	} else {
 		rev_id = pdev->revision;
 		switch (rev_id) {
-		case QM_HW_VER1_ID:
+		case QM_HW_V1:
 			q_num = HSEC_QUEUE_NUM_V1;
 			break;
-		case QM_HW_VER2_ID:
+		case QM_HW_V2:
 			q_num = HSEC_QUEUE_NUM_V2;
 			break;
 		default:

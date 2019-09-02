@@ -232,7 +232,7 @@ static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 			q_num);
 	} else {
 		rev_id = pdev->revision;
-		if (rev_id == QM_HW_VER2_ID)
+		if (rev_id == QM_HW_V2)
 			q_num = HPRE_QUEUE_NUM_V2;
 		else
 			return -EINVAL;
@@ -432,7 +432,7 @@ static void hpre_cnt_regs_clear(struct hisi_qm *qm)
 	/* clear rdclr_en */
 	writel(0x0, qm->io_base + HPRE_CTRL_CNT_CLR_CE);
 
-	hisi_qm_cnt_regs_clear(qm);
+	hisi_qm_debug_regs_clear(qm);
 }
 
 static void hpre_hw_error_set_state(struct hpre *hpre, bool state)

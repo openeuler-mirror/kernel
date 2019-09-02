@@ -146,7 +146,7 @@
 
 #define POLL_PERIOD			10
 #define POLL_TIMEOUT			1000
-#define TEMPBUFFER_LEN			20
+#define TEMPBUFFER_LEN			22
 
 #define QM_DB_TIMEOUT_TYPE_SHIFT	6
 #define QM_FIFO_OVERFLOW_TYPE_SHIFT	6
@@ -1193,7 +1193,7 @@ static struct hisi_qp *hisi_qm_create_qp_nolock(struct hisi_qm *qm,
 			goto err_clear_bit;
 		}
 
-		dev_dbg(dev, "allocate qp dma buf(va=%pK, dma=%pad, size=%lx)\n",
+		dev_dbg(dev, "allocate qp dma buf(va=%pK, dma=%pad, size=%zx)\n",
 			qp->qdma.va, &qp->qdma.dma, qp->qdma.size);
 	}
 
@@ -1890,6 +1890,19 @@ static int qm_register_uacce(struct hisi_qm *qm)
 
 	return uacce_register(uacce);
 }
+
+static int qm_unregister_uacce(struct hisi_qm *qm)
+{
+	int ret;
+
+	ret = uacce_unregister(&qm->uacce);
+	if (ret)
+		return ret;
+
+	memset(&qm->uacce, 0, sizeof(qm->uacce));
+
+	return 0;
+}
 #endif
 
 /**
@@ -1930,7 +1943,7 @@ int hisi_qm_init(struct hisi_qm *qm)
 	ret = pci_enable_device_mem(pdev);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Failed to enable device mem!\n");
-		return ret;
+		goto err_unregister_uacce;
 	}
 
 	ret = pci_request_mem_regions(pdev, qm->dev_name);
@@ -1987,6 +2000,11 @@ err_release_mem_regions:
 	pci_release_mem_regions(pdev);
 err_disable_pcidev:
 	pci_disable_device(pdev);
+err_unregister_uacce:
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		qm_unregister_uacce(qm);
+#endif
 
 	return ret;
 }
@@ -2428,7 +2446,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 		qm->qdma.va = dma_alloc_coherent(dev, qm->qdma.size,
 						 &qm->qdma.dma,
 						 GFP_ATOMIC | __GFP_ZERO);
-		dev_dbg(dev, "allocate qm dma buf(va=%pK, dma=%pad, size=%lx)\n",
+		dev_dbg(dev, "allocate qm dma buf(va=%pK, dma=%pad, size=%zx)\n",
 			qm->qdma.va, &qm->qdma.dma, qm->qdma.size);
 		if (!qm->qdma.va) {
 			ret = -ENOMEM;
@@ -2524,10 +2542,10 @@ err_unlock:
 EXPORT_SYMBOL_GPL(hisi_qm_stop);
 
 /**
- * hisi_qm_cnt_regs_clear() - clear qm cnt regs.
- * @qm: The qm for which we want to clear
+ * hisi_qm_debug_regs_clear() - clear qm debug related registers.
+ * @qm: The qm for which we want to clear.
  */
-void hisi_qm_cnt_regs_clear(struct hisi_qm *qm)
+void hisi_qm_debug_regs_clear(struct hisi_qm *qm)
 {
 	struct qm_dfx_registers *regs;
 	int i;
@@ -2549,7 +2567,7 @@ void hisi_qm_cnt_regs_clear(struct hisi_qm *qm)
 	/* clear clear_enable */
 	writel(0x0, qm->io_base + QM_DFX_CNT_CLR_CE);
 }
-EXPORT_SYMBOL_GPL(hisi_qm_cnt_regs_clear);
+EXPORT_SYMBOL_GPL(hisi_qm_debug_regs_clear);
 
 /**
  * hisi_qm_debug_init() - Initialize qm related debugfs files.
@@ -2674,10 +2692,9 @@ EXPORT_SYMBOL_GPL(hisi_qm_clear_queues);
 enum qm_hw_ver hisi_qm_get_hw_version(struct pci_dev *pdev)
 {
 	switch (pdev->revision) {
-	case QM_HW_VER1_ID:
-		return QM_HW_V1;
-	case QM_HW_VER2_ID:
-		return QM_HW_V2;
+	case QM_HW_V1:
+	case QM_HW_V2:
+		return pdev->revision;
 	default:
 		return QM_HW_UNKNOWN;
 	}
