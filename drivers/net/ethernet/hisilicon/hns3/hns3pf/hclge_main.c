@@ -9511,7 +9511,7 @@ static int hclge_set_vf_spoofchk(struct hnae3_handle *handle, int vf,
 	if (vport->spoofchk == new_spoofchk)
 		return 0;
 
-	if (enable && test_bit(vf, hdev->vf_vlan_full))
+	if (enable && test_bit(vport->vport_id, hdev->vf_vlan_full))
 		dev_warn(&hdev->pdev->dev,
 			 "vf %d vlan table is full, enable spoof check may cause its packet send fail\n",
 			 vf);
@@ -9520,7 +9520,7 @@ static int hclge_set_vf_spoofchk(struct hnae3_handle *handle, int vf,
 			 "vf %d mac table is full, enable spoof check may cause its packet send fail\n",
 			 vf);
 
-	ret = hclge_set_vf_spoofchk_hw(hdev, vf, enable);
+	ret = hclge_set_vf_spoofchk_hw(hdev, vport->vport_id, enable);
 	if (ret)
 		return ret;
 
