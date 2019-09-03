@@ -3506,7 +3506,7 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 
 static bool hclge_reset_err_handle(struct hclge_dev *hdev)
 {
-	struct hnae3_handle *handle = handle = &hdev->vport[0].nic;
+	struct hnae3_handle *handle = &hdev->vport[0].nic;
 
 	if (hdev->reset_pending) {
 		dev_info(&hdev->pdev->dev, "Reset pending %lu\n",
