@@ -344,7 +344,7 @@ static int hclge_ieee_setpfc(struct hnae3_handle *h, struct ieee_pfc *pfc)
 
 	if (netif_msg_ifdown(h))
 		netdev_info(netdev,
-			    "set pfc: pfc_en=%d, pfc_map=%d, num_tc=%d\n",
+			    "set pfc: pfc_en=0x%x, pfc_map=0x%x, num_tc=%u\n",
 			    pfc->pfc_en, pfc_map, hdev->tm_info.num_tc);
 
 	hclge_tm_pfc_info_update(hdev);
