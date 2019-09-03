@@ -6,6 +6,11 @@
 
 #include "hclge_main.h"
 
+#define HCLGE_MPF_RAS_INT_MIN_BD_NUM	10
+#define HCLGE_PF_RAS_INT_MIN_BD_NUM	4
+#define HCLGE_MPF_MSIX_INT_MIN_BD_NUM	10
+#define HCLGE_PF_MSIX_INT_MIN_BD_NUM	4
+
 #define HCLGE_RAS_PF_OTHER_INT_STS_REG   0x20B00
 #define HCLGE_RAS_IMP_RD_POISON_MASK \
 	BIT(HCLGE_VECTOR0_IMP_RD_POISON_B)
@@ -124,12 +129,6 @@ struct hclge_hw_error {
 	enum hnae3_reset_type reset_level;
 };
 
-struct hclge_bd_num {
-	u32 mpf_bd_num;
-	u32 pf_bd_num;
-	u32 max_bd_num;
-};
-
 extern const struct hclge_hw_error hclge_imp_tcm_ecc_int[];
 extern const struct hclge_hw_error hclge_cmdq_nic_mem_ecc_int[];
 extern const struct hclge_hw_error hclge_tqp_int_ecc_int[];
@@ -167,7 +166,6 @@ int hclge_handle_rocee_ras_error(struct hnae3_ae_dev *ae_dev);
 void hclge_log_error(struct device *dev, char *reg,
 		     const struct hclge_hw_error *err,
 		     u32 err_sts, unsigned long *reset_requests);
-struct hclge_desc *hclge_query_bd_num(struct hclge_dev *hdev,
-				      struct hclge_bd_num *bd_num,
-				      enum hclge_opcode_type opcode);
+int hclge_query_bd_num(struct hclge_dev *hdev, bool is_ras, int *mpf_bd_num,
+		       int *pf_bd_num);
 #endif
