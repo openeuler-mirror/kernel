@@ -1954,8 +1954,8 @@ int hisi_qm_init(struct hisi_qm *qm)
 	qm->phys_base = pci_resource_start(pdev, PCI_BAR_2);
 	qm->size = pci_resource_len(qm->pdev, PCI_BAR_2);
 #endif
-	qm->io_base = ioremap(pci_resource_start(pdev, PCI_BAR_2),
-			      pci_resource_len(qm->pdev, PCI_BAR_2));
+	qm->io_base = devm_ioremap(dev, pci_resource_start(pdev, PCI_BAR_2),
+				   pci_resource_len(qm->pdev, PCI_BAR_2));
 	if (!qm->io_base) {
 		ret = -EIO;
 		goto err_release_mem_regions;
@@ -1993,7 +1993,7 @@ int hisi_qm_init(struct hisi_qm *qm)
 err_free_irq_vectors:
 	pci_free_irq_vectors(pdev);
 err_iounmap:
-	iounmap(qm->io_base);
+	devm_iounmap(dev, qm->io_base);
 err_release_mem_regions:
 	pci_release_mem_regions(pdev);
 err_disable_pcidev:
@@ -2029,7 +2029,6 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 
 	qm_irq_unregister(qm);
 	pci_free_irq_vectors(pdev);
-	iounmap(qm->io_base);
 	pci_release_mem_regions(pdev);
 	pci_disable_device(pdev);
 
