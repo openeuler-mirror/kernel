@@ -295,7 +295,7 @@ static bool qm_qp_avail_state(struct hisi_qm *qm, struct hisi_qp *qp,
 
 	switch (new) {
 	case QP_INIT:
-		if (qm_curr == QM_START)
+		if (qm_curr == QM_START || qm_curr == QM_INIT)
 			avail = true;
 		break;
 	case QP_START:
@@ -1646,17 +1646,7 @@ static int hisi_qm_uacce_get_queue(struct uacce *uacce, unsigned long arg,
 
 static void hisi_qm_uacce_put_queue(struct uacce_queue *q)
 {
-	struct hisi_qm *qm = q->uacce->priv;
 	struct hisi_qp *qp = q->priv;
-
-	if (!qm->use_dma_api) {
-		/*
-		 * As put_queue is only called in uacce_mode=1, and only one
-		 * queue can be used in this mode. we flush all sqc cache back
-		 * in put queue.
-		 */
-		hisi_qm_cache_wb(qp->qm);
-	}
 
 	/* need to stop hardware, but can not support in v1 */
 	hisi_qm_release_qp(qp);
@@ -1762,7 +1752,6 @@ static void hisi_qm_uacce_stop_queue(struct uacce_queue *q)
 	hisi_qm_stop_qp(qp);
 
 	if (!qm->use_dma_api) {
-		hisi_qm_stop(qm, QM_NORMAL);
 		/*
 		 * In uacce_mode=1, we flush qm sqc here.
 		 * In uacce_fops_release, the working flow is stop_queue ->
@@ -2428,6 +2417,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 		 * mapped
 		 */
 		dev_dbg(&qm->pdev->dev, "qm delay start\n");
+		atomic_set(&qm->status.flags, QM_START);
 		up_write(&qm->qps_lock);
 		return 0;
 	} else if (!qm->qdma.va) {
@@ -2449,6 +2439,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 	ret = __hisi_qm_start(qm);
 	if (!ret)
 		atomic_set(&qm->status.flags, QM_START);
+
 err_unlock:
 	up_write(&qm->qps_lock);
 	return ret;
