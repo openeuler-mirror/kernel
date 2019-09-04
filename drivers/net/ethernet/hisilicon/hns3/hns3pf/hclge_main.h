@@ -712,6 +712,7 @@ struct hclge_rst_stats {
 	u32 global_rst_cnt;	/* the number of GLOBAL */
 	u32 imp_rst_cnt;	/* the number of IMP reset */
 	u32 reset_cnt;		/* the number of reset has been done */
+	u32 reset_fail_cnt;	/* the number of reset fail */
 };
 
 /* time and register status when mac tunnel interruption occur */
