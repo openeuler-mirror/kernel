@@ -541,6 +541,8 @@ static struct ib_ucontext *hns_roce_alloc_ucontext(struct ib_device *ib_dev,
 	if (ret)
 		goto error_fail_copy_to_udata;
 
+	kref_init(&context->uctx_ref);
+
 	return &context->ibucontext;
 
 error_fail_copy_to_udata:
@@ -552,6 +554,14 @@ error_fail_uar_alloc:
 	return ERR_PTR(ret);
 }
 
+static inline void release_ucontext(struct kref *kref)
+{
+	struct hns_roce_ucontext *context =
+			container_of(kref, struct hns_roce_ucontext, uctx_ref);
+
+	kfree(context);
+}
+
 static int hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 {
 	struct hns_roce_ucontext *context = to_hr_ucontext(ibcontext);
@@ -560,7 +570,8 @@ static int hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 				     RDFX_FUNC_DEALLOC_UCONTEXT);
 
 	hns_roce_uar_free(to_hr_dev(ibcontext->device), &context->uar);
-	kfree(context);
+
+	kref_put(&context->uctx_ref, release_ucontext);
 
 	return 0;
 }
@@ -573,13 +584,19 @@ static void hns_roce_vma_open(struct vm_area_struct *vma)
 static void hns_roce_vma_close(struct vm_area_struct *vma)
 {
 	struct hns_roce_vma_data *vma_data;
+	struct hns_roce_ucontext *context;
 
 	vma_data = (struct hns_roce_vma_data *)vma->vm_private_data;
+	context = container_of(vma_data->vma_list_mutex,
+			       struct hns_roce_ucontext, vma_list_mutex);
+
 	vma_data->vma = NULL;
 	mutex_lock(vma_data->vma_list_mutex);
 	list_del(&vma_data->list);
 	mutex_unlock(vma_data->vma_list_mutex);
 	kfree(vma_data);
+
+	kref_put(&context->uctx_ref, release_ucontext);
 }
 
 static const struct vm_operations_struct hns_roce_vm_ops = {
@@ -592,6 +609,8 @@ static int hns_roce_set_vma_data(struct vm_area_struct *vma,
 {
 	struct list_head *vma_head = &context->vma_list;
 	struct hns_roce_vma_data *vma_data;
+
+	kref_get(&context->uctx_ref);
 
 	vma_data = kzalloc(sizeof(*vma_data), GFP_KERNEL);
 	if (!vma_data)
@@ -683,6 +702,8 @@ static void hns_roce_disassociate_ucontext(struct ib_ucontext *ibcontext)
 		vma->vm_ops = NULL;
 		list_del(&vma_data->list);
 		kfree(vma_data);
+
+		kref_put(&context->uctx_ref, release_ucontext);
 	}
 	mutex_unlock(&context->vma_list_mutex);
 }

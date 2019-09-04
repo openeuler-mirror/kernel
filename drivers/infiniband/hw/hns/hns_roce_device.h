@@ -338,6 +338,7 @@ struct hns_roce_ucontext {
 	struct mutex		page_mutex;
 	struct list_head	vma_list;
 	struct mutex		vma_list_mutex;
+	struct kref		uctx_ref;
 };
 
 struct hns_roce_pd {
