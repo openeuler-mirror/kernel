@@ -646,13 +646,26 @@ static int hns_roce_mmap(struct ib_ucontext *context,
 				       to_hr_ucontext(context)->uar.pfn,
 				       PAGE_SIZE, vma->vm_page_prot))
 			return -EAGAIN;
-	} else if (vma->vm_pgoff == 1 && hr_dev->uar2_dma_addr &&
-		   hr_dev->uar2_size) {
-		if (io_remap_pfn_range(vma, vma->vm_start,
-				       hr_dev->uar2_dma_addr >> PAGE_SHIFT,
-				       hr_dev->uar2_size,
-				       vma->vm_page_prot))
-			return -EAGAIN;
+	} else if (vma->vm_pgoff == 1) {
+		/* vm_pgoff: 1 -- TPTR(hw v1), reset_page(hw v2) */
+		if (hr_dev->tptr_dma_addr && hr_dev->tptr_size) {
+			if (io_remap_pfn_range(vma, vma->vm_start,
+					 hr_dev->tptr_dma_addr >> PAGE_SHIFT,
+					 hr_dev->tptr_size, vma->vm_page_prot)){
+				dev_err(hr_dev->dev,
+					"mmap tptr page failed.\n");
+				return -EAGAIN;
+			}
+		}
+
+		if (hr_dev->reset_page)
+			if (remap_pfn_range(vma, vma->vm_start,
+					       virt_to_pfn(hr_dev->reset_page),
+					       PAGE_SIZE, vma->vm_page_prot)) {
+				dev_err(hr_dev->dev,
+					"mmap reset page failed.\n");
+				return -EAGAIN;
+			}
 	} else {
 		dev_err(hr_dev->dev, "mmap failed, vm_pgoff is unsupported.\n");
 		return -EINVAL;

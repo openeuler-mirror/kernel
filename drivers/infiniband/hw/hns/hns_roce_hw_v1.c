@@ -1414,8 +1414,8 @@ static int hns_roce_tptr_init(struct hns_roce_dev *hr_dev)
 	if (!tptr_buf->buf)
 		return -ENOMEM;
 
-	hr_dev->uar2_dma_addr = tptr_buf->map;
-	hr_dev->uar2_size = HNS_ROCE_V1_TPTR_BUF_SIZE;
+	hr_dev->tptr_dma_addr = tptr_buf->map;
+	hr_dev->tptr_size = HNS_ROCE_V1_TPTR_BUF_SIZE;
 
 	return 0;
 }

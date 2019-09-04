@@ -2459,32 +2459,13 @@ static void hns_roce_free_link_table(struct hns_roce_dev *hr_dev,
 			  link_tbl->table.map);
 }
 
-static int hns_roce_v2_uar_init(struct hns_roce_dev *hr_dev)
+static int hns_roce_v2_get_reset_page(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_v2_priv *priv = hr_dev->priv;
-	struct hns_roce_buf_list *uar = &priv->uar;
-	struct device *dev = &hr_dev->pci_dev->dev;
-
-	uar->buf = dma_alloc_coherent(dev, HNS_ROCE_V2_UAR_BUF_SIZE, &uar->map,
-				      GFP_KERNEL);
-	if (!uar->buf)
+	hr_dev->reset_page = (void *)get_zeroed_page(GFP_KERNEL);
+	if (!hr_dev->reset_page)
 		return -ENOMEM;
 
-	memset(uar->buf, 0, HNS_ROCE_V2_UAR_BUF_SIZE);
-
-	hr_dev->uar2_dma_addr = uar->map;
-	hr_dev->uar2_size = HNS_ROCE_V2_UAR_BUF_SIZE;
-
 	return 0;
-}
-
-static void hns_roce_v2_uar_free(struct hns_roce_dev *hr_dev)
-{
-	struct hns_roce_v2_priv *priv = hr_dev->priv;
-	struct hns_roce_buf_list *uar = &priv->uar;
-	struct device *dev = &hr_dev->pci_dev->dev;
-
-	dma_free_coherent(dev, HNS_ROCE_V2_UAR_BUF_SIZE, uar->buf, uar->map);
 }
 
 static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
@@ -2495,9 +2476,10 @@ static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
 	int ret;
 	int i;
 
-	ret = hns_roce_v2_uar_init(hr_dev);
+	ret = hns_roce_v2_get_reset_page(hr_dev);
 	if (ret) {
-		dev_err(hr_dev->dev, "uar init failed, ret = %d.\n", ret);
+		dev_err(hr_dev->dev,
+			"reset state init failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -2554,7 +2536,7 @@ err_tpq_init_failed:
 	hns_roce_free_link_table(hr_dev, &priv->tsq);
 
 err_tsq_init_failed:
-	hns_roce_v2_uar_free(hr_dev);
+	free_page(hr_dev->reset_page);
 
 	return ret;
 }
@@ -2568,7 +2550,7 @@ static void hns_roce_v2_exit(struct hns_roce_dev *hr_dev)
 
 	hns_roce_free_link_table(hr_dev, &priv->tpq);
 	hns_roce_free_link_table(hr_dev, &priv->tsq);
-	hns_roce_v2_uar_free(hr_dev);
+	free_page(hr_dev->reset_page);
 }
 
 static int hns_roce_query_mbox_status(struct hns_roce_dev *hr_dev)
@@ -7477,12 +7459,16 @@ static void hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
 	handle->rinfo.instance_state = HNS_ROCE_STATE_NON_INIT;
 }
 
-static void hns_roce_hw_v2_reset_notify_usr(struct hns_roce_dev *hr_dev)
+static void hns_roce_v2_reset_notify_user(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_v2_priv *priv = hr_dev->priv;
-	struct hns_roce_v2_uar *uar = (struct hns_roce_v2_uar *)priv->uar.buf;
+	struct hns_roce_v2_reset_state *state;
 
-	uar->dis_db = HNS_ROCE_DISABLE_DB;
+	state = (struct hns_roce_v2_reset_state *)hr_dev->reset_page;
+
+	state->reset_state = HNS_ROCE_IS_RESETTING;
+
+	/* Ensure reset state was flushed in memory */
+	wmb();
 }
 
 static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
@@ -7503,7 +7489,7 @@ static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
 	hr_dev->is_reset = true;
 	hr_dev->active = false;
 	hr_dev->dis_db = true;
-	hns_roce_hw_v2_reset_notify_usr(hr_dev);
+	hns_roce_v2_reset_notify_user(hr_dev);
 
 	hr_dev->state = HNS_ROCE_DEVICE_STATE_RST_DOWN;
 	hns_roce_handle_device_err(hr_dev);

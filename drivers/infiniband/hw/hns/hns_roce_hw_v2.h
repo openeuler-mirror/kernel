@@ -1855,8 +1855,8 @@ struct hns_roce_link_table_entry {
 
 #define HNS_ROCE_V2_UAR_BUF_SIZE	4096
 
-struct hns_roce_v2_uar {
-	u32 dis_db;
+struct hns_roce_v2_reset_state {
+	u32 reset_state; /* stored to use in user space */
 };
 
 struct hns_roce_v2_priv {

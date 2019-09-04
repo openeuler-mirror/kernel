@@ -317,7 +317,7 @@ static inline void hns_roce_inc_rdma_hw_stats(struct ib_device *dev, int stats)
 
 #define PAGE_ADDR_SHIFT				12
 
-#define HNS_ROCE_DISABLE_DB			1
+#define HNS_ROCE_IS_RESETTING			1
 
 struct hns_roce_uar {
 	u64		pfn;
@@ -1226,8 +1226,9 @@ struct hns_roce_dev {
 	int			loop_idc;
 	u32			sdb_offset;
 	u32			odb_offset;
-	dma_addr_t		uar2_dma_addr;
-	u32			uar2_size;
+	dma_addr_t		tptr_dma_addr;	/* only for hw v1 */
+	u32			tptr_size;	/* only for hw v1 */
+	void			*reset_page; /* store reset state for hw v2 */
 	const struct hns_roce_hw *hw;
 	const struct hns_roce_dfx_hw *dfx;
 	void			*priv;
