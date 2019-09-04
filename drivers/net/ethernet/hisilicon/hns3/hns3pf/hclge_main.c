@@ -3444,7 +3444,6 @@ static void hclge_reset_handshake(struct hclge_dev *hdev, bool enable)
 
 static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 {
-
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
 	u32 reg_val;
 	int ret = 0;
@@ -3718,12 +3717,13 @@ static void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle)
 				  HCLGE_RESET_INTERVAL))) {
 		mod_timer(&hdev->reset_timer, jiffies + HCLGE_RESET_INTERVAL);
 		return;
-	} else if (hdev->default_reset_request)
+	} else if (hdev->default_reset_request) {
 		hdev->reset_level =
 			hclge_get_reset_level(ae_dev,
 					      &hdev->default_reset_request);
-	else if (time_after(jiffies, (hdev->last_reset_time + 4 * 5 * HZ)))
+	} else if (time_after(jiffies, (hdev->last_reset_time + 4 * 5 * HZ))) {
 		hdev->reset_level = HNAE3_FUNC_RESET;
+	}
 
 	if (hdev->ppu_poison_ras_err)
 		hdev->ppu_poison_ras_err = false;
