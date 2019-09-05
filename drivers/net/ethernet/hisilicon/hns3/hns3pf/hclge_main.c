@@ -8198,12 +8198,15 @@ void hclge_restore_vlan_table(struct hnae3_handle *handle)
 		}
 
 		list_for_each_entry_safe(vlan, tmp, &vport->vlan_list, node) {
-			if (vlan->hd_tbl_status)
-				hclge_set_vlan_filter_hw(hdev,
-							 htons(ETH_P_8021Q),
-							 vport->vport_id,
-							 vlan->vlan_id,
-							 false);
+			int ret;
+
+			if (!vlan->hd_tbl_status)
+				continue;
+			ret = hclge_set_vlan_filter_hw(hdev, htons(ETH_P_8021Q),
+						       vport->vport_id,
+						       vlan->vlan_id, false);
+			if (ret)
+				break;
 		}
 	}
 
