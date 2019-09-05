@@ -367,6 +367,8 @@ struct hnae3_ae_dev {
  * set_vf_trust
  *   Enable/disable trust for specified vf, if the vf being trusted, then
  *   it can enable promisc mode
+ * set_vf_rate
+ *   Set the max tx rate of specified vf.
  */
 struct hnae3_ae_ops {
 	int (*init_ae_dev)(struct hnae3_ae_dev *ae_dev);

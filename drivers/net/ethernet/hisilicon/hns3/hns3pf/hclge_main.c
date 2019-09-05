@@ -41,6 +41,8 @@
 
 #define HCLGE_LINK_STATUS_MS	10
 
+#define HCLGE_VF_VPORT_START_NUM	1
+
 /* Get DFX BD number offset */
 #define HCLGE_DFX_BIOS_BD_OFFSET        1
 #define HCLGE_DFX_SSU_0_BD_OFFSET       2
@@ -70,6 +72,7 @@ static void hclge_rfs_filter_expire(struct hclge_dev *hdev);
 static void hclge_clear_arfs_rules(struct hnae3_handle *handle);
 static int hclge_set_default_loopback(struct hclge_dev *hdev);
 static int hclge_resume_vf_rate(struct hclge_dev *hdev);
+static void hclge_reset_vf_rate(struct hclge_dev *hdev);
 
 struct hnae3_ae_algo ae_algo;
 
@@ -2874,8 +2877,6 @@ static int hclge_get_status(struct hnae3_handle *handle)
 
 static struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf)
 {
-#define HCLGE_VF_VPORT_START_NUM	1
-
 	if (vf < 0 || vf >= pci_num_vf(hdev->pdev)) {
 		dev_err(&hdev->pdev->dev,
 			"Out-of-range(1 < vfid < %d) or Invalid VF(=%d) specified.\n",
@@ -9830,6 +9831,7 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct hclge_mac *mac = &hdev->hw.mac;
 
+	hclge_reset_vf_rate(hdev);
 	hclge_misc_affinity_teardown(hdev);
 	hclge_state_uninit(hdev);
 
@@ -10531,6 +10533,24 @@ static int hclge_resume_vf_rate(struct hclge_dev *hdev)
 	}
 
 	return 0;
+}
+
+static void hclge_reset_vf_rate(struct hclge_dev *hdev)
+{
+	int ret;
+	int vf;
+
+	/* reset vf rate to default value */
+	for (vf = HCLGE_VF_VPORT_START_NUM; vf < hdev->num_alloc_vport; vf++) {
+		struct hclge_vport *vport = &hdev->vport[vf];
+
+		vport->max_tx_rate = 0;
+		ret = hclge_tm_qs_shaper_cfg(vport, vport->max_tx_rate);
+		if (ret)
+			dev_err(&hdev->pdev->dev,
+				"vf%d failed to reset to default, ret=%d\n",
+				vf - HCLGE_VF_VPORT_START_NUM, ret);
+	}
 }
 
 struct hnae3_ae_ops hclge_ops = {
