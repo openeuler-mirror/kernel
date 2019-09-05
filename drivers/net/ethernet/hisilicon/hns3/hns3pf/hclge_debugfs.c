@@ -988,8 +988,8 @@ static void hclge_dbg_fd_tcam(struct hclge_dev *hdev)
 	    !hdev->fd_cfg.rule_num[HCLGE_FD_STAGE_1])
 		return;
 
-	rule_locs = kzalloc(hdev->fd_cfg.rule_num[HCLGE_FD_STAGE_1] *
-			    MAX_STAGE_NUM, GFP_KERNEL);
+	rule_locs = kcalloc(hdev->fd_cfg.rule_num[HCLGE_FD_STAGE_1],
+			    sizeof(u16), GFP_KERNEL);
 	if (!rule_locs)
 		return;
 
