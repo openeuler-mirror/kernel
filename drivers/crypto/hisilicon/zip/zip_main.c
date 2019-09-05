@@ -1419,6 +1419,12 @@ static int __init hisi_zip_init(void)
 		goto err_pci;
 	}
 
+	if (list_empty(&hisi_zip_list)) {
+		pr_err("no hisilicon zip device!\n");
+		ret = -ENODEV;
+		goto err_probe_device;
+	}
+
 #ifndef CONFIG_IOMMU_SVA
 	if (uacce_mode == UACCE_MODE_UACCE)
 		return 0;
@@ -1427,12 +1433,12 @@ static int __init hisi_zip_init(void)
 	ret = hisi_zip_register_to_crypto();
 	if (ret < 0) {
 		pr_err("Failed to register driver to crypto.\n");
-		goto err_crypto;
+		goto err_probe_device;
 	}
 
 	return 0;
 
-err_crypto:
+err_probe_device:
 	pci_unregister_driver(&hisi_zip_pci_driver);
 err_pci:
 	hisi_zip_unregister_debugfs();
