@@ -2594,7 +2594,7 @@ void hns3_clean_tx_ring(struct hns3_enet_ring *ring)
 	netdev_tx_completed_queue(dev_queue, pkts, bytes);
 
 	if (unlikely(pkts && netif_carrier_ok(netdev) &&
-		     (ring_space(ring) > HNS3_MAX_BD_PER_PKT))) {
+		     ring_space(ring) > HNS3_MAX_TSO_BD_NUM)) {
 		/* Make sure that anybody stopping the queue after this
 		 * sees the new next_to_clean.
 		 */
