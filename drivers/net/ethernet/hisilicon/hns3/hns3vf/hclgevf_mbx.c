@@ -231,7 +231,7 @@ void hclgevf_mbx_handler(struct hclgevf_dev *hdev)
 		case HCLGE_MBX_LINK_STAT_CHANGE:
 		case HCLGE_MBX_ASSERTING_RESET:
 		case HCLGE_MBX_LINK_STAT_MODE:
-		case HLCGE_MBX_PUSH_VLAN_INFO:
+		case HCLGE_MBX_PUSH_VLAN_INFO:
 		case HCLGE_MBX_PUSH_PROMISC_INFO:
 			/* set this mbx event as pending. This is required as we
 			 * might loose interrupt event when mbx task is busy
@@ -344,7 +344,7 @@ void hclgevf_mbx_async_handler(struct hclgevf_dev *hdev)
 			hclgevf_reset_task_schedule(hdev);
 
 			break;
-		case HLCGE_MBX_PUSH_VLAN_INFO:
+		case HCLGE_MBX_PUSH_VLAN_INFO:
 
 			state = msg_q[1];
 			vlan_info = &msg_q[1];

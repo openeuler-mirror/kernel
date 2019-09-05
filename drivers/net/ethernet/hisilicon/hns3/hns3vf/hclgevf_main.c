@@ -1304,7 +1304,7 @@ static int hclgevf_set_vlan_filter(struct hnae3_handle *handle,
 	u8 msg_data[HCLGEVF_VLAN_MBX_MSG_LEN];
 	int ret;
 
-	if (vlan_id > MAX_VLAN_ID)
+	if (vlan_id > HCLGEVF_MAX_VLAN_ID)
 		return -EINVAL;
 
 	if (proto != htons(ETH_P_8021Q))
