@@ -9939,8 +9939,6 @@ static int hclge_get_64_bit_regs(struct hclge_dev *hdev, u32 regs_num,
 
 int hclge_query_bd_num_cmd_send(struct hclge_dev *hdev, struct hclge_desc *desc)
 {
-	int ret;
-
 	/*prepare 4 commands to query DFX BD number*/
 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_DFX_BD_NUM, true);
 	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
@@ -9950,9 +9948,7 @@ int hclge_query_bd_num_cmd_send(struct hclge_dev *hdev, struct hclge_desc *desc)
 	desc[2].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 	hclge_cmd_setup_basic_desc(&desc[3], HCLGE_OPC_DFX_BD_NUM, true);
 
-	ret = hclge_cmd_send(&hdev->hw, desc, 4);
-
-	return ret;
+	return hclge_cmd_send(&hdev->hw, desc, 4);
 }
 
 static int hclge_get_dfx_reg_bd_num(struct hclge_dev *hdev,
@@ -9964,7 +9960,7 @@ static int hclge_get_dfx_reg_bd_num(struct hclge_dev *hdev,
 	int ret;
 
 	ret = hclge_query_bd_num_cmd_send(hdev, desc);
-	if (ret != HCLGE_CMD_EXEC_SUCCESS) {
+	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Get dfx bd num fail, status is %d.\n", ret);
 		return ret;
@@ -9989,7 +9985,7 @@ static int hclge_dfx_reg_cmd_send(struct hclge_dev *hdev,
 	int i, ret;
 
 	hclge_cmd_setup_basic_desc(desc, cmd, true);
-	for (i = 1; i < bd_num; i++) {
+	for (i = 0; i < bd_num - 1; i++) {
 		desc->flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 		desc++;
 		hclge_cmd_setup_basic_desc(desc, cmd, true);
@@ -10029,24 +10025,24 @@ static int hclge_dfx_reg_fetch_data(struct hclge_desc *desc_src, int bd_num,
 static int hclge_get_dfx_reg_len(struct hclge_dev *hdev, int *len)
 {
 	u32 dfx_reg_type_num = ARRAY_SIZE(hclge_dfx_bd_offset_list);
-	int data_len_per_desc, data_len, bd_num, len_per_line, i;
+	int data_len_per_desc, bd_num, i;
 	int bd_num_list[BD_LIST_MAX_NUM];
+	u32 data_len;
 	int ret;
 
 	ret = hclge_get_dfx_reg_bd_num(hdev, bd_num_list, dfx_reg_type_num);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Get dfx reg bd num fail, status is %d.\n", ret);
-		return -EOPNOTSUPP;
+		return ret;
 	}
 
 	data_len_per_desc = FIELD_SIZEOF(struct hclge_desc, data);
 	*len = 0;
-	len_per_line = REG_LEN_PER_LINE;
 	for (i = 0; i < dfx_reg_type_num; i++) {
 		bd_num = bd_num_list[i];
 		data_len = data_len_per_desc * bd_num;
-		*len += (data_len / len_per_line + 1) * len_per_line;
+		*len += (data_len / REG_LEN_PER_LINE + 1) * REG_LEN_PER_LINE;
 	}
 
 	return ret;
@@ -10065,19 +10061,17 @@ static int hclge_get_dfx_reg(struct hclge_dev *hdev, void *data)
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Get dfx reg bd num fail, status is %d.\n", ret);
-		return -EOPNOTSUPP;
+		return ret;
 	}
 
 	bd_num_max = bd_num_list[0];
 	for (i = 1; i < dfx_reg_type_num; i++)
-		bd_num_max = max(bd_num_max, bd_num_list[i]);
+		bd_num_max = max_t(int, bd_num_max, bd_num_list[i]);
 
 	buf_len = sizeof(*desc_src) * bd_num_max;
 	desc_src = kzalloc(buf_len, GFP_KERNEL);
-	if (!desc_src) {
-		dev_err(&hdev->pdev->dev, "call kzalloc failed\n");
+	if (!desc_src)
 		return -ENOMEM;
-	}
 
 	for (i = 0; i < dfx_reg_type_num; i++) {
 		bd_num = bd_num_list[i];
@@ -10099,12 +10093,15 @@ static int hclge_get_dfx_reg(struct hclge_dev *hdev, void *data)
 static int hclge_fetch_pf_reg(struct hclge_dev *hdev, void *data,
 			      struct hnae3_knic_private_info *kinfo)
 {
+#define HCLGE_RING_REG_OFFSET		0x200
+#define HCLGE_RING_INT_REG_OFFSET	0x4
+
 	int i, j, reg_num, separator_num;
 	int data_num_sum;
 	u32 *reg = data;
 
 	/* fetching per-PF registers valus from PF PCIe register space */
-	reg_num = sizeof(cmdq_reg_addr_list) / sizeof(u32);
+	reg_num = ARRAY_SIZE(cmdq_reg_addr_list);
 	separator_num = MAX_SEPARATE_NUM - (reg_num & REG_NUM_REMAIN_MASK);
 	for (i = 0; i < reg_num; i++)
 		*reg++ = hclge_read_dev(&hdev->hw, cmdq_reg_addr_list[i]);
@@ -10112,7 +10109,7 @@ static int hclge_fetch_pf_reg(struct hclge_dev *hdev, void *data,
 		*reg++ = SEPARATOR_VALUE;
 	data_num_sum = reg_num + separator_num;
 
-	reg_num = sizeof(common_reg_addr_list) / sizeof(u32);
+	reg_num = ARRAY_SIZE(common_reg_addr_list);
 	separator_num = MAX_SEPARATE_NUM - (reg_num & REG_NUM_REMAIN_MASK);
 	for (i = 0; i < reg_num; i++)
 		*reg++ = hclge_read_dev(&hdev->hw, common_reg_addr_list[i]);
@@ -10120,25 +10117,25 @@ static int hclge_fetch_pf_reg(struct hclge_dev *hdev, void *data,
 		*reg++ = SEPARATOR_VALUE;
 	data_num_sum += reg_num + separator_num;
 
-	reg_num = sizeof(ring_reg_addr_list) / sizeof(u32);
+	reg_num = ARRAY_SIZE(ring_reg_addr_list);
 	separator_num = MAX_SEPARATE_NUM - (reg_num & REG_NUM_REMAIN_MASK);
 	for (j = 0; j < kinfo->num_tqps; j++) {
 		for (i = 0; i < reg_num; i++)
 			*reg++ = hclge_read_dev(&hdev->hw,
 						ring_reg_addr_list[i] +
-						0x200 * j);
+						HCLGE_RING_REG_OFFSET * j);
 		for (i = 0; i < separator_num; i++)
 			*reg++ = SEPARATOR_VALUE;
 	}
 	data_num_sum += (reg_num + separator_num) * kinfo->num_tqps;
 
-	reg_num = sizeof(tqp_intr_reg_addr_list) / sizeof(u32);
+	reg_num = ARRAY_SIZE(tqp_intr_reg_addr_list);
 	separator_num = MAX_SEPARATE_NUM - (reg_num & REG_NUM_REMAIN_MASK);
 	for (j = 0; j < hdev->num_msi_used - 1; j++) {
 		for (i = 0; i < reg_num; i++)
 			*reg++ = hclge_read_dev(&hdev->hw,
 						tqp_intr_reg_addr_list[i] +
-						4 * j);
+						HCLGE_RING_INT_REG_OFFSET * j);
 		for (i = 0; i < separator_num; i++)
 			*reg++ = SEPARATOR_VALUE;
 	}
@@ -10161,14 +10158,14 @@ static int hclge_get_regs_len(struct hnae3_handle *handle)
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Get register number failed, ret = %d.\n", ret);
-		return -EOPNOTSUPP;
+		return ret;
 	}
 
 	ret = hclge_get_dfx_reg_len(hdev, &dfx_regs_len);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Get dfx reg len failed, ret = %d.\n", ret);
-		return -EOPNOTSUPP;
+		return ret;
 	}
 
 	cmdq_lines = sizeof(cmdq_reg_addr_list) / REG_LEN_PER_LINE +
