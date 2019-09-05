@@ -7705,7 +7705,7 @@ static int hclge_set_vf_vlan_common(struct hclge_dev *hdev, u16 vfid,
 	 * new vlan, because tx packets with these vlan id will be dropped.
 	 */
 	if (test_bit(vfid, hdev->vf_vlan_full) && !is_kill) {
-		if (vport->spoofchk) {
+		if (vport->spoofchk && vlan) {
 			dev_err(&hdev->pdev->dev,
 				"Can't add vlan due to spoof check is on and vf vlan table is full\n");
 			return -EPERM;
