@@ -12,8 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http:
  */
 
 #ifndef __C_UNION_DEFINE_HLLC_RAS_H__
@@ -30,11 +28,11 @@ typedef union {
 		unsigned int hydra_rx_ch0_2bit_ecc_err : 1   ; /* [4]  */
 		unsigned int hydra_rx_ch1_2bit_ecc_err : 1   ; /* [5]  */
 		unsigned int hydra_rx_ch2_2bit_ecc_err : 1   ; /* [6]  */
-		unsigned int reserved_0			: 1   ; /* [7]  */
+		unsigned int reserved_0		 : 1   ; /* [7]  */
 		unsigned int phy_rx_retry_ptr_err : 1   ; /* [8]  */
 		unsigned int phy_tx_retry_buf_ptr_err : 1   ; /* [9]  */
 		unsigned int phy_tx_retry_ptr_err : 1   ; /* [10]  */
-		unsigned int reserved_1			: 5   ; /* [15..11]  */
+		unsigned int reserved_1		 : 5   ; /* [15..11]  */
 		unsigned int hydra_tx_ch0_ovf : 1   ; /* [16]  */
 		unsigned int hydra_tx_ch1_ovf : 1   ; /* [17]  */
 		unsigned int hydra_tx_ch2_ovf : 1   ; /* [18]  */
@@ -42,15 +40,15 @@ typedef union {
 		unsigned int hydra_rx_ch0_ovf : 1   ; /* [20]  */
 		unsigned int hydra_rx_ch1_ovf : 1   ; /* [21]  */
 		unsigned int hydra_rx_ch2_ovf : 1   ; /* [22]  */
-		unsigned int reserved_2			: 1   ; /* [23]  */
-		unsigned int hydra_pcs_err0		: 1   ; /* [24]  */
-		unsigned int hydra_pcs_err1		: 1   ; /* [25]  */
-		unsigned int hydra_pcs_err2		: 1   ; /* [26]  */
-		unsigned int hydra_pcs_err3		: 1   ; /* [27]  */
-		unsigned int hydra_pcs_err4		: 1   ; /* [28]  */
-		unsigned int hydra_pcs_err5		: 1   ; /* [29]  */
-		unsigned int hydra_pcs_err6		: 1   ; /* [30]  */
-		unsigned int hydra_pcs_err7		: 1   ; /* [31]  */
+		unsigned int reserved_2		 : 1   ; /* [23]  */
+		unsigned int hydra_pcs_err0	 : 1   ; /* [24]  */
+		unsigned int hydra_pcs_err1	 : 1   ; /* [25]  */
+		unsigned int hydra_pcs_err2	 : 1   ; /* [26]  */
+		unsigned int hydra_pcs_err3	 : 1   ; /* [27]  */
+		unsigned int hydra_pcs_err4	 : 1   ; /* [28]  */
+		unsigned int hydra_pcs_err5	 : 1   ; /* [29]  */
+		unsigned int hydra_pcs_err6	 : 1   ; /* [30]  */
+		unsigned int hydra_pcs_err7	 : 1   ; /* [31]  */
 	} bits;
 
 	/* Define an unsigned member */
@@ -69,9 +67,9 @@ typedef union {
 		unsigned int hydra_rx_ch0_1bit_ecc_err : 1   ; /* [4]  */
 		unsigned int hydra_rx_ch1_1bit_ecc_err : 1   ; /* [5]  */
 		unsigned int hydra_rx_ch2_1bit_ecc_err : 1   ; /* [6]  */
-		unsigned int reserved_0			: 1   ; /* [7]  */
+		unsigned int reserved_0		 : 1   ; /* [7]  */
 		unsigned int phy_rx_flit_crc_err : 1   ; /* [8]  */
-		unsigned int reserved_1			: 23  ; /* [31..9]  */
+		unsigned int reserved_1		 : 23  ; /* [31..9]  */
 	} bits;
 
 	/* Define an unsigned member */

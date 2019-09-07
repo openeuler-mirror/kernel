@@ -12,8 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http:
  */
 
 #ifndef __DMC_C_UNION_DEFINE_H__
@@ -24,17 +22,17 @@ typedef union {
 	/* Define the struct bits */
 	struct {
 		unsigned int ecc_en : 1   ; /* [0]  */
-		unsigned int reserved_0			: 3   ; /* [3..1]  */
+		unsigned int reserved_0		 : 3   ; /* [3..1]  */
 		unsigned int eccwb_en : 1   ; /* [4]  */
-		unsigned int reserved_1			: 3   ; /* [7..5]  */
+		unsigned int reserved_1		 : 3   ; /* [7..5]  */
 		unsigned int ecc_byp : 1   ; /* [8]  */
 		unsigned int ecc_msk : 1   ; /* [9]  */
-		unsigned int reserved_2			: 2   ; /* [11..10]  */
+		unsigned int reserved_2		 : 2   ; /* [11..10]  */
 		unsigned int ras_en : 1   ; /* [12]  */
 		unsigned int ras_bps : 1   ; /* [13]  */
 		unsigned int poison_en : 1   ; /* [14]  */
 		unsigned int poison_chk_type : 1   ; /* [15]  */
-		unsigned int reserved_3			: 16  ; /* [31..16]  */
+		unsigned int reserved_3		 : 16  ; /* [31..16]  */
 	} bits;
 
 	/* Define an unsigned member */

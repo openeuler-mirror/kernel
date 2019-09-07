@@ -12,8 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http:
  */
 
 #ifndef __HLLC_PCS_C_UNION_DEFINE_H__
@@ -37,7 +35,7 @@ typedef union {
 		unsigned int tx_asyn_fifo_full : 1   ; /* [17]  */
 		unsigned int tx_asyn_fifo_afull : 1   ; /* [18]  */
 		unsigned int tx_asyn_push_word_cnt : 5   ; /* [23..19]  */
-		unsigned int reserved_0			: 8   ; /* [31..24]  */
+		unsigned int reserved_0		 : 8   ; /* [31..24]  */
 	} bits;
 
 	/* Define an unsigned member */

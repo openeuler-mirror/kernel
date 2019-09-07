@@ -12,24 +12,13 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http:
  */
 
-#ifndef __FREQ_H__
-#define __FREQ_H__
+#ifndef _SYSCTL_DFX_H_
+#define _SYSCTL_DFX_H_
 
-#ifdef __cplusplus
-#if __cplusplus
-extern "C" {
-#endif
-#endif /** __cplusplus */
+int sysctl_proc_init(void);
+void sysctl_proc_exit(void);
+void sysctl_dfx_do_ras(struct acpi_hest_generic_data *gdata);
 
-extern void HRD_SLLC_ASYNC_FIFO(void);
-#ifdef __cplusplus
-#if __cplusplus
-}
-#endif
-#endif /** __cplusplus */
-
-#endif /**   __FREQ_H__ */
+#endif /*_SYSCTL_DFX_H_*/

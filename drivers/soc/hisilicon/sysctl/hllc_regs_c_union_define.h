@@ -12,8 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http:
  */
 
 #ifndef __HLLC_REGS_C_UNION_DEFINE_H__
@@ -24,7 +22,7 @@ typedef union {
 	/* Define the struct bits */
 	struct {
 		unsigned int inject_ecc_err_type : 2   ; /* [1..0]  */
-		unsigned int reserved_0			: 30  ; /* [31..2]  */
+		unsigned int reserved_0		 : 30  ; /* [31..2]  */
 	} bits;
 
 	/* Define an unsigned member */
@@ -37,12 +35,12 @@ typedef union {
 	/* Define the struct bits */
 	struct {
 		unsigned int hydra_rx_inject_ecc_err_en : 3   ; /* [2..0]  */
-		unsigned int reserved_0			: 1   ; /* [3]  */
+		unsigned int reserved_0		 : 1   ; /* [3]  */
 		unsigned int phy_tx_retry_inject_ecc_err_en : 1   ; /* [4]  */
-		unsigned int reserved_1			: 3   ; /* [7..5]  */
+		unsigned int reserved_1		 : 3   ; /* [7..5]  */
 		unsigned int hydra_tx_inject_ecc_err_en : 3   ; /* [10..8]  */
-		unsigned int reserved_2			: 1   ; /* [11]  */
-		unsigned int reserved_3			: 20  ; /* [31..12]  */
+		unsigned int reserved_2		 : 1   ; /* [11]  */
+		unsigned int reserved_3		 : 20  ; /* [31..12]  */
 	} bits;
 
 	/* Define an unsigned member */

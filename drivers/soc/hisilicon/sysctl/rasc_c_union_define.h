@@ -12,8 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http:
  */
 
 #ifndef __RASC_C_UNION_DEFINE_H__
@@ -30,10 +28,10 @@ typedef union {
 		unsigned int pa_errcnt_clr : 1   ; /* [4]  */
 		unsigned int sp_errcnt_clr : 1   ; /* [5]  */
 		unsigned int sp_rberrcnt_clr : 1   ; /* [6]  */
-		unsigned int reserved_0			: 1   ; /* [7]  */
+		unsigned int reserved_0		 : 1   ; /* [7]  */
 		unsigned int corr_errcnt_clr : 1   ; /* [8]  */
 		unsigned int uncorr_errcnt_clr : 1   ; /* [9]  */
-		unsigned int reserved_1			: 22  ; /* [31..10]  */
+		unsigned int reserved_1		 : 22  ; /* [31..10]  */
 	} bits;
 
 	/* Define an unsigned member */
@@ -47,7 +45,7 @@ typedef union {
 	struct {
 		unsigned int idx_rnk : 4   ; /* [3..0]  */
 		unsigned int rnk_sel_mode : 1   ; /* [4]  */
-		unsigned int reserved_0			: 27  ; /* [31..5]  */
+		unsigned int reserved_0		 : 27  ; /* [31..5]  */
 	} bits;
 
 	/* Define an unsigned member */
