@@ -12,7 +12,7 @@
 #define WQE_TYPE_MAX	(IB_WR_REG_SIG_MR + 1)
 #define CQ_ST_MAX	(IB_WC_GENERAL_ERR + 1)
 #define RCQE_TYPE_MAX	(RECV_SEND_WITH_INV + 1)
-#define RDFX_FUNC_MAX	(35)
+#define RDFX_FUNC_MAX	(37)
 
 extern const char *rdfx_func_name[RDFX_FUNC_MAX];
 struct rdfx_info;

@@ -42,11 +42,4 @@ extern struct rdfx_ops rdfx_ops_hw_v2;
 
 void *rdfx_buf_offset(struct dfx_buf *buf, int offset);
 
-/**
- * struct roce_dev_kobj {
- *	struct device		*dev;
- *	struct kobject		kobj;
- * };
- */
-
 #endif

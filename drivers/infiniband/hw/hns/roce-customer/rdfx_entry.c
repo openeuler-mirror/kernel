@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
-#include "../roce_k_compat.h"
+#include "roce_k_compat.h"
 #include "rdfx_common.h"
 #include "rdfx_intf.h"
 
@@ -177,6 +177,117 @@ void rdfx_cp_cqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 }
 EXPORT_SYMBOL_GPL(rdfx_cp_cqe_buf);
 
+void rdfx_set_err_cqe_info(u32 status, struct rdfx_cq_info *rdfx_cq)
+{
+	switch (status & HNS_ROCE_V2_CQE_STATUS_MASK) {
+	case HNS_ROCE_CQE_V2_LOCAL_LENGTH_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_LOC_LEN_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_LOCAL_QP_OP_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_LOC_QP_OP_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_LOCAL_PROT_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_LOC_PROT_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_WR_FLUSH_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_WR_FLUSH_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_MW_BIND_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_MW_BIND_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_BAD_RESP_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_BAD_RESP_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_LOCAL_ACCESS_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_LOC_ACCESS_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_REMOTE_INVAL_REQ_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_REM_INV_REQ_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_REMOTE_ACCESS_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_REM_ACCESS_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_REMOTE_OP_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_REM_OP_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_TRANSPORT_RETRY_EXC_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_RETRY_EXC_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_RNR_RETRY_EXC_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_RNR_RETRY_EXC_ERR]));
+		break;
+	case HNS_ROCE_CQE_V2_REMOTE_ABORT_ERR:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_REM_ABORT_ERR]));
+		break;
+	default:
+		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_GENERAL_ERR]));
+		break;
+	}
+}
+
+void rdfx_set_send_cqe_info(u32 opcode, struct rdfx_cq_info *rdfx_cq)
+{
+	switch (opcode) {
+	case HNS_ROCE_SQ_OPCODE_SEND:
+		atomic_inc(&(rdfx_cq->scqe_cnt[IB_WR_SEND]));
+		break;
+	case HNS_ROCE_SQ_OPCODE_SEND_WITH_INV:
+		atomic_inc(&(rdfx_cq->scqe_cnt[IB_WR_SEND_WITH_INV]));
+		break;
+	case HNS_ROCE_SQ_OPCODE_SEND_WITH_IMM:
+		atomic_inc(&(rdfx_cq->scqe_cnt[IB_WR_SEND_WITH_IMM]));
+		break;
+	case HNS_ROCE_SQ_OPCODE_RDMA_READ:
+		atomic_inc(&(rdfx_cq->scqe_cnt[IB_WR_RDMA_READ]));
+		break;
+	case HNS_ROCE_SQ_OPCODE_RDMA_WRITE:
+		atomic_inc(&(rdfx_cq->scqe_cnt[IB_WR_RDMA_WRITE]));
+		break;
+	case HNS_ROCE_SQ_OPCODE_RDMA_WRITE_WITH_IMM:
+		atomic_inc(&(rdfx_cq->scqe_cnt[IB_WR_RDMA_WRITE_WITH_IMM]));
+		break;
+	case HNS_ROCE_SQ_OPCODE_LOCAL_INV:
+		atomic_inc(&(rdfx_cq->scqe_cnt[IB_WR_LOCAL_INV]));
+		break;
+	case HNS_ROCE_SQ_OPCODE_ATOMIC_COMP_AND_SWAP:
+		atomic_inc(&(rdfx_cq->scqe_cnt[IB_WR_ATOMIC_CMP_AND_SWP]));
+		break;
+	case HNS_ROCE_SQ_OPCODE_ATOMIC_FETCH_AND_ADD:
+		atomic_inc(&(rdfx_cq->scqe_cnt[IB_WR_ATOMIC_FETCH_AND_ADD]));
+		break;
+	case HNS_ROCE_SQ_OPCODE_ATOMIC_MASK_COMP_AND_SWAP:
+		atomic_inc(
+		&(rdfx_cq->scqe_cnt[IB_WR_MASKED_ATOMIC_CMP_AND_SWP]));
+		break;
+	case HNS_ROCE_SQ_OPCODE_ATOMIC_MASK_FETCH_AND_ADD:
+		atomic_inc(
+		&(rdfx_cq->scqe_cnt[IB_WR_MASKED_ATOMIC_FETCH_AND_ADD]));
+		break;
+	default:
+		break;
+	}
+}
+
+void rdfx_set_other_cqe_info(u32 opcode, struct rdfx_cq_info *rdfx_cq)
+{
+	switch (opcode) {
+	case HNS_ROCE_V2_OPCODE_RDMA_WRITE_IMM:
+		atomic_inc(&(rdfx_cq->rcqe_cnt[RECV_RDMA_WITH_IMM]));
+		break;
+	case HNS_ROCE_V2_OPCODE_SEND:
+		atomic_inc(&(rdfx_cq->rcqe_cnt[RECV_SEND]));
+		break;
+	case HNS_ROCE_V2_OPCODE_SEND_WITH_IMM:
+		atomic_inc(&(rdfx_cq->rcqe_cnt[RECV_SEND_WITH_IMM]));
+		break;
+	case HNS_ROCE_V2_OPCODE_SEND_WITH_INV:
+		atomic_inc(&(rdfx_cq->rcqe_cnt[RECV_SEND_WITH_INV]));
+		break;
+	default:
+		break;
+	}
+}
+
 void rdfx_set_cqe_info(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 		       struct hns_roce_v2_cqe *cqe)
 {
@@ -200,130 +311,18 @@ void rdfx_set_cqe_info(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 
 	status = roce_get_field(cqe->byte_4, V2_CQE_BYTE_4_STATUS_M,
 				V2_CQE_BYTE_4_STATUS_S);
-	if (status) {
-		switch (status & HNS_ROCE_V2_CQE_STATUS_MASK) {
-		case HNS_ROCE_CQE_V2_LOCAL_LENGTH_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_LOC_LEN_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_LOCAL_QP_OP_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_LOC_QP_OP_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_LOCAL_PROT_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_LOC_PROT_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_WR_FLUSH_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_WR_FLUSH_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_MW_BIND_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_MW_BIND_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_BAD_RESP_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_BAD_RESP_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_LOCAL_ACCESS_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_LOC_ACCESS_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_REMOTE_INVAL_REQ_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_REM_INV_REQ_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_REMOTE_ACCESS_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_REM_ACCESS_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_REMOTE_OP_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_REM_OP_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_TRANSPORT_RETRY_EXC_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_RETRY_EXC_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_RNR_RETRY_EXC_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_RNR_RETRY_EXC_ERR]));
-			break;
-		case HNS_ROCE_CQE_V2_REMOTE_ABORT_ERR:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_REM_ABORT_ERR]));
-			break;
-		default:
-			atomic_inc(&(rdfx_cq->st_cnt[IB_WC_GENERAL_ERR]));
-			break;
-		}
-	} else {
+	if (status)
+		rdfx_set_err_cqe_info(status, rdfx_cq);
+	else {
 		atomic_inc(&(rdfx_cq->st_cnt[IB_WC_SUCCESS]));
 
 		opcode = roce_get_field(cqe->byte_4, V2_CQE_BYTE_4_OPCODE_M,
 			V2_CQE_BYTE_4_OPCODE_S) & 0x1f;
 		is_send = !roce_get_bit(cqe->byte_4, V2_CQE_BYTE_4_S_R_S);
-		if (is_send) {
-			switch (opcode) {
-			case HNS_ROCE_SQ_OPCODE_SEND:
-				atomic_inc(&(rdfx_cq->scqe_cnt[IB_WR_SEND]));
-				break;
-			case HNS_ROCE_SQ_OPCODE_SEND_WITH_INV:
-				atomic_inc(
-				&(rdfx_cq->scqe_cnt[IB_WR_SEND_WITH_INV]));
-				break;
-			case HNS_ROCE_SQ_OPCODE_SEND_WITH_IMM:
-				atomic_inc(
-				&(rdfx_cq->scqe_cnt[IB_WR_SEND_WITH_IMM]));
-				break;
-			case HNS_ROCE_SQ_OPCODE_RDMA_READ:
-				atomic_inc(
-				&(rdfx_cq->scqe_cnt[IB_WR_RDMA_READ]));
-				break;
-			case HNS_ROCE_SQ_OPCODE_RDMA_WRITE:
-				atomic_inc(
-				&(rdfx_cq->scqe_cnt[IB_WR_RDMA_WRITE]));
-				break;
-			case HNS_ROCE_SQ_OPCODE_RDMA_WRITE_WITH_IMM:
-				atomic_inc(
-				&(rdfx_cq->scqe_cnt[
-				IB_WR_RDMA_WRITE_WITH_IMM]));
-				break;
-			case HNS_ROCE_SQ_OPCODE_LOCAL_INV:
-				atomic_inc(
-				&(rdfx_cq->scqe_cnt[IB_WR_LOCAL_INV]));
-				break;
-			case HNS_ROCE_SQ_OPCODE_ATOMIC_COMP_AND_SWAP:
-				atomic_inc(
-				&(rdfx_cq->scqe_cnt[IB_WR_ATOMIC_CMP_AND_SWP]));
-				break;
-			case HNS_ROCE_SQ_OPCODE_ATOMIC_FETCH_AND_ADD:
-				atomic_inc(
-				&(rdfx_cq->scqe_cnt[
-				IB_WR_ATOMIC_FETCH_AND_ADD]));
-				break;
-			case HNS_ROCE_SQ_OPCODE_ATOMIC_MASK_COMP_AND_SWAP:
-				atomic_inc(
-				&(rdfx_cq->scqe_cnt[
-				IB_WR_MASKED_ATOMIC_CMP_AND_SWP]));
-				break;
-			case HNS_ROCE_SQ_OPCODE_ATOMIC_MASK_FETCH_AND_ADD:
-				atomic_inc(
-				&(rdfx_cq->scqe_cnt[
-				IB_WR_MASKED_ATOMIC_FETCH_AND_ADD]));
-				break;
-			default:
-				break;
-			}
-		} else {
-			switch (opcode) {
-			case HNS_ROCE_V2_OPCODE_RDMA_WRITE_IMM:
-				atomic_inc(
-				&(rdfx_cq->rcqe_cnt[RECV_RDMA_WITH_IMM]));
-				break;
-			case HNS_ROCE_V2_OPCODE_SEND:
-				atomic_inc(&(rdfx_cq->rcqe_cnt[RECV_SEND]));
-				break;
-			case HNS_ROCE_V2_OPCODE_SEND_WITH_IMM:
-				atomic_inc(
-				&(rdfx_cq->rcqe_cnt[RECV_SEND_WITH_IMM]));
-				break;
-			case HNS_ROCE_V2_OPCODE_SEND_WITH_INV:
-				atomic_inc(
-				&(rdfx_cq->rcqe_cnt[RECV_SEND_WITH_INV]));
-				break;
-			default:
-				break;
-			}
-		}
+		if (is_send)
+			rdfx_set_send_cqe_info(opcode, rdfx_cq);
+		else
+			rdfx_set_other_cqe_info(opcode, rdfx_cq);
 	}
 }
 EXPORT_SYMBOL_GPL(rdfx_set_cqe_info);

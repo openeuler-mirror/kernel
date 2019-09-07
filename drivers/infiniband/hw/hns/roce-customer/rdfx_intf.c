@@ -213,7 +213,9 @@ const char *rdfx_func_name[RDFX_FUNC_MAX] = {
 	"reg_user_mr",
 	"rereg_mr",
 	"dereg_mr",
-	"port_immutbl"
+	"port_immutbl",
+	"reg_umm_mr",
+	"dereg_umm_mr",
 };
 EXPORT_SYMBOL(rdfx_func_name);
 

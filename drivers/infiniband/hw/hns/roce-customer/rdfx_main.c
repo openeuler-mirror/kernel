@@ -140,7 +140,7 @@ int str_to_ll(char *p_buf, unsigned long long *pll_val, unsigned int *num)
 		}
 		lng = (unsigned long long)convert_val;
 		arr[idx] = lng;
-		pr_info("arr[%d] = 0x%llx\n", idx, arr[idx]);
+		pr_info("arr[%u] = 0x%llx\n", idx, arr[idx]);
 		idx++;
 		if (idx >= SYSFS_MAX_PARA) {
 			pr_err("sub string num should not bigger than 16\n");
@@ -218,10 +218,14 @@ void *rdfx_buf_offset(struct dfx_buf *buf, int offset)
 
 	if ((bits_per_long_val == 64 && buf->page_shift == PAGE_SHIFT) ||
 	    buf->nbufs == 1)
-		return (char *)(buf->direct.buf) + offset;
+		return buf->direct.buf ?
+		       (void *)((char *)(buf->direct.buf) + offset) : NULL;
 	else
-		return (char *)(buf->page_list[offset >> buf->page_shift].buf) +
-		       (offset & (page_size - 1));
+		return (buf->page_list &&
+		       buf->page_list[offset >> buf->page_shift].buf) ?
+		       (void *)((char *)
+		       (buf->page_list[offset >> buf->page_shift].buf) +
+		       (offset & (page_size - 1))) : NULL;
 }
 
 static int rdfx_info_init(struct ib_device *ib_dev, int i)

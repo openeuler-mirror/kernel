@@ -3,12 +3,6 @@
 #ifndef __RDFX_HW_V2__
 #define __RDFX_HW_V2__
 
-/**
- * struct rdfx_hw_v1 {
- *	struct hns_roce_dev *hr_dev;
- * };
- */
-
 #define CNT_SNAP_PARAM_DATA_0_CNT_CLR_CE_S 0
 #define CNT_SNAP_PARAM_DATA_0_SNAP_EN_S 1
 

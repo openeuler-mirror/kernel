@@ -97,14 +97,14 @@ static int rdfx_wrreg(const char *p_buf, struct rdfx_info *rdfx)
 
 static int rdfx_v2_ooo_show(struct rdfx_info *rdfx)
 {
-	pr_info("***************************************\n");
+	pr_info("************** OOO INFO ***************\n");
 
 	return 0;
 }
 
 static int rdfx_v2_err_show(struct rdfx_info *rdfx)
 {
-	pr_info("***************************************\n");
+	pr_info("************** ERR INFO ***************\n");
 
 	return 0;
 }
@@ -340,10 +340,6 @@ static int rdfx_v2_cmd_show(struct rdfx_info *rdfx)
 	pr_info("EQDB EXEC CNT  : 0x%08x\n",
 	       resp_cnt->eq_doorbell_exe_cnt);
 	pr_info("        EMPTY  FULL   ERR");
-	/**
-	 * pr_info("EQDB  : %06x   %06x   %06x",
-	 *        roce_get_bit(resp_dfx->empty_info, shift));
-	 */
 	pr_info("***************************************\n");
 
 	return 0;
