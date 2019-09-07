@@ -39,42 +39,42 @@
 #define HRD_COMMON_ERR_NOT_ENOUGH_RES (int)(HRD_COMMON_ERR_BASE - 12)
 #define HRD_COMMON_ERR_RES_NOT_EXIST (int)(HRD_COMMON_ERR_BASE - 13)
 
-/* 16 bit nibble swap. example 0x1234 -> 0x2143  						 */
-#define HRD_NIBBLE_SWAP_16BIT(X) (((X&0xf) << 4) |	 \
-				((X&0xF0) >> 4) |	\
-				((X&0xF00) << 4) |   \
-				((X&0xF000) >> 4))
+/* 16 bit nibble swap. example 0x1234 -> 0x2143 */
+#define HRD_NIBBLE_SWAP_16BIT(X) ((((X)&0xf) << 4) |   \
+				(((X)&0xF0) >> 4) |  \
+				(((X)&0xF00) << 4) |  \
+				(((X)&0xF000) >> 4))
 
-/*32 bit nibble swap. example 0x12345678 -> 0x21436587			*/
-#define HRD_NIBBLE_SWAP_32BIT(X) (((X&0xF) << 4) |	   \
-					((X&0xF0) >> 4) |	  \
-					((X&0xF00) << 4) |	 \
-					((X&0xF000) >> 4) |	\
-					((X&0xF0000) << 4) |   \
-					((X&0xF00000) >> 4) |  \
-					((X&0xF000000) << 4) | \
-					((X&0xF0000000) >> 4))
+/* 32 bit nibble swap. example 0x12345678 -> 0x21436587 */
+#define HRD_NIBBLE_SWAP_32BIT(X) (((X&0xF) << 4) |  \
+					(((X)&0xF0) >> 4) |  \
+					(((X)&0xF00) << 4) |  \
+					(((X)&0xF000) >> 4) |  \
+					(((X)&0xF0000) << 4) |  \
+					(((X)&0xF00000) >> 4) |  \
+					(((X)&0xF000000) << 4) |  \
+					(((X)&0xF0000000) >> 4))
 
-/* 16 bit byte swap.  example 0x1234->0x3412							 */
+/* 16 bit byte swap.  example 0x1234->0x3412 */
 #define HRD_BYTE_SWAP_16BIT(X) ((((X)&0xFF)<<8) | (((X)&0xFF00)>>8))
 
-/* 32 bit byte swap. example 0x12345678->0x78563412					*/
-#define HRD_BYTE_SWAP_32BIT(X) ((((X)&0xFF)<<24) |					   \
-				(((X)&0xFF00)<<8) |					  \
-				(((X)&0xFF0000)>>8) |					\
+/* 32 bit byte swap. example 0x12345678->0x78563412 */
+#define HRD_BYTE_SWAP_32BIT(X) ((((X)&0xFF)<<24) |  \
+				(((X)&0xFF00)<<8) |  \
+				(((X)&0xFF0000)>>8) |   \
 				(((X)&0xFF000000)>>24))
 
-/* 64 bit byte swap.  example 0x11223344.55667788 -> 0x88776655.44332211  */
-#define HRD_BYTE_SWAP_64BIT(X) ((l64) ((((X)&0xFFULL)<<56) |			 \
-					  (((X)&0xFF00ULL)<<40) |		   \
-					  (((X)&0xFF0000ULL)<<24) |		 \
-					  (((X)&0xFF000000ULL)<<8) |		\
-					  (((X)&0xFF00000000ULL)>>8) |	 \
-					  (((X)&0xFF0000000000ULL)>>24) |   \
-					  (((X)&0xFF000000000000ULL)>>40) | \
+/* 64 bit byte swap.  example 0x11223344.55667788 -> 0x88776655.44332211 */
+#define HRD_BYTE_SWAP_64BIT(X) ((l64) ((((X)&0xFFULL)<<56) |  \
+					  (((X)&0xFF00ULL)<<40) |  \
+					  (((X)&0xFF0000ULL)<<24) |  \
+					  (((X)&0xFF000000ULL)<<8) |   \
+					  (((X)&0xFF00000000ULL)>>8) |   \
+					  (((X)&0xFF0000000000ULL)>>24) |  \
+					  (((X)&0xFF000000000000ULL)>>40) |  \
 					  (((X)&0xFF00000000000000ULL)>>56)))
 
-/*   -- Endianess macros.														*/
+/* -- Endianess macros. */
 #ifdef HRD_ENDNESS_BIGEND
 #define HRD_16BIT_LE(X) HRD_BYTE_SWAP_16BIT(X)
 #define HRD_32BIT_LE(X) HRD_BYTE_SWAP_32BIT(X)
@@ -95,16 +95,6 @@
 
 #ifndef NULL
 #define NULL ((VOID *)0)
-#endif
-
-typedef unsigned int BOOL;
-
-#ifndef FALSE
-#define FALSE ((BOOL)0)
-#endif
-
-#ifndef TRUE
-#define TRUE ((BOOL)1)
 #endif
 
 #define MTD_FLASH_MAP_DEBUG
