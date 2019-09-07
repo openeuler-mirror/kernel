@@ -12,8 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef _HS_LBC_PLTFM_H_
@@ -37,7 +35,7 @@
 
 #define LBC_CS_MAX_NUM (4)
 
-#define LBC_CS_MEM_SIZE_0	 (0)
+#define LBC_CS_MEM_SIZE_0	(0)
 #define LBC_CS_MEM_SIZE_64K (64 * 1024)
 #define LBC_CS_MEM_SIZE_128K (LBC_CS_MEM_SIZE_64K << 1)
 #define LBC_CS_MEM_SIZE_256K (LBC_CS_MEM_SIZE_128K << 1)
@@ -52,7 +50,7 @@
 #define LBC_CS_MEM_SIZE_128M (LBC_CS_MEM_SIZE_64M << 1)
 #define LBC_CS_MEM_SIZE_256M (LBC_CS_MEM_SIZE_128M << 1)
 
-#define LBC_CS_MEM_SIZE_REG_0	 (0)
+#define LBC_CS_MEM_SIZE_REG_0	(0)
 #define LBC_CS_MEM_SIZE_REG_64K (1)
 #define LBC_CS_MEM_SIZE_REG_128K (2)
 #define LBC_CS_MEM_SIZE_REG_256K (3)
@@ -87,11 +85,13 @@ typedef struct lbc_cs_ctrl {
 	volatile unsigned int reserved :  14;
 } LBC_CS_CTRL;
 
+#define LBC_REG_RSV_MAX_NUM 4
+#define LBC_REG_CRE_MAX_NUM 4
 typedef struct lbc_reg_region {
 	volatile unsigned int cs_base[LBC_CS_MAX_NUM];
-	volatile unsigned int cs_base_reserved[4];
+	volatile unsigned int cs_base_reserved[LBC_REG_RSV_MAX_NUM];
 	volatile LBC_CS_CTRL cs_ctrl[LBC_CS_MAX_NUM];
-	volatile LBC_CS_CTRL cs_ctrl_creserved[4];
+	volatile LBC_CS_CTRL cs_ctrl_creserved[LBC_REG_CRE_MAX_NUM];
 } LBC_REG_REGION;
 
 struct hisi_lbc_cs {
@@ -99,20 +99,20 @@ struct hisi_lbc_cs {
 	spinlock_t lock;
 	void __iomem *cs_base;
 	unsigned int size;
-	unsigned int width;	  /* width */
+	unsigned int width; /* width */
 	unsigned int shift; /* address shift */
 };
 
 struct hisi_lbc_dev {
 	unsigned char is_reg_remaped;
 	struct device *dev;
-	void __iomem *regs_base;	  /* localbus regs base addr*/
+	void __iomem *regs_base;	  /* localbus regs base addr */
 	struct hisi_lbc_cs cs[LBC_CS_MAX_NUM];
 };
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 16, 0)
 #define __ACCESS_ONCE(x) ({ \
-	 __maybe_unused typeof(x) __var = (__force typeof(x)) 0; \
+	__maybe_unused typeof(x) __var = (__force typeof(x)) 0; \
 	(volatile typeof(x) *)&(x); })
 #define ACCESS_ONCE(x) (*__ACCESS_ONCE(x))
 #endif

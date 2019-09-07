@@ -12,8 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http:
  */
 
 #include <linux/module.h>
@@ -31,27 +29,27 @@
 
 #include "hs_lbc_pltfm.h"
 
-#define	LBC_DRIVER_VERSION	"1.8.3.0"
+#define LBC_DRIVER_VERSION  "1.8.15.0"
 
-struct hisi_lbc_dev lbc_dev = {0};
+struct hisi_lbc_dev g_lbc_dev = {0};
 
 static void lbc_set_cs_base_addr(unsigned int index, unsigned int cs_base_addr)
 {
-	LBC_REG_REGION *lbc_reg = (LBC_REG_REGION *)(ACCESS_ONCE(lbc_dev.regs_base));
+	LBC_REG_REGION *lbc_reg = (LBC_REG_REGION *)(ACCESS_ONCE(g_lbc_dev.regs_base));
 
 	lbc_reg->cs_base[index] = cs_base_addr;
 }
 
 static void lbc_set_cs_data_width(unsigned int index, unsigned int width)
 {
-	LBC_REG_REGION *lbc_reg = (LBC_REG_REGION *)(ACCESS_ONCE(lbc_dev.regs_base));
+	LBC_REG_REGION *lbc_reg = (LBC_REG_REGION *)(ACCESS_ONCE(g_lbc_dev.regs_base));
 
 	lbc_reg->cs_ctrl[index].data_width = width;
 }
 
 static void lbc_set_cs_data_offset(unsigned int index, unsigned int offset)
 {
-	LBC_REG_REGION *lbc_reg = (LBC_REG_REGION *)(ACCESS_ONCE(lbc_dev.regs_base));
+	LBC_REG_REGION *lbc_reg = (LBC_REG_REGION *)(ACCESS_ONCE(g_lbc_dev.regs_base));
 
 	lbc_reg->cs_ctrl[index].addr_offset = offset;
 }
@@ -59,65 +57,51 @@ static void lbc_set_cs_data_offset(unsigned int index, unsigned int offset)
 static void lbc_set_cs_mem_size(unsigned int index, u64 mem_size)
 {
 	unsigned int size = 0;
-	LBC_REG_REGION *lbc_reg = (LBC_REG_REGION *)(ACCESS_ONCE(lbc_dev.regs_base));
+	LBC_REG_REGION *lbc_reg = (LBC_REG_REGION *)(ACCESS_ONCE(g_lbc_dev.regs_base));
 
 	switch (mem_size) {
 	case LBC_CS_MEM_SIZE_0:
 		size = LBC_CS_MEM_SIZE_REG_0;
 		break;
-
 	case LBC_CS_MEM_SIZE_64K:
 		size = LBC_CS_MEM_SIZE_REG_64K;
 		break;
-
 	case LBC_CS_MEM_SIZE_128K:
 		size = LBC_CS_MEM_SIZE_REG_128K;
 		break;
-
 	case LBC_CS_MEM_SIZE_256K:
 		size = LBC_CS_MEM_SIZE_REG_256K;
 		break;
-
 	case LBC_CS_MEM_SIZE_512K:
 		size = LBC_CS_MEM_SIZE_REG_512K;
 		break;
-
 	case LBC_CS_MEM_SIZE_1M:
 		size = LBC_CS_MEM_SIZE_REG_1M;
 		break;
-
 	case LBC_CS_MEM_SIZE_2M:
 		size = LBC_CS_MEM_SIZE_REG_2M;
 		break;
-
 	case LBC_CS_MEM_SIZE_4M:
 		size = LBC_CS_MEM_SIZE_REG_4M;
 		break;
-
 	case LBC_CS_MEM_SIZE_8M:
 		size = LBC_CS_MEM_SIZE_REG_8M;
 		break;
-
 	case LBC_CS_MEM_SIZE_16M:
 		size = LBC_CS_MEM_SIZE_REG_16M;
 		break;
-
 	case LBC_CS_MEM_SIZE_32M:
 		size = LBC_CS_MEM_SIZE_REG_32M;
 		break;
-
 	case LBC_CS_MEM_SIZE_64M:
 		size = LBC_CS_MEM_SIZE_REG_64M;
 		break;
-
 	case LBC_CS_MEM_SIZE_128M:
 		size = LBC_CS_MEM_SIZE_REG_128M;
 		break;
-
 	case LBC_CS_MEM_SIZE_256M:
 		size = LBC_CS_MEM_SIZE_REG_256M;
 		break;
-
 	default:
 		size = 0;
 	}
@@ -125,15 +109,14 @@ static void lbc_set_cs_mem_size(unsigned int index, u64 mem_size)
 	lbc_reg->cs_ctrl[index].mem_size = size;
 }
 
-static int
-hisi_lbc_para_check(unsigned int index, unsigned int offset, unsigned int type)
+static int hisi_lbc_para_check(unsigned int index, unsigned int offset, unsigned int type)
 {
 	/* cs index check */
 	if (index >= LBC_CS_MAX_NUM)
 		return -EINVAL;
 
 	/* cs offset check */
-	if (offset >= lbc_dev.cs[index].size)
+	if (offset >= g_lbc_dev.cs[index].size)
 		return -EINVAL;
 
 	if (type !=  LBC_RWDATA_WIDTH_8
@@ -145,21 +128,20 @@ hisi_lbc_para_check(unsigned int index, unsigned int offset, unsigned int type)
 	if ((type == LBC_RWDATA_WIDTH_16)
 		|| (type == LBC_RWDATA_WIDTH_32)) {
 
-		if (offset % (type * 2))
+		if (offset % (type * 0x2))
 			return -EINVAL;
 	}
 
 	return 0;
 }
 
-static unsigned int
-lbc_read(unsigned int index, unsigned int offset, unsigned int type)
+static unsigned int lbc_read(unsigned int index, unsigned int offset, unsigned int type)
 {
-	void __iomem *base_addr = ACCESS_ONCE(lbc_dev.cs[index].cs_base);
+	void __iomem *base_addr = ACCESS_ONCE(g_lbc_dev.cs[index].cs_base);
 	unsigned int value;
 	unsigned long flags;
 
-	spin_lock_irqsave(&lbc_dev.cs[index].lock, flags);
+	spin_lock_irqsave(&g_lbc_dev.cs[index].lock, flags);
 
 	if (type == LBC_RWDATA_WIDTH_8)
 		value = readb(base_addr + offset) & 0xff;
@@ -168,16 +150,15 @@ lbc_read(unsigned int index, unsigned int offset, unsigned int type)
 	else
 		value = readl(base_addr + offset) & 0xffffffff;
 
-	spin_unlock_irqrestore(&lbc_dev.cs[index].lock, flags);
+	spin_unlock_irqrestore(&g_lbc_dev.cs[index].lock, flags);
 
 	return value;
 
 }
 
-static unsigned int
-lbc_read_unlock(unsigned int index, unsigned int offset, unsigned int type)
+static unsigned int lbc_read_unlock(unsigned int index, unsigned int offset, unsigned int type)
 {
-	void __iomem *base_addr = ACCESS_ONCE(lbc_dev.cs[index].cs_base);
+	void __iomem *base_addr = ACCESS_ONCE(g_lbc_dev.cs[index].cs_base);
 	unsigned int value;
 
 	if (type == LBC_RWDATA_WIDTH_8)
@@ -191,13 +172,12 @@ lbc_read_unlock(unsigned int index, unsigned int offset, unsigned int type)
 
 }
 
-static int
-lbc_write(unsigned int index, unsigned int offset, unsigned int type, unsigned int data)
+static int lbc_write(unsigned int index, unsigned int offset, unsigned int type, unsigned int data)
 {
-	void __iomem *base_addr = ACCESS_ONCE(lbc_dev.cs[index].cs_base);
+	void __iomem *base_addr = ACCESS_ONCE(g_lbc_dev.cs[index].cs_base);
 	unsigned long flags;
 
-	spin_lock_irqsave(&lbc_dev.cs[index].lock, flags);
+	spin_lock_irqsave(&g_lbc_dev.cs[index].lock, flags);
 
 	if (type == LBC_RWDATA_WIDTH_8)
 		writeb(data & 0xff, base_addr + offset);
@@ -206,23 +186,21 @@ lbc_write(unsigned int index, unsigned int offset, unsigned int type, unsigned i
 	else
 		writel(data & 0xffffffff, base_addr + offset);
 
-	spin_unlock_irqrestore(&lbc_dev.cs[index].lock, flags);
+	spin_unlock_irqrestore(&g_lbc_dev.cs[index].lock, flags);
 
 	return 0;
 }
 
-static int
-lbc_write_unlock(unsigned int index, unsigned int offset, unsigned int type, unsigned int data)
+static int lbc_write_unlock(unsigned int index, unsigned int offset, unsigned int type, unsigned int data)
 {
-	void __iomem *base_addr = ACCESS_ONCE(lbc_dev.cs[index].cs_base);
+	void __iomem *base_addr = ACCESS_ONCE(g_lbc_dev.cs[index].cs_base);
 
-	if (type == LBC_RWDATA_WIDTH_8) {
+	if (type == LBC_RWDATA_WIDTH_8)
 		writeb(data & 0xff, base_addr + offset);
-	} else if (type == LBC_RWDATA_WIDTH_16) {
+	else if (type == LBC_RWDATA_WIDTH_16)
 		writew(data & 0xffff, base_addr + offset);
-	} else {
+	else
 		writel(data & 0xffffffff, base_addr + offset);
-	}
 
 	return 0;
 }
@@ -331,59 +309,59 @@ static int hisi_lbc_cs_init(struct platform_device *pdev)
 	unsigned int shift;
 	struct resource *cs_base = NULL;
 
-	if (has_acpi_companion(lbc_dev.dev)) {
+	if (has_acpi_companion(g_lbc_dev.dev)) {
 		/* get cs index */
 		index = 0;
-		(void)device_property_read_u32(lbc_dev.dev, "index", &index);
+		(void)device_property_read_u32(g_lbc_dev.dev, "index", &index);
 
 		if (index >= LBC_CS_MAX_NUM) {
-			dev_err(lbc_dev.dev, "Cs index error\n");
+			dev_err(g_lbc_dev.dev, "Cs index error\n");
 			return -EINVAL;
 		}
 
 		/* lock init */
-		spin_lock_init(&lbc_dev.cs[index].lock);
+		spin_lock_init(&g_lbc_dev.cs[index].lock);
 
 		/* get cs base address */
 		cs_base = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 
 		if (!cs_base) {
-			dev_err(lbc_dev.dev, "Can not find this cs base resource\n");
+			dev_err(g_lbc_dev.dev, "Can not find this cs base resource\n");
 			return -ENOENT;
 		}
 
-		lbc_dev.cs[index].cs_base = devm_ioremap_resource(&pdev->dev, cs_base);
+		g_lbc_dev.cs[index].cs_base = devm_ioremap_resource(&pdev->dev, cs_base);
 
-		if (IS_ERR(lbc_dev.cs[index].cs_base))
-			return (int)PTR_ERR(lbc_dev.cs[index].cs_base);
+		if (IS_ERR(g_lbc_dev.cs[index].cs_base))
+			return (int)PTR_ERR(g_lbc_dev.cs[index].cs_base);
 
-		lbc_dev.cs[index].size = (unsigned int)resource_size(cs_base);
+		g_lbc_dev.cs[index].size = (unsigned int)resource_size(cs_base);
 
 		lbc_set_cs_base_addr(index, (unsigned int)cs_base->start);
 		lbc_set_cs_mem_size(index, resource_size(cs_base));
 
 		/* get cs width */
 		width = 0;
-		(void)device_property_read_u32(lbc_dev.dev, "width", &width);
+		(void)device_property_read_u32(g_lbc_dev.dev, "width", &width);
 
 		if (width > LBC_CS_WIDTH_32) {
-			dev_err(lbc_dev.dev, "Cs width error\n");
+			dev_err(g_lbc_dev.dev, "Cs width error\n");
 			return -EINVAL;
 		}
 
-		lbc_dev.cs[index].width = width;
+		g_lbc_dev.cs[index].width = width;
 		lbc_set_cs_data_width(index, width);
 
 		/* get cs address offset */
 		shift = 0;
-		(void)device_property_read_u32(lbc_dev.dev, "shift", &shift);
+		(void)device_property_read_u32(g_lbc_dev.dev, "shift", &shift);
 
 		if (shift > LBC_CS_ADDR_SHIFT_2) {
-			dev_err(lbc_dev.dev, "Cs address shift error\n");
+			dev_err(g_lbc_dev.dev, "Cs address shift error\n");
 			return -EINVAL;
 		}
 
-		lbc_dev.cs[index].shift = shift;
+		g_lbc_dev.cs[index].shift = shift;
 
 		lbc_set_cs_data_offset(index, shift);
 
@@ -397,27 +375,27 @@ static int hisi_lbc_probe(struct platform_device *pdev)
 	int ret;
 	struct resource *regs_base = NULL;
 
-	dev_info(&pdev->dev, "hisi_lbc_probe prob\n");
+	dev_info(&pdev->dev, "hisi lbc probe\n");
 
 	if ((!pdev->dev.of_node) && (!ACPI_COMPANION(&pdev->dev))) {
 		dev_err(&pdev->dev, "Device OF-Node and ACPI-Node is NULL\n");
 		return -EFAULT;
 	}
 
-	lbc_dev.dev = &pdev->dev;
+	g_lbc_dev.dev = &pdev->dev;
 
 	/* get resource num */
 	regs_base = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
-	if (!lbc_dev.is_reg_remaped) {
+	if (!g_lbc_dev.is_reg_remaped) {
 
-		lbc_dev.regs_base = devm_ioremap_resource(&pdev->dev, regs_base);
-		lbc_dev.is_reg_remaped = 1;
+		g_lbc_dev.regs_base = devm_ioremap_resource(&pdev->dev, regs_base);
+		g_lbc_dev.is_reg_remaped = 1;
 	}
 
-	if (IS_ERR(lbc_dev.regs_base)) {
+	if (IS_ERR(g_lbc_dev.regs_base)) {
 		dev_err(&pdev->dev, "ERROR: regbase\n");
-		return (int)PTR_ERR(lbc_dev.regs_base);
+		return (int)PTR_ERR(g_lbc_dev.regs_base);
 	}
 
 	/* localbus cs init */
@@ -427,8 +405,8 @@ static int hisi_lbc_probe(struct platform_device *pdev)
 		return -1;
 	}
 
-	platform_set_drvdata(pdev, &lbc_dev);
-	dev_info(&pdev->dev, "hisi_lbc_probe prob ok\n");
+	platform_set_drvdata(pdev, &g_lbc_dev);
+	dev_info(&pdev->dev, "hisi lbc probe prob ok\n");
 	return 0;
 }
 
@@ -437,30 +415,30 @@ static int hisi_lbc_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id hisi_lbc_pltfm_match[] = {
+static const struct of_device_id g_hisi_lbc_pltfm_match[] = {
 	{
-		.compatible = "hisilicon, hi1610_lbc",
+		.compatible = "hisilicon, hi1620_lbc",
 	},
 	{},
 };
 
 #ifdef CONFIG_ACPI
-static const struct acpi_device_id hisi_lbc_acpi_match[] = {
+static const struct acpi_device_id g_hisi_lbc_acpi_match[] = {
 	{ "HISI0C01", 0 },
 	{ }
 };
-MODULE_DEVICE_TABLE(acpi, hisi_lbc_acpi_match);
+MODULE_DEVICE_TABLE(acpi, g_hisi_lbc_acpi_match);
 #endif
 
-static struct platform_driver hisi_lbc_driver = {
+static struct platform_driver g_hisi_lbc_driver = {
 	.probe = hisi_lbc_probe,
 	.remove = hisi_lbc_remove,
 	.driver = {
 		.name = "hisi-lbc",
 		.owner = THIS_MODULE,
-		.of_match_table = hisi_lbc_pltfm_match,
+		.of_match_table = g_hisi_lbc_pltfm_match,
 #ifdef CONFIG_ACPI
-		.acpi_match_table = ACPI_PTR(hisi_lbc_acpi_match),
+		.acpi_match_table = ACPI_PTR(g_hisi_lbc_acpi_match),
 #endif
 	},
 
@@ -468,18 +446,18 @@ static struct platform_driver hisi_lbc_driver = {
 
 static int __init hisi_lbc_init_driver(void)
 {
-	return platform_driver_register((struct platform_driver *)&hisi_lbc_driver);
+	return platform_driver_register((struct platform_driver *)&g_hisi_lbc_driver);
 }
 
 static void __exit hisi_lbc_exit_driver(void)
 {
-	platform_driver_unregister((struct platform_driver *)&hisi_lbc_driver);
+	platform_driver_unregister((struct platform_driver *)&g_hisi_lbc_driver);
 }
 
 module_init(hisi_lbc_init_driver);
 module_exit(hisi_lbc_exit_driver);
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Huawei Tech. Co., Ltd.");
 MODULE_VERSION(LBC_DRIVER_VERSION);
 MODULE_DESCRIPTION("LBC driver for linux");
