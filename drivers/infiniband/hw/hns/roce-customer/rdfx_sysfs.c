@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0 OR Linux-OpenIB
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/kobject.h>
+#include <asm/cacheflush.h>
+#include <linux/delay.h>
 #include <linux/device.h>
-#include <linux/slab.h>
-#include <linux/string.h>
 #include <linux/fs.h>
 #include <linux/init.h>
-#include <linux/time.h>
-#include <linux/delay.h>
+#include <linux/kernel.h>
+#include <linux/kobject.h>
 #include <linux/list.h>
-#include <linux/delay.h>
-#include <asm/cacheflush.h>
+#include <linux/module.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/time.h>
 #include <linux/uaccess.h>
 #include <rdma/ib_verbs.h>
 
-#include "rdfx_main.h"
 #include "rdfx_common.h"
+#include "rdfx_main.h"
 
 static struct kobject rdfx_common_kobj;
 
@@ -47,7 +46,7 @@ static int rdfx_pd_store(const char *p_buf)
 	parg_getopt(buf, "d:", dev_name);
 	rdfx = rdfx_find_rdfx_info(dev_name);
 	if (!rdfx) {
-		pr_err("cann't find dev of %s\n", dev_name);
+		pr_err("pd: can't find device of %s\n", dev_name);
 		return -EINVAL;
 	}
 
@@ -463,7 +462,7 @@ static int rdfx_cq_store(const char *p_buf)
 	parg_getopt(buf, "d:", dev_name);
 	rdfx = rdfx_find_rdfx_info(dev_name);
 	if (!rdfx) {
-		pr_err("cann't find dev of %s\n", dev_name);
+		pr_err("cq: can't find device of %s\n", dev_name);
 		return -EINVAL;
 	}
 
@@ -562,7 +561,7 @@ static int rdfx_mr_store(const char *p_buf)
 	parg_getopt(buf, "d:", dev_name);
 	rdfx = rdfx_find_rdfx_info(dev_name);
 	if (!rdfx) {
-		pr_err("cann't find dev of %s\n", dev_name);
+		pr_err("mr: can't find device of %s\n", dev_name);
 		return -EINVAL;
 	}
 
@@ -615,7 +614,7 @@ static int rdfx_eq_store(const char *p_buf)
 	parg_getopt(buf, "d:", dev_name);
 	rdfx = rdfx_find_rdfx_info(dev_name);
 	if (!rdfx) {
-		pr_err("cann't find dev of %s\n", dev_name);
+		pr_err("eq: can't find device of %s\n", dev_name);
 		return -EINVAL;
 	}
 
@@ -669,7 +668,7 @@ struct rdfx_common_sys_attr {
 	static struct rdfx_common_sys_attr g_rdfx_common_##file_name##_attr = {\
 		{\
 			.name = #file_name,\
-			.mode = 0644,\
+			.mode = 0640,\
 		},\
 		.pub_show  = func_show,\
 		.pub_store = func_store,\

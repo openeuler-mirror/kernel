@@ -20,7 +20,7 @@ hns-roce-objs := hns_roce_main.o hns_roce_cmd.o hns_roce_pd.o \
 	hns_roce_ah.o hns_roce_hem.o hns_roce_mr.o hns_roce_qp.o \
 	hns_roce_sysfs.o \
 	hns_roce_cq.o hns_roce_alloc.o hns_roce_db.o hns_roce_srq.o hns_roce_restrack.o
-hns-roce-$(CONFIG_INFINIBAND_HNS_TEST) += roce-customer/rdfx_intf.o roce-customer/hns_roce_test.o
+hns-roce-$(CONFIG_INFINIBAND_HNS_TEST) += roce-customer/rdfx_intf.o roce-customer/rdfx_entry.o roce-customer/hns_roce_test.o
 obj-$(CONFIG_INFINIBAND_HNS_HIP06) += hns-roce-hw-v1.o
 hns-roce-hw-v1-objs := hns_roce_hw_v1.o
 obj-$(CONFIG_INFINIBAND_HNS_HIP08) += hns-roce-hw-v2.o
