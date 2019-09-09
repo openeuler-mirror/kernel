@@ -2536,7 +2536,7 @@ err_tpq_init_failed:
 	hns_roce_free_link_table(hr_dev, &priv->tsq);
 
 err_tsq_init_failed:
-	free_page(hr_dev->reset_page);
+	free_page((unsigned long)hr_dev->reset_page);
 
 	return ret;
 }
@@ -2550,7 +2550,7 @@ static void hns_roce_v2_exit(struct hns_roce_dev *hr_dev)
 
 	hns_roce_free_link_table(hr_dev, &priv->tpq);
 	hns_roce_free_link_table(hr_dev, &priv->tsq);
-	free_page(hr_dev->reset_page);
+	free_page((unsigned long)hr_dev->reset_page);
 }
 
 static int hns_roce_query_mbox_status(struct hns_roce_dev *hr_dev)

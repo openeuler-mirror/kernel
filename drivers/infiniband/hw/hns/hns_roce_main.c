@@ -660,8 +660,8 @@ static int hns_roce_mmap(struct ib_ucontext *context,
 
 		if (hr_dev->reset_page)
 			if (remap_pfn_range(vma, vma->vm_start,
-					       virt_to_pfn(hr_dev->reset_page),
-					       PAGE_SIZE, vma->vm_page_prot)) {
+				  page_to_pfn(virt_to_page(hr_dev->reset_page)),
+				  PAGE_SIZE, vma->vm_page_prot)) {
 				dev_err(hr_dev->dev,
 					"mmap reset page failed.\n");
 				return -EAGAIN;
