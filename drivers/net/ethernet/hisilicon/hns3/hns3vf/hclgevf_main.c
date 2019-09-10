@@ -2113,9 +2113,10 @@ static int hclgevf_config_gro(struct hclgevf_dev *hdev, bool en)
 static int hclgevf_rss_init_hw(struct hclgevf_dev *hdev)
 {
 	struct hclgevf_rss_cfg *rss_cfg = &hdev->rss_cfg;
-	int i, ret;
+	int ret;
+	u32 i;
 
-	rss_cfg->rss_size = hdev->rss_size_max;
+	rss_cfg->rss_size = hdev->nic.kinfo.rss_size;
 
 	if (hdev->pdev->revision >= HNAE3_REVISION_ID_21) {
 		rss_cfg->hash_algo = HCLGEVF_RSS_HASH_ALGO_SIMPLE;
@@ -2151,13 +2152,13 @@ static int hclgevf_rss_init_hw(struct hclgevf_dev *hdev)
 
 	/* Initialize RSS indirect table */
 	for (i = 0; i < HCLGEVF_RSS_IND_TBL_SIZE; i++)
-		rss_cfg->rss_indirection_tbl[i] = i % hdev->rss_size_max;
+		rss_cfg->rss_indirection_tbl[i] = i % rss_cfg->rss_size;
 
 	ret = hclgevf_set_rss_indir_table(hdev);
 	if (ret)
 		return ret;
 
-	return hclgevf_set_rss_tc_mode(hdev, hdev->rss_size_max);
+	return hclgevf_set_rss_tc_mode(hdev, rss_cfg->rss_size);
 }
 
 static int hclgevf_init_vlan_config(struct hclgevf_dev *hdev)
