@@ -3933,7 +3933,6 @@ static void hclge_misc_err_recovery(struct hclge_dev *hdev)
 				ae_dev->ops->reset_event(hdev->pdev, NULL);
 	}
 
-	clear_bit(HNAE3_UNKNOWN_RESET, &hdev->reset_request);
 	hclge_enable_vector(&hdev->misc_vector, true);
 }
 
@@ -3944,7 +3943,7 @@ static void hclge_reset_service_task(struct work_struct *work)
 
 	clear_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state);
 
-	if (test_bit(HNAE3_UNKNOWN_RESET, &hdev->reset_request)) {
+	if (test_and_clear_bit(HNAE3_UNKNOWN_RESET, &hdev->reset_request)) {
 		hclge_misc_err_recovery(hdev);
 		return;
 	}
