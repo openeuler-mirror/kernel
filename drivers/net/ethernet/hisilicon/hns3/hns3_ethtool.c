@@ -145,6 +145,7 @@ static int hns3_lp_down(struct net_device *ndev, enum hnae3_loop loop_mode)
 static void hns3_lp_setup_skb(struct sk_buff *skb)
 {
 #define	HNS3_NIC_LB_DST_MAC_ADDR	0x1f
+
 	struct net_device *ndev = skb->dev;
 	struct hnae3_handle *handle;
 	unsigned char *packet;
@@ -674,6 +675,7 @@ static int hns3_get_link_ksettings(struct net_device *netdev,
 			cmd->base.port = PORT_DA;
 		else
 			cmd->base.port = PORT_FIBRE;
+
 		hns3_get_ksettings(h, cmd);
 		break;
 	case HNAE3_MEDIA_TYPE_BACKPLANE:

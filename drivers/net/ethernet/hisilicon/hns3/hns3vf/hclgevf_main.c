@@ -557,6 +557,7 @@ static int hclgevf_set_rss_algo_key(struct hclgevf_dev *hdev,
 
 	key_counts = HCLGEVF_RSS_KEY_SIZE;
 	req = (struct hclgevf_rss_config_cmd *)desc.data;
+
 	while (key_counts) {
 		hclgevf_cmd_setup_basic_desc(&desc,
 					     HCLGEVF_OPC_RSS_GENERIC_CONFIG,
@@ -1560,7 +1561,7 @@ static int hclgevf_reset_prepare_wait(struct hclgevf_dev *hdev)
 	}
 
 	set_bit(HCLGEVF_STATE_CMD_DISABLE, &hdev->state);
-	/* imform hardware that preparatory work is done */
+	/* inform hardware that preparatory work is done */
 	msleep(HCLGEVF_RESET_SYNC_TIME);
 	hclgevf_reset_handshake(hdev, true);
 	dev_info(&hdev->pdev->dev, "prepare reset(%d) wait done, ret:%d\n",
@@ -1645,7 +1646,6 @@ static int hclgevf_reset(struct hclgevf_dev *hdev)
 		dev_err(&hdev->pdev->dev,
 			"VF failed(=%d) to fetch H/W reset completion status\n",
 			ret);
-
 		goto err_reset;
 	}
 
@@ -1826,6 +1826,7 @@ static void hclgevf_deferred_task_schedule(struct hclgevf_dev *hdev)
 static void hclgevf_reset_service_task(struct work_struct *work)
 {
 #define	HCLGEVF_MAX_RESET_ATTEMPTS_CNT	3
+
 	struct hclgevf_dev *hdev =
 		container_of(work, struct hclgevf_dev, rst_service_task);
 	int ret;
@@ -2060,7 +2061,7 @@ static int hclgevf_configure(struct hclgevf_dev *hdev)
 {
 	int ret;
 
-	/* get current port base vlan state from PF */
+	/* get current port based vlan state from PF */
 	ret = hclgevf_get_port_base_vlan_filter_state(hdev);
 	if (ret)
 		return ret;
@@ -3092,6 +3093,7 @@ static void hclgevf_get_regs(struct hnae3_handle *handle, u32 *version,
 
 	*version = hdev->fw_version;
 
+	/* fetching per-VF registers values from VF PCIe register space */
 	reg_um = sizeof(cmdq_reg_addr_list) / sizeof(u32);
 	separator_num = MAX_SEPARATE_NUM - reg_um % REG_NUM_PER_LINE;
 	for (i = 0; i < reg_um; i++)
@@ -3138,7 +3140,7 @@ void hclgevf_update_port_base_vlan_info(struct hclgevf_dev *hdev, u16 state,
 	hclgevf_notify_client(hdev, HNAE3_DOWN_CLIENT);
 	rtnl_unlock();
 
-	// send msg to pf and wait update port base vlan info
+	/* send msg to PF and wait update port based vlan info */
 	hclgevf_send_mbx_msg(hdev, HCLGE_MBX_SET_VLAN,
 			     HCLGE_MBX_PORT_BASE_VLAN_CFG,
 			     port_base_vlan_info, data_size,

@@ -248,6 +248,7 @@ static void hns3_dbg_help(struct hnae3_handle *h)
 
 	if (!hns3_is_phys_func(h->pdev))
 		return;
+
 	dev_info(&h->pdev->dev, "dump fd tcam\n");
 	dev_info(&h->pdev->dev, "dump tc\n");
 	dev_info(&h->pdev->dev, "dump tm map <q_num>\n");

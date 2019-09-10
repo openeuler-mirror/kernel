@@ -96,7 +96,6 @@ static irqreturn_t hns3_irq_handle(int irq, void *vector)
 	return IRQ_HANDLED;
 }
 
-
 static void hns3_nic_uninit_irq(struct hns3_nic_priv *priv)
 {
 	struct hns3_enet_tqp_vector *tqp_vectors;
@@ -845,7 +844,7 @@ static void hns3_set_outer_l2l3l4(struct sk_buff *skb, u8 ol4_proto,
 	hns3_set_field(*ol_type_vlan_len_msec, HNS3_TXD_L3LEN_S, l3_len >> 2);
 
 	il2_hdr = skb_inner_mac_header(skb);
-	/* compute OL4 header size, defined in 4 Bytes. */
+	/* compute OL4 header size, defined in 4 Bytes */
 	l4_len = il2_hdr - l4.hdr;
 	hns3_set_field(*ol_type_vlan_len_msec, HNS3_TXD_L4LEN_S, l4_len >> 2);
 
@@ -1322,7 +1321,6 @@ static int hns3_nic_maybe_stop_tx(struct hns3_enet_ring *ring,
 	unsigned int bd_num;
 
 	bd_num = hns3_tx_bd_num(skb, bd_size);
-
 	if (unlikely(bd_num > HNS3_MAX_NON_TSO_BD_NUM)) {
 		struct sk_buff *new_skb;
 
@@ -2667,9 +2665,9 @@ static void hns3_nic_reuse_page(struct sk_buff *skb, int i,
 	skb_add_rx_frag(skb, i, desc_cb->priv, desc_cb->page_offset + pull_len,
 			size - pull_len, truesize);
 
-	 /* Avoid re-using remote pages, or the stack is still using the page
-	  * when page buffer has wrap back, flag default unreuse
-	  */
+	/* Avoid re-using remote pages, or the stack is still using the page
+	 * when page_offset rollback to zero, flag default unreuse
+	 */
 	if (unlikely(page_to_nid(desc_cb->priv) != numa_mem_id()) ||
 	    (!desc_cb->page_offset && page_count(desc_cb->priv) > 1))
 		return;
@@ -2928,8 +2926,8 @@ static int hns3_add_frag(struct hns3_enet_ring *ring, struct hns3_desc *desc,
 	 * to next and the next is NULL
 	 */
 	if (pending) {
-		pre_bd  = (ring->next_to_clean - 1 + ring->desc_num) %
-		      ring->desc_num;
+		pre_bd = (ring->next_to_clean - 1 + ring->desc_num) %
+			 ring->desc_num;
 		pre_desc = &ring->desc[pre_bd];
 		bd_base_info = le32_to_cpu(pre_desc->rx.bd_base_info);
 	} else {
@@ -4154,7 +4152,7 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	ret = hns3_client_start(handle);
 	if (ret) {
 		dev_err(priv->dev, "hns3_client_start fail! ret=%d\n", ret);
-			goto out_client_start;
+		goto out_client_start;
 	}
 
 	hns3_dcbnl_setup(handle);
@@ -4304,11 +4302,12 @@ static void hns3_remove_hw_addr(struct net_device *netdev)
 	hns3_nic_uc_unsync(netdev, netdev->dev_addr);
 
 	netif_addr_lock_bh(netdev);
+	/* go through and unsync uc_addr entries to the device */
 	list = &netdev->uc;
 	list_for_each_entry_safe(ha, tmp, &list->list, list)
 		hns3_nic_uc_unsync(netdev, ha->addr);
 
-	/* go through and sync mc_addr entries to the device */
+	/* go through and unsync mc_addr entries to the device */
 	list = &netdev->mc;
 	list_for_each_entry_safe(ha, tmp, &list->list, list)
 		if (ha->refcount > 1)

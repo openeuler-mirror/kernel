@@ -234,7 +234,7 @@ enum hclge_evt_cause {
 #define HCLGE_MPF_ENBALE 1
 
 enum HCLGE_MAC_SPEED {
-	HCLGE_MAC_SPEED_UNKNOWN	= 0,		/* unknown */
+	HCLGE_MAC_SPEED_UNKNOWN = 0,		/* unknown */
 	HCLGE_MAC_SPEED_10M	= 10,		/* 10 Mbps */
 	HCLGE_MAC_SPEED_100M	= 100,		/* 100 Mbps */
 	HCLGE_MAC_SPEED_1G	= 1000,		/* 1000 Mbps   = 1 Gbps */
@@ -362,7 +362,7 @@ struct hclge_tm_info {
 	struct hclge_tc_info tc_info[HNAE3_MAX_TC];
 	enum hclge_fc_mode fc_mode;
 	u8 hw_pfc_map; /* Allow for packet drop or not on this TC */
-	u8 pfc_en;	/* Pfc enabled or not for user priority */
+	u8 pfc_en;	/* PFC enabled or not for user priority */
 };
 
 struct hclge_comm_stats_str {
@@ -547,7 +547,7 @@ enum HCLGE_FD_META_DATA {
 
 struct key_info {
 	u8 key_type;
-	u8 key_length;	/* use bit as unit */
+	u8 key_length; /* use bit as unit */
 };
 
 static const struct key_info meta_data_key_info[] = {
@@ -713,7 +713,7 @@ struct hclge_rst_stats {
 	u32 core_rst_cnt;	/* the number of CORE reset */
 	u32 global_rst_cnt;	/* the number of GLOBAL */
 	u32 imp_rst_cnt;	/* the number of IMP reset */
-	u32 reset_cnt;		/* the number of reset has been done */
+	u32 reset_cnt;		/* the number of reset */
 	u32 reset_fail_cnt;	/* the number of reset fail */
 };
 
@@ -858,7 +858,7 @@ struct hclge_dev {
 
 	struct hclge_fd_cfg fd_cfg;
 	struct hlist_head fd_rule_list;
-	spinlock_t fd_rule_lock; /* protec fd_rule_list */
+	spinlock_t fd_rule_lock; /* protect fd_rule_list and fd_bmap */
 	u16 hclge_fd_rule_num;
 	u16 fd_arfs_expire_timer;
 	unsigned long fd_bmap[BITS_TO_LONGS(MAX_FD_FILTER_NUM)];
@@ -933,7 +933,7 @@ struct hclge_vf_vlan_cfg {
 #pragma pack()
 
 struct hclge_vlan_info {
-	u16 vlan_proto; /* sofar support 802.1Q only */
+	u16 vlan_proto; /* so far support 802.1Q only */
 	u16 qos;
 	u16 vlan_tag;
 };

@@ -107,7 +107,7 @@
 	(HCLGEVF_FUN_RST_ING_BIT | HCLGEVF_GLOBAL_RST_ING_BIT | \
 	 HCLGEVF_CORE_RST_ING_BIT | HCLGEVF_IMP_RST_ING_BIT)
 
-#define HCLGEVF_VF_RST_ING			0x07008
+#define HCLGEVF_VF_RST_ING		0x07008
 #define HCLGEVF_VF_RST_ING_BIT		BIT(16)
 
 #define HCLGEVF_RSS_IND_TBL_SIZE		512
@@ -227,11 +227,11 @@ struct hclgevf_misc_vector {
 };
 
 struct hclgevf_rst_stats {
-	u32 rst_cnt;		/* the number of all reset */
+	u32 rst_cnt;			/* the number of reset */
 	u32 vf_func_rst_cnt;		/* the number of VF function reset */
 	u32 flr_rst_cnt;		/* the number of FLR */
 	u32 vf_rst_cnt;			/* the number of VF reset */
-	u32 rst_done_cnt;		/* the number of sucessful reset */
+	u32 rst_done_cnt;		/* the number of reset completed */
 	u32 rst_fail_cnt;		/* the number of VF reset fail */
 };
 
@@ -320,5 +320,4 @@ void hclgevf_reset_task_schedule(struct hclgevf_dev *hdev);
 void hclgevf_mbx_task_schedule(struct hclgevf_dev *hdev);
 void hclgevf_update_port_base_vlan_info(struct hclgevf_dev *hdev, u16 state,
 					u8 *port_base_vlan_info, u8 data_size);
-
 #endif

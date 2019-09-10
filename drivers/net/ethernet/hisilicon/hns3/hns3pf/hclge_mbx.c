@@ -358,6 +358,7 @@ int hclge_push_vf_port_base_vlan_info(struct hclge_vport *vport, u8 vfid,
 				      u16 vlan_proto)
 {
 #define MSG_DATA_SIZE	8
+
 	u8 msg_data[MSG_DATA_SIZE];
 
 	memcpy(&msg_data[0], &state, sizeof(u16));

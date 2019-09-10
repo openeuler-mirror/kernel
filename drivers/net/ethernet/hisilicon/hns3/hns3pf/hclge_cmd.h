@@ -100,7 +100,6 @@ enum hclge_opcode_type {
 	HCLGE_OPC_QUERY_REG_NUM		= 0x0040,
 	HCLGE_OPC_QUERY_32_BIT_REG	= 0x0041,
 	HCLGE_OPC_QUERY_64_BIT_REG	= 0x0042,
-
 	HCLGE_OPC_DFX_BD_NUM		= 0x0043,
 	HCLGE_OPC_DFX_BIOS_COMMON_REG	= 0x0044,
 	HCLGE_OPC_DFX_SSU_REG_0		= 0x0045,
@@ -115,7 +114,6 @@ enum hclge_opcode_type {
 	HCLGE_OPC_DFX_TQP_REG		= 0x004E,
 	HCLGE_OPC_DFX_SSU_REG_2		= 0x004F,
 	HCLGE_OPC_DFX_QUERY_CHIP_CAP	= 0x0050,
-
 
 	/* MAC command */
 	HCLGE_OPC_CONFIG_MAC_MODE	= 0x0301,
@@ -237,7 +235,7 @@ enum hclge_opcode_type {
 	HCLGE_OPC_VLAN_FILTER_PF_CFG	= 0x1101,
 	HCLGE_OPC_VLAN_FILTER_VF_CFG	= 0x1102,
 
-	/* Flow Director command */
+	/* Flow Director commands */
 	HCLGE_OPC_FD_MODE_CTRL		= 0x1200,
 	HCLGE_OPC_FD_GET_ALLOCATION	= 0x1201,
 	HCLGE_OPC_FD_KEY_CONFIG		= 0x1202,
@@ -286,7 +284,7 @@ enum hclge_opcode_type {
 	HCLGE_QUERY_RAS_INT_STS_BD_NUM	= 0x1510,
 	HCLGE_QUERY_CLEAR_MPF_RAS_INT	= 0x1511,
 	HCLGE_QUERY_CLEAR_PF_RAS_INT	= 0x1512,
-	HCLGE_QUERY_MSIX_INT_STS_BD_NUM		= 0x1513,
+	HCLGE_QUERY_MSIX_INT_STS_BD_NUM	= 0x1513,
 	HCLGE_QUERY_CLEAR_ALL_MPF_MSIX_INT	= 0x1514,
 	HCLGE_QUERY_CLEAR_ALL_PF_MSIX_INT	= 0x1515,
 	HCLGE_CONFIG_ROCEE_RAS_INT_EN	= 0x1580,
@@ -300,7 +298,7 @@ enum hclge_opcode_type {
 	HCLGE_PPP_CMD0_INT_CMD		= 0x2100,
 	HCLGE_PPP_CMD1_INT_CMD		= 0x2101,
 	HCLGE_PPP_MAC_VLAN_IDX_RD	= 0x2104,
-	HCLGE_MAC_ETHERTYPE_IDX_RD	= 0x2105,
+	HCLGE_MAC_ETHERTYPE_IDX_RD      = 0x2105,
 	HCLGE_NCSI_INT_EN		= 0x2401,
 };
 
@@ -494,6 +492,7 @@ struct hclge_pf_res_cmd {
 #define HCLGE_CFG_SPEED_ABILITY_M	GENMASK(7, 0)
 #define HCLGE_CFG_UMV_TBL_SPACE_S	16
 #define HCLGE_CFG_UMV_TBL_SPACE_M	GENMASK(31, 16)
+
 #define HCLGE_CFG_CMD_CNT		4
 
 struct hclge_cfg_param_cmd {
@@ -724,7 +723,7 @@ struct hclge_mac_mgr_tbl_entry_cmd {
 	u8      flags;
 	u8      resp_code;
 	__le16  vlan_tag;
-	u8	mac_addr[ETH_ALEN];
+	u8      mac_addr[ETH_ALEN];
 	__le16  rsv1;
 	__le16  ethter_type;
 	__le16  egress_port;
@@ -802,7 +801,6 @@ struct hclge_vlan_filter_ctrl_cmd {
 };
 
 #define	HCLGE_VLAN_OFFSET_BITMAP	20
-
 struct hclge_vlan_filter_pf_cfg_cmd {
 	u8 vlan_offset;
 	u8 vlan_cfg;

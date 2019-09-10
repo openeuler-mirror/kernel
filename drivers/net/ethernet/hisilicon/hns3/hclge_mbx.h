@@ -45,11 +45,11 @@ enum HCLGE_MBX_OPCODE {
 	HCLGE_MBX_GET_LINK_MODE,	/* (VF -> PF) get the link mode of pf */
 	HCLGE_MBX_PUSH_VLAN_INFO,	/* (PF -> VF) push port base vlan */
 	HCLGE_MBX_GET_MEDIA_TYPE,       /* (VF -> PF) get media type */
-	HCLGE_MBX_PUSH_PROMISC_INFO,    /* (PF -> VF) push vf promisc info */
-	HCLGE_MBX_VF_UNINIT,		/* (VF -> PF) vf is unintializing */
+	HCLGE_MBX_PUSH_PROMISC_INFO,	/* (PF -> VF) push vf promisc info */
+	HCLGE_MBX_VF_UNINIT,            /* (VF -> PF) vf is unintializing */
 
 	HCLGE_MBX_GET_VF_FLR_STATUS = 200, /* (M7 -> PF) get vf flr status */
-	HCLGE_MBX_PUSH_LINK_STATUS,     /* (M7 -> PF) get port link status */
+	HCLGE_MBX_PUSH_LINK_STATUS,	/* (M7 -> PF) get port link status */
 	HCLGE_MBX_NCSI_ERROR,		/* (M7 -> PF) receive a NCSI error */
 };
 
@@ -68,8 +68,8 @@ enum hclge_mbx_vlan_cfg_subcode {
 	HCLGE_MBX_VLAN_FILTER = 0,	/* set vlan filter */
 	HCLGE_MBX_VLAN_TX_OFF_CFG,	/* set tx side vlan offload */
 	HCLGE_MBX_VLAN_RX_OFF_CFG,	/* set rx side vlan offload */
-	HCLGE_MBX_PORT_BASE_VLAN_CFG,	/* set port base vlan configuration */
-	HCLGE_MBX_GET_PORT_BASE_VLAN_STATE,/* get port base vlan state */
+	HCLGE_MBX_PORT_BASE_VLAN_CFG,	/* set port based vlan configuration */
+	HCLGE_MBX_GET_PORT_BASE_VLAN_STATE,	/* get port based vlan state */
 };
 
 #define HCLGE_MBX_MAX_MSG_SIZE	16

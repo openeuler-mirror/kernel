@@ -419,7 +419,9 @@ static int hclge_mac_update_stats_complete(struct hclge_dev *hdev, u32 desc_num)
 	u16 i, k, n;
 	int ret;
 
-	/* This will be called in service task, can only use GFP_ATOMIC */
+	/* This may be called inside atomic sections,
+	 * so GFP_ATOMIC is more suitalbe here
+	 */
 	desc = kcalloc(desc_num, sizeof(struct hclge_desc), GFP_ATOMIC);
 	if (!desc)
 		return -ENOMEM;
@@ -481,7 +483,7 @@ static int hclge_mac_update_stats(struct hclge_dev *hdev)
 
 	ret = hclge_mac_query_reg_num(hdev, &desc_num);
 
-	/* if firmware's version is too old, then use old command */
+	/* The firmware supports the new statistics acquisition method */
 	if (!ret)
 		ret = hclge_mac_update_stats_complete(hdev, desc_num);
 	else if (ret == -EOPNOTSUPP)
@@ -2937,7 +2939,6 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 	msix_src_reg = hclge_read_dev(&hdev->hw,
 				      HCLGE_VECTOR0_PF_OTHER_INT_STS_REG);
 
-
 	/* Assumption: If by any chance reset and mailbox events are reported
 	 * together then we will only process reset event in this go and will
 	 * defer the processing of the mailbox events. Since, we would have not
@@ -3061,7 +3062,11 @@ static irqreturn_t hclge_misc_irq_handle(int irq, void *data)
 
 	hclge_clear_event_cause(hdev, event_cause, clearval);
 
-	/* enable interrupt if it is not cause by reset */
+	/* Enable interrupt if it is not cause by reset. And when
+	 * clearval equal to 0, it means interrupt status may be
+	 * cleared by hardware before driver reads status register.
+	 * For this case, vector0 interrupt also should be enabled.
+	 */
 	if (!clearval ||
 	    event_cause == HCLGE_VECTOR0_EVENT_MBX) {
 		hclge_enable_vector(&hdev->misc_vector, true);
@@ -3177,7 +3182,6 @@ int hclge_notify_client(struct hclge_dev *hdev,
 	return 0;
 }
 
-
 static int hclge_notify_roce_client(struct hclge_dev *hdev,
 				    enum hnae3_reset_notify_type type)
 {
@@ -3205,7 +3209,6 @@ static int hclge_notify_roce_client(struct hclge_dev *hdev,
 
 	return ret;
 }
-
 
 static int hclge_reset_wait(struct hclge_dev *hdev)
 {
@@ -3783,10 +3786,11 @@ static void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle)
 	 * In case of new request we reset the "reset level" to PF reset.
 	 * And if it is a repeat reset request of the most recent one then we
 	 * want to make sure we throttle the reset request. Therefore, we will
-	 * not allow it again before 12*HZ times.
+	 * not allow it again before 3*HZ times.
 	 */
 	if (!handle)
 		handle = &hdev->vport[0].nic;
+
 	if (time_before(jiffies, (hdev->last_reset_time +
 				  HCLGE_RESET_INTERVAL))) {
 		mod_timer(&hdev->reset_timer, jiffies + HCLGE_RESET_INTERVAL);
@@ -5461,6 +5465,7 @@ static bool hclge_fd_rule_exist(struct hclge_dev *hdev, u16 location)
 	return  rule && rule->location == location;
 }
 
+/* make sure being called after lock up with fd_rule_lock */
 static int hclge_fd_update_rule_list(struct hclge_dev *hdev,
 				     struct hclge_fd_rule *new_rule,
 				     u16 location,
@@ -5672,11 +5677,13 @@ static int hclge_fd_get_tuple(struct hclge_dev *hdev,
 	return 0;
 }
 
+/* make sure being called after lock up with fd_rule_lock */
 static int hclge_fd_config_rule(struct hclge_dev *hdev,
 				struct hclge_fd_rule *rule)
 {
 	int ret;
 
+	/* it will never fail here, so needn't to check return value */
 	hclge_fd_update_rule_list(hdev, rule, rule->location, true);
 
 	ret = hclge_config_action(hdev, HCLGE_FD_STAGE_1, rule);
@@ -6075,7 +6082,6 @@ static int hclge_get_fd_rule_info(struct hnae3_handle *handle,
 	case UDP_V4_FLOW:
 		hclge_fd_get_tcpip4_info(rule, &fs->h_u.tcp_ip4_spec,
 					 &fs->m_u.tcp_ip4_spec);
-
 		break;
 	case IP_USER_FLOW:
 		hclge_fd_get_ip4_info(rule, &fs->h_u.usr_ip4_spec,
@@ -6086,7 +6092,6 @@ static int hclge_get_fd_rule_info(struct hnae3_handle *handle,
 	case UDP_V6_FLOW:
 		hclge_fd_get_tcpip6_info(rule, &fs->h_u.tcp_ip6_spec,
 					 &fs->m_u.tcp_ip6_spec);
-
 		break;
 	case IPV6_USER_FLOW:
 		hclge_fd_get_ip6_info(rule, &fs->h_u.usr_ip6_spec,
@@ -6173,6 +6178,7 @@ static void hclge_fd_get_flow_tuples(const struct flow_keys *fkeys,
 	}
 }
 
+/* traverse all rules, check whether an existed rule has the same tuples */
 static struct hclge_fd_rule *
 hclge_fd_search_flow_keys(struct hclge_dev *hdev,
 			  const struct hclge_fd_rule_tuples *tuples)
@@ -6587,7 +6593,7 @@ static int hclge_cfg_serdes_loopback(struct hclge_dev *hdev, bool en,
 				"serdes loopback get, ret = %d\n", ret);
 			return ret;
 		}
-	} while (++i < HCLGE_SERDES_RETRY_NUM  &&
+	} while (++i < HCLGE_SERDES_RETRY_NUM &&
 		 !(req->result & HCLGE_CMD_SERDES_DONE_B));
 
 	if (!(req->result & HCLGE_CMD_SERDES_DONE_B)) {
@@ -6830,8 +6836,8 @@ static void hclge_ae_stop(struct hnae3_handle *handle)
 
 	hclge_clear_arfs_rules(handle);
 
-	/* before assertting function reset,
-	 * the driver should do the remaining task by itself
+	/* If it is not PF reset, the firmware will disable the MAC,
+	 * so it only need to stop phy here.
 	 */
 	if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) &&
 	    hdev->reset_type != HNAE3_FUNC_RESET) {
@@ -8012,6 +8018,7 @@ static int hclge_set_vlan_tx_offload_cfg(struct hclge_vport *vport)
 		dev_err(&hdev->pdev->dev,
 			"Send port txvlan cfg command fail, ret =%d\n",
 			status);
+
 	return status;
 }
 
@@ -8047,6 +8054,7 @@ static int hclge_set_vlan_rx_offload_cfg(struct hclge_vport *vport)
 		dev_err(&hdev->pdev->dev,
 			"Send port rxvlan cfg command fail, ret =%d\n",
 			status);
+
 	return status;
 }
 
@@ -8067,9 +8075,10 @@ static int hclge_vlan_offload_cfg(struct hclge_vport *vport,
 	}
 
 	vport->txvlan_cfg.accept_untag1 = true;
+
 	/* accept_tag2 and accept_untag2 are not supported on
-	 * pdev revision(0x20), new revision support them. The
-	 * This two fields can not configured by user.
+	 * pdev revision(0x20), new revision support them,
+	 * this two fields can not be configured by user.
 	 */
 	vport->txvlan_cfg.accept_tag2 = true;
 	vport->txvlan_cfg.accept_untag2 = true;
@@ -8473,7 +8482,7 @@ static int hclge_set_vf_vlan_filter(struct hnae3_handle *handle, int vfid,
 	vlan_info.qos = qos;
 	vlan_info.vlan_proto = ntohs(proto);
 
-	/* update port base vlan for pf */
+	/* update port based VLAN for PF */
 	if (!vfid) {
 		hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
 		ret = hclge_update_port_base_vlan_cfg(vport, state, &vlan_info);
@@ -9669,6 +9678,7 @@ static int hclge_reset_vport_spoofchk(struct hclge_dev *hdev)
 					       vport->spoofchk);
 		if (ret)
 			return ret;
+
 		vport++;
 	}
 	return 0;

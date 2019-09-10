@@ -615,7 +615,7 @@ struct hnae3_roce_private_info {
 	int base_vector;
 	int num_vectors;
 
-	/* The below attributes defined for RoCE client. hnae3 gives
+	/* The below attributes defined for RoCE client, hnae3 gives
 	 * initial values to them, and RoCE client can modify and use
 	 * them.
 	 */
@@ -654,7 +654,7 @@ struct hnae3_handle {
 	struct pci_dev *pdev;
 	void *priv;
 	struct hnae3_ae_algo *ae_algo;  /* the class who provides this handle */
-	u64 flags; /* Indicate the status for this handle */
+	u64 flags; /* Indicate the capabilities for this handle */
 
 	union {
 		struct net_device *netdev; /* first member */
@@ -668,7 +668,6 @@ struct hnae3_handle {
 	enum hnae3_port_base_vlan_state port_base_vlan_state;
 
 	u8 netdev_flags;
-
 	struct dentry *hnae3_dbgfs;
 
 	/* Network interface message level enabled bits */

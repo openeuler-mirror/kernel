@@ -96,7 +96,7 @@ enum hclgevf_opcode_type {
 	HCLGEVF_OPC_QUERY_RX_STATUS	= 0x0B13,
 	HCLGEVF_OPC_CFG_COM_TQP_QUEUE	= 0x0B20,
 	/* GRO command */
-	HCLGEVF_OPC_GRO_GENERIC_CONFIG	= 0x0C10,
+	HCLGEVF_OPC_GRO_GENERIC_CONFIG  = 0x0C10,
 	/* RSS cmd */
 	HCLGEVF_OPC_RSS_GENERIC_CONFIG	= 0x0D01,
 	HCLGEVF_OPC_RSS_INPUT_TUPLE     = 0x0D02,
@@ -146,10 +146,10 @@ struct hclgevf_query_version_cmd {
 	__le32 firmware_rsv[5];
 };
 
-#define HCLGEVF_MSIX_OFT_ROCEE_S	0
-#define HCLGEVF_MSIX_OFT_ROCEE_M	(0xffff << HCLGEVF_MSIX_OFT_ROCEE_S)
-#define HCLGEVF_VEC_NUM_S		0
-#define HCLGEVF_VEC_NUM_M		(0xff << HCLGEVF_VEC_NUM_S)
+#define HCLGEVF_MSIX_OFT_ROCEE_S       0
+#define HCLGEVF_MSIX_OFT_ROCEE_M       (0xffff << HCLGEVF_MSIX_OFT_ROCEE_S)
+#define HCLGEVF_VEC_NUM_S              0
+#define HCLGEVF_VEC_NUM_M              (0xff << HCLGEVF_VEC_NUM_S)
 struct hclgevf_query_res_cmd {
 	__le16 tqp_num;
 	__le16 reserved;
@@ -159,14 +159,14 @@ struct hclgevf_query_res_cmd {
 	__le16 rsv[7];
 };
 
-#define HCLGEVF_GRO_EN_B		0
+#define HCLGEVF_GRO_EN_B               0
 struct hclgevf_cfg_gro_status_cmd {
 	__le16 gro_en;
 	u8 rsv[22];
 };
 
-#define HCLGEVF_RSS_DEFAULT_OUTPORT_B  4
-#define HCLGEVF_RSS_HASH_KEY_OFFSET_B  4
+#define HCLGEVF_RSS_DEFAULT_OUTPORT_B	4
+#define HCLGEVF_RSS_HASH_KEY_OFFSET_B	4
 #define HCLGEVF_RSS_HASH_KEY_NUM	16
 struct hclgevf_rss_config_cmd {
 	u8 hash_config;

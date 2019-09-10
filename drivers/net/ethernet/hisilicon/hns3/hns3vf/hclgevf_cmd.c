@@ -325,10 +325,9 @@ int hclgevf_cmd_send(struct hclgevf_hw *hw, struct hclgevf_desc *desc, int num)
 
 	/* Clean the command send queue */
 	handle = hclgevf_cmd_csq_clean(hw);
-	if (handle != num) {
+	if (handle != num)
 		dev_warn(&hdev->pdev->dev,
 			 "cleaned %d, need to clean %d\n", handle, num);
-	}
 
 	spin_unlock_bh(&hw->cmq.csq.lock);
 

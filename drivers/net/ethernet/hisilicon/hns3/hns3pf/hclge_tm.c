@@ -650,6 +650,7 @@ static void hclge_tm_tc_info_init(struct hclge_dev *hdev)
 static void hclge_tm_pg_info_init(struct hclge_dev *hdev)
 {
 #define BW_PERCENT	100
+
 	u8 i;
 
 	for (i = 0; i < hdev->tm_info.num_pg; i++) {
@@ -1009,6 +1010,7 @@ static int hclge_tm_ets_tc_dwrr_cfg(struct hclge_dev *hdev)
 {
 #define DEFAULT_TC_WEIGHT	1
 #define DEFAULT_TC_OFFSET	14
+
 	struct hclge_ets_tc_weight_cmd *ets_weight;
 	struct hclge_desc desc;
 	unsigned int i;
@@ -1460,7 +1462,6 @@ int hclge_tm_init_hw(struct hclge_dev *hdev, bool init)
 
 int hclge_tm_schd_init(struct hclge_dev *hdev)
 {
-
 	/* fc_mode is HCLGE_FC_FULL on reset */
 	hdev->tm_info.fc_mode = HCLGE_FC_FULL;
 	hdev->fc_mode_last_time = hdev->tm_info.fc_mode;

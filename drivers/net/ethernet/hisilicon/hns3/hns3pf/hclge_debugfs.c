@@ -29,9 +29,9 @@ static int hclge_dbg_get_dfx_bd_num(struct hclge_dev *hdev, int offset)
 }
 
 static int hclge_dbg_cmd_send(struct hclge_dev *hdev,
-				       struct hclge_desc *desc_src,
-				       int index, int bd_num,
-				       enum hclge_opcode_type cmd)
+			      struct hclge_desc *desc_src,
+			      int index, int bd_num,
+			      enum hclge_opcode_type cmd)
 {
 	struct hclge_desc *desc = desc_src;
 	int ret, i;
@@ -90,7 +90,6 @@ static void hclge_dbg_dump_reg_common(struct hclge_dev *hdev,
 	}
 
 	entries_per_desc = ARRAY_SIZE(desc->data);
-
 	min_num = min(bd_num * entries_per_desc, reg_msg->msg_num);
 
 	desc = desc_src;
@@ -114,7 +113,7 @@ static void hclge_dbg_dump_dcb(struct hclge_dev *hdev, const char *cmd_buf)
 	struct hclge_dbg_bitmap_cmd *bitmap;
 	enum hclge_opcode_type cmd;
 	int rq_id, pri_id, qset_id;
-	int port_id, nq_id,  pg_id;
+	int port_id, nq_id, pg_id;
 	struct hclge_desc desc[2];
 
 	int cnt, ret;
@@ -123,7 +122,7 @@ static void hclge_dbg_dump_dcb(struct hclge_dev *hdev, const char *cmd_buf)
 		     &port_id, &pri_id, &pg_id, &rq_id, &nq_id, &qset_id);
 	if (cnt != 6) {
 		dev_err(&hdev->pdev->dev,
-			 "dump dcb: bad command parameter, cnt=%d\n", cnt);
+			"dump dcb: bad command parameter, cnt=%d\n", cnt);
 		return;
 	}
 
@@ -236,7 +235,6 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_ssu_reg_0);
 		reg_msg.offset = HCLGE_DBG_DFX_SSU_0_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_SSU_REG_0;
-
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_ssu_reg_0,
 					  &cmd_buf[sizeof("ssu")],
 					  &reg_msg);
@@ -244,7 +242,6 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_ssu_reg_1);
 		reg_msg.offset = HCLGE_DBG_DFX_SSU_1_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_SSU_REG_1;
-
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_ssu_reg_1,
 					  &cmd_buf[sizeof("ssu")],
 					  &reg_msg);
@@ -252,7 +249,6 @@ static void hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev, const char *cmd_buf)
 		reg_msg.msg_num = ARRAY_SIZE(hclge_dbg_ssu_reg_2);
 		reg_msg.offset = HCLGE_DBG_DFX_SSU_2_OFFSET;
 		reg_msg.cmd = HCLGE_OPC_DFX_SSU_REG_2;
-
 		hclge_dbg_dump_reg_common(hdev, hclge_dbg_ssu_reg_2,
 					  &cmd_buf[sizeof("ssu")],
 					  &reg_msg);
@@ -1011,6 +1007,7 @@ static void hclge_dbg_fd_tcam(struct hclge_dev *hdev)
 			kfree(rule_locs);
 			return;
 		}
+
 		ret = hclge_dbg_fd_tcam_read(hdev, 0, false, rule_locs[i]);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
@@ -1019,6 +1016,7 @@ static void hclge_dbg_fd_tcam(struct hclge_dev *hdev)
 			return;
 		}
 	}
+
 	kfree(rule_locs);
 }
 
@@ -1170,7 +1168,6 @@ static void hclge_dbg_dump_ncl_config(struct hclge_dev *hdev,
 			data0 |= HCLGE_NCL_CONFIG_LENGTH_IN_EACH_CMD << 16;
 		else
 			data0 |= length << 16;
-
 		ret = hclge_dbg_cmd_send(hdev, desc, data0, bd_num,
 					 HCLGE_OPC_QUERY_NCL_CONFIG);
 		if (ret)

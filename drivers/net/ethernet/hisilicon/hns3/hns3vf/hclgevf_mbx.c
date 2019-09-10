@@ -330,7 +330,6 @@ void hclgevf_mbx_async_handler(struct hclgevf_dev *hdev)
 			else
 				memcpy(&hdev->hw.mac.advertising, &msg_q[2],
 				       sizeof(unsigned long));
-
 			break;
 		case HCLGE_MBX_ASSERTING_RESET:
 			/* PF has asserted reset hence VF should go in pending
@@ -345,12 +344,10 @@ void hclgevf_mbx_async_handler(struct hclgevf_dev *hdev)
 
 			break;
 		case HCLGE_MBX_PUSH_VLAN_INFO:
-
 			state = msg_q[1];
 			vlan_info = &msg_q[1];
 			hclgevf_update_port_base_vlan_info(hdev, state,
-							   (u8 *)vlan_info,
-							   8);
+							   (u8 *)vlan_info, 8);
 			break;
 		case HCLGE_MBX_PUSH_PROMISC_INFO:
 			hclgevf_parse_promisc_info(hdev, msg_q[1]);
