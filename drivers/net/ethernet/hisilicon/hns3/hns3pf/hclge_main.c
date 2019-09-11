@@ -41,8 +41,6 @@
 
 #define HCLGE_LINK_STATUS_MS	10
 
-#define HCLGE_VF_VPORT_START_NUM	1
-
 /* Get DFX BD number offset */
 #define HCLGE_DFX_BIOS_BD_OFFSET        1
 #define HCLGE_DFX_SSU_0_BD_OFFSET       2
