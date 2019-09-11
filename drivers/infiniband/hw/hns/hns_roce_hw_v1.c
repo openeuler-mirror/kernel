@@ -1100,7 +1100,6 @@ static void hns_roce_v1_mr_free_work_fn(struct work_struct *work)
 free_work:
 	if (mr_work->comp_flag)
 		complete(mr_work->comp);
-	kfree(mr_work);
 }
 
 static int hns_roce_v1_dereg_mr(struct hns_roce_dev *hr_dev,
@@ -1144,17 +1143,19 @@ static int hns_roce_v1_dereg_mr(struct hns_roce_dev *hr_dev,
 
 	while (time_before_eq(jiffies, end)) {
 		if (try_wait_for_completion(&comp))
-			goto free_mr;
+			goto err;
 		msleep(HNS_ROCE_V1_FREE_MR_WAIT_VALUE);
 	}
 
 	mr_work->comp_flag = 0;
 	if (try_wait_for_completion(&comp))
-		goto free_mr;
+		goto err;
 
 	dev_warn(dev, "Free mr work 0x%x over 50s and failed!\n", mr->key);
 	ret = -ETIMEDOUT;
 
+err:
+	kfree(mr_work);
 free_mr:
 	dev_dbg(dev, "Free mr 0x%x use 0x%x us.\n",
 		mr->key, jiffies_to_usecs(jiffies) - jiffies_to_usecs(start));
