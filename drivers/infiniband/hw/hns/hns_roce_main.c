@@ -55,8 +55,6 @@
 #include <rdma/hns-abi.h>
 #include "hns_roce_hem.h"
 
-static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
-			       struct ib_port_attr *props);
 /**
  * hns_get_gid_index - Get gid index.
  * @hr_dev: pointer to structure hns_roce_dev.
@@ -197,26 +195,14 @@ static int hns_roce_del_gid(struct ib_device *device, u8 port_num,
 }
 #endif
 
-static int get_port_state(struct ib_device *ib_dev, u8 port_num,
-			  enum ib_port_state *state)
-{
-	struct ib_port_attr props;
-	int ret;
-
-	memset(&props, 0, sizeof(props));
-	ret = hns_roce_query_port(ib_dev, port_num, &props);
-	if (!ret)
-		*state = props.state;
-	return ret;
-}
-
 static int handle_en_event(struct hns_roce_dev *hr_dev, u8 port,
 			   unsigned long dev_event)
 {
 	struct device *dev = hr_dev->dev;
-	struct net_device *netdev;
-	struct ib_event event = { };
 	enum ib_port_state port_state;
+	struct net_device *netdev;
+	struct ib_event event;
+	unsigned long flags;
 	int ret = 0;
 
 	netdev = hr_dev->iboe.netdevs[port];
@@ -239,32 +225,26 @@ static int handle_en_event(struct hns_roce_dev *hr_dev, u8 port,
 		if (ret)
 			dev_err(dev, "set mac failed(%d), event = 0x%x\n", ret,
 				(u32)dev_event);
+		/* fallthrough */
 	case NETDEV_DOWN:
-		if (get_port_state(&hr_dev->ib_dev, 1, &port_state))
-			return NOTIFY_DONE;
+		port_state = get_port_state(netdev);
 
-		if (hr_dev->iboe.last_port_state[port] == (u8)port_state)
+		spin_lock_irqsave(&hr_dev->iboe.lock, flags);
+		if (hr_dev->iboe.last_port_state[port] == port_state) {
+			spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 			return NOTIFY_DONE;
+		}
+		hr_dev->iboe.last_port_state[port] = port_state;
+		spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
 
-		hr_dev->iboe.last_port_state[port] = (u8)port_state;
 		event.device = &hr_dev->ib_dev;
-		if (port_state == IB_PORT_DOWN)
-			event.event = IB_EVENT_PORT_ERR;
-		else if (port_state == IB_PORT_ACTIVE)
-			event.event = IB_EVENT_PORT_ACTIVE;
-		else
-			return NOTIFY_DONE;
-
-		event.element.port_num = 1;
+		event.event = (port_state == IB_PORT_ACTIVE) ?
+			      IB_EVENT_PORT_ACTIVE : IB_EVENT_PORT_ERR;
+		event.element.port_num = to_rdma_port_num(port);
 		ib_dispatch_event(&event);
-		dev_info(dev, "report ib event: %d\n", event.event);
-		/*
-		 * In v1 engine, only support all ports closed together.
-		 */
 		break;
 	case NETDEV_UNREGISTER:
 		break;
-
 	default:
 		dev_dbg(dev, "NETDEV event = 0x%x!\n", (u32)(dev_event));
 		break;
@@ -442,8 +422,7 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 
 	mtu = iboe_get_mtu(net_dev->mtu);
 	props->active_mtu = mtu ? min(props->max_mtu, mtu) : IB_MTU_256;
-	props->state = (netif_running(net_dev) && netif_carrier_ok(net_dev)) ?
-			IB_PORT_ACTIVE : IB_PORT_DOWN;
+	props->state = get_port_state(net_dev);
 	props->phys_state = (props->state == IB_PORT_ACTIVE) ?
 			     HNS_ROCE_PHY_LINKUP : HNS_ROCE_PHY_DISABLED;
 

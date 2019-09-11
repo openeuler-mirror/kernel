@@ -1321,6 +1321,17 @@ static inline void *hns_roce_buf_offset(struct hns_roce_buf *buf, int offset)
 		       (offset & (page_size - 1));
 }
 
+static inline u8 to_rdma_port_num(u8 phy_port_num)
+{
+	return phy_port_num + 1;
+}
+
+static inline enum ib_port_state get_port_state(struct net_device *net_dev)
+{
+	return (netif_running(net_dev) && netif_carrier_ok(net_dev)) ?
+		IB_PORT_ACTIVE : IB_PORT_DOWN;
+}
+
 int hns_roce_init_uar_table(struct hns_roce_dev *dev);
 int hns_roce_uar_alloc(struct hns_roce_dev *dev, struct hns_roce_uar *uar);
 void hns_roce_uar_free(struct hns_roce_dev *dev, struct hns_roce_uar *uar);
