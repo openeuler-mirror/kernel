@@ -505,7 +505,7 @@ int hns_roce_v2_query_cmd_stat(struct hns_roce_dev *hr_dev,
 	return status;
 }
 
-int hns_roce_v2_query_cqc(struct hns_roce_dev *hr_dev,
+static int hns_roce_v2_query_cqc(struct hns_roce_dev *hr_dev,
 				 u64 *bt0_ba, u64 *bt1_ba, int cqn,
 				 struct hns_roce_v2_cq_context *cq_context)
 {

@@ -801,7 +801,7 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 				     struct ib_udata *udata, unsigned long sqpn,
 				     struct hns_roce_qp *hr_qp)
 {
-	dma_addr_t *buf_list[ARRAY_SIZE(hr_qp->regions)] = { 0 };
+	dma_addr_t *buf_list[ARRAY_SIZE(hr_qp->regions)] = {};
 	struct device *dev = hr_dev->dev;
 	struct hns_roce_ib_create_qp ucmd;
 	struct hns_roce_ib_create_qp_resp resp = {};

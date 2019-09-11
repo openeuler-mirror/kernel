@@ -506,10 +506,10 @@ static int hns_roce_fill_mr(struct sk_buff *msg,
 				   V2_MPT_BYTE_4_MPT_ST_S)))
 		goto err;
 
-	if (rdma_nl_put_driver_u32(msg, "lkey", context->lkey))
+	if (rdma_nl_put_driver_u32(msg, "lkey", le32_to_cpu(context->lkey)))
 		goto err;
 
-	if (rdma_nl_put_driver_u32(msg, "size", context->pbl_size))
+	if (rdma_nl_put_driver_u32(msg, "size", le32_to_cpu(context->pbl_size)))
 		goto err;
 
 	if (rdma_nl_put_driver_u32(msg, "ra",
@@ -553,9 +553,9 @@ static int hns_roce_fill_mr(struct sk_buff *msg,
 				   V2_MPT_BYTE_64_PBL_BUF_PG_SZ_S)))
 		goto err;
 
-	val_h32 = context->len_h;
+	val_h32 = le32_to_cpu(context->len_h);
 	if (rdma_nl_put_driver_u64(msg, "len",
-				   val_h32 << 32 | context->len_l))
+				   val_h32 << 32 | le32_to_cpu(context->len_l)))
 		goto err;
 
 	return 0;

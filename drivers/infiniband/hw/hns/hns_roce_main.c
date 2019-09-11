@@ -1351,7 +1351,7 @@ err_uar_table_free:
 	return ret;
 }
 
-int hns_roce_reset(struct hns_roce_dev *hr_dev)
+static int hns_roce_reset(struct hns_roce_dev *hr_dev)
 {
 	int ret;
 

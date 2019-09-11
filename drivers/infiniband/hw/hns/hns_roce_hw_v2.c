@@ -211,7 +211,7 @@ static int set_atomic_seg(struct ib_qp *ibqp, struct ib_send_wr *wr,
 {
 	struct hns_roce_qp *qp = to_hr_qp(ibqp);
 	struct hns_roce_wqe_atomic_seg *aseg;
-	u32 sge_num = (rc_sq_wqe->msg_len >> 3);
+	u32 sge_num = le32_to_cpu(rc_sq_wqe->msg_len) >> 3;
 
 	wqe += sizeof(struct hns_roce_v2_wqe_data_seg);
 	aseg = wqe;
@@ -503,7 +503,7 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			roce_set_field(ud_sq_wqe->byte_36,
 				       V2_UD_SEND_WQE_BYTE_36_VLAN_M,
 				       V2_UD_SEND_WQE_BYTE_36_VLAN_S,
-				       le16_to_cpu(ah->av.vlan));
+				       ah->av.vlan);
 			roce_set_field(ud_sq_wqe->byte_36,
 				       V2_UD_SEND_WQE_BYTE_36_HOPLIMIT_M,
 				       V2_UD_SEND_WQE_BYTE_36_HOPLIMIT_S,
@@ -511,18 +511,15 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			roce_set_field(ud_sq_wqe->byte_36,
 				       V2_UD_SEND_WQE_BYTE_36_TCLASS_M,
 				       V2_UD_SEND_WQE_BYTE_36_TCLASS_S,
-				      le32_to_cpu(ah->av.sl_tclass_flowlabel) >>
-				       HNS_ROCE_TCLASS_SHIFT);
+				       ah->av.tclass);
 			roce_set_field(ud_sq_wqe->byte_40,
 				       V2_UD_SEND_WQE_BYTE_40_FLOW_LABEL_M,
 				       V2_UD_SEND_WQE_BYTE_40_FLOW_LABEL_S,
-				       le32_to_cpu(ah->av.sl_tclass_flowlabel) &
-				       HNS_ROCE_FLOW_LABEL_MASK);
+				       ah->av.flowlabel);
 			roce_set_field(ud_sq_wqe->byte_40,
-				     V2_UD_SEND_WQE_BYTE_40_SL_M,
-				     V2_UD_SEND_WQE_BYTE_40_SL_S,
-				     (le32_to_cpu(ah->av.sl_tclass_flowlabel) >>
-				     HNS_ROCE_SL_SHIFT) & 0x7);
+				       V2_UD_SEND_WQE_BYTE_40_SL_M,
+				       V2_UD_SEND_WQE_BYTE_40_SL_S,
+				       ah->av.sl);
 			roce_set_field(ud_sq_wqe->byte_40,
 				       V2_UD_SEND_WQE_BYTE_40_PORTN_M,
 				       V2_UD_SEND_WQE_BYTE_40_PORTN_S,
@@ -804,7 +801,7 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 		if (wr->num_sge < hr_qp->rq.max_gs) {
 			dseg->lkey = cpu_to_le32(HNS_ROCE_INVALID_LKEY);
 			dseg->addr = 0;
-			dseg->len = HNS_ROCE_INVALID_SGE_LENGTH;
+			dseg->len = cpu_to_le32(HNS_ROCE_INVALID_SGE_LENGTH);
 		}
 
 		/* rq support inline data */
@@ -1396,7 +1393,7 @@ static void hns_roce_query_func_num(struct hns_roce_dev *hr_dev)
 	}
 
 	resp = (struct hns_roce_pf_func_num *)desc.data;
-	hr_dev->func_num = resp->pf_own_func_num;
+	hr_dev->func_num = le32_to_cpu(resp->pf_own_func_num);
 }
 
 static void hns_roce_clear_func(struct hns_roce_dev *hr_dev, int vf_id)
@@ -1413,7 +1410,7 @@ static void hns_roce_clear_func(struct hns_roce_dev *hr_dev, int vf_id)
 	resp = (struct hns_roce_func_clear *)desc.data;
 
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_FUNC_CLEAR, false);
-	resp->rst_funcid_en = vf_id;
+	resp->rst_funcid_en = cpu_to_le32(vf_id);
 
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret) {
@@ -1433,7 +1430,7 @@ static void hns_roce_clear_func(struct hns_roce_dev *hr_dev, int vf_id)
 
 		hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_FUNC_CLEAR,
 					      true);
-		resp->rst_funcid_en = vf_id;
+		resp->rst_funcid_en = cpu_to_le32(vf_id);
 
 		ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 		if (ret) {
@@ -2012,10 +2009,10 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 	caps->max_mtu		   = resp_b->max_mtu;
 	caps->qpc_entry_sz	   = le16_to_cpu(resp_b->qpc_entry_sz);
 	caps->qpc_timer_entry_sz   = le16_to_cpu(resp_b->qpc_timer_entry_sz);
-	caps->cqc_timer_entry_sz   = resp_b->cqc_timer_entry_sz;
+	caps->cqc_timer_entry_sz   = le16_to_cpu(resp_b->cqc_timer_entry_sz);
 	caps->min_cqes		   = resp_b->min_cqes;
 	caps->min_wqes		   = resp_b->min_wqes;
-	caps->page_size_cap	   = resp_b->page_size_cap;
+	caps->page_size_cap	   = le32_to_cpu(resp_b->page_size_cap);
 	caps->pkey_table_len[0]	   = resp_b->pkey_table_len;
 	caps->phy_num_uars	   = resp_b->phy_num_uars;
 	ctx_hop_num		   = resp_b->ctx_hop_num;
@@ -2596,8 +2593,9 @@ static int hns_roce_mbox_post(struct hns_roce_dev *hr_dev, u64 in_param,
 	mb->in_param_h = cpu_to_le32(in_param >> 32);
 	mb->out_param_l = cpu_to_le32(out_param);
 	mb->out_param_h = cpu_to_le32(out_param >> 32);
-	mb->cmd_tag = in_modifier << HNS_ROCE_MB_TAG_S | op;
-	mb->token_event_en = event << HNS_ROCE_MB_EVENT_EN_S | token;
+	mb->cmd_tag = cpu_to_le32(in_modifier << HNS_ROCE_MB_TAG_S | op);
+	mb->token_event_en = cpu_to_le32(token);
+	mb->token_event_en |= cpu_to_le32(event << HNS_ROCE_MB_EVENT_EN_S);
 
 	return hns_roce_cmq_send(hr_dev, &desc, 1);
 }
@@ -2925,7 +2923,7 @@ static int hns_roce_v2_frmr_write_mtpt(void *mb_buf, struct hns_roce_mr *mr)
 		       mr->pbl_ba_pg_sz + PG_SHIFT_OFFSET);
 	roce_set_field(mpt_entry->byte_4_pd_hop_st, V2_MPT_BYTE_4_PD_M,
 		       V2_MPT_BYTE_4_PD_S, mr->pd);
-	mpt_entry->byte_4_pd_hop_st = cpu_to_le32(mpt_entry->byte_4_pd_hop_st);
+	mpt_entry->byte_4_pd_hop_st = mpt_entry->byte_4_pd_hop_st;
 
 	roce_set_bit(mpt_entry->byte_8_mw_cnt_en, V2_MPT_BYTE_8_RA_EN_S, 1);
 	roce_set_bit(mpt_entry->byte_8_mw_cnt_en, V2_MPT_BYTE_8_R_INV_EN_S, 1);
@@ -4700,7 +4698,7 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 	 * we should set all bits of the relevant fields in context mask to
 	 * 0 at the same time, else set them to 0x1.
 	 */
-	context->sq_cur_blk_addr = (u32)(sq_cur_blk >> PAGE_ADDR_SHIFT);
+	context->sq_cur_blk_addr = cpu_to_le32(sq_cur_blk >> PAGE_ADDR_SHIFT);
 	roce_set_field(context->byte_168_irrl_idx,
 		       V2_QPC_BYTE_168_SQ_CUR_BLK_ADDR_M,
 		       V2_QPC_BYTE_168_SQ_CUR_BLK_ADDR_S,
@@ -5591,7 +5589,7 @@ static int hns_roce_v2_qp_flow_control_init(struct hns_roce_dev *hr_dev,
 
 	scc_cxt_clr = (struct hns_roce_scc_ctx_clr *)desc.data;
 	memset(scc_cxt_clr, 0, sizeof(*scc_cxt_clr));
-	scc_cxt_clr->rocee_scc_ctx_clr_qpn = hr_qp->qpn;
+	scc_cxt_clr->rocee_scc_ctx_clr_qpn = cpu_to_le32(hr_qp->qpn);
 
 	ret =  hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret)
@@ -5608,7 +5606,7 @@ static int hns_roce_v2_qp_flow_control_init(struct hns_roce_dev *hr_dev,
 		if (ret)
 			return ret;
 
-		if (resp->rocee_scc_ctx_clr_done == 1)
+		if (resp->rocee_scc_ctx_clr_done)
 			return 0;
 	}
 
