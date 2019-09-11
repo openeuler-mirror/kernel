@@ -3938,13 +3938,11 @@ static void hns_roce_v1_destroy_qp_work_fn(struct work_struct *work)
 	hns_roce_qp_remove(hr_dev, hr_qp);
 	hns_roce_qp_free(hr_dev, hr_qp);
 
-	if (hr_qp->ibqp.qp_type == IB_QPT_RC) {
-		/* RC QP, release QPN */
+	/* RC QP, release QPN */
+	if (hr_qp->ibqp.qp_type == IB_QPT_RC)
 		hns_roce_release_range_qp(hr_dev, qpn, 1);
-		kfree(hr_qp);
-	} else
-		kfree(hr_to_hr_sqp(hr_qp));
 
+	kfree(hr_qp);
 	kfree(qp_work_entry);
 
 	dev_dbg(dev, "Accomplished destroy QP(0x%lx) work.\n", qpn);
@@ -4002,10 +4000,7 @@ int hns_roce_v1_destroy_qp(struct ib_qp *ibqp)
 	}
 
 	if (!is_timeout) {
-		if (hr_qp->ibqp.qp_type == IB_QPT_RC)
 			kfree(hr_qp);
-		else
-			kfree(hr_to_hr_sqp(hr_qp));
 	} else {
 		qp_work = kzalloc(sizeof(*qp_work), GFP_KERNEL);
 		if (!qp_work)
