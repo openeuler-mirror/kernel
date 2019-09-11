@@ -24,21 +24,6 @@ static const struct pci_device_id ae_algovf_pci_tbl[] = {
 	{0, }
 };
 
-static const u32 cmdq_reg_addr_list[] = {0x27000, 0x27004, 0x27008, 0x27010,
-					 0x27014, 0x27018, 0x2701C, 0x27020,
-					 0x27024, 0x27028, 0x27100, 0x27104,
-					 0x27108, 0x2710C};
-static const u32 common_reg_addr_list[] = {0x20400, 0x20C00, 0x28000};
-static const u32 ring_reg_addr_list[] = {0x80000, 0x80004, 0x80008, 0x8000C,
-					 0x80014, 0x80018, 0x8001C, 0x80020,
-					 0x80024, 0x80028, 0x80030, 0x80034,
-					 0x80040, 0x80044, 0x80048, 0x8004C,
-					 0x80050, 0x80054, 0x80058, 0x8005C,
-					 0x80060, 0x80064, 0x80068, 0x80070,
-					 0x80074, 0x80090};
-static const u32 tqp_intr_reg_addr_list[] = {0x20000, 0x20100, 0x20200, 0x20300,
-					     0x20900};
-
 static const u8 hclgevf_hash_key[] = {
 	0x6D, 0x5A, 0x56, 0xDA, 0x25, 0x5B, 0x0E, 0xC2,
 	0x41, 0x67, 0x25, 0x3D, 0x43, 0xA3, 0x8F, 0xB0,
@@ -48,6 +33,58 @@ static const u8 hclgevf_hash_key[] = {
 };
 
 MODULE_DEVICE_TABLE(pci, ae_algovf_pci_tbl);
+
+static const u32 cmdq_reg_addr_list[] = {HCLGEVF_CMDQ_TX_ADDR_L_REG,
+					 HCLGEVF_CMDQ_TX_ADDR_H_REG,
+					 HCLGEVF_CMDQ_TX_DEPTH_REG,
+					 HCLGEVF_CMDQ_TX_TAIL_REG,
+					 HCLGEVF_CMDQ_TX_HEAD_REG,
+					 HCLGEVF_CMDQ_RX_ADDR_L_REG,
+					 HCLGEVF_CMDQ_RX_ADDR_H_REG,
+					 HCLGEVF_CMDQ_RX_DEPTH_REG,
+					 HCLGEVF_CMDQ_RX_TAIL_REG,
+					 HCLGEVF_CMDQ_RX_HEAD_REG,
+					 HCLGEVF_VECTOR0_CMDQ_SRC_REG,
+					 HCLGEVF_CMDQ_INTR_STS_REG,
+					 HCLGEVF_CMDQ_INTR_EN_REG,
+					 HCLGEVF_CMDQ_INTR_GEN_REG};
+
+static const u32 common_reg_addr_list[] = {HCLGEVF_MISC_VECTOR_REG_BASE,
+					   HCLGEVF_RST_ING,
+					   HCLGEVF_GRO_EN_REG};
+
+static const u32 ring_reg_addr_list[] = {HCLGEVF_RING_RX_ADDR_L_REG,
+					 HCLGEVF_RING_RX_ADDR_H_REG,
+					 HCLGEVF_RING_RX_BD_NUM_REG,
+					 HCLGEVF_RING_RX_BD_LENGTH_REG,
+					 HCLGEVF_RING_RX_MERGE_EN_REG,
+					 HCLGEVF_RING_RX_TAIL_REG,
+					 HCLGEVF_RING_RX_HEAD_REG,
+					 HCLGEVF_RING_RX_FBD_NUM_REG,
+					 HCLGEVF_RING_RX_OFFSET_REG,
+					 HCLGEVF_RING_RX_FBD_OFFSET_REG,
+					 HCLGEVF_RING_RX_STASH_REG,
+					 HCLGEVF_RING_RX_BD_ERR_REG,
+					 HCLGEVF_RING_TX_ADDR_L_REG,
+					 HCLGEVF_RING_TX_ADDR_H_REG,
+					 HCLGEVF_RING_TX_BD_NUM_REG,
+					 HCLGEVF_RING_TX_PRIORITY_REG,
+					 HCLGEVF_RING_TX_TC_REG,
+					 HCLGEVF_RING_TX_MERGE_EN_REG,
+					 HCLGEVF_RING_TX_TAIL_REG,
+					 HCLGEVF_RING_TX_HEAD_REG,
+					 HCLGEVF_RING_TX_FBD_NUM_REG,
+					 HCLGEVF_RING_TX_OFFSET_REG,
+					 HCLGEVF_RING_TX_EBD_NUM_REG,
+					 HCLGEVF_RING_TX_EBD_OFFSET_REG,
+					 HCLGEVF_RING_TX_BD_ERR_REG,
+					 HCLGEVF_RING_EN_REG};
+
+static const u32 tqp_intr_reg_addr_list[] = {HCLGEVF_TQP_INTR_CTRL_REG,
+					     HCLGEVF_TQP_INTR_GL0_REG,
+					     HCLGEVF_TQP_INTR_GL1_REG,
+					     HCLGEVF_TQP_INTR_GL2_REG,
+					     HCLGEVF_TQP_INTR_RL_REG};
 
 static struct hclgevf_dev *hclgevf_ae_get_hdev(struct hnae3_handle *handle)
 {
