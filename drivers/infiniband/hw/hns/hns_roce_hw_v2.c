@@ -5479,15 +5479,16 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 	if (cq_lock)
 		hns_roce_lock_cqs(send_cq, recv_cq);
 	list_del(&hr_qp->list);
-	if (send_cq)
-		list_del(&hr_qp->send_list);
-	if (recv_cq)
-		list_del(&hr_qp->recv_list);
+	list_del(&hr_qp->send_list);
+	list_del(&hr_qp->recv_list);
 
 	if (!is_user) {
-		__hns_roce_v2_cq_clean(recv_cq, hr_qp->qpn, hr_qp->ibqp.srq ?
-				       to_hr_srq(hr_qp->ibqp.srq) : NULL);
-		if (send_cq != recv_cq)
+		if (recv_cq)
+			__hns_roce_v2_cq_clean(recv_cq, hr_qp->qpn,
+					       (hr_qp->ibqp.srq ?
+						to_hr_srq(hr_qp->ibqp.srq) :
+						NULL));
+		if (send_cq && send_cq != recv_cq)
 			__hns_roce_v2_cq_clean(send_cq, hr_qp->qpn, NULL);
 	}
 

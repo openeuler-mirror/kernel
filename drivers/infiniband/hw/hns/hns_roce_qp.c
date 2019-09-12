@@ -1386,7 +1386,16 @@ out:
 void hns_roce_lock_cqs(struct hns_roce_cq *send_cq, struct hns_roce_cq *recv_cq)
 		       __acquires(&send_cq->lock) __acquires(&recv_cq->lock)
 {
-	if (send_cq == recv_cq) {
+	if (unlikely(!send_cq && !recv_cq)) {
+		__acquire(&send_cq->lock);
+		__acquire(&recv_cq->lock);
+	} else if (unlikely(send_cq && !recv_cq)) {
+		spin_lock_irq(&send_cq->lock);
+		__acquire(&recv_cq->lock);
+	} else if (unlikely(!send_cq && recv_cq)) {
+		spin_lock_irq(&recv_cq->lock);
+		__acquire(&send_cq->lock);
+	} else if (send_cq == recv_cq) {
 		spin_lock_irq(&send_cq->lock);
 		__acquire(&recv_cq->lock);
 	} else if (send_cq->cqn < recv_cq->cqn) {
@@ -1403,7 +1412,16 @@ void hns_roce_unlock_cqs(struct hns_roce_cq *send_cq,
 			 struct hns_roce_cq *recv_cq) __releases(&send_cq->lock)
 			 __releases(&recv_cq->lock)
 {
-	if (send_cq == recv_cq) {
+	if (unlikely(!send_cq && !recv_cq)) {
+		__release(&recv_cq->lock);
+		__release(&send_cq->lock);
+	} else if (unlikely(send_cq && !recv_cq)) {
+		spin_unlock(&send_cq->lock);
+		__release(&recv_cq->lock);
+	} else if (unlikely(!send_cq && recv_cq)) {
+		spin_unlock(&recv_cq->lock);
+		__release(&send_cq->lock);
+	} else if (send_cq == recv_cq) {
 		__release(&recv_cq->lock);
 		spin_unlock_irq(&send_cq->lock);
 	} else if (send_cq->cqn < recv_cq->cqn) {
