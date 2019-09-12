@@ -3789,8 +3789,6 @@ static void hns_roce_v2_clear_hem(struct hns_roce_dev *hr_dev,
 }
 
 static int hns_roce_v2_qp_modify(struct hns_roce_dev *hr_dev,
-				 enum ib_qp_state cur_state,
-				 enum ib_qp_state new_state,
 				 struct hns_roce_v2_qp_context *context,
 				 struct hns_roce_qp *hr_qp)
 {
@@ -5250,10 +5248,7 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 		       V2_QPC_BYTE_60_QP_ST_S, 0);
 
 	/* SW pass context to HW */
-	ret = hns_roce_v2_qp_modify(hr_dev,
-				    to_hns_roce_qp_st(cur_state),
-				    to_hns_roce_qp_st(new_state),
-				    context, hr_qp);
+	ret = hns_roce_v2_qp_modify(hr_dev, context, hr_qp);
 	if (ret) {
 		dev_err(dev, "modify qp(0x%x) from state %d to state %d failed, ret = %d\n",
 			ibqp->qp_num, to_hns_roce_qp_st(cur_state),
