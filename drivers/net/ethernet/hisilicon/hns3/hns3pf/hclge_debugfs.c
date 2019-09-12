@@ -17,7 +17,7 @@ static int hclge_dbg_get_dfx_bd_num(struct hclge_dev *hdev, int offset)
 	int ret;
 
 	ret = hclge_query_bd_num_cmd_send(hdev, desc);
-	if (ret != HCLGE_CMD_EXEC_SUCCESS) {
+	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"get dfx bdnum fail, ret = %d\n", ret);
 		return ret;
@@ -90,7 +90,7 @@ static void hclge_dbg_dump_reg_common(struct hclge_dev *hdev,
 	}
 
 	entries_per_desc = ARRAY_SIZE(desc->data);
-	min_num = min(bd_num * entries_per_desc, reg_msg->msg_num);
+	min_num = min_t(int, bd_num * entries_per_desc, reg_msg->msg_num);
 
 	desc = desc_src;
 	for (i = 0; i < min_num; i++) {

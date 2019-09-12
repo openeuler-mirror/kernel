@@ -186,8 +186,8 @@ enum HLCGE_PORT_TYPE {
 #define HCLGE_VECTOR0_RX_CMDQ_INT_B	1
 
 #define HCLGE_VECTOR0_IMP_RESET_INT_B	1
-#define HCLGE_VECTOR0_IMP_CMDQ_ERR_B	4
-#define HCLGE_VECTOR0_IMP_RD_POISON_B	5
+#define HCLGE_VECTOR0_IMP_CMDQ_ERR_B	4U
+#define HCLGE_VECTOR0_IMP_RD_POISON_B	5U
 
 #define HCLGE_MAC_DEFAULT_FRAME \
 	(ETH_HLEN + ETH_FCS_LEN + 2 * VLAN_HLEN + ETH_DATA_LEN)
@@ -1015,6 +1015,7 @@ static inline bool hclge_is_reset_pending(struct hclge_dev *hdev)
 	return !!hdev->reset_pending;
 }
 
+int hclge_inform_reset_assert_to_vf(struct hclge_vport *vport);
 int hclge_cfg_mac_speed_dup(struct hclge_dev *hdev, int speed, u8 duplex);
 int hclge_set_vlan_filter(struct hnae3_handle *handle, __be16 proto,
 			  u16 vlan_id, bool is_kill);
@@ -1024,19 +1025,18 @@ int hclge_buffer_alloc(struct hclge_dev *hdev);
 int hclge_rss_init_hw(struct hclge_dev *hdev);
 void hclge_rss_indir_init_cfg(struct hclge_dev *hdev);
 
-int hclge_inform_reset_assert_to_vf(struct hclge_vport *vport);
 void hclge_mbx_handler(struct hclge_dev *hdev);
 int hclge_reset_tqp(struct hnae3_handle *handle, u16 queue_id);
 void hclge_reset_vf_queue(struct hclge_vport *vport, u16 queue_id);
 int hclge_cfg_flowctrl(struct hclge_dev *hdev);
 int hclge_func_reset_cmd(struct hclge_dev *hdev, int func_id);
-int hclge_notify_client(struct hclge_dev *hdev,
-			enum hnae3_reset_notify_type type);
-int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf);
 int hclge_vport_start(struct hclge_vport *vport);
 void hclge_vport_stop(struct hclge_vport *vport);
 int hclge_set_vport_mtu(struct hclge_vport *vport, int new_mtu);
+int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf);
 u16 hclge_covert_handle_qid_global(struct hnae3_handle *handle, u16 queue_id);
+int hclge_notify_client(struct hclge_dev *hdev,
+			enum hnae3_reset_notify_type type);
 void hclge_add_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
 			       enum HCLGE_MAC_ADDR_TYPE mac_type);
 void hclge_rm_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,

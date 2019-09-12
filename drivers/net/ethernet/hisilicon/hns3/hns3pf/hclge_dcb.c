@@ -109,7 +109,8 @@ static int hclge_ets_validate(struct hclge_dev *hdev, struct ieee_ets *ets,
 	bool has_ets_tc = false;
 	u32 total_ets_bw = 0;
 	u8 max_tc = 0;
-	int ret, i;
+	int ret;
+	u8 i;
 
 	for (i = 0; i < HNAE3_MAX_USER_PRIO; i++) {
 		if (ets->prio_tc[i] != hdev->tm_info.prio_tc[i])
@@ -385,7 +386,7 @@ static u8 hclge_setdcbx(struct hnae3_handle *h, u8 mode)
 	struct hclge_dev *hdev = vport->back;
 
 	if (netif_msg_drv(h))
-		netdev_info(netdev, "set dcbx: mode=%d\n", mode);
+		netdev_info(netdev, "set dcbx: mode=%u\n", mode);
 
 	/* No support for LLD_MANAGED modes or CEE */
 	if ((mode & DCB_CAP_DCBX_LLD_MANAGED) ||

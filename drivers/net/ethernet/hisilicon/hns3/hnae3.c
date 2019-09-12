@@ -254,8 +254,8 @@ void hnae3_unregister_ae_algo(struct hnae3_ae_algo *ae_algo)
 			hnae3_uninit_client_instance(client, ae_dev);
 
 		ae_algo->ops->uninit_ae_dev(ae_dev);
-		hnae3_set_bit(ae_dev->flag, HNAE3_DEV_INITED_B, 0);
 		ae_dev->ops = NULL;
+		hnae3_set_bit(ae_dev->flag, HNAE3_DEV_INITED_B, 0);
 	}
 
 	list_del(&ae_algo->node);

@@ -2825,8 +2825,8 @@ static bool hns3_parse_vlan_tag(struct hns3_enet_ring *ring,
 #define HNS3_STRP_INNER_VLAN	0x2
 #define HNS3_STRP_BOTH		0x3
 
-	/* Hardware always insert vlan tag into rx descriptor when
-	 * remove the tag from packet, driver needs to determin
+	/* Hardware always insert VLAN tag into RX descriptor when
+	 * remove the tag from packet, driver needs to determine
 	 * reporting which tag to stack.
 	 */
 	switch (hnae3_get_field(l234info, HNS3_RXD_STRP_TAGP_M,
@@ -3617,8 +3617,8 @@ static int hns3_nic_alloc_vector_data(struct hns3_nic_priv *priv)
 	/* RSS size, cpu online and vector_num should be the same */
 	/* Should consider 2p/4p later */
 	vector_num = min_t(u16, num_online_cpus(), tqp_num);
-	if (vector_num > HNS3_VECTOR_PF_MAX_NUM)
-		vector_num = HNS3_VECTOR_PF_MAX_NUM;
+	vector_num = min_t(u16, vector_num, HNS3_VECTOR_PF_MAX_NUM);
+
 	vector = devm_kcalloc(&pdev->dev, vector_num, sizeof(*vector),
 			      GFP_KERNEL);
 	if (!vector)
@@ -4477,9 +4477,8 @@ static int hns3_reset_notify_down_enet(struct hnae3_handle *handle)
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(handle->pdev);
 	struct hnae3_knic_private_info *kinfo = &handle->kinfo;
 	struct net_device *ndev = kinfo->netdev;
-	struct hns3_nic_priv *priv;
+	struct hns3_nic_priv *priv = netdev_priv(ndev);
 
-	priv = netdev_priv(ndev);
 	if (test_and_set_bit(HNS3_NIC_STATE_RESETTING, &priv->state))
 		return 0;
 
@@ -4509,9 +4508,9 @@ static int hns3_reset_notify_up_enet(struct hnae3_handle *handle)
 	if (netif_running(kinfo->netdev)) {
 		ret = hns3_nic_net_open(kinfo->netdev);
 		if (ret) {
+			set_bit(HNS3_NIC_STATE_RESETTING, &priv->state);
 			netdev_err(kinfo->netdev,
 				   "net up fail, ret=%d!\n", ret);
-			set_bit(HNS3_NIC_STATE_RESETTING, &priv->state);
 			return ret;
 		}
 	}
@@ -4554,7 +4553,7 @@ static int hns3_reset_notify_init_enet(struct hnae3_handle *handle)
 
 	set_bit(HNS3_NIC_STATE_INITED, &priv->state);
 
-	return 0;
+	return ret;
 
 err_uninit_ring:
 	hns3_uninit_all_ring(priv);
@@ -4572,7 +4571,7 @@ static int hns3_reset_notify_restore_enet(struct hnae3_handle *handle)
 {
 	struct net_device *netdev = handle->kinfo.netdev;
 	bool vlan_filter_enable;
-	int ret = 0;
+	int ret;
 
 	ret = hns3_init_mac_addr(netdev);
 	if (ret)
@@ -4683,7 +4682,7 @@ int hns3_set_channels(struct net_device *netdev,
 
 	if (netif_msg_ifdown(h))
 		netdev_info(netdev,
-			    "set channels: tqp_num=%d, rxfh=%d\n",
+			    "set channels: tqp_num=%u, rxfh=%d\n",
 			    new_tqp_num, rxfh_configured);
 
 	ret = hns3_reset_notify(h, HNAE3_DOWN_CLIENT);

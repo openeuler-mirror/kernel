@@ -616,7 +616,7 @@ static int hns3_set_pauseparam(struct net_device *netdev,
 
 	if (netif_msg_ifdown(h))
 		netdev_info(netdev,
-			    "set pauseparam: autoneg=%d, rx:%d, tx:%d\n",
+			    "set pauseparam: autoneg=%u, rx:%u, tx:%u\n",
 			    param->autoneg, param->rx_pause, param->tx_pause);
 
 	if (h->ae_algo->ops->set_pauseparam)
@@ -766,7 +766,7 @@ static int hns3_set_link_ksettings(struct net_device *netdev,
 
 	if (netif_msg_ifdown(handle))
 		netdev_info(netdev,
-			    "set link(%s): autoneg=%d, speed=%d, duplex=%d\n",
+			    "set link(%s): autoneg=%u, speed=%u, duplex=%u\n",
 			    netdev->phydev ? "phy" : "mac",
 			    cmd->base.autoneg, cmd->base.speed,
 			    cmd->base.duplex);
@@ -951,11 +951,11 @@ static int hns3_set_ringparam(struct net_device *ndev,
 {
 	struct hns3_nic_priv *priv = netdev_priv(ndev);
 	struct hnae3_handle *h = priv->ae_handle;
-	struct hns3_enet_ring *tmp_rings = NULL;
+	struct hns3_enet_ring *tmp_rings;
 	bool if_running = netif_running(ndev);
 	u32 old_tx_desc_num, new_tx_desc_num;
 	u32 old_rx_desc_num, new_rx_desc_num;
-	int queue_num = h->kinfo.num_tqps;
+	u16 queue_num = h->kinfo.num_tqps;
 	int ret, i;
 
 	ret = hns3_check_ringparam(ndev, param);
@@ -990,7 +990,8 @@ static int hns3_set_ringparam(struct net_device *ndev,
 	hns3_change_all_ring_bd_num(priv, new_tx_desc_num, new_rx_desc_num);
 	ret = hns3_init_all_ring(priv);
 	if (ret) {
-		netdev_warn(ndev, "Change bd num fail, revert to old value\n");
+		netdev_err(ndev, "Change bd num fail, revert to old value(%d)\n",
+			   ret);
 
 		hns3_change_all_ring_bd_num(priv, old_tx_desc_num,
 					    old_rx_desc_num);
@@ -1388,7 +1389,7 @@ static int hns3_set_fecparam(struct net_device *netdev,
 	fec_mode = eth_to_loc_fec(fec->fec);
 
 	if (netif_msg_ifdown(handle))
-		netdev_info(netdev, "set fecparam: mode=%d\n", fec_mode);
+		netdev_info(netdev, "set fecparam: mode=%u\n", fec_mode);
 
 	return ops->set_fec(handle, fec_mode);
 }

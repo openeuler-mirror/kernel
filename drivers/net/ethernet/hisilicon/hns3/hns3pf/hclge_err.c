@@ -1234,8 +1234,8 @@ static int hclge_handle_mpf_ras_error(struct hclge_dev *hdev,
 	desc_data = (__le32 *)&desc[5];
 	status = le32_to_cpu(*(desc_data + 1));
 	if (status) {
-		dev_err(dev, "PPU_MPF_ABNORMAL_INT_ST1 %s found\n",
-			"rpu_rx_pkt_ecc_mbit_err");
+		dev_err(dev,
+			"PPU_MPF_ABNORMAL_INT_ST1 rpu_rx_pkt_ecc_mbit_err found\n");
 		set_bit(HNAE3_GLOBAL_RESET, &ae_dev->hw_err_reset_req);
 	}
 
@@ -1778,7 +1778,7 @@ static void hclge_handle_over_8bd_err(struct hclge_dev *hdev,
 		return;
 	}
 
-	dev_err(dev, "PPU_PF_ABNORMAL_INT_ST over_8bd_no_fe found, vf_id(%d), queue_id(%d)\n",
+	dev_err(dev, "PPU_PF_ABNORMAL_INT_ST over_8bd_no_fe found, vf_id(%u), queue_id(%u)\n",
 		vf_id, q_id);
 
 	if (vf_id) {
@@ -1796,7 +1796,7 @@ static void hclge_handle_over_8bd_err(struct hclge_dev *hdev,
 
 		ret = hclge_inform_reset_assert_to_vf(&hdev->vport[vf_id]);
 		if (ret)
-			dev_err(dev, "inform reset to vf(%d) failed %d!\n",
+			dev_err(dev, "inform reset to vf(%u) failed %d!\n",
 				hdev->vport->vport_id, ret);
 	} else {
 		set_bit(HNAE3_FUNC_RESET, reset_requests);

@@ -256,7 +256,7 @@ static int hclgevf_get_port_base_vlan_filter_state(struct hclgevf_dev *hdev)
 				   NULL, 0, true, &resp_msg, sizeof(u8));
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
-			"VF request to get port base vlan state failed %d",
+			"VF request to get port based vlan state failed %d",
 			ret);
 		return ret;
 	}
@@ -292,7 +292,7 @@ static int hclgevf_get_queue_info(struct hclgevf_dev *hdev)
 	 */
 	hdev->num_tqps = min_t(u16, hdev->roce_base_msix_offset - 1,
 			       hdev->num_tqps);
-	hdev->rss_size_max = min_t(u16, hdev->num_tqps, hdev->rss_size_max);
+	hdev->rss_size_max = min_t(u16, hdev->rss_size_max, hdev->num_tqps);
 
 	return 0;
 }
@@ -567,10 +567,7 @@ static int hclgevf_set_rss_algo_key(struct hclgevf_dev *hdev,
 		req->hash_config |=
 			(key_offset << HCLGEVF_RSS_HASH_KEY_OFFSET_B);
 
-		if (key_counts >= HCLGEVF_RSS_HASH_KEY_NUM)
-			key_size = HCLGEVF_RSS_HASH_KEY_NUM;
-		else
-			key_size = key_counts;
+		key_size = min(HCLGEVF_RSS_HASH_KEY_NUM, key_counts);
 		memcpy(req->hash_key,
 		       key + key_offset * HCLGEVF_RSS_HASH_KEY_NUM, key_size);
 
@@ -2140,7 +2137,8 @@ static int hclgevf_config_gro(struct hclgevf_dev *hdev, bool en)
 
 	ret = hclgevf_cmd_send(&hdev->hw, &desc, 1);
 	if (ret)
-		dev_err(&hdev->pdev->dev, "config gro fail,  ret = %d.\n", ret);
+		dev_err(&hdev->pdev->dev,
+			"VF GRO hardware config cmd failed, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -2385,7 +2383,7 @@ static void hclgevf_uninit_msi(struct hclgevf_dev *hdev)
 
 static int hclgevf_misc_irq_init(struct hclgevf_dev *hdev)
 {
-	int ret = 0;
+	int ret;
 
 	hclgevf_get_misc_vector(hdev);
 
@@ -2436,7 +2434,7 @@ static int hclgevf_init_nic_client_instance(struct hnae3_ae_dev *ae_dev,
 {
 	struct hclgevf_dev *hdev = ae_dev->priv;
 	int rst_cnt = hdev->rst_stats.rst_cnt;
-	int ret = 0;
+	int ret;
 
 	ret = client->ops->init_instance(&hdev->nic);
 	if (ret)
@@ -2808,7 +2806,8 @@ static int hclgevf_init_hdev(struct hclgevf_dev *hdev)
 	}
 
 	hdev->last_reset_time = jiffies;
-	pr_info("finished initializing %s driver\n", HCLGEVF_DRIVER_NAME);
+	dev_info(&hdev->pdev->dev, "finished initializing %s driver\n",
+		 HCLGEVF_DRIVER_NAME);
 
 	return 0;
 

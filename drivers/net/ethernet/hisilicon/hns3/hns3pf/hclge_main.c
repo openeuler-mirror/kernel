@@ -1043,7 +1043,8 @@ static void hclge_convert_setting_fec(struct hclge_mac *mac)
 	case HCLGE_MAC_SPEED_40G:
 		linkmode_set_bit(ETHTOOL_LINK_MODE_FEC_BASER_BIT,
 				 mac->supported);
-		mac->fec_ability = BIT(HNAE3_FEC_BASER) | BIT(HNAE3_FEC_AUTO);
+		mac->fec_ability =
+			BIT(HNAE3_FEC_BASER) | BIT(HNAE3_FEC_AUTO);
 		break;
 	case HCLGE_MAC_SPEED_25G:
 	case HCLGE_MAC_SPEED_50G:
@@ -1439,7 +1440,8 @@ static int hclge_config_gro(struct hclge_dev *hdev, bool en)
 
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret)
-		dev_err(&hdev->pdev->dev, "config gro fail, ret = %d\n", ret);
+		dev_err(&hdev->pdev->dev,
+			"GRO hardware config cmd failed, ret = %d\n", ret);
 
 	return ret;
 }
@@ -2927,9 +2929,7 @@ static int hclge_set_vf_link_state(struct hnae3_handle *handle, int vf,
 
 static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 {
-	u32 rst_src_reg;
-	u32 cmdq_src_reg;
-	u32 msix_src_reg;
+	u32 rst_src_reg, cmdq_src_reg, msix_src_reg;
 
 	/* fetch the events from their corresponding regs */
 	rst_src_reg = hclge_read_dev(&hdev->hw, HCLGE_MISC_VECTOR_INT_STS);
@@ -2977,7 +2977,8 @@ static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 	}
 
 	/* print other vector0 event source */
-	dev_info(&hdev->pdev->dev, "cmdq_src_reg:0x%x, msix_src_reg:0x%x\n",
+	dev_info(&hdev->pdev->dev,
+		 "CMDQ INT status:0x%x, other INT status:0x%x\n",
 		 cmdq_src_reg, msix_src_reg);
 	*clearval = msix_src_reg;
 
@@ -4109,10 +4110,7 @@ static int hclge_set_rss_algo_key(struct hclge_dev *hdev,
 		req->hash_config |= (hfunc & HCLGE_RSS_HASH_ALGO_MASK);
 		req->hash_config |= (key_offset << HCLGE_RSS_HASH_KEY_OFFSET_B);
 
-		if (key_counts >= HCLGE_RSS_HASH_KEY_NUM)
-			key_size = HCLGE_RSS_HASH_KEY_NUM;
-		else
-			key_size = key_counts;
+		key_size = min(HCLGE_RSS_HASH_KEY_NUM, key_counts);
 		memcpy(req->hash_key,
 		       key + key_offset * HCLGE_RSS_HASH_KEY_NUM, key_size);
 
@@ -4579,8 +4577,8 @@ int hclge_bind_ring_with_vector(struct hclge_vport *vport,
 	struct hclge_dev *hdev = vport->back;
 	struct hnae3_ring_chain_node *node;
 	struct hclge_desc desc;
-	struct hclge_ctrl_vector_chain_cmd *req
-		= (struct hclge_ctrl_vector_chain_cmd *)desc.data;
+	struct hclge_ctrl_vector_chain_cmd *req =
+		(struct hclge_ctrl_vector_chain_cmd *)desc.data;
 	enum hclge_cmd_status status;
 	enum hclge_opcode_type op;
 	u16 tqp_type_and_id;
@@ -6182,12 +6180,10 @@ hclge_fd_search_flow_keys(struct hclge_dev *hdev,
 			  const struct hclge_fd_rule_tuples *tuples)
 {
 	struct hclge_fd_rule *rule = NULL;
-	struct hlist_node *node2;
+	struct hlist_node *node;
 
-	hlist_for_each_entry_safe(rule, node2,
-				  &hdev->fd_rule_list, rule_node) {
+	hlist_for_each_entry_safe(rule, node, &hdev->fd_rule_list, rule_node) {
 		if (!memcmp(tuples, &rule->tuples, sizeof(*tuples)))
-
 			return rule;
 	}
 
@@ -6301,8 +6297,8 @@ static void hclge_rfs_filter_expire(struct hclge_dev *hdev)
 {
 #ifdef CONFIG_RFS_ACCEL
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
-	struct hclge_fd_rule *rule = NULL;
-	struct hlist_node *node2;
+	struct hclge_fd_rule *rule;
+	struct hlist_node *node;
 	HLIST_HEAD(del_list);
 
 	spin_lock_bh(&hdev->fd_rule_lock);
@@ -6310,8 +6306,7 @@ static void hclge_rfs_filter_expire(struct hclge_dev *hdev)
 		spin_unlock_bh(&hdev->fd_rule_lock);
 		return;
 	}
-	hlist_for_each_entry_safe(rule, node2,
-				  &hdev->fd_rule_list, rule_node) {
+	hlist_for_each_entry_safe(rule, node, &hdev->fd_rule_list, rule_node) {
 		if (rps_may_expire_flow(handle->netdev, rule->queue_id,
 					rule->flow_id, rule->location)) {
 			hlist_del_init(&rule->rule_node);
@@ -6322,7 +6317,7 @@ static void hclge_rfs_filter_expire(struct hclge_dev *hdev)
 	}
 	spin_unlock_bh(&hdev->fd_rule_lock);
 
-	hlist_for_each_entry_safe(rule, node2, &del_list, rule_node) {
+	hlist_for_each_entry_safe(rule, node, &del_list, rule_node) {
 		hclge_fd_tcam_config(hdev, HCLGE_FD_STAGE_1, true,
 				     rule->location, NULL, false);
 		kfree(rule);
@@ -6914,7 +6909,7 @@ static int hclge_get_mac_vlan_cmd_status(struct hclge_vport *vport,
 		}
 
 		dev_err(&hdev->pdev->dev,
-			"add mac addr failed for undefined, code=%d.\n",
+			"add mac addr failed for undefined, code=%u.\n",
 			resp_code);
 		return -EIO;
 	} else if (op == HCLGE_MAC_VLAN_REMOVE) {
@@ -6927,7 +6922,7 @@ static int hclge_get_mac_vlan_cmd_status(struct hclge_vport *vport,
 		}
 
 		dev_err(&hdev->pdev->dev,
-			"remove mac addr failed for undefined, code=%d.\n",
+			"remove mac addr failed for undefined, code=%u.\n",
 			resp_code);
 		return -EIO;
 	} else if (op == HCLGE_MAC_VLAN_LKUP) {
@@ -6940,19 +6935,21 @@ static int hclge_get_mac_vlan_cmd_status(struct hclge_vport *vport,
 		}
 
 		dev_err(&hdev->pdev->dev,
-			"lookup mac addr failed for undefined, code=%d.\n",
+			"lookup mac addr failed for undefined, code=%u.\n",
 			resp_code);
 		return -EIO;
 	}
 
 	dev_err(&hdev->pdev->dev,
-		"unknown opcode for get_mac_vlan_cmd_status,opcode=%d.\n", op);
+		"unknown opcode for get_mac_vlan_cmd_status, opcode=%d.\n", op);
+
 	return -EINVAL;
 }
 
 static int hclge_update_desc_vfid(struct hclge_desc *desc, int vfid, bool clr)
 {
 #define HCLGE_VF_NUM_IN_FIRST_DESC 192
+
 	unsigned int word_num;
 	unsigned int bit_num;
 
@@ -7294,7 +7291,7 @@ int hclge_add_uc_addr_common(struct hclge_vport *vport,
 
 	/* check if we just hit the duplicate */
 	if (!ret) {
-		dev_warn(&hdev->pdev->dev, "VF %d mac(%pM) has been existed\n",
+		dev_warn(&hdev->pdev->dev, "VF %d mac(%pM) exists\n",
 			 vport->vport_id, addr);
 		return 0;
 	}
@@ -8550,10 +8547,8 @@ static void hclge_sync_vlan_filter(struct hclge_dev *hdev)
 {
 #define HCLGE_MAX_SYNC_COUNT	60
 
-	int sync_cnt = 0;
+	int i, ret, sync_cnt = 0;
 	u16 vlan_id;
-	int ret;
-	int i;
 
 	/* start from vport 1 for PF is always alive */
 	for (i = 0; i < hdev->num_alloc_vport; i++) {
@@ -9116,7 +9111,7 @@ static int hclge_init_roce_client_instance(struct hnae3_ae_dev *ae_dev,
 {
 	struct hnae3_client *client = vport->roce.client;
 	struct hclge_dev *hdev = ae_dev->priv;
-	int rst_cnt = hdev->rst_stats.reset_cnt;
+	int rst_cnt;
 	int ret;
 
 	if (!hnae3_dev_roce_supported(hdev) || !hdev->roce_client ||
@@ -9128,6 +9123,7 @@ static int hclge_init_roce_client_instance(struct hnae3_ae_dev *ae_dev,
 	if (ret)
 		return ret;
 
+	rst_cnt = hdev->rst_stats.reset_cnt;
 	ret = client->ops->init_instance(&vport->roce);
 	if (ret)
 		return ret;
@@ -9149,7 +9145,7 @@ static int hclge_init_roce_client_instance(struct hnae3_ae_dev *ae_dev,
 
 	hnae3_set_client_init_flag(client, ae_dev, 1);
 
-	return ret;
+	return 0;
 
 init_roce_err:
 	clear_bit(HCLGE_STATE_ROCE_REGISTERED, &hdev->state);

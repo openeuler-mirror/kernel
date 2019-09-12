@@ -457,15 +457,15 @@ int hclge_cmd_init(struct hclge_dev *hdev)
 	}
 	hdev->fw_version = version;
 
-	pr_info_once("The firmware version is %lu.%lu.%lu.%lu\n",
-		     hnae3_get_field(version, HNAE3_FW_VERSION_BYTE3_MASK,
-				     HNAE3_FW_VERSION_BYTE3_SHIFT),
-		     hnae3_get_field(version, HNAE3_FW_VERSION_BYTE2_MASK,
-				     HNAE3_FW_VERSION_BYTE2_SHIFT),
-		     hnae3_get_field(version, HNAE3_FW_VERSION_BYTE1_MASK,
-				     HNAE3_FW_VERSION_BYTE1_SHIFT),
-		     hnae3_get_field(version, HNAE3_FW_VERSION_BYTE0_MASK,
-				     HNAE3_FW_VERSION_BYTE0_SHIFT));
+	dev_info(&hdev->pdev->dev, "The firmware version is %lu.%lu.%lu.%lu\n",
+		 hnae3_get_field(version, HNAE3_FW_VERSION_BYTE3_MASK,
+				 HNAE3_FW_VERSION_BYTE3_SHIFT),
+		 hnae3_get_field(version, HNAE3_FW_VERSION_BYTE2_MASK,
+				 HNAE3_FW_VERSION_BYTE2_SHIFT),
+		 hnae3_get_field(version, HNAE3_FW_VERSION_BYTE1_MASK,
+				 HNAE3_FW_VERSION_BYTE1_SHIFT),
+		 hnae3_get_field(version, HNAE3_FW_VERSION_BYTE0_MASK,
+				 HNAE3_FW_VERSION_BYTE0_SHIFT));
 
 	/* ask the firmware to enable some features, driver can work without
 	 * it.
@@ -473,7 +473,8 @@ int hclge_cmd_init(struct hclge_dev *hdev)
 	ret = hclge_firmware_compat_config(hdev);
 	if (ret)
 		dev_warn(&hdev->pdev->dev,
-			 "Firmware compatible features are not enabled.\n");
+			 "Firmware compatible features not enabled(%d).\n",
+			 ret);
 
 	return 0;
 
@@ -490,7 +491,7 @@ static void hclge_destroy_queue(struct hclge_cmq_ring *ring)
 	spin_unlock(&ring->lock);
 }
 
-void hclge_destroy_cmd_queue(struct hclge_hw *hw)
+static void hclge_destroy_cmd_queue(struct hclge_hw *hw)
 {
 	hclge_destroy_queue(&hw->cmq.csq);
 	hclge_destroy_queue(&hw->cmq.crq);
