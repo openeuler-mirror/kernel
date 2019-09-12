@@ -2888,31 +2888,6 @@ static int hclge_set_vf_link_state(struct hnae3_handle *handle, int vf,
 	return 0;
 }
 
-static int hclge_set_vf_mac(struct hnae3_handle *handle, int vf,
-			    u8 *mac_addr)
-{
-	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev = vport->back;
-
-	vport = hclge_get_vf_vport(hdev, vf);
-	if (!vport)
-		return -EINVAL;
-
-	if (ether_addr_equal(mac_addr, vport->mac)) {
-		dev_info(&hdev->pdev->dev,
-			 "Specified MAC(=%pM) is same as before, no change committed!\n",
-			 vport->mac);
-		return 0;
-	}
-
-	ether_addr_copy(vport->mac, mac_addr);
-	dev_info(&hdev->pdev->dev,
-		 "VF %d has been set to %pM. Please reload/reset VF\n",
-		 vf, vport->mac);
-
-	return 0;
-}
-
 static u32 hclge_check_event_cause(struct hclge_dev *hdev, u32 *clearval)
 {
 	u32 rst_src_reg;
@@ -7554,6 +7529,71 @@ static int hclge_get_mac_ethertype_cmd_status(struct hclge_dev *hdev,
 	}
 
 	return return_status;
+}
+
+static bool hclge_check_vf_mac_exist(struct hclge_vport *vport, int vf_idx,
+				     u8 *mac_addr)
+{
+	struct hclge_mac_vlan_tbl_entry_cmd req;
+	struct hclge_dev *hdev = vport->back;
+	struct hclge_desc desc;
+	u16 egress_port = 0;
+	int i;
+
+	if (is_zero_ether_addr(mac_addr))
+		return false;
+
+	memset(&req, 0, sizeof(req));
+	hnae3_set_field(egress_port, HCLGE_MAC_EPORT_VFID_M,
+			HCLGE_MAC_EPORT_VFID_S, vport->vport_id);
+	req.egress_port = cpu_to_le16(egress_port);
+	hclge_prepare_mac_addr(&req, mac_addr, false);
+
+	if (hclge_lookup_mac_vlan_tbl(vport, &req, &desc, false) != -ENOENT) {
+		dev_info(&hdev->pdev->dev, "Specified MAC(=%pM) exists!\n",
+			 mac_addr);
+		return true;
+	}
+
+	for (i = hdev->num_vmdq_vport + 1; i < hdev->num_alloc_vport; i++)
+		if (i != vf_idx &&
+		    ether_addr_equal(mac_addr, hdev->vport[i].mac)) {
+			dev_info(&hdev->pdev->dev,
+				 "Specified MAC(=%pM) is same as vport%d, no change committed!\n",
+				 mac_addr, i);
+			return true;
+		}
+
+	return false;
+}
+
+static int hclge_set_vf_mac(struct hnae3_handle *handle, int vf,
+			    u8 *mac_addr)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+
+	if (hclge_check_vf_mac_exist(vport, vf + HCLGE_VF_VPORT_START_NUM,
+				     mac_addr))
+		return -EEXIST;
+
+	vport = hclge_get_vf_vport(hdev, vf);
+	if (!vport)
+		return -EINVAL;
+
+	if (ether_addr_equal(mac_addr, vport->mac)) {
+		dev_info(&hdev->pdev->dev,
+			 "Specified MAC(=%pM) is same as before, no change committed!\n",
+			 vport->mac);
+		return 0;
+	}
+
+	ether_addr_copy(vport->mac, mac_addr);
+	dev_info(&hdev->pdev->dev,
+		 "VF %d has been set to %pM. Please reload/reset VF\n",
+		 vf, vport->mac);
+
+	return 0;
 }
 
 static int hclge_add_mgr_tbl(struct hclge_dev *hdev,

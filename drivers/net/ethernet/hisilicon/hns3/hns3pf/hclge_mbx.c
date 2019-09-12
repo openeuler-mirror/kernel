@@ -277,6 +277,12 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 	if (mbx_req->msg[1] == HCLGE_MBX_MAC_VLAN_UC_MODIFY) {
 		const u8 *old_addr = (const u8 *)(&mbx_req->msg[8]);
 
+		if (!is_zero_ether_addr(vport->mac) &&
+		    !ether_addr_equal(mac_addr, vport->mac)) {
+			status = -EPERM;
+			goto out;
+		}
+
 		hclge_rm_uc_addr_common(vport, old_addr);
 		status = hclge_add_uc_addr_common(vport, mac_addr);
 		if (status) {
@@ -306,6 +312,7 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 		return -EIO;
 	}
 
+out:
 	if (mbx_req->mbx_need_resp & HCLGE_MBX_NEED_RESP_BIT)
 		hclge_gen_resp_to_vf(vport, mbx_req, status, NULL, 0);
 
