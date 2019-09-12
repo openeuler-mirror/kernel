@@ -439,11 +439,6 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				     V2_UD_SEND_WQE_BYTE_40_LBI_S,
 				     hr_dev->loop_idc);
 
-			roce_set_field(ud_sq_wqe->byte_4,
-				       V2_UD_SEND_WQE_BYTE_4_OPCODE_M,
-				       V2_UD_SEND_WQE_BYTE_4_OPCODE_S,
-				       HNS_ROCE_V2_WQE_OP_SEND);
-
 			for (i = 0; i < wr->num_sge; i++)
 				tmp_len += wr->sg_list[i].length;
 
@@ -451,15 +446,23 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			 cpu_to_le32(le32_to_cpu(ud_sq_wqe->msg_len) + tmp_len);
 
 			switch (wr->opcode) {
+			case IB_WR_SEND:
+				hr_op = HNS_ROCE_V2_WQE_OP_SEND;
+				ud_sq_wqe->immtdata = 0;
+				break;
 			case IB_WR_SEND_WITH_IMM:
-			case IB_WR_RDMA_WRITE_WITH_IMM:
+				hr_op = HNS_ROCE_V2_WQE_OP_SEND_WITH_IMM;
 				ud_sq_wqe->immtdata =
 				      cpu_to_le32(be32_to_cpu(wr->ex.imm_data));
 				break;
 			default:
-				ud_sq_wqe->immtdata = 0;
+				hr_op = HNS_ROCE_V2_WQE_OP_MASK;
 				break;
 			}
+
+			roce_set_field(ud_sq_wqe->byte_4,
+				       V2_UD_SEND_WQE_BYTE_4_OPCODE_M,
+				       V2_UD_SEND_WQE_BYTE_4_OPCODE_S, hr_op);
 
 			/* Set sig attr */
 			roce_set_bit(ud_sq_wqe->byte_4,
