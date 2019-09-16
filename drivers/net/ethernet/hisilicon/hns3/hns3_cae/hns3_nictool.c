@@ -831,6 +831,7 @@ struct drv_module_handle driv_module_cmd_handle[] = {
 	{MAC_LOOP_CFG, hns3_test_mac_loop_cfg},
 	{DFX_INFO_CMD, hns3_test_get_dfx_info},
 	{DFX_READ_CMD, hns3_test_read_dfx_info},
+	{EVENT_INJECTION_CMD, hns3_test_event_injection},
 	{SEND_PKT, hns3_test_send_pkt},
 	{RX_PRIV_BUFF_WL_CFG, hns3_test_rx_priv_buff_wl_cfg},
 	{RX_COMMON_THRD_CFG, hns3_test_common_thrd_cfg},

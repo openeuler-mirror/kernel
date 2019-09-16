@@ -111,7 +111,8 @@ int hns3_test_get_dfx_info(struct hns3_nic_priv *net_priv,
 	reg_info.is_read = true;
 	ret = hns3_test_operate_nic_regs(hdev, &reg_info);
 	if (ret) {
-		pr_err("read chip%d's work mode failed!\n", chip_id);
+		dev_err(&hdev->pdev->dev,
+			"read chip%d's work mode failed!\n", chip_id);
 		return ret;
 	}
 	out_info->work_mode = reg_info.value;
@@ -120,7 +121,7 @@ int hns3_test_get_dfx_info(struct hns3_nic_priv *net_priv,
 	reg_info.is_read = true;
 	ret = hns3_test_operate_nic_regs(hdev, &reg_info);
 	if (ret) {
-		pr_err("read mac's map info failed!\n");
+		dev_err(&hdev->pdev->dev, "read mac's map info failed!\n");
 		return ret;
 	}
 	for (i = 0; i < HNS3_TEST_MAX_MAC_NUMBER; i++)
@@ -162,4 +163,37 @@ int hns3_test_read_dfx_info(struct hns3_nic_priv *net_priv,
 	}
 
 	return 0;
+}
+
+int hns3_test_event_injection(struct hns3_nic_priv *net_priv,
+			      void *buf_in, u16 in_size,
+			      void *buf_out, u16 *out_size)
+{
+	struct hns3_test_event_param *in_info;
+	struct hns3_test_reg_param reg_info;
+	struct hnae3_handle *handle;
+	struct hclge_vport *vport;
+	struct hclge_dev *hdev;
+	int ret;
+
+	handle = net_priv->ae_handle;
+	vport = hclge_get_vport(handle);
+	hdev = vport->back;
+
+	in_info = (struct hns3_test_event_param *)buf_in;
+	reg_info.addr = in_info->addr;
+	reg_info.bit_width = 32;
+	reg_info.is_read = false;
+	reg_info.value = in_info->value;
+	dev_info(&hdev->pdev->dev,
+		 "Injection event: %s start.\n", in_info->event_name);
+	ret = hns3_test_operate_nic_regs(hdev, &reg_info);
+	if (ret) {
+		dev_err(&hdev->pdev->dev, "Injection event error!\n");
+		return ret;
+	}
+	dev_info(&hdev->pdev->dev,
+		 "Injection event: %s end.\n", in_info->event_name);
+
+	return ret;
 }

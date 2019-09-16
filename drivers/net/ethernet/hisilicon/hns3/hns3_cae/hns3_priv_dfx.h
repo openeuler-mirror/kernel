@@ -22,6 +22,14 @@ struct hns3_test_dfx_param {
 	u8 func_id;
 };
 
+#define HNS3_TEST_EVENT_NAME_LEN	32
+
+struct hns3_test_event_param {
+	u8 event_name[HNS3_TEST_EVENT_NAME_LEN];
+	u64 value;
+	u64 addr;
+};
+
 #define HNS3_READ_INFO_FLAG		0x1
 #define HNS3_READ_REGS_FLAG		0x2
 
@@ -32,6 +40,9 @@ int hns3_test_get_dfx_info(struct hns3_nic_priv *net_priv,
 			   void *buf_out, u16 *out_size);
 int hns3_test_read_dfx_info(struct hns3_nic_priv *net_priv,
 			    void *buf_in, u16 in_size,
+			    void *buf_out, u16 *out_size);
+int hns3_test_event_injection(struct hns3_nic_priv *net_priv,
+			      void *buf_in, u16 in_size,
 			    void *buf_out, u16 *out_size);
 
 #endif

@@ -39,7 +39,8 @@ enum driver_cmd_type {
 	MAC_LOOP_CFG = 200,
 
 	DFX_INFO_CMD = 250,
-	DFX_READ_CMD = 251,
+	DFX_READ_CMD,
+	EVENT_INJECTION_CMD,
 
 	SEND_PKT = 300,
 	RECV_PKT,
