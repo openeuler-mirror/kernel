@@ -16,18 +16,53 @@
 #define BD_NUM_6				6
 #define BD_NUM_7				7
 
+void fill_port_info(struct hclge_port_info *get_port_info_out,
+		    struct hclge_desc *port_desc, u32 bd_num)
+{
+	u8 *dest_data;
+	u8 *tmp_buff;
+	u32 i;
+
+	dest_data = (u8 *)get_port_info_out;
+
+	/* first BD (24 Bytes) */
+	for (i = 0; i < bd_num; i++) {
+		tmp_buff = (u8 *)&port_desc[i].data[0];
+		if (i == BD_NUM_5) {
+			get_port_info_out->his_link_machine_state =
+			    port_desc[i].data[0];
+			get_port_info_out->his_machine_state_length =
+			    port_desc[i].data[1] & 0xFF;
+			memcpy(get_port_info_out->his_machine_state_data,
+			       tmp_buff + 5, 19);
+		} else if (i == BD_NUM_6) {
+			get_port_info_out->cur_link_machine_state =
+			    port_desc[i].data[0];
+			get_port_info_out->cur_machine_state_length =
+			    port_desc[i].data[1] & 0xFF;
+			memcpy(get_port_info_out->cur_machine_state_data,
+			       tmp_buff + 5, 19);
+		} else {
+			if (i == BD_NUM_7)
+				dest_data =
+				    (u8 *)&get_port_info_out->param_info;
+
+			memcpy(dest_data, tmp_buff, HCLGE_CMD_DATA_BYTE_LEN);
+			if (i != (bd_num - 1))
+				dest_data = dest_data + HCLGE_CMD_DATA_BYTE_LEN;
+		}
+	}
+}
 int hns3_get_port_info(struct hns3_nic_priv *net_priv,
 		       void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
 {
+	struct hnae3_handle *handle = hns3_get_handle(net_priv->netdev);
+	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_port_info *get_port_info_out;
-	struct hclge_desc desc = {0};
+	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc *port_desc;
-	struct hnae3_handle *handle;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hclge_desc desc = {0};
 	__le32 *desc_data;
-	u8 *dest_data;
-	u8 *tmp_buff;
 	u32 bd_num;
 	int ret;
 	u32 i;
@@ -36,9 +71,6 @@ int hns3_get_port_info(struct hns3_nic_priv *net_priv,
 		return -ENODEV;
 
 	get_port_info_out = (struct hclge_port_info *)buf_out;
-	handle = hns3_get_handle(net_priv->netdev);
-	vport = hclge_get_vport(handle);
-	hdev = vport->back;
 
 	get_port_info_out->gpio_insert = 0;
 
@@ -76,35 +108,7 @@ int hns3_get_port_info(struct hns3_nic_priv *net_priv,
 		return ret;
 	}
 
-	dest_data = (u8 *)get_port_info_out;
-
-	/* first BD (24 Bytes) */
-	for (i = 0; i < bd_num; i++) {
-		tmp_buff = (u8 *)&port_desc[i].data[0];
-		if (i == BD_NUM_5) {
-			get_port_info_out->his_link_machine_state =
-			    port_desc[i].data[0];
-			get_port_info_out->his_machine_state_length =
-			    port_desc[i].data[1] & 0xFF;
-			memcpy(get_port_info_out->his_machine_state_data,
-			       tmp_buff + 5, 19);
-		} else if (i == BD_NUM_6) {
-			get_port_info_out->cur_link_machine_state =
-			    port_desc[i].data[0];
-			get_port_info_out->cur_machine_state_length =
-			    port_desc[i].data[1] & 0xFF;
-			memcpy(get_port_info_out->cur_machine_state_data,
-			       tmp_buff + 5, 19);
-		} else {
-			if (i == BD_NUM_7)
-				dest_data =
-				    (u8 *)&get_port_info_out->param_info;
-
-			memcpy(dest_data, tmp_buff, HCLGE_CMD_DATA_BYTE_LEN);
-			if (i != (bd_num - 1))
-				dest_data = dest_data + HCLGE_CMD_DATA_BYTE_LEN;
-		}
-	}
+	fill_port_info(get_port_info_out, port_desc, bd_num);
 
 	kfree(port_desc);
 

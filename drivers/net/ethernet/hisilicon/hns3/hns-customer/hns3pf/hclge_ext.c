@@ -505,8 +505,8 @@ static int hclge_phy_need_page_select(struct hclge_dev *hdev,
 	return 0;
 }
 
-static int hclge_check_phy_opt_pare(struct hclge_dev *hdev,
-				    struct mii_bus *mdio_bus,
+static int hclge_check_phy_opt_param(struct hclge_dev *hdev,
+				     struct mii_bus *mdio_bus,
 				    struct phy_device *phydev,
 				    enum hclge_phy_op_code opt_type)
 {
@@ -529,6 +529,35 @@ static int hclge_check_phy_opt_pare(struct hclge_dev *hdev,
 	return 0;
 }
 
+int hclge_mdio_bus_opt(struct hclge_phy_para *para, struct hclge_dev *hdev,
+		       struct mii_bus *mdio_bus, u32 phyid,
+			 enum hclge_phy_op_code opt_type)
+{
+	int op_ret;
+
+	if (opt_type == PHY_OP_READ) {
+		op_ret = mdio_bus->read(mdio_bus, phyid, para->reg_addr);
+		if (op_ret < 0) {
+			dev_err(&hdev->pdev->dev,
+				"read phy %d page %d reg %d failed.\n",
+				phyid, para->page, para->reg_addr);
+		} else {
+			para->data = (u16)op_ret;
+			op_ret = 0;
+		}
+	} else {
+		op_ret = mdio_bus->write(mdio_bus, phyid, para->reg_addr,
+					 para->data);
+		if (op_ret < 0) {
+			dev_err(&hdev->pdev->dev,
+				"write phy %d page %d reg %d failed.\n",
+				phyid, para->page, para->reg_addr);
+		}
+	}
+
+	return op_ret;
+}
+
 static int hclge_phy_reg_opt(struct hnae3_handle *handle, void *data,
 			     enum hclge_phy_op_code opt_type)
 {
@@ -539,10 +568,11 @@ static int hclge_phy_reg_opt(struct hnae3_handle *handle, void *data,
 	struct mii_bus *mdio_bus = mac->mdio_bus;
 	u32 phyid = mac->phy_addr;
 	int need_page_select;
-	int op_ret, ret;
 	u16 cur_page;
+	int op_ret;
+	int ret;
 
-	ret = hclge_check_phy_opt_pare(hdev, mdio_bus, mac->phydev, opt_type);
+	ret = hclge_check_phy_opt_param(hdev, mdio_bus, mac->phydev, opt_type);
 	if (ret < 0)
 		return ret;
 
@@ -576,25 +606,7 @@ static int hclge_phy_reg_opt(struct hnae3_handle *handle, void *data,
 	}
 
 	/* operate register(read or write) */
-	if (opt_type == PHY_OP_READ) {
-		op_ret = mdio_bus->read(mdio_bus, phyid, para->reg_addr);
-		if (op_ret < 0) {
-			dev_err(&hdev->pdev->dev,
-				"read phy %d page %d reg %d failed.\n",
-				phyid, para->page, para->reg_addr);
-		} else {
-			para->data = (u16)op_ret;
-			op_ret = 0;
-		}
-	} else {
-		op_ret = mdio_bus->write(mdio_bus, phyid, para->reg_addr,
-					 para->data);
-		if (op_ret < 0) {
-			dev_err(&hdev->pdev->dev,
-				"write phy %d page %d reg %d failed.\n",
-				phyid, para->page, para->reg_addr);
-		}
-	}
+	op_ret = hclge_mdio_bus_opt(para, hdev, mdio_bus, phyid, opt_type);
 
 	/* come back to the page recorded in the first step. */
 	if (need_page_select) {

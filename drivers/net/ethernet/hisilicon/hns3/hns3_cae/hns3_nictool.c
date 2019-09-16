@@ -19,7 +19,6 @@
 #include "hns3_priv_mac.h"
 #include "hns3_priv_dfx.h"
 #include "hns3_priv_vlan.h"
-#include "hns3_priv_phy.h"
 #include "hns3_priv_qos.h"
 #include "hns3_priv_qinfo.h"
 #include "hns3_priv_promisc.h"
@@ -61,7 +60,7 @@
 #define HCLGE_OPC_DCQCN_TEMPLATE_CFG	0x7014
 #define HCLGE_OPC_DCQCN_GET_MSG_CNT		0x7017
 
-#define HNAE_DRIVER_VERSION "1.8.10.1"
+#define HNAE_DRIVER_VERSION "1.8.10.2"
 
 #define MAX_MSG_OUT_SIZE	(1024U * 2048U)
 #define MAX_MSG_IN_SIZE		(1024U * 2048U)
@@ -845,7 +844,6 @@ struct drv_module_handle driv_module_cmd_handle[] = {
 	{TIMEOUT_CFG, hns3_nic_timeout_cfg},
 	{PROMISC_MODE_CFG, hns3_promisc_mode_cfg},
 	{QINFO_CFG, hns3_test_qinfo_cfg},
-	{PHY_REGISTER_CFG, hns3_test_phy_register_cfg},
 	{MACTABLE_CFG, hns3_test_opt_mactbl},
 	{CLEAN_STATS, hns3_test_clean_stats},
 	{FD_CFG, hns3_test_fd_cfg},

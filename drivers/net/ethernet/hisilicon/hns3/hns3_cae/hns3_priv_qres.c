@@ -97,6 +97,42 @@ int hns3_get_qres_tx_value(struct hns3_nic_priv *net_priv, int ring_id,
 	return num;
 }
 
+void fill_queue_info(struct hns3_nic_priv *net_priv,
+		     struct qres_param *out_info, int ring_id)
+{
+	/* rx info */
+	out_info->qid = ring_id;
+	out_info->rx_head = hns3_get_qres_rx_value(net_priv, ring_id,
+						   RX_HEAD_TYPE);
+	out_info->rx_tail = hns3_get_qres_rx_value(net_priv, ring_id,
+						   RX_TAIL_TYPE);
+	out_info->rx_ebd = hns3_get_qres_rx_value(net_priv, ring_id,
+						  RX_EBD_TYPE);
+	out_info->rx_fbd = hns3_get_qres_rx_value(net_priv, ring_id,
+						  RX_FBD_TYPE);
+	out_info->rx_software_head =
+	    hns3_get_qres_rx_value(net_priv, ring_id,
+				   RX_SOFTWARE_HEAD_TYPE);
+	out_info->rx_software_tail =
+	    hns3_get_qres_rx_value(net_priv, ring_id,
+				   RX_SOFTWARE_TAIL_TYPE);
+	/* tx info */
+	out_info->tx_head = hns3_get_qres_tx_value(net_priv, ring_id,
+						   TX_HEAD_TYPE);
+	out_info->tx_tail = hns3_get_qres_tx_value(net_priv, ring_id,
+						   TX_TAIL_TYPE);
+	out_info->tx_ebd = hns3_get_qres_tx_value(net_priv, ring_id,
+						  TX_EBD_TYPE);
+	out_info->tx_fbd = hns3_get_qres_tx_value(net_priv, ring_id,
+						  TX_FBD_TYPE);
+	out_info->tx_software_head =
+	    hns3_get_qres_tx_value(net_priv, ring_id,
+				   TX_SOFTWARE_HEAD_TYPE);
+	out_info->tx_software_tail =
+	    hns3_get_qres_tx_value(net_priv, ring_id,
+				   TX_SOFTWARE_TAIL_TYPE);
+}
+
 int hns3_test_qres_cfg(struct hns3_nic_priv *net_priv,
 		       void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
 {
@@ -121,36 +157,8 @@ int hns3_test_qres_cfg(struct hns3_nic_priv *net_priv,
 	}
 
 	if (qres_in_param->mtype == MTYPE_QUEUE_INFO) {
-		out_info->qid = ring_id;
-		out_info->rx_head = hns3_get_qres_rx_value(net_priv, ring_id,
-							   RX_HEAD_TYPE);
-		out_info->rx_tail = hns3_get_qres_rx_value(net_priv, ring_id,
-							   RX_TAIL_TYPE);
-		out_info->rx_ebd = hns3_get_qres_rx_value(net_priv, ring_id,
-							  RX_EBD_TYPE);
-		out_info->rx_fbd = hns3_get_qres_rx_value(net_priv, ring_id,
-							  RX_FBD_TYPE);
-		out_info->rx_software_head =
-		    hns3_get_qres_rx_value(net_priv, ring_id,
-					   RX_SOFTWARE_HEAD_TYPE);
-		out_info->rx_software_tail =
-		    hns3_get_qres_rx_value(net_priv, ring_id,
-					   RX_SOFTWARE_TAIL_TYPE);
-		/* tx info */
-		out_info->tx_head = hns3_get_qres_tx_value(net_priv, ring_id,
-							   TX_HEAD_TYPE);
-		out_info->tx_tail = hns3_get_qres_tx_value(net_priv, ring_id,
-							   TX_TAIL_TYPE);
-		out_info->tx_ebd = hns3_get_qres_tx_value(net_priv, ring_id,
-							  TX_EBD_TYPE);
-		out_info->tx_fbd = hns3_get_qres_tx_value(net_priv, ring_id,
-							  TX_FBD_TYPE);
-		out_info->tx_software_head =
-		    hns3_get_qres_tx_value(net_priv, ring_id,
-					   TX_SOFTWARE_HEAD_TYPE);
-		out_info->tx_software_tail =
-		    hns3_get_qres_tx_value(net_priv, ring_id,
-					   TX_SOFTWARE_TAIL_TYPE);
+		fill_queue_info(net_priv, out_info, ring_id);
+
 	} else if (qres_in_param->mtype == MTYPE_BD_INFO) {
 		if (qres_in_param->queue_type == TYPE_TX) {
 			ring = net_priv->ring_data[ring_id].ring;

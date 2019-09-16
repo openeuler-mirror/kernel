@@ -70,7 +70,6 @@ HNS3_CAE_OBJS_EXT =		hns3_cae/hns3_priv_dfx.o \
 						hns3_cae/hns3_priv_hilink_param.o \
 						hns3_cae/hns3_priv_irq.o \
 						hns3_cae/hns3_priv_mac.o \
-						hns3_cae/hns3_priv_phy.o \
 						hns3_cae/hns3_priv_pkt.o \
 						hns3_cae/hns3_priv_port.o \
 						hns3_cae/hns3_priv_promisc.o \

@@ -205,19 +205,45 @@ int __get_tid(int queue_id, int is_send)
 		return (queue_id * 2 + 1) % MAX_KTHREAD_NUM;
 }
 
+void fill_skb_head(struct sk_buff *skb, int mss)
+{
+	struct ipv6hdr *ip6_hdr;
+	int protocol;
+
+	skb->network_header = ETH_HLEN;
+	if (skb->protocol == htons(ETH_P_8021Q)) {
+		skb->network_header += VLAN_HLEN;
+		protocol = vlan_get_protocol(skb);
+	} else {
+		protocol = skb->protocol;
+	}
+	if (protocol == htons(ETH_P_IP))
+		skb->transport_header = skb->network_header +
+					ip_hdr(skb)->ihl * 4;
+	if (protocol == htons(ETH_P_IPV6)) {
+		ip6_hdr = (struct ipv6hdr *)skb_network_header(skb);
+		skb->transport_header = skb->network_header +
+					sizeof(struct ipv6hdr);
+		if (ip6_hdr->nexthdr == NEXTHDR_HOP)
+			skb->transport_header += (skb_transport_header(skb)[1] +
+						  1) << 3;
+		skb_shinfo(skb)->gso_type = SKB_GSO_TCPV6;
+	}
+
+	skb_shinfo(skb)->gso_size = mss;
+}
+
 static struct sk_buff *__hns_assemble_skb(struct net_device *ndev,
 					  const void *data, int length,
 					  int queue_id, int mss)
 {
-	struct sk_buff *skb;
-	struct page *p;
-	void *buff;
-	int bnum = 0;
-	int protocol;
-	int proc_length;
-	const char *head_data = (const char *)data;
 	const struct ethhdr *ethhead = (const struct ethhdr *)data;
-	struct ipv6hdr *ip6_hdr;
+	const char *head_data = (const char *)data;
+	struct sk_buff *skb;
+	int proc_length;
+	struct page *p;
+	int bnum = 0;
+	void *buff;
 
 	/* allocate test skb */
 	skb = alloc_skb(256, GFP_KERNEL);
@@ -263,30 +289,7 @@ static struct sk_buff *__hns_assemble_skb(struct net_device *ndev,
 				DEFAULT_PAGE_SIZE);
 	}
 
-	skb->network_header = ETH_HLEN;
-	if (skb->protocol == htons(ETH_P_8021Q)) {
-		skb->network_header += VLAN_HLEN;
-		protocol = vlan_get_protocol(skb);
-	} else {
-		protocol = skb->protocol;
-	}
-
-	if (protocol == htons(ETH_P_IP))
-		skb->transport_header =
-		    skb->network_header + ip_hdr(skb)->ihl * 4;
-
-	if (protocol == htons(ETH_P_IPV6)) {
-		ip6_hdr = (struct ipv6hdr *)skb_network_header(skb);
-		skb->transport_header =
-		    skb->network_header + sizeof(struct ipv6hdr);
-		if (ip6_hdr->nexthdr == NEXTHDR_HOP)
-			skb->transport_header +=
-			    (skb_transport_header(skb)[1] + 1) << 3;
-
-		skb_shinfo(skb)->gso_type = SKB_GSO_TCPV6;
-	}
-
-	skb_shinfo(skb)->gso_size = mss;
+	fill_skb_head(skb, mss);
 
 	return skb;
 }
