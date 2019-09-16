@@ -120,7 +120,7 @@ void hclge_reset_event_it(struct pci_dev *pdev, struct hnae3_handle *handle)
 	else if (time_after(jiffies, (hdev->last_reset_time + 4 * 5 * HZ)))
 		hdev->reset_level = HNAE3_FUNC_RESET;
 
-	dev_info(&hdev->pdev->dev, "received reset event , reset type is %d",
+	dev_info(&hdev->pdev->dev, "IT received reset event, reset type is %d",
 		 hdev->reset_level);
 
 	if (hdev->ppu_poison_ras_err && nic_event_call) {
@@ -146,13 +146,13 @@ bool hclge_reset_done_it(struct hnae3_handle *handle, bool done)
 	netdev = hdev->vport[0].nic.netdev;
 
 	if (done) {
-		dev_info(&hdev->pdev->dev, "Report Reset DONE!\n");
+		dev_info(&hdev->pdev->dev, "IT Report Reset DONE!\n");
 		if (nic_event_call)
 			nic_call_event(netdev, HNAE3_RESET_DONE_CUSTOM);
 	}
 
 	if (hdev->reset_fail_cnt >= HCLGE_RESET_MAX_FAIL_CNT) {
-		dev_err(&hdev->pdev->dev, "Report Reset fail!\n");
+		dev_err(&hdev->pdev->dev, "IT Report Reset fail!\n");
 		if (nic_event_call) {
 			if (hdev->reset_type == HNAE3_FUNC_RESET)
 				nic_call_event(netdev,
