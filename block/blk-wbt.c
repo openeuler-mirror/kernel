@@ -570,6 +570,7 @@ static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
 			io_schedule();
 
 		has_sleeper = true;
+		set_current_state(TASK_UNINTERRUPTIBLE);
 	} while (1);
 
 	finish_wait(&rqw->wait, &data.wq);
