@@ -42,7 +42,7 @@ int hns3_test_read_dfx_info(struct hns3_nic_priv *net_priv,
 			    void *buf_in, u16 in_size,
 			    void *buf_out, u16 *out_size);
 int hns3_test_event_injection(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u16 in_size,
-			    void *buf_out, u16 *out_size);
+			     void *buf_in, u16 in_size,
+			     void *buf_out, u16 *out_size);
 
 #endif

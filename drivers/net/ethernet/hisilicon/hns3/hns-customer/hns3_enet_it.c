@@ -17,7 +17,7 @@ extern const char hns3_copyright[];
 
 #ifdef CONFIG_IT_VALIDATION
 
-#define HNAE_DRIVER_VERSION		"1.8.15.0"
+#define HNAE_DRIVER_VERSION		"1.8.15.1"
 
 extern struct net_device_ops hns3_nic_netdev_ops;
 extern const struct hnae3_client_ops client_ops;
