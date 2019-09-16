@@ -6262,7 +6262,7 @@ static bool hclge_get_hw_reset_stat(struct hnae3_handle *handle)
 	struct hclge_dev *hdev = vport->back;
 
 	return hclge_read_dev(&hdev->hw, HCLGE_GLOBAL_RESET_REG) ||
-	       hclge_read_dev(&hdev->hw, HCLGE_FUN_RST_ING);
+	       (hclge_read_dev(&hdev->hw, HCLGE_FUN_RST_ING) & BIT(0));
 }
 
 static bool hclge_ae_dev_resetting(struct hnae3_handle *handle)
