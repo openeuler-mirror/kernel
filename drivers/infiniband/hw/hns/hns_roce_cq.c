@@ -60,7 +60,7 @@ static void hns_roce_ib_cq_event(struct hns_roce_cq *hr_cq,
 	    event_type != HNS_ROCE_EVENT_TYPE_CQ_ACCESS_ERROR &&
 	    event_type != HNS_ROCE_EVENT_TYPE_CQ_OVERFLOW) {
 		dev_err(hr_dev->dev,
-			"hns_roce_ib: Unexpected event type 0x%x on CQ %06lx\n",
+			"hns_roce_ib: Unexpected event type 0x%x on CQ 0x%lx\n",
 			event_type, hr_cq->cqn);
 		return;
 	}
@@ -110,22 +110,22 @@ static int hns_roce_cq_alloc(struct hns_roce_dev *hr_dev, int nent,
 	}
 
 	if (vector >= hr_dev->caps.num_comp_vectors) {
-		dev_err(dev, "CQ alloc.Invalid vector.\n");
+		dev_err(dev, "Invalid vector(0x%x) for CQ alloc.\n", vector);
 		return -EINVAL;
 	}
 	hr_cq->vector = vector;
 
 	ret = hns_roce_bitmap_alloc(&cq_table->bitmap, &hr_cq->cqn);
 	if (ret == -1) {
-		dev_err(dev, "CQ alloc.Failed to alloc index.\n");
+		dev_err(dev, "Num of cq out of range.\n");
 		return -ENOMEM;
 	}
 
 	/* Get CQC memory HEM(Hardware Entry Memory) table */
 	ret = hns_roce_table_get(hr_dev, &cq_table->table, hr_cq->cqn);
 	if (ret) {
-		dev_err(dev, "CQ(0x%lx) alloc.Failed to get context mem(%d).\n",
-			hr_cq->cqn, ret);
+		dev_err(dev, "Get context mem failed(%d) when CQ(0x%lx) alloc.\n",
+			ret, hr_cq->cqn);
 		goto err_out;
 	}
 
@@ -154,8 +154,8 @@ static int hns_roce_cq_alloc(struct hns_roce_dev *hr_dev, int nent,
 	ret = hns_roce_sw2hw_cq(hr_dev, mailbox, hr_cq->cqn);
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
 	if (ret) {
-		dev_err(dev, "CQ(0x%lx) alloc.Failed to cmd mailbox(%d).\n",
-			hr_cq->cqn, ret);
+		dev_err(dev, "Send cmd mailbox failed(%d) when CQ(0x%lx) alloc.\n",
+			ret, hr_cq->cqn);
 		goto err_radix;
 	}
 
@@ -198,7 +198,7 @@ void hns_roce_free_cq(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 
 	ret = hns_roce_hw2sw_cq(hr_dev, NULL, hr_cq->cqn);
 	if (ret)
-		dev_err(dev, "HW2SW_CQ failed (%d) for CQN %06lx\n", ret,
+		dev_err(dev, "HW2SW_CQ failed(%d) for CQN 0x%0lx\n", ret,
 			hr_cq->cqn);
 
 	/* Waiting interrupt process procedure carried out */
@@ -250,13 +250,15 @@ static int hns_roce_ib_get_cq_umem(struct hns_roce_dev *hr_dev,
 				&buf->hr_mtt);
 	}
 	if (ret) {
-		dev_err(hr_dev->dev, "hns_roce_mtt_init error for create cq\n");
+		dev_err(hr_dev->dev, "hns_roce_mtt_init error(%d) for create cq.\n",
+			ret);
 		goto err_buf;
 	}
 
 	ret = hns_roce_ib_umem_write_mtt(hr_dev, &buf->hr_mtt, *umem);
 	if (ret) {
-		dev_err(hr_dev->dev, "hns_roce_ib_umem_write_mtt error for create cq\n");
+		dev_err(hr_dev->dev, "hns_roce_ib_umem_write_mtt error(%d) for create cq.\n",
+			ret);
 		goto err_mtt;
 	}
 
@@ -290,13 +292,15 @@ static int hns_roce_ib_alloc_cq_buf(struct hns_roce_dev *hr_dev,
 	ret = hns_roce_mtt_init(hr_dev, buf->hr_buf.npages,
 				buf->hr_buf.page_shift, &buf->hr_mtt);
 	if (ret) {
-		dev_err(hr_dev->dev, "hns_roce_mtt_init error for kernel create cq\n");
+		dev_err(hr_dev->dev, "hns_roce_mtt_init error(%d) for kernel create cq.\n",
+			ret);
 		goto err_buf;
 	}
 
 	ret = hns_roce_buf_write_mtt(hr_dev, &buf->hr_mtt, &buf->hr_buf);
 	if (ret) {
-		dev_err(hr_dev->dev, "hns_roce_ib_umem_write_mtt error for kernel create cq\n");
+		dev_err(hr_dev->dev, "hns_roce_ib_umem_write_mtt error(%d) for kernel create cq.\n",
+			ret);
 		goto err_mtt;
 	}
 
@@ -332,7 +336,7 @@ static int create_user_cq(struct hns_roce_dev *hr_dev,
 	int ret;
 
 	if (ib_copy_from_udata(&ucmd, udata, sizeof(ucmd))) {
-		dev_err(dev, "Failed to copy_from_udata.\n");
+		dev_err(dev, "Copy_from_udata failed.\n");
 		return -EFAULT;
 	}
 
@@ -341,7 +345,7 @@ static int create_user_cq(struct hns_roce_dev *hr_dev,
 				      &hr_cq->umem, ucmd.buf_addr,
 				      cq_entries);
 	if (ret) {
-		dev_err(dev, "Failed to get_cq_umem.\n");
+		dev_err(dev, "Get_cq_umem failed(%d).\n", ret);
 		return ret;
 	}
 
@@ -350,7 +354,8 @@ static int create_user_cq(struct hns_roce_dev *hr_dev,
 		ret = hns_roce_db_map_user(to_hr_ucontext(context),
 					   ucmd.db_addr, &hr_cq->db);
 		if (ret) {
-			dev_err(dev, "cq record doorbell map failed!\n");
+			dev_err(dev, "cq record doorbell map failed(%d)!\n",
+				ret);
 			goto err_mtt;
 		}
 		hr_cq->db_en = 1;
@@ -379,7 +384,7 @@ static int create_kernel_cq(struct hns_roce_dev *hr_dev,
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RECORD_DB) {
 		ret = hns_roce_alloc_db(hr_dev, &hr_cq->db, 1);
 		if (ret) {
-			dev_err(dev, "Failed to alloc db for cq.\n");
+			dev_err(dev, "Alloc db for cq failed(%d).\n", ret);
 			return ret;
 		}
 
@@ -391,7 +396,7 @@ static int create_kernel_cq(struct hns_roce_dev *hr_dev,
 	/* Init mmt table and write buff address to mtt table */
 	ret = hns_roce_ib_alloc_cq_buf(hr_dev, &hr_cq->hr_buf, cq_entries);
 	if (ret) {
-		dev_err(dev, "Failed to alloc cq buf.\n");
+		dev_err(dev, "Alloc cq buf failed(%d).\n", ret);
 		goto err_db;
 	}
 
@@ -450,7 +455,7 @@ struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 	rdfx_func_cnt(hr_dev, RDFX_FUNC_CREATE_CQ);
 
 	if (cq_entries < 1 || cq_entries > hr_dev->caps.max_cqes) {
-		dev_err(dev, "Creat CQ failed. entries=%d, max=%d\n",
+		dev_err(dev, "Create CQ failed. entries is %d, max cqe is %d\n",
 			cq_entries, hr_dev->caps.max_cqes);
 		return ERR_PTR(-EINVAL);
 	}
@@ -472,13 +477,15 @@ struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 		ret = create_user_cq(hr_dev, hr_cq, context, udata, &resp, uar,
 				     cq_entries);
 		if (ret) {
-			dev_err(dev, "Failed to create cq for user mode!\n");
+			dev_err(dev, "Create cq for user mode failed(%d)!\n",
+				ret);
 			goto err_cq;
 		}
 	} else {
 		ret = create_kernel_cq(hr_dev, hr_cq, uar, cq_entries);
 		if (ret) {
-			dev_err(dev, "Failed to create cq for kernel mode!\n");
+			dev_err(dev, "Create cq for kernel mode failed(%d)!\n",
+				ret);
 			goto err_cq;
 		}
 	}
@@ -487,7 +494,7 @@ struct ib_cq *hns_roce_ib_create_cq(struct ib_device *ib_dev,
 	ret = hns_roce_cq_alloc(hr_dev, cq_entries, &hr_cq->hr_buf.hr_mtt, uar,
 				hr_cq, vector);
 	if (ret) {
-		dev_err(dev, "Creat CQ .Failed to cq_alloc.\n");
+		dev_err(dev, "Cq alloc failed(%d).\n", ret);
 		goto err_dbmap;
 	}
 
@@ -600,7 +607,7 @@ void hns_roce_cq_event(struct hns_roce_dev *hr_dev, u32 cqn, int event_type)
 		atomic_inc(&cq->refcount);
 
 	if (!cq) {
-		dev_warn(dev, "Async event for bogus CQ %08x\n", cqn);
+		dev_warn(dev, "Async event for bogus CQ 0x%08x\n", cqn);
 		return;
 	}
 

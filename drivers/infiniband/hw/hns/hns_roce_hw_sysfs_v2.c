@@ -523,7 +523,7 @@ static int hns_roce_v2_query_cqc(struct hns_roce_dev *hr_dev,
 	if (!ret)
 		memcpy(bt0_ba, mailbox->buf, sizeof(*bt0_ba));
 	else {
-		pr_err("QUERY CQ bt0 cmd process error\n");
+		pr_err("Query CQ bt0 cmd process error(%d).\n", ret);
 		goto out;
 	}
 
@@ -533,7 +533,7 @@ static int hns_roce_v2_query_cqc(struct hns_roce_dev *hr_dev,
 	if (!ret)
 		memcpy(bt1_ba, mailbox->buf, sizeof(*bt1_ba));
 	else {
-		pr_err("QUERY CQ bt1 cmd process error\n");
+		pr_err("Query CQ bt1 cmd process error(%d).\n", ret);
 		goto out;
 	}
 	ret = hns_roce_cmd_mbox(hr_dev, 0, mailbox->dma, cqn, 0,
@@ -626,7 +626,8 @@ int hns_roce_v2_modify_eq(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq,
 				eq_cmd, HNS_ROCE_CMD_TIMEOUT_MSECS);
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
 	if (ret)
-		dev_err(hr_dev->dev, "MODIFY EQ Failed to cmd mailbox.\n");
+		dev_err(hr_dev->dev, "Modify EQ Failed(%d) for cmd mailbox.\n",
+			ret);
 
 	return ret;
 }

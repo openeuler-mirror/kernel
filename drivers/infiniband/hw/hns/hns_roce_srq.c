@@ -49,7 +49,8 @@ void hns_roce_srq_event(struct hns_roce_dev *hr_dev, u32 srqn, int event_type)
 	if (srq) {
 		refcount_inc(&srq->refcount);
 	} else {
-		dev_warn(hr_dev->dev, "Async event for bogus SRQ %08x\n", srqn);
+		dev_warn(hr_dev->dev, "Async event for bogus SRQ 0x%08x\n",
+			 srqn);
 		return;
 	}
 
@@ -79,7 +80,7 @@ static void hns_roce_ib_srq_event(struct hns_roce_srq *srq,
 			break;
 		default:
 			dev_err(hr_dev->dev,
-			   "hns_roce:Unexpected event type 0x%x on SRQ %06lx\n",
+			   "hns_roce:Unexpected event type 0x%x on SRQ 0x%06lx\n",
 			   event_type, srq->srqn);
 			return;
 		}
@@ -147,8 +148,8 @@ static int hns_roce_srq_alloc(struct hns_roce_dev *hr_dev, u32 pdn, u32 cqn,
 
 	ret = hns_roce_table_get(hr_dev, &srq_table->table, srq->srqn);
 	if (ret) {
-		dev_err(hr_dev->dev, "SRQ alloc.Failed to get table, srq - 0x%lx.\n",
-			srq->srqn);
+		dev_err(hr_dev->dev, "Get table failed(%d) for SRQ(0x%lx) alloc.\n",
+			ret, srq->srqn);
 		goto err_out;
 	}
 
@@ -201,7 +202,7 @@ static void hns_roce_srq_free(struct hns_roce_dev *hr_dev,
 
 	ret = hns_roce_hw2sw_srq(hr_dev, NULL, srq->srqn);
 	if (ret)
-		dev_err(hr_dev->dev, "HW2SW_SRQ failed (%d) for CQN %06lx\n",
+		dev_err(hr_dev->dev, "HW2SW_SRQ failed (%d) for CQN 0x%06lx.\n",
 			ret, srq->srqn);
 
 	spin_lock_irq(&srq_table->lock);
@@ -243,7 +244,8 @@ static int create_user_srq(struct ib_pd *pd, struct hns_roce_srq *srq,
 		ret = hns_roce_mtt_init(hr_dev, ib_umem_page_count(srq->umem),
 					srq->umem->page_shift, &srq->mtt);
 	if (ret) {
-		dev_err(hr_dev->dev, "mtt init error when create srq\n");
+		dev_err(hr_dev->dev, "Mtt init error(%d) when create srq.\n",
+			ret);
 		goto err_user_buf;
 	}
 
@@ -274,7 +276,7 @@ static int create_user_srq(struct ib_pd *pd, struct hns_roce_srq *srq,
 	}
 
 	if (ret) {
-		dev_err(hr_dev->dev, "mtt init error for idx que\n");
+		dev_err(hr_dev->dev, "User mtt init error for idx que\n");
 		goto err_user_idx_mtt;
 	}
 
@@ -282,7 +284,7 @@ static int create_user_srq(struct ib_pd *pd, struct hns_roce_srq *srq,
 					 srq->idx_que.umem);
 	if (ret) {
 		dev_err(hr_dev->dev,
-			"write mtt error for idx que\n");
+			"Write mtt error(%d) for idx que\n", ret);
 		goto err_user_idx_buf;
 	}
 
@@ -352,7 +354,8 @@ static int create_kernel_srq(struct ib_pd *pd, struct hns_roce_srq *srq,
 	ret = hns_roce_mtt_init(hr_dev, srq->buf.npages, srq->buf.page_shift,
 				&srq->mtt);
 	if (ret) {
-		dev_err(hr_dev->dev, "mtt init error when create srq\n");
+		dev_err(hr_dev->dev, "Mtt init error(%d) when create srq.\n",
+			ret);
 		goto err_kernel_buf;
 	}
 
@@ -372,14 +375,15 @@ static int create_kernel_srq(struct ib_pd *pd, struct hns_roce_srq *srq,
 				srq->idx_que.idx_buf.page_shift,
 				&srq->idx_que.mtt);
 	if (ret) {
-		dev_err(hr_dev->dev, "mtt init error for idx que\n");
+		dev_err(hr_dev->dev, "Kernel mtt init error(%d) for idx que.\n",
+			ret);
 		goto err_kernel_create_idx;
 	}
 	/* Write buffer address into the mtt table */
 	ret = hns_roce_buf_write_mtt(hr_dev, &srq->idx_que.mtt,
 				     &srq->idx_que.idx_buf);
 	if (ret) {
-		dev_err(hr_dev->dev, "write mtt error for idx que\n");
+		dev_err(hr_dev->dev, "Write mtt error(%d) for idx que.\n", ret);
 		goto err_kernel_idx_buf;
 	}
 	srq->wrid = kcalloc(srq->max, sizeof(u64), GFP_KERNEL);
@@ -487,8 +491,8 @@ struct ib_srq *hns_roce_create_srq(struct ib_pd *pd,
 				 0, srq);
 	if (ret) {
 		dev_err(hr_dev->dev,
-			"failed to alloc srq, cqn - 0x%x, pdn - 0x%lx\n",
-			cqn, to_hr_pd(pd)->pdn);
+			"Alloc srq failed(%d), cqn is 0x%x, pdn is 0x%lx.\n",
+			ret, cqn, to_hr_pd(pd)->pdn);
 		goto err_wrid;
 	}
 

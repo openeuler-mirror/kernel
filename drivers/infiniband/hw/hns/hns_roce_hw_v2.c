@@ -268,7 +268,7 @@ static int set_rwqe_data_seg(struct ib_qp *ibqp, struct ib_send_wr *wr,
 		if (le32_to_cpu(rc_sq_wqe->msg_len) >
 		    hr_dev->caps.max_sq_inline) {
 			*bad_wr = wr;
-			dev_err(hr_dev->dev, "inline len(1-%d)=%d, illegal",
+			dev_err(hr_dev->dev, "Inline len(0x%x)illegal, max is 0x%x.\n",
 				rc_sq_wqe->msg_len, hr_dev->caps.max_sq_inline);
 			return -EINVAL;
 		}
@@ -686,7 +686,7 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 
 			ind++;
 		} else {
-			dev_err(dev, "Illegal qp(0x%x) type:0x%x\n",
+			dev_err(dev, "Post send failed for illegal qp(0x%x) type:0x%x\n",
 				ibqp->qp_num, ibqp->qp_type);
 			v2_spin_unlock_irqrestore(qp_lock, &qp->sq.lock,
 						  &flags);
@@ -770,6 +770,8 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 	if (hr_qp->state == IB_QPS_RESET) {
 		v2_spin_unlock_irqrestore(qp_lock, &hr_qp->rq.lock, &flags);
 		*bad_wr = wr;
+		dev_err(dev, "Post recv failed: QP state is RESET, qp num is 0x%lx.\n",
+			hr_qp->qpn);
 		return -EINVAL;
 	}
 
@@ -785,7 +787,7 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 		}
 
 		if (unlikely(wr->num_sge >= hr_qp->rq.max_gs)) {
-			dev_err(dev, "rq:num_sge=%d >= qp->rq.max_gs=%d\n",
+			dev_err(dev, "RQ: sge num(%d) is larger or equal than max sge num(%d)\n",
 				wr->num_sge, hr_qp->rq.max_gs);
 			ret = -EINVAL;
 			*bad_wr = wr;
@@ -1075,14 +1077,14 @@ static int hns_roce_v2_cmq_init(struct hns_roce_dev *hr_dev)
 	/* Init CSQ */
 	ret = hns_roce_init_cmq_ring(hr_dev, TYPE_CSQ);
 	if (ret) {
-		dev_err(hr_dev->dev, "Init CSQ error, ret = %d.\n", ret);
+		dev_err(hr_dev->dev, "Init CSQ error(%d).\n", ret);
 		return ret;
 	}
 
 	/* Init CRQ */
 	ret = hns_roce_init_cmq_ring(hr_dev, TYPE_CRQ);
 	if (ret) {
-		dev_err(hr_dev->dev, "Init CRQ error, ret = %d.\n", ret);
+		dev_err(hr_dev->dev, "Init CRQ error(%d).\n", ret);
 		goto err_crq;
 	}
 
@@ -1390,8 +1392,7 @@ static void hns_roce_query_func_num(struct hns_roce_dev *hr_dev)
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_QUERY_VF_NUM, true);
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret) {
-		dev_err(hr_dev->dev, "Query vf count fail, ret = %d.\n",
-			 ret);
+		dev_err(hr_dev->dev, "Query vf count failed(%d).\n", ret);
 		return;
 	}
 
@@ -1418,8 +1419,7 @@ static void hns_roce_clear_func(struct hns_roce_dev *hr_dev, int vf_id)
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret) {
 		fclr_write_fail_flag = true;
-		dev_err(hr_dev->dev, "Func clear write failed, ret = %d.\n",
-			 ret);
+		dev_err(hr_dev->dev, "Func clear write failed(%d).\n", ret);
 		goto out;
 	}
 
@@ -1448,8 +1448,7 @@ static void hns_roce_clear_func(struct hns_roce_dev *hr_dev, int vf_id)
 	}
 
 out:
-	dev_err(hr_dev->dev, "Func clear read vf_id %d fail.\n", vf_id);
-	hns_roce_func_clr_rst_prc(hr_dev, ret, fclr_write_fail_flag);
+	(void)hns_roce_func_clr_rst_prc(hr_dev, ret, fclr_write_fail_flag);
 }
 
 static void hns_roce_function_clear(struct hns_roce_dev *hr_dev)
@@ -1483,8 +1482,10 @@ static int hns_roce_query_fw_ver(struct hns_roce_dev *hr_dev)
 
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_QUERY_FW_VER, true);
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
-	if (ret)
+	if (ret) {
+		dev_err(hr_dev->dev, "Query fw version failed(%d)!\n", ret);
 		return ret;
+	}
 
 	resp = (struct hns_roce_query_fw_info *)desc.data;
 	hr_dev->caps.fw_ver = (u64)(le32_to_cpu(resp->fw_ver));
@@ -2170,21 +2171,21 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 
 	ret = hns_roce_cmq_query_hw_info(hr_dev);
 	if (ret) {
-		dev_err(hr_dev->dev, "Query hardware version fail, ret = %d.\n",
+		dev_err(hr_dev->dev, "Query hardware version failed(%d).\n",
 			ret);
 		return ret;
 	}
 
 	ret = hns_roce_query_fw_ver(hr_dev);
 	if (ret) {
-		dev_err(hr_dev->dev, "Query firmware version fail, ret = %d.\n",
+		dev_err(hr_dev->dev, "Query firmware version failed(%d).\n",
 			ret);
 		return ret;
 	}
 
 	ret = hns_roce_config_global_param(hr_dev);
 	if (ret) {
-		dev_err(hr_dev->dev, "Configure global param fail, ret = %d.\n",
+		dev_err(hr_dev->dev, "Configure global param failed(%d).\n",
 			ret);
 		return ret;
 	}
@@ -2192,8 +2193,7 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 	/* Get pf resource owned by every pf */
 	ret = hns_roce_query_pf_resource(hr_dev);
 	if (ret) {
-		dev_err(hr_dev->dev, "Query pf resource fail, ret = %d.\n",
-			ret);
+		dev_err(hr_dev->dev, "Query pf resource failed(%d).\n", ret);
 		return ret;
 	}
 
@@ -2203,15 +2203,14 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 		ret = hns_roce_query_pf_timer_resource(hr_dev);
 		if (ret) {
 			dev_err(hr_dev->dev,
-				"Query pf timer resource fail, ret = %d.\n",
-				ret);
+				"Query pf timer resource failed(%d).\n", ret);
 			return ret;
 		}
 	}
 
 	ret = hns_roce_alloc_vf_resource(hr_dev);
 	if (ret) {
-		dev_err(hr_dev->dev, "Allocate vf resource fail, ret = %d.\n",
+		dev_err(hr_dev->dev, "Allocate vf resource failed(%d).\n",
 			ret);
 		return ret;
 	}
@@ -2220,7 +2219,7 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 		ret = hns_roce_set_vf_switch_param(hr_dev, 0);
 		if (ret) {
 			dev_err(hr_dev->dev,
-				"Set function switch param fail, ret = %d.\n",
+				"Set function switch param failed(%d).\n",
 				ret);
 			return ret;
 		}
@@ -2249,7 +2248,7 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 
 	ret = hns_roce_v2_set_bt(hr_dev);
 	if (ret)
-		dev_err(hr_dev->dev, "Configure bt attribute fail, ret = %d.\n",
+		dev_err(hr_dev->dev, "Configure bt attribute failed(%d).\n",
 			ret);
 
 	return ret;
@@ -2718,7 +2717,8 @@ static int hns_roce_v2_set_gid(struct hns_roce_dev *hr_dev, u8 port,
 
 	ret = hns_roce_config_sgid_table(hr_dev, gid_index, gid, sgid_type);
 	if (ret)
-		dev_err(hr_dev->dev, "Configure sgid table failed(%d)!\n", ret);
+		dev_err(hr_dev->dev, "Configure sgid table failed(%d), gid index is %d, sgid type is %d!\n",
+			ret, gid_index, sgid_type);
 
 	return ret;
 }
@@ -3166,7 +3166,7 @@ static void hns_roce_v2_write_cqc(struct hns_roce_dev *hr_dev,
 	cq_context->db_record_addr = cpu_to_le32(hr_cq->db.dma >> 32);
 
 	if (cq_period * HNS_ROCE_CLOCK_ADJUST > 0xFFFF) {
-		dev_info(hr_dev->dev, "config cq_period param out of range. config value is 0x%x, adjusted to 65.\n",
+		dev_info(hr_dev->dev, "Config cq_period param(0x%x) out of range for write_cqc, adjusted to 65.\n",
 			cq_period);
 		cq_period = HNS_ROCE_MAX_CQ_PERIOD;
 	}
@@ -3333,7 +3333,7 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 	if (!*cur_qp || (qpn & HNS_ROCE_V2_CQE_QPN_MASK) != (*cur_qp)->qpn) {
 		hr_qp = __hns_roce_qp_lookup(hr_dev, qpn);
 		if (unlikely(!hr_qp)) {
-			dev_err(hr_dev->dev, "CQ %06lx with entry for unknown QPN %06x\n",
+			dev_err(hr_dev->dev, "CQ 0x%06lx with entry for unknown QPN 0x%06x\n",
 				hr_cq->cqn, (qpn & HNS_ROCE_V2_CQE_QPN_MASK));
 			return -EINVAL;
 		}
@@ -5303,7 +5303,7 @@ static int hns_roce_v2_query_qpc(struct hns_roce_dev *hr_dev,
 				HNS_ROCE_CMD_QUERY_QPC,
 				HNS_ROCE_CMD_TIMEOUT_MSECS);
 	if (ret) {
-		dev_err(hr_dev->dev, "QUERY QP cmd process error\n");
+		dev_err(hr_dev->dev, "QUERY QP cmd process error(%d).\n", ret);
 		goto out;
 	}
 
@@ -5467,7 +5467,7 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 					    hr_qp->state, IB_QPS_RESET);
 		if (ret)
 			dev_err(dev,
-				"modify QP %06lx to Reset failed, ret = %d.\n",
+				"Modify QP 0x%06lx to Reset failed(%d).\n",
 				hr_qp->qpn, ret);
 	}
 
@@ -5605,7 +5605,7 @@ static int hns_roce_v2_qp_flow_control_init(struct hns_roce_dev *hr_dev,
 			return 0;
 	}
 
-	dev_err(hr_dev->dev, "clear scc ctx failure!");
+	dev_err(hr_dev->dev, "Clear scc ctx failure!");
 	return -EINVAL;
 }
 
@@ -5635,7 +5635,7 @@ static int hns_roce_v2_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period)
 		       0);
 
 	if (cq_period * HNS_ROCE_CLOCK_ADJUST > 0xFFFF) {
-		dev_info(hr_dev->dev, "config cq_period param out of range. config value is 0x%x, adjusted to 65.\n",
+		dev_info(hr_dev->dev, "Config cq_period param(0x%x) out of range for modify_cq, adjusted to 65.\n",
 			cq_period);
 		cq_period = HNS_ROCE_MAX_CQ_PERIOD;
 	}
@@ -5651,8 +5651,8 @@ static int hns_roce_v2_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period)
 				HNS_ROCE_CMD_TIMEOUT_MSECS);
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
 	if (ret)
-		dev_err(hr_dev->dev, "MODIFY CQ(0x%lx) cmd process error.\n",
-			hr_cq->cqn);
+		dev_err(hr_dev->dev, "Modify CQ(0x%lx) cmd process error(%d).\n",
+			hr_cq->cqn, ret);
 
 	return ret;
 }
@@ -6213,7 +6213,7 @@ static void hns_roce_config_eqc(struct hns_roce_dev *hr_dev,
 	test_set_eq_param(eq->type_flag, &eq_period, &eq_max_cnt, &eq_arm_st);
 #endif
 	if (eq_period * HNS_ROCE_CLOCK_ADJUST > 0xFFFF) {
-		dev_info(hr_dev->dev, "config eq_period param out of range. config value is 0x%x, adjusted to 65.\n",
+		dev_info(hr_dev->dev, "Config eq_period param(0x%x) out of range for config_eqc, adjusted to 65.\n",
 			eq_period);
 		eq_period = HNS_ROCE_MAX_CQ_PERIOD;
 	}
@@ -6389,8 +6389,8 @@ static int hns_roce_mhop_alloc_eq(struct hns_roce_dev *hr_dev,
 
 	if (mhop_num == HNS_ROCE_HOP_NUM_0) {
 		if (eq->entries > buf_chk_sz / eq->eqe_size) {
-			dev_err(dev, "eq entries %d is larger than buf_pg_sz!",
-				eq->entries);
+			dev_err(dev, "eq entries %d is larger than buf_pg_sz %d!",
+				eq->entries, buf_chk_sz / eq->eqe_size);
 			return -EINVAL;
 		}
 		eq->bt_l0 = dma_alloc_coherent(dev, eq->entries * eq->eqe_size,
@@ -6697,8 +6697,7 @@ static int __hns_roce_request_irq(struct hns_roce_dev *hr_dev, int irq_num,
 					  0, hr_dev->irq_names[j - comp_num],
 					  &eq_table->eq[j - other_num]);
 		if (ret) {
-			dev_err(hr_dev->dev, "Request irq error, ret = %d\n",
-				ret);
+			dev_err(hr_dev->dev, "Request irq error(%d)\n", ret);
 			goto err_request_failed;
 		}
 	}
@@ -6805,7 +6804,7 @@ static int hns_roce_v2_init_eq_table(struct hns_roce_dev *hr_dev)
 	ret = __hns_roce_request_irq(hr_dev, irq_num, comp_num,
 				     aeq_num, other_num);
 	if (ret) {
-		dev_err(dev, "Request irq failed.\n");
+		dev_err(dev, "Request irq failed(%d).\n", ret);
 		goto err_request_irq_fail;
 	}
 
@@ -6992,9 +6991,12 @@ static int hns_roce_v2_modify_srq(struct ib_srq *ibsrq,
 	int ret;
 
 	if (srq_attr_mask & IB_SRQ_LIMIT) {
-		if (srq_attr->srq_limit >= srq->max)
+		if (srq_attr->srq_limit >= srq->max) {
+			dev_err(hr_dev->dev,
+				"Modify SRQ failed: limit(%d) larger than max wr num(%d).\n",
+				srq_attr->srq_limit, srq->max);
 			return -EINVAL;
-
+		}
 		mailbox = hns_roce_alloc_cmd_mailbox(hr_dev);
 		if (IS_ERR(mailbox))
 			return PTR_ERR(mailbox);

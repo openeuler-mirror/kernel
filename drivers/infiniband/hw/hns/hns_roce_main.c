@@ -1002,7 +1002,7 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 #endif
 	ret = ib_register_device(ib_dev, NULL);
 	if (ret) {
-		dev_err(dev, "ib_register_device failed!\n");
+		dev_err(dev, "ib_register_device failed(%d)!\n", ret);
 		return ret;
 	}
 
@@ -1016,7 +1016,7 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 	ret = register_netdevice_notifier(&iboe->nb);
 	if (ret) {
 		iboe->nb.notifier_call = NULL;
-		dev_err(dev, "register_netdevice_notifier failed!\n");
+		dev_err(dev, "register_netdevice_notifier failed(%d)!\n", ret);
 		goto error_failed_setup_mtu_mac_state;
 	}
 
@@ -1038,7 +1038,7 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 				      HEM_TYPE_MTT, hr_dev->caps.mtt_entry_sz,
 				      hr_dev->caps.num_mtt_segs, 1);
 	if (ret) {
-		dev_err(dev, "Failed to init MTT context memory, aborting.\n");
+		dev_err(dev, "Init MTT context memory failed(%d).\n", ret);
 		return ret;
 	}
 
@@ -1048,7 +1048,8 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 				      HEM_TYPE_CQE, hr_dev->caps.mtt_entry_sz,
 				      hr_dev->caps.num_cqe_segs, 1);
 		if (ret) {
-			dev_err(dev, "Failed to init MTT CQE context memory, aborting.\n");
+			dev_err(dev, "Init MTT CQE context memory failed(%d).\n",
+				ret);
 			goto err_unmap_cqe;
 		}
 	}
@@ -1057,7 +1058,7 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 				      HEM_TYPE_MTPT, hr_dev->caps.mtpt_entry_sz,
 				      hr_dev->caps.num_mtpts, 1);
 	if (ret) {
-		dev_err(dev, "Failed to init MTPT context memory, aborting.\n");
+		dev_err(dev, "Init MTPT context memory failed(%d).\n", ret);
 		goto err_unmap_mtt;
 	}
 
@@ -1065,7 +1066,7 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 				      HEM_TYPE_QPC, hr_dev->caps.qpc_entry_sz,
 				      hr_dev->caps.num_qps, 1);
 	if (ret) {
-		dev_err(dev, "Failed to init QP context memory, aborting.\n");
+		dev_err(dev, "Init QP context memory failed(%d).\n", ret);
 		goto err_unmap_dmpt;
 	}
 
@@ -1075,7 +1076,7 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 				      hr_dev->caps.max_qp_init_rdma,
 				      hr_dev->caps.num_qps, 1);
 	if (ret) {
-		dev_err(dev, "Failed to init irrl_table memory, aborting.\n");
+		dev_err(dev, "Init irrl_table memory failed(%d).\n", ret);
 		goto err_unmap_qp;
 	}
 
@@ -1087,8 +1088,8 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 					      hr_dev->caps.max_qp_dest_rdma,
 					      hr_dev->caps.num_qps, 1);
 		if (ret) {
-			dev_err(dev,
-			       "Failed to init trrl_table memory, aborting.\n");
+			dev_err(dev, "Init trrl_table memory failed(%d).\n",
+				ret);
 			goto err_unmap_irrl;
 		}
 	}
@@ -1097,7 +1098,7 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 				      HEM_TYPE_CQC, hr_dev->caps.cqc_entry_sz,
 				      hr_dev->caps.num_cqs, 1);
 	if (ret) {
-		dev_err(dev, "Failed to init CQ context memory, aborting.\n");
+		dev_err(dev, "Init CQ context memory failed(%d).\n", ret);
 		goto err_unmap_trrl;
 	}
 
@@ -1108,8 +1109,8 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 					      hr_dev->caps.scc_ctx_entry_sz,
 					      hr_dev->caps.num_qps, 1);
 		if (ret) {
-			dev_err(dev,
-			      "Failed to init SCC context memory, aborting.\n");
+			dev_err(dev, "Init SCC context memory failed(%d).\n",
+				ret);
 			goto err_unmap_cq;
 		}
 	}
@@ -1121,8 +1122,8 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 					      hr_dev->caps.qpc_timer_entry_sz,
 					      hr_dev->caps.num_qpc_timer, 1);
 		if (ret) {
-			dev_err(dev,
-			      "Failed to init QPC timer memory, aborting.\n");
+			dev_err(dev, "Init QPC timer memory failed(%d).\n",
+				ret);
 			goto err_unmap_ctx;
 		}
 	}
@@ -1134,8 +1135,8 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 					      hr_dev->caps.cqc_timer_entry_sz,
 					      hr_dev->caps.num_cqc_timer, 1);
 		if (ret) {
-			dev_err(dev,
-			      "Failed to init CQC timer memory, aborting.\n");
+			dev_err(dev, "Init CQC timer memory failed(%d).\n",
+				ret);
 			goto err_unmap_qpc_timer;
 		}
 	}
@@ -1146,8 +1147,8 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 					      hr_dev->caps.srqc_entry_sz,
 					      hr_dev->caps.num_srqs, 1);
 		if (ret) {
-			dev_err(dev,
-			      "Failed to init SRQ context memory, aborting.\n");
+			dev_err(dev, "Init SRQ context memory failed(%d).\n",
+				ret);
 			goto err_unmap_cqc_timer;
 		}
 	}
@@ -1159,8 +1160,8 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 					     hr_dev->caps.mtt_entry_sz,
 					     hr_dev->caps.num_srqwqe_segs, 1);
 		if (ret) {
-			dev_err(dev,
-				"Failed to init MTT srqwqe memory, aborting.\n");
+			dev_err(dev, "Init MTT srqwqe memory failed(%d).\n",
+				ret);
 			goto err_unmap_srq;
 		}
 	}
@@ -1172,8 +1173,7 @@ static int hns_roce_init_hem(struct hns_roce_dev *hr_dev)
 					      hr_dev->caps.idx_entry_sz,
 					      hr_dev->caps.num_idx_segs, 1);
 		if (ret) {
-			dev_err(dev,
-				"Failed to init MTT idx memory, aborting.\n");
+			dev_err(dev, "Init MTT idx memory failed(%d).\n", ret);
 			goto err_unmap_srqwqe;
 		}
 	}
@@ -1270,8 +1270,7 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC) {
 		ret = hns_roce_init_xrcd_table(hr_dev);
 		if (ret) {
-			dev_err(dev, "Failed to init xrcd table(%d).\n",
-				ret);
+			dev_err(dev, "Failed to init xrcd table(%d).\n", ret);
 			goto err_pd_table_free;
 		}
 	}
@@ -1436,7 +1435,8 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 		ret = hns_roce_cmd_use_events(hr_dev);
 		if (ret) {
 			dev_warn(dev,
-				 "Cmd event  mode failed, set back to poll!\n");
+				 "Cmd event  mode failed(%d), set back to poll!\n",
+				 ret);
 			hns_roce_cmd_use_polling(hr_dev);
 		}
 	}
@@ -1456,7 +1456,7 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 
 	ret = hr_dev->hw->hw_init(hr_dev);
 	if (ret) {
-		dev_err(dev, "Hw_init failed!\n");
+		dev_err(dev, "Hw_init failed(%d)!\n", ret);
 		goto error_failed_engine_init;
 	}
 

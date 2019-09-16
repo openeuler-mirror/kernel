@@ -362,8 +362,7 @@ static int pbl_1hop_alloc(struct hns_roce_dev *hr_dev, int npages,
 	struct device *dev = hr_dev->dev;
 
 	if (npages > pbl_bt_sz / BA_BYTE_LEN) {
-		dev_err(dev, "npages %d is larger than buf_pg_sz!",
-			npages);
+		dev_err(dev, "Npages %d is larger than buf_pg_sz!", npages);
 		return -EINVAL;
 	}
 	mr->pbl_buf = dma_alloc_coherent(dev, npages * BA_BYTE_LEN,
@@ -753,7 +752,7 @@ int hns_roce_mr_enable(struct hns_roce_dev *hr_dev,
 	/* Prepare HEM entry memory */
 	ret = hns_roce_table_get(hr_dev, &mr_table->mtpt_table, mtpt_idx);
 	if (ret) {
-		dev_err(dev, "get mtpt table(0x%lx) failed, ret = %d",
+		dev_err(dev, "Get mtpt table(0x%lx) failed(%d).",
 			mtpt_idx, ret);
 		return ret;
 	}
@@ -769,14 +768,15 @@ int hns_roce_mr_enable(struct hns_roce_dev *hr_dev,
 	else
 		ret = hr_dev->hw->frmr_write_mtpt(mailbox->buf, mr);
 	if (ret) {
-		dev_err(dev, "Write mtpt fail!\n");
+		dev_err(dev, "Write mtpt fail(%d)!\n", ret);
 		goto err_page;
 	}
 
 	ret = hns_roce_sw2hw_mpt(hr_dev, mailbox,
 				 mtpt_idx & (hr_dev->caps.num_mtpts - 1));
 	if (ret) {
-		dev_err(dev, "SW2HW_MPT(0x%lx) failed (%d)\n", mtpt_idx, ret);
+		dev_err(dev, "SW2HW_MPT(0x%lx) failed(%d) for mr_enable.\n",
+			mtpt_idx, ret);
 		goto err_page;
 	}
 
@@ -1007,8 +1007,8 @@ struct ib_mr *hns_roce_get_dma_mr(struct ib_pd *pd, int acc)
 				~0ULL, acc, 0, mr);
 	if (ret) {
 		dev_err(to_hr_dev(pd->device)->dev,
-			"alloc mr failed(%d), pd =0x%lx\n",
-			ret, to_hr_pd(pd)->pdn);
+			"alloc mr failed(%d), pd is 0x%lx , access is 0x%x.\n",
+			ret, to_hr_pd(pd)->pdn, acc);
 		goto err_free;
 	}
 
@@ -1065,7 +1065,7 @@ int hns_roce_ib_umem_write_mtt(struct hns_roce_dev *hr_dev,
 		order = hr_dev->caps.idx_ba_pg_sz;
 		break;
 	default:
-		dev_err(dev, "Unsupport mtt type %d, write mtt failed\n",
+		dev_err(dev, "Unsupport mtt type %d, umem write mtt failed\n",
 			mtt->mtt_type);
 		return -EINVAL;
 	}
@@ -1377,7 +1377,7 @@ int hns_roce_rereg_user_mr(struct ib_mr *ibmr, int flags, u64 start, u64 length,
 
 	ret = hns_roce_sw2hw_mpt(hr_dev, mailbox, mtpt_idx);
 	if (ret) {
-		dev_err(dev, "SW2HW_MPT failed (%d)\n", ret);
+		dev_err(dev, "SW2HW_MPT failed(%d) for rereg_usr_mr\n", ret);
 		ib_umem_release(mr->umem);
 		goto free_cmd_mbox;
 	}
@@ -1538,14 +1538,14 @@ static int hns_roce_mw_enable(struct hns_roce_dev *hr_dev,
 
 	ret = hr_dev->hw->mw_write_mtpt(mailbox->buf, mw);
 	if (ret) {
-		dev_err(dev, "MW write mtpt fail!\n");
+		dev_err(dev, "MW write mtpt failed(%d)!\n", ret);
 		goto err_page;
 	}
 
 	ret = hns_roce_sw2hw_mpt(hr_dev, mailbox,
 				 mtpt_idx & (hr_dev->caps.num_mtpts - 1));
 	if (ret) {
-		dev_err(dev, "MW sw2hw_mpt failed (%d)\n", ret);
+		dev_err(dev, "MW sw2hw_mpt failed (%d).\n", ret);
 		goto err_page;
 	}
 

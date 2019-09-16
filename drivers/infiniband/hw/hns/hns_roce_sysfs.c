@@ -78,7 +78,7 @@ static ssize_t cqc_show(struct device *dev,
 
 	ret = hr_dev->dfx->query_cqc_stat(hr_dev, buf, &count);
 	if (ret) {
-		dev_err(dev, "cqc query failed");
+		dev_err(dev, "CQC query failed(%d).", ret);
 		return -EBUSY;
 	}
 
@@ -95,7 +95,7 @@ static ssize_t cmd_show(struct device *dev,
 
 	ret = hr_dev->dfx->query_cmd_stat(hr_dev, buf, &count);
 	if (ret) {
-		dev_err(dev, "cmd query failed");
+		dev_err(dev, "Cmd query failed(%d).", ret);
 		return -EBUSY;
 	}
 
@@ -112,7 +112,7 @@ static ssize_t pkt_show(struct device *dev,
 
 	ret = hr_dev->dfx->query_pkt_stat(hr_dev, buf, &count);
 	if (ret) {
-		dev_err(dev, "pkt query failed");
+		dev_err(dev, "Pkt query failed(%d).", ret);
 		return -EBUSY;
 	}
 
@@ -146,7 +146,7 @@ static ssize_t ceqc_show(struct device *dev,
 
 	ret = hr_dev->dfx->query_ceqc_stat(hr_dev, buf, &count);
 	if (ret) {
-		dev_err(dev, "ceqc query failed");
+		dev_err(dev, "CEQC query failed");
 		return -EBUSY;
 	}
 
@@ -214,7 +214,7 @@ static ssize_t qpc_show(struct device *dev, struct device_attribute *attr,
 	ret = hr_dev->dfx->query_qpc_stat(hr_dev,
 				    buf, &count);
 	if (ret) {
-		dev_err(dev, "qpc query failed");
+		dev_err(dev, "QPC query failed");
 		return -EBUSY;
 	}
 
@@ -247,7 +247,7 @@ static ssize_t srqc_show(struct device *dev, struct device_attribute *attr,
 
 	ret = hr_dev->dfx->query_srqc_stat(hr_dev, buf, &count);
 	if (ret) {
-		dev_err(dev, "srqc query failed");
+		dev_err(dev, "SRQC query failed");
 		return -EBUSY;
 	}
 
@@ -318,7 +318,8 @@ static ssize_t coalesce_maxcnt_store(struct device *dev,
 	}
 
 	if (int_maxcnt > HNS_ROCE_CEQ_MAX_BURST_NUM) {
-		dev_err(dev, "int_maxcnt must be less than 2^16!\n");
+		dev_err(dev, "int_maxcnt(%d) must be less than 2^16!\n",
+			int_maxcnt);
 		return -EINVAL;
 	}
 
@@ -328,7 +329,8 @@ static ssize_t coalesce_maxcnt_store(struct device *dev,
 		ret = hr_dev->dfx->modify_eq(hr_dev, eq, eq->eq_max_cnt, 0,
 					    HNS_ROCE_EQ_MAXCNT_MASK);
 		if (ret) {
-			dev_err(dev, "eqc modify failed, eq_num=%d\n", eq->eqn);
+			dev_err(dev, "EQC(%d) modify failed(%d).\n", eq->eqn,
+				ret);
 			return -EBUSY;
 		}
 	}
@@ -367,7 +369,8 @@ static ssize_t coalesce_period_store(struct device *dev,
 	}
 
 	if (int_period > HNS_ROCE_CEQ_MAX_INTERVAL) {
-		dev_err(dev, "int_period must be less than 2^16!\n");
+		dev_err(dev, "int_period(%d) must be less than 2^16!\n",
+			int_period);
 		return -EINVAL;
 	}
 
@@ -377,7 +380,8 @@ static ssize_t coalesce_period_store(struct device *dev,
 		ret = hr_dev->dfx->modify_eq(hr_dev, eq, 0, eq->eq_period,
 					    HNS_ROCE_EQ_PERIOD_MASK);
 		if (ret) {
-			dev_err(dev, "eqc modify failed, eq_num=%d\n", eq->eqn);
+			dev_err(dev, "EQC(%d) modify failed(%d).\n", eq->eqn,
+				ret);
 			return -EBUSY;
 		}
 	}

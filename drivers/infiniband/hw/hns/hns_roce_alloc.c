@@ -246,7 +246,7 @@ int hns_roce_get_kmem_bufs(struct hns_roce_dev *hr_dev, dma_addr_t *bufs,
 	end = start + buf_cnt;
 	if (end > buf->npages) {
 		dev_err(hr_dev->dev,
-			"invalid kmem region,offset %d,buf_cnt %d,total %d!\n",
+			"Invalid kmem region,offset 0x%x plus buf_cnt 0x%x larger than total 0x%x!\n",
 			start, buf_cnt, buf->npages);
 		return -EINVAL;
 	}
@@ -276,7 +276,7 @@ int hns_roce_get_umem_bufs(struct hns_roce_dev *hr_dev, dma_addr_t *bufs,
 	int total;
 
 	if (page_shift < PAGE_SHIFT || page_shift > umem->page_shift) {
-		dev_err(hr_dev->dev, "invalid page shift %d, umem shift %d!\n",
+		dev_err(hr_dev->dev, "Invalid page shift %d, umem shift %d!\n",
 			page_shift, umem->page_shift);
 		return -EINVAL;
 	}
@@ -287,7 +287,7 @@ int hns_roce_get_umem_bufs(struct hns_roce_dev *hr_dev, dma_addr_t *bufs,
 	end = start + buf_cnt;
 	if (end > total) {
 		dev_err(hr_dev->dev,
-			"invalid umem region,offset %d,buf_cnt %d,total %d!\n",
+			"Invalid umem region,offset 0x%x plus buf_cnt 0x%x larger than total 0x%x!\n",
 			start, buf_cnt, total);
 		return -EINVAL;
 	}
@@ -303,7 +303,7 @@ int hns_roce_get_umem_bufs(struct hns_roce_dev *hr_dev, dma_addr_t *bufs,
 					(n << umem->page_shift);
 				if (addr & ((1 << page_shift) - 1)) {
 					dev_err(hr_dev->dev,
-						"not align to page_shift %d!\n",
+						"Umem addr not align to page_shift %d!\n",
 						page_shift);
 					return -ENOBUFS;
 				}

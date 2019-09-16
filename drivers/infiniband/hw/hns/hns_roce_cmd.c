@@ -69,7 +69,8 @@ static int __hns_roce_cmd_mbox_poll(struct hns_roce_dev *hr_dev, u64 in_param,
 					in_modifier, op_modifier, op,
 					CMD_POLL_TOKEN, 0);
 	if (ret) {
-		dev_err(dev, "[cmd_poll]hns_roce_cmd_mbox_post_hw failed\n");
+		dev_err(dev, "[cmd_poll]hns_roce_cmd_mbox_post_hw failed(%d).\n",
+			ret);
 		return ret;
 	}
 
@@ -138,14 +139,15 @@ static int __hns_roce_cmd_mbox_wait(struct hns_roce_dev *hr_dev, u64 in_param,
 	 */
 	if (!wait_for_completion_timeout(&context->done,
 					 msecs_to_jiffies(timeout))) {
-		dev_err(dev, "[cmd]wait_for_completion_timeout timeout\n");
+		dev_err(dev, "[cmd_wait]wait_for_completion_timeout timeout.\n");
 		ret = -EBUSY;
 		goto out;
 	}
 
 	ret = context->result;
 	if (ret) {
-		dev_err(dev, "[cmd]event mod cmd process error!err=%d\n", ret);
+		dev_err(dev, "[cmd_wait]event mod cmd process error(%d)!\n",
+			ret);
 		goto out;
 	}
 

@@ -95,7 +95,9 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 					rdma_ah_get_port_num(ah_attr),
 					grh->sgid_index, &sgid, &gid_attr);
 		if (ret) {
-			dev_err(dev, "get sgid failed! ret = %d\n", ret);
+			dev_err(dev, "Get index %u of sgid on port %u failed(%d)!\n",
+				grh->sgid_index, rdma_ah_get_port_num(ah_attr),
+				ret);
 			kfree(ah);
 			return ERR_PTR(ret);
 		}

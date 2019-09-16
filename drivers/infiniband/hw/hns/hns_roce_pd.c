@@ -99,7 +99,7 @@ struct ib_pd *hns_roce_alloc_pd(struct ib_device *ib_dev,
 	ret = hns_roce_pd_alloc(to_hr_dev(ib_dev), &pd->pdn);
 	if (ret) {
 		kfree(pd);
-		dev_err(dev, "[alloc_pd]hns_roce_pd_alloc failed!\n");
+		dev_err(dev, "[alloc_pd]hns_roce_pd_alloc failed(%d)!\n", ret);
 		return ERR_PTR(ret);
 	}
 
@@ -171,7 +171,7 @@ struct ib_xrcd *hns_roce_ib_alloc_xrcd(struct ib_device *ib_dev,
 	if (ret) {
 		kfree(xrcd);
 		dev_err(hr_dev->dev,
-			"[alloc_xrcd]hns_roce_xrcd_alloc failed!\n");
+			"[alloc_xrcd]hns_roce_xrcd_alloc failed(%d)!\n", ret);
 		return ERR_PTR(ret);
 	}
 
