@@ -511,6 +511,7 @@ static int wbt_wake_function(struct wait_queue_entry *curr, unsigned int mode,
 		return -1;
 
 	data->got_token = true;
+	smp_wmb();
 	list_del_init(&curr->entry);
 	wake_up_process(data->task);
 	return 1;
@@ -545,6 +546,7 @@ static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
 	prepare_to_wait_exclusive(&rqw->wait, &data.wq, TASK_UNINTERRUPTIBLE);
 	has_sleeper = !wq_has_single_sleeper(&rqw->wait);
 	do {
+		/* The memory barrier in set_task_state saves us here. */
 		if (data.got_token)
 			break;
 
@@ -557,6 +559,7 @@ static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
 			 * which means we now have two. Put our local token
 			 * and wake anyone else potentially waiting for one.
 			 */
+			smp_rmb();
 			if (data.got_token)
 				wbt_rqw_done(rwb, rqw, wb_acct);
 			break;
