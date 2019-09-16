@@ -4,16 +4,22 @@
 #include <linux/kernel.h>
 #include "hns3_priv_m7_cmd.h"
 
-int hns3_m7_cmd_handle(struct hns3_nic_priv *nic_dev, void *buf_in, u16 in_size,
-		       void *buf_out, u16 *out_size)
+int hns3_m7_cmd_handle(struct hns3_nic_priv *nic_dev, void *buf_in, u32 in_size,
+		       void *buf_out, u32 out_size)
 {
+	struct hclge_vport *vport = hclge_get_vport(nic_dev->ae_handle);
 	struct m7_cmd_para *cmd_para = (struct m7_cmd_para *)buf_in;
-	struct hnae3_handle *handle = nic_dev->ae_handle;
-	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 	enum hclge_cmd_status status;
 	struct hclge_desc *desc;
-	int bd_size;
+	u32 bd_size;
+	bool check;
+
+	check = !buf_in || in_size < sizeof(struct m7_cmd_para);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	bd_size = sizeof(struct hclge_desc) * cmd_para->bd_count;
 	desc = kzalloc(bd_size, GFP_KERNEL);
@@ -36,8 +42,12 @@ int hns3_m7_cmd_handle(struct hns3_nic_priv *nic_dev, void *buf_in, u16 in_size,
 	}
 
 	if (desc->flag & HCLGE_CMD_FLAG_WR) {
+		if (!buf_out || out_size < bd_size) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		memcpy(buf_out, desc, bd_size);
-		*out_size = (u16)bd_size;
 	}
 
 	kfree(desc);

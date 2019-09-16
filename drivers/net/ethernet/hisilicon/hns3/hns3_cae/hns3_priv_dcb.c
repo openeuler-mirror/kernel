@@ -38,21 +38,29 @@ static void check_and_set_curr_dev(struct hns3_nic_priv *net_priv)
 }
 
 int hns3_test_dcb_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct nictool_dcb_cfg_param *in_info;
 	struct nictool_dcb_cfg_param *out_info;
+	struct nictool_dcb_cfg_param *in_info;
+	bool check;
+
+	check = !buf_in || in_size < sizeof(struct nictool_dcb_cfg_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	in_info = (struct nictool_dcb_cfg_param *)buf_in;
 	out_info = (struct nictool_dcb_cfg_param *)buf_out;
 	check_and_set_curr_dev(net_priv);
-
-	if (!in_info) {
-		pr_err("in_info should not be NULL in %s funciton\n", __func__);
-		return -1;
-	}
-
 	if (in_info->is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct nictool_dcb_cfg_param);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		out_info->dcb_en =
 		    dcb_all_info[curr_dev_index].dcb_cfg_info.dcb_en;
 	} else {
@@ -143,8 +151,8 @@ static int hns3_test_cfg_pause_param(struct hclge_dev *hdev,
 }
 
 int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size)
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size)
 {
 	struct nictool_pfc_cfg_param *out_info;
 	struct nictool_pfc_cfg_param *in_info;
@@ -152,7 +160,14 @@ int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 	struct hclge_vport *vport;
 	struct hnae3_handle *h;
 	struct hclge_dev *hdev;
+	bool check;
 	int ret;
+
+	check = !buf_in || in_size < sizeof(struct nictool_pfc_cfg_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	check_and_set_curr_dev(net_priv);
 	h = net_priv->ae_handle;
@@ -161,11 +176,6 @@ int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 	hdev = vport->back;
 	in_info = (struct nictool_pfc_cfg_param *)buf_in;
 	out_info = (struct nictool_pfc_cfg_param *)buf_out;
-
-	if (!in_info) {
-		pr_err("in_info should not be NULL in %s function\n", __func__);
-		return -1;
-	}
 
 	if (!in_info->is_read &&
 	    !dcb_all_info[curr_dev_index].dcb_cfg_info.dcb_en) {
@@ -179,6 +189,13 @@ int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 	}
 
 	if (in_info->is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct nictool_pfc_cfg_param);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		ret = hns3_test_cfg_pfc_en(in_info->is_read, hdev, out_info);
 		if (ret)
 			return ret;
@@ -279,8 +296,8 @@ static void hns3_test_enable_ets_cfg(struct hclge_dev *hdev,
 }
 
 int hns3_test_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size)
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size)
 {
 	struct nictool_ets_cfg_param *out_info;
 	struct nictool_ets_cfg_param *in_info;
@@ -289,8 +306,16 @@ int hns3_test_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
 	struct hnae3_handle *h;
+	bool check;
 	int ret;
 	int i;
+
+	check = !buf_in || in_size < sizeof(struct nictool_ets_cfg_param) ||
+		!buf_out || out_size < sizeof(struct nictool_ets_cfg_param);
+	if (check) {
+		pr_err("input parameter error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	check_and_set_curr_dev(net_priv);
 	h = net_priv->ae_handle;
@@ -299,11 +324,6 @@ int hns3_test_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 	hdev = vport->back;
 	in_info = (struct nictool_ets_cfg_param *)buf_in;
 	out_info = (struct nictool_ets_cfg_param *)buf_out;
-
-	if (!in_info) {
-		pr_err("in_info should not be NULL in %s function\n", __func__);
-		return -1;
-	}
 
 	if (!in_info->is_read &&
 	    !dcb_all_info[curr_dev_index].dcb_cfg_info.dcb_en) {

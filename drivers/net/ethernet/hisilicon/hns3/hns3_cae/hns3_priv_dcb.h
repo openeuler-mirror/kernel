@@ -58,11 +58,11 @@ struct nictool_dcb_info {
 #define NICTOOL_PFC_MAC_PRI			8
 
 int hns3_test_dcb_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size);
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size);
 int hns3_test_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size);
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size);
 int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size);
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size);
 #endif

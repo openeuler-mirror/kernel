@@ -168,18 +168,23 @@ static int hns3_get_hilink_ffe(struct hclge_dev *hdev,
 }
 
 int hns3_get_hilink_param(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size)
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *handle = hns3_get_handle(net_priv->netdev);
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hns3_hilink_param *hns3_param_out;
 	struct hns3_hilink_param *hns3_param_in;
 	struct hclge_dev *hdev = vport->back;
+	bool check;
 	int ret;
 
-	if (!buf_in)
-		return -ENODEV;
+	check = !buf_in || in_size < sizeof(struct hns3_hilink_param) ||
+		!buf_out || out_size < sizeof(struct hns3_hilink_param);
+	if (check) {
+		pr_err("input parameter error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	hns3_param_in = (struct hns3_hilink_param *)buf_in;
 	hns3_param_out = (struct hns3_hilink_param *)buf_out;

@@ -103,8 +103,8 @@ static int hns3_get_stat_val(struct ring_stats *r_stats, char val_name[],
 }
 
 int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
-			    void *buf_in, u16 in_size,
-			    void *buf_out, u16 *out_size)
+			    void *buf_in, u32 in_size,
+			    void *buf_out, u32 out_size)
 {
 	struct stat_sw_mode_param *stat_sw_param;
 	struct hnae3_knic_private_info *kinfo;
@@ -122,7 +122,7 @@ int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	kinfo = &handle->kinfo;
 	stat_sw_param = (struct stat_sw_mode_param *)buf_in;
 
-	if (!buf_out || !out_size) {
+	if (!buf_out || out_size < sizeof(u64)) {
 		dev_err(&hdev->pdev->dev, "Get stat buf out is null.\n");
 		return HCLGE_ERR_CSQ_ERROR;
 	}
@@ -147,14 +147,13 @@ int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	}
 
 	*ret_data = le64_to_cpu(*val);
-	*out_size = sizeof(u64);
 
 	return HCLGE_STATUS_SUCCESS;
 }
 
 int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
-			   void *buf_in, u16 in_size,
-			   void *buf_out, u16 *out_size)
+			   void *buf_in, u32 in_size,
+			   void *buf_out, u32 out_size)
 {
 	struct stat_sw_mode_param *stat_sw_param;
 	struct hnae3_knic_private_info *kinfo;
@@ -170,11 +169,6 @@ int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	hdev = vport->back;
 	kinfo = &handle->kinfo;
 	stat_sw_param = (struct stat_sw_mode_param *)buf_in;
-
-	if (!buf_in) {
-		dev_err(&hdev->pdev->dev, "Set stat buf in is null.\n");
-		return HCLGE_ERR_CSQ_ERROR;
-	}
 
 	ring_idx = stat_sw_param->ring_idx;
 	if (ring_idx >= kinfo->num_tqps) {
@@ -201,10 +195,17 @@ int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 }
 
 int hns3_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
-		       void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct stat_sw_mode_param *mode_param;
-	int ret = 0;
+	bool check;
+	int ret;
+
+	check = !buf_in || in_size < sizeof(struct stat_sw_mode_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	mode_param = (struct stat_sw_mode_param *)buf_in;
 	if (mode_param->is_read == 1)

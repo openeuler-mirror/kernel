@@ -97,18 +97,18 @@ struct nictool_ets_cfg_info {
 };
 
 int hns3_test_queue_cfg(struct hns3_nic_priv *net_priv,
-			void *buf_in, u16 in_size,
-			void *buf_out, u16 *out_size);
+			void *buf_in, u32 in_size,
+			void *buf_out, u32 out_size);
 int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u16 in_size, void *buf_out, u16 *out_size);
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size);
 int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size);
-int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u16 in_size,
-		     void *buf_out, u16 *out_size);
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size);
+int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
+		     void *buf_out, u32 out_size);
 int hns3_test_port_cfg(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u16 in_size,
-		       void *buf_out, u16 *out_size);
+		       void *buf_in, u32 in_size,
+		       void *buf_out, u32 out_size);
 int hns3_test_ets_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size);
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size);
 
 #endif

@@ -14,28 +14,39 @@
 #include "hns3_priv_vlan.h"
 
 int hns3_test_upmapping_cfg(struct hns3_nic_priv *net_priv,
-			    void *buf_in, u16 in_size,
-			    void *buf_out, u16 *out_size)
+			    void *buf_in, u32 in_size,
+			    void *buf_out, u32 out_size)
 {
 #define HCLGE_OPC_VLANUP_MAPPING_VF_TX_CFG	0x0F10
 #define HCLGE_OPC_VLANUP_MAPPING_PORT_TX_CFG	0x0F11
 	struct nictool_vlanup_param *out_info;
 	struct nictool_vlanup_param *in_info;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
+	bool check;
 	int ret;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct nictool_vlanup_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct nictool_vlanup_param *)buf_in;
 	out_info = (struct nictool_vlanup_param *)buf_out;
 
 	if (in_info->is_read) {
-		if (!out_info)
+		check = !buf_out ||
+			out_size < sizeof(struct nictool_vlanup_param);
+		if (check) {
+			pr_err("input param buf_out is null in %s function\n",
+			       __func__);
 			return 0;
+		}
+
 		if (in_info->map_flag & NICTOOL_VLANUP_VF_CFG_FLAG) {
 			hclge_cmd_setup_basic_desc
 			    (&desc, HCLGE_OPC_VLANUP_MAPPING_VF_TX_CFG, true);

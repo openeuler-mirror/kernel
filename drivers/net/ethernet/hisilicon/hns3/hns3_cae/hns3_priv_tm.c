@@ -450,24 +450,36 @@ static int hns3_test_tm_operate_nic_regs(struct hclge_dev *hdev,
 }
 
 int hns3_test_queue_cfg(struct hns3_nic_priv *net_priv,
-			void *buf_in, u16 in_size,
-			void *buf_out, u16 *out_size)
+			void *buf_in, u32 in_size,
+			void *buf_out, u32 out_size)
 {
-	struct hnae3_handle *handle;
-	struct hclge_vport *vport;
-	struct nictool_queue_cfg_info *in_info;
 	struct nictool_queue_cfg_info *out_info;
+	struct nictool_queue_cfg_info *in_info;
+	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	int is_read;
+	bool check;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct nictool_queue_cfg_info);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct nictool_queue_cfg_info *)buf_in;
 	out_info = (struct nictool_queue_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 
 	if (is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct nictool_queue_cfg_info);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		out_info->queue_id = in_info->queue_id;
 		if (hns3_test_tm_q_to_qs_get(hdev, in_info->queue_id,
 					     &out_info->qs)) {
@@ -530,22 +542,27 @@ static int hns3_test_qs_set_new_map(int tc, u32 map,
 }
 
 int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct nictool_qs_cfg_info *out_info;
 	struct nictool_qs_cfg_info *in_info;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	int is_read;
 	int offset;
 	u32 bp_map;
+	bool check;
 	u16 qs_id;
 	int gp_id;
 	int tc;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct nictool_qs_cfg_info);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct nictool_qs_cfg_info *)buf_in;
 	out_info = (struct nictool_qs_cfg_info *)buf_out;
@@ -565,6 +582,13 @@ int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
 	}
 
 	if (is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct nictool_qs_cfg_info);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		out_info->qs_id = qs_id;
 		out_info->tc = tc;
 		if (hns3_test_tm_qs_to_pri_get(hdev, qs_id, &out_info->pri)) {
@@ -660,20 +684,25 @@ static int hns3_test_pri_pg_set_map(struct hclge_dev *hdev,
 }
 
 int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct nictool_pri_cfg_info *out_info;
 	struct nictool_pri_cfg_info *in_info;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	int is_read;
 	u16 pri_id;
 	int cur_pg;
+	bool check;
 	u8 bitmap;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct nictool_pri_cfg_info);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct nictool_pri_cfg_info *)buf_in;
 	out_info = (struct nictool_pri_cfg_info *)buf_out;
@@ -700,6 +729,13 @@ int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
 	}
 
 	if (is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct nictool_pri_cfg_info);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		out_info->pri_id = pri_id;
 		out_info->pg = cur_pg;
 		if (hns3_test_tm_pri_shapping_get(hdev, HCLGE_TM_SHAP_C_BUCKET,
@@ -777,19 +813,24 @@ int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u16 in_size,
-		     void *buf_out, u16 *out_size)
+int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
+		     void *buf_out, u32 out_size)
 {
 	struct nictool_pg_cfg_info *out_info;
 	struct nictool_pg_cfg_info *in_info;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	int is_read;
+	bool check;
 	u16 pg_id;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct nictool_pg_cfg_info);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct nictool_pg_cfg_info *)buf_in;
 	out_info = (struct nictool_pg_cfg_info *)buf_out;
@@ -797,6 +838,13 @@ int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u16 in_size,
 	pg_id = in_info->pg_id;
 
 	if (is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct nictool_pg_cfg_info);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		out_info->pg_id = pg_id;
 		if (hns3_test_tm_pg_shapping_get(hdev, HCLGE_TM_SHAP_C_BUCKET,
 						 pg_id,
@@ -867,18 +915,23 @@ int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u16 in_size,
 }
 
 int hns3_test_port_cfg(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct nictool_port_cfg_info *out_info;
 	struct nictool_port_cfg_info *in_info;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	u16 port_id;
 	int is_read;
+	bool check;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct nictool_port_cfg_info);
+	if (check) {
+		pr_err("input parameter error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct nictool_port_cfg_info *)buf_in;
 	out_info = (struct nictool_port_cfg_info *)buf_out;
@@ -886,6 +939,13 @@ int hns3_test_port_cfg(struct hns3_nic_priv *net_priv,
 	port_id = in_info->port_id;
 
 	if (is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct nictool_port_cfg_info);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		out_info->port_id = port_id;
 		if (hns3_test_tm_port_shapping_get(hdev, &out_info->shaping)) {
 			pr_err("%s,%d:get port p shaping failed!\n", __func__,
@@ -905,23 +965,29 @@ int hns3_test_port_cfg(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_test_ets_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 #define HNS3_TM_ETS_PORT_SHAPING		0x130820850
 	struct nictool_ets_cfg_info *out_info;
 	struct nictool_ets_cfg_info *in_info;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	u8 weight[8];
 	int is_read;
+	bool check;
 	u16 tc_id;
 	u8 mac_id;
 	u64 value;
 	u64 addr;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct nictool_ets_cfg_info) ||
+		!buf_out || out_size < sizeof(struct nictool_ets_cfg_info);
+	if (check) {
+		pr_err("input parameter error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct nictool_ets_cfg_info *)buf_in;
 	out_info = (struct nictool_ets_cfg_info *)buf_out;

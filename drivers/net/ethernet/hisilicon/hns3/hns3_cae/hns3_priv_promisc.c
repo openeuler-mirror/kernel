@@ -4,20 +4,26 @@
 #include "hns3_priv_promisc.h"
 
 int hns3_read_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
-			       void *buf_in, u16 in_size,
-			       void *buf_out, u16 *out_size)
+			       void *buf_in, u32 in_size,
+			       void *buf_out, u32 out_size)
 {
 	struct hclge_promisc_cfg_cmd *req;
 	enum hclge_cmd_status status;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
-	u8 *out_buf = (u8 *)buf_out;
+	u8 *out_buf;
+	bool check;
 	u8 enable;
 
-	handle = nic_dev->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_out || out_size < sizeof(u8);
+	if (check) {
+		pr_err("input param buf_out error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	out_buf = (u8 *)buf_out;
+	vport = hclge_get_vport(nic_dev->ae_handle);
 	hdev = vport->back;
 	req = (struct hclge_promisc_cfg_cmd *)desc.data;
 	req->vf_id = vport->vport_id;
@@ -36,24 +42,29 @@ int hns3_read_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
 }
 
 int hns3_set_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
-			      void *buf_in, u16 in_size,
-			      void *buf_out, u16 *out_size)
+			      void *buf_in, u32 in_size,
+			      void *buf_out, u32 out_size)
 {
 	struct promisc_mode_param *mode_param;
 	struct hclge_promisc_cfg_cmd *req;
 	struct hclge_promisc_param param;
 	enum hclge_cmd_status status;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
 	bool en_uc;
 	bool en_mc;
 	bool en_bc;
+	bool check;
 	u8 enable;
 
-	handle = nic_dev->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct promisc_mode_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(nic_dev->ae_handle);
 	hdev = vport->back;
 	req = (struct hclge_promisc_cfg_cmd *)desc.data;
 	req->vf_id = vport->vport_id;
@@ -103,11 +114,18 @@ int hns3_set_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
 }
 
 int hns3_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size)
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size)
 {
-	int ret;
 	struct promisc_mode_param *mode_param;
+	bool check;
+	int ret;
+
+	check = !buf_in || in_size < sizeof(struct promisc_mode_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	mode_param = (struct promisc_mode_param *)buf_in;
 	if (mode_param->is_read == 1)

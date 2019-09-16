@@ -34,7 +34,7 @@ int hns3_get_q_rx_head(struct hns3_nic_priv *net_priv, int ring_id);
 int hns3_get_q_tx_tail(struct hns3_nic_priv *net_priv, int ring_id);
 int hns3_get_q_tx_head(struct hns3_nic_priv *net_priv, int ring_id);
 int hns3_test_qinfo_cfg(struct hns3_nic_priv *net_priv,
-			void *buf_in, u16 in_size,
-			void *buf_out, u16 *out_size);
+			void *buf_in, u32 in_size,
+			void *buf_out, u32 out_size);
 
 #endif

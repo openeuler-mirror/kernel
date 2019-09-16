@@ -14,21 +14,26 @@
 #include "hns3_priv_mac.h"
 
 int hns3_test_mac_loop_cfg(struct hns3_nic_priv *net_priv,
-			   void *buf_in, u16 in_size,
-			   void *buf_out, u16 *out_size)
+			   void *buf_in, u32 in_size,
+			   void *buf_out, u32 out_size)
 {
 	struct nictool_cfg_serdes_mode_cmd *req1;
 	struct nictool_cfg_mac_mode_cmd *req2;
 	struct nictool_loop_param *out_info;
 	struct nictool_loop_param *in_info;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
+	bool check;
 	int ret;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct nictool_loop_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct nictool_loop_param *)buf_in;
 	out_info = (struct nictool_loop_param *)buf_out;
@@ -37,6 +42,14 @@ int hns3_test_mac_loop_cfg(struct hns3_nic_priv *net_priv,
 	req2 = (struct nictool_cfg_mac_mode_cmd *)&desc.data[0];
 
 	if (in_info->is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct nictool_loop_param);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
+
 		hclge_cmd_setup_basic_desc(&desc,
 					   HCLGE_OPC_CONFIG_MAC_MODE, true);
 		ret = hclge_cmd_send(&hdev->hw, &desc, 1);

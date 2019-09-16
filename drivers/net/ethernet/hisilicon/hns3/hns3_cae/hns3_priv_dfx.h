@@ -36,13 +36,13 @@ struct hns3_test_event_param {
 #define HNS3_TEST_MAX_MAC_NUMBER	0x8
 
 int hns3_test_get_dfx_info(struct hns3_nic_priv *net_priv,
-			   void *buf_in, u16 in_size,
-			   void *buf_out, u16 *out_size);
+			   void *buf_in, u32 in_size,
+			   void *buf_out, u32 out_size);
 int hns3_test_read_dfx_info(struct hns3_nic_priv *net_priv,
-			    void *buf_in, u16 in_size,
-			    void *buf_out, u16 *out_size);
+			    void *buf_in, u32 in_size,
+			    void *buf_out, u32 out_size);
 int hns3_test_event_injection(struct hns3_nic_priv *net_priv,
-			     void *buf_in, u16 in_size,
-			     void *buf_out, u16 *out_size);
+			    void *buf_in, u32 in_size,
+			    void *buf_out, u32 out_size);
 
 #endif

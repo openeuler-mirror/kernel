@@ -134,7 +134,7 @@ void fill_queue_info(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_test_qres_cfg(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct qres_bufin_param *qres_in_param;
 	struct hns3_enet_ring *ring;
@@ -142,6 +142,14 @@ int hns3_test_qres_cfg(struct hns3_nic_priv *net_priv,
 	int bd_index;
 	int tqps_num;
 	int ring_id;
+	bool check;
+
+	check = !buf_in || in_size < sizeof(struct qres_bufin_param) ||
+		!buf_out || out_size < sizeof(struct qres_param);
+	if (check) {
+		pr_err("input parameter error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	tqps_num = net_priv->ae_handle->kinfo.num_tqps;
 	out_info = (struct qres_param *)buf_out;
@@ -158,7 +166,6 @@ int hns3_test_qres_cfg(struct hns3_nic_priv *net_priv,
 
 	if (qres_in_param->mtype == MTYPE_QUEUE_INFO) {
 		fill_queue_info(net_priv, out_info, ring_id);
-
 	} else if (qres_in_param->mtype == MTYPE_BD_INFO) {
 		if (qres_in_param->queue_type == TYPE_TX) {
 			ring = net_priv->ring_data[ring_id].ring;

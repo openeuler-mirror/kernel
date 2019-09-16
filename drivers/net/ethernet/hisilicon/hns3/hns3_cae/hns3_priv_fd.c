@@ -18,12 +18,13 @@
 #include "hns3_priv_fd.h"
 
 int hclge_test_send_generic_cmd(struct hclge_dev *hdev, u8 *buf_in,
-				u16 in_size, u8 *buf_out, u16 *out_size)
+				u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_get_fd_mode_cmd *mode_cfg;
 	struct hclge_get_fd_mode_cmd *req;
 	struct hclge_desc desc;
+	bool check;
 	int ret;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_MODE_CTRL,
@@ -42,21 +43,37 @@ int hclge_test_send_generic_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	}
 
 	if (param->is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct hclge_get_fd_mode_cmd);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
+
 		mode_cfg = (struct hclge_get_fd_mode_cmd *)buf_out;
 		mode_cfg->mode = req->mode;
 		mode_cfg->enable = req->enable;
-		*out_size = sizeof(struct hclge_get_fd_mode_cmd);
 	}
+
 	return 0;
 }
 
 int hclge_test_send_allocate_cmd(struct hclge_dev *hdev, u8 *buf_in,
-				 u16 in_size, u8 *buf_out, u16 *out_size)
+				 u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct hclge_get_fd_allocation_cmd *allocation_cfg;
 	struct hclge_get_fd_allocation_cmd *req;
 	struct hclge_desc desc;
+	bool check;
 	int ret;
+
+	check = !buf_out ||
+		out_size < sizeof(struct hclge_get_fd_allocation_cmd);
+	if (check) {
+		pr_err("input param buf_out error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	allocation_cfg = (struct hclge_get_fd_allocation_cmd *)buf_out;
 
@@ -76,18 +93,18 @@ int hclge_test_send_allocate_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	allocation_cfg->stage2_entry_num = req->stage2_entry_num;
 	allocation_cfg->stage1_counter_num = req->stage1_counter_num;
 	allocation_cfg->stage2_counter_num = req->stage2_counter_num;
-	*out_size = sizeof(struct hclge_get_fd_allocation_cmd);
 
 	return 0;
 }
 
 int hclge_test_send_key_cfg_cmd(struct hclge_dev *hdev, u8 *buf_in,
-				u16 in_size, u8 *buf_out, u16 *out_size)
+				u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_set_fd_key_config_cmd *key_cfg_data;
 	struct hclge_set_fd_key_config_cmd *req;
 	struct hclge_desc desc;
+	bool check;
 	int ret;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_KEY_CONFIG,
@@ -113,6 +130,13 @@ int hclge_test_send_key_cfg_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	}
 
 	if (param->is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct hclge_set_fd_key_config_cmd);
+		if (check) {
+			pr_err("input parameter error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		key_cfg_data = (struct hclge_set_fd_key_config_cmd *)buf_out;
 		key_cfg_data->key_select = req->key_select;
 		key_cfg_data->inner_sipv6_word_en = req->inner_sipv6_word_en;
@@ -121,14 +145,13 @@ int hclge_test_send_key_cfg_cmd(struct hclge_dev *hdev, u8 *buf_in,
 		key_cfg_data->outer_dipv6_word_en = req->outer_dipv6_word_en;
 		key_cfg_data->tuple_mask = req->tuple_mask;
 		key_cfg_data->meta_data_mask = req->meta_data_mask;
-		*out_size = sizeof(struct hclge_set_fd_key_config_cmd);
 	}
 
 	return 0;
 }
 
 int hclge_test_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
-				u16 in_size, u8 *buf_out, u16 *out_size)
+				u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_fd_tcam_config_1_cmd *req1;
@@ -136,6 +159,7 @@ int hclge_test_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	struct hclge_fd_tcam_config_3_cmd *req3;
 	struct hclge_fd_tcam_data *tcam_data;
 	struct hclge_desc desc[3];
+	bool check;
 	u8 *buf;
 	int ret;
 
@@ -176,6 +200,14 @@ int hclge_test_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	}
 
 	if (param->is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct hclge_fd_tcam_data);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
+
 		tcam_data = (struct hclge_fd_tcam_data *)buf_out;
 		tcam_data->vld = req1->entry_vld;
 		buf = tcam_data->tcam_data;
@@ -184,18 +216,19 @@ int hclge_test_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 		memcpy(buf, req2->tcam_data, sizeof(req2->tcam_data));
 		buf += sizeof(req2->tcam_data);
 		memcpy(buf, req3->tcam_data, sizeof(req3->tcam_data));
-		*out_size = sizeof(struct hclge_fd_tcam_data);
 	}
+
 	return 0;
 }
 
 int hclge_test_send_ad_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
-			      u16 in_size, u8 *buf_out, u16 *out_size)
+			      u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_fd_ad_config_cmd *ad_data;
 	struct hclge_fd_ad_config_cmd *req;
 	struct hclge_desc desc;
+	bool check;
 	int ret;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_AD_OP,
@@ -216,27 +249,41 @@ int hclge_test_send_ad_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	}
 
 	if (param->is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct hclge_fd_ad_config_cmd);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
+
 		ad_data = (struct hclge_fd_ad_config_cmd *)buf_out;
 		memcpy(&ad_data->ad_data, &req->ad_data, sizeof(req->ad_data));
-		*out_size = sizeof(struct hclge_fd_ad_config_cmd);
 	}
 
 	return 0;
 }
 
 int hclge_test_send_cnt_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
-			       u16 in_size, u8 *buf_out, u16 *out_size)
+			       u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_fd_cnt_op_cmd *cnt_data;
 	struct hclge_fd_cnt_op_cmd *req;
 	struct hclge_desc desc;
+	bool check;
 	int ret;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_CNT_OP, true);
 	req = (struct hclge_fd_cnt_op_cmd *)desc.data;
 	req->stage = param->stage;
 	req->cnt_idx = param->idx;
+
+	check = !buf_out || out_size < sizeof(struct hclge_fd_cnt_op_cmd);
+	if (check) {
+		pr_err("input param buf_out error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
@@ -246,19 +293,25 @@ int hclge_test_send_cnt_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 
 	cnt_data = (struct hclge_fd_cnt_op_cmd *)buf_out;
 	memcpy(&cnt_data->cnt_value, &req->cnt_value, sizeof(req->cnt_value));
-	*out_size = sizeof(struct hclge_fd_cnt_op_cmd);
 
 	return 0;
 }
 
 int hns3_test_fd_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *handle = net_priv->ae_handle;
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_dev *hdev = vport->back;
 	int ret = -1;
+	bool check;
+
+	check = !buf_in || in_size < sizeof(struct fd_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	if (!hnae3_dev_fd_supported(hdev))
 		return -EOPNOTSUPP;

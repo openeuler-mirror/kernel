@@ -55,21 +55,26 @@ static int hclge_set_rss_algo_key(struct hclge_dev *hdev,
 }
 
 static int hns3_test_set_rss_cfg(struct hns3_nic_priv *net_priv,
-				 void *buf_in, u16 in_size,
-				 void *buf_out, u16 *out_size)
+				 void *buf_in, u32 in_size,
+				 void *buf_out, u32 out_size)
 {
 	struct hclge_rss_config_cmd *in_info;
 	enum hclge_cmd_status status;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	u8 hash_config;
+	bool check;
 	u8 *key;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	key = vport->rss_hash_key;
+
+	check = !buf_in || in_size < sizeof(struct hclge_rss_config_cmd);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	in_info = (struct hclge_rss_config_cmd *)buf_in;
 	hash_config =
@@ -86,19 +91,24 @@ static int hns3_test_set_rss_cfg(struct hns3_nic_priv *net_priv,
 }
 
 static int hns3_test_get_rss_cfg(struct hns3_nic_priv *net_priv,
-				 void *buf_in, u16 in_size,
-				 void *buf_out, u16 *out_size)
+				 void *buf_in, u32 in_size,
+				 void *buf_out, u32 out_size)
 {
 	struct hclge_rss_config_cmd *req;
 	enum hclge_cmd_status status;
 	u8 *out_buf = (u8 *)buf_out;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
+	bool check;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_out || out_size < sizeof(u8);
+	if (check) {
+		pr_err("input param buf_out error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_RSS_GENERIC_CONFIG, true);
@@ -115,16 +125,19 @@ static int hns3_test_get_rss_cfg(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_test_rss_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct rss_config *mode_param;
+	bool check;
 	int ret;
 
-	mode_param = (struct rss_config *)buf_in;
-	if (!mode_param) {
-		pr_err("%s error: mode_param NULL.\n", __func__);
-		return -EINVAL;
+	check = !buf_in || in_size < sizeof(struct rss_config);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
 	}
+
+	mode_param = (struct rss_config *)buf_in;
 	if (mode_param->is_read == 1)
 		ret = hns3_test_get_rss_cfg(net_priv, buf_in, in_size, buf_out,
 					    out_size);

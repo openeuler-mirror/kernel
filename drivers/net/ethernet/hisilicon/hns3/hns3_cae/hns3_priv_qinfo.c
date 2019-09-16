@@ -100,8 +100,8 @@ int hns3_get_q_tx_head(struct hns3_nic_priv *net_priv, int ring_id)
 }
 
 int hns3_test_qinfo_cfg(struct hns3_nic_priv *net_priv,
-			void *buf_in, u16 in_size,
-			void *buf_out, u16 *out_size)
+			void *buf_in, u32 in_size,
+			void *buf_out, u32 out_size)
 {
 	struct qinfo_param *out_info;
 	int tqps_num;
@@ -114,6 +114,14 @@ int hns3_test_qinfo_cfg(struct hns3_nic_priv *net_priv,
 	int tx_tail;
 	int tx_ebd;
 	int tx_fbd;
+	bool check;
+
+	check = !buf_in || in_size < sizeof(int) ||
+		!buf_out || out_size < sizeof(struct qinfo_param);
+	if (check) {
+		pr_err("input parameter error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	tqps_num = net_priv->ae_handle->kinfo.num_tqps;
 	out_info = (struct qinfo_param *)buf_out;

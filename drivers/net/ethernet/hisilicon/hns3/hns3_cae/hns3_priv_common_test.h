@@ -34,10 +34,10 @@ struct com_reg_param {
 	u32 is_read;
 };
 
-int hns3_test_reg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u16 in_size,
-		      void *buf_out, u16 *out_size);
+int hns3_test_reg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
+		      void *buf_out, u32 out_size);
 
-int hns3_reg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u16 in_size,
-		 void *buf_out, u16 *out_size);
+int hns3_reg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
+		 void *buf_out, u32 out_size);
 
 #endif

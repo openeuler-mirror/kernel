@@ -88,7 +88,7 @@ struct hclge_lsport_info {
 };
 
 int hns3_get_port_info(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u16 in_size,
-		       void *buf_out, u16 *out_size);
+		       void *buf_in, u32 in_size,
+		       void *buf_out, u32 out_size);
 
 #endif

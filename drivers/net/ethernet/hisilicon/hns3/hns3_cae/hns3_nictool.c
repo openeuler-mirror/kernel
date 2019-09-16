@@ -60,7 +60,7 @@
 #define HCLGE_OPC_DCQCN_TEMPLATE_CFG	0x7014
 #define HCLGE_OPC_DCQCN_GET_MSG_CNT		0x7017
 
-#define HNAE_DRIVER_VERSION "1.8.15.1"
+#define HNAE_DRIVER_VERSION "1.8.15.2"
 
 #define MAX_MSG_OUT_SIZE	(1024U * 2048U)
 #define MAX_MSG_IN_SIZE		(1024U * 2048U)
@@ -90,7 +90,7 @@ int g_nictool_init_flag;
 int g_nictool_ref_cnt;
 
 typedef int (*driv_module) (struct hns3_nic_priv *nic_dev, void *buf_in,
-			    u16 in_size, void *buf_out, u16 *out_size);
+			    u32 in_size, void *buf_out, u32 out_size);
 
 struct drv_module_handle {
 	enum driver_cmd_type driv_cmd_name;
@@ -353,17 +353,22 @@ int hns3_test_chs_get(struct hclge_dev *hdev, u8 chs_type, u8 *enable)
 }
 
 int hns3_test_chs_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hns3_chs_param *in_info;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	u8 *out_info;
+	bool check;
 	u8 is_set;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct hns3_chs_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct hns3_chs_param *)buf_in;
 	out_info = (u8 *)buf_out;
@@ -386,6 +391,12 @@ int hns3_test_chs_cfg(struct hns3_nic_priv *net_priv,
 			return -1;
 		}
 	} else {
+		check = !buf_out || out_size < sizeof(u8);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		if (hns3_test_chs_get(hdev, in_info->type, out_info)) {
 			pr_err("get chs type(%d) enable failed!\n",
 			       in_info->type);
@@ -425,22 +436,26 @@ int hns_test_get_commit_id(struct hnae3_handle *handle, u8 *commit_id,
 	return 0;
 }
 
-static int get_fw_ver(struct hns3_nic_priv *nic_dev, void *buf_in, u16 in_size,
-		      void *buf_out, u16 *out_size)
+static int get_fw_ver(struct hns3_nic_priv *nic_dev, void *buf_in, u32 in_size,
+		      void *buf_out, u32 out_size)
 {
 	struct firmware_ver_param *out_buf;
 	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
+	bool check;
 	u32 fw_ver;
+
+	check = !buf_out || out_size < sizeof(struct firmware_ver_param);
+	if (check) {
+		pr_err("input param buf_out error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	handle = nic_dev->ae_handle;
 	vport = container_of(handle, struct hclge_vport, nic);
 	hdev = vport->back;
 	out_buf = (struct firmware_ver_param *)buf_out;
-
-	if (!handle || !hdev)
-		return -EFAULT;
 
 	if (hns_test_get_commit_id(handle, out_buf->commit_id,
 				   &out_buf->ncl_version))
@@ -456,21 +471,20 @@ static int get_fw_ver(struct hns3_nic_priv *nic_dev, void *buf_in, u16 in_size,
 }
 
 static int get_driver_ver(struct hns3_nic_priv *nic_dev,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size)
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size)
 {
-	if (!buf_out)
+	if (!buf_out || out_size < sizeof(HNAE_DRIVER_VERSION))
 		return -ENOMEM;
 
 	strncpy(buf_out, HNAE_DRIVER_VERSION, sizeof(HNAE_DRIVER_VERSION));
-	*out_size = sizeof(HNAE_DRIVER_VERSION);
 
 	return 0;
 }
 
 int hns3_test_clean_stats(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size)
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size)
 {
 	struct net_device *netdev = net_priv->netdev;
 	struct hnae3_knic_private_info *kinfo;
@@ -502,13 +516,20 @@ int hns3_test_clean_stats(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_nic_reset(struct hns3_nic_priv *net_priv,
-		   void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		   void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *h = net_priv->ae_handle;
 	struct reset_param *reset_info;
 	enum hnae3_reset_type rst_type;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
+	bool check;
+
+	check = !buf_in || in_size < sizeof(struct reset_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	vport = container_of(h, struct hclge_vport, nic);
 	hdev = vport->back;
@@ -542,35 +563,56 @@ int hns3_nic_reset(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_nic_timeout_cfg(struct hns3_nic_priv *net_priv,
-			 void *buf_in, u16 in_size,
-			 void *buf_out, u16 *out_size)
+			 void *buf_in, u32 in_size,
+			 void *buf_out, u32 out_size)
 {
 	struct net_device *netdev = net_priv->netdev;
 	struct tx_timeout_param *in_info;
 	struct tx_timeout_param *out_info;
+	bool check;
+
+	check = !buf_in || in_size < sizeof(struct tx_timeout_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	in_info = (struct tx_timeout_param *)buf_in;
 	out_info = (struct tx_timeout_param *)buf_out;
 
-	if (in_info->wr_flag)
+	if (in_info->wr_flag) {
 		netdev->watchdog_timeo = (in_info->tx_timeout_size) * HZ;
-	else
+	} else {
+		check = !buf_out || out_size < sizeof(struct tx_timeout_param);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		out_info->tx_timeout_size = (netdev->watchdog_timeo) / HZ;
+	}
 
 	return 0;
 }
 
 int hns3_gro_age_handle(struct hns3_nic_priv *net_priv,
-			void *buf_in, u16 in_size,
-			void *buf_out, u16 *out_size)
+			void *buf_in, u32 in_size,
+			void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *h = net_priv->ae_handle;
 	struct hclge_gro_age_config_cmd *req;
-	struct hclge_desc desc;
 	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
 	struct gro_param *param;
+	struct hclge_desc desc;
+	struct hclge_dev *hdev;
+	bool check;
 	int ret;
+
+	check = !buf_in || in_size < sizeof(struct gro_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	vport = container_of(h, struct hclge_vport, nic);
 	param = (struct gro_param *)buf_in;
@@ -591,9 +633,13 @@ int hns3_gro_age_handle(struct hns3_nic_priv *net_priv,
 	}
 
 	if (param->is_read) {
+		if (!buf_out || out_size < sizeof(u32)) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		memcpy(buf_out, &req->ppu_gro_age_cnt,
 		       sizeof(req->ppu_gro_age_cnt));
-		*out_size = sizeof(req->ppu_gro_age_cnt);
 	}
 
 	return 0;
@@ -640,7 +686,7 @@ static int hns3_dcqcn_rw(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_nic_dcqcn(struct hns3_nic_priv *net_priv,
-		   void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		   void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *h = net_priv->ae_handle;
 	struct hclge_vport *vport = container_of(h, struct hclge_vport, nic);
@@ -650,7 +696,14 @@ int hns3_nic_dcqcn(struct hns3_nic_priv *net_priv,
 	struct hclge_dev *hdev = vport->back;
 	u32 tempoutbuff;
 	u32 offset;
+	bool check;
 	int ret;
+
+	check = !buf_in || in_size < sizeof(struct cfg_dcqcn_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	if (!hnae3_dev_roce_supported(hdev)) {
 		dev_err(&hdev->pdev->dev, "This device is not support RoCE!\n");
@@ -770,6 +823,12 @@ int hns3_nic_dcqcn(struct hns3_nic_priv *net_priv,
 			return ret;
 		}
 	} else if (parm_in->is_get == HINICADM_DCQCN_READ_CFG_MODE) {
+		check = !buf_out || out_size < sizeof(struct cfg_dcqcn_param);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		parm_out->ai = tempbuffer.ai;
 		parm_out->f = tempbuffer.f;
 		parm_out->tkp = tempbuffer.tkp;
@@ -790,15 +849,22 @@ int hns3_nic_dcqcn(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_dcqcn_get_msg_cnt(struct hns3_nic_priv *net_priv,
-			   void *buf_in, u16 in_size,
-			   void *buf_out, u16 *out_size)
+			   void *buf_in, u32 in_size,
+			   void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *h = net_priv->ae_handle;
 	struct hclge_vport *vport = container_of(h, struct hclge_vport, nic);
 	struct dcqcn_statistic_param *statistic_parm_out = buf_out;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;
+	bool check;
 	int ret;
+
+	check = !buf_out || out_size < sizeof(struct dcqcn_statistic_param);
+	if (check) {
+		pr_err("input param buf_out error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_DCQCN_GET_MSG_CNT, true);
 
@@ -869,7 +935,7 @@ struct drv_module_handle driv_module_cmd_handle[] = {
 static int send_to_driver(struct hns3_nic_priv *nic_dev,
 			  struct msg_module *nt_msg,
 			  void *buf_in, u32 in_size,
-			  void *buf_out, u32 *out_size)
+			  void *buf_out, u32 out_size)
 {
 	u32 num_cmds = ARRAY_SIZE(driv_module_cmd_handle);
 	enum driver_cmd_type cmd_type =
@@ -881,8 +947,7 @@ static int send_to_driver(struct hns3_nic_priv *nic_dev,
 	for (index = 0; index < num_cmds; index++) {
 		if (cmd_type == driv_module_cmd_handle[index].driv_cmd_name) {
 			fn = driv_module_cmd_handle[index].driv_func;
-			err = fn(nic_dev, buf_in, (u16)in_size, buf_out,
-				 (u16 *)out_size);
+			err = fn(nic_dev, buf_in, in_size, buf_out, out_size);
 			break;
 		}
 	}
@@ -897,8 +962,7 @@ static long nictool_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 	struct msg_module nt_msg;
 	void *buf_out = NULL;
 	void *buf_in = NULL;
-	u32 out_size_expect;
-	u32 out_size = 0;
+	u32 out_size;
 	u32 in_size;
 	int cmd_raw;
 	int ret;
@@ -911,7 +975,7 @@ static long nictool_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 	}
 
 	cmd_raw = nt_msg.module;
-	out_size_expect = nt_msg.len_info.out_buff_len;
+	out_size = nt_msg.len_info.out_buff_len;
 	in_size = nt_msg.len_info.in_buff_len;
 	ret = nictool_k_get_netdev_by_ifname(nt_msg.device_name, &nic_dev);
 	if (ret) {
@@ -930,7 +994,7 @@ static long nictool_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 		return -EFAULT;
 	}
 
-	ret = alloc_buff_out(out_size_expect, &buf_out);
+	ret = alloc_buff_out(out_size, &buf_out);
 	if (ret) {
 		pr_err("alloc out buffer failed\n");
 		goto out_free_buf_in;
@@ -939,7 +1003,7 @@ static long nictool_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 	switch (cmd_raw) {
 	case SEND_TO_DRIVER:
 		ret = send_to_driver(nic_dev, &nt_msg, buf_in, in_size, buf_out,
-				     &out_size);
+				     out_size);
 		if (ret) {
 			pr_err("send buffer to driver failed, ret = %d\n", ret);
 			goto out_free_buf_out;
@@ -951,7 +1015,7 @@ static long nictool_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 		goto out_free_buf_out;
 	}
 
-	ret = copy_buf_out_to_user(&nt_msg, out_size_expect, buf_out);
+	ret = copy_buf_out_to_user(&nt_msg, out_size, buf_out);
 	if (ret)
 		pr_err("copy buf to user failed\n");
 

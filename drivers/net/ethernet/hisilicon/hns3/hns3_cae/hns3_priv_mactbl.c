@@ -19,14 +19,22 @@
 #include "hns3_priv_mactbl.h"
 
 int hns3_test_opt_mactbl(struct hns3_nic_priv *net_priv,
-			 void *buf_in, u16 in_size,
-			 void *buf_out, u16 *out_size)
+			 void *buf_in, u32 in_size,
+			 void *buf_out, u32 out_size)
 {
 	struct hns3_mac_tbl_para *out = (struct hns3_mac_tbl_para *)buf_out;
 	struct hns3_mac_tbl_para *in = (struct hns3_mac_tbl_para *)buf_in;
 	struct net_device *netdev = net_priv->netdev;
 	struct hnae3_handle *h;
+	bool check;
 	int ret;
+
+	check = !buf_in || in_size < sizeof(struct hns3_mac_tbl_para) ||
+		!buf_out || out_size < sizeof(struct hns3_mac_tbl_para);
+	if (check) {
+		pr_err("input parameter error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	h = hns3_get_handle(netdev);
 	if (!h->ae_algo->ops->priv_ops)

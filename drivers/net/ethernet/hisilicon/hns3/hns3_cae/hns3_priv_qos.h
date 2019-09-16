@@ -44,27 +44,27 @@ enum opt_type {
 #define HNS3_QCN_SHAP_BYPASS_OFF	17
 
 int hns3_test_rx_priv_buff_wl_cfg(struct hns3_nic_priv *net_priv,
-				  void *buf_in, u16 in_size,
-				  void *buf_out, u16 *out_size);
+				  void *buf_in, u32 in_size,
+				  void *buf_out, u32 out_size);
 int hns3_test_common_thrd_cfg(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u16 in_size,
-			      void *buf_out, u16 *out_size);
+			      void *buf_in, u32 in_size,
+			      void *buf_out, u32 out_size);
 int hns3_test_common_wl_cfg(struct hns3_nic_priv *net_priv,
-			    void *buf_in, u16 in_size,
-			    void *buf_out, u16 *out_size);
+			    void *buf_in, u32 in_size,
+			    void *buf_out, u32 out_size);
 int hns3_test_tx_buff_cfg(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size);
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size);
 int hns3_test_rx_buff_cfg(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u16 in_size,
-			  void *buf_out, u16 *out_size);
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size);
 int hns3_test_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u16 in_size,
-			      void *buf_out, u16 *out_size);
+			      void *buf_in, u32 in_size,
+			      void *buf_out, u32 out_size);
 int hns3_test_show_comm_thres(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u16 in_size,
-			      void *buf_out, u16 *out_size);
+			      void *buf_in, u32 in_size,
+			      void *buf_out, u32 out_size);
 int hns3_test_qcn_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size);
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size);
 
 #endif

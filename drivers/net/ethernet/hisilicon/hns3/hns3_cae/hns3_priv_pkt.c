@@ -700,7 +700,7 @@ void hns3_test_stop_new_thread(int tid)
 }
 
 int hns3_test_send_pkt(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct nictool_pkt_result_info *out_info;
 	struct nictool_pkt_cfg_info *in_info;
@@ -710,9 +710,15 @@ int hns3_test_send_pkt(struct hns3_nic_priv *net_priv,
 
 	in_info = (struct nictool_pkt_cfg_info *)buf_in;
 	out_info = (struct nictool_pkt_result_info *)buf_out;
+
+	if (!in_info || in_size < sizeof(struct nictool_pkt_cfg_info) ||
+	    !out_info || out_size < sizeof(struct nictool_pkt_result_info)) {
+		pr_err("input parameter error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
 	handle = net_priv->ae_handle;
 	queue_id = in_info->queue_id;
-	*out_size = sizeof(*out_info);
 	if (queue_id > handle->kinfo.num_tqps) {
 		pr_err("%s,%d:queue(%d) is invalid\n", __func__, __LINE__,
 		       in_info->queue_id);

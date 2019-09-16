@@ -78,8 +78,8 @@ static int hns3_test_get_chip_and_mac_id(struct hnae3_handle *handle,
 }
 
 int hns3_test_get_dfx_info(struct hns3_nic_priv *net_priv,
-			   void *buf_in, u16 in_size,
-			   void *buf_out, u16 *out_size)
+			   void *buf_in, u32 in_size,
+			   void *buf_out, u32 out_size)
 {
 #define HNS3_TEST_MAC_MODE_ADDR		0x130000000U
 #define HNS3_TEST_MAC_MAP_ADDR		0x130000008U
@@ -90,8 +90,15 @@ int hns3_test_get_dfx_info(struct hns3_nic_priv *net_priv,
 	struct hclge_dev *hdev;
 	u32 chip_id;
 	u32 mac_id;
+	bool check;
 	int ret;
 	int i;
+
+	check = !buf_out || out_size < sizeof(struct hns3_test_dfx_param);
+	if (check) {
+		pr_err("input param buf_out error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	handle = net_priv->ae_handle;
 	vport = hclge_get_vport(handle);
@@ -131,24 +138,36 @@ int hns3_test_get_dfx_info(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_test_read_dfx_info(struct hns3_nic_priv *net_priv,
-			    void *buf_in, u16 in_size,
-			    void *buf_out, u16 *out_size)
+			    void *buf_in, u32 in_size,
+			    void *buf_out, u32 out_size)
 {
 	struct hns3_test_reg_param *out_info;
 	struct hns3_test_reg_param *in_info;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
+	bool check;
 	int ret;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct hns3_test_reg_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	in_info = (struct hns3_test_reg_param *)buf_in;
 	out_info = (struct hns3_test_reg_param *)buf_out;
 
 	if (in_info->is_read) {
+		check = !buf_out ||
+			out_size < sizeof(struct hns3_test_reg_param);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		out_info->addr = in_info->addr;
 		out_info->is_read = true;
 		out_info->bit_width = in_info->bit_width;
@@ -166,18 +185,23 @@ int hns3_test_read_dfx_info(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_test_event_injection(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u16 in_size,
-			      void *buf_out, u16 *out_size)
+			      void *buf_in, u32 in_size,
+			      void *buf_out, u32 out_size)
 {
 	struct hns3_test_event_param *in_info;
 	struct hns3_test_reg_param reg_info;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
+	bool check;
 	int ret;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	check = !buf_in || in_size < sizeof(struct hns3_test_event_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	in_info = (struct hns3_test_event_param *)buf_in;

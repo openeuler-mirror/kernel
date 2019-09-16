@@ -54,7 +54,7 @@ void fill_port_info(struct hclge_port_info *get_port_info_out,
 	}
 }
 int hns3_get_port_info(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *handle = hns3_get_handle(net_priv->netdev);
 	struct hclge_vport *vport = hclge_get_vport(handle);
@@ -67,7 +67,7 @@ int hns3_get_port_info(struct hns3_nic_priv *net_priv,
 	int ret;
 	u32 i;
 
-	if (!buf_in || !buf_out)
+	if (!buf_out || out_size < sizeof(struct hclge_port_info))
 		return -ENODEV;
 
 	get_port_info_out = (struct hclge_port_info *)buf_out;

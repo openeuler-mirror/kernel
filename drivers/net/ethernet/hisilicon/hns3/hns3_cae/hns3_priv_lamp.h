@@ -27,8 +27,8 @@ struct hns3_lamp_signal {
 };
 
 int hns3_lamp_cfg(struct hns3_nic_priv *net_priv,
-		  void *buf_in, u16 in_size,
-		  void *buf_out, u16 *out_size);
+		  void *buf_in, u32 in_size,
+		  void *buf_out, u32 out_size);
 int nic_get_led_signal(struct net_device *ndev,
 		       struct hns3_lamp_signal *signal);
 int nic_set_led(struct net_device *ndev, int type, int status);

@@ -21,11 +21,18 @@ struct hns3_irq_lli_param {
 };
 
 int hns3_irq_lli_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hns3_irq_lli_param *in_info, *out_info;
 	struct hnae3_handle *handle;
 	int is_get;
+	bool check;
+
+	check = !buf_in || in_size < sizeof(struct hns3_irq_lli_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	handle = net_priv->ae_handle;
 	in_info = (struct hns3_irq_lli_param *)buf_in;
@@ -33,6 +40,13 @@ int hns3_irq_lli_cfg(struct hns3_nic_priv *net_priv,
 	is_get = in_info->is_get;
 
 	if (is_get) {
+		check = !buf_out ||
+			out_size < sizeof(struct hns3_irq_lli_param);
+		if (check) {
+			pr_err("input param buf_out error in %s function\n",
+			       __func__);
+			return -EFAULT;
+		}
 		out_info->computer_cpus = net_priv->vector_num;
 		out_info->tqp_nums = handle->kinfo.num_tqps;
 	}

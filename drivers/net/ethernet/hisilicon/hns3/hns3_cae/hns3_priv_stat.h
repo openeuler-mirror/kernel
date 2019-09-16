@@ -42,6 +42,6 @@ struct ring_stats_name {
 };
 
 int hns3_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
-		       void *buf_in, u16 in_size,
-		       void *buf_out, u16 *out_size);
+		       void *buf_in, u32 in_size,
+		       void *buf_out, u32 out_size);
 #endif

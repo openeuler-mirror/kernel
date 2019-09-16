@@ -143,16 +143,19 @@ int hns3_set_sfp_state(struct hnae3_handle *handle, bool en)
 	return ret;
 }
 
-int hns3_xsfp_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u16 in_size,
-		  void *buf_out, u16 *out_size)
+int hns3_xsfp_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
+		  void *buf_out, u32 out_size)
 {
 	struct hns3_xsfp_info *xsfp_info_out;
 	struct hnae3_handle *handle;
 	struct hns3_cfg_xsfp *param;
 	u32 sfp_present = 0;
+	bool check;
 	int ret;
 
-	if (!buf_in || !buf_out)
+	check = !buf_in || in_size < sizeof(struct hns3_cfg_xsfp) ||
+		!buf_out || out_size < sizeof(struct hns3_xsfp_info);
+	if (check)
 		return -ENODEV;
 
 	handle = hns3_get_handle(net_priv->netdev);

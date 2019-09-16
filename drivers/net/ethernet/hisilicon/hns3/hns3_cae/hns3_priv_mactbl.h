@@ -24,7 +24,7 @@ struct hns3_mac_tbl_para {
 };
 
 int hns3_test_opt_mactbl(struct hns3_nic_priv *net_priv,
-			 void *buf_in, u16 in_size,
-			 void *buf_out, u16 *out_size);
+			 void *buf_in, u32 in_size,
+			 void *buf_out, u32 out_size);
 
 #endif

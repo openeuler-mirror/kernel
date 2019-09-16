@@ -18,18 +18,16 @@
 #include "hns3_priv_common_test.h"
 
 static int hns3_test_write_reg_cfg(struct hns3_nic_priv *net_priv,
-				   void *buf_in, u16 in_size,
-				   void *buf_out, u16 *out_size)
+				   void *buf_in, u32 in_size,
+				   void *buf_out, u32 out_size)
 {
 	struct reg_param *in_buf = (struct reg_param *)buf_in;
 	enum hclge_cmd_status status;
-	struct hnae3_handle *handle;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	if (in_buf->bits_width == 64) {
@@ -54,16 +52,22 @@ static int hns3_test_write_reg_cfg(struct hns3_nic_priv *net_priv,
 }
 
 static int hns3_test_read_reg_cfg(struct hns3_nic_priv *net_priv,
-				  void *buf_in, u16 in_size,
-				  void *buf_out, u16 *out_size)
+				  void *buf_in, u32 in_size,
+				  void *buf_out, u32 out_size)
 {
+	struct hclge_vport *vport = hclge_get_vport(net_priv->ae_handle);
 	struct reg_ret_param *out_buf = (struct reg_ret_param *)buf_out;
 	struct reg_param *in_buf = (struct reg_param *)buf_in;
-	struct hnae3_handle *handle = net_priv->ae_handle;
-	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 	enum hclge_cmd_status status;
 	struct hclge_desc desc;
+	bool check;
+
+	check = !buf_out || out_size < sizeof(struct reg_param);
+	if (check) {
+		pr_err("input param buf_out error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	if (in_buf->bits_width == 64)
 		hclge_cmd_setup_basic_desc(&desc, CMDQ_64_COM_CMD_OPCODE, true);
@@ -86,15 +90,18 @@ static int hns3_test_read_reg_cfg(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_test_reg_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct reg_param *mode_param = (struct reg_param *)buf_in;
+	bool check;
 	int ret;
 
-	if (!mode_param) {
-		pr_err("%s error: mode_param NULL.\n", __func__);
-		return -EINVAL;
+	check = !buf_in || in_size < sizeof(struct reg_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
 	}
+
 	if (mode_param->is_read == 1)
 		ret = hns3_test_read_reg_cfg(net_priv, buf_in, in_size,
 					     buf_out, out_size);
@@ -106,17 +113,23 @@ int hns3_test_reg_cfg(struct hns3_nic_priv *net_priv,
 }
 
 static int hns3_reg_read_cfg(struct hns3_nic_priv *net_priv,
-			     void *buf_in, u16 in_size,
-			     void *buf_out, u16 *out_size)
+			     void *buf_in, u32 in_size,
+			     void *buf_out, u32 out_size)
 {
+	struct hclge_vport *vport = hclge_get_vport(net_priv->ae_handle);
 	struct com_reg_param *out_buf = (struct com_reg_param *)buf_out;
 	struct com_reg_param *in_buf = (struct com_reg_param *)buf_in;
-	struct hnae3_handle *handle = net_priv->ae_handle;
-	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 	enum hclge_cmd_status status;
 	struct hclge_desc desc;
+	bool check;
 	int i;
+
+	check = !buf_out || out_size < sizeof(struct com_reg_param);
+	if (check) {
+		pr_err("input param buf_out error in %s function\n", __func__);
+		return -EFAULT;
+	}
 
 	hclge_cmd_setup_basic_desc(&desc, in_buf->fw_dw_opcode,
 				   in_buf->is_read);
@@ -138,19 +151,17 @@ static int hns3_reg_read_cfg(struct hns3_nic_priv *net_priv,
 }
 
 static int hns3_reg_write_cfg(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u16 in_size,
-			      void *buf_out, u16 *out_size)
+			      void *buf_in, u32 in_size,
+			      void *buf_out, u32 out_size)
 {
-	struct hnae3_handle *handle;
+	struct com_reg_param *in_buf = (struct com_reg_param *)buf_in;
+	enum hclge_cmd_status status;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
-	enum hclge_cmd_status status;
-	struct com_reg_param *in_buf = (struct com_reg_param *)buf_in;
 	int i;
 
-	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	hclge_cmd_setup_basic_desc(&desc, in_buf->fw_dw_opcode,
@@ -169,17 +180,19 @@ static int hns3_reg_write_cfg(struct hns3_nic_priv *net_priv,
 }
 
 int hns3_reg_cfg(struct hns3_nic_priv *net_priv,
-		 void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+		 void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	int ret = 0;
 	struct com_reg_param *param;
+	bool check;
+	int ret;
 
-	param = (struct com_reg_param *)buf_in;
-	if (!param) {
-		pr_err("%s error: param NULL.\n", __func__);
-		return -EINVAL;
+	check = !buf_in || in_size < sizeof(struct com_reg_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
 	}
 
+	param = (struct com_reg_param *)buf_in;
 	if (param->is_read == 1)
 		ret = hns3_reg_read_cfg(net_priv, buf_in, in_size, buf_out,
 					out_size);

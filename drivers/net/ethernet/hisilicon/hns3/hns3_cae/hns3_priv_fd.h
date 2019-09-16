@@ -32,6 +32,6 @@ struct hclge_fd_tcam_data {
 };
 
 int hns3_test_fd_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u16 in_size, void *buf_out, u16 *out_size);
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size);
 
 #endif
