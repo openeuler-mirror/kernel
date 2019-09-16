@@ -543,6 +543,7 @@ static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
 		return;
 
 	prepare_to_wait_exclusive(&rqw->wait, &data.wq, TASK_UNINTERRUPTIBLE);
+	has_sleeper = !wq_has_single_sleeper(&rqw->wait);
 	do {
 		if (data.got_token)
 			break;
