@@ -7790,8 +7790,9 @@ static int hclge_set_port_vlan_filter(struct hclge_dev *hdev, __be16 proto,
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_VLAN_FILTER_PF_CFG, false);
 
-	vlan_offset_160 = vlan_id / HCLGE_VLAN_ID_B;
-	vlan_offset_byte = (vlan_id % HCLGE_VLAN_ID_B) / HCLGE_VLAN_BYTE_SIZE;
+	vlan_offset_160 = vlan_id / HCLGE_VLAN_ID_OFFSET_STEP;
+	vlan_offset_byte = (vlan_id % HCLGE_VLAN_ID_OFFSET_STEP) /
+			   HCLGE_VLAN_BYTE_SIZE;
 	vlan_offset_byte_val = 1 << (vlan_id % HCLGE_VLAN_BYTE_SIZE);
 
 	req = (struct hclge_vlan_filter_pf_cfg_cmd *)desc.data;
