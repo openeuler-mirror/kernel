@@ -31,12 +31,6 @@ enum dm_queue_mode {
 	DM_TYPE_NVME_BIO_BASED	 = 5,
 };
 
-enum dm_rq_status {
-	DM_CLONE_RQ_OK,
-	DM_CLONE_RQ_CANCEL,
-	DM_CLONE_RQ_MAX,
-};
-
 typedef enum { STATUSTYPE_INFO, STATUSTYPE_TABLE } status_type_t;
 
 union map_info {
@@ -68,9 +62,7 @@ typedef int (*dm_clone_and_map_request_fn) (struct dm_target *ti,
 					    struct request *rq,
 					    union map_info *map_context,
 					    struct request **clone);
-typedef void (*dm_release_clone_request_fn) (struct request *clone,
-						union map_info *map_context,
-						enum dm_rq_status clone_status);
+typedef void (*dm_release_clone_request_fn) (struct request *clone);
 
 /*
  * Returns:
