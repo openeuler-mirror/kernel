@@ -1383,21 +1383,23 @@ static void hns_roce_func_clr_rst_prc(struct hns_roce_dev *hr_dev, int retval,
 	}
 }
 
-static void hns_roce_query_func_num(struct hns_roce_dev *hr_dev)
+static void hns_roce_query_func_info(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_cmq_desc desc;
-	struct hns_roce_pf_func_num *resp;
+	struct hns_roce_pf_func_info *resp;
 	int ret;
 
-	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_QUERY_VF_NUM, true);
+	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_QUERY_FUNC_INFO,
+				      true);
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret) {
 		dev_err(hr_dev->dev, "Query vf count failed(%d).\n", ret);
 		return;
 	}
 
-	resp = (struct hns_roce_pf_func_num *)desc.data;
+	resp = (struct hns_roce_pf_func_info *)desc.data;
 	hr_dev->func_num = le32_to_cpu(resp->pf_own_func_num);
+	hr_dev->mac_id = le32_to_cpu(resp->pf_own_mac_id);
 }
 
 static void hns_roce_clear_func(struct hns_roce_dev *hr_dev, int vf_id)
@@ -2197,7 +2199,7 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 		return ret;
 	}
 
-	hns_roce_query_func_num(hr_dev);
+	hns_roce_query_func_info(hr_dev);
 
 	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
 		ret = hns_roce_query_pf_timer_resource(hr_dev);
@@ -3909,8 +3911,6 @@ static void modify_qp_reset_to_init(struct ib_qp *ibqp,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	struct hns_roce_cq *send_cq, *recv_cq;
-	struct net_device *net_dev = hr_dev->iboe.netdevs[hr_qp->port];
-	u32 temp_id = 0;
 
 	hns_roce_get_cqs(ibqp, &send_cq, &recv_cq);
 	/*
@@ -3998,9 +3998,8 @@ static void modify_qp_reset_to_init(struct ib_qp *ibqp,
 	roce_set_bit(qpc_mask->byte_56_dqpn_err, V2_QPC_BYTE_56_RQ_TX_ERR_S, 0);
 	roce_set_bit(qpc_mask->byte_56_dqpn_err, V2_QPC_BYTE_56_RQ_RX_ERR_S, 0);
 
-	sscanf(net_dev->name, "eth%u", &temp_id);
 	roce_set_field(context->byte_60_qpst_tempid, V2_QPC_BYTE_60_TEMPID_M,
-		       V2_QPC_BYTE_60_TEMPID_S, temp_id);
+		       V2_QPC_BYTE_60_TEMPID_S, hr_dev->mac_id);
 	roce_set_field(qpc_mask->byte_60_qpst_tempid, V2_QPC_BYTE_60_TEMPID_M,
 		       V2_QPC_BYTE_60_TEMPID_S, 0);
 

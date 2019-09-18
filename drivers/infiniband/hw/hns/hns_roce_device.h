@@ -1235,6 +1235,7 @@ struct hns_roce_dev {
 	struct workqueue_struct *flush_workq;
 	struct hns_roce_stat	hr_stat;
 	u32			func_num;
+	u32			mac_id;
 	u64			dfx_cnt[HNS_ROCE_DFX_TOTAL];
 };
 

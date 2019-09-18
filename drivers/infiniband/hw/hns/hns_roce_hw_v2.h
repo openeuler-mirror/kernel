@@ -279,7 +279,7 @@ enum hns_roce_opcode_type {
 	HNS_ROCE_OPC_CFG_EXT_LLM			= 0x8403,
 	HNS_ROCE_OPC_CFG_TMOUT_LLM			= 0x8404,
 	HNS_ROCE_OPC_QUERY_PF_TIMER_RES			= 0x8406,
-	HNS_ROCE_OPC_QUERY_VF_NUM			= 0x8407,
+	HNS_ROCE_OPC_QUERY_FUNC_INFO			= 0x8407,
 	HNS_ROCE_OPC_QUERY_PF_CAPS_NUM			= 0x8408,
 	HNS_ROCE_OPC_CFG_SGID_TB			= 0x8500,
 	HNS_ROCE_OPC_CFG_SMAC_TB			= 0x8501,
@@ -1297,9 +1297,9 @@ struct hns_roce_func_clear {
 	__le32 rsv[4];
 };
 
-struct hns_roce_pf_func_num {
+struct hns_roce_pf_func_info {
 	__le32 pf_own_func_num;
-	__le32 func_done;
+	__le32 pf_own_mac_id;
 	__le32 rsv[4];
 };
 
