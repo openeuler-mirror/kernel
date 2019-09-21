@@ -408,12 +408,15 @@ static int hclge_firmware_compat_config(struct hclge_dev *hdev)
 {
 	struct hclge_firmware_compat_cmd *req;
 	struct hclge_desc desc;
+	u32 compat = 0;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_M7_COMPAT_CFG, false);
 
 	req = (struct hclge_firmware_compat_cmd *)desc.data;
-	hnae3_set_bit(req->compat, HCLGE_LINK_EVENT_REPORT_EN_B, 1);
-	hnae3_set_bit(req->compat, HCLGE_NCSI_ERROR_REPORT_EN_B, 1);
+
+	hnae3_set_bit(compat, HCLGE_LINK_EVENT_REPORT_EN_B, 1);
+	hnae3_set_bit(compat, HCLGE_NCSI_ERROR_REPORT_EN_B, 1);
+	req->compat = cpu_to_le32(compat);
 
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
