@@ -154,11 +154,13 @@ static int hns3_nic_init_irq(struct hns3_nic_priv *priv)
 		ret = request_irq(tqp_vectors->vector_irq, hns3_irq_handle, 0,
 				  tqp_vectors->name, tqp_vectors);
 		if (ret) {
-			dev_err(priv->dev, "request irq(%d) fail\n",
-				tqp_vectors->vector_irq);
+			netdev_err(priv->netdev, "request irq(%d) fail\n",
+				   tqp_vectors->vector_irq);
 			hns3_nic_uninit_irq(priv);
 			return ret;
 		}
+
+		disable_irq(tqp_vectors->vector_irq);
 
 		irq_set_affinity_hint(tqp_vectors->vector_irq,
 				      &tqp_vectors->affinity_mask);
@@ -178,6 +180,7 @@ static void hns3_mask_vector_irq(struct hns3_enet_tqp_vector *tqp_vector,
 static void hns3_vector_enable(struct hns3_enet_tqp_vector *tqp_vector)
 {
 	napi_enable(&tqp_vector->napi);
+	enable_irq(tqp_vector->vector_irq);
 
 	/* enable vector */
 	hns3_mask_vector_irq(tqp_vector, 1);
@@ -188,6 +191,7 @@ static void hns3_vector_disable(struct hns3_enet_tqp_vector *tqp_vector)
 	/* disable vector */
 	hns3_mask_vector_irq(tqp_vector, 0);
 
+	disable_irq(tqp_vector->vector_irq);
 	napi_disable(&tqp_vector->napi);
 }
 
