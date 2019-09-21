@@ -2907,6 +2907,9 @@ static int hclge_get_vf_config(struct hnae3_handle *handle, int vf,
 	ivf->trusted = vport->trusted;
 	ivf->min_tx_rate = 0;
 	ivf->max_tx_rate = vport->max_tx_rate;
+	ivf->vlan = vport->port_base_vlan_cfg.vlan_info.vlan_tag;
+	ivf->vlan_proto = htons(vport->port_base_vlan_cfg.vlan_info.vlan_proto);
+	ivf->qos = vport->port_base_vlan_cfg.vlan_info.qos;
 	ether_addr_copy(ivf->mac, vport->mac);
 
 	return 0;
@@ -8460,13 +8463,16 @@ static int hclge_set_vf_vlan_filter(struct hnae3_handle *handle, int vfid,
 	if (hdev->pdev->revision == 0x20)
 		return -EOPNOTSUPP;
 
+	vport = hclge_get_vf_vport(hdev, vfid);
+	if (!vport)
+		return -EINVAL;
+
 	/* qos is a 3 bits value, so can not be bigger than 7 */
-	if (vfid >= hdev->num_alloc_vfs || vlan > VLAN_N_VID - 1 || qos > 7)
+	if (vlan > VLAN_N_VID - 1 || qos > 7)
 		return -EINVAL;
 	if (proto != htons(ETH_P_8021Q))
 		return -EPROTONOSUPPORT;
 
-	vport = &hdev->vport[vfid];
 	state = hclge_get_port_base_vlan_state(vport,
 					       vport->port_base_vlan_cfg.state,
 					       vlan);
@@ -8476,15 +8482,6 @@ static int hclge_set_vf_vlan_filter(struct hnae3_handle *handle, int vfid,
 	vlan_info.vlan_tag = vlan;
 	vlan_info.qos = qos;
 	vlan_info.vlan_proto = ntohs(proto);
-
-	/* update port based VLAN for PF */
-	if (!vfid) {
-		hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
-		ret = hclge_update_port_base_vlan_cfg(vport, state, &vlan_info);
-		hclge_notify_client(hdev, HNAE3_UP_CLIENT);
-
-		return ret;
-	}
 
 	if (!test_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state)) {
 		return hclge_update_port_base_vlan_cfg(vport, state,
