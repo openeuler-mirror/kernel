@@ -470,8 +470,8 @@ static int hns3_nic_net_open(struct net_device *netdev)
 	for (i = 0; i < HNAE3_MAX_USER_PRIO; i++)
 		netdev_set_prio_tc_map(netdev, i, kinfo->prio_tc[i]);
 
-	if (h->ae_algo->ops->enable_timer_task)
-		h->ae_algo->ops->enable_timer_task(priv->ae_handle, true);
+	if (h->ae_algo->ops->set_timer_task)
+		h->ae_algo->ops->set_timer_task(priv->ae_handle, true);
 
 	hns3_config_xps(priv);
 
@@ -534,7 +534,6 @@ static int hns3_nic_net_stop(struct net_device *netdev)
 {
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
 	struct hnae3_handle *h = hns3_get_handle(netdev);
-	const struct hnae3_ae_ops *ops;
 
 	if (test_and_set_bit(HNS3_NIC_STATE_DOWN, &priv->state))
 		return 0;
@@ -542,9 +541,8 @@ static int hns3_nic_net_stop(struct net_device *netdev)
 	if (netif_msg_ifdown(h))
 		netdev_info(netdev, "net stop\n");
 
-	ops = priv->ae_handle->ae_algo->ops;
-	if (ops->enable_timer_task)
-		ops->enable_timer_task(priv->ae_handle, false);
+	if (h->ae_algo->ops->set_timer_task)
+		h->ae_algo->ops->set_timer_task(priv->ae_handle, false);
 
 	netif_tx_stop_all_queues(netdev);
 	netif_carrier_off(netdev);

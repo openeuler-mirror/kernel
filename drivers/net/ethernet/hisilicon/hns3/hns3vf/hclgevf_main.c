@@ -2201,7 +2201,7 @@ static int hclgevf_init_vlan_config(struct hclgevf_dev *hdev)
 				       false);
 }
 
-static void hclgevf_enable_timer_task(struct hnae3_handle *handle, bool enable)
+static void hclgevf_set_timer_task(struct hnae3_handle *handle, bool enable)
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
 
@@ -3200,13 +3200,13 @@ static const struct hnae3_ae_ops hclgevf_ops = {
 	.get_status = hclgevf_get_status,
 	.get_ksettings_an_result = hclgevf_get_ksettings_an_result,
 	.set_gro_en = hclgevf_gro_en,
-	.enable_timer_task = hclgevf_enable_timer_task,
 	.get_media_type = hclgevf_get_media_type,
 	.get_hw_reset_stat = hclgevf_get_hw_reset_stat,
 	.ae_dev_resetting = hclgevf_ae_dev_resetting,
 	.ae_dev_reset_cnt = hclgevf_ae_dev_reset_cnt,
 	.set_mtu = hclgevf_set_mtu,
 	.get_global_queue_id = hclgevf_get_qid_global,
+	.set_timer_task = hclgevf_set_timer_task,
 	.get_link_mode = hclgevf_get_link_mode,
 	.set_promisc_mode = hclgevf_set_promisc_mode,
 };

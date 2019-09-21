@@ -533,8 +533,8 @@ static int hclge_get_link_info(struct hclge_vport *vport,
 				  HCLGE_MBX_LINK_STAT_CHANGE, dest_vfid);
 }
 
-static void hclge_get_vf_link_mode(struct hclge_vport *vport,
-				   struct hclge_mbx_vf_to_pf_cmd *mbx_req)
+static void hclge_get_link_mode(struct hclge_vport *vport,
+				struct hclge_mbx_vf_to_pf_cmd *mbx_req)
 {
 #define HCLGE_SUPPORTED   1
 	struct hclge_dev *hdev = vport->back;
@@ -818,7 +818,7 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 					"PF fail(%d) to set mtu\n", ret);
 			break;
 		case HCLGE_MBX_GET_LINK_MODE:
-			hclge_get_vf_link_mode(vport, req);
+			hclge_get_link_mode(vport, req);
 			break;
 		case HCLGE_MBX_GET_MEDIA_TYPE:
 			ret = hclge_get_vf_media_type(vport, req);

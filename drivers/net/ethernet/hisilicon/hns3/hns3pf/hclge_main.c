@@ -6751,7 +6751,7 @@ static void hclge_reset_tqp_stats(struct hnae3_handle *handle)
 	}
 }
 
-static void hclge_enable_timer_task(struct hnae3_handle *handle, bool enable)
+static void hclge_set_timer_task(struct hnae3_handle *handle, bool enable)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -10503,7 +10503,7 @@ struct hnae3_ae_ops hclge_ops = {
 	.ae_dev_reset_cnt = hclge_ae_dev_reset_cnt,
 	.set_gro_en = hclge_gro_en,
 	.get_global_queue_id = hclge_covert_handle_qid_global,
-	.enable_timer_task = hclge_enable_timer_task,
+	.set_timer_task = hclge_set_timer_task,
 	.mac_connect_phy = hclge_mac_connect_phy,
 	.mac_disconnect_phy = hclge_mac_disconnect_phy,
 	.restore_vlan_table = hclge_restore_vlan_table,

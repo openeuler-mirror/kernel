@@ -526,10 +526,10 @@ struct hnae3_ae_ops {
 	bool (*ae_dev_resetting)(struct hnae3_handle *handle);
 	unsigned long (*ae_dev_reset_cnt)(struct hnae3_handle *handle);
 	int (*set_gro_en)(struct hnae3_handle *handle, bool enable);
-	void (*enable_timer_task)(struct hnae3_handle *handle, bool enable);
 	int (*dbg_run_cmd)(struct hnae3_handle *handle, const char *cmd_buf);
 	pci_ers_result_t (*handle_hw_ras_error)(struct hnae3_ae_dev *ae_dev);
 	u16 (*get_global_queue_id)(struct hnae3_handle *handle, u16 queue_id);
+	void (*set_timer_task)(struct hnae3_handle *handle, bool enable);
 	int (*mac_connect_phy)(struct hnae3_handle *handle);
 	void (*mac_disconnect_phy)(struct hnae3_handle *handle);
 	bool (*reset_done)(struct hnae3_handle *handle, bool done);
