@@ -87,9 +87,9 @@ TRACE_EVENT(hns3_tx_desc,
 	),
 
 	TP_printk(
-		"%s-%d-%d/%d desc(0x%llx): %s",
+		"%s-%d-%d/%d desc(%pad): %s",
 		__get_str(devname), __entry->index, __entry->ntu,
-		__entry->ntc, __entry->desc_dma,
+		__entry->ntc, &__entry->desc_dma,
 		__print_array(__entry->desc, DESC_NR, sizeof(u32))
 	)
 );
@@ -120,9 +120,9 @@ TRACE_EVENT(hns3_rx_desc,
 	),
 
 	TP_printk(
-		"%s-%d-%d/%d desc(0x%llx) buf(0x%llx): %s",
+		"%s-%d-%d/%d desc(%pad) buf(%pad): %s",
 		__get_str(devname), __entry->index, __entry->ntu,
-		__entry->ntc, __entry->desc_dma, __entry->buf_dma,
+		__entry->ntc, &__entry->desc_dma, &__entry->buf_dma,
 		__print_array(__entry->desc, DESC_NR, sizeof(u32))
 	)
 );
