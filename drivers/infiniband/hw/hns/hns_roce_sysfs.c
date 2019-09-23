@@ -65,7 +65,7 @@ static ssize_t cqc_store(struct device *dev,
 	}
 
 	return strnlen(buf, count);
-};
+}
 
 static ssize_t cqc_show(struct device *dev,
 			struct device_attribute *attr,
@@ -83,7 +83,7 @@ static ssize_t cqc_show(struct device *dev,
 	}
 
 	return count;
-};
+}
 
 static ssize_t cmd_show(struct device *dev,
 			 struct device_attribute *attr, char *buf)
@@ -134,7 +134,7 @@ static ssize_t ceqc_store(struct device *dev,
 	}
 
 	return strnlen(buf, count);
-};
+}
 
 static ssize_t ceqc_show(struct device *dev,
 			 struct device_attribute *attr, char *buf)
@@ -167,7 +167,7 @@ static ssize_t aeqc_store(struct device *dev, struct device_attribute *attr,
 	}
 
 	return strnlen(buf, count);
-};
+}
 
 static ssize_t aeqc_show(struct device *dev, struct device_attribute *attr,
 			 char *buf)
@@ -235,7 +235,7 @@ static ssize_t srqc_store(struct device *dev, struct device_attribute *attr,
 	}
 
 	return strnlen(buf, count);
-};
+}
 
 static ssize_t srqc_show(struct device *dev, struct device_attribute *attr,
 			 char *buf)
@@ -268,7 +268,7 @@ static ssize_t mpt_store(struct device *dev, struct device_attribute *attr,
 	}
 
 	return strnlen(buf, count);
-};
+}
 
 static ssize_t mpt_show(struct device *dev, struct device_attribute *attr,
 			char *buf)
