@@ -20,9 +20,10 @@
 #undef pr_fmt
 #define pr_fmt(fmt)	"hisi_sec: " fmt
 
-#define CTX_Q_NUM_DEF 24
-#define FUSION_LIMIT_DEF 1
-#define FUSION_TMOUT_NSEC_DEF (400 * 1000)
+#define CTX_Q_NUM_DEF		24
+#define FUSION_LIMIT_DEF	1
+#define FUSION_LIMIT_MAX	64
+#define FUSION_TMOUT_NSEC_DEF	(400 * 1000)
 
 enum sec_endian {
 	SEC_LE = 0,
@@ -55,7 +56,6 @@ struct hisi_sec {
 	struct list_head list;
 	struct hisi_sec_dfx sec_dfx;
 	struct hisi_sec_ctrl *ctrl;
-	struct dma_pool *sgl_pool;
 	struct mutex *hisi_sec_list_lock;
 	int q_ref;
 	int ctx_q_num;

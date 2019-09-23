@@ -1,13 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0+
-/*
- * Copyright (c) 2018-2019 HiSilicon Limited.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- */
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright (c) 2019 HiSilicon Limited. */
 
 #include <linux/crypto.h>
 #include <linux/hrtimer.h>
@@ -33,7 +25,7 @@
 #define SEC_DES3_2KEY_SIZE (2 * DES_KEY_SIZE)
 #define SEC_DES3_3KEY_SIZE (3 * DES_KEY_SIZE)
 
-/* if modify dm-crypt to transparent LBA, use the below macro
+/* if modify dm-crypt to transport LBA, uncomment the below line
  * #define USE_DM_CRYPT_OPTIMIZE
  */
 
@@ -141,18 +133,14 @@ struct cipher_res {
 	struct skcipher_request_ctx **sk_reqs;
 	u8 *c_ivin;
 	dma_addr_t c_ivin_dma;
-	struct acc_hw_sgl *c_in;
-	dma_addr_t c_in_dma;
-	struct acc_hw_sgl *c_out;
-	dma_addr_t c_out_dma;
 	struct scatterlist *src;
 	struct scatterlist *dst;
 };
 
 struct hisi_sec_cipher_req {
-	struct acc_hw_sgl *c_in;
+	struct hisi_acc_hw_sgl *c_in;
 	dma_addr_t c_in_dma;
-	struct acc_hw_sgl *c_out;
+	struct hisi_acc_hw_sgl *c_out;
 	dma_addr_t c_out_dma;
 	u8 *c_ivin;
 	dma_addr_t c_ivin_dma;
@@ -217,6 +205,8 @@ struct hisi_sec_qp_ctx {
 	struct mutex req_lock;
 	atomic_t req_cnt;
 	struct hisi_sec_sqe *sqe_list;
+	struct hisi_acc_sgl_pool c_in_pool;
+	struct hisi_acc_sgl_pool c_out_pool;
 	int fusion_num;
 	int fusion_limit;
 };
@@ -224,7 +214,7 @@ struct hisi_sec_qp_ctx {
 struct hisi_sec_ctx {
 	struct hisi_sec_qp_ctx *qp_ctx;
 	struct hisi_sec *sec;
-	struct device *sec_dev;
+	struct device *dev;
 	struct hisi_sec_req_op *req_op;
 	struct hrtimer timer;
 	struct work_struct work;
@@ -262,7 +252,7 @@ static int hisi_sec_alloc_req_id(struct hisi_sec_req *req,
 
 	req_id = find_first_zero_bit(qp_ctx->req_bitmap, ctx->req_limit);
 	if (req_id >= ctx->req_limit || req_id < 0) {
-		dev_err(ctx->sec_dev, "no free req id\n");
+		dev_err(ctx->dev, "no free req id\n");
 		return -ENOBUFS;
 	}
 	set_bit(req_id, qp_ctx->req_bitmap);
@@ -329,7 +319,7 @@ void qp_ctx_work_process(struct hisi_sec_qp_ctx *qp_ctx)
 	ret = sec_request_send(ctx, req);
 	__sync_add_and_fetch(&ctx->sec->sec_dfx.send_by_tmout, 1);
 	if (ret != -EBUSY && ret != -EINPROGRESS) {
-		dev_err(ctx->sec_dev, "[%s][%d] ret[%d]\n", __func__,
+		dev_err(ctx->dev, "[%s][%d] ret[%d]\n", __func__,
 			__LINE__, ret);
 		goto err_unmap_req;
 	}
@@ -376,6 +366,7 @@ static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
 {
 	struct hisi_qp *qp;
 	struct hisi_sec_qp_ctx *qp_ctx;
+	struct device *dev = ctx->dev;
 	int ret;
 
 	qp = hisi_qm_create_qp(qm, alg_type);
@@ -417,9 +408,19 @@ static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
 		goto err_free_req_list;
 	}
 
-	ret = ctx->req_op->queue_alloc(ctx, qp_ctx);
+	ret = hisi_acc_create_sgl_pool(dev, &qp_ctx->c_in_pool, QM_Q_DEPTH,
+		FUSION_LIMIT_MAX);
 	if (ret)
 		goto err_free_sqe_list;
+
+	ret = hisi_acc_create_sgl_pool(dev, &qp_ctx->c_out_pool, QM_Q_DEPTH,
+		FUSION_LIMIT_MAX);
+	if (ret)
+		goto err_free_c_in_pool;
+
+	ret = ctx->req_op->queue_alloc(ctx, qp_ctx);
+	if (ret)
+		goto err_free_c_out_pool;
 
 	ret = hisi_qm_start_qp(qp, 0);
 	if (ret < 0)
@@ -429,6 +430,10 @@ static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
 
 err_queue_free:
 	ctx->req_op->queue_free(ctx, qp_ctx);
+err_free_c_out_pool:
+	hisi_acc_free_sgl_pool(dev, &qp_ctx->c_out_pool);
+err_free_c_in_pool:
+	hisi_acc_free_sgl_pool(dev, &qp_ctx->c_in_pool);
 err_free_sqe_list:
 	kfree(qp_ctx->sqe_list);
 err_free_req_list:
@@ -443,8 +448,12 @@ err_qm_release_qp:
 static void hisi_sec_release_qp_ctx(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_qp_ctx *qp_ctx)
 {
+	struct device *dev = ctx->dev;
+
 	hisi_qm_stop_qp(qp_ctx->qp);
 	ctx->req_op->queue_free(ctx, qp_ctx);
+	hisi_acc_free_sgl_pool(dev, &qp_ctx->c_out_pool);
+	hisi_acc_free_sgl_pool(dev, &qp_ctx->c_in_pool);
 	kfree(qp_ctx->req_bitmap);
 	kfree(qp_ctx->req_list);
 	kfree(qp_ctx->sqe_list);
@@ -479,16 +488,7 @@ static int hisi_sec_get_fusion_param(struct hisi_sec_ctx *ctx,
 {
 	if (ctx->is_fusion) {
 		ctx->fusion_tmout_nsec = sec->fusion_tmout_nsec;
-		if (ctx->fusion_tmout_nsec < 0)
-			ctx->fusion_tmout_nsec = 0;
-
-		if (ctx->fusion_tmout_nsec > 1000000000)
-			ctx->fusion_tmout_nsec = FUSION_TMOUT_NSEC_DEF;
-
 		ctx->fusion_limit = sec->fusion_limit;
-		/* if fusion_limit isn't at range, we think don't need fusion */
-		if (ctx->fusion_limit <= 0 || ctx->fusion_limit > QM_Q_DEPTH)
-			ctx->fusion_limit = 1;
 	} else {
 		ctx->fusion_tmout_nsec = 0;
 		ctx->fusion_limit = 1;
@@ -515,20 +515,15 @@ static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
 	ctx->sec = sec;
 
 	qm = &sec->qm;
-	ctx->sec_dev = &qm->pdev->dev;
+	ctx->dev = &qm->pdev->dev;
 
 	ctx->q_num = sec->ctx_q_num;
-	if (ctx->q_num <= 0 || ctx->q_num >= QM_Q_DEPTH
-		|| ctx->q_num % 2 == 1){
-		pr_err("ctx_q_num[%d] is invalid\n", ctx->q_num);
-		return -EINVAL;
-	}
 
 	ctx->enc_q_num = ctx->q_num / 2;
 	ctx->qp_ctx = kcalloc(ctx->q_num, sizeof(struct hisi_sec_qp_ctx),
 		GFP_KERNEL);
 	if (!ctx->qp_ctx) {
-		dev_err(ctx->sec_dev, "failed to alloc qp_ctx");
+		dev_err(ctx->dev, "failed to alloc qp_ctx");
 		return -ENOMEM;
 	}
 
@@ -541,7 +536,7 @@ static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
 	}
 
 	c_ctx = &ctx->c_ctx;
-	c_ctx->c_key = dma_alloc_coherent(ctx->sec_dev,
+	c_ctx->c_key = dma_alloc_coherent(ctx->dev,
 		SEC_MAX_KEY_SIZE, &c_ctx->c_key_dma, GFP_KERNEL);
 
 	if (!ctx->c_ctx.c_key) {
@@ -571,7 +566,7 @@ static void hisi_sec_cipher_ctx_exit(struct crypto_skcipher *tfm)
 		hrtimer_cancel(&ctx->timer);
 
 	if (c_ctx->c_key) {
-		dma_free_coherent(ctx->sec_dev, SEC_MAX_KEY_SIZE, c_ctx->c_key,
+		dma_free_coherent(ctx->dev, SEC_MAX_KEY_SIZE, c_ctx->c_key,
 			c_ctx->c_key_dma);
 		c_ctx->c_key = NULL;
 	}
@@ -902,10 +897,6 @@ static int hisi_sec_skcipher_get_res(struct hisi_sec_ctx *ctx,
 	struct cipher_res *c_res = (struct cipher_res *)qp_ctx->priv_req_res;
 	int req_id = req->req_id;
 
-	c_req->c_in = c_res[req_id].c_in;
-	c_req->c_in_dma = c_res[req_id].c_in_dma;
-	c_req->c_out = c_res[req_id].c_out;
-	c_req->c_out_dma = c_res[req_id].c_out_dma;
 	c_req->c_ivin = c_res[req_id].c_ivin;
 	c_req->c_ivin_dma = c_res[req_id].c_ivin_dma;
 	req->priv = (void **)c_res[req_id].sk_reqs;
@@ -922,8 +913,8 @@ static int hisi_sec_skcipher_queue_alloc(struct hisi_sec_ctx *ctx,
 	int req_num = ctx->fusion_limit;
 	int alloc_num = QM_Q_DEPTH * ctx->fusion_limit;
 	int buf_map_num = QM_Q_DEPTH * ctx->fusion_limit;
-	struct device *sec_dev = ctx->sec_dev;
-	int i, ret, sgl_pool_nr, map_len, sgl_pool_cur;
+	struct device *dev = ctx->dev;
+	int i, ret;
 
 	c_res = kcalloc(QM_Q_DEPTH, sizeof(struct cipher_res), GFP_KERNEL);
 	if (!c_res)
@@ -938,7 +929,7 @@ static int hisi_sec_skcipher_queue_alloc(struct hisi_sec_ctx *ctx,
 		goto err_free_c_res;
 	}
 
-	c_res[0].c_ivin = dma_alloc_coherent(sec_dev,
+	c_res[0].c_ivin = dma_alloc_coherent(dev,
 		SEC_IV_SIZE * alloc_num, &c_res[0].c_ivin_dma, GFP_KERNEL);
 	if (!c_res[0].c_ivin) {
 		ret = -ENOMEM;
@@ -959,45 +950,7 @@ static int hisi_sec_skcipher_queue_alloc(struct hisi_sec_ctx *ctx,
 		goto err_free_src;
 	}
 
-	sgl_pool_nr = (ctx->fusion_limit + BUF_MAP_PER_SGL - 1)
-		/ BUF_MAP_PER_SGL;
-	map_len = QM_Q_DEPTH / sgl_pool_nr;
-	for (sgl_pool_cur = 0; sgl_pool_cur < sgl_pool_nr; sgl_pool_cur++) {
-		int map_st_pos = map_len * sgl_pool_cur;
-
-		c_res[map_st_pos].c_in = acc_alloc_multi_sgl(sec_dev,
-			&c_res[map_st_pos].c_in_dma, QM_Q_DEPTH);
-		if (IS_ERR(c_res[map_st_pos].c_in)) {
-			ret = PTR_ERR(c_res[map_st_pos].c_in);
-			goto err_free_c_in;
-		}
-
-		c_res[map_st_pos].c_out = acc_alloc_multi_sgl(sec_dev,
-			&c_res[map_st_pos].c_out_dma, QM_Q_DEPTH);
-		if (IS_ERR(c_res[map_st_pos].c_out)) {
-			ret = PTR_ERR(c_res[map_st_pos].c_out);
-			goto err_free_c_out;
-		}
-
-		if (map_st_pos) {
-			int last_st_pos = map_st_pos - map_len;
-			struct acc_hw_sgl *last_src_sgl =
-				c_res[last_st_pos].c_in + QM_Q_DEPTH - 1;
-			struct acc_hw_sgl *last_dst_sgl =
-				c_res[last_st_pos].c_out + QM_Q_DEPTH - 1;
-
-			last_src_sgl->next = c_res[map_st_pos].c_in;
-			last_src_sgl->next_dma = c_res[map_st_pos].c_in_dma;
-			last_dst_sgl->next = c_res[map_st_pos].c_out;
-			last_dst_sgl->next_dma = c_res[map_st_pos].c_out_dma;
-		}
-	}
-
 	for (i = 1; i < QM_Q_DEPTH; i++) {
-		int map_st_pos = (i / map_len) * map_len;
-		int next_sgl_nr = sgl_pool_nr;
-		int next_dma_off = (i - map_st_pos) * next_sgl_nr;
-
 		c_res[i].sk_reqs     = c_res[0].sk_reqs + i * req_num;
 		c_res[i].c_ivin      = c_res[0].c_ivin
 			+ i * req_num * SEC_IV_SIZE;
@@ -1005,33 +958,14 @@ static int hisi_sec_skcipher_queue_alloc(struct hisi_sec_ctx *ctx,
 			+ i * req_num * SEC_IV_SIZE;
 		c_res[i].src         = c_res[0].src       + i * req_num;
 		c_res[i].dst         = c_res[0].dst       + i * req_num;
-		c_res[i].c_in        = c_res[map_st_pos].c_in + next_dma_off;
-		c_res[i].c_in_dma    = c_res[map_st_pos].c_in_dma
-			+ next_dma_off * sizeof(struct acc_hw_sgl);
-		c_res[i].c_out       = c_res[map_st_pos].c_out + next_dma_off;
-		c_res[i].c_out_dma   = c_res[map_st_pos].c_out_dma
-			+ next_dma_off * sizeof(struct acc_hw_sgl);
 	}
 
 	return 0;
 
-err_free_c_out:
-	acc_free_multi_sgl(sec_dev, c_res[sgl_pool_cur * map_len].c_in,
-		c_res[sgl_pool_cur * map_len].c_in_dma, QM_Q_DEPTH);
-	for (i = 0; i < sgl_pool_cur; i++) {
-		acc_free_multi_sgl(sec_dev, c_res[i * map_len].c_out,
-			c_res[i * map_len].c_out_dma, QM_Q_DEPTH);
-	}
-err_free_c_in:
-	for (i = 0; i < sgl_pool_cur; i++) {
-		acc_free_multi_sgl(sec_dev, c_res[i * map_len].c_in,
-			c_res[i * map_len].c_in_dma, QM_Q_DEPTH);
-	}
-	kfree(c_res[0].dst);
 err_free_src:
 	kfree(c_res[0].src);
 err_free_c_ivin:
-	dma_free_coherent(sec_dev, SEC_IV_SIZE * alloc_num, c_res[0].c_ivin,
+	dma_free_coherent(dev, SEC_IV_SIZE * alloc_num, c_res[0].c_ivin,
 		c_res[0].c_ivin_dma);
 err_free_sk_reqs:
 	kfree(c_res[0].sk_reqs);
@@ -1045,16 +979,12 @@ static int hisi_sec_skcipher_queue_free(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_qp_ctx *qp_ctx)
 {
 	struct cipher_res *c_res = (struct cipher_res *)qp_ctx->priv_req_res;
-	struct device *sec_dev = ctx->sec_dev;
+	struct device *dev = ctx->dev;
 	int alloc_num = QM_Q_DEPTH * ctx->fusion_limit;
 
-	acc_free_multi_sgl(sec_dev, c_res[0].c_out, c_res[0].c_out_dma,
-		QM_Q_DEPTH);
-	acc_free_multi_sgl(sec_dev, c_res[0].c_in, c_res[0].c_in_dma,
-		QM_Q_DEPTH);
 	kfree(c_res[0].dst);
 	kfree(c_res[0].src);
-	dma_free_coherent(sec_dev, SEC_IV_SIZE * alloc_num, c_res[0].c_ivin,
+	dma_free_coherent(dev, SEC_IV_SIZE * alloc_num, c_res[0].c_ivin,
 		c_res[0].c_ivin_dma);
 	kfree(c_res[0].sk_reqs);
 	kfree(c_res);
@@ -1066,34 +996,38 @@ static int hisi_sec_skcipher_buf_map(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_req *req)
 {
 	struct hisi_sec_cipher_req *c_req = &req->c_req;
-	struct device *dev = ctx->sec_dev;
+	struct device *dev = ctx->dev;
 	struct skcipher_request *sk_next;
-	int src_nents, copyed_src_nents = 0, src_nents_sum = 0;
-	int dst_nents, copyed_dst_nents = 0, dst_nents_sum = 0;
-	int i, ret = 0, buf_map_limit;
+	struct hisi_sec_qp_ctx *qp_ctx = req->qp_ctx;
+	int src_nents, src_nents_sum, copyed_src_nents;
+	int dst_nents, dst_nents_sum, copyed_dst_nents;
+	int i, ret, buf_map_limit;
 
+	src_nents_sum = 0;
+	dst_nents_sum = 0;
 	for (i = 0; i < req->fusion_num; i++) {
 		sk_next = (struct skcipher_request *)req->priv[i];
 		if (sk_next == NULL) {
-			dev_err(ctx->sec_dev, "nullptr at [%d]\n", i);
+			dev_err(ctx->dev, "nullptr at [%d]\n", i);
 			return -EFAULT;
 		}
 		src_nents_sum += sg_nents(sk_next->src);
 		dst_nents_sum += sg_nents(sk_next->dst);
 		if (sk_next->src == sk_next->dst && i > 0) {
-			dev_err(ctx->sec_dev, "err: src == dst\n");
+			dev_err(ctx->dev, "err: src == dst\n");
 			return -EFAULT;
 		}
 	}
 
-	buf_map_limit = (ctx->fusion_limit + BUF_MAP_PER_SGL - 1)
-		/ BUF_MAP_PER_SGL * BUF_MAP_PER_SGL;
+	buf_map_limit = FUSION_LIMIT_MAX;
 	if (src_nents_sum > buf_map_limit || dst_nents_sum > buf_map_limit) {
-		dev_err(ctx->sec_dev, "src[%d] or dst[%d] bigger than %d\n",
+		dev_err(ctx->dev, "src[%d] or dst[%d] bigger than %d\n",
 			src_nents_sum, dst_nents_sum, buf_map_limit);
 		return -ENOBUFS;
 	}
 
+	copyed_src_nents = 0;
+	copyed_dst_nents = 0;
 	for (i = 0; i < req->fusion_num; i++) {
 		sk_next = (struct skcipher_request *)req->priv[i];
 		src_nents = sg_nents(sk_next->src);
@@ -1113,24 +1047,28 @@ static int hisi_sec_skcipher_buf_map(struct hisi_sec_ctx *ctx,
 		copyed_dst_nents += dst_nents;
 	}
 
-	ret = acc_sg_buf_map_v2(dev, c_req->src, c_req->c_in, src_nents_sum);
-	if (ret)
-		return ret;
+	c_req->c_in = hisi_acc_sg_buf_map_to_hw_sgl(dev, c_req->src,
+		&qp_ctx->c_in_pool, req->req_id, &c_req->c_in_dma);
+
+	if (IS_ERR(c_req->c_in))
+		return PTR_ERR(c_req->c_in);
 
 	if (c_req->dst == c_req->src) {
 		c_req->c_out = c_req->c_in;
 		c_req->c_out_dma = c_req->c_in_dma;
 	} else {
-		ret = acc_sg_buf_map_v2(dev, c_req->dst, c_req->c_out,
-			dst_nents_sum);
-		if (ret)
+		c_req->c_out = hisi_acc_sg_buf_map_to_hw_sgl(dev, c_req->dst,
+			&qp_ctx->c_out_pool, req->req_id, &c_req->c_out_dma);
+		if (IS_ERR(c_req->c_out)) {
+			ret = PTR_ERR(c_req->c_out);
 			goto err_unmap_src;
+		}
 	}
 
 	return 0;
 
 err_unmap_src:
-	acc_sg_buf_unmap_v2(dev, c_req->src);
+	hisi_acc_sg_buf_unmap(dev, c_req->src, c_req->c_in);
 
 	return ret;
 }
@@ -1139,12 +1077,12 @@ static int hisi_sec_skcipher_buf_unmap(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_req *req)
 {
 	struct hisi_sec_cipher_req *c_req = &req->c_req;
-	struct device *dev = ctx->sec_dev;
+	struct device *dev = ctx->dev;
 
 	if (c_req->dst != c_req->src)
-		acc_sg_buf_unmap_v2(dev, c_req->src);
+		hisi_acc_sg_buf_unmap(dev, c_req->src, c_req->c_in);
 
-	acc_sg_buf_unmap_v2(dev, c_req->dst);
+	hisi_acc_sg_buf_unmap(dev, c_req->dst, c_req->c_out);
 
 	return 0;
 }
@@ -1452,7 +1390,7 @@ static struct hisi_sec_req *sec_request_alloc(struct hisi_sec_ctx *ctx,
 
 	ret = ctx->req_op->get_res(ctx, req);
 	if (ret) {
-		dev_err(ctx->sec_dev, "req_op get_res failed\n");
+		dev_err(ctx->dev, "req_op get_res failed\n");
 		mutex_unlock(&qp_ctx->req_lock);
 		goto err_free_req_id;
 	}
@@ -1517,14 +1455,16 @@ static int sec_request_send(struct hisi_sec_ctx *ctx, struct hisi_sec_req *req)
 static int sec_io_proc(struct hisi_sec_ctx *ctx, struct hisi_sec_req *in_req)
 {
 	struct hisi_sec_req *req;
-	int ret, fusion_send = 0, fake_busy = 0;
+	int fusion_send = 0;
+	int fake_busy = 0;
+	int ret;
 
 	in_req->fusion_num = 1;
 
 	req = sec_request_alloc(ctx, in_req, &fusion_send, &fake_busy);
 
 	if (!req) {
-		dev_err(ctx->sec_dev, "sec_request_alloc failed\n");
+		dev_err(ctx->dev, "sec_request_alloc failed\n");
 		return -ENOMEM;
 	}
 
@@ -1533,14 +1473,14 @@ static int sec_io_proc(struct hisi_sec_ctx *ctx, struct hisi_sec_req *in_req)
 
 	ret = sec_request_transfer(ctx, req);
 	if (ret) {
-		dev_err(ctx->sec_dev, "sec_transfer failed! ret[%d]\n", ret);
+		dev_err(ctx->dev, "sec_transfer failed! ret[%d]\n", ret);
 		goto err_free_req;
 	}
 
 	ret = sec_request_send(ctx, req);
 	__sync_add_and_fetch(&ctx->sec->sec_dfx.send_by_full, 1);
 	if (ret != -EBUSY && ret != -EINPROGRESS) {
-		dev_err(ctx->sec_dev, "sec_send failed ret[%d]\n", ret);
+		dev_err(ctx->dev, "sec_send failed ret[%d]\n", ret);
 		goto err_unmap_req;
 	}
 

@@ -94,11 +94,14 @@
 #define SEC_CHAIN_ABN_WR_ADDR_HIG	0x314
 #define SEC_CHAIN_ABN_WR_LEN		0x318
 
+#define SEC_DBGFS_VAL_MAX_LEN		20
+
 #define SEC_CHAIN_ABN_LEN 128UL
-#define FORMAT_DECIMAL                10
+#define FORMAT_DECIMAL			10
+#define HSEC_ENABLE			1
+#define HSEC_DISABLE			0
 
 static const char hisi_sec_name[] = "hisi_sec";
-static atomic_t hisi_sec_ref = {0};
 static struct dentry *hsec_debugfs_root;
 static u32 pf_q_num = HSEC_PF_DEF_Q_NUM;
 static struct workqueue_struct *sec_wq;
@@ -219,7 +222,6 @@ struct ctrl_debug_file {
  * Just relevant for PF.
  */
 struct hisi_sec_ctrl {
-	u32 ctrl_q_num;
 	u32 num_vfs;
 	struct hisi_sec *hisi_sec;
 	struct dentry *debug_root;
@@ -312,6 +314,82 @@ static const struct kernel_param_ops uacce_mode_ops = {
 	.get = param_get_int,
 };
 
+static int ctx_q_num_set(const char *val, const struct kernel_param *kp)
+{
+	u32 ctx_q_num;
+	int ret;
+
+	if (!val)
+		return -EINVAL;
+
+	ret = kstrtou32(val, FORMAT_DECIMAL, &ctx_q_num);
+	if (ret)
+		return -EINVAL;
+
+	if (ctx_q_num == 0 || ctx_q_num > QM_Q_DEPTH || ctx_q_num % 2 == 1) {
+		pr_err("ctx_q_num[%u] is invalid\n", ctx_q_num);
+		return -EINVAL;
+	}
+
+	return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops ctx_q_num_ops = {
+	.set = ctx_q_num_set,
+	.get = param_get_int,
+};
+
+static int fusion_limit_set(const char *val, const struct kernel_param *kp)
+{
+	u32 fusion_limit;
+	int ret;
+
+	if (!val)
+		return -EINVAL;
+
+	ret = kstrtou32(val, FORMAT_DECIMAL, &fusion_limit);
+	if (ret)
+		return ret;
+
+	if (fusion_limit == 0 || fusion_limit > FUSION_LIMIT_MAX) {
+		pr_err("fusion_limit[%u] is't at range(0, %d)", fusion_limit,
+			FUSION_LIMIT_MAX);
+		return -EINVAL;
+	}
+
+	return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops fusion_limit_ops = {
+	.set = fusion_limit_set,
+	.get = param_get_int,
+};
+
+static int fusion_tmout_nsec_set(const char *val, const struct kernel_param *kp)
+{
+	u32 fusion_tmout_nsec;
+	int ret;
+
+	if (!val)
+		return -EINVAL;
+
+	ret = kstrtou32(val, FORMAT_DECIMAL, &fusion_tmout_nsec);
+	if (ret)
+		return ret;
+
+	if (fusion_tmout_nsec > NSEC_PER_SEC) {
+		pr_err("fusion_tmout_nsec[%u] is too large", fusion_tmout_nsec);
+		return -EINVAL;
+	}
+
+	return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops fusion_tmout_nsec_ops = {
+	.set = fusion_tmout_nsec_set,
+	.get = param_get_int,
+};
+
 module_param_cb(pf_q_num, &pf_q_num_ops, &pf_q_num, 0444);
 MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 0-4096, v2 0-1024)");
 
@@ -321,15 +399,20 @@ MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
 
 static int enable_sm4_ctr;
 module_param(enable_sm4_ctr, int, 0444);
+MODULE_PARM_DESC(enable_sm4_ctr, "Enable ctr(sm4) algorithm 0(default), 1");
 
 static int ctx_q_num = CTX_Q_NUM_DEF;
-module_param(ctx_q_num, int, 0444);
+module_param_cb(ctx_q_num, &ctx_q_num_ops, &ctx_q_num, 0444);
+MODULE_PARM_DESC(ctx_q_num, "Number of queue in ctx (2, 4, 6, ..., 1024)");
 
 static int fusion_limit = FUSION_LIMIT_DEF;
-module_param(fusion_limit, int, 0444);
+module_param_cb(fusion_limit, &fusion_limit_ops, &fusion_limit, 0444);
+MODULE_PARM_DESC(fusion_limit, "(1, acc_sgl_sge_nr)");
 
 static int fusion_tmout_nsec = FUSION_TMOUT_NSEC_DEF;
-module_param(fusion_tmout_nsec, int, 0444);
+module_param_cb(fusion_tmout_nsec, &fusion_tmout_nsec_ops, &fusion_tmout_nsec,
+	0444);
+MODULE_PARM_DESC(fusion_tmout_nsec, "(0, NSEC_PER_SEC)");
 
 static const struct pci_device_id hisi_sec_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_SEC_PF) },
@@ -562,7 +645,7 @@ static ssize_t ctrl_debug_read(struct file *filp, char __user *buf,
 			       size_t count, loff_t *pos)
 {
 	struct ctrl_debug_file *file = filp->private_data;
-	char tbuf[20];
+	char tbuf[SEC_DBGFS_VAL_MAX_LEN];
 	u32 val;
 	int ret;
 
@@ -587,17 +670,18 @@ static ssize_t ctrl_debug_write(struct file *filp, const char __user *buf,
 				size_t count, loff_t *pos)
 {
 	struct ctrl_debug_file *file = filp->private_data;
-	char tbuf[20];
+	char tbuf[SEC_DBGFS_VAL_MAX_LEN];
 	unsigned long val;
 	int len, ret;
 
 	if (*pos != 0)
 		return 0;
 
-	if (count >= 20)
+	if (count >= SEC_DBGFS_VAL_MAX_LEN)
 		return -ENOSPC;
 
-	len = simple_write_to_buffer(tbuf, 20 - 1, pos, buf, count);
+	len = simple_write_to_buffer(tbuf, SEC_DBGFS_VAL_MAX_LEN - 1,
+		pos, buf, count);
 	if (len < 0)
 		return len;
 
@@ -645,7 +729,7 @@ static int hisi_sec_core_debug_init(struct hisi_sec_ctrl *ctrl)
 	struct hisi_sec_dfx *dfx = &hisi_sec->sec_dfx;
 	struct debugfs_regset32 *regset;
 	struct dentry *tmp_d, *tmp;
-	char buf[20];
+	char buf[SEC_DBGFS_VAL_MAX_LEN];
 
 	sprintf(buf, "hisi_sec_dfx");
 
@@ -825,7 +909,8 @@ static int hisi_sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 
 	qm->sqe_size = HSEC_SQE_SIZE;
 	qm->dev_name = hisi_sec_name;
-	qm->fun_type = (pdev->device == 0xa255) ? QM_HW_PF : QM_HW_VF;
+	qm->fun_type = (pdev->device == PCI_DEVICE_ID_SEC_PF) ?
+		QM_HW_PF : QM_HW_VF;
 	qm->algs = "sec\ncipher\ndigest\n";
 	qm->wq = sec_wq;
 
@@ -895,12 +980,6 @@ static int hisi_sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	hisi_sec->hisi_sec_list_lock = &hisi_sec_list_lock;
 
-	hisi_sec->sgl_pool = acc_create_sgl_pool(&pdev->dev, "hsec-sgl");
-	if (!hisi_sec->sgl_pool)
-		return -ENOMEM;
-
-	atomic_inc(&hisi_sec_ref);
-
 	hisi_sec->ctx_q_num = ctx_q_num;
 	hisi_sec->fusion_limit = fusion_limit;
 
@@ -934,14 +1013,12 @@ static int hisi_sec_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	hisi_qm_uninit(qm);
  err_remove_from_list:
 	hisi_sec_remove_from_list(hisi_sec);
-	atomic_dec(&hisi_sec_ref);
 	return ret;
 }
 
 /* now we only support equal assignment */
 static int hisi_sec_vf_q_assign(struct hisi_sec *hisi_sec, u32 num_vfs)
 {
-	struct hisi_sec_ctrl *ctrl = hisi_sec->ctrl;
 	struct hisi_qm *qm = &hisi_sec->qm;
 	u32 qp_num = qm->qp_num;
 	u32 q_base = qp_num;
@@ -951,7 +1028,7 @@ static int hisi_sec_vf_q_assign(struct hisi_sec *hisi_sec, u32 num_vfs)
 	if (!num_vfs)
 		return -EINVAL;
 
-	remain_q_num = ctrl->ctrl_q_num - qp_num;
+	remain_q_num = qm->ctrl_q_num - qp_num;
 	q_num = remain_q_num / num_vfs;
 
 	for (i = 1; i <= num_vfs; i++) {
@@ -970,8 +1047,9 @@ static int hisi_sec_clear_vft_config(struct hisi_sec *hisi_sec)
 {
 	struct hisi_sec_ctrl *ctrl = hisi_sec->ctrl;
 	struct hisi_qm *qm = &hisi_sec->qm;
-	u32 i, num_vfs = ctrl->num_vfs;
+	u32 num_vfs = ctrl->num_vfs;
 	int ret;
+	u32 i;
 
 	for (i = 1; i <= num_vfs; i++) {
 		ret = hisi_qm_set_vft(qm, i, 0, 0);
@@ -1064,7 +1142,6 @@ static void hisi_sec_remove(struct pci_dev *pdev)
 
 	hisi_qm_uninit(qm);
 	hisi_sec_remove_from_list(hisi_sec);
-	atomic_dec(&hisi_sec_ref);
 }
 
 static void hisi_sec_log_hw_error(struct hisi_sec *hisi_sec, u32 err_sts)
@@ -1261,9 +1338,8 @@ static int hisi_sec_soft_reset(struct hisi_sec *hisi_sec)
 
 	/* If bus lock, reset chip */
 	ret = readl_relaxed_poll_timeout(hisi_sec->qm.io_base +
-					 HSEC_MASTER_TRANS_RETURN, val,
-					 (val == MASTER_TRANS_RETURN_RW), 10,
-					 1000);
+		HSEC_MASTER_TRANS_RETURN, val, (val == MASTER_TRANS_RETURN_RW),
+		SEC_DELAY_10_US, SEC_POLL_TIMEOUT_US);
 	if (ret) {
 		dev_emerg(dev, "Bus lock! Please reset system.\n");
 		return ret;
@@ -1534,21 +1610,22 @@ static int __init hisi_sec_init(void)
 		return 0;
 #endif
 
-	if (atomic_read(&hisi_sec_ref) <= 0) {
+	if (list_empty(&hisi_sec_list)) {
+		pr_err("no device!\n");
 		ret = -ENODEV;
-		goto err_pci;
+		goto err_probe_device;
 	}
 
 	pr_info("hisi_sec: register to crypto\n");
 	ret = hisi_sec_register_to_crypto();
 	if (ret < 0) {
 		pr_err("Failed to register driver to crypto.\n");
-		goto err_crypto;
+		goto err_probe_device;
 	}
 
 	return 0;
 
- err_crypto:
+ err_probe_device:
 	pci_unregister_driver(&hisi_sec_pci_driver);
  err_pci:
 	hisi_sec_unregister_debugfs();
@@ -1577,4 +1654,3 @@ module_exit(hisi_sec_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zhang Wei <zhangwei375@huawei.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon SEC accelerator");
-
