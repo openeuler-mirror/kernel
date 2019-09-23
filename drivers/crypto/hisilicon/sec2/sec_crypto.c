@@ -487,7 +487,7 @@ static int hisi_sec_get_fusion_param(struct hisi_sec_ctx *ctx,
 
 		ctx->fusion_limit = sec->fusion_limit;
 		/* if fusion_limit isn't at range, we think don't need fusion */
-		if (ctx->fusion_limit <= 0 && ctx->fusion_limit > QM_Q_DEPTH)
+		if (ctx->fusion_limit <= 0 || ctx->fusion_limit > QM_Q_DEPTH)
 			ctx->fusion_limit = 1;
 	} else {
 		ctx->fusion_tmout_nsec = 0;
@@ -967,15 +967,15 @@ static int hisi_sec_skcipher_queue_alloc(struct hisi_sec_ctx *ctx,
 
 		c_res[map_st_pos].c_in = acc_alloc_multi_sgl(sec_dev,
 			&c_res[map_st_pos].c_in_dma, QM_Q_DEPTH);
-		if (!c_res[map_st_pos].c_in) {
-			ret = -ENOMEM;
+		if (IS_ERR(c_res[map_st_pos].c_in)) {
+			ret = PTR_ERR(c_res[map_st_pos].c_in);
 			goto err_free_c_in;
 		}
 
 		c_res[map_st_pos].c_out = acc_alloc_multi_sgl(sec_dev,
 			&c_res[map_st_pos].c_out_dma, QM_Q_DEPTH);
-		if (!c_res[map_st_pos].c_out) {
-			ret = -ENOMEM;
+		if (IS_ERR(c_res[map_st_pos].c_out)) {
+			ret = PTR_ERR(c_res[map_st_pos].c_out);
 			goto err_free_c_out;
 		}
 
@@ -1019,8 +1019,6 @@ err_free_c_out:
 	acc_free_multi_sgl(sec_dev, c_res[sgl_pool_cur * map_len].c_in,
 		c_res[sgl_pool_cur * map_len].c_in_dma, QM_Q_DEPTH);
 	for (i = 0; i < sgl_pool_cur; i++) {
-		acc_free_multi_sgl(sec_dev, c_res[i * map_len].c_in,
-			c_res[i * map_len].c_in_dma, QM_Q_DEPTH);
 		acc_free_multi_sgl(sec_dev, c_res[i * map_len].c_out,
 			c_res[i * map_len].c_out_dma, QM_Q_DEPTH);
 	}

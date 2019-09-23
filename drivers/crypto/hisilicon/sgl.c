@@ -212,10 +212,13 @@ struct acc_hw_sgl *acc_alloc_multi_sgl(struct device *dev,
 	int i;
 
 	if (!dev || !hw_sgl_dma || !sgl_num)
-		return NULL;
+		return ERR_PTR(-EINVAL);
 
 	hw_sgl = dma_alloc_coherent(dev, sgl_num * sizeof(struct acc_hw_sgl),
 		hw_sgl_dma, GFP_KERNEL | __GFP_ZERO);
+
+	if (!hw_sgl)
+		return ERR_PTR(-ENOMEM);
 
 	for (i = 1; i < sgl_num; i++) {
 		hw_sgl[i-1].next = &hw_sgl[i];
