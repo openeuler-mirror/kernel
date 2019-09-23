@@ -767,7 +767,7 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 
 	ind = hr_qp->rq.head & (hr_qp->rq.wqe_cnt - 1);
 
-	if (hr_qp->state == IB_QPS_RESET) {
+	if (hr_qp->state == IB_QPS_RESET || hr_qp->ibqp.srq) {
 		v2_spin_unlock_irqrestore(qp_lock, &hr_qp->rq.lock, &flags);
 		*bad_wr = wr;
 		dev_err(dev, "Post recv failed: QP state is RESET, qp num is 0x%lx.\n",
