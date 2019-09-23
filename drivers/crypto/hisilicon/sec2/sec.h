@@ -20,6 +20,7 @@
 #undef pr_fmt
 #define pr_fmt(fmt)	"hisi_sec: " fmt
 
+#define CTX_Q_NUM_DEF 24
 #define FUSION_LIMIT_DEF 1
 #define FUSION_TMOUT_NSEC_DEF (400 * 1000)
 

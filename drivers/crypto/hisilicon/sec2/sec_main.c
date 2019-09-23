@@ -322,7 +322,7 @@ MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
 static int enable_sm4_ctr;
 module_param(enable_sm4_ctr, int, 0444);
 
-static int ctx_q_num = 64;
+static int ctx_q_num = CTX_Q_NUM_DEF;
 module_param(ctx_q_num, int, 0444);
 
 static int fusion_limit = FUSION_LIMIT_DEF;
@@ -826,7 +826,7 @@ static int hisi_sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	qm->sqe_size = HSEC_SQE_SIZE;
 	qm->dev_name = hisi_sec_name;
 	qm->fun_type = (pdev->device == 0xa255) ? QM_HW_PF : QM_HW_VF;
-	qm->algs = "sec\n";
+	qm->algs = "sec\ncipher\ndigest\n";
 	qm->wq = sec_wq;
 
 	switch (uacce_mode) {

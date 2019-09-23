@@ -848,7 +848,6 @@ static int sec_setkey_##name(struct crypto_skcipher *tfm, const u8 *key,\
 
 GEN_SEC_SETKEY_FUNC(aes_ecb, C_ALG_AES, C_MODE_ECB)
 GEN_SEC_SETKEY_FUNC(aes_cbc, C_ALG_AES, C_MODE_CBC)
-GEN_SEC_SETKEY_FUNC(aes_ctr, C_ALG_AES, C_MODE_CTR)
 GEN_SEC_SETKEY_FUNC(sm4_cbc, C_ALG_SM4, C_MODE_CBC)
 
 GEN_SEC_SETKEY_FUNC(des_ecb, C_ALG_DES, C_MODE_ECB)
@@ -1625,9 +1624,6 @@ static struct skcipher_alg sec_algs[] = {
 	SEC_SKCIPHER_NORMAL_ALG("ecb(aes)", sec_setkey_aes_ecb,
 		AES_MIN_KEY_SIZE, AES_MAX_KEY_SIZE, AES_BLOCK_SIZE, 0)
 	SEC_SKCIPHER_NORMAL_ALG("cbc(aes)", sec_setkey_aes_cbc,
-		AES_MIN_KEY_SIZE, AES_MAX_KEY_SIZE, AES_BLOCK_SIZE,
-		AES_BLOCK_SIZE)
-	SEC_SKCIPHER_NORMAL_ALG("ctr(aes)", sec_setkey_aes_ctr,
 		AES_MIN_KEY_SIZE, AES_MAX_KEY_SIZE, AES_BLOCK_SIZE,
 		AES_BLOCK_SIZE)
 	SEC_SKCIPHER_NORMAL_ALG("xts(aes)", sec_setkey_aes_xts,
