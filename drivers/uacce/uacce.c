@@ -998,7 +998,6 @@ static long uacce_put_queue(struct uacce_queue *q)
 	 * To do: we should vm_munmap mmio and dus regions, currently we munmap
 	 * mmio and dus region before put queue.
 	 */
-
 	if (uacce->ops->stop_queue)
 		uacce->ops->stop_queue(q);
 

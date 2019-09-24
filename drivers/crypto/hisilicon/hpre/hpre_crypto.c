@@ -216,9 +216,8 @@ static int hpre_prepare_dma_buf(struct hpre_asym_request *hpre_req,
 		return -EINVAL;
 
 	ptr = dma_alloc_coherent(dev, ctx->key_sz, tmp, GFP_KERNEL);
-	if (!ptr) {
+	if (!ptr)
 		return -ENOMEM;
-	}
 
 	if (is_src) {
 		scatterwalk_map_and_copy(ptr + shift, data, 0, len, 0);
@@ -838,7 +837,7 @@ static int hpre_crt_para_get(char *para, const char *raw,
 	size_t len = raw_sz;
 
 	hpre_rsa_drop_leading_zeros(&ptr, &len);
-	if (!len)
+	if (!len || len > para_size)
 		return -EINVAL;
 
 	memcpy(para + para_size - len, ptr, len);
@@ -1082,7 +1081,7 @@ static struct kpp_alg dh = {
 
 int hpre_algs_register(void)
 {
-	int ret = EINVAL;
+	int ret = 0;
 
 	mutex_lock(&hpre_alg_lock);
 	if (++hpre_active_devs == 1) {

@@ -1466,12 +1466,22 @@ static void hpre_reset_done(struct pci_dev *pdev)
 	}
 
 	if (pdev->is_physfn) {
-		hpre_set_user_domain_and_cache(hpre);
+		ret = hpre_set_user_domain_and_cache(hpre);
+		if (ret)
+			return;
+
 		hpre_hw_err_init(hpre);
+
 		if (hpre->ctrl->num_vfs)
 			hpre_vf_q_assign(hpre, hpre->ctrl->num_vfs);
-		hpre_vf_reset_done(pdev);
+
+		ret = hpre_vf_reset_done(pdev);
+		if (ret) {
+			dev_err(&pdev->dev, "Failed to start VFs!\n");
+			return;
+		}
 	}
+
 	hpre_flr_reset_complete(pdev);
 
 	dev_info(dev, "FLR reset complete\n");
@@ -1492,7 +1502,7 @@ static struct pci_driver hpre_pci_driver = {
 	.probe			= hpre_probe,
 	.remove			= hpre_remove,
 #ifdef CONFIG_PCI_IOV
-		.sriov_configure	= hpre_sriov_configure,
+	.sriov_configure	= hpre_sriov_configure,
 #endif
 	.err_handler		= &hpre_err_handler,
 };
