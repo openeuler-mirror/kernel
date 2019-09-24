@@ -297,36 +297,6 @@ static __always_inline u32  __pv_wait_head_or_lock(struct qspinlock *lock,
 #define queued_spin_lock_slowpath	native_queued_spin_lock_slowpath
 #endif
 
-/*
- * set_locked_empty_mcs - Try to set the spinlock value to _Q_LOCKED_VAL,
- * and by doing that unlock the MCS lock when its waiting queue is empty
- * @lock: Pointer to queued spinlock structure
- * @val: Current value of the lock
- * @node: Pointer to the MCS node of the lock holder
- *
- * *,*,* -> 0,0,1
- */
-static __always_inline bool __set_locked_empty_mcs(struct qspinlock *lock,
-						   u32 val,
-						   struct mcs_spinlock *node)
-{
-	return atomic_try_cmpxchg_relaxed(&lock->val, &val, _Q_LOCKED_VAL);
-}
-
-/*
- * pass_mcs_lock - pass the MCS lock to the next waiter
- * @node: Pointer to the MCS node of the lock holder
- * @next: Pointer to the MCS node of the first waiter in the MCS queue
- */
-static __always_inline void __pass_mcs_lock(struct mcs_spinlock *node,
-					    struct mcs_spinlock *next)
-{
-	arch_mcs_spin_unlock_contended(&next->locked, 1);
-}
-
-#define set_locked_empty_mcs	__set_locked_empty_mcs
-#define pass_mcs_lock		__pass_mcs_lock
-
 #endif /* _GEN_PV_LOCK_SLOWPATH */
 
 /**
@@ -561,7 +531,7 @@ locked:
 	 * necessary acquire semantics required for locking.
 	 */
 	if (((val & _Q_TAIL_MASK) == tail) &&
-	    set_locked_empty_mcs(lock, val, node))
+	    atomic_try_cmpxchg_relaxed(&lock->val, &val, _Q_LOCKED_VAL))
 		goto release; /* No contention */
 
 	/* Either somebody is queued behind us or _Q_PENDING_VAL is set */
@@ -573,7 +543,7 @@ locked:
 	if (!next)
 		next = smp_cond_load_relaxed(&node->next, (VAL));
 
-	pass_mcs_lock(node, next);
+	arch_mcs_spin_unlock_contended(&next->locked, 1);
 	pv_kick_node(lock, next);
 
 release:
@@ -597,12 +567,6 @@ EXPORT_SYMBOL(queued_spin_lock_slowpath);
 #undef pv_wait_node
 #undef pv_kick_node
 #undef pv_wait_head_or_lock
-
-#undef set_locked_empty_mcs
-#define set_locked_empty_mcs		__set_locked_empty_mcs
-
-#undef pass_mcs_lock
-#define pass_mcs_lock			__pass_mcs_lock
 
 #undef  queued_spin_lock_slowpath
 #define queued_spin_lock_slowpath	__pv_queued_spin_lock_slowpath
