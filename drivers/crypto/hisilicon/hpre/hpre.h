@@ -1,13 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
-/*
- * Copyright (c) 2018-2019 HiSilicon Limited.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- */
+/* Copyright (c) 2019 HiSilicon Limited. */
 
 #ifndef __HISI_HPRE_H
 #define __HISI_HPRE_H
@@ -20,12 +12,9 @@
 #define QM_CQ_SIZE			(QM_CQE_SIZE * QM_Q_DEPTH)
 #define HPRE_PF_DEF_Q_NUM		64
 #define HPRE_PF_DEF_Q_BASE		0
+#define HPRE_RESET			0
 
 struct hpre_ctrl;
-
-enum hpre_status {
-	HPRE_RESET,
-};
 
 struct hpre {
 	struct hisi_qm qm;
@@ -49,30 +38,22 @@ enum hpre_alg_type {
 };
 
 struct hpre_sqe {
-	__u32 alg	: 5;
-
-	/* error type */
-	__u32 etype	:11;
-	__u32 resv0	: 14;
-	__u32 done	: 2;
-	__u32 task_len1	: 8;
-	__u32 task_len2	: 8;
-	__u32 mrttest_num	: 8;
-	__u32 resv1	: 8;
-	__u32 low_key;
-	__u32 hi_key;
-	__u32 low_in;
-	__u32 hi_in;
-	__u32 low_out;
-	__u32 hi_out;
-	__u32 tag	:16;
-	__u32 resv2	:16;
+	__le32 dw0;
+	__u8 task_len1;
+	__u8 task_len2;
+	__u8 mrttest_num;
+	__u8 resv1;
+	__le64 key;
+	__le64 in;
+	__le64 out;
+	__le16 tag;
+	__le16 resv2;
 #define _HPRE_SQE_ALIGN_EXT	7
-	__u32 rsvd1[_HPRE_SQE_ALIGN_EXT];
+	__le32 rsvd1[_HPRE_SQE_ALIGN_EXT];
 };
 
-extern struct hpre *find_hpre_device(int node);
-extern int hpre_algs_register(void);
-extern void hpre_algs_unregister(void);
+struct hpre *find_hpre_device(int node);
+int hpre_algs_register(void);
+void hpre_algs_unregister(void);
 
 #endif
