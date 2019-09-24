@@ -866,6 +866,8 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!hpre)
 		return -ENOMEM;
 	pci_set_drvdata(pdev, hpre);
+	if (pci_enable_device(pdev) < 0)
+		return -ENODEV;
 	qm = &hpre->qm;
 	ret = hpre_qm_pre_init(qm, pdev);
 	if (ret)
