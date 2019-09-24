@@ -14,7 +14,6 @@
 
 #include <linux/list.h>
 #include "../qm.h"
-#include "../sgl.h"
 #include "sec_usr_if.h"
 
 #undef pr_fmt

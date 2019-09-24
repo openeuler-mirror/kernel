@@ -205,8 +205,8 @@ struct hisi_sec_qp_ctx {
 	struct mutex req_lock;
 	atomic_t req_cnt;
 	struct hisi_sec_sqe *sqe_list;
-	struct hisi_acc_sgl_pool c_in_pool;
-	struct hisi_acc_sgl_pool c_out_pool;
+	struct hisi_acc_sgl_pool *c_in_pool;
+	struct hisi_acc_sgl_pool *c_out_pool;
 	int fusion_num;
 	int fusion_limit;
 };
@@ -408,14 +408,14 @@ static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
 		goto err_free_req_list;
 	}
 
-	ret = hisi_acc_create_sgl_pool(dev, &qp_ctx->c_in_pool, QM_Q_DEPTH,
+	qp_ctx->c_in_pool = hisi_acc_create_sgl_pool(dev, QM_Q_DEPTH,
 		FUSION_LIMIT_MAX);
-	if (ret)
+	if (IS_ERR(qp_ctx->c_in_pool))
 		goto err_free_sqe_list;
 
-	ret = hisi_acc_create_sgl_pool(dev, &qp_ctx->c_out_pool, QM_Q_DEPTH,
+	qp_ctx->c_out_pool = hisi_acc_create_sgl_pool(dev, QM_Q_DEPTH,
 		FUSION_LIMIT_MAX);
-	if (ret)
+	if (IS_ERR(qp_ctx->c_out_pool))
 		goto err_free_c_in_pool;
 
 	ret = ctx->req_op->queue_alloc(ctx, qp_ctx);
@@ -431,9 +431,9 @@ static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
 err_queue_free:
 	ctx->req_op->queue_free(ctx, qp_ctx);
 err_free_c_out_pool:
-	hisi_acc_free_sgl_pool(dev, &qp_ctx->c_out_pool);
+	hisi_acc_free_sgl_pool(dev, qp_ctx->c_out_pool);
 err_free_c_in_pool:
-	hisi_acc_free_sgl_pool(dev, &qp_ctx->c_in_pool);
+	hisi_acc_free_sgl_pool(dev, qp_ctx->c_in_pool);
 err_free_sqe_list:
 	kfree(qp_ctx->sqe_list);
 err_free_req_list:
@@ -452,8 +452,8 @@ static void hisi_sec_release_qp_ctx(struct hisi_sec_ctx *ctx,
 
 	hisi_qm_stop_qp(qp_ctx->qp);
 	ctx->req_op->queue_free(ctx, qp_ctx);
-	hisi_acc_free_sgl_pool(dev, &qp_ctx->c_out_pool);
-	hisi_acc_free_sgl_pool(dev, &qp_ctx->c_in_pool);
+	hisi_acc_free_sgl_pool(dev, qp_ctx->c_out_pool);
+	hisi_acc_free_sgl_pool(dev, qp_ctx->c_in_pool);
 	kfree(qp_ctx->req_bitmap);
 	kfree(qp_ctx->req_list);
 	kfree(qp_ctx->sqe_list);
@@ -1048,7 +1048,7 @@ static int hisi_sec_skcipher_buf_map(struct hisi_sec_ctx *ctx,
 	}
 
 	c_req->c_in = hisi_acc_sg_buf_map_to_hw_sgl(dev, c_req->src,
-		&qp_ctx->c_in_pool, req->req_id, &c_req->c_in_dma);
+		qp_ctx->c_in_pool, req->req_id, &c_req->c_in_dma);
 
 	if (IS_ERR(c_req->c_in))
 		return PTR_ERR(c_req->c_in);
@@ -1058,7 +1058,7 @@ static int hisi_sec_skcipher_buf_map(struct hisi_sec_ctx *ctx,
 		c_req->c_out_dma = c_req->c_in_dma;
 	} else {
 		c_req->c_out = hisi_acc_sg_buf_map_to_hw_sgl(dev, c_req->dst,
-			&qp_ctx->c_out_pool, req->req_id, &c_req->c_out_dma);
+			qp_ctx->c_out_pool, req->req_id, &c_req->c_out_dma);
 		if (IS_ERR(c_req->c_out)) {
 			ret = PTR_ERR(c_req->c_out);
 			goto err_unmap_src;

@@ -312,6 +312,7 @@ static void uacce_queue_unmap_qfr(struct uacce_queue *q,
 	uacce_iommu_unmap_qfr(q, qfr);
 }
 
+#ifndef CONFIG_UACCE_FIX_MMAP
 static vm_fault_t uacce_shm_vm_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
@@ -348,6 +349,7 @@ out:
 static const struct vm_operations_struct uacce_shm_vm_ops = {
 	.fault = uacce_shm_vm_fault,
 };
+#endif
 
 static int uacce_qfr_alloc_pages(struct uacce_qfile_region *qfr)
 {
