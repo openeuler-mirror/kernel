@@ -7,6 +7,7 @@
 
 extern void __cna_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val);
 extern void native_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val);
+extern void (*cna_queued_spin_lock_slowpath)(struct qspinlock *lock, u32 val);
 
 #define	queued_spin_unlock queued_spin_unlock
 /**
@@ -22,7 +23,7 @@ static inline void native_queued_spin_unlock(struct qspinlock *lock)
 
 static inline void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
 {
-	__cna_queued_spin_lock_slowpath(lock, val);
+	cna_queued_spin_lock_slowpath(lock, val);
 }
 
 static inline void queued_spin_unlock(struct qspinlock *lock)

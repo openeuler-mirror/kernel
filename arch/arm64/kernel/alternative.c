@@ -252,6 +252,33 @@ void __init apply_alternatives_all(void)
 	stop_machine(__apply_alternatives_multi_stop, NULL, cpu_online_mask);
 }
 
+#if defined(CONFIG_NUMA_AWARE_SPINLOCKS)
+/*
+ * Constant (boot-param configurable) flag selecting the NUMA-aware variant
+ * of spinlock.  Possible values: -1 (off, default) / 0 (auto) / 1 (on).
+ */
+static int numa_spinlock_flag = -1;
+
+static int __init numa_spinlock_setup(char *str)
+{
+	if (!strcmp(str, "auto")) {
+		numa_spinlock_flag = 0;
+		return 0;
+	} else if (!strcmp(str, "on")) {
+		numa_spinlock_flag = 1;
+		return 0;
+	} else if (!strcmp(str, "off")) {
+		numa_spinlock_flag = -1;
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
+early_param("numa_spinlock", numa_spinlock_setup);
+
+#endif
+
 /*
  * This is called very early in the boot process (directly after we run
  * a feature detect on the boot CPU). No need to worry about other CPUs
@@ -268,6 +295,20 @@ void __init apply_boot_alternatives(void)
 	WARN_ON(smp_processor_id() != 0);
 
 	__apply_alternatives(&region, false, &boot_capabilities[0]);
+
+#if defined(CONFIG_NUMA_AWARE_SPINLOCKS)
+	/*
+	 * If numa_spinlock=auto, switch to the NUMA-friendly slow path for
+	 * spinlocks when we have multiple NUMA nodes in native environment.
+	 */
+	if ((numa_spinlock_flag == 1) ||
+		(numa_spinlock_flag == 0 && nr_node_ids > 1 &&
+			 cna_queued_spin_lock_slowpath ==
+			 native_queued_spin_lock_slowpath)) {
+		cna_queued_spin_lock_slowpath =
+			__cna_queued_spin_lock_slowpath;
+	}
+#endif
 }
 
 #ifdef CONFIG_MODULES

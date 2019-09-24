@@ -51,6 +51,12 @@ struct cna_node {
 	struct	cna_node *tail;    /* points to the secondary queue tail */
 };
 
+#ifndef CONFIG_PARAVIRT_SPINLOCKS
+void (*cna_queued_spin_lock_slowpath)(struct qspinlock *lock, u32 val) =
+		native_queued_spin_lock_slowpath;
+EXPORT_SYMBOL(cna_queued_spin_lock_slowpath);
+#endif
+
 /* Per-CPU pseudo-random number seed */
 static DEFINE_PER_CPU(u32, seed);
 
