@@ -643,18 +643,6 @@ void __init alternative_instructions(void)
 				(unsigned long)__smp_locks_end);
 #endif
 
-#if defined(CONFIG_NUMA_AWARE_SPINLOCKS)
-	/*
-	 * If we have multiple NUMA nodes, switch from native
-	 * to the NUMA-friendly slow path for spin locks.
-	 */
-	if (nr_node_ids > 1 && pv_lock_ops.queued_spin_lock_slowpath ==
-			native_queued_spin_lock_slowpath) {
-		pv_lock_ops.queued_spin_lock_slowpath =
-			__cna_queued_spin_lock_slowpath;
-	}
-#endif
-
 	apply_paravirt(__parainstructions, __parainstructions_end);
 
 	restart_nmi();
