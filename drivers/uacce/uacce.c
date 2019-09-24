@@ -132,7 +132,7 @@ int uacce_hw_err_isolate(struct uacce *uacce)
 }
 EXPORT_SYMBOL_GPL(uacce_hw_err_isolate);
 
-void uacce_hw_err_destroy(struct uacce *uacce)
+static void uacce_hw_err_destroy(struct uacce *uacce)
 {
 	struct uacce_hw_err *err, *tmp;
 
@@ -318,7 +318,7 @@ static vm_fault_t uacce_shm_vm_fault(struct vm_fault *vmf)
 	struct vm_area_struct *vma = vmf->vma;
 	struct uacce_qfile_region *qfr;
 	pgoff_t page_offset = (vmf->address - vma->vm_start) >> PAGE_SHIFT;
-	int ret;
+	vm_fault_t ret;
 
 	uacce_qs_rlock();
 

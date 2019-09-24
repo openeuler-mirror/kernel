@@ -2646,7 +2646,7 @@ EXPORT_SYMBOL_GPL(hisi_qm_hw_error_init);
  *
  * Accelerators use this function to handle qm non-fatal hardware errors.
  */
-int hisi_qm_hw_error_handle(struct hisi_qm *qm)
+pci_ers_result_t hisi_qm_hw_error_handle(struct hisi_qm *qm)
 {
 	if (!qm->ops->hw_error_handle) {
 		dev_err(&qm->pdev->dev,

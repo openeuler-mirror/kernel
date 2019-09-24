@@ -114,9 +114,9 @@ enum {
 	HPRE_CLUSTERS_NUM,
 };
 
+#define HPRE_NAME	"hisi_hpre"
 static LIST_HEAD(hpre_list);
 static DEFINE_MUTEX(hpre_list_lock);
-static const char hpre_name[] = "hisi_hpre";
 static struct dentry *hpre_debugfs_root;
 static const struct pci_device_id hpre_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, HPRE_PCI_DEVICE_ID) },
@@ -791,7 +791,7 @@ static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	qm->pdev = pdev;
 	qm->ver = rev_id;
 	qm->sqe_size = HPRE_SQE_SIZE;
-	qm->dev_name = hpre_name;
+	qm->dev_name = HPRE_NAME;
 	qm->fun_type = (pdev->device == HPRE_PCI_DEVICE_ID) ?
 		       QM_HW_PF : QM_HW_VF;
 	qm->algs = "rsa\ndh\n";
@@ -1469,7 +1469,7 @@ static const struct pci_error_handlers hpre_err_handler = {
 };
 
 static struct pci_driver hpre_pci_driver = {
-	.name			= hpre_name,
+	.name			= HPRE_NAME,
 	.id_table		= hpre_dev_ids,
 	.probe			= hpre_probe,
 	.remove			= hpre_remove,
@@ -1484,7 +1484,7 @@ static void hpre_register_debugfs(void)
 	if (!debugfs_initialized())
 		return;
 
-	hpre_debugfs_root = debugfs_create_dir(hpre_name, NULL);
+	hpre_debugfs_root = debugfs_create_dir(HPRE_NAME, NULL);
 	if (IS_ERR_OR_NULL(hpre_debugfs_root))
 		hpre_debugfs_root = NULL;
 }

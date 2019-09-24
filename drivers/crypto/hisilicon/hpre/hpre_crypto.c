@@ -360,7 +360,7 @@ static void _dh_cb(struct hpre_ctx *ctx, void *resp)
 	kpp_request_complete(areq, ret);
 }
 
-void hpre_alg_cb(struct hisi_qp *qp, void *_resp)
+static void hpre_alg_cb(struct hisi_qp *qp, void *_resp)
 {
 	struct hpre_sqe *sqe = _resp;
 	struct hpre_asym_request *areq;
