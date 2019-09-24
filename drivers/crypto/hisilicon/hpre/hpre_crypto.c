@@ -517,8 +517,13 @@ static int hpre_dh_set_params(struct hpre_ctx *ctx, struct dh *params)
 	}
 
 	ctx->dh.g = dma_alloc_coherent(dev, sz, &ctx->dh.dma_g, GFP_KERNEL);
-	if (!ctx->dh.g)
+	if (!ctx->dh.g) {
+		dma_free_coherent(dev, sz << 1, ctx->dh.xa_p,
+				  ctx->dh.dma_xa_p);
+		ctx->dh.xa_p = NULL;
 		return -ENOMEM;
+	}
+
 	memcpy(ctx->dh.g + (sz - params->g_size), params->g,
 	       params->g_size);
 
@@ -751,7 +756,7 @@ static int hpre_rsa_set_n(struct hpre_ctx *ctx, const char *value,
 	if (!ctx->rsa.pubkey) {
 		if (ctx->rsa.prikey) {
 			dma_free_coherent(&GET_DEV(ctx), vlen << 1,
-					ctx->rsa.prikey, ctx->rsa.dma_prikey);
+					  ctx->rsa.prikey, ctx->rsa.dma_prikey);
 			ctx->rsa.prikey = NULL;
 		}
 		return -ENOMEM;

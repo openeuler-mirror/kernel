@@ -294,7 +294,7 @@ static int uacce_queue_map_qfr(struct uacce_queue *q,
 	if (!(qfr->flags & UACCE_QFRF_MAP) || (qfr->flags & UACCE_QFRF_DMA))
 		return 0;
 
-	dev_dbg(&q->uacce->dev, "queue map %s qfr(npage=%d, iova=%pK)\n",
+	dev_dbg(&q->uacce->dev, "queue map %s qfr(npage=%ld, iova=%pK)\n",
 		uacce_qfrt_str(qfr), qfr->nr_pages, (void *)qfr->iova);
 
 	return uacce_iommu_map_qfr(q, qfr);
@@ -306,7 +306,7 @@ static void uacce_queue_unmap_qfr(struct uacce_queue *q,
 	if (!(qfr->flags & UACCE_QFRF_MAP) || (qfr->flags & UACCE_QFRF_DMA))
 		return;
 
-	dev_dbg(&q->uacce->dev, "queue map %s qfr(npage=%d, iova=%pK)\n",
+	dev_dbg(&q->uacce->dev, "queue map %s qfr(npage=%ld, iova=%pK)\n",
 		uacce_qfrt_str(qfr), qfr->nr_pages, (void *)qfr->iova);
 
 	uacce_iommu_unmap_qfr(q, qfr);
@@ -329,7 +329,7 @@ static vm_fault_t uacce_shm_vm_fault(struct vm_fault *vmf)
 		goto out;
 	}
 
-	pr_debug("uacce: fault on %s qfr page %ld/%d\n", uacce_qfrt_str(qfr),
+	pr_debug("uacce: fault on %s qfr page %ld/%ld\n", uacce_qfrt_str(qfr),
 		 page_offset, qfr->nr_pages);
 
 	if (page_offset >= qfr->nr_pages) {
@@ -403,7 +403,7 @@ static inline int uacce_queue_mmap_qfr(struct uacce_queue *q,
 				      vma->vm_page_prot);
 		if (ret) {
 			dev_err(q->uacce->pdev,
-				"remap_pfm_range fail(nr_pgs=%d)!\n",
+				"remap_pfm_range fail(nr_pgs=%lx)!\n",
 				qfr->nr_pages);
 			return ret;
 		}
@@ -788,12 +788,12 @@ static int uacce_start_queue(struct uacce_queue *q)
 					  PAGE_KERNEL);
 			if (!qfr->kaddr) {
 				ret = -ENOMEM;
-				dev_err(dev, "fail to kmap %s qfr(%d pages)\n",
+				dev_err(dev, "fail to kmap %s qfr(%ld pages)\n",
 					uacce_qfrt_str(qfr), qfr->nr_pages);
 				goto err_with_vmap;
 			}
 
-			dev_dbg(dev, "kernel vmap %s qfr(%d pages) to %pK\n",
+			dev_dbg(dev, "kernel vmap %s qfr(%ld pages) to %pK\n",
 				uacce_qfrt_str(qfr), qfr->nr_pages,
 				qfr->kaddr);
 		}

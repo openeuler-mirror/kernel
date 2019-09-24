@@ -41,7 +41,7 @@ struct uacce_qfile_region {
 	enum uacce_qfrt type;
 	unsigned long iova;	/* iova share between user and device space */
 	struct page **pages;
-	unsigned int nr_pages;
+	unsigned long nr_pages;
 	int prot;
 	unsigned int flags;
 	struct list_head qs;	/* qs sharing the same region, for ss */
