@@ -13,6 +13,7 @@
 #define HPRE_PF_DEF_Q_NUM		64
 #define HPRE_PF_DEF_Q_BASE		0
 #define HPRE_RESET			0
+#define HPRE_WAIT_DELAY	1000
 
 struct hpre_ctrl;
 

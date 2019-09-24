@@ -1054,12 +1054,21 @@ static int hpre_sriov_configure(struct pci_dev *pdev, int num_vfs)
 }
 #endif
 
+static void hpre_remove_wait_delay(struct hpre *hpre)
+{
+	while (hisi_qm_frozen(&hpre->qm))
+		;
+	udelay(HPRE_WAIT_DELAY);
+}
+
 static void hpre_remove(struct pci_dev *pdev)
 {
 	struct hpre *hpre = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hpre->qm;
 	int ret;
 
+	if (uacce_mode != UACCE_MODE_NOUACCE)
+		hpre_remove_wait_delay(hpre);
 	hpre_algs_unregister();
 	hpre_remove_from_list(hpre);
 
