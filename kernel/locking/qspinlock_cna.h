@@ -79,9 +79,6 @@ static void cna_init_node(struct mcs_spinlock *node)
 	struct mcs_spinlock *base_node;
 	int cpuid;
 
-	if (static_branch_likely(&cna_lock_disabled))
-		return;
-
 	BUILD_BUG_ON(sizeof(struct cna_node) > sizeof(struct qnode));
 	/* we store a pointer in the node's @locked field */
 	BUILD_BUG_ON(sizeof(uintptr_t) > sizeof_field(struct mcs_spinlock, locked));
@@ -150,9 +147,6 @@ static struct cna_node *find_successor(struct mcs_spinlock *me)
 static inline bool cna_set_locked_empty_mcs(struct qspinlock *lock, u32 val,
 					struct mcs_spinlock *node)
 {
-	if (static_branch_likely(&cna_lock_disabled))
-		return __set_locked_empty_mcs(lock, val, node);
-
 	/* Check whether the secondary queue is empty. */
 	if (node->locked <= 1) {
 		if (atomic_try_cmpxchg_relaxed(&lock->val, &val,
@@ -182,11 +176,6 @@ static inline void cna_pass_mcs_lock(struct mcs_spinlock *node,
 	struct cna_node *succ = NULL;
 	u64 *var = &next->locked;
 	u64 val = 1;
-
-	if (static_branch_likely(&cna_lock_disabled)) {
-		__pass_mcs_lock(node, next);
-		return;
-	}
 
 	/*
 	 * Limit thread shuffling when the secondary queue is empty.

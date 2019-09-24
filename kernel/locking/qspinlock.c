@@ -584,21 +584,6 @@ EXPORT_SYMBOL(queued_spin_lock_slowpath);
  * Generate the code for NUMA-aware spin locks
  */
 #if !defined(_GEN_CNA_LOCK_SLOWPATH) && defined(CONFIG_NUMA_AWARE_SPINLOCKS)
-#include <linux/jump_label.h>
-
-DEFINE_STATIC_KEY_TRUE(cna_lock_disabled);
-
-static int __init cna_locks_init_jump(char *str)
-{
-	if (!IS_ENABLED(CONFIG_NUMA))
-		return 0;
-
-	static_branch_dec(&cna_lock_disabled);
-	pr_info("NUMA aware qspinlock is enabled\n");
-	return 0;
-}
-early_param("using_numa_aware_qspinlock", cna_locks_init_jump);
-
 #define _GEN_CNA_LOCK_SLOWPATH
 
 #undef pv_init_node
