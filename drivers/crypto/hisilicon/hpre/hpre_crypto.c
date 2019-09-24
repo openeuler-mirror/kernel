@@ -236,7 +236,7 @@ static int hpre_hw_data_init(struct hpre_asym_request *hpre_req,
 {
 	struct hpre_sqe *msg = &hpre_req->req;
 	struct hpre_ctx *ctx = hpre_req->ctx;
-	dma_addr_t tmp;
+	dma_addr_t tmp = 0;
 	int ret;
 
 	/* when the data is dh's source, we should format it */
@@ -382,7 +382,7 @@ static void hpre_alg_cb(struct hisi_qp *qp, void *_resp)
 	struct hpre_sqe *sqe = _resp;
 	struct hpre_ctx *ctx = qp->qp_ctx;
 
-	ctx->req_list[sqe->tag]->cb(ctx, _resp);
+	ctx->req_list[le16_to_cpu(sqe->tag)]->cb(ctx, _resp);
 }
 
 static int hpre_ctx_init(struct hpre_ctx *ctx)
@@ -470,9 +470,11 @@ static int hpre_dh_compute_value(struct kpp_request *req)
 	if (ret)
 		goto clear_all;
 	if (ctx->crt_g2_mode && !req->src)
-		msg->dw0 |= HPRE_ALG_DH_G2;
+		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0)
+						| HPRE_ALG_DH_G2);
 	else
-		msg->dw0 |= HPRE_ALG_DH;
+		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0)
+						| HPRE_ALG_DH);
 	do {
 		ret = hisi_qp_send(ctx->qp, msg);
 	} while (ret == -EBUSY && ctr++ < HPRE_TRY_SEND_TIMES);
@@ -727,10 +729,12 @@ static int hpre_rsa_dec(struct akcipher_request *req)
 
 	if (ctx->crt_g2_mode) {
 		msg->key = cpu_to_le64((u64)ctx->rsa.dma_crt_prikey);
-		msg->dw0 |= HPRE_ALG_NC_CRT;
+		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0)
+						| HPRE_ALG_NC_CRT);
 	} else {
 		msg->key = cpu_to_le64((u64)ctx->rsa.dma_prikey);
-		msg->dw0 |= HPRE_ALG_NC_NCRT;
+		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0)
+						| HPRE_ALG_NC_NCRT);
 	}
 
 	ret = hpre_hw_data_init(hpre_req, req->src, req->src_len, 1, 0);
@@ -933,7 +937,7 @@ static bool hpre_is_crt_key(struct rsa_key *key)
 	u16 len = key->p_sz + key->q_sz + key->dp_sz + key->dq_sz +
 		  key->qinv_sz;
 
-#define LEN_OF_NCRT_PARA	5 //N-CRT less than 5 parameters
+#define LEN_OF_NCRT_PARA	5 // N-CRT less than 5 parameters
 	return len > LEN_OF_NCRT_PARA;
 }
 

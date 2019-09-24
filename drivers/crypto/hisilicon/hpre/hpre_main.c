@@ -346,13 +346,40 @@ static int hpre_cfg_by_dsm(struct hisi_qm *qm)
 	return 0;
 }
 
+static int hpre_set_cluster(struct hisi_qm *qm)
+{
+	struct device *dev = &qm->pdev->dev;
+	unsigned long offset;
+	u32 val = 0;
+	int ret, i;
+
+	for (i = 0; i < HPRE_CLUSTERS_NUM; i++) {
+		offset = i * HPRE_CLSTR_ADDR_INTRVL;
+
+		/* clusters initiating */
+		writel(HPRE_CLUSTER_CORE_MASK,
+			HPRE_ADDR(offset + HPRE_CORE_ENB));
+		writel(0x1, HPRE_ADDR(offset + HPRE_CORE_INI_CFG));
+		ret = readl_relaxed_poll_timeout(HPRE_ADDR(offset +
+			HPRE_CORE_INI_STATUS), val,
+			((val & HPRE_CLUSTER_CORE_MASK) ==
+			HPRE_CLUSTER_CORE_MASK),
+			HPRE_REG_RD_INTVRL_US, HPRE_REG_RD_TMOUT_US);
+		if (ret) {
+			dev_err(dev, "cluster %d int st status timeout!\n", i);
+			return -ETIMEDOUT;
+		}
+	}
+
+	return 0;
+}
+
 static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 {
-	int ret, i;
-	u32 val;
-	unsigned long offset;
 	struct hisi_qm *qm = &hpre->qm;
 	struct device *dev = &qm->pdev->dev;
+	u32 val;
+	int ret;
 
 	writel(HPRE_QM_USR_CFG_MASK, HPRE_ADDR(QM_ARUSER_M_CFG_ENABLE));
 	writel(HPRE_QM_USR_CFG_MASK, HPRE_ADDR(QM_AWUSER_M_CFG_ENABLE));
@@ -387,24 +414,10 @@ static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 		dev_err(dev, "read rd channel timeout fail!\n");
 		return -ETIMEDOUT;
 	}
-	for (i = 0; i < HPRE_CLUSTERS_NUM; i++) {
-		offset = i * HPRE_CLSTR_ADDR_INTRVL;
 
-		/* clusters initiating */
-		writel(HPRE_CLUSTER_CORE_MASK,
-			HPRE_ADDR(offset + HPRE_CORE_ENB));
-		writel(0x1, HPRE_ADDR(offset + HPRE_CORE_INI_CFG));
-		ret = readl_relaxed_poll_timeout(HPRE_ADDR(offset +
-			HPRE_CORE_INI_STATUS), val,
-			((val & HPRE_CLUSTER_CORE_MASK) ==
-			HPRE_CLUSTER_CORE_MASK),
-			HPRE_REG_RD_INTVRL_US, HPRE_REG_RD_TMOUT_US);
-		if (ret) {
-			dev_err(dev,
-				"cluster %d int st status timeout!\n", i);
-			return -ETIMEDOUT;
-		}
-	}
+	ret = hpre_set_cluster(qm);
+	if (ret)
+		return -ETIMEDOUT;
 
 	ret = hpre_cfg_by_dsm(qm);
 	if (ret)
