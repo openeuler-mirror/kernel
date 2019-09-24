@@ -4,6 +4,7 @@
 #endif
 
 #include <linux/topology.h>
+#include <linux/random.h>
 
 /*
  * Implement a NUMA-aware version of MCS (aka CNA, or compact NUMA-aware lock).
@@ -49,6 +50,34 @@ struct cna_node {
 	u32	encoded_tail;
 	struct	cna_node *tail;    /* points to the secondary queue tail */
 };
+
+/* Per-CPU pseudo-random number seed */
+static DEFINE_PER_CPU(u32, seed);
+
+/*
+ * Controls the probability for intra-node lock hand-off. It can be
+ * tuned and depend, e.g., on the number of CPUs per node. For now,
+ * choose a value that provides reasonable long-term fairness without
+ * sacrificing performance compared to a version that does not have any
+ * fairness guarantees.
+ */
+#define INTRA_NODE_HANDOFF_PROB_ARG (16)
+
+/*
+ * Return false with probability 1 / 2^@num_bits.
+ * Intuitively, the larger @num_bits the less likely false is to be returned.
+ * @num_bits must be a number between 0 and 31.
+ */
+static bool probably(unsigned int num_bits)
+{
+	u32 s;
+
+	s = this_cpu_read(seed);
+	s = next_pseudo_random32(s);
+	this_cpu_write(seed, s);
+
+	return s & ((1 << num_bits) - 1);
+}
 
 static void __init cna_init_nodes_per_cpu(unsigned int cpu)
 {
@@ -202,9 +231,11 @@ static inline void cna_pass_lock(struct mcs_spinlock *node,
 
 	/*
 	 * Try to find a successor running on the same NUMA node
-	 * as the current lock holder.
+	 * as the current lock holder. For long-term fairness,
+	 * search for such a thread with high probability rather than always.
 	 */
-	new_next = cna_try_find_next(node, next);
+	if (probably(INTRA_NODE_HANDOFF_PROB_ARG))
+		new_next = cna_try_find_next(node, next);
 
 	if (new_next) {		          /* if such successor is found */
 		next_holder = new_next;
