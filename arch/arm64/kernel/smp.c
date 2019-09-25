@@ -896,6 +896,7 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 {
 	unsigned int cpu = smp_processor_id();
 	struct pt_regs *old_regs = set_irq_regs(regs);
+	bool irqs_enabled = interrupts_enabled(regs);
 
 	if ((unsigned)ipinr < NR_IPI) {
 		trace_ipi_entry_rcuidle(ipi_types[ipinr]);
@@ -957,14 +958,16 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 	case IPI_CPU_BACKTRACE:
 		if (gic_supports_pseudo_nmis()) {
-			nmi_enter();
+			if (irqs_enabled)
+				nmi_enter();
 		} else {
 			printk_nmi_enter();
 			irq_enter();
 		}
 		nmi_cpu_backtrace(regs);
 		if (gic_supports_pseudo_nmis()) {
-			nmi_exit();
+			if (irqs_enabled)
+				nmi_exit();
 		} else {
 			irq_exit();
 			printk_nmi_exit();
