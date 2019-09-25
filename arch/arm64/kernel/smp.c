@@ -179,7 +179,7 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 	return ret;
 }
 
-void init_gic_priority_masking(bool enable)
+static void init_gic_priority_masking(void)
 {
 	u32 cpuflags;
 
@@ -190,11 +190,7 @@ void init_gic_priority_masking(bool enable)
 
 	WARN_ON(!(cpuflags & PSR_I_BIT));
 
-	gic_write_pmr(GIC_PRIO_IRQOFF);
-
-	/* We can only unmask PSR.I if we can take aborts */
-	if (enable && !(cpuflags & PSR_A_BIT))
-		write_sysreg(cpuflags & ~PSR_I_BIT, daif);
+	gic_write_pmr(GIC_PRIO_IRQON | GIC_PRIO_PSR_I_SET);
 }
 
 /*
@@ -224,7 +220,7 @@ asmlinkage notrace void secondary_start_kernel(void)
 	cpu_uninstall_idmap();
 
 	if (system_uses_irq_prio_masking())
-		init_gic_priority_masking(true);
+		init_gic_priority_masking();
 
 	preempt_disable();
 	trace_hardirqs_off();
@@ -449,7 +445,7 @@ void __init smp_prepare_boot_cpu(void)
 
 	/* Conditionally switch to GIC PMR for interrupt masking */
 	if (system_uses_irq_prio_masking())
-		init_gic_priority_masking(false);
+		init_gic_priority_masking();
 }
 
 static u64 __init of_get_cpu_mpidr(struct device_node *dn)
