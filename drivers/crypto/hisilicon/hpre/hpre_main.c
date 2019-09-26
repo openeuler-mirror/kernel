@@ -1170,7 +1170,7 @@ static pci_ers_result_t hpre_error_detected(struct pci_dev *pdev,
 }
 
 static int hpre_vf_reset_prepare(struct pci_dev *pdev,
-				     enum qm_stop_reason stop_reason)
+				 enum qm_stop_reason stop_reason)
 {
 	struct pci_dev *dev;
 	struct hisi_qm *qm;

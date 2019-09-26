@@ -178,8 +178,8 @@ static struct hisi_qp *hpre_get_qp(void)
 }
 
 static int hpre_get_data_dma_addr(struct hpre_asym_request *hpre_req,
-			      struct scatterlist *data, unsigned int len,
-			      int is_src, dma_addr_t *tmp)
+				  struct scatterlist *data, unsigned int len,
+				  int is_src, dma_addr_t *tmp)
 {
 	enum dma_data_direction dma_dir;
 	struct hpre_ctx *ctx = hpre_req->ctx;
@@ -203,8 +203,8 @@ static int hpre_get_data_dma_addr(struct hpre_asym_request *hpre_req,
 }
 
 static int hpre_prepare_dma_buf(struct hpre_asym_request *hpre_req,
-			       struct scatterlist *data, unsigned int len,
-			       int is_src, dma_addr_t *tmp)
+				struct scatterlist *data, unsigned int len,
+				int is_src, dma_addr_t *tmp)
 {
 	struct hpre_ctx *ctx = hpre_req->ctx;
 	struct device *dev = &HPRE_DEV(ctx);
@@ -230,8 +230,8 @@ static int hpre_prepare_dma_buf(struct hpre_asym_request *hpre_req,
 }
 
 static int hpre_hw_data_init(struct hpre_asym_request *hpre_req,
-			 struct scatterlist *data, unsigned int len,
-			 int is_src, int is_dh)
+			     struct scatterlist *data, unsigned int len,
+			     int is_src, int is_dh)
 {
 	struct hpre_sqe *msg = &hpre_req->req;
 	struct hpre_ctx *ctx = hpre_req->ctx;
@@ -259,8 +259,9 @@ static int hpre_hw_data_init(struct hpre_asym_request *hpre_req,
 }
 
 static void hpre_hw_data_clr_all(struct hpre_ctx *ctx,
-			     struct hpre_asym_request *req,
-			     struct scatterlist *dst, struct scatterlist *src)
+				 struct hpre_asym_request *req,
+				 struct scatterlist *dst,
+				 struct scatterlist *src)
 {
 	dma_addr_t tmp;
 	struct device *dev = &HPRE_DEV(ctx);
@@ -293,7 +294,7 @@ static void hpre_hw_data_clr_all(struct hpre_ctx *ctx,
 }
 
 static int hpre_alg_res_post_hf(struct hpre_ctx *ctx, struct hpre_sqe *sqe,
-			    void **kreq)
+				void **kreq)
 {
 	struct hpre_asym_request *req;
 	int err, id, done;
