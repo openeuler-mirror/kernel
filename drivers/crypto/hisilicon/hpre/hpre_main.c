@@ -385,6 +385,10 @@ static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 	writel(HPRE_QM_USR_CFG_MASK, HPRE_ADDR(QM_AWUSER_M_CFG_ENABLE));
 	writel_relaxed(HPRE_QM_AXI_CFG_MASK, HPRE_ADDR(QM_AXI_M_CFG));
 
+	/* disable FLR triggered by BME(bus master enable) */
+	writel(PEH_AXUSER_CFG, HPRE_ADDR(QM_PEH_AXUSER_CFG));
+	writel(PEH_AXUSER_CFG_ENABLE, HPRE_ADDR(QM_PEH_AXUSER_CFG_ENABLE));
+
 	/* HPRE need more time, we close this interrupt */
 	val = readl_relaxed(HPRE_ADDR(HPRE_QM_ABNML_INT_MASK));
 	val |= BIT(HPRE_TIMEOUT_ABNML_BIT);
@@ -885,8 +889,6 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (!hpre)
 		return -ENOMEM;
 	pci_set_drvdata(pdev, hpre);
-	if (pci_enable_device(pdev) < 0)
-		return -ENODEV;
 	qm = &hpre->qm;
 	ret = hpre_qm_pre_init(qm, pdev);
 	if (ret)
