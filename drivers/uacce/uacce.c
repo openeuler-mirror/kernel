@@ -599,8 +599,8 @@ DMA_MMAP_FAIL:
 }
 
 static int uacce_mmap_region(u32 flags, struct uacce_queue *q,
-				struct vm_area_struct *vma,
-				struct uacce_qfile_region *qfr)
+			     struct vm_area_struct *vma,
+			     struct uacce_qfile_region *qfr)
 {
 	struct uacce *uacce = q->uacce;
 	int ret;
@@ -906,7 +906,7 @@ static long uacce_fops_unl_ioctl(struct file *filep,
 
 #ifdef CONFIG_COMPAT
 static long uacce_fops_compat_ioctl(struct file *filep,
-				   unsigned int cmd, unsigned long arg)
+				    unsigned int cmd, unsigned long arg)
 {
 	arg = (unsigned long)compat_ptr(arg);
 	return uacce_fops_unl_ioctl(filep, cmd, arg);
@@ -1329,7 +1329,7 @@ static const struct file_operations uacce_fops = {
 };
 
 static ssize_t id_show(struct device *dev,
-				 struct device_attribute *attr, char *buf)
+		       struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
@@ -1338,7 +1338,7 @@ static ssize_t id_show(struct device *dev,
 static DEVICE_ATTR_RO(id);
 
 static ssize_t api_show(struct device *dev,
-				  struct device_attribute *attr, char *buf)
+			struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
@@ -1347,8 +1347,7 @@ static ssize_t api_show(struct device *dev,
 static DEVICE_ATTR_RO(api);
 
 static ssize_t numa_distance_show(struct device *dev,
-					    struct device_attribute *attr,
-					    char *buf)
+				  struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 	int distance = 0;
@@ -1361,8 +1360,7 @@ static ssize_t numa_distance_show(struct device *dev,
 static DEVICE_ATTR_RO(numa_distance);
 
 static ssize_t node_id_show(struct device *dev,
-				      struct device_attribute *attr,
-				      char *buf)
+			    struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 	int node_id = -1;
@@ -1375,8 +1373,7 @@ static ssize_t node_id_show(struct device *dev,
 static DEVICE_ATTR_RO(node_id);
 
 static ssize_t flags_show(struct device *dev,
-				    struct device_attribute *attr,
-				    char *buf)
+			  struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
@@ -1385,8 +1382,8 @@ static ssize_t flags_show(struct device *dev,
 static DEVICE_ATTR_RO(flags);
 
 static ssize_t available_instances_show(struct device *dev,
-						  struct device_attribute *attr,
-						  char *buf)
+					struct device_attribute *attr,
+					char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
@@ -1395,8 +1392,7 @@ static ssize_t available_instances_show(struct device *dev,
 static DEVICE_ATTR_RO(available_instances);
 
 static ssize_t algorithms_show(struct device *dev,
-					 struct device_attribute *attr,
-					 char *buf)
+			       struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
@@ -1405,8 +1401,7 @@ static ssize_t algorithms_show(struct device *dev,
 static DEVICE_ATTR_RO(algorithms);
 
 static ssize_t qfrs_offset_show(struct device *dev,
-					  struct device_attribute *attr,
-					  char *buf)
+				struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 	int i, ret;
@@ -1428,8 +1423,7 @@ static ssize_t qfrs_offset_show(struct device *dev,
 static DEVICE_ATTR_RO(qfrs_offset);
 
 static ssize_t isolate_show(struct device *dev,
-				      struct device_attribute *attr,
-				      char *buf)
+			    struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
@@ -1438,8 +1432,7 @@ static ssize_t isolate_show(struct device *dev,
 static DEVICE_ATTR_RO(isolate);
 
 static ssize_t isolate_strategy_show(struct device *dev,
-					   struct device_attribute *attr,
-					   char *buf)
+				     struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
@@ -1447,8 +1440,8 @@ static ssize_t isolate_strategy_show(struct device *dev,
 }
 
 static ssize_t isolate_strategy_store(struct device *dev,
-					    struct device_attribute *attr,
-					    const char *buf, size_t count)
+				      struct device_attribute *attr,
+				      const char *buf, size_t count)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 	unsigned long val = 0;
@@ -1475,7 +1468,7 @@ static ssize_t isolate_strategy_store(struct device *dev,
 static DEVICE_ATTR_RW(isolate_strategy);
 
 static ssize_t dev_state_show(struct device *dev,
-				    struct device_attribute *attr, char *buf)
+			      struct device_attribute *attr, char *buf)
 {
 	struct uacce *uacce = UACCE_FROM_CDEV_ATTR(dev);
 
