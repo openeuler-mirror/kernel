@@ -320,6 +320,7 @@ struct hisi_qp {
 
 	struct hisi_qm *qm;
 	bool is_resetting;
+	bool is_in_kernel;
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	u16 pasid;

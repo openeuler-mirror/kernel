@@ -304,7 +304,8 @@ static bool qm_qp_avail_state(struct hisi_qm *qm, struct hisi_qp *qp,
 			avail = true;
 		break;
 	case QP_STOP:
-		if (qm_curr == QM_START && qp_curr == QP_START)
+		if ((qm_curr == QM_START && qp_curr == QP_START) ||
+		    (qp_curr == QP_INIT))
 			avail = true;
 		break;
 	case QP_CLOSE:
@@ -1200,6 +1201,7 @@ static struct hisi_qp *hisi_qm_create_qp_nolock(struct hisi_qm *qm,
 	qp->qp_id = qp_id;
 	qp->alg_type = alg_type;
 	qp->c_flag = 1;
+	qp->is_in_kernel = true;
 	init_completion(&qp->completion);
 	atomic_set(&qp->qp_status.flags, QP_INIT);
 
@@ -1638,6 +1640,7 @@ static int hisi_qm_uacce_get_queue(struct uacce *uacce, unsigned long arg,
 	qp->uacce_q = wd_q;
 	qp->event_cb = qm_qp_event_notifier;
 	qp->pasid = arg;
+	qp->is_in_kernel = false;
 	init_waitqueue_head(&wd_q->wait);
 
 	up_write(&qm->qps_lock);
@@ -2327,7 +2330,7 @@ int hisi_qm_restart(struct hisi_qm *qm)
 		qp = qm->qp_array[i];
 
 		if (qp && atomic_read(&qp->qp_status.flags) == QP_STOP &&
-		    qp->is_resetting) {
+		    qp->is_resetting && qp->is_in_kernel) {
 			ret = hisi_qm_start_qp_nolock(qp, 0);
 			if (ret < 0) {
 				dev_err(dev, "Failed to start qp%d!\n", i);
