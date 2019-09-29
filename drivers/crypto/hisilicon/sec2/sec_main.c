@@ -1304,6 +1304,16 @@ static int hisi_sec_controller_reset_prepare(struct hisi_sec *hisi_sec)
 		return ret;
 	}
 
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce) {
+		ret = uacce_hw_err_isolate(&qm->uacce);
+		if (ret) {
+			dev_err(&pdev->dev, "Fails to isolate hw err!\n");
+			return ret;
+		}
+	}
+#endif
+
 	return 0;
 }
 
@@ -1378,7 +1388,6 @@ static int hisi_sec_vf_reset_done(struct pci_dev *pdev)
 		if (pci_physfn(dev) == pdev) {
 			qm = &hisi_sec->qm;
 
-			hisi_qm_clear_queues(qm);
 			ret = hisi_qm_restart(qm);
 			if (ret)
 				goto reset_fail;
@@ -1395,8 +1404,6 @@ static int hisi_sec_controller_reset_done(struct hisi_sec *hisi_sec)
 	struct hisi_qm *qm = &hisi_sec->qm;
 	struct pci_dev *pdev = qm->pdev;
 	int ret;
-
-	hisi_qm_clear_queues(qm);
 
 	hisi_sec_set_user_domain_and_cache(hisi_sec);
 	hisi_sec_hw_error_init(hisi_sec);
@@ -1535,7 +1542,6 @@ static void hisi_sec_reset_done(struct pci_dev *pdev)
 	struct device *dev = &pdev->dev;
 	int ret;
 
-	hisi_qm_clear_queues(qm);
 	ret = hisi_qm_restart(qm);
 	if (ret) {
 		dev_err(dev, "Failed to start QM!\n");

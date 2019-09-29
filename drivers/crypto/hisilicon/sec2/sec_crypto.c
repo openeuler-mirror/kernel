@@ -410,13 +410,17 @@ static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
 
 	qp_ctx->c_in_pool = hisi_acc_create_sgl_pool(dev, QM_Q_DEPTH,
 		FUSION_LIMIT_MAX);
-	if (IS_ERR(qp_ctx->c_in_pool))
+	if (IS_ERR(qp_ctx->c_in_pool)) {
+		ret = PTR_ERR(qp_ctx->c_in_pool);
 		goto err_free_sqe_list;
+	}
 
 	qp_ctx->c_out_pool = hisi_acc_create_sgl_pool(dev, QM_Q_DEPTH,
 		FUSION_LIMIT_MAX);
-	if (IS_ERR(qp_ctx->c_out_pool))
+	if (IS_ERR(qp_ctx->c_out_pool)) {
+		ret = PTR_ERR(qp_ctx->c_out_pool);
 		goto err_free_c_in_pool;
+	}
 
 	ret = ctx->req_op->queue_alloc(ctx, qp_ctx);
 	if (ret)
