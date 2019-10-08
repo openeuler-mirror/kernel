@@ -83,9 +83,9 @@ int nic_clean_stats64(struct net_device *ndev, struct rtnl_link_stats64 *stats)
 					  0);
 
 	for (i = 0; i < kinfo->num_tqps; i++) {
-		ring = priv->ring_data[i].ring;
+		ring = &priv->ring[i];
 		memset(&ring->stats, 0, sizeof(struct ring_stats));
-		ring = priv->ring_data[i + kinfo->num_tqps].ring;
+		ring = &priv->ring[i + kinfo->num_tqps];
 		memset(&ring->stats, 0, sizeof(struct ring_stats));
 	}
 

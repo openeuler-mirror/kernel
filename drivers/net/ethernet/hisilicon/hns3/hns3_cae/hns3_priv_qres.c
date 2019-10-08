@@ -11,7 +11,7 @@ int hns3_get_qres_rx_value(struct hns3_nic_priv *net_priv, int ring_id,
 	int num;
 
 	tqps_num = net_priv->ae_handle->kinfo.num_tqps;
-	ring = net_priv->ring_data[ring_id + tqps_num].ring;
+	ring = &net_priv->ring[ring_id + tqps_num];
 	switch (type) {
 	case RX_HEAD_TYPE:
 		num = readl_relaxed(ring->tqp->io_base +
@@ -57,7 +57,7 @@ int hns3_get_qres_tx_value(struct hns3_nic_priv *net_priv, int ring_id,
 	struct hns3_enet_ring *ring;
 	int num;
 
-	ring = net_priv->ring_data[ring_id].ring;
+	ring = &net_priv->ring[ring_id];
 	switch (type) {
 	case TX_HEAD_TYPE:
 		num = readl_relaxed(ring->tqp->io_base +
@@ -168,7 +168,7 @@ int hns3_test_qres_cfg(struct hns3_nic_priv *net_priv,
 		fill_queue_info(net_priv, out_info, ring_id);
 	} else if (qres_in_param->mtype == MTYPE_BD_INFO) {
 		if (qres_in_param->queue_type == TYPE_TX) {
-			ring = net_priv->ring_data[ring_id].ring;
+			ring = &net_priv->ring[ring_id];
 			if (bd_index >= ring->desc_num || bd_index < 0) {
 				out_info->num_bd = ring->desc_num;
 				pr_err("please input valid TX BD_id\n");
@@ -176,7 +176,7 @@ int hns3_test_qres_cfg(struct hns3_nic_priv *net_priv,
 			}
 			out_info->desc = ring->desc[bd_index];
 		} else if (qres_in_param->queue_type == TYPE_RX) {
-			ring = net_priv->ring_data[ring_id + tqps_num].ring;
+			ring = &net_priv->ring[ring_id + tqps_num];
 			if (bd_index >= ring->desc_num || bd_index < 0) {
 				out_info->num_bd = ring->desc_num;
 				pr_err("please input valid RX BD_id\n");

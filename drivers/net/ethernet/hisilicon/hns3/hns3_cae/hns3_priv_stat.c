@@ -138,7 +138,7 @@ int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	if (stat_sw_param->is_rx)
 		ring_idx += kinfo->num_tqps;
 
-	ret = hns3_get_stat_val(&nic_dev->ring_data[ring_idx].ring->stats,
+	ret = hns3_get_stat_val(&nic_dev->ring[ring_idx].stats,
 				stat_sw_param->val_name, &val);
 	if (ret || !val) {
 		pr_info("get stat val name [%s] error.\n",
@@ -181,7 +181,7 @@ int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	if (stat_sw_param->is_rx)
 		ring_idx += kinfo->num_tqps;
 
-	ret = hns3_get_stat_val(&nic_dev->ring_data[ring_idx].ring->stats,
+	ret = hns3_get_stat_val(&nic_dev->ring[ring_idx].stats,
 				stat_sw_param->val_name, &val);
 	if (ret || !val) {
 		pr_info("Set stat val name [%s] error.\n",

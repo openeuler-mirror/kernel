@@ -504,9 +504,9 @@ int hns3_test_clean_stats(struct hns3_nic_priv *net_priv,
 		tqp = container_of(kinfo->tqp[i], struct hclge_tqp, q);
 		memset(&tqp->tqp_stats, 0, sizeof(struct hlcge_tqp_stats));
 
-		ring = net_priv->ring_data[i].ring;
+		ring = &net_priv->ring[i];
 		memset(&ring->stats, 0, sizeof(struct ring_stats));
-		ring = net_priv->ring_data[i + kinfo->num_tqps].ring;
+		ring = &net_priv->ring[i + kinfo->num_tqps];
 		memset(&ring->stats, 0, sizeof(struct ring_stats));
 	}
 	memset(&hdev->hw_stats.mac_stats, 0, sizeof(struct hclge_mac_stats));
