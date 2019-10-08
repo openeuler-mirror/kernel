@@ -893,7 +893,7 @@ static void hclge_dbg_dump_mng_table(struct hclge_dev *hdev)
 		msg_egress_port = le16_to_cpu(req0->egress_port);
 		snprintf(printf_buf + strlen(printf_buf),
 			 HCLGE_DBG_BUF_LEN - strlen(printf_buf),
-			 "%d     |%d    |%02d   |%04d|%x\n",
+			 "%u     |%u    |%02u   |%04u|%x\n",
 			 !!(msg_egress_port & HCLGE_DBG_MNG_E_TYPE_B),
 			 msg_egress_port & HCLGE_DBG_MNG_PF_ID,
 			 (msg_egress_port >> 3) & HCLGE_DBG_MNG_VF_ID,
