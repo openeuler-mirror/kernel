@@ -790,7 +790,9 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 			break;
 		}
 
-		if (req->mbx_need_resp) {
+		/* PF driver should not reply IMP */
+		if (req->mbx_need_resp &&
+		    req->msg.code < HCLGE_MBX_GET_VF_FLR_STATUS) {
 			resp_msg.status = ret;
 			hclge_gen_resp_to_vf(vport, req, &resp_msg);
 		}
