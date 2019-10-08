@@ -4120,10 +4120,6 @@ static void hns3_client_uninit(struct hnae3_handle *handle, bool reset)
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
 	int ret;
 
-	hns3_free_rx_cpu_rmap(netdev);
-
-	hns3_nic_uninit_irq(priv);
-
 	hns3_remove_hw_addr(netdev);
 
 	if (netdev->reg_state != NETREG_UNINITIALIZED)
@@ -4137,6 +4133,10 @@ static void hns3_client_uninit(struct hnae3_handle *handle, bool reset)
 		netdev_warn(netdev, "already uninitialized\n");
 		goto out_netdev_free;
 	}
+
+	hns3_free_rx_cpu_rmap(netdev);
+
+	hns3_nic_uninit_irq(priv);
 
 	hns3_del_all_fd_rules(netdev, true);
 
