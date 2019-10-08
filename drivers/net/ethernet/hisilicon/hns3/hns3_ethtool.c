@@ -1396,14 +1396,11 @@ static int hns3_set_fecparam(struct net_device *netdev,
 
 static const struct ethtool_ops hns3vf_ethtool_ops = {
 	.get_drvinfo = hns3_get_drvinfo,
-	.get_link = hns3_get_link,
 	.get_ringparam = hns3_get_ringparam,
 	.set_ringparam = hns3_set_ringparam,
 	.get_strings = hns3_get_strings,
 	.get_ethtool_stats = hns3_get_stats,
 	.get_sset_count = hns3_get_sset_count,
-	.set_channels = hns3_set_channels,
-	.get_channels = hns3_get_channels,
 	.get_rxnfc = hns3_get_rxnfc,
 	.set_rxnfc = hns3_set_rxnfc,
 	.get_rxfh_key_size = hns3_get_rss_key_size,
@@ -1411,15 +1408,18 @@ static const struct ethtool_ops hns3vf_ethtool_ops = {
 	.get_rxfh = hns3_get_rss,
 	.set_rxfh = hns3_set_rss,
 	.get_link_ksettings = hns3_get_link_ksettings,
+	.get_channels = hns3_get_channels,
+	.set_channels = hns3_set_channels,
 	.get_coalesce = hns3_get_coalesce,
 	.set_coalesce = hns3_set_coalesce,
 	.get_regs_len = hns3_get_regs_len,
 	.get_regs = hns3_get_regs,
+	.get_link = hns3_get_link,
 	.get_msglevel = hns3_get_msglevel,
 	.set_msglevel = hns3_set_msglevel,
 };
 
-struct ethtool_ops hns3_ethtool_ops = {
+static const struct ethtool_ops hns3_ethtool_ops = {
 	.self_test = hns3_self_test,
 	.get_drvinfo = hns3_get_drvinfo,
 	.get_link = hns3_get_link,

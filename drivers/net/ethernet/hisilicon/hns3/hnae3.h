@@ -356,6 +356,8 @@ struct hnae3_ae_dev {
  *   Set vlan filter config of Ports
  * set_vf_vlan_filter()
  *   Set vlan filter config of vf
+ * restore_vlan_table()
+ *   Restore vlan filter entries after reset
  * enable_hw_strip_rxvtag()
  *   Enable/disable hardware strip vlan tag of packets received
  * set_gro_en
@@ -523,24 +525,19 @@ struct hnae3_ae_ops {
 	void (*enable_fd)(struct hnae3_handle *handle, bool enable);
 	int (*add_arfs_entry)(struct hnae3_handle *handle, u16 queue_id,
 			      u16 flow_id, struct flow_keys *fkeys);
-	pci_ers_result_t (*process_hw_error)(struct hnae3_ae_dev *ae_dev);
+	int (*dbg_run_cmd)(struct hnae3_handle *handle, const char *cmd_buf);
+	pci_ers_result_t (*handle_hw_ras_error)(struct hnae3_ae_dev *ae_dev);
 	bool (*get_hw_reset_stat)(struct hnae3_handle *handle);
 	bool (*ae_dev_resetting)(struct hnae3_handle *handle);
 	unsigned long (*ae_dev_reset_cnt)(struct hnae3_handle *handle);
 	int (*set_gro_en)(struct hnae3_handle *handle, bool enable);
-	int (*dbg_run_cmd)(struct hnae3_handle *handle, const char *cmd_buf);
-	pci_ers_result_t (*handle_hw_ras_error)(struct hnae3_ae_dev *ae_dev);
 	u16 (*get_global_queue_id)(struct hnae3_handle *handle, u16 queue_id);
 	void (*set_timer_task)(struct hnae3_handle *handle, bool enable);
 	int (*mac_connect_phy)(struct hnae3_handle *handle);
 	void (*mac_disconnect_phy)(struct hnae3_handle *handle);
-	bool (*reset_done)(struct hnae3_handle *handle, bool done);
 	void (*restore_vlan_table)(struct hnae3_handle *handle);
+	bool (*reset_done)(struct hnae3_handle *handle, bool done);
 	void (*handle_imp_error)(struct hnae3_handle *handle);
-	int (*set_vf_spoofchk)(struct hnae3_handle *handle, int vf,
-			       bool enable);
-	int (*set_vf_rate)(struct hnae3_handle *handle, int vf,
-			   int min_tx_rate, int max_tx_rate, bool force);
 #ifdef CONFIG_HNS3_TEST
 	int (*send_cmdq)(struct hnae3_handle *handle, void *data, int num);
 	int (*test_cmdq)(struct hnae3_handle *handle, void *data, int *len);
@@ -552,8 +549,12 @@ struct hnae3_ae_ops {
 			     struct ifla_vf_info *ivf);
 	int (*set_vf_link_state)(struct hnae3_handle *handle, int vf,
 				 int link_state);
+	int (*set_vf_spoofchk)(struct hnae3_handle *handle, int vf,
+			       bool enable);
 	int (*set_vf_mac)(struct hnae3_handle *handle, int vf, u8 *p);
 	int (*set_vf_trust)(struct hnae3_handle *handle, int vf, bool enable);
+	int (*set_vf_rate)(struct hnae3_handle *handle, int vf,
+			   int min_tx_rate, int max_tx_rate, bool force);
 };
 
 struct hnae3_dcb_ops {

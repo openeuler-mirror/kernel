@@ -3033,16 +3033,6 @@ static void hclgevf_get_media_type(struct hnae3_handle *handle, u8 *media_type,
 		*module_type = hdev->hw.mac.module_type;
 }
 
-static void hclgevf_get_link_mode(struct hnae3_handle *handle,
-				  unsigned long *supported,
-				  unsigned long *advertising)
-{
-	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
-
-	*supported = hdev->hw.mac.supported;
-	*advertising = hdev->hw.mac.advertising;
-}
-
 static bool hclgevf_get_hw_reset_stat(struct hnae3_handle *handle)
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
@@ -3062,6 +3052,16 @@ static unsigned long hclgevf_ae_dev_reset_cnt(struct hnae3_handle *handle)
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
 
 	return hdev->rst_stats.rst_cnt;
+}
+
+static void hclgevf_get_link_mode(struct hnae3_handle *handle,
+				  unsigned long *supported,
+				  unsigned long *advertising)
+{
+	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
+
+	*supported = hdev->hw.mac.supported;
+	*advertising = hdev->hw.mac.advertising;
 }
 
 #define MAX_SEPARATE_NUM	4
@@ -3200,11 +3200,11 @@ static const struct hnae3_ae_ops hclgevf_ops = {
 	.get_regs = hclgevf_get_regs,
 	.get_status = hclgevf_get_status,
 	.get_ksettings_an_result = hclgevf_get_ksettings_an_result,
-	.set_gro_en = hclgevf_gro_en,
 	.get_media_type = hclgevf_get_media_type,
 	.get_hw_reset_stat = hclgevf_get_hw_reset_stat,
 	.ae_dev_resetting = hclgevf_ae_dev_resetting,
 	.ae_dev_reset_cnt = hclgevf_ae_dev_reset_cnt,
+	.set_gro_en = hclgevf_gro_en,
 	.set_mtu = hclgevf_set_mtu,
 	.get_global_queue_id = hclgevf_get_qid_global,
 	.set_timer_task = hclgevf_set_timer_task,
