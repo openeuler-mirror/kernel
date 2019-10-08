@@ -99,6 +99,7 @@
 #define HZIP_REG_RD_INTVRL_US		10
 #define HZIP_REG_RD_TMOUT_US		1000
 #define HZIP_RESET_WAIT_TIMEOUT		400
+#define HZIP_PCI_COMMAND_INVALID	0xFFFFFFFF
 
 static const char hisi_zip_name[] = "hisi_zip";
 static struct dentry *hzip_debugfs_root;
@@ -1426,10 +1427,8 @@ static void hisi_zip_flr_reset_complete(struct hisi_zip *hisi_zip)
 	u32 id;
 
 	pci_read_config_dword(zip->qm.pdev, PCI_COMMAND, &id);
-	if (id == ~0) {
-		hisi_zip_remove(zip->qm.pdev);
+	if (id == HZIP_PCI_COMMAND_INVALID)
 		dev_err(dev, "Device can not be used!\n");
-	}
 
 	clear_bit(HISI_ZIP_RESET, &zip->status);
 }
