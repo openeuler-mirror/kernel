@@ -360,6 +360,9 @@ struct hnae3_ae_dev {
  *   Check the 5-tuples of flow, and create flow director rule
  * set_vf_spoofchk
  *   Enable/disable spoof check for specified vf
+ * set_vf_trust
+ *   Enable/disable trust for specified vf, if the vf being trusted, then
+ *   it can enable promisc mode
  */
 struct hnae3_ae_ops {
 	int (*init_ae_dev)(struct hnae3_ae_dev *ae_dev);
@@ -542,6 +545,7 @@ struct hnae3_ae_ops {
 	int (*set_vf_link_state)(struct hnae3_handle *handle, int vf,
 				 int link_state);
 	int (*set_vf_mac)(struct hnae3_handle *handle, int vf, u8 *p);
+	int (*set_vf_trust)(struct hnae3_handle *handle, int vf, bool enable);
 };
 
 struct hnae3_dcb_ops {

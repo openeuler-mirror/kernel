@@ -1114,6 +1114,7 @@ static int hclgevf_put_vector(struct hnae3_handle *handle, int vector)
 }
 
 static int hclgevf_cmd_set_promisc_mode(struct hclgevf_dev *hdev,
+					bool en_uc_pmc, bool en_mc_pmc,
 					bool en_bc_pmc)
 {
 	struct hclge_mbx_vf_to_pf_cmd *req;
@@ -1121,10 +1122,11 @@ static int hclgevf_cmd_set_promisc_mode(struct hclgevf_dev *hdev,
 	int ret;
 
 	req = (struct hclge_mbx_vf_to_pf_cmd *)desc.data;
-
 	hclgevf_cmd_setup_basic_desc(&desc, HCLGEVF_OPC_MBX_VF_TO_PF, false);
 	req->msg[0] = HCLGE_MBX_SET_PROMISC_MODE;
 	req->msg[1] = en_bc_pmc ? 1 : 0;
+	req->msg[2] = en_uc_pmc ? 1 : 0;
+	req->msg[3] = en_mc_pmc ? 1 : 0;
 
 	ret = hclgevf_cmd_send(&hdev->hw, &desc, 1);
 	if (ret)
@@ -1134,9 +1136,17 @@ static int hclgevf_cmd_set_promisc_mode(struct hclgevf_dev *hdev,
 	return ret;
 }
 
-static int hclgevf_set_promisc_mode(struct hclgevf_dev *hdev, bool en_bc_pmc)
+static int hclgevf_set_promisc_mode(struct hnae3_handle *handle, bool en_uc_pmc,
+				    bool en_mc_pmc)
 {
-	return hclgevf_cmd_set_promisc_mode(hdev, en_bc_pmc);
+	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
+	struct pci_dev *pdev = hdev->pdev;
+	bool en_bc_pmc;
+
+	en_bc_pmc = pdev->revision == 0x20 ? false : true;
+
+	return hclgevf_cmd_set_promisc_mode(hdev, en_uc_pmc, en_mc_pmc,
+					    en_bc_pmc);
 }
 
 static int hclgevf_tqp_enable(struct hclgevf_dev *hdev, unsigned int tqp_id,
@@ -2675,13 +2685,6 @@ static int hclgevf_reset_hdev(struct hclgevf_dev *hdev)
 			dev_err(&pdev->dev, "Enable tso fail, ret =%d\n", ret);
 			return ret;
 		}
-
-		ret = hclgevf_set_promisc_mode(hdev, true);
-		if (ret) {
-			dev_err(&pdev->dev,
-				"Enable promisc mode fail, ret =%d\n", ret);
-			return ret;
-		}
 	}
 
 	/* Initialize RSS for this VF */
@@ -2775,15 +2778,6 @@ static int hclgevf_init_hdev(struct hclgevf_dev *hdev)
 			dev_err(&pdev->dev, "Enable gro fail, ret=%d\n", ret);
 			goto err_config;
 		}
-
-		/* vf is not allowed to enable unicast/multicast promisc mode.
-		 * For revision 0x20, default to disable broadcast promisc mode,
-		 * firmware makes sure broadcast packets can be accepted.
-		 * For revision 0x21, default to enable broadcast promisc mode.
-		 */
-		ret = hclgevf_set_promisc_mode(hdev, true);
-		if (ret)
-			goto err_config;
 	}
 
 	/* Initialize RSS for this VF */
@@ -3201,6 +3195,7 @@ static const struct hnae3_ae_ops hclgevf_ops = {
 	.set_mtu = hclgevf_set_mtu,
 	.get_global_queue_id = hclgevf_get_qid_global,
 	.get_link_mode = hclgevf_get_link_mode,
+	.set_promisc_mode = hclgevf_set_promisc_mode,
 };
 
 static struct hnae3_ae_algo ae_algovf = {

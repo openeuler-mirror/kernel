@@ -977,14 +977,15 @@ struct hclge_vport {
 	int mps; /* Max packet size */
 
 	u32 spoofchk;
+	u32 trusted;
+	u16 promisc_enable;
 
 	struct list_head uc_mac_list;   /* Store VF unicast table */
 	struct list_head mc_mac_list;   /* Store VF multicast table */
 };
 
-void hclge_promisc_param_init(struct hclge_promisc_param *param, bool en_uc,
-			      bool en_mc, bool en_bc, int vport_id);
-
+int hclge_set_vport_promisc_mode(struct hclge_vport *vport, bool en_uc_pmc,
+				 bool en_mc_pmc, bool en_bc_pmc);
 int hclge_add_uc_addr_common(struct hclge_vport *vport,
 			     const unsigned char *addr);
 int hclge_rm_uc_addr_common(struct hclge_vport *vport,
@@ -1051,4 +1052,5 @@ enum hnae3_reset_type hclge_get_reset_level(struct hnae3_ae_dev *ae_dev,
 void hclge_task_schedule(struct hclge_dev *hdev, unsigned long delay_time);
 int hclge_query_bd_num_cmd_send(struct hclge_dev *hdev,
 				struct hclge_desc *desc);
+void hclge_inform_vf_promisc_info(struct hclge_vport *vport);
 #endif

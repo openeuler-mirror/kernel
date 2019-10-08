@@ -47,7 +47,6 @@ int hns3_set_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
 {
 	struct promisc_mode_param *mode_param;
 	struct hclge_promisc_cfg_cmd *req;
-	struct hclge_promisc_param param;
 	enum hclge_cmd_status status;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
@@ -108,9 +107,7 @@ int hns3_set_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
 		return -1;
 	}
 
-	hclge_promisc_param_init(&param, en_uc, en_mc, en_bc, vport->vport_id);
-
-	return hclge_cmd_set_promisc_mode(hdev, &param);
+	return hclge_set_vport_promisc_mode(vport, en_uc, en_mc, en_bc);
 }
 
 int hns3_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,

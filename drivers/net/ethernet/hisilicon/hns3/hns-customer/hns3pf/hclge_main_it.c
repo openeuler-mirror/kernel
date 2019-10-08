@@ -174,8 +174,7 @@ bool hclge_reset_done_it(struct hnae3_handle *handle, bool done)
 #define HCLGE_NAME_IT			"hclge"
 
 EXPORT_SYMBOL(hclge_get_vport);
-EXPORT_SYMBOL(hclge_cmd_set_promisc_mode);
-EXPORT_SYMBOL(hclge_promisc_param_init);
+EXPORT_SYMBOL(hclge_set_vport_promisc_mode);
 
 int hclge_init_it(void)
 {

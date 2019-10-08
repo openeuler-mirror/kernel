@@ -232,6 +232,7 @@ void hclgevf_mbx_handler(struct hclgevf_dev *hdev)
 		case HCLGE_MBX_ASSERTING_RESET:
 		case HCLGE_MBX_LINK_STAT_MODE:
 		case HLCGE_MBX_PUSH_VLAN_INFO:
+		case HCLGE_MBX_PUSH_PROMISC_INFO:
 			/* set this mbx event as pending. This is required as we
 			 * might loose interrupt event when mbx task is busy
 			 * handling. This shall be cleared when mbx task just
@@ -273,6 +274,14 @@ void hclgevf_mbx_handler(struct hclgevf_dev *hdev)
 	/* Write back CMDQ_RQ header pointer, M7 need this pointer */
 	hclgevf_write_dev(&hdev->hw, HCLGEVF_NIC_CRQ_HEAD_REG,
 			  crq->next_to_use);
+}
+
+static void hclgevf_parse_promisc_info(struct hclgevf_dev *hdev,
+				       u16 promisc_info)
+{
+	if (!promisc_info)
+		dev_info(&hdev->pdev->dev,
+			 "Promisc mode is closed by host for being untrusted.\n");
 }
 
 void hclgevf_mbx_async_handler(struct hclgevf_dev *hdev)
@@ -342,6 +351,9 @@ void hclgevf_mbx_async_handler(struct hclgevf_dev *hdev)
 			hclgevf_update_port_base_vlan_info(hdev, state,
 							   (u8 *)vlan_info,
 							   8);
+			break;
+		case HCLGE_MBX_PUSH_PROMISC_INFO:
+			hclgevf_parse_promisc_info(hdev, msg_q[1]);
 			break;
 		default:
 			dev_err(&hdev->pdev->dev,
