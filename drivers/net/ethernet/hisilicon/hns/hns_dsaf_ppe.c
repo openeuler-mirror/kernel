@@ -183,7 +183,7 @@ static void hns_ppe_set_qid(struct ppe_common_cb *ppe_common, u32 qid)
 
 /**
  * hns_ppe_set_port_mode - set port mode
- * @ppe_device: ppe device
+ * @ppe_cb: ppe device
  * @mode: port mode
  */
 static void hns_ppe_set_port_mode(struct hns_ppe_cb *ppe_cb,
@@ -300,7 +300,7 @@ int hns_ppe_wait_tx_fifo_clean(struct hns_ppe_cb *ppe_cb)
 }
 
 /**
- * ppe_init_hw - init ppe
+ * hns_ppe_init_hw - init ppe
  * @ppe_cb: ppe device
  */
 static void hns_ppe_init_hw(struct hns_ppe_cb *ppe_cb)
@@ -347,8 +347,8 @@ static void hns_ppe_init_hw(struct hns_ppe_cb *ppe_cb)
 }
 
 /**
- * ppe_uninit_hw - uninit ppe
- * @ppe_device: ppe device
+ * hns_ppe_uninit_hw - uninit ppe
+ * @ppe_cb: ppe device
  */
 static void hns_ppe_uninit_hw(struct hns_ppe_cb *ppe_cb)
 {
@@ -386,8 +386,9 @@ void hns_ppe_uninit(struct dsaf_device *dsaf_dev)
 }
 
 /**
- * hns_ppe_reset - reinit ppe/rcb hw
+ * hns_ppe_reset_common - reinit ppe/rcb hw
  * @dsaf_dev: dasf device
+ * @ppe_common_index: index of ppe device
  * retuen void
  */
 void hns_ppe_reset_common(struct dsaf_device *dsaf_dev, u8 ppe_common_index)
@@ -458,8 +459,8 @@ int hns_ppe_get_regs_count(void)
 }
 
 /**
- * ppe_get_strings - get ppe srting
- * @ppe_device: ppe device
+ * hns_ppe_get_strings - get ppe srting
+ * @ppe_cb: ppe device
  * @stringset: string set type
  * @data: output string
  */

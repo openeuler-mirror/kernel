@@ -319,8 +319,8 @@ EXPORT_SYMBOL(hnae_reinit_handle);
 
 /* hnae_get_handle - get a handle from the AE
  * @owner_dev: the dev use this handle
- * @ae_id: the id of the ae to be used
- * @ae_opts: the options set for the handle
+ * @fwnode: firmware device node that containing the hnae_ae_dev.
+ * @port_id: the port id of the mac
  * @bops: the callbacks for buffer management
  *
  * return handle ptr or ERR_PTR
@@ -443,7 +443,7 @@ EXPORT_SYMBOL(hnae_ae_register);
 
 /**
  * hnae_ae_unregister - unregisters a HNAE AE engine
- * @cdev: the device to unregister
+ * @hdev: the device to unregister
  */
 void hnae_ae_unregister(struct hnae_ae_dev *hdev)
 {

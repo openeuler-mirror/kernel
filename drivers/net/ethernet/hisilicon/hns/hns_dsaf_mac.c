@@ -115,7 +115,7 @@ int hns_mac_get_port_info(struct hns_mac_cb *mac_cb,
 }
 
 /**
- *hns_mac_is_adjust_link - check is need change mac speed and duplex register
+ *hns_mac_need_adjust_link - check is need change mac speed and duplex register
  *@mac_cb: mac device
  *@speed: phy device speed
  *@duplex:phy device duplex
@@ -378,10 +378,11 @@ static void hns_mac_param_get(struct mac_params *param,
 }
 
 /**
- *hns_mac_queue_config_bc_en - set broadcast rx&tx enable
+ *hns_mac_port_config_bc_en - set broadcast rx&tx enable
  *@mac_cb: mac device
- *@queue: queue number
- *@en:enable
+ *@port_num: the port number that needs to be configured
+ *@vlan_id: the vlan id that needs to be configured
+ *@enable: true means add mac mc port; false means delete mac mc port
  *retuen 0 - success , negative --fail
  */
 static int hns_mac_port_config_bc_en(struct hns_mac_cb *mac_cb,
@@ -415,7 +416,7 @@ static int hns_mac_port_config_bc_en(struct hns_mac_cb *mac_cb,
  *hns_mac_vm_config_bc_en - set broadcast rx&tx enable
  *@mac_cb: mac device
  *@vmid: vm id
- *@en:enable
+ *@enable: true means add; false means delete
  *retuen 0 - success , negative --fail
  */
 int hns_mac_vm_config_bc_en(struct hns_mac_cb *mac_cb, u32 vmid, bool enable)
@@ -546,8 +547,7 @@ void hns_mac_stop(struct hns_mac_cb *mac_cb)
 /**
  * hns_mac_get_autoneg - get auto autonegotiation
  * @mac_cb: mac control block
- * @enable: enable or not
- * retuen 0 - success , negative --fail
+ * @auto_neg: the auto negotiation value to be configured
  */
 void hns_mac_get_autoneg(struct hns_mac_cb *mac_cb, u32 *auto_neg)
 {
@@ -564,7 +564,6 @@ void hns_mac_get_autoneg(struct hns_mac_cb *mac_cb, u32 *auto_neg)
  * @mac_cb: mac control block
  * @rx_en: rx enable status
  * @tx_en: tx enable status
- * retuen 0 - success , negative --fail
  */
 void hns_mac_get_pauseparam(struct hns_mac_cb *mac_cb, u32 *rx_en, u32 *tx_en)
 {
@@ -600,7 +599,7 @@ int hns_mac_set_autoneg(struct hns_mac_cb *mac_cb, u8 enable)
 }
 
 /**
- * hns_mac_set_autoneg - set rx & tx pause parameter
+ * hns_mac_set_pauseparam - set rx & tx pause parameter
  * @mac_cb: mac control block
  * @rx_en: rx enable or not
  * @tx_en: tx enable or not
@@ -804,7 +803,6 @@ static const struct {
 /**
  *hns_mac_get_info  - get mac information from device node
  *@mac_cb: mac device
- *@np:device node
  * return: 0 --success, negative --fail
  */
 static int hns_mac_get_info(struct hns_mac_cb *mac_cb)

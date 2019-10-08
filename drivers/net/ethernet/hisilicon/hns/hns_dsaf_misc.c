@@ -362,7 +362,7 @@ static void hns_dsaf_xge_srst_by_port_acpi(struct dsaf_device *dsaf_dev,
  * bit6-11 for ppe0-5
  * bit12-17 for roce0-5
  * bit18-19 for com/dfx
- * @enable: false - request reset , true - drop reset
+ * @dereset: false - request reset , true - drop reset
  */
 static void
 hns_dsaf_srst_chns(struct dsaf_device *dsaf_dev, u32 msk, bool dereset)
@@ -378,14 +378,14 @@ hns_dsaf_srst_chns(struct dsaf_device *dsaf_dev, u32 msk, bool dereset)
 }
 
 /**
- * hns_dsaf_srst_chns - reset dsaf channels
+ * hns_dsaf_srst_chns_acpi - reset dsaf channels
  * @dsaf_dev: dsaf device struct pointer
  * @msk: xbar channels mask value:
  * bit0-5 for xge0-5
  * bit6-11 for ppe0-5
  * bit12-17 for roce0-5
  * bit18-19 for com/dfx
- * @enable: false - request reset , true - drop reset
+ * @dereset: false - request reset , true - drop reset
  */
 static void
 hns_dsaf_srst_chns_acpi(struct dsaf_device *dsaf_dev, u32 msk, bool dereset)
@@ -527,7 +527,7 @@ static void hns_ppe_com_srst(struct dsaf_device *dsaf_dev, bool dereset)
 }
 
 /**
- * hns_mac_get_sds_mode - get phy ifterface form serdes mode
+ * hns_mac_get_phy_if - get phy ifterface form serdes mode
  * @mac_cb: mac control block
  * retuen phy interface
  */
@@ -640,6 +640,7 @@ static int hns_mac_get_sfp_prsnt_acpi(struct hns_mac_cb *mac_cb, int *sfp_prsnt)
 /**
  * hns_mac_config_sds_loopback - set loop back for serdes
  * @mac_cb: mac control block
+ * @en: true means enable sds loopback; false means disable sds loopback
  * retuen 0 == success
  */
 static int hns_mac_config_sds_loopback(struct hns_mac_cb *mac_cb, bool en)
@@ -711,7 +712,7 @@ hns_mac_config_sds_loopback_acpi(struct hns_mac_cb *mac_cb, bool en)
 	obj_args[0].integer.type = ACPI_TYPE_INTEGER;
 	obj_args[0].integer.value = mac_cb->mac_id;
 	obj_args[1].integer.type = ACPI_TYPE_INTEGER;
-	obj_args[1].integer.value = !!en;
+	obj_args[1].integer.value = en;
 
 	argv4.type = ACPI_TYPE_PACKAGE;
 	argv4.package.count = 2;

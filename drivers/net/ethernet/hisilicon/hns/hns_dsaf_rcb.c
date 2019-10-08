@@ -195,7 +195,8 @@ void hns_rcbv2_int_clr_hw(struct hnae_queue *q, u32 flag)
 
 /**
  *hns_rcb_ring_enable_hw - enable ring
- *@ring: rcb ring
+ *@q: hnae queue struct pointer
+ *@val: true means enable; false means disable
  */
 void hns_rcb_ring_enable_hw(struct hnae_queue *q, u32 val)
 {
@@ -848,7 +849,7 @@ void hns_rcb_update_stats(struct hnae_queue *queue)
 
 /**
  *hns_rcb_get_stats - get rcb statistic
- *@ring: rcb ring
+ *@queue: hnae_queue
  *@data:statistic value
  */
 void hns_rcb_get_stats(struct hnae_queue *queue, u64 *data)
@@ -893,11 +894,6 @@ void hns_rcb_get_stats(struct hnae_queue *queue, u64 *data)
 	regs_buff[27] = queue->rx_ring.stats.l3l4_csum_err;
 }
 
-/**
- *hns_rcb_get_ring_sset_count - rcb string set count
- *@stringset:ethtool cmd
- *return rcb ring string set count
- */
 int hns_rcb_get_ring_sset_count(int stringset)
 {
 	if (stringset == ETH_SS_STATS)
@@ -906,19 +902,11 @@ int hns_rcb_get_ring_sset_count(int stringset)
 	return 0;
 }
 
-/**
- *hns_rcb_get_common_regs_count - rcb common regs count
- *return regs count
- */
 int hns_rcb_get_common_regs_count(void)
 {
 	return HNS_RCB_COMMON_DUMP_REG_NUM;
 }
 
-/**
- *rcb_get_sset_count - rcb ring regs count
- *return regs count
- */
 int hns_rcb_get_ring_regs_count(void)
 {
 	return HNS_RCB_RING_DUMP_REG_NUM;

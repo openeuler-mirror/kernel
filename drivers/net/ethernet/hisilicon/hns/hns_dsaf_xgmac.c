@@ -108,7 +108,7 @@ static void hns_xgmac_rx_enable(struct mac_driver *drv, u32 value)
 }
 
 /**
- * hns_xgmac_tx_lf_rf_insert - insert lf rf control about xgmac
+ * hns_xgmac_lf_rf_insert - insert lf rf control about xgmac
  * @mac_drv: mac driver
  * @mode: inserf rf or lf
  */
@@ -119,7 +119,7 @@ static void hns_xgmac_lf_rf_insert(struct mac_driver *mac_drv, u32 mode)
 }
 
 /**
- * hns_xgmac__lf_rf_control_init - initial the lf rf control register
+ * hns_xgmac_lf_rf_control_init - initial the lf rf control register
  * @mac_drv: mac driver
  */
 static void hns_xgmac_lf_rf_control_init(struct mac_driver *mac_drv)
@@ -134,7 +134,7 @@ static void hns_xgmac_lf_rf_control_init(struct mac_driver *mac_drv)
 
 /**
  *hns_xgmac_enable - enable xgmac port
- *@drv: mac driver
+ *@mac_drv: mac driver
  *@mode: mode of mac port
  */
 static void hns_xgmac_enable(void *mac_drv, enum mac_commom_mode mode)
@@ -181,7 +181,6 @@ static void hns_xgmac_disable(void *mac_drv, enum mac_commom_mode mode)
  *@drv: mac driver
  *@tx_value: tx value
  *@rx_value: rx value
- *return status
  */
 static void hns_xgmac_pma_fec_enable(struct mac_driver *drv, u32 tx_value,
 				     u32 rx_value)
@@ -246,7 +245,8 @@ static void hns_xgmac_config_pad_and_crc(void *mac_drv, u8 newval)
 /**
  *hns_xgmac_pausefrm_cfg - set pause param about xgmac
  *@mac_drv: mac driver
- *@newval:enable of pad and crc
+ *@rx_en: enable or disable rx
+ *@tx_en: enable or disable tx
  */
 static void hns_xgmac_pausefrm_cfg(void *mac_drv, u32 rx_en, u32 tx_en)
 {
@@ -481,7 +481,6 @@ static void hns_xgmac_get_link_status(void *mac_drv, u32 *link_stat)
 /**
  *hns_xgmac_get_regs - dump xgmac regs
  *@mac_drv: mac driver
- *@cmd:ethtool cmd
  *@data:data for value of regs
  */
 static void hns_xgmac_get_regs(void *mac_drv, void *data)
@@ -761,11 +760,6 @@ static void hns_xgmac_get_strings(u32 stringset, u8 *data)
 	}
 }
 
-/**
- *hns_xgmac_get_sset_count - get xgmac string set count
- *@stringset: type of values in data
- *return xgmac string set count
- */
 static int hns_xgmac_get_sset_count(int stringset)
 {
 	if (stringset == ETH_SS_STATS || stringset == ETH_SS_PRIV_FLAGS)
@@ -774,10 +768,6 @@ static int hns_xgmac_get_sset_count(int stringset)
 	return 0;
 }
 
-/**
- *hns_xgmac_get_regs_count - get xgmac regs count
- *return xgmac regs count
- */
 static int hns_xgmac_get_regs_count(void)
 {
 	return HNS_XGMAC_DUMP_NUM;

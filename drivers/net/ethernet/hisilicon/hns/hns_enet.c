@@ -699,8 +699,6 @@ hns_nic_alloc_rx_buffers(struct hns_nic_ring_data *ring_data, int cleand_count)
 	writel_relaxed(i, ring->io_base + RCB_REG_HEAD);
 }
 
-/* return error number for error or number of desc left to take
- */
 static void hns_nic_rx_up_pro(struct hns_nic_ring_data *ring_data,
 			      struct sk_buff *skb)
 {
@@ -778,7 +776,7 @@ static u32 smooth_alg(u32 new_param, u32 old_param)
 }
 
 /**
- * hns_nic_adp_coalesce - self adapte coalesce according to rx rate
+ * hns_nic_adpt_coalesce - self adapte coalesce according to rx rate
  * @ring_data: pointer to hns_nic_ring_data
  **/
 static void hns_nic_adpt_coalesce(struct hns_nic_ring_data *ring_data)
@@ -1896,11 +1894,8 @@ static int hns_nic_uc_unsync(struct net_device *netdev,
 }
 
 /**
- * nic_set_multicast_list - set mutl mac address
- * @netdev: net device
- * @p: mac address
- *
- * return void
+ * hns_set_multicast_list - set mutl mac address
+ * @ndev: net device
  */
 static void hns_set_multicast_list(struct net_device *ndev)
 {
