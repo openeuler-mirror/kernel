@@ -635,10 +635,18 @@ static bool hclge_cmd_crq_empty(struct hclge_hw *hw)
 	return tail == hw->cmq.crq.next_to_use;
 }
 
+static void hclge_handle_ncsi_error(struct hclge_dev *hdev)
+{
+	struct hnae3_ae_dev *ae_dev = hdev->ae_dev;
+
+	ae_dev->ops->set_default_reset_request(ae_dev, HNAE3_GLOBAL_RESET);
+	dev_warn(&hdev->pdev->dev, "requesting reset due to NCSI error\n");
+	ae_dev->ops->reset_event(hdev->pdev, NULL);
+}
+
 void hclge_mbx_handler(struct hclge_dev *hdev)
 {
 	struct hclge_cmq_ring *crq = &hdev->hw.cmq.crq;
-	struct hnae3_ae_dev *ae_dev = hdev->ae_dev;
 	struct hclge_respond_to_vf_msg resp_msg;
 	struct hclge_mbx_vf_to_pf_cmd *req;
 	struct hclge_vport *vport;
@@ -750,7 +758,12 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 		case HCLGE_MBX_GET_QID_IN_PF:
 			hclge_get_queue_id_in_pf(vport, req, &resp_msg);
 			break;
-
+		case HCLGE_MBX_GET_RSS_KEY:
+			hclge_get_rss_key(vport, req, &resp_msg);
+			break;
+		case HCLGE_MBX_GET_LINK_MODE:
+			hclge_get_link_mode(vport, req);
+			break;
 		case HCLGE_MBX_GET_VF_FLR_STATUS:
 		case HCLGE_MBX_VF_UNINIT:
 			mutex_lock(&hdev->vport_cfg_mutex);
@@ -761,27 +774,17 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 			hclge_rm_vport_all_vlan_table(vport, true);
 			mutex_unlock(&hdev->vport_cfg_mutex);
 			break;
-		case HCLGE_MBX_GET_RSS_KEY:
-			hclge_get_rss_key(vport, req, &resp_msg);
-			break;
-		case HCLGE_MBX_GET_LINK_MODE:
-			hclge_get_link_mode(vport, req);
-			break;
 		case HCLGE_MBX_GET_MEDIA_TYPE:
 			hclge_get_vf_media_type(vport, &resp_msg);
+			break;
+		case HCLGE_MBX_PUSH_LINK_STATUS:
+			hclge_handle_link_change_event(hdev, req);
 			break;
 		case HCLGE_MBX_GET_MAC_ADDR:
 			hclge_get_vf_mac_addr(vport, &resp_msg);
 			break;
 		case HCLGE_MBX_NCSI_ERROR:
-			ae_dev->ops->set_default_reset_request(ae_dev,
-							HNAE3_GLOBAL_RESET);
-			dev_warn(&hdev->pdev->dev,
-				 "requesting reset due to NCSI error\n");
-			ae_dev->ops->reset_event(hdev->pdev, NULL);
-			break;
-		case HCLGE_MBX_PUSH_LINK_STATUS:
-			hclge_handle_link_change_event(hdev, req);
+			hclge_handle_ncsi_error(hdev);
 			break;
 		default:
 			dev_err(&hdev->pdev->dev,
