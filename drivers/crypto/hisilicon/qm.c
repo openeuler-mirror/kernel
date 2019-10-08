@@ -111,6 +111,7 @@
 
 #define QM_ABNORMAL_INT_SOURCE		0x100000
 #define QM_ABNORMAL_INT_MASK		0x100004
+#define QM_HW_ERROR_IRQ_DISABLE		GENMASK(12, 0)
 #define QM_ABNORMAL_INT_STATUS		0x100008
 #define QM_ABNORMAL_INF00		0x100010
 #define QM_FIFO_OVERFLOW_TYPE		0xc0
@@ -207,6 +208,7 @@ struct hisi_qm_hw_ops {
 	int (*debug_init)(struct hisi_qm *qm);
 	void (*hw_error_init)(struct hisi_qm *qm, u32 ce, u32 nfe, u32 fe,
 			      u32 msi);
+	void (*hw_error_uninit)(struct hisi_qm *qm);
 	pci_ers_result_t (*hw_error_handle)(struct hisi_qm *qm);
 };
 
@@ -1071,6 +1073,11 @@ static void qm_hw_error_init_v2(struct hisi_qm *qm, u32 ce, u32 nfe, u32 fe,
 	writel(irq_unmask, qm->io_base + QM_ABNORMAL_INT_MASK);
 }
 
+static void qm_hw_error_uninit_v2(struct hisi_qm *qm)
+{
+	writel(QM_HW_ERROR_IRQ_DISABLE, qm->io_base + QM_ABNORMAL_INT_MASK);
+}
+
 static void qm_log_hw_error(struct hisi_qm *qm, u32 error_status)
 {
 	const struct hisi_qm_hw_error *err;
@@ -1142,6 +1149,7 @@ static const struct hisi_qm_hw_ops qm_hw_ops_v2 = {
 	.qm_db = qm_db_v2,
 	.get_irq_num = qm_get_irq_num_v2,
 	.hw_error_init = qm_hw_error_init_v2,
+	.hw_error_uninit = qm_hw_error_uninit_v2,
 	.hw_error_handle = qm_hw_error_handle_v2,
 };
 
@@ -2643,6 +2651,19 @@ void hisi_qm_hw_error_init(struct hisi_qm *qm, u32 ce, u32 nfe, u32 fe,
 }
 EXPORT_SYMBOL_GPL(hisi_qm_hw_error_init);
 
+void hisi_qm_hw_error_uninit(struct hisi_qm *qm)
+{
+	if (!qm->ops->hw_error_uninit) {
+		dev_err(&qm->pdev->dev,
+			"QM version %d doesn't support hw error handling!\n",
+			qm->ver);
+		return;
+	}
+
+	qm->ops->hw_error_uninit(qm);
+}
+EXPORT_SYMBOL_GPL(hisi_qm_hw_error_uninit);
+
 /**
  * hisi_qm_hw_error_handle() - Handle qm non-fatal hardware errors.
  * @qm: The qm which has non-fatal hardware errors.
@@ -2703,6 +2724,19 @@ enum qm_hw_ver hisi_qm_get_hw_version(struct pci_dev *pdev)
 	}
 }
 EXPORT_SYMBOL_GPL(hisi_qm_get_hw_version);
+
+int hisi_qm_get_hw_error_status(struct hisi_qm *qm)
+{
+	u32 err_sts;
+
+	err_sts = readl(qm->io_base + QM_ABNORMAL_INT_STATUS) &
+			QM_ECC_MBIT;
+	if (err_sts)
+		return err_sts;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(hisi_qm_get_hw_error_status);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zhou Wang <wangzhou1@hisilicon.com>");

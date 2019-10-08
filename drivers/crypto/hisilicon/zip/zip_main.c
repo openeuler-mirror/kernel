@@ -64,6 +64,8 @@
 
 #define HZIP_CORE_INT_SOURCE		0x3010A0
 #define HZIP_CORE_INT_MASK		0x3010A4
+#define HZIP_HW_ERROR_IRQ_ENABLE	1
+#define HZIP_HW_ERROR_IRQ_DISABLE	0
 #define HZIP_CORE_INT_STATUS		0x3010AC
 #define HZIP_CORE_INT_STATUS_M_ECC	BIT(1)
 #define HZIP_CORE_SRAM_ECC_ERR_INFO	0x301148
@@ -85,6 +87,9 @@
 
 #define HZIP_SOFT_CTRL_CNT_CLR_CE	0x301000
 #define HZIP_SOFT_CTRL_CNT_CLR_CE_BIT	BIT(0)
+#define HZIP_SOFT_CTRL_ZIP_CONTROL	0x30100C
+#define HZIP_AXI_SHUTDOWN_ENABLE	BIT(14)
+#define HZIP_AXI_SHUTDOWN_DISABLE	0xFFFFBFFF
 
 #define HZIP_MSE_ENABLE			1
 #define HZIP_MSE_DISABLE		0
@@ -431,6 +436,7 @@ static void hisi_zip_debug_regs_clear(struct hisi_zip *hisi_zip)
 static void hisi_zip_hw_error_set_state(struct hisi_zip *hisi_zip, bool state)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
+	u32 val;
 
 	if (qm->ver == QM_HW_V1) {
 		writel(HZIP_CORE_INT_DISABLE, qm->io_base + HZIP_CORE_INT_MASK);
@@ -445,17 +451,27 @@ static void hisi_zip_hw_error_set_state(struct hisi_zip *hisi_zip, bool state)
 	writel(HZIP_CORE_INT_RAS_NFE_ENABLE,
 		hisi_zip->qm.io_base + HZIP_CORE_INT_RAS_NFE_ENB);
 
+
+	val = readl(hisi_zip->qm.io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
 	if (state) {
 		/* clear ZIP hw error source if having */
 		writel(HZIP_CORE_INT_DISABLE, hisi_zip->qm.io_base +
 					      HZIP_CORE_INT_SOURCE);
 		/* enable ZIP hw error interrupts */
 		writel(0, hisi_zip->qm.io_base + HZIP_CORE_INT_MASK);
+
+		/* enable ZIP block master OOO when m-bit error occur */
+		val = val | HZIP_AXI_SHUTDOWN_ENABLE;
 	} else {
 		/* disable ZIP hw error interrupts */
 		writel(HZIP_CORE_INT_DISABLE,
 		       hisi_zip->qm.io_base + HZIP_CORE_INT_MASK);
+
+		/* disable ZIP block master OOO when m-bit error occur */
+		val = val & HZIP_AXI_SHUTDOWN_DISABLE;
 	}
+
+	writel(val, hisi_zip->qm.io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
 }
 
 static inline struct hisi_qm *file_to_qm(struct ctrl_debug_file *file)
@@ -1323,12 +1339,63 @@ static pci_ers_result_t hisi_zip_slot_reset(struct pci_dev *pdev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
+static void hisi_zip_set_hw_error(struct hisi_zip *hisi_zip, bool state)
+{
+	struct pci_dev *pdev = hisi_zip->qm.pdev;
+	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
+	struct hisi_qm *qm = &zip->qm;
+
+	if (state)
+		hisi_qm_hw_error_init(&hisi_zip->qm, QM_BASE_CE,
+				      QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT,
+				      0, QM_DB_RANDOM_INVALID);
+	else
+		hisi_qm_hw_error_uninit(qm);
+
+	hisi_zip_hw_error_set_state(zip, state);
+}
+
+static int hisi_zip_get_hw_error_status(struct hisi_zip *hisi_zip)
+{
+	u32 err_sts;
+
+	err_sts = readl(hisi_zip->qm.io_base + HZIP_CORE_INT_STATUS) &
+			HZIP_CORE_INT_STATUS_M_ECC;
+	if (err_sts)
+		return err_sts;
+
+	return 0;
+}
+
+static int hisi_zip_check_hw_error(struct hisi_zip *hisi_zip)
+{
+	struct pci_dev *pdev = hisi_zip->qm.pdev;
+	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
+	struct hisi_qm *qm = &zip->qm;
+	int ret;
+
+	ret = hisi_qm_get_hw_error_status(qm);
+	if (ret)
+		return ret;
+
+	return hisi_zip_get_hw_error_status(zip);
+}
+
 static void hisi_zip_reset_prepare(struct pci_dev *pdev)
 {
 	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hisi_zip->qm;
 	struct device *dev = &pdev->dev;
+	u32 delay = 0;
 	int ret;
+
+	hisi_zip_set_hw_error(hisi_zip, HZIP_HW_ERROR_IRQ_DISABLE);
+
+	while (hisi_zip_check_hw_error(hisi_zip)) {
+		msleep(++delay);
+		if (delay > HZIP_RESET_WAIT_TIMEOUT)
+			return;
+	}
 
 	ret = hisi_zip_reset_prepare_ready(hisi_zip);
 	if (ret) {
@@ -1355,6 +1422,14 @@ static void hisi_zip_flr_reset_complete(struct hisi_zip *hisi_zip)
 {
 	struct pci_dev *pdev = hisi_zip->qm.pdev;
 	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
+	struct device *dev = &zip->qm.pdev->dev;
+	u32 id;
+
+	pci_read_config_dword(zip->qm.pdev, PCI_COMMAND, &id);
+	if (id == ~0) {
+		hisi_zip_remove(zip->qm.pdev);
+		dev_err(dev, "Device can not be used!\n");
+	}
 
 	clear_bit(HISI_ZIP_RESET, &zip->status);
 }
@@ -1366,21 +1441,23 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 	struct device *dev = &pdev->dev;
 	int ret;
 
+	hisi_zip_set_hw_error(hisi_zip, HZIP_HW_ERROR_IRQ_ENABLE);
+
 	ret = hisi_qm_restart(qm);
 	if (ret) {
 		dev_err(dev, "Failed to start QM!\n");
-		return;
+		goto flr_done;
 	}
 
 	if (pdev->is_physfn) {
 		hisi_zip_set_user_domain_and_cache(hisi_zip);
-		hisi_zip_hw_error_init(hisi_zip);
 		if (hisi_zip->ctrl->num_vfs)
 			hisi_zip_vf_q_assign(hisi_zip,
 				hisi_zip->ctrl->num_vfs);
 		hisi_zip_vf_reset_done(hisi_zip);
 	}
 
+flr_done:
 	hisi_zip_flr_reset_complete(hisi_zip);
 
 	dev_info(dev, "FLR reset complete\n");
