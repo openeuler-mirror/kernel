@@ -2885,10 +2885,16 @@ static int hclge_get_status(struct hnae3_handle *handle)
 
 static struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf)
 {
+	if (pci_num_vf(hdev->pdev) == 0) {
+		dev_err(&hdev->pdev->dev,
+			"SRIOV is disabled, can not get vport(%d) info.\n", vf);
+		return NULL;
+	}
+
 	if (vf < 0 || vf >= pci_num_vf(hdev->pdev)) {
 		dev_err(&hdev->pdev->dev,
-			"Out-of-range(1 < vfid < %d) or Invalid VF(=%d) specified.\n",
-			pci_num_vf(hdev->pdev), vf);
+			"vf id(%d) is out of range(0 <= vfid < %d)\n",
+			vf, pci_num_vf(hdev->pdev));
 		return NULL;
 	}
 
