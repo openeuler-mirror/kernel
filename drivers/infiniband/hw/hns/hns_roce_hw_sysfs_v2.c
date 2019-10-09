@@ -53,7 +53,7 @@ int hns_roce_v2_query_mpt_stat(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_v2_mpt_entry *mpt_ctx;
 	struct hns_roce_cmd_mailbox *mailbox;
-	int key = hr_dev->hr_stat.key;
+	u32 key = hr_dev->hr_stat.key;
 	int cur_len = 0;
 	char *out = buf;
 	u64 bt0_ba = 0;
@@ -123,7 +123,7 @@ int hns_roce_v2_query_srqc_stat(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_srq_context *srq_context;
 	struct hns_roce_cmd_mailbox *mailbox;
-	int srqn = hr_dev->hr_stat.srqn;
+	u32 srqn = hr_dev->hr_stat.srqn;
 	int cur_len = 0;
 	char *out = buf;
 	u64 bt0_ba = 0;
@@ -185,7 +185,7 @@ int hns_roce_v2_query_qpc_stat(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_cmd_mailbox *mailbox;
 	struct hns_roce_v2_qp_context *qp_context;
-	int qpn = hr_dev->hr_stat.qpn;
+	u32 qpn = hr_dev->hr_stat.qpn;
 	int cur_len = 0;
 	char *out = buf;
 	u64 bt0_ba = 0;
@@ -256,7 +256,7 @@ int hns_roce_v2_query_aeqc_stat(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_eq_context *eq_context;
 	struct hns_roce_cmd_mailbox *mailbox;
-	int aeqn = hr_dev->hr_stat.aeqn;
+	u32 aeqn = hr_dev->hr_stat.aeqn;
 	int cur_len = 0;
 	char *out = buf;
 	int i = 0;
@@ -424,7 +424,7 @@ int hns_roce_v2_query_ceqc_stat(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_cmd_mailbox *mailbox;
 	struct hns_roce_eq_context *eq_context;
-	int ceqn = hr_dev->hr_stat.ceqn;
+	u32 ceqn = hr_dev->hr_stat.ceqn;
 	int cur_len = 0;
 	char *out = buf;
 	int *ceqc;
@@ -506,7 +506,7 @@ int hns_roce_v2_query_cmd_stat(struct hns_roce_dev *hr_dev,
 }
 
 static int hns_roce_v2_query_cqc(struct hns_roce_dev *hr_dev,
-				 u64 *bt0_ba, u64 *bt1_ba, int cqn,
+				 u64 *bt0_ba, u64 *bt1_ba, u32 cqn,
 				 struct hns_roce_v2_cq_context *cq_context)
 {
 
@@ -551,7 +551,7 @@ int hns_roce_v2_query_cqc_stat(struct hns_roce_dev *hr_dev,
 				      char *buf, int *desc)
 {
 	struct hns_roce_v2_cq_context *cq_context;
-	int cqn = hr_dev->hr_stat.cqn;
+	u32 cqn = hr_dev->hr_stat.cqn;
 	int cur_len = 0;
 	char *out = buf;
 	u64 bt0_ba = 0;

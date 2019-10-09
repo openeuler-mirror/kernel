@@ -1038,12 +1038,12 @@ struct hns_roce_flush_work {
 };
 
 struct hns_roce_stat {
-	int cqn;
-	int srqn;
+	u32 cqn;
+	u32 srqn;
 	u32 ceqn;
 	u32 qpn;
 	u32 aeqn;
-	int key;
+	u32 key;
 };
 
 struct hns_roce_dfx_hw {

@@ -313,7 +313,8 @@ static ssize_t coalesce_maxcnt_store(struct device *dev,
 
 	ret = kstrtou32(buf, 10, &int_maxcnt);
 	if (ret) {
-		dev_err(dev, "Input params of irq coalesce maxcnt format unmatch\n");
+		dev_err(dev,
+			"Input params of irq coalesce maxcnt format unmatch\n");
 		return -EINVAL;
 	}
 
@@ -345,7 +346,7 @@ static ssize_t coalesce_period_show(struct device *dev,
 						   ib_dev.dev);
 	struct hns_roce_eq *eq = hr_dev->eq_table.eq;
 
-	return scnprintf(buf, PAGE_SIZE, "%u\n", eq->eq_period);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", eq->eq_period);
 }
 
 static ssize_t coalesce_period_store(struct device *dev,
@@ -364,7 +365,8 @@ static ssize_t coalesce_period_store(struct device *dev,
 
 	ret = kstrtou32(buf, 10, &int_period);
 	if (ret) {
-		dev_err(dev, "Input params of irq coalesce period format unmatch\n");
+		dev_err(dev,
+			"Input params of irq coalesce period format unmatch\n");
 		return -EINVAL;
 	}
 
@@ -428,7 +430,6 @@ int hns_roce_register_sysfs(struct hns_roce_dev *hr_dev)
 	}
 
 	return 0;
-
 }
 
 void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev)
@@ -438,5 +439,4 @@ void hns_roce_unregister_sysfs(struct hns_roce_dev *hr_dev)
 	for (i = 0; i < ARRAY_SIZE(hns_roce_hw_attrs_list); i++)
 		device_remove_file(&hr_dev->ib_dev.dev,
 				hns_roce_hw_attrs_list[i]);
-
 }
