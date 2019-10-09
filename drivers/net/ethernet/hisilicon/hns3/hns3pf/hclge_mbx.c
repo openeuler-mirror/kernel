@@ -800,6 +800,9 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 
 		crq->desc[crq->next_to_use].flag = 0;
 		hclge_mbx_ring_ptr_move_crq(crq);
+
+		/* reinitialize ret after complete the mbx message processing */
+		ret = 0;
 	}
 
 	/* Write back CMDQ_RQ header pointer, M7 need this pointer */
