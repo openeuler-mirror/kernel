@@ -458,6 +458,7 @@ struct ib_srq *hns_roce_create_srq(struct ib_pd *pd,
 	srq->max_gs = srq_init_attr->attr.max_sge + HNS_ROCE_RESERVED_SGE;
 
 	srq_desc_size = max(HNS_ROCE_SGE_SIZE, HNS_ROCE_SGE_SIZE * srq->max_gs);
+	srq_desc_size = roundup_pow_of_two(srq_desc_size);
 
 	srq->wqe_shift = ilog2(srq_desc_size);
 
