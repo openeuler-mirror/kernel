@@ -1853,7 +1853,7 @@ static void set_default_caps(struct hns_roce_dev *hr_dev)
 	caps->pbl_ba_pg_sz	= HNS_ROCE_BA_PG_SZ_SUPPORTED_8K;
 	caps->pbl_buf_pg_sz	= 0;
 	caps->pbl_hop_num	= HNS_ROCE_PBL_HOP_NUM;
-	caps->mtt_ba_pg_sz	= 0;
+	caps->mtt_ba_pg_sz	= HNS_ROCE_BA_PG_SZ_SUPPORTED_256K;
 	caps->mtt_buf_pg_sz	= 0;
 	caps->mtt_hop_num	= HNS_ROCE_MTT_HOP_NUM;
 	caps->wqe_sq_hop_num	= HNS_ROCE_SQWQE_HOP_NUM;
@@ -1958,8 +1958,8 @@ static void calc_pg_sz(int obj_num, int obj_size, int hop_num, int ctx_bt_num,
 
 static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_caps *caps = &hr_dev->caps;
 	struct hns_roce_cmq_desc desc[HNS_ROCE_QUERY_PF_CAPS_CMD_NUM];
+	struct hns_roce_caps *caps = &hr_dev->caps;
 	struct hns_roce_query_pf_caps_a *resp_a;
 	struct hns_roce_query_pf_caps_b *resp_b;
 	struct hns_roce_query_pf_caps_c *resp_c;
@@ -1967,8 +1967,8 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 	struct hns_roce_query_pf_caps_e *resp_e;
 	int ctx_hop_num;
 	int pbl_hop_num;
-	int i;
 	int ret;
+	int i;
 
 	for (i = 0; i < HNS_ROCE_QUERY_PF_CAPS_CMD_NUM; i++) {
 		hns_roce_cmq_setup_basic_desc(&desc[i],
@@ -1990,39 +1990,39 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 	resp_d = (struct hns_roce_query_pf_caps_d *)desc[3].data;
 	resp_e = (struct hns_roce_query_pf_caps_e *)desc[4].data;
 
-	caps->local_ca_ack_delay   = resp_a->local_ca_ack_delay;
-	caps->max_sq_sg		   = le16_to_cpu(resp_a->max_sq_sg);
-	caps->max_sq_inline	   = le16_to_cpu(resp_a->max_sq_inline);
-	caps->max_rq_sg		   = le16_to_cpu(resp_a->max_rq_sg);
-	caps->max_extend_sg	   = le32_to_cpu(resp_a->max_extend_sg);
-	caps->num_qpc_timer	   = le16_to_cpu(resp_a->num_qpc_timer);
-	caps->num_cqc_timer	   = le16_to_cpu(resp_a->num_cqc_timer);
-	caps->max_srq_sges	   = le16_to_cpu(resp_a->max_srq_sges);
-	caps->num_aeq_vectors	   = resp_a->num_aeq_vectors;
-	caps->num_other_vectors	   = resp_a->num_other_vectors;
-	caps->max_sq_desc_sz	   = resp_a->max_sq_desc_sz;
-	caps->max_rq_desc_sz	   = resp_a->max_rq_desc_sz;
-	caps->max_srq_desc_sz	   = resp_a->max_srq_desc_sz;
-	caps->cq_entry_sz	   = resp_a->cq_entry_sz;
+	caps->local_ca_ack_delay     = resp_a->local_ca_ack_delay;
+	caps->max_sq_sg		     = le16_to_cpu(resp_a->max_sq_sg);
+	caps->max_sq_inline	     = le16_to_cpu(resp_a->max_sq_inline);
+	caps->max_rq_sg		     = le16_to_cpu(resp_a->max_rq_sg);
+	caps->max_extend_sg	     = le32_to_cpu(resp_a->max_extend_sg);
+	caps->num_qpc_timer	     = le16_to_cpu(resp_a->num_qpc_timer);
+	caps->num_cqc_timer	     = le16_to_cpu(resp_a->num_cqc_timer);
+	caps->max_srq_sges	     = le16_to_cpu(resp_a->max_srq_sges);
+	caps->num_aeq_vectors	     = resp_a->num_aeq_vectors;
+	caps->num_other_vectors	     = resp_a->num_other_vectors;
+	caps->max_sq_desc_sz	     = resp_a->max_sq_desc_sz;
+	caps->max_rq_desc_sz	     = resp_a->max_rq_desc_sz;
+	caps->max_srq_desc_sz	     = resp_a->max_srq_desc_sz;
+	caps->cq_entry_sz	     = resp_a->cq_entry_sz;
 
-	caps->mtpt_entry_sz	   = resp_b->mtpt_entry_sz;
-	caps->irrl_entry_sz	   = resp_b->irrl_entry_sz;
-	caps->trrl_entry_sz	   = resp_b->trrl_entry_sz;
-	caps->cqc_entry_sz	   = resp_b->cqc_entry_sz;
-	caps->srqc_entry_sz	   = resp_b->srqc_entry_sz;
-	caps->idx_entry_sz	   = resp_b->idx_entry_sz;
+	caps->mtpt_entry_sz	     = resp_b->mtpt_entry_sz;
+	caps->irrl_entry_sz	     = resp_b->irrl_entry_sz;
+	caps->trrl_entry_sz	     = resp_b->trrl_entry_sz;
+	caps->cqc_entry_sz	     = resp_b->cqc_entry_sz;
+	caps->srqc_entry_sz	     = resp_b->srqc_entry_sz;
+	caps->idx_entry_sz	     = resp_b->idx_entry_sz;
 	caps->scc_ctx_entry_sz	   = resp_b->scc_ctx_entry_sz;
-	caps->max_mtu		   = resp_b->max_mtu;
-	caps->qpc_entry_sz	   = le16_to_cpu(resp_b->qpc_entry_sz);
-	caps->qpc_timer_entry_sz   = le16_to_cpu(resp_b->qpc_timer_entry_sz);
-	caps->cqc_timer_entry_sz   = le16_to_cpu(resp_b->cqc_timer_entry_sz);
-	caps->min_cqes		   = resp_b->min_cqes;
-	caps->min_wqes		   = resp_b->min_wqes;
-	caps->page_size_cap	   = le32_to_cpu(resp_b->page_size_cap);
-	caps->pkey_table_len[0]	   = resp_b->pkey_table_len;
-	caps->phy_num_uars	   = resp_b->phy_num_uars;
-	ctx_hop_num		   = resp_b->ctx_hop_num;
-	pbl_hop_num		   = resp_b->pbl_hop_num;
+	caps->max_mtu		     = resp_b->max_mtu;
+	caps->qpc_entry_sz	     = le16_to_cpu(resp_b->qpc_entry_sz);
+	caps->qpc_timer_entry_sz     = le16_to_cpu(resp_b->qpc_timer_entry_sz);
+	caps->cqc_timer_entry_sz     = le16_to_cpu(resp_b->cqc_timer_entry_sz);
+	caps->min_cqes		     = resp_b->min_cqes;
+	caps->min_wqes		     = resp_b->min_wqes;
+	caps->page_size_cap	     = le32_to_cpu(resp_b->page_size_cap);
+	caps->pkey_table_len[0]	     = resp_b->pkey_table_len;
+	caps->phy_num_uars	     = resp_b->phy_num_uars;
+	ctx_hop_num		     = resp_b->ctx_hop_num;
+	pbl_hop_num		     = resp_b->pbl_hop_num;
 
 	caps->num_pds = 1 << roce_get_field(resp_c->cap_flags_num_pds,
 					    V2_QUERY_PF_CAPS_C_NUM_PDS_M,
@@ -2040,7 +2040,7 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 					     V2_QUERY_PF_CAPS_C_CQ_DEPTH_M,
 					     V2_QUERY_PF_CAPS_C_CQ_DEPTH_S);
 	caps->num_mtpts = 1 << roce_get_field(resp_c->num_mrws,
-					     V2_QUERY_PF_CAPS_C_NUM_MRWS_M,
+					      V2_QUERY_PF_CAPS_C_NUM_MRWS_M,
 					      V2_QUERY_PF_CAPS_C_NUM_MRWS_S);
 	caps->num_qps = 1 << roce_get_field(resp_c->ord_num_qps,
 					    V2_QUERY_PF_CAPS_C_NUM_QPS_M,
@@ -2064,29 +2064,29 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 					       V2_QUERY_PF_CAPS_D_AEQ_DEPTH_M,
 					       V2_QUERY_PF_CAPS_D_AEQ_DEPTH_S);
 	caps->default_aeq_arm_st = roce_get_field(resp_d->arm_st_aeq_depth,
-					V2_QUERY_PF_CAPS_D_AEQ_ARM_ST_M,
-					V2_QUERY_PF_CAPS_D_AEQ_ARM_ST_S);
+					    V2_QUERY_PF_CAPS_D_AEQ_ARM_ST_M,
+					    V2_QUERY_PF_CAPS_D_AEQ_ARM_ST_S);
 	caps->default_ceq_arm_st = roce_get_field(resp_d->arm_st_aeq_depth,
-					V2_QUERY_PF_CAPS_D_CEQ_ARM_ST_M,
-					V2_QUERY_PF_CAPS_D_CEQ_ARM_ST_S);
+					    V2_QUERY_PF_CAPS_D_CEQ_ARM_ST_M,
+					    V2_QUERY_PF_CAPS_D_CEQ_ARM_ST_S);
 	caps->reserved_pds = roce_get_field(resp_d->num_uars_rsv_pds,
 					    V2_QUERY_PF_CAPS_D_RSV_PDS_M,
 					    V2_QUERY_PF_CAPS_D_RSV_PDS_S);
 	caps->num_uars = 1 << roce_get_field(resp_d->num_uars_rsv_pds,
-					    V2_QUERY_PF_CAPS_D_NUM_UARS_M,
-					    V2_QUERY_PF_CAPS_D_NUM_UARS_S);
+					     V2_QUERY_PF_CAPS_D_NUM_UARS_M,
+					     V2_QUERY_PF_CAPS_D_NUM_UARS_S);
 	caps->reserved_qps = roce_get_field(resp_d->rsv_uars_rsv_qps,
 					    V2_QUERY_PF_CAPS_D_RSV_QPS_M,
 					    V2_QUERY_PF_CAPS_D_RSV_QPS_S);
 	caps->reserved_uars = roce_get_field(resp_d->rsv_uars_rsv_qps,
-					    V2_QUERY_PF_CAPS_D_RSV_UARS_M,
-					    V2_QUERY_PF_CAPS_D_RSV_UARS_S);
+					     V2_QUERY_PF_CAPS_D_RSV_UARS_M,
+					     V2_QUERY_PF_CAPS_D_RSV_UARS_S);
 	caps->reserved_mrws = roce_get_field(resp_e->chunk_size_shift_rsv_mrws,
 					     V2_QUERY_PF_CAPS_E_RSV_MRWS_M,
 					     V2_QUERY_PF_CAPS_E_RSV_MRWS_S);
 	caps->chunk_sz = 1 << roce_get_field(resp_e->chunk_size_shift_rsv_mrws,
-					V2_QUERY_PF_CAPS_E_CHUNK_SIZE_SHIFT_M,
-					V2_QUERY_PF_CAPS_E_CHUNK_SIZE_SHIFT_S);
+					 V2_QUERY_PF_CAPS_E_CHUNK_SIZE_SHIFT_M,
+					 V2_QUERY_PF_CAPS_E_CHUNK_SIZE_SHIFT_S);
 	caps->reserved_cqs = roce_get_field(resp_e->rsv_cqs,
 					    V2_QUERY_PF_CAPS_E_RSV_CQS_M,
 					    V2_QUERY_PF_CAPS_E_RSV_CQS_S);
@@ -2103,6 +2103,7 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 
 	caps->mtt_entry_sz = HNS_ROCE_V2_MTT_ENTRY_SZ;
 	caps->num_mtt_segs = HNS_ROCE_V2_MAX_MTT_SEGS;
+	caps->mtt_ba_pg_sz = HNS_ROCE_BA_PG_SZ_SUPPORTED_256K;
 	caps->num_cqe_segs = HNS_ROCE_V2_MAX_CQE_SEGS;
 	caps->num_srqwqe_segs = HNS_ROCE_V2_MAX_SRQWQE_SEGS;
 	caps->num_idx_segs = HNS_ROCE_V2_MAX_IDX_SEGS;
@@ -2111,37 +2112,38 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 	caps->srqc_hop_num = ctx_hop_num;
 	caps->cqc_hop_num = ctx_hop_num;
 	caps->mpt_hop_num = ctx_hop_num;
-	caps->scc_ctx_hop_num = ctx_hop_num;
-	caps->qpc_timer_hop_num = HNS_ROCE_HOP_NUM_0;
-	caps->cqc_timer_hop_num = HNS_ROCE_HOP_NUM_0;
 	caps->mtt_hop_num = pbl_hop_num;
 	caps->cqe_hop_num = pbl_hop_num;
 	caps->srqwqe_hop_num = pbl_hop_num;
 	caps->idx_hop_num = pbl_hop_num;
 	caps->wqe_sq_hop_num = roce_get_field(resp_d->wq_hop_num_max_srqs,
-					   V2_QUERY_PF_CAPS_D_SQWQE_HOP_NUM_M,
-					   V2_QUERY_PF_CAPS_D_SQWQE_HOP_NUM_S);
+					  V2_QUERY_PF_CAPS_D_SQWQE_HOP_NUM_M,
+					  V2_QUERY_PF_CAPS_D_SQWQE_HOP_NUM_S);
 	caps->wqe_sge_hop_num = roce_get_field(resp_d->wq_hop_num_max_srqs,
-					   V2_QUERY_PF_CAPS_D_EX_SGE_HOP_NUM_M,
-					   V2_QUERY_PF_CAPS_D_EX_SGE_HOP_NUM_S);
+					  V2_QUERY_PF_CAPS_D_EX_SGE_HOP_NUM_M,
+					  V2_QUERY_PF_CAPS_D_EX_SGE_HOP_NUM_S);
 	caps->wqe_rq_hop_num = roce_get_field(resp_d->wq_hop_num_max_srqs,
-					   V2_QUERY_PF_CAPS_D_RQWQE_HOP_NUM_M,
-					   V2_QUERY_PF_CAPS_D_RQWQE_HOP_NUM_S);
+					  V2_QUERY_PF_CAPS_D_RQWQE_HOP_NUM_M,
+					  V2_QUERY_PF_CAPS_D_RQWQE_HOP_NUM_S);
 
 	calc_pg_sz(caps->num_qps, caps->qpc_entry_sz, caps->qpc_hop_num,
-		   caps->qpc_bt_num, &caps->qpc_buf_pg_sz,
-		   &caps->qpc_ba_pg_sz, HEM_TYPE_QPC);
+		   caps->qpc_bt_num, &caps->qpc_buf_pg_sz, &caps->qpc_ba_pg_sz,
+		   HEM_TYPE_QPC);
 	calc_pg_sz(caps->num_mtpts, caps->mtpt_entry_sz, caps->mpt_hop_num,
-		   caps->mpt_bt_num, &caps->mpt_buf_pg_sz,
-		   &caps->mpt_ba_pg_sz, HEM_TYPE_MTPT);
+		   caps->mpt_bt_num, &caps->mpt_buf_pg_sz, &caps->mpt_ba_pg_sz,
+		   HEM_TYPE_MTPT);
 	calc_pg_sz(caps->num_cqs, caps->cqc_entry_sz, caps->cqc_hop_num,
-		   caps->cqc_bt_num, &caps->cqc_buf_pg_sz,
-		   &caps->cqc_ba_pg_sz, HEM_TYPE_CQC);
+		   caps->cqc_bt_num, &caps->cqc_buf_pg_sz, &caps->cqc_ba_pg_sz,
+		   HEM_TYPE_CQC);
 	calc_pg_sz(caps->num_srqs, caps->srqc_entry_sz, caps->srqc_hop_num,
 		   caps->srqc_bt_num, &caps->srqc_buf_pg_sz,
 		   &caps->srqc_ba_pg_sz, HEM_TYPE_SRQC);
 
 	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
+		caps->qpc_timer_hop_num = HNS_ROCE_HOP_NUM_0;
+		caps->cqc_timer_hop_num = HNS_ROCE_HOP_NUM_0;
+		caps->scc_ctx_hop_num = ctx_hop_num;
+
 		calc_pg_sz(caps->num_qps, caps->scc_ctx_entry_sz,
 			   caps->scc_ctx_hop_num, caps->scc_ctx_bt_num,
 			   &caps->scc_ctx_buf_pg_sz,
@@ -2153,15 +2155,13 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 			   &caps->cqc_timer_ba_pg_sz, HEM_TYPE_CQC_TIMER);
 	}
 
-	calc_pg_sz(caps->max_wqes, caps->mtt_entry_sz, caps->mtt_hop_num, 1,
-		   &caps->mtt_buf_pg_sz, &caps->mtt_ba_pg_sz, HEM_TYPE_MTT);
-	calc_pg_sz(caps->max_cqes, caps->cq_entry_sz, caps->cqe_hop_num, 1,
-		   &caps->cqe_buf_pg_sz, &caps->cqe_ba_pg_sz, HEM_TYPE_CQE);
-	calc_pg_sz(caps->max_srq_wrs, caps->mtt_entry_sz, caps->srqwqe_hop_num,
-		   1, &caps->srqwqe_buf_pg_sz, &caps->srqwqe_ba_pg_sz,
-		   HEM_TYPE_SRQWQE);
-	calc_pg_sz(caps->max_srq_wrs, caps->idx_entry_sz, caps->idx_hop_num, 1,
-		   &caps->idx_buf_pg_sz, &caps->idx_ba_pg_sz, HEM_TYPE_IDX);
+	calc_pg_sz(caps->num_cqe_segs, caps->mtt_entry_sz, caps->cqe_hop_num,
+		   1, &caps->cqe_buf_pg_sz, &caps->cqe_ba_pg_sz, HEM_TYPE_CQE);
+	calc_pg_sz(caps->num_srqwqe_segs, caps->mtt_entry_sz,
+		   caps->srqwqe_hop_num, 1, &caps->srqwqe_buf_pg_sz,
+		   &caps->srqwqe_ba_pg_sz, HEM_TYPE_SRQWQE);
+	calc_pg_sz(caps->num_idx_segs, caps->idx_entry_sz, caps->idx_hop_num,
+		   1, &caps->idx_buf_pg_sz, &caps->idx_ba_pg_sz, HEM_TYPE_IDX);
 
 	return 0;
 }
