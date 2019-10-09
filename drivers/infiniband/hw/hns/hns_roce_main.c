@@ -101,7 +101,7 @@ static int hns_roce_add_gid(const union ib_gid *gid,
 
 	if (port >= hr_dev->caps.num_ports ||
 	    attr->index > hr_dev->caps.gid_table_len[port]) {
-		dev_err(hr_dev->dev, "add gid failed. port - %d, index - %d\n",
+		dev_err(hr_dev->dev, "add gid failed. port - %u, index - %u\n",
 			port, attr->index);
 		return -EINVAL;
 	}
@@ -114,7 +114,7 @@ static int hns_roce_add_gid(const union ib_gid *gid,
 #endif
 
 	if (ret)
-		dev_err(hr_dev->dev, "set gid failed(%d), index = %d", ret,
+		dev_err(hr_dev->dev, "set gid failed(%d), index = %u", ret,
 			attr->index);
 
 	return ret;
@@ -129,14 +129,14 @@ static int hns_roce_del_gid(const struct ib_gid_attr *attr, void **context)
 
 	if (port >= hr_dev->caps.num_ports) {
 		dev_err(hr_dev->dev,
-			"Port num %d id large than max port num %d.\n",
+			"Port num %u id large than max port num %u.\n",
 			port, hr_dev->caps.num_ports);
 		return -EINVAL;
 	}
 
 	ret = hr_dev->hw->set_gid(hr_dev, port, attr->index, &zgid, &zattr);
 	if (ret)
-		dev_warn(hr_dev->dev, "del gid failed(%d), index = %d", ret,
+		dev_warn(hr_dev->dev, "del gid failed(%d), index = %u", ret,
 			 attr->index);
 
 	return ret;
@@ -154,7 +154,7 @@ static int hns_roce_add_gid(struct ib_device *device, u8 port_num,
 
 	if (port >= hr_dev->caps.num_ports ||
 	    index > hr_dev->caps.gid_table_len[port]) {
-		dev_err(hr_dev->dev, "add gid failed. port - %d, index - %d\n",
+		dev_err(hr_dev->dev, "add gid failed. port - %u, index - %u\n",
 			port, index);
 		return -EINVAL;
 	}
@@ -162,7 +162,7 @@ static int hns_roce_add_gid(struct ib_device *device, u8 port_num,
 	ret = hr_dev->hw->set_gid(hr_dev, port, index, (union ib_gid *)gid,
 				   attr);
 	if (ret)
-		dev_err(hr_dev->dev, "set gid failed(%d), index = %d",
+		dev_err(hr_dev->dev, "set gid failed(%d), index = %u",
 			ret, index);
 
 	return ret;
@@ -181,14 +181,14 @@ static int hns_roce_del_gid(struct ib_device *device, u8 port_num,
 
 	if (port >= hr_dev->caps.num_ports) {
 		dev_err(hr_dev->dev,
-			"Port num %d id large than max port num %d.\n",
+			"Port num %u id large than max port num %u.\n",
 			port, hr_dev->caps.num_ports);
 		return -EINVAL;
 	}
 
 	ret = hr_dev->hw->set_gid(hr_dev, port, index, &zgid, &zattr);
 	if (ret)
-		dev_warn(hr_dev->dev, "del gid failed(%d), index = %d", ret,
+		dev_warn(hr_dev->dev, "del gid failed(%d), index = %u", ret,
 			 index);
 
 	return ret;
@@ -207,7 +207,7 @@ static int handle_en_event(struct hns_roce_dev *hr_dev, u8 port,
 
 	netdev = hr_dev->iboe.netdevs[port];
 	if (!netdev) {
-		dev_err(dev, "port(%d) can't find netdev\n", port);
+		dev_err(dev, "port(%u) can't find netdev\n", port);
 		return -ENODEV;
 	}
 
@@ -416,7 +416,7 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 	net_dev = hr_dev->iboe.netdevs[port];
 	if (!net_dev) {
 		spin_unlock_irqrestore(&hr_dev->iboe.lock, flags);
-		dev_err(dev, "find netdev %d failed!\r\n", port);
+		dev_err(dev, "find netdev %u failed!\r\n", port);
 		return -EINVAL;
 	}
 
