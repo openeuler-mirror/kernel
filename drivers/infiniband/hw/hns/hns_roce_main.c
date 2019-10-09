@@ -283,7 +283,7 @@ static int hns_roce_setup_mtu_mac_state(struct hns_roce_dev *hr_dev)
 	u8 i;
 
 	for (i = 0; i < hr_dev->caps.num_ports; i++) {
-		hr_dev->iboe.last_port_state[i] = IB_PORT_ACTIVE;
+		hr_dev->iboe.last_port_state[i] = IB_PORT_DOWN;
 		if (hr_dev->hw->set_mtu)
 			hr_dev->hw->set_mtu(hr_dev, hr_dev->iboe.phy_port[i],
 					    hr_dev->caps.max_mtu);
