@@ -393,9 +393,6 @@ static u8 hclge_setdcbx(struct hnae3_handle *h, u8 mode)
 	    !(mode & DCB_CAP_DCBX_HOST))
 		return 1;
 
-	if (hdev->dcbx_cap == mode)
-		return 0;
-
 	hdev->dcbx_cap = mode;
 
 	return 0;
