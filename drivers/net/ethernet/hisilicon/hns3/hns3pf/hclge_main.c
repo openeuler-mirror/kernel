@@ -5811,8 +5811,7 @@ static int hclge_del_fd_entry(struct hnae3_handle *handle,
 
 	if (!hclge_fd_rule_exist(hdev, fs->location)) {
 		dev_err(&hdev->pdev->dev,
-			"Delete fail, rule %u is inexistent\n",
-			le32_to_cpu(fs->location));
+			"Delete fail, rule %u is inexistent\n", fs->location);
 		return -ENOENT;
 	}
 
