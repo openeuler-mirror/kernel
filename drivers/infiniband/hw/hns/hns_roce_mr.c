@@ -996,7 +996,7 @@ struct ib_mr *hns_roce_get_dma_mr(struct ib_pd *pd, int acc)
 	struct hns_roce_mr *mr;
 	int ret;
 
-	mr = kmalloc(sizeof(*mr), GFP_KERNEL);
+	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
 	if (mr == NULL)
 		return  ERR_PTR(-ENOMEM);
 
@@ -1172,7 +1172,7 @@ struct ib_mr *hns_roce_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	int n;
 	int i;
 
-	mr = kmalloc(sizeof(*mr), GFP_KERNEL);
+	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
 	if (!mr)
 		return ERR_PTR(-ENOMEM);
 
@@ -1572,7 +1572,7 @@ struct ib_mw *hns_roce_alloc_mw(struct ib_pd *ib_pd, enum ib_mw_type type,
 	unsigned long index = 0;
 	int ret;
 
-	mw = kmalloc(sizeof(*mw), GFP_KERNEL);
+	mw = kzalloc(sizeof(*mw), GFP_KERNEL);
 	if (!mw)
 		return ERR_PTR(-ENOMEM);
 

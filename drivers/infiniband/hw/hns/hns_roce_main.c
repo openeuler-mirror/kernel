@@ -493,7 +493,8 @@ static struct ib_ucontext *hns_roce_alloc_ucontext(struct ib_device *ib_dev,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ib_dev);
 
 	if (!hr_dev->active) {
-		dev_err(hr_dev->dev, "alloc uncontext failed, hr_dev is not active\n");
+		dev_err(hr_dev->dev,
+			"alloc uncontext failed, hr_dev is not active\n");
 		return ERR_PTR(-EAGAIN);
 	}
 
@@ -501,7 +502,7 @@ static struct ib_ucontext *hns_roce_alloc_ucontext(struct ib_device *ib_dev,
 
 	resp.qp_tab_size = hr_dev->caps.num_qps;
 
-	context = kmalloc(sizeof(*context), GFP_KERNEL);
+	context = kzalloc(sizeof(*context), GFP_KERNEL);
 	if (!context)
 		return ERR_PTR(-ENOMEM);
 

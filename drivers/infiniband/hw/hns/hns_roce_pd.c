@@ -92,7 +92,7 @@ struct ib_pd *hns_roce_alloc_pd(struct ib_device *ib_dev,
 	struct hns_roce_pd *pd;
 	int ret;
 
-	pd = kmalloc(sizeof(*pd), GFP_KERNEL);
+	pd = kzalloc(sizeof(*pd), GFP_KERNEL);
 	if (!pd)
 		return ERR_PTR(-ENOMEM);
 
@@ -163,7 +163,7 @@ struct ib_xrcd *hns_roce_ib_alloc_xrcd(struct ib_device *ib_dev,
 	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC))
 		return ERR_PTR(-EINVAL);
 
-	xrcd = kmalloc(sizeof(*xrcd), GFP_KERNEL);
+	xrcd = kzalloc(sizeof(*xrcd), GFP_KERNEL);
 	if (!xrcd)
 		return ERR_PTR(-ENOMEM);
 
