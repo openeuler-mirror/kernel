@@ -9225,12 +9225,12 @@ static void hclge_state_uninit(struct hclge_dev *hdev)
 	set_bit(HCLGE_STATE_DOWN, &hdev->state);
 	set_bit(HCLGE_STATE_REMOVING, &hdev->state);
 
+	if (hdev->reset_timer.function)
+		del_timer_sync(&hdev->reset_timer);
 	if (hdev->service_task.work.func)
 		cancel_delayed_work_sync(&hdev->service_task);
 	if (hdev->rst_service_task.func)
 		cancel_work_sync(&hdev->rst_service_task);
-	if (hdev->reset_timer.function)
-		del_timer_sync(&hdev->reset_timer);
 	if (hdev->mbx_service_task.func)
 		cancel_work_sync(&hdev->mbx_service_task);
 }

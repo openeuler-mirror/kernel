@@ -4327,9 +4327,6 @@ int hns3_nic_reset_all_ring(struct hnae3_handle *h)
 	int i, j;
 	int ret;
 
-	if (!test_bit(HNS3_NIC_STATE_INITED, &priv->state))
-		return -EBUSY;
-
 	for (i = 0; i < h->kinfo.num_tqps; i++) {
 		ret = h->ae_algo->ops->reset_queue(h, i);
 		if (ret)
@@ -4445,11 +4442,6 @@ static int hns3_reset_notify_init_enet(struct hnae3_handle *handle)
 
 	/* Carrier off reporting is important to ethtool even BEFORE open */
 	netif_carrier_off(netdev);
-
-	if (test_bit(HNS3_NIC_STATE_INITED, &priv->state)) {
-		netdev_warn(netdev, "already initialized\n");
-		return 0;
-	}
 
 	ret = hns3_get_ring_config(priv);
 	if (ret)
