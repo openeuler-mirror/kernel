@@ -1353,9 +1353,10 @@ static ssize_t numa_distance_show(struct device *dev,
 	int distance = 0;
 
 #ifdef CONFIG_NUMA
-	distance = cpu_to_node(smp_processor_id()) - uacce->pdev->numa_node;
+	distance = node_distance(uacce->pdev->numa_node,
+		cpu_to_node(smp_processor_id()));
 #endif
-	return sprintf(buf, "%d\n", abs(distance));
+	return sprintf(buf, "%d\n", distance);
 }
 static DEVICE_ATTR_RO(numa_distance);
 
