@@ -230,8 +230,6 @@ struct hnae3_ae_dev {
 	const struct hnae3_ae_ops *ops;
 	struct list_head node;
 	u32 flag;
-	/* workaround to stop multiple reset happening */
-	u8 override_pci_need_reset;
 	unsigned long hw_err_reset_req;
 	enum hnae3_reset_type reset_type;
 	void *priv;

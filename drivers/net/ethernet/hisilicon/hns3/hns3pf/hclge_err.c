@@ -1677,6 +1677,8 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 	if (status & HCLGE_RAS_REG_NFE_MASK ||
 	    status & HCLGE_RAS_REG_ROCEE_ERR_MASK)
 		ae_dev->hw_err_reset_req = 0;
+	else
+		goto out;
 
 	/* Handling Non-fatal HNS RAS errors */
 	if (status & HCLGE_RAS_REG_NFE_MASK) {
@@ -1689,27 +1691,19 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 			if (ret)
 				return PCI_ERS_RESULT_RECOVERED;
 		}
-	} else {
-		if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) ||
-		    hdev->pdev->revision < 0x21) {
-			ae_dev->override_pci_need_reset = 1;
-			return PCI_ERS_RESULT_RECOVERED;
-		}
 	}
 
-	if (status & HCLGE_RAS_REG_ROCEE_ERR_MASK) {
-		dev_err(dev, "ROCEE uncorrected RAS error identified\n");
+	/* Handling Non-fatal Rocee RAS errors */
+	if (hdev->pdev->revision >= 0x21 &&
+	    status & HCLGE_RAS_REG_ROCEE_ERR_MASK) {
+		dev_err(dev, "ROCEE Non-Fatal RAS error identified\n");
 		hclge_handle_rocee_ras_error(ae_dev);
 	}
 
-	if ((status & HCLGE_RAS_REG_NFE_MASK ||
-	     status & HCLGE_RAS_REG_ROCEE_ERR_MASK) &&
-	     ae_dev->hw_err_reset_req) {
-		ae_dev->override_pci_need_reset = 0;
+	if (ae_dev->hw_err_reset_req)
 		return PCI_ERS_RESULT_NEED_RESET;
-	}
-	ae_dev->override_pci_need_reset = 1;
 
+out:
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
