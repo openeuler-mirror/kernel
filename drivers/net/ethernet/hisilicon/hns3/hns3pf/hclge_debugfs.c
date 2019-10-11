@@ -1022,7 +1022,7 @@ static void hclge_dbg_fd_tcam(struct hclge_dev *hdev)
 	kfree(rule_locs);
 }
 
-static void hclge_dbg_dump_rst_info(struct hclge_dev *hdev)
+void hclge_dbg_dump_rst_info(struct hclge_dev *hdev)
 {
 	dev_info(&hdev->pdev->dev, "PF reset count: %u\n",
 		 hdev->rst_stats.pf_rst_cnt);

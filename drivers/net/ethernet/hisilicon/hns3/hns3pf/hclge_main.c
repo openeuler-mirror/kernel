@@ -3550,6 +3550,8 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev)
 	if (handle && handle->ae_algo->ops->reset_done)
 		handle->ae_algo->ops->reset_done(handle, false);
 
+	hclge_dbg_dump_rst_info(hdev);
+
 	return false;
 }
 
