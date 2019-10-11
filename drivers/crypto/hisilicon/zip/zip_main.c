@@ -964,10 +964,20 @@ static int hisi_zip_sriov_configure(struct pci_dev *pdev, int num_vfs)
 		return hisi_zip_sriov_enable(pdev, num_vfs);
 }
 
+static void hisi_zip_remove_wait_delay(struct hisi_zip *hisi_zip)
+{
+	while (hisi_qm_frozen(&hisi_zip->qm))
+		;
+	udelay(ZIP_WAIT_DELAY);
+}
+
 static void hisi_zip_remove(struct pci_dev *pdev)
 {
 	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hisi_zip->qm;
+
+	if (uacce_mode != UACCE_MODE_NOUACCE)
+		hisi_zip_remove_wait_delay(hisi_zip);
 
 	if (qm->fun_type == QM_HW_PF && hisi_zip->ctrl->num_vfs != 0)
 		hisi_zip_sriov_disable(pdev);

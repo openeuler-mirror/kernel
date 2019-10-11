@@ -10,6 +10,7 @@
 
 #undef pr_fmt
 #define pr_fmt(fmt)	"hisi_zip: " fmt
+#define ZIP_WAIT_DELAY	1000
 
 enum hisi_zip_error_type {
 	/* negative compression */
