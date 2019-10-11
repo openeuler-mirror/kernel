@@ -3431,6 +3431,10 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 	    wc->status != IB_WC_WR_FLUSH_ERR) {
 		dev_err(hr_dev->dev, "error cqe status is: 0x%x\n",
 			status & HNS_ROCE_V2_CQE_STATUS_MASK);
+		dev_err(hr_dev->dev,
+			"dump cqe:%08x %08x %08x %08x %08x %08x %08x\n",
+			cqe->byte_4, cqe->rkey, cqe->byte_12, cqe->byte_16,
+			cqe->byte_cnt, cqe->byte_28, cqe->byte_32);
 		if (qp_lock)
 			init_flush_work(hr_dev, *cur_qp);
 
