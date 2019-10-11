@@ -62,10 +62,6 @@ static int hclge_init_vlan_config(struct hclge_dev *hdev);
 static void hclge_sync_vlan_filter(struct hclge_dev *hdev);
 static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev);
 static bool hclge_get_hw_reset_stat(struct hnae3_handle *handle);
-static void hclge_add_vport_vlan_table(struct hclge_vport *vport, u16 vlan_id,
-				       bool writen_to_tbl);
-static void hclge_rm_vport_vlan_table(struct hclge_vport *vport, u16 vlan_id,
-				      bool is_write_tbl);
 static void hclge_rfs_filter_expire(struct hclge_dev *hdev);
 static void hclge_clear_arfs_rules(struct hnae3_handle *handle);
 static int hclge_set_default_loopback(struct hclge_dev *hdev);
@@ -8233,21 +8229,28 @@ static void hclge_add_vport_vlan_table(struct hclge_vport *vport, u16 vlan_id,
 	list_add_tail(&vlan->node, &vport->vlan_list);
 }
 
-static void hclge_add_vport_all_vlan_table(struct hclge_vport *vport)
+static int hclge_add_vport_all_vlan_table(struct hclge_vport *vport)
 {
 	struct hclge_vport_vlan_cfg *vlan, *tmp;
 	struct hclge_dev *hdev = vport->back;
+	int ret;
 
 	list_for_each_entry_safe(vlan, tmp, &vport->vlan_list, node) {
-		if (!vlan->hd_tbl_status)
-			hclge_set_vlan_filter_hw(hdev,
-						 htons(ETH_P_8021Q),
-						 vport->vport_id,
-						 vlan->vlan_id,
-						 false);
-
+		if (!vlan->hd_tbl_status) {
+			ret = hclge_set_vlan_filter_hw(hdev, htons(ETH_P_8021Q),
+						       vport->vport_id,
+						       vlan->vlan_id, false);
+			if (ret) {
+				dev_err(&hdev->pdev->dev,
+					"restore vport vlan list failed, ret=%d\n",
+					ret);
+				return ret;
+			}
+		}
 		vlan->hd_tbl_status = true;
 	}
+
+	return 0;
 }
 
 static void hclge_rm_vport_vlan_table(struct hclge_vport *vport, u16 vlan_id,
@@ -8378,19 +8381,15 @@ static int hclge_update_vlan_filter_entries(struct hclge_vport *vport,
 						 vport->vport_id,
 						 new_info->vlan_tag,
 						 false);
-
-	} else {
-		ret = hclge_set_vlan_filter_hw(hdev,
-					       htons(old_info->vlan_proto),
-					       vport->vport_id,
-					       old_info->vlan_tag,
-					       true);
-		if (ret)
-			return ret;
-
-		hclge_add_vport_all_vlan_table(vport);
-		return 0;
 	}
+
+	ret = hclge_set_vlan_filter_hw(hdev, htons(old_info->vlan_proto),
+				       vport->vport_id, old_info->vlan_tag,
+				       true);
+	if (ret)
+		return ret;
+
+	return hclge_add_vport_all_vlan_table(vport);
 }
 
 int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
