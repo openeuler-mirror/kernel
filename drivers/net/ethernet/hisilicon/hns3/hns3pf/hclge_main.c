@@ -8407,13 +8407,24 @@ int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
 		return ret;
 
 	if (state == HNAE3_PORT_BASE_VLAN_MODIFY) {
-		hclge_set_vlan_filter_hw(hdev, old_vlan_info->vlan_proto,
-					 vport->vport_id,
-					 old_vlan_info->vlan_tag,
-					 true);
-		hclge_set_vlan_filter_hw(hdev, vlan_info->vlan_proto,
-					 vport->vport_id, vlan_info->vlan_tag,
-					 false);
+		/* add new VLAN tag */
+		ret = hclge_set_vlan_filter_hw(hdev,
+					       htons(vlan_info->vlan_proto),
+					       vport->vport_id,
+					       vlan_info->vlan_tag,
+					       false);
+		if (ret)
+			return ret;
+
+		/* remove old VLAN tag */
+		ret = hclge_set_vlan_filter_hw(hdev,
+					       htons(old_vlan_info->vlan_proto),
+					       vport->vport_id,
+					       old_vlan_info->vlan_tag,
+					       true);
+		if (ret)
+			return ret;
+
 		goto update;
 	}
 
@@ -8422,7 +8433,7 @@ int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
 	if (ret)
 		return ret;
 
-	/* update state only when disable/enable port base vlan */
+	/* update state only when disable/enable port based VLAN */
 	vport->port_base_vlan_cfg.state = state;
 	if (state == HNAE3_PORT_BASE_VLAN_DISABLE)
 		nic->port_base_vlan_state = HNAE3_PORT_BASE_VLAN_DISABLE;
