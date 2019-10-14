@@ -3458,6 +3458,9 @@ static int hns_roce_v1_q_sqp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr,
 	struct hns_roce_sqp_context context;
 	u32 addr;
 
+	memset(qp_attr, 0, sizeof(*qp_attr));
+	memset(qp_init_attr, 0, sizeof(*qp_init_attr));
+
 	mutex_lock(&hr_qp->mutex);
 
 	if (hr_qp->state == IB_QPS_RESET) {
