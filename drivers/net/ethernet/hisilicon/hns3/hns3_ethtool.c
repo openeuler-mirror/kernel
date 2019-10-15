@@ -917,9 +917,11 @@ static struct hns3_enet_ring *hns3_backup_ringparam(struct hns3_nic_priv *priv)
 	if (!tmp_rings)
 		return NULL;
 
-	for (i = 0; i < handle->kinfo.num_tqps * 2; i++)
+	for (i = 0; i < handle->kinfo.num_tqps * 2; i++) {
 		memcpy(&tmp_rings[i], &priv->ring[i],
 		       sizeof(struct hns3_enet_ring));
+		tmp_rings[i].skb = NULL;
+	}
 
 	return tmp_rings;
 }
@@ -970,14 +972,6 @@ static int hns3_set_ringparam(struct net_device *ndev,
 	    old_rx_desc_num == new_rx_desc_num)
 		return 0;
 
-	netdev_info(ndev,
-		    "Changing Tx/Rx ring depth from %u/%u to %u/%u\n",
-		    old_tx_desc_num, old_rx_desc_num,
-		    new_tx_desc_num, new_rx_desc_num);
-
-	if (if_running)
-		ndev->netdev_ops->ndo_stop(ndev);
-
 	tmp_rings = hns3_backup_ringparam(priv);
 	if (!tmp_rings) {
 		netdev_err(ndev,
@@ -985,6 +979,14 @@ static int hns3_set_ringparam(struct net_device *ndev,
 		ret = -ENOMEM;
 		goto out;
 	}
+
+	netdev_info(ndev,
+		    "Changing Tx/Rx ring depth from %d/%d to %d/%d\n",
+		    old_tx_desc_num, old_rx_desc_num,
+		    new_tx_desc_num, new_rx_desc_num);
+
+	if (if_running)
+		ndev->netdev_ops->ndo_stop(ndev);
 
 	hns3_change_all_ring_bd_num(priv, new_tx_desc_num, new_rx_desc_num);
 	ret = hns3_init_all_ring(priv);
