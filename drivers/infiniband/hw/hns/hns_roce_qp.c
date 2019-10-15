@@ -448,6 +448,13 @@ static int hns_roce_set_user_sq_size(struct hns_roce_dev *hr_dev,
 	hr_qp->sq.wqe_cnt = 1 << ucmd->log_sq_bb_count;
 	hr_qp->sq.wqe_shift = ucmd->log_sq_stride;
 
+	if ((u32)hr_qp->sq.wqe_cnt > hr_dev->caps.max_wqes) {
+		dev_err(hr_dev->dev,
+			"while setting sq(0x%lx) size, sq.wqe_cnt too large\n",
+			hr_qp->qpn);
+		return -EINVAL;
+	}
+
 	max_cnt = max(1U, cap->max_send_sge);
 	if (hr_dev->caps.max_sq_sg <= HNS_ROCE_MAX_SGE_NUM)
 		hr_qp->sq.max_gs = roundup_pow_of_two(max_cnt);
