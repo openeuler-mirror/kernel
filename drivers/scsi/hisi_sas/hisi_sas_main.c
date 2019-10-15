@@ -3030,7 +3030,8 @@ ssize_t hisi_sas_debugfs_bist_phy_write(struct file *filp,
 	struct seq_file *m = filp->private_data;
 	struct hisi_hba *hisi_hba = m->private;
 	char kbuf[16] = {}, *pkbuf;
-	int val, phy;
+	unsigned int phy;
+	int val;
 
 	if (hisi_hba->bist_loopback_enable)
 		return -EINVAL;
@@ -3043,7 +3044,7 @@ ssize_t hisi_sas_debugfs_bist_phy_write(struct file *filp,
 
 	pkbuf = strstrip(kbuf);
 
-	val = kstrtoint(pkbuf, 0, &phy);
+	val = kstrtouint(pkbuf, 0, &phy);
 	if (val < 0)
 		return val;
 
