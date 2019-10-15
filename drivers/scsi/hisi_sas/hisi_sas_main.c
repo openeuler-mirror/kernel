@@ -516,13 +516,8 @@ static int hisi_sas_task_prep(struct sas_task *task,
 	slot = &hisi_hba->slot_info[slot_idx];
 
 	spin_lock_irqsave(&dq->lock, flags);
-	wr_q_index = hisi_hba->hw->get_free_slot(hisi_hba, dq);
-	if (wr_q_index < 0) {
-		spin_unlock_irqrestore(&dq->lock, flags);
-		rc = -EAGAIN;
-		goto err_out_tag;
-	}
-
+	wr_q_index = dq->wr_point;
+	dq->wr_point = (dq->wr_point + 1) % HISI_SAS_QUEUE_SLOTS;
 	list_add_tail(&slot->delivery, &dq->list);
 	spin_unlock_irqrestore(&dq->lock, flags);
 	spin_lock_irqsave(&sas_dev->lock, flags);
@@ -577,8 +572,6 @@ static int hisi_sas_task_prep(struct sas_task *task,
 
 	return 0;
 
-err_out_tag:
-	hisi_sas_slot_index_free(hisi_hba, slot_idx);
 err_out_dif_dma_unmap:
 	hisi_sas_dif_dma_unmap(hisi_hba, task, n_elem_dif);
 err_out_dma_unmap:
@@ -1970,12 +1963,8 @@ hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba,
 	slot = &hisi_hba->slot_info[slot_idx];
 
 	spin_lock_irqsave(&dq->lock, flags_dq);
-	wr_q_index = hisi_hba->hw->get_free_slot(hisi_hba, dq);
-	if (wr_q_index < 0) {
-		spin_unlock_irqrestore(&dq->lock, flags_dq);
-		rc = -EAGAIN;
-		goto err_out_tag;
-	}
+	wr_q_index = dq->wr_point;
+	dq->wr_point = (dq->wr_point + 1) % HISI_SAS_QUEUE_SLOTS;
 	list_add_tail(&slot->delivery, &dq->list);
 	spin_unlock_irqrestore(&dq->lock, flags_dq);
 	spin_lock_irqsave(&sas_dev->lock, flags);
@@ -2014,8 +2003,6 @@ hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba,
 
 	return 0;
 
-err_out_tag:
-	hisi_sas_slot_index_free(hisi_hba, slot_idx);
 err_out:
 	dev_err(dev, "internal abort task prep: failed[%d]!\n", rc);
 
