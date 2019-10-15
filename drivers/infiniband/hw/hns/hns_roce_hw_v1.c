@@ -3761,9 +3761,8 @@ static int check_qp_db_process_status(struct hns_roce_dev *hr_dev,
 		while (roce_hw_index_cmp_lt(sdb_send_ptr, sdb_issue_ptr,
 					    ROCEE_SDB_PTR_CMP_BITS)) {
 			if (!time_before(jiffies, end)) {
-				dev_dbg(dev, "QP(0x%lx) db process stage1 timeout. issue 0x%x send 0x%x.\n",
-					hr_qp->qpn, sdb_issue_ptr,
-					sdb_send_ptr);
+				dev_dbg(dev, "QP(0x%lx) db process stage1 timeout.\n",
+					hr_qp->qpn);
 				return 0;
 			}
 
