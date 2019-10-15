@@ -1035,7 +1035,7 @@ static void phy_hard_reset_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 	struct hisi_sas_phy *phy = &hisi_hba->phy[phy_no];
 	u32 txid_auto;
 
-	disable_phy_v3_hw(hisi_hba, phy_no);
+	hisi_sas_phy_enable(hisi_hba, phy_no, 0);
 	if (phy->identify.device_type == SAS_END_DEVICE) {
 		txid_auto = hisi_sas_phy_read32(hisi_hba, phy_no, TXID_AUTO);
 		hisi_sas_phy_write32(hisi_hba, phy_no, TXID_AUTO,
@@ -1044,7 +1044,7 @@ static void phy_hard_reset_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 
 	/* Delay 100ms after phy hard reset to meet hw need */
 	msleep(100);
-	start_phy_v3_hw(hisi_hba, phy_no);
+	hisi_sas_phy_enable(hisi_hba, phy_no, 1);
 }
 
 static enum sas_linkrate phy_get_max_linkrate_v3_hw(void)
@@ -1067,7 +1067,7 @@ static void phys_init_v3_hw(struct hisi_hba *hisi_hba)
 		if (!sas_phy->phy->enabled)
 			continue;
 
-		start_phy_v3_hw(hisi_hba, i);
+		hisi_sas_phy_enable(hisi_hba, i, 1);
 	}
 }
 
@@ -3118,17 +3118,6 @@ static void debugfs_snapshot_restore_v3_hw(struct hisi_hba *hisi_hba)
 			 (u32)((1ULL << hisi_hba->queue_count) - 1));
 
 	clear_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags);
-}
-
-static void hisi_sas_phy_enable(struct hisi_hba *hisi_hba,
-	u32 phy_id, const u32 phy_state)
-{
-	u32 phy_val = 0;
-	u32 temp = 0;
-
-	phy_val = hisi_sas_phy_read32(hisi_hba, phy_id, PHY_CFG);
-	temp = (phy_val & (~PHY_CFG_ENA_MSK)) | (phy_state << PHY_CFG_ENA_OFF);
-	hisi_sas_phy_write32(hisi_hba, phy_id, PHY_CFG, temp);
 }
 
 static void hisi_sas_bist_test_prep_v3_hw(struct hisi_hba *hisi_hba)

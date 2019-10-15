@@ -10,7 +10,6 @@
  */
 
 #include "hisi_sas.h"
-#include "../libsas/sas_internal.h"
 #define DRV_NAME "hisi_sas"
 
 #define DEV_IS_GONE(dev) \
@@ -160,7 +159,7 @@ void hisi_sas_stop_phys(struct hisi_hba *hisi_hba)
 	int phy_no;
 
 	for (phy_no = 0; phy_no < hisi_hba->n_phy; phy_no++)
-		hisi_hba->hw->phy_disable(hisi_hba, phy_no);
+		hisi_sas_phy_enable(hisi_hba, phy_no, 0);
 }
 EXPORT_SYMBOL_GPL(hisi_sas_stop_phys);
 
@@ -947,6 +946,30 @@ static void hisi_sas_phy_init(struct hisi_hba *hisi_hba, int phy_no)
 	timer_setup(&phy->timer, NULL, 0);
 }
 
+/* Wrapper to ensure we track hisi_sas_phy.enable properly */
+void hisi_sas_phy_enable(struct hisi_hba *hisi_hba, int phy_no, int enable)
+{
+	struct hisi_sas_phy *phy = &hisi_hba->phy[phy_no];
+	struct asd_sas_phy *aphy = &phy->sas_phy;
+	struct sas_phy *sphy = aphy->phy;
+	unsigned long flags;
+
+	spin_lock_irqsave(&phy->lock, flags);
+
+	if (enable) {
+		/* We may have been enabled already; if so, don't touch */
+		if (!phy->enable)
+			sphy->negotiated_linkrate = SAS_LINK_RATE_UNKNOWN;
+		hisi_hba->hw->phy_start(hisi_hba, phy_no);
+	} else {
+		sphy->negotiated_linkrate = SAS_PHY_DISABLED;
+		hisi_hba->hw->phy_disable(hisi_hba, phy_no);
+	}
+	phy->enable = enable;
+	spin_unlock_irqrestore(&phy->lock, flags);
+}
+EXPORT_SYMBOL_GPL(hisi_sas_phy_enable);
+
 static void hisi_sas_port_notify_formed(struct asd_sas_phy *sas_phy)
 {
 	struct sas_ha_struct *sas_ha = sas_phy->ha;
@@ -1097,11 +1120,11 @@ static int hisi_sas_phy_set_linkrate(struct hisi_hba *hisi_hba, int phy_no,
 	/* Feed back modified linkrate value pass from upper layer */
 	sas_phy->phy->maximum_linkrate = max;
 	sas_phy->phy->minimum_linkrate = min;
-	hisi_hba->hw->phy_disable(hisi_hba, phy_no);
+	hisi_sas_phy_enable(hisi_hba, phy_no, 0);
 	/* Sleep 100ms after disable phy to meet hw need */
 	msleep(100);
 	hisi_hba->hw->phy_set_linkrate(hisi_hba, phy_no, &_r);
-	hisi_hba->hw->phy_start(hisi_hba, phy_no);
+	hisi_sas_phy_enable(hisi_hba, phy_no, 1);
 
 	return 0;
 }
@@ -1119,14 +1142,14 @@ static int hisi_sas_control_phy(struct asd_sas_phy *sas_phy, enum phy_func func,
 		break;
 
 	case PHY_FUNC_LINK_RESET:
-		hisi_hba->hw->phy_disable(hisi_hba, phy_no);
+		hisi_sas_phy_enable(hisi_hba, phy_no, 0);
 		/* Sleep 100ms after disable phy to meet hw need */
 		msleep(100);
-		hisi_hba->hw->phy_start(hisi_hba, phy_no);
+		hisi_sas_phy_enable(hisi_hba, phy_no, 1);
 		break;
 
 	case PHY_FUNC_DISABLE:
-		hisi_hba->hw->phy_disable(hisi_hba, phy_no);
+		hisi_sas_phy_enable(hisi_hba, phy_no, 0);
 		break;
 
 	case PHY_FUNC_SET_LINK_RATE:
@@ -2180,16 +2203,18 @@ static void hisi_sas_phy_disconnected(struct hisi_sas_phy *phy)
 {
 	struct asd_sas_phy *sas_phy = &phy->sas_phy;
 	struct sas_phy *sphy = sas_phy->phy;
-	struct sas_phy_data *d = sphy->hostdata;
+	unsigned long flags;
 
 	phy->phy_attached = 0;
 	phy->phy_type = 0;
 	phy->port = NULL;
 
-	if (d->enable)
+	spin_lock_irqsave(&phy->lock, flags);
+	if (phy->enable)
 		sphy->negotiated_linkrate = SAS_LINK_RATE_UNKNOWN;
 	else
 		sphy->negotiated_linkrate = SAS_PHY_DISABLED;
+	spin_unlock_irqrestore(&phy->lock, flags);
 }
 
 void hisi_sas_phy_down(struct hisi_hba *hisi_hba, int phy_no, int rdy)
