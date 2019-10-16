@@ -1749,8 +1749,13 @@ static int hisi_qm_uacce_start_queue(struct uacce_queue *q)
 	}
 
 	ret = hisi_qm_start_qp(qp, qp->pasid);
-	if (ret && !qm->use_dma_api)
-		hisi_qm_stop(qm, QM_NORMAL);
+	if (ret && !qm->use_dma_api) {
+		ret = hisi_qm_stop(qm, QM_NORMAL);
+		if (ret) {
+			dev_dbg(&q->uacce->dev, "Stop qm failed!\n");
+			return ret;
+		}
+	}
 
 	return ret;
 }

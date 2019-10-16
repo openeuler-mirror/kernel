@@ -1453,7 +1453,11 @@ static void hisi_zip_reset_done(struct pci_dev *pdev)
 		if (hisi_zip->ctrl->num_vfs)
 			hisi_zip_vf_q_assign(hisi_zip,
 				hisi_zip->ctrl->num_vfs);
-		hisi_zip_vf_reset_done(hisi_zip);
+		ret = hisi_zip_vf_reset_done(hisi_zip);
+		if (ret) {
+			dev_err(dev, "Failed to start VFs!\n");
+			goto flr_done;
+		}
 	}
 
 flr_done:
