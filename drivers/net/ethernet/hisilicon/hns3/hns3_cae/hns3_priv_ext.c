@@ -239,8 +239,8 @@ static int hns3_ext_test_get_pfc_storm_para(struct hns3_nic_priv *net_priv,
 	return ret;
 }
 
-static int hns3_ext_test_get_phy_reg(struct hns3_nic_priv *net_priv, void *in,
-				     void *out)
+static int hns3_ext_test_get_phy_reg(struct hns3_nic_priv *net_priv,
+				     void *in, void *out, int is_8211_phy)
 {
 	struct hns3_phy_para *para_out = (struct hns3_phy_para *)out;
 	struct hns3_phy_para *para_in = (struct hns3_phy_para *)in;
@@ -251,7 +251,12 @@ static int hns3_ext_test_get_phy_reg(struct hns3_nic_priv *net_priv, void *in,
 	u16 data;
 	int ret;
 
-	ret = nic_get_phy_reg(netdev, page_select_addr, page, reg_addr, &data);
+	if (is_8211_phy)
+		ret = nic_get_8211_phy_reg(netdev, page_select_addr, page,
+					   reg_addr, &data);
+	else
+		ret = nic_get_phy_reg(netdev, page_select_addr, page, reg_addr,
+				      &data);
 	if (!ret) {
 		para_out->page = page;
 		para_out->reg_addr = reg_addr;
@@ -261,13 +266,20 @@ static int hns3_ext_test_get_phy_reg(struct hns3_nic_priv *net_priv, void *in,
 	return ret;
 }
 
-static int hns3_ext_test_set_phy_reg(struct hns3_nic_priv *net_priv, void *in)
+static int hns3_ext_test_set_phy_reg(struct hns3_nic_priv *net_priv,
+				     void *in, int is_8211_phy)
 {
 	struct hns3_phy_para *para = (struct hns3_phy_para *)in;
 	struct net_device *netdev = net_priv->netdev;
 
-	return nic_set_phy_reg(netdev, para->page_select_addr,
-			       para->page, para->reg_addr, para->data);
+	if (is_8211_phy)
+		return nic_set_8211_phy_reg(netdev, para->page_select_addr,
+					    para->page, para->reg_addr,
+					    para->data);
+	else
+		return nic_set_phy_reg(netdev, para->page_select_addr,
+				       para->page, para->reg_addr,
+				       para->data);
 }
 
 static int hns3_ext_test_get_macid(struct hns3_nic_priv *net_priv, void *out)
@@ -368,16 +380,22 @@ int hns3_ext_interface_test(struct hns3_nic_priv *net_priv,
 		ret = hns3_ext_test_get_pfc_storm_para(net_priv, in, out);
 		break;
 	case EXT_GET_PHY_REG:
-		ret = hns3_ext_test_get_phy_reg(net_priv, in, out);
+		ret = hns3_ext_test_get_phy_reg(net_priv, in, out, false);
 		break;
 	case EXT_SET_PHY_REG:
-		ret = hns3_ext_test_set_phy_reg(net_priv, in);
+		ret = hns3_ext_test_set_phy_reg(net_priv, in, false);
 		break;
 	case EXT_GET_MAC_ID:
 		ret = hns3_ext_test_get_macid(net_priv, out);
 		break;
 	case EXT_GET_HILINK_REF_LOS:
 		ret = hns3_ext_test_get_hilink_ref_los(net_priv, out);
+		break;
+	case EXT_GET_8211_PHY_REG:
+		ret = hns3_ext_test_get_phy_reg(net_priv, in, out, true);
+		break;
+	case EXT_SET_8211_PHY_REG:
+		ret = hns3_ext_test_set_phy_reg(net_priv, in, true);
 		break;
 	default:
 		ret = -EFAULT;

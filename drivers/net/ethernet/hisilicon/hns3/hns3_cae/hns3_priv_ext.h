@@ -33,6 +33,8 @@ enum ext_op_code {
 	EXT_SET_PHY_REG,
 	EXT_GET_MAC_ID,
 	EXT_GET_HILINK_REF_LOS,
+	EXT_GET_8211_PHY_REG,
+	EXT_SET_8211_PHY_REG,
 };
 
 struct hns3_cpumask_param {
