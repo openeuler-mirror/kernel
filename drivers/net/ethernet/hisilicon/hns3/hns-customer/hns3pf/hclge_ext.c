@@ -638,6 +638,134 @@ static int hclge_set_phy_reg(struct hnae3_handle *handle, int opcode,
 	return hclge_phy_reg_opt(handle, data, PHY_OP_WRITE);
 }
 
+static int hclge_8211_phy_indirect_opt(struct hclge_phy_para *para,
+				       struct hclge_dev *hdev,
+				       struct mii_bus *mdio_bus,
+				       u32 phyid,
+				       enum hclge_phy_op_code opt_type)
+{
+	u32 indirect_reg_data;
+	int op_ret;
+
+	/*select indirect page 0xa43*/
+	op_ret = mdio_bus->write(mdio_bus, phyid, para->page_select_addr,
+				      HCLGE_8211_PHY_INDIRECT_PAGE);
+	if (op_ret < 0) {
+		dev_err(&hdev->pdev->dev,
+			"change phy %d indirect page 0xa43 failed.\n", phyid);
+		return op_ret;
+	}
+	/*ndirect access address = page_no*16 + 2*(reg_no%16)*/
+	indirect_reg_data = (para->page << 4) + ((para->reg_addr % 16) << 1);
+	op_ret = mdio_bus->write(mdio_bus, phyid,
+				 HCLGE_8211_PHY_INDIRECT_REG,
+				 indirect_reg_data);
+	if (op_ret < 0) {
+		dev_err(&hdev->pdev->dev,
+			"write phy %d indirect reg failed.\n", phyid);
+		return op_ret;
+	}
+
+	if (opt_type == PHY_OP_READ) {
+		op_ret = mdio_bus->read(mdio_bus, phyid,
+					HCLGE_8211_PHY_INDIRECT_DATA);
+		if (op_ret < 0) {
+			dev_err(&hdev->pdev->dev,
+				"read phy %d indirect data failed.\n", phyid);
+		} else {
+			para->data = (u16)op_ret;
+			op_ret = 0;
+		}
+	} else {
+		op_ret = mdio_bus->write(mdio_bus, phyid,
+					 HCLGE_8211_PHY_INDIRECT_DATA,
+					 para->data);
+		if (op_ret < 0) {
+			dev_err(&hdev->pdev->dev,
+				"write phy %d indirect data failed.\n", phyid);
+		}
+	}
+
+	return op_ret;
+}
+
+static int hclge_8211_phy_reg_opt(struct hnae3_handle *handle,
+				  void *data, enum hclge_phy_op_code opt_type)
+{
+	struct hclge_phy_para *para = (struct hclge_phy_para *)data;
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+	struct hclge_mac *mac = &hdev->hw.mac;
+	struct mii_bus *mdio_bus = mac->mdio_bus;
+	u32 phyid = mac->phy_addr;
+	u16 save_page;
+	int ret;
+
+	ret = hclge_check_phy_opt_param(hdev, mdio_bus, mac->phydev, opt_type);
+	if (ret < 0)
+		return ret;
+
+	mutex_lock(&mdio_bus->mdio_lock);
+	ret = mdio_bus->read(mdio_bus, phyid, para->page_select_addr);
+	if (ret < 0) {
+		dev_err(&hdev->pdev->dev,
+			"record phy %d reg page failed.\n",
+			phyid);
+		mutex_unlock(&mdio_bus->mdio_lock);
+		return ret;
+	}
+	save_page = ret;
+	ret = hclge_8211_phy_indirect_opt(para, hdev, mdio_bus, phyid,
+					  opt_type);
+	if (ret)
+		dev_err(&hdev->pdev->dev,
+			"8211 phy %d indirect access failed.\n", phyid);
+	ret = mdio_bus->write(mdio_bus, phyid, para->page_select_addr,
+			      save_page);
+	if (ret < 0)
+		dev_err(&hdev->pdev->dev,
+			"restore phy %d reg page %u failed.\n",
+			phyid, save_page);
+
+	mutex_unlock(&mdio_bus->mdio_lock);
+
+	return ret;
+}
+
+static int hclge_8211_phy_need_indirect_access(u16 page)
+{
+	if (page >= HCLGE_8211_PHY_INDIRECT_RANGE1_S &&
+	    page <= HCLGE_8211_PHY_INDIRECT_RANGE1_E)
+		return true;
+	else if ((page >= HCLGE_8211_PHY_INDIRECT_RANGE2_S) &&
+		 (page <= HCLGE_8211_PHY_INDIRECT_RANGE2_E))
+		return true;
+	else
+		return false;
+}
+
+static int hclge_get_8211_phy_reg(struct hnae3_handle *handle,
+				  int opcode, void *data, int length)
+{
+	struct hclge_phy_para *para = (struct hclge_phy_para *)data;
+
+	if (hclge_8211_phy_need_indirect_access(para->page))
+		return hclge_8211_phy_reg_opt(handle, data, PHY_OP_READ);
+	else
+		return hclge_phy_reg_opt(handle, data, PHY_OP_READ);
+}
+
+static int hclge_set_8211_phy_reg(struct hnae3_handle *handle,
+				  int opcode, void *data, int length)
+{
+	struct hclge_phy_para *para = (struct hclge_phy_para *)data;
+
+	if (hclge_8211_phy_need_indirect_access(para->page))
+		return hclge_8211_phy_reg_opt(handle, data, PHY_OP_WRITE);
+	else
+		return hclge_phy_reg_opt(handle, data, PHY_OP_WRITE);
+}
+
 static int hclge_opt_lookup_mac_tbl(struct hclge_vport *vport,
 				    unsigned char *addr)
 {
@@ -809,6 +937,9 @@ static struct hclge_ext_func hclge_ext_func_arr[] = {
 	{HCLGE_EXT_OPC_OPT_MAC_TABLE, hclge_opt_mac_table},
 	{HCLGE_EXT_OPC_RESET, hclge_set_reset_task},
 	{HCLGE_EXT_OPC_GET_HILINK_REF_LOS, hclge_get_hilink_ref_los},
+	{HCLGE_EXT_OPC_GET_8211_PHY_REG, hclge_get_8211_phy_reg},
+	{HCLGE_EXT_OPC_SET_8211_PHY_REG, hclge_set_8211_phy_reg},
+
 };
 
 int hclge_ext_ops_handle(struct hnae3_handle *handle, int opcode,

@@ -30,6 +30,8 @@ enum hns3_ext_op_code {
 	HNS3_EXT_OPC_OPT_MAC_TABLE,
 	HNS3_EXT_OPC_RESET,
 	HNS3_EXT_OPC_GET_HILINK_REF_LOS,
+	HNS3_EXT_OPC_GET_8211_PHY_REG,
+	HNS3_EXT_OPC_SET_8211_PHY_REG,
 };
 
 struct hns3_sfp_info_para {
@@ -90,5 +92,9 @@ int nic_set_phy_reg(struct net_device *ndev, u32 page_select_addr,
 		    u16 page, u32 reg_addr, u16 data);
 int nic_get_mac_id(struct net_device *ndev, u32 *mac_id);
 int nic_get_hilink_ref_los(struct net_device *ndev, u32 *status);
+int nic_get_8211_phy_reg(struct net_device *ndev, u32 page_select_addr,
+			 u16 page, u32 reg_addr, u16 *data);
+int nic_set_8211_phy_reg(struct net_device *ndev, u32 page_select_addr,
+			 u16 page, u32 reg_addr, u16 data);
 
 #endif

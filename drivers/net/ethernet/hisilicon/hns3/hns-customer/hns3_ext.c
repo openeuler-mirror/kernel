@@ -529,3 +529,59 @@ int nic_get_hilink_ref_los(struct net_device *ndev, u32 *status)
 		return -EOPNOTSUPP;
 }
 EXPORT_SYMBOL(nic_get_hilink_ref_los);
+
+int nic_get_8211_phy_reg(struct net_device *ndev, u32 page_select_addr,
+			 u16 page, u32 reg_addr, u16 *data)
+{
+	struct hns3_phy_para phy_para;
+	struct hnae3_handle *h;
+	int ret;
+
+	if (nic_netdev_match_check(ndev))
+		return -ENODEV;
+
+	phy_para.page_select_addr = page_select_addr;
+	phy_para.page = page;
+	phy_para.reg_addr = reg_addr;
+	h = hns3_get_handle(ndev);
+
+	if (h->ae_algo->ops->priv_ops) {
+		ret = h->ae_algo->ops->priv_ops(h,
+						HNS3_EXT_OPC_GET_8211_PHY_REG,
+						&phy_para, 0);
+		if (!ret) {
+			*data = phy_para.data;
+			return 0;
+		} else {
+			return ret;
+		}
+	} else {
+		return -EOPNOTSUPP;
+	}
+}
+EXPORT_SYMBOL(nic_get_8211_phy_reg);
+
+int nic_set_8211_phy_reg(struct net_device *ndev, u32 page_select_addr,
+			 u16 page, u32 reg_addr, u16 data)
+{
+	struct hns3_phy_para phy_para;
+	struct hnae3_handle *h;
+
+	if (nic_netdev_match_check(ndev))
+		return -ENODEV;
+
+	phy_para.page_select_addr = page_select_addr;
+	phy_para.page = page;
+	phy_para.reg_addr = reg_addr;
+	phy_para.data = data;
+	h = hns3_get_handle(ndev);
+
+	if (h->ae_algo->ops->priv_ops)
+		return h->ae_algo->ops->priv_ops(h,
+						 HNS3_EXT_OPC_SET_8211_PHY_REG,
+						 &phy_para, 0);
+	else
+		return -EOPNOTSUPP;
+}
+EXPORT_SYMBOL(nic_set_8211_phy_reg);
+
