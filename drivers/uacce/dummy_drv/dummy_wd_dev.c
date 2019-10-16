@@ -67,14 +67,14 @@ static int _do_copy(struct uacce_queue *q, void *tgt, void *src, size_t len)
 	size_t ksrc = (unsigned long)src - iova_base;
 	size_t range = ss_qfr->nr_pages << PAGE_SHIFT;
 
-	if (ktgt > range || ktgt + len > range) {
+	if (ktgt + len > range) {
 		dev_dbg(&q->uacce->dev, "ktgt(%lx, %lx) not in range(%lx)\n",
 			ktgt, len, range);
 		ret = -EINVAL;
 		goto out;
 	}
 
-	if (ksrc > range || ksrc + len > range) {
+	if (ksrc + len > range) {
 		dev_dbg(&q->uacce->dev, "ksrc(%lx, %lx) not in range(%lx)\n",
 			ksrc, len, range);
 		ret = -EINVAL;

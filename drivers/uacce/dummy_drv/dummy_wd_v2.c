@@ -209,8 +209,11 @@ static struct iommu_domain *dummy_wd2_iommu_domain_alloc(
 	struct dummy_wd2_iommu_domain *domain = kzalloc(
 		sizeof(struct iommu_domain), GFP_KERNEL);
 
-	if (domain)
-		domain->domain.ops = &dummy_wd2_iommu_ops;
+	if (!domain)
+		return NULL;
+
+	domain->domain.ops = &dummy_wd2_iommu_ops;
+
 	return &domain->domain;
 }
 
