@@ -125,8 +125,7 @@ static int hns_roce_srq_alloc(struct hns_roce_dev *hr_dev, u32 pdn, u32 cqn,
 				       srq->mtt.first_seg,
 				       &dma_handle_wqe);
 	if (!mtts_wqe) {
-		dev_err(hr_dev->dev,
-			"SRQ alloc.Failed to find srq buf addr.\n");
+		dev_err(hr_dev->dev, "Failed to find mtt for srq buf.\n");
 		return -EINVAL;
 	}
 
@@ -136,13 +135,14 @@ static int hns_roce_srq_alloc(struct hns_roce_dev *hr_dev, u32 pdn, u32 cqn,
 				       &dma_handle_idx);
 	if (!mtts_idx) {
 		dev_err(hr_dev->dev,
-			"SRQ alloc.Failed to find idx que buf addr.\n");
+			"Failed to find mtt for srq idx queue buf.\n");
 		return -EINVAL;
 	}
 
 	ret = hns_roce_bitmap_alloc(&srq_table->bitmap, &srq->srqn);
 	if (ret == -1) {
-		dev_err(hr_dev->dev, "SRQ alloc.Failed to alloc index.\n");
+		dev_err(hr_dev->dev,
+			"Failed to alloc a bit from srq bitmap.\n");
 		return -ENOMEM;
 	}
 

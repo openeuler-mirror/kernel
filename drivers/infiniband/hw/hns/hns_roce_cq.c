@@ -105,7 +105,7 @@ static int hns_roce_cq_alloc(struct hns_roce_dev *hr_dev, int nent,
 	mtts = hns_roce_table_find(hr_dev, mtt_table,
 				   hr_mtt->first_seg, &dma_handle);
 	if (!mtts) {
-		dev_err(dev, "CQ alloc.Failed to find cq buf addr.\n");
+		dev_err(dev, "Failed to find mtt for cq buf.\n");
 		return -EINVAL;
 	}
 
@@ -135,8 +135,7 @@ static int hns_roce_cq_alloc(struct hns_roce_dev *hr_dev, int nent,
 	ret = radix_tree_insert(&cq_table->tree, hr_cq->cqn, hr_cq);
 	spin_unlock_irq(&cq_table->lock);
 	if (ret) {
-		dev_err(dev, "CQ(0x%lx) alloc.Failed to radix_tree_insert.\n",
-			hr_cq->cqn);
+		dev_err(dev, "Failed to xa_store for cqn(%d).\n", hr_cq->cqn);
 		goto err_put;
 	}
 
