@@ -37,6 +37,11 @@ enum ext_op_code {
 	EXT_SET_8211_PHY_REG,
 };
 
+enum phy_type {
+	PHY_TYPE_8211 = 0,
+	PHY_TYPE_1512,
+};
+
 struct hns3_cpumask_param {
 	u32 affi_exec_flag;
 	char mask[HNS3_AFFI_MAX_LEN];
