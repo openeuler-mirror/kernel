@@ -2134,6 +2134,9 @@ static int hclgevf_config_gro(struct hclgevf_dev *hdev, bool en)
 	struct hclgevf_desc desc;
 	int ret;
 
+	if (!hnae3_dev_gro_supported(hdev))
+		return 0;
+
 	hclgevf_cmd_setup_basic_desc(&desc, HCLGEVF_OPC_GRO_GENERIC_CONFIG,
 				     false);
 	req = (struct hclgevf_cfg_gro_status_cmd *)desc.data;
@@ -2706,14 +2709,6 @@ static int hclgevf_reset_hdev(struct hclgevf_dev *hdev)
 		return ret;
 	}
 
-	if (pdev->revision >= HNAE3_REVISION_ID_21) {
-		ret = hclgevf_config_gro(hdev, true);
-		if (ret) {
-			dev_err(&pdev->dev, "Enable tso fail, ret =%d\n", ret);
-			return ret;
-		}
-	}
-
 	/* Initialize RSS for this VF */
 	ret = hclgevf_rss_init_hw(hdev);
 	if (ret) {
@@ -2721,6 +2716,10 @@ static int hclgevf_reset_hdev(struct hclgevf_dev *hdev)
 			"failed(%d) to initialize RSS\n", ret);
 		return ret;
 	}
+
+	ret = hclgevf_config_gro(hdev, true);
+	if (ret)
+		return ret;
 
 	ret = hclgevf_init_vlan_config(hdev);
 	if (ret) {
@@ -2799,13 +2798,9 @@ static int hclgevf_init_hdev(struct hclgevf_dev *hdev)
 		goto err_config;
 	}
 
-	if (pdev->revision >= HNAE3_REVISION_ID_21) {
-		ret = hclgevf_config_gro(hdev, true);
-		if (ret) {
-			dev_err(&pdev->dev, "Enable gro fail, ret=%d\n", ret);
-			goto err_config;
-		}
-	}
+	ret = hclgevf_config_gro(hdev, true);
+	if (ret)
+		goto err_config;
 
 	/* Initialize RSS for this VF */
 	ret = hclgevf_rss_init_hw(hdev);

@@ -1395,6 +1395,9 @@ static int hclge_config_gro(struct hclge_dev *hdev, bool en)
 	struct hclge_desc desc;
 	int ret;
 
+	if (!hnae3_dev_gro_supported(hdev))
+		return 0;
+
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_GRO_GENERIC_CONFIG, false);
 	req = (struct hclge_cfg_gro_status_cmd *)desc.data;
 
@@ -9445,13 +9448,9 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 		goto err_mdiobus_unreg;
 	}
 
-	if (pdev->revision >= HNAE3_REVISION_ID_21) {
-		ret = hclge_config_gro(hdev, true);
-		if (ret) {
-			dev_err(&pdev->dev, "Enable gro fail, ret=%d\n", ret);
-			goto err_mdiobus_unreg;
-		}
-	}
+	ret = hclge_config_gro(hdev, true);
+	if (ret)
+		goto err_mdiobus_unreg;
 
 	ret = hclge_init_vlan_config(hdev);
 	if (ret) {
@@ -9718,13 +9717,9 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 		return ret;
 	}
 
-	if (pdev->revision >= HNAE3_REVISION_ID_21) {
-		ret = hclge_config_gro(hdev, true);
-		if (ret) {
-			dev_err(&pdev->dev, "Enable gro fail, ret=%d\n", ret);
-			return ret;
-		}
-	}
+	ret = hclge_config_gro(hdev, true);
+	if (ret)
+		return ret;
 
 	ret = hclge_init_vlan_config(hdev);
 	if (ret) {
