@@ -91,8 +91,8 @@
 #define HZIP_AXI_SHUTDOWN_ENABLE	BIT(14)
 #define HZIP_AXI_SHUTDOWN_DISABLE	0xFFFFBFFF
 
-#define HZIP_MSE_ENABLE			1
-#define HZIP_MSE_DISABLE		0
+#define HZIP_ENABLE			1
+#define HZIP_DISABLE			0
 #define HZIP_NUMA_DISTANCE		100
 #define HZIP_BUF_SIZE			22
 #define FORMAT_DECIMAL			10
@@ -1170,30 +1170,29 @@ static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
 	return 0;
 }
 
-static void hisi_zip_set_mse(struct hisi_zip *hisi_zip, bool set)
-{
-	struct pci_dev *pdev = hisi_zip->qm.pdev;
-	u16 sriov_ctrl;
-	int pos;
-
-	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_SRIOV);
-	pci_read_config_word(pdev, pos + PCI_SRIOV_CTRL, &sriov_ctrl);
-	if (set)
-		sriov_ctrl |= PCI_SRIOV_CTRL_MSE;
-	else
-		sriov_ctrl &= ~PCI_SRIOV_CTRL_MSE;
-	pci_write_config_word(pdev, pos + PCI_SRIOV_CTRL, sriov_ctrl);
-}
-
 static int hisi_zip_soft_reset(struct hisi_zip *hisi_zip)
 {
 	struct hisi_qm *qm = &hisi_zip->qm;
 	struct device *dev = &qm->pdev->dev;
+	unsigned long long value;
 	int ret;
 	u32 val;
 
-	/* Set VF MSE bit */
-	hisi_zip_set_mse(hisi_zip, HZIP_MSE_DISABLE);
+	ret = hisi_qm_reg_test(qm);
+	if (ret)
+		return ret;
+
+	ret = hisi_qm_set_vf_mse(qm, HZIP_DISABLE);
+	if (ret) {
+		dev_err(dev, "Fails to disable vf mse bit.\n");
+		return ret;
+	}
+
+	ret = hisi_qm_set_msi(qm, HZIP_DISABLE);
+	if (ret) {
+		dev_err(dev, "Fails to disable peh msi bit.\n");
+		return ret;
+	}
 
 	/* OOO register set and check */
 	writel(HZIP_MASTER_GLOBAL_CTRL_SHUTDOWN,
@@ -1210,11 +1209,18 @@ static int hisi_zip_soft_reset(struct hisi_zip *hisi_zip)
 		return ret;
 	}
 
+	ret = hisi_qm_set_pf_mse(qm, HZIP_DISABLE);
+	if (ret) {
+		dev_err(dev, "Fails to disable pf mse bit.\n");
+		return ret;
+	}
+
 	/* The reset related sub-control registers are not in PCI BAR */
 	if (ACPI_HANDLE(dev)) {
 		acpi_status s;
 
-		s = acpi_evaluate_object(ACPI_HANDLE(dev), "ZRST", NULL, NULL);
+		s = acpi_evaluate_integer(ACPI_HANDLE(dev), "ZRST",
+					  NULL, &value);
 		if (ACPI_FAILURE(s)) {
 			dev_err(dev, "Controller reset fails\n");
 			return -EIO;
@@ -1260,6 +1266,24 @@ static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 	struct device *dev = &qm->pdev->dev;
 	int ret;
 
+	ret = hisi_qm_set_msi(qm, HZIP_ENABLE);
+	if (ret) {
+		dev_err(dev, "Fails to enable peh msi bit!\n");
+		return ret;
+	}
+
+	ret = hisi_qm_set_pf_mse(qm, HZIP_ENABLE);
+	if (ret) {
+		dev_err(dev, "Fails to enable pf mse bit!\n");
+		return ret;
+	}
+
+	ret = hisi_qm_set_vf_mse(qm, HZIP_ENABLE);
+	if (ret) {
+		dev_err(dev, "Fails to enable vf mse bit!\n");
+		return ret;
+	}
+
 	hisi_zip_set_user_domain_and_cache(hisi_zip);
 	hisi_zip_hw_error_init(hisi_zip);
 
@@ -1276,9 +1300,6 @@ static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
 			return ret;
 		}
 	}
-
-	/* Clear VF MSE bit */
-	hisi_zip_set_mse(hisi_zip, HZIP_MSE_ENABLE);
 
 	ret = hisi_zip_vf_reset_done(hisi_zip);
 	if (ret) {

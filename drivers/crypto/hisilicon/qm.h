@@ -352,6 +352,10 @@ void hisi_qm_clear_queues(struct hisi_qm *qm);
 enum qm_hw_ver hisi_qm_get_hw_version(struct pci_dev *pdev);
 int hisi_qm_restart(struct hisi_qm *qm);
 int hisi_qm_get_hw_error_status(struct hisi_qm *qm);
+int hisi_qm_reg_test(struct hisi_qm *qm);
+int hisi_qm_set_pf_mse(struct hisi_qm *qm, bool set);
+int hisi_qm_set_vf_mse(struct hisi_qm *qm, bool set);
+int hisi_qm_set_msi(struct hisi_qm *qm, bool set);
 
 struct hisi_acc_sgl_pool;
 struct hisi_acc_hw_sgl *hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,

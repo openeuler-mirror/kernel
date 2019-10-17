@@ -884,8 +884,9 @@ static long uacce_fops_unl_ioctl(struct file *filep,
 		ret = uacce_start_queue(q);
 		break;
 	case UACCE_CMD_GET_SS_DMA:
+		uacce_qs_wunlock();
 		ret = uacce_get_ss_dma(q, (void __user *)arg);
-		break;
+		return ret;
 	case UACCE_CMD_PUT_Q:
 		ret = uacce_put_queue(q);
 		break;
