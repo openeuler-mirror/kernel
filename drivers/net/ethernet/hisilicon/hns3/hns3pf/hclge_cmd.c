@@ -164,6 +164,9 @@ static int hclge_cmd_csq_clean(struct hclge_hw *hw)
 		dev_warn(&hdev->pdev->dev, "wrong cmd head (%u, %d-%d)\n", head,
 			 csq->next_to_use, csq->next_to_clean);
 		dev_warn(&hdev->pdev->dev,
+			 "Disabling any further commands to IMP firmware\n");
+		set_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
+		dev_warn(&hdev->pdev->dev,
 			 "IMP firmware watchdog reset soon expected!\n");
 		return -EIO;
 	}
