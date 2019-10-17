@@ -70,6 +70,8 @@ static void hclge_reset_vf_rate(struct hclge_dev *hdev);
 
 struct hnae3_ae_algo ae_algo;
 
+static struct workqueue_struct *hclge_wq;
+
 static const struct pci_device_id ae_algo_pci_tbl[] = {
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_GE), 0},
 	{PCI_VDEVICE(HUAWEI, HNAE3_DEV_ID_25GE), 0},
@@ -2644,7 +2646,7 @@ static void hclge_mbx_task_schedule(struct hclge_dev *hdev)
 	if (!test_bit(HCLGE_STATE_REMOVING, &hdev->state) &&
 	    !test_and_set_bit(HCLGE_STATE_MBX_SERVICE_SCHED, &hdev->state))
 		mod_delayed_work_on(cpumask_first(&hdev->affinity_mask),
-				    system_wq, &hdev->service_task, 0);
+				    hclge_wq, &hdev->service_task, 0);
 }
 
 static void hclge_reset_task_schedule(struct hclge_dev *hdev)
@@ -2652,14 +2654,14 @@ static void hclge_reset_task_schedule(struct hclge_dev *hdev)
 	if (!test_bit(HCLGE_STATE_REMOVING, &hdev->state) &&
 	    !test_and_set_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state))
 		mod_delayed_work_on(cpumask_first(&hdev->affinity_mask),
-				    system_wq, &hdev->service_task, 0);
+				    hclge_wq, &hdev->service_task, 0);
 }
 
 void hclge_task_schedule(struct hclge_dev *hdev, unsigned long delay_time)
 {
 	if (!test_bit(HCLGE_STATE_REMOVING, &hdev->state))
 		mod_delayed_work_on(cpumask_first(&hdev->affinity_mask),
-				    system_wq, &hdev->service_task,
+				    hclge_wq, &hdev->service_task,
 				    delay_time);
 }
 
@@ -10722,6 +10724,12 @@ int hclge_init(void)
 {
 	pr_info("%s is initializing\n", HCLGE_NAME);
 
+	hclge_wq = alloc_workqueue("%s", WQ_MEM_RECLAIM, 0, HCLGE_NAME);
+	if (!hclge_wq) {
+		pr_err("%s: Failed to create workqueue\n", HCLGE_NAME);
+		return -ENOMEM;
+	}
+
 	hnae3_register_ae_algo(&ae_algo);
 
 	return 0;
@@ -10732,6 +10740,7 @@ module_init(hclge_init);
 static void hclge_exit(void)
 {
 	hnae3_unregister_ae_algo(&ae_algo);
+	destroy_workqueue(hclge_wq);
 }
 module_exit(hclge_exit);
 
