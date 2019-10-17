@@ -124,6 +124,7 @@
 #define QM_RAS_NFE_ENABLE		0x1000f4
 #define QM_RAS_CE_THRESHOLD		0x1000f8
 #define QM_RAS_MSI_INT_SEL		0x1040f4
+#define QM_ABNORMAL_INT_SOURCE_CLR	GENMASK(12, 0)
 
 #define QM_CACHE_WB_START		0x204
 #define QM_CACHE_WB_DONE		0x208
@@ -1059,6 +1060,10 @@ static void qm_hw_error_init_v2(struct hisi_qm *qm, u32 ce, u32 nfe, u32 fe,
 
 	qm->error_mask = ce | nfe | fe;
 	qm->msi_mask = msi;
+
+	/* clear QM hw residual error source */
+	writel(QM_ABNORMAL_INT_SOURCE_CLR, qm->io_base +
+	       QM_ABNORMAL_INT_SOURCE);
 
 	/* configure error type */
 	writel(ce, qm->io_base + QM_RAS_CE_ENABLE);
