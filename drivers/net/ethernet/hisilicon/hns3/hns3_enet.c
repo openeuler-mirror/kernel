@@ -3311,7 +3311,7 @@ static int hns3_nic_common_poll(struct napi_struct *napi, int budget)
 		return budget;
 
 	if (napi_complete(napi) &&
-	    !test_bit(HNS3_NIC_STATE_DOWN, &priv->state)) {
+	    likely(!test_bit(HNS3_NIC_STATE_DOWN, &priv->state))) {
 		hns3_update_new_int_gl(tqp_vector);
 		hns3_mask_vector_irq(tqp_vector, 1);
 	}
