@@ -876,7 +876,7 @@ static s32 SFC_SPIFlashIdGet(struct SFC_SFLASH_INFO *pFlinfo,
 
 	*pulManuId = ulID0;
 	*pulDevId = (u16) (ulID1 << 0x8) | ulID2;
-	*pcfi_len = (ulRegValue >> 0x18) & 0xff;;
+	*pcfi_len = (ulRegValue >> 0x18) & 0xff;
 
 	ulRegValue = SFC_RegisterRead(pFlinfo->sfc_reg_base + DATABUFFER2);
 	*psec_arch = ulRegValue & 0xff;
