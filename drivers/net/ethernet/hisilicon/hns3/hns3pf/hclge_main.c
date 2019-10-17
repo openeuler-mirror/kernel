@@ -3641,6 +3641,7 @@ static void hclge_reset(struct hclge_dev *hdev)
 	 * know if device is undergoing reset
 	 */
 	ae_dev->reset_type = hdev->reset_type;
+	hdev->rst_stats.reset_cnt++;
 	/* perform reset of the stack & ae device for a client */
 	ret = hclge_notify_roce_client(hdev, HNAE3_DOWN_CLIENT);
 	if (ret)
@@ -3664,7 +3665,7 @@ static void hclge_reset(struct hclge_dev *hdev)
 	if (hclge_reset_wait(hdev))
 		goto err_reset;
 
-	hdev->rst_stats.reset_cnt++;
+	hdev->rst_stats.hw_reset_done_cnt++;
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_UNINIT_CLIENT);
 	if (ret)
@@ -6324,7 +6325,7 @@ static unsigned long hclge_ae_dev_reset_cnt(struct hnae3_handle *handle)
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 
-	return hdev->rst_stats.reset_cnt;
+	return hdev->rst_stats.hw_reset_done_cnt;
 }
 
 static void hclge_enable_fd(struct hnae3_handle *handle, bool enable)

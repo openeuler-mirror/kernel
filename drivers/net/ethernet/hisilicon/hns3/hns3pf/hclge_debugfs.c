@@ -1034,6 +1034,8 @@ void hclge_dbg_dump_rst_info(struct hclge_dev *hdev)
 		 hdev->rst_stats.imp_rst_cnt);
 	dev_info(&hdev->pdev->dev, "reset done count: %u\n",
 		 hdev->rst_stats.reset_done_cnt);
+	dev_info(&hdev->pdev->dev, "HW reset done count: %u\n",
+		 hdev->rst_stats.hw_reset_done_cnt);
 	dev_info(&hdev->pdev->dev, "reset count: %u\n",
 		 hdev->rst_stats.reset_cnt);
 	dev_info(&hdev->pdev->dev, "reset fail count: %u\n",

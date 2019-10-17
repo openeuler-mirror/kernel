@@ -706,6 +706,7 @@ struct hclge_vport_vlan_cfg {
 
 struct hclge_rst_stats {
 	u32 reset_done_cnt;	/* the number of reset has completed */
+	u32 hw_reset_done_cnt;	/* the number of HW reset has completed */
 	u32 pf_rst_cnt;		/* the number of PF reset */
 	u32 flr_rst_cnt;	/* the number of FLR */
 	u32 core_rst_cnt;	/* the number of CORE reset */
