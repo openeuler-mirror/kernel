@@ -3205,6 +3205,9 @@ static bool hns3_get_new_int_gl(struct hns3_enet_ring_group *ring_group)
 	struct hns3_enet_tqp_vector *tqp_vector;
 	u16 new_int_gl;
 
+	if (!ring_group->ring)
+		return false;
+
 	tqp_vector = ring_group->ring->tqp_vector;
 	if (!tqp_vector->last_jiffies)
 		return false;
