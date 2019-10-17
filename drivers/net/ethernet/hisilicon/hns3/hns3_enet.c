@@ -2049,8 +2049,10 @@ static int hns3_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pci_set_drvdata(pdev, ae_dev);
 
 	ret = hnae3_register_ae_dev(ae_dev);
-	if (ret)
+	if (ret) {
+		devm_kfree(&pdev->dev, ae_dev);
 		pci_set_drvdata(pdev, NULL);
+	}
 
 	return ret;
 }
