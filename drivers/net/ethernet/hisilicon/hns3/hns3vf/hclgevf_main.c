@@ -1601,6 +1601,8 @@ static void hclgevf_dump_rst_info(struct hclgevf_dev *hdev)
 		 hdev->rst_stats.vf_rst_cnt);
 	dev_info(&hdev->pdev->dev, "reset done count: %u\n",
 		 hdev->rst_stats.rst_done_cnt);
+	dev_info(&hdev->pdev->dev, "HW reset done count: %u\n",
+		 hdev->rst_stats.hw_rst_done_cnt);
 	dev_info(&hdev->pdev->dev, "reset count: %u\n",
 		 hdev->rst_stats.rst_cnt);
 	dev_info(&hdev->pdev->dev, "reset fail count: %u\n",
@@ -1669,6 +1671,8 @@ static int hclgevf_reset(struct hclgevf_dev *hdev)
 			ret);
 		goto err_reset;
 	}
+
+	hdev->rst_stats.hw_rst_done_cnt++;
 
 	rtnl_lock();
 
@@ -3084,7 +3088,7 @@ static unsigned long hclgevf_ae_dev_reset_cnt(struct hnae3_handle *handle)
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
 
-	return hdev->rst_stats.rst_cnt;
+	return hdev->rst_stats.hw_rst_done_cnt;
 }
 
 static void hclgevf_get_link_mode(struct hnae3_handle *handle,
