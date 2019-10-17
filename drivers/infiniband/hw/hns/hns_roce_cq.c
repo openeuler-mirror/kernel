@@ -135,7 +135,8 @@ static int hns_roce_cq_alloc(struct hns_roce_dev *hr_dev, int nent,
 	ret = radix_tree_insert(&cq_table->tree, hr_cq->cqn, hr_cq);
 	spin_unlock_irq(&cq_table->lock);
 	if (ret) {
-		dev_err(dev, "Failed to xa_store for cqn(%d).\n", hr_cq->cqn);
+		dev_err(dev,
+			"Failed to xa_store for cqn(0x%lx).\n", hr_cq->cqn);
 		goto err_put;
 	}
 
