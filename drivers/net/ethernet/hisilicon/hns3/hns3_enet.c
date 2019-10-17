@@ -1887,6 +1887,9 @@ static int hns3_rx_flow_steer(struct net_device *dev, const struct sk_buff *skb,
 	struct hnae3_handle *h = hns3_get_handle(dev);
 	struct flow_keys fkeys;
 
+	if (!h->ae_algo->ops->add_arfs_entry)
+		return -EOPNOTSUPP;
+
 	if (skb->encapsulation)
 		return -EPROTONOSUPPORT;
 
@@ -1899,11 +1902,7 @@ static int hns3_rx_flow_steer(struct net_device *dev, const struct sk_buff *skb,
 	     fkeys.basic.ip_proto != IPPROTO_UDP))
 		return -EPROTONOSUPPORT;
 
-	if (h->ae_algo->ops->add_arfs_entry)
-		return h->ae_algo->ops->add_arfs_entry(h, rxq_index, flow_id,
-						       &fkeys);
-
-	return -EOPNOTSUPP;
+	return h->ae_algo->ops->add_arfs_entry(h, rxq_index, flow_id, &fkeys);
 }
 #endif
 
