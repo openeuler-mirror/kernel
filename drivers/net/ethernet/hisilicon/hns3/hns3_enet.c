@@ -380,6 +380,8 @@ static int hns3_nic_net_up(struct net_device *netdev)
 	if (ret)
 		return ret;
 
+	clear_bit(HNS3_NIC_STATE_DOWN, &priv->state);
+
 	/* enable the vectors */
 	for (i = 0; i < priv->vector_num; i++)
 		hns3_vector_enable(&priv->tqp_vector[i]);
@@ -391,6 +393,7 @@ static int hns3_nic_net_up(struct net_device *netdev)
 	/* start the ae_dev */
 	ret = h->ae_algo->ops->start ? h->ae_algo->ops->start(h) : 0;
 	if (ret) {
+		set_bit(HNS3_NIC_STATE_DOWN, &priv->state);
 		while (j--)
 			hns3_tqp_disable(h->kinfo.tqp[j]);
 
@@ -440,11 +443,8 @@ static int hns3_nic_net_open(struct net_device *netdev)
 	if (ret)
 		return ret;
 
-	clear_bit(HNS3_NIC_STATE_DOWN, &priv->state);
-
 	ret = hns3_nic_net_up(netdev);
 	if (ret) {
-		set_bit(HNS3_NIC_STATE_DOWN, &priv->state);
 		netdev_err(netdev, "net up fail, ret=%d!\n", ret);
 		return ret;
 	}
