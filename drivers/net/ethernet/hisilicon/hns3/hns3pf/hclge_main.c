@@ -9082,6 +9082,7 @@ static int hclge_init_roce_client_instance(struct hnae3_ae_dev *ae_dev,
 	    !hdev->nic_client)
 		return 0;
 
+	client = hdev->roce_client;
 	ret = hclge_init_roce_base_info(vport);
 	if (ret)
 		return ret;
