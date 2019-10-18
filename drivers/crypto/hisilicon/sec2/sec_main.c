@@ -662,7 +662,7 @@ static ssize_t ctrl_debug_read(struct file *filp, char __user *buf,
 		return -EINVAL;
 	}
 	spin_unlock_irq(&file->lock);
-	ret = sprintf(tbuf, "%u\n", val);
+	ret = snprintf(tbuf, SEC_DBGFS_VAL_MAX_LEN, "%u\n", val);
 	return simple_read_from_buffer(buf, count, pos, tbuf, ret);
 }
 
@@ -731,7 +731,7 @@ static int hisi_sec_core_debug_init(struct hisi_sec_ctrl *ctrl)
 	struct dentry *tmp_d, *tmp;
 	char buf[SEC_DBGFS_VAL_MAX_LEN];
 
-	sprintf(buf, "hisi_sec_dfx");
+	snprintf(buf, SEC_DBGFS_VAL_MAX_LEN, "hisi_sec_dfx");
 
 	tmp_d = debugfs_create_dir(buf, ctrl->debug_root);
 	if (!tmp_d)
