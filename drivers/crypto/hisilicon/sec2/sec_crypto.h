@@ -15,7 +15,7 @@
 #define SEC_IV_SIZE 24
 #define SEC_MAX_KEY_SIZE 64
 
-int hisi_sec_register_to_crypto(void);
-void hisi_sec_unregister_from_crypto(void);
+int hisi_sec_register_to_crypto(int fusion_limit);
+void hisi_sec_unregister_from_crypto(int fusion_limit);
 
 #endif

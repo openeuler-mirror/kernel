@@ -25,10 +25,6 @@
 #define SEC_DES3_2KEY_SIZE (2 * DES_KEY_SIZE)
 #define SEC_DES3_3KEY_SIZE (3 * DES_KEY_SIZE)
 
-/* if modify dm-crypt to transport LBA, uncomment the below line
- * #define USE_DM_CRYPT_OPTIMIZE
- */
-
 #define BUF_MAP_PER_SGL 64
 #define SEC_FUSION_BD
 
@@ -92,41 +88,8 @@ enum {
 
 enum SEC_REQ_OPS_TYPE {
 	SEC_OPS_SKCIPHER_ALG = 0x0,
-	SEC_OPS_DMCRYPT      = 0x1,
-	SEC_OPS_MULTI_IV     = 0x2,
+	SEC_OPS_MULTI_IV     = 0x1,
 	SEC_OPS_BUTT
-};
-
-enum cipher_flags {
-	CRYPT_MODE_INTEGRITY_AEAD,
-	CRYPT_IV_LARGE_SECTORS,
-};
-
-enum setkey_op {
-	SETKEY_OP_INIT,
-	SETKEY_OP_SET,
-	SETKEY_OP_WIPE,
-};
-
-struct geniv_key_info {
-	enum setkey_op keyop;
-	unsigned int tfms_count;
-	u8 *key;
-	char *ivopts;
-	sector_t iv_offset;
-	unsigned long cipher_flags;
-
-	unsigned short int sector_size;
-	unsigned int key_size;
-	unsigned int key_parts;
-	unsigned int key_mac_size;
-	unsigned int on_disk_tag_size;
-};
-
-struct geniv_req_info {
-	sector_t cc_sector;
-	unsigned int nents;
-	u8 *integrity_metadata;
 };
 
 struct cipher_res {
@@ -487,7 +450,7 @@ static int __hisi_sec_ctx_init(struct hisi_sec_ctx *ctx, int qlen)
 	return 0;
 }
 
-static int hisi_sec_get_fusion_param(struct hisi_sec_ctx *ctx,
+static void hisi_sec_get_fusion_param(struct hisi_sec_ctx *ctx,
 	struct hisi_sec *sec)
 {
 	if (ctx->is_fusion) {
@@ -497,8 +460,6 @@ static int hisi_sec_get_fusion_param(struct hisi_sec_ctx *ctx,
 		ctx->fusion_tmout_nsec = 0;
 		ctx->fusion_limit = 1;
 	}
-
-	return 0;
 }
 
 static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
@@ -597,8 +558,6 @@ static int hisi_sec_skcipher_buf_unmap(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_req *req);
 static int hisi_sec_skcipher_copy_iv(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_req *req);
-static int hisi_sec_skcipher_copy_iv_dmcrypt(struct hisi_sec_ctx *ctx,
-	struct hisi_sec_req *req);
 static int hisi_sec_skcipher_bd_fill_base(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_req *req);
 static int hisi_sec_skcipher_bd_fill_storage(struct hisi_sec_ctx *ctx,
@@ -620,17 +579,6 @@ struct hisi_sec_req_op sec_req_ops_tbl[] = {
 		.buf_unmap   = hisi_sec_skcipher_buf_unmap,
 		.do_transfer = hisi_sec_skcipher_copy_iv,
 		.bd_fill     = hisi_sec_skcipher_bd_fill_base,
-		.bd_send     = hisi_sec_bd_send_asyn,
-		.callback    = hisi_sec_skcipher_callback,
-	}, {
-		.fusion_type = SEC_NO_FUSION,
-		.get_res     = hisi_sec_skcipher_get_res,
-		.queue_alloc = hisi_sec_skcipher_queue_alloc,
-		.queue_free  = hisi_sec_skcipher_queue_free,
-		.buf_map     = hisi_sec_skcipher_buf_map,
-		.buf_unmap   = hisi_sec_skcipher_buf_unmap,
-		.do_transfer = hisi_sec_skcipher_copy_iv_dmcrypt,
-		.bd_fill     = hisi_sec_skcipher_bd_fill_storage,
 		.bd_send     = hisi_sec_bd_send_asyn,
 		.callback    = hisi_sec_skcipher_callback,
 	}, {
@@ -656,18 +604,6 @@ static int hisi_sec_cipher_ctx_init_alg(struct crypto_skcipher *tfm)
 
 	return hisi_sec_cipher_ctx_init(tfm);
 }
-
-#ifdef USE_DM_CRYPT_OPTIMIZE
-static int hisi_sec_cipher_ctx_init_dm_crypt(struct crypto_skcipher *tfm)
-{
-	struct hisi_sec_ctx *ctx = crypto_skcipher_ctx(tfm);
-
-	ctx->req_op        = &sec_req_ops_tbl[SEC_OPS_DMCRYPT];
-	ctx->is_fusion     = ctx->req_op->fusion_type;
-
-	return hisi_sec_cipher_ctx_init(tfm);
-}
-#endif
 
 static int hisi_sec_cipher_ctx_init_multi_iv(struct crypto_skcipher *tfm)
 {
@@ -856,27 +792,6 @@ GEN_SEC_SETKEY_FUNC(3des_cbc, C_ALG_3DES, C_MODE_CBC)
 
 GEN_SEC_SETKEY_FUNC(aes_xts, C_ALG_AES, C_MODE_XTS)
 GEN_SEC_SETKEY_FUNC(sm4_xts, C_ALG_SM4, C_MODE_XTS)
-
-#ifdef USE_DM_CRYPT_OPTIMIZE
-static int sec_setkey_plain64_sm4_xts(struct crypto_skcipher *tfm,
-					   const u8 *key, u32 keylen)
-{
-	struct hisi_sec_ctx *ctx = crypto_skcipher_ctx(tfm);
-	struct geniv_key_info *info = (struct geniv_key_info *)key;
-	int ret;
-
-	keylen = info->key_size;
-	key    = info->key;
-	ctx->c_ctx.iv_offset = info->iv_offset;
-	ctx->c_ctx.c_gran_size = info->sector_size;
-
-	ret = xts_verify_key(tfm, key, keylen);
-	if (ret)
-		return ret;
-
-	return sec_skcipher_setkey(ctx, key, keylen, C_ALG_SM4, C_MODE_XTS);
-}
-#endif
 
 static int hisi_sec_get_async_ret(int ret, int req_cnt, int req_fake_limit)
 {
@@ -1124,20 +1039,6 @@ static int hisi_sec_skcipher_copy_iv(struct hisi_sec_ctx *ctx,
 	return 0;
 }
 
-static int hisi_sec_skcipher_copy_iv_dmcrypt(struct hisi_sec_ctx *ctx,
-	struct hisi_sec_req *req)
-{
-	struct skcipher_request *sk_req =
-		(struct skcipher_request *)req->priv[0];
-	struct hisi_sec_cipher_req *c_req = &req->c_req;
-	struct geniv_req_info *info = (struct geniv_req_info *)(sk_req->iv);
-
-	c_req->lba = info->cc_sector + ctx->c_ctx.iv_offset;
-	c_req->gran_num = sk_req->cryptlen / ctx->c_ctx.c_gran_size;
-
-	return 0;
-}
-
 static int hisi_sec_skcipher_bd_fill_storage(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_req *req)
 {
@@ -1259,7 +1160,7 @@ static int hisi_sec_bd_send_asyn(struct hisi_sec_ctx *ctx,
 	return hisi_sec_get_async_ret(ret, req_cnt, ctx->req_fake_limit);
 }
 
-static int hisi_sec_skcipher_complete(struct hisi_sec_ctx *ctx,
+static void hisi_sec_skcipher_complete(struct hisi_sec_ctx *ctx,
 	struct hisi_sec_req *req, int err_code)
 {
 	struct skcipher_request **sk_reqs =
@@ -1281,8 +1182,6 @@ static int hisi_sec_skcipher_complete(struct hisi_sec_ctx *ctx,
 	else
 		__sync_add_and_fetch(&ctx->sec->sec_dfx.busy_comp_cnt,
 			req_fusion_num);
-
-	return 0;
 }
 
 static int hisi_sec_skcipher_callback(struct hisi_sec_ctx *ctx,
@@ -1328,15 +1227,12 @@ static inline int sec_get_issue_id(struct hisi_sec_ctx *ctx,
 	return issue_id;
 }
 
-static inline int hisi_sec_inc_thread_cnt(struct hisi_sec_ctx *ctx)
+static inline void hisi_sec_inc_thread_cnt(struct hisi_sec_ctx *ctx)
 {
-	int thread_cnt;
+	int thread_cnt = atomic_inc_return(&ctx->thread_cnt);
 
-	thread_cnt = atomic_inc_return(&ctx->thread_cnt);
 	if (thread_cnt > ctx->sec->sec_dfx.thread_cnt)
 		ctx->sec->sec_dfx.thread_cnt = thread_cnt;
-
-	return 0;
 }
 
 static struct hisi_sec_req *sec_request_alloc(struct hisi_sec_ctx *ctx,
@@ -1552,17 +1448,12 @@ static int sec_skcipher_decrypt(struct skcipher_request *sk_req)
 	SEC_SKCIPHER_GEN_ALG(name, key_func, min_key_size, max_key_size, \
 	hisi_sec_cipher_ctx_init_alg, blk_size, iv_size)
 
-#define SEC_SKCIPHER_DM_ALG(name, key_func, min_key_size, \
-	max_key_size, blk_size, iv_size) \
-	SEC_SKCIPHER_GEN_ALG(name, key_func, min_key_size, max_key_size, \
-	hisi_sec_cipher_ctx_init_dm_crypt, blk_size, iv_size)
-
 #define SEC_SKCIPHER_FUSION_ALG(name, key_func, min_key_size, \
 	max_key_size, blk_size, iv_size) \
 	SEC_SKCIPHER_GEN_ALG(name, key_func, min_key_size, max_key_size, \
 	hisi_sec_cipher_ctx_init_multi_iv, blk_size, iv_size)
 
-static struct skcipher_alg sec_algs[] = {
+static struct skcipher_alg sec_normal_algs[] = {
 	SEC_SKCIPHER_NORMAL_ALG("ecb(aes)", sec_setkey_aes_ecb,
 		AES_MIN_KEY_SIZE, AES_MAX_KEY_SIZE, AES_BLOCK_SIZE, 0)
 	SEC_SKCIPHER_NORMAL_ALG("cbc(aes)", sec_setkey_aes_cbc,
@@ -1580,35 +1471,39 @@ static struct skcipher_alg sec_algs[] = {
 	SEC_SKCIPHER_NORMAL_ALG("cbc(des3_ede)", sec_setkey_3des_cbc,
 		SEC_DES3_2KEY_SIZE, SEC_DES3_3KEY_SIZE, DES3_EDE_BLOCK_SIZE,
 		DES3_EDE_BLOCK_SIZE)
-#ifndef SEC_FUSION_BD
 	SEC_SKCIPHER_NORMAL_ALG("xts(sm4)", sec_setkey_sm4_xts,
 		SEC_XTS_MIN_KEY_SIZE, SEC_XTS_MIN_KEY_SIZE, AES_BLOCK_SIZE,
 		AES_BLOCK_SIZE)
 	SEC_SKCIPHER_NORMAL_ALG("cbc(sm4)", sec_setkey_sm4_cbc,
 		AES_MIN_KEY_SIZE, AES_MIN_KEY_SIZE, AES_BLOCK_SIZE,
 		AES_BLOCK_SIZE)
-#else
+};
+
+static struct skcipher_alg sec_fusion_algs[] = {
 	SEC_SKCIPHER_FUSION_ALG("xts(sm4)", sec_setkey_sm4_xts,
 		SEC_XTS_MIN_KEY_SIZE, SEC_XTS_MIN_KEY_SIZE, AES_BLOCK_SIZE,
 		AES_BLOCK_SIZE)
 	SEC_SKCIPHER_FUSION_ALG("cbc(sm4)", sec_setkey_sm4_cbc,
 		AES_MIN_KEY_SIZE, AES_MIN_KEY_SIZE, AES_BLOCK_SIZE,
 		AES_BLOCK_SIZE)
-#endif
-
-#ifdef USE_DM_CRYPT_OPTIMIZE
-	SEC_SKCIPHER_DM_ALG("plain64(xts(sm4))", sec_setkey_plain64_sm4_xts,
-		sizeof(struct geniv_key_info), sizeof(struct geniv_key_info),
-		AES_BLOCK_SIZE, AES_BLOCK_SIZE)
-#endif
 };
 
-int hisi_sec_register_to_crypto(void)
+int hisi_sec_register_to_crypto(int fusion_limit)
 {
-	return crypto_register_skciphers(sec_algs, ARRAY_SIZE(sec_algs));
+	if (fusion_limit == 1)
+		return crypto_register_skciphers(sec_normal_algs,
+			ARRAY_SIZE(sec_normal_algs));
+	else
+		return crypto_register_skciphers(sec_fusion_algs,
+			ARRAY_SIZE(sec_fusion_algs));
 }
 
-void hisi_sec_unregister_from_crypto(void)
+void hisi_sec_unregister_from_crypto(int fusion_limit)
 {
-	crypto_unregister_skciphers(sec_algs, ARRAY_SIZE(sec_algs));
+	if (fusion_limit == 1)
+		crypto_unregister_skciphers(sec_normal_algs,
+			ARRAY_SIZE(sec_normal_algs));
+	else
+		crypto_unregister_skciphers(sec_fusion_algs,
+			ARRAY_SIZE(sec_fusion_algs));
 }

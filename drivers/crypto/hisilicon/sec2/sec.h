@@ -64,6 +64,4 @@ struct hisi_sec {
 };
 
 struct hisi_sec *find_sec_device(int node);
-int hisi_sec_register_to_crypto(void);
-void hisi_sec_unregister_from_crypto(void);
 #endif
