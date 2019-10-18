@@ -1094,8 +1094,8 @@ static int hclge_config_ssu_hw_err_int(struct hclge_dev *hdev, bool en)
  *
  * This function querys number of mpf and pf buffer descriptors.
  */
-int hclge_query_bd_num(struct hclge_dev *hdev, bool is_ras, int *mpf_bd_num,
-		       int *pf_bd_num)
+static int hclge_query_bd_num(struct hclge_dev *hdev, bool is_ras,
+			      int *mpf_bd_num, int *pf_bd_num)
 {
 	struct device *dev = &hdev->pdev->dev;
 	u32 mpf_min_bd_num, pf_min_bd_num;

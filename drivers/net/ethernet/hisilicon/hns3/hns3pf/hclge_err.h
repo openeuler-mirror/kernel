@@ -166,6 +166,4 @@ int hclge_handle_rocee_ras_error(struct hnae3_ae_dev *ae_dev);
 void hclge_log_error(struct device *dev, char *reg,
 		     const struct hclge_hw_error *err,
 		     u32 err_sts, unsigned long *reset_requests);
-int hclge_query_bd_num(struct hclge_dev *hdev, bool is_ras, int *mpf_bd_num,
-		       int *pf_bd_num);
 #endif
