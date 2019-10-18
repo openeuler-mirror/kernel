@@ -1222,7 +1222,12 @@ static int hisi_zip_soft_reset(struct hisi_zip *hisi_zip)
 		s = acpi_evaluate_integer(ACPI_HANDLE(dev), "ZRST",
 					  NULL, &value);
 		if (ACPI_FAILURE(s)) {
-			dev_err(dev, "Controller reset fails\n");
+			dev_err(dev, "NO controller reset method!\n");
+			return -EIO;
+		}
+
+		if (value) {
+			dev_err(dev, "Reset step %llu failed!\n", value);
 			return -EIO;
 		}
 	} else {
