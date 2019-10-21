@@ -88,8 +88,8 @@ int hns_roce_v2_query_mpt_stat(struct hns_roce_dev *hr_dev,
 		goto err_cmd;
 	}
 
-	ret = hns_roce_cmd_mbox(hr_dev, 0, mailbox->dma, key, 0,
-				HNS_ROCE_CMD_QUERY_MPT,
+	ret = hns_roce_cmd_mbox(hr_dev, 0, mailbox->dma, key_to_hw_index(key),
+				0, HNS_ROCE_CMD_QUERY_MPT,
 				HNS_ROCE_CMD_TIMEOUT_MSECS);
 	if (!ret)
 		memcpy(mpt_ctx, mailbox->buf, sizeof(*mpt_ctx));
