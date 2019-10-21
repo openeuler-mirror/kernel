@@ -517,11 +517,11 @@ static int current_qm_write(struct ctrl_debug_file *file, u32 val)
 	writel(val, qm->io_base + QM_DFX_DB_CNT_VF);
 
 	tmp = val |
-	      (readl(qm->io_base + QM_DFX_SQE_CNT_VF_SQN) & QM_VF_CNT_MASK);
+	      (readl(qm->io_base + QM_DFX_SQE_CNT_VF_SQN) & CURRENT_Q_MASK);
 	writel(tmp, qm->io_base + QM_DFX_SQE_CNT_VF_SQN);
 
 	tmp = val |
-	      (readl(qm->io_base + QM_DFX_CQE_CNT_VF_CQN) & QM_VF_CNT_MASK);
+	      (readl(qm->io_base + QM_DFX_CQE_CNT_VF_CQN) & CURRENT_Q_MASK);
 	writel(tmp, qm->io_base + QM_DFX_CQE_CNT_VF_CQN);
 
 	return  0;

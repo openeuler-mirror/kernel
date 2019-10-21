@@ -836,11 +836,11 @@ static int current_q_write(struct debugfs_file *file, u32 val)
 		return -EINVAL;
 
 	tmp = val << QM_DFX_QN_SHIFT |
-	      (readl(qm->io_base + QM_DFX_SQE_CNT_VF_SQN) & CURRENT_Q_MASK);
+	      (readl(qm->io_base + QM_DFX_SQE_CNT_VF_SQN) & CURRENT_FUN_MASK);
 	writel(tmp, qm->io_base + QM_DFX_SQE_CNT_VF_SQN);
 
 	tmp = val << QM_DFX_QN_SHIFT |
-	      (readl(qm->io_base + QM_DFX_CQE_CNT_VF_CQN) & CURRENT_Q_MASK);
+	      (readl(qm->io_base + QM_DFX_CQE_CNT_VF_CQN) & CURRENT_FUN_MASK);
 	writel(tmp, qm->io_base + QM_DFX_CQE_CNT_VF_CQN);
 
 	return 0;

@@ -81,8 +81,8 @@
 #define QM_BASE_CE			QM_ECC_1BIT
 
 #define QM_DFX_QN_SHIFT			16
-#define QM_VF_CNT_MASK			0xffffffc0
 
+#define CURRENT_FUN_MASK		GENMASK(5, 0)
 #define CURRENT_Q_MASK                  GENMASK(31, 16)
 
 #define PCI_BAR_2			2
