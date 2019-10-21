@@ -2014,8 +2014,6 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 	caps->scc_ctx_entry_sz	   = resp_b->scc_ctx_entry_sz;
 	caps->max_mtu		     = resp_b->max_mtu;
 	caps->qpc_entry_sz	     = le16_to_cpu(resp_b->qpc_entry_sz);
-	caps->qpc_timer_entry_sz     = le16_to_cpu(resp_b->qpc_timer_entry_sz);
-	caps->cqc_timer_entry_sz     = le16_to_cpu(resp_b->cqc_timer_entry_sz);
 	caps->min_cqes		     = resp_b->min_cqes;
 	caps->min_wqes		     = resp_b->min_wqes;
 	caps->page_size_cap	     = le32_to_cpu(resp_b->page_size_cap);
@@ -2101,6 +2099,8 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 	caps->default_aeq_max_cnt = le16_to_cpu(resp_e->aeq_max_cnt);
 	caps->default_aeq_period = le16_to_cpu(resp_e->aeq_period);
 
+	caps->qpc_timer_entry_sz = HNS_ROCE_V2_QPC_TIMER_ENTRY_SZ;
+	caps->cqc_timer_entry_sz = HNS_ROCE_V2_CQC_TIMER_ENTRY_SZ;
 	caps->mtt_entry_sz = HNS_ROCE_V2_MTT_ENTRY_SZ;
 	caps->num_mtt_segs = HNS_ROCE_V2_MAX_MTT_SEGS;
 	caps->mtt_ba_pg_sz = HNS_ROCE_BA_PG_SZ_SUPPORTED_256K;
