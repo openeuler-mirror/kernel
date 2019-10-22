@@ -7062,7 +7062,7 @@ int hns_roce_v2_query_srq(struct ib_srq *ibsrq, struct ib_srq_attr *attr)
 
 	attr->srq_limit = limit_wl;
 	attr->max_wr    = srq->max - 1;
-	attr->max_sge   = srq->max_gs;
+	attr->max_sge   = srq->max_gs - HNS_ROCE_RESERVED_SGE;
 
 	memcpy(srq_context, mailbox->buf, sizeof(*srq_context));
 
