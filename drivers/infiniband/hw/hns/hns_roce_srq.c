@@ -314,7 +314,7 @@ static int hns_roce_create_idx_que(struct ib_pd *pd, struct hns_roce_srq *srq,
 	int i;
 
 	idx_que->entry_sz = HNS_ROCE_IDX_QUE_ENTRY_SZ;
-	bitmap_num = HNS_ROCE_ALOGN_UP(srq->max, BITS_PER_LONG_LONG);
+	bitmap_num = HNS_ROCE_ALIGN_UP(srq->max, BITS_PER_LONG_LONG);
 
 	idx_que->bitmap = kcalloc(1, bitmap_num / BITS_PER_BYTE, GFP_KERNEL);
 	if (!idx_que->bitmap)
