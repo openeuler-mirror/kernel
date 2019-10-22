@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /* Copyright (c) 2019 HiSilicon Limited. */
-
 #ifndef __HISI_HPRE_H
 #define __HISI_HPRE_H
 
@@ -8,19 +7,52 @@
 #include "../qm.h"
 
 #define HPRE_SQE_SIZE			sizeof(struct hpre_sqe)
-#define HPRE_SQ_SIZE			(HPRE_SQE_SIZE * QM_Q_DEPTH)
-#define QM_CQ_SIZE			(QM_CQE_SIZE * QM_Q_DEPTH)
 #define HPRE_PF_DEF_Q_NUM		64
 #define HPRE_PF_DEF_Q_BASE		0
+
+enum {
+	HPRE_CLUSTER0,
+	HPRE_CLUSTER1,
+	HPRE_CLUSTER2,
+	HPRE_CLUSTER3,
+	HPRE_CLUSTERS_NUM,
+};
+
+
+enum hpre_ctrl_dbgfs_file {
+	HPRE_CURRENT_QM,
+	HPRE_CLEAR_ENABLE,
+	HPRE_CLUSTER_CTRL,
+	HPRE_DEBUG_FILE_NUM,
+};
+
+#define HPRE_DEBUGFS_FILE_NUM    (HPRE_DEBUG_FILE_NUM + HPRE_CLUSTERS_NUM - 1)
+
+struct hpre_debugfs_file {
+	int index;
+	enum hpre_ctrl_dbgfs_file type;
+	spinlock_t lock;
+	struct hpre_debug *debug;
+};
+
 #define HPRE_RESET			0
 #define HPRE_WAIT_DELAY	1000
 
-struct hpre_ctrl;
+/*
+ * One HPRE controller has one PF and multiple VFs, some global configurations
+ * which PF has need this structure.
+ * Just relevant for PF.
+ */
+struct hpre_debug {
+	struct dentry *debug_root;
+	struct hpre_debugfs_file files[HPRE_DEBUGFS_FILE_NUM];
+};
 
 struct hpre {
 	struct hisi_qm qm;
 	struct list_head list;
-	struct hpre_ctrl *ctrl;
+	struct hpre_debug debug;
+	u32 num_vfs;
 	unsigned long status;
 };
 
@@ -31,11 +63,6 @@ enum hpre_alg_type {
 	HPRE_ALG_KG_CRT = 0x3,
 	HPRE_ALG_DH_G2 = 0x4,
 	HPRE_ALG_DH = 0x5,
-	HPRE_ALG_PRIME = 0x6,
-	HPRE_ALG_MOD = 0x7,
-	HPRE_ALG_MOD_INV = 0x8,
-	HPRE_ALG_MUL = 0x9,
-	HPRE_ALG_COPRIME = 0xA
 };
 
 struct hpre_sqe {
@@ -53,7 +80,7 @@ struct hpre_sqe {
 	__le32 rsvd1[_HPRE_SQE_ALIGN_EXT];
 };
 
-struct hpre *find_hpre_device(int node);
+struct hpre *hpre_find_device(int node);
 int hpre_algs_register(void);
 void hpre_algs_unregister(void);
 

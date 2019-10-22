@@ -164,8 +164,6 @@
 #define WAIT_PERIOD			20
 #define MAX_WAIT_COUNTS			1000
 
-#define CURRENT_Q_MASK			0x0000ffff
-
 #define QM_MK_CQC_DW3_V1(hop_num, pg_sz, buf_sz, cqe_sz) \
 	(((hop_num) << QM_CQ_HOP_NUM_SHIFT)	| \
 	((pg_sz) << QM_CQ_PAGE_SIZE_SHIFT)	| \
