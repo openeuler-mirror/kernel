@@ -2,7 +2,6 @@
 /* Copyright (c) 2019 HiSilicon Limited. */
 #include <crypto/akcipher.h>
 #include <crypto/dh.h>
-//#include <linux/idr.h>
 #include <crypto/internal/akcipher.h>
 #include <crypto/internal/kpp.h>
 #include <crypto/internal/rsa.h>
@@ -232,7 +231,7 @@ static int hpre_hw_data_init(struct hpre_asym_request *hpre_req,
 {
 	struct hpre_sqe *msg = &hpre_req->req;
 	struct hpre_ctx *ctx = hpre_req->ctx;
-	dma_addr_t tmp;
+	dma_addr_t tmp = 0;
 	int ret;
 
 	/* when the data is dh's source, we should format it */

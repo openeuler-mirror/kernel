@@ -9,7 +9,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/pci.h>
-//#include <linux/seq_file.h>
 #include <linux/topology.h>
 #include <linux/uacce.h>
 #include "hpre.h"
@@ -77,7 +76,7 @@
 #define HPRE_DBGFS_VAL_MAX_LEN		20
 #define HPRE_PCI_DEVICE_ID		0xa258
 #define HPRE_PCI_VF_DEVICE_ID		0xa259
-#define HPRE_ADDR(qm, offset)		(qm->io_base + (offset))
+#define HPRE_ADDR(qm, offset)		((qm)->io_base + (offset))
 #define HPRE_QM_USR_CFG_MASK		0xfffffffe
 #define HPRE_QM_AXI_CFG_MASK		0xffff
 #define HPRE_QM_VFG_AX_MASK		0xff
@@ -180,7 +179,8 @@ static struct debugfs_reg32 hpre_com_dfx_regs[] = {
 static int hpre_pf_q_num_set(const char *val, const struct kernel_param *kp)
 {
 	struct pci_dev *pdev;
-	u32 n, q_num;
+	u32 q_num;
+	u32 n = 0;
 	u8 rev_id;
 	int ret;
 
@@ -314,13 +314,42 @@ static int hpre_cfg_by_dsm(struct hisi_qm *qm)
 	return 0;
 }
 
+static int hpre_set_cluster(struct hisi_qm *qm)
+{
+	struct device *dev = &qm->pdev->dev;
+	unsigned long offset;
+	u32 val = 0;
+	int ret, i;
+
+	for (i = 0; i < HPRE_CLUSTERS_NUM; i++) {
+		offset = i * HPRE_CLSTR_ADDR_INTRVL;
+
+		/* clusters initiating */
+		writel(HPRE_CLUSTER_CORE_MASK,
+		       HPRE_ADDR(qm, offset + HPRE_CORE_ENB));
+		writel(0x1, HPRE_ADDR(qm, offset + HPRE_CORE_INI_CFG));
+		ret = readl_relaxed_poll_timeout(HPRE_ADDR(qm, offset +
+					HPRE_CORE_INI_STATUS), val,
+					((val & HPRE_CLUSTER_CORE_MASK) ==
+					HPRE_CLUSTER_CORE_MASK),
+					HPRE_REG_RD_INTVRL_US,
+					HPRE_REG_RD_TMOUT_US);
+		if (ret) {
+			dev_err(dev,
+				"cluster %d int st status timeout!\n", i);
+			return -ETIMEDOUT;
+		}
+	}
+
+	return 0;
+}
+
 static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 {
 	struct hisi_qm *qm = &hpre->qm;
 	struct device *dev = &qm->pdev->dev;
-	unsigned long offset;
-	int ret, i;
 	u32 val;
+	int ret;
 
 	writel(HPRE_QM_USR_CFG_MASK, HPRE_ADDR(qm, QM_ARUSER_M_CFG_ENABLE));
 	writel(HPRE_QM_USR_CFG_MASK, HPRE_ADDR(qm, QM_AWUSER_M_CFG_ENABLE));
@@ -360,24 +389,10 @@ static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 		return -ETIMEDOUT;
 	}
 
-	for (i = 0; i < HPRE_CLUSTERS_NUM; i++) {
-		offset = i * HPRE_CLSTR_ADDR_INTRVL;
-
-		/* clusters initiating */
-		writel(HPRE_CLUSTER_CORE_MASK,
-		       HPRE_ADDR(qm, offset + HPRE_CORE_ENB));
-		writel(0x1, HPRE_ADDR(qm, offset + HPRE_CORE_INI_CFG));
-		ret = readl_relaxed_poll_timeout(HPRE_ADDR(qm, offset +
-					HPRE_CORE_INI_STATUS), val,
-					((val & HPRE_CLUSTER_CORE_MASK) ==
-					HPRE_CLUSTER_CORE_MASK),
-					HPRE_REG_RD_INTVRL_US,
-					HPRE_REG_RD_TMOUT_US);
-		if (ret) {
-			dev_err(dev,
-				"cluster %d int st status timeout!\n", i);
-			return -ETIMEDOUT;
-		}
+	ret = hpre_set_cluster(qm);
+	if (ret) {
+		dev_err(dev, "set hpre cluster err!\n");
+		return -ETIMEDOUT;
 	}
 
 	ret = hpre_cfg_by_dsm(qm);
@@ -571,7 +586,7 @@ static ssize_t hpre_ctrl_debug_write(struct file *filp, const char __user *buf,
 {
 	struct hpre_debugfs_file *file = filp->private_data;
 	char tbuf[HPRE_DBGFS_VAL_MAX_LEN];
-	unsigned long val;
+	unsigned long val = 0;
 	int len, ret;
 
 	if (*pos != 0)
@@ -1225,7 +1240,6 @@ static int hpre_soft_reset(struct hpre *hpre)
 {
 	struct hisi_qm *qm = &hpre->qm;
 	struct device *dev = &qm->pdev->dev;
-	unsigned long long value = 0;
 	int ret;
 	u32 val;
 
@@ -1268,6 +1282,7 @@ static int hpre_soft_reset(struct hpre *hpre)
 
 	/* The reset related sub-control registers are not in PCI BAR */
 	if (ACPI_HANDLE(dev)) {
+		unsigned long long value = 0;
 		acpi_status s;
 
 		s = acpi_evaluate_integer(ACPI_HANDLE(dev), "HRST",
