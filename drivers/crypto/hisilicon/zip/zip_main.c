@@ -863,8 +863,20 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ret)
 		dev_err(&pdev->dev, "Failed to init debugfs (%d)!\n", ret);
 
+#ifndef CONFIG_IOMMU_SVA
+	if (uacce_mode == UACCE_MODE_UACCE)
+		return 0;
+#endif
+	ret = hisi_zip_register_to_crypto();
+	if (ret < 0) {
+		pr_err("Failed to register driver to crypto.\n");
+		goto err_qm_stop;
+	}
 	return 0;
 
+err_qm_stop:
+	hisi_zip_debugfs_exit(hisi_zip);
+	hisi_qm_stop(qm, QM_NORMAL);
 err_qm_uninit:
 	hisi_qm_uninit(qm);
 err_remove_from_list:
@@ -998,6 +1010,13 @@ static void hisi_zip_remove(struct pci_dev *pdev)
 
 	if (qm->fun_type == QM_HW_PF && hisi_zip->ctrl->num_vfs != 0)
 		hisi_zip_sriov_disable(pdev);
+
+#ifndef CONFIG_IOMMU_SVA
+	if (uacce_mode != UACCE_MODE_UACCE)
+		hisi_zip_unregister_from_crypto();
+#else
+	hisi_zip_unregister_from_crypto();
+#endif
 
 	hisi_zip_debugfs_exit(hisi_zip);
 	hisi_qm_stop(qm, QM_NORMAL);
@@ -1537,45 +1556,15 @@ static int __init hisi_zip_init(void)
 
 	ret = pci_register_driver(&hisi_zip_pci_driver);
 	if (ret < 0) {
+		hisi_zip_unregister_debugfs();
 		pr_err("Failed to register pci driver.\n");
-		goto err_pci;
 	}
-
-	if (list_empty(&hisi_zip_list)) {
-		pr_err("no hisilicon zip device!\n");
-		ret = -ENODEV;
-		goto err_probe_device;
-	}
-
-#ifndef CONFIG_IOMMU_SVA
-	if (uacce_mode == UACCE_MODE_UACCE)
-		return 0;
-#endif
-	pr_info("hisi_zip: register to crypto\n");
-	ret = hisi_zip_register_to_crypto();
-	if (ret < 0) {
-		pr_err("Failed to register driver to crypto.\n");
-		goto err_probe_device;
-	}
-
-	return 0;
-
-err_probe_device:
-	pci_unregister_driver(&hisi_zip_pci_driver);
-err_pci:
-	hisi_zip_unregister_debugfs();
 
 	return ret;
 }
 
 static void __exit hisi_zip_exit(void)
 {
-#ifndef CONFIG_IOMMU_SVA
-	if (uacce_mode != UACCE_MODE_UACCE)
-		hisi_zip_unregister_from_crypto();
-#else
-	hisi_zip_unregister_from_crypto();
-#endif
 	pci_unregister_driver(&hisi_zip_pci_driver);
 	hisi_zip_unregister_debugfs();
 }

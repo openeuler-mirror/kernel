@@ -117,6 +117,8 @@ static const struct kernel_param_ops sgl_sge_nr_ops = {
 static u16 sgl_sge_nr = HZIP_SGL_SGE_NR;
 module_param_cb(sgl_sge_nr, &sgl_sge_nr_ops, &sgl_sge_nr, 0444);
 MODULE_PARM_DESC(sgl_sge_nr, "Number of sge in sgl(1-255)");
+static DEFINE_MUTEX(hisi_zip_alg_lock);
+static unsigned int hisi_zip_active_devs;
 
 static void hisi_zip_config_buf_type(struct hisi_zip_sqe *sqe, u8 buf_type)
 {
@@ -670,25 +672,34 @@ static struct acomp_alg hisi_zip_acomp_gzip = {
 
 int hisi_zip_register_to_crypto(void)
 {
-	int ret;
+	int ret = 0;
 
-	ret = crypto_register_acomp(&hisi_zip_acomp_zlib);
-	if (ret) {
-		pr_err("Zlib acomp algorithm registration failed\n");
-		return ret;
+	mutex_lock(&hisi_zip_alg_lock);
+	if (++hisi_zip_active_devs == 1) {
+		ret = crypto_register_acomp(&hisi_zip_acomp_zlib);
+		if (ret) {
+			pr_err("Zlib acomp algorithm registration failed\n");
+			goto err_unlock;
+		}
+
+		ret = crypto_register_acomp(&hisi_zip_acomp_gzip);
+		if (ret) {
+			pr_err("Gzip acomp algorithm registration failed\n");
+			crypto_unregister_acomp(&hisi_zip_acomp_zlib);
+		}
 	}
 
-	ret = crypto_register_acomp(&hisi_zip_acomp_gzip);
-	if (ret) {
-		pr_err("Gzip acomp algorithm registration failed\n");
-		crypto_unregister_acomp(&hisi_zip_acomp_zlib);
-	}
-
+err_unlock:
+	mutex_unlock(&hisi_zip_alg_lock);
 	return ret;
 }
 
 void hisi_zip_unregister_from_crypto(void)
 {
-	crypto_unregister_acomp(&hisi_zip_acomp_gzip);
-	crypto_unregister_acomp(&hisi_zip_acomp_zlib);
+	mutex_lock(&hisi_zip_alg_lock);
+	if (--hisi_zip_active_devs == 0) {
+		crypto_unregister_acomp(&hisi_zip_acomp_gzip);
+		crypto_unregister_acomp(&hisi_zip_acomp_zlib);
+	}
+	mutex_unlock(&hisi_zip_alg_lock);
 }
