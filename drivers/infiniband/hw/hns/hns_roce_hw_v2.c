@@ -1850,7 +1850,7 @@ static void set_default_caps(struct hns_roce_dev *hr_dev)
 	caps->mpt_ba_pg_sz	= 0;
 	caps->mpt_buf_pg_sz	= 0;
 	caps->mpt_hop_num	= HNS_ROCE_CONTEXT_HOP_NUM;
-	caps->pbl_ba_pg_sz	= HNS_ROCE_BA_PG_SZ_SUPPORTED_8K;
+	caps->pbl_ba_pg_sz	= HNS_ROCE_BA_PG_SZ_SUPPORTED_16K;
 	caps->pbl_buf_pg_sz	= 0;
 	caps->pbl_hop_num	= HNS_ROCE_PBL_HOP_NUM;
 	caps->mtt_ba_pg_sz	= HNS_ROCE_BA_PG_SZ_SUPPORTED_256K;
@@ -2238,7 +2238,7 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 	caps->tsq_buf_pg_sz	= 0;
 
 	caps->tpq_buf_pg_sz     = 0;
-	caps->pbl_ba_pg_sz      = 2;
+	caps->pbl_ba_pg_sz      = HNS_ROCE_BA_PG_SZ_SUPPORTED_16K;
 	caps->pbl_buf_pg_sz     = 0;
 	caps->pbl_hop_num       = HNS_ROCE_PBL_HOP_NUM;
 
