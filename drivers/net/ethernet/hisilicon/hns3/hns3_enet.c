@@ -4614,9 +4614,9 @@ static int hns3_change_channels(struct hnae3_handle *handle, u32 new_tqp_num,
 
 	ret =  hns3_reset_notify(handle, HNAE3_UP_CLIENT);
 	if (ret)
-		return hns3_reset_notify(handle, HNAE3_UNINIT_CLIENT);
+		hns3_reset_notify(handle, HNAE3_UNINIT_CLIENT);
 
-	return 0;
+	return ret;
 }
 
 int hns3_set_channels(struct net_device *netdev,
