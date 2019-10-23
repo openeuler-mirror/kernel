@@ -22,72 +22,79 @@
 #include <linux/uacce.h>
 #include "rde.h"
 
-#define HRDE_VF_NUM				63
-#define HRDE_QUEUE_NUM_V1		4096
-#define HRDE_QUEUE_NUM_V2		1024
-#define HRDE_PCI_DEVICE_ID		0xa25a
+#define HRDE_VF_NUM		63
+#define HRDE_QUEUE_NUM_V1	4096
+#define HRDE_QUEUE_NUM_V2	1024
+#define HRDE_PCI_DEVICE_ID	0xa25a
+#define HRDE_SQE_SIZE		64
+#define HRDE_SQ_SIZE		(HRDE_SQE_SIZE * QM_Q_DEPTH)
+#define HRDE_PF_DEF_Q_NUM	64
+#define HRDE_PF_DEF_Q_BASE	0
+#define HRDE_RD_INTVRL_US	10
+#define HRDE_RD_TMOUT_US	1000
+#define FORMAT_DECIMAL		10
+#define HRDE_RST_TMOUT_MS	400
+#define HRDE_OOO_DFX_NUM	9
+#define HRDE_DFX_NUM		14
+#define HRDE_ENABLE		1
+#define HRDE_DISABLE		0
+#define HRDE_PCI_COMMAND_INVALID	0xFFFFFFFF
 
-#define HRDE_RAS_INT_MSK		0x310290
+#define HRDE_RAS_INT_MSK	0x310290
 #define HRDE_RAS_CE_MSK		BIT(2)
-#define HRDE_RAS_NFE_MSK		BIT(1)
-#define HRDE_RAS_ENABLE			BIT(0)
-#define HRDE_INT_MSK				0x310314
-#define HRDE_INT_ENABLE			0x0
-#define HRDE_INT_DISABLE		0x3ffff
-
-#define HRDE_INT_SOURCE			0x31030c
-#define HRDE_INT_STATUS			0x310318
-#define HRDE_DFX_CTRL_0			0x310240
-#define HRDE_ECC_ERR			0x310234
-#define HRDE_ECC_ERR_CNT		0x310238
-#define HRDE_OP_DONE_CNT		0x310250
+#define HRDE_RAS_NFE_MSK	BIT(1)
+#define HRDE_RAS_ENABLE		BIT(0)
+#define HRDE_INT_MSK		0x310314
+#define HRDE_INT_ENABLE		0x0
+#define HRDE_INT_DISABLE	0x3ffff
+#define HRDE_INT_SOURCE		0x31030c
+#define HRDE_INT_STATUS		0x310318
+#define HRDE_DFX_CTRL_0		0x310240
+#define HRDE_ECC_ERR		0x310234
+#define HRDE_ECC_ERR_CNT	0x310238
+#define HRDE_OP_DONE_CNT	0x310250
 #define HRDE_OP_ERR_CNT		0x310254
-#define HRDE_OP_ABORT_CNT		0x310258
-#define HRDE_FIFO_STAT_0			0x310200
-#define HRDE_DFX_STAT_7			0x310334
-#define HRDE_DFX_STAT_8			0x310338
-#define DFX_CTRL0					0x2
-#define WRITE_CLEAR_VAL			GENMASK(31, 0)
-
-#define HRDE_AWCACHE			0x310154
-#define HRDE_ARCACHE			0x31015c
-#define AWCACHE					0xff0
-#define ARCACHE					0xfff0
-
-#define HRDE_CFG					0x310000
-#define CHN_CFG					0x1010101
-
-#define HRDE_AWUSER_BD_1		0x310104
-#define HRDE_ARUSER_BD_1		0x310114
-#define HRDE_ARUSER_SGL_1		0x310124
-#define HRDE_AWUSER_DAT_1		0x310134
-#define HRDE_ARUSER_DAT_1		0x310144
-#define HRDE_USER_SMMU			0x40001070
-
-#define HRDE_ERR_CNT			0x310238
-#define HRDE_ECC_1BIT_ERR		BIT(0)
-#define HRDE_ECC_2BIT_ERR		BIT(1)
-#define HRDE_ECC_1BIT_SHIFT		16
-
-#define HRDE_FSM_MAX_CNT		0x310280
-#define HRDE_QM_IDEL_STATUS				0x1040e4
-#define HRDE_QM_PEH_DFX_INFO0			0x1000fc
-#define PEH_MSI_MASK_SHIFT		0x90
+#define HRDE_OP_ABORT_CNT	0x310258
+#define HRDE_FIFO_STAT_0	0x310200
+#define HRDE_DFX_STAT_7		0x310334
+#define HRDE_DFX_STAT_8		0x310338
+#define DFX_CTRL0		0x2
+#define WRITE_CLEAR_VAL		GENMASK(31, 0)
+#define HRDE_AWCACHE		0x310154
+#define HRDE_ARCACHE		0x31015c
+#define AWCACHE			0xff0
+#define ARCACHE			0xfff0
+#define HRDE_CFG		0x310000
+#define CHN_CFG			0x5010101
+#define HRDE_AXI_SHUTDOWN_EN	BIT(26)
+#define HRDE_AXI_SHUTDOWN_DIS	0xFBFFFFFF
+#define HRDE_AWUSER_BD_1	0x310104
+#define HRDE_ARUSER_BD_1	0x310114
+#define HRDE_ARUSER_SGL_1	0x310124
+#define HRDE_AWUSER_DAT_1	0x310134
+#define HRDE_ARUSER_DAT_1	0x310144
+#define HRDE_USER_SMMU		0x40001070
+#define HRDE_ERR_CNT		0x310238
+#define HRDE_ECC_1BIT_ERR	BIT(0)
+#define HRDE_ECC_2BIT_ERR	BIT(1)
+#define HRDE_ECC_1BIT_SHIFT	16
+#define HRDE_ECC_2BIT_CNT_MSK	GENMASK(15, 0)
+#define HRDE_STATE_INT_ERR	GENMASK(10, 2)
+#define HRDE_FSM_MAX_CNT	0x310280
+#define HRDE_QM_IDEL_STATUS	0x1040e4
+#define HRDE_QM_PEH_DFX_INFO0	0x1000fc
+#define PEH_MSI_MASK_SHIFT	0x90
 #define HRDE_MASTER_GLOBAL_CTRL		0x300000
 #define MASTER_GLOBAL_CTRL_SHUTDOWN	0x1
-#define HRDE_MASTER_TRANS_RETURN		0x300150
-#define MASTER_TRANS_RETURN_RW		0x3
-#define CACHE_CTL			0x1833
-#define HRDE_DBGFS_VAL_MAX_LEN		20
-#define HRDE_COM_OFFSET		0x310000
-
-#define HRDE_SQE_SIZE			64
-#define HRDE_SQ_SIZE				(HRDE_SQE_SIZE * QM_Q_DEPTH)
-#define HRDE_PF_DEF_Q_NUM		64
-#define HRDE_PF_DEF_Q_BASE		0
-#define HRDE_RD_INTVRL_US		10
-#define HRDE_RD_TMOUT_US		1000
-#define FORMAT_DECIMAL			10
+#define HRDE_MASTER_TRANS_RETURN	0x300150
+#define MASTER_TRANS_RETURN_RW	0x3
+#define CACHE_CTL		0x1833
+#define HRDE_DBGFS_VAL_MAX_LEN	20
+#define HRDE_PROBE_ADDR		0x31025c
+#define HRDE_PROBE_DATA		0x310260
+#define HRDE_PROBE_EN		BIT(16)
+#define HRDE_PROBE_DATA_EN	BIT(17)
+#define HRDE_STRB_CS_SHIFT	9
 
 static const char hisi_rde_name[] = "hisi_rde";
 static struct dentry *hrde_debugfs_root;
@@ -95,32 +102,11 @@ LIST_HEAD(hisi_rde_list);
 DEFINE_MUTEX(hisi_rde_list_lock);
 static void hisi_rde_ras_proc(struct work_struct *work);
 
-struct hisi_rde *find_rde_device(int node)
-{
-	struct hisi_rde *ret = NULL;
-#ifdef CONFIG_NUMA
-	struct hisi_rde *hisi_rde;
-	int min_distance = 100;
-	struct device *dev;
-
-	mutex_lock(&hisi_rde_list_lock);
-
-	list_for_each_entry(hisi_rde, &hisi_rde_list, list) {
-		dev = &hisi_rde->qm.pdev->dev;
-		if (node_distance(dev->numa_node, node) < min_distance) {
-			ret = hisi_rde;
-			min_distance = node_distance(dev->numa_node, node);
-		}
-	}
-#else
-	mutex_lock(&hisi_rde_list_lock);
-
-	ret = list_first_entry(&hisi_rde_list, struct hisi_rde, list);
-#endif
-	mutex_unlock(&hisi_rde_list_lock);
-
-	return ret;
-}
+struct hisi_rde_resource {
+	struct hisi_rde *hrde;
+	int distance;
+	struct list_head list;
+};
 
 struct hisi_rde_hw_error {
 	u32 int_msk;
@@ -151,12 +137,14 @@ static const struct hisi_rde_hw_error rde_hw_error[] = {
 
 enum ctrl_debug_file_index {
 	HRDE_CURRENT_FUNCTION,
+	HRDE_CURRENT_BD,
 	HRDE_DEBUG_FILE_NUM,
-	/*RDE not support CNT_CLR_CE config, default enable */
+	/* RDE not support CNT_CLR_CE config, default enable */
 };
 
 static const char *const ctrl_debug_file_name[] = {
 	[HRDE_CURRENT_FUNCTION] = "current_function_id",
+	[HRDE_CURRENT_BD] = "current_bd",
 };
 
 struct ctrl_debug_file {
@@ -177,29 +165,41 @@ struct hisi_rde_ctrl {
 };
 
 static struct debugfs_reg32 hrde_dfx_regs[] = {
-	{"HRDE_FIFO_STAT_0	", 0x200ull},
-	{"HRDE_FIFO_STAT_1	", 0x204ull},
-	{"HRDE_OP_TAG_0		", 0x214ull},
-	{"HRDE_OP_TAG_1		", 0x218ull},
-	{"HRDE_OP_TAG_2		", 0x21cull},
-	{"HRDE_ECC_ERR		", 0x234ull},
-	{"HRDE_ECC_ERR_CNT	", 0x238ull},
-	{"HRDE_OP_DONE_CNT	", 0x250ull},
-	{"HRDE_OP_ERR_CNT		", 0x254ull},
-	{"HRDE_OP_ABORT_CNT	", 0x258ull},
-	{"HRDE_TMP_ADDR_HIGH	", 0x270ull},
-	{"HRDE_TMP_ADDR_LOW	", 0x274ull},
-	{"HRDE_TMP_LENGTH		", 0x278ull},
-	{"HRDE_INT_STATUS		", 0x318ull},
-	{"HRDE_DFX_STAT_0		", 0x220ull},
-	{"HRDE_DFX_STAT_1		", 0x224ull},
-	{"HRDE_DFX_STAT_2		", 0x320ull},
-	{"HRDE_DFX_STAT_3		", 0x324ull},
-	{"HRDE_DFX_STAT_4		", 0x328ull},
-	{"HRDE_DFX_STAT_5		", 0x32cull},
-	{"HRDE_DFX_STAT_6		", 0x330ull},
-	{"HRDE_DFX_STAT_7		", 0x334ull},
-	{"HRDE_DFX_STAT_8		", 0x338ull},
+	{"HRDE_DFX_STAT_0", 0x310220ull},
+	{"HRDE_DFX_STAT_1", 0x310224ull},
+	{"HRDE_DFX_STAT_2", 0x310320ull},
+	{"HRDE_DFX_STAT_3", 0x310324ull},
+	{"HRDE_DFX_STAT_4", 0x310328ull},
+	{"HRDE_DFX_STAT_5", 0x31032cull},
+	{"HRDE_DFX_STAT_6", 0x310330ull},
+	{"HRDE_DFX_STAT_7", 0x310334ull},
+	{"HRDE_DFX_STAT_8", 0x310338ull},
+	{"HRDE_FIFO_STAT_0", 0x310200ull},
+	{"HRDE_FIFO_STAT_1", 0x310204ull},
+	{"HRDE_OP_TAG_0", 0x310214ull},
+	{"HRDE_OP_TAG_1", 0x310218ull},
+	{"HRDE_OP_TAG_2", 0x31021cull},
+	{"HRDE_ECC_ERR", 0x310234ull},
+	{"HRDE_ECC_ERR_CNT", 0x310238ull},
+	{"HRDE_OP_DONE_CNT", 0x310250ull},
+	{"HRDE_OP_ERR_CNT", 0x310254ull},
+	{"HRDE_OP_ABORT_CNT", 0x310258ull},
+	{"HRDE_TMP_ADDR_HIGH", 0x310270ull},
+	{"HRDE_TMP_ADDR_LOW", 0x310274ull},
+	{"HRDE_TMP_LENGTH", 0x310278ull},
+	{"HRDE_INT_STATUS", 0x310318ull},
+};
+
+static struct debugfs_reg32 hrde_ooo_dfx_regs[] = {
+	{"HRDE_AM_CURR_PORT_STS", 0x300100ull},
+	{"HRDE_AM_ROB_ECC_ERR_ADDR", 0x30010cull},
+	{"HRDE_AM_CURR_TRANS_RETURN", 0x300150ull},
+	{"HRDE_AM_CURR_RD_TXID_STS_0", 0x300160ull},
+	{"HRDE_AM_CURR_RD_TXID_STS_1", 0x300164ull},
+	{"HRDE_AM_CURR_RD_TXID_STS_2", 0x300168ull},
+	{"HRDE_AM_CURR_WR_TXID_STS_0", 0x300170ull},
+	{"HRDE_AM_CURR_WR_TXID_STS_1", 0x300174ull},
+	{"HRDE_AM_CURR_WR_TXID_STS_2", 0x300178ull},
 };
 
 static int pf_q_num_set(const char *val, const struct kernel_param *kp)
@@ -281,6 +281,69 @@ static const struct pci_device_id hisi_rde_dev_ids[] = {
 
 MODULE_DEVICE_TABLE(pci, hisi_rde_dev_ids);
 
+static void free_list(struct list_head *head)
+{
+	struct hisi_rde_resource *res;
+	struct hisi_rde_resource *tmp;
+
+	list_for_each_entry_safe(res, tmp, head, list) {
+		list_del(&res->list);
+		kfree(res);
+	}
+}
+
+struct hisi_rde *find_rde_device(int node)
+{
+	struct hisi_rde *ret = NULL;
+#ifdef CONFIG_NUMA
+	struct hisi_rde_resource *res, *tmp;
+	struct hisi_rde *hisi_rde;
+	struct list_head *n;
+	struct device *dev;
+	LIST_HEAD(head);
+
+	mutex_lock(&hisi_rde_list_lock);
+
+	list_for_each_entry(hisi_rde, &hisi_rde_list, list) {
+		res = kzalloc(sizeof(*res), GFP_KERNEL);
+		if (!res)
+			goto err;
+
+		dev = &hisi_rde->qm.pdev->dev;
+		res->hrde = hisi_rde;
+		res->distance = node_distance(dev->numa_node, node);
+		n = &head;
+		list_for_each_entry(tmp, &head, list) {
+			if (res->distance < tmp->distance) {
+				n = &tmp->list;
+				break;
+			}
+		}
+		list_add_tail(&res->list, n);
+	}
+
+	list_for_each_entry(tmp, &head, list) {
+		if (tmp->hrde->q_ref + 1 <= pf_q_num) {
+			tmp->hrde->q_ref = tmp->hrde->q_ref + 1;
+			ret = tmp->hrde;
+			break;
+		}
+	}
+
+	free_list(&head);
+#else
+	mutex_lock(&hisi_rde_list_lock);
+	ret = list_first_entry(&hisi_rde_list, struct hisi_rde, list);
+#endif
+	mutex_unlock(&hisi_rde_list_lock);
+	return ret;
+
+err:
+	free_list(&head);
+	mutex_unlock(&hisi_rde_list_lock);
+	return NULL;
+}
+
 static inline void hisi_rde_add_to_list(struct hisi_rde *hisi_rde)
 {
 	mutex_lock(&hisi_rde_list_lock);
@@ -333,11 +396,35 @@ static int current_qm_write(struct ctrl_debug_file *file, u32 val)
 	return 0;
 }
 
+static int current_bd_read(struct ctrl_debug_file *file)
+{
+	struct hisi_qm *qm = file_to_qm(file);
+
+	return readl(qm->io_base + HRDE_PROBE_DATA);
+}
+
+static int current_bd_write(struct ctrl_debug_file *file, u32 val)
+{
+	struct hisi_qm *qm = file_to_qm(file);
+	u32 tmp = 0;
+
+	if (val >=  (HRDE_SQE_SIZE / sizeof(u32))) {
+		pr_err("width index should be smaller than 16.\n");
+		return -EINVAL;
+	}
+
+	tmp = HRDE_PROBE_DATA_EN | HRDE_PROBE_EN |
+		(val << HRDE_STRB_CS_SHIFT);
+	writel(tmp, qm->io_base + HRDE_PROBE_ADDR);
+
+	return 0;
+}
+
 static ssize_t ctrl_debug_read(struct file *filp, char __user *buf,
 			       size_t count, loff_t *pos)
 {
 	struct ctrl_debug_file *file = filp->private_data;
-	char tbuf[20];
+	char tbuf[HRDE_DBGFS_VAL_MAX_LEN];
 	u32 val;
 	int ret;
 
@@ -345,13 +432,18 @@ static ssize_t ctrl_debug_read(struct file *filp, char __user *buf,
 	switch (file->index) {
 	case HRDE_CURRENT_FUNCTION:
 		val = current_qm_read(file);
+		ret = snprintf(tbuf, HRDE_DBGFS_VAL_MAX_LEN, "%u\n", val);
+		break;
+	case HRDE_CURRENT_BD:
+		val = current_bd_read(file);
+		ret = snprintf(tbuf, HRDE_DBGFS_VAL_MAX_LEN, "%x\n", val);
 		break;
 	default:
 		spin_unlock_irq(&file->lock);
 		return -EINVAL;
 	}
 	spin_unlock_irq(&file->lock);
-	ret = sprintf(tbuf, "%u\n", val);
+
 	return simple_read_from_buffer(buf, count, pos, tbuf, ret);
 }
 
@@ -385,6 +477,11 @@ static ssize_t ctrl_debug_write(struct file *filp, const char __user *buf,
 		if (ret)
 			goto err_input;
 		break;
+	case HRDE_CURRENT_BD:
+		ret = current_bd_write(file, val);
+		if (ret)
+			goto err_input;
+		break;
 	default:
 		ret = -EINVAL;
 		goto err_input;
@@ -410,19 +507,34 @@ static int hisi_rde_chn_debug_init(struct hisi_rde_ctrl *ctrl)
 	struct hisi_rde *hisi_rde = ctrl->hisi_rde;
 	struct hisi_qm *qm = &hisi_rde->qm;
 	struct device *dev = &qm->pdev->dev;
-	struct debugfs_regset32 *regset;
-	struct dentry *tmp;
+	struct debugfs_regset32 *regset, *regset_ooo;
+	struct dentry *tmp_d, *tmp;
+	char buf[HRDE_DBGFS_VAL_MAX_LEN];
+
+	snprintf(buf, HRDE_DBGFS_VAL_MAX_LEN, "rde_dfx");
+	tmp_d = debugfs_create_dir(buf, ctrl->debug_root);
+	if (!tmp_d)
+		return -ENOENT;
 
 	regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
 	if (!regset)
 		return -ENOENT;
-
 	regset->regs = hrde_dfx_regs;
 	regset->nregs = ARRAY_SIZE(hrde_dfx_regs);
-	regset->base = qm->io_base + HRDE_COM_OFFSET;
+	regset->base = qm->io_base;
+	tmp = debugfs_create_regset32("chn_regs",
+		0444, tmp_d, regset);
+	if (!tmp)
+		return -ENOENT;
 
-	tmp = debugfs_create_regset32("rde_chn_dfx_regs",
-		0444, ctrl->debug_root, regset);
+	regset_ooo = devm_kzalloc(dev, sizeof(*regset_ooo), GFP_KERNEL);
+	if (!regset_ooo)
+		return -ENOENT;
+	regset_ooo->regs = hrde_ooo_dfx_regs;
+	regset_ooo->nregs = ARRAY_SIZE(hrde_ooo_dfx_regs);
+	regset_ooo->base = qm->io_base;
+	tmp = debugfs_create_regset32("ooo_regs",
+		0444, tmp_d, regset_ooo);
 	if (!tmp)
 		return -ENOENT;
 
@@ -499,17 +611,17 @@ static void hisi_rde_engine_init(struct hisi_rde *hisi_rde)
 	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_DFX_STAT_7);
 	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_DFX_STAT_8);
 
-	/*usr domain */
+	/* usr domain */
 	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_AWUSER_BD_1);
 	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_BD_1);
 	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_AWUSER_DAT_1);
 	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_DAT_1);
 	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_SGL_1);
-	/*rde cache */
+	/* rde cache */
 	writel(AWCACHE, hisi_rde->qm.io_base + HRDE_AWCACHE);
 	writel(ARCACHE, hisi_rde->qm.io_base + HRDE_ARCACHE);
 
-	/*rde chn enable + outstangding config */
+	/* rde chn enable + outstangding config */
 	writel(CHN_CFG, hisi_rde->qm.io_base + HRDE_CFG);
 }
 
@@ -539,27 +651,36 @@ static void hisi_rde_set_user_domain_and_cache(struct hisi_rde *hisi_rde)
 static void hisi_rde_hw_error_set_state(struct hisi_rde *hisi_rde, bool state)
 {
 	u32 ras_msk = (HRDE_RAS_CE_MSK | HRDE_RAS_NFE_MSK);
+	u32 val;
 
-	/*
-	 * if enable RDE hw error interrupts, bd prefetch should bd
-	 * masked,otherwise ras int will misreport
-	 */
+	val = readl(hisi_rde->qm.io_base + HRDE_CFG);
 	if (state) {
 		writel(HRDE_RAS_ENABLE,
 		       hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
+		/* bd prefetch should bd masked to prevent misreport */
 		writel((HRDE_INT_ENABLE | BIT(8)),
 		       hisi_rde->qm.io_base + HRDE_INT_MSK);
+		/* when m-bit error occur, master ooo will close */
+		val = val | HRDE_AXI_SHUTDOWN_EN;
 	} else {
 		writel(ras_msk, hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
 		writel(HRDE_INT_DISABLE, hisi_rde->qm.io_base + HRDE_INT_MSK);
+		/* when m-bit error occur, master ooo will not close */
+		val = val & HRDE_AXI_SHUTDOWN_DIS;
 	}
+
+	writel(val, hisi_rde->qm.io_base + HRDE_CFG);
 }
 
-static void hisi_rde_hw_error_init(struct hisi_rde *hisi_rde)
+static void hisi_rde_set_hw_error(struct hisi_rde *hisi_rde, bool state)
 {
-	hisi_qm_hw_error_init(&hisi_rde->qm, QM_BASE_CE,
+	if (state)
+		hisi_qm_hw_error_init(&hisi_rde->qm, QM_BASE_CE,
 			      QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT, 0, 0);
-	hisi_rde_hw_error_set_state(hisi_rde, true);
+	else
+		hisi_qm_hw_error_uninit(&hisi_rde->qm);
+
+	hisi_rde_hw_error_set_state(hisi_rde, state);
 }
 
 static int hisi_rde_pf_probe_init(struct hisi_rde *hisi_rde)
@@ -588,7 +709,7 @@ static int hisi_rde_pf_probe_init(struct hisi_rde *hisi_rde)
 	}
 
 	hisi_rde_set_user_domain_and_cache(hisi_rde);
-	hisi_rde_hw_error_init(hisi_rde);
+	hisi_rde_set_hw_error(hisi_rde, true);
 
 	return 0;
 }
@@ -598,8 +719,8 @@ static int hisi_rde_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	enum qm_hw_ver rev_id;
 
 	rev_id = hisi_qm_get_hw_version(pdev);
-	if (rev_id < 0)
-		return -ENODEV;
+	if (rev_id == QM_HW_UNKNOWN)
+		return -EINVAL;
 
 	qm->pdev = pdev;
 	qm->ver = rev_id;
@@ -614,7 +735,7 @@ static int hisi_rde_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 		qm->use_uacce = false;
 		break;
 	case UACCE_MODE_UACCE:
-#ifdef CONFIG_IOMMU_SVA2
+#ifdef CONFIG_IOMMU_SVA
 		qm->use_dma_api = true;
 		qm->use_sva = true;
 #else
@@ -632,8 +753,25 @@ static int hisi_rde_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 
 	qm->qp_base = HRDE_PF_DEF_Q_BASE;
 	qm->qp_num = pf_q_num;
+	qm->debug.curr_qm_qp_num = pf_q_num;
+	qm->abnormal_fix = hisi_rde_abnormal_fix;
 
 	return 0;
+}
+
+static u32 hisi_rde_smmu_state(struct device *dev)
+{
+	struct iommu_domain *domain;
+
+	domain = iommu_get_domain_for_dev(dev);
+	if (domain) {
+		if (domain->type == IOMMU_DOMAIN_DMA)
+			return true;
+		else
+			return false;
+	} else {
+		return false;
+	}
 }
 
 static int hisi_rde_probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -648,6 +786,7 @@ static int hisi_rde_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	pci_set_drvdata(pdev, hisi_rde);
 	INIT_WORK(&hisi_rde->reset_work, hisi_rde_ras_proc);
+	hisi_rde->smmu_state = hisi_rde_smmu_state(&pdev->dev);
 
 	qm = &hisi_rde->qm;
 	ret = hisi_rde_qm_pre_init(qm, pdev);
@@ -679,6 +818,8 @@ static int hisi_rde_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		dev_warn(&pdev->dev, "Failed to init debugfs!\n");
 
 	hisi_rde_add_to_list(hisi_rde);
+	hisi_rde->rde_list_lock = &hisi_rde_list_lock;
+
 	return 0;
 
  err_qm_uninit:
@@ -692,7 +833,10 @@ static void hisi_rde_remove(struct pci_dev *pdev)
 	struct hisi_rde *hisi_rde = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hisi_rde->qm;
 
+	qm->abnormal_fix = NULL;
+	qm->debug.curr_qm_qp_num = 0;
 	hisi_rde_hw_error_set_state(hisi_rde, false);
+	cancel_work_sync(&hisi_rde->reset_work);
 	hisi_rde_remove_from_list(hisi_rde);
 	hisi_rde_debugfs_exit(hisi_rde);
 	hisi_qm_stop(qm, QM_NORMAL);
@@ -703,22 +847,32 @@ static void hisi_rde_hw_error_log(struct hisi_rde *hisi_rde, u32 err_sts)
 {
 	const struct hisi_rde_hw_error *err = rde_hw_error;
 	struct device *dev = &hisi_rde->qm.pdev->dev;
-	u32 err_val;
+	u32 i, err_val;
 
 	while (err->msg) {
-		if (err->int_msk & err_sts) {
+		if (err->int_msk & err_sts)
 			dev_err(dev, "%s [error status=0x%x] found\n",
 				 err->msg, err->int_msk);
-
-			if (HRDE_ECC_2BIT_ERR & err_sts) {
-				err_val =
-				    (readl(hisi_rde->qm.io_base + HRDE_ERR_CNT)
-				     & GENMASK(15, 0));
-				dev_err(dev, "rde ecc 2bit sram num=0x%x\n",
-					 err_val);
-			}
-		}
 		err++;
+	}
+
+	if (HRDE_ECC_2BIT_ERR & err_sts) {
+		err_val = (readl(hisi_rde->qm.io_base + HRDE_ERR_CNT)
+			& HRDE_ECC_2BIT_CNT_MSK);
+		dev_err(dev, "rde ecc 2bit sram num=0x%x\n", err_val);
+	}
+
+	if (HRDE_STATE_INT_ERR & err_sts) {
+		for (i = 0; i < HRDE_DFX_NUM; i++) {
+			dev_err(dev, "%s=0x%x\n", hrde_dfx_regs[i].name,
+				readl(hisi_rde->qm.io_base +
+				hrde_dfx_regs[i].offset));
+		}
+		for (i = 0; i < HRDE_OOO_DFX_NUM; i++) {
+			dev_err(dev, "%s=0x%x\n", hrde_ooo_dfx_regs[i].name,
+				readl(hisi_rde->qm.io_base +
+				hrde_ooo_dfx_regs[i].offset));
+		}
 	}
 }
 
@@ -764,34 +918,21 @@ static pci_ers_result_t hisi_rde_hw_error_process(struct pci_dev *pdev)
 
 static int hisi_rde_reset_prepare_rdy(struct hisi_rde *hisi_rde)
 {
-	int delay = 1;
-	u32 flag = 1;
-	int ret = 0;
+	int delay = 0;
 
-#define TIMEOUT_VF 20000
-
-	while (flag) {
-		flag = 0;
-		if (delay > TIMEOUT_VF) {
-			ret = -EBUSY;
-			break;
-		}
-
-		msleep(delay);
-		delay *= 2;
-
-		if (test_and_set_bit(HISI_RDE_RESET, &hisi_rde->status))
-			flag = 1;
+	while (test_and_set_bit(HISI_RDE_RESET, &hisi_rde->status)) {
+		msleep(++delay);
+		if (delay > HRDE_RST_TMOUT_MS)
+			return -EBUSY;
 	}
 
-	return ret;
+	return 0;
 }
 
 static int hisi_rde_controller_reset_prepare(struct hisi_rde *hisi_rde)
 {
 	struct hisi_qm *qm = &hisi_rde->qm;
 	struct pci_dev *pdev = qm->pdev;
-	int retry = 0;
 	int ret;
 
 	ret = hisi_rde_reset_prepare_rdy(hisi_rde);
@@ -807,36 +948,14 @@ static int hisi_rde_controller_reset_prepare(struct hisi_rde *hisi_rde)
 	}
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
-	/* wait 10s for uacce_queue to release */
-	while (retry++ < 1000) {
-		msleep(20);
-		if (!uacce_unregister(&qm->uacce))
-			break;
-
-		if (retry == 1000)
-			return -EBUSY;
+	if (qm->use_uacce) {
+		ret = uacce_hw_err_isolate(&qm->uacce);
+		if (ret) {
+			dev_err(&pdev->dev, "Fails to isolate hw err!\n");
+			return ret;
+		}
 	}
 #endif
-
-	return 0;
-}
-
-static int hisi_rde_set_peh_msi(struct hisi_rde *hisi_rde, bool set)
-{
-	struct pci_dev *pdev = hisi_rde->qm.pdev;
-	u32 val;
-
-	if (set) {
-		pci_write_config_dword(pdev, PEH_MSI_MASK_SHIFT, 0);
-	} else {
-		pci_write_config_dword(pdev,
-			PEH_MSI_MASK_SHIFT, GENMASK(31, 0));
-		usleep_range(1000, 2000);
-		val = readl_relaxed(hisi_rde->qm.io_base +
-			HRDE_QM_PEH_DFX_INFO0);
-		if (val)
-			return -EFAULT;
-	}
 
 	return 0;
 }
@@ -845,15 +964,22 @@ static int hisi_rde_soft_reset(struct hisi_rde *hisi_rde)
 {
 	struct hisi_qm *qm = &hisi_rde->qm;
 	struct device *dev = &qm->pdev->dev;
+	unsigned long long value;
 	int ret;
 	u32 val;
 
-	/*PEH MSI set*/
-	ret = hisi_rde_set_peh_msi(hisi_rde, false);
+	/* Check PF stream stop */
+	ret = hisi_qm_reg_test(qm);
+	if (ret)
+		return ret;
+
+	/* Disable PEH MSI */
+	ret = hisi_qm_set_msi(qm, HRDE_DISABLE);
 	if (ret) {
-		dev_emerg(dev, "chip is wrong! Please reset system.\n");
+		dev_err(dev, "Fails to disable peh msi bit.\n");
 		return ret;
 	}
+
 	/* OOO register set and check */
 	writel(MASTER_GLOBAL_CTRL_SHUTDOWN,
 	       hisi_rde->qm.io_base + HRDE_MASTER_GLOBAL_CTRL);
@@ -868,13 +994,26 @@ static int hisi_rde_soft_reset(struct hisi_rde *hisi_rde)
 		return ret;
 	}
 
+	/* Disable PF MSE bit */
+	ret = hisi_qm_set_pf_mse(qm, HRDE_DISABLE);
+	if (ret) {
+		dev_err(dev, "Fails to disable pf mse bit.\n");
+		return ret;
+	}
+
 	/* The reset related sub-control registers are not in PCI BAR */
 	if (ACPI_HANDLE(dev)) {
 		acpi_status s;
 
-		s = acpi_evaluate_object(ACPI_HANDLE(dev), "RRST", NULL, NULL);
+		s = acpi_evaluate_integer(ACPI_HANDLE(dev), "RRST",
+						NULL, &value);
 		if (ACPI_FAILURE(s)) {
-			dev_err(dev, "Controller reset fails\n");
+			dev_err(dev, "No controller reset method.\n");
+			return -EIO;
+		}
+
+		if (value) {
+			dev_err(dev, "Reset step %llu failed.\n", value);
 			return -EIO;
 		}
 	} else {
@@ -891,22 +1030,28 @@ static int hisi_rde_controller_reset_done(struct hisi_rde *hisi_rde)
 	struct pci_dev *pdev = qm->pdev;
 	int ret;
 
-	hisi_qm_clear_queues(qm);
+	/* Enable PEH MSI */
+	ret = hisi_qm_set_msi(qm, HRDE_ENABLE);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to enable peh msi bit!\n");
+		return ret;
+	}
+
+	/* Enable PF MSE bit */
+	ret = hisi_qm_set_pf_mse(qm, HRDE_ENABLE);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to enable pf mse bit!\n");
+		return ret;
+	}
 
 	hisi_rde_set_user_domain_and_cache(hisi_rde);
-	hisi_rde_hw_error_init(hisi_rde);
-	hisi_rde_set_peh_msi(hisi_rde, true);
+	hisi_rde_set_hw_error(hisi_rde, true);
 
 	ret = hisi_qm_restart(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to start QM!\n");
 		return -EPERM;
 	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce)
-		uacce_register(&qm->uacce);
-#endif
 
 	return 0;
 }
@@ -945,9 +1090,6 @@ static void hisi_rde_ras_proc(struct work_struct *work)
 	pci_ers_result_t ret;
 
 	hisi_rde = container_of(work, struct hisi_rde, reset_work);
-	if (!hisi_rde)
-		return;
-
 	pdev = hisi_rde->qm.pdev;
 	if (!pdev)
 		return;
@@ -957,7 +1099,6 @@ static void hisi_rde_ras_proc(struct work_struct *work)
 		if (hisi_rde_controller_reset(hisi_rde))
 			dev_err(&pdev->dev, "hisi_rde reset fail.\n");
 
-	return;
 }
 
 int hisi_rde_abnormal_fix(struct hisi_qm *qm)
@@ -979,14 +1120,105 @@ int hisi_rde_abnormal_fix(struct hisi_qm *qm)
 	}
 
 	return schedule_work(&hisi_rde->reset_work);
-
 }
+
+static int hisi_rde_get_hw_error_status(struct hisi_rde *hisi_rde)
+{
+	u32 err_sts;
+
+	err_sts = readl(hisi_rde->qm.io_base + HRDE_INT_STATUS) &
+			HRDE_ECC_2BIT_ERR;
+	if (err_sts)
+		return err_sts;
+
+	return 0;
+}
+
+static int hisi_rde_check_hw_error(struct hisi_rde *hisi_rde)
+{
+	int ret;
+
+	ret = hisi_qm_get_hw_error_status(&hisi_rde->qm);
+	if (ret)
+		return ret;
+
+	return hisi_rde_get_hw_error_status(hisi_rde);
+}
+
+static void hisi_rde_reset_prepare(struct pci_dev *pdev)
+{
+	struct hisi_rde *hisi_rde = pci_get_drvdata(pdev);
+	struct hisi_qm *qm = &hisi_rde->qm;
+	u32 delay = 0;
+	int ret;
+
+	hisi_rde_set_hw_error(hisi_rde, false);
+
+	while (hisi_rde_check_hw_error(hisi_rde)) {
+		msleep(++delay);
+		if (delay > HRDE_RST_TMOUT_MS)
+			return;
+	}
+
+	ret = hisi_rde_reset_prepare_rdy(hisi_rde);
+	if (ret) {
+		dev_err(&pdev->dev, "FLR not ready!\n");
+		return;
+	}
+
+	ret = hisi_qm_stop(qm, QM_FLR);
+	if (ret) {
+		dev_err(&pdev->dev, "Fails to stop QM!\n");
+		return;
+	}
+
+	dev_info(&pdev->dev, "FLR resetting...\n");
+}
+
+static void hisi_rde_flr_reset_complete(struct pci_dev *pdev,
+	struct hisi_rde *hisi_rde)
+{
+	u32 id;
+
+	pci_read_config_dword(pdev, PCI_COMMAND, &id);
+	if (id == HRDE_PCI_COMMAND_INVALID)
+		dev_err(&pdev->dev, "Device can not be used!\n");
+
+	clear_bit(HISI_RDE_RESET, &hisi_rde->status);
+}
+
+static void hisi_rde_reset_done(struct pci_dev *pdev)
+{
+	struct hisi_rde *hisi_rde = pci_get_drvdata(pdev);
+	struct hisi_qm *qm = &hisi_rde->qm;
+	int ret;
+
+	hisi_rde_set_hw_error(hisi_rde, true);
+
+	ret = hisi_qm_restart(qm);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to start QM!\n");
+		goto flr_done;
+	}
+
+	hisi_rde_set_user_domain_and_cache(hisi_rde);
+
+flr_done:
+	hisi_rde_flr_reset_complete(pdev, hisi_rde);
+	dev_info(&pdev->dev, "FLR reset complete.\n");
+}
+
+static const struct pci_error_handlers hisi_rde_err_handler = {
+	.reset_prepare = hisi_rde_reset_prepare,
+	.reset_done = hisi_rde_reset_done,
+};
 
 static struct pci_driver hisi_rde_pci_driver = {
 	.name = "hisi_rde",
 	.id_table = hisi_rde_dev_ids,
 	.probe = hisi_rde_probe,
 	.remove = hisi_rde_remove,
+	.err_handler = &hisi_rde_err_handler,
 };
 
 static void hisi_rde_register_debugfs(void)
@@ -1015,14 +1247,18 @@ static int __init hisi_rde_init(void)
 		pr_err("Failed to register pci driver.\n");
 		goto err_pci;
 	}
-#ifndef CONFIG_IOMMU_SVA2
-	if (uacce_mode == UACCE_MODE_UACCE)
-		return 0;
-#endif
+
+	if (list_empty(&hisi_rde_list)) {
+		pr_err("no rde device.\n");
+		ret = -ENODEV;
+		goto err_probe_device;
+	}
 
 	return 0;
 
- err_pci:
+err_probe_device:
+	pci_unregister_driver(&hisi_rde_pci_driver);
+err_pci:
 	hisi_rde_unregister_debugfs();
 
 	return ret;
@@ -1038,5 +1274,5 @@ module_init(hisi_rde_init);
 module_exit(hisi_rde_exit);
 
 MODULE_LICENSE("GPL v2");
-MODULE_AUTHOR("Thales Hu<hucheng.hu@huawei.com>");
+MODULE_AUTHOR("Yu'an Wang<wangyuan46@huawei.com>");
 MODULE_DESCRIPTION("Driver for HiSilicon RDE accelerator");

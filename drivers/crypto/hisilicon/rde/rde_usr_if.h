@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0+ */
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2019 HiSilicon Limited.
  *
@@ -41,6 +41,5 @@ struct hisi_rde_sqe {
 	__u64 dst_tag_addr;
 	__u64 dw7;
 };
-
 
 #endif
