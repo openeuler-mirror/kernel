@@ -1372,8 +1372,11 @@ static void hisi_zip_set_hw_error(struct hisi_zip *hisi_zip, bool state)
 	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
 	struct hisi_qm *qm = &zip->qm;
 
+	if (qm->fun_type == QM_HW_VF)
+		return;
+
 	if (state)
-		hisi_qm_hw_error_init(&hisi_zip->qm, QM_BASE_CE,
+		hisi_qm_hw_error_init(qm, QM_BASE_CE,
 				      QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT,
 				      0, QM_DB_RANDOM_INVALID);
 	else
@@ -1400,6 +1403,9 @@ static int hisi_zip_check_hw_error(struct hisi_zip *hisi_zip)
 	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
 	struct hisi_qm *qm = &zip->qm;
 	int ret;
+
+	if (qm->fun_type == QM_HW_VF)
+		return 0;
 
 	ret = hisi_qm_get_hw_error_status(qm);
 	if (ret)
