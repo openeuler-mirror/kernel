@@ -89,7 +89,6 @@
 #define HNS_ROCE_CEQ_ENTRY_SIZE			0x4
 #define HNS_ROCE_AEQ_ENTRY_SIZE			0x10
 
-/* 4G/4K = 1M */
 #define HNS_ROCE_SL_SHIFT			28
 #define HNS_ROCE_TCLASS_SHIFT			20
 #define HNS_ROCE_FLOW_LABEL_MASK		0xfffff
@@ -409,7 +408,7 @@ struct hns_roce_mtt {
 
 struct hns_roce_buf_region {
 	int offset; /* page offset */
-	u32 count; /* page count*/
+	u32 count; /* page count */
 	int hopnum; /* addressing hop num */
 };
 
@@ -907,7 +906,7 @@ struct hns_roce_caps {
 	int		num_uars;
 	u32		phy_num_uars;
 	u32		max_sq_sg;
-	u32		max_sq_inline;	/* 32 */
+	u32		max_sq_inline;
 	u32		max_rq_sg;
 	u32		max_extend_sg;
 	int		num_qps;
@@ -1012,7 +1011,7 @@ struct hns_roce_caps {
 	u32		sl_num;
 	u32		tsq_buf_pg_sz;
 	u32		tpq_buf_pg_sz;
-	u32		chunk_sz;	/* chunk size in non multihop mode*/
+	u32		chunk_sz;	/* chunk size in non multihop mode */
 	u64		flags;
 	u16		default_ceq_max_cnt;
 	u16		default_ceq_period;
