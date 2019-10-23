@@ -140,6 +140,11 @@
 
 #define SRQ_DB_REG				0x230
 
+/* The chip implementation of the consumer index is calculated
+ * according to twice the actual EQ depth
+ */
+#define EQ_DEPTH_COEFF				2
+
 enum {
 	HNS_ROCE_SUPPORT_RQ_RECORD_DB = 1 << 0,
 	HNS_ROCE_SUPPORT_SQ_RECORD_DB = 1 << 1,

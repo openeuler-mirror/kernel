@@ -5822,7 +5822,6 @@ static int hns_roce_v2_aeq_int(struct hns_roce_dev *hr_dev,
 	int aeqe_found = 0;
 	int event_type;
 	int sub_type;
-	u32 ci_max;
 	u32 srqn;
 	u32 qpn;
 	u32 cqn;
@@ -5893,11 +5892,9 @@ static int hns_roce_v2_aeq_int(struct hns_roce_dev *hr_dev,
 		hr_dev->dfx_cnt[HNS_ROCE_DFX_AEQE]++;
 		aeqe_found = 1;
 
-		ci_max = 2 * eq->entries - 1;
-		if (eq->cons_index > ci_max) {
-			dev_info(dev, "aeq cons_index overflow, set back to 0.\n");
+		if (eq->cons_index > EQ_DEPTH_COEFF * eq->entries - 1)
 			eq->cons_index = 0;
-		}
+
 		hns_roce_v2_init_irq_work(hr_dev, eq, qpn, cqn);
 	}
 
@@ -5952,7 +5949,6 @@ static int hns_roce_v2_ceq_int(struct hns_roce_dev *hr_dev,
 {
 	struct hns_roce_ceqe *ceqe;
 	int ceqe_found = 0;
-	u32 ci_max;
 	u32 cqn;
 
 	while ((ceqe = next_ceqe_sw_v2(eq))) {
@@ -5972,8 +5968,7 @@ static int hns_roce_v2_ceq_int(struct hns_roce_dev *hr_dev,
 		hr_dev->dfx_cnt[HNS_ROCE_DFX_CEQE]++;
 		ceqe_found = 1;
 
-		ci_max = 2 * eq->entries - 1;
-		if (eq->cons_index > ci_max)
+		if (eq->cons_index > EQ_DEPTH_COEFF * eq->entries - 1)
 			eq->cons_index = 0;
 
 		rdfx_inc_ceqe_cnt(hr_dev, eq->eqn);
