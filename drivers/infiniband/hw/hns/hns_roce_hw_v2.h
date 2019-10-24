@@ -179,7 +179,6 @@
 	(cur_state == IB_QPS_ERR && new_state == IB_QPS_ERR))
 
 #define HNS_ICL_SWITCH_CMD_ROCEE_SEL_SHIFT	0
-
 #define HNS_ICL_SWITCH_CMD_ROCEE_SEL	BIT(HNS_ICL_SWITCH_CMD_ROCEE_SEL_SHIFT)
 
 #define CMD_CSQ_DESC_NUM 1024
@@ -1683,7 +1682,6 @@ struct hns_roce_vf_res_b {
 #define VF_RES_B_DATA_4_VF_SCCC_BT_NUM_S 9
 #define VF_RES_B_DATA_4_VF_SCCC_BT_NUM_M GENMASK(17, 9)
 
-
 struct hns_roce_vf_switch {
 	__le32 rocee_sel;
 	__le32 fun_id;
@@ -2180,4 +2178,5 @@ static inline void hns_roce_write64(struct hns_roce_dev *hr_dev, __le32 val[2],
 	if (!hr_dev->dis_db && !ops->get_hw_reset_stat(handle))
 		hns_roce_write64_k(val, dest);
 }
+
 #endif
