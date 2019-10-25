@@ -16312,3 +16312,8 @@ HISILICON SYSCTRL DRIVER
 M:	Feng Sheng <fengsheng5@huawei.com>
 S:	Maintained
 F:	drivers/soc/hisilicon/sysctl/
+
+HISILICON IO_MGMT SUBSYSTEM RDE DRIVER
+M:	hucheng Hu(Cheng) <hucheng.hu@huawei.com>
+S:	Maintained
+F:	drivers/crypto/hisilicon/rde
