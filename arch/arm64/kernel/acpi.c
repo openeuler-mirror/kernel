@@ -31,6 +31,7 @@
 #include <acpi/processor.h>
 #include <asm/cputype.h>
 #include <asm/cpu_ops.h>
+#include <asm/numa.h>
 #include <asm/pgtable.h>
 #include <asm/smp_plat.h>
 
