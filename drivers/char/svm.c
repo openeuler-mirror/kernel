@@ -38,6 +38,7 @@
 #define SVM_DEVICE_NAME "svm"
 
 #ifndef CONFIG_ACPI
+#define CORE_SID		0
 static int probe_index;
 #else
 LIST_HEAD(child_list);
@@ -265,9 +266,108 @@ err_unregister_bus:
 #else
 static int svm_of_add_core(struct svm_device *sdev, struct device_node *np)
 {
-	/*TODO*/
+	int err;
+	struct resource res;
+	struct core_device *cdev = NULL;
+	char *name = NULL;
+
+	name = devm_kasprintf(sdev->dev, GFP_KERNEL, "svm%llu_%s",
+			sdev->id, np->name);
+	if (name == NULL)
+		return -ENOMEM;
+
+	cdev = kzalloc(sizeof(*cdev), GFP_KERNEL);
+	if (cdev == NULL)
+		return -ENOMEM;
+
+	cdev->dev.of_node = np;
+	cdev->dev.parent = sdev->dev;
+	cdev->dev.bus = &svm_bus_type;
+	cdev->dev.release = cdev_device_release;
+	cdev->smmu_bypass = of_property_read_bool(np, "hisi,smmu_bypass");
+	dev_set_name(&cdev->dev, "%s", name);
+
+	err = device_register(&cdev->dev);
+	if (err) {
+		dev_info(&cdev->dev, "core_device register failed\n");
+		put_device(&cdev->dev);
+		kfree(cdev);
+		return err;
+	}
+
+	err = of_dma_configure(&cdev->dev, np, true);
+	if (err) {
+		dev_dbg(&cdev->dev, "of_dma_configure failed\n");
+		goto err_unregister_dev;
+	}
+
+	err = of_address_to_resource(np, 0, &res);
+	if (err) {
+		dev_info(&cdev->dev, "no reg, FW should install the sid\n");
+	} else {
+		/* If the reg specified, install sid for the core */
+		void __iomem *core_base = NULL;
+		int sid = cdev->dev.iommu_fwspec->ids[0];
+
+		core_base = ioremap(res.start, resource_size(&res));
+		if (core_base == NULL) {
+			err = -ENOMEM;
+			dev_err(&cdev->dev, "ioremap failed\n");
+			goto err_unregister_dev;
+		}
+
+		writel_relaxed(sid, core_base + CORE_SID);
+		iounmap(core_base);
+	}
+
+	/* If core device is smmu bypass, request direct map. */
+	if (cdev->smmu_bypass) {
+		err = iommu_request_dm_for_dev(&cdev->dev);
+		if (err)
+			goto err_unregister_dev;
+
+		return 0;
+	}
+
+	cdev->group = iommu_group_get(&cdev->dev);
+	if (IS_ERR_OR_NULL(cdev->group)) {
+		err = -ENXIO;
+		dev_err(&cdev->dev, "smmu is not right configured\n");
+		goto err_unregister_dev;
+	}
+
+	cdev->domain = iommu_domain_alloc(sdev->dev->bus);
+	if (cdev->domain == NULL) {
+		err = -ENOMEM;
+		dev_info(&cdev->dev, "failed to alloc domain\n");
+		goto err_unregister_dev;
+	}
+
+	err = iommu_attach_group(cdev->domain, cdev->group);
+	if (err) {
+		dev_err(&cdev->dev, "failed group to domain\n");
+		goto err_free_domain;
+	}
+
+	err = iommu_sva_device_init(&cdev->dev, IOMMU_SVA_FEAT_IOPF,
+			UINT_MAX, 0);
+	if (err) {
+		dev_err(&cdev->dev, "failed to init sva device\n");
+		goto err_detach_group;
+	}
+
 	return 0;
+
+err_detach_group:
+	iommu_detach_group(cdev->domain, cdev->group);
+err_free_domain:
+	iommu_domain_free(cdev->domain);
+err_unregister_dev:
+	device_unregister(&cdev->dev);
+
+	return err;
 }
+
 static int svm_init_core(struct svm_device *sdev, struct device_node *np)
 {
 	int err = 0;
