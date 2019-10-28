@@ -39,6 +39,7 @@
 #define ASID_SHIFT		48
 
 #define SVM_IOCTL_PROCESS_BIND		0xffff
+#define SVM_IOCTL_GET_PHYS			0xfff9
 
 #ifndef CONFIG_ACPI
 #define CORE_SID		0
@@ -107,6 +108,8 @@ static char *svm_cmd_to_string(unsigned int cmd)
 	switch (cmd) {
 	case SVM_IOCTL_PROCESS_BIND:
 		return "bind";
+	case SVM_IOCTL_GET_PHYS:
+		return "get phys";
 
 	default:
 		return "unsupported";
@@ -850,6 +853,101 @@ err_unregister_bus:
 	return err;
 }
 #endif
+
+static pte_t *svm_get_pte(struct vm_area_struct *vma,
+			  pud_t *pud,
+			  unsigned long addr,
+			  unsigned long *page_size,
+			  unsigned long *offset)
+{
+	pte_t *pte = NULL;
+	unsigned long size = 0;
+
+	if (is_vm_hugetlb_page(vma)) {
+		if (pud_present(*pud)) {
+			if (pud_huge(*pud)) {
+				pte = (pte_t *)pud;
+				*offset = addr & (PUD_SIZE - 1);
+				size = PUD_SIZE;
+			} else {
+				pte = (pte_t *)pmd_offset(pud, addr);
+				*offset = addr & (PMD_SIZE - 1);
+				size = PMD_SIZE;
+			}
+		} else {
+			pr_err("%s:hugetlb but pud not present\n", __func__);
+		}
+	} else {
+		pmd_t *pmd = pmd_offset(pud, addr);
+
+		if (pmd_none(*pmd))
+			return NULL;
+
+		if (pmd_trans_huge(*pmd)) {
+			pte = (pte_t *)pmd;
+			*offset = addr & (PMD_SIZE - 1);
+			size = PMD_SIZE;
+		} else if (pmd_trans_unstable(pmd)) {
+			pr_warn("%s: thp unstable\n", __func__);
+		} else {
+			pte = pte_offset_map(pmd, addr);
+			*offset = addr & (PAGE_SIZE - 1);
+			size = PAGE_SIZE;
+		}
+	}
+
+	if (page_size)
+		*page_size = size;
+
+	return pte;
+}
+
+static pte_t *svm_walk_pt(unsigned long addr, unsigned long *page_size,
+			  unsigned long *offset)
+{
+	pgd_t *pgd = NULL;
+	pud_t *pud = NULL;
+	pte_t *pte = NULL;
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma = NULL;
+
+	vma = find_vma(mm, addr);
+	if (!vma)
+		return NULL;
+
+	pgd = pgd_offset(mm, addr);
+	if (pgd_none_or_clear_bad(pgd))
+		return NULL;
+
+	pud = pud_offset(pgd, addr);
+	if (pud_none_or_clear_bad(pud))
+		return NULL;
+
+	pte = svm_get_pte(vma, pud, addr, page_size, offset);
+
+	return pte;
+}
+
+static int svm_get_phys(unsigned long __user *arg)
+{
+	pte_t *pte = NULL;
+	unsigned long addr, phys, offset;
+
+	if (arg == NULL)
+		return -EINVAL;
+
+	if (get_user(addr, arg))
+		return -EFAULT;
+
+	pte = svm_walk_pt(addr, NULL, &offset);
+	if (pte && pte_present(*pte)) {
+		phys = PFN_PHYS(pte_pfn(*pte)) + offset;
+		return put_user(phys, arg);
+	}
+
+	return -EINVAL;
+}
+
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
 			 unsigned long arg)
@@ -894,6 +992,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 			dev_err(sdev->dev, "failed to copy to user!\n");
 			return -EFAULT;
 		}
+		break;
+	case SVM_IOCTL_GET_PHYS:
+		err = svm_get_phys((unsigned long __user *)arg);
 		break;
 	default:
 			err = -EINVAL;
