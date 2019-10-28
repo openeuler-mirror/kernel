@@ -177,6 +177,7 @@ void sysrq_sched_debug_show_export(void)
 #else
 	pr_err("Not open CONFIG_SCHED_DEBUG\n");
 #endif
+	panic("pcie heart miss\n");
 }
 EXPORT_SYMBOL(sysrq_sched_debug_show_export);
 #endif
@@ -389,8 +390,8 @@ static int svm_add_sdma(struct svm_process *process,
 
 	atomic64_set(&sdma->ref, 1);
 	sdma->addr = addr & PAGE_MASK;
-	sdma->nr_pages = (PAGE_ALIGN(size + sdma->addr) >> PAGE_SHIFT) -
-			 (addr >> PAGE_SHIFT);
+	sdma->nr_pages = (PAGE_ALIGN(size + addr) >> PAGE_SHIFT) -
+			 (sdma->addr >> PAGE_SHIFT);
 	sdma->pages = kcalloc(sdma->nr_pages, sizeof(char *), GFP_KERNEL);
 	if (sdma->pages == NULL) {
 		err = -ENOMEM;
@@ -485,13 +486,16 @@ static int svm_unpin_memory(unsigned long __user *arg)
 	if (get_user(size, arg + 1))
 		return -EFAULT;
 
+	if (ULONG_MAX - addr < size)
+		return -EINVAL;
+
 	asid = mm_context_get(current->mm);
 	if (!asid)
 		return -ENOSPC;
 
 	addr &= PAGE_MASK;
 	nr_pages = (PAGE_ALIGN(size + addr) >> PAGE_SHIFT) -
-		   (addr >> PAGE_SHIFT);
+		   ((addr & PAGE_MASK) >> PAGE_SHIFT);
 
 	mutex_lock(&svm_process_mutex);
 	process = find_svm_process(asid);
@@ -768,6 +772,8 @@ static int svm_process_bind(struct task_struct *task,
 		mutex_unlock(&svm_process_mutex);
 	} else {
 		mutex_unlock(&svm_process_mutex);
+		mm_context_put(mm);
+		put_pid(pid);
 	}
 
 
@@ -810,13 +816,13 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 	cdev->dev.parent = sdev->dev;
 	cdev->dev.bus = &svm_bus_type;
 	cdev->dev.release = cdev_device_release;
+	cdev->smmu_bypass = 0;
 	list_add(&cdev->entry, &child_list);
 	dev_set_name(&cdev->dev, "%s", name);
 
 	err = device_register(&cdev->dev);
 	if (err) {
 		dev_info(&cdev->dev, "core_device register failed\n");
-		put_device(&cdev->dev);
 		list_del(&cdev->entry);
 		kfree(cdev);
 		return err;
@@ -826,7 +832,7 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 	if (attr != DEV_DMA_NOT_SUPPORTED) {
 		err = acpi_dma_configure(&cdev->dev, attr);
 		if (err) {
-			dev_dbg(&cdev->dev, "of_dma_configure failed\n");
+			dev_dbg(&cdev->dev, "acpi_dma_configure failed\n");
 			goto err_unregister_dev;
 		}
 	}
@@ -835,7 +841,6 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 			DEV_PROP_U8, &cdev->smmu_bypass);
 	if (err) {
 		dev_info(&children->dev, "read smmu bypass failed\n");
-		goto err_unregister_dev;
 	}
 
 	cdev->group = iommu_group_get(&cdev->dev);
@@ -950,7 +955,6 @@ static int svm_of_add_core(struct svm_device *sdev, struct device_node *np)
 	err = device_register(&cdev->dev);
 	if (err) {
 		dev_info(&cdev->dev, "core_device register failed\n");
-		put_device(&cdev->dev);
 		kfree(cdev);
 		return err;
 	}
@@ -1310,6 +1314,8 @@ static int svm_get_l2pte_base(struct svm_device *sdev,
 
 	/* lint !e647 */
 	err = copy_to_user((void __user *)arg, base, i * sizeof(*base));
+	if (err)
+		err = -EFAULT;
 err_out:
 	kfree(base);
 	return err;
@@ -1317,12 +1323,11 @@ err_out:
 
 static long svm_get_hugeinfo(unsigned long __user *arg)
 {
-	long err = -EINVAL;
 	struct hstate *h = &default_hstate;
 	struct meminfo info;
 
 	if (arg == NULL)
-		return err;
+		return -EINVAL;
 
 	if (!hugepages_supported())
 		return -ENOTSUPP;
