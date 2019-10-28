@@ -44,6 +44,7 @@
 #define SVM_IOCTL_SET_RC			0xfffc
 #else
 #define SVM_IOCTL_GET_L2PTE_BASE	0xfffb
+#define SVM_IOCTL_LOAD_FLAG			0xfffa
 #define SVM_IOCTL_PIN_MEMORY		0xfff7
 #define SVM_IOCTL_UNPIN_MEMORY		0xfff5
 #define SVM_IOCTL_GETHUGEINFO		0xfff6
@@ -158,6 +159,8 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "get hugeinfo";
 	case SVM_IOCTL_REMAP_PROC:
 		return "remap proc";
+	case SVM_IOCTL_LOAD_FLAG:
+		return "load flag";
 #endif
 	default:
 		return "unsupported";
@@ -1526,6 +1529,22 @@ err:
 	up_read(&mm->mmap_sem);
 	return ret;
 }
+
+static int svm_proc_load_flag(int __user *arg)
+{
+	static atomic_t l2buf_load_flag = ATOMIC_INIT(0);
+	int flag;
+
+	if (arg == NULL)
+		return -EINVAL;
+
+	if (0 == (atomic_cmpxchg(&l2buf_load_flag, 0, 1)))
+		flag = 0;
+	else
+		flag = 1;
+
+	return put_user(flag, arg);
+}
 #endif
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
@@ -1594,6 +1613,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 		break;
 	case SVM_IOCTL_REMAP_PROC:
 		err = svm_remap_proc((unsigned long __user *)arg);
+		break;
+	case SVM_IOCTL_LOAD_FLAG:
+		err = svm_proc_load_flag((int __user *)arg);
 		break;
 #endif
 	default:
