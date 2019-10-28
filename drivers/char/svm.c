@@ -40,6 +40,7 @@
 #ifndef CONFIG_ACPI
 static int probe_index;
 #endif
+static DECLARE_RWSEM(svm_sem);
 
 struct core_device {
 	struct device		dev;
@@ -88,22 +89,120 @@ struct svm_context {
 	atomic_t		ref;
 };
 
+static struct bus_type svm_bus_type = {
+	.name		= "svm_bus",
+};
+
 static int svm_open(struct inode *inode, struct file *file)
 {
 	return 0;
 }
 
-#ifdef CONFIG_ACPI
-static int svm_init_core(struct svm_device *sdev)
-{
-	/*TODO init hi1910 and hi1980 cores for ai*/
-	return 0;
-}
-#else
-static int svm_init_core(struct svm_device *sdev, struct device_node *np)
+static int svm_remove_core(struct device *dev, void *data)
 {
 	/*TODO*/
 	return 0;
+}
+
+#ifdef CONFIG_ACPI
+static int svm_acpi_add_core(struct svm_device *sdev,
+		struct acpi_device *children, int id)
+{
+	/*TODO*/
+	return 0;
+}
+
+static int svm_init_core(struct svm_device *sdev)
+{
+	int err = 0;
+	struct device *dev = sdev->dev;
+	struct acpi_device *adev = ACPI_COMPANION(sdev->dev);
+	struct acpi_device *cdev = NULL;
+	int id = 0;
+
+	down_write(&svm_sem);
+	if (!svm_bus_type.iommu_ops) {
+		err = bus_register(&svm_bus_type);
+		if (err) {
+			up_write(&svm_sem);
+			dev_err(dev, "failed to register svm_bus_type\n");
+			return err;
+		}
+
+		err = bus_set_iommu(&svm_bus_type, dev->bus->iommu_ops);
+		if (err) {
+			up_write(&svm_sem);
+			dev_err(dev, "failed to set iommu for svm_bus_type\n");
+			goto err_unregister_bus;
+		}
+	} else if (svm_bus_type.iommu_ops != dev->bus->iommu_ops) {
+		err = -EBUSY;
+		up_write(&svm_sem);
+		dev_err(dev, "iommu_ops configured, but changed!\n");
+		goto err_unregister_bus;
+	}
+	up_write(&svm_sem);
+
+	list_for_each_entry(cdev, &adev->children, node) {
+		err = svm_acpi_add_core(sdev, cdev, id++);
+		if (err)
+			device_for_each_child(dev, NULL, svm_remove_core);
+	}
+
+	return err;
+
+err_unregister_bus:
+	bus_unregister(&svm_bus_type);
+
+	return err;
+}
+#else
+static int svm_of_add_core(struct svm_device *sdev, struct device_node *np)
+{
+	/*TODO*/
+	return 0;
+}
+static int svm_init_core(struct svm_device *sdev, struct device_node *np)
+{
+	int err = 0;
+	struct device_node *child = NULL;
+	struct device *dev = sdev->dev;
+
+	down_write(&svm_sem);
+	if (svm_bus_type.iommu_ops == NULL) {
+		err = bus_register(&svm_bus_type);
+		if (err) {
+			up_write(&svm_sem);
+			dev_err(dev, "failed to register svm_bus_type\n");
+			return err;
+		}
+
+		err = bus_set_iommu(&svm_bus_type, dev->bus->iommu_ops);
+		if (err) {
+			up_write(&svm_sem);
+			dev_err(dev, "failed to set iommu for svm_bus_type\n");
+			goto err_unregister_bus;
+		}
+	} else if (svm_bus_type.iommu_ops != dev->bus->iommu_ops) {
+		err = -EBUSY;
+		up_write(&svm_sem);
+		dev_err(dev, "iommu_ops configured, but changed!\n");
+		goto err_unregister_bus;
+	}
+	up_write(&svm_sem);
+
+	for_each_available_child_of_node(np, child) {
+		err = svm_of_add_core(sdev, child);
+		if (err)
+			device_for_each_child(dev, NULL, svm_remove_core);
+	}
+
+	return err;
+
+err_unregister_bus:
+	bus_unregister(&svm_bus_type);
+
+	return err;
 }
 #endif
 /*svm ioctl will include some case for HI1980 and HI1910*/
