@@ -46,6 +46,7 @@
 #define SVM_IOCTL_GET_L2PTE_BASE	0xfffb
 #define SVM_IOCTL_PIN_MEMORY		0xfff7
 #define SVM_IOCTL_UNPIN_MEMORY		0xfff5
+#define SVM_IOCTL_GETHUGEINFO		0xfff6
 #endif
 
 #ifndef CONFIG_ACPI
@@ -114,6 +115,11 @@ struct svm_sdma {
 	struct page **pages;
 	atomic64_t ref;
 };
+
+struct meminfo {
+	unsigned long hugetlbfree;
+	unsigned long hugetlbtotal;
+};
 #endif
 
 static struct bus_type svm_bus_type = {
@@ -137,6 +143,8 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "pin memory";
 	case SVM_IOCTL_UNPIN_MEMORY:
 		return "unpin memory";
+	case SVM_IOCTL_GETHUGEINFO:
+		return "get hugeinfo";
 #endif
 	default:
 		return "unsupported";
@@ -1346,6 +1354,35 @@ err_out:
 	kfree(base);
 	return err;
 }
+
+static long svm_get_hugeinfo(unsigned long __user *arg)
+{
+	long err = -EINVAL;
+	struct hstate *h = &default_hstate;
+	struct meminfo info;
+
+	if (arg == NULL)
+		return err;
+
+	if (!hugepages_supported())
+		return -ENOTSUPP;
+
+	info.hugetlbfree = h->free_huge_pages;
+	info.hugetlbtotal = h->nr_huge_pages;
+
+	if (copy_to_user((void __user *)arg, &info, sizeof(info)))
+		return -EFAULT;
+
+	pr_info("svm get hugetlb info: order(%u), max_huge_pages(%lu),"
+			"nr_huge_pages(%lu), free_huge_pages(%lu), resv_huge_pages(%lu)",
+			h->order,
+			h->max_huge_pages,
+			h->nr_huge_pages,
+			h->free_huge_pages,
+			h->resv_huge_pages);
+
+	return 0;
+}
 #endif
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
@@ -1408,6 +1445,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 		break;
 	case SVM_IOCTL_UNPIN_MEMORY:
 		err = svm_unpin_memory((unsigned long __user *)arg);
+		break;
+	case SVM_IOCTL_GETHUGEINFO:
+		err = svm_get_hugeinfo((unsigned long __user *)arg);
 		break;
 #endif
 	default:
