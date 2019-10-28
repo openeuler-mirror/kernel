@@ -2931,7 +2931,7 @@ CONFIG_TCG_CRB=y
 # CONFIG_TCG_TIS_ST33ZP24_SPI is not set
 # CONFIG_DEVPORT is not set
 # CONFIG_XILLYBUS is not set
-
+CONFIG_HISI_SVM=y
 #
 # I2C support
 #
