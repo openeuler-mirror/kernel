@@ -81,6 +81,12 @@ struct svm_context {
 	struct list_head	process_head;
 	atomic_t		ref;
 };
+
+static int svm_open(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
 			 unsigned long arg)
@@ -91,6 +97,7 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 
 static const struct file_operations svm_fops = {
 	.owner			= THIS_MODULE,
+	.open			= svm_open,
 	.unlocked_ioctl		= svm_ioctl,
 };
 /*svm device probe this is init the svm device*/
