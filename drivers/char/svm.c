@@ -211,8 +211,30 @@ static int svm_bind_core(
 #endif
 	void *data)
 {
-	/*TODO*/
-	return 0;
+	int err;
+	struct task_struct *task = NULL;
+	struct svm_process *process = data;
+#ifndef CONFIG_ACPI
+	struct core_device *cdev = to_core_device(dev);
+#endif
+
+	if (cdev->smmu_bypass)
+		return 0;
+
+	task = get_pid_task(process->pid, PIDTYPE_PID);
+	if (!task) {
+		pr_err("failed to get task_struct\n");
+		return -ESRCH;
+	}
+
+	err = iommu_sva_bind_device(&cdev->dev, task->mm,
+			 &process->pasid, IOMMU_SVA_FEAT_IOPF, NULL);
+	if (err)
+		pr_err("failed to get the pasid\n");
+
+	put_task_struct(task);
+
+	return err;
 }
 
 static int svm_unbind_core(
@@ -223,7 +245,15 @@ static int svm_unbind_core(
 #endif
 	void *data)
 {
-	/*TODO*/
+	struct svm_process *process = data;
+#ifndef CONFIG_ACPI
+	struct core_device *cdev = to_core_device(dev);
+#endif
+
+	if (cdev->smmu_bypass)
+		return 0;
+
+	iommu_sva_unbind_device(&cdev->dev, process->pasid);
 	return 0;
 }
 
