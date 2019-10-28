@@ -39,14 +39,17 @@
 
 #ifndef CONFIG_ACPI
 static int probe_index;
+#else
+LIST_HEAD(child_list);
 #endif
 static DECLARE_RWSEM(svm_sem);
 
 struct core_device {
-	struct device		dev;
-	struct iommu_group      *group;
-	struct iommu_domain     *domain;
-	bool			smmu_bypass;
+	struct device	dev;
+	struct iommu_group	*group;
+	struct iommu_domain	*domain;
+	u8	smmu_bypass;
+	struct list_head entry;
 };
 
 struct svm_device {
@@ -98,9 +101,33 @@ static int svm_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static inline struct core_device *to_core_device(struct device *d)
+{
+	return container_of(d, struct core_device, dev);
+}
+
+static void cdev_device_release(struct device *dev)
+{
+	struct core_device *cdev = to_core_device(dev);
+
+#ifdef CONFIG_ACPI
+	list_del(&cdev->entry);
+#endif
+	kfree(cdev);
+}
+
 static int svm_remove_core(struct device *dev, void *data)
 {
-	/*TODO*/
+	struct core_device *cdev = to_core_device(dev);
+
+	if (!cdev->smmu_bypass) {
+		iommu_detach_group(cdev->domain, cdev->group);
+		iommu_group_put(cdev->group);
+		iommu_domain_free(cdev->domain);
+	}
+
+	device_unregister(&cdev->dev);
+
 	return 0;
 }
 
@@ -108,8 +135,87 @@ static int svm_remove_core(struct device *dev, void *data)
 static int svm_acpi_add_core(struct svm_device *sdev,
 		struct acpi_device *children, int id)
 {
-	/*TODO*/
+	int err;
+	struct core_device *cdev = NULL;
+	char *name = NULL;
+	enum dev_dma_attr attr;
+
+	name = devm_kasprintf(sdev->dev, GFP_KERNEL, "svm_child_dev%d", id);
+	if (name == NULL)
+		return -ENOMEM;
+
+	cdev = kzalloc(sizeof(*cdev), GFP_KERNEL);
+	if (cdev == NULL)
+		return -ENOMEM;
+	cdev->dev.fwnode = &children->fwnode;
+	cdev->dev.parent = sdev->dev;
+	cdev->dev.bus = &svm_bus_type;
+	cdev->dev.release = cdev_device_release;
+	list_add(&cdev->entry, &child_list);
+	dev_set_name(&cdev->dev, "%s", name);
+
+	err = device_register(&cdev->dev);
+	if (err) {
+		dev_info(&cdev->dev, "core_device register failed\n");
+		put_device(&cdev->dev);
+		list_del(&cdev->entry);
+		kfree(cdev);
+		return err;
+	}
+
+	attr = acpi_get_dma_attr(children);
+	if (attr != DEV_DMA_NOT_SUPPORTED) {
+		err = acpi_dma_configure(&cdev->dev, attr);
+		if (err) {
+			dev_dbg(&cdev->dev, "of_dma_configure failed\n");
+			goto err_unregister_dev;
+		}
+	}
+
+	err = acpi_dev_prop_read_single(children, "hisi,smmu-bypass",
+			DEV_PROP_U8, &cdev->smmu_bypass);
+	if (err) {
+		dev_info(&children->dev, "read smmu bypass failed\n");
+		goto err_unregister_dev;
+	}
+
+	cdev->group = iommu_group_get(&cdev->dev);
+	if (IS_ERR_OR_NULL(cdev->group)) {
+		err = -ENXIO;
+		dev_err(&cdev->dev, "smmu is not right configured\n");
+		goto err_unregister_dev;
+	}
+
+	cdev->domain = iommu_domain_alloc(sdev->dev->bus);
+	if (cdev->domain == NULL) {
+		err = -ENOMEM;
+		dev_info(&cdev->dev, "failed to alloc domain\n");
+		goto err_unregister_dev;
+	}
+
+	err = iommu_attach_group(cdev->domain, cdev->group);
+	if (err) {
+		dev_err(&cdev->dev, "failed group to domain\n");
+		goto err_free_domain;
+	}
+
+	err = iommu_sva_device_init(&cdev->dev, IOMMU_SVA_FEAT_IOPF,
+			UINT_MAX, 0);
+	if (err) {
+		dev_err(&cdev->dev, "failed to init sva device\n");
+		goto err_detach_group;
+	}
+
 	return 0;
+
+err_detach_group:
+	iommu_detach_group(cdev->domain, cdev->group);
+err_free_domain:
+	iommu_domain_free(cdev->domain);
+err_unregister_dev:
+	device_unregister(&cdev->dev);
+
+	return err;
 }
 
 static int svm_init_core(struct svm_device *sdev)
@@ -297,6 +403,7 @@ static int svm_device_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct svm_device *sdev = dev_get_drvdata(dev);
 
+	device_for_each_child(sdev->dev, NULL, svm_remove_core);
 	misc_deregister(&sdev->miscdev);
 
 	return 0;
