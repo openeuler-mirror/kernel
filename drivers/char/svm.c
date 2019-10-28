@@ -36,6 +36,9 @@
 #endif
 
 #define SVM_DEVICE_NAME "svm"
+#define ASID_SHIFT		48
+
+#define SVM_IOCTL_PROCESS_BIND		0xffff
 
 #ifndef CONFIG_ACPI
 #define CORE_SID		0
@@ -44,6 +47,7 @@ static int probe_index;
 LIST_HEAD(child_list);
 #endif
 static DECLARE_RWSEM(svm_sem);
+static DEFINE_SPINLOCK(svm_process_lock);
 
 struct core_device {
 	struct device	dev;
@@ -97,6 +101,29 @@ static struct bus_type svm_bus_type = {
 	.name		= "svm_bus",
 };
 
+static char *svm_cmd_to_string(unsigned int cmd)
+{
+	switch (cmd) {
+	case SVM_IOCTL_PROCESS_BIND:
+		return "bind";
+
+	default:
+		return "unsupported";
+	}
+}
+
+static struct svm_process *find_svm_process(unsigned long asid)
+{
+	/*TODO*/
+	return NULL;
+}
+
+static struct svm_device *file_to_sdev(struct file *file)
+{
+	return container_of(file->private_data,
+			struct svm_device, miscdev);
+}
+
 static int svm_open(struct inode *inode, struct file *file)
 {
 	return 0;
@@ -130,6 +157,140 @@ static int svm_remove_core(struct device *dev, void *data)
 	device_unregister(&cdev->dev);
 
 	return 0;
+}
+
+static struct svm_process *svm_process_alloc(struct pid *pid,
+		struct mm_struct *mm, unsigned long asid)
+{
+	/*TODO*/
+	return NULL;
+}
+
+static struct svm_context *svm_process_attach(struct svm_process *process,
+		struct svm_device *sdev)
+{
+	/*TODO*/
+	return NULL;
+}
+
+static int svm_process_get_locked(struct svm_process *process)
+{
+	/*TODO*/
+	return 0;
+}
+
+static void svm_process_put_locked(struct svm_process *process)
+{
+	/*TODO*/
+}
+
+static struct task_struct *svm_get_task(struct svm_bind_process params)
+{
+	/*TODO*/
+	return NULL;
+}
+
+static int svm_process_bind(struct task_struct *task,
+		struct svm_device *sdev, u64 *ttbr, u64 *tcr, int *pasid)
+{
+	int err;
+	unsigned long asid;
+	struct pid *pid = NULL;
+	struct svm_context *context = NULL;
+	struct svm_process *process = NULL;
+	struct mm_struct *mm = NULL;
+
+	if ((ttbr == NULL) || (tcr == NULL) || (pasid == NULL))
+		return -EINVAL;
+
+	pid = get_task_pid(task, PIDTYPE_PID);
+	if (pid == NULL)
+		return -EINVAL;
+
+	mm = get_task_mm(task);
+	if (!mm) {
+		err = -EINVAL;
+		goto err_put_pid;
+	}
+
+	asid = mm_context_get(mm);
+	if (!asid) {
+		err = -ENOSPC;
+		goto err_put_mm;
+	}
+
+	/* If a svm_process already exists, use it */
+	spin_lock(&svm_process_lock);
+	process = find_svm_process(asid);
+	if (process) {
+		struct svm_context *cur_context = NULL;
+
+		if (!svm_process_get_locked(process)) {
+			/* ref is 0, svm_process is defunct or not exist */
+			process = NULL;
+			spin_unlock(&svm_process_lock);
+			goto new_process;
+		}
+
+		list_for_each_entry(cur_context,
+				    &process->contexts,
+				    process_head) {
+			if (cur_context->sdev != sdev)
+				continue;
+
+			context = cur_context;
+			*ttbr = virt_to_phys(mm->pgd) | asid << ASID_SHIFT;
+			*tcr  = read_sysreg(tcr_el1);
+			*pasid = process->pasid;
+			atomic_inc(&context->ref);
+			/* One context keep a ref of process */
+			svm_process_put_locked(process);
+
+			break;
+		}
+	}
+	spin_unlock(&svm_process_lock);
+
+new_process:
+	if (process == NULL) {
+		process = svm_process_alloc(pid, mm, asid);
+		if (IS_ERR(process)) {
+			err = PTR_ERR(process);
+			goto err_put_mm_context;
+		}
+	} else {
+		 /* just keep a ref count for single process */
+		mm_context_put(mm);
+		mmput(mm);
+		put_pid(pid);
+	}
+
+	if (context)
+		return 0;
+
+	spin_lock(&svm_process_lock);
+	context = svm_process_attach(process, sdev);
+	if (IS_ERR(context)) {
+		svm_process_put_locked(process);
+		spin_unlock(&svm_process_lock);
+		return PTR_ERR(context);
+	}
+	spin_unlock(&svm_process_lock);
+
+	*ttbr = virt_to_phys(mm->pgd) | asid << ASID_SHIFT;
+	*tcr  = read_sysreg(tcr_el1);
+	*pasid = process->pasid;
+
+	return 0;
+
+err_put_mm_context:
+	mm_context_put(mm);
+err_put_mm:
+	mmput(mm);
+err_put_pid:
+	put_pid(pid);
+
+	return err;
 }
 
 #ifdef CONFIG_ACPI
@@ -415,8 +576,56 @@ err_unregister_bus:
 static long svm_ioctl(struct file *file, unsigned int cmd,
 			 unsigned long arg)
 {
-	/*TODO add svm ioctl*/
-		return 0;
+	int err = -EINVAL;
+	struct svm_bind_process params;
+	struct svm_device *sdev = file_to_sdev(file);
+	struct task_struct *task;
+
+	if (!arg)
+		return -EINVAL;
+
+	if (cmd == SVM_IOCTL_PROCESS_BIND) {
+		err = copy_from_user(&params, (void __user *)arg,
+				sizeof(params));
+		if (err) {
+			dev_err(sdev->dev, "fail to copy params %d\n", err);
+			return -EFAULT;
+		}
+	}
+
+	switch (cmd) {
+	case SVM_IOCTL_PROCESS_BIND:
+		task = svm_get_task(params);
+		if (IS_ERR(task)) {
+			dev_err(sdev->dev, "failed to get task\n");
+			return PTR_ERR(task);
+		}
+
+		err = svm_process_bind(task, sdev, &params.ttbr,
+				&params.tcr, &params.pasid);
+		if (err) {
+			put_task_struct(task);
+			dev_err(sdev->dev, "failed to bind task %d\n", err);
+			return err;
+		}
+
+		put_task_struct(task);
+		err = copy_to_user((void __user *)arg, &params,
+				sizeof(params));
+		if (err) {
+			dev_err(sdev->dev, "failed to copy to user!\n");
+			return -EFAULT;
+		}
+		break;
+	default:
+			err = -EINVAL;
+		}
+
+		if (err)
+			dev_err(sdev->dev, "%s: %s failed err = %d\n", __func__,
+					svm_cmd_to_string(cmd), err);
+
+	return err;
 }
 
 static const struct file_operations svm_fops = {
