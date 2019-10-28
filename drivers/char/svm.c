@@ -57,11 +57,11 @@
 #define CORE_SID		0
 static int probe_index;
 #else
-LIST_HEAD(child_list);
+static LIST_HEAD(child_list);
 #endif
 static DECLARE_RWSEM(svm_sem);
-static DEFINE_SPINLOCK(svm_process_lock);
 static struct rb_root svm_process_root = RB_ROOT;
+static struct mutex svm_process_mutex;
 
 struct core_device {
 	struct device	dev;
@@ -102,18 +102,10 @@ struct svm_process {
 	struct mmu_notifier	notifier;
 	/* For postponed release */
 	struct rcu_head		rcu;
-	struct list_head	contexts;
 	int			pasid;
 	struct mutex		mutex;
 	struct rb_root		sdma_list;
-};
-
-/* keep the relationship of svm_process and svm_device */
-struct svm_context {
-	struct svm_process	*process;
 	struct svm_device	*sdev;
-	struct list_head	process_head;
-	atomic64_t		ref;
 };
 
 #ifndef CONFIG_ACPI
@@ -458,14 +450,14 @@ static int svm_pin_memory(unsigned long __user *arg)
 	if (!asid)
 		return -ENOSPC;
 
-	spin_lock(&svm_process_lock);
+	mutex_lock(&svm_process_mutex);
 	process = find_svm_process(asid);
 	if (process == NULL) {
-		spin_unlock(&svm_process_lock);
+		mutex_unlock(&svm_process_mutex);
 		err = -ESRCH;
 		goto out;
 	}
-	spin_unlock(&svm_process_lock);
+	mutex_unlock(&svm_process_mutex);
 
 	mutex_lock(&process->mutex);
 	err = svm_add_sdma(process, addr, size);
@@ -501,14 +493,14 @@ static int svm_unpin_memory(unsigned long __user *arg)
 	nr_pages = (PAGE_ALIGN(size + addr) >> PAGE_SHIFT) -
 		   (addr >> PAGE_SHIFT);
 
-	spin_lock(&svm_process_lock);
+	mutex_lock(&svm_process_mutex);
 	process = find_svm_process(asid);
 	if (process == NULL) {
-		spin_unlock(&svm_process_lock);
+		mutex_unlock(&svm_process_mutex);
 		err = -ESRCH;
 		goto out;
 	}
-	spin_unlock(&svm_process_lock);
+	mutex_unlock(&svm_process_mutex);
 
 	mutex_lock(&process->mutex);
 	sdma = svm_find_sdma(process, addr, nr_pages);
@@ -592,6 +584,32 @@ static int svm_unbind_core(
 	return 0;
 }
 
+static void svm_bind_cores(struct svm_process *process)
+{
+#ifdef CONFIG_ACPI
+	struct core_device *pos = NULL;
+
+	list_for_each_entry(pos, &child_list, entry) {
+		svm_bind_core(pos, process);
+	}
+#else
+	device_for_each_child(process->sdev->dev, process, svm_bind_core);
+#endif
+}
+
+static void svm_unbind_cores(struct svm_process *process)
+{
+#ifdef CONFIG_ACPI
+	struct core_device *pos = NULL;
+
+	list_for_each_entry(pos, &child_list, entry) {
+		svm_unbind_core(pos, process);
+	}
+#else
+	device_for_each_child(process->sdev->dev, process, svm_unbind_core);
+#endif
+}
+
 static void svm_process_free(struct rcu_head *rcu)
 {
 	struct svm_process *process = NULL;
@@ -628,59 +646,26 @@ static void svm_process_release(struct svm_process *process)
 	mmu_notifier_call_srcu(&process->rcu, svm_process_free);
 }
 
-static void svm_context_free(struct svm_context *context)
-{
-	struct svm_process *process = context->process;
-#ifndef CONFIG_ACPI
-	struct svm_device *sdev = context->sdev;
-#endif
-
-#ifdef CONFIG_ACPI
-	struct core_device *pos = NULL;
-	spin_unlock(&svm_process_lock);
-	list_for_each_entry(pos, &child_list, entry) {
-		svm_unbind_core(pos, process);
-	}
-	spin_lock(&svm_process_lock);
-#else
-	spin_unlock(&svm_process_lock);
-	device_for_each_child(sdev->dev, process, svm_unbind_core);
-	spin_lock(&svm_process_lock);
-#endif
-	list_del(&context->process_head);
-
-	kfree(context);
-}
-
 static void svm_notifier_release(struct mmu_notifier *mn,
 					struct mm_struct *mm)
 {
 	struct svm_process *process = NULL;
-	struct svm_context *context = NULL;
-	struct svm_context *next = NULL;
 
 	process = container_of(mn, struct svm_process, notifier);
 
-	spin_lock(&svm_process_lock);
+	svm_unbind_cores(process);
 
-	list_for_each_entry_safe(context, next,
-				 &process->contexts, process_head) {
-		/*
-		 * Should notify the device cpu release something,
-		 * if context ref is not 0?
-		 */
-		svm_context_free(context);
-	}
-
+	mutex_lock(&svm_process_mutex);
 	svm_process_release(process);
-	spin_unlock(&svm_process_lock);
+	mutex_unlock(&svm_process_mutex);
 }
 
 static struct mmu_notifier_ops svm_process_mmu_notifier = {
 	.release	= svm_notifier_release,
 };
 
-static struct svm_process *svm_process_alloc(struct pid *pid,
+static struct svm_process *
+svm_process_alloc(struct svm_device *sdev, struct pid *pid,
 		struct mm_struct *mm, unsigned long asid)
 {
 	struct svm_process *process = kzalloc(sizeof(*process), GFP_ATOMIC);
@@ -688,48 +673,15 @@ static struct svm_process *svm_process_alloc(struct pid *pid,
 	if (!process)
 		return ERR_PTR(-ENOMEM);
 
+	process->sdev = sdev;
 	process->pid = pid;
 	process->mm = mm;
 	process->asid = asid;
 	process->sdma_list = RB_ROOT; //lint !e64
 	mutex_init(&process->mutex);
-	INIT_LIST_HEAD(&process->contexts);
 	process->notifier.ops = &svm_process_mmu_notifier;
 
-	insert_svm_process(process);
-
 	return process;
-}
-
-static struct svm_context *svm_process_attach(struct svm_process *process,
-		struct svm_device *sdev)
-{
-	struct svm_context *context = NULL;
-#ifdef CONFIG_ACPI
-	struct core_device *pos = NULL;
-#endif
-
-	context = kzalloc(sizeof(*context), GFP_ATOMIC);
-	if (!context)
-		return ERR_PTR(-ENOMEM);
-
-	context->process = process;
-	context->sdev = sdev;
-	atomic64_set(&context->ref, 1);
-#ifdef CONFIG_ACPI
-	spin_unlock(&svm_process_lock);
-	list_for_each_entry(pos, &child_list, entry) {
-		svm_bind_core(pos, process);
-	}
-	spin_lock(&svm_process_lock);
-#else
-	spin_unlock(&svm_process_lock);
-	device_for_each_child(sdev->dev, process, svm_bind_core);
-	spin_lock(&svm_process_lock);
-#endif
-	list_add(&context->process_head, &process->contexts);
-
-	return context;
 }
 
 static struct task_struct *svm_get_task(struct svm_bind_process params)
@@ -773,7 +725,6 @@ static int svm_process_bind(struct task_struct *task,
 	int err;
 	unsigned long asid;
 	struct pid *pid = NULL;
-	struct svm_context *context = NULL;
 	struct svm_process *process = NULL;
 	struct mm_struct *mm = NULL;
 
@@ -797,60 +748,34 @@ static int svm_process_bind(struct task_struct *task,
 	}
 
 	/* If a svm_process already exists, use it */
-	spin_lock(&svm_process_lock);
+	mutex_lock(&svm_process_mutex);
 	process = find_svm_process(asid);
-	if (process) {
-		struct svm_context *cur_context = NULL;
-
-		list_for_each_entry(cur_context,
-				    &process->contexts,
-				    process_head) {
-			if (cur_context->sdev != sdev)
-				continue;
-
-			context = cur_context;
-			*ttbr = virt_to_phys(mm->pgd) | asid << ASID_SHIFT;
-			*tcr  = read_sysreg(tcr_el1);
-			*pasid = process->pasid;
-			atomic64_inc(&context->ref);
-			break;
-		}
-	}
-
 	if (process == NULL) {
-		spin_unlock(&svm_process_lock);
-		process = svm_process_alloc(pid, mm, asid);
+		process = svm_process_alloc(sdev, pid, mm, asid);
 		if (IS_ERR(process)) {
 			err = PTR_ERR(process);
+			mutex_unlock(&svm_process_mutex);
 			goto err_put_mm_context;
 		}
 		err = mmu_notifier_register(&process->notifier, mm);
-		if (err)
+		if (err) {
+			mutex_unlock(&svm_process_mutex);
 			goto err_free_svm_process;
-		mmput(mm);
+		}
+
+		insert_svm_process(process);
+		svm_bind_cores(process);
+		mutex_unlock(&svm_process_mutex);
 	} else {
-		spin_unlock(&svm_process_lock);
-		 /* just keep a ref count for single process */
-		mm_context_put(mm);
-		mmput(mm);
-		put_pid(pid);
+		mutex_unlock(&svm_process_mutex);
 	}
 
-	if (context)
-		return 0;
-
-	spin_lock(&svm_process_lock);
-	context = svm_process_attach(process, sdev);
-	if (IS_ERR(context)) {
-		spin_unlock(&svm_process_lock);
-		return PTR_ERR(context);
-	}
-	spin_unlock(&svm_process_lock);
 
 	*ttbr = virt_to_phys(mm->pgd) | asid << ASID_SHIFT;
 	*tcr  = read_sysreg(tcr_el1);
 	*pasid = process->pasid;
 
+	mmput(mm);
 	return 0;
 
 err_free_svm_process:
@@ -924,7 +849,7 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 	if (cdev->domain == NULL) {
 		err = -ENOMEM;
 		dev_info(&cdev->dev, "failed to alloc domain\n");
-		goto err_unregister_dev;
+		goto err_put_group;
 	}
 
 	err = iommu_attach_group(cdev->domain, cdev->group);
@@ -946,6 +871,8 @@ err_detach_group:
 	iommu_detach_group(cdev->domain, cdev->group);
 err_free_domain:
 	iommu_domain_free(cdev->domain);
+err_put_group:
+	iommu_group_put(cdev->group);
 err_unregister_dev:
 	device_unregister(&cdev->dev);
 
@@ -979,7 +906,7 @@ static int svm_init_core(struct svm_device *sdev)
 		err = -EBUSY;
 		up_write(&svm_sem);
 		dev_err(dev, "iommu_ops configured, but changed!\n");
-		goto err_unregister_bus;
+		return err;
 	}
 	up_write(&svm_sem);
 
@@ -1073,7 +1000,7 @@ static int svm_of_add_core(struct svm_device *sdev, struct device_node *np)
 	if (cdev->domain == NULL) {
 		err = -ENOMEM;
 		dev_info(&cdev->dev, "failed to alloc domain\n");
-		goto err_unregister_dev;
+		goto err_put_group;
 	}
 
 	err = iommu_attach_group(cdev->domain, cdev->group);
@@ -1095,6 +1022,8 @@ err_detach_group:
 	iommu_detach_group(cdev->domain, cdev->group);
 err_free_domain:
 	iommu_domain_free(cdev->domain);
+err_put_group:
+	iommu_group_put(cdev->group);
 err_unregister_dev:
 	device_unregister(&cdev->dev);
 
@@ -1126,7 +1055,7 @@ static int svm_init_core(struct svm_device *sdev, struct device_node *np)
 		err = -EBUSY;
 		up_write(&svm_sem);
 		dev_err(dev, "iommu_ops configured, but changed!\n");
-		goto err_unregister_bus;
+		return err;
 	}
 	up_write(&svm_sem);
 
@@ -1202,20 +1131,23 @@ static pte_t *svm_walk_pt(unsigned long addr, unsigned long *page_size,
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma = NULL;
 
+	down_read(&mm->mmap_sem);
 	vma = find_vma(mm, addr);
 	if (!vma)
-		return NULL;
+		goto err;
 
 	pgd = pgd_offset(mm, addr);
 	if (pgd_none_or_clear_bad(pgd))
-		return NULL;
+		goto err;
 
 	pud = pud_offset(pgd, addr);
 	if (pud_none_or_clear_bad(pud))
-		return NULL;
+		goto err;
 
 	pte = svm_get_pte(vma, pud, addr, page_size, offset);
 
+err:
+	up_read(&mm->mmap_sem);
 	return pte;
 }
 
@@ -1269,9 +1201,9 @@ int svm_get_pasid(pid_t vpid, int dev_id __maybe_unused)
 		goto put_mm;
 	}
 
-	spin_lock(&svm_process_lock);
+	mutex_lock(&svm_process_mutex);
 	process = find_svm_process(asid);
-	spin_unlock(&svm_process_lock);
+	mutex_unlock(&svm_process_mutex);
 	if (process)
 		pasid = process->pasid;
 	else
@@ -1292,8 +1224,6 @@ static int svm_set_rc(unsigned long __user *arg)
 {
 	unsigned long addr, size, rc;
 	unsigned long end, page_size, offset;
-	struct mm_struct *mm = current->mm;
-	struct vm_area_struct *vma = NULL;
 	pte_t *pte = NULL;
 
 	if (arg == NULL)
@@ -1307,10 +1237,6 @@ static int svm_set_rc(unsigned long __user *arg)
 
 	if (get_user(rc, arg + 2))
 		return -EFAULT;
-
-	vma = find_vma(mm, addr);
-	if (!vma)
-		return -ESRCH;
 
 	end = addr + size;
 	if (addr >= end)
@@ -1347,7 +1273,7 @@ static int svm_get_l2pte_base(struct svm_device *sdev,
 	if (get_user(size, arg + 1))
 		return -EFAULT;
 
-	if (size != sdev->l2size)
+	if (size != sdev->l2size || size != sdev->l2size)
 		return -EINVAL;
 
 	size = ALIGN(size, PMD_SIZE) / PMD_SIZE;
@@ -1775,6 +1701,11 @@ static int svm_device_probe(struct platform_device *pdev)
 		return -ENODEV;
 #endif
 
+	if (!dev->bus) {
+		dev_dbg(dev, "this dev bus is NULL\n");
+		return -EPROBE_DEFER;
+	}
+
 	if (!dev->bus->iommu_ops) {
 		dev_dbg(dev, "defer probe svm device\n");
 		return -EPROBE_DEFER;
@@ -1834,6 +1765,8 @@ static int svm_device_probe(struct platform_device *pdev)
 #ifndef CONFIG_ACPI
 	probe_index++;
 #endif
+
+	mutex_init(&svm_process_mutex);
 
 	return err;
 
