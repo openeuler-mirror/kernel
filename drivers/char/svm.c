@@ -108,7 +108,7 @@ struct svm_context {
 	struct svm_process	*process;
 	struct svm_device	*sdev;
 	struct list_head	process_head;
-	atomic_t		ref;
+	atomic64_t		ref;
 };
 
 #ifndef CONFIG_ACPI
@@ -168,6 +168,21 @@ static char *svm_cmd_to_string(unsigned int cmd)
 
 	return NULL;
 }
+
+#ifndef CONFIG_ACPI
+
+extern void sysrq_sched_debug_tidy(void);
+
+void sysrq_sched_debug_show_export(void)
+{
+#ifdef CONFIG_SCHED_DEBUG
+	sysrq_sched_debug_tidy();
+#else
+	pr_err("Not open CONFIG_SCHED_DEBUG\n");
+#endif
+}
+EXPORT_SYMBOL(sysrq_sched_debug_show_export);
+#endif
 
 static struct svm_process *find_svm_process(unsigned long asid)
 {
@@ -742,7 +757,7 @@ static struct svm_context *svm_process_attach(struct svm_process *process,
 
 	context->process = process;
 	context->sdev = sdev;
-	atomic_set(&context->ref, 1);
+	atomic64_set(&context->ref, 1);
 #ifdef CONFIG_ACPI
 	list_for_each_entry(pos, &child_list, entry) {
 		svm_bind_core(pos, process);
@@ -844,7 +859,7 @@ static int svm_process_bind(struct task_struct *task,
 			*ttbr = virt_to_phys(mm->pgd) | asid << ASID_SHIFT;
 			*tcr  = read_sysreg(tcr_el1);
 			*pasid = process->pasid;
-			atomic_inc(&context->ref);
+			atomic64_inc(&context->ref);
 			/* One context keep a ref of process */
 			svm_process_put_locked(process);
 

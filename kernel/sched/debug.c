@@ -780,6 +780,33 @@ void sysrq_sched_debug_show(void)
 
 }
 
+static void print_cpu_tidy(struct seq_file *m, int cpu)
+{
+	struct rq *run_queue = cpu_rq(cpu);
+	unsigned long flags;
+
+	SEQ_printf(m, "cpu#%d\n", cpu);
+	spin_lock_irqsave(&sched_debug_lock, flags);
+
+	print_rq(m, run_queue, cpu);
+	spin_unlock_irqrestore(&sched_debug_lock, flags);
+	SEQ_printf(m, "\n");
+
+}
+
+void sysrq_sched_debug_tidy(void)
+{
+	int cpu;
+
+	SEQ_printf(NULL, "Sched Debug Version: v0.11, %s %.*s\n",
+		init_utsname()->release,
+		(int)strcspn(init_utsname()->version, " "),
+		init_utsname()->version);
+
+	for_each_online_cpu(cpu)
+		print_cpu_tidy(NULL, cpu);
+}
+
 /*
  * This itererator needs some explanation.
  * It returns 1 for the header position.
