@@ -40,7 +40,9 @@
 
 #define SVM_IOCTL_PROCESS_BIND		0xffff
 #define SVM_IOCTL_GET_PHYS			0xfff9
-
+#ifdef CONFIG_ACPI
+#define SVM_IOCTL_SET_RC			0xfffc
+#endif
 #ifndef CONFIG_ACPI
 #define CORE_SID		0
 static int probe_index;
@@ -110,10 +112,16 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "bind";
 	case SVM_IOCTL_GET_PHYS:
 		return "get phys";
+#ifdef CONFIG_ACPI
+	case SVM_IOCTL_SET_RC:
+		return "set rc";
+#endif
 
 	default:
 		return "unsupported";
 	}
+
+	return NULL;
 }
 
 static struct svm_process *find_svm_process(unsigned long asid)
@@ -948,6 +956,46 @@ static int svm_get_phys(unsigned long __user *arg)
 	return -EINVAL;
 }
 
+#ifdef CONFIG_ACPI
+static int svm_set_rc(unsigned long __user *arg)
+{
+	unsigned long addr, size, rc;
+	unsigned long end, page_size, offset;
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma = NULL;
+	pte_t *pte = NULL;
+
+	if (arg == NULL)
+		return -EINVAL;
+
+	if (get_user(addr, arg))
+		return -EFAULT;
+
+	if (get_user(size, arg + 1))
+		return -EFAULT;
+
+	if (get_user(rc, arg + 2))
+		return -EFAULT;
+
+	vma = find_vma(mm, addr);
+	if (!vma)
+		return -ESRCH;
+
+	end = addr + size;
+	if (addr >= end)
+		return -EINVAL;
+
+	while (addr < end) {
+		pte = svm_walk_pt(addr, &page_size, &offset);
+		if (!pte)
+			return -ESRCH;
+		pte->pte |= (rc & (u64)0x0f) << 59;
+		addr += page_size - offset;
+	}
+
+	return 0;
+}
+#endif
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
 			 unsigned long arg)
@@ -996,6 +1044,11 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 	case SVM_IOCTL_GET_PHYS:
 		err = svm_get_phys((unsigned long __user *)arg);
 		break;
+#ifdef CONFIG_ACPI
+	case SVM_IOCTL_SET_RC:
+		err = svm_set_rc((unsigned long __user *)arg);
+		break;
+#endif
 	default:
 			err = -EINVAL;
 		}
