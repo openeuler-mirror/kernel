@@ -88,11 +88,16 @@ struct svm_bind_process {
 #define SVM_BIND_PID		(1 << 0)
 };
 
+/*
+ *svm_process is released in svm_notifier_release() when mm refcnt
+ *goes down zero. We should access svm_process only in the context
+ *where mm_struct is valid, which means we should always get mm
+ *refcnt first.
+ */
 struct svm_process {
 	struct pid		*pid;
 	struct mm_struct	*mm;
 	unsigned long		asid;
-	struct kref		kref;
 	struct rb_node		rb_node;
 	struct mmu_notifier	notifier;
 	/* For postponed release */
@@ -280,7 +285,6 @@ static struct svm_sdma *svm_find_sdma(struct svm_process *process,
 {
 	struct rb_node *node = process->sdma_list.rb_node;
 
-	mutex_lock(&process->mutex);
 	while (node) {
 		struct svm_sdma *sdma = NULL;
 
@@ -294,11 +298,9 @@ static struct svm_sdma *svm_find_sdma(struct svm_process *process,
 		else if (nr_pages > sdma->nr_pages)
 			node = node->rb_right;
 		else {
-			mutex_unlock(&process->mutex);
 			return sdma;
 		}
 	}
-	mutex_unlock(&process->mutex);
 
 	return NULL;
 }
@@ -308,7 +310,6 @@ static int svm_insert_sdma(struct svm_process *process, struct svm_sdma *sdma)
 	struct rb_node **p = &process->sdma_list.rb_node;
 	struct rb_node *parent = NULL;
 
-	mutex_lock(&process->mutex);
 	while (*p) {
 		struct svm_sdma *tmp_sdma = NULL;
 
@@ -328,15 +329,12 @@ static int svm_insert_sdma(struct svm_process *process, struct svm_sdma *sdma)
 			 * to free former alloced one.
 			 */
 			atomic64_inc(&tmp_sdma->ref);
-			mutex_unlock(&process->mutex);
 			return -EBUSY;
 		}
 	}
 
 	rb_link_node(&sdma->node, parent, p);
 	rb_insert_color(&sdma->node, &process->sdma_list);
-
-	mutex_unlock(&process->mutex);
 
 	return 0;
 }
@@ -346,16 +344,12 @@ static void svm_remove_sdma(struct svm_process *process,
 {
 	int null_count = 0;
 
-	mutex_lock(&process->mutex);
-
 	if (try_rm && (!atomic64_dec_and_test(&sdma->ref))) {
-		mutex_unlock(&process->mutex);
 		return;
 	}
 
 	rb_erase(&sdma->node, &process->sdma_list);
 	RB_CLEAR_NODE(&sdma->node);
-	mutex_unlock(&process->mutex);
 
 	while (sdma->nr_pages--) {
 		if (sdma->pages[sdma->nr_pages] == NULL) {
@@ -417,8 +411,8 @@ static int svm_add_sdma(struct svm_process *process,
 	 */
 	err = svm_pin_pages(sdma->addr, sdma->nr_pages, sdma->pages);
 	if (err < 0) {
-		pr_err("%s: failed to pin pages addr 0x%lx, size 0x%lx\n",
-		       __func__, addr, size);
+		pr_err("%s: failed to pin pages addr 0x%pK, size 0x%lx\n",
+		       __func__, (void *)addr, size);
 		goto err_free_pages;
 	}
 
@@ -473,7 +467,9 @@ static int svm_pin_memory(unsigned long __user *arg)
 	}
 	spin_unlock(&svm_process_lock);
 
+	mutex_lock(&process->mutex);
 	err = svm_add_sdma(process, addr, size);
+	mutex_unlock(&process->mutex);
 
 out:
 	mm_context_put(current->mm);
@@ -514,13 +510,16 @@ static int svm_unpin_memory(unsigned long __user *arg)
 	}
 	spin_unlock(&svm_process_lock);
 
+	mutex_lock(&process->mutex);
 	sdma = svm_find_sdma(process, addr, nr_pages);
 	if (sdma == NULL) {
+		mutex_unlock(&process->mutex);
 		err = -ESRCH;
 		goto out;
 	}
 
 	svm_remove_sdma(process, sdma, true);
+	mutex_unlock(&process->mutex);
 
 out:
 	mm_context_put(current->mm);
@@ -605,12 +604,8 @@ static void svm_process_free(struct rcu_head *rcu)
 	kfree(process);
 }
 
-static void svm_process_release(struct kref *kref)
+static void svm_process_release(struct svm_process *process)
 {
-	struct svm_process *process = NULL;
-
-	process = container_of(kref, struct svm_process, kref);
-
 	delete_svm_process(process);
 	put_pid(process->pid);
 
@@ -633,20 +628,6 @@ static void svm_process_release(struct kref *kref)
 	mmu_notifier_call_srcu(&process->rcu, svm_process_free);
 }
 
-static int svm_process_get_locked(struct svm_process *process)
-{
-	if (process)
-		return kref_get_unless_zero(&process->kref);
-
-	return 0;
-}
-
-static void svm_process_put_locked(struct svm_process *process)
-{
-	if (process)
-		kref_put(&process->kref, svm_process_release);
-}
-
 static void svm_context_free(struct svm_context *context)
 {
 	struct svm_process *process = context->process;
@@ -656,18 +637,17 @@ static void svm_context_free(struct svm_context *context)
 
 #ifdef CONFIG_ACPI
 	struct core_device *pos = NULL;
-
+	spin_unlock(&svm_process_lock);
 	list_for_each_entry(pos, &child_list, entry) {
 		svm_unbind_core(pos, process);
 	}
+	spin_lock(&svm_process_lock);
 #else
 	spin_unlock(&svm_process_lock);
 	device_for_each_child(sdev->dev, process, svm_unbind_core);
 	spin_lock(&svm_process_lock);
 #endif
 	list_del(&context->process_head);
-
-	svm_process_put_locked(context->process);
 
 	kfree(context);
 }
@@ -682,11 +662,6 @@ static void svm_notifier_release(struct mmu_notifier *mn,
 	process = container_of(mn, struct svm_process, notifier);
 
 	spin_lock(&svm_process_lock);
-	if (!svm_process_get_locked(process)) {
-		/* Someone's already taking care of it. */
-		spin_unlock(&svm_process_lock);
-		return;
-	}
 
 	list_for_each_entry_safe(context, next,
 				 &process->contexts, process_head) {
@@ -697,7 +672,7 @@ static void svm_notifier_release(struct mmu_notifier *mn,
 		svm_context_free(context);
 	}
 
-	svm_process_put_locked(process);
+	svm_process_release(process);
 	spin_unlock(&svm_process_lock);
 }
 
@@ -708,9 +683,7 @@ static struct mmu_notifier_ops svm_process_mmu_notifier = {
 static struct svm_process *svm_process_alloc(struct pid *pid,
 		struct mm_struct *mm, unsigned long asid)
 {
-	int err;
-
-	struct svm_process *process = kzalloc(sizeof(*process), GFP_KERNEL);
+	struct svm_process *process = kzalloc(sizeof(*process), GFP_ATOMIC);
 
 	if (!process)
 		return ERR_PTR(-ENOMEM);
@@ -723,24 +696,9 @@ static struct svm_process *svm_process_alloc(struct pid *pid,
 	INIT_LIST_HEAD(&process->contexts);
 	process->notifier.ops = &svm_process_mmu_notifier;
 
-	spin_lock(&svm_process_lock);
 	insert_svm_process(process);
-	kref_init(&process->kref);
-	spin_unlock(&svm_process_lock);
-
-	err = mmu_notifier_register(&process->notifier, mm);
-	if (err)
-		goto free_process;
-
-	/* A mm_count reference is kept by the caller */
-	mmput(process->mm);
 
 	return process;
-
-free_process:
-	kfree(process);
-
-	return ERR_PTR(err);
 }
 
 static struct svm_context *svm_process_attach(struct svm_process *process,
@@ -751,7 +709,7 @@ static struct svm_context *svm_process_attach(struct svm_process *process,
 	struct core_device *pos = NULL;
 #endif
 
-	context = kzalloc(sizeof(*context), GFP_KERNEL);
+	context = kzalloc(sizeof(*context), GFP_ATOMIC);
 	if (!context)
 		return ERR_PTR(-ENOMEM);
 
@@ -759,9 +717,11 @@ static struct svm_context *svm_process_attach(struct svm_process *process,
 	context->sdev = sdev;
 	atomic64_set(&context->ref, 1);
 #ifdef CONFIG_ACPI
+	spin_unlock(&svm_process_lock);
 	list_for_each_entry(pos, &child_list, entry) {
 		svm_bind_core(pos, process);
 	}
+	spin_lock(&svm_process_lock);
 #else
 	spin_unlock(&svm_process_lock);
 	device_for_each_child(sdev->dev, process, svm_bind_core);
@@ -842,13 +802,6 @@ static int svm_process_bind(struct task_struct *task,
 	if (process) {
 		struct svm_context *cur_context = NULL;
 
-		if (!svm_process_get_locked(process)) {
-			/* ref is 0, svm_process is defunct or not exist */
-			process = NULL;
-			spin_unlock(&svm_process_lock);
-			goto new_process;
-		}
-
 		list_for_each_entry(cur_context,
 				    &process->contexts,
 				    process_head) {
@@ -860,22 +813,23 @@ static int svm_process_bind(struct task_struct *task,
 			*tcr  = read_sysreg(tcr_el1);
 			*pasid = process->pasid;
 			atomic64_inc(&context->ref);
-			/* One context keep a ref of process */
-			svm_process_put_locked(process);
-
 			break;
 		}
 	}
-	spin_unlock(&svm_process_lock);
 
-new_process:
 	if (process == NULL) {
+		spin_unlock(&svm_process_lock);
 		process = svm_process_alloc(pid, mm, asid);
 		if (IS_ERR(process)) {
 			err = PTR_ERR(process);
 			goto err_put_mm_context;
 		}
+		err = mmu_notifier_register(&process->notifier, mm);
+		if (err)
+			goto err_free_svm_process;
+		mmput(mm);
 	} else {
+		spin_unlock(&svm_process_lock);
 		 /* just keep a ref count for single process */
 		mm_context_put(mm);
 		mmput(mm);
@@ -888,7 +842,6 @@ new_process:
 	spin_lock(&svm_process_lock);
 	context = svm_process_attach(process, sdev);
 	if (IS_ERR(context)) {
-		svm_process_put_locked(process);
 		spin_unlock(&svm_process_lock);
 		return PTR_ERR(context);
 	}
@@ -900,6 +853,8 @@ new_process:
 
 	return 0;
 
+err_free_svm_process:
+	kfree(process);
 err_put_mm_context:
 	mm_context_put(mm);
 err_put_mm:
@@ -1514,15 +1469,21 @@ static long svm_remap_proc(unsigned long __user *arg)
 	}
 
 	if (pmem.buf & (PAGE_SIZE - 1)) {
-		pr_err("address is not aligned with page size, addr:%llx.\n",
-		       pmem.buf);
+		pr_err("address is not aligned with page size, addr:%pK.\n",
+		       (void *)pmem.buf);
 		return -EINVAL;
 	}
 
-	ptask = pid_task(find_vpid((int)pmem.pid), PIDTYPE_PID);
-	if (ptask == NULL) {
-		pr_err("cannot find the task of pid:%d.\n", (int)pmem.pid);
-		return -EINVAL;
+	rcu_read_lock();
+	if (pmem.pid) {
+		ptask = find_task_by_vpid(pmem.pid);
+		if (!ptask) {
+			rcu_read_unlock();
+			pr_err("No task for this pid\n");
+			return -EINVAL;
+		}
+	} else {
+		ptask = current;
 	}
 
 	get_task_struct(ptask);
@@ -1555,8 +1516,8 @@ static long svm_remap_proc(unsigned long __user *arg)
 	vma->vm_flags |= VM_SHARED;
 	if (end > pvma->vm_end || end < vaddr) {
 		ret = -EINVAL;
-		pr_err("memory length is out of range, vaddr:%lx, len:%u.\n",
-		       vaddr, pmem.len);
+		pr_err("memory length is out of range, vaddr:%pK, len:%u.\n",
+		       (void *)vaddr, pmem.len);
 		goto err;
 	}
 
@@ -1590,6 +1551,7 @@ static long svm_remap_proc(unsigned long __user *arg)
 err:
 	up_read(&pmm->mmap_sem);
 	up_read(&mm->mmap_sem);
+	put_task_struct(ptask);
 	return ret;
 }
 
@@ -1677,8 +1639,8 @@ static int svm_mmap(struct file *file, struct vm_area_struct *vma)
 			__pgprot(vma->vm_page_prot.pgprot | PTE_DIRTY));
 
 	if (err)
-		dev_err(sdev->dev, "fail to remap 0x%lx err = %d\n",
-			vma->vm_start, err);
+		dev_err(sdev->dev, "fail to remap 0x%pK err = %d\n",
+			(void *)vma->vm_start, err);
 
 	return err;
 }
