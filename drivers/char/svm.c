@@ -118,6 +118,16 @@ static struct svm_process *find_svm_process(unsigned long asid)
 	return NULL;
 }
 
+static void insert_svm_process(struct svm_process *process)
+{
+	/*TODO*/
+}
+
+static void delete_svm_process(struct svm_process *process)
+{
+	/*TODO*/
+}
+
 static struct svm_device *file_to_sdev(struct file *file)
 {
 	return container_of(file->private_data,
@@ -159,35 +169,180 @@ static int svm_remove_core(struct device *dev, void *data)
 	return 0;
 }
 
+static void svm_process_free(struct rcu_head *rcu)
+{
+	struct svm_process *process = NULL;
+
+	process = container_of(rcu, struct svm_process, rcu);
+	mm_context_put(process->mm);
+	kfree(process);
+}
+
+static void svm_process_release(struct kref *kref)
+{
+	struct svm_process *process = NULL;
+
+	process = container_of(kref, struct svm_process, kref);
+
+	delete_svm_process(process);
+	put_pid(process->pid);
+
+	/*
+	 * If we're being released from process exit, the notifier callback
+	 * ->release has already been called. Otherwise we don't need to go
+	 * through there, the process isn't attached to anything anymore. Hence
+	 * no_release.
+	 */
+	mmu_notifier_unregister_no_release(&process->notifier, process->mm);
+
+	/*
+	 * We can't free the structure here, because ->release might be
+	 * attempting to grab it concurrently. And in the other case, if the
+	 * structure is being released from within ->release, then
+	 * __mmu_notifier_release expects to still have a valid mn when
+	 * returning. So free the structure when it's safe, after the RCU grace
+	 * period elapsed.
+	 */
+	mmu_notifier_call_srcu(&process->rcu, svm_process_free);
+}
+
+static void svm_notifier_release(struct mmu_notifier *mn,
+					struct mm_struct *mm)
+{
+	/*TODO*/
+}
+
+static struct mmu_notifier_ops svm_process_mmu_notifier = {
+	.release	= svm_notifier_release,
+};
+
+
 static struct svm_process *svm_process_alloc(struct pid *pid,
 		struct mm_struct *mm, unsigned long asid)
 {
-	/*TODO*/
-	return NULL;
+	int err;
+
+	struct svm_process *process = kzalloc(sizeof(*process), GFP_KERNEL);
+
+	if (!process)
+		return ERR_PTR(-ENOMEM);
+
+	process->pid = pid;
+	process->mm = mm;
+	process->asid = asid;
+	process->sdma_list = RB_ROOT; //lint !e64
+	mutex_init(&process->mutex);
+	INIT_LIST_HEAD(&process->contexts);
+	process->notifier.ops = &svm_process_mmu_notifier;
+
+	spin_lock(&svm_process_lock);
+	insert_svm_process(process);
+	kref_init(&process->kref);
+	spin_unlock(&svm_process_lock);
+
+	err = mmu_notifier_register(&process->notifier, mm);
+	if (err)
+		goto free_process;
+
+	/* A mm_count reference is kept by the caller */
+	mmput(process->mm);
+
+	return process;
+
+free_process:
+	kfree(process);
+
+	return ERR_PTR(err);
 }
 
-static struct svm_context *svm_process_attach(struct svm_process *process,
-		struct svm_device *sdev)
-{
-	/*TODO*/
-	return NULL;
-}
-
-static int svm_process_get_locked(struct svm_process *process)
+static int svm_bind_core(
+#ifndef CONFIG_ACPI
+		struct device *dev,
+#else
+		struct core_device *cdev,
+#endif
+	void *data)
 {
 	/*TODO*/
 	return 0;
 }
 
+static struct svm_context *svm_process_attach(struct svm_process *process,
+		struct svm_device *sdev)
+{
+	struct svm_context *context = NULL;
+#ifdef CONFIG_ACPI
+	struct core_device *pos = NULL;
+#endif
+
+	context = kzalloc(sizeof(*context), GFP_KERNEL);
+	if (!context)
+		return ERR_PTR(-ENOMEM);
+
+	context->process = process;
+	context->sdev = sdev;
+	atomic_set(&context->ref, 1);
+#ifdef CONFIG_ACPI
+	list_for_each_entry(pos, &child_list, entry) {
+		svm_bind_core(pos, process);
+	}
+#else
+	spin_unlock(&svm_process_lock);
+	device_for_each_child(sdev->dev, process, svm_bind_core);
+	spin_lock(&svm_process_lock);
+#endif
+	list_add(&context->process_head, &process->contexts);
+
+	return context;
+}
+
+static int svm_process_get_locked(struct svm_process *process)
+{
+	if (process)
+		return kref_get_unless_zero(&process->kref);
+
+	return 0;
+}
+
 static void svm_process_put_locked(struct svm_process *process)
 {
-	/*TODO*/
+	if (process)
+		kref_put(&process->kref, svm_process_release);
 }
 
 static struct task_struct *svm_get_task(struct svm_bind_process params)
 {
-	/*TODO*/
-	return NULL;
+	struct task_struct *task = NULL;
+
+	if (params.flags & ~SVM_BIND_PID)
+		return ERR_PTR(-EINVAL);
+
+	if (params.flags & SVM_BIND_PID) {
+		struct mm_struct *mm = NULL;
+
+		rcu_read_lock();
+		task = find_task_by_vpid(params.vpid);
+		if (task)
+			get_task_struct(task);
+		rcu_read_unlock();
+		if (task == NULL)
+			return ERR_PTR(-ESRCH);
+
+		/* check the permission */
+		mm = mm_access(task, PTRACE_MODE_ATTACH_REALCREDS);
+		if (IS_ERR_OR_NULL(mm)) {
+			pr_err("cannot access mm\n");
+			put_task_struct(task);
+			return ERR_PTR(-ESRCH);
+		}
+
+		mmput(mm);
+	} else {
+		get_task_struct(current);
+		task = current;
+	}
+
+	return task;
 }
 
 static int svm_process_bind(struct task_struct *task,
