@@ -47,7 +47,10 @@
 #define SVM_IOCTL_PIN_MEMORY		0xfff7
 #define SVM_IOCTL_UNPIN_MEMORY		0xfff5
 #define SVM_IOCTL_GETHUGEINFO		0xfff6
+#define SVM_IOCTL_REMAP_PROC		0xfff4
 #endif
+
+#define SVM_REMAP_MEM_LEN_MAX		(16 * 1024 * 1024)
 
 #ifndef CONFIG_ACPI
 #define CORE_SID		0
@@ -116,6 +119,14 @@ struct svm_sdma {
 	atomic64_t ref;
 };
 
+struct svm_proc_mem {
+	u32 dev_id;
+	u32 len;
+	u64 pid;
+	u64 vaddr;
+	u64 buf;
+};
+
 struct meminfo {
 	unsigned long hugetlbfree;
 	unsigned long hugetlbtotal;
@@ -145,6 +156,8 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "unpin memory";
 	case SVM_IOCTL_GETHUGEINFO:
 		return "get hugeinfo";
+	case SVM_IOCTL_REMAP_PROC:
+		return "remap proc";
 #endif
 	default:
 		return "unsupported";
@@ -1383,6 +1396,136 @@ static long svm_get_hugeinfo(unsigned long __user *arg)
 
 	return 0;
 }
+
+static long svm_remap_get_phys(struct mm_struct *mm, struct vm_area_struct *vma,
+			       unsigned long addr, unsigned long *phys,
+			       unsigned long *page_size, unsigned long *offset)
+{
+	long err = -EINVAL;
+	pgd_t *pgd = NULL;
+	pud_t *pud = NULL;
+	pte_t *pte = NULL;
+
+	if (mm == NULL || vma == NULL || phys == NULL ||
+	    page_size == NULL || offset == NULL)
+		return err;
+
+	pgd = pgd_offset(mm, addr);
+	if (pgd_none_or_clear_bad(pgd))
+		return err;
+
+	pud = pud_offset(pgd, addr);
+	if (pud_none_or_clear_bad(pud))
+		return err;
+
+	pte = svm_get_pte(vma, pud, addr, page_size, offset);
+	if (pte && pte_present(*pte)) {
+		*phys = PFN_PHYS(pte_pfn(*pte));
+		return 0;
+	}
+
+	return err;
+}
+
+static long svm_remap_proc(unsigned long __user *arg)
+{
+	long ret = -EINVAL;
+	struct svm_proc_mem pmem;
+	struct task_struct *ptask = NULL;
+	struct mm_struct *pmm = NULL, *mm = current->mm;
+	struct vm_area_struct *pvma = NULL, *vma = NULL;
+	unsigned long end, vaddr, phys, buf, offset, pagesize;
+
+	if (arg == NULL) {
+		pr_err("arg is invalid.\n");
+		return ret;
+	}
+
+	ret = copy_from_user(&pmem, (void __user *)arg, sizeof(pmem));
+	if (ret) {
+		pr_err("failed to copy args from user space.\n");
+		return -EFAULT;
+	}
+
+	if (pmem.buf & (PAGE_SIZE - 1)) {
+		pr_err("address is not aligned with page size, addr:%llx.\n",
+		       pmem.buf);
+		return -EINVAL;
+	}
+
+	ptask = pid_task(find_vpid((int)pmem.pid), PIDTYPE_PID);
+	if (ptask == NULL) {
+		pr_err("cannot find the task of pid:%d.\n", (int)pmem.pid);
+		return -EINVAL;
+	}
+
+	get_task_struct(ptask);
+	rcu_read_unlock();
+	pmm = ptask->mm;
+
+	down_read(&mm->mmap_sem);
+	down_read(&pmm->mmap_sem);
+
+	pvma = find_vma(pmm, pmem.vaddr);
+	if (pvma == NULL) {
+		ret = -ESRCH;
+		goto err;
+	}
+
+	vma = find_vma(mm, pmem.buf);
+	if (vma == NULL) {
+		ret = -ESRCH;
+		goto err;
+	}
+
+	if (pmem.len > SVM_REMAP_MEM_LEN_MAX) {
+		ret = -EINVAL;
+		pr_err("too large length of memory.\n");
+		goto err;
+	}
+	vaddr = pmem.vaddr;
+	end = vaddr + pmem.len;
+	buf = pmem.buf;
+	vma->vm_flags |= VM_SHARED;
+	if (end > pvma->vm_end || end < vaddr) {
+		ret = -EINVAL;
+		pr_err("memory length is out of range, vaddr:%lx, len:%u.\n",
+		       vaddr, pmem.len);
+		goto err;
+	}
+
+	do {
+		ret = svm_remap_get_phys(pmm, pvma, vaddr,
+					 &phys, &pagesize, &offset);
+		if (ret) {
+			ret = -EINVAL;
+			goto err;
+		}
+
+		vaddr += pagesize - offset;
+
+		do {
+			if (remap_pfn_range(vma, buf, phys >> PAGE_SHIFT,
+				PAGE_SIZE,
+				__pgprot(vma->vm_page_prot.pgprot |
+					 PTE_DIRTY))) {
+
+				ret = -ESRCH;
+				goto err;
+			}
+
+			offset += PAGE_SIZE;
+			buf += PAGE_SIZE;
+			phys += PAGE_SIZE;
+		} while (offset < pagesize);
+
+	} while (vaddr < end);
+
+err:
+	up_read(&pmm->mmap_sem);
+	up_read(&mm->mmap_sem);
+	return ret;
+}
 #endif
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
@@ -1448,6 +1591,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 		break;
 	case SVM_IOCTL_GETHUGEINFO:
 		err = svm_get_hugeinfo((unsigned long __user *)arg);
+		break;
+	case SVM_IOCTL_REMAP_PROC:
+		err = svm_remap_proc((unsigned long __user *)arg);
 		break;
 #endif
 	default:
