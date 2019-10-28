@@ -29,6 +29,7 @@ typedef struct {
 	atomic64_t	id;
 	unsigned long	pinned;
 	void		*vdso;
+	unsigned long refcount;
 	unsigned long	flags;
 } mm_context_t;
 

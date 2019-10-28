@@ -158,6 +158,10 @@ static u64 new_context(struct mm_struct *mm, unsigned int cpu)
 	if (asid != 0) {
 		u64 newasid = generation | (asid & ~ASID_MASK);
 
+		/* That ASID is pinned for us, we're good to go. */
+		if (mm->context.refcount)
+			return newasid;
+
 		/*
 		 * If our current ASID was active during a rollover, we
 		 * can continue to use it and this was just a false alarm.

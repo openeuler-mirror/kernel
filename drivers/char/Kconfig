@@ -552,6 +552,16 @@ config ADI
 	  and SSM (Silicon Secured Memory).  Intended consumers of this
 	  driver include crash and makedumpfile.
 
+config HISI_SVM
+	bool "Hisilicon svm driver"
+	depends on ARM64 && ARM_SMMU_V3 && MMU_NOTIFIER
+	default y
+	help
+	  This driver provides character-level access to Hisilicon
+	  SVM chipset. Typically, you can bind a task to the
+	  svm and share the virtual memory with hisilicon svm device.
+	  When in doubt, say "N".
+
 endmenu
 
 config RANDOM_TRUST_CPU
