@@ -169,6 +169,30 @@ static int svm_remove_core(struct device *dev, void *data)
 	return 0;
 }
 
+static int svm_bind_core(
+#ifndef CONFIG_ACPI
+		struct device *dev,
+#else
+		struct core_device *cdev,
+#endif
+	void *data)
+{
+	/*TODO*/
+	return 0;
+}
+
+static int svm_unbind_core(
+#ifndef CONFIG_ACPI
+	struct device *dev,
+#else
+	struct core_device *cdev,
+#endif
+	void *data)
+{
+	/*TODO*/
+	return 0;
+}
+
 static void svm_process_free(struct rcu_head *rcu)
 {
 	struct svm_process *process = NULL;
@@ -206,16 +230,77 @@ static void svm_process_release(struct kref *kref)
 	mmu_notifier_call_srcu(&process->rcu, svm_process_free);
 }
 
+static int svm_process_get_locked(struct svm_process *process)
+{
+	if (process)
+		return kref_get_unless_zero(&process->kref);
+
+	return 0;
+}
+
+static void svm_process_put_locked(struct svm_process *process)
+{
+	if (process)
+		kref_put(&process->kref, svm_process_release);
+}
+
+static void svm_context_free(struct svm_context *context)
+{
+	struct svm_process *process = context->process;
+#ifndef CONFIG_ACPI
+	struct svm_device *sdev = context->sdev;
+#endif
+
+#ifdef CONFIG_ACPI
+	struct core_device *pos = NULL;
+
+	list_for_each_entry(pos, &child_list, entry) {
+		svm_unbind_core(pos, process);
+	}
+#else
+	spin_unlock(&svm_process_lock);
+	device_for_each_child(sdev->dev, process, svm_unbind_core);
+	spin_lock(&svm_process_lock);
+#endif
+	list_del(&context->process_head);
+
+	svm_process_put_locked(context->process);
+
+	kfree(context);
+}
+
 static void svm_notifier_release(struct mmu_notifier *mn,
 					struct mm_struct *mm)
 {
-	/*TODO*/
+	struct svm_process *process = NULL;
+	struct svm_context *context = NULL;
+	struct svm_context *next = NULL;
+
+	process = container_of(mn, struct svm_process, notifier);
+
+	spin_lock(&svm_process_lock);
+	if (!svm_process_get_locked(process)) {
+		/* Someone's already taking care of it. */
+		spin_unlock(&svm_process_lock);
+		return;
+	}
+
+	list_for_each_entry_safe(context, next,
+				 &process->contexts, process_head) {
+		/*
+		 * Should notify the device cpu release something,
+		 * if context ref is not 0?
+		 */
+		svm_context_free(context);
+	}
+
+	svm_process_put_locked(process);
+	spin_unlock(&svm_process_lock);
 }
 
 static struct mmu_notifier_ops svm_process_mmu_notifier = {
 	.release	= svm_notifier_release,
 };
-
 
 static struct svm_process *svm_process_alloc(struct pid *pid,
 		struct mm_struct *mm, unsigned long asid)
@@ -255,18 +340,6 @@ free_process:
 	return ERR_PTR(err);
 }
 
-static int svm_bind_core(
-#ifndef CONFIG_ACPI
-		struct device *dev,
-#else
-		struct core_device *cdev,
-#endif
-	void *data)
-{
-	/*TODO*/
-	return 0;
-}
-
 static struct svm_context *svm_process_attach(struct svm_process *process,
 		struct svm_device *sdev)
 {
@@ -294,20 +367,6 @@ static struct svm_context *svm_process_attach(struct svm_process *process,
 	list_add(&context->process_head, &process->contexts);
 
 	return context;
-}
-
-static int svm_process_get_locked(struct svm_process *process)
-{
-	if (process)
-		return kref_get_unless_zero(&process->kref);
-
-	return 0;
-}
-
-static void svm_process_put_locked(struct svm_process *process)
-{
-	if (process)
-		kref_put(&process->kref, svm_process_release);
 }
 
 static struct task_struct *svm_get_task(struct svm_bind_process params)
