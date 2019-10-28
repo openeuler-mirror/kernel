@@ -87,6 +87,12 @@ static int svm_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static int svm_init_core(struct svm_device *sdev)
+{
+	/*TODO init hi1910 and hi1980 cores for ai*/
+	return 0;
+}
+
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
 			 unsigned long arg)
@@ -103,13 +109,61 @@ static const struct file_operations svm_fops = {
 /*svm device probe this is init the svm device*/
 static int svm_device_probe(struct platform_device *pdev)
 {
-	/*TODO svm device init*/
-	return 0;
+	int err = -1;
+	struct device *dev = &pdev->dev;
+	struct svm_device *sdev = NULL;
+
+	if (!dev->bus->iommu_ops) {
+		dev_dbg(dev, "defer probe svm device\n");
+		return -EPROBE_DEFER;
+	}
+
+	sdev = devm_kzalloc(dev, sizeof(*sdev), GFP_KERNEL);
+	if (sdev == NULL)
+		return -ENOMEM;
+
+	err = device_property_read_u64(dev, "svmid", &sdev->id);
+	if (err) {
+		dev_err(dev, "failed to get this svm device id\n");
+		return err;
+	}
+
+	sdev->dev = dev;
+	sdev->miscdev.minor = MISC_DYNAMIC_MINOR;
+	sdev->miscdev.fops = &svm_fops;
+	sdev->miscdev.name = devm_kasprintf(dev, GFP_KERNEL,
+			SVM_DEVICE_NAME"%llu", sdev->id);
+	if (sdev->miscdev.name == NULL)
+		err = -ENOMEM;
+
+	dev_set_drvdata(dev, sdev);
+	err = misc_register(&sdev->miscdev);
+	if (err) {
+		dev_err(dev, "Unable to register misc device\n");
+		return err;
+	}
+
+	err = svm_init_core(sdev);
+	if (err) {
+		dev_err(dev, "failed to init cores\n");
+		goto err_unregister_misc;
+	}
+
+	return err;
+
+err_unregister_misc:
+	misc_deregister(&sdev->miscdev);
+
+	return err;
 }
 /*svm device remove this is device remove*/
 static int svm_device_remove(struct platform_device *pdev)
 {
-	/*TODO svm device remove*/
+	struct device *dev = &pdev->dev;
+	struct svm_device *sdev = dev_get_drvdata(dev);
+
+	misc_deregister(&sdev->miscdev);
+
 	return 0;
 }
 
