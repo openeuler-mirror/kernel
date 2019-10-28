@@ -42,7 +42,10 @@
 #define SVM_IOCTL_GET_PHYS			0xfff9
 #ifdef CONFIG_ACPI
 #define SVM_IOCTL_SET_RC			0xfffc
+#else
+#define SVM_IOCTL_GET_L2PTE_BASE		0xfffb
 #endif
+
 #ifndef CONFIG_ACPI
 #define CORE_SID		0
 static int probe_index;
@@ -115,8 +118,10 @@ static char *svm_cmd_to_string(unsigned int cmd)
 #ifdef CONFIG_ACPI
 	case SVM_IOCTL_SET_RC:
 		return "set rc";
+#else
+	case SVM_IOCTL_GET_L2PTE_BASE:
+		return "get l2pte base";
 #endif
-
 	default:
 		return "unsupported";
 	}
@@ -995,6 +1000,68 @@ static int svm_set_rc(unsigned long __user *arg)
 
 	return 0;
 }
+#else
+static int svm_get_l2pte_base(struct svm_device *sdev,
+			      unsigned long __user *arg)
+{
+	int i = 0, err = -EINVAL;
+	unsigned long *base = NULL;
+	unsigned long vaddr, size;
+	struct mm_struct *mm = current->mm;
+
+	if (arg == NULL)
+		return -EINVAL;
+
+	if (get_user(vaddr, arg))
+		return -EFAULT;
+
+	if (!IS_ALIGNED(vaddr, sdev->l2size))
+		return -EINVAL;
+
+	if (get_user(size, arg + 1))
+		return -EFAULT;
+
+	if (size != sdev->l2size)
+		return -EINVAL;
+
+	size = ALIGN(size, PMD_SIZE) / PMD_SIZE;
+	base = kmalloc_array(size, sizeof(*base), GFP_KERNEL);
+	if (base == NULL)
+		return -ENOMEM;
+
+	while (size) {
+		pgd_t *pgd = NULL;
+		pud_t *pud = NULL;
+		pmd_t *pmd = NULL;
+
+		pgd = pgd_offset(mm, vaddr);
+		if (pgd_none(*pgd) || pgd_bad(*pgd))
+			goto err_out;
+
+		pud = pud_offset(pgd, vaddr);
+		if (pud_none(*pud) || pud_bad(*pud))
+			goto err_out;
+
+		pmd = pmd_offset(pud, vaddr);
+		if (pmd_none(*pmd) || pmd_bad(*pmd))
+			goto err_out;
+
+		/*
+		 * For small page base address, it should use pte_pfn
+		 * instead of pmd_pfn.
+		 */
+		base[i] = PFN_PHYS(pte_pfn(*((pte_t *)pmd)));
+		vaddr += PMD_SIZE;
+		size--;
+		i++;
+	}
+
+	/* lint !e647 */
+	err = copy_to_user((void __user *)arg, base, i * sizeof(*base));
+err_out:
+	kfree(base);
+	return err;
+}
 #endif
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
@@ -1047,6 +1114,10 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 #ifdef CONFIG_ACPI
 	case SVM_IOCTL_SET_RC:
 		err = svm_set_rc((unsigned long __user *)arg);
+		break;
+#else
+	case SVM_IOCTL_GET_L2PTE_BASE:
+		err = svm_get_l2pte_base(sdev, (unsigned long __user *)arg);
 		break;
 #endif
 	default:
