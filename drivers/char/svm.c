@@ -31,9 +31,15 @@
 #include <linux/hugetlb.h>
 #include <linux/sched/mm.h>
 #include <linux/msi.h>
+#ifdef CONFIG_ACPI
 #include <linux/acpi.h>
+#endif
 
 #define SVM_DEVICE_NAME "svm"
+
+#ifndef CONFIG_ACPI
+static int probe_index;
+#endif
 
 struct core_device {
 	struct device		dev;
@@ -87,12 +93,19 @@ static int svm_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+#ifdef CONFIG_ACPI
 static int svm_init_core(struct svm_device *sdev)
 {
 	/*TODO init hi1910 and hi1980 cores for ai*/
 	return 0;
 }
-
+#else
+static int svm_init_core(struct svm_device *sdev, struct device_node *np)
+{
+	/*TODO*/
+	return 0;
+}
+#endif
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
 			 unsigned long arg)
@@ -112,6 +125,13 @@ static int svm_device_probe(struct platform_device *pdev)
 	int err = -1;
 	struct device *dev = &pdev->dev;
 	struct svm_device *sdev = NULL;
+#ifndef CONFIG_ACPI
+	struct device_node *np = dev->of_node;
+	int alias_id;
+
+	if (np == NULL)
+		return -ENODEV;
+#endif
 
 	if (!dev->bus->iommu_ops) {
 		dev_dbg(dev, "defer probe svm device\n");
@@ -122,11 +142,19 @@ static int svm_device_probe(struct platform_device *pdev)
 	if (sdev == NULL)
 		return -ENOMEM;
 
+#ifdef CONFIG_ACPI
 	err = device_property_read_u64(dev, "svmid", &sdev->id);
 	if (err) {
 		dev_err(dev, "failed to get this svm device id\n");
 		return err;
 	}
+#else
+	alias_id = of_alias_get_id(np, "svm");
+	if (alias_id < 0)
+		sdev->id = probe_index;
+	else
+		sdev->id = alias_id;
+#endif
 
 	sdev->dev = dev;
 	sdev->miscdev.minor = MISC_DYNAMIC_MINOR;
@@ -142,12 +170,20 @@ static int svm_device_probe(struct platform_device *pdev)
 		dev_err(dev, "Unable to register misc device\n");
 		return err;
 	}
-
+#ifdef CONFIG_ACPI
 	err = svm_init_core(sdev);
+#else
+	err = svm_init_core(sdev, np);
+#endif
+
 	if (err) {
 		dev_err(dev, "failed to init cores\n");
 		goto err_unregister_misc;
 	}
+
+#ifndef CONFIG_ACPI
+	probe_index++;
+#endif
 
 	return err;
 
@@ -167,18 +203,31 @@ static int svm_device_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_ACPI
 static const struct acpi_device_id svm_acpi_match[] = {
 	{ "HSVM1980", 0},
 	{ }
 };
 MODULE_DEVICE_TABLE(acpi, svm_acpi_match);
+#else
+static const struct of_device_id svm_of_match[] = {
+	{ .compatible = "hisilicon,svm" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, svm_of_match);
+#endif
+
 /*svm acpi probe and remove*/
 static struct platform_driver svm_driver = {
 	.probe	=	svm_device_probe,
 	.remove	=	svm_device_remove,
 	.driver	=	{
 		.name = SVM_DEVICE_NAME,
+#ifdef CONFIG_ACPI
 		.acpi_match_table = ACPI_PTR(svm_acpi_match),
+#else
+		.of_match_table = svm_of_match,
+#endif
 	},
 };
 
