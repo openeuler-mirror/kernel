@@ -1269,6 +1269,54 @@ static int svm_get_phys(unsigned long __user *arg)
 	return -EINVAL;
 }
 
+int svm_get_pasid(pid_t vpid, int dev_id __maybe_unused)
+{
+	int pasid;
+	unsigned long asid;
+	struct task_struct *task = NULL;
+	struct mm_struct *mm = NULL;
+	struct svm_process *process = NULL;
+	struct svm_bind_process params;
+
+	params.flags = SVM_BIND_PID;
+	params.vpid = vpid;
+	params.pasid = -1;
+	params.ttbr = 0;
+	params.tcr = 0;
+	task = svm_get_task(params);
+	if (IS_ERR(task))
+		return PTR_ERR(task);
+
+	mm = get_task_mm(task);
+	if (mm == NULL) {
+		pasid = -EINVAL;
+		goto put_task;
+	}
+
+	asid = mm_context_get(mm);
+	if (!asid) {
+		pasid = -ENOSPC;
+		goto put_mm;
+	}
+
+	spin_lock(&svm_process_lock);
+	process = find_svm_process(asid);
+	spin_unlock(&svm_process_lock);
+	if (process)
+		pasid = process->pasid;
+	else
+		pasid = -ESRCH;
+
+	mm_context_put(mm);
+put_mm:
+	mmput(mm);
+put_task:
+	put_task_struct(task);
+
+	return pasid;
+}
+EXPORT_SYMBOL_GPL(svm_get_pasid);
+
 #ifdef CONFIG_ACPI
 static int svm_set_rc(unsigned long __user *arg)
 {
@@ -1545,6 +1593,80 @@ static int svm_proc_load_flag(int __user *arg)
 
 	return put_user(flag, arg);
 }
+
+static unsigned long svm_get_unmapped_area(struct file *file,
+		unsigned long addr0, unsigned long len,
+		unsigned long pgoff, unsigned long flags)
+{
+	unsigned long addr = addr0;
+	struct mm_struct *mm = current->mm;
+	struct vm_unmapped_area_info info;
+	struct svm_device *sdev = file_to_sdev(file);
+
+	if (len != sdev->l2size) {
+		dev_err(sdev->dev, "Just map the size of L2BUFF %ld\n",
+			sdev->l2size);
+		return -EINVAL; //lint !e570
+	}
+
+	if (flags & MAP_FIXED) {
+		if (IS_ALIGNED(addr, len))
+			return addr;
+
+		dev_err(sdev->dev, "MAP_FIXED but not aligned\n");
+		return -EINVAL; //lint !e570
+	}
+
+	if (addr) {
+		struct vm_area_struct *vma = NULL;
+
+		addr = ALIGN(addr, len);
+		vma = find_vma(mm, addr);
+		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
+		   (vma == NULL || addr + len <= vm_start_gap(vma)))
+			return addr;
+	}
+
+	info.flags = VM_UNMAPPED_AREA_TOPDOWN;
+	info.length = len;
+	info.low_limit = max(PAGE_SIZE, mmap_min_addr);
+	info.high_limit = mm->mmap_base;
+	info.align_mask = ((len >> PAGE_SHIFT) - 1) << PAGE_SHIFT;
+	info.align_offset = pgoff << PAGE_SHIFT;
+	addr = vm_unmapped_area(&info);
+
+	if (offset_in_page(addr)) {
+		VM_BUG_ON(addr != -ENOMEM);
+		info.flags = 0;
+		info.low_limit = TASK_UNMAPPED_BASE;
+		info.high_limit = TASK_SIZE;
+		addr = vm_unmapped_area(&info);
+	}
+
+	return addr;
+}
+
+static int svm_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	int err;
+	struct svm_device *sdev = file_to_sdev(file);
+
+	if ((vma->vm_end < vma->vm_start) ||
+	    ((vma->vm_end - vma->vm_start) > sdev->l2size))
+		return -EINVAL;
+
+	vma->vm_page_prot = __pgprot((~PTE_SHARED) & vma->vm_page_prot.pgprot);
+
+	err = remap_pfn_range(vma, vma->vm_start, sdev->l2buff >> PAGE_SHIFT,
+			vma->vm_end - vma->vm_start,
+			__pgprot(vma->vm_page_prot.pgprot | PTE_DIRTY));
+
+	if (err)
+		dev_err(sdev->dev, "fail to remap 0x%lx err = %d\n",
+			vma->vm_start, err);
+
+	return err;
+}
 #endif
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
@@ -1632,6 +1754,10 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 static const struct file_operations svm_fops = {
 	.owner			= THIS_MODULE,
 	.open			= svm_open,
+#ifndef CONFIG_ACPI
+	.mmap			= svm_mmap,
+	.get_unmapped_area = svm_get_unmapped_area,
+#endif
 	.unlocked_ioctl		= svm_ioctl,
 };
 
