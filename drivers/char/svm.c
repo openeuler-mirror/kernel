@@ -45,6 +45,7 @@
 #else
 #define SVM_IOCTL_GET_L2PTE_BASE	0xfffb
 #define SVM_IOCTL_PIN_MEMORY		0xfff7
+#define SVM_IOCTL_UNPIN_MEMORY		0xfff5
 #endif
 
 #ifndef CONFIG_ACPI
@@ -134,6 +135,8 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "get l2pte base";
 	case SVM_IOCTL_PIN_MEMORY:
 		return "pin memory";
+	case SVM_IOCTL_UNPIN_MEMORY:
+		return "unpin memory";
 #endif
 	default:
 		return "unsupported";
@@ -231,7 +234,36 @@ static int svm_remove_core(struct device *dev, void *data)
 
 	return 0;
 }
+
 #ifndef CONFIG_ACPI
+static struct svm_sdma *svm_find_sdma(struct svm_process *process,
+				unsigned long addr, int nr_pages)
+{
+	struct rb_node *node = process->sdma_list.rb_node;
+
+	mutex_lock(&process->mutex);
+	while (node) {
+		struct svm_sdma *sdma = NULL;
+
+		sdma = rb_entry(node, struct svm_sdma, node);
+		if (addr < sdma->addr)
+			node = node->rb_left;
+		else if (addr > sdma->addr)
+			node = node->rb_right;
+		else if (nr_pages < sdma->nr_pages)
+			node = node->rb_left;
+		else if (nr_pages > sdma->nr_pages)
+			node = node->rb_right;
+		else {
+			mutex_unlock(&process->mutex);
+			return sdma;
+		}
+	}
+	mutex_unlock(&process->mutex);
+
+	return NULL;
+}
+
 static int svm_insert_sdma(struct svm_process *process, struct svm_sdma *sdma)
 {
 	struct rb_node **p = &process->sdma_list.rb_node;
@@ -268,6 +300,39 @@ static int svm_insert_sdma(struct svm_process *process, struct svm_sdma *sdma)
 	mutex_unlock(&process->mutex);
 
 	return 0;
+}
+
+static void svm_remove_sdma(struct svm_process *process,
+			    struct svm_sdma *sdma, bool try_rm)
+{
+	int null_count = 0;
+
+	mutex_lock(&process->mutex);
+
+	if (try_rm && (!atomic64_dec_and_test(&sdma->ref))) {
+		mutex_unlock(&process->mutex);
+		return;
+	}
+
+	rb_erase(&sdma->node, &process->sdma_list);
+	RB_CLEAR_NODE(&sdma->node);
+	mutex_unlock(&process->mutex);
+
+	while (sdma->nr_pages--) {
+		if (sdma->pages[sdma->nr_pages] == NULL) {
+			pr_err("null pointer, nr_pages:%d.\n", sdma->nr_pages);
+			null_count++;
+			continue;
+		}
+
+		put_page(sdma->pages[sdma->nr_pages]);
+	}
+
+	if (null_count)
+		dump_stack();
+
+	kfree(sdma->pages);
+	kfree(sdma);
 }
 
 static int svm_pin_pages(unsigned long addr, int nr_pages,
@@ -376,6 +441,63 @@ out:
 
 	return err;
 }
+
+static int svm_unpin_memory(unsigned long __user *arg)
+{
+	int err = 0, nr_pages;
+	struct svm_sdma *sdma = NULL;
+	unsigned long addr, size, asid;
+	struct svm_process *process = NULL;
+
+	if (arg == NULL)
+		return -EINVAL;
+
+	if (get_user(addr, arg))
+		return -EFAULT;
+
+	if (get_user(size, arg + 1))
+		return -EFAULT;
+
+	asid = mm_context_get(current->mm);
+	if (!asid)
+		return -ENOSPC;
+
+	addr &= PAGE_MASK;
+	nr_pages = (PAGE_ALIGN(size + addr) >> PAGE_SHIFT) -
+		   (addr >> PAGE_SHIFT);
+
+	spin_lock(&svm_process_lock);
+	process = find_svm_process(asid);
+	if (process == NULL) {
+		spin_unlock(&svm_process_lock);
+		err = -ESRCH;
+		goto out;
+	}
+	spin_unlock(&svm_process_lock);
+
+	sdma = svm_find_sdma(process, addr, nr_pages);
+	if (sdma == NULL) {
+		err = -ESRCH;
+		goto out;
+	}
+
+	svm_remove_sdma(process, sdma, true);
+
+out:
+	mm_context_put(current->mm);
+
+	return err;
+}
+
+static void svm_unpin_all(struct svm_process *process)
+{
+	struct rb_node *node = NULL;
+
+	while ((node = rb_first(&process->sdma_list)))
+		svm_remove_sdma(process,
+				rb_entry(node, struct svm_sdma, node),
+				false);
+}
 #endif
 
 static int svm_bind_core(
@@ -437,6 +559,9 @@ static void svm_process_free(struct rcu_head *rcu)
 	struct svm_process *process = NULL;
 
 	process = container_of(rcu, struct svm_process, rcu);
+#ifndef CONFIG_ACPI
+	svm_unpin_all(process);
+#endif
 	mm_context_put(process->mm);
 	kfree(process);
 }
@@ -1280,6 +1405,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 		break;
 	case SVM_IOCTL_PIN_MEMORY:
 		err = svm_pin_memory((unsigned long __user *)arg);
+		break;
+	case SVM_IOCTL_UNPIN_MEMORY:
+		err = svm_unpin_memory((unsigned long __user *)arg);
 		break;
 #endif
 	default:
