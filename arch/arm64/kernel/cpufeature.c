@@ -849,6 +849,7 @@ has_cpuid_feature(const struct arm64_cpu_capabilities *entry, int scope)
 	return feature_matches(val, entry);
 }
 
+#if defined(CONFIG_AS_LSE) && defined(CONFIG_ARM64_LSE_ATOMICS)
 static bool has_cpuid_feature_lse(const struct arm64_cpu_capabilities *entry,
 				  int scope)
 {
@@ -860,6 +861,7 @@ static bool has_cpuid_feature_lse(const struct arm64_cpu_capabilities *entry,
 
 	return has_cpuid_feature(entry, scope);
 }
+#endif
 
 static bool has_useable_gicv3_cpuif(const struct arm64_cpu_capabilities *entry, int scope)
 {
