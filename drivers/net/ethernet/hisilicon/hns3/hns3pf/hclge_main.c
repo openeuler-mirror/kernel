@@ -5524,7 +5524,6 @@ static int hclge_fd_update_rule_list(struct hclge_dev *hdev,
 	if (is_add && !new_rule)
 		return -EINVAL;
 
-	spin_lock_bh(&hdev->fd_rule_lock);
 	hlist_for_each_entry_safe(rule, node2,
 				  &hdev->fd_rule_list, rule_node) {
 		if (rule->location >= location)
@@ -5542,13 +5541,9 @@ static int hclge_fd_update_rule_list(struct hclge_dev *hdev,
 				hdev->fd_active_type = HCLGE_FD_RULE_NONE;
 			clear_bit(location, hdev->fd_bmap);
 
-			spin_unlock_bh(&hdev->fd_rule_lock);
-
 			return 0;
 		}
 	} else if (!is_add) {
-		spin_unlock_bh(&hdev->fd_rule_lock);
-
 		dev_err(&hdev->pdev->dev,
 			"delete fail, rule %u is inexistent\n",
 			location);
@@ -5565,8 +5560,6 @@ static int hclge_fd_update_rule_list(struct hclge_dev *hdev,
 	set_bit(location, hdev->fd_bmap);
 	hdev->hclge_fd_rule_num++;
 	hdev->fd_active_type = new_rule->rule_type;
-
-	spin_unlock_bh(&hdev->fd_rule_lock);
 
 	return 0;
 }
@@ -5827,9 +5820,14 @@ static int hclge_add_fd_entry(struct hnae3_handle *handle,
 	/* to avoid rule conflict, when user configure rule by ethtool,
 	 * we need to clear all arfs rules
 	 */
+	spin_lock_bh(&hdev->fd_rule_lock);
 	hclge_clear_arfs_rules(handle);
 
-	return hclge_fd_config_rule(hdev, rule);
+	ret = hclge_fd_config_rule(hdev, rule);
+
+	spin_unlock_bh(&hdev->fd_rule_lock);
+
+	return ret;
 }
 
 static int hclge_del_fd_entry(struct hnae3_handle *handle,
@@ -5859,9 +5857,15 @@ static int hclge_del_fd_entry(struct hnae3_handle *handle,
 	if (ret)
 		return ret;
 
-	return hclge_fd_update_rule_list(hdev, NULL, fs->location, false);
+	spin_lock_bh(&hdev->fd_rule_lock);
+	ret = hclge_fd_update_rule_list(hdev, NULL, fs->location, false);
+
+	spin_unlock_bh(&hdev->fd_rule_lock);
+
+	return ret;
 }
 
+/* make sure being called after lock up with fd_rule_lock */
 static void hclge_del_all_fd_entries(struct hnae3_handle *handle,
 				     bool clear_list)
 {
@@ -5880,7 +5884,6 @@ static void hclge_del_all_fd_entries(struct hnae3_handle *handle,
 				     NULL, false);
 
 	if (clear_list) {
-		spin_lock_bh(&hdev->fd_rule_lock);
 		hlist_for_each_entry_safe(rule, node, &hdev->fd_rule_list,
 					  rule_node) {
 			hlist_del(&rule->rule_node);
@@ -5891,8 +5894,6 @@ static void hclge_del_all_fd_entries(struct hnae3_handle *handle,
 		hdev->fd_active_type = HCLGE_FD_RULE_NONE;
 		bitmap_zero(hdev->fd_bmap,
 			    hdev->fd_cfg.rule_num[HCLGE_FD_STAGE_1]);
-
-		spin_unlock_bh(&hdev->fd_rule_lock);
 	}
 }
 
@@ -5915,6 +5916,7 @@ static int hclge_restore_fd_entries(struct hnae3_handle *handle)
 	if (!hdev->fd_en)
 		return 0;
 
+	spin_lock_bh(&hdev->fd_rule_lock);
 	hlist_for_each_entry_safe(rule, node, &hdev->fd_rule_list, rule_node) {
 		ret = hclge_config_action(hdev, HCLGE_FD_STAGE_1, rule);
 		if (!ret)
@@ -5933,6 +5935,8 @@ static int hclge_restore_fd_entries(struct hnae3_handle *handle)
 
 	if (hdev->hclge_fd_rule_num)
 		hdev->fd_active_type = HCLGE_FD_EP_ACTIVE;
+
+	spin_unlock_bh(&hdev->fd_rule_lock);
 
 	return 0;
 }
@@ -6312,15 +6316,14 @@ static int hclge_add_fd_entry_by_arfs(struct hnae3_handle *h, u16 queue_id,
 		}
 
 		set_bit(bit_id, hdev->fd_bmap);
-
-		spin_unlock_bh(&hdev->fd_rule_lock);
-
 		rule->location = bit_id;
 		rule->flow_id = flow_id;
 		rule->queue_id = queue_id;
 		hclge_fd_build_arfs_rule(&new_tuples, rule);
-
 		ret = hclge_fd_config_rule(hdev, rule);
+
+		spin_unlock_bh(&hdev->fd_rule_lock);
+
 		if (ret)
 			return ret;
 
@@ -6376,6 +6379,7 @@ static void hclge_rfs_filter_expire(struct hclge_dev *hdev)
 #endif
 }
 
+/* make sure being called after lock up with fd_rule_lock */
 static void hclge_clear_arfs_rules(struct hnae3_handle *handle)
 {
 #ifdef CONFIG_RFS_ACCEL
@@ -6420,10 +6424,14 @@ static void hclge_enable_fd(struct hnae3_handle *handle, bool enable)
 
 	hdev->fd_en = enable;
 	clear = hdev->fd_active_type == HCLGE_FD_ARFS_ACTIVE;
-	if (!enable)
+
+	if (!enable) {
+		spin_lock_bh(&hdev->fd_rule_lock);
 		hclge_del_all_fd_entries(handle, clear);
-	else
+		spin_unlock_bh(&hdev->fd_rule_lock);
+	} else {
 		hclge_restore_fd_entries(handle);
+	}
 }
 
 static void hclge_cfg_mac_mode(struct hclge_dev *hdev, bool enable)
@@ -6890,8 +6898,9 @@ static void hclge_ae_stop(struct hnae3_handle *handle)
 	int i;
 
 	set_bit(HCLGE_STATE_DOWN, &hdev->state);
-
+	spin_lock_bh(&hdev->fd_rule_lock);
 	hclge_clear_arfs_rules(handle);
+	spin_unlock_bh(&hdev->fd_rule_lock);
 
 	/* If it is not PF reset, the firmware will disable the MAC,
 	 * so it only need to stop phy here.
