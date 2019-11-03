@@ -1560,6 +1560,21 @@ static int hns3_nic_set_features(struct net_device *netdev,
 	return 0;
 }
 
+static netdev_features_t hns3_features_check(struct sk_buff *skb,
+					     struct net_device *dev,
+					     netdev_features_t features)
+{
+#define HNS3_MAX_HDR_LEN       480U
+
+	/* Hardware only supports checksum on the skb with a max header
+	 * len of 480 bytes.
+	 */
+	if (hns3_gso_hdr_len(skb) > HNS3_MAX_HDR_LEN)
+		features &= ~(NETIF_F_CSUM_MASK | NETIF_F_GSO_MASK);
+
+	return features;
+}
+
 #ifdef HAVE_VOID_NDO_GET_STATS64
 static void hns3_nic_get_stats64(struct net_device *netdev,
 				 struct rtnl_link_stats64 *stats)
@@ -2014,6 +2029,7 @@ struct net_device_ops hns3_nic_netdev_ops = {
 	.ndo_do_ioctl		= hns3_nic_do_ioctl,
 	.ndo_change_mtu		= hns3_nic_change_mtu,
 	.ndo_set_features	= hns3_nic_set_features,
+	.ndo_features_check	= hns3_features_check,
 	.ndo_get_stats64	= hns3_nic_get_stats64,
 #if defined(HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV)
 	.ndo_setup_tc		= hns3_nic_setup_tc,
