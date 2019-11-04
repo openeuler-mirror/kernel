@@ -256,6 +256,14 @@ CONFIG_ARCH_PROC_KCORE_TEXT=y
 # CONFIG_ARCH_LAYERSCAPE is not set
 # CONFIG_ARCH_LG1K is not set
 CONFIG_ARCH_HISI=y
+
+#
+# Hisilicon platform type
+#
+
+# CONFIG_ARCH_ASCEND is not set
+# CONFIG_ARCH_MINI is not set
+
 # CONFIG_ARCH_MEDIATEK is not set
 # CONFIG_ARCH_MESON is not set
 # CONFIG_ARCH_MVEBU is not set
