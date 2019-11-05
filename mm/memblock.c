@@ -792,7 +792,14 @@ int __init_memblock memblock_remove(phys_addr_t base, phys_addr_t size)
 	return memblock_remove_range(&memblock.memory, base, size);
 }
 
-
+/**
+ * memblock_free - free boot memory block
+ * @base: phys starting address of the  boot memory block
+ * @size: size of the boot memory block in bytes
+ *
+ * Free boot memory block previously allocated by memblock_alloc_xx() API.
+ * The freeing memory will not be released to the buddy allocator.
+ */
 int __init_memblock memblock_free(phys_addr_t base, phys_addr_t size)
 {
 	phys_addr_t end = base + size - 1;
@@ -1584,19 +1591,6 @@ void * __init memblock_virt_alloc_try_nid(
 	return NULL;
 }
 #endif
-
-/**
- * __memblock_free_early - free boot memory block
- * @base: phys starting address of the  boot memory block
- * @size: size of the boot memory block in bytes
- *
- * Free boot memory block previously allocated by memblock_virt_alloc_xx() API.
- * The freeing memory will not be released to the buddy allocator.
- */
-void __init __memblock_free_early(phys_addr_t base, phys_addr_t size)
-{
-	memblock_free(base, size);
-}
 
 /**
  * __memblock_free_late - free bootmem block pages directly to buddy allocator

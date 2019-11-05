@@ -9,6 +9,7 @@
 #include <linux/mm_types.h>
 #include <asm/dma.h>
 #include <asm/processor.h>
+#include <linux/memblock.h>
 
 /*
  *  simple boot-time physical memory area allocator.
@@ -251,13 +252,13 @@ static inline void * __init memblock_virt_alloc_node_nopanic(
 static inline void __init memblock_free_early(
 					phys_addr_t base, phys_addr_t size)
 {
-	__memblock_free_early(base, size);
+	memblock_free(base, size);
 }
 
 static inline void __init memblock_free_early_nid(
 				phys_addr_t base, phys_addr_t size, int nid)
 {
-	__memblock_free_early(base, size);
+	memblock_free(base, size);
 }
 
 static inline void __init memblock_free_late(
