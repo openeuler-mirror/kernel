@@ -401,6 +401,12 @@ struct page __init *sparse_mem_map_populate(unsigned long pnum, int nid,
 static void *sparsemap_buf __meminitdata;
 static void *sparsemap_buf_end __meminitdata;
 
+static inline void __meminit sparse_buffer_free(unsigned long size)
+{
+	WARN_ON(!sparsemap_buf || size == 0);
+	memblock_free_early(__pa(sparsemap_buf), size);
+}
+
 static void __init sparse_buffer_init(unsigned long size, int nid)
 {
 	WARN_ON(sparsemap_buf);	/* forgot to call sparse_buffer_fini()? */
@@ -416,7 +422,7 @@ static void __init sparse_buffer_fini(void)
 	unsigned long size = sparsemap_buf_end - sparsemap_buf;
 
 	if (sparsemap_buf && size > 0)
-		memblock_free_early(__pa(sparsemap_buf), size);
+		sparse_buffer_free(size);
 	sparsemap_buf = NULL;
 }
 
@@ -428,8 +434,12 @@ void * __meminit sparse_buffer_alloc(unsigned long size)
 		ptr = PTR_ALIGN(sparsemap_buf, size);
 		if (ptr + size > sparsemap_buf_end)
 			ptr = NULL;
-		else
+		else {
+			/* Free redundant aligned space */
+			if ((unsigned long)(ptr - sparsemap_buf) > 0)
+				sparse_buffer_free((unsigned long)(ptr - sparsemap_buf));
 			sparsemap_buf = ptr + size;
+		}
 	}
 	return ptr;
 }
