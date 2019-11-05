@@ -2885,7 +2885,7 @@ static int hclge_get_status(struct hnae3_handle *handle)
 
 static struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf)
 {
-	if (pci_num_vf(hdev->pdev) == 0) {
+	if (!pci_num_vf(hdev->pdev)) {
 		dev_err(&hdev->pdev->dev,
 			"SRIOV is disabled, can not get vport(%d) info.\n", vf);
 		return NULL;
