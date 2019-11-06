@@ -1529,6 +1529,9 @@ static unsigned long svm_get_unmapped_area(struct file *file,
 		struct vm_area_struct *vma = NULL;
 
 		addr = ALIGN(addr, len);
+		if (!mmap_va32bit_check(addr, len, flags))
+			return -ENOMEM;
+
 		vma = find_vma(mm, addr);
 		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
 		   (vma == NULL || addr + len <= vm_start_gap(vma)))
@@ -1539,8 +1542,10 @@ static unsigned long svm_get_unmapped_area(struct file *file,
 	info.length = len;
 	info.low_limit = max(PAGE_SIZE, mmap_min_addr);
 	info.high_limit = mm->mmap_base;
+	/* the addr will be get must align to the size of l2buf */
 	info.align_mask = ((len >> PAGE_SHIFT) - 1) << PAGE_SHIFT;
 	info.align_offset = pgoff << PAGE_SHIFT;
+	mmap_va32bit_set_limit(&info, flags);
 	addr = vm_unmapped_area(&info);
 
 	if (offset_in_page(addr)) {
@@ -1548,6 +1553,7 @@ static unsigned long svm_get_unmapped_area(struct file *file,
 		info.flags = 0;
 		info.low_limit = TASK_UNMAPPED_BASE;
 		info.high_limit = TASK_SIZE;
+		mmap_va32bit_set_limit(&info, flags);
 		addr = vm_unmapped_area(&info);
 	}
 
