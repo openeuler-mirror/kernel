@@ -833,7 +833,7 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 		err = acpi_dma_configure(&cdev->dev, attr);
 		if (err) {
 			dev_dbg(&cdev->dev, "acpi_dma_configure failed\n");
-			goto err_unregister_dev;
+			return err;
 		}
 	}
 
@@ -845,43 +845,30 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 
 	cdev->group = iommu_group_get(&cdev->dev);
 	if (IS_ERR_OR_NULL(cdev->group)) {
-		err = -ENXIO;
 		dev_err(&cdev->dev, "smmu is not right configured\n");
-		goto err_unregister_dev;
+		return -ENXIO;
 	}
 
 	cdev->domain = iommu_domain_alloc(sdev->dev->bus);
 	if (cdev->domain == NULL) {
-		err = -ENOMEM;
 		dev_info(&cdev->dev, "failed to alloc domain\n");
-		goto err_put_group;
+		return -ENOMEM;
 	}
 
 	err = iommu_attach_group(cdev->domain, cdev->group);
 	if (err) {
 		dev_err(&cdev->dev, "failed group to domain\n");
-		goto err_free_domain;
+		return err;
 	}
 
 	err = iommu_sva_device_init(&cdev->dev, IOMMU_SVA_FEAT_IOPF,
 			UINT_MAX, 0);
 	if (err) {
 		dev_err(&cdev->dev, "failed to init sva device\n");
-		goto err_detach_group;
+		return err;
 	}
 
 	return 0;
-
-err_detach_group:
-	iommu_detach_group(cdev->domain, cdev->group);
-err_free_domain:
-	iommu_domain_free(cdev->domain);
-err_put_group:
-	iommu_group_put(cdev->group);
-err_unregister_dev:
-	device_unregister(&cdev->dev);
-
-	return err;
 }
 
 static int svm_init_core(struct svm_device *sdev)
@@ -962,7 +949,7 @@ static int svm_of_add_core(struct svm_device *sdev, struct device_node *np)
 	err = of_dma_configure(&cdev->dev, np, true);
 	if (err) {
 		dev_dbg(&cdev->dev, "of_dma_configure failed\n");
-		goto err_unregister_dev;
+		return err;
 	}
 
 	err = of_address_to_resource(np, 0, &res);
@@ -975,9 +962,8 @@ static int svm_of_add_core(struct svm_device *sdev, struct device_node *np)
 
 		core_base = ioremap(res.start, resource_size(&res));
 		if (core_base == NULL) {
-			err = -ENOMEM;
 			dev_err(&cdev->dev, "ioremap failed\n");
-			goto err_unregister_dev;
+			return -ENOMEM;
 		}
 
 		writel_relaxed(sid, core_base + CORE_SID);
@@ -987,51 +973,35 @@ static int svm_of_add_core(struct svm_device *sdev, struct device_node *np)
 	/* If core device is smmu bypass, request direct map. */
 	if (cdev->smmu_bypass) {
 		err = iommu_request_dm_for_dev(&cdev->dev);
-		if (err)
-			goto err_unregister_dev;
-
-		return 0;
+		return err;
 	}
 
 	cdev->group = iommu_group_get(&cdev->dev);
 	if (IS_ERR_OR_NULL(cdev->group)) {
-		err = -ENXIO;
 		dev_err(&cdev->dev, "smmu is not right configured\n");
-		goto err_unregister_dev;
+		return -ENXIO;
 	}
 
 	cdev->domain = iommu_domain_alloc(sdev->dev->bus);
 	if (cdev->domain == NULL) {
-		err = -ENOMEM;
 		dev_info(&cdev->dev, "failed to alloc domain\n");
-		goto err_put_group;
+		return -ENOMEM;
 	}
 
 	err = iommu_attach_group(cdev->domain, cdev->group);
 	if (err) {
 		dev_err(&cdev->dev, "failed group to domain\n");
-		goto err_free_domain;
+		return err;
 	}
 
 	err = iommu_sva_device_init(&cdev->dev, IOMMU_SVA_FEAT_IOPF,
 			UINT_MAX, 0);
 	if (err) {
 		dev_err(&cdev->dev, "failed to init sva device\n");
-		goto err_detach_group;
+		return err;
 	}
 
 	return 0;
-
-err_detach_group:
-	iommu_detach_group(cdev->domain, cdev->group);
-err_free_domain:
-	iommu_domain_free(cdev->domain);
-err_put_group:
-	iommu_group_put(cdev->group);
-err_unregister_dev:
-	device_unregister(&cdev->dev);
-
-	return err;
 }
 
 static int svm_init_core(struct svm_device *sdev, struct device_node *np)
@@ -1786,7 +1756,7 @@ err_unregister_misc:
 
 	return err;
 }
-/*svm device remove this is device remove*/
+
 static int svm_device_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
