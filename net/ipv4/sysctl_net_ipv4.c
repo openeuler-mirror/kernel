@@ -545,6 +545,16 @@ static struct ctl_table ipv4_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &zero,
 	},
+#ifdef CONFIG_ARCH_ASCEND
+	{
+		.procname	= "icmp_timestamp_enable",
+		.data		= &sysctl_icmp_timestamp_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+	},
+#endif
 	{
 		.procname	= "udp_mem",
 		.data		= &sysctl_udp_mem,
