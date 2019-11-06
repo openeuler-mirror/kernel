@@ -215,6 +215,10 @@ hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 
 	if (addr) {
 		addr = ALIGN(addr, huge_page_size(h));
+
+		if (!mmap_va32bit_check(addr, len, flags))
+			return -ENOMEM;
+
 		vma = find_vma(mm, addr);
 		if (TASK_SIZE - len >= addr &&
 		    (!vma || addr + len <= vm_start_gap(vma)))
@@ -227,6 +231,9 @@ hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 	info.high_limit = TASK_SIZE;
 	info.align_mask = PAGE_MASK & ~huge_page_mask(h);
 	info.align_offset = 0;
+
+	mmap_va32bit_set_limit(&info, flags);
+
 	return vm_unmapped_area(&info);
 }
 #endif

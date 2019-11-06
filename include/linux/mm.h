@@ -2360,6 +2360,29 @@ struct vm_unmapped_area_info {
 	unsigned long align_offset;
 };
 
+
+#ifdef CONFIG_ARCH_ASCEND
+
+extern int mmap_va32bit_check(unsigned long addr, unsigned long len,
+			      unsigned long flags);
+extern void mmap_va32bit_set_limit(struct vm_unmapped_area_info *info,
+				   unsigned long flags);
+
+#else
+
+static inline int mmap_va32bit_check(unsigned long addr, unsigned long len,
+				     unsigned long flags)
+{
+	return 1;
+}
+
+static inline void mmap_va32bit_set_limit(struct vm_unmapped_area_info *info,
+					  unsigned long flags)
+{
+}
+
+#endif
+
 extern unsigned long unmapped_area(struct vm_unmapped_area_info *info);
 extern unsigned long unmapped_area_topdown(struct vm_unmapped_area_info *info);
 

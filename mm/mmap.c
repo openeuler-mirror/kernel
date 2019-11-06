@@ -1841,6 +1841,38 @@ unacct_error:
 	return error;
 }
 
+#ifdef CONFIG_ARCH_ASCEND
+
+int mmap_va32bit_check(unsigned long addr, unsigned long len,
+		       unsigned long flags)
+{
+	return !(!(flags & MAP_VA32BIT) &&
+		((addr + len) > (TASK_SIZE - MMAP_TOP_4G_SIZE)) &&
+		(addr < TASK_SIZE));
+}
+
+
+void mmap_va32bit_set_limit(struct vm_unmapped_area_info *info,
+			    unsigned long flags)
+{
+	const unsigned long high_limit = TASK_SIZE;
+	const unsigned long divide = TASK_SIZE - MMAP_TOP_4G_SIZE;
+
+	if (info == NULL)
+		return;
+
+	if (flags & MAP_VA32BIT) {
+		info->low_limit = divide;
+		info->high_limit = high_limit;
+	} else {
+		/* low_limit do not need set */
+		if (info->high_limit > divide)
+			info->high_limit = divide;
+	}
+}
+
+#endif
+
 unsigned long unmapped_area(struct vm_unmapped_area_info *info)
 {
 	/*
@@ -2071,6 +2103,10 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
+
+		if (!mmap_va32bit_check(addr, len, flags))
+			return -ENOMEM;
+
 		vma = find_vma_prev(mm, addr, &prev);
 		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
 		    (!vma || addr + len <= vm_start_gap(vma)) &&
@@ -2083,6 +2119,9 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	info.low_limit = mm->mmap_base;
 	info.high_limit = TASK_SIZE;
 	info.align_mask = 0;
+
+	mmap_va32bit_set_limit(&info, flags);
+
 	return vm_unmapped_area(&info);
 }
 #endif
@@ -2112,6 +2151,10 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 	/* requesting a specific address */
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
+
+		if (!mmap_va32bit_check(addr, len, flags))
+			return -ENOMEM;
+
 		vma = find_vma_prev(mm, addr, &prev);
 		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
 				(!vma || addr + len <= vm_start_gap(vma)) &&
@@ -2124,6 +2167,9 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 	info.low_limit = max(PAGE_SIZE, mmap_min_addr);
 	info.high_limit = mm->mmap_base;
 	info.align_mask = 0;
+
+	mmap_va32bit_set_limit(&info, flags);
+
 	addr = vm_unmapped_area(&info);
 
 	/*
@@ -2137,6 +2183,9 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 		info.flags = 0;
 		info.low_limit = TASK_UNMAPPED_BASE;
 		info.high_limit = TASK_SIZE;
+
+		mmap_va32bit_set_limit(&info, flags);
+
 		addr = vm_unmapped_area(&info);
 	}
 
