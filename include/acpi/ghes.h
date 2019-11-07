@@ -134,4 +134,6 @@ struct ghes_mem_err {
 
 extern struct atomic_notifier_head ghes_mem_err_chain;
 
+extern struct blocking_notifier_head ghes_ts_err_chain;
+
 #endif /* GHES_H */

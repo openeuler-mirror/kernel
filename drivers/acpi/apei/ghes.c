@@ -112,6 +112,9 @@ static DEFINE_MUTEX(ghes_list_mutex);
 ATOMIC_NOTIFIER_HEAD(ghes_mem_err_chain);
 EXPORT_SYMBOL(ghes_mem_err_chain);
 
+BLOCKING_NOTIFIER_HEAD(ghes_ts_err_chain);
+EXPORT_SYMBOL(ghes_ts_err_chain);
+
 /*
  * Because the memory area used to transfer hardware error information
  * from BIOS to Linux can be determined only in NMI, IRQ or timer
@@ -509,6 +512,9 @@ static void ghes_do_proc(struct ghes *ghes,
 			struct cper_sec_proc_arm *err = acpi_hest_get_payload(gdata);
 
 			ghes_arm_process_error(ghes, err);
+		} else if (guid_equal(sec_type, &CPER_SEC_TS_CORE)) {
+			blocking_notifier_call_chain(&ghes_ts_err_chain,
+					0, acpi_hest_get_payload(gdata));
 		} else {
 			void *err = acpi_hest_get_payload(gdata);
 
