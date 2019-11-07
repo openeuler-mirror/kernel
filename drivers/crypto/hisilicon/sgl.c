@@ -3,13 +3,11 @@
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include "qm.h"
 
 #define HISI_ACC_SGL_SGE_NR_MIN		1
-#define HISI_ACC_SGL_SGE_NR_MAX		255
-#define HISI_ACC_SGL_SGE_NR_DEF		10
 #define HISI_ACC_SGL_NR_MAX		256
 #define HISI_ACC_SGL_ALIGN_SIZE		64
-#define FORMAT_DECIMAL			10
 #define HISI_ACC_MEM_BLOCK_NR		5
 
 struct acc_hw_sge {
@@ -58,7 +56,7 @@ struct hisi_acc_sgl_pool {
 struct hisi_acc_sgl_pool *hisi_acc_create_sgl_pool(struct device *dev,
 						   u32 count, u32 sge_nr)
 {
-	u32 sgl_size, block_size, sgl_num_per_block, block_num, remain_sgl = 0;
+	u32 sgl_size, block_size, sgl_num_per_block, block_num, remain_sgl;
 	struct hisi_acc_sgl_pool *pool;
 	struct mem_block *block;
 	u32 i, j;
@@ -86,8 +84,10 @@ struct hisi_acc_sgl_pool *hisi_acc_create_sgl_pool(struct device *dev,
 		block[i].sgl = dma_alloc_coherent(dev, block_size,
 						  &block[i].sgl_dma,
 						  GFP_KERNEL);
-		if (!block[i].sgl)
+		if (!block[i].sgl) {
+			dev_err(dev, "Fail to allocate hw SG buffer!\n");
 			goto err_free_mem;
+		}
 
 		block[i].size = block_size;
 	}
@@ -96,8 +96,10 @@ struct hisi_acc_sgl_pool *hisi_acc_create_sgl_pool(struct device *dev,
 		block[i].sgl = dma_alloc_coherent(dev, remain_sgl * sgl_size,
 						  &block[i].sgl_dma,
 						  GFP_KERNEL);
-		if (!block[i].sgl)
+		if (!block[i].sgl) {
+			dev_err(dev, "Fail to allocate remained hw SG buffer!\n");
 			goto err_free_mem;
+		}
 
 		block[i].size = remain_sgl * sgl_size;
 	}
@@ -163,7 +165,7 @@ static struct hisi_acc_hw_sgl *acc_get_sgl(struct hisi_acc_sgl_pool *pool,
 	return (void *)block[block_index].sgl + pool->sgl_size * offset;
 }
 
-static void sgl_map_to_hw_sg(struct scatterlist *sgl,
+static void sg_map_to_hw_sg(struct scatterlist *sgl,
 			    struct acc_hw_sge *hw_sge)
 {
 	hw_sge->buf = sgl->dma_address;
@@ -194,8 +196,10 @@ static void update_hw_sgl_sum_sge(struct hisi_acc_hw_sgl *hw_sgl, u16 sum)
  * This function builds hw sgl according input sgl, user can use hw_sgl_dma
  * as src/dst in its BD. Only support single hw sgl currently.
  */
-struct hisi_acc_hw_sgl *hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,
-	struct scatterlist *sgl, struct hisi_acc_sgl_pool *pool,
+struct hisi_acc_hw_sgl *
+hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,
+			      struct scatterlist *sgl,
+			      struct hisi_acc_sgl_pool *pool,
 	u32 index, dma_addr_t *hw_sgl_dma)
 {
 	struct hisi_acc_hw_sgl *curr_hw_sgl;
@@ -208,15 +212,20 @@ struct hisi_acc_hw_sgl *hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,
 		return ERR_PTR(-EINVAL);
 
 	sg_n = sg_nents(sgl);
-	if (sg_n > pool->sge_nr)
+	if (sg_n > pool->sge_nr) {
+		dev_err(dev, "the number of entries in input scatterlist is bigger than SGL pool setting.\n");
 		return ERR_PTR(-EINVAL);
+	}
 
 	ret = dma_map_sg(dev, sgl, sg_n, DMA_BIDIRECTIONAL);
-	if (!ret)
+	if (!ret) {
+		dev_err(dev, "DMA mapping for SG error!\n");
 		return ERR_PTR(-EINVAL);
+	}
 
 	curr_hw_sgl = acc_get_sgl(pool, index, &curr_sgl_dma);
 	if (IS_ERR(curr_hw_sgl)) {
+		dev_err(dev, "Get SGL error!\n");
 		dma_unmap_sg(dev, sgl, sg_n, DMA_BIDIRECTIONAL);
 		return ERR_PTR(-ENOMEM);
 	}
@@ -224,7 +233,7 @@ struct hisi_acc_hw_sgl *hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,
 	curr_hw_sge = curr_hw_sgl->sge_entries;
 
 	for_each_sg(sgl, sg, sg_n, i) {
-		sgl_map_to_hw_sg(sg, curr_hw_sge);
+		sg_map_to_hw_sg(sg, curr_hw_sge);
 		inc_hw_sgl_sge(curr_hw_sgl);
 		curr_hw_sge++;
 	}

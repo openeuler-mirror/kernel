@@ -152,18 +152,22 @@ static void hisi_zip_fill_sqe(struct hisi_zip_sqe *sqe, u8 req_type,
 static int hisi_zip_create_qp(struct hisi_qm *qm, struct hisi_zip_qp_ctx *ctx,
 			      int alg_type, int req_type)
 {
+	struct device *dev = &qm->pdev->dev;
 	struct hisi_qp *qp;
 	int ret;
 
 	qp = hisi_qm_create_qp(qm, alg_type);
-	if (IS_ERR(qp))
+	if (IS_ERR(qp)) {
+		dev_err(dev, "create qp failed!\n");
 		return PTR_ERR(qp);
+	}
 
 	qp->req_type = req_type;
 	qp->qp_ctx = ctx;
 
 	ret = hisi_qm_start_qp(qp, 0);
 	if (ret < 0) {
+		dev_err(dev, "start qp failed!\n");
 		hisi_qm_release_qp(qp);
 		return ret;
 	}
@@ -398,19 +402,27 @@ static int hisi_zip_acomp_init(struct crypto_acomp *tfm)
 {
 	const char *alg_name = crypto_tfm_alg_name(&tfm->base);
 	struct hisi_zip_ctx *ctx = crypto_tfm_ctx(&tfm->base);
+	struct device *dev;
 	int ret;
 
 	ret = hisi_zip_ctx_init(ctx, COMP_NAME_TO_TYPE(alg_name));
-	if (ret)
+	if (ret) {
+		pr_err("Init ctx failed!\n");
 		return ret;
+	}
 
+	dev = &ctx->qp_ctx[0].qp->qm->pdev->dev;
 	ret = hisi_zip_create_req_q(ctx);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "Create request queue failed!\n ");
 		goto err_ctx_exit;
+	}
 
 	ret = hisi_zip_create_sgl_pool(ctx);
-	if (ret)
+	if (ret) {
+		dev_err(dev, "Create sgl pool failed!\n ");
 		goto err_release_req_q;
+	}
 
 	hisi_zip_set_acomp_cb(ctx, hisi_zip_acomp_cb);
 
@@ -440,8 +452,10 @@ static int add_comp_head(struct scatterlist *dst, u8 req_type)
 	int ret;
 
 	ret = sg_copy_from_buffer(dst, sg_nents(dst), head, head_size);
-	if (ret != head_size)
+	if (ret != head_size) {
+		pr_err("The head size of buffer is wrong!\n");
 		return -ENOMEM;
+	}
 
 	return head_size;
 }
@@ -563,14 +577,17 @@ static int hisi_zip_do_work(struct hisi_zip_req *req,
 
 	req->hw_src = hisi_acc_sg_buf_map_to_hw_sgl(dev, req->src, pool,
 						    req->req_id << 1, &input);
-	if (IS_ERR(req->hw_src))
+	if (IS_ERR(req->hw_src)) {
+		dev_err(dev, "the src map to hw SGL failed!\n");
 		return PTR_ERR(req->hw_src);
+	}
 	req->dma_src = input;
 
 	req->hw_dst = hisi_acc_sg_buf_map_to_hw_sgl(dev, req->dst, pool,
 						    (req->req_id << 1) + 1,
 						    &output);
 	if (IS_ERR(req->hw_dst)) {
+		dev_err(dev, "the dst map to hw SGL failed!\n");
 		ret = PTR_ERR(req->hw_dst);
 		goto err_unmap_input;
 	}
@@ -583,8 +600,10 @@ static int hisi_zip_do_work(struct hisi_zip_req *req,
 
 	/* send command to start a task */
 	ret = hisi_qp_send(qp, zip_sqe);
-	if (ret < 0)
+	if (ret < 0) {
+		dev_dbg_ratelimited(dev, "send task message failed!\n");
 		goto err_unmap_output;
+	}
 
 	return -EINPROGRESS;
 
@@ -599,6 +618,7 @@ static int hisi_zip_acompress(struct acomp_req *acomp_req)
 {
 	struct hisi_zip_ctx *ctx = crypto_tfm_ctx(acomp_req->base.tfm);
 	struct hisi_zip_qp_ctx *qp_ctx = &ctx->qp_ctx[QPC_COMP];
+	struct device *dev = &qp_ctx->qp->qm->pdev->dev;
 	struct hisi_zip_req *req;
 	int head_size;
 	int ret;
@@ -609,12 +629,16 @@ static int hisi_zip_acompress(struct acomp_req *acomp_req)
 		return -ENOMEM;
 
 	req = hisi_zip_create_req(acomp_req, qp_ctx, head_size, true);
-	if (IS_ERR(req))
+	if (IS_ERR(req)) {
+		dev_err_ratelimited(dev, "create request before compress failed!\n");
 		return PTR_ERR(req);
+	}
 
 	ret = hisi_zip_do_work(req, qp_ctx);
-	if (ret != -EINPROGRESS)
+	if (ret != -EINPROGRESS) {
+		dev_err_ratelimited(dev, "do compress work failed!\n");
 		hisi_zip_remove_req(qp_ctx, req);
+	}
 
 	return ret;
 }
@@ -623,6 +647,7 @@ static int hisi_zip_adecompress(struct acomp_req *acomp_req)
 {
 	struct hisi_zip_ctx *ctx = crypto_tfm_ctx(acomp_req->base.tfm);
 	struct hisi_zip_qp_ctx *qp_ctx = &ctx->qp_ctx[QPC_DECOMP];
+	struct device *dev = &qp_ctx->qp->qm->pdev->dev;
 	struct hisi_zip_req *req;
 	int head_size;
 	int ret;
@@ -632,12 +657,16 @@ static int hisi_zip_adecompress(struct acomp_req *acomp_req)
 		return -ENOMEM;
 
 	req = hisi_zip_create_req(acomp_req, qp_ctx, head_size, false);
-	if (IS_ERR(req))
+	if (IS_ERR(req)) {
+		dev_err_ratelimited(dev, "create request before decompress failed!\n");
 		return PTR_ERR(req);
+	}
 
 	ret = hisi_zip_do_work(req, qp_ctx);
-	if (ret != -EINPROGRESS)
+	if (ret != -EINPROGRESS) {
+		dev_err_ratelimited(dev, "do decompress work failed!\n");
 		hisi_zip_remove_req(qp_ctx, req);
+	}
 
 	return ret;
 }

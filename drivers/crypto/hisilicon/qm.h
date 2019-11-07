@@ -80,6 +80,7 @@
 			 QM_OF_FIFO_OF)
 #define QM_BASE_CE			QM_ECC_1BIT
 
+#define HISI_ACC_SGL_SGE_NR_MAX		255
 #define QM_DFX_QN_SHIFT			16
 
 #define CURRENT_FUN_MASK		GENMASK(5, 0)
