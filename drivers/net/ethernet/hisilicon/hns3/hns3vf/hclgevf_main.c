@@ -1346,7 +1346,6 @@ static int hclgevf_set_vlan_filter(struct hnae3_handle *handle,
 	memcpy(&send_msg.data[HCLGEVF_VLAN_MBX_PROTO_OFFSET], &proto,
 	       sizeof(proto));
 	ret = hclgevf_send_mbx_msg(hdev, &send_msg, true, NULL, 0);
-
 	/* when remove hw vlan filter failed, record the vlan id,
 	 * and try to remove it from hw later, to be consistence
 	 * with stack.
