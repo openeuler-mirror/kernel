@@ -1565,11 +1565,27 @@ static netdev_features_t hns3_features_check(struct sk_buff *skb,
 					     netdev_features_t features)
 {
 #define HNS3_MAX_HDR_LEN       480U
+#define HNS3_MAX_L4_HDR_LEN	60U
+
+	size_t len;
+
+	if (skb->ip_summed != CHECKSUM_PARTIAL)
+		return features;
+
+	if (skb->encapsulation)
+		len = skb_inner_transport_header(skb) - skb->data;
+	else
+		len = skb_transport_header(skb) - skb->data;
+
+	/* Assume L4 is 60 byte as TCP is the only protocol with a
+	 * a flexible value, and it's max len is 60 bytes.
+	 */
+	len += HNS3_MAX_L4_HDR_LEN;
 
 	/* Hardware only supports checksum on the skb with a max header
 	 * len of 480 bytes.
 	 */
-	if (hns3_gso_hdr_len(skb) > HNS3_MAX_HDR_LEN)
+	if (len > HNS3_MAX_HDR_LEN)
 		features &= ~(NETIF_F_CSUM_MASK | NETIF_F_GSO_MASK);
 
 	return features;
