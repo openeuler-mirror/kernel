@@ -5196,4 +5196,28 @@ int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
 }
 EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte);
 
+int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
+				    unsigned long vir_addr,
+				    pgprot_t prot, unsigned long phy_addr)
+{
+	pte_t *ptep, entry;
+	struct hstate *h = &default_hstate;
+
+	ptep = hugetlb_huge_pte_alloc(mm, vir_addr, huge_page_size(h));
+	if (!ptep)
+		return -ENXIO;
+
+	WARN_ON(ptep && !pte_none(*ptep) && !pte_huge(*ptep));
+
+	entry = pfn_pte(phy_addr >> PAGE_SHIFT, prot);
+	entry = huge_pte_mkdirty(entry);
+	entry = huge_pte_mkwrite(entry);
+	entry = pte_mkyoung(entry);
+	entry = pte_mkhuge(entry);
+	entry = pte_mkspecial(entry);
+	set_huge_pte_at(mm, vir_addr, ptep, entry);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte_by_pa);
+
 #endif
