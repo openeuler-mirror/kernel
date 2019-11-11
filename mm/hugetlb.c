@@ -5136,6 +5136,11 @@ EXPORT_SYMBOL_GPL(hugetlb_get_hstate);
  */
 struct page *hugetlb_alloc_hugepage(int nid)
 {
+	VM_WARN_ON(nid < 0 || nid >= MAX_NUMNODES);
+
+	if (nid == NUMA_NO_NODE)
+		nid = numa_mem_id();
+
 	return alloc_huge_page_node(&default_hstate, nid);
 }
 EXPORT_SYMBOL_GPL(hugetlb_alloc_hugepage);
