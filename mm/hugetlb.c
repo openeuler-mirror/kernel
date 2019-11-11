@@ -5122,3 +5122,78 @@ void move_hugetlb_state(struct page *oldpage, struct page *newpage, int reason)
 		spin_unlock(&hugetlb_lock);
 	}
 }
+
+#ifdef CONFIG_ARCH_ASCEND
+
+const struct hstate *hugetlb_get_hstate(void)
+{
+	return &default_hstate;
+}
+EXPORT_SYMBOL_GPL(hugetlb_get_hstate);
+
+/*
+ * Allocate hugepage without reserve
+ */
+struct page *hugetlb_alloc_hugepage(int nid)
+{
+	return alloc_huge_page_node(&default_hstate, nid);
+}
+EXPORT_SYMBOL_GPL(hugetlb_alloc_hugepage);
+
+static pte_t *hugetlb_huge_pte_alloc(struct mm_struct *mm, unsigned long addr,
+				   unsigned long size)
+{
+	pgd_t *pgd;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *pte = NULL;
+
+	pgd = pgd_offset(mm, addr);
+
+	if (pgd_none(*pgd))
+		pud = pud_alloc(mm, pgd, addr);
+	else
+		pud = pud_offset(pgd, addr);
+
+	if (pud) {
+		if (!pud_none(*pud)) {
+			pmd = pmd_offset(pud, addr);
+			if (pmd) {
+				if (!pmd_none(*pmd))
+					pmd_clear(pmd);
+				pte = (pte_t *)pmd;
+			} else {
+				pte = (pte_t *)pmd_alloc(mm, pud, addr);
+			}
+		} else {
+			pte = (pte_t *)pmd_alloc(mm, pud, addr);
+		}
+	}
+
+	return pte;
+}
+
+int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
+			      pgprot_t prot, struct page *hpage)
+{
+	pte_t *ptep, entry;
+	struct hstate *h = &default_hstate;
+
+	ptep = hugetlb_huge_pte_alloc(mm, addr, huge_page_size(h));
+	if (!ptep)
+		return -ENXIO;
+
+	WARN_ON(ptep && !pte_none(*ptep) && !pte_huge(*ptep));
+
+	entry = mk_huge_pte(hpage, prot);
+	entry = huge_pte_mkdirty(entry);
+	entry = huge_pte_mkwrite(entry);
+	entry = pte_mkyoung(entry);
+	entry = pte_mkhuge(entry);
+
+	set_huge_pte_at(mm, addr, ptep, entry);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte);
+
+#endif
