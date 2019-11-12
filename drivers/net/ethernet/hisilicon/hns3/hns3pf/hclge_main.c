@@ -6277,8 +6277,11 @@ static int hclge_add_fd_entry_by_arfs(struct hnae3_handle *h, u16 queue_id,
 	/* when there is already fd rule existed add by user,
 	 * arfs should not work
 	 */
-	if (hdev->fd_active_type == HCLGE_FD_EP_ACTIVE)
+	spin_lock_bh(&hdev->fd_rule_lock);
+	if (hdev->fd_active_type == HCLGE_FD_EP_ACTIVE) {
+		spin_unlock_bh(&hdev->fd_rule_lock);
 		return -EOPNOTSUPP;
+	}
 
 	memset(&new_tuples, 0, sizeof(new_tuples));
 	hclge_fd_get_flow_tuples(fkeys, &new_tuples);
@@ -6288,7 +6291,6 @@ static int hclge_add_fd_entry_by_arfs(struct hnae3_handle *h, u16 queue_id,
 	 * if filter exist with different queue id, modify the filter;
 	 * if filter exist with same queue id, do nothing
 	 */
-	spin_lock_bh(&hdev->fd_rule_lock);
 	rule = hclge_fd_search_flow_keys(hdev, &new_tuples);
 	if (!rule) {
 		bit_id = find_first_zero_bit(hdev->fd_bmap, MAX_FD_FILTER_NUM);
