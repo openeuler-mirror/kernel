@@ -107,9 +107,34 @@ struct shmem_falloc {
 };
 
 #ifdef CONFIG_TMPFS
+#ifdef CONFIG_COHERENT_DEVICE
+static unsigned long ddr_totalram_pages(void)
+{
+	int nid;
+	int zone_type;
+	unsigned long managed_pages = 0;
+	pg_data_t *pgdat;
+
+	for_each_online_node(nid) {
+		if (is_cdm_node(nid))
+			continue;
+		pgdat = NODE_DATA(nid);
+		for (zone_type = 0; zone_type < MAX_NR_ZONES; zone_type++)
+			managed_pages += pgdat->node_zones[zone_type].managed_pages;
+	}
+
+	return managed_pages;
+}
+#else
+static unsigned long ddr_totalram_pages(void)
+{
+	return totalram_pages;
+}
+#endif
+
 static unsigned long shmem_default_max_blocks(void)
 {
-	return totalram_pages / 2;
+	return ddr_totalram_pages() / 2;
 }
 
 static unsigned long shmem_default_max_inodes(void)
