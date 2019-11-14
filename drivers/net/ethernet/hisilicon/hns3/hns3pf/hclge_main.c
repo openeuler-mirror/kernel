@@ -3583,15 +3583,18 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 static bool hclge_reset_err_handle(struct hclge_dev *hdev)
 {
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
+	u32 msix_sts_reg;
+
+	msix_sts_reg = hclge_read_dev(&hdev->hw, HCLGE_MISC_VECTOR_INT_STS);
 
 	if (hdev->reset_pending) {
 		dev_info(&hdev->pdev->dev, "Reset pending %lu\n",
 			 hdev->reset_pending);
 		return true;
-	} else if (hclge_read_dev(&hdev->hw, HCLGE_MISC_VECTOR_INT_STS) &
-		   HCLGE_RESET_INT_M) {
+	} else if (msix_sts_reg & HCLGE_RESET_INT_M) {
 		dev_info(&hdev->pdev->dev,
-			 "reset failed because new reset interrupt\n");
+			 "fail to reset, new reset interrupt is 0x%x\n",
+			 msix_sts_reg);
 		hclge_clear_reset_cause(hdev);
 		return false;
 	} else if (hdev->rst_stats.reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT) {
