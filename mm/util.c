@@ -17,7 +17,6 @@
 
 #include <asm/sections.h>
 #include <linux/uaccess.h>
-#include <linux/oom.h>
 
 #include "internal.h"
 
@@ -727,7 +726,6 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 	if (percpu_counter_read_positive(&vm_committed_as) < allowed)
 		return 0;
 error:
-	hisi_oom_notifier_call(1, NULL);
 	vm_unacct_memory(pages);
 
 	return -ENOMEM;

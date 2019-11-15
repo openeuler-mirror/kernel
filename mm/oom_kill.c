@@ -1047,40 +1047,6 @@ int unregister_oom_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(unregister_oom_notifier);
 
-#ifdef CONFIG_ARCH_ASCEND
-
-int sysctl_enable_oom_killer;
-static BLOCKING_NOTIFIER_HEAD(hisi_oom_notify_list);
-
-int register_hisi_oom_notifier(struct notifier_block *nb)
-{
-	return blocking_notifier_chain_register(&hisi_oom_notify_list, nb);
-}
-EXPORT_SYMBOL_GPL(register_hisi_oom_notifier);
-
-static unsigned long last_jiffies;
-int hisi_oom_notifier_call(unsigned long val, void *v)
-{
-	/* Print time interval to 10 seconds */
-	if (time_after(jiffies, last_jiffies + 10 * HZ)) {
-		pr_warn("HISI_OOM_NOTIFIER: oom type %lu\n", val);
-		dump_stack();
-		show_mem(SHOW_MEM_FILTER_NODES, NULL);
-		dump_tasks(NULL, 0);
-		last_jiffies = jiffies;
-	}
-	return blocking_notifier_call_chain(&hisi_oom_notify_list, val, v);
-}
-EXPORT_SYMBOL_GPL(hisi_oom_notifier_call);
-
-int unregister_hisi_oom_notifier(struct notifier_block *nb)
-{
-	return blocking_notifier_chain_unregister(&hisi_oom_notify_list, nb);
-}
-EXPORT_SYMBOL_GPL(unregister_hisi_oom_notifier);
-
-#endif
-
 /**
  * out_of_memory - kill the "best" process when we run out of memory
  * @oc: pointer to struct oom_control
@@ -1097,11 +1063,6 @@ bool out_of_memory(struct oom_control *oc)
 
 	if (oom_killer_disabled)
 		return false;
-
-	if (!sysctl_enable_oom_killer) {
-		hisi_oom_notifier_call(0, NULL);
-		return false;
-	}
 
 	if (!is_memcg_oom(oc)) {
 		blocking_notifier_call_chain(&oom_notify_list, 0, &freed);
