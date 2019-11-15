@@ -115,6 +115,9 @@ static unsigned long ddr_totalram_pages(void)
 	unsigned long managed_pages = 0;
 	pg_data_t *pgdat;
 
+	if (nodes_empty(cdmmask))
+		return totalram_pages;
+
 	for_each_online_node(nid) {
 		if (is_cdm_node(nid))
 			continue;
