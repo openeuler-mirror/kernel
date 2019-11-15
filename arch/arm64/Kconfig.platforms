@@ -97,25 +97,6 @@ config ARCH_HISI
 	help
 	  This enables support for Hisilicon ARMv8 SoC family
 
-if ARCH_HISI
-
-menu "Hisilicon platform type"
-
-config ARCH_ASCEND
-	bool "Ascend SoC Family"
-	def_bool n
-	help
-	  This enables support for ascend only
-
-config ARCH_MINI
-	bool "Hisilicon Mini SoC"
-	select ARCH_ASCEND
-	help
-	  This enables support for Hisilicon Mini SoC
-endmenu
-
-endif
-
 config ARCH_MEDIATEK
 	bool "MediaTek SoC Family"
 	select ARM_GIC

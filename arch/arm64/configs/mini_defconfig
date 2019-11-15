@@ -241,8 +241,7 @@ CONFIG_ARCH_HISI=y
 #
 # Hisilicon platform type
 #
-CONFIG_ARCH_ASCEND=y
-CONFIG_ARCH_MINI=y
+CONFIG_ARCH_HI1910=y
 # CONFIG_ARCH_MEDIATEK is not set
 # CONFIG_ARCH_MESON is not set
 # CONFIG_ARCH_MVEBU is not set
