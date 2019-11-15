@@ -593,17 +593,11 @@ struct rdists {
 	u32			gicd_typer;
 	bool			has_vlpis;
 	bool			has_direct_lpi;
-#ifdef CONFIG_INIT_ALL_GICR
-	int			nr_gicr;
-#endif
 };
 
 struct irq_domain;
 struct fwnode_handle;
 int its_cpu_init(void);
-#ifdef CONFIG_INIT_ALL_GICR
-int its_cpu_init_others(void __iomem *base, phys_addr_t phys_base, int idx);
-#endif
 int its_init(struct fwnode_handle *handle, struct rdists *rdists,
 	     struct irq_domain *domain);
 int mbi_init(struct fwnode_handle *fwnode, struct irq_domain *parent);

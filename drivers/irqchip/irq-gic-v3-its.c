@@ -1171,15 +1171,9 @@ static int its_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 		}
 	}
 
-#ifdef CONFIG_INIT_ALL_GICR
-	cpu = find_first_bit(cpumask_bits(mask_val), NR_CPUS);
-
-	if (cpu >= gic_rdists->nr_gicr)
-#else
 	cpu = cpumask_any_and(mask_val, cpu_mask);
 
 	if (cpu >= nr_cpu_ids)
-#endif
 		return -EINVAL;
 
 	/* don't set the affinity when the target cpu is same as current one */
@@ -2018,19 +2012,8 @@ static int its_alloc_collections(struct its_node *its)
 {
 	int i;
 
-#ifdef CONFIG_INIT_ALL_GICR
-	int size = gic_rdists->nr_gicr;
-
-	if (size < nr_cpu_ids) {
-		pr_err("Number of GICR is smaller than nr_cpu_ids.\n");
-		return -EINVAL;
-	}
-	its->collections = kcalloc(size, sizeof(*its->collections),
-				   GFP_KERNEL);
-#else
 	its->collections = kcalloc(nr_cpu_ids, sizeof(*its->collections),
 				   GFP_KERNEL);
-#endif
 	if (!its->collections)
 		return -ENOMEM;
 
@@ -2308,169 +2291,6 @@ static void its_cpu_init_collections(void)
 
 	raw_spin_unlock(&its_lock);
 }
-
-#ifdef CONFIG_INIT_ALL_GICR
-static void its_cpu_init_lpis_others(void __iomem *rbase, int cpu)
-{
-	struct page *pend_page;
-	phys_addr_t paddr;
-	u64 val, tmp;
-
-	val = readl_relaxed(rbase + GICR_CTLR);
-	if ((gic_rdists->flags & RDIST_FLAGS_RD_TABLES_PREALLOCATED) &&
-	    (val & GICR_CTLR_ENABLE_LPIS)) {
-		/*
-		 * Check that we get the same property table on all
-		 * RDs. If we don't, this is hopeless.
-		 */
-		paddr = gicr_read_propbaser(rbase + GICR_PROPBASER);
-		paddr &= GENMASK_ULL(51, 12);
-		if (WARN_ON(gic_rdists->prop_table_pa != paddr))
-			add_taint(TAINT_CRAP, LOCKDEP_STILL_OK);
-
-		paddr = gicr_read_pendbaser(rbase + GICR_PENDBASER);
-		paddr &= GENMASK_ULL(51, 16);
-
-		WARN_ON(!gic_check_reserved_range(paddr, LPI_PENDBASE_SZ));
-		its_free_pending_table(gic_data_rdist()->pend_page);
-		gic_data_rdist()->pend_page = NULL;
-
-		goto out;
-	}
-
-	/* If we didn't allocate the pending table yet, do it now */
-	pend_page = its_allocate_pending_table(GFP_NOWAIT);
-	if (!pend_page) {
-		pr_err("Failed to allocate PENDBASE for GICR:%p\n", rbase);
-		return;
-	}
-
-	paddr = page_to_phys(pend_page);
-	pr_info("GICR:%p using LPI pending table @%pa\n",
-		rbase, &paddr);
-
-	WARN_ON(gic_reserve_range(paddr, LPI_PENDBASE_SZ));
-
-	/* Disable LPIs */
-	val = readl_relaxed(rbase + GICR_CTLR);
-	val &= ~GICR_CTLR_ENABLE_LPIS;
-	writel_relaxed(val, rbase + GICR_CTLR);
-
-	/*
-	 * Make sure any change to the table is observable by the GIC.
-	 */
-	dsb(sy);
-
-	/* set PROPBASE */
-	val = (gic_rdists->prop_table_pa |
-	       GICR_PROPBASER_InnerShareable |
-	       GICR_PROPBASER_RaWaWb |
-	       ((LPI_NRBITS - 1) & GICR_PROPBASER_IDBITS_MASK));
-
-	gicr_write_propbaser(val, rbase + GICR_PROPBASER);
-	tmp = gicr_read_propbaser(rbase + GICR_PROPBASER);
-
-	if ((tmp ^ val) & GICR_PROPBASER_SHAREABILITY_MASK) {
-		if (!(tmp & GICR_PROPBASER_SHAREABILITY_MASK)) {
-			/*
-			 * The HW reports non-shareable, we must
-			 * remove the cacheability attributes as
-			 * well.
-			 */
-			val &= ~(GICR_PROPBASER_SHAREABILITY_MASK |
-				 GICR_PROPBASER_CACHEABILITY_MASK);
-			val |= GICR_PROPBASER_nC;
-			gicr_write_propbaser(val, rbase + GICR_PROPBASER);
-		}
-		pr_info_once("GIC: using cache flushing for LPI property table\n");
-		gic_rdists->flags |= RDIST_FLAGS_PROPBASE_NEEDS_FLUSHING;
-	}
-
-	/* set PENDBASE */
-	val = (page_to_phys(pend_page) |
-	       GICR_PENDBASER_InnerShareable |
-	       GICR_PENDBASER_RaWaWb);
-
-	gicr_write_pendbaser(val, rbase + GICR_PENDBASER);
-	tmp = gicr_read_pendbaser(rbase + GICR_PENDBASER);
-
-	if (!(tmp & GICR_PENDBASER_SHAREABILITY_MASK)) {
-		/*
-		 * The HW reports non-shareable, we must remove the
-		 * cacheability attributes as well.
-		 */
-		val &= ~(GICR_PENDBASER_SHAREABILITY_MASK |
-			 GICR_PENDBASER_CACHEABILITY_MASK);
-		val |= GICR_PENDBASER_nC;
-		gicr_write_pendbaser(val, rbase + GICR_PENDBASER);
-	}
-
-	/* Enable LPIs */
-	val = readl_relaxed(rbase + GICR_CTLR);
-	val |= GICR_CTLR_ENABLE_LPIS;
-	writel_relaxed(val, rbase + GICR_CTLR);
-
-	/* Make sure the GIC has seen the above */
-	dsb(sy);
-out:
-	pr_info("GICv3: CPU%d: using %s LPI pending table @%pa\n",
-		cpu, pend_page ? "allocated" : "reserved",	&paddr);
-}
-
-static void its_cpu_init_collection_others(void __iomem *rbase,
-					   phys_addr_t phys_base, int cpu)
-{
-	struct its_node *its;
-
-	raw_spin_lock(&its_lock);
-
-	list_for_each_entry(its, &its_nodes, entry) {
-		u64 target;
-
-		/*
-		 * We now have to bind each collection to its target
-		 * redistributor.
-		 */
-		if (gic_read_typer(its->base + GITS_TYPER) & GITS_TYPER_PTA) {
-			/*
-			 * This ITS wants the physical address of the
-			 * redistributor.
-			 */
-			target = phys_base;
-		} else {
-			/*
-			 * This ITS wants a linear CPU number.
-			 */
-			target = gic_read_typer(rbase + GICR_TYPER);
-			target = GICR_TYPER_CPU_NUMBER(target) << 16;
-		}
-
-		/* Perform collection mapping */
-		its->collections[cpu].target_address = target;
-		its->collections[cpu].col_id = cpu;
-
-		its_send_mapc(its, &its->collections[cpu], 1);
-		its_send_invall(its, &its->collections[cpu]);
-	}
-
-	raw_spin_unlock(&its_lock);
-}
-
-int its_cpu_init_others(void __iomem *base, phys_addr_t phys_base, int cpu)
-{
-	if (!list_empty(&its_nodes)) {
-		if (!(gic_read_typer(base + GICR_TYPER) & GICR_TYPER_PLPIS)) {
-			pr_err("GICR:%p: LPIs not supported\n", base);
-			return -ENXIO;
-		}
-
-		its_cpu_init_lpis_others(base, cpu);
-		its_cpu_init_collection_others(base, phys_base, cpu);
-	}
-
-	return 0;
-}
-#endif
 
 static struct its_device *its_find_device(struct its_node *its, u32 dev_id)
 {
@@ -4167,9 +3987,6 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
 	bool has_v4 = false;
 	int err;
 
-#ifdef CONFIG_INIT_ALL_GICR
-	gic_rdists = rdists;
-#endif
 	its_parent = parent_domain;
 	of_node = to_of_node(handle);
 	if (of_node)
