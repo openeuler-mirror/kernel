@@ -372,7 +372,7 @@ struct page *alloc_huge_page_vma(struct hstate *h, struct vm_area_struct *vma,
 int huge_add_to_page_cache(struct page *page, struct address_space *mapping,
 			pgoff_t idx);
 
-#ifdef CONFIG_ARCH_ASCEND
+#ifdef CONFIG_ARM64
 const struct hstate *hugetlb_get_hstate(void);
 struct page *hugetlb_alloc_hugepage(int nid);
 int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,

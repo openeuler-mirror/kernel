@@ -685,11 +685,7 @@ bool icmp_global_allow(void);
 extern int sysctl_icmp_msgs_per_sec;
 extern int sysctl_icmp_msgs_burst;
 
-#ifdef CONFIG_ARCH_ASCEND
 extern int sysctl_icmp_timestamp_enable;
-#else
-#define sysctl_icmp_timestamp_enable 1
-#endif
 
 #ifdef CONFIG_PROC_FS
 int ip_misc_proc_init(void);

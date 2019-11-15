@@ -232,9 +232,8 @@ static inline void icmp_xmit_unlock(struct sock *sk)
 
 int sysctl_icmp_msgs_per_sec __read_mostly = 1000;
 int sysctl_icmp_msgs_burst __read_mostly = 50;
-#ifdef CONFIG_ARCH_ASCEND
-int sysctl_icmp_timestamp_enable __read_mostly;
-#endif
+
+int sysctl_icmp_timestamp_enable __read_mostly = 1;
 
 static struct {
 	spinlock_t	lock;

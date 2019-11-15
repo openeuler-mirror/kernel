@@ -5123,8 +5123,7 @@ void move_hugetlb_state(struct page *oldpage, struct page *newpage, int reason)
 	}
 }
 
-#ifdef CONFIG_ARCH_ASCEND
-
+#ifdef CONFIG_ARM64
 const struct hstate *hugetlb_get_hstate(void)
 {
 	return &default_hstate;
@@ -5224,5 +5223,4 @@ int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte_by_pa);
-
 #endif
