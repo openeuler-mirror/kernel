@@ -410,11 +410,7 @@ iopf_queue_alloc(const char *name, iopf_queue_flush_t flush, void *cookie)
 	 * that's dealt with, the high-level function can handle groups out of
 	 * order.
 	 */
-#ifdef CONFIG_ARCH_ASCEND
-	queue->wq = alloc_workqueue("iopf_queue/%s", WQ_HIGHPRI, 0, name);
-#else
 	queue->wq = alloc_workqueue("iopf_queue/%s", WQ_UNBOUND, 0, name);
-#endif
 	if (!queue->wq) {
 		kfree(queue);
 		return NULL;
