@@ -647,10 +647,6 @@ struct arm_smmu_device {
 	struct mutex			streams_mutex;
 
 	struct iopf_queue		*iopf_queue;
-
-#define ARM_SUMMU_STATE_BYPASS		(1 << 0)
-#define ARM_SUMMU_STATE_SUSPEND		(1 << 1)
-	unsigned int			state;
 };
 
 struct arm_smmu_stream {
@@ -3378,9 +3374,6 @@ static int arm_smmu_setup_irqs(struct arm_smmu_device *smmu)
 		return ret;
 	}
 
-	if (smmu->state & ARM_SUMMU_STATE_SUSPEND)
-		goto irq_requested;
-
 	irq = smmu->combined_irq;
 	if (irq) {
 		/*
@@ -3400,7 +3393,6 @@ static int arm_smmu_setup_irqs(struct arm_smmu_device *smmu)
 	if (smmu->features & ARM_SMMU_FEAT_PRI)
 		irqen_flags |= IRQ_CTRL_PRIQ_IRQEN;
 
-irq_requested:
 	/* Enable interrupt generation on the SMMU */
 	ret = arm_smmu_write_reg_sync(smmu, irqen_flags,
 				      ARM_SMMU_IRQ_CTRL, ARM_SMMU_IRQ_CTRLACK);
@@ -3947,9 +3939,6 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 	/* Set bypass mode according to firmware probing result */
 	bypass = !!ret;
 
-	if (bypass)
-		smmu->state = smmu->state | ARM_SUMMU_STATE_BYPASS;
-
 	/* Base address */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (resource_size(res) + 1 < arm_smmu_resource_size(smmu)) {
@@ -4065,47 +4054,10 @@ static const struct of_device_id arm_smmu_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, arm_smmu_of_match);
 
-#ifdef CONFIG_PM_SLEEP
-
-static int arm_smmu_suspend(struct device *dev)
-{
-	struct arm_smmu_device *smmu = dev_get_drvdata(dev);
-
-	dev_info(smmu->dev, "smmu device is suspend\n");
-	smmu->state = smmu->state | ARM_SUMMU_STATE_SUSPEND;
-
-	return 0;
-}
-
-static int arm_smmu_resume(struct device *dev)
-{
-	struct arm_smmu_device *smmu = dev_get_drvdata(dev);
-
-	dev_info(smmu->dev, "smmu device is resumed\n");
-	arm_smmu_device_reset(smmu, smmu->state & ARM_SUMMU_STATE_BYPASS);
-	smmu->state = smmu->state & ~ARM_SUMMU_STATE_SUSPEND;
-
-	return 0;
-}
-
-static const struct dev_pm_ops arm_smmu_pm_ops = {
-	.suspend = arm_smmu_suspend,
-	.resume = arm_smmu_resume,
-};
-
-#define ARM_SMMU_PM_OPS			(&arm_smmu_pm_ops)
-
-#else
-
-#define ARM_SMMU_PM_OPS			NULL
-
-#endif
-
 static struct platform_driver arm_smmu_driver = {
 	.driver	= {
 		.name		= "arm-smmu-v3",
 		.of_match_table	= of_match_ptr(arm_smmu_of_match),
-		.pm		= ARM_SMMU_PM_OPS,
 	},
 	.probe	= arm_smmu_device_probe,
 	.remove	= arm_smmu_device_remove,
