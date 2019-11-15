@@ -43,7 +43,7 @@
 #include <linux/pci-ats.h>
 #include <linux/platform_device.h>
 #include <linux/sched/mm.h>
-#include <linux/irq.h>
+
 #include <linux/amba/bus.h>
 
 #include "io-pgtable.h"
@@ -596,10 +596,7 @@ struct arm_smmu_device {
 
 #define ARM_SMMU_OPT_SKIP_PREFETCH	(1 << 0)
 #define ARM_SMMU_OPT_PAGE0_REGS_ONLY	(1 << 1)
-#define ARM_SMMU_OPT_BROKEN_SPI		(1 << 2)
 	u32				options;
-
-	u64				spi_base;
 
 	struct arm_smmu_cmdq		cmdq;
 	struct arm_smmu_evtq		evtq;
@@ -716,7 +713,6 @@ struct arm_smmu_option_prop {
 static struct arm_smmu_option_prop arm_smmu_options[] = {
 	{ ARM_SMMU_OPT_SKIP_PREFETCH, "hisilicon,broken-prefetch-cmd" },
 	{ ARM_SMMU_OPT_PAGE0_REGS_ONLY, "cavium,cn9900-broken-page1-regspace"},
-	{ ARM_SMMU_OPT_BROKEN_SPI, "hisilicon,broken-spi" },
 	{ 0, NULL},
 };
 
@@ -3323,30 +3319,6 @@ static void arm_smmu_setup_msis(struct arm_smmu_device *smmu)
 	devm_add_action(dev, arm_smmu_free_msis, dev);
 }
 
-static void arm_smmu_fix_broken_spi(struct arm_smmu_device *smmu)
-{
-	struct irq_desc *desc;
-	u32 event_hwirq = 0;
-	u32 gerror_hwirq = 0;
-
-	desc = irq_to_desc(smmu->gerr_irq);
-	if (!desc)
-		gerror_hwirq = desc->irq_data.hwirq;
-
-	desc = irq_to_desc(smmu->evtq.q.irq);
-	if (!desc)
-		event_hwirq = desc->irq_data.hwirq;
-
-	writeq_relaxed(smmu->spi_base, smmu->base + ARM_SMMU_GERROR_IRQ_CFG0);
-	writeq_relaxed(smmu->spi_base, smmu->base + ARM_SMMU_EVTQ_IRQ_CFG0);
-
-	writel_relaxed(gerror_hwirq, smmu->base + ARM_SMMU_GERROR_IRQ_CFG1);
-	writel_relaxed(event_hwirq, smmu->base + ARM_SMMU_EVTQ_IRQ_CFG1);
-
-	writel_relaxed(0x0, smmu->base + ARM_SMMU_GERROR_IRQ_CFG2);
-	writel_relaxed(0x0, smmu->base + ARM_SMMU_EVTQ_IRQ_CFG2);
-}
-
 static void arm_smmu_setup_unique_irqs(struct arm_smmu_device *smmu)
 {
 	int irq, ret;
@@ -3429,9 +3401,6 @@ static int arm_smmu_setup_irqs(struct arm_smmu_device *smmu)
 		irqen_flags |= IRQ_CTRL_PRIQ_IRQEN;
 
 irq_requested:
-	if (smmu->options & ARM_SMMU_OPT_BROKEN_SPI)
-		arm_smmu_fix_broken_spi(smmu);
-
 	/* Enable interrupt generation on the SMMU */
 	ret = arm_smmu_write_reg_sync(smmu, irqen_flags,
 				      ARM_SMMU_IRQ_CTRL, ARM_SMMU_IRQ_CTRLACK);
@@ -3937,11 +3906,6 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev,
 
 	parse_driver_options(smmu);
 
-	if (smmu->options & ARM_SMMU_OPT_BROKEN_SPI)
-		if (of_property_read_u64(dev->of_node, "#iommu-spi-base",
-		   &smmu->spi_base))
-			dev_err(dev, "missing irq base address\n");
-
 	if (of_dma_is_coherent(dev->of_node))
 		smmu->features |= ARM_SMMU_FEAT_COHERENCY;
 
@@ -4020,9 +3984,6 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 	ret = arm_smmu_device_hw_probe(smmu);
 	if (ret)
 		return ret;
-
-	if (smmu->options & ARM_SMMU_OPT_BROKEN_SPI)
-		smmu->features &= ~ARM_SMMU_FEAT_MSI;
 
 	/* Initialise in-memory data structures */
 	ret = arm_smmu_init_structures(smmu);
