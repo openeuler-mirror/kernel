@@ -5176,3 +5176,26 @@ out_disable:
 DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_VENDOR_ID_NVIDIA, 0x13b1,
 			      PCI_CLASS_DISPLAY_VGA, 8,
 			      quirk_reset_lenovo_thinkpad_p50_nvgpu);
+
+static void pci_quirk_hisi_fixup_class(struct pci_dev *dev)
+{
+	dev->class = PCI_BASE_CLASS_NETWORK << 8;
+	pci_info(dev, "force hisi class type to network\n");
+}
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_HUAWEI, PCIE_DEVICE_ID_HISI_5896,
+			pci_quirk_hisi_fixup_class);
+
+static void pci_quirk_hisi_fixup_bar(struct pci_dev *dev)
+{
+	int i, start = 3;
+
+	for (i = start; i < PCI_NUM_RESOURCES; i++) {
+		dev->resource[i].start = 0;
+		dev->resource[i].end = 0;
+		dev->resource[i].flags = 0;
+	}
+
+	pci_info(dev, "force disable hisilicon np bar\n");
+}
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_HUAWEI, PCIE_DEVICE_ID_HISI_5896,
+			 pci_quirk_hisi_fixup_bar);

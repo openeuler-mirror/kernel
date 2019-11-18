@@ -2539,6 +2539,8 @@
 #define PCI_VENDOR_ID_HUAWEI         	0x19e5
 #define PCI_DEVICE_ID_ZIP_PF            0xa250
 #define PCI_DEVICE_ID_ZIP_VF            0xa251
+/* Hisilicon PCIe NP devices */
+#define PCIE_DEVICE_ID_HISI_5896        0x5896
 
 #define PCI_VENDOR_ID_NETRONOME		0x19ee
 #define PCI_DEVICE_ID_NETRONOME_NFP3200	0x3200
