@@ -1,6 +1,6 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm64 4.19.30 Kernel Configuration
+# Linux/arm64 4.19.25 Kernel Configuration
 #
 
 #
@@ -129,7 +129,6 @@ CONFIG_PROC_PID_CPUSET=y
 # CONFIG_CGROUP_CPUACCT is not set
 # CONFIG_CGROUP_PERF is not set
 # CONFIG_CGROUP_DEBUG is not set
-# CONFIG_CGROUP_FILES is not set
 CONFIG_NAMESPACES=y
 # CONFIG_UTS_NS is not set
 # CONFIG_IPC_NS is not set
@@ -917,9 +916,7 @@ CONFIG_NET_PTP_CLASSIFY=y
 # CONFIG_BRIDGE is not set
 CONFIG_HAVE_NET_DSA=y
 # CONFIG_NET_DSA is not set
-CONFIG_VLAN_8021Q=y
-# CONFIG_VLAN_8021Q_GVRP is not set
-# CONFIG_VLAN_8021Q_MVRP is not set
+# CONFIG_VLAN_8021Q is not set
 # CONFIG_DECNET is not set
 # CONFIG_LLC2 is not set
 # CONFIG_ATALK is not set

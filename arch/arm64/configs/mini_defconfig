@@ -1,10 +1,10 @@
 #
 # Automatically generated file; DO NOT EDIT.
-# Linux/arm64 4.19.30 Kernel Configuration
+# Linux/arm64 4.19.25 Kernel Configuration
 #
 
 #
-# Compiler: aarch64-linux-gnu-gcc 7.3.0
+# Compiler: aarch64-linux-gnu-gcc 6.3.0
 #
 CONFIG_CC_IS_GCC=y
 CONFIG_GCC_VERSION=60300
@@ -120,7 +120,6 @@ CONFIG_PROC_PID_CPUSET=y
 # CONFIG_CGROUP_CPUACCT is not set
 # CONFIG_CGROUP_PERF is not set
 # CONFIG_CGROUP_DEBUG is not set
-# CONFIG_CGROUP_FILES is not set
 CONFIG_NAMESPACES=y
 # CONFIG_UTS_NS is not set
 # CONFIG_IPC_NS is not set
@@ -1586,6 +1585,7 @@ CONFIG_SERIAL_CORE_CONSOLE=y
 # CONFIG_HVC_DCC is not set
 # CONFIG_IPMI_HANDLER is not set
 # CONFIG_HW_RANDOM is not set
+# CONFIG_R3964 is not set
 # CONFIG_APPLICOM is not set
 
 #
@@ -2645,7 +2645,6 @@ CONFIG_PHY_XGENE=y
 # CONFIG_ARM_CCN is not set
 CONFIG_ARM_PMU=y
 # CONFIG_ARM_DSU_PMU is not set
-CONFIG_HISI_PMU=y
 # CONFIG_ARM_SPE_PMU is not set
 CONFIG_RAS=y
 
