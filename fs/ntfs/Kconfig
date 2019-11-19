@@ -1,5 +1,6 @@
 config NTFS_FS
 	tristate "NTFS file system support"
+	depends on BROKEN
 	select NLS
 	help
 	  NTFS is the file system of Microsoft Windows NT, 2000, XP and 2003.
