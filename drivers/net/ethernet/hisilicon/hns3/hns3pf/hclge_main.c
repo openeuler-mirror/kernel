@@ -6012,13 +6012,13 @@ static void hclge_fd_get_tcpip6_info(struct hclge_fd_rule *rule,
 	cpu_to_be32_array(spec->ip6dst,
 			  rule->tuples.dst_ip, IPV6_SIZE);
 	if (rule->unused_tuple & BIT(INNER_SRC_IP))
-		memset(spec_mask->ip6src, 0, sizeof(int) * IPV6_SIZE);
+		memset(spec_mask->ip6src, 0, sizeof(spec_mask->ip6src));
 	else
 		cpu_to_be32_array(spec_mask->ip6src, rule->tuples_mask.src_ip,
 				  IPV6_SIZE);
 
 	if (rule->unused_tuple & BIT(INNER_DST_IP))
-		memset(spec_mask->ip6dst, 0, sizeof(int) * IPV6_SIZE);
+		memset(spec_mask->ip6dst, 0, sizeof(spec_mask->ip6dst));
 	else
 		cpu_to_be32_array(spec_mask->ip6dst, rule->tuples_mask.dst_ip,
 				  IPV6_SIZE);
@@ -6039,13 +6039,13 @@ static void hclge_fd_get_ip6_info(struct hclge_fd_rule *rule,
 	cpu_to_be32_array(spec->ip6src, rule->tuples.src_ip, IPV6_SIZE);
 	cpu_to_be32_array(spec->ip6dst, rule->tuples.dst_ip, IPV6_SIZE);
 	if (rule->unused_tuple & BIT(INNER_SRC_IP))
-		memset(spec_mask->ip6src, 0, sizeof(int) * IPV6_SIZE);
+		memset(spec_mask->ip6src, 0, sizeof(spec_mask->ip6src));
 	else
 		cpu_to_be32_array(spec_mask->ip6src,
 				  rule->tuples_mask.src_ip, IPV6_SIZE);
 
 	if (rule->unused_tuple & BIT(INNER_DST_IP))
-		memset(spec_mask->ip6dst, 0, sizeof(int) * IPV6_SIZE);
+		memset(spec_mask->ip6dst, 0, sizeof(spec_mask->ip6dst));
 	else
 		cpu_to_be32_array(spec_mask->ip6dst,
 				  rule->tuples_mask.dst_ip, IPV6_SIZE);
