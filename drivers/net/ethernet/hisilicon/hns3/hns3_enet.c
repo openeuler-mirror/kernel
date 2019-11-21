@@ -132,16 +132,16 @@ static int hns3_nic_init_irq(struct hns3_nic_priv *priv)
 			continue;
 
 		if (tqp_vectors->tx_group.ring && tqp_vectors->rx_group.ring) {
-			snprintf(tqp_vectors->name, HNAE3_INT_NAME_LEN - 1,
+			snprintf(tqp_vectors->name, HNAE3_INT_NAME_LEN,
 				 "%s-%s-%d", priv->netdev->name, "TxRx",
 				 txrx_int_idx++);
 			txrx_int_idx++;
 		} else if (tqp_vectors->rx_group.ring) {
-			snprintf(tqp_vectors->name, HNAE3_INT_NAME_LEN - 1,
+			snprintf(tqp_vectors->name, HNAE3_INT_NAME_LEN,
 				 "%s-%s-%d", priv->netdev->name, "Rx",
 				 rx_int_idx++);
 		} else if (tqp_vectors->tx_group.ring) {
-			snprintf(tqp_vectors->name, HNAE3_INT_NAME_LEN - 1,
+			snprintf(tqp_vectors->name, HNAE3_INT_NAME_LEN,
 				 "%s-%s-%d", priv->netdev->name, "Tx",
 				 tx_int_idx++);
 		} else {
@@ -4736,7 +4736,7 @@ static int __init hns3_init_module(void)
 	pr_info("%s: %s\n", hns3_driver_name, hns3_copyright);
 
 	client.type = HNAE3_CLIENT_KNIC;
-	snprintf(client.name, HNAE3_CLIENT_NAME_LENGTH - 1, "%s",
+	snprintf(client.name, HNAE3_CLIENT_NAME_LENGTH, "%s",
 		 hns3_driver_name);
 
 	client.ops = &client_ops;
