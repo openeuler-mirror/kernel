@@ -960,12 +960,6 @@ struct hclge_serdes_lb_cmd {
 	u8 rsv[21];
 };
 
-struct hclge_dbg_reg_common_msg {
-	int msg_num;
-	int offset;
-	enum hclge_opcode_type cmd;
-};
-
 #define HCLGE_DEFAULT_TX_BUF		0x4000	 /* 16k  bytes */
 #define HCLGE_TOTAL_PKT_BUF		0x108000 /* 1.03125M bytes */
 #define HCLGE_DEFAULT_DV		0xA000	 /* 40k byte */
