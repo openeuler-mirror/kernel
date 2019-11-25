@@ -1058,44 +1058,48 @@ static void hclge_dbg_dump_serv_info(struct hclge_dev *hdev)
 static void hclge_dbg_get_m7_stats_info(struct hclge_dev *hdev)
 {
 	struct hclge_desc *desc_src, *desc_tmp;
+	struct hclge_get_m7_bd_cmd *req;
 	struct hclge_desc desc;
 	u32 bd_num, buf_len;
 	int ret, i;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_M7_STATS_BD, true);
 
+	req = (struct hclge_get_m7_bd_cmd *)desc.data;
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
-			"hclge_cmd_send fail, ret =  %d, cmd: 0x%x.\n",
-			ret, HCLGE_OPC_M7_STATS_BD);
+			"get firmware statistics bd number failed, ret = %d\n",
+			ret);
 		return;
 	}
 
-	bd_num = desc.data[0];
+	bd_num = le32_to_cpu(req->bd_num);
 
 	buf_len	 = sizeof(struct hclge_desc) * bd_num;
 	desc_src = kzalloc(buf_len, GFP_KERNEL);
-	if (!desc_src) {
-		dev_err(&hdev->pdev->dev, "call kzalloc failed\n");
+	if (!desc_src)
 		return;
-	}
 
 	desc_tmp = desc_src;
 	ret  = hclge_dbg_cmd_send(hdev, desc_tmp, 0, bd_num,
 				  HCLGE_OPC_M7_STATS_INFO);
 	if (ret) {
 		kfree(desc_src);
+		dev_err(&hdev->pdev->dev,
+			"get firmware statistics failed, ret = %d\n", ret);
 		return;
 	}
 
 	for (i = 0; i < bd_num; i++) {
 		dev_info(&hdev->pdev->dev, "0x%08x  0x%08x  0x%08x\n",
-			 desc_tmp->data[0], desc_tmp->data[1],
-			 desc_tmp->data[2]);
+			 le32_to_cpu(desc_tmp->data[0]),
+			 le32_to_cpu(desc_tmp->data[1]),
+			 le32_to_cpu(desc_tmp->data[2]));
 		dev_info(&hdev->pdev->dev, "0x%08x  0x%08x  0x%08x\n",
-			 desc_tmp->data[3], desc_tmp->data[4],
-			 desc_tmp->data[5]);
+			 le32_to_cpu(desc_tmp->data[3]),
+			 le32_to_cpu(desc_tmp->data[4]),
+			 le32_to_cpu(desc_tmp->data[5]));
 
 		desc_tmp++;
 	}
