@@ -12,6 +12,7 @@
 #include <linux/types.h>
 #include <linux/bitops.h>
 #include <linux/log2.h>
+#include <pthread.h>
 
 #include "cpumap.h"
 #include "color.h"
@@ -48,6 +49,7 @@ struct arm_spe {
 	u8				sample_tlb_miss;
 	u8				sample_branch_miss;
 	u8				sample_remote_access;
+	u8				sample_c2c_mode;
 	u64				llc_miss_id;
 	u64				tlb_miss_id;
 	u64				branch_miss_id;
@@ -75,6 +77,51 @@ struct arm_spe_queue {
 	struct thread 			*thread;
 	bool 				have_sample;
 };
+
+struct spe_c2c_sample {
+	struct rb_node			rb_node;
+	struct arm_spe_state		state;
+};
+
+struct spe_c2c_sample_queues {
+	struct rb_root			ld_list;
+	struct rb_root			st_list;
+
+	struct arm_spe_queue		*speq;
+	bool				valid;
+	int				cpu;
+	uint64_t			ld_num;
+	uint64_t			st_num;
+};
+
+struct spe_c2c_compare_lists {
+	struct rb_root			*listA;
+	struct rb_root			*listB;
+	struct spe_c2c_sample_queues	*queues;
+	struct spe_c2c_sample_queues	*oppoqs;	/* the oppo queues */
+};
+
+#define SPE_C2C_SAMPLE_Q_MAX		128
+
+int spe_c2c_q_num;
+
+struct spe_c2c_sample_queues spe_c2c_sample_list[SPE_C2C_SAMPLE_Q_MAX];
+
+static void spe_c2c_sample_init(void)
+{
+	int i;
+	for (i = 0; i < SPE_C2C_SAMPLE_Q_MAX; i++) {
+		spe_c2c_sample_list[i].ld_list = RB_ROOT;
+		spe_c2c_sample_list[i].st_list = RB_ROOT;
+		spe_c2c_sample_list[i].valid = false;
+		spe_c2c_sample_list[i].cpu = -1;
+		spe_c2c_sample_list[i].speq = NULL;
+		spe_c2c_sample_list[i].ld_num = 0;
+		spe_c2c_sample_list[i].st_num = 0;
+	}
+
+	spe_c2c_q_num = 0;
+}
 
 static void arm_spe_dump(struct arm_spe *spe __maybe_unused,
 			 unsigned char *buf, size_t len)
@@ -231,7 +278,8 @@ static void arm_spe_prep_sample(struct arm_spe *spe,
 	sample->cpumode = arm_spe_cpumode(spe, sample->ip);
 	sample->pid = speq->pid;
 	sample->tid = speq->tid;
-	sample->addr = speq->state->to_ip;
+	sample->addr = speq->state->addr;
+	sample->phys_addr = speq->state->phys_addr;
 	sample->period = 1;
 	sample->cpu = speq->cpu;
 
@@ -254,7 +302,7 @@ static inline int arm_spe_deliver_synth_event(struct arm_spe *spe,
 	return ret;
 }
 
-static int arm_spe_synth_spe_events_sample(struct arm_spe_queue *speq, u64 spe_events_id)
+static int arm_spe_synth_spe_events_sample(struct arm_spe_queue *speq, u64 spe_events_id __maybe_unused)
 {
 	struct arm_spe *spe = speq->spe;
 	union perf_event *event = speq->event_buf;
@@ -306,7 +354,67 @@ static int arm_spe_sample(struct arm_spe_queue *speq)
 	return 0;
 }
 
-static int arm_spe_run_decoder(struct arm_spe_queue *speq, u64 *timestamp)
+static int spe_sample_insert(struct rb_root *root, struct spe_c2c_sample *data)
+{
+	struct rb_node **tmp = &(root->rb_node), *parent = NULL;
+
+	/* Figure out where to put new node */
+	while (*tmp) {
+		struct spe_c2c_sample *this = container_of(*tmp,
+				struct spe_c2c_sample, rb_node);
+
+		parent = *tmp;
+		if (data->state.ts < this->state.ts)
+			tmp = &((*tmp)->rb_left);
+		else if (data->state.ts > this->state.ts)
+			tmp = &((*tmp)->rb_right);
+		else
+			return -1;
+	}
+
+	/* Add new node and rebalance tree. */
+	rb_link_node(&data->rb_node, parent, tmp);
+	rb_insert_color(&data->rb_node, root);
+
+	return 0;
+}
+
+static void arm_spe_c2c_queue_store(struct arm_spe_queue *speq,
+		       struct spe_c2c_sample_queues *spe_c2cq)
+{
+	const struct arm_spe_state *state = speq->state;
+	struct spe_c2c_sample *sample;
+	struct rb_root *root;
+	int ret = 0;
+
+	if (state->ts && (state->is_ld || state->is_st)) {
+		sample = zalloc(sizeof(struct spe_c2c_sample));
+		if (!sample) {
+			pr_err("spe_c2c: Allocate sample error!\n");
+			return;
+		}
+
+		root = state->is_ld ? &(spe_c2cq->ld_list) : &(spe_c2cq->st_list);
+
+		memcpy(&(sample->state), state, sizeof(struct arm_spe_state));
+
+		ret = spe_sample_insert(root, sample);
+		if (ret) {
+			pr_err("spe_c2c: The %lx(%lx) already exists.",
+					state->addr, state->ts);
+			free(sample);
+			return;
+		}
+
+		if (state->is_ld)
+			spe_c2cq->ld_num++;
+		else
+			spe_c2cq->st_num++;
+	}
+}
+
+static int arm_spe_run_decoder(struct arm_spe_queue *speq, u64 *timestamp,
+			       struct spe_c2c_sample_queues *spe_c2cq __maybe_unused)
 {
 	const struct arm_spe_state *state = speq->state;
 	struct arm_spe *spe = speq->spe;
@@ -316,9 +424,14 @@ static int arm_spe_run_decoder(struct arm_spe_queue *speq, u64 *timestamp)
 		spe->kernel_start = machine__kernel_start(spe->machine);
 
 	while (1) {
-		err = arm_spe_sample(speq);
-		if (err)
-			return err;
+		if (spe->sample_c2c_mode) {
+			if (spe_c2cq)
+				arm_spe_c2c_queue_store(speq, spe_c2cq);
+		} else {
+			err = arm_spe_sample(speq);
+			if (err)
+				return err;
+		}
 
 		state = arm_spe_decode(speq->decoder);
 		if (state->err) {
@@ -456,8 +569,32 @@ static void arm_spe_set_pid_tid_cpu(struct arm_spe *spe,
 	}
 }
 
+static struct spe_c2c_sample_queues*
+arm_spe_get_c2c_queue(struct arm_spe_queue *speq)
+{
+	int i;
+
+	for (i = 0; i < SPE_C2C_SAMPLE_Q_MAX; i++) {
+		if (!spe_c2c_sample_list[i].valid) {
+			spe_c2c_sample_list[i].valid = true;
+			spe_c2c_sample_list[i].cpu = speq->cpu;
+			spe_c2c_sample_list[i].speq = speq;
+			spe_c2c_q_num++;
+			return &spe_c2c_sample_list[i];
+		} else {
+			if (spe_c2c_sample_list[i].cpu == speq->cpu)
+				return &spe_c2c_sample_list[i];
+		}
+	}
+
+	pr_warning("spe_c2c: Now only support sample for two cpus!\n");
+
+	return NULL;
+}
+
 static int arm_spe_process_queues(struct arm_spe *spe, u64 timestamp)
 {
+	struct spe_c2c_sample_queues *spe_c2cq;
 	unsigned int queue_nr;
 	u64 ts;
 	int ret;
@@ -489,7 +626,9 @@ static int arm_spe_process_queues(struct arm_spe *spe, u64 timestamp)
 
 		arm_spe_set_pid_tid_cpu(spe, queue);
 
-		ret = arm_spe_run_decoder(speq, &ts);
+		spe_c2cq = arm_spe_get_c2c_queue(speq);
+
+		ret = arm_spe_run_decoder(speq, &ts, spe_c2cq);
 		if (ret < 0) {
 			auxtrace_heap__add(&spe->heap, queue_nr, ts);
 			return ret;
@@ -507,9 +646,163 @@ static int arm_spe_process_queues(struct arm_spe *spe, u64 timestamp)
 	return 0;
 }
 
+pthread_mutex_t mut;
+
+static void arm_spe_c2c_sample(struct spe_c2c_sample_queues *c2c_queues,
+		struct spe_c2c_sample *c2c_sample)
+{
+	struct arm_spe_queue *speq = c2c_queues->speq;
+	union perf_event *event = speq->event_buf;
+	struct perf_sample sample = { .ip = 0, };
+	union perf_mem_data_src src;
+	int ret;
+
+	memset(&src, 0, sizeof(src));
+
+	src.mem_op  = PERF_MEM_OP_LOAD;
+	src.mem_snoop = PERF_MEM_SNOOP_HITM;
+
+	if (c2c_sample->state.is_tlb_miss)
+		src.mem_dtlb = PERF_MEM_TLB_MISS;
+	else
+		src.mem_dtlb = PERF_MEM_TLB_HIT;
+
+	if (speq->spe->synth_opts.c2c_remote) {
+		if (c2c_sample->state.is_remote)
+			src.mem_lvl = PERF_MEM_LVL_REM_CCE2;
+		else
+			return;
+	} else
+		src.mem_lvl = PERF_MEM_LVL_HIT | PERF_MEM_LVL_L3;
+
+	sample.ip = c2c_sample->state.from_ip;
+	sample.cpumode = arm_spe_cpumode(speq->spe, sample.ip);
+	sample.pid = speq->pid;
+	sample.tid = speq->tid;
+	sample.addr = c2c_sample->state.addr;
+	sample.data_src = src.val;
+	sample.phys_addr = c2c_sample->state.phys_addr;
+	sample.period = 1;
+	sample.cpu = c2c_queues->cpu;
+
+	event->sample.header.type = PERF_RECORD_SAMPLE;
+	event->sample.header.misc = sample.cpumode;
+	event->sample.header.size = sizeof(struct perf_event_header);
+
+	ret = perf_session__deliver_synth_event(speq->spe->session, event, &sample);
+	if (ret)
+		pr_err("ARM SPE: failed to deliver event, error %d\n", ret);
+}
+
+static void arm_spe_c2c_get_samples(void *arg)
+{
+	struct rb_root *listA = ((struct spe_c2c_compare_lists *)arg)->listA;
+	struct rb_root *listB = ((struct spe_c2c_compare_lists *)arg)->listB;
+	struct spe_c2c_sample_queues *queues = ((struct spe_c2c_compare_lists *)arg)->queues;
+	struct spe_c2c_sample_queues *oppoqs = ((struct spe_c2c_compare_lists *)arg)->oppoqs;
+	struct rb_node *nodeA, *nodeB;
+	struct spe_c2c_sample *sampleA, *sampleB;
+	uint64_t xor;
+
+	for (nodeA = rb_first(listA); nodeA; nodeA = rb_next(nodeA)) {
+		for (nodeB = rb_first(listB); nodeB; nodeB = rb_next(nodeB)) {
+			sampleA = rb_entry(nodeA, struct spe_c2c_sample, rb_node);
+			sampleB = rb_entry(nodeB, struct spe_c2c_sample, rb_node);
+
+			xor = sampleA->state.phys_addr ^ sampleB->state.phys_addr;
+			if (!(xor & 0xFFFFFFFFFFFFFFC0) && (xor & 0x3F)) {
+				pthread_mutex_lock(&mut);
+				arm_spe_c2c_sample(queues, sampleA);
+				arm_spe_c2c_sample(oppoqs, sampleB);
+				pthread_mutex_unlock(&mut);
+				break;
+
+			}
+
+		}
+	}
+}
+
+static int arm_spe_c2c_process(struct arm_spe *spe __maybe_unused)
+{
+	int i, j, k, ret, size;
+	int store = spe->synth_opts.c2c_store ? 1 : 0;
+	pthread_t *c2c_threads;
+	struct spe_c2c_compare_lists *c2c_lists;
+
+	if (spe_c2c_q_num == 0)
+		return 0;
+
+	if (spe_c2c_q_num < 2) {
+		pr_err("ARM SPE: c2c mode requires data recorded on at least two CPUs!\n");
+		return -1;
+	}
+
+	k = 0;
+	size = (2 + store) * spe_c2c_q_num * (spe_c2c_q_num - 1) / 2;
+
+	c2c_threads = (pthread_t *)zalloc(size * sizeof(pthread_t));
+	c2c_lists = (struct spe_c2c_compare_lists *)zalloc(size * sizeof(struct spe_c2c_compare_lists));
+
+	for (i = 0; i < spe_c2c_q_num; i++) {
+		for (j = i + 1; j < spe_c2c_q_num; j++) {
+			c2c_lists[k].listA = &(spe_c2c_sample_list[i].ld_list);
+			c2c_lists[k].listB = &(spe_c2c_sample_list[j].st_list);
+			c2c_lists[k].queues = &spe_c2c_sample_list[i];
+			c2c_lists[k].oppoqs = &spe_c2c_sample_list[j];
+			ret = pthread_create(&c2c_threads[k], NULL, (void *)arm_spe_c2c_get_samples,
+					(void *)&c2c_lists[k]);
+			if (ret) {
+				pr_info("ARM SPE: c2c process thread[ld->st] create failed! ret=%d\n", ret);
+				return ret;
+			}
+
+			k++;
+			c2c_lists[k].listA = &(spe_c2c_sample_list[j].ld_list);
+			c2c_lists[k].listB = &(spe_c2c_sample_list[i].st_list);
+			c2c_lists[k].queues = &spe_c2c_sample_list[j];
+			c2c_lists[k].oppoqs = &spe_c2c_sample_list[i];
+			ret = pthread_create(&c2c_threads[k], NULL, (void *)arm_spe_c2c_get_samples,
+					(void *)&c2c_lists[k]);
+			if (ret) {
+				pr_info("ARM SPE: c2c process thread[st->ld] create failed! ret=%d\n", ret);
+				return ret;
+			}
+
+			if (store) {
+				k++;
+				c2c_lists[k].listA = &(spe_c2c_sample_list[i].st_list);
+				c2c_lists[k].listB = &(spe_c2c_sample_list[j].st_list);
+				c2c_lists[k].queues = &spe_c2c_sample_list[i];
+				c2c_lists[k].oppoqs = &spe_c2c_sample_list[j];
+				ret = pthread_create(&c2c_threads[k], NULL, (void *)arm_spe_c2c_get_samples,
+						(void *)&c2c_lists[k]);
+				if (ret) {
+					pr_info("ARM SPE: c2c process thread[st->st] create failed! ret=%d\n", ret);
+					return ret;
+				}
+			}
+			k++;
+		}
+	}
+
+	for (i = 0; i < size; i++) {
+		ret = pthread_join(c2c_threads[i], NULL);
+		BUG_ON(ret);
+	}
+
+	free(c2c_threads);
+	free(c2c_lists);
+
+	spe_c2c_q_num = 0;
+
+	return ret;
+}
+
 static int arm_spe_process_timeless_queues(struct arm_spe *spe, pid_t tid,
 					    u64 time_)
 {
+	struct spe_c2c_sample_queues *spe_c2cq = NULL;
 	struct auxtrace_queues *queues = &spe->queues;
 	unsigned int i;
 	u64 ts = 0;
@@ -521,7 +814,7 @@ static int arm_spe_process_timeless_queues(struct arm_spe *spe, pid_t tid,
 		if (speq && (tid == -1 || speq->tid == tid)) {
 			speq->time = time_;
 			arm_spe_set_pid_tid_cpu(spe, queue);
-			arm_spe_run_decoder(speq, &ts);
+			arm_spe_run_decoder(speq, &ts, spe_c2cq);
 		}
 	}
 	return 0;
@@ -567,6 +860,12 @@ static int arm_spe_process_event(struct perf_session *session,
 			err = arm_spe_process_queues(spe, timestamp);
 			if (err)
 				return err;
+
+			if (spe->sample_c2c_mode) {
+				err = arm_spe_c2c_process(spe);
+				if (err)
+					return err;
+			}
 		}
 	}
 
@@ -633,8 +932,12 @@ static int arm_spe_flush(struct perf_session *session __maybe_unused,
 		return arm_spe_process_timeless_queues(spe, -1,
 				MAX_TIMESTAMP - 1);
 
-	return arm_spe_process_queues(spe, MAX_TIMESTAMP);
-	return 0;
+	if (spe->sample_c2c_mode)
+		ret = arm_spe_c2c_process(spe);
+	else
+		ret = arm_spe_process_queues(spe, MAX_TIMESTAMP);
+
+	return ret;
 }
 
 static void arm_spe_free_queue(void *priv)
@@ -867,14 +1170,20 @@ int arm_spe_process_auxtrace_info(union perf_event *event,
 	if (dump_trace)
 		return 0;
 
-	if (session->arm_spe_synth_opts && session->arm_spe_synth_opts->set)
+	if (session->arm_spe_synth_opts && (session->arm_spe_synth_opts->set
+				|| session->arm_spe_synth_opts->c2c_mode))
 		spe->synth_opts = *session->arm_spe_synth_opts;
 	else
 		arm_spe_synth_opts__set_default(&spe->synth_opts);
 
-	err = arm_spe_synth_events(spe, session);
-	if (err)
-		goto err_free_queues;
+	if (spe->synth_opts.c2c_mode) {
+		spe->sample_c2c_mode = true;
+		spe_c2c_sample_init();
+	} else {
+		err = arm_spe_synth_events(spe, session);
+		if (err)
+			goto err_free_queues;
+	}
 
 	err = auxtrace_queues__process_index(&spe->queues, session);
 	if (err)
