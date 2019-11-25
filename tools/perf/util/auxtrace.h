@@ -121,6 +121,7 @@ struct arm_spe_synth_opts {
 	bool			c2c_mode;
 	bool			c2c_remote;
 	bool			c2c_store;
+	bool			c2c_tshare;
 };
 
 /**

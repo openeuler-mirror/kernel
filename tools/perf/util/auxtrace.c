@@ -1144,6 +1144,7 @@ void arm_spe_synth_opts__set_default(struct arm_spe_synth_opts *synth_opts)
 	synth_opts->remote_access = true;
 	synth_opts->c2c_remote = false;
 	synth_opts->c2c_store = false;
+	synth_opts->c2c_tshare = false;
 }
 
 int arm_spe_parse_synth_opts(const struct option *opt, const char *str,
@@ -1165,7 +1166,10 @@ int arm_spe_parse_synth_opts(const struct option *opt, const char *str,
 			synth_opts->llc_miss = true;
 			break;
 		case 't':
-			synth_opts->tlb_miss = true;
+			if (synth_opts->c2c_mode)
+				synth_opts->c2c_tshare = true;
+			else
+				synth_opts->tlb_miss = true;
 			break;
 		case 'b':
 			synth_opts->branch_miss = true;

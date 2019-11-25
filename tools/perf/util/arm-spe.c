@@ -751,8 +751,10 @@ static void arm_spe_c2c_get_samples(void *arg)
 	struct rb_root *listB = ((struct spe_c2c_compare_lists *)arg)->listB;
 	struct spe_c2c_sample_queues *queues = ((struct spe_c2c_compare_lists *)arg)->queues;
 	struct spe_c2c_sample_queues *oppoqs = ((struct spe_c2c_compare_lists *)arg)->oppoqs;
+	struct arm_spe_queue *speq = queues->speq;
 	struct rb_node *nodeA, *nodeB;
 	struct spe_c2c_sample *sampleA, *sampleB;
+	bool tshare = speq->spe->synth_opts.c2c_tshare;
 	uint64_t xor;
 
 	for (nodeA = rb_first(listA); nodeA; nodeA = rb_next(nodeA)) {
@@ -761,8 +763,9 @@ static void arm_spe_c2c_get_samples(void *arg)
 			sampleB = rb_entry(nodeB, struct spe_c2c_sample, rb_node);
 
 			xor = sampleA->state.phys_addr ^ sampleB->state.phys_addr;
-			if (!(xor & 0xFFFFFFFFFFFFFFC0) && (xor & 0x3F)
-					&& sampleA->tid != sampleB->tid) {
+			if (!(xor & 0xFFFFFFFFFFFFFFC0)
+					&& (tshare || (xor & 0x3F))
+					&& (sampleA->tid != sampleB->tid)) {
 				pthread_mutex_lock(&mut);
 				arm_spe_c2c_sample(queues, sampleA);
 				arm_spe_c2c_sample(oppoqs, sampleB);
