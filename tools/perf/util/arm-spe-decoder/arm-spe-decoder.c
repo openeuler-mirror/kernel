@@ -184,6 +184,7 @@ static int arm_spe_walk_trace(struct arm_spe_decoder *decoder)
 		case ARM_SPE_COUNTER:
 			break;
 		case ARM_SPE_CONTEXT:
+			decoder->state.contextidr = payload;
 			break;
 		case ARM_SPE_OP_TYPE:
 			if (idx == 0x1) {

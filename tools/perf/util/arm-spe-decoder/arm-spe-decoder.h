@@ -31,6 +31,7 @@ struct arm_spe_state {
 	uint64_t addr;
 	uint64_t phys_addr;
 	uint64_t timestamp;
+	uint64_t contextidr;	/* if available, means tid */
 };
 
 struct arm_spe_insn;
