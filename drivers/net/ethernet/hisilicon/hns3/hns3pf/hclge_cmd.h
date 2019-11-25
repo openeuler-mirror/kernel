@@ -1065,6 +1065,11 @@ struct hclge_fd_ad_config_cmd {
 	u8 rsv2[8];
 };
 
+struct hclge_get_m7_bd_cmd {
+	__le32 bd_num;
+	u8 rsv[20];
+};
+
 struct hclge_query_ppu_pf_other_int_dfx_cmd {
 	__le16 over_8bd_no_fe_qid;
 	__le16 over_8bd_no_fe_vf_id;
