@@ -1051,10 +1051,12 @@ static int arm_spe_flush(struct perf_session *session __maybe_unused,
 		return arm_spe_process_timeless_queues(spe, -1,
 				MAX_TIMESTAMP - 1);
 
+	ret = arm_spe_process_queues(spe, MAX_TIMESTAMP);
+	if (ret < 0)
+		return ret;
+
 	if (spe->sample_c2c_mode)
 		ret = arm_spe_c2c_process(spe);
-	else
-		ret = arm_spe_process_queues(spe, MAX_TIMESTAMP);
 
 	return ret;
 }
