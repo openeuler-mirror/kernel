@@ -16,6 +16,10 @@
 #include "arm-spe-pkt-decoder.h"
 #include "arm-spe-decoder.h"
 
+#ifndef BIT
+#define BIT(n)		(1UL << (n))
+#endif
+
 struct arm_spe_decoder {
 	int (*get_trace)(struct arm_spe_buffer *buffer, void *data);
 	void *data;
@@ -40,8 +44,12 @@ struct arm_spe_decoder {
 static uint64_t arm_spe_calc_ip(uint64_t ip)
 {
 	/* fill high 8 bits for kernel virtual address */
-	if (ip & 0x1000000000000ULL)
-		ip |= (uint64_t)0xff00000000000000ULL;
+	/* In Armv8 Architecture Reference Manual: Xn[55] determines
+	 * whether the address lies in the upper or lower address range
+	 * for the purpose of determining whether address tagging is
+	 * used */
+	if (ip & BIT(55))
+		ip |= (uint64_t)(0xffULL << 56);
 
 	return ip;
 }
@@ -195,17 +203,17 @@ static int arm_spe_walk_trace(struct arm_spe_decoder *decoder)
 			}
 			break;
 		case ARM_SPE_EVENTS:
-			if (payload & 0x20) {
+			if (payload & BIT(EV_TLB_REFILL)) {
 				decoder->state.type |= ARM_SPE_TLB_MISS;
 				decoder->state.is_tlb_miss = true;
 			}
-			if (payload & 0x80)
+			if (payload & BIT(EV_MISPRED))
 				decoder->state.type |= ARM_SPE_BRANCH_MISS;
-			if (idx > 1 && (payload & 0x200)) {
+			if (idx > 1 && (payload & BIT(EV_LLC_REFILL))) {
 				decoder->state.type |= ARM_SPE_LLC_MISS;
 				decoder->state.is_llc_miss = true;
 			}
-			if (idx > 1 && (payload & 0x400)) {
+			if (idx > 1 && (payload & BIT(EV_REMOTE_ACCESS))) {
 				decoder->state.type |= ARM_SPE_REMOTE_ACCESS;
 				decoder->state.is_remote = true;
 			}

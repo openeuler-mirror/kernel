@@ -31,7 +31,8 @@
 #include "arm-spe-decoder/arm-spe-decoder.h"
 #include "arm-spe-decoder/arm-spe-pkt-decoder.h"
 
-#define MAX_TIMESTAMP (~0ULL)
+#define MAX_TIMESTAMP			(~0ULL)
+#define IN_CACHELINE			(0x3FULL)
 
 struct arm_spe {
 	struct auxtrace			auxtrace;
@@ -763,8 +764,8 @@ static void arm_spe_c2c_get_samples(void *arg)
 			sampleB = rb_entry(nodeB, struct spe_c2c_sample, rb_node);
 
 			xor = sampleA->state.phys_addr ^ sampleB->state.phys_addr;
-			if (!(xor & 0xFFFFFFFFFFFFFFC0)
-					&& (tshare || (xor & 0x3F))
+			if (!(xor & (uint64_t)~IN_CACHELINE)
+					&& (tshare || (xor & IN_CACHELINE))
 					&& (sampleA->tid != sampleB->tid)) {
 				pthread_mutex_lock(&mut);
 				arm_spe_c2c_sample(queues, sampleA);
