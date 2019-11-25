@@ -6,6 +6,20 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+enum arm_spe_events {
+	EV_EXCEPTION_GEN,
+	EV_RETIRED,
+	EV_L1D_ACCESS,
+	EV_L1D_REFILL,
+	EV_TLB_ACCESS,
+	EV_TLB_REFILL,
+	EV_NOT_TAKEN,
+	EV_MISPRED,
+	EV_LLC_ACCESS,
+	EV_LLC_REFILL,
+	EV_REMOTE_ACCESS,
+};
+
 enum arm_spe_sample_type {
 	ARM_SPE_LLC_MISS	= 1 << 0,
 	ARM_SPE_TLB_MISS	= 1 << 1,
