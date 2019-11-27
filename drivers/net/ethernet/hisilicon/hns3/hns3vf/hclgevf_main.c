@@ -2168,49 +2168,49 @@ static int hclgevf_config_gro(struct hclgevf_dev *hdev, bool en)
 	return ret;
 }
 
-static int hclgevf_rss_init_hw(struct hclgevf_dev *hdev)
+static void hclgevf_rss_init_cfg(struct hclgevf_dev *hdev)
 {
 	struct hclgevf_rss_cfg *rss_cfg = &hdev->rss_cfg;
-	int ret;
 	u32 i;
 
 	rss_cfg->rss_size = hdev->nic.kinfo.rss_size;
 
-	if (hdev->pdev->revision >= HNAE3_REVISION_ID_21) {
-		rss_cfg->hash_algo = HCLGEVF_RSS_HASH_ALGO_SIMPLE;
-		memcpy(rss_cfg->rss_hash_key, hclgevf_hash_key,
-		       HCLGEVF_RSS_KEY_SIZE);
+	rss_cfg->rss_tuple_sets.ipv4_tcp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+	rss_cfg->rss_tuple_sets.ipv4_udp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+	rss_cfg->rss_tuple_sets.ipv4_sctp_en = HCLGEVF_RSS_INPUT_TUPLE_SCTP;
+	rss_cfg->rss_tuple_sets.ipv4_fragment_en =
+		HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+	rss_cfg->rss_tuple_sets.ipv6_tcp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+	rss_cfg->rss_tuple_sets.ipv6_udp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+	rss_cfg->rss_tuple_sets.ipv6_sctp_en = HCLGEVF_RSS_INPUT_TUPLE_SCTP;
+	rss_cfg->rss_tuple_sets.ipv6_fragment_en =
+		HCLGEVF_RSS_INPUT_TUPLE_OTHER;
 
+	rss_cfg->hash_algo = hdev->pdev->revision >= 0x21 ?
+		HCLGEVF_RSS_HASH_ALGO_SIMPLE : HCLGEVF_RSS_HASH_ALGO_TOEPLITZ;
+
+	memcpy(rss_cfg->rss_hash_key, hclgevf_hash_key, HCLGEVF_RSS_KEY_SIZE);
+
+	/* Initialize RSS indirect table */
+	for (i = 0; i < HCLGEVF_RSS_IND_TBL_SIZE; i++)
+		rss_cfg->rss_indirection_tbl[i] = i % rss_cfg->rss_size;
+}
+
+static int hclgevf_rss_init_hw(struct hclgevf_dev *hdev)
+{
+	struct hclgevf_rss_cfg *rss_cfg = &hdev->rss_cfg;
+	int ret;
+
+	if (hdev->pdev->revision >= HNAE3_REVISION_ID_21) {
 		ret = hclgevf_set_rss_algo_key(hdev, rss_cfg->hash_algo,
 					       rss_cfg->rss_hash_key);
 		if (ret)
 			return ret;
 
-		rss_cfg->rss_tuple_sets.ipv4_tcp_en =
-					HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-		rss_cfg->rss_tuple_sets.ipv4_udp_en =
-					HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-		rss_cfg->rss_tuple_sets.ipv4_sctp_en =
-					HCLGEVF_RSS_INPUT_TUPLE_SCTP;
-		rss_cfg->rss_tuple_sets.ipv4_fragment_en =
-					HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-		rss_cfg->rss_tuple_sets.ipv6_tcp_en =
-					HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-		rss_cfg->rss_tuple_sets.ipv6_udp_en =
-					HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-		rss_cfg->rss_tuple_sets.ipv6_sctp_en =
-					HCLGEVF_RSS_INPUT_TUPLE_SCTP;
-		rss_cfg->rss_tuple_sets.ipv6_fragment_en =
-					HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-
 		ret = hclgevf_set_rss_input_tuple(hdev, rss_cfg);
 		if (ret)
 			return ret;
 	}
-
-	/* Initialize RSS indirect table */
-	for (i = 0; i < HCLGEVF_RSS_IND_TBL_SIZE; i++)
-		rss_cfg->rss_indirection_tbl[i] = i % rss_cfg->rss_size;
 
 	ret = hclgevf_set_rss_indir_table(hdev);
 	if (ret)
@@ -2815,6 +2815,7 @@ static int hclgevf_init_hdev(struct hclgevf_dev *hdev)
 		goto err_config;
 
 	/* Initialize RSS for this VF */
+	hclgevf_rss_init_cfg(hdev);
 	ret = hclgevf_rss_init_hw(hdev);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
@@ -2992,6 +2993,8 @@ static int hclgevf_set_channels(struct hnae3_handle *handle, u32 new_tqps_num,
 
 	for (i = 0; i < HCLGEVF_RSS_IND_TBL_SIZE; i++)
 		rss_indir[i] = i % kinfo->rss_size;
+
+	hdev->rss_cfg.rss_size = kinfo->rss_size;
 
 	ret = hclgevf_set_rss(handle, rss_indir, NULL, 0);
 	if (ret)
