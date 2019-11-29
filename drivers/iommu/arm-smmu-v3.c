@@ -1775,15 +1775,6 @@ static int arm_smmu_atc_inv_master_all(struct arm_smmu_master_data *master,
 	return arm_smmu_atc_inv_master(master, &cmd);
 }
 
-static int arm_smmu_atc_inv_master_range(struct arm_smmu_master_data *master,
-				int ssid, unsigned long iova, size_t size)
-{
-	struct arm_smmu_cmdq_ent cmd;
-
-	arm_smmu_atc_inv_to_cmd(ssid, iova, size, &cmd);
-	return arm_smmu_atc_inv_master(master, &cmd);
-}
-
 static size_t
 arm_smmu_atc_inv_domain(struct arm_smmu_domain *smmu_domain, int ssid,
 			unsigned long iova, size_t size)
@@ -2456,12 +2447,11 @@ static void arm_smmu_mm_detach(struct iommu_domain *domain, struct device *dev,
 	struct arm_smmu_mm *smmu_mm = to_smmu_mm(io_mm);
 	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
 	struct iommu_pasid_table_ops *ops = smmu_domain->s1_cfg.ops;
-	struct arm_smmu_master_data *master = dev->iommu_fwspec->iommu_priv;
 
 	if (detach_domain)
 		ops->clear_entry(ops, io_mm->pasid, smmu_mm->cd);
 
-	arm_smmu_atc_inv_master_all(master, io_mm->pasid);
+	/* TODO: Invalidate ATC. */
 	/* TODO: Invalidate all mappings if last and not DVM. */
 }
 
@@ -2469,10 +2459,8 @@ static void arm_smmu_mm_invalidate(struct iommu_domain *domain,
 				   struct device *dev, struct io_mm *io_mm,
 				   unsigned long iova, size_t size)
 {
-	struct arm_smmu_master_data *master = dev->iommu_fwspec->iommu_priv;
-
-	arm_smmu_atc_inv_master_range(master, io_mm->pasid, iova, size);
 	/*
+	 * TODO: Invalidate ATC.
 	 * TODO: Invalidate mapping if not DVM
 	 */
 }
