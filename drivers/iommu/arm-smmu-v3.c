@@ -2600,53 +2600,6 @@ static bool arm_smmu_sid_in_range(struct arm_smmu_device *smmu, u32 sid)
 	return sid < limit;
 }
 
-static int arm_smmu_enable_pasid(struct arm_smmu_master_data *master)
-{
-	int ret;
-	int features;
-	u8 pasid_bits;
-	int num_pasids;
-	struct pci_dev *pdev;
-
-	if (!dev_is_pci(master->dev))
-		return -ENOSYS;
-
-	pdev = to_pci_dev(master->dev);
-
-	features = pci_pasid_features(pdev);
-	if (features < 0)
-		return -ENOSYS;
-
-	num_pasids = pci_max_pasids(pdev);
-	if (num_pasids <= 0)
-		return -ENOSYS;
-
-	pasid_bits = min_t(u8, ilog2(num_pasids), master->smmu->ssid_bits);
-
-	dev_dbg(&pdev->dev, "device supports %#x PASID bits [%s%s]\n",
-		pasid_bits,
-		(features & PCI_PASID_CAP_EXEC) ? "x" : "",
-		(features & PCI_PASID_CAP_PRIV) ? "p" : "");
-
-	ret = pci_enable_pasid(pdev, features);
-	return ret ? ret : pasid_bits;
-}
-
-static void arm_smmu_disable_pasid(struct arm_smmu_master_data *master)
-{
-	struct pci_dev *pdev;
-
-	if (!dev_is_pci(master->dev))
-		return;
-
-	pdev = to_pci_dev(master->dev);
-
-	if (!pdev->pasid_enabled)
-		return;
-
-	pci_disable_pasid(pdev);
-}
-
 static int arm_smmu_enable_ats(struct arm_smmu_master_data *master)
 {
 	size_t stu;
@@ -2817,11 +2770,6 @@ static int arm_smmu_add_device(struct device *dev)
 		master->ste.can_stall = true;
 	}
 
-	/* PASID must be enabled before ATS */
-	ret = arm_smmu_enable_pasid(master);
-	if (ret > 0)
-		master->ssid_bits = ret;
-
 	arm_smmu_enable_ats(master);
 
 	ret = iommu_device_link(&smmu->iommu, dev);
@@ -2845,7 +2793,6 @@ err_remove_master:
 
 err_disable_ats:
 	arm_smmu_disable_ats(master);
-	arm_smmu_disable_pasid(master);
 
 err_free_master:
 	kfree(master);
@@ -2875,9 +2822,7 @@ static void arm_smmu_remove_device(struct device *dev)
 	arm_smmu_remove_master(smmu, master);
 	iommu_device_unlink(&smmu->iommu, dev);
 	arm_smmu_disable_pri(master);
-	/* PASID must be disabled after ATS */
 	arm_smmu_disable_ats(master);
-	arm_smmu_disable_pasid(master);
 	kfree(master);
 	iommu_fwspec_free(dev);
 }
