@@ -621,7 +621,6 @@ static void hclge_handle_link_change_event(struct hclge_dev *hdev,
 {
 	int link_status = req->msg.subcode;
 
-	clear_bit(HCLGE_STATE_SERVICE_SCHED, &hdev->state);
 	hclge_task_schedule(hdev, 0);
 
 	if (!link_status)

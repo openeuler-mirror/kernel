@@ -40,7 +40,7 @@ int hclge_clean_stats64(struct hnae3_handle *handle, int opcode,
 		tqp = container_of(kinfo->tqp[i], struct hclge_tqp, q);
 		memset(&tqp->tqp_stats, 0, sizeof(struct hlcge_tqp_stats));
 	}
-	memset(&hdev->hw_stats.mac_stats, 0, sizeof(struct hclge_mac_stats));
+	memset(&hdev->mac_stats, 0, sizeof(struct hclge_mac_stats));
 	return 0;
 }
 
@@ -873,8 +873,9 @@ void hclge_reset_task_schedule_it(struct hclge_dev *hdev)
 {
 	if (!test_bit(HCLGE_STATE_REMOVING, &hdev->state) &&
 	    !test_and_set_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state))
-		queue_work_on(cpumask_first(&hdev->affinity_mask), system_wq,
-			      &hdev->rst_service_task);
+		mod_delayed_work_on(cpumask_first(&hdev->affinity_mask),
+				    system_wq,
+				    &hdev->service_task, 0);
 }
 
 int hclge_set_reset_task(struct hnae3_handle *handle, int opcode,
