@@ -509,7 +509,7 @@ int hns3_test_clean_stats(struct hns3_nic_priv *net_priv,
 		ring = &net_priv->ring[i + kinfo->num_tqps];
 		memset(&ring->stats, 0, sizeof(struct ring_stats));
 	}
-	memset(&hdev->hw_stats.mac_stats, 0, sizeof(struct hclge_mac_stats));
+	memset(&hdev->mac_stats, 0, sizeof(struct hclge_mac_stats));
 	memset(&netdev->stats, 0, sizeof(struct net_device_stats));
 
 	return 0;
@@ -557,7 +557,8 @@ int hns3_nic_reset(struct hns3_nic_priv *net_priv,
 	/* request reset & schedule reset task */
 	set_bit(hdev->reset_level, &hdev->reset_request);
 	if (!test_and_set_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state))
-		schedule_work(&hdev->rst_service_task);
+		mod_delayed_work_on(cpumask_first(&hdev->affinity_mask),
+				    system_wq, &hdev->service_task, 0);
 
 	return 0;
 }
