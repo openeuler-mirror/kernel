@@ -171,25 +171,20 @@ bool hclge_reset_done_it(struct hnae3_handle *handle, bool done)
 
 #ifdef CONFIG_IT_VALIDATION
 
-#define HCLGE_NAME_IT			"hclge"
-
 EXPORT_SYMBOL(hclge_get_vport);
 EXPORT_SYMBOL(hclge_set_vport_promisc_mode);
 
 int hclge_init_it(void)
 {
-	pr_info("%s is initializing\n", HCLGE_NAME_IT);
 #ifdef CONFIG_HNS3_TEST
-	hclge_ops.send_cmdq = hclge_send_cmdq;
 	hclge_ops.priv_ops = hclge_ext_ops_handle;
 #endif
 
 	hclge_ops.reset_event = hclge_reset_event_it;
 	hclge_ops.reset_done = hclge_reset_done_it;
 	hclge_ops.handle_imp_error = hclge_handle_imp_error_it;
-	hnae3_register_ae_algo(&ae_algo);
 
-	return 0;
+	return hclge_init();
 }
 
 module_init(hclge_init_it);
