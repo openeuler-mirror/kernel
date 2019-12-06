@@ -10693,7 +10693,6 @@ struct hnae3_ae_algo ae_algo = {
 	.pdev_id_table = ae_algo_pci_tbl,
 };
 
-#ifndef CONFIG_IT_VALIDATION
 int hclge_init(void)
 {
 	pr_info("%s is initializing\n", HCLGE_NAME);
@@ -10708,6 +10707,8 @@ int hclge_init(void)
 
 	return 0;
 }
+
+#ifndef CONFIG_IT_VALIDATION
 module_init(hclge_init);
 #endif
 
