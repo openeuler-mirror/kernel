@@ -35,6 +35,7 @@ enum ext_op_code {
 	EXT_GET_HILINK_REF_LOS,
 	EXT_GET_8211_PHY_REG,
 	EXT_SET_8211_PHY_REG,
+	EXT_GET_PORT_TYPE,
 };
 
 enum phy_type {

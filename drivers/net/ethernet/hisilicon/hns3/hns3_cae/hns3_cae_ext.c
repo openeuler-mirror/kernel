@@ -309,6 +309,19 @@ static int hns3_ext_test_get_hilink_ref_los(struct hns3_nic_priv *net_priv,
 	return ret;
 }
 
+static int hns3_ext_test_get_port_type(struct hns3_nic_priv *net_priv,
+				       void *out)
+{
+	u32 wire_type;
+	int ret;
+
+	ret = nic_get_port_wire_type(net_priv->netdev, &wire_type);
+	if (!ret)
+		*(u32 *)out = wire_type;
+
+	return ret;
+}
+
 int hns3_ext_interface_test(struct hns3_nic_priv *net_priv,
 			    void *buf_in, u32 in_size,
 			    void *buf_out, u32 out_size)
@@ -400,6 +413,9 @@ int hns3_ext_interface_test(struct hns3_nic_priv *net_priv,
 		break;
 	case EXT_SET_8211_PHY_REG:
 		ret = hns3_ext_test_set_phy_reg(net_priv, in, PHY_TYPE_8211);
+		break;
+	case EXT_GET_PORT_TYPE:
+		ret = hns3_ext_test_get_port_type(net_priv, out);
 		break;
 	default:
 		ret = -EFAULT;

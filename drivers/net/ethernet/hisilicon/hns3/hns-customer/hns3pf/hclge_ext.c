@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
+#ifdef CONFIG_IT_VALIDATION
 #include <linux/dma-mapping.h>
 #include <linux/etherdevice.h>
 #include <linux/interrupt.h>
@@ -23,8 +24,17 @@
 #define BD0_DATA_LEN	20
 #define BD1_DATA_LEN	24
 
-int hclge_clean_stats64(struct hnae3_handle *handle, int opcode,
-			void *data, int length)
+void hclge_reset_task_schedule_it(struct hclge_dev *hdev)
+{
+	if (!test_bit(HCLGE_STATE_REMOVING, &hdev->state) &&
+	    !test_and_set_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state))
+		mod_delayed_work_on(cpumask_first(&hdev->affinity_mask),
+				    system_wq, &hdev->service_task, 0);
+}
+
+#ifdef CONFIG_HNS3_TEST
+static int hclge_clean_stats64(struct hnae3_handle *handle, int opcode,
+			       void *data, int length)
 {
 	struct hnae3_knic_private_info *kinfo;
 	struct hclge_vport *vport;
@@ -44,8 +54,8 @@ int hclge_clean_stats64(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-int hclge_get_chipid(struct hnae3_handle *handle, int opcode,
-		     void *data, int length)
+static int hclge_get_chipid(struct hnae3_handle *handle, int opcode,
+			    void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -66,8 +76,8 @@ int hclge_get_chipid(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-int hclge_get_mac_id(struct hnae3_handle *handle, int opcode,
-		     void *data, int length)
+static int hclge_get_mac_id(struct hnae3_handle *handle, int opcode,
+			    void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -145,8 +155,8 @@ static int _hclge_get_sfpinfo(struct hnae3_handle *handle, u8 *buff,
 	return 0;
 }
 
-int hclge_get_sfpinfo(struct hnae3_handle *handle, int opcode,
-		      void *data, int length)
+static int hclge_get_sfpinfo(struct hnae3_handle *handle, int opcode,
+			     void *data, int length)
 {
 	struct hclge_sfp_info_para *para;
 	u16 tmp_size;
@@ -177,8 +187,8 @@ int hclge_get_sfpinfo(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-int hclge_set_sfp_state(struct hnae3_handle *handle, int opcode,
-			void *data, int length)
+static int hclge_set_sfp_state(struct hnae3_handle *handle, int opcode,
+			       void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_sfp_enable_cmd *req = NULL;
@@ -198,8 +208,8 @@ int hclge_set_sfp_state(struct hnae3_handle *handle, int opcode,
 	return ret;
 }
 
-int hclge_get_chip_num(struct hnae3_handle *handle, int opcode,
-		       void *data, int length)
+static int hclge_get_chip_num(struct hnae3_handle *handle, int opcode,
+			      void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -217,8 +227,8 @@ int hclge_get_chip_num(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-int hclge_get_port_num(struct hnae3_handle *handle, int opcode,
-		       void *data, int length)
+static int hclge_get_port_num(struct hnae3_handle *handle, int opcode,
+			      void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -237,8 +247,8 @@ int hclge_get_port_num(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-int hclge_set_led(struct hnae3_handle *handle, int opcode,
-		  void *data, int length)
+static int hclge_set_led(struct hnae3_handle *handle, int opcode,
+			 void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -259,8 +269,8 @@ int hclge_set_led(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-int hclge_get_led_signal(struct hnae3_handle *handle, int opcode,
-			 void *data, int length)
+static int hclge_get_led_signal(struct hnae3_handle *handle, int opcode,
+				void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -284,8 +294,8 @@ int hclge_get_led_signal(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-int hclge_get_sfp_present(struct hnae3_handle *handle, int opcode,
-			  void *data, int length)
+static int hclge_get_sfp_present(struct hnae3_handle *handle, int opcode,
+				 void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_sfp_present_cmd *resp = NULL;
@@ -307,8 +317,8 @@ int hclge_get_sfp_present(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-int hclge_disable_net_lane(struct hnae3_handle *handle, int opcode,
-			   void *data, int length)
+static int hclge_disable_net_lane(struct hnae3_handle *handle, int opcode,
+				  void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -325,8 +335,8 @@ int hclge_disable_net_lane(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-int hclge_get_net_lane_status(struct hnae3_handle *handle, int opcode,
-			      void *data, int length)
+static int hclge_get_net_lane_status(struct hnae3_handle *handle, int opcode,
+				     void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -346,7 +356,7 @@ int hclge_get_net_lane_status(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-void hclge_set_phy_state(struct hnae3_handle *handle, bool enable)
+static void hclge_set_phy_state(struct hnae3_handle *handle, bool enable)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -361,8 +371,8 @@ void hclge_set_phy_state(struct hnae3_handle *handle, bool enable)
 		phy_stop(phydev);
 }
 
-int hclge_set_mac_state(struct hnae3_handle *handle, int opcode,
-			void *data, int length)
+static int hclge_set_mac_state(struct hnae3_handle *handle, int opcode,
+			       void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_config_mac_mode_cmd *req;
@@ -399,8 +409,8 @@ int hclge_set_mac_state(struct hnae3_handle *handle, int opcode,
 	return ret;
 }
 
-int hclge_config_nic_clock(struct hnae3_handle *handle, int opcode,
-			   void *data, int length)
+static int hclge_config_nic_clock(struct hnae3_handle *handle, int opcode,
+				  void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -419,8 +429,8 @@ int hclge_config_nic_clock(struct hnae3_handle *handle, int opcode,
 	return ret;
 }
 
-int hclge_set_pfc_storm_para(struct hnae3_handle *handle, int opcode,
-			     void *data, int length)
+static int hclge_set_pfc_storm_para(struct hnae3_handle *handle, int opcode,
+				    void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -445,8 +455,8 @@ int hclge_set_pfc_storm_para(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
-int hclge_get_pfc_storm_para(struct hnae3_handle *handle, int opcode,
-			     void *data, int length)
+static int hclge_get_pfc_storm_para(struct hnae3_handle *handle, int opcode,
+				    void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -507,8 +517,8 @@ static int hclge_phy_need_page_select(struct hclge_dev *hdev,
 
 static int hclge_check_phy_opt_param(struct hclge_dev *hdev,
 				     struct mii_bus *mdio_bus,
-				    struct phy_device *phydev,
-				    enum hclge_phy_op_code opt_type)
+				     struct phy_device *phydev,
+				     enum hclge_phy_op_code opt_type)
 {
 	if (!phydev) {
 		dev_err(&hdev->pdev->dev, "this net dev has no phy.\n");
@@ -529,9 +539,10 @@ static int hclge_check_phy_opt_param(struct hclge_dev *hdev,
 	return 0;
 }
 
-int hclge_mdio_bus_opt(struct hclge_phy_para *para, struct hclge_dev *hdev,
-		       struct mii_bus *mdio_bus, u32 phyid,
-			 enum hclge_phy_op_code opt_type)
+static int hclge_mdio_bus_opt(struct hclge_phy_para *para,
+			      struct hclge_dev *hdev,
+			      struct mii_bus *mdio_bus, u32 phyid,
+			      enum hclge_phy_op_code opt_type)
 {
 	int op_ret;
 
@@ -647,15 +658,15 @@ static int hclge_8211_phy_indirect_opt(struct hclge_phy_para *para,
 	u32 indirect_reg_data;
 	int op_ret;
 
-	/*select indirect page 0xa43*/
+	/* select indirect page 0xa43 */
 	op_ret = mdio_bus->write(mdio_bus, phyid, para->page_select_addr,
-				      HCLGE_8211_PHY_INDIRECT_PAGE);
+				 HCLGE_8211_PHY_INDIRECT_PAGE);
 	if (op_ret < 0) {
 		dev_err(&hdev->pdev->dev,
 			"change phy %d indirect page 0xa43 failed.\n", phyid);
 		return op_ret;
 	}
-	/*ndirect access address = page_no*16 + 2*(reg_no%16)*/
+	/* ndirect access address = page_no*16 + 2*(reg_no%16) */
 	indirect_reg_data = (para->page << 4) + ((para->reg_addr % 16) << 1);
 	op_ret = mdio_bus->write(mdio_bus, phyid,
 				 HCLGE_8211_PHY_INDIRECT_REG,
@@ -689,8 +700,8 @@ static int hclge_8211_phy_indirect_opt(struct hclge_phy_para *para,
 	return op_ret;
 }
 
-static int hclge_8211_phy_reg_opt(struct hnae3_handle *handle,
-				  void *data, enum hclge_phy_op_code opt_type)
+static int hclge_8211_phy_reg_opt(struct hnae3_handle *handle, void *data,
+				  enum hclge_phy_op_code opt_type)
 {
 	struct hclge_phy_para *para = (struct hclge_phy_para *)data;
 	struct hclge_vport *vport = hclge_get_vport(handle);
@@ -726,7 +737,6 @@ static int hclge_8211_phy_reg_opt(struct hnae3_handle *handle,
 		dev_err(&hdev->pdev->dev,
 			"restore phy %d reg page %u failed.\n",
 			phyid, save_page);
-
 	mutex_unlock(&mdio_bus->mdio_lock);
 
 	return ret;
@@ -737,44 +747,23 @@ static int hclge_8211_phy_need_indirect_access(u16 page)
 	if (page >= HCLGE_8211_PHY_INDIRECT_RANGE1_S &&
 	    page <= HCLGE_8211_PHY_INDIRECT_RANGE1_E)
 		return true;
-	else if ((page >= HCLGE_8211_PHY_INDIRECT_RANGE2_S) &&
-		 (page <= HCLGE_8211_PHY_INDIRECT_RANGE2_E))
+	else if (page >= HCLGE_8211_PHY_INDIRECT_RANGE2_S &&
+		 page <= HCLGE_8211_PHY_INDIRECT_RANGE2_E)
 		return true;
 	else
 		return false;
 }
 
-static int hclge_get_8211_phy_reg(struct hnae3_handle *handle,
-				  int opcode, void *data, int length)
-{
-	struct hclge_phy_para *para = (struct hclge_phy_para *)data;
-
-	if (hclge_8211_phy_need_indirect_access(para->page))
-		return hclge_8211_phy_reg_opt(handle, data, PHY_OP_READ);
-	else
-		return hclge_phy_reg_opt(handle, data, PHY_OP_READ);
-}
-
-static int hclge_set_8211_phy_reg(struct hnae3_handle *handle,
-				  int opcode, void *data, int length)
-{
-	struct hclge_phy_para *para = (struct hclge_phy_para *)data;
-
-	if (hclge_8211_phy_need_indirect_access(para->page))
-		return hclge_8211_phy_reg_opt(handle, data, PHY_OP_WRITE);
-	else
-		return hclge_phy_reg_opt(handle, data, PHY_OP_WRITE);
-}
 
 static int hclge_opt_lookup_mac_tbl(struct hclge_vport *vport,
 				    unsigned char *addr)
 {
-	u32 high_val;
 	u32 low_val = addr[4] | (addr[5] << 8);
 	struct hclge_mac_vlan_tbl_entry_cmd req = {0};
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;
 	u8 resp_code;
+	u32 high_val;
 	u16 retval;
 	int ret;
 
@@ -869,17 +858,8 @@ static int hclge_opt_mac_table(struct hnae3_handle *handle, int opcode,
 	return ret;
 }
 
-void hclge_reset_task_schedule_it(struct hclge_dev *hdev)
-{
-	if (!test_bit(HCLGE_STATE_REMOVING, &hdev->state) &&
-	    !test_and_set_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state))
-		mod_delayed_work_on(cpumask_first(&hdev->affinity_mask),
-				    system_wq,
-				    &hdev->service_task, 0);
-}
-
-int hclge_set_reset_task(struct hnae3_handle *handle, int opcode,
-			 void *data, int length)
+static int hclge_set_reset_task(struct hnae3_handle *handle, int opcode,
+				void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -916,6 +896,54 @@ static int hclge_get_hilink_ref_los(struct hnae3_handle *handle, int opcode,
 	return 0;
 }
 
+static int hclge_get_8211_phy_reg(struct hnae3_handle *handle, int opcode,
+				  void *data, int length)
+{
+	struct hclge_phy_para *para = (struct hclge_phy_para *)data;
+
+	if (hclge_8211_phy_need_indirect_access(para->page))
+		return hclge_8211_phy_reg_opt(handle, data, PHY_OP_READ);
+	else
+		return hclge_phy_reg_opt(handle, data, PHY_OP_READ);
+}
+
+static int hclge_set_8211_phy_reg(struct hnae3_handle *handle, int opcode,
+				  void *data, int length)
+{
+	struct hclge_phy_para *para = (struct hclge_phy_para *)data;
+
+	if (hclge_8211_phy_need_indirect_access(para->page))
+		return hclge_8211_phy_reg_opt(handle, data, PHY_OP_WRITE);
+	else
+		return hclge_phy_reg_opt(handle, data, PHY_OP_WRITE);
+}
+
+static int hclge_get_port_wire_type(struct hnae3_handle *handle, int opcode,
+				    void *data, int length)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_sfp_info_cmd *resp = NULL;
+	struct hclge_dev *hdev = vport->back;
+	struct hclge_desc desc;
+	u32 *wire_type;
+	int ret;
+
+	wire_type = (u32 *)data;
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_SFP_GET_PORT_INFO, true);
+	resp = (struct hclge_sfp_info_cmd *)desc.data;
+	resp->query_type = PORT_QUERY_TYPE_SFP;
+
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"get port info failed, ret = %d\n", ret);
+		return ret;
+	}
+
+	*wire_type = resp->module_type;
+	return 0;
+}
+
 static struct hclge_ext_func hclge_ext_func_arr[] = {
 	{HCLGE_EXT_OPC_CLEAN_STATS64, hclge_clean_stats64},
 	{HCLGE_EXT_OPC_GET_CHIPID, hclge_get_chipid},
@@ -940,7 +968,7 @@ static struct hclge_ext_func hclge_ext_func_arr[] = {
 	{HCLGE_EXT_OPC_GET_HILINK_REF_LOS, hclge_get_hilink_ref_los},
 	{HCLGE_EXT_OPC_GET_8211_PHY_REG, hclge_get_8211_phy_reg},
 	{HCLGE_EXT_OPC_SET_8211_PHY_REG, hclge_set_8211_phy_reg},
-
+	{HCLGE_EXT_OPC_GET_PORT_TYPE, hclge_get_port_wire_type},
 };
 
 int hclge_ext_ops_handle(struct hnae3_handle *handle, int opcode,
@@ -964,3 +992,5 @@ int hclge_ext_ops_handle(struct hnae3_handle *handle, int opcode,
 	return hclge_ext_func_arr[opcode].priv_ops(handle, opcode, data,
 						   length);
 }
+#endif
+#endif
