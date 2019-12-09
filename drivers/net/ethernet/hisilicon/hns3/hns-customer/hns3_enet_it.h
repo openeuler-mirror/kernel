@@ -4,9 +4,6 @@
 #ifndef __HNS3_ENET_IT_H
 #define __HNS3_ENET_IT_H
 
-typedef int (*hns3_priv_func)(struct net_device *, void *);
-hns3_priv_func hns3_ioctl;
-
 #ifndef LINUX_VERSION_CODE
 #include <linux/version.h>
 #else
