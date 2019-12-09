@@ -17,25 +17,13 @@ extern const char hns3_copyright[];
 
 #ifdef CONFIG_IT_VALIDATION
 
-#define HNAE_DRIVER_VERSION		"1.9.20.0"
+#define HNAE_DRIVER_VERSION		"1.9.20.1"
 
 extern struct net_device_ops hns3_nic_netdev_ops;
 extern const struct hnae3_client_ops client_ops;
 extern struct hnae3_client client;
 extern struct pci_driver hns3_driver;
 extern const char hns3_driver_name[];
-
-int hns3_nic_do_ioctl_it(struct net_device *netdev, struct ifreq *ifr, int cmd)
-{
-	switch (cmd) {
-	case (SIOCDEVPRIVATE + 4):
-		if (hns3_ioctl)
-			return hns3_ioctl(netdev, ifr->ifr_data);
-		return -EINVAL;
-	default:
-		return -EINVAL;
-	}
-}
 
 #if (KERNEL_VERSION(4, 19, 0) > LINUX_VERSION_CODE)
 u16 hns3_nic_select_queue_it(struct net_device *ndev, struct sk_buff *skb,
@@ -75,7 +63,6 @@ static int __init hns3_init_module_it(void)
 
 	client.ops = &client_ops;
 	ndev_ops = (struct net_device_ops *)&hns3_nic_netdev_ops;
-	ndev_ops->ndo_do_ioctl = hns3_nic_do_ioctl_it;
 	ndev_ops->ndo_select_queue = hns3_nic_select_queue_it;
 
 	INIT_LIST_HEAD(&client.node);
