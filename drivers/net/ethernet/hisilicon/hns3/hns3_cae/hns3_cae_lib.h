@@ -171,8 +171,6 @@ struct firmware_ver_param {
 	u32 ncl_version;
 };
 
-#define HCLGE_OPC_GRO_AGE_CFG  0x0c11
-
 struct hclge_gro_age_config_cmd {
 	u32 ppu_gro_age_cnt;
 	u8 rsv[20];
