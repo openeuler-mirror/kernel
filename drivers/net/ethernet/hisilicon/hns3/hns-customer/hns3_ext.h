@@ -32,6 +32,7 @@ enum hns3_ext_op_code {
 	HNS3_EXT_OPC_GET_HILINK_REF_LOS,
 	HNS3_EXT_OPC_GET_8211_PHY_REG,
 	HNS3_EXT_OPC_SET_8211_PHY_REG,
+	HNS3_EXT_OPC_GET_PORT_TYPE,
 };
 
 struct hns3_sfp_info_para {
@@ -96,5 +97,6 @@ int nic_get_8211_phy_reg(struct net_device *ndev, u32 page_select_addr,
 			 u16 page, u32 reg_addr, u16 *data);
 int nic_set_8211_phy_reg(struct net_device *ndev, u32 page_select_addr,
 			 u16 page, u32 reg_addr, u16 data);
+int nic_get_port_wire_type(struct net_device *ndev, u32 *wire_type);
 
 #endif

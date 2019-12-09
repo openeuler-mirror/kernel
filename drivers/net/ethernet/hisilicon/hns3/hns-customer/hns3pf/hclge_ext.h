@@ -19,6 +19,8 @@
 
 #define HCLGE_OPC_CONFIG_NIC_CLOCK	0x0060
 
+#define PORT_QUERY_TYPE_SFP		1
+
 struct hclge_chip_id_cmd {
 	u32 chip_id;
 	u32 rsv[5];
@@ -100,6 +102,7 @@ enum hclge_ext_op_code {
 	HCLGE_EXT_OPC_GET_HILINK_REF_LOS,
 	HCLGE_EXT_OPC_GET_8211_PHY_REG,
 	HCLGE_EXT_OPC_SET_8211_PHY_REG,
+	HCLGE_EXT_OPC_GET_PORT_TYPE,
 };
 
 enum hclge_opt_table_code {
@@ -128,6 +131,7 @@ enum hclge_ext_opcode_type {
 	HCLGE_OPC_SFP_GET_INFO = 0x7100,
 	HCLGE_OPC_SFP_GET_PRESENT = 0x7101,
 	HCLGE_OPC_SFP_SET_STATUS = 0x7102,
+	HCLGE_OPC_SFP_GET_PORT_INFO = 0x7104,
 };
 
 int hclge_ext_ops_handle(struct hnae3_handle *handle, int opcode,

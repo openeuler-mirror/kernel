@@ -580,4 +580,24 @@ int nic_set_8211_phy_reg(struct net_device *ndev, u32 page_select_addr,
 		return -EOPNOTSUPP;
 }
 EXPORT_SYMBOL(nic_set_8211_phy_reg);
+
+int nic_get_port_wire_type(struct net_device *ndev, u32 *wire_type)
+{
+	struct hnae3_handle *h;
+
+	if (nic_netdev_match_check(ndev))
+		return -ENODEV;
+
+	if (!wire_type)
+		return -EINVAL;
+
+	h = hns3_get_handle(ndev);
+	if (h->ae_algo->ops->priv_ops)
+		return h->ae_algo->ops->priv_ops(h,
+						 HNS3_EXT_OPC_GET_PORT_TYPE,
+						 wire_type, 0);
+	else
+		return -EOPNOTSUPP;
+}
+EXPORT_SYMBOL(nic_get_port_wire_type);
 #endif
