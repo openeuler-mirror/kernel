@@ -100,6 +100,20 @@ enum driver_cmd_type {
 #define KERNEL_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))
 #endif
 
+struct cmd_desc {
+	u16 opcode;
+	u16 flag;
+	u16 retval;
+	u16 rsv;
+	u32 data[6];
+};
+
+struct cmd_desc_param {
+	struct cmd_desc reg_desc;
+	u32 fw_dw_opcode;
+	u32 is_read;
+};
+
 #define API_CMD (0x1)
 #define API_CHAIN (0x2)
 
@@ -119,5 +133,8 @@ struct msg_module {
 
 int hns3_cae_k_init(void);
 void hns3_cae_k_uninit(void);
+
+int hns3_cae_common_cmd_send(struct hns3_nic_priv *net_priv, void *buf_in,
+			     u32 in_size, void *buf_out, u32 out_size);
 
 #endif
