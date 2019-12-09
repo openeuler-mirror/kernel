@@ -14,6 +14,7 @@
 #include "hnae3.h"
 #include "hclge_main.h"
 #include "hns3_enet.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_dfx.h"
 
 static int hns3_cae_operate_nic_regs(struct hclge_dev *hdev,
@@ -23,11 +24,12 @@ static int hns3_cae_operate_nic_regs(struct hclge_dev *hdev,
 	int ret;
 
 	if (info->is_read) {
-		hclge_cmd_setup_basic_desc(&desc, OPC_WRITE_READ_REG_CMD, true);
+		hns3_cae_cmd_setup_basic_desc(&desc,
+					      OPC_WRITE_READ_REG_CMD, true);
 		desc.data[0] = (u32)(info->addr & 0xffffffff);
 		desc.data[1] = (u32)(info->addr >> 32);
 		desc.data[4] = (u32)info->bit_width;
-		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+		ret = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
 				"read addr 0x%llx failed! ret = %d.\n",
@@ -36,14 +38,14 @@ static int hns3_cae_operate_nic_regs(struct hclge_dev *hdev,
 		}
 		info->value = (u64)desc.data[2] | ((u64)desc.data[3] << 32);
 	} else {
-		hclge_cmd_setup_basic_desc(&desc, OPC_WRITE_READ_REG_CMD,
-					   false);
+		hns3_cae_cmd_setup_basic_desc(&desc, OPC_WRITE_READ_REG_CMD,
+					      false);
 		desc.data[0] = (u32)(info->addr & 0xffffffff);
 		desc.data[1] = (u32)(info->addr >> 32);
 		desc.data[2] = (u32)(info->value & 0xffffffff);
 		desc.data[3] = (u32)(info->value >> 32);
 		desc.data[4] = (u32)info->bit_width;
-		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+		ret = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
 				"write addr 0x%llx value 0x%llx failed! ret = %d.\n",
@@ -64,8 +66,9 @@ static int hns3_cae_get_chip_and_mac_id(struct hnae3_handle *handle,
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HNS3_CAE_GET_CHIP_MAC_ID_CMD, true);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_setup_basic_desc(&desc,
+				      HNS3_CAE_GET_CHIP_MAC_ID_CMD, true);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "get chip id and mac id failed %d\n",
 			ret);

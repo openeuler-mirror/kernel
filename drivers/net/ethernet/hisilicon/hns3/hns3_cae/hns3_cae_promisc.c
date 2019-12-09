@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2016-2017 Hisilicon Limited.
-
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_promisc.h"
 
 int hns3_read_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
@@ -27,8 +27,8 @@ int hns3_read_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
 	hdev = vport->back;
 	req = (struct hclge_promisc_cfg_cmd *)desc.data;
 	req->vf_id = vport->vport_id;
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_PROMISC_MODE, true);
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_PROMISC_MODE, true);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 	req = (struct hclge_promisc_cfg_cmd *)desc.data;
 	if (status) {
 		dev_err(&hdev->pdev->dev,
@@ -68,8 +68,8 @@ int hns3_set_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
 	req = (struct hclge_promisc_cfg_cmd *)desc.data;
 	req->vf_id = vport->vport_id;
 	mode_param = (struct promisc_mode_param *)buf_in;
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_PROMISC_MODE, true);
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_PROMISC_MODE, true);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 	req = (struct hclge_promisc_cfg_cmd *)desc.data;
 	if (status) {
 		dev_err(&hdev->pdev->dev,
