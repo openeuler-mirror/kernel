@@ -217,3 +217,36 @@ int hns3_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 
 	return ret;
 }
+
+int hns3_cae_clean_stats(struct hns3_nic_priv *net_priv,
+			 void *buf_in, u32 in_size,
+			 void *buf_out, u32 out_size)
+{
+	struct net_device *netdev = net_priv->netdev;
+	struct hnae3_knic_private_info *kinfo;
+	struct hnae3_handle *handle;
+	struct hns3_enet_ring *ring;
+	struct hclge_vport *vport;
+	struct hclge_dev *hdev;
+	struct hclge_tqp *tqp;
+	int i;
+
+	handle = net_priv->ae_handle;
+	kinfo = &handle->kinfo;
+	vport = container_of(handle, struct hclge_vport, nic);
+	hdev = vport->back;
+
+	for (i = 0; i < kinfo->num_tqps; i++) {
+		tqp = container_of(kinfo->tqp[i], struct hclge_tqp, q);
+		memset(&tqp->tqp_stats, 0, sizeof(struct hlcge_tqp_stats));
+
+		ring = &net_priv->ring[i];
+		memset(&ring->stats, 0, sizeof(struct ring_stats));
+		ring = &net_priv->ring[i + kinfo->num_tqps];
+		memset(&ring->stats, 0, sizeof(struct ring_stats));
+	}
+	memset(&hdev->mac_stats, 0, sizeof(struct hclge_mac_stats));
+	memset(&netdev->stats, 0, sizeof(struct net_device_stats));
+
+	return 0;
+}
