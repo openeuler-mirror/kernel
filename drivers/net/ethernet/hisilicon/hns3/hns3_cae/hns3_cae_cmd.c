@@ -1,16 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
-#include <linux/init.h>
-#include <linux/interrupt.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/netdevice.h>
-#include <linux/of.h>
-#include <linux/of_address.h>
-#include <linux/phy_fixed.h>
-#include <linux/platform_device.h>
-
 #include "hns3_cae_cmd.h"
 
 static int hns3_cae_ring_space(struct hclge_cmq_ring *ring)

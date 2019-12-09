@@ -8,6 +8,10 @@
 #include "hclge_cmd.h"
 #include "hns3_enet.h"
 
+#define HNS3_CAE_UC_PROMISC_EN_B	0x1
+#define HNS3_CAE_MC_PROMISC_EN_B	0x2
+#define HNS3_CAE_BC_PROMISC_EN_B	0x3
+
 enum promisc_mode {
 	HNS3_UNICAST = 0,
 	HNS3_MULTICAST,

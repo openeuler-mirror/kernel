@@ -167,8 +167,6 @@ bool hclge_reset_done_it(struct hnae3_handle *handle, bool done)
 
 #ifdef CONFIG_IT_VALIDATION
 
-EXPORT_SYMBOL(hclge_set_vport_promisc_mode);
-
 int hclge_init_it(void)
 {
 #ifdef CONFIG_HNS3_TEST
