@@ -14,6 +14,7 @@
 #include "hnae3.h"
 #include "hclge_main.h"
 #include "hns3_enet.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_rss.h"
 
 #define HASH_ALG_MASK 0XFC
@@ -29,8 +30,9 @@ static int hclge_set_rss_algo_key(struct hclge_dev *hdev,
 
 	req = (struct hclge_rss_config_cmd *)desc.data;
 	for (key_offset = 0; key_offset < 3; key_offset++) {
-		hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_RSS_GENERIC_CONFIG,
-					   false);
+		hns3_cae_cmd_setup_basic_desc(&desc,
+					      HCLGE_OPC_RSS_GENERIC_CONFIG,
+					      false);
 		req->hash_config |= (hfunc & HCLGE_RSS_HASH_ALGO_MASK);
 		req->hash_config |= (key_offset << HCLGE_RSS_HASH_KEY_OFFSET_B);
 		if (key_offset == 2)
@@ -40,7 +42,7 @@ static int hclge_set_rss_algo_key(struct hclge_dev *hdev,
 			key_size = HCLGE_RSS_HASH_KEY_NUM;
 		memcpy(req->hash_key,
 		       key + key_offset * HCLGE_RSS_HASH_KEY_NUM, key_size);
-		status = hclge_cmd_send(&hdev->hw, &desc, 1);
+		status = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (status) {
 			dev_err(&hdev->pdev->dev,
 				"Configure RSS algo fail, status = %d\n",
@@ -109,8 +111,9 @@ static int hns3_cae_get_rss_cfg(struct hns3_nic_priv *net_priv,
 	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_RSS_GENERIC_CONFIG, true);
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_setup_basic_desc(&desc,
+				      HCLGE_OPC_RSS_GENERIC_CONFIG, true);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (status) {
 		dev_err(&hdev->pdev->dev, "%s fail, status is %d.\n",
 			__func__, status);

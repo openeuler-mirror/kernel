@@ -8,6 +8,7 @@
 #include "hnae3.h"
 #include "hclge_main.h"
 #include "hns3_enet.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_xsfp.h"
 
 #define BD0_DATA_LEN	20
@@ -21,9 +22,9 @@ static int hns3_get_sfp_present(struct hnae3_handle *handle, u32 *present)
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, XSFP_OPC_SFP_GET_PRESENT, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, XSFP_OPC_SFP_GET_PRESENT, true);
 	resp = (struct hclge_sfp_present_cmd *)desc.data;
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "get spf present failed %d\n", ret);
 		return ret;
@@ -50,8 +51,8 @@ static int _hns3_get_sfpinfo(struct hnae3_handle *handle, u8 *buff,
 	memset(desc, 0x0, sizeof(desc));
 
 	for (i = 0; i < HCLGE_SFP_INFO_LEN; i++) {
-		hclge_cmd_setup_basic_desc(&desc[i], XSFP_OPC_SFP_GET_INFO,
-					   true);
+		hns3_cae_cmd_setup_basic_desc(&desc[i], XSFP_OPC_SFP_GET_INFO,
+					      true);
 		if (i == 0)
 			desc[0].data[0] = offset | (size << 16);
 
@@ -61,7 +62,7 @@ static int _hns3_get_sfpinfo(struct hnae3_handle *handle, u8 *buff,
 			desc[i].flag &= ~(cpu_to_le16(HCLGE_CMD_FLAG_NEXT));
 	}
 
-	ret = hclge_cmd_send(&hdev->hw, desc, HCLGE_SFP_INFO_LEN);
+	ret = hns3_cae_cmd_send(hdev, desc, HCLGE_SFP_INFO_LEN);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "get spf information cmd failed %d\n",
 			ret);
@@ -131,11 +132,11 @@ int hns3_set_sfp_state(struct hnae3_handle *handle, bool en)
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, XSFP_OPC_SFP_SET_STATUS, false);
+	hns3_cae_cmd_setup_basic_desc(&desc, XSFP_OPC_SFP_SET_STATUS, false);
 	req = (struct hclge_sfp_enable_cmd *)desc.data;
 	req->set_sfp_enable_flag = en;
 
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret)
 		dev_err(&hdev->pdev->dev, "set spf on/off cmd failed %d\n",
 			ret);

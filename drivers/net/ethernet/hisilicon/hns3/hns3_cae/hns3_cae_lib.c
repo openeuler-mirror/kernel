@@ -13,6 +13,7 @@
 #include "hclge_cmd.h"
 #include "hclge_main.h"
 #include "hns3_cae_lib.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_tm.h"
 #include "hns3_cae_dcb.h"
 #include "hns3_cae_pkt.h"
@@ -261,8 +262,8 @@ int hns3_cae_chs_set(struct hclge_dev *hdev, u8 chs_type, u8 enable)
 	enum hclge_cmd_status status;
 	struct hclge_chs_param *recv;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CHECKSUM_CHECK_EN, true);
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_CHECKSUM_CHECK_EN, true);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (status) {
 		pr_err("chs get cmd send failed!\n");
 		return status;
@@ -293,8 +294,8 @@ int hns3_cae_chs_set(struct hclge_dev *hdev, u8 chs_type, u8 enable)
 		break;
 	}
 
-	hclge_cmd_reuse_desc(&desc, false);
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_reuse_desc(&desc, false);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 
 	return status;
 }
@@ -311,8 +312,8 @@ int hns3_cae_chs_get(struct hclge_dev *hdev, u8 chs_type, u8 *enable)
 	u8 outer_l3_en;
 	u8 inner_l3_en;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CHECKSUM_CHECK_EN, true);
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_CHECKSUM_CHECK_EN, true);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (status) {
 		pr_err("chs get cmd send failed!\n");
 		return status;
@@ -419,9 +420,9 @@ int hns3_cae_get_commit_id(struct hnae3_handle *handle, u8 *commit_id,
 	struct hclge_desc desc;
 	int ret, i;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_IMP_COMMIT_ID_GET, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_IMP_COMMIT_ID_GET, true);
 	resp = (struct hns3_cae_commit_id_param *)(desc.data);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "get commit id failed %d\n", ret);
 		return ret;
@@ -619,14 +620,14 @@ int hns3_gro_age_handle(struct hns3_nic_priv *net_priv,
 	param = (struct gro_param *)buf_in;
 	hdev = vport->back;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_GRO_AGE_CFG,
-				   param->is_read ? true : false);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_GRO_AGE_CFG,
+				      param->is_read ? true : false);
 	req = (struct hclge_gro_age_config_cmd *)desc.data;
 
 	if (!param->is_read)
 		req->ppu_gro_age_cnt = param->age_cnt;
 
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "gro age config fail, ret = %d\n",
 			ret);
@@ -662,11 +663,13 @@ static int hns3_dcqcn_rw(struct hns3_nic_priv *net_priv,
 	hdev = vport->back;
 
 	if (rw_type == DEVMEM_CFG_READ) {
-		hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_DCQCN_TEMPLATE_CFG,
-					   true);
+		hns3_cae_cmd_setup_basic_desc(&desc,
+					      HCLGE_OPC_DCQCN_TEMPLATE_CFG,
+					      true);
 	} else {
-		hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_DCQCN_TEMPLATE_CFG,
-					   false);
+		hns3_cae_cmd_setup_basic_desc(&desc,
+					      HCLGE_OPC_DCQCN_TEMPLATE_CFG,
+					      false);
 		desc.data[2] = *data;
 	}
 
@@ -674,7 +677,7 @@ static int hns3_dcqcn_rw(struct hns3_nic_priv *net_priv,
 	desc.data[1] = SCC_TEMP_HIGH_ADDR;
 	desc.data[4] = 32;
 
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "disable net lane failed %d\n", ret);
 		return ret;
@@ -867,9 +870,9 @@ int hns3_dcqcn_get_msg_cnt(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_DCQCN_GET_MSG_CNT, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_DCQCN_GET_MSG_CNT, true);
 
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "disable net lane failed %d\n", ret);
 		return ret;
@@ -978,16 +981,6 @@ static long hns3_cae_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 	cmd_raw = nt_msg.module;
 	out_size = nt_msg.len_info.out_buff_len;
 	in_size = nt_msg.len_info.in_buff_len;
-	ret = hns3_cae_k_get_netdev_by_ifname(nt_msg.device_name, &nic_dev);
-	if (ret) {
-		pr_err("can not get the netdevice correctly\n");
-		return -EINVAL;
-	}
-
-	if (nic_dev->ae_handle->flags & HNAE3_SUPPORT_VF) {
-		pr_err("VF is not supported.\n");
-		return -EINVAL;
-	}
 
 	ret = alloc_buff_in(&nt_msg, in_size, &buf_in);
 	if (ret) {
@@ -1000,6 +993,29 @@ static long hns3_cae_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 		pr_err("alloc out buffer failed\n");
 		goto out_free_buf_in;
 	}
+#ifndef CONFIG_EXT_TEST
+	/**
+	 * After decoupling with driver, the scenario of hns driver unregister
+	 * must be considered. In this scenario, driver unregister may happened
+	 * between hns3_cae_k_get_netdev_by_ifname and send_to_driver,
+	 * which may cause access null pointer or other exception.
+	 * When CONFIG_EXT_TEST was defined, we haven't decoupled the tool
+	 * code yet, so we don't need lock.
+	 */
+	rtnl_lock();
+#endif
+	ret = hns3_cae_k_get_netdev_by_ifname(nt_msg.device_name, &nic_dev);
+	if (ret) {
+		pr_err("can not get the netdevice correctly\n");
+		ret = -EINVAL;
+		goto out_invalid;
+	}
+
+	if (nic_dev->ae_handle->flags & HNAE3_SUPPORT_VF) {
+		pr_err("VF is not supported.\n");
+		ret = -EINVAL;
+		goto out_invalid;
+	}
 
 	switch (cmd_raw) {
 	case SEND_TO_DRIVER:
@@ -1007,19 +1023,26 @@ static long hns3_cae_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 				     out_size);
 		if (ret) {
 			pr_err("send buffer to driver failed, ret = %d\n", ret);
-			goto out_free_buf_out;
+			goto out_invalid;
 		}
 		break;
 	default:
 		pr_err("module err!\n");
 		ret = -EINVAL;
-		goto out_free_buf_out;
+		goto out_invalid;
 	}
-
+#ifndef CONFIG_EXT_TEST
+	rtnl_unlock();
+#endif
 	ret = copy_buf_out_to_user(&nt_msg, out_size, buf_out);
 	if (ret)
 		pr_err("copy buf to user failed\n");
+	goto out_free_buf_out;
 
+out_invalid:
+#ifndef CONFIG_EXT_TEST
+	rtnl_unlock();
+#endif
 out_free_buf_out:
 	free_buff_out(buf_out);
 out_free_buf_in:

@@ -15,6 +15,7 @@
 #include "hclge_main.h"
 #include "hnae3.h"
 #include "hns3_enet.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_common.h"
 
 static int hns3_cae_write_reg_cfg(struct hns3_nic_priv *net_priv,
@@ -31,17 +32,17 @@ static int hns3_cae_write_reg_cfg(struct hns3_nic_priv *net_priv,
 	hdev = vport->back;
 
 	if (in_buf->bits_width == 64) {
-		hclge_cmd_setup_basic_desc(&desc, CMDQ_64_COM_CMD_OPCODE,
-					   false);
+		hns3_cae_cmd_setup_basic_desc(&desc, CMDQ_64_COM_CMD_OPCODE,
+					      false);
 		desc.data[0] = in_buf->addr;
 		desc.data[1] = in_buf->data[0];
 	} else {
-		hclge_cmd_setup_basic_desc(&desc, CMDQ_32_COM_CMD_OPCODE,
-					   false);
+		hns3_cae_cmd_setup_basic_desc(&desc, CMDQ_32_COM_CMD_OPCODE,
+					      false);
 		desc.data[0] = in_buf->addr;
 		desc.data[2] = in_buf->data[0];
 	}
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (status) {
 		dev_err(&hdev->pdev->dev, "%s fail, status is %d.\n", __func__,
 			status);
@@ -70,12 +71,14 @@ static int hns3_cae_read_reg_cfg(struct hns3_nic_priv *net_priv,
 	}
 
 	if (in_buf->bits_width == 64)
-		hclge_cmd_setup_basic_desc(&desc, CMDQ_64_COM_CMD_OPCODE, true);
+		hns3_cae_cmd_setup_basic_desc(&desc,
+					      CMDQ_64_COM_CMD_OPCODE, true);
 	else
-		hclge_cmd_setup_basic_desc(&desc, CMDQ_32_COM_CMD_OPCODE, true);
+		hns3_cae_cmd_setup_basic_desc(&desc,
+					      CMDQ_32_COM_CMD_OPCODE, true);
 
 	desc.data[0] = in_buf->addr;
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (status) {
 		dev_err(&hdev->pdev->dev, "%s fail, status is %d.\n", __func__,
 			status);
@@ -131,13 +134,13 @@ static int hns3_cae_reg_read_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	hclge_cmd_setup_basic_desc(&desc, in_buf->fw_dw_opcode,
-				   in_buf->is_read);
+	hns3_cae_cmd_setup_basic_desc(&desc, in_buf->fw_dw_opcode,
+				      in_buf->is_read);
 
 	for (i = 0; i < 6; i++)
 		desc.data[i] = in_buf->reg_desc.data[i];
 
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (status) {
 		dev_err(&hdev->pdev->dev, "%s, status is %d.\n", __func__,
 			status);
@@ -164,12 +167,12 @@ static int hns3_cae_reg_write_cfg(struct hns3_nic_priv *net_priv,
 	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
-	hclge_cmd_setup_basic_desc(&desc, in_buf->fw_dw_opcode,
-				   in_buf->is_read);
+	hns3_cae_cmd_setup_basic_desc(&desc, in_buf->fw_dw_opcode,
+				      in_buf->is_read);
 	for (i = 0; i < 6; i++)
 		desc.data[i] = in_buf->reg_desc.data[i];
 
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (status) {
 		dev_err(&hdev->pdev->dev, "%s, status is %d.\n", __func__,
 			status);

@@ -9,6 +9,7 @@
 #include "hnae3.h"
 #include "hclge_main.h"
 #include "hns3_enet.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_port.h"
 
 #define HCLGE_CMD_DATA_BYTE_LEN			24
@@ -75,9 +76,9 @@ int hns3_get_port_info(struct hns3_nic_priv *net_priv,
 
 	get_port_info_out->gpio_insert = 0;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_QUERY_PORTINFO_BD_NUM,
-				   true);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_QUERY_PORTINFO_BD_NUM,
+				      true);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"hclge get port info BD num failed %d\n", ret);
@@ -92,8 +93,8 @@ int hns3_get_port_info(struct hns3_nic_priv *net_priv,
 		return -ENOMEM;
 
 	for (i = 0; i < bd_num; i++) {
-		hclge_cmd_setup_basic_desc(&port_desc[i],
-					   HCLGE_OPC_DUMP_PORT_INFO, true);
+		hns3_cae_cmd_setup_basic_desc(&port_desc[i],
+					      HCLGE_OPC_DUMP_PORT_INFO, true);
 		if (i < bd_num - 1)
 			port_desc[i].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 		else
@@ -101,7 +102,7 @@ int hns3_get_port_info(struct hns3_nic_priv *net_priv,
 			    ~(cpu_to_le16(HCLGE_CMD_FLAG_NEXT));
 	}
 
-	ret = hclge_cmd_send(&hdev->hw, port_desc, bd_num);
+	ret = hns3_cae_cmd_send(hdev, port_desc, bd_num);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"get port information cmd failed %d\n", ret);

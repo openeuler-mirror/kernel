@@ -8,6 +8,7 @@
 #include "hnae3.h"
 #include "hclge_main.h"
 #include "hns3_enet.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_hilink_param.h"
 
 #define HILINK_PARAM_CMD_BD_LEN				10UL
@@ -32,8 +33,8 @@ static int hns3_get_hilink_ctle(struct hclge_dev *hdev,
 	u32 i;
 
 	for (i = 0; i < HILINK_PARAM_CMD_BD_LEN; i++) {
-		hclge_cmd_setup_basic_desc(&ctle_desc[i],
-					   HCLGE_OPC_DUMP_CTLE_PARAM, true);
+		hns3_cae_cmd_setup_basic_desc(&ctle_desc[i],
+					      HCLGE_OPC_DUMP_CTLE_PARAM, true);
 		if (i == 0)
 			ctle_desc[0].data[0] = lane_start | (lane_len << 4);
 
@@ -44,7 +45,7 @@ static int hns3_get_hilink_ctle(struct hclge_dev *hdev,
 			    ~(cpu_to_le16(HCLGE_CMD_FLAG_NEXT));
 	}
 
-	ret = hclge_cmd_send(&hdev->hw, ctle_desc, HILINK_PARAM_CMD_BD_LEN);
+	ret = hns3_cae_cmd_send(hdev, ctle_desc, HILINK_PARAM_CMD_BD_LEN);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "get hilink param cmd failed %d\n",
 			ret);
@@ -84,8 +85,8 @@ static int hns3_get_hilink_dfe(struct hclge_dev *hdev,
 	u32 i;
 
 	for (i = 0; i < HILINK_PARAM_CMD_BD_LEN; i++) {
-		hclge_cmd_setup_basic_desc(&dfe_desc[i],
-					   HCLGE_OPC_DUMP_DFE_PARAM, true);
+		hns3_cae_cmd_setup_basic_desc(&dfe_desc[i],
+					      HCLGE_OPC_DUMP_DFE_PARAM, true);
 		if (i == 0)
 			dfe_desc[0].data[0] = lane_start | (lane_len << 4);
 
@@ -95,7 +96,7 @@ static int hns3_get_hilink_dfe(struct hclge_dev *hdev,
 			dfe_desc[i].flag &= ~(cpu_to_le16(HCLGE_CMD_FLAG_NEXT));
 	}
 
-	ret = hclge_cmd_send(&hdev->hw, dfe_desc, HILINK_PARAM_CMD_BD_LEN);
+	ret = hns3_cae_cmd_send(hdev, dfe_desc, HILINK_PARAM_CMD_BD_LEN);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "get hilink param cmd failed %d\n",
 			ret);
@@ -131,8 +132,8 @@ static int hns3_get_hilink_ffe(struct hclge_dev *hdev,
 	u32 i;
 
 	for (i = 0; i < HILINK_PARAM_CMD_BD_LEN; i++) {
-		hclge_cmd_setup_basic_desc(&ffe_desc[i],
-					   HCLGE_OPC_DUMP_FFE_PARAM, true);
+		hns3_cae_cmd_setup_basic_desc(&ffe_desc[i],
+					      HCLGE_OPC_DUMP_FFE_PARAM, true);
 		if (i == 0)
 			ffe_desc[0].data[0] = lane_start | (lane_len << 4);
 
@@ -142,7 +143,7 @@ static int hns3_get_hilink_ffe(struct hclge_dev *hdev,
 			ffe_desc[i].flag &= ~(cpu_to_le16(HCLGE_CMD_FLAG_NEXT));
 	}
 
-	ret = hclge_cmd_send(&hdev->hw, ffe_desc, HILINK_PARAM_CMD_BD_LEN);
+	ret = hns3_cae_cmd_send(hdev, ffe_desc, HILINK_PARAM_CMD_BD_LEN);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "get hilink param cmd failed %d\n",
 			ret);

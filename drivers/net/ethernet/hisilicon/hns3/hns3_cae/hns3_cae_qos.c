@@ -4,6 +4,7 @@
 #include "hclge_main.h"
 #include "hclge_cmd.h"
 #include "hns3_enet.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_qos.h"
 
 struct hclge_dev *get_val_hdev(struct hns3_nic_priv *net_priv)
@@ -27,8 +28,9 @@ int hns3_cmd_rx_priv_wl_config(struct hclge_dev *hdev, u16 tc,
 	int j;
 
 	for (i = 0; i < 2; i++) {
-		hclge_cmd_setup_basic_desc(&desc[i],
-					   HCLGE_OPC_RX_PRIV_WL_ALLOC, false);
+		hns3_cae_cmd_setup_basic_desc(&desc[i],
+					      HCLGE_OPC_RX_PRIV_WL_ALLOC,
+					      false);
 		req = (struct hclge_rx_priv_wl_buf *)desc[i].data;
 		/* The first descriptor set the NEXT bit to 1 */
 		if (i == 0)
@@ -50,7 +52,7 @@ int hns3_cmd_rx_priv_wl_config(struct hclge_dev *hdev, u16 tc,
 	}
 
 	/* Send 2 descriptor at one time */
-	status = hclge_cmd_send(&hdev->hw, desc, 2);
+	status = hns3_cae_cmd_send(hdev, desc, 2);
 	if (status) {
 		dev_err(&hdev->pdev->dev,
 			"Set rx private waterline fail, status %d\n", status);
@@ -97,8 +99,9 @@ int hns3_cmd_common_thrd_config(struct hclge_dev *hdev, u16 tc,
 	int j;
 
 	for (i = 0; i < 2; i++) {
-		hclge_cmd_setup_basic_desc(&desc[i],
-					   HCLGE_OPC_RX_COM_THRD_ALLOC, false);
+		hns3_cae_cmd_setup_basic_desc(&desc[i],
+					      HCLGE_OPC_RX_COM_THRD_ALLOC,
+					      false);
 		req = (struct hclge_rx_com_thrd *)desc[i].data;
 
 		if (i == 0)
@@ -120,7 +123,7 @@ int hns3_cmd_common_thrd_config(struct hclge_dev *hdev, u16 tc,
 	}
 
 	/* Send 2 descriptors at one time */
-	status = hclge_cmd_send(&hdev->hw, desc, 2);
+	status = hns3_cae_cmd_send(hdev, desc, 2);
 	if (status) {
 		dev_err(&hdev->pdev->dev,
 			"Set rx common threshold fail, status %d\n", status);
@@ -161,16 +164,16 @@ int hns3_cae_common_thrd_cfg(struct hns3_nic_priv *net_priv,
 int hns3_cmd_common_wl_config(struct hclge_dev *hdev, u32 high, u32 low, u32 en)
 {
 	enum hclge_cmd_status status;
+	struct hclge_rx_com_wl *req;
 	struct hclge_desc desc;
 
-	struct hclge_rx_com_wl *req = (struct hclge_rx_com_wl *)desc.data;
-
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_RX_COM_WL_ALLOC, false);
+	req = (struct hclge_rx_com_wl *)desc.data;
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_RX_COM_WL_ALLOC, false);
 	req->com_wl.high = cpu_to_le16(high);
 	req->com_wl.high |= cpu_to_le16(en << HCLGE_RX_PRIV_EN_B);
 	req->com_wl.low = cpu_to_le16(low);
 	req->com_wl.low |= cpu_to_le16(en << HCLGE_RX_PRIV_EN_B);
-	status = hclge_cmd_send(&hdev->hw, &desc, 1);
+	status = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (status) {
 		dev_err(&hdev->pdev->dev,
 			"Set rx common waterline fail, status %d\n", status);
@@ -216,9 +219,9 @@ int hns3_cae_common_wl_cfg(struct hns3_nic_priv *net_priv,
 			return -EFAULT;
 		}
 
-		hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_RX_COM_WL_ALLOC,
-					   true);
-		status = hclge_cmd_send(&hdev->hw, &desc, 1);
+		hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_RX_COM_WL_ALLOC,
+					      true);
+		status = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (status != 0) {
 			dev_err(&hdev->pdev->dev,
 				"get rx common waterline fail, status = %d\n",
@@ -260,10 +263,11 @@ int hns3_cae_rx_buff_cfg(struct hns3_nic_priv *net_priv,
 	in_info = (struct hns3_rx_buff_param *)buf_in;
 
 	if (in_info->is_read == IS_READ) {
-		hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_RX_PRIV_BUFF_ALLOC,
-					   true);
+		hns3_cae_cmd_setup_basic_desc(&desc,
+					      HCLGE_OPC_RX_PRIV_BUFF_ALLOC,
+					      true);
 		recv = (struct hclge_rx_priv_buff_cmd *)desc.data;
-		status = hclge_cmd_send(&hdev->hw, &desc, 1);
+		status = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (status) {
 			pr_err("rx buff get cmd send failed!\n");
 			return status;
@@ -305,9 +309,9 @@ int hns3_cae_tx_buff_cfg(struct hns3_nic_priv *net_priv,
 	in_info = (struct hns3_tx_buff_param *)buf_in;
 
 	if (in_info->is_read == IS_READ) {
-		hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TX_BUFF_ALLOC,
-					   true);
-		status = hclge_cmd_send(&hdev->hw, &desc, 1);
+		hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TX_BUFF_ALLOC,
+					      true);
+		status = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (status) {
 			pr_err("tx buff get cmd send failed!\n");
 			return status;
@@ -344,15 +348,16 @@ int hns3_cae_show_comm_thres(struct hns3_nic_priv *net_priv,
 	out_info = (struct hns3_total_priv_wl_param *)buf_out;
 
 	for (i = 0; i < 2; i++) {
-		hclge_cmd_setup_basic_desc(&desc[i],
-					   HCLGE_OPC_RX_COM_THRD_ALLOC, true);
+		hns3_cae_cmd_setup_basic_desc(&desc[i],
+					      HCLGE_OPC_RX_COM_THRD_ALLOC,
+					      true);
 		if (i == 0)
 			desc[i].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 		else
 			desc[i].flag &= ~cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 	}
 
-	status = hclge_cmd_send(&hdev->hw, desc, 2);
+	status = hns3_cae_cmd_send(hdev, desc, 2);
 	if (status) {
 		dev_err(&hdev->pdev->dev,
 			"Get rx common threshold fail, status = %d\n", status);
@@ -394,15 +399,16 @@ int hns3_cae_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
 	out_info = (struct hns3_total_priv_wl_param *)buf_out;
 
 	for (i = 0; i < 2; i++) {
-		hclge_cmd_setup_basic_desc(&desc[i], HCLGE_OPC_RX_PRIV_WL_ALLOC,
-					   true);
+		hns3_cae_cmd_setup_basic_desc(&desc[i],
+					      HCLGE_OPC_RX_PRIV_WL_ALLOC,
+					      true);
 		if (i == 0)
 			desc[i].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 		else
 			desc[i].flag &= ~cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 	}
 
-	status = hclge_cmd_send(&hdev->hw, desc, 2);
+	status = hns3_cae_cmd_send(hdev, desc, 2);
 	if (status) {
 		dev_err(&hdev->pdev->dev,
 			"Get rx private waterline fail, statu = %d\n", status);
@@ -443,15 +449,14 @@ int hns3_cae_qcn_cfg(struct hns3_nic_priv *net_priv,
 	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_QCN_CFG, true);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_QCN_CFG, true);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret)
 		return ret;
 	qcn_cfg = desc.data[0] & HNS3_QCN_SHAP_BYPASS_MASK;
-	hclge_cmd_reuse_desc(&desc, false);
+	hns3_cae_cmd_reuse_desc(&desc, false);
 	desc.data[0] = (qcn_cfg | ((qcn_bypass << HNS3_QCN_SHAP_BYPASS_OFF) &
-				   HNS3_QOS_QCN_BYPASS_MASK)) &
-		       HNS3_QOS_QCN_MASK;
+		       HNS3_QOS_QCN_BYPASS_MASK)) & HNS3_QOS_QCN_MASK;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }

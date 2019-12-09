@@ -2,6 +2,7 @@
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
 #include <linux/kernel.h>
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_m7_cmd.h"
 
 int hns3_m7_cmd_handle(struct hns3_nic_priv *nic_dev, void *buf_in, u32 in_size,
@@ -10,10 +11,10 @@ int hns3_m7_cmd_handle(struct hns3_nic_priv *nic_dev, void *buf_in, u32 in_size,
 	struct hclge_vport *vport = hclge_get_vport(nic_dev->ae_handle);
 	struct m7_cmd_para *cmd_para = (struct m7_cmd_para *)buf_in;
 	struct hclge_dev *hdev = vport->back;
-	enum hclge_cmd_status status;
 	struct hclge_desc *desc;
 	u32 bd_size;
 	bool check;
+	int ret;
 
 	check = !buf_in || in_size < sizeof(struct m7_cmd_para);
 	if (check) {
@@ -33,18 +34,19 @@ int hns3_m7_cmd_handle(struct hns3_nic_priv *nic_dev, void *buf_in, u32 in_size,
 		return -EFAULT;
 	}
 
-	status = hclge_cmd_send(&hdev->hw, desc, cmd_para->bd_count);
-	if (status) {
+	ret = hns3_cae_cmd_send(hdev, desc, cmd_para->bd_count);
+	if (ret) {
 		dev_err(&hdev->pdev->dev,
-			"generic cmd send fail, status is %d.\n", status);
+			"generic cmd send fail, ret is %d.\n", ret);
 		kfree(desc);
-		return status;
+		return ret;
 	}
 
 	if (desc->flag & HCLGE_CMD_FLAG_WR) {
 		if (!buf_out || out_size < bd_size) {
 			pr_err("input param buf_out error in %s function\n",
 			       __func__);
+			kfree(desc);
 			return -EFAULT;
 		}
 		memcpy(buf_out, desc, bd_size);

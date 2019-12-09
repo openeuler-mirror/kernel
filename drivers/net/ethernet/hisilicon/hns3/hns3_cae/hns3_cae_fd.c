@@ -15,6 +15,7 @@
 #include "hnae3.h"
 #include "hclge_main.h"
 #include "hns3_enet.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_fd.h"
 
 static int hns3_cae_send_generic_cmd(struct hclge_dev *hdev, u8 *buf_in,
@@ -27,8 +28,8 @@ static int hns3_cae_send_generic_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	bool check;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_MODE_CTRL,
-				   param->is_read ? true : false);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_MODE_CTRL,
+				      param->is_read ? true : false);
 
 	req = (struct hclge_get_fd_mode_cmd *)desc.data;
 	if (!param->is_read) {
@@ -36,7 +37,7 @@ static int hns3_cae_send_generic_cmd(struct hclge_dev *hdev, u8 *buf_in,
 		req->mode = mode_cfg->mode;
 		req->enable = mode_cfg->enable;
 	}
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "set fd mode fail, ret = %d\n", ret);
 		return ret;
@@ -77,11 +78,11 @@ static int hns3_cae_send_allocate_cmd(struct hclge_dev *hdev, u8 *buf_in,
 
 	allocation_cfg = (struct hclge_get_fd_allocation_cmd *)buf_out;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_GET_ALLOCATION, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_GET_ALLOCATION, true);
 
 	req = (struct hclge_get_fd_allocation_cmd *)desc.data;
 
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"query fd allocation fail, ret = %d\n",
@@ -107,8 +108,8 @@ static int hns3_cae_send_key_cfg_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	bool check;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_KEY_CONFIG,
-				   param->is_read ? true : false);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_KEY_CONFIG,
+				      param->is_read ? true : false);
 
 	req = (struct hclge_set_fd_key_config_cmd *)desc.data;
 	req->stage = param->stage;
@@ -123,7 +124,7 @@ static int hns3_cae_send_key_cfg_cmd(struct hclge_dev *hdev, u8 *buf_in,
 		req->tuple_mask = key_cfg_data->tuple_mask;
 		req->meta_data_mask = key_cfg_data->meta_data_mask;
 	}
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "set fd key fail, ret = %d\n", ret);
 		return ret;
@@ -163,14 +164,14 @@ static int hns3_cae_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	u8 *buf;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_FD_TCAM_OP,
-				   param->is_read ? true : false);
+	hns3_cae_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_FD_TCAM_OP,
+				      param->is_read ? true : false);
 	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
-	hclge_cmd_setup_basic_desc(&desc[1], HCLGE_OPC_FD_TCAM_OP,
-				   param->is_read ? true : false);
+	hns3_cae_cmd_setup_basic_desc(&desc[1], HCLGE_OPC_FD_TCAM_OP,
+				      param->is_read ? true : false);
 	desc[1].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
-	hclge_cmd_setup_basic_desc(&desc[2], HCLGE_OPC_FD_TCAM_OP,
-				   param->is_read ? true : false);
+	hns3_cae_cmd_setup_basic_desc(&desc[2], HCLGE_OPC_FD_TCAM_OP,
+				      param->is_read ? true : false);
 
 	req1 = (struct hclge_fd_tcam_config_1_cmd *)desc[0].data;
 	req2 = (struct hclge_fd_tcam_config_2_cmd *)desc[1].data;
@@ -191,7 +192,7 @@ static int hns3_cae_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 		memcpy(req3->tcam_data, buf, sizeof(req3->tcam_data));
 	}
 
-	ret = hclge_cmd_send(&hdev->hw, desc, 3);
+	ret = hns3_cae_cmd_send(hdev, desc, 3);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"config tcam key fail, ret = %d\n", ret);
@@ -231,8 +232,8 @@ static int hns3_cae_send_ad_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	bool check;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_AD_OP,
-				   param->is_read ? true : false);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_AD_OP,
+				      param->is_read ? true : false);
 	req = (struct hclge_fd_ad_config_cmd *)desc.data;
 	req->stage = param->stage;
 	req->index = param->idx;
@@ -242,7 +243,7 @@ static int hns3_cae_send_ad_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 		memcpy(&req->ad_data, &ad_data->ad_data, sizeof(req->ad_data));
 	}
 
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "fd ad config fail, ret = %d\n", ret);
 		return ret;
@@ -274,7 +275,7 @@ static int hns3_cae_send_cnt_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	bool check;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_CNT_OP, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_CNT_OP, true);
 	req = (struct hclge_fd_cnt_op_cmd *)desc.data;
 	req->stage = param->stage;
 	req->cnt_idx = param->idx;
@@ -285,7 +286,7 @@ static int hns3_cae_send_cnt_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 		return -EFAULT;
 	}
 
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "read fd cnt fail, ret = %d\n", ret);
 		return ret;

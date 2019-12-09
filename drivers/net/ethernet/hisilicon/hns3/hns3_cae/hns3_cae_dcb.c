@@ -12,6 +12,7 @@
 #include "hns3_enet.h"
 #include "hclge_tm.h"
 #include "hclge_cmd.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_dcb.h"
 #define FUNKY_BUF_ERR -1
 #define MAX_DEV_LISTED 20
@@ -81,8 +82,9 @@ static int hns3_cae_cfg_pfc_en(u8 is_read, struct hclge_dev *hdev,
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HNS3_CAE_OPC_CFG_PFC_PAUSE_EN, true);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_setup_basic_desc(&desc,
+				      HNS3_CAE_OPC_CFG_PFC_PAUSE_EN, true);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		pr_err("read pfc enable status fail!ret = %d\n", ret);
 		return ret;
@@ -91,7 +93,7 @@ static int hns3_cae_cfg_pfc_en(u8 is_read, struct hclge_dev *hdev,
 		info->prien = ((desc.data[0] & 0xff00) >> 8);
 		info->pfc_en = ((desc.data[0] & 0x3) == 0x3);
 	} else {
-		hclge_cmd_reuse_desc(&desc, false);
+		hns3_cae_cmd_reuse_desc(&desc, false);
 		if (info->cfg_flag & HNS3_CAE_PFC_EN_CFG_FLAG) {
 			desc.data[0] = (desc.data[0] & (~0x3)) |
 				       (info->pfc_en << 0) |
@@ -105,7 +107,7 @@ static int hns3_cae_cfg_pfc_en(u8 is_read, struct hclge_dev *hdev,
 			dcb_all_info[dev_idx].pfc_cfg_info.prien =
 			    info->prien;
 		}
-		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+		ret = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (ret) {
 			pr_err("set pfc cmd return fail!ret = %d\n", ret);
 			return ret;
@@ -122,8 +124,9 @@ static int hns3_cae_cfg_pause_param(struct hclge_dev *hdev,
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HNS3_CAE_OPC_CFG_PAUSE_PARAM, true);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	hns3_cae_cmd_setup_basic_desc(&desc,
+				      HNS3_CAE_OPC_CFG_PAUSE_PARAM, true);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		pr_err("pause param cfg cmd send fail\n");
 		return ret;
@@ -142,9 +145,9 @@ static int hns3_cae_cfg_pause_param(struct hclge_dev *hdev,
 		desc.data[1] = (desc.data[1] & (~0xff0000)) |
 			       (info->pause_gap << 16);
 
-	hclge_cmd_reuse_desc(&desc, false);
+	hns3_cae_cmd_reuse_desc(&desc, false);
 
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"mac pause param cfg fail, ret = %d.\n", ret);
@@ -352,9 +355,10 @@ int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 	}
 
 	if (in_info->is_read) {
-		hclge_cmd_setup_basic_desc(&desc,
-					   HNS3_CAE_OPC_PRI_TO_TC_MAPPING, 1);
-		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+		hns3_cae_cmd_setup_basic_desc(&desc,
+					      HNS3_CAE_OPC_PRI_TO_TC_MAPPING,
+					      true);
+		ret = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (ret) {
 			pr_err("read up2tc mapping fail!\n");
 			return ret;

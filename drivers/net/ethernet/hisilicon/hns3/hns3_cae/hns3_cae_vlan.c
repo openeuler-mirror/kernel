@@ -11,6 +11,7 @@
 #include "hnae3.h"
 #include "hclge_main.h"
 #include "hns3_enet.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_vlan.h"
 
 int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
@@ -48,7 +49,7 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 		}
 
 		if (in_info->map_flag & HNS3_CAE_VLANUP_VF_CFG_FLAG) {
-			hclge_cmd_setup_basic_desc
+			hns3_cae_cmd_setup_basic_desc
 			    (&desc, HCLGE_OPC_VLANUP_MAPPING_VF_TX_CFG, true);
 			if (in_info->pf_valid) {
 				desc.data[0] |= HNS3_CAE_PFVLD_MASK;
@@ -60,7 +61,7 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 			    ((in_info->vf_id << 3) & HNS3_CAE_VFID_MASK);
 			desc.data[1] |= in_info->module & HNS3_CAE_MODULE_MASK;
 			out_info->vf_id = in_info->vf_id;
-			ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
 					"vf up mapping read fail, ret = %d.\n",
@@ -70,12 +71,12 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 			out_info->ti2oupm = desc.data[2];
 			out_info->tv2pupm = desc.data[4];
 		} else if (in_info->map_flag & HNS3_CAE_VLANUP_TC_CFG_FLAG) {
-			hclge_cmd_setup_basic_desc
+			hns3_cae_cmd_setup_basic_desc
 			    (&desc, HCLGE_OPC_VLANUP_MAPPING_PORT_TX_CFG, true);
 			desc.data[0] |= in_info->tc_id & HNS3_CAE_TCID_MASK;
 			desc.data[1] |= in_info->module & HNS3_CAE_MODULE_MASK;
 			out_info->tc_id = in_info->tc_id;
-			ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
 					"port up mapping read fail, ret = %d.\n",
@@ -90,7 +91,7 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 		out_info->map_flag = in_info->map_flag;
 	} else {
 		if (in_info->map_flag & HNS3_CAE_VLANUP_VF_CFG_FLAG) {
-			hclge_cmd_setup_basic_desc
+			hns3_cae_cmd_setup_basic_desc
 			    (&desc, HCLGE_OPC_VLANUP_MAPPING_VF_TX_CFG, true);
 			if (in_info->pf_valid) {
 				desc.data[0] |= HNS3_CAE_PFVLD_MASK;
@@ -100,7 +101,7 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 			desc.data[0] |=
 			    ((in_info->vf_id << 3) & HNS3_CAE_VFID_MASK);
 			desc.data[1] |= (in_info->module & 0x1);
-			ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
 					"vf up mapping set fail, ret = %d.\n",
@@ -108,12 +109,12 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 				return -EIO;
 			}
 
-			hclge_cmd_reuse_desc(&desc, false);
+			hns3_cae_cmd_reuse_desc(&desc, false);
 			if (in_info->map_flag & HNS3_CAE_VLANUP_TI2OUPM_FLAG)
 				desc.data[2] = in_info->ti2oupm;
 			if (in_info->map_flag & HNS3_CAE_VLANUP_TV2PUPM_FLAG)
 				desc.data[4] = in_info->tv2pupm;
-			ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
 					"vf up mapping set fail, ret = %d.\n",
@@ -121,11 +122,11 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 				return -EIO;
 			}
 		} else if (in_info->map_flag & HNS3_CAE_VLANUP_TC_CFG_FLAG) {
-			hclge_cmd_setup_basic_desc
+			hns3_cae_cmd_setup_basic_desc
 			    (&desc, HCLGE_OPC_VLANUP_MAPPING_PORT_TX_CFG, true);
 			desc.data[0] = (in_info->tc_id & HNS3_CAE_TCID_MASK);
 			desc.data[1] = (in_info->module & HNS3_CAE_MODULE_MASK);
-			ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
 					"port up mapping set fail, ret = %d.\n",
@@ -133,7 +134,7 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 				return -EIO;
 			}
 
-			hclge_cmd_reuse_desc(&desc, false);
+			hns3_cae_cmd_reuse_desc(&desc, false);
 			if (in_info->map_flag & HNS3_CAE_VLANUP_TP2NUPM_FLAG)
 				desc.data[2] = in_info->tp2nupm;
 			if (in_info->map_flag & HNS3_CAE_VLANUP_CTRL_CFG_FLAG) {
@@ -142,7 +143,7 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 				    (((in_info->tag_en >> 2) &
 				      HNS3_CAE_TAGEN_MASK) << 4);
 			}
-			ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
 					"port up mapping set fail, ret = %d.\n",

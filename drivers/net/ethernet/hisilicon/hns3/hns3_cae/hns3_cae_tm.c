@@ -11,6 +11,7 @@
 #include "hclge_main.h"
 #include "hclge_tm.h"
 #include "hclge_cmd.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_tm.h"
 
 static int hns3_cae_tm_schd_mode_set(struct hclge_dev *hdev,
@@ -19,7 +20,7 @@ static int hns3_cae_tm_schd_mode_set(struct hclge_dev *hdev,
 {
 	struct hclge_desc desc;
 
-	hclge_cmd_setup_basic_desc(&desc, opcode, false);
+	hns3_cae_cmd_setup_basic_desc(&desc, opcode, false);
 
 	if (mode == HCLGE_SCH_MODE_DWRR)
 		desc.data[1] = 1;
@@ -28,7 +29,7 @@ static int hns3_cae_tm_schd_mode_set(struct hclge_dev *hdev,
 
 	desc.data[0] = cpu_to_le32(id);
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 static int hns3_cae_tm_schd_mode_get(struct hclge_dev *hdev,
@@ -38,9 +39,9 @@ static int hns3_cae_tm_schd_mode_get(struct hclge_dev *hdev,
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, opcode, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, opcode, true);
 	desc.data[0] = cpu_to_le32(id);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (!ret)
 		*mode = desc.data[1];
 
@@ -52,12 +53,12 @@ int hns3_cae_tm_q_to_qs_set(struct hclge_dev *hdev, u16 q_id, u16 qs_id)
 	struct hclge_nq_to_qs_link_cmd *map;
 	struct hclge_desc desc;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_NQ_TO_QS_LINK, false);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_NQ_TO_QS_LINK, false);
 	map = (struct hclge_nq_to_qs_link_cmd *)desc.data;
 	map->nq_id = cpu_to_le16(q_id);
 	map->qset_id = cpu_to_le16(qs_id | HCLGE_TM_Q_QS_LINK_VLD_MSK);
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 int hns3_cae_tm_q_to_qs_get(struct hclge_dev *hdev, u16 q_id, u16 *qs_id)
@@ -66,11 +67,11 @@ int hns3_cae_tm_q_to_qs_get(struct hclge_dev *hdev, u16 q_id, u16 *qs_id)
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_NQ_TO_QS_LINK, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_NQ_TO_QS_LINK, true);
 	map = (struct hclge_nq_to_qs_link_cmd *)desc.data;
 	map->nq_id = cpu_to_le16(q_id);
 	map->qset_id = cpu_to_le16(*qs_id | HCLGE_TM_Q_QS_LINK_VLD_MSK);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (!ret)
 		*qs_id = map->qset_id & HNS3_CAE_QS_ID_MSK;
 
@@ -82,13 +83,14 @@ int hns3_cae_tm_qs_to_pri_set(struct hclge_dev *hdev, u16 qs_id, u8 pri)
 	struct hclge_qs_to_pri_link_cmd *map;
 	struct hclge_desc desc;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_QS_TO_PRI_LINK, false);
+	hns3_cae_cmd_setup_basic_desc(&desc,
+				      HCLGE_OPC_TM_QS_TO_PRI_LINK, false);
 	map = (struct hclge_qs_to_pri_link_cmd *)desc.data;
 	map->qs_id = cpu_to_le16(qs_id);
 	map->priority = pri;
 	map->link_vld = HCLGE_TM_QS_PRI_LINK_VLD_MSK;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 int hns3_cae_tm_qs_to_pri_get(struct hclge_dev *hdev, u16 qs_id, u8 *pri)
@@ -97,10 +99,10 @@ int hns3_cae_tm_qs_to_pri_get(struct hclge_dev *hdev, u16 qs_id, u8 *pri)
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_QS_TO_PRI_LINK, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_QS_TO_PRI_LINK, true);
 	map = (struct hclge_qs_to_pri_link_cmd *)desc.data;
 	map->qs_id = cpu_to_le16(qs_id);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (!ret)
 		*pri = map->priority;
 
@@ -112,12 +114,12 @@ int hns3_cae_tm_qs_weight_set(struct hclge_dev *hdev, u16 qs_id, u8 dwrr)
 	struct hclge_qs_weight_cmd *weight;
 	struct hclge_desc desc;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_QS_WEIGHT, false);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_QS_WEIGHT, false);
 	weight = (struct hclge_qs_weight_cmd *)desc.data;
 	weight->qs_id = cpu_to_le16(qs_id);
 	weight->dwrr = dwrr;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 int hns3_cae_tm_qs_weight_get(struct hclge_dev *hdev, u16 qs_id, u8 *dwrr)
@@ -126,10 +128,10 @@ int hns3_cae_tm_qs_weight_get(struct hclge_dev *hdev, u16 qs_id, u8 *dwrr)
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_QS_WEIGHT, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_QS_WEIGHT, true);
 	weight = (struct hclge_qs_weight_cmd *)desc.data;
 	weight->qs_id = cpu_to_le16(qs_id);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (!ret)
 		*dwrr = weight->dwrr;
 
@@ -141,12 +143,12 @@ int hns3_cae_tm_pri_weight_set(struct hclge_dev *hdev, u8 pri_id, u8 dwrr)
 	struct hclge_priority_weight_cmd *weight;
 	struct hclge_desc desc;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PRI_WEIGHT, false);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PRI_WEIGHT, false);
 	weight = (struct hclge_priority_weight_cmd *)desc.data;
 	weight->pri_id = pri_id;
 	weight->dwrr = dwrr;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 int hns3_cae_tm_pri_weight_get(struct hclge_dev *hdev, u8 pri_id, u8 *dwrr)
@@ -155,10 +157,10 @@ int hns3_cae_tm_pri_weight_get(struct hclge_dev *hdev, u8 pri_id, u8 *dwrr)
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PRI_WEIGHT, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PRI_WEIGHT, true);
 	weight = (struct hclge_priority_weight_cmd *)desc.data;
 	weight->pri_id = pri_id;
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (!ret)
 		*dwrr = weight->dwrr;
 
@@ -170,12 +172,13 @@ int hns3_cae_tm_pri_pg_bitmap_set(struct hclge_dev *hdev, u8 pg_id, u8 bitmap)
 	struct hclge_pg_to_pri_link_cmd *map;
 	struct hclge_desc desc;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PG_TO_PRI_LINK, false);
+	hns3_cae_cmd_setup_basic_desc(&desc,
+				      HCLGE_OPC_TM_PG_TO_PRI_LINK, false);
 	map = (struct hclge_pg_to_pri_link_cmd *)desc.data;
 	map->pg_id = cpu_to_le16(pg_id);
 	map->pri_bit_map = bitmap;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 int hns3_cae_tm_pri_pg_bitmap_get(struct hclge_dev *hdev, u8 pg_id,
@@ -185,10 +188,10 @@ int hns3_cae_tm_pri_pg_bitmap_get(struct hclge_dev *hdev, u8 pg_id,
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PG_TO_PRI_LINK, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PG_TO_PRI_LINK, true);
 	map = (struct hclge_pg_to_pri_link_cmd *)desc.data;
 	map->pg_id = cpu_to_le16(pg_id);
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret)
 		return ret;
 
@@ -203,15 +206,15 @@ int hns3_cae_tm_qs_bp_bitmap_set(struct hclge_dev *hdev, u8 tc, u8 gp_id,
 	struct hclge_bp_to_qs_map_cmd *bp_to_qs_map_cmd;
 	struct hclge_desc desc;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_BP_TO_QSET_MAPPING,
-				   false);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_BP_TO_QSET_MAPPING,
+				      false);
 	bp_to_qs_map_cmd = (struct hclge_bp_to_qs_map_cmd *)desc.data;
 	bp_to_qs_map_cmd->tc_id = tc;
 	bp_to_qs_map_cmd->qs_group_id = gp_id;
 	/* Qset and tc is one by one mapping */
 	bp_to_qs_map_cmd->qs_bit_map = map;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 int hns3_cae_tm_qs_bp_bitmap_get(struct hclge_dev *hdev, u8 tc, u8 gp_id,
@@ -221,12 +224,12 @@ int hns3_cae_tm_qs_bp_bitmap_get(struct hclge_dev *hdev, u8 tc, u8 gp_id,
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_BP_TO_QSET_MAPPING,
-				   true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_BP_TO_QSET_MAPPING,
+				      true);
 	bp_to_qs_map_cmd = (struct hclge_bp_to_qs_map_cmd *)desc.data;
 	bp_to_qs_map_cmd->tc_id = tc;
 	bp_to_qs_map_cmd->qs_group_id = gp_id;
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret)
 		return ret;
 
@@ -244,12 +247,12 @@ int hns3_cae_tm_pri_shapping_set(struct hclge_dev *hdev,
 
 	opcode = bucket == HCLGE_TM_SHAP_P_BUCKET ?
 	    HCLGE_OPC_TM_PRI_P_SHAPPING : HCLGE_OPC_TM_PRI_C_SHAPPING;
-	hclge_cmd_setup_basic_desc(&desc, opcode, false);
+	hns3_cae_cmd_setup_basic_desc(&desc, opcode, false);
 	shap_cfg_cmd = (struct hclge_pri_shapping_cmd *)desc.data;
 	shap_cfg_cmd->pri_id = pri_id;
 	shap_cfg_cmd->pri_shapping_para = shaper;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 int hns3_cae_tm_pri_shapping_get(struct hclge_dev *hdev,
@@ -263,10 +266,10 @@ int hns3_cae_tm_pri_shapping_get(struct hclge_dev *hdev,
 
 	opcode = bucket == HCLGE_TM_SHAP_P_BUCKET ?
 	    HCLGE_OPC_TM_PRI_P_SHAPPING : HCLGE_OPC_TM_PRI_C_SHAPPING;
-	hclge_cmd_setup_basic_desc(&desc, opcode, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, opcode, true);
 	shap_cfg_cmd = (struct hclge_pri_shapping_cmd *)desc.data;
 	shap_cfg_cmd->pri_id = pri_id;
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	*shaper = shap_cfg_cmd->pri_shapping_para;
 
 	return ret;
@@ -277,12 +280,12 @@ int hns3_cae_tm_pg_weight_set(struct hclge_dev *hdev, u8 pg_id, u8 dwrr)
 	struct hclge_pg_weight_cmd *weight;
 	struct hclge_desc desc;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PG_WEIGHT, false);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PG_WEIGHT, false);
 	weight = (struct hclge_pg_weight_cmd *)desc.data;
 	weight->pg_id = pg_id;
 	weight->dwrr = dwrr;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 int hns3_cae_tm_pg_weight_get(struct hclge_dev *hdev, u8 pg_id, u8 *dwrr)
@@ -291,10 +294,10 @@ int hns3_cae_tm_pg_weight_get(struct hclge_dev *hdev, u8 pg_id, u8 *dwrr)
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PG_WEIGHT, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PG_WEIGHT, true);
 	weight = (struct hclge_pg_weight_cmd *)desc.data;
 	weight->pg_id = pg_id;
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (!ret)
 		*dwrr = weight->dwrr;
 
@@ -311,12 +314,12 @@ int hns3_cae_tm_pg_shapping_set(struct hclge_dev *hdev,
 
 	opcode = bucket == HCLGE_TM_SHAP_P_BUCKET ? HCLGE_OPC_TM_PG_P_SHAPPING :
 	    HCLGE_OPC_TM_PG_C_SHAPPING;
-	hclge_cmd_setup_basic_desc(&desc, opcode, false);
+	hns3_cae_cmd_setup_basic_desc(&desc, opcode, false);
 	shap_cfg_cmd = (struct hclge_pg_shapping_cmd *)desc.data;
 	shap_cfg_cmd->pg_id = pg_id;
 	shap_cfg_cmd->pg_shapping_para = shaper;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 int hns3_cae_tm_pg_shapping_get(struct hclge_dev *hdev,
@@ -330,10 +333,10 @@ int hns3_cae_tm_pg_shapping_get(struct hclge_dev *hdev,
 
 	opcode = bucket == HCLGE_TM_SHAP_P_BUCKET ? HCLGE_OPC_TM_PG_P_SHAPPING :
 	    HCLGE_OPC_TM_PG_C_SHAPPING;
-	hclge_cmd_setup_basic_desc(&desc, opcode, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, opcode, true);
 	shap_cfg_cmd = (struct hclge_pg_shapping_cmd *)desc.data;
 	shap_cfg_cmd->pg_id = pg_id;
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (!ret)
 		*shaper = shap_cfg_cmd->pg_shapping_para;
 
@@ -347,11 +350,11 @@ int hns3_cae_tm_port_shapping_set(struct hclge_dev *hdev, u32 shaper)
 	struct hclge_desc desc;
 
 	opcode = HCLGE_OPC_TM_PORT_SHAPPING;
-	hclge_cmd_setup_basic_desc(&desc, opcode, false);
+	hns3_cae_cmd_setup_basic_desc(&desc, opcode, false);
 	shap_cfg_cmd = (struct hclge_port_shapping_cmd *)desc.data;
 	shap_cfg_cmd->port_shapping_para = shaper;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 int hns3_cae_tm_port_shapping_get(struct hclge_dev *hdev, u32 *shaper)
@@ -362,9 +365,9 @@ int hns3_cae_tm_port_shapping_get(struct hclge_dev *hdev, u32 *shaper)
 	int ret;
 
 	opcode = HCLGE_OPC_TM_PORT_SHAPPING;
-	hclge_cmd_setup_basic_desc(&desc, opcode, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, opcode, true);
 	shap_cfg_cmd = (struct hclge_port_shapping_cmd *)desc.data;
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (!ret)
 		*shaper = shap_cfg_cmd->port_shapping_para;
 
@@ -379,7 +382,7 @@ static int hns3_cae_tm_ets_tc_dwrr_set(struct hclge_dev *hdev, u8 *weight)
 	struct hclge_desc desc;
 	int i;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_ETS_TC_WEIGHT, false);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_ETS_TC_WEIGHT, false);
 	ets_weight = (struct hns3_cae_ets_tc_weight_cmd *)desc.data;
 
 	for (i = 0; i < MAX_TC_NUM; i++)
@@ -387,7 +390,7 @@ static int hns3_cae_tm_ets_tc_dwrr_set(struct hclge_dev *hdev, u8 *weight)
 
 	ets_weight->weight_offset = DEFAULT_TC_OFFSET;
 
-	return hclge_cmd_send(&hdev->hw, &desc, 1);
+	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
 static int hns3_cae_tm_ets_tc_dwrr_get(struct hclge_dev *hdev, u8 *weight)
@@ -396,10 +399,10 @@ static int hns3_cae_tm_ets_tc_dwrr_get(struct hclge_dev *hdev, u8 *weight)
 	struct hclge_desc desc;
 	int ret, i;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_ETS_TC_WEIGHT, true);
+	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_ETS_TC_WEIGHT, true);
 	ets_weight = (struct hns3_cae_ets_tc_weight_cmd *)desc.data;
 
-	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (!ret) {
 		for (i = 0; i < MAX_TC_NUM; i++)
 			weight[i] = ets_weight->tc_weight[i];
@@ -416,12 +419,12 @@ static int hns3_cae_tm_operate_nic_regs(struct hclge_dev *hdev,
 	int ret;
 
 	if (is_read) {
-		hclge_cmd_setup_basic_desc(&desc, HNS3_WRITE_READ_REG_CMD,
-					   true);
+		hns3_cae_cmd_setup_basic_desc(&desc, HNS3_WRITE_READ_REG_CMD,
+					      true);
 		desc.data[0] = (u32)(addr & 0xffffffff);
 		desc.data[1] = (u32)(addr >> 32);
 		desc.data[4] = 32;
-		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+		ret = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
 				"read addr 0x%llx failed! ret = %d.\n",
@@ -430,17 +433,17 @@ static int hns3_cae_tm_operate_nic_regs(struct hclge_dev *hdev,
 		}
 		*value = (u64)desc.data[2] | ((u64)desc.data[3] << 32);
 	} else {
-		hclge_cmd_setup_basic_desc(&desc, HNS3_WRITE_READ_REG_CMD,
-					   false);
+		hns3_cae_cmd_setup_basic_desc(&desc, HNS3_WRITE_READ_REG_CMD,
+					      false);
 		desc.data[0] = (u32)(addr & 0xffffffff);
 		desc.data[1] = (u32)(addr >> 32);
 		desc.data[2] = (u32)(*value & 0xffffffff);
 		desc.data[3] = (u32)(*value >> 32);
 		desc.data[4] = 32;
-		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+		ret = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
-				" write addr 0x%llx value 0x%llx failed! ret = %d.\n",
+				"write addr 0x%llx value 0x%llx failed! ret = %d.\n",
 				addr, *value, ret);
 			return ret;
 		}

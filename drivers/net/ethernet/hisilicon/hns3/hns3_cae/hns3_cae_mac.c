@@ -11,6 +11,7 @@
 #include "hnae3.h"
 #include "hclge_main.h"
 #include "hns3_enet.h"
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_mac.h"
 
 int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
@@ -50,9 +51,9 @@ int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
 			return -EFAULT;
 		}
 
-		hclge_cmd_setup_basic_desc(&desc,
-					   HCLGE_OPC_CONFIG_MAC_MODE, true);
-		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+		hns3_cae_cmd_setup_basic_desc(&desc,
+					      HCLGE_OPC_CONFIG_MAC_MODE, true);
+		ret = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
 				"mac loopback read fail, ret = %d.\n", ret);
@@ -64,9 +65,9 @@ int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
 		out_info->rx2tx_loop_en =
 		    hnae3_get_bit(req2->txrx_pad_fcs_loop_en,
 				  HCLGE_MAC_LINE_LP_B);
-		hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_SERDES_LOOPBACK,
-					   true);
-		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+		hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_SERDES_LOOPBACK,
+					      true);
+		ret = hns3_cae_cmd_send(hdev, &desc, 1);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
 				"serdes loopback read fail, ret = %d.\n", ret);
@@ -81,10 +82,10 @@ int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
 	} else {
 		if (in_info->tx2rx_loop_en < MAINTAIN_LOOP_MODE ||
 		    in_info->rx2tx_loop_en < MAINTAIN_LOOP_MODE) {
-			hclge_cmd_setup_basic_desc(&desc,
-						   HCLGE_OPC_CONFIG_MAC_MODE,
-						   true);
-			ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+			hns3_cae_cmd_setup_basic_desc(&desc,
+						      HCLGE_OPC_CONFIG_MAC_MODE,
+						      true);
+			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
 					"mac loopback set fail, ret = %d.\n",
@@ -104,8 +105,8 @@ int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
 					      HCLGE_MAC_LINE_LP_B,
 					      in_info->rx2tx_loop_en);
 
-			hclge_cmd_reuse_desc(&desc, false);
-			ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+			hns3_cae_cmd_reuse_desc(&desc, false);
+			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
 					"mac loopback set fail, ret = %d.\n",
@@ -113,10 +114,10 @@ int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
 				return -EIO;
 			}
 		} else {
-			hclge_cmd_setup_basic_desc(&desc,
-						   HCLGE_OPC_SERDES_LOOPBACK,
-						   true);
-			ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+			hns3_cae_cmd_setup_basic_desc(&desc,
+						      HCLGE_OPC_SERDES_LOOPBACK,
+						      true);
+			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
 					"mac loopback set fail, ret = %d.\n",
@@ -154,8 +155,8 @@ int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
 					      true);
 			}
 
-			hclge_cmd_reuse_desc(&desc, false);
-			ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+			hns3_cae_cmd_reuse_desc(&desc, false);
+			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
 					"serdes loopback set fail, ret = %d.\n",
