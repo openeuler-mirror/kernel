@@ -253,6 +253,7 @@ struct drv_module_handle driv_module_cmd_handle[] = {
 	{TX_BUFF_CFG, hns3_cae_tx_buff_cfg},
 	{RESET_CFG, hns3_cae_nic_reset},
 	{TIMEOUT_CFG, hns3_cae_nic_timeout_cfg},
+	{GET_BD_BUFF_SIZE, hns3_gro_dump_bd_buff_size},
 	{PROMISC_MODE_CFG, hns3_promisc_mode_cfg},
 	{QINFO_CFG, hns3_cae_qinfo_cfg},
 #ifdef CONFIG_IT_VALIDATION

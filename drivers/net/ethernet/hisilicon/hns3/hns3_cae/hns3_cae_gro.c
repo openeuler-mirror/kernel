@@ -60,3 +60,25 @@ int hns3_gro_age_handle(struct hns3_nic_priv *net_priv,
 
 	return 0;
 }
+
+int hns3_gro_dump_bd_buff_size(struct hns3_nic_priv *net_priv, void *buf_in,
+			       u32 in_size, void *buf_out, u32 out_size)
+{
+	struct hclge_vport *vport;
+	struct hnae3_handle *h;
+	struct hclge_dev *hdev;
+
+	if (!buf_out || out_size < sizeof(u16)) {
+		pr_err("input param buf_out error in %s function\n",
+		       __func__);
+			return -EFAULT;
+	}
+
+	h = net_priv->ae_handle;
+	vport = container_of(h, struct hclge_vport, nic);
+	hdev = vport->back;
+
+	memcpy(buf_out, &hdev->rx_buf_len, sizeof(hdev->rx_buf_len));
+
+	return 0;
+}
