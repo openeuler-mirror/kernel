@@ -36,10 +36,10 @@ void hclge_reset_task_schedule_it(struct hclge_dev *hdev)
 static int hclge_clean_stats64(struct hnae3_handle *handle, int opcode,
 			       void *data, int length)
 {
-	struct hnae3_knic_private_info *kinfo;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
-	struct hclge_tqp *tqp;
+	struct hnae3_knic_private_info *kinfo = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
+	struct hclge_tqp *tqp = NULL;
 	int i;
 
 	kinfo = &handle->kinfo;
@@ -104,12 +104,12 @@ static int _hclge_get_sfpinfo(struct hnae3_handle *handle, u8 *buff,
 	struct hclge_desc desc[HCLGE_SFP_INFO_LEN];
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_sfp_info *resp = NULL;
+	u8 *temp_data = NULL;
+	u32 temp_len;
+	u32 data_len;
 	int ret;
 	u32 i;
 	u32 j;
-	u32 temp_len;
-	u32 data_len;
-	u8 *temp_data;
 
 	memset(desc, 0x0, sizeof(desc));
 
@@ -375,7 +375,7 @@ static int hclge_set_mac_state(struct hnae3_handle *handle, int opcode,
 			       void *data, int length)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_config_mac_mode_cmd *req;
+	struct hclge_config_mac_mode_cmd *req = NULL;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;
 	u32 loop_en = 0;
@@ -809,7 +809,7 @@ static int hclge_opt_mac_table(struct hnae3_handle *handle, int opcode,
 {
 	struct hclge_mac_table_para *info = (struct hclge_mac_table_para *)data;
 	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev;
+	struct hclge_dev *hdev = NULL;
 	int ret;
 
 	if (!info || !vport)
