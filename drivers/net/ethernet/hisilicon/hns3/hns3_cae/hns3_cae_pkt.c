@@ -21,7 +21,7 @@
 #define DEFAULT_MIN_PKT_LEN	60
 #define NEXTHDR_HOP		0
 
-u8 pkt_head_table[NICTOOL_PKT_TYPE_MAX][128] = {
+u8 pkt_head_table[HNS3_CAE_PKT_TYPE_MAX][128] = {
 	/* ARP */
 	{
 	 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0xaa,
@@ -183,8 +183,8 @@ struct kthread_info {
 	struct task_struct *task;
 	int stop;
 	struct hns3_nic_priv *net_priv;
-	struct nictool_pkt_cfg_info *in_info;
-	struct nictool_pkt_result_info *out_info;
+	struct hns3_cae_pkt_cfg_info *in_info;
+	struct hns3_cae_pkt_result_info *out_info;
 };
 
 struct kthread_info *kthread_table[MAX_KTHREAD_NUM] = {0};
@@ -294,9 +294,9 @@ static struct sk_buff *__hns_assemble_skb(struct net_device *ndev,
 	return skb;
 }
 
-void nictool_pkt_type_deal(u8 *payload, struct nictool_pkt_cfg_info *in_info,
-			   struct in_ifaddr *ifa_list,
-			   u8 *pkt_payload, u32 head_len)
+void hns3_cae_pkt_type_deal(u8 *payload, struct hns3_cae_pkt_cfg_info *in_info,
+			    struct in_ifaddr *ifa_list,
+			    u8 *pkt_payload, u32 head_len)
 {
 	int i;
 
@@ -324,7 +324,7 @@ void nictool_pkt_type_deal(u8 *payload, struct nictool_pkt_cfg_info *in_info,
 }
 
 void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
-			 struct nictool_pkt_cfg_info *in_info)
+			 struct hns3_cae_pkt_cfg_info *in_info)
 {
 	struct in_ifaddr *ifa_list;
 	u8 *pkt_payload;
@@ -342,7 +342,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 	ifa_list = (struct in_ifaddr *)netdev->ip_ptr->ifa_list;
 
 	switch (in_info->type) {
-	case NICTOOL_PKT_TYPE_ARP:
+	case HNS3_CAE_PKT_TYPE_ARP:
 		memcpy(payload + 22, netdev->dev_addr, ETH_ALEN);
 
 		if (ifa_list)
@@ -352,7 +352,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 		memcpy(payload + 32, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 38, in_info->dst_ip, 4);
 		break;
-	case NICTOOL_PKT_TYPE_TCP:
+	case HNS3_CAE_PKT_TYPE_TCP:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		payload[16] = in_info->pkt_len / 256;
 		payload[17] = in_info->pkt_len % 256;
@@ -362,7 +362,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 
 		memcpy(payload + 30, in_info->dst_ip, 4);
 		break;
-	case NICTOOL_PKT_TYPE_TCP_DSCP:
+	case HNS3_CAE_PKT_TYPE_TCP_DSCP:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		payload[15] = (in_info->dscp << 2);
 		payload[16] = in_info->pkt_len / 256;
@@ -374,16 +374,16 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 
 		memcpy(payload + 30, in_info->dst_ip, 4);
 		break;
-	case NICTOOL_PKT_TYPE_PAUSE:
+	case HNS3_CAE_PKT_TYPE_PAUSE:
 		memcpy(payload + 16, &in_info->pause_time, 2);
 		break;
-	case NICTOOL_PKT_TYPE_PAUSE_ERR:
+	case HNS3_CAE_PKT_TYPE_PAUSE_ERR:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 12, &in_info->eth_type, 2);
 		memcpy(payload + 14, &in_info->pause_code, 2);
 		memcpy(payload + 16, &in_info->pause_time, 2);
 		break;
-	case NICTOOL_PKT_TYPE_PFC:
+	case HNS3_CAE_PKT_TYPE_PFC:
 		payload[17] = in_info->priority;
 		for (i = 0; i < 8; i++) {
 			if ((in_info->priority >> i) & 0x01)
@@ -391,7 +391,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 				       &in_info->pause_time, 2);
 		}
 		break;
-	case NICTOOL_PKT_TYPE_PFC_ERR:
+	case HNS3_CAE_PKT_TYPE_PFC_ERR:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 12, &in_info->eth_type, 2);
 		memcpy(payload + 14, &in_info->pause_code, 2);
@@ -402,19 +402,19 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 				       &in_info->pause_time, 2);
 		}
 		break;
-	case NICTOOL_PKT_TYPE_IPV4:
-		nictool_pkt_type_deal(payload, in_info, ifa_list, pkt_payload,
-				      34);
+	case HNS3_CAE_PKT_TYPE_IPV4:
+		hns3_cae_pkt_type_deal(payload, in_info, ifa_list, pkt_payload,
+				       34);
 		break;
-	case NICTOOL_PKT_TYPE_IPV4_LOOSESRCROUTE_OPTION:
-		nictool_pkt_type_deal(payload, in_info, ifa_list, pkt_payload,
-				      58);
+	case HNS3_CAE_PKT_TYPE_IPV4_LOOSESRCROUTE_OPTION:
+		hns3_cae_pkt_type_deal(payload, in_info, ifa_list, pkt_payload,
+				       58);
 		break;
-	case NICTOOL_PKT_TYPE_IPV4_TRACEROUTE_OPTION:
-		nictool_pkt_type_deal(payload, in_info, ifa_list, pkt_payload,
-				      66);
+	case HNS3_CAE_PKT_TYPE_IPV4_TRACEROUTE_OPTION:
+		hns3_cae_pkt_type_deal(payload, in_info, ifa_list, pkt_payload,
+				       66);
 		break;
-	case NICTOOL_PKT_TYPE_IPV6:
+	case HNS3_CAE_PKT_TYPE_IPV6:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 22, in_info->pkt_inet6_addr, 16);
 
@@ -432,7 +432,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 			       in_info->pkt_len - 54);	/* payload */
 		}
 		break;
-	case NICTOOL_PKT_TYPE_IPV6_EXTENSION_ROUTING:
+	case HNS3_CAE_PKT_TYPE_IPV6_EXTENSION_ROUTING:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 22, in_info->pkt_inet6_addr, 16);
 
@@ -448,7 +448,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 			       in_info->pkt_len - 114);	/* payload */
 		}
 		break;
-	case NICTOOL_PKT_TYPE_SCTP4:
+	case HNS3_CAE_PKT_TYPE_SCTP4:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 
 		if (ifa_list)
@@ -459,7 +459,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 		memcpy(payload + 42, &in_info->pkt_checksum_sctp,
 		       4);	/* checksum */
 		break;
-	case NICTOOL_PKT_TYPE_SCTP6:
+	case HNS3_CAE_PKT_TYPE_SCTP6:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 22, in_info->pkt_inet6_addr, 16);
 		memcpy(payload + 62, &in_info->pkt_checksum_sctp,
@@ -480,9 +480,9 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 
 #define MAX_PKTS_NUM_ONCE 50
 
-static int __hns3_test_change_send_queue(int cur_queue,
-					 struct nictool_pkt_cfg_info *in_info,
-					 u8 *payload)
+static int __hns3_cae_change_send_queue(int cur_queue,
+					struct hns3_cae_pkt_cfg_info *in_info,
+					u8 *payload)
 {
 	int queue_id = cur_queue;
 
@@ -497,9 +497,9 @@ static int __hns3_test_change_send_queue(int cur_queue,
 	return queue_id;
 }
 
-int __hns3_test_send_pkt(struct hns3_nic_priv *net_priv,
-			 struct nictool_pkt_cfg_info *in_info,
-			 struct nictool_pkt_result_info *out_info)
+int __hns3_cae_send_pkt(struct hns3_nic_priv *net_priv,
+			struct hns3_cae_pkt_cfg_info *in_info,
+			struct hns3_cae_pkt_result_info *out_info)
 {
 	struct hnae3_handle *handle;
 	struct sk_buff *skb;
@@ -539,9 +539,9 @@ skb_again:
 			if (change_flag <= 0) {
 				change_flag = MAX_PKTS_NUM_ONCE;
 				queue_id =
-				    __hns3_test_change_send_queue(queue_id,
-								  in_info,
-								  payload);
+				    __hns3_cae_change_send_queue(queue_id,
+								 in_info,
+								 payload);
 			}
 		}
 
@@ -586,7 +586,7 @@ out:
 	return ret;
 }
 
-void hns3_test_pkt_init(void)
+void hns3_cae_pkt_init(void)
 {
 	int i;
 
@@ -594,7 +594,7 @@ void hns3_test_pkt_init(void)
 		mutex_init(&pkt_mutex[i]);
 }
 
-void hns3_test_pkt_destroy(void)
+void hns3_cae_pkt_destroy(void)
 {
 	int i;
 
@@ -602,14 +602,14 @@ void hns3_test_pkt_destroy(void)
 		mutex_destroy(&pkt_mutex[i]);
 }
 
-int __hns3_test_new_task(void *arg)
+int __hns3_cae_new_task(void *arg)
 {
 	struct kthread_info *info = (struct kthread_info *)arg;
 	int tid = info->tid;
 
 	if (is_send_thread(tid)) {
-		__hns3_test_send_pkt(info->net_priv,
-				     info->in_info, info->out_info);
+		__hns3_cae_send_pkt(info->net_priv,
+				    info->in_info, info->out_info);
 		pr_err("send pkt %d, the total len = %d\n",
 		       info->out_info->num, info->out_info->total_len);
 	}
@@ -624,12 +624,12 @@ int __hns3_test_new_task(void *arg)
 	return 0;
 }
 
-int hns3_test_create_new_thread(int tid,
-				struct hns3_nic_priv *net_priv,
-				struct nictool_pkt_cfg_info *in_info,
-				struct nictool_pkt_result_info *out_info)
+int hns3_cae_create_new_thread(int tid,
+			       struct hns3_nic_priv *net_priv,
+			       struct hns3_cae_pkt_cfg_info *in_info,
+			       struct hns3_cae_pkt_result_info *out_info)
 {
-	char name[] = "hns3_test_pkt00";
+	char name[] = "hns3_cae_pkt00";
 	int ret;
 
 	if (kthread_table[tid]) {
@@ -668,7 +668,7 @@ int hns3_test_create_new_thread(int tid,
 	name[13] = tid / 10 + '0';
 	name[14] = tid % 10 + '0';
 	kthread_table[tid]->task =
-	    kthread_run(__hns3_test_new_task, kthread_table[tid], "%s", name);
+	    kthread_run(__hns3_cae_new_task, kthread_table[tid], "%s", name);
 	if (IS_ERR(kthread_table[tid]->task)) {
 		pr_err("%s,%d:thread[%d] alloc failed\n", __func__, __LINE__,
 		       tid);
@@ -691,7 +691,7 @@ err_in_info_alloc:
 	return ret;
 }
 
-void hns3_test_stop_new_thread(int tid)
+void hns3_cae_stop_new_thread(int tid)
 {
 	mutex_lock(&pkt_mutex[tid]);
 	if (kthread_table[tid])
@@ -699,20 +699,20 @@ void hns3_test_stop_new_thread(int tid)
 	mutex_unlock(&pkt_mutex[tid]);
 }
 
-int hns3_test_send_pkt(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_send_pkt(struct hns3_nic_priv *net_priv,
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct nictool_pkt_result_info *out_info;
-	struct nictool_pkt_cfg_info *in_info;
+	struct hns3_cae_pkt_result_info *out_info;
+	struct hns3_cae_pkt_cfg_info *in_info;
 	struct hnae3_handle *handle;
 	int queue_id;
 	int tid;
 
-	in_info = (struct nictool_pkt_cfg_info *)buf_in;
-	out_info = (struct nictool_pkt_result_info *)buf_out;
+	in_info = (struct hns3_cae_pkt_cfg_info *)buf_in;
+	out_info = (struct hns3_cae_pkt_result_info *)buf_out;
 
-	if (!in_info || in_size < sizeof(struct nictool_pkt_cfg_info) ||
-	    !out_info || out_size < sizeof(struct nictool_pkt_result_info)) {
+	if (!in_info || in_size < sizeof(struct hns3_cae_pkt_cfg_info) ||
+	    !out_info || out_size < sizeof(struct hns3_cae_pkt_result_info)) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
 	}
@@ -728,13 +728,13 @@ int hns3_test_send_pkt(struct hns3_nic_priv *net_priv,
 	memset(out_info, 0, sizeof(*out_info));
 	tid = __get_tid(in_info->queue_id, 1);
 	if (in_info->stop_thread) {
-		hns3_test_stop_new_thread(tid);
+		hns3_cae_stop_new_thread(tid);
 		return 0;
 	}
 
 	if (in_info->new_thread)
-		return hns3_test_create_new_thread(tid, net_priv, in_info,
-						   out_info);
+		return hns3_cae_create_new_thread(tid, net_priv, in_info,
+						  out_info);
 
-	return __hns3_test_send_pkt(net_priv, in_info, out_info);
+	return __hns3_cae_send_pkt(net_priv, in_info, out_info);
 }

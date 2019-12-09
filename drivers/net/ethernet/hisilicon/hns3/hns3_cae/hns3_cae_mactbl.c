@@ -18,9 +18,9 @@
 #include "hns3_ext.h"
 #include "hns3_cae_mactbl.h"
 
-int hns3_test_opt_mactbl(struct hns3_nic_priv *net_priv,
-			 void *buf_in, u32 in_size,
-			 void *buf_out, u32 out_size)
+int hns3_cae_opt_mactbl(struct hns3_nic_priv *net_priv,
+			void *buf_in, u32 in_size,
+			void *buf_out, u32 out_size)
 {
 	struct hns3_mac_tbl_para *out = (struct hns3_mac_tbl_para *)buf_out;
 	struct hns3_mac_tbl_para *in = (struct hns3_mac_tbl_para *)buf_in;

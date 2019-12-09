@@ -82,12 +82,12 @@ struct reset_param {
 
 static dev_t g_dev_id = {0};
 
-struct class *g_nictool_class;
-struct cdev g_nictool_cdev;
+struct class *g_hns3_cae_class;
+struct cdev g_hns3_cae_cdev;
 static const char hns3_driver_name[] = "hns3";
 
-int g_nictool_init_flag;
-int g_nictool_ref_cnt;
+int g_hns3_cae_init_flag;
+int g_hns3_cae_ref_cnt;
 
 typedef int (*driv_module) (struct hns3_nic_priv *nic_dev, void *buf_in,
 			    u32 in_size, void *buf_out, u32 out_size);
@@ -174,7 +174,7 @@ static int copy_buf_out_to_user(struct msg_module *nt_msg, u32 out_size,
 	return ret;
 }
 
-static int nictool_netdev_match_check(struct net_device *netdev)
+static int hns3_cae_netdev_match_check(struct net_device *netdev)
 {
 	struct ethtool_drvinfo drv_info;
 
@@ -230,8 +230,8 @@ out:
 	return netdev;
 }
 
-static int nictool_k_get_netdev_by_ifname(char *ifname,
-					  struct hns3_nic_priv **nic_dev)
+static int hns3_cae_k_get_netdev_by_ifname(char *ifname,
+					   struct hns3_nic_priv **nic_dev)
 {
 	struct net_device *netdev = NULL;
 
@@ -241,7 +241,7 @@ static int nictool_k_get_netdev_by_ifname(char *ifname,
 		return -EFAULT;
 	}
 
-	if (nictool_netdev_match_check(netdev)) {
+	if (hns3_cae_netdev_match_check(netdev)) {
 		netdev_err(netdev, "netdevice is not hns device.\n");
 		return -EFAULT;
 	}
@@ -255,7 +255,7 @@ static int nictool_k_get_netdev_by_ifname(char *ifname,
 	return 0;
 }
 
-int hns3_test_chs_set(struct hclge_dev *hdev, u8 chs_type, u8 enable)
+int hns3_cae_chs_set(struct hclge_dev *hdev, u8 chs_type, u8 enable)
 {
 	struct hclge_desc desc;
 	enum hclge_cmd_status status;
@@ -299,7 +299,7 @@ int hns3_test_chs_set(struct hclge_dev *hdev, u8 chs_type, u8 enable)
 	return status;
 }
 
-int hns3_test_chs_get(struct hclge_dev *hdev, u8 chs_type, u8 *enable)
+int hns3_cae_chs_get(struct hclge_dev *hdev, u8 chs_type, u8 *enable)
 {
 	struct hclge_chs_param *recv;
 	enum hclge_cmd_status status;
@@ -352,8 +352,8 @@ int hns3_test_chs_get(struct hclge_dev *hdev, u8 chs_type, u8 *enable)
 	return status;
 }
 
-int hns3_test_chs_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_chs_cfg(struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hns3_chs_param *in_info;
 	struct hclge_vport *vport;
@@ -384,8 +384,8 @@ int hns3_test_chs_cfg(struct hns3_nic_priv *net_priv,
 		return -1;
 	}
 	if (is_set) {
-		if (hns3_test_chs_set(hdev, in_info->type,
-				      in_info->is_enable)) {
+		if (hns3_cae_chs_set(hdev, in_info->type,
+				     in_info->is_enable)) {
 			pr_err("set chs type(%d) enable failed!\n",
 			       in_info->type);
 			return -1;
@@ -397,7 +397,7 @@ int hns3_test_chs_cfg(struct hns3_nic_priv *net_priv,
 			       __func__);
 			return -EFAULT;
 		}
-		if (hns3_test_chs_get(hdev, in_info->type, out_info)) {
+		if (hns3_cae_chs_get(hdev, in_info->type, out_info)) {
 			pr_err("get chs type(%d) enable failed!\n",
 			       in_info->type);
 			return -1;
@@ -409,18 +409,18 @@ int hns3_test_chs_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns_test_get_commit_id(struct hnae3_handle *handle, u8 *commit_id,
+int hns3_cae_get_commit_id(struct hnae3_handle *handle, u8 *commit_id,
 			   u32 *ncl_version)
 {
 #define COMMIT_ID_LEN	8
 	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hns3_test_commit_id_param *resp;
+	struct hns3_cae_commit_id_param *resp;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;
 	int ret, i;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_IMP_COMMIT_ID_GET, true);
-	resp = (struct hns3_test_commit_id_param *)(desc.data);
+	resp = (struct hns3_cae_commit_id_param *)(desc.data);
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev, "get commit id failed %d\n", ret);
@@ -457,7 +457,7 @@ static int get_fw_ver(struct hns3_nic_priv *nic_dev, void *buf_in, u32 in_size,
 	hdev = vport->back;
 	out_buf = (struct firmware_ver_param *)buf_out;
 
-	if (hns_test_get_commit_id(handle, out_buf->commit_id,
+	if (hns3_cae_get_commit_id(handle, out_buf->commit_id,
 				   &out_buf->ncl_version))
 		return -EFAULT;
 
@@ -482,9 +482,9 @@ static int get_driver_ver(struct hns3_nic_priv *nic_dev,
 	return 0;
 }
 
-int hns3_test_clean_stats(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u32 in_size,
-			  void *buf_out, u32 out_size)
+int hns3_cae_clean_stats(struct hns3_nic_priv *net_priv,
+			 void *buf_in, u32 in_size,
+			 void *buf_out, u32 out_size)
 {
 	struct net_device *netdev = net_priv->netdev;
 	struct hnae3_knic_private_info *kinfo;
@@ -885,45 +885,45 @@ int hns3_dcqcn_get_msg_cnt(struct hns3_nic_priv *net_priv,
 struct drv_module_handle driv_module_cmd_handle[] = {
 	{FW_VER, get_fw_ver},
 	{DRIVER_VER, get_driver_ver},
-	{CHECKSUM_CFG, hns3_test_chs_cfg},
-	{TM_QUEUE_CFG, hns3_test_queue_cfg},
-	{TM_QSET_CFG, hns3_test_qs_cfg},
-	{TM_PRI_CFG, hns3_test_pri_cfg},
-	{TM_PG_CFG, hns3_test_pg_cfg},
-	{TM_PORT_CFG, hns3_test_port_cfg},
-	{TM_ETS_CFG, hns3_test_ets_cfg},
-	{DCB_MODE_CFG, hns3_test_dcb_cfg},
-	{ETS_MODE_CFG, hns3_test_dcb_ets_cfg},
-	{PFC_MODE_CFG, hns3_test_dcb_pfc_cfg},
-	{MAC_LOOP_CFG, hns3_test_mac_loop_cfg},
-	{DFX_INFO_CMD, hns3_test_get_dfx_info},
-	{DFX_READ_CMD, hns3_test_read_dfx_info},
-	{EVENT_INJECTION_CMD, hns3_test_event_injection},
-	{SEND_PKT, hns3_test_send_pkt},
-	{RX_PRIV_BUFF_WL_CFG, hns3_test_rx_priv_buff_wl_cfg},
-	{RX_COMMON_THRD_CFG, hns3_test_common_thrd_cfg},
-	{RX_COMMON_WL_CFG, hns3_test_common_wl_cfg},
-	{SHOW_RX_PRIV_WL, hns3_test_show_rx_priv_wl},
-	{SHOW_RX_COMM_THRES, hns3_test_show_comm_thres},
-	{QCN_EN_CFG, hns3_test_qcn_cfg},
-	{RX_BUFF_CFG, hns3_test_rx_buff_cfg},
-	{TX_BUFF_CFG, hns3_test_tx_buff_cfg},
+	{CHECKSUM_CFG, hns3_cae_chs_cfg},
+	{TM_QUEUE_CFG, hns3_cae_queue_cfg},
+	{TM_QSET_CFG, hns3_cae_qs_cfg},
+	{TM_PRI_CFG, hns3_cae_pri_cfg},
+	{TM_PG_CFG, hns3_cae_pg_cfg},
+	{TM_PORT_CFG, hns3_cae_port_cfg},
+	{TM_ETS_CFG, hns3_cae_ets_cfg},
+	{DCB_MODE_CFG, hns3_cae_dcb_cfg},
+	{ETS_MODE_CFG, hns3_cae_dcb_ets_cfg},
+	{PFC_MODE_CFG, hns3_cae_dcb_pfc_cfg},
+	{MAC_LOOP_CFG, hns3_cae_mac_loop_cfg},
+	{DFX_INFO_CMD, hns3_cae_get_dfx_info},
+	{DFX_READ_CMD, hns3_cae_read_dfx_info},
+	{EVENT_INJECTION_CMD, hns3_cae_event_injection},
+	{SEND_PKT, hns3_cae_send_pkt},
+	{RX_PRIV_BUFF_WL_CFG, hns3_cae_rx_priv_buff_wl_cfg},
+	{RX_COMMON_THRD_CFG, hns3_cae_common_thrd_cfg},
+	{RX_COMMON_WL_CFG, hns3_cae_common_wl_cfg},
+	{SHOW_RX_PRIV_WL, hns3_cae_show_rx_priv_wl},
+	{SHOW_RX_COMM_THRES, hns3_cae_show_comm_thres},
+	{QCN_EN_CFG, hns3_cae_qcn_cfg},
+	{RX_BUFF_CFG, hns3_cae_rx_buff_cfg},
+	{TX_BUFF_CFG, hns3_cae_tx_buff_cfg},
 	{RESET_CFG, hns3_nic_reset},
 	{TIMEOUT_CFG, hns3_nic_timeout_cfg},
 	{PROMISC_MODE_CFG, hns3_promisc_mode_cfg},
-	{QINFO_CFG, hns3_test_qinfo_cfg},
-	{MACTABLE_CFG, hns3_test_opt_mactbl},
-	{CLEAN_STATS, hns3_test_clean_stats},
-	{FD_CFG, hns3_test_fd_cfg},
-	{RSS_GENERIC_CFG, hns3_test_rss_cfg},
-	{REG_CFG, hns3_test_reg_cfg},
+	{QINFO_CFG, hns3_cae_qinfo_cfg},
+	{MACTABLE_CFG, hns3_cae_opt_mactbl},
+	{CLEAN_STATS, hns3_cae_clean_stats},
+	{FD_CFG, hns3_cae_fd_cfg},
+	{RSS_GENERIC_CFG, hns3_cae_rss_cfg},
+	{REG_CFG, hns3_cae_reg_cfg},
 	{COM_REG_CFG, hns3_reg_cfg},
 	{GRO_CFG, hns3_gro_age_handle},
 	{M7_CMD_MODE_CFG, hns3_m7_cmd_handle},
-	{QRES_CFG, hns3_test_qres_cfg},
+	{QRES_CFG, hns3_cae_qres_cfg},
 	{STAT_CFG, hns3_stat_mode_cfg},
 	{IRQ_CFG, hns3_irq_lli_cfg},
-	{VLAN_UPMAPPING, hns3_test_upmapping_cfg},
+	{VLAN_UPMAPPING, hns3_cae_upmapping_cfg},
 	{LAMP_CFG, hns3_lamp_cfg},
 	{EXTERN_INTERFACE_CFG, hns3_ext_interface_test},
 	{XSFP_CFG, hns3_xsfp_cfg},
@@ -956,8 +956,8 @@ static int send_to_driver(struct hns3_nic_priv *nic_dev,
 	return err;
 }
 
-static long nictool_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
-				     unsigned long arg)
+static long hns3_cae_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
+				      unsigned long arg)
 {
 	struct hns3_nic_priv *nic_dev = NULL;
 	struct msg_module nt_msg;
@@ -978,7 +978,7 @@ static long nictool_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 	cmd_raw = nt_msg.module;
 	out_size = nt_msg.len_info.out_buff_len;
 	in_size = nt_msg.len_info.in_buff_len;
-	ret = nictool_k_get_netdev_by_ifname(nt_msg.device_name, &nic_dev);
+	ret = hns3_cae_k_get_netdev_by_ifname(nt_msg.device_name, &nic_dev);
 	if (ret) {
 		pr_err("can not get the netdevice correctly\n");
 		return -EINVAL;
@@ -1028,26 +1028,26 @@ out_free_buf_in:
 	return (long)ret;
 }
 
-static int nictool_k_open(struct inode *pnode, struct file *pfile)
+static int hns3_cae_k_open(struct inode *pnode, struct file *pfile)
 {
 	return 0;
 }
 
-static ssize_t nictool_k_read(struct file *pfile, char __user *ubuf,
-			      size_t size, loff_t *ppos)
+static ssize_t hns3_cae_k_read(struct file *pfile, char __user *ubuf,
+			       size_t size, loff_t *ppos)
 {
 	pr_info("%s read *ppos:%lld size = %d\n", __func__, *ppos, (int)size);
 	return 0;
 }
 
-static ssize_t nictool_k_write(struct file *pfile, const char __user *ubuf,
-			       size_t size, loff_t *ppos)
+static ssize_t hns3_cae_k_write(struct file *pfile, const char __user *ubuf,
+				size_t size, loff_t *ppos)
 {
 	pr_info("%s write *ppos:%lld size = %d\n", __func__, *ppos, (int)size);
 	return 0;
 }
 
-int nictool_k_mmap(struct file *filp, struct vm_area_struct *vma)
+int hns3_cae_k_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	int ret;
 
@@ -1063,14 +1063,14 @@ int nictool_k_mmap(struct file *filp, struct vm_area_struct *vma)
 
 static const struct file_operations fifo_operations = {
 	.owner = THIS_MODULE,
-	.open = nictool_k_open,
-	.read = nictool_k_read,
-	.write = nictool_k_write,
-	.unlocked_ioctl = nictool_k_unlocked_ioctl,
-	.mmap = nictool_k_mmap,
+	.open = hns3_cae_k_open,
+	.read = hns3_cae_k_read,
+	.write = hns3_cae_k_write,
+	.unlocked_ioctl = hns3_cae_k_unlocked_ioctl,
+	.mmap = hns3_cae_k_mmap,
 };
 
-int if_nictool_exist(void)
+int if_hns3_cae_exist(void)
 {
 	struct file *fp = NULL;
 	int exist = 0;
@@ -1086,17 +1086,17 @@ int if_nictool_exist(void)
 	return exist;
 }
 
-int nictool_k_init(void)
+int hns3_cae_k_init(void)
 {
 	int ret;
 	struct device *pdevice;
 
-	if (g_nictool_init_flag) {
-		g_nictool_ref_cnt++;
+	if (g_hns3_cae_init_flag) {
+		g_hns3_cae_ref_cnt++;
 		return 0;
 	}
 
-	if (if_nictool_exist()) {
+	if (if_hns3_cae_exist()) {
 		pr_info("dev/nic_dev is existed!\n");
 		return 0;
 	}
@@ -1107,21 +1107,21 @@ int nictool_k_init(void)
 		return ret;
 	}
 
-	g_nictool_class = class_create(THIS_MODULE, "nic_class");
-	if (IS_ERR(g_nictool_class)) {
+	g_hns3_cae_class = class_create(THIS_MODULE, "nic_class");
+	if (IS_ERR(g_hns3_cae_class)) {
 		pr_err("class create fail.\n");
 		ret = -EFAULT;
 		goto class_create_err;
 	}
 
-	cdev_init(&g_nictool_cdev, &fifo_operations);
-	ret = cdev_add(&g_nictool_cdev, g_dev_id, 1);
+	cdev_init(&g_hns3_cae_cdev, &fifo_operations);
+	ret = cdev_add(&g_hns3_cae_cdev, g_dev_id, 1);
 	if (ret < 0) {
 		pr_err("cdev_add fail, ret = %d.\n", ret);
 		goto cdev_add_err;
 	}
 
-	pdevice = device_create(g_nictool_class, NULL, g_dev_id, NULL,
+	pdevice = device_create(g_hns3_cae_class, NULL, g_dev_id, NULL,
 				"nic_dev");
 	if (IS_ERR(pdevice)) {
 		pr_err("device_create fail.\n");
@@ -1129,39 +1129,39 @@ int nictool_k_init(void)
 		goto device_create_err;
 	}
 
-	g_nictool_init_flag = 1;
-	g_nictool_ref_cnt = 1;
-	pr_info("register nictool_dev to system, ok!\n");
+	g_hns3_cae_init_flag = 1;
+	g_hns3_cae_ref_cnt = 1;
+	pr_info("register hns3_cae_dev to system, ok!\n");
 
 	return 0;
 
 device_create_err:
-	cdev_del(&g_nictool_cdev);
+	cdev_del(&g_hns3_cae_cdev);
 
 cdev_add_err:
-	class_destroy(g_nictool_class);
+	class_destroy(g_hns3_cae_class);
 
 class_create_err:
-	g_nictool_class = NULL;
+	g_hns3_cae_class = NULL;
 	unregister_chrdev_region(g_dev_id, 1);
 
 	return ret;
 }
 
-void nictool_k_uninit(void)
+void hns3_cae_k_uninit(void)
 {
-	if (g_nictool_init_flag) {
-		if ((--g_nictool_ref_cnt))
+	if (g_hns3_cae_init_flag) {
+		if ((--g_hns3_cae_ref_cnt))
 			return;
 	}
 
-	if (!g_nictool_class || IS_ERR(g_nictool_class))
+	if (!g_hns3_cae_class || IS_ERR(g_hns3_cae_class))
 		return;
 
-	cdev_del(&g_nictool_cdev);
-	device_destroy(g_nictool_class, g_dev_id);
-	class_destroy(g_nictool_class);
-	g_nictool_class = NULL;
+	cdev_del(&g_hns3_cae_cdev);
+	device_destroy(g_hns3_cae_class, g_dev_id);
+	class_destroy(g_hns3_cae_class);
+	g_hns3_cae_class = NULL;
 	unregister_chrdev_region(g_dev_id, 1);
-	pr_info("unregister nictool_dev ok!\n");
+	pr_info("unregister hns3_cae_dev ok!\n");
 }

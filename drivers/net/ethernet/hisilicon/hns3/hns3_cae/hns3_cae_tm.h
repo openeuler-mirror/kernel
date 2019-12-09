@@ -9,7 +9,7 @@
 #define MAX_QUEUE_NUM				16
 #define MAX_PG_NUM				4
 #define MAX_TC_NUM				8
-#define HNS3_TEST_QS_ID_MSK			(BIT(10) - 1)
+#define HNS3_CAE_QS_ID_MSK			(BIT(10) - 1)
 #define HCLGE_OPC_TM_PORT_SCH_MODE_CFG		0x0811
 
 #define HNS3_TM_QSET_MAPPING_FLAG		0x01
@@ -35,19 +35,19 @@
 #define HNS3_TM_ETS_PSHAP_CFG_FLAG		0x01
 #define HNS3_TM_ETS_TC_CFG_FLAG			0x02
 
-struct nictool_ets_tc_weight_cmd {
+struct hns3_cae_ets_tc_weight_cmd {
 	u8 tc_weight[MAX_TC_NUM];
 	u8 weight_offset;
 	u8 rsvd[15];
 };
 
-struct nictool_queue_cfg_info {
+struct hns3_cae_queue_cfg_info {
 	int is_read;
 	u16 queue_id;
 	u16 qs;
 };
 
-struct nictool_qs_cfg_info {
+struct hns3_cae_qs_cfg_info {
 	int is_read;
 	u16 qs_id;
 	u8 pri;
@@ -57,7 +57,7 @@ struct nictool_qs_cfg_info {
 	u8 flag;
 };
 
-struct nictool_pri_cfg_info {
+struct hns3_cae_pri_cfg_info {
 	int is_read;
 	u16 pri_id;
 	u8 pg;
@@ -68,7 +68,7 @@ struct nictool_pri_cfg_info {
 	u8 flag;
 };
 
-struct nictool_pg_cfg_info {
+struct hns3_cae_pg_cfg_info {
 	int is_read;
 	u16 pg_id;
 	u32 c_shaping;
@@ -78,7 +78,7 @@ struct nictool_pg_cfg_info {
 	u8 flag;
 };
 
-struct nictool_port_cfg_info {
+struct hns3_cae_port_cfg_info {
 	int is_read;
 	u16 port_id;
 	u32 mode;
@@ -87,7 +87,7 @@ struct nictool_port_cfg_info {
 	u8 flag;
 };
 
-struct nictool_ets_cfg_info {
+struct hns3_cae_ets_cfg_info {
 	int is_read;
 	u16 tc_id;
 	u8 weight;
@@ -96,19 +96,19 @@ struct nictool_ets_cfg_info {
 	u8 flag;
 };
 
-int hns3_test_queue_cfg(struct hns3_nic_priv *net_priv,
-			void *buf_in, u32 in_size,
-			void *buf_out, u32 out_size);
-int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size);
-int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size);
-int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
-		     void *buf_out, u32 out_size);
-int hns3_test_port_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_queue_cfg(struct hns3_nic_priv *net_priv,
 		       void *buf_in, u32 in_size,
 		       void *buf_out, u32 out_size);
-int hns3_test_ets_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size);
+int hns3_cae_qs_cfg(struct hns3_nic_priv *net_priv,
+		    void *buf_in, u32 in_size, void *buf_out, u32 out_size);
+int hns3_cae_pri_cfg(struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size);
+int hns3_cae_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
+		    void *buf_out, u32 out_size);
+int hns3_cae_port_cfg(struct hns3_nic_priv *net_priv,
+		      void *buf_in, u32 in_size,
+		      void *buf_out, u32 out_size);
+int hns3_cae_ets_cfg(struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size);
 
 #endif

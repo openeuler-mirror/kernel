@@ -99,9 +99,9 @@ int hns3_get_q_tx_head(struct hns3_nic_priv *net_priv, int ring_id)
 	return num;
 }
 
-int hns3_test_qinfo_cfg(struct hns3_nic_priv *net_priv,
-			void *buf_in, u32 in_size,
-			void *buf_out, u32 out_size)
+int hns3_cae_qinfo_cfg(struct hns3_nic_priv *net_priv,
+		       void *buf_in, u32 in_size,
+		       void *buf_out, u32 out_size)
 {
 	struct qinfo_param *out_info;
 	int tqps_num;

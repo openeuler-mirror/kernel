@@ -52,9 +52,9 @@ static int hclge_set_rss_algo_key(struct hclge_dev *hdev,
 	return 0;
 }
 
-static int hns3_test_set_rss_cfg(struct hns3_nic_priv *net_priv,
-				 void *buf_in, u32 in_size,
-				 void *buf_out, u32 out_size)
+static int hns3_cae_set_rss_cfg(struct hns3_nic_priv *net_priv,
+				void *buf_in, u32 in_size,
+				void *buf_out, u32 out_size)
 {
 	struct hclge_rss_config_cmd *in_info;
 	enum hclge_cmd_status status;
@@ -88,9 +88,9 @@ static int hns3_test_set_rss_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-static int hns3_test_get_rss_cfg(struct hns3_nic_priv *net_priv,
-				 void *buf_in, u32 in_size,
-				 void *buf_out, u32 out_size)
+static int hns3_cae_get_rss_cfg(struct hns3_nic_priv *net_priv,
+				void *buf_in, u32 in_size,
+				void *buf_out, u32 out_size)
 {
 	struct hclge_rss_config_cmd *req;
 	enum hclge_cmd_status status;
@@ -122,8 +122,8 @@ static int hns3_test_get_rss_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_test_rss_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_rss_cfg(struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct rss_config *mode_param;
 	bool check;
@@ -137,11 +137,11 @@ int hns3_test_rss_cfg(struct hns3_nic_priv *net_priv,
 
 	mode_param = (struct rss_config *)buf_in;
 	if (mode_param->is_read == 1)
-		ret = hns3_test_get_rss_cfg(net_priv, buf_in, in_size, buf_out,
-					    out_size);
+		ret = hns3_cae_get_rss_cfg(net_priv, buf_in, in_size, buf_out,
+					   out_size);
 	else
-		ret = hns3_test_set_rss_cfg(net_priv, buf_in, in_size, buf_out,
-					    out_size);
+		ret = hns3_cae_set_rss_cfg(net_priv, buf_in, in_size, buf_out,
+					   out_size);
 
 	return ret;
 }

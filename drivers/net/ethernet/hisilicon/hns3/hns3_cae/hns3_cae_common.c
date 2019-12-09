@@ -17,9 +17,9 @@
 #include "hns3_enet.h"
 #include "hns3_cae_common.h"
 
-static int hns3_test_write_reg_cfg(struct hns3_nic_priv *net_priv,
-				   void *buf_in, u32 in_size,
-				   void *buf_out, u32 out_size)
+static int hns3_cae_write_reg_cfg(struct hns3_nic_priv *net_priv,
+				  void *buf_in, u32 in_size,
+				  void *buf_out, u32 out_size)
 {
 	struct reg_param *in_buf = (struct reg_param *)buf_in;
 	enum hclge_cmd_status status;
@@ -51,9 +51,9 @@ static int hns3_test_write_reg_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-static int hns3_test_read_reg_cfg(struct hns3_nic_priv *net_priv,
-				  void *buf_in, u32 in_size,
-				  void *buf_out, u32 out_size)
+static int hns3_cae_read_reg_cfg(struct hns3_nic_priv *net_priv,
+				 void *buf_in, u32 in_size,
+				 void *buf_out, u32 out_size)
 {
 	struct hclge_vport *vport = hclge_get_vport(net_priv->ae_handle);
 	struct reg_ret_param *out_buf = (struct reg_ret_param *)buf_out;
@@ -89,8 +89,8 @@ static int hns3_test_read_reg_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_test_reg_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_reg_cfg(struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct reg_param *mode_param = (struct reg_param *)buf_in;
 	bool check;
@@ -103,18 +103,18 @@ int hns3_test_reg_cfg(struct hns3_nic_priv *net_priv,
 	}
 
 	if (mode_param->is_read == 1)
-		ret = hns3_test_read_reg_cfg(net_priv, buf_in, in_size,
-					     buf_out, out_size);
+		ret = hns3_cae_read_reg_cfg(net_priv, buf_in, in_size,
+					    buf_out, out_size);
 	else
-		ret = hns3_test_write_reg_cfg(net_priv, buf_in, in_size,
-					      buf_out, out_size);
+		ret = hns3_cae_write_reg_cfg(net_priv, buf_in, in_size,
+					     buf_out, out_size);
 
 	return ret;
 }
 
-static int hns3_reg_read_cfg(struct hns3_nic_priv *net_priv,
-			     void *buf_in, u32 in_size,
-			     void *buf_out, u32 out_size)
+static int hns3_cae_reg_read_cfg(struct hns3_nic_priv *net_priv,
+				 void *buf_in, u32 in_size,
+				 void *buf_out, u32 out_size)
 {
 	struct hclge_vport *vport = hclge_get_vport(net_priv->ae_handle);
 	struct com_reg_param *out_buf = (struct com_reg_param *)buf_out;
@@ -150,9 +150,9 @@ static int hns3_reg_read_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-static int hns3_reg_write_cfg(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u32 in_size,
-			      void *buf_out, u32 out_size)
+static int hns3_cae_reg_write_cfg(struct hns3_nic_priv *net_priv,
+				  void *buf_in, u32 in_size,
+				  void *buf_out, u32 out_size)
 {
 	struct com_reg_param *in_buf = (struct com_reg_param *)buf_in;
 	enum hclge_cmd_status status;
@@ -194,11 +194,11 @@ int hns3_reg_cfg(struct hns3_nic_priv *net_priv,
 
 	param = (struct com_reg_param *)buf_in;
 	if (param->is_read == 1)
-		ret = hns3_reg_read_cfg(net_priv, buf_in, in_size, buf_out,
-					out_size);
+		ret = hns3_cae_reg_read_cfg(net_priv, buf_in, in_size, buf_out,
+					    out_size);
 	else
-		ret = hns3_reg_write_cfg(net_priv, buf_in, in_size, buf_out,
-					 out_size);
+		ret = hns3_cae_reg_write_cfg(net_priv, buf_in, in_size, buf_out,
+					     out_size);
 
 	return ret;
 }

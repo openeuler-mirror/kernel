@@ -4,25 +4,30 @@
 #ifndef __HNS3_CAE_PKT_H__
 #define __HNS3_CAE_PKT_H__
 
+#include <linux/types.h>
+
+#define IP_ADDR_LEN	4
+#define IP6_ADDR_LEN	10
+
 enum PKT_TYPE {
-	NICTOOL_PKT_TYPE_ARP = 0,
-	NICTOOL_PKT_TYPE_TCP,
-	NICTOOL_PKT_TYPE_TCP_DSCP,
-	NICTOOL_PKT_TYPE_PAUSE,
-	NICTOOL_PKT_TYPE_PAUSE_ERR,
-	NICTOOL_PKT_TYPE_PFC,
-	NICTOOL_PKT_TYPE_PFC_ERR,
-	NICTOOL_PKT_TYPE_IPV4,
-	NICTOOL_PKT_TYPE_IPV4_LOOSESRCROUTE_OPTION,
-	NICTOOL_PKT_TYPE_IPV4_TRACEROUTE_OPTION,
-	NICTOOL_PKT_TYPE_IPV6,
-	NICTOOL_PKT_TYPE_IPV6_EXTENSION_ROUTING,
-	NICTOOL_PKT_TYPE_SCTP4,
-	NICTOOL_PKT_TYPE_SCTP6,
-	NICTOOL_PKT_TYPE_MAX,
+	HNS3_CAE_PKT_TYPE_ARP = 0,
+	HNS3_CAE_PKT_TYPE_TCP,
+	HNS3_CAE_PKT_TYPE_TCP_DSCP,
+	HNS3_CAE_PKT_TYPE_PAUSE,
+	HNS3_CAE_PKT_TYPE_PAUSE_ERR,
+	HNS3_CAE_PKT_TYPE_PFC,
+	HNS3_CAE_PKT_TYPE_PFC_ERR,
+	HNS3_CAE_PKT_TYPE_IPV4,
+	HNS3_CAE_PKT_TYPE_IPV4_LOOSESRCROUTE_OPTION,
+	HNS3_CAE_PKT_TYPE_IPV4_TRACEROUTE_OPTION,
+	HNS3_CAE_PKT_TYPE_IPV6,
+	HNS3_CAE_PKT_TYPE_IPV6_EXTENSION_ROUTING,
+	HNS3_CAE_PKT_TYPE_SCTP4,
+	HNS3_CAE_PKT_TYPE_SCTP6,
+	HNS3_CAE_PKT_TYPE_MAX,
 };
 
-struct nictool_pkt_cfg_info {
+struct hns3_cae_pkt_cfg_info {
 	int queue_id;
 	int type;
 	int pkt_len;
@@ -37,23 +42,23 @@ struct nictool_pkt_cfg_info {
 	u16 pause_code;
 	u8 priority;
 	u8 dscp;
-	u8 dst_mac[6];
-	u8 dst_ip[4];
+	u8 dst_mac[ETH_ALEN];
+	u8 dst_ip[IP_ADDR_LEN];
 	int multi_queue;
 	int pkt_payload_flag;
 	u16 pkt_checksum;
 	u32 pkt_checksum_sctp;
-	u16 pkt_inet6_addr[10];
+	u16 pkt_inet6_addr[IP6_ADDR_LEN];
 };
 
-struct nictool_pkt_result_info {
+struct hns3_cae_pkt_result_info {
 	int total_len;
 	int num;
 };
 
-int hns3_test_send_pkt(struct hns3_nic_priv *net_priv, void *buf_in,
-		       u32 in_size, void *buf_out, u32 out_size);
-void hns3_test_pkt_init(void);
-void hns3_test_pkt_destroy(void);
+int hns3_cae_send_pkt(struct hns3_nic_priv *net_priv, void *buf_in,
+		      u32 in_size, void *buf_out, u32 out_size);
+void hns3_cae_pkt_init(void);
+void hns3_cae_pkt_destroy(void);
 
 #endif
