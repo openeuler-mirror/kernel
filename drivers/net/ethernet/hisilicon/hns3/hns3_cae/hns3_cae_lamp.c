@@ -12,8 +12,8 @@ int hns3_lamp_cfg(struct hns3_nic_priv *net_priv,
 		  void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct net_device *netdev = net_priv->netdev;
-	struct hns3_lamp_signal *signal;
-	struct hns3_lamp_param *param;
+	struct hns3_lamp_signal *signal = NULL;
+	struct hns3_lamp_param *param = NULL;
 	int ret = -1;
 
 	if (!buf_in || in_size < sizeof(struct hns3_lamp_param))

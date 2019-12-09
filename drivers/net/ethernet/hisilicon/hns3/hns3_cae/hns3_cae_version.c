@@ -14,7 +14,7 @@
 #include "hns3_cae_version.h"
 
 static int hns3_cae_get_commit_id(struct hnae3_handle *handle, u8 *commit_id,
-				  u32 *ncl_version)
+			   u32 *ncl_version)
 {
 #define COMMIT_ID_LEN	8
 	struct hclge_vport *vport = hns3_cae_get_vport(handle);
@@ -76,13 +76,13 @@ int hns3_cae_get_fw_ver(struct hns3_nic_priv *nic_dev, void *buf_in,
 }
 
 int hns3_cae_get_driver_ver(struct hns3_nic_priv *nic_dev,
-			    void *buf_in, u32 in_size,
-			    void *buf_out, u32 out_size)
+		   void *buf_in, u32 in_size,
+		   void *buf_out, u32 out_size)
 {
-	if (!buf_out || out_size < sizeof(HNAE_DRIVER_VERSION))
+	if (!buf_out || out_size < strlen(THIS_MODULE->version))
 		return -ENOMEM;
 
-	strncpy(buf_out, HNAE_DRIVER_VERSION, sizeof(HNAE_DRIVER_VERSION));
+	strncpy(buf_out, THIS_MODULE->version, strlen(THIS_MODULE->version));
 
 	return 0;
 }

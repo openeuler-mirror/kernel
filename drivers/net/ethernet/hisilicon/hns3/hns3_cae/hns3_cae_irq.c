@@ -23,8 +23,9 @@ struct hns3_irq_lli_param {
 int hns3_irq_lli_cfg(struct hns3_nic_priv *net_priv,
 		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct hns3_irq_lli_param *in_info, *out_info;
-	struct hnae3_handle *handle;
+	struct hns3_irq_lli_param *in_info = NULL;
+	struct hns3_irq_lli_param *out_info = NULL;
+	struct hnae3_handle *handle = NULL;
 	int is_get;
 	bool check;
 

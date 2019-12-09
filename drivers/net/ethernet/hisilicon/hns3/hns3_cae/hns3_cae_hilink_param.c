@@ -27,7 +27,7 @@ static int hns3_get_hilink_ctle(struct hclge_dev *hdev,
 				struct hns3_hilink_param *hns3_param_out)
 {
 	struct hclge_desc ctle_desc[HILINK_LANE_MAX_NUM] = {0};
-	u8 *ctle_data;
+	u8 *ctle_data = NULL;
 	u32 bd_num;
 	int ret;
 	u32 i;
@@ -79,7 +79,7 @@ static int hns3_get_hilink_dfe(struct hclge_dev *hdev,
 			       struct hns3_hilink_param *hns3_param_out)
 {
 	struct hclge_desc dfe_desc[HILINK_LANE_MAX_NUM] = {0};
-	u8 *dfe_data;
+	u8 *dfe_data = NULL;
 	u32 bd_num;
 	int ret;
 	u32 i;
@@ -126,7 +126,7 @@ static int hns3_get_hilink_ffe(struct hclge_dev *hdev,
 			       struct hns3_hilink_param *hns3_param_out)
 {
 	struct hclge_desc ffe_desc[HILINK_LANE_MAX_NUM] = {0};
-	u8 *ffe_data;
+	u8 *ffe_data = NULL;
 	u32 bd_num;
 	int ret;
 	u32 i;
@@ -174,8 +174,8 @@ int hns3_get_hilink_param(struct hns3_nic_priv *net_priv,
 {
 	struct hnae3_handle *handle = hns3_get_handle(net_priv->netdev);
 	struct hclge_vport *vport = hns3_cae_get_vport(handle);
-	struct hns3_hilink_param *hns3_param_out;
-	struct hns3_hilink_param *hns3_param_in;
+	struct hns3_hilink_param *hns3_param_out = NULL;
+	struct hns3_hilink_param *hns3_param_in = NULL;
 	struct hclge_dev *hdev = vport->back;
 	bool check;
 	int ret;

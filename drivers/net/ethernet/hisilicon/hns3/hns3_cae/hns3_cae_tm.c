@@ -50,7 +50,7 @@ static int hns3_cae_tm_schd_mode_get(struct hclge_dev *hdev,
 
 int hns3_cae_tm_q_to_qs_set(struct hclge_dev *hdev, u16 q_id, u16 qs_id)
 {
-	struct hclge_nq_to_qs_link_cmd *map;
+	struct hclge_nq_to_qs_link_cmd *map = NULL;
 	struct hclge_desc desc;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_NQ_TO_QS_LINK, false);
@@ -63,7 +63,7 @@ int hns3_cae_tm_q_to_qs_set(struct hclge_dev *hdev, u16 q_id, u16 qs_id)
 
 int hns3_cae_tm_q_to_qs_get(struct hclge_dev *hdev, u16 q_id, u16 *qs_id)
 {
-	struct hclge_nq_to_qs_link_cmd *map;
+	struct hclge_nq_to_qs_link_cmd *map = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -80,7 +80,7 @@ int hns3_cae_tm_q_to_qs_get(struct hclge_dev *hdev, u16 q_id, u16 *qs_id)
 
 int hns3_cae_tm_qs_to_pri_set(struct hclge_dev *hdev, u16 qs_id, u8 pri)
 {
-	struct hclge_qs_to_pri_link_cmd *map;
+	struct hclge_qs_to_pri_link_cmd *map = NULL;
 	struct hclge_desc desc;
 
 	hns3_cae_cmd_setup_basic_desc(&desc,
@@ -95,7 +95,7 @@ int hns3_cae_tm_qs_to_pri_set(struct hclge_dev *hdev, u16 qs_id, u8 pri)
 
 int hns3_cae_tm_qs_to_pri_get(struct hclge_dev *hdev, u16 qs_id, u8 *pri)
 {
-	struct hclge_qs_to_pri_link_cmd *map;
+	struct hclge_qs_to_pri_link_cmd *map = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -111,7 +111,7 @@ int hns3_cae_tm_qs_to_pri_get(struct hclge_dev *hdev, u16 qs_id, u8 *pri)
 
 int hns3_cae_tm_qs_weight_set(struct hclge_dev *hdev, u16 qs_id, u8 dwrr)
 {
-	struct hclge_qs_weight_cmd *weight;
+	struct hclge_qs_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_QS_WEIGHT, false);
@@ -124,7 +124,7 @@ int hns3_cae_tm_qs_weight_set(struct hclge_dev *hdev, u16 qs_id, u8 dwrr)
 
 int hns3_cae_tm_qs_weight_get(struct hclge_dev *hdev, u16 qs_id, u8 *dwrr)
 {
-	struct hclge_qs_weight_cmd *weight;
+	struct hclge_qs_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -140,7 +140,7 @@ int hns3_cae_tm_qs_weight_get(struct hclge_dev *hdev, u16 qs_id, u8 *dwrr)
 
 int hns3_cae_tm_pri_weight_set(struct hclge_dev *hdev, u8 pri_id, u8 dwrr)
 {
-	struct hclge_priority_weight_cmd *weight;
+	struct hclge_priority_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PRI_WEIGHT, false);
@@ -153,7 +153,7 @@ int hns3_cae_tm_pri_weight_set(struct hclge_dev *hdev, u8 pri_id, u8 dwrr)
 
 int hns3_cae_tm_pri_weight_get(struct hclge_dev *hdev, u8 pri_id, u8 *dwrr)
 {
-	struct hclge_priority_weight_cmd *weight;
+	struct hclge_priority_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -169,7 +169,7 @@ int hns3_cae_tm_pri_weight_get(struct hclge_dev *hdev, u8 pri_id, u8 *dwrr)
 
 int hns3_cae_tm_pri_pg_bitmap_set(struct hclge_dev *hdev, u8 pg_id, u8 bitmap)
 {
-	struct hclge_pg_to_pri_link_cmd *map;
+	struct hclge_pg_to_pri_link_cmd *map = NULL;
 	struct hclge_desc desc;
 
 	hns3_cae_cmd_setup_basic_desc(&desc,
@@ -184,7 +184,7 @@ int hns3_cae_tm_pri_pg_bitmap_set(struct hclge_dev *hdev, u8 pg_id, u8 bitmap)
 int hns3_cae_tm_pri_pg_bitmap_get(struct hclge_dev *hdev, u8 pg_id,
 				  u8 *bitmap)
 {
-	struct hclge_pg_to_pri_link_cmd *map;
+	struct hclge_pg_to_pri_link_cmd *map = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -203,7 +203,7 @@ int hns3_cae_tm_pri_pg_bitmap_get(struct hclge_dev *hdev, u8 pg_id,
 int hns3_cae_tm_qs_bp_bitmap_set(struct hclge_dev *hdev, u8 tc, u8 gp_id,
 				 u32 map)
 {
-	struct hclge_bp_to_qs_map_cmd *bp_to_qs_map_cmd;
+	struct hclge_bp_to_qs_map_cmd *bp_to_qs_map_cmd = NULL;
 	struct hclge_desc desc;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_BP_TO_QSET_MAPPING,
@@ -220,7 +220,7 @@ int hns3_cae_tm_qs_bp_bitmap_set(struct hclge_dev *hdev, u8 tc, u8 gp_id,
 int hns3_cae_tm_qs_bp_bitmap_get(struct hclge_dev *hdev, u8 tc, u8 gp_id,
 				 u32 *map)
 {
-	struct hclge_bp_to_qs_map_cmd *bp_to_qs_map_cmd;
+	struct hclge_bp_to_qs_map_cmd *bp_to_qs_map_cmd = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -241,7 +241,7 @@ int hns3_cae_tm_pri_shapping_set(struct hclge_dev *hdev,
 				 enum hclge_shap_bucket bucket, u8 pri_id,
 				 u32 shaper)
 {
-	struct hclge_pri_shapping_cmd *shap_cfg_cmd;
+	struct hclge_pri_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
 	struct hclge_desc desc;
 
@@ -259,7 +259,7 @@ int hns3_cae_tm_pri_shapping_get(struct hclge_dev *hdev,
 				 enum hclge_shap_bucket bucket, u8 pri_id,
 				 u32 *shaper)
 {
-	struct hclge_pri_shapping_cmd *shap_cfg_cmd;
+	struct hclge_pri_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
 	struct hclge_desc desc;
 	int ret;
@@ -277,7 +277,7 @@ int hns3_cae_tm_pri_shapping_get(struct hclge_dev *hdev,
 
 int hns3_cae_tm_pg_weight_set(struct hclge_dev *hdev, u8 pg_id, u8 dwrr)
 {
-	struct hclge_pg_weight_cmd *weight;
+	struct hclge_pg_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_PG_WEIGHT, false);
@@ -290,7 +290,7 @@ int hns3_cae_tm_pg_weight_set(struct hclge_dev *hdev, u8 pg_id, u8 dwrr)
 
 int hns3_cae_tm_pg_weight_get(struct hclge_dev *hdev, u8 pg_id, u8 *dwrr)
 {
-	struct hclge_pg_weight_cmd *weight;
+	struct hclge_pg_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -308,7 +308,7 @@ int hns3_cae_tm_pg_shapping_set(struct hclge_dev *hdev,
 				enum hclge_shap_bucket bucket, u8 pg_id,
 				u32 shaper)
 {
-	struct hclge_pg_shapping_cmd *shap_cfg_cmd;
+	struct hclge_pg_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
 	struct hclge_desc desc;
 
@@ -326,7 +326,7 @@ int hns3_cae_tm_pg_shapping_get(struct hclge_dev *hdev,
 				enum hclge_shap_bucket bucket, u8 pg_id,
 				u32 *shaper)
 {
-	struct hclge_pg_shapping_cmd *shap_cfg_cmd;
+	struct hclge_pg_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
 	struct hclge_desc desc;
 	int ret;
@@ -345,7 +345,7 @@ int hns3_cae_tm_pg_shapping_get(struct hclge_dev *hdev,
 
 int hns3_cae_tm_port_shapping_set(struct hclge_dev *hdev, u32 shaper)
 {
-	struct hclge_port_shapping_cmd *shap_cfg_cmd;
+	struct hclge_port_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
 	struct hclge_desc desc;
 
@@ -359,7 +359,7 @@ int hns3_cae_tm_port_shapping_set(struct hclge_dev *hdev, u32 shaper)
 
 int hns3_cae_tm_port_shapping_get(struct hclge_dev *hdev, u32 *shaper)
 {
-	struct hclge_port_shapping_cmd *shap_cfg_cmd;
+	struct hclge_port_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
 	struct hclge_desc desc;
 	int ret;
@@ -379,7 +379,7 @@ static int hns3_cae_tm_ets_tc_dwrr_set(struct hclge_dev *hdev, u8 *weight,
 {
 #define DEFAULT_TC_WEIGHT	1
 #define DEFAULT_TC_OFFSET	14
-	struct hns3_cae_ets_tc_weight_cmd *ets_weight;
+	struct hns3_cae_ets_tc_weight_cmd *ets_weight = NULL;
 	struct hclge_desc desc;
 	u32 i;
 
@@ -397,7 +397,7 @@ static int hns3_cae_tm_ets_tc_dwrr_set(struct hclge_dev *hdev, u8 *weight,
 static int hns3_cae_tm_ets_tc_dwrr_get(struct hclge_dev *hdev, u8 *weight,
 				       u32 weight_cnt)
 {
-	struct hns3_cae_ets_tc_weight_cmd *ets_weight;
+	struct hns3_cae_ets_tc_weight_cmd *ets_weight = NULL;
 	struct hclge_desc desc;
 	int ret;
 	u32 i;
@@ -459,10 +459,10 @@ int hns3_cae_queue_cfg(struct hns3_nic_priv *net_priv,
 		       void *buf_in, u32 in_size,
 		       void *buf_out, u32 out_size)
 {
-	struct hns3_cae_queue_cfg_info *out_info;
-	struct hns3_cae_queue_cfg_info *in_info;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hns3_cae_queue_cfg_info *out_info = NULL;
+	struct hns3_cae_queue_cfg_info *in_info = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	int is_read;
 	bool check;
 
@@ -550,10 +550,10 @@ static int hns3_cae_qs_set_new_map(int tc, u32 map,
 int hns3_cae_qs_cfg(struct hns3_nic_priv *net_priv,
 		    void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct hns3_cae_qs_cfg_info *out_info;
-	struct hns3_cae_qs_cfg_info *in_info;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hns3_cae_qs_cfg_info *out_info = NULL;
+	struct hns3_cae_qs_cfg_info *in_info = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	int is_read;
 	int offset;
 	u32 bp_map;
@@ -697,10 +697,10 @@ static int hns3_cae_pri_pg_set_map(struct hclge_dev *hdev,
 int hns3_cae_pri_cfg(struct hns3_nic_priv *net_priv,
 		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct hns3_cae_pri_cfg_info *out_info;
-	struct hns3_cae_pri_cfg_info *in_info;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hns3_cae_pri_cfg_info *out_info = NULL;
+	struct hns3_cae_pri_cfg_info *in_info = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	int is_read;
 	u16 pri_id;
 	int cur_pg;
@@ -827,10 +827,10 @@ int hns3_cae_pri_cfg(struct hns3_nic_priv *net_priv,
 int hns3_cae_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
 		    void *buf_out, u32 out_size)
 {
-	struct hns3_cae_pg_cfg_info *out_info;
-	struct hns3_cae_pg_cfg_info *in_info;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hns3_cae_pg_cfg_info *out_info = NULL;
+	struct hns3_cae_pg_cfg_info *in_info = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	int is_read;
 	bool check;
 	u16 pg_id;
@@ -928,10 +928,10 @@ int hns3_cae_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
 int hns3_cae_port_cfg(struct hns3_nic_priv *net_priv,
 		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct hns3_cae_port_cfg_info *out_info;
-	struct hns3_cae_port_cfg_info *in_info;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hns3_cae_port_cfg_info *out_info = NULL;
+	struct hns3_cae_port_cfg_info *in_info = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	u16 port_id;
 	int is_read;
 	bool check;
@@ -979,10 +979,10 @@ int hns3_cae_ets_cfg(struct hns3_nic_priv *net_priv,
 		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 #define HNS3_TM_ETS_PORT_SHAPING		0x10820850
-	struct hns3_cae_ets_cfg_info *out_info;
-	struct hns3_cae_ets_cfg_info *in_info;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hns3_cae_ets_cfg_info *out_info = NULL;
+	struct hns3_cae_ets_cfg_info *in_info = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	u8 weight[MAX_TC_NUM];
 	int is_read;
 	bool check;
