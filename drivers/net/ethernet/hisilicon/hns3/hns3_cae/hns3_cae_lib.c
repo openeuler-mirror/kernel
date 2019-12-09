@@ -220,33 +220,6 @@ static int hns3_cae_k_get_netdev_by_ifname(char *ifname,
 	return 0;
 }
 
-int hns3_cae_get_commit_id(struct hnae3_handle *handle, u8 *commit_id,
-			   u32 *ncl_version)
-{
-#define COMMIT_ID_LEN	8
-	struct hclge_vport *vport = hns3_cae_get_vport(handle);
-	struct hns3_cae_commit_id_param *resp;
-	struct hclge_dev *hdev = vport->back;
-	struct hclge_desc desc;
-	int ret, i;
-
-	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_IMP_COMMIT_ID_GET, true);
-	resp = (struct hns3_cae_commit_id_param *)(desc.data);
-	ret = hns3_cae_cmd_send(hdev, &desc, 1);
-	if (ret) {
-		dev_err(&hdev->pdev->dev, "get commit id failed %d\n", ret);
-		return ret;
-	}
-
-	for (i = 0; i < COMMIT_ID_LEN; i++)
-		commit_id[i] = resp->commit_id[i];
-
-	commit_id[COMMIT_ID_LEN] = '\0';
-	*ncl_version = resp->ncl_version;
-
-	return 0;
-}
-
 struct drv_module_handle driv_module_cmd_handle[] = {
 	{FW_VER, hns3_cae_get_fw_ver},
 	{DRIVER_VER, hns3_cae_get_driver_ver},
