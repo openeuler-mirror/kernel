@@ -130,6 +130,11 @@ struct msg_module {
 	void *out_buf;
 };
 
+struct m7_cmd_para {
+	u32 bd_count;
+	u32 bd_type;
+	void *bd_data;
+};
 
 int hns3_cae_k_init(void);
 void hns3_cae_k_uninit(void);
@@ -137,4 +142,6 @@ void hns3_cae_k_uninit(void);
 int hns3_cae_common_cmd_send(struct hns3_nic_priv *net_priv, void *buf_in,
 			     u32 in_size, void *buf_out, u32 out_size);
 
+int hns3_m7_cmd_handle(struct hns3_nic_priv *nic_dev, void *buf_in, u32 in_size,
+		       void *buf_out, u32 out_size);
 #endif
