@@ -20,10 +20,6 @@
 #include "hclge_ext.h"
 #include "hclge_main_it.h"
 
-#ifdef CONFIG_HNS3_TEST
-#include "hclge_test.h"
-#endif
-
 #define HCLGE_RESET_MAX_FAIL_CNT	1
 
 static nic_event_fn_t nic_event_call;

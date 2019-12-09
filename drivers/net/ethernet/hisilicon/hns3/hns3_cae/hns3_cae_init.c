@@ -8,7 +8,7 @@
 #include "hns3_enet_it.h"
 
 #ifdef CONFIG_HNS3_TEST
-#include "hns3_nictool.h"
+#include "hns3_cae_lib.h"
 #endif
 
 static int __init hns3_cae_init(void)
