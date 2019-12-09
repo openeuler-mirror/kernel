@@ -120,14 +120,4 @@ struct msg_module {
 int hns3_cae_k_init(void);
 void hns3_cae_k_uninit(void);
 
-struct hclge_gro_age_config_cmd {
-	u32 ppu_gro_age_cnt;
-	u8 rsv[20];
-};
-
-struct gro_param {
-	u8 is_read;
-	u32 age_cnt;
-};
-
 #endif
