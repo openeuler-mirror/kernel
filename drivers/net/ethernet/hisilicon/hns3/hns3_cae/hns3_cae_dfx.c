@@ -84,8 +84,8 @@ int hns3_cae_get_dfx_info(struct hns3_nic_priv *net_priv,
 			  void *buf_in, u32 in_size,
 			  void *buf_out, u32 out_size)
 {
-#define HNS3_CAE_MAC_MODE_ADDR		0x130000000U
-#define HNS3_CAE_MAC_MAP_ADDR		0x130000008U
+#define HNS3_CAE_MAC_MODE_ADDR		0x10000000U
+#define HNS3_CAE_MAC_MAP_ADDR		0x10000008U
 	struct hns3_cae_dfx_param *out_info;
 	struct hns3_cae_reg_param reg_info;
 	struct hnae3_handle *handle;

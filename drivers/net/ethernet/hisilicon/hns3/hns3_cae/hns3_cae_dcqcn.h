@@ -45,8 +45,8 @@ struct dcqcn_statistic_param {
 	u32 dcqcn_statistic_enable;
 };
 
-#define SCC_TEMP_LOW_ADDR	0x31000000
-#define SCC_TEMP_HIGH_ADDR	0x1
+#define SCC_TEMP_LOW_ADDR	0x11000000
+#define SCC_TEMP_HIGH_ADDR	0x0
 
 #define HIARM_DCQCN_READ_CFG_MODE	30
 #define HIARM_DCQCN_WRITE_CFG_MODE	31
