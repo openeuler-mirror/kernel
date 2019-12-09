@@ -178,7 +178,7 @@ int hns3_cae_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 	curr_dev_idx = check_and_set_curr_dev(net_priv);
 	if (curr_dev_idx < 0) {
 		pr_err("Exceed MAX_DEV_LISTED: %d\n", MAX_DEV_LISTED);
-		return -1;
+		return -EINVAL;
 	}
 	h = net_priv->ae_handle;
 	vport = hns3_cae_get_vport(h);
@@ -190,12 +190,12 @@ int hns3_cae_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 	if (!in_info->is_read &&
 	    !dcb_all_info[curr_dev_idx].dcb_cfg_info.dcb_en) {
 		pr_err("please enable dcb cfg first!\n");
-		return -1;
+		return -EPERM;
 	}
 
 	if (!hnae3_dev_dcb_supported(hdev) || vport->vport_id != 0) {
 		pr_err("this device doesn't support dcb!\n");
-		return -1;
+		return -EOPNOTSUPP;
 	}
 
 	if (in_info->is_read) {
@@ -221,9 +221,13 @@ int hns3_cae_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 			dcb_all_info[curr_dev_idx].pfc_cfg_info.prien =
 			    in_info->prien;
 			if (ndev->dcbnl_ops->ieee_setpfc) {
+#ifdef CONFIG_EXT_TEST
 				rtnl_lock();
+#endif
 				ret = ndev->dcbnl_ops->ieee_setpfc(ndev, &pfc);
+#ifdef CONFIG_EXT_TEST
 				rtnl_unlock();
+#endif
 				if (ret)
 					return ret;
 			}
@@ -333,7 +337,7 @@ int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 	curr_dev_idx = check_and_set_curr_dev(net_priv);
 	if (curr_dev_idx < 0) {
 		pr_err("Exceed MAX_DEV_LISTED: %d\n", MAX_DEV_LISTED);
-		return -1;
+		return -EINVAL;
 	}
 	h = net_priv->ae_handle;
 	vport = hns3_cae_get_vport(h);
@@ -345,12 +349,12 @@ int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 	if (!in_info->is_read &&
 	    !dcb_all_info[curr_dev_idx].dcb_cfg_info.dcb_en) {
 		pr_err("please enable dcb cfg first!\n");
-		return -1;
+		return -EPERM;
 	}
 
 	if (!hnae3_dev_dcb_supported(hdev) || vport->vport_id != 0) {
 		pr_err("this device doesn't support dcb!\n");
-		return -1;
+		return -EOPNOTSUPP;
 	}
 
 	if (in_info->is_read) {
@@ -391,9 +395,13 @@ int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 						curr_dev_idx);
 
 		if (ndev->dcbnl_ops->ieee_setets) {
+#ifdef CONFIG_EXT_TEST
 			rtnl_lock();
+#endif
 			ret = ndev->dcbnl_ops->ieee_setets(ndev, &ets);
+#ifdef CONFIG_EXT_TEST
 			rtnl_unlock();
+#endif
 			if (ret)
 				return ret;
 		}
