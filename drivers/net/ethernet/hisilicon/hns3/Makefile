@@ -14,72 +14,78 @@ ccflags-y += -fsigned-char
 
 ccflags-y += -DCONFIG_IT_VALIDATION
 ccflags-y += -DCONFIG_HNS3_TEST
-ccflags-y += -DCONFIG_EXT_TEST
 
 PWD = $(srctree)/drivers/net/ethernet/hisilicon/hns3
 #add include path
-ccflags-y +=	-I$(PWD) \
-				-I$(PWD)/hns3pf \
-				-I$(PWD)/hns-customer \
-				-I$(PWD)/hns-customer/hns3pf \
-				-I$(PWD)/hns3vf \
-				-I$(PWD)/hns3_cae
-
-obj-$(CONFIG_HNS3_HCLGE) += hclge.o
-hclge-objs =	hns3pf/hclge_main.o \
-				hns3pf/hclge_cmd.o \
-				hns3pf/hclge_mdio.o \
-				hns3pf/hclge_debugfs.o \
-				hns3pf/hclge_tm.o \
-				hns3pf/hclge_mbx.o \
-				hns3pf/hclge_err.o
-
-hclge-objs +=	hns-customer/hns3pf/hclge_main_it.o \
-				hns-customer/hns3pf/hclge_cmd_it.o \
-				hns-customer/hns3pf/hclge_ext.o \
-				hns-customer/hns3pf/hclge_test.o
-
-hclge-$(CONFIG_HNS3_DCB) += hns3pf/hclge_dcb.o
+ccflags-y += 	-I$(PWD) \
+		-I$(PWD)/hns3pf \
+		-I$(PWD)/hns-customer \
+		-I$(PWD)/hns-customer/hns3pf \
+		-I$(PWD)/hns3vf \
+		-I$(PWD)/hns3_cae
 
 #### compile hnae3.ko
 obj-$(CONFIG_HNS3) += hnae3.o
 
+#### compile hns3.ko
+HNS3_OBJS = 	hns3_enet.o \
+			hns3_ethtool.o \
+			hns3_debugfs.o
+HNS3_OBJS_IT	=	hns-customer/hns3_enet_it.o \
+			hns-customer/hns3_ext.o
 obj-$(CONFIG_HNS3_ENET) += hns3.o
-hns3-objs = hns3_enet.o hns3_ethtool.o hns3_debugfs.o
-hns3-objs += hns-customer/hns3_enet_it.o hns-customer/hns3_ext.o
+hns3-objs = $(HNS3_OBJS) $(HNS3_OBJS_IT)
 
 hns3-$(CONFIG_HNS3_DCB) += hns3_dcbnl.o
 
+#### compile hclge.ko
+HCLGE_OBJ = 	hns3pf/hclge_main.o \
+			hns3pf/hclge_cmd.o \
+			hns3pf/hclge_mdio.o \
+			hns3pf/hclge_debugfs.o \
+			hns3pf/hclge_tm.o \
+			hns3pf/hclge_mbx.o \
+			hns3pf/hclge_err.o
+
+
+HCLGE_OBJ_IT_MAIN	=	hns-customer/hns3pf/hclge_main_it.o \
+						hns-customer/hns3pf/hclge_cmd_it.o
+HCLGE_OBJ_IT_EXPORT	=	hns-customer/hns3pf/hclge_ext.o
+
+
+obj-$(CONFIG_HNS3_HCLGE) += hclge.o
+hclge-objs := $(HCLGE_OBJ) $(HCLGE_OBJ_IT_MAIN) $(HCLGE_OBJ_IT_EXPORT)
+hclge-$(CONFIG_HNS3_DCB) += hns3pf/hclge_dcb.o
 #### compile hclgevf.ko
 obj-$(CONFIG_HNS3_HCLGEVF) += hclgevf.o
 hclgevf-objs := hns3vf/hclgevf_main.o hns3vf/hclgevf_cmd.o hns3vf/hclgevf_mbx.o
 
 #### compile hns3_cae.ko
 #add rally code
-HNS3_CAE_OBJS_PRIM =	hns3_cae/hns3_cae_init.o \
-						hns3_cae/hns3_nictool.o \
-						hns3_cae/hns3_priv_common_test.o \
-						hns3_cae/hns3_priv_dcb.o \
-						hns3_cae/hns3_priv_lamp.o \
-						hns3_cae/hns3_priv_mactbl.o \
-						hns3_cae/hns3_priv_m7_cmd.o
+HNS3_CAE_OBJS_PRIM = 	hns3_cae/hns3_cae_init.o \
+			hns3_cae/hns3_cae_lib.o \
+			hns3_cae/hns3_cae_common.o \
+			hns3_cae/hns3_cae_dcb.o \
+			hns3_cae/hns3_cae_lamp.o \
+			hns3_cae/hns3_cae_mactbl.o \
+			hns3_cae/hns3_cae_m7_cmd.o
 #add test code
-HNS3_CAE_OBJS_EXT =		hns3_cae/hns3_priv_dfx.o \
-						hns3_cae/hns3_priv_ext.o \
-						hns3_cae/hns3_priv_fd.o \
-						hns3_cae/hns3_priv_hilink_param.o \
-						hns3_cae/hns3_priv_irq.o \
-						hns3_cae/hns3_priv_mac.o \
-						hns3_cae/hns3_priv_pkt.o \
-						hns3_cae/hns3_priv_port.o \
-						hns3_cae/hns3_priv_promisc.o \
-						hns3_cae/hns3_priv_qinfo.o \
-						hns3_cae/hns3_priv_qos.o \
-						hns3_cae/hns3_priv_qres.o \
-						hns3_cae/hns3_priv_rss.o \
-						hns3_cae/hns3_priv_stat.o \
-						hns3_cae/hns3_priv_tm.o \
-						hns3_cae/hns3_priv_vlan.o \
-						hns3_cae/hns3_priv_xsfp.o
+HNS3_CAE_OBJS_EXT =	hns3_cae/hns3_cae_dfx.o \
+			hns3_cae/hns3_cae_ext.o \
+			hns3_cae/hns3_cae_fd.o \
+			hns3_cae/hns3_cae_hilink_param.o \
+			hns3_cae/hns3_cae_irq.o \
+			hns3_cae/hns3_cae_mac.o \
+			hns3_cae/hns3_cae_pkt.o \
+			hns3_cae/hns3_cae_port.o \
+			hns3_cae/hns3_cae_promisc.o \
+			hns3_cae/hns3_cae_qinfo.o \
+			hns3_cae/hns3_cae_qos.o \
+			hns3_cae/hns3_cae_qres.o \
+			hns3_cae/hns3_cae_rss.o \
+			hns3_cae/hns3_cae_stat.o \
+			hns3_cae/hns3_cae_tm.o \
+			hns3_cae/hns3_cae_vlan.o \
+			hns3_cae/hns3_cae_xsfp.o
 obj-$(CONFIG_HNS3_CAE) += hns3_cae.o
 hns3_cae-objs := $(HNS3_CAE_OBJS_PRIM) $(HNS3_CAE_OBJS_EXT)
