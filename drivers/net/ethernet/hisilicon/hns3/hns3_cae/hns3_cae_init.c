@@ -5,7 +5,6 @@
 
 #include "hnae3.h"
 #include "hns3_enet.h"
-#include "hns3_enet_it.h"
 
 #ifdef CONFIG_HNS3_TEST
 #include "hns3_cae_lib.h"

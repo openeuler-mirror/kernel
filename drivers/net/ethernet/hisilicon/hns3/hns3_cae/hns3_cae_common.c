@@ -23,10 +23,10 @@ static int hns3_cae_write_reg_cfg(struct hns3_nic_priv *net_priv,
 				  void *buf_out, u32 out_size)
 {
 	struct reg_param *in_buf = (struct reg_param *)buf_in;
-	enum hclge_cmd_status status;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
+	int ret;
 
 	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
@@ -42,11 +42,11 @@ static int hns3_cae_write_reg_cfg(struct hns3_nic_priv *net_priv,
 		desc.data[0] = in_buf->addr;
 		desc.data[2] = in_buf->data[0];
 	}
-	status = hns3_cae_cmd_send(hdev, &desc, 1);
-	if (status) {
-		dev_err(&hdev->pdev->dev, "%s fail, status is %d.\n", __func__,
-			status);
-		return status;
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev, "%s fail, ret is %d.\n", __func__,
+			ret);
+		return ret;
 	}
 
 	return 0;
@@ -60,9 +60,9 @@ static int hns3_cae_read_reg_cfg(struct hns3_nic_priv *net_priv,
 	struct reg_ret_param *out_buf = (struct reg_ret_param *)buf_out;
 	struct reg_param *in_buf = (struct reg_param *)buf_in;
 	struct hclge_dev *hdev = vport->back;
-	enum hclge_cmd_status status;
 	struct hclge_desc desc;
 	bool check;
+	int ret;
 
 	check = !buf_out || out_size < sizeof(struct reg_param);
 	if (check) {
@@ -78,11 +78,11 @@ static int hns3_cae_read_reg_cfg(struct hns3_nic_priv *net_priv,
 					      CMDQ_32_COM_CMD_OPCODE, true);
 
 	desc.data[0] = in_buf->addr;
-	status = hns3_cae_cmd_send(hdev, &desc, 1);
-	if (status) {
-		dev_err(&hdev->pdev->dev, "%s fail, status is %d.\n", __func__,
-			status);
-		return status;
+	ret = hns3_cae_cmd_send(hdev, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev, "%s fail, ret is %d.\n", __func__,
+			ret);
+		return ret;
 	}
 
 	out_buf->value[0] = desc.data[0];

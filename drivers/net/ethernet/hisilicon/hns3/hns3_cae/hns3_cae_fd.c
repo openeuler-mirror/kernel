@@ -154,6 +154,7 @@ static int hns3_cae_send_key_cfg_cmd(struct hclge_dev *hdev, u8 *buf_in,
 static int hns3_cae_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 				     u32 in_size, u8 *buf_out, u32 out_size)
 {
+#define HNS3_CAE_FD_TCAM_BD_NUM		3
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_fd_tcam_config_1_cmd *req1;
 	struct hclge_fd_tcam_config_2_cmd *req2;
@@ -163,15 +164,14 @@ static int hns3_cae_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	bool check;
 	u8 *buf;
 	int ret;
+	int i;
 
-	hns3_cae_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_FD_TCAM_OP,
-				      param->is_read ? true : false);
-	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
-	hns3_cae_cmd_setup_basic_desc(&desc[1], HCLGE_OPC_FD_TCAM_OP,
-				      param->is_read ? true : false);
-	desc[1].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
-	hns3_cae_cmd_setup_basic_desc(&desc[2], HCLGE_OPC_FD_TCAM_OP,
-				      param->is_read ? true : false);
+	for (i = 0; i < HNS3_CAE_FD_TCAM_BD_NUM; i++) {
+		hns3_cae_cmd_setup_basic_desc(&desc[i], HCLGE_OPC_FD_TCAM_OP,
+					      param->is_read ? true : false);
+		if (i < HNS3_CAE_FD_TCAM_BD_NUM - 1)
+			desc[i].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+	}
 
 	req1 = (struct hclge_fd_tcam_config_1_cmd *)desc[0].data;
 	req2 = (struct hclge_fd_tcam_config_2_cmd *)desc[1].data;
@@ -192,7 +192,7 @@ static int hns3_cae_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 		memcpy(req3->tcam_data, buf, sizeof(req3->tcam_data));
 	}
 
-	ret = hns3_cae_cmd_send(hdev, desc, 3);
+	ret = hns3_cae_cmd_send(hdev, desc, HNS3_CAE_FD_TCAM_BD_NUM);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"config tcam key fail, ret = %d\n", ret);

@@ -91,8 +91,8 @@ static int hns3_cae_cmd_csq_clean(struct hclge_hw *hw)
 {
 	struct hclge_dev *hdev = container_of(hw, struct hclge_dev, hw);
 	struct hclge_cmq_ring *csq = &hw->cmq.csq;
-	u32 head;
 	int clean;
+	u32 head;
 
 	head = hclge_read_dev(hw, HCLGE_NIC_CSQ_HEAD_REG);
 	rmb(); /* Make sure head is ready before touch any data */
@@ -231,7 +231,6 @@ int hns3_cae_cmd_send(struct hclge_dev *hdev, struct hclge_desc *desc, int num)
 	else
 		retval = hns3_cae_cmd_check_retval(&hdev->hw, desc, num, ntc);
 
-	/* Clean the command send queue */
 	handle = hns3_cae_cmd_csq_clean(&hdev->hw);
 	if (handle < 0)
 		retval = handle;

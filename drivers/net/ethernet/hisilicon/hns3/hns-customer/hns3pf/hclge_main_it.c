@@ -20,6 +20,7 @@
 #include "hclge_ext.h"
 #include "hclge_main_it.h"
 
+#ifdef CONFIG_IT_VALIDATION
 #define HCLGE_RESET_MAX_FAIL_CNT	1
 
 static nic_event_fn_t nic_event_call;
@@ -164,8 +165,6 @@ bool hclge_reset_done_it(struct hnae3_handle *handle, bool done)
 
 	return done;
 }
-
-#ifdef CONFIG_IT_VALIDATION
 
 int hclge_init_it(void)
 {

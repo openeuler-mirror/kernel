@@ -94,6 +94,12 @@ enum driver_cmd_type {
 	DCQCN_GET_MSG_CNT_CMD = 1600
 };
 
+#ifndef LINUX_VERSION_CODE
+#include <linux/version.h>
+#else
+#define KERNEL_VERSION(a, b, c) (((a) << 16) + ((b) << 8) + (c))
+#endif
+
 #define API_CMD (0x1)
 #define API_CHAIN (0x2)
 

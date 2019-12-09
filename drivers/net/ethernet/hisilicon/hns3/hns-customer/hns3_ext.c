@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
+#ifdef CONFIG_HNS3_TEST
 #include <linux/dma-mapping.h>
 #include <linux/etherdevice.h>
 #include <linux/interrupt.h>
@@ -410,7 +411,6 @@ int nic_set_pfc_storm_para(struct net_device *ndev, int dir, int enable,
 	para.times = times;
 	para.recovery_period_ms = recovery_period_ms;
 	h = hns3_get_handle(ndev);
-
 	if (h->ae_algo->ops->priv_ops)
 		return h->ae_algo->ops->priv_ops(h,
 						HNS3_EXT_OPC_SET_PFC_STORM_PARA,
@@ -470,7 +470,6 @@ int nic_get_phy_reg(struct net_device *ndev, u32 page_select_addr,
 	para.page = page;
 	para.reg_addr = reg_addr;
 	h = hns3_get_handle(ndev);
-
 	if (h->ae_algo->ops->priv_ops) {
 		ret = h->ae_algo->ops->priv_ops(h, HNS3_EXT_OPC_GET_PHY_REG,
 						&para, 0);
@@ -500,7 +499,6 @@ int nic_set_phy_reg(struct net_device *ndev, u32 page_select_addr,
 	para.reg_addr = reg_addr;
 	para.data = data;
 	h = hns3_get_handle(ndev);
-
 	if (h->ae_algo->ops->priv_ops)
 		return h->ae_algo->ops->priv_ops(h, HNS3_EXT_OPC_SET_PHY_REG,
 						 &para, 0);
@@ -544,7 +542,6 @@ int nic_get_8211_phy_reg(struct net_device *ndev, u32 page_select_addr,
 	phy_para.page = page;
 	phy_para.reg_addr = reg_addr;
 	h = hns3_get_handle(ndev);
-
 	if (h->ae_algo->ops->priv_ops) {
 		ret = h->ae_algo->ops->priv_ops(h,
 						HNS3_EXT_OPC_GET_8211_PHY_REG,
@@ -575,7 +572,6 @@ int nic_set_8211_phy_reg(struct net_device *ndev, u32 page_select_addr,
 	phy_para.reg_addr = reg_addr;
 	phy_para.data = data;
 	h = hns3_get_handle(ndev);
-
 	if (h->ae_algo->ops->priv_ops)
 		return h->ae_algo->ops->priv_ops(h,
 						 HNS3_EXT_OPC_SET_8211_PHY_REG,
@@ -584,4 +580,4 @@ int nic_set_8211_phy_reg(struct net_device *ndev, u32 page_select_addr,
 		return -EOPNOTSUPP;
 }
 EXPORT_SYMBOL(nic_set_8211_phy_reg);
-
+#endif
