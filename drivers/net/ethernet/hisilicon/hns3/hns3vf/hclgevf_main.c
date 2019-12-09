@@ -1406,6 +1406,7 @@ static int hclgevf_reset_tqp(struct hnae3_handle *handle, u16 queue_id)
 
 	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_QUEUE_RESET, 0);
 	memcpy(send_msg.data, &queue_id, sizeof(queue_id));
+
 	return hclgevf_send_mbx_msg(hdev, &send_msg, true, NULL, 0);
 }
 
@@ -1416,6 +1417,7 @@ static int hclgevf_set_mtu(struct hnae3_handle *handle, int new_mtu)
 
 	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_MTU, 0);
 	memcpy(send_msg.data, &new_mtu, sizeof(new_mtu));
+
 	return hclgevf_send_mbx_msg(hdev, &send_msg, true, NULL, 0);
 }
 
@@ -2293,6 +2295,7 @@ static int hclgevf_set_alive(struct hnae3_handle *handle, bool alive)
 	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_ALIVE, 0);
 	send_msg.data[0] = alive ? HCLGEVF_STATE_ALIVE :
 				HCLGEVF_STATE_NOT_ALIVE;
+
 	return hclgevf_send_mbx_msg(hdev, &send_msg, false, NULL, 0);
 }
 
