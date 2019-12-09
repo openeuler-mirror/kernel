@@ -975,7 +975,7 @@ int hns3_cae_port_cfg(struct hns3_nic_priv *net_priv,
 int hns3_cae_ets_cfg(struct hns3_nic_priv *net_priv,
 		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-#define HNS3_TM_ETS_PORT_SHAPING		0x130820850
+#define HNS3_TM_ETS_PORT_SHAPING		0x10820850
 	struct hns3_cae_ets_cfg_info *out_info;
 	struct hns3_cae_ets_cfg_info *in_info;
 	struct hclge_vport *vport;
