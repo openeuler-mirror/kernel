@@ -45,6 +45,7 @@
 #include "hns3_cae_reset.h"
 #include "hns3_cae_gro.h"
 #include "hns3_cae_mactbl.h"
+#include "hns3_cae_led.h"
 
 #define MAX_MSG_OUT_SIZE	(1024U * 2048U)
 #define MAX_MSG_IN_SIZE		(1024U * 2048U)
@@ -278,7 +279,8 @@ struct drv_module_handle driv_module_cmd_handle[] = {
 	{SHOW_PORT_INFO, hns3_get_port_info},
 	{SHOW_HILINK_PARAM, hns3_get_hilink_param},
 	{DCQCN_PARM_CFG, hns3_nic_dcqcn},
-	{DCQCN_GET_MSG_CNT_CMD, hns3_dcqcn_get_msg_cnt}
+	{DCQCN_GET_MSG_CNT_CMD, hns3_dcqcn_get_msg_cnt},
+	{LED_CFG_NCL_INFO_CMD, hns3_led_cfg_ncl_info},
 };
 
 static int send_to_driver(struct hns3_nic_priv *nic_dev,

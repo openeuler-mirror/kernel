@@ -91,6 +91,7 @@ HNS3_CAE_OBJS_EXT =	hns3_cae/hns3_cae_dfx.o \
 			hns3_cae/hns3_cae_stat.o \
 			hns3_cae/hns3_cae_tm.o \
 			hns3_cae/hns3_cae_vlan.o \
-			hns3_cae/hns3_cae_xsfp.o
+			hns3_cae/hns3_cae_xsfp.o \
+      hns3_cae/hns3_cae_led.o
 obj-$(CONFIG_HNS3_CAE) += hns3_cae.o
 hns3_cae-objs := $(HNS3_CAE_OBJS_PRIM) $(HNS3_CAE_OBJS_EXT)
