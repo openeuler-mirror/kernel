@@ -66,6 +66,7 @@ HNS3_CAE_OBJS_PRIM = 	hns3_cae/hns3_cae_init.o \
 			hns3_cae/hns3_cae_common.o \
 			hns3_cae/hns3_cae_dcb.o \
 			hns3_cae/hns3_cae_lamp.o \
+      hns3_cae/hns3_cae_dcqcn.o \
 			hns3_cae/hns3_cae_mactbl.o \
 			hns3_cae/hns3_cae_m7_cmd.o \
       hns3_cae/hns3_cae_cmd.o

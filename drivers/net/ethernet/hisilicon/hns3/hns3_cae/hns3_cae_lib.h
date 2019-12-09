@@ -116,21 +116,6 @@ struct msg_module {
 	void *out_buf;
 };
 
-enum {
-	DCQCN_MASK_AI = 0x0,
-	DCQCN_MASK_F,
-	DCQCN_MASK_TKP,
-	DCQCN_MASK_TMP,
-	DCQCN_MASK_ALP,
-	DCQCN_MASK_G,
-	DCQCN_MASK_AL,
-	DCQCN_MASK_MAX_SPEED,
-	DCQCN_MASK_CNP_TIME,
-	DCQCN_MASK_ALP_SHIFT,
-};
-
-#define HINICADM_DCQCN_READ_CFG_MODE	30
-#define HINICADM_DCQCN_WRITE_CFG_MODE	31
 
 int hns3_cae_k_init(void);
 void hns3_cae_k_uninit(void);
@@ -156,34 +141,6 @@ struct hclge_gro_age_config_cmd {
 struct gro_param {
 	u8 is_read;
 	u32 age_cnt;
-};
-
-struct cfg_dcqcn_param {
-	u16 ai;
-	u8 f;
-	u8 tkp;
-	u16 tmp;
-	u16 alp;
-	u32 max_speed;
-	u8 g;
-	u8 al;
-	u8 cnp_time;
-	u8 alp_shift;
-	u16 dcqcn_parm_opcode;
-	u16 is_get;
-	u32 device_number;
-};
-
-struct dcqcn_statistic_param {
-	u32 dcqcn_rx_cnt;
-	u32 dcqcn_tx_cnt;
-	u32 dcqcn_db_cnt;
-	u32 dcqcn_statistic_enable;
-};
-
-enum DEVMEM_RW_TYPE {
-	DEVMEM_CFG_WRITE = 0,
-	DEVMEM_CFG_READ,
 };
 
 #endif
