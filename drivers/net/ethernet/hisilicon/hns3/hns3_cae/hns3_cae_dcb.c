@@ -39,8 +39,8 @@ static int check_and_set_curr_dev(struct hns3_nic_priv *net_priv)
 int hns3_cae_dcb_cfg(struct hns3_nic_priv *net_priv,
 		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct hns3_cae_dcb_cfg_param *out_info;
-	struct hns3_cae_dcb_cfg_param *in_info;
+	struct hns3_cae_dcb_cfg_param *out_info = NULL;
+	struct hns3_cae_dcb_cfg_param *in_info = NULL;
 	int curr_dev_idx;
 	bool check;
 
@@ -159,12 +159,12 @@ int hns3_cae_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size)
 {
-	struct hns3_cae_pfc_cfg_param *out_info;
-	struct hns3_cae_pfc_cfg_param *in_info;
-	struct net_device *ndev;
-	struct hclge_vport *vport;
-	struct hnae3_handle *h;
-	struct hclge_dev *hdev;
+	struct hns3_cae_pfc_cfg_param *out_info = NULL;
+	struct hns3_cae_pfc_cfg_param *in_info = NULL;
+	struct hclge_vport *vport = NULL;
+	struct net_device *ndev = NULL;
+	struct hnae3_handle *h = NULL;
+	struct hclge_dev *hdev = NULL;
 	int curr_dev_idx;
 	bool check;
 	int ret;
@@ -316,13 +316,13 @@ int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 			 void *buf_out, u32 out_size)
 {
 #define BYTELEN 4
-	struct hns3_cae_ets_cfg_param *out_info;
-	struct hns3_cae_ets_cfg_param *in_info;
-	struct hclge_vport *vport;
-	struct net_device *ndev;
-	struct hclge_dev *hdev;
+	struct hns3_cae_ets_cfg_param *out_info = NULL;
+	struct hns3_cae_ets_cfg_param *in_info = NULL;
+	struct hclge_vport *vport = NULL;
+	struct net_device *ndev = NULL;
+	struct hclge_dev *hdev = NULL;
+	struct hnae3_handle *h = NULL;
 	struct hclge_desc desc;
-	struct hnae3_handle *h;
 	int curr_dev_idx;
 	bool check;
 	int ret;

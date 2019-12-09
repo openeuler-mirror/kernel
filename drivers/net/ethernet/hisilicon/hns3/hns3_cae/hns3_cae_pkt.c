@@ -207,7 +207,7 @@ int __get_tid(int queue_id, int is_send)
 
 void fill_skb_head(struct sk_buff *skb, int mss)
 {
-	struct ipv6hdr *ip6_hdr;
+	struct ipv6hdr *ip6_hdr = NULL;
 	int protocol;
 
 	skb->network_header = ETH_HLEN;
@@ -239,11 +239,11 @@ static struct sk_buff *__hns_assemble_skb(struct net_device *ndev,
 {
 	const struct ethhdr *ethhead = (const struct ethhdr *)data;
 	const char *head_data = (const char *)data;
+	struct page *p = NULL;
 	struct sk_buff *skb;
+	void *buff = NULL;
 	int proc_length;
-	struct page *p;
 	int bnum = 0;
-	void *buff;
 
 	/* allocate test skb */
 	skb = alloc_skb(256, GFP_KERNEL);
@@ -326,7 +326,7 @@ void hns3_cae_pkt_type_deal(u8 *payload, struct hns3_cae_pkt_cfg_info *in_info,
 void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 			 struct hns3_cae_pkt_cfg_info *in_info)
 {
-	struct in_ifaddr *ifa_list;
+	struct in_ifaddr *ifa_list = NULL;
 	u8 *pkt_payload;
 	u32 vlan_tag;
 	size_t count;
@@ -480,9 +480,9 @@ int __hns3_cae_send_pkt(struct hns3_nic_priv *net_priv,
 			struct hns3_cae_pkt_result_info *out_info)
 {
 	struct hnae3_handle *handle;
-	struct sk_buff *skb;
+	struct sk_buff *skb = NULL;
+	u8 *payload = NULL;
 	int pkt_len;
-	u8 *payload;
 	int ret = 0;
 	int i;
 	int change_flag;
@@ -682,7 +682,7 @@ int hns3_cae_send_pkt(struct hns3_nic_priv *net_priv,
 {
 	struct hns3_cae_pkt_result_info *out_info;
 	struct hns3_cae_pkt_cfg_info *in_info;
-	struct hnae3_handle *handle;
+	struct hnae3_handle *handle = NULL;
 	int queue_id;
 	int tid;
 

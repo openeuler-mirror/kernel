@@ -86,11 +86,11 @@ int hns3_cae_get_dfx_info(struct hns3_nic_priv *net_priv,
 {
 #define HNS3_CAE_MAC_MODE_ADDR		0x10000000U
 #define HNS3_CAE_MAC_MAP_ADDR		0x10000008U
-	struct hns3_cae_dfx_param *out_info;
+	struct hns3_cae_dfx_param *out_info = NULL;
 	struct hns3_cae_reg_param reg_info;
-	struct hnae3_handle *handle;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hnae3_handle *handle = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	u32 chip_id;
 	u32 mac_id;
 	bool check;
@@ -143,10 +143,10 @@ int hns3_cae_read_dfx_info(struct hns3_nic_priv *net_priv,
 			   void *buf_in, u32 in_size,
 			   void *buf_out, u32 out_size)
 {
-	struct hns3_cae_reg_param *out_info;
-	struct hns3_cae_reg_param *in_info;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hns3_cae_reg_param *out_info = NULL;
+	struct hns3_cae_reg_param *in_info = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	bool check;
 	int ret;
 
@@ -190,10 +190,10 @@ int hns3_cae_event_injection(struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size)
 {
-	struct hns3_cae_event_param *in_info;
+	struct hns3_cae_event_param *in_info = NULL;
 	struct hns3_cae_reg_param reg_info;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	bool check;
 	int ret;
 

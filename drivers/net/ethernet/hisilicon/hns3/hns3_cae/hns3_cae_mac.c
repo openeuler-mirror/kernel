@@ -18,12 +18,12 @@ int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
 			  void *buf_in, u32 in_size,
 			  void *buf_out, u32 out_size)
 {
-	struct hns3_cae_cfg_serdes_mode_cmd *req1;
-	struct hns3_cae_cfg_mac_mode_cmd *req2;
-	struct hns3_cae_loop_param *out_info;
-	struct hns3_cae_loop_param *in_info;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hns3_cae_cfg_serdes_mode_cmd *req1 = NULL;
+	struct hns3_cae_cfg_mac_mode_cmd *req2 = NULL;
+	struct hns3_cae_loop_param *out_info = NULL;
+	struct hns3_cae_loop_param *in_info = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
 	bool check;
 	int ret;
