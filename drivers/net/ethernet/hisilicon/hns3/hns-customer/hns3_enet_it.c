@@ -17,7 +17,7 @@ extern const char hns3_copyright[];
 
 #ifdef CONFIG_IT_VALIDATION
 
-#define HNAE_DRIVER_VERSION		"1.9.23.1"
+#define HNAE_DRIVER_VERSION		"1.9.23.6"
 
 extern struct net_device_ops hns3_nic_netdev_ops;
 extern const struct hnae3_client_ops client_ops;
@@ -58,8 +58,7 @@ static int __init hns3_init_module_it(void)
 		strlen(hns3_driver_version));
 
 	client.type = HNAE3_CLIENT_KNIC;
-	snprintf(client.name, HNAE3_CLIENT_NAME_LENGTH - 1, "%s",
-		 hns3_driver_name);
+	snprintf(client.name, HNAE3_CLIENT_NAME_LENGTH, "%s", hns3_driver_name);
 
 	client.ops = &client_ops;
 	ndev_ops = (struct net_device_ops *)&hns3_nic_netdev_ops;

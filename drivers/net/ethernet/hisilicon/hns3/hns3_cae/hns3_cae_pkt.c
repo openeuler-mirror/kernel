@@ -298,29 +298,29 @@ void hns3_cae_pkt_type_deal(u8 *payload, struct hns3_cae_pkt_cfg_info *in_info,
 			    struct in_ifaddr *ifa_list,
 			    u8 *pkt_payload, u32 head_len)
 {
+	u8 payload_data;
 	int i;
 
-	memcpy(payload, in_info->dst_mac, 6);	/* DST_MAC */
+	/* DST_MAC */
+	memcpy(payload, in_info->dst_mac, ETH_ALEN);
 	payload[16] = in_info->pkt_len / 256;
 	payload[17] = in_info->pkt_len % 256;
-	memcpy(payload + 24, &in_info->pkt_checksum, 2);	/* checksum */
 
+	/* checksum */
+	memcpy(payload + 24, &in_info->pkt_checksum, 2);
+
+	/* SRC_IP */
 	if (ifa_list)
-		memcpy(payload + 26, &ifa_list->ifa_address, 4); /* SRC_IP */
+		memcpy(payload + 26, &ifa_list->ifa_address, 4);
 
-	memcpy(payload + 30, in_info->dst_ip, 4);	/* DST_IP */
+	/* DST_IP */
+	memcpy(payload + 30, in_info->dst_ip, 4);
 
-	if (in_info->pkt_payload_flag == 1) {
-		for (i = 0; i < in_info->pkt_len; i++)
-			pkt_payload[i] = 0xff;
-		memcpy(payload + head_len, pkt_payload,
-		       in_info->pkt_len - head_len);	/* payload */
-	} else {
-		for (i = 0; i < in_info->pkt_len; i++)
-			pkt_payload[i] = 0x0;
-		memcpy(payload + head_len, pkt_payload,
-		       in_info->pkt_len - head_len);	/* payload */
-	}
+	/* payload */
+	payload_data = in_info->pkt_payload_flag == 1 ? 0xFF : 0;
+	for (i = 0; i < in_info->pkt_len; i++)
+		pkt_payload[i] = payload_data;
+	memcpy(payload + head_len, pkt_payload, in_info->pkt_len - head_len);
 }
 
 void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
@@ -346,8 +346,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 		memcpy(payload + 22, netdev->dev_addr, ETH_ALEN);
 
 		if (ifa_list)
-			memcpy(payload + 28, &ifa_list->ifa_address,
-			       4);	/* SRC_IP */
+			memcpy(payload + 28, &ifa_list->ifa_address, 4);
 
 		memcpy(payload + 32, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 38, in_info->dst_ip, 4);
@@ -369,8 +368,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 		payload[17] = in_info->pkt_len % 256;
 
 		if (ifa_list)
-			memcpy(payload + 26, &ifa_list->ifa_address,
-			       4);	/* SRC_IP */
+			memcpy(payload + 26, &ifa_list->ifa_address, 4);
 
 		memcpy(payload + 30, in_info->dst_ip, 4);
 		break;
@@ -418,52 +416,32 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 22, in_info->pkt_inet6_addr, 16);
 
-		if (in_info->pkt_payload_flag == 1) {
-			for (i = 0; i < in_info->pkt_len; i++)
-				pkt_payload[i] = 0xff;
-
-			memcpy(payload + 54, pkt_payload,
-			       in_info->pkt_len - 54);	/* payload */
-		} else {
-			for (i = 0; i < in_info->pkt_len; i++)
-				pkt_payload[i] = 0x0;
-
-			memcpy(payload + 54, pkt_payload,
-			       in_info->pkt_len - 54);	/* payload */
-		}
+		hns3_cae_pkt_type_deal(payload, in_info, ifa_list, pkt_payload,
+				       54);
 		break;
 	case HNS3_CAE_PKT_TYPE_IPV6_EXTENSION_ROUTING:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 22, in_info->pkt_inet6_addr, 16);
 
-		if (in_info->pkt_payload_flag == 1) {
-			for (i = 0; i < in_info->pkt_len; i++)
-				pkt_payload[i] = 0xff;
-			memcpy(payload + 114, pkt_payload,
-			       in_info->pkt_len - 114);	/* payload */
-		} else {
-			for (i = 0; i < in_info->pkt_len; i++)
-				pkt_payload[i] = 0x0;
-			memcpy(payload + 114, pkt_payload,
-			       in_info->pkt_len - 114);	/* payload */
-		}
+		hns3_cae_pkt_type_deal(payload, in_info, ifa_list, pkt_payload,
+				       114);
 		break;
 	case HNS3_CAE_PKT_TYPE_SCTP4:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 
+		/* SRC_IP */
 		if (ifa_list)
-			memcpy(payload + 26, &ifa_list->ifa_address,
-			       4);	/* SRC_IP */
+			memcpy(payload + 26, &ifa_list->ifa_address, 4);
 
 		memcpy(payload + 30, in_info->dst_ip, 4);
-		memcpy(payload + 42, &in_info->pkt_checksum_sctp,
-		       4);	/* checksum */
+		/* checksum */
+		memcpy(payload + 42, &in_info->pkt_checksum_sctp, 4);
 		break;
 	case HNS3_CAE_PKT_TYPE_SCTP6:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 22, in_info->pkt_inet6_addr, 16);
-		memcpy(payload + 62, &in_info->pkt_checksum_sctp,
-		       4);	/* checksum */
+		/* checksum */
+		memcpy(payload + 62, &in_info->pkt_checksum_sctp, 4);
 		break;
 	default:
 		break;
