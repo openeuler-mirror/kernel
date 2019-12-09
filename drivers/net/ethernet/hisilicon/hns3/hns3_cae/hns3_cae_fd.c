@@ -17,8 +17,8 @@
 #include "hns3_enet.h"
 #include "hns3_cae_fd.h"
 
-int hclge_test_send_generic_cmd(struct hclge_dev *hdev, u8 *buf_in,
-				u32 in_size, u8 *buf_out, u32 out_size)
+static int hns3_cae_send_generic_cmd(struct hclge_dev *hdev, u8 *buf_in,
+				     u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_get_fd_mode_cmd *mode_cfg;
@@ -59,8 +59,8 @@ int hclge_test_send_generic_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	return 0;
 }
 
-int hclge_test_send_allocate_cmd(struct hclge_dev *hdev, u8 *buf_in,
-				 u32 in_size, u8 *buf_out, u32 out_size)
+static int hns3_cae_send_allocate_cmd(struct hclge_dev *hdev, u8 *buf_in,
+				      u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct hclge_get_fd_allocation_cmd *allocation_cfg;
 	struct hclge_get_fd_allocation_cmd *req;
@@ -97,8 +97,8 @@ int hclge_test_send_allocate_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	return 0;
 }
 
-int hclge_test_send_key_cfg_cmd(struct hclge_dev *hdev, u8 *buf_in,
-				u32 in_size, u8 *buf_out, u32 out_size)
+static int hns3_cae_send_key_cfg_cmd(struct hclge_dev *hdev, u8 *buf_in,
+				     u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_set_fd_key_config_cmd *key_cfg_data;
@@ -150,8 +150,8 @@ int hclge_test_send_key_cfg_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	return 0;
 }
 
-int hclge_test_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
-				u32 in_size, u8 *buf_out, u32 out_size)
+static int hns3_cae_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
+				     u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_fd_tcam_config_1_cmd *req1;
@@ -221,8 +221,8 @@ int hclge_test_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	return 0;
 }
 
-int hclge_test_send_ad_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
-			      u32 in_size, u8 *buf_out, u32 out_size)
+static int hns3_cae_send_ad_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
+				   u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_fd_ad_config_cmd *ad_data;
@@ -264,8 +264,8 @@ int hclge_test_send_ad_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	return 0;
 }
 
-int hclge_test_send_cnt_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
-			       u32 in_size, u8 *buf_out, u32 out_size)
+static int hns3_cae_send_cnt_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
+				    u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_fd_cnt_op_cmd *cnt_data;
@@ -297,8 +297,8 @@ int hclge_test_send_cnt_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	return 0;
 }
 
-int hns3_test_fd_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_fd_cfg(struct hns3_nic_priv *net_priv,
+		    void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *handle = net_priv->ae_handle;
 	struct hclge_vport *vport = hclge_get_vport(handle);
@@ -317,33 +317,33 @@ int hns3_test_fd_cfg(struct hns3_nic_priv *net_priv,
 		return -EOPNOTSUPP;
 
 	if (param->op == HCLGE_OPC_FD_MODE_CTRL) {
-		ret = hclge_test_send_generic_cmd(hdev, buf_in, in_size,
-						  buf_out, out_size);
-	}
-
-	if (param->op == HCLGE_OPC_FD_GET_ALLOCATION) {
-		ret = hclge_test_send_allocate_cmd(hdev, buf_in, in_size,
-						   buf_out, out_size);
-	}
-
-	if (param->op == HCLGE_OPC_FD_KEY_CONFIG) {
-		ret = hclge_test_send_key_cfg_cmd(hdev, buf_in, in_size,
-						  buf_out, out_size);
-	}
-
-	if (param->op == HCLGE_OPC_FD_TCAM_OP) {
-		ret = hclge_test_send_tcam_op_cmd(hdev, buf_in, in_size,
-						  buf_out, out_size);
-	}
-
-	if (param->op == HCLGE_OPC_FD_AD_OP) {
-		ret = hclge_test_send_ad_op_cmd(hdev, buf_in, in_size,
+		ret = hns3_cae_send_generic_cmd(hdev, buf_in, in_size,
 						buf_out, out_size);
 	}
 
-	if (param->op == HCLGE_OPC_FD_CNT_OP) {
-		ret = hclge_test_send_cnt_op_cmd(hdev, buf_in, in_size,
+	if (param->op == HCLGE_OPC_FD_GET_ALLOCATION) {
+		ret = hns3_cae_send_allocate_cmd(hdev, buf_in, in_size,
 						 buf_out, out_size);
+	}
+
+	if (param->op == HCLGE_OPC_FD_KEY_CONFIG) {
+		ret = hns3_cae_send_key_cfg_cmd(hdev, buf_in, in_size,
+						buf_out, out_size);
+	}
+
+	if (param->op == HCLGE_OPC_FD_TCAM_OP) {
+		ret = hns3_cae_send_tcam_op_cmd(hdev, buf_in, in_size,
+						buf_out, out_size);
+	}
+
+	if (param->op == HCLGE_OPC_FD_AD_OP) {
+		ret = hns3_cae_send_ad_op_cmd(hdev, buf_in, in_size,
+					      buf_out, out_size);
+	}
+
+	if (param->op == HCLGE_OPC_FD_CNT_OP) {
+		ret = hns3_cae_send_cnt_op_cmd(hdev, buf_in, in_size,
+					       buf_out, out_size);
 	}
 
 	return ret;

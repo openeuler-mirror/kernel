@@ -13,9 +13,9 @@
 #include "hclge_cmd.h"
 #include "hns3_cae_tm.h"
 
-static int hns3_test_tm_schd_mode_set(struct hclge_dev *hdev,
-				      enum hclge_opcode_type opcode,
-				      u8 mode, u16 id)
+static int hns3_cae_tm_schd_mode_set(struct hclge_dev *hdev,
+				     enum hclge_opcode_type opcode,
+				     u8 mode, u16 id)
 {
 	struct hclge_desc desc;
 
@@ -31,9 +31,9 @@ static int hns3_test_tm_schd_mode_set(struct hclge_dev *hdev,
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-static int hns3_test_tm_schd_mode_get(struct hclge_dev *hdev,
-				      enum hclge_opcode_type opcode,
-				      u8 *mode, u16 id)
+static int hns3_cae_tm_schd_mode_get(struct hclge_dev *hdev,
+				     enum hclge_opcode_type opcode,
+				     u8 *mode, u16 id)
 {
 	struct hclge_desc desc;
 	int ret;
@@ -47,7 +47,7 @@ static int hns3_test_tm_schd_mode_get(struct hclge_dev *hdev,
 	return ret;
 }
 
-int hns3_test_tm_q_to_qs_set(struct hclge_dev *hdev, u16 q_id, u16 qs_id)
+int hns3_cae_tm_q_to_qs_set(struct hclge_dev *hdev, u16 q_id, u16 qs_id)
 {
 	struct hclge_nq_to_qs_link_cmd *map;
 	struct hclge_desc desc;
@@ -60,7 +60,7 @@ int hns3_test_tm_q_to_qs_set(struct hclge_dev *hdev, u16 q_id, u16 qs_id)
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-int hns3_test_tm_q_to_qs_get(struct hclge_dev *hdev, u16 q_id, u16 *qs_id)
+int hns3_cae_tm_q_to_qs_get(struct hclge_dev *hdev, u16 q_id, u16 *qs_id)
 {
 	struct hclge_nq_to_qs_link_cmd *map;
 	struct hclge_desc desc;
@@ -72,12 +72,12 @@ int hns3_test_tm_q_to_qs_get(struct hclge_dev *hdev, u16 q_id, u16 *qs_id)
 	map->qset_id = cpu_to_le16(*qs_id | HCLGE_TM_Q_QS_LINK_VLD_MSK);
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (!ret)
-		*qs_id = map->qset_id & HNS3_TEST_QS_ID_MSK;
+		*qs_id = map->qset_id & HNS3_CAE_QS_ID_MSK;
 
 	return ret;
 }
 
-int hns3_test_tm_qs_to_pri_set(struct hclge_dev *hdev, u16 qs_id, u8 pri)
+int hns3_cae_tm_qs_to_pri_set(struct hclge_dev *hdev, u16 qs_id, u8 pri)
 {
 	struct hclge_qs_to_pri_link_cmd *map;
 	struct hclge_desc desc;
@@ -91,7 +91,7 @@ int hns3_test_tm_qs_to_pri_set(struct hclge_dev *hdev, u16 qs_id, u8 pri)
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-int hns3_test_tm_qs_to_pri_get(struct hclge_dev *hdev, u16 qs_id, u8 *pri)
+int hns3_cae_tm_qs_to_pri_get(struct hclge_dev *hdev, u16 qs_id, u8 *pri)
 {
 	struct hclge_qs_to_pri_link_cmd *map;
 	struct hclge_desc desc;
@@ -107,7 +107,7 @@ int hns3_test_tm_qs_to_pri_get(struct hclge_dev *hdev, u16 qs_id, u8 *pri)
 	return ret;
 }
 
-int hns3_test_tm_qs_weight_set(struct hclge_dev *hdev, u16 qs_id, u8 dwrr)
+int hns3_cae_tm_qs_weight_set(struct hclge_dev *hdev, u16 qs_id, u8 dwrr)
 {
 	struct hclge_qs_weight_cmd *weight;
 	struct hclge_desc desc;
@@ -120,7 +120,7 @@ int hns3_test_tm_qs_weight_set(struct hclge_dev *hdev, u16 qs_id, u8 dwrr)
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-int hns3_test_tm_qs_weight_get(struct hclge_dev *hdev, u16 qs_id, u8 *dwrr)
+int hns3_cae_tm_qs_weight_get(struct hclge_dev *hdev, u16 qs_id, u8 *dwrr)
 {
 	struct hclge_qs_weight_cmd *weight;
 	struct hclge_desc desc;
@@ -136,7 +136,7 @@ int hns3_test_tm_qs_weight_get(struct hclge_dev *hdev, u16 qs_id, u8 *dwrr)
 	return ret;
 }
 
-int hns3_test_tm_pri_weight_set(struct hclge_dev *hdev, u8 pri_id, u8 dwrr)
+int hns3_cae_tm_pri_weight_set(struct hclge_dev *hdev, u8 pri_id, u8 dwrr)
 {
 	struct hclge_priority_weight_cmd *weight;
 	struct hclge_desc desc;
@@ -149,7 +149,7 @@ int hns3_test_tm_pri_weight_set(struct hclge_dev *hdev, u8 pri_id, u8 dwrr)
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-int hns3_test_tm_pri_weight_get(struct hclge_dev *hdev, u8 pri_id, u8 *dwrr)
+int hns3_cae_tm_pri_weight_get(struct hclge_dev *hdev, u8 pri_id, u8 *dwrr)
 {
 	struct hclge_priority_weight_cmd *weight;
 	struct hclge_desc desc;
@@ -165,7 +165,7 @@ int hns3_test_tm_pri_weight_get(struct hclge_dev *hdev, u8 pri_id, u8 *dwrr)
 	return ret;
 }
 
-int hns3_test_tm_pri_pg_bitmap_set(struct hclge_dev *hdev, u8 pg_id, u8 bitmap)
+int hns3_cae_tm_pri_pg_bitmap_set(struct hclge_dev *hdev, u8 pg_id, u8 bitmap)
 {
 	struct hclge_pg_to_pri_link_cmd *map;
 	struct hclge_desc desc;
@@ -178,8 +178,8 @@ int hns3_test_tm_pri_pg_bitmap_set(struct hclge_dev *hdev, u8 pg_id, u8 bitmap)
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-int hns3_test_tm_pri_pg_bitmap_get(struct hclge_dev *hdev, u8 pg_id,
-				   u8 *bitmap)
+int hns3_cae_tm_pri_pg_bitmap_get(struct hclge_dev *hdev, u8 pg_id,
+				  u8 *bitmap)
 {
 	struct hclge_pg_to_pri_link_cmd *map;
 	struct hclge_desc desc;
@@ -197,8 +197,8 @@ int hns3_test_tm_pri_pg_bitmap_get(struct hclge_dev *hdev, u8 pg_id,
 	return 0;
 }
 
-int hns3_test_tm_qs_bp_bitmap_set(struct hclge_dev *hdev, u8 tc, u8 gp_id,
-				  u32 map)
+int hns3_cae_tm_qs_bp_bitmap_set(struct hclge_dev *hdev, u8 tc, u8 gp_id,
+				 u32 map)
 {
 	struct hclge_bp_to_qs_map_cmd *bp_to_qs_map_cmd;
 	struct hclge_desc desc;
@@ -214,8 +214,8 @@ int hns3_test_tm_qs_bp_bitmap_set(struct hclge_dev *hdev, u8 tc, u8 gp_id,
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-int hns3_test_tm_qs_bp_bitmap_get(struct hclge_dev *hdev, u8 tc, u8 gp_id,
-				  u32 *map)
+int hns3_cae_tm_qs_bp_bitmap_get(struct hclge_dev *hdev, u8 tc, u8 gp_id,
+				 u32 *map)
 {
 	struct hclge_bp_to_qs_map_cmd *bp_to_qs_map_cmd;
 	struct hclge_desc desc;
@@ -234,9 +234,9 @@ int hns3_test_tm_qs_bp_bitmap_get(struct hclge_dev *hdev, u8 tc, u8 gp_id,
 	return 0;
 }
 
-int hns3_test_tm_pri_shapping_set(struct hclge_dev *hdev,
-				  enum hclge_shap_bucket bucket, u8 pri_id,
-				  u32 shaper)
+int hns3_cae_tm_pri_shapping_set(struct hclge_dev *hdev,
+				 enum hclge_shap_bucket bucket, u8 pri_id,
+				 u32 shaper)
 {
 	struct hclge_pri_shapping_cmd *shap_cfg_cmd;
 	enum hclge_opcode_type opcode;
@@ -252,9 +252,9 @@ int hns3_test_tm_pri_shapping_set(struct hclge_dev *hdev,
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-int hns3_test_tm_pri_shapping_get(struct hclge_dev *hdev,
-				  enum hclge_shap_bucket bucket, u8 pri_id,
-				  u32 *shaper)
+int hns3_cae_tm_pri_shapping_get(struct hclge_dev *hdev,
+				 enum hclge_shap_bucket bucket, u8 pri_id,
+				 u32 *shaper)
 {
 	struct hclge_pri_shapping_cmd *shap_cfg_cmd;
 	enum hclge_opcode_type opcode;
@@ -272,7 +272,7 @@ int hns3_test_tm_pri_shapping_get(struct hclge_dev *hdev,
 	return ret;
 }
 
-int hns3_test_tm_pg_weight_set(struct hclge_dev *hdev, u8 pg_id, u8 dwrr)
+int hns3_cae_tm_pg_weight_set(struct hclge_dev *hdev, u8 pg_id, u8 dwrr)
 {
 	struct hclge_pg_weight_cmd *weight;
 	struct hclge_desc desc;
@@ -285,7 +285,7 @@ int hns3_test_tm_pg_weight_set(struct hclge_dev *hdev, u8 pg_id, u8 dwrr)
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-int hns3_test_tm_pg_weight_get(struct hclge_dev *hdev, u8 pg_id, u8 *dwrr)
+int hns3_cae_tm_pg_weight_get(struct hclge_dev *hdev, u8 pg_id, u8 *dwrr)
 {
 	struct hclge_pg_weight_cmd *weight;
 	struct hclge_desc desc;
@@ -301,9 +301,9 @@ int hns3_test_tm_pg_weight_get(struct hclge_dev *hdev, u8 pg_id, u8 *dwrr)
 	return ret;
 }
 
-int hns3_test_tm_pg_shapping_set(struct hclge_dev *hdev,
-				 enum hclge_shap_bucket bucket, u8 pg_id,
-				 u32 shaper)
+int hns3_cae_tm_pg_shapping_set(struct hclge_dev *hdev,
+				enum hclge_shap_bucket bucket, u8 pg_id,
+				u32 shaper)
 {
 	struct hclge_pg_shapping_cmd *shap_cfg_cmd;
 	enum hclge_opcode_type opcode;
@@ -319,9 +319,9 @@ int hns3_test_tm_pg_shapping_set(struct hclge_dev *hdev,
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-int hns3_test_tm_pg_shapping_get(struct hclge_dev *hdev,
-				 enum hclge_shap_bucket bucket, u8 pg_id,
-				 u32 *shaper)
+int hns3_cae_tm_pg_shapping_get(struct hclge_dev *hdev,
+				enum hclge_shap_bucket bucket, u8 pg_id,
+				u32 *shaper)
 {
 	struct hclge_pg_shapping_cmd *shap_cfg_cmd;
 	enum hclge_opcode_type opcode;
@@ -340,7 +340,7 @@ int hns3_test_tm_pg_shapping_get(struct hclge_dev *hdev,
 	return ret;
 }
 
-int hns3_test_tm_port_shapping_set(struct hclge_dev *hdev, u32 shaper)
+int hns3_cae_tm_port_shapping_set(struct hclge_dev *hdev, u32 shaper)
 {
 	struct hclge_port_shapping_cmd *shap_cfg_cmd;
 	enum hclge_opcode_type opcode;
@@ -354,7 +354,7 @@ int hns3_test_tm_port_shapping_set(struct hclge_dev *hdev, u32 shaper)
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-int hns3_test_tm_port_shapping_get(struct hclge_dev *hdev, u32 *shaper)
+int hns3_cae_tm_port_shapping_get(struct hclge_dev *hdev, u32 *shaper)
 {
 	struct hclge_port_shapping_cmd *shap_cfg_cmd;
 	enum hclge_opcode_type opcode;
@@ -371,16 +371,16 @@ int hns3_test_tm_port_shapping_get(struct hclge_dev *hdev, u32 *shaper)
 	return ret;
 }
 
-static int hns3_test_tm_ets_tc_dwrr_set(struct hclge_dev *hdev, u8 *weight)
+static int hns3_cae_tm_ets_tc_dwrr_set(struct hclge_dev *hdev, u8 *weight)
 {
 #define DEFAULT_TC_WEIGHT	1
 #define DEFAULT_TC_OFFSET	14
-	struct nictool_ets_tc_weight_cmd *ets_weight;
+	struct hns3_cae_ets_tc_weight_cmd *ets_weight;
 	struct hclge_desc desc;
 	int i;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_ETS_TC_WEIGHT, false);
-	ets_weight = (struct nictool_ets_tc_weight_cmd *)desc.data;
+	ets_weight = (struct hns3_cae_ets_tc_weight_cmd *)desc.data;
 
 	for (i = 0; i < MAX_TC_NUM; i++)
 		ets_weight->tc_weight[i] = weight[i];
@@ -390,14 +390,14 @@ static int hns3_test_tm_ets_tc_dwrr_set(struct hclge_dev *hdev, u8 *weight)
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
 
-static int hns3_test_tm_ets_tc_dwrr_get(struct hclge_dev *hdev, u8 *weight)
+static int hns3_cae_tm_ets_tc_dwrr_get(struct hclge_dev *hdev, u8 *weight)
 {
-	struct nictool_ets_tc_weight_cmd *ets_weight;
+	struct hns3_cae_ets_tc_weight_cmd *ets_weight;
 	struct hclge_desc desc;
 	int ret, i;
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_ETS_TC_WEIGHT, true);
-	ets_weight = (struct nictool_ets_tc_weight_cmd *)desc.data;
+	ets_weight = (struct hns3_cae_ets_tc_weight_cmd *)desc.data;
 
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (!ret) {
@@ -408,8 +408,8 @@ static int hns3_test_tm_ets_tc_dwrr_get(struct hclge_dev *hdev, u8 *weight)
 	return ret;
 }
 
-static int hns3_test_tm_operate_nic_regs(struct hclge_dev *hdev,
-					 u64 addr, u64 *value, u8 is_read)
+static int hns3_cae_tm_operate_nic_regs(struct hclge_dev *hdev,
+					u64 addr, u64 *value, u8 is_read)
 {
 #define HNS3_WRITE_READ_REG_CMD  0x7014
 	struct hclge_desc desc;
@@ -449,18 +449,18 @@ static int hns3_test_tm_operate_nic_regs(struct hclge_dev *hdev,
 	return 0;
 }
 
-int hns3_test_queue_cfg(struct hns3_nic_priv *net_priv,
-			void *buf_in, u32 in_size,
-			void *buf_out, u32 out_size)
+int hns3_cae_queue_cfg(struct hns3_nic_priv *net_priv,
+		       void *buf_in, u32 in_size,
+		       void *buf_out, u32 out_size)
 {
-	struct nictool_queue_cfg_info *out_info;
-	struct nictool_queue_cfg_info *in_info;
+	struct hns3_cae_queue_cfg_info *out_info;
+	struct hns3_cae_queue_cfg_info *in_info;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	int is_read;
 	bool check;
 
-	check = !buf_in || in_size < sizeof(struct nictool_queue_cfg_info);
+	check = !buf_in || in_size < sizeof(struct hns3_cae_queue_cfg_info);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -468,28 +468,28 @@ int hns3_test_queue_cfg(struct hns3_nic_priv *net_priv,
 
 	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	in_info = (struct nictool_queue_cfg_info *)buf_in;
-	out_info = (struct nictool_queue_cfg_info *)buf_out;
+	in_info = (struct hns3_cae_queue_cfg_info *)buf_in;
+	out_info = (struct hns3_cae_queue_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 
 	if (is_read) {
 		check = !buf_out ||
-			out_size < sizeof(struct nictool_queue_cfg_info);
+			out_size < sizeof(struct hns3_cae_queue_cfg_info);
 		if (check) {
 			pr_err("input param buf_out error in %s function\n",
 			       __func__);
 			return -EFAULT;
 		}
 		out_info->queue_id = in_info->queue_id;
-		if (hns3_test_tm_q_to_qs_get(hdev, in_info->queue_id,
-					     &out_info->qs)) {
+		if (hns3_cae_tm_q_to_qs_get(hdev, in_info->queue_id,
+					    &out_info->qs)) {
 			pr_err("%s,%d:get queue(%d) to qs failed!\n", __func__,
 			       __LINE__, in_info->queue_id);
 			return -1;
 		}
 	} else {
-		if (hns3_test_tm_q_to_qs_set(hdev, in_info->queue_id,
-					     in_info->qs)) {
+		if (hns3_cae_tm_q_to_qs_set(hdev, in_info->queue_id,
+					    in_info->qs)) {
 			pr_err("%s,%d:set queue(%d) to qs(%d) failed!\n",
 			       __func__, __LINE__,
 			       in_info->queue_id, in_info->qs);
@@ -500,9 +500,9 @@ int hns3_test_queue_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-static int hns3_test_qs_set_new_map(int tc, u32 map,
-				    struct hclge_dev *hdev,
-				    struct nictool_qs_cfg_info *in_info)
+static int hns3_cae_qs_set_new_map(int tc, u32 map,
+				   struct hclge_dev *hdev,
+				   struct hns3_cae_qs_cfg_info *in_info)
 {
 	u32 bp_map = map;
 	u16 qs_id;
@@ -516,13 +516,13 @@ static int hns3_test_qs_set_new_map(int tc, u32 map,
 	if (tc < MAX_TC_NUM) {
 		/* clear old bit */
 		bp_map &= ~BIT(offset);
-		if (hns3_test_tm_qs_bp_bitmap_set(hdev, tc, gp_id, bp_map)) {
+		if (hns3_cae_tm_qs_bp_bitmap_set(hdev, tc, gp_id, bp_map)) {
 			pr_err("%s,%d:set qs(%d) bp map failed!\n", __func__,
 			       __LINE__, qs_id);
 			return -1;
 		}
 		/* set new bit */
-		if (hns3_test_tm_qs_bp_bitmap_get
+		if (hns3_cae_tm_qs_bp_bitmap_get
 		    (hdev, in_info->tc, gp_id, &bp_map)) {
 			pr_err("%s,%d:get qs(%d) bp map failed!\n", __func__,
 			       __LINE__, qs_id);
@@ -530,7 +530,7 @@ static int hns3_test_qs_set_new_map(int tc, u32 map,
 		}
 
 		bp_map |= BIT(offset);
-		if (hns3_test_tm_qs_bp_bitmap_set
+		if (hns3_cae_tm_qs_bp_bitmap_set
 		    (hdev, in_info->tc, gp_id, bp_map)) {
 			pr_err("%s,%d:set qs(%d) bp map failed!\n", __func__,
 			       __LINE__, qs_id);
@@ -541,11 +541,11 @@ static int hns3_test_qs_set_new_map(int tc, u32 map,
 	return 0;
 }
 
-int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_qs_cfg(struct hns3_nic_priv *net_priv,
+		    void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct nictool_qs_cfg_info *out_info;
-	struct nictool_qs_cfg_info *in_info;
+	struct hns3_cae_qs_cfg_info *out_info;
+	struct hns3_cae_qs_cfg_info *in_info;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	int is_read;
@@ -556,7 +556,7 @@ int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
 	int gp_id;
 	int tc;
 
-	check = !buf_in || in_size < sizeof(struct nictool_qs_cfg_info);
+	check = !buf_in || in_size < sizeof(struct hns3_cae_qs_cfg_info);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -564,15 +564,15 @@ int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
 
 	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	in_info = (struct nictool_qs_cfg_info *)buf_in;
-	out_info = (struct nictool_qs_cfg_info *)buf_out;
+	in_info = (struct hns3_cae_qs_cfg_info *)buf_in;
+	out_info = (struct hns3_cae_qs_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 	qs_id = in_info->qs_id;
 	gp_id = qs_id / 32;
 	offset = qs_id % 32;
 
 	for (tc = 0; tc < MAX_TC_NUM; tc++) {
-		if (hns3_test_tm_qs_bp_bitmap_get(hdev, tc, gp_id, &bp_map)) {
+		if (hns3_cae_tm_qs_bp_bitmap_get(hdev, tc, gp_id, &bp_map)) {
 			pr_err("%s,%d:get qs(%d) bp map failed!\n", __func__,
 			       __LINE__, qs_id);
 			return -1;
@@ -583,7 +583,7 @@ int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
 
 	if (is_read) {
 		check = !buf_out ||
-			out_size < sizeof(struct nictool_qs_cfg_info);
+			out_size < sizeof(struct hns3_cae_qs_cfg_info);
 		if (check) {
 			pr_err("input param buf_out error in %s function\n",
 			       __func__);
@@ -591,13 +591,13 @@ int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
 		}
 		out_info->qs_id = qs_id;
 		out_info->tc = tc;
-		if (hns3_test_tm_qs_to_pri_get(hdev, qs_id, &out_info->pri)) {
+		if (hns3_cae_tm_qs_to_pri_get(hdev, qs_id, &out_info->pri)) {
 			pr_err("%s,%d:get qs(%d) to pri failed!\n", __func__,
 			       __LINE__, qs_id);
 			return -1;
 		}
 
-		if (hns3_test_tm_schd_mode_get
+		if (hns3_cae_tm_schd_mode_get
 		    (hdev, HCLGE_OPC_TM_QS_SCH_MODE_CFG, &out_info->mode,
 		     qs_id)) {
 			pr_err("%s,%d:get qs(%d) mode failed!\n", __func__,
@@ -605,8 +605,8 @@ int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
 			return -1;
 		}
 
-		if (hns3_test_tm_qs_weight_get(hdev, qs_id,
-					       &out_info->weight)) {
+		if (hns3_cae_tm_qs_weight_get(hdev, qs_id,
+					      &out_info->weight)) {
 			pr_err("%s,%d:get qs(%d) weight failed!\n", __func__,
 			       __LINE__, qs_id);
 			return -1;
@@ -614,30 +614,30 @@ int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
 
 	} else {
 		if ((in_info->flag & HNS3_TM_QSET_MAPPING_FLAG) &&
-		    hns3_test_tm_qs_to_pri_set(hdev, qs_id, in_info->pri)) {
+		    hns3_cae_tm_qs_to_pri_set(hdev, qs_id, in_info->pri)) {
 			pr_err("%s,%d:set qs(%d) to pri(%d) failed!\n",
 			       __func__, __LINE__, qs_id, in_info->pri);
 			return -1;
 		}
 
 		if ((in_info->flag & HNS3_TM_QSET_MODE_CFG_FLAG) &&
-		    hns3_test_tm_schd_mode_set(hdev,
-					       HCLGE_OPC_TM_QS_SCH_MODE_CFG,
-					       in_info->mode, qs_id)) {
+		    hns3_cae_tm_schd_mode_set(hdev,
+					      HCLGE_OPC_TM_QS_SCH_MODE_CFG,
+					      in_info->mode, qs_id)) {
 			pr_err("%s,%d:set qs(%d) mode(%d) failed!\n", __func__,
 			       __LINE__, qs_id, in_info->mode);
 			return -1;
 		}
 
 		if ((in_info->flag & HNS3_TM_QSET_WEIGHT_CFG_FLAG) &&
-		    hns3_test_tm_qs_weight_set(hdev, qs_id, in_info->weight)) {
+		    hns3_cae_tm_qs_weight_set(hdev, qs_id, in_info->weight)) {
 			pr_err("%s,%d:set qs(%d) weight(%d) failed!\n",
 			       __func__, __LINE__, qs_id, in_info->weight);
 			return -1;
 		}
 
 		if ((in_info->flag & HNS3_TM_QSET_BP_CFG_FLAG) &&
-		    hns3_test_qs_set_new_map(tc, bp_map, hdev, in_info)) {
+		    hns3_cae_qs_set_new_map(tc, bp_map, hdev, in_info)) {
 			pr_err("%s,%d:set qset %d bp cfg to tc %d failed!\n",
 			       __func__, __LINE__, qs_id, in_info->tc);
 			return -1;
@@ -647,9 +647,9 @@ int hns3_test_qs_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-static int hns3_test_pri_pg_set_map(struct hclge_dev *hdev,
-				    int cur_pg, u8 map,
-				    struct nictool_pri_cfg_info *in_info)
+static int hns3_cae_pri_pg_set_map(struct hclge_dev *hdev,
+				   int cur_pg, u8 map,
+				   struct hns3_cae_pri_cfg_info *in_info)
 {
 	u8 bitmap = map;
 	u16 pri_id = in_info->pri_id;
@@ -657,15 +657,15 @@ static int hns3_test_pri_pg_set_map(struct hclge_dev *hdev,
 	/* clear old map */
 	if (in_info->pg != cur_pg) {
 		bitmap &= ~BIT(pri_id);
-		if (hns3_test_tm_pri_pg_bitmap_set(hdev, cur_pg, bitmap)) {
+		if (hns3_cae_tm_pri_pg_bitmap_set(hdev, cur_pg, bitmap)) {
 			pr_err("%s,%d:set pg(%d) pri_map failed!\n", __func__,
 			       __LINE__, cur_pg);
 			return -1;
 		}
 
 		bitmap = 0;
-		if (hns3_test_tm_pri_pg_bitmap_get(hdev, in_info->pg,
-						   &bitmap)) {
+		if (hns3_cae_tm_pri_pg_bitmap_get(hdev, in_info->pg,
+						  &bitmap)) {
 			pr_err("%s,%d:get pg(%d) pri_map failed!\n", __func__,
 			       __LINE__, in_info->pg);
 			return -1;
@@ -674,7 +674,7 @@ static int hns3_test_pri_pg_set_map(struct hclge_dev *hdev,
 
 	/* set new map */
 	bitmap |= BIT(pri_id);
-	if (hns3_test_tm_pri_pg_bitmap_set(hdev, in_info->pg, bitmap)) {
+	if (hns3_cae_tm_pri_pg_bitmap_set(hdev, in_info->pg, bitmap)) {
 		pr_err("%s,%d:set pg(%d) pri_map failed!\n", __func__, __LINE__,
 		       in_info->pg);
 		return -1;
@@ -683,11 +683,11 @@ static int hns3_test_pri_pg_set_map(struct hclge_dev *hdev,
 	return 0;
 }
 
-int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_pri_cfg(struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct nictool_pri_cfg_info *out_info;
-	struct nictool_pri_cfg_info *in_info;
+	struct hns3_cae_pri_cfg_info *out_info;
+	struct hns3_cae_pri_cfg_info *in_info;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	int is_read;
@@ -696,7 +696,7 @@ int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
 	bool check;
 	u8 bitmap;
 
-	check = !buf_in || in_size < sizeof(struct nictool_pri_cfg_info);
+	check = !buf_in || in_size < sizeof(struct hns3_cae_pri_cfg_info);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -704,15 +704,15 @@ int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
 
 	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	in_info = (struct nictool_pri_cfg_info *)buf_in;
-	out_info = (struct nictool_pri_cfg_info *)buf_out;
+	in_info = (struct hns3_cae_pri_cfg_info *)buf_in;
+	out_info = (struct hns3_cae_pri_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 
 	pri_id = in_info->pri_id;
 
 	for (cur_pg = 0; cur_pg < MAX_PG_NUM; cur_pg++) {
 		bitmap = 0;
-		if (hns3_test_tm_pri_pg_bitmap_get(hdev, cur_pg, &bitmap)) {
+		if (hns3_cae_tm_pri_pg_bitmap_get(hdev, cur_pg, &bitmap)) {
 			pr_err("%s,%d:get pg(%d) pri_map failed!\n", __func__,
 			       __LINE__, cur_pg);
 			return -1;
@@ -730,7 +730,7 @@ int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
 
 	if (is_read) {
 		check = !buf_out ||
-			out_size < sizeof(struct nictool_pri_cfg_info);
+			out_size < sizeof(struct hns3_cae_pri_cfg_info);
 		if (check) {
 			pr_err("input param buf_out error in %s function\n",
 			       __func__);
@@ -738,23 +738,23 @@ int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
 		}
 		out_info->pri_id = pri_id;
 		out_info->pg = cur_pg;
-		if (hns3_test_tm_pri_shapping_get(hdev, HCLGE_TM_SHAP_C_BUCKET,
-						  pri_id,
-						  &out_info->c_shaping)) {
+		if (hns3_cae_tm_pri_shapping_get(hdev, HCLGE_TM_SHAP_C_BUCKET,
+						 pri_id,
+						 &out_info->c_shaping)) {
 			pr_err("%s,%d:get pri(%d) c shaping failed!\n",
 			       __func__, __LINE__, pri_id);
 			return -1;
 		}
 
-		if (hns3_test_tm_pri_shapping_get(hdev, HCLGE_TM_SHAP_P_BUCKET,
-						  pri_id,
-						  &out_info->p_shaping)) {
+		if (hns3_cae_tm_pri_shapping_get(hdev, HCLGE_TM_SHAP_P_BUCKET,
+						 pri_id,
+						 &out_info->p_shaping)) {
 			pr_err("%s,%d:get pri(%d) p shaping failed!\n",
 			       __func__, __LINE__, pri_id);
 			return -1;
 		}
 
-		if (hns3_test_tm_schd_mode_get
+		if (hns3_cae_tm_schd_mode_get
 		    (hdev, HCLGE_OPC_TM_PRI_SCH_MODE_CFG, &out_info->mode,
 		     pri_id)) {
 			pr_err("%s,%d:get pri(%d) mode failed!\n", __func__,
@@ -762,7 +762,7 @@ int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
 			return -1;
 		}
 
-		if (hns3_test_tm_pri_weight_get
+		if (hns3_cae_tm_pri_weight_get
 		    (hdev, pri_id, &out_info->weight)) {
 			pr_err("%s,%d:set pri(%d) weight failed!\n", __func__,
 			       __LINE__, pri_id);
@@ -770,40 +770,40 @@ int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
 		}
 	} else {
 		if ((in_info->flag & HNS3_TM_PRI_MAPPING_FLAG) &&
-		    hns3_test_pri_pg_set_map(hdev, cur_pg, bitmap, in_info)) {
+		    hns3_cae_pri_pg_set_map(hdev, cur_pg, bitmap, in_info)) {
 			pr_err("%s,%d:set pri(%d) mapping to pg(%d) failed!\n",
 			       __func__, __LINE__, pri_id, in_info->pg);
 			return -1;
 		}
 
 		if ((in_info->flag & HNS3_TM_PRI_CSHAP_CFG_FLAG) &&
-		    hns3_test_tm_pri_shapping_set(hdev, HCLGE_TM_SHAP_C_BUCKET,
-						  pri_id, in_info->c_shaping)) {
+		    hns3_cae_tm_pri_shapping_set(hdev, HCLGE_TM_SHAP_C_BUCKET,
+						 pri_id, in_info->c_shaping)) {
 			pr_err("%s,%d:set pri(%d) c shaping(%u)) failed!\n",
 			       __func__, __LINE__, pri_id, in_info->c_shaping);
 			return -1;
 		}
 
 		if ((in_info->flag & HNS3_TM_PRI_PSHAP_CFG_FLAG) &&
-		    hns3_test_tm_pri_shapping_set(hdev, HCLGE_TM_SHAP_P_BUCKET,
-						  pri_id, in_info->p_shaping)) {
+		    hns3_cae_tm_pri_shapping_set(hdev, HCLGE_TM_SHAP_P_BUCKET,
+						 pri_id, in_info->p_shaping)) {
 			pr_err("%s,%d:set pri(%d) p shaping(%u) failed!\n",
 			       __func__, __LINE__, pri_id, in_info->p_shaping);
 			return -1;
 		}
 
 		if ((in_info->flag & HNS3_TM_PRI_MODE_CFG_FLAG) &&
-		    hns3_test_tm_schd_mode_set(hdev,
-					       HCLGE_OPC_TM_PRI_SCH_MODE_CFG,
-					       in_info->mode, pri_id)) {
+		    hns3_cae_tm_schd_mode_set(hdev,
+					      HCLGE_OPC_TM_PRI_SCH_MODE_CFG,
+					      in_info->mode, pri_id)) {
 			pr_err("%s,%d:set pri(%d) mode(%d) failed!\n", __func__,
 			       __LINE__, pri_id, in_info->mode);
 			return -1;
 		}
 
 		if ((in_info->flag & HNS3_TM_PRI_WEIGHT_CFG_FLAG) &&
-		    hns3_test_tm_pri_weight_set(hdev, pri_id,
-						in_info->weight)) {
+		    hns3_cae_tm_pri_weight_set(hdev, pri_id,
+					       in_info->weight)) {
 			pr_err("%s,%d:set pri(%d) weight(%d) failed!\n",
 			       __func__, __LINE__, pri_id, in_info->weight);
 			return -1;
@@ -813,18 +813,18 @@ int hns3_test_pri_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
-		     void *buf_out, u32 out_size)
+int hns3_cae_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
+		    void *buf_out, u32 out_size)
 {
-	struct nictool_pg_cfg_info *out_info;
-	struct nictool_pg_cfg_info *in_info;
+	struct hns3_cae_pg_cfg_info *out_info;
+	struct hns3_cae_pg_cfg_info *in_info;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	int is_read;
 	bool check;
 	u16 pg_id;
 
-	check = !buf_in || in_size < sizeof(struct nictool_pg_cfg_info);
+	check = !buf_in || in_size < sizeof(struct hns3_cae_pg_cfg_info);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -832,37 +832,37 @@ int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
 
 	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	in_info = (struct nictool_pg_cfg_info *)buf_in;
-	out_info = (struct nictool_pg_cfg_info *)buf_out;
+	in_info = (struct hns3_cae_pg_cfg_info *)buf_in;
+	out_info = (struct hns3_cae_pg_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 	pg_id = in_info->pg_id;
 
 	if (is_read) {
 		check = !buf_out ||
-			out_size < sizeof(struct nictool_pg_cfg_info);
+			out_size < sizeof(struct hns3_cae_pg_cfg_info);
 		if (check) {
 			pr_err("input param buf_out error in %s function\n",
 			       __func__);
 			return -EFAULT;
 		}
 		out_info->pg_id = pg_id;
-		if (hns3_test_tm_pg_shapping_get(hdev, HCLGE_TM_SHAP_C_BUCKET,
-						 pg_id,
-						 &out_info->c_shaping)) {
+		if (hns3_cae_tm_pg_shapping_get(hdev, HCLGE_TM_SHAP_C_BUCKET,
+						pg_id,
+						&out_info->c_shaping)) {
 			pr_err("%s,%d:get pg(%d) c shaping failed!\n", __func__,
 			       __LINE__, pg_id);
 			return -1;
 		}
 
-		if (hns3_test_tm_pg_shapping_get(hdev, HCLGE_TM_SHAP_P_BUCKET,
-						 pg_id,
-						 &out_info->p_shaping)) {
+		if (hns3_cae_tm_pg_shapping_get(hdev, HCLGE_TM_SHAP_P_BUCKET,
+						pg_id,
+						&out_info->p_shaping)) {
 			pr_err("%s,%d:get pg(%d) p shaping failed!\n", __func__,
 			       __LINE__, pg_id);
 			return -1;
 		}
 
-		if (hns3_test_tm_schd_mode_get
+		if (hns3_cae_tm_schd_mode_get
 		    (hdev, HCLGE_OPC_TM_PG_SCH_MODE_CFG, &out_info->mode,
 		     pg_id)) {
 			pr_err("%s,%d:get pg(%d) mode failed!\n", __func__,
@@ -870,8 +870,8 @@ int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
 			return -1;
 		}
 
-		if (hns3_test_tm_pg_weight_get(hdev, pg_id,
-					       &out_info->weight)) {
+		if (hns3_cae_tm_pg_weight_get(hdev, pg_id,
+					      &out_info->weight)) {
 			pr_err("%s,%d:set pg(%d) weight failed!\n", __func__,
 			       __LINE__, pg_id);
 			return -1;
@@ -879,32 +879,32 @@ int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
 
 	} else {
 		if ((in_info->flag & HNS3_TM_PG_CSHAP_CFG_FLAG) &&
-		    hns3_test_tm_pg_shapping_set(hdev, HCLGE_TM_SHAP_C_BUCKET,
-						 pg_id, in_info->c_shaping)) {
+		    hns3_cae_tm_pg_shapping_set(hdev, HCLGE_TM_SHAP_C_BUCKET,
+						pg_id, in_info->c_shaping)) {
 			pr_err("%s,%d:set pg(%d) c shaping(%u) failed!\n",
 			       __func__, __LINE__, pg_id, in_info->c_shaping);
 			return -1;
 		}
 
 		if ((in_info->flag & HNS3_TM_PG_PSHAP_CFG_FLAG) &&
-		    hns3_test_tm_pg_shapping_set(hdev, HCLGE_TM_SHAP_P_BUCKET,
-						 pg_id, in_info->p_shaping)) {
+		    hns3_cae_tm_pg_shapping_set(hdev, HCLGE_TM_SHAP_P_BUCKET,
+						pg_id, in_info->p_shaping)) {
 			pr_err("%s,%d:set pg(%d) p shaping(%u) failed!\n",
 			       __func__, __LINE__, pg_id, in_info->p_shaping);
 			return -1;
 		}
 
 		if ((in_info->flag & HNS3_TM_PG_MODE_CFG_FLAG) &&
-		    hns3_test_tm_schd_mode_set(hdev,
-					       HCLGE_OPC_TM_PG_SCH_MODE_CFG,
-					       in_info->mode, pg_id)) {
+		    hns3_cae_tm_schd_mode_set(hdev,
+					      HCLGE_OPC_TM_PG_SCH_MODE_CFG,
+					      in_info->mode, pg_id)) {
 			pr_err("%s,%d:set pg(%d) mode(%d) failed!\n", __func__,
 			       __LINE__, pg_id, in_info->mode);
 			return -1;
 		}
 
 		if ((in_info->flag & HNS3_TM_PG_WEIGHT_CFG_FLAG) &&
-		    hns3_test_tm_pg_weight_set(hdev, pg_id, in_info->weight)) {
+		    hns3_cae_tm_pg_weight_set(hdev, pg_id, in_info->weight)) {
 			pr_err("%s,%d:set pg(%d) weight(%d) failed!\n",
 			       __func__, __LINE__, pg_id, in_info->weight);
 			return -1;
@@ -914,18 +914,18 @@ int hns3_test_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
 	return 0;
 }
 
-int hns3_test_port_cfg(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_port_cfg(struct hns3_nic_priv *net_priv,
+		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct nictool_port_cfg_info *out_info;
-	struct nictool_port_cfg_info *in_info;
+	struct hns3_cae_port_cfg_info *out_info;
+	struct hns3_cae_port_cfg_info *in_info;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	u16 port_id;
 	int is_read;
 	bool check;
 
-	check = !buf_in || in_size < sizeof(struct nictool_port_cfg_info);
+	check = !buf_in || in_size < sizeof(struct hns3_cae_port_cfg_info);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
@@ -933,28 +933,28 @@ int hns3_test_port_cfg(struct hns3_nic_priv *net_priv,
 
 	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	in_info = (struct nictool_port_cfg_info *)buf_in;
-	out_info = (struct nictool_port_cfg_info *)buf_out;
+	in_info = (struct hns3_cae_port_cfg_info *)buf_in;
+	out_info = (struct hns3_cae_port_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 	port_id = in_info->port_id;
 
 	if (is_read) {
 		check = !buf_out ||
-			out_size < sizeof(struct nictool_port_cfg_info);
+			out_size < sizeof(struct hns3_cae_port_cfg_info);
 		if (check) {
 			pr_err("input param buf_out error in %s function\n",
 			       __func__);
 			return -EFAULT;
 		}
 		out_info->port_id = port_id;
-		if (hns3_test_tm_port_shapping_get(hdev, &out_info->shaping)) {
+		if (hns3_cae_tm_port_shapping_get(hdev, &out_info->shaping)) {
 			pr_err("%s,%d:get port p shaping failed!\n", __func__,
 			       __LINE__);
 			return -1;
 		}
 	} else {
 		if ((in_info->flag & HNS3_TM_PORT_PSHAP_CFG_FLAG) &&
-		    hns3_test_tm_port_shapping_set(hdev, in_info->shaping)) {
+		    hns3_cae_tm_port_shapping_set(hdev, in_info->shaping)) {
 			pr_err("%s,%d:set port p shaping(%u) failed!\n",
 			       __func__, __LINE__, in_info->shaping);
 			return -1;
@@ -964,12 +964,12 @@ int hns3_test_port_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_test_ets_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_ets_cfg(struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 #define HNS3_TM_ETS_PORT_SHAPING		0x130820850
-	struct nictool_ets_cfg_info *out_info;
-	struct nictool_ets_cfg_info *in_info;
+	struct hns3_cae_ets_cfg_info *out_info;
+	struct hns3_cae_ets_cfg_info *in_info;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	u8 weight[8];
@@ -980,8 +980,8 @@ int hns3_test_ets_cfg(struct hns3_nic_priv *net_priv,
 	u64 value;
 	u64 addr;
 
-	check = !buf_in || in_size < sizeof(struct nictool_ets_cfg_info) ||
-		!buf_out || out_size < sizeof(struct nictool_ets_cfg_info);
+	check = !buf_in || in_size < sizeof(struct hns3_cae_ets_cfg_info) ||
+		!buf_out || out_size < sizeof(struct hns3_cae_ets_cfg_info);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
@@ -989,8 +989,8 @@ int hns3_test_ets_cfg(struct hns3_nic_priv *net_priv,
 
 	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	in_info = (struct nictool_ets_cfg_info *)buf_in;
-	out_info = (struct nictool_ets_cfg_info *)buf_out;
+	in_info = (struct hns3_cae_ets_cfg_info *)buf_in;
+	out_info = (struct hns3_cae_ets_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 	tc_id = in_info->tc_id;
 	mac_id = in_info->mac_id;
@@ -998,36 +998,36 @@ int hns3_test_ets_cfg(struct hns3_nic_priv *net_priv,
 	out_info->tc_id = tc_id;
 	out_info->mac_id = mac_id;
 	if (is_read) {
-		if (hns3_test_tm_ets_tc_dwrr_get(hdev, weight)) {
+		if (hns3_cae_tm_ets_tc_dwrr_get(hdev, weight)) {
 			pr_err("%s,%d:get ets tc dwrr failed!\n", __func__,
 			       __LINE__);
 			return -1;
 		}
 		out_info->weight = weight[tc_id];
-		if (hns3_test_tm_operate_nic_regs(hdev, addr, &value,
-						  is_read)) {
+		if (hns3_cae_tm_operate_nic_regs(hdev, addr, &value,
+						 is_read)) {
 			pr_err("%s,%d:get ets port shaper failed!\n", __func__,
 			       __LINE__);
 			return -1;
 		}
 		out_info->shaping = (u32)value;
 	} else {
-		if (hns3_test_tm_ets_tc_dwrr_get(hdev, weight)) {
+		if (hns3_cae_tm_ets_tc_dwrr_get(hdev, weight)) {
 			pr_err("%s,%d:get ets tc dwrr failed!\n", __func__,
 			       __LINE__);
 			return -1;
 		}
 		weight[tc_id] = in_info->weight;
 		if ((in_info->flag & HNS3_TM_ETS_TC_CFG_FLAG) &&
-		    hns3_test_tm_ets_tc_dwrr_set(hdev, weight)) {
+		    hns3_cae_tm_ets_tc_dwrr_set(hdev, weight)) {
 			pr_err("%s,%d:set ets tc dwrr failed!\n", __func__,
 			       __LINE__);
 			return -1;
 		}
 		value = (u64)in_info->shaping;
 		if ((in_info->flag & HNS3_TM_ETS_PSHAP_CFG_FLAG) &&
-		    hns3_test_tm_operate_nic_regs(hdev, addr, &value,
-						  is_read)) {
+		    hns3_cae_tm_operate_nic_regs(hdev, addr, &value,
+						 is_read)) {
 			pr_err("%s,%d:set ets port shaping(%u) failed!\n",
 			       __func__, __LINE__, in_info->shaping);
 			return -1;

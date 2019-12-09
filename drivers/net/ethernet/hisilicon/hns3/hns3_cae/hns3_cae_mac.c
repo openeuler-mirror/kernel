@@ -13,21 +13,21 @@
 #include "hns3_enet.h"
 #include "hns3_cae_mac.h"
 
-int hns3_test_mac_loop_cfg(struct hns3_nic_priv *net_priv,
-			   void *buf_in, u32 in_size,
-			   void *buf_out, u32 out_size)
+int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size)
 {
-	struct nictool_cfg_serdes_mode_cmd *req1;
-	struct nictool_cfg_mac_mode_cmd *req2;
-	struct nictool_loop_param *out_info;
-	struct nictool_loop_param *in_info;
+	struct hns3_cae_cfg_serdes_mode_cmd *req1;
+	struct hns3_cae_cfg_mac_mode_cmd *req2;
+	struct hns3_cae_loop_param *out_info;
+	struct hns3_cae_loop_param *in_info;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
 	bool check;
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct nictool_loop_param);
+	check = !buf_in || in_size < sizeof(struct hns3_cae_loop_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -35,15 +35,15 @@ int hns3_test_mac_loop_cfg(struct hns3_nic_priv *net_priv,
 
 	vport = hclge_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	in_info = (struct nictool_loop_param *)buf_in;
-	out_info = (struct nictool_loop_param *)buf_out;
+	in_info = (struct hns3_cae_loop_param *)buf_in;
+	out_info = (struct hns3_cae_loop_param *)buf_out;
 
-	req1 = (struct nictool_cfg_serdes_mode_cmd *)&desc.data[0];
-	req2 = (struct nictool_cfg_mac_mode_cmd *)&desc.data[0];
+	req1 = (struct hns3_cae_cfg_serdes_mode_cmd *)&desc.data[0];
+	req2 = (struct hns3_cae_cfg_mac_mode_cmd *)&desc.data[0];
 
 	if (in_info->is_read) {
 		check = !buf_out ||
-			out_size < sizeof(struct nictool_loop_param);
+			out_size < sizeof(struct hns3_cae_loop_param);
 		if (check) {
 			pr_err("input param buf_out error in %s function\n",
 			       __func__);

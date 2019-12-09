@@ -16,7 +16,7 @@
 #define FUNKY_BUF_ERR -1
 #define MAX_DEV_LISTED 20
 
-struct nictool_dcb_info dcb_all_info[MAX_DEV_LISTED];
+struct hns3_cae_dcb_info dcb_all_info[MAX_DEV_LISTED];
 
 static int check_and_set_curr_dev(struct hns3_nic_priv *net_priv)
 {
@@ -35,22 +35,22 @@ static int check_and_set_curr_dev(struct hns3_nic_priv *net_priv)
 	return i;
 }
 
-int hns3_test_dcb_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_dcb_cfg(struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
-	struct nictool_dcb_cfg_param *out_info;
-	struct nictool_dcb_cfg_param *in_info;
+	struct hns3_cae_dcb_cfg_param *out_info;
+	struct hns3_cae_dcb_cfg_param *in_info;
 	int curr_dev_idx;
 	bool check;
 
-	check = !buf_in || in_size < sizeof(struct nictool_dcb_cfg_param);
+	check = !buf_in || in_size < sizeof(struct hns3_cae_dcb_cfg_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
-	in_info = (struct nictool_dcb_cfg_param *)buf_in;
-	out_info = (struct nictool_dcb_cfg_param *)buf_out;
+	in_info = (struct hns3_cae_dcb_cfg_param *)buf_in;
+	out_info = (struct hns3_cae_dcb_cfg_param *)buf_out;
 	curr_dev_idx = check_and_set_curr_dev(net_priv);
 	if (curr_dev_idx < 0) {
 		pr_err("Exceed MAX_DEV_LISTED: %d\n", MAX_DEV_LISTED);
@@ -58,7 +58,7 @@ int hns3_test_dcb_cfg(struct hns3_nic_priv *net_priv,
 	}
 	if (in_info->is_read) {
 		check = !buf_out ||
-			out_size < sizeof(struct nictool_dcb_cfg_param);
+			out_size < sizeof(struct hns3_cae_dcb_cfg_param);
 		if (check) {
 			pr_err("input param buf_out error in %s function\n",
 			       __func__);
@@ -67,7 +67,7 @@ int hns3_test_dcb_cfg(struct hns3_nic_priv *net_priv,
 		out_info->dcb_en =
 		    dcb_all_info[curr_dev_idx].dcb_cfg_info.dcb_en;
 	} else {
-		if (in_info->cfg_flag & NICTOOL_DCB_DCB_CFG_FLAG)
+		if (in_info->cfg_flag & HNS3_CAE_DCB_DCB_CFG_FLAG)
 			dcb_all_info[curr_dev_idx].dcb_cfg_info.dcb_en =
 			    in_info->dcb_en;
 	}
@@ -75,13 +75,13 @@ int hns3_test_dcb_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-static int hns3_test_cfg_pfc_en(u8 is_read, struct hclge_dev *hdev,
-				struct nictool_pfc_cfg_param *info, int dev_idx)
+static int hns3_cae_cfg_pfc_en(u8 is_read, struct hclge_dev *hdev,
+			       struct hns3_cae_pfc_cfg_param *info, int dev_idx)
 {
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, NICTOOL_OPC_CFG_PFC_PAUSE_EN, true);
+	hclge_cmd_setup_basic_desc(&desc, HNS3_CAE_OPC_CFG_PFC_PAUSE_EN, true);
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
 		pr_err("read pfc enable status fail!ret = %d\n", ret);
@@ -92,14 +92,14 @@ static int hns3_test_cfg_pfc_en(u8 is_read, struct hclge_dev *hdev,
 		info->pfc_en = ((desc.data[0] & 0x3) == 0x3);
 	} else {
 		hclge_cmd_reuse_desc(&desc, false);
-		if (info->cfg_flag & NICTOOL_PFC_EN_CFG_FLAG) {
+		if (info->cfg_flag & HNS3_CAE_PFC_EN_CFG_FLAG) {
 			desc.data[0] = (desc.data[0] & (~0x3)) |
 				       (info->pfc_en << 0) |
 				       (info->pfc_en << 1);
 			dcb_all_info[dev_idx].pfc_cfg_info.pfc_en =
 			    info->pfc_en;
 		}
-		if (info->cfg_flag & NICTOOL_PFC_PRIEN_CFG_FLAG) {
+		if (info->cfg_flag & HNS3_CAE_PFC_PRIEN_CFG_FLAG) {
 			desc.data[0] = (desc.data[0] & (~0xff00)) |
 				       (info->prien << 8);
 			dcb_all_info[dev_idx].pfc_cfg_info.prien =
@@ -115,14 +115,14 @@ static int hns3_test_cfg_pfc_en(u8 is_read, struct hclge_dev *hdev,
 	return ret;
 }
 
-static int hns3_test_cfg_pause_param(struct hclge_dev *hdev,
-				     struct nictool_pfc_cfg_param *info,
-				     u8 is_read)
+static int hns3_cae_cfg_pause_param(struct hclge_dev *hdev,
+				    struct hns3_cae_pfc_cfg_param *info,
+				    u8 is_read)
 {
 	struct hclge_desc desc;
 	int ret;
 
-	hclge_cmd_setup_basic_desc(&desc, NICTOOL_OPC_CFG_PAUSE_PARAM, true);
+	hclge_cmd_setup_basic_desc(&desc, HNS3_CAE_OPC_CFG_PAUSE_PARAM, true);
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
 		pr_err("pause param cfg cmd send fail\n");
@@ -135,10 +135,10 @@ static int hns3_test_cfg_pause_param(struct hclge_dev *hdev,
 		return 0;
 	}
 
-	if (info->cfg_flag & NICTOOL_PFC_TIME_CFG_FLAG)
+	if (info->cfg_flag & HNS3_CAE_PFC_TIME_CFG_FLAG)
 		desc.data[2] = (desc.data[2] & (~0xffff)) | info->pause_time;
 
-	if (info->cfg_flag & NICTOOL_PFC_GAP_CFG_FLAG)
+	if (info->cfg_flag & HNS3_CAE_PFC_GAP_CFG_FLAG)
 		desc.data[1] = (desc.data[1] & (~0xff0000)) |
 			       (info->pause_gap << 16);
 
@@ -153,12 +153,12 @@ static int hns3_test_cfg_pause_param(struct hclge_dev *hdev,
 	return 0;
 }
 
-int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u32 in_size,
-			  void *buf_out, u32 out_size)
+int hns3_cae_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
+			 void *buf_in, u32 in_size,
+			 void *buf_out, u32 out_size)
 {
-	struct nictool_pfc_cfg_param *out_info;
-	struct nictool_pfc_cfg_param *in_info;
+	struct hns3_cae_pfc_cfg_param *out_info;
+	struct hns3_cae_pfc_cfg_param *in_info;
 	struct net_device *ndev;
 	struct hclge_vport *vport;
 	struct hnae3_handle *h;
@@ -167,7 +167,7 @@ int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 	bool check;
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct nictool_pfc_cfg_param);
+	check = !buf_in || in_size < sizeof(struct hns3_cae_pfc_cfg_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -182,8 +182,8 @@ int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 	vport = hclge_get_vport(h);
 	ndev = h->netdev;
 	hdev = vport->back;
-	in_info = (struct nictool_pfc_cfg_param *)buf_in;
-	out_info = (struct nictool_pfc_cfg_param *)buf_out;
+	in_info = (struct hns3_cae_pfc_cfg_param *)buf_in;
+	out_info = (struct hns3_cae_pfc_cfg_param *)buf_out;
 
 	if (!in_info->is_read &&
 	    !dcb_all_info[curr_dev_idx].dcb_cfg_info.dcb_en) {
@@ -198,23 +198,23 @@ int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 
 	if (in_info->is_read) {
 		check = !buf_out ||
-			out_size < sizeof(struct nictool_pfc_cfg_param);
+			out_size < sizeof(struct hns3_cae_pfc_cfg_param);
 		if (check) {
 			pr_err("input param buf_out error in %s function\n",
 			       __func__);
 			return -EFAULT;
 		}
-		ret = hns3_test_cfg_pfc_en(in_info->is_read, hdev,
-					   out_info, curr_dev_idx);
+		ret = hns3_cae_cfg_pfc_en(in_info->is_read, hdev,
+					  out_info, curr_dev_idx);
 		if (ret)
 			return ret;
-		ret = hns3_test_cfg_pause_param(hdev, out_info, true);
+		ret = hns3_cae_cfg_pause_param(hdev, out_info, true);
 		if (ret)
 			return ret;
 	} else {
 		struct ieee_pfc pfc = {0};
 
-		if (in_info->cfg_flag & NICTOOL_PFC_PRIEN_CFG_FLAG) {
+		if (in_info->cfg_flag & HNS3_CAE_PFC_PRIEN_CFG_FLAG) {
 			pfc.pfc_en = in_info->prien;
 			dcb_all_info[curr_dev_idx].pfc_cfg_info.prien =
 			    in_info->prien;
@@ -227,9 +227,9 @@ int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 			}
 		}
 
-		if ((in_info->cfg_flag & NICTOOL_PFC_TIME_CFG_FLAG) ||
-		    (in_info->cfg_flag & NICTOOL_PFC_GAP_CFG_FLAG)) {
-			ret = hns3_test_cfg_pause_param(hdev, in_info, false);
+		if ((in_info->cfg_flag & HNS3_CAE_PFC_TIME_CFG_FLAG) ||
+		    (in_info->cfg_flag & HNS3_CAE_PFC_GAP_CFG_FLAG)) {
+			ret = hns3_cae_cfg_pause_param(hdev, in_info, false);
 			if (ret)
 				return ret;
 		}
@@ -238,13 +238,13 @@ int hns3_test_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-static void hns3_test_disable_ets_cfg(struct hclge_dev *hdev,
-				      struct ieee_ets *ets, int dev_idx)
+static void hns3_cae_disable_ets_cfg(struct hclge_dev *hdev,
+				     struct ieee_ets *ets, int dev_idx)
 {
 	u8 percent = 0;
 	int i;
 
-	for (i = 0; i < NICTOOL_ETS_MAC_TC_NUM; i++) {
+	for (i = 0; i < HNS3_CAE_ETS_MAC_TC_NUM; i++) {
 		ets->prio_tc[i] = hdev->tm_info.prio_tc[i];
 		ets->tc_tsa[i] = IEEE_8021QAZ_TSA_ETS;
 		dcb_all_info[dev_idx].ets_cfg_info.schedule[i] = 0;
@@ -262,55 +262,55 @@ static void hns3_test_disable_ets_cfg(struct hclge_dev *hdev,
 	}
 }
 
-static void hns3_test_enable_ets_cfg(struct hclge_dev *hdev,
-				     struct ieee_ets *ets,
-				     struct nictool_ets_cfg_param *info,
-				     int dev_idx)
+static void hns3_cae_enable_ets_cfg(struct hclge_dev *hdev,
+				    struct ieee_ets *ets,
+				    struct hns3_cae_ets_cfg_param *info,
+				    int dev_idx)
 {
 	int i;
 
-	if (info->cfg_flag & NICTOOL_ETS_UP2TC_CFG_FLAG) {
-		for (i = 0; i < NICTOOL_ETS_MAC_TC_NUM; i++) {
+	if (info->cfg_flag & HNS3_CAE_ETS_UP2TC_CFG_FLAG) {
+		for (i = 0; i < HNS3_CAE_ETS_MAC_TC_NUM; i++) {
 			ets->prio_tc[i] = info->up2tc[i];
 			dcb_all_info[dev_idx].ets_cfg_info.up2tc[i] =
 			    info->up2tc[i];
 		}
 	} else {
-		for (i = 0; i < NICTOOL_ETS_MAC_TC_NUM; i++)
+		for (i = 0; i < HNS3_CAE_ETS_MAC_TC_NUM; i++)
 			ets->prio_tc[i] = hdev->tm_info.prio_tc[i];
 	}
 
-	if (info->cfg_flag & NICTOOL_ETS_BANDWIDTH_CFG_FLAG) {
-		for (i = 0; i < NICTOOL_ETS_MAC_TC_NUM; i++) {
+	if (info->cfg_flag & HNS3_CAE_ETS_BANDWIDTH_CFG_FLAG) {
+		for (i = 0; i < HNS3_CAE_ETS_MAC_TC_NUM; i++) {
 			ets->tc_tx_bw[i] = info->bw[i];
 			dcb_all_info[dev_idx].ets_cfg_info.bw[i] =
 			    info->bw[i];
 		}
 	} else {
-		for (i = 0; i < NICTOOL_ETS_MAC_TC_NUM; i++)
+		for (i = 0; i < HNS3_CAE_ETS_MAC_TC_NUM; i++)
 			ets->tc_tx_bw[i] = hdev->tm_info.pg_info[0].tc_dwrr[i];
 	}
 
-	if (info->cfg_flag & NICTOOL_ETS_SCHEDULE_CFG_FLAG) {
-		for (i = 0; i < NICTOOL_ETS_MAC_TC_NUM; i++) {
+	if (info->cfg_flag & HNS3_CAE_ETS_SCHEDULE_CFG_FLAG) {
+		for (i = 0; i < HNS3_CAE_ETS_MAC_TC_NUM; i++) {
 			ets->tc_tsa[i] = info->schedule[i] ?
 			    IEEE_8021QAZ_TSA_STRICT : IEEE_8021QAZ_TSA_ETS;
 			dcb_all_info[dev_idx].ets_cfg_info.schedule[i] =
 				info->schedule[i];
 		}
 	} else {
-		for (i = 0; i < NICTOOL_ETS_MAC_TC_NUM; i++)
+		for (i = 0; i < HNS3_CAE_ETS_MAC_TC_NUM; i++)
 			ets->tc_tsa[i] = hdev->tm_info.tc_info[i].tc_sch_mode ?
 			    IEEE_8021QAZ_TSA_ETS : IEEE_8021QAZ_TSA_STRICT;
 	}
 }
 
-int hns3_test_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u32 in_size,
-			  void *buf_out, u32 out_size)
+int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
+			 void *buf_in, u32 in_size,
+			 void *buf_out, u32 out_size)
 {
-	struct nictool_ets_cfg_param *out_info;
-	struct nictool_ets_cfg_param *in_info;
+	struct hns3_cae_ets_cfg_param *out_info;
+	struct hns3_cae_ets_cfg_param *in_info;
 	struct hclge_vport *vport;
 	struct net_device *ndev;
 	struct hclge_dev *hdev;
@@ -321,8 +321,8 @@ int hns3_test_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 	int ret;
 	int i;
 
-	check = !buf_in || in_size < sizeof(struct nictool_ets_cfg_param) ||
-		!buf_out || out_size < sizeof(struct nictool_ets_cfg_param);
+	check = !buf_in || in_size < sizeof(struct hns3_cae_ets_cfg_param) ||
+		!buf_out || out_size < sizeof(struct hns3_cae_ets_cfg_param);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
@@ -337,8 +337,8 @@ int hns3_test_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 	vport = hclge_get_vport(h);
 	ndev = h->netdev;
 	hdev = vport->back;
-	in_info = (struct nictool_ets_cfg_param *)buf_in;
-	out_info = (struct nictool_ets_cfg_param *)buf_out;
+	in_info = (struct hns3_cae_ets_cfg_param *)buf_in;
+	out_info = (struct hns3_cae_ets_cfg_param *)buf_out;
 
 	if (!in_info->is_read &&
 	    !dcb_all_info[curr_dev_idx].dcb_cfg_info.dcb_en) {
@@ -353,7 +353,7 @@ int hns3_test_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 
 	if (in_info->is_read) {
 		hclge_cmd_setup_basic_desc(&desc,
-					   NICTOOL_OPC_PRI_TO_TC_MAPPING, true);
+					   HNS3_CAE_OPC_PRI_TO_TC_MAPPING, 1);
 		ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 		if (ret) {
 			pr_err("read up2tc mapping fail!\n");
@@ -361,7 +361,7 @@ int hns3_test_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 		}
 		out_info->ets_en =
 		    dcb_all_info[curr_dev_idx].ets_cfg_info.ets_en;
-		for (i = 0; i < NICTOOL_ETS_MAC_TC_NUM; i++) {
+		for (i = 0; i < HNS3_CAE_ETS_MAC_TC_NUM; i++) {
 			out_info->up2tc[i] =
 			    (desc.data[0] & (0xf << (4 * i))) >> (4 * i);
 			dcb_all_info[curr_dev_idx].ets_cfg_info.up2tc[i] =
@@ -377,15 +377,15 @@ int hns3_test_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 	} else {
 		struct ieee_ets ets = {0};
 
-		if (in_info->cfg_flag & NICTOOL_ETS_EN_CFG_FLAG)
+		if (in_info->cfg_flag & HNS3_CAE_ETS_EN_CFG_FLAG)
 			dcb_all_info[curr_dev_idx].ets_cfg_info.ets_en =
 			    in_info->ets_en;
 
 		if (!dcb_all_info[curr_dev_idx].ets_cfg_info.ets_en)
-			hns3_test_disable_ets_cfg(hdev, &ets, curr_dev_idx);
+			hns3_cae_disable_ets_cfg(hdev, &ets, curr_dev_idx);
 		else
-			hns3_test_enable_ets_cfg(hdev, &ets, in_info,
-						 curr_dev_idx);
+			hns3_cae_enable_ets_cfg(hdev, &ets, in_info,
+						curr_dev_idx);
 
 		if (ndev->dcbnl_ops->ieee_setets) {
 			rtnl_lock();

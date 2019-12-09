@@ -6,14 +6,14 @@
 
 #define OPC_WRITE_READ_REG_CMD	0x7014
 
-struct hns3_test_reg_param {
+struct hns3_cae_reg_param {
 	u8 is_read;
 	u8 bit_width;
 	u64 value;
 	u64 addr;
 };
 
-struct hns3_test_dfx_param {
+struct hns3_cae_dfx_param {
 	u8 is_cs_board;
 	u8 work_mode;
 	u8 mac_used;
@@ -22,10 +22,10 @@ struct hns3_test_dfx_param {
 	u8 func_id;
 };
 
-#define HNS3_TEST_EVENT_NAME_LEN	32
+#define HNS3_CAE_EVENT_NAME_LEN	32
 
-struct hns3_test_event_param {
-	u8 event_name[HNS3_TEST_EVENT_NAME_LEN];
+struct hns3_cae_event_param {
+	u8 event_name[HNS3_CAE_EVENT_NAME_LEN];
 	u64 value;
 	u64 addr;
 };
@@ -33,16 +33,16 @@ struct hns3_test_event_param {
 #define HNS3_READ_INFO_FLAG		0x1
 #define HNS3_READ_REGS_FLAG		0x2
 
-#define HNS3_TEST_MAX_MAC_NUMBER	0x8
+#define HNS3_CAE_MAX_MAC_NUMBER	0x8
 
-int hns3_test_get_dfx_info(struct hns3_nic_priv *net_priv,
+int hns3_cae_get_dfx_info(struct hns3_nic_priv *net_priv,
+			  void *buf_in, u32 in_size,
+			  void *buf_out, u32 out_size);
+int hns3_cae_read_dfx_info(struct hns3_nic_priv *net_priv,
 			   void *buf_in, u32 in_size,
 			   void *buf_out, u32 out_size);
-int hns3_test_read_dfx_info(struct hns3_nic_priv *net_priv,
-			    void *buf_in, u32 in_size,
-			    void *buf_out, u32 out_size);
-int hns3_test_event_injection(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u32 in_size,
-			      void *buf_out, u32 out_size);
+int hns3_cae_event_injection(struct hns3_nic_priv *net_priv,
+			     void *buf_in, u32 in_size,
+			     void *buf_out, u32 out_size);
 
 #endif

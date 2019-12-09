@@ -59,9 +59,9 @@ int hns3_cmd_rx_priv_wl_config(struct hclge_dev *hdev, u16 tc,
 	return 0;
 }
 
-int hns3_test_rx_priv_buff_wl_cfg(struct hns3_nic_priv *net_priv,
-				  void *buf_in, u32 in_size,
-				  void *buf_out, u32 out_size)
+int hns3_cae_rx_priv_buff_wl_cfg(struct hns3_nic_priv *net_priv,
+				 void *buf_in, u32 in_size,
+				 void *buf_out, u32 out_size)
 {
 	struct hclge_dev *hdev = get_val_hdev(net_priv);
 	struct hns3_rx_priv_buff_wl_param *in_info;
@@ -130,9 +130,9 @@ int hns3_cmd_common_thrd_config(struct hclge_dev *hdev, u16 tc,
 	return 0;
 }
 
-int hns3_test_common_thrd_cfg(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u32 in_size,
-			      void *buf_out, u32 out_size)
+int hns3_cae_common_thrd_cfg(struct hns3_nic_priv *net_priv,
+			     void *buf_in, u32 in_size,
+			     void *buf_out, u32 out_size)
 {
 	struct hclge_dev *hdev = get_val_hdev(net_priv);
 	struct hns3_rx_priv_buff_wl_param *in_info;
@@ -180,9 +180,9 @@ int hns3_cmd_common_wl_config(struct hclge_dev *hdev, u32 high, u32 low, u32 en)
 	return 0;
 }
 
-int hns3_test_common_wl_cfg(struct hns3_nic_priv *net_priv,
-			    void *buf_in, u32 in_size,
-			    void *buf_out, u32 out_size)
+int hns3_cae_common_wl_cfg(struct hns3_nic_priv *net_priv,
+			   void *buf_in, u32 in_size,
+			   void *buf_out, u32 out_size)
 {
 	struct hns3_rx_priv_buff_wl_param *out_info;
 	struct hns3_rx_priv_buff_wl_param *in_info;
@@ -233,9 +233,9 @@ int hns3_test_common_wl_cfg(struct hns3_nic_priv *net_priv,
 	return status;
 }
 
-int hns3_test_rx_buff_cfg(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u32 in_size,
-			  void *buf_out, u32 out_size)
+int hns3_cae_rx_buff_cfg(struct hns3_nic_priv *net_priv,
+			 void *buf_in, u32 in_size,
+			 void *buf_out, u32 out_size)
 {
 	struct hclge_rx_priv_buff_cmd *recv;
 	struct hns3_rx_buff_param *out_info;
@@ -278,9 +278,9 @@ int hns3_test_rx_buff_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_test_tx_buff_cfg(struct hns3_nic_priv *net_priv,
-			  void *buf_in, u32 in_size,
-			  void *buf_out, u32 out_size)
+int hns3_cae_tx_buff_cfg(struct hns3_nic_priv *net_priv,
+			 void *buf_in, u32 in_size,
+			 void *buf_out, u32 out_size)
 {
 	struct hclge_tx_buff_alloc_cmd *recv;
 	struct hns3_tx_buff_param *out_info;
@@ -321,9 +321,9 @@ int hns3_test_tx_buff_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_test_show_comm_thres(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u32 in_size,
-			      void *buf_out, u32 out_size)
+int hns3_cae_show_comm_thres(struct hns3_nic_priv *net_priv,
+			     void *buf_in, u32 in_size,
+			     void *buf_out, u32 out_size)
 {
 	struct hclge_dev *hdev = get_val_hdev(net_priv);
 	struct hns3_total_priv_wl_param *out_info;
@@ -371,9 +371,9 @@ int hns3_test_show_comm_thres(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_test_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
-			      void *buf_in, u32 in_size,
-			      void *buf_out, u32 out_size)
+int hns3_cae_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
+			     void *buf_in, u32 in_size,
+			     void *buf_out, u32 out_size)
 {
 	struct hclge_dev *hdev = get_val_hdev(net_priv);
 	struct hns3_total_priv_wl_param *out_info;
@@ -421,8 +421,8 @@ int hns3_test_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_test_qcn_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_qcn_cfg(struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 #define HCLGE_OPC_QCN_CFG	0x1A01
 	struct hclge_vport *vport;

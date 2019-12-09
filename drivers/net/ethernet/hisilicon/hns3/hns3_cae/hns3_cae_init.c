@@ -18,7 +18,7 @@ static int __init hns3_cae_init(void)
 
 	pr_err("%s enter!\n", __func__);
 
-	ret = nictool_k_init();
+	ret = hns3_cae_k_init();
 	if (ret)
 		return ret;
 #endif
@@ -29,7 +29,7 @@ static void __exit hns3_cae_exit(void)
 {
 #ifdef CONFIG_HNS3_TEST
 	pr_err("%s exit!\n", __func__);
-	nictool_k_uninit();
+	hns3_cae_k_uninit();
 #endif
 }
 

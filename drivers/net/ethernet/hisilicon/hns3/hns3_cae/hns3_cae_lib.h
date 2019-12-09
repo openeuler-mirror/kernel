@@ -143,8 +143,8 @@ enum {
 	CKS_MAX,
 };
 
-int nictool_k_init(void);
-void nictool_k_uninit(void);
+int hns3_cae_k_init(void);
+void hns3_cae_k_uninit(void);
 
 struct hns3_chs_param {
 	u8 is_set;
@@ -152,7 +152,7 @@ struct hns3_chs_param {
 	u8 is_enable;
 };
 
-struct hns3_test_commit_id_param {
+struct hns3_cae_commit_id_param {
 	u8 commit_id[8];
 	u32 ncl_version;
 	u32 rsv[3];
