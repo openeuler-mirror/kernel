@@ -85,4 +85,5 @@ err_reg_client:
 }
 
 module_init(hns3_init_module_it);
+MODULE_VERSION(HNAE_DRIVER_VERSION);
 #endif
