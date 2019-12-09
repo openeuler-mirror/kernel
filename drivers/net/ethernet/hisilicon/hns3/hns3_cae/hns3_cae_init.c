@@ -35,6 +35,7 @@
 #include "hns3_cae_irq.h"
 #include "hns3_cae_lamp.h"
 #include "hns3_cae_ext.h"
+#include "hns3_cae_pfc_storm.h"
 #include "hns3_cae_xsfp.h"
 #include "hns3_cae_port.h"
 #include "hns3_cae_hilink_param.h"
@@ -270,6 +271,8 @@ struct drv_module_handle driv_module_cmd_handle[] = {
 #ifdef CONFIG_EXT_TEST
 	{LAMP_CFG, hns3_lamp_cfg},
 	{EXTERN_INTERFACE_CFG, hns3_ext_interface_test},
+#else
+	{EXTERN_INTERFACE_CFG, hns3_cae_pfc_storm_cfg},
 #endif
 	{XSFP_CFG, hns3_xsfp_cfg},
 	{SHOW_PORT_INFO, hns3_get_port_info},
