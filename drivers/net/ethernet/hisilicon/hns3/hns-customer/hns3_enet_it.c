@@ -17,8 +17,6 @@ extern const char hns3_copyright[];
 
 #ifdef CONFIG_IT_VALIDATION
 
-#define HNAE_DRIVER_VERSION		"1.9.25.0"
-
 extern struct net_device_ops hns3_nic_netdev_ops;
 extern const struct hnae3_client_ops client_ops;
 extern struct hnae3_client client;
@@ -48,21 +46,19 @@ u16 hns3_nic_select_queue_it(struct net_device *ndev, struct sk_buff *skb,
 
 static int __init hns3_init_module_it(void)
 {
-	struct net_device_ops *ndev_ops;
 	int ret;
 
 	pr_info("%s: %s - version\n", hns3_driver_name, hns3_driver_string);
 	pr_info("%s: %s\n", hns3_driver_name, hns3_copyright);
 
-	strncpy(hns3_driver_version, HNAE_DRIVER_VERSION,
+	strncpy(hns3_driver_version, THIS_MODULE->version,
 		strlen(hns3_driver_version));
 
 	client.type = HNAE3_CLIENT_KNIC;
 	snprintf(client.name, HNAE3_CLIENT_NAME_LENGTH, "%s", hns3_driver_name);
 
 	client.ops = &client_ops;
-	ndev_ops = (struct net_device_ops *)&hns3_nic_netdev_ops;
-	ndev_ops->ndo_select_queue = hns3_nic_select_queue_it;
+	hns3_nic_netdev_ops.ndo_select_queue = hns3_nic_select_queue_it;
 
 	INIT_LIST_HEAD(&client.node);
 	hns3_dbg_register_debugfs(hns3_driver_name);
@@ -85,5 +81,4 @@ err_reg_client:
 }
 
 module_init(hns3_init_module_it);
-MODULE_VERSION(HNAE_DRIVER_VERSION);
 #endif
