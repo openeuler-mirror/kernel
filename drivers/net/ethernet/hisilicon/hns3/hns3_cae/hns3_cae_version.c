@@ -13,7 +13,7 @@
 #include "hns3_cae_cmd.h"
 #include "hns3_cae_version.h"
 
-#define HNAE_DRIVER_VERSION "1.9.22.0"
+#define HNAE_DRIVER_VERSION "1.9.22.1"
 
 static int hns3_cae_get_commit_id(struct hnae3_handle *handle, u8 *commit_id,
 				  u32 *ncl_version)
