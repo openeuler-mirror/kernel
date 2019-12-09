@@ -7,9 +7,7 @@
 #ifndef IFNAMSIZ
 #define IFNAMSIZ    16
 #endif
-/* completion overtime in (unit of) jiffies */
-#define UP_COMP_TIME_OUT_VAL		10000U
-#define UCODE_COMP_TIME_OUT_VAL		0xFF00000
+
 #define NIC_TOOL_MAGIC			'x'
 
 enum module_name {
@@ -135,9 +133,6 @@ struct m7_cmd_para {
 	u32 bd_type;
 	void *bd_data;
 };
-
-int hns3_cae_k_init(void);
-void hns3_cae_k_uninit(void);
 
 int hns3_cae_common_cmd_send(struct hns3_nic_priv *net_priv, void *buf_in,
 			     u32 in_size, void *buf_out, u32 out_size);
