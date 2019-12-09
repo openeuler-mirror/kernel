@@ -116,13 +116,6 @@ struct msg_module {
 	void *out_buf;
 };
 
-#define OUTER_L3_CHECK_EN		0x1
-#define OUTER_UDP_CHECK_EN		0x1
-#define INNER_L3_CHECK_EN		0x1
-#define INNER_TCP_CHECK_EN		0x1
-#define INNER_UDP_CHECK_EN		0x1
-#define INNER_SCTP_CHECK_EN		0x1
-
 enum {
 	DCQCN_MASK_AI = 0x0,
 	DCQCN_MASK_F,
@@ -139,24 +132,8 @@ enum {
 #define HINICADM_DCQCN_READ_CFG_MODE	30
 #define HINICADM_DCQCN_WRITE_CFG_MODE	31
 
-enum {
-	CKS_OUTER_L3_EN = 0,
-	CKS_OUTER_UDP_EN,
-	CKS_INNER_L3_EN,
-	CKS_INNER_TCP_EN,
-	CKS_INNER_UDP_EN,
-	CKS_INNER_SCTP_EN,
-	CKS_MAX,
-};
-
 int hns3_cae_k_init(void);
 void hns3_cae_k_uninit(void);
-
-struct hns3_chs_param {
-	u8 is_set;
-	u8 type;
-	u8 is_enable;
-};
 
 struct hns3_cae_commit_id_param {
 	u8 commit_id[8];

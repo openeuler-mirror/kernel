@@ -74,6 +74,7 @@ HNS3_CAE_OBJS_EXT =	hns3_cae/hns3_cae_dfx.o \
 			hns3_cae/hns3_cae_ext.o \
 			hns3_cae/hns3_cae_fd.o \
 			hns3_cae/hns3_cae_hilink_param.o \
+			hns3_cae/hns3_cae_checksum.o \
 			hns3_cae/hns3_cae_irq.o \
 			hns3_cae/hns3_cae_mac.o \
 			hns3_cae/hns3_cae_pkt.o \
