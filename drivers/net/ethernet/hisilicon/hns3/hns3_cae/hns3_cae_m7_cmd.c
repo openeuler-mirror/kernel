@@ -8,7 +8,7 @@
 int hns3_m7_cmd_handle(struct hns3_nic_priv *nic_dev, void *buf_in, u32 in_size,
 		       void *buf_out, u32 out_size)
 {
-	struct hclge_vport *vport = hclge_get_vport(nic_dev->ae_handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(nic_dev->ae_handle);
 	struct m7_cmd_para *cmd_para = (struct m7_cmd_para *)buf_in;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc *desc;

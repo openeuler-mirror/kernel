@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
+#include "hns3_cae_cmd.h"
 #include "hns3_cae_stat.h"
 
 const struct ring_stats_name hns3_ring_stats_name[] = {
@@ -117,7 +118,7 @@ int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	int ret;
 
 	handle = nic_dev->ae_handle;
-	vport = hclge_get_vport(handle);
+	vport = hns3_cae_get_vport(handle);
 	hdev = vport->back;
 	kinfo = &handle->kinfo;
 	stat_sw_param = (struct stat_sw_mode_param *)buf_in;
@@ -165,7 +166,7 @@ int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	int ret;
 
 	handle = nic_dev->ae_handle;
-	vport = hclge_get_vport(handle);
+	vport = hns3_cae_get_vport(handle);
 	hdev = vport->back;
 	kinfo = &handle->kinfo;
 	stat_sw_param = (struct stat_sw_mode_param *)buf_in;

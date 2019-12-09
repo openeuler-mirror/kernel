@@ -253,3 +253,8 @@ int hns3_cae_cmd_send(struct hclge_dev *hdev, struct hclge_desc *desc, int num)
 
 	return retval;
 }
+
+struct hclge_vport *hns3_cae_get_vport(struct hnae3_handle *handle)
+{
+	return container_of(handle, struct hclge_vport, nic);
+}

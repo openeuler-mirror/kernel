@@ -369,7 +369,7 @@ int hns3_cae_chs_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct hns3_chs_param *)buf_in;
 	out_info = (u8 *)buf_out;
@@ -414,7 +414,7 @@ int hns3_cae_get_commit_id(struct hnae3_handle *handle, u8 *commit_id,
 			   u32 *ncl_version)
 {
 #define COMMIT_ID_LEN	8
-	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct hns3_cae_commit_id_param *resp;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;

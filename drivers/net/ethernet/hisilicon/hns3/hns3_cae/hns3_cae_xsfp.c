@@ -16,7 +16,7 @@
 
 static int hns3_get_sfp_present(struct hnae3_handle *handle, u32 *present)
 {
-	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_sfp_present_cmd *resp;
 	struct hclge_desc desc;
@@ -37,7 +37,7 @@ static int hns3_get_sfp_present(struct hnae3_handle *handle, u32 *present)
 static int _hns3_get_sfpinfo(struct hnae3_handle *handle, u8 *buff,
 			     u16 offset, u16 size, u16 *outlen)
 {
-	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct hclge_desc desc[HCLGE_SFP_INFO_LEN];
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_sfp_info *resp = NULL;
@@ -126,7 +126,7 @@ static int hns3_get_sfpinfo(struct hnae3_handle *handle, u8 *buff, u16 offset,
 
 int hns3_set_sfp_state(struct hnae3_handle *handle, bool en)
 {
-	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct hclge_sfp_enable_cmd *req = NULL;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;

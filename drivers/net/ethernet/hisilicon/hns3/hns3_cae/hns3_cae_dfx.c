@@ -61,7 +61,7 @@ static int hns3_cae_get_chip_and_mac_id(struct hnae3_handle *handle,
 					u32 *chip_id, u32 *mac_id)
 {
 #define HNS3_CAE_GET_CHIP_MAC_ID_CMD	0x7003
-	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;
 	int ret;
@@ -104,7 +104,7 @@ int hns3_cae_get_dfx_info(struct hns3_nic_priv *net_priv,
 	}
 
 	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	vport = hns3_cae_get_vport(handle);
 	hdev = vport->back;
 	out_info = (struct hns3_cae_dfx_param *)buf_out;
 
@@ -157,7 +157,7 @@ int hns3_cae_read_dfx_info(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	in_info = (struct hns3_cae_reg_param *)buf_in;
@@ -204,7 +204,7 @@ int hns3_cae_event_injection(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	in_info = (struct hns3_cae_event_param *)buf_in;

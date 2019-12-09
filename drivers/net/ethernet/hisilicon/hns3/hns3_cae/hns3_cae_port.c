@@ -59,7 +59,7 @@ int hns3_get_port_info(struct hns3_nic_priv *net_priv,
 		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *handle = hns3_get_handle(net_priv->netdev);
-	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct hclge_port_info *get_port_info_out;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc *port_desc;

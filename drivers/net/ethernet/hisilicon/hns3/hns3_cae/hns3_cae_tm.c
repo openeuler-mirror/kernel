@@ -469,7 +469,7 @@ int hns3_cae_queue_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct hns3_cae_queue_cfg_info *)buf_in;
 	out_info = (struct hns3_cae_queue_cfg_info *)buf_out;
@@ -565,7 +565,7 @@ int hns3_cae_qs_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct hns3_cae_qs_cfg_info *)buf_in;
 	out_info = (struct hns3_cae_qs_cfg_info *)buf_out;
@@ -705,7 +705,7 @@ int hns3_cae_pri_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct hns3_cae_pri_cfg_info *)buf_in;
 	out_info = (struct hns3_cae_pri_cfg_info *)buf_out;
@@ -833,7 +833,7 @@ int hns3_cae_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct hns3_cae_pg_cfg_info *)buf_in;
 	out_info = (struct hns3_cae_pg_cfg_info *)buf_out;
@@ -934,7 +934,7 @@ int hns3_cae_port_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct hns3_cae_port_cfg_info *)buf_in;
 	out_info = (struct hns3_cae_port_cfg_info *)buf_out;
@@ -990,7 +990,7 @@ int hns3_cae_ets_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	in_info = (struct hns3_cae_ets_cfg_info *)buf_in;
 	out_info = (struct hns3_cae_ets_cfg_info *)buf_out;

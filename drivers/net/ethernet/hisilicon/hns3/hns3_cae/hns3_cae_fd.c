@@ -302,7 +302,7 @@ int hns3_cae_fd_cfg(struct hns3_nic_priv *net_priv,
 		    void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *handle = net_priv->ae_handle;
-	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_dev *hdev = vport->back;
 	int ret = -1;
