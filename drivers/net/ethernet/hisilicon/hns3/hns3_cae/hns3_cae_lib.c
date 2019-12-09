@@ -36,7 +36,6 @@
 #include "hns3_cae_port.h"
 #include "hns3_cae_hilink_param.h"
 #include "hns3_cae_mactbl.h"
-#include "kcompat.h"
 
 #define HCLGE_CHS_OUT_L3_B 0
 #define HCLGE_CHS_OUT_UDP_B 1
@@ -61,7 +60,7 @@
 #define HCLGE_OPC_DCQCN_TEMPLATE_CFG	0x7014
 #define HCLGE_OPC_DCQCN_GET_MSG_CNT		0x7017
 
-#define HNAE_DRIVER_VERSION "1.9.19.3"
+#define HNAE_DRIVER_VERSION "1.9.20.0"
 
 #define MAX_MSG_OUT_SIZE	(1024U * 2048U)
 #define MAX_MSG_IN_SIZE		(1024U * 2048U)
@@ -915,7 +914,9 @@ struct drv_module_handle driv_module_cmd_handle[] = {
 	{TIMEOUT_CFG, hns3_nic_timeout_cfg},
 	{PROMISC_MODE_CFG, hns3_promisc_mode_cfg},
 	{QINFO_CFG, hns3_cae_qinfo_cfg},
+#ifdef CONFIG_IT_VALIDATION
 	{MACTABLE_CFG, hns3_cae_opt_mactbl},
+#endif
 	{CLEAN_STATS, hns3_cae_clean_stats},
 	{FD_CFG, hns3_cae_fd_cfg},
 	{RSS_GENERIC_CFG, hns3_cae_rss_cfg},
@@ -927,8 +928,10 @@ struct drv_module_handle driv_module_cmd_handle[] = {
 	{STAT_CFG, hns3_stat_mode_cfg},
 	{IRQ_CFG, hns3_irq_lli_cfg},
 	{VLAN_UPMAPPING, hns3_cae_upmapping_cfg},
+#ifdef CONFIG_EXT_TEST
 	{LAMP_CFG, hns3_lamp_cfg},
 	{EXTERN_INTERFACE_CFG, hns3_ext_interface_test},
+#endif
 	{XSFP_CFG, hns3_xsfp_cfg},
 	{SHOW_PORT_INFO, hns3_get_port_info},
 	{SHOW_HILINK_PARAM, hns3_get_hilink_param},
@@ -1070,7 +1073,7 @@ static ssize_t hns3_cae_k_write(struct file *pfile, const char __user *ubuf,
 	return 0;
 }
 
-int hns3_cae_k_mmap(struct file *filp, struct vm_area_struct *vma)
+static int hns3_cae_k_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	int ret;
 
@@ -1093,7 +1096,7 @@ static const struct file_operations fifo_operations = {
 	.mmap = hns3_cae_k_mmap,
 };
 
-int if_hns3_cae_exist(void)
+static int if_hns3_cae_exist(void)
 {
 	struct file *fp = NULL;
 	int exist = 0;

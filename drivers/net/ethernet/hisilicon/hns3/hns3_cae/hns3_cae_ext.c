@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
+#if (defined CONFIG_EXT_TEST) && (defined CONFIG_IT_VALIDATION)
 #include "hns3_cae_ext.h"
 #include "hns3_ext.h"
 
@@ -406,3 +407,4 @@ int hns3_ext_interface_test(struct hns3_nic_priv *net_priv,
 
 	return ret;
 }
+#endif

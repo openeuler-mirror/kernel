@@ -557,6 +557,7 @@ int hns3_cae_qs_cfg(struct hns3_nic_priv *net_priv,
 	bool check;
 	u16 qs_id;
 	int gp_id;
+	int ret;
 	int tc;
 
 	check = !buf_in || in_size < sizeof(struct hns3_cae_qs_cfg_info);
@@ -575,9 +576,10 @@ int hns3_cae_qs_cfg(struct hns3_nic_priv *net_priv,
 	offset = qs_id % 32;
 
 	for (tc = 0; tc < MAX_TC_NUM; tc++) {
-		if (hns3_cae_tm_qs_bp_bitmap_get(hdev, tc, gp_id, &bp_map)) {
-			pr_err("%s,%d:get qs(%d) bp map failed!\n", __func__,
-			       __LINE__, qs_id);
+		ret = hns3_cae_tm_qs_bp_bitmap_get(hdev, tc, gp_id, &bp_map);
+		if (ret) {
+			pr_err("%s,%d:get qs(%d) bp map failed! ret = %d\n",
+			       __func__, __LINE__, qs_id, ret);
 			return -1;
 		}
 		if (bp_map & BIT(offset))
@@ -594,24 +596,27 @@ int hns3_cae_qs_cfg(struct hns3_nic_priv *net_priv,
 		}
 		out_info->qs_id = qs_id;
 		out_info->tc = tc;
-		if (hns3_cae_tm_qs_to_pri_get(hdev, qs_id, &out_info->pri)) {
-			pr_err("%s,%d:get qs(%d) to pri failed!\n", __func__,
-			       __LINE__, qs_id);
+		ret = hns3_cae_tm_qs_to_pri_get(hdev, qs_id, &out_info->pri);
+		if (ret) {
+			pr_err("%s,%d:get qs(%d) to pri failed! ret = %d\n",
+			       __func__, __LINE__, qs_id, ret);
 			return -1;
 		}
 
-		if (hns3_cae_tm_schd_mode_get
+		ret = hns3_cae_tm_schd_mode_get
 		    (hdev, HCLGE_OPC_TM_QS_SCH_MODE_CFG, &out_info->mode,
-		     qs_id)) {
-			pr_err("%s,%d:get qs(%d) mode failed!\n", __func__,
-			       __LINE__, qs_id);
+		     qs_id);
+		if (ret) {
+			pr_err("%s,%d:get qs(%d) mode failed! ret = %d\n",
+			       __func__, __LINE__, qs_id, ret);
 			return -1;
 		}
 
-		if (hns3_cae_tm_qs_weight_get(hdev, qs_id,
-					      &out_info->weight)) {
-			pr_err("%s,%d:get qs(%d) weight failed!\n", __func__,
-			       __LINE__, qs_id);
+		ret = hns3_cae_tm_qs_weight_get(hdev, qs_id,
+						&out_info->weight);
+		if (ret) {
+			pr_err("%s,%d:get qs(%d) weight failed! ret = %d\n",
+			       __func__, __LINE__, qs_id, ret);
 			return -1;
 		}
 

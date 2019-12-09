@@ -102,9 +102,9 @@ static int hns3_get_stat_val(struct ring_stats *r_stats, char val_name[],
 	return HCLGE_STATUS_SUCCESS;
 }
 
-int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
-			    void *buf_in, u32 in_size,
-			    void *buf_out, u32 out_size)
+static int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
+				   void *buf_in, u32 in_size,
+				   void *buf_out, u32 out_size)
 {
 	struct stat_sw_mode_param *stat_sw_param;
 	struct hnae3_knic_private_info *kinfo;
@@ -151,9 +151,9 @@ int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	return HCLGE_STATUS_SUCCESS;
 }
 
-int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
-			   void *buf_in, u32 in_size,
-			   void *buf_out, u32 out_size)
+static int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
+				  void *buf_in, u32 in_size,
+				  void *buf_out, u32 out_size)
 {
 	struct stat_sw_mode_param *stat_sw_param;
 	struct hnae3_knic_private_info *kinfo;

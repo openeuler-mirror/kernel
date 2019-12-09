@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /* Copyright (c) 2016-2019 Hisilicon Limited. */
 
-#ifndef __HNS3_CAE_CMD_H
-#define __HNS3_CAE_CMD_H
+#ifndef __HNS3_CAE_CMD_H__
+#define __HNS3_CAE_CMD_H__
 #include <linux/types.h>
 #include "hnae3.h"
 #include "hclge_main.h"

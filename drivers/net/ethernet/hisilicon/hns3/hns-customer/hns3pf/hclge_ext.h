@@ -6,6 +6,7 @@
 #include <linux/types.h>
 #include "hnae3.h"
 
+#ifdef CONFIG_IT_VALIDATION
 #define HCLGE_SFP_INFO_LEN		6
 #define HCLGE_SFP_INFO_SIZE		140
 #define HCLGE_8211_PHY_INDIRECT_PAGE	0xa43
@@ -133,3 +134,5 @@ int hclge_ext_ops_handle(struct hnae3_handle *handle, int opcode,
 			 void *data, int length);
 void hclge_reset_task_schedule_it(struct hclge_dev *hdev);
 #endif
+#endif
+

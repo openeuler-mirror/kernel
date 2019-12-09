@@ -114,8 +114,7 @@ int hns3_cae_get_dfx_info(struct hns3_nic_priv *net_priv,
 	out_info->chip_id = (u8)chip_id;
 	out_info->mac_id = (u8)mac_id;
 	out_info->func_id = (u8)hdev->pdev->devfn;
-	out_info->is_cs_board =
-	    (handle->pdev->revision > HNAE3_REVISION_ID_20) ? true : false;
+	out_info->is_cs_board = (handle->pdev->revision > 0x20) ? true : false;
 	reg_info.addr = HNS3_CAE_MAC_MODE_ADDR;
 	reg_info.bit_width = 32;
 	reg_info.is_read = true;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
+#ifdef CONFIG_IT_VALIDATION
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -22,6 +23,9 @@ int hns3_cae_opt_mactbl(struct hns3_nic_priv *net_priv,
 			void *buf_in, u32 in_size,
 			void *buf_out, u32 out_size)
 {
+#ifndef CONFIG_HNS3_TEST
+	return -EOPNOTSUPP;
+#else
 	struct hns3_mac_tbl_para *out = (struct hns3_mac_tbl_para *)buf_out;
 	struct hns3_mac_tbl_para *in = (struct hns3_mac_tbl_para *)buf_in;
 	struct net_device *netdev = net_priv->netdev;
@@ -54,4 +58,6 @@ int hns3_cae_opt_mactbl(struct hns3_nic_priv *net_priv,
 	out->result = HNS3_MACTBL_RESULT_FAIL;
 
 	return ret;
+#endif
 }
+#endif

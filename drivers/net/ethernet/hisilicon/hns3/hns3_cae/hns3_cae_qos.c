@@ -91,6 +91,7 @@ int hns3_cae_rx_priv_buff_wl_cfg(struct hns3_nic_priv *net_priv,
 int hns3_cmd_common_thrd_config(struct hclge_dev *hdev, u16 tc,
 				u32 high, u32 low, u32 en)
 {
+#define HNS3_CAE_THRD_ALLOC_BD_NUM	2
 	struct hclge_rx_com_thrd *req;
 	enum hclge_cmd_status status;
 	struct hclge_desc desc[2];
@@ -98,7 +99,7 @@ int hns3_cmd_common_thrd_config(struct hclge_dev *hdev, u16 tc,
 	int i;
 	int j;
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < HNS3_CAE_THRD_ALLOC_BD_NUM; i++) {
 		hns3_cae_cmd_setup_basic_desc(&desc[i],
 					      HCLGE_OPC_RX_COM_THRD_ALLOC,
 					      false);
@@ -123,7 +124,7 @@ int hns3_cmd_common_thrd_config(struct hclge_dev *hdev, u16 tc,
 	}
 
 	/* Send 2 descriptors at one time */
-	status = hns3_cae_cmd_send(hdev, desc, 2);
+	status = hns3_cae_cmd_send(hdev, desc, HNS3_CAE_THRD_ALLOC_BD_NUM);
 	if (status) {
 		dev_err(&hdev->pdev->dev,
 			"Set rx common threshold fail, status %d\n", status);
@@ -329,6 +330,7 @@ int hns3_cae_show_comm_thres(struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size)
 {
+#define HNS3_CAE_THRD_ALLOC_BD_NUM	2
 	struct hclge_dev *hdev = get_val_hdev(net_priv);
 	struct hns3_total_priv_wl_param *out_info;
 	struct hclge_rx_com_thrd *req;
@@ -347,7 +349,7 @@ int hns3_cae_show_comm_thres(struct hns3_nic_priv *net_priv,
 
 	out_info = (struct hns3_total_priv_wl_param *)buf_out;
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < HNS3_CAE_THRD_ALLOC_BD_NUM; i++) {
 		hns3_cae_cmd_setup_basic_desc(&desc[i],
 					      HCLGE_OPC_RX_COM_THRD_ALLOC,
 					      true);
@@ -357,7 +359,7 @@ int hns3_cae_show_comm_thres(struct hns3_nic_priv *net_priv,
 			desc[i].flag &= ~cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 	}
 
-	status = hns3_cae_cmd_send(hdev, desc, 2);
+	status = hns3_cae_cmd_send(hdev, desc, HNS3_CAE_THRD_ALLOC_BD_NUM);
 	if (status) {
 		dev_err(&hdev->pdev->dev,
 			"Get rx common threshold fail, status = %d\n", status);
@@ -380,6 +382,7 @@ int hns3_cae_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size)
 {
+#define HNS3_CAE_WL_ALLOC_BD_NUM	2
 	struct hclge_dev *hdev = get_val_hdev(net_priv);
 	struct hns3_total_priv_wl_param *out_info;
 	struct hclge_rx_priv_wl_buf *req;
@@ -398,7 +401,7 @@ int hns3_cae_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
 
 	out_info = (struct hns3_total_priv_wl_param *)buf_out;
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < HNS3_CAE_WL_ALLOC_BD_NUM; i++) {
 		hns3_cae_cmd_setup_basic_desc(&desc[i],
 					      HCLGE_OPC_RX_PRIV_WL_ALLOC,
 					      true);
@@ -408,14 +411,14 @@ int hns3_cae_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
 			desc[i].flag &= ~cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 	}
 
-	status = hns3_cae_cmd_send(hdev, desc, 2);
+	status = hns3_cae_cmd_send(hdev, desc, HNS3_CAE_WL_ALLOC_BD_NUM);
 	if (status) {
 		dev_err(&hdev->pdev->dev,
 			"Get rx private waterline fail, statu = %d\n", status);
 		return status;
 	}
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < HNS3_CAE_WL_ALLOC_BD_NUM; i++) {
 		req = (struct hclge_rx_priv_wl_buf *)desc[i].data;
 		for (j = 0; j < HCLGE_TC_NUM_ONE_DESC; j++) {
 			idx = i * HCLGE_TC_NUM_ONE_DESC + j;

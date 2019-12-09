@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2016-2017 Hisilicon Limited.
 
+#ifdef CONFIG_EXT_TEST
 #include "hclge_cmd.h"
 #include "hnae3.h"
 #include "hclge_main.h"
@@ -31,3 +32,4 @@ int hns3_lamp_cfg(struct hns3_nic_priv *net_priv,
 
 	return ret;
 }
+#endif

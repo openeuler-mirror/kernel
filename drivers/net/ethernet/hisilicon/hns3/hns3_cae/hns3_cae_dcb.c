@@ -146,7 +146,6 @@ static int hns3_cae_cfg_pause_param(struct hclge_dev *hdev,
 			       (info->pause_gap << 16);
 
 	hns3_cae_cmd_reuse_desc(&desc, false);
-
 	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
