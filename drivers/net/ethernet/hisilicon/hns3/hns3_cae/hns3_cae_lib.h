@@ -120,19 +120,6 @@ struct msg_module {
 int hns3_cae_k_init(void);
 void hns3_cae_k_uninit(void);
 
-struct hns3_cae_commit_id_param {
-	u8 commit_id[8];
-	u32 ncl_version;
-	u32 rsv[3];
-};
-
-struct firmware_ver_param {
-	u32 imp_ver;
-	u8 commit_id[9];
-	u8 rsv[3];
-	u32 ncl_version;
-};
-
 struct hclge_gro_age_config_cmd {
 	u32 ppu_gro_age_cnt;
 	u8 rsv[20];
