@@ -28,7 +28,7 @@ static int hns3_cae_write_reg_cfg(struct hns3_nic_priv *net_priv,
 	struct hclge_dev *hdev;
 	struct hclge_desc desc;
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	if (in_buf->bits_width == 64) {
@@ -56,7 +56,7 @@ static int hns3_cae_read_reg_cfg(struct hns3_nic_priv *net_priv,
 				 void *buf_in, u32 in_size,
 				 void *buf_out, u32 out_size)
 {
-	struct hclge_vport *vport = hclge_get_vport(net_priv->ae_handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
 	struct reg_ret_param *out_buf = (struct reg_ret_param *)buf_out;
 	struct reg_param *in_buf = (struct reg_param *)buf_in;
 	struct hclge_dev *hdev = vport->back;
@@ -119,7 +119,7 @@ static int hns3_cae_reg_read_cfg(struct hns3_nic_priv *net_priv,
 				 void *buf_in, u32 in_size,
 				 void *buf_out, u32 out_size)
 {
-	struct hclge_vport *vport = hclge_get_vport(net_priv->ae_handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
 	struct com_reg_param *out_buf = (struct com_reg_param *)buf_out;
 	struct com_reg_param *in_buf = (struct com_reg_param *)buf_in;
 	struct hclge_dev *hdev = vport->back;
@@ -164,7 +164,7 @@ static int hns3_cae_reg_write_cfg(struct hns3_nic_priv *net_priv,
 	struct hclge_desc desc;
 	int i;
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, in_buf->fw_dw_opcode,

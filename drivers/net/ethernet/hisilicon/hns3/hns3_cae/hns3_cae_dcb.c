@@ -182,7 +182,7 @@ int hns3_cae_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 		return -1;
 	}
 	h = net_priv->ae_handle;
-	vport = hclge_get_vport(h);
+	vport = hns3_cae_get_vport(h);
 	ndev = h->netdev;
 	hdev = vport->back;
 	in_info = (struct hns3_cae_pfc_cfg_param *)buf_in;
@@ -337,7 +337,7 @@ int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 		return -1;
 	}
 	h = net_priv->ae_handle;
-	vport = hclge_get_vport(h);
+	vport = hns3_cae_get_vport(h);
 	ndev = h->netdev;
 	hdev = vport->back;
 	in_info = (struct hns3_cae_ets_cfg_param *)buf_in;

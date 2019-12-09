@@ -13,7 +13,7 @@ struct hclge_dev *get_val_hdev(struct hns3_nic_priv *net_priv)
 	struct hclge_vport *vport;
 
 	handle = net_priv->ae_handle;
-	vport = hclge_get_vport(handle);
+	vport = hns3_cae_get_vport(handle);
 	return vport->back;
 }
 
@@ -202,7 +202,7 @@ int hns3_cae_common_wl_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	out_info = (struct hns3_rx_priv_buff_wl_param *)buf_out;
 	in_info = (struct hns3_rx_priv_buff_wl_param *)buf_in;
@@ -257,7 +257,7 @@ int hns3_cae_rx_buff_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	out_info = (struct hns3_rx_buff_param *)buf_out;
 	in_info = (struct hns3_rx_buff_param *)buf_in;
@@ -303,7 +303,7 @@ int hns3_cae_tx_buff_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	out_info = (struct hns3_tx_buff_param *)buf_out;
 	in_info = (struct hns3_tx_buff_param *)buf_in;
@@ -446,7 +446,7 @@ int hns3_cae_qcn_cfg(struct hns3_nic_priv *net_priv,
 	}
 
 	qcn_bypass = *(int *)(buf_in);
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_QCN_CFG, true);

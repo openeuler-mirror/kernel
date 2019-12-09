@@ -26,5 +26,6 @@ int hns3_cae_cmd_send(struct hclge_dev *hdev, struct hclge_desc *desc, int num);
 void hns3_cae_cmd_setup_basic_desc(struct hclge_desc *desc,
 				   enum hclge_opcode_type opcode, bool is_read);
 void hns3_cae_cmd_reuse_desc(struct hclge_desc *desc, bool is_read);
+struct hclge_vport *hns3_cae_get_vport(struct hnae3_handle *handle);
 
 #endif

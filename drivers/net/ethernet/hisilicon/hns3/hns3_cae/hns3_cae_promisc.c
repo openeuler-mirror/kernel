@@ -23,7 +23,7 @@ int hns3_read_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
 	}
 
 	out_buf = (u8 *)buf_out;
-	vport = hclge_get_vport(nic_dev->ae_handle);
+	vport = hns3_cae_get_vport(nic_dev->ae_handle);
 	hdev = vport->back;
 	req = (struct hclge_promisc_cfg_cmd *)desc.data;
 	req->vf_id = vport->vport_id;
@@ -63,7 +63,7 @@ int hns3_set_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(nic_dev->ae_handle);
+	vport = hns3_cae_get_vport(nic_dev->ae_handle);
 	hdev = vport->back;
 	req = (struct hclge_promisc_cfg_cmd *)desc.data;
 	req->vf_id = vport->vport_id;

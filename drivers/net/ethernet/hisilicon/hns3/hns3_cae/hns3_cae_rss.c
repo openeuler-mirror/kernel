@@ -66,7 +66,7 @@ static int hns3_cae_set_rss_cfg(struct hns3_nic_priv *net_priv,
 	bool check;
 	u8 *key;
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 	key = vport->rss_hash_key;
 
@@ -108,7 +108,7 @@ static int hns3_cae_get_rss_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	vport = hclge_get_vport(net_priv->ae_handle);
+	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
 	hns3_cae_cmd_setup_basic_desc(&desc,

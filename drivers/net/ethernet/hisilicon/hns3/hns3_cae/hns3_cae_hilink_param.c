@@ -173,7 +173,7 @@ int hns3_get_hilink_param(struct hns3_nic_priv *net_priv,
 			  void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *handle = hns3_get_handle(net_priv->netdev);
-	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct hns3_hilink_param *hns3_param_out;
 	struct hns3_hilink_param *hns3_param_in;
 	struct hclge_dev *hdev = vport->back;
