@@ -41,7 +41,6 @@ enum driver_cmd_type {
 	EVENT_INJECTION_CMD,
 
 	SEND_PKT = 300,
-	RECV_PKT,
 
 	RX_PRIV_BUFF_WL_CFG = 400,
 	RX_COMMON_THRD_CFG,
@@ -60,7 +59,6 @@ enum driver_cmd_type {
 	QCN_EN_CFG,
 
 	RESET_CFG = 500,
-	RAS_RESET_CFG = 501,
 	TIMEOUT_CFG = 550,
 
 	CLEAN_STATS = 600,
