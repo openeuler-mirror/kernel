@@ -315,6 +315,7 @@ int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size)
 {
+#define BYTELEN 4
 	struct hns3_cae_ets_cfg_param *out_info;
 	struct hns3_cae_ets_cfg_param *in_info;
 	struct hclge_vport *vport;
@@ -370,7 +371,8 @@ int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 		    dcb_all_info[curr_dev_idx].ets_cfg_info.ets_en;
 		for (i = 0; i < HNS3_CAE_ETS_MAC_TC_NUM; i++) {
 			out_info->up2tc[i] =
-			    (desc.data[0] & (0xf << (4 * i))) >> (4 * i);
+			    (desc.data[0] & (0xfU << (BYTELEN * i))) >>
+			    (BYTELEN * i);
 			dcb_all_info[curr_dev_idx].ets_cfg_info.up2tc[i] =
 			    out_info->up2tc[i];
 			out_info->bw[i] = hdev->tm_info.pg_info[0].tc_dwrr[i];
