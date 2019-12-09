@@ -287,7 +287,7 @@ static int send_to_driver(struct hns3_nic_priv *nic_dev,
 	enum driver_cmd_type cmd_type =
 	    (enum driver_cmd_type)(nt_msg->msg_formate);
 	driv_module fn;
-	int err = 0;
+	int err = -EOPNOTSUPP;
 	u32 index;
 
 	for (index = 0; index < num_cmds; index++) {
