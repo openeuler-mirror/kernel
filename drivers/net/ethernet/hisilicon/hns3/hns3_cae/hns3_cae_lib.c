@@ -38,8 +38,8 @@
 #include "hns3_cae_checksum.h"
 #include "hns3_cae_mactbl.h"
 #include "hns3_cae_dcqcn.h"
+#include "hns3_cae_version.h"
 
-#define HNAE_DRIVER_VERSION "1.9.21.3"
 
 #define MAX_MSG_OUT_SIZE	(1024U * 2048U)
 #define MAX_MSG_IN_SIZE		(1024U * 2048U)
@@ -255,52 +255,6 @@ int hns3_cae_get_commit_id(struct hnae3_handle *handle, u8 *commit_id,
 	return 0;
 }
 
-static int get_fw_ver(struct hns3_nic_priv *nic_dev, void *buf_in, u32 in_size,
-		      void *buf_out, u32 out_size)
-{
-	struct firmware_ver_param *out_buf;
-	struct hnae3_handle *handle;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
-	bool check;
-	u32 fw_ver;
-
-	check = !buf_out || out_size < sizeof(struct firmware_ver_param);
-	if (check) {
-		pr_err("input param buf_out error in %s function\n", __func__);
-		return -EFAULT;
-	}
-
-	handle = nic_dev->ae_handle;
-	vport = container_of(handle, struct hclge_vport, nic);
-	hdev = vport->back;
-	out_buf = (struct firmware_ver_param *)buf_out;
-
-	if (hns3_cae_get_commit_id(handle, out_buf->commit_id,
-				   &out_buf->ncl_version))
-		return -EFAULT;
-
-	fw_ver = hdev->fw_version;
-	out_buf->imp_ver = fw_ver;
-
-	if (!fw_ver)
-		return -EFAULT;
-
-	return 0;
-}
-
-static int get_driver_ver(struct hns3_nic_priv *nic_dev,
-			  void *buf_in, u32 in_size,
-			  void *buf_out, u32 out_size)
-{
-	if (!buf_out || out_size < sizeof(HNAE_DRIVER_VERSION))
-		return -ENOMEM;
-
-	strncpy(buf_out, HNAE_DRIVER_VERSION, sizeof(HNAE_DRIVER_VERSION));
-
-	return 0;
-}
-
 int hns3_cae_clean_stats(struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size)
@@ -466,8 +420,8 @@ int hns3_gro_age_handle(struct hns3_nic_priv *net_priv,
 }
 
 struct drv_module_handle driv_module_cmd_handle[] = {
-	{FW_VER, get_fw_ver},
-	{DRIVER_VER, get_driver_ver},
+	{FW_VER, hns3_cae_get_fw_ver},
+	{DRIVER_VER, hns3_cae_get_driver_ver},
 	{CHECKSUM_CFG, hns3_cae_chs_cfg},
 	{TM_QUEUE_CFG, hns3_cae_queue_cfg},
 	{TM_QSET_CFG, hns3_cae_qs_cfg},

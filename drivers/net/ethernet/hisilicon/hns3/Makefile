@@ -69,6 +69,7 @@ HNS3_CAE_OBJS_PRIM = 	hns3_cae/hns3_cae_init.o \
       hns3_cae/hns3_cae_dcqcn.o \
 			hns3_cae/hns3_cae_mactbl.o \
 			hns3_cae/hns3_cae_m7_cmd.o \
+      hns3_cae/hns3_cae_version.o \
       hns3_cae/hns3_cae_cmd.o
 #add test code
 HNS3_CAE_OBJS_EXT =	hns3_cae/hns3_cae_dfx.o \
