@@ -84,7 +84,8 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 				return -EIO;
 			}
 			out_info->tp2nupm = desc.data[2];
-			out_info->tag_en = (desc.data[4] & 0x3) |
+			out_info->tag_en =
+			    (desc.data[4] & HNS3_CAE_TAGEN_MASK) |
 			    (((desc.data[4] >> 4) & HNS3_CAE_TAGEN_MASK) << 2);
 		}
 		out_info->module = in_info->module;
@@ -96,11 +97,12 @@ int hns3_cae_upmapping_cfg(struct hns3_nic_priv *net_priv,
 			if (in_info->pf_valid) {
 				desc.data[0] |= HNS3_CAE_PFVLD_MASK;
 				desc.data[0] |=
-				    (in_info->pf_id & HNS3_CAE_PFID_MASK);
+					(in_info->pf_id & HNS3_CAE_PFID_MASK);
 			}
 			desc.data[0] |=
-			    ((in_info->vf_id << 3) & HNS3_CAE_VFID_MASK);
-			desc.data[1] |= (in_info->module & 0x1);
+				((in_info->vf_id << 3) & HNS3_CAE_VFID_MASK);
+			desc.data[1] |=
+				(in_info->module & HNS3_CAE_MODULE_MASK);
 			ret = hns3_cae_cmd_send(hdev, &desc, 1);
 			if (ret) {
 				dev_err(&hdev->pdev->dev,
