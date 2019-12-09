@@ -8,10 +8,12 @@
 #include "hclge_cmd.h"
 #include "hns3_enet.h"
 
+#define MAX_STAT_NAME_LEN	24
+
 struct stat_sw_mode_param {
 	u64 data;
 	u32 ring_idx;
-	u8 val_name[24];
+	u8 val_name[MAX_STAT_NAME_LEN];
 	u8 is_read;
 	u8 is_rx;
 };
@@ -37,7 +39,7 @@ enum stats_name_type {
 };
 
 struct ring_stats_name {
-	u8 stats_name[24];
+	u8 stats_name[MAX_STAT_NAME_LEN];
 	u32 stats_namd_id;
 };
 

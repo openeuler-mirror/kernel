@@ -23,13 +23,13 @@ const struct ring_stats_name hns3_ring_stats_name[] = {
 	{"rx_multicast", RX_MULTICAST},
 };
 
-static int hns3_get_stat_val(struct ring_stats *r_stats, char val_name[],
-			     u64 **val)
+static int hns3_get_stat_val(struct ring_stats *r_stats, char *val_name,
+			     u32 max_name_len, u64 **val)
 {
 	u32 stats_name_id = 0;
 	u32 i;
 
-	if (!r_stats || !val_name || !val) {
+	if (!r_stats || !val_name || !val || strlen(val_name) >= max_name_len) {
 		pr_info("%s param is null.\n", __func__);
 		return HCLGE_ERR_CSQ_ERROR;
 	}
@@ -121,7 +121,6 @@ static int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	hdev = vport->back;
 	kinfo = &handle->kinfo;
 	stat_sw_param = (struct stat_sw_mode_param *)buf_in;
-
 	if (!buf_out || out_size < sizeof(u64)) {
 		dev_err(&hdev->pdev->dev, "Get stat buf out is null.\n");
 		return HCLGE_ERR_CSQ_ERROR;
@@ -139,7 +138,8 @@ static int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 		ring_idx += kinfo->num_tqps;
 
 	ret = hns3_get_stat_val(&nic_dev->ring[ring_idx].stats,
-				stat_sw_param->val_name, &val);
+				stat_sw_param->val_name,
+				MAX_STAT_NAME_LEN, &val);
 	if (ret || !val) {
 		pr_info("get stat val name [%s] error.\n",
 			stat_sw_param->val_name);
@@ -169,7 +169,6 @@ static int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	hdev = vport->back;
 	kinfo = &handle->kinfo;
 	stat_sw_param = (struct stat_sw_mode_param *)buf_in;
-
 	ring_idx = stat_sw_param->ring_idx;
 	if (ring_idx >= kinfo->num_tqps) {
 		dev_err(&hdev->pdev->dev,
@@ -182,7 +181,8 @@ static int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 		ring_idx += kinfo->num_tqps;
 
 	ret = hns3_get_stat_val(&nic_dev->ring[ring_idx].stats,
-				stat_sw_param->val_name, &val);
+				stat_sw_param->val_name,
+				MAX_STAT_NAME_LEN, &val);
 	if (ret || !val) {
 		pr_info("Set stat val name [%s] error.\n",
 			stat_sw_param->val_name);

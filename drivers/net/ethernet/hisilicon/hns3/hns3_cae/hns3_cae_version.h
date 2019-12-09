@@ -4,7 +4,7 @@
 #ifndef __HNS3_CAE_VERSION_H__
 #define __HNS3_CAE_VERSION_H__
 
-#define HNAE_DRIVER_VERSION "1.9.25.0"
+#define HNAE_DRIVER_VERSION "1.9.25.1"
 
 #define CMT_ID_LEN 8
 #define RESV_LEN 3

@@ -374,18 +374,19 @@ int hns3_cae_tm_port_shapping_get(struct hclge_dev *hdev, u32 *shaper)
 	return ret;
 }
 
-static int hns3_cae_tm_ets_tc_dwrr_set(struct hclge_dev *hdev, u8 *weight)
+static int hns3_cae_tm_ets_tc_dwrr_set(struct hclge_dev *hdev, u8 *weight,
+				       u32 weight_cnt)
 {
 #define DEFAULT_TC_WEIGHT	1
 #define DEFAULT_TC_OFFSET	14
 	struct hns3_cae_ets_tc_weight_cmd *ets_weight;
 	struct hclge_desc desc;
-	int i;
+	u32 i;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_ETS_TC_WEIGHT, false);
 	ets_weight = (struct hns3_cae_ets_tc_weight_cmd *)desc.data;
 
-	for (i = 0; i < MAX_TC_NUM; i++)
+	for (i = 0; i < weight_cnt; i++)
 		ets_weight->tc_weight[i] = weight[i];
 
 	ets_weight->weight_offset = DEFAULT_TC_OFFSET;
@@ -393,18 +394,20 @@ static int hns3_cae_tm_ets_tc_dwrr_set(struct hclge_dev *hdev, u8 *weight)
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-static int hns3_cae_tm_ets_tc_dwrr_get(struct hclge_dev *hdev, u8 *weight)
+static int hns3_cae_tm_ets_tc_dwrr_get(struct hclge_dev *hdev, u8 *weight,
+				       u32 weight_cnt)
 {
 	struct hns3_cae_ets_tc_weight_cmd *ets_weight;
 	struct hclge_desc desc;
-	int ret, i;
+	int ret;
+	u32 i;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_ETS_TC_WEIGHT, true);
 	ets_weight = (struct hns3_cae_ets_tc_weight_cmd *)desc.data;
 
 	ret = hns3_cae_cmd_send(hdev, &desc, 1);
 	if (!ret) {
-		for (i = 0; i < MAX_TC_NUM; i++)
+		for (i = 0; i < weight_cnt; i++)
 			weight[i] = ets_weight->tc_weight[i];
 	}
 
@@ -980,7 +983,7 @@ int hns3_cae_ets_cfg(struct hns3_nic_priv *net_priv,
 	struct hns3_cae_ets_cfg_info *in_info;
 	struct hclge_vport *vport;
 	struct hclge_dev *hdev;
-	u8 weight[8];
+	u8 weight[MAX_TC_NUM];
 	int is_read;
 	bool check;
 	u16 tc_id;
@@ -1005,12 +1008,12 @@ int hns3_cae_ets_cfg(struct hns3_nic_priv *net_priv,
 	addr = (u64)HNS3_TM_ETS_PORT_SHAPING + ((u64)mac_id << 20);
 	out_info->tc_id = tc_id;
 	out_info->mac_id = mac_id;
+	if (hns3_cae_tm_ets_tc_dwrr_get(hdev, weight, MAX_TC_NUM)) {
+		pr_err("%s,%d:get ets tc dwrr failed!\n", __func__,
+		       __LINE__);
+		return -1;
+	}
 	if (is_read) {
-		if (hns3_cae_tm_ets_tc_dwrr_get(hdev, weight)) {
-			pr_err("%s,%d:get ets tc dwrr failed!\n", __func__,
-			       __LINE__);
-			return -1;
-		}
 		out_info->weight = weight[tc_id];
 		if (hns3_cae_tm_operate_nic_regs(hdev, addr, &value,
 						 is_read)) {
@@ -1020,14 +1023,9 @@ int hns3_cae_ets_cfg(struct hns3_nic_priv *net_priv,
 		}
 		out_info->shaping = (u32)value;
 	} else {
-		if (hns3_cae_tm_ets_tc_dwrr_get(hdev, weight)) {
-			pr_err("%s,%d:get ets tc dwrr failed!\n", __func__,
-			       __LINE__);
-			return -1;
-		}
 		weight[tc_id] = in_info->weight;
 		if ((in_info->flag & HNS3_TM_ETS_TC_CFG_FLAG) &&
-		    hns3_cae_tm_ets_tc_dwrr_set(hdev, weight)) {
+		    hns3_cae_tm_ets_tc_dwrr_set(hdev, weight, MAX_TC_NUM)) {
 			pr_err("%s,%d:set ets tc dwrr failed!\n", __func__,
 			       __LINE__);
 			return -1;

@@ -161,16 +161,18 @@ static int hns3_cae_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	struct hclge_fd_tcam_config_3_cmd *req3;
 	struct hclge_fd_tcam_data *tcam_data;
 	struct hclge_desc desc[3];
+	struct hclge_desc *pdesc;
 	bool check;
 	u8 *buf;
 	int ret;
 	int i;
 
 	for (i = 0; i < HNS3_CAE_FD_TCAM_BD_NUM; i++) {
-		hns3_cae_cmd_setup_basic_desc(&desc[i], HCLGE_OPC_FD_TCAM_OP,
+		pdesc = &desc[i];
+		hns3_cae_cmd_setup_basic_desc(pdesc, HCLGE_OPC_FD_TCAM_OP,
 					      param->is_read ? true : false);
 		if (i < HNS3_CAE_FD_TCAM_BD_NUM - 1)
-			desc[i].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+			pdesc->flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
 	}
 
 	req1 = (struct hclge_fd_tcam_config_1_cmd *)desc[0].data;
