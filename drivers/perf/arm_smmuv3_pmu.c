@@ -787,7 +787,7 @@ static int smmu_pmu_probe(struct platform_device *pdev)
 	smmu_pmu_get_acpi_options(smmu_pmu);
 
 	/* Pick one CPU to be the preferred one to use */
-	smmu_pmu->on_cpu = get_cpu();
+	smmu_pmu->on_cpu = raw_smp_processor_id();
 	WARN_ON(irq_set_affinity(smmu_pmu->irq, cpumask_of(smmu_pmu->on_cpu)));
 
 	err = cpuhp_state_add_instance_nocalls(cpuhp_state_num,
@@ -805,7 +805,6 @@ static int smmu_pmu_probe(struct platform_device *pdev)
 		goto out_unregister;
 	}
 
-	put_cpu();
 	dev_info(dev, "Registered PMU @ %pa using %d counters with %s filter settings\n",
 		 &res_0->start, smmu_pmu->num_counters,
 		 smmu_pmu->global_filter ? "Global(Counter0)" :
@@ -816,7 +815,6 @@ static int smmu_pmu_probe(struct platform_device *pdev)
 out_unregister:
 	cpuhp_state_remove_instance_nocalls(cpuhp_state_num, &smmu_pmu->node);
 out_cpuhp_err:
-	put_cpu();
 	return err;
 }
 
