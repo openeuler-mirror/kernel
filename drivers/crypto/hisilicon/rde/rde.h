@@ -45,12 +45,6 @@ struct hisi_rde {
 #define RDE_MEM_SAVE_SHIFT	2
 #define RDE_BUF_TYPE_SHIFT	3
 #define SGL_DATA_OFFSET_SHIFT	8
-#define RDE_COEF_GF_SHIFT	32
-#define RDE_LBA_BLK		8
-#define RDE_LBA_DWORD_CNT	5
-#define DIF_CHK_GRD_CTRL_SHIFT	4
-#define DIF_CHK_REF_CTRL_SHIFT	32
-#define DIF_LBA_SHIFT		32
 #define DIF_GEN_PAD_CTRL_SHIFT	32
 #define DIF_GEN_REF_CTRL_SHIFT	35
 #define DIF_GEN_APP_CTRL_SHIFT	38
@@ -76,18 +70,26 @@ struct hisi_rde {
 #define RDE_DONE_SHIFT		7
 #define RDE_PER_SRC_COEF_SIZE	32
 #define RDE_PER_SRC_COEF_TIMES	4
-#define RDE_UPD_GN_FLAG		0x80
-#define RDE_UPD_PARITY_SHIFT	7
 #define RDE_TASK_TMOUT_MS	10000
 
 
+#define RDE_GN_WITH_MODE(column, mode, parity) \
+	((u8)column + ((ACC_OPT_UPD ^ mode) ? 0 : (0x80 & (parity << 7))))
 #define RDE_GN_CNT(i)	(((i + 1) % 2 == 0) ? ((i + 1) >> 1) : ((i + 2) >> 1))
 #define RDE_GN_FLAG(i)	(((i + 1) % 2 == 0) ? 2 : 1)
-#define RDE_GN_SHIFT(x)	(RDE_COEF_GF_SHIFT * (x == 1 ? 1 : 0))
-#define RDE_CLR_CNT(i)	(((i - 1) / RDE_LBA_BLK + 1) * RDE_LBA_DWORD_CNT)
-#define RDE_LBA_INFO_CNT(i)  ((i % 2 == 0) ? (i >> 1) : ((i - 1) >> 1))
-#define RDE_LBA_SHIFT_MSK(i)  ((i % 2 == 0) ? 1 : 0)
+#define RDE_GN_SHIFT(i)	(32 * (i == 1 ? 1 : 0))
+#define RDE_CHK_CTRL_CNT(i)    ((i / 8) * 5)
+#define RDE_LBA_CNT(i)  ((i / 8 + 1) + \
+	((i % 2 == 0) ? (i >> 1) : ((i - 1) >> 1)))
+#define RDE_CHK_CTRL_VALUE(grd, ref, i) \
+	((u64)(grd << 4 | ref) << (8 * (i % 8)))
+#define RDE_LBA_SHIFT(i)    (32 * ((i % 2) ^ 1))
 
+struct hisi_rde_hw_error {
+	u8 status;
+	u32 int_msk;
+	const char *msg;
+};
 
 /* src data addr table, should be 64byte aligned */
 struct rde_src_tbl {
@@ -125,6 +127,7 @@ struct hisi_rde_msg {
 	struct raid_ec_ctrl *udata;
 	struct completion completion;
 	u32 req_id;
+	int result;
 };
 
 /* rde ctx structure, acc_init api can alloc and init this structure */
@@ -146,6 +149,40 @@ struct rde_type {
 	u8 mem_mode;
 	u8 buf_mode;
 	u8 alg_type;
+};
+
+/* RDE hardware error status */
+enum {
+	RDE_STATUS_NULL = 0,
+	RDE_BD_ADDR_NO_ALIGN = 0x2,
+	RDE_BD_RD_BUS_ERR = 0x3,
+	RDE_IO_ABORT = 0x4,
+	RDE_BD_ERR = 0x5,
+	RDE_ECC_ERR = 0x6,
+	RDE_SGL_ADDR_ERR = 0x7,
+	RDE_SGL_PARA_ERR = 0x8,
+	RDE_DATA_RD_BUS_ERR = 0x1c,
+	RDE_DATA_WR_BUS_ERR = 0x1d,
+	RDE_CRC_CHK_ERR = 0x1e,
+	RDE_REF_CHK_ERR = 0x1f,
+	RDE_DISK0_VERIFY = 0x20,
+	RDE_DISK1_VERIFY = 0x21,
+	RDE_DISK2_VERIFY = 0x22,
+	RDE_DISK3_VERIFY = 0x23,
+	RDE_DISK4_VERIFY = 0x24,
+	RDE_DISK5_VERIFY = 0x25,
+	RDE_DISK6_VERIFY = 0x26,
+	RDE_DISK7_VERIFY = 0x27,
+	RDE_DISK8_VERIFY = 0x28,
+	RDE_DISK9_VERIFY = 0x29,
+	RDE_DISK10_VERIFY = 0x2a,
+	RDE_DISK11_VERIFY = 0x2b,
+	RDE_DISK12_VERIFY = 0x2c,
+	RDE_DISK13_VERIFY = 0x2d,
+	RDE_DISK14_VERIFY = 0x2e,
+	RDE_DISK15_VERIFY = 0x2f,
+	RDE_DISK16_VERIFY = 0x30,
+	RDE_CHAN_TMOUT = 0x31,
 };
 
 /* RDE algorithm types */
@@ -262,14 +299,26 @@ static inline void rde_table_dump(const struct hisi_rde_msg *req)
 
 	for (i = 0; i < SRC_ADDR_TABLE_NUM; i++) {
 		if (req->src_addr->content[i])
-			pr_info("src addr info[%d] content is 0x%llx\n",
+			pr_info("Table0 info[%d] is 0x%llx.\n",
 				i, req->src_addr->content[i]);
+	}
+
+	for (i = 0; i < SRC_DIF_TABLE_NUM; i++) {
+		if (req->src_tag_addr->content[i])
+			pr_info("Table1 info[%d] is 0x%llx.\n",
+				i, req->src_tag_addr->content[i]);
 	}
 
 	for (i = 0; i < DST_ADDR_TABLE_NUM; i++) {
 		if (req->dst_addr->content[i])
-			pr_info("dst addr info[%d] content is 0x%llx\n",
+			pr_info("Table2 info[%d] is 0x%llx.\n",
 				i, req->dst_addr->content[i]);
+	}
+
+	for (i = 0; i < DST_DIF_TABLE_NUM; i++) {
+		if (req->dst_tag_addr->content[i])
+			pr_info("Table3 info[%d] is 0x%llx.\n",
+				i, req->dst_tag_addr->content[i]);
 	}
 }
 

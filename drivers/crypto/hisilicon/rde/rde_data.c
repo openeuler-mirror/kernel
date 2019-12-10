@@ -23,7 +23,7 @@ static inline u32 sgl_addr_cnt(struct sgl_hw *sgl)
 	struct sgl_hw *cur_sgl = sgl;
 
 	if (!sgl) {
-		pr_err("[%s] sgl address is NULL", __func__);
+		pr_err("[%s] Sgl address is NULL.\n", __func__);
 		return 0;
 	}
 
@@ -45,22 +45,22 @@ int acc_sgl_dump(struct sgl_hw *data)
 	struct sgl_entry_hw *entry;
 
 	if (unlikely(!data->entry_sum_in_sgl)) {
-		pr_err("error! The entrysum of sgl is zero.\n");
+		pr_err("Error! The entrysum of sgl is zero.\n");
 		return -EINVAL;
 	}
 	cnt_entries = sgl_addr_cnt(data);
-	pr_info("sgl entries:%d\n", cnt_entries);
+	pr_info("Sgl entries:%d.\n", cnt_entries);
 
 	for (cur_sgl = data; cur_sgl; ) {
-		pr_info("sgl addr: 0x%pK\n", cur_sgl);
-		pr_info("nextSgl: 0x%pK\n", cur_sgl->next);
-		pr_info("entrySumInChain: %u\n", cur_sgl->entry_sum_in_chain);
-		pr_info("entrySumInSgl: %u\n", cur_sgl->entry_sum_in_sgl);
+		pr_info("Sgl addr: 0x%pK.\n", cur_sgl);
+		pr_info("NextSgl: 0x%pK.\n", cur_sgl->next);
+		pr_info("EntrySumInChain: %u.\n", cur_sgl->entry_sum_in_chain);
+		pr_info("EntrySumInSgl: %u.\n", cur_sgl->entry_sum_in_sgl);
 
 		entry = cur_sgl->entries;
 		for (i = 0; (i < cur_sgl->entry_sum_in_sgl &&
 			entry->buf); i++) {
-			pr_info("entries[%d]:addr = 0x%pK\n", i, entry->buf);
+			pr_info("Entries[%d]:addr = 0x%pK.\n", i, entry->buf);
 			entry++;
 		}
 		if (cur_sgl->next)
@@ -121,20 +121,20 @@ int acc_sgl_virt_to_phys(struct pci_dev *pdev, struct sgl_hw *data,
 	struct scatterlist *sglist;
 
 	if (!data) {
-		pr_err("[%s] para sgl_s is NULL.\n", __func__);
+		pr_err("[%s] Para sgl_s is NULL.\n", __func__);
 		return -EINVAL;
 	}
 
 	if (unlikely(!data->entry_sum_in_sgl) ||
 			data->entry_sum_in_sgl > data->entry_num_in_sgl) {
-		pr_err("[%s] para sge num is wrong.\n", __func__);
+		pr_err("[%s] Para sge num is wrong.\n", __func__);
 		return -EINVAL;
 	}
 
 	addr_cnt = sgl_addr_cnt(data);
 	sglist = kcalloc(addr_cnt, sizeof(*sglist), GFP_KERNEL);
 	if (unlikely(!sglist)) {
-		pr_err("[%s] malloc sglist fail.\n", __func__);
+		pr_err("[%s] Malloc sglist fail.\n", __func__);
 		return -ENOMEM;
 	}
 
@@ -162,7 +162,7 @@ int acc_sgl_phys_to_virt(struct pci_dev *pdev, void *sglist_head,
 	int ret = -EFAULT;
 
 	if (!sglist_head) {
-		pr_err("[%s] para sglist_head is NULL.\n", __func__);
+		pr_err("[%s] Para sglist_head is NULL.\n", __func__);
 		return -EINVAL;
 	}
 
@@ -177,7 +177,7 @@ int acc_sgl_phys_to_virt(struct pci_dev *pdev, void *sglist_head,
 			entry->buf); i++) {
 			sg = sg_next(sg);
 			if (unlikely(!sg)) {
-				pr_err("[%s][%d]scatterlist happens to be NULL.\n",
+				pr_err("[%s][%d]Scatterlist happens to be NULL.\n",
 					__func__, __LINE__);
 				goto FAIL;
 			}
@@ -190,7 +190,7 @@ int acc_sgl_phys_to_virt(struct pci_dev *pdev, void *sglist_head,
 		if (cur_sgl->next) {
 			sg = sg_next(sg);
 			if (unlikely(!sg)) {
-				pr_err("[%s][%d]scatterlist happens to be NULL.\n",
+				pr_err("[%s][%d]Scatterlist happens to be NULL.\n",
 					__func__, __LINE__);
 				goto FAIL;
 			}
