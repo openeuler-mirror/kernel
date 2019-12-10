@@ -308,7 +308,7 @@ struct acc_dif {
  * @input_block: number of sector
  * @data_len: data len of per disk, block_size (with dif)* input_block
  * @buf_type: denoted by ACC_BUF_TYPE_E
- * @src_dif��dif information of source disks
+ * @src_dif£»dif information of source disks
  * @dst_dif: dif information of dest disks
  * @cm_load: coe_matrix reload control, 0: do not load, 1: load
  * @cm_len: length of loaded coe_matrix, equal to src_num
@@ -361,42 +361,14 @@ struct acc_ctx {
 };
 
 /**
- *
- * @brief set T10 CRC seed.
- *
- * @param [in] seed T10 CRC seed.
- * @retval 0 is success, else is a negative number that is error code.
- *
- * @note
- *
+ * @brief return value.
  */
-int acc_set_pi_crc_seed(uint16_t seed);
-
-/**
- *
- * @brief set the PRP page size.
- *
- * @param [in] page_size typical values: 4096 bytes, 8192 bytes.
- * @retval 0 is success, else is a negative number that is error code.
- *
- * @note
- * Not supported yet
- *
- */
-int acc_set_prp_mem_page_size(uint32_t page_size_byte);
-
-/**
- *
- * @brief set the offset of SGE related to SGL.
- *
- * @param [in] offset typical values: 32 bytes, 64 bytes.
- * @retval 0 is success, else is a negative number that is error code.
- *
- * @note
- * Not supported yet
- *
- */
-int acc_set_sge_offset_from_sgl(uint32_t offset_byte);
+enum ACC_STATUS_E {
+	ACC_SUCCESS = 0,
+	ACC_INVALID_PARAM = (-103), /*!< parameter error */
+	ACC_RDE_DIF_ERR = (-113), /*!< Input or Output dif check error */
+	ACC_RDE_DISK_VERIFY_ERR = (-114) /*!< Output data verify error */
+};
 
 /**
  *
