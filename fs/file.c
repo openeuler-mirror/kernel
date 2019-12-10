@@ -361,8 +361,12 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 
 	rcu_assign_pointer(newf->fdt, new_fdt);
 #ifdef CONFIG_CGROUP_FILES
-	if (!files_cgroup_alloc_fd(newf, files_cgroup_count_fds(newf)))
+	spin_lock(&newf->file_lock);
+	if (!files_cgroup_alloc_fd(newf, files_cgroup_count_fds(newf))) {
+		spin_unlock(&newf->file_lock);
 		return newf;
+	}
+	spin_unlock(&newf->file_lock);
 
 	/* could not get enough FD resources.  Need to clean up. */
 	new_fds = new_fdt->fd;
