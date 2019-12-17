@@ -126,17 +126,17 @@ static int sysctl_tdh_mem_access_open(u8 chip_id)
 
 static inline bool sysctl_is_hest_type_generic_v2(struct ghes *ghes)
 {
-		return ghes->generic->header.type == ACPI_HEST_TYPE_GENERIC_ERROR_V2;
+	return ghes->generic->header.type == ACPI_HEST_TYPE_GENERIC_ERROR_V2;
 }
 
 static int sysctl_map_gen_v2(const struct ghes *ghes)
 {
-		return apei_map_generic_address(&ghes->generic_v2->read_ack_register);
+	return apei_map_generic_address(&ghes->generic_v2->read_ack_register);
 }
 
 static void sysctl_unmap_gen_v2(const struct ghes *ghes)
 {
-		apei_unmap_generic_address(&ghes->generic_v2->read_ack_register);
+	apei_unmap_generic_address(&ghes->generic_v2->read_ack_register);
 }
 static int sysctl_correlation_reg_report(const struct hisi_oem_type1_err_sec *ras_cper)
 {
@@ -381,15 +381,6 @@ static int sysctl_ghes_read_estatus(struct ghes *sysctl_ghes, int silent)
 		goto error_read_block;
 	}
 
-	pr_info("[INFO] SYSCTL RAS HISILICON Error : ghes source id is %d.\n",
-		sysctl_ghes->generic->header.source_id);
-	pr_info("[INFO] SYSCTL RAS HISILICON Error : error status addr is 0x%llx.\n",
-		sysctl_ghes->buffer_paddr);
-	pr_info("[INFO] SYSCTL RAS HISILICON Error : data_length is %d.\n",
-		sysctl_ghes->estatus->data_length);
-	pr_info("[INFO] SYSCTL RAS HISILICON Error : severity is %d.\n",
-		sysctl_ghes->estatus->error_severity);
-
 	if (cper_estatus_check(sysctl_ghes->estatus)) {
 		pr_err("[ERROR] SYSCTL RAS cper_estatus_check fail.\n");
 		goto error_read_block;
@@ -467,17 +458,12 @@ static int sysctl_hisi_error_handler(struct work_struct *work)
 	struct ghes *sysctl_ghes = NULL;
 	(void)work;
 
-	pr_info("[INFO] SYSCTL RAS %s start.\n", __func__);
-
 	rcu_read_lock();
 	list_for_each_entry_rcu(sysctl_ghes, &hisi_ghes_list, list) {
 		if (!sysctl_ghes_proc(sysctl_ghes))
 			ret = NOTIFY_OK;
 	}
 	rcu_read_unlock();
-
-	pr_info("[INFO] SYSCTL RAS sysctl_ghes_proc ret: %d.\n", ret);
-	pr_info("[INFO] SYSCTL RAS %s end.\n", __func__);
 
 	return ret;
 
@@ -559,6 +545,7 @@ int hip_sysctl_local_ras_init(void)
 static void his_ghes_list_free(void)
 {
 	struct ghes *node = NULL;
+	struct ghes *tmp_node = NULL;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(node, &hisi_ghes_list, list) {
@@ -574,8 +561,27 @@ static void his_ghes_list_free(void)
 		if (sysctl_is_hest_type_generic_v2(node))
 			sysctl_unmap_gen_v2(node);
 
-		kfree(node);
+		/* Release the node of the previous loop. */
+		if (tmp_node != NULL) {
+			kfree(tmp_node);
+			tmp_node = NULL;
+		}
+
+		/* Record the node of the current loop. */
+		tmp_node = node;
+
+		/* hisi_ghes_list isn't a member of node. */
+		if (node->list.next == &hisi_ghes_list) {
+			node = NULL;
+			break;
+		}
 	}
+
+	if (tmp_node != NULL) {
+		kfree(tmp_node);
+		tmp_node = NULL;
+	}
+
 	rcu_read_unlock();
 }
 

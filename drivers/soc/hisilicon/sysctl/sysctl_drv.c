@@ -48,9 +48,8 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #define DEBUG
 
-#define SYSCTL_DRIVER_VERSION "1.8.15.0"
+#define SYSCTL_DRIVER_VERSION "1.8.15.2"
 
-/* debug���� */
 unsigned int g_sysctrl_debug;
 
 /* sysctrl reg base address */
@@ -667,6 +666,9 @@ unsigned long ut_hisi_sysctl_get_hllc_crc_ecc(u8 chip_id, u32 hllc_id)
 {
 	unsigned int ret;
 	hllc_crc_ecc_info hllc_crc_ecc;
+
+	if (hllc_id >= HLLC_NUM_MAX)
+		return SYSCTL_ERR_PARAM; /* the upper 32 bits. */
 
 	memset(&hllc_crc_ecc, 0, sizeof(hllc_crc_ecc_info));
 	ret = hisi_sysctl_get_hllc_crc_ecc(chip_id, &hllc_crc_ecc);
