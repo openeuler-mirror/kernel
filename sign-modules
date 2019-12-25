@@ -1,0 +1,25 @@
+#! /bin/bash
+
+moddir=$1
+
+modules=`find $moddir -name *.ko`
+
+MODSECKEY="./signing_key.pem"
+MODPUBKEY="./signing_key.x509"
+
+for mod in $modules
+do
+    dir=`dirname $mod`
+    file=`basename $mod`
+
+    ./scripts/sign-file sha256 ${MODSECKEY} ${MODPUBKEY} ${dir}/${file}
+    rm -f ${dir}/${file}.{sig,dig}
+done
+
+RANDOMMOD=$(find $moddir -type f -name '*.ko' | sort -R | tail -n 1)
+if [ "~Module signature appended~" != "$(tail -c 28 $RANDOMMOD)" ]; then
+	echo "*** Modules are unsigned! ***"
+	exit 1
+fi
+
+exit 0

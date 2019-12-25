@@ -1,0 +1,36 @@
+RPMBUILD := $(shell if [ -x "/usr/bin/rpmbuild" ]; then echo rpmbuild; \
+                   else echo rpm; fi)
+REDHAT:=$(shell pwd)
+TOPDIR:=$(shell dirname $(REDHAT))
+MACH :=  $(shell uname -m)
+KVERSION:=3.17.0
+GITID:= $(shell git log --max-count=1 --pretty=format:%H)
+RPMVERSION:=3.17.0
+# marker is git tag which we base off of for exporting patches
+MARKER:=v3.17
+PREBUILD:=0.
+BUILD:=49
+DIST:=.sa2
+SPECFILE:=kernel.spec
+RPM:=$(REDHAT)/rpm
+SRPMS:=$(RPM)/SRPMS
+SOURCES:=$(RPM)/SOURCES
+TESTPATCH:=$(REDHAT)/linux-kernel-test.patch
+FILTERDIFF:=/usr/bin/filterdiff -x '*redhat/*' -x '*/.gitignore' -x '*/makefile' -x '*/Makefile'
+
+RELEASED_KERNEL := 1
+STAMP_VERSION := $(KVERSION)
+
+LOCVERFILE:=../localversion
+# create an empty localversion file if you don't want a local buildid
+ifneq ($(wildcard $(LOCVERFILE)),)
+  BUILDID:=$(shell cat $(LOCVERFILE))
+else
+  BUILDID:=.test
+endif
+$(info BUILDID is "$(BUILDID)". Update '$(shell dirname $(REDHAT))/localversion' to change.)
+
+PKGRELEASE:=$(PREBUILD)$(BUILD)$(DIST)$(BUILDID)
+
+TARFILE:=linux-$(KVERSION)-$(PKGRELEASE).tar.xz
+TARBALL:=$(REDHAT)/$(TARFILE)

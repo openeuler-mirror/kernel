@@ -1,0 +1,101 @@
+# arch/arm64/kvm/guest.c
+kvm_arch_vcpu_ioctl_get_regs
+kvm_arch_vcpu_ioctl_set_regs
+kvm_arch_vcpu_ioctl_get_sregs
+kvm_arch_vcpu_ioctl_set_sregs
+kvm_arch_vcpu_ioctl_get_fpu
+kvm_arch_vcpu_ioctl_set_fpu
+kvm_arch_vcpu_ioctl_translate
+kvm_arm_vcpu_arch_get_attr
+kvm_arch_vcpu_ioctl_set_guest_debug
+
+# arch/arm64/kvm/inject_fault.c
+prepare_fault32
+inject_undef32
+inject_abt32
+
+# virt/kvm/eventfd.c
+irqfd_resampler_ack
+irqfd_resampler_shutdown
+kvm_irq_has_notifier
+kvm_register_irq_ack_notifier
+kvm_irqfd_exit
+
+# virt/kvm/kvm_main.c
+ack_flush
+kvm_reload_remote_mmus
+kvm_make_mclock_inprogress_request
+kvm_make_scan_ioapic_request
+kvm_get_dirty_log
+kvm_largepages_enabled
+kvm_disable_largepages
+kvm_host_page_size
+gfn_to_hva
+kvm_vcpu_gfn_to_hva
+kvm_vcpu_gfn_to_hva_prot
+kvm_vcpu_gfn_to_pfn_atomic
+kvm_vcpu_gfn_to_page
+kvm_vcpu_gfn_to_pfn
+kvm_pfn_to_page
+gfn_to_page
+gfn_to_pfn
+kvm_vcpu_gfn_to_pfn_atomic
+gfn_to_pfn_memslot_atomic
+gfn_to_pfn_atomic
+kvm_vcpu_gfn_to_pfn_atomic
+gfn_to_page_many_atomic
+kvm_release_page_clean
+kvm_release_page_dirty
+kvm_release_pfn_dirty
+kvm_vcpu_read_guest_page
+kvm_vcpu_read_guest
+kvm_read_guest_atomic
+kvm_vcpu_read_guest_atomic
+__kvm_read_guest_atomic
+kvm_vcpu_write_guest
+kvm_vcpu_write_guest_page
+kvm_gfn_to_hva_cache_init
+kvm_write_guest_cached
+kvm_read_guest_cached
+kvm_clear_guest_page
+kvm_clear_guest
+kvm_vcpu_mark_page_dirty
+kvm_vcpu_compat_ioctl
+kvm_device_from_filp
+kvm_unregister_device_ops
+kvm_vm_compat_ioctl
+kvm_reboot
+kvm_io_bus_write_cookie
+vm_stat_get_per_vm
+vm_stat_get_per_vm_open
+vm_stat_get
+kvm_suspend
+kvm_resume
+kvm_exit
+
+# virt/kvm/arm/arm.c
+kvm_arch_vcpu_destroy
+kvm_arch_vcpu_free
+kvm_arch_exit
+kvm_perf_teardown
+
+# virt/kvm/arm/mmu.c
+create_hyp_io_mappings
+
+# virt/kvm/arm/psci.c
+kvm_psci_0_1_call
+
+# virt/kvm/arm/vgic/vgic-v2.c
+vgic_v2_probe
+vgic_v2_enable
+vgic_v2_set_vmcr
+vgic_v2_clear_lr
+vgic_v2_populate_lr
+vgic_v2_fold_lr_state
+vgic_v2_set_underflow
+vgic_v2_process_maintenance
+vgic_v2_init_lrs
+
+# virt/kvm/arm/vgic/vgic.c
+vgic_irq_release
+
