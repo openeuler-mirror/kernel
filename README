@@ -1,3 +1,210 @@
+Contributions to openEuler kernel project
+=========================================
+
+Sign CLA
+--------
+
+Before submitting any Contributions to openEuler, you have to sign CLA.
+
+See:
+     https://openeuler.org/zh/cla.html
+     https://openeuler.org/en/cla.html
+
+Steps of submitting patches
+---------------------------
+
+1. Compile and test your patches successfully.
+2. Generate patches
+   Your patches should be based on top of latest openEuler branch, and should
+   use git-format-patch to generate patches, and if it's a patchset, it's
+   better to use --cover-letter option to describe what the patchset does.
+
+   Using scripts/checkpatch.pl to make sure there's no coding style issue.
+
+   And make sure your patch follow unified openEuler patch format describe
+   below.
+
+3. Send patch to openEuler mailing list
+   Use this command to send patches to openEuler mailing list:
+
+     git send-email *.patch -to="kernel@openeuler.org" --suppress-cc=all
+
+   *NOTE*: that you must add --suppress-cc=all if you use git send-email,
+   otherwise the email will be cced to the people in upstream community and mailing
+   lists.
+
+   *See*: How to send patches using git-send-email
+    https://git-scm.com/docs/git-send-email
+
+4. Mark "v1, v2, v3 ..." in your patch subject if you have multiple versions
+   to send out.
+
+   Use --subject-prefix="PATCH v2" option to add v2 tag for patchset.
+     git format-patch --subject-prefix="PATCH v2" -1
+
+   Subject examples:
+     Subject: [PATCH v2 01/27] fork: fix some -Wmissing-prototypes warnings
+     Subject: [PATCH v3] ext2: improve scalability of bitmap searching
+
+5. Upstream your kernel patch to kernel community is strongly recommended.
+   openEuler will sync up with kernel master timely.
+
+6. Sign your work - the Developer’s Certificate of Origin
+   As the same of upstream kernel community, you also need to sign your patch.
+
+   See: https://www.kernel.org/doc/html/latest/process/submitting-patches.html
+
+   The sign-off is a simple line at the end of the explanation for the patch,
+   which certifies that you wrote it or otherwise have the right to pass it
+   on as an open-source patch. The rules are pretty simple: if you can certify
+   the below:
+
+   Developer’s Certificate of Origin 1.1
+   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+     By making a contribution to this project, I certify that:
+
+     (a) The contribution was created in whole or in part by me and I have
+         the right to submit it under the open source license indicated in
+         the file; or
+
+     (b  The contribution is based upon previous work that, to the best of
+         my knowledge, is covered under an appropriate open source license
+         and I have the right under that license to submit that work with
+         modifications, whether created in whole or in part by me, under
+         the same open source license (unless I am permitted to submit under
+         a different license), as indicated in the file; or
+
+     (c) The contribution was provided directly to me by some other person
+         who certified (a), (b) or (c) and I have not modified it.
+
+     (d) I understand and agree that this project and the contribution are
+         public and that a record of the contribution (including all personal
+         information I submit with it, including my sign-off) is maintained
+         indefinitely and may be redistributed consistent with this project
+         or the open source license(s) involved.
+
+   then you just add a line saying:
+
+     Signed-off-by: Random J Developer <random@developer.example.org>
+
+   using your real name (sorry, no pseudonyms or anonymous contributions.)
+
+Use unified patch format
+------------------------
+
+Reasons:
+
+1. long term maintainability
+   openEuler will merge massive patches. If all patches are merged by casual
+   changelog format without a unified format, the git log will be messy, and
+   then it's hard to figure out the original patch.
+
+2. kernel upgrade
+   We definitely will upgrade our openEuler kernel in someday, using strict
+   patch management will alleviate the pain to migrate patches during big upgrade.
+
+3. easy for script parsing
+   Keyword highlighting is necessary for script parsing.
+
+Patch format definition
+-----------------------
+
+[M] stands for "mandatory"
+[O] stands for "option"
+$category can be: bug preparation, bugfix, perf, feature, doc, other...
+
+If category is feature, then we also need to add feature name like below:
+	category: feature
+	feature: YYY (the feature name)
+
+If the patch is related to CVE or bugzilla, then we need add the corresponding
+tag like below (In general, it should include at least one of the following):
+	CVE: $cve-id
+	bugzilla: $bug-id
+
+Additional changelog should include at least one of the flollwing:
+	1) Why we should apply this patch
+	2) What real problem in product does this patch resolved
+	3) How could we reproduce this bug or how to test
+	4) Other useful information for help to understand this patch or problem
+
+The detail information is very useful for porting patch to another kenrel branch.
+
+Example for mainline patch:
+
+	mainline inclusion      [M]
+	from $mainline-version  [M]
+	commit $id              [M]
+	category: $category     [M]
+	bugzilla: $bug-id       [O]
+	CVE: $cve-id            [O]
+
+	additional changelog    [O]
+
+	--------------------------------
+
+	original changelog
+
+	Signed-off-by: $yourname <$yourname@huawei.com>   [M]
+
+	($mainline-version could be mainline-3.5, mainline-3.6, etc...)
+
+Examples
+--------
+
+mainline inclusion
+from mainline-4.10
+commit 0becc0ae5b42828785b589f686725ff5bc3b9b25
+category: bugfix
+bugzilla: 3004
+CVE: NA
+
+The patch fixes a BUG_ON in the product: injecting single bit ECC error
+to memory before system boot use hardware inject tools, which cause a
+large amount of CMCI during system booting .
+
+[    1.146580] mce: [Hardware Error]: Machine check events logged
+[    1.152908] ------------[ cut here ]------------
+[    1.157751] kernel BUG at kernel/timer.c:951!
+[    1.162321] invalid opcode: 0000 [#1] SMP
+...
+
+-------------------------------------------------
+
+original changelog
+
+<original S-O-B>
+Signed-off-by: Zhang San <zhangsan@huawei.com>
+Tested-by: Li Si <lisi@huawei.com>
+
+Email Client - Thunderbird Settings
+-----------------------------------
+
+If you are newly developer in the kernel community, it is highly recommended
+to use thunderbird mail client.
+
+1. Thunderbird Installation
+   Get English version Thunderbird from http://www.mozilla.org/ and install
+   it on your system。
+
+   Download url: https://www.thunderbird.net/en-US/thunderbird/all/
+
+2. Settings
+   2.1 Use plain text format instead of HTML format
+       Options -> Account Settings -> Composition & Addressing, do *NOT* select
+       "Compose message in HTML format".
+
+   2.2 Editor Settings
+       Tools->Options->Advanced->Config editor.
+
+       - To bring up the thunderbird's registry editor, and set:
+         "mailnews.send_plaintext_flowed" to "false".
+       - Disable HTML Format: Set "mail.identity.id1.compose_html" to "false".
+       - Enable UTF8: Set "prefs.converted-to-utf8" to "true".
+       - View message in UTF-8: Set "mailnews.view_default_charset" to "UTF-8".
+       - Set mailnews.wraplength to 9999 for avoiding auto-wrap
+
 Linux kernel
 ============
 
