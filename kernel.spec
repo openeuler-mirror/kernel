@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0012
+Release: %{hulkrelease}.0018
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -301,8 +301,8 @@ make ARCH=%{Arch} modules %{?_smp_mflags}
 
 %if 0%{?with_kabichk}
     chmod 0755 %{SOURCE18}
-    if [ -e $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu}]; then
-        %{SOURCE18} -k $RPM_BUILD_ROOT/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
+    if [ -e $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} ]; then
+        %{SOURCE18} -k $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
     else
         echo "**** NOTE: Cannot find reference Module.kabi file. ****"
     fi
@@ -813,6 +813,26 @@ fi
 %endif
 
 %changelog
+* Wed Dec 25 2019 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1907.1.0.0018
+- update Module.kabi_aarch64
+- fix patch kernel-SMMU-V3-support-Virtualization-with-3408iMR-3.patch
+
+* Tue Dec 24 2019 Pan Zhang<zhangpan26@huawei.com> - 4.19.90-vhulk1907.1.0.0017
+- fix get_user_pages_fast with evmm issue
+
+* Tue Dec 24 2019 caihongda <caihongda@huawei.com> - 4.19.90-vhulk1907.1.0.0016
+- cpu/freq:remove unused patches
+
+* Tue Dec 24 2019 shenkai <shenkai8@huawei.com> - 4.19.90-vhulk1907.1.0.0015
+- modify vmap allocation start address
+
+* Tue Dec 24 2019 caomeng<caomeng5@huawei.com> - 4.19.90-vhulk1907.1.0.0014
+- fix some problem about rebase hulk
+
+* Mon Dec 23 2019 yuxiangyang<yuxiangyang4@huawei.com> - 4.19.90-vhulk1907.1.0.0013
+- fix CONFIG_EULEROS_USE_IDLE_NO_CSTATES compile error
+- add a new method of cpu usage
+
 * Mon Dec 23 2019 caomeng <caomeng5@huawei.com> - 4.19.90-vhulk1907.1.0.0012
 - change version
 
