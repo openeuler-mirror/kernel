@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0018
+Release: %{hulkrelease}.0019
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -813,6 +813,9 @@ fi
 %endif
 
 %changelog
+* Fri Dec 28 2019 caomeng<caomeng5g@huawei.com> - 4.19.90-vhulk1907.1.0.0019
+- modefied license
+
 * Wed Dec 25 2019 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1907.1.0.0018
 - update Module.kabi_aarch64
 - fix patch kernel-SMMU-V3-support-Virtualization-with-3408iMR-3.patch
