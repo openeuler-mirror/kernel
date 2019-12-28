@@ -813,7 +813,7 @@ fi
 %endif
 
 %changelog
-* Fri Dec 28 2019 caomeng<caomeng5g@huawei.com> - 4.19.90-vhulk1907.1.0.0019
+* Sat Dec 28 2019 caomeng<caomeng5g@huawei.com> - 4.19.90-vhulk1907.1.0.0019
 - modefied license
 
 * Wed Dec 25 2019 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1907.1.0.0018
