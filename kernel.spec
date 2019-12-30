@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0020
+Release: %{hulkrelease}.0021
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -813,6 +813,9 @@ fi
 %endif
 
 %changelog
+* Mon Dec 30 2019 caomeng<caomeng5g@huawei.com> - 4.19.90-vhulk1912.2.1.0021
+- modefied README.md
+
 * Sat Dec 28 2019 caomeng<caomeng5g@huawei.com> - 4.19.90-vhulk1912.2.1.0020
 - change tag and change config_ktask
 
