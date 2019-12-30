@@ -813,13 +813,16 @@ fi
 %endif
 
 %changelog
-* Mon Dec 30 2019 caomeng<caomeng5g@huawei.com> - 4.19.90-vhulk1912.2.1.0021
+* Mon Dec 30 2019 yuxiangyang<yuxiangyang4@huawei.com> - 4.19.90-vhulk1912.2.1.0022
+- update Huawei copyright
+
+* Mon Dec 30 2019 caomeng<caomeng5@huawei.com> - 4.19.90-vhulk1912.2.1.0021
 - modefied README.md
 
-* Sat Dec 28 2019 caomeng<caomeng5g@huawei.com> - 4.19.90-vhulk1912.2.1.0020
+* Sat Dec 28 2019 caomeng<caomeng5@huawei.com> - 4.19.90-vhulk1912.2.1.0020
 - change tag and change config_ktask
 
-* Sat Dec 28 2019 caomeng<caomeng5g@huawei.com> - 4.19.90-vhulk1907.1.0.0019
+* Sat Dec 28 2019 caomeng<caomeng5@huawei.com> - 4.19.90-vhulk1907.1.0.0019
 - modefied license
 
 * Wed Dec 25 2019 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1907.1.0.0018
