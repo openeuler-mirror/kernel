@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0021
+Release: %{hulkrelease}.0023
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -33,24 +33,15 @@ Source0: linux-%{TarballVer}.tar.gz
 %else
 Source0: linux-%{version}.tar.gz
 %endif
-Source1: Makefile.common
 Source10: sign-modules
 Source11: x509.genkey
 Source12: extra_certificates
-Source15: merge.pl
 
 %if 0%{?with_kabichk}
 Source18: check-kabi
 Source20: Module.kabi_aarch64
 %endif
 
-Source30: Makefile.config
-Source50: config-debug
-Source51: config-nodebug
-Source52: config-arm64
-Source53: config-generic
-Source55: config-local
-Source59: config-arm-generic
 Source200: mkgrub-menu-aarch64.sh
 
 Source2000: cpupower.service
@@ -228,9 +219,6 @@ cp -rl linux-%{version} linux-%{KernelVer}
 %endif
 
 cd linux-%{KernelVer}
-cp $RPM_SOURCE_DIR/config-* .
-cp %{SOURCE15} .
-cp %{SOURCE30} .
 
 %if 0%{?with_patch}
 cp %{SOURCE9000} .
@@ -258,12 +246,6 @@ Applypatches()
 }
 
 Applypatches series.conf %{_builddir}/kernel-%{version}/linux-%{KernelVer}
-%endif
-
-make -f Makefile.config  VERSION=%{version} configs
-
-%if !0%{?debugbuildsenabled}
-rm -f kernel-%{version}-*debug.config
 %endif
 
 touch .scmversion
@@ -813,6 +795,9 @@ fi
 %endif
 
 %changelog
+* Tue Dec 31 2019 linfeilong<linfeilong@huawei.com> - 4.19.90-vhulk1912.2.1.0023
+- delete some unuseful file
+
 * Mon Dec 30 2019 yuxiangyang<yuxiangyang4@huawei.com> - 4.19.90-vhulk1912.2.1.0022
 - update Huawei copyright
 
