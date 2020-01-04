@@ -8,13 +8,13 @@
 
 %global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/)
 
-%global TarballVer 4.19.13
+%global TarballVer 4.19.90
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
 %global hulkrelease vhulk1912.2.1
 
-%define with_patch 0
+%define with_patch 1
 
 %define debuginfodir /usr/lib/debug
 
