@@ -529,6 +529,7 @@ static void hisi_sec_cipher_ctx_exit(struct crypto_skcipher *tfm)
 		hrtimer_cancel(&ctx->timer);
 
 	if (c_ctx->c_key) {
+		memzero_explicit(c_ctx->c_key, SEC_MAX_KEY_SIZE);
 		dma_free_coherent(ctx->dev, SEC_MAX_KEY_SIZE, c_ctx->c_key,
 			c_ctx->c_key_dma);
 		c_ctx->c_key = NULL;
