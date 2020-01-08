@@ -70,7 +70,7 @@ struct hisi_rde {
 #define RDE_DONE_SHIFT		7
 #define RDE_PER_SRC_COEF_SIZE	32
 #define RDE_PER_SRC_COEF_TIMES	4
-#define RDE_TASK_TMOUT_MS	10000
+#define RDE_TASK_TMOUT_MS	3000
 
 
 #define RDE_GN_WITH_MODE(column, mode, parity) \
@@ -286,11 +286,12 @@ static inline void rde_bd_dump(struct hisi_rde_sqe *bd)
 {
 	int i;
 
-	pr_info("====== BD info start======\n");
+	pr_info_ratelimited("====== BD info start======\n");
 	for (i = 0; i < sizeof(struct hisi_rde_sqe) / sizeof(u64); i++)
-		pr_info("sqe-word[%d]: 0x%llx.\n", i, *((u64 *)bd + i));
+		pr_info_ratelimited("sqe-word[%d]: 0x%llx.\n",
+				    i, *((u64 *)bd + i));
 
-	pr_info("====== BD info end======\n");
+	pr_info_ratelimited("====== BD info end======\n");
 }
 
 static inline void rde_table_dump(const struct hisi_rde_msg *req)
@@ -299,26 +300,26 @@ static inline void rde_table_dump(const struct hisi_rde_msg *req)
 
 	for (i = 0; i < SRC_ADDR_TABLE_NUM; i++) {
 		if (req->src_addr->content[i])
-			pr_info("Table0 info[%d] is 0x%llx.\n",
-				i, req->src_addr->content[i]);
+			pr_info_ratelimited("Table0 info[%d] is 0x%llx.\n",
+					    i, req->src_addr->content[i]);
 	}
 
 	for (i = 0; i < SRC_DIF_TABLE_NUM; i++) {
 		if (req->src_tag_addr->content[i])
-			pr_info("Table1 info[%d] is 0x%llx.\n",
-				i, req->src_tag_addr->content[i]);
+			pr_info_ratelimited("Table1 info[%d] is 0x%llx.\n",
+					    i, req->src_tag_addr->content[i]);
 	}
 
 	for (i = 0; i < DST_ADDR_TABLE_NUM; i++) {
 		if (req->dst_addr->content[i])
-			pr_info("Table2 info[%d] is 0x%llx.\n",
-				i, req->dst_addr->content[i]);
+			pr_info_ratelimited("Table2 info[%d] is 0x%llx.\n",
+					    i, req->dst_addr->content[i]);
 	}
 
 	for (i = 0; i < DST_DIF_TABLE_NUM; i++) {
 		if (req->dst_tag_addr->content[i])
-			pr_info("Table3 info[%d] is 0x%llx.\n",
-				i, req->dst_tag_addr->content[i]);
+			pr_info_ratelimited("Table3 info[%d] is 0x%llx.\n",
+					    i, req->dst_tag_addr->content[i]);
 	}
 }
 

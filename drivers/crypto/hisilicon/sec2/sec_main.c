@@ -6,7 +6,6 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- *
  */
 
 #include <linux/acpi.h>
@@ -42,23 +41,20 @@
 #define SEC_CORE_INT_STATUS		0x301008
 #define SEC_CORE_INT_STATUS_M_ECC	BIT(2)
 #define SEC_CORE_ECC_INFO		0x301C14
-#define SEC_ECC_NUM_SHIFT		16
-#define SEC_ECC_ADDR_SHIFT		0
-#define SEC_ECC_NUM(err_val)		((err_val >> SEC_ECC_NUM_SHIFT) & 0xFF)
-#define SEC_ECC_ADDR(err_val)		(err_val >> SEC_ECC_ADDR_SHIFT)
+#define SEC_ECC_NUM(err_val)		(((err_val) >> 16) & 0xFFFF)
+#define SEC_ECC_ADDR(err_val)		((err_val) & 0xFFFF)
 
 #define SEC_CORE_INT_DISABLE		0x0
 #define SEC_CORE_INT_ENABLE		0x1ff
 #define SEC_HW_ERROR_IRQ_ENABLE		1
 #define SEC_HW_ERROR_IRQ_DISABLE	0
 
-#define SEC_SM4_CTR_ENABLE_REG		0x301380
-#define SEC_SM4_CTR_ENABLE_MSK		0xEFFFFFFF
-#define SEC_SM4_CTR_DISABLE_MSK		0xFFFFFFFF
-
-#define SEC_XTS_MIV_ENABLE_REG		0x301384
-#define SEC_XTS_MIV_ENABLE_MSK		0x7FFFFFFF
-#define SEC_XTS_MIV_DISABLE_MSK		0xFFFFFFFF
+#define SEC_BD_ERR_CHK_EN0		0xEFFFFFFF
+#define SEC_BD_ERR_CHK_EN1		0x7FFFF7FD
+#define SEC_BD_ERR_CHK_EN3		0xFFFFBFFF
+#define SEC_BD_ERR_CHK_EN_REG0		0x0380
+#define SEC_BD_ERR_CHK_EN_REG1		0x0384
+#define SEC_BD_ERR_CHK_EN_REG3		0x038c
 
 #define SEC_SQE_SIZE			128
 #define SEC_SQ_SIZE			(SEC_SQE_SIZE * QM_Q_DEPTH)
@@ -86,10 +82,10 @@
 #define SEC_TRNG_EN_SHIFT		8
 #define SEC_AXI_SHUTDOWN_ENABLE		BIT(12)
 #define SEC_AXI_SHUTDOWN_DISABLE	0xFFFFEFFF
+#define SEC_WR_MSI_PORT			0xFFFE
 
 #define SEC_INTERFACE_USER_CTRL0_REG	0x0220
 #define SEC_INTERFACE_USER_CTRL1_REG	0x0224
-#define SEC_BD_ERR_CHK_EN_REG(n)	(0x0380 + (n) * 0x04)
 
 #define SEC_USER0_SMMU_NORMAL		(BIT(23) | BIT(15))
 #define SEC_USER1_SMMU_NORMAL		(BIT(31) | BIT(23) | BIT(15) | BIT(7))
@@ -107,8 +103,10 @@
 #define SEC_PCI_COMMAND_INVALID		0xFFFFFFFF
 
 #define FORMAT_DECIMAL			10
+#define FROZEN_RANGE_MIN		10
+#define FROZEN_RANGE_MAX		20
 
-static const char hisi_sec_name[] = "hisi_sec";
+static const char sec_name[] = "hisi_sec2";
 static struct dentry *sec_debugfs_root;
 static u32 pf_q_num = SEC_PF_DEF_Q_NUM;
 static struct workqueue_struct *sec_wq;
@@ -404,10 +402,6 @@ static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
 MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
 
-static int enable_sm4_ctr;
-module_param(enable_sm4_ctr, int, 0444);
-MODULE_PARM_DESC(enable_sm4_ctr, "Enable ctr(sm4) algorithm 0(default), 1");
-
 static int ctx_q_num = CTX_Q_NUM_DEF;
 module_param_cb(ctx_q_num, &ctx_q_num_ops, &ctx_q_num, 0444);
 MODULE_PARM_DESC(ctx_q_num, "Number of queue in ctx (2, 4, 6, ..., 1024)");
@@ -502,8 +496,11 @@ static int sec_engine_init(struct hisi_sec *hisi_sec)
 	reg |= SEC_USER1_SMMU_NORMAL;
 	writel(reg, base + SEC_INTERFACE_USER_CTRL1_REG);
 
-	writel(0xfffff7fd, base + SEC_BD_ERR_CHK_EN_REG(1));
-	writel(0xffffbfff, base + SEC_BD_ERR_CHK_EN_REG(3));
+	/* Enable sm4 extra mode, as ctr/ecb */
+	writel(SEC_BD_ERR_CHK_EN0, base + SEC_BD_ERR_CHK_EN_REG0);
+	/* Enable sm4 xts mode multiple iv */
+	writel(SEC_BD_ERR_CHK_EN1, base + SEC_BD_ERR_CHK_EN_REG1);
+	writel(SEC_BD_ERR_CHK_EN3, base + SEC_BD_ERR_CHK_EN_REG3);
 
 	/* enable clock gate control */
 	reg = readl_relaxed(base + SEC_CONTROL_REG);
@@ -515,23 +512,7 @@ static int sec_engine_init(struct hisi_sec *hisi_sec)
 	reg |= sec_get_endian(hisi_sec);
 	writel(reg, base + SEC_CONTROL_REG);
 
-	if (enable_sm4_ctr)
-		writel(SEC_SM4_CTR_ENABLE_MSK,
-			qm->io_base + SEC_SM4_CTR_ENABLE_REG);
-
-	writel(SEC_XTS_MIV_ENABLE_MSK,
-		qm->io_base + SEC_XTS_MIV_ENABLE_REG);
-
 	return 0;
-}
-
-static void hisi_sec_disable_sm4_ctr(struct hisi_sec *hisi_sec)
-{
-	struct hisi_qm *qm = &hisi_sec->qm;
-
-	if (enable_sm4_ctr)
-		writel(SEC_SM4_CTR_DISABLE_MSK,
-			qm->io_base + SEC_SM4_CTR_ENABLE_REG);
 }
 
 static void hisi_sec_set_user_domain_and_cache(struct hisi_sec *hisi_sec)
@@ -548,7 +529,11 @@ static void hisi_sec_set_user_domain_and_cache(struct hisi_sec *hisi_sec)
 	/* qm cache */
 	writel(AXI_M_CFG, qm->io_base + QM_AXI_M_CFG);
 	writel(AXI_M_CFG_ENABLE, qm->io_base + QM_AXI_M_CFG_ENABLE);
-	writel(PEH_AXUSER_CFG_ENABLE, qm->io_base + QM_PEH_AXUSER_CFG_ENABLE);
+
+	/* disable FLR triggered by BME(bus master enable) */
+	writel(PEH_AXUSER_CFG, qm->io_base + QM_PEH_AXUSER_CFG);
+	writel(PEH_AXUSER_CFG_ENABLE, qm->io_base +
+	       QM_PEH_AXUSER_CFG_ENABLE);
 
 	/* enable sqc,cqc writeback */
 	writel(SQC_CACHE_ENABLE | CQC_CACHE_ENABLE | SQC_CACHE_WB_ENABLE |
@@ -590,8 +575,8 @@ static void hisi_sec_hw_error_set_state(struct hisi_sec *hisi_sec, bool state)
 	val = readl(base + SEC_CONTROL_REG);
 	if (state) {
 		/* clear SEC hw error source if having */
-		writel(SEC_CORE_INT_DISABLE, qm->io_base +
-			SEC_CORE_INT_SOURCE);
+		writel(SEC_CORE_INT_ENABLE,
+		       hisi_sec->qm.io_base + SEC_CORE_INT_SOURCE);
 
 		/* enable SEC hw error interrupts */
 		writel(SEC_CORE_INT_ENABLE, qm->io_base + SEC_CORE_INT_MASK);
@@ -782,8 +767,11 @@ static int hisi_sec_core_debug_init(struct hisi_sec_ctrl *ctrl)
 	struct debugfs_regset32 *regset;
 	struct dentry *tmp_d, *tmp;
 	char buf[SEC_DBGFS_VAL_MAX_LEN];
+	int ret;
 
-	snprintf(buf, SEC_DBGFS_VAL_MAX_LEN, "hisi_sec_dfx");
+	ret = snprintf(buf, SEC_DBGFS_VAL_MAX_LEN, "sec_dfx");
+	if (ret < 0)
+		return -ENOENT;
 
 	tmp_d = debugfs_create_dir(buf, ctrl->debug_root);
 	if (!tmp_d)
@@ -921,6 +909,49 @@ static void hisi_sec_hw_error_init(struct hisi_sec *hisi_sec)
 	hisi_sec_hw_error_set_state(hisi_sec, true);
 }
 
+static void hisi_sec_open_master_ooo(struct hisi_qm *qm)
+{
+	u32 val;
+	void *base = qm->io_base + SEC_ENGINE_PF_CFG_OFF +
+		     SEC_ACC_COMMON_REG_OFF;
+
+	val = readl(qm->io_base + SEC_CONTROL_REG);
+	writel(val & SEC_AXI_SHUTDOWN_DISABLE, base + SEC_CONTROL_REG);
+	writel(val | SEC_AXI_SHUTDOWN_ENABLE, base + SEC_CONTROL_REG);
+}
+
+static u32 hisi_sec_get_hw_err_status(struct hisi_qm *qm)
+{
+	return readl(qm->io_base + SEC_CORE_INT_STATUS);
+}
+
+static void hisi_sec_clear_hw_err_status(struct hisi_qm *qm, u32 err_sts)
+{
+	writel(err_sts, qm->io_base + SEC_CORE_INT_SOURCE);
+}
+
+static void hisi_sec_log_hw_error(struct hisi_qm *qm, u32 err_sts)
+{
+	const struct hisi_sec_hw_error *err = sec_hw_error;
+	struct device *dev = &qm->pdev->dev;
+	u32 err_val;
+
+	while (err->msg) {
+		if (err->int_msk & err_sts)
+			dev_err(dev, "%s [error status=0x%x] found\n",
+				 err->msg, err->int_msk);
+		err++;
+	}
+
+	if (SEC_CORE_INT_STATUS_M_ECC & err_sts) {
+		err_val = readl(qm->io_base + SEC_CORE_ECC_INFO);
+		dev_err(dev, "hisi-sec multi ecc sram num=0x%x\n",
+			SEC_ECC_NUM(err_val));
+		dev_err(dev, "hisi-sec multi ecc sram addr=0x%x\n",
+			SEC_ECC_ADDR(err_val));
+	}
+}
+
 static int hisi_sec_pf_probe_init(struct hisi_sec *hisi_sec)
 {
 	struct hisi_qm *qm = &hisi_sec->qm;
@@ -946,8 +977,15 @@ static int hisi_sec_pf_probe_init(struct hisi_sec *hisi_sec)
 		return -EINVAL;
 	}
 
+	qm->err_ini.qm_wr_port = SEC_WR_MSI_PORT;
+	qm->err_ini.ecc_2bits_mask = SEC_CORE_INT_STATUS_M_ECC;
+	qm->err_ini.open_axi_master_ooo = hisi_sec_open_master_ooo;
+	qm->err_ini.get_dev_hw_err_status = hisi_sec_get_hw_err_status;
+	qm->err_ini.clear_dev_hw_err_status = hisi_sec_clear_hw_err_status;
+	qm->err_ini.log_dev_hw_err = hisi_sec_log_hw_error;
 	hisi_sec_set_user_domain_and_cache(hisi_sec);
 	hisi_sec_hw_error_init(hisi_sec);
+	qm->err_ini.open_axi_master_ooo(qm);
 	hisi_sec_debug_regs_clear(hisi_sec);
 
 	return 0;
@@ -965,7 +1003,7 @@ static int hisi_sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	qm->ver = rev_id;
 
 	qm->sqe_size = SEC_SQE_SIZE;
-	qm->dev_name = hisi_sec_name;
+	qm->dev_name = sec_name;
 	qm->fun_type = (pdev->device == SEC_PCI_DEVICE_ID_PF) ?
 		QM_HW_PF : QM_HW_VF;
 	qm->algs = "sec\ncipher\ndigest\n";
@@ -1159,6 +1197,31 @@ static int hisi_sec_sriov_enable(struct pci_dev *pdev, int max_vfs)
 #endif
 }
 
+static int hisi_sec_try_frozen_vfs(struct pci_dev *pdev)
+{
+	struct hisi_sec *sec, *vf_sec;
+	struct pci_dev *dev;
+	int ret = 0;
+
+	/* Try to frozen all the VFs as disable SRIOV */
+	mutex_lock(&hisi_sec_list_lock);
+	list_for_each_entry(sec, &hisi_sec_list, list) {
+		dev = sec->qm.pdev;
+		if (dev == pdev)
+			continue;
+		if (pci_physfn(dev) == pdev) {
+			vf_sec = pci_get_drvdata(dev);
+			ret = hisi_qm_frozen(&vf_sec->qm);
+			if (ret)
+				goto frozen_fail;
+		}
+	}
+
+frozen_fail:
+	mutex_unlock(&hisi_sec_list_lock);
+	return ret;
+}
+
 static int hisi_sec_sriov_disable(struct pci_dev *pdev)
 {
 	struct hisi_sec *hisi_sec = pci_get_drvdata(pdev);
@@ -1169,9 +1232,13 @@ static int hisi_sec_sriov_disable(struct pci_dev *pdev)
 		return -EPERM;
 	}
 
+	if (hisi_sec_try_frozen_vfs(pdev)) {
+		dev_err(&pdev->dev, "try frozen VFs failed!\n");
+		return -EBUSY;
+	}
+
 	/* remove in hisi_sec_pci_driver will be called to free VF resources */
 	pci_disable_sriov(pdev);
-
 	return hisi_sec_clear_vft_config(hisi_sec);
 }
 
@@ -1185,8 +1252,12 @@ static int hisi_sec_sriov_configure(struct pci_dev *pdev, int num_vfs)
 
 static void hisi_sec_remove_wait_delay(struct hisi_sec *hisi_sec)
 {
-	while (hisi_qm_frozen(&hisi_sec->qm))
-		;
+	struct hisi_qm *qm = &hisi_sec->qm;
+
+	while (hisi_qm_frozen(qm) || ((qm->fun_type == QM_HW_PF) &&
+		hisi_sec_try_frozen_vfs(qm->pdev)))
+		usleep_range(FROZEN_RANGE_MIN, FROZEN_RANGE_MAX);
+
 	udelay(SEC_WAIT_DELAY);
 }
 
@@ -1204,80 +1275,18 @@ static void hisi_sec_remove(struct pci_dev *pdev)
 	hisi_sec_debugfs_exit(hisi_sec);
 	(void)hisi_qm_stop(qm, QM_NORMAL);
 
-	if (qm->fun_type == QM_HW_PF) {
+	if (qm->fun_type == QM_HW_PF)
 		hisi_sec_hw_error_set_state(hisi_sec, false);
-		hisi_sec_disable_sm4_ctr(hisi_sec);
-	}
 
 	hisi_qm_uninit(qm);
 	hisi_sec_remove_from_list(hisi_sec);
 }
 
-static void hisi_sec_log_hw_error(struct hisi_sec *hisi_sec, u32 err_sts)
-{
-	const struct hisi_sec_hw_error *err = sec_hw_error;
-	struct device *dev = &hisi_sec->qm.pdev->dev;
-	u32 err_val;
-
-	while (err->msg) {
-		if (err->int_msk & err_sts) {
-			dev_err(dev, "%s [error status=0x%x] found\n",
-				 err->msg, err->int_msk);
-
-			if (SEC_CORE_INT_STATUS_M_ECC & err_sts) {
-				err_val = readl(hisi_sec->qm.io_base +
-						SEC_CORE_ECC_INFO);
-				dev_err(dev,
-					"hisi-sec multi ecc sram num=0x%x\n",
-					SEC_ECC_NUM(err_val));
-				dev_err(dev,
-					"hisi-sec multi ecc sram addr=0x%x\n",
-					SEC_ECC_ADDR(err_val));
-			}
-		}
-		err++;
-	}
-}
-
-static pci_ers_result_t hisi_sec_hw_error_handle(struct hisi_sec *hisi_sec)
-{
-	u32 err_sts;
-
-	/* read err sts */
-	err_sts = readl(hisi_sec->qm.io_base + SEC_CORE_INT_STATUS);
-
-	if (err_sts) {
-		hisi_sec_log_hw_error(hisi_sec, err_sts);
-		/* clear error interrupts */
-		writel(err_sts, hisi_sec->qm.io_base + SEC_CORE_INT_SOURCE);
-
-		return PCI_ERS_RESULT_NEED_RESET;
-	}
-
-	return PCI_ERS_RESULT_RECOVERED;
-}
-
-static pci_ers_result_t hisi_sec_process_hw_error(struct pci_dev *pdev)
+static void hisi_sec_shutdown(struct pci_dev *pdev)
 {
 	struct hisi_sec *hisi_sec = pci_get_drvdata(pdev);
-	struct device *dev = &pdev->dev;
-	pci_ers_result_t qm_ret, sec_ret;
 
-	if (!hisi_sec) {
-		dev_err(dev,
-			"Can't recover error occurred during device init\n");
-		return PCI_ERS_RESULT_NONE;
-	}
-
-	/* log qm error */
-	qm_ret = hisi_qm_hw_error_handle(&hisi_sec->qm);
-
-	/* log sec error */
-	sec_ret = hisi_sec_hw_error_handle(hisi_sec);
-
-	return (qm_ret == PCI_ERS_RESULT_NEED_RESET ||
-		sec_ret == PCI_ERS_RESULT_NEED_RESET) ?
-	    PCI_ERS_RESULT_NEED_RESET : PCI_ERS_RESULT_RECOVERED;
+	hisi_qm_stop(&hisi_sec->qm, QM_NORMAL);
 }
 
 static pci_ers_result_t hisi_sec_error_detected(struct pci_dev *pdev,
@@ -1290,7 +1299,7 @@ static pci_ers_result_t hisi_sec_error_detected(struct pci_dev *pdev,
 	if (state == pci_channel_io_perm_failure)
 		return PCI_ERS_RESULT_DISCONNECT;
 
-	return hisi_sec_process_hw_error(pdev);
+	return hisi_qm_process_dev_error(pdev);
 }
 
 static int hisi_sec_reset_prepare_ready(struct hisi_sec *hisi_sec)
@@ -1399,6 +1408,9 @@ static int hisi_sec_soft_reset(struct hisi_sec *hisi_sec)
 		return ret;
 	}
 
+	/* Set qm ecc if dev ecc happened to hold on ooo */
+	hisi_qm_set_ecc(qm);
+
 	/* OOO register set and check */
 	writel(SEC_MASTER_GLOBAL_CTRL_SHUTDOWN,
 	       hisi_sec->qm.io_base + SEC_MASTER_GLOBAL_CTRL);
@@ -1492,7 +1504,7 @@ static int hisi_sec_controller_reset_done(struct hisi_sec *hisi_sec)
 	}
 
 	hisi_sec_set_user_domain_and_cache(hisi_sec);
-	hisi_sec_hw_error_init(hisi_sec);
+	hisi_qm_restart_prepare(qm);
 
 	ret = hisi_qm_restart(qm);
 	if (ret) {
@@ -1513,6 +1525,9 @@ static int hisi_sec_controller_reset_done(struct hisi_sec *hisi_sec)
 		dev_err(dev, "Failed to start VFs!\n");
 		return -EPERM;
 	}
+
+	hisi_qm_restart_done(qm);
+	hisi_sec_hw_error_init(hisi_sec);
 
 	return 0;
 }
@@ -1713,12 +1728,13 @@ static const struct pci_error_handlers hisi_sec_err_handler = {
 };
 
 static struct pci_driver hisi_sec_pci_driver = {
-	.name = "hisi_sec",
+	.name = "hisi_sec2",
 	.id_table = hisi_sec_dev_ids,
 	.probe = hisi_sec_probe,
 	.remove = hisi_sec_remove,
 	.sriov_configure = hisi_sec_sriov_configure,
 	.err_handler = &hisi_sec_err_handler,
+	.shutdown = hisi_sec_shutdown,
 };
 
 static void hisi_sec_register_debugfs(void)
@@ -1726,7 +1742,7 @@ static void hisi_sec_register_debugfs(void)
 	if (!debugfs_initialized())
 		return;
 
-	sec_debugfs_root = debugfs_create_dir("hisi_sec", NULL);
+	sec_debugfs_root = debugfs_create_dir("hisi_sec2", NULL);
 	if (IS_ERR_OR_NULL(sec_debugfs_root))
 		sec_debugfs_root = NULL;
 }
@@ -1740,7 +1756,7 @@ static int __init hisi_sec_init(void)
 {
 	int ret;
 
-	sec_wq = alloc_workqueue("hisi_sec", WQ_HIGHPRI | WQ_CPU_INTENSIVE |
+	sec_wq = alloc_workqueue("hisi_sec2", WQ_HIGHPRI | WQ_CPU_INTENSIVE |
 		WQ_MEM_RECLAIM | WQ_UNBOUND, num_online_cpus());
 
 	if (!sec_wq) {

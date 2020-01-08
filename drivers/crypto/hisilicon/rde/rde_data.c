@@ -90,7 +90,8 @@ static void acc_sgl_to_scatterlist(struct pci_dev *pdev, struct sgl_hw *data,
 			entry->buf); i++) {
 			sg_set_buf(sglist, (void *)entry->buf, entry->len);
 			pa = acc_virt_to_phys(pdev, sg_virt(sglist),
-				(size_t)sglist->length, smmu_state);
+					      (size_t)sglist->length,
+					      smmu_state);
 			sg_dma_address(sglist) = pa;
 			sglist++;
 			entry->buf = (char *)pa;
@@ -99,11 +100,12 @@ static void acc_sgl_to_scatterlist(struct pci_dev *pdev, struct sgl_hw *data,
 		if (cur_sgl->next) {
 			next_sgl = cur_sgl->next;
 			sg_set_buf(sglist, (void *)next_sgl,
-				(u32)(sizeof(struct sgl_hw) +
-				sizeof(struct sgl_entry_hw) *
-				(next_sgl->entry_sum_in_sgl)));
+				   (u32)(sizeof(struct sgl_hw) +
+				   sizeof(struct sgl_entry_hw) *
+				   (next_sgl->entry_sum_in_sgl)));
 			pa = acc_virt_to_phys(pdev, sg_virt(sglist),
-				(size_t)sglist->length, smmu_state);
+					      (size_t)sglist->length,
+					      smmu_state);
 			sg_dma_address(sglist) = pa;
 			sglist++;
 			cur_sgl->next = (struct sgl_hw *)pa;
@@ -126,7 +128,7 @@ int acc_sgl_virt_to_phys(struct pci_dev *pdev, struct sgl_hw *data,
 	}
 
 	if (unlikely(!data->entry_sum_in_sgl) ||
-			data->entry_sum_in_sgl > data->entry_num_in_sgl) {
+		     data->entry_sum_in_sgl > data->entry_num_in_sgl) {
 		pr_err("[%s] Para sge num is wrong.\n", __func__);
 		return -EINVAL;
 	}
@@ -141,9 +143,9 @@ int acc_sgl_virt_to_phys(struct pci_dev *pdev, struct sgl_hw *data,
 	*sglist_head = sglist;
 	sg_init_table(sglist, addr_cnt);
 	sg_set_buf(sglist, (void *)data, (u32)(sizeof(struct sgl_hw) +
-		sizeof(struct sgl_entry_hw) * (data->entry_sum_in_sgl)));
+		   sizeof(struct sgl_entry_hw) * (data->entry_sum_in_sgl)));
 	sg_dma_address(sglist) = acc_virt_to_phys(pdev, sg_virt(sglist),
-		(size_t)sglist->length, smmu_state);
+				 (size_t)sglist->length, smmu_state);
 	sglist++;
 	acc_sgl_to_scatterlist(pdev, data, sglist, smmu_state);
 
@@ -170,7 +172,7 @@ int acc_sgl_phys_to_virt(struct pci_dev *pdev, void *sglist_head,
 	sg = sglist;
 	cur_sgl = (struct sgl_hw *)sg_virt(sg);
 	acc_phys_to_virt(pdev, sg_dma_address(sg),
-		(size_t)sg->length, smmu_state);
+			 (size_t)sg->length, smmu_state);
 	while (cur_sgl) {
 		entry = cur_sgl->entries;
 		for (i = 0; (i < cur_sgl->entry_sum_in_sgl &&
@@ -178,12 +180,12 @@ int acc_sgl_phys_to_virt(struct pci_dev *pdev, void *sglist_head,
 			sg = sg_next(sg);
 			if (unlikely(!sg)) {
 				pr_err("[%s][%d]Scatterlist happens to be NULL.\n",
-					__func__, __LINE__);
+				       __func__, __LINE__);
 				goto FAIL;
 			}
 			entry->buf = (char *)sg_virt(sg);
 			acc_phys_to_virt(pdev, sg_dma_address(sg),
-				(size_t)sg->length, smmu_state);
+					 (size_t)sg->length, smmu_state);
 			entry++;
 		}
 
@@ -191,12 +193,12 @@ int acc_sgl_phys_to_virt(struct pci_dev *pdev, void *sglist_head,
 			sg = sg_next(sg);
 			if (unlikely(!sg)) {
 				pr_err("[%s][%d]Scatterlist happens to be NULL.\n",
-					__func__, __LINE__);
+				       __func__, __LINE__);
 				goto FAIL;
 			}
 			next_sgl = (struct sgl_hw *)sg_virt(sg);
 			acc_phys_to_virt(pdev, sg_dma_address(sg),
-				(size_t)sg->length, smmu_state);
+					 (size_t)sg->length, smmu_state);
 			cur_sgl->next = next_sgl;
 		} else {
 			next_sgl = NULL;

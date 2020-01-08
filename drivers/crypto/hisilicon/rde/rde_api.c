@@ -63,7 +63,7 @@ static u32 rde_matrix_len(u8 alg_type, u8 cm_len)
 		break;
 	case MPCC:
 		len = (RDE_PER_SRC_COEF_SIZE *
-				RDE_PER_SRC_COEF_TIMES * cm_len);
+		       RDE_PER_SRC_COEF_TIMES * cm_len);
 		break;
 	default:
 		pr_err("[%s] Err alg type.\n", __func__);
@@ -74,9 +74,8 @@ static u32 rde_matrix_len(u8 alg_type, u8 cm_len)
 }
 
 static int rde_sgl_src_scatterlist_release(struct pci_dev *pdev,
-		struct hisi_rde_ctx *rde_ctx,
-		struct hisi_rde_msg *req,
-		u32 num)
+					   struct hisi_rde_ctx *rde_ctx,
+					   struct hisi_rde_msg *req, u32 num)
 {
 	u32 i;
 	int ret;
@@ -84,8 +83,8 @@ static int rde_sgl_src_scatterlist_release(struct pci_dev *pdev,
 	for (i = 0; i < num; i++) {
 		if (req->src_record[i]) {
 			ret = acc_sgl_phys_to_virt(pdev,
-				(void *)req->src_record[i],
-				rde_ctx->smmu_state);
+						   (void *)req->src_record[i],
+						   rde_ctx->smmu_state);
 			if (ret) {
 				dev_err(&pdev->dev,
 					"[%s] Src[%d] fail.\n", __func__, i);
@@ -108,8 +107,8 @@ static int rde_sgl_dst_scatterlist_release(struct pci_dev *pdev,
 	for (i = 0; i < num; i++) {
 		if (req->dst_record[i]) {
 			ret = acc_sgl_phys_to_virt(pdev,
-				(void *)req->dst_record[i],
-				rde_ctx->smmu_state);
+						   (void *)req->dst_record[i],
+						   rde_ctx->smmu_state);
 			if (ret) {
 				dev_err(&pdev->dev,
 					"[%s] Dst[%d] fail.\n", __func__, i);
@@ -122,9 +121,8 @@ static int rde_sgl_dst_scatterlist_release(struct pci_dev *pdev,
 }
 
 static void rde_pbuf_src_addr_unmap(struct pci_dev *pdev,
-		struct hisi_rde_ctx *rde_ctx,
-		struct hisi_rde_msg *req,
-		u32 num)
+				    struct hisi_rde_ctx *rde_ctx,
+				    struct hisi_rde_msg *req, u32 num)
 {
 	u32 i;
 	u32 gn_cnt;
@@ -137,16 +135,16 @@ static void rde_pbuf_src_addr_unmap(struct pci_dev *pdev,
 		gn_cnt = RDE_GN_CNT(i) + i;
 		if (req->src_addr->content[gn_cnt]) {
 			acc_phys_to_virt(pdev,
-				(dma_addr_t)req->src_addr->content[gn_cnt],
-				(size_t)udata->data_len, rde_ctx->smmu_state);
+					 req->src_addr->content[gn_cnt],
+					 (size_t)udata->data_len,
+					 rde_ctx->smmu_state);
 		}
 	}
 }
 
 static void rde_pbuf_dst_addr_unmap(struct pci_dev *pdev,
-		struct hisi_rde_ctx *rde_ctx,
-		struct hisi_rde_msg *req,
-		u32 num)
+				    struct hisi_rde_ctx *rde_ctx,
+				    struct hisi_rde_msg *req, u32 num)
 {
 	u32 i;
 	u32 gn_cnt;
@@ -159,15 +157,15 @@ static void rde_pbuf_dst_addr_unmap(struct pci_dev *pdev,
 		gn_cnt = RDE_GN_CNT(i) + i;
 		if (req->dst_addr->content[gn_cnt]) {
 			acc_phys_to_virt(pdev,
-				(dma_addr_t)req->dst_addr->content[gn_cnt],
-				(size_t)udata->data_len, rde_ctx->smmu_state);
+					 req->dst_addr->content[gn_cnt],
+					 (size_t)udata->data_len,
+					 rde_ctx->smmu_state);
 		}
 	}
 }
 
-static void rde_cm_addr_unmap(struct pci_dev *pdev,
-	struct hisi_rde_sqe *bd, u8 alg_type,
-	struct hisi_rde_ctx *rde_ctx)
+static void rde_cm_addr_unmap(struct pci_dev *pdev, struct hisi_rde_sqe *bd,
+			      u8 alg_type, struct hisi_rde_ctx *rde_ctx)
 {
 	u32 matrix_len;
 
@@ -177,13 +175,12 @@ static void rde_cm_addr_unmap(struct pci_dev *pdev,
 	matrix_len = rde_matrix_len(alg_type, (u8)bd->cm_len);
 	if (bd->coef_matrix_addr && matrix_len)
 		acc_phys_to_virt(pdev, (dma_addr_t)bd->coef_matrix_addr,
-			(size_t)matrix_len, rde_ctx->smmu_state);
+				 (size_t)matrix_len, rde_ctx->smmu_state);
 }
 
 static void rde_bd_addr_release(struct pci_dev *pdev,
-		struct hisi_rde_ctx *rde_ctx,
-		struct hisi_rde_msg *req,
-		u8 buf_mode)
+				struct hisi_rde_ctx *rde_ctx,
+				struct hisi_rde_msg *req, u8 buf_mode)
 {
 	int ret = 0;
 	struct raid_ec_ctrl *udata = req->udata;
@@ -195,29 +192,36 @@ static void rde_bd_addr_release(struct pci_dev *pdev,
 		rde_pbuf_dst_addr_unmap(pdev, rde_ctx, req, dst_num);
 	} else if (buf_mode == SGL) {
 		ret = rde_sgl_src_scatterlist_release(pdev,
-			rde_ctx, req, src_num);
+						      rde_ctx, req, src_num);
 		if (ret)
 			dev_err(&pdev->dev,
 				"[%s] Src release fail.\n", __func__);
 
 		ret = rde_sgl_dst_scatterlist_release(pdev,
-			rde_ctx, req, dst_num);
+						      rde_ctx, req, dst_num);
 		if (ret)
 			dev_err(&pdev->dev,
 				"[%s] Dst release fail.\n", __func__);
 	}
 }
 
-static int rde_cm_len_check(struct device *dev, u8 alg_type, u8 cm_len)
+static int rde_cm_len_check(struct device *dev, struct raid_ec_ctrl *req,
+			    u8 alg_type)
 {
+	if (unlikely(req->src_num > RDE_MAX_SRC_PLATE_NUM ||
+		     req->dst_num > RDE_MAX_DST_PLATE_NUM)) {
+		dev_err(dev, "Error!Invalid disk num.\n");
+		return -EINVAL;
+	}
+
 	if (alg_type == MPCC) {
-		if (unlikely(cm_len > RDE_MPCC_MAX_SRC_NUM)) {
+		if (unlikely(req->cm_len > RDE_MPCC_MAX_SRC_NUM)) {
 			dev_err(dev,
 				"Error!mpcc cmlen should smaller than 17.\n");
 			return -EINVAL;
 		}
 	} else if (alg_type == PQ_FLEXEC) {
-		if (unlikely(cm_len > RDE_FLEXEC_MAX_SRC_NUM)) {
+		if (unlikely(req->cm_len > RDE_FLEXEC_MAX_SRC_NUM)) {
 			dev_err(dev,
 				"Error!flexec cmlen should smaller than 32.\n");
 			return -EINVAL;
@@ -230,9 +234,8 @@ static int rde_cm_len_check(struct device *dev, u8 alg_type, u8 cm_len)
 	return 0;
 }
 
-static int rde_io_para_check(struct acc_ctx *ctx,
-		struct raid_ec_ctrl *req,
-		u8 op_type, u8 alg_type)
+static int rde_io_para_check(struct acc_ctx *ctx, struct raid_ec_ctrl *req,
+			     u8 op_type, u8 alg_type)
 {
 	struct hisi_rde_ctx *rde_ctx;
 
@@ -256,7 +259,7 @@ static int rde_io_para_check(struct acc_ctx *ctx,
 	}
 
 	if (unlikely(!req->input_block || !req->data_len)) {
-		dev_err(rde_ctx->dev, "Error!invalid input_block.\n");
+		dev_err(rde_ctx->dev, "Error!invalid input block.\n");
 		return -EINVAL;
 	}
 
@@ -265,7 +268,7 @@ static int rde_io_para_check(struct acc_ctx *ctx,
 		return -EINVAL;
 	}
 
-	return rde_cm_len_check(rde_ctx->dev, alg_type, req->cm_len);
+	return rde_cm_len_check(rde_ctx->dev, req, alg_type);
 }
 
 static void src_dif_package(struct hisi_rde_msg *req)
@@ -320,9 +323,10 @@ static void dst_dif_package(struct hisi_rde_msg *req)
 	}
 }
 
-static int rde_disk_sgl_addr_translation(struct pci_dev *pdev,
-	struct hisi_rde_ctx *rde_ctx, struct sgl_hw *sgl_addr,
-	u64 *content, u64 *record)
+static int rde_disk_sgl_addr_tran(struct pci_dev *pdev,
+				  struct hisi_rde_ctx *rde_ctx,
+				  struct sgl_hw *sgl_addr,
+				  u64 *content, u64 *record)
 {
 	int ret;
 	void *sg_head = NULL;
@@ -330,7 +334,7 @@ static int rde_disk_sgl_addr_translation(struct pci_dev *pdev,
 	switch (rde_ctx->addr_type) {
 	case VA_FROM_NORMAL_DMA_ZONE:
 		ret = acc_sgl_virt_to_phys(pdev, sgl_addr, &sg_head,
-			rde_ctx->smmu_state);
+					   rde_ctx->smmu_state);
 		if (unlikely(ret))
 			return ret;
 		break;
@@ -349,9 +353,8 @@ static int rde_disk_sgl_addr_translation(struct pci_dev *pdev,
 }
 
 static int sgl_src_addr_package(struct pci_dev *pdev,
-		struct hisi_rde_ctx *rde_ctx,
-		struct hisi_rde_msg *req,
-		u8 mode)
+				struct hisi_rde_ctx *rde_ctx,
+				struct hisi_rde_msg *req, u8 mode)
 {
 	int ret, r_ret;
 	u32 i;
@@ -369,21 +372,22 @@ static int sgl_src_addr_package(struct pci_dev *pdev,
 
 	memset(&req->src_record[0], 0, num * sizeof(u64));
 	for (i = 0; i < num; i++) {
-		gn = RDE_GN_WITH_MODE(rde_sgl_src->column,
-			mode, rde_sgl_src->parity);
-		sgl_data = (rde_sgl_src->buf_offset <<
-			SGL_DATA_OFFSET_SHIFT) | (u32)gn;
+		gn = RDE_GN_WITH_MODE(rde_sgl_src->column, mode,
+				      rde_sgl_src->parity);
+		sgl_data = (rde_sgl_src->buf_offset << SGL_DATA_OFFSET_SHIFT) |
+			   (u32)gn;
 		gn_cnt = RDE_GN_CNT(i) + i;
 		gn_flag = RDE_GN_FLAG(i);
 		cur_cnt = gn_cnt - gn_flag;
 		req->src_addr->content[cur_cnt] |=
 			((u64)sgl_data << RDE_GN_SHIFT(gn_flag));
-		ret = rde_disk_sgl_addr_translation(pdev, rde_ctx,
-			rde_sgl_src->ctrl, &req->src_addr->content[gn_cnt],
-			&req->src_record[i]);
+		ret = rde_disk_sgl_addr_tran(pdev, rde_ctx,
+					     rde_sgl_src->ctrl,
+					     &req->src_addr->content[gn_cnt],
+					     &req->src_record[i]);
 		if (ret) {
-			r_ret = rde_sgl_src_scatterlist_release(pdev,
-				rde_ctx, req, i);
+			r_ret = rde_sgl_src_scatterlist_release(pdev, rde_ctx,
+								req, i);
 			if (r_ret)
 				return r_ret;
 			return ret;
@@ -396,8 +400,8 @@ static int sgl_src_addr_package(struct pci_dev *pdev,
 }
 
 static int sgl_dst_addr_package(struct pci_dev *pdev,
-		struct hisi_rde_ctx *rde_ctx,
-		struct hisi_rde_msg *req)
+				struct hisi_rde_ctx *rde_ctx,
+				struct hisi_rde_msg *req)
 {
 	int ret, r_ret;
 	u32 i;
@@ -417,19 +421,20 @@ static int sgl_dst_addr_package(struct pci_dev *pdev,
 	memset(&req->dst_record[0], 0, num * sizeof(u64));
 	for (i = 0; i < num; i++) {
 		gn = (u8)(rde_sgl_dst->column);
-		sgl_data = (rde_sgl_dst->buf_offset <<
-			SGL_DATA_OFFSET_SHIFT) | (u32)gn;
+		sgl_data = (rde_sgl_dst->buf_offset << SGL_DATA_OFFSET_SHIFT) |
+			   (u32)gn;
 		gn_cnt = RDE_GN_CNT(i) + i;
 		gn_flag = RDE_GN_FLAG(i);
 		cur_cnt = gn_cnt - gn_flag;
 		req->dst_addr->content[cur_cnt] |= ((u64)sgl_data <<
-			RDE_GN_SHIFT(gn_flag));
-		ret = rde_disk_sgl_addr_translation(pdev, rde_ctx,
-			rde_sgl_dst->ctrl, &req->dst_addr->content[gn_cnt],
-			&req->dst_record[i]);
+						   RDE_GN_SHIFT(gn_flag));
+		ret = rde_disk_sgl_addr_tran(pdev, rde_ctx,
+					     rde_sgl_dst->ctrl,
+					     &req->dst_addr->content[gn_cnt],
+					     &req->dst_record[i]);
 		if (ret) {
-			r_ret = rde_sgl_dst_scatterlist_release(pdev,
-				rde_ctx, req, i);
+			r_ret = rde_sgl_dst_scatterlist_release(pdev, rde_ctx,
+								req, i);
 			if (r_ret)
 				return r_ret;
 			return ret;
@@ -441,15 +446,16 @@ static int sgl_dst_addr_package(struct pci_dev *pdev,
 	return 0;
 }
 
-static int rde_disk_pbuf_addr_translation(struct pci_dev *pdev,
-	struct hisi_rde_ctx *rde_ctx, u64 *content, char *addr, u32 data_len)
+static int rde_disk_pbuf_addr_tran(struct pci_dev *pdev,
+				   struct hisi_rde_ctx *rde_ctx,
+				   u64 *content, char *addr, u32 data_len)
 {
 	dma_addr_t pa = 0;
 
 	switch (rde_ctx->addr_type) {
 	case VA_FROM_NORMAL_DMA_ZONE:
 		pa = acc_virt_to_phys(pdev, addr, (size_t)data_len,
-				rde_ctx->smmu_state);
+				      rde_ctx->smmu_state);
 		break;
 	case VA_FROM_HIGHMEM_ZONE:
 		pa = acc_pfn_to_phys(addr);
@@ -473,9 +479,8 @@ static int rde_disk_pbuf_addr_translation(struct pci_dev *pdev,
 }
 
 static int pbuf_src_addr_package(struct pci_dev *pdev,
-		struct hisi_rde_ctx *rde_ctx,
-		struct hisi_rde_msg *req,
-		u8 mode)
+				 struct hisi_rde_ctx *rde_ctx,
+				 struct hisi_rde_msg *req, u8 mode)
 {
 	u32 i;
 	int ret;
@@ -487,16 +492,17 @@ static int pbuf_src_addr_package(struct pci_dev *pdev,
 	struct rde_pbuf *rde_pbuf_src = (struct rde_pbuf *)(ctrl->src_data);
 
 	for (i = 0; i < num; i++) {
-		gn = RDE_GN_WITH_MODE(rde_pbuf_src->column,
-			mode, rde_pbuf_src->parity);
+		gn = RDE_GN_WITH_MODE(rde_pbuf_src->column, mode,
+				      rde_pbuf_src->parity);
 		gn_cnt = RDE_GN_CNT(i) + i;
 		gn_flag = RDE_GN_FLAG(i);
 		cur_cnt = gn_cnt - gn_flag;
 		req->src_addr->content[cur_cnt] |= ((u64)gn <<
-			RDE_GN_SHIFT(gn_flag));
-		ret = rde_disk_pbuf_addr_translation(pdev, rde_ctx,
-			&req->src_addr->content[gn_cnt],
-			rde_pbuf_src->pbuf, data_len_nbytes);
+						   RDE_GN_SHIFT(gn_flag));
+		ret = rde_disk_pbuf_addr_tran(pdev, rde_ctx,
+					      &req->src_addr->content[gn_cnt],
+					      rde_pbuf_src->pbuf,
+					      data_len_nbytes);
 		if (ret) {
 			rde_pbuf_src_addr_unmap(pdev, rde_ctx, req, i);
 			return ret;
@@ -509,8 +515,8 @@ static int pbuf_src_addr_package(struct pci_dev *pdev,
 }
 
 static int pbuf_dst_addr_package(struct pci_dev *pdev,
-		struct hisi_rde_ctx *rde_ctx,
-		struct hisi_rde_msg *req)
+				 struct hisi_rde_ctx *rde_ctx,
+				 struct hisi_rde_msg *req)
 {
 	u32 i;
 	int ret;
@@ -527,9 +533,9 @@ static int pbuf_dst_addr_package(struct pci_dev *pdev,
 		gf_flag = RDE_GN_FLAG(i);
 		cur_cnt = gf_cnt - gf_flag;
 		req->dst_addr->content[cur_cnt] |= ((u64)gf_coef <<
-			RDE_GN_SHIFT(gf_flag));
-		ret = rde_disk_pbuf_addr_translation(pdev, rde_ctx,
-			&req->dst_addr->content[gf_cnt],
+						   RDE_GN_SHIFT(gf_flag));
+		ret = rde_disk_pbuf_addr_tran(pdev, rde_ctx,
+					      &req->dst_addr->content[gf_cnt],
 			rde_pbuf_dst->pbuf, data_len_nbytes);
 		if (ret) {
 			rde_pbuf_dst_addr_unmap(pdev, rde_ctx, req, i);
@@ -543,11 +549,12 @@ static int pbuf_dst_addr_package(struct pci_dev *pdev,
 }
 
 static int hisi_rde_fill_addr_tlb(struct pci_dev *pdev,
-		struct hisi_rde_ctx *rde_ctx,
-		struct hisi_rde_msg *req,
-		struct rde_type *type)
+				  struct hisi_rde_ctx *rde_ctx,
+				  struct hisi_rde_msg *req,
+				  struct rde_type *type)
 {
 	int ret, r_ret;
+	u32 num = req->udata->src_num;
 
 	if (type->buf_mode == PBUF) {
 		ret = pbuf_src_addr_package(pdev, rde_ctx, req, type->alg_mode);
@@ -558,8 +565,7 @@ static int hisi_rde_fill_addr_tlb(struct pci_dev *pdev,
 		ret = pbuf_dst_addr_package(pdev, rde_ctx, req);
 		if (ret) {
 			dev_err(&pdev->dev, "Pbuf dst addr package fail.\n");
-			rde_pbuf_src_addr_unmap(pdev, rde_ctx, req,
-				req->udata->src_num);
+			rde_pbuf_src_addr_unmap(pdev, rde_ctx, req, num);
 			return ret;
 		}
 	} else if (type->buf_mode == SGL) {
@@ -572,7 +578,7 @@ static int hisi_rde_fill_addr_tlb(struct pci_dev *pdev,
 		if (ret) {
 			dev_err(&pdev->dev, "Sgl dst addr package fail.\n");
 			r_ret = rde_sgl_src_scatterlist_release(pdev, rde_ctx,
-				req, req->udata->src_num);
+								req, num);
 			if (r_ret)
 				return r_ret;
 			return ret;
@@ -586,8 +592,9 @@ static int hisi_rde_fill_addr_tlb(struct pci_dev *pdev,
 }
 
 static int rde_cm_addr_translation(struct pci_dev *pdev,
-	struct hisi_rde_ctx *rde_ctx, struct raid_ec_ctrl *ctrl,
-	struct hisi_rde_sqe *bd, u8 alg_type)
+				   struct hisi_rde_ctx *rde_ctx,
+				   struct raid_ec_ctrl *ctrl,
+				   struct hisi_rde_sqe *bd, u8 alg_type)
 {
 	u32 matrix_len = 0;
 	dma_addr_t pa = 0;
@@ -595,7 +602,7 @@ static int rde_cm_addr_translation(struct pci_dev *pdev,
 	if (rde_ctx->addr_type != PA_PASS_THROUGH) {
 		matrix_len = rde_matrix_len(alg_type, ctrl->cm_len);
 		pa = acc_virt_to_phys(pdev, ctrl->coe_matrix,
-			(size_t)matrix_len, rde_ctx->smmu_state);
+				      (size_t)matrix_len, rde_ctx->smmu_state);
 		if (unlikely(!pa)) {
 			dev_err(rde_ctx->dev,
 				"[%s] Coe_matrix virt to phys fail.\n",
@@ -610,7 +617,7 @@ static int rde_cm_addr_translation(struct pci_dev *pdev,
 }
 
 int hisi_rde_fill_sqe(struct hisi_rde_ctx *rde_ctx, struct hisi_rde_msg *req,
-	struct rde_type *type)
+		      struct rde_type *type)
 {
 	int ret;
 	struct raid_ec_ctrl *ctrl = req->udata;
@@ -622,7 +629,7 @@ int hisi_rde_fill_sqe(struct hisi_rde_ctx *rde_ctx, struct hisi_rde_msg *req,
 	bd->op_tag = q_id * rde_ctx->session_num + req->req_id;
 	bd->alg_blk_size = ctrl->alg_blk_size;
 	bd->cm_type = (type->alg_mode ==
-		ACC_OPT_RCT) ? CM_DECODE : CM_ENCODE;
+		      ACC_OPT_RCT) ? CM_DECODE : CM_ENCODE;
 	bd->cm_le =  ctrl->cm_load;
 	bd->abort = NO_ABORT;
 	bd->src_nblks = ctrl->src_num;
@@ -634,18 +641,18 @@ int hisi_rde_fill_sqe(struct hisi_rde_ctx *rde_ctx, struct hisi_rde_msg *req,
 			ctrl->dst_dif.ctrl.verify.grd_verify_type;
 	}
 	bd->op_type = type->alg_mode | type->mem_mode |
-			type->buf_mode | type->alg_type;
+		      type->buf_mode | type->alg_type;
 	bd->block_size = ctrl->block_size;
 	bd->page_pad_type = ctrl->dst_dif.ctrl.gen.page_layout_pad_type;
-	bd->dif_type = (ctrl->dst_dif.ctrl.gen.grd_gen_type) ?
-		RDE_DIF : NO_RDE_DIF;
+	bd->dif_type = ((ctrl->dst_dif.ctrl.gen.grd_gen_type) ?
+		       RDE_DIF : NO_RDE_DIF);
 	bd->crciv_sel = CRCIV1;
 	bd->crciv_en = CRCIV;
 	bd->cm_len = ctrl->cm_len;
 	bd->transfer_size = ctrl->input_block - 1;
 
-	ret = rde_cm_addr_translation(pdev, rde_ctx, ctrl,
-		bd, type->alg_type);
+	ret = rde_cm_addr_translation(pdev, rde_ctx, ctrl, bd,
+				      type->alg_type);
 	if (ret)
 		return ret;
 	bd->src_addr = req->src_dma_addr;
@@ -708,15 +715,18 @@ static int rde_task_error_log(struct pci_dev *pdev, u8 err_sts)
 	while (err->msg) {
 		if (err_sts == err->status) {
 			dev_err_ratelimited(&pdev->dev,
-				"[%s] [Error status=0x%x] found.\n",
-				err->msg, err->status);
+					    "[%s][Error status=0x%x] found.\n",
+					    err->msg, err->status);
 			break;
 		}
 
 		err++;
 	}
 
-	if (err_sts < RDE_CRC_CHK_ERR || err_sts > RDE_DISK16_VERIFY)
+	/* err_sts is 0, fatal engine*/
+	if (err_sts == RDE_STATUS_NULL)
+		return -EAGAIN;
+	else if (err_sts < RDE_CRC_CHK_ERR || err_sts > RDE_DISK16_VERIFY)
 		return ACC_INVALID_PARAM;
 	else if (err_sts >= RDE_CRC_CHK_ERR && err_sts <= RDE_REF_CHK_ERR)
 		return ACC_RDE_DIF_ERR;
@@ -740,11 +750,8 @@ static void rde_cb(struct hisi_qp *qp, void *resp)
 	req = &rde_ctx->req_list[req_id];
 	ctrl = req->udata;
 	err_status = wb_sqe->status & RDE_STATUS_MSK;
-	if (wb_sqe->status != RDE_TASK_DONE_STATUS) {
+	if (wb_sqe->status != RDE_TASK_DONE_STATUS)
 		req->result = rde_task_error_log(pdev, err_status);
-		rde_bd_dump(wb_sqe);
-		rde_table_dump(req);
-	}
 
 	if (ctx->cb) {
 		if (rde_ctx->addr_type != PA_PASS_THROUGH) {
@@ -760,7 +767,7 @@ static void rde_cb(struct hisi_qp *qp, void *resp)
 }
 
 int hisi_rde_io_proc(struct acc_ctx *ctx, struct raid_ec_ctrl *ctrl,
-		u8 op_type, u8 alg_type, bool sync)
+		     u8 op_type, u8 alg_type, bool sync)
 {
 	int ret, id;
 	struct hisi_rde_ctx *rde_ctx;
@@ -809,7 +816,8 @@ int hisi_rde_io_proc(struct acc_ctx *ctx, struct raid_ec_ctrl *ctrl,
 		return ret;
 
 	if (wait_for_completion_timeout(&req->completion,
-		msecs_to_jiffies(RDE_TASK_TMOUT_MS)) == 0) {
+					msecs_to_jiffies(RDE_TASK_TMOUT_MS))
+					== 0) {
 		dev_err_ratelimited(rde_ctx->dev, "Sync mode task timeout.\n");
 		ret = -ETIME;
 		goto addr_unmap;
@@ -864,32 +872,32 @@ static void hisi_rde_release_qp(struct hisi_rde_ctx *rde_ctx)
 static int hisi_rde_tbl_init(struct device *dev, struct hisi_rde_msg *req)
 {
 	req->src_addr = dma_alloc_coherent(dev,
-		(size_t)sizeof(struct rde_src_tbl),
-		&req->src_dma_addr, GFP_KERNEL);
+			(size_t)sizeof(struct rde_src_tbl),
+			&req->src_dma_addr, GFP_KERNEL);
 	if (!req->src_addr) {
 		dev_err(dev, "[%s] Alloc rde_src_tlb failed.\n", __func__);
 		return -ENOMEM;
 	}
 
 	req->dst_addr = dma_alloc_coherent(dev,
-		(size_t)sizeof(struct rde_dst_tbl),
-		&req->dst_dma_addr, GFP_KERNEL);
+			(size_t)sizeof(struct rde_dst_tbl),
+			&req->dst_dma_addr, GFP_KERNEL);
 	if (!req->dst_addr) {
 		dev_err(dev, "[%s] Alloc rde_dst_tlb failed.\n", __func__);
 		return -ENOMEM;
 	}
 
 	req->src_tag_addr = dma_alloc_coherent(dev,
-		(size_t)sizeof(struct rde_src_tag_tbl),
-		&req->src_tag_dma_addr, GFP_KERNEL);
+			    (size_t)sizeof(struct rde_src_tag_tbl),
+			    &req->src_tag_dma_addr, GFP_KERNEL);
 	if (!req->src_tag_addr) {
 		dev_err(dev, "[%s] Alloc rde_src_tag_tlb failed.\n", __func__);
 		return -ENOMEM;
 	}
 
 	req->dst_tag_addr = dma_alloc_coherent(dev,
-		(size_t)sizeof(struct rde_dst_tag_tbl),
-		&req->dst_tag_dma_addr, GFP_KERNEL);
+			    (size_t)sizeof(struct rde_dst_tag_tbl),
+			    &req->dst_tag_dma_addr, GFP_KERNEL);
 	if (!req->dst_tag_addr) {
 		dev_err(dev, "[%s] Alloc rde_dst_tag_tlb failed.\n", __func__);
 		return -ENOMEM;
@@ -907,25 +915,25 @@ static void hisi_rde_tbl_deinit(struct device *dev, struct hisi_rde_msg *req)
 
 	if (req->src_addr) {
 		dma_free_coherent(dev, (size_t)sizeof(struct rde_src_tbl),
-			req->src_addr, req->src_dma_addr);
+				  req->src_addr, req->src_dma_addr);
 		req->src_addr = NULL;
 	}
 
 	if (req->dst_addr) {
 		dma_free_coherent(dev, (size_t)sizeof(struct rde_dst_tbl),
-			req->dst_addr, req->dst_dma_addr);
+				  req->dst_addr, req->dst_dma_addr);
 		req->dst_addr = NULL;
 	}
 
 	if (req->src_tag_addr) {
 		dma_free_coherent(dev, (size_t)sizeof(struct rde_src_tag_tbl),
-			req->src_tag_addr, req->src_tag_dma_addr);
+				  req->src_tag_addr, req->src_tag_dma_addr);
 		req->src_tag_addr = NULL;
 	}
 
 	if (req->dst_tag_addr) {
 		dma_free_coherent(dev, (size_t)sizeof(struct rde_dst_tag_tbl),
-			req->dst_tag_addr, req->dst_tag_dma_addr);
+				  req->dst_tag_addr, req->dst_tag_dma_addr);
 		req->dst_tag_addr = NULL;
 	}
 }
@@ -953,13 +961,13 @@ static int hisi_rde_ctx_init(struct hisi_rde_ctx *rde_ctx, int qlen)
 	int ret;
 
 	spin_lock_init(&rde_ctx->req_lock);
-	rde_ctx->req_bitmap = kcalloc(BITS_TO_LONGS(qlen),
-		sizeof(long), GFP_KERNEL);
+	rde_ctx->req_bitmap = kcalloc(BITS_TO_LONGS(qlen), sizeof(long),
+				      GFP_KERNEL);
 	if (!rde_ctx->req_bitmap)
 		return -ENOMEM;
 
 	rde_ctx->req_list = kcalloc(qlen, sizeof(struct hisi_rde_msg),
-			GFP_KERNEL);
+				    GFP_KERNEL);
 	if (!rde_ctx->req_list) {
 		kfree(rde_ctx->req_bitmap);
 		rde_ctx->req_bitmap = NULL;

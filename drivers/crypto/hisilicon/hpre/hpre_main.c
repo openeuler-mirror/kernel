@@ -49,9 +49,9 @@
 #define HPRE_CORE_IS_SCHD_OFFSET	0x90
 
 #define HPRE_RAS_CE_ENB			0x301410
-#define HPRE_HAC_RAS_CE_ENABLE		0x3f
+#define HPRE_HAC_RAS_CE_ENABLE		0x1
 #define HPRE_RAS_NFE_ENB		0x301414
-#define HPRE_HAC_RAS_NFE_ENABLE		0x3fffc0
+#define HPRE_HAC_RAS_NFE_ENABLE		0x3ffffe
 #define HPRE_RAS_FE_ENB			0x301418
 #define HPRE_HAC_RAS_FE_ENABLE		0
 
@@ -87,6 +87,7 @@
 #define HPRE_AM_OOO_SHUTDOWN_ENB	0x301044
 #define AM_OOO_SHUTDOWN_ENABLE		BIT(0)
 #define AM_OOO_SHUTDOWN_DISABLE		0xFFFFFFFE
+#define HPRE_WR_MSI_PORT		0xFFFB
 
 #define HPRE_HW_ERROR_IRQ_ENABLE	1
 #define HPRE_HW_ERROR_IRQ_DISABLE	0
@@ -94,6 +95,11 @@
 #define HPRE_CORE_ECC_2BIT_ERR		BIT(1)
 #define HPRE_OOO_ECC_2BIT_ERR		BIT(5)
 
+#define HPRE_QM_BME_FLR         BIT(7)
+#define HPRE_QM_PM_FLR          BIT(11)
+#define HPRE_QM_SRIOV_FLR       BIT(12)
+
+#define HPRE_USLEEP         10
 
 /* function index:
  * 1 for hpre bypass mode,
@@ -355,10 +361,6 @@ static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 	writel(HPRE_QM_USR_CFG_MASK, HPRE_ADDR(qm, QM_AWUSER_M_CFG_ENABLE));
 	writel_relaxed(HPRE_QM_AXI_CFG_MASK, HPRE_ADDR(qm, QM_AXI_M_CFG));
 
-	/* disable FLR triggered by BME(bus master enable) */
-	writel(PEH_AXUSER_CFG, HPRE_ADDR(qm, QM_PEH_AXUSER_CFG));
-	writel(PEH_AXUSER_CFG_ENABLE, HPRE_ADDR(qm, QM_PEH_AXUSER_CFG_ENABLE));
-
 	/* HPRE need more time, we close this interrupt */
 	val = readl_relaxed(HPRE_ADDR(qm, HPRE_QM_ABNML_INT_MASK));
 	val |= BIT(HPRE_TIMEOUT_ABNML_BIT);
@@ -398,6 +400,13 @@ static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 	ret = hpre_cfg_by_dsm(qm);
 	if (ret)
 		dev_err(dev, "acpi_evaluate_dsm err.\n");
+
+	/* disable FLR triggered by BME(bus master enable) */
+	val = readl(hpre->qm.io_base + QM_PEH_AXUSER_CFG);
+	val &= ~(HPRE_QM_BME_FLR | HPRE_QM_SRIOV_FLR);
+	val |= HPRE_QM_PM_FLR;
+	writel(val, HPRE_ADDR(qm, QM_PEH_AXUSER_CFG));
+	writel(PEH_AXUSER_CFG_ENABLE, HPRE_ADDR(qm, QM_PEH_AXUSER_CFG_ENABLE));
 
 	return ret;
 }
@@ -442,6 +451,9 @@ static void hpre_hw_error_enable(struct hpre *hpre)
 	struct hisi_qm *qm = &hpre->qm;
 	u32 val;
 
+	/* clear HPRE hw error source if having */
+	writel(HPRE_CORE_INT_DISABLE, qm->io_base + HPRE_HAC_SOURCE_INT);
+
 	/* enable hpre hw error interrupts */
 	writel(HPRE_CORE_INT_ENABLE, qm->io_base + HPRE_INT_MASK);
 	writel(HPRE_HAC_RAS_CE_ENABLE, qm->io_base + HPRE_RAS_CE_ENB);
@@ -475,7 +487,6 @@ static int hpre_current_qm_write(struct hpre_debugfs_file *file, u32 val)
 	struct hpre *hpre = container_of(debug, struct hpre, debug);
 	u32 num_vfs = hpre->num_vfs;
 	u32 vfq_num, tmp;
-
 
 	if (val > num_vfs)
 		return -EINVAL;
@@ -700,7 +711,9 @@ static int hpre_cluster_debugfs_init(struct hpre_debug *debug)
 	int i, ret;
 
 	for (i = 0; i < HPRE_CLUSTERS_NUM; i++) {
-		sprintf(buf, "cluster%d", i);
+		ret = snprintf(buf, HPRE_DBGFS_VAL_MAX_LEN, "cluster%d", i);
+		if (ret < 0)
+			return -EINVAL;
 
 		tmp_d = debugfs_create_dir(buf, debug->debug_root);
 		if (!tmp_d)
@@ -836,9 +849,44 @@ static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 
 static void hpre_hw_err_init(struct hpre *hpre)
 {
-	hisi_qm_hw_error_init(&hpre->qm, QM_BASE_CE, QM_BASE_NFE,
-			      0, QM_DB_RANDOM_INVALID);
+	hisi_qm_hw_error_init(&hpre->qm, QM_BASE_CE,
+				QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT,
+				0, QM_DB_RANDOM_INVALID);
 	hpre_hw_error_enable(hpre);
+}
+
+static void hpre_open_master_ooo(struct hisi_qm *qm)
+{
+	u32 val;
+
+	val = readl(qm->io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
+	writel(val & AM_OOO_SHUTDOWN_DISABLE,
+	       HPRE_ADDR(qm, HPRE_AM_OOO_SHUTDOWN_ENB));
+	writel(val | AM_OOO_SHUTDOWN_ENABLE,
+	       HPRE_ADDR(qm, HPRE_AM_OOO_SHUTDOWN_ENB));
+}
+
+static u32 hpre_get_hw_err_status(struct hisi_qm *qm)
+{
+	return readl(qm->io_base + HPRE_HAC_INT_STATUS);
+}
+
+static void hpre_clear_hw_err_status(struct hisi_qm *qm, u32 err_sts)
+{
+	writel(err_sts, qm->io_base + HPRE_HAC_SOURCE_INT);
+}
+
+static void hpre_log_hw_error(struct hisi_qm *qm, u32 err_sts)
+{
+	const struct hpre_hw_error *err = hpre_hw_errors;
+	struct device *dev = &qm->pdev->dev;
+
+	while (err->msg) {
+		if (err->int_msk & err_sts)
+			dev_warn(dev, "%s [error status=0x%x] found\n",
+				 err->msg, err->int_msk);
+		err++;
+	}
 }
 
 static int hpre_pf_probe_init(struct hpre *hpre)
@@ -850,6 +898,13 @@ static int hpre_pf_probe_init(struct hpre *hpre)
 		return -EINVAL;
 
 	qm->ctrl_q_num = HPRE_QUEUE_NUM_V2;
+	qm->err_ini.qm_wr_port = HPRE_WR_MSI_PORT;
+	qm->err_ini.ecc_2bits_mask = (HPRE_CORE_ECC_2BIT_ERR |
+				      HPRE_OOO_ECC_2BIT_ERR);
+	qm->err_ini.open_axi_master_ooo = hpre_open_master_ooo;
+	qm->err_ini.get_dev_hw_err_status = hpre_get_hw_err_status;
+	qm->err_ini.clear_dev_hw_err_status = hpre_clear_hw_err_status;
+	qm->err_ini.log_dev_hw_err = hpre_log_hw_error;
 
 	ret = hpre_set_user_domain_and_cache(hpre);
 	if (ret)
@@ -1058,8 +1113,12 @@ static int hpre_sriov_configure(struct pci_dev *pdev, int num_vfs)
 
 static void hpre_remove_wait_delay(struct hpre *hpre)
 {
-	while (hisi_qm_frozen(&hpre->qm))
-		;
+	struct hisi_qm *qm = &hpre->qm;
+
+	while (hisi_qm_frozen(&hpre->qm) ||
+	       ((qm->fun_type == QM_HW_PF) &&
+	       hpre_try_frozen_vfs(hpre->qm.pdev)))
+		usleep_range(HPRE_USLEEP, HPRE_USLEEP);
 	udelay(HPRE_WAIT_DELAY);
 }
 
@@ -1067,20 +1126,15 @@ static void hpre_remove(struct pci_dev *pdev)
 {
 	struct hpre *hpre = pci_get_drvdata(pdev);
 	struct hisi_qm *qm = &hpre->qm;
-	int ret;
 
 	if (uacce_mode != UACCE_MODE_NOUACCE)
 		hpre_remove_wait_delay(hpre);
 
 	hpre_algs_unregister();
 	hpre_remove_from_list(hpre);
-	if (qm->fun_type == QM_HW_PF && hpre->num_vfs != 0) {
-		ret = hpre_sriov_disable(pdev);
-		if (ret) {
-			pci_err(pdev, "Disable SRIOV fail!\n");
-			return;
-		}
-	}
+	if (qm->fun_type == QM_HW_PF && hpre->num_vfs != 0)
+		hpre_sriov_disable(pdev);
+
 	if (qm->fun_type == QM_HW_PF) {
 		hpre_cnt_regs_clear(qm);
 		qm->debug.curr_qm_qp_num = 0;
@@ -1095,50 +1149,11 @@ static void hpre_remove(struct pci_dev *pdev)
 	hisi_qm_uninit(qm);
 }
 
-static void hpre_log_hw_error(struct hpre *hpre, u32 err_sts)
-{
-	const struct hpre_hw_error *err = hpre_hw_errors;
-	struct device *dev = &hpre->qm.pdev->dev;
-
-	while (err->msg) {
-		if (err->int_msk & err_sts)
-			dev_warn(dev, "%s [error status=0x%x] found\n",
-				 err->msg, err->int_msk);
-		err++;
-	}
-}
-
-static pci_ers_result_t hpre_hw_error_handle(struct hpre *hpre)
-{
-	u32 err_sts;
-
-	/* read err sts */
-	err_sts = readl(hpre->qm.io_base + HPRE_HAC_INT_STATUS);
-	if (err_sts) {
-		hpre_log_hw_error(hpre, err_sts);
-
-		/* clear error interrupts */
-		writel(err_sts, hpre->qm.io_base + HPRE_HAC_SOURCE_INT);
-		return PCI_ERS_RESULT_NEED_RESET;
-	}
-
-	return PCI_ERS_RESULT_RECOVERED;
-}
-
-static pci_ers_result_t hpre_process_hw_error(struct pci_dev *pdev)
+static void hpre_shutdown(struct pci_dev *pdev)
 {
 	struct hpre *hpre = pci_get_drvdata(pdev);
-	pci_ers_result_t qm_ret, hpre_ret;
 
-	/* log qm error */
-	qm_ret = hisi_qm_hw_error_handle(&hpre->qm);
-
-	/* log hpre error */
-	hpre_ret = hpre_hw_error_handle(hpre);
-
-	return (qm_ret == PCI_ERS_RESULT_NEED_RESET ||
-		hpre_ret == PCI_ERS_RESULT_NEED_RESET) ?
-		PCI_ERS_RESULT_NEED_RESET : PCI_ERS_RESULT_RECOVERED;
+	hisi_qm_stop(&hpre->qm, QM_NORMAL);
 }
 
 static pci_ers_result_t hpre_error_detected(struct pci_dev *pdev,
@@ -1151,7 +1166,7 @@ static pci_ers_result_t hpre_error_detected(struct pci_dev *pdev,
 	if (state == pci_channel_io_perm_failure)
 		return PCI_ERS_RESULT_DISCONNECT;
 
-	return hpre_process_hw_error(pdev);
+	return hisi_qm_process_dev_error(pdev);
 }
 
 static int hpre_vf_reset_prepare(struct pci_dev *pdev,
@@ -1240,6 +1255,7 @@ static int hpre_soft_reset(struct hpre *hpre)
 {
 	struct hisi_qm *qm = &hpre->qm;
 	struct device *dev = &qm->pdev->dev;
+	unsigned long long value = 0;
 	int ret;
 	u32 val;
 
@@ -1258,6 +1274,9 @@ static int hpre_soft_reset(struct hpre *hpre)
 		dev_err(dev, "Fails to disable peh msi bit.\n");
 		return ret;
 	}
+
+	/* Set qm ecc if dev ecc happened to hold on ooo */
+	hisi_qm_set_ecc(qm);
 
 	/* OOO register set and check */
 	writel(MASTER_GLOBAL_CTRL_SHUTDOWN,
@@ -1282,7 +1301,6 @@ static int hpre_soft_reset(struct hpre *hpre)
 
 	/* The reset related sub-control registers are not in PCI BAR */
 	if (ACPI_HANDLE(dev)) {
-		unsigned long long value = 0;
 		acpi_status s;
 
 		s = acpi_evaluate_integer(ACPI_HANDLE(dev), "HRST",
@@ -1358,7 +1376,8 @@ static int hpre_controller_reset_done(struct hpre *hpre)
 	ret = hpre_set_user_domain_and_cache(hpre);
 	if (ret)
 		return ret;
-	hpre_hw_err_init(hpre);
+
+	hisi_qm_restart_prepare(qm);
 
 	ret = hisi_qm_restart(qm);
 	if (ret) {
@@ -1374,6 +1393,9 @@ static int hpre_controller_reset_done(struct hpre *hpre)
 		dev_err(&pdev->dev, "Failed to start VFs!\n");
 		return -EPERM;
 	}
+
+	hisi_qm_restart_done(qm);
+	hpre_hw_err_init(hpre);
 
 	return 0;
 }
@@ -1438,16 +1460,14 @@ static void hpre_set_hw_error(struct hpre *hisi_hpre, bool enable)
 
 	if (enable) {
 		hisi_qm_hw_error_init(qm, QM_BASE_CE,
-				      QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT,
-				      0, QM_DB_RANDOM_INVALID);
+					QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT,
+					0, QM_DB_RANDOM_INVALID);
 		hpre_hw_error_enable(hpre);
 	} else {
 		hisi_qm_hw_error_uninit(qm);
 		hpre_hw_error_disable(hpre);
 	}
-
 }
-
 
 static int hpre_get_hw_error_status(struct hpre *hpre)
 {
@@ -1589,6 +1609,7 @@ static struct pci_driver hpre_pci_driver = {
 	.remove			= hpre_remove,
 	.sriov_configure	= hpre_sriov_configure,
 	.err_handler		= &hpre_err_handler,
+	.shutdown		= hpre_shutdown,
 };
 
 static void hpre_register_debugfs(void)
