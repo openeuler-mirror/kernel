@@ -2691,7 +2691,7 @@ static void interrupt_disable_v3_hw(struct hisi_hba *hisi_hba)
 	synchronize_irq(pci_irq_vector(pdev, PCI_IRQ_PHY));
 	synchronize_irq(pci_irq_vector(pdev, PCI_IRQ_CHANNEL));
 	synchronize_irq(pci_irq_vector(pdev, PCI_IRQ_AXI_FATAL));
-	for (i = 0; i < hisi_hba->queue_count; i++) {
+	for (i = 0; i < hisi_hba->nvecs; i++) {
 		hisi_sas_write32(hisi_hba, OQ0_INT_SRC_MSK + 0x4 * i, 0x1);
 		synchronize_irq(pci_irq_vector(pdev, i + PCI_IRQ_CQ_BASE));
 	}
