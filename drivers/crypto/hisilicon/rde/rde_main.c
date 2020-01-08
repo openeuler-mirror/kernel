@@ -34,8 +34,6 @@
 #define HRDE_RD_TMOUT_US	1000
 #define FORMAT_DECIMAL		10
 #define HRDE_RST_TMOUT_MS	400
-#define HRDE_OOO_DFX_NUM	9
-#define HRDE_DFX_NUM		14
 #define HRDE_ENABLE		1
 #define HRDE_DISABLE		0
 #define HRDE_PCI_COMMAND_INVALID	0xFFFFFFFF
@@ -48,6 +46,7 @@
 #define HRDE_INT_ENABLE		0x0
 #define HRDE_INT_DISABLE	0x3ffff
 #define HRDE_INT_SOURCE		0x31030c
+#define HRDE_INT_SOURCE_CLEAR	GENMASK(17, 0)
 #define HRDE_INT_STATUS		0x310318
 #define HRDE_DFX_CTRL_0		0x310240
 #define HRDE_ECC_ERR		0x310234
@@ -68,6 +67,7 @@
 #define CHN_CFG			0x5010101
 #define HRDE_AXI_SHUTDOWN_EN	BIT(26)
 #define HRDE_AXI_SHUTDOWN_DIS	0xFBFFFFFF
+#define HRDE_WR_MSI_PORT	0xFFFE
 #define HRDE_AWUSER_BD_1	0x310104
 #define HRDE_ARUSER_BD_1	0x310114
 #define HRDE_ARUSER_SGL_1	0x310124
@@ -79,14 +79,15 @@
 #define HRDE_ECC_2BIT_ERR	BIT(1)
 #define HRDE_ECC_1BIT_SHIFT	16
 #define HRDE_ECC_2BIT_CNT_MSK	GENMASK(15, 0)
-#define HRDE_STATE_INT_ERR	GENMASK(10, 2)
+#define HRDE_STATE_INT_ERR	GENMASK(11, 2)
+#define HRDE_AM_CURR_PORT_STS	0x300100
+#define HRDE_MASTER_TRANS_RET	0x300150
 #define HRDE_FSM_MAX_CNT	0x310280
 #define HRDE_QM_IDEL_STATUS	0x1040e4
 #define HRDE_QM_PEH_DFX_INFO0	0x1000fc
 #define PEH_MSI_MASK_SHIFT	0x90
 #define HRDE_MASTER_GLOBAL_CTRL		0x300000
 #define MASTER_GLOBAL_CTRL_SHUTDOWN	0x1
-#define HRDE_MASTER_TRANS_RETURN	0x300150
 #define MASTER_TRANS_RETURN_RW	0x3
 #define CACHE_CTL		0x1833
 #define HRDE_DBGFS_VAL_MAX_LEN	20
@@ -403,13 +404,13 @@ static int current_bd_write(struct ctrl_debug_file *file, u32 val)
 	struct hisi_qm *qm = file_to_qm(file);
 	u32 tmp = 0;
 
-	if (val >=  (HRDE_SQE_SIZE / sizeof(u32))) {
+	if (val >= (HRDE_SQE_SIZE / sizeof(u32))) {
 		pr_err("Width index should be smaller than 16.\n");
 		return -EINVAL;
 	}
 
 	tmp = HRDE_PROBE_DATA_EN | HRDE_PROBE_EN |
-		(val << HRDE_STRB_CS_SHIFT);
+	      (val << HRDE_STRB_CS_SHIFT);
 	writel(tmp, qm->io_base + HRDE_PROBE_ADDR);
 
 	return 0;
@@ -505,8 +506,12 @@ static int hisi_rde_chn_debug_init(struct hisi_rde_ctrl *ctrl)
 	struct debugfs_regset32 *regset, *regset_ooo;
 	struct dentry *tmp_d, *tmp;
 	char buf[HRDE_DBGFS_VAL_MAX_LEN];
+	int ret;
 
-	snprintf(buf, HRDE_DBGFS_VAL_MAX_LEN, "rde_dfx");
+	ret = snprintf(buf, HRDE_DBGFS_VAL_MAX_LEN, "rde_dfx");
+	if (ret < 0)
+		return -ENOENT;
+
 	tmp_d = debugfs_create_dir(buf, ctrl->debug_root);
 	if (!tmp_d)
 		return -ENOENT;
@@ -517,8 +522,7 @@ static int hisi_rde_chn_debug_init(struct hisi_rde_ctrl *ctrl)
 	regset->regs = hrde_dfx_regs;
 	regset->nregs = ARRAY_SIZE(hrde_dfx_regs);
 	regset->base = qm->io_base;
-	tmp = debugfs_create_regset32("chn_regs",
-		0444, tmp_d, regset);
+	tmp = debugfs_create_regset32("chn_regs", 0444, tmp_d, regset);
 	if (!tmp)
 		return -ENOENT;
 
@@ -528,8 +532,7 @@ static int hisi_rde_chn_debug_init(struct hisi_rde_ctrl *ctrl)
 	regset_ooo->regs = hrde_ooo_dfx_regs;
 	regset_ooo->nregs = ARRAY_SIZE(hrde_ooo_dfx_regs);
 	regset_ooo->base = qm->io_base;
-	tmp = debugfs_create_regset32("ooo_regs",
-		0444, tmp_d, regset_ooo);
+	tmp = debugfs_create_regset32("ooo_regs", 0444, tmp_d, regset_ooo);
 	if (!tmp)
 		return -ENOENT;
 
@@ -602,7 +605,6 @@ static void hisi_rde_engine_init(struct hisi_rde *hisi_rde)
 	readl(hisi_rde->qm.io_base + HRDE_OP_ERR_CNT);
 	readl(hisi_rde->qm.io_base + HRDE_OP_ABORT_CNT);
 	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_FIFO_STAT_0);
-	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_INT_SOURCE);
 	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_DFX_STAT_7);
 	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_DFX_STAT_8);
 
@@ -653,17 +655,19 @@ static void hisi_rde_hw_error_set_state(struct hisi_rde *hisi_rde, bool state)
 
 	val = readl(hisi_rde->qm.io_base + HRDE_CFG);
 	if (state) {
+		writel(HRDE_INT_SOURCE_CLEAR,
+		       hisi_rde->qm.io_base + HRDE_INT_SOURCE);
 		writel(HRDE_RAS_ENABLE,
 		       hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
 		/* bd prefetch should bd masked to prevent misreport */
 		writel((HRDE_INT_ENABLE | BIT(8)),
 		       hisi_rde->qm.io_base + HRDE_INT_MSK);
-		/* when m-bit error occur, master ooo will close */
+		/* make master ooo close, when m-bits error happens*/
 		val = val | HRDE_AXI_SHUTDOWN_EN;
 	} else {
 		writel(ras_msk, hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
 		writel(HRDE_INT_DISABLE, hisi_rde->qm.io_base + HRDE_INT_MSK);
-		/* when m-bit error occur, master ooo will not close */
+		/* make master ooo open, when m-bits error happens*/
 		val = val & HRDE_AXI_SHUTDOWN_DIS;
 	}
 
@@ -674,11 +678,62 @@ static void hisi_rde_set_hw_error(struct hisi_rde *hisi_rde, bool state)
 {
 	if (state)
 		hisi_qm_hw_error_init(&hisi_rde->qm, QM_BASE_CE,
-			      QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT, 0, 0);
+				      QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT,
+				      0, 0);
 	else
 		hisi_qm_hw_error_uninit(&hisi_rde->qm);
 
 	hisi_rde_hw_error_set_state(hisi_rde, state);
+}
+
+static void hisi_rde_open_master_ooo(struct hisi_qm *qm)
+{
+	u32 val;
+
+	val = readl(qm->io_base + HRDE_CFG);
+	writel(val & HRDE_AXI_SHUTDOWN_DIS, qm->io_base + HRDE_CFG);
+	writel(val | HRDE_AXI_SHUTDOWN_EN, qm->io_base + HRDE_CFG);
+}
+
+static u32 hisi_rde_get_hw_err_status(struct hisi_qm *qm)
+{
+	return readl(qm->io_base + HRDE_INT_STATUS);
+}
+
+static void hisi_rde_clear_hw_err_status(struct hisi_qm *qm, u32 err_sts)
+{
+	writel(err_sts, qm->io_base + HRDE_INT_SOURCE);
+}
+
+static void hisi_rde_hw_error_log(struct hisi_qm *qm, u32 err_sts)
+{
+	const struct hisi_rde_hw_error *err = rde_hw_error;
+	struct device *dev = &qm->pdev->dev;
+	u32 err_val;
+
+	while (err->msg) {
+		if (err->int_msk & err_sts)
+			dev_err_ratelimited(dev,
+				"[%s] [Error status=0x%x] found.\n",
+				err->msg, err->int_msk);
+		err++;
+	}
+
+	if (HRDE_ECC_2BIT_ERR & err_sts) {
+		err_val = (readl(qm->io_base + HRDE_ERR_CNT) &
+			  HRDE_ECC_2BIT_CNT_MSK);
+		dev_err_ratelimited(dev,
+				    "Rde ecc 2bit sram num=0x%x.\n", err_val);
+	}
+
+	if (HRDE_STATE_INT_ERR & err_sts) {
+		err_val = readl(qm->io_base + HRDE_AM_CURR_PORT_STS);
+		dev_err_ratelimited(dev,
+				    "Rde ooo cur port sts=0x%x.\n", err_val);
+		err_val = readl(qm->io_base + HRDE_MASTER_TRANS_RET);
+		dev_err_ratelimited(dev,
+				    "Rde ooo outstanding sts=0x%x.\n", err_val);
+	}
 }
 
 static int hisi_rde_pf_probe_init(struct hisi_rde *hisi_rde)
@@ -706,8 +761,15 @@ static int hisi_rde_pf_probe_init(struct hisi_rde *hisi_rde)
 		return -EINVAL;
 	}
 
+	qm->err_ini.qm_wr_port = HRDE_WR_MSI_PORT;
+	qm->err_ini.ecc_2bits_mask = HRDE_ECC_2BIT_ERR;
+	qm->err_ini.open_axi_master_ooo = hisi_rde_open_master_ooo;
+	qm->err_ini.get_dev_hw_err_status = hisi_rde_get_hw_err_status;
+	qm->err_ini.clear_dev_hw_err_status = hisi_rde_clear_hw_err_status;
+	qm->err_ini.log_dev_hw_err = hisi_rde_hw_error_log;
 	hisi_rde_set_user_domain_and_cache(hisi_rde);
 	hisi_rde_set_hw_error(hisi_rde, true);
+	qm->err_ini.open_axi_master_ooo(qm);
 
 	return 0;
 }
@@ -841,81 +903,11 @@ static void hisi_rde_remove(struct pci_dev *pdev)
 	hisi_qm_uninit(qm);
 }
 
-static void hisi_rde_hw_error_log(struct hisi_rde *hisi_rde, u32 err_sts)
-{
-	const struct hisi_rde_hw_error *err = rde_hw_error;
-	struct device *dev = &hisi_rde->qm.pdev->dev;
-	u32 i, err_val;
-
-	while (err->msg) {
-		if (err->int_msk & err_sts)
-			dev_err_ratelimited(dev,
-				"[%s] [Error status=0x%x] found.\n",
-				err->msg, err->int_msk);
-		err++;
-	}
-
-	if (HRDE_ECC_2BIT_ERR & err_sts) {
-		err_val = (readl(hisi_rde->qm.io_base + HRDE_ERR_CNT)
-			& HRDE_ECC_2BIT_CNT_MSK);
-		dev_err_ratelimited(dev,
-			"Rde ecc 2bit sram num=0x%x.\n", err_val);
-	}
-
-	if (HRDE_STATE_INT_ERR & err_sts) {
-		for (i = 0; i < HRDE_DFX_NUM; i++) {
-			dev_err_ratelimited(dev, "%s=0x%x\n",
-				hrde_dfx_regs[i].name,
-				readl(hisi_rde->qm.io_base +
-				hrde_dfx_regs[i].offset));
-		}
-		for (i = 0; i < HRDE_OOO_DFX_NUM; i++) {
-			dev_err_ratelimited(dev, "%s=0x%x\n",
-				hrde_ooo_dfx_regs[i].name,
-				readl(hisi_rde->qm.io_base +
-				hrde_ooo_dfx_regs[i].offset));
-		}
-	}
-}
-
-static pci_ers_result_t hisi_rde_hw_error_handle(struct hisi_rde *hisi_rde)
-{
-	u32 err_sts;
-
-	/* read err sts */
-	err_sts = readl(hisi_rde->qm.io_base + HRDE_INT_STATUS);
-	if (err_sts) {
-		hisi_rde_hw_error_log(hisi_rde, err_sts);
-
-		/* clear error interrupts */
-		writel(err_sts, hisi_rde->qm.io_base + HRDE_INT_SOURCE);
-		return PCI_ERS_RESULT_NEED_RESET;
-	}
-
-	return PCI_ERS_RESULT_RECOVERED;
-}
-
-static pci_ers_result_t hisi_rde_hw_error_process(struct pci_dev *pdev)
+static void hisi_rde_shutdown(struct pci_dev *pdev)
 {
 	struct hisi_rde *hisi_rde = pci_get_drvdata(pdev);
-	struct device *dev = &pdev->dev;
-	pci_ers_result_t qm_ret, rde_ret, ret;
 
-	if (!hisi_rde) {
-		dev_err(dev, "Can't recover rde-error at dev init.\n");
-		return PCI_ERS_RESULT_NONE;
-	}
-
-	/* log qm error */
-	qm_ret = hisi_qm_hw_error_handle(&hisi_rde->qm);
-
-	/* log rde error */
-	rde_ret = hisi_rde_hw_error_handle(hisi_rde);
-	ret = (qm_ret == PCI_ERS_RESULT_NEED_RESET ||
-	       rde_ret == PCI_ERS_RESULT_NEED_RESET) ?
-	    PCI_ERS_RESULT_NEED_RESET : PCI_ERS_RESULT_RECOVERED;
-
-	return ret;
+	hisi_qm_stop(&hisi_rde->qm, QM_NORMAL);
 }
 
 static int hisi_rde_reset_prepare_rdy(struct hisi_rde *hisi_rde)
@@ -982,13 +974,16 @@ static int hisi_rde_soft_reset(struct hisi_rde *hisi_rde)
 		return ret;
 	}
 
+	/* Set qm ecc if dev ecc happened to hold on ooo */
+	hisi_qm_set_ecc(qm);
+
 	/* OOO register set and check */
 	writel(MASTER_GLOBAL_CTRL_SHUTDOWN,
 	       hisi_rde->qm.io_base + HRDE_MASTER_GLOBAL_CTRL);
 
 	/* If bus lock, reset chip */
 	ret = readl_relaxed_poll_timeout(hisi_rde->qm.io_base +
-					 HRDE_MASTER_TRANS_RETURN, val,
+					 HRDE_MASTER_TRANS_RET, val,
 					 (val == MASTER_TRANS_RETURN_RW),
 					 HRDE_RD_INTVRL_US, HRDE_RD_TMOUT_US);
 	if (ret) {
@@ -1008,7 +1003,7 @@ static int hisi_rde_soft_reset(struct hisi_rde *hisi_rde)
 		acpi_status s;
 
 		s = acpi_evaluate_integer(ACPI_HANDLE(dev), "RRST",
-						NULL, &value);
+						      NULL, &value);
 		if (ACPI_FAILURE(s)) {
 			dev_err(dev, "No controller reset method.\n");
 			return -EIO;
@@ -1047,13 +1042,16 @@ static int hisi_rde_controller_reset_done(struct hisi_rde *hisi_rde)
 	}
 
 	hisi_rde_set_user_domain_and_cache(hisi_rde);
-	hisi_rde_set_hw_error(hisi_rde, true);
+	hisi_qm_restart_prepare(qm);
 
 	ret = hisi_qm_restart(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "Start QM failed!\n");
 		return -EPERM;
 	}
+
+	hisi_qm_restart_done(qm);
+	hisi_rde_set_hw_error(hisi_rde, true);
 
 	return 0;
 }
@@ -1096,7 +1094,7 @@ static void hisi_rde_ras_proc(struct work_struct *work)
 	if (!pdev)
 		return;
 
-	ret = hisi_rde_hw_error_process(pdev);
+	ret = hisi_qm_process_dev_error(pdev);
 	if (ret == PCI_ERS_RESULT_NEED_RESET)
 		if (hisi_rde_controller_reset(hisi_rde))
 			dev_err(&pdev->dev, "Hisi_rde reset fail.\n");
@@ -1129,7 +1127,7 @@ static int hisi_rde_get_hw_error_status(struct hisi_rde *hisi_rde)
 	u32 err_sts;
 
 	err_sts = readl(hisi_rde->qm.io_base + HRDE_INT_STATUS) &
-			HRDE_ECC_2BIT_ERR;
+		  HRDE_ECC_2BIT_ERR;
 	if (err_sts)
 		return err_sts;
 
@@ -1221,6 +1219,7 @@ static struct pci_driver hisi_rde_pci_driver = {
 	.probe = hisi_rde_probe,
 	.remove = hisi_rde_remove,
 	.err_handler = &hisi_rde_err_handler,
+	.shutdown = hisi_rde_shutdown,
 };
 
 static void hisi_rde_register_debugfs(void)

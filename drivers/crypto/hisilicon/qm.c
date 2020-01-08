@@ -113,6 +113,7 @@
 #define QM_ABNORMAL_INT_MASK		0x100004
 #define QM_HW_ERROR_IRQ_DISABLE		GENMASK(12, 0)
 #define QM_ABNORMAL_INT_STATUS		0x100008
+#define QM_ABNORMAL_INT_SET		0x10000c
 #define QM_ABNORMAL_INF00		0x100010
 #define QM_FIFO_OVERFLOW_TYPE		0xc0
 #define QM_FIFO_OVERFLOW_VF		0x3f
@@ -163,6 +164,13 @@
 
 #define WAIT_PERIOD			20
 #define MAX_WAIT_COUNTS			1000
+#define MAX_WAIT_TASK_COUNTS		10
+
+#define QM_RAS_NFE_MBIT_DISABLE		~QM_ECC_MBIT
+#define AM_CFG_PORT_WR_EN		0x30001C
+#define AM_CFG_PORT_WR_EN_VALUE		0xFFFF
+#define AM_ROB_ECC_INT_STS		0x300104
+#define ROB_ECC_ERR_MULTPL		BIT(1)
 
 #define QM_MK_CQC_DW3_V1(hop_num, pg_sz, buf_sz, cqe_sz) \
 	(((hop_num) << QM_CQ_HOP_NUM_SHIFT)	| \
@@ -524,7 +532,6 @@ static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 				atomic_dec(&qp->qp_status.used);
 			}
 		}
-
 	}
 }
 
@@ -1134,13 +1141,13 @@ static pci_ers_result_t qm_hw_error_handle_v2(struct hisi_qm *qm)
 	/* read err sts */
 	tmp = readl(qm->io_base + QM_ABNORMAL_INT_STATUS);
 	error_status = qm->error_mask & tmp;
-
 	if (error_status) {
+		if (error_status & QM_ECC_MBIT)
+			qm->err_ini.is_qm_ecc_mbit = 1;
+		else
+			qm->err_ini.is_qm_ecc_mbit = 0;
+
 		qm_log_hw_error(qm, error_status);
-
-		/* clear err sts */
-		writel(error_status, qm->io_base + QM_ABNORMAL_INT_SOURCE);
-
 		return PCI_ERS_RESULT_NEED_RESET;
 	}
 
@@ -1460,10 +1467,27 @@ int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg)
 }
 EXPORT_SYMBOL_GPL(hisi_qm_start_qp);
 
+/* Callback function should be called whether task completed or not. */
+static void qp_stop_fail_cb(struct hisi_qp *qp)
+{
+	struct hisi_qm *qm = qp->qm;
+	int cur_head, cur_tail;
+	int j, cnt, pos;
+
+	cur_tail = qp->qp_status.sq_tail;
+	cnt = atomic_read(&qp->qp_status.used);
+	cur_head = (cur_tail + QM_Q_DEPTH - cnt) % QM_Q_DEPTH;
+
+	for (j = 0; j < cnt; j++) {
+		pos = (j + cur_head) % QM_Q_DEPTH;
+		qp->req_cb(qp, qp->sqe + qm->sqe_size * pos);
+		atomic_dec(&qp->qp_status.used);
+	}
+}
+
 static int hisi_qm_stop_qp_nolock(struct hisi_qp *qp)
 {
 	struct device *dev = &qp->qm->pdev->dev;
-	int i = 0;
 
 	/* it is stopped */
 	if (atomic_read(&qp->qp_status.flags) == QP_STOP)
@@ -1473,14 +1497,11 @@ static int hisi_qm_stop_qp_nolock(struct hisi_qp *qp)
 
 	atomic_set(&qp->qp_status.flags, QP_STOP);
 
-	while (atomic_read(&qp->qp_status.used)) {
-		i++;
-		msleep(WAIT_PERIOD);
-		if (i == MAX_WAIT_COUNTS) {
-			dev_err(dev, "Cannot drain out data for stopping, system may hang up!!!\n");
-			break;
-		}
-	}
+	/* waiting for increase used count in hisi_qp_send */
+	udelay(WAIT_PERIOD);
+
+	if (atomic_read(&qp->qp_status.used))
+		qp_stop_fail_cb(qp);
 
 	dev_dbg(dev, "stop queue %u!", qp->qp_id);
 
@@ -1528,8 +1549,9 @@ int hisi_qp_send(struct hisi_qp *qp, const void *msg)
 	void *sqe = qm_get_avail_sqe(qp);
 
 	if (unlikely(atomic_read(&qp->qp_status.flags) == QP_STOP ||
-		     atomic_read(&qp->qm->status.flags) == QM_STOP)) {
-		dev_info(&qp->qm->pdev->dev, "QM resetting...\n");
+		     atomic_read(&qp->qm->status.flags) == QM_STOP) ||
+		     qp->is_resetting == true) {
+		dev_info_ratelimited(&qp->qm->pdev->dev, "QM resetting...\n");
 		return -EAGAIN;
 	}
 
@@ -1897,7 +1919,6 @@ static int qm_register_uacce(struct hisi_qm *qm)
 		if (qm->use_sva) {
 			uacce->flags = UACCE_DEV_SVA | UACCE_DEV_DRVMAP_DUS;
 		} else {
-
 			uacce->flags = UACCE_DEV_NOIOMMU |
 				       UACCE_DEV_DRVMAP_DUS;
 			if (qm->ver == QM_HW_V1)
@@ -1911,7 +1932,6 @@ static int qm_register_uacce(struct hisi_qm *qm)
 
 	for (i = 0; i < UACCE_QFRT_MAX; i++)
 		uacce->qf_pg_start[i] = UACCE_QFR_NA;
-
 
 	return uacce_register(uacce);
 }
@@ -2512,6 +2532,43 @@ static int qm_stop_started_qp(struct hisi_qm *qm)
 	return 0;
 }
 
+static void qm_set_resetting_flag(struct hisi_qm *qm)
+{
+	struct hisi_qp *qp;
+	int i;
+
+	for (i = 0; i < qm->qp_num; i++) {
+		qp = qm->qp_array[i];
+		if (qp && atomic_read(&qp->qp_status.flags) == QP_START)
+			qp->is_resetting = true;
+	}
+}
+
+static void qm_wait_task_complete(struct hisi_qm *qm)
+{
+	struct hisi_qp *qp;
+	int tmcnt = 0;
+	int last_num;
+	int task_num;
+	int i;
+
+	task_num = 0;
+	do {
+		last_num = task_num;
+		task_num = 0;
+		msleep(WAIT_PERIOD);
+		for (i = 0; i < qm->qp_num; i++) {
+			qp = qm->qp_array[i];
+			if (qp)
+				task_num += atomic_read(&qp->qp_status.used);
+		}
+		if (task_num && last_num == task_num)
+			tmcnt++;
+		else
+			tmcnt = 0;
+	} while (task_num && tmcnt < MAX_WAIT_TASK_COUNTS);
+}
+
 /**
  * hisi_qm_stop() - Stop a qm.
  * @qm: The qm which will be stopped.
@@ -2533,6 +2590,12 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 	if (!qm_avail_state(qm, QM_STOP)) {
 		ret = -EPERM;
 		goto err_unlock;
+	}
+
+	if (qm->status.stop_reason == QM_SOFT_RESET ||
+	    qm->status.stop_reason == QM_FLR) {
+		qm_set_resetting_flag(qm);
+		qm_wait_task_complete(qm);
 	}
 
 	if (qm->status.stop_reason == QM_SOFT_RESET ||
@@ -2560,6 +2623,7 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 
 	hisi_qm_clear_queues(qm);
 	atomic_set(&qm->status.flags, QM_STOP);
+
 err_unlock:
 	up_write(&qm->qps_lock);
 	return ret;
@@ -2752,6 +2816,46 @@ int hisi_qm_get_hw_error_status(struct hisi_qm *qm)
 }
 EXPORT_SYMBOL_GPL(hisi_qm_get_hw_error_status);
 
+static pci_ers_result_t hisi_qm_dev_err_handle(struct hisi_qm *qm)
+{
+	u32 err_sts;
+
+	if (!qm->err_ini.get_dev_hw_err_status ||
+	    !qm->err_ini.log_dev_hw_err)
+		return PCI_ERS_RESULT_RECOVERED;
+
+	/* read err sts */
+	err_sts = qm->err_ini.get_dev_hw_err_status(qm);
+	if (err_sts) {
+		if (err_sts & qm->err_ini.ecc_2bits_mask)
+			qm->err_ini.is_dev_ecc_mbit = 1;
+		else
+			qm->err_ini.is_dev_ecc_mbit = 0;
+
+		qm->err_ini.log_dev_hw_err(qm, err_sts);
+		return PCI_ERS_RESULT_NEED_RESET;
+	}
+
+	return PCI_ERS_RESULT_RECOVERED;
+}
+
+pci_ers_result_t hisi_qm_process_dev_error(struct pci_dev *pdev)
+{
+	struct hisi_qm *qm = pci_get_drvdata(pdev);
+	pci_ers_result_t qm_ret, dev_ret;
+
+	/* log qm error */
+	qm_ret = hisi_qm_hw_error_handle(qm);
+
+	/* log device error */
+	dev_ret = hisi_qm_dev_err_handle(qm);
+
+	return (qm_ret == PCI_ERS_RESULT_NEED_RESET ||
+		dev_ret == PCI_ERS_RESULT_NEED_RESET) ?
+		PCI_ERS_RESULT_NEED_RESET : PCI_ERS_RESULT_RECOVERED;
+}
+EXPORT_SYMBOL_GPL(hisi_qm_process_dev_error);
+
 int hisi_qm_reg_test(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
@@ -2822,8 +2926,8 @@ int hisi_qm_set_vf_mse(struct hisi_qm *qm, bool set)
 
 	for (i = 0; i < MAX_WAIT_COUNTS; i++) {
 		pci_read_config_word(pdev, pos + PCI_SRIOV_CTRL, &sriov_ctrl);
-		if (set == (sriov_ctrl & PCI_SRIOV_CTRL_MSE) >>
-		    PEH_SRIOV_CTRL_VF_MSE_SHIFT)
+		if (set == ((sriov_ctrl & PCI_SRIOV_CTRL_MSE) >>
+		    PEH_SRIOV_CTRL_VF_MSE_SHIFT))
 			return 0;
 
 		udelay(1);
@@ -2843,6 +2947,8 @@ int hisi_qm_set_msi(struct hisi_qm *qm, bool set)
 	} else {
 		pci_write_config_dword(pdev, pdev->msi_cap +
 				       PCI_MSI_MASK_64, PEH_MSI_DISABLE);
+		if (qm->err_ini.is_qm_ecc_mbit || qm->err_ini.is_dev_ecc_mbit)
+			return 0;
 
 		mdelay(1);
 		if (readl(qm->io_base + QM_PEH_DFX_INFO0))
@@ -2852,6 +2958,63 @@ int hisi_qm_set_msi(struct hisi_qm *qm, bool set)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(hisi_qm_set_msi);
+
+void hisi_qm_set_ecc(struct hisi_qm *qm)
+{
+	u32 nfe_enb;
+
+	if ((!qm->err_ini.is_qm_ecc_mbit && !qm->err_ini.is_dev_ecc_mbit) ||
+	    (qm->err_ini.is_qm_ecc_mbit && !qm->err_ini.inject_dev_hw_err) ||
+	    (qm->err_ini.is_dev_ecc_mbit && qm->err_ini.inject_dev_hw_err))
+		return;
+
+	if (qm->err_ini.inject_dev_hw_err)
+		qm->err_ini.inject_dev_hw_err(qm);
+	else {
+		nfe_enb = readl(qm->io_base + QM_RAS_NFE_ENABLE);
+		writel(nfe_enb & QM_RAS_NFE_MBIT_DISABLE,
+		       qm->io_base + QM_RAS_NFE_ENABLE);
+		writel(QM_ECC_MBIT, qm->io_base + QM_ABNORMAL_INT_SET);
+		qm->err_ini.is_qm_ecc_mbit = 1;
+	}
+}
+EXPORT_SYMBOL_GPL(hisi_qm_set_ecc);
+
+void hisi_qm_restart_prepare(struct hisi_qm *qm)
+{
+	if (!qm->err_ini.is_qm_ecc_mbit && !qm->err_ini.is_dev_ecc_mbit)
+		return;
+
+	/* close AM wr msi port */
+	writel(qm->err_ini.qm_wr_port, qm->io_base + AM_CFG_PORT_WR_EN);
+
+	/* clear dev ecc 2bit error source */
+	if (qm->err_ini.clear_dev_hw_err_status) {
+		qm->err_ini.clear_dev_hw_err_status(qm,
+						    qm->err_ini.ecc_2bits_mask);
+	}
+
+	/* clear QM ecc mbit error source */
+	writel(QM_ECC_MBIT, qm->io_base + QM_ABNORMAL_INT_SOURCE);
+
+	/* clear AM Reorder Buffer ecc mbit source */
+	writel(ROB_ECC_ERR_MULTPL, qm->io_base + AM_ROB_ECC_INT_STS);
+
+	if (qm->err_ini.open_axi_master_ooo)
+		qm->err_ini.open_axi_master_ooo(qm);
+}
+EXPORT_SYMBOL_GPL(hisi_qm_restart_prepare);
+
+void hisi_qm_restart_done(struct hisi_qm *qm)
+{
+	if (!qm->err_ini.is_qm_ecc_mbit && !qm->err_ini.is_dev_ecc_mbit)
+		return;
+
+	writel(AM_CFG_PORT_WR_EN_VALUE, qm->io_base + AM_CFG_PORT_WR_EN);
+	qm->err_ini.is_qm_ecc_mbit = 0;
+	qm->err_ini.is_dev_ecc_mbit = 0;
+}
+EXPORT_SYMBOL_GPL(hisi_qm_restart_done);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zhou Wang <wangzhou1@hisilicon.com>");

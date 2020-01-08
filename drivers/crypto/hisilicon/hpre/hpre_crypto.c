@@ -677,7 +677,7 @@ static int hpre_rsa_enc(struct akcipher_request *req)
 	if (ret)
 		return ret;
 
-	msg->dw0 |= HPRE_ALG_NC_NCRT;
+	msg->dw0 |= cpu_to_le32(HPRE_ALG_NC_NCRT);
 	msg->key = cpu_to_le64((u64)ctx->rsa.dma_pubkey);
 
 	ret = hpre_hw_data_init(hpre_req, req->src, req->src_len, 1, 0);
@@ -807,10 +807,8 @@ static int hpre_rsa_set_e(struct hpre_ctx *ctx, const char *value,
 
 	hpre_rsa_drop_leading_zeros(&ptr, &vlen);
 
-	if (!ctx->key_sz || !vlen || vlen > ctx->key_sz) {
-		ctx->rsa.pubkey = NULL;
+	if (!ctx->key_sz || !vlen || vlen > ctx->key_sz)
 		return -EINVAL;
-	}
 
 	memcpy(ctx->rsa.pubkey + ctx->key_sz - vlen, ptr, vlen);
 
@@ -927,7 +925,7 @@ static void hpre_rsa_clear_ctx(struct hpre_ctx *ctx, bool is_clear_all)
 	}
 
 	if (ctx->rsa.prikey) {
-		memset(ctx->rsa.prikey, 0, ctx->key_sz);
+		memset(ctx->rsa.prikey, 0, ctx->key_sz << 1);
 		dma_free_coherent(dev, ctx->key_sz << 1, ctx->rsa.prikey,
 				  ctx->rsa.dma_prikey);
 		ctx->rsa.prikey = NULL;
@@ -1039,6 +1037,7 @@ static unsigned int hpre_rsa_max_size(struct crypto_akcipher *tfm)
 static int hpre_rsa_init_tfm(struct crypto_akcipher *tfm)
 {
 	struct hpre_ctx *ctx = akcipher_tfm_ctx(tfm);
+	int ret;
 
 	ctx->rsa.soft_tfm = crypto_alloc_akcipher("rsa-generic", 0, 0);
 	if (IS_ERR(ctx->rsa.soft_tfm)) {
@@ -1046,7 +1045,11 @@ static int hpre_rsa_init_tfm(struct crypto_akcipher *tfm)
 		return PTR_ERR(ctx->rsa.soft_tfm);
 	}
 
-	return hpre_ctx_init(ctx);
+	ret = hpre_ctx_init(ctx);
+	if (ret)
+		crypto_free_akcipher(ctx->rsa.soft_tfm);
+
+	return ret;
 }
 
 static void hpre_rsa_exit_tfm(struct crypto_akcipher *tfm)

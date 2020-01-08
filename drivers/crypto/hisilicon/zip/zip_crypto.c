@@ -5,6 +5,9 @@
 #include <linux/dma-mapping.h>
 #include <linux/scatterlist.h>
 #include "zip.h"
+#ifndef CONFIG_SG_SPLIT
+#include <../lib/sg_split.c>
+#endif
 
 /* hisi_zip_sqe dw3 */
 #define HZIP_BD_STATUS_M			GENMASK(7, 0)
@@ -368,7 +371,6 @@ static void hisi_zip_acomp_cb(struct hisi_qp *qp, void *data)
 	int err = 0;
 
 	status = sqe->dw3 & HZIP_BD_STATUS_M;
-
 	if (status != 0 && status != HZIP_NC_ERR) {
 		dev_err(dev, "%scompress fail in qp%u: %u, output: %u\n",
 			(qp->alg_type == 0) ? "" : "de", qp->qp_id, status,

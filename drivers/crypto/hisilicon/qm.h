@@ -52,7 +52,7 @@
 #define AXI_M_CFG_ENABLE		0xffffffff
 #define QM_PEH_AXUSER_CFG		0x1000cc
 #define QM_PEH_AXUSER_CFG_ENABLE	0x1000d0
-#define PEH_AXUSER_CFG			0x401001
+#define PEH_AXUSER_CFG			0x400801
 #define PEH_AXUSER_CFG_ENABLE		0xffffffff
 
 #define QM_DFX_MB_CNT_VF		0x104010
@@ -235,6 +235,21 @@ struct hisi_qm_status {
 	int stop_reason;
 };
 
+struct hisi_qm;
+
+struct hisi_qm_err_ini {
+	u32 qm_wr_port;
+	u32 is_qm_ecc_mbit;
+	u32 is_dev_ecc_mbit;
+	u32 ecc_2bits_mask;
+	void (*open_axi_master_ooo)(struct hisi_qm *qm);
+	u32 (*get_dev_hw_err_status)(struct hisi_qm *qm);
+	void (*clear_dev_hw_err_status)(struct hisi_qm *qm, u32 err_sts);
+	void (*log_dev_hw_err)(struct hisi_qm *qm, u32 err_sts);
+	/* design for module can not hold on ooo through qm, such as zip */
+	void (*inject_dev_hw_err)(struct hisi_qm *qm);
+};
+
 struct hisi_qm {
 	enum qm_hw_ver ver;
 	enum qm_fun_type fun_type;
@@ -257,7 +272,7 @@ struct hisi_qm {
 	dma_addr_t aeqe_dma;
 
 	struct hisi_qm_status status;
-
+	struct hisi_qm_err_ini err_ini;
 	struct rw_semaphore qps_lock;
 	unsigned long *qp_bitmap;
 	struct hisi_qp **qp_array;
@@ -355,10 +370,14 @@ void hisi_qm_clear_queues(struct hisi_qm *qm);
 enum qm_hw_ver hisi_qm_get_hw_version(struct pci_dev *pdev);
 int hisi_qm_restart(struct hisi_qm *qm);
 int hisi_qm_get_hw_error_status(struct hisi_qm *qm);
+pci_ers_result_t hisi_qm_process_dev_error(struct pci_dev *pdev);
 int hisi_qm_reg_test(struct hisi_qm *qm);
 int hisi_qm_set_pf_mse(struct hisi_qm *qm, bool set);
 int hisi_qm_set_vf_mse(struct hisi_qm *qm, bool set);
 int hisi_qm_set_msi(struct hisi_qm *qm, bool set);
+void hisi_qm_set_ecc(struct hisi_qm *qm);
+void hisi_qm_restart_prepare(struct hisi_qm *qm);
+void hisi_qm_restart_done(struct hisi_qm *qm);
 
 struct hisi_acc_sgl_pool;
 struct hisi_acc_hw_sgl *hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,

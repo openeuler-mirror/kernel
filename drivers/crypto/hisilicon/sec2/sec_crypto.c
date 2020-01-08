@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0
-/* Copyright (c) 2019 HiSilicon Limited. */
+// SPDX-License-Identifier: GPL-2.0+
+/* Copyright (c) 2018-2019 HiSilicon Limited. */
 
 #include <linux/crypto.h>
 #include <linux/hrtimer.h>
@@ -19,7 +19,7 @@
 #define SEC_ASYNC
 
 #define SEC_INVLD_REQ_ID (-1)
-#define SEC_PRIORITY (4001)
+#define SEC_PRIORITY 4001
 #define SEC_XTS_MIN_KEY_SIZE (2 * AES_MIN_KEY_SIZE)
 #define SEC_XTS_MAX_KEY_SIZE (2 * AES_MAX_KEY_SIZE)
 #define SEC_DES3_2KEY_SIZE (2 * DES_KEY_SIZE)
@@ -196,7 +196,7 @@ struct hisi_sec_ctx {
 	bool is_fusion;
 };
 
-#define DES_WEAK_KEY_NUM (4)
+#define DES_WEAK_KEY_NUM 4
 u64 des_weak_key[DES_WEAK_KEY_NUM] = {0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
 	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E};
 
@@ -325,7 +325,7 @@ static enum hrtimer_restart hrtimer_handler(struct hrtimer *timer)
 }
 
 static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
-			      int qp_ctx_id, int alg_type, int req_type)
+	int qp_ctx_id, int alg_type, int req_type)
 {
 	struct hisi_qp *qp;
 	struct hisi_sec_qp_ctx *qp_ctx;
@@ -352,7 +352,7 @@ static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
 	atomic_set(&qp_ctx->req_cnt, 0);
 
 	qp_ctx->req_bitmap = kcalloc(BITS_TO_LONGS(QM_Q_DEPTH), sizeof(long),
-				  GFP_ATOMIC);
+		GFP_ATOMIC);
 	if (!qp_ctx->req_bitmap) {
 		ret = -ENOMEM;
 		goto err_qm_release_qp;
@@ -487,8 +487,10 @@ static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
 	ctx->enc_q_num = ctx->q_num / 2;
 	ctx->qp_ctx = kcalloc(ctx->q_num, sizeof(struct hisi_sec_qp_ctx),
 		GFP_KERNEL);
-	if (!ctx->qp_ctx)
+	if (!ctx->qp_ctx) {
+		dev_err(ctx->dev, "failed to alloc qp_ctx");
 		return -ENOMEM;
+	}
 
 	hisi_sec_get_fusion_param(ctx, sec);
 
@@ -617,10 +619,11 @@ static int hisi_sec_cipher_ctx_init_multi_iv(struct crypto_skcipher *tfm)
 static void hisi_sec_req_cb(struct hisi_qp *qp, void *resp)
 {
 	struct hisi_sec_sqe *sec_sqe = (struct hisi_sec_sqe *)resp;
-	u32 req_id;
 	struct hisi_sec_qp_ctx *qp_ctx = qp->qp_ctx;
+	struct device *dev = &qp->qm->pdev->dev;
 	struct hisi_sec_req *req;
 	struct hisi_sec_dfx *dfx;
+	u32 req_id;
 
 	if (sec_sqe->type == 1) {
 		req_id = sec_sqe->type1.tag;
@@ -629,8 +632,10 @@ static void hisi_sec_req_cb(struct hisi_qp *qp, void *resp)
 		req->err_type = sec_sqe->type1.error_type;
 		if (req->err_type || sec_sqe->type1.done != 0x1 ||
 			sec_sqe->type1.flag != 0x2) {
-			pr_err("err_type[%d] done[%d] flag[%d]\n",
-				req->err_type, sec_sqe->type1.done,
+			dev_err_ratelimited(dev,
+				"err_type[%d] done[%d] flag[%d]\n",
+				req->err_type,
+				sec_sqe->type1.done,
 				sec_sqe->type1.flag);
 		}
 	} else if (sec_sqe->type == 2) {
@@ -640,12 +645,14 @@ static void hisi_sec_req_cb(struct hisi_qp *qp, void *resp)
 		req->err_type = sec_sqe->type2.error_type;
 		if (req->err_type || sec_sqe->type2.done != 0x1 ||
 			sec_sqe->type2.flag != 0x2) {
-			pr_err("err_type[%d] done[%d] flag[%d]\n",
-				req->err_type, sec_sqe->type2.done,
+			dev_err_ratelimited(dev,
+				"err_type[%d] done[%d] flag[%d]\n",
+				req->err_type,
+				sec_sqe->type2.done,
 				sec_sqe->type2.flag);
 		}
 	} else {
-		pr_err("err bd type [%d]\n", sec_sqe->type);
+		dev_err_ratelimited(dev, "err bd type [%d]\n", sec_sqe->type);
 		return;
 	}
 
@@ -1153,7 +1160,8 @@ static int hisi_sec_bd_send_asyn(struct hisi_sec_ctx *ctx,
 
 	mutex_lock(&qp_ctx->req_lock);
 	ret = hisi_qp_send(qp_ctx->qp, &req->sec_sqe);
-	__sync_add_and_fetch(&ctx->sec->sec_dfx.send_cnt, 1);
+	if (ret == 0)
+		ctx->sec->sec_dfx.send_cnt++;
 	mutex_unlock(&qp_ctx->req_lock);
 
 	return hisi_sec_get_async_ret(ret, req_cnt, ctx->req_fake_limit);
@@ -1363,7 +1371,7 @@ static int sec_io_proc(struct hisi_sec_ctx *ctx, struct hisi_sec_req *in_req)
 	req = sec_request_alloc(ctx, in_req, &fusion_send, &fake_busy);
 
 	if (!req) {
-		dev_err(ctx->dev, "sec_request_alloc failed\n");
+		dev_err_ratelimited(ctx->dev, "sec_request_alloc failed\n");
 		return -ENOMEM;
 	}
 
@@ -1372,14 +1380,14 @@ static int sec_io_proc(struct hisi_sec_ctx *ctx, struct hisi_sec_req *in_req)
 
 	ret = sec_request_transfer(ctx, req);
 	if (ret) {
-		dev_err(ctx->dev, "sec_transfer failed! ret[%d]\n", ret);
+		dev_err_ratelimited(ctx->dev, "sec_transfer ret[%d]\n", ret);
 		goto err_free_req;
 	}
 
 	ret = sec_request_send(ctx, req);
 	__sync_add_and_fetch(&ctx->sec->sec_dfx.send_by_full, 1);
 	if (ret != -EBUSY && ret != -EINPROGRESS) {
-		dev_err(ctx->dev, "sec_send failed ret[%d]\n", ret);
+		dev_err_ratelimited(ctx->dev, "sec_send ret[%d]\n", ret);
 		goto err_unmap_req;
 	}
 
