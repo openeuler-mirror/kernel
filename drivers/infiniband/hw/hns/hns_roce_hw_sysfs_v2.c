@@ -83,7 +83,7 @@ int hns_roce_v2_query_mpt_stat(struct hns_roce_dev *hr_dev,
 		goto err_cmd;
 
 	mpt_ctx = kzalloc(sizeof(*mpt_ctx), GFP_KERNEL);
-	if (!mpt_ctx) {
+	if (ZERO_OR_NULL_PTR(mpt_ctx)) {
 		ret = -ENOMEM;
 		goto err_cmd;
 	}
@@ -268,7 +268,7 @@ int hns_roce_v2_query_aeqc_stat(struct hns_roce_dev *hr_dev,
 		return PTR_ERR(mailbox);
 
 	eq_context = kzalloc(sizeof(*eq_context), GFP_KERNEL);
-	if (!eq_context) {
+	if (ZERO_OR_NULL_PTR(eq_context)) {
 		ret = -ENOMEM;
 		goto err_context;
 	}
@@ -436,7 +436,7 @@ int hns_roce_v2_query_ceqc_stat(struct hns_roce_dev *hr_dev,
 		return PTR_ERR(mailbox);
 
 	eq_context = kzalloc(sizeof(*eq_context), GFP_KERNEL);
-	if (!eq_context) {
+	if (ZERO_OR_NULL_PTR(eq_context)) {
 		ret = -ENOMEM;
 		goto err_context;
 	}

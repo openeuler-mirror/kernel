@@ -504,9 +504,8 @@ void rdfx_v2_qpc_store_print(u32 qpn, u64 bt0_ba, u64 bt1_ba,
 			struct hns_roce_v2_qp_context *qp_context)
 {
 	int i;
-	int *qpc;
+	int *qpc = (int *)qp_context;
 
-	qpc = (int *)qp_context;
 	pr_info("************** QPC INFO ***************\n");
 	pr_info("QPC(0x%x) BT0: 0x%llx\n", qpn, bt0_ba);
 	pr_info("QPC(0x%x) BT1: 0x%llx\n", qpn, bt1_ba);
@@ -711,9 +710,8 @@ void rdfx_v2_srqc_store_print(u32 srqn, u64 bt0_ba, u64 bt1_ba,
 			struct hns_roce_srq_context *srq_context)
 {
 	int i;
-	int *srqc;
+	int *srqc = (int *)srq_context;
 
-	srqc = (int *)srq_context;
 	pr_info("************** SRQC INFO ***************\n");
 	pr_info("SRQC(0x%x) BT0: 0x%llx\n", srqn, bt0_ba);
 	pr_info("SRQC(0x%x) BT1: 0x%llx\n", srqn, bt1_ba);
@@ -815,9 +813,8 @@ void rdfx_v2_mpt_store_print(int key, u64 bt0_ba, u64 bt1_ba,
 			struct hns_roce_v2_mpt_entry *mpt_ctx)
 {
 	int i;
-	int *mpt;
+	int *mpt = (int *)mpt_ctx;
 
-	mpt = (int *)mpt_ctx;
 	pr_info("************** MPT INFO ***************\n");
 	pr_info("MPT(0x%x) BT0: 0x%llx\n", key, bt0_ba);
 	pr_info("MPT(0x%x) BT1: 0x%llx\n", key, bt1_ba);
