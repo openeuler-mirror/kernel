@@ -29,7 +29,7 @@
 
 #include "hs_lbc_pltfm.h"
 
-#define LBC_DRIVER_VERSION  "1.8.15.0"
+#define LBC_DRIVER_VERSION  "1.9.30.0"
 
 struct hisi_lbc_dev g_lbc_dev = {0};
 
@@ -213,6 +213,11 @@ int lbc_read8(unsigned int index, unsigned int offset, unsigned char *value)
 		return -EINVAL;
 	}
 
+	if (!value) {
+		pr_err("value is null\n");
+		return -EINVAL;
+	}
+
 	*value = (unsigned char)lbc_read(index, offset, LBC_RWDATA_WIDTH_8);
 
 	return 0;
@@ -224,6 +229,11 @@ int lbc_read8_nolock(unsigned int index, unsigned int offset, unsigned char *val
 	/* para check */
 	if (hisi_lbc_para_check(index, offset, LBC_RWDATA_WIDTH_8)) {
 		pr_err("Lbc para check failed\n");
+		return -EINVAL;
+	}
+
+	if (!value) {
+		pr_err("value is null\n");
 		return -EINVAL;
 	}
 
