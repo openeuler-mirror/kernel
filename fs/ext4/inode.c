@@ -2075,6 +2075,20 @@ out_no_pagelock:
 	return ret;
 }
 
+static void cancel_page_dirty_status(struct page *page)
+{
+	struct address_space *mapping = page_mapping(page);
+	unsigned long flags;
+
+	cancel_dirty_page(page);
+	xa_lock_irqsave(&mapping->i_pages, flags);
+	radix_tree_tag_clear(&mapping->i_pages, page_index(page),
+			PAGECACHE_TAG_DIRTY);
+	radix_tree_tag_clear(&mapping->i_pages, page_index(page),
+			PAGECACHE_TAG_TOWRITE);
+	xa_unlock_irqrestore(&mapping->i_pages, flags);
+}
+
 /*
  * Note that we don't need to start a transaction unless we're journaling data
  * because we should have holes filled from ext4_page_mkwrite(). We even don't
@@ -2131,6 +2145,12 @@ static int ext4_writepage(struct page *page,
 		ext4_invalidatepage(page, 0, PAGE_SIZE);
 		unlock_page(page);
 		return -EIO;
+	}
+
+	if (WARN_ON(!page_has_buffers(page))) {
+		cancel_page_dirty_status(page);
+		unlock_page(page);
+		return 0;
 	}
 
 	trace_ext4_writepage(page);
@@ -2682,6 +2702,12 @@ static int mpage_prepare_extent_to_map(struct mpage_da_data *mpd)
 			    (PageWriteback(page) &&
 			     (mpd->wbc->sync_mode == WB_SYNC_NONE)) ||
 			    unlikely(page->mapping != mapping)) {
+				unlock_page(page);
+				continue;
+			}
+
+			if (WARN_ON(!page_has_buffers(page))) {
+				cancel_page_dirty_status(page);
 				unlock_page(page);
 				continue;
 			}
