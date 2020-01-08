@@ -79,10 +79,10 @@ int hns3_cae_get_driver_ver(struct hns3_nic_priv *nic_dev,
 		   void *buf_in, u32 in_size,
 		   void *buf_out, u32 out_size)
 {
-	if (!buf_out || out_size < strlen(THIS_MODULE->version))
+	if (!buf_out || out_size < strlen(HNS3_CAE_MOD_VERSION))
 		return -ENOMEM;
 
-	strncpy(buf_out, THIS_MODULE->version, strlen(THIS_MODULE->version));
+	strncpy(buf_out, HNS3_CAE_MOD_VERSION, strlen(HNS3_CAE_MOD_VERSION));
 
 	return 0;
 }
