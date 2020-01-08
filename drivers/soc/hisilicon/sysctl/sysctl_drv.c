@@ -48,7 +48,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #define DEBUG
 
-#define SYSCTL_DRIVER_VERSION "1.8.15.2"
+#define SYSCTL_DRIVER_VERSION "1.9.31.0"
 
 unsigned int g_sysctrl_debug;
 
@@ -816,7 +816,7 @@ EXPORT_SYMBOL(hip_sysctrl_remove);
 module_init(his_sysctrl_init);
 module_exit(his_sysctrl_exit);
 
-MODULE_DESCRIPTION("sysctrl for hisillicon platform");
+MODULE_DESCRIPTION("sysctrl for hisilicon platform");
 MODULE_VERSION(SYSCTL_DRIVER_VERSION);
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("platform:hip-sysctl");

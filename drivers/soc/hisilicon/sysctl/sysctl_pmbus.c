@@ -19,6 +19,9 @@
 #include "sysctl_drv.h"
 #include "sysctl_pmbus.h"
 
+#define SLAVE_ADDR_MAX (1 << 7)
+#define CPU_VOL_MIN 500
+
 static void __iomem *g_sysctl_pmbus_base[CHIP_ID_NUM_MAX];
 
 static void his_sysctrl_reg_rd(const void __iomem *addr, u32 reg, unsigned int *val)
@@ -217,8 +220,9 @@ int sysctl_pmbus_cfg(u8 chip_id, u8 addr, u8 page, u32 slave_addr)
 {
 	void __iomem *base = NULL;
 
-	if (chip_id >= CHIP_ID_NUM_MAX) {
-		pr_err("[sysctl pmbus]read chip_id range[0x0-0x3]is err!\n");
+	if ((chip_id >= CHIP_ID_NUM_MAX) || (slave_addr >= SLAVE_ADDR_MAX)) {
+		pr_err("[sysctl pmbus] cfg param err,chipid=0x%x,slave_addr=0x%x\n",
+			chip_id, slave_addr);
 		return SYSCTL_ERR_PARAM;
 	}
 
@@ -239,8 +243,11 @@ int sysctl_pmbus_write(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 bu
 	u32 temp_data = addr;
 	void __iomem *base = NULL;
 
-	if ((chip_id >= CHIP_ID_NUM_MAX) || (data_len > 0x4)) {
-		pr_err("[sysctl pmbus]write chip_id range[0x0-0x3] or data_len range[0x0-0x4] is err!\n");
+	if ((chip_id >= CHIP_ID_NUM_MAX) ||
+		(data_len > DATA_NUM_MAX) ||
+		(slave_addr >= SLAVE_ADDR_MAX)) {
+		pr_err("[sysctl pmbus] write param err,chipid=0x%x,data_len=0x%x,slave_addr=0x%x!\n",
+			chip_id, data_len, slave_addr);
 		return SYSCTL_ERR_PARAM;
 	}
 
@@ -371,8 +378,10 @@ int sysctl_pmbus_read(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 *bu
 
 	if ((chip_id >= CHIP_ID_NUM_MAX) ||
 		(data_len > DATA_NUM_MAX) ||
-		(data_len == 0x0)) {
-		pr_err("[sysctl pmbus]read chip_id range[0x0-0x3] or data_len range[0x1-0x4] is err!\n");
+		(data_len == 0x0) ||
+		(slave_addr >= SLAVE_ADDR_MAX)) {
+		pr_err("[sysctl pmbus]read param err,chipid=0x%x,data_len=0x%x,slave_addr=0x%x!\n",
+			chip_id, data_len, slave_addr);
 		return SYSCTL_ERR_PARAM;
 	}
 
@@ -407,8 +416,9 @@ int sysctl_cpu_voltage_password_cfg(u8 chip_id, u32 slave_addr)
 {
 	void __iomem *base = NULL;
 
-	if (chip_id >= CHIP_ID_NUM_MAX) {
-		pr_err("[sysctl pmbus]read chip_id range[0x0-0x3]is err!\n");
+	if ((chip_id >= CHIP_ID_NUM_MAX) || (slave_addr >= SLAVE_ADDR_MAX)) {
+		pr_err("[sysctl pmbus]  voltage_password_cfg param err,chipid=0x%x,slave_addr=0x%x!\n",
+			chip_id, slave_addr);
 		return SYSCTL_ERR_PARAM;
 	}
 
@@ -422,7 +432,7 @@ int sysctl_cpu_voltage_password_cfg(u8 chip_id, u32 slave_addr)
 	return 0;
 }
 
-static int hi_vrd_info_check_params(u8 chip_id, u8 page, u32 data_len)
+static int hi_vrd_info_check_params(u8 chip_id, u8 page, u32 data_len, u32 slave_addr)
 {
 	if (chip_id >= CHIP_ID_NUM_MAX) {
 		pr_err("[sysctl pmbus] read chip_id range[0x0-0x3]is err!\n");
@@ -439,6 +449,11 @@ static int hi_vrd_info_check_params(u8 chip_id, u8 page, u32 data_len)
 		return SYSCTL_ERR_PARAM;
 	}
 
+	if (slave_addr >= SLAVE_ADDR_MAX) {
+		pr_err("[sysctl pmbus] vrd_info slave_addr=0x%x err!\n", slave_addr);
+		return SYSCTL_ERR_PARAM;
+	}
+
 	return SYSCTL_ERR_OK;
 }
 
@@ -447,7 +462,7 @@ int hi_vrd_info_get(u8 chip_id, u8 addr, u8 page, u32 slave_addr, u32 data_len, 
 	u32 retry_time = 0x10;
 	u32 ret;
 
-	ret = hi_vrd_info_check_params(chip_id, page, data_len);
+	ret = hi_vrd_info_check_params(chip_id, page, data_len, slave_addr);
 	if (ret != SYSCTL_ERR_OK)
 		return ret;
 
@@ -509,6 +524,11 @@ int sysctl_cpu_voltage_read(u8 chip_id, u8 loop, u32 slave_addr)
 		return SYSCTL_ERR_PARAM;
 	}
 
+	if (slave_addr >= SLAVE_ADDR_MAX) {
+		pr_err("[sysctl pmbus] cpu_voltage_read slave_addr=0x%x err!\n", slave_addr);
+		return SYSCTL_ERR_PARAM;
+	}
+
 	/* read voltage mode */
 	ret = hi_vrd_info_get(chip_id, 0x20, loop, slave_addr, 0x1, (u32 *)&vout_mode);
 	if (ret)
@@ -555,8 +575,11 @@ int sysctl_cpu_voltage_adjust (u8 chip_id, u8 loop, u32 slave_addr, u32 value)
 	pmbus_vout_mode vout_mode;
 	void __iomem *base = NULL;
 
-	if (chip_id >= CHIP_ID_NUM_MAX) {
-		pr_err("[sysctl pmbus]read chip_id range[0x0-0x3]is err!\n");
+	if ((chip_id >= CHIP_ID_NUM_MAX) ||
+		(slave_addr >= SLAVE_ADDR_MAX) ||
+		(value < CPU_VOL_MIN)) {
+		pr_err("[sysctl pmbus]cpu_voltage_adjust param err,chipid=0x%x,slave_addr=0x%x,value=0x%x!\n",
+			chip_id, slave_addr, value);
 		return SYSCTL_ERR_PARAM;
 	}
 
