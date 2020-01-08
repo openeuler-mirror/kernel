@@ -17,14 +17,14 @@ void rdfx_cp_rq_wqe_buf(struct hns_roce_dev *hr_dev,
 #endif
 {
 	struct rdfx_info *rdfx = (struct rdfx_info *)hr_dev->dfx_priv;
-	struct rdfx_qp_info *rdfx_qp;
-	struct rdfx_rq_info *rq;
-	void *dfx_qp_buf;
+	struct rdfx_qp_info *rdfx_qp = NULL;
+	struct rdfx_rq_info *rq = NULL;
+	void *dfx_qp_buf = NULL;
 
 	spin_lock(&(rdfx->qp.qp_lock));
 
 	rdfx_qp = rdfx_find_rdfx_qp(rdfx, hr_qp->qpn);
-	if (!rdfx_qp) {
+	if (ZERO_OR_NULL_PTR(rdfx_qp)) {
 		dev_err(hr_dev->dev, "find qp 0x%lx failed while cp sq wqe buf\n",
 			hr_qp->qpn);
 		spin_unlock(&(rdfx->qp.qp_lock));
@@ -109,16 +109,16 @@ void rdfx_cp_sq_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
 #endif
 {
 	struct rdfx_info *rdfx = (struct rdfx_info *)hr_dev->dfx_priv;
-	struct rdfx_qp_info *rdfx_qp;
-	struct rdfx_sq_info *sq;
-	void *dfx_qp_buf;
-	void *dfx_hns_wqe_sge;
+	struct rdfx_qp_info *rdfx_qp = NULL;
+	struct rdfx_sq_info *sq = NULL;
+	void *dfx_hns_wqe_sge = NULL;
+	void *dfx_qp_buf = NULL;
 	int atomic_en = 0;
 
 	spin_lock(&(rdfx->qp.qp_lock));
 
 	rdfx_qp = rdfx_find_rdfx_qp(rdfx, qp->qpn);
-	if (!rdfx_qp) {
+	if (ZERO_OR_NULL_PTR(rdfx_qp)) {
 		dev_err(hr_dev->dev, "find qp 0x%lx failed while cp sq wqe buf\n",
 			qp->qpn);
 		spin_unlock(&(rdfx->qp.qp_lock));
@@ -153,14 +153,14 @@ void rdfx_cp_cqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 		     void *cqe)
 {
 	struct rdfx_info *rdfx = (struct rdfx_info *)hr_dev->dfx_priv;
-	struct rdfx_cq_info *rdfx_cq;
-	void *dfx_cq_buf;
+	struct rdfx_cq_info *rdfx_cq = NULL;
+	void *dfx_cq_buf = NULL;
 	u32 ci;
 
 	spin_lock(&rdfx->cq.cq_lock);
 
 	rdfx_cq = rdfx_find_rdfx_cq(rdfx, hr_cq->cqn);
-	if (!rdfx_cq) {
+	if (ZERO_OR_NULL_PTR(rdfx_cq)) {
 		dev_err(hr_dev->dev, "find cq 0x%lx failed while cp cqe buf\n",
 			hr_cq->cqn);
 		spin_unlock(&rdfx->cq.cq_lock);
