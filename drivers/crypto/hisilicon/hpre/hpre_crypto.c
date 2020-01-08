@@ -559,13 +559,13 @@ static void hpre_dh_clear_ctx(struct hpre_ctx *ctx, bool is_clear_all)
 		hisi_qm_stop_qp(ctx->qp);
 
 	if (ctx->dh.g) {
-		memset(ctx->dh.g, 0, sz);
+		memzero_explicit(ctx->dh.g, sz);
 		dma_free_coherent(dev, sz, ctx->dh.g, ctx->dh.dma_g);
 		ctx->dh.g = NULL;
 	}
 
 	if (ctx->dh.xa_p) {
-		memset(ctx->dh.xa_p, 0, sz);
+		memzero_explicit(ctx->dh.xa_p, sz);
 		dma_free_coherent(dev, sz << 1, ctx->dh.xa_p,
 				  ctx->dh.dma_xa_p);
 		ctx->dh.xa_p = NULL;
@@ -918,14 +918,15 @@ static void hpre_rsa_clear_ctx(struct hpre_ctx *ctx, bool is_clear_all)
 	}
 
 	if (ctx->rsa.crt_prikey) {
-		memset(ctx->rsa.crt_prikey, 0, half_key_sz * HPRE_CRT_PRMS);
+		memzero_explicit(ctx->rsa.crt_prikey,
+				 half_key_sz * HPRE_CRT_PRMS);
 		dma_free_coherent(dev, half_key_sz * HPRE_CRT_PRMS,
 				  ctx->rsa.crt_prikey, ctx->rsa.dma_crt_prikey);
 		ctx->rsa.crt_prikey = NULL;
 	}
 
 	if (ctx->rsa.prikey) {
-		memset(ctx->rsa.prikey, 0, ctx->key_sz << 1);
+		memzero_explicit(ctx->rsa.prikey, ctx->key_sz << 1);
 		dma_free_coherent(dev, ctx->key_sz << 1, ctx->rsa.prikey,
 				  ctx->rsa.dma_prikey);
 		ctx->rsa.prikey = NULL;
