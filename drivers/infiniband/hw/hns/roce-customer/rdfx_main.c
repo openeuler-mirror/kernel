@@ -76,6 +76,8 @@ int parg_getopt(char *input, char *optstring, char *parg)
 		p++;
 		cnt++;
 	}
+	if (cnt >= DEF_OPT_STR_LEN)
+		return -EINVAL;
 	*p = '\0';
 	p -= cnt;
 	strcpy(parg, p);

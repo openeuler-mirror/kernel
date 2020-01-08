@@ -50,51 +50,6 @@ static void *rdfx_v2_get_dfx(struct ib_device *ib_dev)
 	return hr_dev->dfx_priv;
 }
 
-static int rdfx_rdreg(const char *p_buf, struct rdfx_info *rdfx)
-{
-	struct hns_roce_dev *hr_dev = (struct hns_roce_dev *)rdfx->priv;
-	unsigned long long a_val[SYSFS_MAX_PARA] = {0};
-	char *buf = (char *)p_buf;
-	u32 offset;
-	int ret;
-	u32 param_num;
-
-	ret = check_input(buf, a_val, 2, 1, &param_num);
-	if (ret)
-		return ret;
-
-	offset = a_val[0];
-
-	pr_info("Reg(0x%08x): 0x%08x\n",
-		offset, roce_read(hr_dev, offset));
-
-	return 0;
-}
-
-static int rdfx_wrreg(const char *p_buf, struct rdfx_info *rdfx)
-{
-	struct hns_roce_dev *hr_dev = (struct hns_roce_dev *)rdfx->priv;
-	unsigned long long a_val[SYSFS_MAX_PARA] = {0};
-	char *buf = (char *)p_buf;
-	u32 offset;
-	u32 value;
-	int ret;
-	u32 param_num;
-
-	ret = check_input(buf, a_val, 3, 2, &param_num);
-	if (ret)
-		return ret;
-
-	offset = a_val[0];
-	value = a_val[1];
-
-	pr_info("Write reg: offset - 0x%08x, value - 0x%08x\n",
-		offset, value);
-	roce_write(hr_dev, offset, value);
-
-	return 0;
-}
-
 static int rdfx_v2_ooo_show(struct rdfx_info *rdfx)
 {
 	pr_info("************** OOO INFO ***************\n");
@@ -922,8 +877,6 @@ rdfx_hw_file_attr_def(aeqc, NULL, rdfx_v2_aeqc_store);
 rdfx_hw_file_attr_def(qpc, NULL, rdfx_v2_qpc_store);
 rdfx_hw_file_attr_def(cqc, NULL, rdfx_v2_cqc_store);
 rdfx_hw_file_attr_def(mpt, NULL, rdfx_v2_mpt_store);
-rdfx_hw_file_attr_def(rdreg, NULL, rdfx_rdreg);
-rdfx_hw_file_attr_def(wrreg, NULL, rdfx_wrreg);
 rdfx_hw_file_attr_def(srqc, NULL, rdfx_v2_srqc_store);
 
 static struct attribute *rdfx_hw_v2_attrs_list[] = {
@@ -936,8 +889,6 @@ static struct attribute *rdfx_hw_v2_attrs_list[] = {
 	HW_ATTRS_LIST_MEMBER(qpc),
 	HW_ATTRS_LIST_MEMBER(cqc),
 	HW_ATTRS_LIST_MEMBER(mpt),
-	HW_ATTRS_LIST_MEMBER(rdreg),
-	HW_ATTRS_LIST_MEMBER(wrreg),
 	HW_ATTRS_LIST_MEMBER(srqc),
 	NULL
 };

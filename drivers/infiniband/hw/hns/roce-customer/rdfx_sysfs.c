@@ -127,28 +127,12 @@ static int show_qp_detail(struct rdfx_qp_info *rdfx_qp)
 		atomic_read(&rdfx_qp->sq.db_cnt),
 		atomic_read(&rdfx_qp->sq.inline_cnt));
 	pr_info("\n");
-	pr_info("SQ_head         SQ_head_addr\n");
-	pr_info("  0x%x          0x%llx\n",
-		atomic_read(&rdfx_qp->sq.head), rdfx_qp->sq.head_addr);
-	pr_info("\n");
-	pr_info("SQ_tail         SQ_tail_addr\n");
-	pr_info("0x%x            0x%llx\n",
-		atomic_read(&rdfx_qp->sq.tail), rdfx_qp->sq.tail_addr);
-	pr_info("\n");
 	pr_info("***************** RQ INFO *****************\n");
 	pr_info("rq_wqe_cnt       bd_cnt        inline_cnt\n");
 	pr_info("   0x%x	    0x%x	   0x%x\n",
 		    atomic_read(&rdfx_qp->rq.rq_wqe_cnt),
 		    atomic_read(&rdfx_qp->rq.db_cnt),
 		    atomic_read(&rdfx_qp->rq.inline_cnt));
-	pr_info("\n");
-	pr_info("RQ_head         RQ_head_addr\n");
-	pr_info("  0x%x          0x%llx\n",
-		    atomic_read(&rdfx_qp->rq.head), rdfx_qp->rq.head_addr);
-	pr_info("\n");
-	pr_info("RQ_tail         RQ_tail_addr\n");
-	pr_info("  0x%x          0x%llx\n",
-		    atomic_read(&rdfx_qp->rq.head), rdfx_qp->rq.tail_addr);
 	pr_info("\n");
 	pr_info("***************** QP ATTR *****************\n");
 	pr_info("state        : 0x%x\n",
@@ -215,7 +199,7 @@ static int show_cqe(struct rdfx_cq_info *rdfx_cq, int cqe_index)
 	u32 *cqe;
 
 	rdfx_cq->cqe_size = CQE_SIZE;
-	cqe_index = cqe_index & (rdfx_cq->cq_depth);
+	cqe_index = cqe_index & (rdfx_cq->cq_depth - 1);
 	cqe = rdfx_buf_offset(rdfx_cq->buf, (cqe_index * rdfx_cq->cqe_size));
 	if (cqe)
 		pr_info("%08x %08x %08x %08x %08x %08x %08x %08x\n",
@@ -226,37 +210,6 @@ static int show_cqe(struct rdfx_cq_info *rdfx_cq, int cqe_index)
 
 	return 0;
 }
-
-#ifdef CONFIG_INFINIBAND_HNS_DFX_ENHANCE
-static int rdfx_enhance_qp_delete(u32 qpn, struct rdfx_info *rdfx)
-{
-	struct rdfx_qp_info *rdfx_qp;
-	struct list_head *pos;
-	struct list_head *q;
-	unsigned long flags;
-	u32 is_existed = 0;
-
-	spin_lock_irqsave(&rdfx->qp.qp_lock, flags);
-	list_for_each_safe(pos, q, &(rdfx->qp.list)) {
-		rdfx_qp = list_entry(pos, struct rdfx_qp_info, list);
-		if (qpn == rdfx_qp->qpn) {
-			is_existed = 1;
-			list_del(pos);
-			break;
-		}
-	}
-	if (!is_existed) {
-		spin_unlock_irqrestore(&rdfx->qp.qp_lock, flags);
-		pr_err("QPN %u is not in dfx list!\n", qpn);
-		return -EINVAL;
-	}
-	spin_unlock_irqrestore(&rdfx->qp.qp_lock, flags);
-	kref_put(&(rdfx_qp->cnt), qp_release);
-	pr_info("delete qpn:0x%lx\n", rdfx_qp->qpn);
-
-	return 0;
-}
-#endif
 
 static inline int rdfx_convert_str(char *str, u32 *val)
 {
@@ -329,13 +282,7 @@ static int rdfx_qp_store(const char *p_buf)
 		show_valid_qpn(&(rdfx->qp.list));
 		return 0;
 	}
-#ifdef CONFIG_INFINIBAND_HNS_DFX_ENHANCE
-	if (!parg_getopt(buf, "r:", str)) {
-		if (rdfx_convert_str(str, &qpn))
-			return -EINVAL;
-		return rdfx_enhance_qp_delete(qpn, rdfx);
-	}
-#endif
+
 	parg_getopt(buf, "v:", str);
 	if (rdfx_convert_str(str, &qpn))
 		return -EINVAL;
@@ -450,37 +397,6 @@ static void show_valid_cqn(struct list_head *head)
 	pr_info("\n");
 }
 
-#ifdef CONFIG_INFINIBAND_HNS_DFX_ENHANCE
-static int rdfx_enhance_cq_delete(u32 cqn, struct rdfx_info *rdfx)
-{
-	struct rdfx_cq_info *rdfx_cq = NULL;
-	struct list_head *pos;
-	struct list_head *q;
-	unsigned long flags;
-	u32 is_existed = 0;
-
-	spin_lock_irqsave(&rdfx->cq.cq_lock, flags);
-	list_for_each_safe(pos, q, &(rdfx->cq.list)) {
-		rdfx_cq = list_entry(pos, struct rdfx_cq_info, list);
-		if (cqn == rdfx_cq->cqn) {
-			is_existed = 1;
-			list_del(pos);
-			break;
-		}
-	}
-	if (!is_existed) {
-		pr_err("CQN %u is not in dfx list!\n", cqn);
-		spin_unlock_irqrestore(&rdfx->cq.cq_lock, flags);
-		return -EINVAL;
-	}
-	spin_unlock_irqrestore(&rdfx->cq.cq_lock, flags);
-	kref_put(&(rdfx_cq->cnt), cq_release);
-	pr_err("delete cqn:0x%lx\n", rdfx_cq->cqn);
-
-	return 0;
-}
-#endif
-
 static inline int rdfx_show_cq_detail(u32 cqn, struct rdfx_info *rdfx)
 {
 	struct rdfx_cq_info *rdfx_cq = NULL;
@@ -524,14 +440,6 @@ static int rdfx_cq_store(const char *p_buf)
 		return 0;
 	}
 
-#ifdef CONFIG_INFINIBAND_HNS_DFX_ENHANCE
-	if (!parg_getopt(buf, "r:", str)) {
-		if (rdfx_convert_str(str, &cqn))
-			return -EINVAL;
-
-		return rdfx_enhance_cq_delete(cqn, rdfx);
-	}
-#endif
 	parg_getopt(buf, "v:", str);
 	if (rdfx_convert_str(str, &cqn))
 		return -EINVAL;
