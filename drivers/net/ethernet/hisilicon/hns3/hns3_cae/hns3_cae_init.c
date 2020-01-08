@@ -563,5 +563,5 @@ static void __exit hns3_cae_exit(void)
 module_init(hns3_cae_init);
 module_exit(hns3_cae_exit);
 MODULE_DESCRIPTION("HNS3 CAE Driver");
-MODULE_VERSION(HNAE_DRIVER_VERSION);
+MODULE_VERSION(HNS3_CAE_MOD_VERSION);
 MODULE_LICENSE("GPL");
