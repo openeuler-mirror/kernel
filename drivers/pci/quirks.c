@@ -5185,7 +5185,7 @@ DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_VENDOR_ID_NVIDIA, 0x13b1,
 
 static void pci_quirk_hisi_fixup_class(struct pci_dev *dev)
 {
-	dev->class = PCI_BASE_CLASS_NETWORK << 8;
+	dev->class = PCI_CLASS_NETWORK_ETHERNET << 8;
 	pci_info(dev, "force hisi class type to network\n");
 }
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_HUAWEI, PCIE_DEVICE_ID_HISI_5896,
