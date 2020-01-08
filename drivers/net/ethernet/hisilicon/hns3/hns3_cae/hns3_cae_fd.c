@@ -156,11 +156,11 @@ static int hns3_cae_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 {
 #define HNS3_CAE_FD_TCAM_BD_NUM		3
 	struct fd_param *param = (struct fd_param *)buf_in;
+	struct hclge_desc desc[HNS3_CAE_FD_TCAM_BD_NUM];
 	struct hclge_fd_tcam_config_1_cmd *req1;
 	struct hclge_fd_tcam_config_2_cmd *req2;
 	struct hclge_fd_tcam_config_3_cmd *req3;
 	struct hclge_fd_tcam_data *tcam_data;
-	struct hclge_desc desc[3];
 	struct hclge_desc *pdesc;
 	bool check;
 	u8 *buf;

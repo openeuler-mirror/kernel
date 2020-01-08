@@ -157,7 +157,7 @@ void hns3_cae_cmd_setup_basic_desc(struct hclge_desc *desc,
 
 /**
  * hns3_cae_cmd_send - send command to command queue
- * @h: pointer to the hnae3_handle
+ * @hdev: pointer to the hclge_dev
  * @desc: prefilled descriptor for describing the command
  * @num : the number of descriptors to be sent
  *

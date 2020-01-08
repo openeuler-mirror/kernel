@@ -420,12 +420,21 @@ static ssize_t hns3_cae_k_write(struct file *pfile, const char __user *ubuf,
 
 static int hns3_cae_k_mmap(struct file *filp, struct vm_area_struct *vma)
 {
+	phys_addr_t offset = (phys_addr_t)vma->vm_pgoff << PAGE_SHIFT;
+	size_t size = vma->vm_end - vma->vm_start;
 	int ret;
 
 	vma->vm_flags |= VM_IO;
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+
+	if (offset + (phys_addr_t)size - 1 < offset)
+		return -EINVAL;
+
+	if (offset >> PAGE_SHIFT != vma->vm_pgoff)
+		return -EINVAL;
+
 	ret = remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
-			      vma->vm_end - vma->vm_start, vma->vm_page_prot);
+			      size, vma->vm_page_prot);
 	if (ret)
 		return -EIO;
 

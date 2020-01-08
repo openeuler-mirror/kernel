@@ -239,11 +239,16 @@ static struct sk_buff *__hns_assemble_skb(struct net_device *ndev,
 {
 	const struct ethhdr *ethhead = (const struct ethhdr *)data;
 	const char *head_data = (const char *)data;
+	struct sk_buff *skb = NULL;
 	struct page *p = NULL;
-	struct sk_buff *skb;
 	void *buff = NULL;
 	int proc_length;
 	int bnum = 0;
+
+	if (mss <= 0) {
+		pr_err("mss(=%d) of packet is invalid\n", mss);
+		return NULL;
+	}
 
 	/* allocate test skb */
 	skb = alloc_skb(256, GFP_KERNEL);
@@ -409,8 +414,15 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 				       58);
 		break;
 	case HNS3_CAE_PKT_TYPE_IPV4_TRACEROUTE_OPTION:
+		if (in_info->pkt_len < IPV4_TRACEROUTE_PKT_LEN) {
+			dev_err(&netdev->dev,
+				"pkt_len(=%d) of ipv4 trace route pkt must big than %d.\n",
+				in_info->pkt_len, IPV4_TRACEROUTE_PKT_LEN);
+			return;
+		}
+
 		hns3_cae_pkt_type_deal(payload, in_info, ifa_list, pkt_payload,
-				       66);
+				       IPV4_TRACEROUTE_PKT_LEN);
 		break;
 	case HNS3_CAE_PKT_TYPE_IPV6:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
@@ -420,11 +432,17 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 				       54);
 		break;
 	case HNS3_CAE_PKT_TYPE_IPV6_EXTENSION_ROUTING:
+		if (in_info->pkt_len < IPV6_EXTENSION_PKT_LEN) {
+			dev_err(&netdev->dev,
+				"pkt_len(=%d) of ipv6 extension pkt must big than %d.\n",
+				in_info->pkt_len, IPV6_EXTENSION_PKT_LEN);
+			return;
+		}
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
 		memcpy(payload + 22, in_info->pkt_inet6_addr, 16);
 
 		hns3_cae_pkt_type_deal(payload, in_info, ifa_list, pkt_payload,
-				       114);
+				       IPV6_EXTENSION_PKT_LEN);
 		break;
 	case HNS3_CAE_PKT_TYPE_SCTP4:
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
@@ -492,8 +510,9 @@ int __hns3_cae_send_pkt(struct hns3_nic_priv *net_priv,
 	struct net_device *netdev = net_priv->netdev;
 
 	handle = net_priv->ae_handle;
-	if (queue_id > handle->kinfo.num_tqps ||
-	    queue_id + in_info->multi_queue - 1 > handle->kinfo.num_tqps) {
+	if (queue_id >= handle->kinfo.num_tqps ||
+	    queue_id + in_info->multi_queue - 1 >= handle->kinfo.num_tqps ||
+	    queue_id < 0) {
 		pr_err("%s,%d:queue(%d) or multi_queue(%d) is invalid\n",
 		       __func__, __LINE__,
 		       in_info->queue_id, in_info->multi_queue);
@@ -501,6 +520,10 @@ int __hns3_cae_send_pkt(struct hns3_nic_priv *net_priv,
 	}
 
 	pkt_len = in_info->pkt_len;
+	if (pkt_len < MIN_PKT_LEN) {
+		dev_err(&netdev->dev, "pkt_len(=%d) is invalid\n", pkt_len);
+		return -EINVAL;
+	}
 
 	payload = kzalloc(pkt_len, GFP_KERNEL);
 	if (ZERO_OR_NULL_PTR(payload))
@@ -643,8 +666,8 @@ int hns3_cae_create_new_thread(int tid,
 
 	memcpy(kthread_table[tid]->in_info, in_info, sizeof(*in_info));
 
-	name[13] = tid / 10 + '0';
-	name[14] = tid % 10 + '0';
+	name[strlen(name) - 2] = tid / 10 + '0';
+	name[strlen(name) - 1] = tid % 10 + '0';
 	kthread_table[tid]->task =
 	    kthread_run(__hns3_cae_new_task, kthread_table[tid], "%s", name);
 	if (IS_ERR(kthread_table[tid]->task)) {
@@ -697,7 +720,7 @@ int hns3_cae_send_pkt(struct hns3_nic_priv *net_priv,
 
 	handle = net_priv->ae_handle;
 	queue_id = in_info->queue_id;
-	if (queue_id > handle->kinfo.num_tqps) {
+	if (queue_id >= handle->kinfo.num_tqps || queue_id < 0) {
 		pr_err("%s,%d:queue(%d) is invalid\n", __func__, __LINE__,
 		       in_info->queue_id);
 		return -EINVAL;

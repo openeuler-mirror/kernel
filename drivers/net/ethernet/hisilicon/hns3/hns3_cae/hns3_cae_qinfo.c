@@ -127,7 +127,7 @@ int hns3_cae_qinfo_cfg(struct hns3_nic_priv *net_priv,
 	out_info = (struct qinfo_param *)buf_out;
 	ring_id = *((int *)buf_in);
 
-	if (ring_id > tqps_num || ring_id < 0) {
+	if (ring_id >= tqps_num || ring_id < 0) {
 		pr_err("please input valid qid\n");
 		return -1;
 	}
