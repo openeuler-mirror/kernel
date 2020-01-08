@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0023
+Release: %{hulkrelease}.0024
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -795,6 +795,9 @@ fi
 %endif
 
 %changelog
+* Mon Jan  6 2020 zhanghailiang<zhang.zhanghailiang@huawei.com> - 4.19.90-vhulk1912.2.1.0024
+- support more than 256 vcpus for VM
+
 * Tue Dec 31 2019 linfeilong<linfeilong@huawei.com> - 4.19.90-vhulk1912.2.1.0023
 - delete some unuseful file
 
