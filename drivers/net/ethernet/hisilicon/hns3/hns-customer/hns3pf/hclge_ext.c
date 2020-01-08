@@ -283,7 +283,7 @@ static int hclge_get_led_signal(struct hnae3_handle *handle, int opcode,
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
-			"hclge_get_sgpio_tx_reg failed %d\n", ret);
+			"hclge get led signal failed %d\n", ret);
 		return ret;
 	}
 
@@ -349,7 +349,7 @@ static int hclge_get_net_lane_status(struct hnae3_handle *handle, int opcode,
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_DISABLE_NET_LANE, true);
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
-		dev_err(&hdev->pdev->dev, "disable net lane failed %d\n", ret);
+		dev_err(&hdev->pdev->dev, "get lane status failed %d\n", ret);
 		return ret;
 	}
 	*status = desc.data[0];
@@ -521,12 +521,12 @@ static int hclge_check_phy_opt_param(struct hclge_dev *hdev,
 				     enum hclge_phy_op_code opt_type)
 {
 	if (!phydev) {
-		dev_err(&hdev->pdev->dev, "this net dev has no phy.\n");
+		dev_err(&hdev->pdev->dev, "this net dev has no phy.");
 		return -EINVAL;
 	}
 
 	if (!mdio_bus) {
-		dev_err(&hdev->pdev->dev, "this net dev has no mdio bus.\n");
+		dev_err(&hdev->pdev->dev, "this net dev has no mdio bus.");
 		return -EINVAL;
 	}
 
@@ -550,7 +550,7 @@ static int hclge_mdio_bus_opt(struct hclge_phy_para *para,
 		op_ret = mdio_bus->read(mdio_bus, phyid, para->reg_addr);
 		if (op_ret < 0) {
 			dev_err(&hdev->pdev->dev,
-				"read phy %d page %d reg %d failed.\n",
+				"read phy %u page %d reg %d failed.\n",
 				phyid, para->page, para->reg_addr);
 		} else {
 			para->data = (u16)op_ret;
@@ -561,7 +561,7 @@ static int hclge_mdio_bus_opt(struct hclge_phy_para *para,
 					 para->data);
 		if (op_ret < 0) {
 			dev_err(&hdev->pdev->dev,
-				"write phy %d page %d reg %d failed.\n",
+				"write phy %u page %d reg %d failed.\n",
 				phyid, para->page, para->reg_addr);
 		}
 	}
