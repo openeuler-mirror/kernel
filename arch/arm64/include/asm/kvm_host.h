@@ -31,6 +31,7 @@
 #include <asm/kvm.h>
 #include <asm/kvm_asm.h>
 #include <asm/kvm_mmio.h>
+#include <asm/smp_plat.h>
 #include <asm/thread_info.h>
 
 #define __KVM_HAVE_ARCH_INTC_INITIALIZED
@@ -402,6 +403,14 @@ struct kvm_vcpu *kvm_mpidr_to_vcpu(struct kvm *kvm, unsigned long mpidr);
 DECLARE_PER_CPU(kvm_cpu_context_t, kvm_host_cpu_state);
 
 void __kvm_enable_ssbs(void);
+
+static inline void kvm_init_host_cpu_context(kvm_cpu_context_t *cpu_ctxt,
+                                            int cpu)
+{
+       /* The host's MPIDR is immutable, so let's set it up at boot time */
+       cpu_ctxt->sys_regs[MPIDR_EL1] = cpu_logical_map(cpu);
+}
+
 
 static inline void __cpu_init_hyp_mode(phys_addr_t pgd_ptr,
 				       unsigned long hyp_stack_ptr,

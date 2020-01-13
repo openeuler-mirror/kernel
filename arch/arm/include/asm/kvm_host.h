@@ -26,6 +26,7 @@
 #include <asm/kvm_asm.h>
 #include <asm/kvm_mmio.h>
 #include <asm/fpstate.h>
+#include <asm/smp_plat.h>
 #include <kvm/arm_arch_timer.h>
 
 #define __KVM_HAVE_ARCH_INTC_INITIALIZED
@@ -147,6 +148,13 @@ struct kvm_cpu_context {
 };
 
 typedef struct kvm_cpu_context kvm_cpu_context_t;
+
+static inline void kvm_init_host_cpu_context(kvm_cpu_context_t *cpu_ctxt,
+					     int cpu)
+{
+	/* The host's MPIDR is immutable, so let's set it up at boot time */
+	cpu_ctxt->cp15[c0_MPIDR] = cpu_logical_map(cpu);
+}
 
 struct vcpu_reset_state {
 	unsigned long	pc;
