@@ -557,13 +557,21 @@ static inline int list_is_first(const struct list_head *list,
 	return list->prev == head;
 }
 
+/* Default is 16 cached LPIs per vcpu */
+#define LPI_DEFAULT_PCPU_CACHE_SIZE	16
+
 static struct vgic_irq *__vgic_its_check_cache(struct vgic_dist *dist,
 					       phys_addr_t db,
-					       u32 devid, u32 eventid)
+					       u32 devid, u32 eventid,
+					       int cacheid)
 {
 	struct vgic_translation_cache_entry *cte;
+	struct vgic_irq *irq = NULL;
+	struct list_head *cache_head;
+	int pos = 0;
 
-	list_for_each_entry(cte, &dist->lpi_translation_cache, entry) {
+	cache_head = &dist->lpi_translation_cache[cacheid].lpi_cache;
+	list_for_each_entry(cte, cache_head, entry) {
 		/*
 		 * If we hit a NULL entry, there is nothing after this
 		 * point.
@@ -571,21 +579,25 @@ static struct vgic_irq *__vgic_its_check_cache(struct vgic_dist *dist,
 		if (!cte->irq)
 			break;
 
-		if (cte->db != db || cte->devid != devid ||
-		    cte->eventid != eventid)
-			continue;
+		pos++;
 
-		/*
-		 * Move this entry to the head, as it is the most
-		 * recently used.
-		 */
-		if (!list_is_first(&cte->entry, &dist->lpi_translation_cache))
-			list_move(&cte->entry, &dist->lpi_translation_cache);
+		if (cte->devid == devid &&
+		    cte->eventid == eventid &&
+		    cte->db == db) {
+			/*
+			 * Move this entry to the head if the entry at the
+			 * position behind the LPI_DEFAULT_PCPU_CACHE_SIZE * 2
+			 * of the LRU list, as it is the most recently used.
+			 */
+			if (pos > LPI_DEFAULT_PCPU_CACHE_SIZE * 2)
+				list_move(&cte->entry, cache_head);
 
-		return cte->irq;
+			irq = cte->irq;
+			break;
+		}
 	}
 
-	return NULL;
+	return irq;
 }
 
 static struct vgic_irq *vgic_its_check_cache(struct kvm *kvm, phys_addr_t db,
@@ -593,11 +605,15 @@ static struct vgic_irq *vgic_its_check_cache(struct kvm *kvm, phys_addr_t db,
 {
 	struct vgic_dist *dist = &kvm->arch.vgic;
 	struct vgic_irq *irq;
-	unsigned long flags;
+	int cpu;
+	int cacheid;
 
-	raw_spin_lock_irqsave(&dist->lpi_list_lock, flags);
-	irq = __vgic_its_check_cache(dist, db, devid, eventid);
-	raw_spin_unlock_irqrestore(&dist->lpi_list_lock, flags);
+	cpu = smp_processor_id();
+	cacheid = cpu % LPI_TRANS_CACHES_NUM;
+
+	raw_spin_lock(&dist->lpi_translation_cache[cacheid].lpi_cache_lock);
+	irq = __vgic_its_check_cache(dist, db, devid, eventid, cacheid);
+	raw_spin_unlock(&dist->lpi_translation_cache[cacheid].lpi_cache_lock);
 
 	return irq;
 }
@@ -610,49 +626,58 @@ static void vgic_its_cache_translation(struct kvm *kvm, struct vgic_its *its,
 	struct vgic_translation_cache_entry *cte;
 	unsigned long flags;
 	phys_addr_t db;
+	raw_spinlock_t *lpi_lock;
+	struct list_head *cache_head;
+	int cacheid;
 
 	/* Do not cache a directly injected interrupt */
 	if (irq->hw)
 		return;
 
-	raw_spin_lock_irqsave(&dist->lpi_list_lock, flags);
+	for (cacheid = 0; cacheid < LPI_TRANS_CACHES_NUM; cacheid++) {
+		lpi_lock = &dist->lpi_translation_cache[cacheid].lpi_cache_lock;
+		cache_head = &dist->lpi_translation_cache[cacheid].lpi_cache;
+		raw_spin_lock_irqsave(lpi_lock, flags);
+		if (unlikely(list_empty(cache_head))) {
+			raw_spin_unlock_irqrestore(lpi_lock, flags);
+			break;
+		}
 
-	if (unlikely(list_empty(&dist->lpi_translation_cache)))
-		goto out;
+		/*
+		 * We could have raced with another CPU caching the same
+		 * translation behind our back, so let's check it is not in
+		 * already
+		 */
+		db = its->vgic_its_base + GITS_TRANSLATER;
+		if (__vgic_its_check_cache(dist, db, devid, eventid, cacheid)) {
+			raw_spin_unlock_irqrestore(lpi_lock, flags);
+			continue;
+		}
 
-	/*
-	 * We could have raced with another CPU caching the same
-	 * translation behind our back, so let's check it is not in
-	 * already
-	 */
-	db = its->vgic_its_base + GITS_TRANSLATER;
-	if (__vgic_its_check_cache(dist, db, devid, eventid))
-		goto out;
+		/* Always reuse the last entry (LRU policy) */
+		cte = list_last_entry(cache_head, typeof(*cte), entry);
 
-	/* Always reuse the last entry (LRU policy) */
-	cte = list_last_entry(&dist->lpi_translation_cache,
-			      typeof(*cte), entry);
+		/*
+		 * Caching the translation implies having an extra reference
+		 * to the interrupt, so drop the potential reference on what
+		 * was in the cache, and increment it on the new interrupt.
+		 */
+		if (cte->irq) {
+			raw_spin_lock(&dist->lpi_list_lock);
+			__vgic_put_lpi_locked(kvm, cte->irq);
+			raw_spin_unlock(&dist->lpi_list_lock);
+		}
+		vgic_get_irq_kref(irq);
 
-	/*
-	 * Caching the translation implies having an extra reference
-	 * to the interrupt, so drop the potential reference on what
-	 * was in the cache, and increment it on the new interrupt.
-	 */
-	if (cte->irq)
-		__vgic_put_lpi_locked(kvm, cte->irq);
+		cte->db		= db;
+		cte->devid	= devid;
+		cte->eventid	= eventid;
+		cte->irq	= irq;
 
-	vgic_get_irq_kref(irq);
-
-	cte->db		= db;
-	cte->devid	= devid;
-	cte->eventid	= eventid;
-	cte->irq	= irq;
-
-	/* Move the new translation to the head of the list */
-	list_move(&cte->entry, &dist->lpi_translation_cache);
-
-out:
-	raw_spin_unlock_irqrestore(&dist->lpi_list_lock, flags);
+		/* Move the new translation to the head of the list */
+		list_move(&cte->entry, cache_head);
+		raw_spin_unlock_irqrestore(lpi_lock, flags);
+	}
 }
 
 void vgic_its_invalidate_cache(struct kvm *kvm)
@@ -660,22 +685,29 @@ void vgic_its_invalidate_cache(struct kvm *kvm)
 	struct vgic_dist *dist = &kvm->arch.vgic;
 	struct vgic_translation_cache_entry *cte;
 	unsigned long flags;
+	raw_spinlock_t *lpi_lock;
+	struct list_head *cache_head;
+	int i;
 
-	raw_spin_lock_irqsave(&dist->lpi_list_lock, flags);
+	for (i = 0; i < LPI_TRANS_CACHES_NUM; i++) {
+		lpi_lock = &dist->lpi_translation_cache[i].lpi_cache_lock;
+		cache_head = &dist->lpi_translation_cache[i].lpi_cache;
+		raw_spin_lock_irqsave(lpi_lock, flags);
+		list_for_each_entry(cte, cache_head, entry) {
+			/*
+			 * If we hit a NULL entry, there is nothing after this
+			 * point.
+			 */
+			if (!cte->irq)
+				break;
 
-	list_for_each_entry(cte, &dist->lpi_translation_cache, entry) {
-		/*
-		 * If we hit a NULL entry, there is nothing after this
-		 * point.
-		 */
-		if (!cte->irq)
-			break;
-
-		__vgic_put_lpi_locked(kvm, cte->irq);
-		cte->irq = NULL;
+			raw_spin_lock(&dist->lpi_list_lock);
+			__vgic_put_lpi_locked(kvm, cte->irq);
+			raw_spin_unlock(&dist->lpi_list_lock);
+			cte->irq = NULL;
+		}
+		raw_spin_unlock_irqrestore(lpi_lock, flags);
 	}
-
-	raw_spin_unlock_irqrestore(&dist->lpi_list_lock, flags);
 }
 
 int vgic_its_resolve_lpi(struct kvm *kvm, struct vgic_its *its,
@@ -1872,30 +1904,34 @@ out:
 	return ret;
 }
 
-/* Default is 16 cached LPIs per vcpu */
-#define LPI_DEFAULT_PCPU_CACHE_SIZE	16
-
 void vgic_lpi_translation_cache_init(struct kvm *kvm)
 {
 	struct vgic_dist *dist = &kvm->arch.vgic;
 	unsigned int sz;
+	struct list_head *cache_head;
 	int i;
+	int cacheid;
 
-	if (!list_empty(&dist->lpi_translation_cache))
-		return;
+	for (cacheid = 0; cacheid < LPI_TRANS_CACHES_NUM; cacheid++) {
+		cache_head = &dist->lpi_translation_cache[cacheid].lpi_cache;
+		if (!list_empty(cache_head))
+			return;
+	}
 
 	sz = atomic_read(&kvm->online_vcpus) * LPI_DEFAULT_PCPU_CACHE_SIZE;
 
-	for (i = 0; i < sz; i++) {
-		struct vgic_translation_cache_entry *cte;
+	for (cacheid = 0; cacheid < LPI_TRANS_CACHES_NUM; cacheid++) {
+		cache_head = &dist->lpi_translation_cache[cacheid].lpi_cache;
+		for (i = 0; i < sz; i++) {
+			struct vgic_translation_cache_entry *cte;
 
-		/* An allocation failure is not fatal */
-		cte = kzalloc(sizeof(*cte), GFP_KERNEL);
-		if (WARN_ON(!cte))
-			break;
-
-		INIT_LIST_HEAD(&cte->entry);
-		list_add(&cte->entry, &dist->lpi_translation_cache);
+			/* An allocation failure is not fatal */
+			cte = kzalloc(sizeof(*cte), GFP_KERNEL);
+			if (WARN_ON(!cte))
+				break;
+			INIT_LIST_HEAD(&cte->entry);
+			list_add(&cte->entry, cache_head);
+		}
 	}
 }
 
@@ -1903,13 +1939,22 @@ void vgic_lpi_translation_cache_destroy(struct kvm *kvm)
 {
 	struct vgic_dist *dist = &kvm->arch.vgic;
 	struct vgic_translation_cache_entry *cte, *tmp;
+	unsigned long flags;
+	raw_spinlock_t *lpi_lock;
+	struct list_head *cache_head;
+	int cacheid;
 
 	vgic_its_invalidate_cache(kvm);
 
-	list_for_each_entry_safe(cte, tmp,
-				 &dist->lpi_translation_cache, entry) {
-		list_del(&cte->entry);
-		kfree(cte);
+	for (cacheid = 0; cacheid < LPI_TRANS_CACHES_NUM; cacheid++) {
+		lpi_lock = &dist->lpi_translation_cache[cacheid].lpi_cache_lock;
+		cache_head = &dist->lpi_translation_cache[cacheid].lpi_cache;
+		raw_spin_lock_irqsave(lpi_lock, flags);
+		list_for_each_entry_safe(cte, tmp, cache_head, entry) {
+			list_del(&cte->entry);
+			kfree(cte);
+		}
+		raw_spin_unlock_irqrestore(lpi_lock, flags);
 	}
 }
 
