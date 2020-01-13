@@ -1654,10 +1654,10 @@ static unsigned long vgic_mmio_read_its_baser(struct kvm *kvm,
 }
 
 #define GITS_BASER_RO_MASK	(GENMASK_ULL(52, 48) | GENMASK_ULL(58, 56))
-static void vgic_mmio_write_its_baser(struct kvm *kvm,
-				      struct vgic_its *its,
-				      gpa_t addr, unsigned int len,
-				      unsigned long val)
+static void vgic_mmio_write_its_baser_common(struct kvm *kvm,
+					     struct vgic_its *its,
+					     gpa_t addr, unsigned int len,
+					     unsigned long val, bool uaccess)
 {
 	const struct vgic_its_abi *abi = vgic_its_get_abi(its);
 	u64 entry_size, table_type;
@@ -1694,10 +1694,21 @@ static void vgic_mmio_write_its_baser(struct kvm *kvm,
 	*regptr = reg;
 
 	if (!(reg & GITS_BASER_VALID)) {
+		struct kvm_vcpu *vcpu;
+		int c;
+
 		/* Take the its_lock to prevent a race with a save/restore */
 		mutex_lock(&its->its_lock);
 		switch (table_type) {
 		case GITS_BASER_TYPE_DEVICE:
+			if (!uaccess) {
+				/* Fix kdump irq missing issue */
+				pr_debug("%s: flush pending LPIs for all VCPUs.\n",
+					 __func__);
+				kvm_for_each_vcpu(c, vcpu, kvm)
+					vgic_flush_pending_lpis(vcpu);
+			}
+
 			vgic_its_free_device_list(kvm, its);
 			break;
 		case GITS_BASER_TYPE_COLLECTION:
@@ -1706,6 +1717,23 @@ static void vgic_mmio_write_its_baser(struct kvm *kvm,
 		}
 		mutex_unlock(&its->its_lock);
 	}
+}
+
+static void vgic_mmio_write_its_baser(struct kvm *kvm,
+				      struct vgic_its *its,
+				      gpa_t addr, unsigned int len,
+				      unsigned long val)
+{
+	vgic_mmio_write_its_baser_common(kvm, its, addr, len, val, false);
+}
+
+static int vgic_mmio_uaccess_write_its_baser(struct kvm *kvm,
+					      struct vgic_its *its,
+					      gpa_t addr, unsigned int len,
+					      unsigned long val)
+{
+	vgic_mmio_write_its_baser_common(kvm, its, addr, len, val, true);
+	return 0;
 }
 
 static unsigned long vgic_mmio_read_its_ctlr(struct kvm *vcpu,
@@ -1800,8 +1828,9 @@ static struct vgic_register_region its_registers[] = {
 		vgic_mmio_read_its_creadr, its_mmio_write_wi,
 		vgic_mmio_uaccess_write_its_creadr, 8,
 		VGIC_ACCESS_64bit | VGIC_ACCESS_32bit),
-	REGISTER_ITS_DESC(GITS_BASER,
-		vgic_mmio_read_its_baser, vgic_mmio_write_its_baser, 0x40,
+	REGISTER_ITS_DESC_UACCESS(GITS_BASER,
+		vgic_mmio_read_its_baser, vgic_mmio_write_its_baser,
+		vgic_mmio_uaccess_write_its_baser, 0x40,
 		VGIC_ACCESS_64bit | VGIC_ACCESS_32bit),
 	REGISTER_ITS_DESC(GITS_IDREGS_BASE,
 		vgic_mmio_read_its_idregs, its_mmio_write_wi, 0x30,
