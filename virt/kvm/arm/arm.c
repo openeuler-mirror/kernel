@@ -1441,6 +1441,8 @@ static int init_common_resources(void)
 	kvm_vmid_bits = kvm_get_vmid_bits();
 	kvm_info("%d-bit VMID\n", kvm_vmid_bits);
 
+	kvm_set_ipa_limit();
+
 	return 0;
 }
 
