@@ -226,7 +226,10 @@ static int handle_trap_exceptions(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		exit_handle_fn exit_handler;
 
 		exit_handler = kvm_get_exit_handler(vcpu);
+		trace_kvm_trap_enter(vcpu->vcpu_id,
+				     kvm_vcpu_trap_get_class(vcpu));
 		handled = exit_handler(vcpu, run);
+		trace_kvm_trap_exit(vcpu->vcpu_id);
 	}
 
 	/*
