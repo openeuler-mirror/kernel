@@ -1269,7 +1269,9 @@ struct iommu_group *iommu_group_get_for_dev(struct device *dev)
 	const struct iommu_ops *ops = dev->bus->iommu_ops;
 	struct iommu_group *group;
 	int ret;
-
+#ifdef CONFIG_SMMU_BYPASS_DEV
+	unsigned int type = iommu_def_domain_type;
+#endif
 	group = iommu_group_get(dev);
 	if (group)
 		return group;
@@ -1291,8 +1293,19 @@ struct iommu_group *iommu_group_get_for_dev(struct device *dev)
 	if (!group->default_domain) {
 		struct iommu_domain *dom;
 
+#ifdef CONFIG_SMMU_BYPASS_DEV
+		/* direct allocate required default domain type for some specific devices. */
+		if (ops->device_domain_type != NULL) {
+			if (ops->device_domain_type(dev, &type))
+				type = iommu_def_domain_type;
+               }
+
+		dom = __iommu_domain_alloc(dev->bus, type);
+		if (!dom && type != IOMMU_DOMAIN_DMA) {
+#else
 		dom = __iommu_domain_alloc(dev->bus, iommu_def_domain_type);
 		if (!dom && iommu_def_domain_type != IOMMU_DOMAIN_DMA) {
+#endif
 			dev_warn(dev,
 				 "failed to allocate default IOMMU domain of type %u; falling back to IOMMU_DOMAIN_DMA",
 				 iommu_def_domain_type);

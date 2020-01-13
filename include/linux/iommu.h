@@ -362,6 +362,12 @@ struct iommu_ops {
 	int (*page_response)(struct device *dev, struct page_response_msg *msg);
 
 	unsigned long pgsize_bitmap;
+
+#ifdef CONFIG_SMMU_BYPASS_DEV
+#ifndef __GENKSYMS__
+	int (*device_domain_type)(struct device *dev, unsigned int *type);
+#endif
+#endif
 };
 
 /**
