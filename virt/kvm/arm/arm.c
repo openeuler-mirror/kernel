@@ -72,6 +72,7 @@ static bool vgic_present;
 
 /* Hisi cpu type enum */
 enum hisi_cpu_type hi_cpu_type = UNKNOWN_HI_TYPE;
+bool kvm_ncsnp_support;
 
 static DEFINE_PER_CPU(unsigned char, kvm_arm_hardware_enabled);
 
@@ -1677,6 +1678,7 @@ int kvm_arch_init(void *opaque)
 
 	/* Probe the Hisi CPU type */
 	probe_hisi_cpu_type();
+	probe_hisi_ncsnp_support();
 
 	if (!is_hyp_mode_available()) {
 		kvm_info("HYP mode not available\n");

@@ -80,3 +80,37 @@ void probe_hisi_cpu_type(void)
 
 	WARN_ON(hi_cpu_type == UNKNOWN_HI_TYPE);
 }
+
+#define NCSNP_MMIO_BASE	0x20107E238
+
+/*
+ * We have the fantastic HHA ncsnp capability on Kunpeng 920,
+ * with which hypervisor doesn't need to perform a lot of cache
+ * maintenance like before (in case the guest has non-cacheable
+ * Stage-1 mappings).
+ */
+void probe_hisi_ncsnp_support(void)
+{
+	void __iomem *base;
+	unsigned int high;
+
+	kvm_ncsnp_support = false;
+
+	if (hi_cpu_type != HI_1620)
+		goto out;
+
+	base = ioremap(NCSNP_MMIO_BASE, 4);
+	if (!base) {
+		pr_err("Unable to map MMIO region when probing ncsnp!\n");
+		goto out;
+	}
+
+	high = readl_relaxed(base) >> 28;
+	iounmap(base);
+	if (high != 0x1)
+		kvm_ncsnp_support = true;
+
+out:
+	kvm_info("Hisi ncsnp: %s\n", kvm_ncsnp_support ? "enabled" :
+							 "disabled");
+}
