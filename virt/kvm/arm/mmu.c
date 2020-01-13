@@ -1056,7 +1056,8 @@ static pmd_t *stage2_get_pmd(struct kvm *kvm, struct kvm_mmu_memory_cache *cache
 }
 
 static int stage2_set_pmd_huge(struct kvm *kvm, struct kvm_mmu_memory_cache
-			       *cache, phys_addr_t addr, const pmd_t *new_pmd)
+			       *cache, phys_addr_t addr, const pmd_t *new_pmd,
+			       unsigned long fault_status)
 {
 	pmd_t *pmd, old_pmd;
 
@@ -1072,12 +1073,15 @@ retry:
 	 * (pmd_clear() followed by tlb_flush()) process can
 	 * hinder forward progress due to refaults generated
 	 * on missing translations.
-	 *
-	 * Skip updating the page table if the entry is
-	 * unchanged.
 	 */
-	if (pmd_val(old_pmd) == pmd_val(*new_pmd))
-		return 0;
+	if (fault_status == FSC_PERM) {
+		/* Skip updating the page table if the entry is unchanged. */
+		if (pmd_val(old_pmd) == pmd_val(*new_pmd))
+			return 0;
+	} else if (fault_status == FSC_FAULT) {
+		if (pmd_present(old_pmd) && !pmd_table(old_pmd))
+			return 0;
+	}
 
 	if (pmd_present(old_pmd)) {
 		/*
@@ -1120,7 +1124,8 @@ retry:
 }
 
 static int stage2_set_pud_huge(struct kvm *kvm, struct kvm_mmu_memory_cache *cache,
-			       phys_addr_t addr, const pud_t *new_pudp)
+			       phys_addr_t addr, const pud_t *new_pudp,
+			       unsigned long fault_status)
 {
 	pud_t *pudp, old_pud;
 
@@ -1135,8 +1140,13 @@ retry:
 	 * can lead to a refault due to the stage2_pud_clear()/tlb_flush().
 	 * Skip updating the page tables if there is no change.
 	 */
-	if (pud_val(old_pud) == pud_val(*new_pudp))
-		return 0;
+	if (fault_status == FSC_PERM) {
+		if (pud_val(old_pud) == pud_val(*new_pudp))
+			return 0;
+	} else if (fault_status == FSC_FAULT) {
+		if (pud_present(old_pud) && !pud_table(old_pud))
+			return 0;
+	}
 
 	if (stage2_pud_present(kvm, old_pud)) {
 		/*
@@ -1223,7 +1233,7 @@ static bool stage2_is_exec(struct kvm *kvm, phys_addr_t addr)
 
 static int stage2_set_pte(struct kvm *kvm, struct kvm_mmu_memory_cache *cache,
 			  phys_addr_t addr, const pte_t *new_pte,
-			  unsigned long flags)
+			  unsigned long flags, unsigned long fault_status)
 {
 	pud_t *pud;
 	pmd_t *pmd;
@@ -1290,11 +1300,16 @@ static int stage2_set_pte(struct kvm *kvm, struct kvm_mmu_memory_cache *cache,
 
 	/* Create 2nd stage page table mapping - Level 3 */
 	old_pte = *pte;
-	if (pte_present(old_pte)) {
+	if (fault_status == FSC_PERM) {
 		/* Skip page table update if there is no change */
 		if (pte_val(old_pte) == pte_val(*new_pte))
 			return 0;
+	} else if (fault_status == FSC_FAULT) {
+		if (pte_present(old_pte))
+			return 0;
+	}
 
+	if (pte_present(old_pte)) {
 		kvm_set_pte(pte, __pte(0));
 		kvm_tlb_flush_vmid_ipa(kvm, addr);
 	} else {
@@ -1363,7 +1378,7 @@ int kvm_phys_addr_ioremap(struct kvm *kvm, phys_addr_t guest_ipa,
 			goto out;
 		spin_lock(&kvm->mmu_lock);
 		ret = stage2_set_pte(kvm, &cache, addr, &pte,
-						KVM_S2PTE_FLAG_IS_IOMAP);
+				     KVM_S2PTE_FLAG_IS_IOMAP, FSC_IGNORE);
 		spin_unlock(&kvm->mmu_lock);
 		if (ret)
 			goto out;
@@ -1833,7 +1848,8 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 		if (needs_exec)
 			new_pud = kvm_s2pud_mkexec(new_pud);
 
-		ret = stage2_set_pud_huge(kvm, memcache, fault_ipa, &new_pud);
+		ret = stage2_set_pud_huge(kvm, memcache, fault_ipa, &new_pud,
+					  fault_status);
 	} else if (vma_pagesize == PMD_SIZE) {
 		pmd_t new_pmd = kvm_pfn_pmd(pfn, mem_type);
 
@@ -1845,7 +1861,8 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 		if (needs_exec)
 			new_pmd = kvm_s2pmd_mkexec(new_pmd);
 
-		ret = stage2_set_pmd_huge(kvm, memcache, fault_ipa, &new_pmd);
+		ret = stage2_set_pmd_huge(kvm, memcache, fault_ipa, &new_pmd,
+					  fault_status);
 	} else {
 		pte_t new_pte = kvm_pfn_pte(pfn, mem_type);
 
@@ -1857,7 +1874,8 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 		if (needs_exec)
 			new_pte = kvm_s2pte_mkexec(new_pte);
 
-		ret = stage2_set_pte(kvm, memcache, fault_ipa, &new_pte, flags);
+		ret = stage2_set_pte(kvm, memcache, fault_ipa, &new_pte, flags,
+				     fault_status);
 	}
 
 out_unlock:
@@ -2083,7 +2101,7 @@ static int kvm_set_spte_handler(struct kvm *kvm, gpa_t gpa, u64 size, void *data
 	 * therefore stage2_set_pte() never needs to clear out a huge PMD
 	 * through this calling path.
 	 */
-	stage2_set_pte(kvm, NULL, gpa, pte, 0);
+	stage2_set_pte(kvm, NULL, gpa, pte, 0, FSC_IGNORE);
 	return 0;
 }
 

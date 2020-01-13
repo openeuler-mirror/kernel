@@ -185,6 +185,7 @@
 #define FSC_FAULT	(0x04)
 #define FSC_ACCESS	(0x08)
 #define FSC_PERM	(0x0c)
+#define FSC_IGNORE	(-1)
 #define FSC_SEA		(0x10)
 #define FSC_SEA_TTW0	(0x14)
 #define FSC_SEA_TTW1	(0x15)
