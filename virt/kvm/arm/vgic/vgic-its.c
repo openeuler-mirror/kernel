@@ -605,15 +605,16 @@ static struct vgic_irq *vgic_its_check_cache(struct kvm *kvm, phys_addr_t db,
 {
 	struct vgic_dist *dist = &kvm->arch.vgic;
 	struct vgic_irq *irq;
+	unsigned long flags;
 	int cpu;
 	int cacheid;
 
 	cpu = smp_processor_id();
 	cacheid = cpu % LPI_TRANS_CACHES_NUM;
 
-	raw_spin_lock(&dist->lpi_translation_cache[cacheid].lpi_cache_lock);
+	raw_spin_lock_irqsave(&dist->lpi_translation_cache[cacheid].lpi_cache_lock, flags);
 	irq = __vgic_its_check_cache(dist, db, devid, eventid, cacheid);
-	raw_spin_unlock(&dist->lpi_translation_cache[cacheid].lpi_cache_lock);
+	raw_spin_unlock_irqrestore(&dist->lpi_translation_cache[cacheid].lpi_cache_lock, flags);
 
 	return irq;
 }
