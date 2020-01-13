@@ -1676,14 +1676,14 @@ int kvm_arch_init(void *opaque)
 	int ret, cpu;
 	bool in_hyp_mode;
 
-	/* Probe the Hisi CPU type */
-	probe_hisi_cpu_type();
-	probe_hisi_ncsnp_support();
-
 	if (!is_hyp_mode_available()) {
 		kvm_info("HYP mode not available\n");
 		return -ENODEV;
 	}
+
+	/* Probe the Hisi CPU type */
+	probe_hisi_cpu_type();
+	probe_hisi_ncsnp_support();
 
 	if (!kvm_arch_check_sve_has_vhe()) {
 		kvm_pr_unimpl("SVE system without VHE unsupported.  Broken cpu?");
