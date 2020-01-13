@@ -33,6 +33,7 @@
 #include <asm/kvm_asm.h>
 #include <asm/kvm_mmio.h>
 #include <asm/thread_info.h>
+#include <asm/hisi_cpu_model.h>
 
 #define __KVM_HAVE_ARCH_INTC_INITIALIZED
 

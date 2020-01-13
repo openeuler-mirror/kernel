@@ -70,6 +70,9 @@ static DEFINE_SPINLOCK(kvm_vmid_lock);
 
 static bool vgic_present;
 
+/* Hisi cpu type enum */
+enum hisi_cpu_type hi_cpu_type = UNKNOWN_HI_TYPE;
+
 static DEFINE_PER_CPU(unsigned char, kvm_arm_hardware_enabled);
 
 static void kvm_arm_set_running_vcpu(struct kvm_vcpu *vcpu)
@@ -1671,6 +1674,9 @@ int kvm_arch_init(void *opaque)
 	int err;
 	int ret, cpu;
 	bool in_hyp_mode;
+
+	/* Probe the Hisi CPU type */
+	probe_hisi_cpu_type();
 
 	if (!is_hyp_mode_available()) {
 		kvm_info("HYP mode not available\n");
