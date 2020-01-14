@@ -12,9 +12,9 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease vhulk1912.2.1
+%global hulkrelease vhulk2001.1.0
 
-%define with_patch 1
+%define with_patch 0
 
 %define debuginfodir /usr/lib/debug
 
@@ -24,14 +24,14 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0024
+Release: %{hulkrelease}.0025
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
 %if 0%{?with_patch}
 Source0: linux-%{TarballVer}.tar.gz
 %else
-Source0: linux-%{version}.tar.gz
+Source0: linux-%{version}.tar.gz#/kernel.tar.gz
 %endif
 Source10: sign-modules
 Source11: x509.genkey
@@ -215,6 +215,7 @@ fi
 cp -rl vanilla-%{TarballVer} linux-%{KernelVer}
 %else
 %setup -q -n kernel-%{version} -c
+mv kernel linux-%{version}
 cp -rl linux-%{version} linux-%{KernelVer}
 %endif
 
@@ -273,8 +274,8 @@ perl -p -i -e "s/^EXTRAVERSION.*/EXTRAVERSION = -%{release}.%{_target_cpu}/" Mak
 ## make linux
 make mrproper %{_smp_mflags}
 
-make ARCH=%{Arch} euleros_defconfig
-make ARCH=%{Arch} oldnoconfig
+make ARCH=%{Arch} openeuler_defconfig
+make ARCH=%{Arch} olddefconfig
 
 TargetImage=$(basename $(make -s image_name))
 
@@ -284,7 +285,8 @@ make ARCH=%{Arch} modules %{?_smp_mflags}
 %if 0%{?with_kabichk}
     chmod 0755 %{SOURCE18}
     if [ -e $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} ]; then
-        %{SOURCE18} -k $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
+        ##%{SOURCE18} -k $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
+	echo "**** NOTE: now don't check Kabi. ****"
     else
         echo "**** NOTE: Cannot find reference Module.kabi file. ****"
     fi
@@ -795,6 +797,9 @@ fi
 %endif
 
 %changelog
+* Mon Jan 13 2020 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1912.2.1.0025
+- update kernel code from https://gitee.com/openeuler/kernel/ 
+
 * Mon Jan  6 2020 zhanghailiang<zhang.zhanghailiang@huawei.com> - 4.19.90-vhulk1912.2.1.0024
 - support more than 256 vcpus for VM
 
