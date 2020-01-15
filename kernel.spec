@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0025
+Release: %{hulkrelease}.0026
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -65,6 +65,7 @@ BuildRequires: hmaccalc
 BuildRequires: ncurses-devel
 #BuildRequires: pesign >= 0.109-4
 BuildRequires: elfutils-libelf-devel
+BuildRequires: rpm >= 4.14.2
 #BuildRequires: sparse >= 0.4.1
 BuildRequires: elfutils-devel zlib-devel binutils-devel newt-devel python-devel perl(ExtUtils::Embed) bison
 BuildRequires: audit-libs-devel
@@ -178,8 +179,7 @@ package or when debugging this package.\
 %{nil}
 
 %debuginfo_template -n kernel
-%files -n kernel-debuginfo -f kernel-debugfiles.list -f debugfiles.list
-%{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*/%{KernelVer}/.*|.*/vmlinux|XXX' -o kernel-debugfiles.list}
+%files -n kernel-debuginfo -f debugfiles.list
 
 %debuginfo_template -n bpftool
 %files -n bpftool-debuginfo -f bpftool-debugfiles.list
@@ -797,6 +797,9 @@ fi
 %endif
 
 %changelog
+* Wed Jan 13 2020 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1912.2.1.0026
+- fix compile error when debugfiles.list is empty
+
 * Mon Jan 13 2020 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1912.2.1.0025
 - update kernel code from https://gitee.com/openeuler/kernel/ 
 
