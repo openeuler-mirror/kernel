@@ -681,16 +681,18 @@ el1_irq:
 	irq_handler
 
 #ifdef CONFIG_PREEMPT
-	ldr	x24, [tsk, #TSK_TI_PREEMPT]	// get preempt count
+	ldr	w24, [tsk, #TSK_TI_PREEMPT]	// get preempt count
 alternative_if ARM64_HAS_IRQ_PRIO_MASKING
 	/*
 	 * DA_F were cleared at start of handling. If anything is set in DAIF,
 	 * we come back from an NMI, so skip preemption
 	 */
 	mrs	x0, daif
-	orr	x24, x24, x0
+	orr	w24, w24, w0
 alternative_else_nop_endif
-	cbnz	x24, 1f				// preempt count != 0 || NMI return path
+	cbnz	w24, 1f				// preempt count != 0 || NMI return path
+	ldr	x0, [tsk, #TSK_TI_FLAGS]	// get flags
+	tbz	x0, #TIF_NEED_RESCHED, 1f	// needs rescheduling?
 	bl	el1_preempt
 1:
 #endif
