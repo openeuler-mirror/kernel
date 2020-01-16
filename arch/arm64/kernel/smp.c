@@ -924,9 +924,10 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 	case IPI_CPU_CRASH_STOP:
 		if (IS_ENABLED(CONFIG_KEXEC_CORE)) {
-			if (gic_supports_pseudo_nmis())
-				nmi_enter();
-			else
+			if (gic_supports_pseudo_nmis()) {
+				if (irqs_enabled)
+					nmi_enter();
+			} else
 				irq_enter();
 			ipi_cpu_crash_stop(cpu, regs);
 
