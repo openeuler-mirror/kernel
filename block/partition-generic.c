@@ -263,6 +263,12 @@ static void delete_partition_work_fn(struct work_struct *work)
 void __delete_partition(struct percpu_ref *ref)
 {
 	struct hd_struct *part = container_of(ref, struct hd_struct, ref);
+	struct disk_part_tbl *ptbl =
+		rcu_dereference_protected(part->disk->part_tbl, 1);
+
+	rcu_assign_pointer(ptbl->last_lookup, NULL);
+	put_device(disk_to_dev(part->disk));
+
 	INIT_RCU_WORK(&part->rcu_work, delete_partition_work_fn);
 	queue_rcu_work(system_wq, &part->rcu_work);
 }
@@ -284,8 +290,9 @@ void delete_partition(struct gendisk *disk, int partno)
 	if (!part)
 		return;
 
+	get_device(disk_to_dev(disk));
 	rcu_assign_pointer(ptbl->part[partno], NULL);
-	rcu_assign_pointer(ptbl->last_lookup, NULL);
+
 	kobject_put(part->holder_dir);
 	device_del(part_to_dev(part));
 
@@ -350,6 +357,7 @@ struct hd_struct *add_partition(struct gendisk *disk, int partno,
 	p->nr_sects = len;
 	p->partno = partno;
 	p->policy = get_disk_ro(disk);
+	p->disk = disk;
 
 	if (info) {
 		struct partition_meta_info *pinfo = alloc_part_info(disk);

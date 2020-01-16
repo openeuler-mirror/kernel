@@ -129,6 +129,7 @@ struct hd_struct {
 	struct disk_stats dkstats;
 #endif
 	struct percpu_ref ref;
+	struct gendisk *disk;
 	struct rcu_work rcu_work;
 
 	KABI_RESERVE(1)
