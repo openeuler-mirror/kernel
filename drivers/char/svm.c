@@ -568,26 +568,6 @@ static int svm_bind_core(
 	return err;
 }
 
-static int svm_unbind_core(
-#ifndef CONFIG_ACPI
-	struct device *dev,
-#else
-	struct core_device *cdev,
-#endif
-	void *data)
-{
-	struct svm_process *process = data;
-#ifndef CONFIG_ACPI
-	struct core_device *cdev = to_core_device(dev);
-#endif
-
-	if (cdev->smmu_bypass)
-		return 0;
-
-	iommu_sva_unbind_device(&cdev->dev, process->pasid);
-	return 0;
-}
-
 static void svm_bind_cores(struct svm_process *process)
 {
 #ifdef CONFIG_ACPI
@@ -598,19 +578,6 @@ static void svm_bind_cores(struct svm_process *process)
 	}
 #else
 	device_for_each_child(process->sdev->dev, process, svm_bind_core);
-#endif
-}
-
-static void svm_unbind_cores(struct svm_process *process)
-{
-#ifdef CONFIG_ACPI
-	struct core_device *pos = NULL;
-
-	list_for_each_entry(pos, &child_list, entry) {
-		svm_unbind_core(pos, process);
-	}
-#else
-	device_for_each_child(process->sdev->dev, process, svm_unbind_core);
 #endif
 }
 
@@ -657,7 +624,10 @@ static void svm_notifier_release(struct mmu_notifier *mn,
 
 	process = container_of(mn, struct svm_process, notifier);
 
-	svm_unbind_cores(process);
+	/*
+	 * No need to call svm_unbind_cores(), as iommu-sva will do the
+	 * unbind in its mm_notifier callback.
+	 */
 
 	mutex_lock(&svm_process_mutex);
 	svm_process_release(process);
