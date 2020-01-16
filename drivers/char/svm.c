@@ -493,9 +493,9 @@ static int svm_unpin_memory(unsigned long __user *arg)
 	if (!asid)
 		return -ENOSPC;
 
-	addr &= PAGE_MASK;
 	nr_pages = (PAGE_ALIGN(size + addr) >> PAGE_SHIFT) -
 		   ((addr & PAGE_MASK) >> PAGE_SHIFT);
+	addr &= PAGE_MASK;
 
 	mutex_lock(&svm_process_mutex);
 	process = find_svm_process(asid);
