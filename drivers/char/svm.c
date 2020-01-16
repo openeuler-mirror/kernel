@@ -31,34 +31,26 @@
 #include <linux/hugetlb.h>
 #include <linux/sched/mm.h>
 #include <linux/msi.h>
-#ifdef CONFIG_ACPI
 #include <linux/acpi.h>
-#endif
 
 #define SVM_DEVICE_NAME "svm"
 #define ASID_SHIFT		48
 
 #define SVM_IOCTL_PROCESS_BIND		0xffff
-#define SVM_IOCTL_GET_PHYS			0xfff9
-#ifdef CONFIG_ACPI
-#define SVM_IOCTL_SET_RC			0xfffc
-#else
+#define SVM_IOCTL_GET_PHYS		0xfff9
+#define SVM_IOCTL_SET_RC		0xfffc
 #define SVM_IOCTL_GET_L2PTE_BASE	0xfffb
-#define SVM_IOCTL_LOAD_FLAG			0xfffa
+#define SVM_IOCTL_LOAD_FLAG		0xfffa
 #define SVM_IOCTL_PIN_MEMORY		0xfff7
 #define SVM_IOCTL_UNPIN_MEMORY		0xfff5
 #define SVM_IOCTL_GETHUGEINFO		0xfff6
 #define SVM_IOCTL_REMAP_PROC		0xfff4
-#endif
 
 #define SVM_REMAP_MEM_LEN_MAX		(16 * 1024 * 1024)
 
-#ifndef CONFIG_ACPI
 #define CORE_SID		0
 static int probe_index;
-#else
 static LIST_HEAD(child_list);
-#endif
 static DECLARE_RWSEM(svm_sem);
 static struct rb_root svm_process_root = RB_ROOT;
 static struct mutex svm_process_mutex;
@@ -108,7 +100,6 @@ struct svm_process {
 	struct svm_device	*sdev;
 };
 
-#ifndef CONFIG_ACPI
 struct svm_sdma {
 	struct rb_node node;
 	unsigned long addr;
@@ -129,7 +120,6 @@ struct meminfo {
 	unsigned long hugetlbfree;
 	unsigned long hugetlbtotal;
 };
-#endif
 
 static struct bus_type svm_bus_type = {
 	.name		= "svm_bus",
@@ -142,10 +132,8 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "bind";
 	case SVM_IOCTL_GET_PHYS:
 		return "get phys";
-#ifdef CONFIG_ACPI
 	case SVM_IOCTL_SET_RC:
 		return "set rc";
-#else
 	case SVM_IOCTL_GET_L2PTE_BASE:
 		return "get l2pte base";
 	case SVM_IOCTL_PIN_MEMORY:
@@ -158,15 +146,12 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "remap proc";
 	case SVM_IOCTL_LOAD_FLAG:
 		return "load flag";
-#endif
 	default:
 		return "unsupported";
 	}
 
 	return NULL;
 }
-
-#ifndef CONFIG_ACPI
 
 extern void sysrq_sched_debug_tidy(void);
 
@@ -180,7 +165,6 @@ void sysrq_sched_debug_show_export(void)
 	panic("pcie heart miss\n");
 }
 EXPORT_SYMBOL(sysrq_sched_debug_show_export);
-#endif
 
 static struct svm_process *find_svm_process(unsigned long asid)
 {
@@ -251,9 +235,9 @@ static void cdev_device_release(struct device *dev)
 {
 	struct core_device *cdev = to_core_device(dev);
 
-#ifdef CONFIG_ACPI
-	list_del(&cdev->entry);
-#endif
+	if (!acpi_disabled)
+		list_del(&cdev->entry);
+
 	kfree(cdev);
 }
 
@@ -272,7 +256,6 @@ static int svm_remove_core(struct device *dev, void *data)
 	return 0;
 }
 
-#ifndef CONFIG_ACPI
 static struct svm_sdma *svm_find_sdma(struct svm_process *process,
 				unsigned long addr, int nr_pages)
 {
@@ -435,6 +418,9 @@ static int svm_pin_memory(unsigned long __user *arg)
 	struct svm_process *process = NULL;
 	unsigned long addr, size, asid;
 
+	if (!acpi_disabled)
+		return -EPERM;
+
 	if (arg == NULL)
 		return -EINVAL;
 
@@ -476,6 +462,9 @@ static int svm_unpin_memory(unsigned long __user *arg)
 	struct svm_sdma *sdma = NULL;
 	unsigned long addr, size, asid;
 	struct svm_process *process = NULL;
+
+	if (!acpi_disabled)
+		return -EPERM;
 
 	if (arg == NULL)
 		return -EINVAL;
@@ -532,22 +521,12 @@ static void svm_unpin_all(struct svm_process *process)
 				rb_entry(node, struct svm_sdma, node),
 				false);
 }
-#endif
 
-static int svm_bind_core(
-#ifndef CONFIG_ACPI
-		struct device *dev,
-#else
-		struct core_device *cdev,
-#endif
-	void *data)
+static int svm_acpi_bind_core(struct core_device *cdev,	void *data)
 {
 	int err;
 	struct task_struct *task = NULL;
 	struct svm_process *process = data;
-#ifndef CONFIG_ACPI
-	struct core_device *cdev = to_core_device(dev);
-#endif
 
 	if (cdev->smmu_bypass)
 		return 0;
@@ -568,17 +547,44 @@ static int svm_bind_core(
 	return err;
 }
 
-static void svm_bind_cores(struct svm_process *process)
+static int svm_dt_bind_core(struct device *dev, void *data)
 {
-#ifdef CONFIG_ACPI
+	int err;
+	struct task_struct *task = NULL;
+	struct svm_process *process = data;
+	struct core_device *cdev = to_core_device(dev);
+
+	if (cdev->smmu_bypass)
+		return 0;
+
+	task = get_pid_task(process->pid, PIDTYPE_PID);
+	if (!task) {
+		pr_err("failed to get task_struct\n");
+		return -ESRCH;
+	}
+
+	err = iommu_sva_bind_device(&cdev->dev, task->mm,
+			 &process->pasid, IOMMU_SVA_FEAT_IOPF, NULL);
+	if (err)
+		pr_err("failed to get the pasid\n");
+
+	put_task_struct(task);
+
+	return err;
+}
+
+static void svm_dt_bind_cores(struct svm_process *process)
+{
+	device_for_each_child(process->sdev->dev, process, svm_dt_bind_core);
+}
+
+static void svm_acpi_bind_cores(struct svm_process *process)
+{
 	struct core_device *pos = NULL;
 
 	list_for_each_entry(pos, &child_list, entry) {
-		svm_bind_core(pos, process);
+		svm_acpi_bind_core(pos, process);
 	}
-#else
-	device_for_each_child(process->sdev->dev, process, svm_bind_core);
-#endif
 }
 
 static void svm_process_free(struct rcu_head *rcu)
@@ -586,9 +592,7 @@ static void svm_process_free(struct rcu_head *rcu)
 	struct svm_process *process = NULL;
 
 	process = container_of(rcu, struct svm_process, rcu);
-#ifndef CONFIG_ACPI
 	svm_unpin_all(process);
-#endif
 	mm_context_put(process->mm);
 	kfree(process);
 }
@@ -738,7 +742,12 @@ static int svm_process_bind(struct task_struct *task,
 		}
 
 		insert_svm_process(process);
-		svm_bind_cores(process);
+
+		if (acpi_disabled)
+			svm_dt_bind_cores(process);
+		else
+			svm_acpi_bind_cores(process);
+
 		mutex_unlock(&svm_process_mutex);
 	} else {
 		mutex_unlock(&svm_process_mutex);
@@ -841,7 +850,7 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 	return 0;
 }
 
-static int svm_init_core(struct svm_device *sdev)
+static int svm_acpi_init_core(struct svm_device *sdev)
 {
 	int err = 0;
 	struct device *dev = sdev->dev;
@@ -886,6 +895,9 @@ err_unregister_bus:
 	return err;
 }
 #else
+static int svm_acpi_init_core(struct svm_device *sdev) { return 0; }
+#endif
+
 static int svm_of_add_core(struct svm_device *sdev, struct device_node *np)
 {
 	int err;
@@ -974,7 +986,7 @@ static int svm_of_add_core(struct svm_device *sdev, struct device_node *np)
 	return 0;
 }
 
-static int svm_init_core(struct svm_device *sdev, struct device_node *np)
+static int svm_dt_init_core(struct svm_device *sdev, struct device_node *np)
 {
 	int err = 0;
 	struct device_node *child = NULL;
@@ -1016,7 +1028,6 @@ err_unregister_bus:
 
 	return err;
 }
-#endif
 
 static pte_t *svm_get_pte(struct vm_area_struct *vma,
 			  pud_t *pud,
@@ -1100,6 +1111,9 @@ static int svm_get_phys(unsigned long __user *arg)
 	pte_t *pte = NULL;
 	unsigned long addr, phys, offset;
 
+	if (!acpi_disabled)
+		return -EPERM;
+
 	if (arg == NULL)
 		return -EINVAL;
 
@@ -1163,12 +1177,14 @@ put_task:
 }
 EXPORT_SYMBOL_GPL(svm_get_pasid);
 
-#ifdef CONFIG_ACPI
 static int svm_set_rc(unsigned long __user *arg)
 {
 	unsigned long addr, size, rc;
 	unsigned long end, page_size, offset;
 	pte_t *pte = NULL;
+
+	if (acpi_disabled)
+		return -EPERM;
 
 	if (arg == NULL)
 		return -EINVAL;
@@ -1196,7 +1212,7 @@ static int svm_set_rc(unsigned long __user *arg)
 
 	return 0;
 }
-#else
+
 static int svm_get_l2pte_base(struct svm_device *sdev,
 			      unsigned long __user *arg)
 {
@@ -1204,6 +1220,9 @@ static int svm_get_l2pte_base(struct svm_device *sdev,
 	unsigned long *base = NULL;
 	unsigned long vaddr, size;
 	struct mm_struct *mm = current->mm;
+
+	if (!acpi_disabled)
+		return -EPERM;
 
 	if (arg == NULL)
 		return -EINVAL;
@@ -1266,6 +1285,9 @@ static long svm_get_hugeinfo(unsigned long __user *arg)
 	struct hstate *h = &default_hstate;
 	struct meminfo info;
 
+	if (!acpi_disabled)
+		return -EPERM;
+
 	if (arg == NULL)
 		return -EINVAL;
 
@@ -1327,6 +1349,9 @@ static long svm_remap_proc(unsigned long __user *arg)
 	struct mm_struct *pmm = NULL, *mm = current->mm;
 	struct vm_area_struct *pvma = NULL, *vma = NULL;
 	unsigned long end, vaddr, phys, buf, offset, pagesize;
+
+	if (!acpi_disabled)
+		return -EPERM;
 
 	if (arg == NULL) {
 		pr_err("arg is invalid.\n");
@@ -1431,6 +1456,9 @@ static int svm_proc_load_flag(int __user *arg)
 	static atomic_t l2buf_load_flag = ATOMIC_INIT(0);
 	int flag;
 
+	if (!acpi_disabled)
+		return -EPERM;
+
 	if (arg == NULL)
 		return -EINVAL;
 
@@ -1450,6 +1478,9 @@ static unsigned long svm_get_unmapped_area(struct file *file,
 	struct mm_struct *mm = current->mm;
 	struct vm_unmapped_area_info info;
 	struct svm_device *sdev = file_to_sdev(file);
+
+	if (!acpi_disabled)
+		return -EPERM;
 
 	if (len != sdev->l2size) {
 		dev_err(sdev->dev, "Just map the size of L2BUFF %ld\n",
@@ -1499,6 +1530,9 @@ static int svm_mmap(struct file *file, struct vm_area_struct *vma)
 	int err;
 	struct svm_device *sdev = file_to_sdev(file);
 
+	if (!acpi_disabled)
+		return -EPERM;
+
 	if ((vma->vm_end < vma->vm_start) ||
 	    ((vma->vm_end - vma->vm_start) > sdev->l2size))
 		return -EINVAL;
@@ -1515,7 +1549,7 @@ static int svm_mmap(struct file *file, struct vm_area_struct *vma)
 
 	return err;
 }
-#endif
+
 /*svm ioctl will include some case for HI1980 and HI1910*/
 static long svm_ioctl(struct file *file, unsigned int cmd,
 			 unsigned long arg)
@@ -1564,11 +1598,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 	case SVM_IOCTL_GET_PHYS:
 		err = svm_get_phys((unsigned long __user *)arg);
 		break;
-#ifdef CONFIG_ACPI
 	case SVM_IOCTL_SET_RC:
 		err = svm_set_rc((unsigned long __user *)arg);
 		break;
-#else
 	case SVM_IOCTL_GET_L2PTE_BASE:
 		err = svm_get_l2pte_base(sdev, (unsigned long __user *)arg);
 		break;
@@ -1587,7 +1619,6 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 	case SVM_IOCTL_LOAD_FLAG:
 		err = svm_proc_load_flag((int __user *)arg);
 		break;
-#endif
 	default:
 			err = -EINVAL;
 		}
@@ -1602,15 +1633,12 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 static const struct file_operations svm_fops = {
 	.owner			= THIS_MODULE,
 	.open			= svm_open,
-#ifndef CONFIG_ACPI
 	.mmap			= svm_mmap,
 	.get_unmapped_area = svm_get_unmapped_area,
-#endif
 	.unlocked_ioctl		= svm_ioctl,
 };
 
-#ifndef CONFIG_ACPI
-static int svm_setup_l2buff(struct svm_device *sdev, struct device_node *np)
+static int svm_dt_setup_l2buff(struct svm_device *sdev, struct device_node *np)
 {
 	struct device_node *l2buff = of_parse_phandle(np, "memory-region", 0);
 
@@ -1630,7 +1658,6 @@ static int svm_setup_l2buff(struct svm_device *sdev, struct device_node *np)
 	of_node_put(l2buff);
 	return 0;
 }
-#endif
 
 /*svm device probe this is init the svm device*/
 static int svm_device_probe(struct platform_device *pdev)
@@ -1638,13 +1665,11 @@ static int svm_device_probe(struct platform_device *pdev)
 	int err = -1;
 	struct device *dev = &pdev->dev;
 	struct svm_device *sdev = NULL;
-#ifndef CONFIG_ACPI
 	struct device_node *np = dev->of_node;
 	int alias_id;
 
-	if (np == NULL)
+	if (acpi_disabled && np == NULL)
 		return -ENODEV;
-#endif
 
 	if (!dev->bus) {
 		dev_dbg(dev, "this dev bus is NULL\n");
@@ -1660,19 +1685,19 @@ static int svm_device_probe(struct platform_device *pdev)
 	if (sdev == NULL)
 		return -ENOMEM;
 
-#ifdef CONFIG_ACPI
-	err = device_property_read_u64(dev, "svmid", &sdev->id);
-	if (err) {
-		dev_err(dev, "failed to get this svm device id\n");
-		return err;
+	if (!acpi_disabled) {
+		err = device_property_read_u64(dev, "svmid", &sdev->id);
+		if (err) {
+			dev_err(dev, "failed to get this svm device id\n");
+			return err;
+		}
+	} else {
+		alias_id = of_alias_get_id(np, "svm");
+		if (alias_id < 0)
+			sdev->id = probe_index;
+		else
+			sdev->id = alias_id;
 	}
-#else
-	alias_id = of_alias_get_id(np, "svm");
-	if (alias_id < 0)
-		sdev->id = probe_index;
-	else
-		sdev->id = alias_id;
-#endif
 
 	sdev->dev = dev;
 	sdev->miscdev.minor = MISC_DYNAMIC_MINOR;
@@ -1680,7 +1705,7 @@ static int svm_device_probe(struct platform_device *pdev)
 	sdev->miscdev.name = devm_kasprintf(dev, GFP_KERNEL,
 			SVM_DEVICE_NAME"%llu", sdev->id);
 	if (sdev->miscdev.name == NULL)
-		err = -ENOMEM;
+		return -ENOMEM;
 
 	dev_set_drvdata(dev, sdev);
 	err = misc_register(&sdev->miscdev);
@@ -1688,28 +1713,30 @@ static int svm_device_probe(struct platform_device *pdev)
 		dev_err(dev, "Unable to register misc device\n");
 		return err;
 	}
-#ifdef CONFIG_ACPI
-	err = svm_init_core(sdev);
-#else
-	/*
-	 * Get the l2buff phys address and size, if it do not exist
-	 * just warn and continue, and runtime can not use L2BUFF.
-	 */
-	err = svm_setup_l2buff(sdev, np);
-	if (err)
-		dev_warn(dev, "Cannot get l2buff\n");
 
-	err = svm_init_core(sdev, np);
-#endif
+	if (!acpi_disabled) {
+		err = svm_acpi_init_core(sdev);
+		if (err) {
+			dev_err(dev, "failed to init acpi cores\n");
+			goto err_unregister_misc;
+		}
+	} else {
+		/*
+		 * Get the l2buff phys address and size, if it do not exist
+		 * just warn and continue, and runtime can not use L2BUFF.
+		 */
+		err = svm_dt_setup_l2buff(sdev, np);
+		if (err)
+			dev_warn(dev, "Cannot get l2buff\n");
 
-	if (err) {
-		dev_err(dev, "failed to init cores\n");
-		goto err_unregister_misc;
+		err = svm_dt_init_core(sdev, np);
+		if (err) {
+			dev_err(dev, "failed to init dt cores\n");
+			goto err_unregister_misc;
+		}
+
+		probe_index++;
 	}
-
-#ifndef CONFIG_ACPI
-	probe_index++;
-#endif
 
 	mutex_init(&svm_process_mutex);
 
@@ -1732,19 +1759,17 @@ static int svm_device_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_ACPI
 static const struct acpi_device_id svm_acpi_match[] = {
 	{ "HSVM1980", 0},
 	{ }
 };
 MODULE_DEVICE_TABLE(acpi, svm_acpi_match);
-#else
+
 static const struct of_device_id svm_of_match[] = {
 	{ .compatible = "hisilicon,svm" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, svm_of_match);
-#endif
 
 /*svm acpi probe and remove*/
 static struct platform_driver svm_driver = {
@@ -1752,11 +1777,8 @@ static struct platform_driver svm_driver = {
 	.remove	=	svm_device_remove,
 	.driver	=	{
 		.name = SVM_DEVICE_NAME,
-#ifdef CONFIG_ACPI
 		.acpi_match_table = ACPI_PTR(svm_acpi_match),
-#else
 		.of_match_table = svm_of_match,
-#endif
 	},
 };
 
