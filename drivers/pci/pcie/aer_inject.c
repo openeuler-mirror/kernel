@@ -304,6 +304,13 @@ static int pci_bus_set_aer_ops(struct pci_bus *bus)
 	spin_lock_irqsave(&inject_lock, flags);
 	if (ops == &aer_inj_pci_ops)
 		goto out;
+	/*
+	 * increments the reference count of the pci bus. Otherwise, when we
+	 * restore the 'pci_ops' in 'aer_inject_exit', the 'pci_bus' may have
+	 * been freed.
+	 */
+	pci_bus_get(bus);
+
 	pci_bus_ops_init(bus_ops, bus, ops);
 	list_add(&bus_ops->list, &pci_bus_ops_list);
 	bus_ops = NULL;
@@ -543,6 +550,7 @@ static void __exit aer_inject_exit(void)
 
 	while ((bus_ops = pci_bus_ops_pop())) {
 		pci_bus_set_ops(bus_ops->bus, bus_ops->ops);
+		pci_bus_put(bus_ops->bus);
 		kfree(bus_ops);
 	}
 
