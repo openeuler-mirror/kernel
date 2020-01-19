@@ -414,6 +414,7 @@ extern asmlinkage int swsusp_arch_resume(void);
 extern void hibernation_set_ops(const struct platform_hibernation_ops *ops);
 extern int hibernate(void);
 extern bool system_entering_hibernation(void);
+extern bool system_in_hibernation(void);
 extern bool hibernation_available(void);
 asmlinkage int swsusp_save(void);
 extern struct pbe *restore_pblist;
@@ -427,6 +428,7 @@ static inline void swsusp_unset_page_free(struct page *p) {}
 static inline void hibernation_set_ops(const struct platform_hibernation_ops *ops) {}
 static inline int hibernate(void) { return -ENOSYS; }
 static inline bool system_entering_hibernation(void) { return false; }
+static inline bool system_in_hibernation(void) { return false; }
 static inline bool hibernation_available(void) { return false; }
 #endif /* CONFIG_HIBERNATION */
 

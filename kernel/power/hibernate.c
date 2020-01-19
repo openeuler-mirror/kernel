@@ -104,6 +104,15 @@ bool system_entering_hibernation(void)
 }
 EXPORT_SYMBOL(system_entering_hibernation);
 
+/* To let some devices or syscore know if system carrying out hibernation*/
+static bool carry_out_hibernation;
+
+bool system_in_hibernation(void)
+{
+	return carry_out_hibernation;
+}
+EXPORT_SYMBOL(system_in_hibernation);
+
 #ifdef CONFIG_PM_DEBUG
 static void hibernation_debug_sleep(void)
 {
@@ -711,6 +720,7 @@ int hibernate(void)
 	}
 
 	pr_info("hibernation entry\n");
+	carry_out_hibernation = true;
 	pm_prepare_console();
 	error = __pm_notifier_call_chain(PM_HIBERNATION_PREPARE, -1, &nr_calls);
 	if (error) {
@@ -781,6 +791,7 @@ int hibernate(void)
 	atomic_inc(&snapshot_device_available);
  Unlock:
 	unlock_system_sleep();
+	carry_out_hibernation = false;
 	pr_info("hibernation exit\n");
 
 	return error;
