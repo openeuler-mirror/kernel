@@ -848,6 +848,7 @@ static int pci_register_host_bridge(struct pci_host_bridge *bridge)
 	bus->sysdata = bridge->sysdata;
 	bus->msi = bridge->msi;
 	bus->ops = bridge->ops;
+	bus->backup_ops = bus->ops;
 	bus->number = bus->busn_res.start = bridge->busnr;
 #ifdef CONFIG_PCI_DOMAINS_GENERIC
 	bus->domain_nr = pci_bus_find_domain_nr(bus, parent);
@@ -993,7 +994,11 @@ static struct pci_bus *pci_alloc_child_bus(struct pci_bus *parent,
 		return NULL;
 
 	child->parent = parent;
-	child->ops = parent->ops;
+	if (parent->backup_ops)
+		child->ops = parent->backup_ops;
+	else
+		child->ops = parent->ops;
+	child->backup_ops = child->ops;
 	child->msi = parent->msi;
 	child->sysdata = parent->sysdata;
 	child->bus_flags = parent->bus_flags;
