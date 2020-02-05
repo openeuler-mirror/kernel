@@ -41,6 +41,7 @@
 #include <linux/in.h>
 #include <net/ip.h>
 #include <linux/ip.h>
+#include <linux/icmpv6.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/slab.h>
@@ -4095,6 +4096,39 @@ out:
 	return ret;
 }
 
+/* Check whether the skb is arp or nd msg */
+static inline bool skb_is_arp_or_nd(struct sk_buff *skb)
+{
+	switch (ntohs(skb->protocol)) {
+	case ETH_P_ARP:
+		return true;
+	case ETH_P_IPV6:
+		if (pskb_may_pull(skb, sizeof(struct ipv6hdr) +
+				  sizeof(struct nd_msg))) {
+			struct ipv6hdr *hdr = ipv6_hdr(skb);
+			u8 nexthdr = hdr->nexthdr;
+			struct icmp6hdr *icmp6;
+
+			if (nexthdr == IPPROTO_ICMPV6) {
+				icmp6 = icmp6_hdr(skb);
+
+				if ((icmp6->icmp6_type ==
+				     NDISC_NEIGHBOUR_SOLICITATION ||
+				    icmp6->icmp6_type ==
+				    NDISC_NEIGHBOUR_ADVERTISEMENT) &&
+				    icmp6->icmp6_code == 0) {
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+static netdev_tx_t bond_xmit_broadcast(struct sk_buff *skb,
+				       struct net_device *bond_dev);
+
 /* Use this Xmit function for 3AD as well as XOR modes. The current
  * usable slave array is formed in the control path. The xmit function
  * just calculates hash and sends the packet out.
@@ -4106,6 +4140,10 @@ static netdev_tx_t bond_3ad_xor_xmit(struct sk_buff *skb,
 	struct slave *slave;
 	struct bond_up_slave *slaves;
 	unsigned int count;
+
+	/* Broadcast to all slaves. */
+	if (sysctl_bond_broadcast_arp_or_nd && skb_is_arp_or_nd(skb))
+		return bond_xmit_broadcast(skb, dev);
 
 	slaves = rcu_dereference(bond->slave_arr);
 	count = slaves ? READ_ONCE(slaves->count) : 0;
@@ -4958,6 +4996,7 @@ static int __init bonding_init(void)
 		goto err_link;
 
 	bond_create_debugfs();
+	bond_create_sysctl();
 
 	for (i = 0; i < max_bonds; i++) {
 		res = bond_create(&init_net, NULL);
@@ -4970,6 +5009,7 @@ out:
 	return res;
 err:
 	bond_destroy_debugfs();
+	bond_destroy_sysctl();
 	bond_netlink_fini();
 err_link:
 	unregister_pernet_subsys(&bond_net_ops);
@@ -4982,6 +5022,7 @@ static void __exit bonding_exit(void)
 	unregister_netdevice_notifier(&bond_netdev_notifier);
 
 	bond_destroy_debugfs();
+	bond_destroy_sysctl();
 
 	bond_netlink_fini();
 	unregister_pernet_subsys(&bond_net_ops);
