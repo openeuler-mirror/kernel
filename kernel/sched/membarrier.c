@@ -154,20 +154,21 @@ static int membarrier_private_expedited(int flags)
 	int cpu;
 	bool fallback = false;
 	cpumask_var_t tmpmask;
+	struct mm_struct *mm = current->mm;
 
 	if (flags & MEMBARRIER_FLAG_SYNC_CORE) {
 		if (!IS_ENABLED(CONFIG_ARCH_HAS_MEMBARRIER_SYNC_CORE))
 			return -EINVAL;
-		if (!(atomic_read(&current->mm->membarrier_state) &
+		if (!(atomic_read(&mm->membarrier_state) &
 		      MEMBARRIER_STATE_PRIVATE_EXPEDITED_SYNC_CORE_READY))
 			return -EPERM;
 	} else {
-		if (!(atomic_read(&current->mm->membarrier_state) &
+		if (!(atomic_read(&mm->membarrier_state) &
 		      MEMBARRIER_STATE_PRIVATE_EXPEDITED_READY))
 			return -EPERM;
 	}
 
-	if (num_online_cpus() == 1)
+	if (atomic_read(&mm->mm_users) == 1 || num_online_cpus() == 1)
 		return 0;
 
 	/*
@@ -203,7 +204,7 @@ static int membarrier_private_expedited(int flags)
 			continue;
 		rcu_read_lock();
 		p = task_rcu_dereference(&cpu_rq(cpu)->curr);
-		if (p && p->mm == current->mm) {
+		if (p && p->mm == mm) {
 			if (!fallback)
 				__cpumask_set_cpu(cpu, tmpmask);
 			else
