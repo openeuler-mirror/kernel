@@ -75,7 +75,6 @@ void membarrier_exec_mmap(struct mm_struct *mm)
 static int membarrier_global_expedited(void)
 {
 	int cpu;
-	bool fallback = false;
 	cpumask_var_t tmpmask;
 
 	if (num_online_cpus() == 1)
@@ -87,15 +86,8 @@ static int membarrier_global_expedited(void)
 	 */
 	smp_mb();	/* system call entry is not a mb. */
 
-	/*
-	 * Expedited membarrier commands guarantee that they won't
-	 * block, hence the GFP_NOWAIT allocation flag and fallback
-	 * implementation.
-	 */
-	if (!zalloc_cpumask_var(&tmpmask, GFP_NOWAIT)) {
-		/* Fallback for OOM. */
-		fallback = true;
-	}
+	if (!zalloc_cpumask_var(&tmpmask, GFP_KERNEL))
+		return -ENOMEM;
 
 	cpus_read_lock();
 	rcu_read_lock();
@@ -126,18 +118,15 @@ static int membarrier_global_expedited(void)
 		if (p->flags & PF_KTHREAD)
 			continue;
 
-		if (!fallback)
-			__cpumask_set_cpu(cpu, tmpmask);
-		else
-			smp_call_function_single(cpu, ipi_mb, NULL, 1);
+		__cpumask_set_cpu(cpu, tmpmask);
 	}
 	rcu_read_unlock();
-	if (!fallback) {
-		preempt_disable();
-		smp_call_function_many(tmpmask, ipi_mb, NULL, 1);
-		preempt_enable();
-		free_cpumask_var(tmpmask);
-	}
+
+	preempt_disable();
+	smp_call_function_many(tmpmask, ipi_mb, NULL, 1);
+	preempt_enable();
+
+	free_cpumask_var(tmpmask);
 	cpus_read_unlock();
 
 	/*
@@ -152,7 +141,6 @@ static int membarrier_global_expedited(void)
 static int membarrier_private_expedited(int flags)
 {
 	int cpu;
-	bool fallback = false;
 	cpumask_var_t tmpmask;
 	struct mm_struct *mm = current->mm;
 
@@ -177,15 +165,8 @@ static int membarrier_private_expedited(int flags)
 	 */
 	smp_mb();	/* system call entry is not a mb. */
 
-	/*
-	 * Expedited membarrier commands guarantee that they won't
-	 * block, hence the GFP_NOWAIT allocation flag and fallback
-	 * implementation.
-	 */
-	if (!zalloc_cpumask_var(&tmpmask, GFP_NOWAIT)) {
-		/* Fallback for OOM. */
-		fallback = true;
-	}
+	if (!zalloc_cpumask_var(&tmpmask, GFP_KERNEL))
+		return -ENOMEM;
 
 	cpus_read_lock();
 	rcu_read_lock();
@@ -204,20 +185,16 @@ static int membarrier_private_expedited(int flags)
 			continue;
 		rcu_read_lock();
 		p = task_rcu_dereference(&cpu_rq(cpu)->curr);
-		if (p && p->mm == mm) {
-			if (!fallback)
-				__cpumask_set_cpu(cpu, tmpmask);
-			else
-				smp_call_function_single(cpu, ipi_mb, NULL, 1);
-		}
+		if (p && p->mm == mm)
+			__cpumask_set_cpu(cpu, tmpmask);
 	}
 	rcu_read_unlock();
-	if (!fallback) {
-		preempt_disable();
-		smp_call_function_many(tmpmask, ipi_mb, NULL, 1);
-		preempt_enable();
-		free_cpumask_var(tmpmask);
-	}
+
+	preempt_disable();
+	smp_call_function_many(tmpmask, ipi_mb, NULL, 1);
+	preempt_enable();
+
+	free_cpumask_var(tmpmask);
 	cpus_read_unlock();
 
 	/*
