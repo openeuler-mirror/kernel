@@ -138,6 +138,4 @@ int hns3_cae_common_cmd_send(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size, void *buf_out,
 			     u32 out_size);
 
-int hns3_m7_cmd_handle(const struct hns3_nic_priv *nic_dev, void *buf_in,
-		       u32 in_size, void *buf_out, u32 out_size);
 #endif

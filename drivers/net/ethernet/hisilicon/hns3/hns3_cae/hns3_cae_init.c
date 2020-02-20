@@ -20,7 +20,6 @@
 #include "hns3_cae_cmd.h"
 #include "hns3_cae_tm.h"
 #include "hns3_cae_dcb.h"
-#include "hns3_cae_pkt.h"
 #include "hns3_cae_mac.h"
 #include "hns3_cae_dfx.h"
 #include "hns3_cae_vlan.h"
@@ -29,12 +28,9 @@
 #include "hns3_cae_promisc.h"
 #include "hns3_cae_fd.h"
 #include "hns3_cae_rss.h"
-#include "hns3_cae_common.h"
 #include "hns3_cae_qres.h"
 #include "hns3_cae_stat.h"
 #include "hns3_cae_irq.h"
-#include "hns3_cae_lamp.h"
-#include "hns3_cae_ext.h"
 #include "hns3_cae_pfc_storm.h"
 #include "hns3_cae_xsfp.h"
 #include "hns3_cae_port.h"
@@ -44,7 +40,6 @@
 #include "hns3_cae_dcqcn.h"
 #include "hns3_cae_reset.h"
 #include "hns3_cae_gro.h"
-#include "hns3_cae_mactbl.h"
 #include "hns3_cae_led.h"
 
 #define MAX_MSG_OUT_SIZE	(1024U * 2048U)
@@ -153,7 +148,7 @@ static int hns3_cae_netdev_match_check(struct net_device *netdev)
 		netdev->ethtool_ops->get_drvinfo(netdev, &drv_info);
 
 	if (!strncmp(drv_info.driver, hns3_driver_name,
-		     strlen(hns3_driver_name)))
+		     strlen(hns3_driver_name) + 1))
 		return 0;
 
 	netdev_err(netdev, "match hns3 driver name(%s) failed\n",
@@ -243,7 +238,6 @@ struct drv_module_handle driv_module_cmd_handle[] = {
 	{DFX_INFO_CMD, hns3_cae_get_dfx_info},
 	{DFX_READ_CMD, hns3_cae_read_dfx_info},
 	{EVENT_INJECTION_CMD, hns3_cae_event_injection},
-	{SEND_PKT, hns3_cae_send_pkt},
 	{RX_PRIV_BUFF_WL_CFG, hns3_cae_rx_priv_buff_wl_cfg},
 	{RX_COMMON_THRD_CFG, hns3_cae_common_thrd_cfg},
 	{RX_COMMON_WL_CFG, hns3_cae_common_wl_cfg},
@@ -257,26 +251,16 @@ struct drv_module_handle driv_module_cmd_handle[] = {
 	{GET_BD_BUFF_SIZE, hns3_gro_dump_bd_buff_size},
 	{PROMISC_MODE_CFG, hns3_promisc_mode_cfg},
 	{QINFO_CFG, hns3_cae_qinfo_cfg},
-#ifdef CONFIG_IT_VALIDATION
-	{MACTABLE_CFG, hns3_cae_opt_mactbl},
-#endif
 	{CLEAN_STATS, hns3_cae_clean_stats},
 	{FD_CFG, hns3_cae_fd_cfg},
 	{RSS_GENERIC_CFG, hns3_cae_rss_cfg},
-	{REG_CFG, hns3_cae_reg_cfg},
 	{COM_REG_CFG, hns3_cae_common_cmd_send},
 	{GRO_CFG, hns3_gro_age_handle},
-	{M7_CMD_MODE_CFG, hns3_m7_cmd_handle},
 	{QRES_CFG, hns3_cae_qres_cfg},
 	{STAT_CFG, hns3_stat_mode_cfg},
 	{IRQ_CFG, hns3_irq_lli_cfg},
 	{VLAN_UPMAPPING, hns3_cae_upmapping_cfg},
-#ifdef CONFIG_EXT_TEST
-	{LAMP_CFG, hns3_lamp_cfg},
-	{EXTERN_INTERFACE_CFG, hns3_ext_interface_test},
-#else
 	{EXTERN_INTERFACE_CFG, hns3_cae_pfc_storm_cfg},
-#endif
 	{XSFP_CFG, hns3_xsfp_cfg},
 	{SHOW_PORT_INFO, hns3_get_port_info},
 	{SHOW_HILINK_PARAM, hns3_get_hilink_param},
@@ -342,7 +326,6 @@ static long hns3_cae_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 		pr_err("alloc out buffer failed\n");
 		goto out_free_buf_in;
 	}
-#ifndef CONFIG_EXT_TEST
 	/**
 	 * After decoupling with driver, the scenario of hns driver unregister
 	 * must be considered. In this scenario, driver unregister may happened
@@ -352,7 +335,6 @@ static long hns3_cae_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 	 * code yet, so we don't need lock.
 	 */
 	rtnl_lock();
-#endif
 	ret = hns3_cae_k_get_netdev_by_ifname(nt_msg.device_name, &nic_dev);
 	if (ret) {
 		pr_err("can not get the netdevice correctly\n");
@@ -380,18 +362,14 @@ static long hns3_cae_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 		ret = -EINVAL;
 		goto out_invalid;
 	}
-#ifndef CONFIG_EXT_TEST
 	rtnl_unlock();
-#endif
 	ret = copy_buf_out_to_user(&nt_msg, out_size, buf_out);
 	if (ret)
 		pr_err("copy buf to user failed\n");
 	goto out_free_buf_out;
 
 out_invalid:
-#ifndef CONFIG_EXT_TEST
 	rtnl_unlock();
-#endif
 out_free_buf_out:
 	free_buff_out(buf_out);
 out_free_buf_in:

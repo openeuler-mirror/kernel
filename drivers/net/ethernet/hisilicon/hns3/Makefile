@@ -31,8 +31,7 @@ obj-$(CONFIG_HNS3) += hnae3.o
 HNS3_OBJS	=	hns3_enet.o \
 			hns3_ethtool.o \
 			hns3_debugfs.o
-HNS3_OBJS_IT	=	hns-customer/hns3_enet_it.o \
-			hns-customer/hns3_ext.o
+HNS3_OBJS_IT	=	hns-customer/hns3_enet_it.o
 obj-$(CONFIG_HNS3_ENET) += hns3.o
 hns3-objs = $(HNS3_OBJS) $(HNS3_OBJS_IT)
 
@@ -49,11 +48,8 @@ HCLGE_OBJ = 	hns3pf/hclge_main.o \
 
 
 HCLGE_OBJ_IT_MAIN	=	hns-customer/hns3pf/hclge_main_it.o
-HCLGE_OBJ_IT_EXPORT	=	hns-customer/hns3pf/hclge_ext.o
-
-
 obj-$(CONFIG_HNS3_HCLGE) += hclge.o
-hclge-objs := $(HCLGE_OBJ) $(HCLGE_OBJ_IT_MAIN) $(HCLGE_OBJ_IT_EXPORT)
+hclge-objs := $(HCLGE_OBJ) $(HCLGE_OBJ_IT_MAIN)
 hclge-$(CONFIG_HNS3_DCB) += hns3pf/hclge_dcb.o
 #### compile hclgevf.ko
 obj-$(CONFIG_HNS3_HCLGEVF) += hclgevf.o
@@ -63,25 +59,20 @@ hclgevf-objs := hns3vf/hclgevf_main.o hns3vf/hclgevf_cmd.o hns3vf/hclgevf_mbx.o
 #add rally code
 HNS3_CAE_OBJS_PRIM = 	hns3_cae/hns3_cae_init.o \
 			hns3_cae/hns3_cae_lib.o \
-			hns3_cae/hns3_cae_common.o \
 			hns3_cae/hns3_cae_dcb.o \
-			hns3_cae/hns3_cae_lamp.o \
-      hns3_cae/hns3_cae_dcqcn.o \
-			hns3_cae/hns3_cae_mactbl.o \
-      hns3_cae/hns3_cae_version.o \
-      hns3_cae/hns3_cae_reset.o \
-      hns3_cae/hns3_cae_pfc_storm.o \
-      hns3_cae/hns3_cae_cmd.o
+			hns3_cae/hns3_cae_dcqcn.o \
+			hns3_cae/hns3_cae_version.o \
+			hns3_cae/hns3_cae_reset.o \
+			hns3_cae/hns3_cae_pfc_storm.o \
+			hns3_cae/hns3_cae_cmd.o
 #add test code
 HNS3_CAE_OBJS_EXT =	hns3_cae/hns3_cae_dfx.o \
-			hns3_cae/hns3_cae_ext.o \
 			hns3_cae/hns3_cae_fd.o \
 			hns3_cae/hns3_cae_hilink_param.o \
 			hns3_cae/hns3_cae_checksum.o \
 			hns3_cae/hns3_cae_irq.o \
 			hns3_cae/hns3_cae_gro.o \
 			hns3_cae/hns3_cae_mac.o \
-			hns3_cae/hns3_cae_pkt.o \
 			hns3_cae/hns3_cae_port.o \
 			hns3_cae/hns3_cae_promisc.o \
 			hns3_cae/hns3_cae_qinfo.o \
@@ -92,6 +83,6 @@ HNS3_CAE_OBJS_EXT =	hns3_cae/hns3_cae_dfx.o \
 			hns3_cae/hns3_cae_tm.o \
 			hns3_cae/hns3_cae_vlan.o \
 			hns3_cae/hns3_cae_xsfp.o \
-      hns3_cae/hns3_cae_led.o
+			hns3_cae/hns3_cae_led.o
 obj-$(CONFIG_HNS3_CAE) += hns3_cae.o
 hns3_cae-objs := $(HNS3_CAE_OBJS_PRIM) $(HNS3_CAE_OBJS_EXT)

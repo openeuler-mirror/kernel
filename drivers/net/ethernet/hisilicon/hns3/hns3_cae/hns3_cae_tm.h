@@ -9,6 +9,8 @@
 #define MAX_QUEUE_NUM				16
 #define MAX_PG_NUM				4
 #define MAX_TC_NUM				8
+#define MAX_QUEUE_ID				1024
+#define MAX_QSET_ID				1024
 #define HNS3_CAE_QS_ID_MSK			(BIT(10) - 1)
 #define HCLGE_OPC_TM_PORT_SCH_MODE_CFG		0x0811
 

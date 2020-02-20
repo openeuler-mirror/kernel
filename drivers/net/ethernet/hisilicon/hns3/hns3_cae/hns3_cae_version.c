@@ -52,7 +52,6 @@ int hns3_cae_get_fw_ver(const struct hns3_nic_priv *nic_dev, void *buf_in,
 	struct hclge_vport *vport =
 				  container_of(handle, struct hclge_vport, nic);
 	struct hclge_dev *hdev = vport->back;
-
 	u32 fw_ver;
 
 	if (check) {
@@ -65,10 +64,9 @@ int hns3_cae_get_fw_ver(const struct hns3_nic_priv *nic_dev, void *buf_in,
 		return -EFAULT;
 
 	fw_ver = hdev->fw_version;
-	out_buf->imp_ver = fw_ver;
-
 	if (!fw_ver)
 		return -EFAULT;
+	out_buf->imp_ver = fw_ver;
 
 	return 0;
 }

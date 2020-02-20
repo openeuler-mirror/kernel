@@ -48,7 +48,5 @@ int nic_register_event(nic_event_fn_t event_call);
  */
 int nic_unregister_event(void);
 
-void nic_call_event(struct net_device *netdev,
-		    enum hnae3_event_type_custom event_t);
 int hclge_init(void);
 #endif
