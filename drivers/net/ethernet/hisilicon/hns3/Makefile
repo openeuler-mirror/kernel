@@ -59,7 +59,6 @@ hclgevf-objs := hns3vf/hclgevf_main.o hns3vf/hclgevf_cmd.o hns3vf/hclgevf_mbx.o
 #add rally code
 HNS3_CAE_OBJS_PRIM = 	hns3_cae/hns3_cae_init.o \
 			hns3_cae/hns3_cae_lib.o \
-			hns3_cae/hns3_cae_dcb.o \
 			hns3_cae/hns3_cae_dcqcn.o \
 			hns3_cae/hns3_cae_version.o \
 			hns3_cae/hns3_cae_reset.o \
@@ -86,3 +85,4 @@ HNS3_CAE_OBJS_EXT =	hns3_cae/hns3_cae_dfx.o \
 			hns3_cae/hns3_cae_led.o
 obj-$(CONFIG_HNS3_CAE) += hns3_cae.o
 hns3_cae-objs := $(HNS3_CAE_OBJS_PRIM) $(HNS3_CAE_OBJS_EXT)
+hns3_cae-$(CONFIG_HNS3_DCB) += hns3_cae/hns3_cae_dcb.o
