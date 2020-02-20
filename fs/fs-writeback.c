@@ -1980,8 +1980,10 @@ void wb_workfn(struct work_struct *work)
 	struct bdi_writeback *wb = container_of(to_delayed_work(work),
 						struct bdi_writeback, dwork);
 	long pages_written;
+	char dname[BDI_DEV_NAME_LEN];
 
-	set_worker_desc("flush-%s", dev_name(wb->bdi->dev));
+	bdi_get_dev_name(wb->bdi, dname, BDI_DEV_NAME_LEN);
+	set_worker_desc("flush-%s", dname);
 	current->flags |= PF_SWAPWRITE;
 
 	if (likely(!current_is_workqueue_rescuer() ||

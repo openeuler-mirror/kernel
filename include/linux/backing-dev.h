@@ -18,6 +18,8 @@
 #include <linux/backing-dev-defs.h>
 #include <linux/slab.h>
 
+#define BDI_DEV_NAME_LEN	32
+
 static inline struct backing_dev_info *bdi_get(struct backing_dev_info *bdi)
 {
 	kref_get(&bdi->refcnt);
@@ -496,6 +498,19 @@ static inline int bdi_rw_congested(struct backing_dev_info *bdi)
 {
 	return bdi_congested(bdi, (1 << WB_sync_congested) |
 				  (1 << WB_async_congested));
+}
+
+static inline void bdi_get_dev_name(struct backing_dev_info *bdi, char *dname,
+					int len)
+{
+	struct rcu_device *rcu_dev;
+
+	rcu_read_lock();
+
+	rcu_dev = rcu_dereference(bdi->rcu_dev);
+	strlcpy(dname, rcu_dev ? dev_name(&rcu_dev->dev) : "(unknown)", len);
+
+	rcu_read_unlock();
 }
 
 #endif	/* _LINUX_BACKING_DEV_H */
