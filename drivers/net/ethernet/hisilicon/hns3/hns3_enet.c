@@ -548,6 +548,9 @@ static int hns3_nic_uc_unsync(struct net_device *netdev,
 {
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 
+	if (ether_addr_equal(addr, netdev->dev_addr))
+		return 0;
+
 	if (h->ae_algo->ops->rm_uc_addr)
 		return h->ae_algo->ops->rm_uc_addr(h, addr);
 

@@ -635,9 +635,17 @@ struct hclge_fd_ad_data {
 	u16 rule_id;
 };
 
+enum HCLGE_MAC_ADDR_STATE {
+	HCLGE_MAC_TO_ADD,
+	HCLGE_MAC_TO_DEL,
+	HCLGE_MAC_DEL_FAIL,
+	HCLGE_MAC_ACTIVE
+};
+
 struct hclge_vport_mac_addr_cfg {
 	struct list_head node;
 	int hd_tbl_status;
+	enum HCLGE_MAC_ADDR_STATE state;
 	u8 mac_addr[ETH_ALEN];
 };
 
@@ -866,8 +874,11 @@ struct hclge_rss_tuple_cfg {
 	u8 ipv6_fragment_en;
 };
 
+#define HCLGE_MAC_TBL_SYNC_INTERVAL	3U
+
 enum HCLGE_VPORT_STATE {
 	HCLGE_VPORT_STATE_ALIVE,
+	HCLGE_VPORT_STATE_MAC_TBL_CHANGE,
 	HCLGE_VPORT_STATE_MAX
 };
 
@@ -933,6 +944,7 @@ struct hclge_vport {
 	u32 trusted;
 	u16 promisc_enable;
 
+	spinlock_t mac_list_lock; /* protect mac address need to add/detele */
 	struct list_head uc_mac_list;   /* Store VF unicast table */
 	struct list_head mc_mac_list;   /* Store VF multicast table */
 };

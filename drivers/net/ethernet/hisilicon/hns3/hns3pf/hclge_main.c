@@ -68,6 +68,8 @@ static int hclge_set_default_loopback(struct hclge_dev *hdev);
 static int hclge_resume_vf_rate(struct hclge_dev *hdev);
 static void hclge_reset_vf_rate(struct hclge_dev *hdev);
 
+static void hclge_sync_mac_table(struct hclge_dev *hdev);
+
 struct hnae3_ae_algo ae_algo;
 
 static struct workqueue_struct *hclge_wq;
@@ -1711,6 +1713,7 @@ static int hclge_alloc_vport(struct hclge_dev *hdev)
 		INIT_LIST_HEAD(&vport->vlan_list);
 		INIT_LIST_HEAD(&vport->uc_mac_list);
 		INIT_LIST_HEAD(&vport->mc_mac_list);
+		spin_lock_init(&vport->mac_list_lock);
 
 		if (i == 0)
 			ret = hclge_vport_setup(vport, tqp_main_vport);
@@ -4044,6 +4047,7 @@ static void hclge_periodical_service_task(struct hclge_dev *hdev)
 	 * updated when it is triggered by mbx.
 	 */
 	hclge_update_link_status(hdev);
+	hclge_sync_mac_table(hdev);
 
 	if (time_is_after_jiffies(hdev->last_serv_processed + HZ)) {
 		delta = jiffies - hdev->last_serv_processed;
@@ -7350,12 +7354,106 @@ static void hclge_update_umv_space(struct hclge_vport *vport, bool is_free)
 	spin_unlock(&hdev->umv_lock);
 }
 
+static struct hclge_vport_mac_addr_cfg *
+hclge_find_mac_node(struct list_head *list, const u8 *mac_addr)
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *tmp;
+
+	list_for_each_entry_safe(mac_node, tmp, list, node) {
+		if (ether_addr_equal(mac_addr, mac_node->mac_addr))
+			return mac_node;
+	}
+	return NULL;
+}
+
+static void hclge_mac_node_convert(struct hclge_vport_mac_addr_cfg *mac_node,
+				   enum HCLGE_MAC_ADDR_STATE state)
+{
+	switch (state) {
+	/* from set_rx_mode or tmp_add_list */
+	case HCLGE_MAC_TO_ADD:
+		if (mac_node->state == HCLGE_MAC_TO_DEL ||
+		    mac_node->state == HCLGE_MAC_DEL_FAIL)
+			mac_node->state = HCLGE_MAC_ACTIVE;
+		break;
+	/* only from set_rx_mode */
+	case HCLGE_MAC_TO_DEL:
+		if (mac_node->state == HCLGE_MAC_TO_ADD) {
+			list_del(&mac_node->node);
+			kfree(mac_node);
+		} else {
+			mac_node->state = HCLGE_MAC_TO_DEL;
+		}
+		break;
+	/* only from tmp_add_list, the mac_node->state won't be
+	 * HCLGE_MAC_ACTIVE/HCLGE_MAC_DEL_FAIL/HCLGE_MAC_ADD_FAIL
+	 */
+	case HCLGE_MAC_DEL_FAIL:
+		if (mac_node->state == HCLGE_MAC_TO_ADD)
+			mac_node->state = HCLGE_MAC_ACTIVE;
+		break;
+	/* only from tmp_add_list, the mac_node->state won't be
+	 * HCLGE_MAC_ACTIVE/HCLGE_MAC_DEL_FAIL/HCLGE_MAC_ADD_FAIL
+	 */
+	case HCLGE_MAC_ACTIVE:
+		if (mac_node->state == HCLGE_MAC_TO_ADD)
+			mac_node->state = HCLGE_MAC_ACTIVE;
+
+		break;
+	}
+}
+
+static int hclge_update_mac_list(struct hnae3_handle *handle,
+				 enum HCLGE_MAC_ADDR_STATE state,
+				 enum HCLGE_MAC_ADDR_TYPE mac_type,
+				 const unsigned char *addr)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_vport_mac_addr_cfg *mac_node;
+	struct list_head *list;
+
+	list = (mac_type == HCLGE_MAC_ADDR_UC) ?
+		&vport->uc_mac_list : &vport->mc_mac_list;
+
+	set_bit(HCLGE_VPORT_STATE_MAC_TBL_CHANGE, &vport->state);
+
+	/* if the mac addr is already in the mac list, no need to add a new
+	 * one into it, just check the mac addr state, convert it to a new
+	 * new state, or just remove it, or do nothing.
+	 */
+	mac_node = hclge_find_mac_node(list, addr);
+	if (mac_node) {
+		hclge_mac_node_convert(mac_node, state);
+		return 0;
+	}
+
+	/* if this address is never added, unnecessary to delete */
+	if (state == HCLGE_MAC_TO_DEL)
+		return -ENOENT;
+
+	mac_node = kzalloc(sizeof(*mac_node), GFP_ATOMIC);
+	if (!mac_node)
+		return -ENOMEM;
+
+	mac_node->state = state;
+	ether_addr_copy(mac_node->mac_addr, addr);
+	list_add_tail(&mac_node->node, list);
+
+	return 0;
+}
+
 static int hclge_add_uc_addr(struct hnae3_handle *handle,
 			     const unsigned char *addr)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
+	int ret;
 
-	return hclge_add_uc_addr_common(vport, addr);
+	spin_lock_bh(&vport->mac_list_lock);
+	ret = hclge_update_mac_list(handle, HCLGE_MAC_TO_ADD, HCLGE_MAC_ADDR_UC,
+				    addr);
+	spin_unlock_bh(&vport->mac_list_lock);
+
+	return ret;
 }
 
 int hclge_add_uc_addr_common(struct hclge_vport *vport,
@@ -7425,8 +7523,14 @@ static int hclge_rm_uc_addr(struct hnae3_handle *handle,
 			    const unsigned char *addr)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
+	int ret;
 
-	return hclge_rm_uc_addr_common(vport, addr);
+	spin_lock_bh(&vport->mac_list_lock);
+	ret = hclge_update_mac_list(handle, HCLGE_MAC_TO_DEL, HCLGE_MAC_ADDR_UC,
+				    addr);
+	spin_unlock_bh(&vport->mac_list_lock);
+
+	return ret;
 }
 
 int hclge_rm_uc_addr_common(struct hclge_vport *vport,
@@ -7459,8 +7563,14 @@ static int hclge_add_mc_addr(struct hnae3_handle *handle,
 			     const unsigned char *addr)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
+	int ret;
 
-	return hclge_add_mc_addr_common(vport, addr);
+	spin_lock_bh(&vport->mac_list_lock);
+	ret = hclge_update_mac_list(handle, HCLGE_MAC_TO_ADD, HCLGE_MAC_ADDR_MC,
+				    addr);
+	spin_unlock_bh(&vport->mac_list_lock);
+
+	return ret;
 }
 
 int hclge_add_mc_addr_common(struct hclge_vport *vport,
@@ -7502,8 +7612,14 @@ static int hclge_rm_mc_addr(struct hnae3_handle *handle,
 			    const unsigned char *addr)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
+	int ret;
 
-	return hclge_rm_mc_addr_common(vport, addr);
+	spin_lock_bh(&vport->mac_list_lock);
+	ret = hclge_update_mac_list(handle, HCLGE_MAC_TO_DEL, HCLGE_MAC_ADDR_MC,
+				    addr);
+	spin_unlock_bh(&vport->mac_list_lock);
+
+	return ret;
 }
 
 int hclge_rm_mc_addr_common(struct hclge_vport *vport,
@@ -7549,6 +7665,199 @@ int hclge_rm_mc_addr_common(struct hclge_vport *vport,
 	}
 
 	return status;
+}
+
+static void hclge_sync_mac_list(struct hclge_vport *vport,
+				struct list_head *list,
+				int (*sync)(struct hclge_vport *,
+					    const unsigned char *))
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *tmp;
+	int ret;
+
+	list_for_each_entry_safe(mac_node, tmp, list, node) {
+		ret = sync(vport, mac_node->mac_addr);
+		if (!ret) {
+			mac_node->state = HCLGE_MAC_ACTIVE;
+		} else {
+			set_bit(HCLGE_VPORT_STATE_MAC_TBL_CHANGE,
+				&vport->state);
+			break;
+		}
+	}
+}
+
+static void hclge_unsync_mac_list(struct hclge_vport *vport,
+				  struct list_head *list,
+				  int (*unsync)(struct hclge_vport *,
+						const unsigned char *))
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *tmp;
+	int ret;
+
+	list_for_each_entry_safe(mac_node, tmp, list, node) {
+		ret = unsync(vport, mac_node->mac_addr);
+		if (!ret || ret == -ENOENT) {
+			list_del(&mac_node->node);
+			kfree(mac_node);
+		} else {
+			mac_node->state = HCLGE_MAC_DEL_FAIL;
+			set_bit(HCLGE_VPORT_STATE_MAC_TBL_CHANGE,
+				&vport->state);
+			break;
+		}
+	}
+}
+
+static void hclge_sync_from_add_list(struct list_head *add_list,
+				     struct list_head *mac_list)
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *tmp, *new_node;
+
+	list_for_each_entry_safe(mac_node, tmp, add_list, node) {
+		/* if the mac address from tmp_add_list is not in the
+		 * uc/mc_mac_list, it means have received a TO_DEL request
+		 * during the time window of adding the mac address into mac
+		 * table. if mac_node state is ACTIVE, then change it to TO_DEL,
+		 * then it will be removed at next time. else it must be TO_ADD
+		 * or ADD_FAIL, this address hasn't been added into mac table,
+		 * so just remove the mac node.
+		 */
+		new_node = hclge_find_mac_node(mac_list, mac_node->mac_addr);
+		if (new_node) {
+			hclge_mac_node_convert(new_node, mac_node->state);
+			list_del(&mac_node->node);
+			kfree(mac_node);
+		} else if (mac_node->state == HCLGE_MAC_ACTIVE) {
+			mac_node->state = HCLGE_MAC_TO_DEL;
+			list_del(&mac_node->node);
+			list_add_tail(&mac_node->node, mac_list);
+		} else {
+			list_del(&mac_node->node);
+			kfree(mac_node);
+		}
+	}
+}
+
+static void hclge_sync_from_del_list(struct list_head *del_list,
+				     struct list_head *mac_list)
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *tmp, *new_node;
+
+	list_for_each_entry_safe(mac_node, tmp, del_list, node) {
+		new_node = hclge_find_mac_node(mac_list, mac_node->mac_addr);
+		if (new_node) {
+			hclge_mac_node_convert(new_node, mac_node->state);
+		} else {
+			list_del(&mac_node->node);
+			list_add_tail(&mac_node->node, mac_list);
+		}
+	}
+}
+
+static void hclge_rollback_add_list(struct list_head *add_list)
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *tmp;
+
+	list_for_each_entry_safe(mac_node, tmp, add_list, node) {
+		list_del(&mac_node->node);
+		kfree(mac_node);
+	}
+}
+
+static void hclge_rollback_del_list(struct list_head *del_list,
+				    struct list_head *mac_list)
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *tmp;
+
+	list_for_each_entry_safe(mac_node, tmp, del_list, node) {
+		list_del(&mac_node->node);
+		list_add_tail(&mac_node->node, mac_list);
+	}
+}
+
+static void hclge_sync_vport_mac_table(struct hclge_vport *vport,
+				       enum HCLGE_MAC_ADDR_TYPE mac_type)
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *tmp, *new_node;
+	struct list_head tmp_add_list, tmp_del_list;
+	struct list_head *list;
+
+	INIT_LIST_HEAD(&tmp_add_list);
+	INIT_LIST_HEAD(&tmp_del_list);
+
+	/* move the mac addr to the tmp_add_list and tmp_del_list, then
+	 * we can add/delete these mac addr outside the spin lock
+	 */
+	list = (mac_type == HCLGE_MAC_ADDR_UC) ?
+		&vport->uc_mac_list : &vport->mc_mac_list;
+
+	spin_lock_bh(&vport->mac_list_lock);
+
+	list_for_each_entry_safe(mac_node, tmp, list, node) {
+		switch (mac_node->state) {
+		case HCLGE_MAC_TO_DEL:
+		case HCLGE_MAC_DEL_FAIL:
+			list_del(&mac_node->node);
+			list_add_tail(&mac_node->node, &tmp_del_list);
+			break;
+		case HCLGE_MAC_TO_ADD:
+			new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+			if (!new_node)
+				goto clear_tmp_list;
+			ether_addr_copy(new_node->mac_addr, mac_node->mac_addr);
+			new_node->state = mac_node->state;
+			list_add_tail(&new_node->node, &tmp_add_list);
+			break;
+		default:
+			break;
+		}
+	}
+
+	spin_unlock_bh(&vport->mac_list_lock);
+
+	/* delete first, in order to get max mac table space for adding */
+	if (mac_type == HCLGE_MAC_ADDR_UC) {
+		hclge_unsync_mac_list(vport, &tmp_del_list,
+				      hclge_rm_uc_addr_common);
+		hclge_sync_mac_list(vport, &tmp_add_list,
+				    hclge_add_uc_addr_common);
+	} else {
+		hclge_unsync_mac_list(vport, &tmp_del_list,
+				      hclge_rm_mc_addr_common);
+		hclge_sync_mac_list(vport, &tmp_add_list,
+				    hclge_add_mc_addr_common);
+	}
+
+	/* if some mac addresses were added/deleted fail, move back to the
+	 * mac_list, and retry at next time.
+	 */
+	spin_lock_bh(&vport->mac_list_lock);
+
+	hclge_sync_from_del_list(&tmp_del_list, list);
+	hclge_sync_from_add_list(&tmp_add_list, list);
+
+	spin_unlock_bh(&vport->mac_list_lock);
+	return;
+
+clear_tmp_list:
+	hclge_rollback_del_list(&tmp_del_list, list);
+	hclge_rollback_add_list(&tmp_add_list);
+
+	spin_unlock_bh(&vport->mac_list_lock);
+}
+
+static void hclge_sync_mac_table(struct hclge_dev *hdev)
+{
+	struct hclge_vport *vport = &hdev->vport[0];
+
+	if (hdev->serv_processed_cnt % HCLGE_MAC_TBL_SYNC_INTERVAL &&
+	    !test_and_clear_bit(HCLGE_VPORT_STATE_MAC_TBL_CHANGE,
+	    &vport->state))
+		return;
+
+	hclge_sync_vport_mac_table(vport, HCLGE_MAC_ADDR_UC);
+	hclge_sync_vport_mac_table(vport, HCLGE_MAC_ADDR_MC);
 }
 
 void hclge_add_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
@@ -7626,23 +7935,59 @@ void hclge_rm_vport_all_mac_table(struct hclge_vport *vport, bool is_del_list,
 	}
 }
 
+/* remove all mac address when uninitailize */
+static void hclge_uninit_mac_list(struct hclge_vport *vport,
+				  enum HCLGE_MAC_ADDR_TYPE mac_type)
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *tmp;
+	struct list_head tmp_del_list, *list;
+
+	INIT_LIST_HEAD(&tmp_del_list);
+
+	list = (mac_type == HCLGE_MAC_ADDR_UC) ?
+		&vport->uc_mac_list : &vport->mc_mac_list;
+
+	spin_lock_bh(&vport->mac_list_lock);
+
+	list_for_each_entry_safe(mac_node, tmp, list, node) {
+		switch (mac_node->state) {
+		case HCLGE_MAC_TO_DEL:
+		case HCLGE_MAC_DEL_FAIL:
+		case HCLGE_MAC_ACTIVE:
+			list_del(&mac_node->node);
+			list_add_tail(&mac_node->node, &tmp_del_list);
+			break;
+		case HCLGE_MAC_TO_ADD:
+			list_del(&mac_node->node);
+			kfree(mac_node);
+			break;
+		}
+	}
+
+	spin_unlock_bh(&vport->mac_list_lock);
+
+	if (mac_type == HCLGE_MAC_ADDR_UC)
+		hclge_unsync_mac_list(vport, &tmp_del_list,
+				      hclge_rm_uc_addr_common);
+	else
+		hclge_unsync_mac_list(vport, &tmp_del_list,
+				      hclge_rm_mc_addr_common);
+
+	list_for_each_entry_safe(mac_node, tmp, &tmp_del_list, node) {
+		list_del(&mac_node->node);
+		kfree(mac_node);
+	}
+}
+
 static void hclge_uninit_vport_mac_table(struct hclge_dev *hdev)
 {
-	struct hclge_vport_mac_addr_cfg *mac, *tmp;
 	struct hclge_vport *vport;
 	int i;
 
 	for (i = 0; i < hdev->num_alloc_vport; i++) {
 		vport = &hdev->vport[i];
-		list_for_each_entry_safe(mac, tmp, &vport->uc_mac_list, node) {
-			list_del(&mac->node);
-			kfree(mac);
-		}
-
-		list_for_each_entry_safe(mac, tmp, &vport->mc_mac_list, node) {
-			list_del(&mac->node);
-			kfree(mac);
-		}
+		hclge_uninit_mac_list(vport, HCLGE_MAC_ADDR_UC);
+		hclge_uninit_mac_list(vport, HCLGE_MAC_ADDR_MC);
 	}
 }
 
@@ -7823,18 +8168,18 @@ static int hclge_set_mac_addr(struct hnae3_handle *handle, void *p,
 	}
 
 	if ((!is_first || is_kdump_kernel()) &&
-	    hclge_rm_uc_addr(handle, hdev->hw.mac.mac_addr))
+	    hclge_rm_uc_addr_common(vport, hdev->hw.mac.mac_addr))
 		dev_warn(&hdev->pdev->dev,
 			 "remove old uc mac address fail.\n");
 
-	ret = hclge_add_uc_addr(handle, new_addr);
+	ret = hclge_add_uc_addr_common(vport, new_addr);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"add uc mac address fail, ret =%d.\n",
 			ret);
 
 		if (!is_first &&
-		    hclge_add_uc_addr(handle, hdev->hw.mac.mac_addr))
+		    hclge_add_uc_addr_common(vport, hdev->hw.mac.mac_addr))
 			dev_err(&hdev->pdev->dev,
 				"restore uc mac address fail.\n");
 
@@ -9933,6 +10278,7 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 	hclge_reset_vf_rate(hdev);
 	hclge_misc_affinity_teardown(hdev);
 	hclge_state_uninit(hdev);
+	hclge_uninit_vport_mac_table(hdev);
 
 	if (mac->phydev)
 		mdiobus_unregister(mac->mdio_bus);
@@ -9950,7 +10296,6 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 	hclge_misc_irq_uninit(hdev);
 	hclge_pci_uninit(hdev);
 	mutex_destroy(&hdev->vport_lock);
-	hclge_uninit_vport_mac_table(hdev);
 	hclge_uninit_vport_vlan_table(hdev);
 	ae_dev->priv = NULL;
 }
