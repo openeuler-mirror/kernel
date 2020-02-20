@@ -1714,6 +1714,7 @@ static int hclge_alloc_vport(struct hclge_dev *hdev)
 		vport->vf_info.link_state = IFLA_VF_LINK_STATE_AUTO;
 		vport->mps = HCLGE_MAC_DEFAULT_FRAME;
 		vport->port_base_vlan_cfg.state = HNAE3_PORT_BASE_VLAN_DISABLE;
+		vport->port_base_vlan_cfg.tbl_sta = true;
 		vport->rxvlan_cfg.rx_vlan_offload_en = true;
 		INIT_LIST_HEAD(&vport->vlan_list);
 		INIT_LIST_HEAD(&vport->uc_mac_list);
@@ -6966,7 +6967,7 @@ int hclge_vport_start(struct hclge_vport *vport)
 	set_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state);
 	vport->last_active_jiffies = jiffies;
 
-	if (test_and_clear_bit(vport->vport_id, hdev->vport_config_block)) {
+	if (test_bit(vport->vport_id, hdev->vport_config_block)) {
 		if (vport->vport_id) {
 			hclge_restore_mac_table_common(vport);
 			hclge_restore_vport_vlan_table(vport);
@@ -6974,6 +6975,8 @@ int hclge_vport_start(struct hclge_vport *vport)
 			hclge_restore_hw_table(hdev);
 		}
 	}
+	clear_bit(vport->vport_id, hdev->vport_config_block);
+
 	return 0;
 }
 
@@ -8857,33 +8860,52 @@ void hclge_uninit_vport_vlan_table(struct hclge_dev *hdev)
 	}
 }
 
+void hclge_restore_vport_port_base_vlan_config(struct hclge_dev *hdev)
+{
+	struct hclge_vlan_info *vlan_info;
+	struct hclge_vport *vport;
+	u16 vlan_proto;
+	u16 vlan_id;
+	u16 state;
+	int vf_id;
+	int ret;
+
+	/* PF should restore all vfs port base vlan */
+	for (vf_id = 0; vf_id < hdev->num_alloc_vfs; vf_id++) {
+		vport = &hdev->vport[vf_id + HCLGE_VF_VPORT_START_NUM];
+		vlan_info = vport->port_base_vlan_cfg.tbl_sta ?
+			    &vport->port_base_vlan_cfg.vlan_info :
+			    &vport->port_base_vlan_cfg.old_vlan_info;
+
+		vlan_id = vlan_info->vlan_tag;
+		vlan_proto = vlan_info->vlan_proto;
+		state = vport->port_base_vlan_cfg.state;
+
+		if (state != HNAE3_PORT_BASE_VLAN_DISABLE) {
+			clear_bit(vport->vport_id, hdev->vlan_table[vlan_id]);
+			ret = hclge_set_vlan_filter_hw(hdev, htons(vlan_proto),
+						       vport->vport_id,
+						       vlan_id, false);
+			vport->port_base_vlan_cfg.tbl_sta = ret == 0;
+		}
+	}
+}
+
 void hclge_restore_vport_vlan_table(struct hclge_vport *vport)
 {
 	struct hclge_vport_vlan_cfg *vlan, *tmp;
 	struct hclge_dev *hdev = vport->back;
-	u16 vlan_proto;
-	u16 state, vlan_id;
 	int ret;
 
-	vlan_proto = vport->port_base_vlan_cfg.vlan_info.vlan_proto;
-	vlan_id = vport->port_base_vlan_cfg.vlan_info.vlan_tag;
-	state = vport->port_base_vlan_cfg.state;
-
-	if (state != HNAE3_PORT_BASE_VLAN_DISABLE) {
-		clear_bit(vport->vport_id, hdev->vlan_table[vlan_id]);
-		hclge_set_vlan_filter_hw(hdev, htons(vlan_proto),
-					 vport->vport_id, vlan_id,
-					 false);
-		return;
-	}
-
-	list_for_each_entry_safe(vlan, tmp, &vport->vlan_list, node) {
-		ret = hclge_set_vlan_filter_hw(hdev, htons(ETH_P_8021Q),
-					       vport->vport_id,
-					       vlan->vlan_id, false);
-		if (ret)
-			break;
-		vlan->hd_tbl_status = true;
+	if (vport->port_base_vlan_cfg.state == HNAE3_PORT_BASE_VLAN_DISABLE) {
+		list_for_each_entry_safe(vlan, tmp, &vport->vlan_list, node) {
+			ret = hclge_set_vlan_filter_hw(hdev, htons(ETH_P_8021Q),
+						       vport->vport_id,
+						       vlan->vlan_id, false);
+			if (ret)
+				break;
+			vlan->hd_tbl_status = true;
+		}
 	}
 }
 
@@ -8924,6 +8946,7 @@ static int hclge_restore_hw_table(struct hclge_dev *hdev)
 	struct hnae3_handle *handle = &vport->nic;
 
 	hclge_restore_mac_table_common(vport);
+	hclge_restore_vport_port_base_vlan_config(hdev);
 	hclge_restore_vport_vlan_table(vport);
 	set_bit(HCLGE_STATE_PROMISC_CHANGED, &hdev->state);
 
@@ -8964,6 +8987,7 @@ static int hclge_update_vlan_filter_entries(struct hclge_vport *vport,
 						 new_info->vlan_tag,
 						 false);
 	}
+	vport->port_base_vlan_cfg.tbl_sta = false;
 
 	ret = hclge_set_vlan_filter_hw(hdev, htons(old_info->vlan_proto),
 				       vport->vport_id, old_info->vlan_tag,
@@ -8997,7 +9021,7 @@ int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
 					       false);
 		if (ret)
 			return ret;
-
+		vport->port_base_vlan_cfg.tbl_sta = false;
 		/* remove old VLAN tag */
 		ret = hclge_set_vlan_filter_hw(hdev,
 					       htons(old_vlan_info->vlan_proto),
@@ -9023,9 +9047,16 @@ int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
 		nic->port_base_vlan_state = HNAE3_PORT_BASE_VLAN_ENABLE;
 
 update:
+	vport->port_base_vlan_cfg.old_vlan_info.vlan_tag =
+		old_vlan_info->vlan_tag;
+	vport->port_base_vlan_cfg.old_vlan_info.qos =
+		old_vlan_info->qos;
+	vport->port_base_vlan_cfg.old_vlan_info.vlan_proto =
+		old_vlan_info->vlan_proto;
 	vport->port_base_vlan_cfg.vlan_info.vlan_tag = vlan_info->vlan_tag;
 	vport->port_base_vlan_cfg.vlan_info.qos = vlan_info->qos;
 	vport->port_base_vlan_cfg.vlan_info.vlan_proto = vlan_info->vlan_proto;
+	vport->port_base_vlan_cfg.tbl_sta = true;
 
 	return 0;
 }
