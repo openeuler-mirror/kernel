@@ -302,9 +302,7 @@ static int sysctl_hest_hisi_parse_ghes(struct acpi_hest_header *hest_hdr, void *
 		return -ENOMEM;
 	}
 
-	mutex_lock(&hisi_ghes_mutex);
-	list_add_rcu(&sysctl_ghes->list, &hisi_ghes_list);
-	mutex_unlock(&hisi_ghes_mutex);
+	list_add(&sysctl_ghes->list, &hisi_ghes_list);
 
 	return 0;
 }
@@ -458,15 +456,12 @@ static int sysctl_hisi_error_handler(struct work_struct *work)
 	struct ghes *sysctl_ghes = NULL;
 	(void)work;
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(sysctl_ghes, &hisi_ghes_list, list) {
+	list_for_each_entry(sysctl_ghes, &hisi_ghes_list, list) {
 		if (!sysctl_ghes_proc(sysctl_ghes))
 			ret = NOTIFY_OK;
 	}
-	rcu_read_unlock();
 
 	return ret;
-
 }
 
 /* acpi hisi hest init */
@@ -547,14 +542,9 @@ static void his_ghes_list_free(void)
 	struct ghes *node = NULL;
 	struct ghes *tmp_node = NULL;
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(node, &hisi_ghes_list, list) {
+	list_for_each_entry(node, &hisi_ghes_list, list) {
 		if (!node)
 			continue;
-
-		mutex_lock(&hisi_ghes_mutex);
-		list_del_rcu(&node->list);
-		mutex_unlock(&hisi_ghes_mutex);
 
 		apei_unmap_generic_address(&node->generic->error_status_address);
 
@@ -581,16 +571,14 @@ static void his_ghes_list_free(void)
 		kfree(tmp_node);
 		tmp_node = NULL;
 	}
-
-	rcu_read_unlock();
 }
 
 void hip_sysctl_local_ras_exit(void)
 {
+	unregister_acpi_hed_notifier(&g_sysctl_ghes_hisi_notifier_hed);
 	sysctl_proc_exit();
 	sysctl_tdh_deinit();
 	his_ghes_list_free();
-	unregister_acpi_hed_notifier(&g_sysctl_ghes_hisi_notifier_hed);
 
 	pr_info("[INFO] hip sysctl local ras exit.\n");
 }
