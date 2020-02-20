@@ -1365,15 +1365,16 @@ static void hclge_init_kdump_kernel_config(struct hclge_dev *hdev)
 #define HCLGE_MIN_TX_DESC	64
 #define HCLGE_MIN_RX_DESC	64
 
-	if (is_kdump_kernel()) {
-		dev_info(&hdev->pdev->dev,
-			 "Running kdump kernel. Using minimal resources\n");
+	if (!is_kdump_kernel())
+		return;
 
-		/* minimal queue pairs equals to the number of vports */
-		hdev->num_tqps = hdev->num_vmdq_vport + hdev->num_req_vfs + 1;
-		hdev->num_tx_desc = HCLGE_MIN_TX_DESC;
-		hdev->num_rx_desc = HCLGE_MIN_RX_DESC;
-	}
+	dev_info(&hdev->pdev->dev,
+		 "Running kdump kernel. Using minimal resources\n");
+
+	/* minimal queue pairs equals to the number of vports */
+	hdev->num_tqps = hdev->num_vmdq_vport + hdev->num_req_vfs + 1;
+	hdev->num_tx_desc = HCLGE_MIN_TX_DESC;
+	hdev->num_rx_desc = HCLGE_MIN_RX_DESC;
 }
 
 static int hclge_configure(struct hclge_dev *hdev)
