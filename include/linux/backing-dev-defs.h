@@ -201,10 +201,14 @@ struct backing_dev_info {
 #endif
 	wait_queue_head_t wb_waitq;
 
+#ifndef __GENKSYMS__
 	union {
 		struct rcu_device *rcu_dev;
 		struct device *dev;
 	};
+#else
+	struct device *dev;
+#endif
 	struct device *owner;
 
 	struct timer_list laptop_mode_wb_timer;
