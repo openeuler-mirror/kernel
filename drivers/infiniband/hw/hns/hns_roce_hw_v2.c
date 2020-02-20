@@ -7330,6 +7330,7 @@ static void __hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
 	handle->priv = NULL;
 
 	hr_dev->state = HNS_ROCE_DEVICE_STATE_UNINIT;
+	hns_roce_handle_device_err(hr_dev);
 
 	hns_roce_exit(hr_dev);
 	kfree(hr_dev->priv);
@@ -7487,7 +7488,6 @@ static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
 	hns_roce_v2_reset_notify_user(hr_dev);
 
 	hr_dev->state = HNS_ROCE_DEVICE_STATE_RST_DOWN;
-	hns_roce_handle_device_err(hr_dev);
 
 	return 0;
 }
