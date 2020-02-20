@@ -4453,6 +4453,9 @@ static int hns3_reset_notify_init_enet(struct hnae3_handle *handle)
 		goto err_init_irq_fail;
 	}
 
+	if (!hns3_is_phys_func(handle->pdev))
+		hns3_init_mac_addr(netdev);
+
 	ret = hns3_client_start(handle);
 	if (ret) {
 		dev_err(priv->dev, "hns3_client_start fail! ret=%d\n", ret);

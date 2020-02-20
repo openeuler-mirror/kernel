@@ -1264,7 +1264,7 @@ static int hclgevf_set_mac_addr(struct hnae3_handle *handle, void *p,
 	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_UNICAST, 0);
 	send_msg.subcode = HCLGE_MBX_MAC_VLAN_UC_MODIFY;
 	ether_addr_copy(send_msg.data, new_mac_addr);
-	if (is_first)
+	if (is_first && !hdev->has_pf_mac)
 		eth_zero_addr(&send_msg.data[ETH_ALEN]);
 	else
 		ether_addr_copy(&send_msg.data[ETH_ALEN], old_mac_addr);
