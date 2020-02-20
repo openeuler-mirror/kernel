@@ -473,8 +473,11 @@ static int blkcg_reset_stats(struct cgroup_subsys_state *css,
 const char *blkg_dev_name(struct blkcg_gq *blkg)
 {
 	/* some drivers (floppy) instantiate a queue w/o disk registered */
-	if (blkg->q->backing_dev_info->dev)
-		return dev_name(blkg->q->backing_dev_info->dev);
+	struct rcu_device *rcu_dev;
+
+	rcu_dev = rcu_dereference(blkg->q->backing_dev_info->rcu_dev);
+	if (rcu_dev)
+		return dev_name(&rcu_dev->dev);
 	return NULL;
 }
 EXPORT_SYMBOL_GPL(blkg_dev_name);

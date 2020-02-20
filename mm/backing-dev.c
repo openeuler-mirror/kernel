@@ -872,19 +872,43 @@ struct backing_dev_info *bdi_alloc_node(gfp_t gfp_mask, int node_id)
 }
 EXPORT_SYMBOL(bdi_alloc_node);
 
+static void bdi_device_release(struct device *dev)
+{
+	struct rcu_device *rcu_dev = container_of(dev,
+			struct rcu_device, dev);
+	kfree(rcu_dev);
+}
+
 int bdi_register_va(struct backing_dev_info *bdi, const char *fmt, va_list args)
 {
 	struct device *dev;
+	struct rcu_device *rcu_dev;
+	int retval = -ENODEV;
 
 	if (bdi->dev)	/* The driver needs to use separate queues per device */
 		return 0;
 
-	dev = device_create_vargs(bdi_class, NULL, MKDEV(0, 0), bdi, fmt, args);
-	if (IS_ERR(dev))
-		return PTR_ERR(dev);
+	rcu_dev = kzalloc(sizeof(struct rcu_device), GFP_KERNEL);
+	if (!rcu_dev)
+		return -ENOMEM;
+
+	/* initialize device */
+	dev = &rcu_dev->dev;
+	device_initialize(dev);
+	dev->class = bdi_class;
+	dev->release = bdi_device_release;
+	dev->devt = MKDEV(0, 0);
+	dev_set_drvdata(dev, (void *)bdi);
+	retval = kobject_set_name_vargs(&dev->kobj, fmt, args);
+	if (retval)
+		goto error;
+
+	retval = device_add(dev);
+	if (retval)
+		goto error;
 
 	cgwb_bdi_register(bdi);
-	bdi->dev = dev;
+	bdi->rcu_dev = rcu_dev;
 
 	bdi_debug_register(bdi, dev_name(dev));
 	set_bit(WB_registered, &bdi->wb.state);
@@ -895,6 +919,10 @@ int bdi_register_va(struct backing_dev_info *bdi, const char *fmt, va_list args)
 
 	trace_writeback_bdi_register(bdi);
 	return 0;
+
+error:
+	kfree(rcu_dev);
+	return retval;
 }
 EXPORT_SYMBOL(bdi_register_va);
 
@@ -937,17 +965,28 @@ static void bdi_remove_from_list(struct backing_dev_info *bdi)
 	synchronize_rcu_expedited();
 }
 
+static void bdi_put_device_rcu(struct rcu_head *rcu)
+{
+	struct rcu_device *rcu_dev = container_of(rcu, struct rcu_device,
+							rcu_head);
+	put_device(&rcu_dev->dev);
+}
 void bdi_unregister(struct backing_dev_info *bdi)
 {
 	/* make sure nobody finds us on the bdi_list anymore */
+	struct rcu_device *rcu_dev = bdi->rcu_dev;
 	bdi_remove_from_list(bdi);
 	wb_shutdown(&bdi->wb);
 	cgwb_bdi_unregister(bdi);
 
 	if (bdi->dev) {
 		bdi_debug_unregister(bdi);
+		get_device(bdi->dev);
 		device_unregister(bdi->dev);
-		bdi->dev = NULL;
+		rcu_assign_pointer(bdi->dev, NULL);
+
+		/* wait all rcu reader of bdi->dev before free dev */
+		call_rcu(&rcu_dev->rcu_head, bdi_put_device_rcu);
 	}
 
 	if (bdi->owner) {
