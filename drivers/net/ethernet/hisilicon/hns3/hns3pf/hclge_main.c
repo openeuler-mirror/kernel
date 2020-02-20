@@ -6534,9 +6534,11 @@ static void hclge_phy_link_status_wait(struct hclge_dev *hdev,
 
 	do {
 		ret = phy_read_status(phydev);
-		if (ret)
-			dev_warn(&hdev->pdev->dev,
-				 "phy update link status fail\n");
+		if (ret) {
+			dev_err(&hdev->pdev->dev,
+				"phy update link status fail, ret = %d\n", ret);
+			return;
+		}
 
 		if (phydev->link == link_ret)
 			break;
