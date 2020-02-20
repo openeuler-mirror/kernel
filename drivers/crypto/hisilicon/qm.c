@@ -376,8 +376,7 @@ static int qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
 	struct qm_mailbox mailbox;
 	int ret = 0;
 
-	dev_dbg(&qm->pdev->dev, "QM mailbox request to q%u: %u-%llx\n", queue,
-		cmd, dma_addr);
+	dev_dbg(&qm->pdev->dev, "QM mailbox request to q%u: %u\n", queue, cmd);
 
 	mailbox.w0 = cpu_to_le16(cmd |
 		     (op ? 0x1 << QM_MB_OP_SHIFT : 0) |
@@ -1217,8 +1216,7 @@ static struct hisi_qp *hisi_qm_create_qp_nolock(struct hisi_qm *qm,
 		goto err_clear_bit;
 	}
 
-	dev_dbg(dev, "allocate qp dma buf(va=%pK, dma=%pad, size=%zx)\n",
-		qp->qdma.va, &qp->qdma.dma, qp->qdma.size);
+	dev_dbg(dev, "allocate qp dma buf size=%zx\n", qp->qdma.size);
 
 	qp->qp_id = qp_id;
 	qp->alg_type = alg_type;
@@ -1379,7 +1377,6 @@ static int hisi_qm_start_qp_nolock(struct hisi_qp *qp, unsigned long arg)
 {
 	struct hisi_qm *qm = qp->qm;
 	struct device *dev = &qm->pdev->dev;
-	enum qm_hw_ver ver = qm->ver;
 	int qp_id = qp->qp_id;
 	int pasid = arg;
 	size_t off = 0;
@@ -1407,13 +1404,6 @@ static int hisi_qm_start_qp_nolock(struct hisi_qp *qp, unsigned long arg)
 
 	QP_INIT_BUF(qp, sqe, qm->sqe_size * QM_Q_DEPTH);
 	QP_INIT_BUF(qp, cqe, sizeof(struct cqe) * QM_Q_DEPTH);
-
-	dev_dbg(dev, "init qp buffer(v%d):\n"
-		     " sqe	(%pK, %lx)\n"
-		     " cqe	(%pK, %lx)\n",
-		     ver,
-		     qp->sqe, (unsigned long)qp->sqe_dma,
-		     qp->cqe, (unsigned long)qp->cqe_dma);
 
 	ret = qm_qp_ctx_cfg(qp, qp_id, pasid);
 	if (ret)
@@ -2176,8 +2166,6 @@ static int qm_eq_aeq_ctx_cfg(struct hisi_qm *qm)
 
 static int __hisi_qm_start(struct hisi_qm *qm)
 {
-	struct pci_dev *pdev = qm->pdev;
-	struct device *dev = &pdev->dev;
 	size_t off = 0;
 	int ret;
 
@@ -2211,16 +2199,6 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 	qm->reserve = qm->qdma.va + off;
 	qm->reserve_dma = qm->qdma.dma + off;
 	off += PAGE_SIZE;
-
-	dev_dbg(dev, "init qm buffer:\n"
-		     " eqe	(%pK, %lx)\n"
-		     " aeqe	(%pK, %lx)\n"
-		     " sqc	(%pK, %lx)\n"
-		     " cqc	(%pK, %lx)\n",
-		     qm->eqe, (unsigned long)qm->eqe_dma,
-		     qm->aeqe, (unsigned long)qm->aeqe_dma,
-		     qm->sqc, (unsigned long)qm->sqc_dma,
-		     qm->cqc, (unsigned long)qm->cqc_dma);
 
 	ret = qm_eq_aeq_ctx_cfg(qm);
 	if (ret)
@@ -2357,8 +2335,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 		qm->qdma.va = dma_alloc_coherent(dev, qm->qdma.size,
 						 &qm->qdma.dma,
 						 GFP_ATOMIC | __GFP_ZERO);
-		dev_dbg(dev, "allocate qm dma buf(va=%pK, dma=%pad, size=%zx)\n",
-			qm->qdma.va, &qm->qdma.dma, qm->qdma.size);
+		dev_dbg(dev, "allocate qm dma buf size=%zx\n", qm->qdma.size);
 		if (!qm->qdma.va) {
 			ret = -ENOMEM;
 			goto err_unlock;

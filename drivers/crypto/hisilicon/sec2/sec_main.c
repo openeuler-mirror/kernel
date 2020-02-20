@@ -959,8 +959,6 @@ static void hisi_sec_log_hw_error(struct hisi_qm *qm, u32 err_sts)
 		err_val = readl(qm->io_base + SEC_CORE_ECC_INFO);
 		dev_err(dev, "hisi-sec multi ecc sram num=0x%x\n",
 			SEC_ECC_NUM(err_val));
-		dev_err(dev, "hisi-sec multi ecc sram addr=0x%x\n",
-			SEC_ECC_ADDR(err_val));
 	}
 }
 
