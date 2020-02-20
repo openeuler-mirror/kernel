@@ -64,8 +64,7 @@ int hns3_cae_nic_timeout_cfg(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size)
 {
-	struct tx_timeout_param *out_info =
-					     (struct tx_timeout_param *)buf_out;
+	struct tx_timeout_param *out_info = (struct tx_timeout_param *)buf_out;
 	struct tx_timeout_param *in_info = (struct tx_timeout_param *)buf_in;
 	bool check = !buf_in || in_size < sizeof(struct tx_timeout_param);
 	struct net_device *netdev = net_priv->netdev;

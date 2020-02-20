@@ -20,8 +20,9 @@ static int hns3_cae_tm_schd_mode_set(struct hclge_dev *hdev,
 {
 	struct hclge_desc desc;
 
+	if (mode > HCLGE_SCH_MODE_DWRR)
+		return -EINVAL;
 	hns3_cae_cmd_setup_basic_desc(&desc, opcode, false);
-
 	if (mode == HCLGE_SCH_MODE_DWRR)
 		desc.data[1] = 1;
 	else
@@ -48,7 +49,7 @@ static int hns3_cae_tm_schd_mode_get(struct hclge_dev *hdev,
 	return ret;
 }
 
-int hns3_cae_tm_q_to_qs_set(struct hclge_dev *hdev, u16 q_id, u16 qs_id)
+static int hns3_cae_tm_q_to_qs_set(struct hclge_dev *hdev, u16 q_id, u16 qs_id)
 {
 	struct hclge_nq_to_qs_link_cmd *map = NULL;
 	struct hclge_desc desc;
@@ -61,7 +62,7 @@ int hns3_cae_tm_q_to_qs_set(struct hclge_dev *hdev, u16 q_id, u16 qs_id)
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-int hns3_cae_tm_q_to_qs_get(struct hclge_dev *hdev, u16 q_id, u16 *qs_id)
+static int hns3_cae_tm_q_to_qs_get(struct hclge_dev *hdev, u16 q_id, u16 *qs_id)
 {
 	struct hclge_nq_to_qs_link_cmd *map = NULL;
 	struct hclge_desc desc;
@@ -78,7 +79,7 @@ int hns3_cae_tm_q_to_qs_get(struct hclge_dev *hdev, u16 q_id, u16 *qs_id)
 	return ret;
 }
 
-int hns3_cae_tm_qs_to_pri_set(struct hclge_dev *hdev, u16 qs_id, u8 pri)
+static int hns3_cae_tm_qs_to_pri_set(struct hclge_dev *hdev, u16 qs_id, u8 pri)
 {
 	struct hclge_qs_to_pri_link_cmd *map = NULL;
 	struct hclge_desc desc;
@@ -93,7 +94,7 @@ int hns3_cae_tm_qs_to_pri_set(struct hclge_dev *hdev, u16 qs_id, u8 pri)
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-int hns3_cae_tm_qs_to_pri_get(struct hclge_dev *hdev, u16 qs_id, u8 *pri)
+static int hns3_cae_tm_qs_to_pri_get(struct hclge_dev *hdev, u16 qs_id, u8 *pri)
 {
 	struct hclge_qs_to_pri_link_cmd *map = NULL;
 	struct hclge_desc desc;
@@ -109,7 +110,7 @@ int hns3_cae_tm_qs_to_pri_get(struct hclge_dev *hdev, u16 qs_id, u8 *pri)
 	return ret;
 }
 
-int hns3_cae_tm_qs_weight_set(struct hclge_dev *hdev, u16 qs_id, u8 dwrr)
+static int hns3_cae_tm_qs_weight_set(struct hclge_dev *hdev, u16 qs_id, u8 dwrr)
 {
 	struct hclge_qs_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
@@ -122,7 +123,8 @@ int hns3_cae_tm_qs_weight_set(struct hclge_dev *hdev, u16 qs_id, u8 dwrr)
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-int hns3_cae_tm_qs_weight_get(struct hclge_dev *hdev, u16 qs_id, u8 *dwrr)
+static int hns3_cae_tm_qs_weight_get(struct hclge_dev *hdev,
+				     u16 qs_id, u8 *dwrr)
 {
 	struct hclge_qs_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
@@ -138,7 +140,8 @@ int hns3_cae_tm_qs_weight_get(struct hclge_dev *hdev, u16 qs_id, u8 *dwrr)
 	return ret;
 }
 
-int hns3_cae_tm_pri_weight_set(struct hclge_dev *hdev, u8 pri_id, u8 dwrr)
+static int hns3_cae_tm_pri_weight_set(struct hclge_dev *hdev,
+				      u8 pri_id, u8 dwrr)
 {
 	struct hclge_priority_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
@@ -151,7 +154,8 @@ int hns3_cae_tm_pri_weight_set(struct hclge_dev *hdev, u8 pri_id, u8 dwrr)
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-int hns3_cae_tm_pri_weight_get(struct hclge_dev *hdev, u8 pri_id, u8 *dwrr)
+static int hns3_cae_tm_pri_weight_get(struct hclge_dev *hdev,
+				      u8 pri_id, u8 *dwrr)
 {
 	struct hclge_priority_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
@@ -167,7 +171,8 @@ int hns3_cae_tm_pri_weight_get(struct hclge_dev *hdev, u8 pri_id, u8 *dwrr)
 	return ret;
 }
 
-int hns3_cae_tm_pri_pg_bitmap_set(struct hclge_dev *hdev, u8 pg_id, u8 bitmap)
+static int hns3_cae_tm_pri_pg_bitmap_set(struct hclge_dev *hdev,
+					 u8 pg_id, u8 bitmap)
 {
 	struct hclge_pg_to_pri_link_cmd *map = NULL;
 	struct hclge_desc desc;
@@ -181,8 +186,8 @@ int hns3_cae_tm_pri_pg_bitmap_set(struct hclge_dev *hdev, u8 pg_id, u8 bitmap)
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-int hns3_cae_tm_pri_pg_bitmap_get(struct hclge_dev *hdev, u8 pg_id,
-				  u8 *bitmap)
+static int hns3_cae_tm_pri_pg_bitmap_get(struct hclge_dev *hdev, u8 pg_id,
+					 u8 *bitmap)
 {
 	struct hclge_pg_to_pri_link_cmd *map = NULL;
 	struct hclge_desc desc;
@@ -200,8 +205,8 @@ int hns3_cae_tm_pri_pg_bitmap_get(struct hclge_dev *hdev, u8 pg_id,
 	return 0;
 }
 
-int hns3_cae_tm_qs_bp_bitmap_set(struct hclge_dev *hdev, u8 tc, u8 gp_id,
-				 u32 map)
+static int hns3_cae_tm_qs_bp_bitmap_set(struct hclge_dev *hdev, u8 tc, u8 gp_id,
+					u32 map)
 {
 	struct hclge_bp_to_qs_map_cmd *bp_to_qs_map_cmd = NULL;
 	struct hclge_desc desc;
@@ -217,8 +222,8 @@ int hns3_cae_tm_qs_bp_bitmap_set(struct hclge_dev *hdev, u8 tc, u8 gp_id,
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-int hns3_cae_tm_qs_bp_bitmap_get(struct hclge_dev *hdev, u8 tc, u8 gp_id,
-				 u32 *map)
+static int hns3_cae_tm_qs_bp_bitmap_get(struct hclge_dev *hdev, u8 tc, u8 gp_id,
+					u32 *map)
 {
 	struct hclge_bp_to_qs_map_cmd *bp_to_qs_map_cmd = NULL;
 	struct hclge_desc desc;
@@ -237,9 +242,9 @@ int hns3_cae_tm_qs_bp_bitmap_get(struct hclge_dev *hdev, u8 tc, u8 gp_id,
 	return 0;
 }
 
-int hns3_cae_tm_pri_shapping_set(struct hclge_dev *hdev,
-				 enum hclge_shap_bucket bucket, u8 pri_id,
-				 u32 shaper)
+static int hns3_cae_tm_pri_shapping_set(struct hclge_dev *hdev,
+					enum hclge_shap_bucket bucket,
+					u8 pri_id, u32 shaper)
 {
 	struct hclge_pri_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
@@ -255,9 +260,9 @@ int hns3_cae_tm_pri_shapping_set(struct hclge_dev *hdev,
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-int hns3_cae_tm_pri_shapping_get(struct hclge_dev *hdev,
-				 enum hclge_shap_bucket bucket, u8 pri_id,
-				 u32 *shaper)
+static int hns3_cae_tm_pri_shapping_get(struct hclge_dev *hdev,
+					enum hclge_shap_bucket bucket,
+					u8 pri_id, u32 *shaper)
 {
 	struct hclge_pri_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
@@ -275,7 +280,7 @@ int hns3_cae_tm_pri_shapping_get(struct hclge_dev *hdev,
 	return ret;
 }
 
-int hns3_cae_tm_pg_weight_set(struct hclge_dev *hdev, u8 pg_id, u8 dwrr)
+static int hns3_cae_tm_pg_weight_set(struct hclge_dev *hdev, u8 pg_id, u8 dwrr)
 {
 	struct hclge_pg_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
@@ -288,7 +293,7 @@ int hns3_cae_tm_pg_weight_set(struct hclge_dev *hdev, u8 pg_id, u8 dwrr)
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-int hns3_cae_tm_pg_weight_get(struct hclge_dev *hdev, u8 pg_id, u8 *dwrr)
+static int hns3_cae_tm_pg_weight_get(struct hclge_dev *hdev, u8 pg_id, u8 *dwrr)
 {
 	struct hclge_pg_weight_cmd *weight = NULL;
 	struct hclge_desc desc;
@@ -304,9 +309,9 @@ int hns3_cae_tm_pg_weight_get(struct hclge_dev *hdev, u8 pg_id, u8 *dwrr)
 	return ret;
 }
 
-int hns3_cae_tm_pg_shapping_set(struct hclge_dev *hdev,
-				enum hclge_shap_bucket bucket, u8 pg_id,
-				u32 shaper)
+static int hns3_cae_tm_pg_shapping_set(struct hclge_dev *hdev,
+				       enum hclge_shap_bucket bucket,
+				       u8 pg_id, u32 shaper)
 {
 	struct hclge_pg_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
@@ -322,9 +327,9 @@ int hns3_cae_tm_pg_shapping_set(struct hclge_dev *hdev,
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-int hns3_cae_tm_pg_shapping_get(struct hclge_dev *hdev,
-				enum hclge_shap_bucket bucket, u8 pg_id,
-				u32 *shaper)
+static int hns3_cae_tm_pg_shapping_get(struct hclge_dev *hdev,
+				       enum hclge_shap_bucket bucket,
+				       u8 pg_id, u32 *shaper)
 {
 	struct hclge_pg_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
@@ -343,7 +348,7 @@ int hns3_cae_tm_pg_shapping_get(struct hclge_dev *hdev,
 	return ret;
 }
 
-int hns3_cae_tm_port_shapping_set(struct hclge_dev *hdev, u32 shaper)
+static int hns3_cae_tm_port_shapping_set(struct hclge_dev *hdev, u32 shaper)
 {
 	struct hclge_port_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
@@ -357,7 +362,7 @@ int hns3_cae_tm_port_shapping_set(struct hclge_dev *hdev, u32 shaper)
 	return hns3_cae_cmd_send(hdev, &desc, 1);
 }
 
-int hns3_cae_tm_port_shapping_get(struct hclge_dev *hdev, u32 *shaper)
+static int hns3_cae_tm_port_shapping_get(struct hclge_dev *hdev, u32 *shaper)
 {
 	struct hclge_port_shapping_cmd *shap_cfg_cmd = NULL;
 	enum hclge_opcode_type opcode;
@@ -474,8 +479,9 @@ int hns3_cae_queue_cfg(const struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
+	if (in_info->queue_id >= MAX_QUEUE_ID)
+		return -EINVAL;
 	is_read = in_info->is_read;
-
 	if (is_read) {
 		check = !buf_out ||
 			out_size < sizeof(struct hns3_cae_queue_cfg_info);
@@ -492,6 +498,8 @@ int hns3_cae_queue_cfg(const struct hns3_nic_priv *net_priv,
 			return -1;
 		}
 	} else {
+		if (in_info->qs >= MAX_QSET_ID)
+			return -EINVAL;
 		if (hns3_cae_tm_q_to_qs_set(hdev, in_info->queue_id,
 					    in_info->qs)) {
 			pr_err("%s,%d:set queue(%d) to qs(%d) failed!\n",
@@ -571,6 +579,8 @@ int hns3_cae_qs_cfg(const struct hns3_nic_priv *net_priv,
 
 	is_read = in_info->is_read;
 	qs_id = in_info->qs_id;
+	if (qs_id >= MAX_QSET_ID)
+		return -EINVAL;
 	gp_id = qs_id / 32;
 	offset = qs_id % 32;
 
@@ -618,7 +628,6 @@ int hns3_cae_qs_cfg(const struct hns3_nic_priv *net_priv,
 			       __func__, __LINE__, qs_id, ret);
 			return -1;
 		}
-
 	} else {
 		if ((in_info->flag & HNS3_TM_QSET_MAPPING_FLAG) &&
 		    hns3_cae_tm_qs_to_pri_set(hdev, qs_id, in_info->pri)) {
@@ -661,6 +670,10 @@ static int hns3_cae_pri_pg_set_map(struct hclge_dev *hdev,
 	u8 bitmap = map;
 	u16 pri_id = in_info->pri_id;
 
+	if (pri_id >= MAX_TC_NUM)
+		return -EINVAL;
+	if (in_info->pg >= MAX_PG_NUM)
+		return -EINVAL;
 	/* clear old map */
 	if (in_info->pg != cur_pg) {
 		bitmap &= ~BIT(pri_id);
@@ -712,8 +725,9 @@ int hns3_cae_pri_cfg(const struct hns3_nic_priv *net_priv,
 	}
 
 	is_read = in_info->is_read;
-
 	pri_id = in_info->pri_id;
+	if (pri_id >= MAX_TC_NUM)
+		return -EINVAL;
 
 	for (cur_pg = 0; cur_pg < MAX_PG_NUM; cur_pg++) {
 		bitmap = 0;
@@ -838,6 +852,8 @@ int hns3_cae_pg_cfg(const struct hns3_nic_priv *net_priv, void *buf_in,
 
 	is_read = in_info->is_read;
 	pg_id = in_info->pg_id;
+	if (pg_id >= MAX_PG_NUM)
+		return -EINVAL;
 
 	if (is_read) {
 		check = !buf_out ||
@@ -969,6 +985,7 @@ int hns3_cae_ets_cfg(const struct hns3_nic_priv *net_priv,
 		     u32 out_size)
 {
 #define HNS3_TM_ETS_PORT_SHAPING		0x10820850
+#define HNS3_TM_MAC_ID_MASK			0x7
 	struct hns3_cae_ets_cfg_info *out_info =
 					(struct hns3_cae_ets_cfg_info *)buf_out;
 	struct hns3_cae_ets_cfg_info *in_info =
@@ -993,7 +1010,16 @@ int hns3_cae_ets_cfg(const struct hns3_nic_priv *net_priv,
 
 	is_read = in_info->is_read;
 	tc_id = in_info->tc_id;
-	mac_id = in_info->mac_id;
+	if (tc_id >= MAX_TC_NUM) {
+		pr_err("tc id(%d) is invalid in %s function\n", tc_id, __func__);
+		return -EFAULT;
+	}
+	mac_id = in_info->mac_id & HNS3_TM_MAC_ID_MASK;
+	if (mac_id & 0x1) {
+		pr_err("mac id(%d) is invalid in %s function\n", mac_id, __func__);
+		return -EFAULT;
+	}
+
 	addr = (u64)HNS3_TM_ETS_PORT_SHAPING + ((u64)mac_id << 20);
 	out_info->tc_id = tc_id;
 	out_info->mac_id = mac_id;

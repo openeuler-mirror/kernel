@@ -124,7 +124,7 @@ static int hns3_get_sfpinfo(struct hnae3_handle *handle, u8 *buff, u16 offset,
 	return 0;
 }
 
-int hns3_set_sfp_state(struct hnae3_handle *handle, bool en)
+static int hns3_set_sfp_state(struct hnae3_handle *handle, bool en)
 {
 	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct hclge_sfp_enable_cmd *req = NULL;

@@ -220,13 +220,7 @@ int hns3_cae_dcb_pfc_cfg(const struct hns3_nic_priv *net_priv,
 			dcb_all_info[curr_dev_idx].pfc_cfg_info.prien =
 			    in_info->prien;
 			if (ndev->dcbnl_ops->ieee_setpfc) {
-#ifdef CONFIG_EXT_TEST
-				rtnl_lock();
-#endif
 				ret = ndev->dcbnl_ops->ieee_setpfc(ndev, &pfc);
-#ifdef CONFIG_EXT_TEST
-				rtnl_unlock();
-#endif
 				if (ret)
 					return ret;
 			}
@@ -397,13 +391,7 @@ int hns3_cae_dcb_ets_cfg(const struct hns3_nic_priv *net_priv,
 						curr_dev_idx);
 
 		if (ndev->dcbnl_ops->ieee_setets) {
-#ifdef CONFIG_EXT_TEST
-			rtnl_lock();
-#endif
 			ret = ndev->dcbnl_ops->ieee_setets(ndev, &ets);
-#ifdef CONFIG_EXT_TEST
-			rtnl_unlock();
-#endif
 			if (ret)
 				return ret;
 		}

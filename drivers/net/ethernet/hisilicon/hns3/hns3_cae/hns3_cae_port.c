@@ -17,8 +17,8 @@
 #define BD_NUM_6				6
 #define BD_NUM_7				7
 
-void fill_port_info(struct hclge_port_info *get_port_info_out,
-		    struct hclge_desc *port_desc, u32 bd_num)
+static void fill_port_info(struct hclge_port_info *get_port_info_out,
+			   struct hclge_desc *port_desc, u32 bd_num)
 {
 	u8 *dest_data = NULL;
 	u8 *tmp_buff = NULL;

@@ -17,7 +17,6 @@
 #include "hclge_cmd.h"
 #include "hclge_main.h"
 #include "hnae3.h"
-#include "hclge_ext.h"
 #include "hclge_main_it.h"
 
 #ifdef CONFIG_IT_VALIDATION
@@ -46,17 +45,16 @@ int nic_unregister_event(void)
 }
 EXPORT_SYMBOL(nic_unregister_event);
 
-void nic_call_event(struct net_device *netdev,
-		    enum hnae3_event_type_custom event_t)
+static void nic_call_event(struct net_device *netdev,
+			   enum hnae3_event_type_custom event_t)
 {
 	if (nic_event_call) {
 		nic_event_call(netdev, event_t);
 		netdev_info(netdev, "report event %d\n", event_t);
 	}
 }
-EXPORT_SYMBOL(nic_call_event);
 
-void hclge_handle_imp_error_it(struct hnae3_handle *handle)
+static void hclge_handle_imp_error_it(struct hnae3_handle *handle)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -83,6 +81,14 @@ void hclge_handle_imp_error_it(struct hnae3_handle *handle)
 		hclge_write_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG, reg_val);
 	}
 
+}
+
+static void hclge_reset_task_schedule_it(struct hclge_dev *hdev)
+{
+	if (!test_bit(HCLGE_STATE_REMOVING, &hdev->state) &&
+	    !test_and_set_bit(HCLGE_STATE_RST_SERVICE_SCHED, &hdev->state))
+		mod_delayed_work_on(cpumask_first(&hdev->affinity_mask),
+				    system_wq, &hdev->service_task, 0);
 }
 
 void hclge_reset_event_it(struct pci_dev *pdev, struct hnae3_handle *handle)
@@ -168,10 +174,6 @@ bool hclge_reset_done_it(struct hnae3_handle *handle, bool done)
 
 int hclge_init_it(void)
 {
-#ifdef CONFIG_HNS3_TEST
-	hclge_ops.priv_ops = hclge_ext_ops_handle;
-#endif
-
 	hclge_ops.reset_event = hclge_reset_event_it;
 	hclge_ops.reset_done = hclge_reset_done_it;
 	hclge_ops.handle_imp_error = hclge_handle_imp_error_it;

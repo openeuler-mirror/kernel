@@ -45,6 +45,7 @@ int hns3_set_promisc_mode_cfg(const struct hns3_nic_priv *nic_dev,
 			      void *buf_in, u32 in_size,
 			      void *buf_out, u32 out_size)
 {
+#define PROMISC_EN_MAX_VAL		0x1
 	bool check = !buf_in || in_size < sizeof(struct promisc_mode_param);
 	struct promisc_mode_param *mode_param = NULL;
 	struct hclge_promisc_cfg_cmd *req = NULL;
@@ -76,16 +77,22 @@ int hns3_set_promisc_mode_cfg(const struct hns3_nic_priv *nic_dev,
 	switch (mode_param->type) {
 	case HNS3_UNICAST:
 		req->flag &= ~BIT(HNS3_CAE_UC_PROMISC_EN_B);
+		if (mode_param->uc > PROMISC_EN_MAX_VAL)
+			return -EINVAL;
 		req->flag |= (mode_param->uc << HNS3_CAE_UC_PROMISC_EN_B) |
 			     HCLGE_PROMISC_TX_EN_B | HCLGE_PROMISC_RX_EN_B;
 		break;
 	case HNS3_MULTICAST:
 		req->flag &= ~BIT(HNS3_CAE_MC_PROMISC_EN_B);
+		if (mode_param->mc > PROMISC_EN_MAX_VAL)
+			return -EINVAL;
 		req->flag |= (mode_param->mc << HNS3_CAE_MC_PROMISC_EN_B) |
 			     HCLGE_PROMISC_TX_EN_B | HCLGE_PROMISC_RX_EN_B;
 		break;
 	case HNS3_BROADCAST:
 		req->flag &= ~BIT(HNS3_CAE_BC_PROMISC_EN_B);
+		if (mode_param->bc > PROMISC_EN_MAX_VAL)
+			return -EINVAL;
 		req->flag |= (mode_param->bc << HNS3_CAE_BC_PROMISC_EN_B) |
 			     HCLGE_PROMISC_TX_EN_B | HCLGE_PROMISC_RX_EN_B;
 		break;

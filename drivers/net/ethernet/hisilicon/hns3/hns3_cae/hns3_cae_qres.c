@@ -3,8 +3,8 @@
 
 #include "hns3_cae_qres.h"
 
-int hns3_get_qres_rx_value(const struct hns3_nic_priv *net_priv, int ring_id,
-			   enum param_type type)
+static int hns3_get_qres_rx_value(const struct hns3_nic_priv *net_priv,
+				  int ring_id, enum param_type type)
 {
 	struct hns3_enet_ring *ring = NULL;
 	int tqps_num;
@@ -51,8 +51,8 @@ int hns3_get_qres_rx_value(const struct hns3_nic_priv *net_priv, int ring_id,
 	return num;
 }
 
-int hns3_get_qres_tx_value(const struct hns3_nic_priv *net_priv, int ring_id,
-			   enum param_type type)
+static int hns3_get_qres_tx_value(const struct hns3_nic_priv *net_priv,
+				  int ring_id, enum param_type type)
 {
 	struct hns3_enet_ring *ring = NULL;
 	int num;
@@ -97,8 +97,8 @@ int hns3_get_qres_tx_value(const struct hns3_nic_priv *net_priv, int ring_id,
 	return num;
 }
 
-void fill_queue_info(const struct hns3_nic_priv *net_priv,
-		     struct qres_param *out_info, int ring_id)
+static void fill_queue_info(const struct hns3_nic_priv *net_priv,
+			    struct qres_param *out_info, int ring_id)
 {
 	/* rx info */
 	out_info->qid = ring_id;
