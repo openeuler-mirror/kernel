@@ -123,7 +123,7 @@ static int hpre_add_req_to_ctx(struct hpre_asym_request *hpre_req)
 
 	ctx = hpre_req->ctx;
 	id = hpre_alloc_req_id(ctx);
-	if (id < 0)
+	if (unlikely(id < 0))
 		return -EINVAL;
 
 	ctx->req_list[id] = hpre_req;
@@ -190,7 +190,7 @@ static int hpre_get_data_dma_addr(struct hpre_asym_request *hpre_req,
 	}
 	*tmp = dma_map_single(dev, sg_virt(data),
 			      len, dma_dir);
-	if (dma_mapping_error(dev, *tmp)) {
+	if (unlikely(dma_mapping_error(dev, *tmp))) {
 		dev_err(dev, "dma map data err!\n");
 		return -ENOMEM;
 	}
@@ -208,11 +208,11 @@ static int hpre_prepare_dma_buf(struct hpre_asym_request *hpre_req,
 	int shift;
 
 	shift = ctx->key_sz - len;
-	if (shift < 0)
+	if (unlikely(shift < 0))
 		return -EINVAL;
 
 	ptr = dma_alloc_coherent(dev, ctx->key_sz, tmp, GFP_KERNEL);
-	if (!ptr)
+	if (unlikely(!ptr))
 		return -ENOMEM;
 
 	if (is_src) {
@@ -241,7 +241,7 @@ static int hpre_hw_data_init(struct hpre_asym_request *hpre_req,
 	else
 		ret = hpre_prepare_dma_buf(hpre_req, data, len,
 					  is_src, &tmp);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	if (is_src)
@@ -262,7 +262,7 @@ static void hpre_hw_data_clr_all(struct hpre_ctx *ctx,
 	dma_addr_t tmp;
 
 	tmp = le64_to_cpu(sqe->in);
-	if (!tmp)
+	if (unlikely(!tmp))
 		return;
 
 	if (src) {
@@ -275,7 +275,7 @@ static void hpre_hw_data_clr_all(struct hpre_ctx *ctx,
 	}
 
 	tmp = le64_to_cpu(sqe->out);
-	if (!tmp)
+	if (unlikely(!tmp))
 		return;
 
 	if (req->dst) {
@@ -308,8 +308,7 @@ static int hpre_alg_res_post_hf(struct hpre_ctx *ctx, struct hpre_sqe *sqe,
 
 	done = (le32_to_cpu(sqe->dw0) >> HPRE_SQE_DONE_SHIFT) &
 		HREE_SQE_DONE_MASK;
-
-	if (err == HPRE_NO_HW_ERR &&  done == HPRE_HW_TASK_DONE)
+	if (likely(err == HPRE_NO_HW_ERR && done == HPRE_HW_TASK_DONE))
 		return  0;
 
 	return -EINVAL;
@@ -456,31 +455,29 @@ static int hpre_dh_compute_value(struct kpp_request *req)
 	int ret;
 
 	ret = hpre_msg_request_set(ctx, req, false);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	if (req->src) {
 		ret = hpre_hw_data_init(hpre_req, req->src, req->src_len, 1, 1);
-		if (ret)
+		if (unlikely(ret))
 			goto clear_all;
 	}
 
 	ret = hpre_hw_data_init(hpre_req, req->dst, req->dst_len, 0, 1);
-	if (ret)
+	if (unlikely(ret))
 		goto clear_all;
 
 	if (ctx->crt_g2_mode && !req->src)
-		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0)
-			   | HPRE_ALG_DH_G2);
+		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0) | HPRE_ALG_DH_G2);
 	else
-		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0)
-			   | HPRE_ALG_DH);
+		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0) | HPRE_ALG_DH);
 	do {
 		ret = hisi_qp_send(ctx->qp, msg);
 	} while (ret == -EBUSY && ctr++ < HPRE_TRY_SEND_TIMES);
 
 	/* success */
-	if (!ret)
+	if (likely(!ret))
 		return -EINPROGRESS;
 
 clear_all:
@@ -520,12 +517,12 @@ static int hpre_dh_set_params(struct hpre_ctx *ctx, struct dh *params)
 		return -EINVAL;
 
 	if (hpre_is_dh_params_length_valid(params->p_size <<
-		HPRE_BITS_2_BYTES_SHIFT))
+					   HPRE_BITS_2_BYTES_SHIFT))
 		return -EINVAL;
 
 	sz = ctx->key_sz = params->p_size;
 	ctx->dh.xa_p = dma_alloc_coherent(dev, sz << 1,
-				&ctx->dh.dma_xa_p, GFP_KERNEL);
+					  &ctx->dh.dma_xa_p, GFP_KERNEL);
 	if (!ctx->dh.xa_p)
 		return -ENOMEM;
 
@@ -669,22 +666,22 @@ static int hpre_rsa_enc(struct akcipher_request *req)
 		return ret;
 	}
 
-	if (!ctx->rsa.pubkey)
+	if (unlikely(!ctx->rsa.pubkey))
 		return -EINVAL;
 
 	ret = hpre_msg_request_set(ctx, req, true);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	msg->dw0 |= cpu_to_le32(HPRE_ALG_NC_NCRT);
 	msg->key = cpu_to_le64((u64)ctx->rsa.dma_pubkey);
 
 	ret = hpre_hw_data_init(hpre_req, req->src, req->src_len, 1, 0);
-	if (ret)
+	if (unlikely(ret))
 		goto clear_all;
 
 	ret = hpre_hw_data_init(hpre_req, req->dst, req->dst_len, 0, 0);
-	if (ret)
+	if (unlikely(ret))
 		goto clear_all;
 
 	do {
@@ -692,7 +689,7 @@ static int hpre_rsa_enc(struct akcipher_request *req)
 	} while (ret == -EBUSY && ctr++ < HPRE_TRY_SEND_TIMES);
 
 	/* success */
-	if (!ret)
+	if (likely(!ret))
 		return -EINPROGRESS;
 
 clear_all:
@@ -721,29 +718,29 @@ static int hpre_rsa_dec(struct akcipher_request *req)
 		return ret;
 	}
 
-	if (!ctx->rsa.prikey)
+	if (unlikely(!ctx->rsa.prikey))
 		return -EINVAL;
 
 	ret = hpre_msg_request_set(ctx, req, true);
-	if (ret)
+	if (unlikely(ret))
 		return ret;
 
 	if (ctx->crt_g2_mode) {
 		msg->key = cpu_to_le64((u64)ctx->rsa.dma_crt_prikey);
-		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0)
-			   | HPRE_ALG_NC_CRT);
+		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0) |
+				       HPRE_ALG_NC_CRT);
 	} else {
 		msg->key = cpu_to_le64((u64)ctx->rsa.dma_prikey);
-		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0)
-			   | HPRE_ALG_NC_NCRT);
+		msg->dw0 = cpu_to_le32(le32_to_cpu(msg->dw0) |
+				       HPRE_ALG_NC_NCRT);
 	}
 
 	ret = hpre_hw_data_init(hpre_req, req->src, req->src_len, 1, 0);
-	if (ret)
+	if (unlikely(ret))
 		goto clear_all;
 
 	ret = hpre_hw_data_init(hpre_req, req->dst, req->dst_len, 0, 0);
-	if (ret)
+	if (unlikely(ret))
 		goto clear_all;
 
 	do {
@@ -751,7 +748,7 @@ static int hpre_rsa_dec(struct akcipher_request *req)
 	} while (ret == -EBUSY && ctr++ < HPRE_TRY_SEND_TIMES);
 
 	/* success */
-	if (!ret)
+	if (likely(!ret))
 		return -EINPROGRESS;
 
 clear_all:
@@ -829,17 +826,17 @@ static int hpre_rsa_set_d(struct hpre_ctx *ctx, const char *value,
 	return 0;
 }
 
-static int hpre_crt_para_get(char *para, const char *raw,
-			     unsigned int raw_sz, unsigned int para_size)
+static int hpre_crt_para_get(char *para, size_t para_sz,
+			     const char *raw, size_t raw_sz)
 {
 	const char *ptr = raw;
 	size_t len = raw_sz;
 
 	hpre_rsa_drop_leading_zeros(&ptr, &len);
-	if (!len || len > para_size)
+	if (!len || len > para_sz)
 		return -EINVAL;
 
-	memcpy(para + para_size - len, ptr, len);
+	memcpy(para + para_sz - len, ptr, len);
 
 	return 0;
 }
@@ -857,32 +854,32 @@ static int hpre_rsa_setkey_crt(struct hpre_ctx *ctx, struct rsa_key *rsa_key)
 	if (!ctx->rsa.crt_prikey)
 		return -ENOMEM;
 
-	ret = hpre_crt_para_get(ctx->rsa.crt_prikey, rsa_key->dq,
-				rsa_key->dq_sz, hlf_ksz);
+	ret = hpre_crt_para_get(ctx->rsa.crt_prikey, hlf_ksz,
+				rsa_key->dq, rsa_key->dq_sz);
 	if (ret)
 		goto free_key;
 
 	offset = hlf_ksz;
-	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset, rsa_key->dp,
-				rsa_key->dp_sz, hlf_ksz);
+	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset, hlf_ksz,
+				rsa_key->dp, rsa_key->dp_sz);
 	if (ret)
 		goto free_key;
 
 	offset = hlf_ksz * HPRE_CRT_Q;
-	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset,
-				rsa_key->q, rsa_key->q_sz, hlf_ksz);
+	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset, hlf_ksz,
+				rsa_key->q, rsa_key->q_sz);
 	if (ret)
 		goto free_key;
 
 	offset = hlf_ksz * HPRE_CRT_P;
-	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset,
-				rsa_key->p, rsa_key->p_sz, hlf_ksz);
+	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset, hlf_ksz,
+				rsa_key->p, rsa_key->p_sz);
 	if (ret)
 		goto free_key;
 
 	offset = hlf_ksz * HPRE_CRT_INV;
-	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset,
-				rsa_key->qinv, rsa_key->qinv_sz, hlf_ksz);
+	ret = hpre_crt_para_get(ctx->rsa.crt_prikey + offset, hlf_ksz,
+				rsa_key->qinv, rsa_key->qinv_sz);
 	if (ret)
 		goto free_key;
 

@@ -840,31 +840,31 @@ static int hisi_rde_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	qm = &hisi_rde->qm;
 	ret = hisi_rde_qm_pre_init(qm, pdev);
 	if (ret) {
-		dev_err(&pdev->dev, "Pre init qm failed!\n");
+		pci_err(pdev, "Pre init qm failed!\n");
 		return ret;
 	}
 
 	ret = hisi_qm_init(qm);
 	if (ret) {
-		dev_err(&pdev->dev, "Init qm failed!\n");
+		pci_err(pdev, "Init qm failed!\n");
 		return ret;
 	}
 
 	ret = hisi_rde_pf_probe_init(hisi_rde);
 	if (ret) {
-		dev_err(&pdev->dev, "Init pf failed!\n");
+		pci_err(pdev, "Init pf failed!\n");
 		goto err_qm_uninit;
 	}
 
 	ret = hisi_qm_start(qm);
 	if (ret) {
-		dev_err(&pdev->dev, "Start qm failed!\n");
+		pci_err(pdev, "Start qm failed!\n");
 		goto err_qm_uninit;
 	}
 
 	ret = hisi_rde_debugfs_init(hisi_rde);
 	if (ret)
-		dev_warn(&pdev->dev, "Init debugfs failed!\n");
+		pci_warn(pdev, "Init debugfs failed!\n");
 
 	hisi_rde_add_to_list(hisi_rde);
 	hisi_rde->rde_list_lock = &hisi_rde_list_lock;
@@ -1234,22 +1234,9 @@ static int __init hisi_rde_init(void)
 
 	ret = pci_register_driver(&hisi_rde_pci_driver);
 	if (ret < 0) {
+		hisi_rde_unregister_debugfs();
 		pr_err("Register pci driver failed.\n");
-		goto err_pci;
 	}
-
-	if (list_empty(&hisi_rde_list)) {
-		pr_err("No rde device.\n");
-		ret = -ENODEV;
-		goto err_probe_device;
-	}
-
-	return 0;
-
-err_probe_device:
-	pci_unregister_driver(&hisi_rde_pci_driver);
-err_pci:
-	hisi_rde_unregister_debugfs();
 
 	return ret;
 }
