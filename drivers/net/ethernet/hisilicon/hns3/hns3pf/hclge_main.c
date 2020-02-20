@@ -6783,9 +6783,7 @@ static int hclge_set_loopback(struct hnae3_handle *handle,
 	struct phy_device *phydev = handle->netdev->phydev;
 	struct hnae3_knic_private_info *kinfo;
 	struct hclge_dev *hdev = vport->back;
-	int ret = 0;
-	u8 value;
-	int i;
+	int i, ret;
 
 	/* Loopback can be enabled in three places: SSU, MAC, and serdes. By
 	 * default, SSU loopback is enabled, so if the SMAC and the DMAC are
@@ -6793,8 +6791,9 @@ static int hclge_set_loopback(struct hnae3_handle *handle,
 	 * is disabled, packets can reach MAC even if SMAC is the same as DMAC.
 	 */
 	if (hdev->pdev->revision >= 0x21) {
-		value = en ? 0 : BIT(HCLGE_SWITCH_ALW_LPBK_B);
-		ret = hclge_config_switch_param(hdev, PF_VPORT_ID, value,
+		u8 switch_param = en ? 0 : BIT(HCLGE_SWITCH_ALW_LPBK_B);
+
+		ret = hclge_config_switch_param(hdev, PF_VPORT_ID, switch_param,
 						HCLGE_SWITCH_ALW_LPBK_MASK);
 		if (ret)
 			return ret;
