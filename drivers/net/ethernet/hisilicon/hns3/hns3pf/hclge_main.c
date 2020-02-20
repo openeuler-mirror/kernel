@@ -3740,56 +3740,51 @@ static int hclge_reset_stack(struct hclge_dev *hdev)
 	return hclge_notify_client(hdev, HNAE3_INIT_CLIENT);
 }
 
-static void hclge_reset(struct hclge_dev *hdev)
+static int hclge_reset_prepare(struct hclge_dev *hdev)
 {
-	struct hnae3_handle *handle = &hdev->vport[0].nic;
-	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
-	enum hnae3_reset_type reset_level;
 	int ret;
 
 	hdev->rst_stats.reset_cnt++;
 	/* perform reset of the stack & ae device for a client */
 	ret = hclge_notify_roce_client(hdev, HNAE3_DOWN_CLIENT);
 	if (ret)
-		goto err_reset;
+		return ret;
 
 	ret = hclge_reset_prepare_down(hdev);
 	if (ret)
-		goto err_reset;
+		return ret;
 
 	rtnl_lock();
 	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
-	if (ret)
-		goto err_reset_lock;
-
 	rtnl_unlock();
-
-	ret = hclge_reset_prepare_wait(hdev);
 	if (ret)
-		goto err_reset;
+		return ret;
 
-	if (hclge_reset_wait(hdev))
-		goto err_reset;
+	return hclge_reset_prepare_wait(hdev);
+}
 
-	hdev->rst_stats.hw_reset_done_cnt++;
+static int hclge_reset_rebuild(struct hclge_dev *hdev)
+{
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
+	struct hnae3_handle *handle = &hdev->vport[0].nic;
+	enum hnae3_reset_type reset_level;
+	int ret;
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_UNINIT_CLIENT);
 	if (ret)
-		goto err_reset;
+		return ret;
 
 	rtnl_lock();
-
 	ret = hclge_reset_stack(hdev);
+	rtnl_unlock();
 	if (ret)
-		goto err_reset_lock;
+		return ret;
 
 	hclge_clear_reset_cause(hdev);
 
 	ret = hclge_reset_prepare_up(hdev);
 	if (ret)
-		goto err_reset_lock;
-
-	rtnl_unlock();
+		return ret;
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_INIT_CLIENT);
 	/* ignore RoCE notify error if it fails HCLGE_RESET_MAX_FAIL_CNT - 1
@@ -3797,19 +3792,17 @@ static void hclge_reset(struct hclge_dev *hdev)
 	 */
 	if (ret &&
 	    hdev->rst_stats.reset_fail_cnt < HCLGE_RESET_MAX_FAIL_CNT - 1)
-		goto err_reset;
+		return ret;
 
 	rtnl_lock();
-
 	ret = hclge_notify_client(hdev, HNAE3_UP_CLIENT);
-	if (ret)
-		goto err_reset_lock;
-
 	rtnl_unlock();
+	if (ret)
+		return ret;
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_UP_CLIENT);
 	if (ret)
-		goto err_reset;
+		return ret;
 
 	hdev->last_reset_time = jiffies;
 	hdev->rst_stats.reset_fail_cnt = 0;
@@ -3827,10 +3820,24 @@ static void hclge_reset(struct hclge_dev *hdev)
 	if (handle && handle->ae_algo->ops->reset_done)
 		handle->ae_algo->ops->reset_done(handle, true);
 
+	return 0;
+}
+
+static void hclge_reset(struct hclge_dev *hdev)
+{
+	if (hclge_reset_prepare(hdev))
+		goto err_reset;
+
+	if (hclge_reset_wait(hdev))
+		goto err_reset;
+
+	hdev->rst_stats.hw_reset_done_cnt++;
+
+	if (hclge_reset_rebuild(hdev))
+		goto err_reset;
+
 	return;
 
-err_reset_lock:
-	rtnl_unlock();
 err_reset:
 	if (hclge_reset_err_handle(hdev))
 		hclge_reset_task_schedule(hdev);
