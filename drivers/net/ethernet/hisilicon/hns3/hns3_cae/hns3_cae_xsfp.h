@@ -42,7 +42,7 @@ struct hns3_cfg_xsfp {
 struct hns3_xsfp_info {
 	u8 light_module_status;
 	u16 eeprom_len;
-	u8 sfp_info[STD_XSFP_INFO_MAX_SIZE + 1];
+	u8 sfp_info[STD_XSFP_INFO_MAX_SIZE];
 };
 
 int hns3_xsfp_cfg(struct hns3_nic_priv *net_priv, void *buf_in,
