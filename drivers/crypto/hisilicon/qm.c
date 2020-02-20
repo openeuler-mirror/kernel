@@ -2198,10 +2198,13 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 	QM_INIT_BUF(qm, aeqe, QM_Q_DEPTH);
 	QM_INIT_BUF(qm, sqc, qm->qp_num);
 	QM_INIT_BUF(qm, cqc, qm->qp_num);
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
 	/* get reserved dma memory */
 	qm->reserve = qm->qdma.va + off;
 	qm->reserve_dma = qm->qdma.dma + off;
 	off += PAGE_SIZE;
+#endif
 
 	ret = qm_eq_aeq_ctx_cfg(qm);
 	if (ret)
