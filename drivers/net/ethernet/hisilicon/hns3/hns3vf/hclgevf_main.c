@@ -1718,7 +1718,8 @@ static int hclgevf_reset_stack(struct hclgevf_dev *hdev)
 	/* clear handshake status with IMP */
 	hclgevf_reset_handshake(hdev, false);
 
-	return 0;
+	/* bring up the nic to enable TX/RX again */
+	return hclgevf_notify_client(hdev, HNAE3_UP_CLIENT);
 }
 
 static int hclgevf_reset_prepare_wait(struct hclgevf_dev *hdev)
@@ -1797,21 +1798,48 @@ static void hclgevf_reset_err_handle(struct hclgevf_dev *hdev)
 	}
 }
 
-static int hclgevf_reset(struct hclgevf_dev *hdev)
+static int hclgevf_reset_prepare(struct hclgevf_dev *hdev)
 {
 	int ret;
 
 	hdev->rst_stats.rst_cnt++;
-	rtnl_lock();
 
+	rtnl_lock();
 	/* bring down the nic to stop any ongoing TX/RX */
 	ret = hclgevf_notify_client(hdev, HNAE3_DOWN_CLIENT);
-	if (ret)
-		goto err_reset_lock;
-
 	rtnl_unlock();
+	if (ret)
+		return ret;
 
-	ret = hclgevf_reset_prepare_wait(hdev);
+	return hclgevf_reset_prepare_wait(hdev);
+}
+
+static int hclgevf_reset_rebuild(struct hclgevf_dev *hdev)
+{
+	int ret;
+
+	rtnl_lock();
+	/* now, re-initialize the nic client and ae device */
+	ret = hclgevf_reset_stack(hdev);
+	rtnl_unlock();
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"fail to reset VF stack, ret=%d\n", ret);
+		return ret;
+	}
+
+	hdev->last_reset_time = jiffies;
+	hdev->rst_stats.rst_done_cnt++;
+	hdev->rst_stats.rst_fail_cnt = 0;
+
+	return 0;
+}
+
+static int hclgevf_reset(struct hclgevf_dev *hdev)
+{
+	int ret;
+
+	ret = hclgevf_reset_prepare(hdev);
 	if (ret)
 		goto err_reset;
 
@@ -1829,28 +1857,12 @@ static int hclgevf_reset(struct hclgevf_dev *hdev)
 
 	hdev->rst_stats.hw_rst_done_cnt++;
 
-	rtnl_lock();
-
-	/* now, re-initialize the nic client and ae device */
-	ret = hclgevf_reset_stack(hdev);
-	if (ret) {
-		dev_err(&hdev->pdev->dev, "failed to reset VF stack\n");
-		goto err_reset_lock;
-	}
-
-	/* bring up the nic to enable TX/RX again */
-	ret = hclgevf_notify_client(hdev, HNAE3_UP_CLIENT);
+	ret = hclgevf_reset_rebuild(hdev);
 	if (ret)
-		goto err_reset_lock;
-
-	rtnl_unlock();
-
-	hdev->rst_stats.rst_done_cnt++;
-	hdev->rst_stats.rst_fail_cnt = 0;
+		goto err_reset;
 
 	return ret;
-err_reset_lock:
-	rtnl_unlock();
+
 err_reset:
 	hclgevf_reset_err_handle(hdev);
 
