@@ -4,7 +4,7 @@
 #ifndef __HNS3_CAE_VERSION_H__
 #define __HNS3_CAE_VERSION_H__
 
-#define HNS3_CAE_MOD_VERSION "1.9.32.0"
+#define HNS3_CAE_MOD_VERSION "1.9.33.0"
 
 #define CMT_ID_LEN 8
 #define RESV_LEN 3
