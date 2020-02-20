@@ -69,6 +69,7 @@ static int hclge_resume_vf_rate(struct hclge_dev *hdev);
 static void hclge_reset_vf_rate(struct hclge_dev *hdev);
 
 static void hclge_sync_mac_table(struct hclge_dev *hdev);
+static int hclge_restore_hw_table(struct hclge_dev *hdev);
 
 struct hnae3_ae_algo ae_algo;
 
@@ -3741,7 +3742,11 @@ static int hclge_reset_stack(struct hclge_dev *hdev)
 	if (ret)
 		return ret;
 
-	return hclge_notify_client(hdev, HNAE3_RESTORE_CLIENT);
+	/* imp rest and global reset need to restore PF tbl */
+	if (hdev->reset_type == HNAE3_IMP_RESET ||
+	    hdev->reset_type == HNAE3_GLOBAL_RESET)
+		return hclge_restore_hw_table(hdev);
+	return 0;
 }
 
 static void hclge_reset(struct hclge_dev *hdev)
@@ -7555,6 +7560,8 @@ int hclge_rm_uc_addr_common(struct hclge_vport *vport,
 	ret = hclge_remove_mac_vlan_tbl(vport, &req);
 	if (!ret)
 		hclge_update_umv_space(vport, true);
+	else if (ret == -ENOENT)
+		ret = 0;
 
 	return ret;
 }
@@ -7654,13 +7661,7 @@ int hclge_rm_mc_addr_common(struct hclge_vport *vport,
 			/* Not all the vfid is zero, update the vfid */
 			status = hclge_add_mac_vlan_tbl(vport, &req, desc);
 
-	} else {
-		/* Maybe this mac address is in mta table, but it cannot be
-		 * deleted here because an entry of mta represents an address
-		 * range rather than a specific address. the delete action to
-		 * all entries will take effect in update_mta_status called by
-		 * hns3_nic_set_rx_mode.
-		 */
+	} else if (status == -ENOENT) {
 		status = 0;
 	}
 
@@ -7874,7 +7875,7 @@ void hclge_add_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
 		return;
 
 	mac_cfg->hd_tbl_status = true;
-	memcpy(mac_cfg->mac_addr, mac_addr, ETH_ALEN);
+	ether_addr_copy(mac_cfg->mac_addr, mac_addr);
 
 	list = (mac_type == HCLGE_MAC_ADDR_UC) ?
 	       &vport->uc_mac_list : &vport->mc_mac_list;
@@ -7883,27 +7884,16 @@ void hclge_add_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
 }
 
 void hclge_rm_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
-			      bool is_write_tbl,
 			      enum HCLGE_MAC_ADDR_TYPE mac_type)
 {
 	struct hclge_vport_mac_addr_cfg *mac_cfg, *tmp;
 	struct list_head *list;
-	bool uc_flag, mc_flag;
 
 	list = (mac_type == HCLGE_MAC_ADDR_UC) ?
 	       &vport->uc_mac_list : &vport->mc_mac_list;
 
-	uc_flag = is_write_tbl && mac_type == HCLGE_MAC_ADDR_UC;
-	mc_flag = is_write_tbl && mac_type == HCLGE_MAC_ADDR_MC;
-
 	list_for_each_entry_safe(mac_cfg, tmp, list, node) {
 		if (ether_addr_equal(mac_cfg->mac_addr, mac_addr)) {
-			if (uc_flag && mac_cfg->hd_tbl_status)
-				hclge_rm_uc_addr_common(vport, mac_addr);
-
-			if (mc_flag && mac_cfg->hd_tbl_status)
-				hclge_rm_mc_addr_common(vport, mac_addr);
-
 			list_del(&mac_cfg->node);
 			kfree(mac_cfg);
 			break;
@@ -8149,12 +8139,54 @@ static void hclge_get_mac_addr(struct hnae3_handle *handle, u8 *p)
 	ether_addr_copy(p, hdev->hw.mac.mac_addr);
 }
 
+/* use new node to replace old node in the list, if old address is still in
+ * mac table, add it to list tail, and try to remove in service task
+ */
+static void hclge_replace_mac_node(struct list_head *list, const u8 *old_addr,
+				   const u8 *new_addr, bool keep_old)
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *new_node;
+
+	mac_node = hclge_find_mac_node(list, old_addr);
+	if (!mac_node) {
+		new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+		if (!new_node)
+			return;
+		new_node->state = HCLGE_MAC_ACTIVE;
+		ether_addr_copy(new_node->mac_addr, new_addr);
+		list_add_tail(&new_node->node, list);
+		return;
+	}
+
+	mac_node->state = HCLGE_MAC_ACTIVE;
+	ether_addr_copy(mac_node->mac_addr, new_addr);
+	if (keep_old) {
+		new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+		if (!new_node)
+			return;
+		new_node->state = HCLGE_MAC_TO_DEL;
+		ether_addr_copy(new_node->mac_addr, old_addr);
+		list_add_tail(&new_node->node, list);
+	}
+}
+
+static void hclge_modify_mac_node_state(struct list_head *list, const u8 *addr,
+					enum HCLGE_MAC_ADDR_STATE state)
+{
+	struct hclge_vport_mac_addr_cfg *mac_node;
+
+	mac_node = hclge_find_mac_node(list, addr);
+	if (mac_node)
+		mac_node->state = state;
+}
+
 static int hclge_set_mac_addr(struct hnae3_handle *handle, void *p,
 			      bool is_first)
 {
 	const unsigned char *new_addr = (const unsigned char *)p;
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
+	bool old_mac_removed = true;
 	int ret;
 
 	/* mac addr check */
@@ -8168,9 +8200,11 @@ static int hclge_set_mac_addr(struct hnae3_handle *handle, void *p,
 	}
 
 	if ((!is_first || is_kdump_kernel()) &&
-	    hclge_rm_uc_addr_common(vport, hdev->hw.mac.mac_addr))
+	    hclge_rm_uc_addr_common(vport, hdev->hw.mac.mac_addr)) {
 		dev_warn(&hdev->pdev->dev,
 			 "remove old uc mac address fail.\n");
+		old_mac_removed = false;
+	}
 
 	ret = hclge_add_uc_addr_common(vport, new_addr);
 	if (ret) {
@@ -8178,13 +8212,37 @@ static int hclge_set_mac_addr(struct hnae3_handle *handle, void *p,
 			"add uc mac address fail, ret =%d.\n",
 			ret);
 
-		if (!is_first &&
-		    hclge_add_uc_addr_common(vport, hdev->hw.mac.mac_addr))
-			dev_err(&hdev->pdev->dev,
-				"restore uc mac address fail.\n");
+		if (!is_first) {
+			ret = hclge_add_uc_addr_common(vport,
+						       hdev->hw.mac.mac_addr);
+			if (ret) {
+				old_mac_removed = true;
+				dev_err(&hdev->pdev->dev,
+					"restore uc mac address fail.\n");
+			} else {
+				old_mac_removed = false;
+			}
+		}
+
+		/* if old dev addr restore failed, add to the uc mac list,
+		 * and try to restore it in service task
+		 */
+		if (old_mac_removed)
+			hclge_modify_mac_node_state(&vport->uc_mac_list,
+						    hdev->hw.mac.mac_addr,
+						    HCLGE_MAC_TO_ADD);
 
 		return -EIO;
 	}
+
+	/* new dev addr add success, replace the old dev addr in uc mac list.
+	 * if old dev addr delete fail, keep it in the mac list, and try to del
+	 * it in service task.
+	 */
+	spin_lock_bh(&vport->mac_list_lock);
+	hclge_replace_mac_node(&vport->uc_mac_list, hdev->hw.mac.mac_addr,
+			       new_addr, !old_mac_removed);
+	spin_unlock_bh(&vport->mac_list_lock);
 
 	ret = hclge_pause_addr_cfg(hdev, new_addr);
 	if (ret) {
@@ -8420,8 +8478,8 @@ static int hclge_set_vlan_filter_hw(struct hclge_dev *hdev, __be16 proto,
 	if (is_kill &&
 	    !test_and_clear_bit(vport_id, hdev->vlan_table[vlan_id])) {
 		dev_err(&hdev->pdev->dev,
-			"Delete port vlan failed, vport %u is not in vlan %u\n",
-			vport_id, vlan_id);
+			"Delete port vlan failed, vlan %u is not in vport %u\n",
+			vlan_id, vport_id);
 		return -EINVAL;
 	}
 
@@ -8670,6 +8728,9 @@ static void hclge_add_vport_vlan_table(struct hclge_vport *vport, u16 vlan_id,
 {
 	struct hclge_vport_vlan_cfg *vlan;
 
+	if (!list_empty(&vport->vlan_list) && !vlan_id)
+		return;
+
 	vlan = kzalloc(sizeof(*vlan), GFP_KERNEL);
 	if (!vlan)
 		return;
@@ -8732,6 +8793,9 @@ void hclge_rm_vport_all_vlan_table(struct hclge_vport *vport, bool is_del_list)
 	struct hclge_dev *hdev = vport->back;
 
 	list_for_each_entry_safe(vlan, tmp, &vport->vlan_list, node) {
+		if (!vlan->vlan_id)
+			continue;
+
 		if (vlan->hd_tbl_status)
 			hclge_set_vlan_filter_hw(hdev,
 						 htons(ETH_P_8021Q),
@@ -8763,40 +8827,99 @@ void hclge_uninit_vport_vlan_table(struct hclge_dev *hdev)
 	}
 }
 
-void hclge_restore_vlan_table(struct hnae3_handle *handle)
+void hclge_restore_vport_vlan_table(struct hclge_vport *vport)
 {
-	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_vport_vlan_cfg *vlan, *tmp;
 	struct hclge_dev *hdev = vport->back;
 	u16 vlan_proto;
 	u16 state, vlan_id;
-	int i;
+	int ret;
 
-	for (i = 0; i < hdev->num_alloc_vport; i++) {
-		vport = &hdev->vport[i];
-		vlan_proto = vport->port_base_vlan_cfg.vlan_info.vlan_proto;
-		vlan_id = vport->port_base_vlan_cfg.vlan_info.vlan_tag;
-		state = vport->port_base_vlan_cfg.state;
+	vlan_proto = vport->port_base_vlan_cfg.vlan_info.vlan_proto;
+	vlan_id = vport->port_base_vlan_cfg.vlan_info.vlan_tag;
+	state = vport->port_base_vlan_cfg.state;
 
-		if (state != HNAE3_PORT_BASE_VLAN_DISABLE) {
-			hclge_set_vlan_filter_hw(hdev, htons(vlan_proto),
-						 vport->vport_id, vlan_id,
-						 false);
-			continue;
-		}
+	if (state != HNAE3_PORT_BASE_VLAN_DISABLE) {
+		clear_bit(vport->vport_id, hdev->vlan_table[vlan_id]);
+		hclge_set_vlan_filter_hw(hdev, htons(vlan_proto),
+					 vport->vport_id, vlan_id,
+					 false);
+		return;
+	}
 
-		list_for_each_entry_safe(vlan, tmp, &vport->vlan_list, node) {
-			int ret;
+	list_for_each_entry_safe(vlan, tmp, &vport->vlan_list, node) {
+		ret = hclge_set_vlan_filter_hw(hdev, htons(ETH_P_8021Q),
+					       vport->vport_id,
+					       vlan->vlan_id, false);
+		if (ret)
+			break;
+		vlan->hd_tbl_status = true;
+	}
+}
 
-			if (!vlan->hd_tbl_status)
-				continue;
-			ret = hclge_set_vlan_filter_hw(hdev, htons(ETH_P_8021Q),
-						       vport->vport_id,
-						       vlan->vlan_id, false);
-			if (ret)
-				break;
+void hclge_restore_vport_mac_table(struct hclge_vport *vport)
+{
+	struct hclge_vport_mac_addr_cfg *mac_cfg, *tmp;
+	int ret;
+
+	list_for_each_entry_safe(mac_cfg, tmp, &vport->uc_mac_list, node) {
+		ret = hclge_add_uc_addr_common(vport, mac_cfg->mac_addr);
+		if (!ret)
+			mac_cfg->hd_tbl_status = true;
+		else if (ret == -ENOSPC)
+			break;
+	}
+
+	list_for_each_entry_safe(mac_cfg, tmp, &vport->mc_mac_list, node) {
+		ret = hclge_add_mc_addr_common(vport, mac_cfg->mac_addr);
+		if (!ret)
+			mac_cfg->hd_tbl_status = true;
+	}
+}
+
+/* For global reset and imp reset, hardware will clear the mac table,
+ * so we change the mac address state from ACTIVE to TO_ADD, then they
+ * can be restored in the service task after reset complete. Furtherly,
+ * the mac addresses with state TO_DEL or DEL_FAIL are unnecessary to
+ * be restored after reset, so just remove these mac nodes from mac_list.
+ */
+static void hclge_mac_node_convert_for_reset(struct list_head *list)
+{
+	struct hclge_vport_mac_addr_cfg *mac_node, *tmp;
+
+	list_for_each_entry_safe(mac_node, tmp, list, node) {
+		if (mac_node->state == HCLGE_MAC_ACTIVE) {
+			mac_node->state = HCLGE_MAC_TO_ADD;
+		} else if (mac_node->state == HCLGE_MAC_TO_DEL ||
+			   mac_node->state == HCLGE_MAC_DEL_FAIL) {
+			list_del(&mac_node->node);
+			kfree(mac_node);
 		}
 	}
+}
+
+static void hclge_restore_pf_mac_table(struct hclge_vport *vport)
+{
+	/* move the mac addr to the tmp_add_list and tmp_del_list, then
+	 * we can add/delete these mac addr outside the spin lock
+	 */
+	spin_lock_bh(&vport->mac_list_lock);
+
+	hclge_mac_node_convert_for_reset(&vport->uc_mac_list);
+	hclge_mac_node_convert_for_reset(&vport->mc_mac_list);
+
+	spin_unlock_bh(&vport->mac_list_lock);
+}
+
+static int hclge_restore_hw_table(struct hclge_dev *hdev)
+{
+	struct hclge_vport *vport = &hdev->vport[0];
+	struct hnae3_handle *handle = &vport->nic;
+
+	hclge_restore_pf_mac_table(vport);
+	hclge_restore_vport_vlan_table(vport);
+
+	return hclge_restore_fd_entries(handle);
 }
 
 int hclge_en_hw_strip_rxvtag(struct hnae3_handle *handle, bool enable)
@@ -8992,7 +9115,7 @@ int hclge_set_vlan_filter(struct hnae3_handle *handle, __be16 proto,
 	}
 
 	if (!ret) {
-		if (is_kill)
+		if (is_kill && vlan_id != 0)
 			hclge_rm_vport_vlan_table(vport, vlan_id, false);
 		else
 			hclge_add_vport_vlan_table(vport, vlan_id,
@@ -10168,8 +10291,14 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 	set_bit(HCLGE_STATE_DOWN, &hdev->state);
 
 	hclge_stats_clear(hdev);
-	memset(hdev->vlan_table, 0, sizeof(hdev->vlan_table));
-	memset(hdev->vf_vlan_full, 0, sizeof(hdev->vf_vlan_full));
+	/* NOTE: pf reset needn't to clear or restore pf and vf table entry.
+	 * so here should not clean table in memory.
+	 */
+	if (hdev->reset_type == HNAE3_IMP_RESET ||
+	    hdev->reset_type == HNAE3_GLOBAL_RESET) {
+		memset(hdev->vlan_table, 0, sizeof(hdev->vlan_table));
+		memset(hdev->vf_vlan_full, 0, sizeof(hdev->vf_vlan_full));
+	}
 
 	ret = hclge_cmd_init(hdev);
 	if (ret) {
@@ -11082,7 +11211,6 @@ struct hnae3_ae_ops hclge_ops = {
 	.set_timer_task = hclge_set_timer_task,
 	.mac_connect_phy = hclge_mac_connect_phy,
 	.mac_disconnect_phy = hclge_mac_disconnect_phy,
-	.restore_vlan_table = hclge_restore_vlan_table,
 	.reset_done = hclge_reset_done,
 	.handle_imp_error = hclge_handle_imp_error,
 	.get_vf_config = hclge_get_vf_config,

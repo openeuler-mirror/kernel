@@ -357,8 +357,6 @@ struct hnae3_ae_dev {
  *   Set vlan filter config of Ports
  * set_vf_vlan_filter()
  *   Set vlan filter config of vf
- * restore_vlan_table()
- *   Restore vlan filter entries after reset
  * enable_hw_strip_rxvtag()
  *   Enable/disable hardware strip vlan tag of packets received
  * set_gro_en
@@ -536,7 +534,6 @@ struct hnae3_ae_ops {
 	void (*set_timer_task)(struct hnae3_handle *handle, bool enable);
 	int (*mac_connect_phy)(struct hnae3_handle *handle);
 	void (*mac_disconnect_phy)(struct hnae3_handle *handle);
-	void (*restore_vlan_table)(struct hnae3_handle *handle);
 	bool (*reset_done)(struct hnae3_handle *handle, bool done);
 	void (*handle_imp_error)(struct hnae3_handle *handle);
 #ifdef CONFIG_HNS3_TEST

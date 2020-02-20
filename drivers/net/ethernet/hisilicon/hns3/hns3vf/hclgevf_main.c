@@ -15,6 +15,7 @@
 #define HCLGEVF_RESET_MAX_FAIL_CNT	5
 
 static int hclgevf_reset_hdev(struct hclgevf_dev *hdev);
+static int hclgevf_restore_hw_table(struct hclgevf_dev *hdev);
 static struct hnae3_ae_algo ae_algovf;
 
 static struct workqueue_struct *hclgevf_wq;
@@ -1253,10 +1254,12 @@ static int hclgevf_set_mac_addr(struct hnae3_handle *handle, void *p,
 	}
 
 	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_UNICAST, 0);
-	send_msg.subcode = is_first ? HCLGE_MBX_MAC_VLAN_UC_ADD :
-			HCLGE_MBX_MAC_VLAN_UC_MODIFY;
+	send_msg.subcode = HCLGE_MBX_MAC_VLAN_UC_MODIFY;
 	ether_addr_copy(send_msg.data, new_mac_addr);
-	ether_addr_copy(&send_msg.data[ETH_ALEN], old_mac_addr);
+	if (is_first)
+		eth_zero_addr(&send_msg.data[ETH_ALEN]);
+	else
+		ether_addr_copy(&send_msg.data[ETH_ALEN], old_mac_addr);
 	status = hclgevf_send_mbx_msg(hdev, &send_msg, true, NULL, 0);
 	if (!status)
 		ether_addr_copy(hdev->hw.mac.mac_addr, new_mac_addr);
@@ -2719,6 +2722,28 @@ static int hclgevf_pci_reset(struct hclgevf_dev *hdev)
 	return ret;
 }
 
+static int hclgevf_clear_vport_list(struct hclgevf_dev *hdev)
+{
+	struct hclge_vf_to_pf_msg send_msg;
+
+	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_HANDLE_VF_TBL,
+			       HCLGE_MBX_VPORT_LIST_CLEAR);
+	return hclgevf_send_mbx_msg(hdev, &send_msg, false, NULL, 0);
+}
+
+static int hclgevf_restore_hw_table(struct hclgevf_dev *hdev)
+{
+	struct hclge_vf_to_pf_msg send_msg;
+
+	if (hdev->reset_type == HNAE3_VF_RESET ||
+	    hdev->reset_type == HNAE3_FLR_RESET) {
+		hclgevf_build_send_msg(&send_msg, HCLGE_MBX_HANDLE_VF_TBL,
+				       HCLGE_MBX_HW_TBL_RESTORE);
+		return hclgevf_send_mbx_msg(hdev, &send_msg, false, NULL, 0);
+	}
+	return 0;
+}
+
 static int hclgevf_reset_hdev(struct hclgevf_dev *hdev)
 {
 	struct pci_dev *pdev = hdev->pdev;
@@ -2752,6 +2777,14 @@ static int hclgevf_reset_hdev(struct hclgevf_dev *hdev)
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"failed(%d) to initialize VLAN config\n", ret);
+		return ret;
+	}
+
+	/* VF_RESET & VF_FLR_RESET need to request to restore hw table */
+	ret = hclgevf_restore_hw_table(hdev);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed(%d) to restore hw table\n", ret);
 		return ret;
 	}
 
@@ -2823,6 +2856,14 @@ static int hclgevf_init_hdev(struct hclgevf_dev *hdev)
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"failed(%d) to initialize RSS\n", ret);
+		goto err_config;
+	}
+
+	/* ensure vf tbl list as empty before init*/
+	ret = hclgevf_clear_vport_list(hdev);
+	if (ret) {
+		dev_err(&pdev->dev,
+			"failed(%d) to clear tbl list configuration\n", ret);
 		goto err_config;
 	}
 
