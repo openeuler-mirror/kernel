@@ -132,6 +132,7 @@
 #include <linux/ioprio.h>
 #include <linux/sbitmap.h>
 #include <linux/delay.h>
+#include <linux/backing-dev.h>
 
 #include "blk.h"
 #include "blk-mq.h"
@@ -4204,6 +4205,7 @@ bfq_set_next_ioprio_data(struct bfq_queue *bfqq, struct bfq_io_cq *bic)
 	struct task_struct *tsk = current;
 	int ioprio_class;
 	struct bfq_data *bfqd = bfqq->bfqd;
+	char dname[BDI_DEV_NAME_LEN];
 
 	if (!bfqd)
 		return;
@@ -4211,8 +4213,9 @@ bfq_set_next_ioprio_data(struct bfq_queue *bfqq, struct bfq_io_cq *bic)
 	ioprio_class = IOPRIO_PRIO_CLASS(bic->ioprio);
 	switch (ioprio_class) {
 	default:
-		dev_err(bfqq->bfqd->queue->backing_dev_info->dev,
-			"bfq: bad prio class %d\n", ioprio_class);
+		bdi_get_dev_name(bfqq->bfqd->queue->backing_dev_info,
+				dname, BDI_DEV_NAME_LEN);
+		pr_err("%s bfq: bad prio class %d\n", dname, ioprio_class);
 		/* fall through */
 	case IOPRIO_CLASS_NONE:
 		/*

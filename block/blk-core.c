@@ -1353,6 +1353,7 @@ static struct request *__get_request(struct request_list *rl, unsigned int op,
 	const bool is_sync = op_is_sync(op);
 	int may_queue;
 	req_flags_t rq_flags = RQF_ALLOCED;
+	char dname[BDI_DEV_NAME_LEN];
 
 	lockdep_assert_held(q->queue_lock);
 
@@ -1474,8 +1475,9 @@ fail_elvpriv:
 	 * shouldn't stall IO.  Treat this request as !elvpriv.  This will
 	 * disturb iosched and blkcg but weird is bettern than dead.
 	 */
+	bdi_get_dev_name(q->backing_dev_info, dname, BDI_DEV_NAME_LEN);
 	printk_ratelimited(KERN_WARNING "%s: dev %s: request aux data allocation failed, iosched may be disturbed\n",
-			   __func__, dev_name(q->backing_dev_info->dev));
+			   __func__, dname);
 
 	rq->rq_flags &= ~RQF_ELVPRIV;
 	rq->elv.icq = NULL;
