@@ -85,6 +85,7 @@
 
 #define SEC_CONTROL_REG			0x0200
 #define SEC_TRNG_EN_SHIFT		8
+#define SEC_CLK_GATE_DISABLE		(~BIT(3))
 #define SEC_AXI_SHUTDOWN_ENABLE		BIT(12)
 #define SEC_AXI_SHUTDOWN_DISABLE	0xFFFFEFFF
 #define SEC_WR_MSI_PORT			0xFFFE
@@ -484,7 +485,7 @@ static int sec_engine_init(struct hisi_sec *hisi_sec)
 
 	/* disable clock gate control */
 	reg = readl_relaxed(base + SEC_CONTROL_REG);
-	reg &= ~BIT(3);
+	reg &= SEC_CLK_GATE_DISABLE;
 	writel(reg, base + SEC_CONTROL_REG);
 
 	writel(0x1, base + SEC_MEM_START_INIT_REG);
@@ -513,11 +514,6 @@ static int sec_engine_init(struct hisi_sec *hisi_sec)
 	/* Enable sm4 xts mode multiple iv */
 	writel(SEC_BD_ERR_CHK_EN1, base + SEC_BD_ERR_CHK_EN_REG1);
 	writel(SEC_BD_ERR_CHK_EN3, base + SEC_BD_ERR_CHK_EN_REG3);
-
-	/* enable clock gate control */
-	reg = readl_relaxed(base + SEC_CONTROL_REG);
-	reg |= BIT(3);
-	writel(reg, base + SEC_CONTROL_REG);
 
 	/* config endian */
 	reg = readl_relaxed(base + SEC_CONTROL_REG);
@@ -927,7 +923,7 @@ static void hisi_sec_open_master_ooo(struct hisi_qm *qm)
 	void *base = qm->io_base + SEC_ENGINE_PF_CFG_OFF +
 		     SEC_ACC_COMMON_REG_OFF;
 
-	val = readl(qm->io_base + SEC_CONTROL_REG);
+	val = readl(base + SEC_CONTROL_REG);
 	writel(val & SEC_AXI_SHUTDOWN_DISABLE, base + SEC_CONTROL_REG);
 	writel(val | SEC_AXI_SHUTDOWN_ENABLE, base + SEC_CONTROL_REG);
 }
