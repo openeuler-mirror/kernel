@@ -11,6 +11,7 @@
 #include <linux/blktrace_api.h>
 #include <linux/blk-mq.h>
 #include <linux/blk-cgroup.h>
+#include <linux/debugfs.h>
 
 #include "blk.h"
 #include "blk-mq.h"
@@ -958,6 +959,48 @@ unlock:
 }
 EXPORT_SYMBOL_GPL(blk_register_queue);
 
+#ifdef CONFIG_DEBUG_FS
+/*
+ * blk_prepare_release_queue - rename q->debugfs_dir and q->blk_trace->dir
+ * @q: request_queue of which the dir to be renamed belong to.
+ *
+ * Because the final release of request_queue is in a workqueue, the
+ * cleanup might not been finished yet while the same device start to
+ * create. It's not correct if q->debugfs_dir still exist while trying
+ * to create a new one.
+ */
+static void blk_prepare_release_queue(struct request_queue *q)
+{
+	struct dentry *new = NULL;
+	struct dentry **old = NULL;
+	char name[DNAME_INLINE_LEN];
+	int i = 0;
+
+#ifdef CONFIG_BLK_DEBUG_FS
+	if (!IS_ERR_OR_NULL(q->debugfs_dir))
+		old = &q->debugfs_dir;
+#endif
+#ifdef CONFIG_BLK_DEV_IO_TRACE
+	/* q->debugfs_dir and q->blk_trace->dir can't both exist */
+	if (q->blk_trace && !IS_ERR_OR_NULL(q->blk_trace->dir))
+		old = &q->blk_trace->dir;
+#endif
+	if (old == NULL)
+		return;
+#define MAX_ATTEMPT 1024
+	while (new == NULL && i < MAX_ATTEMPT) {
+		sprintf(name, "ready_to_remove_%s_%d",
+				kobject_name(q->kobj.parent), i++);
+		new = debugfs_rename(blk_debugfs_root, *old,
+				blk_debugfs_root, name);
+	}
+	if (new)
+		*old = new;
+}
+#else
+#define blk_prepare_release_queue(q)           do { } while (0)
+#endif
+
 /**
  * blk_unregister_queue - counterpart of blk_register_queue()
  * @disk: Disk of which the request queue should be unregistered from sysfs.
@@ -982,6 +1025,7 @@ void blk_unregister_queue(struct gendisk *disk)
 	 * concurrent elv_iosched_store() calls.
 	 */
 	mutex_lock(&q->sysfs_lock);
+	blk_prepare_release_queue(q);
 
 	blk_queue_flag_clear(QUEUE_FLAG_REGISTERED, q);
 
