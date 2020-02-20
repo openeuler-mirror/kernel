@@ -6733,10 +6733,13 @@ static int hclge_disable_phy_loopback(struct hclge_dev *hdev,
 	return ret;
 }
 
-static int hclge_set_phy_loopback(struct hclge_dev *hdev,
-				  struct phy_device *phydev, bool en)
+static int hclge_set_phy_loopback(struct hclge_dev *hdev, bool en)
 {
+	struct phy_device *phydev = hdev->hw.mac.phydev;
 	int ret;
+
+	if (!phydev)
+		return -ENOTSUPP;
 
 	if (en)
 		ret = hclge_enable_phy_loopback(hdev, phydev);
@@ -6783,7 +6786,6 @@ static int hclge_set_loopback(struct hnae3_handle *handle,
 			      enum hnae3_loop loop_mode, bool en)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct phy_device *phydev = handle->netdev->phydev;
 	struct hnae3_knic_private_info *kinfo;
 	struct hclge_dev *hdev = vport->back;
 	int i, ret;
@@ -6811,8 +6813,7 @@ static int hclge_set_loopback(struct hnae3_handle *handle,
 		ret = hclge_set_serdes_loopback(hdev, en, loop_mode);
 		break;
 	case HNAE3_LOOP_PHY:
-		if (phydev)
-			ret = hclge_set_phy_loopback(hdev, phydev, en);
+		ret = hclge_set_phy_loopback(hdev, en);
 		break;
 	default:
 		ret = -ENOTSUPP;
