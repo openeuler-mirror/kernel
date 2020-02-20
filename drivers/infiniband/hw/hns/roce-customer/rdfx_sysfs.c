@@ -372,9 +372,9 @@ static int show_cq_detail(struct rdfx_cq_info *rdfx_cq)
 	pr_info("\n");
 	pr_info("arm_cnt:\n");
 	pr_info("IB_CQ_SOLICITED      : 0x%x\n",
-		atomic_read(&rdfx_cq->rcqe_cnt[0]));
+		atomic_read(&rdfx_cq->arm_cnt[0]));
 	pr_info("IB_CQ_NEXT_COMP      : 0x%x\n",
-		atomic_read(&rdfx_cq->rcqe_cnt[1]));
+		atomic_read(&rdfx_cq->arm_cnt[1]));
 	pr_info("CQ_CI      : 0x%x\n", atomic_read(&rdfx_cq->ci));
 
 	return 0;
@@ -400,6 +400,10 @@ static void show_valid_cqn(struct list_head *head)
 static inline int rdfx_show_cq_detail(u32 cqn, struct rdfx_info *rdfx)
 {
 	struct rdfx_cq_info *rdfx_cq = NULL;
+	struct hns_roce_dev *hr_dev;
+	struct hns_roce_cq *cq;
+
+	hr_dev = (struct hns_roce_dev *)rdfx->priv;
 
 	pr_info("***************** CQ(0x%x) INFO *****************\n", cqn);
 	pr_info("alloc_cq_cnt    : 0x%x\n",
@@ -408,6 +412,11 @@ static inline int rdfx_show_cq_detail(u32 cqn, struct rdfx_info *rdfx)
 		atomic_read(&rdfx->cq.dealloc_cq_cnt));
 	pr_info("top_cq_index    : 0x%x\n",
 		atomic_read(&rdfx->cq.top_cq_index));
+
+	cq = radix_tree_lookup(&hr_dev->cq_table.tree,
+			       cqn & (hr_dev->caps.num_cqs - 1));
+	if (cq)
+		pr_info("arm_sn_cnt       : 0x%x\n", cq->arm_sn);
 
 	list_for_each_entry(rdfx_cq, &rdfx->cq.list, list) {
 		if (cqn == rdfx_cq->cqn)
