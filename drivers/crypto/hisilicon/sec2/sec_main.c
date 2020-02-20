@@ -1771,12 +1771,6 @@ static int __init hisi_sec_init(void)
 		goto err_pci;
 	}
 
-	if (list_empty(&hisi_sec_list)) {
-		pr_err("no device!\n");
-		ret = -ENODEV;
-		goto err_probe_device;
-	}
-
 	pr_info("hisi_sec: register to crypto\n");
 	ret = hisi_sec_register_to_crypto(fusion_limit);
 	if (ret < 0) {

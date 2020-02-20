@@ -450,7 +450,7 @@ static void hisi_zip_hw_error_set_state(struct hisi_zip *hisi_zip, bool state)
 
 	if (qm->ver == QM_HW_V1) {
 		writel(HZIP_CORE_INT_DISABLE, qm->io_base + HZIP_CORE_INT_MASK);
-		dev_info(&qm->pdev->dev, "ZIP v%d does not support hw error handle\n",
+		pci_info(qm->pdev, "ZIP v%d cannot support hw error handle!\n",
 			 qm->ver);
 		return;
 	}
@@ -460,7 +460,6 @@ static void hisi_zip_hw_error_set_state(struct hisi_zip *hisi_zip, bool state)
 	writel(0x0, hisi_zip->qm.io_base + HZIP_CORE_INT_RAS_FE_ENB);
 	writel(HZIP_CORE_INT_RAS_NFE_ENABLE,
 		hisi_zip->qm.io_base + HZIP_CORE_INT_RAS_NFE_ENB);
-
 
 	val = readl(hisi_zip->qm.io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
 	if (state) {
@@ -654,7 +653,7 @@ static int hisi_zip_core_debug_init(struct hisi_zip_ctrl *ctrl)
 			ret = snprintf(buf, HZIP_BUF_SIZE, "comp_core%d", i);
 		else
 			ret = snprintf(buf, HZIP_BUF_SIZE,
-				"decomp_core%d", i - HZIP_COMP_CORE_NUM);
+				       "decomp_core%d", i - HZIP_COMP_CORE_NUM);
 		if (ret < 0)
 			return -EINVAL;
 
@@ -876,14 +875,16 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	ret = hisi_qm_init(qm);
 	if (ret) {
-		dev_err(&pdev->dev, "Failed to init qm!\n");
+		pci_err(pdev, "Failed to init qm (%d)!\n", ret);
 		goto err_remove_from_list;
 	}
 
 	if (qm->fun_type == QM_HW_PF) {
 		ret = hisi_zip_pf_probe_init(hisi_zip);
-		if (ret)
+		if (ret) {
+			pci_err(pdev, "Failed to init pf probe (%d)!\n", ret);
 			goto err_remove_from_list;
+		}
 
 		qm->qp_base = HZIP_PF_DEF_Q_BASE;
 		qm->qp_num = pf_q_num;
@@ -908,16 +909,18 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	ret = hisi_qm_start(qm);
-	if (ret)
+	if (ret) {
+		pci_err(pdev, "Failed to start qm (%d)!\n", ret);
 		goto err_qm_uninit;
+	}
 
 	ret = hisi_zip_debugfs_init(hisi_zip);
 	if (ret)
-		dev_err(&pdev->dev, "Failed to init debugfs (%d)!\n", ret);
+		pci_err(pdev, "Failed to init debugfs (%d)!\n", ret);
 
 	ret = hisi_zip_register_to_crypto();
 	if (ret < 0) {
-		pr_err("Failed to register driver to crypto.\n");
+		pci_err(pdev, "Failed to register driver to crypto!\n");
 		goto err_qm_stop;
 	}
 	return 0;

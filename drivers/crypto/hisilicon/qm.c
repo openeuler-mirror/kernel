@@ -1518,7 +1518,7 @@ int hisi_qp_send(struct hisi_qp *qp, const void *msg)
 
 	if (unlikely(atomic_read(&qp->qp_status.flags) == QP_STOP ||
 		     atomic_read(&qp->qm->status.flags) == QM_STOP) ||
-		     qp->is_resetting == true) {
+		     qp->is_resetting) {
 		dev_info_ratelimited(&qp->qm->pdev->dev, "QM resetting...\n");
 		return -EAGAIN;
 	}
@@ -1708,6 +1708,7 @@ static int hisi_qm_uacce_mmap(struct uacce_queue *q,
 		ret = dma_mmap_coherent(dev, vma, qp->qdma.va,
 					qp->qdma.dma, sz);
 		vma->vm_pgoff = vm_pgoff;
+
 		return ret;
 	default:
 		return -EINVAL;
