@@ -6553,8 +6553,11 @@ static int hclge_mac_link_status_wait(struct hclge_dev *hdev, int link_ret)
 
 	do {
 		ret = hclge_get_mac_link_status(hdev);
-		if (ret == link_ret)
+		if (ret < 0)
+			return ret;
+		else if (ret == link_ret)
 			return 0;
+
 		msleep(HCLGE_LINK_STATUS_MS);
 	} while (++i < HCLGE_MAC_LINK_STATUS_NUM);
 	return -EBUSY;
