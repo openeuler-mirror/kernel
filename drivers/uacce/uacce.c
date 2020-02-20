@@ -7,52 +7,32 @@
 #include <linux/dma-mapping.h>
 #include <linux/file.h>
 #include <linux/idr.h>
-#include <linux/irqdomain.h>
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/poll.h>
-#include <linux/sched/signal.h>
 #include <linux/slab.h>
 #include <linux/uacce.h>
 #include <linux/wait.h>
-
-/*
- * This will set the page mapping to user space without page fault.
- *
- * fixme: make it as a config item when it is mature
- * If this is ok in practice, we can change the queue lock to semaphore
- */
-#define CONFIG_UACCE_FIX_MMAP
 
 static struct class *uacce_class;
 static DEFINE_IDR(uacce_idr);
 static dev_t uacce_devt;
 
-/* lock to protect all queues management */
-#ifdef CONFIG_UACCE_FIX_MMAP
 static DECLARE_RWSEM(uacce_qs_lock);
 #define uacce_qs_rlock() down_read(&uacce_qs_lock)
 #define uacce_qs_runlock() up_read(&uacce_qs_lock)
 #define uacce_qs_wlock() down_write(&uacce_qs_lock)
 #define uacce_qs_wunlock() up_write(&uacce_qs_lock)
-#else
-static DEFINE_RWLOCK(uacce_qs_lock);
-#define uacce_qs_rlock() read_lock_irq(&uacce_qs_lock)
-#define uacce_qs_runlock() read_unlock_irq(&uacce_qs_lock)
-#define uacce_qs_wlock() write_lock_irq(&uacce_qs_lock)
-#define uacce_qs_wunlock() write_unlock_irq(&uacce_qs_lock)
-#endif
 
 #define UACCE_RESET_DELAY_MS        10
 #define UACCE_FROM_CDEV_ATTR(dev) container_of(dev, struct uacce, dev)
 
 static const struct file_operations uacce_fops;
-static long uacce_put_queue(struct uacce_queue *q);
+static void uacce_put_queue(struct uacce_queue *q);
 
 /* match with enum uacce_qfrt */
 static const char *const qfrt_str[] = {
 	"mmio",
-	"dko",
 	"dus",
 	"ss",
 	"invalid"
@@ -144,12 +124,7 @@ static void uacce_hw_err_destroy(struct uacce *uacce)
 
 const char *uacce_qfrt_str(struct uacce_qfile_region *qfr)
 {
-	enum uacce_qfrt type = qfr->type;
-
-	if (type > UACCE_QFRT_INVALID)
-		type = UACCE_QFRT_INVALID;
-
-	return qfrt_str[type];
+	return qfrt_str[qfr->type];
 }
 EXPORT_SYMBOL_GPL(uacce_qfrt_str);
 
@@ -220,7 +195,6 @@ static bool uacce_q_avail_mmap(struct uacce_queue *q, unsigned int type)
 		break;
 	case UACCE_Q_STARTED:
 		switch (type) {
-		case UACCE_QFRT_DKO:
 		/* fix me: ss map should be done before start queue */
 		case UACCE_QFRT_SS:
 			avail = true;
@@ -238,183 +212,6 @@ static bool uacce_q_avail_mmap(struct uacce_queue *q, unsigned int type)
 	}
 
 	return avail;
-}
-
-static inline int uacce_iommu_map_qfr(struct uacce_queue *q,
-				      struct uacce_qfile_region *qfr)
-{
-	struct device *dev = q->uacce->pdev;
-	struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
-	int i, j, ret;
-
-	if (!domain)
-		return -ENODEV;
-
-	for (i = 0; i < qfr->nr_pages; i++) {
-		ret = iommu_map(domain, qfr->iova + i * PAGE_SIZE,
-				page_to_phys(qfr->pages[i]),
-				PAGE_SIZE, qfr->prot | q->uacce->prot);
-		if (ret) {
-			dev_err(dev, "iommu_map page %i fail %d\n", i, ret);
-			goto err_with_map_pages;
-		}
-		get_page(qfr->pages[i]);
-	}
-
-	return 0;
-
-err_with_map_pages:
-	for (j = i - 1; j >= 0; j--) {
-		iommu_unmap(domain, qfr->iova + j * PAGE_SIZE, PAGE_SIZE);
-		put_page(qfr->pages[j]);
-	}
-	return ret;
-}
-
-static inline void uacce_iommu_unmap_qfr(struct uacce_queue *q,
-					 struct uacce_qfile_region *qfr)
-{
-	struct device *dev = q->uacce->pdev;
-	struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
-	int i;
-
-	if (!domain || !qfr)
-		return;
-
-	for (i = qfr->nr_pages - 1; i >= 0; i--) {
-		iommu_unmap(domain, qfr->iova + i * PAGE_SIZE, PAGE_SIZE);
-		put_page(qfr->pages[i]);
-	}
-}
-
-static int uacce_queue_map_qfr(struct uacce_queue *q,
-			       struct uacce_qfile_region *qfr)
-{
-	/* Only IOMMU mode does this map */
-	if (!(qfr->flags & UACCE_QFRF_MAP) || (qfr->flags & UACCE_QFRF_DMA))
-		return 0;
-
-	dev_dbg(&q->uacce->dev, "queue map %s qfr(npage=%ld, iova=%pK)\n",
-		uacce_qfrt_str(qfr), qfr->nr_pages, (void *)qfr->iova);
-
-	return uacce_iommu_map_qfr(q, qfr);
-}
-
-static void uacce_queue_unmap_qfr(struct uacce_queue *q,
-				  struct uacce_qfile_region *qfr)
-{
-	if (!(qfr->flags & UACCE_QFRF_MAP) || (qfr->flags & UACCE_QFRF_DMA))
-		return;
-
-	dev_dbg(&q->uacce->dev, "queue map %s qfr(npage=%ld, iova=%pK)\n",
-		uacce_qfrt_str(qfr), qfr->nr_pages, (void *)qfr->iova);
-
-	uacce_iommu_unmap_qfr(q, qfr);
-}
-
-#ifndef CONFIG_UACCE_FIX_MMAP
-static vm_fault_t uacce_shm_vm_fault(struct vm_fault *vmf)
-{
-	struct vm_area_struct *vma = vmf->vma;
-	struct uacce_qfile_region *qfr;
-	pgoff_t page_offset = (vmf->address - vma->vm_start) >> PAGE_SHIFT;
-	vm_fault_t ret;
-
-	uacce_qs_rlock();
-
-	qfr = vma->vm_private_data;
-	if (!qfr) {
-		pr_info("this page is not valid to user space\n");
-		ret = VM_FAULT_SIGBUS;
-		goto out;
-	}
-
-	pr_debug("uacce: fault on %s qfr page %ld/%ld\n", uacce_qfrt_str(qfr),
-		 page_offset, qfr->nr_pages);
-
-	if (page_offset >= qfr->nr_pages) {
-		ret = VM_FAULT_SIGBUS;
-		goto out;
-	}
-
-	get_page(qfr->pages[page_offset]);
-	vmf->page = qfr->pages[page_offset];
-	ret = 0;
-
-out:
-	uacce_qs_runlock();
-	return ret;
-}
-
-static const struct vm_operations_struct uacce_shm_vm_ops = {
-	.fault = uacce_shm_vm_fault,
-};
-#endif
-
-static int uacce_qfr_alloc_pages(struct uacce_qfile_region *qfr)
-{
-	gfp_t gfp_mask = GFP_ATOMIC | __GFP_ZERO;
-	int i, j;
-
-	qfr->pages = kcalloc(qfr->nr_pages, sizeof(*qfr->pages), gfp_mask);
-	if (!qfr->pages)
-		return -ENOMEM;
-
-	for (i = 0; i < qfr->nr_pages; i++) {
-		qfr->pages[i] = alloc_page(gfp_mask);
-		if (!qfr->pages[i])
-			goto err_with_pages;
-	}
-
-	return 0;
-
-err_with_pages:
-	for (j = i - 1; j >= 0; j--)
-		put_page(qfr->pages[j]);
-
-	kfree(qfr->pages);
-	return -ENOMEM;
-}
-
-static void uacce_qfr_free_pages(struct uacce_qfile_region *qfr)
-{
-	int i;
-
-	for (i = 0; i < qfr->nr_pages; i++)
-		put_page(qfr->pages[i]);
-
-	kfree(qfr->pages);
-}
-
-static inline int uacce_queue_mmap_qfr(struct uacce_queue *q,
-				       struct uacce_qfile_region *qfr,
-				       struct vm_area_struct *vma)
-{
-#ifdef CONFIG_UACCE_FIX_MMAP
-	int i, ret;
-
-	if (qfr->nr_pages)
-		dev_dbg(q->uacce->pdev, "mmap qfr (page ref=%d)\n",
-			page_ref_count(qfr->pages[0]));
-	for (i = 0; i < qfr->nr_pages; i++) {
-		get_page(qfr->pages[i]);
-		ret = remap_pfn_range(vma, vma->vm_start + i * PAGE_SIZE,
-				      page_to_pfn(qfr->pages[i]), PAGE_SIZE,
-				      vma->vm_page_prot);
-		if (ret) {
-			dev_err(q->uacce->pdev,
-				"remap_pfm_range fail(nr_pgs=%lx)!\n",
-				qfr->nr_pages);
-			return ret;
-		}
-	}
-
-#else
-	vma->vm_private_data = qfr;
-	vma->vm_ops = &uacce_shm_vm_ops;
-#endif
-
-	return 0;
 }
 
 static void uacce_free_dma_buffers(struct uacce_queue *q)
@@ -603,31 +400,18 @@ static int uacce_mmap_region(u32 flags, struct uacce_queue *q,
 			     struct uacce_qfile_region *qfr)
 {
 	struct uacce *uacce = q->uacce;
-	int ret;
+	int ret = 0;
 
 	if (flags & UACCE_QFRF_SELFMT)
 		return uacce->ops->mmap(q, vma, qfr);
-
-	/* map to device */
-	if (!(flags & UACCE_QFRF_SELFMT)) {
-		ret = uacce_queue_map_qfr(q, qfr);
-		if (ret)
-			return ret;
-	}
 
 	/* mmap to user space */
 	if (flags & UACCE_QFRF_MMAP) {
 		if (flags & UACCE_QFRF_DMA)
 			ret = uacce_mmap_dma_buffers(q, vma);
-		else
-			ret = uacce_queue_mmap_qfr(q, qfr, vma);
-		if (ret) {
-			uacce_queue_unmap_qfr(q, qfr);
-			return ret;
-		}
 	}
 
-	return 0;
+	return ret;
 }
 
 static struct
@@ -662,14 +446,7 @@ uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 			uacce_free_dma_buffers(q);
 			goto err_with_qfr;
 		}
-	} else if (!(flags & UACCE_QFRF_SELFMT)) {
-		ret = uacce_qfr_alloc_pages(qfr);
-		if (ret) {
-			dev_err(uacce->pdev, "alloc page fail!\n");
-			goto err_with_qfr;
-		}
 	}
-
 	ret = uacce_mmap_region(flags, q, vma, qfr);
 	if (ret) {
 		dev_err(uacce->pdev, "uacce mmap region fail!\n");
@@ -681,8 +458,6 @@ uacce_qfile_region *uacce_create_region(struct uacce_queue *q,
 err_with_pages:
 	if (flags & UACCE_QFRF_DMA)
 		uacce_free_dma_buffers(q);
-	else if (!(flags & UACCE_QFRF_SELFMT))
-		uacce_qfr_free_pages(qfr);
 err_with_qfr:
 	kfree(qfr);
 	q->qfrs[type] = NULL;
@@ -698,20 +473,9 @@ static struct uacce_qfile_region noiommu_ss_default_qfr = {
 static void uacce_destroy_region(struct uacce_queue *q,
 				 struct uacce_qfile_region *qfr)
 {
-	struct uacce *uacce = q->uacce;
-
-	if (qfr->flags & UACCE_QFRF_DMA) {
+	if (qfr->flags & UACCE_QFRF_DMA)
 		uacce_free_dma_buffers(q);
-	} else if (qfr->pages) {
-		if (qfr->flags & UACCE_QFRF_KMAP && qfr->kaddr) {
-			dev_dbg(uacce->pdev, "vunmap qfr %s\n",
-				uacce_qfrt_str(qfr));
-			vunmap(qfr->kaddr);
-			qfr->kaddr = NULL;
-		}
 
-		uacce_qfr_free_pages(qfr);
-	}
 	if (qfr != &noiommu_ss_default_qfr)
 		kfree(qfr);
 }
@@ -753,10 +517,6 @@ static long uacce_cmd_share_qfr(struct uacce_queue *src, int fd)
 		goto out_with_fd;
 	}
 
-	ret = uacce_queue_map_qfr(tgt, src->qfrs[UACCE_QFRT_SS]);
-	if (ret)
-		goto out_with_fd;
-
 	/* In No-IOMMU mode, taget queue uses default SS qfr */
 	if (src->qfrs[UACCE_QFRT_SS]->flags & UACCE_QFRF_DMA) {
 		tgt->qfrs[UACCE_QFRT_SS] = &noiommu_ss_default_qfr;
@@ -774,51 +534,18 @@ out_with_fd:
 static int uacce_start_queue(struct uacce_queue *q)
 {
 	struct device *dev = &q->uacce->dev;
-	struct uacce_qfile_region *qfr;
-	int ret, i, j;
-
-	/*
-	 * map KMAP qfr to kernel
-	 * vmap should be done in non-spinlocked context!
-	 */
-	for (i = 0; i < UACCE_QFRT_MAX; i++) {
-		qfr = q->qfrs[i];
-		if (qfr && (qfr->flags & UACCE_QFRF_KMAP) && !qfr->kaddr) {
-			qfr->kaddr = vmap(qfr->pages, qfr->nr_pages, VM_MAP,
-					  PAGE_KERNEL);
-			if (!qfr->kaddr) {
-				ret = -ENOMEM;
-				dev_err(dev, "fail to kmap %s qfr(%ld pages)\n",
-					uacce_qfrt_str(qfr), qfr->nr_pages);
-				goto err_with_vmap;
-			}
-
-			dev_dbg(dev, "kernel vmap %s qfr(%ld pages) to %pK\n",
-				uacce_qfrt_str(qfr), qfr->nr_pages,
-				qfr->kaddr);
-		}
-	}
+	int ret;
 
 	ret = q->uacce->ops->start_queue(q);
 	if (ret < 0) {
 		dev_err(dev, "uacce fails to start queue!\n");
-		goto err_with_vmap;
+		return ret;
 	}
 
 	dev_dbg(&q->uacce->dev, "uacce queue state switch to STARTED\n");
 	q->state = UACCE_Q_STARTED;
 
 	return 0;
-
-err_with_vmap:
-	for (j = i - 1; j >= 0; j--) {
-		qfr = q->qfrs[j];
-		if (qfr && qfr->kaddr) {
-			vunmap(qfr->kaddr);
-			qfr->kaddr = NULL;
-		}
-	}
-	return ret;
 }
 
 static long uacce_get_ss_dma(struct uacce_queue *q, void __user *arg)
@@ -888,7 +615,7 @@ static long uacce_fops_unl_ioctl(struct file *filep,
 		ret = uacce_get_ss_dma(q, (void __user *)arg);
 		return ret;
 	case UACCE_CMD_PUT_Q:
-		ret = uacce_put_queue(q);
+		uacce_put_queue(q);
 		break;
 	default:
 		uacce_qs_wunlock();
@@ -934,7 +661,7 @@ static int uacce_dev_open_check(struct uacce *uacce)
 	return -EBUSY;
 }
 
-static int uacce_queue_drain(struct uacce_queue *q)
+static void uacce_queue_drain(struct uacce_queue *q)
 {
 	struct uacce_qfile_region *qfr;
 	bool is_to_free_region;
@@ -955,7 +682,7 @@ static int uacce_queue_drain(struct uacce_queue *q)
 			continue;
 
 		is_to_free_region = false;
-		uacce_queue_unmap_qfr(q, qfr);
+
 		if (i == UACCE_QFRT_SS && !(qfr->flags & UACCE_QFRF_DMA)) {
 			list_del(&q->list);
 			if (list_empty(&qfr->qs))
@@ -983,15 +710,13 @@ static int uacce_queue_drain(struct uacce_queue *q)
 	 */
 	kfree(q);
 	atomic_dec(&uacce->ref);
-
-	return 0;
 }
 
 /*
  * While user space releases a queue, all the relatives on the queue
  * should be released imediately by this putting.
  */
-static long uacce_put_queue(struct uacce_queue *q)
+static void uacce_put_queue(struct uacce_queue *q)
 {
 	struct uacce *uacce = q->uacce;
 
@@ -1006,8 +731,10 @@ static long uacce_put_queue(struct uacce_queue *q)
 		uacce->ops->put_queue(q);
 
 	q->state = UACCE_Q_ZOMBIE;
-
-	return 0;
+	q->filep->private_data = NULL;
+	uacce_queue_drain(q);
+	if (module_refcount(uacce->pdev->driver->owner) > 0)
+		module_put(uacce->pdev->driver->owner);
 }
 
 static int uacce_get_queue(struct uacce *uacce, struct file *filep)
@@ -1022,7 +749,6 @@ static int uacce_get_queue(struct uacce *uacce, struct file *filep)
 					    IOMMU_SVA_FEAT_IOPF, NULL);
 		if (ret) {
 			dev_err(uacce->pdev, "iommu SVA binds fail!\n");
-			module_put(uacce->pdev->driver->owner);
 			return ret;
 		}
 	}
@@ -1037,6 +763,7 @@ static int uacce_get_queue(struct uacce *uacce, struct file *filep)
 	q->pasid = pasid;
 	q->uacce = uacce;
 	q->mm = current->mm;
+	q->filep = filep;
 	memset(q->qfrs, 0, sizeof(q->qfrs));
 	INIT_LIST_HEAD(&q->list);
 	init_waitqueue_head(&q->wait);
@@ -1053,7 +780,6 @@ err_unbind:
 	if (uacce->flags & UACCE_DEV_PASID)
 		iommu_sva_unbind_device(uacce->pdev, pasid);
 #endif
-	module_put(uacce->pdev->driver->owner);
 	return ret;
 }
 
@@ -1073,21 +799,21 @@ static int uacce_fops_open(struct inode *inode, struct file *filep)
 		return -EINVAL;
 	}
 
-	if (!try_module_get(uacce->pdev->driver->owner)) {
-		dev_err(uacce->pdev, "uacce try to get module(%s) fail!\n",
-			uacce->pdev->driver->name);
-		return -ENODEV;
-	}
 	ret = uacce_dev_open_check(uacce);
-	if (ret) {
-		module_put(uacce->pdev->driver->owner);
+	if (ret)
 		return ret;
-	}
 
 	ret = uacce_get_queue(uacce, filep);
 	if (ret) {
 		dev_err(uacce->pdev, "uacce get queue fail!\n");
 		return ret;
+	}
+
+	if (!try_module_get(uacce->pdev->driver->owner)) {
+		uacce_put_queue(filep->private_data);
+		dev_err(uacce->pdev, "uacce try to get module(%s) fail!\n",
+			uacce->pdev->driver->name);
+		return -ENODEV;
 	}
 
 	return 0;
@@ -1097,7 +823,6 @@ static int uacce_fops_release(struct inode *inode, struct file *filep)
 {
 	struct uacce_queue *q;
 	struct uacce *uacce;
-	int ret = 0;
 
 	uacce_qs_wlock();
 
@@ -1109,7 +834,7 @@ static int uacce_fops_release(struct inode *inode, struct file *filep)
 		 * fall into this logic as the task exits to prevent hardware
 		 * resources leaking.
 		 */
-		ret = uacce_queue_drain(q);
+		uacce_queue_drain(q);
 		filep->private_data = NULL;
 	}
 
@@ -1118,7 +843,7 @@ static int uacce_fops_release(struct inode *inode, struct file *filep)
 	if (q)
 		module_put(uacce->pdev->driver->owner);
 
-	return ret;
+	return 0;
 }
 
 static enum uacce_qfrt uacce_get_region_type(struct uacce *uacce,
@@ -1139,14 +864,6 @@ static enum uacce_qfrt uacce_get_region_type(struct uacce *uacce,
 	case UACCE_QFRT_MMIO:
 		if (!uacce->ops->mmap) {
 			dev_err(&uacce->dev, "no driver mmap!\n");
-			return UACCE_QFRT_INVALID;
-		}
-		break;
-
-	case UACCE_QFRT_DKO:
-		if ((uacce->flags & UACCE_DEV_PASID) ||
-		    (uacce->flags & UACCE_DEV_NOIOMMU)) {
-			dev_err(&uacce->dev, "No DKO as device has PASID or no IOMMU!\n");
 			return UACCE_QFRT_INVALID;
 		}
 		break;
@@ -1238,36 +955,12 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 
 	switch (type) {
 	case UACCE_QFRT_MMIO:
+	case UACCE_QFRT_DUS:
 		flags = UACCE_QFRF_SELFMT;
 		break;
-
 	case UACCE_QFRT_SS:
-		flags = UACCE_QFRF_MAP | UACCE_QFRF_MMAP;
-
-		if (uacce->flags & UACCE_DEV_NOIOMMU)
-			flags |= UACCE_QFRF_DMA;
+		flags = UACCE_QFRF_MMAP | UACCE_QFRF_DMA;
 		break;
-
-	case UACCE_QFRT_DKO:
-		flags = UACCE_QFRF_MAP | UACCE_QFRF_KMAP;
-
-		if (uacce->flags & UACCE_DEV_NOIOMMU)
-			flags |= UACCE_QFRF_DMA;
-		break;
-
-	case UACCE_QFRT_DUS:
-		if (q->uacce->flags & UACCE_DEV_DRVMAP_DUS) {
-			flags = UACCE_QFRF_SELFMT;
-			break;
-		}
-
-		flags = UACCE_QFRF_MAP | UACCE_QFRF_MMAP;
-		if (q->uacce->flags & UACCE_DEV_KMAP_DUS)
-			flags |= UACCE_QFRF_KMAP;
-		if (q->uacce->flags & UACCE_DEV_NOIOMMU)
-			flags |= UACCE_QFRF_DMA;
-		break;
-
 	default:
 		WARN_ON(&uacce->dev);
 		break;
@@ -1279,10 +972,6 @@ static int uacce_fops_mmap(struct file *filep, struct vm_area_struct *vma)
 		goto out_with_lock;
 	}
 
-	if (type == UACCE_QFRT_SS && !(qfr->flags & UACCE_QFRF_DMA)) {
-		INIT_LIST_HEAD(&qfr->qs);
-		list_add(&q->list, &q->qfrs[type]->qs);
-	}
 	uacce_qs_wunlock();
 
 	return 0;
@@ -1554,143 +1243,6 @@ static int uacce_default_start_queue(struct uacce_queue *q)
 	return 0;
 }
 
-#ifndef CONFIG_IOMMU_SVA2
-static int uacce_dev_match(struct device *dev, void *data)
-{
-	if (dev->parent == data)
-		return -EBUSY;
-
-	return 0;
-}
-
-/* Borrowed from VFIO */
-static bool uacce_iommu_has_sw_msi(struct iommu_group *group,
-				   phys_addr_t *base)
-{
-	struct iommu_resv_region *region, *next;
-	struct list_head group_resv_regions;
-	bool ret = false;
-
-	INIT_LIST_HEAD(&group_resv_regions);
-	iommu_get_group_resv_regions(group, &group_resv_regions);
-	list_for_each_entry(region, &group_resv_regions, list) {
-		pr_debug("uacce: find a resv region (%d) on %llx\n",
-			 region->type, region->start);
-
-		/*
-		 * The presence of any 'real' MSI regions should take
-		 * precedence over the software-managed one if the
-		 * IOMMU driver happens to advertise both types.
-		 */
-		if (region->type == IOMMU_RESV_MSI) {
-			ret = false;
-			break;
-		}
-
-		if (region->type == IOMMU_RESV_SW_MSI) {
-			*base = region->start;
-			ret = true;
-		}
-	}
-	list_for_each_entry_safe(region, next, &group_resv_regions, list)
-		kfree(region);
-	return ret;
-}
-
-static int uacce_set_iommu_domain(struct uacce *uacce)
-{
-	struct device *dev = uacce->pdev;
-	struct iommu_domain *domain;
-	struct iommu_group *group;
-	phys_addr_t resv_msi_base = 0;
-	bool resv_msi;
-	int ret;
-
-	if (uacce->flags & UACCE_DEV_NOIOMMU)
-		return 0;
-
-	/*
-	 * We don't support multiple register for the same dev in RFC version ,
-	 * will add it in formal version
-	 */
-	ret = class_for_each_device(uacce_class, NULL, dev, uacce_dev_match);
-	if (ret) {
-		dev_err(dev, "no matching device in uacce class!\n");
-		return ret;
-	}
-
-	/* allocate and attach a unmanged domain */
-	domain = iommu_domain_alloc(dev->bus);
-	if (!domain) {
-		dev_err(dev, "fail to allocate domain on its bus\n");
-		return -ENODEV;
-	}
-
-	ret = iommu_attach_device(domain, dev);
-	if (ret) {
-		dev_err(dev, "iommu attach device failing!\n");
-		goto err_with_domain;
-	}
-
-	if (iommu_capable(dev->bus, IOMMU_CAP_CACHE_COHERENCY)) {
-		uacce->prot |= IOMMU_CACHE;
-		dev_dbg(dev, "Enable uacce with c-coherent capa\n");
-	} else {
-		dev_dbg(dev, "Enable uacce without c-coherent capa\n");
-	}
-
-	group = iommu_group_get(dev);
-	if (!group) {
-		dev_err(dev, "fail to get iommu group!\n");
-		ret = -EINVAL;
-		goto err_with_domain;
-	}
-
-	resv_msi = uacce_iommu_has_sw_msi(group, &resv_msi_base);
-	iommu_group_put(group);
-
-	if (resv_msi) {
-		if (!irq_domain_check_msi_remap() &&
-		    !iommu_capable(dev->bus, IOMMU_CAP_INTR_REMAP)) {
-			dev_err(dev, "No interrupt remapping support!\n");
-			ret = -EPERM;
-			goto err_with_domain;
-		}
-
-		dev_dbg(dev, "Set resv msi %llx on iommu domain!\n",
-			(u64)resv_msi_base);
-		ret = iommu_get_msi_cookie(domain, resv_msi_base);
-		if (ret) {
-			dev_err(dev, "fail to get msi cookie from domain!\n");
-			goto err_with_domain;
-		}
-	}
-
-	return 0;
-
-err_with_domain:
-	iommu_domain_free(domain);
-	return ret;
-}
-
-static void uacce_unset_iommu_domain(struct uacce *uacce)
-{
-	struct device *dev = uacce->pdev;
-	struct iommu_domain *domain;
-
-	if (uacce->flags & UACCE_DEV_NOIOMMU)
-		return;
-
-	domain = iommu_get_domain_for_dev(dev);
-	if (domain) {
-		iommu_detach_device(domain, dev);
-		iommu_domain_free(domain);
-	} else {
-		dev_err(dev, "no domain attached to device\n");
-	}
-}
-#endif
-
 /**
  * uacce_register - register an accelerator
  * @uacce: the accelerator structure
@@ -1728,12 +1280,6 @@ int uacce_register(struct uacce *uacce)
 	if (!uacce->ops->get_available_instances)
 		uacce->ops->get_available_instances =
 			uacce_default_get_available_instances;
-
-#ifndef CONFIG_IOMMU_SVA2
-	ret = uacce_set_iommu_domain(uacce);
-	if (ret)
-		return ret;
-#endif
 
 	ret = uacce_create_chrdev(uacce);
 	if (ret) {
@@ -1779,8 +1325,6 @@ int uacce_unregister(struct uacce *uacce)
 
 #ifdef CONFIG_IOMMU_SVA2
 	iommu_sva_shutdown_device(uacce->pdev);
-#else
-	uacce_unset_iommu_domain(uacce);
 #endif
 	uacce_hw_err_destroy(uacce);
 	uacce_destroy_chrdev(uacce);
