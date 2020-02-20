@@ -140,7 +140,7 @@ void hnae3_unregister_client(struct hnae3_client *client)
 {
 	struct hnae3_client *client_tmp;
 	struct hnae3_ae_dev *ae_dev;
-	bool flag = false;
+	bool existed = false;
 
 	if (!client)
 		return;
@@ -149,12 +149,12 @@ void hnae3_unregister_client(struct hnae3_client *client)
 	/* one system should only have one client for every type */
 	list_for_each_entry(client_tmp, &hnae3_client_list, node) {
 		if (client_tmp->type == client->type) {
-			flag = true;
+			existed = true;
 			break;
 		}
 	}
 
-	if (!flag) {
+	if (!existed) {
 		mutex_unlock(&hnae3_common_lock);
 		return;
 	}
