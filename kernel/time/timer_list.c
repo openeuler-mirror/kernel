@@ -294,13 +294,17 @@ void sysrq_timer_list_show(void)
 
 	timer_list_header(NULL, now);
 
-	for_each_online_cpu(cpu)
+	for_each_online_cpu(cpu) {
+		touch_all_softlockup_watchdogs();
 		print_cpu(NULL, cpu, now);
+	}
 
 #ifdef CONFIG_GENERIC_CLOCKEVENTS
 	timer_list_show_tickdevices_header(NULL);
-	for_each_online_cpu(cpu)
+	for_each_online_cpu(cpu) {
+		touch_all_softlockup_watchdogs();
 		print_tickdevice(NULL, tick_get_device(cpu), cpu);
+	}
 #endif
 	return;
 }
