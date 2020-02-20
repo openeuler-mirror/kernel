@@ -115,7 +115,7 @@ int hns3_cae_get_dfx_info(const struct hns3_nic_priv *net_priv,
 	out_info->func_id = (u8)hdev->pdev->devfn;
 	out_info->is_cs_board = (handle->pdev->revision > 0x20) ? true : false;
 	reg_info.addr = HNS3_CAE_MAC_MODE_ADDR;
-	reg_info.bit_width = 32;
+	reg_info.bit_width = HNS3_CAE_BITWIDTH_32BIT;
 	reg_info.is_read = true;
 	ret = hns3_cae_operate_nic_regs(hdev, &reg_info);
 	if (ret) {
@@ -125,7 +125,7 @@ int hns3_cae_get_dfx_info(const struct hns3_nic_priv *net_priv,
 	}
 	out_info->work_mode = reg_info.value;
 	reg_info.addr = HNS3_CAE_MAC_MAP_ADDR;
-	reg_info.bit_width = 64;
+	reg_info.bit_width = HNS3_CAE_BITWIDTH_64BIT;
 	reg_info.is_read = true;
 	ret = hns3_cae_operate_nic_regs(hdev, &reg_info);
 	if (ret) {
@@ -204,7 +204,7 @@ int hns3_cae_event_injection(const struct hns3_nic_priv *net_priv,
 	hdev = vport->back;
 
 	reg_info.addr = in_info->addr;
-	reg_info.bit_width = 32;
+	reg_info.bit_width = HNS3_CAE_BITWIDTH_32BIT;
 	reg_info.is_read = false;
 	reg_info.value = in_info->value;
 	dev_info(&hdev->pdev->dev,

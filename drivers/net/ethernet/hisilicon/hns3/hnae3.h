@@ -30,7 +30,7 @@
 #include <linux/pci.h>
 #include <linux/types.h>
 
-#define HNAE3_MOD_VERSION "1.9.36.0"
+#define HNAE3_MOD_VERSION "1.9.37.0"
 
 #define HNAE3_MIN_VECTOR_NUM	2 /* one for msi-x, another for IO */
 
