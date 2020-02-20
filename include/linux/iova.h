@@ -97,6 +97,7 @@ struct iova_domain {
 						   flush-queues */
 	atomic_t fq_timer_on;			/* 1 when timer is active, 0
 						   when not */
+	struct work_struct free_iova_work;
 };
 
 static inline unsigned long iova_size(struct iova *iova)
