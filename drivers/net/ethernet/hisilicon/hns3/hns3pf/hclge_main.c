@@ -6560,25 +6560,21 @@ static int hclge_mac_link_status_wait(struct hclge_dev *hdev, int link_ret)
 	return -EBUSY;
 }
 
-static int hclge_mac_phy_link_status_wait(struct hclge_dev *hdev, bool en)
+static int hclge_mac_phy_link_status_wait(struct hclge_dev *hdev, bool en,
+					  bool is_phy)
 {
 #define HCLGE_LINK_STATUS_DOWN 0
 #define HCLGE_LINK_STATUS_UP   1
 
 	struct phy_device *phydev = hdev->hw.mac.phydev;
 	int link_ret;
-	int ret;
 
-	if (en)
-		link_ret = HCLGE_LINK_STATUS_UP;
-	else
-		link_ret = HCLGE_LINK_STATUS_DOWN;
+	link_ret = en ? HCLGE_LINK_STATUS_UP : HCLGE_LINK_STATUS_DOWN;
 
-	if (phydev)
+	if (is_phy)
 		hclge_phy_link_status_wait(hdev, phydev, link_ret);
 
-	ret = hclge_mac_link_status_wait(hdev, link_ret);
-	return ret;
+	return hclge_mac_link_status_wait(hdev, link_ret);
 }
 
 static int hclge_set_app_loopback(struct hclge_dev *hdev, bool en)
@@ -6692,7 +6688,7 @@ static int hclge_set_serdes_loopback(struct hclge_dev *hdev, bool en,
 
 	hclge_cfg_mac_mode(hdev, en);
 
-	ret = hclge_mac_phy_link_status_wait(hdev, en);
+	ret = hclge_mac_phy_link_status_wait(hdev, en, false);
 	if (ret)
 		dev_err(&hdev->pdev->dev,
 			"serdes loopback config mac mode timeout\n");
@@ -6749,7 +6745,7 @@ static int hclge_set_phy_loopback(struct hclge_dev *hdev,
 
 	hclge_cfg_mac_mode(hdev, en);
 
-	ret = hclge_mac_phy_link_status_wait(hdev, en);
+	ret = hclge_mac_phy_link_status_wait(hdev, en, true);
 	if (ret)
 		dev_err(&hdev->pdev->dev,
 			"phy loopback config mac mode timeout\n");
