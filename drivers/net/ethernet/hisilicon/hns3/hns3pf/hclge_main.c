@@ -7030,17 +7030,11 @@ static int hclge_get_mac_vlan_cmd_status(struct hclge_vport *vport,
 	}
 
 	if (op == HCLGE_MAC_VLAN_ADD) {
-		if ((!resp_code) || (resp_code == 1)) {
+		if (!resp_code || resp_code == 1)
 			return 0;
-		} else if (resp_code == HCLGE_ADD_UC_OVERFLOW) {
-			dev_err(&hdev->pdev->dev,
-				"add mac addr failed for uc_overflow.\n");
+		else if (resp_code == HCLGE_ADD_UC_OVERFLOW ||
+			 resp_code == HCLGE_ADD_MC_OVERFLOW)
 			return -ENOSPC;
-		} else if (resp_code == HCLGE_ADD_MC_OVERFLOW) {
-			dev_err(&hdev->pdev->dev,
-				"add mac addr failed for mc_overflow.\n");
-			return -ENOSPC;
-		}
 
 		dev_err(&hdev->pdev->dev,
 			"add mac addr failed for undefined, code=%u.\n",
