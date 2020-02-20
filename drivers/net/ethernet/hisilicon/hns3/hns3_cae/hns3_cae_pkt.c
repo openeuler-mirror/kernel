@@ -418,6 +418,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 			dev_err(&netdev->dev,
 				"pkt_len(=%d) of ipv4 trace route pkt must big than %d.\n",
 				in_info->pkt_len, IPV4_TRACEROUTE_PKT_LEN);
+			kfree(pkt_payload);
 			return;
 		}
 
@@ -436,6 +437,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 			dev_err(&netdev->dev,
 				"pkt_len(=%d) of ipv6 extension pkt must big than %d.\n",
 				in_info->pkt_len, IPV6_EXTENSION_PKT_LEN);
+			kfree(pkt_payload);
 			return;
 		}
 		memcpy(payload, in_info->dst_mac, ETH_ALEN);
