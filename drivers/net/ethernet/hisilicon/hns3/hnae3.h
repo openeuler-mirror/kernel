@@ -232,7 +232,6 @@ struct hnae3_ae_dev {
 	struct list_head node;
 	u32 flag;
 	unsigned long hw_err_reset_req;
-	enum hnae3_reset_type reset_type;
 	void *priv;
 };
 
