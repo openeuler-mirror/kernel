@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
+/* SPDX-License-Identifier: GPL-2.0-or-later WITH Linux-syscall-note */
 /* Copyright (c) 2018-2019 HiSilicon Limited. */
 #ifndef _UAPIUUACCE_H
 #define _UAPIUUACCE_H
@@ -30,15 +30,12 @@
 #define UACCE_DEV_NOIOMMU		(1 << 0)
 #define UACCE_DEV_PASID			(1 << 1)
 #define UACCE_DEV_FAULT_FROM_DEV	(1 << 2)
-#define UACCE_DEV_KMAP_DUS		(1 << 3)
-#define UACCE_DEV_DRVMAP_DUS		(1 << 4)
 
 #define UACCE_DEV_SVA		(UACCE_DEV_PASID | UACCE_DEV_FAULT_FROM_DEV)
 #define UACCE_DEV_SHARE_DOMAIN	(0)
 
 /* uacce mode of the driver */
 #define UACCE_MODE_NOUACCE	0 /* don't use uacce */
-#define UACCE_MODE_UACCE	1 /* use uacce exclusively */
 #define UACCE_MODE_NOIOMMU	2 /* use uacce noiommu mode */
 
 #define UACCE_API_VER_NOIOMMU_SUBFIX	"_noiommu"
@@ -46,7 +43,6 @@
 #define UACCE_QFR_NA ((unsigned long)-1)
 enum uacce_qfrt {
 	UACCE_QFRT_MMIO = 0,	/* device mmio region */
-	UACCE_QFRT_DKO,		/* device kernel-only */
 	UACCE_QFRT_DUS,		/* device user share */
 	UACCE_QFRT_SS,		/* static share memory */
 	UACCE_QFRT_MAX,

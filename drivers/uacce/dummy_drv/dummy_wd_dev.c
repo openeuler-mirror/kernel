@@ -325,7 +325,6 @@ static int dummy_wd_probe(struct platform_device *pdev)
 	uacce->api_ver = "dummy_v1";
 	uacce->flags = UACCE_DEV_NOIOMMU;
 	uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
-	uacce->qf_pg_start[UACCE_QFRT_DKO] = UACCE_QFR_NA;
 	uacce->qf_pg_start[UACCE_QFRT_DUS] = UACCE_QFR_NA;
 	uacce->qf_pg_start[UACCE_QFRT_SS] = 1;
 

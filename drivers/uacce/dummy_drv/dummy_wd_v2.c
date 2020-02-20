@@ -458,7 +458,6 @@ static int dummy_wd2_probe(struct platform_device *pdev)
 	uacce->api_ver = "dummy_v2";
 	uacce->flags = 0;
 	uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
-	uacce->qf_pg_start[UACCE_QFRT_DKO] = UACCE_QFR_NA;
 	uacce->qf_pg_start[UACCE_QFRT_DUS] = 1;
 	uacce->qf_pg_start[UACCE_QFRT_SS] = 2;
 
