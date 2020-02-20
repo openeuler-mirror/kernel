@@ -330,7 +330,7 @@ static ssize_t hns3_dbg_cmd_write(struct file *filp, const char __user *buffer,
 		return 0;
 
 	if (count > HNS3_DBG_WRITE_LEN)
-		return 0;
+		return -ENOSPC;
 
 	cmd_buf = kzalloc(count + 1, GFP_KERNEL);
 	if (!cmd_buf)
