@@ -221,6 +221,7 @@ enum HCLGE_DEV_STATE {
 	HCLGE_STATE_STATISTICS_UPDATING,
 	HCLGE_STATE_CMD_DISABLE,
 	HCLGE_STATE_LINK_UPDATING,
+	HCLGE_STATE_PROMISC_CHANGED,
 	HCLGE_STATE_MAX
 };
 
@@ -814,7 +815,7 @@ struct hclge_dev {
 	unsigned long vlan_table[VLAN_N_VID][BITS_TO_LONGS(HCLGE_VPORT_NUM)];
 	unsigned long vf_vlan_full[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
 
-	unsigned long need_restore_vf_table[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
+	unsigned long vport_config_block[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
 
 	struct hclge_fd_cfg fd_cfg;
 	struct hlist_head fd_rule_list;
@@ -879,7 +880,6 @@ struct hclge_rss_tuple_cfg {
 enum HCLGE_VPORT_STATE {
 	HCLGE_VPORT_STATE_ALIVE,
 	HCLGE_VPORT_STATE_MAC_TBL_CHANGE,
-	HCLGE_VPORT_STATE_BLOCK_CONFIG, /* blocking mac configuration */
 	HCLGE_VPORT_STATE_MAX
 };
 
@@ -944,6 +944,8 @@ struct hclge_vport {
 	u32 max_tx_rate;
 	u32 trusted;
 	u16 promisc_enable;
+	u8 overflow_promisc_flags;
+	u8 last_promisc_flags;
 
 	spinlock_t mac_list_lock; /* protect mac address need to add/detele */
 	struct list_head uc_mac_list;   /* Store VF unicast table */

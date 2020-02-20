@@ -276,14 +276,19 @@ static int hclge_modify_vf_mac_addr(struct hclge_vport *vport,
 	ret = hclge_add_uc_addr_common(vport, new_addr);
 	if (ret) {
 		ret = hclge_add_uc_addr_common(vport, old_addr);
-		if (ret)
+		if (ret) {
+			spin_lock_bh(&vport->mac_list_lock);
 			hclge_modify_mac_node_state(&vport->uc_mac_list,
 						    old_addr, HCLGE_MAC_TO_ADD);
+			spin_unlock_bh(&vport->mac_list_lock);
+		}
 		return -EIO;
 
 	} else {
+		spin_lock_bh(&vport->mac_list_lock);
 		hclge_replace_mac_node(&vport->uc_mac_list, old_addr, new_addr,
 				       !old_mac_removed);
+		spin_unlock_bh(&vport->mac_list_lock);
 	}
 	return ret;
 }
