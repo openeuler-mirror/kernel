@@ -6472,7 +6472,7 @@ static int hns_roce_mhop_alloc_eq(struct hns_roce_dev *hr_dev,
 			*(eq->bt_l0 + i) = eq->l1_dma[i];
 
 			for (j = 0; j < bt_chk_sz / BA_BYTE_LEN; j++) {
-				idx = i * bt_chk_sz / BA_BYTE_LEN + j;
+				idx = i * (bt_chk_sz / BA_BYTE_LEN) + j;
 				if (eq_buf_cnt + 1 < ba_num) {
 					size = buf_chk_sz;
 				} else {
@@ -6520,7 +6520,7 @@ err_dma_alloc_l1:
 				  eq->l1_dma[i]);
 
 		for (j = 0; j < bt_chk_sz / BA_BYTE_LEN; j++) {
-			idx = i * bt_chk_sz / BA_BYTE_LEN + j;
+			idx = i * (bt_chk_sz / BA_BYTE_LEN) + j;
 			dma_free_coherent(dev, buf_chk_sz, eq->buf[idx],
 					  eq->buf_dma[idx]);
 		}
@@ -6547,7 +6547,7 @@ err_dma_alloc_buf:
 				if (i == record_i && j >= record_j)
 					break;
 
-				idx = i * bt_chk_sz / BA_BYTE_LEN + j;
+				idx = i * (bt_chk_sz / BA_BYTE_LEN) + j;
 				dma_free_coherent(dev, buf_chk_sz,
 						  eq->buf[idx],
 						  eq->buf_dma[idx]);
