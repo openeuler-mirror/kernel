@@ -80,13 +80,13 @@ static void mr_release(struct kref *ref)
 	kfree(rdfx_mr);
 }
 
-void alloc_rdfx_info(struct hns_roce_dev *hr_dev)
+int alloc_rdfx_info(struct hns_roce_dev *hr_dev)
 {
 	struct rdfx_info *rdfx;
 
 	rdfx = kzalloc(sizeof(*rdfx), GFP_KERNEL);
 	if (ZERO_OR_NULL_PTR(rdfx))
-		return;
+		return -ENOMEM;
 
 	hr_dev->dfx_priv = rdfx;
 	rdfx->priv = hr_dev;
@@ -104,6 +104,7 @@ void alloc_rdfx_info(struct hns_roce_dev *hr_dev)
 	spin_lock_init(&rdfx->mr.mr_lock);
 	spin_lock_init(&rdfx->eq.eq_lock);
 
+	return 0;
 }
 
 void rdfx_set_dev_name(struct hns_roce_dev *hr_dev)
@@ -173,6 +174,8 @@ void free_rdfx_info(struct hns_roce_dev *hr_dev)
 {
 	struct rdfx_info *rdfx = (struct rdfx_info *)hr_dev->dfx_priv;
 
+	if (!rdfx)
+		return;
 	rdfx_clean_list(rdfx);
 	kfree(rdfx);
 	hr_dev->dfx_priv = NULL;

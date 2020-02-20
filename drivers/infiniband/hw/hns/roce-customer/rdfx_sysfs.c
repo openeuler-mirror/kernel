@@ -39,8 +39,8 @@ static int rdfx_pd_store(const char *p_buf)
 	char *buf = (char *)p_buf;
 	struct rdfx_info *rdfx;
 	long long convert_val;
-	char dev_name[DEF_OPT_STR_LEN];
-	char str[DEF_OPT_STR_LEN];
+	char dev_name[DEF_OPT_STR_LEN] = {0};
+	char str[DEF_OPT_STR_LEN] = {0};
 	u32 pdn = 0;
 
 	parg_getopt(buf, "d:", dev_name);
@@ -121,14 +121,14 @@ static int show_qp_detail(struct rdfx_qp_info *rdfx_qp)
 
 
 	pr_info("\n");
-	pr_info("sig_wqe_cnt      bd_cnt       inline_cnt\n");
+	pr_info("sig_wqe_cnt      db_cnt       inline_cnt\n");
 	pr_info("   0x%x           0x%x          0x%x\n",
 		atomic_read(&rdfx_qp->sq.sig_wqe_cnt),
 		atomic_read(&rdfx_qp->sq.db_cnt),
 		atomic_read(&rdfx_qp->sq.inline_cnt));
 	pr_info("\n");
 	pr_info("***************** RQ INFO *****************\n");
-	pr_info("rq_wqe_cnt       bd_cnt        inline_cnt\n");
+	pr_info("rq_wqe_cnt       db_cnt        inline_cnt\n");
 	pr_info("   0x%x	    0x%x	   0x%x\n",
 		    atomic_read(&rdfx_qp->rq.rq_wqe_cnt),
 		    atomic_read(&rdfx_qp->rq.db_cnt),
@@ -432,8 +432,8 @@ static int rdfx_cq_store(const char *p_buf)
 	struct rdfx_cq_info *rdfx_cq = NULL;
 	struct rdfx_info *rdfx;
 	char *buf = (char *)p_buf;
-	char dev_name[DEF_OPT_STR_LEN];
-	char str[DEF_OPT_STR_LEN];
+	char dev_name[DEF_OPT_STR_LEN] = {0};
+	char str[DEF_OPT_STR_LEN] = {0};
 	u32 cqe_index = 0;
 	u32 cqn = 0;
 
@@ -482,8 +482,8 @@ static int rdfx_mr_store(const char *p_buf)
 	char *buf = (char *)p_buf;
 	struct rdfx_info *rdfx;
 	long long convert_val;
-	char dev_name[DEF_OPT_STR_LEN];
-	char str[DEF_OPT_STR_LEN];
+	char dev_name[DEF_OPT_STR_LEN] = {0};
+	char str[DEF_OPT_STR_LEN] = {0};
 	u32 key;
 
 	parg_getopt(buf, "d:", dev_name);
@@ -534,8 +534,8 @@ static int rdfx_eq_store(const char *p_buf)
 	long long convert_val;
 	char *buf = (char *)p_buf;
 	struct rdfx_info *rdfx;
-	char dev_name[DEF_OPT_STR_LEN];
-	char str[DEF_OPT_STR_LEN];
+	char dev_name[DEF_OPT_STR_LEN] = {0};
+	char str[DEF_OPT_STR_LEN] = {0};
 	u32 ceqn;
 
 	parg_getopt(buf, "d:", dev_name);
@@ -566,7 +566,7 @@ static int roce_dev_store(const char *p_buf)
 {
 	char *buf = (char *)p_buf;
 	struct rdfx_info *rdfx;
-	char dev_name[DEF_OPT_STR_LEN];
+	char dev_name[DEF_OPT_STR_LEN] = {0};
 	int i;
 
 	parg_getopt(buf, "d:", dev_name);

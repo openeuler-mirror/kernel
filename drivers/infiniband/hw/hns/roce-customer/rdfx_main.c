@@ -76,12 +76,15 @@ int parg_getopt(char *input, char *optstring, char *parg)
 		p++;
 		cnt++;
 	}
-	if (cnt >= DEF_OPT_STR_LEN)
+	if (cnt >= DEF_OPT_STR_LEN) {
+		kfree(_input);
 		return -EINVAL;
+	}
 	*p = '\0';
 	p -= cnt;
 	strcpy(parg, p);
 	kfree(_input);
+
 	return 0;
 }
 
@@ -196,7 +199,7 @@ struct rdfx_info *rdfx_find_rdfx_info(char *dev_name)
 	int i;
 
 	if (!strlen(dev_name))
-		return rdfx_top_info_list[0].rdfx;
+		return NULL;
 
 	for (i = 0; i < MAX_IB_DEV; i++) {
 		if (!rdfx_top_info_list[i].dev)
@@ -284,8 +287,11 @@ static void rdfx_add_device(struct ib_device *ib_dev)
 
 	ops = (rdfx_top_info_list[i].rdfx)->ops;
 	ret = ops->add_sysfs(rdfx_top_info_list[i].rdfx);
-	if (ret)
+	if (ret) {
+		rdfx_top_info_list[i].rdfx = NULL;
+		rdfx_top_info_list[i].dev = NULL;
 		pr_err("rdfx add hw sysfs failed\n");
+	}
 }
 
 static void rdfx_remove_device(struct ib_device *ib_dev, void *client_data)
@@ -324,8 +330,16 @@ static int __init rdfx_init(void)
 
 	/*default content:/sys/class */
 	drv_class = class_create(THIS_MODULE, DFX_DEVICE_NAME);
+	if (IS_ERR(drv_class)) {
+		pr_err("rdfx register client failed\n");
+		goto class_create_failed;
+	}
 	drv_device = device_create(drv_class, NULL, MKDEV(major, 0),
 				   NULL, DFX_DEVICE_NAME);
+	if (IS_ERR(drv_device)) {
+		pr_err("rdfx register device failed\n");
+		goto device_regist_failed;
+	}
 
 	memset(rdfx_top_info_list, 0, sizeof(rdfx_top_info_list));
 
@@ -348,7 +362,9 @@ add_common_sysfs_failed:
 	ib_unregister_client(&rdfx_client);
 register_client_failed:
 	device_unregister(drv_device);
+device_regist_failed:
 	class_destroy(drv_class);
+class_create_failed:
 	unregister_chrdev(major, DFX_DEVICE_NAME);
 
 	return ret;

@@ -47,9 +47,6 @@
 #include "hns_roce_hem.h"
 #include "hns_roce_hw_v2.h"
 
-#ifdef CONFIG_INFINIBAND_HNS_TEST
-#include "hns_hw_v2_test.h"
-#endif
 static int loopback;
 
 static bool qp_lock = true;
@@ -374,8 +371,6 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 	}
 
 	v2_spin_lock_irqsave(qp_lock, &qp->sq.lock, &flags);
-	rdfx_func_cnt(hr_dev, RDFX_FUNC_POST_SEND);
-	rdfx_get_rdfx_qp(hr_dev, ibqp->qp_num);
 
 	if (hr_dev->state >= HNS_ROCE_DEVICE_STATE_RST_DOWN) {
 		*bad_wr = wr;
@@ -681,8 +676,6 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				if (ret)
 					goto out;
 			}
-
-			rdfx_cp_sq_wqe_buf(hr_dev, qp, ind, wqe, rc_sq_wqe, wr);
 			hns_roce_dfx_record_post_send_wqe(qp, wr);
 
 			ind++;
@@ -727,8 +720,6 @@ out:
 		qp->sq_next_wqe = ind;
 		qp->next_sge = sge_ind;
 	}
-	rdfx_inc_sq_db_cnt(hr_dev, ibqp->qp_num);
-	rdfx_put_rdfx_qp(hr_dev, ibqp->qp_num);
 	qp->dfx_cnt[HNS_ROCE_QP_DFX_POST_SEND]++;
 
 	v2_spin_unlock_irqrestore(qp_lock, &qp->sq.lock, &flags);
@@ -776,9 +767,6 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 		return -EINVAL;
 	}
 
-	rdfx_func_cnt(hr_dev, RDFX_FUNC_POST_RECV);
-	rdfx_get_rdfx_qp(hr_dev, ibqp->qp_num);
-
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		if (hns_roce_wq_overflow(&hr_qp->rq, nreq,
 			hr_qp->ibqp.recv_cq)) {
@@ -823,9 +811,6 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 		}
 
 		hr_qp->rq.wrid[ind] = wr->wr_id;
-
-		rdfx_cp_rq_wqe_buf(hr_dev, hr_qp, ind, wqe, wr);
-
 		ind = (ind + 1) & (hr_qp->rq.wqe_cnt - 1);
 	}
 
@@ -842,11 +827,8 @@ out:
 		} else {
 			*hr_qp->rdb.db_record = hr_qp->rq.head & 0xffff;
 		}
-
-		rdfx_inc_rq_db_cnt(hr_dev, hr_qp->qpn);
 	}
 
-	rdfx_put_rdfx_qp(hr_dev, hr_qp->qpn);
 	hr_qp->dfx_cnt[HNS_ROCE_QP_DFX_POST_RECV]++;
 
 	v2_spin_unlock_irqrestore(qp_lock, &hr_qp->rq.lock, &flags);
@@ -3110,9 +3092,6 @@ static void hns_roce_v2_write_cqc(struct hns_roce_dev *hr_dev,
 	unsigned int cq_period = HNS_ROCE_V2_CQ_DEFAULT_INTERVAL;
 	unsigned int cq_max_cnt = HNS_ROCE_V2_CQ_DEFAULT_BURST_NUM;
 
-#ifdef CONFIG_INFINIBAND_HNS_TEST
-	test_set_cqc_param(&cq_period, &cq_max_cnt);
-#endif
 	cq_context = mb_buf;
 	memset(cq_context, 0, sizeof(*cq_context));
 
@@ -3193,9 +3172,6 @@ static int hns_roce_v2_req_notify_cq(struct ib_cq *ibcq,
 
 	doorbell[0] = 0;
 	doorbell[1] = 0;
-
-	rdfx_func_cnt(to_hr_dev(ibcq->device), RDFX_FUNC_REQ_NOTIFY_CQ);
-	rdfx_inc_arm_cq_cnt(to_hr_dev(ibcq->device), hr_cq, flags);
 
 	notification_flag = (flags & IB_CQ_SOLICITED_MASK) == IB_CQ_SOLICITED ?
 			     V2_CQ_DB_REQ_NOT : V2_CQ_DB_REQ_NOT_SOL;
@@ -3597,24 +3573,14 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 
 	v2_spin_lock_irqsave(cq_lock, &hr_cq->lock, &flags);
 
-	rdfx_func_cnt(hr_dev, RDFX_FUNC_POLL_CQ);
-	rdfx_get_rdfx_cq(hr_dev, hr_cq->cqn);
-
 	if (hr_dev->state == HNS_ROCE_DEVICE_STATE_UNINIT) {
 		hns_roce_v2_poll_sw_cq(hr_cq, num_entries, wc, &npolled);
 		goto out;
 	}
 
 	for (npolled = 0; npolled < num_entries; ++npolled) {
-		rdfx_cp_cqe_buf(hr_dev, hr_cq,
-				get_sw_cqe_v2(hr_cq, hr_cq->cons_index));
-
 		if (hns_roce_v2_poll_one(hr_cq, &cur_qp, wc + npolled))
 			break;
-
-		rdfx_set_cqe_info(hr_dev, hr_cq,
-				get_cqe_v2(hr_cq, (hr_cq->cons_index - 1) &
-						(hr_cq->ib_cq.cqe)));
 	}
 
 	if (npolled) {
@@ -3623,10 +3589,7 @@ static int hns_roce_v2_poll_cq(struct ib_cq *ibcq, int num_entries,
 		hns_roce_v2_cq_set_ci(hr_cq, hr_cq->cons_index);
 	}
 
-	rdfx_set_rdfx_cq_ci(hr_dev, hr_cq);
-
 out:
-	rdfx_put_rdfx_cq(hr_dev, hr_cq->cqn);
 	v2_spin_unlock_irqrestore(cq_lock, &hr_cq->lock, &flags);
 
 	return npolled;
@@ -5971,8 +5934,6 @@ static int hns_roce_v2_ceq_int(struct hns_roce_dev *hr_dev,
 
 		if (eq->cons_index > EQ_DEPTH_COEFF * eq->entries - 1)
 			eq->cons_index = 0;
-
-		rdfx_inc_ceqe_cnt(hr_dev, eq->eqn);
 	}
 
 	set_eq_cons_index_v2(eq);
@@ -6208,9 +6169,6 @@ static void hns_roce_config_eqc(struct hns_roce_dev *hr_dev,
 	eqc = mb_buf;
 	memset(eqc, 0, sizeof(struct hns_roce_eq_context));
 
-#ifdef CONFIG_INFINIBAND_HNS_TEST
-	test_set_eq_param(eq->type_flag, &eq_period, &eq_max_cnt, &eq_arm_st);
-#endif
 	if (eq_period * HNS_ROCE_CLOCK_ADJUST > 0xFFFF) {
 		dev_info(hr_dev->dev, "Config eq_period param(0x%x) out of range for config_eqc, adjusted to 65.\n",
 			eq_period);

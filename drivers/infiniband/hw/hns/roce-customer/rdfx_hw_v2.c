@@ -214,9 +214,9 @@ static int rdfx_v2_pkt_store(const char *p_buf, struct rdfx_info *rdfx)
 	struct hns_roce_cmq_desc desc_cnp_rx = {0};
 	struct rdfx_query_cnp_rx_cnt *resp_cnp_rx =
 			(struct rdfx_query_cnp_rx_cnt *)desc_cnp_rx.data;
-	int ret;
 	char *buf = (char *)p_buf;
-	char str[DEF_OPT_STR_LEN];
+	char str[DEF_OPT_STR_LEN] = {0};
+	int ret;
 	int i;
 
 	if (!parg_getopt(buf, "c", str))
@@ -355,7 +355,7 @@ static int rdfx_v2_ceqc_store(const char *p_buf, struct rdfx_info *rdfx)
 	struct hns_roce_dev *hr_dev;
 	long long convert_val;
 	char *buf = (char *)p_buf;
-	char str[DEF_OPT_STR_LEN];
+	char str[DEF_OPT_STR_LEN] = {0};
 	u32 ceqn = 0;
 	int ret;
 
@@ -433,7 +433,7 @@ static int rdfx_v2_aeqc_store(const char *p_buf, struct rdfx_info *rdfx)
 	struct hns_roce_dev *hr_dev;
 	long long convert_val;
 	char *buf = (char *)p_buf;
-	char str[DEF_OPT_STR_LEN];
+	char str[DEF_OPT_STR_LEN] = {0};
 	u32 aeqn = 0;
 	int ret;
 
@@ -534,7 +534,7 @@ static int rdfx_v2_qpc_store(const char *p_buf, struct rdfx_info *rdfx)
 	struct hns_roce_dev *hr_dev;
 	long long convert_val;
 	char *buf = (char *)p_buf;
-	char str[DEF_OPT_STR_LEN];
+	char str[DEF_OPT_STR_LEN] = {0};
 	u32 qpn = 0;
 	u64 bt0_ba = 0;
 	u64 bt1_ba = 0;
@@ -637,7 +637,7 @@ static int rdfx_v2_cqc_store(const char *p_buf, struct rdfx_info *rdfx)
 	struct hns_roce_dev *hr_dev;
 	long long convert_val;
 	char *buf = (char *)p_buf;
-	char str[DEF_OPT_STR_LEN];
+	char str[DEF_OPT_STR_LEN] = {0};
 	u64 bt0_ba = 0;
 	u64 bt1_ba = 0;
 	u32 cqn = 0;
@@ -740,7 +740,7 @@ static int rdfx_v2_srqc_store(const char *p_buf, struct rdfx_info *rdfx)
 	struct hns_roce_dev *hr_dev;
 	long long convert_val;
 	char *buf = (char *)p_buf;
-	char str[DEF_OPT_STR_LEN];
+	char str[DEF_OPT_STR_LEN] = {0};
 	u64 bt0_ba = 0;
 	u64 bt1_ba = 0;
 	u32 srqn = 0;
@@ -843,7 +843,7 @@ static int rdfx_v2_mpt_store(const char *p_buf, struct rdfx_info *rdfx)
 	struct hns_roce_dev *hr_dev;
 	long long convert_val;
 	char *buf = (char *)p_buf;
-	char str[DEF_OPT_STR_LEN];
+	char str[DEF_OPT_STR_LEN] = {0};
 	u64 bt0_ba = 0;
 	u64 bt1_ba = 0;
 	int key;
