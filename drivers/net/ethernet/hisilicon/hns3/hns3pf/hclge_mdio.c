@@ -28,6 +28,17 @@ enum hclge_mdio_c22_op_seq {
 
 #define HCLGE_MDIO_STA_B		0
 
+struct hclge_mdio_cfg_cmd {
+	u8 ctrl_bit;
+	u8 phyid;
+	u8 phyad;
+	u8 rsvd;
+	__le16 reserve;
+	__le16 data_wr;
+	__le16 data_rd;
+	__le16 sta;
+};
+
 static int hclge_mdio_write(struct mii_bus *bus, int phyid, int regnum,
 			    u16 data)
 {
