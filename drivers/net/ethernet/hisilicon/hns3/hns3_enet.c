@@ -3981,17 +3981,6 @@ static void hns3_uninit_phy(struct net_device *netdev)
 		h->ae_algo->ops->mac_disconnect_phy(h);
 }
 
-static int hns3_restore_fd_rules(struct net_device *netdev)
-{
-	struct hnae3_handle *h = hns3_get_handle(netdev);
-	int ret = 0;
-
-	if (h->ae_algo->ops->restore_fd_rules)
-		ret = h->ae_algo->ops->restore_fd_rules(h);
-
-	return ret;
-}
-
 static void hns3_del_all_fd_rules(struct net_device *netdev, bool clear_list)
 {
 	struct hnae3_handle *h = hns3_get_handle(netdev);
@@ -4237,35 +4226,6 @@ static int hns3_client_setup_tc(struct hnae3_handle *handle, u8 tc)
 	return hns3_nic_set_real_num_queue(ndev);
 }
 
-static int hns3_recover_hw_addr(struct net_device *ndev)
-{
-	struct netdev_hw_addr_list *list;
-	struct netdev_hw_addr *ha, *tmp;
-	int ret = 0;
-
-	netif_addr_lock_bh(ndev);
-	/* go through and sync uc_addr entries to the device */
-	list = &ndev->uc;
-	list_for_each_entry_safe(ha, tmp, &list->list, list) {
-		ret = hns3_nic_uc_sync(ndev, ha->addr);
-		if (ret)
-			goto out;
-	}
-
-	/* go through and sync mc_addr entries to the device */
-	list = &ndev->mc;
-	list_for_each_entry_safe(ha, tmp, &list->list, list)
-		if (ha->refcount > 1) {
-			ret = hns3_nic_mc_sync(ndev, ha->addr);
-			if (ret)
-				goto out;
-		}
-
-out:
-	netif_addr_unlock_bh(ndev);
-	return ret;
-}
-
 static void hns3_remove_hw_addr(struct net_device *netdev)
 {
 	struct netdev_hw_addr_list *list;
@@ -4446,22 +4406,12 @@ static void hns3_restore_coal(struct hns3_nic_priv *priv)
 
 static int hns3_reset_notify_down_enet(struct hnae3_handle *handle)
 {
-	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(handle->pdev);
 	struct hnae3_knic_private_info *kinfo = &handle->kinfo;
 	struct net_device *ndev = kinfo->netdev;
 	struct hns3_nic_priv *priv = netdev_priv(ndev);
 
 	if (test_and_set_bit(HNS3_NIC_STATE_RESETTING, &priv->state))
 		return 0;
-
-	/* it is cumbersome for hardware to pick-and-choose entries for deletion
-	 * from table space. Hence, for function reset software intervention is
-	 * required to delete the entries
-	 */
-	if (hns3_dev_ongoing_func_reset(ae_dev)) {
-		hns3_remove_hw_addr(ndev);
-		hns3_del_all_fd_rules(ndev, false);
-	}
 
 	if (!netif_running(ndev))
 		return 0;
@@ -4554,33 +4504,6 @@ err_put_ring:
 	return ret;
 }
 
-static int hns3_reset_notify_restore_enet(struct hnae3_handle *handle)
-{
-	struct net_device *netdev = handle->kinfo.netdev;
-	bool vlan_filter_enable;
-	int ret;
-
-	ret = hns3_init_mac_addr(netdev);
-	if (ret)
-		return ret;
-
-	ret = hns3_recover_hw_addr(netdev);
-	if (ret)
-		return ret;
-
-	ret = hns3_update_promisc_mode(netdev, handle->netdev_flags);
-	if (ret)
-		return ret;
-
-	vlan_filter_enable = netdev->flags & IFF_PROMISC ? false : true;
-	hns3_enable_vlan_filter(netdev, vlan_filter_enable);
-
-	if (handle->ae_algo->ops->restore_vlan_table)
-		handle->ae_algo->ops->restore_vlan_table(handle);
-
-	return hns3_restore_fd_rules(netdev);
-}
-
 static int hns3_reset_notify_uninit_enet(struct hnae3_handle *handle)
 {
 	struct net_device *netdev = handle->kinfo.netdev;
@@ -4629,9 +4552,6 @@ static int hns3_reset_notify(struct hnae3_handle *handle,
 		break;
 	case HNAE3_UNINIT_CLIENT:
 		ret = hns3_reset_notify_uninit_enet(handle);
-		break;
-	case HNAE3_RESTORE_CLIENT:
-		ret = hns3_reset_notify_restore_enet(handle);
 		break;
 	default:
 		break;

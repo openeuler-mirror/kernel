@@ -1002,11 +1002,12 @@ int hclge_notify_client(struct hclge_dev *hdev,
 void hclge_add_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
 			       enum HCLGE_MAC_ADDR_TYPE mac_type);
 void hclge_rm_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
-			      bool is_write_tbl,
 			      enum HCLGE_MAC_ADDR_TYPE mac_type);
 void hclge_rm_vport_all_mac_table(struct hclge_vport *vport, bool is_del_list,
 				  enum HCLGE_MAC_ADDR_TYPE mac_type);
 void hclge_rm_vport_all_vlan_table(struct hclge_vport *vport, bool is_del_list);
+void hclge_restore_vport_vlan_table(struct hclge_vport *vport);
+void hclge_restore_vport_mac_table(struct hclge_vport *vport);
 int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
 				    struct hclge_vlan_info *vlan_info);
 int hclge_push_vf_port_base_vlan_info(struct hclge_vport *vport, u8 vfid,
