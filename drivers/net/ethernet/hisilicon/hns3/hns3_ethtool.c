@@ -509,11 +509,9 @@ static void hns3_get_stats(struct net_device *netdev,
 			   struct ethtool_stats *stats, u64 *data)
 {
 	struct hnae3_handle *h = hns3_get_handle(netdev);
-	struct hns3_nic_priv *priv = h->priv;
 	u64 *p = data;
 
-	if (!test_bit(HNS3_NIC_STATE_INITED, &priv->state) ||
-	    hns3_nic_resetting(netdev)) {
+	if (hns3_nic_resetting(netdev)) {
 		netdev_err(netdev, "dev resetting, could not get stats\n");
 		return;
 	}
