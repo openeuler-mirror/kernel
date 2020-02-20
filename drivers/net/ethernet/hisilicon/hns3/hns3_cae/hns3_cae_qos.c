@@ -433,7 +433,7 @@ int hns3_cae_qcn_cfg(const struct hns3_nic_priv *net_priv,
 		     u32 out_size)
 {
 #define HCLGE_OPC_QCN_CFG	0x1A01
-	bool check = !buf_in || in_size < sizeof(32);
+	bool check = !buf_in || in_size < sizeof(u32);
 	struct hclge_vport *vport = NULL;
 	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
