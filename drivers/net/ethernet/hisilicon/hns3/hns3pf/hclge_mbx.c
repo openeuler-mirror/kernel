@@ -83,7 +83,6 @@ static int hclge_gen_resp_to_vf(struct hclge_vport *vport,
 			status, vf_to_pf_req->mbx_src_vfid,
 			vf_to_pf_req->msg.code, vf_to_pf_req->msg.subcode);
 
-
 	return status;
 }
 
@@ -110,7 +109,6 @@ static int hclge_send_mbx_msg(struct hclge_vport *vport, u8 *msg, u16 msg_len,
 		dev_err(&hdev->pdev->dev,
 			"PF failed(=%d) to send mailbox message(vfid:%u, opcode:%u) to VF\n",
 			status, dest_vfid, mbx_opcode);
-
 
 	return status;
 }

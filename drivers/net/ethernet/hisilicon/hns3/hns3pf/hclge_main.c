@@ -2765,7 +2765,6 @@ static void hclge_update_link_status(struct hclge_dev *hdev)
 		return;
 
 	state = hclge_get_mac_phy_link(hdev);
-
 	if (state != hdev->hw.mac.link) {
 		for (i = 0; i < hdev->num_vmdq_vport + 1; i++) {
 			handle = &hdev->vport[i].nic;
@@ -3926,7 +3925,6 @@ static void hclge_reset_subtask(struct hclge_dev *hdev)
 	 */
 	hdev->last_reset_time = jiffies;
 	hdev->reset_type = hclge_get_reset_level(ae_dev, &hdev->reset_pending);
-
 	if (hdev->reset_type != HNAE3_NONE_RESET)
 		hclge_reset(hdev);
 
