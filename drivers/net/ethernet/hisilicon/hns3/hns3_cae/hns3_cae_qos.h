@@ -43,28 +43,29 @@ enum opt_type {
 #define HNS3_QOS_QCN_BYPASS_MASK	0x20000
 #define HNS3_QCN_SHAP_BYPASS_OFF	17
 
-int hns3_cae_rx_priv_buff_wl_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_rx_priv_buff_wl_cfg(const struct hns3_nic_priv *net_priv,
 				 void *buf_in, u32 in_size,
 				 void *buf_out, u32 out_size);
-int hns3_cae_common_thrd_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_common_thrd_cfg(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size);
-int hns3_cae_common_wl_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_common_wl_cfg(const struct hns3_nic_priv *net_priv,
 			   void *buf_in, u32 in_size,
 			   void *buf_out, u32 out_size);
-int hns3_cae_tx_buff_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_tx_buff_cfg(const struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size);
-int hns3_cae_rx_buff_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_rx_buff_cfg(const struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size);
-int hns3_cae_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
+int hns3_cae_show_rx_priv_wl(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size);
-int hns3_cae_show_comm_thres(struct hns3_nic_priv *net_priv,
+int hns3_cae_show_comm_thres(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size);
-int hns3_cae_qcn_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size);
+int hns3_cae_qcn_cfg(const struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out,
+		     u32 out_size);
 
 #endif

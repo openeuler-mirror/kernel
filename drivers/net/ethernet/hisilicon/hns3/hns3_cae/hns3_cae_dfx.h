@@ -35,13 +35,13 @@ struct hns3_cae_event_param {
 
 #define HNS3_CAE_MAX_MAC_NUMBER	0x8
 
-int hns3_cae_get_dfx_info(struct hns3_nic_priv *net_priv,
+int hns3_cae_get_dfx_info(const struct hns3_nic_priv *net_priv,
 			  void *buf_in, u32 in_size,
 			  void *buf_out, u32 out_size);
-int hns3_cae_read_dfx_info(struct hns3_nic_priv *net_priv,
+int hns3_cae_read_dfx_info(const struct hns3_nic_priv *net_priv,
 			   void *buf_in, u32 in_size,
 			   void *buf_out, u32 out_size);
-int hns3_cae_event_injection(struct hns3_nic_priv *net_priv,
+int hns3_cae_event_injection(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size);
 

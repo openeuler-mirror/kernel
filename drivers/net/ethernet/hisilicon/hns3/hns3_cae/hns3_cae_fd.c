@@ -22,10 +22,10 @@ static int hns3_cae_send_generic_cmd(struct hclge_dev *hdev, u8 *buf_in,
 				     u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
-	struct hclge_get_fd_mode_cmd *mode_cfg;
-	struct hclge_get_fd_mode_cmd *req;
+	struct hclge_get_fd_mode_cmd *mode_cfg = NULL;
+	struct hclge_get_fd_mode_cmd *req = NULL;
 	struct hclge_desc desc;
-	bool check;
+	bool check = false;
 	int ret;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_MODE_CTRL,
@@ -63,14 +63,13 @@ static int hns3_cae_send_generic_cmd(struct hclge_dev *hdev, u8 *buf_in,
 static int hns3_cae_send_allocate_cmd(struct hclge_dev *hdev, u8 *buf_in,
 				      u32 in_size, u8 *buf_out, u32 out_size)
 {
-	struct hclge_get_fd_allocation_cmd *allocation_cfg;
-	struct hclge_get_fd_allocation_cmd *req;
+	struct hclge_get_fd_allocation_cmd *allocation_cfg = NULL;
+	struct hclge_get_fd_allocation_cmd *req = NULL;
 	struct hclge_desc desc;
-	bool check;
+	bool check = !buf_out ||
+		     out_size < sizeof(struct hclge_get_fd_allocation_cmd);
 	int ret;
 
-	check = !buf_out ||
-		out_size < sizeof(struct hclge_get_fd_allocation_cmd);
 	if (check) {
 		pr_err("input param buf_out error in %s function\n", __func__);
 		return -EFAULT;
@@ -102,10 +101,10 @@ static int hns3_cae_send_key_cfg_cmd(struct hclge_dev *hdev, u8 *buf_in,
 				     u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
-	struct hclge_set_fd_key_config_cmd *key_cfg_data;
-	struct hclge_set_fd_key_config_cmd *req;
+	struct hclge_set_fd_key_config_cmd *key_cfg_data = NULL;
+	struct hclge_set_fd_key_config_cmd *req = NULL;
 	struct hclge_desc desc;
-	bool check;
+	bool check = false;
 	int ret;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_KEY_CONFIG,
@@ -157,13 +156,13 @@ static int hns3_cae_send_tcam_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 #define HNS3_CAE_FD_TCAM_BD_NUM		3
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_desc desc[HNS3_CAE_FD_TCAM_BD_NUM];
-	struct hclge_fd_tcam_config_1_cmd *req1;
-	struct hclge_fd_tcam_config_2_cmd *req2;
-	struct hclge_fd_tcam_config_3_cmd *req3;
-	struct hclge_fd_tcam_data *tcam_data;
-	struct hclge_desc *pdesc;
-	bool check;
-	u8 *buf;
+	struct hclge_fd_tcam_config_1_cmd *req1 = NULL;
+	struct hclge_fd_tcam_config_2_cmd *req2 = NULL;
+	struct hclge_fd_tcam_config_3_cmd *req3 = NULL;
+	struct hclge_fd_tcam_data *tcam_data = NULL;
+	struct hclge_desc *pdesc = NULL;
+	bool check = false;
+	u8 *buf = NULL;
 	int ret;
 	int i;
 
@@ -228,10 +227,10 @@ static int hns3_cae_send_ad_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 				   u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
-	struct hclge_fd_ad_config_cmd *ad_data;
-	struct hclge_fd_ad_config_cmd *req;
+	struct hclge_fd_ad_config_cmd *ad_data = NULL;
+	struct hclge_fd_ad_config_cmd *req = NULL;
 	struct hclge_desc desc;
-	bool check;
+	bool check = false;
 	int ret;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_AD_OP,
@@ -271,10 +270,10 @@ static int hns3_cae_send_cnt_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 				    u32 in_size, u8 *buf_out, u32 out_size)
 {
 	struct fd_param *param = (struct fd_param *)buf_in;
-	struct hclge_fd_cnt_op_cmd *cnt_data;
-	struct hclge_fd_cnt_op_cmd *req;
+	struct hclge_fd_cnt_op_cmd *cnt_data = NULL;
+	struct hclge_fd_cnt_op_cmd *req = NULL;
 	struct hclge_desc desc;
-	bool check;
+	bool check = !buf_out || out_size < sizeof(struct hclge_fd_cnt_op_cmd);
 	int ret;
 
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_FD_CNT_OP, true);
@@ -282,7 +281,6 @@ static int hns3_cae_send_cnt_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	req->stage = param->stage;
 	req->cnt_idx = param->idx;
 
-	check = !buf_out || out_size < sizeof(struct hclge_fd_cnt_op_cmd);
 	if (check) {
 		pr_err("input param buf_out error in %s function\n", __func__);
 		return -EFAULT;
@@ -300,17 +298,17 @@ static int hns3_cae_send_cnt_op_cmd(struct hclge_dev *hdev, u8 *buf_in,
 	return 0;
 }
 
-int hns3_cae_fd_cfg(struct hns3_nic_priv *net_priv,
-		    void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_fd_cfg(const struct hns3_nic_priv *net_priv,
+		    void *buf_in, u32 in_size, void *buf_out,
+		    u32 out_size)
 {
+	bool check = !buf_in || in_size < sizeof(struct fd_param);
 	struct hnae3_handle *handle = net_priv->ae_handle;
 	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct fd_param *param = (struct fd_param *)buf_in;
 	struct hclge_dev *hdev = vport->back;
 	int ret = -1;
-	bool check;
 
-	check = !buf_in || in_size < sizeof(struct fd_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;

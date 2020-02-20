@@ -5,17 +5,17 @@
 #include "hns3_cae_ext.h"
 #include "hns3_ext.h"
 
-static int hns3_ext_test_disable_netclk(struct hns3_nic_priv *net_priv)
+static int hns3_disable_netclk(const struct hns3_nic_priv *net_priv)
 {
 	struct net_device *netdev = net_priv->netdev;
 
 	return nic_disable_clock(netdev);
 }
 
-static int hns3_get_cpu_affinity(struct hns3_nic_priv *priv)
+static int hns3_get_cpu_affinity(const struct hns3_nic_priv *priv)
 {
-	struct hns3_enet_tqp_vector *tqp_vector;
-	struct hnae3_handle *h;
+	struct hns3_enet_tqp_vector *tqp_vector = NULL;
+	struct hnae3_handle *h = NULL;
 	int i;
 
 	if (!priv) {
@@ -42,9 +42,9 @@ static int hns3_get_cpu_affinity(struct hns3_nic_priv *priv)
 	return 0;
 }
 
-static int hns3_ext_test_affi(struct hns3_nic_priv *net_priv, void *in)
+static int hns3_affi(const struct hns3_nic_priv *net_priv, void *in)
 {
-	struct hns3_cpumask_param *cpumask_param;
+	struct hns3_cpumask_param *cpumask_param = NULL;
 	cpumask_var_t cpumask_new;
 	int ret;
 
@@ -77,7 +77,7 @@ static int hns3_ext_test_affi(struct hns3_nic_priv *net_priv, void *in)
 	return ret;
 }
 
-static int hns3_ext_test_get_chipid(struct hns3_nic_priv *net_priv, void *out)
+static int hns3_get_chipid(const struct hns3_nic_priv *net_priv, void *out)
 {
 	u32 chip_id;
 	int ret;
@@ -89,14 +89,14 @@ static int hns3_ext_test_get_chipid(struct hns3_nic_priv *net_priv, void *out)
 	return ret;
 }
 
-static int hns3_ext_test_match_check(struct hns3_nic_priv *net_priv)
+static int hns3_match_check(const struct hns3_nic_priv *net_priv)
 {
 	struct net_device *netdev = net_priv->netdev;
 
 	return nic_netdev_match_check(netdev);
 }
 
-static int hns3_ext_test_set_led(struct hns3_nic_priv *net_priv, void *in)
+static int hns3_set_led(const struct hns3_nic_priv *net_priv, void *in)
 {
 	struct hns3_led_state_para *para = (struct hns3_led_state_para *)in;
 	struct net_device *netdev = net_priv->netdev;
@@ -104,8 +104,8 @@ static int hns3_ext_test_set_led(struct hns3_nic_priv *net_priv, void *in)
 	return nic_set_led(netdev, para->type, para->status);
 }
 
-static int hns3_ext_test_get_sfp_info(struct hns3_nic_priv *net_priv, void *in,
-				      void *out)
+static int hns3_get_sfp_info(const struct hns3_nic_priv *net_priv, void *in,
+			     void *out)
 {
 	struct hns3_priv_sfp_info_para *para_in =
 	    (struct hns3_priv_sfp_info_para *)in;
@@ -120,8 +120,8 @@ static int hns3_ext_test_get_sfp_info(struct hns3_nic_priv *net_priv, void *in,
 	return ret;
 }
 
-static int hns3_ext_test_get_sfp_present(struct hns3_nic_priv *net_priv,
-					 void *out)
+static int hns3_get_sfp_present(const struct hns3_nic_priv *net_priv,
+				void *out)
 {
 	struct net_device *netdev = net_priv->netdev;
 	u32 present;
@@ -134,7 +134,7 @@ static int hns3_ext_test_get_sfp_present(struct hns3_nic_priv *net_priv,
 	return ret;
 }
 
-static int hns3_ext_test_set_sfp_state(struct hns3_nic_priv *net_priv, void *in)
+static int hns3_set_sfp_state(const struct hns3_nic_priv *net_priv, void *in)
 {
 	struct net_device *netdev = net_priv->netdev;
 	bool en = *(bool *)in;
@@ -142,14 +142,14 @@ static int hns3_ext_test_set_sfp_state(struct hns3_nic_priv *net_priv, void *in)
 	return nic_set_sfp_state(netdev, en);
 }
 
-static int hns3_ext_test_clean_stats64(struct hns3_nic_priv *net_priv)
+static int hns3_clean_stats64(const struct hns3_nic_priv *net_priv)
 {
 	struct net_device *netdev = net_priv->netdev;
 
 	return nic_clean_stats64(netdev, NULL);
 }
 
-static int hns3_ext_test_get_chip_num(struct hns3_nic_priv *net_priv, void *out)
+static int hns3_get_chip_num(const struct hns3_nic_priv *net_priv, void *out)
 {
 	u32 chip_num;
 	int ret;
@@ -161,7 +161,7 @@ static int hns3_ext_test_get_chip_num(struct hns3_nic_priv *net_priv, void *out)
 	return ret;
 }
 
-static int hns3_ext_test_get_port_num(struct hns3_nic_priv *net_priv, void *out)
+static int hns3_get_port_num(const struct hns3_nic_priv *net_priv, void *out)
 {
 	u32 port_num;
 	int ret;
@@ -173,15 +173,15 @@ static int hns3_ext_test_get_port_num(struct hns3_nic_priv *net_priv, void *out)
 	return ret;
 }
 
-static int hns3_ext_test_disable_net_lane(struct hns3_nic_priv *net_priv)
+static int hns3_disable_net_lane(const struct hns3_nic_priv *net_priv)
 {
 	struct net_device *netdev = net_priv->netdev;
 
 	return nic_disable_net_lane(netdev);
 }
 
-static int hns3_ext_test_get_lane_status(struct hns3_nic_priv *net_priv,
-					 void *out)
+static int hns3_get_lane_status(const struct hns3_nic_priv *net_priv,
+				void *out)
 {
 	u32 lane_status;
 	int ret;
@@ -193,7 +193,7 @@ static int hns3_ext_test_get_lane_status(struct hns3_nic_priv *net_priv,
 	return ret;
 }
 
-static int hns3_ext_test_set_mac_state(struct hns3_nic_priv *net_priv, void *in)
+static int hns3_set_mac_state(const struct hns3_nic_priv *net_priv, void *in)
 {
 	struct net_device *netdev = net_priv->netdev;
 	int enable = *(int *)in;
@@ -201,8 +201,8 @@ static int hns3_ext_test_set_mac_state(struct hns3_nic_priv *net_priv, void *in)
 	return nic_set_mac_state(netdev, enable);
 }
 
-static int hns3_ext_test_set_pfc_storm_para(struct hns3_nic_priv *net_priv,
-					    void *in)
+static int hns3_set_pfc_storm_para(const struct hns3_nic_priv *net_priv,
+				   void *in)
 {
 	struct hns3_pfc_storm_para *para = (struct hns3_pfc_storm_para *)in;
 	struct net_device *netdev = net_priv->netdev;
@@ -212,13 +212,13 @@ static int hns3_ext_test_set_pfc_storm_para(struct hns3_nic_priv *net_priv,
 				      para->recovery_period_ms);
 }
 
-static int hns3_ext_test_get_pfc_storm_para(struct hns3_nic_priv *net_priv,
-					    void *in, void *out)
+static int hns3_get_pfc_storm_para(const struct hns3_nic_priv *net_priv,
+				   void *in, void *out)
 {
 	struct hns3_pfc_storm_para *para_in = (struct hns3_pfc_storm_para *)in;
 	struct net_device *netdev = net_priv->netdev;
 	struct hns3_pfc_storm_para *para_out =
-	    (struct hns3_pfc_storm_para *)out;
+					      (struct hns3_pfc_storm_para *)out;
 	u32 recovery_period_ms;
 	u32 period_ms;
 	u32 enable;
@@ -240,9 +240,9 @@ static int hns3_ext_test_get_pfc_storm_para(struct hns3_nic_priv *net_priv,
 	return ret;
 }
 
-static int hns3_ext_test_get_phy_reg(struct hns3_nic_priv *net_priv,
-				     void *in, void *out,
-				     enum phy_type phy_type)
+static int hns3_get_phy_reg(const struct hns3_nic_priv *net_priv,
+			    void *in, void *out,
+			    enum phy_type phy_type)
 {
 	struct hns3_phy_para *para_out = (struct hns3_phy_para *)out;
 	struct hns3_phy_para *para_in = (struct hns3_phy_para *)in;
@@ -268,8 +268,8 @@ static int hns3_ext_test_get_phy_reg(struct hns3_nic_priv *net_priv,
 	return ret;
 }
 
-static int hns3_ext_test_set_phy_reg(struct hns3_nic_priv *net_priv,
-				     void *in, enum phy_type phy_type)
+static int hns3_set_phy_reg(const struct hns3_nic_priv *net_priv, void *in,
+			    enum phy_type phy_type)
 {
 	struct hns3_phy_para *para = (struct hns3_phy_para *)in;
 	struct net_device *netdev = net_priv->netdev;
@@ -284,7 +284,7 @@ static int hns3_ext_test_set_phy_reg(struct hns3_nic_priv *net_priv,
 				       para->data);
 }
 
-static int hns3_ext_test_get_macid(struct hns3_nic_priv *net_priv, void *out)
+static int hns3_get_macid(const struct hns3_nic_priv *net_priv, void *out)
 {
 	u32 mac_id;
 	int ret;
@@ -296,8 +296,8 @@ static int hns3_ext_test_get_macid(struct hns3_nic_priv *net_priv, void *out)
 	return ret;
 }
 
-static int hns3_ext_test_get_hilink_ref_los(struct hns3_nic_priv *net_priv,
-					    void *out)
+static int hns3_get_hilink_ref_los(const struct hns3_nic_priv *net_priv,
+				   void *out)
 {
 	u32 status;
 	int ret;
@@ -309,8 +309,7 @@ static int hns3_ext_test_get_hilink_ref_los(struct hns3_nic_priv *net_priv,
 	return ret;
 }
 
-static int hns3_ext_test_get_port_type(struct hns3_nic_priv *net_priv,
-				       void *out)
+static int hns3_get_port_type(const struct hns3_nic_priv *net_priv, void *out)
 {
 	u32 wire_type;
 	int ret;
@@ -322,100 +321,97 @@ static int hns3_ext_test_get_port_type(struct hns3_nic_priv *net_priv,
 	return ret;
 }
 
-int hns3_ext_interface_test(struct hns3_nic_priv *net_priv,
+int hns3_ext_interface_test(const struct hns3_nic_priv *net_priv,
 			    void *buf_in, u32 in_size,
 			    void *buf_out, u32 out_size)
 {
-	struct cmd_ext_driver_param *ext_param_out;
-	struct cmd_ext_driver_param *ext_param_in;
-	bool check;
-	void *out;
-	void *in;
+	struct cmd_ext_driver_param *ext_param_out =
+					 (struct cmd_ext_driver_param *)buf_out;
+	struct cmd_ext_driver_param *ext_param_in =
+					  (struct cmd_ext_driver_param *)buf_in;
+	bool check = !buf_in || in_size < sizeof(struct cmd_ext_driver_param) ||
+		     !buf_out || out_size < sizeof(struct cmd_ext_driver_param);
+	void *out = NULL;
+	void *in = NULL;
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct cmd_ext_driver_param) ||
-		!buf_out || out_size < sizeof(struct cmd_ext_driver_param);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
-	ext_param_in = (struct cmd_ext_driver_param *)buf_in;
-	ext_param_out = (struct cmd_ext_driver_param *)buf_out;
 	in = ext_param_in->buf;
 	out = ext_param_out->buf;
 
 	switch (ext_param_in->op_code) {
 	case EXT_AFFI_MASK:
-		ret = hns3_ext_test_affi(net_priv, in);
+		ret = hns3_affi(net_priv, in);
 		break;
 	case EXT_DISABLE_NET_CLK:
-		ret = hns3_ext_test_disable_netclk(net_priv);
+		ret = hns3_disable_netclk(net_priv);
 		break;
 	case EXT_GET_CHIP_ID:
-		ret = hns3_ext_test_get_chipid(net_priv, out);
+		ret = hns3_get_chipid(net_priv, out);
 		break;
 	case EXT_NET_MATCH_CHECK:
-		ret = hns3_ext_test_match_check(net_priv);
+		ret = hns3_match_check(net_priv);
 		break;
 	case EXT_SET_LED:
-		ret = hns3_ext_test_set_led(net_priv, in);
+		ret = hns3_set_led(net_priv, in);
 		break;
 	case EXT_GET_SFP_INFO:
-		ret = hns3_ext_test_get_sfp_info(net_priv, in, out);
+		ret = hns3_get_sfp_info(net_priv, in, out);
 		break;
 	case EXT_GET_SFP_PRESENT:
-		ret = hns3_ext_test_get_sfp_present(net_priv, out);
+		ret = hns3_get_sfp_present(net_priv, out);
 		break;
 	case EXT_SET_SFP_STATE:
-		ret = hns3_ext_test_set_sfp_state(net_priv, in);
+		ret = hns3_set_sfp_state(net_priv, in);
 		break;
 	case EXT_CLEAN_STATS64:
-		ret = hns3_ext_test_clean_stats64(net_priv);
+		ret = hns3_clean_stats64(net_priv);
 		break;
 	case EXT_GET_CHIP_NUM:
-		ret = hns3_ext_test_get_chip_num(net_priv, out);
+		ret = hns3_get_chip_num(net_priv, out);
 		break;
 	case EXT_GET_PORT_NUM:
-		ret = hns3_ext_test_get_port_num(net_priv, out);
+		ret = hns3_get_port_num(net_priv, out);
 		break;
 	case EXT_DISABLE_NET_LANE:
-		ret = hns3_ext_test_disable_net_lane(net_priv);
+		ret = hns3_disable_net_lane(net_priv);
 		break;
 	case EXT_GET_LANE_STATUS:
-		ret = hns3_ext_test_get_lane_status(net_priv, out);
+		ret = hns3_get_lane_status(net_priv, out);
 		break;
 	case EXT_SET_MAC_STATE:
-		ret = hns3_ext_test_set_mac_state(net_priv, in);
+		ret = hns3_set_mac_state(net_priv, in);
 		break;
 	case EXT_SET_PFC_STORM_PARA:
-		ret = hns3_ext_test_set_pfc_storm_para(net_priv, in);
+		ret = hns3_set_pfc_storm_para(net_priv, in);
 		break;
 	case EXT_GET_PFC_STORM_PARA:
-		ret = hns3_ext_test_get_pfc_storm_para(net_priv, in, out);
+		ret = hns3_get_pfc_storm_para(net_priv, in, out);
 		break;
 	case EXT_GET_PHY_REG:
-		ret = hns3_ext_test_get_phy_reg(net_priv, in, out,
-						PHY_TYPE_1512);
+		ret = hns3_get_phy_reg(net_priv, in, out, PHY_TYPE_1512);
 		break;
 	case EXT_SET_PHY_REG:
-		ret = hns3_ext_test_set_phy_reg(net_priv, in, PHY_TYPE_1512);
+		ret = hns3_set_phy_reg(net_priv, in, PHY_TYPE_1512);
 		break;
 	case EXT_GET_MAC_ID:
-		ret = hns3_ext_test_get_macid(net_priv, out);
+		ret = hns3_get_macid(net_priv, out);
 		break;
 	case EXT_GET_HILINK_REF_LOS:
-		ret = hns3_ext_test_get_hilink_ref_los(net_priv, out);
+		ret = hns3_get_hilink_ref_los(net_priv, out);
 		break;
 	case EXT_GET_8211_PHY_REG:
-		ret = hns3_ext_test_get_phy_reg(net_priv, in, out,
-						PHY_TYPE_8211);
+		ret = hns3_get_phy_reg(net_priv, in, out, PHY_TYPE_8211);
 		break;
 	case EXT_SET_8211_PHY_REG:
-		ret = hns3_ext_test_set_phy_reg(net_priv, in, PHY_TYPE_8211);
+		ret = hns3_set_phy_reg(net_priv, in, PHY_TYPE_8211);
 		break;
 	case EXT_GET_PORT_TYPE:
-		ret = hns3_ext_test_get_port_type(net_priv, out);
+		ret = hns3_get_port_type(net_priv, out);
 		break;
 	default:
 		ret = -EFAULT;

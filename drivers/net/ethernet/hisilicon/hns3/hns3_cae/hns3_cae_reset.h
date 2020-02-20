@@ -13,9 +13,10 @@ struct tx_timeout_param {
 	u16 tx_timeout_size;
 };
 
-int hns3_cae_nic_reset(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u32 in_size, void *buf_out, u32 out_size);
-int hns3_cae_nic_timeout_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_nic_reset(const struct hns3_nic_priv *net_priv,
+		       void *buf_in, u32 in_size, void *buf_out,
+		       u32 out_size);
+int hns3_cae_nic_timeout_cfg(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size);
 

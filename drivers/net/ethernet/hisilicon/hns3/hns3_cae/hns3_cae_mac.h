@@ -31,7 +31,7 @@ struct hns3_cae_cfg_serdes_mode_cmd {
 	u8 rsv[21];
 };
 
-int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_mac_loop_cfg(const struct hns3_nic_priv *net_priv,
 			  void *buf_in, u32 in_size,
 			  void *buf_out, u32 out_size);
 

@@ -59,8 +59,9 @@ static const char hns3_driver_name[] = "hns3";
 int g_hns3_cae_init_flag;
 int g_hns3_cae_ref_cnt;
 
-typedef int (*driv_module) (struct hns3_nic_priv *nic_dev, void *buf_in,
-			    u32 in_size, void *buf_out, u32 out_size);
+typedef int (*driv_module) (const struct hns3_nic_priv *nic_dev,
+			    void *buf_in, u32 in_size, void *buf_out,
+			    u32 out_size);
 
 struct drv_module_handle {
 	enum driver_cmd_type driv_cmd_name;
@@ -77,7 +78,7 @@ static void free_buff_in(void *buf_in)
 
 static int alloc_buff_in(struct msg_module *nt_msg, u32 in_size, void **buf_in)
 {
-	void *msg_buf;
+	void *msg_buf = NULL;
 
 	if (!in_size)
 		return 0;
@@ -469,7 +470,7 @@ static int if_hns3_cae_exist(void)
 static int hns3_cae_k_init(void)
 {
 	int ret;
-	struct device *pdevice;
+	struct device *pdevice = NULL;
 
 	if (g_hns3_cae_init_flag) {
 		g_hns3_cae_ref_cnt++;

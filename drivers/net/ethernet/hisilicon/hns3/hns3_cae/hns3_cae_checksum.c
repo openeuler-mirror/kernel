@@ -15,7 +15,7 @@
 
 static int hns3_cae_chs_set(struct hclge_dev *hdev, u8 chs_type, u8 enable)
 {
-	struct hns3_cae_chs_cmd_param *recv;
+	struct hns3_cae_chs_cmd_param *recv = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -58,7 +58,7 @@ static int hns3_cae_chs_set(struct hclge_dev *hdev, u8 chs_type, u8 enable)
 
 static int hns3_cae_chs_get(struct hclge_dev *hdev, u8 chs_type, u8 *enable)
 {
-	struct hns3_cae_chs_cmd_param *recv;
+	struct hns3_cae_chs_cmd_param *recv = NULL;
 	struct hclge_desc desc;
 	u8 inner_sctp_en;
 	u8 inner_tcp_en;
@@ -109,17 +109,17 @@ static int hns3_cae_chs_get(struct hclge_dev *hdev, u8 chs_type, u8 *enable)
 	return ret;
 }
 
-int hns3_cae_chs_cfg(struct hns3_nic_priv *net_priv, void *buf_in,
+int hns3_cae_chs_cfg(const struct hns3_nic_priv *net_priv, void *buf_in,
 		     u32 in_size, void *buf_out, u32 out_size)
 {
-	struct hns3_cae_chs_param *in_info;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
-	u8 *out_info;
-	bool check;
+	struct hns3_cae_chs_param *in_info =
+					    (struct hns3_cae_chs_param *)buf_in;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
+	u8 *out_info = NULL;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cae_chs_param);
 	u8 is_set;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_chs_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -127,7 +127,6 @@ int hns3_cae_chs_cfg(struct hns3_nic_priv *net_priv, void *buf_in,
 
 	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	in_info = (struct hns3_cae_chs_param *)buf_in;
 	out_info = (u8 *)buf_out;
 	is_set = in_info->is_set;
 

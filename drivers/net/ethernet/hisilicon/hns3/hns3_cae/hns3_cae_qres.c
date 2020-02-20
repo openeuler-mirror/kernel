@@ -3,10 +3,10 @@
 
 #include "hns3_cae_qres.h"
 
-int hns3_get_qres_rx_value(struct hns3_nic_priv *net_priv, int ring_id,
+int hns3_get_qres_rx_value(const struct hns3_nic_priv *net_priv, int ring_id,
 			   enum param_type type)
 {
-	struct hns3_enet_ring *ring;
+	struct hns3_enet_ring *ring = NULL;
 	int tqps_num;
 	int num;
 
@@ -51,10 +51,10 @@ int hns3_get_qres_rx_value(struct hns3_nic_priv *net_priv, int ring_id,
 	return num;
 }
 
-int hns3_get_qres_tx_value(struct hns3_nic_priv *net_priv, int ring_id,
+int hns3_get_qres_tx_value(const struct hns3_nic_priv *net_priv, int ring_id,
 			   enum param_type type)
 {
-	struct hns3_enet_ring *ring;
+	struct hns3_enet_ring *ring = NULL;
 	int num;
 
 	ring = &net_priv->ring[ring_id];
@@ -97,7 +97,7 @@ int hns3_get_qres_tx_value(struct hns3_nic_priv *net_priv, int ring_id,
 	return num;
 }
 
-void fill_queue_info(struct hns3_nic_priv *net_priv,
+void fill_queue_info(const struct hns3_nic_priv *net_priv,
 		     struct qres_param *out_info, int ring_id)
 {
 	/* rx info */
@@ -133,27 +133,26 @@ void fill_queue_info(struct hns3_nic_priv *net_priv,
 				   TX_SOFTWARE_TAIL_TYPE);
 }
 
-int hns3_cae_qres_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_qres_cfg(const struct hns3_nic_priv *net_priv,
+		      void *buf_in, u32 in_size, void *buf_out,
+		      u32 out_size)
 {
-	struct qres_bufin_param *qres_in_param;
-	struct hns3_enet_ring *ring;
-	struct qres_param *out_info;
+	struct qres_bufin_param *qres_in_param =
+					      (struct qres_bufin_param *)buf_in;
+	struct qres_param *out_info = (struct qres_param *)buf_out;
+	struct hns3_enet_ring *ring = NULL;
+	bool check = !buf_in || in_size < sizeof(struct qres_bufin_param) ||
+		     !buf_out || out_size < sizeof(struct qres_param);
 	int bd_index;
 	int tqps_num;
 	int ring_id;
-	bool check;
 
-	check = !buf_in || in_size < sizeof(struct qres_bufin_param) ||
-		!buf_out || out_size < sizeof(struct qres_param);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
 	tqps_num = net_priv->ae_handle->kinfo.num_tqps;
-	out_info = (struct qres_param *)buf_out;
-	qres_in_param = (struct qres_bufin_param *)buf_in;
 	ring_id = qres_in_param->queue_id;
 	bd_index = qres_in_param->BD_id;
 

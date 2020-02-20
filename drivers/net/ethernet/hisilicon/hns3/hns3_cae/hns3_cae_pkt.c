@@ -182,7 +182,7 @@ struct kthread_info {
 	int tid;
 	struct task_struct *task;
 	int stop;
-	struct hns3_nic_priv *net_priv;
+	const struct hns3_nic_priv *net_priv;
 	struct hns3_cae_pkt_cfg_info *in_info;
 	struct hns3_cae_pkt_result_info *out_info;
 };
@@ -332,7 +332,7 @@ void __fill_the_pkt_head(struct net_device *netdev, u8 *payload,
 			 struct hns3_cae_pkt_cfg_info *in_info)
 {
 	struct in_ifaddr *ifa_list = NULL;
-	u8 *pkt_payload;
+	u8 *pkt_payload = NULL;
 	u32 vlan_tag;
 	size_t count;
 	int i;
@@ -493,11 +493,11 @@ static int __hns3_cae_change_send_queue(int cur_queue,
 	return queue_id;
 }
 
-int __hns3_cae_send_pkt(struct hns3_nic_priv *net_priv,
+int __hns3_cae_send_pkt(const struct hns3_nic_priv *net_priv,
 			struct hns3_cae_pkt_cfg_info *in_info,
 			struct hns3_cae_pkt_result_info *out_info)
 {
-	struct hnae3_handle *handle;
+	struct hnae3_handle *handle = NULL;
 	struct sk_buff *skb = NULL;
 	u8 *payload = NULL;
 	int pkt_len;
@@ -626,7 +626,7 @@ int __hns3_cae_new_task(void *arg)
 }
 
 int hns3_cae_create_new_thread(int tid,
-			       struct hns3_nic_priv *net_priv,
+			       const struct hns3_nic_priv *net_priv,
 			       struct hns3_cae_pkt_cfg_info *in_info,
 			       struct hns3_cae_pkt_result_info *out_info)
 {
@@ -700,17 +700,17 @@ void hns3_cae_stop_new_thread(int tid)
 	mutex_unlock(&pkt_mutex[tid]);
 }
 
-int hns3_cae_send_pkt(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_send_pkt(const struct hns3_nic_priv *net_priv,
+		      void *buf_in, u32 in_size, void *buf_out,
+		      u32 out_size)
 {
-	struct hns3_cae_pkt_result_info *out_info;
-	struct hns3_cae_pkt_cfg_info *in_info;
+	struct hns3_cae_pkt_result_info *out_info =
+				     (struct hns3_cae_pkt_result_info *)buf_out;
+	struct hns3_cae_pkt_cfg_info *in_info =
+					 (struct hns3_cae_pkt_cfg_info *)buf_in;
 	struct hnae3_handle *handle = NULL;
 	int queue_id;
 	int tid;
-
-	in_info = (struct hns3_cae_pkt_cfg_info *)buf_in;
-	out_info = (struct hns3_cae_pkt_result_info *)buf_out;
 
 	if (!in_info || in_size < sizeof(struct hns3_cae_pkt_cfg_info) ||
 	    !out_info || out_size < sizeof(struct hns3_cae_pkt_result_info)) {

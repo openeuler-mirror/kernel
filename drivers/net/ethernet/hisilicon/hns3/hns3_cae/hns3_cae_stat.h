@@ -43,10 +43,10 @@ struct ring_stats_name {
 	u32 stats_namd_id;
 };
 
-int hns3_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
+int hns3_stat_mode_cfg(const struct hns3_nic_priv *nic_dev,
 		       void *buf_in, u32 in_size,
 		       void *buf_out, u32 out_size);
-int hns3_cae_clean_stats(struct hns3_nic_priv *net_priv,
+int hns3_cae_clean_stats(const struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size);
 #endif

@@ -19,7 +19,7 @@
 
 struct hns3_cae_dcb_info dcb_all_info[MAX_DEV_LISTED];
 
-static int check_and_set_curr_dev(struct hns3_nic_priv *net_priv)
+static int check_and_set_curr_dev(const struct hns3_nic_priv *net_priv)
 {
 	int i;
 
@@ -36,22 +36,22 @@ static int check_and_set_curr_dev(struct hns3_nic_priv *net_priv)
 	return i;
 }
 
-int hns3_cae_dcb_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_dcb_cfg(const struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out,
+		     u32 out_size)
 {
-	struct hns3_cae_dcb_cfg_param *out_info = NULL;
-	struct hns3_cae_dcb_cfg_param *in_info = NULL;
+	struct hns3_cae_dcb_cfg_param *out_info =
+				       (struct hns3_cae_dcb_cfg_param *)buf_out;
+	struct hns3_cae_dcb_cfg_param *in_info =
+					(struct hns3_cae_dcb_cfg_param *)buf_in;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cae_dcb_cfg_param);
 	int curr_dev_idx;
-	bool check;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_dcb_cfg_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
-	in_info = (struct hns3_cae_dcb_cfg_param *)buf_in;
-	out_info = (struct hns3_cae_dcb_cfg_param *)buf_out;
 	curr_dev_idx = check_and_set_curr_dev(net_priv);
 	if (curr_dev_idx < 0) {
 		pr_err("Exceed MAX_DEV_LISTED: %d\n", MAX_DEV_LISTED);
@@ -155,21 +155,22 @@ static int hns3_cae_cfg_pause_param(struct hclge_dev *hdev,
 	return 0;
 }
 
-int hns3_cae_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_dcb_pfc_cfg(const struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size)
 {
-	struct hns3_cae_pfc_cfg_param *out_info = NULL;
-	struct hns3_cae_pfc_cfg_param *in_info = NULL;
+	struct hns3_cae_pfc_cfg_param *out_info =
+				       (struct hns3_cae_pfc_cfg_param *)buf_out;
+	struct hns3_cae_pfc_cfg_param *in_info =
+					(struct hns3_cae_pfc_cfg_param *)buf_in;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cae_pfc_cfg_param);
 	struct hclge_vport *vport = NULL;
 	struct net_device *ndev = NULL;
 	struct hnae3_handle *h = NULL;
 	struct hclge_dev *hdev = NULL;
 	int curr_dev_idx;
-	bool check;
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_pfc_cfg_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -184,8 +185,6 @@ int hns3_cae_dcb_pfc_cfg(struct hns3_nic_priv *net_priv,
 	vport = hns3_cae_get_vport(h);
 	ndev = h->netdev;
 	hdev = vport->back;
-	in_info = (struct hns3_cae_pfc_cfg_param *)buf_in;
-	out_info = (struct hns3_cae_pfc_cfg_param *)buf_out;
 
 	if (!in_info->is_read &&
 	    !dcb_all_info[curr_dev_idx].dcb_cfg_info.dcb_en) {
@@ -311,25 +310,28 @@ static void hns3_cae_enable_ets_cfg(struct hclge_dev *hdev,
 	}
 }
 
-int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_dcb_ets_cfg(const struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size)
 {
 #define BYTELEN 4
-	struct hns3_cae_ets_cfg_param *out_info = NULL;
-	struct hns3_cae_ets_cfg_param *in_info = NULL;
+	struct hns3_cae_ets_cfg_param *out_info =
+				       (struct hns3_cae_ets_cfg_param *)buf_out;
+	struct hns3_cae_ets_cfg_param *in_info =
+					(struct hns3_cae_ets_cfg_param *)buf_in;
+	bool check = !buf_in ||
+		     in_size < sizeof(struct hns3_cae_ets_cfg_param) ||
+		     !buf_out ||
+		     out_size < sizeof(struct hns3_cae_ets_cfg_param);
 	struct hclge_vport *vport = NULL;
 	struct net_device *ndev = NULL;
 	struct hclge_dev *hdev = NULL;
 	struct hnae3_handle *h = NULL;
 	struct hclge_desc desc;
 	int curr_dev_idx;
-	bool check;
 	int ret;
 	int i;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_ets_cfg_param) ||
-		!buf_out || out_size < sizeof(struct hns3_cae_ets_cfg_param);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
@@ -344,8 +346,6 @@ int hns3_cae_dcb_ets_cfg(struct hns3_nic_priv *net_priv,
 	vport = hns3_cae_get_vport(h);
 	ndev = h->netdev;
 	hdev = vport->back;
-	in_info = (struct hns3_cae_ets_cfg_param *)buf_in;
-	out_info = (struct hns3_cae_ets_cfg_param *)buf_out;
 
 	if (!in_info->is_read &&
 	    !dcb_all_info[curr_dev_idx].dcb_cfg_info.dcb_en) {

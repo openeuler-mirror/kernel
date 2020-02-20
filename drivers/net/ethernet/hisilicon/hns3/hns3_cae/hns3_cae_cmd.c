@@ -166,8 +166,8 @@ void hns3_cae_cmd_setup_basic_desc(struct hclge_desc *desc,
  **/
 int hns3_cae_cmd_send(struct hclge_dev *hdev, struct hclge_desc *desc, int num)
 {
-	struct hclge_desc *desc_to_use;
-	struct hclge_cmq_ring *csq;
+	struct hclge_desc *desc_to_use = NULL;
+	struct hclge_cmq_ring *csq = NULL;
 	bool complete = false;
 	u32 timeout = 0;
 	int handle = 0;

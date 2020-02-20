@@ -51,9 +51,10 @@ struct dcqcn_statistic_param {
 #define HIARM_DCQCN_READ_CFG_MODE	30
 #define HIARM_DCQCN_WRITE_CFG_MODE	31
 
-int hns3_nic_dcqcn(struct hns3_nic_priv *net_priv,
-		   void *buf_in, u32 in_size, void *buf_out, u32 out_size);
-int hns3_dcqcn_get_msg_cnt(struct hns3_nic_priv *net_priv,
+int hns3_nic_dcqcn(const struct hns3_nic_priv *net_priv,
+		   void *buf_in, u32 in_size, void *buf_out,
+		   u32 out_size);
+int hns3_dcqcn_get_msg_cnt(const struct hns3_nic_priv *net_priv,
 			   void *buf_in, u32 in_size,
 			   void *buf_out, u32 out_size);
 #endif

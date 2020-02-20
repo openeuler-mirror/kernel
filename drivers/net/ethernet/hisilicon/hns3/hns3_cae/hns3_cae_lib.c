@@ -15,23 +15,27 @@
 #include "hns3_cae_cmd.h"
 #include "hns3_cae_lib.h"
 
-int hns3_cae_common_cmd_send(struct hns3_nic_priv *net_priv, void *buf_in,
-			     u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_common_cmd_send(const struct hns3_nic_priv *net_priv,
+			     void *buf_in, u32 in_size, void *buf_out,
+			     u32 out_size)
 {
 #define MAX_DESC_DATA_LEN       6
-	struct cmd_desc_param *param_in;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct cmd_desc_param *param_in = (struct cmd_desc_param *)buf_in;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
-	bool check;
+	bool check = !buf_in || in_size < sizeof(struct cmd_desc_param);
 	int ret;
 	int i;
 
-	check = !buf_in || in_size < sizeof(struct cmd_desc_param);
+	if (check) {
+		pr_err("input param buf_in error in %s function\n", __func__);
+		return -EFAULT;
+	}
+
 	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
-	param_in = (struct cmd_desc_param *)buf_in;
 	hns3_cae_cmd_setup_basic_desc(&desc, param_in->fw_dw_opcode,
 				      param_in->is_read);
 	for (i = 0; i < MAX_DESC_DATA_LEN; i++)
@@ -59,18 +63,17 @@ int hns3_cae_common_cmd_send(struct hns3_nic_priv *net_priv, void *buf_in,
 	return 0;
 }
 
-int hns3_m7_cmd_handle(struct hns3_nic_priv *nic_dev, void *buf_in, u32 in_size,
-		       void *buf_out, u32 out_size)
+int hns3_m7_cmd_handle(const struct hns3_nic_priv *nic_dev, void *buf_in,
+		       u32 in_size, void *buf_out, u32 out_size)
 {
 	struct hclge_vport *vport = hns3_cae_get_vport(nic_dev->ae_handle);
 	struct m7_cmd_para *cmd_para = (struct m7_cmd_para *)buf_in;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc *desc = NULL;
 	u32 bd_size;
-	bool check;
+	bool check = !buf_in || in_size < sizeof(struct m7_cmd_para);
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct m7_cmd_para);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;

@@ -8,19 +8,19 @@
 #include "hns3_cae_cmd.h"
 #include "hns3_cae_led.h"
 
-int hns3_led_cfg_ncl_info(struct hns3_nic_priv *net_priv, void *buf_in,
-			  u32 in_size, void *buf_out, u32 out_size)
+int hns3_led_cfg_ncl_info(const struct hns3_nic_priv *net_priv,
+			  void *buf_in, u32 in_size, void *buf_out,
+			  u32 out_size)
 {
 	struct hnae3_handle *handle = hns3_get_handle(net_priv->netdev);
 	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct led_statistic_param *parm_out = buf_out;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc = {0};
-	bool check;
+	bool check = !buf_out || out_size < sizeof(struct led_statistic_param);
 	int index;
 	int ret;
 
-	check = !buf_out || out_size < sizeof(struct led_statistic_param);
 	if (check) {
 		pr_err("input param buf_out error in %s function\n", __func__);
 		return -EFAULT;

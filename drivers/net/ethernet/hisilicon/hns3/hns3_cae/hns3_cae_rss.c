@@ -22,7 +22,7 @@
 static int hclge_set_rss_algo_key(struct hclge_dev *hdev,
 				  const u8 hfunc, const u8 *key)
 {
-	struct hclge_rss_config_cmd *req;
+	struct hclge_rss_config_cmd *req = NULL;
 	enum hclge_cmd_status status;
 	struct hclge_desc desc;
 	int key_offset;
@@ -54,31 +54,26 @@ static int hclge_set_rss_algo_key(struct hclge_dev *hdev,
 	return 0;
 }
 
-static int hns3_cae_set_rss_cfg(struct hns3_nic_priv *net_priv,
+static int hns3_cae_set_rss_cfg(const struct hns3_nic_priv *net_priv,
 				void *buf_in, u32 in_size,
 				void *buf_out, u32 out_size)
 {
-	struct hclge_rss_config_cmd *in_info;
+	struct hclge_rss_config_cmd *in_info =
+					  (struct hclge_rss_config_cmd *)buf_in;
+	bool check = !buf_in || in_size < sizeof(struct hclge_rss_config_cmd);
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
+	struct hclge_dev *hdev = vport->back;
+	u8 *key = vport->rss_hash_key;
 	enum hclge_cmd_status status;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
 	u8 hash_config;
-	bool check;
-	u8 *key;
 
-	vport = hns3_cae_get_vport(net_priv->ae_handle);
-	hdev = vport->back;
-	key = vport->rss_hash_key;
-
-	check = !buf_in || in_size < sizeof(struct hclge_rss_config_cmd);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
-	in_info = (struct hclge_rss_config_cmd *)buf_in;
 	hash_config =
-	    ((u8)(vport->rss_algo) & (HASH_ALG_MASK)) | in_info->hash_config;
+	       ((u8)(vport->rss_algo) & (HASH_ALG_MASK)) | in_info->hash_config;
 	status = hclge_set_rss_algo_key(hdev, hash_config, key);
 	if (status) {
 		dev_err(&hdev->pdev->dev,
@@ -90,26 +85,22 @@ static int hns3_cae_set_rss_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-static int hns3_cae_get_rss_cfg(struct hns3_nic_priv *net_priv,
+static int hns3_cae_get_rss_cfg(const struct hns3_nic_priv *net_priv,
 				void *buf_in, u32 in_size,
 				void *buf_out, u32 out_size)
 {
-	struct hclge_rss_config_cmd *req;
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
+	bool check = !buf_out || out_size < sizeof(u8);
+	struct hclge_rss_config_cmd *req = NULL;
+	struct hclge_dev *hdev = vport->back;
 	enum hclge_cmd_status status;
 	u8 *out_buf = (u8 *)buf_out;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
 	struct hclge_desc desc;
-	bool check;
 
-	check = !buf_out || out_size < sizeof(u8);
 	if (check) {
 		pr_err("input param buf_out error in %s function\n", __func__);
 		return -EFAULT;
 	}
-
-	vport = hns3_cae_get_vport(net_priv->ae_handle);
-	hdev = vport->back;
 
 	hns3_cae_cmd_setup_basic_desc(&desc,
 				      HCLGE_OPC_RSS_GENERIC_CONFIG, true);
@@ -125,14 +116,14 @@ static int hns3_cae_get_rss_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_rss_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_rss_cfg(const struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out,
+		     u32 out_size)
 {
-	struct rss_config *mode_param;
-	bool check;
+	bool check = !buf_in || in_size < sizeof(struct rss_config);
+	struct rss_config *mode_param = NULL;
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct rss_config);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
