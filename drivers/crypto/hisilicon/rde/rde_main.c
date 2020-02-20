@@ -250,7 +250,7 @@ static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 		return -EINVAL;
 
 	ret = kstrtou32(val, FORMAT_DECIMAL, &n);
-	if (ret != 0 || n > UACCE_MODE_NOIOMMU)
+	if (ret != 0 || (n != UACCE_MODE_NOIOMMU && n != UACCE_MODE_NOUACCE))
 		return -EINVAL;
 
 	return param_set_int(val, kp);
@@ -268,7 +268,7 @@ MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 0-4096, v2 0-1024)");
 
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
-MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
+MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
 
 static const struct pci_device_id hisi_rde_dev_ids[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, HRDE_PCI_DEVICE_ID)},
@@ -791,20 +791,9 @@ static int hisi_rde_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 
 	switch (uacce_mode) {
 	case UACCE_MODE_NOUACCE:
-		qm->use_dma_api = true;
 		qm->use_uacce = false;
 		break;
-	case UACCE_MODE_UACCE:
-#ifdef CONFIG_IOMMU_SVA
-		qm->use_dma_api = true;
-		qm->use_sva = true;
-#else
-		qm->use_dma_api = false;
-#endif
-		qm->use_uacce = true;
-		break;
 	case UACCE_MODE_NOIOMMU:
-		qm->use_dma_api = true;
 		qm->use_uacce = true;
 		break;
 	default:

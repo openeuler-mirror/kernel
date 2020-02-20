@@ -331,7 +331,7 @@ static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 		return -EINVAL;
 
 	ret = kstrtou32(val, FORMAT_DECIMAL, &n);
-	if (ret != 0 || n > UACCE_MODE_NOIOMMU)
+	if (ret != 0 || (n != UACCE_MODE_NOIOMMU && n != UACCE_MODE_NOUACCE))
 		return -EINVAL;
 
 	return param_set_int(val, kp);
@@ -348,7 +348,7 @@ MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 1-4096, v2 1-1024)");
 
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
-MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
+MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
 
 static const struct pci_device_id hisi_zip_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_ZIP_PF) },
@@ -580,7 +580,7 @@ static ssize_t hisi_zip_ctrl_debug_read(struct file *filp, char __user *buf,
 		return -EINVAL;
 	}
 	spin_unlock(&file->lock);
-	ret = sprintf(tbuf, "%u\n", val);
+	ret = snprintf(tbuf, HZIP_BUF_SIZE, "%u\n", val);
 	return simple_read_from_buffer(buf, count, pos, tbuf, ret);
 }
 
@@ -867,21 +867,9 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	switch (uacce_mode) {
 	case UACCE_MODE_NOUACCE:
-		qm->use_dma_api = true;
 		qm->use_uacce = false;
 		break;
-	case UACCE_MODE_UACCE:
-#ifdef CONFIG_IOMMU_SVA
-		qm->use_dma_api = true;
-		qm->use_sva = true;
-#else
-		qm->use_dma_api = false;
-		qm->use_sva = false;
-#endif
-		qm->use_uacce = true;
-		break;
 	case UACCE_MODE_NOIOMMU:
-		qm->use_dma_api = true;
 		qm->use_uacce = true;
 		break;
 	default:
@@ -930,10 +918,6 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ret)
 		dev_err(&pdev->dev, "Failed to init debugfs (%d)!\n", ret);
 
-#ifndef CONFIG_IOMMU_SVA
-	if (uacce_mode == UACCE_MODE_UACCE)
-		return 0;
-#endif
 	ret = hisi_zip_register_to_crypto();
 	if (ret < 0) {
 		pr_err("Failed to register driver to crypto.\n");
@@ -1111,13 +1095,7 @@ static void hisi_zip_remove(struct pci_dev *pdev)
 	if (qm->fun_type == QM_HW_PF && hisi_zip->ctrl->num_vfs != 0)
 		(void)hisi_zip_sriov_disable(pdev);
 
-#ifndef CONFIG_IOMMU_SVA
-	if (uacce_mode != UACCE_MODE_UACCE)
-		hisi_zip_unregister_from_crypto();
-#else
 	hisi_zip_unregister_from_crypto();
-#endif
-
 	hisi_zip_debugfs_exit(hisi_zip);
 	hisi_qm_stop(qm, QM_NORMAL);
 
