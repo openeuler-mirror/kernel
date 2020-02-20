@@ -307,15 +307,11 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 		 * cannot be overridden by the MAC specified by the VM.
 		 */
 		if (!is_zero_ether_addr(vport->vf_info.mac) &&
-		    !ether_addr_equal(mac_addr, vport->vf_info.mac)) {
-			status = -EPERM;
-			goto out;
-		}
+		    !ether_addr_equal(mac_addr, vport->vf_info.mac))
+			return -EPERM;
 
-		if (!is_valid_ether_addr(mac_addr)) {
-			status = -EINVAL;
-			goto out;
-		}
+		if (!is_valid_ether_addr(mac_addr))
+			return -EINVAL;
 
 		if (is_zero_ether_addr(old_addr)) {
 			status = hclge_add_uc_addr_common(vport, mac_addr);
@@ -342,8 +338,6 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 			mbx_req->msg.subcode);
 		return -EIO;
 	}
-
-out:
 	return status;
 }
 
