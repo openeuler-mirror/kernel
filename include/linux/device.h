@@ -1075,6 +1075,11 @@ struct device {
 	KABI_RESERVE(16)
 };
 
+struct rcu_device {
+	struct device dev;
+	struct rcu_head rcu_head;
+};
+
 static inline struct device *kobj_to_dev(struct kobject *kobj)
 {
 	return container_of(kobj, struct device, kobj);
