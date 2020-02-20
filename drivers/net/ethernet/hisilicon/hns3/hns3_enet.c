@@ -40,7 +40,6 @@
 	} while (0)
 
 static void hns3_clear_all_ring(struct hnae3_handle *h, bool force);
-static void hns3_remove_hw_addr(struct net_device *netdev);
 
 const char hns3_driver_name[] = "hns3";
 char hns3_driver_version[] = VERMAGIC_STRING;
@@ -4153,8 +4152,6 @@ static void hns3_client_uninit(struct hnae3_handle *handle, bool reset)
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
 	int ret;
 
-	hns3_remove_hw_addr(netdev);
-
 	if (netdev->reg_state != NETREG_UNINITIALIZED)
 		unregister_netdev(netdev);
 
@@ -4223,28 +4220,6 @@ static int hns3_client_setup_tc(struct hnae3_handle *handle, u8 tc)
 		return -ENODEV;
 
 	return hns3_nic_set_real_num_queue(ndev);
-}
-
-static void hns3_remove_hw_addr(struct net_device *netdev)
-{
-	struct netdev_hw_addr_list *list;
-	struct netdev_hw_addr *ha, *tmp;
-
-	hns3_nic_uc_unsync(netdev, netdev->dev_addr);
-
-	netif_addr_lock_bh(netdev);
-	/* go through and unsync uc_addr entries to the device */
-	list = &netdev->uc;
-	list_for_each_entry_safe(ha, tmp, &list->list, list)
-		hns3_nic_uc_unsync(netdev, ha->addr);
-
-	/* go through and unsync mc_addr entries to the device */
-	list = &netdev->mc;
-	list_for_each_entry_safe(ha, tmp, &list->list, list)
-		if (ha->refcount > 1)
-			hns3_nic_mc_unsync(netdev, ha->addr);
-
-	netif_addr_unlock_bh(netdev);
 }
 
 static void hns3_clear_tx_ring(struct hns3_enet_ring *ring)
