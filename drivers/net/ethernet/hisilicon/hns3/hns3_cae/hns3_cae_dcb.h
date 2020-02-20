@@ -57,6 +57,7 @@ struct hns3_cae_dcb_info {
 	struct hns3_cae_ets_cfg_param ets_cfg_info;
 };
 
+#ifdef CONFIG_HNS3_DCB
 int hns3_cae_dcb_cfg(const struct hns3_nic_priv *net_priv,
 		     void *buf_in, u32 in_size, void *buf_out,
 		     u32 out_size);
@@ -66,4 +67,28 @@ int hns3_cae_dcb_ets_cfg(const struct hns3_nic_priv *net_priv,
 int hns3_cae_dcb_pfc_cfg(const struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size);
+#else
+static inline int hns3_cae_dcb_cfg(const struct hns3_nic_priv *net_priv,
+				   void *buf_in, u32 in_size, void *buf_out,
+				   u32 out_size)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int hns3_cae_dcb_ets_cfg(const struct hns3_nic_priv *net_priv,
+				       void *buf_in, u32 in_size,
+				       void *buf_out, u32 out_size)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int hns3_cae_dcb_pfc_cfg(const struct hns3_nic_priv *net_priv,
+				       void *buf_in, u32 in_size,
+				       void *buf_out, u32 out_size)
+{
+	return -EOPNOTSUPP;
+}
+
+#endif
+
 #endif
