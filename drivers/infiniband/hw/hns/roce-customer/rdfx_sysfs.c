@@ -211,7 +211,7 @@ static int show_cqe(struct rdfx_cq_info *rdfx_cq, int cqe_index)
 	return 0;
 }
 
-static inline int rdfx_convert_str(char *str, u32 *val)
+static inline int rdfx_convert_str(const char *str, u32 *val)
 {
 	long long convert_val;
 
@@ -224,7 +224,7 @@ static inline int rdfx_convert_str(char *str, u32 *val)
 	return 0;
 }
 
-static inline int rdfx_show_qp_wqe(char *sq_rq, void *buf, u32 qpn,
+static inline int rdfx_show_qp_wqe(const char *sq_rq, void *buf, u32 qpn,
 				   struct rdfx_info *rdfx)
 {
 	struct rdfx_qp_info *rdfx_qp;
@@ -401,7 +401,7 @@ static inline int rdfx_show_cq_detail(u32 cqn, struct rdfx_info *rdfx)
 {
 	struct rdfx_cq_info *rdfx_cq = NULL;
 	struct hns_roce_dev *hr_dev;
-	struct hns_roce_cq *cq;
+	struct hns_roce_cq *cq = NULL;
 
 	hr_dev = (struct hns_roce_dev *)rdfx->priv;
 
@@ -414,7 +414,7 @@ static inline int rdfx_show_cq_detail(u32 cqn, struct rdfx_info *rdfx)
 		atomic_read(&rdfx->cq.top_cq_index));
 
 	cq = radix_tree_lookup(&hr_dev->cq_table.tree,
-			       cqn & (hr_dev->caps.num_cqs - 1));
+			       cqn & (u32)(hr_dev->caps.num_cqs - 1));
 	if (cq)
 		pr_info("arm_sn_cnt       : 0x%x\n", cq->arm_sn);
 
