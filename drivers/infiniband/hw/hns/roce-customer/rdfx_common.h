@@ -36,7 +36,7 @@ static struct rdfx_hw_sys_attr g_sysfs_roce_##file_name##_attr = {\
 
 #define HW_ATTRS_LIST_MEMBER(file_name)(&g_sysfs_roce_##file_name##_attr.attr)
 
-enum{
+enum {
 	RECV_RDMA_WITH_IMM,
 	RECV_SEND,
 	RECV_SEND_WITH_IMM,
