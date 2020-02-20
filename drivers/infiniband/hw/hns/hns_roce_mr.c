@@ -39,10 +39,6 @@
 #include "hns_roce_cmd.h"
 #include "hns_roce_hem.h"
 
-#ifdef CONFIG_INFINIBAND_HNS_TEST
-#include "hns_roce_test.h"
-#endif
-
 u32 hw_index_to_key(unsigned long ind)
 {
 	return (u32)(ind >> 24) | (ind << 8);
@@ -1012,10 +1008,6 @@ struct ib_mr *hns_roce_get_dma_mr(struct ib_pd *pd, int acc)
 			ret, to_hr_pd(pd)->pdn, acc);
 		goto err_free;
 	}
-
-#ifdef CONFIG_INFINIBAND_HNS_TEST
-	test_set_mr_access(mr);
-#endif
 
 	ret = hns_roce_mr_enable(to_hr_dev(pd->device), mr);
 	if (ret)

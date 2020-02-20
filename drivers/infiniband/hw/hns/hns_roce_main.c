@@ -1398,10 +1398,14 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 	int ret;
 	struct device *dev = hr_dev->dev;
 
-	alloc_rdfx_info(hr_dev);
-
+	ret = alloc_rdfx_info(hr_dev);
+	if (ret) {
+		dev_err(dev, "Alloc RoCE DFX failed(%d)!\n", ret);
+		return ret;
+	}
 	ret = hns_roce_reset(hr_dev);
 	if (ret) {
+		free_rdfx_info(hr_dev);
 		dev_err(dev, "Reset RoCE engine failed(%d)!\n", ret);
 		return ret;
 	}
@@ -1508,6 +1512,8 @@ error_failed_cmq_init:
 		if (hr_dev->hw->reset(hr_dev, false))
 			dev_err(dev, "Dereset RoCE engine failed!\n");
 	}
+
+	free_rdfx_info(hr_dev);
 
 	return ret;
 }

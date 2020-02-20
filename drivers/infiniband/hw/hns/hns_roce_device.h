@@ -1569,7 +1569,7 @@ enum {
 	RDFX_FUNC_REG_UMM_MR,
 	RDFX_FUNC_DEREG_UMM_MR,
 };
-void alloc_rdfx_info(struct hns_roce_dev *hr_dev);
+int alloc_rdfx_info(struct hns_roce_dev *hr_dev);
 void rdfx_set_dev_name(struct hns_roce_dev *hr_dev);
 void free_rdfx_info(struct hns_roce_dev *hr_dev);
 void rdfx_func_cnt(struct hns_roce_dev *hr_dev, int func);
@@ -1625,7 +1625,7 @@ void rdfx_cp_cqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 void rdfx_set_rdfx_cq_ci(struct hns_roce_dev *hr_dev,
 			 struct hns_roce_cq *hr_cq);
 #else
-#define alloc_rdfx_info(hr_dev)
+#define alloc_rdfx_info(hr_dev)		(0)
 #define rdfx_set_dev_name(hr_dev)
 #define free_rdfx_info(hr_dev)
 #define rdfx_func_cnt(hr_dev, func)
