@@ -10135,8 +10135,7 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 		reset_level = hclge_get_reset_level(ae_dev,
 						    &ae_dev->hw_err_reset_req);
 		hclge_set_def_reset_request(ae_dev, reset_level);
-		mod_timer(&hdev->reset_timer,
-			  jiffies + HCLGE_RESET_INTERVAL);
+		mod_timer(&hdev->reset_timer, jiffies + HCLGE_RESET_INTERVAL);
 	}
 
 	/* Enable MISC vector(vector0) */
