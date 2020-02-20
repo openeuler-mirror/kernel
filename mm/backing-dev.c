@@ -921,7 +921,7 @@ int bdi_register_va(struct backing_dev_info *bdi, const char *fmt, va_list args)
 	return 0;
 
 error:
-	kfree(rcu_dev);
+	put_device(&rcu_dev->dev);
 	return retval;
 }
 EXPORT_SYMBOL(bdi_register_va);
@@ -974,12 +974,12 @@ static void bdi_put_device_rcu(struct rcu_head *rcu)
 void bdi_unregister(struct backing_dev_info *bdi)
 {
 	/* make sure nobody finds us on the bdi_list anymore */
-	struct rcu_device *rcu_dev = bdi->rcu_dev;
 	bdi_remove_from_list(bdi);
 	wb_shutdown(&bdi->wb);
 	cgwb_bdi_unregister(bdi);
 
 	if (bdi->dev) {
+		struct rcu_device *rcu_dev = bdi->rcu_dev;
 		bdi_debug_unregister(bdi);
 		get_device(bdi->dev);
 		device_unregister(bdi->dev);
