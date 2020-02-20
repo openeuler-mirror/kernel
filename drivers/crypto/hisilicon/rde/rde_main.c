@@ -45,6 +45,7 @@
 #define HRDE_INT_MSK		0x310314
 #define HRDE_INT_ENABLE		0x0
 #define HRDE_INT_DISABLE	0x3ffff
+#define HRDE_BD_PREFETCH	BIT(8)
 #define HRDE_INT_SOURCE		0x31030c
 #define HRDE_INT_SOURCE_CLEAR	GENMASK(17, 0)
 #define HRDE_INT_STATUS		0x310318
@@ -57,7 +58,7 @@
 #define HRDE_FIFO_STAT_0	0x310200
 #define HRDE_DFX_STAT_7		0x310334
 #define HRDE_DFX_STAT_8		0x310338
-#define DFX_CTRL0		0x2
+#define DFX_CTRL0		0x3
 #define WRITE_CLEAR_VAL		GENMASK(31, 0)
 #define HRDE_AWCACHE		0x310154
 #define HRDE_ARCACHE		0x31015c
@@ -354,6 +355,95 @@ static inline void hisi_rde_remove_from_list(struct hisi_rde *hisi_rde)
 	mutex_unlock(&hisi_rde_list_lock);
 }
 
+static void hisi_rde_engine_init(struct hisi_rde *hisi_rde)
+{
+	writel(DFX_CTRL0, hisi_rde->qm.io_base + HRDE_DFX_CTRL_0);
+
+	/* usr domain */
+	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_AWUSER_BD_1);
+	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_BD_1);
+	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_AWUSER_DAT_1);
+	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_DAT_1);
+	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_SGL_1);
+	/* rde cache */
+	writel(AWCACHE, hisi_rde->qm.io_base + HRDE_AWCACHE);
+	writel(ARCACHE, hisi_rde->qm.io_base + HRDE_ARCACHE);
+
+	/* rde chn enable + outstangding config */
+	writel(CHN_CFG, hisi_rde->qm.io_base + HRDE_CFG);
+}
+
+static void hisi_rde_set_user_domain_and_cache(struct hisi_rde *hisi_rde)
+{
+	/* qm user domain */
+	writel(AXUSER_BASE, hisi_rde->qm.io_base + QM_ARUSER_M_CFG_1);
+	writel(ARUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
+	       QM_ARUSER_M_CFG_ENABLE);
+	writel(AXUSER_BASE, hisi_rde->qm.io_base + QM_AWUSER_M_CFG_1);
+	writel(AWUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
+	       QM_AWUSER_M_CFG_ENABLE);
+	writel(WUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
+	       QM_WUSER_M_CFG_ENABLE);
+
+	/* qm cache */
+	writel(AXI_M_CFG, hisi_rde->qm.io_base + QM_AXI_M_CFG);
+	writel(AXI_M_CFG_ENABLE, hisi_rde->qm.io_base + QM_AXI_M_CFG_ENABLE);
+
+	/* disable BME/PM/SRIOV FLR*/
+	writel(PEH_AXUSER_CFG, hisi_rde->qm.io_base + QM_PEH_AXUSER_CFG);
+	writel(PEH_AXUSER_CFG_ENABLE, hisi_rde->qm.io_base +
+	       QM_PEH_AXUSER_CFG_ENABLE);
+
+	writel(CACHE_CTL, hisi_rde->qm.io_base + QM_CACHE_CTL);
+
+	hisi_rde_engine_init(hisi_rde);
+}
+
+static void hisi_rde_debug_regs_clear(struct hisi_qm *qm)
+{
+	/* clear rde debug regs */
+	readl(qm->io_base + HRDE_ECC_ERR);
+	readl(qm->io_base + HRDE_ECC_ERR_CNT);
+	readl(qm->io_base + HRDE_OP_DONE_CNT);
+	readl(qm->io_base + HRDE_OP_ERR_CNT);
+	readl(qm->io_base + HRDE_OP_ABORT_CNT);
+	writel(WRITE_CLEAR_VAL, qm->io_base + HRDE_FIFO_STAT_0);
+	writel(WRITE_CLEAR_VAL, qm->io_base + HRDE_DFX_STAT_7);
+	writel(WRITE_CLEAR_VAL, qm->io_base + HRDE_DFX_STAT_8);
+
+	/* clear current_qm */
+	writel(0x0, qm->io_base + QM_DFX_MB_CNT_VF);
+	writel(0x0, qm->io_base + QM_DFX_DB_CNT_VF);
+
+	hisi_qm_debug_regs_clear(qm);
+}
+
+static void hisi_rde_hw_error_set_state(struct hisi_rde *hisi_rde, bool state)
+{
+	u32 ras_msk = (HRDE_RAS_CE_MSK | HRDE_RAS_NFE_MSK);
+	u32 val;
+
+	val = readl(hisi_rde->qm.io_base + HRDE_CFG);
+	if (state) {
+		writel(HRDE_INT_SOURCE_CLEAR,
+		       hisi_rde->qm.io_base + HRDE_INT_SOURCE);
+		writel(HRDE_RAS_ENABLE,
+		       hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
+		/* bd prefetch should bd masked to prevent misreport */
+		writel((HRDE_INT_ENABLE | HRDE_BD_PREFETCH),
+		       hisi_rde->qm.io_base + HRDE_INT_MSK);
+		/* make master ooo close, when m-bits error happens*/
+		val = val | HRDE_AXI_SHUTDOWN_EN;
+	} else {
+		writel(ras_msk, hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
+		writel(HRDE_INT_DISABLE, hisi_rde->qm.io_base + HRDE_INT_MSK);
+		/* make master ooo open, when m-bits error happens*/
+		val = val & HRDE_AXI_SHUTDOWN_DIS;
+	}
+
+	writel(val, hisi_rde->qm.io_base + HRDE_CFG);
+}
+
 static inline struct hisi_qm *file_to_qm(struct ctrl_debug_file *file)
 {
 	struct hisi_rde *hisi_rde = file->ctrl->hisi_rde;
@@ -409,8 +499,7 @@ static int current_bd_write(struct ctrl_debug_file *file, u32 val)
 		return -EINVAL;
 	}
 
-	tmp = HRDE_PROBE_DATA_EN | HRDE_PROBE_EN |
-	      (val << HRDE_STRB_CS_SHIFT);
+	tmp = HRDE_PROBE_DATA_EN | HRDE_PROBE_EN | (val << HRDE_STRB_CS_SHIFT);
 	writel(tmp, qm->io_base + HRDE_PROBE_ADDR);
 
 	return 0;
@@ -594,84 +683,10 @@ static void hisi_rde_debugfs_exit(struct hisi_rde *hisi_rde)
 	struct hisi_qm *qm = &hisi_rde->qm;
 
 	debugfs_remove_recursive(qm->debug.debug_root);
-}
-
-static void hisi_rde_engine_init(struct hisi_rde *hisi_rde)
-{
-	writel(DFX_CTRL0, hisi_rde->qm.io_base + HRDE_DFX_CTRL_0);
-	readl(hisi_rde->qm.io_base + HRDE_ECC_ERR);
-	readl(hisi_rde->qm.io_base + HRDE_ECC_ERR_CNT);
-	readl(hisi_rde->qm.io_base + HRDE_OP_DONE_CNT);
-	readl(hisi_rde->qm.io_base + HRDE_OP_ERR_CNT);
-	readl(hisi_rde->qm.io_base + HRDE_OP_ABORT_CNT);
-	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_FIFO_STAT_0);
-	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_DFX_STAT_7);
-	writel(WRITE_CLEAR_VAL, hisi_rde->qm.io_base + HRDE_DFX_STAT_8);
-
-	/* usr domain */
-	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_AWUSER_BD_1);
-	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_BD_1);
-	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_AWUSER_DAT_1);
-	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_DAT_1);
-	writel(HRDE_USER_SMMU, hisi_rde->qm.io_base + HRDE_ARUSER_SGL_1);
-	/* rde cache */
-	writel(AWCACHE, hisi_rde->qm.io_base + HRDE_AWCACHE);
-	writel(ARCACHE, hisi_rde->qm.io_base + HRDE_ARCACHE);
-
-	/* rde chn enable + outstangding config */
-	writel(CHN_CFG, hisi_rde->qm.io_base + HRDE_CFG);
-}
-
-static void hisi_rde_set_user_domain_and_cache(struct hisi_rde *hisi_rde)
-{
-	/* qm user domain */
-	writel(AXUSER_BASE, hisi_rde->qm.io_base + QM_ARUSER_M_CFG_1);
-	writel(ARUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
-	       QM_ARUSER_M_CFG_ENABLE);
-	writel(AXUSER_BASE, hisi_rde->qm.io_base + QM_AWUSER_M_CFG_1);
-	writel(AWUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
-	       QM_AWUSER_M_CFG_ENABLE);
-	writel(WUSER_M_CFG_ENABLE, hisi_rde->qm.io_base +
-	       QM_WUSER_M_CFG_ENABLE);
-
-	/* qm cache */
-	writel(AXI_M_CFG, hisi_rde->qm.io_base + QM_AXI_M_CFG);
-	writel(AXI_M_CFG_ENABLE, hisi_rde->qm.io_base + QM_AXI_M_CFG_ENABLE);
-
-	/* disable BME/PM/SRIOV FLR*/
-	writel(PEH_AXUSER_CFG, hisi_rde->qm.io_base + QM_PEH_AXUSER_CFG);
-	writel(PEH_AXUSER_CFG_ENABLE, hisi_rde->qm.io_base +
-	       QM_PEH_AXUSER_CFG_ENABLE);
-
-	writel(CACHE_CTL, hisi_rde->qm.io_base + QM_CACHE_CTL);
-
-	hisi_rde_engine_init(hisi_rde);
-}
-
-static void hisi_rde_hw_error_set_state(struct hisi_rde *hisi_rde, bool state)
-{
-	u32 ras_msk = (HRDE_RAS_CE_MSK | HRDE_RAS_NFE_MSK);
-	u32 val;
-
-	val = readl(hisi_rde->qm.io_base + HRDE_CFG);
-	if (state) {
-		writel(HRDE_INT_SOURCE_CLEAR,
-		       hisi_rde->qm.io_base + HRDE_INT_SOURCE);
-		writel(HRDE_RAS_ENABLE,
-		       hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
-		/* bd prefetch should bd masked to prevent misreport */
-		writel((HRDE_INT_ENABLE | BIT(8)),
-		       hisi_rde->qm.io_base + HRDE_INT_MSK);
-		/* make master ooo close, when m-bits error happens*/
-		val = val | HRDE_AXI_SHUTDOWN_EN;
-	} else {
-		writel(ras_msk, hisi_rde->qm.io_base + HRDE_RAS_INT_MSK);
-		writel(HRDE_INT_DISABLE, hisi_rde->qm.io_base + HRDE_INT_MSK);
-		/* make master ooo open, when m-bits error happens*/
-		val = val & HRDE_AXI_SHUTDOWN_DIS;
+	if (qm->fun_type == QM_HW_PF) {
+		hisi_rde_debug_regs_clear(qm);
+		qm->debug.curr_qm_qp_num = 0;
 	}
-
-	writel(val, hisi_rde->qm.io_base + HRDE_CFG);
 }
 
 static void hisi_rde_set_hw_error(struct hisi_rde *hisi_rde, bool state)
@@ -770,6 +785,7 @@ static int hisi_rde_pf_probe_init(struct hisi_rde *hisi_rde)
 	hisi_rde_set_user_domain_and_cache(hisi_rde);
 	hisi_rde_set_hw_error(hisi_rde, true);
 	qm->err_ini.open_axi_master_ooo(qm);
+	hisi_rde_debug_regs_clear(qm);
 
 	return 0;
 }
@@ -883,7 +899,6 @@ static void hisi_rde_remove(struct pci_dev *pdev)
 	struct hisi_qm *qm = &hisi_rde->qm;
 
 	qm->abnormal_fix = NULL;
-	qm->debug.curr_qm_qp_num = 0;
 	hisi_rde_hw_error_set_state(hisi_rde, false);
 	cancel_work_sync(&hisi_rde->reset_work);
 	hisi_rde_remove_from_list(hisi_rde);

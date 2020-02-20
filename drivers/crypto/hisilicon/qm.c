@@ -1195,7 +1195,9 @@ static struct hisi_qp *hisi_qm_create_qp_nolock(struct hisi_qm *qm,
 
 	qp_id = find_first_zero_bit(qm->qp_bitmap, qm->qp_num);
 	if (qp_id >= qm->qp_num) {
-		dev_info_ratelimited(&qm->pdev->dev, "QM all queues are busy!\n");
+		dev_info_ratelimited(&qm->pdev->dev,
+				     "All %u queues of QM are busy!\n",
+				     qm->qp_num);
 		ret = -EBUSY;
 		goto err_free_qp;
 	}

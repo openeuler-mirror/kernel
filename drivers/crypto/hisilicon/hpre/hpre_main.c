@@ -923,13 +923,17 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return ret;
 
 	ret = hisi_qm_init(qm);
-	if (ret)
+	if (ret) {
+		pci_err(pdev, "Failed to init qm (%d)!\n", ret);
 		return ret;
+	}
 
 	if (pdev->is_physfn) {
 		ret = hpre_pf_probe_init(hpre);
-		if (ret)
+		if (ret) {
+			pci_err(pdev, "Failed to init pf probe (%d)!\n", ret);
 			goto err_with_qm_init;
+		}
 	} else if (qm->fun_type == QM_HW_VF && qm->ver == QM_HW_V2) {
 		/* v2 starts to support get vft by mailbox */
 		ret = hisi_qm_get_vft(qm, &qm->qp_base, &qm->qp_num);
@@ -938,12 +942,14 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	ret = hisi_qm_start(qm);
-	if (ret)
+	if (ret) {
+		pci_err(pdev, "Failed to start qm (%d)!\n", ret);
 		goto err_with_err_init;
+	}
 
 	ret = hpre_debugfs_init(hpre);
 	if (ret)
-		dev_warn(&pdev->dev, "init debugfs fail!\n");
+		pci_warn(pdev, "init debugfs fail!\n");
 
 	hpre_add_to_list(hpre);
 
