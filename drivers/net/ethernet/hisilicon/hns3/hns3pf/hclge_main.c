@@ -6525,10 +6525,11 @@ static int hclge_config_switch_param(struct hclge_dev *hdev, int vfid, u8 value,
 }
 
 static void hclge_phy_link_status_wait(struct hclge_dev *hdev,
-				       struct phy_device *phydev, int link_ret)
+				       int link_ret)
 {
 #define HCLGE_PHY_LINK_STATUS_NUM  200
 
+	struct phy_device *phydev = hdev->hw.mac.phydev;
 	int i = 0;
 	int ret;
 
@@ -6571,13 +6572,12 @@ static int hclge_mac_phy_link_status_wait(struct hclge_dev *hdev, bool en,
 #define HCLGE_LINK_STATUS_DOWN 0
 #define HCLGE_LINK_STATUS_UP   1
 
-	struct phy_device *phydev = hdev->hw.mac.phydev;
 	int link_ret;
 
 	link_ret = en ? HCLGE_LINK_STATUS_UP : HCLGE_LINK_STATUS_DOWN;
 
 	if (is_phy)
-		hclge_phy_link_status_wait(hdev, phydev, link_ret);
+		hclge_phy_link_status_wait(hdev, link_ret);
 
 	return hclge_mac_link_status_wait(hdev, link_ret);
 }
