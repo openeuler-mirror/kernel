@@ -330,7 +330,7 @@ int hns3_cae_dcb_ets_cfg(const struct hns3_nic_priv *net_priv,
 	struct hclge_desc desc;
 	int curr_dev_idx;
 	int ret;
-	int i;
+	u32 i;
 
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);

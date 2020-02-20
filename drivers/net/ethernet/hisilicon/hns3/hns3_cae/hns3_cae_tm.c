@@ -509,9 +509,9 @@ static int hns3_cae_qs_set_new_map(int tc, u32 map,
 				   struct hns3_cae_qs_cfg_info *in_info)
 {
 	u32 bp_map = map;
+	u16 offset;
 	u16 qs_id;
 	int gp_id;
-	int offset;
 
 	qs_id = in_info->qs_id;
 	gp_id = qs_id / 32;
@@ -557,7 +557,7 @@ int hns3_cae_qs_cfg(const struct hns3_nic_priv *net_priv,
 	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
 	struct hclge_dev *hdev = vport->back;
 	int is_read;
-	int offset;
+	u16 offset;
 	u32 bp_map;
 	u16 qs_id;
 	int gp_id;

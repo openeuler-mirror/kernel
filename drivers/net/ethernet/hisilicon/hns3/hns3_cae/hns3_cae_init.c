@@ -147,7 +147,7 @@ static int copy_buf_out_to_user(struct msg_module *nt_msg, u32 out_size,
 
 static int hns3_cae_netdev_match_check(struct net_device *netdev)
 {
-	struct ethtool_drvinfo drv_info;
+	struct ethtool_drvinfo drv_info = {0};
 
 	if (netdev->ethtool_ops->get_drvinfo)
 		netdev->ethtool_ops->get_drvinfo(netdev, &drv_info);
