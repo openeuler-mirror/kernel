@@ -334,13 +334,13 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 #endif
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
-	struct hns_roce_ah *ah = to_hr_ah(ud_wr(wr)->ah);
 	struct hns_roce_v2_ud_send_wqe *ud_sq_wqe;
 	struct hns_roce_v2_rc_send_wqe *rc_sq_wqe;
 	struct hns_roce_qp *qp = to_hr_qp(ibqp);
 	struct hns_roce_v2_wqe_data_seg *dseg;
 	struct hns_roce_wqe_frmr_seg *fseg;
 	struct device *dev = hr_dev->dev;
+	struct hns_roce_ah *ah = NULL;
 	struct hns_roce_v2_db sq_db;
 	unsigned int sge_ind;
 	unsigned int owner_bit;
@@ -414,6 +414,7 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 
 		/* Corresponding to the QP type, wqe process separately */
 		if (ibqp->qp_type == IB_QPT_GSI || ibqp->qp_type == IB_QPT_UD) {
+			ah = to_hr_ah(ud_wr(wr)->ah);
 			ud_sq_wqe = wqe;
 			memset(ud_sq_wqe, 0, sizeof(*ud_sq_wqe));
 
