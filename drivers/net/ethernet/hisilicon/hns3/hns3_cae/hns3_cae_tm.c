@@ -455,27 +455,25 @@ static int hns3_cae_tm_operate_nic_regs(struct hclge_dev *hdev,
 	return 0;
 }
 
-int hns3_cae_queue_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_queue_cfg(const struct hns3_nic_priv *net_priv,
 		       void *buf_in, u32 in_size,
 		       void *buf_out, u32 out_size)
 {
-	struct hns3_cae_queue_cfg_info *out_info = NULL;
-	struct hns3_cae_queue_cfg_info *in_info = NULL;
-	struct hclge_vport *vport = NULL;
-	struct hclge_dev *hdev = NULL;
+	struct hns3_cae_queue_cfg_info *out_info =
+				      (struct hns3_cae_queue_cfg_info *)buf_out;
+	struct hns3_cae_queue_cfg_info *in_info =
+				       (struct hns3_cae_queue_cfg_info *)buf_in;
+	bool check = !buf_in ||
+		     in_size < sizeof(struct hns3_cae_queue_cfg_info);
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
+	struct hclge_dev *hdev = vport->back;
 	int is_read;
-	bool check;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_queue_cfg_info);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
-	vport = hns3_cae_get_vport(net_priv->ae_handle);
-	hdev = vport->back;
-	in_info = (struct hns3_cae_queue_cfg_info *)buf_in;
-	out_info = (struct hns3_cae_queue_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 
 	if (is_read) {
@@ -547,32 +545,30 @@ static int hns3_cae_qs_set_new_map(int tc, u32 map,
 	return 0;
 }
 
-int hns3_cae_qs_cfg(struct hns3_nic_priv *net_priv,
-		    void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_qs_cfg(const struct hns3_nic_priv *net_priv,
+		    void *buf_in, u32 in_size, void *buf_out,
+		    u32 out_size)
 {
-	struct hns3_cae_qs_cfg_info *out_info = NULL;
-	struct hns3_cae_qs_cfg_info *in_info = NULL;
-	struct hclge_vport *vport = NULL;
-	struct hclge_dev *hdev = NULL;
+	struct hns3_cae_qs_cfg_info *out_info =
+					 (struct hns3_cae_qs_cfg_info *)buf_out;
+	struct hns3_cae_qs_cfg_info *in_info =
+					  (struct hns3_cae_qs_cfg_info *)buf_in;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cae_qs_cfg_info);
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
+	struct hclge_dev *hdev = vport->back;
 	int is_read;
 	int offset;
 	u32 bp_map;
-	bool check;
 	u16 qs_id;
 	int gp_id;
 	int ret;
 	int tc;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_qs_cfg_info);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
-	vport = hns3_cae_get_vport(net_priv->ae_handle);
-	hdev = vport->back;
-	in_info = (struct hns3_cae_qs_cfg_info *)buf_in;
-	out_info = (struct hns3_cae_qs_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 	qs_id = in_info->qs_id;
 	gp_id = qs_id / 32;
@@ -694,29 +690,27 @@ static int hns3_cae_pri_pg_set_map(struct hclge_dev *hdev,
 	return 0;
 }
 
-int hns3_cae_pri_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_pri_cfg(const struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out,
+		     u32 out_size)
 {
-	struct hns3_cae_pri_cfg_info *out_info = NULL;
-	struct hns3_cae_pri_cfg_info *in_info = NULL;
-	struct hclge_vport *vport = NULL;
-	struct hclge_dev *hdev = NULL;
+	struct hns3_cae_pri_cfg_info *out_info =
+					(struct hns3_cae_pri_cfg_info *)buf_out;
+	struct hns3_cae_pri_cfg_info *in_info =
+					 (struct hns3_cae_pri_cfg_info *)buf_in;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cae_pri_cfg_info);
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
+	struct hclge_dev *hdev = vport->back;
 	int is_read;
 	u16 pri_id;
 	int cur_pg;
-	bool check;
 	u8 bitmap;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_pri_cfg_info);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
-	vport = hns3_cae_get_vport(net_priv->ae_handle);
-	hdev = vport->back;
-	in_info = (struct hns3_cae_pri_cfg_info *)buf_in;
-	out_info = (struct hns3_cae_pri_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 
 	pri_id = in_info->pri_id;
@@ -824,27 +818,24 @@ int hns3_cae_pri_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
-		    void *buf_out, u32 out_size)
+int hns3_cae_pg_cfg(const struct hns3_nic_priv *net_priv, void *buf_in,
+		    u32 in_size, void *buf_out, u32 out_size)
 {
-	struct hns3_cae_pg_cfg_info *out_info = NULL;
-	struct hns3_cae_pg_cfg_info *in_info = NULL;
-	struct hclge_vport *vport = NULL;
-	struct hclge_dev *hdev = NULL;
+	struct hns3_cae_pg_cfg_info *out_info =
+					 (struct hns3_cae_pg_cfg_info *)buf_out;
+	struct hns3_cae_pg_cfg_info *in_info =
+					  (struct hns3_cae_pg_cfg_info *)buf_in;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cae_pg_cfg_info);
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
+	struct hclge_dev *hdev = vport->back;
 	int is_read;
-	bool check;
 	u16 pg_id;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_pg_cfg_info);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
-	vport = hns3_cae_get_vport(net_priv->ae_handle);
-	hdev = vport->back;
-	in_info = (struct hns3_cae_pg_cfg_info *)buf_in;
-	out_info = (struct hns3_cae_pg_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 	pg_id = in_info->pg_id;
 
@@ -925,27 +916,25 @@ int hns3_cae_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
 	return 0;
 }
 
-int hns3_cae_port_cfg(struct hns3_nic_priv *net_priv,
-		      void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_port_cfg(const struct hns3_nic_priv *net_priv,
+		      void *buf_in, u32 in_size, void *buf_out,
+		      u32 out_size)
 {
-	struct hns3_cae_port_cfg_info *out_info = NULL;
-	struct hns3_cae_port_cfg_info *in_info = NULL;
-	struct hclge_vport *vport = NULL;
-	struct hclge_dev *hdev = NULL;
+	struct hns3_cae_port_cfg_info *out_info =
+				       (struct hns3_cae_port_cfg_info *)buf_out;
+	struct hns3_cae_port_cfg_info *in_info =
+					(struct hns3_cae_port_cfg_info *)buf_in;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cae_port_cfg_info);
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
+	struct hclge_dev *hdev = vport->back;
 	u16 port_id;
 	int is_read;
-	bool check;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_port_cfg_info);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
-	vport = hns3_cae_get_vport(net_priv->ae_handle);
-	hdev = vport->back;
-	in_info = (struct hns3_cae_port_cfg_info *)buf_in;
-	out_info = (struct hns3_cae_port_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 	port_id = in_info->port_id;
 
@@ -975,33 +964,33 @@ int hns3_cae_port_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_ets_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_ets_cfg(const struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out,
+		     u32 out_size)
 {
 #define HNS3_TM_ETS_PORT_SHAPING		0x10820850
-	struct hns3_cae_ets_cfg_info *out_info = NULL;
-	struct hns3_cae_ets_cfg_info *in_info = NULL;
-	struct hclge_vport *vport = NULL;
-	struct hclge_dev *hdev = NULL;
+	struct hns3_cae_ets_cfg_info *out_info =
+					(struct hns3_cae_ets_cfg_info *)buf_out;
+	struct hns3_cae_ets_cfg_info *in_info =
+					 (struct hns3_cae_ets_cfg_info *)buf_in;
+	bool check = !buf_in ||
+		     in_size < sizeof(struct hns3_cae_ets_cfg_info) ||
+		     !buf_out ||
+		     out_size < sizeof(struct hns3_cae_ets_cfg_info);
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
+	struct hclge_dev *hdev = vport->back;
 	u8 weight[MAX_TC_NUM];
 	int is_read;
-	bool check;
 	u16 tc_id;
 	u8 mac_id;
 	u64 value;
 	u64 addr;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_ets_cfg_info) ||
-		!buf_out || out_size < sizeof(struct hns3_cae_ets_cfg_info);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
-	vport = hns3_cae_get_vport(net_priv->ae_handle);
-	hdev = vport->back;
-	in_info = (struct hns3_cae_ets_cfg_info *)buf_in;
-	out_info = (struct hns3_cae_ets_cfg_info *)buf_out;
 	is_read = in_info->is_read;
 	tc_id = in_info->tc_id;
 	mac_id = in_info->mac_id;

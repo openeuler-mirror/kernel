@@ -4,7 +4,7 @@
 #ifndef __HNS3_CAE_VERSION_H__
 #define __HNS3_CAE_VERSION_H__
 
-#define HNS3_CAE_MOD_VERSION "1.9.30.0"
+#define HNS3_CAE_MOD_VERSION "1.9.32.0"
 
 #define CMT_ID_LEN 8
 #define RESV_LEN 3
@@ -24,9 +24,10 @@ struct hns3_cae_firmware_ver_param {
 	u32 ncl_version;
 };
 
-int hns3_cae_get_fw_ver(struct hns3_nic_priv *nic_dev, void *buf_in,
+int hns3_cae_get_fw_ver(const struct hns3_nic_priv *nic_dev, void *buf_in,
 			u32 in_size, void *buf_out, u32 out_size);
-int hns3_cae_get_driver_ver(struct hns3_nic_priv *nic_dev, void *buf_in,
-			    u32 in_size, void *buf_out, u32 out_size);
+int hns3_cae_get_driver_ver(const struct hns3_nic_priv *nic_dev,
+			    void *buf_in, u32 in_size, void *buf_out,
+			    u32 out_size);
 
 #endif

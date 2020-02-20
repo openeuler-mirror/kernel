@@ -80,24 +80,24 @@ static int hns3_cae_get_chip_and_mac_id(struct hnae3_handle *handle,
 	return 0;
 }
 
-int hns3_cae_get_dfx_info(struct hns3_nic_priv *net_priv,
+int hns3_cae_get_dfx_info(const struct hns3_nic_priv *net_priv,
 			  void *buf_in, u32 in_size,
 			  void *buf_out, u32 out_size)
 {
 #define HNS3_CAE_MAC_MODE_ADDR		0x10000000U
 #define HNS3_CAE_MAC_MAP_ADDR		0x10000008U
-	struct hns3_cae_dfx_param *out_info = NULL;
+	struct hns3_cae_dfx_param *out_info =
+					   (struct hns3_cae_dfx_param *)buf_out;
 	struct hns3_cae_reg_param reg_info;
 	struct hnae3_handle *handle = NULL;
 	struct hclge_vport *vport = NULL;
 	struct hclge_dev *hdev = NULL;
 	u32 chip_id;
 	u32 mac_id;
-	bool check;
+	bool check = !buf_out || out_size < sizeof(struct hns3_cae_dfx_param);
 	int ret;
 	int i;
 
-	check = !buf_out || out_size < sizeof(struct hns3_cae_dfx_param);
 	if (check) {
 		pr_err("input param buf_out error in %s function\n", __func__);
 		return -EFAULT;
@@ -106,7 +106,6 @@ int hns3_cae_get_dfx_info(struct hns3_nic_priv *net_priv,
 	handle = net_priv->ae_handle;
 	vport = hns3_cae_get_vport(handle);
 	hdev = vport->back;
-	out_info = (struct hns3_cae_dfx_param *)buf_out;
 
 	ret = hns3_cae_get_chip_and_mac_id(handle, &chip_id, &mac_id);
 	if (ret)
@@ -139,18 +138,19 @@ int hns3_cae_get_dfx_info(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_read_dfx_info(struct hns3_nic_priv *net_priv,
+int hns3_cae_read_dfx_info(const struct hns3_nic_priv *net_priv,
 			   void *buf_in, u32 in_size,
 			   void *buf_out, u32 out_size)
 {
-	struct hns3_cae_reg_param *out_info = NULL;
-	struct hns3_cae_reg_param *in_info = NULL;
+	struct hns3_cae_reg_param *out_info =
+					   (struct hns3_cae_reg_param *)buf_out;
+	struct hns3_cae_reg_param *in_info =
+					    (struct hns3_cae_reg_param *)buf_in;
 	struct hclge_vport *vport = NULL;
 	struct hclge_dev *hdev = NULL;
-	bool check;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cae_reg_param);
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_reg_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -158,9 +158,6 @@ int hns3_cae_read_dfx_info(struct hns3_nic_priv *net_priv,
 
 	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-
-	in_info = (struct hns3_cae_reg_param *)buf_in;
-	out_info = (struct hns3_cae_reg_param *)buf_out;
 
 	if (in_info->is_read) {
 		check = !buf_out ||
@@ -186,18 +183,18 @@ int hns3_cae_read_dfx_info(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_event_injection(struct hns3_nic_priv *net_priv,
+int hns3_cae_event_injection(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size)
 {
-	struct hns3_cae_event_param *in_info = NULL;
+	struct hns3_cae_event_param *in_info =
+					  (struct hns3_cae_event_param *)buf_in;
 	struct hns3_cae_reg_param reg_info;
 	struct hclge_vport *vport = NULL;
 	struct hclge_dev *hdev = NULL;
-	bool check;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cae_event_param);
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_event_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -206,7 +203,6 @@ int hns3_cae_event_injection(struct hns3_nic_priv *net_priv,
 	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 
-	in_info = (struct hns3_cae_event_param *)buf_in;
 	reg_info.addr = in_info->addr;
 	reg_info.bit_width = 32;
 	reg_info.is_read = false;

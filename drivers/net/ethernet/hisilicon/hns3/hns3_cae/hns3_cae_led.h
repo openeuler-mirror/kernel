@@ -10,6 +10,7 @@ struct led_statistic_param {
 	u32 data[6];
 };
 
-int hns3_led_cfg_ncl_info(struct hns3_nic_priv *net_priv, void *buf_in,
-			  u32 in_size, void *buf_out, u32 out_size);
+int hns3_led_cfg_ncl_info(const struct hns3_nic_priv *net_priv,
+			  void *buf_in, u32 in_size, void *buf_out,
+			  u32 out_size);
 #endif

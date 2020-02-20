@@ -18,13 +18,13 @@
 #include "hns3_cae_cmd.h"
 #include "hns3_cae_common.h"
 
-static int hns3_cae_write_reg_cfg(struct hns3_nic_priv *net_priv,
+static int hns3_cae_write_reg_cfg(const struct hns3_nic_priv *net_priv,
 				  void *buf_in, u32 in_size,
 				  void *buf_out, u32 out_size)
 {
 	struct reg_param *in_buf = (struct reg_param *)buf_in;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -52,7 +52,7 @@ static int hns3_cae_write_reg_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-static int hns3_cae_read_reg_cfg(struct hns3_nic_priv *net_priv,
+static int hns3_cae_read_reg_cfg(const struct hns3_nic_priv *net_priv,
 				 void *buf_in, u32 in_size,
 				 void *buf_out, u32 out_size)
 {
@@ -61,10 +61,9 @@ static int hns3_cae_read_reg_cfg(struct hns3_nic_priv *net_priv,
 	struct reg_param *in_buf = (struct reg_param *)buf_in;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;
-	bool check;
+	bool check = !buf_out || out_size < sizeof(struct reg_param);
 	int ret;
 
-	check = !buf_out || out_size < sizeof(struct reg_param);
 	if (check) {
 		pr_err("input param buf_out error in %s function\n", __func__);
 		return -EFAULT;
@@ -92,14 +91,14 @@ static int hns3_cae_read_reg_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_reg_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_reg_cfg(const struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out,
+		     u32 out_size)
 {
+	bool check = !buf_in || in_size < sizeof(struct reg_param);
 	struct reg_param *mode_param = (struct reg_param *)buf_in;
-	bool check;
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct reg_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;

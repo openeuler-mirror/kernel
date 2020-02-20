@@ -31,7 +31,8 @@ struct hclge_fd_tcam_data {
 	u8 tcam_data[52];
 };
 
-int hns3_cae_fd_cfg(struct hns3_nic_priv *net_priv,
-		    void *buf_in, u32 in_size, void *buf_out, u32 out_size);
+int hns3_cae_fd_cfg(const struct hns3_nic_priv *net_priv,
+		    void *buf_in, u32 in_size, void *buf_out,
+		    u32 out_size);
 
 #endif

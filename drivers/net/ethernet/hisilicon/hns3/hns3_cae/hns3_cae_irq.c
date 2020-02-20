@@ -20,24 +20,24 @@ struct hns3_irq_lli_param {
 	u16 tqp_nums;
 };
 
-int hns3_irq_lli_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_irq_lli_cfg(const struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out,
+		     u32 out_size)
 {
-	struct hns3_irq_lli_param *in_info = NULL;
-	struct hns3_irq_lli_param *out_info = NULL;
+	struct hns3_irq_lli_param *in_info =
+					    (struct hns3_irq_lli_param *)buf_in;
+	struct hns3_irq_lli_param *out_info =
+					   (struct hns3_irq_lli_param *)buf_out;
 	struct hnae3_handle *handle = NULL;
 	int is_get;
-	bool check;
+	bool check = !buf_in || in_size < sizeof(struct hns3_irq_lli_param);
 
-	check = !buf_in || in_size < sizeof(struct hns3_irq_lli_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
 	handle = net_priv->ae_handle;
-	in_info = (struct hns3_irq_lli_param *)buf_in;
-	out_info = (struct hns3_irq_lli_param *)buf_out;
 	is_get = in_info->is_get;
 
 	if (is_get) {

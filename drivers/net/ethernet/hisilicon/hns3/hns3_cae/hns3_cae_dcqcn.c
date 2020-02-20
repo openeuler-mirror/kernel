@@ -13,12 +13,12 @@
 #include "hns3_cae_cmd.h"
 #include "hns3_cae_dcqcn.h"
 
-static int hns3_dcqcn_rw(struct hns3_nic_priv *net_priv,
+static int hns3_dcqcn_rw(const struct hns3_nic_priv *net_priv,
 			 u32 offset, u32 *data, u32 rw_type)
 {
 	struct hnae3_handle *h = net_priv->ae_handle;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -55,7 +55,7 @@ static int hns3_dcqcn_rw(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_nic_dcqcn(struct hns3_nic_priv *net_priv,
+int hns3_nic_dcqcn(const struct hns3_nic_priv *net_priv,
 		   void *buf_in, u32 in_size, void *buf_out, u32 out_size)
 {
 #define SCC_TEMP_CFG0 0x6000
@@ -64,16 +64,15 @@ int hns3_nic_dcqcn(struct hns3_nic_priv *net_priv,
 #define SCC_TEMP_CFG3 0x600c
 	struct hnae3_handle *h = net_priv->ae_handle;
 	struct hclge_vport *vport = container_of(h, struct hclge_vport, nic);
+	bool check = !buf_in || in_size < sizeof(struct cfg_dcqcn_param);
 	struct cfg_dcqcn_param *parm_out = buf_out;
 	struct cfg_dcqcn_param *parm_in = buf_in;
 	struct cfg_dcqcn_param tempbuffer = {0};
 	struct hclge_dev *hdev = vport->back;
 	u32 tempoutbuff;
 	u32 offset;
-	bool check;
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct cfg_dcqcn_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -226,7 +225,7 @@ int hns3_nic_dcqcn(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_dcqcn_get_msg_cnt(struct hns3_nic_priv *net_priv,
+int hns3_dcqcn_get_msg_cnt(const struct hns3_nic_priv *net_priv,
 			   void *buf_in, u32 in_size,
 			   void *buf_out, u32 out_size)
 {
@@ -235,10 +234,10 @@ int hns3_dcqcn_get_msg_cnt(struct hns3_nic_priv *net_priv,
 	struct dcqcn_statistic_param *statistic_parm_out = buf_out;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;
-	bool check;
+	bool check = !buf_out ||
+		     out_size < sizeof(struct dcqcn_statistic_param);
 	int ret;
 
-	check = !buf_out || out_size < sizeof(struct dcqcn_statistic_param);
 	if (check) {
 		pr_err("input param buf_out error in %s function\n", __func__);
 		return -EFAULT;

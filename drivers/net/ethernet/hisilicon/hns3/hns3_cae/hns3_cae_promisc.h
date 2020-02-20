@@ -26,7 +26,7 @@ struct promisc_mode_param {
 	u8 type;
 };
 
-int hns3_promisc_mode_cfg(struct hns3_nic_priv *nic_dev,
+int hns3_promisc_mode_cfg(const struct hns3_nic_priv *nic_dev,
 			  void *buf_in, u32 in_size,
 			  void *buf_out, u32 out_size);
 #endif

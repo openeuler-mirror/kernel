@@ -3,9 +3,9 @@
 
 #include "hns3_cae_qinfo.h"
 
-int hns3_get_q_rx_fbd(struct hns3_nic_priv *net_priv, int ring_id)
+int hns3_get_q_rx_fbd(const struct hns3_nic_priv *net_priv, int ring_id)
 {
-	struct hns3_enet_ring *ring;
+	struct hns3_enet_ring *ring = NULL;
 	int num;
 	int tqps_num;
 
@@ -16,9 +16,9 @@ int hns3_get_q_rx_fbd(struct hns3_nic_priv *net_priv, int ring_id)
 	return num;
 }
 
-int hns3_get_q_rx_ebd(struct hns3_nic_priv *net_priv, int ring_id)
+int hns3_get_q_rx_ebd(const struct hns3_nic_priv *net_priv, int ring_id)
 {
-	struct hns3_enet_ring *ring;
+	struct hns3_enet_ring *ring = NULL;
 	int num;
 	int tqps_num;
 
@@ -29,9 +29,9 @@ int hns3_get_q_rx_ebd(struct hns3_nic_priv *net_priv, int ring_id)
 	return num;
 }
 
-int hns3_get_q_tx_fbd(struct hns3_nic_priv *net_priv, int ring_id)
+int hns3_get_q_tx_fbd(const struct hns3_nic_priv *net_priv, int ring_id)
 {
-	struct hns3_enet_ring *ring;
+	struct hns3_enet_ring *ring = NULL;
 	int num;
 
 	ring = &net_priv->ring[ring_id];
@@ -40,9 +40,9 @@ int hns3_get_q_tx_fbd(struct hns3_nic_priv *net_priv, int ring_id)
 	return num;
 }
 
-int hns3_get_q_tx_ebd(struct hns3_nic_priv *net_priv, int ring_id)
+int hns3_get_q_tx_ebd(const struct hns3_nic_priv *net_priv, int ring_id)
 {
-	struct hns3_enet_ring *ring;
+	struct hns3_enet_ring *ring = NULL;
 	int num;
 
 	ring = &net_priv->ring[ring_id];
@@ -51,9 +51,9 @@ int hns3_get_q_tx_ebd(struct hns3_nic_priv *net_priv, int ring_id)
 	return num;
 }
 
-int hns3_get_q_rx_tail(struct hns3_nic_priv *net_priv, int ring_id)
+int hns3_get_q_rx_tail(const struct hns3_nic_priv *net_priv, int ring_id)
 {
-	struct hns3_enet_ring *ring;
+	struct hns3_enet_ring *ring = NULL;
 	int num;
 	int tqps_num;
 
@@ -64,9 +64,9 @@ int hns3_get_q_rx_tail(struct hns3_nic_priv *net_priv, int ring_id)
 	return num;
 }
 
-int hns3_get_q_rx_head(struct hns3_nic_priv *net_priv, int ring_id)
+int hns3_get_q_rx_head(const struct hns3_nic_priv *net_priv, int ring_id)
 {
-	struct hns3_enet_ring *ring;
+	struct hns3_enet_ring *ring = NULL;
 	int num;
 	int tqps_num;
 
@@ -77,9 +77,9 @@ int hns3_get_q_rx_head(struct hns3_nic_priv *net_priv, int ring_id)
 	return num;
 }
 
-int hns3_get_q_tx_tail(struct hns3_nic_priv *net_priv, int ring_id)
+int hns3_get_q_tx_tail(const struct hns3_nic_priv *net_priv, int ring_id)
 {
-	struct hns3_enet_ring *ring;
+	struct hns3_enet_ring *ring = NULL;
 	int num;
 
 	ring = &net_priv->ring[ring_id];
@@ -88,9 +88,9 @@ int hns3_get_q_tx_tail(struct hns3_nic_priv *net_priv, int ring_id)
 	return num;
 }
 
-int hns3_get_q_tx_head(struct hns3_nic_priv *net_priv, int ring_id)
+int hns3_get_q_tx_head(const struct hns3_nic_priv *net_priv, int ring_id)
 {
-	struct hns3_enet_ring *ring;
+	struct hns3_enet_ring *ring = NULL;
 	int num;
 
 	ring = &net_priv->ring[ring_id];
@@ -99,11 +99,13 @@ int hns3_get_q_tx_head(struct hns3_nic_priv *net_priv, int ring_id)
 	return num;
 }
 
-int hns3_cae_qinfo_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_qinfo_cfg(const struct hns3_nic_priv *net_priv,
 		       void *buf_in, u32 in_size,
 		       void *buf_out, u32 out_size)
 {
-	struct qinfo_param *out_info;
+	struct qinfo_param *out_info = (struct qinfo_param *)buf_out;
+	bool check = !buf_in || in_size < sizeof(int) || !buf_out ||
+		     out_size < sizeof(struct qinfo_param);
 	int tqps_num;
 	int ring_id;
 	int rx_head;
@@ -114,17 +116,13 @@ int hns3_cae_qinfo_cfg(struct hns3_nic_priv *net_priv,
 	int tx_tail;
 	int tx_ebd;
 	int tx_fbd;
-	bool check;
 
-	check = !buf_in || in_size < sizeof(int) ||
-		!buf_out || out_size < sizeof(struct qinfo_param);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
 	}
 
 	tqps_num = net_priv->ae_handle->kinfo.num_tqps;
-	out_info = (struct qinfo_param *)buf_out;
 	ring_id = *((int *)buf_in);
 
 	if (ring_id >= tqps_num || ring_id < 0) {

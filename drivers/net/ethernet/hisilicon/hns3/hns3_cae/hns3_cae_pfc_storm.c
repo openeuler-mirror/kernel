@@ -6,18 +6,18 @@
 #include "hns3_cae_pfc_storm.h"
 #include "hns3_enet.h"
 
-static int hns3_cae_set_pfc_storm_cfg(struct hns3_nic_priv *net_priv,
+static int hns3_cae_set_pfc_storm_cfg(const struct hns3_nic_priv *net_priv,
 				      void *buf_in, u32 in_size)
 {
-	struct cmd_pfc_storm_param *prelude_in;
-	struct net_device *netdev;
-	struct hclge_vport *vport;
-	struct hnae3_handle *h;
-	struct hclge_dev *hdev;
+	struct cmd_pfc_storm_param *prelude_in =
+					   (struct cmd_pfc_storm_param *)buf_in;
+	struct net_device *netdev = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hnae3_handle *h = NULL;
+	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
 	int ret;
 
-	prelude_in = (struct cmd_pfc_storm_param *)buf_in;
 	netdev = net_priv->netdev;
 	h = hns3_get_handle(netdev);
 	vport = hns3_cae_get_vport(h);
@@ -41,16 +41,18 @@ static int hns3_cae_set_pfc_storm_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-static int hns3_cae_get_pfc_storm_cfg(struct hns3_nic_priv *net_priv,
-				      void *buf_in, u32 in_size, void *buf_out,
-				      u32 out_size)
+static int hns3_cae_get_pfc_storm_cfg(const struct hns3_nic_priv *net_priv,
+				      void *buf_in, u32 in_size,
+				      void *buf_out, u32 out_size)
 {
-	struct cmd_pfc_storm_param *prelude_in;
-	struct cmd_pfc_storm_param *info_dstn;
-	struct net_device *netdev;
-	struct hclge_vport *vport;
-	struct hnae3_handle *h;
-	struct hclge_dev *hdev;
+	struct cmd_pfc_storm_param *prelude_in =
+					   (struct cmd_pfc_storm_param *)buf_in;
+	struct cmd_pfc_storm_param *info_dstn =
+					  (struct cmd_pfc_storm_param *)buf_out;
+	struct net_device *netdev = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hnae3_handle *h = NULL;
+	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
 	int check;
 	int ret;
@@ -61,8 +63,6 @@ static int hns3_cae_get_pfc_storm_cfg(struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	prelude_in = (struct cmd_pfc_storm_param *)buf_in;
-	info_dstn = (struct cmd_pfc_storm_param *)buf_out;
 	netdev = net_priv->netdev;
 	h = hns3_get_handle(netdev);
 	vport = hns3_cae_get_vport(h);
@@ -89,10 +89,12 @@ static int hns3_cae_get_pfc_storm_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_pfc_storm_cfg(struct hns3_nic_priv *net_priv, void *buf_in,
-			   u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_pfc_storm_cfg(const struct hns3_nic_priv *net_priv,
+			   void *buf_in, u32 in_size, void *buf_out,
+			   u32 out_size)
 {
-	struct cmd_pfc_storm_param *para_in;
+	struct cmd_pfc_storm_param *para_in =
+					   (struct cmd_pfc_storm_param *)buf_in;
 	int check;
 	int ret;
 
@@ -102,7 +104,6 @@ int hns3_cae_pfc_storm_cfg(struct hns3_nic_priv *net_priv, void *buf_in,
 		return -EFAULT;
 	}
 
-	para_in = (struct cmd_pfc_storm_param *)buf_in;
 	if (para_in->op_code == SET_PFC_STORM_PARA) {
 		ret = hns3_cae_set_pfc_storm_cfg(net_priv, buf_in, in_size);
 	} else if (para_in->op_code == GET_PFC_STORM_PARA) {

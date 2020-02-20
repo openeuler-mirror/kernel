@@ -18,7 +18,7 @@ static int hns3_get_sfp_present(struct hnae3_handle *handle, u32 *present)
 {
 	struct hclge_vport *vport = hns3_cae_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
-	struct hclge_sfp_present_cmd *resp;
+	struct hclge_sfp_present_cmd *resp = NULL;
 	struct hclge_desc desc;
 	int ret;
 
@@ -42,7 +42,7 @@ static int _hns3_get_sfpinfo(struct hnae3_handle *handle, u8 *buff,
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_sfp_info *resp = NULL;
 	u32 data_length;
-	u8 *temp_data;
+	u8 *temp_data = NULL;
 	u32 temp_len;
 	int ret;
 	u32 i;
@@ -98,7 +98,7 @@ static int hns3_get_sfpinfo(struct hnae3_handle *handle, u8 *buff, u16 offset,
 			    u16 size, u16 *outlen)
 {
 	u16 tmp_size;
-	u8 *tmp_buff;
+	u8 *tmp_buff = NULL;
 	u16 tmp_outlen;
 	int ret;
 
@@ -144,25 +144,19 @@ int hns3_set_sfp_state(struct hnae3_handle *handle, bool en)
 	return ret;
 }
 
-int hns3_xsfp_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
-		  void *buf_out, u32 out_size)
+int hns3_xsfp_cfg(const struct hns3_nic_priv *net_priv, void *buf_in,
+		  u32 in_size, void *buf_out, u32 out_size)
 {
-	struct hns3_xsfp_info *xsfp_info_out;
-	struct hnae3_handle *handle;
-	struct hns3_cfg_xsfp *param;
+	struct hns3_xsfp_info *xsfp_info_out = (struct hns3_xsfp_info *)buf_out;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cfg_xsfp) ||
+		     !buf_out || out_size < sizeof(struct hns3_xsfp_info);
+	struct hnae3_handle *handle = hns3_get_handle(net_priv->netdev);
+	struct hns3_cfg_xsfp *param = (struct hns3_cfg_xsfp *)buf_in;
 	u32 sfp_present = 0;
-	bool check;
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cfg_xsfp) ||
-		!buf_out || out_size < sizeof(struct hns3_xsfp_info);
 	if (check)
 		return -ENODEV;
-
-	handle = hns3_get_handle(net_priv->netdev);
-
-	param = (struct hns3_cfg_xsfp *)buf_in;
-	xsfp_info_out = (struct hns3_xsfp_info *)buf_out;
 
 	ret = hns3_get_sfp_present(handle, &sfp_present);
 	if (ret) {

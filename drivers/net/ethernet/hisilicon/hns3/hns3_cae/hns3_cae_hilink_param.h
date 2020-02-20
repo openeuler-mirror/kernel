@@ -45,7 +45,7 @@ struct hns3_hilink_param {
 	struct hns3_ffe_data ffe_param[HILINK_LANE_MAX_NUM];
 };
 
-int hns3_get_hilink_param(struct hns3_nic_priv *net_priv,
+int hns3_get_hilink_param(const struct hns3_nic_priv *net_priv,
 			  void *buf_in, u32 in_size,
 			  void *buf_out, u32 out_size);
 

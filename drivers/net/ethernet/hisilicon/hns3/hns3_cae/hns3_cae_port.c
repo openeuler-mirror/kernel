@@ -20,8 +20,8 @@
 void fill_port_info(struct hclge_port_info *get_port_info_out,
 		    struct hclge_desc *port_desc, u32 bd_num)
 {
-	u8 *dest_data;
-	u8 *tmp_buff;
+	u8 *dest_data = NULL;
+	u8 *tmp_buff = NULL;
 	u32 i;
 
 	dest_data = (u8 *)get_port_info_out;
@@ -55,24 +55,24 @@ void fill_port_info(struct hclge_port_info *get_port_info_out,
 	}
 }
 
-int hns3_get_port_info(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_get_port_info(const struct hns3_nic_priv *net_priv,
+		       void *buf_in, u32 in_size, void *buf_out,
+		       u32 out_size)
 {
 	struct hnae3_handle *handle = hns3_get_handle(net_priv->netdev);
 	struct hclge_vport *vport = hns3_cae_get_vport(handle);
-	struct hclge_port_info *get_port_info_out;
+	struct hclge_port_info *get_port_info_out =
+					      (struct hclge_port_info *)buf_out;
 	struct hclge_dev *hdev = vport->back;
-	struct hclge_desc *port_desc;
+	struct hclge_desc *port_desc = NULL;
 	struct hclge_desc desc = {0};
-	__le32 *desc_data;
+	__le32 *desc_data = NULL;
 	u32 bd_num;
 	int ret;
 	u32 i;
 
 	if (!buf_out || out_size < sizeof(struct hclge_port_info))
 		return -ENODEV;
-
-	get_port_info_out = (struct hclge_port_info *)buf_out;
 
 	get_port_info_out->gpio_insert = 0;
 

@@ -61,7 +61,7 @@ struct cmd_ext_driver_param {
 	u8 buf[1024];
 };
 
-int hns3_ext_interface_test(struct hns3_nic_priv *net_priv,
+int hns3_ext_interface_test(const struct hns3_nic_priv *net_priv,
 			    void *buf_in, u32 in_size,
 			    void *buf_out, u32 out_size);
 

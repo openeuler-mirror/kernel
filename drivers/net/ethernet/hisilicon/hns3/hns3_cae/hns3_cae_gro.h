@@ -16,9 +16,10 @@ struct gro_param {
 	u32 age_cnt;
 };
 
-int hns3_gro_age_handle(struct hns3_nic_priv *net_priv,
+int hns3_gro_age_handle(const struct hns3_nic_priv *net_priv,
 			void *buf_in, u32 in_size,
 			void *buf_out, u32 out_size);
-int hns3_gro_dump_bd_buff_size(struct hns3_nic_priv *net_priv, void *buf_in,
-			       u32 in_size, void *buf_out, u32 out_size);
+int hns3_gro_dump_bd_buff_size(const struct hns3_nic_priv *net_priv,
+			       void *buf_in, u32 in_size, void *buf_out,
+			       u32 out_size);
 #endif

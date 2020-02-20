@@ -96,19 +96,21 @@ struct hns3_cae_ets_cfg_info {
 	u8 flag;
 };
 
-int hns3_cae_queue_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_queue_cfg(const struct hns3_nic_priv *net_priv,
 		       void *buf_in, u32 in_size,
 		       void *buf_out, u32 out_size);
-int hns3_cae_qs_cfg(struct hns3_nic_priv *net_priv,
-		    void *buf_in, u32 in_size, void *buf_out, u32 out_size);
-int hns3_cae_pri_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size);
-int hns3_cae_pg_cfg(struct hns3_nic_priv *net_priv, void *buf_in, u32 in_size,
-		    void *buf_out, u32 out_size);
-int hns3_cae_port_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_qs_cfg(const struct hns3_nic_priv *net_priv,
+		    void *buf_in, u32 in_size, void *buf_out,
+		    u32 out_size);
+int hns3_cae_pri_cfg(const struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out,
+		     u32 out_size);
+int hns3_cae_pg_cfg(const struct hns3_nic_priv *net_priv, void *buf_in,
+		    u32 in_size, void *buf_out, u32 out_size);
+int hns3_cae_port_cfg(const struct hns3_nic_priv *net_priv,
 		      void *buf_in, u32 in_size,
 		      void *buf_out, u32 out_size);
-int hns3_cae_ets_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size);
+int hns3_cae_ets_cfg(const struct hns3_nic_priv *net_priv, void *buf_in,
+		     u32 in_size, void *buf_out, u32 out_size);
 
 #endif

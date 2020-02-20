@@ -102,16 +102,16 @@ static int hns3_get_stat_val(struct ring_stats *r_stats, char *val_name,
 	return HCLGE_STATUS_SUCCESS;
 }
 
-static int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
+static int hns3_read_stat_mode_cfg(const struct hns3_nic_priv *nic_dev,
 				   void *buf_in, u32 in_size,
 				   void *buf_out, u32 out_size)
 {
-	struct stat_sw_mode_param *stat_sw_param;
-	struct hnae3_knic_private_info *kinfo;
+	struct stat_sw_mode_param *stat_sw_param = NULL;
+	struct hnae3_knic_private_info *kinfo = NULL;
 	u64 *ret_data = (u64 *)buf_out;
-	struct hnae3_handle *handle;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hnae3_handle *handle = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	u64 *val = NULL;
 	u32 ring_idx;
 	int ret;
@@ -151,15 +151,15 @@ static int hns3_read_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	return HCLGE_STATUS_SUCCESS;
 }
 
-static int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
+static int hns3_set_stat_mode_cfg(const struct hns3_nic_priv *nic_dev,
 				  void *buf_in, u32 in_size,
 				  void *buf_out, u32 out_size)
 {
-	struct stat_sw_mode_param *stat_sw_param;
-	struct hnae3_knic_private_info *kinfo;
-	struct hnae3_handle *handle;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct stat_sw_mode_param *stat_sw_param = NULL;
+	struct hnae3_knic_private_info *kinfo = NULL;
+	struct hnae3_handle *handle = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	u64 *val = NULL;
 	u32 ring_idx;
 	int ret;
@@ -194,14 +194,14 @@ static int hns3_set_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	return HCLGE_STATUS_SUCCESS;
 }
 
-int hns3_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
-		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_stat_mode_cfg(const struct hns3_nic_priv *nic_dev,
+		       void *buf_in, u32 in_size, void *buf_out,
+		       u32 out_size)
 {
-	struct stat_sw_mode_param *mode_param;
-	bool check;
+	struct stat_sw_mode_param *mode_param = NULL;
+	bool check = !buf_in || in_size < sizeof(struct stat_sw_mode_param);
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct stat_sw_mode_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -218,17 +218,17 @@ int hns3_stat_mode_cfg(struct hns3_nic_priv *nic_dev,
 	return ret;
 }
 
-int hns3_cae_clean_stats(struct hns3_nic_priv *net_priv,
+int hns3_cae_clean_stats(const struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size)
 {
 	struct net_device *netdev = net_priv->netdev;
-	struct hnae3_knic_private_info *kinfo;
-	struct hnae3_handle *handle;
-	struct hns3_enet_ring *ring;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
-	struct hclge_tqp *tqp;
+	struct hnae3_knic_private_info *kinfo = NULL;
+	struct hnae3_handle *handle = NULL;
+	struct hns3_enet_ring *ring = NULL;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
+	struct hclge_tqp *tqp = NULL;
 	int i;
 
 	handle = net_priv->ae_handle;

@@ -12,18 +12,18 @@
 #include "hclge_main.h"
 #include "hns3_cae_reset.h"
 
-int hns3_cae_nic_reset(struct hns3_nic_priv *net_priv,
-		       void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_nic_reset(const struct hns3_nic_priv *net_priv,
+		       void *buf_in, u32 in_size, void *buf_out,
+		       u32 out_size)
 {
 #define MIN_DOG_INTVAL 12
 	struct hnae3_handle *h = net_priv->ae_handle;
-	struct reset_param *reset_info;
+	struct reset_param *reset_info = (struct reset_param *)buf_in;
 	enum hnae3_reset_type rst_type;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
-	bool check;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
+	bool check = !buf_in || in_size < sizeof(struct reset_param);
 
-	check = !buf_in || in_size < sizeof(struct reset_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -31,7 +31,6 @@ int hns3_cae_nic_reset(struct hns3_nic_priv *net_priv,
 
 	vport = container_of(h, struct hclge_vport, nic);
 	hdev = vport->back;
-	reset_info = (struct reset_param *)buf_in;
 	rst_type = HNAE3_NONE_RESET;
 
 	if (test_bit(HCLGE_STATE_REMOVING, &hdev->state)) {
@@ -61,23 +60,20 @@ int hns3_cae_nic_reset(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_nic_timeout_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_nic_timeout_cfg(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size)
 {
+	struct tx_timeout_param *out_info =
+					     (struct tx_timeout_param *)buf_out;
+	struct tx_timeout_param *in_info = (struct tx_timeout_param *)buf_in;
+	bool check = !buf_in || in_size < sizeof(struct tx_timeout_param);
 	struct net_device *netdev = net_priv->netdev;
-	struct tx_timeout_param *in_info;
-	struct tx_timeout_param *out_info;
-	bool check;
 
-	check = !buf_in || in_size < sizeof(struct tx_timeout_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
 	}
-
-	in_info = (struct tx_timeout_param *)buf_in;
-	out_info = (struct tx_timeout_param *)buf_out;
 
 	if (in_info->wr_flag) {
 		netdev->watchdog_timeo = (in_info->tx_timeout_size) * HZ;

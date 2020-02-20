@@ -11,20 +11,19 @@
 #include "hns3_cae_cmd.h"
 #include "hns3_cae_gro.h"
 
-int hns3_gro_age_handle(struct hns3_nic_priv *net_priv,
+int hns3_gro_age_handle(const struct hns3_nic_priv *net_priv,
 			void *buf_in, u32 in_size,
 			void *buf_out, u32 out_size)
 {
 	struct hnae3_handle *h = net_priv->ae_handle;
-	struct hns3_cae_gro_age_config_cmd *req;
-	struct hclge_vport *vport;
-	struct gro_param *param;
+	struct hns3_cae_gro_age_config_cmd *req = NULL;
+	struct hclge_vport *vport = NULL;
+	struct gro_param *param = NULL;
+	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
-	struct hclge_dev *hdev;
-	bool check;
+	bool check = !buf_in || in_size < sizeof(struct gro_param);
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct gro_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -61,12 +60,13 @@ int hns3_gro_age_handle(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_gro_dump_bd_buff_size(struct hns3_nic_priv *net_priv, void *buf_in,
-			       u32 in_size, void *buf_out, u32 out_size)
+int hns3_gro_dump_bd_buff_size(const struct hns3_nic_priv *net_priv,
+			       void *buf_in, u32 in_size, void *buf_out,
+			       u32 out_size)
 {
-	struct hclge_vport *vport;
-	struct hnae3_handle *h;
-	struct hclge_dev *hdev;
+	struct hclge_vport *vport = NULL;
+	struct hnae3_handle *h = NULL;
+	struct hclge_dev *hdev = NULL;
 
 	if (!buf_out || out_size < sizeof(u16)) {
 		pr_err("input param buf_out error in %s function\n",

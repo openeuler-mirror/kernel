@@ -7,10 +7,10 @@
 #include "hns3_cae_cmd.h"
 #include "hns3_cae_qos.h"
 
-struct hclge_dev *get_val_hdev(struct hns3_nic_priv *net_priv)
+struct hclge_dev *get_val_hdev(const struct hns3_nic_priv *net_priv)
 {
-	struct hnae3_handle *handle;
-	struct hclge_vport *vport;
+	struct hnae3_handle *handle = NULL;
+	struct hclge_vport *vport = NULL;
 
 	handle = net_priv->ae_handle;
 	vport = hns3_cae_get_vport(handle);
@@ -20,7 +20,7 @@ struct hclge_dev *get_val_hdev(struct hns3_nic_priv *net_priv)
 int hns3_cmd_rx_priv_wl_config(struct hclge_dev *hdev, u16 tc,
 			       u32 high, u32 low, u32 en)
 {
-	struct hclge_rx_priv_wl_buf *req;
+	struct hclge_rx_priv_wl_buf *req = NULL;
 	enum hclge_cmd_status status;
 	struct hclge_desc desc[2];
 	int idx;
@@ -61,15 +61,16 @@ int hns3_cmd_rx_priv_wl_config(struct hclge_dev *hdev, u16 tc,
 	return 0;
 }
 
-int hns3_cae_rx_priv_buff_wl_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_rx_priv_buff_wl_cfg(const struct hns3_nic_priv *net_priv,
 				 void *buf_in, u32 in_size,
 				 void *buf_out, u32 out_size)
 {
 	struct hclge_dev *hdev = get_val_hdev(net_priv);
-	struct hns3_rx_priv_buff_wl_param *in_info;
-	bool check;
+	struct hns3_rx_priv_buff_wl_param *in_info =
+				    (struct hns3_rx_priv_buff_wl_param *)buf_in;
+	bool check = !buf_in ||
+		     in_size < sizeof(struct hns3_rx_priv_buff_wl_param);
 
-	check = !buf_in || in_size < sizeof(struct hns3_rx_priv_buff_wl_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -80,7 +81,7 @@ int hns3_cae_rx_priv_buff_wl_cfg(struct hns3_nic_priv *net_priv,
 			"This device is not support this cmd!\n");
 		return -EPERM;
 	}
-	in_info = (struct hns3_rx_priv_buff_wl_param *)buf_in;
+
 	pr_err("wl is_set param, tc_no = 0x%x, hight = 0x%x, low = 0x%x\n",
 	       in_info->tc_no, in_info->high_wl, in_info->low_wl);
 
@@ -92,7 +93,7 @@ int hns3_cmd_common_thrd_config(struct hclge_dev *hdev, u16 tc,
 				u32 high, u32 low, u32 en)
 {
 #define HNS3_CAE_THRD_ALLOC_BD_NUM	2
-	struct hclge_rx_com_thrd *req;
+	struct hclge_rx_com_thrd *req = NULL;
 	enum hclge_cmd_status status;
 	struct hclge_desc desc[2];
 	int idx;
@@ -134,15 +135,16 @@ int hns3_cmd_common_thrd_config(struct hclge_dev *hdev, u16 tc,
 	return 0;
 }
 
-int hns3_cae_common_thrd_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_common_thrd_cfg(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size)
 {
 	struct hclge_dev *hdev = get_val_hdev(net_priv);
-	struct hns3_rx_priv_buff_wl_param *in_info;
-	bool check;
+	struct hns3_rx_priv_buff_wl_param *in_info =
+				    (struct hns3_rx_priv_buff_wl_param *)buf_in;
+	bool check = !buf_in ||
+		     in_size < sizeof(struct hns3_rx_priv_buff_wl_param);
 
-	check = !buf_in || in_size < sizeof(struct hns3_rx_priv_buff_wl_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -153,7 +155,7 @@ int hns3_cae_common_thrd_cfg(struct hns3_nic_priv *net_priv,
 			"This device is not support this cmd!\n");
 		return -EPERM;
 	}
-	in_info = (struct hns3_rx_priv_buff_wl_param *)buf_in;
+
 	pr_info("common thrd is_set param, tc_no = 0x%x, hight = 0x%x, low = 0x%x\n",
 		in_info->tc_no, in_info->high_wl, in_info->low_wl);
 
@@ -165,7 +167,7 @@ int hns3_cae_common_thrd_cfg(struct hns3_nic_priv *net_priv,
 int hns3_cmd_common_wl_config(struct hclge_dev *hdev, u32 high, u32 low, u32 en)
 {
 	enum hclge_cmd_status status;
-	struct hclge_rx_com_wl *req;
+	struct hclge_rx_com_wl *req = NULL;
 	struct hclge_desc desc;
 
 	req = (struct hclge_rx_com_wl *)desc.data;
@@ -184,20 +186,22 @@ int hns3_cmd_common_wl_config(struct hclge_dev *hdev, u32 high, u32 low, u32 en)
 	return 0;
 }
 
-int hns3_cae_common_wl_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_common_wl_cfg(const struct hns3_nic_priv *net_priv,
 			   void *buf_in, u32 in_size,
 			   void *buf_out, u32 out_size)
 {
-	struct hns3_rx_priv_buff_wl_param *out_info;
-	struct hns3_rx_priv_buff_wl_param *in_info;
+	struct hns3_rx_priv_buff_wl_param *out_info =
+				   (struct hns3_rx_priv_buff_wl_param *)buf_out;
+	struct hns3_rx_priv_buff_wl_param *in_info =
+				    (struct hns3_rx_priv_buff_wl_param *)buf_in;
+	bool check = !buf_in ||
+		     in_size < sizeof(struct hns3_rx_priv_buff_wl_param);
 	enum hclge_cmd_status status;
-	struct hclge_rx_com_wl *req;
-	struct hclge_vport *vport;
+	struct hclge_rx_com_wl *req = NULL;
+	struct hclge_vport *vport = NULL;
 	struct hclge_desc desc;
-	struct hclge_dev *hdev;
-	bool check;
+	struct hclge_dev *hdev = NULL;
 
-	check = !buf_in || in_size < sizeof(struct hns3_rx_priv_buff_wl_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
@@ -205,8 +209,6 @@ int hns3_cae_common_wl_cfg(struct hns3_nic_priv *net_priv,
 
 	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	out_info = (struct hns3_rx_priv_buff_wl_param *)buf_out;
-	in_info = (struct hns3_rx_priv_buff_wl_param *)buf_in;
 
 	if (in_info->is_read == IS_WRITE) {
 		status = hns3_cmd_common_wl_config(hdev, in_info->high_wl,
@@ -237,22 +239,23 @@ int hns3_cae_common_wl_cfg(struct hns3_nic_priv *net_priv,
 	return status;
 }
 
-int hns3_cae_rx_buff_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_rx_buff_cfg(const struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size)
 {
-	struct hclge_rx_priv_buff_cmd *recv;
-	struct hns3_rx_buff_param *out_info;
-	struct hns3_rx_buff_param *in_info;
+	struct hclge_rx_priv_buff_cmd *recv = NULL;
+	struct hns3_rx_buff_param *out_info =
+					   (struct hns3_rx_buff_param *)buf_out;
+	struct hns3_rx_buff_param *in_info =
+					    (struct hns3_rx_buff_param *)buf_in;
 	enum hclge_cmd_status status;
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
-	bool check;
+	bool check = !buf_in || in_size < sizeof(struct hns3_rx_buff_param) ||
+		     !buf_out || out_size < sizeof(struct hns3_rx_buff_param);
 	int i;
 
-	check = !buf_in || in_size < sizeof(struct hns3_rx_buff_param) ||
-		!buf_out || out_size < sizeof(struct hns3_rx_buff_param);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
@@ -260,8 +263,6 @@ int hns3_cae_rx_buff_cfg(struct hns3_nic_priv *net_priv,
 
 	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	out_info = (struct hns3_rx_buff_param *)buf_out;
-	in_info = (struct hns3_rx_buff_param *)buf_in;
 
 	if (in_info->is_read == IS_READ) {
 		hns3_cae_cmd_setup_basic_desc(&desc,
@@ -283,22 +284,23 @@ int hns3_cae_rx_buff_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_tx_buff_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_tx_buff_cfg(const struct hns3_nic_priv *net_priv,
 			 void *buf_in, u32 in_size,
 			 void *buf_out, u32 out_size)
 {
-	struct hclge_tx_buff_alloc_cmd *recv;
-	struct hns3_tx_buff_param *out_info;
-	struct hns3_tx_buff_param *in_info;
+	struct hclge_tx_buff_alloc_cmd *recv = NULL;
+	struct hns3_tx_buff_param *out_info =
+					   (struct hns3_tx_buff_param *)buf_out;
+	struct hns3_tx_buff_param *in_info =
+					    (struct hns3_tx_buff_param *)buf_in;
 	enum hclge_cmd_status status;
-	struct hclge_vport *vport;
+	struct hclge_vport *vport = NULL;
 	struct hclge_desc desc;
-	struct hclge_dev *hdev;
-	bool check;
+	struct hclge_dev *hdev = NULL;
+	bool check = !buf_in || in_size < sizeof(struct hns3_tx_buff_param) ||
+		     !buf_out || out_size < sizeof(struct hns3_tx_buff_param);
 	int i;
 
-	check = !buf_in || in_size < sizeof(struct hns3_tx_buff_param) ||
-		!buf_out || out_size < sizeof(struct hns3_tx_buff_param);
 	if (check) {
 		pr_err("input parameter error in %s function\n", __func__);
 		return -EFAULT;
@@ -306,8 +308,6 @@ int hns3_cae_tx_buff_cfg(struct hns3_nic_priv *net_priv,
 
 	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
-	out_info = (struct hns3_tx_buff_param *)buf_out;
-	in_info = (struct hns3_tx_buff_param *)buf_in;
 
 	if (in_info->is_read == IS_READ) {
 		hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_TX_BUFF_ALLOC,
@@ -326,28 +326,27 @@ int hns3_cae_tx_buff_cfg(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_show_comm_thres(struct hns3_nic_priv *net_priv,
+int hns3_cae_show_comm_thres(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size)
 {
 #define HNS3_CAE_THRD_ALLOC_BD_NUM	2
 	struct hclge_dev *hdev = get_val_hdev(net_priv);
-	struct hns3_total_priv_wl_param *out_info;
-	struct hclge_rx_com_thrd *req;
+	struct hns3_total_priv_wl_param *out_info =
+				     (struct hns3_total_priv_wl_param *)buf_out;
+	struct hclge_rx_com_thrd *req = NULL;
 	enum hclge_cmd_status status;
 	struct hclge_desc desc[2];
-	bool check;
+	bool check = !buf_out ||
+		     out_size < sizeof(struct hns3_total_priv_wl_param);
 	int idx;
 	int i;
 	int j;
 
-	check = !buf_out || out_size < sizeof(struct hns3_total_priv_wl_param);
 	if (check) {
 		pr_err("input param buf_out error in %s function\n", __func__);
 		return -EFAULT;
 	}
-
-	out_info = (struct hns3_total_priv_wl_param *)buf_out;
 
 	for (i = 0; i < HNS3_CAE_THRD_ALLOC_BD_NUM; i++) {
 		hns3_cae_cmd_setup_basic_desc(&desc[i],
@@ -378,28 +377,27 @@ int hns3_cae_show_comm_thres(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
+int hns3_cae_show_rx_priv_wl(const struct hns3_nic_priv *net_priv,
 			     void *buf_in, u32 in_size,
 			     void *buf_out, u32 out_size)
 {
 #define HNS3_CAE_WL_ALLOC_BD_NUM	2
 	struct hclge_dev *hdev = get_val_hdev(net_priv);
-	struct hns3_total_priv_wl_param *out_info;
-	struct hclge_rx_priv_wl_buf *req;
+	struct hns3_total_priv_wl_param *out_info =
+				     (struct hns3_total_priv_wl_param *)buf_out;
+	struct hclge_rx_priv_wl_buf *req = NULL;
 	enum hclge_cmd_status status;
 	struct hclge_desc desc[2];
-	bool check;
+	bool check = !buf_out ||
+		     out_size < sizeof(struct hns3_total_priv_wl_param);
 	int idx;
 	int i;
 	int j;
 
-	check = !buf_out || out_size < sizeof(struct hns3_total_priv_wl_param);
 	if (check) {
 		pr_err("input param buf_out error in %s function\n", __func__);
 		return -EFAULT;
 	}
-
-	out_info = (struct hns3_total_priv_wl_param *)buf_out;
 
 	for (i = 0; i < HNS3_CAE_WL_ALLOC_BD_NUM; i++) {
 		hns3_cae_cmd_setup_basic_desc(&desc[i],
@@ -430,19 +428,19 @@ int hns3_cae_show_rx_priv_wl(struct hns3_nic_priv *net_priv,
 	return 0;
 }
 
-int hns3_cae_qcn_cfg(struct hns3_nic_priv *net_priv,
-		     void *buf_in, u32 in_size, void *buf_out, u32 out_size)
+int hns3_cae_qcn_cfg(const struct hns3_nic_priv *net_priv,
+		     void *buf_in, u32 in_size, void *buf_out,
+		     u32 out_size)
 {
 #define HCLGE_OPC_QCN_CFG	0x1A01
-	struct hclge_vport *vport;
-	struct hclge_dev *hdev;
+	struct hclge_vport *vport = NULL;
+	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
 	int qcn_bypass;
 	u32 qcn_cfg;
-	bool check;
+	bool check = !buf_in || in_size < sizeof(int);
 	int ret;
 
-	check = !buf_in || in_size < sizeof(int);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;

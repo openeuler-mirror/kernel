@@ -59,7 +59,7 @@ struct hns3_cae_pkt_result_info {
 	int num;
 };
 
-int hns3_cae_send_pkt(struct hns3_nic_priv *net_priv, void *buf_in,
+int hns3_cae_send_pkt(const struct hns3_nic_priv *net_priv, void *buf_in,
 		      u32 in_size, void *buf_out, u32 out_size);
 void hns3_cae_pkt_init(void);
 void hns3_cae_pkt_destroy(void);

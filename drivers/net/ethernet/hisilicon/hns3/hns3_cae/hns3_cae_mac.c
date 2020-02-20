@@ -14,30 +14,26 @@
 #include "hns3_cae_cmd.h"
 #include "hns3_cae_mac.h"
 
-int hns3_cae_mac_loop_cfg(struct hns3_nic_priv *net_priv,
+int hns3_cae_mac_loop_cfg(const struct hns3_nic_priv *net_priv,
 			  void *buf_in, u32 in_size,
 			  void *buf_out, u32 out_size)
 {
 	struct hns3_cae_cfg_serdes_mode_cmd *req1 = NULL;
 	struct hns3_cae_cfg_mac_mode_cmd *req2 = NULL;
-	struct hns3_cae_loop_param *out_info = NULL;
-	struct hns3_cae_loop_param *in_info = NULL;
-	struct hclge_vport *vport = NULL;
-	struct hclge_dev *hdev = NULL;
+	struct hns3_cae_loop_param *out_info =
+					  (struct hns3_cae_loop_param *)buf_out;
+	struct hns3_cae_loop_param *in_info =
+					   (struct hns3_cae_loop_param *)buf_in;
+	bool check = !buf_in || in_size < sizeof(struct hns3_cae_loop_param);
+	struct hclge_vport *vport = hns3_cae_get_vport(net_priv->ae_handle);
+	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;
-	bool check;
 	int ret;
 
-	check = !buf_in || in_size < sizeof(struct hns3_cae_loop_param);
 	if (check) {
 		pr_err("input param buf_in error in %s function\n", __func__);
 		return -EFAULT;
 	}
-
-	vport = hns3_cae_get_vport(net_priv->ae_handle);
-	hdev = vport->back;
-	in_info = (struct hns3_cae_loop_param *)buf_in;
-	out_info = (struct hns3_cae_loop_param *)buf_out;
 
 	req1 = (struct hns3_cae_cfg_serdes_mode_cmd *)&desc.data[0];
 	req2 = (struct hns3_cae_cfg_mac_mode_cmd *)&desc.data[0];
