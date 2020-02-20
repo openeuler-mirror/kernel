@@ -90,6 +90,9 @@ static int sysctl_tdh_reset(u8 chip_id)
 		return SYSCTL_ERR_PARAM;
 	}
 
+	if (!sysctl_subctrl_tdh_priv[chip_id])
+		return SYSCTL_ERR_PARAM;
+
 	addr = sysctl_subctrl_tdh_priv[chip_id] + SUBCTRL_TDH_RESET_OFFSET;
 	writel(0x3, addr);
 
@@ -105,6 +108,9 @@ static int sysctl_tdh_unreset(u8 chip_id)
 		return SYSCTL_ERR_PARAM;
 	}
 
+	if (!sysctl_subctrl_tdh_priv[chip_id])
+		return SYSCTL_ERR_PARAM;
+
 	addr = sysctl_subctrl_tdh_priv[chip_id] + SUBCTRL_TDH_UNRESET_OFFSET;
 	writel(0x3, addr);
 
@@ -114,6 +120,11 @@ static int sysctl_tdh_unreset(u8 chip_id)
 static int sysctl_tdh_mem_access_open(u8 chip_id)
 {
 	void __iomem *addr;
+
+	if (chip_id >= CHIP_ID_NUM_MAX) {
+		pr_err("err chip id %u %s\n", chip_id, __func__);
+		return SYSCTL_ERR_PARAM;
+	}
 
 	if (!sysctl_tdh_priv[chip_id])
 		return SYSCTL_ERR_PARAM;
