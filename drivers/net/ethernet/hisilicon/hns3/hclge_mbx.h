@@ -72,7 +72,6 @@ enum hclge_mbx_vlan_cfg_subcode {
 };
 
 enum hclge_mbx_tbl_cfg_subcode {
-	HCLGE_MBX_HW_TBL_RESTORE,
 	HCLGE_MBX_VPORT_LIST_CLEAR,
 };
 

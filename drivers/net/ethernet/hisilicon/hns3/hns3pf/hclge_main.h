@@ -644,7 +644,6 @@ enum HCLGE_MAC_ADDR_STATE {
 
 struct hclge_vport_mac_addr_cfg {
 	struct list_head node;
-	int hd_tbl_status;
 	enum HCLGE_MAC_ADDR_STATE state;
 	u8 mac_addr[ETH_ALEN];
 };
@@ -815,6 +814,8 @@ struct hclge_dev {
 	unsigned long vlan_table[VLAN_N_VID][BITS_TO_LONGS(HCLGE_VPORT_NUM)];
 	unsigned long vf_vlan_full[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
 
+	unsigned long need_restore_vf_table[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
+
 	struct hclge_fd_cfg fd_cfg;
 	struct hlist_head fd_rule_list;
 	spinlock_t fd_rule_lock; /* protect fd_rule_list and fd_bmap */
@@ -878,6 +879,7 @@ struct hclge_rss_tuple_cfg {
 enum HCLGE_VPORT_STATE {
 	HCLGE_VPORT_STATE_ALIVE,
 	HCLGE_VPORT_STATE_MAC_TBL_CHANGE,
+	HCLGE_VPORT_STATE_BLOCK_CONFIG, /* blocking mac configuration */
 	HCLGE_VPORT_STATE_MAX
 };
 
@@ -998,15 +1000,19 @@ int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf);
 u16 hclge_covert_handle_qid_global(struct hnae3_handle *handle, u16 queue_id);
 int hclge_notify_client(struct hclge_dev *hdev,
 			enum hnae3_reset_notify_type type);
-void hclge_add_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
-			       enum HCLGE_MAC_ADDR_TYPE mac_type);
-void hclge_rm_vport_mac_table(struct hclge_vport *vport, const u8 *mac_addr,
-			      enum HCLGE_MAC_ADDR_TYPE mac_type);
+int hclge_update_mac_list(struct hclge_vport *vport,
+			  enum HCLGE_MAC_ADDR_STATE state,
+			  enum HCLGE_MAC_ADDR_TYPE mac_type,
+			  const unsigned char *addr);
+void hclge_replace_mac_node(struct list_head *list, const u8 *old_addr,
+			    const u8 *new_addr, bool keep_old);
+void hclge_modify_mac_node_state(struct list_head *list, const u8 *addr,
+				 enum HCLGE_MAC_ADDR_STATE state);
 void hclge_rm_vport_all_mac_table(struct hclge_vport *vport, bool is_del_list,
 				  enum HCLGE_MAC_ADDR_TYPE mac_type);
 void hclge_rm_vport_all_vlan_table(struct hclge_vport *vport, bool is_del_list);
+void hclge_restore_mac_table_common(struct hclge_vport *vport);
 void hclge_restore_vport_vlan_table(struct hclge_vport *vport);
-void hclge_restore_vport_mac_table(struct hclge_vport *vport);
 int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
 				    struct hclge_vlan_info *vlan_info);
 int hclge_push_vf_port_base_vlan_info(struct hclge_vport *vport, u8 vfid,

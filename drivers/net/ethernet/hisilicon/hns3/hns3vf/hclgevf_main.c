@@ -15,7 +15,6 @@
 #define HCLGEVF_RESET_MAX_FAIL_CNT	5
 
 static int hclgevf_reset_hdev(struct hclgevf_dev *hdev);
-static int hclgevf_restore_hw_table(struct hclgevf_dev *hdev);
 static struct hnae3_ae_algo ae_algovf;
 
 static struct workqueue_struct *hclgevf_wq;
@@ -1267,52 +1266,204 @@ static int hclgevf_set_mac_addr(struct hnae3_handle *handle, void *p,
 	return status;
 }
 
+static struct hclgevf_mac_addr_node *
+hclgevf_find_mac_node(struct list_head *list, const u8 *mac_addr)
+{
+	struct hclgevf_mac_addr_node *mac_node, *tmp;
+
+	list_for_each_entry_safe(mac_node, tmp, list, node) {
+		if (ether_addr_equal(mac_addr, mac_node->mac_addr))
+			return mac_node;
+	}
+	return NULL;
+}
+
+static int hclgevf_update_mac_list(struct hnae3_handle *handle,
+				   enum HCLGEVF_MAC_ADDR_STATE state,
+				   enum HCLGEVF_MAC_ADDR_TYPE mac_type,
+				   const unsigned char *addr)
+{
+	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
+	struct hclgevf_mac_addr_node *mac_node;
+	struct list_head *list;
+
+	list = (mac_type == HCLGEVF_MAC_ADDR_UC) ?
+	       &hdev->mac_table.uc_mac_list : &hdev->mac_table.mc_mac_list;
+
+	spin_lock_bh(&hdev->mac_table.mac_list_lock);
+
+	mac_node = kzalloc(sizeof(*mac_node), GFP_ATOMIC);
+	if (!mac_node) {
+		spin_unlock_bh(&hdev->mac_table.mac_list_lock);
+		return -ENOMEM;
+	}
+
+	mac_node->state = state;
+	ether_addr_copy(mac_node->mac_addr, addr);
+	list_add_tail(&mac_node->node, list);
+
+	spin_unlock_bh(&hdev->mac_table.mac_list_lock);
+	return 0;
+}
+
 static int hclgevf_add_uc_addr(struct hnae3_handle *handle,
 			       const unsigned char *addr)
 {
-	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
-	struct hclge_vf_to_pf_msg send_msg;
-
-	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_UNICAST,
-			       HCLGE_MBX_MAC_VLAN_UC_ADD);
-	ether_addr_copy(send_msg.data, addr);
-	return hclgevf_send_mbx_msg(hdev, &send_msg, false, NULL, 0);
+	return hclgevf_update_mac_list(handle, HCLGEVF_MAC_TO_ADD,
+				       HCLGEVF_MAC_ADDR_UC, addr);
 }
 
 static int hclgevf_rm_uc_addr(struct hnae3_handle *handle,
 			      const unsigned char *addr)
 {
-	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
-	struct hclge_vf_to_pf_msg send_msg;
-
-	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_UNICAST,
-			       HCLGE_MBX_MAC_VLAN_UC_REMOVE);
-	ether_addr_copy(send_msg.data, addr);
-	return hclgevf_send_mbx_msg(hdev, &send_msg, false, NULL, 0);
+	return hclgevf_update_mac_list(handle, HCLGEVF_MAC_TO_DEL,
+				       HCLGEVF_MAC_ADDR_UC, addr);
 }
 
 static int hclgevf_add_mc_addr(struct hnae3_handle *handle,
 			       const unsigned char *addr)
 {
-	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
-	struct hclge_vf_to_pf_msg send_msg;
-
-	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_MULTICAST,
-			       HCLGE_MBX_MAC_VLAN_MC_ADD);
-	ether_addr_copy(send_msg.data, addr);
-	return hclgevf_send_mbx_msg(hdev, &send_msg, false, NULL, 0);
+	return hclgevf_update_mac_list(handle, HCLGEVF_MAC_TO_ADD,
+				       HCLGEVF_MAC_ADDR_MC, addr);
 }
 
 static int hclgevf_rm_mc_addr(struct hnae3_handle *handle,
 			      const unsigned char *addr)
 {
-	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
-	struct hclge_vf_to_pf_msg send_msg;
+	return hclgevf_update_mac_list(handle, HCLGEVF_MAC_TO_DEL,
+				       HCLGEVF_MAC_ADDR_MC, addr);
+}
 
-	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_MULTICAST,
-			       HCLGE_MBX_MAC_VLAN_MC_REMOVE);
-	ether_addr_copy(send_msg.data, addr);
+static int hclgevf_add_del_mac_addr(struct hclgevf_dev *hdev,
+				    struct hclgevf_mac_addr_node *mac_node,
+				    enum HCLGEVF_MAC_ADDR_TYPE mac_type)
+{
+	struct hclge_vf_to_pf_msg send_msg;
+	u8 code, subcode;
+
+	if (mac_type == HCLGEVF_MAC_ADDR_UC) {
+		code = HCLGE_MBX_SET_UNICAST;
+		if (mac_node->state == HCLGEVF_MAC_TO_ADD)
+			subcode = HCLGE_MBX_MAC_VLAN_UC_ADD;
+		else
+			subcode = HCLGE_MBX_MAC_VLAN_UC_REMOVE;
+	} else {
+		code = HCLGE_MBX_SET_MULTICAST;
+		if (mac_node->state == HCLGEVF_MAC_TO_ADD)
+			subcode = HCLGE_MBX_MAC_VLAN_MC_ADD;
+		else
+			subcode = HCLGE_MBX_MAC_VLAN_MC_REMOVE;
+	}
+
+	hclgevf_build_send_msg(&send_msg, code, subcode);
+	ether_addr_copy(send_msg.data, mac_node->mac_addr);
 	return hclgevf_send_mbx_msg(hdev, &send_msg, false, NULL, 0);
+}
+
+static void hclgevf_config_mac_list(struct hclgevf_dev *hdev,
+				    struct list_head *list,
+				    enum HCLGEVF_MAC_ADDR_TYPE mac_type)
+{
+	struct hclgevf_mac_addr_node *mac_node, *tmp;
+	int ret;
+
+	list_for_each_entry_safe(mac_node, tmp, list, node) {
+		ret = hclgevf_add_del_mac_addr(hdev, mac_node, mac_type);
+		if  (ret) {
+			dev_err(&hdev->pdev->dev,
+				"request configure mac %pM failed, state=%d, ret=%d\n",
+				mac_node->mac_addr, mac_node->state, ret);
+			mac_node->state = HCLGEVF_MAC_REQ_FAIL;
+			return;
+		}
+		mac_node->state = HCLGEVF_MAC_REQ_SUC;
+	}
+}
+
+static void hclgevf_sync_from_tmp_list(struct list_head *tmp_list,
+				       struct list_head *mac_list)
+{
+	struct hclgevf_mac_addr_node *mac_node, *tmp, *new_node;
+
+	list_for_each_entry_safe(mac_node, tmp, tmp_list, node) {
+		new_node = hclgevf_find_mac_node(mac_list, mac_node->mac_addr);
+		if (new_node) {
+			if (mac_node->state == HCLGEVF_MAC_REQ_SUC) {
+				list_del(&new_node->node);
+				kfree(new_node);
+			}
+		}
+		list_del(&mac_node->node);
+		kfree(mac_node);
+	}
+}
+
+static void hclgevf_clear_list(struct list_head *list)
+{
+	struct hclgevf_mac_addr_node *mac_node, *tmp;
+
+	list_for_each_entry_safe(mac_node, tmp, list, node) {
+		list_del(&mac_node->node);
+		kfree(mac_node);
+	}
+}
+
+/* For PF handle VF's the mac configure request asynchronously, so VF
+ * is unware that whether the mac address is exist in the mac table.
+ * VF has to record the mac address from set_rx_mode, and send request
+ * one by one. After finish all request, then update the mac address
+ * state in mac list.
+ */
+static void hclgevf_sync_mac_list(struct hclgevf_dev *hdev,
+				  enum HCLGEVF_MAC_ADDR_TYPE mac_type)
+{
+	struct hclgevf_mac_addr_node *mac_node, *tmp, *new_node;
+	struct list_head tmp_list, *list;
+
+	INIT_LIST_HEAD(&tmp_list);
+
+	list = (mac_type == HCLGEVF_MAC_ADDR_UC) ?
+		&hdev->mac_table.uc_mac_list : &hdev->mac_table.mc_mac_list;
+
+	spin_lock_bh(&hdev->mac_table.mac_list_lock);
+
+	list_for_each_entry_safe(mac_node, tmp, list, node) {
+		new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+		if (!new_node) {
+			hclgevf_clear_list(&tmp_list);
+			spin_unlock_bh(&hdev->mac_table.mac_list_lock);
+			return;
+		}
+		ether_addr_copy(new_node->mac_addr, mac_node->mac_addr);
+		new_node->state = mac_node->state;
+		list_add_tail(&new_node->node, &tmp_list);
+	}
+
+	spin_unlock_bh(&hdev->mac_table.mac_list_lock);
+
+	hclgevf_config_mac_list(hdev, &tmp_list, mac_type);
+
+	spin_lock_bh(&hdev->mac_table.mac_list_lock);
+
+	hclgevf_sync_from_tmp_list(&tmp_list, list);
+
+	spin_unlock_bh(&hdev->mac_table.mac_list_lock);
+}
+
+static void hclgevf_sync_mac_table(struct hclgevf_dev *hdev)
+{
+	hclgevf_sync_mac_list(hdev, HCLGEVF_MAC_ADDR_UC);
+	hclgevf_sync_mac_list(hdev, HCLGEVF_MAC_ADDR_MC);
+}
+
+static void hclgevf_uninit_mac_list(struct hclgevf_dev *hdev)
+{
+	spin_lock_bh(&hdev->mac_table.mac_list_lock);
+
+	hclgevf_clear_list(&hdev->mac_table.uc_mac_list);
+	hclgevf_clear_list(&hdev->mac_table.mc_mac_list);
+
+	spin_unlock_bh(&hdev->mac_table.mac_list_lock);
 }
 
 static int hclgevf_set_vlan_filter(struct hnae3_handle *handle,
@@ -1555,10 +1706,6 @@ static int hclgevf_reset_stack(struct hclgevf_dev *hdev)
 	if (ret)
 		return ret;
 
-	ret = hclgevf_notify_client(hdev, HNAE3_RESTORE_CLIENT);
-	if (ret)
-		return ret;
-
 	/* clear handshake status with IMP */
 	hclgevf_reset_handshake(hdev, false);
 
@@ -1643,13 +1790,8 @@ static void hclgevf_reset_err_handle(struct hclgevf_dev *hdev)
 
 static int hclgevf_reset(struct hclgevf_dev *hdev)
 {
-	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 	int ret;
 
-	/* Initialize ae_dev reset status as well, in case enet layer wants to
-	 * know if device is undergoing reset
-	 */
-	ae_dev->reset_type = hdev->reset_type;
 	hdev->rst_stats.rst_cnt++;
 	rtnl_lock();
 
@@ -1694,7 +1836,6 @@ static int hclgevf_reset(struct hclgevf_dev *hdev)
 
 	rtnl_unlock();
 
-	ae_dev->reset_type = HNAE3_NONE_RESET;
 	hdev->rst_stats.rst_done_cnt++;
 	hdev->rst_stats.rst_fail_cnt = 0;
 
@@ -1972,6 +2113,8 @@ static void hclgevf_periodical_service_task(struct hclgevf_dev *hdev)
 	hclgevf_update_link_mode(hdev);
 
 	hclgevf_sync_vlan_filter(hdev);
+
+	hclgevf_sync_mac_table(hdev);
 
 	hdev->last_serv_processed = jiffies;
 
@@ -2332,6 +2475,10 @@ static void hclgevf_state_init(struct hclgevf_dev *hdev)
 	INIT_DELAYED_WORK(&hdev->service_task, hclgevf_service_task);
 
 	mutex_init(&hdev->mbx_resp.mbx_mutex);
+
+	spin_lock_init(&hdev->mac_table.mac_list_lock);
+	INIT_LIST_HEAD(&hdev->mac_table.uc_mac_list);
+	INIT_LIST_HEAD(&hdev->mac_table.mc_mac_list);
 
 	/* bring the device down */
 	set_bit(HCLGEVF_STATE_DOWN, &hdev->state);
@@ -2731,19 +2878,6 @@ static int hclgevf_clear_vport_list(struct hclgevf_dev *hdev)
 	return hclgevf_send_mbx_msg(hdev, &send_msg, false, NULL, 0);
 }
 
-static int hclgevf_restore_hw_table(struct hclgevf_dev *hdev)
-{
-	struct hclge_vf_to_pf_msg send_msg;
-
-	if (hdev->reset_type == HNAE3_VF_RESET ||
-	    hdev->reset_type == HNAE3_FLR_RESET) {
-		hclgevf_build_send_msg(&send_msg, HCLGE_MBX_HANDLE_VF_TBL,
-				       HCLGE_MBX_HW_TBL_RESTORE);
-		return hclgevf_send_mbx_msg(hdev, &send_msg, false, NULL, 0);
-	}
-	return 0;
-}
-
 static int hclgevf_reset_hdev(struct hclgevf_dev *hdev)
 {
 	struct pci_dev *pdev = hdev->pdev;
@@ -2777,14 +2911,6 @@ static int hclgevf_reset_hdev(struct hclgevf_dev *hdev)
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"failed(%d) to initialize VLAN config\n", ret);
-		return ret;
-	}
-
-	/* VF_RESET & VF_FLR_RESET need to request to restore hw table */
-	ret = hclgevf_restore_hw_table(hdev);
-	if (ret) {
-		dev_err(&hdev->pdev->dev,
-			"failed(%d) to restore hw table\n", ret);
 		return ret;
 	}
 
@@ -2911,6 +3037,7 @@ static void hclgevf_uninit_hdev(struct hclgevf_dev *hdev)
 
 	hclgevf_pci_uninit(hdev);
 	hclgevf_cmd_uninit(hdev);
+	hclgevf_uninit_mac_list(hdev);
 }
 
 static int hclgevf_init_ae_dev(struct hnae3_ae_dev *ae_dev)

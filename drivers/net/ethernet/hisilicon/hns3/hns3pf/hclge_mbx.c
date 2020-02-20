@@ -263,13 +263,38 @@ void hclge_inform_vf_promisc_info(struct hclge_vport *vport)
 				 HCLGE_MBX_PUSH_PROMISC_INFO, dest_vfid);
 }
 
+static int hclge_modify_vf_mac_addr(struct hclge_vport *vport,
+				    const u8 *old_addr, const u8 *new_addr)
+{
+	bool old_mac_removed = true;
+	int ret;
+
+	ret = hclge_rm_uc_addr_common(vport, old_addr);
+	if (ret)
+		old_mac_removed = false;
+
+	ret = hclge_add_uc_addr_common(vport, new_addr);
+	if (ret) {
+		ret = hclge_add_uc_addr_common(vport, old_addr);
+		if (ret)
+			hclge_modify_mac_node_state(&vport->uc_mac_list,
+						    old_addr, HCLGE_MAC_TO_ADD);
+		return -EIO;
+
+	} else {
+		hclge_replace_mac_node(&vport->uc_mac_list, old_addr, new_addr,
+				       !old_mac_removed);
+	}
+	return ret;
+}
+
 static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 				    struct hclge_mbx_vf_to_pf_cmd *mbx_req)
 {
 #define HCLGE_MBX_VF_OLD_MAC_ADDR_OFFSET	6
 	const u8 *mac_addr = (const u8 *)(mbx_req->msg.data);
 	struct hclge_dev *hdev = vport->back;
-	int status;
+	int status = 0;
 
 	if (mbx_req->msg.subcode == HCLGE_MBX_MAC_VLAN_UC_MODIFY) {
 		const u8 *old_addr = (const u8 *)
@@ -282,32 +307,22 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 		if (is_zero_ether_addr(old_addr)) {
 			status = hclge_add_uc_addr_common(vport, mac_addr);
 			if (!status)
-				hclge_add_vport_mac_table(vport, mac_addr,
-							  HCLGE_MAC_ADDR_UC);
+				hclge_update_mac_list(vport, HCLGE_MAC_ACTIVE,
+						      HCLGE_MAC_ADDR_UC,
+						      mac_addr);
+			else
+				hclge_update_mac_list(vport, HCLGE_MAC_TO_ADD,
+						      HCLGE_MAC_ADDR_UC,
+						      mac_addr);
 		} else {
-			hclge_rm_uc_addr_common(vport, old_addr);
-			status = hclge_add_uc_addr_common(vport, mac_addr);
-			if (status) {
-				hclge_add_uc_addr_common(vport, old_addr);
-			} else {
-				hclge_rm_vport_mac_table(vport, old_addr,
-							 HCLGE_MAC_ADDR_UC);
-				hclge_add_vport_mac_table(vport, mac_addr,
-							  HCLGE_MAC_ADDR_UC);
-			}
+			hclge_modify_vf_mac_addr(vport, old_addr, mac_addr);
 		}
 	} else if (mbx_req->msg.subcode == HCLGE_MBX_MAC_VLAN_UC_ADD) {
-		status = hclge_add_uc_addr_common(vport, mac_addr);
-		if (!status) {
-			hclge_add_vport_mac_table(vport, mac_addr,
-						  HCLGE_MAC_ADDR_UC);
-		}
+		hclge_update_mac_list(vport, HCLGE_MAC_TO_ADD,
+				      HCLGE_MAC_ADDR_UC, mac_addr);
 	} else if (mbx_req->msg.subcode == HCLGE_MBX_MAC_VLAN_UC_REMOVE) {
-		status = hclge_rm_uc_addr_common(vport, mac_addr);
-		if (!status) {
-			hclge_rm_vport_mac_table(vport, mac_addr,
-						 HCLGE_MAC_ADDR_UC);
-		}
+		hclge_update_mac_list(vport, HCLGE_MAC_TO_DEL,
+				      HCLGE_MAC_ADDR_UC, mac_addr);
 	} else {
 		dev_err(&hdev->pdev->dev,
 			"failed to set unicast mac addr, unknown subcode %u\n",
@@ -322,18 +337,14 @@ static int hclge_set_vf_mc_mac_addr(struct hclge_vport *vport,
 {
 	const u8 *mac_addr = (const u8 *)(mbx_req->msg.data);
 	struct hclge_dev *hdev = vport->back;
-	int status;
+	int status = 0;
 
 	if (mbx_req->msg.subcode == HCLGE_MBX_MAC_VLAN_MC_ADD) {
-		status = hclge_add_mc_addr_common(vport, mac_addr);
-		if (!status)
-			hclge_add_vport_mac_table(vport, mac_addr,
-						  HCLGE_MAC_ADDR_MC);
+		hclge_update_mac_list(vport, HCLGE_MAC_TO_ADD,
+				      HCLGE_MAC_ADDR_MC, mac_addr);
 	} else if (mbx_req->msg.subcode == HCLGE_MBX_MAC_VLAN_MC_REMOVE) {
-		status = hclge_rm_mc_addr_common(vport, mac_addr);
-		if (!status)
-			hclge_rm_vport_mac_table(vport, mac_addr,
-						 HCLGE_MAC_ADDR_MC);
+		hclge_update_mac_list(vport, HCLGE_MAC_TO_DEL,
+				      HCLGE_MAC_ADDR_MC, mac_addr);
 	} else {
 		dev_err(&hdev->pdev->dev,
 			"failed to set mcast mac addr, unknown subcode %u\n",
@@ -659,10 +670,7 @@ static void hclge_handle_vf_tbl(struct hclge_vport *vport,
 	struct hclge_vf_vlan_cfg *msg_cmd;
 
 	msg_cmd = (struct hclge_vf_vlan_cfg *)&mbx_req->msg;
-	if (msg_cmd->subcode == HCLGE_MBX_HW_TBL_RESTORE) {
-		hclge_restore_vport_mac_table(vport);
-		hclge_restore_vport_vlan_table(vport);
-	} else if (msg_cmd->subcode == HCLGE_MBX_VPORT_LIST_CLEAR) {
+	if (msg_cmd->subcode == HCLGE_MBX_VPORT_LIST_CLEAR) {
 		hclge_rm_vport_all_mac_table(vport, true, HCLGE_MAC_ADDR_UC);
 		hclge_rm_vport_all_mac_table(vport, true, HCLGE_MAC_ADDR_MC);
 		hclge_rm_vport_all_vlan_table(vport, true);
