@@ -47,6 +47,8 @@
 
 #define QM_SQ_TYPE_MASK			0xf
 
+#define QM_SQ_TAIL_IDX(sqc)		((le16_to_cpu((sqc)->w11) >> 6) & 0x1)
+
 /* cqc shift */
 #define QM_CQ_HOP_NUM_SHIFT		0
 #define QM_CQ_PAGE_SIZE_SHIFT		4
@@ -58,6 +60,8 @@
 #define QM_CQE_PHASE(cqe)		(le16_to_cpu((cqe)->w7) & 0x1)
 
 #define QM_QC_CQE_SIZE			4
+
+#define QM_CQ_TAIL_IDX(cqc)		((le16_to_cpu((cqc)->w11) >> 6) & 0x1)
 
 /* eqc shift */
 #define QM_EQE_AEQE_SIZE		(2UL << 12)
@@ -164,6 +168,8 @@
 
 #define WAIT_PERIOD			20
 #define MAX_WAIT_COUNTS			1000
+#define WAIT_PERIOD_US_MAX		200
+#define WAIT_PERIOD_US_MIN		100
 #define MAX_WAIT_TASK_COUNTS		10
 
 #define QM_RAS_NFE_MBIT_DISABLE		~QM_ECC_MBIT
@@ -496,6 +502,9 @@ static void qm_cq_head_update(struct hisi_qp *qp)
 static void qm_poll_qp(struct hisi_qp *qp, struct hisi_qm *qm)
 {
 	struct qm_cqe *cqe;
+
+	if (atomic_read(&qp->qp_status.flags) == QP_STOP)
+		return;
 
 	if (qp->event_cb)
 		qp->event_cb(qp);
@@ -1036,6 +1045,45 @@ static const struct file_operations qm_regs_fops = {
 	.release = single_release,
 };
 
+static void *qm_ctx_alloc(struct hisi_qm *qm, size_t ctx_size,
+			  dma_addr_t *dma_addr)
+{
+	struct device *dev = &qm->pdev->dev;
+	void *ctx_addr;
+
+	ctx_addr = kzalloc(ctx_size, GFP_KERNEL);
+	if (!ctx_addr)
+		return ERR_PTR(-ENOMEM);
+
+	*dma_addr = dma_map_single(dev, ctx_addr, ctx_size, DMA_FROM_DEVICE);
+	if (dma_mapping_error(dev, *dma_addr)) {
+		dev_err(dev, "DMA mapping error!\n");
+		kfree(ctx_addr);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	return ctx_addr;
+}
+
+static void qm_ctx_free(struct hisi_qm *qm, size_t ctx_size,
+			const void *ctx_addr, dma_addr_t *dma_addr)
+{
+	struct device *dev = &qm->pdev->dev;
+
+	dma_unmap_single(dev, *dma_addr, ctx_size, DMA_FROM_DEVICE);
+	kfree(ctx_addr);
+}
+
+static int qm_dump_sqc_raw(struct hisi_qm *qm, dma_addr_t dma_addr, u16 qp_id)
+{
+	return qm_mb(qm, QM_MB_CMD_SQC, dma_addr, qp_id, 1);
+}
+
+static int qm_dump_cqc_raw(struct hisi_qm *qm, dma_addr_t dma_addr, u16 qp_id)
+{
+	return qm_mb(qm, QM_MB_CMD_CQC, dma_addr, qp_id, 1);
+}
+
 static int qm_create_debugfs_file(struct hisi_qm *qm, enum qm_debug_file index)
 {
 	struct dentry *qm_d = qm->debug.qm_d, *tmp;
@@ -1440,19 +1488,67 @@ EXPORT_SYMBOL_GPL(hisi_qm_start_qp);
 /* Callback function should be called whether task completed or not. */
 static void qp_stop_fail_cb(struct hisi_qp *qp)
 {
+	int qp_used = atomic_read(&qp->qp_status.used);
+	u16 cur_tail = qp->qp_status.sq_tail;
+	u16 cur_head = (cur_tail + QM_Q_DEPTH - qp_used) % QM_Q_DEPTH;
 	struct hisi_qm *qm = qp->qm;
-	int cur_head, cur_tail;
-	int j, cnt, pos;
+	u16 pos;
+	int i;
 
-	cur_tail = qp->qp_status.sq_tail;
-	cnt = atomic_read(&qp->qp_status.used);
-	cur_head = (cur_tail + QM_Q_DEPTH - cnt) % QM_Q_DEPTH;
-
-	for (j = 0; j < cnt; j++) {
-		pos = (j + cur_head) % QM_Q_DEPTH;
-		qp->req_cb(qp, qp->sqe + qm->sqe_size * pos);
+	for (i = 0; i < qp_used; i++) {
+		pos = (i + cur_head) % QM_Q_DEPTH;
+		qp->req_cb(qp, qp->sqe + (u32)(qm->sqe_size * pos));
 		atomic_dec(&qp->qp_status.used);
 	}
+}
+
+static void qm_qp_has_no_task(struct hisi_qp *qp)
+{
+	size_t size = sizeof(struct qm_sqc) + sizeof(struct qm_cqc);
+	struct device *dev = &qp->qm->pdev->dev;
+	struct qm_sqc *sqc;
+	struct qm_cqc *cqc;
+	dma_addr_t dma_addr;
+	void *addr;
+	int i = 0;
+	int ret;
+
+	if (qp->qm->err_ini.is_qm_ecc_mbit || qp->qm->err_ini.is_dev_ecc_mbit)
+		return;
+
+	addr = qm_ctx_alloc(qp->qm, size, &dma_addr);
+	if (IS_ERR(addr)) {
+		dev_err(dev, "alloc ctx for sqc and cqc failed!\n");
+		return;
+	}
+
+	while (++i) {
+		ret = qm_dump_sqc_raw(qp->qm, dma_addr, qp->qp_id);
+		if (ret) {
+			dev_err(dev, "Failed to dump sqc!\n");
+			break;
+		}
+		sqc = addr;
+
+		ret = qm_dump_cqc_raw(qp->qm,
+				(dma_addr + sizeof(struct qm_sqc)), qp->qp_id);
+		if (ret) {
+			dev_err(dev, "Failed to dump cqc!\n");
+			break;
+		}
+		cqc = addr + sizeof(struct qm_sqc);
+
+		if ((sqc->tail == cqc->tail) &&
+			(QM_SQ_TAIL_IDX(sqc) == QM_CQ_TAIL_IDX(cqc)))
+			break;
+
+		if (WARN_ON(i == MAX_WAIT_COUNTS))
+			break;
+
+		usleep_range(WAIT_PERIOD_US_MIN, WAIT_PERIOD_US_MAX);
+	}
+
+	qm_ctx_free(qp->qm, size, addr, &dma_addr);
 }
 
 static int hisi_qm_stop_qp_nolock(struct hisi_qp *qp)
@@ -1460,16 +1556,22 @@ static int hisi_qm_stop_qp_nolock(struct hisi_qp *qp)
 	struct device *dev = &qp->qm->pdev->dev;
 
 	/* it is stopped */
-	if (atomic_read(&qp->qp_status.flags) == QP_STOP)
+	if (atomic_read(&qp->qp_status.flags) == QP_STOP) {
+		qp->is_resetting = false;
 		return 0;
+	}
 	if (!qm_qp_avail_state(qp->qm, qp, QP_STOP))
 		return -EPERM;
 
 	atomic_set(&qp->qp_status.flags, QP_STOP);
 
-	/* waiting for increase used count in hisi_qp_send */
-	udelay(WAIT_PERIOD);
+	qm_qp_has_no_task(qp);
 
+	if (qp->qm->wq)
+		flush_workqueue(qp->qm->wq);
+
+	/* wait for increase used count in qp send and last poll qp finish */
+	udelay(WAIT_PERIOD);
 	if (atomic_read(&qp->qp_status.used))
 		qp_stop_fail_cb(qp);
 
@@ -2368,54 +2470,16 @@ static int qm_stop_started_qp(struct hisi_qm *qm)
 	for (i = 0; i < qm->qp_num; i++) {
 		qp = qm->qp_array[i];
 		if (qp && atomic_read(&qp->qp_status.flags) == QP_START) {
+			qp->is_resetting = true;
 			ret = hisi_qm_stop_qp_nolock(qp);
 			if (ret < 0) {
 				dev_err(dev, "Failed to stop qp%d!\n", i);
 				return ret;
 			}
-
-			qp->is_resetting = true;
 		}
 	}
 
 	return 0;
-}
-
-static void qm_set_resetting_flag(struct hisi_qm *qm)
-{
-	struct hisi_qp *qp;
-	int i;
-
-	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
-		if (qp && atomic_read(&qp->qp_status.flags) == QP_START)
-			qp->is_resetting = true;
-	}
-}
-
-static void qm_wait_task_complete(struct hisi_qm *qm)
-{
-	struct hisi_qp *qp;
-	int tmcnt = 0;
-	int last_num;
-	int task_num;
-	int i;
-
-	task_num = 0;
-	do {
-		last_num = task_num;
-		task_num = 0;
-		msleep(WAIT_PERIOD);
-		for (i = 0; i < qm->qp_num; i++) {
-			qp = qm->qp_array[i];
-			if (qp)
-				task_num += atomic_read(&qp->qp_status.used);
-		}
-		if (task_num && last_num == task_num)
-			tmcnt++;
-		else
-			tmcnt = 0;
-	} while (task_num && tmcnt < MAX_WAIT_TASK_COUNTS);
 }
 
 /**
@@ -2439,12 +2503,6 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 	if (!qm_avail_state(qm, QM_STOP)) {
 		ret = -EPERM;
 		goto err_unlock;
-	}
-
-	if (qm->status.stop_reason == QM_SOFT_RESET ||
-	    qm->status.stop_reason == QM_FLR) {
-		qm_set_resetting_flag(qm);
-		qm_wait_task_complete(qm);
 	}
 
 	if (qm->status.stop_reason == QM_SOFT_RESET ||
