@@ -54,7 +54,7 @@ EXPORT_SYMBOL_GPL(rdfx_cp_rq_wqe_buf);
 
 #ifdef CONFIG_KERNEL_419
 static void rdfx_change_sq_buf(const struct ib_send_wr *wr, int atomic_en,
-			       void *dfx_qp_buf, void *dfx_hns_wqe_sge,
+			       void *dfx_qp_buf, const void *dfx_hns_wqe_sge,
 			       struct rdfx_sq_info *sq,
 			       struct hns_roce_dev *hr_dev,
 			       struct hns_roce_qp *qp)
@@ -88,10 +88,12 @@ static void rdfx_change_sq_buf(struct ib_send_wr *wr, int atomic_en,
 
 	atomic_set(&sq->head, (int)qp->sq.head);
 	sq->head_addr =
-		(u64)get_send_wqe(qp, qp->sq.head & (qp->sq.wqe_cnt - 1));
+		(u64)get_send_wqe(qp, qp->sq.head &
+		    (unsigned int)(qp->sq.wqe_cnt - 1));
 	atomic_set(&sq->tail, (int)qp->sq.tail);
 	sq->tail_addr =
-		(u64)get_send_wqe(qp, qp->sq.tail & (qp->sq.wqe_cnt - 1));
+		(u64)get_send_wqe(qp, qp->sq.tail &
+		    (unsigned int)(qp->sq.wqe_cnt - 1));
 }
 
 #ifdef CONFIG_KERNEL_419
