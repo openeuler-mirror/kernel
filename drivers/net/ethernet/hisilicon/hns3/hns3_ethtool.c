@@ -981,7 +981,7 @@ static int hns3_set_ringparam(struct net_device *ndev,
 	}
 
 	netdev_info(ndev,
-		    "Changing Tx/Rx ring depth from %d/%d to %d/%d\n",
+		    "Changing Tx/Rx ring depth from %u/%u to %u/%u\n",
 		    old_tx_desc_num, old_rx_desc_num,
 		    new_tx_desc_num, new_rx_desc_num);
 
