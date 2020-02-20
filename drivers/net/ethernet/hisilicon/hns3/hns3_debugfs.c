@@ -262,6 +262,7 @@ static void hns3_dbg_help(struct hnae3_handle *h)
 	dev_info(&h->pdev->dev, "dump ncl_config <offset> <length>(in hex)\n");
 	dev_info(&h->pdev->dev, "dump mac tnl status\n");
 	dev_info(&h->pdev->dev, "dump loopback\n");
+	dev_info(&h->pdev->dev, "dump qs shaper [qs id]\n");
 	dev_info(&h->pdev->dev, "dump uc mac list <func id>\n");
 	dev_info(&h->pdev->dev, "dump mc mac list <func id>\n");
 
