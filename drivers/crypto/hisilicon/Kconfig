@@ -28,7 +28,6 @@ config CRYPTO_DEV_HISI_ZIP
 	tristate "Support for HISI ZIP Driver"
 	depends on ARM64 && ACPI
 	select CRYPTO_DEV_HISI_QM
-	select SG_SPLIT
 	help
 	  Support for HiSilicon HIP08 ZIP Driver.
 
