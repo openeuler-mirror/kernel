@@ -240,14 +240,14 @@ static int hclge_set_vf_promisc_mode(struct hclge_vport *vport,
 	bool en_mc = req->msg.en_mc ? true : false;
 	int ret;
 
-	if (!vport->trusted) {
+	if (!vport->vf_info.trusted) {
 		en_uc = false;
 		en_mc = false;
 	}
 
 	ret = hclge_set_vport_promisc_mode(vport, en_uc, en_mc, en_bc);
 
-	vport->promisc_enable = (en_uc || en_mc) ? 1 : 0;
+	vport->vf_info.promisc_enable = (en_uc || en_mc) ? 1 : 0;
 
 	return ret;
 }
@@ -257,10 +257,10 @@ void hclge_inform_vf_promisc_info(struct hclge_vport *vport)
 	u8 dest_vfid = (u8)vport->vport_id;
 	u8 msg_data[2];
 
-	memcpy(&msg_data[0], &vport->promisc_enable, sizeof(u16));
+	memcpy(&msg_data[0], &vport->vf_info.promisc_enable, sizeof(u16));
 
-	(void)hclge_send_mbx_msg(vport, msg_data, sizeof(msg_data),
-				 HCLGE_MBX_PUSH_PROMISC_INFO, dest_vfid);
+	hclge_send_mbx_msg(vport, msg_data, sizeof(msg_data),
+			   HCLGE_MBX_PUSH_PROMISC_INFO, dest_vfid);
 }
 
 static int hclge_modify_vf_mac_addr(struct hclge_vport *vport,
@@ -305,9 +305,19 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 		const u8 *old_addr = (const u8 *)
 		(&mbx_req->msg.data[HCLGE_MBX_VF_OLD_MAC_ADDR_OFFSET]);
 
-		if (!is_zero_ether_addr(vport->mac) &&
-		    !ether_addr_equal(mac_addr, vport->mac))
-			return -EPERM;
+		/* If VF MAC has been configured by the host then it
+		 * cannot be overridden by the MAC specified by the VM.
+		 */
+		if (!is_zero_ether_addr(vport->vf_info.mac) &&
+		    !ether_addr_equal(mac_addr, vport->vf_info.mac)) {
+			status = -EPERM;
+			goto out;
+		}
+
+		if (!is_valid_ether_addr(mac_addr)) {
+			status = -EINVAL;
+			goto out;
+		}
 
 		if (is_zero_ether_addr(old_addr)) {
 			status = hclge_add_uc_addr_common(vport, mac_addr);
@@ -334,6 +344,8 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 			mbx_req->msg.subcode);
 		return -EIO;
 	}
+
+out:
 	return status;
 }
 
@@ -467,7 +479,7 @@ static void hclge_get_vf_queue_info(struct hclge_vport *vport,
 static void hclge_get_vf_mac_addr(struct hclge_vport *vport,
 				  struct hclge_respond_to_vf_msg *resp_msg)
 {
-	ether_addr_copy(resp_msg->data, vport->mac);
+	ether_addr_copy(resp_msg->data, vport->vf_info.mac);
 	resp_msg->len = ETH_ALEN;
 }
 
@@ -507,6 +519,7 @@ static int hclge_get_link_info(struct hclge_vport *vport,
 {
 #define HCLGE_VF_LINK_STATE_UP		1U
 #define HCLGE_VF_LINK_STATE_DOWN	0U
+
 	struct hclge_dev *hdev = vport->back;
 	u16 link_status;
 	u8 msg_data[8];
@@ -514,7 +527,7 @@ static int hclge_get_link_info(struct hclge_vport *vport,
 	u16 duplex;
 
 	/* mac.link can only be 0 or 1 */
-	switch (vport->link_state) {
+	switch (vport->vf_info.link_state) {
 	case IFLA_VF_LINK_STATE_ENABLE:
 		link_status = HCLGE_VF_LINK_STATE_UP;
 		break;

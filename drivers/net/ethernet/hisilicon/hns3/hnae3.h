@@ -364,6 +364,10 @@ struct hnae3_ae_dev {
  *   Enable/disable HW GRO
  * add_arfs_entry
  *   Check the 5-tuples of flow, and create flow director rule
+ * get_vf_config
+ *   Get the VF configuration setting by the host
+ * set_vf_link_state
+ *   Set VF link status
  * set_vf_spoofchk
  *   Enable/disable spoof check for specified vf
  * set_vf_trust
@@ -371,6 +375,8 @@ struct hnae3_ae_dev {
  *   it can enable promisc mode
  * set_vf_rate
  *   Set the max tx rate of specified vf.
+ * set_vf_mac
+ *   Configure the default MAC for specified VF
  */
 struct hnae3_ae_ops {
 	int (*init_ae_dev)(struct hnae3_ae_dev *ae_dev);
@@ -551,10 +557,10 @@ struct hnae3_ae_ops {
 				 int link_state);
 	int (*set_vf_spoofchk)(struct hnae3_handle *handle, int vf,
 			       bool enable);
-	int (*set_vf_mac)(struct hnae3_handle *handle, int vf, u8 *p);
 	int (*set_vf_trust)(struct hnae3_handle *handle, int vf, bool enable);
 	int (*set_vf_rate)(struct hnae3_handle *handle, int vf,
 			   int min_tx_rate, int max_tx_rate, bool force);
+	int (*set_vf_mac)(struct hnae3_handle *handle, int vf, u8 *p);
 };
 
 struct hnae3_dcb_ops {
