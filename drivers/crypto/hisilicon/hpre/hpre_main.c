@@ -227,7 +227,7 @@ static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 		return -EINVAL;
 
 	ret = kstrtou32(val, 10, &n);
-	if (ret != 0 || n > UACCE_MODE_NOIOMMU)
+	if (ret != 0 || (n != UACCE_MODE_NOIOMMU && n != UACCE_MODE_NOUACCE))
 		return -EINVAL;
 
 	return param_set_int(val, kp);
@@ -244,7 +244,7 @@ MODULE_PARM_DESC(pf_q_num, "Number of queues in PF of CS(1-1024)");
 
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
-MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
+MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
 static inline void hpre_add_to_list(struct hpre *hpre)
 {
 	mutex_lock(&hpre_list_lock);
@@ -588,7 +588,7 @@ static ssize_t hpre_ctrl_debug_read(struct file *filp, char __user *buf,
 		return -EINVAL;
 	}
 	spin_unlock_irq(&file->lock);
-	ret = sprintf(tbuf, "%u\n", val);
+	ret = snprintf(tbuf, HPRE_DBGFS_VAL_MAX_LEN, "%u\n", val);
 	return simple_read_from_buffer(buf, count, pos, tbuf, ret);
 }
 
@@ -819,20 +819,9 @@ static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	qm->algs = "rsa\ndh\n";
 	switch (uacce_mode) {
 	case UACCE_MODE_NOUACCE:
-		qm->use_dma_api = true;
 		qm->use_uacce = false;
 		break;
-	case UACCE_MODE_UACCE:
-#ifdef CONFIG_IOMMU_SVA
-		qm->use_dma_api = true;
-		qm->use_sva = true;
-#else
-		qm->use_dma_api = false;
-#endif
-		qm->use_uacce = true;
-		break;
 	case UACCE_MODE_NOIOMMU:
-		qm->use_dma_api = true;
 		qm->use_uacce = true;
 		break;
 	default:

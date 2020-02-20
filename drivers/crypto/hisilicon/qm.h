@@ -287,7 +287,6 @@ struct hisi_qm {
 	u32 msi_mask;
 
 	const char *algs;
-	bool use_dma_api;	/* use dma or iommu api api */
 	bool use_uacce;		/* register to uacce */
 	bool use_sva;
 

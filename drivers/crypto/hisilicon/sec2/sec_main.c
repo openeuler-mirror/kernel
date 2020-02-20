@@ -313,7 +313,7 @@ static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 		return -EINVAL;
 
 	ret = kstrtou32(val, FORMAT_DECIMAL, &n);
-	if (ret != 0 || n > UACCE_MODE_NOIOMMU)
+	if (ret != 0 || (n != UACCE_MODE_NOIOMMU && n != UACCE_MODE_NOUACCE))
 		return -EINVAL;
 
 	return param_set_int(val, kp);
@@ -405,7 +405,7 @@ MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 0-4096, v2 0-1024)");
 
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
-MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 1, 2");
+MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
 
 static int ctx_q_num = CTX_Q_NUM_DEF;
 module_param_cb(ctx_q_num, &ctx_q_num_ops, &ctx_q_num, 0444);
@@ -1023,20 +1023,9 @@ static int hisi_sec_qm_init(struct hisi_qm *qm, struct pci_dev *pdev)
 
 	switch (uacce_mode) {
 	case UACCE_MODE_NOUACCE:
-		qm->use_dma_api = true;
 		qm->use_uacce = false;
 		break;
-	case UACCE_MODE_UACCE:
-#ifdef CONFIG_IOMMU_SVA
-		qm->use_dma_api = true;
-		qm->use_sva = true;
-#else
-		qm->use_dma_api = false;
-#endif
-		qm->use_uacce = true;
-		break;
 	case UACCE_MODE_NOIOMMU:
-		qm->use_dma_api = true;
 		qm->use_uacce = true;
 		break;
 	default:
@@ -1783,10 +1772,6 @@ static int __init hisi_sec_init(void)
 		pr_err("Failed to register pci driver.\n");
 		goto err_pci;
 	}
-#ifndef CONFIG_IOMMU_SVA
-	if (uacce_mode == UACCE_MODE_UACCE)
-		return 0;
-#endif
 
 	if (list_empty(&hisi_sec_list)) {
 		pr_err("no device!\n");
@@ -1814,12 +1799,7 @@ static int __init hisi_sec_init(void)
 
 static void __exit hisi_sec_exit(void)
 {
-#ifndef CONFIG_IOMMU_SVA
-	if (uacce_mode != UACCE_MODE_UACCE)
-		hisi_sec_unregister_from_crypto(fusion_limit);
-#else
 	hisi_sec_unregister_from_crypto(fusion_limit);
-#endif
 	pci_unregister_driver(&hisi_sec_pci_driver);
 	hisi_sec_unregister_debugfs();
 	if (sec_wq)
