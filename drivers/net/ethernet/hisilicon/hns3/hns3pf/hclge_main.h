@@ -905,6 +905,15 @@ struct hclge_port_base_vlan_config {
 	struct hclge_vlan_info vlan_info;
 };
 
+struct hclge_vf_info {
+	int link_state;
+	u8 mac[ETH_ALEN];
+	u32 spoofchk;
+	u32 max_tx_rate;
+	u32 trusted;
+	u16 promisc_enable;
+};
+
 struct hclge_vport {
 	u16 alloc_tqps;	/* Allocated Tx/Rx queues */
 
@@ -936,16 +945,11 @@ struct hclge_vport {
 
 	unsigned long state;
 	unsigned long last_active_jiffies;
-	int link_state;
-	u8 mac[ETH_ALEN];
 	int mps; /* Max packet size */
 
-	u32 spoofchk;
-	u32 max_tx_rate;
-	u32 trusted;
-	u16 promisc_enable;
 	u8 overflow_promisc_flags;
 	u8 last_promisc_flags;
+	struct hclge_vf_info vf_info;
 
 	spinlock_t mac_list_lock; /* protect mac address need to add/detele */
 	struct list_head uc_mac_list;   /* Store VF unicast table */

@@ -65,8 +65,6 @@ static bool hclge_get_hw_reset_stat(struct hnae3_handle *handle);
 static void hclge_rfs_filter_expire(struct hclge_dev *hdev);
 static void hclge_clear_arfs_rules(struct hnae3_handle *handle);
 static int hclge_set_default_loopback(struct hclge_dev *hdev);
-static int hclge_resume_vf_rate(struct hclge_dev *hdev);
-static void hclge_reset_vf_rate(struct hclge_dev *hdev);
 
 static void hclge_sync_mac_table(struct hclge_dev *hdev);
 static int hclge_restore_hw_table(struct hclge_dev *hdev);
@@ -1708,7 +1706,7 @@ static int hclge_alloc_vport(struct hclge_dev *hdev)
 	for (i = 0; i < num_vport; i++) {
 		vport->back = hdev;
 		vport->vport_id = i;
-		vport->link_state = IFLA_VF_LINK_STATE_AUTO;
+		vport->vf_info.link_state = IFLA_VF_LINK_STATE_AUTO;
 		vport->mps = HCLGE_MAC_DEFAULT_FRAME;
 		vport->port_base_vlan_cfg.state = HNAE3_PORT_BASE_VLAN_DISABLE;
 		vport->rxvlan_cfg.rx_vlan_offload_en = true;
@@ -2945,7 +2943,7 @@ static struct hclge_vport *hclge_get_vf_vport(struct hclge_dev *hdev, int vf)
 		return NULL;
 	}
 
-	/* vf start from 1 in vport */
+	/* VF start from 1 in vport */
 	vf += HCLGE_VF_VPORT_START_NUM;
 	return &hdev->vport[vf];
 }
@@ -2961,15 +2959,15 @@ static int hclge_get_vf_config(struct hnae3_handle *handle, int vf,
 		return -EINVAL;
 
 	ivf->vf = vf;
-	ivf->linkstate = vport->link_state;
-	ivf->spoofchk = vport->spoofchk;
-	ivf->trusted = vport->trusted;
+	ivf->linkstate = vport->vf_info.link_state;
+	ivf->spoofchk = vport->vf_info.spoofchk;
+	ivf->trusted = vport->vf_info.trusted;
 	ivf->min_tx_rate = 0;
-	ivf->max_tx_rate = vport->max_tx_rate;
+	ivf->max_tx_rate = vport->vf_info.max_tx_rate;
 	ivf->vlan = vport->port_base_vlan_cfg.vlan_info.vlan_tag;
 	ivf->vlan_proto = htons(vport->port_base_vlan_cfg.vlan_info.vlan_proto);
 	ivf->qos = vport->port_base_vlan_cfg.vlan_info.qos;
-	ether_addr_copy(ivf->mac, vport->mac);
+	ether_addr_copy(ivf->mac, vport->vf_info.mac);
 
 	return 0;
 }
@@ -2984,7 +2982,7 @@ static int hclge_set_vf_link_state(struct hnae3_handle *handle, int vf,
 	if (!vport)
 		return -EINVAL;
 
-	vport->link_state = link_state;
+	vport->vf_info.link_state = link_state;
 
 	return 0;
 }
@@ -8100,20 +8098,14 @@ static bool hclge_check_vf_mac_exist(struct hclge_vport *vport, int vf_idx,
 	req.egress_port = cpu_to_le16(egress_port);
 	hclge_prepare_mac_addr(&req, mac_addr, false);
 
-	if (hclge_lookup_mac_vlan_tbl(vport, &req, &desc, false) != -ENOENT) {
-		dev_info(&hdev->pdev->dev, "Specified MAC(=%pM) exists!\n",
-			 mac_addr);
+	if (hclge_lookup_mac_vlan_tbl(vport, &req, &desc, false) != -ENOENT)
 		return true;
-	}
 
+	vf_idx += HCLGE_VF_VPORT_START_NUM;
 	for (i = hdev->num_vmdq_vport + 1; i < hdev->num_alloc_vport; i++)
 		if (i != vf_idx &&
-		    ether_addr_equal(mac_addr, hdev->vport[i].mac)) {
-			dev_info(&hdev->pdev->dev,
-				 "Specified MAC(=%pM) is same as vport%d, no change committed!\n",
-				 mac_addr, i);
+		    ether_addr_equal(mac_addr, hdev->vport[i].vf_info.mac))
 			return true;
-		}
 
 	return false;
 }
@@ -8124,27 +8116,29 @@ static int hclge_set_vf_mac(struct hnae3_handle *handle, int vf,
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 
-	if (hclge_check_vf_mac_exist(vport, vf + HCLGE_VF_VPORT_START_NUM,
-				     mac_addr))
-		return -EEXIST;
-
 	vport = hclge_get_vf_vport(hdev, vf);
 	if (!vport)
 		return -EINVAL;
 
-	if (ether_addr_equal(mac_addr, vport->mac)) {
+	if (ether_addr_equal(mac_addr, vport->vf_info.mac)) {
 		dev_info(&hdev->pdev->dev,
 			 "Specified MAC(=%pM) is same as before, no change committed!\n",
-			 vport->mac);
+			 mac_addr);
 		return 0;
 	}
 
-	ether_addr_copy(vport->mac, mac_addr);
-	dev_info(&hdev->pdev->dev,
-		 "VF %d has been set to %pM. Please reload/reset VF\n",
-		 vf, vport->mac);
+	if (hclge_check_vf_mac_exist(vport, vf, mac_addr)) {
+		dev_err(&hdev->pdev->dev, "Specified MAC(=%pM) exists!\n",
+			mac_addr);
+		return -EEXIST;
+	}
 
-	return 0;
+	ether_addr_copy(vport->vf_info.mac, mac_addr);
+	dev_info(&hdev->pdev->dev,
+		 "MAC of VF %d has been set to %pM, and it will be reinitialized!\n",
+		 vf, mac_addr);
+
+	return hclge_inform_reset_assert_to_vf(vport);
 }
 
 static int hclge_add_mgr_tbl(struct hclge_dev *hdev,
@@ -8404,7 +8398,7 @@ static int hclge_set_vf_vlan_common(struct hclge_dev *hdev, u16 vfid,
 	 * new vlan, because tx packets with these vlan id will be dropped.
 	 */
 	if (test_bit(vfid, hdev->vf_vlan_full) && !is_kill) {
-		if (vport->spoofchk && vlan) {
+		if (vport->vf_info.spoofchk && vlan) {
 			dev_err(&hdev->pdev->dev,
 				"Can't add vlan due to spoof check is on and vf vlan table is full\n");
 			return -EPERM;
@@ -10240,7 +10234,7 @@ static int hclge_set_vf_spoofchk(struct hnae3_handle *handle, int vf,
 	if (!vport)
 		return -EINVAL;
 
-	if (vport->spoofchk == new_spoofchk)
+	if (vport->vf_info.spoofchk == new_spoofchk)
 		return 0;
 
 	if (enable && test_bit(vport->vport_id, hdev->vf_vlan_full))
@@ -10256,7 +10250,7 @@ static int hclge_set_vf_spoofchk(struct hnae3_handle *handle, int vf,
 	if (ret)
 		return ret;
 
-	vport->spoofchk = new_spoofchk;
+	vport->vf_info.spoofchk = new_spoofchk;
 	return 0;
 }
 
@@ -10272,12 +10266,13 @@ static int hclge_reset_vport_spoofchk(struct hclge_dev *hdev)
 	/* resume the vf spoof check state after reset */
 	for (i = 0; i < hdev->num_alloc_vport; i++) {
 		ret = hclge_set_vf_spoofchk_hw(hdev, vport->vport_id,
-					       vport->spoofchk);
+					       vport->vf_info.spoofchk);
 		if (ret)
 			return ret;
 
 		vport++;
 	}
+
 	return 0;
 }
 
@@ -10293,21 +10288,113 @@ static int hclge_set_vf_trust(struct hnae3_handle *handle, int vf, bool enable)
 	if (!vport)
 		return -EINVAL;
 
-	if (vport->trusted == new_trusted)
+	if (vport->vf_info.trusted == new_trusted)
 		return 0;
 
 	/* Disable promisc mode for VF if it is not trusted any more. */
-	if (!enable && vport->promisc_enable) {
+	if (!enable && vport->vf_info.promisc_enable) {
 		en_bc_pmc = hdev->pdev->revision != 0x20;
 		ret = hclge_set_vport_promisc_mode(vport, false, false,
 						   en_bc_pmc);
 		if (ret)
 			return ret;
-		vport->promisc_enable = 0;
+		vport->vf_info.promisc_enable = 0;
 		hclge_inform_vf_promisc_info(vport);
 	}
 
-	vport->trusted = new_trusted;
+	vport->vf_info.trusted = new_trusted;
+
+	return 0;
+}
+
+static void hclge_reset_vf_rate(struct hclge_dev *hdev)
+{
+	int ret;
+	int vf;
+
+	/* reset vf rate to default value */
+	for (vf = HCLGE_VF_VPORT_START_NUM; vf < hdev->num_alloc_vport; vf++) {
+		struct hclge_vport *vport = &hdev->vport[vf];
+
+		vport->vf_info.max_tx_rate = 0;
+		ret = hclge_tm_qs_shaper_cfg(vport, vport->vf_info.max_tx_rate);
+		if (ret)
+			dev_err(&hdev->pdev->dev,
+				"vf%d failed to reset to default, ret=%d\n",
+				vf - HCLGE_VF_VPORT_START_NUM, ret);
+	}
+}
+
+static int hclge_vf_rate_param_check(struct hclge_dev *hdev, int vf,
+				     int min_tx_rate, int max_tx_rate)
+{
+	if (min_tx_rate != 0 ||
+	    max_tx_rate < 0 || max_tx_rate > hdev->hw.mac.max_speed) {
+		dev_err(&hdev->pdev->dev,
+			"min_tx_rate:%d [0], max_tx_rate:%d [0, %u]\n",
+			min_tx_rate, max_tx_rate, hdev->hw.mac.max_speed);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int hclge_set_vf_rate(struct hnae3_handle *handle, int vf,
+			     int min_tx_rate, int max_tx_rate, bool force)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+	int ret;
+
+	ret = hclge_vf_rate_param_check(hdev, vf, min_tx_rate, max_tx_rate);
+	if (ret)
+		return ret;
+
+	vport = hclge_get_vf_vport(hdev, vf);
+	if (!vport)
+		return -EINVAL;
+
+	if (!force && max_tx_rate == vport->vf_info.max_tx_rate)
+		return 0;
+
+	ret = hclge_tm_qs_shaper_cfg(vport, max_tx_rate);
+	if (ret)
+		return ret;
+
+	vport->vf_info.max_tx_rate = max_tx_rate;
+
+	return 0;
+}
+
+static int hclge_resume_vf_rate(struct hclge_dev *hdev)
+{
+	struct hnae3_handle *handle = &hdev->vport->nic;
+	struct hclge_vport *vport;
+	int ret;
+	int vf;
+
+	/* resume the vf max_tx_rate after reset */
+	for (vf = 0; vf < pci_num_vf(hdev->pdev); vf++) {
+		vport = hclge_get_vf_vport(hdev, vf);
+		if (!vport)
+			return -EINVAL;
+
+		/* zero means max rate, after reset, firmware already set it to
+		 * max rate, so just continue.
+		 */
+		if (!vport->vf_info.max_tx_rate)
+			continue;
+
+		ret = hclge_set_vf_rate(handle, vf, 0,
+					vport->vf_info.max_tx_rate, true);
+		if (ret) {
+			dev_err(&hdev->pdev->dev,
+				"vf%d failed to resume tx_rate:%u, ret=%d\n",
+				vf, vport->vf_info.max_tx_rate, ret);
+			return ret;
+		}
+	}
+
 	return 0;
 }
 
@@ -11072,97 +11159,6 @@ static int hclge_gro_en(struct hnae3_handle *handle, bool enable)
 	struct hclge_dev *hdev = vport->back;
 
 	return hclge_config_gro(hdev, enable);
-}
-
-static int hclge_vf_rate_param_check(struct hclge_dev *hdev, int vf,
-				     int min_tx_rate, int max_tx_rate)
-{
-	if (min_tx_rate != 0 ||
-	    max_tx_rate < 0 || max_tx_rate > hdev->hw.mac.max_speed) {
-		dev_err(&hdev->pdev->dev,
-			"min_tx_rate:%d [0], max_tx_rate:%d [0, %u]\n",
-			min_tx_rate, max_tx_rate, hdev->hw.mac.max_speed);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-static int hclge_set_vf_rate(struct hnae3_handle *handle, int vf,
-			     int min_tx_rate, int max_tx_rate, bool force)
-{
-	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev = vport->back;
-	int ret;
-
-	ret = hclge_vf_rate_param_check(hdev, vf, min_tx_rate, max_tx_rate);
-	if (ret)
-		return ret;
-
-	vport = hclge_get_vf_vport(hdev, vf);
-	if (!vport)
-		return -EINVAL;
-
-	if (!force && max_tx_rate == vport->max_tx_rate)
-		return 0;
-
-	ret = hclge_tm_qs_shaper_cfg(vport, max_tx_rate);
-	if (ret)
-		return ret;
-
-	vport->max_tx_rate = max_tx_rate;
-
-	return 0;
-}
-
-static int hclge_resume_vf_rate(struct hclge_dev *hdev)
-{
-	struct hnae3_handle *handle = &hdev->vport->nic;
-	struct hclge_vport *vport;
-	int ret;
-	int vf;
-
-	/* resume the vf max_tx_rate after reset */
-	for (vf = 0; vf < pci_num_vf(hdev->pdev); vf++) {
-		vport = hclge_get_vf_vport(hdev, vf);
-		if (!vport)
-			return -EINVAL;
-
-		/* zero means max rate, after reset, firmware already set it to
-		 * max rate, so just continue.
-		 */
-		if (!vport->max_tx_rate)
-			continue;
-
-		ret = hclge_set_vf_rate(handle, vf, 0, vport->max_tx_rate,
-					true);
-		if (ret) {
-			dev_err(&hdev->pdev->dev,
-				"vf%d failed to resume tx_rate:%u, ret=%d\n",
-				vf, vport->max_tx_rate, ret);
-			return ret;
-		}
-	}
-
-	return 0;
-}
-
-static void hclge_reset_vf_rate(struct hclge_dev *hdev)
-{
-	int ret;
-	int vf;
-
-	/* reset vf rate to default value */
-	for (vf = HCLGE_VF_VPORT_START_NUM; vf < hdev->num_alloc_vport; vf++) {
-		struct hclge_vport *vport = &hdev->vport[vf];
-
-		vport->max_tx_rate = 0;
-		ret = hclge_tm_qs_shaper_cfg(vport, vport->max_tx_rate);
-		if (ret)
-			dev_err(&hdev->pdev->dev,
-				"vf%d failed to reset to default, ret=%d\n",
-				vf - HCLGE_VF_VPORT_START_NUM, ret);
-	}
 }
 
 static void hclge_sync_promisc_mode(struct hclge_dev *hdev)

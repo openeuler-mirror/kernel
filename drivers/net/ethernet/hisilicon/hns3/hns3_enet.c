@@ -1259,15 +1259,13 @@ static bool hns3_skb_need_linearized(struct sk_buff *skb, unsigned int *bd_size,
 	for (i = 0; i < HNS3_MAX_NON_TSO_BD_NUM - 1U; i++)
 		tot_len += bd_size[i];
 
-	/* ensure the first 8 frags is greater than mss + header the first
-	 * 7 frags is greater than mss.
-	 */
+	/* ensure the first 8 frags is greater than mss + header */
 	if (tot_len + bd_size[HNS3_MAX_NON_TSO_BD_NUM - 1U] <
 	    skb_shinfo(skb)->gso_size + hns3_gso_hdr_len(skb))
 		return true;
 
-	/* ensure the remaining continuous 7 buffer is greater than mss
-	 * except the last 7 frags.
+	/* ensure every continuous 7 buffer is greater than mss
+	 * except the last one.
 	 */
 	for (i = 0; i < bd_num - HNS3_MAX_NON_TSO_BD_NUM; i++) {
 		tot_len -= bd_size[i];
@@ -1492,6 +1490,16 @@ static int hns3_nic_net_set_mac_address(struct net_device *netdev, void *p)
 		netdev_info(netdev, "already using mac address %pM\n",
 			    mac_addr->sa_data);
 		return 0;
+	}
+
+	/* For VF device, if there is a perm_addr, then the user will not
+	 * be allowed to change the address.
+	 */
+	if (!hns3_is_phys_func(h->pdev) &&
+	    !is_zero_ether_addr(netdev->perm_addr)) {
+		netdev_err(netdev, "has permanent MAC %pM, user MAC %pM not allow\n",
+			   netdev->perm_addr, mac_addr->sa_data);
+		return -EPERM;
 	}
 
 	ret = h->ae_algo->ops->set_mac_addr(h, mac_addr->sa_data, false);
@@ -2007,23 +2015,6 @@ static int hns3_nic_set_vf_link_state(struct net_device *ndev, int vf,
 	return h->ae_algo->ops->set_vf_link_state(h, vf, link_state);
 }
 
-static int hns3_nic_set_vf_mac(struct net_device *netdev, int vf_id, u8 *mac)
-{
-	struct hnae3_handle *h = hns3_get_handle(netdev);
-
-	if (!h->ae_algo->ops->set_vf_mac)
-		return -EOPNOTSUPP;
-
-	if (is_broadcast_ether_addr(mac) ||
-	    is_multicast_ether_addr(mac)) {
-		netdev_err(netdev,
-			   "Set VF MAC error! invalid mac:%pM.\n", mac);
-		return -EINVAL;
-	}
-
-	return h->ae_algo->ops->set_vf_mac(h, vf_id, mac);
-}
-
 static int hns3_nic_set_vf_rate(struct net_device *ndev, int vf,
 				int min_tx_rate, int max_tx_rate)
 {
@@ -2034,6 +2025,23 @@ static int hns3_nic_set_vf_rate(struct net_device *ndev, int vf,
 
 	return h->ae_algo->ops->set_vf_rate(h, vf, min_tx_rate, max_tx_rate,
 					    false);
+}
+
+static int hns3_nic_set_vf_mac(struct net_device *netdev, int vf_id, u8 *mac)
+{
+	struct hnae3_handle *h = hns3_get_handle(netdev);
+
+	if (!h->ae_algo->ops->set_vf_mac)
+		return -EOPNOTSUPP;
+
+	if (is_multicast_ether_addr(mac)) {
+		netdev_err(netdev,
+			   "Invalid MAC:%pM specified. Could not set MAC\n",
+			   mac);
+		return -EINVAL;
+	}
+
+	return h->ae_algo->ops->set_vf_mac(h, vf_id, mac);
 }
 
 struct net_device_ops hns3_nic_netdev_ops = {
@@ -2061,8 +2069,8 @@ struct net_device_ops hns3_nic_netdev_ops = {
 #endif
 	.ndo_get_vf_config	= hns3_nic_get_vf_config,
 	.ndo_set_vf_link_state	= hns3_nic_set_vf_link_state,
-	.ndo_set_vf_mac		= hns3_nic_set_vf_mac,
 	.ndo_set_vf_rate	= hns3_nic_set_vf_rate,
+	.ndo_set_vf_mac		= hns3_nic_set_vf_mac,
 };
 
 bool hns3_is_phys_func(struct pci_dev *pdev)
@@ -3934,16 +3942,17 @@ static int hns3_init_mac_addr(struct net_device *netdev)
 	u8 mac_addr_temp[ETH_ALEN];
 	int ret = 0;
 
-	if (h->ae_algo->ops->get_mac_addr) {
+	if (h->ae_algo->ops->get_mac_addr)
 		h->ae_algo->ops->get_mac_addr(h, mac_addr_temp);
-		ether_addr_copy(netdev->dev_addr, mac_addr_temp);
-	}
 
 	/* Check if the MAC address is valid, if not get a random one */
-	if (!is_valid_ether_addr(netdev->dev_addr)) {
+	if (!is_valid_ether_addr(mac_addr_temp)) {
 		eth_hw_addr_random(netdev);
 		dev_warn(priv->dev, "using random MAC address %pM\n",
 			 netdev->dev_addr);
+	} else {
+		ether_addr_copy(netdev->dev_addr, mac_addr_temp);
+		ether_addr_copy(netdev->perm_addr, mac_addr_temp);
 	}
 
 	if (h->ae_algo->ops->set_mac_addr)

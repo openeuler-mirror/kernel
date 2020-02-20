@@ -1259,19 +1259,7 @@ static int hclgevf_set_mac_addr(struct hnae3_handle *handle, void *p,
 	u8 *old_mac_addr = (u8 *)hdev->hw.mac.mac_addr;
 	struct hclge_vf_to_pf_msg send_msg;
 	u8 *new_mac_addr = (u8 *)p;
-	u8 host_mac_addr[ETH_ALEN];
 	int status;
-
-	status = hclgevf_get_host_mac_addr(hdev, host_mac_addr);
-	if (status)
-		return status;
-
-	if (!is_first && hdev->has_pf_mac) {
-		dev_err(&hdev->pdev->dev,
-			"has host VF mac %pM, user MAC %pM not allow\n",
-			old_mac_addr, p);
-		return -EPERM;
-	}
 
 	hclgevf_build_send_msg(&send_msg, HCLGE_MBX_SET_UNICAST, 0);
 	send_msg.subcode = HCLGE_MBX_MAC_VLAN_UC_MODIFY;
