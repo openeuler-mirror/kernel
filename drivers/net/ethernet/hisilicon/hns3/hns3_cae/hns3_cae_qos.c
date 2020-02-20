@@ -433,12 +433,12 @@ int hns3_cae_qcn_cfg(const struct hns3_nic_priv *net_priv,
 		     u32 out_size)
 {
 #define HCLGE_OPC_QCN_CFG	0x1A01
+	bool check = !buf_in || in_size < sizeof(32);
 	struct hclge_vport *vport = NULL;
 	struct hclge_dev *hdev = NULL;
 	struct hclge_desc desc;
-	int qcn_bypass;
+	u32 qcn_bypass;
 	u32 qcn_cfg;
-	bool check = !buf_in || in_size < sizeof(int);
 	int ret;
 
 	if (check) {
@@ -446,7 +446,7 @@ int hns3_cae_qcn_cfg(const struct hns3_nic_priv *net_priv,
 		return -EFAULT;
 	}
 
-	qcn_bypass = *(int *)(buf_in);
+	qcn_bypass = *(u32 *)(buf_in);
 	vport = hns3_cae_get_vport(net_priv->ae_handle);
 	hdev = vport->back;
 

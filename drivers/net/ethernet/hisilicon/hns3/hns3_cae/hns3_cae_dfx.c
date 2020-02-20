@@ -96,7 +96,7 @@ int hns3_cae_get_dfx_info(const struct hns3_nic_priv *net_priv,
 	u32 mac_id;
 	bool check = !buf_out || out_size < sizeof(struct hns3_cae_dfx_param);
 	int ret;
-	int i;
+	u32 i;
 
 	if (check) {
 		pr_err("input param buf_out error in %s function\n", __func__);
