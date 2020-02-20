@@ -78,6 +78,7 @@ static void free_iova_flush_queue(struct iova_domain *iovad)
 
 	del_timer_sync(&iovad->fq_timer);
 
+	flush_work(&iovad->free_iova_work);
 	fq_destroy_all_entries(iovad);
 
 	free_percpu(iovad->fq);
@@ -85,6 +86,24 @@ static void free_iova_flush_queue(struct iova_domain *iovad)
 	iovad->fq         = NULL;
 	iovad->flush_cb   = NULL;
 	iovad->entry_dtor = NULL;
+}
+
+static void fq_ring_free(struct iova_domain *iovad, struct iova_fq *fq);
+static void free_iova_work_func(struct work_struct *work)
+{
+	struct iova_domain *iovad;
+	int cpu;
+
+	iovad = container_of(work, struct iova_domain, free_iova_work);
+	for_each_possible_cpu(cpu) {
+		unsigned long flags;
+		struct iova_fq *fq;
+
+		fq = per_cpu_ptr(iovad->fq, cpu);
+		spin_lock_irqsave(&fq->lock, flags);
+		fq_ring_free(iovad, fq);
+		spin_unlock_irqrestore(&fq->lock, flags);
+	}
 }
 
 int init_iova_flush_queue(struct iova_domain *iovad,
@@ -117,6 +136,7 @@ int init_iova_flush_queue(struct iova_domain *iovad,
 
 	iovad->fq = queue;
 
+	INIT_WORK(&iovad->free_iova_work, free_iova_work_func);
 	timer_setup(&iovad->fq_timer, fq_flush_timeout, 0);
 	atomic_set(&iovad->fq_timer_on, 0);
 
@@ -541,20 +561,11 @@ static void fq_destroy_all_entries(struct iova_domain *iovad)
 static void fq_flush_timeout(struct timer_list *t)
 {
 	struct iova_domain *iovad = from_timer(iovad, t, fq_timer);
-	int cpu;
 
 	atomic_set(&iovad->fq_timer_on, 0);
 	iova_domain_flush(iovad);
 
-	for_each_possible_cpu(cpu) {
-		unsigned long flags;
-		struct iova_fq *fq;
-
-		fq = per_cpu_ptr(iovad->fq, cpu);
-		spin_lock_irqsave(&fq->lock, flags);
-		fq_ring_free(iovad, fq);
-		spin_unlock_irqrestore(&fq->lock, flags);
-	}
+	schedule_work(&iovad->free_iova_work);
 }
 
 void queue_iova(struct iova_domain *iovad,
