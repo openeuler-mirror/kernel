@@ -3730,6 +3730,8 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	enum hnae3_reset_type reset_level;
 	int ret;
 
+	hdev->rst_stats.hw_reset_done_cnt++;
+
 	ret = hclge_notify_roce_client(hdev, HNAE3_UNINIT_CLIENT);
 	if (ret)
 		return ret;
@@ -3790,8 +3792,6 @@ static void hclge_reset(struct hclge_dev *hdev)
 
 	if (hclge_reset_wait(hdev))
 		goto err_reset;
-
-	hdev->rst_stats.hw_reset_done_cnt++;
 
 	if (hclge_reset_rebuild(hdev))
 		goto err_reset;
