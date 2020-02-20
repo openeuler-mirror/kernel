@@ -3272,7 +3272,8 @@ static int hclge_notify_roce_client(struct hclge_dev *hdev,
 static int hclge_reset_wait(struct hclge_dev *hdev)
 {
 #define HCLGE_RESET_WATI_MS	100
-#define HCLGE_RESET_WAIT_CNT	300
+#define HCLGE_RESET_WAIT_CNT	350
+
 	u32 val, reg, reg_bit;
 	u32 cnt = 0;
 
