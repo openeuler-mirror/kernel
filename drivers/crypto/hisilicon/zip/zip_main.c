@@ -787,9 +787,6 @@ static void hisi_zip_log_hw_error(struct hisi_qm *qm, u32 err_sts)
 					 ((err_val >>
 					   HZIP_SRAM_ECC_ERR_NUM_SHIFT) &
 					   0xFF));
-				dev_err(dev, "hisi-zip multi ecc sram addr=0x%x\n",
-					 (err_val >>
-					  HZIP_SRAM_ECC_ERR_ADDR_SHIFT));
 			}
 		}
 		err++;
