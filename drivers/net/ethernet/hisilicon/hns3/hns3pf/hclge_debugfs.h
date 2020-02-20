@@ -10,6 +10,14 @@
 
 #define HCLGE_DBG_BUF_LEN	   256
 #define HCLGE_DBG_MNG_TBL_MAX	   64
+#define HCLGE_DBG_MAC_TBL_MAX	   4223
+#define HCLGE_DBG_MAC_MC_TBL	   2
+#define HCLGE_DBG_MAC_TBL_EN_TYPE  0x01
+#define HCLGE_DBG_MAC_TBL_MC_TYPE  0x02
+#define HCLGE_DBG_MAC_TBL_MAC_EN   0x01
+#define HCLGE_DBG_MAC_TBL_IN_PORT  0x07
+#define HCLGE_DBG_MAC_TBL_E_PORT   0x3FF
+#define HCLGE_DBG_MAC_TBL_E_PORT_B BIT(11)
 
 #define HCLGE_DBG_MNG_VLAN_MASK_B  BIT(0)
 #define HCLGE_DBG_MNG_MAC_MASK_B   BIT(1)
@@ -35,6 +43,9 @@
 #define HCLGE_DBG_DFX_TQP_OFFSET   11
 
 #define HCLGE_DBG_DFX_SSU_2_OFFSET 12
+
+#define HCLGE_DBG_SCAN_STEP        100
+#define HCLGE_DBG_PAUSE_TIME       50
 
 #pragma pack(1)
 
@@ -71,6 +82,12 @@ struct hclge_dbg_reg_common_msg {
 	int msg_num;
 	int offset;
 	enum hclge_opcode_type cmd;
+};
+
+struct hclge_mac_vlan_idx_rd_mc {
+	u32 index;
+	u8  mac_addr[ETH_ALEN];
+	u8  mg_vf_mb[32];
 };
 
 #define	HCLGE_DBG_MAX_DFX_MSG_LEN	60

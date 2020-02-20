@@ -831,6 +831,134 @@ err_qos_cmd_send:
 		"dump qos buf cfg fail(0x%x), ret =  %d\n", cmd, ret);
 }
 
+static void hclge_dbg_dump_mac_table(struct hclge_dev *hdev)
+{
+	struct hclge_mac_vlan_idx_rd_cmd *mac_rd_cmd;
+	struct hclge_mac_vlan_idx_rd_mc *mc_mac_tbl;
+	char printf_buf[HCLGE_DBG_BUF_LEN];
+	struct hclge_desc desc[3];
+	u32 mc_tbl_idx, i;
+	int ret, len;
+	int j;
+
+	len = sizeof(struct hclge_mac_vlan_idx_rd_mc) * HCLGE_DBG_MAC_TBL_MAX;
+	mc_mac_tbl = kzalloc(len, GFP_KERNEL);
+	if (!mc_mac_tbl) {
+		dev_err(&hdev->pdev->dev, "mc_mac_tbl alloc memory failed\n");
+		return;
+	}
+
+	memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
+	dev_info(&hdev->pdev->dev, "Unicast tab:\n");
+	strncat(printf_buf, "|index |mac_addr          drivers/net/ethernet/hisilicon/hns3/|vlan_id drivers/net/ethernet/hisilicon/hns3/|VMDq1 |",
+		HCLGE_DBG_BUF_LEN - 1);
+	strncat(printf_buf, "U_M drivers/net/ethernet/hisilicon/hns3/|mac_en |in_port |E_type |E_Port\n",
+		HCLGE_DBG_BUF_LEN - strlen(printf_buf) - 1);
+
+	dev_info(&hdev->pdev->dev, "%s", printf_buf);
+
+	mc_tbl_idx = 0;
+	for (i = 0; i < HCLGE_DBG_MAC_TBL_MAX; i++) {
+		/* Prevent long-term occupation of the command channel. */
+		if ((i % HCLGE_DBG_SCAN_STEP) == 0)
+			msleep(HCLGE_DBG_PAUSE_TIME);
+
+		hclge_cmd_setup_basic_desc(&desc[0], HCLGE_PPP_MAC_VLAN_IDX_RD,
+					   true);
+		desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+		hclge_cmd_setup_basic_desc(&desc[1], HCLGE_PPP_MAC_VLAN_IDX_RD,
+					   true);
+		desc[1].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+		hclge_cmd_setup_basic_desc(&desc[2], HCLGE_PPP_MAC_VLAN_IDX_RD,
+					   true);
+
+		mac_rd_cmd = (struct hclge_mac_vlan_idx_rd_cmd *)desc[0].data;
+
+		mac_rd_cmd->index = cpu_to_le32(i);
+		ret = hclge_cmd_send(&hdev->hw, desc, 3);
+		if (ret) {
+			dev_err(&hdev->pdev->dev,
+				"call hclge_cmd_send fail, ret = %d\n", ret);
+			kfree(mc_mac_tbl);
+			return;
+		}
+
+		if (mac_rd_cmd->resp_code)
+			continue;
+
+		if (mac_rd_cmd->entry_type == HCLGE_DBG_MAC_MC_TBL) {
+			mc_mac_tbl[mc_tbl_idx].index = i;
+			memcpy(mc_mac_tbl[mc_tbl_idx].mac_addr,
+			       mac_rd_cmd->mac_addr, ETH_ALEN);
+			memcpy(mc_mac_tbl[mc_tbl_idx].mg_vf_mb,
+			       desc[1].data, 24);
+			memcpy(&mc_mac_tbl[mc_tbl_idx].mg_vf_mb[24],
+			       desc[2].data, 8);
+			mc_tbl_idx++;
+
+			continue;
+		}
+
+		memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
+		snprintf(printf_buf, HCLGE_DBG_BUF_LEN,
+			 "|%04u  |%02x:%02x:%02x:%02x:%02x:%02x |",
+			 i, mac_rd_cmd->mac_addr[0], mac_rd_cmd->mac_addr[1],
+			 mac_rd_cmd->mac_addr[2], mac_rd_cmd->mac_addr[3],
+			 mac_rd_cmd->mac_addr[4], mac_rd_cmd->mac_addr[5]);
+
+		snprintf(printf_buf + strlen(printf_buf),
+			 HCLGE_DBG_BUF_LEN - strlen(printf_buf),
+			 "%04u    |%u     |%u   |%u      |%u       |",
+			 le16_to_cpu(mac_rd_cmd->vlan_tag),
+			 mac_rd_cmd->entry_type & HCLGE_DBG_MAC_TBL_EN_TYPE,
+			 mac_rd_cmd->entry_type & HCLGE_DBG_MAC_TBL_MC_TYPE,
+			 mac_rd_cmd->mc_mac_en & HCLGE_DBG_MAC_TBL_MAC_EN,
+			 le16_to_cpu(mac_rd_cmd->port) &
+			 HCLGE_DBG_MAC_TBL_IN_PORT);
+		snprintf(printf_buf + strlen(printf_buf),
+			 HCLGE_DBG_BUF_LEN - strlen(printf_buf),
+			 "%lu      |%04x\n",
+			 le16_to_cpu(mac_rd_cmd->egress_port) &
+			 HCLGE_DBG_MAC_TBL_E_PORT_B,
+			 le16_to_cpu(mac_rd_cmd->egress_port) &
+			 HCLGE_DBG_MAC_TBL_E_PORT);
+
+		dev_info(&hdev->pdev->dev, "%s", printf_buf);
+	}
+
+	if (mc_tbl_idx > 0) {
+		dev_info(&hdev->pdev->dev,
+			 "Multicast tab: entry number = %u\n", mc_tbl_idx);
+		memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
+		strncat(printf_buf, "|index |mac_addr          |UM_MC_RDATA\n",
+			HCLGE_DBG_BUF_LEN - 1);
+		dev_info(&hdev->pdev->dev, "%s", printf_buf);
+	}
+
+	for (i = 0; i < mc_tbl_idx; i++) {
+		memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
+		snprintf(printf_buf, HCLGE_DBG_BUF_LEN,
+			 "|%04u  |%02x:%02x:%02x:%02x:%02x:%02x |",
+			 mc_mac_tbl[i].index, mc_mac_tbl[i].mac_addr[0],
+			 mc_mac_tbl[i].mac_addr[1], mc_mac_tbl[i].mac_addr[2],
+			 mc_mac_tbl[i].mac_addr[3], mc_mac_tbl[i].mac_addr[4],
+			 mc_mac_tbl[i].mac_addr[5]);
+
+		for (j = 31; j >= 3; j -= 4)
+			snprintf(printf_buf + strlen(printf_buf),
+				 HCLGE_DBG_BUF_LEN - strlen(printf_buf),
+				 "%02x%02x%02x%02x:", mc_mac_tbl[i].mg_vf_mb[j],
+				 mc_mac_tbl[i].mg_vf_mb[j - 1],
+				 mc_mac_tbl[i].mg_vf_mb[j - 2],
+				 mc_mac_tbl[i].mg_vf_mb[j - 3]);
+
+		printf_buf[strlen(printf_buf) - 1] = '\n';
+		dev_info(&hdev->pdev->dev, "%s", printf_buf);
+	}
+
+	kfree(mc_mac_tbl);
+}
+
 static void hclge_dbg_dump_mng_table(struct hclge_dev *hdev)
 {
 	struct hclge_mac_ethertype_idx_rd_cmd *req0;
@@ -1343,6 +1471,8 @@ int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf)
 		hclge_dbg_dump_qos_pri_map(hdev);
 	} else if (strncmp(cmd_buf, "dump qos buf cfg", 16) == 0) {
 		hclge_dbg_dump_qos_buf_cfg(hdev);
+	} else if (strncmp(cmd_buf, "dump mac tbl", 12) == 0) {
+		hclge_dbg_dump_mac_table(hdev);
 	} else if (strncmp(cmd_buf, "dump mng tbl", 12) == 0) {
 		hclge_dbg_dump_mng_table(hdev);
 	} else if (strncmp(cmd_buf, DUMP_REG, strlen(DUMP_REG)) == 0) {
