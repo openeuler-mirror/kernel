@@ -976,8 +976,7 @@ static int hns3_set_ringparam(struct net_device *ndev,
 	if (!tmp_rings) {
 		netdev_err(ndev,
 			   "backup ring param failed by allocating memory fail\n");
-		ret = -ENOMEM;
-		goto out;
+		return -ENOMEM;
 	}
 
 	netdev_info(ndev,
@@ -1006,9 +1005,8 @@ static int hns3_set_ringparam(struct net_device *ndev,
 
 	kfree(tmp_rings);
 
-out:
 	if (if_running)
-		ndev->netdev_ops->ndo_open(ndev);
+		ret = ndev->netdev_ops->ndo_open(ndev);
 
 	return ret;
 }
