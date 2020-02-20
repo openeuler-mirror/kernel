@@ -48,7 +48,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #define DEBUG
 
-#define SYSCTL_DRIVER_VERSION "1.9.32.0"
+#define SYSCTL_DRIVER_VERSION "1.9.38.0"
 
 unsigned int g_sysctrl_debug;
 
