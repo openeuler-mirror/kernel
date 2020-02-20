@@ -3304,11 +3304,12 @@ static int hclge_reset_wait(struct hclge_dev *hdev)
 		return -EINVAL;
 	}
 
-	do {
+	val = hclge_read_dev(&hdev->hw, reg);
+	while (hnae3_get_bit(val, reg_bit) && cnt < HCLGE_RESET_WAIT_CNT) {
 		msleep(HCLGE_RESET_WATI_MS);
 		val = hclge_read_dev(&hdev->hw, reg);
 		cnt++;
-	} while (hnae3_get_bit(val, reg_bit) && cnt < HCLGE_RESET_WAIT_CNT);
+	}
 
 	if (cnt >= HCLGE_RESET_WAIT_CNT) {
 		dev_warn(&hdev->pdev->dev,
