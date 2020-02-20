@@ -324,7 +324,7 @@ static void hns_roce_loop_free(struct hns_roce_dev *hr_dev,
 				if (i == loop_i && j >= loop_j)
 					break;
 
-				bt_idx = i * pbl_bt_sz / BA_BYTE_LEN + j;
+				bt_idx = i * (pbl_bt_sz / BA_BYTE_LEN) + j;
 				dma_free_coherent(dev, pbl_bt_sz,
 						  mr->pbl_bt_l2[bt_idx],
 						  mr->pbl_l2_dma_addr[bt_idx]);
@@ -336,7 +336,7 @@ static void hns_roce_loop_free(struct hns_roce_dev *hr_dev,
 					  mr->pbl_l1_dma_addr[i]);
 
 			for (j = 0; j < pbl_bt_sz / BA_BYTE_LEN; j++) {
-				bt_idx = i * pbl_bt_sz / BA_BYTE_LEN + j;
+				bt_idx = i * (pbl_bt_sz / BA_BYTE_LEN) + j;
 				dma_free_coherent(dev, pbl_bt_sz,
 						  mr->pbl_bt_l2[bt_idx],
 						  mr->pbl_l2_dma_addr[bt_idx]);
@@ -461,7 +461,7 @@ static int pbl_3hop_alloc(struct hns_roce_dev *hr_dev, int npages,
 		*(mr->pbl_bt_l0 + i) = mr->pbl_l1_dma_addr[i];
 
 		for (j = 0; j < pbl_bt_sz / BA_BYTE_LEN; j++) {
-			bt_idx = i * pbl_bt_sz / BA_BYTE_LEN + j;
+			bt_idx = i * (pbl_bt_sz / BA_BYTE_LEN) + j;
 
 			if (pbl_bt_cnt + 1 < pbl_last_bt_num) {
 				size = pbl_bt_sz;
