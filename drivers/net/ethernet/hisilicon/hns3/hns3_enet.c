@@ -1574,7 +1574,7 @@ static netdev_features_t hns3_features_check(struct sk_buff *skb,
 					     struct net_device *dev,
 					     netdev_features_t features)
 {
-#define HNS3_MAX_HDR_LEN       480U
+#define HNS3_MAX_HDR_LEN	480U
 #define HNS3_MAX_L4_HDR_LEN	60U
 
 	size_t len;
