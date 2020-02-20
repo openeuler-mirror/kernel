@@ -354,7 +354,6 @@ static int hclge_set_vf_mc_mac_addr(struct hclge_vport *vport,
 {
 	const u8 *mac_addr = (const u8 *)(mbx_req->msg.data);
 	struct hclge_dev *hdev = vport->back;
-	int status = 0;
 
 	if (mbx_req->msg.subcode == HCLGE_MBX_MAC_VLAN_MC_ADD) {
 		hclge_update_mac_list(vport, HCLGE_MAC_TO_ADD,
@@ -369,7 +368,7 @@ static int hclge_set_vf_mc_mac_addr(struct hclge_vport *vport,
 		return -EIO;
 	}
 
-	return status;
+	return 0;
 }
 
 int hclge_push_vf_port_base_vlan_info(struct hclge_vport *vport, u8 vfid,
