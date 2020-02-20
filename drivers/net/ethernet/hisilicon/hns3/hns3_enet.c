@@ -2858,21 +2858,19 @@ static bool hns3_parse_vlan_tag(struct hns3_enet_ring *ring,
 	switch (hnae3_get_field(l234info, HNS3_RXD_STRP_TAGP_M,
 				HNS3_RXD_STRP_TAGP_S)) {
 	case HNS3_STRP_OUTER_VLAN:
-		if (handle->port_base_vlan_state ==
-				HNAE3_PORT_BASE_VLAN_DISABLE) {
-			*vlan_tag = le16_to_cpu(desc->rx.ot_vlan_tag);
-			return true;
-		}
+		if (handle->port_base_vlan_state !=
+				HNAE3_PORT_BASE_VLAN_DISABLE)
+			return false;
 
-		return false;
+		*vlan_tag = le16_to_cpu(desc->rx.ot_vlan_tag);
+		return true;
 	case HNS3_STRP_INNER_VLAN:
-		if (handle->port_base_vlan_state ==
-				HNAE3_PORT_BASE_VLAN_DISABLE) {
-			*vlan_tag = le16_to_cpu(desc->rx.vlan_tag);
-			return true;
-		}
+		if (handle->port_base_vlan_state !=
+				HNAE3_PORT_BASE_VLAN_DISABLE)
+			return false;
 
-		return false;
+		*vlan_tag = le16_to_cpu(desc->rx.vlan_tag);
+		return true;
 	case HNS3_STRP_BOTH:
 		if (handle->port_base_vlan_state ==
 				HNAE3_PORT_BASE_VLAN_DISABLE)
