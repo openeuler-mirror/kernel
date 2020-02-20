@@ -35,6 +35,8 @@
 #define SEC_MASTER_GLOBAL_CTRL_SHUTDOWN	0x1
 #define SEC_MASTER_TRANS_RETURN		0x300150
 #define SEC_MASTER_TRANS_RETURN_RW	0x3
+#define SEC_AM_CFG_SIG_PORT_MAX_TRANS	0x300014
+#define SEC_SINGLE_PORT_MAX_TRANS	0x2060
 
 #define SEC_CORE_INT_SOURCE		0x301010
 #define SEC_CORE_INT_MASK		0x301000
@@ -74,6 +76,9 @@
 #define SEC_RAS_FE_ENB_MSK		0x0
 #define SEC_RAS_NFE_ENB_MSK		0x177
 #define SEC_RAS_DISABLE			0x0
+
+#define SEC_SAA_EN_REG			0x270
+#define SEC_SAA_EN			0x17F
 
 #define SEC_MEM_START_INIT_REG		0x0100
 #define SEC_MEM_INIT_DONE_REG		0x0104
@@ -469,6 +474,13 @@ static int sec_engine_init(struct hisi_sec *hisi_sec)
 	struct hisi_qm *qm = &hisi_sec->qm;
 	void *base = qm->io_base + SEC_ENGINE_PF_CFG_OFF +
 		SEC_ACC_COMMON_REG_OFF;
+
+	/* config sec single port max outstanding */
+	writel(SEC_SINGLE_PORT_MAX_TRANS,
+	       qm->io_base + SEC_AM_CFG_SIG_PORT_MAX_TRANS);
+
+	/* config sec saa enable */
+	writel(SEC_SAA_EN, base + SEC_SAA_EN_REG);
 
 	/* disable clock gate control */
 	reg = readl_relaxed(base + SEC_CONTROL_REG);
