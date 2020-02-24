@@ -672,12 +672,6 @@ void debugfs_remove(struct dentry *dentry)
 }
 EXPORT_SYMBOL_GPL(debugfs_remove);
 
-void debugfs_remove_recursive(struct dentry *dentry)
-{
-	debugfs_remove(dentry);
-}
-EXPORT_SYMBOL_GPL(debugfs_remove_recursive);
-
 /**
  * debugfs_rename - rename a file/directory in the debugfs filesystem
  * @old_dir: a pointer to the parent dentry for the renamed object. This
