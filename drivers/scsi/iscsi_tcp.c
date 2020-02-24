@@ -132,6 +132,7 @@ static void iscsi_sw_tcp_data_ready(struct sock *sk)
 	struct iscsi_conn *conn;
 	struct iscsi_tcp_conn *tcp_conn;
 	read_descriptor_t rd_desc;
+	int current_cpu;
 
 	read_lock_bh(&sk->sk_callback_lock);
 	conn = sk->sk_user_data;
@@ -140,6 +141,13 @@ static void iscsi_sw_tcp_data_ready(struct sock *sk)
 		return;
 	}
 	tcp_conn = conn->dd_data;
+
+	/* save intimate cpu when in softirq */
+	if (!sock_owned_by_user_nocheck(sk)) {
+		current_cpu = smp_processor_id();
+		if (conn->intimate_cpu != current_cpu)
+			conn->intimate_cpu = current_cpu;
+	}
 
 	/*
 	 * Use rd_desc to pass 'conn' to iscsi_tcp_recv.
