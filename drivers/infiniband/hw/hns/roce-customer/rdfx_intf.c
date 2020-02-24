@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 // Copyright (c) 2016-2017 Hisilicon Limited.
-
+#ifdef CONFIG_INFINIBAND_HNS_DFX
 #include "roce_k_compat.h"
 #include "hns_roce_device.h"
 #include "hns_roce_common.h"
@@ -940,4 +940,4 @@ void rdfx_set_rdfx_cq_ci(struct hns_roce_dev *hr_dev,
 	spin_unlock(&rdfx->cq.cq_lock);
 }
 EXPORT_SYMBOL_GPL(rdfx_set_rdfx_cq_ci);
-
+#endif
