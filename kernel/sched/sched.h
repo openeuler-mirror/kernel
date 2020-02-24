@@ -843,6 +843,10 @@ struct rq {
 
 	atomic_t		nr_iowait;
 
+#ifdef CONFIG_MEMBARRIER
+	int membarrier_state;
+#endif
+
 #ifdef CONFIG_SMP
 	struct root_domain	*rd;
 	struct sched_domain	*sd;
@@ -926,14 +930,7 @@ struct rq {
 	struct cpuidle_state	*idle_state;
 #endif
 
-#if defined(CONFIG_MEMBARRIER) && !defined(__GENKSYMS__)
-	union {
-		int membarrier_state;
-		long membarrier_state_KABI;
-	};
-#else
 	KABI_RESERVE(1)
-#endif
 	KABI_RESERVE(2)
 };
 
