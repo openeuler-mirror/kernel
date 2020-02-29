@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2002.1.0
+%global hulkrelease 2002.5.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.95
-Release: %{hulkrelease}.0027
+Release: %{hulkrelease}.0028
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -797,7 +797,146 @@ fi
 %endif
 
 %changelog
-* Fri Feb 7 2020 Xie XiuQi <xiexiuqi@huawei.com> - 4.19.90-2002.1.0.0027
+* Fri Feb 28 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.95-2002.5.0.0028
+- x86 / config: add openeuler_defconfig
+- files_cgroup: Fix soft lockup when refcnt overflow.
+- vt: selection, close sel_buffer race
+- vt: selection, handle pending signals in paste_selection
+- RDMA/hns: Compilation Configuration update
+- jbd2: do not clear the BH_Mapped flag when forgetting a metadata buffer
+- jbd2: move the clearing of b_modified flag to the journal_unmap_buffer()
+- iscsi: use dynamic single thread workqueue to improve performance
+- workqueue: implement NUMA affinity for single thread workqueue
+- iscsi: add member for NUMA aware order workqueue
+- Revert "debugfs: fix kabi for function debugfs_remove_recursive"
+- Revert "bdi: fix kabi for struct backing_dev_info"
+- Revert "membarrier/kabi: fix kabi for membarrier_state"
+- Revert "PCI: fix kabi change in struct pci_bus"
+- files_cgroup: fix error pointer when kvm_vm_worker_thread
+- bdi: get device name under rcu protect
+- x86/kvm: Be careful not to clear KVM_VCPU_FLUSH_TLB bit
+- timer_list: avoid other cpu soft lockup when printing timer list
+- sysrq: avoid concurrently info printing by 'sysrq-trigger'
+- bdi: fix memleak in bdi_register_va()
+- iommu/iova: avoid softlockup in fq_flush_timeout
+- qm: fix the way judge whether q stop in user space
+- net: hns3: clear devil number for hns3_cae
+- net: hns3: fix compile error when CONFIG_HNS3_DCB is not set
+- qm: fixup compilation dependency
+- rde: optimize debug regs clear logic
+- sec: change sec_control reg config
+- hpre: add likely and unlikey in result judgement
+- hpre: optimize key process before free
+- net: hns3: fix bug when parameter check
+- drivers : sysctl fixup some param dont check the legitimacy
+- net: hns3: add protect for parameters and remove unused functions
+- qm: remove invalid addr print
+- zip: use offset fields in sqe to avoid SG_SPLIT
+- qm: fix wrong number of sg elements after dma map
+- RDMA/hns:security review update
+- RDMA/hns: some robust optimize in rdfx
+- RDMA/hns: fix the bug of out-of-bonds-read in post send
+- net: hns3: Remove the function of vf check mac address
+- net: hns3: update hns3 version to 1.9.35.1
+- uacce: Remove uacce mode 1 relatives
+- acc: Remove uacce mode 1 logic below hisilicon
+- RDMA/hns: Add roce dfx of arm_cnt
+- RDMA/hns: avoid potential overflow of
+- RDMA/hns: handle device err after device state to UNIT
+- net: hns3: change version to 1.9.35.0
+- net: hns3: fix missing help info for qs shaper in debugfs
+- net: hns3: set VF's default reset_type to HNAE3_NONE_RESET
+- net: hns3: fix port base vlan add fail when concurrent with reset
+- net: hns3: skip mac speed and duplex modification checking for fibre port support autoneg
+- net: hns3: modify timing of reading register in hclge_reset_wait()
+- net: hns3: support of dump mac id and loopback status in debugfs
+- net: hns3: optimize parameter of hclge_set_phy_loopback() function
+- net: hns3: optimize parameter of hclge_phy_link_status_wait() function
+- net: hns3: delete unnecessary judgement in hns3_get_stats()
+- net: hns3: no need to check return value of debugfs_create functions
+- net: hns3: make array spec_opcode static const, makes object smaller
+- net: hns: replace space with tab for cleanup
+- net: hns3: modify return value in hns3_dbg_cmd_write
+- net: hns3: rename variable flag in hnae3_unregister_client()
+- net: hns3: move struct hclge_mdio_cfg_cmd declaration
+- net: hns3: modify error process of hclge_phy_link_status_wait()
+- net: hns3: support query vf ring and vector map relation
+- net: hns3: add enabled tc numbers and dwrr weight info in debugfs
+- net: hns3: add error process in hclge_mac_link_status_wait() function
+- net: hns3: modify code of hclge_mac_phy_link_status_wait() function
+- net: hns3: replace goto with return in function hns3_set_ringparam()
+- net: hns3: modify print format in hns3_set_ringpa()
+- net: hns: replace goto with return in function hclge_set_vf_uc_mac_addr
+- net: hns3: modify the irq name of misc vectors
+- net: hns3: optimize code of hns3_parse_vlan_tag() function
+- net: hns3: optimize local variable of hclge_set_loopback() function
+- net: hns3: optimize code of hclge_init_kdump_kernel_config() function
+- net: hns: remove unnecessary newline
+- net: hns: modify print function used in hclge_init_ae_dev()
+- net: hns3: modify the irq name of tqp vectors
+- net: hns3: delete blank lines and space for cleanup
+- net: hns3: do not schedule the periodical task when reset fail
+- net: hns3: modify the location of updating the hardware reset done counter
+- net: hns3: refactor the notification scheme of PF reset
+- net: hns3: refactor the procedure of VF FLR
+- net: hns3: modify hclge_func_reset_sync_vf()'s return type to void
+- net: hns3: enlarge HCLGE_RESET_WAIT_CNT
+- net: hns3: refactor the precedure of PF FLR
+- net: hns3: split hclgevf_reset() into preparing and rebuilding part
+- net: hns3: split hclge_reset() into preparing and rebuilding part
+- net: hns3: Add "mac table" information query function
+- net: hns3: fix bug that PF set VF mac didn't work
+- net: hns3: delete some useless repeated printing
+- net: hns3: delete some useless function and definication
+- net: hns3: sync some code from net-next part1
+- net: hns3: refactor the promisc mode setting
+- net: hns3: refine mac address configure for VF
+- net: hns3: use mutex vport_lock intead of spin lock umv_lock
+- net: hns3: opmitize the table entry restore when resetting
+- net: hns3: refine mac address configure for PF
+- net: fix bug and change version to 1.9.33.0
+- net: hns3: cae clear warnings
+- drivers : sysctl remove rcu_lock
+- RDMA/hns:remove useless header in cmd
+- hac: sec: add initial configuration in sec_engine_init
+- net: hns3: cae security review
+- net: hns3: cae io_param definition updated
+- debugfs: fix kabi for function debugfs_remove_recursive
+- simple_recursive_removal(): kernel-side rm -rf for ramfs-style filesystems
+- debugfs: simplify __debugfs_remove_file()
+- block: rename 'q->debugfs_dir' and 'q->blk_trace->dir' in blk_unregister_queue()
+- ext4: add cond_resched() to ext4_protect_reserved_inode
+- bdi: fix kabi for struct backing_dev_info
+- bdi: fix use-after-free for the bdi device
+- vfs: fix do_last() regression
+- do_last(): fetch directory ->i_mode and ->i_uid before it's too late
+- ext4: reserve revoke credits in __ext4_new_inode
+- jbd2: make jbd2_handle_buffer_credits() handle reserved handles
+- jbd2: Fine tune estimate of necessary descriptor blocks
+- jbd2: Provide trace event for handle restarts
+- ext4: Reserve revoke credits for freed blocks
+- jbd2: Make credit checking more strict
+- jbd2: Rename h_buffer_credits to h_total_credits
+- jbd2: Reserve space for revoke descriptor blocks
+- jbd2: Drop jbd2_space_needed()
+- jbd2: remove repeated assignments in __jbd2_log_wait_for_space()
+- jbd2: Account descriptor blocks into t_outstanding_credits
+- jbd2: Factor out common parts of stopping and restarting a handle
+- jbd2: Drop pointless wakeup from jbd2_journal_stop()
+- jbd2: Drop pointless check from jbd2_journal_stop()
+- jbd2: Reorganize jbd2_journal_stop()
+- ocfs2: Use accessor function for h_buffer_credits
+- ext4, jbd2: Provide accessor function for handle credits
+- ext4: Provide function to handle transaction restarts
+- ext4: Avoid unnecessary revokes in ext4_alloc_branch()
+- ext4: Use ext4_journal_extend() instead of jbd2_journal_extend()
+- ext4: Fix ext4_should_journal_data() for EA inodes
+- ext4: Do not iput inode under running transaction
+- ext4: Move marking of handle as sync to ext4_add_nondir()
+- jbd2: Completely fill journal descriptor blocks
+- jbd2: Fixup stale comment in commit code
+- libertas: Fix two buffer overflows at parsing bss descriptor
+* Fri Feb 7 2020 Xie XiuQi <xiexiuqi@huawei.com> - 4.19.95-2002.1.0.0027
 - drm/i915/gen9: Clear residual context state on context switch
 - selftest/membarrier: fix build error
 - membarrier/kabi: fix kabi for membarrier_state
