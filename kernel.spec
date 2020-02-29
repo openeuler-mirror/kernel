@@ -936,6 +936,7 @@ fi
 - jbd2: Completely fill journal descriptor blocks
 - jbd2: Fixup stale comment in commit code
 - libertas: Fix two buffer overflows at parsing bss descriptor
+* Fri Feb 7 2020 Xie XiuQi <xiexiuqi@huawei.com> - 4.19.95-2002.1.0.0027
 - drm/i915/gen9: Clear residual context state on context switch
 - selftest/membarrier: fix build error
 - membarrier/kabi: fix kabi for membarrier_state
