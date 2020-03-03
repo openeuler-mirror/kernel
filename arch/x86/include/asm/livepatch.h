@@ -24,17 +24,48 @@
 #include <asm/setup.h>
 #include <linux/ftrace.h>
 
+#ifdef CONFIG_LIVEPATCH
 static inline int klp_check_compiler_support(void)
 {
-#ifndef CC_USING_FENTRY
+#if defined(CONFIG_LIVEPATCH_FTRACE) && !defined(CC_USING_FENTRY)
 	return 1;
 #endif
 	return 0;
 }
 
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static inline void klp_arch_set_pc(struct pt_regs *regs, unsigned long ip)
 {
 	regs->ip = ip;
 }
+
+static inline unsigned long klp_arch_stub_ip(unsigned long addr)
+{
+	return addr;
+}
+#else /* CONFIG_LIVEPATCH_WO_FTRACE */
+#define klp_smp_isb()
+
+static inline void klp_arch_set_pc(struct pt_regs *regs, unsigned long ip)
+{
+	BUG();
+}
+
+static inline unsigned long klp_arch_stub_ip(unsigned long addr)
+{
+	BUG();
+	return 0;
+}
+
+struct klp_patch;
+struct klp_func;
+int arch_klp_patch_func(struct klp_func *func);
+void arch_klp_unpatch_func(struct klp_func *func);
+int klp_check_calltrace(struct klp_patch *patch, int enable);
+#endif
+
+#else
+#error Live patching support is disabled; check CONFIG_LIVEPATCH
+#endif
 
 #endif /* _ASM_X86_LIVEPATCH_H */
