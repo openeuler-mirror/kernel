@@ -70,6 +70,40 @@ void arch_klp_init_object_loaded(struct klp_patch *patch,
 
 
 #ifdef	CONFIG_LIVEPATCH_WO_FTRACE
+#include <linux/slab.h>
+#include <asm/nops.h>
+#include <asm/sections.h>
+
+#define	JMP_E9_INSN_SIZE	5
+union klp_code_union {
+	char code[JMP_E9_INSN_SIZE];
+	struct {
+		unsigned char e9;
+		int offset;
+	} __packed;
+};
+
+struct klp_func_node {
+	struct list_head node;
+	struct list_head func_stack;
+	unsigned long old_addr;
+	unsigned char old_code[JMP_E9_INSN_SIZE];
+};
+
+static LIST_HEAD(klp_func_list);
+
+static struct klp_func_node *klp_find_func_node(unsigned long old_addr)
+{
+	struct klp_func_node *func_node;
+
+	list_for_each_entry(func_node, &klp_func_list, node) {
+		if (func_node->old_addr == old_addr)
+			return func_node;
+	}
+
+	return NULL;
+}
+
 static inline int klp_compare_address(unsigned long stack_addr,
 		unsigned long func_addr, unsigned long func_size,
 		const char *func_name)
@@ -81,11 +115,14 @@ static inline int klp_compare_address(unsigned long stack_addr,
 	return 0;
 }
 
+static struct klp_func_node *klp_find_func_node(unsigned long old_addr);
+
 static int klp_check_stack_func(struct klp_func *func,
 		struct stack_trace *trace, int enable)
 {
 	unsigned long func_addr, func_size, address;
 	const char *func_name;
+	struct klp_func_node *func_node;
 	int i;
 
 	for (i = 0; i < trace->nr_entries; i++) {
@@ -94,9 +131,33 @@ static int klp_check_stack_func(struct klp_func *func,
 		if (enable) {
 			if (func->force)
 				continue;
-			func_addr = func->old_addr;
-			func_size = func->old_size;
+			/*
+			 * When enable, checking the currently active
+			 * functions.
+			 */
+			func_node = klp_find_func_node(func->old_addr);
+			if (!func_node ||
+			    list_empty(&func_node->func_stack)) {
+				func_addr = func->old_addr;
+				func_size = func->old_size;
+			} else {
+				/*
+				 * Previously patched function
+				 * [the active one]
+				 */
+				struct klp_func *prev;
+
+				prev = list_first_or_null_rcu(
+						&func_node->func_stack,
+						struct klp_func, stack_node);
+				func_addr = (unsigned long)prev->new_func;
+				func_size = prev->new_size;
+			}
 		} else {
+			/*
+			 * When disable, check for the function itself
+			 * which to be unpatched.
+			 */
 			func_addr = (unsigned long)func->new_func;
 			func_size = func->new_size;
 		}
@@ -186,40 +247,6 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 
 out:
 	return ret;
-}
-
-#include <linux/slab.h>
-#include <asm/nops.h>
-#include <asm/sections.h>
-
-#define	JMP_E9_INSN_SIZE	5
-union klp_code_union {
-	char code[JMP_E9_INSN_SIZE];
-	struct {
-		unsigned char e9;
-		int offset;
-	} __packed;
-};
-
-struct klp_func_node {
-	struct list_head node;
-	struct list_head func_stack;
-	unsigned long old_addr;
-	unsigned char old_code[JMP_E9_INSN_SIZE];
-};
-
-static LIST_HEAD(klp_func_list);
-
-static struct klp_func_node *klp_find_func_node(unsigned long old_addr)
-{
-	struct klp_func_node *func_node;
-
-	list_for_each_entry(func_node, &klp_func_list, node) {
-		if (func_node->old_addr == old_addr)
-			return func_node;
-	}
-
-	return NULL;
 }
 
 int arch_klp_init_func(struct klp_object *obj, struct klp_func *func)
