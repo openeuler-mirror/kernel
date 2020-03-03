@@ -1542,7 +1542,7 @@ fi
 - ext4: check for directory entries too close to block end
 - ext4: fix ext4_empty_dir() for directories with holes
 
-* Wed Jan 13 2020 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1912.2.1.0026
+* Mon Jan 13 2020 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1912.2.1.0026
 - fix compile error when debugfiles.list is empty
 
 * Mon Jan 13 2020 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1912.2.1.0025
