@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2002.5.0
+%global hulkrelease 2002.6.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.95
-Release: %{hulkrelease}.0028
+Release: %{hulkrelease}.0029
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -797,6 +797,17 @@ fi
 %endif
 
 %changelog
+* Tue Mar 3 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.95-2002.6.0.0029
+- livepatch/x86: enable livepatch config openeuler
+- livepatch/x86: enable livepatch config for hulk
+- livepatch/arm64: check active func in consistency stack checking
+- livepatch/x86: check active func in consistency stack checking
+- livepatch/x86: support livepatch without ftrace
+- KVM: nVMX: Check IO instruction VM-exit conditions
+- KVM: nVMX: Refactor IO bitmap checks into helper function
+- KVM: nVMX: Don't emulate instructions in guest mode
+- floppy: check FDC index for errors before assigning it
+- ext4: add cond_resched() to __ext4_find_entry()
 * Fri Feb 28 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.95-2002.5.0.0028
 - x86 / config: add openeuler_defconfig
 - files_cgroup: Fix soft lockup when refcnt overflow.
