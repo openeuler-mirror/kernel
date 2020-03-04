@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.95
-Release: %{hulkrelease}.0029
+Release: %{hulkrelease}.0030
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -635,7 +635,6 @@ popd
 %{_sbindir}/new-kernel-pkg --package kernel --install %{KernelVer} || exit $?
 
 %preun
-rm -rf /lib/modules/%{KernelVer}/EulerOS
 if [ `uname -i` == "aarch64" ] &&
         [ -f /boot/EFI/grub2/grub.cfg ]; then
     /usr/bin/sh  %{_sbindir}/mkgrub-menu-%{hulkrelease}.sh %{version}-%{hulkrelease}.aarch64  /boot/EFI/grub2/grub.cfg  remove
@@ -658,13 +657,6 @@ if [ `uname -i` == "aarch64" ] &&
         [ -f /boot/EFI/grub2/grub.cfg ]; then
 	/usr/bin/sh %{_sbindir}/mkgrub-menu-%{hulkrelease}.sh %{version}-%{hulkrelease}.aarch64  /boot/EFI/grub2/grub.cfg  update  
 fi
-if [ ! -d "/lib/modules/EulerOS" ];then
-    mkdir -p /lib/modules/EulerOS
-fi
-if [ -e "/lib/modules/%{KernelVer}/EulerOS" ]; then
-    rm -rf "/lib/modules/%{KernelVer}/EulerOS"
-fi
-ln -sf /lib/modules/EulerOS  /lib/modules/%{KernelVer}/EulerOS
 if [ -x %{_sbindir}/weak-modules ]
 then
     %{_sbindir}/weak-modules --add-kernel %{KernelVer} || exit $?
@@ -797,6 +789,9 @@ fi
 %endif
 
 %changelog
+* Wed Mar 4 2020 Luo Chunsheng <luochunsheng@huawei.com> - 4.19.95-2002.6.0.0030
+- delete useless directory
+
 * Tue Mar 3 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.95-2002.6.0.0029
 - livepatch/x86: enable livepatch config openeuler
 - livepatch/x86: enable livepatch config for hulk
