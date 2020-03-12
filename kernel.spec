@@ -8,11 +8,11 @@
 
 %global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/)
 
-%global TarballVer 4.19.95
+%global TarballVer 4.19.90
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2002.6.0
+%global hulkrelease 2003.1.0
 
 %define with_patch 0
 
@@ -23,8 +23,8 @@
 %define with_source 1
 
 Name:	 kernel
-Version: 4.19.95
-Release: %{hulkrelease}.0030
+Version: 4.19.90
+Release: %{hulkrelease}.0031
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,21 @@ fi
 %endif
 
 %changelog
+* Thu Mar 12 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.1.0.0030
+- net/hinic: driver code compliance rectification
+- net/hinic: Solve the problem that the network card hangs when receiving the skb which frag_size=0
+- net: hns3: adds support for reading module eeprom info
+- net: hns3: update hns3 version to 1.9.37.1
+- btrfs: tree-checker: Remove comprehensive root owner check
+- xfs: add agf freeblocks verify in xfs_agf_verify
+- blktrace: fix dereference after null check
+- blktrace: Protect q->blk_trace with RCU
+- vgacon: Fix a UAF in vgacon_invert_region
+- can, slip: Protect tty->disc_data in write_wakeup and close with RCU
+- relay: handle alloc_percpu returning NULL in relay_open
+- drm/radeon: check the alloc_workqueue return value
+- apparmor: Fix use-after-free in aa_audit_rule_init
+
 * Wed Mar 4 2020 Luo Chunsheng <luochunsheng@huawei.com> - 4.19.95-2002.6.0.0030
 - delete useless directory
 
