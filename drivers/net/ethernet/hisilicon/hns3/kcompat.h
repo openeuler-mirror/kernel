@@ -409,6 +409,16 @@ static inline void linkmode_zero(unsigned long *dst)
 
 #endif
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0))
+#ifndef ETH_MODULE_SFF_8636_MAX_LEN
+#define ETH_MODULE_SFF_8636_MAX_LEN	640
+#endif
+
+#ifndef ETH_MODULE_SFF_8436_MAX_LEN
+#define ETH_MODULE_SFF_8436_MAX_LEN	640
+#endif
+#endif
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0))
 #ifndef dma_zalloc_coherent
 #define dma_zalloc_coherent(d, s, h, f) dma_alloc_coherent(d, s, h, f)
