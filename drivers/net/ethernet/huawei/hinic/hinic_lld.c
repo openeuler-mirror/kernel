@@ -629,6 +629,7 @@ static void hinic_ignore_minor_version(char *version)
 {
 	char ver_split[MAX_VER_SPLIT_NUM][MAX_VER_FIELD_LEN] = { {0} };
 	int max_ver_len, split_num = 0;
+	int err;
 
 	__version_split(version, &split_num, ver_split);
 	if (split_num != MAX_VER_SPLIT_NUM)
@@ -637,8 +638,11 @@ static void hinic_ignore_minor_version(char *version)
 	max_ver_len = (int)strlen(version) + 1;
 	memset(version, 0, max_ver_len);
 
-	snprintf(version, max_ver_len, "%s.%s.%s.0",
-		 ver_split[0], ver_split[1], ver_split[2]);
+	err = snprintf(version, max_ver_len, "%s.%s.%s.0",
+		       ver_split[0], ver_split[1], ver_split[2]);
+	if (err <= 0 || err >= max_ver_len)
+		pr_err("Failed snprintf version, function return(%d) and dest_len(%d)\n",
+		       err, max_ver_len);
 }
 
 static int hinic_detect_version_compatible(struct hinic_pcidev *pcidev)
@@ -1152,7 +1156,7 @@ void hinic_get_all_chip_id(void *id_info)
 	lld_dev_hold();
 	list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
 		err = sscanf(chip_node->chip_name, HINIC_CHIP_NAME "%d", &id);
-		if (err < 0)
+		if (err <= 0)
 			pr_err("Failed to get hinic id\n");
 
 		card_id->id[i] = id;
@@ -1895,6 +1899,7 @@ static int alloc_chip_node(struct hinic_pcidev *pci_adapter)
 	struct card_node *chip_node;
 	unsigned char i;
 	unsigned char parent_bus_number = 0;
+	int err;
 
 	if  (!pci_is_root_bus(pci_adapter->pcidev->bus))
 		parent_bus_number = pci_adapter->pcidev->bus->parent->number;
@@ -1931,27 +1936,39 @@ static int alloc_chip_node(struct hinic_pcidev *pci_adapter)
 
 	chip_node = kzalloc(sizeof(*chip_node), GFP_KERNEL);
 	if (!chip_node) {
-		card_bit_map = CLEAR_BIT(card_bit_map, i);
 		sdk_err(&pci_adapter->pcidev->dev,
 			"Failed to alloc chip node\n");
-		return -ENOMEM;
+		goto alloc_chip_err;
 	}
 
 	chip_node->dbgtool_attr_file.name = kzalloc(IFNAMSIZ, GFP_KERNEL);
 	if (!(chip_node->dbgtool_attr_file.name)) {
-		kfree(chip_node);
-		card_bit_map = CLEAR_BIT(card_bit_map, i);
 		sdk_err(&pci_adapter->pcidev->dev,
 			"Failed to alloc dbgtool attr file name\n");
-		return -ENOMEM;
+		goto alloc_dbgtool_attr_file_err;
 	}
 
 	/* parent bus number */
 	chip_node->dp_bus_num = parent_bus_number;
 
-	snprintf(chip_node->chip_name, IFNAMSIZ, "%s%d", HINIC_CHIP_NAME, i);
-	snprintf((char *)chip_node->dbgtool_attr_file.name,
-		 IFNAMSIZ, "%s%d", HINIC_CHIP_NAME, i);
+	err = snprintf(chip_node->chip_name, IFNAMSIZ, "%s%d",
+		       HINIC_CHIP_NAME, i);
+	if (err <= 0 || err >= IFNAMSIZ) {
+		sdk_err(&pci_adapter->pcidev->dev,
+			"Failed snprintf chip_name, function return(%d) and dest_len(%d)\n",
+			err, IFNAMSIZ);
+		goto alloc_dbgtool_attr_file_err;
+	}
+
+	err = snprintf((char *)chip_node->dbgtool_attr_file.name,
+		       IFNAMSIZ, "%s%d", HINIC_CHIP_NAME, i);
+	if (err <= 0 || err >= IFNAMSIZ) {
+		sdk_err(&pci_adapter->pcidev->dev,
+			"Failed snprintf dbgtool_attr_file_name, function return(%d) and dest_len(%d)\n",
+			err, IFNAMSIZ);
+		goto alloc_dbgtool_attr_file_err;
+	}
+
 	sdk_info(&pci_adapter->pcidev->dev,
 		 "Add new chip %s to global list succeed\n",
 		 chip_node->chip_name);
@@ -1962,6 +1979,13 @@ static int alloc_chip_node(struct hinic_pcidev *pci_adapter)
 	pci_adapter->chip_node = chip_node;
 
 	return 0;
+
+alloc_dbgtool_attr_file_err:
+	kfree(chip_node);
+
+alloc_chip_err:
+	card_bit_map = CLEAR_BIT(card_bit_map, i);
+	return -ENOMEM;
 }
 
 static void free_chip_node(struct hinic_pcidev *pci_adapter)
@@ -1976,7 +2000,7 @@ static void free_chip_node(struct hinic_pcidev *pci_adapter)
 			 "Delete chip %s from global list succeed\n",
 			 chip_node->chip_name);
 		err = sscanf(chip_node->chip_name, HINIC_CHIP_NAME "%u", &id);
-		if (err < 0)
+		if (err <= 0)
 			sdk_err(&pci_adapter->pcidev->dev, "Failed to get hinic id\n");
 
 		card_bit_map = CLEAR_BIT(card_bit_map, id);

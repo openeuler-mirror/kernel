@@ -750,8 +750,15 @@ static int hinic_qps_irq_init(struct hinic_nic_dev *nic_dev)
 			cpumask_set_cpu(local_cpu, &irq_cfg->affinity_mask);
 		}
 
-		snprintf(irq_cfg->irq_name, sizeof(irq_cfg->irq_name),
-			 "%s_qp%d", nic_dev->netdev->name, q_id);
+		err = snprintf(irq_cfg->irq_name, sizeof(irq_cfg->irq_name),
+			       "%s_qp%d", nic_dev->netdev->name, q_id);
+		if (err <= 0 || err >= (int)sizeof(irq_cfg->irq_name)) {
+			nic_err(&pdev->dev,
+				"Failed snprintf irq_name, function return(%d) and dest_len(%d)\n",
+				err, (int)sizeof(irq_cfg->irq_name));
+			goto req_tx_irq_err;
+		}
+
 		err = hinic_request_irq(irq_cfg, q_id);
 		if (err) {
 			nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to request Rx irq\n");
