@@ -789,7 +789,7 @@ fi
 %endif
 
 %changelog
-* Thu Mar 12 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.1.0.0030
+* Thu Mar 12 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.1.0.0031
 - net/hinic: driver code compliance rectification
 - net/hinic: Solve the problem that the network card hangs when receiving the skb which frag_size=0
 - net: hns3: adds support for reading module eeprom info
