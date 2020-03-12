@@ -1179,14 +1179,20 @@ static int get_drv_version(void *hwdev, void *buf_in, u32 in_size,
 {
 	struct drv_version_info *ver_info;
 	char ver_str[MAX_VER_INFO_LEN] = {0};
+	int err;
 
 	if (*out_size != sizeof(*ver_info)) {
 		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
 		       *out_size, sizeof(*ver_info));
 		return -EFAULT;
 	}
-	snprintf(ver_str, sizeof(ver_str), "%s  [compiled with the kernel]",
-		 HINIC_DRV_VERSION);
+	err = snprintf(ver_str, sizeof(ver_str),
+		       "%s  [compiled with the kernel]", HINIC_DRV_VERSION);
+	if (err <= 0 || err >= MAX_VER_INFO_LEN) {
+		pr_err("Failed snprintf driver version, function return(%d) and dest_len(%d)\n",
+		       err, MAX_VER_INFO_LEN);
+		return -EFAULT;
+	}
 	ver_info = (struct drv_version_info *)buf_out;
 	memcpy(ver_info->ver, ver_str, sizeof(ver_str));
 
@@ -1420,7 +1426,7 @@ static int get_card_func_info(char *dev_name, struct msg_module *nt_msg)
 	}
 
 	err = sscanf(dev_name, HINIC_CHIP_NAME "%d", &id);
-	if (err < 0) {
+	if (err <= 0) {
 		pr_err("Failed to get hinic id\n");
 		return err;
 	}

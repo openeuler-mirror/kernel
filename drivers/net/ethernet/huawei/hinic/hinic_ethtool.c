@@ -294,12 +294,15 @@ u32 hinic_get_io_stats_size(struct hinic_nic_dev *nic_dev)
 }
 
 #define QUEUE_STATS_PACK(items, item_idx, array, stats_ptr, qid) {	\
-	int j;								\
+	int j, err;							\
 	for (j = 0; j < ARRAY_LEN(array); j++) {			\
 		memcpy((items)[item_idx].name, (array)[j].name,		\
 		       HINIC_SHOW_ITEM_LEN);				\
-		snprintf((items)[item_idx].name, HINIC_SHOW_ITEM_LEN,	\
+		err = snprintf((items)[item_idx].name, HINIC_SHOW_ITEM_LEN,\
 			 (array)[j].name, (qid));			\
+		if (err <= 0 || err >= HINIC_SHOW_ITEM_LEN)		\
+			pr_err("Failed snprintf: func_ret(%d), dest_len(%d)\n",\
+				err, HINIC_SHOW_ITEM_LEN);		\
 		(items)[item_idx].hexadecimal = 0;			\
 		(items)[item_idx].value =				\
 			GET_VALUE_OF_PTR((array)[j].size,		\
@@ -335,6 +338,8 @@ void hinic_get_io_stats(struct hinic_nic_dev *nic_dev,
 
 #define LP_DEFAULT_TIME                 (5) /* seconds */
 #define LP_PKT_LEN                      (1514)
+#define OBJ_STR_MAX_LEN			(32)
+#define SET_LINK_STR_MAX_LEN		(128)
 
 #define PORT_DOWN_ERR_IDX  0
 enum diag_test_index {
@@ -743,16 +748,28 @@ static int hinic_set_settings_to_hw(struct hinic_nic_dev *nic_dev,
 	struct net_device *netdev = nic_dev->netdev;
 	struct hinic_link_ksettings settings = {0};
 	enum nic_speed_level speed_level = 0;
-	char set_link_str[128] = {0};
+	char set_link_str[SET_LINK_STR_MAX_LEN] = {0};
 	int err = 0;
 
-	snprintf(set_link_str, sizeof(set_link_str), "%s",
-		 (set_settings & HILINK_LINK_SET_AUTONEG) ?
-		 (autoneg ? "autong enable " : "autong disable ") : "");
+	err = snprintf(set_link_str, sizeof(set_link_str), "%s",
+		       (set_settings & HILINK_LINK_SET_AUTONEG) ?
+		       (autoneg ? "autong enable " : "autong disable ") : "");
+	if (err < 0 || err >= SET_LINK_STR_MAX_LEN) {
+		nicif_err(nic_dev, drv, netdev,
+			  "Failed snprintf link state, function return(%d) and dest_len(%d)\n",
+			  err, SET_LINK_STR_MAX_LEN);
+		return -EFAULT;
+	}
 	if (set_settings & HILINK_LINK_SET_SPEED) {
 		speed_level = hinic_ethtool_to_hw_speed_level(speed);
-		snprintf(set_link_str, sizeof(set_link_str),
-			 "%sspeed %d ", set_link_str, speed);
+		err = snprintf(set_link_str, sizeof(set_link_str),
+			       "%sspeed %d ", set_link_str, speed);
+		if (err <= 0 || err >= SET_LINK_STR_MAX_LEN) {
+			nicif_err(nic_dev, drv, netdev,
+				  "Failed snprintf link speed, function return(%d) and dest_len(%d)\n",
+				  err, SET_LINK_STR_MAX_LEN);
+			return -EFAULT;
+		}
 	}
 
 	settings.valid_bitmap = set_settings;
@@ -883,7 +900,12 @@ static void hinic_get_drvinfo(struct net_device *netdev,
 		return;
 	}
 
-	snprintf(info->fw_version, sizeof(info->fw_version), "%s", mgmt_ver);
+	err = snprintf(info->fw_version, sizeof(info->fw_version),
+		       "%s", mgmt_ver);
+	if (err <= 0 || err >= (int)sizeof(info->fw_version))
+		nicif_err(nic_dev, drv, netdev,
+			  "Failed snprintf fw_version, function return(%d) and dest_len(%d)\n",
+			  err, (int)sizeof(info->fw_version));
 }
 
 static u32 hinic_get_msglevel(struct net_device *netdev)
@@ -1429,10 +1451,22 @@ static int __hinic_set_coalesce(struct net_device *netdev,
 
 	if (queue == COALESCE_ALL_QUEUE) {
 		ori_intr_coal = &nic_dev->intr_coalesce[0];
-		snprintf(obj_str, sizeof(obj_str), "for netdev");
+		err = snprintf(obj_str, sizeof(obj_str), "for netdev");
+		if (err <= 0 || err >= OBJ_STR_MAX_LEN) {
+			nicif_err(nic_dev, drv, netdev,
+				  "Failed snprintf string, function return(%d) and dest_len(%d)\n",
+				  err, OBJ_STR_MAX_LEN);
+			return -EFAULT;
+		}
 	} else {
 		ori_intr_coal = &nic_dev->intr_coalesce[queue];
-		snprintf(obj_str, sizeof(obj_str), "for queue %d", queue);
+		err = snprintf(obj_str, sizeof(obj_str), "for queue %d", queue);
+		if (err <= 0 || err >= OBJ_STR_MAX_LEN) {
+			nicif_err(nic_dev, drv, netdev,
+				  "Failed snprintf string, function return(%d) and dest_len(%d)\n",
+				  err, OBJ_STR_MAX_LEN);
+			return -EFAULT;
+		}
 	}
 	CHECK_COALESCE_CHANGED(coal, rx_coalesce_usecs, COALESCE_TIMER_CFG_UNIT,
 			       ori_intr_coal->coalesce_timer_cfg, obj_str);

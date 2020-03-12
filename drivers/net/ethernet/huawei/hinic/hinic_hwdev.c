@@ -519,6 +519,9 @@ static inline void __set_heartbeat_ehd_detect_delay(struct hinic_hwdev *hwdev,
 #define HINIC_QUEUE_MAX_DEPTH		12
 #define HINIC_MAX_RX_BUFFER_SIZE	15
 
+#define CAP_INFO_MAC_LEN		512
+#define VENDOR_MAX_LEN			17
+
 static bool check_root_ctxt(struct hinic_hwdev *hwdev, u16 func_idx,
 			    void *buf_in, u16 in_size)
 {
@@ -3891,6 +3894,7 @@ static void __print_cable_info(struct hinic_hwdev *hwdev,
 	char tmp_vendor[17] = {0};
 	char *port_type = "Unknown port type";
 	int i;
+	int err = 0;
 
 	if (info->cable_absent) {
 		sdk_info(hwdev->dev_hdl, "Cable unpresent\n");
@@ -3918,24 +3922,45 @@ static void __print_cable_info(struct hinic_hwdev *hwdev,
 
 	memcpy(tmp_vendor, info->vendor_name,
 	       sizeof(info->vendor_name));
-	snprintf(tmp_str, sizeof(tmp_str) - 1,
-		 "Vendor: %s, %s, length: %um, max_speed: %uGbps",
-		 tmp_vendor, port_type, info->cable_length,
-		 info->cable_max_speed);
+	err = snprintf(tmp_str, sizeof(tmp_str),
+		       "Vendor: %s, %s, length: %um, max_speed: %uGbps",
+		       tmp_vendor, port_type, info->cable_length,
+		       info->cable_max_speed);
+	if (err <= 0 || err >= CAP_INFO_MAC_LEN) {
+		sdk_err(hwdev->dev_hdl,
+			"Failed snprintf cable vendor info, function return(%d) and dest_len(%d)\n",
+			err, CAP_INFO_MAC_LEN);
+		return;
+	}
+
 	if (info->port_type == LINK_PORT_FIBRE ||
 	    info->port_type == LINK_PORT_AOC) {
-		snprintf(tmp_str, sizeof(tmp_str) - 1,
-			 "%s, %s, Temperature: %u", tmp_str,
-			 info->sfp_type ? "SFP" : "QSFP", info->cable_temp);
+		err = snprintf(tmp_str, sizeof(tmp_str),
+			       "%s, %s, Temperature: %u", tmp_str,
+			       info->sfp_type ? "SFP" : "QSFP",
+			       info->cable_temp);
+		if (err <= 0 || err >= CAP_INFO_MAC_LEN) {
+			sdk_err(hwdev->dev_hdl,
+				"Failed snprintf cable Temp, function return(%d) and dest_len(%d)\n",
+				err, CAP_INFO_MAC_LEN);
+			return;
+		}
+
 		if (info->sfp_type) {
-			snprintf(tmp_str, sizeof(tmp_str) - 1,
-				 "%s, rx power: %uuW, tx power: %uuW",
-				 tmp_str, info->power[0], info->power[1]);
+			err = snprintf(tmp_str, sizeof(tmp_str),
+				       "%s, rx power: %uuW, tx power: %uuW",
+				       tmp_str, info->power[0], info->power[1]);
 		} else {
-			snprintf(tmp_str, sizeof(tmp_str) - 1,
-				 "%s, rx power: %uuw %uuW %uuW %uuW",
-				 tmp_str, info->power[0], info->power[1],
-				 info->power[2], info->power[3]);
+			err = snprintf(tmp_str, sizeof(tmp_str),
+				       "%s, rx power: %uuw %uuW %uuW %uuW",
+				       tmp_str, info->power[0], info->power[1],
+				       info->power[2], info->power[3]);
+		}
+		if (err <= 0 || err >= CAP_INFO_MAC_LEN) {
+			sdk_err(hwdev->dev_hdl,
+				"Failed snprintf power info, function return(%d) and dest_len(%d)\n",
+				err, CAP_INFO_MAC_LEN);
+			return;
 		}
 	}
 

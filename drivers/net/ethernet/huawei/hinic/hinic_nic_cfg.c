@@ -2175,7 +2175,13 @@ int hinic_get_mgmt_version(void *hwdev, u8 *mgmt_ver)
 		return -EINVAL;
 	}
 
-	snprintf(mgmt_ver, HINIC_MGMT_VERSION_MAX_LEN, "%s", up_ver.ver);
+	err = snprintf(mgmt_ver, HINIC_MGMT_VERSION_MAX_LEN, "%s", up_ver.ver);
+	if (err <= 0 || err >= HINIC_MGMT_VERSION_MAX_LEN) {
+		nic_err(dev->dev_hdl,
+			"Failed snprintf fw version, function return(%d) and dest_len(%d)\n",
+			err, HINIC_MGMT_VERSION_MAX_LEN);
+		return -EINVAL;
+	}
 
 	return 0;
 }

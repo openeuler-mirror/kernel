@@ -768,7 +768,7 @@ int dbgtool_knl_init(void *vhwdev, void *chip_node)
 	sema_init(&dbgtool_info->dbgtool_sem, 1);
 
 	ret = sscanf(chip_info->chip_name, HINIC_CHIP_NAME "%d", &id);
-	if (ret < 0) {
+	if (ret <= 0) {
 		pr_err("Failed to get hinic id\n");
 		goto sscanf_chdev_fail;
 	}
@@ -874,7 +874,7 @@ void dbgtool_knl_deinit(void *vhwdev, void *chip_node)
 		return;
 
 	err = sscanf(chip_info->chip_name, HINIC_CHIP_NAME "%d", &id);
-	if (err < 0)
+	if (err <= 0)
 		pr_err("Failed to get hinic id\n");
 
 	g_card_node_array[id] = NULL;
