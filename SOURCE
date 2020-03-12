@@ -1,1 +1,1 @@
-git clone -b 4.19.95-2002.6.0 git@gitee.com:openeuler/kernel.git
+git clone -b 4.19.90-2003.1.0 git@gitee.com:openeuler/kernel.git
