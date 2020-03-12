@@ -140,6 +140,7 @@ static struct hinic_stats hinic_tx_queue_stats_extern[] = {
 	HINIC_TXQ_STAT(alloc_cpy_frag_err),
 	HINIC_TXQ_STAT(map_cpy_frag_err),
 	HINIC_TXQ_STAT(map_frag_err),
+	HINIC_TXQ_STAT(frag_size_err),
 };/*lint -restore*/
 
 #define HINIC_FUNC_STAT(_stat_item) {	\

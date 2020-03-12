@@ -92,6 +92,7 @@ void hinic_txq_clean_stats(struct hinic_txq_stats *txq_stats)
 	txq_stats->alloc_cpy_frag_err = 0;
 	txq_stats->map_cpy_frag_err = 0;
 	txq_stats->map_frag_err = 0;
+	txq_stats->frag_size_err = 0;
 	u64_stats_update_end(&txq_stats->syncp);
 }
 
@@ -113,7 +114,7 @@ inline void hinic_set_buf_desc(struct hinic_sq_bufdesc *buf_descs,
 
 static int tx_map_skb(struct hinic_nic_dev *nic_dev, struct sk_buff *skb,
 		      struct hinic_txq *txq, struct hinic_tx_info *tx_info,
-		      struct hinic_sq_bufdesc *buf_descs)
+		      struct hinic_sq_bufdesc *buf_descs, u16 skb_nr_frags)
 {
 	struct pci_dev *pdev = nic_dev->pdev;
 	struct hinic_dma_len *dma_len = tx_info->dma_len;
@@ -123,7 +124,6 @@ static int tx_map_skb(struct hinic_nic_dev *nic_dev, struct sk_buff *skb,
 	int node, err = 0;
 	u32 nsize, cpy_nsize = 0;
 	u8 *vaddr, *cpy_buff = NULL;
-	u16 skb_nr_frags = skb_shinfo(skb)->nr_frags;
 
 	if (unlikely(skb_nr_frags > HINIC_MAX_SKB_NR_FRAGE)) {
 		for (i = HINIC_MAX_SKB_NR_FRAGE; i <= skb_nr_frags; i++)
@@ -152,7 +152,7 @@ static int tx_map_skb(struct hinic_nic_dev *nic_dev, struct sk_buff *skb,
 
 		for (i = HINIC_MAX_SKB_NR_FRAGE; i <= skb_nr_frags; i++) {
 			frag = &skb_shinfo(skb)->frags[i - 1];
-			nsize = skb_frag_size(&skb_shinfo(skb)->frags[i - 1]);
+			nsize = skb_frag_size(frag);
 
 			vaddr = _kc_kmap_atomic(skb_frag_page(frag));
 			memcpy(cpy_buff, vaddr + frag->page_offset, nsize);
@@ -179,17 +179,17 @@ static int tx_map_skb(struct hinic_nic_dev *nic_dev, struct sk_buff *skb,
 
 	for (i = 0; i < base_nr_frags; ) {
 		frag = &(skb_shinfo(skb)->frags[i]);
+		nsize = skb_frag_size(frag);
 		i++;
 		dma_len[i].dma = skb_frag_dma_map(&pdev->dev, frag, 0,
-					    skb_frag_size(frag),
-					    DMA_TO_DEVICE);
+					    nsize, DMA_TO_DEVICE);
 		if (dma_mapping_error(&pdev->dev, dma_len[i].dma)) {
 			TXQ_STATS_INC(txq, map_frag_err);
 			i--;
 			err = -EFAULT;
 			goto frag_map_err;
 		}
-		dma_len[i].len = skb_frag_size(frag);
+		dma_len[i].len = nsize;
 
 		hinic_set_buf_desc(&buf_descs[i], dma_len[i].dma,
 				   dma_len[i].len);
@@ -233,16 +233,15 @@ map_single_err:
 
 static inline void tx_unmap_skb(struct hinic_nic_dev *nic_dev,
 				struct sk_buff *skb,
-				struct hinic_dma_len *dma_len)
+				struct hinic_dma_len *dma_len,
+				u16 valid_nr_frags)
 {
 	struct pci_dev *pdev = nic_dev->pdev;
-	u16 nr_frags;
 	int i;
+	u16 nr_frags = valid_nr_frags;
 
-	if (skb_shinfo(skb)->nr_frags > HINIC_MAX_SKB_NR_FRAGE)
+	if (nr_frags > HINIC_MAX_SKB_NR_FRAGE)
 		nr_frags = HINIC_MAX_SKB_NR_FRAGE;
-	else
-		nr_frags = skb_shinfo(skb)->nr_frags;
 
 	for (i = 0; i < nr_frags; ) {
 		i++;
@@ -767,6 +766,9 @@ static int hinic_ufo_avoidance(struct sk_buff *skb, struct sk_buff **ufo_skb,
 }
 #endif
 
+#define HINIC_FRAG_STATUS_OK		0
+#define HINIC_FRAG_STATUS_IGNORE	1
+
 static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
 				      struct net_device *netdev,
 				      struct hinic_txq *txq,
@@ -782,6 +784,10 @@ static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
 	u16 pi = 0;
 	int err, wqebb_cnt;
 	u16 num_sge = 0;
+	u16 original_nr_frags;
+	u16 new_nr_frags;
+	u16 i;
+	int frag_err = HINIC_FRAG_STATUS_OK;
 
 	/* skb->dev will not initialized when calling netdev_alloc_skb_ip_align
 	 * and parameter of length is largger then PAGE_SIZE(under redhat7.3),
@@ -799,7 +805,36 @@ static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
 		skb->len = MIN_SKB_LEN;
 	}
 
-	num_sge = skb_shinfo(skb)->nr_frags + 1;
+	original_nr_frags = skb_shinfo(skb)->nr_frags;
+	new_nr_frags = original_nr_frags;
+
+	/* If size of lastest frags are all zero, should ignore this frags.
+	 * If size of some frag in the middle is zero, should drop this skb.
+	 */
+	for (i = 0; i < original_nr_frags; i++) {
+		if ((skb_frag_size(&skb_shinfo(skb)->frags[i])) &&
+		    frag_err == HINIC_FRAG_STATUS_OK)
+			continue;
+
+		if ((!skb_frag_size(&skb_shinfo(skb)->frags[i])) &&
+		    frag_err == HINIC_FRAG_STATUS_OK) {
+			frag_err = HINIC_FRAG_STATUS_IGNORE;
+			new_nr_frags = i + 1;
+			continue;
+		}
+
+		if ((!skb_frag_size(&skb_shinfo(skb)->frags[i])) &&
+		    frag_err == HINIC_FRAG_STATUS_IGNORE)
+			continue;
+
+		if ((skb_frag_size(&skb_shinfo(skb)->frags[i])) &&
+		    frag_err == HINIC_FRAG_STATUS_IGNORE) {
+			TXQ_STATS_INC(txq, frag_size_err);
+			goto tx_drop_pkts;
+		}
+	}
+
+	num_sge = new_nr_frags + 1;
 
 	/* if skb->len is more than 65536B but num_sge is 1,
 	 * driver will drop it
@@ -838,6 +873,7 @@ static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
 	tx_info = &txq->tx_info[pi];
 	tx_info->skb = skb;
 	tx_info->wqebb_cnt = wqebb_cnt;
+	tx_info->valid_nr_frags = new_nr_frags;
 
 	__get_pkt_stats(tx_info, skb);
 
@@ -848,7 +884,8 @@ static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
 		goto tx_drop_pkts;
 	}
 
-	err = tx_map_skb(nic_dev, skb, txq, tx_info, wqe->buf_descs);
+	err = tx_map_skb(nic_dev, skb, txq, tx_info, wqe->buf_descs,
+			 new_nr_frags);
 	if (err) {
 		hinic_return_sq_wqe(nic_dev->hwdev, q_id, wqebb_cnt, owner);
 		goto tx_drop_pkts;
@@ -965,7 +1002,7 @@ static inline void tx_free_skb(struct hinic_nic_dev *nic_dev,
 			       struct sk_buff *skb,
 			       struct hinic_tx_info *tx_info)
 {
-	tx_unmap_skb(nic_dev, skb, tx_info->dma_len);
+	tx_unmap_skb(nic_dev, skb, tx_info->dma_len, tx_info->valid_nr_frags);
 
 	kfree(tx_info->cpy_buff);
 	tx_info->cpy_buff = NULL;
