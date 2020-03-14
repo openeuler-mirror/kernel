@@ -316,6 +316,11 @@ enum hclge_fc_mode {
 	HCLGE_FC_DEFAULT
 };
 
+enum hclge_vlan_mode_sel {
+	HCLGE_VLAN_DEFAULT_MODE,
+	HCLGE_VLAN_DYNAMIC_MODE,
+};
+
 enum hclge_link_fail_code {
 	HCLGE_LF_NORMAL,
 	HCLGE_LF_REF_CLOCK_LOST,
@@ -353,6 +358,7 @@ struct hclge_cfg {
 	u8 default_speed;
 	u32 numa_node_map;
 	u8 speed_ability;
+	u8 vlan_mode_sel;
 	u16 umv_space;
 };
 
@@ -829,6 +835,7 @@ struct hclge_dev {
 	unsigned long fd_bmap[BITS_TO_LONGS(MAX_FD_FILTER_NUM)];
 	enum HCLGE_FD_ACTIVE_RULE_TYPE fd_active_type;
 	u8 fd_en;
+	u8 vlan_mode;
 
 	u16 wanted_umv_size;
 	/* max available unicast mac vlan space */
@@ -935,6 +942,7 @@ struct hclge_vport {
 	u32 bw_limit;		/* VSI BW Limit (0 = disabled) */
 	u8  dwrr;
 
+	u8 vf_vlan_en;
 	unsigned long vlan_del_fail_bmap[BITS_TO_LONGS(VLAN_N_VID)];
 	struct list_head vlan_list;     /* Store VF vlan table */
 	struct hclge_port_base_vlan_config port_base_vlan_cfg;

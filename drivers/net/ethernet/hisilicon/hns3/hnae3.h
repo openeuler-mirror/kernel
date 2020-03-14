@@ -650,10 +650,12 @@ struct hnae3_unic_private_info {
 #define HNAE3_BPE		BIT(2)	/* broadcast promisc enable */
 #define HNAE3_OVERFLOW_UPE	BIT(3)	/* unicast mac vlan overflow */
 #define HNAE3_OVERFLOW_MPE	BIT(4)	/* multicast mac vlan overflow */
-#define HNAE3_VLAN_FLTR		BIT(5)	/* enable vlan filter */
+#define HNAE3_VLAN_FLTR		BIT(5)	/* enable vlan filter by promisc mode */
+#define HNAE3_VF_VLAN_EN	BIT(6)	/* enable vf vlan filter by vlan used */
 #define HNAE3_UPE		(HNAE3_USER_UPE | HNAE3_OVERFLOW_UPE)
 #define HNAE3_MPE		(HNAE3_USER_MPE | HNAE3_OVERFLOW_MPE)
 #define HNAE3_OVERFLOW_UMPE	(HNAE3_OVERFLOW_UPE | HNAE3_OVERFLOW_MPE)
+#define HNAE3_VLAN_FLTR_EN	(HNAE3_VLAN_FLTR | HNAE3_VF_VLAN_EN)
 
 struct hnae3_handle {
 	struct hnae3_client *client;

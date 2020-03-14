@@ -488,15 +488,6 @@ static int hclge_set_vf_vlan_cfg(struct hclge_vport *vport,
 		bool en = msg_cmd->is_kill ? true : false;
 
 		status = hclge_en_hw_strip_rxvtag(handle, en);
-	} else if (msg_cmd->subcode == HCLGE_MBX_PORT_BASE_VLAN_CFG) {
-		struct hclge_vlan_info *vlan_info;
-		u16 *state;
-
-		state = (u16 *)&mbx_req->msg.data[HCLGE_MBX_VLAN_STATE_OFFSET];
-		vlan_info = (struct hclge_vlan_info *)
-			&mbx_req->msg.data[HCLGE_MBX_VLAN_INFO_OFFSET];
-		status = hclge_update_port_base_vlan_cfg(vport, *state,
-							 vlan_info);
 	} else if (msg_cmd->subcode == HCLGE_MBX_GET_PORT_BASE_VLAN_STATE) {
 		resp_msg->data[0] = vport->port_base_vlan_cfg.state;
 		resp_msg->len = sizeof(u8);

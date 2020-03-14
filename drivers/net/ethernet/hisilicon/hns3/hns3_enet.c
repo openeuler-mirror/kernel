@@ -583,6 +583,7 @@ static int hns3_nic_mc_unsync(struct net_device *netdev,
 
 static u8 hns3_get_netdev_flags(struct net_device *netdev)
 {
+	struct hnae3_handle *h = hns3_get_handle(netdev);
 	u8 flags = 0;
 
 	if (netdev->flags & IFF_PROMISC) {
@@ -592,6 +593,8 @@ static u8 hns3_get_netdev_flags(struct net_device *netdev)
 		if (netdev->flags & IFF_ALLMULTI)
 			flags |= HNAE3_USER_MPE;
 	}
+
+	flags |= (h->netdev_flags & HNAE3_VF_VLAN_EN);
 
 	return flags;
 }
