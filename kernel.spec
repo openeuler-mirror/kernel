@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2003.1.0
+%global hulkrelease 2003.1.1
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0031
+Release: %{hulkrelease}.0032
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,14 @@ fi
 %endif
 
 %changelog
+* Thu Sat 14 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.1.1.0032
+- openeuler/config: enable CONFIG_FCOE
+- openeuler/config: disable unused debug config
+- net: hns3: update the number of version
+- net: hns3: add dumping vlan filter config in debugfs
+- net: hns3: Increase vlan tag0 when close the port_base_vlan
+- net: hns3: adds support for extended VLAN mode and 'QOS' in vlan 802.1Q protocol.
+
 * Thu Mar 12 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.1.0.0031
 - net/hinic: driver code compliance rectification
 - net/hinic: Solve the problem that the network card hangs when receiving the skb which frag_size=0
