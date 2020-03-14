@@ -789,7 +789,8 @@ fi
 %endif
 
 %changelog
-* Thu Mar 14 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.1.1.0032
+* Thu Sat 14 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.1.1.0032
+- openeuler/config: enable CONFIG_FCOE
 - openeuler/config: disable unused debug config
 - net: hns3: update the number of version
 - net: hns3: add dumping vlan filter config in debugfs
