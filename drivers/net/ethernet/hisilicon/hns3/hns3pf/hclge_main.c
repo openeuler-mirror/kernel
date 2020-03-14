@@ -9045,8 +9045,10 @@ static int hclge_update_vlan_filter_entries(struct hclge_vport *vport,
 	if (port_base_vlan_state == HNAE3_PORT_BASE_VLAN_ENABLE) {
 		hclge_rm_vport_all_vlan_table(vport, false);
 		/* force clear vlan 0 */
-		hclge_set_vf_vlan_common(hdev, vport->vport_id, true, 0,
-					 htons(ETH_P_8021Q));
+		ret = hclge_set_vf_vlan_common(hdev, vport->vport_id, true, 0,
+					       htons(ETH_P_8021Q));
+		if (ret)
+			return ret;
 		return hclge_set_vlan_filter_hw(hdev,
 						 htons(new_info->vlan_proto),
 						 vport->vport_id,
@@ -9054,6 +9056,12 @@ static int hclge_update_vlan_filter_entries(struct hclge_vport *vport,
 						 false);
 	}
 	vport->port_base_vlan_cfg.tbl_sta = false;
+
+	/* force add vlan 0 */
+	ret = hclge_set_vf_vlan_common(hdev, vport->vport_id, false, 0,
+				       htons(ETH_P_8021Q));
+	if (ret)
+		return ret;
 
 	ret = hclge_set_vlan_filter_hw(hdev, htons(old_info->vlan_proto),
 				       vport->vport_id, old_info->vlan_tag,
