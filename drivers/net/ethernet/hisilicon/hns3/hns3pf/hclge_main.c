@@ -8989,7 +8989,7 @@ int hclge_en_hw_strip_rxvtag(struct hnae3_handle *handle, bool enable)
 	return hclge_set_vlan_rx_offload_cfg(vport);
 }
 
-static bool hclge_has_vlan_used(struct hclge_dev *hdev, u16 vport_id)
+bool hclge_has_vlan_used(struct hclge_dev *hdev, u16 vport_id)
 {
 #define	VLAN_CHECK_START_NUM	1
 	u16 vlan_id;

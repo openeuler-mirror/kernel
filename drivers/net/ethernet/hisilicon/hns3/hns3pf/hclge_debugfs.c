@@ -1497,10 +1497,63 @@ static int hclge_dbg_dump_mac_list(struct hclge_dev *hdev, const char *cmd_buf,
 	return 0;
 }
 
+static void hclge_dbg_dump_vlan_filter(struct hclge_dev *hdev,
+				       const char *cmd_buf)
+{
+	struct hclge_vlan_filter_ctrl_cmd *req;
+	struct hclge_vport *vport;
+	struct hclge_desc desc;
+	bool has_vlan_used;
+	int vf_id;
+	int ret;
+
+	ret = kstrtouint(cmd_buf, 0, &vf_id);
+	if (ret < 0) {
+		dev_err(&hdev->pdev->dev,
+			"dump vlan filter: bad command string, ret=%d\n", ret);
+		return;
+	}
+
+	if (vf_id >= hdev->num_alloc_vport) {
+		dev_err(&hdev->pdev->dev,
+			"vf id(%u) is out of range(0-%u)\n", vf_id,
+			hdev->num_alloc_vport - 1);
+		return;
+	}
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_VLAN_FILTER_CTRL, true);
+	req = (struct hclge_vlan_filter_ctrl_cmd *)desc.data;
+	req->vf_id = vf_id;
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to get vlan filter config, ret=%d\n", ret);
+		return;
+	}
+
+	vport = &hdev->vport[vf_id];
+	has_vlan_used = hclge_has_vlan_used(hdev, vport->vport_id);
+
+	dev_info(&hdev->pdev->dev, "vf_id:%u\n", req->vf_id);
+	dev_info(&hdev->pdev->dev, "vlan_type:%u\n", req->vlan_type);
+	dev_info(&hdev->pdev->dev, "vlan_fe:%u\n", req->vlan_fe);
+	dev_info(&hdev->pdev->dev, "vf_vlan_en:%u\n", vport->vf_vlan_en);
+	dev_info(&hdev->pdev->dev, "vlan_mode:%s\n",
+		 (hdev->vlan_mode == HCLGE_VLAN_DEFAULT_MODE) ? "default" :
+		 "dynamic");
+	dev_info(&hdev->pdev->dev, "netdev_flags:%x\n",
+		 vport->nic.netdev_flags);
+	dev_info(&hdev->pdev->dev, "has_vlan_used:%s\n",
+		 has_vlan_used ? "true" : "false");
+	dev_info(&hdev->pdev->dev, "port_base_vlan_cfg_state:%u\n",
+		 vport->port_base_vlan_cfg.state);
+}
+
 int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf)
 {
 #define DUMP_REG	"dump reg"
 #define DUMP_LOOPBACK	"dump loopback"
+#define DUMP_VLAN_FILTER "dump vlan filter"
 
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -1550,6 +1603,10 @@ int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf)
 		hclge_dbg_dump_mac_list(hdev,
 					&cmd_buf[sizeof("dump mc mac list")],
 					false);
+	} else if (strncmp(cmd_buf, DUMP_VLAN_FILTER,
+		   strlen(DUMP_VLAN_FILTER)) == 0) {
+		hclge_dbg_dump_vlan_filter(hdev,
+					   &cmd_buf[sizeof(DUMP_VLAN_FILTER)]);
 	} else {
 		dev_info(&hdev->pdev->dev, "unknown command\n");
 		return -EINVAL;
