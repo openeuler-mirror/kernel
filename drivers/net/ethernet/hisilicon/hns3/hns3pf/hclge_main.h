@@ -1045,4 +1045,5 @@ int hclge_query_bd_num_cmd_send(struct hclge_dev *hdev,
 				struct hclge_desc *desc);
 void hclge_inform_vf_promisc_info(struct hclge_vport *vport);
 void hclge_dbg_dump_rst_info(struct hclge_dev *hdev);
+bool hclge_has_vlan_used(struct hclge_dev *hdev, u16 vport_id);
 #endif
