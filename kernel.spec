@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0032
+Release: %{hulkrelease}.0033
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -665,7 +665,7 @@ fi
 %{_sbindir}/new-kernel-pkg --package kernel --rpmposttrans %{KernelVer} || exit $?
 
 
-%postun devel
+%post devel
 if [ -f /etc/sysconfig/kernel ]
 then
     . /etc/sysconfig/kernel || exit $?
@@ -674,7 +674,7 @@ if [ "$HARDLINK" != "no" -a -x /usr/sbin/hardlink ]
 then
     (cd /usr/src/kernels/%{KernelVer} &&
      /usr/bin/find . -type f | while read f; do
-       hardlink -c /usr/src/kernels/*.fc*.*/$f $f
+       hardlink -c /usr/src/kernels/*.oe*.*/$f $f
      done)
 fi
 
@@ -789,7 +789,10 @@ fi
 %endif
 
 %changelog
-* Thu Sat 14 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.1.1.0032
+* Mon Mar 16 2020 Luo Chunsheng <luochunsheng@huawei.com> - 4.19.90-2003.1.1.0033
+- fix kernel-devel upgrade running scriptlet failed
+
+* Thu Mar 14 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.1.1.0032
 - openeuler/config: enable CONFIG_FCOE
 - openeuler/config: disable unused debug config
 - net: hns3: update the number of version
