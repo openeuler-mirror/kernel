@@ -29,6 +29,7 @@ enum mapping_flags {
 	AS_EXITING	= 4, 	/* final truncate in progress */
 	/* writeback related tags are not used */
 	AS_NO_WRITEBACK_TAGS = 5,
+	AS_PERCPU_REF	= 6,	/* percpu ref counter for special inode */
 };
 
 /**
@@ -95,6 +96,21 @@ static inline void mapping_set_no_writeback_tags(struct address_space *mapping)
 static inline int mapping_use_writeback_tags(struct address_space *mapping)
 {
 	return !test_bit(AS_NO_WRITEBACK_TAGS, &mapping->flags);
+}
+
+static inline void mapping_set_percpu_ref(struct address_space *mapping)
+{
+	set_bit(AS_PERCPU_REF, &mapping->flags);
+}
+
+static inline void mapping_clear_percpu_ref(struct address_space *mapping)
+{
+	clear_bit(AS_PERCPU_REF, &mapping->flags);
+}
+
+static inline int mapping_percpu_ref(struct address_space *mapping)
+{
+	return test_bit(AS_PERCPU_REF, &mapping->flags);
 }
 
 static inline gfp_t mapping_gfp_mask(struct address_space * mapping)
@@ -170,6 +186,10 @@ static inline int page_cache_get_speculative(struct page *page)
 # ifdef CONFIG_PREEMPT_COUNT
 	VM_BUG_ON(!in_atomic() && !irqs_disabled());
 # endif
+	if (PagePercpuRef(page)) {
+		percpu_ref_get(page_percpu_ref(page));
+		return 1;
+	}
 	/*
 	 * Preempt must be disabled here - we rely on rcu_read_lock doing
 	 * this for us.
@@ -183,6 +203,10 @@ static inline int page_cache_get_speculative(struct page *page)
 	page_ref_inc(page);
 
 #else
+	if (PagePercpuRef(page)) {
+		percpu_ref_get(page_percpu_ref(page));
+		return 1;
+	}
 	if (unlikely(!get_page_unless_zero(page))) {
 		/*
 		 * Either the page has been freed, or will be freed.

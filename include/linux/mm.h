@@ -528,6 +528,10 @@ static inline int pgd_devmap(pgd_t pgd)
 static inline int put_page_testzero(struct page *page)
 {
 	VM_BUG_ON_PAGE(page_ref_count(page) == 0, page);
+	if (PagePercpuRef(page)) {
+		percpu_ref_put(page_percpu_ref(page));
+		return 0;
+	}
 	return page_ref_dec_and_test(page);
 }
 
@@ -539,6 +543,10 @@ static inline int put_page_testzero(struct page *page)
  */
 static inline int get_page_unless_zero(struct page *page)
 {
+	if (PagePercpuRef(page)) {
+		percpu_ref_get(page_percpu_ref(page));
+		return true;
+	}
 	return page_ref_add_unless(page, 1, 0);
 }
 
@@ -928,6 +936,11 @@ static inline bool is_device_public_page(const struct page *page)
 static inline void get_page(struct page *page)
 {
 	page = compound_head(page);
+
+	if (PagePercpuRef(page)) {
+		percpu_ref_get(page_percpu_ref(page));
+		return;
+	}
 	/*
 	 * Getting a normal page or the head of a compound page
 	 * requires to already have an elevated page->_refcount.
@@ -939,6 +952,11 @@ static inline void get_page(struct page *page)
 static inline __must_check bool try_get_page(struct page *page)
 {
 	page = compound_head(page);
+
+	if (PagePercpuRef(page)) {
+		percpu_ref_get(page_percpu_ref(page));
+		return true;
+	}
 	if (WARN_ON_ONCE(page_ref_count(page) <= 0))
 		return false;
 	page_ref_inc(page);
@@ -948,6 +966,11 @@ static inline __must_check bool try_get_page(struct page *page)
 static inline void put_page(struct page *page)
 {
 	page = compound_head(page);
+
+	if (PagePercpuRef(page)) {
+		percpu_ref_put(page_percpu_ref(page));
+		return;
+	}
 
 	/*
 	 * For devmap managed pages we need to catch refcount transition from

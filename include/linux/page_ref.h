@@ -180,4 +180,15 @@ static inline void page_ref_unfreeze(struct page *page, int count)
 		__page_ref_unfreeze(page, count);
 }
 
+static inline struct percpu_ref *page_percpu_ref(struct page *page)
+{
+	return *(struct percpu_ref **)&page->lru;
+}
+
+static inline void page_set_percpu_ref(struct page *page,
+					struct percpu_ref *ref)
+{
+	*(struct percpu_ref **)&page->lru = ref;
+}
+
 #endif

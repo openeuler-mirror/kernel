@@ -48,6 +48,66 @@
 
 #include <asm/mman.h>
 
+struct percpu_page {
+	struct percpu_ref ref;
+	struct page *page;
+};
+
+static void free_page_ref(struct percpu_ref *ref)
+{
+	struct percpu_page *p = (struct percpu_page *)ref;
+	struct page *page = p->page;
+
+	percpu_ref_exit(ref);
+	kfree(page_percpu_ref(page));
+	page_set_percpu_ref(page, NULL);
+
+	ClearPagePercpuRef(page);
+	/* really free the page */
+	put_page(page);
+}
+
+static void page_cache_init(struct address_space *mapping, struct page *page)
+{
+	struct percpu_page *p;
+
+	if (!mapping_percpu_ref(mapping))
+		return;
+
+	p = kzalloc(sizeof(struct percpu_page), GFP_KERNEL);
+	if (!p)
+		return;
+	if (percpu_ref_init(&p->ref, free_page_ref, 0, GFP_KERNEL))
+		goto err;
+
+	p->page = page;
+	page_set_percpu_ref(page, &p->ref);
+	SetPagePercpuRef(page);
+	get_page(page);
+	return;
+err:
+	kfree(p);
+}
+
+static void page_cache_exit(struct page *page)
+{
+	if (!PagePercpuRef(page))
+		return;
+
+	put_page(page);
+	ClearPagePercpuRef(page);
+	percpu_ref_exit(page_percpu_ref(page));
+	kfree(page_percpu_ref(page));
+	page_set_percpu_ref(page, NULL);
+}
+
+static void page_cache_kill(struct page *page)
+{
+	if (!PagePercpuRef(page))
+		return;
+	percpu_ref_kill(page_percpu_ref(page));
+}
+
 /*
  * Shared mappings implemented 30.11.1994. It's not fully working yet,
  * though.
@@ -264,6 +324,7 @@ void __delete_from_page_cache(struct page *page, void *shadow)
 
 	unaccount_page_cache_page(mapping, page);
 	page_cache_tree_delete(mapping, page, shadow);
+	page_cache_kill(page);
 }
 
 static void page_cache_free_page(struct address_space *mapping,
@@ -384,8 +445,10 @@ void delete_from_page_cache_batch(struct address_space *mapping,
 	page_cache_tree_delete_batch(mapping, pvec);
 	xa_unlock_irqrestore(&mapping->i_pages, flags);
 
-	for (i = 0; i < pagevec_count(pvec); i++)
+	for (i = 0; i < pagevec_count(pvec); i++) {
+		page_cache_kill(pvec->pages[i]);
 		page_cache_free_page(mapping, pvec->pages[i]);
+	}
 }
 
 int filemap_check_errors(struct address_space *mapping)
@@ -966,7 +1029,8 @@ int add_to_page_cache_lru(struct page *page, struct address_space *mapping,
 			workingset_activation(page);
 		} else
 			ClearPageActive(page);
-		lru_cache_add(page);
+		if (!PagePercpuRef(page))
+			lru_cache_add(page);
 	}
 	return ret;
 }
@@ -1630,8 +1694,10 @@ no_page:
 		if (fgp_flags & FGP_ACCESSED)
 			__SetPageReferenced(page);
 
+		page_cache_init(mapping, page);
 		err = add_to_page_cache_lru(page, mapping, offset, gfp_mask);
 		if (unlikely(err)) {
+			page_cache_exit(page);
 			put_page(page);
 			page = NULL;
 			if (err == -EEXIST)
@@ -2320,9 +2386,11 @@ no_cached_page:
 			error = -ENOMEM;
 			goto out;
 		}
+		page_cache_init(mapping, page);
 		error = add_to_page_cache_lru(page, mapping, index,
 				mapping_gfp_constraint(mapping, GFP_KERNEL));
 		if (error) {
+			page_cache_exit(page);
 			put_page(page);
 			if (error == -EEXIST) {
 				error = 0;
@@ -2837,8 +2905,10 @@ repeat:
 		page = __page_cache_alloc(gfp);
 		if (!page)
 			return ERR_PTR(-ENOMEM);
+		page_cache_init(mapping, page);
 		err = add_to_page_cache_lru(page, mapping, index, gfp);
 		if (unlikely(err)) {
+			page_cache_exit(page);
 			put_page(page);
 			if (err == -EEXIST)
 				goto repeat;
