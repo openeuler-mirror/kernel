@@ -29,6 +29,7 @@
 #include <linux/poll.h>
 #include <asm/siginfo.h>
 #include <linux/uaccess.h>
+#include <linux/pagemap.h>
 
 #define SETFL_MASK (O_APPEND | O_NONBLOCK | O_NDELAY | O_DIRECT | O_NOATIME)
 
@@ -319,6 +320,22 @@ static long fcntl_rw_hint(struct file *file, unsigned int cmd,
 	}
 }
 
+static long fcntl_mapping_percpu(struct file *filp, unsigned int cmd,
+			  unsigned long arg)
+{
+	struct address_space *mapping = filp->f_mapping;
+	unsigned long flag = arg;
+
+	if (!mapping)
+		return -EINVAL;
+
+	if (flag)
+		mapping_set_percpu_ref(mapping);
+	else
+		mapping_clear_percpu_ref(mapping);
+	return 0;
+}
+
 static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 		struct file *filp)
 {
@@ -425,6 +442,9 @@ static long do_fcntl(int fd, unsigned int cmd, unsigned long arg,
 	case F_GET_FILE_RW_HINT:
 	case F_SET_FILE_RW_HINT:
 		err = fcntl_rw_hint(filp, cmd, arg);
+		break;
+	case F_MAPPING_PERCPU:
+		err = fcntl_mapping_percpu(filp, cmd, arg);
 		break;
 	default:
 		break;
