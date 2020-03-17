@@ -87,8 +87,16 @@ static int change_memory_common(unsigned long addr, int numpages,
 	area = find_vm_area((void *)addr);
 	if (!area ||
 	    end > (unsigned long)area->addr + area->size ||
-	    !(area->flags & VM_ALLOC))
+	    !(area->flags & VM_ALLOC)) {
+		/*
+		 * When pagealloc debug is enabled, the linear address is
+		 * mapped with NO_BLOCK_MAPPINGS and NO_CONT_MAPPINGS flags.
+		 */
+		if (numpages && debug_pagealloc_enabled())
+			return __change_memory_common(start, size,
+				set_mask, clear_mask);
 		return -EINVAL;
+	}
 
 	if (!numpages)
 		return 0;
