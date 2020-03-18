@@ -759,6 +759,8 @@ static int hinic_qps_irq_init(struct hinic_nic_dev *nic_dev)
 			goto req_tx_irq_err;
 		}
 
+		set_bit(HINIC_INTR_ON, &irq_cfg->intr_flag);
+
 		err = hinic_request_irq(irq_cfg, q_id);
 		if (err) {
 			nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to request Rx irq\n");
@@ -768,7 +770,6 @@ static int hinic_qps_irq_init(struct hinic_nic_dev *nic_dev)
 		hinic_set_msix_state(nic_dev->hwdev,
 				     irq_cfg->msix_entry_idx,
 				     HINIC_MSIX_ENABLE);
-		set_bit(HINIC_INTR_ON, &irq_cfg->intr_flag);
 	}
 
 	INIT_DELAYED_WORK(&nic_dev->moderation_task,
