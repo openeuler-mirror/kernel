@@ -3890,8 +3890,8 @@ char *__hw_to_char_port_type[LINK_PORT_MAX_TYPE] = {
 static void __print_cable_info(struct hinic_hwdev *hwdev,
 			       struct hinic_link_info *info)
 {
-	char tmp_str[512] = {0};
-	char tmp_vendor[17] = {0};
+	char tmp_str[CAP_INFO_MAC_LEN] = {0};
+	char tmp_vendor[VENDOR_MAX_LEN] = {0};
 	char *port_type = "Unknown port type";
 	int i;
 	int err = 0;
