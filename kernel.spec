@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2003.1.1
+%global hulkrelease 2003.2.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0033
+Release: %{hulkrelease}.0034
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,25 @@ fi
 %endif
 
 %changelog
+* Wed Mar 18 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.2.0.0034
+- xfs: avoid f_bfree overflow
+- xfs: always init fdblocks in mount
+- xfs: devirtualize ->sf_entsize and ->sf_nextentry
+- block: fix inaccurate io_ticks
+- block: delete part_round_stats and switch to less precise counting
+- CIFS: Fix bug which the return value by asynchronous read is error
+- net/hinic: Magic number rectification
+- net/hinic: slove the problem that VF may be disconnected when vm reboot and receive lots of broadcast packets.
+- openeuler/config: disable CONFIG_EFI_VARS
+- pagecache: support percpu refcount to imporve performance
+- arm64: mm: support setting page attributes for debugging
+- staging: android: ashmem: Disallow ashmem memory from being remapped
+- mm/resource: Return real error codes from walk failures
+- vt: selection, push sel_lock up
+- vt: selection, push console lock down
+- net: ipv6_stub: use ip6_dst_lookup_flow instead of ip6_dst_lookup
+- net: ipv6: add net argument to ip6_dst_lookup_flow
+
 * Mon Mar 16 2020 Luo Chunsheng <luochunsheng@huawei.com> - 4.19.90-2003.1.1.0033
 - fix kernel-devel upgrade running scriptlet failed
 
