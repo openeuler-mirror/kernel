@@ -1429,7 +1429,7 @@ static int __hinic_set_coalesce(struct net_device *netdev,
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic_intr_coal_info intr_coal = {0};
 	struct hinic_intr_coal_info *ori_intr_coal;
-	char obj_str[32] = {0};
+	char obj_str[OBJ_STR_MAX_LEN] = {0};
 	u16 i;
 	int err = 0;
 
