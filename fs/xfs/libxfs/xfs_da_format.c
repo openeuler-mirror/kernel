@@ -18,48 +18,6 @@
 #include "xfs_dir2_priv.h"
 
 /*
- * Shortform directory ops
- */
-static int
-xfs_dir2_sf_entsize(
-	struct xfs_dir2_sf_hdr	*hdr,
-	int			len)
-{
-	int count = sizeof(struct xfs_dir2_sf_entry);	/* namelen + offset */
-
-	count += len;					/* name */
-	count += hdr->i8count ? XFS_INO64_SIZE : XFS_INO32_SIZE; /* ino # */
-	return count;
-}
-
-static int
-xfs_dir3_sf_entsize(
-	struct xfs_dir2_sf_hdr	*hdr,
-	int			len)
-{
-	return xfs_dir2_sf_entsize(hdr, len) + sizeof(uint8_t);
-}
-
-static struct xfs_dir2_sf_entry *
-xfs_dir2_sf_nextentry(
-	struct xfs_dir2_sf_hdr	*hdr,
-	struct xfs_dir2_sf_entry *sfep)
-{
-	return (struct xfs_dir2_sf_entry *)
-		((char *)sfep + xfs_dir2_sf_entsize(hdr, sfep->namelen));
-}
-
-static struct xfs_dir2_sf_entry *
-xfs_dir3_sf_nextentry(
-	struct xfs_dir2_sf_hdr	*hdr,
-	struct xfs_dir2_sf_entry *sfep)
-{
-	return (struct xfs_dir2_sf_entry *)
-		((char *)sfep + xfs_dir3_sf_entsize(hdr, sfep->namelen));
-}
-
-
-/*
  * For filetype enabled shortform directories, the file type field is stored at
  * the end of the name.  Because it's only a single byte, endian conversion is
  * not necessary. For non-filetype enable directories, the type is always
@@ -692,8 +650,6 @@ xfs_dir3_free_hdr_to_disk(
 }
 
 static const struct xfs_dir_ops xfs_dir2_ops = {
-	.sf_entsize = xfs_dir2_sf_entsize,
-	.sf_nextentry = xfs_dir2_sf_nextentry,
 	.sf_get_ftype = xfs_dir2_sfe_get_ftype,
 	.sf_put_ftype = xfs_dir2_sfe_put_ftype,
 	.sf_get_ino = xfs_dir2_sfe_get_ino,
@@ -742,8 +698,6 @@ static const struct xfs_dir_ops xfs_dir2_ops = {
 };
 
 static const struct xfs_dir_ops xfs_dir2_ftype_ops = {
-	.sf_entsize = xfs_dir3_sf_entsize,
-	.sf_nextentry = xfs_dir3_sf_nextentry,
 	.sf_get_ftype = xfs_dir3_sfe_get_ftype,
 	.sf_put_ftype = xfs_dir3_sfe_put_ftype,
 	.sf_get_ino = xfs_dir3_sfe_get_ino,
@@ -792,8 +746,6 @@ static const struct xfs_dir_ops xfs_dir2_ftype_ops = {
 };
 
 static const struct xfs_dir_ops xfs_dir3_ops = {
-	.sf_entsize = xfs_dir3_sf_entsize,
-	.sf_nextentry = xfs_dir3_sf_nextentry,
 	.sf_get_ftype = xfs_dir3_sfe_get_ftype,
 	.sf_put_ftype = xfs_dir3_sfe_put_ftype,
 	.sf_get_ino = xfs_dir3_sfe_get_ino,
