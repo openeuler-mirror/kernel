@@ -1674,11 +1674,8 @@ static void part_round_stats_single(struct request_queue *q, int cpu,
 				    struct hd_struct *part, unsigned long now,
 				    unsigned int inflight)
 {
-	if (inflight) {
-		__part_stat_add(cpu, part, time_in_queue,
-				inflight * (now - part->stamp));
+	if (inflight)
 		__part_stat_add(cpu, part, io_ticks, (now - part->stamp));
-	}
 	part->stamp = now;
 }
 
@@ -2791,11 +2788,10 @@ void blk_account_io_start(struct request *rq, bool new_io)
 		part_stat_inc(cpu, part, merges[rw]);
 	} else {
 		part = disk_map_sector_rcu(rq->rq_disk, blk_rq_pos(rq));
+		part_round_stats(rq->q, cpu, part);
 		part_inc_in_flight(rq->q, part, rw);
 		rq->part = part;
 	}
-
-	update_io_ticks(cpu, part, jiffies);
 
 	part_stat_unlock();
 }

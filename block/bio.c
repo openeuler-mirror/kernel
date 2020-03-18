@@ -1675,7 +1675,7 @@ again:
 	stamp = READ_ONCE(part->stamp);
 	if (unlikely(stamp != now)) {
 		if (likely(cmpxchg(&part->stamp, stamp, now) == stamp))
-			__part_stat_add(cpu, part, io_ticks, 1);
+			__part_stat_add(cpu, part, io_ticks, now - stamp);
 	}
 	if (part->partno) {
 		part = &part_to_disk(part)->part0;
@@ -1689,7 +1689,7 @@ void generic_start_io_acct(struct request_queue *q, int op,
 	const int sgrp = op_stat_group(op);
 	int cpu = part_stat_lock();
 
-	update_io_ticks(cpu, part, jiffies);
+	part_round_stats(q, cpu, part);
 	part_stat_inc(cpu, part, ios[sgrp]);
 	part_stat_add(cpu, part, sectors[sgrp], sectors);
 	part_inc_in_flight(q, part, op_is_write(op));
