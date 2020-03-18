@@ -624,39 +624,6 @@ xfs_check_summary_counts(
 		return -EFSCORRUPTED;
 	}
 
-	/*
-	 * Now the log is mounted, we know if it was an unclean shutdown or
-	 * not. If it was, with the first phase of recovery has completed, we
-	 * have consistent AG blocks on disk. We have not recovered EFIs yet,
-	 * but they are recovered transactionally in the second recovery phase
-	 * later.
-	 *
-	 * If the log was clean when we mounted, we can check the summary
-	 * counters.  If any of them are obviously incorrect, we can recompute
-	 * them from the AGF headers in the next step.
-	 */
-	if (XFS_LAST_UNMOUNT_WAS_CLEAN(mp) &&
-	    (mp->m_sb.sb_fdblocks > mp->m_sb.sb_dblocks ||
-	     !xfs_verify_icount(mp, mp->m_sb.sb_icount) ||
-	     mp->m_sb.sb_ifree > mp->m_sb.sb_icount))
-		mp->m_flags |= XFS_MOUNT_BAD_SUMMARY;
-
-	/*
-	 * We can safely re-initialise incore superblock counters from the
-	 * per-ag data. These may not be correct if the filesystem was not
-	 * cleanly unmounted, so we waited for recovery to finish before doing
-	 * this.
-	 *
-	 * If the filesystem was cleanly unmounted or the previous check did
-	 * not flag anything weird, then we can trust the values in the
-	 * superblock to be correct and we don't need to do anything here.
-	 * Otherwise, recalculate the summary counters.
-	 */
-	if ((!xfs_sb_version_haslazysbcount(&mp->m_sb) ||
-	     XFS_LAST_UNMOUNT_WAS_CLEAN(mp)) &&
-	    !(mp->m_flags & XFS_MOUNT_BAD_SUMMARY))
-		return 0;
-
 	return xfs_initialize_perag_data(mp, mp->m_sb.sb_agcount);
 }
 
