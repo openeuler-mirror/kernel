@@ -790,6 +790,14 @@ fi
 
 %changelog
 * Wed Mar 18 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.2.0.0034
+- xfs: avoid f_bfree overflow
+- xfs: always init fdblocks in mount
+- xfs: devirtualize ->sf_entsize and ->sf_nextentry
+- block: fix inaccurate io_ticks
+- block: delete part_round_stats and switch to less precise counting
+- CIFS: Fix bug which the return value by asynchronous read is error
+- net/hinic: Magic number rectification
+- net/hinic: slove the problem that VF may be disconnected when vm reboot and receive lots of broadcast packets.
 - openeuler/config: disable CONFIG_EFI_VARS
 - pagecache: support percpu refcount to imporve performance
 - arm64: mm: support setting page attributes for debugging
