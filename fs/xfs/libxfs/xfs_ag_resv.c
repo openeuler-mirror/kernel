@@ -309,10 +309,13 @@ xfs_ag_resv_init(
 	}
 
 #ifdef DEBUG
-	/* need to read in the AGF for the ASSERT below to work */
-	error = xfs_alloc_pagf_init(pag->pag_mount, tp, pag->pag_agno, 0);
-	if (error)
-		return error;
+	if (!pag->pagf_init) {
+		/* need to read in the AGF for the ASSERT below to work */
+		error = xfs_alloc_pagf_init(pag->pag_mount, tp,
+					    pag->pag_agno, 0);
+		if (error)
+			return error;
+	}
 
 	ASSERT(xfs_perag_resv(pag, XFS_AG_RESV_METADATA)->ar_reserved +
 	       xfs_perag_resv(pag, XFS_AG_RESV_RMAPBT)->ar_reserved <=
