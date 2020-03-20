@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2003.2.0
+%global hulkrelease 2003.3.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0034
+Release: %{hulkrelease}.0035
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,9 @@ fi
 %endif
 
 %changelog
+* Fri Mar 30 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.3.0.0035
+- cifs: fix panic in smb2_reconnect
+
 * Wed Mar 18 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.2.0.0034
 - xfs: avoid f_bfree overflow
 - xfs: always init fdblocks in mount
