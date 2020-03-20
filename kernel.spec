@@ -813,7 +813,6 @@ fi
 - net: ipv6: add net argument to ip6_dst_lookup_flow
 
 * Mon Mar 16 2020 Luo Chunsheng <luochunsheng@huawei.com> - 4.19.90-2003.1.1.0033
-- btrfs: don't use WARN_ON when ret is -ENOTENT in __btrfs_free_extent()
 - fix kernel-devel upgrade running scriptlet failed
 
 * Thu Mar 14 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.1.1.0032
