@@ -790,6 +790,7 @@ fi
 
 %changelog
 * Fri Mar 30 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.3.0.0035
+- btrfs: don't use WARN_ON when ret is -ENOTENT in __btrfs_free_extent()
 - cifs: fix panic in smb2_reconnect
 
 * Wed Mar 18 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.2.0.0034
