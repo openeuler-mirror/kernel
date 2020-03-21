@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2003.3.0
+%global hulkrelease 2003.4.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0035
+Release: %{hulkrelease}.0036
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,7 +789,12 @@ fi
 %endif
 
 %changelog
-* Fri Mar 30 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.3.0.0035
+* Sat Mar 21 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.4.0.0036
+- x86/config: enable CONFIG_CFQ_GROUP_IOSCHED
+- x86/openeuler_config: disable CONFIG_EFI_VARS
+
+* Fri Mar 20 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.3.0.0035
+- btrfs: don't use WARN_ON when ret is -ENOTENT in __btrfs_free_extent()
 - cifs: fix panic in smb2_reconnect
 
 * Wed Mar 18 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2003.2.0.0034
