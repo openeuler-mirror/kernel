@@ -3,15 +3,6 @@
 # Makefile for the HISILICON network device drivers.
 #
 
-# Add security options
-ccflags-y += -fstack-protector-strong
-ccflags-y += -Wl,-z,relro,-z,now
-ccflags-y += -Wl,-z,noexecstack
-ccflags-y += -D_FORTIFY_SOURCE=2 -O2
-ccflags-y += -fvisibility=hidden
-ccflags-y += -Wformat=2 -Wfloat-equal
-ccflags-y += -fsigned-char
-
 ccflags-y += -DCONFIG_IT_VALIDATION
 ccflags-y += -DCONFIG_HNS3_TEST
 
