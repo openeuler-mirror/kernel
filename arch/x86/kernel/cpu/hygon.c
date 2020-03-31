@@ -86,6 +86,8 @@ static void hygon_get_topology(struct cpuinfo_x86 *c)
 		err = detect_extended_topology(c);
 		if (!err)
 			c->x86_coreid_bits = get_count_order(c->x86_max_cores);
+
+		cacheinfo_hygon_init_llc_id(c, cpu, node_id);
 	} else if (cpu_has(c, X86_FEATURE_NODEID_MSR)) {
 		u64 value;
 
@@ -319,6 +321,8 @@ static void init_hygon(struct cpuinfo_x86 *c)
 	hygon_detect_cmp(c);
 	hygon_get_topology(c);
 	srat_detect_node(c);
+
+	init_hygon_cacheinfo(c);
 
 	if (cpu_has(c, X86_FEATURE_XMM2)) {
 		unsigned long long val;
