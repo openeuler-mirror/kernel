@@ -1125,6 +1125,7 @@ static const struct file_operations amd_ntb_debugfs_info = {
 
 static const struct pci_device_id amd_ntb_pci_tbl[] = {
 	{PCI_VDEVICE(AMD, PCI_DEVICE_ID_AMD_NTB)},
+	{PCI_VDEVICE(HYGON, PCI_DEVICE_ID_AMD_NTB)},
 	{0}
 };
 MODULE_DEVICE_TABLE(pci, amd_ntb_pci_tbl);
