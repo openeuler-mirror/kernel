@@ -38,6 +38,8 @@ struct shmem_sb_info {
 	spinlock_t shrinklist_lock;   /* Protects shrinklist */
 	struct list_head shrinklist;  /* List of shinkable inodes */
 	unsigned long shrinklist_len; /* Length of shrinklist */
+	unsigned long __percpu *last_ino_number; /* Last inode number */
+	atomic64_t shared_last_ino_number; /* Shared last inode number */
 };
 
 static inline struct shmem_inode_info *SHMEM_I(struct inode *inode)

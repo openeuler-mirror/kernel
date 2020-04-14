@@ -2207,6 +2207,40 @@ static int shmem_mmap(struct file *file, struct vm_area_struct *vma)
 	return 0;
 }
 
+#define SHMEM_LAST_INO_BATCH 1024
+
+static unsigned long shmem_get_next_ino(struct shmem_sb_info *sbinfo)
+{
+	unsigned long *p;
+	unsigned long res;
+	int cpu;
+
+	cpu = get_cpu();
+	p = per_cpu_ptr(sbinfo->last_ino_number, cpu);
+	res = *p;
+
+#ifdef CONFIG_SMP
+	if (unlikely((res & (SHMEM_LAST_INO_BATCH-1)) == 0)) {
+		/*
+		 * If OS is 32-bit, next will be truncated(Cause
+		 * inode->i_ino is unsigned long, define next to long.)
+		 */
+		long next = atomic64_add_return(SHMEM_LAST_INO_BATCH,
+		    &sbinfo->shared_last_ino_number);
+
+		res = next - SHMEM_LAST_INO_BATCH;
+	}
+#endif
+
+	res++;
+	/* Avoid 0 in the low 32 bits: might appear deleted */
+	if (unlikely(!(unsigned int)res))
+		res++;
+	*p = res;
+	put_cpu();
+	return res;
+}
+
 static struct inode *shmem_get_inode(struct super_block *sb, const struct inode *dir,
 				     umode_t mode, dev_t dev, unsigned long flags)
 {
@@ -2219,7 +2253,7 @@ static struct inode *shmem_get_inode(struct super_block *sb, const struct inode 
 
 	inode = new_inode(sb);
 	if (inode) {
-		inode->i_ino = get_next_ino();
+		inode->i_ino = shmem_get_next_ino(sbinfo);
 		inode_init_owner(inode, dir, mode);
 		inode->i_blocks = 0;
 		inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
@@ -3534,6 +3568,7 @@ static void shmem_put_super(struct super_block *sb)
 {
 	struct shmem_sb_info *sbinfo = SHMEM_SB(sb);
 
+	free_percpu(sbinfo->last_ino_number);
 	percpu_counter_destroy(&sbinfo->used_blocks);
 	mpol_put(sbinfo->mpol);
 	kfree(sbinfo);
@@ -3582,6 +3617,10 @@ int shmem_fill_super(struct super_block *sb, void *data, int silent)
 	spin_lock_init(&sbinfo->stat_lock);
 	if (percpu_counter_init(&sbinfo->used_blocks, 0, GFP_KERNEL))
 		goto failed;
+	sbinfo->last_ino_number = alloc_percpu(unsigned long);
+	if (!sbinfo->last_ino_number)
+		goto failed;
+	atomic64_set(&sbinfo->shared_last_ino_number, 0);
 	sbinfo->free_inodes = sbinfo->max_inodes;
 	spin_lock_init(&sbinfo->shrinklist_lock);
 	INIT_LIST_HEAD(&sbinfo->shrinklist);
