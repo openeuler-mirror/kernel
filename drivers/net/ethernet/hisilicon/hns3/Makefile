@@ -28,7 +28,7 @@ ccflags-y += 	-I$(PWD) \
 obj-$(CONFIG_HNS3) += hnae3.o
 
 #### compile hns3.ko
-HNS3_OBJS = 	hns3_enet.o \
+HNS3_OBJS	=	hns3_enet.o \
 			hns3_ethtool.o \
 			hns3_debugfs.o
 HNS3_OBJS_IT	=	hns-customer/hns3_enet_it.o \
