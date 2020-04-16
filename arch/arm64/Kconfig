@@ -770,7 +770,9 @@ config ARM64_ERR_RECOV
 config MPAM
 	bool "Support Memory Partitioning and Monitoring"
 	default n
+	depends on ACPI
 	select RESCTRL
+	select ACPI_MPAM if ACPI
 	help
 	  Memory Partitioning and Monitoring. More exactly Memory system
 	  performance resource Partitioning and Monitoring
