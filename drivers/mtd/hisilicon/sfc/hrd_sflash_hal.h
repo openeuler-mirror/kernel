@@ -16,6 +16,7 @@
 
 #ifndef __HRD_SFLASH_HAL_H__
 #define __HRD_SFLASH_HAL_H__
+#include "hrd_sflash_driver.h"
 
 extern void SFC_CheckErr(struct SFC_SFLASH_INFO *sflash);
 extern s32 SFC_RegModeRead(struct SFC_SFLASH_INFO *sflash, u32 offset,

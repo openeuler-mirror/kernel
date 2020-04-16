@@ -17,6 +17,8 @@
 #ifndef __HRD_SFLASH_CORE_H__
 #define __HRD_SFLASH_CORE_H__
 
+#include "hrd_sflash_driver.h"
+
 #define SFC_HARD_BUF_LEN (256)
 
 #define SPI_CMD_SR_WIP 1 /* Write in Progress bit in status register position */
