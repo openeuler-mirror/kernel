@@ -113,6 +113,10 @@ static inline u32 get_acpi_id_for_cpu(unsigned int cpu)
 
 static inline void arch_fix_phys_package_id(int num, u32 slot) { }
 void __init acpi_init_cpus(void);
+void acpi_pptt_find_min_physid_cpu_node(struct acpi_table_header *table_hdr,
+			struct acpi_pptt_processor *cpu_node,
+			phys_cpuid_t *min_physid,
+			struct acpi_pptt_processor **min_cpu_node);
 
 #else
 static inline void acpi_init_cpus(void) { }
