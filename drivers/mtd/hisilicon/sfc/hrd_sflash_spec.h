@@ -14,8 +14,8 @@
  *
  */
 
-#ifndef __SPI_FLASH_SPEC_H__
-#define __SPI_FLASH_SPEC_H__
+#ifndef __HRD_SFLASH_SPEC_H__
+#define __HRD_SFLASH_SPEC_H__
 
 #define SFLASH_DEFAULT_RDID_OPCD 0x9F /* Default Read ID */
 #define SFLASH_DEFAULT_WREN_OPCD 0x06 /* Default Write Enable */

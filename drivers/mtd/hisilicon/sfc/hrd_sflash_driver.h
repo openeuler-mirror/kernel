@@ -14,8 +14,8 @@
  *
  */
 
-#ifndef _HRD_SLASH_DRIVER_H
-#define _HRD_SLASH_DRIVER_H
+#ifndef _HRD_SFLASH_DRIVER_H
+#define _HRD_SFLASH_DRIVER_H
 
 #include <linux/mtd/map.h>
 
@@ -102,4 +102,4 @@ struct SFC_SFLASH_INFO {
 extern struct mtd_info *sflash_probe(struct map_info *map, struct resource *sfc_regres);
 extern void sflash_destroy(struct mtd_info *mtd);
 
-#endif  /* _HRD_SLASH_DRIVER_H */
+#endif /* _HRD_SLASH_DRIVER_H */

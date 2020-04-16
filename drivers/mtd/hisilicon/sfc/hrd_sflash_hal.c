@@ -700,7 +700,6 @@ s32 SFC_BlockErase(struct SFC_SFLASH_INFO *sflash, u32 ulAddr, u32 ErCmd)
  rel:
 	SFC_FlashUnlock(sflash);
 	return ulRet;
-
 }
 
 static s32 _SFC_RegModeWrite(struct SFC_SFLASH_INFO *sflash,
@@ -727,7 +726,7 @@ static s32 _SFC_RegModeWrite(struct SFC_SFLASH_INFO *sflash,
 	}
 
 	if (ulRemain >= 0x4) {
-		slRet = SFC_RegWordAlignWrite(sflash, (const u32 *)(pucSrc + i), offset + i, ulRemain&(~0x3));
+		slRet = SFC_RegWordAlignWrite(sflash, (const u32 *)(pucSrc + i), offset + i, ulRemain & (~0x3));
 		if (slRet != HRD_OK) {
 			pr_err("[SFC] [%s %d]: SFC_RegWordAlignWrite fail\n", __func__, __LINE__);
 			return slRet;
@@ -805,7 +804,7 @@ s32 SFC_RegModeRead(struct SFC_SFLASH_INFO *sflash,
 	}
 
 	if (ulRemain >= 0x4) {
-		ret = SFC_RegWordAlignRead(sflash, offset + i, (u32 *) (pucDest + i), ulRemain&(~0x3));
+		ret = SFC_RegWordAlignRead(sflash, offset + i, (u32 *) (pucDest + i), ulRemain & (~0x3));
 		if (ret != HRD_OK) {
 			pr_err("[SFC] [%s %d]: SFC_RegWordAlignRead fail\n", __func__, __LINE__);
 			return ret;

@@ -26,9 +26,9 @@
 #include "hrd_common.h"
 #include "hrd_sflash_driver.h"
 
-#define SFC_DRIVER_VERSION  "1.8.15.0"
+#define SFC_DRIVER_VERSION  "1.9.39.0"
 
-static const char *g_sflashMtdList[] = { "sflash", NULL };
+static const char *g_sflashMtdList[] = {"sflash", NULL};
 
 static unsigned int hrd_flash_info_fill(struct maps_init_info *maps,
 	struct resource *flash_iores, struct platform_device *pdev)

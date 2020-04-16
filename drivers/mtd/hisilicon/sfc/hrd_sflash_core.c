@@ -28,7 +28,6 @@
 #include <linux/signal.h>
 #include <linux/types.h>
 #include "hrd_common.h"
-#include "hrd_sflash_driver.h"
 #include "hrd_sflash_spec.h"
 #include "hrd_sflash_core.h"
 
@@ -205,7 +204,6 @@ s32 SFC_ClearStatus(struct SFC_SFLASH_INFO *sflash)
 	(void)SFC_ClearInt(sflash->sfc_reg_base);
 
 	if (sflash->manufacturerId == HISI_SPANSION_MANF_ID) {
-
 		/* 30 for spansion , clear status */
 		SFC_RegisterWrite(sflash->sfc_reg_base + CMD_INS, 0x30);
 
@@ -234,7 +232,6 @@ void SFC_CheckErr(struct SFC_SFLASH_INFO *sflash)
 	unsigned long delay_us = 50; /* delay 50us */
 
 	if (sflash->manufacturerId == HISI_SPANSION_MANF_ID) {
-
 		ulRegValue = SFC_ReadStatus(sflash);
 		if (ulRegValue == WAIT_TIME_OUT) {
 			pr_err("[SFC] [%s %d]: SFC_ReadStatus time out\n",
@@ -362,7 +359,7 @@ s32 SFC_RegWordAlignRead(struct SFC_SFLASH_INFO *sflash,
 	u32 ulRegValue;
 	s32 ulRet;
 
-	if (!ulReadLen || ulReadLen > SFC_HARD_BUF_LEN || (ulReadLen&0x3)) {
+	if (!ulReadLen || ulReadLen > SFC_HARD_BUF_LEN || (ulReadLen & 0x3)) {
 		pr_err("[SFC] [%s %d]: len=%u err\n", __func__, __LINE__, ulReadLen);
 		return HRD_ERR;
 	}
@@ -379,7 +376,7 @@ s32 SFC_RegWordAlignRead(struct SFC_SFLASH_INFO *sflash,
 	ulRegValue = SFC_RegisterRead(sflash->sfc_reg_base + CMD_CONFIG);
 	ulRegValue &= (~(0xff << DATA_CNT) & (~(1 << SEL_CS)));
 	ulRegValue |=
-		((ulReadLen-1) << DATA_CNT) | (1 << ADDR_EN) | (1 << DATA_EN) | (1 << RW_DATA)
+		((ulReadLen - 1) << DATA_CNT) | (1 << ADDR_EN) | (1 << DATA_EN) | (1 << RW_DATA)
 		| (SFC_CHIP_CS << SEL_CS) | (0x1 << START);
 
 	wmb();
@@ -398,7 +395,6 @@ s32 SFC_RegWordAlignRead(struct SFC_SFLASH_INFO *sflash,
 		pulData[i] = SFC_RegisterRead(sflash->sfc_reg_base + DATABUFFER1 + (u32)(0x4 * i));
 
 	return ulRet;
-
 }
 
 s32 SFC_RegByteRead(struct SFC_SFLASH_INFO *sflash,
@@ -448,7 +444,7 @@ s32 SFC_RegWordAlignWrite(struct SFC_SFLASH_INFO *sflash,
 	s32 ulRet;
 
 	ulRet = SFC_WriteEnable(sflash);
-	if (!ulWriteLen || ulWriteLen > SFC_HARD_BUF_LEN || (ulWriteLen&0x3)) {
+	if ((!ulWriteLen) || (ulWriteLen > SFC_HARD_BUF_LEN) || (ulWriteLen & 0x3)) {
 		pr_err("[SFC] [%s %d]: len=%u err\n", __func__, __LINE__, ulWriteLen);
 		ulRet = HRD_ERR;
 		goto rel;
@@ -471,7 +467,7 @@ s32 SFC_RegWordAlignWrite(struct SFC_SFLASH_INFO *sflash,
 	ulRegValue = SFC_RegisterRead(sflash->sfc_reg_base + CMD_CONFIG);
 	ulRegValue &=
 		(~(0xff << DATA_CNT)) & (~(1 << RW_DATA) & (~(1 << SEL_CS)));
-	ulRegValue |= ((ulWriteLen-1) << DATA_CNT) | (1 << ADDR_EN) | (1 << DATA_EN)
+	ulRegValue |= ((ulWriteLen - 1) << DATA_CNT) | (1 << ADDR_EN) | (1 << DATA_EN)
 		| (SFC_CHIP_CS << SEL_CS) | (0x1 << START);
 
 	wmb();
