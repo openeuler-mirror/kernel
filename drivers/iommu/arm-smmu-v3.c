@@ -1226,8 +1226,8 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_device *smmu, u32 sid,
 			ste_live = true;
 			break;
 		case STRTAB_STE_0_CFG_ABORT:
-			if (disable_bypass)
-				break;
+			BUG_ON(!disable_bypass);
+			break;
 		default:
 			BUG(); /* STE corruption */
 		}
