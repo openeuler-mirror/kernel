@@ -15,7 +15,6 @@
 #include <linux/uacce.h>
 #include "zip.h"
 
-#define HZIP_VF_NUM			63
 #define HZIP_QUEUE_NUM_V1		4096
 #define HZIP_QUEUE_NUM_V2		1024
 
@@ -75,7 +74,6 @@
 #define HZIP_CORE_SRAM_ECC_ERR_INFO	0x301148
 #define HZIP_CORE_INT_RAS_CE_ENB	0x301160
 #define HZIP_CORE_INT_RAS_NFE_ENB	0x301164
-#define HZIP_RAS_NFE_MBIT_DISABLE	~HZIP_CORE_INT_STATUS_M_ECC
 #define HZIP_CORE_INT_RAS_FE_ENB        0x301168
 #define HZIP_CORE_INT_RAS_NFE_ENABLE	0x7FE
 #define HZIP_SRAM_ECC_ERR_NUM_SHIFT	16
@@ -95,95 +93,14 @@
 #define HZIP_SOFT_CTRL_ZIP_CONTROL	0x30100C
 #define HZIP_AXI_SHUTDOWN_ENABLE	BIT(14)
 #define HZIP_AXI_SHUTDOWN_DISABLE	0xFFFFBFFF
-#define HZIP_WR_MSI_PORT		0xF7FF
+#define HZIP_WR_PORT			BIT(11)
 
-#define HZIP_ENABLE			1
-#define HZIP_DISABLE			0
-#define HZIP_NUMA_DISTANCE		100
 #define HZIP_BUF_SIZE			22
 #define FORMAT_DECIMAL			10
-#define HZIP_REG_RD_INTVRL_US		10
-#define HZIP_REG_RD_TMOUT_US		1000
-#define HZIP_RESET_WAIT_TIMEOUT		400
-#define HZIP_PCI_COMMAND_INVALID	0xFFFFFFFF
-
-#define FROZEN_RANGE_MIN		10
-#define FROZEN_RANGE_MAX		20
 
 static const char hisi_zip_name[] = "hisi_zip";
 static struct dentry *hzip_debugfs_root;
-static LIST_HEAD(hisi_zip_list);
-static DEFINE_MUTEX(hisi_zip_list_lock);
-
-struct hisi_zip_resource {
-	struct hisi_zip *hzip;
-	int distance;
-	struct list_head list;
-};
-
-static void free_list(struct list_head *head)
-{
-	struct hisi_zip_resource *res, *tmp;
-
-	list_for_each_entry_safe(res, tmp, head, list) {
-		list_del(&res->list);
-		kfree(res);
-	}
-}
-
-struct hisi_zip *find_zip_device(int node)
-{
-	struct hisi_zip *ret = NULL;
-#ifdef CONFIG_NUMA
-	struct hisi_zip_resource *res, *tmp;
-	struct hisi_zip *hisi_zip;
-	struct list_head *n;
-	struct device *dev;
-	LIST_HEAD(head);
-
-	mutex_lock(&hisi_zip_list_lock);
-
-	list_for_each_entry(hisi_zip, &hisi_zip_list, list) {
-		res = kzalloc(sizeof(*res), GFP_KERNEL);
-		if (!res)
-			goto err;
-
-		dev = &hisi_zip->qm.pdev->dev;
-		res->hzip = hisi_zip;
-		res->distance = node_distance(dev->numa_node, node);
-
-		n = &head;
-		list_for_each_entry(tmp, &head, list) {
-			if (res->distance < tmp->distance) {
-				n = &tmp->list;
-				break;
-			}
-		}
-		list_add_tail(&res->list, n);
-	}
-
-	list_for_each_entry(tmp, &head, list) {
-		if (hisi_qm_get_free_qp_num(&tmp->hzip->qm)) {
-			ret = tmp->hzip;
-			break;
-		}
-	}
-
-	free_list(&head);
-#else
-	mutex_lock(&hisi_zip_list_lock);
-
-	ret = list_first_entry(&hisi_zip_list, struct hisi_zip, list);
-#endif
-	mutex_unlock(&hisi_zip_list_lock);
-
-	return ret;
-
-err:
-	free_list(&head);
-	mutex_unlock(&hisi_zip_list_lock);
-	return NULL;
-}
+static struct hisi_qm_list zip_devices;
 
 struct hisi_zip_hw_error {
 	u32 int_msk;
@@ -229,9 +146,7 @@ struct ctrl_debug_file {
  * Just relevant for PF.
  */
 struct hisi_zip_ctrl {
-	u32 num_vfs;
 	struct hisi_zip *hisi_zip;
-	struct dentry *debug_root;
 	struct ctrl_debug_file files[HZIP_DEBUG_FILE_NUM];
 };
 
@@ -282,59 +197,10 @@ static struct debugfs_reg32 hzip_dfx_regs[] = {
 	{"HZIP_DECOMP_LZ77_CURR_ST       ",  0x9cull},
 };
 
-static int pf_q_num_set(const char *val, const struct kernel_param *kp)
-{
-	struct pci_dev *pdev = pci_get_device(PCI_VENDOR_ID_HUAWEI,
-					      PCI_DEVICE_ID_ZIP_PF, NULL);
-	u32 n, q_num;
-	u8 rev_id;
-	int ret;
-
-	if (!val)
-		return -EINVAL;
-
-	if (!pdev) {
-		q_num = min_t(u32, HZIP_QUEUE_NUM_V1, HZIP_QUEUE_NUM_V2);
-		pr_info("No device found currently, suppose queue number is %d\n",
-			q_num);
-	} else {
-		rev_id = pdev->revision;
-		switch (rev_id) {
-		case QM_HW_V1:
-			q_num = HZIP_QUEUE_NUM_V1;
-			break;
-		case QM_HW_V2:
-			q_num = HZIP_QUEUE_NUM_V2;
-			break;
-		default:
-			return -EINVAL;
-		}
-	}
-
-	ret = kstrtou32(val, 10, &n);
-	if (ret != 0 || n == 0 || n > q_num)
-		return -EINVAL;
-
-	return param_set_int(val, kp);
-}
-
-static const struct kernel_param_ops pf_q_num_ops = {
-	.set = pf_q_num_set,
-	.get = param_get_int,
-};
+#ifdef CONFIG_CRYPTO_QM_UACCE
 static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 {
-	u32 n;
-	int ret;
-
-	if (!val)
-		return -EINVAL;
-
-	ret = kstrtou32(val, FORMAT_DECIMAL, &n);
-	if (ret != 0 || (n != UACCE_MODE_NOIOMMU && n != UACCE_MODE_NOUACCE))
-		return -EINVAL;
-
-	return param_set_int(val, kp);
+	return mode_set(val, kp);
 }
 
 static const struct kernel_param_ops uacce_mode_ops = {
@@ -342,13 +208,38 @@ static const struct kernel_param_ops uacce_mode_ops = {
 	.get = param_get_int,
 };
 
+static int uacce_mode = UACCE_MODE_NOUACCE;
+module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
+MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
+#endif
+
+static int pf_q_num_set(const char *val, const struct kernel_param *kp)
+{
+	return q_num_set(val, kp, PCI_DEVICE_ID_ZIP_PF);
+}
+
+static const struct kernel_param_ops pf_q_num_ops = {
+	.set = pf_q_num_set,
+	.get = param_get_int,
+};
+
 static u32 pf_q_num = HZIP_PF_DEF_Q_NUM;
 module_param_cb(pf_q_num, &pf_q_num_ops, &pf_q_num, 0444);
 MODULE_PARM_DESC(pf_q_num, "Number of queues in PF(v1 1-4096, v2 1-1024)");
 
-static int uacce_mode = UACCE_MODE_NOUACCE;
-module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
-MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
+static int vfs_num_set(const char *val, const struct kernel_param *kp)
+{
+	return vf_num_set(val, kp);
+}
+
+static const struct kernel_param_ops vfs_num_ops = {
+	.set = vfs_num_set,
+	.get = param_get_int,
+};
+
+static u32 vfs_num;
+module_param_cb(vfs_num, &vfs_num_ops, &vfs_num, 0444);
+MODULE_PARM_DESC(vfs_num, "Number of VFs to enable(1-63), 0(default)");
 
 static const struct pci_device_id hisi_zip_dev_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_ZIP_PF) },
@@ -357,81 +248,67 @@ static const struct pci_device_id hisi_zip_dev_ids[] = {
 };
 MODULE_DEVICE_TABLE(pci, hisi_zip_dev_ids);
 
-static inline void hisi_zip_add_to_list(struct hisi_zip *hisi_zip)
+int zip_create_qps(struct hisi_qp **qps, int ctx_num)
 {
-	mutex_lock(&hisi_zip_list_lock);
-	list_add_tail(&hisi_zip->list, &hisi_zip_list);
-	mutex_unlock(&hisi_zip_list_lock);
+	int node = cpu_to_node(smp_processor_id());
+
+	return hisi_qm_alloc_qps_node(node, &zip_devices,
+					qps, ctx_num, 0);
 }
 
-static inline void hisi_zip_remove_from_list(struct hisi_zip *hisi_zip)
+static int hisi_zip_set_user_domain_and_cache(struct hisi_qm *qm)
 {
-	mutex_lock(&hisi_zip_list_lock);
-	list_del(&hisi_zip->list);
-	mutex_unlock(&hisi_zip_list_lock);
-}
-
-static void hisi_zip_set_user_domain_and_cache(struct hisi_zip *hisi_zip)
-{
-	struct hisi_qm *qm = &hisi_zip->qm;
+	void __iomem *base = qm->io_base;
 
 	/* qm user domain */
-	writel(AXUSER_BASE, hisi_zip->qm.io_base + QM_ARUSER_M_CFG_1);
-	writel(ARUSER_M_CFG_ENABLE, hisi_zip->qm.io_base +
-	       QM_ARUSER_M_CFG_ENABLE);
-	writel(AXUSER_BASE, hisi_zip->qm.io_base + QM_AWUSER_M_CFG_1);
-	writel(AWUSER_M_CFG_ENABLE, hisi_zip->qm.io_base +
-	       QM_AWUSER_M_CFG_ENABLE);
-	writel(WUSER_M_CFG_ENABLE, hisi_zip->qm.io_base +
-	       QM_WUSER_M_CFG_ENABLE);
+	writel(AXUSER_BASE, base + QM_ARUSER_M_CFG_1);
+	writel(ARUSER_M_CFG_ENABLE, base + QM_ARUSER_M_CFG_ENABLE);
+	writel(AXUSER_BASE, base + QM_AWUSER_M_CFG_1);
+	writel(AWUSER_M_CFG_ENABLE, base + QM_AWUSER_M_CFG_ENABLE);
+	writel(WUSER_M_CFG_ENABLE, base + QM_WUSER_M_CFG_ENABLE);
 
 	/* qm cache */
-	writel(AXI_M_CFG, hisi_zip->qm.io_base + QM_AXI_M_CFG);
-	writel(AXI_M_CFG_ENABLE, hisi_zip->qm.io_base + QM_AXI_M_CFG_ENABLE);
+	writel(AXI_M_CFG, base + QM_AXI_M_CFG);
+	writel(AXI_M_CFG_ENABLE, base + QM_AXI_M_CFG_ENABLE);
+
 	/* disable FLR triggered by BME(bus master enable) */
-	writel(PEH_AXUSER_CFG, hisi_zip->qm.io_base + QM_PEH_AXUSER_CFG);
-	writel(PEH_AXUSER_CFG_ENABLE, hisi_zip->qm.io_base +
-	       QM_PEH_AXUSER_CFG_ENABLE);
+	writel(PEH_AXUSER_CFG, base + QM_PEH_AXUSER_CFG);
+	writel(PEH_AXUSER_CFG_ENABLE, base + QM_PEH_AXUSER_CFG_ENABLE);
 
 	/* cache */
-	writel(HZIP_CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_0);
-	writel(HZIP_CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_ARCA_CHE_1);
-	writel(HZIP_CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_0);
-	writel(HZIP_CACHE_ALL_EN, hisi_zip->qm.io_base + HZIP_PORT_AWCA_CHE_1);
+	writel(HZIP_CACHE_ALL_EN, base + HZIP_PORT_ARCA_CHE_0);
+	writel(HZIP_CACHE_ALL_EN, base + HZIP_PORT_ARCA_CHE_1);
+	writel(HZIP_CACHE_ALL_EN, base + HZIP_PORT_AWCA_CHE_0);
+	writel(HZIP_CACHE_ALL_EN, base + HZIP_PORT_AWCA_CHE_1);
 
 	/* user domain configurations */
-	writel(AXUSER_BASE, hisi_zip->qm.io_base + HZIP_BD_RUSER_32_63);
-	writel(AXUSER_BASE, hisi_zip->qm.io_base + HZIP_SGL_RUSER_32_63);
-	writel(AXUSER_BASE, hisi_zip->qm.io_base + HZIP_BD_WUSER_32_63);
+	writel(AXUSER_BASE, base + HZIP_BD_RUSER_32_63);
+	writel(AXUSER_BASE, base + HZIP_SGL_RUSER_32_63);
+	writel(AXUSER_BASE, base + HZIP_BD_WUSER_32_63);
 
 	if (qm->use_sva) {
-		writel(AXUSER_BASE | AXUSER_SSV, hisi_zip->qm.io_base +
-		       HZIP_DATA_RUSER_32_63);
-		writel(AXUSER_BASE | AXUSER_SSV, hisi_zip->qm.io_base +
-		       HZIP_DATA_WUSER_32_63);
+		writel(AXUSER_BASE | AXUSER_SSV, base + HZIP_DATA_RUSER_32_63);
+		writel(AXUSER_BASE | AXUSER_SSV, base + HZIP_DATA_WUSER_32_63);
 	} else {
-		writel(AXUSER_BASE, hisi_zip->qm.io_base +
-		       HZIP_DATA_RUSER_32_63);
-		writel(AXUSER_BASE, hisi_zip->qm.io_base +
-		       HZIP_DATA_WUSER_32_63);
+		writel(AXUSER_BASE, base + HZIP_DATA_RUSER_32_63);
+		writel(AXUSER_BASE, base + HZIP_DATA_WUSER_32_63);
 	}
 
 	/* let's open all compression/decompression cores */
 	writel(HZIP_DECOMP_CHECK_ENABLE | HZIP_ALL_COMP_DECOMP_EN,
-	       hisi_zip->qm.io_base + HZIP_CLOCK_GATE_CTRL);
+	       base + HZIP_CLOCK_GATE_CTRL);
 
 	/* enable sqc,cqc writeback */
 	writel(SQC_CACHE_ENABLE | CQC_CACHE_ENABLE | SQC_CACHE_WB_ENABLE |
 	       CQC_CACHE_WB_ENABLE | FIELD_PREP(SQC_CACHE_WB_THRD, 1) |
-	       FIELD_PREP(CQC_CACHE_WB_THRD, 1),
-	       hisi_zip->qm.io_base + QM_CACHE_CTL);
+	       FIELD_PREP(CQC_CACHE_WB_THRD, 1), base + QM_CACHE_CTL);
+
+	return 0;
 }
 
 /* hisi_zip_debug_regs_clear() - clear the zip debug regs */
-static void hisi_zip_debug_regs_clear(struct hisi_zip *hisi_zip)
+static void hisi_zip_debug_regs_clear(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &hisi_zip->qm;
-
 	/* clear current_qm */
 	writel(0x0, qm->io_base + QM_DFX_MB_CNT_VF);
 	writel(0x0, qm->io_base + QM_DFX_DB_CNT_VF);
@@ -442,52 +319,70 @@ static void hisi_zip_debug_regs_clear(struct hisi_zip *hisi_zip)
 	hisi_qm_debug_regs_clear(qm);
 }
 
-
-static void hisi_zip_hw_error_set_state(struct hisi_zip *hisi_zip, bool state)
+static int hisi_zip_hw_err_pre_set(struct hisi_qm *qm, u32 *val)
 {
-	struct hisi_qm *qm = &hisi_zip->qm;
-	u32 val;
-
 	if (qm->ver == QM_HW_V1) {
 		writel(HZIP_CORE_INT_DISABLE, qm->io_base + HZIP_CORE_INT_MASK);
 		pci_info(qm->pdev, "ZIP v%d cannot support hw error handle!\n",
 			 qm->ver);
-		return;
+		return -EINVAL;
 	}
 
 	/* configure error type */
-	writel(0x1, hisi_zip->qm.io_base + HZIP_CORE_INT_RAS_CE_ENB);
-	writel(0x0, hisi_zip->qm.io_base + HZIP_CORE_INT_RAS_FE_ENB);
+	writel(0x1, qm->io_base + HZIP_CORE_INT_RAS_CE_ENB);
+	writel(0x0, qm->io_base + HZIP_CORE_INT_RAS_FE_ENB);
 	writel(HZIP_CORE_INT_RAS_NFE_ENABLE,
-		hisi_zip->qm.io_base + HZIP_CORE_INT_RAS_NFE_ENB);
+		qm->io_base + HZIP_CORE_INT_RAS_NFE_ENB);
 
-	val = readl(hisi_zip->qm.io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
-	if (state) {
-		/* clear ZIP hw error source if having */
-		writel(HZIP_CORE_INT_DISABLE, hisi_zip->qm.io_base +
-					      HZIP_CORE_INT_SOURCE);
-		/* enable ZIP hw error interrupts */
-		writel(0, hisi_zip->qm.io_base + HZIP_CORE_INT_MASK);
+	*val = readl(qm->io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
 
-		/* enable ZIP block master OOO when m-bit error occur */
-		val = val | HZIP_AXI_SHUTDOWN_ENABLE;
-	} else {
-		/* disable ZIP hw error interrupts */
-		writel(HZIP_CORE_INT_DISABLE,
-		       hisi_zip->qm.io_base + HZIP_CORE_INT_MASK);
+	return 0;
+}
 
-		/* disable ZIP block master OOO when m-bit error occur */
-		val = val & HZIP_AXI_SHUTDOWN_DISABLE;
-	}
+static void hisi_zip_hw_error_enable(struct hisi_qm *qm)
+{
+	u32 val;
+	int ret;
 
-	writel(val, hisi_zip->qm.io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
+	ret = hisi_zip_hw_err_pre_set(qm, &val);
+	if (ret)
+		return;
+
+	/* clear ZIP hw error source if having */
+	writel(HZIP_CORE_INT_DISABLE, qm->io_base + HZIP_CORE_INT_SOURCE);
+
+	/* enable ZIP hw error interrupts */
+	writel(0, qm->io_base + HZIP_CORE_INT_MASK);
+
+	/* enable ZIP block master OOO when m-bit error occur */
+	val = val | HZIP_AXI_SHUTDOWN_ENABLE;
+
+	writel(val, qm->io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
+}
+
+static void hisi_zip_hw_error_disable(struct hisi_qm *qm)
+{
+	u32 val;
+	int ret;
+
+	ret = hisi_zip_hw_err_pre_set(qm, &val);
+	if (ret)
+		return;
+
+	/* disable ZIP hw error interrupts */
+	writel(HZIP_CORE_INT_DISABLE, qm->io_base + HZIP_CORE_INT_MASK);
+
+	/* disable ZIP block master OOO when m-bit error occur */
+	val = val & HZIP_AXI_SHUTDOWN_DISABLE;
+
+	writel(val, qm->io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
 }
 
 static inline struct hisi_qm *file_to_qm(struct ctrl_debug_file *file)
 {
-	struct hisi_zip *hisi_zip = file->ctrl->hisi_zip;
+	struct hisi_zip *zip = file->ctrl->hisi_zip;
 
-	return &hisi_zip->qm;
+	return &zip->qm;
 }
 
 static u32 current_qm_read(struct ctrl_debug_file *file)
@@ -500,22 +395,21 @@ static u32 current_qm_read(struct ctrl_debug_file *file)
 static int current_qm_write(struct ctrl_debug_file *file, u32 val)
 {
 	struct hisi_qm *qm = file_to_qm(file);
-	struct hisi_zip_ctrl *ctrl = file->ctrl;
 	u32 vfq_num;
 	u32 tmp;
 
-	if (val > ctrl->num_vfs)
+	if (val > qm->vfs_num)
 		return -EINVAL;
 
 	/* According PF or VF Dev ID to calculation curr_qm_qp_num and store */
 	if (val == 0) {
 		qm->debug.curr_qm_qp_num = qm->qp_num;
 	} else {
-		vfq_num = (qm->ctrl_q_num - qm->qp_num) / ctrl->num_vfs;
-		if (val == ctrl->num_vfs) {
+		vfq_num = (qm->ctrl_q_num - qm->qp_num) / qm->vfs_num;
+		if (val == qm->vfs_num) {
 			qm->debug.curr_qm_qp_num =
 				qm->ctrl_q_num - qm->qp_num -
-				(ctrl->num_vfs - 1) * vfq_num;
+				(qm->vfs_num - 1) * vfq_num;
 		} else {
 			qm->debug.curr_qm_qp_num = vfq_num;
 		}
@@ -638,10 +532,8 @@ static const struct file_operations ctrl_debug_fops = {
 	.write = hisi_zip_ctrl_debug_write,
 };
 
-static int hisi_zip_core_debug_init(struct hisi_zip_ctrl *ctrl)
+static int hisi_zip_core_debug_init(struct hisi_qm *qm)
 {
-	struct hisi_zip *hisi_zip = ctrl->hisi_zip;
-	struct hisi_qm *qm = &hisi_zip->qm;
 	struct device *dev = &qm->pdev->dev;
 	struct debugfs_regset32 *regset;
 	struct dentry *tmp_d, *tmp;
@@ -657,7 +549,7 @@ static int hisi_zip_core_debug_init(struct hisi_zip_ctrl *ctrl)
 		if (ret < 0)
 			return -EINVAL;
 
-		tmp_d = debugfs_create_dir(buf, ctrl->debug_root);
+		tmp_d = debugfs_create_dir(buf, qm->debug.debug_root);
 		if (!tmp_d)
 			return -ENOENT;
 
@@ -677,29 +569,29 @@ static int hisi_zip_core_debug_init(struct hisi_zip_ctrl *ctrl)
 	return 0;
 }
 
-static int hisi_zip_ctrl_debug_init(struct hisi_zip_ctrl *ctrl)
+static int hisi_zip_ctrl_debug_init(struct hisi_qm *qm)
 {
+	struct hisi_zip *zip = container_of(qm, struct hisi_zip, qm);
 	struct dentry *tmp;
 	int i;
 
 	for (i = HZIP_CURRENT_QM; i < HZIP_DEBUG_FILE_NUM; i++) {
-		spin_lock_init(&ctrl->files[i].lock);
-		ctrl->files[i].ctrl = ctrl;
-		ctrl->files[i].index = i;
+		spin_lock_init(&zip->ctrl->files[i].lock);
+		zip->ctrl->files[i].ctrl = zip->ctrl;
+		zip->ctrl->files[i].index = i;
 
 		tmp = debugfs_create_file(ctrl_debug_file_name[i], 0600,
-					  ctrl->debug_root, ctrl->files + i,
+			qm->debug.debug_root, zip->ctrl->files + i,
 					  &ctrl_debug_fops);
 		if (!tmp)
 			return -ENOENT;
 	}
 
-	return hisi_zip_core_debug_init(ctrl);
+	return hisi_zip_core_debug_init(qm);
 }
 
-static int hisi_zip_debugfs_init(struct hisi_zip *hisi_zip)
+static int hisi_zip_debugfs_init(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &hisi_zip->qm;
 	struct device *dev = &qm->pdev->dev;
 	struct dentry *dev_d;
 	int ret;
@@ -714,8 +606,7 @@ static int hisi_zip_debugfs_init(struct hisi_zip *hisi_zip)
 		goto failed_to_create;
 
 	if (qm->fun_type == QM_HW_PF) {
-		hisi_zip->ctrl->debug_root = dev_d;
-		ret = hisi_zip_ctrl_debug_init(hisi_zip->ctrl);
+		ret = hisi_zip_ctrl_debug_init(qm);
 		if (ret)
 			goto failed_to_create;
 	}
@@ -727,45 +618,14 @@ failed_to_create:
 	return ret;
 }
 
-static void hisi_zip_debugfs_exit(struct hisi_zip *hisi_zip)
+static void hisi_zip_debugfs_exit(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &hisi_zip->qm;
-
 	debugfs_remove_recursive(qm->debug.debug_root);
 
 	if (qm->fun_type == QM_HW_PF) {
-		hisi_zip_debug_regs_clear(hisi_zip);
+		hisi_zip_debug_regs_clear(qm);
 		qm->debug.curr_qm_qp_num = 0;
 	}
-}
-
-static void hisi_zip_hw_error_init(struct hisi_zip *hisi_zip)
-{
-	hisi_qm_hw_error_init(&hisi_zip->qm, QM_BASE_CE,
-			      QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT, 0,
-			      QM_DB_RANDOM_INVALID);
-	hisi_zip_hw_error_set_state(hisi_zip, true);
-}
-
-static u32 hisi_zip_get_hw_err_status(struct hisi_qm *qm)
-{
-	return readl(qm->io_base + HZIP_CORE_INT_STATUS);
-}
-
-static void hisi_zip_clear_hw_err_status(struct hisi_qm *qm, u32 err_sts)
-{
-	writel(err_sts, qm->io_base + HZIP_CORE_INT_SOURCE);
-}
-
-static void hisi_zip_set_ecc(struct hisi_qm *qm)
-{
-	u32 nfe_enb;
-
-	nfe_enb = readl(qm->io_base + HZIP_CORE_INT_RAS_NFE_ENB);
-	writel(nfe_enb & HZIP_RAS_NFE_MBIT_DISABLE,
-	       qm->io_base + HZIP_CORE_INT_RAS_NFE_ENB);
-	writel(HZIP_CORE_INT_STATUS_M_ECC, qm->io_base + HZIP_CORE_INT_SET);
-	qm->err_ini.is_dev_ecc_mbit = 1;
 }
 
 static void hisi_zip_log_hw_error(struct hisi_qm *qm, u32 err_sts)
@@ -792,17 +652,53 @@ static void hisi_zip_log_hw_error(struct hisi_qm *qm, u32 err_sts)
 	}
 }
 
-static int hisi_zip_pf_probe_init(struct hisi_zip *hisi_zip)
+static u32 hisi_zip_get_hw_err_status(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &hisi_zip->qm;
+	return readl(qm->io_base + HZIP_CORE_INT_STATUS);
+}
+
+static void hisi_zip_clear_hw_err_status(struct hisi_qm *qm, u32 err_sts)
+{
+	writel(err_sts, qm->io_base + HZIP_CORE_INT_SOURCE);
+}
+
+static void hisi_zip_open_axi_master_ooo(struct hisi_qm *qm)
+{
+	u32 val;
+
+	val = readl(qm->io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
+
+	writel(val & HZIP_AXI_SHUTDOWN_DISABLE,
+	       qm->io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
+
+	writel(val | HZIP_AXI_SHUTDOWN_ENABLE,
+	       qm->io_base + HZIP_SOFT_CTRL_ZIP_CONTROL);
+}
+
+static void hisi_zip_close_axi_master_ooo(struct hisi_qm *qm)
+{
+	u32 nfe_enb;
+
+	nfe_enb = readl(qm->io_base + HZIP_CORE_INT_RAS_NFE_ENB);
+	writel(nfe_enb & ~HZIP_CORE_INT_STATUS_M_ECC,
+	       qm->io_base + HZIP_CORE_INT_RAS_NFE_ENB);
+
+	writel(HZIP_CORE_INT_STATUS_M_ECC,
+	       qm->io_base + HZIP_CORE_INT_SET);
+}
+
+static int hisi_zip_pf_probe_init(struct hisi_qm *qm)
+{
+	struct hisi_zip *zip = container_of(qm, struct hisi_zip, qm);
 	struct hisi_zip_ctrl *ctrl;
+	int ret;
 
 	ctrl = devm_kzalloc(&qm->pdev->dev, sizeof(*ctrl), GFP_KERNEL);
 	if (!ctrl)
 		return -ENOMEM;
 
-	hisi_zip->ctrl = ctrl;
-	ctrl->hisi_zip = hisi_zip;
+	zip->ctrl = ctrl;
+	ctrl->hisi_zip = zip;
 
 	switch (qm->ver) {
 	case QM_HW_V1:
@@ -817,61 +713,71 @@ static int hisi_zip_pf_probe_init(struct hisi_zip *hisi_zip)
 		return -EINVAL;
 	}
 
-	qm->err_ini.qm_wr_port = HZIP_WR_MSI_PORT;
-	qm->err_ini.ecc_2bits_mask = HZIP_CORE_INT_STATUS_M_ECC;
 	qm->err_ini.get_dev_hw_err_status = hisi_zip_get_hw_err_status;
 	qm->err_ini.clear_dev_hw_err_status = hisi_zip_clear_hw_err_status;
+	qm->err_ini.err_info.ecc_2bits_mask = HZIP_CORE_INT_STATUS_M_ECC;
+	qm->err_ini.err_info.ce = QM_BASE_CE;
+	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT;
+	qm->err_ini.err_info.fe = 0;
+	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
+	qm->err_ini.err_info.acpi_rst = "ZRST";
+	qm->err_ini.hw_err_disable = hisi_zip_hw_error_disable;
+	qm->err_ini.hw_err_enable = hisi_zip_hw_error_enable;
+	qm->err_ini.set_usr_domain_cache = hisi_zip_set_user_domain_and_cache;
 	qm->err_ini.log_dev_hw_err = hisi_zip_log_hw_error;
-	qm->err_ini.inject_dev_hw_err = hisi_zip_set_ecc;
+	qm->err_ini.open_axi_master_ooo = hisi_zip_open_axi_master_ooo;
+	qm->err_ini.close_axi_master_ooo = hisi_zip_close_axi_master_ooo;
 
-	hisi_zip_set_user_domain_and_cache(hisi_zip);
-	hisi_zip_hw_error_init(hisi_zip);
-	hisi_zip_debug_regs_clear(hisi_zip);
+	qm->err_ini.err_info.msi_wr_port = HZIP_WR_PORT;
+
+	ret = qm->err_ini.set_usr_domain_cache(qm);
+	if (ret)
+		return ret;
+
+	hisi_qm_dev_err_init(qm);
+
+	hisi_zip_debug_regs_clear(qm);
+
+	return 0;
+}
+
+static int hisi_zip_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
+{
+	int ret;
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\n";
+	qm->uacce_mode = uacce_mode;
+#endif
+	qm->pdev = pdev;
+	ret = hisi_qm_pre_init(qm, pf_q_num, HZIP_PF_DEF_Q_BASE);
+	if (ret)
+		return ret;
+	qm->sqe_size = HZIP_SQE_SIZE;
+	qm->dev_name = hisi_zip_name;
+	qm->qm_list = &zip_devices;
 
 	return 0;
 }
 
 static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
-	struct hisi_zip *hisi_zip;
-	enum qm_hw_ver rev_id;
+	struct hisi_zip *zip;
 	struct hisi_qm *qm;
 	int ret;
 
-	rev_id = hisi_qm_get_hw_version(pdev);
-	if (rev_id == QM_HW_UNKNOWN)
-		return -EINVAL;
-
-	hisi_zip = devm_kzalloc(&pdev->dev, sizeof(*hisi_zip), GFP_KERNEL);
-	if (!hisi_zip)
+	zip = devm_kzalloc(&pdev->dev, sizeof(*zip), GFP_KERNEL);
+	if (!zip)
 		return -ENOMEM;
 
-	pci_set_drvdata(pdev, hisi_zip);
+	qm = &zip->qm;
+	qm->fun_type = pdev->is_physfn ? QM_HW_PF : QM_HW_VF;
 
-	hisi_zip_add_to_list(hisi_zip);
+	ret = hisi_zip_qm_pre_init(qm, pdev);
+	if (ret)
+		return ret;
 
-	hisi_zip->status = 0;
-	qm = &hisi_zip->qm;
-	qm->pdev = pdev;
-	qm->ver = rev_id;
-
-	qm->sqe_size = HZIP_SQE_SIZE;
-	qm->dev_name = hisi_zip_name;
-	qm->fun_type = (pdev->device == PCI_DEVICE_ID_ZIP_PF) ? QM_HW_PF :
-								QM_HW_VF;
-	qm->algs = "zlib\ngzip\nxts(sm4)\nxts(aes)\n";
-
-	switch (uacce_mode) {
-	case UACCE_MODE_NOUACCE:
-		qm->use_uacce = false;
-		break;
-	case UACCE_MODE_NOIOMMU:
-		qm->use_uacce = true;
-		break;
-	default:
-		ret = -EINVAL;
-		goto err_remove_from_list;
-	}
+	hisi_qm_add_to_list(qm, &zip_devices);
 
 	ret = hisi_qm_init(qm);
 	if (ret) {
@@ -880,15 +786,11 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	if (qm->fun_type == QM_HW_PF) {
-		ret = hisi_zip_pf_probe_init(hisi_zip);
+		ret = hisi_zip_pf_probe_init(qm);
 		if (ret) {
 			pci_err(pdev, "Failed to init pf probe (%d)!\n", ret);
 			goto err_remove_from_list;
 		}
-
-		qm->qp_base = HZIP_PF_DEF_Q_BASE;
-		qm->qp_num = pf_q_num;
-		qm->debug.curr_qm_qp_num = pf_q_num;
 	} else if (qm->fun_type == QM_HW_VF) {
 		/*
 		 * have no way to get qm configure in VM in v1 hardware,
@@ -914,7 +816,7 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto err_qm_uninit;
 	}
 
-	ret = hisi_zip_debugfs_init(hisi_zip);
+	ret = hisi_zip_debugfs_init(qm);
 	if (ret)
 		pci_err(pdev, "Failed to init debugfs (%d)!\n", ret);
 
@@ -923,630 +825,62 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		pci_err(pdev, "Failed to register driver to crypto!\n");
 		goto err_qm_stop;
 	}
+
+	if (qm->fun_type == QM_HW_PF && vfs_num > 0) {
+		ret = hisi_qm_sriov_enable(pdev, vfs_num);
+		if (ret < 0)
+			goto err_crypto_unregister;
+	}
+
 	return 0;
 
+err_crypto_unregister:
+	hisi_zip_unregister_from_crypto();
 err_qm_stop:
-	hisi_zip_debugfs_exit(hisi_zip);
+	hisi_zip_debugfs_exit(qm);
 	hisi_qm_stop(qm, QM_NORMAL);
 err_qm_uninit:
 	hisi_qm_uninit(qm);
 err_remove_from_list:
-	hisi_zip_remove_from_list(hisi_zip);
+	hisi_qm_del_from_list(qm, &zip_devices);
 	return ret;
-}
-
-/* now we only support equal assignment */
-static int hisi_zip_vf_q_assign(struct hisi_zip *hisi_zip, u32 num_vfs)
-{
-	struct hisi_qm *qm = &hisi_zip->qm;
-	u32 qp_num = qm->qp_num;
-	u32 q_base = qp_num;
-	u32 q_num, remain_q_num, i;
-	int ret;
-
-	if (!num_vfs)
-		return -EINVAL;
-
-	remain_q_num = qm->ctrl_q_num - qp_num;
-	/* If remain queues not enough, return error. */
-	if (remain_q_num < num_vfs)
-		return -EINVAL;
-
-	q_num = remain_q_num / num_vfs;
-	for (i = 1; i <= num_vfs; i++) {
-		if (i == num_vfs)
-			q_num += remain_q_num % num_vfs;
-		ret = hisi_qm_set_vft(qm, i, q_base, q_num);
-		if (ret)
-			return ret;
-		q_base += q_num;
-	}
-
-	return 0;
-}
-
-static int hisi_zip_clear_vft_config(struct hisi_zip *hisi_zip)
-{
-	struct hisi_zip_ctrl *ctrl = hisi_zip->ctrl;
-	struct hisi_qm *qm = &hisi_zip->qm;
-	u32 i, num_vfs = ctrl->num_vfs;
-	int ret;
-
-	for (i = 1; i <= num_vfs; i++) {
-		ret = hisi_qm_set_vft(qm, i, 0, 0);
-		if (ret)
-			return ret;
-	}
-
-	ctrl->num_vfs = 0;
-
-	return 0;
-}
-
-static int hisi_zip_sriov_enable(struct pci_dev *pdev, int max_vfs)
-{
-#ifdef CONFIG_PCI_IOV
-	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
-	int pre_existing_vfs, num_vfs, ret;
-
-	pre_existing_vfs = pci_num_vf(pdev);
-	if (pre_existing_vfs) {
-		dev_err(&pdev->dev,
-			"Can't enable VF. Please disable pre-enabled VFs!\n");
-		return 0;
-	}
-
-	num_vfs = min_t(int, max_vfs, HZIP_VF_NUM);
-
-	ret = hisi_zip_vf_q_assign(hisi_zip, num_vfs);
-	if (ret) {
-		dev_err(&pdev->dev, "Can't assign queues for VF!\n");
-		return ret;
-	}
-
-	hisi_zip->ctrl->num_vfs = num_vfs;
-
-	ret = pci_enable_sriov(pdev, num_vfs);
-	if (ret) {
-		dev_err(&pdev->dev, "Can't enable VF!\n");
-		hisi_zip_clear_vft_config(hisi_zip);
-		return ret;
-	}
-
-	return num_vfs;
-#else
-	return 0;
-#endif
-}
-
-static int hisi_zip_try_frozen_vfs(struct pci_dev *pdev)
-{
-	struct hisi_zip *zip, *vf_zip;
-	struct pci_dev *dev;
-	int ret = 0;
-
-	/* Try to frozen all the VFs as disable SRIOV */
-	mutex_lock(&hisi_zip_list_lock);
-	list_for_each_entry(zip, &hisi_zip_list, list) {
-		dev = zip->qm.pdev;
-		if (dev == pdev)
-			continue;
-		if (pci_physfn(dev) == pdev) {
-			vf_zip = pci_get_drvdata(dev);
-			ret = hisi_qm_frozen(&vf_zip->qm);
-			if (ret)
-				goto frozen_fail;
-		}
-	}
-
-frozen_fail:
-	mutex_unlock(&hisi_zip_list_lock);
-	return ret;
-}
-
-static int hisi_zip_sriov_disable(struct pci_dev *pdev)
-{
-	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
-
-	if (pci_vfs_assigned(pdev)) {
-		dev_err(&pdev->dev,
-			"Can't disable VFs while VFs are assigned!\n");
-		return -EPERM;
-	}
-
-	if (hisi_zip_try_frozen_vfs(pdev)) {
-		dev_err(&pdev->dev, "try frozen VFs failed!\n");
-		return -EBUSY;
-	}
-
-	/* remove in hisi_zip_pci_driver will be called to free VF resources */
-	pci_disable_sriov(pdev);
-
-	return hisi_zip_clear_vft_config(hisi_zip);
 }
 
 static int hisi_zip_sriov_configure(struct pci_dev *pdev, int num_vfs)
 {
 	if (num_vfs == 0)
-		return hisi_zip_sriov_disable(pdev);
+		return hisi_qm_sriov_disable(pdev, &zip_devices);
 	else
-		return hisi_zip_sriov_enable(pdev, num_vfs);
-}
-
-static void hisi_zip_remove_wait_delay(struct hisi_zip *hisi_zip)
-{
-	struct hisi_qm *qm = &hisi_zip->qm;
-
-	while (hisi_qm_frozen(qm) || ((qm->fun_type == QM_HW_PF) &&
-		hisi_zip_try_frozen_vfs(qm->pdev)))
-		usleep_range(FROZEN_RANGE_MIN, FROZEN_RANGE_MAX);
-
-	udelay(ZIP_WAIT_DELAY);
+		return hisi_qm_sriov_enable(pdev, num_vfs);
 }
 
 static void hisi_zip_remove(struct pci_dev *pdev)
 {
-	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
-	struct hisi_qm *qm = &hisi_zip->qm;
+	struct hisi_qm *qm = pci_get_drvdata(pdev);
 
 	if (uacce_mode != UACCE_MODE_NOUACCE)
-		hisi_zip_remove_wait_delay(hisi_zip);
+		hisi_qm_remove_wait_delay(qm, &zip_devices);
 
-	if (qm->fun_type == QM_HW_PF && hisi_zip->ctrl->num_vfs != 0)
-		(void)hisi_zip_sriov_disable(pdev);
+	if (qm->fun_type == QM_HW_PF && qm->vfs_num)
+		hisi_qm_sriov_disable(pdev, NULL);
 
 	hisi_zip_unregister_from_crypto();
-	hisi_zip_debugfs_exit(hisi_zip);
+
+	hisi_zip_debugfs_exit(qm);
 	hisi_qm_stop(qm, QM_NORMAL);
 
 	if (qm->fun_type == QM_HW_PF)
-		hisi_zip_hw_error_set_state(hisi_zip, false);
+		hisi_qm_dev_err_uninit(qm);
 
 	hisi_qm_uninit(qm);
-	hisi_zip_remove_from_list(hisi_zip);
-}
-
-static void hisi_zip_shutdown(struct pci_dev *pdev)
-{
-	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
-
-	hisi_qm_stop(&hisi_zip->qm, QM_NORMAL);
-}
-
-static pci_ers_result_t hisi_zip_error_detected(struct pci_dev *pdev,
-						pci_channel_state_t state)
-{
-	if (pdev->is_virtfn)
-		return PCI_ERS_RESULT_NONE;
-
-	dev_info(&pdev->dev, "PCI error detected, state(=%d)!!\n", state);
-	if (state == pci_channel_io_perm_failure)
-		return PCI_ERS_RESULT_DISCONNECT;
-
-	return hisi_qm_process_dev_error(pdev);
-}
-
-static int hisi_zip_reset_prepare_ready(struct hisi_zip *hisi_zip)
-{
-	struct pci_dev *pdev = hisi_zip->qm.pdev;
-	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
-	int delay = 0;
-
-	while (test_and_set_bit(HISI_ZIP_RESET, &zip->status)) {
-		msleep(++delay);
-		if (delay > HZIP_RESET_WAIT_TIMEOUT)
-			return -EBUSY;
-	}
-
-	return 0;
-}
-
-static int hisi_zip_vf_reset_prepare(struct hisi_zip *hisi_zip,
-				     enum qm_stop_reason stop_reason)
-{
-	struct pci_dev *pdev = hisi_zip->qm.pdev;
-	struct pci_dev *dev;
-	struct hisi_qm *qm;
-	int ret = 0;
-
-	mutex_lock(&hisi_zip_list_lock);
-	if (pdev->is_physfn) {
-		list_for_each_entry(hisi_zip, &hisi_zip_list, list) {
-			dev = hisi_zip->qm.pdev;
-			if (dev == pdev)
-				continue;
-
-			if (pci_physfn(dev) == pdev) {
-				qm = &hisi_zip->qm;
-
-				ret = hisi_qm_stop(qm, stop_reason);
-				if (ret)
-					goto prepare_fail;
-			}
-		}
-	}
-
-prepare_fail:
-	mutex_unlock(&hisi_zip_list_lock);
-	return ret;
-}
-
-static int hisi_zip_controller_reset_prepare(struct hisi_zip *hisi_zip)
-{
-	struct hisi_qm *qm = &hisi_zip->qm;
-	struct device *dev = &qm->pdev->dev;
-	int ret;
-
-	ret = hisi_zip_reset_prepare_ready(hisi_zip);
-	if (ret) {
-		dev_err(dev, "Controller reset not ready!\n");
-		return ret;
-	}
-
-	ret = hisi_zip_vf_reset_prepare(hisi_zip, QM_SOFT_RESET);
-	if (ret) {
-		dev_err(dev, "Fails to stop VFs!\n");
-		return ret;
-	}
-
-	ret = hisi_qm_stop(qm, QM_SOFT_RESET);
-	if (ret) {
-		dev_err(dev, "Fails to stop QM!\n");
-		return ret;
-	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce) {
-		ret = uacce_hw_err_isolate(&qm->uacce);
-		if (ret) {
-			dev_err(dev, "Fails to isolate hw err!\n");
-			return ret;
-		}
-	}
-#endif
-
-	return 0;
-}
-
-static int hisi_zip_soft_reset(struct hisi_zip *hisi_zip)
-{
-	struct hisi_qm *qm = &hisi_zip->qm;
-	struct device *dev = &qm->pdev->dev;
-	unsigned long long value;
-	int ret;
-	u32 val;
-
-	ret = hisi_qm_reg_test(qm);
-	if (ret)
-		return ret;
-
-	ret = hisi_qm_set_vf_mse(qm, HZIP_DISABLE);
-	if (ret) {
-		dev_err(dev, "Fails to disable vf mse bit.\n");
-		return ret;
-	}
-
-	ret = hisi_qm_set_msi(qm, HZIP_DISABLE);
-	if (ret) {
-		dev_err(dev, "Fails to disable peh msi bit.\n");
-		return ret;
-	}
-
-	/* Set qm ecc if dev ecc happened to hold on ooo */
-	hisi_qm_set_ecc(qm);
-
-	/* OOO register set and check */
-	writel(HZIP_MASTER_GLOBAL_CTRL_SHUTDOWN,
-	       hisi_zip->qm.io_base + HZIP_MASTER_GLOBAL_CTRL);
-
-	/* If bus lock, reset chip */
-	ret = readl_relaxed_poll_timeout(hisi_zip->qm.io_base +
-					 HZIP_MASTER_TRANS_RETURN, val,
-					 (val == HZIP_MASTER_TRANS_RETURN_RW),
-					 HZIP_REG_RD_INTVRL_US,
-					 HZIP_REG_RD_TMOUT_US);
-	if (ret) {
-		dev_emerg(dev, "Bus lock! Please reset system.\n");
-		return ret;
-	}
-
-	ret = hisi_qm_set_pf_mse(qm, HZIP_DISABLE);
-	if (ret) {
-		dev_err(dev, "Fails to disable pf mse bit.\n");
-		return ret;
-	}
-
-	/* The reset related sub-control registers are not in PCI BAR */
-	if (ACPI_HANDLE(dev)) {
-		acpi_status s;
-
-		s = acpi_evaluate_integer(ACPI_HANDLE(dev), "ZRST",
-					  NULL, &value);
-		if (ACPI_FAILURE(s)) {
-			dev_err(dev, "NO controller reset method!\n");
-			return -EIO;
-		}
-
-		if (value) {
-			dev_err(dev, "Reset step %llu failed!\n", value);
-			return -EIO;
-		}
-	} else {
-		dev_err(dev, "No reset method!\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-static int hisi_zip_vf_reset_done(struct hisi_zip *hisi_zip)
-{
-	struct pci_dev *pdev = hisi_zip->qm.pdev;
-	struct pci_dev *dev;
-	struct hisi_qm *qm;
-	int ret = 0;
-
-	mutex_lock(&hisi_zip_list_lock);
-	list_for_each_entry(hisi_zip, &hisi_zip_list, list) {
-		dev = hisi_zip->qm.pdev;
-		if (dev == pdev)
-			continue;
-
-		if (pci_physfn(dev) == pdev) {
-			qm = &hisi_zip->qm;
-
-			ret = hisi_qm_restart(qm);
-			if (ret)
-				goto reset_fail;
-		}
-	}
-
-reset_fail:
-	mutex_unlock(&hisi_zip_list_lock);
-	return ret;
-}
-
-static int hisi_zip_controller_reset_done(struct hisi_zip *hisi_zip)
-{
-	struct hisi_qm *qm = &hisi_zip->qm;
-	struct device *dev = &qm->pdev->dev;
-	int ret;
-
-	ret = hisi_qm_set_msi(qm, HZIP_ENABLE);
-	if (ret) {
-		dev_err(dev, "Fails to enable peh msi bit!\n");
-		return ret;
-	}
-
-	ret = hisi_qm_set_pf_mse(qm, HZIP_ENABLE);
-	if (ret) {
-		dev_err(dev, "Fails to enable pf mse bit!\n");
-		return ret;
-	}
-
-	ret = hisi_qm_set_vf_mse(qm, HZIP_ENABLE);
-	if (ret) {
-		dev_err(dev, "Fails to enable vf mse bit!\n");
-		return ret;
-	}
-
-	hisi_zip_set_user_domain_and_cache(hisi_zip);
-	hisi_qm_restart_prepare(qm);
-
-	ret = hisi_qm_restart(qm);
-	if (ret) {
-		dev_err(dev, "Failed to start QM!\n");
-		return -EPERM;
-	}
-
-	if (hisi_zip->ctrl->num_vfs) {
-		ret = hisi_zip_vf_q_assign(hisi_zip, hisi_zip->ctrl->num_vfs);
-		if (ret) {
-			dev_err(dev, "Failed to assign vf queues!\n");
-			return ret;
-		}
-	}
-
-	ret = hisi_zip_vf_reset_done(hisi_zip);
-	if (ret) {
-		dev_err(dev, "Failed to start VFs!\n");
-		return -EPERM;
-	}
-
-	hisi_qm_restart_done(qm);
-	hisi_zip_hw_error_init(hisi_zip);
-
-	return 0;
-}
-
-static int hisi_zip_controller_reset(struct hisi_zip *hisi_zip)
-{
-	struct hisi_qm *qm = &hisi_zip->qm;
-	struct device *dev = &qm->pdev->dev;
-	int ret;
-
-	dev_info(dev, "Controller resetting...\n");
-
-	ret = hisi_zip_controller_reset_prepare(hisi_zip);
-	if (ret)
-		return ret;
-
-	ret = hisi_zip_soft_reset(hisi_zip);
-	if (ret) {
-		dev_err(dev, "Controller reset failed (%d)\n", ret);
-		return ret;
-	}
-
-	ret = hisi_zip_controller_reset_done(hisi_zip);
-	if (ret)
-		return ret;
-
-	clear_bit(HISI_ZIP_RESET, &hisi_zip->status);
-
-	dev_info(dev, "Controller reset complete\n");
-
-	return ret;
-}
-
-static pci_ers_result_t hisi_zip_slot_reset(struct pci_dev *pdev)
-{
-	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
-	int ret;
-
-	if (pdev->is_virtfn)
-		return PCI_ERS_RESULT_RECOVERED;
-
-	dev_info(&pdev->dev, "Requesting reset due to PCI error\n");
-
-	pci_cleanup_aer_uncorrect_error_status(pdev);
-
-	ret = hisi_zip_controller_reset(hisi_zip);
-	if (ret) {
-		dev_err(&pdev->dev, "hisi_zip controller reset failed (%d)\n",
-			 ret);
-		return PCI_ERS_RESULT_DISCONNECT;
-	}
-
-	return PCI_ERS_RESULT_RECOVERED;
-}
-
-static void hisi_zip_set_hw_error(struct hisi_zip *hisi_zip, bool state)
-{
-	struct pci_dev *pdev = hisi_zip->qm.pdev;
-	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
-	struct hisi_qm *qm = &zip->qm;
-
-	if (qm->fun_type == QM_HW_VF)
-		return;
-
-	if (state)
-		hisi_qm_hw_error_init(qm, QM_BASE_CE,
-				      QM_BASE_NFE | QM_ACC_WB_NOT_READY_TIMEOUT,
-				      0, QM_DB_RANDOM_INVALID);
-	else
-		hisi_qm_hw_error_uninit(qm);
-
-	hisi_zip_hw_error_set_state(zip, state);
-}
-
-static int hisi_zip_get_hw_error_status(struct hisi_zip *hisi_zip)
-{
-	u32 err_sts;
-
-	err_sts = readl(hisi_zip->qm.io_base + HZIP_CORE_INT_STATUS) &
-			HZIP_CORE_INT_STATUS_M_ECC;
-	if (err_sts)
-		return err_sts;
-
-	return 0;
-}
-
-static int hisi_zip_check_hw_error(struct hisi_zip *hisi_zip)
-{
-	struct pci_dev *pdev = hisi_zip->qm.pdev;
-	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
-	struct hisi_qm *qm = &zip->qm;
-	int ret;
-
-	if (qm->fun_type == QM_HW_VF)
-		return 0;
-
-	ret = hisi_qm_get_hw_error_status(qm);
-	if (ret)
-		return ret;
-
-	return hisi_zip_get_hw_error_status(zip);
-}
-
-static void hisi_zip_reset_prepare(struct pci_dev *pdev)
-{
-	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
-	struct hisi_qm *qm = &hisi_zip->qm;
-	struct device *dev = &pdev->dev;
-	u32 delay = 0;
-	int ret;
-
-	hisi_zip_set_hw_error(hisi_zip, HZIP_HW_ERROR_IRQ_DISABLE);
-
-	while (hisi_zip_check_hw_error(hisi_zip)) {
-		msleep(++delay);
-		if (delay > HZIP_RESET_WAIT_TIMEOUT)
-			return;
-	}
-
-	ret = hisi_zip_reset_prepare_ready(hisi_zip);
-	if (ret) {
-		dev_err(dev, "FLR not ready!\n");
-		return;
-	}
-
-	ret = hisi_zip_vf_reset_prepare(hisi_zip, QM_FLR);
-	if (ret) {
-		dev_err(dev, "Fails to prepare reset!\n");
-		return;
-	}
-
-	ret = hisi_qm_stop(qm, QM_FLR);
-	if (ret) {
-		dev_err(dev, "Fails to stop QM!\n");
-		return;
-	}
-
-	dev_info(dev, "FLR resetting...\n");
-}
-
-static void hisi_zip_flr_reset_complete(struct hisi_zip *hisi_zip)
-{
-	struct pci_dev *pdev = hisi_zip->qm.pdev;
-	struct hisi_zip *zip = pci_get_drvdata(pci_physfn(pdev));
-	struct device *dev = &zip->qm.pdev->dev;
-	u32 id;
-
-	pci_read_config_dword(zip->qm.pdev, PCI_COMMAND, &id);
-	if (id == HZIP_PCI_COMMAND_INVALID)
-		dev_err(dev, "Device can not be used!\n");
-
-	clear_bit(HISI_ZIP_RESET, &zip->status);
-}
-
-static void hisi_zip_reset_done(struct pci_dev *pdev)
-{
-	struct hisi_zip *hisi_zip = pci_get_drvdata(pdev);
-	struct hisi_qm *qm = &hisi_zip->qm;
-	struct device *dev = &pdev->dev;
-	int ret;
-
-	hisi_zip_set_hw_error(hisi_zip, HZIP_HW_ERROR_IRQ_ENABLE);
-
-	ret = hisi_qm_restart(qm);
-	if (ret) {
-		dev_err(dev, "Failed to start QM!\n");
-		goto flr_done;
-	}
-
-	if (pdev->is_physfn) {
-		hisi_zip_set_user_domain_and_cache(hisi_zip);
-		if (hisi_zip->ctrl->num_vfs)
-			hisi_zip_vf_q_assign(hisi_zip,
-				hisi_zip->ctrl->num_vfs);
-		ret = hisi_zip_vf_reset_done(hisi_zip);
-		if (ret) {
-			dev_err(dev, "Failed to start VFs!\n");
-			goto flr_done;
-		}
-	}
-
-flr_done:
-	hisi_zip_flr_reset_complete(hisi_zip);
-
-	dev_info(dev, "FLR reset complete\n");
+	hisi_qm_del_from_list(qm, &zip_devices);
 }
 
 static const struct pci_error_handlers hisi_zip_err_handler = {
-	.error_detected	= hisi_zip_error_detected,
-	.slot_reset	= hisi_zip_slot_reset,
-	.reset_prepare	= hisi_zip_reset_prepare,
-	.reset_done	= hisi_zip_reset_done,
+	.error_detected	= hisi_qm_dev_err_detected,
+	.slot_reset	= hisi_qm_dev_slot_reset,
+	.reset_prepare	= hisi_qm_reset_prepare,
+	.reset_done	= hisi_qm_reset_done,
 };
 
 static struct pci_driver hisi_zip_pci_driver = {
@@ -1556,7 +890,7 @@ static struct pci_driver hisi_zip_pci_driver = {
 	.remove		= hisi_zip_remove,
 	.sriov_configure = hisi_zip_sriov_configure,
 	.err_handler	= &hisi_zip_err_handler,
-	.shutdown	= hisi_zip_shutdown,
+	.shutdown	= hisi_qm_dev_shutdown,
 };
 
 static void hisi_zip_register_debugfs(void)
@@ -1577,6 +911,10 @@ static void hisi_zip_unregister_debugfs(void)
 static int __init hisi_zip_init(void)
 {
 	int ret;
+
+	INIT_LIST_HEAD(&zip_devices.list);
+	mutex_init(&zip_devices.lock);
+	zip_devices.check = NULL;
 
 	hisi_zip_register_debugfs();
 

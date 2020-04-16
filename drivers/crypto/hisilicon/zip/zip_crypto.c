@@ -153,26 +153,19 @@ static void hisi_zip_fill_sqe(struct hisi_zip_sqe *sqe, u8 req_type,
 	sqe->dest_addr_h = upper_32_bits(d_addr);
 }
 
-static int hisi_zip_create_qp(struct hisi_qm *qm, struct hisi_zip_qp_ctx *ctx,
+static int hisi_zip_start_qp(struct hisi_qp *qp, struct hisi_zip_qp_ctx *ctx,
 			      int alg_type, int req_type)
 {
-	struct device *dev = &qm->pdev->dev;
-	struct hisi_qp *qp;
+	struct device *dev = &qp->qm->pdev->dev;
 	int ret;
 
-	qp = hisi_qm_create_qp(qm, alg_type);
-	if (IS_ERR(qp)) {
-		dev_err(dev, "create qp failed!\n");
-		return PTR_ERR(qp);
-	}
-
 	qp->req_type = req_type;
+	qp->alg_type = alg_type;
 	qp->qp_ctx = ctx;
 
 	ret = hisi_qm_start_qp(qp, 0);
 	if (ret < 0) {
 		dev_err(dev, "start qp failed!\n");
-		hisi_qm_release_qp(qp);
 		return ret;
 	}
 
@@ -188,26 +181,27 @@ static void hisi_zip_release_qp(struct hisi_zip_qp_ctx *ctx)
 
 static int hisi_zip_ctx_init(struct hisi_zip_ctx *hisi_zip_ctx, u8 req_type)
 {
+	struct hisi_qp *qps[HZIP_CTX_Q_NUM] = { NULL };
 	struct hisi_zip *hisi_zip;
-	struct hisi_qm *qm;
 	int ret, i, j;
 
-	/* find the proper zip device */
-	hisi_zip = find_zip_device(cpu_to_node(smp_processor_id()));
-	if (!hisi_zip) {
-		pr_err("Failed to find a proper ZIP device!\n");
+	ret = zip_create_qps(qps, HZIP_CTX_Q_NUM);
+	if (ret) {
+		pr_err("Can not create zip qps!\n");
 		return -ENODEV;
 	}
-	qm = &hisi_zip->qm;
+
+	hisi_zip = container_of(qps[0]->qm, struct hisi_zip, qm);
 
 	for (i = 0; i < HZIP_CTX_Q_NUM; i++) {
 		/* alg_type = 0 for compress, 1 for decompress in hw sqe */
-		ret = hisi_zip_create_qp(qm, &hisi_zip_ctx->qp_ctx[i], i,
+		ret = hisi_zip_start_qp(qps[i], &hisi_zip_ctx->qp_ctx[i], i,
 					 req_type);
 		if (ret) {
 			for (j = i - 1; j >= 0; j--)
-				hisi_zip_release_qp(&hisi_zip_ctx->qp_ctx[j]);
+				hisi_qm_stop_qp(hisi_zip_ctx->qp_ctx[j].qp);
 
+			hisi_qm_free_qps(qps, HZIP_CTX_Q_NUM);
 			return ret;
 		}
 

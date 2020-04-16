@@ -17,6 +17,9 @@
 
 #include "qm_usr_if.h"
 
+#define QNUM_V1				4096
+#define QNUM_V2				1024
+#define QM_MAX_VFS_NUM			63
 /* qm user domain */
 #define QM_ARUSER_M_CFG_1		0x100088
 #define AXUSER_SNOOP_ENABLE		BIT(30)
@@ -49,6 +52,7 @@
 #define QM_AXI_M_CFG			0x1000ac
 #define AXI_M_CFG			0xffff
 #define QM_AXI_M_CFG_ENABLE		0x1000b0
+#define AM_CFG_SINGLE_PORT_MAX_TRANS	0x300014
 #define AXI_M_CFG_ENABLE		0xffffffff
 #define QM_PEH_AXUSER_CFG		0x1000cc
 #define QM_PEH_AXUSER_CFG_ENABLE	0x1000d0
@@ -235,19 +239,41 @@ struct hisi_qm_status {
 	int stop_reason;
 };
 
+struct hisi_qm_hw_error {
+	u32 int_msk;
+	const char *msg;
+};
+
 struct hisi_qm;
 
-struct hisi_qm_err_ini {
-	u32 qm_wr_port;
+struct hisi_qm_err_info {
+	char *acpi_rst;
+	u32 msi_wr_port;
+	u32 ecc_2bits_mask;
 	u32 is_qm_ecc_mbit;
 	u32 is_dev_ecc_mbit;
-	u32 ecc_2bits_mask;
-	void (*open_axi_master_ooo)(struct hisi_qm *qm);
+	u32 ce;
+	u32 nfe;
+	u32 fe;
+	u32 msi;
+};
+
+struct hisi_qm_err_ini {
 	u32 (*get_dev_hw_err_status)(struct hisi_qm *qm);
 	void (*clear_dev_hw_err_status)(struct hisi_qm *qm, u32 err_sts);
+	void (*hw_err_enable)(struct hisi_qm *qm);
+	void (*hw_err_disable)(struct hisi_qm *qm);
+	int (*set_usr_domain_cache)(struct hisi_qm *qm);
 	void (*log_dev_hw_err)(struct hisi_qm *qm, u32 err_sts);
-	/* design for module can not hold on ooo through qm, such as zip */
-	void (*inject_dev_hw_err)(struct hisi_qm *qm);
+	void (*open_axi_master_ooo)(struct hisi_qm *qm);
+	void (*close_axi_master_ooo)(struct hisi_qm *qm);
+	struct hisi_qm_err_info err_info;
+};
+
+struct hisi_qm_list {
+	struct mutex lock;
+	struct list_head list;
+	bool (*check)(struct hisi_qm *qm);
 };
 
 struct hisi_qm {
@@ -260,7 +286,9 @@ struct hisi_qm {
 	u32 qp_base;
 	u32 qp_num;
 	u32 ctrl_q_num;
-
+	u32 vfs_num;
+	struct list_head list;
+	struct hisi_qm_list *qm_list;
 	struct qm_dma qdma;
 	struct qm_sqc *sqc;
 	struct qm_cqc *cqc;
@@ -285,8 +313,7 @@ struct hisi_qm {
 
 	u32 error_mask;
 	u32 msi_mask;
-
-	const char *algs;
+	unsigned long hw_status;
 	bool use_uacce;		/* register to uacce */
 	bool use_sva;
 
@@ -294,7 +321,9 @@ struct hisi_qm {
 	resource_size_t phys_base;
 	resource_size_t size;
 	struct uacce uacce;
+	const char *algs;
 	void *reserve;
+	int uacce_mode;
 	dma_addr_t reserve_dma;
 #endif
 	struct workqueue_struct *wq;
@@ -345,9 +374,144 @@ struct hisi_qp {
 #endif
 };
 
+static inline int q_num_set(const char *val, const struct kernel_param *kp,
+			    unsigned int device)
+{
+	struct pci_dev *pdev = pci_get_device(PCI_VENDOR_ID_HUAWEI,
+					      device, NULL);
+	u32 n, q_num;
+	u8 rev_id;
+	int ret;
+
+	if (!val)
+		return -EINVAL;
+
+	if (!pdev) {
+		q_num = min_t(u32, QNUM_V1, QNUM_V2);
+		pr_info("No device found currently, suppose queue number is %d\n",
+			q_num);
+	} else {
+		rev_id = pdev->revision;
+		switch (rev_id) {
+		case QM_HW_V1:
+			q_num = QNUM_V1;
+			break;
+		case QM_HW_V2:
+			q_num = QNUM_V2;
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+
+	ret = kstrtou32(val, 10, &n);
+	if (ret || !n || n > q_num)
+		return -EINVAL;
+
+	return param_set_int(val, kp);
+}
+
+static inline int vf_num_set(const char *val, const struct kernel_param *kp)
+{
+	u32 n;
+	int ret;
+
+	if (!val)
+		return -EINVAL;
+
+	ret = kstrtou32(val, 10, &n);
+	if (ret < 0)
+		return ret;
+
+	if (n > QM_MAX_VFS_NUM)
+		return -ERANGE;
+
+	return param_set_int(val, kp);
+}
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
+static inline int mode_set(const char *val, const struct kernel_param *kp)
+{
+	u32 n;
+	int ret;
+
+	if (!val)
+		return -EINVAL;
+
+	ret = kstrtou32(val, 10, &n);
+	if (ret != 0 || (n != UACCE_MODE_NOIOMMU &&
+			 n != UACCE_MODE_NOUACCE))
+		return -EINVAL;
+
+	return param_set_int(val, kp);
+}
+#endif
+
+static inline void hisi_qm_add_to_list(struct hisi_qm *qm,
+				       struct hisi_qm_list *qm_list)
+{
+	mutex_lock(&qm_list->lock);
+	list_add_tail(&qm->list, &qm_list->list);
+	mutex_unlock(&qm_list->lock);
+}
+
+static inline void hisi_qm_del_from_list(struct hisi_qm *qm,
+					 struct hisi_qm_list *qm_list)
+{
+	mutex_lock(&qm_list->lock);
+	list_del(&qm->list);
+	mutex_unlock(&qm_list->lock);
+}
+
+static inline int hisi_qm_pre_init(struct hisi_qm *qm,
+				   u32 pf_q_num, u32 def_q_num)
+{
+	struct pci_dev *pdev = qm->pdev;
+
+	switch (pdev->revision) {
+	case QM_HW_V1:
+	case QM_HW_V2:
+		qm->ver = pdev->revision;
+		break;
+	default:
+		pci_err(pdev, "hardware version err!\n");
+		return -ENODEV;
+	}
+
+	pci_set_drvdata(pdev, qm);
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	switch (qm->uacce_mode) {
+	case UACCE_MODE_NOUACCE:
+		qm->use_uacce = false;
+		break;
+	case UACCE_MODE_NOIOMMU:
+		qm->use_uacce = true;
+		break;
+	default:
+		pci_err(pdev, "uacce mode error!\n");
+		return -EINVAL;
+	}
+#else
+	qm->use_uacce = false;
+#endif
+	if (qm->fun_type == QM_HW_PF) {
+		qm->qp_base = def_q_num;
+		qm->qp_num = pf_q_num;
+		qm->debug.curr_qm_qp_num = pf_q_num;
+	}
+
+	return 0;
+}
+
+void hisi_qm_free_qps(struct hisi_qp **qps, int qp_num);
+int hisi_qm_alloc_qps_node(int node, struct hisi_qm_list *qm_list,
+			   struct hisi_qp **qps, int qp_num, u8 alg_type);
 int hisi_qm_init(struct hisi_qm *qm);
 void hisi_qm_uninit(struct hisi_qm *qm);
-int hisi_qm_frozen(struct hisi_qm *qm);
+void hisi_qm_dev_shutdown(struct pci_dev *pdev);
+void hisi_qm_remove_wait_delay(struct hisi_qm *qm,
+			       struct hisi_qm_list *qm_list);
 int hisi_qm_start(struct hisi_qm *qm);
 int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r);
 struct hisi_qp *hisi_qm_create_qp(struct hisi_qm *qm, u8 alg_type);
@@ -358,25 +522,20 @@ int hisi_qp_send(struct hisi_qp *qp, const void *msg);
 int hisi_qp_wait(struct hisi_qp *qp);
 int hisi_qm_get_free_qp_num(struct hisi_qm *qm);
 int hisi_qm_get_vft(struct hisi_qm *qm, u32 *base, u32 *number);
-int hisi_qm_set_vft(struct hisi_qm *qm, u32 fun_num, u32 base, u32 number);
 void hisi_qm_debug_regs_clear(struct hisi_qm *qm);
 int hisi_qm_debug_init(struct hisi_qm *qm);
-void hisi_qm_hw_error_init(struct hisi_qm *qm, u32 ce, u32 nfe, u32 fe,
-			   u32 msi);
-void hisi_qm_hw_error_uninit(struct hisi_qm *qm);
-pci_ers_result_t hisi_qm_hw_error_handle(struct hisi_qm *qm);
-void hisi_qm_clear_queues(struct hisi_qm *qm);
-enum qm_hw_ver hisi_qm_get_hw_version(struct pci_dev *pdev);
 int hisi_qm_restart(struct hisi_qm *qm);
-int hisi_qm_get_hw_error_status(struct hisi_qm *qm);
+int hisi_qm_sriov_enable(struct pci_dev *pdev, int max_vfs);
+int hisi_qm_sriov_disable(struct pci_dev *pdev, struct hisi_qm_list *qm_list);
+void hisi_qm_dev_err_init(struct hisi_qm *qm);
+void hisi_qm_dev_err_uninit(struct hisi_qm *qm);
+pci_ers_result_t hisi_qm_dev_err_detected(struct pci_dev *pdev,
+					  pci_channel_state_t state);
+pci_ers_result_t hisi_qm_dev_slot_reset(struct pci_dev *pdev);
+void hisi_qm_reset_prepare(struct pci_dev *pdev);
+void hisi_qm_reset_done(struct pci_dev *pdev);
 pci_ers_result_t hisi_qm_process_dev_error(struct pci_dev *pdev);
-int hisi_qm_reg_test(struct hisi_qm *qm);
-int hisi_qm_set_pf_mse(struct hisi_qm *qm, bool set);
-int hisi_qm_set_vf_mse(struct hisi_qm *qm, bool set);
-int hisi_qm_set_msi(struct hisi_qm *qm, bool set);
-void hisi_qm_set_ecc(struct hisi_qm *qm);
-void hisi_qm_restart_prepare(struct hisi_qm *qm);
-void hisi_qm_restart_done(struct hisi_qm *qm);
+int hisi_qm_controller_reset(struct hisi_qm *qm);
 
 struct hisi_acc_sgl_pool;
 struct hisi_acc_hw_sgl *hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,

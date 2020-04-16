@@ -13,9 +13,6 @@
 #include <linux/uacce.h>
 #include "hpre.h"
 
-#define HPRE_ENABLE			1
-#define HPRE_DISABLE			0
-#define HPRE_VF_NUM			63
 #define HPRE_QUEUE_NUM_V2		1024
 #define HPRE_QUEUE_NUM_V1		4096
 #define HPRE_QM_ABNML_INT_MASK		0x100004
@@ -63,10 +60,6 @@
 #define HPRE_HAC_ECC2_CNT		0x301a08
 #define HPRE_HAC_INT_STATUS		0x301800
 #define HPRE_HAC_SOURCE_INT		0x301600
-#define MASTER_GLOBAL_CTRL_SHUTDOWN	1
-#define MASTER_TRANS_RETURN_RW		3
-#define HPRE_MASTER_TRANS_RETURN	0x300150
-#define HPRE_MASTER_GLOBAL_CTRL		0x300000
 #define HPRE_CLSTR_ADDR_INTRVL		0x1000
 #define HPRE_CLUSTER_INQURY		0x100
 #define HPRE_CLSTR_ADDR_INQRY_RSLT	0x104
@@ -83,24 +76,18 @@
 #define HPRE_QM_VFG_AX_MASK		0xff
 #define HPRE_BD_USR_MASK		0x3
 #define HPRE_CLUSTER_CORE_MASK		0xf
-#define HPRE_RESET_WAIT_TIMEOUT		400
 
 #define HPRE_AM_OOO_SHUTDOWN_ENB	0x301044
 #define AM_OOO_SHUTDOWN_ENABLE		BIT(0)
 #define AM_OOO_SHUTDOWN_DISABLE		0xFFFFFFFE
-#define HPRE_WR_MSI_PORT		0xFFFB
+#define HPRE_WR_MSI_PORT		BIT(2)
 
-#define HPRE_HW_ERROR_IRQ_ENABLE	1
-#define HPRE_HW_ERROR_IRQ_DISABLE	0
-#define HPRE_PCI_COMMAND_INVALID	0xFFFFFFFF
 #define HPRE_CORE_ECC_2BIT_ERR		BIT(1)
 #define HPRE_OOO_ECC_2BIT_ERR		BIT(5)
 
-#define HPRE_QM_BME_FLR         BIT(7)
-#define HPRE_QM_PM_FLR          BIT(11)
-#define HPRE_QM_SRIOV_FLR       BIT(12)
-
-#define HPRE_USLEEP         10
+#define HPRE_QM_BME_FLR			BIT(7)
+#define HPRE_QM_PM_FLR			BIT(11)
+#define HPRE_QM_SRIOV_FLR		BIT(12)
 
 /* function index:
  * 1 for hpre bypass mode,
@@ -108,8 +95,7 @@
  */
 #define HPRE_VIA_MSI_DSM	1
 
-static LIST_HEAD(hpre_list);
-static DEFINE_MUTEX(hpre_list_lock);
+static struct hisi_qm_list hpre_devices;
 static const char hpre_name[] = "hisi_hpre";
 static struct dentry *hpre_debugfs_root;
 static const struct pci_device_id hpre_dev_ids[] = {
@@ -183,55 +169,10 @@ static struct debugfs_reg32 hpre_com_dfx_regs[] = {
 	{"INT_STATUS               ",  HPRE_INT_STATUS},
 };
 
-static int hpre_pf_q_num_set(const char *val, const struct kernel_param *kp)
-{
-	struct pci_dev *pdev;
-	u32 q_num;
-	u32 n = 0;
-	u8 rev_id;
-	int ret;
-
-	if (!val)
-		return -EINVAL;
-
-	pdev = pci_get_device(PCI_VENDOR_ID_HUAWEI, HPRE_PCI_DEVICE_ID, NULL);
-	if (!pdev) {
-		q_num = HPRE_QUEUE_NUM_V2;
-		pr_info("No device found currently, suppose queue number is %d\n",
-			q_num);
-	} else {
-		rev_id = pdev->revision;
-		if (rev_id != QM_HW_V2)
-			return -EINVAL;
-
-		q_num = HPRE_QUEUE_NUM_V2;
-	}
-
-	ret = kstrtou32(val, 10, &n);
-	if (ret != 0 || n == 0 || n > q_num)
-		return -EINVAL;
-
-	return param_set_int(val, kp);
-}
-
-static const struct kernel_param_ops hpre_pf_q_num_ops = {
-	.set = hpre_pf_q_num_set,
-	.get = param_get_int,
-};
-
+#ifdef CONFIG_CRYPTO_QM_UACCE
 static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 {
-	u32 n;
-	int ret;
-
-	if (!val)
-		return -EINVAL;
-
-	ret = kstrtou32(val, 10, &n);
-	if (ret != 0 || (n != UACCE_MODE_NOIOMMU && n != UACCE_MODE_NOUACCE))
-		return -EINVAL;
-
-	return param_set_int(val, kp);
+	return mode_set(val, kp);
 }
 
 static const struct kernel_param_ops uacce_mode_ops = {
@@ -239,50 +180,50 @@ static const struct kernel_param_ops uacce_mode_ops = {
 	.get = param_get_int,
 };
 
+static int uacce_mode = UACCE_MODE_NOUACCE;
+module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
+MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
+#endif
+
+static int pf_q_num_set(const char *val, const struct kernel_param *kp)
+{
+	return q_num_set(val, kp, HPRE_PCI_DEVICE_ID);
+}
+
+static const struct kernel_param_ops hpre_pf_q_num_ops = {
+	.set = pf_q_num_set,
+	.get = param_get_int,
+};
+
 static u32 pf_q_num = HPRE_PF_DEF_Q_NUM;
 module_param_cb(pf_q_num, &hpre_pf_q_num_ops, &pf_q_num, 0444);
 MODULE_PARM_DESC(pf_q_num, "Number of queues in PF of CS(1-1024)");
 
-static int uacce_mode = UACCE_MODE_NOUACCE;
-module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
-MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
-static inline void hpre_add_to_list(struct hpre *hpre)
+static int vfs_num_set(const char *val, const struct kernel_param *kp)
 {
-	mutex_lock(&hpre_list_lock);
-	list_add_tail(&hpre->list, &hpre_list);
-	mutex_unlock(&hpre_list_lock);
+	return vf_num_set(val, kp);
 }
 
-static inline void hpre_remove_from_list(struct hpre *hpre)
+static const struct kernel_param_ops vfs_num_ops = {
+	.set = vfs_num_set,
+	.get = param_get_int,
+};
+
+static u32 vfs_num;
+module_param_cb(vfs_num, &vfs_num_ops, &vfs_num, 0444);
+MODULE_PARM_DESC(vfs_num, "Number of VFs to enable(1-63), 0(default)");
+
+struct hisi_qp *hpre_create_qp(void)
 {
-	mutex_lock(&hpre_list_lock);
-	list_del(&hpre->list);
-	mutex_unlock(&hpre_list_lock);
-}
+	int node = cpu_to_node(smp_processor_id());
+	struct hisi_qp *qp = NULL;
+	int ret;
 
-struct hpre *hpre_find_device(int node)
-{
-	struct hpre *hpre, *ret = NULL;
-	int min_distance = INT_MAX;
-	struct device *dev;
-	int dev_node = 0;
+	ret = hisi_qm_alloc_qps_node(node, &hpre_devices, &qp, 1, 0);
+	if (!ret)
+		return qp;
 
-	mutex_lock(&hpre_list_lock);
-	list_for_each_entry(hpre, &hpre_list, list) {
-		dev = &hpre->qm.pdev->dev;
-#ifdef CONFIG_NUMA
-		dev_node = dev->numa_node;
-		if (dev_node < 0)
-			dev_node = 0;
-#endif
-		if (node_distance(dev_node, node) < min_distance) {
-			ret = hpre;
-			min_distance = node_distance(dev_node, node);
-		}
-	}
-	mutex_unlock(&hpre_list_lock);
-
-	return ret;
+	return NULL;
 }
 
 static void hpre_pasid_enable(struct hisi_qm *qm)
@@ -351,9 +292,8 @@ static int hpre_set_cluster(struct hisi_qm *qm)
 	return 0;
 }
 
-static int hpre_set_user_domain_and_cache(struct hpre *hpre)
+static int hpre_set_user_domain_and_cache(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &hpre->qm;
 	struct pci_dev *pdev = qm->pdev;
 	u32 val;
 	int ret;
@@ -403,7 +343,7 @@ static int hpre_set_user_domain_and_cache(struct hpre *hpre)
 		pci_err(pdev, "acpi_evaluate_dsm err.\n");
 
 	/* disable FLR triggered by BME(bus master enable) */
-	val = readl(hpre->qm.io_base + QM_PEH_AXUSER_CFG);
+	val = readl(HPRE_ADDR(qm, QM_PEH_AXUSER_CFG));
 	val &= ~(HPRE_QM_BME_FLR | HPRE_QM_SRIOV_FLR);
 	val |= HPRE_QM_PM_FLR;
 	writel(val, HPRE_ADDR(qm, QM_PEH_AXUSER_CFG));
@@ -433,23 +373,21 @@ static void hpre_cnt_regs_clear(struct hisi_qm *qm)
 	hisi_qm_debug_regs_clear(qm);
 }
 
-static void hpre_hw_error_disable(struct hpre *hpre)
+static void hpre_hw_error_disable(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &hpre->qm;
 	u32 val;
 
 	/* disable hpre hw error interrupts */
 	writel(HPRE_CORE_INT_DISABLE, qm->io_base + HPRE_INT_MASK);
 
 	/* disable HPRE block master OOO when m-bit error occur */
-	val = readl(hpre->qm.io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
+	val = readl(qm->io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
 	val &= AM_OOO_SHUTDOWN_DISABLE;
-	writel(val, hpre->qm.io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
+	writel(val, qm->io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
 }
 
-static void hpre_hw_error_enable(struct hpre *hpre)
+static void hpre_hw_error_enable(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &hpre->qm;
 	u32 val;
 
 	/* clear HPRE hw error source if having */
@@ -462,9 +400,9 @@ static void hpre_hw_error_enable(struct hpre *hpre)
 	writel(HPRE_HAC_RAS_FE_ENABLE, qm->io_base + HPRE_RAS_FE_ENB);
 
 	/* enable HPRE block master OOO when m-bit error occur */
-	val = readl(hpre->qm.io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
+	val = readl(qm->io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
 	val |= AM_OOO_SHUTDOWN_ENABLE;
-	writel(val, hpre->qm.io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
+	writel(val, qm->io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
 }
 
 static inline struct hisi_qm *hpre_file_to_qm(struct hpre_debugfs_file *file)
@@ -484,9 +422,7 @@ static u32 hpre_current_qm_read(struct hpre_debugfs_file *file)
 static int hpre_current_qm_write(struct hpre_debugfs_file *file, u32 val)
 {
 	struct hisi_qm *qm = hpre_file_to_qm(file);
-	struct hpre_debug *debug = file->debug;
-	struct hpre *hpre = container_of(debug, struct hpre, debug);
-	u32 num_vfs = hpre->num_vfs;
+	u32 num_vfs = qm->vfs_num;
 	u32 vfq_num, tmp;
 
 	if (val > num_vfs)
@@ -657,11 +593,14 @@ static int hpre_create_debugfs_file(struct hpre_debug *dbg, struct dentry *dir,
 				    enum hpre_ctrl_dbgfs_file type, int indx)
 {
 	struct dentry *tmp, *file_dir;
+	struct hpre *hpre;
 
-	if (dir)
+	if (dir) {
 		file_dir = dir;
-	else
-		file_dir = dbg->debug_root;
+	} else {
+		hpre = container_of(dbg, struct hpre, debug);
+		file_dir = hpre->qm.debug.debug_root;
+	}
 
 	if (type >= HPRE_DEBUG_FILE_NUM)
 		return -EINVAL;
@@ -694,7 +633,8 @@ static int hpre_pf_comm_regs_debugfs_init(struct hpre_debug *debug)
 	regset->nregs = ARRAY_SIZE(hpre_com_dfx_regs);
 	regset->base = qm->io_base;
 
-	tmp = debugfs_create_regset32("regs", 0444,  debug->debug_root, regset);
+	tmp = debugfs_create_regset32("regs", 0444,  qm->debug.debug_root,
+				      regset);
 	if (!tmp)
 		return -ENOENT;
 
@@ -716,7 +656,7 @@ static int hpre_cluster_debugfs_init(struct hpre_debug *debug)
 		if (ret < 0)
 			return -EINVAL;
 
-		tmp_d = debugfs_create_dir(buf, debug->debug_root);
+		tmp_d = debugfs_create_dir(buf, qm->debug.debug_root);
 		if (!tmp_d)
 			return -ENOENT;
 
@@ -761,9 +701,9 @@ static int hpre_ctrl_debug_init(struct hpre_debug *debug)
 	return hpre_cluster_debugfs_init(debug);
 }
 
-static int hpre_debugfs_init(struct hpre *hpre)
+static int hpre_debugfs_init(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &hpre->qm;
+	struct hpre *hpre = container_of(qm, struct hpre, qm);
 	struct device *dev = &qm->pdev->dev;
 	struct dentry *dir;
 	int ret;
@@ -779,7 +719,6 @@ static int hpre_debugfs_init(struct hpre *hpre)
 		goto failed_to_create;
 
 	if (qm->pdev->device == HPRE_PCI_DEVICE_ID) {
-		hpre->debug.debug_root = dir;
 		ret = hpre_ctrl_debug_init(&hpre->debug);
 		if (ret)
 			goto failed_to_create;
@@ -791,79 +730,28 @@ failed_to_create:
 	return ret;
 }
 
-static void hpre_debugfs_exit(struct hpre *hpre)
-{
-	struct hisi_qm *qm = &hpre->qm;
-
-	debugfs_remove_recursive(qm->debug.debug_root);
-}
-
 static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 {
-	enum qm_hw_ver rev_id;
+	int ret;
 
-	rev_id = hisi_qm_get_hw_version(pdev);
-	if (rev_id < 0)
-		return -ENODEV;
-
-	if (rev_id == QM_HW_V1) {
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	qm->algs = "rsa\ndh\n";
+	qm->uacce_mode = uacce_mode;
+#endif
+	qm->pdev = pdev;
+	ret = hisi_qm_pre_init(qm, pf_q_num, HPRE_PF_DEF_Q_BASE);
+	if (ret)
+		return ret;
+	if (qm->ver == QM_HW_V1) {
 		pci_warn(pdev, "HPRE version 1 is not supported!\n");
 		return -EINVAL;
 	}
 
-	qm->pdev = pdev;
-	qm->ver = rev_id;
+	qm->qm_list = &hpre_devices;
 	qm->sqe_size = HPRE_SQE_SIZE;
 	qm->dev_name = hpre_name;
-	qm->fun_type = (pdev->device == HPRE_PCI_DEVICE_ID) ?
-		       QM_HW_PF : QM_HW_VF;
-	qm->algs = "rsa\ndh\n";
-	switch (uacce_mode) {
-	case UACCE_MODE_NOUACCE:
-		qm->use_uacce = false;
-		break;
-	case UACCE_MODE_NOIOMMU:
-		qm->use_uacce = true;
-		break;
-	default:
-		return -EINVAL;
-	}
-	if (pdev->is_physfn) {
-		qm->qp_base = HPRE_PF_DEF_Q_BASE;
-		qm->qp_num = pf_q_num;
-		qm->debug.curr_qm_qp_num = pf_q_num;
-	}
 
 	return 0;
-}
-
-static void hpre_hw_err_init(struct hpre *hpre)
-{
-	hisi_qm_hw_error_init(&hpre->qm, QM_BASE_CE,
-				QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT,
-				0, QM_DB_RANDOM_INVALID);
-	hpre_hw_error_enable(hpre);
-}
-
-static void hpre_open_master_ooo(struct hisi_qm *qm)
-{
-	u32 val;
-
-	val = readl(qm->io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
-	writel(val & AM_OOO_SHUTDOWN_DISABLE,
-	       HPRE_ADDR(qm, HPRE_AM_OOO_SHUTDOWN_ENB));
-	writel(val | AM_OOO_SHUTDOWN_ENABLE,
-	       HPRE_ADDR(qm, HPRE_AM_OOO_SHUTDOWN_ENB));
-}
-
-static u32 hpre_get_hw_err_status(struct hisi_qm *qm)
-{
-	return readl(qm->io_base + HPRE_HAC_INT_STATUS);
-}
-
-static void hpre_clear_hw_err_status(struct hisi_qm *qm, u32 err_sts)
-{
-	writel(err_sts, qm->io_base + HPRE_HAC_SOURCE_INT);
 }
 
 static void hpre_log_hw_error(struct hisi_qm *qm, u32 err_sts)
@@ -879,28 +767,57 @@ static void hpre_log_hw_error(struct hisi_qm *qm, u32 err_sts)
 	}
 }
 
-static int hpre_pf_probe_init(struct hpre *hpre)
+static u32 hpre_get_hw_err_status(struct hisi_qm *qm)
 {
-	struct hisi_qm *qm = &hpre->qm;
+	return readl(qm->io_base + HPRE_HAC_INT_STATUS);
+}
+
+static void hpre_clear_hw_err_status(struct hisi_qm *qm, u32 err_sts)
+{
+	writel(err_sts, qm->io_base + HPRE_HAC_SOURCE_INT);
+}
+
+static void hpre_open_axi_master_ooo(struct hisi_qm *qm)
+{
+	u32 value;
+
+	value = readl(qm->io_base + HPRE_AM_OOO_SHUTDOWN_ENB);
+	writel(value & AM_OOO_SHUTDOWN_DISABLE,
+	       HPRE_ADDR(qm, HPRE_AM_OOO_SHUTDOWN_ENB));
+	writel(value | AM_OOO_SHUTDOWN_ENABLE,
+	       HPRE_ADDR(qm, HPRE_AM_OOO_SHUTDOWN_ENB));
+}
+
+static int hpre_pf_probe_init(struct hisi_qm *qm)
+{
 	int ret;
 
 	if (qm->ver != QM_HW_V2)
 		return -EINVAL;
 
 	qm->ctrl_q_num = HPRE_QUEUE_NUM_V2;
-	qm->err_ini.qm_wr_port = HPRE_WR_MSI_PORT;
-	qm->err_ini.ecc_2bits_mask = (HPRE_CORE_ECC_2BIT_ERR |
-				      HPRE_OOO_ECC_2BIT_ERR);
-	qm->err_ini.open_axi_master_ooo = hpre_open_master_ooo;
 	qm->err_ini.get_dev_hw_err_status = hpre_get_hw_err_status;
 	qm->err_ini.clear_dev_hw_err_status = hpre_clear_hw_err_status;
-	qm->err_ini.log_dev_hw_err = hpre_log_hw_error;
+	qm->err_ini.err_info.ecc_2bits_mask = HPRE_CORE_ECC_2BIT_ERR |
+				HPRE_OOO_ECC_2BIT_ERR;
+	qm->err_ini.err_info.ce = QM_BASE_CE;
+	qm->err_ini.err_info.nfe = QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT;
+	qm->err_ini.err_info.fe = 0;
+	qm->err_ini.err_info.msi = QM_DB_RANDOM_INVALID;
+	qm->err_ini.err_info.acpi_rst = "HRST";
 
-	ret = hpre_set_user_domain_and_cache(hpre);
+	qm->err_ini.hw_err_disable = hpre_hw_error_disable;
+	qm->err_ini.hw_err_enable = hpre_hw_error_enable;
+	qm->err_ini.set_usr_domain_cache = hpre_set_user_domain_and_cache;
+	qm->err_ini.log_dev_hw_err = hpre_log_hw_error;
+	qm->err_ini.open_axi_master_ooo = hpre_open_axi_master_ooo;
+	qm->err_ini.err_info.msi_wr_port = HPRE_WR_MSI_PORT;
+
+	ret = qm->err_ini.set_usr_domain_cache(qm);
 	if (ret)
 		return ret;
 
-	hpre_hw_err_init(hpre);
+	hisi_qm_dev_err_init(qm);
 
 	return 0;
 }
@@ -914,10 +831,9 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	hpre = devm_kzalloc(&pdev->dev, sizeof(*hpre), GFP_KERNEL);
 	if (!hpre)
 		return -ENOMEM;
-
-	pci_set_drvdata(pdev, hpre);
-
 	qm = &hpre->qm;
+	qm->fun_type = pdev->is_physfn ? QM_HW_PF : QM_HW_VF;
+
 	ret = hpre_qm_pre_init(qm, pdev);
 	if (ret)
 		return ret;
@@ -929,7 +845,7 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	if (pdev->is_physfn) {
-		ret = hpre_pf_probe_init(hpre);
+		ret = hpre_pf_probe_init(qm);
 		if (ret) {
 			pci_err(pdev, "Failed to init pf probe (%d)!\n", ret);
 			goto err_with_qm_init;
@@ -947,26 +863,35 @@ static int hpre_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto err_with_err_init;
 	}
 
-	ret = hpre_debugfs_init(hpre);
+	ret = hpre_debugfs_init(qm);
 	if (ret)
 		pci_warn(pdev, "init debugfs fail!\n");
 
-	hpre_add_to_list(hpre);
+	hisi_qm_add_to_list(qm, &hpre_devices);
 
 	ret = hpre_algs_register();
 	if (ret < 0) {
-		hpre_remove_from_list(hpre);
 		pci_err(pdev, "fail to register algs to crypto!\n");
 		goto err_with_qm_start;
 	}
+
+	if (qm->fun_type == QM_HW_PF && vfs_num > 0) {
+		ret = hisi_qm_sriov_enable(pdev, vfs_num);
+		if (ret < 0)
+			goto err_with_crypto_register;
+	}
+
 	return 0;
 
+err_with_crypto_register:
+	hpre_algs_unregister();
+
 err_with_qm_start:
+	hisi_qm_del_from_list(qm, &hpre_devices);
 	hisi_qm_stop(qm, QM_NORMAL);
 
 err_with_err_init:
-	if (pdev->is_physfn)
-		hpre_hw_error_disable(hpre);
+	hisi_qm_dev_err_uninit(qm);
 
 err_with_qm_init:
 	hisi_qm_uninit(qm);
@@ -974,627 +899,51 @@ err_with_qm_init:
 	return ret;
 }
 
-static int hpre_vf_q_assign(struct hpre *hpre, int num_vfs)
-{
-	struct hisi_qm *qm = &hpre->qm;
-	u32 qp_num = qm->qp_num;
-	int q_num, remain_q_num, i;
-	u32 q_base = qp_num;
-	int ret;
-
-	if (!num_vfs)
-		return -EINVAL;
-
-	remain_q_num = qm->ctrl_q_num - qp_num;
-	/* If remain queues not enough, return error. */
-	if (remain_q_num < num_vfs)
-		return -EINVAL;
-
-	q_num = remain_q_num / num_vfs;
-	for (i = 1; i <= num_vfs; i++) {
-		if (i == num_vfs)
-			q_num += remain_q_num % num_vfs;
-		ret = hisi_qm_set_vft(qm, i, q_base, (u32)q_num);
-		if (ret)
-			return ret;
-		q_base += q_num;
-	}
-
-	return 0;
-}
-
-static int hpre_clear_vft_config(struct hpre *hpre)
-{
-	struct hisi_qm *qm = &hpre->qm;
-	u32 num_vfs = hpre->num_vfs;
-	int ret;
-	u32 i;
-
-	for (i = 1; i <= num_vfs; i++) {
-		ret = hisi_qm_set_vft(qm, i, 0, 0);
-		if (ret)
-			return ret;
-	}
-	hpre->num_vfs = 0;
-
-	return 0;
-}
-
-static int hpre_sriov_enable(struct pci_dev *pdev, int max_vfs)
-{
-	struct hpre *hpre = pci_get_drvdata(pdev);
-	int pre_existing_vfs, num_vfs, ret;
-
-	pre_existing_vfs = pci_num_vf(pdev);
-	if (pre_existing_vfs) {
-		pci_err(pdev,
-			"Can't enable VF. Please disable pre-enabled VFs!\n");
-		return 0;
-	}
-
-	num_vfs = min_t(int, max_vfs, HPRE_VF_NUM);
-	ret = hpre_vf_q_assign(hpre, num_vfs);
-	if (ret) {
-		pci_err(pdev, "Can't assign queues for VF!\n");
-		return ret;
-	}
-
-	hpre->num_vfs = num_vfs;
-
-	ret = pci_enable_sriov(pdev, num_vfs);
-	if (ret) {
-		pci_err(pdev, "Can't enable VF!\n");
-		hpre_clear_vft_config(hpre);
-		return ret;
-	}
-	return num_vfs;
-}
-
-static int hpre_try_frozen_vfs(struct pci_dev *pdev)
-{
-	int ret = 0;
-	struct hpre *hpre, *vf_hpre;
-	struct pci_dev *dev;
-
-	/* Try to frozen all the VFs as disable SRIOV */
-	mutex_lock(&hpre_list_lock);
-	list_for_each_entry(hpre, &hpre_list, list) {
-		dev = hpre->qm.pdev;
-		if (dev == pdev)
-			continue;
-		if (pci_physfn(dev) == pdev) {
-			vf_hpre = pci_get_drvdata(dev);
-			ret = hisi_qm_frozen(&vf_hpre->qm);
-			if (ret)
-				goto frozen_fail;
-		}
-	}
-
-frozen_fail:
-	mutex_unlock(&hpre_list_lock);
-	return ret;
-}
-
-static int hpre_sriov_disable(struct pci_dev *pdev)
-{
-	struct hpre *hpre = pci_get_drvdata(pdev);
-
-	if (pci_vfs_assigned(pdev)) {
-		pci_err(pdev, "Failed to disable VFs while VFs are assigned!\n");
-		return -EPERM;
-	}
-
-	/* While VF is in used, SRIOV cannot be disabled.
-	 * However, there is a risk that the behavior is uncertain if the
-	 * device is in hardware resetting.
-	 */
-	if (hpre_try_frozen_vfs(pdev)) {
-		dev_err(&pdev->dev,
-			"Uacce user space task is using its VF!\n");
-		return -EBUSY;
-	}
-
-	/* remove in hpre_pci_driver will be called to free VF resources */
-	pci_disable_sriov(pdev);
-	return hpre_clear_vft_config(hpre);
-}
-
 static int hpre_sriov_configure(struct pci_dev *pdev, int num_vfs)
 {
 	if (num_vfs)
-		return hpre_sriov_enable(pdev, num_vfs);
+		return hisi_qm_sriov_enable(pdev, num_vfs);
 	else
-		return hpre_sriov_disable(pdev);
-}
-
-static void hpre_remove_wait_delay(struct hpre *hpre)
-{
-	struct hisi_qm *qm = &hpre->qm;
-
-	while (hisi_qm_frozen(&hpre->qm) ||
-	       ((qm->fun_type == QM_HW_PF) &&
-	       hpre_try_frozen_vfs(hpre->qm.pdev)))
-		usleep_range(HPRE_USLEEP, HPRE_USLEEP);
-	udelay(HPRE_WAIT_DELAY);
+		return hisi_qm_sriov_disable(pdev, &hpre_devices);
 }
 
 static void hpre_remove(struct pci_dev *pdev)
 {
-	struct hpre *hpre = pci_get_drvdata(pdev);
-	struct hisi_qm *qm = &hpre->qm;
+	struct hisi_qm *qm = pci_get_drvdata(pdev);
+	int ret;
 
+#ifdef CONFIG_CRYPTO_QM_UACCE
 	if (uacce_mode != UACCE_MODE_NOUACCE)
-		hpre_remove_wait_delay(hpre);
-
+		hisi_qm_remove_wait_delay(qm, &hpre_devices);
+#endif
 	hpre_algs_unregister();
-	hpre_remove_from_list(hpre);
-	if (qm->fun_type == QM_HW_PF && hpre->num_vfs != 0)
-		hpre_sriov_disable(pdev);
-
+	hisi_qm_del_from_list(qm, &hpre_devices);
+	if (qm->fun_type == QM_HW_PF && qm->vfs_num) {
+		ret = hisi_qm_sriov_disable(pdev, NULL);
+		if (ret) {
+			pci_err(pdev, "Disable SRIOV fail!\n");
+			return;
+		}
+	}
 	if (qm->fun_type == QM_HW_PF) {
 		hpre_cnt_regs_clear(qm);
 		qm->debug.curr_qm_qp_num = 0;
 	}
-
-	hpre_debugfs_exit(hpre);
+	debugfs_remove_recursive(qm->debug.debug_root);
 	hisi_qm_stop(qm, QM_NORMAL);
 
 	if (qm->fun_type == QM_HW_PF)
-		hpre_hw_error_disable(hpre);
+		hisi_qm_dev_err_uninit(qm);
 
 	hisi_qm_uninit(qm);
 }
 
-static void hpre_shutdown(struct pci_dev *pdev)
-{
-	struct hpre *hpre = pci_get_drvdata(pdev);
-
-	hisi_qm_stop(&hpre->qm, QM_NORMAL);
-}
-
-static pci_ers_result_t hpre_error_detected(struct pci_dev *pdev,
-					    pci_channel_state_t state)
-{
-	if (pdev->is_virtfn)
-		return PCI_ERS_RESULT_NONE;
-
-	pci_info(pdev, "PCI error detected, state(=%d)!!\n", state);
-	if (state == pci_channel_io_perm_failure)
-		return PCI_ERS_RESULT_DISCONNECT;
-
-	return hisi_qm_process_dev_error(pdev);
-}
-
-static int hpre_vf_reset_prepare(struct pci_dev *pdev,
-				 enum qm_stop_reason stop_reason)
-{
-	struct pci_dev *dev;
-	struct hisi_qm *qm;
-	struct hpre *hpre;
-	int ret = 0;
-
-	mutex_lock(&hpre_list_lock);
-	if (pdev->is_physfn) {
-		list_for_each_entry(hpre, &hpre_list, list) {
-			dev = hpre->qm.pdev;
-			if (dev == pdev)
-				continue;
-
-			if (pci_physfn(dev) == pdev) {
-				qm = &hpre->qm;
-
-				ret = hisi_qm_stop(qm, stop_reason);
-				if (ret)
-					goto prepare_fail;
-			}
-		}
-	}
-
-prepare_fail:
-	mutex_unlock(&hpre_list_lock);
-	return ret;
-}
-
-static int hpre_reset_prepare_rdy(struct hpre *hpre)
-{
-	struct pci_dev *pdev = hpre->qm.pdev;
-	struct hpre *hisi_hpre = pci_get_drvdata(pci_physfn(pdev));
-	int delay = 0;
-
-	while (test_and_set_bit(HPRE_RESET, &hisi_hpre->status)) {
-		msleep(++delay);
-		if (delay > HPRE_RESET_WAIT_TIMEOUT)
-			return -EBUSY;
-	}
-
-	return 0;
-}
-
-static int hpre_controller_reset_prepare(struct hpre *hpre)
-{
-	struct hisi_qm *qm = &hpre->qm;
-	struct pci_dev *pdev = qm->pdev;
-	int ret;
-
-	ret = hpre_reset_prepare_rdy(hpre);
-	if (ret) {
-		dev_err(&pdev->dev, "Controller reset not ready!\n");
-		return ret;
-	}
-
-	ret = hpre_vf_reset_prepare(pdev, QM_SOFT_RESET);
-	if (ret) {
-		dev_err(&pdev->dev, "Fails to stop VFs!\n");
-		return ret;
-	}
-
-	ret = hisi_qm_stop(qm, QM_SOFT_RESET);
-	if (ret) {
-		dev_err(&pdev->dev, "Fails to stop QM!\n");
-		return ret;
-	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce) {
-		ret = uacce_hw_err_isolate(&qm->uacce);
-		if (ret) {
-			dev_err(&pdev->dev, "Fails to isolate hw err!\n");
-			return ret;
-		}
-	}
-#endif
-
-	return 0;
-}
-
-static int hpre_soft_reset(struct hpre *hpre)
-{
-	struct hisi_qm *qm = &hpre->qm;
-	struct device *dev = &qm->pdev->dev;
-	unsigned long long value = 0;
-	int ret;
-	u32 val;
-
-	ret = hisi_qm_reg_test(qm);
-	if (ret)
-		return ret;
-
-	ret = hisi_qm_set_vf_mse(qm, HPRE_DISABLE);
-	if (ret) {
-		dev_err(dev, "Fails to disable vf mse bit.\n");
-		return ret;
-	}
-
-	ret = hisi_qm_set_msi(qm, HPRE_DISABLE);
-	if (ret) {
-		dev_err(dev, "Fails to disable peh msi bit.\n");
-		return ret;
-	}
-
-	/* Set qm ecc if dev ecc happened to hold on ooo */
-	hisi_qm_set_ecc(qm);
-
-	/* OOO register set and check */
-	writel(MASTER_GLOBAL_CTRL_SHUTDOWN,
-	hpre->qm.io_base + HPRE_MASTER_GLOBAL_CTRL);
-
-	/* If bus lock, reset chip */
-	ret = readl_relaxed_poll_timeout(hpre->qm.io_base +
-					HPRE_MASTER_TRANS_RETURN, val,
-					(val == MASTER_TRANS_RETURN_RW),
-					HPRE_REG_RD_INTVRL_US,
-					HPRE_REG_RD_TMOUT_US);
-	if (ret) {
-		dev_emerg(dev, "Bus lock! Please reset system.\n");
-		return ret;
-	}
-
-	ret = hisi_qm_set_pf_mse(qm, HPRE_DISABLE);
-	if (ret) {
-		dev_err(dev, "Fails to disable pf mse bit.\n");
-		return ret;
-	}
-
-	/* The reset related sub-control registers are not in PCI BAR */
-	if (ACPI_HANDLE(dev)) {
-		acpi_status s;
-
-		s = acpi_evaluate_integer(ACPI_HANDLE(dev), "HRST",
-			NULL, &value);
-		if (ACPI_FAILURE(s)) {
-			dev_err(dev, "NO controller reset method!\n");
-			return -EIO;
-		}
-
-		if (value) {
-			dev_err(dev, "Reset step %llu failed!\n", value);
-			return -EIO;
-		}
-	} else {
-		dev_err(dev, "No reset method!\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-static int hpre_vf_reset_done(struct pci_dev *pdev)
-{
-	struct pci_dev *dev;
-	struct hisi_qm *qm;
-	struct hpre *hpre;
-	int ret = 0;
-
-	mutex_lock(&hpre_list_lock);
-	list_for_each_entry(hpre, &hpre_list, list) {
-		dev = hpre->qm.pdev;
-		if (dev == pdev)
-			continue;
-
-		if (pci_physfn(dev) == pdev) {
-			qm = &hpre->qm;
-
-			ret = hisi_qm_restart(qm);
-			if (ret)
-				goto reset_fail;
-		}
-	}
-
-reset_fail:
-	mutex_unlock(&hpre_list_lock);
-	return ret;
-}
-
-static int hpre_controller_reset_done(struct hpre *hpre)
-{
-	struct hisi_qm *qm = &hpre->qm;
-	struct pci_dev *pdev = qm->pdev;
-	int ret;
-
-	ret = hisi_qm_set_msi(qm, HPRE_ENABLE);
-	if (ret) {
-		dev_err(&pdev->dev, "Fails to enable peh msi bit!\n");
-		return ret;
-	}
-
-	ret = hisi_qm_set_pf_mse(qm, HPRE_ENABLE);
-	if (ret) {
-		dev_err(&pdev->dev, "Fails to enable pf mse bit!\n");
-		return ret;
-	}
-
-	ret = hisi_qm_set_vf_mse(qm, HPRE_ENABLE);
-	if (ret) {
-		dev_err(&pdev->dev, "Fails to enable vf mse bit!\n");
-		return ret;
-	}
-
-	ret = hpre_set_user_domain_and_cache(hpre);
-	if (ret)
-		return ret;
-
-	hisi_qm_restart_prepare(qm);
-
-	ret = hisi_qm_restart(qm);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to start QM!\n");
-		return ret;
-	}
-
-	if (hpre->num_vfs)
-		hpre_vf_q_assign(hpre, hpre->num_vfs);
-
-	ret = hpre_vf_reset_done(pdev);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to start VFs!\n");
-		return -EPERM;
-	}
-
-	hisi_qm_restart_done(qm);
-	hpre_hw_err_init(hpre);
-
-	return 0;
-}
-
-static int hpre_controller_reset(struct hpre *hpre)
-{
-	struct device *dev = &hpre->qm.pdev->dev;
-	int ret;
-
-	dev_info(dev, "Controller resetting...\n");
-
-	ret = hpre_controller_reset_prepare(hpre);
-	if (ret)
-		return ret;
-
-	ret = hpre_soft_reset(hpre);
-	if (ret) {
-		dev_err(dev, "Controller reset failed (%d)\n", ret);
-		return ret;
-	}
-
-	ret = hpre_controller_reset_done(hpre);
-	if (ret)
-		return ret;
-
-	clear_bit(HPRE_RESET, &hpre->status);
-	dev_info(dev, "Controller reset complete\n");
-
-	return 0;
-}
-
-static pci_ers_result_t hpre_slot_reset(struct pci_dev *pdev)
-{
-	struct hpre *hpre = pci_get_drvdata(pdev);
-	int ret;
-
-	if (pdev->is_virtfn)
-		return PCI_ERS_RESULT_RECOVERED;
-
-	dev_info(&pdev->dev, "Requesting reset due to PCI error\n");
-	pci_cleanup_aer_uncorrect_error_status(pdev);
-
-	/* reset hpre controller */
-	ret = hpre_controller_reset(hpre);
-	if (ret) {
-		dev_err(&pdev->dev, "hpre controller reset failed (%d)\n",
-			ret);
-		return PCI_ERS_RESULT_DISCONNECT;
-	}
-
-	return PCI_ERS_RESULT_RECOVERED;
-}
-
-static void hpre_set_hw_error(struct hpre *hisi_hpre, bool enable)
-{
-	struct pci_dev *pdev = hisi_hpre->qm.pdev;
-	struct hpre *hpre = pci_get_drvdata(pci_physfn(pdev));
-	struct hisi_qm *qm = &hpre->qm;
-
-	if (qm->fun_type == QM_HW_VF)
-		return;
-
-	if (enable) {
-		hisi_qm_hw_error_init(qm, QM_BASE_CE,
-					QM_BASE_NFE | QM_ACC_DO_TASK_TIMEOUT,
-					0, QM_DB_RANDOM_INVALID);
-		hpre_hw_error_enable(hpre);
-	} else {
-		hisi_qm_hw_error_uninit(qm);
-		hpre_hw_error_disable(hpre);
-	}
-}
-
-static int hpre_get_hw_error_status(struct hpre *hpre)
-{
-	u32 err_sts;
-
-	err_sts = readl(hpre->qm.io_base + HPRE_HAC_INT_STATUS) &
-			(HPRE_CORE_ECC_2BIT_ERR | HPRE_OOO_ECC_2BIT_ERR);
-	if (err_sts)
-		return err_sts;
-
-	return 0;
-}
-
-/* check the interrupt is ecc-zbit error or not */
-static int hpre_check_hw_error(struct hpre *hisi_hpre)
-{
-	struct pci_dev *pdev = hisi_hpre->qm.pdev;
-	struct hpre *hpre = pci_get_drvdata(pci_physfn(pdev));
-	struct hisi_qm *qm = &hpre->qm;
-	int ret;
-
-	if (qm->fun_type == QM_HW_VF)
-		return 0;
-
-	ret = hisi_qm_get_hw_error_status(qm);
-	if (ret)
-		return ret;
-
-	/* Now the ecc-2bit is ce_err, so this func is always return 0 */
-	return hpre_get_hw_error_status(hpre);
-}
-
-static void hpre_reset_prepare(struct pci_dev *pdev)
-{
-	struct hpre *hpre = pci_get_drvdata(pdev);
-	struct hisi_qm *qm = &hpre->qm;
-	struct device *dev = &pdev->dev;
-	u32 delay = 0;
-	int ret;
-
-	hpre_set_hw_error(hpre, HPRE_HW_ERROR_IRQ_DISABLE);
-
-	while (hpre_check_hw_error(hpre)) {
-		msleep(++delay);
-		if (delay > HPRE_RESET_WAIT_TIMEOUT)
-			return;
-	}
-
-	ret = hpre_reset_prepare_rdy(hpre);
-	if (ret) {
-		dev_err(dev, "FLR not ready!\n");
-		return;
-	}
-
-	ret = hpre_vf_reset_prepare(pdev, QM_FLR);
-	if (ret) {
-		dev_err(&pdev->dev, "Fails to prepare reset!\n");
-		return;
-	}
-
-	ret = hisi_qm_stop(qm, QM_FLR);
-	if (ret) {
-		dev_err(&pdev->dev, "Fails to stop QM!\n");
-		return;
-	}
-
-	dev_info(dev, "FLR resetting...\n");
-}
-
-static bool hpre_flr_reset_complete(struct pci_dev *pdev)
-{
-	struct pci_dev *pf_pdev = pci_physfn(pdev);
-	struct hpre *hpre = pci_get_drvdata(pf_pdev);
-	struct device *dev = &hpre->qm.pdev->dev;
-	u32 id;
-
-	pci_read_config_dword(hpre->qm.pdev, PCI_COMMAND, &id);
-	if (id == HPRE_PCI_COMMAND_INVALID) {
-		dev_err(dev, "Device HPRE can not be used!\n");
-		return false;
-	}
-
-	clear_bit(HPRE_RESET, &hpre->status);
-	return true;
-}
-
-static void hpre_reset_done(struct pci_dev *pdev)
-{
-	struct hpre *hpre = pci_get_drvdata(pdev);
-	struct hisi_qm *qm = &hpre->qm;
-	struct device *dev = &pdev->dev;
-	int ret;
-
-	hpre_set_hw_error(hpre, HPRE_HW_ERROR_IRQ_ENABLE);
-
-	ret = hisi_qm_restart(qm);
-	if (ret) {
-		dev_err(dev, "Failed to start QM!\n");
-		return;
-	}
-
-	if (pdev->is_physfn) {
-		ret = hpre_set_user_domain_and_cache(hpre);
-		if (ret) {
-			dev_err(dev, "Failed to start QM!\n");
-			goto flr_done;
-		}
-
-		hpre_hw_err_init(hpre);
-
-		if (hpre->num_vfs)
-			hpre_vf_q_assign(hpre, hpre->num_vfs);
-
-		ret = hpre_vf_reset_done(pdev);
-		if (ret) {
-			dev_err(&pdev->dev, "Failed to start VFs!\n");
-			return;
-		}
-	}
-
-flr_done:
-	if (hpre_flr_reset_complete(pdev))
-		dev_info(dev, "FLR reset complete\n");
-}
-
 static const struct pci_error_handlers hpre_err_handler = {
-	.error_detected		= hpre_error_detected,
-	.slot_reset		= hpre_slot_reset,
+	.error_detected		= hisi_qm_dev_err_detected,
+	.slot_reset		= hisi_qm_dev_slot_reset,
 #ifdef CONFIG_CRYPTO_QM_UACCE
-	.reset_prepare		= hpre_reset_prepare,
-	.reset_done		= hpre_reset_done,
+	.reset_prepare		= hisi_qm_reset_prepare,
+	.reset_done		= hisi_qm_reset_done,
 #endif
 };
 
@@ -1605,7 +954,7 @@ static struct pci_driver hpre_pci_driver = {
 	.remove			= hpre_remove,
 	.sriov_configure	= hpre_sriov_configure,
 	.err_handler		= &hpre_err_handler,
-	.shutdown		= hpre_shutdown,
+	.shutdown		= hisi_qm_dev_shutdown,
 };
 
 static void hpre_register_debugfs(void)
@@ -1618,20 +967,19 @@ static void hpre_register_debugfs(void)
 		hpre_debugfs_root = NULL;
 }
 
-static void hpre_unregister_debugfs(void)
-{
-	debugfs_remove_recursive(hpre_debugfs_root);
-}
-
 static int __init hpre_init(void)
 {
 	int ret;
+
+	INIT_LIST_HEAD(&hpre_devices.list);
+	mutex_init(&hpre_devices.lock);
+	hpre_devices.check = NULL;
 
 	hpre_register_debugfs();
 
 	ret = pci_register_driver(&hpre_pci_driver);
 	if (ret) {
-		hpre_unregister_debugfs();
+		debugfs_remove_recursive(hpre_debugfs_root);
 		pr_err("hpre: can't register hisi hpre driver.\n");
 	}
 
@@ -1641,7 +989,7 @@ static int __init hpre_init(void)
 static void __exit hpre_exit(void)
 {
 	pci_unregister_driver(&hpre_pci_driver);
-	hpre_unregister_debugfs();
+	debugfs_remove_recursive(hpre_debugfs_root);
 }
 
 module_init(hpre_init);
