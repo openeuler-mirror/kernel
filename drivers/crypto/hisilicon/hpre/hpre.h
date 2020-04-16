@@ -35,25 +35,18 @@ struct hpre_debugfs_file {
 	struct hpre_debug *debug;
 };
 
-#define HPRE_RESET			0
-#define HPRE_WAIT_DELAY	1000
-
 /*
  * One HPRE controller has one PF and multiple VFs, some global configurations
  * which PF has need this structure.
  * Just relevant for PF.
  */
 struct hpre_debug {
-	struct dentry *debug_root;
 	struct hpre_debugfs_file files[HPRE_DEBUGFS_FILE_NUM];
 };
 
 struct hpre {
 	struct hisi_qm qm;
-	struct list_head list;
 	struct hpre_debug debug;
-	u32 num_vfs;
-	unsigned long status;
 };
 
 enum hpre_alg_type {
@@ -80,7 +73,7 @@ struct hpre_sqe {
 	__le32 rsvd1[_HPRE_SQE_ALIGN_EXT];
 };
 
-struct hpre *hpre_find_device(int node);
+struct hisi_qp *hpre_create_qp(void);
 int hpre_algs_register(void);
 void hpre_algs_unregister(void);
 

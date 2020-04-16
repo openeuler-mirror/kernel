@@ -835,16 +835,11 @@ req_free:
 	return ret;
 }
 
-static int hisi_rde_create_qp(struct hisi_qm *qm, struct acc_ctx *ctx,
-			      int alg_type, int req_type)
+static int hisi_rde_start_qp(struct hisi_qp *qp, struct acc_ctx *ctx,
+			     int req_type)
 {
-	struct hisi_qp *qp;
 	struct hisi_rde_ctx *rde_ctx;
 	int ret;
-
-	qp = hisi_qm_create_qp(qm, alg_type);
-	if (IS_ERR(qp))
-		return PTR_ERR(qp);
 
 	qp->req_type = req_type;
 	qp->qp_ctx = ctx;
@@ -994,9 +989,10 @@ err_proc:
 
 int acc_init(struct acc_ctx *ctx)
 {
-	struct hisi_rde *hisi_rde;
-	struct hisi_qm *qm;
 	struct hisi_rde_ctx *rde_ctx;
+	struct hisi_rde *hisi_rde;
+	struct hisi_qp *qp;
+	struct hisi_qm *qm;
 	int ret;
 
 	if (unlikely(!ctx)) {
@@ -1004,9 +1000,9 @@ int acc_init(struct acc_ctx *ctx)
 		return -EINVAL;
 	}
 
-	hisi_rde = find_rde_device(cpu_to_node(smp_processor_id()));
-	if (unlikely(!hisi_rde)) {
-		pr_err("[%s]Can not find proper RDE device.\n", __func__);
+	qp = rde_create_qp();
+	if (unlikely(!qp)) {
+		pr_err("[%s]Can not create RDE qp.\n", __func__);
 		return -ENODEV;
 	}
 	/* alloc inner private struct */
@@ -1017,20 +1013,20 @@ int acc_init(struct acc_ctx *ctx)
 	}
 	ctx->inner = (void *)rde_ctx;
 
-	qm = &hisi_rde->qm;
+	qm = qp->qm;
 	if (unlikely(!qm->pdev)) {
 		pr_err("[%s] Pdev is NULL.\n", __func__);
 		return -ENODEV;
 	}
 	rde_ctx->dev = &qm->pdev->dev;
 
-	ret = hisi_rde_create_qp(qm, ctx, 0, 0);
+	ret = hisi_rde_start_qp(qp, ctx, 0);
 	if (ret) {
-		dev_err(rde_ctx->dev, "[%s] Create qp failed.\n", __func__);
+		dev_err(rde_ctx->dev, "[%s] start qp failed.\n", __func__);
 		goto qp_err;
 	}
 
-	rde_ctx->rde_dev = hisi_rde;
+	hisi_rde = container_of(qm, struct hisi_rde, qm);
 	rde_ctx->smmu_state = hisi_rde->smmu_state;
 	rde_ctx->addr_type = ctx->addr_type;
 	hisi_rde_session_init(rde_ctx);
@@ -1081,9 +1077,6 @@ int acc_clear(struct acc_ctx *ctx)
 	rde_ctx->req_list = NULL;
 	hisi_rde_release_qp(rde_ctx);
 
-	mutex_lock(rde_ctx->rde_dev->rde_list_lock);
-	rde_ctx->rde_dev->q_ref = rde_ctx->rde_dev->q_ref - 1;
-	mutex_unlock(rde_ctx->rde_dev->rde_list_lock);
 	kfree(rde_ctx);
 	ctx->inner = NULL;
 

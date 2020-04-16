@@ -22,19 +22,11 @@
 
 struct hisi_rde_ctrl;
 
-enum hisi_rde_status {
-	HISI_RDE_RESET,
-};
-
 struct hisi_rde {
 	struct hisi_qm qm;
-	struct list_head list;
 	struct hisi_rde_ctrl *ctrl;
 	struct work_struct reset_work;
-	struct mutex *rde_list_lock;
-	unsigned long status;
 	u32 smmu_state;
-	int q_ref;
 };
 
 #define RDE_CM_LOAD_ENABLE	1
@@ -134,7 +126,6 @@ struct hisi_rde_msg {
 struct hisi_rde_ctx {
 	struct device *dev;
 	struct hisi_qp *qp;
-	struct hisi_rde *rde_dev;
 	struct hisi_rde_msg *req_list;
 	unsigned long *req_bitmap;
 	spinlock_t req_lock;
@@ -323,7 +314,7 @@ static inline void rde_table_dump(const struct hisi_rde_msg *req)
 	}
 }
 
-struct hisi_rde *find_rde_device(int node);
+struct hisi_qp *rde_create_qp(void);
 int hisi_rde_abnormal_fix(struct hisi_qm *qm);
 
 #endif

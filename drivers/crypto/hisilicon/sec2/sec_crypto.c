@@ -16,6 +16,8 @@
 #include "sec.h"
 #include "sec_crypto.h"
 
+static atomic_t sec_active_devs;
+
 #define SEC_ASYNC
 
 #define SEC_INVLD_REQ_ID (-1)
@@ -179,6 +181,7 @@ struct hisi_sec_ctx {
 	struct hisi_sec *sec;
 	struct device *dev;
 	struct hisi_sec_req_op *req_op;
+	struct hisi_qp **qps;
 	struct hrtimer timer;
 	struct work_struct work;
 	atomic_t thread_cnt;
@@ -199,11 +202,6 @@ struct hisi_sec_ctx {
 #define DES_WEAK_KEY_NUM 4
 u64 des_weak_key[DES_WEAK_KEY_NUM] = {0x0101010101010101, 0xFEFEFEFEFEFEFEFE,
 	0xE0E0E0E0F1F1F1F1, 0x1F1F1F1F0E0E0E0E};
-
-static void sec_update_iv(struct hisi_sec_req *req, u8 *iv)
-{
-	// todo: update iv by cbc/ctr mode
-}
 
 static void hisi_sec_req_cb(struct hisi_qp *qp, void *);
 
@@ -324,19 +322,16 @@ static enum hrtimer_restart hrtimer_handler(struct hrtimer *timer)
 	return HRTIMER_RESTART;
 }
 
-static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
-	int qp_ctx_id, int alg_type, int req_type)
+static int hisi_sec_create_qp_ctx(struct hisi_sec_ctx *ctx,
+				  int qp_ctx_id, int req_type)
 {
-	struct hisi_qp *qp;
 	struct hisi_sec_qp_ctx *qp_ctx;
 	struct device *dev = ctx->dev;
+	struct hisi_qp *qp;
 	int ret;
 
-	qp = hisi_qm_create_qp(qm, alg_type);
-	if (IS_ERR(qp))
-		return PTR_ERR(qp);
-
 	qp_ctx = &ctx->qp_ctx[qp_ctx_id];
+	qp = ctx->qps[qp_ctx_id];
 	qp->req_type = req_type;
 	qp->qp_ctx = qp_ctx;
 #ifdef SEC_ASYNC
@@ -353,10 +348,8 @@ static int hisi_sec_create_qp_ctx(struct hisi_qm *qm, struct hisi_sec_ctx *ctx,
 
 	qp_ctx->req_bitmap = kcalloc(BITS_TO_LONGS(QM_Q_DEPTH), sizeof(long),
 		GFP_ATOMIC);
-	if (!qp_ctx->req_bitmap) {
-		ret = -ENOMEM;
-		goto err_qm_release_qp;
-	}
+	if (!qp_ctx->req_bitmap)
+		return -ENOMEM;
 
 	qp_ctx->req_list = kcalloc(QM_Q_DEPTH, sizeof(void *), GFP_ATOMIC);
 	if (!qp_ctx->req_list) {
@@ -407,8 +400,7 @@ err_free_req_list:
 	kfree(qp_ctx->req_list);
 err_free_req_bitmap:
 	kfree(qp_ctx->req_bitmap);
-err_qm_release_qp:
-	hisi_qm_release_qp(qp);
+
 	return ret;
 }
 
@@ -424,7 +416,6 @@ static void hisi_sec_release_qp_ctx(struct hisi_sec_ctx *ctx,
 	kfree(qp_ctx->req_bitmap);
 	kfree(qp_ctx->req_list);
 	kfree(qp_ctx->sqe_list);
-	hisi_qm_release_qp(qp_ctx->qp);
 }
 
 static int __hisi_sec_ctx_init(struct hisi_sec_ctx *ctx, int qlen)
@@ -465,22 +456,22 @@ static void hisi_sec_get_fusion_param(struct hisi_sec_ctx *ctx,
 static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
 {
 	struct hisi_sec_ctx *ctx = crypto_skcipher_ctx(tfm);
-	struct hisi_qm *qm;
 	struct hisi_sec_cipher_ctx *c_ctx;
 	struct hisi_sec *sec;
 	int i, ret;
 
 	crypto_skcipher_set_reqsize(tfm, sizeof(struct hisi_sec_req));
 
-	sec = find_sec_device(cpu_to_node(smp_processor_id()));
-	if (!sec) {
-		pr_err("failed to find a proper sec device!\n");
+	ctx->qps = sec_create_qps();
+	if (!ctx->qps) {
+		pr_err("Can not create sec qps!\n");
 		return -ENODEV;
 	}
+
+	sec = container_of(ctx->qps[0]->qm, struct hisi_sec, qm);
 	ctx->sec = sec;
 
-	qm = &sec->qm;
-	ctx->dev = &qm->pdev->dev;
+	ctx->dev = &sec->qm.pdev->dev;
 
 	ctx->q_num = sec->ctx_q_num;
 
@@ -495,7 +486,7 @@ static int hisi_sec_cipher_ctx_init(struct crypto_skcipher *tfm)
 	hisi_sec_get_fusion_param(ctx, sec);
 
 	for (i = 0; i < ctx->q_num; i++) {
-		ret = hisi_sec_create_qp_ctx(qm, ctx, i, 0, 0);
+		ret = hisi_sec_create_qp_ctx(ctx, i, 0);
 		if (ret)
 			goto err_sec_release_qp_ctx;
 	}
@@ -515,6 +506,7 @@ err_sec_release_qp_ctx:
 	for (i = i - 1; i >= 0; i--)
 		hisi_sec_release_qp_ctx(ctx, &ctx->qp_ctx[i]);
 
+	sec_destroy_qps(ctx->qps, sec->ctx_q_num);
 	kfree(ctx->qp_ctx);
 	return ret;
 }
@@ -540,11 +532,8 @@ static void hisi_sec_cipher_ctx_exit(struct crypto_skcipher *tfm)
 	for (i = 0; i < ctx->q_num; i++)
 		hisi_sec_release_qp_ctx(ctx, &ctx->qp_ctx[i]);
 
+	sec_destroy_qps(ctx->qps, ctx->q_num);
 	kfree(ctx->qp_ctx);
-
-	mutex_lock(ctx->sec->hisi_sec_list_lock);
-	ctx->sec->q_ref -= ctx->sec->ctx_q_num;
-	mutex_unlock(ctx->sec->hisi_sec_list_lock);
 }
 
 static int hisi_sec_skcipher_get_res(struct hisi_sec_ctx *ctx,
@@ -657,8 +646,6 @@ static void hisi_sec_req_cb(struct hisi_qp *qp, void *resp)
 	}
 
 	dfx = &req->ctx->sec->sec_dfx;
-
-	sec_update_iv(req, req->c_req.sk_req->iv);
 
 	req->ctx->req_op->buf_unmap(req->ctx, req);
 	req->ctx->req_op->callback(req->ctx, req);
@@ -1497,20 +1484,28 @@ static struct skcipher_alg sec_fusion_algs[] = {
 
 int hisi_sec_register_to_crypto(int fusion_limit)
 {
-	if (fusion_limit == 1)
-		return crypto_register_skciphers(sec_normal_algs,
-			ARRAY_SIZE(sec_normal_algs));
-	else
-		return crypto_register_skciphers(sec_fusion_algs,
-			ARRAY_SIZE(sec_fusion_algs));
+	/* To avoid repeat register */
+	if (atomic_add_return(1, &sec_active_devs) == 1) {
+		if (fusion_limit == 1)
+			return crypto_register_skciphers(sec_normal_algs,
+						ARRAY_SIZE(sec_normal_algs));
+		else
+			return crypto_register_skciphers(sec_fusion_algs,
+						ARRAY_SIZE(sec_fusion_algs));
+	}
+
+	return 0;
 }
 
 void hisi_sec_unregister_from_crypto(int fusion_limit)
 {
-	if (fusion_limit == 1)
-		crypto_unregister_skciphers(sec_normal_algs,
-			ARRAY_SIZE(sec_normal_algs));
-	else
-		crypto_unregister_skciphers(sec_fusion_algs,
-			ARRAY_SIZE(sec_fusion_algs));
+	if (atomic_sub_return(1, &sec_active_devs) == 0) {
+		if (fusion_limit == 1)
+			crypto_unregister_skciphers(sec_normal_algs,
+						ARRAY_SIZE(sec_normal_algs));
+		else
+			crypto_unregister_skciphers(sec_fusion_algs,
+						ARRAY_SIZE(sec_fusion_algs));
+	}
 }
+

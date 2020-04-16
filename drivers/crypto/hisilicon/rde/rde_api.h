@@ -308,7 +308,7 @@ struct acc_dif {
  * @input_block: number of sector
  * @data_len: data len of per disk, block_size (with dif)* input_block
  * @buf_type: denoted by ACC_BUF_TYPE_E
- * @src_dif��dif information of source disks
+ * @src_dif: dif information of source disks
  * @dst_dif: dif information of dest disks
  * @cm_load: coe_matrix reload control, 0: do not load, 1: load
  * @cm_len: length of loaded coe_matrix, equal to src_num
