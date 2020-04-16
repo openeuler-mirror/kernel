@@ -88,7 +88,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } pmbus_vout_mode;
 
 enum {

@@ -462,7 +462,6 @@ static int sysctl_ghes_proc(struct ghes *sysctl_ghes)
 
 static int sysctl_hisi_error_handler(struct work_struct *work)
 {
-
 	int ret = 0;
 	struct ghes *sysctl_ghes = NULL;
 	(void)work;

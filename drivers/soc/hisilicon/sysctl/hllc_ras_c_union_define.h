@@ -14,8 +14,8 @@
  *
  */
 
-#ifndef __C_UNION_DEFINE_HLLC_RAS_H__
-#define __C_UNION_DEFINE_HLLC_RAS_H__
+#ifndef __HLLC_RAS_C_UNION_DEFINE_H__
+#define __HLLC_RAS_C_UNION_DEFINE_H__
 
 /* Define the union hllc_ras_u_err_misc1l */
 typedef union {
@@ -53,7 +53,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } hllc_ras_u_err_misc1l;
 
 /* Define the union hllc_ras_u_err_misc1h */
@@ -74,7 +73,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } hllc_ras_u_err_misc1h;
 
 #endif /* __C_UNION_DEFINE_HLLC_RAS_H__ */

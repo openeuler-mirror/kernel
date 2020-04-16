@@ -23,7 +23,6 @@
 /******************************************************************************/
 /*					  xxx HLLC_PCS Registers' Definitions */
 /******************************************************************************/
-
 #define HLLC_HLLC_PCS_PCS_GLOBAL_CFG_REG (HLLC_HLLC_PCS_BASE + 0x0)
 #define HLLC_HLLC_PCS_PCS_MISC_CFG_REG (HLLC_HLLC_PCS_BASE + 0x4)
 #define HLLC_HLLC_PCS_PCS_POLARITY_CFG_REG (HLLC_HLLC_PCS_BASE + 0x8)

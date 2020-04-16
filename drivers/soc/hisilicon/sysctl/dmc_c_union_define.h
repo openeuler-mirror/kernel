@@ -37,7 +37,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } dmc_ddrc_u_cfg_ecc;
 
 #endif /* __DMC_C_UNION_DEFINE_H__ */

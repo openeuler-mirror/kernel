@@ -36,7 +36,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } ddrc_rasc_u_cfg_clr;
 
 /* Define the union ddrc_rasc_u_cfg_info_rnk */
@@ -50,7 +49,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } ddrc_rasc_u_cfg_info_rnk;
 
 /* Define the union ddrc_rasc_u_his_ha_rankcnt_inf */
@@ -63,7 +61,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } ddrc_rasc_u_his_ha_rankcnt_inf;
 
 #endif /* __RASC_C_UNION_DEFINE_H__ */

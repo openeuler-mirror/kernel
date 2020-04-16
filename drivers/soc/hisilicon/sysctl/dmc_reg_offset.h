@@ -23,7 +23,6 @@
 /******************************************************************************/
 /*					  xxx DMC Registers' Definitions */
 /******************************************************************************/
-
 #define DMC_DMC_DDRC_CTRL_SREF_REG (DMC_DMC_BASE + 0x0)
 #define DMC_DMC_DDRC_CTRL_INIT_REG (DMC_DMC_BASE + 0x4)
 #define DMC_DMC_DDRC_CTRL_DDRRST_REG (DMC_DMC_BASE + 0x8)

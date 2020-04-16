@@ -48,7 +48,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #define DEBUG
 
-#define SYSCTL_DRIVER_VERSION "1.9.38.0"
+#define SYSCTL_DRIVER_VERSION "1.9.39.1"
 
 unsigned int g_sysctrl_debug;
 
@@ -143,7 +143,6 @@ int his_hllc_init(void)
 			if (!g_hip_hllc_priv.ddrc_ta_base[chip_id][ddrc_num])
 				pr_err("chip=%u,ddr_ch=%u ddrc ta ioremap failed\n", chip_id, ddrc_num);
 		}
-
 	}
 
 	return SYSCTL_ERR_OK;
@@ -757,7 +756,6 @@ int hip_sysctrl_probe(void)
 	int ret;
 
 	ret = his_hllc_init();
-
 	if (ret != SYSCTL_ERR_OK) {
 		pr_err("[ERROR] his_hllc_init fail, ret:[0x%x].\n", ret);
 		return ret;
@@ -771,7 +769,6 @@ int hip_sysctrl_remove(void)
 	int ret;
 
 	ret = his_hllc_deinit();
-
 	if (ret != SYSCTL_ERR_OK) {
 		pr_err("[ERROR] his hllc deinit fail, ret:[0x%x].\n", ret);
 		return ret;

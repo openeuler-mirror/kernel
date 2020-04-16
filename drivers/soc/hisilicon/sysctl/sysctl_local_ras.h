@@ -13,8 +13,8 @@
  * GNU General Public License for more details.
  *
  */
-#ifndef _RP_INTERRUPT_H
-#define _RP_INTERRUPT_H
+#ifndef _SYSCTL_LOCAL_RAS_H_
+#define _SYSCTL_LOCAL_RAS_H_
 
 enum {
 	OEM1_SUB_MODULE_USB0 = 0,
@@ -174,74 +174,74 @@ struct hisi_oem_type1_err_sec {
 };
 
 struct hisi_oem_type2_err_sec {
-	u32   val_bits;
-	u8	version;
-	u8	soc_id;
-	u8	socket_id;
-	u8	nimbus_id;
-	u8	module_id;
-	u8	sub_module_id;
-	u8	err_severity;
-	u8	reserv;
-	u32   err_fr_0;
-	u32   err_fr_1;
-	u32   err_ctrl_0;
-	u32   err_ctrl_1;
-	u32   err_status_0;
-	u32   err_status_1;
-	u32   err_addr_0;
-	u32   err_addr_1;
-	u32   err_misc0_0;
-	u32   err_misc0_1;
-	u32   err_misc1_0;
-	u32   err_misc1_1;
+	u32 val_bits;
+	u8 version;
+	u8 soc_id;
+	u8 socket_id;
+	u8 nimbus_id;
+	u8 module_id;
+	u8 sub_module_id;
+	u8 err_severity;
+	u8 reserv;
+	u32 err_fr_0;
+	u32 err_fr_1;
+	u32 err_ctrl_0;
+	u32 err_ctrl_1;
+	u32 err_status_0;
+	u32 err_status_1;
+	u32 err_addr_0;
+	u32 err_addr_1;
+	u32 err_misc0_0;
+	u32 err_misc0_1;
+	u32 err_misc1_0;
+	u32 err_misc1_1;
 };
 
 struct hisi_pcie_local_err_sec {
-	uint64_t   val_bits;
-	u8	version;
-	u8	soc_id;
-	u8	socket_id;
-	u8	nimbus_id;
-	u8	sub_module_id;
-	u8	core_id;
-	u8	port_id;
-	u8	err_severity;
-	u16   err_type;
-	u8	 reserv[2];
-	u32   err_misc_0;
-	u32   err_misc_1;
-	u32   err_misc_2;
-	u32   err_misc_3;
-	u32   err_misc_4;
-	u32   err_misc_5;
-	u32   err_misc_6;
-	u32   err_misc_7;
-	u32   err_misc_8;
-	u32   err_misc_9;
-	u32   err_misc_10;
-	u32   err_misc_11;
-	u32   err_misc_12;
-	u32   err_misc_13;
-	u32   err_misc_14;
-	u32   err_misc_15;
-	u32   err_misc_16;
-	u32   err_misc_17;
-	u32   err_misc_18;
-	u32   err_misc_19;
-	u32   err_misc_20;
-	u32   err_misc_21;
-	u32   err_misc_22;
-	u32   err_misc_23;
-	u32   err_misc_24;
-	u32   err_misc_25;
-	u32   err_misc_26;
-	u32   err_misc_27;
-	u32   err_misc_28;
-	u32   err_misc_29;
-	u32   err_misc_30;
-	u32   err_misc_31;
-	u32   err_misc_32;
+	u64 val_bits;
+	u8 version;
+	u8 soc_id;
+	u8 socket_id;
+	u8 nimbus_id;
+	u8 sub_module_id;
+	u8 core_id;
+	u8 port_id;
+	u8 err_severity;
+	u16 err_type;
+	u8 reserv[2]; /* reserv 2 bytes */
+	u32 err_misc_0;
+	u32 err_misc_1;
+	u32 err_misc_2;
+	u32 err_misc_3;
+	u32 err_misc_4;
+	u32 err_misc_5;
+	u32 err_misc_6;
+	u32 err_misc_7;
+	u32 err_misc_8;
+	u32 err_misc_9;
+	u32 err_misc_10;
+	u32 err_misc_11;
+	u32 err_misc_12;
+	u32 err_misc_13;
+	u32 err_misc_14;
+	u32 err_misc_15;
+	u32 err_misc_16;
+	u32 err_misc_17;
+	u32 err_misc_18;
+	u32 err_misc_19;
+	u32 err_misc_20;
+	u32 err_misc_21;
+	u32 err_misc_22;
+	u32 err_misc_23;
+	u32 err_misc_24;
+	u32 err_misc_25;
+	u32 err_misc_26;
+	u32 err_misc_27;
+	u32 err_misc_28;
+	u32 err_misc_29;
+	u32 err_misc_30;
+	u32 err_misc_31;
+	u32 err_misc_32;
 };
 
 int hip_sysctl_local_ras_init(void);

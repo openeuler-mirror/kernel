@@ -135,7 +135,6 @@ int sysctl_reg_read32(u64 addr, u32 data_len)
 	for (loop = 0; loop < data_len; loop++) {
 		reg_addr = reg_base + loop * 0x4;
 		data = readl(reg_addr);
-
 		pr_info("0x%llx: 0x%8.8x\n", addr + (u64)loop * 0x4, data);
 	}
 
@@ -153,7 +152,6 @@ int sysctl_reg_write32(u64 addr, u32 data)
 		pr_err("%s: reg_addr is err.\n", __func__);
 		return SYSCTL_ERR_PARAM;
 	}
-
 
 	reg_base = ioremap(addr, (u64)0x100);
 	if (!reg_base) {
@@ -557,7 +555,7 @@ int sysctl_cpu_voltage_read(u8 chip_id, u8 loop, u32 slave_addr)
 static int sysctl_cpu_convert_vol_to_vid(u32 vid_table, u32 value, u32 *vid)
 {
 	if (vid_table == CPU_VOUT_MODE_VR125) {
-		*vid = (value/2 - 250) / 5 + 1; /* 2 1 5 and 250 are the number of relationships. */
+		*vid = (value / 2 - 250) / 5 + 1; /* 2 1 5 and 250 are the number of relationships. */
 	} else if (vid_table == CPU_VOUT_MODE_VR120) {
 		*vid = (value - 250) / 5 + 1; /* 1 5 and 250 are the number of relationships. */
 	} else {

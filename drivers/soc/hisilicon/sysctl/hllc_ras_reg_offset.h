@@ -23,7 +23,6 @@
 /******************************************************************************/
 /*					  xxx HLLC_RAS Registers' Definitions */
 /******************************************************************************/
-
 #define HLLC_HLLC_RAS_HLLC_ERR_FRL_REG (HLLC_HLLC_RAS_BASE + 0x2000)
 #define HLLC_HLLC_RAS_HLLC_ERR_FRH_REG (HLLC_HLLC_RAS_BASE + 0x2004)
 #define HLLC_HLLC_RAS_HLLC_ERR_CTRLL_REG (HLLC_HLLC_RAS_BASE + 0x2008)

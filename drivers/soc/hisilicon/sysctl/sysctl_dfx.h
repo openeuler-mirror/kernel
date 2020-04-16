@@ -21,4 +21,4 @@ int sysctl_proc_init(void);
 void sysctl_proc_exit(void);
 void sysctl_dfx_do_ras(struct acpi_hest_generic_data *gdata);
 
-#endif /*_SYSCTL_DFX_H_*/
+#endif /* _SYSCTL_DFX_H_ */

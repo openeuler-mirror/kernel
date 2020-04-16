@@ -27,7 +27,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } hllc_regs_u_inject_ecc_type;
 
 /* Define the union hllc_regs_u_inject_ecc_en */
@@ -45,7 +44,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } hllc_regs_u_inject_ecc_en;
 
 #endif /* __HLLC_REGS_C_UNION_DEFINE_H__ */

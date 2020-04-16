@@ -14,10 +14,10 @@
  *
  */
 
-#ifndef _HIS_SYSCTL_H_
-#define _HIS_SYSCTL_H_
+#ifndef _SYSCTL_DRV_H_
+#define _SYSCTL_DRV_H_
 
-/********************SYSCTRL ERR********************/
+/* SYSCTRL ERR */
 #define SYSCTL_ERR_OK 0   /* Ok */
 #define SYSCTL_ERR_PARAM 1   /* Invalid parameter */
 #define SYSCTL_ERR_FAILED 2   /* Operation failed */
@@ -99,7 +99,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } hllc_link_sta_info;
 
 typedef union {
@@ -124,7 +123,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } hllc_mem_ecc_info;
 
 typedef struct {
@@ -136,4 +134,4 @@ typedef struct {
 
 u64 get_chip_base(void);
 
-#endif /* _HIS_SYSCTL_H_ */
+#endif /* _SYSCTL_DRV_H_ */
