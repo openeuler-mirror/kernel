@@ -29,7 +29,7 @@
 
 #include "hs_lbc_pltfm.h"
 
-#define LBC_DRIVER_VERSION  "1.9.30.0"
+#define LBC_DRIVER_VERSION  "1.9.39.0"
 
 struct hisi_lbc_dev g_lbc_dev = {0};
 
@@ -127,7 +127,6 @@ static int hisi_lbc_para_check(unsigned int index, unsigned int offset, unsigned
 	/* width check */
 	if ((type == LBC_RWDATA_WIDTH_16)
 		|| (type == LBC_RWDATA_WIDTH_32)) {
-
 		if (offset % (type * 0x2))
 			return -EINVAL;
 	}
@@ -153,7 +152,6 @@ static unsigned int lbc_read(unsigned int index, unsigned int offset, unsigned i
 	spin_unlock_irqrestore(&g_lbc_dev.cs[index].lock, flags);
 
 	return value;
-
 }
 
 static unsigned int lbc_read_unlock(unsigned int index, unsigned int offset, unsigned int type)
@@ -169,7 +167,6 @@ static unsigned int lbc_read_unlock(unsigned int index, unsigned int offset, uns
 		value = readl(base_addr + offset) & 0xffffffff;
 
 	return value;
-
 }
 
 static int lbc_write(unsigned int index, unsigned int offset, unsigned int type, unsigned int data)
@@ -290,7 +287,6 @@ EXPORT_SYMBOL(lbc_write8_nolock);
 
 int lbc_write16(unsigned int index, unsigned int offset, unsigned short data)
 {
-
 	/* para check */
 	if (hisi_lbc_para_check(index, offset, LBC_RWDATA_WIDTH_16)) {
 		pr_err("Lbc para check failed\n");
@@ -302,7 +298,6 @@ int lbc_write16(unsigned int index, unsigned int offset, unsigned short data)
 
 int lbc_write32(unsigned int index, unsigned int offset, unsigned int data)
 {
-
 	/* para check */
 	if (hisi_lbc_para_check(index, offset, LBC_RWDATA_WIDTH_32)) {
 		pr_err("Lbc para check failed\n");
@@ -374,7 +369,6 @@ static int hisi_lbc_cs_init(struct platform_device *pdev)
 		g_lbc_dev.cs[index].shift = shift;
 
 		lbc_set_cs_data_offset(index, shift);
-
 	}
 
 	return 0;
@@ -398,7 +392,6 @@ static int hisi_lbc_probe(struct platform_device *pdev)
 	regs_base = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
 	if (!g_lbc_dev.is_reg_remaped) {
-
 		g_lbc_dev.regs_base = devm_ioremap_resource(&pdev->dev, regs_base);
 		g_lbc_dev.is_reg_remaped = 1;
 	}
