@@ -23,7 +23,6 @@
 /******************************************************************************/
 /*					  xxx PA Registers' Definitions */
 /******************************************************************************/
-
 #define PA_PA_ID_MAPPING_CFG_REG (PA_PA_BASE + 0x0)
 #define PA_PA_GLOBAL_CFG_REG (PA_PA_BASE + 0x4)
 #define PA_PA_LINK_DOWN_CFG_REG (PA_PA_BASE + 0x8)

@@ -23,7 +23,6 @@
 /******************************************************************************/
 /*					  xxx HLLC_REGS Registers' Definitions */
 /******************************************************************************/
-
 #define HLLC_HLLC_REGS_HLLC_HYDRA_RX_AFULL_TH_CFG_REG (HLLC_HLLC_REGS_BASE + 0x0)
 #define HLLC_HLLC_REGS_HLLC_TOKEN_CFG_REG (HLLC_HLLC_REGS_BASE + 0x100)
 #define HLLC_HLLC_REGS_HLLC_RETRAINING_CFG0_REG (HLLC_HLLC_REGS_BASE + 0x300)

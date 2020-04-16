@@ -40,7 +40,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } pa_u_global_cfg;
 
 #endif /* __PA_C_UNION_DEFINE_H__ */

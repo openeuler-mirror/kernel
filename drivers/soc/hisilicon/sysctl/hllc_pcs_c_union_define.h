@@ -40,7 +40,6 @@ typedef union {
 
 	/* Define an unsigned member */
 	unsigned int u32;
-
 } pcs_u_tx_training_sts;
 
 #endif /* __HLLC_PCS_C_UNION_DEFINE_H__ */

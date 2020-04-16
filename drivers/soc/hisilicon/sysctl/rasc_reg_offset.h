@@ -23,7 +23,6 @@
 /******************************************************************************/
 /*					  xxx RASC Registers' Definitions */
 /******************************************************************************/
-
 #define DDRC_RASC_RASC_CTRL_MODE_REG (DDRC_RASC_BASE + 0x0)
 #define DDRC_RASC_RASC_CTRL_ADDDC_REG (DDRC_RASC_BASE + 0x4)
 #define DDRC_RASC_RASC_CTRL_PASCRUB_REG (DDRC_RASC_BASE + 0x8)
