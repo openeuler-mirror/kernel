@@ -689,6 +689,7 @@ err_put_group:
 	dev->iommu_group = NULL;
 	kobject_put(group->devices_kobj);
 	kfree(dev->iommu_param);
+	sysfs_remove_link(group->devices_kobj, device->name);
 err_free_name:
 	kfree(device->name);
 err_remove_link:
