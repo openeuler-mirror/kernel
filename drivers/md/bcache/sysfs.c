@@ -1023,8 +1023,6 @@ SHOW(__bch_cache)
 		       !cached[n - 1])
 			--n;
 
-		unused = ca->sb.nbuckets - n;
-
 		while (cached < p + n &&
 		       *cached == BTREE_PRIO)
 			cached++, n--;
