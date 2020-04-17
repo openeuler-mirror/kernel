@@ -6309,11 +6309,11 @@ static void hclge_fd_build_arfs_rule(const struct hclge_fd_rule_tuples *tuples,
 	memset(&rule->tuples_mask, 0xFF, sizeof(rule->tuples_mask));
 }
 
-static int hclge_add_fd_entry_by_arfs(struct hnae3_handle *h, u16 queue_id,
+static int hclge_add_fd_entry_by_arfs(struct hnae3_handle *handle, u16 queue_id,
 				      u16 flow_id, struct flow_keys *fkeys)
 {
 #ifdef CONFIG_RFS_ACCEL
-	struct hclge_vport *vport = hclge_get_vport(h);
+	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_fd_rule_tuples new_tuples;
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_fd_rule *rule;
