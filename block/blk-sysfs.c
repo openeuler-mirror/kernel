@@ -12,6 +12,7 @@
 #include <linux/blk-mq.h>
 #include <linux/blk-cgroup.h>
 #include <linux/debugfs.h>
+#include <linux/atomic.h>
 
 #include "blk.h"
 #include "blk-mq.h"
@@ -960,6 +961,25 @@ unlock:
 EXPORT_SYMBOL_GPL(blk_register_queue);
 
 #ifdef CONFIG_DEBUG_FS
+void blk_rename_debugfs_dir(struct dentry **old)
+{
+	static atomic_t i = ATOMIC_INIT(0);
+	struct dentry *new;
+	char name[DNAME_INLINE_LEN];
+	u32 index = atomic_fetch_inc(&i);
+
+	snprintf(name, sizeof(name), "ready_to_remove_%u", index);
+	new = debugfs_lookup(name, blk_debugfs_root);
+	if (WARN_ON(new)) {
+		dput(new);
+		return;
+	}
+	new = debugfs_rename(blk_debugfs_root, *old, blk_debugfs_root, name);
+	if (WARN_ON(!new))
+		return;
+	*old = new;
+}
+
 /*
  * blk_prepare_release_queue - rename q->debugfs_dir and q->blk_trace->dir
  * @q: request_queue of which the dir to be renamed belong to.
@@ -971,31 +991,17 @@ EXPORT_SYMBOL_GPL(blk_register_queue);
  */
 static void blk_prepare_release_queue(struct request_queue *q)
 {
-	struct dentry *new = NULL;
-	struct dentry **old = NULL;
-	char name[DNAME_INLINE_LEN];
-	int i = 0;
-
 #ifdef CONFIG_BLK_DEBUG_FS
 	if (!IS_ERR_OR_NULL(q->debugfs_dir))
-		old = &q->debugfs_dir;
+		blk_rename_debugfs_dir(&q->debugfs_dir);
+
 #endif
 #ifdef CONFIG_BLK_DEV_IO_TRACE
-	/* q->debugfs_dir and q->blk_trace->dir can't both exist */
+	mutex_lock(&q->blk_trace_mutex);
 	if (q->blk_trace && !IS_ERR_OR_NULL(q->blk_trace->dir))
-		old = &q->blk_trace->dir;
+		blk_rename_debugfs_dir(&q->blk_trace->dir);
+	mutex_unlock(&q->blk_trace_mutex);
 #endif
-	if (old == NULL)
-		return;
-#define MAX_ATTEMPT 1024
-	while (new == NULL && i < MAX_ATTEMPT) {
-		sprintf(name, "ready_to_remove_%s_%d",
-				kobject_name(q->kobj.parent), i++);
-		new = debugfs_rename(blk_debugfs_root, *old,
-				blk_debugfs_root, name);
-	}
-	if (new)
-		*old = new;
 }
 #else
 #define blk_prepare_release_queue(q)           do { } while (0)
