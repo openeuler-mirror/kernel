@@ -40,8 +40,6 @@
 #define HCLGE_PF_RESET_SYNC_TIME	20
 #define HCLGE_PF_RESET_SYNC_CNT		1500
 
-#define HCLGE_LINK_STATUS_MS	10
-
 /* Get DFX BD number offset */
 #define HCLGE_DFX_BIOS_BD_OFFSET        1
 #define HCLGE_DFX_SSU_0_BD_OFFSET       2
@@ -55,6 +53,8 @@
 #define HCLGE_DFX_RCB_BD_OFFSET         10
 #define HCLGE_DFX_TQP_BD_OFFSET         11
 #define HCLGE_DFX_SSU_2_BD_OFFSET       12
+
+#define HCLGE_LINK_STATUS_MS	10
 
 #define HCLGE_VF_VPORT_START_NUM	1
 
