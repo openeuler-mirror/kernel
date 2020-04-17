@@ -18,6 +18,8 @@
 
 #include "hinic_wq.h"
 
+#define SET_VPORT_MBOX_TIMEOUT	(30 * 1000)
+#define SET_VPORT_MGMT_TIMEOUT	(25 * 1000)
 struct hinic_sq {
 	struct hinic_wq	*wq;
 
