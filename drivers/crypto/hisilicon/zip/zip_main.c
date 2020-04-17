@@ -858,8 +858,10 @@ static void hisi_zip_remove(struct pci_dev *pdev)
 {
 	struct hisi_qm *qm = pci_get_drvdata(pdev);
 
+#ifdef CONFIG_CRYPTO_QM_UACCE
 	if (uacce_mode != UACCE_MODE_NOUACCE)
 		hisi_qm_remove_wait_delay(qm, &zip_devices);
+#endif
 
 	if (qm->fun_type == QM_HW_PF && qm->vfs_num)
 		hisi_qm_sriov_disable(pdev, NULL);

@@ -1428,6 +1428,7 @@ static int qm_cq_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 			       qp->c_flag << QM_CQ_FLAG_SHIFT);
 
 	ret = qm_mb(qm, QM_MB_CMD_CQC, cqc_dma, qp_id, 0);
+
 	dma_unmap_single(dev, cqc_dma, sizeof(struct qm_cqc), DMA_TO_DEVICE);
 	kfree(cqc);
 
@@ -2330,6 +2331,7 @@ static int qm_aeq_ctx_cfg(struct hisi_qm *qm)
 	aeqc->base_h = cpu_to_le32(upper_32_bits(qm->aeqe_dma));
 	aeqc->dw6 = cpu_to_le32((QM_Q_DEPTH - 1) | (1 << QM_EQC_PHASE_SHIFT));
 	ret = qm_mb(qm, QM_MB_CMD_AEQC, aeqc_dma, 0, 0);
+
 	dma_unmap_single(dev, aeqc_dma, sizeof(struct qm_aeqc), DMA_TO_DEVICE);
 	kfree(aeqc);
 
@@ -2383,13 +2385,6 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 	QM_INIT_BUF(qm, aeqe, QM_Q_DEPTH);
 	QM_INIT_BUF(qm, sqc, qm->qp_num);
 	QM_INIT_BUF(qm, cqc, qm->qp_num);
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	/* get reserved dma memory */
-	qm->reserve = qm->qdma.va + off;
-	qm->reserve_dma = qm->qdma.dma + off;
-	off += PAGE_SIZE;
-#endif
 
 	ret = qm_eq_aeq_ctx_cfg(qm);
 	if (ret)
@@ -2681,7 +2676,7 @@ EXPORT_SYMBOL_GPL(hisi_qm_debug_regs_clear);
  */
 int hisi_qm_debug_init(struct hisi_qm *qm)
 {
-	struct dentry *qm_d, *qm_regs;
+	struct dentry *qm_d;
 	int i, ret;
 
 	qm_d = debugfs_create_dir("qm", qm->debug.debug_root);
@@ -2697,12 +2692,7 @@ int hisi_qm_debug_init(struct hisi_qm *qm)
 				goto failed_to_create;
 			}
 
-	qm_regs = debugfs_create_file("regs", 0444, qm->debug.qm_d, qm,
-				      &qm_regs_fops);
-	if (IS_ERR(qm_regs)) {
-		ret = -ENOENT;
-		goto failed_to_create;
-	}
+	debugfs_create_file("regs", 0444, qm->debug.qm_d, qm, &qm_regs_fops);
 
 	return 0;
 
@@ -3038,7 +3028,9 @@ int hisi_qm_sriov_enable(struct pci_dev *pdev, int max_vfs)
 {
 	struct hisi_qm *qm = pci_get_drvdata(pdev);
 	int pre_existing_vfs, num_vfs, ret;
+	int total_vfs;
 
+	total_vfs = pci_sriov_get_totalvfs(pdev);
 	pre_existing_vfs = pci_num_vf(pdev);
 	if (pre_existing_vfs) {
 		pci_err(pdev,
@@ -3046,7 +3038,7 @@ int hisi_qm_sriov_enable(struct pci_dev *pdev, int max_vfs)
 		return 0;
 	}
 
-	num_vfs = min_t(int, max_vfs, QM_MAX_VFS_NUM);
+	num_vfs = min_t(int, max_vfs, total_vfs);
 	ret = qm_vf_q_assign(qm, num_vfs);
 	if (ret) {
 		pci_err(pdev, "Can't assign queues for VF!\n");

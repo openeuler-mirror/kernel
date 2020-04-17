@@ -19,7 +19,7 @@
 
 #define QNUM_V1				4096
 #define QNUM_V2				1024
-#define QM_MAX_VFS_NUM			63
+#define QM_MAX_VFS_NUM_V2		63
 /* qm user domain */
 #define QM_ARUSER_M_CFG_1		0x100088
 #define AXUSER_SNOOP_ENABLE		BIT(30)
@@ -322,9 +322,7 @@ struct hisi_qm {
 	resource_size_t size;
 	struct uacce uacce;
 	const char *algs;
-	void *reserve;
 	int uacce_mode;
-	dma_addr_t reserve_dma;
 #endif
 	struct workqueue_struct *wq;
 	struct work_struct work;
@@ -423,7 +421,7 @@ static inline int vf_num_set(const char *val, const struct kernel_param *kp)
 	if (ret < 0)
 		return ret;
 
-	if (n > QM_MAX_VFS_NUM)
+	if (n > QM_MAX_VFS_NUM_V2)
 		return -ERANGE;
 
 	return param_set_int(val, kp);
