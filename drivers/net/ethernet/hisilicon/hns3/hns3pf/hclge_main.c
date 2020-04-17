@@ -6728,8 +6728,7 @@ static int hclge_enable_phy_loopback(struct hclge_dev *hdev,
 	if (ret)
 		return ret;
 
-	ret = phy_loopback(phydev, true);
-	return ret;
+	return phy_loopback(phydev, true);
 }
 
 static int hclge_disable_phy_loopback(struct hclge_dev *hdev,
@@ -6741,8 +6740,7 @@ static int hclge_disable_phy_loopback(struct hclge_dev *hdev,
 	if (ret)
 		return ret;
 
-	ret = phy_suspend(phydev);
-	return ret;
+	return phy_suspend(phydev);
 }
 
 static int hclge_set_phy_loopback(struct hclge_dev *hdev, bool en)
