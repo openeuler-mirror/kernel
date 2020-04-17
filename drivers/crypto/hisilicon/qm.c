@@ -173,7 +173,6 @@
 #define WAIT_PERIOD_US_MIN		100
 #define REMOVE_WAIT_DELAY		10
 #define MAX_WAIT_COUNTS			1000
-#define DELAY_PERIOD_MS			100
 #define QM_DEV_RESET_STATUS		0
 #define QM_RESET_WAIT_TIMEOUT		400
 #define QM_PCI_COMMAND_INVALID		0xFFFFFFFF
@@ -1569,8 +1568,10 @@ static void qm_qp_has_no_task(struct hisi_qp *qp)
 			(QM_SQ_TAIL_IDX(sqc) == QM_CQ_TAIL_IDX(cqc)))
 			break;
 
-		if (WARN_ON(i == MAX_WAIT_COUNTS))
+		if (i == MAX_WAIT_COUNTS) {
+			dev_err(dev, "Fail to wait for device stop!\n");
 			break;
+		}
 
 		usleep_range(WAIT_PERIOD_US_MIN, WAIT_PERIOD_US_MAX);
 	}
@@ -2575,7 +2576,7 @@ static void qm_clear_queues(struct hisi_qm *qm)
 
 	for (i = 0; i < qm->qp_num; i++) {
 		qp = qm->qp_array[i];
-		if (qp)
+		if (qp && qp->is_in_kernel)
 			/* device state use the last page */
 			memset(qp->qdma.va, 0, qp->qdma.size - PAGE_SIZE);
 	}
@@ -3295,8 +3296,6 @@ static int qm_soft_reset(struct hisi_qm *qm)
 
 	qm_dev_ecc_mbit_handle(qm);
 
-	mdelay(DELAY_PERIOD_MS);
-
 	/* OOO register set and check */
 	writel(MASTER_GLOBAL_CTRL_SHUTDOWN, qm->io_base + MASTER_GLOBAL_CTRL);
 
@@ -3493,22 +3492,42 @@ int hisi_qm_controller_reset(struct hisi_qm *qm)
 
 	ret = qm_controller_reset_prepare(qm);
 	if (ret)
-		return ret;
+		goto err_prepare;
 
 	ret = qm_soft_reset(qm);
 	if (ret) {
 		pci_err(pdev, "Controller reset failed (%d)\n", ret);
-		return ret;
+		goto err_reset;
 	}
 
 	ret = qm_controller_reset_done(qm);
 	if (ret)
-		return ret;
+		goto err_reset;
 
 	clear_bit(QM_DEV_RESET_STATUS, &qm->hw_status);
 	pci_info(pdev, "Controller reset complete\n");
 
 	return 0;
+
+err_prepare:
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	pci_info(pdev, "Controller reset_prepare failed\n");
+	writel(MASTER_GLOBAL_CTRL_SHUTDOWN, qm->io_base + MASTER_GLOBAL_CTRL);
+	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_TX_OFFSET);
+	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_RX_OFFSET);
+#endif
+
+err_reset:
+	pci_info(pdev, "Controller reset failed\n");
+	clear_bit(QM_DEV_RESET_STATUS, &qm->hw_status);
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	/* if resetting fails, isolate the device */
+	if (qm->use_uacce && !qm->uacce.is_vf)
+		atomic_set(&qm->uacce.isolate->is_isolate, 1);
+#endif
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(hisi_qm_controller_reset);
 
