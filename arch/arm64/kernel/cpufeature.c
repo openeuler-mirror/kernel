@@ -1232,6 +1232,34 @@ static bool can_use_gic_priorities(const struct arm64_cpu_capabilities *entry,
 }
 #endif
 
+static bool use_clearpage_stnp;
+
+static int __init early_use_clearpage_stnp(char *p)
+{
+	return strtobool(p, &use_clearpage_stnp);
+}
+early_param("mm.use_clearpage_stnp", early_use_clearpage_stnp);
+
+static bool has_mor_nontemporal(const struct arm64_cpu_capabilities *entry)
+{
+	/*
+	 * List of CPUs which have memory ordering ruled non-temporal
+	 * load and store.
+	 */
+	static const struct midr_range cpus[] = {
+		MIDR_ALL_VERSIONS(MIDR_HISI_TSV110),
+		{},
+	};
+
+	return is_midr_in_range_list(read_cpuid_id(), cpus);
+}
+
+static bool can_clearpage_use_stnp(const struct arm64_cpu_capabilities *entry,
+				   int scope)
+{
+	return use_clearpage_stnp && has_mor_nontemporal(entry);
+}
+
 static const struct arm64_cpu_capabilities arm64_features[] = {
 	{
 		.desc = "GIC system register CPU interface",
@@ -1467,6 +1495,12 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.cpu_enable = cpu_enable_ssbs,
 	},
 #endif
+	{
+		.desc = "Clear Page by STNP",
+		.capability = ARM64_CLEARPAGE_STNP,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = can_clearpage_use_stnp,
+	},
 	{},
 };
 
