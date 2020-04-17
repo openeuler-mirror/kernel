@@ -3470,7 +3470,7 @@ static int hclgevf_init(void)
 
 	hclgevf_wq = alloc_workqueue("%s", WQ_MEM_RECLAIM, 0, HCLGEVF_NAME);
 	if (!hclgevf_wq) {
-		pr_err("%s: Failed to create workqueue\n", HCLGEVF_NAME);
+		pr_err("%s: failed to create workqueue\n", HCLGEVF_NAME);
 		return -ENOMEM;
 	}
 
