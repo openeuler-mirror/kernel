@@ -350,21 +350,12 @@ int vt_ioctl(struct tty_struct *tty,
 {
 	struct vc_data *vc = tty->driver_data;
 	struct console_font_op op;	/* used in multiple places here */
-	unsigned int console;
+	unsigned int console = vc->vc_num;
 	unsigned char ucval;
 	unsigned int uival;
 	void __user *up = (void __user *)arg;
 	int i, perm;
 	int ret = 0;
-
-	console = vc->vc_num;
-
-
-	if (!vc_cons_allocated(console)) { 	/* impossible? */
-		ret = -ENOIOCTLCMD;
-		goto out;
-	}
-
 
 	/*
 	 * To have permissions to do most of the vt ioctls, we either have
@@ -1190,17 +1181,9 @@ long vt_compat_ioctl(struct tty_struct *tty,
 {
 	struct vc_data *vc = tty->driver_data;
 	struct console_font_op op;	/* used in multiple places here */
-	unsigned int console;
 	void __user *up = (void __user *)arg;
 	int perm;
 	int ret = 0;
-
-	console = vc->vc_num;
-
-	if (!vc_cons_allocated(console)) { 	/* impossible? */
-		ret = -ENOIOCTLCMD;
-		goto out;
-	}
 
 	/*
 	 * To have permissions to do most of the vt ioctls, we either have
@@ -1261,7 +1244,7 @@ long vt_compat_ioctl(struct tty_struct *tty,
 		arg = (unsigned long)compat_ptr(arg);
 		goto fallback;
 	}
-out:
+
 	return ret;
 
 fallback:
