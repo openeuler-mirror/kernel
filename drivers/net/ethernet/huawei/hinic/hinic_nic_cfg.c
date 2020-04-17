@@ -1696,6 +1696,7 @@ int hinic_set_vport_enable(void *hwdev, bool enable)
 	struct hinic_vport_state en_state = {0};
 	u16 out_size = sizeof(en_state);
 	int err;
+	u32 timeout;
 
 	if (!hwdev)
 		return -EINVAL;
@@ -1706,9 +1707,16 @@ int hinic_set_vport_enable(void *hwdev, bool enable)
 
 	en_state.state = enable ? 1 : 0;
 
-	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_VPORT_ENABLE,
-				     &en_state, sizeof(en_state),
-				     &en_state, &out_size);
+	if (HINIC_IS_VF(nic_hwdev))
+		timeout = SET_VPORT_MBOX_TIMEOUT;
+	else
+		timeout = SET_VPORT_MGMT_TIMEOUT;
+
+	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_L2NIC,
+				     HINIC_PORT_CMD_SET_VPORT_ENABLE,
+				     &en_state, sizeof(en_state), &en_state,
+				     &out_size, timeout);
+
 	if (err || !out_size || en_state.status) {
 		nic_err(nic_hwdev->dev_hdl, "Failed to set vport state, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, en_state.status, out_size);
@@ -1897,7 +1905,7 @@ int hinic_rss_get_template_tbl(void *hwdev, u32 tmpl_idx, u8 *temp)
 				     &temp_key, sizeof(temp_key),
 				     &temp_key, &out_size);
 	if (err || !out_size || temp_key.status) {
-		nic_err(nic_hwdev->dev_hdl, "Failed to set hash key, err: %d, status: 0x%x, out size: 0x%x\n",
+		nic_err(nic_hwdev->dev_hdl, "Failed to get hash key, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, temp_key.status, out_size);
 		return -EINVAL;
 	}
@@ -2667,6 +2675,7 @@ int nic_pf_mbox_handler(void *hwdev, u16 vf_id, u8 cmd, void *buf_in,
 	u8 size = sizeof(nic_cmd_support_vf) / sizeof(nic_cmd_support_vf[0]);
 	struct hinic_nic_io *nic_io;
 	int err = 0;
+	u32 timeout = 0;
 
 	if (!hwdev)
 		return -EFAULT;
@@ -2731,9 +2740,12 @@ int nic_pf_mbox_handler(void *hwdev, u16 vf_id, u8 cmd, void *buf_in,
 
 	default:
 		/* pass through */
+		if (cmd == HINIC_PORT_CMD_SET_VPORT_ENABLE)
+			timeout = SET_VPORT_MGMT_TIMEOUT;
+
 		err = hinic_pf_msg_to_mgmt_sync(nic_io->hwdev, HINIC_MOD_L2NIC,
 						cmd, buf_in, in_size,
-						buf_out, out_size, 0);
+						buf_out, out_size, timeout);
 
 		break;
 	}

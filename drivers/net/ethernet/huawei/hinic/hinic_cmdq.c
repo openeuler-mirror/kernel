@@ -37,7 +37,7 @@
 #include "hinic_wq.h"
 #include "hinic_cmdq.h"
 
-#define CMDQ_CMD_TIMEOUT				1000 /* millisecond */
+#define CMDQ_CMD_TIMEOUT				5000 /* millisecond */
 
 #define UPPER_8_BITS(data)				(((data) >> 8) & 0xFF)
 #define LOWER_8_BITS(data)				((data) & 0xFF)
