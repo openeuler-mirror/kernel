@@ -1923,6 +1923,14 @@ int register_kretprobe(struct kretprobe *rp)
 		}
 	}
 
+	/*
+	 * Return error if it's being re-registered,
+	 * also give a warning message to the developer.
+	 */
+	ret = check_kprobe_rereg(&rp->kp);
+	if (WARN_ON(ret))
+		return ret;
+
 	rp->kp.pre_handler = pre_handler_kretprobe;
 	rp->kp.post_handler = NULL;
 	rp->kp.fault_handler = NULL;
