@@ -1292,7 +1292,7 @@ static void hns3_get_regs(struct net_device *netdev,
 {
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 
-	if (!h->ae_algo->ops->get_regs || !data)
+	if (!h->ae_algo->ops->get_regs)
 		return;
 
 	h->ae_algo->ops->get_regs(h, &cmd->version, data);
