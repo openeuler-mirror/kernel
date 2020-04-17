@@ -353,6 +353,7 @@ static void hisi_zip_acomp_cb(struct hisi_qp *qp, void *data)
 {
 	struct hisi_zip_sqe *sqe = data;
 	struct hisi_zip_qp_ctx *qp_ctx = qp->qp_ctx;
+	struct zip_dfx *dfx = &qp_ctx->zip_dev->dfx;
 	struct hisi_zip_req_q *req_q = &qp_ctx->req_q;
 	struct hisi_zip_req *req = req_q->q + sqe->tag;
 	struct acomp_req *acomp_req = req->req;
@@ -360,11 +361,13 @@ static void hisi_zip_acomp_cb(struct hisi_qp *qp, void *data)
 	u32 status, dlen, head_size;
 	int err = 0;
 
+	atomic64_inc(&dfx->recv_cnt);
 	status = sqe->dw3 & HZIP_BD_STATUS_M;
 	if (status != 0 && status != HZIP_NC_ERR) {
 		dev_err(dev, "%scompress fail in qp%u: %u, output: %u\n",
 			(qp->alg_type == 0) ? "" : "de", qp->qp_id, status,
 			sqe->produced);
+		atomic64_inc(&dfx->err_bd_cnt);
 		err = -EIO;
 	}
 	dlen = sqe->produced;
@@ -452,7 +455,7 @@ static int add_comp_head(struct scatterlist *dst, u8 req_type)
 	return head_size;
 }
 
-static size_t get_gzip_head_size(struct scatterlist *sgl)
+static size_t __maybe_unused get_gzip_head_size(struct scatterlist *sgl)
 {
 	char buf[HZIP_GZIP_HEAD_BUF];
 
@@ -461,13 +464,20 @@ static size_t get_gzip_head_size(struct scatterlist *sgl)
 	return __get_gzip_head_size(buf);
 }
 
-static int get_comp_head_size(struct scatterlist *src, u8 req_type)
+static int get_comp_head_size(struct acomp_req *acomp_req, u8 req_type)
 {
+	if (!acomp_req->src || !acomp_req->slen)
+		return -EINVAL;
+
+	if ((req_type == HZIP_ALG_TYPE_GZIP) &&
+	    (acomp_req->slen < GZIP_HEAD_FEXTRA_SHIFT))
+		return -EINVAL;
+
 	switch (req_type) {
 	case HZIP_ALG_TYPE_ZLIB:
 		return TO_HEAD_SIZE(HZIP_ALG_TYPE_ZLIB);
 	case HZIP_ALG_TYPE_GZIP:
-		return get_gzip_head_size(src);
+		return TO_HEAD_SIZE(HZIP_ALG_TYPE_GZIP);
 	default:
 		pr_err("request type does not support!\n");
 		return -EINVAL;
@@ -489,7 +499,7 @@ static struct hisi_zip_req *hisi_zip_create_req(struct acomp_req *req,
 	if (req_id >= req_q->size) {
 		write_unlock(&req_q->req_lock);
 		dev_dbg(&qp_ctx->qp->qm->pdev->dev, "req cache is full!\n");
-		return ERR_PTR(-EBUSY);
+		return ERR_PTR(-EPERM);
 	}
 	set_bit(req_id, req_q->req_bitmap);
 
@@ -518,6 +528,7 @@ static int hisi_zip_do_work(struct hisi_zip_req *req,
 	struct hisi_qp *qp = qp_ctx->qp;
 	struct device *dev = &qp->qm->pdev->dev;
 	struct hisi_acc_sgl_pool *pool = qp_ctx->sgl_pool;
+	struct zip_dfx *dfx = &qp_ctx->zip_dev->dfx;
 	dma_addr_t input;
 	dma_addr_t output;
 	int ret;
@@ -549,8 +560,11 @@ static int hisi_zip_do_work(struct hisi_zip_req *req,
 	hisi_zip_config_tag(zip_sqe, req->req_id);
 
 	/* send command to start a task */
+	atomic64_inc(&dfx->send_cnt);
 	ret = hisi_qp_send(qp, zip_sqe);
 	if (ret < 0) {
+		atomic64_inc(&dfx->send_busy_cnt);
+		ret = -EPERM;
 		dev_dbg_ratelimited(dev, "send task message failed!\n");
 		goto err_unmap_output;
 	}
@@ -602,7 +616,7 @@ static int hisi_zip_adecompress(struct acomp_req *acomp_req)
 	int head_size;
 	int ret;
 
-	head_size = get_comp_head_size(acomp_req->src, qp_ctx->qp->req_type);
+	head_size = get_comp_head_size(acomp_req, qp_ctx->qp->req_type);
 	if (head_size < 0)
 		return -ENOMEM;
 

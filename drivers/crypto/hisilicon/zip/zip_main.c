@@ -98,6 +98,11 @@
 #define HZIP_BUF_SIZE			22
 #define FORMAT_DECIMAL			10
 
+#define HZIP_CNT_CLR_CE_EN		BIT(0)
+#define HZIP_RO_CNT_CLR_CE_EN		BIT(2)
+#define HZIP_RD_CNT_CLR_CE_EN		(HZIP_CNT_CLR_CE_EN | \
+					 HZIP_RO_CNT_CLR_CE_EN)
+
 static const char hisi_zip_name[] = "hisi_zip";
 static struct dentry *hzip_debugfs_root;
 static struct hisi_qm_list zip_devices;
@@ -105,6 +110,18 @@ static struct hisi_qm_list zip_devices;
 struct hisi_zip_hw_error {
 	u32 int_msk;
 	const char *msg;
+};
+
+struct zip_dfx_item {
+	const char *name;
+	u32 offset;
+};
+
+static struct zip_dfx_item zip_dfx_files[] = {
+	{"send_cnt", offsetof(struct zip_dfx, send_cnt)},
+	{"recv_cnt", offsetof(struct zip_dfx, recv_cnt)},
+	{"send_busy_cnt", offsetof(struct zip_dfx, send_busy_cnt)},
+	{"err_bd_cnt", offsetof(struct zip_dfx, err_bd_cnt)},
 };
 
 static const struct hisi_zip_hw_error zip_hw_error[] = {
@@ -309,9 +326,18 @@ static int hisi_zip_set_user_domain_and_cache(struct hisi_qm *qm)
 /* hisi_zip_debug_regs_clear() - clear the zip debug regs */
 static void hisi_zip_debug_regs_clear(struct hisi_qm *qm)
 {
+	int i, j;
+
 	/* clear current_qm */
 	writel(0x0, qm->io_base + QM_DFX_MB_CNT_VF);
 	writel(0x0, qm->io_base + QM_DFX_DB_CNT_VF);
+
+	/* enable rdclr_en */
+	writel(HZIP_RD_CNT_CLR_CE_EN, qm->io_base + HZIP_SOFT_CTRL_CNT_CLR_CE);
+	for (i = 0; i < ARRAY_SIZE(core_offsets); i++)
+		for (j = 0; j < ARRAY_SIZE(hzip_dfx_regs); j++)
+			readl(qm->io_base + core_offsets[i] +
+			      hzip_dfx_regs[j].offset);
 
 	/* clear rdclr_en */
 	writel(0x0, qm->io_base + HZIP_SOFT_CTRL_CNT_CLR_CE);
@@ -532,11 +558,31 @@ static const struct file_operations ctrl_debug_fops = {
 	.write = hisi_zip_ctrl_debug_write,
 };
 
+static int zip_debugfs_atomic64_set(void *data, u64 val)
+{
+	if (!val)
+		atomic64_set((atomic64_t *)data, 0);
+	else
+		return -EINVAL;
+
+	return 0;
+}
+
+static int zip_debugfs_atomic64_get(void *data, u64 *val)
+{
+	*val = atomic64_read((atomic64_t *)data);
+
+	return 0;
+}
+
+DEFINE_DEBUGFS_ATTRIBUTE(zip_atomic64_ops, zip_debugfs_atomic64_get,
+			 zip_debugfs_atomic64_set, "%llu\n");
+
 static int hisi_zip_core_debug_init(struct hisi_qm *qm)
 {
 	struct device *dev = &qm->pdev->dev;
 	struct debugfs_regset32 *regset;
-	struct dentry *tmp_d, *tmp;
+	struct dentry *tmp_d;
 	char buf[HZIP_BUF_SIZE];
 	int i, ret;
 
@@ -561,12 +607,29 @@ static int hisi_zip_core_debug_init(struct hisi_qm *qm)
 		regset->nregs = ARRAY_SIZE(hzip_dfx_regs);
 		regset->base = qm->io_base + core_offsets[i];
 
-		tmp = debugfs_create_regset32("regs", 0444, tmp_d, regset);
-		if (!tmp)
-			return -ENOENT;
+		debugfs_create_regset32("regs", 0444, tmp_d, regset);
 	}
 
 	return 0;
+}
+
+static void hisi_zip_dfx_debug_init(struct hisi_qm *qm)
+{
+	struct hisi_zip *zip = container_of(qm, struct hisi_zip, qm);
+	struct zip_dfx *dfx = &zip->dfx;
+	struct dentry *tmp_dir;
+	void *data;
+	int i;
+
+	tmp_dir = debugfs_create_dir("zip_dfx", qm->debug.debug_root);
+	for (i = 0; i < ARRAY_SIZE(zip_dfx_files); i++) {
+		data = (atomic64_t *)((uintptr_t)dfx + zip_dfx_files[i].offset);
+		debugfs_create_file(zip_dfx_files[i].name,
+			0644,
+			tmp_dir,
+			data,
+			&zip_atomic64_ops);
+	}
 }
 
 static int hisi_zip_ctrl_debug_init(struct hisi_qm *qm)
@@ -610,6 +673,8 @@ static int hisi_zip_debugfs_init(struct hisi_qm *qm)
 		if (ret)
 			goto failed_to_create;
 	}
+
+	hisi_zip_dfx_debug_init(qm);
 
 	return 0;
 
