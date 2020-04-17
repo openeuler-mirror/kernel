@@ -89,6 +89,11 @@ struct sec_hw_error {
 	const char *msg;
 };
 
+struct sec_dfx_item {
+	const char *name;
+	u32 offset;
+};
+
 static const char sec_name[] = "hisi_sec2";
 static struct dentry *sec_debugfs_root;
 static struct hisi_qm_list sec_devices;
@@ -109,6 +114,16 @@ static const struct sec_hw_error sec_hw_errors[] = {
 static const char * const sec_dbg_file_name[] = {
 	[SEC_CURRENT_QM] = "current_qm",
 	[SEC_CLEAR_ENABLE] = "clear_enable",
+};
+
+static struct sec_dfx_item sec_dfx_labels[] = {
+	{"send_cnt", offsetof(struct sec_dfx, send_cnt)},
+	{"recv_cnt", offsetof(struct sec_dfx, recv_cnt)},
+	{"send_busy_cnt", offsetof(struct sec_dfx, send_busy_cnt)},
+	{"recv_busy_cnt", offsetof(struct sec_dfx, recv_busy_cnt)},
+	{"err_bd_cnt", offsetof(struct sec_dfx, err_bd_cnt)},
+	{"invalid_req_cnt", offsetof(struct sec_dfx, invalid_req_cnt)},
+	{"done_flag_cnt", offsetof(struct sec_dfx, done_flag_cnt)},
 };
 
 static struct debugfs_reg32 sec_dfx_regs[] = {
@@ -350,9 +365,16 @@ static int sec_set_user_domain_and_cache(struct hisi_qm *qm)
 /* sec_debug_regs_clear() - clear the sec debug regs */
 static void sec_debug_regs_clear(struct hisi_qm *qm)
 {
+	int i;
+
 	/* clear current_qm */
 	writel(0x0, qm->io_base + QM_DFX_MB_CNT_VF);
 	writel(0x0, qm->io_base + QM_DFX_DB_CNT_VF);
+
+	/* clear sec dfx regs */
+	writel(0x1, qm->io_base + SEC_CTRL_CNT_CLR_CE);
+	for (i = 0; i < ARRAY_SIZE(sec_dfx_regs); i++)
+		readl(qm->io_base + sec_dfx_regs[i].offset);
 
 	/* clear rdclr_en */
 	writel(0x0, qm->io_base + SEC_CTRL_CNT_CLR_CE);
@@ -564,10 +586,22 @@ static const struct file_operations sec_dbg_fops = {
 static int sec_debugfs_atomic64_get(void *data, u64 *val)
 {
 	*val = atomic64_read((atomic64_t *)data);
+
 	return 0;
 }
+
+static int sec_debugfs_atomic64_set(void *data, u64 val)
+{
+	if (!val) {
+		atomic64_set((atomic64_t *)data, 0);
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
 DEFINE_DEBUGFS_ATTRIBUTE(sec_atomic64_ops, sec_debugfs_atomic64_get,
-			 NULL, "%lld\n");
+			 sec_debugfs_atomic64_set, "%lld\n");
 
 static int sec_core_debug_init(struct hisi_qm *qm)
 {
@@ -576,24 +610,27 @@ static int sec_core_debug_init(struct hisi_qm *qm)
 	struct sec_dfx *dfx = &sec->debug.dfx;
 	struct debugfs_regset32 *regset;
 	struct dentry *tmp_d;
+	int i;
 
 	tmp_d = debugfs_create_dir("sec_dfx", qm->debug.debug_root);
 
 	regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
 	if (!regset)
-		return -ENOENT;
+		return -ENOMEM;
 
 	regset->regs = sec_dfx_regs;
 	regset->nregs = ARRAY_SIZE(sec_dfx_regs);
 	regset->base = qm->io_base;
 
-	debugfs_create_regset32("regs", 0444, tmp_d, regset);
+	if (qm->pdev->device == SEC_PF_PCI_DEVICE_ID)
+		debugfs_create_regset32("regs", 0444, tmp_d, regset);
 
-	debugfs_create_file("send_cnt", 0444, tmp_d,
-			    &dfx->send_cnt, &sec_atomic64_ops);
-
-	debugfs_create_file("recv_cnt", 0444, tmp_d,
-			    &dfx->recv_cnt, &sec_atomic64_ops);
+	for (i = 0; i < ARRAY_SIZE(sec_dfx_labels); i++) {
+		atomic64_t *data = (atomic64_t *)((uintptr_t)dfx +
+					sec_dfx_labels[i].offset);
+		debugfs_create_file(sec_dfx_labels[i].name, 0644,
+				   tmp_d, data, &sec_atomic64_ops);
+	}
 
 	return 0;
 }
@@ -603,15 +640,17 @@ static int sec_debug_init(struct hisi_qm *qm)
 	struct sec_dev *sec = container_of(qm, struct sec_dev, qm);
 	int i;
 
-	for (i = SEC_CURRENT_QM; i < SEC_DEBUG_FILE_NUM; i++) {
-		spin_lock_init(&sec->debug.files[i].lock);
-		sec->debug.files[i].index = i;
-		sec->debug.files[i].qm = qm;
+	if (qm->pdev->device == SEC_PF_PCI_DEVICE_ID) {
+		for (i = SEC_CURRENT_QM; i < SEC_DEBUG_FILE_NUM; i++) {
+			spin_lock_init(&sec->debug.files[i].lock);
+			sec->debug.files[i].index = i;
+			sec->debug.files[i].qm = qm;
 
-		debugfs_create_file(sec_dbg_file_name[i], 0600,
-					  qm->debug.debug_root,
-					  sec->debug.files + i,
-					  &sec_dbg_fops);
+			debugfs_create_file(sec_dbg_file_name[i], 0600,
+						  qm->debug.debug_root,
+						  sec->debug.files + i,
+						  &sec_dbg_fops);
+		}
 	}
 
 	return sec_core_debug_init(qm);
@@ -628,11 +667,9 @@ static int sec_debugfs_init(struct hisi_qm *qm)
 	if (ret)
 		goto failed_to_create;
 
-	if (qm->pdev->device == SEC_PF_PCI_DEVICE_ID) {
-		ret = sec_debug_init(qm);
-		if (ret)
-			goto failed_to_create;
-	}
+	ret = sec_debug_init(qm);
+	if (ret)
+		goto failed_to_create;
 
 	return 0;
 
@@ -735,7 +772,13 @@ static int sec_probe_init(struct hisi_qm *qm)
 {
 	int ret;
 
-	qm->wq = alloc_workqueue("%s", WQ_HIGHPRI | WQ_CPU_INTENSIVE |
+	/*
+	 * WQ_HIGHPRI: SEC request must be low delayed,
+	 * so need a high priority workqueue.
+	 * WQ_UNBOUND: SEC task is likely with long
+	 * running CPU intensive workloads.
+	 */
+	qm->wq = alloc_workqueue("%s", WQ_HIGHPRI |
 		WQ_MEM_RECLAIM | WQ_UNBOUND, num_online_cpus(),
 		pci_name(qm->pdev));
 	if (!qm->wq) {
@@ -814,7 +857,7 @@ static void sec_iommu_used_check(struct sec_dev *sec)
 	if (domain) {
 		if (domain->type & __IOMMU_DOMAIN_PAGING)
 			sec->iommu_used = true;
-		dev_info(dev, "SMMU Opened! the iommu type:= %d!\n",
+		dev_info(dev, "SMMU Opened, the iommu type = %u\n",
 			domain->type);
 	}
 }
