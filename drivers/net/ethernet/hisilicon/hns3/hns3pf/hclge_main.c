@@ -4014,7 +4014,7 @@ static void hclge_update_vport_alive(struct hclge_dev *hdev)
 	}
 }
 
-static void hclge_periodical_service_task(struct hclge_dev *hdev)
+static void hclge_periodic_service_task(struct hclge_dev *hdev)
 {
 	unsigned long delta = round_jiffies_relative(HZ);
 
@@ -4064,11 +4064,11 @@ static void hclge_service_task(struct work_struct *work)
 
 	hclge_reset_service_task(hdev);
 	hclge_mailbox_service_task(hdev);
-	hclge_periodical_service_task(hdev);
+	hclge_periodic_service_task(hdev);
 
 	/* Handle reset and mbx again in case periodical task delays the
 	 * handling by calling hclge_task_schedule() in
-	 * hclge_periodical_service_task().
+	 * hclge_periodic_service_task().
 	 */
 	hclge_reset_service_task(hdev);
 	hclge_mailbox_service_task(hdev);
