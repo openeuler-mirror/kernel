@@ -1559,9 +1559,6 @@ static int hclgevf_reset_tqp(struct hnae3_handle *handle, u16 queue_id)
 	struct hclge_vf_to_pf_msg send_msg;
 	int ret;
 
-	if (test_bit(HCLGEVF_STATE_RST_HANDLING, &hdev->state))
-		return 0;
-
 	/* disable vf queue before send queue reset msg to PF */
 	ret = hclgevf_tqp_enable(hdev, queue_id, 0, false);
 	if (ret)
