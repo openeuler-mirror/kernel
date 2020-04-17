@@ -453,7 +453,6 @@ retry:
 			clear_bit(BTREE_NODE_journal_flush, &b->flags);
 			mutex_unlock(&b->write_lock);
 			/* We raced */
-			atomic_long_inc(&c->retry_flush_write);
 			goto retry;
 		}
 
