@@ -940,7 +940,6 @@ struct hclge_vport {
 
 	u8 vf_vlan_en;
 	unsigned long vlan_del_fail_bmap[BITS_TO_LONGS(VLAN_N_VID)];
-	struct list_head vlan_list;     /* Store VF vlan table */
 	struct hclge_port_base_vlan_config port_base_vlan_cfg;
 	struct hclge_tx_vtag_cfg  txvlan_cfg;
 	struct hclge_rx_vtag_cfg  rxvlan_cfg;
@@ -955,14 +954,15 @@ struct hclge_vport {
 	unsigned long state;
 	unsigned long last_active_jiffies;
 	int mps; /* Max packet size */
+	struct hclge_vf_info vf_info;
 
 	u8 overflow_promisc_flags;
 	u8 last_promisc_flags;
-	struct hclge_vf_info vf_info;
 
 	spinlock_t mac_list_lock; /* protect mac address need to add/detele */
 	struct list_head uc_mac_list;   /* Store VF unicast table */
 	struct list_head mc_mac_list;   /* Store VF multicast table */
+	struct list_head vlan_list;     /* Store VF vlan table */
 };
 
 int hclge_set_vport_promisc_mode(struct hclge_vport *vport, bool en_uc_pmc,
@@ -1026,6 +1026,7 @@ void hclge_modify_mac_node_state(struct list_head *list, const u8 *addr,
 void hclge_rm_vport_all_mac_table(struct hclge_vport *vport, bool is_del_list,
 				  enum HCLGE_MAC_ADDR_TYPE mac_type);
 void hclge_rm_vport_all_vlan_table(struct hclge_vport *vport, bool is_del_list);
+void hclge_uninit_vport_vlan_table(struct hclge_dev *hdev);
 void hclge_restore_mac_table_common(struct hclge_vport *vport);
 void hclge_restore_vport_port_base_vlan_config(struct hclge_dev *hdev);
 void hclge_restore_vport_vlan_table(struct hclge_vport *vport);
