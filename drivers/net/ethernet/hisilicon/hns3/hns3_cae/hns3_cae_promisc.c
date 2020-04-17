@@ -26,10 +26,9 @@ int hns3_read_promisc_mode_cfg(const struct hns3_nic_priv *nic_dev,
 	vport = hns3_cae_get_vport(nic_dev->ae_handle);
 	hdev = vport->back;
 	req = (struct hclge_promisc_cfg_cmd *)desc.data;
-	req->vf_id = vport->vport_id;
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_PROMISC_MODE, true);
+	req->vf_id = vport->vport_id;
 	ret = hns3_cae_cmd_send(hdev, &desc, 1);
-	req = (struct hclge_promisc_cfg_cmd *)desc.data;
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Get promisc mode fail, ret is %d.\n", ret);
@@ -62,11 +61,10 @@ int hns3_set_promisc_mode_cfg(const struct hns3_nic_priv *nic_dev,
 	vport = hns3_cae_get_vport(nic_dev->ae_handle);
 	hdev = vport->back;
 	req = (struct hclge_promisc_cfg_cmd *)desc.data;
-	req->vf_id = vport->vport_id;
 	mode_param = (struct promisc_mode_param *)buf_in;
 	hns3_cae_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_PROMISC_MODE, true);
+	req->vf_id = vport->vport_id;
 	ret = hns3_cae_cmd_send(hdev, &desc, 1);
-	req = (struct hclge_promisc_cfg_cmd *)desc.data;
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Get promisc mode fail, ret is %d.\n", ret);

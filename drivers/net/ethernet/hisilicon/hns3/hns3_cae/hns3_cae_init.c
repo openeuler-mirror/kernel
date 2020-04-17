@@ -386,37 +386,14 @@ static int hns3_cae_k_open(struct inode *pnode, struct file *pfile)
 static ssize_t hns3_cae_k_read(struct file *pfile, char __user *ubuf,
 			       size_t size, loff_t *ppos)
 {
-	pr_info("%s read *ppos:%lld size = %d\n", __func__, *ppos, (int)size);
+	pr_info("%s read *ppos:%lld size = %lu\n", __func__, *ppos, size);
 	return 0;
 }
 
 static ssize_t hns3_cae_k_write(struct file *pfile, const char __user *ubuf,
 				size_t size, loff_t *ppos)
 {
-	pr_info("%s write *ppos:%lld size = %d\n", __func__, *ppos, (int)size);
-	return 0;
-}
-
-static int hns3_cae_k_mmap(struct file *filp, struct vm_area_struct *vma)
-{
-	phys_addr_t offset = (phys_addr_t)vma->vm_pgoff << PAGE_SHIFT;
-	size_t size = vma->vm_end - vma->vm_start;
-	int ret;
-
-	vma->vm_flags |= VM_IO;
-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-
-	if (offset + (phys_addr_t)size - 1 < offset)
-		return -EINVAL;
-
-	if (offset >> PAGE_SHIFT != vma->vm_pgoff)
-		return -EINVAL;
-
-	ret = remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
-			      size, vma->vm_page_prot);
-	if (ret)
-		return -EIO;
-
+	pr_info("%s write *ppos:%lld size = %lu\n", __func__, *ppos, size);
 	return 0;
 }
 
@@ -426,7 +403,6 @@ static const struct file_operations fifo_operations = {
 	.read = hns3_cae_k_read,
 	.write = hns3_cae_k_write,
 	.unlocked_ioctl = hns3_cae_k_unlocked_ioctl,
-	.mmap = hns3_cae_k_mmap,
 };
 
 static int if_hns3_cae_exist(void)
