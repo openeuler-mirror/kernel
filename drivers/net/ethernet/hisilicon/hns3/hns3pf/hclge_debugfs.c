@@ -1316,6 +1316,7 @@ static void hclge_dbg_dump_ncl_config(struct hclge_dev *hdev,
 static void hclge_dbg_dump_loopback(struct hclge_dev *hdev,
 				    const char *cmd_buf)
 {
+	struct phy_device *phydev = hdev->hw.mac.phydev;
 	struct hclge_config_mac_mode_cmd *req_app;
 	struct hclge_serdes_lb_cmd *req_serdes;
 	struct hclge_desc desc;
@@ -1356,6 +1357,10 @@ static void hclge_dbg_dump_loopback(struct hclge_dev *hdev,
 			HCLGE_CMD_SERDES_PARALLEL_INNER_LOOP_B;
 	dev_info(&hdev->pdev->dev, "serdes parallel loopback: %s\n",
 		 loopback_en ? "on" : "off");
+
+	if (phydev)
+		dev_info(&hdev->pdev->dev, "phy loopback: %s\n",
+			 phydev->loopback_enabled ? "on" : "off");
 }
 
 /* hclge_dbg_dump_mac_tnl_status: print message about mac tnl interrupt
