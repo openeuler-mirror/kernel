@@ -156,6 +156,7 @@ void hnae3_unregister_client(struct hnae3_client *client)
 
 	if (!existed) {
 		mutex_unlock(&hnae3_common_lock);
+		pr_err("client %s does not exist!\n", client->name);
 		return;
 	}
 
