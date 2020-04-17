@@ -13,6 +13,7 @@
 #include <linux/bitops.h>
 #include <linux/debugfs.h>
 #include <linux/init.h>
+#include <linux/iommu.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -20,6 +21,7 @@
 #include <linux/seq_file.h>
 #include <linux/topology.h>
 #include <linux/uacce.h>
+
 #include "rde.h"
 
 #define HRDE_QUEUE_NUM_V1	4096

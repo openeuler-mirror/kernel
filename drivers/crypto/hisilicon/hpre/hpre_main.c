@@ -435,8 +435,7 @@ static int hpre_current_qm_write(struct hpre_debugfs_file *file, u32 val)
 		vfq_num = (qm->ctrl_q_num - qm->qp_num) / num_vfs;
 		if (val == num_vfs) {
 			qm->debug.curr_qm_qp_num =
-				qm->ctrl_q_num - qm->qp_num -
-				(num_vfs - 1) * vfq_num;
+			qm->ctrl_q_num - qm->qp_num - (num_vfs - 1) * vfq_num;
 		} else {
 			qm->debug.curr_qm_qp_num = vfq_num;
 		}
@@ -592,7 +591,7 @@ static const struct file_operations hpre_ctrl_debug_fops = {
 static int hpre_create_debugfs_file(struct hpre_debug *dbg, struct dentry *dir,
 				    enum hpre_ctrl_dbgfs_file type, int indx)
 {
-	struct dentry *tmp, *file_dir;
+	struct dentry *file_dir;
 	struct hpre *hpre;
 
 	if (dir) {
@@ -609,10 +608,9 @@ static int hpre_create_debugfs_file(struct hpre_debug *dbg, struct dentry *dir,
 	dbg->files[indx].debug = dbg;
 	dbg->files[indx].type = type;
 	dbg->files[indx].index = indx;
-	tmp = debugfs_create_file(hpre_debug_file_name[type], 0600, file_dir,
-				  dbg->files + indx, &hpre_ctrl_debug_fops);
-	if (!tmp)
-		return -ENOENT;
+
+	debugfs_create_file(hpre_debug_file_name[type], 0600, file_dir,
+			    dbg->files + indx, &hpre_ctrl_debug_fops);
 
 	return 0;
 }
@@ -623,7 +621,6 @@ static int hpre_pf_comm_regs_debugfs_init(struct hpre_debug *debug)
 	struct hisi_qm *qm = &hpre->qm;
 	struct device *dev = &qm->pdev->dev;
 	struct debugfs_regset32 *regset;
-	struct dentry *tmp;
 
 	regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
 	if (!regset)
@@ -633,11 +630,7 @@ static int hpre_pf_comm_regs_debugfs_init(struct hpre_debug *debug)
 	regset->nregs = ARRAY_SIZE(hpre_com_dfx_regs);
 	regset->base = qm->io_base;
 
-	tmp = debugfs_create_regset32("regs", 0444,  qm->debug.debug_root,
-				      regset);
-	if (!tmp)
-		return -ENOENT;
-
+	debugfs_create_regset32("regs", 0444, qm->debug.debug_root, regset);
 	return 0;
 }
 
@@ -648,7 +641,7 @@ static int hpre_cluster_debugfs_init(struct hpre_debug *debug)
 	struct device *dev = &qm->pdev->dev;
 	char buf[HPRE_DBGFS_VAL_MAX_LEN];
 	struct debugfs_regset32 *regset;
-	struct dentry *tmp_d, *tmp;
+	struct dentry *tmp_d;
 	int i, ret;
 
 	for (i = 0; i < HPRE_CLUSTERS_NUM; i++) {
@@ -657,8 +650,6 @@ static int hpre_cluster_debugfs_init(struct hpre_debug *debug)
 			return -EINVAL;
 
 		tmp_d = debugfs_create_dir(buf, qm->debug.debug_root);
-		if (!tmp_d)
-			return -ENOENT;
 
 		regset = devm_kzalloc(dev, sizeof(*regset), GFP_KERNEL);
 		if (!regset)
@@ -668,9 +659,8 @@ static int hpre_cluster_debugfs_init(struct hpre_debug *debug)
 		regset->nregs = ARRAY_SIZE(hpre_cluster_dfx_regs);
 		regset->base = qm->io_base + hpre_cluster_offsets[i];
 
-		tmp = debugfs_create_regset32("regs", 0444, tmp_d, regset);
-		if (!tmp)
-			return -ENOENT;
+		debugfs_create_regset32("regs", 0444, tmp_d, regset);
+
 		ret = hpre_create_debugfs_file(debug, tmp_d, HPRE_CLUSTER_CTRL,
 					       i + HPRE_CLUSTER_CTRL);
 		if (ret)
@@ -705,14 +695,10 @@ static int hpre_debugfs_init(struct hisi_qm *qm)
 {
 	struct hpre *hpre = container_of(qm, struct hpre, qm);
 	struct device *dev = &qm->pdev->dev;
-	struct dentry *dir;
 	int ret;
 
-	dir = debugfs_create_dir(dev_name(dev), hpre_debugfs_root);
-	if (!dir)
-		return -ENOENT;
-
-	qm->debug.debug_root = dir;
+	qm->debug.debug_root = debugfs_create_dir(dev_name(dev),
+						  hpre_debugfs_root);
 
 	ret = hisi_qm_debug_init(qm);
 	if (ret)
@@ -728,6 +714,11 @@ static int hpre_debugfs_init(struct hisi_qm *qm)
 failed_to_create:
 	debugfs_remove_recursive(qm->debug.debug_root);
 	return ret;
+}
+
+static void hpre_debugfs_exit(struct hisi_qm *qm)
+{
+	debugfs_remove_recursive(qm->debug.debug_root);
 }
 
 static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
@@ -929,7 +920,8 @@ static void hpre_remove(struct pci_dev *pdev)
 		hpre_cnt_regs_clear(qm);
 		qm->debug.curr_qm_qp_num = 0;
 	}
-	debugfs_remove_recursive(qm->debug.debug_root);
+
+	hpre_debugfs_exit(qm);
 	hisi_qm_stop(qm, QM_NORMAL);
 
 	if (qm->fun_type == QM_HW_PF)
@@ -967,19 +959,23 @@ static void hpre_register_debugfs(void)
 		hpre_debugfs_root = NULL;
 }
 
+static void hpre_unregister_debugfs(void)
+{
+	debugfs_remove_recursive(hpre_debugfs_root);
+}
+
 static int __init hpre_init(void)
 {
 	int ret;
 
 	INIT_LIST_HEAD(&hpre_devices.list);
 	mutex_init(&hpre_devices.lock);
-	hpre_devices.check = NULL;
 
 	hpre_register_debugfs();
 
 	ret = pci_register_driver(&hpre_pci_driver);
 	if (ret) {
-		debugfs_remove_recursive(hpre_debugfs_root);
+		hpre_unregister_debugfs();
 		pr_err("hpre: can't register hisi hpre driver.\n");
 	}
 
@@ -989,7 +985,7 @@ static int __init hpre_init(void)
 static void __exit hpre_exit(void)
 {
 	pci_unregister_driver(&hpre_pci_driver);
-	debugfs_remove_recursive(hpre_debugfs_root);
+	hpre_unregister_debugfs();
 }
 
 module_init(hpre_init);

@@ -18,7 +18,6 @@ enum {
 	HPRE_CLUSTERS_NUM,
 };
 
-
 enum hpre_ctrl_dbgfs_file {
 	HPRE_CURRENT_QM,
 	HPRE_CLEAR_ENABLE,
