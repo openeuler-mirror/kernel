@@ -320,6 +320,12 @@ struct mod_kallsyms {
 };
 
 #ifdef CONFIG_LIVEPATCH
+enum MODULE_KLP_REL_STATE {
+	MODULE_KLP_REL_NONE = 0,
+	MODULE_KLP_REL_UNDO,
+	MODULE_KLP_REL_DONE,
+};
+
 struct klp_modinfo {
 	Elf_Ehdr hdr;
 	Elf_Shdr *sechdrs;
@@ -463,6 +469,19 @@ struct module {
 
 	/* Elf information */
 	struct klp_modinfo *klp_info;
+	/*
+	 * livepatch should relocate the key of jump_label by
+	 * using klp_write_module_reloc. So it's necessary to
+	 * do jump_label_apply_nops() and jump_label_add_module()
+	 * later after livepatch relocation finised.
+	 *
+	 * for normal module :
+	 *	always MODULE_KLP_REL_DONE.
+	 * for livepatch module :
+	 *	init as MODULE_KLP_REL_UNDO,
+	 *	set to MODULE_KLP_REL_DONE when relocate completed.
+	 */
+	enum MODULE_KLP_REL_STATE klp_rel_state;
 #endif
 
 #ifdef CONFIG_MODULE_UNLOAD
@@ -652,10 +671,27 @@ static inline bool is_livepatch_module(struct module *mod)
 {
 	return mod->klp;
 }
+
+static inline void set_mod_klp_rel_state(struct module *mod,
+			enum MODULE_KLP_REL_STATE state)
+{
+	mod->klp_rel_state = state;
+}
+
+static inline bool mod_klp_rel_completed(struct module *mod)
+{
+	return mod->klp_rel_state == MODULE_KLP_REL_NONE ||
+		mod->klp_rel_state == MODULE_KLP_REL_DONE;
+}
 #else /* !CONFIG_LIVEPATCH */
 static inline bool is_livepatch_module(struct module *mod)
 {
 	return false;
+}
+
+static inline bool mod_klp_rel_completed(struct module *mod)
+{
+	return true;
 }
 #endif /* CONFIG_LIVEPATCH */
 

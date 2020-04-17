@@ -2875,7 +2875,10 @@ static int check_modinfo_livepatch(struct module *mod, struct load_info *info)
 		add_taint_module(mod, TAINT_LIVEPATCH, LOCKDEP_STILL_OK);
 		pr_notice_once("%s: tainting kernel with TAINT_LIVEPATCH\n",
 			       mod->name);
-	}
+
+		set_mod_klp_rel_state(mod, MODULE_KLP_REL_UNDO);
+	} else
+		set_mod_klp_rel_state(mod, MODULE_KLP_REL_NONE);
 
 	return 0;
 }
