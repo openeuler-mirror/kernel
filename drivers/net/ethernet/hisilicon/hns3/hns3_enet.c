@@ -1150,8 +1150,9 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 		/* The txbd's baseinfo of DESC_TYPE_PAGE & DESC_TYPE_SKB */
 		desc_cb->priv = priv;
 		desc_cb->dma = dma + HNS3_MAX_BD_SIZE * k;
-		desc_cb->type = (type == DESC_TYPE_SKB && !k) ?
-				DESC_TYPE_SKB : DESC_TYPE_PAGE;
+		desc_cb->type = ((type == DESC_TYPE_FRAGLIST_SKB ||
+				  type == DESC_TYPE_SKB) && !k) ?
+				type : DESC_TYPE_PAGE;
 
 		/* now, fill the descriptor */
 		desc->addr = cpu_to_le64(dma + HNS3_MAX_BD_SIZE * k);
@@ -1363,7 +1364,9 @@ static void hns3_clear_desc(struct hns3_enet_ring *ring, int next_to_use_orig)
 		ring_ptr_move_bw(ring, next_to_use);
 
 		/* unmap the descriptor dma address */
-		if (ring->desc_cb[ring->next_to_use].type == DESC_TYPE_SKB)
+		if (ring->desc_cb[ring->next_to_use].type == DESC_TYPE_SKB ||
+		    ring->desc_cb[ring->next_to_use].type ==
+		    DESC_TYPE_FRAGLIST_SKB)
 			dma_unmap_single(dev,
 					 ring->desc_cb[ring->next_to_use].dma,
 					ring->desc_cb[ring->next_to_use].length,
