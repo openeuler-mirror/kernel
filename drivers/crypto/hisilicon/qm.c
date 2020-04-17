@@ -1591,10 +1591,12 @@ static int hisi_qm_stop_qp_nolock(struct hisi_qp *qp)
 
 	if (qp->qm->wq)
 		flush_workqueue(qp->qm->wq);
+	else
+		flush_work(&qp->qm->work);
 
 	/* wait for increase used count in qp send and last poll qp finish */
 	udelay(WAIT_PERIOD);
-	if (atomic_read(&qp->qp_status.used))
+	if (unlikely(qp->is_resetting && atomic_read(&qp->qp_status.used)))
 		qp_stop_fail_cb(qp);
 
 	dev_dbg(dev, "stop queue %u!", qp->qp_id);
