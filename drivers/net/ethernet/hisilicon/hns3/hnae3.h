@@ -81,6 +81,7 @@
 
 enum hns_desc_type {
 	DESC_TYPE_SKB,
+	DESC_TYPE_FRAGLIST_SKB,
 	DESC_TYPE_PAGE,
 };
 

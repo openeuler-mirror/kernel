@@ -1109,6 +1109,10 @@ static int hns3_fill_desc(struct hns3_enet_ring *ring, void *priv,
 			return ret;
 
 		dma = dma_map_single(dev, skb->data, size, DMA_TO_DEVICE);
+	} else if (type == DESC_TYPE_FRAGLIST_SKB) {
+		struct sk_buff *skb = (struct sk_buff *)priv;
+
+		dma = dma_map_single(dev, skb->data, size, DMA_TO_DEVICE);
 	} else {
 		frag = (struct skb_frag_struct *)priv;
 		dma = skb_frag_dma_map(dev, frag, 0, size, DMA_TO_DEVICE);
@@ -1452,7 +1456,8 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 		goto out;
 
 	skb_walk_frags(skb, frag_skb) {
-		ret = hns3_fill_skb_to_desc(ring, frag_skb, DESC_TYPE_PAGE);
+		ret = hns3_fill_skb_to_desc(ring, frag_skb,
+					    DESC_TYPE_FRAGLIST_SKB);
 		if (unlikely(ret < 0))
 			goto fill_err;
 
@@ -2408,7 +2413,7 @@ static int hns3_map_buffer(struct hns3_enet_ring *ring, struct hns3_desc_cb *cb)
 static void hns3_unmap_buffer(struct hns3_enet_ring *ring,
 			      struct hns3_desc_cb *cb)
 {
-	if (cb->type == DESC_TYPE_SKB)
+	if (cb->type == DESC_TYPE_SKB || cb->type == DESC_TYPE_FRAGLIST_SKB)
 		dma_unmap_single(ring_to_dev(ring), cb->dma, cb->length,
 				 ring_to_dma_dir(ring));
 	else if (cb->length)
