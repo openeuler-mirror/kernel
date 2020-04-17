@@ -509,6 +509,11 @@ static int hns_roce_table_mhop_get(struct hns_roce_dev *hr_dev,
 
 	mutex_lock(&table->mutex);
 
+	if (!table->hem) {
+		ret = -ENODEV;
+		goto out;
+	}
+
 	if (table->hem[hem_idx]) {
 		++table->hem[hem_idx]->refcount;
 		goto out;
@@ -646,6 +651,11 @@ int hns_roce_table_get(struct hns_roce_dev *hr_dev,
 
 	mutex_lock(&table->mutex);
 
+	if (!table->hem) {
+		ret = -ENODEV;
+		goto out;
+	}
+
 	if (table->hem[i]) {
 		++table->hem[i]->refcount;
 		goto out;
@@ -723,6 +733,11 @@ static void hns_roce_table_mhop_put(struct hns_roce_dev *hr_dev,
 
 	mutex_lock(&table->mutex);
 
+	if (!table->hem) {
+		mutex_unlock(&table->mutex);
+		return;
+	}
+
 	if (check_refcount && (--table->hem[hem_idx]->refcount > 0)) {
 		mutex_unlock(&table->mutex);
 		return;
@@ -797,6 +812,11 @@ void hns_roce_table_put(struct hns_roce_dev *hr_dev,
 
 	mutex_lock(&table->mutex);
 
+	if (!table->hem) {
+		mutex_unlock(&table->mutex);
+		return;
+	}
+
 	if (--table->hem[i]->refcount == 0) {
 		/* Clear HEM base address */
 		hr_dev->hw->clear_hem(hr_dev, table, obj, 0);
@@ -830,6 +850,11 @@ void *hns_roce_table_find(struct hns_roce_dev *hr_dev,
 
 	mutex_lock(&table->mutex);
 
+	if (!table->hem) {
+		mutex_unlock(&table->mutex);
+		return NULL;
+	}
+
 	if (!hns_roce_check_whether_mhop(hr_dev, table->type)) {
 		obj_per_chunk = table->table_chunk_size / table->obj_size;
 		hem = table->hem[(obj & (table->num_obj - 1)) / obj_per_chunk];
@@ -837,9 +862,9 @@ void *hns_roce_table_find(struct hns_roce_dev *hr_dev,
 		dma_offset = offset = idx_offset * table->obj_size;
 	} else {
 		u32 seg_size;
+
 		if (hns_roce_calc_hem_mhop(hr_dev, table, &mhop_obj, &mhop))
 			goto out;
-
 		/* mtt mhop */
 		i = mhop.l0_idx;
 		j = mhop.l1_idx;
@@ -1062,6 +1087,7 @@ static void hns_roce_cleanup_mhop_hem_table(struct hns_roce_dev *hr_dev,
 		}
 	}
 
+	mutex_lock(&table->mutex);
 	kfree(table->hem);
 	table->hem = NULL;
 	kfree(table->bt_l1);
@@ -1072,6 +1098,7 @@ static void hns_roce_cleanup_mhop_hem_table(struct hns_roce_dev *hr_dev,
 	table->bt_l0 = NULL;
 	kfree(table->bt_l0_dma_addr);
 	table->bt_l0_dma_addr = NULL;
+	mutex_unlock(&table->mutex);
 }
 
 void hns_roce_cleanup_hem_table(struct hns_roce_dev *hr_dev,
