@@ -7156,10 +7156,10 @@ static int hclge_remove_mac_vlan_tbl(struct hclge_vport *vport,
 					     HCLGE_MAC_VLAN_REMOVE);
 }
 
-static int hclge_lookup_mac_vlan_tbl(struct hclge_vport *vport,
-				     struct hclge_mac_vlan_tbl_entry_cmd *req,
-				     struct hclge_desc *desc,
-				     bool is_mc)
+static int
+hclge_lookup_mc_mac_vlan_tbl(struct hclge_vport *vport,
+			     struct hclge_mac_vlan_tbl_entry_cmd *req,
+			     struct hclge_desc *desc)
 {
 	struct hclge_dev *hdev = vport->back;
 	u8 resp_code;
@@ -7167,31 +7167,20 @@ static int hclge_lookup_mac_vlan_tbl(struct hclge_vport *vport,
 	int ret;
 
 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_MAC_VLAN_ADD, true);
-	if (is_mc) {
-		desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
-		memcpy(desc[0].data,
-		       req,
-		       sizeof(struct hclge_mac_vlan_tbl_entry_cmd));
-		hclge_cmd_setup_basic_desc(&desc[1],
-					   HCLGE_OPC_MAC_VLAN_ADD,
-					   true);
-		desc[1].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
-		hclge_cmd_setup_basic_desc(&desc[2],
-					   HCLGE_OPC_MAC_VLAN_ADD,
-					   true);
-		ret = hclge_cmd_send(&hdev->hw, desc, 3);
-	} else {
-		memcpy(desc[0].data,
-		       req,
-		       sizeof(struct hclge_mac_vlan_tbl_entry_cmd));
-		ret = hclge_cmd_send(&hdev->hw, desc, 1);
-	}
+	desc[0].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+	memcpy(desc[0].data, req, sizeof(struct hclge_mac_vlan_tbl_entry_cmd));
+	hclge_cmd_setup_basic_desc(&desc[1], HCLGE_OPC_MAC_VLAN_ADD, true);
+	desc[1].flag |= cpu_to_le16(HCLGE_CMD_FLAG_NEXT);
+	hclge_cmd_setup_basic_desc(&desc[2], HCLGE_OPC_MAC_VLAN_ADD, true);
+
+	ret = hclge_cmd_send(&hdev->hw, desc, 3);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"lookup mac addr failed for cmd_send, ret =%d.\n",
 			ret);
 		return ret;
 	}
+
 	resp_code = (le32_to_cpu(desc[0].data[0]) >> 8) & 0xff;
 	retval = le16_to_cpu(desc[0].retval);
 
@@ -7464,7 +7453,6 @@ int hclge_add_uc_addr_common(struct hclge_vport *vport,
 {
 	struct hclge_dev *hdev = vport->back;
 	struct hclge_mac_vlan_tbl_entry_cmd req;
-	struct hclge_desc desc;
 	u16 egress_port = 0;
 	int ret;
 
@@ -7489,42 +7477,22 @@ int hclge_add_uc_addr_common(struct hclge_vport *vport,
 
 	hclge_prepare_mac_addr(&req, addr, false);
 
-	/* Lookup the mac address in the mac_vlan table, and add
-	 * it if the entry is inexistent. Repeated unicast entry
-	 * is not allowed in the mac vlan table.
-	 */
-	ret = hclge_lookup_mac_vlan_tbl(vport, &req, &desc, false);
-	if (ret == -ENOENT) {
-		mutex_lock(&hdev->vport_lock);
-		if (!hclge_is_umv_space_full(vport, false)) {
-			ret = hclge_add_mac_vlan_tbl(vport, &req, NULL);
-			if (!ret)
-				hclge_update_umv_space(vport, false);
+	mutex_lock(&hdev->vport_lock);
+	if (!hclge_is_umv_space_full(vport, false)) {
+		ret = hclge_add_mac_vlan_tbl(vport, &req, NULL);
+		if (!ret)
+			hclge_update_umv_space(vport, false);
 
-			mutex_unlock(&hdev->vport_lock);
-			return ret;
-		}
 		mutex_unlock(&hdev->vport_lock);
-
-		if (!(vport->overflow_promisc_flags & HNAE3_OVERFLOW_UPE))
-			dev_err(&hdev->pdev->dev, "UC MAC table full(%u)\n",
-				hdev->priv_umv_size);
-
-		return -ENOSPC;
+		return ret;
 	}
+	mutex_unlock(&hdev->vport_lock);
 
-	/* check if we just hit the duplicate */
-	if (!ret) {
-		dev_warn(&hdev->pdev->dev, "VF %u mac(%pM) exists\n",
-			 vport->vport_id, addr);
-		return 0;
-	}
+	if (!(vport->overflow_promisc_flags & HNAE3_OVERFLOW_UPE))
+		dev_err(&hdev->pdev->dev, "UC MAC table full(%u)\n",
+			hdev->priv_umv_size);
 
-	dev_err(&hdev->pdev->dev,
-		"PF failed to add unicast entry(%pM) in the MAC table\n",
-		addr);
-
-	return ret;
+	return -ENOSPC;
 }
 
 static int hclge_rm_uc_addr(struct hnae3_handle *handle,
@@ -7593,7 +7561,7 @@ int hclge_add_mc_addr_common(struct hclge_vport *vport,
 	}
 	memset(&req, 0, sizeof(req));
 	hclge_prepare_mac_addr(&req, addr, true);
-	status = hclge_lookup_mac_vlan_tbl(vport, &req, desc, true);
+	status = hclge_lookup_mc_mac_vlan_tbl(vport, &req, desc);
 	if (status) {
 		/* This mac addr do not exist, add new entry for it */
 		memset(desc[0].data, 0, sizeof(desc[0].data));
@@ -7641,7 +7609,7 @@ int hclge_rm_mc_addr_common(struct hclge_vport *vport,
 
 	memset(&req, 0, sizeof(req));
 	hclge_prepare_mac_addr(&req, addr, true);
-	status = hclge_lookup_mac_vlan_tbl(vport, &req, desc, true);
+	status = hclge_lookup_mc_mac_vlan_tbl(vport, &req, desc);
 	if (!status) {
 		/* This mac addr exist, remove this handle's VFID for it */
 		status = hclge_update_desc_vfid(desc, vport->vport_id, true);
