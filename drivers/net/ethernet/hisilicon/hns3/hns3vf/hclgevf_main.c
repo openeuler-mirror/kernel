@@ -1868,10 +1868,6 @@ static void hclgevf_reset_event(struct pci_dev *pdev,
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
 	struct hclgevf_dev *hdev = ae_dev->priv;
 
-	if (time_before(jiffies, (hdev->last_reset_time +
-				  HCLGEVF_RESET_TASK_INTERVAL * HZ)))
-		return;
-
 	dev_info(&hdev->pdev->dev, "received reset request from VF enet\n");
 
 	if (hdev->default_reset_request)
