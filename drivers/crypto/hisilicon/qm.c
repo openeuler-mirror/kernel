@@ -189,6 +189,9 @@
 #define AM_ROB_ECC_INT_STS		0x300104
 #define ROB_ECC_ERR_MULTPL		BIT(1)
 
+#define QM_RESET_STOP_TX_OFFSET 1
+#define QM_RESET_STOP_RX_OFFSET 2
+
 #define QM_DBG_READ_LEN 256
 #define QM_DBG_WRITE_LEN 1024
 #define QM_DBG_SHOW_SHIFT 16
@@ -1725,7 +1728,7 @@ static int hisi_qm_get_available_instances(struct uacce *uacce)
 	return hisi_qm_get_free_qp_num(uacce->priv);
 }
 
-static void hisi_qm_set_hw_reset(struct hisi_qm *qm)
+static void hisi_qm_set_hw_reset(struct hisi_qm *qm, int offset)
 {
 	struct hisi_qp *qp;
 	u32 *addr;
@@ -1735,7 +1738,7 @@ static void hisi_qm_set_hw_reset(struct hisi_qm *qm)
 		qp = qm->qp_array[i];
 		if (qp) {
 			/* Use last 32 bits of DUS to save reset status. */
-			addr = (u32 *)(qp->qdma.va + qp->qdma.size) - 1;
+			addr = (u32 *)(qp->qdma.va + qp->qdma.size) - offset;
 			*addr = 1;
 
 			/* make sure setup is completed */
@@ -2609,11 +2612,14 @@ int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r)
 
 	if (qm->status.stop_reason == QM_SOFT_RESET ||
 	    qm->status.stop_reason == QM_FLR) {
+#ifdef CONFIG_CRYPTO_QM_UACCE
+		hisi_qm_set_hw_reset(qm, QM_RESET_STOP_TX_OFFSET);
+#endif
 		ret = qm_stop_started_qp(qm);
 		if (ret < 0)
 			goto err_unlock;
 #ifdef CONFIG_CRYPTO_QM_UACCE
-		hisi_qm_set_hw_reset(qm);
+		hisi_qm_set_hw_reset(qm, QM_RESET_STOP_RX_OFFSET);
 #endif
 	}
 
