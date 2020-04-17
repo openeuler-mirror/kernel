@@ -378,6 +378,7 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 				    struct hclge_mbx_vf_to_pf_cmd *mbx_req)
 {
 #define HCLGE_MBX_VF_OLD_MAC_ADDR_OFFSET	6
+
 	const u8 *mac_addr = (const u8 *)(mbx_req->msg.data);
 	struct hclge_dev *hdev = vport->back;
 	int status = 0;
@@ -421,6 +422,7 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 			mbx_req->msg.subcode);
 		return -EIO;
 	}
+
 	return status;
 }
 
@@ -529,6 +531,7 @@ static void hclge_get_vf_queue_info(struct hclge_vport *vport,
 #define HCLGE_TQPS_ALLOC_OFFSET		0
 #define HCLGE_TQPS_RSS_SIZE_OFFSET	2
 #define HCLGE_TQPS_RX_BUFFER_LEN_OFFSET	4
+
 	struct hclge_dev *hdev = vport->back;
 
 	/* get the queue related info */
@@ -554,6 +557,7 @@ static void hclge_get_vf_queue_depth(struct hclge_vport *vport,
 #define HCLGE_TQPS_DEPTH_INFO_LEN	4
 #define HCLGE_TQPS_NUM_TX_DESC_OFFSET	0
 #define HCLGE_TQPS_NUM_RX_DESC_OFFSET	2
+
 	struct hclge_dev *hdev = vport->back;
 
 	/* get the queue depth info */
