@@ -2097,7 +2097,7 @@ static void hclgevf_keep_alive(struct hclgevf_dev *hdev)
 			"VF sends keep alive cmd failed(=%d)\n", ret);
 }
 
-static void hclgevf_periodical_service_task(struct hclgevf_dev *hdev)
+static void hclgevf_periodic_service_task(struct hclgevf_dev *hdev)
 {
 	unsigned long delta = round_jiffies_relative(HZ);
 	struct hnae3_handle *handle = &hdev->nic;
@@ -2149,11 +2149,11 @@ static void hclgevf_service_task(struct work_struct *work)
 
 	hclgevf_reset_service_task(hdev);
 	hclgevf_mailbox_service_task(hdev);
-	hclgevf_periodical_service_task(hdev);
+	hclgevf_periodic_service_task(hdev);
 
 	/* Handle reset and mbx again in case periodical task delays the
 	 * handling by calling hclgevf_task_schedule() in
-	 * hclgevf_periodical_service_task()
+	 * hclgevf_periodic_service_task()
 	 */
 	hclgevf_reset_service_task(hdev);
 	hclgevf_mailbox_service_task(hdev);
