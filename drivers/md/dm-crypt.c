@@ -563,14 +563,8 @@ static int crypt_iv_essiv_gen(struct geniv_ctx *ctx,
 
 static int crypt_iv_benbi_ctr(struct geniv_ctx *ctx)
 {
-	unsigned bs;
-	int log;
-
-	if (test_bit(CRYPT_MODE_INTEGRITY_AEAD, &ctx->cipher_flags))
-		bs = crypto_aead_blocksize(ctx->tfms.tfms_aead[0]);
-	else
-		bs = crypto_skcipher_blocksize(ctx->tfms.tfms[0]);
-	log = ilog2(bs);
+	unsigned int bs = crypto_skcipher_blocksize(ctx->tfms.tfms[0]);
+	int log = ilog2(bs);
 
 	/* we need to calculate how far we must shift the sector count
 	 * to get the cipher block count, we use this shift in _gen */
