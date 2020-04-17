@@ -3358,9 +3358,18 @@ static void hclgevf_get_regs(struct hnae3_handle *handle, u32 *version,
 void hclgevf_update_port_base_vlan_info(struct hclgevf_dev *hdev, u16 state,
 					u8 *port_base_vlan_info, u8 data_size)
 {
+#define	MAX_LENGTH_OF_PORT_BASE_VLAN_INFO	8U
 	struct hnae3_handle *nic = &hdev->nic;
 	struct hclge_vf_to_pf_msg send_msg;
 	int ret;
+
+	if (data_size > MAX_LENGTH_OF_PORT_BASE_VLAN_INFO) {
+		dev_info(&hdev->pdev->dev,
+			 "the VF info len %u exceeds max len %u\n",
+			 data_size, MAX_LENGTH_OF_PORT_BASE_VLAN_INFO);
+		/* If data_size is too long, set the value to max length */
+		data_size = MAX_LENGTH_OF_PORT_BASE_VLAN_INFO;
+	}
 
 	rtnl_lock();
 
