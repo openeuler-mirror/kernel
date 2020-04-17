@@ -530,6 +530,9 @@ void jump_label_apply_nops(struct module *mod)
 	struct jump_entry *iter_stop = iter_start + mod->num_jump_entries;
 	struct jump_entry *iter;
 
+	if (unlikely(!mod_klp_rel_completed(mod)))
+		return;
+
 	/* if the module doesn't have jump label entries, just return */
 	if (iter_start == iter_stop)
 		return;
@@ -548,6 +551,9 @@ static int jump_label_add_module(struct module *mod)
 	struct jump_entry *iter;
 	struct static_key *key = NULL;
 	struct static_key_mod *jlm, *jlm2;
+
+	if (unlikely(!mod_klp_rel_completed(mod)))
+		return 0;
 
 	/* if the module doesn't have jump label entries, just return */
 	if (iter_start == iter_stop)
@@ -698,6 +704,16 @@ static struct notifier_block jump_label_module_nb = {
 	.notifier_call = jump_label_module_notify,
 	.priority = 1, /* higher than tracepoints */
 };
+
+int jump_label_register(struct module *mod)
+{
+	int ret;
+
+	ret = jump_label_module_notify(&jump_label_module_nb,
+			MODULE_STATE_COMING, mod);
+
+	return notifier_to_errno(ret);
+}
 
 static __init int jump_label_init_module(void)
 {

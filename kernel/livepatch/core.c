@@ -1074,9 +1074,16 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 	}
 
 	arch_klp_init_object_loaded(patch, obj);
+
+	set_mod_klp_rel_state(patch->mod, MODULE_KLP_REL_DONE);
+	jump_label_apply_nops(patch->mod);
 	module_enable_ro(patch->mod, true);
 
 	mutex_unlock(&text_mutex);
+
+	ret = jump_label_register(patch->mod);
+	if (ret)
+		return ret;
 
 	klp_for_each_func(obj, func) {
 		ret = klp_find_object_symbol(obj->name, func->old_name,
