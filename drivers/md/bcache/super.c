@@ -1195,6 +1195,7 @@ int bch_cached_dev_attach(struct cached_dev *dc, struct cache_set *c,
 	return 0;
 }
 
+/* when dc->disk.kobj released */
 void bch_cached_dev_release(struct kobject *kobj)
 {
 	struct cached_dev *dc = container_of(kobj, struct cached_dev,
@@ -1345,6 +1346,7 @@ err:
 
 /* Flash only volumes */
 
+/* When d->kobj released */
 void bch_flash_dev_release(struct kobject *kobj)
 {
 	struct bcache_device *d = container_of(kobj, struct bcache_device,
@@ -1498,6 +1500,7 @@ bool bch_cache_set_error(struct cache_set *c, const char *fmt, ...)
 	return true;
 }
 
+/* When c->kobj released */
 void bch_cache_set_release(struct kobject *kobj)
 {
 	struct cache_set *c = container_of(kobj, struct cache_set, kobj);
@@ -2032,6 +2035,7 @@ err:
 
 /* Cache device */
 
+/* When ca->kobj released */
 void bch_cache_release(struct kobject *kobj)
 {
 	struct cache *ca = container_of(kobj, struct cache, kobj);
