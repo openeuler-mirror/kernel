@@ -7120,7 +7120,6 @@ static void hclge_prepare_mac_addr(struct hclge_mac_vlan_tbl_entry_cmd *new_req,
 
 	hnae3_set_bit(new_req->flags, HCLGE_MAC_VLAN_BIT0_EN_B, 1);
 	if (is_mc) {
-		hnae3_set_bit(new_req->entry_type, HCLGE_MAC_VLAN_BIT0_EN_B, 0);
 		hnae3_set_bit(new_req->entry_type, HCLGE_MAC_VLAN_BIT1_EN_B, 1);
 		hnae3_set_bit(new_req->mc_mac_en, HCLGE_MAC_VLAN_BIT0_EN_B, 1);
 	}
