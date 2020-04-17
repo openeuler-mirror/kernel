@@ -5919,11 +5919,10 @@ static void hclge_del_all_fd_entries(struct hnae3_handle *handle,
 		hlist_for_each_entry_safe(rule, node, &hdev->fd_rule_list,
 					  rule_node) {
 			hlist_del(&rule->rule_node);
-			clear_bit(rule->location, hdev->fd_bmap);
 			kfree(rule);
-			hdev->hclge_fd_rule_num--;
 		}
 		hdev->fd_active_type = HCLGE_FD_RULE_NONE;
+		hdev->hclge_fd_rule_num = 0;
 		bitmap_zero(hdev->fd_bmap,
 			    hdev->fd_cfg.rule_num[HCLGE_FD_STAGE_1]);
 	}
