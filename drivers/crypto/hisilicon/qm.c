@@ -1389,6 +1389,7 @@ static int qm_sq_ctx_cfg(struct hisi_qp *qp, int qp_id, int pasid)
 	sqc->w13 = cpu_to_le16(QM_MK_SQC_W13(0, 1, qp->alg_type));
 
 	ret = qm_mb(qm, QM_MB_CMD_SQC, sqc_dma, qp_id, 0);
+
 	dma_unmap_single(dev, sqc_dma, sizeof(struct qm_sqc), DMA_TO_DEVICE);
 	kfree(sqc);
 
@@ -1598,7 +1599,7 @@ static int hisi_qm_stop_qp_nolock(struct hisi_qp *qp)
 	else
 		flush_work(&qp->qm->work);
 
-	/* wait for increase used count in qp send and last poll qp finish */
+	/* waiting for increase used count in qp send and last poll qp finish */
 	udelay(WAIT_PERIOD);
 	if (unlikely(qp->is_resetting && atomic_read(&qp->qp_status.used)))
 		qp_stop_fail_cb(qp);
