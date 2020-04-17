@@ -5755,6 +5755,12 @@ static int hclge_fd_config_rule(struct hclge_dev *hdev,
 {
 	int ret;
 
+	if (!rule) {
+		dev_err(&hdev->pdev->dev,
+			"The flow director rule is NULL\n");
+		return -EINVAL;
+	}
+
 	/* it will never fail here, so needn't to check return value */
 	hclge_fd_update_rule_list(hdev, rule, rule->location, true);
 
