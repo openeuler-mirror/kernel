@@ -1165,13 +1165,6 @@ struct roce_hem_item {
 	int end; /* end buf offset in this hem */
 };
 
-#define hem_list_for_each(pos, n, head) \
-		list_for_each_entry_safe(pos, n, head, list)
-
-#define hem_list_del_item(hem)		list_del(&hem->list)
-#define hem_list_add_item(hem, head)	list_add(&hem->list, head)
-#define hem_list_link_item(hem, head)	list_add(&hem->sibling, head)
-
 static struct roce_hem_item *hem_list_alloc_item(struct hns_roce_dev *hr_dev,
 						   int start, int end,
 						   int count, bool exist_bt,
@@ -1216,8 +1209,8 @@ static void hem_list_free_all(struct hns_roce_dev *hr_dev,
 {
 	struct roce_hem_item *hem, *temp_hem;
 
-	hem_list_for_each(hem, temp_hem, head) {
-		hem_list_del_item(hem);
+	list_for_each_entry_safe(hem, temp_hem, head, list) {
+		list_del(&hem->list);
 		hem_list_free_item(hr_dev, hem, exist_bt);
 	}
 }
@@ -1249,7 +1242,7 @@ static struct roce_hem_item *hem_list_search_item(struct list_head *ba_list,
 	struct roce_hem_item *hem, *temp_hem;
 	struct roce_hem_item *found = NULL;
 
-	hem_list_for_each(hem, temp_hem, ba_list) {
+	list_for_each_entry_safe(hem, temp_hem, ba_list, list) {
 		if (hem_list_page_is_in_range(hem, page_offset)) {
 			found = hem;
 			break;
@@ -1391,9 +1384,9 @@ static int hem_list_alloc_mid_bt(struct hns_roce_dev *hr_dev,
 			goto err_exit;
 		}
 		hem_ptrs[level] = cur;
-		hem_list_add_item(cur, &temp_list[level]);
+		list_add(&cur->list, &temp_list[level]);
 		if (hem_list_is_bottom_bt(hopnum, level))
-			hem_list_link_item(cur, &temp_list[0]);
+			list_add(&cur->sibling, &temp_list[0]);
 
 		/* link bt to parent bt */
 		if (level > 1) {
@@ -1430,6 +1423,7 @@ static int hem_list_alloc_root_bt(struct hns_roce_dev *hr_dev,
 	void *cpu_base;
 	u64 phy_base;
 	int ret = 0;
+	int ba_num;
 	int offset;
 	int total;
 	int step;
@@ -1440,15 +1434,19 @@ static int hem_list_alloc_root_bt(struct hns_roce_dev *hr_dev,
 	if (root_hem)
 		return 0;
 
+	ba_num = hns_roce_hem_list_calc_root_ba(regions, region_cnt, unit);
+	if (ba_num < 1)
+		return -ENOMEM;
+
 	INIT_LIST_HEAD(&temp_root);
-	total = r->offset;
+	offset = r->offset;
 	/* indicate to last region */
 	r = &regions[region_cnt - 1];
-	root_hem = hem_list_alloc_item(hr_dev, total, r->offset + r->count - 1,
-				       unit, true, 0);
+	root_hem = hem_list_alloc_item(hr_dev, offset, r->offset + r->count - 1,
+		ba_num, true, 0);
 	if (!root_hem)
 		return -ENOMEM;
-	hem_list_add_item(root_hem, &temp_root);
+	list_add(&root_hem->list, &temp_root);
 
 	hem_list->root_ba = root_hem->dma_addr;
 
@@ -1457,7 +1455,7 @@ static int hem_list_alloc_root_bt(struct hns_roce_dev *hr_dev,
 		INIT_LIST_HEAD(&temp_list[i]);
 
 	total = 0;
-	for (i = 0; i < region_cnt && total < unit; i++) {
+	for (i = 0; i < region_cnt && total < ba_num; i++) {
 		r = &regions[i];
 		if (!r->count)
 			continue;
@@ -1478,8 +1476,8 @@ static int hem_list_alloc_root_bt(struct hns_roce_dev *hr_dev,
 				goto err_exit;
 			}
 			hem_list_assign_bt(hr_dev, hem, cpu_base, phy_base);
-			hem_list_add_item(hem, &temp_list[i]);
-			hem_list_link_item(hem, &temp_btm);
+			list_add(&hem->list, &temp_list[i]);
+			list_add(&hem->sibling, &temp_btm);
 			total += r->count;
 		} else {
 			step = hem_list_calc_ba_range(r->hopnum, 1, unit);
@@ -1488,9 +1486,10 @@ static int hem_list_alloc_root_bt(struct hns_roce_dev *hr_dev,
 				goto err_exit;
 			}
 			/* if exist mid bt, link L1 to L0 */
-			hem_list_for_each(hem, temp_hem,
-					  &hem_list->mid_bt[i][1]) {
-				offset = hem->start / step * BA_BYTE_LEN;
+			list_for_each_entry_safe(hem, temp_hem,
+			    &hem_list->mid_bt[i][1], list) {
+				offset = ((hem->start - r->offset) / step) *
+						 BA_BYTE_LEN;
 				hem_list_link_bt(hr_dev, cpu_base + offset,
 						 hem->dma_addr);
 				total++;
