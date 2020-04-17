@@ -1092,6 +1092,7 @@ static int hclge_dbg_get_rules_location(struct hclge_dev *hdev, u16 *rule_locs)
 
 	if (cnt != hdev->hclge_fd_rule_num)
 		return -EINVAL;
+
 	return cnt;
 }
 

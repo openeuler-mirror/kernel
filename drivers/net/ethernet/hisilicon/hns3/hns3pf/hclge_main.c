@@ -6562,6 +6562,7 @@ static void hclge_phy_link_status_wait(struct hclge_dev *hdev,
 
 		if (phydev->link == link_ret)
 			break;
+
 		msleep(HCLGE_LINK_STATUS_MS);
 	} while (++i < HCLGE_PHY_LINK_STATUS_NUM);
 }
