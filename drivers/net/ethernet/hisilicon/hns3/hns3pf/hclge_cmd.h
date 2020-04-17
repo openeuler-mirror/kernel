@@ -806,7 +806,10 @@ struct hclge_vlan_filter_ctrl_cmd {
 	u8 rsv2[19];
 };
 
-#define	HCLGE_VLAN_OFFSET_BITMAP	20
+#define HCLGE_VLAN_ID_OFFSET_STEP	160
+#define HCLGE_VLAN_BYTE_SIZE		8
+#define	HCLGE_VLAN_OFFSET_BITMAP \
+	(HCLGE_VLAN_ID_OFFSET_STEP / HCLGE_VLAN_BYTE_SIZE)
 struct hclge_vlan_filter_pf_cfg_cmd {
 	u8 vlan_offset;
 	u8 vlan_cfg;

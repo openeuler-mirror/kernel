@@ -119,9 +119,6 @@
 #define HCLGE_DEFAULT_UMV_SPACE_PER_PF \
 	(HCLGE_UMV_TBL_SIZE / HCLGE_MAX_PF_NUM)
 
-#define HCLGE_VLAN_ID_OFFSET_STEP	160
-#define HCLGE_VLAN_BYTE_SIZE		8
-
 #define HCLGE_TQP_RESET_TRY_TIMES	200
 
 #define HCLGE_PHY_PAGE_MDIX		0
@@ -146,7 +143,6 @@
 
 /* Factor used to calculate offset and bitmap of VF num */
 #define HCLGE_VF_NUM_PER_CMD           64
-#define HCLGE_VF_NUM_PER_BYTE          8
 
 enum HLCGE_PORT_TYPE {
 	HOST_PORT,
