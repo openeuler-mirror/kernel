@@ -72,7 +72,7 @@ static int hclge_restore_hw_table(struct hclge_dev *hdev);
 static void hclge_sync_promisc_mode(struct hclge_dev *hdev);
 static int hclge_vf_vlan_filter_switch(struct hclge_vport *vport);
 
-struct hnae3_ae_algo ae_algo;
+static struct hnae3_ae_algo ae_algo;
 
 static struct workqueue_struct *hclge_wq;
 
@@ -10751,8 +10751,8 @@ static int hclge_set_channels(struct hnae3_handle *handle, u32 new_tqps_num,
 	u16 tc_offset[HCLGE_MAX_TC_NUM] = {0};
 	struct hclge_dev *hdev = vport->back;
 	u16 tc_size[HCLGE_MAX_TC_NUM] = {0};
-	int cur_rss_size = kinfo->rss_size;
-	int cur_tqps = kinfo->num_tqps;
+	u16 cur_rss_size = kinfo->rss_size;
+	u16 cur_tqps = kinfo->num_tqps;
 	u16 tc_valid[HCLGE_MAX_TC_NUM];
 	u16 roundup_size;
 	u32 *rss_indir;
@@ -10806,7 +10806,7 @@ static int hclge_set_channels(struct hnae3_handle *handle, u32 new_tqps_num,
 out:
 	if (!ret)
 		dev_info(&hdev->pdev->dev,
-			 "Channels changed, rss_size from %d to %u, tqps from %d to %u",
+			 "Channels changed, rss_size from %u to %u, tqps from %u to %u",
 			 cur_rss_size, kinfo->rss_size,
 			 cur_tqps, kinfo->rss_size * kinfo->num_tc);
 
@@ -11545,7 +11545,7 @@ struct hnae3_ae_ops hclge_ops = {
 	.get_module_eeprom = hclge_get_module_eeprom,
 };
 
-struct hnae3_ae_algo ae_algo = {
+static struct hnae3_ae_algo ae_algo = {
 	.ops = &hclge_ops,
 	.pdev_id_table = ae_algo_pci_tbl,
 };
