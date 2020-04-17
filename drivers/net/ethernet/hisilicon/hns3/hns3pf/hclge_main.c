@@ -11528,7 +11528,7 @@ int hclge_init(void)
 
 	hclge_wq = alloc_workqueue("%s", WQ_MEM_RECLAIM, 0, HCLGE_NAME);
 	if (!hclge_wq) {
-		pr_err("%s: Failed to create workqueue\n", HCLGE_NAME);
+		pr_err("%s: failed to create workqueue\n", HCLGE_NAME);
 		return -ENOMEM;
 	}
 

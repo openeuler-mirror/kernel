@@ -830,7 +830,7 @@ static void hclge_dbg_dump_qos_buf_cfg(struct hclge_dev *hdev)
 
 err_qos_cmd_send:
 	dev_err(&hdev->pdev->dev,
-		"dump qos buf cfg fail(0x%x), ret =  %d\n", cmd, ret);
+		"dump qos buf cfg fail(0x%x), ret = %d\n", cmd, ret);
 }
 
 static void hclge_dbg_dump_mac_table(struct hclge_dev *hdev)
@@ -1118,8 +1118,8 @@ static void hclge_dbg_fd_tcam(struct hclge_dev *hdev)
 
 	rule_cnt = hclge_dbg_get_rules_location(hdev, rule_locs);
 	if (rule_cnt <= 0) {
-		dev_err(&hdev->pdev->dev, "get error rule number, ret = %d\n",
-			rule_cnt);
+		dev_err(&hdev->pdev->dev,
+			"failed to get rule number, ret = %d\n", rule_cnt);
 		kfree(rule_locs);
 		return;
 	}
@@ -1128,7 +1128,7 @@ static void hclge_dbg_fd_tcam(struct hclge_dev *hdev)
 		ret = hclge_dbg_fd_tcam_read(hdev, 0, true, rule_locs[i]);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
-				"get fd tcam key x failed, ret = %d\n", ret);
+				"failed to get fd tcam key x, ret = %d\n", ret);
 			kfree(rule_locs);
 			return;
 		}
@@ -1136,7 +1136,7 @@ static void hclge_dbg_fd_tcam(struct hclge_dev *hdev)
 		ret = hclge_dbg_fd_tcam_read(hdev, 0, false, rule_locs[i]);
 		if (ret) {
 			dev_err(&hdev->pdev->dev,
-				"get fd tcam key y failed, ret = %d\n", ret);
+				"failed to get fd tcam key y, ret = %d\n", ret);
 			kfree(rule_locs);
 			return;
 		}
