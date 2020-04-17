@@ -39,12 +39,14 @@ struct sec_req {
 	struct sec_qp_ctx *qp_ctx;
 
 	struct sec_cipher_req c_req;
+	struct list_head backlog_head;
 
 	int err_type;
 	int req_id;
 
 	/* Status of the SEC request */
 	bool fake_busy;
+	bool use_pbuf;
 };
 
 /**
@@ -86,10 +88,11 @@ struct sec_qp_ctx {
 	struct sec_alg_res res[QM_Q_DEPTH];
 	struct sec_ctx *ctx;
 	struct mutex req_lock;
+	struct list_head backlog;
 	struct hisi_acc_sgl_pool *c_in_pool;
 	struct hisi_acc_sgl_pool *c_out_pool;
-	atomic_t pending_reqs;
 };
+
 enum sec_alg_type {
 	SEC_SKCIPHER,
 	SEC_AEAD
@@ -116,7 +119,6 @@ struct sec_ctx {
 
 	enum sec_alg_type alg_type;
 	bool pbuf_supported;
-	bool use_pbuf;
 	struct sec_cipher_ctx c_ctx;
 };
 
@@ -141,6 +143,11 @@ struct sec_debug_file {
 struct sec_dfx {
 	atomic64_t send_cnt;
 	atomic64_t recv_cnt;
+	atomic64_t send_busy_cnt;
+	atomic64_t recv_busy_cnt;
+	atomic64_t err_bd_cnt;
+	atomic64_t invalid_req_cnt;
+	atomic64_t done_flag_cnt;
 };
 
 struct sec_debug {

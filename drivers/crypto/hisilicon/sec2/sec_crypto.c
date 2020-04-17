@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0+
-/* Copyright (c) 2018-2019 HiSilicon Limited. */
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright (c) 2019 HiSilicon Limited. */
 
 #include <crypto/aes.h>
 #include <crypto/algapi.h>
@@ -123,6 +123,7 @@ static void sec_free_req_id(struct sec_req *req)
 static void sec_req_cb(struct hisi_qp *qp, void *resp)
 {
 	struct sec_qp_ctx *qp_ctx = qp->qp_ctx;
+	struct sec_dfx *dfx = &qp_ctx->ctx->sec->debug.dfx;
 	struct sec_sqe *bd = resp;
 	struct sec_ctx *ctx;
 	struct sec_req *req;
@@ -132,12 +133,14 @@ static void sec_req_cb(struct hisi_qp *qp, void *resp)
 
 	type = bd->type_cipher_auth & SEC_TYPE_MASK;
 	if (unlikely(type != SEC_BD_TYPE2)) {
+		atomic64_inc(&dfx->err_bd_cnt);
 		pr_err("err bd type [%d]\n", type);
 		return;
 	}
 
 	req = qp_ctx->req_list[le16_to_cpu(bd->type2.tag)];
 	if (unlikely(!req)) {
+		atomic64_inc(&dfx->invalid_req_cnt);
 		atomic_inc(&qp->qp_status.used);
 		return;
 	}
@@ -153,9 +156,10 @@ static void sec_req_cb(struct hisi_qp *qp, void *resp)
 			"err_type[%d],done[%d],flag[%d]\n",
 			req->err_type, done, flag);
 		err = -EIO;
+		atomic64_inc(&dfx->done_flag_cnt);
 	}
 
-	atomic64_inc(&ctx->sec->debug.dfx.recv_cnt);
+	atomic64_inc(&dfx->recv_cnt);
 
 	ctx->req_op->buf_unmap(ctx, req);
 
@@ -168,18 +172,25 @@ static int sec_bd_send(struct sec_ctx *ctx, struct sec_req *req)
 	int ret;
 
 	mutex_lock(&qp_ctx->req_lock);
+
 	ret = hisi_qp_send(qp_ctx->qp, &req->sec_sqe);
+
+	if (ctx->fake_req_limit <=
+	    atomic_read(&qp_ctx->qp->qp_status.used) && !ret) {
+		list_add_tail(&req->backlog_head, &qp_ctx->backlog);
+		atomic64_inc(&ctx->sec->debug.dfx.send_cnt);
+		atomic64_inc(&ctx->sec->debug.dfx.send_busy_cnt);
+		mutex_unlock(&qp_ctx->req_lock);
+		return -EBUSY;
+	}
 	mutex_unlock(&qp_ctx->req_lock);
-	atomic64_inc(&ctx->sec->debug.dfx.send_cnt);
 
 	if (unlikely(ret == -EBUSY))
 		return -ENOBUFS;
 
-	if (!ret) {
-		if (req->fake_busy)
-			ret = -EBUSY;
-		else
-			ret = -EINPROGRESS;
+	if (likely(!ret)) {
+		ret = -EINPROGRESS;
+		atomic64_inc(&ctx->sec->debug.dfx.send_cnt);
 	}
 
 	return ret;
@@ -219,15 +230,15 @@ static void sec_free_pbuf_resource(struct device *dev, struct sec_alg_res *res)
 
 /*
  * To improve performance, pbuffer is used for
- * small packets (< 576Bytes) as IOMMU translation using.
+ * small packets (< 512Bytes) as IOMMU translation using.
  */
 static int sec_alloc_pbuf_resource(struct device *dev, struct sec_alg_res *res)
 {
 	int pbuf_page_offset;
 	int i, j, k;
 
-	res->pbuf = dma_alloc_coherent(dev, SEC_TOTAL_PBUF_SZ, &res->pbuf_dma,
-				       GFP_KERNEL);
+	res->pbuf = dma_alloc_coherent(dev, SEC_TOTAL_PBUF_SZ,
+				       &res->pbuf_dma, GFP_KERNEL);
 	if (!res->pbuf)
 		return -ENOMEM;
 
@@ -272,6 +283,7 @@ static int sec_alg_resource_alloc(struct sec_ctx *ctx,
 			goto alloc_fail;
 		}
 	}
+
 	return 0;
 alloc_fail:
 	sec_free_civ_resource(dev, res);
@@ -306,8 +318,8 @@ static int sec_create_qp_ctx(struct sec_ctx *ctx, int qp_ctx_id, int alg_type)
 	qp_ctx->ctx = ctx;
 
 	mutex_init(&qp_ctx->req_lock);
-	atomic_set(&qp_ctx->pending_reqs, 0);
 	idr_init(&qp_ctx->req_idr);
+	INIT_LIST_HEAD(&qp_ctx->backlog);
 
 	qp_ctx->c_in_pool = hisi_acc_create_sgl_pool(dev, QM_Q_DEPTH,
 						     SEC_SGL_SGE_NR);
@@ -374,11 +386,7 @@ static int sec_ctx_base_init(struct sec_ctx *ctx)
 	ctx->sec = sec;
 	ctx->hlf_q_num = sec->ctx_q_num >> 1;
 
-	if (ctx->sec->iommu_used)
-		ctx->pbuf_supported = true;
-	else
-		ctx->pbuf_supported = false;
-	ctx->use_pbuf = false;
+	ctx->pbuf_supported = ctx->sec->iommu_used;
 
 	/* Half of queue depth is taken as fake requests limit in the queue. */
 	ctx->fake_req_limit = QM_Q_DEPTH >> 1;
@@ -595,7 +603,9 @@ static int sec_cipher_pbuf_map(struct sec_ctx *ctx, struct sec_req *req,
 	copy_size = c_req->c_len;
 
 	pbuf_length = sg_copy_to_buffer(src, sg_nents(src),
-					qp_ctx->res[req_id].pbuf, copy_size);
+				qp_ctx->res[req_id].pbuf,
+				copy_size);
+
 	if (unlikely(pbuf_length != copy_size)) {
 		dev_err(dev, "copy src data to pbuf error!\n");
 		return -EINVAL;
@@ -624,7 +634,9 @@ static void sec_cipher_pbuf_unmap(struct sec_ctx *ctx, struct sec_req *req,
 	copy_size = c_req->c_len;
 
 	pbuf_length = sg_copy_from_buffer(dst, sg_nents(dst),
-					  qp_ctx->res[req_id].pbuf, copy_size);
+				qp_ctx->res[req_id].pbuf,
+				copy_size);
+
 	if (unlikely(pbuf_length != copy_size))
 		dev_err(dev, "copy pbuf data to dst error!\n");
 }
@@ -634,10 +646,19 @@ static int sec_cipher_map(struct sec_ctx *ctx, struct sec_req *req,
 {
 	struct sec_cipher_req *c_req = &req->c_req;
 	struct sec_qp_ctx *qp_ctx = req->qp_ctx;
+	struct sec_alg_res *res = &qp_ctx->res[req->req_id];
 	struct device *dev = SEC_CTX_DEV(ctx);
+	int ret;
 
-	if (ctx->use_pbuf)
-		return sec_cipher_pbuf_map(ctx, req, src);
+	if (req->use_pbuf) {
+		ret = sec_cipher_pbuf_map(ctx, req, src);
+		c_req->c_ivin = res->pbuf + SEC_PBUF_IV_OFFSET;
+		c_req->c_ivin_dma = res->pbuf_dma + SEC_PBUF_IV_OFFSET;
+
+		return ret;
+	}
+	c_req->c_ivin = res->c_ivin;
+	c_req->c_ivin_dma = res->c_ivin_dma;
 
 	c_req->c_in = hisi_acc_sg_buf_map_to_hw_sgl(dev, src,
 						    qp_ctx->c_in_pool,
@@ -674,7 +695,7 @@ static void sec_cipher_unmap(struct sec_ctx *ctx, struct sec_req *req,
 	struct sec_cipher_req *c_req = &req->c_req;
 	struct device *dev = SEC_CTX_DEV(ctx);
 
-	if (ctx->use_pbuf) {
+	if (req->use_pbuf) {
 		sec_cipher_pbuf_unmap(ctx, req, dst);
 	} else {
 		if (dst != src)
@@ -729,15 +750,6 @@ static void sec_skcipher_copy_iv(struct sec_ctx *ctx, struct sec_req *req)
 {
 	struct skcipher_request *sk_req = req->c_req.sk_req;
 	struct sec_cipher_req *c_req = &req->c_req;
-	struct sec_alg_res *res = &req->qp_ctx->res[req->req_id];
-
-	if (ctx->use_pbuf) {
-		c_req->c_ivin = res->pbuf + SEC_PBUF_IV_OFFSET;
-		c_req->c_ivin_dma = res->pbuf_dma + SEC_PBUF_IV_OFFSET;
-	} else {
-		c_req->c_ivin = res->c_ivin;
-		c_req->c_ivin_dma = res->c_ivin_dma;
-	}
 
 	memcpy(c_req->c_ivin, sk_req->iv, ctx->c_ctx.ivsize);
 }
@@ -771,7 +783,7 @@ static int sec_skcipher_bd_fill(struct sec_ctx *ctx, struct sec_req *req)
 		cipher = SEC_CIPHER_DEC << SEC_CIPHER_OFFSET;
 	sec_sqe->type_cipher_auth = bd_type | cipher;
 
-	if (ctx->use_pbuf)
+	if (req->use_pbuf)
 		sa_type = SEC_PBUF << SEC_SRC_SGL_OFFSET;
 	else
 		sa_type = SEC_SGL << SEC_SRC_SGL_OFFSET;
@@ -782,7 +794,7 @@ static int sec_skcipher_bd_fill(struct sec_ctx *ctx, struct sec_req *req)
 	sec_sqe->sds_sa_type = (de | scene | sa_type);
 
 	/* Just set DST address type */
-	if (ctx->use_pbuf)
+	if (req->use_pbuf)
 		da_type = SEC_PBUF << SEC_DST_SGL_OFFSET;
 	else
 		da_type = SEC_SGL << SEC_DST_SGL_OFFSET;
@@ -817,30 +829,54 @@ static void sec_update_iv(struct sec_req *req, enum sec_alg_type alg_type)
 		dev_err(SEC_CTX_DEV(req->ctx), "copy output iv error!\n");
 }
 
+static struct sec_req *sec_back_req_clear(struct sec_ctx *ctx,
+				struct sec_qp_ctx *qp_ctx)
+{
+	struct sec_req *backlog_req = NULL;
+
+	mutex_lock(&qp_ctx->req_lock);
+	if (ctx->fake_req_limit >=
+	    atomic_read(&qp_ctx->qp->qp_status.used) &&
+	    !list_empty(&qp_ctx->backlog)) {
+		backlog_req = list_first_entry(&qp_ctx->backlog,
+				typeof(*backlog_req), backlog_head);
+		list_del(&backlog_req->backlog_head);
+	}
+	mutex_unlock(&qp_ctx->req_lock);
+
+	return backlog_req;
+}
+
 static void sec_skcipher_callback(struct sec_ctx *ctx, struct sec_req *req,
 				  int err)
 {
 	struct skcipher_request *sk_req = req->c_req.sk_req;
 	struct sec_qp_ctx *qp_ctx = req->qp_ctx;
+	struct skcipher_request *backlog_sk_req;
+	struct sec_req *backlog_req;
 
-	atomic_dec(&qp_ctx->pending_reqs);
 	sec_free_req_id(req);
 
 	/* IV output at encrypto of CBC mode */
 	if (!err && ctx->c_ctx.c_mode == SEC_CMODE_CBC && req->c_req.encrypt)
 		sec_update_iv(req, SEC_SKCIPHER);
 
-	if (req->fake_busy)
-		sk_req->base.complete(&sk_req->base, -EINPROGRESS);
+	while (1) {
+		backlog_req = sec_back_req_clear(ctx, qp_ctx);
+		if (!backlog_req)
+			break;
+
+		backlog_sk_req = backlog_req->c_req.sk_req;
+		backlog_sk_req->base.complete(&backlog_sk_req->base,
+						-EINPROGRESS);
+		atomic64_inc(&ctx->sec->debug.dfx.recv_busy_cnt);
+	}
 
 	sk_req->base.complete(&sk_req->base, err);
 }
 
 static void sec_request_uninit(struct sec_ctx *ctx, struct sec_req *req)
 {
-	struct sec_qp_ctx *qp_ctx = req->qp_ctx;
-
-	atomic_dec(&qp_ctx->pending_reqs);
 	sec_free_req_id(req);
 	sec_free_queue_id(ctx, req);
 }
@@ -859,11 +895,6 @@ static int sec_request_init(struct sec_ctx *ctx, struct sec_req *req)
 		sec_free_queue_id(ctx, req);
 		return req->req_id;
 	}
-
-	if (ctx->fake_req_limit <= atomic_inc_return(&qp_ctx->pending_reqs))
-		req->fake_busy = true;
-	else
-		req->fake_busy = false;
 
 	return 0;
 }
@@ -946,7 +977,9 @@ static int sec_skcipher_param_check(struct sec_ctx *ctx, struct sec_req *sreq)
 	sreq->c_req.c_len = sk_req->cryptlen;
 
 	if (ctx->pbuf_supported && sk_req->cryptlen <= SEC_PBUF_SZ)
-		ctx->use_pbuf = true;
+		sreq->use_pbuf = true;
+	else
+		sreq->use_pbuf = false;
 
 	if (c_alg == SEC_CALG_3DES) {
 		if (unlikely(sk_req->cryptlen & (DES3_EDE_BLOCK_SIZE - 1))) {
