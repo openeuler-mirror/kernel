@@ -728,7 +728,6 @@ static int hclge_get_sset_count(struct hnae3_handle *handle, int stringset)
 		HNAE3_SUPPORT_SERDES_PARALLEL_LOOPBACK)
 
 	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct phy_device *phy_dev = handle->netdev->phydev;
 	struct hclge_dev *hdev = vport->back;
 	int count = 0;
 
@@ -752,7 +751,7 @@ static int hclge_get_sset_count(struct hnae3_handle *handle, int stringset)
 		handle->flags |= HNAE3_SUPPORT_SERDES_SERIAL_LOOPBACK;
 		handle->flags |= HNAE3_SUPPORT_SERDES_PARALLEL_LOOPBACK;
 
-		if (phy_dev) {
+		if (hdev->hw.mac.phydev) {
 			count += 1;
 			handle->flags |= HNAE3_SUPPORT_PHY_LOOPBACK;
 		}
