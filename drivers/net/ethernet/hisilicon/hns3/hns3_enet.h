@@ -8,7 +8,7 @@
 
 #include "hnae3.h"
 
-#define HNS3_MOD_VERSION "1.9.37.5"
+#define HNS3_MOD_VERSION "1.9.37.6"
 
 extern char hns3_driver_version[];
 
