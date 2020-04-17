@@ -3961,9 +3961,11 @@ static int hns3_init_mac_addr(struct net_device *netdev)
 		eth_hw_addr_random(netdev);
 		dev_warn(priv->dev, "using random MAC address %pM\n",
 			 netdev->dev_addr);
-	} else {
+	} else if (!ether_addr_equal(netdev->dev_addr, mac_addr_temp)) {
 		ether_addr_copy(netdev->dev_addr, mac_addr_temp);
 		ether_addr_copy(netdev->perm_addr, mac_addr_temp);
+	} else {
+		return 0;
 	}
 
 	if (h->ae_algo->ops->set_mac_addr)
