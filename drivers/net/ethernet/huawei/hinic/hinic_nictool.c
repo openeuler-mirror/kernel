@@ -1712,6 +1712,19 @@ static u32 get_up_timeout_val(enum hinic_mod_type mod, u8 cmd)
 		return UP_COMP_TIME_OUT_VAL;
 }
 
+static int check_useparam_valid(struct msg_module *nt_msg, void *buf_in)
+{
+	struct csr_write_st *csr_write_msg = (struct csr_write_st *)buf_in;
+	u32 rd_len = csr_write_msg->rd_len;
+
+	if (rd_len > TOOL_COUNTER_MAX_LEN) {
+		pr_err("Csr read or write len is invalid!\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int send_to_up(void *hwdev, struct msg_module *nt_msg,
 		      void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
 {
@@ -1744,6 +1757,9 @@ static int send_to_up(void *hwdev, struct msg_module *nt_msg,
 		}
 
 	} else if (nt_msg->up_cmd.up_db.up_api_type == API_CHAIN) {
+		if (check_useparam_valid(nt_msg, buf_in))
+			return -EINVAL;
+
 		if (nt_msg->up_cmd.up_db.chipif_cmd == API_CSR_WRITE) {
 			ret = api_csr_write(hwdev, nt_msg, buf_in,
 					    in_size, buf_out, out_size);
@@ -1993,6 +2009,8 @@ static int get_self_test_cmd(struct msg_module *nt_msg)
 static int get_all_chip_id_cmd(struct msg_module *nt_msg)
 {
 	struct nic_card_id card_id;
+
+	memset(&card_id, 0, sizeof(card_id));
 
 	hinic_get_all_chip_id((void *)&card_id);
 
