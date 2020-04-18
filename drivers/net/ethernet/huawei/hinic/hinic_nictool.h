@@ -285,4 +285,6 @@ extern u32 hinic_get_io_stats_size(struct hinic_nic_dev *nic_dev);
 extern void hinic_get_io_stats(struct hinic_nic_dev *nic_dev,
 			       struct hinic_show_item *items);
 
+#define TOOL_COUNTER_MAX_LEN			512
+
 #endif

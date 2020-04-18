@@ -253,9 +253,19 @@ int hinic_sm_ctr_rd64_pair(void *hwdev, u8 node, u8 instance,
 	ctr_rd_rsp_u rsp;
 	int ret;
 
-	if (!hwdev || (0 != (ctr_id & 0x1)) || !value1 || !value2) {
-		pr_err("Hwdev(0x%p) or value1(0x%p) or value2(0x%p) is NULL or ctr_id(%d) is odd number\n",
-		       hwdev, value1, value2, ctr_id);
+	if (!value1) {
+		pr_err("value1 is NULL for read 64 bit pair\n");
+		return -EFAULT;
+	}
+
+	if (!value2) {
+		pr_err("value2 is NULL for read 64 bit pair\n");
+		return -EFAULT;
+	}
+
+	if (!hwdev || (0 != (ctr_id & 0x1))) {
+		pr_err("Hwdev is NULL or ctr_id(%d) is odd number for read 64 bit pair\n",
+		       ctr_id);
 		return -EFAULT;
 	}
 
