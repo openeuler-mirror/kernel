@@ -1898,8 +1898,11 @@ static void handle_chl_int0_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 	if (irq_value0 & CHL_INT0_PHY_RDY_MSK) {
 		struct hisi_sas_phy *phy = &hisi_hba->phy[phy_no];
 
+		dev_dbg(dev, "phy%d OOB ready\n", phy_no);
+		if (phy->phy_attached)
+			return;
+
 		if (!timer_pending(&phy->timer)) {
-			dev_dbg(dev, "phy%d OOB ready\n", phy_no);
 			phy->timer.function = wait_phyup_timedout_v3_hw;
 			phy->timer.expires = jiffies +
 					WAIT_PHYUP_TIMEOUT_V3_HW * HZ;
