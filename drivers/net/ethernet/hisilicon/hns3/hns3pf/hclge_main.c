@@ -3820,6 +3820,72 @@ err_reset:
 		hclge_reset_task_schedule(hdev);
 }
 
+#ifdef CONFIG_PM
+static int hclge_suspend(struct hnae3_ae_dev *ae_dev)
+{
+	struct hclge_dev *hdev = ae_dev->priv;
+	int ret;
+
+	ret = hclge_notify_roce_client(hdev, HNAE3_DOWN_CLIENT);
+	if (ret)
+		return ret;
+
+	rtnl_lock();
+
+	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
+	if (ret)
+		goto err_reset_lock;
+
+	ret = hclge_notify_client(hdev, HNAE3_UNINIT_CLIENT);
+	if (ret)
+		goto err_reset_lock;
+
+	rtnl_unlock();
+
+	return hclge_notify_roce_client(hdev, HNAE3_UNINIT_CLIENT);
+
+err_reset_lock:
+	rtnl_unlock();
+	return ret;
+}
+
+static int hclge_resume(struct hnae3_ae_dev *ae_dev)
+{
+	struct hclge_dev *hdev = ae_dev->priv;
+	int ret;
+
+	rtnl_lock();
+
+	ret = hclge_reset_ae_dev(hdev->ae_dev);
+	if (ret)
+		goto err_reset_lock;
+
+	ret = hclge_notify_client(hdev, HNAE3_INIT_CLIENT);
+	if (ret)
+		goto err_reset_lock;
+
+	rtnl_unlock();
+
+	ret = hclge_notify_roce_client(hdev, HNAE3_INIT_CLIENT);
+	if (ret)
+		goto err_reset_lock;
+
+	rtnl_lock();
+
+	ret = hclge_notify_client(hdev, HNAE3_UP_CLIENT);
+	if (ret)
+		goto err_reset_lock;
+
+	rtnl_unlock();
+
+	return hclge_notify_roce_client(hdev, HNAE3_UP_CLIENT);
+
+err_reset_lock:
+	rtnl_unlock();
+	return ret;
+}
+#endif
+
 static void hclge_reset_event(struct pci_dev *pdev, struct hnae3_handle *handle)
 {
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
@@ -11525,6 +11591,10 @@ struct hnae3_ae_ops hclge_ops = {
 	.set_vf_rate = hclge_set_vf_rate,
 	.set_vf_mac = hclge_set_vf_mac,
 	.get_module_eeprom = hclge_get_module_eeprom,
+#ifdef CONFIG_PM
+	.suspend = hclge_suspend,
+	.resume = hclge_resume,
+#endif
 };
 
 static struct hnae3_ae_algo ae_algo = {

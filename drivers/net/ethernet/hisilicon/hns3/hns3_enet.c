@@ -2226,6 +2226,34 @@ static void hns3_shutdown(struct pci_dev *pdev)
 		pci_set_power_state(pdev, PCI_D3hot);
 }
 
+#ifdef CONFIG_PM
+static int hns3_suspend(struct pci_dev *pdev, pm_message_t state)
+{
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
+
+	if (ae_dev->ops->suspend)
+		ae_dev->ops->suspend(ae_dev);
+
+	pci_save_state(pdev);
+	pci_set_power_state(pdev, PCI_D3hot);
+
+	return 0;
+}
+
+static int hns3_resume(struct pci_dev *pdev)
+{
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(pdev);
+
+	pci_set_power_state(pdev, PCI_D0);
+	pci_restore_state(pdev);
+
+	if (ae_dev->ops->resume)
+		return ae_dev->ops->resume(ae_dev);
+
+	return 0;
+}
+#endif
+
 static pci_ers_result_t hns3_error_detected(struct pci_dev *pdev,
 					    pci_channel_state_t state)
 {
@@ -2310,6 +2338,10 @@ struct pci_driver hns3_driver = {
 	.probe    = hns3_probe,
 	.remove   = hns3_remove,
 	.shutdown = hns3_shutdown,
+#ifdef CONFIG_PM
+	.suspend  = hns3_suspend,
+	.resume   = hns3_resume,
+#endif
 	.sriov_configure = hns3_pci_sriov_configure,
 	.err_handler    = &hns3_err_handler,
 };
