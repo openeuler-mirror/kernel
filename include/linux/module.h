@@ -469,19 +469,6 @@ struct module {
 
 	/* Elf information */
 	struct klp_modinfo *klp_info;
-	/*
-	 * livepatch should relocate the key of jump_label by
-	 * using klp_write_module_reloc. So it's necessary to
-	 * do jump_label_apply_nops() and jump_label_add_module()
-	 * later after livepatch relocation finised.
-	 *
-	 * for normal module :
-	 *	always MODULE_KLP_REL_DONE.
-	 * for livepatch module :
-	 *	init as MODULE_KLP_REL_UNDO,
-	 *	set to MODULE_KLP_REL_DONE when relocate completed.
-	 */
-	enum MODULE_KLP_REL_STATE klp_rel_state;
 #endif
 
 #ifdef CONFIG_MODULE_UNLOAD
@@ -507,7 +494,27 @@ struct module {
 	unsigned int num_ei_funcs;
 #endif
 
+#if defined(CONFIG_LIVEPATCH) && !defined(__GENKSYMS__)
+	union {
+		/*
+		 * livepatch should relocate the key of jump_label by
+		 * using klp_write_module_reloc. So it's necessary to
+		 * do jump_label_apply_nops() and jump_label_add_module()
+		 * later after livepatch relocation finised.
+		 *
+		 * for normal module :
+		 *	always MODULE_KLP_REL_DONE.
+		 * for livepatch module :
+		 *	init as MODULE_KLP_REL_UNDO,
+		 *	set to MODULE_KLP_REL_DONE when relocate completed.
+		 */
+		enum MODULE_KLP_REL_STATE klp_rel_state;
+		long klp_rel_state_KABI;
+	};
+#else
 	KABI_RESERVE(1)
+#endif
+
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
