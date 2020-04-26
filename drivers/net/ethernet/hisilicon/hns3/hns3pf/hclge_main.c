@@ -7798,27 +7798,6 @@ static void hclge_sync_from_del_list(struct list_head *del_list,
 	}
 }
 
-static void hclge_rollback_add_list(struct list_head *add_list)
-{
-	struct hclge_vport_mac_addr_cfg *mac_node, *tmp;
-
-	list_for_each_entry_safe(mac_node, tmp, add_list, node) {
-		list_del(&mac_node->node);
-		kfree(mac_node);
-	}
-}
-
-static void hclge_rollback_del_list(struct list_head *del_list,
-				    struct list_head *mac_list)
-{
-	struct hclge_vport_mac_addr_cfg *mac_node, *tmp;
-
-	list_for_each_entry_safe(mac_node, tmp, del_list, node) {
-		list_del(&mac_node->node);
-		list_add_tail(&mac_node->node, mac_list);
-	}
-}
-
 static void hclge_update_overflow_flags(struct hclge_vport *vport,
 					enum HCLGE_MAC_ADDR_TYPE mac_type,
 					bool is_all_added)
@@ -7864,7 +7843,7 @@ static void hclge_sync_vport_mac_table(struct hclge_vport *vport,
 		case HCLGE_MAC_TO_ADD:
 			new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
 			if (!new_node)
-				goto clear_tmp_list;
+				goto stop_traverse;
 			ether_addr_copy(new_node->mac_addr, mac_node->mac_addr);
 			new_node->state = mac_node->state;
 			list_add_tail(&new_node->node, &tmp_add_list);
@@ -7873,7 +7852,7 @@ static void hclge_sync_vport_mac_table(struct hclge_vport *vport,
 			break;
 		}
 	}
-
+stop_traverse:
 	spin_unlock_bh(&vport->mac_list_lock);
 
 	/* delete first, in order to get max mac table space for adding */
@@ -7902,12 +7881,6 @@ static void hclge_sync_vport_mac_table(struct hclge_vport *vport,
 	hclge_update_overflow_flags(vport, mac_type, all_added);
 
 	return;
-
-clear_tmp_list:
-	hclge_rollback_del_list(&tmp_del_list, list);
-	hclge_rollback_add_list(&tmp_add_list);
-
-	spin_unlock_bh(&vport->mac_list_lock);
 }
 
 static bool hclge_need_sync_mac_table(struct hclge_vport *vport)
