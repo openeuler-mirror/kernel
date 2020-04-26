@@ -143,12 +143,10 @@ static void hclge_dbg_dump_reg_common(struct hclge_dev *hdev,
 		return;
 	}
 
-	buf_len	 = sizeof(struct hclge_desc) * bd_num;
+	buf_len = sizeof(struct hclge_desc) * bd_num;
 	desc_src = kzalloc(buf_len, GFP_KERNEL);
-	if (!desc_src) {
-		dev_err(&hdev->pdev->dev, "call kzalloc failed\n");
+	if (!desc_src)
 		return;
-	}
 
 	desc = desc_src;
 	ret = hclge_dbg_cmd_send(hdev, desc, index, bd_num, reg_msg->cmd);
@@ -845,10 +843,8 @@ static void hclge_dbg_dump_mac_table(struct hclge_dev *hdev)
 
 	len = sizeof(struct hclge_mac_vlan_idx_rd_mc) * HCLGE_DBG_MAC_TBL_MAX;
 	mc_mac_tbl = kzalloc(len, GFP_KERNEL);
-	if (!mc_mac_tbl) {
-		dev_err(&hdev->pdev->dev, "mc_mac_tbl alloc memory failed\n");
+	if (!mc_mac_tbl)
 		return;
-	}
 
 	memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
 	dev_info(&hdev->pdev->dev, "Unicast tab:\n");
