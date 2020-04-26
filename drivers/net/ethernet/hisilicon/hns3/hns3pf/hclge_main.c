@@ -4018,15 +4018,13 @@ static void hclge_misc_err_recovery(struct hclge_dev *hdev)
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 	struct device *dev = &hdev->pdev->dev;
 	u32 msix_sts_reg;
-	int ret;
 
 	msix_sts_reg = hclge_read_dev(&hdev->hw,
 				      HCLGE_VECTOR0_PF_OTHER_INT_STS_REG);
 
 	if (msix_sts_reg & HCLGE_VECTOR0_REG_MSIX_MASK) {
-		ret = hclge_handle_hw_msix_error(hdev,
-						 &hdev->default_reset_request);
-		if (ret)
+		if (hclge_handle_hw_msix_error(hdev,
+					       &hdev->default_reset_request))
 			dev_info(dev, "received msix interrupt 0x%x\n",
 				 msix_sts_reg);
 
