@@ -5513,10 +5513,9 @@ static int hclge_fd_check_ext_tuple(struct hclge_dev *hdev,
 		if (!fs->h_ext.vlan_tci)
 			*unused_tuple |= BIT(INNER_VLAN_TAG_FST);
 
-		if (fs->m_ext.vlan_tci) {
-			if (be16_to_cpu(fs->h_ext.vlan_tci) >= VLAN_N_VID)
-				return -EINVAL;
-		}
+		if (fs->m_ext.vlan_tci &&
+		    be16_to_cpu(fs->h_ext.vlan_tci) >= VLAN_N_VID)
+			return -EINVAL;
 	} else {
 		*unused_tuple |= BIT(INNER_VLAN_TAG_FST);
 	}
