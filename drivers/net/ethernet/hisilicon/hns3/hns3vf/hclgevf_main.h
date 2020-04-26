@@ -244,8 +244,7 @@ enum HCLGEVF_MAC_ADDR_TYPE {
 enum HCLGEVF_MAC_ADDR_STATE {
 	HCLGEVF_MAC_TO_ADD,
 	HCLGEVF_MAC_TO_DEL,
-	HCLGEVF_MAC_REQ_SUC, /* send request mbx success */
-	HCLGEVF_MAC_REQ_FAIL, /* send request mbx fail */
+	HCLGEVF_MAC_ACTIVE
 };
 
 struct hclgevf_mac_addr_node {

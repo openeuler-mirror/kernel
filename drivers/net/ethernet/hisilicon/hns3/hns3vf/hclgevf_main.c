@@ -1287,6 +1287,34 @@ hclgevf_find_mac_node(struct list_head *list, const u8 *mac_addr)
 	return NULL;
 }
 
+static void hclgevf_mac_node_convert(struct hclgevf_mac_addr_node *mac_node,
+				     enum HCLGEVF_MAC_ADDR_STATE state)
+{
+	switch (state) {
+	/* from set_rx_mode or tmp_add_list */
+	case HCLGEVF_MAC_TO_ADD:
+		if (mac_node->state == HCLGEVF_MAC_TO_DEL)
+			mac_node->state = HCLGEVF_MAC_ACTIVE;
+		break;
+	/* only from set_rx_mode */
+	case HCLGEVF_MAC_TO_DEL:
+		if (mac_node->state == HCLGEVF_MAC_TO_ADD) {
+			list_del(&mac_node->node);
+			kfree(mac_node);
+		} else {
+			mac_node->state = HCLGEVF_MAC_TO_DEL;
+		}
+		break;
+	/* only from tmp_add_list, the mac_node->state won't be
+	 * HCLGEVF_MAC_ACTIVE
+	 */
+	case HCLGEVF_MAC_ACTIVE:
+		if (mac_node->state == HCLGEVF_MAC_TO_ADD)
+			mac_node->state = HCLGEVF_MAC_ACTIVE;
+		break;
+	}
+}
+
 static int hclgevf_update_mac_list(struct hnae3_handle *handle,
 				   enum HCLGEVF_MAC_ADDR_STATE state,
 				   enum HCLGEVF_MAC_ADDR_TYPE mac_type,
@@ -1300,6 +1328,22 @@ static int hclgevf_update_mac_list(struct hnae3_handle *handle,
 	       &hdev->mac_table.uc_mac_list : &hdev->mac_table.mc_mac_list;
 
 	spin_lock_bh(&hdev->mac_table.mac_list_lock);
+
+	/* if the mac addr is already in the mac list, no need to add a new
+	 * one into it, just check the mac addr state, convert it to a new
+	 * new state, or just remove it, or do nothing.
+	 */
+	mac_node = hclgevf_find_mac_node(list, addr);
+	if (mac_node) {
+		hclgevf_mac_node_convert(mac_node, state);
+		spin_unlock_bh(&hdev->mac_table.mac_list_lock);
+		return 0;
+	}
+	/* if this address is never added, unnecessary to delete */
+	if (state == HCLGEVF_MAC_TO_DEL) {
+		spin_unlock_bh(&hdev->mac_table.mac_list_lock);
+		return -ENOENT;
+	}
 
 	mac_node = kzalloc(sizeof(*mac_node), GFP_ATOMIC);
 	if (!mac_node) {
@@ -1382,28 +1426,66 @@ static void hclgevf_config_mac_list(struct hclgevf_dev *hdev,
 			dev_err(&hdev->pdev->dev,
 				"request configure mac %pM failed, state=%d, ret=%d\n",
 				mac_node->mac_addr, mac_node->state, ret);
-			mac_node->state = HCLGEVF_MAC_REQ_FAIL;
 			return;
 		}
-		mac_node->state = HCLGEVF_MAC_REQ_SUC;
+		if (mac_node->state == HCLGEVF_MAC_TO_ADD) {
+			mac_node->state = HCLGEVF_MAC_ACTIVE;
+		} else {
+			list_del(&mac_node->node);
+			kfree(mac_node);
+		}
 	}
 }
 
-static void hclgevf_sync_from_tmp_list(struct list_head *tmp_list,
+static void hclgevf_sync_from_add_list(struct list_head *add_list,
 				       struct list_head *mac_list)
 {
 	struct hclgevf_mac_addr_node *mac_node, *tmp, *new_node;
 
-	list_for_each_entry_safe(mac_node, tmp, tmp_list, node) {
+	list_for_each_entry_safe(mac_node, tmp, add_list, node) {
+		/* if the mac address from tmp_add_list is not in the
+		 * uc/mc_mac_list, it means have received a TO_DEL request
+		 * during the time window of sending mac config request to PF
+		 * If mac_node state is ACTIVE, then change its state to TO_DEL,
+		 * then it will be removed at next time. If is TO_ADD, it means
+		 * send TO_ADD request failed, so just remove the mac node.
+		 */
 		new_node = hclgevf_find_mac_node(mac_list, mac_node->mac_addr);
 		if (new_node) {
-			if (mac_node->state == HCLGEVF_MAC_REQ_SUC) {
-				list_del(&new_node->node);
-				kfree(new_node);
-			}
+			hclgevf_mac_node_convert(new_node, mac_node->state);
+			list_del(&mac_node->node);
+			kfree(mac_node);
+		} else if (mac_node->state == HCLGEVF_MAC_ACTIVE) {
+			mac_node->state = HCLGEVF_MAC_TO_DEL;
+			list_del(&mac_node->node);
+			list_add_tail(&mac_node->node, mac_list);
+		} else {
+			list_del(&mac_node->node);
+			kfree(mac_node);
 		}
-		list_del(&mac_node->node);
-		kfree(mac_node);
+	}
+}
+
+static void hclgevf_sync_from_del_list(struct list_head *del_list,
+				       struct list_head *mac_list)
+{
+	struct hclgevf_mac_addr_node *mac_node, *tmp, *new_node;
+
+	list_for_each_entry_safe(mac_node, tmp, del_list, node) {
+		new_node = hclgevf_find_mac_node(mac_list, mac_node->mac_addr);
+		if (new_node) {
+			/* If the mac addr is exist in the mac list, it means
+			 * received a new request TO_ADD during the time window
+			 * of sending mac addr configurrequest to PF, so just
+			 * change the mac state to ACTIVE.
+			 */
+			new_node->state = HCLGEVF_MAC_ACTIVE;
+			list_del(&mac_node->node);
+			kfree(mac_node);
+		} else {
+			list_del(&mac_node->node);
+			list_add_tail(&mac_node->node, mac_list);
+		}
 	}
 }
 
@@ -1417,44 +1499,56 @@ static void hclgevf_clear_list(struct list_head *list)
 	}
 }
 
-/* For PF handle VF's the mac configure request asynchronously, so VF
- * is unware that whether the mac address is exist in the mac table.
- * VF has to record the mac address from set_rx_mode, and send request
- * one by one. After finish all request, then update the mac address
- * state in mac list.
- */
 static void hclgevf_sync_mac_list(struct hclgevf_dev *hdev,
 				  enum HCLGEVF_MAC_ADDR_TYPE mac_type)
 {
 	struct hclgevf_mac_addr_node *mac_node, *tmp, *new_node;
-	struct list_head tmp_list, *list;
+	struct list_head tmp_add_list, tmp_del_list;
+	struct list_head *list;
 
-	INIT_LIST_HEAD(&tmp_list);
+	INIT_LIST_HEAD(&tmp_add_list);
+	INIT_LIST_HEAD(&tmp_del_list);
 
+	/* move the mac addr to the tmp_add_list and tmp_del_list, then
+	 * we can add/delete these mac addr outside the spin lock
+	 */
 	list = (mac_type == HCLGEVF_MAC_ADDR_UC) ?
 		&hdev->mac_table.uc_mac_list : &hdev->mac_table.mc_mac_list;
 
 	spin_lock_bh(&hdev->mac_table.mac_list_lock);
 
 	list_for_each_entry_safe(mac_node, tmp, list, node) {
-		new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
-		if (!new_node) {
-			hclgevf_clear_list(&tmp_list);
-			spin_unlock_bh(&hdev->mac_table.mac_list_lock);
-			return;
+		switch (mac_node->state) {
+		case HCLGEVF_MAC_TO_DEL:
+			list_del(&mac_node->node);
+			list_add_tail(&mac_node->node, &tmp_del_list);
+			break;
+		case HCLGEVF_MAC_TO_ADD:
+			new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
+			if (!new_node)
+				goto stop_traverse;
+			ether_addr_copy(new_node->mac_addr, mac_node->mac_addr);
+			new_node->state = mac_node->state;
+			list_add_tail(&new_node->node, &tmp_add_list);
+			break;
+		default:
+			break;
 		}
-		ether_addr_copy(new_node->mac_addr, mac_node->mac_addr);
-		new_node->state = mac_node->state;
-		list_add_tail(&new_node->node, &tmp_list);
 	}
-
+stop_traverse:
 	spin_unlock_bh(&hdev->mac_table.mac_list_lock);
 
-	hclgevf_config_mac_list(hdev, &tmp_list, mac_type);
+	/* delete first, in order to get max mac table space for adding */
+	hclgevf_config_mac_list(hdev, &tmp_del_list, mac_type);
+	hclgevf_config_mac_list(hdev, &tmp_add_list, mac_type);
 
+	/* if some mac addresses were added/deleted fail, move back to the
+	 * mac_list, and retry at next time.
+	 */
 	spin_lock_bh(&hdev->mac_table.mac_list_lock);
 
-	hclgevf_sync_from_tmp_list(&tmp_list, list);
+	hclgevf_sync_from_del_list(&tmp_del_list, list);
+	hclgevf_sync_from_add_list(&tmp_add_list, list);
 
 	spin_unlock_bh(&hdev->mac_table.mac_list_lock);
 }
