@@ -689,6 +689,17 @@ struct hclge_mac_tnl_stats {
 #define HCLGE_RESET_INTERVAL	(12 * HZ)
 #define HCLGE_WAIT_RESET_DONE	100
 
+#pragma pack(1)
+struct hclge_vf_vlan_cfg {
+	u8 mbx_cmd;
+	u8 subcode;
+	u8 is_kill;
+	u16 vlan;
+	u16 proto;
+};
+
+#pragma pack()
+
 /* For each bit of TCAM entry, it uses a pair of 'x' and
  * 'y' to indicate which value to match, like below:
  * ----------------------------------
@@ -887,17 +898,6 @@ enum HCLGE_VPORT_STATE {
 	HCLGE_VPORT_STATE_MAC_TBL_CHANGE,
 	HCLGE_VPORT_STATE_MAX
 };
-
-#pragma pack(1)
-struct hclge_vf_vlan_cfg {
-	u8 mbx_cmd;
-	u8 subcode;
-	u8 is_kill;
-	u16 vlan;
-	u16 proto;
-};
-
-#pragma pack()
 
 struct hclge_vlan_info {
 	u16 vlan_proto; /* so far support 802.1Q only */
