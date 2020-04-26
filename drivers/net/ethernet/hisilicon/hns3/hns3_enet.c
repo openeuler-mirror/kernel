@@ -3719,7 +3719,7 @@ static void hns3_nic_uninit_vector_data(struct hns3_nic_priv *priv)
 		 * the remaining options.
 		 */
 		if (hns3_get_vector_ring_chain(tqp_vector, &vector_ring_chain))
-			dev_warn(priv->dev, "get ring chain fail\n");
+			dev_warn(priv->dev, "failed to get ring chain\n");
 
 		h->ae_algo->ops->unmap_ring_from_vector(h,
 			tqp_vector->vector_irq, &vector_ring_chain);
