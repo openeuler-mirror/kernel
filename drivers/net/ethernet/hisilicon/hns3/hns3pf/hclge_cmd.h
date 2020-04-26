@@ -781,21 +781,6 @@ struct hclge_mac_vlan_idx_rd_cmd {
 	__le32  index;
 };
 
-struct hclge_mac_ethertype_idx_rd_cmd {
-	u8	flags;
-	u8	resp_code;
-	__le16  vlan_tag;
-	u8      mac_addr[ETH_ALEN];
-	__le16  index;
-	__le16	ethter_type;
-	__le16  egress_port;
-	__le16  egress_queue;
-	__le16  rev0;
-	u8	i_port_bitmap;
-	u8	i_port_direction;
-	u8	rev1[2];
-};
-
 #pragma pack()
 
 struct hclge_vlan_filter_ctrl_cmd {
@@ -913,6 +898,24 @@ struct hclge_cfg_tx_queue_pointer_cmd {
 	__le16 ring_offset;
 	u8 rsv[14];
 };
+
+#pragma pack(1)
+struct hclge_mac_ethertype_idx_rd_cmd {
+	u8	flags;
+	u8	resp_code;
+	__le16  vlan_tag;
+	u8      mac_addr[ETH_ALEN];
+	__le16  index;
+	__le16	ethter_type;
+	__le16  egress_port;
+	__le16  egress_queue;
+	__le16  rev0;
+	u8	i_port_bitmap;
+	u8	i_port_direction;
+	u8	rev1[2];
+};
+
+#pragma pack()
 
 #define HCLGE_TSO_MSS_MIN_S	0
 #define HCLGE_TSO_MSS_MIN_M	GENMASK(13, 0)
