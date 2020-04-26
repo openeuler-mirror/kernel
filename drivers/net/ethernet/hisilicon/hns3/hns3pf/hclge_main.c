@@ -7469,8 +7469,6 @@ int hclge_update_mac_list(struct hclge_vport *vport,
 	list = (mac_type == HCLGE_MAC_ADDR_UC) ?
 		&vport->uc_mac_list : &vport->mc_mac_list;
 
-	set_bit(HCLGE_VPORT_STATE_MAC_TBL_CHANGE, &vport->state);
-
 	spin_lock_bh(&vport->mac_list_lock);
 
 	/* if the mac addr is already in the mac list, no need to add a new
@@ -7481,6 +7479,7 @@ int hclge_update_mac_list(struct hclge_vport *vport,
 	if (mac_node) {
 		hclge_update_mac_node(mac_node, state);
 		spin_unlock_bh(&vport->mac_list_lock);
+		set_bit(HCLGE_VPORT_STATE_MAC_TBL_CHANGE, &vport->state);
 		return 0;
 	}
 
@@ -7495,6 +7494,8 @@ int hclge_update_mac_list(struct hclge_vport *vport,
 		spin_unlock_bh(&vport->mac_list_lock);
 		return -ENOMEM;
 	}
+
+	set_bit(HCLGE_VPORT_STATE_MAC_TBL_CHANGE, &vport->state);
 
 	mac_node->state = state;
 	ether_addr_copy(mac_node->mac_addr, addr);
@@ -8193,45 +8194,47 @@ static void hclge_get_mac_addr(struct hnae3_handle *handle, u8 *p)
 	ether_addr_copy(p, hdev->hw.mac.mac_addr);
 }
 
-/* use new node to replace old node in the list, if old address is still in
- * mac table, add it to list tail, and try to remove in service task
- */
-void hclge_replace_mac_node(struct list_head *list, const u8 *old_addr,
-			    const u8 *new_addr, bool keep_old)
+int hclge_update_mac_node_for_dev_addr(struct hclge_vport *vport,
+				       const u8 *old_addr, const u8 *new_addr)
 {
-	struct hclge_vport_mac_addr_cfg *mac_node, *new_node;
+	struct hclge_vport_mac_addr_cfg *old_node, *new_node;
+	struct list_head *list = &vport->uc_mac_list;
 
-	mac_node = hclge_find_mac_node(list, old_addr);
-	if (!mac_node) {
+	new_node = hclge_find_mac_node(list, new_addr);
+	if (!new_node) {
 		new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
 		if (!new_node)
-			return;
-		new_node->state = HCLGE_MAC_ACTIVE;
+			return -ENOMEM;
+		new_node->state = HCLGE_MAC_TO_ADD;
 		ether_addr_copy(new_node->mac_addr, new_addr);
-		list_add_tail(&new_node->node, list);
-		return;
+		list_add(&new_node->node, list);
+	} else {
+		if (new_node->state == HCLGE_MAC_TO_DEL)
+			new_node->state = HCLGE_MAC_ACTIVE;
+
+		/* make sure the new addr is in the list head, avoid dev
+		 * addr may be not re-added into mac table for the umv space
+		 * limitation after global/imp reset which will clear mac
+		 * table by hardware.
+		 */
+		list_move(&new_node->node, list);
 	}
 
-	mac_node->state = HCLGE_MAC_ACTIVE;
-	ether_addr_copy(mac_node->mac_addr, new_addr);
-	if (keep_old) {
-		new_node = kzalloc(sizeof(*new_node), GFP_ATOMIC);
-		if (!new_node)
-			return;
-		new_node->state = HCLGE_MAC_TO_DEL;
-		ether_addr_copy(new_node->mac_addr, old_addr);
-		list_add_tail(&new_node->node, list);
+	if (old_addr && !ether_addr_equal(old_addr, new_addr)) {
+		old_node = hclge_find_mac_node(list, old_addr);
+		if (old_node) {
+			if (old_node->state == HCLGE_MAC_TO_ADD) {
+				list_del(&old_node->node);
+				kfree(old_node);
+			} else {
+				old_node->state = HCLGE_MAC_TO_DEL;
+			}
+		}
 	}
-}
 
-void hclge_modify_mac_node_state(struct list_head *list, const u8 *addr,
-				 enum HCLGE_MAC_NODE_STATE state)
-{
-	struct hclge_vport_mac_addr_cfg *mac_node;
+	set_bit(HCLGE_VPORT_STATE_MAC_TBL_CHANGE, &vport->state);
 
-	mac_node = hclge_find_mac_node(list, addr);
-	if (mac_node)
-		mac_node->state = state;
+	return 0;
 }
 
 static int hclge_set_mac_addr(struct hnae3_handle *handle, void *p,
@@ -8240,7 +8243,7 @@ static int hclge_set_mac_addr(struct hnae3_handle *handle, void *p,
 	const unsigned char *new_addr = (const unsigned char *)p;
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
-	bool old_mac_removed = true;
+	unsigned char *old_addr = NULL;
 	int ret;
 
 	/* mac addr check */
@@ -8253,63 +8256,33 @@ static int hclge_set_mac_addr(struct hnae3_handle *handle, void *p,
 		return -EINVAL;
 	}
 
-	if ((!is_first || is_kdump_kernel()) &&
-	    hclge_rm_uc_addr_common(vport, hdev->hw.mac.mac_addr)) {
-		dev_warn(&hdev->pdev->dev,
-			 "remove old uc mac address fail.\n");
-		old_mac_removed = false;
-	}
-
-	ret = hclge_add_uc_addr_common(vport, new_addr);
-	if (ret) {
-		dev_err(&hdev->pdev->dev,
-			"add uc mac address fail, ret =%d.\n",
-			ret);
-
-		if (!is_first) {
-			ret = hclge_add_uc_addr_common(vport,
-						       hdev->hw.mac.mac_addr);
-			if (ret) {
-				old_mac_removed = true;
-				dev_err(&hdev->pdev->dev,
-					"restore uc mac address fail.\n");
-			} else {
-				old_mac_removed = false;
-			}
-		}
-
-		/* if old dev addr restore failed, add to the uc mac list,
-		 * and try to restore it in service task
-		 */
-		if (old_mac_removed) {
-			spin_lock_bh(&vport->mac_list_lock);
-			hclge_modify_mac_node_state(&vport->uc_mac_list,
-						    hdev->hw.mac.mac_addr,
-						    HCLGE_MAC_TO_ADD);
-			spin_unlock_bh(&vport->mac_list_lock);
-		}
-
-		return -EIO;
-	}
-
-	/* new dev addr add success, replace the old dev addr in uc mac list.
-	 * if old dev addr delete fail, keep it in the mac list, and try to del
-	 * it in service task.
-	 */
-	spin_lock_bh(&vport->mac_list_lock);
-	hclge_replace_mac_node(&vport->uc_mac_list, hdev->hw.mac.mac_addr,
-			       new_addr, !old_mac_removed);
-	spin_unlock_bh(&vport->mac_list_lock);
-
 	ret = hclge_pause_addr_cfg(hdev, new_addr);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
-			"configure mac pause address fail, ret =%d.\n",
+			"Failed to configure mac pause address, ret=%d\n",
 			ret);
-		return -EIO;
+		return ret;
 	}
 
+	if (!is_first)
+		old_addr = hdev->hw.mac.mac_addr;
+
+	spin_lock_bh(&vport->mac_list_lock);
+	ret = hclge_update_mac_node_for_dev_addr(vport, old_addr, new_addr);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"Failed to change the mac addr:%pM, ret =%d\n",
+			new_addr, ret);
+		spin_unlock_bh(&vport->mac_list_lock);
+		return ret;
+	}
+	/* we must update dev addr with spin lock protect, preventing dev addr
+	 * being removed by set_rx_mode path.
+	 */
 	ether_addr_copy(hdev->hw.mac.mac_addr, new_addr);
+	spin_unlock_bh(&vport->mac_list_lock);
+
+	hclge_task_schedule(hdev, 0);
 
 	return 0;
 }
