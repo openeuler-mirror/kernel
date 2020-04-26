@@ -68,7 +68,7 @@ static void hclge_clear_arfs_rules(struct hnae3_handle *handle);
 static int hclge_set_default_loopback(struct hclge_dev *hdev);
 
 static void hclge_sync_mac_table(struct hclge_dev *hdev);
-static int hclge_restore_hw_table(struct hclge_dev *hdev);
+static void hclge_restore_hw_table(struct hclge_dev *hdev);
 static void hclge_sync_promisc_mode(struct hclge_dev *hdev);
 static int hclge_vf_vlan_filter_switch(struct hclge_vport *vport);
 
@@ -5995,7 +5995,7 @@ static void hclge_del_all_fd_entries(struct hnae3_handle *handle,
 	}
 }
 
-static int hclge_restore_fd_entries(struct hnae3_handle *handle)
+static void hclge_restore_fd_entries(struct hnae3_handle *handle)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -6008,11 +6008,11 @@ static int hclge_restore_fd_entries(struct hnae3_handle *handle)
 	 * fail.
 	 */
 	if (!hnae3_dev_fd_supported(hdev))
-		return 0;
+		return;
 
 	/* if fd is disabled, should not restore it when reset */
 	if (!hdev->fd_en)
-		return 0;
+		return;
 
 	spin_lock_bh(&hdev->fd_rule_lock);
 	hlist_for_each_entry_safe(rule, node, &hdev->fd_rule_list, rule_node) {
@@ -6035,8 +6035,6 @@ static int hclge_restore_fd_entries(struct hnae3_handle *handle)
 		hdev->fd_active_type = HCLGE_FD_EP_ACTIVE;
 
 	spin_unlock_bh(&hdev->fd_rule_lock);
-
-	return 0;
 }
 
 static int hclge_get_fd_rule_cnt(struct hnae3_handle *handle,
@@ -8996,7 +8994,7 @@ void hclge_restore_mac_table_common(struct hclge_vport *vport)
 	spin_unlock_bh(&vport->mac_list_lock);
 }
 
-static int hclge_restore_hw_table(struct hclge_dev *hdev)
+static void hclge_restore_hw_table(struct hclge_dev *hdev)
 {
 	struct hclge_vport *vport = &hdev->vport[0];
 	struct hnae3_handle *handle = &vport->nic;
@@ -9006,7 +9004,7 @@ static int hclge_restore_hw_table(struct hclge_dev *hdev)
 	hclge_restore_vport_vlan_table(vport);
 	set_bit(HCLGE_STATE_PROMISC_CHANGED, &hdev->state);
 
-	return hclge_restore_fd_entries(handle);
+	hclge_restore_fd_entries(handle);
 }
 
 int hclge_en_hw_strip_rxvtag(struct hnae3_handle *handle, bool enable)
