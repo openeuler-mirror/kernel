@@ -2409,25 +2409,27 @@ static int hclgevf_config_gro(struct hclgevf_dev *hdev, bool en)
 static void hclgevf_rss_init_cfg(struct hclgevf_dev *hdev)
 {
 	struct hclgevf_rss_cfg *rss_cfg = &hdev->rss_cfg;
+	struct hclgevf_rss_tuple_cfg *tuple_sets;
 	u32 i;
 
+	rss_cfg->hash_algo = HCLGEVF_RSS_HASH_ALGO_TOEPLITZ;
 	rss_cfg->rss_size = hdev->nic.kinfo.rss_size;
 
-	rss_cfg->rss_tuple_sets.ipv4_tcp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-	rss_cfg->rss_tuple_sets.ipv4_udp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-	rss_cfg->rss_tuple_sets.ipv4_sctp_en = HCLGEVF_RSS_INPUT_TUPLE_SCTP;
-	rss_cfg->rss_tuple_sets.ipv4_fragment_en =
-		HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-	rss_cfg->rss_tuple_sets.ipv6_tcp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-	rss_cfg->rss_tuple_sets.ipv6_udp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
-	rss_cfg->rss_tuple_sets.ipv6_sctp_en = HCLGEVF_RSS_INPUT_TUPLE_SCTP;
-	rss_cfg->rss_tuple_sets.ipv6_fragment_en =
-		HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+	tuple_sets = &rss_cfg->rss_tuple_sets;
+	if (hdev->pdev->revision >= 0x21) {
+		rss_cfg->hash_algo = HCLGEVF_RSS_HASH_ALGO_SIMPLE;
+		memcpy(rss_cfg->rss_hash_key, hclgevf_hash_key,
+		       HCLGEVF_RSS_KEY_SIZE);
 
-	rss_cfg->hash_algo = hdev->pdev->revision >= 0x21 ?
-		HCLGEVF_RSS_HASH_ALGO_SIMPLE : HCLGEVF_RSS_HASH_ALGO_TOEPLITZ;
-
-	memcpy(rss_cfg->rss_hash_key, hclgevf_hash_key, HCLGEVF_RSS_KEY_SIZE);
+		tuple_sets->ipv4_tcp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+		tuple_sets->ipv4_udp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+		tuple_sets->ipv4_sctp_en = HCLGEVF_RSS_INPUT_TUPLE_SCTP;
+		tuple_sets->ipv4_fragment_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+		tuple_sets->ipv6_tcp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+		tuple_sets->ipv6_udp_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+		tuple_sets->ipv6_sctp_en = HCLGEVF_RSS_INPUT_TUPLE_SCTP;
+		tuple_sets->ipv6_fragment_en = HCLGEVF_RSS_INPUT_TUPLE_OTHER;
+	}
 
 	/* Initialize RSS indirect table */
 	for (i = 0; i < HCLGEVF_RSS_IND_TBL_SIZE; i++)
