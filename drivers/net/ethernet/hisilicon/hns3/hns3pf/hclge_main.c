@@ -7422,14 +7422,13 @@ hclge_find_mac_node(struct list_head *list, const u8 *mac_addr)
 	return NULL;
 }
 
-static void hclge_mac_node_convert(struct hclge_vport_mac_addr_cfg *mac_node,
-				   enum HCLGE_MAC_ADDR_STATE state)
+static void hclge_update_mac_node(struct hclge_vport_mac_addr_cfg *mac_node,
+				  enum HCLGE_MAC_NODE_STATE state)
 {
 	switch (state) {
 	/* from set_rx_mode or tmp_add_list */
 	case HCLGE_MAC_TO_ADD:
-		if (mac_node->state == HCLGE_MAC_TO_DEL ||
-		    mac_node->state == HCLGE_MAC_DEL_FAIL)
+		if (mac_node->state == HCLGE_MAC_TO_DEL)
 			mac_node->state = HCLGE_MAC_ACTIVE;
 		break;
 	/* only from set_rx_mode */
@@ -7442,14 +7441,7 @@ static void hclge_mac_node_convert(struct hclge_vport_mac_addr_cfg *mac_node,
 		}
 		break;
 	/* only from tmp_add_list, the mac_node->state won't be
-	 * HCLGE_MAC_ACTIVE/HCLGE_MAC_DEL_FAIL/HCLGE_MAC_ADD_FAIL
-	 */
-	case HCLGE_MAC_DEL_FAIL:
-		if (mac_node->state == HCLGE_MAC_TO_ADD)
-			mac_node->state = HCLGE_MAC_ACTIVE;
-		break;
-	/* only from tmp_add_list, the mac_node->state won't be
-	 * HCLGE_MAC_ACTIVE/HCLGE_MAC_DEL_FAIL/HCLGE_MAC_ADD_FAIL
+	 * ACTIVE.
 	 */
 	case HCLGE_MAC_ACTIVE:
 		if (mac_node->state == HCLGE_MAC_TO_ADD)
@@ -7460,7 +7452,7 @@ static void hclge_mac_node_convert(struct hclge_vport_mac_addr_cfg *mac_node,
 }
 
 int hclge_update_mac_list(struct hclge_vport *vport,
-			  enum HCLGE_MAC_ADDR_STATE state,
+			  enum HCLGE_MAC_NODE_STATE state,
 			  enum HCLGE_MAC_ADDR_TYPE mac_type,
 			  const unsigned char *addr)
 {
@@ -7480,7 +7472,7 @@ int hclge_update_mac_list(struct hclge_vport *vport,
 	 */
 	mac_node = hclge_find_mac_node(list, addr);
 	if (mac_node) {
-		hclge_mac_node_convert(mac_node, state);
+		hclge_update_mac_node(mac_node, state);
 		spin_unlock_bh(&vport->mac_list_lock);
 		return 0;
 	}
@@ -7731,7 +7723,6 @@ static void hclge_unsync_mac_list(struct hclge_vport *vport,
 			list_del(&mac_node->node);
 			kfree(mac_node);
 		} else {
-			mac_node->state = HCLGE_MAC_DEL_FAIL;
 			set_bit(HCLGE_VPORT_STATE_MAC_TBL_CHANGE,
 				&vport->state);
 			break;
@@ -7753,13 +7744,13 @@ static bool hclge_sync_from_add_list(struct list_head *add_list,
 		 * uc/mc_mac_list, it means have received a TO_DEL request
 		 * during the time window of adding the mac address into mac
 		 * table. if mac_node state is ACTIVE, then change it to TO_DEL,
-		 * then it will be removed at next time. else it must be TO_ADD
-		 * or ADD_FAIL, this address hasn't been added into mac table,
+		 * then it will be removed at next time. else it must be TO_ADD,
+		 * this address hasn't been added into mac table,
 		 * so just remove the mac node.
 		 */
 		new_node = hclge_find_mac_node(mac_list, mac_node->mac_addr);
 		if (new_node) {
-			hclge_mac_node_convert(new_node, mac_node->state);
+			hclge_update_mac_node(new_node, mac_node->state);
 			list_del(&mac_node->node);
 			kfree(mac_node);
 		} else if (mac_node->state == HCLGE_MAC_ACTIVE) {
@@ -7782,7 +7773,16 @@ static void hclge_sync_from_del_list(struct list_head *del_list,
 	list_for_each_entry_safe(mac_node, tmp, del_list, node) {
 		new_node = hclge_find_mac_node(mac_list, mac_node->mac_addr);
 		if (new_node) {
-			hclge_mac_node_convert(new_node, mac_node->state);
+			/* If the mac addr exists in the mac list, it means
+			 * received a new TO_ADD request during the time window
+			 * of configuring the mac address. For the mac node
+			 * state is TO_ADD, and the address is already in the
+			 * in the hardware(due to delete fail), so we just need
+			 * to change the mac node state to ACTIVE.
+			 */
+			new_node->state = HCLGE_MAC_ACTIVE;
+			list_del(&mac_node->node);
+			kfree(mac_node);
 		} else {
 			list_del(&mac_node->node);
 			list_add_tail(&mac_node->node, mac_list);
@@ -7850,7 +7850,6 @@ static void hclge_sync_vport_mac_table(struct hclge_vport *vport,
 	list_for_each_entry_safe(mac_node, tmp, list, node) {
 		switch (mac_node->state) {
 		case HCLGE_MAC_TO_DEL:
-		case HCLGE_MAC_DEL_FAIL:
 			list_del(&mac_node->node);
 			list_add_tail(&mac_node->node, &tmp_del_list);
 			break;
@@ -7962,7 +7961,6 @@ void hclge_rm_vport_all_mac_table(struct hclge_vport *vport, bool is_del_list,
 	list_for_each_entry_safe(mac_cfg, tmp, list, node) {
 		switch (mac_cfg->state) {
 		case HCLGE_MAC_TO_DEL:
-		case HCLGE_MAC_DEL_FAIL:
 		case HCLGE_MAC_ACTIVE:
 			list_del(&mac_cfg->node);
 			list_add_tail(&mac_cfg->node, &tmp_del_list);
@@ -8021,7 +8019,6 @@ static void hclge_uninit_mac_list(struct hclge_vport *vport,
 	list_for_each_entry_safe(mac_node, tmp, list, node) {
 		switch (mac_node->state) {
 		case HCLGE_MAC_TO_DEL:
-		case HCLGE_MAC_DEL_FAIL:
 		case HCLGE_MAC_ACTIVE:
 			list_del(&mac_node->node);
 			list_add_tail(&mac_node->node, &tmp_del_list);
@@ -8221,7 +8218,7 @@ void hclge_replace_mac_node(struct list_head *list, const u8 *old_addr,
 }
 
 void hclge_modify_mac_node_state(struct list_head *list, const u8 *addr,
-				 enum HCLGE_MAC_ADDR_STATE state)
+				 enum HCLGE_MAC_NODE_STATE state)
 {
 	struct hclge_vport_mac_addr_cfg *mac_node;
 
@@ -8989,8 +8986,7 @@ static void hclge_mac_node_convert_for_reset(struct list_head *list)
 	list_for_each_entry_safe(mac_node, tmp, list, node) {
 		if (mac_node->state == HCLGE_MAC_ACTIVE) {
 			mac_node->state = HCLGE_MAC_TO_ADD;
-		} else if (mac_node->state == HCLGE_MAC_TO_DEL ||
-			   mac_node->state == HCLGE_MAC_DEL_FAIL) {
+		} else if (mac_node->state == HCLGE_MAC_TO_DEL) {
 			list_del(&mac_node->node);
 			kfree(mac_node);
 		}

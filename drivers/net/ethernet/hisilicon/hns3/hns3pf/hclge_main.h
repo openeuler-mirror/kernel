@@ -640,16 +640,15 @@ struct hclge_fd_ad_data {
 	u16 rule_id;
 };
 
-enum HCLGE_MAC_ADDR_STATE {
+enum HCLGE_MAC_NODE_STATE {
 	HCLGE_MAC_TO_ADD,
 	HCLGE_MAC_TO_DEL,
-	HCLGE_MAC_DEL_FAIL,
 	HCLGE_MAC_ACTIVE
 };
 
 struct hclge_vport_mac_addr_cfg {
 	struct list_head node;
-	enum HCLGE_MAC_ADDR_STATE state;
+	enum HCLGE_MAC_NODE_STATE state;
 	u8 mac_addr[ETH_ALEN];
 };
 
@@ -1016,13 +1015,13 @@ u16 hclge_covert_handle_qid_global(struct hnae3_handle *handle, u16 queue_id);
 int hclge_notify_client(struct hclge_dev *hdev,
 			enum hnae3_reset_notify_type type);
 int hclge_update_mac_list(struct hclge_vport *vport,
-			  enum HCLGE_MAC_ADDR_STATE state,
+			  enum HCLGE_MAC_NODE_STATE state,
 			  enum HCLGE_MAC_ADDR_TYPE mac_type,
 			  const unsigned char *addr);
 void hclge_replace_mac_node(struct list_head *list, const u8 *old_addr,
 			    const u8 *new_addr, bool keep_old);
 void hclge_modify_mac_node_state(struct list_head *list, const u8 *addr,
-				 enum HCLGE_MAC_ADDR_STATE state);
+				 enum HCLGE_MAC_NODE_STATE state);
 void hclge_rm_vport_all_mac_table(struct hclge_vport *vport, bool is_del_list,
 				  enum HCLGE_MAC_ADDR_TYPE mac_type);
 void hclge_rm_vport_all_vlan_table(struct hclge_vport *vport, bool is_del_list);
