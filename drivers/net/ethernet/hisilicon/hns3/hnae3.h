@@ -32,7 +32,7 @@
 
 #define HNAE3_MOD_VERSION "1.9.37.7"
 
-#define HNAE3_MIN_VECTOR_NUM	2 /* one for msi-x, another for IO */
+#define HNAE3_MIN_VECTOR_NUM	2 /* first one for misc, another for IO */
 
 /* Device IDs */
 #define HNAE3_DEV_ID_GE				0xA220
