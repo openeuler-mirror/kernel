@@ -5286,10 +5286,10 @@ static int hclge_config_key(struct hclge_dev *hdev, u8 stage,
 	struct hclge_fd_key_cfg *key_cfg = &hdev->fd_cfg.key_cfg[stage];
 	u8 key_x[MAX_KEY_BYTES], key_y[MAX_KEY_BYTES];
 	u8 *cur_key_x, *cur_key_y;
-	unsigned int i;
-	int ret;
 	u8 meta_data_region;
 	u8 tuple_size;
+	int ret;
+	u32 i;
 
 	memset(key_x, 0, sizeof(key_x));
 	memset(key_y, 0, sizeof(key_y));
@@ -9431,7 +9431,11 @@ int hclge_set_vport_mtu(struct hclge_vport *vport, int new_mtu)
 			return -EINVAL;
 		}
 
-	hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
+	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
+	if (ret) {
+		mutex_unlock(&hdev->vport_lock);
+		return ret;
+	}
 
 	ret = hclge_set_mac_mtu(hdev, max_frm_size);
 	if (ret) {
