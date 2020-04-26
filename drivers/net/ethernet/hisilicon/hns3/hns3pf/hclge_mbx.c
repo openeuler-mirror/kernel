@@ -344,36 +344,6 @@ void hclge_inform_vf_promisc_info(struct hclge_vport *vport)
 			   HCLGE_MBX_PUSH_PROMISC_INFO, dest_vfid);
 }
 
-static int hclge_modify_vf_mac_addr(struct hclge_vport *vport,
-				    const u8 *old_addr, const u8 *new_addr)
-{
-	bool old_mac_removed = true;
-	int ret;
-
-	ret = hclge_rm_uc_addr_common(vport, old_addr);
-	if (ret)
-		old_mac_removed = false;
-
-	ret = hclge_add_uc_addr_common(vport, new_addr);
-	if (ret) {
-		ret = hclge_add_uc_addr_common(vport, old_addr);
-		if (ret) {
-			spin_lock_bh(&vport->mac_list_lock);
-			hclge_modify_mac_node_state(&vport->uc_mac_list,
-						    old_addr, HCLGE_MAC_TO_ADD);
-			spin_unlock_bh(&vport->mac_list_lock);
-		}
-		return -EIO;
-
-	} else {
-		spin_lock_bh(&vport->mac_list_lock);
-		hclge_replace_mac_node(&vport->uc_mac_list, old_addr, new_addr,
-				       !old_mac_removed);
-		spin_unlock_bh(&vport->mac_list_lock);
-	}
-	return ret;
-}
-
 static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 				    struct hclge_mbx_vf_to_pf_cmd *mbx_req)
 {
@@ -381,7 +351,7 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 
 	const u8 *mac_addr = (const u8 *)(mbx_req->msg.data);
 	struct hclge_dev *hdev = vport->back;
-	int status = 0;
+	int status;
 
 	if (mbx_req->msg.subcode == HCLGE_MBX_MAC_VLAN_UC_MODIFY) {
 		const u8 *old_addr = (const u8 *)
@@ -397,25 +367,17 @@ static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
 		if (!is_valid_ether_addr(mac_addr))
 			return -EINVAL;
 
-		if (is_zero_ether_addr(old_addr)) {
-			status = hclge_add_uc_addr_common(vport, mac_addr);
-			if (!status)
-				hclge_update_mac_list(vport, HCLGE_MAC_ACTIVE,
-						      HCLGE_MAC_ADDR_UC,
-						      mac_addr);
-			else
-				hclge_update_mac_list(vport, HCLGE_MAC_TO_ADD,
-						      HCLGE_MAC_ADDR_UC,
-						      mac_addr);
-		} else {
-			hclge_modify_vf_mac_addr(vport, old_addr, mac_addr);
-		}
+		spin_lock_bh(&vport->mac_list_lock);
+		status = hclge_update_mac_node_for_dev_addr(vport, old_addr,
+							    mac_addr);
+		spin_unlock_bh(&vport->mac_list_lock);
+		hclge_task_schedule(hdev, 0);
 	} else if (mbx_req->msg.subcode == HCLGE_MBX_MAC_VLAN_UC_ADD) {
-		hclge_update_mac_list(vport, HCLGE_MAC_TO_ADD,
-				      HCLGE_MAC_ADDR_UC, mac_addr);
+		status = hclge_update_mac_list(vport, HCLGE_MAC_TO_ADD,
+					       HCLGE_MAC_ADDR_UC, mac_addr);
 	} else if (mbx_req->msg.subcode == HCLGE_MBX_MAC_VLAN_UC_REMOVE) {
-		hclge_update_mac_list(vport, HCLGE_MAC_TO_DEL,
-				      HCLGE_MAC_ADDR_UC, mac_addr);
+		status = hclge_update_mac_list(vport, HCLGE_MAC_TO_DEL,
+					       HCLGE_MAC_ADDR_UC, mac_addr);
 	} else {
 		dev_err(&hdev->pdev->dev,
 			"failed to set unicast mac addr, unknown subcode %u\n",

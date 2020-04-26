@@ -1018,10 +1018,8 @@ int hclge_update_mac_list(struct hclge_vport *vport,
 			  enum HCLGE_MAC_NODE_STATE state,
 			  enum HCLGE_MAC_ADDR_TYPE mac_type,
 			  const unsigned char *addr);
-void hclge_replace_mac_node(struct list_head *list, const u8 *old_addr,
-			    const u8 *new_addr, bool keep_old);
-void hclge_modify_mac_node_state(struct list_head *list, const u8 *addr,
-				 enum HCLGE_MAC_NODE_STATE state);
+int hclge_update_mac_node_for_dev_addr(struct hclge_vport *vport,
+				       const u8 *old_addr, const u8 *new_addr);
 void hclge_rm_vport_all_mac_table(struct hclge_vport *vport, bool is_del_list,
 				  enum HCLGE_MAC_ADDR_TYPE mac_type);
 void hclge_rm_vport_all_vlan_table(struct hclge_vport *vport, bool is_del_list);
