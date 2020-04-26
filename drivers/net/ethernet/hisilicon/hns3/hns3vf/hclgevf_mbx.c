@@ -60,7 +60,7 @@ static int hclgevf_get_mbx_resp(struct hclgevf_dev *hdev, u16 code0, u16 code1,
 
 	if (resp_len > HCLGE_MBX_MAX_RESP_DATA_SIZE) {
 		dev_err(&hdev->pdev->dev,
-			"VF mbx response len(=%u) exceeds maximum(=%d)\n",
+			"VF mbx response len(=%u) exceeds maximum(=%u)\n",
 			resp_len,
 			HCLGE_MBX_MAX_RESP_DATA_SIZE);
 		return -EINVAL;

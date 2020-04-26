@@ -77,7 +77,7 @@ enum hclge_mbx_tbl_cfg_subcode {
 };
 
 #define HCLGE_MBX_MAX_MSG_SIZE	14
-#define HCLGE_MBX_MAX_RESP_DATA_SIZE	8
+#define HCLGE_MBX_MAX_RESP_DATA_SIZE	8U
 #define HCLGE_MBX_MAX_RING_CHAIN_PARAM_NUM	4
 
 struct hclge_ring_chain_param {
