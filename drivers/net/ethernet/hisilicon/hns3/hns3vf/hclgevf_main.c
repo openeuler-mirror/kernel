@@ -1613,10 +1613,6 @@ static int hclgevf_reset_wait(struct hclgevf_dev *hdev)
 	u32 val;
 	int ret;
 
-	/* wait to check the hardware reset completion status */
-	val = hclgevf_read_dev(&hdev->hw, HCLGEVF_RST_ING);
-	dev_info(&hdev->pdev->dev, "checking vf resetting status: %x\n", val);
-
 	if (hdev->reset_type == HNAE3_VF_RESET)
 		ret = readl_poll_timeout(hdev->hw.io_base +
 					 HCLGEVF_VF_RST_ING, val,
@@ -1780,13 +1776,14 @@ static int hclgevf_reset_rebuild(struct hclgevf_dev *hdev)
 {
 	int ret;
 
+	hdev->rst_stats.hw_rst_done_cnt++;
+
 	rtnl_lock();
 	/* now, re-initialize the nic client and ae device */
 	ret = hclgevf_reset_stack(hdev);
 	rtnl_unlock();
 	if (ret) {
-		dev_err(&hdev->pdev->dev,
-			"fail to reset VF stack, ret=%d\n", ret);
+		dev_err(&hdev->pdev->dev, "failed to reset VF stack\n");
 		return ret;
 	}
 
@@ -1798,38 +1795,28 @@ static int hclgevf_reset_rebuild(struct hclgevf_dev *hdev)
 	return 0;
 }
 
-static int hclgevf_reset(struct hclgevf_dev *hdev)
+static void hclgevf_reset(struct hclgevf_dev *hdev)
 {
-	int ret;
-
-	ret = hclgevf_reset_prepare(hdev);
-	if (ret)
+	if (hclgevf_reset_prepare(hdev))
 		goto err_reset;
 
 	/* check if VF could successfully fetch the hardware reset completion
 	 * status from the hardware
 	 */
-	ret = hclgevf_reset_wait(hdev);
-	if (ret) {
+	if (hclgevf_reset_wait(hdev)) {
 		/* can't do much in this situation, will disable VF */
 		dev_err(&hdev->pdev->dev,
-			"VF failed(=%d) to fetch H/W reset completion status\n",
-			ret);
+			"failed to fetch H/W reset completion status\n");
 		goto err_reset;
 	}
 
-	hdev->rst_stats.hw_rst_done_cnt++;
-
-	ret = hclgevf_reset_rebuild(hdev);
-	if (ret)
+	if (hclgevf_reset_rebuild(hdev))
 		goto err_reset;
 
-	return ret;
+	return;
 
 err_reset:
 	hclgevf_reset_err_handle(hdev);
-
-	return ret;
 }
 
 static enum hnae3_reset_type hclgevf_get_reset_level(struct hclgevf_dev *hdev,
@@ -1998,8 +1985,6 @@ static void hclgevf_reset_service_task(struct hclgevf_dev *hdev)
 {
 #define	HCLGEVF_MAX_RESET_ATTEMPTS_CNT	3
 
-	int ret;
-
 	if (!test_and_clear_bit(HCLGEVF_STATE_RST_SERVICE_SCHED, &hdev->state))
 		return;
 
@@ -2018,12 +2003,8 @@ static void hclgevf_reset_service_task(struct hclgevf_dev *hdev)
 		hdev->last_reset_time = jiffies;
 		while ((hdev->reset_type =
 			hclgevf_get_reset_level(hdev, &hdev->reset_pending))
-		       != HNAE3_NONE_RESET) {
-			ret = hclgevf_reset(hdev);
-			if (ret)
-				dev_err(&hdev->pdev->dev,
-					"VF stack reset failed %d.\n", ret);
-		}
+		       != HNAE3_NONE_RESET)
+			hclgevf_reset(hdev);
 	} else if (test_and_clear_bit(HCLGEVF_RESET_REQUESTED,
 				      &hdev->reset_state)) {
 		/* we could be here when either of below happens:
