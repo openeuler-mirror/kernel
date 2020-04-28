@@ -790,6 +790,31 @@ fi
 
 %changelog
 * Tue Apr 28 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2004.1.0.0037
+- net: hns3: update hns3 version to 1.9.37.8
+- net: hns3: optimize FD tuple inspect
+- net: hns3: fix unsupported config for RSS
+- net: hns3: disable auto-negotiation off with 1000M setting in ethtool
+- net: hns3: update VF mac list configuration as PF
+- net: hns3: modify magic number in hclge_dbg_dump_ncl_config
+- net: hns3: do mac configuration instead of rollback when malloc mac node fail
+- net: hns3: update the device mac address asynchronously
+- net: hns3: add one parameter for function hns3_nic_maybe_stop_tx()
+- net: hns3: delete unnecessary logs after kzalloc fails
+- net: hns3: fix some coding style found by codereview
+- net: hns3: use uniform format "failed to xxx" to print fail message
+- net: hns3: add debug information for flow table when failed
+- net: hns3: modify hclge_restore_fd_entries()'s return type to void
+- net: hns3: splice two "if" logic as one
+- net: hns3: clean up some coding style issue
+- net: hns3: modify definition location of struct hclge_mac_ethertype_idx_rd_cmd
+- net: hns3: modify comment of macro HNAE3_MIN_VECTOR_NUM
+- net: hns3: modify one macro into unsigned type
+- net: hns3: delete unused macro HCLGEVF_MPF_ENBALE
+- net: hns3: modify definition location of struct hclge_vf_vlan_cfg
+- net: hns3: remove unnecessary 'ret' variable in hclge_misc_err_recovery()
+- net: hns3: remove unnecessary register info in hclge_reset_err_handle()
+- net: hns3: misc cleanup for VF reset
+- net: hns3: merge mac state HCLGE_MAC_TO_DEL and HCLGE_MAC_DEL_FAIL
 - net: hns3: update hns3 version to 1.9.37.7
 - scsi: hisi_sas: do not reset the timer to wait for phyup when phy already up
 - net: hns3: add suspend/resume function for hns3 driver
