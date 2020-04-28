@@ -3,6 +3,7 @@
 
 #include <linux/mm.h>
 #include <linux/miscdevice.h>
+#include <linux/uaccess.h>
 #include <linux/device.h>
 #include <linux/module.h>
 #include <linux/io.h>
@@ -21,6 +22,7 @@
 #define CHIP_INFO_REG_SIZE 4
 #define TYPE_SHIFT 4
 #define BIT_SHIFT_8 8
+#define PCIE_CMD_GET_CHIPNUMS 0x01
 
 #define	DEVICE_NAME "pcie_reg_dev"
 
@@ -37,7 +39,7 @@ enum {
 	MMAP_TYPE_VIRTIO
 };
 
-static int current_chip_nums;
+static u32 current_chip_nums;
 
 static const struct vm_operations_struct mmap_pcie_mem_ops = {
 #ifdef CONFIG_HAVE_IOREMAP_PROT
@@ -100,10 +102,10 @@ static int pcie_reg_mmap(struct file *filep, struct vm_area_struct *vma)
 	return 0;
 }
 
-int pcie_get_chipnums(u32 cpu_info)
+u32 pcie_get_chipnums(u32 cpu_info)
 {
 	int i;
-	int chip_count = 0;
+	u32 chip_count = 0;
 	u32 chip_i_info;
 
 	for (i = 0; i < MAX_CHIP_NUM; i++) {
@@ -144,12 +146,41 @@ static int pcie_release(struct inode *inode, struct file *f)
 	return 0;
 }
 
+static long pcie_reg_ioctl(struct file *pfile, unsigned int cmd,
+			   unsigned long arg)
+{
+	int ret = 0;
+
+	switch (cmd) {
+	case PCIE_CMD_GET_CHIPNUMS:
+		if ((void *)arg == NULL) {
+			pr_info("[PCIe Base] invalid arg address\n");
+			ret = -EINVAL;
+			break;
+		}
+
+		if (copy_to_user((void *)arg, (void *)&current_chip_nums,
+				 sizeof(int))) {
+			pr_info("[PCIe Base] copy chip_nums to usr failed\n");
+			ret =  -EINVAL;
+		}
+		break;
+
+	default:
+		pr_info("[PCIe Base] invalid pcie ioctl cmd:%u\n", cmd);
+		break;
+	}
+
+	return ret;
+}
+
 static const struct file_operations pcie_dfx_fops = {
 	.owner          = THIS_MODULE,
 	.open           = pcie_open,
 	.release        = pcie_release,
 	.llseek         = noop_llseek,
 	.mmap           = pcie_reg_mmap,
+	.unlocked_ioctl = pcie_reg_ioctl,
 };
 
 static struct miscdevice pcie_dfx_misc = {
