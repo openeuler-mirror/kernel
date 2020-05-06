@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2004.1.0
+%global hulkrelease 2005.1.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0037
+Release: %{hulkrelease}.0038
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,11 @@ fi
 %endif
 
 %changelog
+* Wed May 6 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.1.0.0038
+- perf: Make perf able to build with latest libbfd
+- nbd: use blk_mq_queue_tag_inflight_iter()
+- blk-mq: use blk_mq_queue_tag_inflight_iter() in debugfs
+
 * Tue Apr 28 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2004.1.0.0037
 - net: hns3: update hns3 version to 1.9.37.8
 - net: hns3: optimize FD tuple inspect
