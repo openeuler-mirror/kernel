@@ -373,26 +373,45 @@ static int hinic_tx_csum(struct hinic_sq_task *task, u32 *queue_info,
 
 		if (ip.v4->version == 4) {
 			l3_type = IPV4_PKT_NO_CHKSUM_OFFLOAD;
+			l4_proto = ip.v4->protocol;
 		} else if (ip.v4->version == 6) {
+			unsigned char *exthdr;
+			__be16 frag_off;
+
 			l3_type = IPV6_PKT;
 #ifdef HAVE_OUTER_IPV6_TUNNEL_OFFLOAD
 			tunnel_type = TUNNEL_UDP_CSUM;
 #endif
+			exthdr = ip.hdr + sizeof(*ip.v6);
+			l4_proto = ip.v6->nexthdr;
+			l4.hdr = skb_transport_header(skb);
+			if (l4.hdr != exthdr)
+				ipv6_skip_exthdr(skb, exthdr - skb->data,
+						 &l4_proto, &frag_off);
 		} else {
 			l3_type = UNKNOWN_L3TYPE;
+			l4_proto = IPPROTO_RAW;
 		}
 
 		hinic_task_set_outter_l3(task, l3_type,
 					 skb_network_header_len(skb));
 
-		l4_tunnel_len = skb_inner_network_offset(skb) -
-				skb_transport_offset(skb);
+		if (l4_proto == IPPROTO_UDP || l4_proto == IPPROTO_GRE) {
+			l4_tunnel_len = skb_inner_network_offset(skb) -
+					skb_transport_offset(skb);
+			ip.hdr = skb_inner_network_header(skb);
+			l4.hdr = skb_inner_transport_header(skb);
+			network_hdr_len = skb_inner_network_header_len(skb);
+		} else {
+			tunnel_type = NOT_TUNNEL;
+			l4_tunnel_len = 0;
+
+			ip.hdr = skb_inner_network_header(skb);
+			l4.hdr = skb_transport_header(skb);
+			network_hdr_len = skb_network_header_len(skb);
+		}
 
 		hinic_task_set_tunnel_l4(task, tunnel_type, l4_tunnel_len);
-
-		ip.hdr = skb_inner_network_header(skb);
-		l4.hdr = skb_inner_transport_header(skb);
-		network_hdr_len = skb_inner_network_header_len(skb);
 	} else {
 		ip.hdr = skb_network_header(skb);
 		l4.hdr = skb_transport_header(skb);
