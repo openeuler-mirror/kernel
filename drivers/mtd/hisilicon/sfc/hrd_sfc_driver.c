@@ -26,7 +26,7 @@
 #include "hrd_common.h"
 #include "hrd_sflash_driver.h"
 
-#define SFC_DRIVER_VERSION  "1.9.39.0"
+#define SFC_DRIVER_VERSION  "1.9.60.0"
 
 static const char *g_sflashMtdList[] = {"sflash", NULL};
 

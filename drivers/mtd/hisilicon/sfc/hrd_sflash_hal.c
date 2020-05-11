@@ -731,7 +731,7 @@ static s32 _SFC_RegModeWrite(struct SFC_SFLASH_INFO *sflash,
 			pr_err("[SFC] [%s %d]: SFC_RegWordAlignWrite fail\n", __func__, __LINE__);
 			return slRet;
 		}
-		i += ulRemain&(~0x3);
+		i += ulRemain & (~0x3);
 	}
 
 	for (; i < ulWriteLen; i++) {
@@ -749,6 +749,9 @@ s32 SFC_RegModeWrite(struct SFC_SFLASH_INFO *sflash,
 	u32 offset, const u8 *pucSrc, u32 ulWriteLen)
 {
 	s32 slRet;
+	u32 ulPageRemain;
+	u32 offsetTmp = offset;
+	u8 *pucSrcTmp = (u8 *)pucSrc;
 
 	if (!pucSrc) {
 		pr_err("[SFC] [%s %d]: Pointer is null\n", __func__, __LINE__);
@@ -762,9 +765,23 @@ s32 SFC_RegModeWrite(struct SFC_SFLASH_INFO *sflash,
 
 	SFC_CheckErr(sflash);
 
-	slRet = _SFC_RegModeWrite(sflash, offset, pucSrc, ulWriteLen);
-	if (slRet != HRD_OK)
-		return slRet;
+	/* the size of data remaining on the first page */
+	ulPageRemain = SPI_FLASH_PAGE_SIZE - (offset % SPI_FLASH_PAGE_SIZE);
+	if (ulWriteLen >= ulPageRemain) {
+		slRet = _SFC_RegModeWrite(sflash, offsetTmp, pucSrcTmp, ulPageRemain);
+		if (slRet != HRD_OK)
+			return slRet;
+
+		offsetTmp += ulPageRemain;
+		pucSrcTmp += ulPageRemain;
+		ulWriteLen -= ulPageRemain;
+	}
+
+	if (ulWriteLen) {
+		slRet = _SFC_RegModeWrite(sflash, offsetTmp, pucSrcTmp, ulWriteLen);
+		if (slRet != HRD_OK)
+			return slRet;
+	}
 
 	if (SFC_IsOpErr(sflash->sfc_reg_base))
 		return HRD_ERR;
@@ -809,7 +826,7 @@ s32 SFC_RegModeRead(struct SFC_SFLASH_INFO *sflash,
 			pr_err("[SFC] [%s %d]: SFC_RegWordAlignRead fail\n", __func__, __LINE__);
 			return ret;
 		}
-		i += ulRemain&(~0x3);
+		i += ulRemain & (~0x3);
 	}
 
 	for (; i < ulReadLen; i++) {
