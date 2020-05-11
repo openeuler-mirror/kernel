@@ -20,6 +20,7 @@
 #include "hrd_sflash_driver.h"
 
 #define SFC_HARD_BUF_LEN (256)
+#define SPI_FLASH_PAGE_SIZE (256)
 
 #define SPI_CMD_SR_WIP 1 /* Write in Progress bit in status register position */
 #define SPI_CMD_RDSR 0x05 /* Read Status Register */
