@@ -20,6 +20,13 @@
 #define PAGE_NUM_MAX (0x6f)
 #define DATA_NUM_MAX (0x4)
 
+#define I2C_FIFO_DEPTH (256)
+
+/* slave_addr use 1 fifo */
+#define PMBUS_READ_LEN_MAX (I2C_FIFO_DEPTH - 1)
+/* slave_addr use 2 fifo */
+#define PMBUS_WRITE_LEN_MAX (I2C_FIFO_DEPTH - 2)
+
 #define I2C_TX_ABRT (0x040)
 #define I2C_TX_ABRT_SRC_REG (0x0880)
 #define I2C_CLR_TX_ABRT_REG (0x0854)
@@ -29,6 +36,7 @@
 
 #define I2C_SS_SCLHCNT 0x3db
 #define I2C_SS_SCLLCNT 0x3e6
+#define I2C_SS_SDA_HOLD_FS 0xfa
 
 /* AVS_REG_GEN */
 #define AVS_WR_OPEN_OFFSET 0x0004
@@ -76,6 +84,14 @@
 #define VOLTAGE_CONVERT_CFG_OFFSET 0x0A34
 #define STATUS_RPT_OFFSET 0x0AA4
 #define STATUS_ERR_RPT_OFFSET 0x0AA8
+
+struct pmbus_read_op {
+	u32 slave_addr;
+	u32 cmd_len;
+	u32 data_len;
+	u8 *cmd;
+	u8 *data;
+};
 
 /* Define the union pmbus_vout_mode */
 typedef union {

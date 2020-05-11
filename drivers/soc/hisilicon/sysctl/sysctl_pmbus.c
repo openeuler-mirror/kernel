@@ -190,6 +190,9 @@ int InitPmbus(u8 chip_id)
 	his_sysctrl_reg_wr(base, I2C_SS_SCL_HCNT_OFFSET, I2C_SS_SCLHCNT);
 	/* ulSclLow > 1.5us */
 	his_sysctrl_reg_wr(base, I2C_SS_SCL_LCNT_OFFSET, I2C_SS_SCLLCNT);
+	/* set sda_hold_fs 1us > 250ns */
+	his_sysctrl_reg_wr(base, I2C_SDA_HOLD_OFFSET, I2C_SS_SDA_HOLD_FS);
+
 	his_sysctrl_reg_wr(base, I2C_ENABLE_OFFSET, 0x1);
 
 	debug_sysctrl_print("Initialize Pmbus end\n");
@@ -233,35 +236,36 @@ int sysctl_pmbus_cfg(u8 chip_id, u8 addr, u8 page, u32 slave_addr)
 	return 0;
 }
 
-int sysctl_pmbus_write(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 buf)
+int sysctl_pmbus_write_common(u8 chip_id, u32 slave_addr, u32 data_len, u8 *buf)
 {
 	u32 i = 0;
 	u32 temp = 0;
 	u32 loop = 0x1000;
-	u32 temp_data = addr;
+	u32 temp_data;
 	void __iomem *base = NULL;
 
 	if ((chip_id >= CHIP_ID_NUM_MAX) ||
-		(data_len > DATA_NUM_MAX) ||
-		(slave_addr >= SLAVE_ADDR_MAX)) {
+		(slave_addr >= SLAVE_ADDR_MAX) ||
+		(!data_len) || (data_len > PMBUS_WRITE_LEN_MAX) ||
+		(!buf)) {
 		pr_err("[sysctl pmbus] write param err,chipid=0x%x,data_len=0x%x,slave_addr=0x%x!\n",
 			chip_id, data_len, slave_addr);
 		return SYSCTL_ERR_PARAM;
 	}
 
+	/* clear all interrupt */
 	base = g_sysctl_pmbus_base[chip_id];
-
 	his_sysctrl_reg_wr(base, I2C_INTR_RAW_OFFSET, 0x3ffff);
 
+	/* send: slave_addr[7bit] + write[1bit] */
 	his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, (0x2 << 0x8) | slave_addr);
-	if (data_len != 0) {
-		his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, addr);
 
-		for (i = 0; i < data_len - 1; i++)
-			his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, 0xff & (buf >> (i * 0x8)));
+	/* write data */
+	for (i = 0; i < data_len - 1; i++)
+		his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, buf[i]);
 
-		temp_data = (0xff & (buf >> (i * 0x8)));
-	}
+	/* last data should send stop */
+	temp_data = buf[i];
 	his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, (0x4 << 0x8) | temp_data);
 
 	/* poll until send done */
@@ -273,14 +277,15 @@ int sysctl_pmbus_write(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 bu
 		/* send data failed */
 		if (temp & I2C_TX_ABRT) {
 			his_sysctrl_reg_rd(base, I2C_TX_ABRT_SRC_REG, &temp);
-			pr_err("[sysctl pmbus]write data fail, chip_id:0x%x,slave_addr:0x%x, addr:0x%x!\r\n",
-				chip_id, slave_addr, addr);
+			pr_err("[sysctl pmbus]write data fail, chip_id:0x%x,slave_addr:0x%x\r\n",
+				chip_id, slave_addr);
 
 			his_sysctrl_reg_rd(base, I2C_CLR_TX_ABRT_REG, &temp);
 			return SYSCTL_ERR_FAILED;
 		}
 
 		his_sysctrl_reg_rd(base, I2C_STATUS_REG, &temp);
+		/* send done */
 		if (temp & I2C_TX_FIFO_EMPTY) {
 			his_sysctrl_reg_rd(base, I2C_TX_FIFO_DATA_NUM_REG, &temp);
 			if (temp == 0)
@@ -289,8 +294,8 @@ int sysctl_pmbus_write(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 bu
 
 		loop--;
 		if (loop == 0) {
-			pr_err("[sysctl pmbus]write data retry fail, chip_id:0x%x,slave_addr:0x%x, addr:0x%x!\r\n",
-				chip_id, slave_addr, addr);
+			pr_err("[sysctl pmbus]write data retry fail, chip_id:0x%x,slave_addr:0x%x\r\n",
+				chip_id, slave_addr);
 			return SYSCTL_ERR_FAILED;
 		}
 	}
@@ -298,7 +303,25 @@ int sysctl_pmbus_write(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 bu
 	return SYSCTL_ERR_OK;
 }
 
-static int sysctl_pmbus_read_pre(void __iomem *base, u8 addr, u32 slave_addr, u32 data_len)
+int sysctl_pmbus_write(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 buf)
+{
+#define TMP_LEN_MAX 5
+	u8 i;
+	u8 tmp[TMP_LEN_MAX] = {0};
+
+	if (data_len > DATA_NUM_MAX) {
+		pr_err("[sysctl pmbus] write param err,data_len=0x%x!\n", data_len);
+		return SYSCTL_ERR_PARAM;
+	}
+
+	tmp[0] = addr;
+	for (i = 0; i < data_len; i++)
+		tmp[i + 1] = (buf >> (i * 0x8)) & 0xff;
+
+	return sysctl_pmbus_write_common(chip_id, slave_addr, data_len + sizeof(addr), &tmp[0]);
+}
+
+static int sysctl_pmbus_read_pre(void __iomem *base, u32 cmd_len, u8 *cmd, u32 slave_addr, u32 data_len)
 {
 	u32 i = 0;
 	u32 fifo_num = 0;
@@ -309,22 +332,29 @@ static int sysctl_pmbus_read_pre(void __iomem *base, u8 addr, u32 slave_addr, u3
 		return SYSCTL_ERR_PARAM;
 	}
 
+	/* clear all interrupt */
 	his_sysctrl_reg_wr(base, I2C_INTR_RAW_OFFSET, 0x3ffff);
+	/* clear rx fifo */
 	his_sysctrl_reg_rd(base, I2C_RXFLR_OFFSET, &fifo_num);
-	debug_sysctrl_print("[sysctl_pmbus_read_byte]read pmbus , read empty rx fifo num:%d\r\n", fifo_num);
 	for (i = 0; i < fifo_num; i++)
 		his_sysctrl_reg_rd(base, I2C_DATA_CMD_OFFSET, &temp_byte);
 
-	his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, (0x2 << 0x8) | slave_addr);
-	his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, addr);
-	his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, (0x3 << 0x8) | slave_addr);
+	/* send cmd */
+	if (cmd_len) {
+		his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, (0x2 << 0x8) | slave_addr);
+		for (i = 0; i < cmd_len; i++)
+			his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, cmd[i]);
+	}
 
+	/* read data */
+	his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, (0x3 << 0x8) | slave_addr);
 	i = data_len;
 	while ((i - 1) > 0) {
 		his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, 0x100);
 		i--;
 	}
 
+	/* last data should send stop */
 	his_sysctrl_reg_wr(base, I2C_DATA_CMD_OFFSET, 0x500);
 
 	return 0;
@@ -366,6 +396,43 @@ static int sysctl_pmbus_wait_data(void __iomem *base, u32 data_len)
 	return SYSCTL_ERR_OK;
 }
 
+int sysctl_pmbus_read_common(u8 chip_id, struct pmbus_read_op *op)
+{
+	u32 ret;
+	u32 i = 0;
+	u32 temp_byte = 0;
+	void __iomem *base = NULL;
+
+	if ((chip_id >= CHIP_ID_NUM_MAX) || (!op)) {
+		pr_err("[sysctl pmbus]read param err,chipid=0x%x!\n", chip_id);
+		return SYSCTL_ERR_PARAM;
+	}
+
+	if ((op->slave_addr >= SLAVE_ADDR_MAX) ||
+		(!op->data_len) || ((op->cmd_len + op->data_len) > PMBUS_READ_LEN_MAX) ||
+		(!op->data) || ((op->cmd_len) && (!op->cmd))) {
+		pr_err("[sysctl pmbus]read param err,data_len=0x%x,cmd_len=0x%x,slave_addr=0x%x\n",
+			op->data_len, op->cmd_len, op->slave_addr);
+		return SYSCTL_ERR_PARAM;
+	}
+
+	base = g_sysctl_pmbus_base[chip_id];
+	ret = sysctl_pmbus_read_pre(base, op->cmd_len, op->cmd, op->slave_addr, op->data_len);
+	if (ret != SYSCTL_ERR_OK)
+		return ret;
+
+	ret = sysctl_pmbus_wait_data(base, op->data_len);
+	if (ret != SYSCTL_ERR_OK)
+		return ret;
+
+	for (i = 0; i < op->data_len; i++) {
+		his_sysctrl_reg_rd(base, I2C_DATA_CMD_OFFSET, &temp_byte);
+		op->data[i] = temp_byte & 0xff;
+	}
+
+	return SYSCTL_ERR_OK;
+}
+
 int sysctl_pmbus_read(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 *buf)
 {
 	u32 ret;
@@ -385,7 +452,7 @@ int sysctl_pmbus_read(u8 chip_id, u8 addr, u32 slave_addr, u32 data_len, u32 *bu
 
 	base = g_sysctl_pmbus_base[chip_id];
 
-	ret = sysctl_pmbus_read_pre(base, addr, slave_addr, data_len);
+	ret = sysctl_pmbus_read_pre(base, sizeof(addr), &addr, slave_addr, data_len);
 	if (ret != SYSCTL_ERR_OK)
 		return ret;
 
@@ -566,7 +633,7 @@ static int sysctl_cpu_convert_vol_to_vid(u32 vid_table, u32 value, u32 *vid)
 	return SYSCTL_ERR_OK;
 }
 
-int sysctl_cpu_voltage_adjust (u8 chip_id, u8 loop, u32 slave_addr, u32 value)
+int sysctl_cpu_voltage_adjust(u8 chip_id, u8 loop, u32 slave_addr, u32 value)
 {
 	u32 ret;
 	u32 vid;
@@ -647,5 +714,7 @@ EXPORT_SYMBOL(hi_vrd_info_get);
 EXPORT_SYMBOL(sysctl_cpu_voltage_adjust);
 EXPORT_SYMBOL(sysctl_pmbus_write);
 EXPORT_SYMBOL(sysctl_pmbus_read);
+EXPORT_SYMBOL(sysctl_pmbus_write_common);
+EXPORT_SYMBOL(sysctl_pmbus_read_common);
 EXPORT_SYMBOL(InitPmbus);
 EXPORT_SYMBOL(DeInitPmbus);
