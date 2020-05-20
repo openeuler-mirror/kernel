@@ -30,6 +30,8 @@
 #include "hinic_nic_io.h"
 #include "hinic_nic.h"
 #include "hinic_ctx_def.h"
+#include "hinic_wq.h"
+#include "hinic_cmdq.h"
 
 #define HINIC_DEAULT_TX_CI_PENDING_LIMIT	0
 #define HINIC_DEAULT_TX_CI_COALESCING_TIME	0
@@ -777,6 +779,14 @@ int hinic_init_nic_hwdev(void *hwdev, u16 rx_buff_len)
 
 	if (!hwdev)
 		return -EINVAL;
+
+	if (is_multi_bm_slave(hwdev) && hinic_support_dynamic_q(hwdev)) {
+		err = hinic_reinit_cmdq_ctxts(dev);
+		if (err) {
+			nic_err(dev->dev_hdl, "Failed to reinit cmdq\n");
+			return err;
+		}
+	}
 
 	nic_io = dev->nic_io;
 

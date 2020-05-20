@@ -264,12 +264,15 @@ static void parse_l2nic_res_cap(struct service_cap *cap,
 		nic_cap->max_rqs = dev_cap->nic_max_rq + 1;
 		nic_cap->vf_max_sqs = dev_cap->nic_vf_max_sq + 1;
 		nic_cap->vf_max_rqs = dev_cap->nic_vf_max_rq + 1;
+		nic_cap->max_queue_allowed = 0;
+		nic_cap->dynamic_qp = 0;
 	} else {
 		nic_cap->max_sqs = dev_cap->nic_max_sq;
 		nic_cap->max_rqs = dev_cap->nic_max_rq;
 		nic_cap->vf_max_sqs = 0;
 		nic_cap->vf_max_rqs = 0;
 		nic_cap->max_queue_allowed = dev_cap->max_queue_allowed;
+		nic_cap->dynamic_qp = dev_cap->ovs_dq_en;
 	}
 
 	if (dev_cap->nic_lro_en)
@@ -509,6 +512,9 @@ static void parse_ovs_res_cap(struct service_cap *cap,
 
 	ovs_cap->dev_ovs_cap.max_pctxs = dev_cap->ovs_max_qpc;
 	ovs_cap->dev_ovs_cap.max_cqs = 0;
+
+	if (type == TYPE_PF || type == TYPE_PPF)
+		ovs_cap->dev_ovs_cap.dynamic_qp_en = dev_cap->ovs_dq_en;
 
 	pr_info("Get ovs resource capbility, max_qpc: 0x%x\n",
 		ovs_cap->dev_ovs_cap.max_pctxs);
@@ -1329,6 +1335,7 @@ static int cfg_mbx_pf_proc_vf_msg(void *hwdev, u16 vf_id, u8 cmd, void *buf_in,
 
 	/* OVS VF resources */
 	dev_cap->ovs_max_qpc = ovs_cap->max_pctxs;
+	dev_cap->ovs_dq_en = ovs_cap->dynamic_qp_en;
 
 	*out_size = sizeof(*dev_cap);
 
@@ -1352,8 +1359,10 @@ static int cfg_mbx_pf_proc_vf_msg(void *hwdev, u16 vf_id, u8 cmd, void *buf_in,
 	dev_cap->nic_max_sq = dev_cap_tmp.nic_max_sq + 1;
 	dev_cap->nic_max_rq = dev_cap_tmp.nic_max_rq + 1;
 	dev_cap->max_queue_allowed = dev_cap_tmp.max_queue_allowed;
-	sdk_info(dev->dev_hdl, "func_id(%u) fixed qnum %u max_queue_allowed %u\n",
-		 func_id, dev_cap->nic_max_sq, dev_cap->max_queue_allowed);
+
+	sdk_info(dev->dev_hdl, "func_id(%u) %s qnum %u max_queue_allowed %u\n",
+		 func_id, (ovs_cap->dynamic_qp_en ? "dynamic" : "fixed"),
+		 dev_cap->nic_max_sq, dev_cap->max_queue_allowed);
 
 	return 0;
 }
@@ -1750,6 +1759,16 @@ bool hinic_support_ft(void *hwdev)
 	return true;
 }
 EXPORT_SYMBOL(hinic_support_ft);
+
+bool hinic_support_dynamic_q(void *hwdev)
+{
+	struct hinic_hwdev *dev = hwdev;
+
+	if (!hwdev)
+		return false;
+
+	return dev->cfg_mgmt->svc_cap.nic_cap.dynamic_qp ? true : false;
+}
 
 bool hinic_func_for_mgmt(void *hwdev)
 {

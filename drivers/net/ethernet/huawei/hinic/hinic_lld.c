@@ -1644,6 +1644,9 @@ static int __set_nic_func_state(struct hinic_pcidev *pci_adapter)
 	}
 
 	if (enable_nic) {
+		if (is_multi_bm_slave(pci_adapter->hwdev))
+			hinic_set_vf_dev_cap(pci_adapter->hwdev);
+
 		err = attach_uld(pci_adapter, SERVICE_T_NIC,
 				 &g_uld_info[SERVICE_T_NIC]);
 		if (err) {
@@ -2059,6 +2062,10 @@ static void hinic_set_vf_load_state(struct hinic_pcidev *pci_adapter,
 
 	if (hinic_func_type(pci_adapter->hwdev) == TYPE_VF)
 		return;
+
+	/* The VF on the BM slave side must be probed */
+	if (is_multi_bm_slave(pci_adapter->hwdev))
+		vf_load_state = false;
 
 	func_id = hinic_global_func_id_hw(pci_adapter->hwdev);
 

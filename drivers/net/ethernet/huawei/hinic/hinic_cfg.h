@@ -442,7 +442,8 @@ struct hinic_dev_cap {
 
 	/* OVS */
 	u32 ovs_max_qpc;
-	u32 rsvd6;
+	u8  ovs_dq_en;
+	u8  rsvd5[3];
 
 	/* ToE */
 	u32 toe_max_pctx;
