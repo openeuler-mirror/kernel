@@ -159,8 +159,6 @@ u32 hinic_func_own_bit_get(struct hinic_hwdev *hwdev);
 
 void hinic_func_own_bit_set(struct hinic_hwdev *hwdev, u32 cfg);
 
-void hinic_qps_num_set(struct hinic_hwdev *hwdev, u32 num_qps);
-
 int hinic_aeqs_init(struct hinic_hwdev *hwdev, u16 num_aeqs,
 		    struct irq_info *msix_entries);
 

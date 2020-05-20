@@ -2318,6 +2318,7 @@ static int hinic_func_init(struct pci_dev *pdev,
 			true : disable_vf_load;
 
 	hinic_set_vf_load_state(pci_adapter, vf_load_state);
+	hinic_qps_num_set(pci_adapter->hwdev, 0);
 
 	pci_adapter->lld_dev.pdev = pdev;
 	pci_adapter->lld_dev.hwdev = pci_adapter->hwdev;

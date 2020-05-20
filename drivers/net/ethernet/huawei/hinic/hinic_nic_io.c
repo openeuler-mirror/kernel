@@ -763,6 +763,8 @@ void hinic_free_qp_ctxts(void *hwdev)
 	if (!hwdev)
 		return;
 
+	hinic_qps_num_set(hwdev, 0);
+
 	err = hinic_clean_root_ctxt(hwdev);
 	if (err)
 		nic_err(((struct hinic_hwdev *)hwdev)->dev_hdl,

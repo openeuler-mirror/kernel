@@ -229,9 +229,17 @@ MODULE_PARM_DESC(g_num_ceqe_in_tasklet,
 static irqreturn_t aeq_interrupt(int irq, void *data);
 static irqreturn_t ceq_interrupt(int irq, void *data);
 
-void hinic_qps_num_set(struct hinic_hwdev *hwdev, u32 num_qps)
+/**
+ * hinic_qps_num_set - set the number of queues that are actually opened,
+ * and instructs the migration driver to migrate specified queues
+ * during VF live migration.
+ *
+ * @hwdev: the pointer to hw device
+ * @num_qps: number of queue
+ */
+void hinic_qps_num_set(void *hwdev, u32 num_qps)
 {
-	struct hinic_hwif *hwif = hwdev->hwif;
+	struct hinic_hwif *hwif = ((struct hinic_hwdev *)hwdev)->hwif;
 	u32 addr, val, ctrl;
 
 	addr = HINIC_CSR_AEQ_CTRL_0_ADDR(0);
