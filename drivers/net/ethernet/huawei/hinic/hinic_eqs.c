@@ -1223,6 +1223,7 @@ int hinic_aeqs_init(struct hinic_hwdev *hwdev, u16 num_aeqs,
 	struct hinic_aeqs *aeqs;
 	int err;
 	u16 i, q_id;
+	u32 aeq_len;
 
 	aeqs = kzalloc(sizeof(*aeqs), GFP_KERNEL);
 	if (!aeqs)
@@ -1245,8 +1246,14 @@ int hinic_aeqs_init(struct hinic_hwdev *hwdev, u16 num_aeqs,
 		g_aeq_len = HINIC_DEFAULT_AEQ_LEN;
 	}
 
+	if (HINIC_FUNC_TYPE(hwdev) == TYPE_VF &&
+	    hwdev->hwif->chip_mode != CHIP_MODE_NORMAL)
+		aeq_len = HINIC_VMGW_DEFAULT_AEQ_LEN;
+	else
+		aeq_len = g_aeq_len;
+
 	for (q_id = 0; q_id < num_aeqs; q_id++) {
-		err = init_eq(&aeqs->aeq[q_id], hwdev, q_id, g_aeq_len,
+		err = init_eq(&aeqs->aeq[q_id], hwdev, q_id, aeq_len,
 			      HINIC_AEQ, &msix_entries[q_id]);
 		if (err) {
 			sdk_err(hwdev->dev_hdl, "Failed to init aeq %d\n",
@@ -1307,6 +1314,7 @@ int hinic_ceqs_init(struct hinic_hwdev *hwdev, u16 num_ceqs,
 	struct hinic_ceqs *ceqs;
 	int err;
 	u16 i, q_id;
+	u32 ceq_len;
 
 	ceqs = kzalloc(sizeof(*ceqs), GFP_KERNEL);
 	if (!ceqs)
@@ -1322,6 +1330,12 @@ int hinic_ceqs_init(struct hinic_hwdev *hwdev, u16 num_ceqs,
 		g_ceq_len = HINIC_DEFAULT_CEQ_LEN;
 	}
 
+	if (HINIC_FUNC_TYPE(hwdev) == TYPE_VF &&
+	    hwdev->hwif->chip_mode != CHIP_MODE_NORMAL)
+		ceq_len = HINIC_VMGW_DEFAULT_CEQ_LEN;
+	else
+		ceq_len = g_ceq_len;
+
 	if (!g_num_ceqe_in_tasklet) {
 		sdk_warn(hwdev->dev_hdl, "Module Parameter g_num_ceqe_in_tasklet can not be zero, resetting to %d\n",
 			 HINIC_TASK_PROCESS_EQE_LIMIT);
@@ -1329,7 +1343,7 @@ int hinic_ceqs_init(struct hinic_hwdev *hwdev, u16 num_ceqs,
 	}
 
 	for (q_id = 0; q_id < num_ceqs; q_id++) {
-		err = init_eq(&ceqs->ceq[q_id], hwdev, q_id, g_ceq_len,
+		err = init_eq(&ceqs->ceq[q_id], hwdev, q_id, ceq_len,
 			      HINIC_CEQ, &msix_entries[q_id]);
 		if (err) {
 			sdk_err(hwdev->dev_hdl, "Failed to init ceq %d\n",
