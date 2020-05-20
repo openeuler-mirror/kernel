@@ -44,6 +44,18 @@
 			(((u8)(enable) & 1U) << (host_id))
 #define SLAVE_HOST_STATUS_GET(host_id, val)	(!!((val) & (1U << (host_id))))
 
+#define MULTI_HOST_PPF_GET(host_id, val) (((val) >> ((host_id) * 4 + 16)) & 0xf)
+
+static inline u8 get_master_host_ppf_idx(struct hinic_hwdev *hwdev)
+{
+	u32 reg_val;
+
+	reg_val = hinic_hwif_read_reg(hwdev->hwif,
+				      HINIC_MULT_HOST_SLAVE_STATUS_ADDR);
+	/* master host sets host_id to 0 */
+	return MULTI_HOST_PPF_GET(0, reg_val);
+}
+
 void set_slave_host_enable(struct hinic_hwdev *hwdev, u8 host_id, bool enable)
 {
 	u32 reg_val;
@@ -272,7 +284,7 @@ int __mbox_to_host(struct hinic_hwdev *hwdev, enum hinic_mod_type mod,
 
 	if (!mbox_hwdev->mhost_mgmt) {
 		/* send to master host in default */
-		dst_host_func_idx = 0;
+		dst_host_func_idx = get_master_host_ppf_idx(hwdev);
 	} else {
 		dst_host_func_idx = IS_MASTER_HOST(hwdev) ?
 				mbox_hwdev->mhost_mgmt->shost_ppf_idx :
@@ -881,21 +893,13 @@ int hinic_multi_host_mgmt_init(struct hinic_hwdev *hwdev)
 		return -ENOMEM;
 	}
 
+	hwdev->mhost_mgmt->mhost_ppf_idx = get_master_host_ppf_idx(hwdev);
+	hwdev->mhost_mgmt->shost_ppf_idx = 0;
+	hwdev->mhost_mgmt->shost_host_idx = 2;
+
 	err = hinic_get_hw_pf_infos(hwdev, &hwdev->mhost_mgmt->pf_infos);
 	if (err)
 		goto out_free_mhost_mgmt;
-
-	/* master ppf idx fix to 0 */
-	hwdev->mhost_mgmt->mhost_ppf_idx = 0;
-	if (IS_BMGW_MASTER_HOST(hwdev) || IS_BMGW_SLAVE_HOST(hwdev)) {
-		/* fix slave host ppf 6 and host 2 in bmwg mode
-		 */
-		hwdev->mhost_mgmt->shost_ppf_idx = 6;
-		hwdev->mhost_mgmt->shost_host_idx = 2;
-	} else {
-		hwdev->mhost_mgmt->shost_ppf_idx = 7;
-		hwdev->mhost_mgmt->shost_host_idx = 2;
-	}
 
 	hinic_register_ppf_mbox_cb(hwdev, HINIC_MOD_COMM,
 				   comm_ppf_mbox_handler);
