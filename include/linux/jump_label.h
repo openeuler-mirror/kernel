@@ -240,6 +240,11 @@ static inline int jump_label_apply_nops(struct module *mod)
 	return 0;
 }
 
+static inline int jump_label_register(struct module *mod)
+{
+	return 0;
+}
+
 static inline void static_key_enable(struct static_key *key)
 {
 	STATIC_KEY_CHECK_USE(key);
