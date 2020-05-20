@@ -892,8 +892,8 @@ struct task_struct {
 	struct seccomp			seccomp;
 
 	/* Thread group tracking: */
-	u64				parent_exec_id;
-	u64				self_exec_id;
+	u32				parent_exec_id;
+	u32				self_exec_id;
 
 	/* Protection against (de-)allocation: mm, files, fs, tty, keyrings, mems_allowed, mempolicy: */
 	spinlock_t			alloc_lock;
@@ -1212,8 +1212,13 @@ struct task_struct {
 	 */
 	randomized_struct_fields_end
 
+#ifndef __GENKSYMS__
+	u64				parent_exec_id_u64;
+	u64				self_exec_id_u64;
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
