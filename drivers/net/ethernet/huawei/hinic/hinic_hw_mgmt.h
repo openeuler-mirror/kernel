@@ -73,6 +73,7 @@ struct nic_service_cap {
 	u8 tso_sz;      /* TSO context space: n*16B */
 
 	u16 max_queue_allowed;
+	u16 dynamic_qp; /* support dynamic queue */
 };
 
 struct dev_roce_svc_own_cap {
@@ -358,6 +359,7 @@ struct dev_ovs_svc_cap {
 	/* PF resources */
 	u32 max_pctxs; /* Parent Context: max specifications 1M */
 	u32 max_cqs;
+	u8 dynamic_qp_en;
 
 	/* VF resources */
 	u32 vf_max_pctxs; /* Parent Context: max specifications 1M */
@@ -412,6 +414,7 @@ bool hinic_support_acl(void *hwdev, struct acl_service_cap *cap);
 bool hinic_support_rdma(void *hwdev, struct rdma_service_cap *cap);
 bool hinic_support_ft(void *hwdev);
 bool hinic_func_for_mgmt(void *hwdev);
+bool hinic_support_dynamic_q(void *hwdev);
 
 int hinic_set_toe_enable(void *hwdev, bool enable);
 bool hinic_get_toe_enable(void *hwdev);
