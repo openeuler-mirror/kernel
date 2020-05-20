@@ -64,6 +64,8 @@ struct hinic_hwif {
 	struct hinic_func_attr		attr;
 
 	void				*pdev;
+	enum hinic_chip_mode		chip_mode;
+	u32				db_size;
 };
 
 struct hinic_dma_addr_align {

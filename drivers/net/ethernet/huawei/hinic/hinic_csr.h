@@ -125,6 +125,10 @@
 #define HINIC_CEQ_CONS_IDX_0_ADDR_BASE			0x1008
 #define HINIC_CEQ_CONS_IDX_1_ADDR_BASE			0x100C
 
+/* For multi-host mgmt
+ * CEQ_CTRL_0_ADDR: bit26~29: uP write vf mode is normal(0x0),bmgw(0x1),
+ * vmgw(0x2)
+ */
 #define HINIC_CSR_CEQ_CTRL_0_ADDR(idx) \
 	(HINIC_CEQ_CTRL_0_ADDR_BASE + (idx) * HINIC_EQ_OFF_STRIDE)
 

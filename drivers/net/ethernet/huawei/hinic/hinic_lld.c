@@ -43,8 +43,6 @@
 #define HINIC_PCI_DB_BAR		4
 #define HINIC_PCI_VENDOR_ID		0x19e5
 
-#define HINIC_DB_DWQE_SIZE		0x00080000
-
 #define SELF_TEST_BAR_ADDR_OFFSET	0x883c
 
 #define HINIC_SECOND_BASE (1000)
@@ -131,6 +129,7 @@ struct hinic_pcidev {
 	struct work_struct slave_nic_work;
 	struct workqueue_struct *slave_nic_init_workq;
 	struct delayed_work slave_nic_init_dwork;
+	enum hinic_chip_mode chip_mode;
 	bool nic_cur_enable;
 	bool nic_des_enable;
 };
@@ -1836,6 +1835,7 @@ void hinic_event_process(void *adapter, struct hinic_event_info *event)
 
 static int mapping_bar(struct pci_dev *pdev, struct hinic_pcidev *pci_adapter)
 {
+	u32 db_dwqe_size;
 	u64 dwqe_addr;
 
 	pci_adapter->cfg_reg_base =
@@ -1854,19 +1854,25 @@ static int mapping_bar(struct pci_dev *pdev, struct hinic_pcidev *pci_adapter)
 		goto map_intr_bar_err;
 	}
 
+	db_dwqe_size = hinic_get_db_size(pci_adapter->cfg_reg_base,
+					 &pci_adapter->chip_mode);
+
 	pci_adapter->db_base_phy = pci_resource_start(pdev, HINIC_PCI_DB_BAR);
 	pci_adapter->db_base = ioremap(pci_adapter->db_base_phy,
-				       HINIC_DB_DWQE_SIZE);
+				       db_dwqe_size);
 	if (!pci_adapter->db_base) {
 		sdk_err(&pci_adapter->pcidev->dev,
 			"Failed to map doorbell regs\n");
 		goto map_db_err;
 	}
 
-	dwqe_addr = pci_adapter->db_base_phy + HINIC_DB_DWQE_SIZE;
+	if (pci_adapter->chip_mode != CHIP_MODE_NORMAL)
+		return 0;
+
+	dwqe_addr = pci_adapter->db_base_phy + db_dwqe_size;
 
 	/* arm do not support call ioremap_wc() */
-	pci_adapter->dwqe_mapping = __ioremap(dwqe_addr, HINIC_DB_DWQE_SIZE,
+	pci_adapter->dwqe_mapping = __ioremap(dwqe_addr, db_dwqe_size,
 					      __pgprot(PROT_DEVICE_nGnRnE));
 	if (!pci_adapter->dwqe_mapping) {
 		sdk_err(&pci_adapter->pcidev->dev, "Failed to io_mapping_create_wc\n");
@@ -1889,7 +1895,8 @@ map_intr_bar_err:
 
 static void unmapping_bar(struct hinic_pcidev *pci_adapter)
 {
-	iounmap(pci_adapter->dwqe_mapping);
+	if (pci_adapter->chip_mode == CHIP_MODE_NORMAL)
+		iounmap(pci_adapter->dwqe_mapping);
 
 	iounmap(pci_adapter->db_base);
 	iounmap(pci_adapter->intr_reg_base);
