@@ -3865,7 +3865,7 @@ static int hclge_resume(struct hnae3_ae_dev *ae_dev)
 
 	ret = hclge_notify_roce_client(hdev, HNAE3_INIT_CLIENT);
 	if (ret)
-		goto err_reset_lock;
+		return ret;
 
 	rtnl_lock();
 
