@@ -393,6 +393,12 @@ struct acl_service_cap {
 	u32 scqc_sz;    /* 64B */
 };
 
+enum hinic_chip_mode {
+	CHIP_MODE_NORMAL,
+	CHIP_MODE_BMGW,
+	CHIP_MODE_VMGW,
+};
+
 bool hinic_support_nic(void *hwdev, struct nic_service_cap *cap);
 bool hinic_support_roce(void *hwdev, struct rdma_service_cap *cap);
 bool hinic_support_fcoe(void *hwdev, struct fcoe_service_cap *cap);
@@ -553,4 +559,5 @@ u16 hinic_pf_id_of_vf_hw(void *hwdev);
 u16 hinic_global_func_id_hw(void *hwdev);
 bool hinic_func_for_pt(void *hwdev);
 bool hinic_func_for_hwpt(void *hwdev);
+u32 hinic_get_db_size(void *cfg_reg_base, enum hinic_chip_mode *chip_mode);
 #endif

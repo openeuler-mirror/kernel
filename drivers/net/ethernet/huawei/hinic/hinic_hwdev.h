@@ -240,12 +240,6 @@ struct hinic_heartbeat_enhanced {
 
 #define HINIC_BOARD_TYPE_MULTI_HOST_ETH_25GE	12
 
-enum hinic_chip_mode {
-	CHIP_MODE_NORMAL,
-	CHIP_MODE_BMGW,
-	CHIP_MODE_VMGW,
-};
-
 /* new version of roce qp not limited by power of 2 */
 #define HINIC_CMD_VER_ROCE_QP		1
 /* new version for add function id in multi-host */

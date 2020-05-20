@@ -527,6 +527,8 @@ enum hinic_pf_status {
 
 /* total doorbell or direct wqe size is 512kB, db num: 128, dwqe: 128 */
 #define HINIC_DB_DWQE_SIZE       0x00080000
+/* BMGW & VMGW VF db size 256k, have no dwqe space */
+#define HINIC_GW_VF_DB_SIZE	 0x00040000
 
 /* db/dwqe page size: 4K */
 #define HINIC_DB_PAGE_SIZE		0x00001000ULL

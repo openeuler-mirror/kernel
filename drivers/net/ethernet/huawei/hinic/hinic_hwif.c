@@ -283,14 +283,19 @@ static void set_mpf(struct hinic_hwif *hwif)
 	hinic_hwif_write_reg(hwif, addr, val);
 }
 
-static void init_db_area_idx(struct hinic_free_db_area *free_db_area)
+static void init_db_area_idx(struct hinic_hwif *hwif)
 {
+	struct hinic_free_db_area *free_db_area;
+	u32 db_max_areas;
 	u32 i;
 
-	for (i = 0; i < HINIC_DB_MAX_AREAS; i++)
+	free_db_area = &hwif->free_db_area;
+	db_max_areas = hwif->db_size / HINIC_DB_PAGE_SIZE;
+
+	for (i = 0; i < db_max_areas; i++)
 		free_db_area->db_idx[i] = i;
 
-	free_db_area->num_free = HINIC_DB_MAX_AREAS;
+	free_db_area->num_free = db_max_areas;
 
 	spin_lock_init(&free_db_area->idx_lock);
 }
@@ -298,6 +303,7 @@ static void init_db_area_idx(struct hinic_free_db_area *free_db_area)
 static int get_db_idx(struct hinic_hwif *hwif, u32 *idx)
 {
 	struct hinic_free_db_area *free_db_area = &hwif->free_db_area;
+	u32 db_max_areas = hwif->db_size / HINIC_DB_PAGE_SIZE;
 	u32 pos;
 	u32 pg_idx;
 
@@ -312,14 +318,14 @@ retry:
 	free_db_area->num_free--;
 
 	pos = free_db_area->alloc_pos++;
-	pos &= HINIC_DB_MAX_AREAS - 1;
+	pos &= db_max_areas - 1;
 
 	pg_idx = free_db_area->db_idx[pos];
 
 	free_db_area->db_idx[pos] = 0xFFFFFFFF;
 
 	/* pg_idx out of range */
-	if (pg_idx >= HINIC_DB_MAX_AREAS)
+	if (pg_idx >= db_max_areas)
 		goto retry;
 
 	spin_unlock(&free_db_area->idx_lock);
@@ -332,15 +338,16 @@ retry:
 static void free_db_idx(struct hinic_hwif *hwif, u32 idx)
 {
 	struct hinic_free_db_area *free_db_area = &hwif->free_db_area;
+	u32 db_max_areas = hwif->db_size / HINIC_DB_PAGE_SIZE;
 	u32 pos;
 
-	if (idx >= HINIC_DB_MAX_AREAS)
+	if (idx >= db_max_areas)
 		return;
 
 	spin_lock(&free_db_area->idx_lock);
 
 	pos = free_db_area->return_pos++;
-	pos &= HINIC_DB_MAX_AREAS - 1;
+	pos &= db_max_areas - 1;
 
 	free_db_area->db_idx[pos] = idx;
 
@@ -386,7 +393,7 @@ int hinic_alloc_db_addr(void *hwdev, void __iomem **db_base,
 
 	*db_base = hwif->db_base + idx * HINIC_DB_PAGE_SIZE;
 
-	if (!dwqe_base)
+	if (!dwqe_base || hwif->chip_mode != CHIP_MODE_NORMAL)
 		return 0;
 
 	offset = ((u64)idx) << PAGE_SHIFT;
@@ -433,7 +440,9 @@ int hinic_alloc_db_phy_addr(void *hwdev, u64 *db_base, u64 *dwqe_base)
 		return -EFAULT;
 
 	*db_base = hwif->db_base_phy + idx * HINIC_DB_PAGE_SIZE;
-	*dwqe_base = *db_base + HINIC_DB_DWQE_SIZE;
+
+	if (hwif->chip_mode == CHIP_MODE_NORMAL)
+		*dwqe_base = *db_base + HINIC_DB_DWQE_SIZE;
 
 	return 0;
 }
@@ -559,7 +568,13 @@ int hinic_init_hwif(struct hinic_hwdev *hwdev, void *cfg_reg_base,
 	hwif->db_base_phy = db_base_phy;
 	hwif->db_base = db_base;
 	hwif->dwqe_mapping = dwqe_mapping;
-	init_db_area_idx(&hwif->free_db_area);
+
+	hwif->db_size = hinic_get_db_size(cfg_reg_base, &hwif->chip_mode);
+
+	sdk_info(hwdev->dev_hdl, "Doorbell size: 0x%x, chip mode: %d\n",
+		 hwif->db_size, hwif->chip_mode);
+
+	init_db_area_idx(hwif);
 
 	err = wait_hwif_ready(hwdev);
 	if (err) {
@@ -924,3 +939,43 @@ u8 hinic_ppf_idx(void *hwdev)
 	return hwif->attr.ppf_idx;
 }
 EXPORT_SYMBOL(hinic_ppf_idx);
+
+#define CEQ_CTRL_0_CHIP_MODE_SHIFT		26
+#define CEQ_CTRL_0_CHIP_MODE_MASK		0xFU
+#define CEQ_CTRL_0_GET(val, member)				\
+		(((val) >> CEQ_CTRL_0_##member##_SHIFT) &	\
+			CEQ_CTRL_0_##member##_MASK)
+
+/**
+ * hinic_get_db_size - get db size ceq ctrl: bit26~29: uP write vf mode is
+ * normal(0x0), bmgw(0x1) or vmgw(0x2) and normal mode db size is 512k,
+ * bmgw or vmgw mode db size is 256k
+ * @cfg_reg_base: pointer to cfg_reg_base
+ * @chip_mode: pointer to chip_mode
+ */
+u32 hinic_get_db_size(void *cfg_reg_base, enum hinic_chip_mode *chip_mode)
+{
+	u32 attr0, ctrl0;
+
+	attr0 = be32_to_cpu(readl((u8 __iomem *)cfg_reg_base +
+				  HINIC_CSR_FUNC_ATTR0_ADDR));
+
+	/* PF is always normal mode & db size is 512K */
+	if (HINIC_AF0_GET(attr0, FUNC_TYPE) != TYPE_VF) {
+		*chip_mode = CHIP_MODE_NORMAL;
+		return HINIC_DB_DWQE_SIZE;
+	}
+
+	ctrl0 = be32_to_cpu(readl((u8 __iomem *)cfg_reg_base +
+				  HINIC_CSR_CEQ_CTRL_0_ADDR(0)));
+
+	*chip_mode = CEQ_CTRL_0_GET(ctrl0, CHIP_MODE);
+
+	switch (*chip_mode) {
+	case CHIP_MODE_VMGW:
+	case CHIP_MODE_BMGW:
+		return HINIC_GW_VF_DB_SIZE;
+	default:
+		return HINIC_DB_DWQE_SIZE;
+	}
+}
