@@ -1170,10 +1170,12 @@ static int hinic_get_sset_count(struct net_device *netdev, int sset)
 	case ETH_SS_STATS:
 		q_num = nic_dev->num_qps;
 		count = ARRAY_LEN(hinic_netdev_stats) +
-		    ARRAY_LEN(hinic_nic_dev_stats) +
-			ARRAY_LEN(hinic_function_stats) +
+			ARRAY_LEN(hinic_nic_dev_stats) +
 			(ARRAY_LEN(hinic_tx_queue_stats) +
 			ARRAY_LEN(hinic_rx_queue_stats)) * q_num;
+
+		if (!HINIC_FUNC_IS_VF(nic_dev->hwdev))
+			count += ARRAY_LEN(hinic_function_stats);
 
 		if (!HINIC_FUNC_IS_VF(nic_dev->hwdev) &&
 		    FUNC_SUPPORT_PORT_SETTING(nic_dev->hwdev))
@@ -1625,15 +1627,19 @@ static void hinic_get_ethtool_stats(struct net_device *netdev,
 		data[i] = (hinic_nic_dev_stats[j].size ==
 				sizeof(u64)) ? *(u64 *)p : *(u32 *)p;
 	}
-	err = hinic_get_vport_stats(nic_dev->hwdev, &vport_stats);
-	if (err)
-		nicif_err(nic_dev, drv, netdev,
-			  "Failed to get function stats from fw\n");
 
-	for (j = 0; j < ARRAY_LEN(hinic_function_stats); j++, i++) {
-		p = (char *)(&vport_stats) + hinic_function_stats[j].offset;
-		data[i] = (hinic_function_stats[j].size ==
-				sizeof(u64)) ? *(u64 *)p : *(u32 *)p;
+	if (!HINIC_FUNC_IS_VF(nic_dev->hwdev)) {
+		err = hinic_get_vport_stats(nic_dev->hwdev, &vport_stats);
+		if (err)
+			nicif_err(nic_dev, drv, netdev,
+				  "Failed to get function stats from fw\n");
+
+		for (j = 0; j < ARRAY_LEN(hinic_function_stats); j++, i++) {
+			p = (char *)(&vport_stats) +
+					hinic_function_stats[j].offset;
+			data[i] = (hinic_function_stats[j].size ==
+					sizeof(u64)) ? *(u64 *)p : *(u32 *)p;
+		}
 	}
 
 	if (!HINIC_FUNC_IS_VF(nic_dev->hwdev) &&
@@ -1689,10 +1695,12 @@ static void hinic_get_strings(struct net_device *netdev,
 			p += ETH_GSTRING_LEN;
 		}
 
-		for (i = 0; i < ARRAY_LEN(hinic_function_stats); i++) {
-			memcpy(p, hinic_function_stats[i].name,
-			       ETH_GSTRING_LEN);
-			p += ETH_GSTRING_LEN;
+		if (!HINIC_FUNC_IS_VF(nic_dev->hwdev)) {
+			for (i = 0; i < ARRAY_LEN(hinic_function_stats); i++) {
+				memcpy(p, hinic_function_stats[i].name,
+				       ETH_GSTRING_LEN);
+				p += ETH_GSTRING_LEN;
+			}
 		}
 
 		if (!HINIC_FUNC_IS_VF(nic_dev->hwdev) &&
