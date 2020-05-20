@@ -377,6 +377,8 @@ void hinic_shutdown_hwdev(void *hwdev);
 void hinic_ppf_hwdev_unreg(void *hwdev);
 void hinic_ppf_hwdev_reg(void *hwdev, void *ppf_hwdev);
 
+void hinic_qps_num_set(void *hwdev, u32 num_qps);
+
 bool hinic_is_hwdev_mod_inited(void *hwdev, enum hinic_hwdev_init_state state);
 enum hinic_func_mode hinic_get_func_mode(void *hwdev);
 u64 hinic_get_func_feature_cap(void *hwdev);
