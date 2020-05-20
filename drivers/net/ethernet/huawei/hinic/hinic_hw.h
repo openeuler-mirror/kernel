@@ -325,6 +325,8 @@ enum hinic_func_cap {
 	HINIC_FUNC_SUPP_CHANGE_MAC = 1 << 9,
 	/* OVS don't support SCTP_CRC/HW_VLAN/LRO */
 	HINIC_FUNC_OFFLOAD_OVS_UNSUPP = 1 << 10,
+	/* OVS don't support encap-tso/encap-csum */
+	HINIC_FUNC_SUPP_ENCAP_TSO_CSUM = 1 << 11,
 };
 
 #define FUNC_SUPPORT_MGMT(hwdev)		\
@@ -363,6 +365,9 @@ enum hinic_func_cap {
 #define FUNC_SUPPORT_LRO(hwdev)			\
 	(!(hinic_get_func_feature_cap(hwdev) &  \
 	   HINIC_FUNC_OFFLOAD_OVS_UNSUPP))
+#define FUNC_SUPPORT_ENCAP_TSO_CSUM(hwdev)	\
+	(!!(hinic_get_func_feature_cap(hwdev) & \
+	   HINIC_FUNC_SUPP_ENCAP_TSO_CSUM))
 
 int hinic_init_hwdev(struct hinic_init_para *para);
 int hinic_set_vf_dev_cap(void *hwdev);

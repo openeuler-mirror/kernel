@@ -2243,10 +2243,12 @@ static void netdev_feature_init(struct net_device *netdev)
 
 	netdev->vlan_features = netdev->features;
 
+	if (FUNC_SUPPORT_ENCAP_TSO_CSUM(nic_dev->hwdev)) {
 #ifdef HAVE_ENCAPSULATION_TSO
-	netdev->features |= NETIF_F_GSO_UDP_TUNNEL |
-			    NETIF_F_GSO_UDP_TUNNEL_CSUM;
+		netdev->features |= NETIF_F_GSO_UDP_TUNNEL |
+				    NETIF_F_GSO_UDP_TUNNEL_CSUM;
 #endif /* HAVE_ENCAPSULATION_TSO */
+	}
 
 	if (FUNC_SUPPORT_HW_VLAN(nic_dev->hwdev)) {
 #if defined(NETIF_F_HW_VLAN_CTAG_TX)
@@ -2300,16 +2302,18 @@ static void netdev_feature_init(struct net_device *netdev)
 	netdev->priv_flags |= IFF_UNICAST_FLT;
 #endif
 
+	if (FUNC_SUPPORT_ENCAP_TSO_CSUM(nic_dev->hwdev)) {
 #ifdef HAVE_ENCAPSULATION_CSUM
-	netdev->hw_enc_features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM
-			       | NETIF_F_SCTP_CRC | NETIF_F_SG
+		netdev->hw_enc_features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM
+			       | NETIF_F_SCTP_CRC | NETIF_F_SG;
 #ifdef HAVE_ENCAPSULATION_TSO
-			       | NETIF_F_TSO | NETIF_F_TSO6 | NETIF_F_TSO_ECN
+		netdev->hw_enc_features |= NETIF_F_TSO | NETIF_F_TSO6
+			       | NETIF_F_TSO_ECN
 			       | NETIF_F_GSO_UDP_TUNNEL_CSUM
 			       | NETIF_F_GSO_UDP_TUNNEL;
-
 #endif /* HAVE_ENCAPSULATION_TSO */
 #endif /* HAVE_ENCAPSULATION_CSUM */
+	}
 }
 
 #define MOD_PARA_VALIDATE_NUM_QPS(nic_dev, num_qps, out_qps)	{	\
