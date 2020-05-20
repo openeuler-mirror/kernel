@@ -199,7 +199,8 @@ struct nic_interrupt_info {
 
 int hinic_get_interrupt_cfg(void *hwdev,
 			    struct nic_interrupt_info *interrupt_info);
-
+int hinic_set_interrupt_cfg_direct(void *hwdev,
+				   struct nic_interrupt_info *interrupt_info);
 int hinic_set_interrupt_cfg(void *hwdev,
 			    struct nic_interrupt_info interrupt_info);
 

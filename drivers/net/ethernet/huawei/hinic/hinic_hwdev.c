@@ -1572,13 +1572,45 @@ int hinic_get_interrupt_cfg(void *hwdev,
 }
 EXPORT_SYMBOL(hinic_get_interrupt_cfg);
 
-int hinic_set_interrupt_cfg(void *hwdev,
-			    struct nic_interrupt_info interrupt_info)
+int hinic_set_interrupt_cfg_direct(void *hwdev,
+				   struct nic_interrupt_info *interrupt_info)
 {
 	struct hinic_hwdev *nic_hwdev = hwdev;
 	struct hinic_msix_config msix_cfg = {0};
-	struct nic_interrupt_info temp_info;
 	u16 out_size = sizeof(msix_cfg);
+	int err;
+
+	if (!hwdev)
+		return -EINVAL;
+
+	err = hinic_global_func_id_get(hwdev, &msix_cfg.func_id);
+	if (err)
+		return err;
+
+	msix_cfg.msix_index = (u16)interrupt_info->msix_index;
+	msix_cfg.lli_credit_cnt = interrupt_info->lli_credit_limit;
+	msix_cfg.lli_tmier_cnt = interrupt_info->lli_timer_cfg;
+	msix_cfg.pending_cnt = interrupt_info->pending_limt;
+	msix_cfg.coalesct_timer_cnt = interrupt_info->coalesc_timer_cfg;
+	msix_cfg.resend_timer_cnt = interrupt_info->resend_timer_cfg;
+
+	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_COMM,
+				     HINIC_MGMT_CMD_MSI_CTRL_REG_WR_BY_UP,
+				     &msix_cfg, sizeof(msix_cfg),
+				     &msix_cfg, &out_size, 0);
+	if (err || !out_size || msix_cfg.status) {
+		sdk_err(nic_hwdev->dev_hdl, "Failed to set interrupt config, err: %d, status: 0x%x, out size: 0x%x\n",
+			err, msix_cfg.status, out_size);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+int hinic_set_interrupt_cfg(void *hwdev,
+			    struct nic_interrupt_info interrupt_info)
+{
+	struct nic_interrupt_info temp_info;
 	int err;
 
 	if (!hwdev)
@@ -1590,39 +1622,18 @@ int hinic_set_interrupt_cfg(void *hwdev,
 	if (err)
 		return -EINVAL;
 
-	err = hinic_global_func_id_get(hwdev, &msix_cfg.func_id);
-	if (err)
-		return err;
-
-	msix_cfg.msix_index = (u16)interrupt_info.msix_index;
-	msix_cfg.lli_credit_cnt = temp_info.lli_credit_limit;
-	msix_cfg.lli_tmier_cnt = temp_info.lli_timer_cfg;
-	msix_cfg.pending_cnt = temp_info.pending_limt;
-	msix_cfg.coalesct_timer_cnt = temp_info.coalesc_timer_cfg;
-	msix_cfg.resend_timer_cnt = temp_info.resend_timer_cfg;
-
-	if (interrupt_info.lli_set) {
-		msix_cfg.lli_credit_cnt = interrupt_info.lli_credit_limit;
-		msix_cfg.lli_tmier_cnt = interrupt_info.lli_timer_cfg;
+	if (!interrupt_info.lli_set) {
+		interrupt_info.lli_credit_limit = temp_info.lli_credit_limit;
+		interrupt_info.lli_timer_cfg = temp_info.lli_timer_cfg;
 	}
 
-	if (interrupt_info.interrupt_coalesc_set) {
-		msix_cfg.pending_cnt = interrupt_info.pending_limt;
-		msix_cfg.coalesct_timer_cnt = interrupt_info.coalesc_timer_cfg;
-		msix_cfg.resend_timer_cnt = interrupt_info.resend_timer_cfg;
+	if (!interrupt_info.interrupt_coalesc_set) {
+		interrupt_info.pending_limt = temp_info.pending_limt;
+		interrupt_info.coalesc_timer_cfg = temp_info.coalesc_timer_cfg;
+		interrupt_info.resend_timer_cfg = temp_info.resend_timer_cfg;
 	}
 
-	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_COMM,
-				     HINIC_MGMT_CMD_MSI_CTRL_REG_WR_BY_UP,
-				     &msix_cfg, sizeof(msix_cfg),
-				     &msix_cfg, &out_size, 0);
-	if (err || !out_size || msix_cfg.status) {
-		sdk_err(nic_hwdev->dev_hdl, "Failed to set interrupt config, err: %d, status: 0x%x, out size: 0x%x\n",
-			err, msix_cfg.status, out_size);
-		return -EINVAL;
-	}
-
-	return 0;
+	return hinic_set_interrupt_cfg_direct(hwdev, &interrupt_info);
 }
 EXPORT_SYMBOL(hinic_set_interrupt_cfg);
 
@@ -1650,7 +1661,7 @@ static int init_aeqs_msix_attr(struct hinic_hwdev *hwdev)
 	struct hinic_aeqs *aeqs = hwdev->aeqs;
 	struct nic_interrupt_info info = {0};
 	struct hinic_eq *eq;
-	u16 q_id;
+	int q_id;
 	int err;
 
 	info.lli_set = 0;
@@ -1659,16 +1670,18 @@ static int init_aeqs_msix_attr(struct hinic_hwdev *hwdev)
 	info.coalesc_timer_cfg = HINIC_DEAULT_EQ_MSIX_COALESC_TIMER_CFG;
 	info.resend_timer_cfg = HINIC_DEAULT_EQ_MSIX_RESEND_TIMER_CFG;
 
-	for (q_id = 0; q_id < aeqs->num_aeqs; q_id++) {
+	for (q_id = aeqs->num_aeqs - 1; q_id >= 0; q_id--) {
 		eq = &aeqs->aeq[q_id];
 		info.msix_index = eq->eq_irq.msix_entry_idx;
-		err = hinic_set_interrupt_cfg(hwdev, info);
+		err = hinic_set_interrupt_cfg_direct(hwdev, &info);
 		if (err) {
 			sdk_err(hwdev->dev_hdl, "Set msix attr for aeq %d failed\n",
 				q_id);
 			return -EFAULT;
 		}
 	}
+
+	hinic_set_mbox_seg_ack_mod(hwdev, HINIC_MBOX_SEND_MSG_INT);
 
 	return 0;
 }
@@ -2320,24 +2333,6 @@ static int __get_func_misc_info(struct hinic_hwdev *hwdev)
 	return 0;
 }
 
-static int __init_eqs_msix_attr(struct hinic_hwdev *hwdev)
-{
-	int err;
-
-	err = init_aeqs_msix_attr(hwdev);
-	if (err) {
-		sdk_err(hwdev->dev_hdl, "Failed to init aeqs msix attr\n");
-		return err;
-	}
-
-	err = init_ceqs_msix_attr(hwdev);
-	if (err) {
-		sdk_err(hwdev->dev_hdl, "Failed to init ceqs msix attr\n");
-		return err;
-	}
-
-	return 0;
-}
 
 /* initialize communication channel */
 int hinic_init_comm_ch(struct hinic_hwdev *hwdev)
@@ -2375,6 +2370,12 @@ int hinic_init_comm_ch(struct hinic_hwdev *hwdev)
 		goto func_to_func_init_err;
 	}
 
+	err = init_aeqs_msix_attr(hwdev);
+	if (err) {
+		sdk_err(hwdev->dev_hdl, "Failed to init aeqs msix attr\n");
+		goto aeqs_msix_attr_init_err;
+	}
+
 	err = __get_func_misc_info(hwdev);
 	if (err) {
 		sdk_err(hwdev->dev_hdl, "Failed to get function msic information\n");
@@ -2406,9 +2407,11 @@ int hinic_init_comm_ch(struct hinic_hwdev *hwdev)
 		goto ceqs_init_err;
 	}
 
-	err = __init_eqs_msix_attr(hwdev);
-	if (err)
+	err = init_ceqs_msix_attr(hwdev);
+	if (err) {
+		sdk_err(hwdev->dev_hdl, "Failed to init ceqs msix attr\n");
 		goto init_eqs_msix_err;
+	}
 
 	/* set default wq page_size */
 	hwdev->wq_page_size = HINIC_DEFAULT_WQ_PAGE_SIZE;
@@ -2469,6 +2472,7 @@ multi_host_mgmt_init_err:
 l2nic_reset_err:
 rectify_mode_err:
 get_func_info_err:
+aeqs_msix_attr_init_err:
 func_to_func_init_err:
 	return err;
 

@@ -173,10 +173,6 @@ enum hinic_hwif_direction_type {
 	HINIC_HWIF_RESPONSE	= 1,
 };
 
-enum mbox_send_mod {
-	MBOX_SEND_MSG_INT,
-};
-
 enum mbox_seg_type {
 	NOT_LAST_SEG,
 	LAST_SEG,
@@ -1146,7 +1142,8 @@ static int send_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
 		}
 
 		err = send_mbox_seg(func_to_func, header, dst_func, msg_seg,
-				    seg_len, MBOX_SEND_MSG_INT, msg_info);
+				    seg_len, func_to_func->send_ack_mod,
+				    msg_info);
 		if (err) {
 			sdk_err(hwdev->dev_hdl, "Failed to send mbox seg, seq_id=0x%llx\n",
 				HINIC_MBOX_HEADER_GET(header, SEQID));
@@ -1601,6 +1598,15 @@ int hinic_vf_mbox_random_id_init(struct hinic_hwdev *hwdev)
 	return err;
 }
 
+void hinic_set_mbox_seg_ack_mod(struct hinic_hwdev *hwdev,
+				enum hinic_mbox_send_mod mod)
+{
+	if (!hwdev || !hwdev->func_to_func)
+		return;
+
+	hwdev->func_to_func->send_ack_mod = mod;
+}
+
 int hinic_func_to_func_init(struct hinic_hwdev *hwdev)
 {
 	struct hinic_mbox_func_to_func *func_to_func;
@@ -1645,6 +1651,8 @@ int hinic_func_to_func_init(struct hinic_hwdev *hwdev)
 	}
 
 	prepare_send_mbox(func_to_func);
+
+	func_to_func->send_ack_mod = HINIC_MBOX_SEND_MSG_POLL;
 
 	return 0;
 

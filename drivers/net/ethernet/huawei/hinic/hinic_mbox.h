@@ -101,6 +101,11 @@ enum hinic_mbox_cb_state {
 	HINIC_PPF_TO_PF_MBOX_CB_RUNNIG,
 };
 
+enum hinic_mbox_send_mod {
+	HINIC_MBOX_SEND_MSG_INT,
+	HINIC_MBOX_SEND_MSG_POLL,
+};
+
 struct hinic_mbox_func_to_func {
 	struct hinic_hwdev	*hwdev;
 
@@ -130,6 +135,7 @@ struct hinic_mbox_func_to_func {
 	u32 *vf_mbx_old_rand_id;
 	u32 *vf_mbx_rand_id;
 	bool support_vf_random;
+	enum hinic_mbox_send_mod send_ack_mod;
 };
 
 struct hinic_mbox_work {
@@ -228,5 +234,8 @@ int __hinic_mbox_to_vf(void *hwdev,
 
 int vf_to_pf_handler(void *handle, u16 vf_id, u8 cmd, void *buf_in,
 		     u16 in_size, void *buf_out, u16 *out_size);
+
+void hinic_set_mbox_seg_ack_mod(struct hinic_hwdev *hwdev,
+				enum hinic_mbox_send_mod mod);
 
 #endif
