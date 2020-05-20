@@ -728,5 +728,6 @@ int hinic_get_card_present_state(void *hwdev, bool *card_present_state);
 void hinic_migrate_report(void *dev);
 int hinic_set_vxlan_udp_dport(void *hwdev, u32 udp_port);
 bool is_multi_vm_slave(void *hwdev);
+bool is_multi_bm_slave(void *hwdev);
 
 #endif

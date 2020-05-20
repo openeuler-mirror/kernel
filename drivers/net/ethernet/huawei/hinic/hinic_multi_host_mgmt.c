@@ -150,6 +150,16 @@ bool is_multi_vm_slave(void *hwdev)
 	return (hw_dev->func_mode == FUNC_MOD_MULTI_VM_SLAVE) ? true : false;
 }
 
+bool is_multi_bm_slave(void *hwdev)
+{
+	struct hinic_hwdev *hw_dev = hwdev;
+
+	if (!hwdev)
+		return false;
+
+	return (hw_dev->func_mode == FUNC_MOD_MULTI_BM_SLAVE) ? true : false;
+}
+
 int rectify_host_mode(struct hinic_hwdev *hwdev)
 {
 	u16 cur_sdi_mode;

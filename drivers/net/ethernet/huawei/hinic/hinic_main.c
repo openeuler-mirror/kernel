@@ -61,6 +61,21 @@ MODULE_PARM_DESC(poll_weight, "Number packets for NAPI budget (default=64)");
 #define HINIC_DEAULT_TXRX_MSIX_COALESC_TIMER_CFG	32
 #define HINIC_DEAULT_TXRX_MSIX_RESEND_TIMER_CFG		7
 
+/* suit for sdi3.0 vm mode, change this define for test best performance */
+#define SDI_VM_PENDING_LIMT		2
+#define SDI_VM_COALESCE_TIMER_CFG	16
+#define SDI_VM_RX_PKT_RATE_HIGH		1000000
+#define SDI_VM_RX_PKT_RATE_LOW		30000
+#define SDI_VM_RX_USECS_HIGH		56
+#define SDI_VM_RX_PENDING_LIMT_HIGH	20
+#define SDI_VM_RX_USECS_LOW		16
+#define SDI_VM_RX_PENDING_LIMT_LOW	2
+
+/* if qp_coalesc_use_drv_params_switch !=0, use user setting params */
+static unsigned char qp_coalesc_use_drv_params_switch;
+module_param(qp_coalesc_use_drv_params_switch, byte, 0444);
+MODULE_PARM_DESC(qp_coalesc_use_drv_params_switch, "QP MSI-X Interrupt coalescing parameter switch (default=0, not use drv parameter)");
+
 static unsigned char qp_pending_limit = HINIC_DEAULT_TXRX_MSIX_PENDING_LIMIT;
 module_param(qp_pending_limit, byte, 0444);
 MODULE_PARM_DESC(qp_pending_limit, "QP MSI-X Interrupt coalescing parameter pending_limit (default=2)");
@@ -465,7 +480,9 @@ static int hinic_poll(struct napi_struct *napi, int budget)
 			hinic_set_msix_state(nic_dev->hwdev,
 					     irq_cfg->msix_entry_idx,
 					     HINIC_MSIX_ENABLE);
-		else if (!nic_dev->in_vm)
+		else if (!nic_dev->in_vm &&
+			 (hinic_get_func_mode(nic_dev->hwdev) ==
+			  FUNC_MOD_NORMAL_HOST))
 			enable_irq(irq_cfg->irq_id);
 	}
 
@@ -500,7 +517,9 @@ static irqreturn_t qp_irq(int irq, void *data)
 				hinic_set_msix_state(nic_dev->hwdev,
 						     msix_entry_idx,
 						     HINIC_MSIX_DISABLE);
-			} else if (!nic_dev->in_vm) {
+			} else if (!nic_dev->in_vm &&
+				   (hinic_get_func_mode(nic_dev->hwdev) ==
+				    FUNC_MOD_NORMAL_HOST)) {
 				disable_irq_nosync(irq_cfg->irq_id);
 			}
 
@@ -603,12 +622,6 @@ static void __calc_coal_para(struct hinic_nic_dev *nic_dev,
 			     struct hinic_intr_coal_info *q_coal, u64 rate,
 			     u8 *coalesc_timer_cfg, u8 *pending_limt)
 {
-	if (nic_dev->is_vm_slave && nic_dev->in_vm) {
-		*coalesc_timer_cfg = HINIC_MULTI_VM_LATENCY;
-		*pending_limt = HINIC_MULTI_VM_PENDING_LIMIT;
-		return;
-	}
-
 	if (rate < q_coal->pkt_rate_low) {
 		*coalesc_timer_cfg = q_coal->rx_usecs_low;
 		*pending_limt = q_coal->rx_pending_limt_low;
@@ -635,19 +648,79 @@ static void __calc_coal_para(struct hinic_nic_dev *nic_dev,
 	}
 }
 
-static void hinic_auto_moderation_work(struct work_struct *work)
+static void update_queue_coal(struct hinic_nic_dev *nic_dev, u16 qid,
+			      u64 rate, u64 avg_pkt_size, u64 tx_rate)
 {
 	struct hinic_intr_coal_info *q_coal;
+	u8 coalesc_timer_cfg, pending_limt;
+
+	q_coal = &nic_dev->intr_coalesce[qid];
+
+	if ((rate > HINIC_RX_RATE_THRESH &&
+	     avg_pkt_size > HINIC_AVG_PKT_SMALL) ||
+	    (nic_dev->in_vm && rate > HINIC_RX_RATE_THRESH)) {
+		__calc_coal_para(nic_dev, q_coal, rate,
+				 &coalesc_timer_cfg, &pending_limt);
+	} else {
+		coalesc_timer_cfg = HINIC_LOWEST_LATENCY;
+		pending_limt = q_coal->rx_pending_limt_low;
+	}
+
+	set_interrupt_moder(nic_dev, qid, coalesc_timer_cfg,
+			    pending_limt);
+}
+
+#define SDI_VM_PPS_3W		30000
+#define SDI_VM_PPS_5W		50000
+
+#define SDI_VM_BPS_100MB	12500000
+#define SDI_VM_BPS_1GB		125000000
+
+static void update_queue_coal_sdi_vm(struct hinic_nic_dev *nic_dev,
+				     u16 qid, u64 rx_pps, u64 rx_bps,
+				     u64 tx_pps, u64 tx_bps)
+{
+	struct hinic_intr_coal_info *q_coal = NULL;
+	u8 coalesc_timer_cfg, pending_limt;
+
+	q_coal = &nic_dev->intr_coalesce[qid];
+	if (qp_coalesc_use_drv_params_switch == 0) {
+		if (rx_pps < SDI_VM_PPS_3W &&
+		    tx_pps < SDI_VM_PPS_3W &&
+		    rx_bps < SDI_VM_BPS_100MB &&
+		    tx_bps < SDI_VM_BPS_100MB) {
+			set_interrupt_moder(nic_dev, qid, 0, 0);
+		} else if (tx_pps > SDI_VM_PPS_3W &&
+			   tx_pps < SDI_VM_PPS_5W &&
+			   tx_bps > SDI_VM_BPS_1GB) {
+			set_interrupt_moder(nic_dev, qid, 7, 7);
+		} else {
+			__calc_coal_para(nic_dev, q_coal, rx_pps,
+					 &coalesc_timer_cfg,
+					 &pending_limt);
+			set_interrupt_moder(nic_dev, qid,
+					    coalesc_timer_cfg,
+					    pending_limt);
+		}
+	} else {
+		__calc_coal_para(nic_dev, q_coal, rx_pps,
+				 &coalesc_timer_cfg,
+				 &pending_limt);
+		set_interrupt_moder(nic_dev, qid, coalesc_timer_cfg,
+				    pending_limt);
+	}
+}
+
+static void hinic_auto_moderation_work(struct work_struct *work)
+{
 	struct delayed_work *delay = to_delayed_work(work);
 	struct hinic_nic_dev *nic_dev = container_of(delay,
 						     struct hinic_nic_dev,
 						     moderation_task);
 	unsigned long period = (unsigned long)(jiffies -
 			nic_dev->last_moder_jiffies);
-
 	u64 rx_packets, rx_bytes, rx_pkt_diff, rate, avg_pkt_size;
-	u64 tx_packets, tx_bytes, tx_pkt_diff, tx_rate;
-	u8 coalesc_timer_cfg, pending_limt;
+	u64 tx_packets, tx_bytes, tx_pkt_diff, tx_rate, rx_bps, tx_bps;
 	u16 qid;
 
 	if (!test_bit(HINIC_INTF_UP, &nic_dev->flags))
@@ -664,7 +737,6 @@ static void hinic_auto_moderation_work(struct work_struct *work)
 		rx_bytes = nic_dev->rxqs[qid].rxq_stats.bytes;
 		tx_packets = nic_dev->txqs[qid].txq_stats.packets;
 		tx_bytes = nic_dev->txqs[qid].txq_stats.bytes;
-		q_coal = &nic_dev->intr_coalesce[qid];
 
 		rx_pkt_diff =
 			rx_packets - nic_dev->rxqs[qid].last_moder_packets;
@@ -678,24 +750,20 @@ static void hinic_auto_moderation_work(struct work_struct *work)
 			tx_packets - nic_dev->txqs[qid].last_moder_packets;
 		tx_rate = tx_pkt_diff * HZ / period;
 
-		if ((rate > HINIC_RX_RATE_THRESH &&
-		     avg_pkt_size > HINIC_AVG_PKT_SMALL) ||
-		    (nic_dev->in_vm && (rate > HINIC_RX_RATE_THRESH ||
-					 (nic_dev->is_vm_slave &&
-					 tx_rate > HINIC_TX_RATE_THRESH)))) {
-			__calc_coal_para(nic_dev, q_coal, rate,
-					 &coalesc_timer_cfg, &pending_limt);
+		rx_bps = (unsigned long)(rx_bytes -
+			 nic_dev->rxqs[qid].last_moder_bytes)
+			 * HZ / period;
+		tx_bps = (unsigned long)(tx_bytes -
+			 nic_dev->txqs[qid].last_moder_bytes)
+			 * HZ / period;
+		if ((nic_dev->is_vm_slave && nic_dev->in_vm) ||
+		    nic_dev->is_bm_slave) {
+			update_queue_coal_sdi_vm(nic_dev, qid, rate, rx_bps,
+						 tx_rate, tx_bps);
 		} else {
-			coalesc_timer_cfg =
-				(nic_dev->is_vm_slave && nic_dev->in_vm) ?
-				 0 : HINIC_LOWEST_LATENCY;
-			pending_limt =
-				(nic_dev->is_vm_slave && nic_dev->in_vm) ?
-				 0 : q_coal->rx_pending_limt_low;
+			update_queue_coal(nic_dev, qid, rate, avg_pkt_size,
+					  tx_rate);
 		}
-
-		set_interrupt_moder(nic_dev, qid, coalesc_timer_cfg,
-				    pending_limt);
 
 		nic_dev->rxqs[qid].last_moder_packets = rx_packets;
 		nic_dev->rxqs[qid].last_moder_bytes = rx_bytes;
@@ -2436,9 +2504,82 @@ static void hinic_assign_netdev_ops(struct hinic_nic_dev *adapter)
 #define HINIC_DFT_PG_100GE_TXRX_MSIX_COALESC_TIMER	2
 #define HINIC_DFT_PG_ARM_100GE_TXRX_MSIX_COALESC_TIMER	3
 
+static void update_queue_coal_param(struct hinic_nic_dev *nic_dev,
+				    struct pci_device_id *id, u16 qid)
+{
+	struct hinic_intr_coal_info *info = NULL;
+
+	info = &nic_dev->intr_coalesce[qid];
+	if (!nic_dev->intr_coal_set_flag) {
+		switch (id->driver_data) {
+		case HINIC_BOARD_PG_TP_10GE:
+			info->pending_limt =
+			HINIC_DFT_PG_10GE_TXRX_MSIX_PENDING_LIMIT;
+			info->coalesce_timer_cfg =
+			HINIC_DFT_PG_10GE_TXRX_MSIX_COALESC_TIMER;
+			break;
+		case HINIC_BOARD_PG_SM_25GE:
+			info->pending_limt =
+			HINIC_DFT_PG_25GE_TXRX_MSIX_PENDING_LIMIT;
+			info->coalesce_timer_cfg =
+			HINIC_DFT_PG_ARM_25GE_TXRX_MSIX_COALESC_TIMER;
+			break;
+		case HINIC_BOARD_PG_100GE:
+			info->pending_limt =
+			HINIC_DFT_PG_100GE_TXRX_MSIX_PENDING_LIMIT;
+			info->coalesce_timer_cfg =
+			HINIC_DFT_PG_ARM_100GE_TXRX_MSIX_COALESC_TIMER;
+			break;
+		default:
+			info->pending_limt = qp_pending_limit;
+			info->coalesce_timer_cfg = qp_coalesc_timer_cfg;
+			break;
+		}
+	}
+
+	info->resend_timer_cfg = HINIC_DEAULT_TXRX_MSIX_RESEND_TIMER_CFG;
+	info->pkt_rate_high = HINIC_RX_RATE_HIGH;
+	info->rx_usecs_high = qp_coalesc_timer_high;
+	info->rx_pending_limt_high = qp_pending_limit_high;
+	info->pkt_rate_low = HINIC_RX_RATE_LOW;
+	info->rx_usecs_low = qp_coalesc_timer_low;
+	info->rx_pending_limt_low = qp_pending_limit_low;
+
+	if (nic_dev->in_vm) {
+		if (qp_pending_limit_high == HINIC_RX_PENDING_LIMIT_HIGH)
+			qp_pending_limit_high = HINIC_RX_PENDING_LIMIT_HIGH_VM;
+		info->pkt_rate_low = HINIC_RX_RATE_LOW_VM;
+		info->rx_pending_limt_high = qp_pending_limit_high;
+	}
+
+	/* suit for sdi3.0 vm mode vf drv or bm mode pf/vf drv */
+	if ((nic_dev->is_vm_slave && nic_dev->in_vm) ||
+	    nic_dev->is_bm_slave) {
+		info->pkt_rate_high = SDI_VM_RX_PKT_RATE_HIGH;
+		info->pkt_rate_low = SDI_VM_RX_PKT_RATE_LOW;
+
+		if (qp_coalesc_use_drv_params_switch == 0) {
+			/* if arm server, maybe need to change this value
+			 * again
+			 */
+			info->pending_limt = SDI_VM_PENDING_LIMT;
+			info->coalesce_timer_cfg = SDI_VM_COALESCE_TIMER_CFG;
+			info->rx_usecs_high = SDI_VM_RX_USECS_HIGH;
+			info->rx_pending_limt_high =
+				SDI_VM_RX_PENDING_LIMT_HIGH;
+			info->rx_usecs_low = SDI_VM_RX_USECS_LOW;
+			info->rx_pending_limt_low = SDI_VM_RX_PENDING_LIMT_LOW;
+		} else {
+			info->rx_usecs_high = qp_coalesc_timer_high;
+			info->rx_pending_limt_high = qp_pending_limit_high;
+			info->rx_usecs_low = qp_coalesc_timer_low;
+			info->rx_pending_limt_low = qp_pending_limit_low;
+		}
+	}
+}
+
 static void init_intr_coal_param(struct hinic_nic_dev *nic_dev)
 {
-	struct hinic_intr_coal_info *info;
 	struct pci_device_id *id;
 	u16 i;
 
@@ -2463,54 +2604,8 @@ static void init_intr_coal_param(struct hinic_nic_dev *nic_dev)
 		break;
 	}
 
-	for (i = 0; i < nic_dev->max_qps; i++) {
-		info = &nic_dev->intr_coalesce[i];
-		if (!nic_dev->intr_coal_set_flag) {
-			switch (id->driver_data) {
-			case HINIC_BOARD_PG_TP_10GE:
-				info->pending_limt =
-				HINIC_DFT_PG_10GE_TXRX_MSIX_PENDING_LIMIT;
-				info->coalesce_timer_cfg =
-				HINIC_DFT_PG_10GE_TXRX_MSIX_COALESC_TIMER;
-				break;
-			case HINIC_BOARD_PG_SM_25GE:
-				info->pending_limt =
-				HINIC_DFT_PG_25GE_TXRX_MSIX_PENDING_LIMIT;
-				info->coalesce_timer_cfg =
-				HINIC_DFT_PG_ARM_25GE_TXRX_MSIX_COALESC_TIMER;
-				break;
-			case HINIC_BOARD_PG_100GE:
-				info->pending_limt =
-				HINIC_DFT_PG_100GE_TXRX_MSIX_PENDING_LIMIT;
-				info->coalesce_timer_cfg =
-				HINIC_DFT_PG_ARM_100GE_TXRX_MSIX_COALESC_TIMER;
-				break;
-			default:
-				info->pending_limt = qp_pending_limit;
-				info->coalesce_timer_cfg = qp_coalesc_timer_cfg;
-				break;
-			}
-		}
-
-		info->resend_timer_cfg =
-			HINIC_DEAULT_TXRX_MSIX_RESEND_TIMER_CFG;
-		info->pkt_rate_high = HINIC_RX_RATE_HIGH;
-		info->rx_usecs_high = qp_coalesc_timer_high;
-		info->rx_pending_limt_high = qp_pending_limit_high;
-		info->pkt_rate_low = HINIC_RX_RATE_LOW;
-		info->rx_usecs_low = qp_coalesc_timer_low;
-		info->rx_pending_limt_low = qp_pending_limit_low;
-
-		if (nic_dev->in_vm) {
-			if (qp_pending_limit_high ==
-			    HINIC_RX_PENDING_LIMIT_HIGH)
-				qp_pending_limit_high =
-					HINIC_RX_PENDING_LIMIT_HIGH_VM;
-			info->pkt_rate_low = HINIC_RX_RATE_LOW_VM;
-			info->rx_pending_limt_high =
-					qp_pending_limit_high;
-		}
-	}
+	for (i = 0; i < nic_dev->max_qps; i++)
+		update_queue_coal_param(nic_dev, id, i);
 }
 
 static int hinic_init_intr_coalesce(struct hinic_nic_dev *nic_dev)
@@ -2832,6 +2927,7 @@ static int nic_probe(struct hinic_lld_dev *lld_dev, void **uld_dev,
 	nic_dev->heart_status = true;
 	nic_dev->in_vm = !hinic_is_in_host();
 	nic_dev->is_vm_slave = is_multi_vm_slave(lld_dev->hwdev);
+	nic_dev->is_bm_slave = is_multi_bm_slave(lld_dev->hwdev);
 	nic_dev->lro_replenish_thld = lro_replenish_thld;
 	nic_dev->rx_buff_len = (u16)(rx_buff * CONVERT_UNIT);
 	page_num = (RX_BUFF_NUM_PER_PAGE * nic_dev->rx_buff_len) / PAGE_SIZE;

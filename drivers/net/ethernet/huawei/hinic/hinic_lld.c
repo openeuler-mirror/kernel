@@ -1728,6 +1728,8 @@ int hinic_ovs_set_vf_nic_state(struct hinic_lld_dev *lld_dev, u16 vf_func_id,
 			uld_dev->in_vm = true;
 			uld_dev->is_vm_slave =
 				is_multi_vm_slave(uld_dev->hwdev);
+			uld_dev->is_bm_slave =
+				is_multi_bm_slave(uld_dev->hwdev);
 			if (des_dev->init_state < HINIC_INIT_STATE_NIC_INITED)
 				des_dev->init_state =
 					HINIC_INIT_STATE_NIC_INITED;

@@ -235,7 +235,7 @@ struct hinic_nic_dev {
 	/* interrupt coalesce must be different in virtual machine */
 	bool			in_vm;
 	bool			is_vm_slave;
-
+	int			is_bm_slave;
 #ifndef HAVE_NETDEV_STATS_IN_NETDEV
 	struct net_device_stats net_stats;
 #endif
