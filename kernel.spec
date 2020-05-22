@@ -790,6 +790,13 @@ fi
 
 %changelog
 * Fri May 22 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.2.0.0039
+- net/hinic: Disable the CSUM offload capability of TUNNEL in SDI mode
+- net/hinic: VF does not display firmware statistics
+- net/hinic: SDI bare metal VF supports dynamic queue
+- net/hinic: Support doorbell BAR size of 256K in SDI mode
+- net/hinic: Supports variable SDI master host ppf_id
+- net/hinic: Optimize SDI interrupt aggregation parameters
+- netlabel: cope with NULL catmap
 - netprio_cgroup: Fix unlimited memory leak of v2 cgroups
 - net: hns3: update hns3 version to 1.9.38.0
 - net: hns3: solve the unlock 2 times when rocee init fault
