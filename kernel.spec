@@ -790,7 +790,7 @@ fi
 
 %changelog
 * Fri May 22 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.2.0.0039
- - signal: fix kabi changes in struct task_struct
+-  signal: fix kabi changes in struct task_struct
 - signal: Extend exec_id to 64bits
 - livepatch/core: Fix compile error when CONFIG_JUMP_LABEL closed
 - net/hinic: Adjust AEQ interrupt retransmission settings
