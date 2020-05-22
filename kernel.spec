@@ -789,6 +789,10 @@ fi
 %endif
 
 %changelog
+* Fri May 22 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.2.0.0039
+- pcie_cae support getting chipnums of this system
+- net: hns3: remove the unnecessary ccflags
+
 * Wed May 6 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.1.0.0038
 - perf: Make perf able to build with latest libbfd
 - nbd: use blk_mq_queue_tag_inflight_iter()
