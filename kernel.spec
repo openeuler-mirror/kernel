@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2005.1.0
+%global hulkrelease 2005.2.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0038
+Release: %{hulkrelease}.0039
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
