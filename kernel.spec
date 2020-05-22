@@ -790,6 +790,12 @@ fi
 
 %changelog
 * Fri May 22 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.2.0.0039
+ - signal: fix kabi changes in struct task_struct
+- signal: Extend exec_id to 64bits
+- livepatch/core: Fix compile error when CONFIG_JUMP_LABEL closed
+- net/hinic: Adjust AEQ interrupt retransmission settings
+- net/hinic: Number of VF queues cleared during initialization
+- net/hinic: Reduce VF EQ queue depth in SDI mode
 - net/hinic: Disable the CSUM offload capability of TUNNEL in SDI mode
 - net/hinic: VF does not display firmware statistics
 - net/hinic: SDI bare metal VF supports dynamic queue
