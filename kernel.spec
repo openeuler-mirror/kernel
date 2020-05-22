@@ -790,6 +790,28 @@ fi
 
 %changelog
 * Fri May 22 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.2.0.0039
+- netprio_cgroup: Fix unlimited memory leak of v2 cgroups
+- net: hns3: update hns3 version to 1.9.38.0
+- net: hns3: solve the unlock 2 times when rocee init fault
+- scsi: sg: add sg_remove_request in sg_write
+- KVM: SVM: Fix potential memory leak in svm_cpu_init()
+- ptp: free ptp device pin descriptors properly
+- spi: spi-dw: Add lock protect dw_spi rx/tx to prevent concurrent calls
+- drivers sfc: Fix cross page write error
+- drivers sysctl: add read and write interface of pmbus
+- net/hinic: Fix TX timeout under ipip tunnel packet
+- xsk: Add missing check on user supplied headroom size
+- fs/namespace.c: fix mountpoint reference counter race
+- USB: core: Fix free-while-in-use bug in the USB S-Glibrary
+- block, bfq: fix use-after-free in bfq_idle_slice_timer_body
+- mwifiex: Fix possible buffer overflows in mwifiex_cmd_append_vsie_tlv()
+- mwifiex: Fix possible buffer overflows in mwifiex_ret_wmm_get_status()
+- scsi: mptfusion: Fix double fetch bug in ioctl
+- mt76: fix array overflow on receiving too many fragments for a packet
+- net: hns3: change the order of reinitializing RoCE and VF during reset
+- net: hns3: update hns3 version to 1.9.37.9
+- Revert "scsi: fix failing unload of a LLDD module"
+- s390/mm: fix page table upgrade vs 2ndary address mode accesses
 - pcie_cae support getting chipnums of this system
 - net: hns3: remove the unnecessary ccflags
 
