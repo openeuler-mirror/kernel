@@ -60,17 +60,14 @@ config V4L2_FWNODE
 	tristate
 
 # Used by drivers that need Videobuf modules
-config VIDEOBUF_GEN
-	tristate
-
 config VIDEOBUF_DMA_SG
 	tristate
-	select VIDEOBUF_GEN
+	depends on BROKEN
 
 config VIDEOBUF_VMALLOC
 	tristate
-	select VIDEOBUF_GEN
+	depends on BROKEN
 
 config VIDEOBUF_DMA_CONTIG
 	tristate
-	select VIDEOBUF_GEN
+	depends on BROKEN

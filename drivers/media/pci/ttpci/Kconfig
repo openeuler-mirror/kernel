@@ -6,6 +6,7 @@ config DVB_AV7110
 	depends on DVB_CORE && PCI && I2C
 	select TTPCI_EEPROM
 	select VIDEO_SAA7146_VV
+	depends on BROKEN
 	select DVB_AV7110_IR if INPUT_EVDEV=y || INPUT_EVDEV=DVB_AV7110
 	depends on VIDEO_DEV	# dependencies of VIDEO_SAA7146_VV
 	select DVB_VES1820 if MEDIA_SUBDRV_AUTOSELECT
@@ -116,6 +117,7 @@ config DVB_BUDGET_AV
 	tristate "Budget cards with analog video inputs"
 	depends on DVB_BUDGET_CORE && I2C
 	select VIDEO_SAA7146_VV
+	depends on BROKEN
 	depends on VIDEO_DEV	# dependencies of VIDEO_SAA7146_VV
 	select DVB_PLL if MEDIA_SUBDRV_AUTOSELECT
 	select DVB_STV0299 if MEDIA_SUBDRV_AUTOSELECT
