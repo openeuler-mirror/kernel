@@ -2475,6 +2475,19 @@ void kvm_set_way_flush(struct kvm_vcpu *vcpu)
 	}
 }
 
+static bool kvm_need_flush_vm(struct kvm_vcpu *vcpu)
+{
+	if (kvm_ncsnp_support)
+		return false;
+
+	/* Hackish... */
+	if (vcpu->vcpu_id == 0 || (vcpu->vcpu_id + 1 ==
+				   atomic_read(&vcpu->kvm->online_vcpus)))
+		return true;
+
+	return false;
+}
+
 void kvm_toggle_cache(struct kvm_vcpu *vcpu, bool was_enabled)
 {
 	bool now_enabled = vcpu_has_cache_enabled(vcpu);
@@ -2484,7 +2497,7 @@ void kvm_toggle_cache(struct kvm_vcpu *vcpu, bool was_enabled)
 	 * If switching it off, need to clean the caches.
 	 * Clean + invalidate does the trick always.
 	 */
-	if (now_enabled != was_enabled && !kvm_ncsnp_support)
+	if (now_enabled != was_enabled && kvm_need_flush_vm(vcpu))
 		stage2_flush_vm(vcpu->kvm);
 
 	/* Caches are now on, stop trapping VM ops (until a S/W op) */
