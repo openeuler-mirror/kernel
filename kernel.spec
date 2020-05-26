@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2005.1.0
+%global hulkrelease 2005.2.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0038
+Release: %{hulkrelease}.0039
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,45 @@ fi
 %endif
 
 %changelog
+* Fri May 22 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.2.0.0039
+- signal: fix kabi changes in struct task_struct
+- signal: Extend exec_id to 64bits
+- livepatch/core: Fix compile error when CONFIG_JUMP_LABEL closed
+- net/hinic: Adjust AEQ interrupt retransmission settings
+- net/hinic: Number of VF queues cleared during initialization
+- net/hinic: Reduce VF EQ queue depth in SDI mode
+- net/hinic: Disable the CSUM offload capability of TUNNEL in SDI mode
+- net/hinic: VF does not display firmware statistics
+- net/hinic: SDI bare metal VF supports dynamic queue
+- net/hinic: Support doorbell BAR size of 256K in SDI mode
+- net/hinic: Supports variable SDI master host ppf_id
+- net/hinic: Optimize SDI interrupt aggregation parameters
+- netlabel: cope with NULL catmap
+- netprio_cgroup: Fix unlimited memory leak of v2 cgroups
+- net: hns3: update hns3 version to 1.9.38.0
+- net: hns3: solve the unlock 2 times when rocee init fault
+- scsi: sg: add sg_remove_request in sg_write
+- KVM: SVM: Fix potential memory leak in svm_cpu_init()
+- ptp: free ptp device pin descriptors properly
+- spi: spi-dw: Add lock protect dw_spi rx/tx to prevent concurrent calls
+- drivers sfc: Fix cross page write error
+- drivers sysctl: add read and write interface of pmbus
+- net/hinic: Fix TX timeout under ipip tunnel packet
+- xsk: Add missing check on user supplied headroom size
+- fs/namespace.c: fix mountpoint reference counter race
+- USB: core: Fix free-while-in-use bug in the USB S-Glibrary
+- block, bfq: fix use-after-free in bfq_idle_slice_timer_body
+- mwifiex: Fix possible buffer overflows in mwifiex_cmd_append_vsie_tlv()
+- mwifiex: Fix possible buffer overflows in mwifiex_ret_wmm_get_status()
+- scsi: mptfusion: Fix double fetch bug in ioctl
+- mt76: fix array overflow on receiving too many fragments for a packet
+- net: hns3: change the order of reinitializing RoCE and VF during reset
+- net: hns3: update hns3 version to 1.9.37.9
+- Revert "scsi: fix failing unload of a LLDD module"
+- s390/mm: fix page table upgrade vs 2ndary address mode accesses
+- pcie_cae support getting chipnums of this system
+- net: hns3: remove the unnecessary ccflags
+
 * Wed May 6 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.1.0.0038
 - perf: Make perf able to build with latest libbfd
 - nbd: use blk_mq_queue_tag_inflight_iter()
