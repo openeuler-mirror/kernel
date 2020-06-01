@@ -2432,7 +2432,8 @@ static int hinic_set_vf_mac_msg_handler(struct hinic_nic_io *nic_io, u16 vf,
 	struct hinic_port_mac_set *mac_out = buf_out;
 	int err;
 
-	if (vf_info->pf_set_mac && is_valid_ether_addr(mac_in->mac)) {
+	if (vf_info->pf_set_mac && !(vf_info->trust) &&
+	    is_valid_ether_addr(mac_in->mac)) {
 		nic_warn(nic_io->hwdev->dev_hdl, "PF has already set VF %d MAC address\n",
 			 HW_VF_ID_TO_OS(vf));
 		mac_out->status = HINIC_PF_SET_VF_ALREADY;
@@ -2462,7 +2463,8 @@ static int hinic_del_vf_mac_msg_handler(struct hinic_nic_io *nic_io, u16 vf,
 	struct hinic_port_mac_set *mac_out = buf_out;
 	int err;
 
-	if (vf_info->pf_set_mac && is_valid_ether_addr(mac_in->mac) &&
+	if (vf_info->pf_set_mac && !(vf_info->trust) &&
+	    is_valid_ether_addr(mac_in->mac) &&
 	    !memcmp(vf_info->vf_mac_addr, mac_in->mac, ETH_ALEN)) {
 		nic_warn(nic_io->hwdev->dev_hdl, "PF has already set VF mac.\n");
 		mac_out->status = HINIC_PF_SET_VF_ALREADY;
@@ -2497,7 +2499,7 @@ static int hinic_update_vf_mac_msg_handler(struct hinic_nic_io *nic_io, u16 vf,
 		return -EINVAL;
 	}
 
-	if (vf_info->pf_set_mac) {
+	if (vf_info->pf_set_mac && !(vf_info->trust)) {
 		nic_warn(nic_io->hwdev->dev_hdl, "PF has already set VF mac.\n");
 		mac_out->status = HINIC_PF_SET_VF_ALREADY;
 		*out_size = sizeof(*mac_out);
@@ -3026,6 +3028,10 @@ void hinic_get_vf_config(void *hwdev, u16 vf_id, struct ifla_vf_info *ivi)
 	ivi->spoofchk = vfinfo->spoofchk;
 #endif
 
+#ifdef HAVE_NDO_SET_VF_TRUST
+	ivi->trusted = vfinfo->trust;
+#endif
+
 #ifdef HAVE_NDO_SET_VF_MIN_MAX_TX_RATE
 	ivi->max_tx_rate = vfinfo->max_rate;
 	ivi->min_tx_rate = vfinfo->min_rate;
@@ -3062,6 +3068,11 @@ void hinic_clear_vf_infos(void *hwdev, u16 vf_id)
 
 	if (vf_infos->spoofchk)
 		hinic_set_vf_spoofchk(hwdev, vf_id, false);
+
+#ifdef HAVE_NDO_SET_VF_TRUST
+	if (vf_infos->trust)
+		hinic_set_vf_trust(hwdev, vf_id, false);
+#endif
 
 	memset(vf_infos, 0, sizeof(*vf_infos));
 	/* set vf_infos to default */
@@ -3181,6 +3192,24 @@ int hinic_set_vf_spoofchk(void *hwdev, u16 vf_id, bool spoofchk)
 	return err;
 }
 
+#ifdef HAVE_NDO_SET_VF_TRUST
+int hinic_set_vf_trust(void *hwdev, u16 vf_id, bool trust)
+{
+	struct hinic_hwdev *hw_dev = hwdev;
+	struct hinic_nic_io *nic_io = NULL;
+	struct vf_data_storage *vf_infos = NULL;
+
+	if (!hwdev)
+		return -EINVAL;
+
+	nic_io = hw_dev->nic_io;
+	vf_infos = nic_io->vf_infos;
+	vf_infos[HW_VF_ID_TO_OS(vf_id)].trust = trust;
+
+	return 0;
+}
+#endif
+
 bool hinic_vf_info_spoofchk(void *hwdev, int vf_id)
 {
 	struct hinic_nic_io *nic_io = ((struct hinic_hwdev *)hwdev)->nic_io;
@@ -3188,6 +3217,16 @@ bool hinic_vf_info_spoofchk(void *hwdev, int vf_id)
 
 	return spoofchk;
 }
+
+#ifdef HAVE_NDO_SET_VF_TRUST
+bool hinic_vf_info_trust(void *hwdev, int vf_id)
+{
+	struct hinic_nic_io *nic_io = ((struct hinic_hwdev *)hwdev)->nic_io;
+	bool trust = nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].trust;
+
+	return trust;
+}
+#endif
 
 static int hinic_set_vf_rate_limit(void *hwdev, u16 vf_id, u32 tx_rate)
 {

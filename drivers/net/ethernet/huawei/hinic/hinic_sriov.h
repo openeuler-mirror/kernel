@@ -59,6 +59,10 @@ int hinic_ndo_get_vf_config(struct net_device *netdev, int vf,
 int hinic_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting);
 #endif
 
+#ifdef HAVE_NDO_SET_VF_TRUST
+int hinic_ndo_set_vf_trust(struct net_device *netdev, int vf, bool setting);
+#endif
+
 int hinic_ndo_set_vf_link_state(struct net_device *netdev, int vf_id, int link);
 
 #ifdef HAVE_NDO_SET_VF_MIN_MAX_TX_RATE

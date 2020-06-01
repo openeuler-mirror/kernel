@@ -64,6 +64,7 @@ struct vf_data_storage {
 	bool link_forced;
 	bool link_up;		/* only valid if VF link is forced */
 	bool spoofchk;
+	bool trust;
 };
 
 struct hinic_nic_cfg {
