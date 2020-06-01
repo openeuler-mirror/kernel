@@ -468,7 +468,8 @@ static int hinic_poll(struct napi_struct *napi, int budget)
 
 	set_bit(HINIC_RESEND_ON, &irq_cfg->intr_flag);
 	rx_pkts += hinic_rx_poll(irq_cfg->rxq, budget - rx_pkts);
-	if (rx_pkts >= budget) {
+	tx_pkts += hinic_tx_poll(irq_cfg->txq, budget - tx_pkts);
+	if (rx_pkts >= budget || tx_pkts >= budget) {
 		clear_bit(HINIC_RESEND_ON, &irq_cfg->intr_flag);
 		return budget;
 	}
