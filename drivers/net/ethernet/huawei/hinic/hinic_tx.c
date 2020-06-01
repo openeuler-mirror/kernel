@@ -39,6 +39,7 @@
 #include "hinic_nic_dev.h"
 #include "hinic_qp.h"
 #include "hinic_tx.h"
+#include "hinic_dbg.h"
 
 #define MIN_SKB_LEN        32
 #define MAX_PAYLOAD_OFFSET 221
@@ -1291,17 +1292,25 @@ void hinic_free_txqs(struct net_device *netdev)
 /* should stop transmit any packets before calling this function */
 #define HINIC_FLUSH_QUEUE_TIMEOUT	1000
 
+static bool hinic_get_hw_handle_status(void *hwdev, u16 q_id)
+{
+	u16 sw_pi = 0, hw_ci = 0;
+
+	sw_pi = hinic_dbg_get_sq_pi(hwdev, q_id);
+	hw_ci = hinic_get_sq_hw_ci(hwdev, q_id);
+
+	return sw_pi == hw_ci;
+}
+
 int hinic_stop_sq(struct hinic_txq *txq)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(txq->netdev);
 	unsigned long timeout;
-	int free_wqebbs, err;
+	int err;
 
 	timeout = msecs_to_jiffies(HINIC_FLUSH_QUEUE_TIMEOUT) + jiffies;
 	do {
-		free_wqebbs = hinic_get_sq_free_wqebbs(nic_dev->hwdev,
-						       txq->q_id) + 1;
-		if (free_wqebbs == txq->q_depth)
+		if (hinic_get_hw_handle_status(nic_dev->hwdev, txq->q_id))
 			return 0;
 
 		usleep_range(900, 1000);
@@ -1310,9 +1319,7 @@ int hinic_stop_sq(struct hinic_txq *txq)
 	/* force hardware to drop packets */
 	timeout = msecs_to_jiffies(HINIC_FLUSH_QUEUE_TIMEOUT) + jiffies;
 	do {
-		free_wqebbs = hinic_get_sq_free_wqebbs(nic_dev->hwdev,
-						       txq->q_id) + 1;
-		if (free_wqebbs == txq->q_depth)
+		if (hinic_get_hw_handle_status(nic_dev->hwdev, txq->q_id))
 			return 0;
 
 		err = hinic_force_drop_tx_pkt(nic_dev->hwdev);
@@ -1323,8 +1330,7 @@ int hinic_stop_sq(struct hinic_txq *txq)
 	} while (time_before(jiffies, timeout));
 
 	/* Avoid msleep takes too long and get a fake result */
-	free_wqebbs = hinic_get_sq_free_wqebbs(nic_dev->hwdev, txq->q_id) + 1;
-	if (free_wqebbs == txq->q_depth)
+	if (hinic_get_hw_handle_status(nic_dev->hwdev, txq->q_id))
 		return 0;
 
 	return -EFAULT;
@@ -1342,6 +1348,4 @@ void hinic_flush_txqs(struct net_device *netdev)
 			nicif_err(nic_dev, drv, netdev,
 				  "Failed to stop sq%d\n", qid);
 	}
-
-	return;
 } /*lint -e766*/
