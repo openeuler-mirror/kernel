@@ -183,6 +183,8 @@ enum hinic_rx_buff_len {
 int hinic_netdev_event(struct notifier_block *notifier,
 		       unsigned long event, void *ptr);
 
+/* used for netdev notifier register/unregister */
+DEFINE_MUTEX(g_hinic_netdev_notifiers_mutex);
 static int hinic_netdev_notifiers_ref_cnt;
 static struct notifier_block hinic_netdev_notifier = {
 	.notifier_call = hinic_netdev_event,
@@ -192,6 +194,7 @@ static void hinic_register_notifier(struct hinic_nic_dev *nic_dev)
 {
 	int err;
 
+	mutex_lock(&g_hinic_netdev_notifiers_mutex);
 	hinic_netdev_notifiers_ref_cnt++;
 	if (hinic_netdev_notifiers_ref_cnt == 1) {
 		err = register_netdevice_notifier(&hinic_netdev_notifier);
@@ -201,15 +204,18 @@ static void hinic_register_notifier(struct hinic_nic_dev *nic_dev)
 			hinic_netdev_notifiers_ref_cnt--;
 		}
 	}
+	mutex_unlock(&g_hinic_netdev_notifiers_mutex);
 }
 
 static void hinic_unregister_notifier(struct hinic_nic_dev *nic_dev)
 {
+	mutex_lock(&g_hinic_netdev_notifiers_mutex);
 	if (hinic_netdev_notifiers_ref_cnt == 1)
 		unregister_netdevice_notifier(&hinic_netdev_notifier);
 
 	if (hinic_netdev_notifiers_ref_cnt)
 		hinic_netdev_notifiers_ref_cnt--;
+	mutex_unlock(&g_hinic_netdev_notifiers_mutex);
 }
 
 #define HINIC_MAX_VLAN_DEPTH_OFFLOAD_SUPPORT	2
