@@ -428,6 +428,7 @@ int hinic_init_hwdev(struct hinic_init_para *para);
 int hinic_set_vf_dev_cap(void *hwdev);
 void hinic_free_hwdev(void *hwdev);
 void hinic_shutdown_hwdev(void *hwdev);
+void hinic_set_api_stop(void *hwdev);
 
 void hinic_ppf_hwdev_unreg(void *hwdev);
 void hinic_ppf_hwdev_reg(void *hwdev, void *ppf_hwdev);
