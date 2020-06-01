@@ -839,7 +839,8 @@ static int __pf_to_mgmt_pre_handle(struct hinic_hwdev *hwdev,
 				   enum hinic_mod_type mod, u8 cmd)
 {
 	if (hinic_get_mgmt_channel_status(hwdev)) {
-		if (mod == HINIC_MOD_COMM || mod == HINIC_MOD_L2NIC)
+		if (mod == HINIC_MOD_COMM || mod == HINIC_MOD_L2NIC ||
+		    mod == HINIC_MOD_CFGM || mod == HINIC_MOD_HILINK)
 			return HINIC_DEV_BUSY_ACTIVE_FW;
 		else
 			return -EBUSY;

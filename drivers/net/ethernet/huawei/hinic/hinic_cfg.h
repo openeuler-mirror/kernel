@@ -18,8 +18,6 @@
 
 #include "hinic_ctx_def.h"
 
-#define CFG_MAX_CMD_TIMEOUT     1000 /* ms */
-
 enum {
 	CFG_FREE = 0,
 	CFG_BUSY = 1

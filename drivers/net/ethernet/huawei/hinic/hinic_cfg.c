@@ -604,16 +604,15 @@ static int get_cap_from_fw(struct hinic_hwdev *dev, enum func_type type)
 
 static int get_cap_from_pf(struct hinic_hwdev *dev, enum func_type type)
 {
-	int err;
-	u16 in_len, out_len;
 	struct hinic_dev_cap dev_cap = {0};
+	u16 in_len, out_len;
+	int err;
 
 	in_len = sizeof(dev_cap);
 	out_len = in_len;
 
-	err = hinic_mbox_to_pf(dev, HINIC_MOD_CFGM, HINIC_CFG_MBOX_CAP,
-			       &dev_cap, in_len, &dev_cap, &out_len,
-			       CFG_MAX_CMD_TIMEOUT);
+	err = hinic_msg_to_mgmt_sync(dev, HINIC_MOD_CFGM, HINIC_CFG_MBOX_CAP,
+				     &dev_cap, in_len, &dev_cap, &out_len, 0);
 	if (err || dev_cap.status || !out_len) {
 		sdk_err(dev->dev_hdl, "Failed to get capability from PF,  err: %d, status: 0x%x, out size: 0x%x\n",
 			err, dev_cap.status, out_len);
@@ -1346,14 +1345,17 @@ static int cfg_mbx_pf_proc_vf_msg(void *hwdev, u16 vf_id, u8 cmd, void *buf_in,
 	/* fixed qnum in ovs mode */
 	func_id = vf_id + hinic_glb_pf_vf_offset(hwdev);
 	dev_cap_tmp.func_id = func_id;
-	err = hinic_msg_to_mgmt_sync(dev, HINIC_MOD_CFGM, HINIC_CFG_FUNC_CAP,
-				     &dev_cap_tmp, sizeof(dev_cap_tmp),
-				     &dev_cap_tmp, &out_len, 0);
-	if (err || !out_len || dev_cap_tmp.status) {
+	err = hinic_pf_msg_to_mgmt_sync(dev, HINIC_MOD_CFGM, HINIC_CFG_FUNC_CAP,
+					&dev_cap_tmp, sizeof(dev_cap_tmp),
+					&dev_cap_tmp, &out_len, 0);
+	if (err && err != HINIC_DEV_BUSY_ACTIVE_FW &&
+	    err != HINIC_MBOX_PF_BUSY_ACTIVE_FW) {
 		sdk_err(dev->dev_hdl,
 			"Get func_id: %u capability from FW failed, err: %d, status: 0x%x, out_size: 0x%x\n",
 			func_id, err, dev_cap_tmp.status, out_len);
 		return -EFAULT;
+	} else if (err) {
+		return err;
 	}
 
 	dev_cap->nic_max_sq = dev_cap_tmp.nic_max_sq + 1;
