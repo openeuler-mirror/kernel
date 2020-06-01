@@ -59,6 +59,6 @@ int  mdev_create_sysfs_files(struct device *dev, struct mdev_type *type);
 void mdev_remove_sysfs_files(struct device *dev, struct mdev_type *type);
 
 int  mdev_device_create(struct kobject *kobj, struct device *dev, uuid_le uuid);
-int  mdev_device_remove(struct device *dev, bool force_remove);
+int  mdev_device_remove(struct device *dev);
 
 #endif /* MDEV_PRIVATE_H */
