@@ -2127,6 +2127,14 @@ static const struct net_device_ops hinic_netdev_ops = {
 #ifdef HAVE_VF_SPOOFCHK_CONFIGURE
 	.ndo_set_vf_spoofchk	= hinic_ndo_set_vf_spoofchk,
 #endif
+#ifdef HAVE_NDO_SET_VF_TRUST
+#ifdef HAVE_RHEL7_NET_DEVICE_OPS_EXT
+	.extended.ndo_set_vf_trust = hinic_ndo_set_vf_trust,
+#else
+	.ndo_set_vf_trust	= hinic_ndo_set_vf_trust,
+#endif /* HAVE_RHEL7_NET_DEVICE_OPS_EXT */
+#endif /* HAVE_NDO_SET_VF_TRUST */
+
 	.ndo_get_vf_config	= hinic_ndo_get_vf_config,
 #endif
 

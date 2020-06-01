@@ -356,6 +356,37 @@ int hinic_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting)
 }
 #endif
 
+#ifdef HAVE_NDO_SET_VF_TRUST
+int hinic_ndo_set_vf_trust(struct net_device *netdev, int vf, bool setting)
+{
+	struct hinic_nic_dev *adapter = netdev_priv(netdev);
+	struct hinic_sriov_info *sriov_info;
+	int err = 0;
+	bool cur_trust;
+
+	sriov_info = hinic_get_sriov_info_by_pcidev(adapter->pdev);
+	if (vf >= sriov_info->num_vfs)
+		return -EINVAL;
+
+	cur_trust = hinic_vf_info_trust(sriov_info->hwdev,
+					OS_VF_ID_TO_HW(vf));
+	/* same request, so just return success */
+	if ((setting && cur_trust) || (!setting && !cur_trust))
+		return 0;
+
+	err = hinic_set_vf_trust(sriov_info->hwdev,
+				 OS_VF_ID_TO_HW(vf), setting);
+	if (!err)
+		nicif_info(adapter, drv, netdev, "Set VF %d trusted %s succeed\n",
+			   vf, setting ? "on" : "off");
+	else
+		nicif_err(adapter, drv, netdev, "Failed set VF %d trusted %s\n",
+			  vf, setting ? "on" : "off");
+
+	return err;
+}
+#endif
+
 int hinic_ndo_get_vf_config(struct net_device *netdev,
 			    int vf, struct ifla_vf_info *ivi)
 {

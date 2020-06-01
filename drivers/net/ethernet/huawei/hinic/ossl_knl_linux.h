@@ -265,6 +265,8 @@ enum ethtool_link_mode_bit_indices {
 #define HAVE_SKB_L4_RXHASH
 #endif
 
+#define HAVE_NDO_SET_VF_TRUST
+
 /*****************************************************************************/
 #define HAVE_ETHTOOL_GRXFHINDIR_SIZE
 #define HAVE_INT_NDO_VLAN_RX_ADD_VID
