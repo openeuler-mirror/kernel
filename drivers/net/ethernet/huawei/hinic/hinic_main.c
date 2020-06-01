@@ -1193,8 +1193,7 @@ static u16 hinic_select_queue(struct net_device *netdev, struct sk_buff *skb)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
-	if (skb->vlan_tci && !skb->priority)
-		skb->priority = skb->vlan_tci >> VLAN_PRIO_SHIFT;
+	skb->priority = skb->vlan_tci >> VLAN_PRIO_SHIFT;
 
 	if (netdev_get_num_tc(netdev) || !nic_dev->rss_hkey_user_be)
 		goto fallback;
