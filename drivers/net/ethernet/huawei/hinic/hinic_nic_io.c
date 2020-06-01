@@ -829,13 +829,20 @@ int hinic_init_nic_hwdev(void *hwdev, u16 rx_buff_len)
 			}
 		}
 	}
-	return 0;
+
+	/* VFs don't set port routine command report */
+	if (hinic_func_type(dev) != TYPE_VF)
+		/* Inform mgmt to send sfp's information to driver */
+		err = hinic_set_port_routine_cmd_report(hwdev, true);
+
+	return err;
 }
 EXPORT_SYMBOL(hinic_init_nic_hwdev);
 
 void hinic_free_nic_hwdev(void *hwdev)
 {
-	/* nothing to do for now */
+	if (hinic_func_type(hwdev) != TYPE_VF)
+		hinic_set_port_routine_cmd_report(hwdev, false);
 }
 EXPORT_SYMBOL(hinic_free_nic_hwdev);
 

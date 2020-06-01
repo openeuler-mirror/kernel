@@ -620,5 +620,7 @@ int hinic_add_hw_rqfilter(void *hwdev,
 			struct hinic_rq_filter_info *filter_info);
 int hinic_del_hw_rqfilter(void *hwdev,
 			struct hinic_rq_filter_info *filter_info);
+int hinic_get_sfp_eeprom(void *hwdev, u8 *data, u16 *len);
+int hinic_get_sfp_type(void *hwdev, u8 *data0, u8 *data1);
 
 #endif
