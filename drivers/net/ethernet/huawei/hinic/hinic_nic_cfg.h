@@ -19,6 +19,10 @@
 #define OS_VF_ID_TO_HW(os_vf_id) ((os_vf_id) + 1)
 #define HW_VF_ID_TO_OS(hw_vf_id) ((hw_vf_id) - 1)
 
+#define FW_SUPPORT_MAC_REUSE		0x1
+#define FW_SUPPORT_MAC_REUSE_FUNC(hwdev)	\
+	((hwdev)->fw_support_func_flag & FW_SUPPORT_MAC_REUSE)
+
 #define HINIC_VLAN_PRIORITY_SHIFT	13
 
 #define HINIC_RSS_INDIR_SIZE		256

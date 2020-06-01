@@ -690,6 +690,15 @@ struct hinic_port_rt_cmd {
 	u8	rsvd1[6];
 };
 
+struct fw_support_func {
+	u8	status;
+	u8	version;
+	u8	rsvd0[6];
+
+	u64	flag;
+	u64	rsvd;
+};
+
 struct hinic_vf_dcb_state {
 	u8	status;
 	u8	version;
@@ -740,6 +749,8 @@ struct hinic_set_link_follow {
 int hinic_init_function_table(void *hwdev, u16 rx_buf_sz);
 
 int hinic_get_base_qpn(void *hwdev, u16 *global_qpn);
+
+int hinic_get_fw_support_func(void *hwdev);
 
 int hinic_vf_func_init(struct hinic_hwdev *hwdev);
 
