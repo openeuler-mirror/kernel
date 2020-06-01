@@ -831,9 +831,17 @@ int hinic_init_nic_hwdev(void *hwdev, u16 rx_buff_len)
 	}
 
 	/* VFs don't set port routine command report */
-	if (hinic_func_type(dev) != TYPE_VF)
+	if (hinic_func_type(dev) != TYPE_VF) {
+		/* Get the fw support mac reuse flag */
+		err = hinic_get_fw_support_func(hwdev);
+		if (err) {
+			nic_err(dev->dev_hdl, "Failed to get function capability\n");
+			return err;
+		}
+
 		/* Inform mgmt to send sfp's information to driver */
 		err = hinic_set_port_routine_cmd_report(hwdev, true);
+	}
 
 	return err;
 }

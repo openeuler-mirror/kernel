@@ -201,6 +201,34 @@ int hinic_get_base_qpn(void *hwdev, u16 *global_qpn)
 	return 0;
 }
 
+int hinic_get_fw_support_func(void *hwdev)
+{
+	struct fw_support_func support_flag = {0};
+	struct hinic_hwdev *dev = hwdev;
+	u16 out_size = sizeof(support_flag);
+	int err;
+
+	if (!hwdev)
+		return -EINVAL;
+
+	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_L2NIC,
+				     HINIC_PORT_CMD_GET_FW_SUPPORT_FLAG,
+				     &support_flag, sizeof(support_flag),
+				     &support_flag, &out_size, 0);
+	if (support_flag.status == HINIC_MGMT_CMD_UNSUPPORTED) {
+		nic_info(dev->dev_hdl, "Current firmware doesn't support to get function capability\n");
+		support_flag.flag = 0;
+	} else if (support_flag.status || err || !out_size) {
+		nic_err(dev->dev_hdl, "Failed to get function capability, err: %d, status: 0x%x, out size: 0x%x\n",
+			err, support_flag.status, out_size);
+		return -EFAULT;
+	}
+
+	dev->fw_support_func_flag = support_flag.flag;
+
+	return 0;
+}
+
 #define HINIC_ADD_VLAN_IN_MAC	0x8000
 #define HINIC_VLAN_ID_MASK	0x7FFF
 
@@ -351,6 +379,11 @@ int hinic_update_mac_vlan(void *hwdev, u16 old_vlan, u16 new_vlan, int vf_id)
 	vf_info = dev->nic_io->vf_infos + HW_VF_ID_TO_OS(vf_id);
 	if (!vf_info->pf_set_mac)
 		return 0;
+
+	if (!FW_SUPPORT_MAC_REUSE_FUNC(dev)) {
+		nic_info(dev->dev_hdl, "Current firmware doesn't support mac reuse\n");
+		return 0;
+	}
 
 	func_id = hinic_glb_pf_vf_offset(dev) + (u16)vf_id;
 	vlan_id = old_vlan;
@@ -2562,9 +2595,14 @@ static int hinic_init_vf_config(struct hinic_hwdev *hwdev, u16 vf_id)
 	vf_info = hwdev->nic_io->vf_infos + HW_VF_ID_TO_OS(vf_id);
 	if (vf_info->pf_set_mac) {
 		func_id = hinic_glb_pf_vf_offset(hwdev) + vf_id;
-		vlan_id = vf_info->pf_vlan;
-		if (vlan_id)
-			vlan_id |= HINIC_ADD_VLAN_IN_MAC;
+		if (FW_SUPPORT_MAC_REUSE_FUNC(hwdev)) {
+			vlan_id = vf_info->pf_vlan;
+			if (vlan_id)
+				vlan_id |= HINIC_ADD_VLAN_IN_MAC;
+		} else {
+			vlan_id = 0;
+		}
+
 		err = hinic_set_mac(hwdev, vf_info->vf_mac_addr, vlan_id,
 				    func_id);
 		if (err) {
@@ -4065,3 +4103,4 @@ int hinic_get_sfp_type(void *hwdev, u8 *data0, u8 *data1)
 
 	return 0;
 }
+

@@ -266,6 +266,42 @@ int hinic_ndo_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 
 /*lint -save -e574 -e734*/
 #ifdef IFLA_VF_MAX
+static int set_hw_vf_vlan(struct hinic_sriov_info *sriov_info,
+			  u16 cur_vlanprio, int vf, u16 vlan, u8 qos)
+{
+	int err = 0;
+	u16 old_vlan = cur_vlanprio & VLAN_VID_MASK;
+
+	if (vlan || qos) {
+		if (cur_vlanprio) {
+			err = hinic_kill_vf_vlan(sriov_info->hwdev,
+						 OS_VF_ID_TO_HW(vf));
+			if (err) {
+				nic_err(&sriov_info->pdev->dev, "Failed to delete vf %d old vlan %d\n",
+					vf, old_vlan);
+				return err;
+			}
+		}
+		err = hinic_add_vf_vlan(sriov_info->hwdev,
+					OS_VF_ID_TO_HW(vf), vlan, qos);
+		if (err) {
+			nic_err(&sriov_info->pdev->dev, "Failed to add vf %d new vlan %d\n",
+				vf, vlan);
+			return err;
+		}
+	} else {
+		err = hinic_kill_vf_vlan(sriov_info->hwdev, OS_VF_ID_TO_HW(vf));
+		if (err) {
+			nic_err(&sriov_info->pdev->dev, "Failed to delete vf %d vlan %d\n",
+				vf, old_vlan);
+			return err;
+		}
+	}
+
+	return hinic_update_mac_vlan(sriov_info->hwdev, old_vlan, vlan,
+				     OS_VF_ID_TO_HW(vf));
+}
+
 #ifdef IFLA_VF_VLAN_INFO_MAX
 int hinic_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos,
 			  __be16 vlan_proto)
@@ -276,7 +312,6 @@ int hinic_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos)
 	struct hinic_nic_dev *adapter = netdev_priv(netdev);
 	struct hinic_sriov_info *sriov_info;
 	u16 vlanprio, cur_vlanprio;
-	int err = 0;
 
 	if (!FUNC_SUPPORT_SET_VF_MAC_VLAN(adapter->hwdev)) {
 		nicif_err(adapter, drv, netdev,
@@ -298,27 +333,7 @@ int hinic_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos)
 	if (vlanprio == cur_vlanprio)
 		return 0;
 
-	if (vlan || qos) {
-		if (cur_vlanprio)
-			err = hinic_kill_vf_vlan(sriov_info->hwdev,
-						 OS_VF_ID_TO_HW(vf));
-		if (err)
-			goto out;
-		err = hinic_add_vf_vlan(sriov_info->hwdev, OS_VF_ID_TO_HW(vf),
-					vlan, qos);
-	} else {
-		err = hinic_kill_vf_vlan(sriov_info->hwdev, OS_VF_ID_TO_HW(vf));
-	}
-
-	if (err)
-		return err;
-
-	err = hinic_update_mac_vlan(sriov_info->hwdev,
-				    cur_vlanprio & VLAN_VID_MASK, vlan,
-				    OS_VF_ID_TO_HW(vf));
-
-out:
-	return err;
+	return set_hw_vf_vlan(sriov_info, cur_vlanprio, vf, vlan, qos);
 }
 #endif
 

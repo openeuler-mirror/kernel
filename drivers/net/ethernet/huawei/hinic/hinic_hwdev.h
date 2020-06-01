@@ -319,6 +319,7 @@ struct hinic_hwdev {
 	struct hinic_board_info board_info;
 #define MGMT_VERSION_MAX_LEN	32
 	u8	mgmt_ver[MGMT_VERSION_MAX_LEN];
+	u64	fw_support_func_flag;
 };
 
 int hinic_init_comm_ch(struct hinic_hwdev *hwdev);
