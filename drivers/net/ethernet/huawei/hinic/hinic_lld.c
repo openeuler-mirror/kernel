@@ -2658,8 +2658,10 @@ init_nictool_err:
 
 alloc_chip_node_fail:
 	lld_unlock_chip_node();
-	unmapping_bar(pci_adapter);
+
 ceate_nic_delay_work_fail:
+	unmapping_bar(pci_adapter);
+
 map_bar_failed:
 	hinic_pci_deinit(pdev);
 
