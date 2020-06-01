@@ -7,6 +7,7 @@
 #include <linux/device.h>
 #include <linux/module.h>
 #include <linux/io.h>
+#include <linux/pci.h>
 
 #define	CHIP_OFFSET		0x200000000000UL
 #define	APB_SUBCTRL_BASE	0x148070000UL
@@ -23,7 +24,8 @@
 #define TYPE_SHIFT 4
 #define BIT_SHIFT_8 8
 #define PCIE_CMD_GET_CHIPNUMS 0x01
-
+#define HI1620_PCI_VENDOR_ID 0x19e5
+#define HI1620_PCI_DEVICE_ID 0xa120
 #define	DEVICE_NAME "pcie_reg_dev"
 
 enum chip_type_t {
@@ -55,7 +57,7 @@ static int pcie_reg_mmap(struct file *filep, struct vm_area_struct *vma)
 	u64 phy_addr;
 
 	if (chip_id >= current_chip_nums) {
-		pr_info("[PCIe Base] input chip_id %u is invalid\n", chip_id);
+		pr_err("pcie_cae input chip_id %u is invalid\n", chip_id);
 		return -EINVAL;
 	}
 
@@ -64,26 +66,26 @@ static int pcie_reg_mmap(struct file *filep, struct vm_area_struct *vma)
 	case MMAP_TYPE_APB:
 		phy_addr = APB_SUBCTRL_BASE + CHIP_OFFSET * chip_id;
 		if (size > PCIE_REG_SIZE) {
-			pr_info("[PCIe Base] mmap_type_apb map size is invalid\n");
+			pr_err("pcie_cae mmap_type_apb map size is invalid\n");
 			return -EINVAL;
 		}
 		break;
 	case MMAP_TYPE_NVME:
 		phy_addr = NVME_BAR_BASE + CHIP_OFFSET * chip_id;
 		if (size > NVME_BAR_SIZE) {
-			pr_info("[PCIe Base] mmap_type_nvme map size is invalid\n");
+			pr_err("pcie_cae mmap_type_nvme map size is invalid\n");
 			return -EINVAL;
 		}
 		break;
 	case MMAP_TYPE_VIRTIO:
 		phy_addr = VIRTIO_BAR_BASE + CHIP_OFFSET * chip_id;
 		if (size > VIRTIO_BAR_SIZE) {
-			pr_info("[PCIe Base] mmap_type_virtio map size is invalid\n");
+			pr_err("pcie_cae mmap_type_virtio map size is invalid\n");
 			return -EINVAL;
 		}
 		break;
 	default:
-		pr_info("[PCIe Base] input addr type %u is invalid\n", type);
+		pr_err("pcie_cae input addr type %u is invalid\n", type);
 		return -EINVAL;
 	}
 	vma->vm_pgoff = phy_addr >> PAGE_SHIFT;
@@ -95,7 +97,7 @@ static int pcie_reg_mmap(struct file *filep, struct vm_area_struct *vma)
 			    vma->vm_pgoff,
 			    size,
 			    vma->vm_page_prot)) {
-		pr_info("[PCIe Base] map pcie reg zone failed\n");
+		pr_err("pcie_cae map pcie reg zone failed\n");
 		return -EAGAIN;
 	}
 
@@ -125,10 +127,28 @@ static int pcie_open(struct inode *inode, struct file *f)
 {
 	void __iomem *addr_base;
 	u32 val;
+	struct pci_dev *dev;
+	int type;
+
+	dev = pci_get_device(HI1620_PCI_VENDOR_ID, HI1620_PCI_DEVICE_ID, NULL);
+	if (!dev) {
+		pr_err("pcie_cae can only work at Hi1620 series chip\n");
+		return -EINVAL;
+	}
+
+	type = pci_pcie_type(dev);
+	pr_info("pcie_cae detect chip PCIe Vendor ID:0x%x, Device ID:0x%x\n",
+		dev->vendor, dev->device);
+	pci_dev_put(dev);
+
+	if (type != PCI_EXP_TYPE_ROOT_PORT) {
+		pr_err("pcie_cae can not support this chip\n");
+		return -EINVAL;
+	}
 
 	addr_base = ioremap_nocache(SYSCTRL_SC_ECO_RSV1, CHIP_INFO_REG_SIZE);
 	if (!addr_base) {
-		pr_info("[PCIe Base] map chip_info_reg zone failed\n");
+		pr_err("pcie_cae map chip_info_reg zone failed\n");
 		return -EPERM;
 	}
 
@@ -136,7 +156,6 @@ static int pcie_open(struct inode *inode, struct file *f)
 	current_chip_nums = pcie_get_chipnums(val);
 
 	iounmap(addr_base);
-	addr_base = NULL;
 
 	return 0;
 }
@@ -154,27 +173,28 @@ static long pcie_reg_ioctl(struct file *pfile, unsigned int cmd,
 	switch (cmd) {
 	case PCIE_CMD_GET_CHIPNUMS:
 		if ((void *)arg == NULL) {
-			pr_info("[PCIe Base] invalid arg address\n");
+			pr_err("pcie_cae invalid arg address\n");
 			ret = -EINVAL;
 			break;
 		}
 
 		if (copy_to_user((void *)arg, (void *)&current_chip_nums,
 				 sizeof(int))) {
-			pr_info("[PCIe Base] copy chip_nums to usr failed\n");
+			pr_err("pcie_cae copy chip_nums to usr failed\n");
 			ret =  -EINVAL;
 		}
 		break;
 
 	default:
-		pr_info("[PCIe Base] invalid pcie ioctl cmd:%u\n", cmd);
+		pr_err("pcie_cae invalid pcie ioctl cmd:%u\n", cmd);
+		ret = -EINVAL;
 		break;
 	}
 
 	return ret;
 }
 
-static const struct file_operations pcie_dfx_fops = {
+static const struct file_operations pcie_cae_fops = {
 	.owner          = THIS_MODULE,
 	.open           = pcie_open,
 	.release        = pcie_release,
@@ -183,25 +203,25 @@ static const struct file_operations pcie_dfx_fops = {
 	.unlocked_ioctl = pcie_reg_ioctl,
 };
 
-static struct miscdevice pcie_dfx_misc = {
+static struct miscdevice pcie_cae_misc = {
 	.minor = MISC_DYNAMIC_MINOR,
-	.fops = &pcie_dfx_fops,
+	.fops = &pcie_cae_fops,
 	.name = DEVICE_NAME,
 };
 
 static int __init misc_dev_init(void)
 {
-	return misc_register(&pcie_dfx_misc);
+	return misc_register(&pcie_cae_misc);
 }
 
 static void __exit misc_dev_exit(void)
 {
-	(void)misc_deregister(&pcie_dfx_misc);
+	(void)misc_deregister(&pcie_cae_misc);
 }
 
 module_init(misc_dev_init);
 module_exit(misc_dev_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Huawei Technology Company");
-MODULE_DESCRIPTION("PCIe DFX TOOL");
-MODULE_VERSION("V1.1");
+MODULE_DESCRIPTION("PCIe CAE Driver");
+MODULE_VERSION("V1.2");
