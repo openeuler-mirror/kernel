@@ -34,6 +34,7 @@
 #include "ossl_knl.h"
 #include "hinic_hw_mgmt.h"
 #include "hinic_hw.h"
+#include "hinic_dbg.h"
 #include "hinic_nic_cfg.h"
 #include "hinic_nic_dev.h"
 #include "hinic_tx.h"
@@ -1298,9 +1299,22 @@ static struct net_device_stats *hinic_get_stats(struct net_device *netdev)
 static void hinic_tx_timeout(struct net_device *netdev)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u8 q_id;
 
 	HINIC_NIC_STATS_INC(nic_dev, netdev_tx_timeout);
 	nicif_err(nic_dev, drv, netdev, "Tx timeout\n");
+
+	for (q_id = 0; q_id < nic_dev->num_qps; q_id++) {
+		if (!netif_xmit_stopped(netdev_get_tx_queue(netdev, q_id)))
+			continue;
+
+		nicif_info(nic_dev, drv, netdev,
+			   "txq%d: sw_pi: %d, hw_ci: %d, sw_ci: %d, napi->state: 0x%lx\n",
+			   q_id, hinic_dbg_get_sq_pi(nic_dev->hwdev, q_id),
+			   hinic_get_sq_hw_ci(nic_dev->hwdev, q_id),
+			   hinic_get_sq_local_ci(nic_dev->hwdev, q_id),
+			   nic_dev->irq_cfg[q_id].napi.state);
+	}
 }
 
 static int hinic_change_mtu(struct net_device *netdev, int new_mtu)
