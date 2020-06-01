@@ -2039,6 +2039,74 @@ static void hinic_diag_test(struct net_device *netdev,
 	hinic_lp_test(netdev, eth_test, data, 0);
 }
 
+#ifdef ETHTOOL_GMODULEEEPROM
+static int hinic_get_module_info(struct net_device *netdev,
+				 struct ethtool_modinfo *modinfo)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u8 sfp_type;
+	u8 sfp_type_ext;
+	int err;
+
+	err = hinic_get_sfp_type(nic_dev->hwdev, &sfp_type, &sfp_type_ext);
+	if (err)
+		return err;
+
+	switch (sfp_type) {
+	case MODULE_TYPE_SFP:
+		modinfo->type = ETH_MODULE_SFF_8472;
+		modinfo->eeprom_len = ETH_MODULE_SFF_8472_LEN;
+		break;
+	case MODULE_TYPE_QSFP:
+		modinfo->type = ETH_MODULE_SFF_8436;
+		modinfo->eeprom_len = STD_SFP_INFO_MAX_SIZE;
+		break;
+	case MODULE_TYPE_QSFP_PLUS:
+		if (sfp_type_ext >= 0x3) {
+			modinfo->type = ETH_MODULE_SFF_8636;
+			modinfo->eeprom_len = STD_SFP_INFO_MAX_SIZE;
+
+		} else {
+			modinfo->type = ETH_MODULE_SFF_8436;
+			modinfo->eeprom_len = STD_SFP_INFO_MAX_SIZE;
+		}
+		break;
+	case MODULE_TYPE_QSFP28:
+		modinfo->type = ETH_MODULE_SFF_8636;
+		modinfo->eeprom_len = STD_SFP_INFO_MAX_SIZE;
+		break;
+	default:
+		nicif_warn(nic_dev, drv, netdev,
+			   "Optical module unknown: 0x%x\n", sfp_type);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int hinic_get_module_eeprom(struct net_device *netdev,
+				   struct ethtool_eeprom *ee, u8 *data)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u8 sfp_data[STD_SFP_INFO_MAX_SIZE];
+	u16 len;
+	int err;
+
+	if (!ee->len || ((ee->len + ee->offset) > STD_SFP_INFO_MAX_SIZE))
+		return -EINVAL;
+
+	memset(data, 0, ee->len);
+
+	err = hinic_get_sfp_eeprom(nic_dev->hwdev, sfp_data, &len);
+	if (err)
+		return err;
+
+	memcpy(data, sfp_data + ee->offset, ee->len);
+
+	return 0;
+}
+#endif /* ETHTOOL_GMODULEEEPROM */
+
 static int set_l4_rss_hash_ops(struct ethtool_rxnfc *cmd,
 			       struct nic_rss_type *rss_type)
 {
@@ -2532,6 +2600,10 @@ static const struct ethtool_ops hinic_ethtool_ops = {
 #ifndef HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT
 	.get_channels = hinic_get_channels,
 	.set_channels = hinic_set_channels,
+#ifdef ETHTOOL_GMODULEEEPROM
+	.get_module_info = hinic_get_module_info,
+	.get_module_eeprom = hinic_get_module_eeprom,
+#endif
 #ifndef NOT_HAVE_GET_RXFH_INDIR_SIZE
 	.get_rxfh_indir_size = hinic_get_rxfh_indir_size,
 #endif
@@ -2552,6 +2624,11 @@ static const struct ethtool_ops_ext hinic_ethtool_ops_ext = {
 	.set_phys_id = hinic_set_phys_id,
 	.get_channels = hinic_get_channels,
 	.set_channels = hinic_set_channels,
+#ifdef ETHTOOL_GMODULEEEPROM
+	.get_module_info = hinic_get_module_info,
+	.get_module_eeprom = hinic_get_module_eeprom,
+#endif
+
 #ifndef NOT_HAVE_GET_RXFH_INDIR_SIZE
 	.get_rxfh_indir_size = hinic_get_rxfh_indir_size,
 #endif

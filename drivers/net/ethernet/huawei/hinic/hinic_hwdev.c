@@ -59,6 +59,8 @@
 
 #define HINIC_OK_FLAG_FAILED		1
 
+#define HINIC_GET_SFP_INFO_REAL_TIME	0x1
+
 #define HINIC_GLB_SO_RO_CFG_SHIFT	0x0
 #define HINIC_GLB_SO_RO_CFG_MASK	0x1
 #define HINIC_DISABLE_ORDER		0
@@ -913,6 +915,80 @@ int hinic_pf_msg_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 	return err;
 }
 
+static bool is_sfp_info_cmd_cached(struct hinic_hwdev *hwdev,
+				   enum hinic_mod_type mod, u8 cmd,
+				   void *buf_in, u16 in_size,
+				   void *buf_out, u16 *out_size)
+{
+	struct hinic_cmd_get_sfp_qsfp_info *sfp_info = NULL;
+	struct hinic_port_routine_cmd *rt_cmd = NULL;
+	struct card_node *chip_node = hwdev->chip_node;
+
+	sfp_info = buf_in;
+	if (sfp_info->port_id >= HINIC_MAX_PORT_ID ||
+	    *out_size < sizeof(*sfp_info))
+		return false;
+
+	if (sfp_info->version == HINIC_GET_SFP_INFO_REAL_TIME)
+		return false;
+
+	rt_cmd = &chip_node->rt_cmd[sfp_info->port_id];
+	mutex_lock(&chip_node->sfp_mutex);
+	memcpy(buf_out, &rt_cmd->sfp_info, sizeof(*sfp_info));
+	mutex_unlock(&chip_node->sfp_mutex);
+
+	return true;
+}
+
+static bool is_sfp_abs_cmd_cached(struct hinic_hwdev *hwdev,
+				  enum hinic_mod_type mod, u8 cmd,
+				  void *buf_in, u16 in_size,
+				  void *buf_out, u16 *out_size)
+{
+	struct hinic_cmd_get_light_module_abs *abs = NULL;
+	struct hinic_port_routine_cmd *rt_cmd = NULL;
+	struct card_node *chip_node = hwdev->chip_node;
+
+	abs = buf_in;
+	if (abs->port_id >= HINIC_MAX_PORT_ID ||
+	    *out_size < sizeof(*abs))
+		return false;
+
+	if (abs->version == HINIC_GET_SFP_INFO_REAL_TIME)
+		return false;
+
+	rt_cmd = &chip_node->rt_cmd[abs->port_id];
+	mutex_lock(&chip_node->sfp_mutex);
+	memcpy(buf_out, &rt_cmd->abs, sizeof(*abs));
+	mutex_unlock(&chip_node->sfp_mutex);
+
+	return true;
+}
+
+static bool driver_processed_cmd(struct hinic_hwdev *hwdev,
+				 enum hinic_mod_type mod, u8 cmd,
+				 void *buf_in, u16 in_size,
+				 void *buf_out, u16 *out_size)
+{
+	struct card_node *chip_node = hwdev->chip_node;
+
+	if (mod == HINIC_MOD_L2NIC) {
+		if (cmd == HINIC_PORT_CMD_GET_SFP_INFO &&
+		    chip_node->rt_cmd->up_send_sfp_info) {
+			return is_sfp_info_cmd_cached(hwdev, mod, cmd, buf_in,
+						      in_size, buf_out,
+						      out_size);
+		} else if (cmd == HINIC_PORT_CMD_GET_SFP_ABS &&
+			 chip_node->rt_cmd->up_send_sfp_abs) {
+			return is_sfp_abs_cmd_cached(hwdev, mod, cmd, buf_in,
+						     in_size, buf_out,
+						     out_size);
+		}
+	}
+
+	return false;
+}
+
 int hinic_msg_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 			   void *buf_in, u16 in_size,
 			   void *buf_out, u16 *out_size, u32 timeout)
@@ -949,6 +1025,10 @@ int hinic_msg_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 		err = __func_send_mbox(hwdev, mod, cmd, buf_in, in_size,
 				       buf_out, out_size, timeout);
 	} else {
+		if (driver_processed_cmd(hwdev, mod, cmd, buf_in, in_size,
+					 buf_out, out_size))
+			return 0;
+
 		do {
 			if (!hinic_get_mgmt_channel_status(hwdev) ||
 			    !hinic_get_chip_present_flag(hwdev))
@@ -3202,6 +3282,8 @@ enum hinic_event_cmd {
 	HINIC_EVENT_MGMT_PCIE_DFX,
 	HINIC_EVENT_MCTP_HOST_INFO,
 	HINIC_EVENT_MGMT_HEARTBEAT_EHD,
+	HINIC_EVENT_SFP_INFO_REPORT,
+	HINIC_EVENT_SFP_ABS_REPORT,
 
 	HINIC_EVENT_MAX_TYPE,
 };
@@ -3283,6 +3365,16 @@ static struct hinic_event_convert __event_convert[] = {
 		.mod	= HINIC_MOD_COMM,
 		.cmd	= HINIC_MGMT_CMD_HEARTBEAT_EVENT,
 		.event	= HINIC_EVENT_MGMT_HEARTBEAT_EHD,
+	},
+	{
+		.mod	= HINIC_MOD_L2NIC,
+		.cmd	= HINIC_PORT_CMD_GET_SFP_INFO,
+		.event	= HINIC_EVENT_SFP_INFO_REPORT,
+	},
+	{
+		.mod	= HINIC_MOD_L2NIC,
+		.cmd	= HINIC_PORT_CMD_GET_SFP_ABS,
+		.event	= HINIC_EVENT_SFP_ABS_REPORT,
 	},
 };
 
@@ -3587,11 +3679,21 @@ static void module_status_event(struct hinic_hwdev *hwdev,
 	struct hinic_cable_plug_event *plug_event;
 	struct hinic_link_err_event *link_err;
 	struct hinic_event_info event_info = {0};
+	struct hinic_port_routine_cmd *rt_cmd;
+	struct card_node *chip_node = hwdev->chip_node;
 
 	event_info.type = HINIC_EVENT_PORT_MODULE_EVENT;
 
 	if (cmd == HINIC_EVENT_CABLE_PLUG) {
 		plug_event = buf_in;
+
+		if (plug_event->port_id < HINIC_MAX_PORT_ID) {
+			rt_cmd = &chip_node->rt_cmd[plug_event->port_id];
+			mutex_lock(&chip_node->sfp_mutex);
+			rt_cmd->up_send_sfp_abs = false;
+			rt_cmd->up_send_sfp_info = false;
+			mutex_unlock(&chip_node->sfp_mutex);
+		}
 
 		event_info.module_event.type = plug_event->plugged ?
 					HINIC_PORT_MODULE_CABLE_PLUGGED :
@@ -3731,6 +3833,64 @@ static void mgmt_watchdog_timeout_event_handler(struct hinic_hwdev *hwdev,
 	up(&hwdev->fault_list_sem);
 
 	queue_work(hwdev->workq, &hwdev->fault_work);
+}
+
+static void port_sfp_info_event(struct hinic_hwdev *hwdev, void *buf_in,
+				u16 in_size, void *buf_out, u16 *out_size)
+{
+	struct hinic_cmd_get_sfp_qsfp_info *sfp_info = buf_in;
+	struct hinic_port_routine_cmd *rt_cmd;
+	struct card_node *chip_node = hwdev->chip_node;
+
+	if (in_size != sizeof(*sfp_info)) {
+		sdk_err(hwdev->dev_hdl, "Invalid sfp info cmd, length: %d, should be %ld\n",
+			in_size, sizeof(*sfp_info));
+		return;
+	}
+
+	if (sfp_info->port_id >= HINIC_MAX_PORT_ID) {
+		sdk_err(hwdev->dev_hdl, "Invalid sfp port id: %d, max port is %d\n",
+			sfp_info->port_id, HINIC_MAX_PORT_ID - 1);
+		return;
+	}
+
+	if (!chip_node->rt_cmd)
+		return;
+
+	rt_cmd = &chip_node->rt_cmd[sfp_info->port_id];
+	mutex_lock(&chip_node->sfp_mutex);
+	memcpy(&rt_cmd->sfp_info, sfp_info, sizeof(rt_cmd->sfp_info));
+	rt_cmd->up_send_sfp_info = true;
+	mutex_unlock(&chip_node->sfp_mutex);
+}
+
+static void port_sfp_abs_event(struct hinic_hwdev *hwdev, void *buf_in,
+			       u16 in_size, void *buf_out, u16 *out_size)
+{
+	struct hinic_cmd_get_light_module_abs *sfp_abs = buf_in;
+	struct hinic_port_routine_cmd *rt_cmd;
+	struct card_node *chip_node = hwdev->chip_node;
+
+	if (in_size != sizeof(*sfp_abs)) {
+		sdk_err(hwdev->dev_hdl, "Invalid sfp absent cmd, length: %d, should be %ld\n",
+			in_size, sizeof(*sfp_abs));
+		return;
+	}
+
+	if (sfp_abs->port_id >= HINIC_MAX_PORT_ID) {
+		sdk_err(hwdev->dev_hdl, "Invalid sfp port id: %d, max port is %d\n",
+			sfp_abs->port_id, HINIC_MAX_PORT_ID - 1);
+		return;
+	}
+
+	if (!chip_node->rt_cmd)
+		return;
+
+	rt_cmd = &chip_node->rt_cmd[sfp_abs->port_id];
+	mutex_lock(&chip_node->sfp_mutex);
+	memcpy(&rt_cmd->abs, sfp_abs, sizeof(rt_cmd->abs));
+	rt_cmd->up_send_sfp_abs = true;
+	mutex_unlock(&chip_node->sfp_mutex);
 }
 
 static void mgmt_reset_event_handler(struct hinic_hwdev *hwdev)
@@ -4239,6 +4399,14 @@ static void _event_handler(struct hinic_hwdev *hwdev, enum hinic_event_cmd cmd,
 	case HINIC_EVENT_MGMT_HEARTBEAT_EHD:
 		mgmt_heartbeat_enhanced_event(hwdev, buf_in, in_size,
 					      buf_out, out_size);
+		break;
+
+	case HINIC_EVENT_SFP_INFO_REPORT:
+		port_sfp_info_event(hwdev, buf_in, in_size, buf_out, out_size);
+		break;
+
+	case HINIC_EVENT_SFP_ABS_REPORT:
+		port_sfp_abs_event(hwdev, buf_in, in_size, buf_out, out_size);
 		break;
 
 	default:

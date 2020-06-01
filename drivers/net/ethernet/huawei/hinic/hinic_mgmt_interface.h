@@ -680,6 +680,16 @@ struct hinic_capture_info {
 	u32 data_vlan;
 };
 
+struct hinic_port_rt_cmd {
+	u8	status;
+	u8	version;
+	u8	rsvd0[6];
+
+	u8	pf_id;
+	u8	enable;
+	u8	rsvd1[6];
+};
+
 struct hinic_vf_dcb_state {
 	u8	status;
 	u8	version;
@@ -736,6 +746,8 @@ int hinic_vf_func_init(struct hinic_hwdev *hwdev);
 void hinic_vf_func_free(struct hinic_hwdev *hwdev);
 
 void hinic_unregister_vf_msg_handler(void *hwdev, u16 vf_id);
+
+int hinic_set_port_routine_cmd_report(void *hwdev, bool enable);
 
 int hinic_refresh_nic_cfg(void *hwdev, struct nic_port_info *port_info);
 

@@ -35,7 +35,6 @@
 #include "hinic_nic.h"
 #include "hinic_mgmt_interface.h"
 #include "hinic_hwif.h"
-#include "hinic_eqs.h"
 
 static unsigned char set_vf_link_state;
 module_param(set_vf_link_state, byte, 0444);
@@ -3571,6 +3570,35 @@ int hinic_set_super_cqe_state(void *hwdev, bool enable)
 	return 0;
 }
 
+int hinic_set_port_routine_cmd_report(void *hwdev, bool enable)
+{
+	struct hinic_port_rt_cmd rt_cmd = { 0 };
+	struct hinic_hwdev *dev = hwdev;
+	u16 out_size = sizeof(rt_cmd);
+	int err;
+
+	if (!hwdev)
+		return -EINVAL;
+
+	rt_cmd.pf_id = (u8)hinic_global_func_id(hwdev);
+	rt_cmd.enable = enable;
+
+	err = l2nic_msg_to_mgmt_sync(hwdev,
+				     HINIC_PORT_CMD_SET_PORT_REPORT,
+				     &rt_cmd, sizeof(rt_cmd), &rt_cmd,
+				     &out_size);
+	if (rt_cmd.status == HINIC_MGMT_CMD_UNSUPPORTED) {
+		nic_info(dev->dev_hdl, "Current firmware doesn't support to set port routine command report\n");
+	} else if (rt_cmd.status || err || !out_size) {
+		nic_err(dev->dev_hdl,
+			"Failed to set port routine command report, err: %d, status: 0x%x, out size: 0x%x\n",
+			err, rt_cmd.status, out_size);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
 int hinic_set_func_capture_en(void *hwdev, u16 func_id, bool cap_en)
 {
 	struct hinic_hwdev *dev = hwdev;
@@ -3888,4 +3916,113 @@ int hinic_disable_tx_promisc(void *hwdev)
 		return -EFAULT;
 	}
 	return  0;
+}
+
+static bool hinic_if_sfp_absent(void *hwdev)
+{
+	struct card_node *chip_node = ((struct hinic_hwdev *)hwdev)->chip_node;
+	struct hinic_port_routine_cmd *rt_cmd;
+	struct hinic_cmd_get_light_module_abs sfp_abs = {0};
+	u8 port_id = hinic_physical_port_id(hwdev);
+	u16 out_size = sizeof(sfp_abs);
+	int err;
+	bool sfp_abs_valid;
+	bool sfp_abs_status;
+
+	rt_cmd = &chip_node->rt_cmd[port_id];
+	mutex_lock(&chip_node->sfp_mutex);
+	sfp_abs_valid = rt_cmd->up_send_sfp_abs;
+	sfp_abs_status = (bool)rt_cmd->abs.abs_status;
+	if (sfp_abs_valid) {
+		mutex_unlock(&chip_node->sfp_mutex);
+		return sfp_abs_status;
+	}
+	mutex_unlock(&chip_node->sfp_mutex);
+
+	sfp_abs.port_id = port_id;
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_SFP_ABS,
+				     &sfp_abs, sizeof(sfp_abs), &sfp_abs,
+				     &out_size);
+	if (sfp_abs.status || err || !out_size) {
+		nic_err(((struct hinic_hwdev *)hwdev)->dev_hdl,
+			"Failed to get port%d sfp absent status, err: %d, status: 0x%x, out size: 0x%x\n",
+			port_id, err, sfp_abs.status, out_size);
+		return true;
+	}
+
+	return ((sfp_abs.abs_status == 0) ? false : true);
+}
+
+int hinic_get_sfp_eeprom(void *hwdev, u8 *data, u16 *len)
+{
+	struct hinic_cmd_get_std_sfp_info sfp_info = {0};
+	u8 port_id;
+	u16 out_size = sizeof(sfp_info);
+	int err;
+
+	if (!hwdev || !data || !len)
+		return -EINVAL;
+
+	port_id = hinic_physical_port_id(hwdev);
+	if (port_id >= HINIC_MAX_PORT_ID)
+		return -EINVAL;
+
+	if (hinic_if_sfp_absent(hwdev))
+		return -ENXIO;
+
+	sfp_info.port_id = port_id;
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_GET_STD_SFP_INFO,
+				     &sfp_info, sizeof(sfp_info), &sfp_info,
+				     &out_size);
+	if (sfp_info.status || err || !out_size) {
+		nic_err(((struct hinic_hwdev *)hwdev)->dev_hdl,
+			"Failed to get port%d sfp eeprom information, err: %d, status: 0x%x, out size: 0x%x\n",
+			port_id, err, sfp_info.status, out_size);
+		return -EIO;
+	}
+
+	*len = min_t(u16, sfp_info.eeprom_len, STD_SFP_INFO_MAX_SIZE);
+	memcpy(data, sfp_info.sfp_info, STD_SFP_INFO_MAX_SIZE);
+
+	return  0;
+}
+
+int hinic_get_sfp_type(void *hwdev, u8 *data0, u8 *data1)
+{
+	struct card_node *chip_node = NULL;
+	struct hinic_port_routine_cmd *rt_cmd;
+	u8 sfp_data[STD_SFP_INFO_MAX_SIZE];
+	u16 len;
+	u8 port_id;
+	int err;
+
+	if (!hwdev || !data0 || !data1)
+		return -EINVAL;
+
+	port_id = hinic_physical_port_id(hwdev);
+	if (port_id >= HINIC_MAX_PORT_ID)
+		return -EINVAL;
+
+	if (hinic_if_sfp_absent(hwdev))
+		return -ENXIO;
+
+	chip_node = ((struct hinic_hwdev *)hwdev)->chip_node;
+	rt_cmd = &chip_node->rt_cmd[port_id];
+	mutex_lock(&chip_node->sfp_mutex);
+	if (rt_cmd->up_send_sfp_info) {
+		*data0 = rt_cmd->sfp_info.sfp_qsfp_info[0];
+		*data1 = rt_cmd->sfp_info.sfp_qsfp_info[1];
+		mutex_unlock(&chip_node->sfp_mutex);
+		return 0;
+	}
+	mutex_unlock(&chip_node->sfp_mutex);
+
+	err = hinic_get_sfp_eeprom(hwdev, sfp_data, &len);
+	if (err)
+		return err;
+
+	*data0 = sfp_data[0];
+	*data1 = sfp_data[1];
+
+	return 0;
 }

@@ -264,6 +264,56 @@ struct hinic_init_para {
 #define INIT_SUCCESS 1
 #define MAX_DRV_BUF_SIZE 4096
 
+struct hinic_cmd_get_light_module_abs {
+	u8 status;
+	u8 version;
+	u8 rsvd0[6];
+
+	u8 port_id;
+	u8 abs_status; /* 0:present, 1:absent */
+	u8 rsv[2];
+};
+
+#define MODULE_TYPE_SFP		0x3
+#define MODULE_TYPE_QSFP28	0x11
+#define MODULE_TYPE_QSFP	0x0C
+#define MODULE_TYPE_QSFP_PLUS	0x0D
+
+#define SFP_INFO_MAX_SIZE	512
+struct hinic_cmd_get_sfp_qsfp_info {
+	u8 status;
+	u8 version;
+	u8 rsvd0[6];
+
+	u8 port_id;
+	u8 wire_type;
+	u16 out_len;
+	u8 sfp_qsfp_info[SFP_INFO_MAX_SIZE];
+};
+
+#define STD_SFP_INFO_MAX_SIZE	640
+struct hinic_cmd_get_std_sfp_info {
+	u8 status;
+	u8 version;
+	u8 rsvd0[6];
+
+	u8 port_id;
+	u8 wire_type;
+	u16 eeprom_len;
+	u32 rsvd;
+	u8 sfp_info[STD_SFP_INFO_MAX_SIZE];
+};
+
+#define HINIC_MAX_PORT_ID	4
+
+struct hinic_port_routine_cmd {
+	int up_send_sfp_info;
+	int up_send_sfp_abs;
+
+	struct hinic_cmd_get_sfp_qsfp_info sfp_info;
+	struct hinic_cmd_get_light_module_abs abs;
+};
+
 struct card_node {
 	struct list_head node;
 	struct list_head func_list;
@@ -282,6 +332,10 @@ struct card_node {
 	bool disable_vf_load[HINIC_MAX_PF_NUM];
 	u32 vf_mbx_old_rand_id[MAX_FUNCTION_NUM];
 	u32 vf_mbx_rand_id[MAX_FUNCTION_NUM];
+	struct hinic_port_routine_cmd rt_cmd[HINIC_MAX_PORT_ID];
+
+	/* mutex used for copy sfp info */
+	struct mutex sfp_mutex;
 };
 
 enum hinic_hwdev_init_state {

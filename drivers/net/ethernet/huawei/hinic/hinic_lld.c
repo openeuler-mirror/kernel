@@ -1990,6 +1990,8 @@ static int alloc_chip_node(struct hinic_pcidev *pci_adapter)
 	INIT_LIST_HEAD(&chip_node->func_list);
 	pci_adapter->chip_node = chip_node;
 
+	mutex_init(&chip_node->sfp_mutex);
+
 	return 0;
 
 alloc_dbgtool_attr_file_err:
