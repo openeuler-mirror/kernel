@@ -477,9 +477,6 @@ struct hinic_reg_info {
 
 #define PCIE_MSIX_ATTR_ENTRY			0
 
-#define HINIC_CHIP_PRESENT 1
-#define HINIC_CHIP_ABSENT 0
-
 struct hinic_cmd_fault_event {
 	u8	status;
 	u8	version;

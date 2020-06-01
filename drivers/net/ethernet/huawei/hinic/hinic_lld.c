@@ -2729,6 +2729,9 @@ static void hinic_shutdown(struct pci_dev *pdev)
 		hinic_shutdown_hwdev(pci_adapter->hwdev);
 
 	pci_disable_device(pdev);
+
+	if (pci_adapter)
+		hinic_set_api_stop(pci_adapter->hwdev);
 }
 
 #ifdef HAVE_RHEL6_SRIOV_CONFIGURE

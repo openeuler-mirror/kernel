@@ -2409,6 +2409,19 @@ void hinic_free_hwdev(void *hwdev)
 	kfree(dev);
 }
 
+void hinic_set_api_stop(void *hwdev)
+{
+	struct hinic_hwdev *dev = hwdev;
+
+	if (!hwdev)
+		return;
+
+	dev->chip_present_flag = HINIC_CHIP_ABSENT;
+	sdk_info(dev->dev_hdl, "Set card absent\n");
+	hinic_force_complete_all(dev);
+	sdk_info(dev->dev_hdl, "All messages interacting with the chip will stop\n");
+}
+
 void hinic_shutdown_hwdev(void *hwdev)
 {
 	struct hinic_hwdev *dev = hwdev;

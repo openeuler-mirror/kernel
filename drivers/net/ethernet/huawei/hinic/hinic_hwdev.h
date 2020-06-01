@@ -48,6 +48,9 @@
 #define HINIC_MGMT_STATUS_ERR_LEN         32  /* Length too short or too long */
 #define HINIC_MGMT_STATUS_ERR_UNSUPPORT   0xFF /* Feature not supported */
 
+#define HINIC_CHIP_PRESENT 1
+#define HINIC_CHIP_ABSENT 0
+
 struct cfg_mgmt_info;
 struct rdma_comp_resource;
 
