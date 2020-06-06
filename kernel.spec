@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0039
+Release: %{hulkrelease}.0040
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,9 @@ fi
 %endif
 
 %changelog
+* Wed Jun 3 2020 Xie XiuQi <xiexiuqi@huawei.com> - 4.19.90-2005.2.0.0040
+- update req_distinguished_name for x509.genkey
+
 * Fri May 22 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.2.0.0039
 - signal: fix kabi changes in struct task_struct
 - signal: Extend exec_id to 64bits
