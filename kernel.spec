@@ -1178,7 +1178,6 @@ fi
 - net/sched: act_mirred: Pull mac prior redir to non mac_header_xmit device
 - kernfs: fix potential null pointer dereference
 - arm64: fix calling nmi_enter() repeatedly when IPI_CPU_CRASH_STOP
-- Linux 4.19.95
 - usb: missing parentheses in USE_NEW_SCHEME
 - USB: serial: option: add Telit ME910G1 0x110a composition
 - USB: core: fix check for duplicate endpoints
@@ -1262,7 +1261,6 @@ fi
 - USB: dummy-hcd: increase max number of devices to 32
 - USB: dummy-hcd: use usb_urb_dir_in instead of usb_pipein
 - block: fix use-after-free on cached last_lookup partition
-- Linux 4.19.94
 - perf/x86/intel/bts: Fix the use of page_private()
 - xen/blkback: Avoid unmapping unmapped grant pages
 - s390/smp: fix physical to logical CPU map for SMT
@@ -1373,7 +1371,6 @@ fi
 - drm/amdgpu: add check before enabling/disabling broadcast mode
 - nvme-fc: fix double-free scenarios on hw queues
 - nvme_fc: add module to ops template to allow module references
-- Linux 4.19.93
 - spi: fsl: use platform_get_irq() instead of of_irq_to_resource()
 - pinctrl: baytrail: Really serialize all register accesses
 - tty/serial: atmel: fix out of range clock divider handling
@@ -1482,7 +1479,6 @@ fi
 - scsi: lpfc: Fix locking on mailbox command completion
 - scsi: mpt3sas: Fix clear pending bit in ioctl status
 - scsi: lpfc: Fix discovery failures when target device connectivity bounces
-- Linux 4.19.92
 - perf probe: Fix to show function entry line as probe-able
 - mmc: sdhci: Add a quirk for broken command queuing
 - mmc: sdhci: Workaround broken command queuing on Intel GLK
@@ -1698,7 +1694,6 @@ fi
 - svm: Fix unpin_memory calculate nr_pages error
 - vrf: Do not attempt to create IPv6 mcast rule if IPv6 is disabled
 - iommu: Add missing new line for dma type
-- Linux 4.19.91
 - xhci: fix USB3 device initiated resume race with roothub autosuspend
 - drm/radeon: fix r1xx/r2xx register checker for POT textures
 - scsi: iscsi: Fix a potential deadlock in the timeout handler
