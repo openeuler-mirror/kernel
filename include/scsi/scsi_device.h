@@ -201,8 +201,6 @@ struct scsi_device {
 	unsigned lun_in_cdb:1;		/* Store LUN bits in CDB[1] */
 	unsigned unmap_limit_for_ws:1;	/* Use the UNMAP limit for WRITE SAME */
 
-	bool offline_already;		/* Device offline message logged */
-
 	atomic_t disk_events_disable_depth; /* disable depth for disk events */
 
 	DECLARE_BITMAP(supported_events, SDEV_EVT_MAXBITS); /* supported events */
@@ -230,8 +228,11 @@ struct scsi_device {
 	struct mutex		state_mutex;
 	enum scsi_device_state sdev_state;
 	struct task_struct	*quiesced_by;
-
+#ifndef __GENKSYMS__
+	unsigned long offline_already;	/* Device offline message logged */
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

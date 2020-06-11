@@ -1438,7 +1438,7 @@ scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 			 * before trying any recovery commands.
 			 */
 			if (!sdev->offline_already) {
-				sdev->offline_already = true;
+				sdev->offline_already = 1;
 				sdev_printk(KERN_ERR, sdev,
 					    "rejecting I/O to offline device\n");
 			}
@@ -2859,7 +2859,7 @@ scsi_device_set_state(struct scsi_device *sdev, enum scsi_device_state state)
 		break;
 
 	}
-	sdev->offline_already = false;
+	sdev->offline_already = 0;
 	sdev->sdev_state = state;
 	return 0;
 
