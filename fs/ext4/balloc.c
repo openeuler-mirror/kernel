@@ -465,7 +465,7 @@ ext4_read_block_bitmap_nowait(struct super_block *sb, ext4_group_t block_group)
 		goto verify;
 	}
 	ext4_unlock_group(sb, block_group);
-	if (buffer_uptodate(bh)) {
+	if (ext4_buffer_uptodate(bh)) {
 		/*
 		 * if not uninit if bh is uptodate,
 		 * bitmap is also uptodate
