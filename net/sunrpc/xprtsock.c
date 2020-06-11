@@ -915,6 +915,7 @@ static void xs_destroy(struct rpc_xprt *xprt)
 	dprintk("RPC:       xs_destroy xprt %p\n", xprt);
 
 	cancel_delayed_work_sync(&transport->connect_worker);
+	del_timer_sync(&xprt->timer);
 	xs_close(xprt);
 	cancel_work_sync(&transport->recv_worker);
 	xs_xprt_free(xprt);
