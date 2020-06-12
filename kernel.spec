@@ -8,11 +8,11 @@
 
 %global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/)
 
-%global TarballVer 4.19.127
+%global TarballVer 4.19.128
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 
+%global hulkrelease 2006.1.0
 
 %define with_patch 0
 
@@ -23,8 +23,8 @@
 %define with_source 1
 
 Name:	 kernel
-Version: 4.19.126
-Release: %{hulkrelease}.0036
+Version: 4.19.128
+Release: %{hulkrelease}.0037
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,8 +789,32 @@ fi
 %endif
 
 %changelog
-* Fri Jun 12 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.9127
-
+* Fri Jun 12 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.9128-2006.1.0
+- Linux 4.19.128
+- Revert "net/mlx5: Annotate mutex destroy for root ns"
+- uprobes: ensure that uprobe->offset and ->ref_ctr_offset are properly aligned
+- x86/speculation: Add Ivy Bridge to affected list
+- x86/speculation: Add SRBDS vulnerability and mitigation documentation
+- x86/speculation: Add Special Register Buffer Data Sampling (SRBDS) mitigation
+- x86/cpu: Add 'table' argument to cpu_matches()
+- x86/cpu: Add a steppings field to struct x86_cpu_id
+- nvmem: qfprom: remove incorrect write support
+- CDC-ACM: heed quirk also in error handling
+- staging: rtl8712: Fix IEEE80211_ADDBA_PARAM_BUF_SIZE_MASK
+- tty: hvc_console, fix crashes on parallel open/close
+- usb: musb: Fix runtime PM imbalance on error
+- usb: musb: start session in resume for host port
+- iio: vcnl4000: Fix i2c swapped word reading.
+- USB: serial: option: add Telit LE910C1-EUX compositions
+- USB: serial: usb_wwan: do not resubmit rx urb on fatal errors
+- USB: serial: qcserial: add DW5816e QDL support
+- net: check untrusted gso_size at kernel entry
+- vsock: fix timeout in vsock_accept()
+- NFC: st21nfca: add missed kfree_skb() in an error path
+- net: usb: qmi_wwan: add Telit LE910C1-EUX composition
+- l2tp: do not use inet_hash()/inet_unhash()
+- l2tp: add sk_family checks to l2tp_validate_socket
+- devinet: fix memleak in inetdev_init()
 - Linux 4.19.127
 - net: smsc911x: Fix runtime PM imbalance on error
 - net: ethernet: stmmac: Enable interface clocks on probe for IPQ806x
