@@ -8,7 +8,7 @@
 
 %global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/)
 
-%global TarballVer 4.19.126
+%global TarballVer 4.19.127
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
