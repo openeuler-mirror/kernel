@@ -789,7 +789,7 @@ fi
 %endif
 
 %changelog
-* Fri Jun 12 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.9128-2006.1.0.0037
+* Fri Jun 12 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.128-2006.1.0.0037
 - Linux 4.19.128
 - Revert "net/mlx5: Annotate mutex destroy for root ns"
 - uprobes: ensure that uprobe->offset and ->ref_ctr_offset are properly aligned
