@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.128
-Release: %{hulkrelease}.0037
+Release: %{hulkrelease}.0038
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,9 @@ fi
 %endif
 
 %changelog
+* Mon Jun 15 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.128-2006.1.0.0038
+- update req_distinguished_name for x509.genkey
+
 * Fri Jun 12 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.128-2006.1.0.0037
 - Linux 4.19.128
 - Revert "net/mlx5: Annotate mutex destroy for root ns"
