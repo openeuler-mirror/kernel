@@ -52,6 +52,8 @@
 #include <asm/cacheflush.h>
 #include "audit.h"	/* audit_signal_info() */
 
+EXPORT_TRACEPOINT_SYMBOL(signal_generate);
+
 /*
  * SLAB caches for signal bits.
  */
