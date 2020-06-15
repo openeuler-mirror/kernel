@@ -79,9 +79,13 @@ EXPORT_SYMBOL_GPL(dev_to_uacce);
  */
 int uacce_hw_err_isolate(struct uacce *uacce)
 {
-	struct uacce_err_isolate *isolate = uacce->isolate;
 	struct uacce_hw_err *err, *tmp, *hw_err;
+	struct uacce_err_isolate *isolate;
 	u32 count = 0;
+
+	if (!uacce)
+		return -EINVAL;
+	isolate = uacce->isolate;
 
 #define SECONDS_PER_HOUR	3600
 
@@ -134,7 +138,9 @@ EXPORT_SYMBOL_GPL(uacce_qfrt_str);
  */
 void uacce_wake_up(struct uacce_queue *q)
 {
-	dev_dbg(&q->uacce->dev, "wake up\n");
+	if (!q)
+		return;
+
 	wake_up_interruptible(&q->wait);
 }
 EXPORT_SYMBOL_GPL(uacce_wake_up);
@@ -1249,13 +1255,17 @@ static int uacce_default_start_queue(struct uacce_queue *q)
  */
 int uacce_register(struct uacce *uacce)
 {
-	struct device *dev = uacce->pdev;
+	struct device *dev;
 	int ret;
 
-	if (!dev) {
+	if (!uacce)
+		return -ENODEV;
+
+	if (!uacce->pdev) {
 		pr_err("uacce parent device not set\n");
 		return -ENODEV;
 	}
+	dev = uacce->pdev;
 
 	if (uacce->flags & UACCE_DEV_NOIOMMU) {
 		add_taint(TAINT_CRAP, LOCKDEP_STILL_OK);
