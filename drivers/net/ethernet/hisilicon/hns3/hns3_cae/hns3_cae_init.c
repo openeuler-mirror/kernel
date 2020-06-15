@@ -335,6 +335,11 @@ static long hns3_cae_k_unlocked_ioctl(struct file *pfile, unsigned int cmd,
 	 * code yet, so we don't need lock.
 	 */
 	rtnl_lock();
+	if (nt_msg.device_name[IFNAMSIZ - 1] != '\0') {
+		pr_err("the device name is invalid.\n");
+		ret = -EINVAL;
+		goto out_invalid;
+	}
 	ret = hns3_cae_k_get_netdev_by_ifname(nt_msg.device_name, &nic_dev);
 	if (ret) {
 		pr_err("can not get the netdevice correctly\n");
