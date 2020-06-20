@@ -498,8 +498,6 @@ nlmsg_failure:
 
 static void ext4_handle_error(struct super_block *sb)
 {
-	struct ext4_sb_info *sbi = EXT4_SB(sb);
-
 	if (test_opt(sb, WARN_ON_ERROR))
 		WARN_ON_ONCE(1);
 
@@ -507,9 +505,9 @@ static void ext4_handle_error(struct super_block *sb)
 		return;
 
 	if (!test_opt(sb, ERRORS_CONT)) {
-		journal_t *journal = sbi->s_journal;
+		journal_t *journal = EXT4_SB(sb)->s_journal;
 
-		sbi->s_mount_flags |= EXT4_MF_FS_ABORTED;
+		EXT4_SB(sb)->s_mount_flags |= EXT4_MF_FS_ABORTED;
 		if (journal)
 			jbd2_journal_abort(journal, -EIO);
 	}
@@ -530,8 +528,9 @@ static void ext4_handle_error(struct super_block *sb)
 		smp_wmb();
 		sb->s_flags |= SB_RDONLY;
 	} else if (test_opt(sb, ERRORS_PANIC)) {
-		if (sbi->s_journal && is_journal_aborted(sbi->s_journal))
-			wait_for_completion(&sbi->s_journal->j_record_errno);
+		if (EXT4_SB(sb)->s_journal &&
+		  !(EXT4_SB(sb)->s_journal->j_flags & JBD2_REC_ERR))
+			return;
 		panic("EXT4-fs (device %s): panic forced after error\n",
 			sb->s_id);
 	}
@@ -720,11 +719,10 @@ void __ext4_std_error(struct super_block *sb, const char *function,
 void __ext4_abort(struct super_block *sb, const char *function,
 		unsigned int line, const char *fmt, ...)
 {
-	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct va_format vaf;
 	va_list args;
 
-	if (unlikely(ext4_forced_shutdown(sbi)))
+	if (unlikely(ext4_forced_shutdown(EXT4_SB(sb))))
 		return;
 
 	save_error_info(sb, function, line);
@@ -737,21 +735,22 @@ void __ext4_abort(struct super_block *sb, const char *function,
 
 	if (sb_rdonly(sb) == 0) {
 		ext4_msg(sb, KERN_CRIT, "Remounting filesystem read-only");
-		sbi->s_mount_flags |= EXT4_MF_FS_ABORTED;
+		EXT4_SB(sb)->s_mount_flags |= EXT4_MF_FS_ABORTED;
 		/*
 		 * Make sure updated value of ->s_mount_flags will be visible
 		 * before ->s_flags update
 		 */
 		smp_wmb();
 		sb->s_flags |= SB_RDONLY;
-		if (sbi->s_journal)
-			jbd2_journal_abort(sbi->s_journal, -EIO);
+		if (EXT4_SB(sb)->s_journal)
+			jbd2_journal_abort(EXT4_SB(sb)->s_journal, -EIO);
 		save_error_info(sb, function, line);
 		ext4_netlink_send_info(sb, 2);
 	}
 	if (test_opt(sb, ERRORS_PANIC) && !system_going_down()) {
-		if (sbi->s_journal && is_journal_aborted(sbi->s_journal))
-			wait_for_completion(&sbi->s_journal->j_record_errno);
+		if (EXT4_SB(sb)->s_journal &&
+		  !(EXT4_SB(sb)->s_journal->j_flags & JBD2_REC_ERR))
+			return;
 		panic("EXT4-fs panic from previous error\n");
 	}
 }
