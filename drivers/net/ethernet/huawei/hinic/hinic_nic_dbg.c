@@ -253,8 +253,6 @@ u16 hinic_dbg_clear_hw_stats(void *hwdev)
 void hinic_get_chip_fault_stats(const void *hwdev,
 				u8 *chip_fault_stats, int offset)
 {
-	int copy_len = offset + MAX_DRV_BUF_SIZE - HINIC_CHIP_FAULT_SIZE;
-
 	if (offset < 0 || offset > HINIC_CHIP_FAULT_SIZE) {
 		pr_err("Invalid chip offset value: %d\n", offset);
 		return;
@@ -267,7 +265,7 @@ void hinic_get_chip_fault_stats(const void *hwdev,
 	else
 		memcpy(chip_fault_stats,
 		       ((struct hinic_hwdev *)hwdev)->chip_fault_stats + offset,
-		       copy_len);
+		       HINIC_CHIP_FAULT_SIZE - offset);
 }
 
 int hinic_dbg_get_pf_bw_limit(void *hwdev, u32 *pf_bw_limit)
