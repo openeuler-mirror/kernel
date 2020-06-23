@@ -78,8 +78,7 @@ out:
 	return err;
 }
 
-static int ovl_map_dev_ino(struct dentry *dentry, struct kstat *stat,
-			   struct ovl_layer *lower_layer)
+static int ovl_map_dev_ino(struct dentry *dentry, struct kstat *stat, int fsid)
 {
 	bool samefs = ovl_same_fs(dentry->d_sb);
 	unsigned int xinobits = ovl_xino_bits(dentry->d_sb);
@@ -106,9 +105,7 @@ static int ovl_map_dev_ino(struct dentry *dentry, struct kstat *stat,
 			pr_warn_ratelimited("overlayfs: inode number too big (%pd2, ino=%llu, xinobits=%d)\n",
 					    dentry, stat->ino, xinobits);
 		} else {
-			if (lower_layer)
-				stat->ino |= ((u64)lower_layer->fsid) << shift;
-
+			stat->ino |= ((u64)fsid) << shift;
 			stat->dev = dentry->d_sb->s_dev;
 			return 0;
 		}
@@ -127,7 +124,7 @@ static int ovl_map_dev_ino(struct dentry *dentry, struct kstat *stat,
 		 */
 		stat->dev = dentry->d_sb->s_dev;
 		stat->ino = dentry->d_inode->i_ino;
-	} else if (lower_layer && lower_layer->fsid) {
+	} else if (fsid) {
 		/*
 		 * For non-samefs setup, if we cannot map all layers st_ino
 		 * to a unified address space, we need to make sure that st_dev
@@ -135,7 +132,7 @@ static int ovl_map_dev_ino(struct dentry *dentry, struct kstat *stat,
 		 * lower layers use the unique anonymous bdev assigned to the
 		 * lower fs.
 		 */
-		stat->dev = lower_layer->fs->pseudo_dev;
+		stat->dev = OVL_FS(dentry->d_sb)->fs[fsid].pseudo_dev;
 	}
 
 	return 0;
@@ -150,7 +147,7 @@ int ovl_getattr(const struct path *path, struct kstat *stat,
 	const struct cred *old_cred;
 	bool is_dir = S_ISDIR(dentry->d_inode->i_mode);
 	bool samefs = ovl_same_fs(dentry->d_sb);
-	struct ovl_layer *lower_layer = NULL;
+	int fsid = 0;
 	int err;
 	bool metacopy_blocks = false;
 
@@ -173,7 +170,7 @@ int ovl_getattr(const struct path *path, struct kstat *stat,
 	 */
 	if (!is_dir || ovl_same_dev(dentry->d_sb)) {
 		if (!OVL_TYPE_UPPER(type)) {
-			lower_layer = ovl_layer_lower(dentry);
+			fsid = ovl_layer_lower(dentry)->fsid;
 		} else if (OVL_TYPE_ORIGIN(type)) {
 			struct kstat lowerstat;
 			u32 lowermask = STATX_INO | STATX_BLOCKS |
@@ -203,13 +200,13 @@ int ovl_getattr(const struct path *path, struct kstat *stat,
 			if (ovl_test_flag(OVL_INDEX, d_inode(dentry)) ||
 			    (!ovl_verify_lower(dentry->d_sb) &&
 			     (is_dir || lowerstat.nlink == 1))) {
-				lower_layer = ovl_layer_lower(dentry);
+				fsid = ovl_layer_lower(dentry)->fsid;
 				/*
 				 * Cannot use origin st_dev;st_ino because
 				 * origin inode content may differ from overlay
 				 * inode content.
 				 */
-				if (samefs || lower_layer->fsid)
+				if (samefs || fsid)
 					stat->ino = lowerstat.ino;
 			}
 
@@ -244,7 +241,7 @@ int ovl_getattr(const struct path *path, struct kstat *stat,
 		}
 	}
 
-	err = ovl_map_dev_ino(dentry, stat, lower_layer);
+	err = ovl_map_dev_ino(dentry, stat, fsid);
 	if (err)
 		goto out;
 
