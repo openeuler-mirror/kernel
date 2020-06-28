@@ -1190,12 +1190,7 @@ EXPORT_SYMBOL(ipmi_get_smi_info);
 static void free_user(struct kref *ref)
 {
 	struct ipmi_user *user = container_of(ref, struct ipmi_user, refcount);
-
-	/*
-	 * Cleanup without waiting. This could be called in atomic context.
-	 * Refcount is zero: all read-sections should have been ended.
-	 */
-	cleanup_srcu_struct_quiesced(&user->release_barrier);
+	cleanup_srcu_struct(&user->release_barrier);
 	kfree(user);
 }
 
