@@ -1444,7 +1444,7 @@ int hinic_dcb_set_rq_iq_mapping(void *hwdev, u32 num_rqs, u8 *map)
 	u16 out_size = sizeof(rq_iq_mapping);
 	int err;
 
-	if (!hwdev || !map || num_rqs > HINIC_MAX_NUM_RQ)
+	if (!hwdev || num_rqs > HINIC_MAX_NUM_RQ)
 		return -EINVAL;
 
 	dev = hwdev;
@@ -1458,8 +1458,6 @@ int hinic_dcb_set_rq_iq_mapping(void *hwdev, u32 num_rqs, u8 *map)
 
 	rq_iq_mapping.num_rqs = num_rqs;
 	rq_iq_mapping.rq_depth = (u16)ilog2(nic_io->rq_depth);
-
-	memcpy(rq_iq_mapping.map, map, num_rqs);
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_RQ_IQ_MAP,
 				     &rq_iq_mapping, sizeof(rq_iq_mapping),

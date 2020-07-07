@@ -55,7 +55,7 @@ enum {
 #define L2NIC_SQ_DEPTH      (4 * K_UNIT)
 #define L2NIC_RQ_DEPTH      (4 * K_UNIT)
 
-#define HINIC_CFG_MAX_QP	64
+#define HINIC_CFG_MAX_QP    128
 
 /* RDMA */
 #define RDMA_RSVD_QPS       2
