@@ -10,7 +10,7 @@
  * Bump this up when changing the output format or the meaning of an existing
  * format, so that tools can adapt (or abort)
  */
-#define SCHEDSTAT_VERSION 15
+#define SCHEDSTAT_VERSION 16
 
 static int show_schedstat(struct seq_file *seq, void *v)
 {
@@ -36,6 +36,15 @@ static int show_schedstat(struct seq_file *seq, void *v)
 		    rq->ttwu_count, rq->ttwu_local,
 		    rq->rq_cpu_time,
 		    rq->rq_sched_info.run_delay, rq->rq_sched_info.pcount);
+
+		seq_printf(seq, " %u %u %u %u %lu %u %u",
+			   rq->found_idle_cpu_easy,
+			   rq->found_idle_cpu,
+			   rq->found_idle_core,
+			   rq->nofound_idle_cpu,
+			   rq->find_time,
+			   rq->steal,
+			   rq->steal_fail);
 
 		seq_printf(seq, "\n");
 
