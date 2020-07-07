@@ -2908,7 +2908,13 @@ static void adaptive_configuration_init(struct hinic_nic_dev *nic_dev)
 
 	nic_dev->env_info.os = HINIC_OS_HUAWEI;
 
+#if defined(__aarch64__)
 	nic_dev->env_info.cpu = HINIC_CPU_ARM_GENERIC;
+#elif defined(__x86_64__)
+	nic_dev->env_info.cpu = HINIC_CPU_X86_GENERIC;
+#else
+	nic_dev->env_info.cpu = HINIC_CPU_UNKNOWN;
+#endif
 
 	nic_info(&nic_dev->pdev->dev,
 		 "Board type %u, OS type %u, CPU type %u\n",
