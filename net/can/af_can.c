@@ -323,7 +323,7 @@ EXPORT_SYMBOL(can_send);
  * af_can rx path
  */
 
-static struct can_dev_rcv_lists *find_dev_rcv_lists(struct net *net,
+static struct can_dev_rcv_lists *can_dev_rcv_lists_find(struct net *net,
 						struct net_device *dev)
 {
 	if (!dev)
@@ -484,7 +484,7 @@ int can_rx_register(struct net *net, struct net_device *dev, canid_t can_id,
 
 	spin_lock(&net->can.can_rcvlists_lock);
 
-	dev_rcv_lists = find_dev_rcv_lists(net, dev);
+	dev_rcv_lists = can_dev_rcv_lists_find(net, dev);
 	if (dev_rcv_lists) {
 		rl = can_rcv_list_find(&can_id, &mask, dev_rcv_lists);
 
@@ -554,7 +554,7 @@ void can_rx_unregister(struct net *net, struct net_device *dev, canid_t can_id,
 
 	spin_lock(&net->can.can_rcvlists_lock);
 
-	dev_rcv_lists = find_dev_rcv_lists(net, dev);
+	dev_rcv_lists = can_dev_rcv_lists_find(net, dev);
 	if (!dev_rcv_lists) {
 		pr_err("BUG: receive list not found for "
 		       "dev %s, id %03X, mask %03X\n",
@@ -703,7 +703,7 @@ static void can_receive(struct sk_buff *skb, struct net_device *dev)
 	matches = can_rcv_filter(net->can.can_rx_alldev_list, skb);
 
 	/* find receive list for this device */
-	dev_rcv_lists = find_dev_rcv_lists(net, dev);
+	dev_rcv_lists = can_dev_rcv_lists_find(net, dev);
 	if (dev_rcv_lists)
 		matches += can_rcv_filter(dev_rcv_lists, skb);
 
