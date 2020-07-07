@@ -1622,7 +1622,7 @@ static void hclge_dbg_dump_vlan_filter(struct hclge_dev *hdev,
 	struct hclge_vport *vport;
 	struct hclge_desc desc;
 	bool has_vlan_used;
-	int vf_id;
+	u32 vf_id;
 	int ret;
 
 	ret = kstrtouint(cmd_buf, 0, &vf_id);
