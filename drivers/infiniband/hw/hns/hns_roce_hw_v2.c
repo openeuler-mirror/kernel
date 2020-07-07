@@ -1366,23 +1366,26 @@ static void hns_roce_func_clr_rst_prc(struct hns_roce_dev *hr_dev, int retval,
 	}
 }
 
-static void hns_roce_query_func_info(struct hns_roce_dev *hr_dev)
+static int hns_roce_query_func_info(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_cmq_desc desc;
 	struct hns_roce_pf_func_info *resp;
-	int ret;
+	int ret = 0;
 
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_QUERY_FUNC_INFO,
 				      true);
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret) {
-		dev_err(hr_dev->dev, "Query vf count failed(%d).\n", ret);
-		return;
+		dev_err(hr_dev->dev, "Query function info failed(%d).\n",
+			 ret);
+		return ret;
 	}
 
 	resp = (struct hns_roce_pf_func_info *)desc.data;
 	hr_dev->func_num = le32_to_cpu(resp->pf_own_func_num);
 	hr_dev->mac_id = le32_to_cpu(resp->pf_own_mac_id);
+
+	return ret;
 }
 
 static void hns_roce_clear_func(struct hns_roce_dev *hr_dev, int vf_id)
@@ -1438,12 +1441,11 @@ out:
 
 static void hns_roce_function_clear(struct hns_roce_dev *hr_dev)
 {
-	int i;
 	int vf_num = 0;/* should be (hr_dev->func_num-1) when enable ROCE VF */
 
 	/* Clear vf first, then clear pf */
-	for (i = vf_num; i >= 0; i--)
-		hns_roce_clear_func(hr_dev, i);
+	for (; vf_num >= 0; vf_num--)
+		hns_roce_clear_func(hr_dev, vf_num);
 }
 
 static void hns_roce_clear_extdb_list_info(struct hns_roce_dev *hr_dev)
@@ -2182,7 +2184,9 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 		return ret;
 	}
 
-	hns_roce_query_func_info(hr_dev);
+	ret = hns_roce_query_func_info(hr_dev);
+	if (ret)
+		return ret;
 
 	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
 		ret = hns_roce_query_pf_timer_resource(hr_dev);
@@ -5488,7 +5492,7 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 		kfree(hr_qp->sq.wrid);
 		kfree(hr_qp->rq.wrid);
 		hns_roce_buf_free(hr_dev, hr_qp->buff_size, &hr_qp->hr_buf);
-		if (hr_qp->rq.wqe_cnt)
+		if (hr_qp->rq.wqe_cnt && (hr_qp->rdb_en == 1))
 			hns_roce_free_db(hr_dev, &hr_qp->rdb);
 	}
 
