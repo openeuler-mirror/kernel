@@ -58,7 +58,11 @@ struct hinic_hwif {
 	u64				db_base_phy;
 	u8 __iomem			*db_base;
 
+#if defined(__aarch64__)
 	void __iomem			*dwqe_mapping;
+#else
+	struct io_mapping		*dwqe_mapping;
+#endif
 	struct hinic_free_db_area	free_db_area;
 
 	struct hinic_func_attr		attr;

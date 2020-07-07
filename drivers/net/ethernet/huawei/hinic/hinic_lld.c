@@ -114,7 +114,11 @@ struct hinic_pcidev {
 	u64 db_base_phy;
 	void __iomem *db_base;
 
+#if defined(__aarch64__)
 	void __iomem *dwqe_mapping;
+#else
+	struct io_mapping *dwqe_mapping;
+#endif
 	/* lock for attach/detach uld */
 	struct mutex pdev_mutex;
 	struct hinic_sriov_info sriov_info;
@@ -1874,9 +1878,15 @@ static int mapping_bar(struct pci_dev *pdev, struct hinic_pcidev *pci_adapter)
 
 	dwqe_addr = pci_adapter->db_base_phy + db_dwqe_size;
 
+#if defined(__aarch64__)
 	/* arm do not support call ioremap_wc() */
 	pci_adapter->dwqe_mapping = __ioremap(dwqe_addr, db_dwqe_size,
 					      __pgprot(PROT_DEVICE_nGnRnE));
+#else
+	pci_adapter->dwqe_mapping = io_mapping_create_wc(dwqe_addr,
+							 db_dwqe_size);
+
+#endif
 	if (!pci_adapter->dwqe_mapping) {
 		sdk_err(&pci_adapter->pcidev->dev, "Failed to io_mapping_create_wc\n");
 		goto mapping_dwqe_err;
@@ -1898,8 +1908,13 @@ map_intr_bar_err:
 
 static void unmapping_bar(struct hinic_pcidev *pci_adapter)
 {
-	if (pci_adapter->chip_mode == CHIP_MODE_NORMAL)
+	if (pci_adapter->chip_mode == CHIP_MODE_NORMAL) {
+#if defined(__aarch64__)
 		iounmap(pci_adapter->dwqe_mapping);
+#else
+		io_mapping_free(pci_adapter->dwqe_mapping);
+#endif
+	}
 
 	iounmap(pci_adapter->db_base);
 	iounmap(pci_adapter->intr_reg_base);

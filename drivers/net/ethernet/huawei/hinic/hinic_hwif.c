@@ -368,7 +368,12 @@ void hinic_free_db_addr(void *hwdev, void __iomem *db_base,
 	hwif = ((struct hinic_hwdev *)hwdev)->hwif;
 	idx = DB_IDX(db_base, hwif->db_base);
 
+#if defined(__aarch64__)
 	/* No need to unmap */
+#else
+	if (dwqe_base && hwif->chip_mode == CHIP_MODE_NORMAL)
+		io_mapping_unmap(dwqe_base);
+#endif
 
 	free_db_idx(hwif, idx);
 }
@@ -398,7 +403,12 @@ int hinic_alloc_db_addr(void *hwdev, void __iomem **db_base,
 
 	offset = ((u64)idx) << PAGE_SHIFT;
 
+#if defined(__aarch64__)
 	*dwqe_base = hwif->dwqe_mapping + offset;
+#else
+	*dwqe_base = io_mapping_map_wc(hwif->dwqe_mapping, offset,
+				       HINIC_DB_PAGE_SIZE);
+#endif
 
 	if (!(*dwqe_base)) {
 		hinic_free_db_addr(hwdev, *db_base, NULL);
