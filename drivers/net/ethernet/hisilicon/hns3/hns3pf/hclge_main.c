@@ -9120,14 +9120,13 @@ int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
 	if (ret)
 		return ret;
 
-	/* update state only when disable/enable port based VLAN */
+update:
 	vport->port_base_vlan_cfg.state = state;
 	if (state == HNAE3_PORT_BASE_VLAN_DISABLE)
 		nic->port_base_vlan_state = HNAE3_PORT_BASE_VLAN_DISABLE;
 	else
 		nic->port_base_vlan_state = HNAE3_PORT_BASE_VLAN_ENABLE;
 
-update:
 	vport->port_base_vlan_cfg.old_vlan_info.vlan_tag =
 		old_vlan_info->vlan_tag;
 	vport->port_base_vlan_cfg.old_vlan_info.qos =
