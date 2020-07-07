@@ -219,7 +219,7 @@ int can_send(struct sk_buff *skb, int loop)
 {
 	struct sk_buff *newskb = NULL;
 	struct canfd_frame *cfd = (struct canfd_frame *)skb->data;
-	struct s_stats *can_stats = dev_net(skb->dev)->can.can_stats;
+	struct s_stats *pkg_stats = dev_net(skb->dev)->can.can_stats;
 	int err = -EINVAL;
 
 	if (skb->len == CAN_MTU) {
@@ -308,8 +308,8 @@ int can_send(struct sk_buff *skb, int loop)
 		netif_rx_ni(newskb);
 
 	/* update statistics */
-	can_stats->tx_frames++;
-	can_stats->tx_frames_delta++;
+	pkg_stats->tx_frames++;
+	pkg_stats->tx_frames_delta++;
 
 	return 0;
 
@@ -467,7 +467,7 @@ int can_rx_register(struct net *net, struct net_device *dev, canid_t can_id,
 	struct receiver *r;
 	struct hlist_head *rl;
 	struct can_dev_rcv_lists *d;
-	struct s_pstats *can_pstats = net->can.can_pstats;
+	struct s_pstats *rcv_lists_stats = net->can.can_pstats;
 	int err = 0;
 
 	/* insert new receiver  (dev,canid,mask) -> (func,data) */
@@ -499,9 +499,9 @@ int can_rx_register(struct net *net, struct net_device *dev, canid_t can_id,
 		hlist_add_head_rcu(&r->list, rl);
 		d->entries++;
 
-		can_pstats->rcv_entries++;
-		if (can_pstats->rcv_entries_max < can_pstats->rcv_entries)
-			can_pstats->rcv_entries_max = can_pstats->rcv_entries;
+		rcv_lists_stats->rcv_entries++;
+		if (rcv_lists_stats->rcv_entries_max < rcv_lists_stats->rcv_entries)
+			rcv_lists_stats->rcv_entries_max = rcv_lists_stats->rcv_entries;
 	} else {
 		kmem_cache_free(rcv_cache, r);
 		err = -ENODEV;
@@ -543,7 +543,7 @@ void can_rx_unregister(struct net *net, struct net_device *dev, canid_t can_id,
 {
 	struct receiver *r = NULL;
 	struct hlist_head *rl;
-	struct s_pstats *can_pstats = net->can.can_pstats;
+	struct s_pstats *rcv_lists_stats = net->can.can_pstats;
 	struct can_dev_rcv_lists *d;
 
 	if (dev && dev->type != ARPHRD_CAN)
@@ -590,8 +590,8 @@ void can_rx_unregister(struct net *net, struct net_device *dev, canid_t can_id,
 	hlist_del_rcu(&r->list);
 	d->entries--;
 
-	if (can_pstats->rcv_entries > 0)
-		can_pstats->rcv_entries--;
+	if (rcv_lists_stats->rcv_entries > 0)
+		rcv_lists_stats->rcv_entries--;
 
 	/* remove device structure requested by NETDEV_UNREGISTER */
 	if (d->remove_on_zero_entries && !d->entries) {
@@ -686,12 +686,12 @@ static void can_receive(struct sk_buff *skb, struct net_device *dev)
 {
 	struct can_dev_rcv_lists *d;
 	struct net *net = dev_net(dev);
-	struct s_stats *can_stats = net->can.can_stats;
+	struct s_stats *pkg_stats = net->can.can_stats;
 	int matches;
 
 	/* update statistics */
-	can_stats->rx_frames++;
-	can_stats->rx_frames_delta++;
+	pkg_stats->rx_frames++;
+	pkg_stats->rx_frames_delta++;
 
 	/* create non-zero unique skb identifier together with *skb */
 	while (!(can_skb_prv(skb)->skbcnt))
@@ -713,8 +713,8 @@ static void can_receive(struct sk_buff *skb, struct net_device *dev)
 	consume_skb(skb);
 
 	if (matches > 0) {
-		can_stats->matches++;
-		can_stats->matches_delta++;
+		pkg_stats->matches++;
+		pkg_stats->matches_delta++;
 	}
 }
 
