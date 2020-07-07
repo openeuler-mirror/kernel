@@ -1032,8 +1032,8 @@ void hclge_restore_vport_vlan_table(struct hclge_vport *vport);
 int hclge_update_port_base_vlan_cfg(struct hclge_vport *vport, u16 state,
 				    struct hclge_vlan_info *vlan_info);
 int hclge_push_vf_port_base_vlan_info(struct hclge_vport *vport, u8 vfid,
-				      u16 state, u16 vlan_tag, u16 qos,
-				      u16 vlan_proto);
+				      u16 state,
+				      struct hclge_vlan_info *vlan_info);
 enum hnae3_reset_type hclge_get_reset_level(struct hnae3_ae_dev *ae_dev,
 					    unsigned long *addr);
 void hclge_task_schedule(struct hclge_dev *hdev, unsigned long delay_time);
