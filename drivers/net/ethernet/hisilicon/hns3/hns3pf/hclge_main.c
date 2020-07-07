@@ -9497,6 +9497,11 @@ int hclge_reset_tqp(struct hnae3_handle *handle, u16 queue_id)
 	u16 queue_gid;
 	int ret;
 
+	if (queue_id >= handle->kinfo.num_tqps) {
+		dev_err(&hdev->pdev->dev, "Invalid queue id(%u)\n", queue_id);
+		return -EINVAL;
+	}
+
 	queue_gid = hclge_covert_handle_qid_global(handle, queue_id);
 
 	ret = hclge_tqp_enable(hdev, queue_id, 0, false);
