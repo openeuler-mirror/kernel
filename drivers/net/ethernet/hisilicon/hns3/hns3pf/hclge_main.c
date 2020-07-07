@@ -9755,8 +9755,7 @@ static void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,
 	 * the port information per second. Query the port information before
 	 * return the media type, ensure getting the correct media information.
 	 */
-	if (test_bit(HCLGE_STATE_DOWN, &hdev->state))
-		hclge_update_port_info(hdev);
+	hclge_update_port_info(hdev);
 
 	if (media_type)
 		*media_type = hdev->hw.mac.media_type;
