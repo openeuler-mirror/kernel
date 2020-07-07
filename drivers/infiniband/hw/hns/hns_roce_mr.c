@@ -552,7 +552,6 @@ static int hns_roce_mhop_alloc(struct hns_roce_dev *hr_dev, int npages,
 			goto err_kcalloc_l2_dma;
 	}
 
-
 	mr->pbl_size = npages;
 	mr->pbl_ba = mr->pbl_l0_dma_addr;
 	mr->pbl_hop_num = hr_dev->caps.pbl_hop_num;
@@ -1289,7 +1288,6 @@ static int rereg_mr_trans(struct ib_mr *ibmr, int flags,
 	if (ret)
 		goto release_umem;
 
-
 	ret = hns_roce_ib_umem_write_mr(hr_dev, mr, mr->umem);
 	if (ret) {
 		if (mr->size != ~0ULL) {
@@ -1307,13 +1305,10 @@ static int rereg_mr_trans(struct ib_mr *ibmr, int flags,
 	}
 
 	return 0;
-
 release_umem:
 	ib_umem_release(mr->umem);
 	return ret;
-
 }
-
 
 int hns_roce_rereg_user_mr(struct ib_mr *ibmr, int flags, u64 start, u64 length,
 			   u64 virt_addr, int mr_access_flags, struct ib_pd *pd,

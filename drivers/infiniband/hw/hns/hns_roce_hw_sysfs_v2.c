@@ -612,7 +612,6 @@ int hns_roce_v2_modify_eq(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq,
 		roce_set_field(eqc_mask->byte_12,
 			       HNS_ROCE_EQC_MAX_CNT_M,
 			       HNS_ROCE_EQC_MAX_CNT_S, 0);
-
 	} else if (type == HNS_ROCE_EQ_PERIOD_MASK) {
 		roce_set_field(eqc->byte_12,
 			       HNS_ROCE_EQC_PERIOD_M,
