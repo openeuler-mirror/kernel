@@ -9034,7 +9034,7 @@ static int hclge_vf_vlan_filter_switch(struct hclge_vport *vport)
 {
 	struct hnae3_handle *nic = &vport->nic;
 	struct hclge_dev *hdev = vport->back;
-	u8 filter_en;
+	bool filter_en;
 	int ret;
 
 	filter_en = hclge_has_vlan_used(hdev, vport->vport_id) ||
@@ -9243,8 +9243,7 @@ static int hclge_set_vf_vlan_filter(struct hnae3_handle *handle, int vfid,
 	if (test_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state))
 		(void)hclge_push_vf_port_base_vlan_info(&hdev->vport[0],
 							vport->vport_id,
-							state, vlan, qos,
-							ntohs(proto));
+							state, &vlan_info);
 
 	return 0;
 }
