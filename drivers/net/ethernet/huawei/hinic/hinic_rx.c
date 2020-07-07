@@ -1016,51 +1016,6 @@ static void hinic_rss_deinit(struct hinic_nic_dev *nic_dev)
 	hinic_rss_cfg(nic_dev->hwdev, 0, nic_dev->rss_tmpl_idx, 0, prio_tc);
 }
 
-/* In rx, iq means cos */
-static u8 hinic_get_iqmap_by_tc(u8 *prio_tc, u8 num_iq, u8 tc)
-{
-	u8 i, map = 0;
-
-	for (i = 0; i < num_iq; i++) {
-		if (prio_tc[i] == tc)
-			map |= (u8)(1U << ((num_iq - 1) - i));
-	}
-
-	return map;
-}
-
-static u8 hinic_get_tcid_by_rq(u32 *indir_tbl, u8 num_tcs, u16 rq_id)
-{
-	u16 tc_group_size;
-	int i;
-
-	tc_group_size = HINIC_RSS_INDIR_SIZE / num_tcs;
-	for (i = 0; i < HINIC_RSS_INDIR_SIZE; i++) {
-		if (indir_tbl[i] == rq_id)
-			return (u8)(i / tc_group_size);
-	}
-
-	return 0xFF;	/* Invalid TC */
-}
-
-#define HINIC_NUM_IQ_PER_FUNC	8
-static void hinic_get_rq2iq_map(struct hinic_nic_dev *nic_dev,
-				u16 num_rq, u8 num_tcs, u8 *prio_tc,
-				u32 *indir_tbl, u8 *map)
-{
-	u16 qid;
-	u8 tc_id;
-
-	if (!num_tcs)
-		num_tcs = 1;
-
-	for (qid = 0; qid < num_rq; qid++) {
-		tc_id = hinic_get_tcid_by_rq(indir_tbl, num_tcs, qid);
-		map[qid] = hinic_get_iqmap_by_tc(prio_tc,
-						 HINIC_NUM_IQ_PER_FUNC, tc_id);
-	}
-}
-
 int hinic_set_hw_rss_parameters(struct net_device *netdev, u8 rss_en, u8 num_tc,
 				u8 *prio_tc)
 {
@@ -1125,7 +1080,7 @@ out:
 	return err;
 }
 
-static int hinic_rss_init(struct hinic_nic_dev *nic_dev, u8 *rq2iq_map)
+static int hinic_rss_init(struct hinic_nic_dev *nic_dev)
 {
 	struct net_device *netdev = nic_dev->netdev;
 	u32 *indir_tbl;
@@ -1162,9 +1117,6 @@ static int hinic_rss_init(struct hinic_nic_dev *nic_dev, u8 *rq2iq_map)
 		return err;
 	}
 
-	hinic_get_rq2iq_map(nic_dev, nic_dev->num_qps, num_tc,
-			    prio_tc, indir_tbl, rq2iq_map);
-
 	kfree(indir_tbl);
 	return 0;
 }
@@ -1181,13 +1133,10 @@ int hinic_update_hw_tc_map(struct net_device *netdev, u8 num_tc, u8 *prio_tc)
 int hinic_rx_configure(struct net_device *netdev)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
-	u8 rq2iq_map[HINIC_MAX_NUM_RQ];
 	int err;
 
-	/* Set all rq mapping to all iq in default */
-	memset(rq2iq_map, 0xFF, sizeof(rq2iq_map));
 	if (test_bit(HINIC_RSS_ENABLE, &nic_dev->flags)) {
-		err = hinic_rss_init(nic_dev, rq2iq_map);
+		err = hinic_rss_init(nic_dev);
 		if (err) {
 			nicif_err(nic_dev, drv, netdev, "Failed to init rss\n");
 			return -EFAULT;
@@ -1196,7 +1145,7 @@ int hinic_rx_configure(struct net_device *netdev)
 
 	err = hinic_dcb_set_rq_iq_mapping(nic_dev->hwdev,
 					  hinic_func_max_qnum(nic_dev->hwdev),
-					  rq2iq_map);
+					  NULL);
 	if (err) {
 		nicif_err(nic_dev, drv, netdev, "Failed to set rq_iq mapping\n");
 		goto set_rq_cos_mapping_err;

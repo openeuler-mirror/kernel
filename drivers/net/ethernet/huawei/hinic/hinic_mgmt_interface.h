@@ -462,7 +462,7 @@ struct hinic_set_rq_iq_mapping {
 
 	u16	func_id;
 	u16	rsvd1;
-	u8	map[HINIC_MAX_NUM_RQ];
+	u8	map[64];
 	u32	num_rqs;
 	u32	rq_depth;
 };

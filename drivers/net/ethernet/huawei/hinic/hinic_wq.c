@@ -32,7 +32,7 @@
 #include "hinic_wq.h"
 #include "hinic_qe_def.h"
 
-#define	WQS_MAX_NUM_BLOCKS		128
+#define WQS_MAX_NUM_BLOCKS		256
 #define WQS_FREE_BLOCKS_SIZE(wqs)	(WQS_MAX_NUM_BLOCKS * \
 					sizeof((wqs)->free_blocks[0]))
 
