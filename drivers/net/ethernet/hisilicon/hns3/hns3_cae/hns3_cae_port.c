@@ -72,7 +72,7 @@ int hns3_get_port_info(const struct hns3_nic_priv *net_priv,
 	u32 i;
 
 	if (!buf_out || out_size < sizeof(struct hclge_port_info))
-		return -ENODEV;
+		return -EINVAL;
 
 	get_port_info_out->gpio_insert = 0;
 

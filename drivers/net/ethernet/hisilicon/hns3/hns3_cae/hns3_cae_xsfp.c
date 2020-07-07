@@ -156,7 +156,7 @@ int hns3_xsfp_cfg(const struct hns3_nic_priv *net_priv, void *buf_in,
 	int ret;
 
 	if (check)
-		return -ENODEV;
+		return -EINVAL;
 
 	ret = hns3_get_sfp_present(handle, &sfp_present);
 	if (ret) {
