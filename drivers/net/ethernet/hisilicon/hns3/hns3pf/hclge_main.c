@@ -10627,7 +10627,8 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 
 	ret = init_mgr_tbl(hdev);
 	if (ret) {
-		dev_err(&pdev->dev, "manager table init fail, ret =%d\n", ret);
+		dev_err(&pdev->dev,
+			"failed to reinit manager table, ret = %d\n", ret);
 		return ret;
 	}
 

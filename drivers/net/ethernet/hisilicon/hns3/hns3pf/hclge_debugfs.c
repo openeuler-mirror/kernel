@@ -284,7 +284,8 @@ static void hclge_dbg_dump_dcb(struct hclge_dev *hdev, const char *cmd_buf)
 	return;
 
 err_dcb_cmd_send:
-	dev_err(&hdev->pdev->dev, "dump dcb fail(0x%x), ret = %d\n",
+	dev_err(&hdev->pdev->dev,
+		"failed to dump dcb dfx, cmd = %#x, ret = %d\n",
 		cmd, ret);
 }
 
