@@ -45,6 +45,8 @@
 				       SEGMENT_LEN) / SEGMENT_LEN)
 
 #define MAX_PF_MGMT_BUF_SIZE		2048UL
+#define MGMT_MSG_LAST_SEG_MAX_LEN	(MAX_PF_MGMT_BUF_SIZE - \
+					 SEGMENT_LEN * MGMT_MSG_MAX_SEQ_ID)
 
 #define MGMT_MSG_SIZE_MIN		20
 #define MGMT_MSG_SIZE_STEP		16
@@ -1121,6 +1123,9 @@ static bool check_mgmt_seq_id_and_seg_len(struct hinic_recv_msg *recv_msg,
 					  u8 seq_id, u8 seg_len)
 {
 	if (seq_id > MGMT_MSG_MAX_SEQ_ID || seg_len > SEGMENT_LEN)
+		return false;
+	else if (seq_id == MGMT_MSG_MAX_SEQ_ID &&
+		 seg_len > MGMT_MSG_LAST_SEG_MAX_LEN)
 		return false;
 
 	if (seq_id == 0) {
