@@ -9316,6 +9316,7 @@ int hclge_set_vlan_filter(struct hnae3_handle *handle, __be16 proto,
 	if (ret) {
 		dev_info(&hdev->pdev->dev, "failed to set vf vlan, ret = %d!\n",
 			 ret);
+		return ret;
 	}
 
 	return hclge_vf_vlan_filter_switch(vport);
