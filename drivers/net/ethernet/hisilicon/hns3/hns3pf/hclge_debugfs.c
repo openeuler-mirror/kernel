@@ -1650,7 +1650,7 @@ static void hclge_dbg_dump_vlan_filter(struct hclge_dev *hdev,
 	}
 
 	vport = &hdev->vport[vf_id];
-	has_vlan_used = hclge_has_vlan_used(hdev, vport->vport_id);
+	has_vlan_used = hclge_vf_vlan_need_enable(vport);
 
 	dev_info(&hdev->pdev->dev, "vf_id:%u\n", req->vf_id);
 	dev_info(&hdev->pdev->dev, "vlan_type:%u\n", req->vlan_type);

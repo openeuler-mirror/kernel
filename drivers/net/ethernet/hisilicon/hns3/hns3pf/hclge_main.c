@@ -9013,18 +9013,19 @@ int hclge_en_hw_strip_rxvtag(struct hnae3_handle *handle, bool enable)
 	return hclge_set_vlan_rx_offload_cfg(vport);
 }
 
-bool hclge_has_vlan_used(struct hclge_dev *hdev, u16 vport_id)
+bool hclge_vf_vlan_need_enable(struct hclge_vport *vport)
 {
 #define	VLAN_CHECK_START_NUM	1
+	struct hclge_dev *hdev = vport->back;
 	u16 vlan_id;
 
-	/* if set as vlan normal mode, vf vlan filter always on */
-	if (hdev->vlan_mode == HCLGE_VLAN_DEFAULT_MODE)
+	if (hdev->vlan_mode == HCLGE_VLAN_DEFAULT_MODE ||
+	    vport->port_base_vlan_cfg.state != HNAE3_PORT_BASE_VLAN_DISABLE)
 		return true;
 
-	/* check all vlan tag in vf vlan table except 0 */
+	/* check all vlan tag in vf vlan table except vlan 0 */
 	for (vlan_id = VLAN_CHECK_START_NUM; vlan_id < VLAN_N_VID; vlan_id++)
-		if (test_bit(vport_id, hdev->vlan_table[vlan_id]))
+		if (test_bit(vport->vport_id, hdev->vlan_table[vlan_id]))
 			return true;
 
 	return false;
@@ -9037,8 +9038,7 @@ static int hclge_vf_vlan_filter_switch(struct hclge_vport *vport)
 	bool filter_en;
 	int ret;
 
-	filter_en = hclge_has_vlan_used(hdev, vport->vport_id) ||
-		vport->port_base_vlan_cfg.state == HNAE3_PORT_BASE_VLAN_ENABLE;
+	filter_en = hclge_vf_vlan_need_enable(vport);
 
 	if (filter_en == vport->vf_vlan_en)
 		return 0;
@@ -11374,8 +11374,7 @@ static void hclge_sync_promisc_mode(struct hclge_dev *hdev)
 					     tmp_flags & HNAE3_MPE);
 		if (!ret) {
 			clear_bit(HCLGE_STATE_PROMISC_CHANGED, &hdev->state);
-			/* promisc set for pf, so vport id as 0 */
-			filter_en = hclge_has_vlan_used(hdev, 0) ?
+			filter_en = hclge_vf_vlan_need_enable(vport) ?
 				HNAE3_VLAN_FLTR : 0;
 			hclge_enable_vlan_filter(handle, tmp_flags & filter_en);
 		}
