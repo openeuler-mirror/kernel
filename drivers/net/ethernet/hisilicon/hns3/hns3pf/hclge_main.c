@@ -2774,6 +2774,7 @@ static void hclge_update_link_status(struct hclge_dev *hdev)
 	}
 
 	if (state != hdev->hw.mac.link) {
+		hdev->hw.mac.link = state;
 		for (i = 0; i < hdev->num_vmdq_vport + 1; i++) {
 			handle = &hdev->vport[i].nic;
 			client->ops->link_status_change(handle, state);
@@ -2783,7 +2784,6 @@ static void hclge_update_link_status(struct hclge_dev *hdev)
 				rclient->ops->link_status_change(rhandle,
 								 state);
 		}
-		hdev->hw.mac.link = state;
 	}
 
 	clear_bit(HCLGE_STATE_LINK_UPDATING, &hdev->state);

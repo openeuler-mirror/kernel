@@ -317,8 +317,8 @@ void hclgevf_mbx_async_handler(struct hclgevf_dev *hdev)
 			duplex = (u8)msg_q[4];
 
 			/* update upper layer with new link link status */
-			hclgevf_update_link_status(hdev, link_status);
 			hclgevf_update_speed_duplex(hdev, speed, duplex);
+			hclgevf_update_link_status(hdev, link_status);
 
 			break;
 		case HCLGE_MBX_LINK_STAT_MODE:
