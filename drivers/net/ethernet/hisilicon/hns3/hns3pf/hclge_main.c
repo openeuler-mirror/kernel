@@ -10680,6 +10680,8 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 		return ret;
 	}
 
+	set_bit(HCLGE_STATE_PROMISC_CHANGED, &hdev->state);
+
 	/* Log and clear the hw errors those already occurred */
 	hclge_handle_all_hns_hw_errors(ae_dev);
 
@@ -11360,7 +11362,7 @@ static void hclge_sync_promisc_mode(struct hclge_dev *hdev)
 	struct hclge_vport *vport = &hdev->vport[0];
 	struct hnae3_handle *handle = &vport->nic;
 	u8 tmp_flags = 0;
-	u32 filter_en;
+	bool vlan_en;
 	int ret;
 
 	if (vport->last_promisc_flags != vport->overflow_promisc_flags) {
@@ -11374,9 +11376,11 @@ static void hclge_sync_promisc_mode(struct hclge_dev *hdev)
 					     tmp_flags & HNAE3_MPE);
 		if (!ret) {
 			clear_bit(HCLGE_STATE_PROMISC_CHANGED, &hdev->state);
-			filter_en = hclge_vf_vlan_need_enable(vport) ?
-				HNAE3_VLAN_FLTR : 0;
-			hclge_enable_vlan_filter(handle, tmp_flags & filter_en);
+			vlan_en = (tmp_flags & HNAE3_USER_UPE) ?
+				   false : hclge_vf_vlan_need_enable(vport);
+
+			vport->vf_vlan_en = vlan_en;
+			hclge_enable_vlan_filter(handle, vlan_en);
 		}
 	}
 }
