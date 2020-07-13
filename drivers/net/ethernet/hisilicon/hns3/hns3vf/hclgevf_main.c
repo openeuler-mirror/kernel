@@ -2293,7 +2293,7 @@ static enum hclgevf_evt_cause hclgevf_check_evt_cause(struct hclgevf_dev *hdev,
 
 	/* print other vector0 event source */
 	dev_info(&hdev->pdev->dev,
-		 "vector 0 interrupt from unknown source, cmdq_drivers/net/ethernet/hisilicon = %#x\n",
+		 "vector 0 interrupt from unknown source, cmdq_src = %#x\n",
 		 cmdq_stat_reg);
 	return HCLGEVF_VECTOR0_EVENT_OTHER;
 }

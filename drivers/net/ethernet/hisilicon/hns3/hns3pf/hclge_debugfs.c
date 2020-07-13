@@ -962,9 +962,9 @@ static void hclge_dbg_dump_mac_table(struct hclge_dev *hdev)
 
 	memset(printf_buf, 0, HCLGE_DBG_BUF_LEN);
 	dev_info(&hdev->pdev->dev, "Unicast tab:\n");
-	strncat(printf_buf, "|index |mac_addr          drivers/net/ethernet/hisilicon/hns3/|vlan_id drivers/net/ethernet/hisilicon/hns3/|VMDq1 |",
+	strncat(printf_buf, "|index |mac_addr          |vlan_id |VMDq1 |",
 		HCLGE_DBG_BUF_LEN - 1);
-	strncat(printf_buf, "U_M drivers/net/ethernet/hisilicon/hns3/|mac_en |in_port |E_type |E_Port\n",
+	strncat(printf_buf, "U_M |mac_en |in_port |E_type |E_Port\n",
 		HCLGE_DBG_BUF_LEN - strlen(printf_buf) - 1);
 
 	dev_info(&hdev->pdev->dev, "%s", printf_buf);
