@@ -6899,6 +6899,10 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int ret;
 #endif
 
+        if ((wake_flags & WF_CURRENT_CPU) && cpumask_test_cpu(cpu, p->cpus_ptr))
+                return cpu;
+
+
 	time = schedstat_start_time();
 
 	if (sd_flag & SD_BALANCE_WAKE) {

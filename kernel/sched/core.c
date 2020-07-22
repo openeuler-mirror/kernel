@@ -6931,6 +6931,11 @@ void sched_setnuma(struct task_struct *p, int nid)
 }
 #endif /* CONFIG_NUMA_BALANCING */
 
+int wake_up_process_prefer_current_cpu(struct task_struct *next)
+{
+       return try_to_wake_up(next, TASK_NORMAL, WF_CURRENT_CPU);
+}
+
 #ifdef CONFIG_HOTPLUG_CPU
 /*
  * Ensure that the idle task is using init_mm right before its CPU goes
