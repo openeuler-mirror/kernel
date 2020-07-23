@@ -33,10 +33,15 @@ __printf(1, 0) int vprintk_default(const char *fmt, va_list args);
 __printf(1, 0) int vprintk_deferred(const char *fmt, va_list args);
 __printf(1, 0) int vprintk_func(const char *fmt, va_list args);
 
+void printk_safe_init(void);
+bool printk_percpu_data_ready(void);
+
 void defer_console_output(void);
 
 #else
 
 __printf(1, 0) int vprintk_func(const char *fmt, va_list args) { return 0; }
 
+static inline void printk_safe_init(void) { }
+static inline bool printk_percpu_data_ready(void) { return false; }
 #endif /* CONFIG_PRINTK */
