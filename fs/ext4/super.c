@@ -511,8 +511,6 @@ static void ext4_handle_error(struct super_block *sb)
 			jbd2_journal_abort(journal, -EIO);
 	}
 
-	ext4_netlink_send_info(sb, 1);
-
 	/*
 	 * We force ERRORS_RO behavior when system is rebooting. Otherwise we
 	 * could panic during 'reboot -f' as the underlying device got already
@@ -530,6 +528,8 @@ static void ext4_handle_error(struct super_block *sb)
 		panic("EXT4-fs (device %s): panic forced after error\n",
 			sb->s_id);
 	}
+
+	ext4_netlink_send_info(sb, 1);
 }
 
 #define ext4_error_ratelimit(sb)					\
