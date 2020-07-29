@@ -218,6 +218,8 @@ int nf_nat_icmp_reply_translation(struct sk_buff *skb,
 		return 1;
 
 	l4proto = __nf_nat_l4proto_find(NFPROTO_IPV4, inside->ip.protocol);
+	if (!l4proto)
+		return 1;
 	if (!nf_nat_ipv4_manip_pkt(skb, hdrlen + sizeof(inside->icmp),
 				   l4proto, &ct->tuplehash[!dir].tuple, !manip))
 		return 0;
@@ -234,7 +236,7 @@ int nf_nat_icmp_reply_translation(struct sk_buff *skb,
 	/* Change outer to look like the reply to an incoming packet */
 	nf_ct_invert_tuplepr(&target, &ct->tuplehash[!dir].tuple);
 	l4proto = __nf_nat_l4proto_find(NFPROTO_IPV4, 0);
-	if (!nf_nat_ipv4_manip_pkt(skb, 0, l4proto, &target, manip))
+	if (l4proto && !nf_nat_ipv4_manip_pkt(skb, 0, l4proto, &target, manip))
 		return 0;
 
 	return 1;

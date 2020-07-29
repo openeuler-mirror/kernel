@@ -64,12 +64,18 @@ struct nat_net {
 inline const struct nf_nat_l3proto *
 __nf_nat_l3proto_find(u8 family)
 {
+	if (unlikely(family >= NFPROTO_NUMPROTO))
+		return ERR_PTR(-EPROTONOSUPPORT);
+
 	return rcu_dereference(nf_nat_l3protos[family]);
 }
 
 inline const struct nf_nat_l4proto *
 __nf_nat_l4proto_find(u8 family, u8 protonum)
 {
+	if (unlikely(family >= NFPROTO_NUMPROTO || nf_nat_l4protos[family] == NULL))
+		return NULL;
+
 	return rcu_dereference(nf_nat_l4protos[family][protonum]);
 }
 EXPORT_SYMBOL_GPL(__nf_nat_l4proto_find);
@@ -90,7 +96,7 @@ static void __nf_nat_decode_session(struct sk_buff *skb, struct flowi *fl)
 
 	family = nf_ct_l3num(ct);
 	l3proto = __nf_nat_l3proto_find(family);
-	if (l3proto == NULL)
+	if (IS_ERR_OR_NULL(l3proto))
 		return;
 
 	dir = CTINFO2DIR(ctinfo);
@@ -333,8 +339,12 @@ get_unique_tuple(struct nf_conntrack_tuple *tuple,
 
 	rcu_read_lock();
 	l3proto = __nf_nat_l3proto_find(orig_tuple->src.l3num);
+	if (IS_ERR_OR_NULL(l3proto))
+		goto out;
 	l4proto = __nf_nat_l4proto_find(orig_tuple->src.l3num,
 					orig_tuple->dst.protonum);
+	if (!l4proto)
+		goto out;
 
 	/* 1) If this srcip/proto/src-proto-part is currently mapped,
 	 * and that same mapping gives a unique tuple within the given
@@ -509,8 +519,12 @@ static unsigned int nf_nat_manip_pkt(struct sk_buff *skb, struct nf_conn *ct,
 	nf_ct_invert_tuplepr(&target, &ct->tuplehash[!dir].tuple);
 
 	l3proto = __nf_nat_l3proto_find(target.src.l3num);
+	if (IS_ERR_OR_NULL(l3proto))
+		return NF_DROP;
 	l4proto = __nf_nat_l4proto_find(target.src.l3num,
 					target.dst.protonum);
+	if (!l4proto)
+		return NF_DROP;
 	if (!l3proto->manip_pkt(skb, 0, l4proto, &target, mtype))
 		return NF_DROP;
 
@@ -816,6 +830,9 @@ static int nfnetlink_parse_nat_proto(struct nlattr *attr,
 		return err;
 
 	l4proto = __nf_nat_l4proto_find(nf_ct_l3num(ct), nf_ct_protonum(ct));
+	if (!l4proto)
+		return -EPROTONOSUPPORT;
+
 	if (l4proto->nlattr_to_range)
 		err = l4proto->nlattr_to_range(tb, range);
 
@@ -876,6 +893,8 @@ nfnetlink_parse_nat_setup(struct nf_conn *ct,
 	l3proto = __nf_nat_l3proto_find(nf_ct_l3num(ct));
 	if (l3proto == NULL)
 		return -EAGAIN;
+	if (IS_ERR(l3proto))
+		return PTR_ERR(l3proto);
 
 	/* No NAT information has been passed, allocate the null-binding */
 	if (attr == NULL)
