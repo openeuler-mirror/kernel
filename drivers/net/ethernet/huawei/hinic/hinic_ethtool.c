@@ -682,8 +682,6 @@ static int hinic_get_settings(struct net_device *netdev,
 	return 0;
 }
 
-#ifdef ETHTOOL_GLINKSETTINGS
-#ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
 static int hinic_get_link_ksettings(struct net_device *netdev,
 				struct ethtool_link_ksettings *link_settings)
 {
@@ -712,8 +710,6 @@ static int hinic_get_link_ksettings(struct net_device *netdev,
 
 	return 0;
 }
-#endif
-#endif
 
 static int hinic_is_speed_legal(struct hinic_nic_dev *nic_dev, u32 speed)
 {
@@ -870,8 +866,6 @@ static int hinic_set_settings(struct net_device *netdev,
 				 ethtool_cmd_speed(link_settings));
 }
 
-#ifdef ETHTOOL_GLINKSETTINGS
-#ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
 static int hinic_set_link_ksettings(struct net_device *netdev,
 			const struct ethtool_link_ksettings *link_settings)
 {
@@ -879,8 +873,6 @@ static int hinic_set_link_ksettings(struct net_device *netdev,
 	return set_link_settings(netdev, link_settings->base.autoneg,
 				 link_settings->base.speed);
 }
-#endif
-#endif
 
 static void hinic_get_drvinfo(struct net_device *netdev,
 			      struct ethtool_drvinfo *info)
@@ -1545,7 +1537,6 @@ static int hinic_set_coalesce(struct net_device *netdev,
 	return __hinic_set_coalesce(netdev, coal, COALESCE_ALL_QUEUE);
 }
 
-#if defined(ETHTOOL_PERQUEUE) && defined(ETHTOOL_GCOALESCE)
 static int hinic_get_per_queue_coalesce(struct net_device *netdev, u32 queue,
 					struct ethtool_coalesce *coal)
 {
@@ -1557,7 +1548,6 @@ static int hinic_set_per_queue_coalesce(struct net_device *netdev, u32 queue,
 {
 	return __hinic_set_coalesce(netdev, coal, queue);
 }
-#endif
 
 static void get_drv_queue_stats(struct hinic_nic_dev *nic_dev, u64 *data)
 {
@@ -1734,7 +1724,6 @@ static void hinic_get_strings(struct net_device *netdev,
 	}
 }
 
-#ifdef HAVE_ETHTOOL_SET_PHYS_ID
 static int hinic_set_phys_id(struct net_device *netdev,
 			     enum ethtool_phys_id_state state)
 {
@@ -1782,16 +1771,6 @@ static int hinic_set_phys_id(struct net_device *netdev,
 	else
 		return 0;
 }
-#else
-static int hinic_phys_id(struct net_device *netdev, u32 data)
-{
-	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
-
-	nicif_err(nic_dev, drv, netdev, "Not support to set phys id\n");
-
-	return -EOPNOTSUPP;
-}
-#endif
 
 static void hinic_get_pauseparam(struct net_device *netdev,
 				 struct ethtool_pauseparam *pause)
@@ -2039,7 +2018,6 @@ static void hinic_diag_test(struct net_device *netdev,
 	hinic_lp_test(netdev, eth_test, data, 0);
 }
 
-#ifdef ETHTOOL_GMODULEEEPROM
 static int hinic_get_module_info(struct net_device *netdev,
 				 struct ethtool_modinfo *modinfo)
 {
@@ -2105,7 +2083,6 @@ static int hinic_get_module_eeprom(struct net_device *netdev,
 
 	return 0;
 }
-#endif /* ETHTOOL_GMODULEEEPROM */
 
 static int set_l4_rss_hash_ops(struct ethtool_rxnfc *cmd,
 			       struct nic_rss_type *rss_type)
@@ -2297,12 +2274,10 @@ static int hinic_set_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd)
 	return err;
 }
 
-#ifndef NOT_HAVE_GET_RXFH_INDIR_SIZE
 static u32 hinic_get_rxfh_indir_size(struct net_device *netdev)
 {
 	return HINIC_RSS_INDIR_SIZE;
 }
-#endif
 
 static int __set_rss_rxfh(struct net_device *netdev,
 			  const u32 *indir, const u8 *key)
@@ -2378,18 +2353,13 @@ static int __set_rss_rxfh(struct net_device *netdev,
 	return 0;
 }
 
-#if defined(ETHTOOL_GRSSH) && defined(ETHTOOL_SRSSH)
 static u32 hinic_get_rxfh_key_size(struct net_device *netdev)
 {
 	return HINIC_RSS_KEY_SIZE;
 }
 
-#ifdef HAVE_RXFH_HASHFUNC
 static int hinic_get_rxfh(struct net_device *netdev,
 			  u32 *indir, u8 *key, u8 *hfunc)
-#else
-static int hinic_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
-#endif
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	int err = 0;
@@ -2397,7 +2367,6 @@ static int hinic_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 	if (!test_bit(HINIC_RSS_ENABLE, &nic_dev->flags))
 		return -EOPNOTSUPP;
 
-#ifdef HAVE_RXFH_HASHFUNC
 	if (hfunc) {
 		u8 hash_engine_type = 0;
 
@@ -2409,7 +2378,6 @@ static int hinic_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 
 		*hfunc = hash_engine_type ? ETH_RSS_HASH_TOP : ETH_RSS_HASH_XOR;
 	}
-#endif
 
 	if (indir) {
 		err = hinic_rss_get_indir_tbl(nic_dev->hwdev,
@@ -2425,17 +2393,8 @@ static int hinic_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 	return err;
 }
 
-#ifdef HAVE_RXFH_HASHFUNC
 static int hinic_set_rxfh(struct net_device *netdev, const u32 *indir,
 			  const u8 *key, const u8 hfunc)
-#else
-#ifdef HAVE_RXFH_NONCONST
-static int hinic_set_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
-#else
-static int hinic_set_rxfh(struct net_device *netdev, const u32 *indir,
-			  const u8 *key)
-#endif
-#endif /* HAVE_RXFH_HASHFUNC */
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	int err = 0;
@@ -2452,7 +2411,6 @@ static int hinic_set_rxfh(struct net_device *netdev, const u32 *indir,
 		return -EOPNOTSUPP;
 	}
 
-#ifdef HAVE_RXFH_HASHFUNC
 	if (hfunc != ETH_RSS_HASH_NO_CHANGE) {
 		if (hfunc != ETH_RSS_HASH_TOP && hfunc != ETH_RSS_HASH_XOR) {
 			nicif_err(nic_dev, drv, netdev,
@@ -2473,99 +2431,15 @@ static int hinic_set_rxfh(struct net_device *netdev, const u32 *indir,
 			   "Change hfunc to RSS_HASH_%s success\n",
 			   (hfunc == ETH_RSS_HASH_XOR) ? "XOR" : "TOP");
 	}
-#endif
 
 	err = __set_rss_rxfh(netdev, indir, key);
 
 	return err;
 }
 
-#else /* !(defined(ETHTOOL_GRSSH) && defined(ETHTOOL_SRSSH)) */
-
-#ifdef NOT_HAVE_GET_RXFH_INDIR_SIZE
-static int hinic_get_rxfh_indir(struct net_device *netdev,
-				struct ethtool_rxfh_indir *indir1)
-#else
-static int hinic_get_rxfh_indir(struct net_device *netdev, u32 *indir)
-#endif
-{
-	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
-	int err = 0;
-#ifdef NOT_HAVE_GET_RXFH_INDIR_SIZE
-	u32 *indir;
-
-	/* In a low version kernel(eg:suse 11.2), call the interface twice.
-	 * First call to get the size value,
-	 * and second call to get the rxfh indir according to the size value.
-	 */
-	if (indir1->size == 0) {
-		indir1->size = HINIC_RSS_INDIR_SIZE;
-		return 0;
-	}
-
-	if (indir1->size < HINIC_RSS_INDIR_SIZE) {
-		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Failed to get rss indir, hinic rss size(%d) is more than system rss size(%u).\n",
-			  HINIC_RSS_INDIR_SIZE, indir1->size);
-		return -EINVAL;
-	}
-
-	indir = indir1->ring_index;
-#endif
-	if (!test_bit(HINIC_RSS_ENABLE, &nic_dev->flags))
-		return -EOPNOTSUPP;
-
-	if (indir)
-		err = hinic_rss_get_indir_tbl(nic_dev->hwdev,
-					      nic_dev->rss_tmpl_idx, indir);
-
-	return err;
-}
-
-#ifdef NOT_HAVE_GET_RXFH_INDIR_SIZE
-static int hinic_set_rxfh_indir(struct net_device *netdev,
-				const struct ethtool_rxfh_indir *indir1)
-#else
-static int hinic_set_rxfh_indir(struct net_device *netdev, const u32 *indir)
-#endif
-{
-	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
-#ifdef NOT_HAVE_GET_RXFH_INDIR_SIZE
-	const u32 *indir;
-
-	if (indir1->size != HINIC_RSS_INDIR_SIZE) {
-		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Failed to set rss indir, hinic rss size(%d) is more than system rss size(%u).\n",
-			  HINIC_RSS_INDIR_SIZE, indir1->size);
-		return -EINVAL;
-	}
-
-	indir = indir1->ring_index;
-#endif
-
-	if (!test_bit(HINIC_RSS_ENABLE, &nic_dev->flags)) {
-		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Not support to set rss indir when rss is disable\n");
-		return -EOPNOTSUPP;
-	}
-
-	if (test_bit(HINIC_DCB_ENABLE, &nic_dev->flags) && indir) {
-		nicif_err(nic_dev, drv, netdev,
-			  "Not support to set indir when DCB is enabled\n");
-		return -EOPNOTSUPP;
-	}
-
-	return __set_rss_rxfh(netdev, indir, NULL);
-}
-#endif /* defined(ETHTOOL_GRSSH) && defined(ETHTOOL_SRSSH) */
-
 static const struct ethtool_ops hinic_ethtool_ops = {
-#ifdef ETHTOOL_GLINKSETTINGS
-#ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
 	.get_link_ksettings = hinic_get_link_ksettings,
 	.set_link_ksettings = hinic_set_link_ksettings,
-#endif
-#endif
 	.get_settings = hinic_get_settings,
 	.set_settings = hinic_set_settings,
 	.get_drvinfo = hinic_get_drvinfo,
@@ -2580,77 +2454,26 @@ static const struct ethtool_ops hinic_ethtool_ops = {
 	.get_sset_count = hinic_get_sset_count,
 	.get_coalesce = hinic_get_coalesce,
 	.set_coalesce = hinic_set_coalesce,
-#if defined(ETHTOOL_PERQUEUE) && defined(ETHTOOL_GCOALESCE)
 	.get_per_queue_coalesce = hinic_get_per_queue_coalesce,
 	.set_per_queue_coalesce = hinic_set_per_queue_coalesce,
-#endif
 	.get_ethtool_stats = hinic_get_ethtool_stats,
 	.get_strings = hinic_get_strings,
-#ifndef HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT
-#ifdef HAVE_ETHTOOL_SET_PHYS_ID
 	.set_phys_id = hinic_set_phys_id,
-#else
-	.phys_id = hinic_phys_id,
-#endif
-#endif
 	.self_test = hinic_diag_test,
 	.get_rxnfc = hinic_get_rxnfc,
 	.set_rxnfc = hinic_set_rxnfc,
-
-#ifndef HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT
 	.get_channels = hinic_get_channels,
 	.set_channels = hinic_set_channels,
-#ifdef ETHTOOL_GMODULEEEPROM
 	.get_module_info = hinic_get_module_info,
 	.get_module_eeprom = hinic_get_module_eeprom,
-#endif
-#ifndef NOT_HAVE_GET_RXFH_INDIR_SIZE
 	.get_rxfh_indir_size = hinic_get_rxfh_indir_size,
-#endif
-#if defined(ETHTOOL_GRSSH) && defined(ETHTOOL_SRSSH)
 	.get_rxfh_key_size = hinic_get_rxfh_key_size,
 	.get_rxfh = hinic_get_rxfh,
 	.set_rxfh = hinic_set_rxfh,
-#else
-	.get_rxfh_indir = hinic_get_rxfh_indir,
-	.set_rxfh_indir = hinic_set_rxfh_indir,
-#endif
-#endif /* HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT */
 };
-
-#ifdef HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT
-static const struct ethtool_ops_ext hinic_ethtool_ops_ext = {
-	.size	= sizeof(struct ethtool_ops_ext),
-	.set_phys_id = hinic_set_phys_id,
-	.get_channels = hinic_get_channels,
-	.set_channels = hinic_set_channels,
-#ifdef ETHTOOL_GMODULEEEPROM
-	.get_module_info = hinic_get_module_info,
-	.get_module_eeprom = hinic_get_module_eeprom,
-#endif
-
-#ifndef NOT_HAVE_GET_RXFH_INDIR_SIZE
-	.get_rxfh_indir_size = hinic_get_rxfh_indir_size,
-#endif
-#if defined(ETHTOOL_GRSSH) && defined(ETHTOOL_SRSSH)
-	.get_rxfh_key_size = hinic_get_rxfh_key_size,
-	.get_rxfh = hinic_get_rxfh,
-	.set_rxfh = hinic_set_rxfh,
-#else
-	.get_rxfh_indir = hinic_get_rxfh_indir,
-	.set_rxfh_indir = hinic_set_rxfh_indir,
-#endif
-};
-#endif /* HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT */
 
 static const struct ethtool_ops hinicvf_ethtool_ops = {
-#ifdef ETHTOOL_GLINKSETTINGS
-#ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
 	.get_link_ksettings = hinic_get_link_ksettings,
-#endif
-#else
-	.get_settings = hinic_get_settings,
-#endif
 	.get_drvinfo = hinic_get_drvinfo,
 	.get_msglevel = hinic_get_msglevel,
 	.set_msglevel = hinic_set_msglevel,
@@ -2660,63 +2483,27 @@ static const struct ethtool_ops hinicvf_ethtool_ops = {
 	.get_sset_count = hinic_get_sset_count,
 	.get_coalesce = hinic_get_coalesce,
 	.set_coalesce = hinic_set_coalesce,
-#if defined(ETHTOOL_PERQUEUE) && defined(ETHTOOL_GCOALESCE)
 	.get_per_queue_coalesce = hinic_get_per_queue_coalesce,
 	.set_per_queue_coalesce = hinic_set_per_queue_coalesce,
-#endif
 	.get_ethtool_stats = hinic_get_ethtool_stats,
 	.get_strings = hinic_get_strings,
 	.get_rxnfc = hinic_get_rxnfc,
 	.set_rxnfc = hinic_set_rxnfc,
 
-#ifndef HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT
 	.get_channels = hinic_get_channels,
 	.set_channels = hinic_set_channels,
-#ifndef NOT_HAVE_GET_RXFH_INDIR_SIZE
 	.get_rxfh_indir_size = hinic_get_rxfh_indir_size,
-#endif
-#if defined(ETHTOOL_GRSSH) && defined(ETHTOOL_SRSSH)
 	.get_rxfh_key_size = hinic_get_rxfh_key_size,
 	.get_rxfh = hinic_get_rxfh,
 	.set_rxfh = hinic_set_rxfh,
-#else
-	.get_rxfh_indir = hinic_get_rxfh_indir,
-	.set_rxfh_indir = hinic_set_rxfh_indir,
-#endif
-#endif /* HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT */
 };
-
-#ifdef HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT
-static const struct ethtool_ops_ext hinicvf_ethtool_ops_ext = {
-	.size	= sizeof(struct ethtool_ops_ext),
-	.get_channels = hinic_get_channels,
-	.set_channels = hinic_set_channels,
-#ifndef NOT_HAVE_GET_RXFH_INDIR_SIZE
-	.get_rxfh_indir_size = hinic_get_rxfh_indir_size,
-#endif
-#if defined(ETHTOOL_GRSSH) && defined(ETHTOOL_SRSSH)
-	.get_rxfh_key_size = hinic_get_rxfh_key_size,
-	.get_rxfh = hinic_get_rxfh,
-	.set_rxfh = hinic_set_rxfh,
-#else
-	.get_rxfh_indir = hinic_get_rxfh_indir,
-	.set_rxfh_indir = hinic_set_rxfh_indir,
-#endif
-};
-#endif /* HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT */
 
 void hinic_set_ethtool_ops(struct net_device *netdev)
 {
 	SET_ETHTOOL_OPS(netdev, &hinic_ethtool_ops);
-#ifdef HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT
-	set_ethtool_ops_ext(netdev, &hinic_ethtool_ops_ext);
-#endif /* HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT */
 }
 
 void hinicvf_set_ethtool_ops(struct net_device *netdev)
 {
 	SET_ETHTOOL_OPS(netdev, &hinicvf_ethtool_ops);
-#ifdef HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT
-	set_ethtool_ops_ext(netdev, &hinicvf_ethtool_ops_ext);
-#endif /* HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT */
 } /*lint -e766*/
