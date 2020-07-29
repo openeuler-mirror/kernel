@@ -149,11 +149,7 @@ struct hinic_nic_stats {
 	u64	tx_carrier_off_drop;
 	u64	tx_invalid_qid;
 
-#ifdef HAVE_NDO_GET_STATS64
 	struct u64_stats_sync	syncp;
-#else
-	struct u64_stats_sync_empty syncp;
-#endif
 };
 
 struct hinic_nic_dev {
@@ -236,9 +232,6 @@ struct hinic_nic_dev {
 	bool			in_vm;
 	bool			is_vm_slave;
 	int			is_bm_slave;
-#ifndef HAVE_NETDEV_STATS_IN_NETDEV
-	struct net_device_stats net_stats;
-#endif
 	struct hinic_nic_stats	stats;
 	/* lock for nic resource */
 	struct mutex		nic_mutex;

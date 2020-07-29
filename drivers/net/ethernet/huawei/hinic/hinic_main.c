@@ -180,7 +180,6 @@ enum hinic_rx_buff_len {
 #define HINIC_MODERATONE_DELAY		HZ
 #define CONVERT_UNIT			1024
 
-#ifdef HAVE_MULTI_VLAN_OFFLOAD_EN
 int hinic_netdev_event(struct notifier_block *notifier,
 		       unsigned long event, void *ptr);
 
@@ -255,15 +254,7 @@ int hinic_netdev_event(struct notifier_block *notifier,
 		if (vlan_depth == HINIC_MAX_VLAN_DEPTH_OFFLOAD_SUPPORT) {
 			ndev->vlan_features &= (~HINIC_VLAN_CLEAR_OFFLOAD);
 		} else if (vlan_depth > HINIC_MAX_VLAN_DEPTH_OFFLOAD_SUPPORT) {
-#ifdef HAVE_NDO_SET_FEATURES
-#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
-			set_netdev_hw_features(ndev,
-					       get_netdev_hw_features(ndev) &
-					       (~HINIC_VLAN_CLEAR_OFFLOAD));
-#else
 			ndev->hw_features &= (~HINIC_VLAN_CLEAR_OFFLOAD);
-#endif
-#endif
 			ndev->features &= (~HINIC_VLAN_CLEAR_OFFLOAD);
 		}
 
@@ -278,7 +269,6 @@ out:
 
 	return NOTIFY_DONE;
 }
-#endif
 
 void hinic_link_status_change(struct hinic_nic_dev *nic_dev, bool status)
 {
@@ -1172,24 +1162,9 @@ static u16 select_queue_by_toeplitz(struct net_device *dev,
 	return (u16)nic_dev->rss_indir_user[hash & 0xFF];
 }
 
-#if defined(HAVE_NDO_SELECT_QUEUE_ACCEL_FALLBACK)
-#if defined(HAVE_NDO_SELECT_QUEUE_SB_DEV)
 static u16 hinic_select_queue(struct net_device *netdev, struct sk_buff *skb,
 				      struct net_device *sb_dev,
 				      select_queue_fallback_t fallback)
-#else
-static u16 hinic_select_queue(struct net_device *netdev, struct sk_buff *skb,
-			      __always_unused void *accel,
-			      select_queue_fallback_t fallback)
-#endif
-
-#elif defined(HAVE_NDO_SELECT_QUEUE_ACCEL)
-static u16 hinic_select_queue(struct net_device *netdev, struct sk_buff *skb,
-			      __always_unused void *accel)
-
-#else
-static u16 hinic_select_queue(struct net_device *netdev, struct sk_buff *skb)
-#endif /* end of HAVE_NDO_SELECT_QUEUE_ACCEL_FALLBACK */
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
@@ -1204,40 +1179,13 @@ static u16 hinic_select_queue(struct net_device *netdev, struct sk_buff *skb)
 						netdev->real_num_tx_queues);
 
 fallback:
-
-#ifndef HAVE_NDO_SELECT_QUEUE_ACCEL_FALLBACK
-	return skb_tx_hash(netdev, skb);
-#else
-#ifdef HAVE_NDO_SELECT_QUEUE_SB_DEV
 	return fallback(netdev, skb, sb_dev);
-#else
-	return fallback(netdev, skb);
-#endif
-#endif
 }
 
-#ifdef HAVE_NDO_GET_STATS64
-#ifdef HAVE_VOID_NDO_GET_STATS64
 static void hinic_get_stats64(struct net_device *netdev,
 				struct rtnl_link_stats64 *stats)
-#else
-static struct rtnl_link_stats64
-	*hinic_get_stats64(struct net_device *netdev,
-			   struct rtnl_link_stats64 *stats)
-#endif
-
-#else /* !HAVE_NDO_GET_STATS64 */
-static struct net_device_stats *hinic_get_stats(struct net_device *netdev)
-#endif
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
-#ifndef HAVE_NDO_GET_STATS64
-#ifdef HAVE_NETDEV_STATS_IN_NETDEV
-	struct net_device_stats *stats = &netdev->stats;
-#else
-	struct net_device_stats *stats = &nic_dev->net_stats;
-#endif /* HAVE_NETDEV_STATS_IN_NETDEV */
-#endif /* HAVE_NDO_GET_STATS64 */
 	struct hinic_txq_stats *txq_stats;
 	struct hinic_rxq_stats *rxq_stats;
 	struct hinic_txq *txq;
@@ -1289,10 +1237,6 @@ static struct net_device_stats *hinic_get_stats(struct net_device *netdev)
 	stats->rx_bytes   = bytes;
 	stats->rx_errors  = errors;
 	stats->rx_dropped = dropped;
-
-#ifndef HAVE_VOID_NDO_GET_STATS64
-	return stats;
-#endif
 }
 
 static void hinic_tx_timeout(struct net_device *netdev)
@@ -1495,12 +1439,8 @@ static int set_features(struct hinic_nic_dev *nic_dev,
 	return err;
 }
 
-#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
-static int hinic_set_features(struct net_device *netdev, u32 features)
-#else
 static int hinic_set_features(struct net_device *netdev,
 			      netdev_features_t features)
-#endif
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
@@ -1508,12 +1448,8 @@ static int hinic_set_features(struct net_device *netdev,
 			    features, false);
 }
 
-#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
-static u32 hinic_fix_features(struct net_device *netdev, u32 features)
-#else
 static netdev_features_t hinic_fix_features(struct net_device *netdev,
 					    netdev_features_t features)
-#endif
 {
 	/* If Rx checksum is disabled, then LRO should also be disabled */
 	if (!(features & NETIF_F_RXCSUM))
@@ -1577,52 +1513,23 @@ static int hinic_set_default_hw_feature(struct hinic_nic_dev *nic_dev)
 	return set_features(nic_dev, 0, nic_dev->netdev->features, true);
 }
 
-#ifdef NETIF_F_HW_TC
-#ifdef TC_MQPRIO_HW_OFFLOAD_MAX
 static int hinic_setup_tc_mqprio(struct net_device *dev,
 				 struct tc_mqprio_qopt *mqprio)
 {
 	mqprio->hw = TC_MQPRIO_HW_OFFLOAD_TCS;
 	return hinic_setup_tc(dev, mqprio->num_tc);
 }
-#endif /* TC_MQPRIO_HW_OFFLOAD_MAX */
 
-#if defined(HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV)
 static int __hinic_setup_tc(struct net_device *dev, enum tc_setup_type type,
 			    void *type_data)
-#elif defined(HAVE_NDO_SETUP_TC_CHAIN_INDEX)
-static int __hinic_setup_tc(struct net_device *dev, __always_unused u32 handle,
-			    u32 chain_index, __always_unused __be16 proto,
-			    struct tc_to_netdev *tc)
-#else
-static int __hinic_setup_tc(struct net_device *dev, __always_unused u32 handle,
-			    __always_unused __be16 proto,
-			    struct tc_to_netdev *tc)
-#endif
 {
-#ifndef HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV
-	unsigned int type = tc->type;
-
-#ifdef HAVE_NDO_SETUP_TC_CHAIN_INDEX
-	if (chain_index)
-		return -EOPNOTSUPP;
-
-#endif
-#endif
 	switch (type) {
 	case TC_SETUP_QDISC_MQPRIO:
-#if defined(HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV)
 		return hinic_setup_tc_mqprio(dev, type_data);
-#elif defined(TC_MQPRIO_HW_OFFLOAD_MAX)
-		return hinic_setup_tc_mqprio(dev, tc->mqprio);
-#else
-		return hinic_setup_tc(dev, tc->tc);
-#endif
 	default:
 		return -EOPNOTSUPP;
 	}
 }
-#endif /* NETIF_F_HW_TC */
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
 static void hinic_netpoll(struct net_device *netdev)
@@ -1974,43 +1881,6 @@ static void hinic_update_mac_filter(struct hinic_nic_dev *nic_dev,
 	}
 }
 
-#ifndef NETDEV_HW_ADDR_T_MULTICAST
-static void hinic_update_mc_filter(struct hinic_nic_dev *nic_dev,
-				   struct list_head *filter_list)
-{
-	struct dev_mc_list *ha;
-	struct hinic_mac_filter *f, *ftmp, *filter;
-
-	/* add addr if not already in the filter list */
-	netif_addr_lock_bh(nic_dev->netdev);
-	netdev_for_each_mc_addr(ha, nic_dev->netdev) {
-		filter = hinic_find_mac(filter_list, ha->da_addr);
-		if (!filter)
-			hinic_add_filter(nic_dev, filter_list, ha->da_addr);
-		else if (filter->state == HINIC_MAC_WAIT_HW_UNSYNC)
-			filter->state = HINIC_MAC_HW_SYNCED;
-	}
-	netif_addr_unlock_bh(nic_dev->netdev);
-	/* delete addr if not in netdev list */
-	list_for_each_entry_safe(f, ftmp, filter_list, list) {
-		bool found = false;
-
-		netif_addr_lock_bh(nic_dev->netdev);
-		netdev_for_each_mc_addr(ha, nic_dev->netdev)
-			if (ether_addr_equal(ha->da_addr, f->addr)) {
-				found = true;
-				break;
-			}
-		netif_addr_unlock_bh(nic_dev->netdev);
-
-		if (found)
-			continue;
-
-		hinic_del_filter(nic_dev, f);
-	}
-}
-#endif
-
 static void __update_mac_filter(struct hinic_nic_dev *nic_dev)
 {
 	struct net_device *netdev = nic_dev->netdev;
@@ -2018,12 +1888,8 @@ static void __update_mac_filter(struct hinic_nic_dev *nic_dev)
 	if (test_and_clear_bit(HINIC_UPDATE_MAC_FILTER, &nic_dev->flags)) {
 		hinic_update_mac_filter(nic_dev, &netdev->uc,
 					&nic_dev->uc_filter_list);
-#ifdef NETDEV_HW_ADDR_T_MULTICAST
 		hinic_update_mac_filter(nic_dev, &netdev->mc,
 					&nic_dev->mc_filter_list);
-#else
-		hinic_update_mc_filter(nic_dev, &nic_dev->mc_filter_list);
-#endif
 	}
 }
 
@@ -2104,124 +1970,44 @@ static const struct net_device_ops hinic_netdev_ops = {
 	.ndo_open = hinic_open,
 	.ndo_stop = hinic_close,
 	.ndo_start_xmit = hinic_xmit_frame,
-
-#ifdef HAVE_NDO_GET_STATS64
 	.ndo_get_stats64 =  hinic_get_stats64,
-#else
-	.ndo_get_stats = hinic_get_stats,
-#endif /* HAVE_NDO_GET_STATS64 */
-
 	.ndo_tx_timeout = hinic_tx_timeout,
 	.ndo_select_queue = hinic_select_queue,
-#ifdef HAVE_RHEL7_NETDEV_OPS_EXT_NDO_CHANGE_MTU
-	.extended.ndo_change_mtu = hinic_change_mtu,
-#else
 	.ndo_change_mtu = hinic_change_mtu,
-#endif
 	.ndo_set_mac_address = hinic_set_mac_addr,
 	.ndo_validate_addr = eth_validate_addr,
 #if defined(NETIF_F_HW_VLAN_TX) || defined(NETIF_F_HW_VLAN_CTAG_TX)
 	.ndo_vlan_rx_add_vid = hinic_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid = hinic_vlan_rx_kill_vid,
 #endif
-#ifdef HAVE_RHEL7_NET_DEVICE_OPS_EXT
-	/* RHEL7 requires this to be defined to enable extended ops.  RHEL7
-	 * uses the function get_ndo_ext to retrieve offsets for extended
-	 * fields from with the net_device_ops struct and ndo_size is checked
-	 * to determine whether or not the offset is valid.
-	 */
-	.ndo_size		= sizeof(const struct net_device_ops),
-#endif
-#ifdef IFLA_VF_MAX
+
 	.ndo_set_vf_mac		= hinic_ndo_set_vf_mac,
-#ifdef HAVE_RHEL7_NETDEV_OPS_EXT_NDO_SET_VF_VLAN
-	.extended.ndo_set_vf_vlan = hinic_ndo_set_vf_vlan,
-#else
 	.ndo_set_vf_vlan	= hinic_ndo_set_vf_vlan,
-#endif
-#ifdef HAVE_NDO_SET_VF_MIN_MAX_TX_RATE
 	.ndo_set_vf_rate	= hinic_ndo_set_vf_bw,
-#else
-	.ndo_set_vf_tx_rate	= hinic_ndo_set_vf_bw,
-#endif /* HAVE_NDO_SET_VF_MIN_MAX_TX_RATE */
-#ifdef HAVE_VF_SPOOFCHK_CONFIGURE
 	.ndo_set_vf_spoofchk	= hinic_ndo_set_vf_spoofchk,
-#endif
-#ifdef HAVE_NDO_SET_VF_TRUST
-#ifdef HAVE_RHEL7_NET_DEVICE_OPS_EXT
-	.extended.ndo_set_vf_trust = hinic_ndo_set_vf_trust,
-#else
 	.ndo_set_vf_trust	= hinic_ndo_set_vf_trust,
-#endif /* HAVE_RHEL7_NET_DEVICE_OPS_EXT */
-#endif /* HAVE_NDO_SET_VF_TRUST */
-
 	.ndo_get_vf_config	= hinic_ndo_get_vf_config,
-#endif
 
-#ifdef HAVE_RHEL7_NETDEV_OPS_EXT_NDO_SETUP_TC
-	.extended.ndo_setup_tc_rh	= __hinic_setup_tc,
-#else
-#ifdef HAVE_SETUP_TC
-#ifdef NETIF_F_HW_TC
 	.ndo_setup_tc		= __hinic_setup_tc,
-#else
-	.ndo_setup_tc		= hinic_setup_tc,
-#endif /* NETIF_F_HW_TC */
-#endif /* HAVE_SETUP_TC */
-#endif
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller = hinic_netpoll,
 #endif /* CONFIG_NET_POLL_CONTROLLER */
 
 	.ndo_set_rx_mode = hinic_nic_set_rx_mode,
-
-#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
-};
-
-/* RHEL6 keeps these operations in a separate structure */
-static const struct net_device_ops_ext hinic_netdev_ops_ext = {
-	.size = sizeof(struct net_device_ops_ext),
-#endif /* HAVE_RHEL6_NET_DEVICE_OPS_EXT */
-
-#ifdef HAVE_NDO_SET_VF_LINK_STATE
 	.ndo_set_vf_link_state	= hinic_ndo_set_vf_link_state,
-#endif
-
-#ifdef HAVE_NDO_SET_FEATURES
 	.ndo_fix_features = hinic_fix_features,
 	.ndo_set_features = hinic_set_features,
-#endif /* HAVE_NDO_SET_FEATURES */
 };
 
 static const struct net_device_ops hinicvf_netdev_ops = {
 	.ndo_open = hinic_open,
 	.ndo_stop = hinic_close,
 	.ndo_start_xmit = hinic_xmit_frame,
-
-#ifdef HAVE_NDO_GET_STATS64
 	.ndo_get_stats64 =  hinic_get_stats64,
-#else
-	.ndo_get_stats = hinic_get_stats,
-#endif /* HAVE_NDO_GET_STATS64 */
-
 	.ndo_tx_timeout = hinic_tx_timeout,
 	.ndo_select_queue = hinic_select_queue,
-
-#ifdef HAVE_RHEL7_NET_DEVICE_OPS_EXT
-	/* RHEL7 requires this to be defined to enable extended ops.  RHEL7
-	 * uses the function get_ndo_ext to retrieve offsets for extended
-	 * fields from with the net_device_ops struct and ndo_size is checked
-	 * to determine whether or not the offset is valid.
-	 */
-	 .ndo_size = sizeof(const struct net_device_ops),
-#endif
-
-#ifdef HAVE_RHEL7_NETDEV_OPS_EXT_NDO_CHANGE_MTU
-	.extended.ndo_change_mtu = hinic_change_mtu,
-#else
 	.ndo_change_mtu = hinic_change_mtu,
-#endif
 	.ndo_set_mac_address = hinic_set_mac_addr,
 	.ndo_validate_addr = eth_validate_addr,
 #if defined(NETIF_F_HW_VLAN_TX) || defined(NETIF_F_HW_VLAN_CTAG_TX)
@@ -2235,31 +2021,14 @@ static const struct net_device_ops hinicvf_netdev_ops = {
 
 	.ndo_set_rx_mode = hinic_nic_set_rx_mode,
 
-#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
-};
-
-/* RHEL6 keeps these operations in a separate structure */
-static const struct net_device_ops_ext hinicvf_netdev_ops_ext = {
-	.size = sizeof(struct net_device_ops_ext),
-#endif /* HAVE_RHEL6_NET_DEVICE_OPS_EXT */
-
-#ifdef HAVE_NDO_SET_FEATURES
 	.ndo_fix_features = hinic_fix_features,
 	.ndo_set_features = hinic_set_features,
-#endif /* HAVE_NDO_SET_FEATURES */
 };
 
 static void netdev_feature_init(struct net_device *netdev)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
-
-#ifdef HAVE_NDO_SET_FEATURES
-#ifndef HAVE_RHEL6_NET_DEVICE_OPS_EXT
 	netdev_features_t hw_features;
-#else
-	u32 hw_features;
-#endif
-#endif
 
 	netdev->features = NETIF_F_SG | NETIF_F_HIGHDMA |
 			   NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
@@ -2271,12 +2040,9 @@ static void netdev_feature_init(struct net_device *netdev)
 
 	netdev->vlan_features = netdev->features;
 
-	if (FUNC_SUPPORT_ENCAP_TSO_CSUM(nic_dev->hwdev)) {
-#ifdef HAVE_ENCAPSULATION_TSO
+	if (FUNC_SUPPORT_ENCAP_TSO_CSUM(nic_dev->hwdev))
 		netdev->features |= NETIF_F_GSO_UDP_TUNNEL |
 				    NETIF_F_GSO_UDP_TUNNEL_CSUM;
-#endif /* HAVE_ENCAPSULATION_TSO */
-	}
 
 	if (FUNC_SUPPORT_HW_VLAN(nic_dev->hwdev)) {
 #if defined(NETIF_F_HW_VLAN_CTAG_TX)
@@ -2292,15 +2058,10 @@ static void netdev_feature_init(struct net_device *netdev)
 #endif
 	}
 
-#ifdef HAVE_NDO_SET_FEATURES
 	/* copy netdev features into list of user selectable features */
-#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
-	hw_features = get_netdev_hw_features(netdev);
-#else
 	hw_features = netdev->hw_features;
-#endif
 	hw_features |= netdev->features;
-#endif
+
 	if (FUNC_SUPPORT_LRO(nic_dev->hwdev)) {
 		/* LRO is disable in default, only set hw features */
 		hw_features |= NETIF_F_LRO;
@@ -2311,13 +2072,7 @@ static void netdev_feature_init(struct net_device *netdev)
 			netdev->features |= NETIF_F_LRO;
 	}
 
-#ifdef HAVE_NDO_SET_FEATURES
-#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
-	set_netdev_hw_features(netdev, hw_features);
-#else
 	netdev->hw_features = hw_features;
-#endif
-#endif
 
 /* Set after hw_features because this could not be part of hw_features */
 #if defined(NETIF_F_HW_VLAN_CTAG_FILTER)
@@ -2331,16 +2086,12 @@ static void netdev_feature_init(struct net_device *netdev)
 #endif
 
 	if (FUNC_SUPPORT_ENCAP_TSO_CSUM(nic_dev->hwdev)) {
-#ifdef HAVE_ENCAPSULATION_CSUM
 		netdev->hw_enc_features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM
 			       | NETIF_F_SCTP_CRC | NETIF_F_SG;
-#ifdef HAVE_ENCAPSULATION_TSO
 		netdev->hw_enc_features |= NETIF_F_TSO | NETIF_F_TSO6
 			       | NETIF_F_TSO_ECN
 			       | NETIF_F_GSO_UDP_TUNNEL_CSUM
 			       | NETIF_F_GSO_UDP_TUNNEL;
-#endif /* HAVE_ENCAPSULATION_TSO */
-#endif /* HAVE_ENCAPSULATION_CSUM */
 	}
 }
 
@@ -2486,15 +2237,9 @@ static int hinic_sw_init(struct hinic_nic_dev *adapter)
 	}
 
 	/* MTU range: 256 - 9600 */
-#ifdef HAVE_NETDEVICE_MIN_MAX_MTU
 	netdev->min_mtu = HINIC_MIN_MTU_SIZE;
 	netdev->max_mtu = HINIC_MAX_JUMBO_FRAME_SIZE;
-#endif
 
-#ifdef HAVE_NETDEVICE_EXTENDED_MIN_MAX_MTU
-	netdev->extended->min_mtu = HINIC_MIN_MTU_SIZE;
-	netdev->extended->max_mtu = HINIC_MAX_JUMBO_FRAME_SIZE;
-#endif
 	return 0;
 
 set_mac_err:
@@ -2511,17 +2256,11 @@ static void hinic_assign_netdev_ops(struct hinic_nic_dev *adapter)
 {
 	if (!HINIC_FUNC_IS_VF(adapter->hwdev)) {
 		adapter->netdev->netdev_ops = &hinic_netdev_ops;
-#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
-		set_netdev_ops_ext(adapter->netdev, &hinic_netdev_ops_ext);
-#endif /* HAVE_RHEL6_NET_DEVICE_OPS_EXT */
 		if (FUNC_SUPPORT_DCB(adapter->hwdev))
 			adapter->netdev->dcbnl_ops = &hinic_dcbnl_ops;
 		hinic_set_ethtool_ops(adapter->netdev);
 	} else {
 		adapter->netdev->netdev_ops = &hinicvf_netdev_ops;
-#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
-		set_netdev_ops_ext(adapter->netdev, &hinicvf_netdev_ops_ext);
-#endif /* HAVE_RHEL6_NET_DEVICE_OPS_EXT */
 		hinicvf_set_ethtool_ops(adapter->netdev);
 	}
 	adapter->netdev->watchdog_timeo = 5 * HZ;
@@ -3025,9 +2764,8 @@ static int nic_probe(struct hinic_lld_dev *lld_dev, void **uld_dev,
 	if (err)
 		goto set_features_err;
 
-#ifdef HAVE_MULTI_VLAN_OFFLOAD_EN
 	hinic_register_notifier(nic_dev);
-#endif
+
 	err = register_netdev(netdev);
 	if (err) {
 		nic_err(&pdev->dev, "Failed to register netdev\n");
@@ -3043,9 +2781,7 @@ static int nic_probe(struct hinic_lld_dev *lld_dev, void **uld_dev,
 	return 0;
 
 netdev_err:
-#ifdef HAVE_MULTI_VLAN_OFFLOAD_EN
 	hinic_unregister_notifier(nic_dev);
-#endif
 
 set_features_err:
 	destroy_workqueue(nic_dev->workq);
@@ -3083,10 +2819,8 @@ static void nic_remove(struct hinic_lld_dev *lld_dev, void *adapter)
 	netdev = nic_dev->netdev;
 
 	unregister_netdev(netdev);
-#ifdef HAVE_MULTI_VLAN_OFFLOAD_EN
 	hinic_unregister_notifier(nic_dev);
 
-#endif
 	cancel_work_sync(&nic_dev->rx_mode_work);
 	destroy_workqueue(nic_dev->workq);
 

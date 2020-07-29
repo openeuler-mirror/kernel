@@ -1587,12 +1587,8 @@ static void hinic_get_ethtool_stats(struct net_device *netdev,
 				    struct ethtool_stats *stats, u64 *data)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
-#ifdef HAVE_NDO_GET_STATS64
 	struct rtnl_link_stats64 temp;
 	const struct rtnl_link_stats64 *net_stats;
-#else
-	const struct net_device_stats *net_stats;
-#endif
 	struct hinic_phy_port_stats *port_stats;
 	struct hinic_nic_stats *nic_stats;
 	struct hinic_vport_stats vport_stats = {0};
@@ -1600,11 +1596,7 @@ static void hinic_get_ethtool_stats(struct net_device *netdev,
 	char *p;
 	int err;
 
-#ifdef HAVE_NDO_GET_STATS64
 	net_stats = dev_get_stats(netdev, &temp);
-#else
-	net_stats = dev_get_stats(netdev);
-#endif
 	for (j = 0; j < ARRAY_LEN(hinic_netdev_stats); j++, i++) {
 		p = (char *)(net_stats) + hinic_netdev_stats[j].offset;
 		data[i] = (hinic_netdev_stats[j].size ==

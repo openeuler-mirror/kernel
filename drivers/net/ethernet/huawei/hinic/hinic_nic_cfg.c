@@ -3056,30 +3056,18 @@ void hinic_get_vf_config(void *hwdev, u16 vf_id, struct ifla_vf_info *ivi)
 	memcpy(ivi->mac, vfinfo->vf_mac_addr, ETH_ALEN);
 	ivi->vlan = vfinfo->pf_vlan;
 	ivi->qos = vfinfo->pf_qos;
-
-#ifdef HAVE_VF_SPOOFCHK_CONFIGURE
 	ivi->spoofchk = vfinfo->spoofchk;
-#endif
-
-#ifdef HAVE_NDO_SET_VF_TRUST
 	ivi->trusted = vfinfo->trust;
-#endif
 
-#ifdef HAVE_NDO_SET_VF_MIN_MAX_TX_RATE
 	ivi->max_tx_rate = vfinfo->max_rate;
 	ivi->min_tx_rate = vfinfo->min_rate;
-#else
-	ivi->tx_rate = vfinfo->max_rate;
-#endif /* HAVE_NDO_SET_VF_MIN_MAX_TX_RATE */
 
-#ifdef HAVE_NDO_SET_VF_LINK_STATE
 	if (!vfinfo->link_forced)
 		ivi->linkstate = IFLA_VF_LINK_STATE_AUTO;
 	else if (vfinfo->link_up)
 		ivi->linkstate = IFLA_VF_LINK_STATE_ENABLE;
 	else
 		ivi->linkstate = IFLA_VF_LINK_STATE_DISABLE;
-#endif
 }
 
 void hinic_clear_vf_infos(void *hwdev, u16 vf_id)
@@ -3102,10 +3090,8 @@ void hinic_clear_vf_infos(void *hwdev, u16 vf_id)
 	if (vf_infos->spoofchk)
 		hinic_set_vf_spoofchk(hwdev, vf_id, false);
 
-#ifdef HAVE_NDO_SET_VF_TRUST
 	if (vf_infos->trust)
 		hinic_set_vf_trust(hwdev, vf_id, false);
-#endif
 
 	memset(vf_infos, 0, sizeof(*vf_infos));
 	/* set vf_infos to default */
@@ -3225,7 +3211,6 @@ int hinic_set_vf_spoofchk(void *hwdev, u16 vf_id, bool spoofchk)
 	return err;
 }
 
-#ifdef HAVE_NDO_SET_VF_TRUST
 int hinic_set_vf_trust(void *hwdev, u16 vf_id, bool trust)
 {
 	struct hinic_hwdev *hw_dev = hwdev;
@@ -3241,7 +3226,6 @@ int hinic_set_vf_trust(void *hwdev, u16 vf_id, bool trust)
 
 	return 0;
 }
-#endif
 
 bool hinic_vf_info_spoofchk(void *hwdev, int vf_id)
 {
@@ -3251,7 +3235,6 @@ bool hinic_vf_info_spoofchk(void *hwdev, int vf_id)
 	return spoofchk;
 }
 
-#ifdef HAVE_NDO_SET_VF_TRUST
 bool hinic_vf_info_trust(void *hwdev, int vf_id)
 {
 	struct hinic_nic_io *nic_io = ((struct hinic_hwdev *)hwdev)->nic_io;
@@ -3259,7 +3242,6 @@ bool hinic_vf_info_trust(void *hwdev, int vf_id)
 
 	return trust;
 }
-#endif
 
 static int hinic_set_vf_rate_limit(void *hwdev, u16 vf_id, u32 tx_rate)
 {

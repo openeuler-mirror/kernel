@@ -596,10 +596,8 @@ int hinic_set_vf_spoofchk(void *hwdev, u16 vf_id, bool spoofchk);
 
 bool hinic_vf_info_spoofchk(void *hwdev, int vf_id);
 
-#ifdef HAVE_NDO_SET_VF_TRUST
 int hinic_set_vf_trust(void *hwdev, u16 vf_id, bool trust);
 bool hinic_vf_info_trust(void *hwdev, int vf_id);
-#endif
 
 int hinic_set_vf_tx_rate(void *hwdev, u16 vf_id, u32 max_rate, u32 min_rate);
 

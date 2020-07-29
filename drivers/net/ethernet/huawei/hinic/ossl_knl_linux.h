@@ -99,7 +99,6 @@
 
 /*****************************************************************************/
 #define ETH_TYPE_TRANS_SETS_DEV
-#define HAVE_NETDEV_STATS_IN_NETDEV
 
 /*****************************************************************************/
 
@@ -108,28 +107,6 @@
 	(RHEL_RELEASE_VERSION(7, 0) > RHEL_RELEASE_CODE))
 #define HAVE_RHEL6_NET_DEVICE_EXTENDED
 #endif /* RHEL >= 6.2 && RHEL < 7.0 */
-#if (RHEL_RELEASE_CODE && \
-	(RHEL_RELEASE_VERSION(6, 6) <= RHEL_RELEASE_CODE) && \
-	(RHEL_RELEASE_VERSION(7, 0) > RHEL_RELEASE_CODE))
-#define HAVE_RHEL6_NET_DEVICE_OPS_EXT
-#define HAVE_NDO_SET_FEATURES
-#endif /* RHEL >= 6.6 && RHEL < 7.0 */
-
-#define HAVE_NDO_GET_STATS64
-
-/*****************************************************************************/
-#ifndef HAVE_SETUP_TC
-#define HAVE_SETUP_TC
-#endif
-
-#ifndef HAVE_NDO_SET_FEATURES
-#define HAVE_NDO_SET_FEATURES
-#endif
-
-/*****************************************************************************/
-#define HAVE_VF_SPOOFCHK_CONFIGURE
-
-#define HAVE_NDO_SET_VF_TRUST
 
 /*****************************************************************************/
 #define HAVE_NAPI_GRO_FLUSH_OLD
@@ -140,39 +117,13 @@
 #endif
 
 /*****************************************************************************/
-#define HAVE_NDO_SET_VF_LINK_STATE
-
-/*****************************************************************************/
 #define HAVE_NDO_SELECT_QUEUE_ACCEL
-
-#define HAVE_NDO_SELECT_QUEUE_ACCEL_FALLBACK
-
-/*****************************************************************************/
-#define HAVE_NDO_SET_VF_MIN_MAX_TX_RATE
 
 /*****************************************************************************/
 #define HAVE_SKBUFF_CSUM_LEVEL
-#define HAVE_MULTI_VLAN_OFFLOAD_EN
-
-/*****************************************************************************/
-#define HAVE_NETDEVICE_MIN_MAX_MTU
-
-/*****************************************************************************/
-#define HAVE_VOID_NDO_GET_STATS64
-
-/*****************************************************************************/
-#define HAVE_NDO_SETUP_TC_CHAIN_INDEX
-
-/*****************************************************************************/
-#define HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV
-/*****************************************************************************/
 
 /*****************************************************************************/
 #define HAVE_TIMER_SETUP
-/*****************************************************************************/
-
-/*****************************************************************************/
-#define HAVE_NDO_SELECT_QUEUE_SB_DEV
 /*****************************************************************************/
 
 /* vxlan outer udp checksum will offload and skb->inner_transport_header
@@ -183,10 +134,6 @@
 	(RHEL_RELEASE_CODE && (RHEL_RELEASE_VERSION(7, 0) == RHEL_RELEASE_CODE))
 #define HAVE_OUTER_IPV6_TUNNEL_OFFLOAD
 #endif
-
-#define HAVE_ENCAPSULATION_TSO
-
-#define HAVE_ENCAPSULATION_CSUM
 
 int local_atoi(const char *name);
 

@@ -363,9 +363,6 @@ static int clear_func_static(struct hinic_nic_dev *nic_dev, void *buf_in,
 	int i;
 
 	*out_size = 0;
-#ifndef HAVE_NETDEV_STATS_IN_NETDEV
-	memset(&nic_dev->net_stats, 0, sizeof(nic_dev->net_stats));
-#endif
 	clean_nicdev_stats(nic_dev);
 	for (i = 0; i < nic_dev->max_qps; i++) {
 		hinic_rxq_clean_stats(&nic_dev->rxqs[i].rxq_stats);
