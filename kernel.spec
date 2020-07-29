@@ -790,13 +790,6 @@ fi
 
 %changelog
 * Fri Jul 29 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2007.2.0.0041
-- net/hinic: Delete unused UFO codes
-- net/hinic: Delete the remaining old linux kernel adaptation interface
-- net/hinic: Delete the old kernel version adaptation interface in netdev ops
-- net/hinic: Delete the old kernel version adaptation interface in ethtool ops
-- net/hinic: Delete useless linux adaptation functions
-- net/hinic: Delete unused functions and macro definitions in ossl
-- netfilter: nat: check the bounds of nf_nat_l3protos and nf_nat_l4protos
 - mm, vmstat: reduce zone->lock holding time by /proc/pagetypeinfo
 - kernel/notifier.c: intercept duplicate registrations to avoid infinite loops
 - macvlan: use skb_reset_mac_header() in macvlan_queue_xmit()
