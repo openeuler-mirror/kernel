@@ -107,9 +107,7 @@ struct dbgtool_param {
 	char chip_name[16];
 };
 
-#ifndef MAX_CARD_NUM
 #define MAX_CARD_NUM 64
-#endif
 #define DBGTOOL_PAGE_ORDER 10
 
 int dbgtool_knl_init(void *vhwdev, void *chip_node);

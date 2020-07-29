@@ -1703,7 +1703,7 @@ static int api_csr_write(void *hwdev, struct msg_module *nt_msg,
 
 static u32 get_up_timeout_val(enum hinic_mod_type mod, u8 cmd)
 {
-	if (mod == HINIC_MOD_L2NIC && cmd == NIC_UP_CMD_UPDATE_FW)
+	if (mod == HINIC_MOD_L2NIC && cmd == HINIC_PORT_CMD_UPDATE_FW)
 		return UP_UPDATEFW_TIME_OUT_VAL;
 	else
 		return UP_COMP_TIME_OUT_VAL;

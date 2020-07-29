@@ -16,16 +16,6 @@
 #ifndef HINIC_SRIOV_H
 #define HINIC_SRIOV_H
 
-#if !(defined(HAVE_SRIOV_CONFIGURE) || defined(HAVE_RHEL6_SRIOV_CONFIGURE))
-ssize_t hinic_sriov_totalvfs_show(struct device *dev,
-				  struct device_attribute *attr, char *buf);
-ssize_t hinic_sriov_numvfs_show(struct device *dev,
-				struct device_attribute *attr, char *buf);
-ssize_t hinic_sriov_numvfs_store(struct device *dev,
-				 struct device_attribute *attr,
-				 const char *buf, size_t count);
-#endif /* !(HAVE_SRIOV_CONFIGURE || HAVE_RHEL6_SRIOV_CONFIGURE) */
-
 enum hinic_sriov_state {
 	HINIC_SRIOV_DISABLE,
 	HINIC_SRIOV_ENABLE,

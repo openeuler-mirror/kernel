@@ -16,12 +16,6 @@
 #ifndef __HINIC_PORT_CMD_H__
 #define __HINIC_PORT_CMD_H__
 
-#ifdef __cplusplus
-    #if __cplusplus
-extern "C"{
-    #endif
-#endif /* __cplusplus */
-
 /* cmd of mgmt CPU message for NIC module */
 enum hinic_port_cmd {
 	HINIC_PORT_CMD_VF_REGISTER		= 0x0,
@@ -544,9 +538,4 @@ enum hinic_pf_status {
 #define HINIC_PCI_MSIX_ENTRY_VECTOR_CTRL		12
 #define HINIC_PCI_MSIX_ENTRY_CTRL_MASKBIT		1
 
-#ifdef __cplusplus
-    #if __cplusplus
-}
-    #endif
-#endif /* __cplusplus */
 #endif /* __HINIC_PORT_CMD_H__ */

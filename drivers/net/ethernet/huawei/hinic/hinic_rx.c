@@ -264,11 +264,7 @@ static bool hinic_add_rx_frag(struct hinic_rxq *rxq,
 	/* flip page offset to other buffer */
 	rx_info->page_offset ^= rxq->buf_len;
 
-#ifdef HAVE_PAGE_COUNT
-	atomic_add(1, &page->_count);
-#else
 	page_ref_inc(page);
-#endif
 
 	return true;
 }
@@ -464,7 +460,6 @@ static void hinic_rx_csum(struct hinic_rxq *rxq, u32 status,
 	}
 }
 
-#ifdef HAVE_SKBUFF_CSUM_LEVEL
 static void hinic_rx_gro(struct hinic_rxq *rxq, u32 offload_type,
 			 struct sk_buff *skb)
 {
@@ -481,7 +476,6 @@ static void hinic_rx_gro(struct hinic_rxq *rxq, u32 offload_type,
 		/* If we checked the outer header let the stack know */
 		skb->csum_level = 1;
 }
-#endif /* HAVE_SKBUFF_CSUM_LEVEL */
 
 #define HINIC_RX_BP_THD		128
 
@@ -565,17 +559,10 @@ int recv_one_pkt(struct hinic_rxq *rxq, struct hinic_rq_cqe *rx_cqe,
 	hinic_rx_csum(rxq, status, skb);
 
 	offload_type = be32_to_cpu(rx_cqe->offload_type);
-#ifdef HAVE_SKBUFF_CSUM_LEVEL
 	hinic_rx_gro(rxq, offload_type, skb);
-#endif
 
-#if defined(NETIF_F_HW_VLAN_CTAG_RX)
 	if ((netdev->features & NETIF_F_HW_VLAN_CTAG_RX) &&
 	    HINIC_GET_RX_VLAN_OFFLOAD_EN(offload_type)) {
-#else
-	if ((netdev->features & NETIF_F_HW_VLAN_RX) &&
-	    HINIC_GET_RX_VLAN_OFFLOAD_EN(offload_type)) {
-#endif
 		u16 vid = HINIC_GET_RX_VLAN_TAG(vlan_len);
 
 		/* if the packet is a vlan pkt, the vid may be 0 */
@@ -589,11 +576,7 @@ int recv_one_pkt(struct hinic_rxq *rxq, struct hinic_rq_cqe *rx_cqe,
 	skb->protocol = eth_type_trans(skb, netdev);
 
 	if (skb_has_frag_list(skb)) {
-#ifdef HAVE_NAPI_GRO_FLUSH_OLD
 		napi_gro_flush(&rxq->irq_cfg->napi, false);
-#else
-		napi_gro_flush(&rxq->irq_cfg->napi);
-#endif
 		netif_receive_skb(skb);
 	} else {
 		napi_gro_receive(&rxq->irq_cfg->napi, skb);

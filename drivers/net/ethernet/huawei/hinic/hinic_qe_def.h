@@ -16,12 +16,6 @@
 #ifndef __HINIC_QE_DEF_H__
 #define __HINIC_QE_DEF_H__
 
-#ifdef __cplusplus
-    #if __cplusplus
-extern "C"{
-    #endif
-#endif /* __cplusplus */
-
 #define HINIC_SQ_WQEBB_SIZE	64
 #define HINIC_RQ_WQE_SIZE	32
 #define HINIC_SQ_WQEBB_SHIFT	6
@@ -462,10 +456,4 @@ enum rq_completion_fmt {
 	RQ_COMPLETE_SGE = 1
 };
 
-
-#ifdef __cplusplus
-    #if __cplusplus
-}
-    #endif
-#endif /* __cplusplus */
 #endif /* __HINIC_QE_DEF_H__ */

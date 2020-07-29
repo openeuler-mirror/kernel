@@ -35,14 +35,6 @@
 #define LT_LOAD16_API_SIZE (16 + 4)
 #define LT_STORE16_API_SIZE (32 + 4)
 
-#ifndef HTONL
-#define HTONL(x) \
-	((((x) & 0x000000ff) << 24) \
-	| (((x) & 0x0000ff00) << 8) \
-	| (((x) & 0x00ff0000) >> 8) \
-	| (((x) & 0xff000000) >> 24))
-#endif
-
 static inline void sm_lt_build_head(sml_lt_req_head_u *head,
 				    u8 instance_id,
 				    u8 op_id, u8 ack,
@@ -56,7 +48,7 @@ static inline void sm_lt_build_head(sml_lt_req_head_u *head,
 	head->bs.abuf_flg = 0;
 	head->bs.bc = 1;
 	head->bs.offset = offset;
-	head->value = HTONL((head->value));
+	head->value = cpu_to_be32(head->value);
 }
 
 static inline void sm_lt_load_build_req(sml_lt_load_req_s *req,
@@ -68,7 +60,7 @@ static inline void sm_lt_load_build_req(sml_lt_load_req_s *req,
 	sm_lt_build_head(&req->head, instance_id, op_id, ack, offset, num);
 	req->extra = 0;
 	req->index = lt_index;
-	req->index = HTONL(req->index);
+	req->index = cpu_to_be32(req->index);
 }
 
 static inline void sm_lt_store_build_req(sml_lt_store_req_s *req,
@@ -84,11 +76,11 @@ static inline void sm_lt_store_build_req(sml_lt_store_req_s *req,
 {
 	sm_lt_build_head(&req->head, instance_id, op_id, ack, offset, num);
 	req->index     = lt_index;
-	req->index     = HTONL(req->index);
+	req->index     = cpu_to_be32(req->index);
 	req->extra = 0;
 	req->byte_enb[0] = (u32)(byte_enb3);
-	req->byte_enb[0] = HTONL(req->byte_enb[0]);
-	req->byte_enb[1] = HTONL((((u32)byte_enb2) << 16) | byte_enb1);
+	req->byte_enb[0] = cpu_to_be32(req->byte_enb[0]);
+	req->byte_enb[1] = cpu_to_be32((((u32)byte_enb2) << 16) | byte_enb1);
 	sml_lt_store_memcpy((u32 *)req->write_data, (u32 *)(void *)data, num);
 }
 

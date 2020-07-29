@@ -17,9 +17,6 @@
 #define HINIC_NICTOOL_H_
 
 #include "hinic_dfx_def.h"
-#ifndef IFNAMSIZ
-#define IFNAMSIZ    16
-#endif
 /* completion timeout interval, unit is jiffies*/
 #define UP_COMP_TIME_OUT_VAL		10000U
 
@@ -207,18 +204,14 @@ struct hinic_dbg_rq_info {
 	u32	msix_vector;
 };
 
-#ifndef BUSINFO_LEN
-#define BUSINFO_LEN (32)
-#endif
+#define BUSINFO_LEN 32
 struct pf_info {
 	char name[IFNAMSIZ];
 	char bus_info[BUSINFO_LEN];
 	u32 pf_type;
 };
 
-#ifndef MAX_SIZE
-#define MAX_SIZE (16)
-#endif
+#define MAX_SIZE 16
 struct card_info {
 	struct pf_info pf[MAX_SIZE];
 	u32 pf_num;
@@ -242,13 +235,7 @@ struct hinic_card_func_info {
 	struct func_pdev_info pdev_info[MAX_SIZE];
 };
 
-#ifndef NIC_UP_CMD_UPDATE_FW
-#define NIC_UP_CMD_UPDATE_FW (114)
-#endif
-
-#ifndef MAX_CARD_NUM
-#define MAX_CARD_NUM (64)
-#endif
+#define MAX_CARD_NUM 64
 extern void *g_card_node_array[MAX_CARD_NUM];
 extern void *g_card_vir_addr[MAX_CARD_NUM];
 extern u64 g_card_phy_addr[MAX_CARD_NUM];
