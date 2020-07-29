@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2005.2.0
+%global hulkrelease 2007.2.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0040
+Release: %{hulkrelease}.0041
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,211 @@ fi
 %endif
 
 %changelog
+* Fri Jul 29 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2007.2.0.0041
+- net/hinic: Delete unused UFO codes
+- net/hinic: Delete the remaining old linux kernel adaptation interface
+- net/hinic: Delete the old kernel version adaptation interface in netdev ops
+- net/hinic: Delete the old kernel version adaptation interface in ethtool ops
+- net/hinic: Delete useless linux adaptation functions
+- net/hinic: Delete unused functions and macro definitions in ossl
+- netfilter: nat: check the bounds of nf_nat_l3protos and nf_nat_l4protos
+- mm, vmstat: reduce zone->lock holding time by /proc/pagetypeinfo
+- kernel/notifier.c: intercept duplicate registrations to avoid infinite loops
+- macvlan: use skb_reset_mac_header() in macvlan_queue_xmit()
+- scsi: qedf: remove memset/memcpy to nfunc and use func instead
+- ext4: Send ext4_handle_error message after set sb->s_flags
+- tcp: refine rule to allow EPOLLOUT generation under mem pressure
+- netfilter: nf_tables: fix flowtable list del corruption
+- netfilter: nf_tables: store transaction list locally while requesting module
+- netfilter: nf_tables: remove WARN and add NLA_STRING upper limits
+- netfilter: nft_tunnel: fix null-attribute check
+- netfilter: arp_tables: init netns pointer in xt_tgdtor_param struct
+- netfilter: fix a use-after-free in mtype_destroy()
+- mm/huge_memory.c: thp: fix conflict of above-47bit hint address and PMD alignment
+- mm/huge_memory.c: make __thp_get_unmapped_area static
+- mm/page-writeback.c: avoid potential division by zero in wb_min_max_ratio()
+- mm: memcg/slab: call flush_memcg_workqueue() only if memcg workqueue is valid
+- mm/shmem.c: thp, shmem: fix conflict of above-47bit hint address and PMD alignment
+- iommu: Remove device link to group on failure
+- netfilter: ipset: avoid null deref when IPSET_ATTR_LINENO is present
+- netfilter: conntrack: dccp, sctp: handle null timeout argument
+- netfilter: arp_tables: init netns pointer in xt_tgchk_param struct
+- tty: always relink the port
+- tty: link tty and port before configuring it as console
+- chardev: Avoid potential use-after-free in 'chrdev_open()'
+- net: hns3: update hns3 version to 1.9.38.5
+- net: hns3: fix the number of queues
+- net: hns3: fixes a promoiscuous mode
+- net: hns3: fix driver bug
+- net: hns3: fix for VLAN config when reset
+- net: hns3: fix bug when calculating the
+- net: hns3: fix speed unknown issue in bond
+- net: hns3: fix a missing return in hclge_set_vlan_filter()
+- net: hns3: update hns3 version to 1.9.38.3
+- net: hns3: remove redundant codes entered by mistake
+- net/hinic: Fix out-of-bounds when receiving mbox messages
+- RDMA/hns: Modify the code based on the review comments
+- Revert "zram: convert remaining CLASS_ATTR() to CLASS_ATTR_RO()"
+- config: set CONFIG_CAN_DEBUG_DEVICES for arm64 hulk_defconfig
+- config: add CONFIG_CAN_J1939 in defconfigs
+- can: j1939: fix address claim code example
+- can: j1939: j1939_sk_bind(): take priv after lock is held
+- can: j1939: warn if resources are still linked on destroy
+- can: j1939: j1939_can_recv(): add priv refcounting
+- can: j1939: transport: j1939_cancel_active_session(): use hrtimer_try_to_cancel() instead of hrtimer_cancel()
+- can: j1939: make sure socket is held as long as session exists
+- can: j1939: transport: make sure the aborted session will be deactivated only once
+- can: j1939: socket: rework socket locking for j1939_sk_release() and j1939_sk_sendmsg()
+- can: j1939: main: j1939_ndev_to_priv(): avoid crash if can_ml_priv is NULL
+- can: j1939: move j1939_priv_put() into sk_destruct callback
+- can: af_can: export can_sock_destruct()
+- can: j1939: transport: j1939_xtp_rx_eoma_one(): Add sanity check for correct total message size
+- can: j1939: transport: j1939_session_fresh_new(): make sure EOMA is send with the total message size set
+- can: j1939: fix memory leak if filters was set
+- can: j1939: fix resource leak of skb on error return paths
+- can: add support of SAE J1939 protocol
+- can: af_can: use spin_lock_bh() for &net->can.can_rcvlists_lock
+- can: af_can: remove NULL-ptr checks from users of can_dev_rcv_lists_find()
+- can: make use of preallocated can_ml_priv for per device struct can_dev_rcv_lists
+- can: af_can: can_pernet_exit(): no need to iterate over and cleanup registered CAN devices
+- can: af_can: can_rx_register(): use max() instead of open coding it
+- can: af_can: give variable holding the CAN receiver and the receiver list a sensible name
+- can: af_can: rename find_dev_rcv_lists() to can_dev_rcv_lists_find()
+- can: af_can: rename find_rcv_list() to can_rcv_list_find()
+- can: proc: give variable holding the CAN per device receive lists a sensible name
+- can: af_can: give variable holding the CAN per device receive lists a sensible name
+- can: proc: give variables holding CAN statistics a sensible name
+- can: af_can: give variables holding CAN statistics a sensible name
+- can: af_can: can_pernet_init(): Use preferred style kzalloc(sizeof()) usage
+- can: extend sockaddr_can to include j1939 members
+- can: add socket type for CAN_J1939
+- can: introduce CAN_REQUIRED_SIZE macro
+- can: introduce CAN midlayer private and allocate it automatically
+- net: hns3: update hns3 version to 1.9.38.3
+- net: hns3: clean code for security
+- net: hns3: modify an incorrect type in
+- net: hns3: check queue id range before
+- net: hns3: fix error handling for desc filling
+- net: hns3: fix for not calculating tx BD send size correctly
+- net: hns3: fix for not unmapping tx buffer correctly
+- net: hns3: fix desc filling bug when skb is expanded or lineared
+- net: hns3: drop the WQ_MEM_RECLAIM flag when allocating wq
+- net: hns3: optimize the parameter of hclge_update_port_base_vlan_cfg and ignore the send mailbox failure when VF is unalive
+- net: hns3: use netif_tx_disable to stop the transmit queue
+- net: hns3: add support of dumping mac reg in debugfs
+- net: hns3: fix a fake tx timeout issue
+- net: hns3: fix use-after-free when doing self test
+- net: hns3: add a log for switching VLAN filter state
+- net: hns3: fix problem of missing updating port information
+- net: hns3: add vlan list lock to protect vlan list and fix duplicate node in vlan list
+- net: hns3: fix bug for port base vlan configuration
+- net: hns3: skip periodic service task if reset failed
+- net: hns3: check reset pending after FLR prepare
+- net: hns3: fix for mishandle of asserting VF reset fail
+- net: hns3: fix for missing uninit debugfs when unload driver
+- net: hns3: unify format of failed print information for clean up
+- net: hns3: modify location of one print information
+- net: hns3: fix return value error when query mac link status fail
+- net: hns3: remove unnecessary mac enable in app loopback
+- net: hns3: remove some useless code
+- net: hns3: fix an inappropriate type assignment
+- net: hns3: update hns3 version to 1.9.38.2
+- net: hns3: fix reset bug
+- sdei_watchdog: fix compile error when CONFIG_HARDLOCKUP_DETECTOR is not set
+- net/hinic: Add support for 128 qps
+- net/hinic: Add support for X86 Arch
+- fs/filescontrol: add a switch to enable / disable accounting of open fds
+- usb: usbtest: fix missing kfree(dev->buf) in usbtest_disconnect
+- vfio/pci: Fix SR-IOV VF handling with MMIO blocking
+- signal: Export tracepoint symbol signal_generate
+- x86/speculation: PR_SPEC_FORCE_DISABLE enforcement for indirect branches.
+- x86/speculation: Avoid force-disabling IBPB based on STIBP and enhanced IBRS.
+- x86/speculation: Add support for STIBP always-on preferred mode
+- x86/speculation: Change misspelled STIPB to STIBP
+- x86/speculation: Prevent rogue cross-process SSBD shutdown
+- vfio-pci: Invalidate mmaps and block MMIO access on disabled memory
+- vfio-pci: Fault mmaps to enable vma tracking
+- vfio/type1: Support faulting PFNMAP vmas
+- vfio/type1: Fix VA->PA translation for PFNMAP VMAs in vaddr_get_pfn()
+- vfio_pci: Enable memory accesses before calling pci_map_rom
+- net/hinic: Fix copying out of bounds when using tools to get statistics
+- uacce: fix problem of parameter check
+- net: hns3: update hns3 version to 1.9.38.1
+- net: hns3: add device name valid check
+- ext4, jbd2: ensure panic by fix a race between jbd2 abort and ext4 error handlers
+- Revert "ext4, jbd2: switch to use completion variable instead of JBD2_REC_ERR"
+- x86/speculation: Add Ivy Bridge to affected list
+- x86/speculation: Add SRBDS vulnerability and mitigation documentation
+- x86/speculation: Add Special Register Buffer Data Sampling (SRBDS) mitigation
+- x86/cpu: Add 'table' argument to cpu_matches()
+- x86/cpu: Add a steppings field to struct x86_cpu_id
+- ext4: stop overwrite the errcode in ext4_setup_super
+- panic/printk: fix zap_lock
+- vt: keyboard: avoid signed integer overflow in k_ascii
+- ext4: Fix block bitmap corruption when io error
+- mm: Fix mremap not considering huge pmd devmap
+- net-sysfs: Call dev_hold always in rx_queue_add_kobject
+- net-sysfs: Call dev_hold always in netdev_queue_add_kobject
+- net-sysfs: fix netdev_queue_add_kobject() breakage
+- net-sysfs: Fix reference count leak in rx|netdev_queue_add_kobject
+- SUNRPC: Fix xprt->timer use-after-free
+- printk/panic: Avoid deadlock in printk()
+- block: Fix use-after-free in blkdev_get()
+- ata/libata: Fix usage of page address by page_address in ata_scsi_mode_select_xlat function
+- media: go7007: fix a miss of snd_card_free
+- vt: fix unicode console freeing with a common interface
+- vt: don't use kmalloc() for the unicode screen buffer
+- scsi: Fix kabi change due to add offline_already member in struct scsi_device
+- scsi: core: avoid repetitive logging of device offline messages
+- hfs: fix null-ptr-deref in hfs_find_init()
+- ext4, jbd2: switch to use completion variable instead of JBD2_REC_ERR
+- jbd2: clean __jbd2_journal_abort_hard() and __journal_abort_soft()
+- jbd2: make sure ESHUTDOWN to be recorded in the journal superblock
+- vt: vt_ioctl: fix use-after-free in vt_in_use()
+- vt: vt_ioctl: fix VT_DISALLOCATE freeing in-use virtual console
+- vt: vt_ioctl: remove unnecessary console allocation checks
+- vt: switch vt_dont_switch to bool
+- vt: ioctl, switch VT_IS_IN_USE and VT_BUSY to inlines
+- vt: selection, introduce vc_is_sel
+- ALSA: proc: Avoid possible leaks of snd_info_entry objects
+- net/hinic: update hinic version to 2.3.2.14
+- net/hinic: Fix memleak when create_singlethread_workqueue() is failed
+- net/hinic: Fix VF driver loading failure during the firmware hot upgrade process
+- net/hinic: Fix data inconsistency in the forwarding scenario when DCB is turned on
+- net/hinic: Fix reboot -f stuck for a long time
+- net/hinic: Add tx timeout dfx information
+- net/hinic: Add a lock when registering the driver's global netdevice notifier
+- net/hinic: Fix VF has a low probability of network failure on the virtual machine
+- net/hinic: Fix the firmware compatibility bug in the MAC reuse scenario
+- irqchip/gic-v3-its: Probe ITS page size for all GITS_BASERn registers
+- selinux: properly handle multiple messages in selinux_netlink_send()
+- media: tw5864: Fix possible NULL pointer dereference in tw5864_handle_frame
+- arm64/mpam: Supplement err tips in info/last_cmd_status
+- arm64/mpam: Fix unreset resources when mkdir ctrl group or umount resctrl
+- MPAM / ACPI: Refactoring MPAM init process and set MPAM ACPI as entrance
+- ACPI 6.x: Add definitions for MPAM table
+- ACPI / PPTT: cacheinfo: Label caches based on fw_token
+- ACPI / PPTT: Filthy hack to find _a_ backwards reference in the PPTT [ROTTEN]
+- ACPI / PPTT: Add helper to validate cache nodes from an offset [dead]
+- ACPI / processor: Add helper to convert acpi_id to a phys_cpuid
+- ext4: report error to userspace by netlink
+- pcie_cae add judgement about chip type
+- Enable trust mode control for SR-IOV ports
+- Added ethtool_ops interface to query optical module information
+- Revert "consolemap: Fix a memory leaking bug in drivers/tty/vt/consolemap.c"
+- ext4: fix support for inode sizes > 1024 bytes
+- ext4: validate the debug_want_extra_isize mount option at parse time
+- sunrpc: clean up properly in gss_mech_unregister()
+- sunrpc: svcauth_gss_register_pseudoflavor must reject duplicate registrations.
+- sunrpc: check that domain table is empty at module unload.
+- arm64: smp: Increase secondary CPU boot timeout value
+- KVM: arm64: Only flush VM for the first and the last vcpu
+- media: remove videobuf-core.c
+- ext4: mark block bitmap corrupted when found instead of BUGON
+- bcache: fix potential deadlock problem in btree_gc_coalesce
+- fs/binfmt_elf.c: allocate initialized memory in fill_thread_core_info()
+- USB: gadget: fix illegal array access in binding with UDC
+
 * Wed Jun 3 2020 Xie XiuQi <xiexiuqi@huawei.com> - 4.19.90-2005.2.0.0040
 - update req_distinguished_name for x509.genkey
 
