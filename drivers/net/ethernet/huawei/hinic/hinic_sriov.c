@@ -265,7 +265,6 @@ int hinic_ndo_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 }
 
 /*lint -save -e574 -e734*/
-#ifdef IFLA_VF_MAX
 static int set_hw_vf_vlan(struct hinic_sriov_info *sriov_info,
 			  u16 cur_vlanprio, int vf, u16 vlan, u8 qos)
 {
@@ -302,12 +301,8 @@ static int set_hw_vf_vlan(struct hinic_sriov_info *sriov_info,
 				     OS_VF_ID_TO_HW(vf));
 }
 
-#ifdef IFLA_VF_VLAN_INFO_MAX
 int hinic_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos,
 			  __be16 vlan_proto)
-#else
-int hinic_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos)
-#endif
 {
 	struct hinic_nic_dev *adapter = netdev_priv(netdev);
 	struct hinic_sriov_info *sriov_info;
@@ -322,10 +317,10 @@ int hinic_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos)
 	sriov_info = hinic_get_sriov_info_by_pcidev(adapter->pdev);
 	if (vf >= sriov_info->num_vfs || vlan > 4095 || qos > 7)
 		return -EINVAL;
-#ifdef IFLA_VF_VLAN_INFO_MAX
+
 	if (vlan_proto != htons(ETH_P_8021Q))
 		return -EPROTONOSUPPORT;
-#endif
+
 	vlanprio = vlan | qos << HINIC_VLAN_PRIORITY_SHIFT;
 	cur_vlanprio = hinic_vf_info_vlanprio(sriov_info->hwdev,
 					      OS_VF_ID_TO_HW(vf));
@@ -335,9 +330,7 @@ int hinic_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos)
 
 	return set_hw_vf_vlan(sriov_info, cur_vlanprio, vf, vlan, qos);
 }
-#endif
 
-#ifdef HAVE_VF_SPOOFCHK_CONFIGURE
 int hinic_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting)
 {
 	struct hinic_nic_dev *adapter = netdev_priv(netdev);
@@ -369,9 +362,7 @@ int hinic_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting)
 
 	return err;
 }
-#endif
 
-#ifdef HAVE_NDO_SET_VF_TRUST
 int hinic_ndo_set_vf_trust(struct net_device *netdev, int vf, bool setting)
 {
 	struct hinic_nic_dev *adapter = netdev_priv(netdev);
@@ -400,7 +391,6 @@ int hinic_ndo_set_vf_trust(struct net_device *netdev, int vf, bool setting)
 
 	return err;
 }
-#endif
 
 int hinic_ndo_get_vf_config(struct net_device *netdev,
 			    int vf, struct ifla_vf_info *ivi)
@@ -458,19 +448,12 @@ int hinic_ndo_set_vf_link_state(struct net_device *netdev, int vf_id, int link)
 
 #define HINIC_TX_RATE_TABLE_FULL	12
 
-#ifdef HAVE_NDO_SET_VF_MIN_MAX_TX_RATE
 int hinic_ndo_set_vf_bw(struct net_device *netdev,
 			int vf, int min_tx_rate, int max_tx_rate)
-#else
-int hinic_ndo_set_vf_bw(struct net_device *netdev, int vf, int max_tx_rate)
-#endif /* HAVE_NDO_SET_VF_MIN_MAX_TX_RATE */
 {
 	struct hinic_nic_dev *adapter = netdev_priv(netdev);
 	struct nic_port_info port_info = {0};
 	struct hinic_sriov_info *sriov_info;
-#ifndef HAVE_NDO_SET_VF_MIN_MAX_TX_RATE
-	int min_tx_rate = 0;
-#endif
 	u8 link_status = 0;
 	u32 speeds[] = {SPEED_10, SPEED_100, SPEED_1000, SPEED_10000,
 			SPEED_25000, SPEED_40000, SPEED_100000};
@@ -532,15 +515,9 @@ int hinic_ndo_set_vf_bw(struct net_device *netdev, int vf, int max_tx_rate)
 		return -EIO;
 	}
 
-#ifdef HAVE_NDO_SET_VF_MIN_MAX_TX_RATE
 	nicif_info(adapter, drv, netdev,
 		   "Set VF %d max tx rate %d min tx rate %d successfully\n",
 		   vf, max_tx_rate, min_tx_rate);
-#else
-	nicif_info(adapter, drv, netdev,
-		   "Set VF %d tx rate %d successfully\n",
-		   vf, max_tx_rate);
-#endif
 
 	return 0;
 }

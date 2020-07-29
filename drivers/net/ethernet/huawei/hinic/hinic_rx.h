@@ -49,11 +49,8 @@ struct hinic_rxq_stats {
 	u64	dropped;
 
 	u64	alloc_skb_err;
-#ifdef HAVE_NDO_GET_STATS64
+
 	struct u64_stats_sync		syncp;
-#else
-	struct u64_stats_sync_empty	syncp;
-#endif
 };
 
 struct hinic_rx_info {

@@ -44,11 +44,7 @@ struct hinic_txq_stats {
 	u64	map_frag_err;
 	u64	frag_size_err;
 
-#ifdef HAVE_NDO_GET_STATS64
 	struct u64_stats_sync	syncp;
-#else
-	struct u64_stats_sync_empty syncp;
-#endif
 };
 
 struct hinic_dma_len {
