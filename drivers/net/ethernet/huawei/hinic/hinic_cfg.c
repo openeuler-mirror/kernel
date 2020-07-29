@@ -1485,12 +1485,10 @@ int init_cfg_mgmt(struct hinic_hwdev *dev)
 
 free_interrupt_mem:
 	kfree(cfg_mgmt->irq_param_info.alloc_info);
-	mutex_deinit(&((cfg_mgmt->irq_param_info).irq_mutex));
 	cfg_mgmt->irq_param_info.alloc_info = NULL;
 
 free_eq_mem:
 	kfree(cfg_mgmt->eq_info.eq);
-	mutex_deinit(&cfg_mgmt->eq_info.eq_mutex);
 	cfg_mgmt->eq_info.eq = NULL;
 
 free_mgmt_mem:
@@ -1524,11 +1522,9 @@ void free_cfg_mgmt(struct hinic_hwdev *dev)
 
 	kfree(cfg_mgmt->irq_param_info.alloc_info);
 	cfg_mgmt->irq_param_info.alloc_info = NULL;
-	mutex_deinit(&((cfg_mgmt->irq_param_info).irq_mutex));
 
 	kfree(cfg_mgmt->eq_info.eq);
 	cfg_mgmt->eq_info.eq = NULL;
-	mutex_deinit(&cfg_mgmt->eq_info.eq_mutex);
 
 	kfree(cfg_mgmt);
 }
@@ -2141,16 +2137,11 @@ static int hinic_os_dep_init(struct hinic_hwdev *hwdev)
 
 static void hinic_os_dep_deinit(struct hinic_hwdev *hwdev)
 {
-	destroy_work(&hwdev->fault_work);
-
 	destroy_workqueue(hwdev->workq);
 
 	down(&hwdev->fault_list_sem);
 
 	up(&hwdev->fault_list_sem);
-
-	sema_deinit(&hwdev->fault_list_sem);
-	sema_deinit(&hwdev->recover_sem);
 }
 
 void hinic_ppf_hwdev_unreg(void *hwdev)
@@ -2335,8 +2326,6 @@ init_hwif_err:
 	vfree(hwdev->chip_fault_stats);
 
 alloc_chip_fault_stats_err:
-	sema_deinit(&hwdev->func_sem);
-	sema_deinit(&hwdev->ppf_sem);
 	kfree(hwdev);
 	*para->hwdev = NULL;
 
@@ -2406,8 +2395,6 @@ void hinic_free_hwdev(void *hwdev)
 	clear_bit(HINIC_HWDEV_NONE_INITED, &dev->func_state);
 	hinic_free_hwif(dev);
 	vfree(dev->chip_fault_stats);
-	sema_deinit(&dev->func_sem);
-	sema_deinit(&dev->ppf_sem);
 	kfree(dev);
 }
 

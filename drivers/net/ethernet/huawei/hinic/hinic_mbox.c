@@ -699,8 +699,6 @@ static void recv_func_mbox_work_handler(struct work_struct *work)
 	recv_func_mbox_handler(mbox_work->func_to_func, mbox_work->recv_mbox,
 			       mbox_work->src_func_idx);
 
-	destroy_work(&mbox_work->work);
-
 	kfree(mbox_work);
 }
 
@@ -839,8 +837,6 @@ static void update_random_id_work_handler(struct work_struct *work)
 	if (err)
 		sdk_warn(func_to_func->hwdev->dev_hdl, "Update vf id(0x%x) random id fail\n",
 			 mbox_work->src_func_idx);
-
-	destroy_work(&mbox_work->work);
 
 	kfree(mbox_work);
 }
@@ -1087,10 +1083,8 @@ static int send_mbox_seg(struct hinic_mbox_func_to_func *func_to_func,
 		if (!wait_for_completion_timeout(done, jif)) {
 			sdk_err(hwdev->dev_hdl, "Send mailbox segment timeout\n");
 			dump_mox_reg(hwdev);
-			destroy_completion(done);
 			return -ETIMEDOUT;
 		}
-		destroy_completion(done);
 
 		wb_status = get_mbox_status(send_mbox);
 	}
@@ -1247,7 +1241,6 @@ int hinic_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
 	}
 
 send_err:
-	destroy_completion(&mbox_for_resp->recv_done);
 	up(&func_to_func->mbox_send_sem);
 
 	return err;
@@ -1670,9 +1663,6 @@ alloc_mbox_for_send_err:
 	destroy_workqueue(func_to_func->workq);
 
 create_mbox_workq_err:
-	spin_lock_deinit(&func_to_func->mbox_lock);
-	sema_deinit(&func_to_func->msg_send_sem);
-	sema_deinit(&func_to_func->mbox_send_sem);
 	kfree(func_to_func);
 
 	return err;
@@ -1690,9 +1680,6 @@ void hinic_func_to_func_free(struct hinic_hwdev *hwdev)
 	free_mbox_wb_status(func_to_func);
 	free_mbox_info(func_to_func->mbox_resp);
 	free_mbox_info(func_to_func->mbox_send);
-	spin_lock_deinit(&func_to_func->mbox_lock);
-	sema_deinit(&func_to_func->mbox_send_sem);
-	sema_deinit(&func_to_func->msg_send_sem);
 
 	kfree(func_to_func);
 }

@@ -155,9 +155,9 @@ static int tx_map_skb(struct hinic_nic_dev *nic_dev, struct sk_buff *skb,
 			frag = &skb_shinfo(skb)->frags[i - 1];
 			nsize = skb_frag_size(frag);
 
-			vaddr = _kc_kmap_atomic(skb_frag_page(frag));
+			vaddr = kmap_atomic(skb_frag_page(frag));
 			memcpy(cpy_buff, vaddr + frag->page_offset, nsize);
-			_kc_kunmap_atomic(vaddr);
+			kunmap_atomic(vaddr);
 			cpy_buff += nsize;
 		}
 	}

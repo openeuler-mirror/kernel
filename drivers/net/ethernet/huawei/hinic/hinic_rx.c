@@ -67,8 +67,7 @@ static bool rx_alloc_mapped_page(struct hinic_rxq *rxq,
 		return true;
 
 	/* alloc new page for storage */
-	page = alloc_pages_node(NUMA_NO_NODE, GFP_ATOMIC | __GFP_COLD |
-				__GFP_COMP, nic_dev->page_order);
+	page = alloc_pages_node(NUMA_NO_NODE, GFP_ATOMIC, nic_dev->page_order);
 	if (unlikely(!page)) {
 		nicif_err(nic_dev, drv, netdev, "Alloc rxq: %d page failed\n",
 			  rxq->q_id);

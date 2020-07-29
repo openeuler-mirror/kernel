@@ -461,7 +461,6 @@ int hinic_pf_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 	pf_to_mgmt_send_event_set(pf_to_mgmt, SEND_EVENT_END);
 
 	if (!(((struct hinic_hwdev *)hwdev)->chip_present_flag)) {
-		destroy_completion(recv_done);
 		up(&pf_to_mgmt->sync_msg_lock);
 		return -ETIMEDOUT;
 	}
@@ -481,7 +480,6 @@ int hinic_pf_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 	}
 
 unlock_sync_msg:
-	destroy_completion(recv_done);
 	up(&pf_to_mgmt->sync_msg_lock);
 
 	return err;
@@ -1113,8 +1111,6 @@ static void recv_mgmt_msg_work_handler(struct work_struct *work)
 			      mgmt_work->msg_len, mgmt_work->msg_id,
 			      !mgmt_work->async_mgmt_to_pf);
 
-	destroy_work(&mgmt_work->work);
-
 	kfree(mgmt_work->msg);
 	kfree(mgmt_work);
 }
@@ -1387,9 +1383,6 @@ alloc_msg_buf_err:
 	destroy_workqueue(pf_to_mgmt->workq);
 
 create_mgmt_workq_err:
-	spin_lock_deinit(&pf_to_mgmt->sync_event_lock);
-	spin_lock_deinit(&pf_to_mgmt->async_msg_lock);
-	sema_deinit(&pf_to_mgmt->sync_msg_lock);
 	kfree(pf_to_mgmt);
 
 	return err;
@@ -1409,9 +1402,6 @@ void hinic_pf_to_mgmt_free(struct hinic_hwdev *hwdev)
 	destroy_workqueue(pf_to_mgmt->workq);
 	hinic_api_cmd_free(pf_to_mgmt->cmd_chain);
 	free_msg_buf(pf_to_mgmt);
-	spin_lock_deinit(&pf_to_mgmt->sync_event_lock);
-	spin_lock_deinit(&pf_to_mgmt->async_msg_lock);
-	sema_deinit(&pf_to_mgmt->sync_msg_lock);
 	kfree(pf_to_mgmt);
 }
 
@@ -1451,7 +1441,6 @@ void hinic_clp_pf_to_mgmt_free(struct hinic_hwdev *hwdev)
 {
 	struct hinic_clp_pf_to_mgmt *clp_pf_to_mgmt = hwdev->clp_pf_to_mgmt;
 
-	sema_deinit(&clp_pf_to_mgmt->clp_msg_lock);
 	kfree(clp_pf_to_mgmt->clp_msg_buf);
 	kfree(clp_pf_to_mgmt);
 }

@@ -13,29 +13,7 @@
  *
  */
 
-#include <linux/pci_regs.h>
-
 #include "ossl_knl_linux.h"
-
-void add_to_timer(struct timer_list *timer, long period)
-{
-	if (!timer)
-		return;
-
-	add_timer(timer);
-}
-
-void stop_timer(struct timer_list *timer)
-{
-}
-
-void delete_timer(struct timer_list *timer)
-{
-	if (!timer)
-		return;
-
-	del_timer_sync(timer);
-}
 
 int local_atoi(const char *name)
 {

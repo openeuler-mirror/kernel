@@ -672,12 +672,10 @@ static int cmdq_sync_cmd_direct_resp(struct hinic_cmdq *cmdq,
 		sdk_err(cmdq->hwdev->dev_hdl, "Cmdq sync command timeout, prod idx: 0x%x\n",
 			curr_prod_idx);
 		hinic_dump_ceq_info(cmdq->hwdev);
-		destroy_completion(&done);
 		return -ETIMEDOUT;
 	}
 
 timeout_check_ok:
-	destroy_completion(&done);
 	smp_rmb();	/* read error code after completion */
 
 	if (errcode > 1)
@@ -803,12 +801,10 @@ static int cmdq_sync_cmd_detail_resp(struct hinic_cmdq *cmdq,
 		sdk_err(cmdq->hwdev->dev_hdl, "Cmdq sync command timeout, prod idx: 0x%x\n",
 			curr_prod_idx);
 		hinic_dump_ceq_info(cmdq->hwdev);
-		destroy_completion(&done);
 		return -ETIMEDOUT;
 	}
 
 timeout_check_ok:
-	destroy_completion(&done);
 	smp_rmb();	/* read error code after completion */
 
 	if (errcode > 1)
@@ -1354,7 +1350,6 @@ alloc_db_err:
 	kfree(cmdq->cmd_infos);
 
 cmd_infos_err:
-	spin_lock_deinit(&cmdq->cmdq_lock);
 
 	return err;
 }
@@ -1363,7 +1358,6 @@ static void free_cmdq(struct hinic_hwdev *hwdev, struct hinic_cmdq *cmdq)
 {
 	hinic_free_db_addr(hwdev, cmdq->db_base, NULL);
 	kfree(cmdq->cmd_infos);
-	spin_lock_deinit(&cmdq->cmdq_lock);
 }
 
 int hinic_set_cmdq_ctxts(struct hinic_hwdev *hwdev)

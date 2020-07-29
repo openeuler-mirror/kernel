@@ -622,7 +622,6 @@ int hinic_init_hwif(struct hinic_hwdev *hwdev, void *cfg_reg_base,
 	return 0;
 
 hwif_ready_err:
-	spin_lock_deinit(&hwif->free_db_area.idx_lock);
 	kfree(hwif);
 
 	return err;
@@ -634,7 +633,6 @@ hwif_ready_err:
  */
 void hinic_free_hwif(struct hinic_hwdev *hwdev)
 {
-	spin_lock_deinit(&hwdev->hwif->free_db_area.idx_lock);
 	kfree(hwdev->hwif);
 }
 

@@ -29,14 +29,6 @@
 #include <linux/udp.h>
 #include <linux/highmem.h>
 
-#ifndef __GFP_COLD
-#define __GFP_COLD 0
-#endif
-
-#ifndef __GFP_COMP
-#define __GFP_COMP 0
-#endif
-
 #ifndef SUPPORTED_100000baseKR4_Full
 #define SUPPORTED_100000baseKR4_Full	0
 #define ADVERTISED_100000baseKR4_Full	0
@@ -143,12 +135,6 @@
 #define HAVE_NDO_SET_VF_TRUST
 
 /*****************************************************************************/
-#include <linux/kconfig.h>
-
-#define _kc_kmap_atomic(page)	kmap_atomic(page)
-#define _kc_kunmap_atomic(addr)	kunmap_atomic(addr)
-
-/*****************************************************************************/
 #define HAVE_NAPI_GRO_FLUSH_OLD
 
 /*****************************************************************************/
@@ -208,13 +194,6 @@
 
 #define HAVE_ENCAPSULATION_CSUM
 
-#define spin_lock_deinit(lock)
-
-#define destroy_work(work)
-void add_to_timer(struct timer_list *timer, long period);
-void stop_timer(struct timer_list *timer);
-void delete_timer(struct timer_list *timer);
-
 int local_atoi(const char *name);
 
 #define nicif_err(priv, type, dev, fmt, args...)		\
@@ -227,11 +206,6 @@ int local_atoi(const char *name);
 	netif_level(info, priv, type, dev, "[NIC]"fmt, ##args)
 #define nicif_dbg(priv, type, dev, fmt, args...)		\
 	netif_level(dbg, priv, type, dev, "[NIC]"fmt, ##args)
-
-#define destroy_completion(completion)
-#define sema_deinit(lock)
-#define mutex_deinit(lock)
-#define rwlock_deinit(lock)
 
 #define tasklet_state(tasklet) ((tasklet)->state)
 
