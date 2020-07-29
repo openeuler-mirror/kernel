@@ -18,22 +18,6 @@
 
 #include "ossl_knl_linux.h"
 
-#if defined(__WIN__) || defined(__VMWARE__)
-#define __WIN_OR_VMWARE__
-#endif
-
-#if defined(__WIN__) || defined(__VMWARE__) || defined(__UEFI__)
-#define __WIN_OR_VMWARE_OR_UEFI__
-#endif
-
-#if (defined(__WIN__) || defined(__VMWARE__)) && !defined(__HIFC__)
-#define __WIN_OR_VMWARE_AND_NONHIFC__
-#endif
-
-#if defined(__WIN__) || defined(__UEFI__)
-#define __WIN_OR_UEFI__
-#endif
-
 #define sdk_err(dev, format, ...)		\
 	dev_err(dev, "[COMM]"format, ##__VA_ARGS__)
 #define sdk_warn(dev, format, ...)		\
