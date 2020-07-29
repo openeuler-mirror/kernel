@@ -16,12 +16,6 @@
 #ifndef __HINIC_DFX_DEF_H__
 #define __HINIC_DFX_DEF_H__
 
-#ifdef __cplusplus
-    #if __cplusplus
-extern "C"{
-    #endif
-#endif /* __cplusplus */
-
 enum module_name {
 	SEND_TO_NIC_DRIVER = 1,
 	SEND_TO_HW_DRIVER,
@@ -145,9 +139,4 @@ struct hinic_show_item {
 #define UCODE_COMP_TIME_OUT_VAL		0xFF00000
 #define NIC_TOOL_MAGIC					'x'
 
-#ifdef __cplusplus
-    #if __cplusplus
-}
-    #endif
-#endif /* __cplusplus */
 #endif /* __HINIC_DFX_DEF_H__ */

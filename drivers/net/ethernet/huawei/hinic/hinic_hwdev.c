@@ -4662,17 +4662,9 @@ static bool __detect_heartbeat_ehd_lost(struct hinic_hwdev *hwdev)
 	return hb_ehd_lost;
 }
 
-#ifdef HAVE_TIMER_SETUP
 static void hinic_heartbeat_timer_handler(struct timer_list *t)
-#else
-static void hinic_heartbeat_timer_handler(unsigned long data)
-#endif
 {
-#ifdef HAVE_TIMER_SETUP
 	struct hinic_hwdev *hwdev = from_timer(hwdev, t, heartbeat_timer);
-#else
-	struct hinic_hwdev *hwdev = (struct hinic_hwdev *)data;
-#endif
 
 	if (__detect_heartbeat_ehd_lost(hwdev) ||
 	    !hinic_get_heartbeat_status(hwdev)) {
@@ -4686,13 +4678,8 @@ static void hinic_heartbeat_timer_handler(unsigned long data)
 
 void hinic_init_heartbeat(struct hinic_hwdev *hwdev)
 {
-#ifdef HAVE_TIMER_SETUP
 	timer_setup(&hwdev->heartbeat_timer, hinic_heartbeat_timer_handler, 0);
-#else
-	initialize_timer(hwdev->adapter_hdl, &hwdev->heartbeat_timer);
-	hwdev->heartbeat_timer.data = (unsigned long)hwdev;
-	hwdev->heartbeat_timer.function = hinic_heartbeat_timer_handler;
-#endif
+
 	hwdev->heartbeat_timer.expires =
 		jiffies + msecs_to_jiffies(HINIC_HEARTBEAT_START_EXPIRE);
 

@@ -20,20 +20,12 @@
 #include "hinic_hwdev.h"
 #include "hinic_sml_counter.h"
 
-#ifndef HTONL
-#define HTONL(x) \
-	((((x) & 0x000000ff) << 24) \
-	| (((x) & 0x0000ff00) << 8) \
-	| (((x) & 0x00ff0000) >> 8) \
-	| (((x) & 0xff000000) >> 24))
-#endif
-
 static void sml_ctr_htonl_n(u32 *node, u32 ulLen)
 {
 	u32 i;
 
 	for (i = 0; i < ulLen; i++) {
-		*node = HTONL(*node);
+		*node = cpu_to_be32(*node);
 		node++;
 	}
 }
@@ -46,10 +38,10 @@ static void hinic_sml_ctr_read_build_req(chipif_sml_ctr_rd_req_s *msg,
 	msg->head.bs.instance = instance_id;
 	msg->head.bs.op_id = op_id;
 	msg->head.bs.ack = ack;
-	msg->head.value = HTONL(msg->head.value);
+	msg->head.value = cpu_to_be32(msg->head.value);
 
 	msg->ctr_id = ctr_id;
-	msg->ctr_id = HTONL(msg->ctr_id);
+	msg->ctr_id = cpu_to_be32(msg->ctr_id);
 
 	msg->initial = init_val;
 }
@@ -63,10 +55,10 @@ static void hinic_sml_ctr_write_build_req(chipif_sml_ctr_wr_req_s *msg,
 	msg->head.bs.instance = instance_id;
 	msg->head.bs.op_id = op_id;
 	msg->head.bs.ack = ack;
-	msg->head.value = HTONL(msg->head.value);
+	msg->head.value = cpu_to_be32(msg->head.value);
 
 	msg->ctr_id = ctr_id;
-	msg->ctr_id = HTONL(msg->ctr_id);
+	msg->ctr_id = cpu_to_be32(msg->ctr_id);
 
 	msg->value1_h = val1 >> 32;
 	msg->value1_l = val1 & 0xFFFFFFFF;

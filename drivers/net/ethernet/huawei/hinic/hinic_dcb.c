@@ -1422,11 +1422,7 @@ static int hinic_dcbnl_ieee_set_pfc(struct net_device *netdev,
 	return 0;
 }
 
-#ifdef NUMTCS_RETURNS_U8
-static u8 hinic_dcbnl_getnumtcs(struct net_device *netdev, int tcid, u8 *num)
-#else
 static int hinic_dcbnl_getnumtcs(struct net_device *netdev, int tcid, u8 *num)
-#endif
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic_dcb_config *dcb_cfg = &nic_dev->dcb_cfg;
@@ -1448,11 +1444,7 @@ static int hinic_dcbnl_getnumtcs(struct net_device *netdev, int tcid, u8 *num)
 	return 0;
 }
 
-#ifdef NUMTCS_RETURNS_U8
-static u8 hinic_dcbnl_setnumtcs(struct net_device *netdev, int tcid, u8 num)
-#else
 static int hinic_dcbnl_setnumtcs(struct net_device *netdev, int tcid, u8 num)
-#endif
 {
 	return -EINVAL;
 }

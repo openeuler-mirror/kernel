@@ -60,25 +60,6 @@ MODULE_DESCRIPTION(HINIC_DRV_DESC);
 MODULE_VERSION(HINIC_DRV_VERSION);
 MODULE_LICENSE("GPL");
 
-#if !(defined(HAVE_SRIOV_CONFIGURE) || defined(HAVE_RHEL6_SRIOV_CONFIGURE))
-static DEVICE_ATTR(sriov_numvfs, 0664,
-			hinic_sriov_numvfs_show, hinic_sriov_numvfs_store);
-static DEVICE_ATTR(sriov_totalvfs, 0444,
-			hinic_sriov_totalvfs_show, NULL);
-#endif /* !(HAVE_SRIOV_CONFIGURE || HAVE_RHEL6_SRIOV_CONFIGURE) */
-
-static struct attribute *hinic_attributes[] = {
-#if !(defined(HAVE_SRIOV_CONFIGURE) || defined(HAVE_RHEL6_SRIOV_CONFIGURE))
-	&dev_attr_sriov_numvfs.attr,
-	&dev_attr_sriov_totalvfs.attr,
-#endif /* !(HAVE_SRIOV_CONFIGURE || HAVE_RHEL6_SRIOV_CONFIGURE) */
-	NULL
-};
-
-static const struct attribute_group hinic_attr_group = {
-	.attrs		= hinic_attributes,
-};
-
 #ifdef CONFIG_PCI_IOV
 static bool disable_vf_load;
 module_param(disable_vf_load, bool, 0444);
@@ -353,7 +334,6 @@ static void detach_uld(struct hinic_pcidev *dev, enum hinic_service_type type)
 	mutex_unlock(&dev->pdev_mutex);
 }
 
-#ifndef __HIFC_PANGEA__
 static void attach_ulds(struct hinic_pcidev *dev)
 {
 	enum hinic_service_type type;
@@ -363,7 +343,6 @@ static void attach_ulds(struct hinic_pcidev *dev)
 			attach_uld(dev, type, &g_uld_info[type]);
 	}
 }
-#endif
 
 static void detach_ulds(struct hinic_pcidev *dev)
 {
@@ -2376,25 +2355,7 @@ static int hinic_func_init(struct pci_dev *pdev,
 	if (err)
 		return err;
 
-#ifndef __HIFC_PANGEA__
 	attach_ulds(pci_adapter);
-#else
-	if (g_uld_info[SERVICE_T_FC].probe) {
-		err = attach_uld(pci_adapter, SERVICE_T_FC,
-				 &g_uld_info[SERVICE_T_FC]);
-		if (err) {
-			sdk_err(&pdev->dev, "Failed to initialize FC\n");
-			return err;
-		}
-	}
-#endif
-	if (!HINIC_FUNC_IS_VF(pci_adapter->hwdev)) {
-		err = sysfs_create_group(&pdev->dev.kobj, &hinic_attr_group);
-		if (err) {
-			sdk_err(&pdev->dev, "Failed to create sysfs group\n");
-			return -EFAULT;
-		}
-	}
 
 #ifdef CONFIG_X86
 	cfg_order_reg(pci_adapter);
@@ -2501,8 +2462,6 @@ static void hinic_remove(struct pci_dev *pdev)
 
 	switch (pci_adapter->init_state) {
 	case HINIC_INIT_STATE_ALL_INITED:
-		if (!HINIC_FUNC_IS_VF(pci_adapter->hwdev))
-			sysfs_remove_group(&pdev->dev.kobj, &hinic_attr_group);
 		/*lint -fallthrough*/
 	case HINIC_INIT_STATE_NIC_INITED:
 		/* Don't support hotplug when SR-IOV is enabled now.
@@ -2751,12 +2710,6 @@ static void hinic_shutdown(struct pci_dev *pdev)
 		hinic_set_api_stop(pci_adapter->hwdev);
 }
 
-#ifdef HAVE_RHEL6_SRIOV_CONFIGURE
-static struct pci_driver_rh hinic_driver_rh = {
-	.sriov_configure = hinic_pci_sriov_configure,
-};
-#endif
-
 /* Cause we only need error detecting not error handling, so only error_detected
  * callback is enough.
  */
@@ -2770,13 +2723,7 @@ static struct pci_driver hinic_driver = {
 	.probe		 = hinic_probe,
 	.remove		 = hinic_remove,
 	.shutdown	 = hinic_shutdown,
-
-#if defined(HAVE_SRIOV_CONFIGURE)
 	.sriov_configure = hinic_pci_sriov_configure,
-#elif defined(HAVE_RHEL6_SRIOV_CONFIGURE)
-	.rh_reserved = &hinic_driver_rh,
-#endif
-
 	.err_handler	 = &hinic_err_handler
 };
 

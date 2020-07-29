@@ -280,30 +280,14 @@ static void get_inner_l3_l4_type(struct sk_buff *skb, union hinic_ip *ip,
 		*l3_type = (offload_type == TX_OFFLOAD_CSUM) ?
 		  IPV4_PKT_NO_CHKSUM_OFFLOAD : IPV4_PKT_WITH_CHKSUM_OFFLOAD;
 		*l4_proto = ip->v4->protocol;
-
-#ifdef HAVE_OUTER_IPV6_TUNNEL_OFFLOAD
-		/* inner_transport_header is wrong in centos7.0 and suse12.1 */
-		l4->hdr = ip->hdr + ((u8)ip->v4->ihl << 2);
-#endif
 	} else if (ip->v4->version == 6) {
 		*l3_type = IPV6_PKT;
 		exthdr = ip->hdr + sizeof(*ip->v6);
 		*l4_proto = ip->v6->nexthdr;
 		if (exthdr != l4->hdr) {
 			__be16 frag_off = 0;
-#ifndef HAVE_OUTER_IPV6_TUNNEL_OFFLOAD
 			ipv6_skip_exthdr(skb, (int)(exthdr - skb->data),
 					 l4_proto, &frag_off);
-#else
-			int pld_off = 0;
-
-			pld_off = ipv6_skip_exthdr(skb,
-						   (int)(exthdr - skb->data),
-						   l4_proto, &frag_off);
-			l4->hdr = skb->data + pld_off;
-		} else {
-			l4->hdr = exthdr;
-#endif
 		}
 	} else {
 		*l3_type = UNKNOWN_L3TYPE;
@@ -380,9 +364,6 @@ static int hinic_tx_csum(struct hinic_sq_task *task, u32 *queue_info,
 			__be16 frag_off;
 
 			l3_type = IPV6_PKT;
-#ifdef HAVE_OUTER_IPV6_TUNNEL_OFFLOAD
-			tunnel_type = TUNNEL_UDP_CSUM;
-#endif
 			exthdr = ip.hdr + sizeof(*ip.v6);
 			l4_proto = ip.v6->nexthdr;
 			l4.hdr = skb_transport_header(skb);
@@ -423,22 +404,6 @@ static int hinic_tx_csum(struct hinic_sq_task *task, u32 *queue_info,
 
 	get_inner_l4_info(skb, &l4, TX_OFFLOAD_CSUM, l4_proto,
 			  &l4_offload, &l4_len, &offset);
-
-#ifdef HAVE_OUTER_IPV6_TUNNEL_OFFLOAD
-	/* get wrong network header length using skb_network_header_len */
-	if (unlikely(l3_type == UNKNOWN_L3TYPE))
-		network_hdr_len = 0;
-	else
-		network_hdr_len = l4.hdr - ip.hdr;
-
-	/* payload offset must be setted */
-	if (unlikely(!offset)) {
-		if (l3_type == UNKNOWN_L3TYPE)
-			offset = ip.hdr - skb->data;
-		else if (l4_offload == OFFLOAD_DISABLE)
-			offset = ip.hdr - skb->data + network_hdr_len;
-	}
-#endif
 
 	hinic_task_set_inner_l3(task, l3_type, network_hdr_len);
 
@@ -497,16 +462,7 @@ static int hinic_tso(struct hinic_sq_task *task, u32 *queue_info,
 			l4.udp->check = ~csum_magic(&ip, IPPROTO_UDP);
 			tunnel_type = TUNNEL_UDP_CSUM;
 		} else if (gso_type & SKB_GSO_UDP_TUNNEL) {
-#ifdef HAVE_OUTER_IPV6_TUNNEL_OFFLOAD
-			if (l3_type == IPV6_PKT) {
-				tunnel_type = TUNNEL_UDP_CSUM;
-				l4.udp->check = ~csum_magic(&ip, IPPROTO_UDP);
-			} else {
-				tunnel_type = TUNNEL_UDP_NO_CSUM;
-			}
-#else
 			tunnel_type = TUNNEL_UDP_NO_CSUM;
-#endif
 		}
 
 		l4_tunnel_len = skb_inner_network_offset(skb) -
@@ -534,20 +490,6 @@ static int hinic_tso(struct hinic_sq_task *task, u32 *queue_info,
 
 	get_inner_l4_info(skb, &l4, TX_OFFLOAD_TSO, l4_proto,
 			  &l4_offload, &l4_len, &offset);
-
-#ifdef HAVE_OUTER_IPV6_TUNNEL_OFFLOAD
-	if (unlikely(l3_type == UNKNOWN_L3TYPE))
-		network_hdr_len = 0;
-	else
-		network_hdr_len = l4.hdr - ip.hdr;
-
-	if (unlikely(!offset)) {
-		if (l3_type == UNKNOWN_L3TYPE)
-			offset = ip.hdr - skb->data;
-		else if (l4_offload == OFFLOAD_DISABLE)
-			offset = ip.hdr - skb->data + network_hdr_len;
-	}
-#endif
 
 	hinic_task_set_inner_l3(task, l3_type, network_hdr_len);
 

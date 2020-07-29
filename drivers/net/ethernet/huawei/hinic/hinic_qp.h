@@ -103,10 +103,6 @@ void hinic_clear_rx_done(struct hinic_rq_cqe *cqe, u32 status_old);
 void hinic_prepare_rq_wqe(void *wqe, u16 pi, dma_addr_t buf_addr,
 			  dma_addr_t cqe_dma);
 
-#ifdef static
-#undef static
-#define LLT_STATIC_DEF_SAVED
-#endif
 static inline void hinic_task_set_outter_l3(struct hinic_sq_task *task,
 					    enum sq_l3_type l3_type,
 					    u32 network_len)
@@ -130,11 +126,6 @@ static inline void hinic_task_set_inner_l3(struct hinic_sq_task *task,
 	task->pkt_info0 |= SQ_TASK_INFO0_SET(l3_type, INNER_L3TYPE);
 	task->pkt_info1 |= SQ_TASK_INFO1_SET(network_len, INNER_L3LEN);
 }
-
-#ifdef LLT_STATIC_DEF_SAVED
-#define static
-#undef LLT_STATIC_DEF_SAVED
-#endif
 
 void hinic_set_cs_inner_l4(struct hinic_sq_task *task, u32 *queue_info,
 			   enum sq_l4offload_type l4_offload,

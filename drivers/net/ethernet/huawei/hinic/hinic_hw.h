@@ -16,20 +16,6 @@
 #ifndef HINIC_HW_H_
 #define HINIC_HW_H_
 
-#ifndef __BIG_ENDIAN__
-#define __BIG_ENDIAN__    0x4321
-#endif
-
-#ifndef __LITTLE_ENDIAN__
-#define __LITTLE_ENDIAN__    0x1234
-#endif
-
-#ifdef __BYTE_ORDER__
-#undef __BYTE_ORDER__
-#endif
-/* X86 */
-#define __BYTE_ORDER__    __LITTLE_ENDIAN__
-
 enum hinic_mod_type {
 	HINIC_MOD_COMM = 0,	/* HW communication module */
 	HINIC_MOD_L2NIC = 1,	/* L2NIC module */
@@ -254,9 +240,6 @@ struct hinic_init_para {
 	void *ppf_hwdev;
 };
 
-#ifndef IFNAMSIZ
-#define IFNAMSIZ    16
-#endif
 #define MAX_FUNCTION_NUM 512
 #define HINIC_MAX_PF_NUM 16
 #define HINIC_MAX_COS	8

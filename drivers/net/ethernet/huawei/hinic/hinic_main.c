@@ -1387,13 +1387,8 @@ static int set_features(struct hinic_nic_dev *nic_dev,
 			netdev_features_t features, bool force_change)
 {
 	netdev_features_t changed = force_change ? ~0 : pre_features ^ features;
-#ifdef NETIF_F_HW_VLAN_CTAG_RX
 	u8 rxvlan_changed = !!(changed & NETIF_F_HW_VLAN_CTAG_RX);
 	u8 rxvlan_en = !!(features & NETIF_F_HW_VLAN_CTAG_RX);
-#else
-	u8 rxvlan_changed = !!(changed & NETIF_F_HW_VLAN_RX);
-	u8 rxvlan_en = !!(features & NETIF_F_HW_VLAN_RX);
-#endif
 	u32 lro_timer, lro_buf_size;
 	int err = 0;
 
@@ -1976,10 +1971,8 @@ static const struct net_device_ops hinic_netdev_ops = {
 	.ndo_change_mtu = hinic_change_mtu,
 	.ndo_set_mac_address = hinic_set_mac_addr,
 	.ndo_validate_addr = eth_validate_addr,
-#if defined(NETIF_F_HW_VLAN_TX) || defined(NETIF_F_HW_VLAN_CTAG_TX)
 	.ndo_vlan_rx_add_vid = hinic_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid = hinic_vlan_rx_kill_vid,
-#endif
 
 	.ndo_set_vf_mac		= hinic_ndo_set_vf_mac,
 	.ndo_set_vf_vlan	= hinic_ndo_set_vf_vlan,
@@ -2010,10 +2003,8 @@ static const struct net_device_ops hinicvf_netdev_ops = {
 	.ndo_change_mtu = hinic_change_mtu,
 	.ndo_set_mac_address = hinic_set_mac_addr,
 	.ndo_validate_addr = eth_validate_addr,
-#if defined(NETIF_F_HW_VLAN_TX) || defined(NETIF_F_HW_VLAN_CTAG_TX)
 	.ndo_vlan_rx_add_vid = hinic_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid = hinic_vlan_rx_kill_vid,
-#endif
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller = hinic_netpoll,
@@ -2045,17 +2036,8 @@ static void netdev_feature_init(struct net_device *netdev)
 				    NETIF_F_GSO_UDP_TUNNEL_CSUM;
 
 	if (FUNC_SUPPORT_HW_VLAN(nic_dev->hwdev)) {
-#if defined(NETIF_F_HW_VLAN_CTAG_TX)
 		netdev->features |= NETIF_F_HW_VLAN_CTAG_TX;
-#elif defined(NETIF_F_HW_VLAN_TX)
-		netdev->features |= NETIF_F_HW_VLAN_TX;
-#endif
-
-#if defined(NETIF_F_HW_VLAN_CTAG_RX)
 		netdev->features |= NETIF_F_HW_VLAN_CTAG_RX;
-#elif defined(NETIF_F_HW_VLAN_RX)
-		netdev->features |= NETIF_F_HW_VLAN_RX;
-#endif
 	}
 
 	/* copy netdev features into list of user selectable features */
@@ -2074,16 +2056,12 @@ static void netdev_feature_init(struct net_device *netdev)
 
 	netdev->hw_features = hw_features;
 
-/* Set after hw_features because this could not be part of hw_features */
-#if defined(NETIF_F_HW_VLAN_CTAG_FILTER)
+	/* Set after hw_features because this could not be part of
+	 * hw_features
+	 */
 	netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER;
-#elif defined(NETIF_F_HW_VLAN_FILTER)
-	netdev->features |= NETIF_F_HW_VLAN_FILTER;
-#endif
 
-#ifdef IFF_UNICAST_FLT
 	netdev->priv_flags |= IFF_UNICAST_FLT;
-#endif
 
 	if (FUNC_SUPPORT_ENCAP_TSO_CSUM(nic_dev->hwdev)) {
 		netdev->hw_enc_features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM

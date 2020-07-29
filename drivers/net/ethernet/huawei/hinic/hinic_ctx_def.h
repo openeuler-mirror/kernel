@@ -16,12 +16,6 @@
 #ifndef __HINIC_CTX_DEF_H__
 #define __HINIC_CTX_DEF_H__
 
-#ifdef __cplusplus
-    #if __cplusplus
-extern "C"{
-    #endif
-#endif /* __cplusplus */
-
 #define MASKED_SQ_IDX(sq, idx)			((idx) & (sq)->wq->mask)
 
 #define HINIC_CEQE_QN_MASK			0x3FFU
@@ -245,9 +239,4 @@ enum cfg_svc_type_en {
 #define IS_HWPT_TYPE(dev) \
 	((dev)->cfg_mgmt->svc_cap.chip_svc_type & CFG_SVC_HWPT_BIT10)
 
-#ifdef __cplusplus
-    #if __cplusplus
-}
-    #endif
-#endif /* __cplusplus */
 #endif /* __HINIC_CTX_DEF_H__ */
