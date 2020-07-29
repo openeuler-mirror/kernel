@@ -482,11 +482,6 @@ static int hinic_tso(struct hinic_sq_task *task, u32 *queue_info,
 
 	if (l4_proto == IPPROTO_TCP)
 		l4.tcp->check = ~csum_magic(&ip, IPPROTO_TCP);
-#ifdef HAVE_IP6_FRAG_ID_ENABLE_UFO
-	else if (l4_proto == IPPROTO_UDP && ip.v4->version == 6)
-		ip_identify = be32_to_cpu(skb_shinfo(skb)->ip6_frag_id);
-	/* changed to big endiant is just to keep the same code style here */
-#endif
 
 	get_inner_l4_info(skb, &l4, TX_OFFLOAD_TSO, l4_proto,
 			  &l4_offload, &l4_len, &offset);
@@ -614,119 +609,6 @@ static void *__try_to_get_wqe(struct net_device *netdev, u16 q_id,
 
 	return wqe;
 }
-
-#ifdef HAVE_IP6_FRAG_ID_ENABLE_UFO
-static int hinic_ufo_avoidance(struct sk_buff *skb, struct sk_buff **ufo_skb,
-			       struct net_device *netdev, struct hinic_txq *txq)
-{
-	__be32 ip6_frag_id = skb_shinfo(skb)->ip6_frag_id;
-	u16 gso_size = skb_shinfo(skb)->gso_size;
-	struct frag_hdr ipv6_fhdr = {0};
-	union hinic_ip ip;
-	u32 l2_l3_hlen, l3_payload_len, extra_len;
-	u32 skb_len, nsize, frag_data_len = 0;
-	u16 ipv6_fhl_ext = sizeof(struct frag_hdr);
-	__wsum frag_data_csum = 0;
-	u16 frag_offset = 0;
-	u8 *tmp = NULL;
-	int err;
-
-	ip.hdr = skb_network_header(skb);
-	if (ip.v6->version == 6 && ip.v6->nexthdr != NEXTHDR_UDP) {
-		TXQ_STATS_INC(txq, ufo_pkt_unsupport);
-		return -EPROTONOSUPPORT;
-	}
-
-	/* linearize the big ufo packet */
-	err = skb_linearize(skb);
-	if (err) {
-		TXQ_STATS_INC(txq, ufo_linearize_err);
-		return err;
-	}
-
-	extra_len = skb->len - HINIC_GSO_MAX_SIZE;
-	l2_l3_hlen = (u32)(skb_transport_header(skb) - skb_mac_header(skb));
-	l3_payload_len = skb->len - l2_l3_hlen;
-	frag_data_len += extra_len +
-			((l3_payload_len - extra_len) % gso_size);
-	skb_len = skb->len - frag_data_len;
-
-	/* ipv6 need external frag header */
-	if (ip.v6->version == 6)
-		nsize = frag_data_len + l2_l3_hlen + ipv6_fhl_ext;
-	else
-		nsize = frag_data_len + l2_l3_hlen;
-
-	*ufo_skb = netdev_alloc_skb_ip_align(netdev, nsize);
-	if (!*ufo_skb) {
-		TXQ_STATS_INC(txq, ufo_alloc_skb_err);
-		return -ENOMEM;
-	}
-
-	/* copy l2_l3 layer header from original skb to ufo_skb */
-	skb_copy_from_linear_data_offset(skb, 0, skb_put(*ufo_skb, l2_l3_hlen),
-					 l2_l3_hlen);
-
-	/* reserve ipv6 external frag header for ufo_skb */
-	if (ip.v6->version == 6) {
-		ipv6_fhdr.nexthdr = NEXTHDR_UDP;
-		ipv6_fhdr.reserved = 0;
-		frag_offset = (u16)(l3_payload_len - frag_data_len);
-		ipv6_fhdr.frag_off = htons(frag_offset);
-		ipv6_fhdr.identification = ip6_frag_id;
-		tmp = skb_put(*ufo_skb, ipv6_fhl_ext);
-		memcpy(tmp, &ipv6_fhdr, ipv6_fhl_ext);
-	}
-
-	/* split original one skb to two parts: skb and ufo_skb */
-	skb_split(skb, (*ufo_skb), skb_len);
-
-	/* modify skb ip total len */
-	ip.hdr = skb_network_header(skb);
-	if (ip.v4->version == 4)
-		ip.v4->tot_len = htons(ntohs(ip.v4->tot_len) -
-							(u16)frag_data_len);
-	else
-		ip.v6->payload_len = htons(ntohs(ip.v6->payload_len) -
-							(u16)frag_data_len);
-
-	/* set ufo_skb network header */
-	skb_set_network_header(*ufo_skb, skb_network_offset(skb));
-
-	/* set vlan offload feature */
-	(*ufo_skb)->vlan_tci = skb->vlan_tci;
-
-	/* modify ufo_skb ip total len, flag, frag_offset and compute csum */
-	ip.hdr = skb_network_header(*ufo_skb);
-	if (ip.v4->version == 4) {
-		/* compute ufo_skb data csum and put into skb udp csum */
-		tmp = (*ufo_skb)->data + l2_l3_hlen;
-		frag_data_csum = csum_partial(tmp, (int)frag_data_len, 0);
-		udp_hdr(skb)->check =
-				(__sum16)csum_add(~csum_fold(frag_data_csum),
-						  udp_hdr(skb)->check);
-
-		ip.v4->tot_len = htons((u16)(skb_network_header_len(skb) +
-								frag_data_len));
-		ip.v4->frag_off = 0;
-		frag_offset = (u16)((l3_payload_len - frag_data_len) >> 3);
-		ip.v4->frag_off = htons(frag_offset);
-		ip_send_check(ip.v4);
-	} else {
-		/* compute ufo_skb data csum and put into skb udp csum */
-		tmp = (*ufo_skb)->data + l2_l3_hlen + ipv6_fhl_ext;
-		frag_data_csum = csum_partial(tmp, (int)frag_data_len, 0);
-		udp_hdr(skb)->check =
-				(__sum16)csum_add(~csum_fold(frag_data_csum),
-						  udp_hdr(skb)->check);
-
-		ip.v6->payload_len = htons(ipv6_fhl_ext + (u16)frag_data_len);
-		ip.v6->nexthdr = NEXTHDR_FRAGMENT;
-	}
-
-	return 0;
-}
-#endif
 
 #define HINIC_FRAG_STATUS_OK		0
 #define HINIC_FRAG_STATUS_IGNORE	1
@@ -895,10 +777,6 @@ netdev_tx_t hinic_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 	u16 q_id = skb_get_queue_mapping(skb);
 	struct hinic_txq *txq;
 	u8 flag = 0;
-#ifdef HAVE_IP6_FRAG_ID_ENABLE_UFO
-	struct sk_buff *ufo_skb;
-	int err;
-#endif
 
 	if (unlikely(!netif_carrier_ok(netdev) ||
 		     !nic_dev->heart_status)) {
@@ -913,41 +791,6 @@ netdev_tx_t hinic_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 		goto tx_drop_pkts;
 	}
 	txq = &nic_dev->txqs[q_id];
-
-#ifdef HAVE_IP6_FRAG_ID_ENABLE_UFO
-	/* UFO avoidance */
-	if (unlikely(skb->len > HINIC_GSO_MAX_SIZE &&
-		     (skb_shinfo(skb)->gso_type & SKB_GSO_UDP))) {
-		TXQ_STATS_INC(txq, big_udp_pkts);
-
-		err = hinic_ufo_avoidance(skb, &ufo_skb, netdev, txq);
-		if (err)
-			goto tx_drop_pkts;
-
-		err = hinic_send_one_skb(skb, netdev, txq, &flag,
-					 HINIC_TX_UFO_AVD);
-		if (err == NETDEV_TX_BUSY) {
-			dev_kfree_skb_any(ufo_skb);
-			return NETDEV_TX_BUSY;
-		}
-
-		if (flag == HINIC_TX_DROPED) {
-			nicif_err(nic_dev, drv, netdev, "Send first skb failed for HINIC_TX_SKB_DROPED\n");
-			dev_kfree_skb_any(ufo_skb);
-			return NETDEV_TX_OK;
-		}
-
-		err = hinic_send_one_skb(ufo_skb, netdev, txq, &flag,
-					 HINIC_TX_NON_AVD);
-		if (err == NETDEV_TX_BUSY) {
-			nicif_err(nic_dev, drv, netdev, "Send second skb failed for NETDEV_TX_BUSY\n");
-			dev_kfree_skb_any(ufo_skb);
-			return NETDEV_TX_OK;
-		}
-
-		return NETDEV_TX_OK;
-	}
-#endif
 
 	return hinic_send_one_skb(skb, netdev, txq, &flag, HINIC_TX_NON_AVD);
 
