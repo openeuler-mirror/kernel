@@ -2922,7 +2922,6 @@ init_vf_infos_err:
 	kfree(nic_io->vf_infos);
 
 out_free_nic_io:
-	sema_deinit(&hwdev->nic_io->nic_cfg.cfg_lock);
 	kfree(hwdev->nic_io);
 	hwdev->nic_io = NULL;
 
@@ -2949,8 +2948,6 @@ void hinic_vf_func_free(struct hinic_hwdev *hwdev)
 			kfree(hwdev->nic_io->vf_infos);
 		}
 	}
-
-	sema_deinit(&hwdev->nic_io->nic_cfg.cfg_lock);
 
 	kfree(hwdev->nic_io);
 	hwdev->nic_io = NULL;

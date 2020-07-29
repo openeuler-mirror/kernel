@@ -528,8 +528,6 @@ void hinic_wqs_free(struct hinic_wqs *wqs)
 {
 	u32 page_idx;
 
-	spin_lock_deinit(&wqs->alloc_blocks_lock);
-
 	for (page_idx = 0; page_idx < wqs->num_pages; page_idx++)
 		wqs_free_page(wqs, page_idx);
 

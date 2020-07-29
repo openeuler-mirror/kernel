@@ -971,15 +971,13 @@ static int api_chain_init(struct hinic_api_cmd_chain *chain,
 	cell_ctxt_size = chain->num_cells * sizeof(*chain->cell_ctxt);
 	if (!cell_ctxt_size) {
 		sdk_err(dev, "Api chain cell size cannot be zero\n");
-		err = -EINVAL;
-		goto alloc_cell_ctxt_err;
+		return -EINVAL;
 	}
 
 	chain->cell_ctxt = kzalloc(cell_ctxt_size, GFP_KERNEL);
 	if (!chain->cell_ctxt) {
 		sdk_err(dev, "Failed to allocate cell contexts for a chain\n");
-		err = -ENOMEM;
-		goto alloc_cell_ctxt_err;
+		return -ENOMEM;
 	}
 
 	chain->wb_status = dma_zalloc_coherent(dev,
@@ -1032,13 +1030,6 @@ alloc_cells_buf_err:
 alloc_wb_status_err:
 	kfree(chain->cell_ctxt);
 
-/*lint -save -e548*/
-alloc_cell_ctxt_err:
-	if (chain->chain_type == HINIC_API_CMD_WRITE_ASYNC_TO_MGMT_CPU)
-		spin_lock_deinit(&chain->async_lock);
-	else
-		sema_deinit(&chain->sem);
-/*lint -restore*/
 	return err;
 }
 
@@ -1055,13 +1046,6 @@ static void api_chain_free(struct hinic_api_cmd_chain *chain)
 	dma_free_coherent(dev, sizeof(*chain->wb_status),
 			  chain->wb_status, chain->wb_status_paddr);
 	kfree(chain->cell_ctxt);
-
-/*lint -save -e548*/
-	if (chain->chain_type == HINIC_API_CMD_WRITE_ASYNC_TO_MGMT_CPU)
-		spin_lock_deinit(&chain->async_lock);
-	else
-		sema_deinit(&chain->sem);
-/*lint -restore*/
 }
 
 /**

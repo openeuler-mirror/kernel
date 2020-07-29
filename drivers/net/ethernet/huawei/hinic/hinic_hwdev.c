@@ -4677,7 +4677,6 @@ static void hinic_heartbeat_timer_handler(unsigned long data)
 	if (__detect_heartbeat_ehd_lost(hwdev) ||
 	    !hinic_get_heartbeat_status(hwdev)) {
 		hwdev->heartbeat_lost = 1;
-		stop_timer(&hwdev->heartbeat_timer);
 		queue_work(hwdev->workq, &hwdev->timer_work);
 	} else {
 		mod_timer(&hwdev->heartbeat_timer,
@@ -4697,16 +4696,14 @@ void hinic_init_heartbeat(struct hinic_hwdev *hwdev)
 	hwdev->heartbeat_timer.expires =
 		jiffies + msecs_to_jiffies(HINIC_HEARTBEAT_START_EXPIRE);
 
-	add_to_timer(&hwdev->heartbeat_timer, HINIC_HEARTBEAT_PERIOD);
+	add_timer(&hwdev->heartbeat_timer);
 
 	INIT_WORK(&hwdev->timer_work, hinic_heartbeat_event_handler);
 }
 
 void hinic_destroy_heartbeat(struct hinic_hwdev *hwdev)
 {
-	destroy_work(&hwdev->timer_work);
-	stop_timer(&hwdev->heartbeat_timer);
-	delete_timer(&hwdev->heartbeat_timer);
+	del_timer_sync(&hwdev->heartbeat_timer);
 }
 
 u8 hinic_nic_sw_aeqe_handler(void *handle, u8 event, u64 data)
