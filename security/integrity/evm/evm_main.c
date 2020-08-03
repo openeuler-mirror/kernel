@@ -94,7 +94,7 @@ static bool evm_key_loaded(void)
 	return (bool)(evm_initialized & EVM_KEY_MASK);
 }
 
-static int evm_find_protected_xattrs(struct dentry *dentry)
+static int evm_find_protected_xattrs(struct dentry *dentry, int *ima_present)
 {
 	struct inode *inode = d_backing_inode(dentry);
 	struct xattr_list *xattr;
@@ -111,6 +111,8 @@ static int evm_find_protected_xattrs(struct dentry *dentry)
 				continue;
 			return error;
 		}
+		if (!strcmp(xattr->name, XATTR_NAME_IMA))
+			*ima_present = 1;
 		count++;
 	}
 
@@ -138,11 +140,14 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 {
 	struct evm_ima_xattr_data *xattr_data = NULL;
 	struct signature_v2_hdr *hdr;
-	enum integrity_status evm_status = INTEGRITY_PASS;
+	enum integrity_status evm_status = INTEGRITY_PASS, saved_evm_status;
 	struct evm_digest digest;
 	struct ima_digest *found_digest;
 	struct inode *inode;
-	int rc, xattr_len, evm_immutable = 0;
+	struct signature_v2_hdr evm_fake_xattr = {
+				.type = EVM_IMA_XATTR_DIGEST_LIST,
+				.version = 2, .hash_algo = HASH_ALGO_SHA256 };
+	int rc, xattr_len, evm_immutable = 0, ima_present = 0;
 
 	if (iint && (iint->evm_status == INTEGRITY_PASS ||
 		     iint->evm_status == INTEGRITY_PASS_IMMUTABLE))
@@ -156,7 +161,7 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 	if (rc <= 0) {
 		evm_status = INTEGRITY_FAIL;
 		if (rc == -ENODATA) {
-			rc = evm_find_protected_xattrs(dentry);
+			rc = evm_find_protected_xattrs(dentry, &ima_present);
 			if (rc > 0)
 				evm_status = INTEGRITY_NOLABEL;
 			else if (rc == 0)
@@ -164,7 +169,20 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 		} else if (rc == -EOPNOTSUPP) {
 			evm_status = INTEGRITY_UNKNOWN;
 		}
-		goto out;
+		/* IMA added a fake xattr, set also EVM fake xattr */
+		if (!ima_present && xattr_name &&
+		    !strcmp(xattr_name, XATTR_NAME_IMA) &&
+		    xattr_value_len >= sizeof(struct evm_ima_xattr_data)) {
+			evm_fake_xattr.hash_algo =
+			  ((struct evm_ima_xattr_data *)xattr_value)->digest[0];
+			xattr_data =
+			  (struct evm_ima_xattr_data *)&evm_fake_xattr;
+			rc = sizeof(evm_fake_xattr);
+		}
+		if (xattr_data != (struct evm_ima_xattr_data *)&evm_fake_xattr)
+			goto out;
+
+		saved_evm_status = evm_status;
 	}
 
 	xattr_len = rc;
@@ -274,14 +292,17 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 		break;
 	}
 
-	if (rc)
+	if (rc && xattr_data == (struct evm_ima_xattr_data *)&evm_fake_xattr)
+		evm_status = saved_evm_status;
+	else if (rc)
 		evm_status = (rc == -ENODATA) ?
 				INTEGRITY_NOXATTRS : evm_immutable ?
 				INTEGRITY_FAIL_IMMUTABLE : INTEGRITY_FAIL;
 out:
 	if (iint)
 		iint->evm_status = evm_status;
-	kfree(xattr_data);
+	if (xattr_data != (struct evm_ima_xattr_data *)&evm_fake_xattr)
+		kfree(xattr_data);
 	return evm_status;
 }
 
