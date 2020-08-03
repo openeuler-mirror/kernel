@@ -140,6 +140,7 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 	struct signature_v2_hdr *hdr;
 	enum integrity_status evm_status = INTEGRITY_PASS;
 	struct evm_digest digest;
+	struct ima_digest *found_digest;
 	struct inode *inode;
 	int rc, xattr_len, evm_immutable = 0;
 
@@ -222,6 +223,50 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 				evm_update_evmxattr(dentry, xattr_name,
 						    xattr_value,
 						    xattr_value_len);
+			}
+		}
+		break;
+	case EVM_IMA_XATTR_DIGEST_LIST:
+		if (xattr_len < offsetof(struct signature_v2_hdr, keyid)) {
+			evm_status = INTEGRITY_FAIL;
+			goto out;
+		}
+
+		hdr = (struct signature_v2_hdr *)xattr_data;
+		digest.hdr.algo = hdr->hash_algo;
+		rc = evm_calc_hash(dentry, xattr_name, xattr_value,
+				   xattr_value_len, xattr_data->type, &digest);
+		if (rc)
+			break;
+
+		found_digest = ima_lookup_digest(digest.digest, hdr->hash_algo,
+						 COMPACT_METADATA);
+		if (!found_digest) {
+			rc = -ENOENT;
+			break;
+		}
+
+		if (!ima_digest_allow(found_digest, IMA_APPRAISE)) {
+			rc = -EACCES;
+			break;
+		}
+
+		if (ima_digest_is_immutable(found_digest)) {
+			evm_immutable = 1;
+
+			if (iint)
+				iint->flags |= EVM_IMMUTABLE_DIGSIG;
+			evm_status = INTEGRITY_PASS_IMMUTABLE;
+		} else {
+			inode = d_backing_inode(dentry);
+			if (!IS_RDONLY(inode) &&
+			    !(inode->i_sb->s_readonly_remount) &&
+			    !IS_IMMUTABLE(inode)) {
+				rc = __vfs_removexattr(dentry, XATTR_NAME_EVM);
+				if (!rc)
+					evm_update_evmxattr(dentry, xattr_name,
+							    xattr_value,
+							    xattr_value_len);
 			}
 		}
 		break;
@@ -461,7 +506,8 @@ int evm_inode_setxattr(struct dentry *dentry, const char *xattr_name,
 		if (!xattr_value_len)
 			return -EINVAL;
 		if (xattr_data->type != EVM_IMA_XATTR_DIGSIG &&
-		    xattr_data->type != EVM_XATTR_PORTABLE_DIGSIG)
+		    xattr_data->type != EVM_XATTR_PORTABLE_DIGSIG &&
+		    xattr_data->type != EVM_IMA_XATTR_DIGEST_LIST)
 			return -EPERM;
 	}
 	return evm_protect_xattr(dentry, xattr_name, xattr_value,

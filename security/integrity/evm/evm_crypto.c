@@ -158,7 +158,8 @@ static void hmac_add_misc(struct shash_desc *desc, struct inode *inode,
 	/* Don't include the inode or generation number in portable
 	 * signatures
 	 */
-	if (type != EVM_XATTR_PORTABLE_DIGSIG) {
+	if (type != EVM_XATTR_PORTABLE_DIGSIG &&
+	    type != EVM_IMA_XATTR_DIGEST_LIST) {
 		hmac_misc.ino = inode->i_ino;
 		hmac_misc.generation = inode->i_generation;
 	}
@@ -175,7 +176,8 @@ static void hmac_add_misc(struct shash_desc *desc, struct inode *inode,
 	hmac_misc.mode = inode->i_mode;
 	crypto_shash_update(desc, (const u8 *)&hmac_misc, sizeof(hmac_misc));
 	if ((evm_hmac_attrs & EVM_ATTR_FSUUID) &&
-	    type != EVM_XATTR_PORTABLE_DIGSIG)
+	    type != EVM_XATTR_PORTABLE_DIGSIG &&
+	    type != EVM_IMA_XATTR_DIGEST_LIST)
 		crypto_shash_update(desc, &inode->i_sb->s_uuid.b[0],
 				    sizeof(inode->i_sb->s_uuid));
 	crypto_shash_final(desc, digest);
@@ -289,7 +291,8 @@ static int evm_is_immutable(struct dentry *dentry, struct inode *inode)
 			return 0;
 		return rc;
 	}
-	if (xattr_data->type == EVM_XATTR_PORTABLE_DIGSIG)
+	if (xattr_data->type == EVM_XATTR_PORTABLE_DIGSIG ||
+	    xattr_data->type == EVM_IMA_XATTR_DIGEST_LIST)
 		rc = 1;
 	else
 		rc = 0;
