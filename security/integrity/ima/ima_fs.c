@@ -392,6 +392,18 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 		} else {
 			result = ima_parse_add_rule(data);
 		}
+	} else if (dentry == digest_list_data) {
+		if (!ima_check_current_is_parser())
+			result = -EACCES;
+		else
+			result = ima_parse_compact_list(datalen, data,
+							DIGEST_LIST_OP_ADD);
+	} else if (dentry == digest_list_data_del) {
+		if (!ima_check_current_is_parser())
+			result = -EACCES;
+		else
+			result = ima_parse_compact_list(datalen, data,
+							DIGEST_LIST_OP_DEL);
 	} else {
 		pr_err("Unknown data type\n");
 		result = -EINVAL;
