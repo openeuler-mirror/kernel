@@ -35,3 +35,21 @@ system_certificate_list_size:
 #else
 	.long __cert_list_end - __cert_list_start
 #endif
+
+	.align 8
+	.globl pgp_public_keys
+pgp_public_keys:
+__pgp_key_list_start:
+#ifdef CONFIG_PGP_PRELOAD_PUBLIC_KEYS
+	.incbin "certs/pubring.gpg"
+#endif
+__pgp_key_list_end:
+
+	.align 8
+	.globl pgp_public_keys_size
+pgp_public_keys_size:
+#ifdef CONFIG_64BIT
+	.quad __pgp_key_list_end - __pgp_key_list_start
+#else
+	.long __pgp_key_list_end - __pgp_key_list_start
+#endif
