@@ -164,6 +164,13 @@ static struct ima_rule_entry default_appraise_rules[] __ro_after_init = {
 #endif
 };
 
+static struct ima_rule_entry appraise_exec_rules[] __ro_after_init = {
+	{.action = APPRAISE, .func = BPRM_CHECK,
+	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+	{.action = APPRAISE, .func = MMAP_CHECK,
+	 .flags = IMA_FUNC},
+};
+
 static struct ima_rule_entry build_appraise_rules[] __ro_after_init = {
 #ifdef CONFIG_IMA_APPRAISE_REQUIRE_MODULE_SIGS
 	{.action = APPRAISE, .func = MODULE_CHECK,
@@ -214,6 +221,7 @@ static int __init default_measure_policy_setup(char *str)
 __setup("ima_tcb", default_measure_policy_setup);
 
 static bool ima_use_appraise_tcb __initdata;
+static bool ima_use_appraise_exec_tcb __initdata;
 static bool ima_use_secure_boot __initdata;
 static bool ima_fail_unverifiable_sigs __ro_after_init;
 static int __init policy_setup(char *str)
@@ -229,6 +237,8 @@ static int __init policy_setup(char *str)
 			ima_policy = EXEC_TCB;
 		else if (strcmp(p, "appraise_tcb") == 0)
 			ima_use_appraise_tcb = true;
+		else if (strcmp(p, "appraise_exec_tcb") == 0)
+			ima_use_appraise_exec_tcb = true;
 		else if (strcmp(p, "secure_boot") == 0)
 			ima_use_secure_boot = true;
 		else if (strcmp(p, "fail_securely") == 0)
@@ -489,12 +499,16 @@ static int ima_appraise_flag(enum ima_hooks func)
 void __init ima_init_policy(void)
 {
 	int i, measure_entries, appraise_entries, secure_boot_entries;
+	int appraise_exec_entries;
 
 	/* if !ima_policy set entries = 0 so we load NO default rules */
 	measure_entries = ima_policy ? ARRAY_SIZE(dont_measure_rules) : 0;
-	appraise_entries = ima_use_appraise_tcb ?
+	appraise_entries = (ima_use_appraise_tcb || ima_use_appraise_exec_tcb) ?
 			 ARRAY_SIZE(default_appraise_rules) : 0;
-	secure_boot_entries = ima_use_secure_boot ?
+	appraise_exec_entries = ima_use_appraise_exec_tcb ?
+			 ARRAY_SIZE(appraise_exec_rules) : 0;
+	secure_boot_entries = (ima_use_secure_boot ||
+			       ima_use_appraise_exec_tcb) ?
 			ARRAY_SIZE(secure_boot_rules) : 0;
 
 	for (i = 0; i < measure_entries; i++) {
@@ -560,11 +574,22 @@ void __init ima_init_policy(void)
 	}
 
 	for (i = 0; i < appraise_entries; i++) {
+		if (ima_use_appraise_exec_tcb &&
+		    default_appraise_rules[i].action != DONT_APPRAISE)
+			continue;
+		if (ima_use_appraise_exec_tcb &&
+		    (default_appraise_rules[i].flags & IMA_FSMAGIC) &&
+		    default_appraise_rules[i].fsmagic == TMPFS_MAGIC)
+			continue;
 		list_add_tail(&default_appraise_rules[i].list,
 			      &ima_default_rules);
 		if (default_appraise_rules[i].func == POLICY_CHECK)
 			temp_ima_appraise |= IMA_APPRAISE_POLICY;
 	}
+
+	for (i = 0; i < appraise_exec_entries; i++)
+		list_add_tail(&appraise_exec_rules[i].list,
+			      &ima_default_rules);
 
 	ima_update_policy_flag();
 }
