@@ -217,7 +217,8 @@ void ima_check_measured_appraised(struct file *file)
 
 	iint = integrity_iint_find(file_inode(file));
 	if (!iint) {
-		pr_err("disabling digest lists lookup\n");
+		pr_err("%s not processed, disabling digest lists lookup\n",
+		       file_dentry(file)->d_name.name);
 		ima_digest_list_actions = 0;
 		return;
 	}
@@ -225,14 +226,16 @@ void ima_check_measured_appraised(struct file *file)
 	mutex_lock(&iint->mutex);
 	if ((ima_digest_list_actions & IMA_MEASURE) &&
 	    !(iint->flags & IMA_MEASURED)) {
-		pr_err("disabling digest lists lookup for measurement\n");
+		pr_err("%s not measured, disabling digest lists lookup "
+		       "for measurement\n", file_dentry(file)->d_name.name);
 		ima_digest_list_actions &= ~IMA_MEASURE;
 	}
 
 	if ((ima_digest_list_actions & IMA_APPRAISE) &&
 	    (!(iint->flags & IMA_APPRAISED) ||
 	    !test_bit(IMA_DIGSIG, &iint->atomic_flags))) {
-		pr_err("disabling digest lists lookup for appraisal\n");
+		pr_err("%s not appraised, disabling digest lists lookup "
+		       "for appraisal\n", file_dentry(file)->d_name.name);
 		ima_digest_list_actions &= ~IMA_APPRAISE;
 	}
 
