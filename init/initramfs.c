@@ -222,6 +222,7 @@ static void __init read_into(char *buf, unsigned size, enum state next)
 }
 
 static __initdata char *header_buf, *symlink_buf, *name_buf, *metadata_buf;
+static __initdata char *metadata_buf_ptr, *previous_name_buf;
 
 static int __init do_start(void)
 {
@@ -401,6 +402,7 @@ static int __init __maybe_unused do_parse_metadata(char *pathname)
 }
 
 static __initdata int wfd;
+static int metadata __initdata;
 
 static int __init do_name(void)
 {
@@ -409,6 +411,10 @@ static int __init do_name(void)
 	if (strcmp(collected, "TRAILER!!!") == 0) {
 		free_hash();
 		return 0;
+	} else if (strcmp(collected, METADATA_FILENAME) == 0) {
+		metadata = 1;
+	} else {
+		memcpy(previous_name_buf, collected, strlen(collected) + 1);
 	}
 	clean_path(collected, mode);
 	if (S_ISREG(mode)) {
@@ -445,11 +451,47 @@ static int __init do_name(void)
 	return 0;
 }
 
+static int __init do_process_metadata(char *buf, int len, bool last)
+{
+	int ret = 0;
+
+	if (!metadata_buf) {
+		metadata_buf_ptr = metadata_buf = kmalloc(body_len, GFP_KERNEL);
+		if (!metadata_buf_ptr) {
+			ret = -ENOMEM;
+			goto out;
+		}
+
+		metadata_len = body_len;
+	}
+
+	if (metadata_buf_ptr + len > metadata_buf + metadata_len) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	memcpy(metadata_buf_ptr, buf, len);
+	metadata_buf_ptr += len;
+
+	if (last)
+		do_parse_metadata(previous_name_buf);
+out:
+	if (ret < 0 || last) {
+		kfree(metadata_buf);
+		metadata_buf = NULL;
+		metadata = 0;
+	}
+
+	return ret;
+}
+
 static int __init do_copy(void)
 {
 	if (byte_count >= body_len) {
 		if (xwrite(wfd, victim, body_len) != body_len)
 			error("write error");
+		if (metadata)
+			do_process_metadata(victim, body_len, true);
 		ksys_close(wfd);
 		do_utime(vcollected, mtime);
 		kfree(vcollected);
@@ -459,6 +501,8 @@ static int __init do_copy(void)
 	} else {
 		if (xwrite(wfd, victim, byte_count) != byte_count)
 			error("write error");
+		if (metadata)
+			do_process_metadata(victim, byte_count, false);
 		body_len -= byte_count;
 		eat(byte_count);
 		return 1;
@@ -468,6 +512,7 @@ static int __init do_copy(void)
 static int __init do_symlink(void)
 {
 	collected[N_ALIGN(name_len) + body_len] = '\0';
+	memcpy(previous_name_buf, collected, strlen(collected) + 1);
 	clean_path(collected, 0);
 	ksys_symlink(collected + N_ALIGN(name_len), collected);
 	ksys_lchown(collected, uid, gid);
@@ -535,8 +580,10 @@ static char * __init unpack_to_rootfs(char *buf, unsigned long len)
 	header_buf = kmalloc(110, GFP_KERNEL);
 	symlink_buf = kmalloc(PATH_MAX + N_ALIGN(PATH_MAX) + 1, GFP_KERNEL);
 	name_buf = kmalloc(N_ALIGN(PATH_MAX), GFP_KERNEL);
+	previous_name_buf = kmalloc(PATH_MAX + N_ALIGN(PATH_MAX) + 1,
+				    GFP_KERNEL);
 
-	if (!header_buf || !symlink_buf || !name_buf)
+	if (!header_buf || !symlink_buf || !name_buf || !previous_name_buf)
 		panic("can't allocate buffers");
 
 	state = Start;
@@ -581,6 +628,7 @@ static char * __init unpack_to_rootfs(char *buf, unsigned long len)
 		len -= my_inptr;
 	}
 	dir_utime();
+	kfree(previous_name_buf);
 	kfree(name_buf);
 	kfree(symlink_buf);
 	kfree(header_buf);
