@@ -849,6 +849,10 @@ static int __pf_to_mgmt_pre_handle(struct hinic_hwdev *hwdev,
 	/* Set channel invalid, don't allowed to send other cmd */
 	if (mod == HINIC_MOD_COMM && cmd == HINIC_MGMT_CMD_ACTIVATE_FW) {
 		hinic_set_mgmt_channel_status(hwdev, true);
+
+		/* Sleep 2s wait other pf's mgmt messages to complete */
+		msleep(2000);
+
 		/* stop heartbeat enhanced detection temporary, and will
 		 * restart in firmware active event when mgmt is resetted
 		 */
