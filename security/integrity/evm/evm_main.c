@@ -487,13 +487,17 @@ int evm_inode_removexattr(struct dentry *dentry, const char *xattr_name)
 	return evm_protect_xattr(dentry, xattr_name, NULL, 0);
 }
 
-static void evm_reset_status(struct inode *inode)
+static void evm_reset_status(struct inode *inode, int bit)
 {
 	struct integrity_iint_cache *iint;
 
 	iint = integrity_iint_find(inode);
-	if (iint)
+	if (iint) {
+		if (evm_initialized & EVM_ALLOW_METADATA_WRITES)
+			set_bit(bit, &iint->atomic_flags);
+
 		iint->evm_status = INTEGRITY_UNKNOWN;
+	}
 }
 
 /**
@@ -516,7 +520,7 @@ void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
 				  && !posix_xattr_acl(xattr_name)))
 		return;
 
-	evm_reset_status(dentry->d_inode);
+	evm_reset_status(dentry->d_inode, IMA_CHANGE_XATTR);
 
 	evm_update_evmxattr(dentry, xattr_name, xattr_value, xattr_value_len);
 }
@@ -536,7 +540,7 @@ void evm_inode_post_removexattr(struct dentry *dentry, const char *xattr_name)
 	if (!evm_key_loaded() || !evm_protected_xattr(xattr_name))
 		return;
 
-	evm_reset_status(dentry->d_inode);
+	evm_reset_status(dentry->d_inode, IMA_CHANGE_XATTR);
 
 	evm_update_evmxattr(dentry, xattr_name, NULL, 0);
 }
@@ -608,6 +612,8 @@ void evm_inode_post_setattr(struct dentry *dentry, int ia_valid)
 {
 	if (!evm_key_loaded())
 		return;
+
+	evm_reset_status(dentry->d_inode, IMA_CHANGE_ATTR);
 
 	if (ia_valid & (ATTR_MODE | ATTR_UID | ATTR_GID))
 		evm_update_evmxattr(dentry, NULL, NULL, 0);
