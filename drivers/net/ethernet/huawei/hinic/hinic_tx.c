@@ -94,6 +94,7 @@ void hinic_txq_clean_stats(struct hinic_txq_stats *txq_stats)
 	txq_stats->map_cpy_frag_err = 0;
 	txq_stats->map_frag_err = 0;
 	txq_stats->frag_size_err = 0;
+	txq_stats->unknown_tunnel_pkt = 0;
 	u64_stats_update_end(&txq_stats->syncp);
 }
 
@@ -336,8 +337,8 @@ static void get_inner_l4_info(struct sk_buff *skb, union hinic_l4 *l4,
 	}
 }
 
-static int hinic_tx_csum(struct hinic_sq_task *task, u32 *queue_info,
-			 struct sk_buff *skb)
+static int hinic_tx_csum(struct hinic_txq *txq, struct hinic_sq_task *task,
+			 u32 *queue_info, struct sk_buff *skb)
 {
 	union hinic_ip ip;
 	union hinic_l4 l4;
@@ -378,19 +379,28 @@ static int hinic_tx_csum(struct hinic_sq_task *task, u32 *queue_info,
 		hinic_task_set_outter_l3(task, l3_type,
 					 skb_network_header_len(skb));
 
-		if (l4_proto == IPPROTO_UDP || l4_proto == IPPROTO_GRE) {
+		switch (l4_proto) {
+		case IPPROTO_UDP:
 			l4_tunnel_len = skb_inner_network_offset(skb) -
 					skb_transport_offset(skb);
 			ip.hdr = skb_inner_network_header(skb);
 			l4.hdr = skb_inner_transport_header(skb);
 			network_hdr_len = skb_inner_network_header_len(skb);
-		} else {
+			break;
+		case IPPROTO_IPIP:
+		case IPPROTO_IPV6:
 			tunnel_type = NOT_TUNNEL;
 			l4_tunnel_len = 0;
 
 			ip.hdr = skb_inner_network_header(skb);
 			l4.hdr = skb_transport_header(skb);
 			network_hdr_len = skb_network_header_len(skb);
+			break;
+		default:
+			TXQ_STATS_INC(txq, unknown_tunnel_pkt);
+			/* Unsupport tunnel packet, disable csum offload */
+			skb_checksum_help(skb);
+			return 0;
 		}
 
 		hinic_task_set_tunnel_l4(task, tunnel_type, l4_tunnel_len);
@@ -494,7 +504,8 @@ static int hinic_tso(struct hinic_sq_task *task, u32 *queue_info,
 	return 1;
 }
 
-static enum tx_offload_type hinic_tx_offload(struct sk_buff *skb,
+static enum tx_offload_type hinic_tx_offload(struct hinic_txq *txq,
+					     struct sk_buff *skb,
 					     struct hinic_sq_task *task,
 					     u32 *queue_info, u8 avd_flag)
 {
@@ -513,7 +524,7 @@ static enum tx_offload_type hinic_tx_offload(struct sk_buff *skb,
 	} else if (tso_cs_en) {
 		offload |= TX_OFFLOAD_TSO;
 	} else {
-		tso_cs_en = hinic_tx_csum(task, queue_info, skb);
+		tso_cs_en = hinic_tx_csum(txq, task, queue_info, skb);
 		if (tso_cs_en)
 			offload |= TX_OFFLOAD_CSUM;
 	}
@@ -721,7 +732,7 @@ static netdev_tx_t hinic_send_one_skb(struct sk_buff *skb,
 
 	__get_pkt_stats(tx_info, skb);
 
-	offload = hinic_tx_offload(skb, &wqe->task, &queue_info, avd_flag);
+	offload = hinic_tx_offload(txq, skb, &wqe->task, &queue_info, avd_flag);
 	if (unlikely(offload == TX_OFFLOAD_INVALID)) {
 		hinic_return_sq_wqe(nic_dev->hwdev, q_id, wqebb_cnt, owner);
 		TXQ_STATS_INC(txq, offload_cow_skb_err);

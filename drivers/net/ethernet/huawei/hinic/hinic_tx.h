@@ -43,6 +43,7 @@ struct hinic_txq_stats {
 	u64	map_cpy_frag_err;
 	u64	map_frag_err;
 	u64	frag_size_err;
+	u64	unknown_tunnel_pkt;
 
 	struct u64_stats_sync	syncp;
 };
