@@ -29,6 +29,7 @@
 #include "hinic_hwdev.h"
 #include "hinic_csr.h"
 #include "hinic_hwif.h"
+#include "hinic_eqs.h"
 #include "hinic_mbox.h"
 
 #define HINIC_MBOX_INT_DST_FUNC_SHIFT				0
@@ -112,6 +113,7 @@ enum hinic_mbox_tx_status {
 #define HINIC_MBOX_SEG_LEN			48
 #define HINIC_MBOX_COMP_TIME			8000U
 #define MBOX_MSG_POLLING_TIMEOUT		8000
+#define MBOX_MSG_RETRY_ACK_TIMEOUT		1000
 
 #define HINIC_MBOX_DATA_SIZE			2040
 
@@ -975,13 +977,10 @@ static void mbox_copy_send_data(struct hinic_hwdev *hwdev,
 }
 
 static void write_mbox_msg_attr(struct hinic_mbox_func_to_func *func_to_func,
-				u16 dst_func, u16 dst_aeqn, u16 seg_len,
-				int poll)
+				u16 dst_func, u16 dst_aeqn, u16 rsp_aeq,
+				u16 seg_len, int poll)
 {
 	u32 mbox_int, mbox_ctrl;
-
-	/* msg_len - the total mbox msg len */
-	u16 rsp_aeq = (dst_aeqn == 0) ? 0 : HINIC_MBOX_RSP_AEQN;
 
 	mbox_int = HINIC_MBOX_INT_SET(dst_func, DST_FUNC) |
 		   HINIC_MBOX_INT_SET(dst_aeqn, DST_AEQN) |
@@ -1030,6 +1029,38 @@ static u16 get_mbox_status(struct hinic_send_mbox *mbox)
 	return (u16)(wb_val & MBOX_WB_STATUS_ERRCODE_MASK);
 }
 
+static u16 mbox_msg_ack_aeqn(struct hinic_hwdev *hwdev,
+			     enum hinic_hwif_direction_type seq_dir)
+{
+	u8 num_aeqs = hwdev->hwif->attr.num_aeqs;
+	u16 dst_aeqn;
+
+	if (num_aeqs >= HINIC_HW_MAX_AEQS)
+		dst_aeqn = HINIC_MBOX_RSP_AEQN;
+	else
+		dst_aeqn = 0;
+
+	return dst_aeqn;
+}
+
+static int mbox_retry_get_ack(struct hinic_mbox_func_to_func *func_to_func,
+			      struct completion *done, u16 aeq_id)
+{
+	ulong timeo = msecs_to_jiffies(MBOX_MSG_RETRY_ACK_TIMEOUT);
+	int err;
+
+	init_completion(done);
+
+	err = hinic_reschedule_eq(func_to_func->hwdev, HINIC_AEQ, aeq_id);
+	if (err)
+		return err;
+
+	if (!wait_for_completion_timeout(done, timeo))
+		return -ETIMEDOUT;
+
+	return 0;
+}
+
 static int send_mbox_seg(struct hinic_mbox_func_to_func *func_to_func,
 			 u64 header, u16 dst_func, void *seg, u16 seg_len,
 			 int poll, void *msg_info)
@@ -1037,17 +1068,19 @@ static int send_mbox_seg(struct hinic_mbox_func_to_func *func_to_func,
 	struct hinic_send_mbox *send_mbox = &func_to_func->send_mbox;
 	struct hinic_hwdev *hwdev = func_to_func->hwdev;
 	u8 num_aeqs = hwdev->hwif->attr.num_aeqs;
-	u16 dst_aeqn, wb_status = 0, errcode;
+	u16 dst_aeqn, wb_status = 0, errcode, rsp_aeq;
 	u16 seq_dir = HINIC_MBOX_HEADER_GET(header, DIRECTION);
 	struct completion *done = &send_mbox->send_done;
 	ulong jif;
 	u32 cnt = 0;
 
-	if (num_aeqs >= 4)
+	if (num_aeqs >= HINIC_HW_MAX_AEQS)
 		dst_aeqn = (seq_dir == HINIC_HWIF_DIRECT_SEND) ?
 			   HINIC_MBOX_RECV_AEQN : HINIC_MBOX_RSP_AEQN;
 	else
 		dst_aeqn = 0;
+
+	rsp_aeq = (dst_aeqn == 0) ? 0 : HINIC_MBOX_RSP_AEQN;
 
 	if (!poll)
 		init_completion(done);
@@ -1058,7 +1091,8 @@ static int send_mbox_seg(struct hinic_mbox_func_to_func *func_to_func,
 
 	mbox_copy_send_data(hwdev, send_mbox, seg, seg_len);
 
-	write_mbox_msg_attr(func_to_func, dst_func, dst_aeqn, seg_len, poll);
+	write_mbox_msg_attr(func_to_func, dst_func, dst_aeqn, rsp_aeq,
+			    seg_len, poll);
 
 	wmb();	/* writing the mbox msg attributes */
 
@@ -1080,7 +1114,8 @@ static int send_mbox_seg(struct hinic_mbox_func_to_func *func_to_func,
 		}
 	} else {
 		jif = msecs_to_jiffies(HINIC_MBOX_COMP_TIME);
-		if (!wait_for_completion_timeout(done, jif)) {
+		if (!wait_for_completion_timeout(done, jif) &&
+		    mbox_retry_get_ack(func_to_func, done, rsp_aeq)) {
 			sdk_err(hwdev->dev_hdl, "Send mailbox segment timeout\n");
 			dump_mox_reg(hwdev);
 			return -ETIMEDOUT;
@@ -1206,7 +1241,10 @@ int hinic_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
 	}
 
 	timeo = msecs_to_jiffies(timeout ? timeout : HINIC_MBOX_COMP_TIME);
-	if (!wait_for_completion_timeout(&mbox_for_resp->recv_done, timeo)) {
+	if (!wait_for_completion_timeout(&mbox_for_resp->recv_done, timeo) &&
+	    mbox_retry_get_ack(func_to_func, &mbox_for_resp->recv_done,
+			       mbox_msg_ack_aeqn(func_to_func->hwdev,
+						 HINIC_HWIF_DIRECT_SEND))) {
 		set_mbox_to_func_event(func_to_func, EVENT_TIMEOUT);
 		sdk_err(func_to_func->hwdev->dev_hdl,
 			"Send mbox msg timeout, msg_id: %d\n", msg_info.msg_id);

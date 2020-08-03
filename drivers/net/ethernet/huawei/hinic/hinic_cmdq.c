@@ -38,6 +38,7 @@
 #include "hinic_cmdq.h"
 
 #define CMDQ_CMD_TIMEOUT				5000 /* millisecond */
+#define CMDQ_CMD_RETRY_TIMEOUT				1000 /* millisecond */
 
 #define UPPER_8_BITS(data)				(((data) >> 8) & 0xFF)
 #define LOWER_8_BITS(data)				((data) & 0xFF)
@@ -557,6 +558,24 @@ static void __clear_cmd_info(struct hinic_cmdq_cmd_info *cmd_info,
 		cmd_info->direct_resp = NULL;
 }
 
+static int cmdq_retry_get_ack(struct hinic_hwdev *hwdev,
+			      struct completion *done, u8 ceq_id)
+{
+	ulong timeo = msecs_to_jiffies(CMDQ_CMD_RETRY_TIMEOUT);
+	int err;
+
+	init_completion(done);
+
+	err = hinic_reschedule_eq(hwdev, HINIC_CEQ, ceq_id);
+	if (err)
+		return err;
+
+	if (!wait_for_completion_timeout(done, timeo))
+		return -ETIMEDOUT;
+
+	return 0;
+}
+
 static int cmdq_sync_cmd_direct_resp(struct hinic_cmdq *cmdq,
 				     enum hinic_ack_type ack_type,
 				     enum hinic_mod_type mod, u8 cmd,
@@ -634,7 +653,8 @@ static int cmdq_sync_cmd_direct_resp(struct hinic_cmdq *cmdq,
 	spin_unlock_bh(&cmdq->cmdq_lock);
 
 	timeo = msecs_to_jiffies(timeout ? timeout : CMDQ_CMD_TIMEOUT);
-	if (!wait_for_completion_timeout(&done, timeo)) {
+	if (!wait_for_completion_timeout(&done, timeo) &&
+	    cmdq_retry_get_ack(cmdq->hwdev, &done, HINIC_CEQ_ID_CMDQ)) {
 		spin_lock_bh(&cmdq->cmdq_lock);
 
 		if (cmd_info->cmpt_code == &cmpt_code)
@@ -759,7 +779,8 @@ static int cmdq_sync_cmd_detail_resp(struct hinic_cmdq *cmdq,
 	spin_unlock_bh(&cmdq->cmdq_lock);
 
 	timeo = msecs_to_jiffies(timeout ? timeout : CMDQ_CMD_TIMEOUT);
-	if (!wait_for_completion_timeout(&done, timeo)) {
+	if (!wait_for_completion_timeout(&done, timeo) &&
+	    cmdq_retry_get_ack(cmdq->hwdev, &done, HINIC_CEQ_ID_CMDQ)) {
 		spin_lock_bh(&cmdq->cmdq_lock);
 
 		if (cmd_info->cmpt_code == &cmpt_code)

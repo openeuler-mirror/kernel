@@ -20,6 +20,7 @@
 
 #define HINIC_EQ_PAGE_SIZE		0x00001000
 
+#define HINIC_HW_MAX_AEQS		4
 #define HINIC_MAX_AEQS			3
 #define HINIC_MAX_CEQS			32
 
@@ -178,5 +179,8 @@ void hinic_get_aeq_irqs(struct hinic_hwdev *hwdev, struct irq_info *irqs,
 void hinic_dump_ceq_info(struct hinic_hwdev *hwdev);
 
 void hinic_dump_aeq_info(struct hinic_hwdev *hwdev);
+
+int hinic_reschedule_eq(struct hinic_hwdev *hwdev, enum hinic_eq_type type,
+			u16 eq_id);
 
 #endif
