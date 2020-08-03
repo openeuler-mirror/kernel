@@ -233,3 +233,11 @@ config INITRAMFS_COMPRESSION
 	default ".lzma" if RD_LZMA
 	default ".bz2"  if RD_BZIP2
 	default ""
+
+config INITRAMFS_FILE_METADATA
+	string "File metadata type"
+	default ""
+	help
+	  Specify xattr to include xattrs in the image.
+
+	  If you are not sure, leave it blank.
