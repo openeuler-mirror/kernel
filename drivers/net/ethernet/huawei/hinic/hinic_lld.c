@@ -1793,17 +1793,10 @@ static void __multi_host_mgmt(struct hinic_pcidev *dev,
 	}
 }
 
-void hinic_event_process(void *adapter, struct hinic_event_info *event)
+static void send_uld_dev_event(struct hinic_pcidev *dev,
+			       struct hinic_event_info *event)
 {
-	struct hinic_pcidev *dev = adapter;
 	enum hinic_service_type type;
-
-	if (event->type == HINIC_EVENT_FMW_ACT_NTC)
-		return hinic_sync_time_to_fmw(dev);
-	else if (event->type == HINIC_EVENT_MCTP_GET_HOST_INFO)
-		return __mctp_get_host_info(dev, &event->mctp_info);
-	else if (event->type == HINIC_EVENT_MULTI_HOST_MGMT)
-		return __multi_host_mgmt(dev, &event->mhost_mgmt);
 
 	for (type = SERVICE_T_NIC; type < SERVICE_T_MAX; type++) {
 		if (test_and_set_bit(type, &dev->state)) {
@@ -1816,6 +1809,78 @@ void hinic_event_process(void *adapter, struct hinic_event_info *event)
 			g_uld_info[type].event(&dev->lld_dev,
 					       dev->uld_dev[type], event);
 		clear_bit(type, &dev->state);
+	}
+}
+
+static void send_event_to_all_pf(struct hinic_pcidev *dev,
+				 struct hinic_event_info *event)
+{
+	struct hinic_pcidev *des_dev = NULL;
+
+	lld_dev_hold();
+	list_for_each_entry(des_dev, &dev->chip_node->func_list, node) {
+		if (test_bit(HINIC_FUNC_IN_REMOVE, &des_dev->flag))
+			continue;
+
+		if (hinic_func_type(des_dev->hwdev) == TYPE_VF)
+			continue;
+
+		send_uld_dev_event(des_dev, event);
+	}
+	lld_dev_put();
+}
+
+static void send_event_to_dst_pf(struct hinic_pcidev *dev, u16 func_id,
+				 struct hinic_event_info *event)
+{
+	struct hinic_pcidev *des_dev = NULL;
+
+	lld_dev_hold();
+	list_for_each_entry(des_dev, &dev->chip_node->func_list, node) {
+		if (test_bit(HINIC_FUNC_IN_REMOVE, &des_dev->flag))
+			continue;
+
+		if (hinic_func_type(des_dev->hwdev) == TYPE_VF)
+			continue;
+
+		if (hinic_global_func_id(des_dev->hwdev) == func_id) {
+			send_uld_dev_event(des_dev, event);
+			break;
+		}
+	}
+	lld_dev_put();
+}
+
+void hinic_event_process(void *adapter, struct hinic_event_info *event)
+{
+	struct hinic_pcidev *dev = adapter;
+	u16 func_id;
+
+	switch (event->type) {
+	case HINIC_EVENT_FMW_ACT_NTC:
+		hinic_sync_time_to_fmw(dev);
+		break;
+	case HINIC_EVENT_MCTP_GET_HOST_INFO:
+		__mctp_get_host_info(dev, &event->mctp_info);
+		break;
+	case HINIC_EVENT_MULTI_HOST_MGMT:
+		__multi_host_mgmt(dev, &event->mhost_mgmt);
+		break;
+	case HINIC_EVENT_FAULT:
+		if (event->info.fault_level == FAULT_LEVEL_SERIOUS_FLR &&
+		    event->info.event.chip.func_id < HINIC_MAX_PF_NUM) {
+			func_id = event->info.event.chip.func_id;
+			send_event_to_dst_pf(adapter, func_id, event);
+		} else {
+			send_uld_dev_event(adapter, event);
+		}
+		break;
+	case HINIC_EVENT_MGMT_WATCHDOG_EVENT:
+		send_event_to_all_pf(adapter, event);
+		break;
+	default:
+		send_uld_dev_event(adapter, event);
+		break;
 	}
 }
 

@@ -3537,9 +3537,10 @@ static void fault_event_handler(struct hinic_hwdev *hwdev, void *buf_in,
 	struct hinic_cmd_fault_event *fault_event;
 	struct hinic_event_info event_info;
 	struct hinic_fault_info_node *fault_node;
+	u8 fault_level;
 
 	if (in_size != sizeof(*fault_event)) {
-		sdk_err(hwdev->dev_hdl, "Invalid fault event report, length: %d, should be %ld.\n",
+		sdk_err(hwdev->dev_hdl, "Invalid fault event report, length: %d, should be %ld\n",
 			in_size, sizeof(*fault_event));
 		return;
 	}
@@ -3547,11 +3548,16 @@ static void fault_event_handler(struct hinic_hwdev *hwdev, void *buf_in,
 	fault_event = buf_in;
 	fault_report_show(hwdev, &fault_event->event);
 
+	if (fault_event->event.type == HINIC_FAULT_SRC_HW_MGMT_CHIP)
+		fault_level = fault_event->event.event.chip.err_level;
+	else
+		fault_level = FAULT_LEVEL_FATAL;
+
 	if (hwdev->event_callback) {
 		event_info.type = HINIC_EVENT_FAULT;
 		memcpy(&event_info.info, &fault_event->event,
 		       sizeof(event_info.info));
-
+		event_info.info.fault_level = fault_level;
 		hwdev->event_callback(hwdev->event_pri_handle, &event_info);
 	}
 
@@ -3567,11 +3573,7 @@ static void fault_event_handler(struct hinic_hwdev *hwdev, void *buf_in,
 	else if (fault_event->event.type == FAULT_TYPE_PHY_FAULT)
 		fault_node->info.fault_src = HINIC_FAULT_SRC_HW_PHY_FAULT;
 
-	if (fault_node->info.fault_src == HINIC_FAULT_SRC_HW_MGMT_CHIP)
-		fault_node->info.fault_lev =
-					fault_event->event.event.chip.err_level;
-	else
-		fault_node->info.fault_lev = FAULT_LEVEL_FATAL;
+	fault_node->info.fault_lev = fault_level;
 
 	memcpy(&fault_node->info.fault_data.hw_mgmt, &fault_event->event.event,
 	       sizeof(union hinic_fault_hw_mgmt));
@@ -3811,9 +3813,15 @@ static void mgmt_watchdog_timeout_event_handler(struct hinic_hwdev *hwdev,
 						void *buf_out, u16 *out_size)
 {
 	struct hinic_fault_info_node *fault_node;
+	struct hinic_event_info event_info = { 0 };
 
 	sw_watchdog_timeout_info_show(hwdev, buf_in, in_size,
 				      buf_out, out_size);
+
+	if (hwdev->event_callback) {
+		event_info.type = HINIC_EVENT_MGMT_WATCHDOG_EVENT;
+		hwdev->event_callback(hwdev->event_pri_handle, &event_info);
+	}
 
 	/* refresh history fault info */
 	fault_node = kzalloc(sizeof(*fault_node), GFP_KERNEL);
