@@ -287,3 +287,13 @@ config IMA_APPRAISE_SIGNED_INIT
 	default n
 	help
 	   This option requires user-space init to be signed.
+
+config IMA_DIGEST_LIST
+	bool "Measure and appraise files with digest lists"
+	depends on IMA
+	default n
+	help
+	   This option allows users to load digest lists. If calculated digests
+	   of accessed files are found in one of those lists, no new entries are
+	   added to the measurement list, and access to the file is granted if
+	   appraisal is in enforcing mode.
