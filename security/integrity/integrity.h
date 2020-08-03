@@ -68,6 +68,7 @@
 #define IMA_CHANGE_ATTR		2
 #define IMA_DIGSIG		3
 #define IMA_MUST_MEASURE	4
+#define IMA_DIGEST_LIST		5
 
 enum evm_ima_xattr_type {
 	IMA_XATTR_DIGEST = 0x01,

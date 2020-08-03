@@ -366,7 +366,9 @@ static int process_measurement(struct file *file, const struct cred *cred,
 	if (rc == 0 && (action & IMA_APPRAISE_SUBMASK)) {
 		inode_lock(inode);
 		rc = ima_appraise_measurement(func, iint, file, pathname,
-					      xattr_value, xattr_len);
+					      xattr_value, xattr_len,
+					      ima_digest_allow(found_digest,
+							       IMA_APPRAISE));
 		inode_unlock(inode);
 	}
 	if (action & IMA_AUDIT)

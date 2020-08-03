@@ -17,6 +17,7 @@
 #include <linux/evm.h>
 
 #include "ima.h"
+#include "ima_digest_list.h"
 
 static bool ima_appraise_req_evm __ro_after_init;
 static int __init default_appraise_setup(char *str)
@@ -36,6 +37,22 @@ static int __init default_appraise_setup(char *str)
 }
 
 __setup("ima_appraise=", default_appraise_setup);
+
+static bool ima_appraise_no_metadata __ro_after_init;
+#ifdef CONFIG_IMA_DIGEST_LIST
+static int __init appraise_digest_list_setup(char *str)
+{
+	if (!strncmp(str, "digest", 6)) {
+		ima_digest_list_actions |= IMA_APPRAISE;
+
+		if (!strcmp(str + 6, "-nometadata"))
+			ima_appraise_no_metadata = true;
+	}
+
+	return 1;
+}
+__setup("ima_appraise_digest_list=", appraise_digest_list_setup);
+#endif
 
 /*
  * is_ima_appraise_enabled - return appraise status
@@ -70,7 +87,11 @@ static int ima_fix_xattr(struct dentry *dentry,
 	int rc, offset;
 	u8 algo = iint->ima_hash->algo;
 
-	if (algo <= HASH_ALGO_SHA1) {
+	if (test_bit(IMA_DIGEST_LIST, &iint->atomic_flags)) {
+		offset = 0;
+		iint->ima_hash->xattr.ng.type = EVM_IMA_XATTR_DIGEST_LIST;
+		iint->ima_hash->xattr.ng.algo = algo;
+	} else if (algo <= HASH_ALGO_SHA1) {
 		offset = 1;
 		iint->ima_hash->xattr.sha1.type = IMA_XATTR_DIGEST;
 	} else {
@@ -165,17 +186,28 @@ int ima_appraise_measurement(enum ima_hooks func,
 			     struct integrity_iint_cache *iint,
 			     struct file *file, const unsigned char *filename,
 			     struct evm_ima_xattr_data *xattr_value,
-			     int xattr_len)
+			     int xattr_len, struct ima_digest *found_digest)
 {
 	static const char op[] = "appraise_data";
 	const char *cause = "unknown";
 	struct dentry *dentry = file_dentry(file);
 	struct inode *inode = d_backing_inode(dentry);
 	enum integrity_status status = INTEGRITY_UNKNOWN;
+	struct evm_ima_xattr_data digest_list_value;
 	int rc = xattr_len, hash_start = 0;
 
 	if (!(inode->i_opflags & IOP_XATTR))
 		return INTEGRITY_UNKNOWN;
+
+	if (rc == -ENODATA && found_digest &&
+	    !(file->f_mode && FMODE_CREATED)) {
+		digest_list_value.type = EVM_IMA_XATTR_DIGEST_LIST;
+		digest_list_value.digest[0] = found_digest->algo;
+		memcpy(&digest_list_value.digest[1], found_digest->digest,
+		       hash_digest_size[found_digest->algo]);
+		xattr_value = &digest_list_value;
+		rc = hash_digest_size[found_digest->algo] + 2;
+	}
 
 	if (rc <= 0) {
 		if (rc && rc != -ENODATA)
@@ -200,11 +232,18 @@ int ima_appraise_measurement(enum ima_hooks func,
 		break;
 	case INTEGRITY_UNKNOWN:
 		if (ima_appraise_req_evm &&
-		    xattr_value->type != EVM_IMA_XATTR_DIGSIG)
+		    xattr_value->type != EVM_IMA_XATTR_DIGSIG && !found_digest)
 			goto out;
 		break;
 	case INTEGRITY_NOXATTRS:	/* No EVM protected xattrs. */
 	case INTEGRITY_NOLABEL:		/* No security.evm xattr. */
+		/*
+		 * If the digest-nometadata mode is selected, allow access
+		 * without metadata check. EVM will eventually create an HMAC
+		 * based on current xattr values.
+		 */
+		if (ima_appraise_no_metadata && found_digest)
+			break;
 		cause = "missing-HMAC";
 		goto out;
 	case INTEGRITY_FAIL_IMMUTABLE:
@@ -218,6 +257,31 @@ int ima_appraise_measurement(enum ima_hooks func,
 	}
 
 	switch (xattr_value->type) {
+	case EVM_IMA_XATTR_DIGEST_LIST:
+		set_bit(IMA_DIGEST_LIST, &iint->atomic_flags);
+
+		if (found_digest) {
+			if (!ima_digest_is_immutable(found_digest)) {
+				if (iint->flags & IMA_DIGSIG_REQUIRED) {
+					cause = "IMA-signature-required";
+					status = INTEGRITY_FAIL;
+					break;
+				}
+				clear_bit(IMA_DIGSIG, &iint->atomic_flags);
+			} else {
+				set_bit(IMA_DIGSIG, &iint->atomic_flags);
+			}
+
+			status = INTEGRITY_PASS;
+			break;
+		}
+
+		if (!ima_appraise_no_metadata) {
+			cause = "IMA-xattr-untrusted";
+			status = INTEGRITY_FAIL;
+			break;
+		}
+		/* fall through */
 	case IMA_XATTR_DIGEST_NG:
 		/* first byte contains algorithm id */
 		hash_start = 1;
