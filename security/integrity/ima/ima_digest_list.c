@@ -17,6 +17,8 @@
 
 #include <linux/vmalloc.h>
 #include <linux/module.h>
+#include <linux/file.h>
+#include <linux/namei.h>
 
 #include "ima.h"
 #include "ima_digest_list.h"
@@ -218,4 +220,77 @@ struct ima_digest *ima_digest_allow(struct ima_digest *digest, int action)
 		return NULL;
 
 	return digest;
+}
+
+/**************************************
+ * Digest list loading at kernel init *
+ **************************************/
+struct readdir_callback {
+	struct dir_context ctx;
+	struct path *path;
+};
+
+static int __init load_digest_list(struct dir_context *__ctx, const char *name,
+				   int namelen, loff_t offset, u64 ino,
+				   unsigned int d_type)
+{
+	struct readdir_callback *ctx = container_of(__ctx, typeof(*ctx), ctx);
+	struct path *dir = ctx->path;
+	struct file *file;
+	void *datap;
+	loff_t size;
+	int ret;
+
+	if (!strcmp(name, ".") || !strcmp(name, ".."))
+		return 0;
+
+	file = file_open_root(dir->dentry, dir->mnt, name, O_RDONLY, 0);
+	if (IS_ERR(file)) {
+		pr_err("Unable to open file: %s (%ld)", name, PTR_ERR(file));
+		return 0;
+	}
+
+	ret = kernel_read_file(file, &datap, &size, 0, READING_DIGEST_LIST);
+	if (ret < 0) {
+		pr_err("Unable to read file: %s (%d)", name, ret);
+		goto out;
+	}
+
+	ima_check_measured_appraised(file);
+
+	ret = ima_parse_compact_list(size, datap, DIGEST_LIST_OP_ADD);
+	if (ret < 0)
+		pr_err("Unable to parse file: %s (%d)", name, ret);
+
+	vfree(datap);
+out:
+	fput(file);
+	return 0;
+}
+
+void __init ima_load_digest_lists(void)
+{
+	struct path path;
+	struct file *file;
+	int ret;
+	struct readdir_callback buf = {
+		.ctx.actor = load_digest_list,
+	};
+
+	if (!(ima_digest_list_actions & ima_policy_flag))
+		return;
+
+	ret = kern_path(CONFIG_IMA_DIGEST_LISTS_DIR, 0, &path);
+	if (ret)
+		return;
+
+	file = dentry_open(&path, O_RDONLY, current_cred());
+	if (IS_ERR(file))
+		goto out;
+
+	buf.path = &path;
+	iterate_dir(file, &buf.ctx);
+	fput(file);
+out:
+	path_put(&path);
 }

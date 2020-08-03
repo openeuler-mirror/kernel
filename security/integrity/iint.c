@@ -213,6 +213,7 @@ void __init integrity_load_keys(void)
 {
 	ima_load_x509();
 	evm_load_x509();
+	ima_load_digest_lists();
 }
 
 static int __init integrity_fs_init(void)
