@@ -265,30 +265,18 @@ int ima_appraise_measurement(enum ima_hooks func,
 		goto out;
 	}
 
-	switch (xattr_value->type) {
-	case EVM_IMA_XATTR_DIGEST_LIST:
+	if (found_digest && status != INTEGRITY_PASS &&
+	    status != INTEGRITY_PASS_IMMUTABLE)
 		set_bit(IMA_DIGEST_LIST, &iint->atomic_flags);
 
-		if (found_digest) {
-			if (!ima_digest_is_immutable(found_digest)) {
-				if (iint->flags & IMA_DIGSIG_REQUIRED) {
-					cause = "IMA-signature-required";
-					status = INTEGRITY_FAIL;
-					break;
-				}
-				clear_bit(IMA_DIGSIG, &iint->atomic_flags);
-			} else {
-				set_bit(IMA_DIGSIG, &iint->atomic_flags);
-			}
-
-			status = INTEGRITY_PASS;
-			break;
-		}
+	switch (xattr_value->type) {
+	case EVM_IMA_XATTR_DIGEST_LIST:
 		if (!ima_appraise_no_metadata) {
 			cause = "IMA-xattr-untrusted";
 			status = INTEGRITY_FAIL;
 			break;
 		}
+		set_bit(IMA_DIGEST_LIST, &iint->atomic_flags);
 		/* fall through */
 	case IMA_XATTR_DIGEST_NG:
 		/* first byte contains algorithm id */
@@ -300,7 +288,8 @@ int ima_appraise_measurement(enum ima_hooks func,
 			status = INTEGRITY_FAIL;
 			break;
 		}
-		if (status != INTEGRITY_PASS_IMMUTABLE) {
+		if (status != INTEGRITY_PASS_IMMUTABLE &&
+		    (!found_digest || !ima_digest_is_immutable(found_digest))) {
 			if (iint->flags & IMA_DIGSIG_REQUIRED) {
 				cause = "IMA-signature-required";
 				status = INTEGRITY_FAIL;
