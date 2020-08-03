@@ -180,7 +180,6 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 			evm_status = INTEGRITY_FAIL;
 			goto out;
 		}
-
 		digest.hdr.algo = HASH_ALGO_SHA1;
 		rc = evm_calc_hmac(dentry, xattr_name, xattr_value,
 				   xattr_value_len, &digest);
@@ -562,11 +561,16 @@ static void evm_reset_status(struct inode *inode, int bit)
 void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
 			     const void *xattr_value, size_t xattr_value_len)
 {
+	int is_evm = !strcmp(xattr_name, XATTR_NAME_EVM);
+
 	if (!evm_key_loaded() || (!evm_protected_xattr(xattr_name)
-				  && !posix_xattr_acl(xattr_name)))
+				  && !posix_xattr_acl(xattr_name) && !is_evm))
 		return;
 
 	evm_reset_status(dentry->d_inode, IMA_CHANGE_XATTR);
+
+	if (is_evm)
+		return;
 
 	evm_update_evmxattr(dentry, xattr_name, xattr_value, xattr_value_len);
 }
@@ -583,10 +587,15 @@ void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
  */
 void evm_inode_post_removexattr(struct dentry *dentry, const char *xattr_name)
 {
-	if (!evm_key_loaded() || !evm_protected_xattr(xattr_name))
+	int is_evm = !strcmp(xattr_name, XATTR_NAME_EVM);
+
+	if (!evm_key_loaded() || (!evm_protected_xattr(xattr_name) && !is_evm))
 		return;
 
 	evm_reset_status(dentry->d_inode, IMA_CHANGE_XATTR);
+
+	if (is_evm)
+		return;
 
 	evm_update_evmxattr(dentry, xattr_name, NULL, 0);
 }
