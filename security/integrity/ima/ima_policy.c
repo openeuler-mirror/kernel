@@ -957,6 +957,8 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 			ima_log_string(ab, "appraise_type", args[0].from);
 			if ((strcmp(args[0].from, "imasig")) == 0)
 				entry->flags |= IMA_DIGSIG_REQUIRED;
+			else if (strcmp(args[0].from, "meta_immutable") == 0)
+				entry->flags |= IMA_META_IMMUTABLE_REQUIRED;
 			else
 				result = -EINVAL;
 			break;
@@ -1255,6 +1257,8 @@ int ima_policy_show(struct seq_file *m, void *v)
 	}
 	if (entry->flags & IMA_DIGSIG_REQUIRED)
 		seq_puts(m, "appraise_type=imasig ");
+	if (entry->flags & IMA_META_IMMUTABLE_REQUIRED)
+		seq_puts(m, "appraise_type=meta_immutable ");
 	if (entry->flags & IMA_PERMIT_DIRECTIO)
 		seq_puts(m, "permit_directio ");
 	rcu_read_unlock();

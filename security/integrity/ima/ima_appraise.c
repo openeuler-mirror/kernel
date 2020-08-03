@@ -229,6 +229,14 @@ int ima_appraise_measurement(enum ima_hooks func,
 	switch (status) {
 	case INTEGRITY_PASS:
 	case INTEGRITY_PASS_IMMUTABLE:
+		if (iint->flags & IMA_META_IMMUTABLE_REQUIRED &&
+		    status != INTEGRITY_PASS_IMMUTABLE) {
+			status = INTEGRITY_FAIL;
+			cause = "metadata-modifiable";
+			integrity_audit_msg(AUDIT_INTEGRITY_DATA, inode,
+					    filename, op, cause, rc, 0);
+			goto out;
+		}
 		break;
 	case INTEGRITY_UNKNOWN:
 		if (ima_appraise_req_evm &&
