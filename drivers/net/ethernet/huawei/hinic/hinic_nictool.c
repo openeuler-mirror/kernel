@@ -36,8 +36,7 @@
 #define HIADM_DEV_CLASS		"nictool_class"
 #define HIADM_DEV_NAME		"nictool_dev"
 
-#define MAJOR_DEV_NUM 921
-#define	HINIC_CMDQ_BUF_MAX_SIZE		2048U
+#define HINIC_CMDQ_BUF_MAX_SIZE		2048U
 #define MSG_MAX_IN_SIZE	(2048 * 1024)
 #define MSG_MAX_OUT_SIZE	(2048 * 1024)
 
@@ -2353,19 +2352,10 @@ int nictool_k_init(void)
 		return 0;
 	}
 
-	/* Device ID: primary device ID (12bit) |
-	 * secondary device number (20bit)
-	 */
-	g_dev_id = MKDEV(MAJOR_DEV_NUM, 0);
-
-	/* Static device registration number */
-	ret = register_chrdev_region(g_dev_id, 1, HIADM_DEV_NAME);
+	ret = alloc_chrdev_region(&g_dev_id, 0, 1, HIADM_DEV_NAME);
 	if (ret < 0) {
-		ret = alloc_chrdev_region(&g_dev_id, 0, 1, HIADM_DEV_NAME);
-		if (ret < 0) {
-			pr_err("Register nictool_dev fail(0x%x)\n", ret);
-			return ret;
-		}
+		pr_err("Register nictool_dev fail(0x%x)\n", ret);
+		return ret;
 	}
 
 	/* Create equipment */
