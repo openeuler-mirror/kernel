@@ -26,10 +26,19 @@
 #include <linux/rcupdate.h>
 #include <linux/parser.h>
 #include <linux/vmalloc.h>
+#include <linux/file.h>
 
 #include "ima.h"
 
 static DEFINE_MUTEX(ima_write_mutex);
+
+static struct dentry *ima_dir;
+static struct dentry *ima_symlink;
+static struct dentry *binary_runtime_measurements;
+static struct dentry *ascii_runtime_measurements;
+static struct dentry *runtime_measurements_count;
+static struct dentry *violations;
+static struct dentry *ima_policy;
 
 bool ima_canonical_fmt;
 static int __init default_canonical_fmt_setup(char *str)
@@ -275,11 +284,13 @@ static const struct file_operations ima_ascii_measurements_ops = {
 	.release = seq_release,
 };
 
-static ssize_t ima_read_policy(char *path)
+static ssize_t ima_read_file(char *path, struct dentry *dentry)
 {
 	void *data;
 	char *datap;
 	loff_t size;
+	struct file *file;
+	enum kernel_read_file_id file_id = READING_POLICY;
 	int rc, pathlen = strlen(path);
 
 	char *p;
@@ -288,21 +299,36 @@ static ssize_t ima_read_policy(char *path)
 	datap = path;
 	strsep(&datap, "\n");
 
-	rc = kernel_read_file_from_path(path, &data, &size, 0, READING_POLICY);
+	file = filp_open(path, O_RDONLY, 0);
+	if (IS_ERR(file)) {
+		pr_err("Unable to open file: %s (%ld)", path, PTR_ERR(file));
+		return PTR_ERR(file);
+	}
+
+	rc = kernel_read_file(file, &data, &size, 0, file_id);
 	if (rc < 0) {
-		pr_err("Unable to open file: %s (%d)", path, rc);
+		pr_err("Unable to read file: %s (%d)", path, rc);
+		fput(file);
 		return rc;
 	}
 
 	datap = data;
-	while (size > 0 && (p = strsep(&datap, "\n"))) {
-		pr_debug("rule: %s\n", p);
-		rc = ima_parse_add_rule(p);
+	while (size > 0) {
+		if (dentry == ima_policy) {
+			p = strsep(&datap, "\n");
+			if (p == NULL)
+				break;
+
+			pr_debug("rule: %s\n", p);
+			rc = ima_parse_add_rule(p);
+		}
+
 		if (rc < 0)
 			break;
 		size -= rc;
 	}
 
+	fput(file);
 	vfree(data);
 	if (rc < 0)
 		return rc;
@@ -337,7 +363,7 @@ static ssize_t ima_write_policy(struct file *file, const char __user *buf,
 		goto out_free;
 
 	if (data[0] == '/') {
-		result = ima_read_policy(data);
+		result = ima_read_file(data, file_dentry(file));
 	} else if (ima_appraise & IMA_APPRAISE_POLICY) {
 		pr_err("signed policy file (specified as an absolute pathname) required\n");
 		integrity_audit_msg(AUDIT_INTEGRITY_STATUS, NULL, NULL,
@@ -356,14 +382,6 @@ out:
 
 	return result;
 }
-
-static struct dentry *ima_dir;
-static struct dentry *ima_symlink;
-static struct dentry *binary_runtime_measurements;
-static struct dentry *ascii_runtime_measurements;
-static struct dentry *runtime_measurements_count;
-static struct dentry *violations;
-static struct dentry *ima_policy;
 
 enum ima_fs_flags {
 	IMA_FS_BUSY,
