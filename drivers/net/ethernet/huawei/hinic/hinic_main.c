@@ -1382,56 +1382,134 @@ end:
 	return err;
 }
 
+#define FEATURES_OP_STR(op)		((op) ? "Enable" : "Disable")
+
+static int set_feature_tso(struct hinic_nic_dev *nic_dev,
+			   netdev_features_t wanted_features,
+			   netdev_features_t features,
+			   netdev_features_t *failed_features)
+{
+	netdev_features_t changed = wanted_features ^ features;
+	bool en = !!(wanted_features & NETIF_F_TSO);
+	int err;
+
+	if (!(changed & NETIF_F_TSO))
+		return 0;
+
+	err = hinic_set_tx_tso(nic_dev->hwdev, en);
+	if (err) {
+		hinic_err(nic_dev, drv, "%s tso failed\n", FEATURES_OP_STR(en));
+		*failed_features |= NETIF_F_TSO;
+	} else {
+		hinic_info(nic_dev, drv, "%s tso success\n",
+			   FEATURES_OP_STR(en));
+	}
+
+	return err;
+}
+
+static int set_feature_cvlan(struct hinic_nic_dev *nic_dev,
+			     netdev_features_t wanted_features,
+			     netdev_features_t features,
+			     netdev_features_t *failed_features)
+{
+	netdev_features_t changed = wanted_features ^ features;
+	netdev_features_t vlan_feature = NETIF_F_HW_VLAN_CTAG_RX;
+	bool en = !!(wanted_features & vlan_feature);
+	int err;
+
+	if (!(changed & vlan_feature))
+		return 0;
+
+	err = hinic_set_rx_vlan_offload(nic_dev->hwdev, en);
+	if (err) {
+		hinic_err(nic_dev, drv, "%s rxvlan failed\n",
+			  FEATURES_OP_STR(en));
+		*failed_features |= vlan_feature;
+	} else {
+		hinic_info(nic_dev, drv, "%s rxvlan success\n",
+			   FEATURES_OP_STR(en));
+	}
+
+	return err;
+}
+
+static int set_feature_rxcsum(struct hinic_nic_dev *nic_dev,
+			      netdev_features_t wanted_features,
+			      netdev_features_t features,
+			      netdev_features_t *failed_features)
+{
+	netdev_features_t changed = wanted_features ^ features;
+	bool en = !!(wanted_features & NETIF_F_RXCSUM);
+	int err;
+
+	if (!(changed & NETIF_F_RXCSUM))
+		return 0;
+
+	/* hw should always enable rx csum */
+	err = hinic_set_rx_csum_offload(nic_dev->hwdev,
+					HINIC_RX_CSUM_OFFLOAD_EN);
+	if (err) {
+		hinic_err(nic_dev, drv, "%s rx csum failed\n",
+			  FEATURES_OP_STR(en));
+		*failed_features |= NETIF_F_RXCSUM;
+	} else {
+		hinic_info(nic_dev, drv, "%s rx csum success\n",
+			   FEATURES_OP_STR(en));
+	}
+
+	return err;
+}
+
+static int set_feature_lro(struct hinic_nic_dev *nic_dev,
+			   netdev_features_t wanted_features,
+			   netdev_features_t features,
+			   netdev_features_t *failed_features)
+{
+	netdev_features_t changed = wanted_features ^ features;
+	bool en = !!(wanted_features & NETIF_F_LRO);
+	u32 lro_timer, lro_buf_size;
+	int err;
+
+	if (!(changed & NETIF_F_LRO))
+		return 0;
+
+	lro_timer = nic_dev->adaptive_cfg.lro.timer;
+	lro_buf_size = nic_dev->adaptive_cfg.lro.buffer_size;
+	err = hinic_set_rx_lro_state(nic_dev->hwdev, en, lro_timer,
+				     lro_buf_size / nic_dev->rx_buff_len);
+	if (err) {
+		hinic_err(nic_dev, drv, "%s lro failed\n", FEATURES_OP_STR(en));
+		*failed_features |= NETIF_F_LRO;
+	} else {
+		hinic_info(nic_dev, drv, "%s lro success\n",
+			   FEATURES_OP_STR(en));
+	}
+
+	return err;
+}
+
 static int set_features(struct hinic_nic_dev *nic_dev,
 			netdev_features_t pre_features,
 			netdev_features_t features, bool force_change)
 {
-	netdev_features_t changed = force_change ? ~0 : pre_features ^ features;
-	u8 rxvlan_changed = !!(changed & NETIF_F_HW_VLAN_CTAG_RX);
-	u8 rxvlan_en = !!(features & NETIF_F_HW_VLAN_CTAG_RX);
-	u32 lro_timer, lro_buf_size;
-	int err = 0;
+	netdev_features_t failed_features = 0;
+	u32 err;
 
-	if (changed & NETIF_F_TSO) {
-		err = hinic_set_tx_tso(nic_dev->hwdev,
-				       !!(features & NETIF_F_TSO));
-		hinic_info(nic_dev, drv, "%s tso %s\n",
-			   (features & NETIF_F_TSO) ? "Enable" : "Disable",
-			   err ? "failed" : "success");
+	err = (u32)set_feature_tso(nic_dev, features, pre_features,
+				   &failed_features);
+	err |= (u32)set_feature_cvlan(nic_dev, features, pre_features,
+				      &failed_features);
+	err |= (u32)set_feature_rxcsum(nic_dev, features, pre_features,
+				       &failed_features);
+	err |= (u32)set_feature_lro(nic_dev, features, pre_features,
+				    &failed_features);
+	if (err) {
+		nic_dev->netdev->features = features ^ failed_features;
+		return -EIO;
 	}
 
-	if (rxvlan_changed) {
-		err = hinic_set_rx_vlan_offload(nic_dev->hwdev, rxvlan_en);
-		hinic_info(nic_dev, drv, "%s rxvlan %s\n",
-			   rxvlan_en ? "Enable" : "Disable",
-			   err ? "failed" : "success");
-	}
-
-	if (changed & NETIF_F_RXCSUM) {
-		/* hw should always enable rx csum */
-		u32 csum_en = HINIC_RX_CSUM_OFFLOAD_EN;
-
-		err = hinic_set_rx_csum_offload(nic_dev->hwdev, csum_en);
-		hinic_info(nic_dev, drv, "%s rx csum %s\n",
-			   (features & NETIF_F_RXCSUM) ? "Enable" : "Disable",
-			   err ? "failed" : "success");
-	}
-
-	if (changed & NETIF_F_LRO) {
-		lro_timer = nic_dev->adaptive_cfg.lro.timer;
-		lro_buf_size = nic_dev->adaptive_cfg.lro.buffer_size;
-
-		err = hinic_set_rx_lro_state(nic_dev->hwdev,
-					     !!(features & NETIF_F_LRO),
-					     lro_timer,
-					     lro_buf_size /
-					     nic_dev->rx_buff_len);
-		hinic_info(nic_dev, drv, "%s lro %s\n",
-			   (features & NETIF_F_LRO) ? "Enable" : "Disable",
-			   err ? "failed" : "success");
-	}
-
-	return err;
+	return 0;
 }
 
 static int hinic_set_features(struct net_device *netdev,
