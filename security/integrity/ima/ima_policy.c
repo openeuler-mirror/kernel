@@ -133,6 +133,7 @@ static struct ima_rule_entry default_measurement_rules[] __ro_after_init = {
 	{.action = MEASURE, .func = MODULE_CHECK, .flags = IMA_FUNC},
 	{.action = MEASURE, .func = FIRMWARE_CHECK, .flags = IMA_FUNC},
 	{.action = MEASURE, .func = POLICY_CHECK, .flags = IMA_FUNC},
+	{.action = MEASURE, .func = DIGEST_LIST_CHECK, .flags = IMA_FUNC},
 };
 
 static struct ima_rule_entry default_appraise_rules[] __ro_after_init = {
@@ -190,6 +191,8 @@ static struct ima_rule_entry secure_boot_rules[] __ro_after_init = {
 	{.action = APPRAISE, .func = KEXEC_KERNEL_CHECK,
 	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
 	{.action = APPRAISE, .func = POLICY_CHECK,
+	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+	{.action = APPRAISE, .func = DIGEST_LIST_CHECK,
 	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
 };
 
@@ -470,6 +473,8 @@ static int ima_appraise_flag(enum ima_hooks func)
 		return IMA_APPRAISE_POLICY;
 	else if (func == KEXEC_KERNEL_CHECK)
 		return IMA_APPRAISE_KEXEC;
+	else if (func == DIGEST_LIST_CHECK)
+		return IMA_APPRAISE_DIGEST_LIST;
 	return 0;
 }
 
@@ -785,6 +790,8 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 				entry->func = KEXEC_INITRAMFS_CHECK;
 			else if (strcmp(args[0].from, "POLICY_CHECK") == 0)
 				entry->func = POLICY_CHECK;
+			else if (strcmp(args[0].from, "DIGEST_LIST_CHECK") == 0)
+				entry->func = DIGEST_LIST_CHECK;
 			else
 				result = -EINVAL;
 			if (!result)
