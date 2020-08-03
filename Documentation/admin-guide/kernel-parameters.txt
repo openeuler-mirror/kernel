@@ -1620,6 +1620,10 @@
 			latter, as it would break processes accessing files on
 			tmpfs, e.g. firewalld).
 
+			The "appraise_exec_immutable" policy requires immutable
+			metadata for all files appraised by the "secure_boot"
+			and "appraise_exec_tcb" policies.
+
 			The "fail_securely" policy forces file signature
 			verification failure also on privileged mounted
 			filesystems with the SB_I_UNVERIFIABLE_SIGNATURE

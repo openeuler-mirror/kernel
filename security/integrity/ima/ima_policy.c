@@ -222,6 +222,7 @@ __setup("ima_tcb", default_measure_policy_setup);
 
 static bool ima_use_appraise_tcb __initdata;
 static bool ima_use_appraise_exec_tcb __initdata;
+static bool ima_use_appraise_exec_immutable __initdata;
 static bool ima_use_secure_boot __initdata;
 static bool ima_fail_unverifiable_sigs __ro_after_init;
 static int __init policy_setup(char *str)
@@ -239,6 +240,8 @@ static int __init policy_setup(char *str)
 			ima_use_appraise_tcb = true;
 		else if (strcmp(p, "appraise_exec_tcb") == 0)
 			ima_use_appraise_exec_tcb = true;
+		else if (strcmp(p, "appraise_exec_immutable") == 0)
+			ima_use_appraise_exec_immutable = true;
 		else if (strcmp(p, "secure_boot") == 0)
 			ima_use_secure_boot = true;
 		else if (strcmp(p, "fail_securely") == 0)
@@ -548,6 +551,9 @@ void __init ima_init_policy(void)
 	 * signatures, prior to any other appraise rules.
 	 */
 	for (i = 0; i < secure_boot_entries; i++) {
+		if (ima_use_appraise_exec_immutable)
+			secure_boot_rules[i].flags |=
+						IMA_META_IMMUTABLE_REQUIRED;
 		list_add_tail(&secure_boot_rules[i].list, &ima_default_rules);
 		temp_ima_appraise |=
 		    ima_appraise_flag(secure_boot_rules[i].func);
@@ -587,9 +593,13 @@ void __init ima_init_policy(void)
 			temp_ima_appraise |= IMA_APPRAISE_POLICY;
 	}
 
-	for (i = 0; i < appraise_exec_entries; i++)
+	for (i = 0; i < appraise_exec_entries; i++) {
+		if (ima_use_appraise_exec_immutable)
+			appraise_exec_rules[i].flags |=
+						IMA_META_IMMUTABLE_REQUIRED;
 		list_add_tail(&appraise_exec_rules[i].list,
 			      &ima_default_rules);
+	}
 
 	ima_update_policy_flag();
 }
