@@ -551,9 +551,6 @@ void __init ima_init_policy(void)
 	 * signatures, prior to any other appraise rules.
 	 */
 	for (i = 0; i < secure_boot_entries; i++) {
-		if (ima_use_appraise_exec_immutable)
-			secure_boot_rules[i].flags |=
-						IMA_META_IMMUTABLE_REQUIRED;
 		list_add_tail(&secure_boot_rules[i].list, &ima_default_rules);
 		temp_ima_appraise |=
 		    ima_appraise_flag(secure_boot_rules[i].func);
@@ -594,7 +591,8 @@ void __init ima_init_policy(void)
 	}
 
 	for (i = 0; i < appraise_exec_entries; i++) {
-		if (ima_use_appraise_exec_immutable)
+		if (ima_use_appraise_exec_immutable &&
+		    appraise_exec_rules[i].func == BPRM_CHECK)
 			appraise_exec_rules[i].flags |=
 						IMA_META_IMMUTABLE_REQUIRED;
 		list_add_tail(&appraise_exec_rules[i].list,
