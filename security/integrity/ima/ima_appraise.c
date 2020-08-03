@@ -153,57 +153,6 @@ static void ima_cache_flags(struct integrity_iint_cache *iint,
 	}
 }
 
-enum hash_algo ima_get_hash_algo(struct evm_ima_xattr_data *xattr_value,
-				 int xattr_len)
-{
-	struct signature_v2_hdr *sig;
-	enum hash_algo ret;
-
-	if (!xattr_value || xattr_len < 2)
-		/* return default hash algo */
-		return ima_hash_algo;
-
-	switch (xattr_value->type) {
-	case EVM_IMA_XATTR_DIGSIG:
-		sig = (typeof(sig))xattr_value;
-		if (sig->version != 2 || xattr_len <= sizeof(*sig))
-			return ima_hash_algo;
-		return sig->hash_algo;
-		break;
-	case IMA_XATTR_DIGEST_NG:
-		ret = xattr_value->digest[0];
-		if (ret < HASH_ALGO__LAST)
-			return ret;
-		break;
-	case IMA_XATTR_DIGEST:
-		/* this is for backward compatibility */
-		if (xattr_len == 21) {
-			unsigned int zero = 0;
-			if (!memcmp(&xattr_value->digest[16], &zero, 4))
-				return HASH_ALGO_MD5;
-			else
-				return HASH_ALGO_SHA1;
-		} else if (xattr_len == 17)
-			return HASH_ALGO_MD5;
-		break;
-	}
-
-	/* return default hash algo */
-	return ima_hash_algo;
-}
-
-int ima_read_xattr(struct dentry *dentry,
-		   struct evm_ima_xattr_data **xattr_value)
-{
-	ssize_t ret;
-
-	ret = vfs_getxattr_alloc(dentry, XATTR_NAME_IMA, (char **)xattr_value,
-				 0, GFP_NOFS);
-	if (ret == -EOPNOTSUPP)
-		ret = 0;
-	return ret;
-}
-
 /*
  * ima_appraise_measurement - appraise file measurement
  *
