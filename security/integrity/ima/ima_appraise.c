@@ -193,19 +193,19 @@ int ima_appraise_measurement(enum ima_hooks func,
 	struct dentry *dentry = file_dentry(file);
 	struct inode *inode = d_backing_inode(dentry);
 	enum integrity_status status = INTEGRITY_UNKNOWN;
-	struct evm_ima_xattr_data digest_list_value;
+	char _buf[sizeof(struct evm_ima_xattr_data) + SHA512_DIGEST_SIZE];
 	int rc = xattr_len, hash_start = 0;
 
 	if (!(inode->i_opflags & IOP_XATTR))
 		return INTEGRITY_UNKNOWN;
 
 	if (rc == -ENODATA && found_digest &&
-	    !(file->f_mode && FMODE_CREATED)) {
-		digest_list_value.type = EVM_IMA_XATTR_DIGEST_LIST;
-		digest_list_value.digest[0] = found_digest->algo;
-		memcpy(&digest_list_value.digest[1], found_digest->digest,
+	    !(file->f_mode & FMODE_CREATED)) {
+		xattr_value = (struct evm_ima_xattr_data *)_buf;
+		xattr_value->type = IMA_XATTR_DIGEST_NG;
+		xattr_value->digest[0] = found_digest->algo;
+		memcpy(&xattr_value->digest[1], found_digest->digest,
 		       hash_digest_size[found_digest->algo]);
-		xattr_value = &digest_list_value;
 		rc = hash_digest_size[found_digest->algo] + 2;
 	}
 
@@ -283,7 +283,6 @@ int ima_appraise_measurement(enum ima_hooks func,
 			status = INTEGRITY_PASS;
 			break;
 		}
-
 		if (!ima_appraise_no_metadata) {
 			cause = "IMA-xattr-untrusted";
 			status = INTEGRITY_FAIL;
