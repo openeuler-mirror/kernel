@@ -52,38 +52,24 @@ __setup("ima_canonical_fmt", default_canonical_fmt_setup);
 
 static int valid_policy = 1;
 
-static ssize_t ima_show_htable_value(char __user *buf, size_t count,
-				     loff_t *ppos, atomic_long_t *val)
+static ssize_t ima_show_htable_value(struct file *filp, char __user *buf,
+				     size_t count, loff_t *ppos)
 {
+	atomic_long_t *val = NULL;
 	char tmpbuf[32];	/* greater than largest 'long' string value */
 	ssize_t len;
+
+	if (filp->f_path.dentry == violations)
+		val = &ima_htable.violations;
+	else if (filp->f_path.dentry == runtime_measurements_count)
+		val = &ima_htable.len;
 
 	len = scnprintf(tmpbuf, sizeof(tmpbuf), "%li\n", atomic_long_read(val));
 	return simple_read_from_buffer(buf, count, ppos, tmpbuf, len);
 }
 
-static ssize_t ima_show_htable_violations(struct file *filp,
-					  char __user *buf,
-					  size_t count, loff_t *ppos)
-{
-	return ima_show_htable_value(buf, count, ppos, &ima_htable.violations);
-}
-
-static const struct file_operations ima_htable_violations_ops = {
-	.read = ima_show_htable_violations,
-	.llseek = generic_file_llseek,
-};
-
-static ssize_t ima_show_measurements_count(struct file *filp,
-					   char __user *buf,
-					   size_t count, loff_t *ppos)
-{
-	return ima_show_htable_value(buf, count, ppos, &ima_htable.len);
-
-}
-
-static const struct file_operations ima_measurements_count_ops = {
-	.read = ima_show_measurements_count,
+static const struct file_operations ima_htable_value_ops = {
+	.read = ima_show_htable_value,
 	.llseek = generic_file_llseek,
 };
 
@@ -538,13 +524,13 @@ int __init ima_fs_init(void)
 	runtime_measurements_count =
 	    securityfs_create_file("runtime_measurements_count",
 				   S_IRUSR | S_IRGRP, ima_dir, NULL,
-				   &ima_measurements_count_ops);
+				   &ima_htable_value_ops);
 	if (IS_ERR(runtime_measurements_count))
 		goto out;
 
 	violations =
 	    securityfs_create_file("violations", S_IRUSR | S_IRGRP,
-				   ima_dir, NULL, &ima_htable_violations_ops);
+				   ima_dir, NULL, &ima_htable_value_ops);
 	if (IS_ERR(violations))
 		goto out;
 
