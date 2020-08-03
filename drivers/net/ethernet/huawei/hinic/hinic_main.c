@@ -3026,8 +3026,13 @@ void nic_event(struct hinic_lld_dev *lld_dev, void *adapter,
 		break;
 	case HINIC_EVENT_HEART_LOST:
 		hinic_heart_lost(nic_dev);
+		hinic_link_status_change(nic_dev, false);
 		break;
 	case HINIC_EVENT_FAULT:
+		if (event->info.fault_level == FAULT_LEVEL_SERIOUS_FLR &&
+		    event->info.event.chip.func_id ==
+		    hinic_global_func_id(lld_dev->hwdev))
+			hinic_link_status_change(nic_dev, false);
 		break;
 	case HINIC_EVENT_DCB_STATE_CHANGE:
 		if (nic_dev->default_cos_id == event->dcb_state.default_cos)
@@ -3046,6 +3051,9 @@ void nic_event(struct hinic_lld_dev *lld_dev, void *adapter,
 		break;
 	case HINIC_EVENT_PORT_MODULE_EVENT:
 		hinic_port_module_event_handler(nic_dev, event);
+		break;
+	case HINIC_EVENT_MGMT_WATCHDOG_EVENT:
+		hinic_link_status_change(nic_dev, false);
 		break;
 	default:
 		break;

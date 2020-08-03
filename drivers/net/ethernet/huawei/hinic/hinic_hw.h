@@ -565,7 +565,8 @@ union hinic_fault_hw_mgmt {
 struct hinic_fault_event {
 	/* enum hinic_fault_type */
 	u8 type;
-	u8 rsvd0[3];
+	u8 fault_level; /* sdk write fault level for uld event */
+	u8 rsvd0[2];
 	union hinic_fault_hw_mgmt event;
 };
 
@@ -653,6 +654,7 @@ enum hinic_event_type {
 	HINIC_EVENT_MCTP_GET_HOST_INFO,
 	HINIC_EVENT_MULTI_HOST_MGMT,
 	HINIC_EVENT_INIT_MIGRATE_PF,
+	HINIC_EVENT_MGMT_WATCHDOG_EVENT,
 };
 
 struct hinic_event_info {
