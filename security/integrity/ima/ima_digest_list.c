@@ -19,6 +19,7 @@
 #include <linux/module.h>
 #include <linux/file.h>
 #include <linux/namei.h>
+#include <linux/xattr.h>
 #include <linux/sched/mm.h>
 #include <linux/magic.h>
 
@@ -271,6 +272,8 @@ static int __init load_digest_list(struct dir_context *__ctx, const char *name,
 	struct readdir_callback *ctx = container_of(__ctx, typeof(*ctx), ctx);
 	struct path *dir = ctx->path;
 	struct file *file;
+	u8 *xattr_value = NULL;
+	char *type_start, *format_start, *format_end;
 	void *datap;
 	loff_t size;
 	int ret;
@@ -278,10 +281,34 @@ static int __init load_digest_list(struct dir_context *__ctx, const char *name,
 	if (!strcmp(name, ".") || !strcmp(name, ".."))
 		return 0;
 
+	type_start = strchr(name, '-');
+	if (!type_start)
+		return 0;
+
+	format_start = strchr(type_start + 1, '-');
+	if (!format_start)
+		return 0;
+
+	format_end = strchr(format_start + 1, '-');
+	if (!format_end)
+		return 0;
+
+	if (format_end - format_start - 1 != strlen("compact") ||
+	    strncmp(format_start + 1, "compact", format_end - format_start - 1))
+		return 0;
+
 	file = file_open_root(dir->dentry, dir->mnt, name, O_RDONLY, 0);
 	if (IS_ERR(file)) {
 		pr_err("Unable to open file: %s (%ld)", name, PTR_ERR(file));
 		return 0;
+	}
+
+	size = vfs_getxattr(file_dentry(file), XATTR_NAME_EVM, NULL, 0);
+	if (size < 0) {
+		size = vfs_getxattr_alloc(file_dentry(file), XATTR_NAME_IMA,
+					  (char **)&xattr_value, 0, GFP_NOFS);
+		if (size < 0 || xattr_value[0] != EVM_IMA_XATTR_DIGSIG)
+			goto out;
 	}
 
 	ret = kernel_read_file(file, &datap, &size, 0, READING_DIGEST_LIST);
@@ -299,7 +326,19 @@ static int __init load_digest_list(struct dir_context *__ctx, const char *name,
 	vfree(datap);
 out:
 	fput(file);
+	kfree(xattr_value);
 	return 0;
+}
+
+static void ima_exec_parser(void)
+{
+	char *argv[4] = {NULL}, *envp[1] = {NULL};
+
+	argv[0] = (char *)CONFIG_IMA_PARSER_BINARY_PATH;
+	argv[1] = "add";
+	argv[2] = (char *)CONFIG_IMA_DIGEST_LISTS_DIR;
+
+	call_usermodehelper(argv[0], argv, envp, UMH_WAIT_PROC);
 }
 
 void __init ima_load_digest_lists(void)
@@ -327,6 +366,8 @@ void __init ima_load_digest_lists(void)
 	fput(file);
 out:
 	path_put(&path);
+
+	ima_exec_parser();
 }
 
 /****************

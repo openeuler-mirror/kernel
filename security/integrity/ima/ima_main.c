@@ -460,11 +460,15 @@ int ima_bprm_check(struct linux_binprm *bprm)
 int ima_file_check(struct file *file, int mask)
 {
 	u32 secid;
+	int rc;
 
 	security_task_getsecid(current, &secid);
-	return process_measurement(file, current_cred(), secid, NULL, 0,
-				   mask & (MAY_READ | MAY_WRITE | MAY_EXEC |
-					   MAY_APPEND), FILE_CHECK);
+	rc = process_measurement(file, current_cred(), secid, NULL, 0,
+				 mask & (MAY_READ | MAY_WRITE | MAY_EXEC |
+					 MAY_APPEND), FILE_CHECK);
+	if (ima_current_is_parser() && !rc)
+		ima_check_measured_appraised(file);
+	return rc;
 }
 EXPORT_SYMBOL_GPL(ima_file_check);
 
