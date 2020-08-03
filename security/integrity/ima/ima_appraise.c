@@ -244,6 +244,16 @@ int ima_appraise_measurement(enum ima_hooks func,
 		 */
 		if (ima_appraise_no_metadata && found_digest)
 			break;
+		/* Allow access to digest lists without metadata, only if they
+		 * are signed or found in a digest list (immutable)
+		 */
+		if (func == DIGEST_LIST_CHECK) {
+			if (xattr_value->type == EVM_IMA_XATTR_DIGSIG)
+				break;
+			if (found_digest &&
+			    ima_digest_is_immutable(found_digest))
+				break;
+		}
 		cause = "missing-HMAC";
 		goto out;
 	case INTEGRITY_FAIL_IMMUTABLE:
