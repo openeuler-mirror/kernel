@@ -39,6 +39,10 @@ int ima_appraise;
 #endif
 
 int ima_hash_algo = HASH_ALGO_SHA256;
+
+/* Actions (measure/appraisal) for which digest lists can be used */
+int ima_digest_list_actions;
+
 static int hash_setup_done;
 
 static int __init hash_setup(char *str)
