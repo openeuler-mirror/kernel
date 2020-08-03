@@ -22,6 +22,7 @@
 #include <linux/seq_file.h>
 
 #include "ima.h"
+#include "ima_digest_list.h"
 
 /* flags definitions */
 #define IMA_FUNC	0x0001
@@ -34,6 +35,7 @@
 #define IMA_EUID	0x0080
 #define IMA_PCR		0x0100
 #define IMA_FSNAME	0x0200
+#define IMA_PARSER	0x0800
 
 #define UNKNOWN		0
 #define MEASURE		0x0001	/* same as IMA_MEASURE */
@@ -136,6 +138,10 @@ static struct ima_rule_entry default_measurement_rules[] __ro_after_init = {
 	{.action = MEASURE, .func = DIGEST_LIST_CHECK, .flags = IMA_FUNC},
 };
 
+static struct ima_rule_entry ima_parser_measure_rule __ro_after_init = {
+	.action = MEASURE, .flags = IMA_PARSER
+};
+
 static struct ima_rule_entry default_appraise_rules[] __ro_after_init = {
 	{.action = DONT_APPRAISE, .fsmagic = PROC_SUPER_MAGIC, .flags = IMA_FSMAGIC},
 	{.action = DONT_APPRAISE, .fsmagic = SYSFS_MAGIC, .flags = IMA_FSMAGIC},
@@ -201,6 +207,11 @@ static struct ima_rule_entry secure_boot_rules[] __ro_after_init = {
 	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
 	{.action = APPRAISE, .func = DIGEST_LIST_CHECK,
 	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+};
+
+static struct ima_rule_entry ima_parser_appraise_rule __ro_after_init = {
+	.action = APPRAISE,
+	.flags = IMA_PARSER | IMA_DIGSIG_REQUIRED
 };
 
 static LIST_HEAD(ima_default_rules);
@@ -333,6 +344,9 @@ static bool ima_match_rules(struct ima_rule_entry *rule, struct inode *inode,
 
 	if ((rule->flags & IMA_FOWNER) &&
 	    !rule->fowner_op(inode->i_uid, rule->fowner))
+		return false;
+	if ((rule->flags & IMA_PARSER) &&
+	    !ima_current_is_parser())
 		return false;
 	for (i = 0; i < MAX_LSM_RULES; i++) {
 		int rc = 0;
@@ -546,6 +560,10 @@ void __init ima_init_policy(void)
 		break;
 	}
 
+	if (ima_policy)
+		list_add_tail(&ima_parser_measure_rule.list,
+			      &ima_default_rules);
+
 	/*
 	 * Insert the builtin "secure_boot" policy rules requiring file
 	 * signatures, prior to any other appraise rules.
@@ -599,6 +617,11 @@ void __init ima_init_policy(void)
 			      &ima_default_rules);
 	}
 
+	if (ima_use_secure_boot || ima_use_appraise_tcb ||
+	    ima_use_appraise_exec_tcb)
+		list_add_tail(&ima_parser_appraise_rule.list,
+			      &ima_default_rules);
+
 	ima_update_policy_flag();
 }
 
@@ -646,7 +669,7 @@ enum {
 	Opt_uid_gt, Opt_euid_gt, Opt_fowner_gt,
 	Opt_uid_lt, Opt_euid_lt, Opt_fowner_lt,
 	Opt_appraise_type, Opt_permit_directio,
-	Opt_pcr
+	Opt_pcr, Opt_parser
 };
 
 static match_table_t policy_tokens = {
@@ -680,6 +703,7 @@ static match_table_t policy_tokens = {
 	{Opt_appraise_type, "appraise_type=%s"},
 	{Opt_permit_directio, "permit_directio"},
 	{Opt_pcr, "pcr=%s"},
+	{Opt_parser, "parser"},
 	{Opt_err, NULL}
 };
 
@@ -1030,6 +1054,9 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 				entry->flags |= IMA_PCR;
 
 			break;
+		case Opt_parser:
+			entry->flags |= IMA_PARSER;
+			break;
 		case Opt_err:
 			ima_log_string(ab, "UNKNOWN", p);
 			result = -EINVAL;
@@ -1274,6 +1301,9 @@ int ima_policy_show(struct seq_file *m, void *v)
 			seq_printf(m, pt(Opt_fowner_eq), tbuf);
 		seq_puts(m, " ");
 	}
+
+	if (entry->flags & IMA_PARSER)
+		seq_puts(m, "parser ");
 
 	for (i = 0; i < MAX_LSM_RULES; i++) {
 		if (entry->lsm[i].rule) {

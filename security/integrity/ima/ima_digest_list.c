@@ -361,3 +361,20 @@ bool ima_check_current_is_parser(void)
 	return ima_lookup_digest(parser_iint->ima_hash->digest,
 				 parser_iint->ima_hash->algo, COMPACT_PARSER);
 }
+
+struct task_struct *parser_task;
+
+void ima_set_parser(void)
+{
+	parser_task = current;
+}
+
+void ima_unset_parser(void)
+{
+	parser_task = NULL;
+}
+
+bool ima_current_is_parser(void)
+{
+	return (current == parser_task);
+}
