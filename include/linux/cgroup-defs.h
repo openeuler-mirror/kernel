@@ -753,10 +753,14 @@ static inline void cgroup_threadgroup_change_end(struct task_struct *tsk) {}
  */
 struct sock_cgroup_data {
 	union {
+		/*
+		 * Field is_data is the combination of is_data and no_refcnt,
+		 * bit 0: is_data,
+		 * bit 1: no_refcnt.
+		 */
 #ifdef __LITTLE_ENDIAN
 		struct {
-			u8	is_data : 1;
-			u8	no_refcnt : 1;
+			u8	is_data;
 			u8	padding;
 			u16	prioidx;
 			u32	classid;
@@ -766,8 +770,7 @@ struct sock_cgroup_data {
 			u32	classid;
 			u16	prioidx;
 			u8	padding;
-			u8	no_refcnt : 1;
-			u8	is_data : 1;
+			u8	is_data;
 		} __packed;
 #endif
 		u64		val;

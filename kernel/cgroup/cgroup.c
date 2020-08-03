@@ -5915,7 +5915,7 @@ void cgroup_sk_alloc_disable(void)
 void cgroup_sk_alloc(struct sock_cgroup_data *skcd)
 {
 	if (cgroup_sk_alloc_disabled) {
-		skcd->no_refcnt = 1;
+		skcd->is_data |= 2;
 		return;
 	}
 
@@ -5954,7 +5954,7 @@ void cgroup_sk_clone(struct sock_cgroup_data *skcd)
 
 void cgroup_sk_free(struct sock_cgroup_data *skcd)
 {
-	if (skcd->no_refcnt)
+	if (skcd->is_data & 2)
 		return;
 
 	cgroup_put(sock_cgroup_ptr(skcd));
