@@ -56,7 +56,7 @@ enum lsm_rule_types { LSM_OBJ_USER, LSM_OBJ_ROLE, LSM_OBJ_TYPE,
 	LSM_SUBJ_USER, LSM_SUBJ_ROLE, LSM_SUBJ_TYPE
 };
 
-enum policy_types { ORIGINAL_TCB = 1, DEFAULT_TCB };
+enum policy_types { ORIGINAL_TCB = 1, DEFAULT_TCB, EXEC_TCB };
 
 struct ima_rule_entry {
 	struct list_head list;
@@ -225,6 +225,8 @@ static int __init policy_setup(char *str)
 			continue;
 		if ((strcmp(p, "tcb") == 0) && !ima_policy)
 			ima_policy = DEFAULT_TCB;
+		else if ((strcmp(p, "exec_tcb") == 0) && !ima_policy)
+			ima_policy = EXEC_TCB;
 		else if (strcmp(p, "appraise_tcb") == 0)
 			ima_use_appraise_tcb = true;
 		else if (strcmp(p, "secure_boot") == 0)
@@ -495,8 +497,14 @@ void __init ima_init_policy(void)
 	secure_boot_entries = ima_use_secure_boot ?
 			ARRAY_SIZE(secure_boot_rules) : 0;
 
-	for (i = 0; i < measure_entries; i++)
+	for (i = 0; i < measure_entries; i++) {
+		if (ima_policy == EXEC_TCB &&
+		    (dont_measure_rules[i].flags & IMA_FSMAGIC) &&
+		    dont_measure_rules[i].fsmagic == TMPFS_MAGIC)
+			continue;
+
 		list_add_tail(&dont_measure_rules[i].list, &ima_default_rules);
+	}
 
 	switch (ima_policy) {
 	case ORIGINAL_TCB:
@@ -505,9 +513,18 @@ void __init ima_init_policy(void)
 				      &ima_default_rules);
 		break;
 	case DEFAULT_TCB:
-		for (i = 0; i < ARRAY_SIZE(default_measurement_rules); i++)
+		/* fall through */
+	case EXEC_TCB:
+		for (i = 0; i < ARRAY_SIZE(default_measurement_rules); i++) {
+			if (ima_policy == EXEC_TCB &&
+			    (default_measurement_rules[i].flags & IMA_FUNC) &&
+			    default_measurement_rules[i].func == FILE_CHECK)
+				continue;
+
 			list_add_tail(&default_measurement_rules[i].list,
 				      &ima_default_rules);
+		}
+		break;
 	default:
 		break;
 	}
