@@ -784,6 +784,7 @@ config KVM_GUEST
 	bool "KVM Guest support (including kvmclock)"
 	depends on PARAVIRT
 	select PARAVIRT_CLOCK
+	select ARCH_CPUIDLE_HALTPOLL
 	default y
 	---help---
 	  This option enables various optimizations for running under the KVM
@@ -791,6 +792,15 @@ config KVM_GUEST
 	  of relying on a PIT (or probably other) emulation by the
 	  underlying device model, the host provides the guest with
 	  timing infrastructure such as time of day, and system time
+
+config ARCH_CPUIDLE_HALTPOLL
+	def_bool n
+	prompt "Disable host haltpoll when loading haltpoll driver"
+	help
+	  If virtualized under KVM, disable host haltpoll. When loading
+	  haltpoll driver, It allows the guest vcpus to poll for a
+	  specified amount of time before halting, The execution of
+	  haltpoll on the host is redundant.
 
 config KVM_DEBUG_FS
 	bool "Enable debug information for KVM Guests in debugfs"
