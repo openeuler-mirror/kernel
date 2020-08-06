@@ -109,6 +109,7 @@ struct mqm_addr_trans_tbl_info {
 	(HINIC_NODE_ID_MAX * FAULT_LEVEL_MAX * HINIC_CHIP_ERROR_TYPE_MAX)
 
 enum hinic_node_id {
+	HINIC_NODE_ID_CPI = 0,
 	HINIC_NODE_ID_IPSU = 4,
 	HINIC_NODE_ID_MGMT_HOST = 21, /* Host CPU send API to uP */
 	HINIC_NODE_ID_MAX = 22
