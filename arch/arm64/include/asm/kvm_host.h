@@ -371,6 +371,21 @@ struct kvm_vcpu_stat {
 	u64 mmio_exit_user;
 	u64 mmio_exit_kernel;
 	u64 exits;
+	u64 fp_asimd_exit_stat;
+	u64 irq_exit_stat;
+	u64 sys64_exit_stat;
+	u64 mabt_exit_stat;
+	u64 fail_entry_exit_stat;
+	u64 internal_error_exit_stat;
+	u64 unknown_ec_exit_stat;
+	u64 cp15_32_exit_stat;
+	u64 cp15_64_exit_stat;
+	u64 cp14_mr_exit_stat;
+	u64 cp14_ls_exit_stat;
+	u64 cp14_64_exit_stat;
+	u64 smc_exit_stat;
+	u64 sve_exit_stat;
+	u64 debug_exit_stat;
 };
 
 int kvm_vcpu_preferred_target(struct kvm_vcpu_init *init);

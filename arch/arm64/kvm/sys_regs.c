@@ -2105,6 +2105,7 @@ int kvm_handle_sys_reg(struct kvm_vcpu *vcpu, struct kvm_run *run)
 	int ret;
 
 	trace_kvm_handle_sys_reg(esr);
+	vcpu->stat.sys64_exit_stat++;
 
 	params.is_aarch32 = false;
 	params.is_32bit = false;

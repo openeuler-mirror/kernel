@@ -415,8 +415,10 @@ static bool __hyp_text fixup_guest_exit(struct kvm_vcpu *vcpu, u64 *exit_code)
 	 * undefined instruction exception to the guest.
 	 */
 	if (system_supports_fpsimd() &&
-	    kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_FP_ASIMD)
+	    kvm_vcpu_trap_get_class(vcpu) == ESR_ELx_EC_FP_ASIMD) {
+		vcpu->stat.fp_asimd_exit_stat++;
 		return __hyp_switch_fpsimd(vcpu);
+	}
 
 	if (!__populate_fault_info(vcpu))
 		return true;

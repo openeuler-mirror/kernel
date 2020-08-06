@@ -109,6 +109,8 @@ int kvm_handle_cp_0_13_access(struct kvm_vcpu *vcpu, struct kvm_run *run)
 int kvm_handle_cp14_load_store(struct kvm_vcpu *vcpu, struct kvm_run *run)
 {
 	kvm_inject_undefined(vcpu);
+	vcpu->stat.cp14_ls_exit_stat++;
+
 	return 1;
 }
 
@@ -637,6 +639,8 @@ int kvm_handle_cp15_64(struct kvm_vcpu *vcpu, struct kvm_run *run)
 {
 	struct coproc_params params = decode_64bit_hsr(vcpu);
 
+	vcpu->stat.cp15_64_exit_stat++;
+
 	return emulate_cp15(vcpu, &params);
 }
 
@@ -654,6 +658,8 @@ int kvm_handle_cp14_64(struct kvm_vcpu *vcpu, struct kvm_run *run)
 
 	/* handled */
 	kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
+	vcpu->stat.cp14_64_exit_stat++;
+
 	return 1;
 }
 
@@ -701,6 +707,9 @@ static struct coproc_params decode_32bit_hsr(struct kvm_vcpu *vcpu)
 int kvm_handle_cp15_32(struct kvm_vcpu *vcpu, struct kvm_run *run)
 {
 	struct coproc_params params = decode_32bit_hsr(vcpu);
+
+	vcpu->stat.cp15_32_exit_stat++;
+
 	return emulate_cp15(vcpu, &params);
 }
 
@@ -718,6 +727,8 @@ int kvm_handle_cp14_32(struct kvm_vcpu *vcpu, struct kvm_run *run)
 
 	/* handled */
 	kvm_skip_instr(vcpu, kvm_vcpu_trap_il_is32bit(vcpu));
+	vcpu->stat.cp14_mr_exit_stat++;
+
 	return 1;
 }
 
