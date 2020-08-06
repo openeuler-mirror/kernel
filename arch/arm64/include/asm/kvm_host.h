@@ -360,6 +360,7 @@ struct kvm_vm_stat {
 };
 
 struct kvm_vcpu_stat {
+	u64 pid;
 	u64 halt_successful_poll;
 	u64 halt_attempted_poll;
 	u64 halt_poll_invalid;
