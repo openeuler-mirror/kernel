@@ -1603,74 +1603,87 @@ static int send_to_ucode(void *hwdev, struct msg_module *nt_msg,
 	return ret;
 }
 
+enum api_csr_op_width {
+	OP_WIDTH_4B,
+	OP_WIDTH_8B,
+	OP_WIDTH_UNKNOWN,
+};
+
 static int api_csr_read(void *hwdev, struct msg_module *nt_msg,
-			void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
+			void *buf_in, u32 in_size, void *buf_out, u32 *out_size,
+			enum api_csr_op_width width)
 {
 	struct up_log_msg_st *up_log_msg = (struct up_log_msg_st *)buf_in;
+	u32 op_bytes = (width == OP_WIDTH_4B ? sizeof(u32) : sizeof(u64));
 	int ret = 0;
-	u32 rd_len;
-	u32 rd_addr;
-	u32 rd_cnt = 0;
+	u32 rd_len, rd_addr, rd_cnt;
 	u32 offset = 0;
 	u8 node_id;
 	u32 i;
 
 	if (!buf_in || !buf_out || in_size != sizeof(*up_log_msg) ||
-	    *out_size != up_log_msg->rd_len)
+	    *out_size != up_log_msg->rd_len || width >= OP_WIDTH_UNKNOWN)
 		return -EINVAL;
 
 	rd_len = up_log_msg->rd_len;
 	rd_addr = up_log_msg->addr;
 	node_id = (u8)nt_msg->up_cmd.up_db.comm_mod_type;
 
-	rd_cnt = rd_len / 4;
+	rd_cnt = rd_len / op_bytes;
 
-	if (rd_len % 4)
+	if (rd_len % op_bytes)
 		rd_cnt++;
 
 	for (i = 0; i < rd_cnt; i++) {
-		ret = hinic_api_csr_rd32(hwdev, node_id,
-					 rd_addr + offset,
-					 (u32 *)(((u8 *)buf_out) + offset));
+		if (width == OP_WIDTH_4B)
+			ret = hinic_api_csr_rd32(hwdev, node_id,
+						 rd_addr + offset,
+						 (u32 *)(((u8 *)buf_out) +
+							 offset));
+		else
+			ret = hinic_api_csr_rd64(hwdev, node_id,
+						 rd_addr + offset,
+						 (u64 *)(((u8 *)buf_out) +
+							 offset));
 		if (ret) {
-			pr_err("Csr rd fail, err: %d, node_id: %d, csr addr: 0x%08x\n",
+			pr_err("Read csr failed, err: %d, node_id: %d, csr addr: 0x%08x\n",
 			       ret, node_id, rd_addr + offset);
 			return ret;
 		}
-		offset += 4;
+		offset += op_bytes;
 	}
 	*out_size = rd_len;
 
 	return ret;
 }
 
-static int api_csr_write(void *hwdev, struct msg_module *nt_msg,
-			 void *buf_in, u32 in_size, void *buf_out,
-			 u32 *out_size)
+static int api_csr_write(void *hwdev, struct msg_module *nt_msg, void *buf_in,
+			 u32 in_size, void *buf_out, u32 *out_size,
+			 enum api_csr_op_width width)
 {
 	struct csr_write_st *csr_write_msg = (struct csr_write_st *)buf_in;
+	u32 op_bytes = (width == OP_WIDTH_4B ? sizeof(u32) : sizeof(u64));
 	int ret = 0;
-	u32 rd_len;
-	u32 rd_addr;
-	u32 rd_cnt = 0;
+	u32 rd_len, rd_addr, rd_cnt;
 	u32 offset = 0;
 	u8 node_id;
 	u32 i;
-	u8 *data;
+	u8 *data = NULL;
 
-	if (!buf_in || in_size != sizeof(*csr_write_msg))
+	if (!buf_in || in_size != sizeof(*csr_write_msg) ||
+	    width >= OP_WIDTH_UNKNOWN)
 		return -EINVAL;
 
 	rd_len = csr_write_msg->rd_len;
 	rd_addr = csr_write_msg->addr;
 	node_id = (u8)nt_msg->up_cmd.up_db.comm_mod_type;
 
-	if (rd_len % 4) {
-		pr_err("Csr length must be a multiple of 4\n");
+	if (rd_len % op_bytes) {
+		pr_err("Csr length must be a multiple of %d\n", op_bytes);
 		return -EFAULT;
 	}
 
-	rd_cnt = rd_len / 4;
+	rd_cnt = rd_len / op_bytes;
 	data = kzalloc(rd_len, GFP_KERNEL);
 	if (!data) {
 		pr_err("No more memory\n");
@@ -1683,16 +1696,21 @@ static int api_csr_write(void *hwdev, struct msg_module *nt_msg,
 	}
 
 	for (i = 0; i < rd_cnt; i++) {
-		ret = hinic_api_csr_wr32(hwdev, node_id,
-					 rd_addr + offset,
-					 *((u32 *)(data + offset)));
+		if (width == OP_WIDTH_4B)
+			ret = hinic_api_csr_wr32(hwdev, node_id,
+						 rd_addr + offset,
+						 *((u32 *)(data + offset)));
+		else
+			ret = hinic_api_csr_wr64(hwdev, node_id,
+						 rd_addr + offset,
+						 *((u64 *)(data + offset)));
 		if (ret) {
-			pr_err("Csr wr fail, ret: %d, node_id: %d, csr addr: 0x%08x\n",
+			pr_err("Write csr failed, ret: %d, node_id: %d, csr addr: 0x%08x\n",
 			       ret, rd_addr + offset, node_id);
 			kfree(data);
 			return ret;
 		}
-		offset += 4;
+		offset += op_bytes;
 	}
 
 	*out_size = 0;
@@ -1756,14 +1774,29 @@ static int send_to_up(void *hwdev, struct msg_module *nt_msg,
 		if (check_useparam_valid(nt_msg, buf_in))
 			return -EINVAL;
 
-		if (nt_msg->up_cmd.up_db.chipif_cmd == API_CSR_WRITE) {
-			ret = api_csr_write(hwdev, nt_msg, buf_in,
-					    in_size, buf_out, out_size);
-			return ret;
+		switch (nt_msg->up_cmd.up_db.chipif_cmd) {
+		case API_CSR_WRITE:
+			ret = api_csr_write(hwdev, nt_msg, buf_in, in_size,
+					    buf_out, out_size, OP_WIDTH_4B);
+			break;
+		case API_CSR_READ:
+			ret = api_csr_read(hwdev, nt_msg, buf_in, in_size,
+					   buf_out, out_size, OP_WIDTH_4B);
+			break;
+		case API_CSR_WRITE_8B:
+			ret = api_csr_write(hwdev, nt_msg, buf_in, in_size,
+					    buf_out, out_size, OP_WIDTH_8B);
+			break;
+		case API_CSR_READ_8B:
+			ret = api_csr_read(hwdev, nt_msg, buf_in, in_size,
+					   buf_out, out_size, OP_WIDTH_8B);
+			break;
+		default:
+			pr_err("Unsupported chipif cmd: %d\n",
+			       nt_msg->up_cmd.up_db.chipif_cmd);
+			ret = -EINVAL;
+			break;
 		}
-
-		ret = api_csr_read(hwdev, nt_msg, buf_in,
-				   in_size, buf_out, out_size);
 	}
 
 	return ret;
@@ -2167,42 +2200,58 @@ static int nictool_exec_cmd(void *hwdev, struct msg_module *nt_msg,
 	return ret;
 }
 
+static int get_nictool_drv_cap(struct msg_module *nt_msg)
+{
+	int ret;
+	u64 support = 0;
+
+	if (nt_msg->lenInfo.outBuffLen != sizeof(u64)) {
+		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
+		       nt_msg->lenInfo.outBuffLen, sizeof(u64));
+		return -EINVAL;
+	}
+
+	support |= NICTOOL_SUPPORT_API_CSR;
+
+	ret = copy_buf_out_to_user(nt_msg, sizeof(support), &support);
+	if (ret)
+		pr_err("%s:%d:: Copy to user failed\n", __func__, __LINE__);
+
+	return ret;
+}
+
 static bool hinic_is_special_handling_cmd(struct msg_module *nt_msg, int *ret)
 {
-	unsigned int cmd_raw = nt_msg->module;
+	bool handled = true;
 
-	/* Get self test result directly whatever driver probe success or not */
-	if (cmd_raw == SEND_TO_HW_DRIVER &&
-	    nt_msg->msg_formate == GET_SELF_TEST_RES) {
+	if (nt_msg->module != SEND_TO_HW_DRIVER)
+		return false;
+
+	switch (nt_msg->msg_formate) {
+	case GET_SELF_TEST_RES:
 		*ret = get_self_test_cmd(nt_msg);
-		return true;
-	}
-
-	if (cmd_raw == SEND_TO_HW_DRIVER &&
-	    nt_msg->msg_formate == GET_CHIP_ID) {
+		break;
+	case GET_CHIP_ID:
 		*ret = get_all_chip_id_cmd(nt_msg);
-		return true;
-	}
-
-	if (cmd_raw == SEND_TO_HW_DRIVER &&
-	    nt_msg->msg_formate == GET_PF_DEV_INFO) {
+		break;
+	case GET_PF_DEV_INFO:
 		*ret = get_pf_dev_info(nt_msg->device_name, nt_msg);
-		return true;
-	}
-
-	if (cmd_raw == SEND_TO_HW_DRIVER &&
-	    nt_msg->msg_formate == CMD_FREE_MEM) {
+		break;
+	case CMD_FREE_MEM:
 		*ret = knl_free_mem(nt_msg->device_name, nt_msg);
-		return true;
-	}
-
-	if (cmd_raw == SEND_TO_HW_DRIVER &&
-	    nt_msg->msg_formate == GET_CHIP_INFO) {
+		break;
+	case GET_CHIP_INFO:
 		*ret = get_card_func_info(nt_msg->device_name, nt_msg);
-		return true;
+		break;
+	case GET_NICTOOL_CAP:
+		*ret = get_nictool_drv_cap(nt_msg);
+		break;
+	default:
+		handled = false;
+		break;
 	}
 
-	return false;
+	return handled;
 }
 
 static long nictool_k_unlocked_ioctl(struct file *pfile,
