@@ -458,6 +458,23 @@ int hinic_alloc_db_phy_addr(void *hwdev, u64 *db_base, u64 *dwqe_base)
 }
 EXPORT_SYMBOL(hinic_alloc_db_phy_addr);
 
+enum hinic_msix_state hinic_get_msix_state(void *hwdev, u16 msix_idx)
+{
+	struct hinic_hwif *hwif = NULL;
+	u32 offset = msix_idx * HINIC_PCI_MSIX_ENTRY_SIZE +
+		     HINIC_PCI_MSIX_ENTRY_VECTOR_CTRL;
+	u32 mask_bits;
+
+	if (!hwdev)
+		return HINIC_MSIX_DISABLE;
+
+	hwif = ((struct hinic_hwdev *)hwdev)->hwif;
+
+	mask_bits = readl(hwif->intr_regs_base + offset);
+
+	return !!(mask_bits & HINIC_PCI_MSIX_ENTRY_CTRL_MASKBIT);
+}
+
 void hinic_set_msix_state(void *hwdev, u16 msix_idx, enum hinic_msix_state flag)
 {
 	struct hinic_hwif *hwif;
@@ -614,10 +631,10 @@ int hinic_init_hwif(struct hinic_hwdev *hwdev, void *cfg_reg_base,
 	/* disable mgmt cpu report any event */
 	hinic_set_pf_status(hwdev->hwif, HINIC_PF_STATUS_INIT);
 
-	pr_info("global_func_idx: %d, func_type: %d, host_id: %d, ppf: %d, mpf: %d\n",
-		hwif->attr.func_global_idx, hwif->attr.func_type,
-		hwif->attr.pci_intf_idx, hwif->attr.ppf_idx,
-		hwif->attr.mpf_idx);
+	sdk_info(hwdev->dev_hdl, "global_func_idx: %d, func_type: %d, host_id: %d, ppf: %d, mpf: %d\n",
+		 hwif->attr.func_global_idx, hwif->attr.func_type,
+		 hwif->attr.pci_intf_idx, hwif->attr.ppf_idx,
+		 hwif->attr.mpf_idx);
 
 	return 0;
 

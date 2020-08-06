@@ -494,6 +494,7 @@ enum hinic_msix_state {
 
 void hinic_set_msix_state(void *hwdev, u16 msix_idx,
 			  enum hinic_msix_state flag);
+enum hinic_msix_state hinic_get_msix_state(void *hwdev, u16 msix_idx);
 
 /* Define the version information structure */
 struct dev_version_info {

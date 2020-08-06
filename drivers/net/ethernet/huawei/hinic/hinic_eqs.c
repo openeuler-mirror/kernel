@@ -1163,8 +1163,8 @@ static int init_eq(struct hinic_eq *eq, struct hinic_hwdev *hwdev, u16 q_id,
 			       "hinic_aeq%d@pci:%s", eq->q_id,
 			       pci_name(hwdev->pcidev_hdl));
 		if (err <= 0 || err >= (int)sizeof(eq->irq_name)) {
-			pr_err("Failed snprintf irq_name, function return(%d) and dest_len(%d)\n",
-			       err, (int)sizeof(eq->irq_name));
+			sdk_err(hwdev->dev_hdl, "Failed snprintf irq_name, function return(%d) and dest_len(%d)\n",
+				err, (int)sizeof(eq->irq_name));
 			err = -EINVAL;
 			goto req_irq_err;
 		}
@@ -1175,8 +1175,8 @@ static int init_eq(struct hinic_eq *eq, struct hinic_hwdev *hwdev, u16 q_id,
 			       "hinic_ceq%d@pci:%s", eq->q_id,
 			       pci_name(hwdev->pcidev_hdl));
 		if (err <= 0 || err >= (int)sizeof(eq->irq_name)) {
-			pr_err("Failed snprintf irq_name, function return(%d) and dest_len(%d)\n",
-			       err, (int)sizeof(eq->irq_name));
+			sdk_err(hwdev->dev_hdl, "Failed snprintf irq_name, function return(%d) and dest_len(%d)\n",
+				err, (int)sizeof(eq->irq_name));
 			err = -EINVAL;
 			goto req_irq_err;
 		}

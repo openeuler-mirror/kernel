@@ -441,8 +441,8 @@ int hinic_pf_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 				    HINIC_MSG_ACK, HINIC_MSG_DIRECT_SEND,
 				    MSG_NO_RESP);
 	if (err) {
-		sdk_err(dev, "Failed to send sync msg to mgmt, sync_msg_id: %d\n",
-			pf_to_mgmt->sync_msg_id);
+		sdk_err(dev, "Failed to send sync msg mod %d cmd 0x%x to mgmt, sync_msg_id: %d\n",
+			mod, cmd, pf_to_mgmt->sync_msg_id);
 		pf_to_mgmt_send_event_set(pf_to_mgmt, SEND_EVENT_FAIL);
 		goto unlock_sync_msg;
 	}
@@ -451,8 +451,8 @@ int hinic_pf_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 
 	ret = wait_for_completion_timeout(recv_done, timeo);
 	if (!ret) {
-		sdk_err(dev, "Mgmt response sync cmd timeout, sync_msg_id: %d\n",
-			pf_to_mgmt->sync_msg_id);
+		sdk_err(dev, "Mgmt response sync msg mod %d cmd 0x%x timeout, sync_msg_id: %d\n",
+			mod, cmd, pf_to_mgmt->sync_msg_id);
 		hinic_dump_aeq_info((struct hinic_hwdev *)hwdev);
 		err = -ETIMEDOUT;
 		pf_to_mgmt_send_event_set(pf_to_mgmt, SEND_EVENT_TIMEOUT);
@@ -467,7 +467,7 @@ int hinic_pf_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 
 	if (buf_out && out_size) {
 		if (*out_size < recv_msg->msg_len) {
-			sdk_err(dev, "Invalid response message length: %d for mod %d cmd %d from mgmt, should less than: %d\n",
+			sdk_err(dev, "Invalid response message length: %d for mod %d cmd 0x%x from mgmt, should less than: %d\n",
 				recv_msg->msg_len, mod, cmd, *out_size);
 			err = -EFAULT;
 			goto unlock_sync_msg;

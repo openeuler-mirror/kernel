@@ -1242,6 +1242,7 @@ static void hinic_get_stats64(struct net_device *netdev,
 static void hinic_tx_timeout(struct net_device *netdev)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+	u16 msix_idx;
 	u8 q_id;
 
 	HINIC_NIC_STATS_INC(nic_dev, netdev_tx_timeout);
@@ -1251,12 +1252,15 @@ static void hinic_tx_timeout(struct net_device *netdev)
 		if (!netif_xmit_stopped(netdev_get_tx_queue(netdev, q_id)))
 			continue;
 
+		msix_idx = nic_dev->irq_cfg[q_id].msix_entry_idx;
 		nicif_info(nic_dev, drv, netdev,
-			   "txq%d: sw_pi: %d, hw_ci: %d, sw_ci: %d, napi->state: 0x%lx\n",
+			   "txq%d: sw_pi: %d, hw_ci: %d, sw_ci: %d, napi->state: 0x%lx, msix mask: %d, intr_flag: 0x%lx\n",
 			   q_id, hinic_dbg_get_sq_pi(nic_dev->hwdev, q_id),
 			   hinic_get_sq_hw_ci(nic_dev->hwdev, q_id),
 			   hinic_get_sq_local_ci(nic_dev->hwdev, q_id),
-			   nic_dev->irq_cfg[q_id].napi.state);
+			   nic_dev->irq_cfg[q_id].napi.state,
+			   hinic_get_msix_state(nic_dev->hwdev, msix_idx),
+			   nic_dev->irq_cfg[q_id].intr_flag);
 	}
 }
 
