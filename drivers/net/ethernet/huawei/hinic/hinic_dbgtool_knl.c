@@ -630,6 +630,7 @@ void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
 	struct timex txc;
 	struct rtc_time rctm;
 	struct card_node *card_info = NULL;
+	struct hinic_hwdev *hwdev = handle;
 	bool flag = false;
 	int i, j;
 
@@ -667,7 +668,8 @@ void ffm_intr_msg_record(void *handle, void *buf_in, u16 in_size,
 
 	ffm_idx = dbgtool_info->ffm->ffm_num;
 	if (ffm_idx < FFM_RECORD_NUM_MAX) {
-		pr_info("%s: recv intr, ffm_idx: %d\n", __func__, ffm_idx);
+		nic_info(hwdev->dev_hdl, "%s: recv intr, ffm_idx: %d\n",
+			 __func__, ffm_idx);
 
 		dbgtool_info->ffm->ffm[ffm_idx].node_id = intr->node_id;
 		dbgtool_info->ffm->ffm[ffm_idx].err_level = intr->err_level;

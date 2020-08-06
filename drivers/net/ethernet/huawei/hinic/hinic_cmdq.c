@@ -689,8 +689,8 @@ static int cmdq_sync_cmd_direct_resp(struct hinic_cmdq *cmdq,
 		if (!err)
 			goto timeout_check_ok;
 
-		sdk_err(cmdq->hwdev->dev_hdl, "Cmdq sync command timeout, prod idx: 0x%x\n",
-			curr_prod_idx);
+		sdk_err(cmdq->hwdev->dev_hdl, "Cmdq sync command timeout, mod: %d cmd: 0x%x prod idx: 0x%x\n",
+			mod, cmd, curr_prod_idx);
 		hinic_dump_ceq_info(cmdq->hwdev);
 		return -ETIMEDOUT;
 	}
@@ -819,8 +819,8 @@ static int cmdq_sync_cmd_detail_resp(struct hinic_cmdq *cmdq,
 		if (!err)
 			goto timeout_check_ok;
 
-		sdk_err(cmdq->hwdev->dev_hdl, "Cmdq sync command timeout, prod idx: 0x%x\n",
-			curr_prod_idx);
+		sdk_err(cmdq->hwdev->dev_hdl, "Cmdq sync command timeout, mod: %d cmd: 0x%x prod idx: 0x%x\n",
+			mod, cmd, curr_prod_idx);
 		hinic_dump_ceq_info(cmdq->hwdev);
 		return -ETIMEDOUT;
 	}

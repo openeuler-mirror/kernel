@@ -1118,6 +1118,7 @@ static int send_mbox_seg(struct hinic_mbox_func_to_func *func_to_func,
 		    mbox_retry_get_ack(func_to_func, done, rsp_aeq)) {
 			sdk_err(hwdev->dev_hdl, "Send mailbox segment timeout\n");
 			dump_mox_reg(hwdev);
+			hinic_dump_aeq_info(hwdev);
 			return -ETIMEDOUT;
 		}
 
@@ -1234,8 +1235,8 @@ int hinic_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
 				dst_func, HINIC_HWIF_DIRECT_SEND, MBOX_ACK,
 				&msg_info);
 	if (err) {
-		sdk_err(func_to_func->hwdev->dev_hdl, "Send mailbox failed, msg_id: %d\n",
-			msg_info.msg_id);
+		sdk_err(func_to_func->hwdev->dev_hdl, "Send mailbox mod %d cmd 0x%x failed, msg_id: %d\n",
+			mod, cmd, msg_info.msg_id);
 		set_mbox_to_func_event(func_to_func, EVENT_FAIL);
 		goto send_err;
 	}
@@ -1247,7 +1248,9 @@ int hinic_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
 						 HINIC_HWIF_DIRECT_SEND))) {
 		set_mbox_to_func_event(func_to_func, EVENT_TIMEOUT);
 		sdk_err(func_to_func->hwdev->dev_hdl,
-			"Send mbox msg timeout, msg_id: %d\n", msg_info.msg_id);
+			"Send mbox msg mod %d cmd 0x%x timeout, msg_id: %d\n",
+			mod, cmd, msg_info.msg_id);
+		hinic_dump_aeq_info(func_to_func->hwdev);
 		err = -ETIMEDOUT;
 		goto send_err;
 	}
@@ -1265,7 +1268,7 @@ int hinic_mbox_to_func(struct hinic_mbox_func_to_func *func_to_func,
 	if (buf_out && out_size) {
 		if (*out_size < mbox_for_resp->mbox_len) {
 			sdk_err(func_to_func->hwdev->dev_hdl,
-				"Invalid response mbox message length: %d for mod %d cmd %d, should less than: %d\n",
+				"Invalid response mbox message length: %d for mod %d cmd 0x%x, should less than: %d\n",
 				mbox_for_resp->mbox_len, mod, cmd, *out_size);
 			err = -EFAULT;
 			goto send_err;
