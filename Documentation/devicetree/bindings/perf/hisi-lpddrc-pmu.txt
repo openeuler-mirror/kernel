@@ -1,0 +1,16 @@
+Hisilicon LPDDRC PMU comtrollers
+
+Required properties:
+  - compatible : should be "hisilicon,lpddrc-pmu".
+  - reg : should contain at least address and length of the LPDDRC PMU
+    register set for the device.
+  - interrupts : one LPDDRC interrupt should be described here.
+
+Example
+    lpddrc0@A5800000 {
+        compatible = "hisilicon,lpddrc-pmu";
+        hisilicon,ch-id = <0>;
+        hisilicon,scl-id = <1>;
+        reg = <0x0 0xA5800000 0x0 0x10000>;
+        interrupts = <0x0 32 0x4>;
+    };
