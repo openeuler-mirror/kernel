@@ -4108,6 +4108,10 @@ static int vcpu_stat_clear(void *_offset, u64 val)
 DEFINE_SIMPLE_ATTRIBUTE(vcpu_stat_fops, vcpu_stat_get, vcpu_stat_clear,
 			"%llu\n");
 
+void __attribute__((weak)) kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat)
+{
+}
+
 #define DFX_MAX_VCPU		1024
 #define DFX_MAX_VCPU_STAT_SIZE	1024
 
@@ -4139,6 +4143,7 @@ static int __dfx_vcpu_stats_get(struct seq_file *p, void *v)
 				break;
 			memcpy(vcpu_stats + index, &vcpu->stat,
 			       sizeof(struct kvm_vcpu_stat));
+			kvm_arch_vcpu_stat_reset(&vcpu->stat);
 			++index;
 		}
 	mutex_unlock(&kvm_lock);

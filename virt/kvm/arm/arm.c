@@ -376,6 +376,20 @@ int kvm_arch_vcpu_init(struct kvm_vcpu *vcpu)
 	return kvm_vgic_vcpu_init(vcpu);
 }
 
+void kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat)
+{
+	vcpu_stat->st_max = 0;
+}
+
+static void update_steal_time(struct kvm_vcpu *vcpu)
+{
+	u64 delta;
+
+	delta = current->sched_info.run_delay - vcpu->stat.steal;
+	vcpu->stat.steal = current->sched_info.run_delay;
+	vcpu->stat.st_max = max(vcpu->stat.st_max, delta);
+}
+
 void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
 	int *last_ran;
@@ -407,6 +421,8 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 		vcpu_clear_wfe_traps(vcpu);
 	else
 		vcpu_set_wfe_traps(vcpu);
+
+	update_steal_time(vcpu);
 }
 
 void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
@@ -677,6 +693,13 @@ static void check_vcpu_requests(struct kvm_vcpu *vcpu)
 	}
 }
 
+static void update_vcpu_stat_time(struct kvm_vcpu_stat *vcpu_stat)
+{
+	vcpu_stat->utime = current->utime;
+	vcpu_stat->stime = current->stime;
+	vcpu_stat->gtime = current->gtime;
+}
+
 /**
  * kvm_arch_vcpu_ioctl_run - the main VCPU run function to execute guest code
  * @vcpu:	The VCPU pointer
@@ -861,6 +884,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu, struct kvm_run *run)
 		preempt_enable();
 
 		ret = handle_exit(vcpu, run, ret);
+		update_vcpu_stat_time(&vcpu->stat);
 	}
 
 	/* Tell userspace about in-kernel device output levels */

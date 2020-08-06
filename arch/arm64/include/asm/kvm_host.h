@@ -386,6 +386,11 @@ struct kvm_vcpu_stat {
 	u64 smc_exit_stat;
 	u64 sve_exit_stat;
 	u64 debug_exit_stat;
+	u64 steal;
+	u64 st_max;
+	u64 utime;
+	u64 stime;
+	u64 gtime;
 };
 
 int kvm_vcpu_preferred_target(struct kvm_vcpu_init *init);
