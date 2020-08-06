@@ -390,7 +390,7 @@ static int hisi_l3c_pmu_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	ret = cpuhp_state_add_instance(CPUHP_AP_PERF_ARM_HISI_L3_ONLINE,
+	ret = cpuhp_state_add_instance(CPUHP_AP_PERF_ARM_HISI_L3C_ONLINE,
 				       &l3c_pmu->node);
 	if (ret) {
 		dev_err(&pdev->dev, "Error %d registering hotplug\n", ret);
@@ -404,7 +404,7 @@ static int hisi_l3c_pmu_probe(struct platform_device *pdev)
 	ret = perf_pmu_register(&l3c_pmu->pmu, name, -1);
 	if (ret) {
 		dev_err(l3c_pmu->dev, "L3C PMU register failed!\n");
-		cpuhp_state_remove_instance(CPUHP_AP_PERF_ARM_HISI_L3_ONLINE,
+		cpuhp_state_remove_instance(CPUHP_AP_PERF_ARM_HISI_L3C_ONLINE,
 					    &l3c_pmu->node);
 	}
 
@@ -416,7 +416,7 @@ static int hisi_l3c_pmu_remove(struct platform_device *pdev)
 	struct hisi_pmu *l3c_pmu = platform_get_drvdata(pdev);
 
 	perf_pmu_unregister(&l3c_pmu->pmu);
-	cpuhp_state_remove_instance(CPUHP_AP_PERF_ARM_HISI_L3_ONLINE,
+	cpuhp_state_remove_instance(CPUHP_AP_PERF_ARM_HISI_L3C_ONLINE,
 				    &l3c_pmu->node);
 
 	return 0;
@@ -435,8 +435,8 @@ static int __init hisi_l3c_pmu_module_init(void)
 {
 	int ret;
 
-	ret = cpuhp_setup_state_multi(CPUHP_AP_PERF_ARM_HISI_L3_ONLINE,
-				      "AP_PERF_ARM_HISI_L3_ONLINE",
+	ret = cpuhp_setup_state_multi(CPUHP_AP_PERF_ARM_HISI_L3C_ONLINE,
+				      "AP_PERF_ARM_HISI_L3C_ONLINE",
 				      hisi_uncore_pmu_online_cpu,
 				      hisi_uncore_pmu_offline_cpu);
 	if (ret) {
@@ -446,7 +446,7 @@ static int __init hisi_l3c_pmu_module_init(void)
 
 	ret = platform_driver_register(&hisi_l3c_pmu_driver);
 	if (ret)
-		cpuhp_remove_multi_state(CPUHP_AP_PERF_ARM_HISI_L3_ONLINE);
+		cpuhp_remove_multi_state(CPUHP_AP_PERF_ARM_HISI_L3C_ONLINE);
 
 	return ret;
 }
@@ -455,7 +455,7 @@ module_init(hisi_l3c_pmu_module_init);
 static void __exit hisi_l3c_pmu_module_exit(void)
 {
 	platform_driver_unregister(&hisi_l3c_pmu_driver);
-	cpuhp_remove_multi_state(CPUHP_AP_PERF_ARM_HISI_L3_ONLINE);
+	cpuhp_remove_multi_state(CPUHP_AP_PERF_ARM_HISI_L3C_ONLINE);
 }
 module_exit(hisi_l3c_pmu_module_exit);
 
