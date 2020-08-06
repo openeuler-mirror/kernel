@@ -36,6 +36,7 @@
 
 #define VM_STAT(x) { #x, offsetof(struct kvm, stat.x), KVM_STAT_VM }
 #define VCPU_STAT(x) { #x, offsetof(struct kvm_vcpu, stat.x), KVM_STAT_VCPU }
+#define DFX_STAT(x) { #x, offsetof(struct kvm_vcpu_stat, x), DFX_STAT_U64 }
 
 struct kvm_stats_debugfs_item debugfs_entries[] = {
 	VCPU_STAT(hvc_exit_stat),
@@ -44,6 +45,19 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	VCPU_STAT(mmio_exit_user),
 	VCPU_STAT(mmio_exit_kernel),
 	VCPU_STAT(exits),
+	{ "vcpu_stat", 0, KVM_STAT_DFX },
+	{ NULL }
+};
+
+/* debugfs entries of Detail For vcpu stat EXtension */
+struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
+	DFX_STAT(pid),
+	DFX_STAT(hvc_exit_stat),
+	DFX_STAT(wfe_exit_stat),
+	DFX_STAT(wfi_exit_stat),
+	DFX_STAT(mmio_exit_user),
+	DFX_STAT(mmio_exit_kernel),
+	DFX_STAT(exits),
 	{ NULL }
 };
 
