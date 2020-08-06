@@ -117,6 +117,8 @@ struct hinic_pcidev {
 	enum hinic_chip_mode chip_mode;
 	bool nic_cur_enable;
 	bool nic_des_enable;
+
+	struct timer_list syncfw_time_timer;
 };
 #define HINIC_EVENT_PROCESS_TIMEOUT	10000
 
@@ -423,6 +425,49 @@ void hinic_unregister_uld(enum hinic_service_type type)
 	lld_dev_put();
 }
 EXPORT_SYMBOL(hinic_unregister_uld);
+
+#define HINIC_SYNFW_TIME_PERIOD		(60 * 60 * 1000)
+
+static void hinic_syncfw_timer_handler(struct timer_list *t)
+{
+	struct hinic_pcidev *pci_adapter = from_timer(pci_adapter, t,
+						      syncfw_time_timer);
+	struct timeval tv = {0};
+	u64 tv_msec;
+
+	do_gettimeofday(&tv);
+
+	tv_msec = tv.tv_sec * MSEC_PER_SEC +
+			tv.tv_usec / USEC_PER_MSEC;
+
+	hinic_sync_time_async(pci_adapter->hwdev, tv_msec);
+	mod_timer(&pci_adapter->syncfw_time_timer,
+		  jiffies + msecs_to_jiffies(HINIC_SYNFW_TIME_PERIOD));
+}
+
+void hinic_init_syncfw_timer(struct hinic_pcidev *pci_adapter)
+{
+	if (hinic_get_func_mode(pci_adapter->hwdev) != FUNC_MOD_NORMAL_HOST ||
+	    hinic_func_type(pci_adapter->hwdev) != TYPE_PPF)
+		return;
+
+	timer_setup(&pci_adapter->syncfw_time_timer,
+		    hinic_syncfw_timer_handler, 0);
+
+	pci_adapter->syncfw_time_timer.expires =
+		jiffies + msecs_to_jiffies(HINIC_SYNFW_TIME_PERIOD);
+
+	add_timer(&pci_adapter->syncfw_time_timer);
+}
+
+void hinic_destroy_syncfw_timer(struct hinic_pcidev *pci_adapter)
+{
+	if (hinic_get_func_mode(pci_adapter->hwdev) != FUNC_MOD_NORMAL_HOST ||
+	    hinic_func_type(pci_adapter->hwdev) != TYPE_PPF)
+		return;
+
+	del_timer_sync(&pci_adapter->syncfw_time_timer);
+}
 
 static void hinic_sync_time_to_fmw(struct hinic_pcidev *pdev_pri)
 {
@@ -2391,6 +2436,7 @@ static int hinic_func_init(struct pci_dev *pdev,
 
 	if (!HINIC_FUNC_IS_VF(pci_adapter->hwdev))
 		hinic_sync_time_to_fmw(pci_adapter);
+	hinic_init_syncfw_timer(pci_adapter);
 
 	/* dbgtool init */
 	lld_lock_chip_node();
@@ -2398,6 +2444,7 @@ static int hinic_func_init(struct pci_dev *pdev,
 	if (err) {
 		lld_unlock_chip_node();
 		sdk_err(&pdev->dev, "Failed to initialize dbgtool\n");
+		hinic_destroy_syncfw_timer(pci_adapter);
 		hinic_event_unregister(pci_adapter->hwdev);
 		return err;
 	}
@@ -2454,6 +2501,7 @@ static void hinic_func_deinit(struct pci_dev *pdev)
 		lld_lock_chip_node();
 		dbgtool_knl_deinit(pci_adapter->hwdev, pci_adapter->chip_node);
 		lld_unlock_chip_node();
+		hinic_destroy_syncfw_timer(pci_adapter);
 		hinic_event_unregister(pci_adapter->hwdev);
 	}
 

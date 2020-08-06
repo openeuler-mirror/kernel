@@ -110,6 +110,16 @@ int hinic_sync_time(void *hwdev, u64 time)
 	return err;
 }
 
+void hinic_sync_time_async(void *hwdev, u64 time)
+{
+	struct hinic_sync_time_info time_info = { 0 };
+
+	time_info.mstime = time;
+	hinic_msg_to_mgmt_async(hwdev, HINIC_MOD_COMM,
+				HINIC_MGMT_CMD_SYNC_TIME, &time_info,
+				sizeof(time_info));
+}
+
 static void parse_sf_en_cap(struct service_cap *cap,
 			    struct hinic_dev_cap *dev_cap, enum func_type type)
 {

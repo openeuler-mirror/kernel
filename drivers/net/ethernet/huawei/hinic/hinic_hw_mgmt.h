@@ -526,6 +526,7 @@ int hinic_alloc_ceqs(void *hwdev, enum hinic_service_type type, int req_num,
 		     int *ceq_id_array, int *resp_num);
 void hinic_free_ceq(void *hwdev, enum hinic_service_type type, int ceq_id);
 int hinic_sync_time(void *hwdev, u64 time);
+void hinic_sync_time_async(void *hwdev, u64 time);
 
 struct hinic_micro_log_info {
 	int (*init)(void *hwdev);
