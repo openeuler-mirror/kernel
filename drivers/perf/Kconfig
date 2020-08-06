@@ -72,7 +72,7 @@ config ARM_DSU_PMU
 
 config HISI_PMU
        bool "HiSilicon SoC PMU"
-       depends on ARM64 && ACPI
+       depends on ARM64
        help
          Support for HiSilicon SoC uncore performance monitoring
          unit (PMU), such as: L3C, HHA and DDRC.

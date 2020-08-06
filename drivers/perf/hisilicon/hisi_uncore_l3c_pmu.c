@@ -17,6 +17,7 @@
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/list.h>
+#include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/smp.h>
 
@@ -234,20 +235,33 @@ static const struct acpi_device_id hisi_l3c_pmu_acpi_match[] = {
 };
 MODULE_DEVICE_TABLE(acpi, hisi_l3c_pmu_acpi_match);
 
-static int hisi_l3c_pmu_init_data(struct platform_device *pdev,
+#ifdef CONFIG_ACPI
+static int hisi_l3c_pmu_init_index(struct platform_device *pdev,
 				  struct hisi_pmu *l3c_pmu)
 {
 	unsigned long long id;
-	struct resource *res;
 	acpi_status status;
 
 	status = acpi_evaluate_integer(ACPI_HANDLE(&pdev->dev),
-				       "_UID", NULL, &id);
+					"_UID", NULL, &id);
 	if (ACPI_FAILURE(status))
 		return -EINVAL;
 
 	l3c_pmu->index_id = id;
 
+	return 0;
+}
+#endif
+
+static int hisi_l3c_pmu_init_data(struct platform_device *pdev,
+				  struct hisi_pmu *l3c_pmu)
+{
+	struct resource *res;
+
+#ifdef CONFIG_ACPI
+	if (hisi_l3c_pmu_init_index(pdev, l3c_pmu))
+		dev_info(&pdev->dev, "Can not init index id by acpi!");
+#endif
 	/*
 	 * Use the SCCL_ID and CCL_ID to identify the L3C PMU, while
 	 * SCCL_ID is in MPIDR[aff2] and CCL_ID is in MPIDR[aff1].

@@ -17,6 +17,7 @@
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/list.h>
+#include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/smp.h>
 
@@ -235,19 +236,33 @@ static const struct acpi_device_id hisi_hha_pmu_acpi_match[] = {
 };
 MODULE_DEVICE_TABLE(acpi, hisi_hha_pmu_acpi_match);
 
-static int hisi_hha_pmu_init_data(struct platform_device *pdev,
+#ifdef CONFIG_ACPI
+static int hisi_hha_pmu_init_index(struct platform_device *pdev,
 				  struct hisi_pmu *hha_pmu)
 {
-	unsigned long long id;
-	struct resource *res;
 	acpi_status status;
+	unsigned long long id;
 
 	status = acpi_evaluate_integer(ACPI_HANDLE(&pdev->dev),
-				       "_UID", NULL, &id);
+					"_UID", NULL, &id);
 	if (ACPI_FAILURE(status))
 		return -EINVAL;
 
 	hha_pmu->index_id = id;
+
+	return 0;
+}
+#endif
+
+static int hisi_hha_pmu_init_data(struct platform_device *pdev,
+				  struct hisi_pmu *hha_pmu)
+{
+	struct resource *res;
+
+#ifdef CONFIG_ACPI
+	if (hisi_hha_pmu_init_index(pdev, hha_pmu))
+		dev_info(&pdev->dev, "Can not init index id by acpi!\n");
+#endif
 
 	/*
 	 * Use SCCL_ID and UID to identify the HHA PMU, while
