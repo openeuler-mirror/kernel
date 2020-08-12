@@ -1325,6 +1325,35 @@ config RANDOMIZE_MODULE_REGION_FULL
 	  a limited range that contains the [_stext, _etext] interval of the
 	  core kernel, so branch relocations are always in range.
 
+menuconfig ASCEND_FEATURES
+	bool "Support Ascend Features"
+	depends on ARM64
+	help
+	  The Ascend chip use the Hisilicon DaVinci architecture, and mainly
+	  focus on AI and machine leanring area, contains many external features.
+
+	  Enable this config to enable selective list of these features.
+
+	  If unsure, say Y
+
+if ASCEND_FEATURES
+
+config ASCEND_DVPP_MMAP
+	bool "Enable support for the DvPP mmap"
+	default y
+	help
+	  The DvPP means Davinci Video Pre-Processor, are mainly consist of VDEC
+	  (Video Decode), VENC(Video Encode), JPEG D/E (Decode/Encode), PNGD
+	  (PNG Decode) and VPC (Video Process) processors.
+
+	  The DvPP could only use a limit range of virtual address, just like the
+	  Ascend310/910 could only use the limit range of virtual address (default
+	  4 GB), so add a new mmap flag which is named MAP_DVPP to allocate the
+	  special memory for DvPP processor, the new flag is only valid for Ascend
+	  platform.
+
+endif
+
 endmenu
 
 menu "Boot options"
