@@ -1500,6 +1500,10 @@ static unsigned long svm_get_unmapped_area(struct file *file,
 		struct vm_area_struct *vma = NULL;
 
 		addr = ALIGN(addr, len);
+
+		if (dvpp_mmap_check(addr, len, flags))
+			return -ENOMEM;
+
 		vma = find_vma(mm, addr);
 		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
 		   (vma == NULL || addr + len <= vm_start_gap(vma)))
@@ -1509,16 +1513,22 @@ static unsigned long svm_get_unmapped_area(struct file *file,
 	info.flags = VM_UNMAPPED_AREA_TOPDOWN;
 	info.length = len;
 	info.low_limit = max(PAGE_SIZE, mmap_min_addr);
-	info.high_limit = mm->mmap_base;
+	info.high_limit = ((mm->mmap_base <= DVPP_MMAP_BASE) ?
+			   mm->mmap_base : DVPP_MMAP_BASE);
 	info.align_mask = ((len >> PAGE_SHIFT) - 1) << PAGE_SHIFT;
 	info.align_offset = pgoff << PAGE_SHIFT;
+
 	addr = vm_unmapped_area(&info);
 
 	if (offset_in_page(addr)) {
 		VM_BUG_ON(addr != -ENOMEM);
 		info.flags = 0;
 		info.low_limit = TASK_UNMAPPED_BASE;
-		info.high_limit = TASK_SIZE;
+		info.high_limit = DVPP_MMAP_BASE;
+
+		if (enable_map_dvpp)
+			dvpp_mmap_get_area(info);
+
 		addr = vm_unmapped_area(&info);
 	}
 
