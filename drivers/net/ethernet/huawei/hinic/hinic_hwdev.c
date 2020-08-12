@@ -780,10 +780,12 @@ void hinic_force_complete_all(void *hwdev)
 	if (hinic_func_type(dev) != TYPE_VF &&
 	    hinic_is_hwdev_mod_inited(dev, HINIC_HWDEV_MGMT_INITED)) {
 		recv_resp_msg = &dev->pf_to_mgmt->recv_resp_msg_from_mgmt;
+		spin_lock_bh(&dev->pf_to_mgmt->sync_event_lock);
 		if (dev->pf_to_mgmt->event_flag == SEND_EVENT_START) {
 			complete(&recv_resp_msg->recv_done);
 			dev->pf_to_mgmt->event_flag = SEND_EVENT_TIMEOUT;
 		}
+		spin_unlock_bh(&dev->pf_to_mgmt->sync_event_lock);
 	}
 
 	/* only flush sync cmdq to avoid blocking remove */
