@@ -48,6 +48,9 @@
 
 #define SVM_REMAP_MEM_LEN_MAX		(16 * 1024 * 1024)
 
+#define SVM_IOCTL_RELEASE_PHYS32	0xfff3
+#define MMAP_PHY32_MAX (16 * 1024 * 1024)
+
 #define CORE_SID		0
 static int probe_index;
 static LIST_HEAD(child_list);
@@ -146,6 +149,8 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "remap proc";
 	case SVM_IOCTL_LOAD_FLAG:
 		return "load flag";
+	case SVM_IOCTL_RELEASE_PHYS32:
+		return "release phys";
 	default:
 		return "unsupported";
 	}
@@ -1483,12 +1488,6 @@ static unsigned long svm_get_unmapped_area(struct file *file,
 	if (!acpi_disabled)
 		return -EPERM;
 
-	if (len != sdev->l2size) {
-		dev_err(sdev->dev, "Just map the size of L2BUFF %ld\n",
-			sdev->l2size);
-		return -EINVAL; //lint !e570
-	}
-
 	if (flags & MAP_FIXED) {
 		if (IS_ALIGNED(addr, len))
 			return addr;
@@ -1544,21 +1543,85 @@ static int svm_mmap(struct file *file, struct vm_area_struct *vma)
 	if (!acpi_disabled)
 		return -EPERM;
 
-	if ((vma->vm_end < vma->vm_start) ||
-	    ((vma->vm_end - vma->vm_start) > sdev->l2size))
-		return -EINVAL;
+	if (vma->vm_flags & VM_PA32BIT) {
+		unsigned long vm_size = vma->vm_end - vma->vm_start;
+		struct page *page = NULL;
 
-	vma->vm_page_prot = __pgprot((~PTE_SHARED) & vma->vm_page_prot.pgprot);
+		if ((vma->vm_end < vma->vm_start) || (vm_size > MMAP_PHY32_MAX))
+			return -EINVAL;
 
-	err = remap_pfn_range(vma, vma->vm_start, sdev->l2buff >> PAGE_SHIFT,
-			vma->vm_end - vma->vm_start,
-			__pgprot(vma->vm_page_prot.pgprot | PTE_DIRTY));
+		page = alloc_pages(GFP_KERNEL | GFP_DMA32, get_order(vm_size));
+		if (!page) {
+			dev_err(sdev->dev, "fail to alloc page\n");
+			return -ENOMEM;
+		}
 
-	if (err)
-		dev_err(sdev->dev, "fail to remap 0x%pK err = %d\n",
-			(void *)vma->vm_start, err);
+		err = remap_pfn_range(vma,
+				vma->vm_start,
+				page_to_pfn(page),
+				vm_size, vma->vm_page_prot);
+		if (err)
+			dev_err(sdev->dev,
+				"fail to remap 0x%pK err=%d\n",
+				(void *)vma->vm_start, err);
+	} else {
+		if ((vma->vm_end < vma->vm_start) ||
+		    ((vma->vm_end - vma->vm_start) > sdev->l2size))
+			return -EINVAL;
+
+		vma->vm_page_prot = __pgprot((~PTE_SHARED) &
+				    vma->vm_page_prot.pgprot);
+
+		err = remap_pfn_range(vma,
+				vma->vm_start,
+				sdev->l2buff >> PAGE_SHIFT,
+				vma->vm_end - vma->vm_start,
+				__pgprot(vma->vm_page_prot.pgprot | PTE_DIRTY));
+		if (err)
+			dev_err(sdev->dev,
+				"fail to remap 0x%pK err=%d\n",
+				(void *)vma->vm_start, err);
+	}
 
 	return err;
+}
+
+static int svm_release_phys32(unsigned long __user *arg)
+{
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma = NULL;
+	struct page *page = NULL;
+	pte_t *pte = NULL;
+	unsigned long phys, addr, offset;
+	unsigned int len = 0;
+
+	if (arg == NULL)
+		return -EINVAL;
+
+	if (get_user(addr, arg))
+		return -EFAULT;
+
+	pte = svm_walk_pt(addr, NULL, &offset);
+	if (pte && pte_present(*pte))
+		phys = PFN_PHYS(pte_pfn(*pte)) + offset;
+	else
+		return -EINVAL;
+
+	down_read(&mm->mmap_sem);
+	vma = find_vma(mm, addr);
+	if (!vma) {
+		up_read(&mm->mmap_sem);
+		return -EFAULT;
+	}
+
+	page = phys_to_page(phys);
+	len = vma->vm_end - vma->vm_start;
+
+	__free_pages(page, get_order(len));
+
+	up_read(&mm->mmap_sem);
+
+	return 0;
 }
 
 /*svm ioctl will include some case for HI1980 and HI1910*/
@@ -1629,6 +1692,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 		break;
 	case SVM_IOCTL_LOAD_FLAG:
 		err = svm_proc_load_flag((int __user *)arg);
+		break;
+	case SVM_IOCTL_RELEASE_PHYS32:
+		err = svm_release_phys32((unsigned long __user *)arg);
 		break;
 	default:
 			err = -EINVAL;

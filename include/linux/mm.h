@@ -219,6 +219,7 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_HUGEPAGE	0x20000000	/* MADV_HUGEPAGE marked this vma */
 #define VM_NOHUGEPAGE	0x40000000	/* MADV_NOHUGEPAGE marked this vma */
 #define VM_MERGEABLE	0x80000000	/* KSM may merge identical pages */
+#define VM_PA32BIT	0x400000000	/* Physical address is within 4G */
 
 #ifdef CONFIG_COHERENT_DEVICE
 #define VM_CDM		0x100000000	/* Contains coherent device memory */
