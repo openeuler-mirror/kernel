@@ -127,6 +127,8 @@ int cpu_suspend(unsigned long arg, int (*fn)(unsigned long))
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(cpu_suspend);
+EXPORT_SYMBOL_GPL(cpu_resume);
 
 static int __init cpu_suspend_init(void)
 {
