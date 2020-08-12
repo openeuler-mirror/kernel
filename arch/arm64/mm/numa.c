@@ -38,7 +38,7 @@ static u8 *numa_distance;
 bool numa_off;
 
 #ifdef CONFIG_COHERENT_DEVICE
-nodemask_t cdmmask;
+nodemask_t __cacheline_aligned cdmmask;
 
 inline int arch_check_node_cdm(int nid)
 {
