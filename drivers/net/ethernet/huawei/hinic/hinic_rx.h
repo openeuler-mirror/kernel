@@ -75,8 +75,8 @@ struct hinic_rxq {
 	u32			dma_rx_buff_size;
 
 	struct hinic_rxq_stats rxq_stats;
-	int			cons_idx;
-	int			delta;
+	u16			cons_idx;
+	u16			delta;
 
 	u32			irq_id;
 	u16			msix_entry_idx;
