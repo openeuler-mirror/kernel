@@ -3784,7 +3784,9 @@ static int arm_smmu_device_remove(struct platform_device *pdev)
 {
 	struct arm_smmu_device *smmu = platform_get_drvdata(pdev);
 
-	iopf_queue_free(smmu->iopf_queue);
+	if (smmu->iopf_queue)
+		iopf_queue_free(smmu->iopf_queue);
+
 	arm_smmu_device_disable(smmu);
 
 	return 0;
