@@ -2527,10 +2527,21 @@ static int hinic_validate_parameters(struct hinic_lld_dev *lld_dev)
 		bp_upper_thd = HINIC_RX_BP_UPPER_THD;
 	}
 
+	/* Check poll_weight value, default poll_weight is 64.
+	 * The poll_weight isn't more than max queue depth,
+	 * so the valid value range is 1~4096.
+	 */
 	if (!poll_weight) {
 		nic_warn(&pdev->dev, "Module Parameter poll_weight can not be 0, resetting to %d\n",
 			 DEFAULT_POLL_WEIGHT);
 		poll_weight = DEFAULT_POLL_WEIGHT;
+	}
+
+	if (poll_weight > HINIC_MAX_QUEUE_DEPTH) {
+		nic_warn(&pdev->dev, "Module Parameter poll_weight value %u is out of 1~%d, resetting to max value %d\n",
+			 poll_weight, HINIC_MAX_QUEUE_DEPTH,
+			 HINIC_MAX_QUEUE_DEPTH);
+		poll_weight = HINIC_MAX_QUEUE_DEPTH;
 	}
 
 	/* check rx_buff value, default rx_buff is 2KB.
