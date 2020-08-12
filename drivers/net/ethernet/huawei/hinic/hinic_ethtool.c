@@ -1824,7 +1824,7 @@ static int hinic_set_pauseparam(struct net_device *netdev,
 	err = hinic_set_pause_info(nic_dev->hwdev, nic_pause);
 	if (err) {
 		nicif_err(nic_dev, drv, netdev, "Failed to set pauseparam\n");
-		return -EFAULT;
+		return err;
 	}
 
 	nicif_info(nic_dev, drv, netdev, "Set pause options, tx: %s, rx: %s\n",
