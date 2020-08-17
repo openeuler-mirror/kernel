@@ -1149,10 +1149,22 @@ static inline void iommu_debugfs_setup(void) {}
 extern void iommu_set_process_exit_handler(struct device *dev,
 					   iommu_process_exit_handler_t cb,
 					   void *token);
+extern struct iommu_process *iommu_process_find(int pasid);
+extern void iommu_process_put(struct iommu_process *process);
+
 #else /* CONFIG_IOMMU_PROCESS */
 static inline void iommu_set_process_exit_handler(struct device *dev,
 						  iommu_process_exit_handler_t cb,
 						  void *token)
+{
+}
+
+static inline struct iommu_process *iommu_process_find(int pasid)
+{
+	return NULL;
+}
+
+static inline void iommu_process_put(struct iommu_process *process)
 {
 }
 #endif /* CONFIG_IOMMU_PROCESS */

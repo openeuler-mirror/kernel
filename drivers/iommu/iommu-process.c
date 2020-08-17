@@ -36,6 +36,93 @@ struct iommu_context {
 	refcount_t		ref;
 };
 
+/*
+ * Because we're using an IDR, PASIDs are limited to 31 bits (the sign bit is
+ * used for returning errors). In practice implementations will use at most 20
+ * bits, which is the PCI limit.
+ */
+static DEFINE_IDR(iommu_process_idr);
+
+/*
+ * For the moment this is an all-purpose lock. It serializes
+ * access/modifications to contexts (process-domain links), access/modifications
+ * to the PASID IDR, and changes to process refcount as well.
+ */
+static DEFINE_SPINLOCK(iommu_process_lock);
+
+static void iommu_process_release(struct kref *kref)
+{
+	struct iommu_process *process;
+	void (*release)(struct iommu_process *);
+
+	assert_spin_locked(&iommu_process_lock);
+
+	process = container_of(kref, struct iommu_process, kref);
+	release = process->release;
+
+	WARN_ON(!list_empty(&process->domains));
+
+	idr_remove(&iommu_process_idr, process->pasid);
+	put_pid(process->pid);
+	release(process);
+}
+
+/*
+ * Returns non-zero if a reference to the process was successfully taken.
+ * Returns zero if the process is being freed and should not be used.
+ */
+static int iommu_process_get_locked(struct iommu_process *process)
+{
+	assert_spin_locked(&iommu_process_lock);
+
+	if (process)
+		return kref_get_unless_zero(&process->kref);
+
+	return 0;
+}
+
+static void iommu_process_put_locked(struct iommu_process *process)
+{
+	assert_spin_locked(&iommu_process_lock);
+
+	kref_put(&process->kref, iommu_process_release);
+}
+
+/**
+ * iommu_process_put - Put reference to process, freeing it if necessary.
+ */
+void iommu_process_put(struct iommu_process *process)
+{
+	spin_lock(&iommu_process_lock);
+	iommu_process_put_locked(process);
+	spin_unlock(&iommu_process_lock);
+}
+EXPORT_SYMBOL_GPL(iommu_process_put);
+
+/**
+ * iommu_process_find - Find process associated to the given PASID
+ *
+ * Returns the IOMMU process corresponding to this PASID, or NULL if not found.
+ * A reference to the iommu_process is kept, and must be released with
+ * iommu_process_put.
+ */
+struct iommu_process *iommu_process_find(int pasid)
+{
+	struct iommu_process *process;
+
+	spin_lock(&iommu_process_lock);
+	process = idr_find(&iommu_process_idr, pasid);
+	if (process) {
+		if (!iommu_process_get_locked(process))
+			/* kref is 0, process is defunct */
+			process = NULL;
+	}
+	spin_unlock(&iommu_process_lock);
+
+	return process;
+}
+EXPORT_SYMBOL_GPL(iommu_process_find);
+
 /**
  * iommu_set_process_exit_handler() - set a callback for stopping the use of
  * PASID in a device.
