@@ -129,9 +129,9 @@ struct msg_module {
 	};
 
 	struct {
-		u32 inBuffLen;
-		u32 outBuffLen;
-	} lenInfo;
+		u32 in_buff_len;
+		u32 out_buff_len;
+	} len_info;
 	u32 res;
 	void *in_buff;
 	void *out_buf;
