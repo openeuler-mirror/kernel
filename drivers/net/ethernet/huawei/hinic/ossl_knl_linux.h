@@ -59,15 +59,15 @@
 int local_atoi(const char *name);
 
 #define nicif_err(priv, type, dev, fmt, args...)		\
-	netif_level(err, priv, type, dev, "[NIC]"fmt, ##args)
+	netif_level(err, priv, type, dev, "[NIC]" fmt, ##args)
 #define nicif_warn(priv, type, dev, fmt, args...)		\
-	netif_level(warn, priv, type, dev, "[NIC]"fmt, ##args)
+	netif_level(warn, priv, type, dev, "[NIC]" fmt, ##args)
 #define nicif_notice(priv, type, dev, fmt, args...)		\
-	netif_level(notice, priv, type, dev, "[NIC]"fmt, ##args)
+	netif_level(notice, priv, type, dev, "[NIC]" fmt, ##args)
 #define nicif_info(priv, type, dev, fmt, args...)		\
-	netif_level(info, priv, type, dev, "[NIC]"fmt, ##args)
+	netif_level(info, priv, type, dev, "[NIC]" fmt, ##args)
 #define nicif_dbg(priv, type, dev, fmt, args...)		\
-	netif_level(dbg, priv, type, dev, "[NIC]"fmt, ##args)
+	netif_level(dbg, priv, type, dev, "[NIC]" fmt, ##args)
 
 #define tasklet_state(tasklet) ((tasklet)->state)
 

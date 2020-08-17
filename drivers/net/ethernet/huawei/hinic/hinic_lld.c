@@ -45,10 +45,10 @@
 
 #define SELF_TEST_BAR_ADDR_OFFSET	0x883c
 
-#define HINIC_SECOND_BASE (1000)
-#define HINIC_SYNC_YEAR_OFFSET (1900)
-#define HINIC_SYNC_MONTH_OFFSET (1)
-#define HINIC_MINUTE_BASE (60)
+#define HINIC_SECOND_BASE		1000
+#define HINIC_SYNC_YEAR_OFFSET		1900
+#define HINIC_SYNC_MONTH_OFFSET		1
+#define HINIC_MINUTE_BASE		60
 #define HINIC_WAIT_TOOL_CNT_TIMEOUT	10000
 #define HINIC_WAIT_SRIOV_CFG_TIMEOUT	15000
 
@@ -120,6 +120,7 @@ struct hinic_pcidev {
 
 	struct timer_list syncfw_time_timer;
 };
+
 #define HINIC_EVENT_PROCESS_TIMEOUT	10000
 
 #define FIND_BIT(num, n)	(((num) & (1UL << (n))) ? 1 : 0)
@@ -261,6 +262,7 @@ static int attach_uld(struct hinic_pcidev *dev, enum hinic_service_type type,
 {
 	void *uld_dev = NULL;
 	int err;
+
 	mutex_lock(&dev->pdev_mutex);
 
 	if (dev->init_state < HINIC_INIT_STATE_HWDEV_INITED) {
@@ -1334,8 +1336,6 @@ void hinic_get_card_func_info_by_card_name(const char *chip_name,
 	}
 
 	lld_dev_put();
-
-	return;
 }
 
 int hinic_get_device_id(void *hwdev, u16 *dev_id)
@@ -2187,6 +2187,7 @@ static void hinic_set_vf_load_state(struct hinic_pcidev *pci_adapter,
 int hinic_ovs_set_vf_load_state(struct pci_dev *pdev)
 {
 	struct hinic_pcidev *pci_adapter;
+
 	if (!pdev) {
 		pr_err("pdev is null\n");
 		return -EINVAL;
@@ -2659,12 +2660,10 @@ static void slave_host_init_delay_work(struct work_struct *work)
 		clear_bit(HINIC_FUNC_PRB_DELAY, &pci_adapter->flag);
 		if (err)
 			set_bit(HINIC_FUNC_PRB_ERR, &pci_adapter->flag);
-		return;
 	} else {
 		queue_delayed_work(pci_adapter->slave_nic_init_workq,
 				   &pci_adapter->slave_nic_init_dwork,
 				   HINIC_SLAVE_NIC_DELAY_TIME);
-		return;
 	}
 }
 
@@ -2861,10 +2860,11 @@ static void __exit hinic_lld_exit(void)
 	pci_unregister_driver(&hinic_driver);
 
 	hinic_unregister_uld(SERVICE_T_NIC);
-
 }
+
 module_init(hinic_lld_init);
 module_exit(hinic_lld_exit);
+
 int hinic_register_micro_log(struct hinic_micro_log_info *micro_log_info)
 {
 	struct card_node *chip_node;

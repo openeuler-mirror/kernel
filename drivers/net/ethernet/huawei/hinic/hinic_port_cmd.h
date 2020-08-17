@@ -278,7 +278,7 @@ enum hinic_mgmt_cmd {
 	HINIC_MGMT_CMD_GET_HW_PF_INFOS		= 0x6D,
 	HINIC_MGMT_CMD_GET_SDI_MODE		= 0x6E,
 
-	HINIC_MGMT_CMD_ENABLE_MIGRATE	= 0x6F,
+	HINIC_MGMT_CMD_ENABLE_MIGRATE		= 0x6F,
 };
 
 /* uCode relates commands */
@@ -343,8 +343,8 @@ enum sq_tunnel_l4_type {
 	TUNNEL_UDP_CSUM,
 };
 
-#define NIC_RSS_CMD_TEMP_ALLOC  0x01
-#define NIC_RSS_CMD_TEMP_FREE   0x02
+#define NIC_RSS_CMD_TEMP_ALLOC				0x01
+#define NIC_RSS_CMD_TEMP_FREE				0x02
 
 #define HINIC_RSS_TYPE_VALID_SHIFT			23
 #define HINIC_RSS_TYPE_TCP_IPV6_EXT_SHIFT		24
@@ -495,7 +495,7 @@ enum {
 
 #define DB_IDX(db, db_base)	\
 	((u32)(((ulong)(db) - (ulong)(db_base)) /	\
-	HINIC_DB_PAGE_SIZE))
+	       HINIC_DB_PAGE_SIZE))
 
 enum hinic_pcie_nosnoop {
 	HINIC_PCIE_SNOOP = 0,
@@ -518,21 +518,21 @@ enum hinic_doorbell_ctrl {
 };
 
 enum hinic_pf_status {
-	HINIC_PF_STATUS_INIT = 0X0,
+	HINIC_PF_STATUS_INIT = 0x0,
 	HINIC_PF_STATUS_ACTIVE_FLAG = 0x11,
 	HINIC_PF_STATUS_FLR_START_FLAG = 0x12,
 	HINIC_PF_STATUS_FLR_FINISH_FLAG = 0x13,
 };
 
 /* total doorbell or direct wqe size is 512kB, db num: 128, dwqe: 128 */
-#define HINIC_DB_DWQE_SIZE       0x00080000
+#define HINIC_DB_DWQE_SIZE      0x00080000
 /* BMGW & VMGW VF db size 256k, have no dwqe space */
-#define HINIC_GW_VF_DB_SIZE	 0x00040000
+#define HINIC_GW_VF_DB_SIZE	0x00040000
 
 /* db/dwqe page size: 4K */
-#define HINIC_DB_PAGE_SIZE		0x00001000ULL
+#define HINIC_DB_PAGE_SIZE	0x00001000ULL
 
-#define HINIC_DB_MAX_AREAS         (HINIC_DB_DWQE_SIZE / HINIC_DB_PAGE_SIZE)
+#define HINIC_DB_MAX_AREAS	(HINIC_DB_DWQE_SIZE / HINIC_DB_PAGE_SIZE)
 
 #define HINIC_PCI_MSIX_ENTRY_SIZE			16
 #define HINIC_PCI_MSIX_ENTRY_VECTOR_CTRL		12

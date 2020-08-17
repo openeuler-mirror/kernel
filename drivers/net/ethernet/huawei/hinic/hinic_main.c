@@ -107,11 +107,9 @@ static unsigned char set_link_status_follow = HINIC_LINK_FOLLOW_STATUS_MAX;
 module_param(set_link_status_follow, byte, 0444);
 MODULE_PARM_DESC(set_link_status_follow, "Set link status follow port status. 0 - default, 1 - follow, 2 - separate, other - unset. (default unset)");
 
-
 static unsigned int lro_replenish_thld = 256;
 module_param(lro_replenish_thld, uint, 0444);
 MODULE_PARM_DESC(lro_replenish_thld, "Number wqe for lro replenish buffer (default=256)");
-
 
 static bool l2nic_interrupt_switch = true;
 module_param(l2nic_interrupt_switch, bool, 0644);
@@ -632,9 +630,9 @@ static void __calc_coal_para(struct hinic_nic_dev *nic_dev,
 		if (nic_dev->in_vm)
 			*pending_limt = (u8)((rate - q_coal->pkt_rate_low) *
 				(q_coal->rx_pending_limt_high -
-				q_coal->rx_pending_limt_low) /
+				 q_coal->rx_pending_limt_low) /
 				(q_coal->pkt_rate_high -
-				q_coal->pkt_rate_low) +
+				 q_coal->pkt_rate_low) +
 				q_coal->rx_pending_limt_low);
 		else
 			*pending_limt = q_coal->rx_pending_limt_low;
@@ -1158,8 +1156,8 @@ static u16 select_queue_by_toeplitz(struct net_device *dev,
 }
 
 static u16 hinic_select_queue(struct net_device *netdev, struct sk_buff *skb,
-				      struct net_device *sb_dev,
-				      select_queue_fallback_t fallback)
+			      struct net_device *sb_dev,
+			      select_queue_fallback_t fallback)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
@@ -1178,7 +1176,7 @@ fallback:
 }
 
 static void hinic_get_stats64(struct net_device *netdev,
-				struct rtnl_link_stats64 *stats)
+			      struct rtnl_link_stats64 *stats)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic_txq_stats *txq_stats;
@@ -2131,14 +2129,14 @@ static void netdev_feature_init(struct net_device *netdev)
 }
 
 #define MOD_PARA_VALIDATE_NUM_QPS(nic_dev, num_qps, out_qps)	{	\
-	if ((num_qps) > nic_dev->max_qps)				\
-		nic_warn(&nic_dev->pdev->dev,				\
+	if ((num_qps) > (nic_dev)->max_qps)				\
+		nic_warn(&(nic_dev)->pdev->dev,				\
 			 "Module Parameter %s value %d is out of range, "\
 			 "Maximum value for the device: %d, using %d\n",\
-			 #num_qps, num_qps, nic_dev->max_qps,		\
-			 nic_dev->max_qps);				\
-	if (!(num_qps) || (num_qps) > nic_dev->max_qps)			\
-		out_qps = nic_dev->max_qps;				\
+			 #num_qps, num_qps, (nic_dev)->max_qps,		\
+			 (nic_dev)->max_qps);				\
+	if (!(num_qps) || (num_qps) > (nic_dev)->max_qps)		\
+		out_qps = (nic_dev)->max_qps;				\
 	else								\
 		out_qps = num_qps;					\
 }
@@ -2150,7 +2148,6 @@ static void hinic_try_to_enable_rss(struct hinic_nic_dev *nic_dev)
 	u16 num_cpus = 0;
 	enum hinic_service_mode service_mode =
 					hinic_get_service_mode(nic_dev->hwdev);
-
 
 	nic_dev->max_qps = hinic_func_max_nic_qnum(nic_dev->hwdev);
 	if (nic_dev->max_qps <= 1) {
@@ -2733,7 +2730,6 @@ static int nic_probe(struct hinic_lld_dev *lld_dev, void **uld_dev,
 		return -ENOMEM;
 	}
 
-
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 	nic_dev = (struct hinic_nic_dev *)netdev_priv(netdev);
 	nic_dev->hwdev = lld_dev->hwdev;
@@ -2748,7 +2744,6 @@ static int nic_probe(struct hinic_lld_dev *lld_dev, void **uld_dev,
 	nic_dev->rx_buff_len = (u16)(rx_buff * CONVERT_UNIT);
 	page_num = (RX_BUFF_NUM_PER_PAGE * nic_dev->rx_buff_len) / PAGE_SIZE;
 	nic_dev->page_order = page_num > 0 ? ilog2(page_num) : 0;
-
 
 	mutex_init(&nic_dev->nic_mutex);
 

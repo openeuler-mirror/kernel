@@ -92,12 +92,12 @@
 		(pg_num) * HINIC_CSR_EQ_PAGE_OFF_STRIDE + 4)
 
 #define HINIC_EQ_HI_PHYS_ADDR_REG(type, q_id, pg_num)	\
-		((u32)((type == HINIC_AEQ) ? \
+		((u32)(((type) == HINIC_AEQ) ? \
 		HINIC_AEQ_HI_PHYS_ADDR_REG(q_id, pg_num) : \
 		HINIC_CEQ_HI_PHYS_ADDR_REG(q_id, pg_num)))
 
 #define HINIC_EQ_LO_PHYS_ADDR_REG(type, q_id, pg_num)	\
-		((u32)((type == HINIC_AEQ) ? \
+		((u32)(((type) == HINIC_AEQ) ? \
 		HINIC_AEQ_LO_PHYS_ADDR_REG(q_id, pg_num) : \
 		HINIC_CEQ_LO_PHYS_ADDR_REG(q_id, pg_num)))
 

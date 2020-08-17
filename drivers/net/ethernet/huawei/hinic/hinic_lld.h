@@ -16,8 +16,8 @@
 #ifndef HINIC_LLD_H_
 #define HINIC_LLD_H_
 
-#define HINIC_SLAVE_NIC_DELAY "hinic_slave_nic_delay"
-#define HINIC_SLAVE_NIC_DELAY_TIME  (5 * HZ)
+#define HINIC_SLAVE_NIC_DELAY		"hinic_slave_nic_delay"
+#define HINIC_SLAVE_NIC_DELAY_TIME	(5 * HZ)
 
 struct hinic_lld_dev {
 	struct pci_dev *pdev;

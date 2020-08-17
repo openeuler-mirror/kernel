@@ -70,8 +70,8 @@ int hinic_msg_to_mgmt_async(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 			    void *buf_in, u16 in_size);
 
 int hinic_mbox_to_vf(void *hwdev, enum hinic_mod_type mod,
-				u16 vf_id, u8 cmd, void *buf_in, u16 in_size,
-				void *buf_out, u16 *out_size, u32 timeout);
+		     u16 vf_id, u8 cmd, void *buf_in, u16 in_size,
+		     void *buf_out, u16 *out_size, u32 timeout);
 
 int hinic_api_cmd_write_nack(void *hwdev, u8 dest,
 			     void *cmd, u16 size);
@@ -155,7 +155,8 @@ int hinic_aeq_register_swe_cb(void *hwdev, enum hinic_aeq_sw_type event,
 void hinic_aeq_unregister_swe_cb(void *hwdev, enum hinic_aeq_sw_type event);
 
 typedef void (*hinic_mgmt_msg_cb)(void *hwdev, void *pri_handle,
-	u8 cmd, void *buf_in, u16 in_size, void *buf_out, u16 *out_size);
+				  u8 cmd, void *buf_in, u16 in_size,
+				  void *buf_out, u16 *out_size);
 
 int hinic_register_mgmt_msg_cb(void *hwdev,
 			       enum hinic_mod_type mod, void *pri_handle,
@@ -428,6 +429,7 @@ enum hinic_service_mode {
 	HINIC_WORK_MODE_NIC,
 	HINIC_WORK_MODE_INVALID	= 0xFF,
 };
+
 enum hinic_service_mode hinic_get_service_mode(void *hwdev);
 
 int hinic_slq_init(void *dev, int num_wqs);
@@ -439,7 +441,8 @@ u64 hinic_slq_get_addr(void *handle, u16 index);
 u64 hinic_slq_get_first_pageaddr(void *handle);
 
 typedef void (*comm_up_self_msg_proc)(void *handle, void *buf_in,
-				u16 in_size, void *buf_out, u16 *out_size);
+				      u16 in_size, void *buf_out,
+				      u16 *out_size);
 
 void hinic_comm_recv_mgmt_self_cmd_reg(void *hwdev, u8 cmd,
 				       comm_up_self_msg_proc proc);
@@ -668,7 +671,7 @@ enum hinic_ucode_event_type {
 };
 
 typedef void (*hinic_event_handler)(void *handle,
-		struct hinic_event_info *event);
+				    struct hinic_event_info *event);
 
 /* only register once */
 void hinic_event_register(void *dev, void *pri_handle,
@@ -751,11 +754,11 @@ struct hinic_hw_pf_infos {
 int hinic_get_hw_pf_infos(void *hwdev, struct hinic_hw_pf_infos *infos);
 int hinic_set_ip_check(void *hwdev, bool ip_check_ctl);
 int hinic_mbox_to_host_sync(void *hwdev, enum hinic_mod_type mod,
-		u8 cmd, void *buf_in, u16 in_size, void *buf_out,
-		u16 *out_size, u32 timeout);
-int hinic_mbox_ppf_to_vf(void *hwdev,
-		enum hinic_mod_type mod, u16 func_id, u8 cmd, void *buf_in,
-		u16 in_size, void *buf_out, u16 *out_size, u32 timeout);
+			    u8 cmd, void *buf_in, u16 in_size, void *buf_out,
+			    u16 *out_size, u32 timeout);
+int hinic_mbox_ppf_to_vf(void *hwdev, enum hinic_mod_type mod, u16 func_id,
+			 u8 cmd, void *buf_in, u16 in_size, void *buf_out,
+			 u16 *out_size, u32 timeout);
 
 int hinic_get_card_present_state(void *hwdev, bool *card_present_state);
 

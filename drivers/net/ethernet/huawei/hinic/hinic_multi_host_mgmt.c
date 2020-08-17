@@ -450,7 +450,8 @@ static int multi_host_event_handler(struct hinic_hwdev *hwdev,
 }
 
 static int sw_fwd_msg_to_vf(struct hinic_hwdev *hwdev,
-	void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
+			    void *buf_in, u16 in_size, void *buf_out,
+			    u16 *out_size)
 {
 	struct hinic_host_fwd_head *fwd_head;
 	u16 fwd_head_len;
@@ -461,9 +462,9 @@ static int sw_fwd_msg_to_vf(struct hinic_hwdev *hwdev,
 	fwd_head_len = sizeof(struct hinic_host_fwd_head);
 	msg = (void *)((u8 *)buf_in + fwd_head_len);
 	err = hinic_mbox_ppf_to_vf(hwdev, fwd_head->mod,
-				fwd_head->dst_glb_func_idx, fwd_head->cmd,
-				msg, (in_size - fwd_head_len),
-				buf_out, out_size, 0);
+				   fwd_head->dst_glb_func_idx, fwd_head->cmd,
+				   msg, in_size - fwd_head_len,
+				   buf_out, out_size, 0);
 	if (err)
 		nic_err(hwdev->dev_hdl,
 			"Fwd msg to func %u failed, err: %d\n",
@@ -471,6 +472,7 @@ static int sw_fwd_msg_to_vf(struct hinic_hwdev *hwdev,
 
 	return err;
 }
+
 static int __slave_host_sw_func_handler(struct hinic_hwdev *hwdev, u16 pf_idx,
 					u8 cmd, void *buf_in, u16 in_size,
 					void *buf_out, u16 *out_size)
@@ -505,7 +507,7 @@ static int __slave_host_sw_func_handler(struct hinic_hwdev *hwdev, u16 pf_idx,
 
 	case HINIC_SW_CMD_SEND_MSG_TO_VF:
 		err = sw_fwd_msg_to_vf(hwdev, buf_in, in_size,
-				buf_out, out_size);
+				       buf_out, out_size);
 		break;
 
 	case HINIC_SW_CMD_MIGRATE_READY:
@@ -550,7 +552,8 @@ int __ppf_process_mbox_msg(struct hinic_hwdev *hwdev, u16 pf_idx, u16 vf_id,
 
 	if (IS_SLAVE_HOST(hwdev)) {
 		err = hinic_mbox_to_host_sync(hwdev, mod, cmd,
-				buf_in, in_size, buf_out, out_size, 0);
+					      buf_in, in_size, buf_out,
+					      out_size, 0);
 		if (err)
 			sdk_err(hwdev->dev_hdl, "send to mpf failed, err: %d\n",
 				err);

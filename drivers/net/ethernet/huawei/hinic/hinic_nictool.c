@@ -36,8 +36,8 @@
 #define HIADM_DEV_CLASS		"nictool_class"
 #define HIADM_DEV_NAME		"nictool_dev"
 
-#define HINIC_CMDQ_BUF_MAX_SIZE		2048U
-#define MSG_MAX_IN_SIZE	(2048 * 1024)
+#define HINIC_CMDQ_BUF_MAX_SIZE	2048U
+#define MSG_MAX_IN_SIZE		(2048 * 1024)
 #define MSG_MAX_OUT_SIZE	(2048 * 1024)
 
 static dev_t g_dev_id = {0};
@@ -50,14 +50,14 @@ static int g_nictool_init_flag;
 static int g_nictool_ref_cnt;
 
 typedef int (*nic_driv_module)(struct hinic_nic_dev *nic_dev, void *buf_in,
-			   u32 in_size, void *buf_out, u32 *out_size);
+			       u32 in_size, void *buf_out, u32 *out_size);
 struct nic_drv_module_handle {
 	enum driver_cmd_type	driv_cmd_name;
 	nic_driv_module		driv_func;
 };
 
 typedef int (*hw_driv_module)(void *hwdev, void *buf_in,
-			   u32 in_size, void *buf_out, u32 *out_size);
+			      u32 in_size, void *buf_out, u32 *out_size);
 struct hw_drv_module_handle {
 	enum driver_cmd_type	driv_cmd_name;
 	hw_driv_module		driv_func;
@@ -654,7 +654,7 @@ static int set_link_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
 }
 
 static int set_dcb_cfg(struct hinic_nic_dev *nic_dev, void *buf_in,
-			u32 in_size, void *buf_out, u32 *out_size)
+		       u32 in_size, void *buf_out, u32 *out_size)
 {
 	union _dcb_ctl dcb_ctl = {.data = 0};
 	int err;
@@ -666,8 +666,8 @@ static int set_dcb_cfg(struct hinic_nic_dev *nic_dev, void *buf_in,
 	dcb_ctl.data = *((u32 *)buf_in);
 
 	err = hinic_setup_dcb_tool(nic_dev->netdev,
-				&dcb_ctl.dcb_data.dcb_en,
-				!!dcb_ctl.dcb_data.wr_flag);
+				   &dcb_ctl.dcb_data.dcb_en,
+				   !!dcb_ctl.dcb_data.wr_flag);
 	if (err) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Failed to setup dcb state to %d\n",
@@ -682,7 +682,7 @@ static int set_dcb_cfg(struct hinic_nic_dev *nic_dev, void *buf_in,
 }
 
 int get_pfc_info(struct hinic_nic_dev *nic_dev, void *buf_in,
-			   u32 in_size, void *buf_out, u32 *out_size)
+		 u32 in_size, void *buf_out, u32 *out_size)
 {
 	union _pfc pfc = {.data = 0};
 
@@ -705,7 +705,7 @@ int get_pfc_info(struct hinic_nic_dev *nic_dev, void *buf_in,
 }
 
 int set_pfc_control(struct hinic_nic_dev *nic_dev, void *buf_in,
-			   u32 in_size, void *buf_out, u32 *out_size)
+		    u32 in_size, void *buf_out, u32 *out_size)
 {
 	u8 pfc_en = 0;
 	u8 err = 0;
@@ -737,7 +737,7 @@ exit:
 }
 
 int set_ets(struct hinic_nic_dev *nic_dev, void *buf_in,
-			    u32 in_size, void *buf_out, u32 *out_size)
+	    u32 in_size, void *buf_out, u32 *out_size)
 {
 	struct _ets ets =  {0};
 	u8 err = 0;
@@ -801,7 +801,7 @@ exit:
 }
 
 int get_support_up(struct hinic_nic_dev *nic_dev, void *buf_in,
-			    u32 in_size, void *buf_out, u32 *out_size)
+		   u32 in_size, void *buf_out, u32 *out_size)
 {
 	u8 *up_num = buf_out;
 	u8 support_up = 0;
@@ -829,7 +829,7 @@ int get_support_up(struct hinic_nic_dev *nic_dev, void *buf_in,
 }
 
 int get_support_tc(struct hinic_nic_dev *nic_dev, void *buf_in,
-			    u32 in_size, void *buf_out, u32 *out_size)
+		   u32 in_size, void *buf_out, u32 *out_size)
 {
 	u8 *tc_num = buf_out;
 
@@ -849,7 +849,7 @@ int get_support_tc(struct hinic_nic_dev *nic_dev, void *buf_in,
 }
 
 int get_ets_info(struct hinic_nic_dev *nic_dev, void *buf_in,
-			    u32 in_size, void *buf_out, u32 *out_size)
+		 u32 in_size, void *buf_out, u32 *out_size)
 {
 	struct _ets *ets = buf_out;
 
@@ -868,7 +868,7 @@ int get_ets_info(struct hinic_nic_dev *nic_dev, void *buf_in,
 }
 
 int set_pfc_priority(struct hinic_nic_dev *nic_dev, void *buf_in,
-			   u32 in_size, void *buf_out, u32 *out_size)
+		     u32 in_size, void *buf_out, u32 *out_size)
 {
 	u8 pfc_prority = 0;
 	u8 err = 0;
@@ -997,6 +997,7 @@ static int get_homologue(struct hinic_nic_dev *nic_dev, void *buf_in,
 			 u32 in_size, void *buf_out, u32 *out_size)
 {
 	struct hinic_homologues *homo = buf_out;
+
 	if (!buf_out || *out_size != sizeof(*homo)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Unexpect out buf size from user: %d, expect: %lu\n",
@@ -1018,6 +1019,7 @@ static int set_homologue(struct hinic_nic_dev *nic_dev, void *buf_in,
 			 u32 in_size, void *buf_out, u32 *out_size)
 {
 	struct hinic_homologues *homo = buf_in;
+
 	if (!buf_in || in_size != sizeof(*homo)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Unexpect in buf size from user: %d, expect: %lu\n",
@@ -1228,6 +1230,7 @@ static int get_device_id(void *hwdev, void *buf_in, u32 in_size,
 {
 	u16 dev_id;
 	int err;
+
 	if (!buf_out || !buf_in || *out_size != sizeof(u16) ||
 	    in_size != sizeof(u16)) {
 		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
@@ -1263,7 +1266,7 @@ static int is_driver_in_vm(void *hwdev, void *buf_in, u32 in_size,
 }
 
 static int get_pf_id(void *hwdev, void *buf_in, u32 in_size,
-			   void *buf_out, u32 *out_size)
+		     void *buf_out, u32 *out_size)
 {
 	struct hinic_pf_info *pf_info;
 	u32 port_id = 0;
@@ -1898,7 +1901,7 @@ static int send_to_sm(void *hwdev, struct msg_module *nt_msg,
 }
 
 static bool is_hwdev_cmd_support(unsigned int mod,
-					   char *ifname, u32 up_api_type)
+				 char *ifname, u32 up_api_type)
 {
 	void *hwdev;
 
@@ -1954,7 +1957,7 @@ static bool is_hwdev_cmd_support(unsigned int mod,
 }
 
 static bool nictool_k_is_cmd_support(unsigned int mod,
-					      char *ifname, u32 up_api_type)
+				     char *ifname, u32 up_api_type)
 {
 	enum hinic_init_state init_state =
 			hinic_get_init_state_by_ifname(ifname);
@@ -1971,7 +1974,7 @@ static bool nictool_k_is_cmd_support(unsigned int mod,
 	} else if (mod >= SEND_TO_UCODE && mod <= SEND_TO_SM) {
 		return is_hwdev_cmd_support(mod, ifname, up_api_type);
 	} else if ((mod >= HINICADM_OVS_DRIVER &&
-		   mod <= HINICADM_FCOE_DRIVER) ||
+		    mod <= HINICADM_FCOE_DRIVER) ||
 		   mod == SEND_TO_HW_DRIVER) {
 		if (init_state < HINIC_INIT_STATE_HWDEV_INITED) {
 			pr_err("Hwdev have not initialized\n");

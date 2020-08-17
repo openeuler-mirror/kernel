@@ -44,18 +44,19 @@
 
 #define HINIC_MSG_HEADER_GET(val, member)			\
 		(((val) >> HINIC_MSG_HEADER_##member##_SHIFT) & \
-		HINIC_MSG_HEADER_##member##_MASK)
+		 HINIC_MSG_HEADER_##member##_MASK)
 
 #define HINIC_MSG_HEADER_SET(val, member)			\
 		((u64)((val) & HINIC_MSG_HEADER_##member##_MASK) << \
-		HINIC_MSG_HEADER_##member##_SHIFT)
+		 HINIC_MSG_HEADER_##member##_SHIFT)
 
-#define HINIC_MGMT_WQ_NAME "hinic_mgmt"
+#define HINIC_MGMT_WQ_NAME	"hinic_mgmt"
 
 enum clp_data_type {
 	HINIC_CLP_REQ_HOST = 0,
 	HINIC_CLP_RSP_HOST = 1
 };
+
 enum clp_reg_type {
 	HINIC_CLP_BA_HOST = 0,
 	HINIC_CLP_SIZE_HOST = 1,
@@ -63,12 +64,13 @@ enum clp_reg_type {
 	HINIC_CLP_START_REQ_HOST = 3,
 	HINIC_CLP_READY_RSP_HOST = 4
 };
-#define HINIC_CLP_REG_GAP			(0x20)
-#define HINIC_CLP_INPUT_BUFFER_LEN_HOST		(4096UL)
-#define HINIC_CLP_DATA_UNIT_HOST		(4UL)
 
-#define HINIC_BAR01_GLOABAL_CTL_OFFSET		(0x4000)
-#define HINIC_BAR01_CLP_OFFSET			(0x5000)
+#define HINIC_CLP_REG_GAP			0x20
+#define HINIC_CLP_INPUT_BUFFER_LEN_HOST		4096UL
+#define HINIC_CLP_DATA_UNIT_HOST		4UL
+
+#define HINIC_BAR01_GLOABAL_CTL_OFFSET		0x4000
+#define HINIC_BAR01_CLP_OFFSET			0x5000
 
 #define HINIC_CLP_SRAM_SIZE_REG		(HINIC_BAR01_GLOABAL_CTL_OFFSET + 0x220)
 #define HINIC_CLP_REQ_SRAM_BA_REG	(HINIC_BAR01_GLOABAL_CTL_OFFSET + 0x224)
@@ -77,29 +79,29 @@ enum clp_reg_type {
 #define HINIC_CLP_RSP_REG		(HINIC_BAR01_GLOABAL_CTL_OFFSET + 0x230)
 #define HINIC_CLP_REG(member)		(HINIC_CLP_##member##_REG)
 
-#define HINIC_CLP_REQ_DATA			(HINIC_BAR01_CLP_OFFSET)
+#define HINIC_CLP_REQ_DATA		(HINIC_BAR01_CLP_OFFSET)
 #define HINIC_CLP_RSP_DATA		(HINIC_BAR01_CLP_OFFSET + 0x1000)
-#define HINIC_CLP_DATA(member)			(HINIC_CLP_##member##_DATA)
+#define HINIC_CLP_DATA(member)		(HINIC_CLP_##member##_DATA)
 
-#define HINIC_CLP_SRAM_SIZE_OFFSET		(16)
-#define HINIC_CLP_SRAM_BASE_OFFSET		(0)
-#define HINIC_CLP_LEN_OFFSET			(0)
-#define HINIC_CLP_START_OFFSET			(31)
-#define HINIC_CLP_READY_OFFSET			(31)
+#define HINIC_CLP_SRAM_SIZE_OFFSET		16
+#define HINIC_CLP_SRAM_BASE_OFFSET		0
+#define HINIC_CLP_LEN_OFFSET			0
+#define HINIC_CLP_START_OFFSET			31
+#define HINIC_CLP_READY_OFFSET			31
 #define HINIC_CLP_OFFSET(member)		(HINIC_CLP_##member##_OFFSET)
 
-#define HINIC_CLP_SRAM_SIZE_BIT_LEN		(0x7ffUL)
-#define HINIC_CLP_SRAM_BASE_BIT_LEN		(0x7ffffffUL)
-#define HINIC_CLP_LEN_BIT_LEN			(0x7ffUL)
-#define HINIC_CLP_START_BIT_LEN			(0x1UL)
-#define HINIC_CLP_READY_BIT_LEN			(0x1UL)
+#define HINIC_CLP_SRAM_SIZE_BIT_LEN		0x7ffUL
+#define HINIC_CLP_SRAM_BASE_BIT_LEN		0x7ffffffUL
+#define HINIC_CLP_LEN_BIT_LEN			0x7ffUL
+#define HINIC_CLP_START_BIT_LEN			0x1UL
+#define HINIC_CLP_READY_BIT_LEN			0x1UL
 #define HINIC_CLP_MASK(member)			(HINIC_CLP_##member##_BIT_LEN)
 
-#define HINIC_CLP_DELAY_CNT_MAX			(200UL)
-#define HINIC_CLP_SRAM_SIZE_REG_MAX		(0x3ff)
-#define HINIC_CLP_SRAM_BASE_REG_MAX		(0x7ffffff)
-#define HINIC_CLP_LEN_REG_MAX			(0x3ff)
-#define HINIC_CLP_START_OR_READY_REG_MAX	(0x1)
+#define HINIC_CLP_DELAY_CNT_MAX			200UL
+#define HINIC_CLP_SRAM_SIZE_REG_MAX		0x3ff
+#define HINIC_CLP_SRAM_BASE_REG_MAX		0x7ffffff
+#define HINIC_CLP_LEN_REG_MAX			0x3ff
+#define HINIC_CLP_START_OR_READY_REG_MAX	0x1
 
 enum hinic_msg_direction_type {
 	HINIC_MSG_DIRECT_SEND	= 0,
@@ -228,14 +230,14 @@ void hinic_pf_to_mgmt_free(struct hinic_hwdev *hwdev);
 
 int hinic_pf_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 			  void *buf_in, u16 in_size, void *buf_out,
-				u16 *out_size, u32 timeout);
+			  u16 *out_size, u32 timeout);
 
 int hinic_pf_to_mgmt_async(void *hwdev, enum hinic_mod_type mod,
 			   u8 cmd, void *buf_in, u16 in_size);
 
 int hinic_pf_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
-			const void *buf_in, u16 in_size,
-			void *buf_out, u16 *out_size);
+			 const void *buf_in, u16 in_size,
+			 void *buf_out, u16 *out_size);
 
 int hinic_clp_pf_to_mgmt_init(struct hinic_hwdev *hwdev);
 void hinic_clp_pf_to_mgmt_free(struct hinic_hwdev *hwdev);

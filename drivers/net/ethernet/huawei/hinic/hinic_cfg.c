@@ -561,7 +561,6 @@ static void parse_dev_cap(struct hinic_hwdev *dev,
 	if (IS_NIC_TYPE(dev))
 		parse_l2nic_res_cap(dev, cap, dev_cap, type);
 
-
 	/* FCoE/IOE/TOE/FC without virtulization */
 	if (type == TYPE_PF || type == TYPE_PPF) {
 		if (IS_FC_TYPE(dev))
@@ -677,7 +676,6 @@ static void nic_param_fix(struct hinic_hwdev *dev)
 		nic_cap->max_rqs = nic_cap->max_queue_allowed;
 		nic_cap->max_sqs = nic_cap->max_queue_allowed;
 	}
-
 }
 
 static void rdma_param_fix(struct hinic_hwdev *dev)
@@ -1207,7 +1205,7 @@ int hinic_alloc_ceqs(void *hwdev, enum hinic_service_type type, int num,
 	for (i = 0; i < num; i++) {
 		if (eq->num_ceq_remain == 0) {
 			sdk_warn(dev->dev_hdl, "Alloc %d ceqs, less than required %d ceqs\n",
-				*act_num, num);
+				 *act_num, num);
 			mutex_unlock(&eq->eq_mutex);
 			return 0;
 		}
@@ -1385,8 +1383,8 @@ static int cfg_mbx_pf_proc_vf_msg(void *hwdev, u16 vf_id, u8 cmd, void *buf_in,
 }
 
 static int cfg_mbx_ppf_proc_msg(void *hwdev, u16 pf_id, u16 vf_id, u8 cmd,
-				 void *buf_in, u16 in_size, void *buf_out,
-				 u16 *out_size)
+				void *buf_in, u16 in_size, void *buf_out,
+				u16 *out_size)
 {
 	struct hinic_hwdev *dev = hwdev;
 
@@ -1399,7 +1397,7 @@ static int cfg_mbx_ppf_proc_msg(void *hwdev, u16 pf_id, u16 vf_id, u8 cmd,
 }
 
 static int cfg_mbx_vf_proc_msg(void *hwdev, u8 cmd, void *buf_in, u16 in_size,
-				void *buf_out, u16 *out_size)
+			       void *buf_out, u16 *out_size)
 {
 	struct hinic_hwdev *dev = hwdev;
 
@@ -1546,8 +1544,8 @@ void free_cfg_mgmt(struct hinic_hwdev *dev)
 
 int init_capability(struct hinic_hwdev *dev)
 {
-	int err;
 	struct cfg_mgmt_info *cfg_mgmt = dev->cfg_mgmt;
+	int err;
 
 	set_cfg_test_param(cfg_mgmt);
 
@@ -2153,6 +2151,7 @@ static void hinic_os_dep_deinit(struct hinic_hwdev *hwdev)
 void hinic_ppf_hwdev_unreg(void *hwdev)
 {
 	struct hinic_hwdev *dev = hwdev;
+
 	if (!hwdev)
 		return;
 
@@ -2166,6 +2165,7 @@ void hinic_ppf_hwdev_unreg(void *hwdev)
 void hinic_ppf_hwdev_reg(void *hwdev, void *ppf_hwdev)
 {
 	struct hinic_hwdev *dev = hwdev;
+
 	if (!hwdev)
 		return;
 

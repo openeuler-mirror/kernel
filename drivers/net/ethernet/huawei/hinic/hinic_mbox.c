@@ -52,7 +52,7 @@
 
 #define HINIC_MBOX_INT_SET(val, field)	\
 			(((val) & HINIC_MBOX_INT_##field##_MASK) << \
-			HINIC_MBOX_INT_##field##_SHIFT)
+			 HINIC_MBOX_INT_##field##_SHIFT)
 
 enum hinic_mbox_tx_status {
 	TX_NOT_DONE = 1,
@@ -70,7 +70,7 @@ enum hinic_mbox_tx_status {
 
 #define HINIC_MBOX_CTRL_SET(val, field)	\
 			(((val) & HINIC_MBOX_CTRL_##field##_MASK) << \
-			HINIC_MBOX_CTRL_##field##_SHIFT)
+			 HINIC_MBOX_CTRL_##field##_SHIFT)
 
 #define HINIC_MBOX_HEADER_MSG_LEN_SHIFT				0
 #define HINIC_MBOX_HEADER_MODULE_SHIFT				11
@@ -102,10 +102,10 @@ enum hinic_mbox_tx_status {
 
 #define HINIC_MBOX_HEADER_GET(val, field)	\
 			(((val) >> HINIC_MBOX_HEADER_##field##_SHIFT) & \
-			HINIC_MBOX_HEADER_##field##_MASK)
+			 HINIC_MBOX_HEADER_##field##_MASK)
 #define HINIC_MBOX_HEADER_SET(val, field)	\
 			((u64)((val) & HINIC_MBOX_HEADER_##field##_MASK) << \
-			HINIC_MBOX_HEADER_##field##_SHIFT)
+			 HINIC_MBOX_HEADER_##field##_SHIFT)
 
 #define MBOX_SEGLEN_MASK			\
 		HINIC_MBOX_HEADER_SET(HINIC_MBOX_HEADER_SEG_LEN_MASK, SEG_LEN)
@@ -395,7 +395,7 @@ void hinic_unregister_vf_mbox_cb(struct hinic_hwdev *hwdev,
 	clear_bit(HINIC_VF_MBOX_CB_REG, &func_to_func->vf_mbox_cb_state[mod]);
 
 	while (test_bit(HINIC_VF_MBOX_CB_RUNNING,
-	       &func_to_func->vf_mbox_cb_state[mod]))
+			&func_to_func->vf_mbox_cb_state[mod]))
 		usleep_range(900, 1000);
 
 	func_to_func->vf_mbox_cb[mod] = NULL;
@@ -671,8 +671,8 @@ static bool check_mbox_seq_id_and_seg_len(struct hinic_recv_mbox *recv_mbox,
 	} else {
 		if (seq_id != recv_mbox->seq_id + 1)
 			return false;
-		else
-			recv_mbox->seq_id = seq_id;
+
+		recv_mbox->seq_id = seq_id;
 	}
 
 	return true;
@@ -1448,9 +1448,9 @@ int __hinic_mbox_to_vf(void *hwdev,
 				  in_size, buf_out, out_size, timeout);
 }
 
-int hinic_mbox_ppf_to_vf(void *hwdev,
-		     enum hinic_mod_type mod, u16 func_id, u8 cmd, void *buf_in,
-		     u16 in_size, void *buf_out, u16 *out_size, u32 timeout)
+int hinic_mbox_ppf_to_vf(void *hwdev, enum hinic_mod_type mod, u16 func_id,
+			 u8 cmd, void *buf_in, u16 in_size, void *buf_out,
+			 u16 *out_size, u32 timeout)
 {
 	struct hinic_mbox_func_to_func *func_to_func;
 	int err;
@@ -1620,7 +1620,8 @@ int hinic_vf_mbox_random_id_init(struct hinic_hwdev *hwdev)
 
 	for (vf_in_pf = 1; vf_in_pf <= hinic_func_max_vf(hwdev); vf_in_pf++) {
 		err = set_vf_mbox_random_id(hwdev,
-				(hinic_glb_pf_vf_offset(hwdev) + vf_in_pf));
+					    hinic_glb_pf_vf_offset(hwdev) +
+					    vf_in_pf);
 		if (err)
 			break;
 	}

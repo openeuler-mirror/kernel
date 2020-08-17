@@ -16,27 +16,27 @@
 #ifndef __CHIPIF_SML_COUNTER_H__
 #define __CHIPIF_SML_COUNTER_H__
 
-#define CHIPIF_FUNC_PF  0
-#define CHIPIF_FUNC_VF  1
-#define CHIPIF_FUNC_PPF 2
+#define CHIPIF_FUNC_PF			0
+#define CHIPIF_FUNC_VF			1
+#define CHIPIF_FUNC_PPF			2
 
-#define CHIPIF_ACK 1
-#define CHIPIF_NOACK 0
+#define CHIPIF_ACK			1
+#define CHIPIF_NOACK			0
 
-#define CHIPIF_SM_CTR_OP_READ 0x2
-#define CHIPIF_SM_CTR_OP_READ_CLEAR 0x6
-#define CHIPIF_SM_CTR_OP_WRITE 0x3
+#define CHIPIF_SM_CTR_OP_READ		0x2
+#define CHIPIF_SM_CTR_OP_READ_CLEAR	0x6
+#define CHIPIF_SM_CTR_OP_WRITE		0x3
 
-#define SMALL_CNT_READ_RSP_SIZE 16
+#define SMALL_CNT_READ_RSP_SIZE		16
 
 /* request head */
 typedef union {
 	struct {
-		u32  pad:15;
-		u32  ack:1;
-		u32  op_id:5;
-		u32  instance:6;
-		u32  src:5;
+		u32  pad : 15;
+		u32  ack : 1;
+		u32  op_id : 5;
+		u32  instance : 6;
+		u32  src : 5;
 	} bs;
 
 	u32 value;
@@ -53,8 +53,8 @@ typedef struct {
 /* counter read response union */
 typedef union {
 	struct {
-		u32 value1:16;
-		u32 pad0:16;
+		u32 value1 : 16;
+		u32 pad0 : 16;
 		u32 pad1[3];
 	} bs_ss16_rsp;
 
@@ -64,10 +64,10 @@ typedef union {
 	} bs_ss32_rsp;
 
 	struct {
-		u32 value1:20;
-		u32 pad0:12;
-		u32 value2:12;
-		u32 pad1:20;
+		u32 value1 : 20;
+		u32 pad0 : 12;
+		u32 value2 : 12;
+		u32 pad1 : 20;
 		u32 pad2[2];
 	} bs_sp_rsp;
 
@@ -89,8 +89,8 @@ typedef union {
 /* resopnse head */
 typedef union {
 	struct {
-		u32 pad:30; /* reserve */
-		u32 code:2;  /* error code */
+		u32 pad : 30; /* reserve */
+		u32 code : 2;  /* error code */
 	} bs;
 
 	u32 value;

@@ -41,16 +41,16 @@
 #include "hinic_tx.h"
 #include "hinic_dbg.h"
 
-#define MIN_SKB_LEN        32
-#define MAX_PAYLOAD_OFFSET 221
+#define MIN_SKB_LEN		32
+#define MAX_PAYLOAD_OFFSET	221
 
 #define NIC_QID(q_id, nic_dev)	((q_id) & ((nic_dev)->num_qps - 1))
 
 #define TXQ_STATS_INC(txq, field)			\
 {							\
-	u64_stats_update_begin(&txq->txq_stats.syncp);	\
-	txq->txq_stats.field++;				\
-	u64_stats_update_end(&txq->txq_stats.syncp);	\
+	u64_stats_update_begin(&(txq)->txq_stats.syncp);	\
+	(txq)->txq_stats.field++;				\
+	u64_stats_update_end(&(txq)->txq_stats.syncp);	\
 }
 
 void hinic_txq_get_stats(struct hinic_txq *txq,
@@ -164,7 +164,7 @@ static int tx_map_skb(struct hinic_nic_dev *nic_dev, struct sk_buff *skb,
 	}
 
 	dma_len[0].dma = dma_map_single(&pdev->dev, skb->data,
-				  skb_headlen(skb), DMA_TO_DEVICE);
+					skb_headlen(skb), DMA_TO_DEVICE);
 	if (dma_mapping_error(&pdev->dev, dma_len[0].dma)) {
 		TXQ_STATS_INC(txq, map_frag_err);
 		err = -EFAULT;
@@ -184,7 +184,7 @@ static int tx_map_skb(struct hinic_nic_dev *nic_dev, struct sk_buff *skb,
 		nsize = skb_frag_size(frag);
 		i++;
 		dma_len[i].dma = skb_frag_dma_map(&pdev->dev, frag, 0,
-					    nsize, DMA_TO_DEVICE);
+						  nsize, DMA_TO_DEVICE);
 		if (dma_mapping_error(&pdev->dev, dma_len[i].dma)) {
 			TXQ_STATS_INC(txq, map_frag_err);
 			i--;
@@ -287,6 +287,7 @@ static void get_inner_l3_l4_type(struct sk_buff *skb, union hinic_ip *ip,
 		*l4_proto = ip->v6->nexthdr;
 		if (exthdr != l4->hdr) {
 			__be16 frag_off = 0;
+
 			ipv6_skip_exthdr(skb, (int)(exthdr - skb->data),
 					 l4_proto, &frag_off);
 		}

@@ -69,7 +69,7 @@ struct hinic_wqs {
 	u64				**page_vaddr;
 	u64				**shadow_page_vaddr;
 
-	struct hinic_free_block	*free_blocks;
+	struct hinic_free_block		*free_blocks;
 	u32				alloc_blk_pos;
 	u32				return_blk_pos;
 	int				num_free_blks;
@@ -86,8 +86,8 @@ void hinic_wq_wqe_pg_clear(struct hinic_wq *wq);
 
 int hinic_cmdq_alloc(struct hinic_cmdq_pages *cmdq_pages,
 		     struct hinic_wq *wq, void *dev_hdl,
-			int cmdq_blocks, u32 wq_page_size, u32 wqebb_size,
-			u16 q_depth, u32 max_wqe_size);
+		     int cmdq_blocks, u32 wq_page_size, u32 wqebb_size,
+		     u16 q_depth, u32 max_wqe_size);
 
 void hinic_cmdq_free(struct hinic_cmdq_pages *cmdq_pages,
 		     struct hinic_wq *wq, int cmdq_blocks);
@@ -98,7 +98,7 @@ void hinic_wqs_free(struct hinic_wqs *wqs);
 
 int hinic_wq_allocate(struct hinic_wqs *wqs, struct hinic_wq *wq,
 		      u32 wqebb_size, u32 wq_page_size, u16 q_depth,
-			u32 max_wqe_size);
+		      u32 max_wqe_size);
 
 void hinic_wq_free(struct hinic_wqs *wqs, struct hinic_wq *wq);
 

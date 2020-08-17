@@ -48,9 +48,9 @@ static void hinic_clear_rss_config_user(struct hinic_nic_dev *nic_dev);
 
 #define RXQ_STATS_INC(rxq, field)			\
 {							\
-	u64_stats_update_begin(&rxq->rxq_stats.syncp);	\
-	rxq->rxq_stats.field++;				\
-	u64_stats_update_end(&rxq->rxq_stats.syncp);	\
+	u64_stats_update_begin(&(rxq)->rxq_stats.syncp);	\
+	(rxq)->rxq_stats.field++;				\
+	u64_stats_update_end(&(rxq)->rxq_stats.syncp);	\
 }
 
 static bool rx_alloc_mapped_page(struct hinic_rxq *rxq,
@@ -657,7 +657,7 @@ int hinic_rx_poll(struct hinic_rxq *rxq, int budget)
 			num_lro = HINIC_GET_RX_NUM_LRO(status);
 			if (num_lro) {
 				rx_bytes += ((num_lro - 1) *
-					    LRO_PKT_HDR_LEN(rx_cqe));
+					     LRO_PKT_HDR_LEN(rx_cqe));
 
 				num_wqe +=
 				(u16)(pkt_len >> rxq->rx_buff_shift) +

@@ -203,9 +203,9 @@ static u16 get_cell_data_size(enum hinic_api_cmd_chain_type type, u16 cmd_size)
 	switch (type) {
 	case HINIC_API_CMD_POLL_READ:
 		cell_data_size = ALIGN(API_CMD_CELL_DESC_SIZE +
-				    API_CMD_CELL_WB_ADDR_SIZE +
-				    API_CMD_CELL_DATA_ADDR_SIZE,
-				    API_CHAIN_CELL_ALIGNMENT);
+				       API_CMD_CELL_WB_ADDR_SIZE +
+				       API_CMD_CELL_DATA_ADDR_SIZE,
+				       API_CHAIN_CELL_ALIGNMENT);
 		break;
 
 	case HINIC_API_CMD_WRITE_TO_MGMT_CPU:
@@ -253,9 +253,9 @@ static void prepare_cell_ctrl(u64 *cell_ctrl, u16 cell_len)
  * @cmd_size: the command size
  */
 static void prepare_api_cmd(struct hinic_api_cmd_chain *chain,
-			struct hinic_api_cmd_cell *cell,
-			enum hinic_node_id dest,
-			const void *cmd, u16 cmd_size)
+			    struct hinic_api_cmd_cell *cell,
+			    enum hinic_node_id dest,
+			    const void *cmd, u16 cmd_size)
 {
 	struct hinic_api_cmd_cell_ctxt	*cell_ctxt;
 	u32 priv;
@@ -299,7 +299,7 @@ static void prepare_api_cmd(struct hinic_api_cmd_chain *chain,
 		      HINIC_API_CMD_DESC_SET(SIZE_4BYTES(cmd_size), SIZE);
 
 	cell->desc |= HINIC_API_CMD_DESC_SET(xor_chksum_set(&cell->desc),
-						XOR_CHKSUM);
+					     XOR_CHKSUM);
 
 	/* The data in the HW should be in Big Endian Format */
 	cell->desc = cpu_to_be64(cell->desc);
@@ -559,7 +559,7 @@ int hinic_api_cmd_write(struct hinic_api_cmd_chain *chain,
 
 int hinic_api_cmd_read(struct hinic_api_cmd_chain *chain,
 		       enum hinic_node_id dest,
-			void *cmd, u16 size, void *ack, u16 ack_size)
+		       void *cmd, u16 size, void *ack, u16 ack_size)
 {
 	return api_cmd(chain, dest, cmd, size, ack, ack_size);
 }

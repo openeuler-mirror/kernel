@@ -62,11 +62,11 @@
 
 #define MAX_MSG_SZ			2016
 
-#define MAX_CMD_BUF_SIZE    2048ULL
+#define MAX_CMD_BUF_SIZE		2048ULL
 
 #define MSG_SZ_IS_VALID(in_size)	((in_size) <= MAX_MSG_SZ)
 
-#define SYNC_MSG_ID(pf_to_mgmt)	((pf_to_mgmt)->sync_msg_id)
+#define SYNC_MSG_ID(pf_to_mgmt)		((pf_to_mgmt)->sync_msg_id)
 
 #define SYNC_MSG_ID_INC(pf_to_mgmt)	(SYNC_MSG_ID(pf_to_mgmt) = \
 			(SYNC_MSG_ID(pf_to_mgmt) + 1) & SYNC_MSG_ID_MASK)
@@ -251,10 +251,11 @@ static void prepare_header(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 }
 
 static void clp_prepare_header(struct hinic_hwdev *hwdev,
-			   u64 *header, u16 msg_len, enum hinic_mod_type mod,
-			   enum hinic_msg_ack_type ack_type,
-			   enum hinic_msg_direction_type direction,
-			   enum hinic_mgmt_cmd cmd, u32 msg_id)
+			       u64 *header, u16 msg_len,
+			       enum hinic_mod_type mod,
+			       enum hinic_msg_ack_type ack_type,
+			       enum hinic_msg_direction_type direction,
+			       enum hinic_mgmt_cmd cmd, u32 msg_id)
 {
 	struct hinic_hwif *hwif = hwdev->hwif;
 
@@ -304,9 +305,9 @@ static void prepare_mgmt_cmd(u8 *mgmt_cmd, u64 *header, const void *msg,
  */
 static int send_msg_to_mgmt_async(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 				  enum hinic_mod_type mod, u8 cmd,
-				void *msg, u16 msg_len,
-				enum hinic_msg_direction_type direction,
-				u16 resp_msg_id)
+				  void *msg, u16 msg_len,
+				  enum hinic_msg_direction_type direction,
+				  u16 resp_msg_id)
 {
 	void *mgmt_cmd = pf_to_mgmt->async_msg_buf;
 	struct hinic_api_cmd_chain *chain;
@@ -331,7 +332,7 @@ static int send_msg_to_mgmt_async(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 	chain = pf_to_mgmt->cmd_chain[HINIC_API_CMD_WRITE_ASYNC_TO_MGMT_CPU];
 
 	return hinic_api_cmd_write(chain, HINIC_NODE_ID_MGMT_HOST, mgmt_cmd,
-					cmd_size);
+				   cmd_size);
 }
 
 int hinic_pf_to_mgmt_async(void *hwdev, enum hinic_mod_type mod,
@@ -373,10 +374,10 @@ int hinic_pf_to_mgmt_async(void *hwdev, enum hinic_mod_type mod,
  */
 static int send_msg_to_mgmt_sync(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 				 enum hinic_mod_type mod, u8 cmd,
-				void *msg, u16 msg_len,
-				enum hinic_msg_ack_type ack_type,
-				enum hinic_msg_direction_type direction,
-				u16 resp_msg_id)
+				 void *msg, u16 msg_len,
+				 enum hinic_msg_ack_type ack_type,
+				 enum hinic_msg_direction_type direction,
+				 u16 resp_msg_id)
 {
 	void *mgmt_cmd = pf_to_mgmt->sync_msg_buf;
 	struct hinic_api_cmd_chain *chain;
@@ -486,7 +487,7 @@ unlock_sync_msg:
 }
 
 static int __get_clp_reg(void *hwdev, enum clp_data_type data_type,
-			enum clp_reg_type reg_type, u32 *reg_addr)
+			 enum clp_reg_type reg_type, u32 *reg_addr)
 {
 	struct hinic_hwdev *dev = hwdev;
 	u32 offset;
@@ -530,8 +531,8 @@ static int __get_clp_reg(void *hwdev, enum clp_data_type data_type,
 }
 
 static int hinic_read_clp_reg(struct hinic_hwdev *hwdev,
-				enum clp_data_type data_type,
-				enum clp_reg_type reg_type, u32 *read_value)
+			      enum clp_data_type data_type,
+			      enum clp_reg_type reg_type, u32 *read_value)
 {
 	int err;
 	u32 reg_addr, reg_value;
@@ -660,7 +661,7 @@ static void hinic_write_clp_reg(struct hinic_hwdev *hwdev,
 }
 
 static int hinic_read_clp_data(struct hinic_hwdev *hwdev,
-				void *buf_out, u16 *out_size)
+			       void *buf_out, u16 *out_size)
 {
 	int err;
 	u32 reg = HINIC_CLP_DATA(RSP);
@@ -788,7 +789,7 @@ static int hinic_check_clp_init_status(struct hinic_hwdev *hwdev)
 }
 
 static void hinic_clear_clp_data(struct hinic_hwdev *hwdev,
-				enum clp_data_type data_type)
+				 enum clp_data_type data_type)
 {
 	u32 reg = (data_type == HINIC_CLP_REQ_HOST) ?
 		   HINIC_CLP_DATA(REQ) : HINIC_CLP_DATA(RSP);
@@ -801,8 +802,8 @@ static void hinic_clear_clp_data(struct hinic_hwdev *hwdev,
 }
 
 int hinic_pf_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
-			const void *buf_in, u16 in_size,
-			void *buf_out, u16 *out_size)
+			 const void *buf_in, u16 in_size,
+			 void *buf_out, u16 *out_size)
 {
 	struct hinic_clp_pf_to_mgmt *clp_pf_to_mgmt;
 	struct hinic_hwdev *dev = hwdev;

@@ -280,7 +280,7 @@ int hinic_ndo_set_vf_spoofchk(struct net_device *netdev, int vf, bool setting)
 		return 0;
 
 	err = hinic_set_vf_spoofchk(sriov_info->hwdev,
-				      OS_VF_ID_TO_HW(vf), setting);
+				    OS_VF_ID_TO_HW(vf), setting);
 
 	if (!err) {
 		nicif_info(adapter, drv, netdev, "Set VF %d spoofchk %s\n",
