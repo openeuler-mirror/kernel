@@ -112,6 +112,17 @@ config IOMMU_DMA
 	select IOMMU_IOVA
 	select NEED_SG_DMA_LENGTH
 
+config IOMMU_PROCESS
+	bool "Process management API for the IOMMU"
+	depends on MMU_NOTIFIER
+	select IOMMU_API
+	help
+	  Enable process management for the IOMMU API. In systems that support
+	  it, device drivers can bind processes to devices and share their page
+	  tables using this API.
+
+	  If unsure, say N here.
+
 config IOMMU_SVA
 	bool
 	select IOMMU_API
