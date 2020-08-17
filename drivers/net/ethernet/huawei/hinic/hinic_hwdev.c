@@ -761,15 +761,6 @@ int hinic_get_chip_present_flag(void *hwdev)
 }
 EXPORT_SYMBOL(hinic_get_chip_present_flag);
 
-
-static void hinic_set_fast_recycle_status(void *hwdev)
-{
-	struct hinic_hwdev *dev = hwdev;
-
-	sdk_err(dev->dev_hdl, "Enter fast recycle status\n");
-	dev->chip_present_flag = HINIC_CHIP_ABSENT;
-}
-
 void hinic_force_complete_all(void *hwdev)
 {
 	struct hinic_hwdev *dev = (struct hinic_hwdev *)hwdev;
@@ -3509,20 +3500,6 @@ static void fault_report_show(struct hinic_hwdev *hwdev,
 	}
 }
 
-static void hinic_refresh_history_fault(struct hinic_hwdev *hwdev,
-				 struct hinic_fault_recover_info *info)
-{
-	if (!hwdev->history_fault_flag) {
-		hwdev->history_fault_flag = true;
-		memcpy(&hwdev->history_fault, info,
-		       sizeof(struct hinic_fault_recover_info));
-	} else {
-		if (hwdev->history_fault.fault_lev >= info->fault_lev)
-			memcpy(&hwdev->history_fault, info,
-			       sizeof(struct hinic_fault_recover_info));
-	}
-}
-
 void hinic_migrate_report(void *dev)
 {
 	struct hinic_hwdev *hwdev = (struct hinic_hwdev *)dev;
@@ -3542,7 +3519,6 @@ static void fault_event_handler(struct hinic_hwdev *hwdev, void *buf_in,
 {
 	struct hinic_cmd_fault_event *fault_event;
 	struct hinic_event_info event_info;
-	struct hinic_fault_info_node *fault_node;
 	u8 fault_level;
 
 	if (in_size != sizeof(*fault_event)) {
@@ -3566,35 +3542,10 @@ static void fault_event_handler(struct hinic_hwdev *hwdev, void *buf_in,
 		event_info.info.fault_level = fault_level;
 		hwdev->event_callback(hwdev->event_pri_handle, &event_info);
 	}
-
-	/* refresh history fault info */
-	fault_node = kzalloc(sizeof(*fault_node), GFP_KERNEL);
-	if (!fault_node) {
-		sdk_err(hwdev->dev_hdl, "Malloc fault node memory failed\n");
-		return;
-	}
-
-	if (fault_event->event.type <= FAULT_TYPE_REG_WR_TIMEOUT)
-		fault_node->info.fault_src = fault_event->event.type;
-	else if (fault_event->event.type == FAULT_TYPE_PHY_FAULT)
-		fault_node->info.fault_src = HINIC_FAULT_SRC_HW_PHY_FAULT;
-
-	fault_node->info.fault_lev = fault_level;
-
-	memcpy(&fault_node->info.fault_data.hw_mgmt, &fault_event->event.event,
-	       sizeof(union hinic_fault_hw_mgmt));
-	hinic_refresh_history_fault(hwdev, &fault_node->info);
-
-	down(&hwdev->fault_list_sem);
-	kfree(fault_node);
-	up(&hwdev->fault_list_sem);
-
-	queue_work(hwdev->workq, &hwdev->fault_work);
 }
 
 static void heartbeat_lost_event_handler(struct hinic_hwdev *hwdev)
 {
-	struct hinic_fault_info_node *fault_node;
 	struct hinic_event_info event_info = {0};
 
 	atomic_inc(&hwdev->hw_stats.heart_lost_stats);
@@ -3605,23 +3556,6 @@ static void heartbeat_lost_event_handler(struct hinic_hwdev *hwdev)
 		event_info.type = HINIC_EVENT_HEART_LOST;
 		hwdev->event_callback(hwdev->event_pri_handle, &event_info);
 	}
-
-	/* refresh history fault info */
-	fault_node = kzalloc(sizeof(*fault_node), GFP_KERNEL);
-	if (!fault_node) {
-		sdk_err(hwdev->dev_hdl, "Malloc fault node memory failed\n");
-		return;
-	}
-
-	fault_node->info.fault_src = HINIC_FAULT_SRC_HOST_HEARTBEAT_LOST;
-	fault_node->info.fault_lev = FAULT_LEVEL_FATAL;
-	hinic_refresh_history_fault(hwdev, &fault_node->info);
-
-	down(&hwdev->fault_list_sem);
-	kfree(fault_node);
-	up(&hwdev->fault_list_sem);
-
-	queue_work(hwdev->workq, &hwdev->fault_work);
 }
 
 static void link_status_event_handler(struct hinic_hwdev *hwdev, void *buf_in,
@@ -3818,7 +3752,6 @@ static void mgmt_watchdog_timeout_event_handler(struct hinic_hwdev *hwdev,
 						void *buf_in, u16 in_size,
 						void *buf_out, u16 *out_size)
 {
-	struct hinic_fault_info_node *fault_node;
 	struct hinic_event_info event_info = { 0 };
 
 	sw_watchdog_timeout_info_show(hwdev, buf_in, in_size,
@@ -3828,23 +3761,6 @@ static void mgmt_watchdog_timeout_event_handler(struct hinic_hwdev *hwdev,
 		event_info.type = HINIC_EVENT_MGMT_WATCHDOG_EVENT;
 		hwdev->event_callback(hwdev->event_pri_handle, &event_info);
 	}
-
-	/* refresh history fault info */
-	fault_node = kzalloc(sizeof(*fault_node), GFP_KERNEL);
-	if (!fault_node) {
-		sdk_err(hwdev->dev_hdl, "Malloc fault node memory failed\n");
-		return;
-	}
-
-	fault_node->info.fault_src = HINIC_FAULT_SRC_MGMT_WATCHDOG;
-	fault_node->info.fault_lev = FAULT_LEVEL_FATAL;
-	hinic_refresh_history_fault(hwdev, &fault_node->info);
-
-	down(&hwdev->fault_list_sem);
-	kfree(fault_node);
-	up(&hwdev->fault_list_sem);
-
-	queue_work(hwdev->workq, &hwdev->fault_work);
 }
 
 static void port_sfp_info_event(struct hinic_hwdev *hwdev, void *buf_in,
@@ -5117,106 +5033,6 @@ int hinic_read_reg(void *hwdev, u32 reg_addr, u32 *val)
 
 	return 0;
 }
-
-static void hinic_exec_recover_cb(struct hinic_hwdev *hwdev,
-			   struct hinic_fault_recover_info *info)
-{
-	sdk_info(hwdev->dev_hdl, "Enter hinic_exec_recover_cb\n");
-
-	if (!hinic_get_chip_present_flag(hwdev)) {
-		sdk_err(hwdev->dev_hdl, "Device surprised removed, abort recover\n");
-		return;
-	}
-
-	if (info->fault_lev >= FAULT_LEVEL_MAX) {
-		sdk_err(hwdev->dev_hdl, "Invalid fault level\n");
-		return;
-	}
-
-	down(&hwdev->recover_sem);
-	if (hwdev->recover_cb) {
-		if (info->fault_lev <= FAULT_LEVEL_SERIOUS_FLR)
-			hinic_set_fast_recycle_status(hwdev);
-
-		hwdev->recover_cb(hwdev->recover_pri_hd, *info);
-	}
-	up(&hwdev->recover_sem);
-}
-
-void hinic_fault_work_handler(struct work_struct *work)
-{
-	struct hinic_hwdev *hwdev =
-			container_of(work, struct hinic_hwdev, fault_work);
-
-	down(&hwdev->fault_list_sem);
-	up(&hwdev->fault_list_sem);
-}
-
-void hinic_swe_fault_handler(struct hinic_hwdev *hwdev, u8 level,
-			     u8 event, u64 val)
-{
-	struct hinic_fault_info_node *fault_node;
-
-	if (level < FAULT_LEVEL_MAX) {
-		fault_node = kzalloc(sizeof(*fault_node), GFP_KERNEL);
-		if (!fault_node) {
-			sdk_err(hwdev->dev_hdl, "Malloc fault node memory failed\n");
-			return;
-		}
-
-		fault_node->info.fault_src = HINIC_FAULT_SRC_SW_MGMT_UCODE;
-		fault_node->info.fault_lev = level;
-		fault_node->info.fault_data.sw_mgmt.event_id = event;
-		fault_node->info.fault_data.sw_mgmt.event_data = val;
-		hinic_refresh_history_fault(hwdev, &fault_node->info);
-
-		down(&hwdev->fault_list_sem);
-		kfree(fault_node);
-		up(&hwdev->fault_list_sem);
-
-		queue_work(hwdev->workq, &hwdev->fault_work);
-	}
-}
-
-int hinic_register_fault_recover(void *hwdev, void *pri_handle,
-				 hinic_fault_recover_handler cb)
-{
-	struct hinic_hwdev *dev = hwdev;
-
-	if (!hwdev || !pri_handle || !cb) {
-		pr_err("Invalid input parameters when register fault recover handler\n");
-		return -EINVAL;
-	}
-
-	down(&dev->recover_sem);
-	dev->recover_pri_hd = pri_handle;
-	dev->recover_cb = cb;
-	up(&dev->recover_sem);
-
-	if (dev->history_fault_flag)
-		hinic_exec_recover_cb(dev, &dev->history_fault);
-
-	return 0;
-}
-EXPORT_SYMBOL(hinic_register_fault_recover);
-
-int hinic_unregister_fault_recover(void *hwdev)
-{
-	struct hinic_hwdev *dev = hwdev;
-
-	if (!hwdev) {
-		pr_err("Invalid input parameters when unregister fault recover handler\n");
-		return -EINVAL;
-	}
-
-	down(&dev->recover_sem);
-	dev->recover_pri_hd = NULL;
-	dev->recover_cb = NULL;
-	up(&dev->recover_sem);
-
-	return 0;
-}
-EXPORT_SYMBOL(hinic_unregister_fault_recover);
 
 void hinic_set_func_deinit_flag(void *hwdev)
 {
