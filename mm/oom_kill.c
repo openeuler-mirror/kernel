@@ -52,6 +52,9 @@
 int sysctl_panic_on_oom;
 int sysctl_oom_kill_allocating_task;
 int sysctl_oom_dump_tasks = 1;
+#ifdef CONFIG_ASCEND_OOM
+int sysctl_enable_oom_killer = 1;
+#endif
 
 /*
  * Serializes oom killer invocations (out_of_memory()) from all contexts to
@@ -1047,6 +1050,42 @@ int unregister_oom_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(unregister_oom_notifier);
 
+#ifdef CONFIG_ASCEND_OOM
+static BLOCKING_NOTIFIER_HEAD(hisi_oom_notify_list);
+
+int register_hisi_oom_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&hisi_oom_notify_list, nb);
+}
+EXPORT_SYMBOL_GPL(register_hisi_oom_notifier);
+
+static unsigned long last_jiffies;
+int hisi_oom_notifier_call(unsigned long val, void *v)
+{
+	/* when enable oom killer, just return */
+	if (sysctl_enable_oom_killer == 1)
+		return 0;
+
+	/* Print time interval to 10 seconds */
+	if (time_after(jiffies, last_jiffies + 10 * HZ)) {
+		pr_err("OOM_NOTIFIER: oom type %lu\n", val);
+		dump_stack();
+		show_mem(SHOW_MEM_FILTER_NODES, NULL);
+		dump_tasks(NULL, 0);
+		last_jiffies = jiffies;
+	}
+
+	return blocking_notifier_call_chain(&hisi_oom_notify_list, val, v);
+}
+EXPORT_SYMBOL_GPL(hisi_oom_notifier_call);
+
+int unregister_hisi_oom_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&hisi_oom_notify_list, nb);
+}
+EXPORT_SYMBOL_GPL(unregister_hisi_oom_notifier);
+#endif
+
 /**
  * out_of_memory - kill the "best" process when we run out of memory
  * @oc: pointer to struct oom_control
@@ -1060,9 +1099,26 @@ bool out_of_memory(struct oom_control *oc)
 {
 	unsigned long freed = 0;
 	enum oom_constraint constraint = CONSTRAINT_NONE;
+#ifdef CONFIG_ASCEND_OOM
+	unsigned long oom_type;
+#endif
 
 	if (oom_killer_disabled)
 		return false;
+
+#ifdef CONFIG_ASCEND_OOM
+	if (sysctl_enable_oom_killer == 0 || sysctl_enable_oom_killer == 2) {
+		if (is_memcg_oom(oc))
+			oom_type = HISI_OOM_TYPE_CGROUP;
+		else
+			oom_type = HISI_OOM_TYPE_NOMEM;
+
+		hisi_oom_notifier_call(oom_type, NULL);
+		if (unlikely(sysctl_enable_oom_killer == 2))
+			panic("Out of memory, panic by sysctl_enable_oom_killer");
+		return false;
+	}
+#endif
 
 	if (!is_memcg_oom(oc)) {
 		blocking_notifier_call_chain(&oom_notify_list, 0, &freed);

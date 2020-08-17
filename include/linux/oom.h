@@ -117,4 +117,15 @@ extern struct task_struct *find_lock_task_mm(struct task_struct *p);
 extern int sysctl_oom_dump_tasks;
 extern int sysctl_oom_kill_allocating_task;
 extern int sysctl_panic_on_oom;
+
+#ifdef CONFIG_ASCEND_OOM
+#define HISI_OOM_TYPE_NOMEM		0
+#define HISI_OOM_TYPE_OVERCOMMIT	1
+#define HISI_OOM_TYPE_CGROUP		2
+
+extern int sysctl_enable_oom_killer;
+extern int register_hisi_oom_notifier(struct notifier_block *nb);
+extern int hisi_oom_notifier_call(unsigned long val, void *v);
+extern int unregister_hisi_oom_notifier(struct notifier_block *nb);
+#endif
 #endif /* _INCLUDE_LINUX_OOM_H */

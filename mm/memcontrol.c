@@ -1729,6 +1729,9 @@ static enum oom_status mem_cgroup_oom(struct mem_cgroup *memcg, gfp_t mask, int 
 		current->memcg_in_oom = memcg;
 		current->memcg_oom_gfp_mask = mask;
 		current->memcg_oom_order = order;
+#ifdef CONFIG_ASCEND_OOM
+		hisi_oom_notifier_call(HISI_OOM_TYPE_CGROUP, NULL);
+#endif
 
 		return OOM_ASYNC;
 	}
@@ -1802,6 +1805,9 @@ bool mem_cgroup_oom_synchronize(bool handle)
 		mem_cgroup_out_of_memory(memcg, current->memcg_oom_gfp_mask,
 					 current->memcg_oom_order);
 	} else {
+#ifdef CONFIG_ASCEND_OOM
+		hisi_oom_notifier_call(HISI_OOM_TYPE_CGROUP, NULL);
+#endif
 		schedule();
 		mem_cgroup_unmark_under_oom(memcg);
 		finish_wait(&memcg_oom_waitq, &owait.wait);

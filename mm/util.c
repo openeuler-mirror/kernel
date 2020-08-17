@@ -17,6 +17,9 @@
 
 #include <asm/sections.h>
 #include <linux/uaccess.h>
+#ifdef CONFIG_ASCEND_OOM
+#include <linux/oom.h>
+#endif
 
 #include "internal.h"
 
@@ -744,6 +747,9 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 	if (percpu_counter_read_positive(&vm_committed_as) < allowed)
 		return 0;
 error:
+#ifdef CONFIG_ASCEND_OOM
+	hisi_oom_notifier_call(HISI_OOM_TYPE_OVERCOMMIT, NULL);
+#endif
 	vm_unacct_memory(pages);
 
 	return -ENOMEM;
