@@ -486,7 +486,7 @@ static void ceq_event_handler(struct hinic_ceqs *ceqs, u32 ceqe)
 	u32 ceqe_data = CEQE_DATA(ceqe);
 
 	if (event >= HINIC_MAX_CEQ_EVENTS) {
-		sdk_err(hwdev->dev_hdl, "Ceq unknown event:%d, ceqe date: 0x%x\n",
+		sdk_err(hwdev->dev_hdl, "Ceq unknown event: %d, ceqe date: 0x%x\n",
 			event, ceqe_data);
 		return;
 	}
@@ -1126,7 +1126,7 @@ static int init_eq(struct hinic_eq *eq, struct hinic_hwdev *hwdev, u16 q_id,
 	eq->orig_page_size = eq->page_size;
 	eq->num_pages = GET_EQ_NUM_PAGES(eq, eq->page_size);
 	if (eq->num_pages > HINIC_EQ_MAX_PAGES) {
-		sdk_err(hwdev->dev_hdl, "Number pages:%d too many pages for eq\n",
+		sdk_err(hwdev->dev_hdl, "Number pages: %d too many pages for eq\n",
 			eq->num_pages);
 		return -EINVAL;
 	}

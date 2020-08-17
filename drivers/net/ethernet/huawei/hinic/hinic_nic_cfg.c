@@ -309,7 +309,7 @@ int hinic_del_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id)
 		return -EINVAL;
 	}
 	if (mac_info.status == HINIC_PF_SET_VF_ALREADY) {
-		nic_warn(nic_hwdev->dev_hdl, "PF has already set VF mac, Ignore delete operation.\n");
+		nic_warn(nic_hwdev->dev_hdl, "PF has already set VF mac, Ignore delete operation\n");
 		return HINIC_PF_SET_VF_ALREADY;
 	}
 
@@ -461,12 +461,14 @@ int hinic_set_port_mtu(void *hwdev, u32 new_mtu)
 
 	if (new_mtu < HINIC_MIN_MTU_SIZE) {
 		nic_err(nic_hwdev->dev_hdl,
-			"Invalid mtu size, mtu size < 256bytes");
+			"Invalid mtu size, mtu size < %dbytes\n",
+			HINIC_MIN_MTU_SIZE);
 		return -EINVAL;
 	}
 
 	if (new_mtu > HINIC_MAX_JUMBO_FRAME_SIZE) {
-		nic_err(nic_hwdev->dev_hdl, "Invalid mtu size, mtu size > 9600bytes");
+		nic_err(nic_hwdev->dev_hdl, "Invalid mtu size, mtu size > %dbytes\n",
+			HINIC_MAX_JUMBO_FRAME_SIZE);
 		return -EINVAL;
 	}
 
@@ -2220,7 +2222,7 @@ int hinic_get_mgmt_version(void *hwdev, u8 *mgmt_ver)
 	err = snprintf(mgmt_ver, HINIC_MGMT_VERSION_MAX_LEN, "%s", up_ver.ver);
 	if (err <= 0 || err >= HINIC_MGMT_VERSION_MAX_LEN) {
 		nic_err(dev->dev_hdl,
-			"Failed snprintf fw version, function return(%d) and dest_len(%d)\n",
+			"Failed to snprintf fw version, function return(%d) and dest_len(%d)\n",
 			err, HINIC_MGMT_VERSION_MAX_LEN);
 		return -EINVAL;
 	}
@@ -2501,7 +2503,7 @@ static int hinic_del_vf_mac_msg_handler(struct hinic_nic_io *nic_io, u16 vf,
 	if (vf_info->pf_set_mac && !(vf_info->trust) &&
 	    is_valid_ether_addr(mac_in->mac) &&
 	    !memcmp(vf_info->vf_mac_addr, mac_in->mac, ETH_ALEN)) {
-		nic_warn(nic_io->hwdev->dev_hdl, "PF has already set VF mac.\n");
+		nic_warn(nic_io->hwdev->dev_hdl, "PF has already set VF mac\n");
 		mac_out->status = HINIC_PF_SET_VF_ALREADY;
 		*out_size = sizeof(*mac_out);
 		return 0;
@@ -2530,12 +2532,12 @@ static int hinic_update_vf_mac_msg_handler(struct hinic_nic_io *nic_io, u16 vf,
 	int err;
 
 	if (!is_valid_ether_addr(mac_in->new_mac)) {
-		nic_err(nic_io->hwdev->dev_hdl, "Update VF MAC is invalid.\n");
+		nic_err(nic_io->hwdev->dev_hdl, "Update VF MAC is invalid\n");
 		return -EINVAL;
 	}
 
 	if (vf_info->pf_set_mac && !(vf_info->trust)) {
-		nic_warn(nic_io->hwdev->dev_hdl, "PF has already set VF mac.\n");
+		nic_warn(nic_io->hwdev->dev_hdl, "PF has already set VF mac\n");
 		mac_out->status = HINIC_PF_SET_VF_ALREADY;
 		*out_size = sizeof(*mac_out);
 		return 0;
@@ -2724,7 +2726,7 @@ int nic_pf_mbox_handler(void *hwdev, u16 vf_id, u8 cmd, void *buf_in,
 	if (!hinic_mbox_check_cmd_valid(hwdev, nic_cmd_support_vf, vf_id, cmd,
 					buf_in, in_size, size)) {
 		nic_err(((struct hinic_hwdev *)hwdev)->dev_hdl,
-			"PF Receive VF nic cmd(0x%x), mbox len(0x%x) is invalid\n",
+			"PF Receive VF nic cmd(0x%x) or mbox len(0x%x) is invalid\n",
 			cmd, in_size);
 		err = HINIC_MBOX_VF_CMD_ERROR;
 		return err;
@@ -2793,7 +2795,7 @@ int nic_pf_mbox_handler(void *hwdev, u16 vf_id, u8 cmd, void *buf_in,
 
 	if (err && err != HINIC_DEV_BUSY_ACTIVE_FW &&
 	    err != HINIC_MBOX_PF_BUSY_ACTIVE_FW)
-		nic_err(nic_io->hwdev->dev_hdl, "PF receive VF L2NIC cmd: %d process error, err:%d\n",
+		nic_err(nic_io->hwdev->dev_hdl, "PF receive VF L2NIC cmd: %d process error, err: %d\n",
 			cmd, err);
 	return err;
 }
@@ -3522,13 +3524,13 @@ int hinic_set_anti_attack(void *hwdev, bool enable)
 				     &rate, sizeof(rate), &rate,
 				     &out_size);
 	if (err || !out_size || rate.status) {
-		nic_err(nic_hwdev->dev_hdl, "Can`t %s port Anti-Attack rate limit err: %d, status: 0x%x, out size: 0x%x\n",
+		nic_err(nic_hwdev->dev_hdl, "Can't %s port Anti-Attack rate limit err: %d, status: 0x%x, out size: 0x%x\n",
 			(enable ? "enable" : "disable"), err, rate.status,
 			out_size);
 		return -EINVAL;
 	}
 
-	nic_info(nic_hwdev->dev_hdl, "%s port Anti-Attack rate limit succeed.\n",
+	nic_info(nic_hwdev->dev_hdl, "%s port Anti-Attack rate limit succeed\n",
 		 (enable ? "Enable" : "Disable"));
 
 	return 0;
@@ -3616,13 +3618,13 @@ int hinic_set_super_cqe_state(void *hwdev, bool enable)
 				     &super_cqe, sizeof(super_cqe), &super_cqe,
 				     &out_size);
 	if (err || !out_size || super_cqe.status) {
-		nic_err(nic_hwdev->dev_hdl, "Can`t %s surper cqe, err: %d, status: 0x%x, out size: 0x%x\n",
+		nic_err(nic_hwdev->dev_hdl, "Can't %s surper cqe, err: %d, status: 0x%x, out size: 0x%x\n",
 			(enable ? "enable" : "disable"), err, super_cqe.status,
 			out_size);
 		return -EINVAL;
 	}
 
-	nic_info(nic_hwdev->dev_hdl, "%s super cqe succeed.\n",
+	nic_info(nic_hwdev->dev_hdl, "%s super cqe succeed\n",
 		 (enable ? "Enable" : "Disable"));
 
 	return 0;
@@ -3960,16 +3962,16 @@ int hinic_disable_tx_promisc(void *hwdev)
 
 	info.cfg = HINIC_TX_PROMISC_DISABLE;
 	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_L2NIC,
-				     HINIC_PORT_CMD_DISABLE_PROMISIC, &info,
+				     HINIC_PORT_CMD_DISABLE_PROMISC, &info,
 				     sizeof(info), &info, &out_size, 0);
 	if (err || !out_size || info.status) {
 		if (info.status == HINIC_MGMT_CMD_UNSUPPORTED) {
 			nic_info(((struct hinic_hwdev *)hwdev)->dev_hdl,
-				 "Unsupported to disable TX promisic\n");
+				 "Unsupported to disable TX promisc\n");
 			return 0;
 		}
 		nic_err(((struct hinic_hwdev *)hwdev)->dev_hdl,
-			"Failed to disable multihost promisic, err: %d, status: 0x%x, out size: 0x%x\n",
+			"Failed to disable multihost promisc, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, info.status, out_size);
 		return -EFAULT;
 	}

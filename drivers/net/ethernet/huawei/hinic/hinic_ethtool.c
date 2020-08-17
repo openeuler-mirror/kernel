@@ -753,7 +753,7 @@ static int hinic_set_settings_to_hw(struct hinic_nic_dev *nic_dev,
 		       (autoneg ? "autong enable " : "autong disable ") : "");
 	if (err < 0 || err >= SET_LINK_STR_MAX_LEN) {
 		nicif_err(nic_dev, drv, netdev,
-			  "Failed snprintf link state, function return(%d) and dest_len(%d)\n",
+			  "Failed to snprintf link state, function return(%d) and dest_len(%d)\n",
 			  err, SET_LINK_STR_MAX_LEN);
 		return -EFAULT;
 	}
@@ -763,7 +763,7 @@ static int hinic_set_settings_to_hw(struct hinic_nic_dev *nic_dev,
 			       "%sspeed %d ", set_link_str, speed);
 		if (err <= 0 || err >= SET_LINK_STR_MAX_LEN) {
 			nicif_err(nic_dev, drv, netdev,
-				  "Failed snprintf link speed, function return(%d) and dest_len(%d)\n",
+				  "Failed to snprintf link speed, function return(%d) and dest_len(%d)\n",
 				  err, SET_LINK_STR_MAX_LEN);
 			return -EFAULT;
 		}
@@ -897,7 +897,7 @@ static void hinic_get_drvinfo(struct net_device *netdev,
 		       "%s", mgmt_ver);
 	if (err <= 0 || err >= (int)sizeof(info->fw_version))
 		nicif_err(nic_dev, drv, netdev,
-			  "Failed snprintf fw_version, function return(%d) and dest_len(%d)\n",
+			  "Failed to snprintf fw_version, function return(%d) and dest_len(%d)\n",
 			  err, (int)sizeof(info->fw_version));
 }
 
@@ -997,7 +997,7 @@ static int hinic_set_ringparam(struct net_device *netdev,
 	    ring->rx_pending > HINIC_MAX_QUEUE_DEPTH ||
 	    ring->rx_pending < HINIC_MIN_QUEUE_DEPTH) {
 		nicif_err(nic_dev, drv, netdev,
-			  "Queue depth out of rang [%d-%d]\n",
+			  "Queue depth out of range [%d-%d]\n",
 			  HINIC_MIN_QUEUE_DEPTH, HINIC_MAX_QUEUE_DEPTH);
 		return -EINVAL;
 	}
@@ -1449,7 +1449,7 @@ static int __hinic_set_coalesce(struct net_device *netdev,
 		err = snprintf(obj_str, sizeof(obj_str), "for netdev");
 		if (err <= 0 || err >= OBJ_STR_MAX_LEN) {
 			nicif_err(nic_dev, drv, netdev,
-				  "Failed snprintf string, function return(%d) and dest_len(%d)\n",
+				  "Failed to snprintf string, function return(%d) and dest_len(%d)\n",
 				  err, OBJ_STR_MAX_LEN);
 			return -EFAULT;
 		}
@@ -1458,7 +1458,7 @@ static int __hinic_set_coalesce(struct net_device *netdev,
 		err = snprintf(obj_str, sizeof(obj_str), "for queue %d", queue);
 		if (err <= 0 || err >= OBJ_STR_MAX_LEN) {
 			nicif_err(nic_dev, drv, netdev,
-				  "Failed snprintf string, function return(%d) and dest_len(%d)\n",
+				  "Failed to snprintf string, function return(%d) and dest_len(%d)\n",
 				  err, OBJ_STR_MAX_LEN);
 			return -EFAULT;
 		}
@@ -1712,7 +1712,7 @@ static void hinic_get_strings(struct net_device *netdev,
 		return;
 	default:
 		nicif_err(nic_dev, drv, netdev,
-			  "Invalid string set %d.", stringset);
+			  "Invalid string set %d", stringset);
 		return;
 	}
 }
@@ -1913,7 +1913,7 @@ static int hinic_run_lp_test(struct hinic_nic_dev *nic_dev, u32 test_time)
 	}
 
 	dev_kfree_skb_any(skb_tmp);
-	nicif_info(nic_dev, drv, netdev, "Loopback test succeed.\n");
+	nicif_info(nic_dev, drv, netdev, "Loopback test succeed\n");
 	return 0;
 }
 
@@ -1961,7 +1961,7 @@ void hinic_lp_test(struct net_device *netdev, struct ethtool_test *eth_test,
 	lb_test_rx_buf = vmalloc(LP_PKT_CNT * LP_PKT_LEN);
 	if (!lb_test_rx_buf) {
 		nicif_err(nic_dev, drv, netdev,
-			  "Failed to alloc rx buffer for loopback test.\n");
+			  "Failed to alloc rx buffer for loopback test\n");
 		err = 1;
 	} else {
 		nic_dev->lb_test_rx_buf = lb_test_rx_buf;
@@ -1980,7 +1980,7 @@ void hinic_lp_test(struct net_device *netdev, struct ethtool_test *eth_test,
 	if (!(test.flags & ETH_TEST_FL_EXTERNAL_LB)) {
 		if (hinic_set_loopback_mode(nic_dev->hwdev, false)) {
 			nicif_err(nic_dev, drv, netdev,
-				  "Failed to cancel port loopback mode after loopback test.\n");
+				  "Failed to cancel port loopback mode after loopback test\n");
 			err = 1;
 
 			goto resume_link;

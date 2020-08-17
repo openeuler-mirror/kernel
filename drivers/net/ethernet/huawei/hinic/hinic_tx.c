@@ -949,7 +949,7 @@ int hinic_setup_all_tx_resources(struct net_device *netdev)
 		txq = &nic_dev->txqs[q_id];
 		tx_info_sz = txq->q_depth * sizeof(*txq->tx_info);
 		if (!tx_info_sz) {
-			nicif_err(nic_dev, drv, netdev, "Cannot allocate zero size tx%d info\n",
+			nicif_err(nic_dev, drv, netdev, "Cannot allocate zero size txq%d info\n",
 				  q_id);
 			err = -EINVAL;
 			goto init_txq_err;
@@ -965,7 +965,7 @@ int hinic_setup_all_tx_resources(struct net_device *netdev)
 
 		err = hinic_setup_tx_wqe(txq);
 		if (err != txq->q_depth) {
-			nicif_err(nic_dev, drv, netdev, "Failed to setup Tx:%d wqe\n",
+			nicif_err(nic_dev, drv, netdev, "Failed to setup Tx: %d wqe\n",
 				  q_id);
 			q_id++;
 			goto init_txq_err;

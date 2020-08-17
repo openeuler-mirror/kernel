@@ -129,7 +129,7 @@ static void dump_api_chain_reg(struct hinic_api_cmd_chain *chain)
 	addr = HINIC_CSR_API_CMD_STATUS_0_ADDR(chain->chain_type);
 	val  = hinic_hwif_read_reg(chain->hwdev->hwif, addr);
 
-	sdk_err(dev, "Chain type: 0x%x, cpld error: 0x%x, check error: 0x%x,  current fsm: 0x%x\n",
+	sdk_err(dev, "Chain type: 0x%x, cpld error: 0x%x, check error: 0x%x, current fsm: 0x%x\n",
 		chain->chain_type, HINIC_API_CMD_STATUS_GET(val, CPLD_ERR),
 		HINIC_API_CMD_STATUS_GET(val, CHKSUM_ERR),
 		HINIC_API_CMD_STATUS_GET(val, FSM));
@@ -161,7 +161,7 @@ static int chain_busy(struct hinic_api_cmd_chain *chain)
 		resp_header = be64_to_cpu(ctxt->resp->header);
 		if (ctxt->status &&
 		    !HINIC_API_CMD_RESP_HEADER_VALID(resp_header)) {
-			sdk_err(dev, "Context(0x%x) busy!, pi: %d, resp_header: 0x%08x%08x\n",
+			sdk_err(dev, "Context(0x%x) busy, pi: %d, resp_header: 0x%08x%08x\n",
 				ctxt->status, chain->prod_idx,
 				upper_32_bits(resp_header),
 				lower_32_bits(resp_header));

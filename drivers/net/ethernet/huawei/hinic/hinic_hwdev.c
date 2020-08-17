@@ -1369,7 +1369,7 @@ int hinic_clean_root_ctxt(void *hwdev)
 				     &root_ctxt, &out_size, 0);
 	if (err || !out_size || root_ctxt.status) {
 		sdk_err(((struct hinic_hwdev *)hwdev)->dev_hdl,
-			"Failed to set root context, err: %d, status: 0x%x, out_size: 0x%x\n",
+			"Failed to clean root context, err: %d, status: 0x%x, out_size: 0x%x\n",
 			err, root_ctxt.status, out_size);
 		return -EFAULT;
 	}
@@ -1528,7 +1528,7 @@ static int hinic_vf_rx_tx_flush_in_pf(struct hinic_hwdev *hwdev, u16 vf_id)
 				     HINIC_MGMT_CMD_START_FLR, &clr_res,
 				     sizeof(clr_res), &clr_res, &out_size, 0);
 	if (err || !out_size || clr_res.status) {
-		sdk_warn(hwdev->dev_hdl, "Failed to flush doorbell, err: %d, status: 0x%x, out_size: 0x%x\n",
+		sdk_warn(hwdev->dev_hdl, "Failed to start flr, err: %d, status: 0x%x, out_size: 0x%x\n",
 			 err, clr_res.status, out_size);
 		ret = err ? err : (-EFAULT);
 	}
@@ -1759,7 +1759,7 @@ static int init_aeqs_msix_attr(struct hinic_hwdev *hwdev)
 		info.msix_index = eq->eq_irq.msix_entry_idx;
 		err = hinic_set_interrupt_cfg_direct(hwdev, &info);
 		if (err) {
-			sdk_err(hwdev->dev_hdl, "Set msix attr for aeq %d failed\n",
+			sdk_err(hwdev->dev_hdl, "Failed to set msix attr for aeq %d\n",
 				q_id);
 			return -EFAULT;
 		}
@@ -1789,7 +1789,7 @@ static int init_ceqs_msix_attr(struct hinic_hwdev *hwdev)
 		info.msix_index = eq->eq_irq.msix_entry_idx;
 		err = hinic_set_interrupt_cfg(hwdev, info);
 		if (err) {
-			sdk_err(hwdev->dev_hdl, "Set msix attr for ceq %d failed\n",
+			sdk_err(hwdev->dev_hdl, "Failed to set msix attr for ceq %d\n",
 				q_id);
 			return -EFAULT;
 		}
@@ -2032,7 +2032,7 @@ int comm_pf_mbox_handler(void *handle, u16 vf_id, u8 cmd, void *buf_in,
 	if (!hinic_mbox_check_cmd_valid(handle, hw_cmd_support_vf, vf_id, cmd,
 					buf_in, in_size, size)) {
 		sdk_err(((struct hinic_hwdev *)handle)->dev_hdl,
-			"PF Receive VF(%d) common cmd(0x%x), mbox len(0x%x) is invalid\n",
+			"PF Receive VF(%d) common cmd(0x%x) or mbox len(0x%x) is invalid\n",
 			vf_id + hinic_glb_pf_vf_offset(handle), cmd, in_size);
 		err = HINIC_MBOX_VF_CMD_ERROR;
 		return err;
@@ -2050,8 +2050,8 @@ int comm_pf_mbox_handler(void *handle, u16 vf_id, u8 cmd, void *buf_in,
 		if (err && err != HINIC_DEV_BUSY_ACTIVE_FW &&
 		    err != HINIC_MBOX_PF_BUSY_ACTIVE_FW)
 			sdk_err(((struct hinic_hwdev *)handle)->dev_hdl,
-				"PF mbox common callback handler err: %d\n",
-				err);
+				"PF mbox common cmd %d callback handler err: %d\n",
+				cmd, err);
 	}
 
 	return err;
@@ -2462,7 +2462,7 @@ int hinic_init_comm_ch(struct hinic_hwdev *hwdev)
 
 	err = __get_func_misc_info(hwdev);
 	if (err) {
-		sdk_err(hwdev->dev_hdl, "Failed to get function msic information\n");
+		sdk_err(hwdev->dev_hdl, "Failed to get function misc information\n");
 		goto get_func_info_err;
 	}
 
@@ -3133,7 +3133,7 @@ int mqm_eqm_init(struct hinic_hwdev *hwdev)
 				     &info_eqm_fix, sizeof(info_eqm_fix),
 				     &info_eqm_fix, &len, 0);
 	if (ret || !len || info_eqm_fix.status) {
-		sdk_err(hwdev->dev_hdl, "Get mqm fix info fail,err: %d, status: 0x%x, out_size: 0x%x\n",
+		sdk_err(hwdev->dev_hdl, "Get mqm fix info failed, err: %d, status: 0x%x, out_size: 0x%x\n",
 			ret, info_eqm_fix.status, len);
 		return -EFAULT;
 	}
@@ -3149,25 +3149,25 @@ int mqm_eqm_init(struct hinic_hwdev *hwdev)
 		kcalloc(hwdev->mqm_att.chunk_num,
 			sizeof(struct hinic_page_addr), GFP_KERNEL);
 	if (!(hwdev->mqm_att.brm_srch_page_addr)) {
-		sdk_err(hwdev->dev_hdl, "Alloc virtual mem failed\r\n");
+		sdk_err(hwdev->dev_hdl, "Alloc virtual mem failed\n");
 		return -EFAULT;
 	}
 
 	ret = mqm_eqm_alloc_page_mem(hwdev);
 	if (ret) {
-		sdk_err(hwdev->dev_hdl, "Alloc eqm page mem failed\r\n");
+		sdk_err(hwdev->dev_hdl, "Alloc eqm page mem failed\n");
 		goto err_page;
 	}
 
 	ret = mqm_eqm_set_page_2_hw(hwdev);
 	if (ret) {
-		sdk_err(hwdev->dev_hdl, "Set page to hw failed\r\n");
+		sdk_err(hwdev->dev_hdl, "Set page to hw failed\n");
 		goto err_ecmd;
 	}
 
 	ret = mqm_eqm_set_cfg_2_hw(hwdev, 1);
 	if (ret) {
-		sdk_err(hwdev->dev_hdl, "Set page to hw failed\r\n");
+		sdk_err(hwdev->dev_hdl, "Set page to hw failed\n");
 		goto err_ecmd;
 	}
 
@@ -3197,7 +3197,7 @@ void mqm_eqm_deinit(struct hinic_hwdev *hwdev)
 
 	ret = mqm_eqm_set_cfg_2_hw(hwdev, 0);
 	if (ret) {
-		sdk_err(hwdev->dev_hdl, "Set mqm eqm cfg to chip fail! err: %d\n",
+		sdk_err(hwdev->dev_hdl, "Set mqm eqm cfg to chip fail, err: %d\n",
 			ret);
 		return;
 	}
@@ -3218,7 +3218,7 @@ int hinic_ppf_ext_db_init(void *dev)
 
 	ret = mqm_eqm_init(hwdev);
 	if (ret) {
-		sdk_err(hwdev->dev_hdl, "MQM eqm init fail!\n");
+		sdk_err(hwdev->dev_hdl, "MQM eqm init failed\n");
 		return -EFAULT;
 	}
 
@@ -3425,7 +3425,7 @@ static void fault_report_show(struct hinic_hwdev *hwdev,
 	struct hinic_fault_event_stats *fault;
 	u8 node_id;
 
-	sdk_err(hwdev->dev_hdl, "Fault event report received, func_id: %d.\n",
+	sdk_err(hwdev->dev_hdl, "Fault event report received, func_id: %d\n",
 		hinic_global_func_id(hwdev));
 
 	memset(type_str, 0, FAULT_SHOW_STR_LEN + 1);
@@ -3759,7 +3759,7 @@ static void sw_watchdog_timeout_info_show(struct hinic_hwdev *hwdev,
 	u32 *dump_addr, *reg, stack_len, i, j;
 
 	if (in_size != sizeof(*watchdog_info)) {
-		sdk_err(hwdev->dev_hdl, "Invalid mgmt watchdog report, length: %d, should be %ld.\n",
+		sdk_err(hwdev->dev_hdl, "Invalid mgmt watchdog report, length: %d, should be %ld\n",
 			in_size, sizeof(*watchdog_info));
 		return;
 	}
@@ -3924,7 +3924,7 @@ static void hinic_fmw_act_ntc_handler(struct hinic_hwdev *hwdev,
 	struct hinic_fmw_act_ntc *notice_info;
 
 	if (in_size != sizeof(*notice_info)) {
-		sdk_err(hwdev->dev_hdl, "Invalid mgmt firmware active notice, length: %d, should be %ld.\n",
+		sdk_err(hwdev->dev_hdl, "Invalid mgmt firmware active notice, length: %d, should be %ld\n",
 			in_size, sizeof(*notice_info));
 		return;
 	}
@@ -3957,7 +3957,7 @@ static void hinic_pcie_dfx_event_handler(struct hinic_hwdev *hwdev,
 	u32 *reg;
 
 	if (in_size != sizeof(*notice_info)) {
-		sdk_err(hwdev->dev_hdl, "Invalid mgmt firmware active notice, length: %d, should be %ld.\n",
+		sdk_err(hwdev->dev_hdl, "Invalid mgmt firmware active notice, length: %d, should be %ld\n",
 			in_size, sizeof(*notice_info));
 		return;
 	}
@@ -4724,7 +4724,7 @@ u8 hinic_nic_sw_aeqe_handler(void *handle, u8 event, u64 data)
 		event_level = FAULT_LEVEL_FATAL;
 		break;
 	default:
-		sdk_err(hwdev->dev_hdl, "Unsupported sw event %d to process.\n",
+		sdk_err(hwdev->dev_hdl, "Unsupported sw event %d to process\n",
 			event);
 	}
 

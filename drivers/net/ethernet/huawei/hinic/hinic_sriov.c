@@ -39,7 +39,7 @@ int hinic_pci_sriov_disable(struct pci_dev *dev)
 
 	if (test_and_set_bit(HINIC_SRIOV_DISABLE, &sriov_info->state)) {
 		nic_err(&sriov_info->pdev->dev,
-			"SR-IOV disable in process, please wait");
+			"SR-IOV disable in process, please wait\n");
 		return -EPERM;
 	}
 
@@ -190,7 +190,7 @@ int hinic_ndo_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 		return err;
 
 	nic_info(&sriov_info->pdev->dev, "Setting MAC %pM on VF %d\n", mac, vf);
-	nic_info(&sriov_info->pdev->dev, "Reload the VF driver to make this change effective.");
+	nic_info(&sriov_info->pdev->dev, "Reload the VF driver to make this change effective\n");
 
 	return 0;
 }

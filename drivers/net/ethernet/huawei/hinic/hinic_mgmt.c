@@ -680,7 +680,7 @@ static int hinic_read_clp_data(struct hinic_hwdev *hwdev,
 		err = hinic_read_clp_reg(hwdev, HINIC_CLP_RSP_HOST,
 					 HINIC_CLP_READY_RSP_HOST, &ready);
 		if (err || delay_cnt > HINIC_CLP_DELAY_CNT_MAX) {
-			sdk_err(hwdev->dev_hdl, "timeout with delay_cnt:%d\n",
+			sdk_err(hwdev->dev_hdl, "Timeout with delay_cnt: %d\n",
 				delay_cnt);
 			return -EINVAL;
 		}
@@ -692,7 +692,7 @@ static int hinic_read_clp_data(struct hinic_hwdev *hwdev,
 		return err;
 
 	if (temp_out_size > HINIC_CLP_SRAM_SIZE_REG_MAX || !temp_out_size) {
-		sdk_err(hwdev->dev_hdl, "invalid temp_out_size:%d\n",
+		sdk_err(hwdev->dev_hdl, "Invalid temp_out_size: %d\n",
 			temp_out_size);
 		return -EINVAL;
 	}
@@ -757,14 +757,16 @@ static int hinic_check_clp_init_status(struct hinic_hwdev *hwdev)
 	err = hinic_read_clp_reg(hwdev, HINIC_CLP_REQ_HOST,
 				 HINIC_CLP_BA_HOST, &reg_value);
 	if (err || !reg_value) {
-		sdk_err(hwdev->dev_hdl, "Wrong req ba value:0x%x\n", reg_value);
+		sdk_err(hwdev->dev_hdl, "Wrong req ba value: 0x%x\n",
+			reg_value);
 		return -EINVAL;
 	}
 
 	err = hinic_read_clp_reg(hwdev, HINIC_CLP_RSP_HOST,
 				 HINIC_CLP_BA_HOST, &reg_value);
 	if (err || !reg_value) {
-		sdk_err(hwdev->dev_hdl, "Wrong rsp ba value:0x%x\n", reg_value);
+		sdk_err(hwdev->dev_hdl, "Wrong rsp ba value: 0x%x\n",
+			reg_value);
 		return -EINVAL;
 	}
 
@@ -822,7 +824,7 @@ int hinic_pf_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 
 	if (real_size >
 	    (HINIC_CLP_INPUT_BUFFER_LEN_HOST / HINIC_CLP_DATA_UNIT_HOST)) {
-		sdk_err(dev->dev_hdl, "Invalid real_size:%d\n", real_size);
+		sdk_err(dev->dev_hdl, "Invalid real_size: %d\n", real_size);
 		return -EINVAL;
 	}
 	down(&clp_pf_to_mgmt->clp_msg_lock);
@@ -871,13 +873,13 @@ int hinic_pf_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 	real_size = (u16)((real_size * HINIC_CLP_DATA_UNIT_HOST) & 0xffff);
 	if (real_size <= sizeof(header) ||
 	    real_size > HINIC_CLP_INPUT_BUFFER_LEN_HOST) {
-		sdk_err(dev->dev_hdl, "Invalid response size:%d", real_size);
+		sdk_err(dev->dev_hdl, "Invalid response size: %d", real_size);
 		up(&clp_pf_to_mgmt->clp_msg_lock);
 		return -EINVAL;
 	}
 	real_size = real_size - sizeof(header);
 	if (real_size != *out_size) {
-		sdk_err(dev->dev_hdl, "Invalid real_size:%d, out_size:%d\n",
+		sdk_err(dev->dev_hdl, "Invalid real_size: %d, out_size: %d\n",
 			real_size, *out_size);
 		up(&clp_pf_to_mgmt->clp_msg_lock);
 		return -EINVAL;
@@ -1090,11 +1092,11 @@ static void mgmt_resp_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 	    pf_to_mgmt->event_flag == SEND_EVENT_START) {
 		complete(&recv_msg->recv_done);
 	} else if (recv_msg->msg_id != pf_to_mgmt->sync_msg_id) {
-		sdk_err(dev, "Send msg id(0x%x) recv msg id(0x%x) dismatch, event state=%d\n",
+		sdk_err(dev, "Send msg id(0x%x) recv msg id(0x%x) dismatch, event state: %d\n",
 			pf_to_mgmt->sync_msg_id, recv_msg->msg_id,
 			pf_to_mgmt->event_flag);
 	} else {
-		sdk_err(dev, "Wait timeout, send msg id(0x%x) recv msg id(0x%x), event state=%d!\n",
+		sdk_err(dev, "Wait timeout, send msg id(0x%x) recv msg id(0x%x), event state: %d\n",
 			pf_to_mgmt->sync_msg_id, recv_msg->msg_id,
 			pf_to_mgmt->event_flag);
 	}

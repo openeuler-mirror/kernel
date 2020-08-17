@@ -251,7 +251,7 @@ struct hinic_cmd_buf *hinic_alloc_cmd_buf(void *hwdev)
 	void *dev;
 
 	if (!hwdev) {
-		pr_err("Failed to alloc cmd buf, Invalid hwdev\n");
+		pr_err("Failed to alloc cmd buf, invalid hwdev\n");
 		return NULL;
 	}
 
@@ -1516,7 +1516,7 @@ int hinic_cmdqs_init(struct hinic_hwdev *hwdev)
 		err = init_cmdq(&cmdqs->cmdq[cmdq_type], hwdev,
 				&cmdqs->saved_wqs[cmdq_type], cmdq_type);
 		if (err) {
-			sdk_err(hwdev->dev_hdl, "Failed to initialize cmdq type :%d\n",
+			sdk_err(hwdev->dev_hdl, "Failed to initialize cmdq type: %d\n",
 				cmdq_type);
 			goto init_cmdq_err;
 		}
