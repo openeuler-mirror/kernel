@@ -1362,6 +1362,19 @@ config ASCEND_OOM
 		0: disable oom killer
 		1: enable oom killer (default,compatible with mainline)
 		2: disable oom killer and panic on oom
+
+config ASCEND_IOPF_HIPRI
+	bool "Enable support for highpri iopf workqueue"
+	default y
+	depends on IOMMU_PAGE_FAULT
+	help
+	  The iopf workqueue which means IO Page Fault workqueue is used for device
+	  page fault.
+
+	  This option enable the high priority for iopf workqueue. If enabled, the
+	  CPU which processes IOPF work is the same as that which processes IOPF
+	  event interrupts.
+
 endif
 
 endmenu
