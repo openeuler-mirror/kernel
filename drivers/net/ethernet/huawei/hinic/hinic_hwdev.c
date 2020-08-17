@@ -485,34 +485,8 @@ struct hinic_cmd_fault_event {
 	struct hinic_fault_event event;
 };
 
-#define HEARTBEAT_DRV_MAGIC_ACK	0x5A5A5A5A
-
-struct hinic_heartbeat_support {
-	u8	status;
-	u8	version;
-	u8	rsvd0[6];
-
-	u8	ppf_id;
-	u8	pf_issupport;
-	u8	mgmt_issupport;
-	u8	rsvd1[5];
-};
-
-struct hinic_heartbeat_event {
-	u8	status;
-	u8	version;
-	u8	rsvd0[6];
-
-	u8	mgmt_init_state;
-	u8	rsvd1[3];
-	u32	heart;		/* increased every event */
-	u32	drv_heart;
-};
-
 static void hinic_enable_mgmt_channel(void *hwdev, void *buf_out);
 static void hinic_set_mgmt_channel_status(void *handle, bool state);
-static inline void __set_heartbeat_ehd_detect_delay(struct hinic_hwdev *hwdev,
-						    u32 delay_ms);
 
 #define HINIC_QUEUE_MIN_DEPTH		6
 #define HINIC_QUEUE_MAX_DEPTH		12
@@ -845,12 +819,6 @@ static int __pf_to_mgmt_pre_handle(struct hinic_hwdev *hwdev,
 
 		/* Sleep 2s wait other pf's mgmt messages to complete */
 		msleep(2000);
-
-		/* stop heartbeat enhanced detection temporary, and will
-		 * restart in firmware active event when mgmt is resetted
-		 */
-		__set_heartbeat_ehd_detect_delay(hwdev,
-						 HINIC_DEV_ACTIVE_FW_TIMEOUT);
 	}
 
 	return 0;
@@ -1912,34 +1880,6 @@ static int resources_state_set(struct hinic_hwdev *hwdev,
 	return 0;
 }
 
-int hinic_sync_heartbeat_status(struct hinic_hwdev *hwdev,
-				enum heartbeat_support_state pf_state,
-				enum heartbeat_support_state *mgmt_state)
-{
-	struct hinic_heartbeat_support hb_support = {0};
-	u16 out_size = sizeof(hb_support);
-	int err;
-
-	hb_support.ppf_id = hinic_ppf_idx(hwdev);
-	hb_support.pf_issupport = pf_state;
-
-	err = hinic_msg_to_mgmt_sync(hwdev, HINIC_MOD_COMM,
-				     HINIC_MGMT_CMD_HEARTBEAT_SUPPORTED,
-				     &hb_support, sizeof(hb_support),
-				     &hb_support, &out_size, 0);
-	if ((hb_support.status != HINIC_MGMT_CMD_UNSUPPORTED &&
-	     hb_support.status) || err || !out_size) {
-		sdk_err(hwdev->dev_hdl, "Failed to synchronize heartbeat status, err: %d, status: 0x%x, out_size: 0x%x\n",
-			err, hb_support.status, out_size);
-		return -EFAULT;
-	}
-
-	if (!hb_support.status)
-		*mgmt_state = hb_support.mgmt_issupport;
-
-	return hb_support.status;
-}
-
 static void comm_mgmt_msg_handler(void *hwdev, void *pri_handle, u8 cmd,
 				  void *buf_in, u16 in_size, void *buf_out,
 				  u16 *out_size)
@@ -2292,13 +2232,6 @@ static void hinic_comm_cmdqs_free(struct hinic_hwdev *hwdev)
 	hinic_cmdqs_free(hwdev);
 }
 
-static inline void __set_heartbeat_ehd_detect_delay(struct hinic_hwdev *hwdev,
-						    u32 delay_ms)
-{
-	hwdev->heartbeat_ehd.start_detect_jiffies =
-					jiffies + msecs_to_jiffies(delay_ms);
-}
-
 static int hinic_sync_mgmt_func_state(struct hinic_hwdev *hwdev)
 {
 	int err;
@@ -2312,14 +2245,6 @@ static int hinic_sync_mgmt_func_state(struct hinic_hwdev *hwdev)
 		goto resources_state_set_err;
 	}
 
-	hwdev->heartbeat_ehd.en = false;
-	if (HINIC_FUNC_TYPE(hwdev) == TYPE_PPF) {
-		/* heartbeat synchronize must be after set pf active status */
-		hinic_comm_recv_mgmt_self_cmd_reg(hwdev,
-				 HINIC_MGMT_CMD_HEARTBEAT_EVENT,
-				mgmt_heartbeat_event_handler);
-	}
-
 	return 0;
 
 resources_state_set_err:
@@ -2331,12 +2256,6 @@ resources_state_set_err:
 static void hinic_unsync_mgmt_func_state(struct hinic_hwdev *hwdev)
 {
 	hinic_set_pf_status(hwdev->hwif, HINIC_PF_STATUS_INIT);
-
-	hwdev->heartbeat_ehd.en = false;
-	if (HINIC_FUNC_TYPE(hwdev) == TYPE_PPF) {
-		hinic_comm_recv_up_self_cmd_unreg(hwdev,
-					HINIC_MGMT_CMD_HEARTBEAT_EVENT);
-	}
 
 	resources_state_set(hwdev, HINIC_RES_CLEAN);
 }
@@ -3276,7 +3195,6 @@ enum hinic_event_cmd {
 	HINIC_EVENT_MGMT_RESET,
 	HINIC_EVENT_MGMT_PCIE_DFX,
 	HINIC_EVENT_MCTP_HOST_INFO,
-	HINIC_EVENT_MGMT_HEARTBEAT_EHD,
 	HINIC_EVENT_SFP_INFO_REPORT,
 	HINIC_EVENT_SFP_ABS_REPORT,
 
@@ -3355,11 +3273,6 @@ static struct hinic_event_convert __event_convert[] = {
 		.mod	= HINIC_MOD_COMM,
 		.cmd	= HINIC_MGMT_CMD_GET_HOST_INFO,
 		.event	= HINIC_EVENT_MCTP_HOST_INFO,
-	},
-	{
-		.mod	= HINIC_MOD_COMM,
-		.cmd	= HINIC_MGMT_CMD_HEARTBEAT_EVENT,
-		.event	= HINIC_EVENT_MGMT_HEARTBEAT_EHD,
 	},
 	{
 		.mod	= HINIC_MOD_L2NIC,
@@ -3845,9 +3758,6 @@ static void hinic_fmw_act_ntc_handler(struct hinic_hwdev *hwdev,
 		return;
 	}
 
-	/* mgmt is activated now, restart heartbeat enhanced detection */
-	__set_heartbeat_ehd_detect_delay(hwdev, 0);
-
 	if (!hwdev->event_callback)
 		return;
 
@@ -4221,31 +4131,6 @@ int hinic_hilink_info_show(struct hinic_hwdev *hwdev)
 	return 0;
 }
 
-static void mgmt_heartbeat_enhanced_event(struct hinic_hwdev *hwdev,
-					  void *buf_in, u16 in_size,
-					  void *buf_out, u16 *out_size)
-{
-	struct hinic_heartbeat_event *hb_event = buf_in;
-	struct hinic_heartbeat_event *hb_event_out = buf_out;
-	struct hinic_hwdev *dev = hwdev;
-
-	if (in_size != sizeof(*hb_event)) {
-		sdk_err(dev->dev_hdl, "Invalid data size from mgmt for heartbeat event: %d\n",
-			in_size);
-		return;
-	}
-
-	if (dev->heartbeat_ehd.last_heartbeat != hb_event->heart) {
-		dev->heartbeat_ehd.last_update_jiffies = jiffies;
-		dev->heartbeat_ehd.last_heartbeat = hb_event->heart;
-	}
-
-	hb_event_out->drv_heart = HEARTBEAT_DRV_MAGIC_ACK;
-
-	hb_event_out->status = 0;
-	*out_size = sizeof(*hb_event_out);
-}
-
 /* public process for this event:
  * pf link change event
  * pf heart lost event ,TBD
@@ -4322,11 +4207,6 @@ static void _event_handler(struct hinic_hwdev *hwdev, enum hinic_event_cmd cmd,
 	case HINIC_EVENT_MCTP_HOST_INFO:
 		hinic_mctp_get_host_info_event_handler(hwdev, buf_in, in_size,
 						       buf_out, out_size);
-		break;
-
-	case HINIC_EVENT_MGMT_HEARTBEAT_EHD:
-		mgmt_heartbeat_enhanced_event(hwdev, buf_in, in_size,
-					      buf_out, out_size);
 		break;
 
 	case HINIC_EVENT_SFP_INFO_REPORT:
@@ -4449,13 +4329,6 @@ void mgmt_get_mctp_event_handler(void *hwdev, void *buf_in, u16 in_size,
 		       in_size, buf_out, out_size);
 }
 
-void mgmt_heartbeat_event_handler(void *hwdev, void *buf_in, u16 in_size,
-				  void *buf_out, u16 *out_size)
-{
-	_event_handler(hwdev, HINIC_EVENT_MGMT_HEARTBEAT_EHD, buf_in,
-		       in_size, buf_out, out_size);
-}
-
 static void pf_event_register(struct hinic_hwdev *hwdev)
 {
 	if (hinic_is_hwdev_mod_inited(hwdev, HINIC_HWDEV_MGMT_INITED)) {
@@ -4565,39 +4438,11 @@ static void hinic_heartbeat_event_handler(struct work_struct *work)
 		       NULL, 0, &out, &out);
 }
 
-static bool __detect_heartbeat_ehd_lost(struct hinic_hwdev *hwdev)
-{
-	struct hinic_heartbeat_enhanced *hb_ehd = &hwdev->heartbeat_ehd;
-	u64 update_time;
-	bool hb_ehd_lost = false;
-
-	if (!hb_ehd->en)
-		return false;
-
-	if (time_after(jiffies, hb_ehd->start_detect_jiffies)) {
-		update_time = jiffies_to_msecs(jiffies -
-					       hb_ehd->last_update_jiffies);
-		if (update_time > HINIC_HEARBEAT_ENHANCED_LOST) {
-			sdk_warn(hwdev->dev_hdl, "Heartbeat enhanced lost for %d millisecond\n",
-				 (u32)update_time);
-			hb_ehd_lost = true;
-		}
-	} else {
-		/* mgmt may not report heartbeart enhanced event and won't
-		 * update last_update_jiffies
-		 */
-		hb_ehd->last_update_jiffies = jiffies;
-	}
-
-	return hb_ehd_lost;
-}
-
 static void hinic_heartbeat_timer_handler(struct timer_list *t)
 {
 	struct hinic_hwdev *hwdev = from_timer(hwdev, t, heartbeat_timer);
 
-	if (__detect_heartbeat_ehd_lost(hwdev) ||
-	    !hinic_get_heartbeat_status(hwdev)) {
+	if (!hinic_get_heartbeat_status(hwdev)) {
 		hwdev->heartbeat_lost = 1;
 		queue_work(hwdev->workq, &hwdev->timer_work);
 	} else {
@@ -5001,37 +4846,6 @@ bool hinic_get_ppf_status(void *hwdev)
 	}
 
 	return (bool)ppf_state.ppf_state;
-}
-
-#define HINIC_RED_REG_TIME_OUT	3000
-
-int hinic_read_reg(void *hwdev, u32 reg_addr, u32 *val)
-{
-	struct hinic_reg_info reg_info = {0};
-	u16 out_size = sizeof(reg_info);
-	int err;
-
-	if (!hwdev || !val)
-		return -EINVAL;
-
-	reg_info.reg_addr = reg_addr;
-	reg_info.val_length = sizeof(u32);
-
-	err = hinic_pf_msg_to_mgmt_sync(hwdev, HINIC_MOD_COMM,
-					HINIC_MGMT_CMD_REG_READ,
-					&reg_info, sizeof(reg_info),
-					&reg_info, &out_size,
-					HINIC_RED_REG_TIME_OUT);
-	if (reg_info.status || err || !out_size) {
-		sdk_err(((struct hinic_hwdev *)hwdev)->dev_hdl,
-			"Failed to read reg, err: %d, status: 0x%x, out size: 0x%x\n",
-			err, reg_info.status, out_size);
-		return -EFAULT;
-	}
-
-	*val = reg_info.data[0];
-
-	return 0;
 }
 
 void hinic_set_func_deinit_flag(void *hwdev)
