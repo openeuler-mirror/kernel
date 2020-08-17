@@ -384,7 +384,6 @@ void hinic_rxq_get_stats(struct hinic_rxq *rxq,
 				rxq_stats->other_errors;
 		stats->csum_errors = rxq_stats->csum_errors;
 		stats->other_errors = rxq_stats->other_errors;
-		stats->unlock_bp = rxq_stats->unlock_bp;
 		stats->dropped = rxq_stats->dropped;
 	} while (u64_stats_fetch_retry(&rxq_stats->syncp, start));
 	u64_stats_update_end(&stats->syncp);
@@ -397,7 +396,6 @@ void hinic_rxq_clean_stats(struct hinic_rxq_stats *rxq_stats)
 	rxq_stats->packets = 0;
 	rxq_stats->errors = 0;
 	rxq_stats->csum_errors = 0;
-	rxq_stats->unlock_bp = 0;
 	rxq_stats->other_errors = 0;
 	rxq_stats->dropped = 0;
 
@@ -475,34 +473,6 @@ static void hinic_rx_gro(struct hinic_rxq *rxq, u32 offload_type,
 	if (l2_tunnel && skb->ip_summed == CHECKSUM_UNNECESSARY)
 		/* If we checked the outer header let the stack know */
 		skb->csum_level = 1;
-}
-
-#define HINIC_RX_BP_THD		128
-
-static void hinic_unlock_bp(struct hinic_rxq *rxq, bool bp_en, bool force_en)
-{
-	struct net_device *netdev = rxq->netdev;
-	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
-	int free_wqebbs, err;
-
-	if (bp_en)
-		set_bit(HINIC_RX_STATUS_BP_EN, &rxq->status);
-
-	free_wqebbs = rxq->delta - 1;
-	if (test_bit(HINIC_RX_STATUS_BP_EN, &rxq->status) &&
-	    (nic_dev->rq_depth - free_wqebbs) >= nic_dev->bp_upper_thd &&
-		(rxq->bp_cnt >= HINIC_RX_BP_THD || force_en)) {
-		err = hinic_set_iq_enable_mgmt(nic_dev->hwdev, rxq->q_id,
-					       nic_dev->bp_lower_thd,
-					       rxq->next_to_update);
-		if (!err) {
-			clear_bit(HINIC_RX_STATUS_BP_EN, &rxq->status);
-			rxq->bp_cnt = 0;
-			rxq->rxq_stats.unlock_bp++;
-		} else {
-			nicif_err(nic_dev, drv, netdev, "Failed to set iq enable\n");
-		}
-	}
 }
 
 static void hinic_copy_lp_data(struct hinic_nic_dev *nic_dev,
@@ -653,7 +623,6 @@ int hinic_rx_poll(struct hinic_rxq *rxq, int budget)
 	u64 rx_bytes = 0;
 	u16 sw_ci, num_lro;
 	int pkts = 0, nr_pkts = 0;
-	bool bp_en = false;
 	u16 num_wqe = 0;
 
 	while (likely(pkts < budget)) {
@@ -695,10 +664,6 @@ int hinic_rx_poll(struct hinic_rxq *rxq, int budget)
 				((pkt_len & (rxq->buf_len - 1)) ? 1 : 0);
 			}
 		}
-		if (unlikely(HINIC_GET_RX_BP_EN(status))) {
-			rxq->bp_cnt++;
-			bp_en = true;
-		}
 
 		rx_cqe->status = 0;
 
@@ -708,9 +673,6 @@ int hinic_rx_poll(struct hinic_rxq *rxq, int budget)
 
 	if (rxq->delta >= HINIC_RX_BUFFER_WRITE)
 		hinic_rx_fill_buffers(rxq);
-
-	if (unlikely(bp_en || test_bit(HINIC_RX_STATUS_BP_EN, &rxq->status)))
-		hinic_unlock_bp(rxq, bp_en, pkts < budget);
 
 	u64_stats_update_begin(&rxq->rxq_stats.syncp);
 	rxq->rxq_stats.packets += nr_pkts;
