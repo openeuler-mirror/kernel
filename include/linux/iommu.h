@@ -284,6 +284,11 @@ struct iommu_sva_param {
  * @domain_free: free iommu domain
  * @attach_dev: attach device to an iommu domain
  * @detach_dev: detach device from an iommu domain
+ * @process_alloc: allocate iommu process
+ * @process_free: free iommu process
+ * @process_attach: attach iommu process to a domain
+ * @process_detach: detach iommu process from a domain. Remove PASID entry and
+ *                  flush associated TLB entries.
  * @process_invalidate: Invalidate a range of mappings for a process.
  * @process_exit: A process is exiting. Stop using the PASID, remove PASID entry
  *                and flush associated TLB entries.
@@ -330,6 +335,12 @@ struct iommu_ops {
 
 	int (*attach_dev)(struct iommu_domain *domain, struct device *dev);
 	void (*detach_dev)(struct iommu_domain *domain, struct device *dev);
+	struct iommu_process *(*process_alloc)(struct task_struct *task);
+	void (*process_free)(struct iommu_process *process);
+	int (*process_attach)(struct iommu_domain *domain, struct device *dev,
+			      struct iommu_process *process, bool first);
+	void (*process_detach)(struct iommu_domain *domain, struct device *dev,
+			       struct iommu_process *process, bool last);
 	void (*process_invalidate)(struct iommu_domain *domain,
 				   struct iommu_process *process,
 				   unsigned long iova, size_t size);
@@ -703,6 +714,10 @@ int iommu_fwspec_init(struct device *dev, struct fwnode_handle *iommu_fwnode,
 void iommu_fwspec_free(struct device *dev);
 int iommu_fwspec_add_ids(struct device *dev, u32 *ids, int num_ids);
 const struct iommu_ops *iommu_ops_from_fwnode(struct fwnode_handle *fwnode);
+extern int iommu_process_bind_group(struct iommu_group *group,
+				    struct task_struct *task, int *pasid,
+				    int flags);
+extern int iommu_process_unbind_group(struct iommu_group *group, int pasid);
 
 extern int iommu_sva_bind_device(struct device *dev, struct mm_struct *mm,
 				int *pasid, unsigned long flags, void *drvdata);
@@ -1059,6 +1074,19 @@ static inline int iommu_sva_unbind_device(struct device *dev, int pasid)
 	return -ENODEV;
 }
 
+static inline int iommu_process_bind_group(struct iommu_group *group,
+					   struct task_struct *task, int *pasid,
+					   int flags)
+{
+	return -ENODEV;
+}
+
+static inline int iommu_process_unbind_group(struct iommu_group *group,
+					     int pasid)
+{
+	return -ENODEV;
+}
+
 #endif /* CONFIG_IOMMU_API */
 
 #ifdef CONFIG_IOMMU_SVA
@@ -1165,6 +1193,13 @@ extern void iommu_set_process_exit_handler(struct device *dev,
 extern struct iommu_process *iommu_process_find(int pasid);
 extern void iommu_process_put(struct iommu_process *process);
 
+extern int iommu_process_bind_device(struct device *dev,
+				     struct task_struct *task, int *pasid,
+				     int flags);
+extern int iommu_process_unbind_device(struct device *dev, int pasid);
+extern void __iommu_process_unbind_dev_all(struct iommu_domain *domain,
+					   struct device *dev);
+
 #else /* CONFIG_IOMMU_PROCESS */
 static inline void iommu_set_process_exit_handler(struct device *dev,
 						  iommu_process_exit_handler_t cb,
@@ -1180,6 +1215,24 @@ static inline struct iommu_process *iommu_process_find(int pasid)
 static inline void iommu_process_put(struct iommu_process *process)
 {
 }
+
+static inline int iommu_process_bind_device(struct device *dev,
+					    struct task_struct *task,
+					    int *pasid, int flags)
+{
+	return -ENODEV;
+}
+
+static inline int iommu_process_unbind_device(struct device *dev, int pasid)
+{
+	return -ENODEV;
+}
+
+static inline void __iommu_process_unbind_dev_all(struct iommu_domain *domain,
+						  struct device *dev)
+{
+}
+
 #endif /* CONFIG_IOMMU_PROCESS */
 
 #endif /* __LINUX_IOMMU_H */
