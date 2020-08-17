@@ -122,9 +122,15 @@ struct iommu_process {
 	int			pasid;
 	struct list_head	domains;
 	struct kref		kref;
+#ifdef CONFIG_MMU_NOTIFIER
+	struct mmu_notifier	notifier;
+#endif
+	struct mm_struct	*mm;
 
 	/* Release callback for this process */
 	void (*release)(struct iommu_process *process);
+	/* For postponed release */
+	struct rcu_head		rcu;
 };
 
 struct io_mm {
@@ -278,6 +284,9 @@ struct iommu_sva_param {
  * @domain_free: free iommu domain
  * @attach_dev: attach device to an iommu domain
  * @detach_dev: detach device from an iommu domain
+ * @process_invalidate: Invalidate a range of mappings for a process.
+ * @process_exit: A process is exiting. Stop using the PASID, remove PASID entry
+ *                and flush associated TLB entries.
  * @sva_device_init: initialize Shared Virtual Adressing for a device
  * @sva_device_shutdown: shutdown Shared Virtual Adressing for a device
  * @mm_alloc: allocate io_mm
@@ -321,6 +330,10 @@ struct iommu_ops {
 
 	int (*attach_dev)(struct iommu_domain *domain, struct device *dev);
 	void (*detach_dev)(struct iommu_domain *domain, struct device *dev);
+	void (*process_invalidate)(struct iommu_domain *domain,
+				   struct iommu_process *process,
+				   unsigned long iova, size_t size);
+	void (*process_exit)(struct iommu_domain *domain, struct iommu_process *process);
 	int (*sva_device_init)(struct device *dev,
 			       struct iommu_sva_param *param);
 	void (*sva_device_shutdown)(struct device *dev,
