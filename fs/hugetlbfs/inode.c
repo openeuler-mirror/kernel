@@ -121,6 +121,45 @@ static void huge_pagevec_release(struct pagevec *pvec)
 }
 
 /*
+ * Check current numa node has enough free huge pages to mmap hugetlb.
+ * resv_huge_pages_node: mmap hugepages but haven't used in current
+ * numa node.
+ */
+static int hugetlb_checknode(struct vm_area_struct *vma, long nr)
+{
+	int nid;
+	int ret = 0;
+	struct hstate *h = &default_hstate;
+
+	spin_lock(&hugetlb_lock);
+
+	nid = vma->vm_flags >> CHECKNODE_BITS;
+
+	if (nid >= MAX_NUMNODES) {
+		ret = -EINVAL;
+		goto err;
+	}
+
+	if (h->free_huge_pages_node[nid] < nr) {
+		ret = -ENOMEM;
+		goto err;
+	} else {
+		if (h->resv_huge_pages_node[nid] + nr >
+				h->free_huge_pages_node[nid]) {
+			ret = -ENOMEM;
+			goto err;
+		} else {
+			h->resv_huge_pages_node[nid] += nr;
+			ret = 0;
+		}
+	}
+
+err:
+	spin_unlock(&hugetlb_lock);
+	return ret;
+}
+
+/*
  * Mask used when checking the page offset value passed in via system
  * calls.  This value will be converted to a loff_t which is signed.
  * Therefore, we want to check the upper PAGE_SHIFT + 1 bits of the
@@ -171,6 +210,12 @@ static int hugetlbfs_file_mmap(struct file *file, struct vm_area_struct *vma)
 
 	inode_lock(inode);
 	file_accessed(file);
+
+	if (is_set_cdmmask()) {
+		ret = hugetlb_checknode(vma, len >> huge_page_shift(h));
+		if (ret < 0)
+			goto out;
+	}
 
 	ret = -ENOMEM;
 	if (hugetlb_reserve_pages(inode,

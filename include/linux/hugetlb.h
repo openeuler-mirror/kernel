@@ -15,6 +15,9 @@ struct ctl_table;
 struct user_struct;
 struct mmu_gather;
 
+#define CHECKNODE_BITS	48
+#define CHECKNODE_MASK	(~((_AC(1, UL) << CHECKNODE_BITS) - 1))
+
 #ifndef is_hugepd
 /*
  * Some architectures requires a hugepage directory format that is
@@ -350,6 +353,7 @@ struct hstate {
 	unsigned int nr_huge_pages_node[MAX_NUMNODES];
 	unsigned int free_huge_pages_node[MAX_NUMNODES];
 	unsigned int surplus_huge_pages_node[MAX_NUMNODES];
+	unsigned int resv_huge_pages_node[MAX_NUMNODES];
 #ifdef CONFIG_CGROUP_HUGETLB
 	/* cgroup control files */
 	struct cftype cgroup_files[5];

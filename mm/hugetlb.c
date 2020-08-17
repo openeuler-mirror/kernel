@@ -969,6 +969,8 @@ static struct page *dequeue_huge_page_vma(struct hstate *h,
 	if (page && !avoid_reserve && vma_has_reserves(vma, chg)) {
 		SetPagePrivate(page);
 		h->resv_huge_pages--;
+		if (is_set_cdmmask())
+			h->resv_huge_pages_node[vma->vm_flags >> CHECKNODE_BITS]--;
 	}
 
 	mpol_cond_put(mpol);
