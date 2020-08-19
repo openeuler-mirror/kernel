@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2008.2.0
+%global hulkrelease 2008.3.0
 
 %define with_patch 0
 
@@ -789,7 +789,10 @@ fi
 %endif
 
 %changelog
-* Mon Aug 17 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2008.2.0.0042
+* Wed Aug 19 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2008.3.0.0042
+- x86/mm: split vmalloc_sync_all()
+- kexec/uefi: copy secure_boot flag in boot params across kexec reboot
+- x86/config: enable CONFIG_HINIC by default
 - cgroup: add missing skcd->no_refcnt check in cgroup_sk_clone()
 - Revert "cgroup: add missing skcd->no_refcnt check in cgroup_sk_clone()"
 - cgroup: add missing skcd->no_refcnt check in cgroup_sk_clone()
