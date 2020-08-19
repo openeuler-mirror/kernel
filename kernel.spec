@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2007.2.0
+%global hulkrelease 2008.3.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0041
+Release: %{hulkrelease}.0042
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,79 @@ fi
 %endif
 
 %changelog
+* Wed Aug 19 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2008.3.0.0042
+- x86/mm: split vmalloc_sync_all()
+- kexec/uefi: copy secure_boot flag in boot params across kexec reboot
+- x86/config: enable CONFIG_HINIC by default
+- cgroup: add missing skcd->no_refcnt check in cgroup_sk_clone()
+- Revert "cgroup: add missing skcd->no_refcnt check in cgroup_sk_clone()"
+- cgroup: add missing skcd->no_refcnt check in cgroup_sk_clone()
+- ext4: Correctly restore system zone info when remount fails
+- ext4: Handle add_system_zone() failure in ext4_setup_system_zone()
+- ext4: Fold ext4_data_block_valid_rcu() into the caller
+- ext4: Check journal inode extents more carefully
+- ext4: Don't allow overlapping system zones
+- ext4: Handle error of ext4_setup_system_zone() on remount
+- nfs: set invalid blocks after NFSv4 writes
+- cgroup1: don't call release_agent when it is ""
+- cgroup-v1: cgroup_pidlist_next should update position index
+- cgroup: Iterate tasks that did not finish do_exit()
+- cgroup: cgroup_procs_next should increase position index
+- mm/vmscan.c: don't round up scan size for online memory cgroup
+- cgroup: saner refcounting for cgroup_root
+- cgroup: Prevent double killing of css when enabling threaded cgroup
+- mm: memcg/slab: fix memory leak at non-root kmem_cache destroy
+- mm: memcg/slab: synchronize access to kmem_cache dying flag using a spinlock
+- mm/memcg: fix refcount error while moving and swapping
+- memcg: fix NULL pointer dereference in __mem_cgroup_usage_unregister_event
+- mm/memcontrol.c: lost css_put in memcg_expand_shrinker_maps()
+- random32: move the pseudo-random 32-bit definitions to prandom.h
+- random32: remove net_rand_state from the latent entropy gcc plugin
+- random: fix circular include dependency on arm64 after addition of percpu.h
+- ARM: percpu.h: fix build error
+- random32: update the net random state on interrupt and activity
+- vgacon: Fix for missing check in scrollback handling
+- memcg: fix memcg_kmem_bypass() for remote memcg charging
+- arm64/numa: cdm: Cacheline aligned cdmmask to improve performance
+- mm/page_alloc.c: ratelimit allocation failure warnings more aggressively
+- iomap: fix sub-page uptodate handling
+- net/hinic: Add dfx information
+- net/hinic: Add read chip register interface
+- net/hinic: Synchronize time to firmware every hour
+- net: add {READ|WRITE}_ONCE() annotations on ->rskq_accept_head
+- net: avoid possible false sharing in sk_leave_memory_pressure()
+- sctp: add chunks to sk_backlog when the newsk sk_socket is not set
+- netfilter: ctnetlink: honor IPS_OFFLOAD flag
+- fork, memcg: alloc_thread_stack_node needs to set tsk->stack
+- net/udp_gso: Allow TX timestamp with UDP GSO
+- inet: frags: call inet_frags_fini() after unregister_pernet_subsys()
+- netfilter: ebtables: CONFIG_COMPAT: reject trailing data after last rule
+- netfilter: nft_flow_offload: add entry to flowtable after confirmation
+- perf/core: Fix the address filtering fix
+- netfilter: nft_set_hash: bogus element self comparison from deactivation path
+- fs/nfs: Fix nfs_parse_devname to not modify it's argument
+- ip_tunnel: Fix route fl4 init in ip_md_tunnel_xmit
+- net/mlx5: Take lock with IRQs disabled to avoid deadlock
+- xfs: Sanity check flags of Q_XQUOTARM call
+- cgroup: fix KABI broken by "cgroup: fix cgroup_sk_alloc() for sk_clone_lock()"
+- cgroup: fix cgroup_sk_alloc() for sk_clone_lock()
+- net: memcg: fix lockdep splat in inet_csk_accept()
+- net: memcg: late association of sock to memcg
+- cgroup: memcg: net: do not associate sock with unrelated cgroup
+- net/hinic: Retry to get ack after VF message timeout
+- net/hinic: Fix register_chrdev_region fails for major number 921
+- net/hinic: Fix mgmt message timeout during firmware hot upgrade
+- net/hinic: Correct return and features from set_features callback
+- net/hinic: Hinic only supports csum offloading of vxlan/ipip tunnel packets
+- net/hinic: Set net device link down when the chip fault
+- net/hinic: Delete unused UFO codes
+- net/hinic: Delete the remaining old linux kernel adaptation interface
+- net/hinic: Delete the old kernel version adaptation interface in netdev ops
+- net/hinic: Delete the old kernel version adaptation interface in ethtool ops
+- net/hinic: Delete useless linux adaptation functions
+- net/hinic: Delete unused functions and macro definitions in ossl
+- netfilter: nat: check the bounds of nf_nat_l3protos and nf_nat_l4protos
+
 * Fri Jul 29 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2007.2.0.0041
 - mm, vmstat: reduce zone->lock holding time by /proc/pagetypeinfo
 - kernel/notifier.c: intercept duplicate registrations to avoid infinite loops
