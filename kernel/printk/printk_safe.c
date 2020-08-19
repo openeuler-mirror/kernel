@@ -290,6 +290,7 @@ void printk_safe_flush_on_panic(void)
 
 	printk_safe_flush();
 }
+EXPORT_SYMBOL_GPL(printk_safe_flush_on_panic);
 
 #ifdef CONFIG_PRINTK_NMI
 /*
