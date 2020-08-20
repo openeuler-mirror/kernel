@@ -175,7 +175,11 @@ void __init xen_time_setup_guest(void)
 	xen_runstate_remote = !HYPERVISOR_vm_assist(VMASST_CMD_enable,
 					VMASST_TYPE_runstate_update_flag);
 
+#ifdef CONFIG_ARM64
+	pv_ops.time.steal_clock = xen_steal_clock;
+#else
 	pv_time_ops.steal_clock = xen_steal_clock;
+#endif
 
 	static_key_slow_inc(&paravirt_steal_enabled);
 	if (xen_runstate_remote)
