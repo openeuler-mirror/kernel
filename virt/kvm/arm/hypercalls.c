@@ -14,6 +14,7 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 	u32 func_id = smccc_get_function(vcpu);
 	u32 val = SMCCC_RET_NOT_SUPPORTED;
 	u32 feature;
+	gpa_t gpa;
 
 	switch (func_id) {
 	case ARM_SMCCC_VERSION_FUNC_ID:
@@ -47,6 +48,17 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 		break;
 	case ARM_SMCCC_HV_PV_SCHED_FEATURES:
 		val = kvm_hypercall_pvsched_features(vcpu);
+		break;
+	case ARM_SMCCC_HV_PV_SCHED_IPA_INIT:
+		gpa = smccc_get_arg1(vcpu);
+		if (gpa != GPA_INVALID) {
+			vcpu->arch.pvsched.base = gpa;
+			val = SMCCC_RET_SUCCESS;
+		}
+		break;
+	case ARM_SMCCC_HV_PV_SCHED_IPA_RELEASE:
+		vcpu->arch.pvsched.base = GPA_INVALID;
+		val = SMCCC_RET_SUCCESS;
 		break;
 	default:
 		return kvm_psci_call(vcpu);

@@ -303,6 +303,20 @@ static inline int kvm_arch_dev_ioctl_check_extension(struct kvm *kvm, long ext)
 int kvm_perf_init(void);
 int kvm_perf_teardown(void);
 
+static inline void kvm_arm_pvsched_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
+{
+}
+
+static inline bool kvm_arm_is_pvsched_enabled(struct kvm_vcpu_arch *vcpu_arch)
+{
+	return false;
+}
+
+static inline void kvm_update_pvsched_preempted(struct kvm_vcpu *vcpu,
+						u32 preempted)
+{
+}
+
 static inline int kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu)
 {
 	return SMCCC_RET_NOT_SUPPORTED;

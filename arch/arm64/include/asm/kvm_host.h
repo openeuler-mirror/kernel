@@ -324,6 +324,11 @@ struct kvm_vcpu_arch {
 	/* True when deferrable sysregs are loaded on the physical CPU,
 	 * see kvm_vcpu_load_sysregs and kvm_vcpu_put_sysregs. */
 	bool sysregs_loaded_on_cpu;
+
+	/* Guest PV sched state */
+	struct {
+		gpa_t base;
+	} pvsched;
 };
 
 /* vcpu_arch flags field values: */
@@ -430,6 +435,17 @@ void handle_exit_early(struct kvm_vcpu *vcpu, struct kvm_run *run,
 int kvm_perf_init(void);
 int kvm_perf_teardown(void);
 
+static inline void kvm_arm_pvsched_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
+{
+	vcpu_arch->pvsched.base = GPA_INVALID;
+}
+
+static inline bool kvm_arm_is_pvsched_enabled(struct kvm_vcpu_arch *vcpu_arch)
+{
+	return (vcpu_arch->pvsched.base != GPA_INVALID);
+}
+
+void kvm_update_pvsched_preempted(struct kvm_vcpu *vcpu, u32 preempted);
 int kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu);
 
 void kvm_set_sei_esr(struct kvm_vcpu *vcpu, u64 syndrome);
