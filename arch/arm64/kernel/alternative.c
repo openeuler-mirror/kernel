@@ -26,6 +26,7 @@
 #include <asm/cpufeature.h>
 #include <asm/insn.h>
 #include <asm/sections.h>
+#include <asm/paravirt.h>
 #include <linux/stop_machine.h>
 
 #define __ALT_PTR(a,f)		((void *)&(a)->f + (a)->f)
@@ -291,9 +292,9 @@ void __init apply_boot_alternatives(void)
 	 */
 	if ((numa_spinlock_flag == 1) ||
 		(numa_spinlock_flag == 0 && nr_node_ids > 1 &&
-			 cna_queued_spin_lock_slowpath ==
+			 pv_ops.sched.queued_spin_lock_slowpath ==
 			 native_queued_spin_lock_slowpath)) {
-		cna_queued_spin_lock_slowpath =
+		pv_ops.sched.queued_spin_lock_slowpath =
 			__cna_queued_spin_lock_slowpath;
 	}
 #endif

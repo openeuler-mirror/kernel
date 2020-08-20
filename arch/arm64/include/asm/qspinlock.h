@@ -2,12 +2,19 @@
 #ifndef _ASM_ARM64_QSPINLOCK_H
 #define _ASM_ARM64_QSPINLOCK_H
 
-#ifdef CONFIG_NUMA_AWARE_SPINLOCKS
 #include <asm-generic/qspinlock_types.h>
+#include <asm/paravirt.h>
 
+#define _Q_PENDING_LOOPS	(1 << 9)
+
+#ifdef CONFIG_NUMA_AWARE_SPINLOCKS
 extern void __cna_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val);
+#endif
+
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
 extern void native_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val);
-extern void (*cna_queued_spin_lock_slowpath)(struct qspinlock *lock, u32 val);
+extern void __pv_init_lock_hash(void);
+extern void __pv_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val);
 
 #define	queued_spin_unlock queued_spin_unlock
 /**
@@ -23,12 +30,12 @@ static inline void native_queued_spin_unlock(struct qspinlock *lock)
 
 static inline void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
 {
-	cna_queued_spin_lock_slowpath(lock, val);
+	pv_queued_spin_lock_slowpath(lock, val);
 }
 
 static inline void queued_spin_unlock(struct qspinlock *lock)
 {
-	native_queued_spin_unlock(lock);
+	pv_queued_spin_unlock(lock);
 }
 #endif
 

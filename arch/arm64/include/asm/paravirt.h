@@ -12,6 +12,12 @@ struct pv_time_ops {
 };
 
 struct pv_sched_ops {
+	void (*queued_spin_lock_slowpath)(struct qspinlock *lock, u32 val);
+	void (*queued_spin_unlock)(struct qspinlock *lock);
+
+	void (*wait)(u8 *ptr, u8 val);
+	void (*kick)(int cpu);
+
 	bool (*vcpu_is_preempted)(int cpu);
 };
 
@@ -34,6 +40,29 @@ static inline bool pv_vcpu_is_preempted(int cpu)
 {
 	return pv_ops.sched.vcpu_is_preempted(cpu);
 }
+
+#if defined(CONFIG_SMP) && defined(CONFIG_PARAVIRT_SPINLOCKS)
+bool pv_is_native_spin_unlock(void);
+static inline void pv_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
+{
+	return pv_ops.sched.queued_spin_lock_slowpath(lock, val);
+}
+
+static inline void pv_queued_spin_unlock(struct qspinlock *lock)
+{
+	return pv_ops.sched.queued_spin_unlock(lock);
+}
+
+static inline void pv_wait(u8 *ptr, u8 val)
+{
+	return pv_ops.sched.wait(ptr, val);
+}
+
+static inline void pv_kick(int cpu)
+{
+	return pv_ops.sched.kick(cpu);
+}
+#endif /* SMP && PARAVIRT_SPINLOCKS */
 
 #else
 

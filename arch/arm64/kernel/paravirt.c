@@ -30,6 +30,10 @@ struct static_key paravirt_steal_enabled;
 struct static_key paravirt_steal_rq_enabled;
 
 struct paravirt_patch_template pv_ops = {
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+	.sched.queued_spin_lock_slowpath	= native_queued_spin_lock_slowpath,
+	.sched.queued_spin_unlock		= native_queued_spin_unlock,
+#endif
 	.sched.vcpu_is_preempted		= __native_vcpu_is_preempted,
 };
 EXPORT_SYMBOL_GPL(pv_ops);
