@@ -25,6 +25,7 @@
 #include <linux/types.h>
 #include <asm/paravirt.h>
 #include <asm/pvsched-abi.h>
+#include <asm/qspinlock_paravirt.h>
 
 struct static_key paravirt_steal_enabled;
 struct static_key paravirt_steal_rq_enabled;
@@ -120,6 +121,63 @@ static bool has_kvm_pvsched(void)
 	return (res.a0 == SMCCC_RET_SUCCESS);
 }
 
+#ifdef CONFIG_PARAVIRT_SPINLOCKS
+static bool arm_pvspin = false;
+
+/* Kick a cpu by its cpuid. Used to wake up a halted vcpu */
+static void kvm_kick_cpu(int cpu)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_HV_PV_SCHED_KICK_CPU, cpu, &res);
+}
+
+static void kvm_wait(u8 *ptr, u8 val)
+{
+	unsigned long flags;
+
+	if (in_nmi())
+		return;
+
+	local_irq_save(flags);
+
+	if (READ_ONCE(*ptr) != val)
+		goto out;
+
+	dsb(sy);
+	wfi();
+
+out:
+	local_irq_restore(flags);
+}
+
+void __init pv_qspinlock_init(void)
+{
+	/* Don't use the PV qspinlock code if there is only 1 vCPU. */
+	if (num_possible_cpus() == 1)
+		arm_pvspin = false;
+
+	if (!arm_pvspin) {
+		pr_info("PV qspinlocks disabled\n");
+		return;
+	}
+	pr_info("PV qspinlocks enabled\n");
+
+	__pv_init_lock_hash();
+	pv_ops.sched.queued_spin_lock_slowpath = __pv_queued_spin_lock_slowpath;
+	pv_ops.sched.queued_spin_unlock = __pv_queued_spin_unlock;
+	pv_ops.sched.wait = kvm_wait;
+	pv_ops.sched.kick = kvm_kick_cpu;
+}
+
+static __init int arm_parse_pvspin(char *arg)
+{
+	arm_pvspin = true;
+	return 0;
+}
+early_param("arm_pvspin", arm_parse_pvspin);
+#endif  /* CONFIG_PARAVIRT_SPINLOCKS */
+
 int __init pv_sched_init(void)
 {
 	int ret;
@@ -138,6 +196,8 @@ int __init pv_sched_init(void)
 
 	pv_ops.sched.vcpu_is_preempted = kvm_vcpu_is_preempted;
 	pr_info("using PV sched preempted\n");
+
+	pv_qspinlock_init();
 
 	return 0;
 }
