@@ -327,6 +327,7 @@ struct kvm_vcpu_arch {
 
 	/* Guest PV sched state */
 	struct {
+		bool pv_unhalted;
 		gpa_t base;
 	} pvsched;
 };
@@ -447,6 +448,7 @@ static inline bool kvm_arm_is_pvsched_enabled(struct kvm_vcpu_arch *vcpu_arch)
 
 void kvm_update_pvsched_preempted(struct kvm_vcpu *vcpu, u32 preempted);
 int kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu);
+int kvm_pvsched_kick_vcpu(struct kvm_vcpu *vcpu);
 
 void kvm_set_sei_esr(struct kvm_vcpu *vcpu, u64 syndrome);
 

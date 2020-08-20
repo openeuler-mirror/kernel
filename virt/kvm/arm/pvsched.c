@@ -38,6 +38,30 @@ void kvm_update_pvsched_preempted(struct kvm_vcpu *vcpu, u32 preempted)
 	pagefault_enable();
 }
 
+int kvm_pvsched_kick_vcpu(struct kvm_vcpu *vcpu)
+{
+	unsigned int vcpu_idx;
+	int val = SMCCC_RET_NOT_SUPPORTED;
+	struct kvm *kvm = vcpu->kvm;
+	struct kvm_vcpu *target = NULL;
+
+	vcpu_idx = smccc_get_arg1(vcpu);
+	target = kvm_get_vcpu(kvm, vcpu_idx);
+	if (!target)
+		goto out;
+
+	target->arch.pvsched.pv_unhalted = true;
+	kvm_make_request(KVM_REQ_IRQ_PENDING, target);
+	kvm_vcpu_kick(target);
+	if (READ_ONCE(target->ready))
+		kvm_vcpu_yield_to(target);
+
+	val = SMCCC_RET_SUCCESS;
+
+out:
+	return val;
+}
+
 int kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu)
 {
 	u32 feature = smccc_get_arg1(vcpu);
@@ -47,6 +71,7 @@ int kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu)
 	case ARM_SMCCC_HV_PV_SCHED_FEATURES:
 	case ARM_SMCCC_HV_PV_SCHED_IPA_INIT:
 	case ARM_SMCCC_HV_PV_SCHED_IPA_RELEASE:
+	case ARM_SMCCC_HV_PV_SCHED_KICK_CPU:
 		val = SMCCC_RET_SUCCESS;
 		break;
 	}
