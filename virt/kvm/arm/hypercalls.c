@@ -40,7 +40,13 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 				break;
 			}
 			break;
+		case ARM_SMCCC_HV_PV_SCHED_FEATURES:
+			val = SMCCC_RET_SUCCESS;
+			break;
 		}
+		break;
+	case ARM_SMCCC_HV_PV_SCHED_FEATURES:
+		val = kvm_hypercall_pvsched_features(vcpu);
 		break;
 	default:
 		return kvm_psci_call(vcpu);
