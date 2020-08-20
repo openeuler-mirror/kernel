@@ -27,12 +27,18 @@ static inline u64 paravirt_steal_clock(int cpu)
 	return pv_ops.time.steal_clock(cpu);
 }
 
+int __init pv_sched_init(void);
+
 __visible bool __native_vcpu_is_preempted(int cpu);
 static inline bool pv_vcpu_is_preempted(int cpu)
 {
 	return pv_ops.sched.vcpu_is_preempted(cpu);
 }
 
-#endif
+#else
+
+#define pv_sched_init() do {} while (0)
+
+#endif /* CONFIG_PARAVIRT */
 
 #endif
