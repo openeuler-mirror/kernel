@@ -96,7 +96,7 @@ static void haltpoll_uninit(void)
 
 static bool haltpoll_want(void)
 {
-	return kvm_para_has_hint(KVM_HINTS_REALTIME) || force;
+	return kvm_para_has_hint(KVM_HINTS_REALTIME);
 }
 
 static int __init haltpoll_init(void)
@@ -106,7 +106,7 @@ static int __init haltpoll_init(void)
 
 	cpuidle_poll_state_init(drv);
 
-	if (!kvm_para_available() || !haltpoll_want())
+	if (!force && (!kvm_para_available() || !haltpoll_want()))
 		return -ENODEV;
 
 	ret = cpuidle_register_driver(drv);

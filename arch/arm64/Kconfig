@@ -288,6 +288,9 @@ config ARCH_SUPPORTS_UPROBES
 config ARCH_PROC_KCORE_TEXT
 	def_bool y
 
+config ARCH_HAS_CPU_RELAX
+	def_bool y
+
 source "arch/arm64/Kconfig.platforms"
 
 source "kernel/livepatch/Kconfig"
