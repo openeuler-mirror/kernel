@@ -63,11 +63,6 @@ typedef int (*iommu_fault_handler_t)(struct iommu_domain *,
 typedef int (*iommu_dev_fault_handler_t)(struct iommu_fault_event *, void *);
 typedef int (*iommu_mm_exit_handler_t)(struct device *dev, int pasid, void *);
 
-/* All process are being detached from this device */
-#define IOMMU_PROCESS_EXIT_ALL			(-1)
-typedef int (*iommu_process_exit_handler_t)(struct iommu_domain *, struct device *dev,
-					    int pasid, void *);
-
 #define IOMMU_SVA_FEAT_IOPF		(1 << 0)
 
 struct iommu_domain_geometry {
@@ -106,25 +101,10 @@ struct iommu_domain {
 	unsigned long pgsize_bitmap;	/* Bitmap of page sizes in use */
 	iommu_fault_handler_t handler;
 	void *handler_token;
-	iommu_process_exit_handler_t process_exit;
-	void *process_exit_token;
 	struct iommu_domain_geometry geometry;
 	void *iova_cookie;
 
-	unsigned int min_pasid, max_pasid;
-	struct list_head processes;
-
 	struct list_head mm_list;
-};
-
-struct iommu_process {
-	struct pid		*pid;
-	int			pasid;
-	struct list_head	domains;
-	struct kref		kref;
-
-	/* Release callback for this process */
-	void (*release)(struct iommu_process *process);
 };
 
 struct io_mm {
@@ -1144,18 +1124,6 @@ void iommu_debugfs_setup(void);
 #else
 static inline void iommu_debugfs_setup(void) {}
 #endif
-
-#ifdef CONFIG_IOMMU_PROCESS
-extern void iommu_set_process_exit_handler(struct device *dev,
-					   iommu_process_exit_handler_t cb,
-					   void *token);
-#else /* CONFIG_IOMMU_PROCESS */
-static inline void iommu_set_process_exit_handler(struct device *dev,
-						  iommu_process_exit_handler_t cb,
-						  void *token)
-{
-}
-#endif /* CONFIG_IOMMU_PROCESS */
 
 extern int enable_iopf_hipri __read_mostly;
 
