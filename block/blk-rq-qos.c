@@ -88,6 +88,17 @@ void rq_qos_track(struct request_queue *q, struct request *rq, struct bio *bio)
 	}
 }
 
+void rq_qos_merge(struct request_queue *q, struct request *rq, struct bio *bio)
+{
+	struct rq_qos *rqos;
+
+	for (rqos = q->rq_qos; rqos; rqos = rqos->next) {
+		if (rqos->ops->merge)
+			rqos->ops->merge(rqos, rq, bio);
+	}
+}
+
+
 void rq_qos_done_bio(struct request_queue *q, struct bio *bio)
 {
 	struct rq_qos *rqos;
