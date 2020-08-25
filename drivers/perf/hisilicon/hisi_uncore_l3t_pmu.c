@@ -217,7 +217,7 @@ static int hisi_l3t_pmu_init_irq(struct hisi_pmu *l3t_pmu,
 	}
 
 	ret = devm_request_irq(&pdev->dev, irq, hisi_l3t_pmu_isr,
-			       IRQF_NOBALANCING | IRQF_NO_THREAD,
+			       IRQF_NOBALANCING | IRQF_NO_THREAD | IRQF_SHARED,
 			       dev_name(&pdev->dev), l3t_pmu);
 	if (ret < 0) {
 		dev_err(&pdev->dev,

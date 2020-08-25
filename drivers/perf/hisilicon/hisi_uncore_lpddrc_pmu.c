@@ -224,7 +224,7 @@ static int hisi_lpddrc_pmu_init_irq(struct hisi_pmu *lpddrc_pmu,
 	}
 
 	ret = devm_request_irq(&pdev->dev, irq, hisi_lpddrc_pmu_isr,
-			       IRQF_NOBALANCING | IRQF_NO_THREAD,
+			       IRQF_NOBALANCING | IRQF_NO_THREAD | IRQF_SHARED,
 			       dev_name(&pdev->dev), lpddrc_pmu);
 	if (ret < 0) {
 		dev_err(&pdev->dev,
