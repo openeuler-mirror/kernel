@@ -178,7 +178,7 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 		/* IMA added a fake xattr, set also EVM fake xattr */
 		if (!ima_present && xattr_name &&
 		    !strcmp(xattr_name, XATTR_NAME_IMA) &&
-		    xattr_value_len >= sizeof(struct evm_ima_xattr_data)) {
+		    xattr_value_len > 2) {
 			evm_fake_xattr.hash_algo =
 			  ((struct evm_ima_xattr_data *)xattr_value)->digest[0];
 			xattr_data =
