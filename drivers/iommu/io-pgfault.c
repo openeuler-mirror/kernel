@@ -48,7 +48,7 @@ struct iopf_group {
 	struct work_struct		work;
 };
 
-static int enable_iopf_hipri __read_mostly;
+int enable_iopf_hipri __read_mostly;
 
 static int iopf_complete(struct device *dev, struct iommu_fault_event *evt,
 			 enum page_response_code status)

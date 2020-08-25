@@ -1235,4 +1235,6 @@ static inline void __iommu_process_unbind_dev_all(struct iommu_domain *domain,
 
 #endif /* CONFIG_IOMMU_PROCESS */
 
+extern int enable_iopf_hipri __read_mostly;
+
 #endif /* __LINUX_IOMMU_H */

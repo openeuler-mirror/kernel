@@ -3747,7 +3747,7 @@ subsys_initcall(init_reserve_notifier);
 /*
  *  Enable the MAP_32BIT (mmaps and hugetlb).
  */
-int enable_map_dvpp __read_mostly = 0;
+int enable_map_dvpp __read_mostly;
 
 #ifdef CONFIG_ASCEND_DVPP_MMAP
 
