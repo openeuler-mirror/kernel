@@ -150,24 +150,8 @@ __vfs_setxattr(struct dentry *dentry, struct inode *inode, const char *name,
 }
 EXPORT_SYMBOL(__vfs_setxattr);
 
-/**
- *  __vfs_setxattr_noperm - perform setxattr operation without performing
- *  permission checks.
- *
- *  @dentry - object to perform setxattr on
- *  @name - xattr name to set
- *  @value - value to set @name to
- *  @size - size of @value
- *  @flags - flags to pass into filesystem operations
- *
- *  returns the result of the internal setxattr or setsecurity operations.
- *
- *  This function requires the caller to lock the inode's i_mutex before it
- *  is executed. It also assumes that the caller will make the appropriate
- *  permission checks.
- */
-int __vfs_setxattr_noperm(struct dentry *dentry, const char *name,
-		const void *value, size_t size, int flags)
+static int __vfs_setxattr_noperm_evm(struct dentry *dentry, const char *name,
+		const void *value, size_t size, int flags, int evm_error)
 {
 	struct inode *inode = dentry->d_inode;
 	int error = -EAGAIN;
@@ -182,7 +166,8 @@ int __vfs_setxattr_noperm(struct dentry *dentry, const char *name,
 			fsnotify_xattr(dentry);
 			security_inode_post_setxattr(dentry, name, value,
 						     size, flags);
-			evm_inode_post_setxattr(dentry, name, value, size);
+			evm_inode_post_setxattr(dentry, name, value, size,
+						evm_error);
 		}
 	} else {
 		if (unlikely(is_bad_inode(inode)))
@@ -202,6 +187,28 @@ int __vfs_setxattr_noperm(struct dentry *dentry, const char *name,
 	}
 
 	return error;
+}
+
+/**
+ *  __vfs_setxattr_noperm - perform setxattr operation without performing
+ *  permission checks.
+ *
+ *  @dentry - object to perform setxattr on
+ *  @name - xattr name to set
+ *  @value - value to set @name to
+ *  @size - size of @value
+ *  @flags - flags to pass into filesystem operations
+ *
+ *  returns the result of the internal setxattr or setsecurity operations.
+ *
+ *  This function requires the caller to lock the inode's i_mutex before it
+ *  is executed. It also assumes that the caller will make the appropriate
+ *  permission checks.
+ */
+int __vfs_setxattr_noperm(struct dentry *dentry, const char *name,
+		const void *value, size_t size, int flags)
+{
+	return __vfs_setxattr_noperm_evm(dentry, name, value, size, flags, 0);
 }
 
 /**
@@ -242,7 +249,8 @@ __vfs_setxattr_locked(struct dentry *dentry, const char *name,
 	if (error)
 		goto out;
 
-	error = __vfs_setxattr_noperm(dentry, name, value, size, flags);
+	error = __vfs_setxattr_noperm_evm(dentry, name, value, size, flags,
+					  evm_error);
 
 out:
 	return error;
@@ -459,7 +467,7 @@ __vfs_removexattr_locked(struct dentry *dentry, const char *name,
 
 	if (!error) {
 		fsnotify_xattr(dentry);
-		evm_inode_post_removexattr(dentry, name);
+		evm_inode_post_removexattr(dentry, name, evm_error);
 	}
 
 out:

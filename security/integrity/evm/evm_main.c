@@ -576,6 +576,7 @@ static void evm_reset_status(struct inode *inode, int bit)
  * @xattr_name: pointer to the affected extended attribute name
  * @xattr_value: pointer to the new extended attribute value
  * @xattr_value_len: pointer to the new extended attribute value length
+ * @evm_pre_error: error returned by evm_inode_setxattr()
  *
  * Update the HMAC stored in 'security.evm' to reflect the change.
  *
@@ -584,7 +585,8 @@ static void evm_reset_status(struct inode *inode, int bit)
  * i_mutex lock.
  */
 void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
-			     const void *xattr_value, size_t xattr_value_len)
+			     const void *xattr_value, size_t xattr_value_len,
+			     int evm_pre_error)
 {
 	int is_evm = !strcmp(xattr_name, XATTR_NAME_EVM);
 
@@ -597,6 +599,9 @@ void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
 	if (is_evm)
 		return;
 
+	if (evm_pre_error)
+		return;
+
 	evm_update_evmxattr(dentry, xattr_name, xattr_value, xattr_value_len);
 }
 
@@ -604,13 +609,15 @@ void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
  * evm_inode_post_removexattr - update 'security.evm' after removing the xattr
  * @dentry: pointer to the affected dentry
  * @xattr_name: pointer to the affected extended attribute name
+ * @evm_pre_error: error returned by evm_inode_removexattr()
  *
  * Update the HMAC stored in 'security.evm' to reflect removal of the xattr.
  *
  * No need to take the i_mutex lock here, as this function is called from
  * vfs_removexattr() which takes the i_mutex.
  */
-void evm_inode_post_removexattr(struct dentry *dentry, const char *xattr_name)
+void evm_inode_post_removexattr(struct dentry *dentry, const char *xattr_name,
+				int evm_pre_error)
 {
 	int is_evm = !strcmp(xattr_name, XATTR_NAME_EVM);
 
@@ -620,6 +627,9 @@ void evm_inode_post_removexattr(struct dentry *dentry, const char *xattr_name)
 	evm_reset_status(dentry->d_inode, IMA_CHANGE_XATTR);
 
 	if (is_evm)
+		return;
+
+	if (evm_pre_error)
 		return;
 
 	evm_update_evmxattr(dentry, xattr_name, NULL, 0);
@@ -681,6 +691,7 @@ int evm_inode_setattr(struct dentry *dentry, struct iattr *attr)
  * evm_inode_post_setattr - update 'security.evm' after modifying metadata
  * @dentry: pointer to the affected dentry
  * @ia_valid: for the UID and GID status
+ * @evm_pre_error: error returned by evm_inode_setattr()
  *
  * For now, update the HMAC stored in 'security.evm' to reflect UID/GID
  * changes.
@@ -688,12 +699,16 @@ int evm_inode_setattr(struct dentry *dentry, struct iattr *attr)
  * This function is called from notify_change(), which expects the caller
  * to lock the inode's i_mutex.
  */
-void evm_inode_post_setattr(struct dentry *dentry, int ia_valid)
+void evm_inode_post_setattr(struct dentry *dentry, int ia_valid,
+			    int evm_pre_error)
 {
 	if (!evm_key_loaded())
 		return;
 
 	evm_reset_status(dentry->d_inode, IMA_CHANGE_ATTR);
+
+	if (evm_pre_error)
+		return;
 
 	if (ia_valid & (ATTR_MODE | ATTR_UID | ATTR_GID))
 		evm_update_evmxattr(dentry, NULL, NULL, 0);
