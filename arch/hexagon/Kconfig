@@ -4,6 +4,7 @@ comment "Linux Kernel Configuration for Hexagon"
 
 config HEXAGON
 	def_bool y
+	select ARCH_32BIT_OFF_T
 	select ARCH_NO_PREEMPT
 	select HAVE_OPROFILE
 	# Other pending projects/to-do items.
