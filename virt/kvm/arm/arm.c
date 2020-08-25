@@ -277,6 +277,24 @@ void kvm_arch_free_vm(struct kvm *kvm)
 		vfree(kvm);
 }
 
+static int get_cpu_ftr(u32 id, u64 val, void *argp)
+{
+	struct id_registers *idregs = argp;
+
+	/*
+	 * (Op0, Op1, CRn, CRm, Op2) of ID registers is (3, 0, 0, crm, op2),
+	 * where 1<=crm<8, 0<=op2<8.
+	 */
+	if (sys_reg_Op0(id) == 3 && sys_reg_Op1(id) == 0 &&
+	    sys_reg_CRn(id) == 0 && sys_reg_CRm(id) > 0) {
+		idregs->regs[idregs->num].sys_id = id;
+		idregs->regs[idregs->num].sys_val = val;
+		idregs->num++;
+	}
+
+	return 0;
+}
+
 struct kvm_vcpu *kvm_arch_vcpu_create(struct kvm *kvm, unsigned int id)
 {
 	int err;
@@ -299,6 +317,10 @@ struct kvm_vcpu *kvm_arch_vcpu_create(struct kvm *kvm, unsigned int id)
 	}
 
 	err = kvm_vcpu_init(vcpu, kvm, id);
+	if (err)
+		goto free_vcpu;
+
+	err = arm64_cpu_ftr_regs_traverse(get_cpu_ftr, &vcpu->arch.idregs);
 	if (err)
 		goto free_vcpu;
 
