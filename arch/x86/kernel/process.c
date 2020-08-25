@@ -559,6 +559,7 @@ void __cpuidle default_idle(void)
 }
 #if defined(CONFIG_APM_MODULE) || defined(CONFIG_HALTPOLL_CPUIDLE_MODULE)
 EXPORT_SYMBOL(default_idle);
+EXPORT_SYMBOL(arch_cpu_idle);
 #endif
 
 #ifdef CONFIG_XEN
