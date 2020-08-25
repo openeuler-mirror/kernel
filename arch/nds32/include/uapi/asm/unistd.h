@@ -2,6 +2,7 @@
 // Copyright (C) 2005-2017 Andes Technology Corporation
 
 #define __ARCH_WANT_SYNC_FILE_RANGE2
+#define __ARCH_WANT_SET_GET_RLIMIT
 
 /* Use the standard ABI for syscalls */
 #include <asm-generic/unistd.h>
