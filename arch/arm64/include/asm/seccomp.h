@@ -13,7 +13,7 @@
 
 #include <asm/unistd.h>
 
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 #define __NR_seccomp_read_32		__NR_compat_read
 #define __NR_seccomp_write_32		__NR_compat_write
 #define __NR_seccomp_exit_32		__NR_compat_exit
