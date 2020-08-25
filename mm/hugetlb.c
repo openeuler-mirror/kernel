@@ -54,6 +54,7 @@ static struct hstate * __initdata parsed_hstate;
 static unsigned long __initdata default_hstate_max_huge_pages;
 static unsigned long __initdata default_hstate_size;
 static bool __initdata parsed_valid_hugepagesz = true;
+static int enable_charge_mighp __read_mostly;
 
 /*
  * Protects updates to hugepage_freelists, hugepage_activelist, nr_huge_pages,
@@ -1710,8 +1711,12 @@ struct page *alloc_huge_page_node(struct hstate *h, int nid)
 		page = dequeue_huge_page_nodemask(h, gfp_mask, nid, NULL, NULL);
 	spin_unlock(&hugetlb_lock);
 
-	if (!page)
+	if (!page) {
+		if (enable_charge_mighp)
+			gfp_mask |= __GFP_ACCOUNT;
+
 		page = alloc_migrate_huge_page(h, gfp_mask, nid, NULL);
+	}
 
 	return page;
 }
@@ -5227,4 +5232,18 @@ int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte_by_pa);
+
+#ifdef CONFIG_ASCEND_CHARGE_MIGRATE_HUGEPAGES
+
+static int __init ascend_enable_charge_migrate_hugepages(char *s)
+{
+	enable_charge_mighp = 1;
+
+	pr_info("Ascend enable charge migrate hugepage\n");
+
+	return 1;
+}
+__setup("enable_charge_mighp", ascend_enable_charge_migrate_hugepages);
+
+#endif
 #endif

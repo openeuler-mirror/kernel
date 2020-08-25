@@ -1389,6 +1389,17 @@ config ASCEND_IOPF_HIPRI
 	  CPU which processes IOPF work is the same as that which processes IOPF
 	  event interrupts.
 
+config ASCEND_CHARGE_MIGRATE_HUGEPAGES
+	bool "Enable support for migrate hugepages"
+	default y
+	help
+	  When reseved hugepages are used up, we attempts to apply for migrate
+	  hugepages. We expect that the migrated hugepages that are applied for
+	  can be charged in memcg to limit the memory usage.
+
+	  This option enable the feature to charge migrate hugepages to memory
+	  cgroup.
+
 endif
 
 endmenu
