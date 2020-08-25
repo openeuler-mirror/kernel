@@ -207,14 +207,14 @@ static noinline void pci_wait_cfg(struct pci_dev *dev)
 {
 	DECLARE_WAITQUEUE(wait, current);
 
+	__add_wait_queue(&pci_cfg_wait, &wait);
 	do {
 		set_current_state(TASK_UNINTERRUPTIBLE);
 		raw_spin_unlock_irq(&pci_lock);
-		add_wait_queue(&pci_cfg_wait, &wait);
 		schedule();
-		remove_wait_queue(&pci_cfg_wait, &wait);
 		raw_spin_lock_irq(&pci_lock);
 	} while (dev->block_cfg_access);
+	__remove_wait_queue(&pci_cfg_wait, &wait);
 }
 
 /* Returns 0 on success, negative values indicate error. */
