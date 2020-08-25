@@ -196,21 +196,19 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 	/* check value type */
 	switch (xattr_data->type) {
 	case EVM_XATTR_HMAC:
-		if (xattr_len < SHA256_DIGEST_SIZE) {
+		if (xattr_len != hash_digest_size[evm_hash_algo] + 1) {
+			evm_status = INTEGRITY_FAIL;
 			rc = -EINVAL;
 			break;
 		}
-		if (xattr_len != sizeof(struct evm_ima_xattr_data)) {
-			evm_status = INTEGRITY_FAIL;
-			goto out;
-		}
-		digest.hdr.algo = HASH_ALGO_SHA1;
+
+		digest.hdr.algo = evm_hash_algo;
 		rc = evm_calc_hmac(dentry, xattr_name, xattr_value,
 				   xattr_value_len, &digest);
 		if (rc)
 			break;
 		rc = crypto_memneq(xattr_data->digest, digest.digest,
-				   SHA1_DIGEST_SIZE);
+				   hash_digest_size[evm_hash_algo]);
 		if (rc)
 			rc = -EINVAL;
 		break;
@@ -750,7 +748,7 @@ int evm_inode_init_security(struct inode *inode,
 		goto out;
 
 	evm_xattr->value = xattr_data;
-	evm_xattr->value_len = sizeof(*xattr_data);
+	evm_xattr->value_len = hash_digest_size[evm_hash_algo] + 1;
 	evm_xattr->name = XATTR_EVM_SUFFIX;
 	return 0;
 out:
@@ -772,9 +770,14 @@ void __init evm_load_x509(void)
 
 static int __init init_evm(void)
 {
-	int error;
+	int error, i;
 	struct list_head *pos, *q;
 	struct xattr_list *xattr;
+
+	i = match_string(hash_algo_name, HASH_ALGO__LAST,
+			 CONFIG_EVM_DEFAULT_HASH);
+	if (i >= 0)
+		evm_hash_algo = i;
 
 	evm_init_config();
 
