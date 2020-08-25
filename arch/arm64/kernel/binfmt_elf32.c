@@ -20,8 +20,8 @@
 })
 
 #define COMPAT_ARCH_DLINFO
-#define COMPAT_ELF_HWCAP		(compat_elf_hwcap)
-#define COMPAT_ELF_HWCAP2		(compat_elf_hwcap2)
+#define COMPAT_ELF_HWCAP		(a32_elf_hwcap)
+#define COMPAT_ELF_HWCAP2		(a32_elf_hwcap2)
 
 #define compat_arch_setup_additional_pages \
 					aarch32_setup_vectors_page
