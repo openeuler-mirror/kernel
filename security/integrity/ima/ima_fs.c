@@ -361,7 +361,7 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 		goto out;
 
 	result = -EFBIG;
-	if (datalen + 1 > 64 * 1024 * 1024)
+	if (datalen > 64 * 1024 * 1024 - 1)
 		goto out;
 
 	result = -ENOMEM;
