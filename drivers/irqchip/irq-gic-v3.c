@@ -891,6 +891,208 @@ static void gic_cpu_init(void)
 	gic_cpu_sys_reg_init();
 }
 
+#ifdef CONFIG_ASCEND_INIT_ALL_GICR
+struct workaround_oem_info {
+	char oem_id[ACPI_OEM_ID_SIZE + 1];
+	char oem_table_id[ACPI_OEM_TABLE_ID_SIZE + 1];
+	u32 oem_revision;
+};
+
+static struct workaround_oem_info gicr_wkrd_info[] = {
+	{
+		.oem_id		= "HISI  ",
+		.oem_table_id	= "HIP08   ",
+		.oem_revision	= 0x300,
+	}, {
+		.oem_id		= "HISI  ",
+		.oem_table_id	= "HIP08   ",
+		.oem_revision	= 0x301,
+	}, {
+		.oem_id		= "HISI  ",
+		.oem_table_id	= "HIP08   ",
+		.oem_revision	= 0x400,
+	}, {
+		.oem_id		= "HISI  ",
+		.oem_table_id	= "HIP08   ",
+		.oem_revision	= 0x401,
+	}, {
+		.oem_id		= "HISI  ",
+		.oem_table_id	= "HIP08   ",
+		.oem_revision	= 0x402,
+	}
+};
+
+static void gic_check_hisi_workaround(void)
+{
+	struct acpi_table_header *tbl;
+	acpi_status status = AE_OK;
+	int i;
+
+	status = acpi_get_table(ACPI_SIG_MADT, 0, &tbl);
+	if (ACPI_FAILURE(status) || !tbl)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(gicr_wkrd_info); i++) {
+		if (!memcmp(gicr_wkrd_info[i].oem_id, tbl->oem_id, ACPI_OEM_ID_SIZE) &&
+		    !memcmp(gicr_wkrd_info[i].oem_table_id, tbl->oem_table_id, ACPI_OEM_TABLE_ID_SIZE) &&
+		    gicr_wkrd_info[i].oem_revision == tbl->oem_revision) {
+			its_enable_init_all_gicr();
+			break;
+		}
+	}
+}
+
+static void gic_compute_nr_gicr(void)
+{
+	int i;
+	int sum = 0;
+
+	for (i = 0; i < gic_data.nr_redist_regions; i++) {
+		u64 typer;
+		void __iomem *ptr = gic_data.redist_regions[i].redist_base;
+
+		do {
+			typer = gic_read_typer(ptr + GICR_TYPER);
+			sum++;
+
+			if (gic_data.redist_regions[i].single_redist)
+				break;
+
+			if (gic_data.redist_stride) {
+				ptr += gic_data.redist_stride;
+			} else {
+				ptr += SZ_64K * 2; /* Skip RD_base + SGI_base */
+				if (typer & GICR_TYPER_VLPIS)
+					/* Skip VLPI_base + reserved page */
+					ptr += SZ_64K * 2;
+			}
+		} while (!(typer & GICR_TYPER_LAST));
+	}
+
+	its_set_gicr_nr(sum);
+}
+
+static void gic_enable_redist_others(void __iomem *rbase, bool enable)
+{
+	u32 count = 1000000;	/* 1s! */
+	u32 val;
+
+	val = readl_relaxed(rbase + GICR_WAKER);
+	if (enable)
+		/* Wake up this CPU redistributor */
+		val &= ~GICR_WAKER_ProcessorSleep;
+	else
+		val |= GICR_WAKER_ProcessorSleep;
+	writel_relaxed(val, rbase + GICR_WAKER);
+
+	if (!enable) {		/* Check that GICR_WAKER is writeable */
+		val = readl_relaxed(rbase + GICR_WAKER);
+		if (!(val & GICR_WAKER_ProcessorSleep))
+			return;	/* No PM support in this redistributor */
+	}
+
+	while (--count) {
+		val = readl_relaxed(rbase + GICR_WAKER);
+		if (enable ^ (bool)(val & GICR_WAKER_ChildrenAsleep))
+			break;
+		cpu_relax();
+		udelay(1);
+	};
+	if (!count)
+		pr_err_ratelimited("redistributor failed to %s...\n",
+				   enable ? "wakeup" : "sleep");
+}
+
+static int gic_rdist_cpu(void __iomem *ptr, unsigned int cpu)
+{
+	unsigned long mpidr = cpu_logical_map(cpu);
+	u64 typer;
+	u32 aff;
+
+	/*
+	 * Convert affinity to a 32bit value that can be matched to
+	 * GICR_TYPER bits [63:32].
+	 */
+	aff = (MPIDR_AFFINITY_LEVEL(mpidr, 3) << 24 |
+	       MPIDR_AFFINITY_LEVEL(mpidr, 2) << 16 |
+	       MPIDR_AFFINITY_LEVEL(mpidr, 1) << 8 |
+	       MPIDR_AFFINITY_LEVEL(mpidr, 0));
+
+	typer = gic_read_typer(ptr + GICR_TYPER);
+	if ((typer >> 32) == aff)
+		return 0;
+
+	return 1;
+}
+
+static int gic_rdist_cpus(void __iomem *ptr)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr_cpu_ids; i++) {
+		if (gic_rdist_cpu(ptr, i) == 0)
+			return 0;
+	}
+
+	return 1;
+}
+
+static void gic_cpu_init_others(void)
+{
+	int i, cpu = nr_cpu_ids;
+	int gicr_nr = its_gicr_nr();
+
+	if (!its_init_all_gicr())
+		return;
+
+	for (i = 0; i < gic_data.nr_redist_regions; i++) {
+		u64 typer;
+		void __iomem *redist_base =
+				gic_data.redist_regions[i].redist_base;
+		phys_addr_t phys_base = gic_data.redist_regions[i].phys_base;
+
+		do {
+			typer = gic_read_typer(redist_base + GICR_TYPER);
+
+			if (gic_rdist_cpus(redist_base) == 1) {
+				if (cpu >= gicr_nr) {
+					pr_err("CPU over GICR number.\n");
+					break;
+				}
+				gic_enable_redist_others(redist_base, true);
+
+				if (gic_dist_supports_lpis())
+					its_cpu_init_others(redist_base, phys_base, cpu);
+				cpu++;
+			}
+
+			if (gic_data.redist_regions[i].single_redist)
+				break;
+
+			if (gic_data.redist_stride) {
+				redist_base += gic_data.redist_stride;
+				phys_base += gic_data.redist_stride;
+			} else {
+				/* Skip RD_base + SGI_base */
+				redist_base += SZ_64K * 2;
+				phys_base += SZ_64K * 2;
+				if (typer & GICR_TYPER_VLPIS) {
+					/* Skip VLPI_base + reserved page */
+					redist_base += SZ_64K * 2;
+					phys_base += SZ_64K * 2;
+				}
+			}
+		} while (!(typer & GICR_TYPER_LAST));
+	}
+}
+#else
+static inline void gic_check_hisi_workaround(void) {}
+
+static inline void gic_compute_nr_gicr(void) {}
+
+static inline void gic_cpu_init_others(void) {}
+#endif
+
 #ifdef CONFIG_SMP
 
 #define MPIDR_TO_SGI_RS(mpidr)	(MPIDR_RS(mpidr) << ICC_SGI1R_RS_SHIFT)
@@ -1345,6 +1547,8 @@ static int __init gic_init_bases(void __iomem *dist_base,
 	gic_data.rdists.rdist = alloc_percpu(typeof(*gic_data.rdists.rdist));
 	gic_data.rdists.has_vlpis = true;
 	gic_data.rdists.has_direct_lpi = true;
+	gic_check_hisi_workaround();
+	gic_compute_nr_gicr();
 
 	if (WARN_ON(!gic_data.domain) || WARN_ON(!gic_data.rdists.rdist)) {
 		err = -ENOMEM;
@@ -1385,6 +1589,8 @@ static int __init gic_init_bases(void __iomem *dist_base,
 		its_init(handle, &gic_data.rdists, gic_data.domain);
 		its_cpu_init();
 	}
+
+	gic_cpu_init_others();
 
 	return 0;
 
