@@ -1597,7 +1597,7 @@ static bool compat_has_neon(const struct arm64_cpu_capabilities *cap, int scope)
 }
 #endif
 
-static const struct arm64_cpu_capabilities compat_elf_hwcaps[] = {
+static const struct arm64_cpu_capabilities a32_elf_hwcaps[] = {
 #ifdef CONFIG_AARCH32_EL0
 	HWCAP_CAP_MATCH(compat_has_neon, CAP_COMPAT_HWCAP, COMPAT_HWCAP_NEON),
 	HWCAP_CAP(SYS_MVFR1_EL1, MVFR1_SIMDFMAC_SHIFT, FTR_UNSIGNED, 1, CAP_COMPAT_HWCAP, COMPAT_HWCAP_VFPv4),
@@ -1896,7 +1896,7 @@ static void verify_local_cpu_capabilities(void)
 	verify_local_elf_hwcaps(arm64_elf_hwcaps);
 
 	if (system_supports_32bit_el0())
-		verify_local_elf_hwcaps(compat_elf_hwcaps);
+		verify_local_elf_hwcaps(a32_elf_hwcaps);
 
 	if (system_supports_sve())
 		verify_sve_features();
@@ -1967,7 +1967,7 @@ void __init setup_cpu_features(void)
 	setup_elf_hwcaps(arm64_elf_hwcaps);
 
 	if (system_supports_32bit_el0())
-		setup_elf_hwcaps(compat_elf_hwcaps);
+		setup_elf_hwcaps(a32_elf_hwcaps);
 
 	if (system_uses_ttbr0_pan())
 		pr_info("emulated: Privileged Access Never (PAN) using TTBR0_EL1 switching\n");

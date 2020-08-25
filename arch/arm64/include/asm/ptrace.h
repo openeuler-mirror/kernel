@@ -208,16 +208,16 @@ static inline void forget_syscall(struct pt_regs *regs)
 #define arch_has_single_step()	(1)
 
 #ifdef CONFIG_AARCH32_EL0
-#define compat_thumb_mode(regs) \
+#define a32_thumb_mode(regs) \
 	(((regs)->pstate & PSR_AA32_T_BIT))
 #else
-#define compat_thumb_mode(regs) (0)
+#define a32_thumb_mode(regs) (0)
 #endif
 
 #define user_mode(regs)	\
 	(((regs)->pstate & PSR_MODE_MASK) == PSR_MODE_EL0t)
 
-#define compat_user_mode(regs)	\
+#define a32_user_mode(regs)	\
 	(((regs)->pstate & (PSR_MODE32_BIT | PSR_MODE_MASK)) == \
 	 (PSR_MODE32_BIT | PSR_MODE_EL0t))
 
@@ -236,10 +236,10 @@ static inline void forget_syscall(struct pt_regs *regs)
 	(!((regs)->pstate & PSR_F_BIT))
 
 #define GET_USP(regs) \
-	(!compat_user_mode(regs) ? (regs)->sp : (regs)->compat_sp)
+	(!a32_user_mode(regs) ? (regs)->sp : (regs)->compat_sp)
 
 #define SET_USP(ptregs, value) \
-	(!compat_user_mode(regs) ? ((regs)->sp = value) : ((regs)->compat_sp = value))
+	(!a32_user_mode(regs) ? ((regs)->sp = value) : ((regs)->compat_sp = value))
 
 extern int regs_query_register_offset(const char *name);
 extern unsigned long regs_get_kernel_stack_nth(struct pt_regs *regs,
