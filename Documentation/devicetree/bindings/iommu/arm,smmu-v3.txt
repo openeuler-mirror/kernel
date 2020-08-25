@@ -61,6 +61,14 @@ the PCIe specification.
 		      Set for Cavium ThunderX2 silicon that doesn't support
 		      SMMU page1 register space.
 
+- hisilicon,message-based-spi
+                   : Message based SPI is used for Ascend310 silicon. The addr
+                     of GICD_SETSPIR needs to be configured in the CFG_REG of
+                     SMMU.
+
+- iommu-spi-base
+                   : The addr of GICD_SETSPI
+
 ** Example
 
         smmu@2b400000 {
