@@ -109,6 +109,16 @@ void rq_qos_done_bio(struct request_queue *q, struct bio *bio)
 	}
 }
 
+void rq_qos_queue_depth_changed(struct request_queue *q)
+{
+	struct rq_qos *rqos;
+
+	for (rqos = q->rq_qos; rqos; rqos = rqos->next) {
+		if (rqos->ops->queue_depth_changed)
+			rqos->ops->queue_depth_changed(rqos);
+	}
+}
+
 /*
  * Return true, if we can't increase the depth further by scaling
  */
