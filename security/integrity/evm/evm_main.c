@@ -146,7 +146,8 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 {
 	struct evm_ima_xattr_data *xattr_data = NULL;
 	struct signature_v2_hdr *hdr;
-	enum integrity_status evm_status = INTEGRITY_PASS, saved_evm_status;
+	enum integrity_status evm_status = INTEGRITY_PASS;
+	enum integrity_status saved_evm_status = INTEGRITY_UNKNOWN;
 	struct evm_digest digest;
 	struct ima_digest *found_digest;
 	struct inode *inode;
