@@ -769,8 +769,19 @@ int set_ets(struct hinic_nic_dev *nic_dev, void *buf_in,
 		err = 0xff;
 		goto exit;
 	}
-	if (ets.flag_com.ets_flag.flag_ets_cos)
+
+	if (ets.flag_com.ets_flag.flag_ets_cos) {
+		for (i = 0; i < HINIC_DCB_COS_MAX; i++) {
+			if (ets.tc[i] >= HINIC_DCB_TC_MAX) {
+				nicif_err(nic_dev, drv, nic_dev->netdev,
+					  "ETS tc id %d out of range\n",
+					  ets.tc[i]);
+				err = 0xFF;
+				goto exit;
+			}
+		}
 		hinic_dcbnl_set_ets_tc_tool(nic_dev->netdev, ets.tc, true);
+	}
 
 	if (ets.flag_com.ets_flag.flag_ets_percent) {
 		for (i = support_tc; i < HINIC_DCB_TC_MAX; i++) {
