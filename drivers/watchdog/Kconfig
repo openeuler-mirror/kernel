@@ -273,6 +273,14 @@ config ARM_SBSA_WATCHDOG
 	  To compile this driver as module, choose M here: The module
 	  will be called sbsa_gwdt.
 
+config ARM_SBSA_WATCHDOG_PANIC_NOTIFIER
+	bool "Reset the WDT Timeout on Panic"
+	depends on ASCEND_FEATURES
+	depends on ARM_SBSA_WATCHDOG
+	help
+	  This registers a panic notifier that reset the timeout of watchdog to
+	  pretimeout set by user before.
+
 config ASM9260_WATCHDOG
 	tristate "Alphascale ASM9260 watchdog"
 	depends on MACH_ASM9260 || COMPILE_TEST
