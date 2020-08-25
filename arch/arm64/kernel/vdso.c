@@ -37,8 +37,13 @@
 #include <asm/vdso.h>
 #include <asm/vdso_datapage.h>
 
-extern char vdso_start[], vdso_end[];
-static unsigned long vdso_pages __ro_after_init;
+extern char vdso_lp64_start[], vdso_lp64_end[];
+static unsigned long vdso_lp64_pages __ro_after_init;
+
+#ifdef CONFIG_ARM64_ILP32
+extern char vdso_ilp32_start[], vdso_ilp32_end[];
+static unsigned long vdso_ilp32_pages __ro_after_init;
+#endif
 
 /*
  * The vDSO data page.
@@ -114,7 +119,7 @@ static int vdso_mremap(const struct vm_special_mapping *sm,
 		struct vm_area_struct *new_vma)
 {
 	unsigned long new_size = new_vma->vm_end - new_vma->vm_start;
-	unsigned long vdso_size = vdso_end - vdso_start;
+	unsigned long vdso_size = vdso_lp64_end - vdso_lp64_start;
 
 	if (vdso_size != new_size)
 		return -EINVAL;
@@ -124,7 +129,7 @@ static int vdso_mremap(const struct vm_special_mapping *sm,
 	return 0;
 }
 
-static struct vm_special_mapping vdso_spec[2] __ro_after_init = {
+static struct vm_special_mapping vdso_lp64_spec[2] __ro_after_init = {
 	{
 		.name	= "[vvar]",
 	},
@@ -134,9 +139,23 @@ static struct vm_special_mapping vdso_spec[2] __ro_after_init = {
 	},
 };
 
-static int __init vdso_init(void)
+#ifdef CONFIG_ARM64_ILP32
+static struct vm_special_mapping vdso_ilp32_spec[2] __ro_after_init = {
+	{
+		.name	= "[vvar]",
+	},
+	{
+		.name	= "[vdso]",
+	},
+};
+#endif
+
+static int __init vdso_init(char *vdso_start, char *vdso_end,
+					  unsigned long *vdso_pagesp,
+					  struct vm_special_mapping *vdso_spec)
 {
 	int i;
+	unsigned long vdso_pages;
 	struct page **vdso_pagelist;
 	unsigned long pfn;
 
@@ -146,6 +165,7 @@ static int __init vdso_init(void)
 	}
 
 	vdso_pages = (vdso_end - vdso_start) >> PAGE_SHIFT;
+	*vdso_pagesp = vdso_pages;
 
 	/* Allocate the vDSO pagelist, plus a page for the data. */
 	vdso_pagelist = kcalloc(vdso_pages + 1, sizeof(struct page *),
@@ -168,7 +188,22 @@ static int __init vdso_init(void)
 
 	return 0;
 }
-arch_initcall(vdso_init);
+
+static int __init vdso_lp64_init(void)
+{
+	return vdso_init(vdso_lp64_start, vdso_lp64_end,
+				&vdso_lp64_pages, vdso_lp64_spec);
+}
+arch_initcall(vdso_lp64_init);
+
+#ifdef CONFIG_ARM64_ILP32
+static int __init vdso_ilp32_init(void)
+{
+	return vdso_init(vdso_ilp32_start, vdso_ilp32_end,
+				&vdso_ilp32_pages, vdso_ilp32_spec);
+}
+arch_initcall(vdso_ilp32_init);
+#endif
 
 int arch_setup_additional_pages(struct linux_binprm *bprm,
 				int uses_interp)
@@ -176,8 +211,17 @@ int arch_setup_additional_pages(struct linux_binprm *bprm,
 	struct mm_struct *mm = current->mm;
 	unsigned long vdso_base, vdso_text_len, vdso_mapping_len;
 	void *ret;
+	unsigned long pages = vdso_lp64_pages;
+	struct vm_special_mapping *vdso_spec = vdso_lp64_spec;
 
-	vdso_text_len = vdso_pages << PAGE_SHIFT;
+#ifdef CONFIG_ARM64_ILP32
+	if (is_ilp32_compat_task()) {
+		pages = vdso_ilp32_pages;
+		vdso_spec = vdso_ilp32_spec;
+	}
+#endif
+
+	vdso_text_len = pages << PAGE_SHIFT;
 	/* Be sure to map the data page */
 	vdso_mapping_len = vdso_text_len + PAGE_SIZE;
 

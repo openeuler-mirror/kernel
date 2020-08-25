@@ -26,6 +26,12 @@
 #include <linux/math64.h>
 #include <linux/time.h>
 #include <linux/kernel.h>
+
+#ifdef __ILP32__
+#undef BITS_PER_LONG
+#define BITS_PER_LONG 32
+#endif
+
 #include <linux/hrtimer.h>
 
 extern struct vdso_data _vdso_data;
