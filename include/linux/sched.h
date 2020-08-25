@@ -28,6 +28,7 @@
 #include <linux/mm_types_task.h>
 #include <linux/task_io_accounting.h>
 #include <linux/rseq.h>
+#include <linux/thread_bits.h>
 
 /* task_struct member predeclarations (sorted alphabetically): */
 struct audit_context;
