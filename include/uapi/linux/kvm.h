@@ -967,6 +967,8 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_ARM_VM_IPA_SIZE 165 /* returns maximum IPA bits for a VM */
 #define KVM_CAP_ARM_IRQ_LINE_LAYOUT_2 174
 
+#define KVM_CAP_ARM_CPU_FEATURE 555
+
 #ifdef KVM_CAP_IRQ_ROUTING
 
 struct kvm_irq_routing_irqchip {
