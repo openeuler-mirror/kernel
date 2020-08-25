@@ -342,8 +342,6 @@ static int get_inter_num(struct hinic_nic_dev *nic_dev, void *buf_in,
 	}
 	*(u16 *)buf_out = intr_num;
 
-	*out_size = sizeof(u16);
-
 	return 0;
 }
 
@@ -361,7 +359,12 @@ static int clear_func_static(struct hinic_nic_dev *nic_dev, void *buf_in,
 {
 	int i;
 
-	*out_size = 0;
+	if (*out_size != 0) {
+		pr_err("Unexpect out buf size from user: %d, expect: 0\n",
+		       *out_size);
+		return -EINVAL;
+	}
+
 	clean_nicdev_stats(nic_dev);
 	for (i = 0; i < nic_dev->max_qps; i++) {
 		hinic_rxq_clean_stats(&nic_dev->rxqs[i].rxq_stats);
@@ -415,7 +418,12 @@ static int set_dcb_cos_up_map(struct hinic_nic_dev *nic_dev, void *buf_in,
 	if (!buf_in || !out_size || in_size != sizeof(*map))
 		return -EINVAL;
 
-	*out_size = sizeof(*map);
+	if (*out_size != sizeof(*map)) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
+			  *out_size, sizeof(*map));
+		return -EINVAL;
+	}
 
 	return hinic_set_cos_up_map(nic_dev, map->cos_up);
 }
@@ -589,7 +597,6 @@ static int set_loopback_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
 			     u32 in_size, void *buf_out, u32 *out_size)
 {
 	struct hinic_nic_loop_mode *mode = buf_in;
-	int err;
 
 	if (!test_bit(HINIC_INTF_UP, &nic_dev->flags)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
@@ -600,13 +607,15 @@ static int set_loopback_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
 	if (!mode || !out_size || in_size != sizeof(*mode))
 		return -EFAULT;
 
-	err = hinic_set_loopback_mode_ex(nic_dev->hwdev, mode->loop_mode,
-					 mode->loop_ctrl);
-	if (err)
-		return err;
+	if (*out_size != sizeof(*mode)) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
+			  *out_size, sizeof(*mode));
+		return -EINVAL;
+	}
 
-	*out_size = sizeof(*mode);
-	return 0;
+	return hinic_set_loopback_mode_ex(nic_dev->hwdev, mode->loop_mode,
+					  mode->loop_ctrl);
 }
 
 static int set_link_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
@@ -623,6 +632,13 @@ static int set_link_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (!link || !out_size || in_size != sizeof(*link))
 		return -EFAULT;
+
+	if (*out_size != sizeof(*link)) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
+			  *out_size, sizeof(*link));
+		return -EINVAL;
+	}
 
 	switch (*link) {
 	case HINIC_LINK_MODE_AUTO:
@@ -649,7 +665,6 @@ static int set_link_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
 		return  -EINVAL;
 	}
 
-	*out_size = sizeof(*link);
 	return 0;
 }
 
@@ -676,7 +691,6 @@ static int set_dcb_cfg(struct hinic_nic_dev *nic_dev, void *buf_in,
 	}
 	dcb_ctl.dcb_data.err = (u8)err;
 	*((u32 *)buf_out) = (u32)dcb_ctl.data;
-	*out_size = sizeof(u32);
 
 	return 0;
 }
@@ -699,7 +713,6 @@ int get_pfc_info(struct hinic_nic_dev *nic_dev, void *buf_in,
 	hinic_dcbnl_get_tc_num_tool(nic_dev->netdev,
 				    &pfc.pfc_data.num_of_tc);
 	*((u32 *)buf_out) = (u32)pfc.data;
-	*out_size = sizeof(u32);
 
 	return 0;
 }
@@ -732,7 +745,7 @@ int set_pfc_control(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 exit:
 	*((u8 *)buf_out) = (u8)err;
-	*out_size = sizeof(u8);
+
 	return 0;
 }
 
@@ -807,7 +820,7 @@ int set_ets(struct hinic_nic_dev *nic_dev, void *buf_in,
 	}
 exit:
 	*((u8 *)buf_out) = err;
-	*out_size = sizeof(err);
+
 	return 0;
 }
 
@@ -874,7 +887,6 @@ int get_ets_info(struct hinic_nic_dev *nic_dev, void *buf_in,
 	hinic_dcbnl_set_ets_strict_tool(nic_dev->netdev, &ets->strict, false);
 	ets->err = 0;
 
-	*out_size = sizeof(*ets);
 	return 0;
 }
 
@@ -907,7 +919,6 @@ int set_pfc_priority(struct hinic_nic_dev *nic_dev, void *buf_in,
 	}
 exit:
 	*((u8 *)buf_out) = (u8)err;
-	*out_size = sizeof(u8);
 
 	return 0;
 }
@@ -940,7 +951,6 @@ static int set_pf_bw_limit(struct hinic_nic_dev *nic_dev, void *buf_in,
 	}
 
 	*((u8 *)buf_out) = (u8)err;
-	*out_size = sizeof(u8);
 
 	return 0;
 }
@@ -992,15 +1002,16 @@ static int set_poll_weight(struct hinic_nic_dev *nic_dev, void *buf_in,
 {
 	struct hinic_nic_poll_weight *weight_info = buf_in;
 
-	if (!buf_in || in_size != sizeof(*weight_info)) {
+	if (!buf_in || in_size != sizeof(*weight_info) ||
+	    *out_size != sizeof(u32)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect in buf size from user: %u, expect: %lu\n",
-			  *out_size, sizeof(*weight_info));
+			  "Unexpect in buf size: %u or out buf size: %d from user, expect: %lu\n",
+			  in_size, *out_size, sizeof(*weight_info));
 		return -EFAULT;
 	}
 
 	nic_dev->poll_weight = weight_info->poll_weight;
-	*out_size = sizeof(u32);
+
 	return 0;
 }
 
@@ -1021,8 +1032,6 @@ static int get_homologue(struct hinic_nic_dev *nic_dev, void *buf_in,
 	else
 		homo->homo_state = HINIC_HOMOLOGUES_OFF;
 
-	*out_size = sizeof(*homo);
-
 	return 0;
 }
 
@@ -1031,10 +1040,11 @@ static int set_homologue(struct hinic_nic_dev *nic_dev, void *buf_in,
 {
 	struct hinic_homologues *homo = buf_in;
 
-	if (!buf_in || in_size != sizeof(*homo)) {
+	if (!buf_in || in_size != sizeof(*homo) ||
+	    *out_size != sizeof(*homo)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect in buf size from user: %d, expect: %lu\n",
-			  *out_size, sizeof(*homo));
+			  "Unexpect in buf size: %d or out buf size: %d from user, expect: %lu\n",
+			  in_size, *out_size, sizeof(*homo));
 		return -EFAULT;
 	}
 
@@ -1046,8 +1056,6 @@ static int set_homologue(struct hinic_nic_dev *nic_dev, void *buf_in,
 		pr_err("Invalid parameters\n");
 		return -EFAULT;
 	}
-
-	*out_size = sizeof(*homo);
 
 	return 0;
 }
@@ -1146,7 +1154,7 @@ static int get_func_id(void *hwdev, void *buf_in, u32 in_size,
 
 	func_id = hinic_global_func_id_hw(hwdev);
 	*(u16 *)buf_out = func_id;
-	*out_size = sizeof(u16);
+
 	return 0;
 }
 
@@ -1179,8 +1187,7 @@ static int get_hw_stats(void *hwdev, void *buf_in, u32 in_size,
 static int clear_hw_stats(void *hwdev, void *buf_in, u32 in_size,
 			  void *buf_out, u32 *out_size)
 {
-	*out_size = hinic_dbg_clear_hw_stats(hwdev);
-	return 0;
+	return hinic_dbg_clear_hw_stats(hwdev, out_size);
 }
 
 static int get_drv_version(void *hwdev, void *buf_in, u32 in_size,
@@ -1231,7 +1238,6 @@ static int get_single_card_info(void *hwdev, void *buf_in, u32 in_size,
 	}
 
 	hinic_get_card_info(hwdev, buf_out);
-	*out_size = in_size;
 
 	return 0;
 }
@@ -1242,8 +1248,7 @@ static int get_device_id(void *hwdev, void *buf_in, u32 in_size,
 	u16 dev_id;
 	int err;
 
-	if (!buf_out || !buf_in || *out_size != sizeof(u16) ||
-	    in_size != sizeof(u16)) {
+	if (!buf_out || *out_size != sizeof(u16)) {
 		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
 		       *out_size, sizeof(u16));
 		return -EFAULT;
@@ -1254,7 +1259,6 @@ static int get_device_id(void *hwdev, void *buf_in, u32 in_size,
 		return err;
 
 	*((u32 *)buf_out) = dev_id;
-	*out_size = in_size;
 
 	return 0;
 }
@@ -1293,8 +1297,6 @@ static int get_pf_id(void *hwdev, void *buf_in, u32 in_size,
 			      &pf_info->isvalid);
 	if (err)
 		return err;
-
-	*out_size = sizeof(*pf_info);
 
 	return 0;
 }
@@ -1477,6 +1479,12 @@ static int get_firmware_active_status(void *hwdev, void *buf_in, u32 in_size,
 				      void *buf_out, u32 *out_size)
 {
 	u32 loop_cnt = 0;
+
+	if (*out_size != 0) {
+		pr_err("Unexpect out buf size from user: %d, expect: 0\n",
+		       *out_size);
+		return -EINVAL;
+	}
 
 	while (loop_cnt < GET_FIRMWARE_ACTIVE_STATUS_TIMEOUT) {
 		if (!hinic_get_mgmt_channel_status(hwdev))
