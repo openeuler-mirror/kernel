@@ -182,6 +182,7 @@ int __vfs_setxattr_noperm(struct dentry *dentry, const char *name,
 			fsnotify_xattr(dentry);
 			security_inode_post_setxattr(dentry, name, value,
 						     size, flags);
+			evm_inode_post_setxattr(dentry, name, value, size);
 		}
 	} else {
 		if (unlikely(is_bad_inode(inode)))
@@ -221,7 +222,7 @@ __vfs_setxattr_locked(struct dentry *dentry, const char *name,
 		struct inode **delegated_inode)
 {
 	struct inode *inode = dentry->d_inode;
-	int error;
+	int error, evm_error;
 
 	error = xattr_permission(inode, name, MAY_WRITE);
 	if (error)
@@ -230,6 +231,12 @@ __vfs_setxattr_locked(struct dentry *dentry, const char *name,
 	error = security_inode_setxattr(dentry, name, value, size, flags);
 	if (error)
 		goto out;
+
+	evm_error = evm_inode_setxattr(dentry, name, value, size);
+	if (evm_error) {
+		error = evm_error;
+		goto out;
+	}
 
 	error = try_break_deleg(inode, delegated_inode);
 	if (error)
@@ -428,7 +435,7 @@ __vfs_removexattr_locked(struct dentry *dentry, const char *name,
 		struct inode **delegated_inode)
 {
 	struct inode *inode = dentry->d_inode;
-	int error;
+	int error, evm_error;
 
 	error = xattr_permission(inode, name, MAY_WRITE);
 	if (error)
@@ -437,6 +444,12 @@ __vfs_removexattr_locked(struct dentry *dentry, const char *name,
 	error = security_inode_removexattr(dentry, name);
 	if (error)
 		goto out;
+
+	evm_error = evm_inode_removexattr(dentry, name);
+	if (evm_error) {
+		error = evm_error;
+		goto out;
+	}
 
 	error = try_break_deleg(inode, delegated_inode);
 	if (error)

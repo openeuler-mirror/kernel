@@ -706,14 +706,9 @@ int security_inode_permission(struct inode *inode, int mask)
 
 int security_inode_setattr(struct dentry *dentry, struct iattr *attr)
 {
-	int ret;
-
 	if (unlikely(IS_PRIVATE(d_backing_inode(dentry))))
 		return 0;
-	ret = call_int_hook(inode_setattr, 0, dentry, attr);
-	if (ret)
-		return ret;
-	return evm_inode_setattr(dentry, attr);
+	return call_int_hook(inode_setattr, 0, dentry, attr);
 }
 EXPORT_SYMBOL_GPL(security_inode_setattr);
 
@@ -742,10 +737,7 @@ int security_inode_setxattr(struct dentry *dentry, const char *name,
 		ret = cap_inode_setxattr(dentry, name, value, size, flags);
 	if (ret)
 		return ret;
-	ret = ima_inode_setxattr(dentry, name, value, size);
-	if (ret)
-		return ret;
-	return evm_inode_setxattr(dentry, name, value, size);
+	return ima_inode_setxattr(dentry, name, value, size);
 }
 
 void security_inode_post_setxattr(struct dentry *dentry, const char *name,
@@ -754,7 +746,6 @@ void security_inode_post_setxattr(struct dentry *dentry, const char *name,
 	if (unlikely(IS_PRIVATE(d_backing_inode(dentry))))
 		return;
 	call_void_hook(inode_post_setxattr, dentry, name, value, size, flags);
-	evm_inode_post_setxattr(dentry, name, value, size);
 }
 
 int security_inode_getxattr(struct dentry *dentry, const char *name)
@@ -786,10 +777,7 @@ int security_inode_removexattr(struct dentry *dentry, const char *name)
 		ret = cap_inode_removexattr(dentry, name);
 	if (ret)
 		return ret;
-	ret = ima_inode_removexattr(dentry, name);
-	if (ret)
-		return ret;
-	return evm_inode_removexattr(dentry, name);
+	return ima_inode_removexattr(dentry, name);
 }
 
 int security_inode_need_killpriv(struct dentry *dentry)

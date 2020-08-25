@@ -227,7 +227,7 @@ int notify_change(struct dentry * dentry, struct iattr * attr, struct inode **de
 {
 	struct inode *inode = dentry->d_inode;
 	umode_t mode = inode->i_mode;
-	int error;
+	int error, evm_error;
 	struct timespec64 now;
 	unsigned int ia_valid = attr->ia_valid;
 
@@ -326,6 +326,9 @@ int notify_change(struct dentry * dentry, struct iattr * attr, struct inode **de
 	error = security_inode_setattr(dentry, attr);
 	if (error)
 		return error;
+	evm_error = evm_inode_setattr(dentry, attr);
+	if (evm_error)
+		return evm_error;
 	error = try_break_deleg(inode, delegated_inode);
 	if (error)
 		return error;
