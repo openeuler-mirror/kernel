@@ -61,7 +61,7 @@ static struct xattr_list evm_config_default_xattrnames[] = {
 
 LIST_HEAD(evm_config_xattrnames);
 
-static int evm_fixmode;
+static int evm_fixmode, evm_ignoremode __ro_after_init;
 static int __init evm_set_param(char *str)
 {
 	if (strncmp(str, "fix", 3) == 0)
@@ -70,6 +70,8 @@ static int __init evm_set_param(char *str)
 		evm_initialized |= EVM_INIT_X509;
 	else if (strncmp(str, "allow_metadata_writes", 21) == 0)
 		evm_initialized |= EVM_ALLOW_METADATA_WRITES;
+	else if (strncmp(str, "ignore", 6) == 0)
+		evm_ignoremode = 1;
 	return 0;
 }
 __setup("evm=", evm_set_param);
@@ -450,6 +452,7 @@ static int evm_protect_xattr(struct dentry *dentry, const char *xattr_name,
 			     const void *xattr_value, size_t xattr_value_len)
 {
 	enum integrity_status evm_status;
+	int rc = -EPERM;
 
 	if (strcmp(xattr_name, XATTR_NAME_EVM) == 0) {
 		if (!capable(CAP_SYS_ADMIN))
@@ -494,12 +497,17 @@ out:
 	    !evm_xattr_change(dentry, xattr_name, xattr_value, xattr_value_len))
 		return 0;
 
-	if (evm_status != INTEGRITY_PASS)
+	if (evm_status != INTEGRITY_PASS) {
+		if (evm_ignoremode && evm_status != INTEGRITY_PASS_IMMUTABLE)
+			rc = -EAGAIN;
+
 		integrity_audit_msg(AUDIT_INTEGRITY_METADATA, d_backing_inode(dentry),
 				    dentry->d_name.name, "appraise_metadata",
 				    integrity_status_msg[evm_status],
-				    -EPERM, 0);
-	return evm_status == INTEGRITY_PASS ? 0 : -EPERM;
+				    rc, 0);
+	}
+
+	return evm_status == INTEGRITY_PASS ? 0 : rc;
 }
 
 /**
@@ -659,6 +667,7 @@ int evm_inode_setattr(struct dentry *dentry, struct iattr *attr)
 {
 	unsigned int ia_valid = attr->ia_valid;
 	enum integrity_status evm_status;
+	int rc = -EPERM;
 
 	/* Policy permits modification of the protected attrs even though
 	 * there's no HMAC key loaded
@@ -681,10 +690,13 @@ int evm_inode_setattr(struct dentry *dentry, struct iattr *attr)
 	    !evm_attr_change(dentry, attr))
 		return 0;
 
+	if (evm_ignoremode && evm_status != INTEGRITY_PASS_IMMUTABLE)
+		rc = -EAGAIN;
+
 	integrity_audit_msg(AUDIT_INTEGRITY_METADATA, d_backing_inode(dentry),
 			    dentry->d_name.name, "appraise_metadata",
-			    integrity_status_msg[evm_status], -EPERM, 0);
-	return -EPERM;
+			    integrity_status_msg[evm_status], rc, 0);
+	return rc;
 }
 
 /**

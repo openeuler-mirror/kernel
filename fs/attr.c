@@ -327,7 +327,7 @@ int notify_change(struct dentry * dentry, struct iattr * attr, struct inode **de
 	if (error)
 		return error;
 	evm_error = evm_inode_setattr(dentry, attr);
-	if (evm_error)
+	if (evm_error && evm_error != -EAGAIN)
 		return evm_error;
 	error = try_break_deleg(inode, delegated_inode);
 	if (error)

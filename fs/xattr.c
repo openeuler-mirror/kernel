@@ -240,7 +240,7 @@ __vfs_setxattr_locked(struct dentry *dentry, const char *name,
 		goto out;
 
 	evm_error = evm_inode_setxattr(dentry, name, value, size);
-	if (evm_error) {
+	if (evm_error && evm_error != -EAGAIN) {
 		error = evm_error;
 		goto out;
 	}
@@ -454,7 +454,7 @@ __vfs_removexattr_locked(struct dentry *dentry, const char *name,
 		goto out;
 
 	evm_error = evm_inode_removexattr(dentry, name);
-	if (evm_error) {
+	if (evm_error && evm_error != -EAGAIN) {
 		error = evm_error;
 		goto out;
 	}
