@@ -1201,13 +1201,13 @@ struct kvm_vfio_spapr_tce {
 
 #define ID_REG_MAX_NUMS 64
 struct id_reg_info {
-	uint64_t sys_id;
-	uint64_t sys_val;
+	__u64 sys_id;
+	__u64 sys_val;
 };
 
 struct id_registers {
 	struct id_reg_info regs[ID_REG_MAX_NUMS];
-	uint64_t num;
+	__u64 num;
 };
 
 /*
