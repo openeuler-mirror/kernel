@@ -447,7 +447,7 @@ config ARM64_ERRATUM_834220
 
 config ARM64_ERRATUM_845719
 	bool "Cortex-A53: 845719: a load might read incorrect data"
-	depends on AARCH32_EL0
+	depends on COMPAT
 	default y
 	help
 	  This option adds an alternative code sequence to work around ARM
@@ -1042,7 +1042,7 @@ config ARM64_SSBD
 
 menuconfig ARMV8_DEPRECATED
 	bool "Emulate deprecated/obsolete ARMv8 instructions"
-	depends on AARCH32_EL0
+	depends on COMPAT
 	depends on SYSCTL
 	help
 	  Legacy software support may require certain instructions
@@ -1493,13 +1493,9 @@ config DMI
 endmenu
 
 config COMPAT
-	def_bool y
-	depends on AARCH32_EL0 || ARM64_ILP32
-
-config AARCH32_EL0
 	bool "Kernel support for 32-bit EL0"
-	def_bool y
 	depends on ARM64_4K_PAGES || EXPERT
+	select COMPAT_BINFMT_ELF if BINFMT_ELF
 	select HAVE_UID16
 	select OLD_SIGSUSPEND3
 	select COMPAT_OLD_SIGACTION
@@ -1514,13 +1510,6 @@ config AARCH32_EL0
 	  with page size aligned segments.
 
 	  If you want to execute 32-bit userspace applications, say Y.
-
-config ARM64_ILP32
-	bool "Kernel support for ILP32"
-	help
-	  This option enables support for AArch64 ILP32 user space.  ILP32
-	  is an ABI where long and pointers are 32bits but it uses the AARCH64
-	  instruction set.
 
 config SYSVIPC_COMPAT
 	def_bool y

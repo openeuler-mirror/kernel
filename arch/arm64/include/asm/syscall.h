@@ -24,12 +24,8 @@ typedef long (*syscall_fn_t)(const struct pt_regs *regs);
 
 extern const syscall_fn_t sys_call_table[];
 
-#ifdef CONFIG_AARCH32_EL0
-extern const syscall_fn_t a32_sys_call_table[];
-#endif
-
-#ifdef CONFIG_ARM64_ILP32
-extern const syscall_fn_t ilp32_sys_call_table[];
+#ifdef CONFIG_COMPAT
+extern const syscall_fn_t compat_sys_call_table[];
 #endif
 
 static inline int syscall_get_nr(struct task_struct *task,
@@ -133,7 +129,7 @@ static inline void syscall_set_arguments(struct task_struct *task,
  */
 static inline int syscall_get_arch(void)
 {
-	if (is_a32_compat_task())
+	if (is_compat_task())
 		return AUDIT_ARCH_ARM;
 
 	return AUDIT_ARCH_AARCH64;

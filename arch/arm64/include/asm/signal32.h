@@ -17,37 +17,34 @@
 #define __ASM_SIGNAL32_H
 
 #ifdef __KERNEL__
-
-#ifdef CONFIG_AARCH32_EL0
-
+#ifdef CONFIG_COMPAT
 #include <linux/compat.h>
 
 #define AARCH32_KERN_SIGRET_CODE_OFFSET	0x500
 
-int a32_setup_frame(int usig, struct ksignal *ksig, sigset_t *set,
+int compat_setup_frame(int usig, struct ksignal *ksig, sigset_t *set,
 		       struct pt_regs *regs);
-
-int a32_setup_rt_frame(int usig, struct ksignal *ksig, sigset_t *set,
+int compat_setup_rt_frame(int usig, struct ksignal *ksig, sigset_t *set,
 			  struct pt_regs *regs);
 
-void a32_setup_restart_syscall(struct pt_regs *regs);
+void compat_setup_restart_syscall(struct pt_regs *regs);
 #else
 
-static inline int a32_setup_frame(int usid, struct ksignal *ksig,
+static inline int compat_setup_frame(int usid, struct ksignal *ksig,
 				     sigset_t *set, struct pt_regs *regs)
 {
 	return -ENOSYS;
 }
 
-static inline int a32_setup_rt_frame(int usig, struct ksignal *ksig, sigset_t *set,
+static inline int compat_setup_rt_frame(int usig, struct ksignal *ksig, sigset_t *set,
 					struct pt_regs *regs)
 {
 	return -ENOSYS;
 }
 
-static inline void a32_setup_restart_syscall(struct pt_regs *regs)
+static inline void compat_setup_restart_syscall(struct pt_regs *regs)
 {
 }
-#endif /* CONFIG_AARCH32_EL0 */
+#endif /* CONFIG_COMPAT */
 #endif /* __KERNEL__ */
 #endif /* __ASM_SIGNAL32_H */

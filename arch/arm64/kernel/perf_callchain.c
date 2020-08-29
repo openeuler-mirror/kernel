@@ -63,26 +63,26 @@ user_backtrace(struct frame_tail __user *tail,
 	return buftail.fp;
 }
 
-#ifdef CONFIG_AARCH32_EL0
+#ifdef CONFIG_COMPAT
 /*
  * The registers we're interested in are at the end of the variable
  * length saved register structure. The fp points at the end of this
  * structure so the address of this struct is:
- * (struct a32_frame_tail *)(xxx->fp)-1
+ * (struct compat_frame_tail *)(xxx->fp)-1
  *
  * This code has been adapted from the ARM OProfile support.
  */
-struct a32_frame_tail {
-	compat_uptr_t	fp; /* a (struct a32_frame_tail *) in compat mode */
+struct compat_frame_tail {
+	compat_uptr_t	fp; /* a (struct compat_frame_tail *) in compat mode */
 	u32		sp;
 	u32		lr;
 } __attribute__((packed));
 
-static struct a32_frame_tail __user *
-compat_user_backtrace(struct a32_frame_tail __user *tail,
+static struct compat_frame_tail __user *
+compat_user_backtrace(struct compat_frame_tail __user *tail,
 		      struct perf_callchain_entry_ctx *entry)
 {
-	struct a32_frame_tail buftail;
+	struct compat_frame_tail buftail;
 	unsigned long err;
 
 	/* Also check accessibility of one struct frame_tail beyond */
@@ -102,13 +102,13 @@ compat_user_backtrace(struct a32_frame_tail __user *tail,
 	 * Frame pointers should strictly progress back up the stack
 	 * (towards higher addresses).
 	 */
-	if (tail + 1 >= (struct a32_frame_tail __user *)
+	if (tail + 1 >= (struct compat_frame_tail __user *)
 			compat_ptr(buftail.fp))
 		return NULL;
 
-	return (struct a32_frame_tail __user *)compat_ptr(buftail.fp) - 1;
+	return (struct compat_frame_tail __user *)compat_ptr(buftail.fp) - 1;
 }
-#endif /* CONFIG_AARCH32_EL0 */
+#endif /* CONFIG_COMPAT */
 
 void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 			 struct pt_regs *regs)
@@ -120,7 +120,7 @@ void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 
 	perf_callchain_store(entry, regs->pc);
 
-	if (!a32_user_mode(regs)) {
+	if (!compat_user_mode(regs)) {
 		/* AARCH64 mode */
 		struct frame_tail __user *tail;
 
@@ -130,11 +130,11 @@ void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 		       tail && !((unsigned long)tail & 0xf))
 			tail = user_backtrace(tail, entry);
 	} else {
-#ifdef CONFIG_AARCH32_EL0
+#ifdef CONFIG_COMPAT
 		/* AARCH32 compat mode */
-		struct a32_frame_tail __user *tail;
+		struct compat_frame_tail __user *tail;
 
-		tail = (struct a32_frame_tail __user *)regs->compat_fp - 1;
+		tail = (struct compat_frame_tail __user *)regs->compat_fp - 1;
 
 		while ((entry->nr < entry->max_stack) &&
 			tail && !((unsigned long)tail & 0x3))

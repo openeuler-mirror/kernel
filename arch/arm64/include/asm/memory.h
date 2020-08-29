@@ -192,12 +192,10 @@ extern u64			kimage_vaddr;
 /* the offset between the kernel virtual and physical mappings */
 extern u64			kimage_voffset;
 
-#ifndef __ILP32__
 static inline unsigned long kaslr_offset(void)
 {
 	return kimage_vaddr - KIMAGE_VADDR;
 }
-#endif
 
 /*
  * Allow all memory at the discovery stage. We will clip it later.
@@ -257,7 +255,6 @@ extern phys_addr_t __phys_addr_symbol(unsigned long x);
 #define page_to_phys(page)	(__pfn_to_phys(page_to_pfn(page)))
 #define phys_to_page(phys)	(pfn_to_page(__phys_to_pfn(phys)))
 
-#ifndef __ILP32__
 /*
  * Note: Drivers should NOT use these.  They are the wrong
  * translation for translating DMA addresses.  Use the driver
@@ -274,7 +271,6 @@ static inline void *phys_to_virt(phys_addr_t x)
 {
 	return (void *)(__phys_to_virt(x));
 }
-#endif
 
 /*
  * Drivers should NOT use these either.

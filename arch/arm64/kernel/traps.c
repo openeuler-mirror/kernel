@@ -18,7 +18,6 @@
  */
 
 #include <linux/bug.h>
-#include <linux/compat.h>
 #include <linux/signal.h>
 #include <linux/personality.h>
 #include <linux/kallsyms.h>
@@ -319,7 +318,7 @@ static int call_undef_hook(struct pt_regs *regs)
 		if (probe_kernel_address((__force __le32 *)pc, instr_le))
 			goto exit;
 		instr = le32_to_cpu(instr_le);
-	} else if (a32_thumb_mode(regs)) {
+	} else if (compat_thumb_mode(regs)) {
 		/* 16-bit Thumb instruction */
 		__le16 instr_le;
 		if (get_user(instr_le, (__le16 __user *)pc))

@@ -38,14 +38,14 @@
 unsigned long elf_hwcap __read_mostly;
 EXPORT_SYMBOL_GPL(elf_hwcap);
 
-#ifdef CONFIG_AARCH32_EL0
-#define AARCH32_EL0_ELF_HWCAP_DEFAULT	\
+#ifdef CONFIG_COMPAT
+#define COMPAT_ELF_HWCAP_DEFAULT	\
 				(COMPAT_HWCAP_HALF|COMPAT_HWCAP_THUMB|\
 				 COMPAT_HWCAP_FAST_MULT|COMPAT_HWCAP_EDSP|\
 				 COMPAT_HWCAP_TLS|COMPAT_HWCAP_IDIV|\
 				 COMPAT_HWCAP_LPAE)
-unsigned int a32_elf_hwcap __read_mostly = AARCH32_EL0_ELF_HWCAP_DEFAULT;
-unsigned int a32_elf_hwcap2 __read_mostly;
+unsigned int compat_elf_hwcap __read_mostly = COMPAT_ELF_HWCAP_DEFAULT;
+unsigned int compat_elf_hwcap2 __read_mostly;
 #endif
 
 DECLARE_BITMAP(cpu_hwcaps, ARM64_NCAPS);
@@ -1706,8 +1706,8 @@ static bool compat_has_neon(const struct arm64_cpu_capabilities *cap, int scope)
 }
 #endif
 
-static const struct arm64_cpu_capabilities a32_elf_hwcaps[] = {
-#ifdef CONFIG_AARCH32_EL0
+static const struct arm64_cpu_capabilities compat_elf_hwcaps[] = {
+#ifdef CONFIG_COMPAT
 	HWCAP_CAP_MATCH(compat_has_neon, CAP_COMPAT_HWCAP, COMPAT_HWCAP_NEON),
 	HWCAP_CAP(SYS_MVFR1_EL1, MVFR1_SIMDFMAC_SHIFT, FTR_UNSIGNED, 1, CAP_COMPAT_HWCAP, COMPAT_HWCAP_VFPv4),
 	/* Arm v8 mandates MVFR0.FPDP == {0, 2}. So, piggy back on this for the presence of VFP support */
@@ -1728,12 +1728,12 @@ static void __init cap_set_elf_hwcap(const struct arm64_cpu_capabilities *cap)
 	case CAP_HWCAP:
 		elf_hwcap |= cap->hwcap;
 		break;
-#ifdef CONFIG_AARCH32_EL0
+#ifdef CONFIG_COMPAT
 	case CAP_COMPAT_HWCAP:
-		a32_elf_hwcap |= (u32)cap->hwcap;
+		compat_elf_hwcap |= (u32)cap->hwcap;
 		break;
 	case CAP_COMPAT_HWCAP2:
-		a32_elf_hwcap2 |= (u32)cap->hwcap;
+		compat_elf_hwcap2 |= (u32)cap->hwcap;
 		break;
 #endif
 	default:
@@ -1751,12 +1751,12 @@ static bool cpus_have_elf_hwcap(const struct arm64_cpu_capabilities *cap)
 	case CAP_HWCAP:
 		rc = (elf_hwcap & cap->hwcap) != 0;
 		break;
-#ifdef CONFIG_AARCH32_EL0
+#ifdef CONFIG_COMPAT
 	case CAP_COMPAT_HWCAP:
-		rc = (a32_elf_hwcap & (u32)cap->hwcap) != 0;
+		rc = (compat_elf_hwcap & (u32)cap->hwcap) != 0;
 		break;
 	case CAP_COMPAT_HWCAP2:
-		rc = (a32_elf_hwcap2 & (u32)cap->hwcap) != 0;
+		rc = (compat_elf_hwcap2 & (u32)cap->hwcap) != 0;
 		break;
 #endif
 	default:
@@ -2005,7 +2005,7 @@ static void verify_local_cpu_capabilities(void)
 	verify_local_elf_hwcaps(arm64_elf_hwcaps);
 
 	if (system_supports_32bit_el0())
-		verify_local_elf_hwcaps(a32_elf_hwcaps);
+		verify_local_elf_hwcaps(compat_elf_hwcaps);
 
 	if (system_supports_sve())
 		verify_sve_features();
@@ -2076,7 +2076,7 @@ void __init setup_cpu_features(void)
 	setup_elf_hwcaps(arm64_elf_hwcaps);
 
 	if (system_supports_32bit_el0())
-		setup_elf_hwcaps(a32_elf_hwcaps);
+		setup_elf_hwcaps(compat_elf_hwcaps);
 
 	if (system_uses_ttbr0_pan())
 		pr_info("emulated: Privileged Access Never (PAN) using TTBR0_EL1 switching\n");

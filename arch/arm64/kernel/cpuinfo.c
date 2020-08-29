@@ -88,7 +88,7 @@ static const char *const hwcap_str[] = {
 	NULL
 };
 
-#ifdef CONFIG_AARCH32_EL0
+#ifdef CONFIG_COMPAT
 static const char *const compat_hwcap_str[] = {
 	"swp",
 	"half",
@@ -123,12 +123,12 @@ static const char *const compat_hwcap2_str[] = {
 	"crc32",
 	NULL
 };
-#endif /* CONFIG_AARCH32_EL0 */
+#endif /* CONFIG_COMPAT */
 
 static int c_show(struct seq_file *m, void *v)
 {
 	int i, j;
-	bool aarch32 = personality(current->personality) == PER_LINUX32;
+	bool compat = personality(current->personality) == PER_LINUX32;
 
 	for_each_online_cpu(i) {
 		struct cpuinfo_arm64 *cpuinfo = &per_cpu(cpu_data, i);
@@ -140,7 +140,7 @@ static int c_show(struct seq_file *m, void *v)
 		 * "processor".  Give glibc what it expects.
 		 */
 		seq_printf(m, "processor\t: %d\n", i);
-		if (aarch32)
+		if (compat)
 			seq_printf(m, "model name\t: ARMv8 Processor rev %d (%s)\n",
 				   MIDR_REVISION(midr), COMPAT_ELF_PLATFORM);
 
@@ -155,16 +155,16 @@ static int c_show(struct seq_file *m, void *v)
 		 * software which does already (at least for 32-bit).
 		 */
 		seq_puts(m, "Features\t:");
-		if (aarch32) {
-#ifdef CONFIG_AARCH32_EL0
+		if (compat) {
+#ifdef CONFIG_COMPAT
 			for (j = 0; compat_hwcap_str[j]; j++)
-				if (a32_elf_hwcap & (1 << j))
+				if (compat_elf_hwcap & (1 << j))
 					seq_printf(m, " %s", compat_hwcap_str[j]);
 
 			for (j = 0; compat_hwcap2_str[j]; j++)
-				if (a32_elf_hwcap2 & (1 << j))
+				if (compat_elf_hwcap2 & (1 << j))
 					seq_printf(m, " %s", compat_hwcap2_str[j]);
-#endif /* CONFIG_AARCH32_EL0 */
+#endif /* CONFIG_COMPAT */
 		} else {
 			for (j = 0; hwcap_str[j]; j++)
 				if (elf_hwcap & (1 << j))

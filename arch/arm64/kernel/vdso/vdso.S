@@ -21,12 +21,12 @@
 #include <linux/const.h>
 #include <asm/page.h>
 
-	.globl vdso_lp64_start, vdso_lp64_end
+	.globl vdso_start, vdso_end
 	.section .rodata
 	.balign PAGE_SIZE
-vdso_lp64_start:
+vdso_start:
 	.incbin "arch/arm64/kernel/vdso/vdso.so"
 	.balign PAGE_SIZE
-vdso_lp64_end:
+vdso_end:
 
 	.previous

@@ -52,6 +52,7 @@
 
 #include <asm/alternative.h>
 #include <asm/arch_gicv3.h>
+#include <asm/compat.h>
 #include <asm/cacheflush.h>
 #include <asm/exec.h>
 #include <asm/fpsimd.h>
@@ -224,7 +225,7 @@ static void print_pstate(struct pt_regs *regs)
 {
 	u64 pstate = regs->pstate;
 
-	if (a32_user_mode(regs)) {
+	if (compat_user_mode(regs)) {
 		printk("pstate: %08llx (%c%c%c%c %c %s %s %c%c%c)\n",
 			pstate,
 			pstate & PSR_AA32_N_BIT ? 'N' : 'n',
@@ -258,7 +259,7 @@ void __show_regs(struct pt_regs *regs)
 	int i, top_reg;
 	u64 lr, sp;
 
-	if (a32_user_mode(regs)) {
+	if (compat_user_mode(regs)) {
 		lr = regs->compat_lr;
 		sp = regs->compat_sp;
 		top_reg = 12;
@@ -309,7 +310,7 @@ static void tls_thread_flush(void)
 {
 	write_sysreg(0, tpidr_el0);
 
-	if (is_a32_compat_task()) {
+	if (is_compat_task()) {
 		current->thread.uw.tp_value = 0;
 
 		/*
@@ -391,7 +392,7 @@ int copy_thread(unsigned long clone_flags, unsigned long stack_start,
 		*task_user_tls(p) = read_sysreg(tpidr_el0);
 
 		if (stack_start) {
-			if (is_a32_compat_thread(task_thread_info(p)))
+			if (is_compat_thread(task_thread_info(p)))
 				childregs->compat_sp = stack_start;
 			else
 				childregs->sp = stack_start;
@@ -435,7 +436,7 @@ static void tls_thread_switch(struct task_struct *next)
 {
 	tls_preserve_current_state();
 
-	if (is_a32_compat_thread(task_thread_info(next)))
+	if (is_compat_thread(task_thread_info(next)))
 		write_sysreg(next->thread.uw.tp_value, tpidrro_el0);
 	else if (!arm64_kernel_unmapped_at_el0())
 		write_sysreg(0, tpidrro_el0);
@@ -481,7 +482,7 @@ static void ssbs_thread_switch(struct task_struct *next)
 	    test_tsk_thread_flag(next, TIF_SSBD))
 		return;
 
-	if (a32_user_mode(regs))
+	if (compat_user_mode(regs))
 		set_compat_ssbs_bit(regs);
 	else if (user_mode(regs))
 		set_ssbs_bit(regs);

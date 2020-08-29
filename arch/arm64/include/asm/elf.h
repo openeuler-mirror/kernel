@@ -16,10 +16,6 @@
 #ifndef __ASM_ELF_H
 #define __ASM_ELF_H
 
-#ifndef __ASSEMBLY__
-#include <linux/compat.h>
-#endif
-
 #include <asm/hwcap.h>
 
 /*
@@ -146,7 +142,6 @@ typedef struct user_fpsimd_state elf_fpregset_t;
 
 #define SET_PERSONALITY(ex)						\
 ({									\
-	clear_thread_flag(TIF_32BIT_AARCH64);				\
 	clear_thread_flag(TIF_32BIT);					\
 	current->personality &= ~READ_IMPLIES_EXEC;			\
 })
@@ -174,9 +169,13 @@ extern int arch_setup_additional_pages(struct linux_binprm *bprm,
 				       int uses_interp);
 
 /* 1GB of VA */
-#define STACK_RND_MASK			(is_compat_task() ? \
+#ifdef CONFIG_COMPAT
+#define STACK_RND_MASK			(test_thread_flag(TIF_32BIT) ? \
 						0x7ff >> (PAGE_SHIFT - 12) : \
 						0x3ffff >> (PAGE_SHIFT - 12))
+#else
+#define STACK_RND_MASK			(0x3ffff >> (PAGE_SHIFT - 12))
+#endif
 
 #ifdef __AARCH64EB__
 #define COMPAT_ELF_PLATFORM		("v8b")
@@ -188,16 +187,35 @@ extern int arch_setup_additional_pages(struct linux_binprm *bprm,
 
 /* PIE load location for compat arm. Must match ARM ELF_ET_DYN_BASE. */
 #define COMPAT_ELF_ET_DYN_BASE		0x000400000UL
-#endif /*CONFIG_COMPAT */
 
-#ifdef CONFIG_AARCH32_EL0
 /* AArch32 registers. */
 #define COMPAT_ELF_NGREG		18
 typedef unsigned int			compat_elf_greg_t;
 typedef compat_elf_greg_t		compat_elf_gregset_t[COMPAT_ELF_NGREG];
+
+/* AArch32 EABI. */
+#define EF_ARM_EABI_MASK		0xff000000
+#define compat_elf_check_arch(x)	(system_supports_32bit_el0() && \
+					 ((x)->e_machine == EM_ARM) && \
+					 ((x)->e_flags & EF_ARM_EABI_MASK))
+
+#define compat_start_thread		compat_start_thread
+/*
+ * Unlike the native SET_PERSONALITY macro, the compat version maintains
+ * READ_IMPLIES_EXEC across an execve() since this is the behaviour on
+ * arch/arm/.
+ */
+#define COMPAT_SET_PERSONALITY(ex)					\
+({									\
+	set_thread_flag(TIF_32BIT);					\
+ })
+#define COMPAT_ARCH_DLINFO
 extern int aarch32_setup_vectors_page(struct linux_binprm *bprm,
 				      int uses_interp);
-#endif /* CONFIG_AARCH32_EL0 */
+#define compat_arch_setup_additional_pages \
+					aarch32_setup_vectors_page
+
+#endif /* CONFIG_COMPAT */
 
 #endif /* !__ASSEMBLY__ */
 
