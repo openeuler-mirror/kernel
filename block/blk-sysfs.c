@@ -11,7 +11,6 @@
 #include <linux/blktrace_api.h>
 #include <linux/blk-mq.h>
 #include <linux/blk-cgroup.h>
-#include <linux/debugfs.h>
 #include <linux/atomic.h>
 
 #include "blk.h"
@@ -960,53 +959,6 @@ unlock:
 }
 EXPORT_SYMBOL_GPL(blk_register_queue);
 
-#ifdef CONFIG_DEBUG_FS
-void blk_rename_debugfs_dir(struct dentry **old)
-{
-	static atomic_t i = ATOMIC_INIT(0);
-	struct dentry *new;
-	char name[DNAME_INLINE_LEN];
-	u32 index = atomic_fetch_inc(&i);
-
-	snprintf(name, sizeof(name), "ready_to_remove_%u", index);
-	new = debugfs_lookup(name, blk_debugfs_root);
-	if (WARN_ON(new)) {
-		dput(new);
-		return;
-	}
-	new = debugfs_rename(blk_debugfs_root, *old, blk_debugfs_root, name);
-	if (WARN_ON(!new))
-		return;
-	*old = new;
-}
-
-/*
- * blk_prepare_release_queue - rename q->debugfs_dir and q->blk_trace->dir
- * @q: request_queue of which the dir to be renamed belong to.
- *
- * Because the final release of request_queue is in a workqueue, the
- * cleanup might not been finished yet while the same device start to
- * create. It's not correct if q->debugfs_dir still exist while trying
- * to create a new one.
- */
-static void blk_prepare_release_queue(struct request_queue *q)
-{
-#ifdef CONFIG_BLK_DEBUG_FS
-	if (!IS_ERR_OR_NULL(q->debugfs_dir))
-		blk_rename_debugfs_dir(&q->debugfs_dir);
-
-#endif
-#ifdef CONFIG_BLK_DEV_IO_TRACE
-	mutex_lock(&q->blk_trace_mutex);
-	if (q->blk_trace && !IS_ERR_OR_NULL(q->blk_trace->dir))
-		blk_rename_debugfs_dir(&q->blk_trace->dir);
-	mutex_unlock(&q->blk_trace_mutex);
-#endif
-}
-#else
-#define blk_prepare_release_queue(q)           do { } while (0)
-#endif
-
 /**
  * blk_unregister_queue - counterpart of blk_register_queue()
  * @disk: Disk of which the request queue should be unregistered from sysfs.
@@ -1031,7 +983,6 @@ void blk_unregister_queue(struct gendisk *disk)
 	 * concurrent elv_iosched_store() calls.
 	 */
 	mutex_lock(&q->sysfs_lock);
-	blk_prepare_release_queue(q);
 
 	blk_queue_flag_clear(QUEUE_FLAG_REGISTERED, q);
 
