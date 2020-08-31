@@ -175,22 +175,6 @@ struct hinic_hw_stats {
 	struct hinic_fault_event_stats fault_event_stats;
 };
 
-enum heartbeat_support_state {
-	HEARTBEAT_NOT_SUPPORT = 0,
-	HEARTBEAT_SUPPORT,
-};
-
-/* 25s for max 5 heartbeat event lost */
-#define HINIC_HEARBEAT_ENHANCED_LOST		25000
-struct hinic_heartbeat_enhanced {
-	bool		en;	/* enable enhanced heartbeat or not */
-
-	unsigned long	last_update_jiffies;
-	u32		last_heartbeat;
-
-	unsigned long	start_detect_jiffies;
-};
-
 #define HINIC_NORMAL_HOST_CAP	(HINIC_FUNC_MGMT | HINIC_FUNC_PORT | \
 				 HINIC_FUNC_SUPP_RATE_LIMIT | \
 				 HINIC_FUNC_SUPP_DFX_REG | \
@@ -284,7 +268,6 @@ struct hinic_hwdev {
 	/* true represent heartbeat lost, false represent heartbeat restore */
 	u32 heartbeat_lost;
 	int chip_present_flag;
-	struct hinic_heartbeat_enhanced heartbeat_ehd;
 	struct hinic_hw_stats hw_stats;
 	u8 *chip_fault_stats;
 
@@ -383,8 +366,5 @@ int hinic_ppf_process_mbox_msg(struct hinic_hwdev *hwdev, u16 pf_idx, u16 vf_id,
 #define HINIC_SDI_MODE_VM		2
 #define HINIC_SDI_MODE_MAX		3
 int hinic_get_sdi_mode(struct hinic_hwdev *hwdev, u16 *cur_mode);
-
-void mgmt_heartbeat_event_handler(void *hwdev, void *buf_in, u16 in_size,
-				  void *buf_out, u16 *out_size);
 
 #endif
