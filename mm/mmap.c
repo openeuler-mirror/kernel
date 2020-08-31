@@ -2065,6 +2065,10 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
+
+		if (dvpp_mmap_check(addr, len, flags))
+			return -ENOMEM;
+
 		vma = find_vma_prev(mm, addr, &prev);
 		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
 		    (!vma || addr + len <= vm_start_gap(vma)) &&
@@ -2077,6 +2081,10 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	info.low_limit = mm->mmap_base;
 	info.high_limit = TASK_SIZE;
 	info.align_mask = 0;
+
+	if (enable_map_dvpp)
+		dvpp_mmap_get_area(info);
+
 	return vm_unmapped_area(&info);
 }
 #endif
@@ -2106,6 +2114,10 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 	/* requesting a specific address */
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
+
+		if (dvpp_mmap_check(addr, len, flags))
+			return -ENOMEM;
+
 		vma = find_vma_prev(mm, addr, &prev);
 		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
 				(!vma || addr + len <= vm_start_gap(vma)) &&
@@ -2118,6 +2130,10 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 	info.low_limit = max(PAGE_SIZE, mmap_min_addr);
 	info.high_limit = mm->mmap_base;
 	info.align_mask = 0;
+
+	if (enable_map_dvpp)
+		dvpp_mmap_get_area(info);
+
 	addr = vm_unmapped_area(&info);
 
 	/*
@@ -2131,6 +2147,10 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 		info.flags = 0;
 		info.low_limit = TASK_UNMAPPED_BASE;
 		info.high_limit = TASK_SIZE;
+
+		if (enable_map_dvpp)
+			dvpp_mmap_get_area(info);
+
 		addr = vm_unmapped_area(&info);
 	}
 
@@ -3705,3 +3725,23 @@ static int __meminit init_reserve_notifier(void)
 	return 0;
 }
 subsys_initcall(init_reserve_notifier);
+
+
+/*
+ *  Enable the MAP_32BIT (mmaps and hugetlb).
+ */
+int enable_map_dvpp __read_mostly = 0;
+
+#ifdef CONFIG_ASCEND_DVPP_MMAP
+
+static int __init ascend_enable_map_dvpp(char *s)
+{
+	enable_map_dvpp = 1;
+
+	pr_info("Ascend enable dvpp mmap features\n");
+
+	return 1;
+}
+__setup("enable_map_dvpp", ascend_enable_map_dvpp);
+
+#endif

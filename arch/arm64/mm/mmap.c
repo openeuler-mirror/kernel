@@ -103,6 +103,10 @@ void arch_pick_mmap_layout(struct mm_struct *mm, struct rlimit *rlim_stack)
 		mm->get_unmapped_area = arch_get_unmapped_area;
 	} else {
 		mm->mmap_base = mmap_base(random_factor, rlim_stack);
+
+		if (enable_map_dvpp && dvpp_mmap_zone(mm->mmap_base))
+			mm->mmap_base = DVPP_MMAP_BASE;
+
 		mm->get_unmapped_area = arch_get_unmapped_area_topdown;
 	}
 }

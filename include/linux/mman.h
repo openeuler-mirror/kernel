@@ -8,6 +8,48 @@
 #include <linux/atomic.h>
 #include <uapi/linux/mman.h>
 
+
+/*
+ * Enable MAP_32BIT for Ascend Platform
+ */
+#ifdef CONFIG_ASCEND_DVPP_MMAP
+
+#define MAP_DVPP	0x200
+
+#define DVPP_MMAP_BASE	(TASK_SIZE - 0x100000000UL)
+#define DVPP_MMAP_SIZE	(0x100000000UL)
+
+#define dvpp_mmap_check(addr, len, flags) \
+	(((enable_map_dvpp) && (flags & MAP_DVPP) && \
+	(addr < DVPP_MMAP_BASE + DVPP_MMAP_SIZE) && \
+	(addr > DVPP_MMAP_BASE)) ? -EINVAL : 0)
+
+#define dvpp_mmap_get_area(info) \
+({ \
+	(info.low_limit = DVPP_MMAP_BASE); \
+	(info.high_limit = DVPP_MMAP_BASE + DVPP_MMAP_SIZE); \
+})
+
+#define dvpp_mmap_zone(addr) ((addr > DVPP_MMAP_BASE) ? 1 : 0)
+
+#else
+
+#define MAP_DVPP (0)
+
+#define dvpp_mmap_check(addr, len, flags) (0)
+
+#define dvpp_mmap_get_area(info)  do { } while (0)
+
+#define dvpp_mmap_zone(addr) (0)
+
+#define DVPP_MMAP_BASE (0)
+
+#define DVPP_MMAP_SIZE (0)
+
+#endif
+
+extern int enable_map_dvpp;
+
 /*
  * Arrange for legacy / undefined architecture specific flags to be
  * ignored by mmap handling code.
