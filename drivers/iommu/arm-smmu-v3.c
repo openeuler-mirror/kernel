@@ -43,6 +43,7 @@
 #include <linux/platform_device.h>
 #include <linux/sched/mm.h>
 
+#include <linux/irq.h>
 #include <linux/amba/bus.h>
 
 #include "io-pgtable.h"
@@ -609,7 +610,10 @@ struct arm_smmu_device {
 
 #define ARM_SMMU_OPT_SKIP_PREFETCH	(1 << 0)
 #define ARM_SMMU_OPT_PAGE0_REGS_ONLY	(1 << 1)
+#define ARM_SMMU_OPT_MESSAGE_BASED_SPI	(1 << 2)
 	u32				options;
+
+	u64				spi_base;
 
 	struct arm_smmu_cmdq		cmdq;
 	struct arm_smmu_evtq		evtq;
@@ -722,6 +726,7 @@ struct arm_smmu_option_prop {
 static struct arm_smmu_option_prop arm_smmu_options[] = {
 	{ ARM_SMMU_OPT_SKIP_PREFETCH, "hisilicon,broken-prefetch-cmd" },
 	{ ARM_SMMU_OPT_PAGE0_REGS_ONLY, "cavium,cn9900-broken-page1-regspace"},
+	{ ARM_SMMU_OPT_MESSAGE_BASED_SPI, "hisilicon,message-based-spi"},
 	{ 0, NULL},
 };
 
@@ -1126,7 +1131,8 @@ static int __arm_smmu_cmdq_issue_sync(struct arm_smmu_device *smmu)
 static void arm_smmu_cmdq_issue_sync(struct arm_smmu_device *smmu)
 {
 	int ret;
-	bool msi = (smmu->features & ARM_SMMU_FEAT_MSI) &&
+	bool msi = !(smmu->options & ARM_SMMU_OPT_MESSAGE_BASED_SPI) &&
+		   (smmu->features & ARM_SMMU_FEAT_MSI) &&
 		   (smmu->features & ARM_SMMU_FEAT_COHERENCY);
 
 	ret = msi ? __arm_smmu_cmdq_issue_sync_msi(smmu)
@@ -3070,6 +3076,37 @@ static void arm_smmu_setup_msis(struct arm_smmu_device *smmu)
 	devm_add_action(dev, arm_smmu_free_msis, dev);
 }
 
+static void arm_smmu_setup_message_based_spi(struct arm_smmu_device *smmu)
+{
+	struct irq_desc *desc;
+	u32 event_hwirq, gerror_hwirq, pri_hwirq;
+
+	desc = irq_to_desc(smmu->gerr_irq);
+	gerror_hwirq = desc->irq_data.hwirq;
+	writeq_relaxed(smmu->spi_base, smmu->base + ARM_SMMU_GERROR_IRQ_CFG0);
+	writel_relaxed(gerror_hwirq, smmu->base + ARM_SMMU_GERROR_IRQ_CFG1);
+	writel_relaxed(ARM_SMMU_MEMATTR_DEVICE_nGnRE,
+		       smmu->base + ARM_SMMU_GERROR_IRQ_CFG2);
+
+	desc = irq_to_desc(smmu->evtq.q.irq);
+	event_hwirq = desc->irq_data.hwirq;
+	writeq_relaxed(smmu->spi_base, smmu->base + ARM_SMMU_EVTQ_IRQ_CFG0);
+	writel_relaxed(event_hwirq, smmu->base + ARM_SMMU_EVTQ_IRQ_CFG1);
+	writel_relaxed(ARM_SMMU_MEMATTR_DEVICE_nGnRE,
+		       smmu->base + ARM_SMMU_EVTQ_IRQ_CFG2);
+
+	if (smmu->features & ARM_SMMU_FEAT_PRI) {
+		desc = irq_to_desc(smmu->priq.q.irq);
+		pri_hwirq = desc->irq_data.hwirq;
+
+		writeq_relaxed(smmu->spi_base,
+			       smmu->base + ARM_SMMU_PRIQ_IRQ_CFG0);
+		writel_relaxed(pri_hwirq, smmu->base + ARM_SMMU_PRIQ_IRQ_CFG1);
+		writel_relaxed(ARM_SMMU_MEMATTR_DEVICE_nGnRE,
+			       smmu->base + ARM_SMMU_PRIQ_IRQ_CFG2);
+	}
+}
+
 static void arm_smmu_setup_unique_irqs(struct arm_smmu_device *smmu)
 {
 	int irq, ret;
@@ -3147,6 +3184,9 @@ static int arm_smmu_setup_irqs(struct arm_smmu_device *smmu)
 
 	if (smmu->features & ARM_SMMU_FEAT_PRI)
 		irqen_flags |= IRQ_CTRL_PRIQ_IRQEN;
+
+	if (smmu->options & ARM_SMMU_OPT_MESSAGE_BASED_SPI)
+		arm_smmu_setup_message_based_spi(smmu);
 
 	/* Enable interrupt generation on the SMMU */
 	ret = arm_smmu_write_reg_sync(smmu, irqen_flags,
@@ -3642,6 +3682,14 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev,
 		ret = 0;
 
 	parse_driver_options(smmu);
+
+	if (smmu->options & ARM_SMMU_OPT_MESSAGE_BASED_SPI) {
+		if (of_property_read_u64(dev->of_node, "iommu-spi-base",
+					 &smmu->spi_base)) {
+			dev_err(dev, "missing irq base address\n");
+			ret = -EINVAL;
+		}
+	}
 
 	if (of_dma_is_coherent(dev->of_node))
 		smmu->features |= ARM_SMMU_FEAT_COHERENCY;
