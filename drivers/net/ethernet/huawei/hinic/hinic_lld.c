@@ -668,7 +668,7 @@ static void hinic_ignore_minor_version(char *version)
 	err = snprintf(version, max_ver_len, "%s.%s.%s.0",
 		       ver_split[0], ver_split[1], ver_split[2]);
 	if (err <= 0 || err >= max_ver_len)
-		pr_err("Failed snprintf version, function return(%d) and dest_len(%d)\n",
+		pr_err("Failed to snprintf version, function return(%d) and dest_len(%d)\n",
 		       err, max_ver_len);
 }
 
@@ -1087,7 +1087,7 @@ void *hinic_get_uld_dev_by_ifname(char *ifname, enum hinic_service_type type)
 	struct hinic_pcidev *dev;
 
 	if (type >= SERVICE_T_MAX) {
-		pr_err("Service type :%d is error\n", type);
+		pr_err("Service type: %d is error\n", type);
 		return NULL;
 	}
 
@@ -1467,7 +1467,7 @@ struct net_device *hinic_get_netdev_by_lld(struct hinic_lld_dev *lld_dev)
 	nic_dev = pci_adapter->uld_dev[SERVICE_T_NIC];
 	if (!nic_dev) {
 		sdk_err(&pci_adapter->pcidev->dev,
-			"There's no net device attached on the pci device");
+			"There's no net device attached on the pci device\n");
 		return NULL;
 	}
 
@@ -1501,7 +1501,7 @@ struct net_device *hinic_get_netdev_by_pcidev(struct pci_dev *pdev)
 	nic_dev = pci_adapter->uld_dev[SERVICE_T_NIC];
 	if (!nic_dev) {
 		sdk_err(&pci_adapter->pcidev->dev,
-			"There`s no net device attached on the pci device");
+			"There`s no net device attached on the pci device\n");
 		return NULL;
 	}
 
@@ -1739,7 +1739,7 @@ int hinic_ovs_set_vf_nic_state(struct hinic_lld_dev *lld_dev, u16 vf_func_id,
 
 				if (err) {
 					sdk_err(&des_dev->pcidev->dev,
-						"%s driver Set VF max_queue_num failed, err=%d.\n",
+						"%s driver Set VF max_queue_num failed, err=%d\n",
 						s_uld_name[SERVICE_T_NIC], err);
 
 					break;
@@ -2071,7 +2071,7 @@ static int alloc_chip_node(struct hinic_pcidev *pci_adapter)
 		       HINIC_CHIP_NAME, i);
 	if (err <= 0 || err >= IFNAMSIZ) {
 		sdk_err(&pci_adapter->pcidev->dev,
-			"Failed snprintf chip_name, function return(%d) and dest_len(%d)\n",
+			"Failed to snprintf chip_name, function return(%d) and dest_len(%d)\n",
 			err, IFNAMSIZ);
 		goto alloc_dbgtool_attr_file_err;
 	}
@@ -2080,7 +2080,7 @@ static int alloc_chip_node(struct hinic_pcidev *pci_adapter)
 		       IFNAMSIZ, "%s%d", HINIC_CHIP_NAME, i);
 	if (err <= 0 || err >= IFNAMSIZ) {
 		sdk_err(&pci_adapter->pcidev->dev,
-			"Failed snprintf dbgtool_attr_file_name, function return(%d) and dest_len(%d)\n",
+			"Failed to snprintf dbgtool_attr_file_name, function return(%d) and dest_len(%d)\n",
 			err, IFNAMSIZ);
 		goto alloc_dbgtool_attr_file_err;
 	}
@@ -2188,13 +2188,13 @@ int hinic_ovs_set_vf_load_state(struct pci_dev *pdev)
 {
 	struct hinic_pcidev *pci_adapter;
 	if (!pdev) {
-		pr_err("pdev is null.\n");
+		pr_err("pdev is null\n");
 		return -EINVAL;
 	}
 
 	pci_adapter = pci_get_drvdata(pdev);
 	if (!pci_adapter) {
-		pr_err("pci_adapter is null.\n");
+		pr_err("pci_adapter is null\n");
 		return -EFAULT;
 	}
 
@@ -2699,7 +2699,7 @@ static int hinic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		create_singlethread_workqueue(HINIC_SLAVE_NIC_DELAY);
 	if (!pci_adapter->slave_nic_init_workq) {
 		sdk_err(&pdev->dev,
-			"Failed to create work queue:%s\n",
+			"Failed to create work queue: %s\n",
 			HINIC_SLAVE_NIC_DELAY);
 		goto ceate_nic_delay_work_fail;
 	}

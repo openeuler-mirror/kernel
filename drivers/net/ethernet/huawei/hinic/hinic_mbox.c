@@ -213,8 +213,8 @@ static bool check_func_id(struct hinic_hwdev *hwdev, u16 src_func_idx,
 
 	if (in_size < offset + sizeof(func_idx)) {
 		sdk_warn(hwdev->dev_hdl,
-			 "Reveice mailbox msg len: %d less than 10 Bytes is invalid\n",
-			 in_size);
+			 "Receive mailbox msg len: %d less than %ld Bytes is invalid\n",
+			 in_size, offset + sizeof(func_idx));
 		return false;
 	}
 
@@ -222,7 +222,7 @@ static bool check_func_id(struct hinic_hwdev *hwdev, u16 src_func_idx,
 
 	if (src_func_idx != func_idx) {
 		sdk_warn(hwdev->dev_hdl,
-			 "Reveice mailbox function id(0x%x) not equal to msg function id(0x%x)\n",
+			 "Reveive mailbox function id(0x%x) not equal to msg function id(0x%x)\n",
 			 src_func_idx, func_idx);
 		return false;
 	}
@@ -909,7 +909,8 @@ void hinic_mbox_func_aeqe_handler(void *handle, u8 *header, u8 size)
 
 	if (src >= HINIC_MAX_FUNCTIONS) {
 		sdk_err(func_to_func->hwdev->dev_hdl,
-			"Mailbox source function id:%u is invalid\n", (u32)src);
+			"Mailbox source function id: %u is invalid\n",
+			(u32)src);
 		return;
 	}
 

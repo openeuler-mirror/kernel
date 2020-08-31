@@ -336,7 +336,7 @@ static int get_inter_num(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (*out_size != sizeof(u16)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect out buf size from user :%d, expect: %lu\n",
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
 			  *out_size, sizeof(u16));
 		return -EFAULT;
 	}
@@ -381,7 +381,7 @@ static int get_num_cos(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (*out_size != sizeof(*num_cos)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect out buf size from user :%d, expect: %lu\n",
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
 			  *out_size, sizeof(*num_cos));
 		return -EFAULT;
 	}
@@ -399,7 +399,7 @@ static int get_dcb_cos_up_map(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (*out_size != sizeof(*map)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect out buf size from user :%d, expect: %lu\n",
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
 			  *out_size, sizeof(*map));
 		return -EFAULT;
 	}
@@ -438,7 +438,7 @@ static int get_rx_cqe_info(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (*out_size != sizeof(struct hinic_rq_cqe)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect out buf size from user :%d, expect: %lu\n",
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
 			  *out_size, sizeof(struct hinic_rq_cqe));
 		return -EFAULT;
 	}
@@ -477,7 +477,7 @@ static int hinic_dbg_get_sq_info(struct hinic_nic_dev *nic_dev, u16 q_id,
 
 	if (*msg_size != sizeof(*sq_info)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect out buf size from user :%d, expect: %lu\n",
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
 			  *msg_size, sizeof(*sq_info));
 		return -EFAULT;
 	}
@@ -576,7 +576,7 @@ static int get_loopback_mode(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (*out_size != sizeof(*mode)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect out buf size from user :%d, expect: %lu\n",
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
 			  *out_size, sizeof(*mode));
 		return -EFAULT;
 	}
@@ -717,7 +717,7 @@ int set_pfc_control(struct hinic_nic_dev *nic_dev, void *buf_in,
 	pfc_en = *((u8 *)buf_in);
 	if (!(test_bit(HINIC_DCB_ENABLE, &nic_dev->flags))) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Need to enable dcb first.\n");
+			  "Need to enable dcb first\n");
 		err = 0xff;
 		goto exit;
 	}
@@ -752,7 +752,7 @@ int set_ets(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (!(test_bit(HINIC_DCB_ENABLE, &nic_dev->flags))) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Need to enable dcb first.\n");
+			  "Need to enable dcb first\n");
 		err = 0xff;
 		goto exit;
 	}
@@ -765,7 +765,7 @@ int set_ets(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (!(test_bit(HINIC_ETS_ENABLE, &nic_dev->flags))) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Need to enable ets first.\n");
+			  "Need to enable ets first\n");
 		err = 0xff;
 		goto exit;
 	}
@@ -792,7 +792,7 @@ int set_ets(struct hinic_nic_dev *nic_dev, void *buf_in,
 	err = hinic_dcbnl_set_ets_tool(nic_dev->netdev);
 	if (err) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Failed to set ets [%d].\n", err);
+			  "Failed to set ets [%d]\n", err);
 	}
 exit:
 	*((u8 *)buf_out) = err;
@@ -838,7 +838,7 @@ int get_support_tc(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (*out_size != sizeof(*tc_num)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect out buf size from user :%d, expect:	%lu\n",
+			  "Unexpect out buf size from user: %d, expect:	%lu\n",
 			  *out_size, sizeof(*tc_num));
 		return -EFAULT;
 	}
@@ -881,7 +881,7 @@ int set_pfc_priority(struct hinic_nic_dev *nic_dev, void *buf_in,
 	if (!((test_bit(HINIC_DCB_ENABLE, &nic_dev->flags)) &&
 	      nic_dev->tmp_dcb_cfg.pfc_state)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Need to enable pfc first.\n");
+			  "Need to enable pfc first\n");
 		err = 0xff;
 		goto exit;
 	}
@@ -983,7 +983,7 @@ static int set_poll_weight(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (!buf_in || in_size != sizeof(*weight_info)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect in buf size from user :%u, expect: %lu\n",
+			  "Unexpect in buf size from user: %u, expect: %lu\n",
 			  *out_size, sizeof(*weight_info));
 		return -EFAULT;
 	}
@@ -999,7 +999,7 @@ static int get_homologue(struct hinic_nic_dev *nic_dev, void *buf_in,
 	struct hinic_homologues *homo = buf_out;
 	if (!buf_out || *out_size != sizeof(*homo)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect out buf size from user :%d, expect: %lu\n",
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
 			  *out_size, sizeof(*homo));
 		return -EFAULT;
 	}
@@ -1020,7 +1020,7 @@ static int set_homologue(struct hinic_nic_dev *nic_dev, void *buf_in,
 	struct hinic_homologues *homo = buf_in;
 	if (!buf_in || in_size != sizeof(*homo)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect in buf size from user :%d, expect: %lu\n",
+			  "Unexpect in buf size from user: %d, expect: %lu\n",
 			  *out_size, sizeof(*homo));
 		return -EFAULT;
 	}
@@ -1030,7 +1030,7 @@ static int set_homologue(struct hinic_nic_dev *nic_dev, void *buf_in,
 	} else if (homo->homo_state == HINIC_HOMOLOGUES_OFF) {
 		clear_bit(HINIC_SAME_RXTX, &nic_dev->flags);
 	} else {
-		pr_err("Invalid parameters.\n");
+		pr_err("Invalid parameters\n");
 		return -EFAULT;
 	}
 
@@ -1047,7 +1047,7 @@ static int get_sset_count(struct hinic_nic_dev *nic_dev, void *buf_in,
 	if (!buf_in || !buf_out || in_size != sizeof(u32) ||
 	    *out_size != sizeof(u32)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Invalid parameters.\n");
+			  "Invalid parameters\n");
 		return -EINVAL;
 	}
 
@@ -1083,7 +1083,7 @@ static int get_sset_stats(struct hinic_nic_dev *nic_dev, void *buf_in,
 
 	if (count * sizeof(*items) != *out_size) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Unexpect out buf size from user :%d, expect: %lu\n",
+			  "Unexpect out buf size from user: %d, expect: %lu\n",
 			  *out_size, count * sizeof(*items));
 		return -EINVAL;
 	}
@@ -1112,7 +1112,7 @@ static int get_func_type(void *hwdev, void *buf_in, u32 in_size,
 
 	func_typ = hinic_func_type(hwdev);
 	if (!buf_out || *out_size != sizeof(u16)) {
-		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
+		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
 		       *out_size, sizeof(u16));
 		return -EFAULT;
 	}
@@ -1126,7 +1126,7 @@ static int get_func_id(void *hwdev, void *buf_in, u32 in_size,
 	u16 func_id;
 
 	if (!buf_out || *out_size != sizeof(u16)) {
-		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
+		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
 		       *out_size, sizeof(u16));
 		return -EFAULT;
 	}
@@ -1145,7 +1145,7 @@ static int get_chip_faults_stats(void *hwdev, void *buf_in, u32 in_size,
 
 	if (!buf_in || !buf_out || *out_size != sizeof(*fault_info) ||
 	    in_size != sizeof(*fault_info)) {
-		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
+		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
 		       *out_size, sizeof(*fault_info));
 		return -EFAULT;
 	}
@@ -1178,7 +1178,7 @@ static int get_drv_version(void *hwdev, void *buf_in, u32 in_size,
 	int err;
 
 	if (*out_size != sizeof(*ver_info)) {
-		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
+		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
 		       *out_size, sizeof(*ver_info));
 		return -EFAULT;
 	}
@@ -1212,7 +1212,7 @@ static int get_single_card_info(void *hwdev, void *buf_in, u32 in_size,
 {
 	if (!buf_in || !buf_out || in_size != sizeof(struct card_info) ||
 	    *out_size != sizeof(struct card_info)) {
-		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
+		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
 		       *out_size, sizeof(struct card_info));
 		return -EFAULT;
 	}
@@ -1230,7 +1230,7 @@ static int get_device_id(void *hwdev, void *buf_in, u32 in_size,
 	int err;
 	if (!buf_out || !buf_in || *out_size != sizeof(u16) ||
 	    in_size != sizeof(u16)) {
-		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
+		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
 		       *out_size, sizeof(u16));
 		return -EFAULT;
 	}
@@ -1297,7 +1297,7 @@ static int __get_card_usr_api_chain_mem(int card_idx)
 			(void *)__get_free_pages(GFP_KERNEL,
 						 DBGTOOL_PAGE_ORDER);
 		if (!g_card_vir_addr[card_idx]) {
-			pr_err("Alloc api chain memory fail for card %d.\n",
+			pr_err("Alloc api chain memory fail for card %d\n",
 			       card_idx);
 			mutex_unlock(&g_addr_lock);
 			return -EFAULT;
@@ -1309,7 +1309,7 @@ static int __get_card_usr_api_chain_mem(int card_idx)
 		g_card_phy_addr[card_idx] =
 			virt_to_phys(g_card_vir_addr[card_idx]);
 		if (!g_card_phy_addr[card_idx]) {
-			pr_err("phy addr for card %d is 0.\n", card_idx);
+			pr_err("phy addr for card %d is 0\n", card_idx);
 			free_pages((unsigned long)g_card_vir_addr[card_idx],
 				   DBGTOOL_PAGE_ORDER);
 			g_card_vir_addr[card_idx] = NULL;
@@ -1589,7 +1589,7 @@ static int send_to_ucode(void *hwdev, struct msg_module *nt_msg,
 			 nt_msg->ucode_cmd.ucode_db.ucode_cmd_type,
 			 buf_in, buf_out, 0);
 		if (ret)
-			pr_err("Send direct cmdq err: %d!\n", ret);
+			pr_err("Send direct cmdq err: %d\n", ret);
 	} else {
 		ret = hinic_cmdq_detail_resp
 			(hwdev, nt_msg->ucode_cmd.ucode_db.cmdq_ack_type,
@@ -1597,7 +1597,7 @@ static int send_to_ucode(void *hwdev, struct msg_module *nt_msg,
 			 nt_msg->ucode_cmd.ucode_db.ucode_cmd_type,
 			 buf_in, buf_out, 0);
 		if (ret)
-			pr_err("Send detail cmdq err: %d!\n", ret);
+			pr_err("Send detail cmdq err: %d\n", ret);
 	}
 
 	return ret;
@@ -1732,7 +1732,7 @@ static int check_useparam_valid(struct msg_module *nt_msg, void *buf_in)
 	u32 rd_len = csr_write_msg->rd_len;
 
 	if (rd_len > TOOL_COUNTER_MAX_LEN) {
-		pr_err("Csr read or write len is invalid!\n");
+		pr_err("Csr read or write len is invalid\n");
 		return -EINVAL;
 	}
 
@@ -1810,7 +1810,7 @@ static int sm_rd32(void *hwdev, u32 id, u8 instance,
 
 	ret = hinic_sm_ctr_rd32(hwdev, node, instance, id, &val1);
 	if (ret) {
-		pr_err("Get sm ctr information (32 bits)failed!\n");
+		pr_err("Get sm ctr information (32 bits)failed\n");
 		val1 = 0xffffffff;
 	}
 
@@ -1827,7 +1827,7 @@ static int sm_rd64_pair(void *hwdev, u32 id, u8 instance,
 
 	ret = hinic_sm_ctr_rd64_pair(hwdev, node, instance, id, &val1, &val2);
 	if (ret) {
-		pr_err("Get sm ctr information (64 bits pair)failed!\n");
+		pr_err("Get sm ctr information (64 bits pair)failed\n");
 		val1 = 0xffffffff;
 	}
 
@@ -1845,7 +1845,7 @@ static int sm_rd64(void *hwdev, u32 id, u8 instance,
 
 	ret = hinic_sm_ctr_rd64(hwdev, node, instance, id, &val1);
 	if (ret) {
-		pr_err("Get sm ctr information (64 bits)failed!\n");
+		pr_err("Get sm ctr information (64 bits)failed\n");
 		val1 = 0xffffffff;
 	}
 	buf_out->val1 = val1;
@@ -1890,7 +1890,7 @@ static int send_to_sm(void *hwdev, struct msg_module *nt_msg,
 	}
 
 	if (ret)
-		pr_err("Get sm information fail!\n");
+		pr_err("Get sm information fail\n");
 
 	*out_size = sizeof(struct sm_out_st);
 
@@ -2024,7 +2024,7 @@ static int get_self_test_cmd(struct msg_module *nt_msg)
 
 	ret = hinic_get_self_test_result(nt_msg->device_name, &res);
 	if (ret) {
-		pr_err("Get self test result failed!\n");
+		pr_err("Get self test result failed\n");
 		return -EFAULT;
 	}
 

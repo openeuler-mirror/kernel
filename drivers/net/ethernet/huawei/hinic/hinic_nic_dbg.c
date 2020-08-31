@@ -101,7 +101,7 @@ u16 hinic_dbg_get_rq_hw_pi(void *hwdev, u16 q_id)
 	if (qp)
 		return cpu_to_be16(*qp->rq.pi_virt_addr);
 
-	nic_err(((struct hinic_hwdev *)hwdev)->dev_hdl, "Get rq hw pi failed!\n");
+	nic_err(((struct hinic_hwdev *)hwdev)->dev_hdl, "Get rq hw pi failed\n");
 
 	return INVALID_PI;
 }
@@ -184,7 +184,7 @@ static int get_wqe_info(struct hinic_wq *wq, u16 idx, u16 wqebb_cnt,
 		return -EFAULT;
 
 	if (*wqe_size != (u16)(wq->wqebb_size * wqebb_cnt)) {
-		pr_err("Unexpect out buf size from user :%d, expect: %d\n",
+		pr_err("Unexpect out buf size from user: %d, expect: %d\n",
 		       *wqe_size, (u16)(wq->wqebb_size * wqebb_cnt));
 		return -EFAULT;
 	}
@@ -231,7 +231,7 @@ int hinic_dbg_get_rq_wqe_info(void *hwdev, u16 q_id, u16 idx, u16 wqebb_cnt,
 int hinic_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, u16 *out_size)
 {
 	if (!hw_stats || *out_size != sizeof(struct hinic_hw_stats)) {
-		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
+		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
 		       *out_size, sizeof(struct hinic_hw_stats));
 		return -EFAULT;
 	}

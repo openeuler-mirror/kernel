@@ -407,7 +407,7 @@ static int hinic_setup_num_qps(struct hinic_nic_dev *nic_dev)
 	}
 	nic_dev->qps_irq_info = kzalloc(irq_size, GFP_KERNEL);
 	if (!nic_dev->qps_irq_info) {
-		nicif_err(nic_dev, drv, netdev, "Failed to alloc msix entries\n");
+		nicif_err(nic_dev, drv, netdev, "Failed to alloc qps_irq_info\n");
 		return -ENOMEM;
 	}
 
@@ -560,7 +560,7 @@ static int hinic_request_irq(struct hinic_irq *irq_cfg, u16 q_id)
 	err = hinic_set_interrupt_cfg(nic_dev->hwdev, info);
 	if (err) {
 		nicif_err(nic_dev, drv, irq_cfg->netdev,
-			  "Failed to set RX interrupt coalescing attribute.\n");
+			  "Failed to set RX interrupt coalescing attribute\n");
 		qp_del_napi(irq_cfg);
 		return err;
 	}
@@ -2977,7 +2977,7 @@ int hinic_enable_func_rss(struct hinic_nic_dev *nic_dev)
 	if (err) {
 		if (err == -ENOSPC)
 			nicif_warn(nic_dev, drv, netdev,
-				   "Failed to alloc RSS template,table is full\n");
+				   "Failed to alloc RSS template, table is full\n");
 		else
 			nicif_err(nic_dev, drv, netdev,
 				  "Failed to alloc RSS template\n");

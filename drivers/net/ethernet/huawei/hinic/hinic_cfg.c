@@ -629,7 +629,7 @@ static int get_cap_from_pf(struct hinic_hwdev *dev, enum func_type type)
 	err = hinic_msg_to_mgmt_sync(dev, HINIC_MOD_CFGM, HINIC_CFG_MBOX_CAP,
 				     &dev_cap, in_len, &dev_cap, &out_len, 0);
 	if (err || dev_cap.status || !out_len) {
-		sdk_err(dev->dev_hdl, "Failed to get capability from PF,  err: %d, status: 0x%x, out size: 0x%x\n",
+		sdk_err(dev->dev_hdl, "Failed to get capability from PF, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, dev_cap.status, out_len);
 		return -EFAULT;
 	}
@@ -925,7 +925,7 @@ int hinic_vector_to_eqn(void *hwdev, enum hinic_service_type type, int vector)
 
 	if (type != SERVICE_T_ROCE && type != SERVICE_T_IWARP) {
 		sdk_err(dev->dev_hdl,
-			"Service type :%d, only RDMA service could get eqn by vector.\n",
+			"Service type: %d, only RDMA service could get eqn by vector\n",
 			type);
 		return -EINVAL;
 	}
@@ -982,7 +982,7 @@ static int cfg_enable_interrupt(struct hinic_hwdev *dev)
 
 	irq_info = cfg_mgmt->irq_param_info.alloc_info;
 
-	sdk_info(dev->dev_hdl, "Interrupt type: %d, irq num: %d.\n",
+	sdk_info(dev->dev_hdl, "Interrupt type: %d, irq num: %d\n",
 		 cfg_mgmt->svc_cap.interrupt_type, nreq);
 
 	switch (cfg_mgmt->svc_cap.interrupt_type) {
@@ -1001,7 +1001,7 @@ static int cfg_enable_interrupt(struct hinic_hwdev *dev)
 		actual_irq = pci_enable_msix_range(pcidev, entry,
 						   VECTOR_THRESHOLD, nreq);
 		if (actual_irq < 0) {
-			sdk_err(dev->dev_hdl, "Alloc msix entries with threshold 2 failed.\n");
+			sdk_err(dev->dev_hdl, "Alloc msix entries with threshold 2 failed\n");
 			kfree(entry);
 			return -ENOMEM;
 		}
@@ -1009,7 +1009,7 @@ static int cfg_enable_interrupt(struct hinic_hwdev *dev)
 		nreq = (u16)actual_irq;
 		cfg_mgmt->irq_param_info.num_total = nreq;
 		cfg_mgmt->irq_param_info.num_irq_remain = nreq;
-		sdk_info(dev->dev_hdl, "Request %d msix vector success.\n",
+		sdk_info(dev->dev_hdl, "Request %d msix vector success\n",
 			 nreq);
 
 		for (i = 0; i < nreq; ++i) {
@@ -1059,12 +1059,12 @@ int hinic_alloc_irqs(void *hwdev, enum hinic_service_type type, u16 num,
 	if (num > free_num_irq) {
 		if (free_num_irq == 0) {
 			sdk_err(dev->dev_hdl,
-				"no free irq resource in cfg mgmt.\n");
+				"no free irq resource in cfg mgmt\n");
 			mutex_unlock(&irq_info->irq_mutex);
 			return -ENOMEM;
 		}
 
-		sdk_warn(dev->dev_hdl, "only %d irq resource in cfg mgmt.\n",
+		sdk_warn(dev->dev_hdl, "only %d irq resource in cfg mgmt\n",
 			 free_num_irq);
 		num = free_num_irq;
 	}
@@ -1125,7 +1125,7 @@ void hinic_free_irq(void *hwdev, enum hinic_service_type type, u32 irq_id)
 				alloc_info[i].free = CFG_FREE;
 				irq_info->num_irq_remain++;
 				if (irq_info->num_irq_remain > max_num_irq) {
-					sdk_err(dev->dev_hdl, "Find target,but over range\n");
+					sdk_err(dev->dev_hdl, "Find target, but over range\n");
 					mutex_unlock(&irq_info->irq_mutex);
 					return;
 				}
@@ -1135,7 +1135,7 @@ void hinic_free_irq(void *hwdev, enum hinic_service_type type, u32 irq_id)
 	}
 
 	if (i >= max_num_irq)
-		sdk_warn(dev->dev_hdl, "Irq %d don`t need to free\n", irq_id);
+		sdk_warn(dev->dev_hdl, "Irq %d don't need to free\n", irq_id);
 
 	mutex_unlock(&irq_info->irq_mutex);
 }
@@ -1262,7 +1262,7 @@ void hinic_free_ceq(void *hwdev, enum hinic_service_type type, int ceq_id)
 	}
 
 	if (i >= num_ceq)
-		sdk_warn(dev->dev_hdl, "ceq %d don`t need to free.\n", ceq_id);
+		sdk_warn(dev->dev_hdl, "ceq %d don't need to free\n", ceq_id);
 
 	mutex_unlock(&eq->eq_mutex);
 }

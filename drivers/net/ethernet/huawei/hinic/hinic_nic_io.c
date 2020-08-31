@@ -253,7 +253,7 @@ int hinic_create_qps(void *dev, u16 num_qp, u16 sq_depth, u16 rq_depth,
 
 	max_qps = hinic_func_max_qnum(hwdev);
 	if (num_qp > max_qps) {
-		nic_err(hwdev->dev_hdl, "Create number of qps: %d > max number of qps:%d\n",
+		nic_err(hwdev->dev_hdl, "Create number of qps: %d > max number of qps: %d\n",
 			num_qp, max_qps);
 		return -EINVAL;
 	}

@@ -55,7 +55,7 @@ static int queue_alloc_page(void *handle, u64 **vaddr, u64 *paddr,
 	}
 
 	if (!ADDR_4K_ALIGNED(dma_addr)) {
-		sdk_err(handle, "Cla is not 4k aligned!\n");
+		sdk_err(handle, "Cla is not 4k aligned\n");
 		goto shadow_vaddr_err;
 	}
 
