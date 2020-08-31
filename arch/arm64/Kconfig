@@ -444,7 +444,7 @@ config ARM64_ERRATUM_834220
 
 config ARM64_ERRATUM_845719
 	bool "Cortex-A53: 845719: a load might read incorrect data"
-	depends on COMPAT
+	depends on AARCH32_EL0
 	default y
 	help
 	  This option adds an alternative code sequence to work around ARM
@@ -1009,7 +1009,7 @@ config ARM64_SSBD
 
 menuconfig ARMV8_DEPRECATED
 	bool "Emulate deprecated/obsolete ARMv8 instructions"
-	depends on COMPAT
+	depends on AARCH32_EL0
 	depends on SYSCTL
 	help
 	  Legacy software support may require certain instructions
@@ -1373,7 +1373,12 @@ config DMI
 endmenu
 
 config COMPAT
+	def_bool y
+	depends on AARCH32_EL0
+
+config AARCH32_EL0
 	bool "Kernel support for 32-bit EL0"
+	def_bool y
 	depends on ARM64_4K_PAGES || EXPERT
 	select COMPAT_BINFMT_ELF if BINFMT_ELF
 	select HAVE_UID16
