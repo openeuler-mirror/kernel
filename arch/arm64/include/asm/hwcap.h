@@ -47,7 +47,7 @@
 #define ELF_HWCAP		(elf_hwcap)
 
 #ifdef CONFIG_AARCH32_EL0
-extern unsigned int compat_elf_hwcap, compat_elf_hwcap2;
+extern unsigned int a32_elf_hwcap, a32_elf_hwcap2;
 #endif
 
 enum {

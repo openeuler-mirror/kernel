@@ -39,15 +39,15 @@ unsigned long elf_hwcap __read_mostly;
 EXPORT_SYMBOL_GPL(elf_hwcap);
 
 #ifdef CONFIG_AARCH32_EL0
-#define COMPAT_ELF_HWCAP_DEFAULT	\
+#define AARCH32_EL0_ELF_HWCAP_DEFAULT	\
 				(COMPAT_HWCAP_HALF|COMPAT_HWCAP_THUMB|\
 				 COMPAT_HWCAP_FAST_MULT|COMPAT_HWCAP_EDSP|\
 				 COMPAT_HWCAP_TLS|COMPAT_HWCAP_VFP|\
 				 COMPAT_HWCAP_VFPv3|COMPAT_HWCAP_VFPv4|\
 				 COMPAT_HWCAP_NEON|COMPAT_HWCAP_IDIV|\
 				 COMPAT_HWCAP_LPAE)
-unsigned int compat_elf_hwcap __read_mostly = COMPAT_ELF_HWCAP_DEFAULT;
-unsigned int compat_elf_hwcap2 __read_mostly;
+unsigned int a32_elf_hwcap __read_mostly = AARCH32_EL0_ELF_HWCAP_DEFAULT;
+unsigned int a32_elf_hwcap2 __read_mostly;
 #endif
 
 DECLARE_BITMAP(cpu_hwcaps, ARM64_NCAPS);
@@ -1537,10 +1537,10 @@ static void __init cap_set_elf_hwcap(const struct arm64_cpu_capabilities *cap)
 		break;
 #ifdef CONFIG_AARCH32_EL0
 	case CAP_COMPAT_HWCAP:
-		compat_elf_hwcap |= (u32)cap->hwcap;
+		a32_elf_hwcap |= (u32)cap->hwcap;
 		break;
 	case CAP_COMPAT_HWCAP2:
-		compat_elf_hwcap2 |= (u32)cap->hwcap;
+		a32_elf_hwcap2 |= (u32)cap->hwcap;
 		break;
 #endif
 	default:
@@ -1560,10 +1560,10 @@ static bool cpus_have_elf_hwcap(const struct arm64_cpu_capabilities *cap)
 		break;
 #ifdef CONFIG_AARCH32_EL0
 	case CAP_COMPAT_HWCAP:
-		rc = (compat_elf_hwcap & (u32)cap->hwcap) != 0;
+		rc = (a32_elf_hwcap & (u32)cap->hwcap) != 0;
 		break;
 	case CAP_COMPAT_HWCAP2:
-		rc = (compat_elf_hwcap2 & (u32)cap->hwcap) != 0;
+		rc = (a32_elf_hwcap2 & (u32)cap->hwcap) != 0;
 		break;
 #endif
 	default:
