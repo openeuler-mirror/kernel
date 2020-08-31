@@ -1473,6 +1473,63 @@ static void check_apply_cts_event_workaround(struct uart_amba_port *uap)
 	dummy_read = pl011_read(uap, REG_ICR);
 }
 
+#ifdef CONFIG_SERIAL_ATTACHED_MBIGEN
+struct workaround_oem_info {
+	char oem_id[ACPI_OEM_ID_SIZE + 1];
+	char oem_table_id[ACPI_OEM_TABLE_ID_SIZE + 1];
+	u32 oem_revision;
+};
+
+static bool pl011_enable_hisi_wkrd;
+static struct workaround_oem_info pl011_wkrd_info[] = {
+	{
+		.oem_id		= "HISI  ",
+		.oem_table_id	= "HIP08   ",
+		.oem_revision	= 0x300,
+	}, {
+		.oem_id		= "HISI  ",
+		.oem_table_id	= "HIP08   ",
+		.oem_revision	= 0x301,
+	}, {
+		.oem_id		= "HISI  ",
+		.oem_table_id	= "HIP08   ",
+		.oem_revision	= 0x400,
+	}, {
+		.oem_id		= "HISI  ",
+		.oem_table_id	= "HIP08   ",
+		.oem_revision	= 0x401,
+	}, {
+		.oem_id		= "HISI  ",
+		.oem_table_id	= "HIP08   ",
+		.oem_revision	= 0x402,
+	}
+};
+
+static void pl011_check_hisi_workaround(void)
+{
+	struct acpi_table_header *tbl;
+	acpi_status status = AE_OK;
+	int i;
+
+	status = acpi_get_table(ACPI_SIG_MADT, 0, &tbl);
+	if (ACPI_FAILURE(status) || !tbl)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(pl011_wkrd_info); i++) {
+		if (!memcmp(pl011_wkrd_info[i].oem_id, tbl->oem_id, ACPI_OEM_ID_SIZE) &&
+		    !memcmp(pl011_wkrd_info[i].oem_table_id, tbl->oem_table_id, ACPI_OEM_TABLE_ID_SIZE) &&
+		    pl011_wkrd_info[i].oem_revision == tbl->oem_revision) {
+			pl011_enable_hisi_wkrd = true;
+			break;
+		}
+	}
+}
+
+#else
+#define pl011_enable_hisi_wkrd	0
+static inline void pl011_check_hisi_workaround(void){ }
+#endif
+
 static irqreturn_t pl011_int(int irq, void *dev_id)
 {
 	struct uart_amba_port *uap = dev_id;
@@ -1508,6 +1565,11 @@ static irqreturn_t pl011_int(int irq, void *dev_id)
 			status = pl011_read(uap, REG_RIS) & uap->im;
 		} while (status != 0);
 		handled = 1;
+	}
+
+	if (pl011_enable_hisi_wkrd) {
+		pl011_write(0, uap, REG_IMSC);
+		pl011_write(uap->im, uap, REG_IMSC);
 	}
 
 	spin_unlock_irqrestore(&uap->port.lock, flags);
@@ -1687,6 +1749,8 @@ static int pl011_hwinit(struct uart_port *port)
 		if (plat->init)
 			plat->init();
 	}
+
+	pl011_check_hisi_workaround();
 	return 0;
 }
 
