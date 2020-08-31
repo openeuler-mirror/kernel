@@ -14,7 +14,7 @@
 #include <asm/thread_info.h>
 #include <asm/unistd.h>
 
-long compat_arm_syscall(struct pt_regs *regs, int scno);
+long a32_arm_syscall(struct pt_regs *regs, int scno);
 long sys_ni_syscall(void);
 
 static long do_ni_syscall(struct pt_regs *regs, int scno)
@@ -22,7 +22,7 @@ static long do_ni_syscall(struct pt_regs *regs, int scno)
 #ifdef CONFIG_AARCH32_EL0
 	long ret;
 	if (is_compat_task()) {
-		ret = compat_arm_syscall(regs, scno);
+		ret = a32_arm_syscall(regs, scno);
 		if (ret != -ENOSYS)
 			return ret;
 	}
@@ -164,6 +164,6 @@ asmlinkage void el0_svc_handler(struct pt_regs *regs)
 asmlinkage void el0_svc_compat_handler(struct pt_regs *regs)
 {
 	el0_svc_common(regs, regs->regs[7], __NR_compat_syscalls,
-		       compat_sys_call_table);
+		       a32_sys_call_table);
 }
 #endif

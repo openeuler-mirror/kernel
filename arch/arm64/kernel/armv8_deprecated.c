@@ -559,7 +559,7 @@ static int setend_set_hw_mode(bool enable)
 	return 0;
 }
 
-static int compat_setend_handler(struct pt_regs *regs, u32 big_endian)
+static int __a32_setend_handler(struct pt_regs *regs, u32 big_endian)
 {
 	char *insn;
 
@@ -582,14 +582,14 @@ static int compat_setend_handler(struct pt_regs *regs, u32 big_endian)
 
 static int a32_setend_handler(struct pt_regs *regs, u32 instr)
 {
-	int rc = compat_setend_handler(regs, (instr >> 9) & 1);
+	int rc = __a32_setend_handler(regs, (instr >> 9) & 1);
 	arm64_skip_faulting_instruction(regs, 4);
 	return rc;
 }
 
 static int t16_setend_handler(struct pt_regs *regs, u32 instr)
 {
-	int rc = compat_setend_handler(regs, (instr >> 3) & 1);
+	int rc = __a32_setend_handler(regs, (instr >> 3) & 1);
 	arm64_skip_faulting_instruction(regs, 2);
 	return rc;
 }

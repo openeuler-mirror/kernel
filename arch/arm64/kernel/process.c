@@ -220,7 +220,7 @@ static void print_pstate(struct pt_regs *regs)
 {
 	u64 pstate = regs->pstate;
 
-	if (compat_user_mode(regs)) {
+	if (a32_user_mode(regs)) {
 		printk("pstate: %08llx (%c%c%c%c %c %s %s %c%c%c)\n",
 			pstate,
 			pstate & PSR_AA32_N_BIT ? 'N' : 'n',
@@ -254,7 +254,7 @@ void __show_regs(struct pt_regs *regs)
 	int i, top_reg;
 	u64 lr, sp;
 
-	if (compat_user_mode(regs)) {
+	if (a32_user_mode(regs)) {
 		lr = regs->compat_lr;
 		sp = regs->compat_sp;
 		top_reg = 12;
@@ -470,7 +470,7 @@ static void ssbs_thread_switch(struct task_struct *next)
 	    test_tsk_thread_flag(next, TIF_SSBD))
 		return;
 
-	if (compat_user_mode(regs))
+	if (a32_user_mode(regs))
 		set_compat_ssbs_bit(regs);
 	else if (user_mode(regs))
 		set_ssbs_bit(regs);
