@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2008.3.0
+%global hulkrelease 2008.6.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0042
+Release: %{hulkrelease}.0043
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,85 @@ fi
 %endif
 
 %changelog
+* Mon Aug 31 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2008.6.0.0043
+- arm64/config: enable TIPC module for openEuler
+- net: hns3: update hns3 version to 1.9.38.6
+- net: hns3: add support for dumping MAC umv counter in debugfs
+- net: hns3: fix bug when PF set the duplicate MAC address for VFs
+- net/hinic: Check the legality of out_size in nictool
+- net/hinic: Fix out-of-bounds access when setting ets
+- net/hinic: Rename camelCase used in nictool
+- net/hinic: Fix alignment and code style
+- net/hinic: Delete unused heartbeat enhancement feature
+- net/hinic: Delete the unused chip fault handling process
+- net/hinic: Delete unused microcode back pressure feature
+- net/hinic: Fix misspelled word and wrong print format
+- net/hinic: update hinic version to 2.3.2.15
+- net/hinic: Add the maximum value of the module parameter poll_weight
+- net/hinic: Add pause/pfc mutual exclusion protection
+- net/hinic: Add lock for mgmt channel event_flag
+- net/hinic: Fix signed integer overflow
+- nfsd: apply umask on fs without ACL support
+- arm64/ascend: use ascend_enable_full to enable ascend platform
+- sbsa_gwdt: Enable ARM_SBSA_WATCHDOG_PANIC_NOTIFIER in hulk_defconfig
+- sbsa_gwdt: Introduce a panic notifier
+- memcg/ascend: Support not account pages of cdm for memcg
+- dt-bindings: iommu: Add Message Based SPI for hisilicon
+- iommu: support message based spi for smmu
+- nbd_genl_status: null check for nla_nest_start
+- config: Add default value for CONFIG_ASCEND_INIT_ALL_GICR
+- irq-gic-v3: Add support to init ts core GICR
+- ascend: mm/hugetlb: Enable ASCEND_CHARGE_MIGRAGE_HUGEPAGES for hulk_defconfig
+- ascend: mm/hugetlb: Enable charge migrate hugepages
+- config: Add default value for CONFIG_SERIAL_ATTACHED_MBIGEN
+- serial: amba-pl011: Fix serial port discard interrupt when interrupt signal line of serial port is connected to mbigen.
+- iommu: fix a mistake for iommu_unregister_device_fault_handler
+- printk: Export a symbol.
+- arm64/ascend: Enable ASCEND_IOPF_HIPRI for hulk_defconfig
+- arm64/ascend: Enable iopf hipri feature for Ascend Platform
+- mm: Check numa node hugepages enough when mmap hugetlb
+- arm64/ascend: Enable CONFIG_ASCEND_OOM for hulk_defconfig
+- arm64/ascend: Add new enable_oom_killer interface for oom contrl
+- svm: add support for allocing memory which is within 4G physical address in svm_mmap
+- suspend: export cpu_suspend/cpu_resume/psci_ops
+- printk: export log_buf_addr_get/log_buf_len_get
+- arm64/ascend: fix memleak when remove svm
+- iommu: fix NULL pointer when release iopf queue
+- arm64/ascend: Enable ASCEND_DVPP_MMAP for hulk_defconfig
+- arm64/ascend: Don't use the DvPP mmap space for svm.
+- arm64/ascend: Enable DvPP mmap features for Ascend Platform
+- usb: xhci: Add workaround for phytium
+- arm64: topology: Support PHYTIUM CPU
+- arm64: mm: define NET_IP_ALIGN to 0
+- arm64: ilp32: fix kabi change
+- config: add CONFIG_ARM64_ILP32 in defconfigs
+- arm64: ilp32: fix compile warning cause by 'VA_BITS'
+- arm64:ilp32: add ARM64_ILP32 to Kconfig
+- arm64:ilp32: add vdso-ilp32 and use for signal return
+- arm64: ptrace: handle ptrace_request differently for aarch32 and ilp32
+- arm64: ilp32: introduce ilp32-specific sigframe and ucontext
+- arm64: signal32: move ilp32 and aarch32 common code to separated file
+- arm64: signal: share lp64 signal structures and routines to ilp32
+- arm64: ilp32: introduce syscall table for ILP32
+- arm64: ilp32: share aarch32 syscall handlers
+- arm64: ilp32: introduce binfmt_ilp32.c
+- arm64: change compat_elf_hwcap and compat_elf_hwcap2 prefix to a32
+- arm64: introduce binfmt_elf32.c
+- arm64: ilp32: add is_ilp32_compat_{task, thread} and TIF_32BIT_AARCH64
+- arm64: introduce is_a32_compat_{task, thread} for AArch32 compat
+- arm64: uapi: set __BITS_PER_LONG correctly for ILP32 and LP64
+- arm64: rename functions that reference compat term
+- arm64: rename COMPAT to AARCH32_EL0
+- arm64: ilp32: add documentation on the ILP32 ABI for ARM64
+- thread: move thread bits accessors to separated file
+- asm-generic: Drop getrlimit and setrlimit syscalls from default list
+- 32-bit userspace ABI: introduce ARCH_32BIT_OFF_T config option
+- compat ABI: use non-compat openat and open_by_handle_at variants
+- ptrace: Add compat PTRACE_{G, S}ETSIGMASK handlers
+- arm64: signal: Make parse_user_sigframe() independent of rt_sigframe layout
+- scsi: libsas: Check link status in ATA prereset()
+- scsi: libsas: Remove postreset from sas_sata_ops
+
 * Wed Aug 19 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2008.3.0.0042
 - x86/mm: split vmalloc_sync_all()
 - kexec/uefi: copy secure_boot flag in boot params across kexec reboot
