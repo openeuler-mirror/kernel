@@ -16,10 +16,6 @@
 #ifndef __ASM_ELF_H
 #define __ASM_ELF_H
 
-#ifndef __ASSEMBLY__
-#include <linux/compat.h>
-#endif
-
 #include <asm/hwcap.h>
 
 /*
@@ -172,6 +168,12 @@ do {									\
 struct linux_binprm;
 extern int arch_setup_additional_pages(struct linux_binprm *bprm,
 				       int uses_interp);
+
+#ifndef CONFIG_COMPAT
+#ifndef is_compat_task
+#define is_compat_task() (0)
+#endif
+#endif
 
 /* 1GB of VA */
 #define STACK_RND_MASK			(is_compat_task() ? \
