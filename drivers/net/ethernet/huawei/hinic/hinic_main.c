@@ -137,11 +137,6 @@ static unsigned char qp_coalesc_timer_high = HINIC_RX_COAL_TIME_HIGH;
 module_param(qp_coalesc_timer_high, byte, 0444);
 MODULE_PARM_DESC(qp_coalesc_timer_high, "MSI-X adaptive high coalesce time, range is 0 - 255");
 
-static unsigned int enable_bp;
-
-static unsigned int bp_lower_thd = HINIC_RX_BP_LOWER_THD;
-static unsigned int bp_upper_thd = HINIC_RX_BP_UPPER_THD;
-
 #define HINIC_NIC_DEV_WQ_NAME		"hinic_nic_dev_wq"
 
 #define DEFAULT_MSG_ENABLE		(NETIF_MSG_DRV | NETIF_MSG_LINK)
@@ -1554,26 +1549,6 @@ static int hinic_set_default_hw_feature(struct hinic_nic_dev *nic_dev)
 				return -EFAULT;
 		}
 
-		if (enable_bp) {
-			nic_dev->bp_upper_thd = (u16)bp_upper_thd;
-			nic_dev->bp_lower_thd = (u16)bp_lower_thd;
-			err = hinic_set_bp_thd(nic_dev->hwdev,
-					       nic_dev->bp_lower_thd);
-			if (err) {
-				nic_err(&nic_dev->pdev->dev,
-					"Failed to set bp lower threshold\n");
-				return -EFAULT;
-			}
-
-			set_bit(HINIC_BP_ENABLE, &nic_dev->flags);
-		} else {
-			err = hinic_disable_fw_bp(nic_dev->hwdev);
-			if (err)
-				return -EFAULT;
-
-			clear_bit(HINIC_BP_ENABLE, &nic_dev->flags);
-		}
-
 		hinic_set_anti_attack(nic_dev->hwdev, true);
 
 		if (set_link_status_follow < HINIC_LINK_FOLLOW_STATUS_MAX &&
@@ -2519,13 +2494,6 @@ static void hinic_destroy_qps(struct hinic_nic_dev *nic_dev)
 static int hinic_validate_parameters(struct hinic_lld_dev *lld_dev)
 {
 	struct pci_dev *pdev = lld_dev->pdev;
-
-	if (bp_upper_thd < bp_lower_thd || bp_lower_thd == 0) {
-		nic_warn(&pdev->dev, "Module Parameter bp_upper_thd: %d, bp_lower_thd: %d is invalid, resetting to default\n",
-			 bp_upper_thd, bp_lower_thd);
-		bp_lower_thd = HINIC_RX_BP_LOWER_THD;
-		bp_upper_thd = HINIC_RX_BP_UPPER_THD;
-	}
 
 	/* Check poll_weight value, default poll_weight is 64.
 	 * The poll_weight isn't more than max queue depth,

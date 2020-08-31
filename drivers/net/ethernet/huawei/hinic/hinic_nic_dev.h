@@ -41,7 +41,6 @@ enum hinic_flags {
 	HINIC_LP_TEST,
 	HINIC_RSS_ENABLE,
 	HINIC_DCB_ENABLE,
-	HINIC_BP_ENABLE,
 	HINIC_SAME_RXTX,
 	HINIC_INTR_ADAPT,
 	HINIC_UPDATE_MAC_FILTER,
@@ -219,8 +218,6 @@ struct hinic_nic_dev {
 	/* lock for disable or enable traffic flow */
 	struct semaphore	dcb_sem;
 
-	u16			bp_lower_thd;
-	u16			bp_upper_thd;
 	bool			heart_status;
 
 	struct hinic_intr_coal_info *intr_coalesce;

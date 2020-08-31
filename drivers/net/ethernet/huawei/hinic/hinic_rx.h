@@ -29,15 +29,8 @@
 
 #define HINIC_RX_CSUM_OFFLOAD_EN	0xFFF
 
-#define HINIC_RX_BP_LOWER_THD		200
-#define HINIC_RX_BP_UPPER_THD		400
-
 #define HINIC_SUPPORT_LRO_ADAP_QPS_MAX	16
 #define HINIC_RX_BUFFER_WRITE			16
-
-enum {
-	HINIC_RX_STATUS_BP_EN,
-};
 
 struct hinic_rxq_stats {
 	u64	packets;
@@ -45,7 +38,6 @@ struct hinic_rxq_stats {
 	u64	errors;
 	u64	csum_errors;
 	u64	other_errors;
-	u64	unlock_bp;
 	u64	dropped;
 
 	u64	alloc_skb_err;
@@ -88,7 +80,6 @@ struct hinic_rxq {
 	u16			next_to_update;
 	struct device		*dev;		/* device for DMA mapping */
 
-	u32			bp_cnt;
 	unsigned long		status;
 	dma_addr_t		cqe_start_paddr;
 	void			*cqe_start_vaddr;

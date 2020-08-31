@@ -1009,14 +1009,6 @@ static int hinic_set_ringparam(struct net_device *netdev,
 	    new_rq_depth == nic_dev->rq_depth)
 		return 0;
 
-	if (test_bit(HINIC_BP_ENABLE, &nic_dev->flags) &&
-	    new_rq_depth <= nic_dev->bp_upper_thd) {
-		nicif_err(nic_dev, drv, netdev,
-			  "BP is enable, rq_depth must be larger than upper threshold: %d\n",
-			  nic_dev->bp_upper_thd);
-		return -EINVAL;
-	}
-
 	nicif_info(nic_dev, drv, netdev,
 		   "Change Tx/Rx ring depth from %d/%d to %d/%d\n",
 		   nic_dev->sq_depth, nic_dev->rq_depth,
@@ -1794,14 +1786,6 @@ static int hinic_set_pauseparam(struct net_device *netdev,
 	if (!FUNC_SUPPORT_PORT_SETTING(nic_dev->hwdev)) {
 		nicif_err(nic_dev, drv, netdev, "Not support to set pause parameters\n");
 		return -EOPNOTSUPP;
-	}
-
-	if (test_bit(HINIC_BP_ENABLE, &nic_dev->flags) && pause->tx_pause &&
-	    nic_dev->rq_depth <= nic_dev->bp_upper_thd) {
-		nicif_err(nic_dev, drv, netdev,
-			  "Can not set tx pause enable, rq depth is less than bp upper threshold: %d\n",
-			  nic_dev->bp_upper_thd);
-		return -EINVAL;
 	}
 
 	err = hinic_get_port_info(nic_dev->hwdev, &port_info);

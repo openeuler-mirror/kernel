@@ -499,17 +499,6 @@ int hinic_dcb_set_cos_up_map(void *hwdev, u8 cos_valid_bitmap, u8 *cos_up);
 
 int hinic_dcb_set_rq_iq_mapping(void *hwdev, u32 num_rqs, u8 *map);
 
-int hinic_set_pfc_threshold(void *hwdev, u16 op_type, u16 threshold);
-
-int hinic_set_bp_thd(void *hwdev, u16 threshold);
-
-int hinic_disable_fw_bp(void *hwdev);
-
-int hinic_set_iq_enable(void *hwdev, u16 q_id, u16 lower_thd, u16 prod_idx);
-
-int hinic_set_iq_enable_mgmt(void *hwdev, u16 q_id, u16 lower_thd,
-			     u16 prod_idx);
-
 /* nictool adaptation interface*/
 int hinic_set_lro_aging_timer(void *hwdev, u8 timer_en, u32 period);
 /* There should be output parameters, add the
