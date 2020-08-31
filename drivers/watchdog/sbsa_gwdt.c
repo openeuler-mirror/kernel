@@ -108,12 +108,13 @@ MODULE_PARM_DESC(timeout,
  * action refers to action taken when watchdog gets WS0
  * 0 = skip
  * 1 = panic
+ * 2 = panic and reset timeout (need to enable CONFIG_ARM_SBSA_WATCHDOG_PANIC_NOTIFIER)
  * defaults to skip (0)
  */
 static int action;
 module_param(action, int, 0);
 MODULE_PARM_DESC(action, "after watchdog gets WS0 interrupt, do: "
-		 "0 = skip(*)  1 = panic");
+		 "0 = skip(*)  1 = panic 2 = panic_notifier");
 
 static bool nowayout = WATCHDOG_NOWAYOUT;
 module_param(nowayout, bool, S_IRUGO);
@@ -130,6 +131,11 @@ static int sbsa_gwdt_set_timeout(struct watchdog_device *wdd,
 	struct sbsa_gwdt *gwdt = watchdog_get_drvdata(wdd);
 
 	wdd->timeout = timeout;
+#ifdef CONFIG_ARM_SBSA_WATCHDOG_PANIC_NOTIFIER
+	/* Disable pretimeout if it doesn't fit the new timeout */
+	if (action == 2 && wdd->pretimeout >= wdd->timeout)
+		wdd->pretimeout = 0;
+#endif
 
 	if (action)
 		writel(gwdt->clk * timeout,
@@ -208,7 +214,7 @@ static irqreturn_t sbsa_gwdt_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static const struct watchdog_info sbsa_gwdt_info = {
+static struct watchdog_info sbsa_gwdt_info = {
 	.identity	= WATCHDOG_NAME,
 	.options	= WDIOF_SETTIMEOUT |
 			  WDIOF_KEEPALIVEPING |
@@ -224,6 +230,44 @@ static const struct watchdog_ops sbsa_gwdt_ops = {
 	.set_timeout	= sbsa_gwdt_set_timeout,
 	.get_timeleft	= sbsa_gwdt_get_timeleft,
 };
+
+#ifdef CONFIG_ARM_SBSA_WATCHDOG_PANIC_NOTIFIER
+static struct sbsa_gwdt_notifier_s {
+	struct sbsa_gwdt	*gwdt;
+	struct notifier_block	panic_notifier;
+} sbsa_gwdt_notifier;
+
+static int gwdt_reset_timeout(struct notifier_block *self,
+			      unsigned long v, void *p)
+{
+	struct sbsa_gwdt *gwdt =
+		container_of(self, struct sbsa_gwdt_notifier_s,
+			     panic_notifier)->gwdt;
+	unsigned int timeout = gwdt->wdd.pretimeout;
+	unsigned int div = 1U;
+
+	/*
+	 * If the panic occurred after when WSO was raised, the gwdt would
+	 * reset the board after WOR. If WS0 was not raised WOR * 2 would
+	 * take before gwdt would reset the board.
+	 */
+	if (!(readl(gwdt->control_base + SBSA_GWDT_WCS) & SBSA_GWDT_WCS_WS0))
+		div = 2U;
+	writel(gwdt->clk * timeout / div, gwdt->control_base + SBSA_GWDT_WOR);
+
+	return 0;
+}
+
+static void sbsa_register_panic_notifier(struct sbsa_gwdt *gwdt)
+{
+	sbsa_gwdt_notifier.gwdt = gwdt;
+	sbsa_gwdt_notifier.panic_notifier.notifier_call = gwdt_reset_timeout;
+	sbsa_gwdt_notifier.panic_notifier.priority = INT_MAX;
+
+	atomic_notifier_chain_register(&panic_notifier_list,
+				       &sbsa_gwdt_notifier.panic_notifier);
+}
+#endif
 
 static int sbsa_gwdt_probe(struct platform_device *pdev)
 {
@@ -316,6 +360,20 @@ static int sbsa_gwdt_probe(struct platform_device *pdev)
 	ret = watchdog_register_device(wdd);
 	if (ret)
 		return ret;
+
+#ifdef CONFIG_ARM_SBSA_WATCHDOG_PANIC_NOTIFIER
+	if (action == 2) {
+		/*
+		 * Since pretimeout should be smaller than timeout we initialize
+		 * pretimeout to timeout-1.
+		 * Add WDIOF_PRETIMEOUT flags to enable user to configure it.
+		 */
+		gwdt->wdd.pretimeout = gwdt->wdd.timeout - 1;
+		sbsa_gwdt_info.options |= WDIOF_PRETIMEOUT;
+
+		sbsa_register_panic_notifier(gwdt);
+	}
+#endif
 
 	dev_info(dev, "Initialized with %ds timeout @ %u Hz, action=%d.%s\n",
 		 wdd->timeout, gwdt->clk, action,
