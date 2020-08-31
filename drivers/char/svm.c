@@ -246,6 +246,7 @@ static int svm_remove_core(struct device *dev, void *data)
 	struct core_device *cdev = to_core_device(dev);
 
 	if (!cdev->smmu_bypass) {
+		iommu_sva_device_shutdown(dev);
 		iommu_detach_group(cdev->domain, cdev->group);
 		iommu_group_put(cdev->group);
 		iommu_domain_free(cdev->domain);
@@ -1769,6 +1770,11 @@ static int svm_device_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static void svm_device_shutdown(struct platform_device *pdev)
+{
+	svm_device_remove(pdev);
+}
+
 static const struct acpi_device_id svm_acpi_match[] = {
 	{ "HSVM1980", 0},
 	{ }
@@ -1785,6 +1791,7 @@ MODULE_DEVICE_TABLE(of, svm_of_match);
 static struct platform_driver svm_driver = {
 	.probe	=	svm_device_probe,
 	.remove	=	svm_device_remove,
+	.shutdown =	svm_device_shutdown,
 	.driver	=	{
 		.name = SVM_DEVICE_NAME,
 		.acpi_match_table = ACPI_PTR(svm_acpi_match),
