@@ -241,13 +241,20 @@ int hinic_dbg_get_hw_stats(const void *hwdev, u8 *hw_stats, u16 *out_size)
 	return 0;
 }
 
-u16 hinic_dbg_clear_hw_stats(void *hwdev)
+u16 hinic_dbg_clear_hw_stats(void *hwdev, u32 *out_size)
 {
+	if (*out_size != sizeof(struct hinic_hw_stats)) {
+		pr_err("Unexpect out buf size from user :%d, expect: %lu\n",
+		       *out_size, sizeof(struct hinic_hw_stats));
+		return -EFAULT;
+	}
+
 	memset((void *)&((struct hinic_hwdev *)hwdev)->hw_stats, 0,
 	       sizeof(struct hinic_hw_stats));
 	memset((void *)((struct hinic_hwdev *)hwdev)->chip_fault_stats, 0,
 	       HINIC_CHIP_FAULT_SIZE);
-	return sizeof(struct hinic_hw_stats);
+
+	return 0;
 }
 
 void hinic_get_chip_fault_stats(const void *hwdev,
