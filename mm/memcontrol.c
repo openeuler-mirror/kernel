@@ -2696,10 +2696,15 @@ int __memcg_kmem_charge(struct page *page, gfp_t gfp, int order)
 
 	memcg = get_mem_cgroup_from_current();
 	if (!mem_cgroup_is_root(memcg)) {
+		if (is_cdm_node(page_to_nid(page)))
+			goto out;
+
 		ret = __memcg_kmem_charge_memcg(page, gfp, order, memcg);
 		if (!ret)
 			__SetPageKmemcg(page);
 	}
+
+out:
 	css_put(&memcg->css);
 	return ret;
 }
@@ -6015,6 +6020,12 @@ int mem_cgroup_try_charge(struct page *page, struct mm_struct *mm,
 
 	if (!memcg)
 		memcg = get_mem_cgroup_from_mm(mm);
+
+	if (!mem_cgroup_is_root(memcg) && is_cdm_node(page_to_nid(page))) {
+		css_put(&memcg->css);
+		memcg = NULL;
+		goto out;
+	}
 
 	ret = try_charge(memcg, gfp_mask, nr_pages);
 
