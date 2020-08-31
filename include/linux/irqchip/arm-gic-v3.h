@@ -608,6 +608,13 @@ struct rdists {
 struct irq_domain;
 struct fwnode_handle;
 int its_cpu_init(void);
+#ifdef CONFIG_ASCEND_INIT_ALL_GICR
+void its_set_gicr_nr(int nr);
+int its_gicr_nr(void);
+void its_enable_init_all_gicr(void);
+bool its_init_all_gicr(void);
+int its_cpu_init_others(void __iomem *base, phys_addr_t phys_base, int idx);
+#endif
 int its_init(struct fwnode_handle *handle, struct rdists *rdists,
 	     struct irq_domain *domain);
 int mbi_init(struct fwnode_handle *fwnode, struct irq_domain *parent);

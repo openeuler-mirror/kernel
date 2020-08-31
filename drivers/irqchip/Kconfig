@@ -145,6 +145,16 @@ config HISILICON_IRQ_MBIGEN
 	select ARM_GIC_V3
 	select ARM_GIC_V3_ITS
 
+if ASCEND_FEATURES
+
+config ASCEND_INIT_ALL_GICR
+	bool "Enable init all GICR for Ascend"
+	depends on ARM_GIC_V3
+	depends on ARM_GIC_V3_ITS
+	default n
+
+endif
+
 config IMGPDC_IRQ
 	bool
 	select GENERIC_IRQ_CHIP
