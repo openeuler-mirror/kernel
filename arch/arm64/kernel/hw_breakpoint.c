@@ -168,7 +168,7 @@ enum hw_breakpoint_ops {
 	HW_BREAKPOINT_RESTORE
 };
 
-static int is_compat_bp(struct perf_event *bp)
+static int is_a32_compat_bp(struct perf_event *bp)
 {
 	struct task_struct *tsk = bp->hw.target;
 
@@ -179,7 +179,7 @@ static int is_compat_bp(struct perf_event *bp)
 	 * deprecated behaviour if we use unaligned watchpoints in
 	 * AArch64 state.
 	 */
-	return tsk && is_compat_thread(task_thread_info(tsk));
+	return tsk && is_a32_compat_thread(task_thread_info(tsk));
 }
 
 /**
@@ -478,7 +478,7 @@ static int arch_build_bp_info(struct perf_event *bp,
 	 * Watchpoints can be of length 1, 2, 4 or 8 bytes.
 	 */
 	if (hw->ctrl.type == ARM_BREAKPOINT_EXECUTE) {
-		if (is_compat_bp(bp)) {
+		if (is_a32_compat_bp(bp)) {
 			if (hw->ctrl.len != ARM_BREAKPOINT_LEN_2 &&
 			    hw->ctrl.len != ARM_BREAKPOINT_LEN_4)
 				return -EINVAL;
@@ -536,7 +536,7 @@ int hw_breakpoint_arch_parse(struct perf_event *bp,
 	 * AArch32 tasks expect some simple alignment fixups, so emulate
 	 * that here.
 	 */
-	if (is_compat_bp(bp)) {
+	if (is_a32_compat_bp(bp)) {
 		if (hw->ctrl.len == ARM_BREAKPOINT_LEN_8)
 			alignment_mask = 0x7;
 		else

@@ -119,7 +119,7 @@ static inline void syscall_set_arguments(struct task_struct *task,
  */
 static inline int syscall_get_arch(void)
 {
-	if (is_compat_task())
+	if (is_a32_compat_task())
 		return AUDIT_ARCH_ARM;
 
 	return AUDIT_ARCH_AARCH64;

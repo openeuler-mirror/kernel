@@ -54,7 +54,7 @@ static inline unsigned long ftrace_call_adjust(unsigned long addr)
 #define ARCH_TRACE_IGNORE_COMPAT_SYSCALLS
 static inline bool arch_trace_is_compat_syscall(struct pt_regs *regs)
 {
-	return is_compat_task();
+	return is_a32_compat_task();
 }
 
 #define ARCH_HAS_SYSCALL_MATCH_SYM_NAME
