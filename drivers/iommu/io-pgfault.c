@@ -48,6 +48,8 @@ struct iopf_group {
 	struct work_struct		work;
 };
 
+static int enable_iopf_hipri __read_mostly;
+
 static int iopf_complete(struct device *dev, struct iommu_fault_event *evt,
 			 enum page_response_code status)
 {
@@ -399,6 +401,7 @@ struct iopf_queue *
 iopf_queue_alloc(const char *name, iopf_queue_flush_t flush, void *cookie)
 {
 	struct iopf_queue *queue;
+	unsigned int type = WQ_UNBOUND;
 
 	queue = kzalloc(sizeof(*queue), GFP_KERNEL);
 	if (!queue)
@@ -410,7 +413,10 @@ iopf_queue_alloc(const char *name, iopf_queue_flush_t flush, void *cookie)
 	 * that's dealt with, the high-level function can handle groups out of
 	 * order.
 	 */
-	queue->wq = alloc_workqueue("iopf_queue/%s", WQ_UNBOUND, 0, name);
+	if (enable_iopf_hipri)
+		type = WQ_HIGHPRI;
+
+	queue->wq = alloc_workqueue("iopf_queue/%s", type, 0, name);
 	if (!queue->wq) {
 		kfree(queue);
 		return NULL;
@@ -442,3 +448,17 @@ void iopf_queue_free(struct iopf_queue *queue)
 	kfree(queue);
 }
 EXPORT_SYMBOL_GPL(iopf_queue_free);
+
+#ifdef CONFIG_ASCEND_IOPF_HIPRI
+
+static int __init ascend_enable_iopf_hipri(char *s)
+{
+	enable_iopf_hipri = 1;
+
+	pr_info("Ascend enable iopf workqueue highpri\n");
+
+	return 1;
+}
+__setup("enable_iopf_hipri", ascend_enable_iopf_hipri);
+
+#endif
