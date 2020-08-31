@@ -1415,6 +1415,10 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 			pkey = 0;
 	}
 
+	/* Physical address is within 4G */
+	if (flags & MAP_PA32BIT)
+		vm_flags |= VM_PA32BIT;
+
 	/* Do simple checking here so the lower-level routines won't have
 	 * to. we assume access permissions have been handled by the open
 	 * of the memory object, so we don't do any here.

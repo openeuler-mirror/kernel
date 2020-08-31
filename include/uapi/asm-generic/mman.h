@@ -14,6 +14,7 @@
 #define MAP_STACK	0x20000		/* give out an address that is best suited for process/thread stacks */
 #define MAP_HUGETLB	0x40000		/* create a huge page mapping */
 #define MAP_SYNC	0x80000		/* perform synchronous page faults for the mapping */
+#define MAP_PA32BIT	0x400000	/* physical address is within 4G */
 
 /* Bits [26:31] are reserved, see mman-common.h for MAP_HUGETLB usage */
 
