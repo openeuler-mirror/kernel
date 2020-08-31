@@ -54,7 +54,7 @@ static struct hstate * __initdata parsed_hstate;
 static unsigned long __initdata default_hstate_max_huge_pages;
 static unsigned long __initdata default_hstate_size;
 static bool __initdata parsed_valid_hugepagesz = true;
-static int enable_charge_mighp __read_mostly;
+int enable_charge_mighp __read_mostly;
 
 /*
  * Protects updates to hugepage_freelists, hugepage_activelist, nr_huge_pages,

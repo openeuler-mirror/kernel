@@ -40,6 +40,7 @@
 #include <linux/mm.h>
 #include <linux/kexec.h>
 #include <linux/crash_dump.h>
+#include <linux/iommu.h>
 
 #include <asm/boot.h>
 #include <asm/fixmap.h>
@@ -765,6 +766,25 @@ static int __init keepinitrd_setup(char *__unused)
 
 __setup("keepinitrd", keepinitrd_setup);
 #endif
+
+#ifdef CONFIG_ASCEND_FEATURES
+static int __init ascend_enable_setup(char *__unused)
+{
+	if (IS_ENABLED(CONFIG_ASCEND_DVPP_MMAP))
+		enable_map_dvpp = 1;
+
+	if (IS_ENABLED(CONFIG_ASCEND_IOPF_HIPRI))
+		enable_iopf_hipri = 1;
+
+	if (IS_ENABLED(CONFIG_ASCEND_CHARGE_MIGRATE_HUGEPAGES))
+		enable_charge_mighp = 1;
+
+	return 1;
+}
+
+__setup("ascend_enable_all", ascend_enable_setup);
+#endif
+
 
 /*
  * Dump out memory limit information on panic.

@@ -1125,4 +1125,6 @@ void iommu_debugfs_setup(void);
 static inline void iommu_debugfs_setup(void) {}
 #endif
 
+extern int enable_iopf_hipri __read_mostly;
+
 #endif /* __LINUX_IOMMU_H */
