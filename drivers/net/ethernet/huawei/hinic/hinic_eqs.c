@@ -550,8 +550,6 @@ static bool aeq_irq_handler(struct hinic_eq *eq)
 				lev = aeqs->aeq_swe_cb[sw_event](aeqs->hwdev,
 								 ucode_event,
 								 aeqe_data);
-				hinic_swe_fault_handler(aeqs->hwdev, lev,
-							ucode_event, aeqe_data);
 			}
 			clear_bit(HINIC_AEQ_SW_CB_RUNNING,
 				  &aeqs->aeq_sw_cb_state[sw_event]);

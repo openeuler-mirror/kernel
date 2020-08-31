@@ -2142,21 +2142,12 @@ static int hinic_os_dep_init(struct hinic_hwdev *hwdev)
 		return -EFAULT;
 	}
 
-	sema_init(&hwdev->recover_sem, 1);
-	sema_init(&hwdev->fault_list_sem, 1);
-
-	INIT_WORK(&hwdev->fault_work, hinic_fault_work_handler);
-
 	return 0;
 }
 
 static void hinic_os_dep_deinit(struct hinic_hwdev *hwdev)
 {
 	destroy_workqueue(hwdev->workq);
-
-	down(&hwdev->fault_list_sem);
-
-	up(&hwdev->fault_list_sem);
 }
 
 void hinic_ppf_hwdev_unreg(void *hwdev)

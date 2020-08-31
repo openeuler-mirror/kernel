@@ -570,18 +570,6 @@ struct hinic_fault_event {
 	union hinic_fault_hw_mgmt event;
 };
 
-struct hinic_fault_recover_info {
-	u8 fault_src; /* enum hinic_fault_source_type */
-	u8 fault_lev; /* enum hinic_fault_err_level */
-	u8 rsvd0[2];
-	union {
-		union hinic_fault_hw_mgmt hw_mgmt;
-		struct hinic_fault_sw_mgmt sw_mgmt;
-		u32 mgmt_rsvd[4];
-		u32 host_rsvd[4];
-	} fault_data;
-};
-
 struct hinic_dcb_state {
 	u8	dcb_on;
 	u8	default_cos;
@@ -682,8 +670,6 @@ enum hinic_ucode_event_type {
 typedef void (*hinic_event_handler)(void *handle,
 		struct hinic_event_info *event);
 
-typedef void (*hinic_fault_recover_handler)(void *pri_handle,
-					struct hinic_fault_recover_info info);
 /* only register once */
 void hinic_event_register(void *dev, void *pri_handle,
 			  hinic_event_handler callback);

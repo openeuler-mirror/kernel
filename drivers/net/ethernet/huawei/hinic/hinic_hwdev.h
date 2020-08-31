@@ -175,12 +175,6 @@ struct hinic_hw_stats {
 	struct hinic_fault_event_stats fault_event_stats;
 };
 
-struct hinic_fault_info_node {
-	struct list_head list;
-	struct hinic_hwdev *hwdev;
-	struct hinic_fault_recover_info info;
-};
-
 enum heartbeat_support_state {
 	HEARTBEAT_NOT_SUPPORT = 0,
 	HEARTBEAT_SUPPORT,
@@ -284,16 +278,6 @@ struct hinic_hwdev {
 	hinic_event_handler event_callback;
 	void *event_pri_handle;
 
-	struct semaphore recover_sem;
-	bool collect_log_flag;
-	bool history_fault_flag;
-	struct hinic_fault_recover_info history_fault;
-	void *recover_pri_hd;
-	hinic_fault_recover_handler recover_cb;
-
-	struct work_struct fault_work;
-	struct semaphore fault_list_sem;
-
 	struct work_struct timer_work;
 	struct workqueue_struct *workq;
 	struct timer_list heartbeat_timer;
@@ -378,10 +362,6 @@ int hinic_pf_send_clp_cmd(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 			void *buf_out, u16 *out_size);
 
 int hinic_get_bios_pf_bw_limit(void *hwdev, u32 *pf_bw_limit);
-
-void hinic_fault_work_handler(struct work_struct *work);
-void hinic_swe_fault_handler(struct hinic_hwdev *hwdev, u8 level,
-			     u8 event, u64 val);
 
 bool hinic_mgmt_event_ack_first(u8 mod, u8 cmd);
 
