@@ -1029,6 +1029,10 @@ int hinic_set_pause_info(void *hwdev, struct nic_pause_config nic_pause)
 		return -EINVAL;
 
 	nic_cfg = &nic_hwdev->nic_io->nic_cfg;
+	if (nic_cfg->pfc_en) {
+		nic_err(nic_hwdev->dev_hdl, "Failed to set pause, please disable pfc first\n");
+		return -EPERM;
+	}
 
 	down(&nic_cfg->cfg_lock);
 
