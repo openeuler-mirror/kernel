@@ -1374,7 +1374,7 @@ endmenu
 
 config COMPAT
 	def_bool y
-	depends on AARCH32_EL0
+	depends on AARCH32_EL0 || ARM64_ILP32
 
 config AARCH32_EL0
 	bool "Kernel support for 32-bit EL0"
@@ -1394,6 +1394,13 @@ config AARCH32_EL0
 	  with page size aligned segments.
 
 	  If you want to execute 32-bit userspace applications, say Y.
+
+config ARM64_ILP32
+	bool "Kernel support for ILP32"
+	help
+	  This option enables support for AArch64 ILP32 user space.  ILP32
+	  is an ABI where long and pointers are 32bits but it uses the AARCH64
+	  instruction set.
 
 config SYSVIPC_COMPAT
 	def_bool y
