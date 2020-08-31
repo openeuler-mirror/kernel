@@ -158,6 +158,9 @@ ifeq ($(KBUILD_EXTMOD),)
 prepare: vdso_prepare
 vdso_prepare: prepare0
 	$(Q)$(MAKE) $(build)=arch/arm64/kernel/vdso include/generated/vdso-offsets.h
+ifeq ($(CONFIG_ARM64_ILP32), y)
+	$(Q)$(MAKE) $(build)=arch/arm64/kernel/vdso-ilp32 include/generated/vdso-ilp32-offsets.h
+endif
 endif
 
 define archhelp

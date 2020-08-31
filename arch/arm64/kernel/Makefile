@@ -66,6 +66,7 @@ arm64-obj-$(CONFIG_SDEI_WATCHDOG) 	+= watchdog_sdei.o
 arm64-obj-$(CONFIG_MPAM)		+= mpam.o mpam_ctrlmon.o mpam_mon.o
 
 obj-y					+= $(arm64-obj-y) vdso/ probes/
+obj-$(CONFIG_ARM64_ILP32)		+= vdso-ilp32/
 obj-m					+= $(arm64-obj-m)
 head-y					:= head.o
 extra-y					+= $(head-y) vmlinux.lds
