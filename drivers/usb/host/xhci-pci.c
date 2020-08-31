@@ -289,6 +289,18 @@ static int xhci_pci_setup(struct usb_hcd *hcd)
 	return xhci_pci_reinit(xhci, pdev);
 }
 
+#ifdef CONFIG_ARM64
+#include <asm/cputype.h>
+static void phytium_xhci_pci_workaround(struct pci_dev *dev)
+{
+	/* Firmware bug, DMA mask is not reported by the firmware */
+	if (read_cpuid_implementor() == ARM_CPU_IMP_PHYTIUM)
+		dma_set_mask(&dev->dev, DMA_BIT_MASK(64));
+}
+#else
+static inline void phytium_xhci_pci_workaround(struct pci_dev *dev) { }
+#endif
+
 /*
  * We need to register our own PCI probe function (instead of the USB core's
  * function) in order to create a second roothub under xHCI.
@@ -301,6 +313,8 @@ static int xhci_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	struct usb_hcd *hcd;
 
 	driver = (struct hc_driver *)id->driver_data;
+
+	phytium_xhci_pci_workaround(dev);
 
 	/* Prevent runtime suspending between USB-2 and USB-3 initialization */
 	pm_runtime_get_noresume(&dev->dev);
