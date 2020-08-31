@@ -1338,11 +1338,11 @@ static int get_pf_dev_info(char *dev_name, struct msg_module *nt_msg)
 	int i;
 	int err;
 
-	if (nt_msg->lenInfo.outBuffLen != sizeof(dev_info) ||
-	    nt_msg->lenInfo.inBuffLen != sizeof(dev_info)) {
+	if (nt_msg->len_info.out_buff_len != sizeof(dev_info) ||
+	    nt_msg->len_info.in_buff_len != sizeof(dev_info)) {
 		pr_err("Invalid out_buf_size %d or Invalid in_buf_size %d, expect %lu\n",
-		       nt_msg->lenInfo.outBuffLen, nt_msg->lenInfo.inBuffLen,
-		       (sizeof(dev_info) * 16));
+		       nt_msg->len_info.out_buff_len,
+		       nt_msg->len_info.in_buff_len, (sizeof(dev_info) * 16));
 		return -EINVAL;
 	}
 
@@ -1410,11 +1410,11 @@ static int get_card_func_info(char *dev_name, struct msg_module *nt_msg)
 	struct hinic_card_func_info card_func_info = {0};
 	int id, err;
 
-	if (nt_msg->lenInfo.outBuffLen != sizeof(card_func_info) ||
-	    nt_msg->lenInfo.inBuffLen != sizeof(card_func_info)) {
+	if (nt_msg->len_info.out_buff_len != sizeof(card_func_info) ||
+	    nt_msg->len_info.in_buff_len != sizeof(card_func_info)) {
 		pr_err("Invalid out_buf_size %d or Invalid in_buf_size %d, expect %lu\n",
-		       nt_msg->lenInfo.outBuffLen, nt_msg->lenInfo.inBuffLen,
-		       sizeof(card_func_info));
+		       nt_msg->len_info.out_buff_len,
+		       nt_msg->len_info.in_buff_len, sizeof(card_func_info));
 		return -EINVAL;
 	}
 
@@ -1860,8 +1860,8 @@ typedef int (*sm_module)(void *hwdev, u32 id, u8 instance,
 			 u8 node, struct sm_out_st *buf_out);
 
 struct sm_module_handle {
-	enum sm_cmd_type	smCmdName;
-	sm_module		smFunc;
+	enum sm_cmd_type	sm_cmd_name;
+	sm_module		sm_func;
 };
 
 struct sm_module_handle sm_module_cmd_handle[] = {
@@ -1885,8 +1885,8 @@ static int send_to_sm(void *hwdev, struct msg_module *nt_msg,
 		return -EINVAL;
 
 	for (index = 0; index < num_cmds; index++) {
-		if (msg_formate == sm_module_cmd_handle[index].smCmdName)
-			ret = sm_module_cmd_handle[index].smFunc(hwdev,
+		if (msg_formate == sm_module_cmd_handle[index].sm_cmd_name)
+			ret = sm_module_cmd_handle[index].sm_func(hwdev,
 						(u32)sm_in->id,
 						(u8)sm_in->instance,
 						(u8)sm_in->node, sm_out);
@@ -2208,9 +2208,9 @@ static int get_nictool_drv_cap(struct msg_module *nt_msg)
 	int ret;
 	u64 support = 0;
 
-	if (nt_msg->lenInfo.outBuffLen != sizeof(u64)) {
+	if (nt_msg->len_info.out_buff_len != sizeof(u64)) {
 		pr_err("Unexpect out buf size from user: %d, expect: %lu\n",
-		       nt_msg->lenInfo.outBuffLen, sizeof(u64));
+		       nt_msg->len_info.out_buff_len, sizeof(u64));
 		return -EINVAL;
 	}
 
@@ -2282,8 +2282,8 @@ static long nictool_k_unlocked_ioctl(struct file *pfile,
 
 	cmd_raw = nt_msg.module;
 
-	out_size_expect = nt_msg.lenInfo.outBuffLen;
-	in_size = nt_msg.lenInfo.inBuffLen;
+	out_size_expect = nt_msg.len_info.out_buff_len;
+	in_size = nt_msg.len_info.in_buff_len;
 
 	hinic_tool_cnt_inc();
 
