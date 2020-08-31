@@ -286,6 +286,12 @@ void store_cpu_topology(unsigned int cpuid)
 		cpuid_topo->package_id = MPIDR_AFFINITY_LEVEL(mpidr, 1) |
 					 MPIDR_AFFINITY_LEVEL(mpidr, 2) << 8 |
 					 MPIDR_AFFINITY_LEVEL(mpidr, 3) << 16;
+
+		if (read_cpuid_implementor() == ARM_CPU_IMP_PHYTIUM) {
+			cpuid_topo->thread_id  = 0;
+			cpuid_topo->core_id  = cpuid;
+			cpuid_topo->package_id = 0;
+		}
 	}
 
 	pr_debug("CPU%u: cluster %d core %d thread %d mpidr %#016llx\n",
