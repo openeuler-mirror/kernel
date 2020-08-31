@@ -70,6 +70,15 @@ extern const int mmap_rnd_compat_bits_max;
 extern int mmap_rnd_compat_bits __read_mostly;
 #endif
 
+#ifdef CONFIG_COHERENT_DEVICE
+static inline bool is_set_cdmmask(void)
+{
+	return !nodes_empty(cdmmask);
+}
+#else
+#define is_set_cdmmask() (0)
+#endif
+
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/processor.h>

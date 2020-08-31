@@ -69,6 +69,7 @@ const int mmap_rnd_compat_bits_max = CONFIG_ARCH_MMAP_RND_COMPAT_BITS_MAX;
 int mmap_rnd_compat_bits __read_mostly = CONFIG_ARCH_MMAP_RND_COMPAT_BITS;
 #endif
 
+static unsigned long numanode;
 static bool ignore_rlimit_data;
 core_param(ignore_rlimit_data, ignore_rlimit_data, bool, 0644);
 
@@ -1531,6 +1532,12 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 			vm_flags |= VM_NORESERVE;
 	}
 
+	/* set numa node id into vm_flags,
+	 * hugetlbfs file mmap will use it to check node
+	 */
+	if (is_set_cdmmask())
+		vm_flags |= ((numanode << CHECKNODE_BITS) & CHECKNODE_MASK);
+
 	addr = mmap_region(file, addr, len, vm_flags, pgoff, uf);
 	if (!IS_ERR_VALUE(addr) &&
 	    ((vm_flags & VM_LOCKED) ||
@@ -1545,6 +1552,12 @@ unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
 {
 	struct file *file = NULL;
 	unsigned long retval;
+
+	/* get mmap numa node id */
+	if (is_set_cdmmask()) {
+		numanode = (flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK;
+		flags &= ~(MAP_HUGE_MASK << MAP_HUGE_SHIFT);
+	}
 
 	if (!(flags & MAP_ANONYMOUS)) {
 		audit_mmap_fd(fd, flags);
