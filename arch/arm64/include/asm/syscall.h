@@ -28,6 +28,10 @@ extern const syscall_fn_t sys_call_table[];
 extern const syscall_fn_t a32_sys_call_table[];
 #endif
 
+#ifdef CONFIG_ARM64_ILP32
+extern const syscall_fn_t ilp32_sys_call_table[];
+#endif
+
 static inline int syscall_get_nr(struct task_struct *task,
 				 struct pt_regs *regs)
 {
