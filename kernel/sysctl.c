@@ -1264,6 +1264,18 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero,
 		.extra2		= &two,
 	},
+#ifdef CONFIG_ASCEND_OOM
+	{
+		/* 0: diasable, 1: enable, 2: disable and panic on oom */
+		.procname	= "enable_oom_killer",
+		.data		= &sysctl_enable_oom_killer,
+		.maxlen		= sizeof(sysctl_enable_oom_killer),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &two,
+	},
+#endif
 	{
 		.procname	= "oom_kill_allocating_task",
 		.data		= &sysctl_oom_kill_allocating_task,
