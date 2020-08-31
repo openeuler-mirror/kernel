@@ -49,6 +49,12 @@
 #define __arm64_compat_sys_statfs64		__arm64_compat_sys_aarch32_statfs64
 
 /*
+ * Using custom wrapper for rt_sigreturn() to handle custom
+ * struct rt_sigframe.
+ */
+#define __arm64_compat_sys_rt_sigreturn		__arm64_compat_sys_ilp32_rt_sigreturn
+
+/*
  * Wrappers to pass the pt_regs argument.
  */
 #define sys_personality		sys_arm64_personality

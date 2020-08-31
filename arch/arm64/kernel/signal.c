@@ -44,6 +44,7 @@
 #include <asm/traps.h>
 #include <asm/vdso.h>
 #include <asm/ras.h>
+#include <asm/signal_ilp32.h>
 
 #define get_sigset(s, m) __copy_from_user(s, m, sizeof(*s))
 #define put_sigset(s, m) __copy_to_user(m, s, sizeof(*s))
@@ -587,6 +588,8 @@ static void handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 			ret = a32_setup_rt_frame(usig, ksig, oldset, regs);
 		else
 			ret = a32_setup_frame(usig, ksig, oldset, regs);
+	} else if (is_ilp32_compat_task()) {
+		ret = ilp32_setup_rt_frame(usig, ksig, oldset, regs);
 	} else {
 		ret = setup_rt_frame(usig, ksig, oldset, regs);
 	}
