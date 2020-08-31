@@ -80,9 +80,9 @@
 static void pf_to_mgmt_send_event_set(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 				      int event_flag)
 {
-	spin_lock(&pf_to_mgmt->sync_event_lock);
+	spin_lock_bh(&pf_to_mgmt->sync_event_lock);
 	pf_to_mgmt->event_flag = event_flag;
-	spin_unlock(&pf_to_mgmt->sync_event_lock);
+	spin_unlock_bh(&pf_to_mgmt->sync_event_lock);
 }
 
 /**
@@ -1085,7 +1085,7 @@ static void mgmt_resp_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 	if (recv_msg->msg_id & ASYNC_MSG_FLAG)
 		return;
 
-	spin_lock(&pf_to_mgmt->sync_event_lock);
+	spin_lock_bh(&pf_to_mgmt->sync_event_lock);
 	if (recv_msg->msg_id == pf_to_mgmt->sync_msg_id &&
 	    pf_to_mgmt->event_flag == SEND_EVENT_START) {
 		complete(&recv_msg->recv_done);
@@ -1098,7 +1098,7 @@ static void mgmt_resp_msg_handler(struct hinic_msg_pf_to_mgmt *pf_to_mgmt,
 			pf_to_mgmt->sync_msg_id, recv_msg->msg_id,
 			pf_to_mgmt->event_flag);
 	}
-	spin_unlock(&pf_to_mgmt->sync_event_lock);
+	spin_unlock_bh(&pf_to_mgmt->sync_event_lock);
 }
 
 static void recv_mgmt_msg_work_handler(struct work_struct *work)
