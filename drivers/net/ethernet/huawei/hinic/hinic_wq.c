@@ -34,7 +34,7 @@
 
 #define WQS_MAX_NUM_BLOCKS		256
 #define WQS_FREE_BLOCKS_SIZE(wqs)	(WQS_MAX_NUM_BLOCKS * \
-					sizeof((wqs)->free_blocks[0]))
+					 sizeof((wqs)->free_blocks[0]))
 
 static int wqs_next_block(struct hinic_wqs *wqs, u32 *page_idx,
 			  u32 *block_idx);
@@ -381,8 +381,8 @@ void hinic_wq_wqe_pg_clear(struct hinic_wq *wq)
 
 int hinic_cmdq_alloc(struct hinic_cmdq_pages *cmdq_pages,
 		     struct hinic_wq *wq, void *dev_hdl,
-			int cmdq_blocks, u32 wq_page_size, u32 wqebb_size,
-			u16 q_depth, u32 max_wqe_size)
+		     int cmdq_blocks, u32 wq_page_size, u32 wqebb_size,
+		     u16 q_depth, u32 max_wqe_size)
 {
 	int i, j, err = -ENOMEM;
 

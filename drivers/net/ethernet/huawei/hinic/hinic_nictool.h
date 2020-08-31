@@ -50,11 +50,11 @@ struct ipsurx_stats_info {
 struct ucode_cmd_st {
 	union {
 		struct {
-			u32 comm_mod_type:8;
-			u32 ucode_cmd_type:4;
-			u32 cmdq_ack_type:3;
-			u32 ucode_imm:1;
-			u32 len:16;
+			u32 comm_mod_type : 8;
+			u32 ucode_cmd_type : 4;
+			u32 cmdq_ack_type : 3;
+			u32 ucode_imm : 1;
+			u32 len : 16;
 		} ucode_db;
 		u32 value;
 	};
@@ -63,9 +63,9 @@ struct ucode_cmd_st {
 struct up_cmd_st {
 	union {
 		struct {
-			u32 comm_mod_type:8;
-			u32 chipif_cmd:8;
-			u32 up_api_type:16;
+			u32 comm_mod_type : 8;
+			u32 chipif_cmd : 8;
+			u32 up_api_type : 16;
 		} up_db;
 		u32 value;
 	};
@@ -97,11 +97,11 @@ union _pfc {
 
 union _flag_com {
 	struct _ets_flag {
-		u8 flag_ets_enable:1;
-		u8 flag_ets_percent:1;
-		u8 flag_ets_cos:1;
-		u8 flag_ets_strict:1;
-		u8 rev:4;
+		u8 flag_ets_enable : 1;
+		u8 flag_ets_percent : 1;
+		u8 flag_ets_cos : 1;
+		u8 flag_ets_strict : 1;
+		u8 rev : 4;
 	} ets_flag;
 	u8 data;
 };
@@ -166,8 +166,8 @@ struct hinic_tx_hw_page {
 struct hinic_dbg_sq_info {
 	u16	q_id;
 	u16	pi;
-	u16	ci;/* sw_ci */
-	u16	fi;/* hw_ci */
+	u16	ci; /* sw_ci */
+	u16	fi; /* hw_ci */
 
 	u32	q_depth;
 	u16	pi_reverse;
@@ -268,9 +268,9 @@ struct hinic_pf_info {
 int nictool_k_init(void);
 void nictool_k_uninit(void);
 
-extern u32 hinic_get_io_stats_size(struct hinic_nic_dev *nic_dev);
-extern void hinic_get_io_stats(struct hinic_nic_dev *nic_dev,
-			       struct hinic_show_item *items);
+u32 hinic_get_io_stats_size(struct hinic_nic_dev *nic_dev);
+void hinic_get_io_stats(struct hinic_nic_dev *nic_dev,
+			struct hinic_show_item *items);
 
 #define TOOL_COUNTER_MAX_LEN			512
 

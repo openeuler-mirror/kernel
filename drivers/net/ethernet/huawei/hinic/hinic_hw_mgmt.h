@@ -533,6 +533,7 @@ struct hinic_micro_log_info {
 	int (*init)(void *hwdev);
 	void (*deinit)(void *hwdev);
 };
+
 int hinic_register_micro_log(struct hinic_micro_log_info *micro_log_info);
 void hinic_unregister_micro_log(struct hinic_micro_log_info *micro_log_info);
 

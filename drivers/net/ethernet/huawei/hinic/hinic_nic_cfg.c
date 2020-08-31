@@ -49,7 +49,7 @@ MODULE_PARM_DESC(set_vf_link_state, "Set vf link state, 0 represents link auto, 
 	hinic_msg_to_mgmt_async(hwdev, HINIC_MOD_L2NIC, cmd, buf_in, in_size)
 
 #define CPATH_FUNC_ID_VALID_LIMIT	2
-#define CHECK_IPSU_15BIT	0X8000
+#define CHECK_IPSU_15BIT		0X8000
 
 static int hinic_set_rx_lro_timer(void *hwdev, u32 timer_value);
 
@@ -256,9 +256,9 @@ int hinic_set_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id)
 				     sizeof(mac_info), &mac_info, &out_size);
 	if (err || !out_size ||
 	    (mac_info.status && mac_info.status != HINIC_MGMT_STATUS_EXIST &&
-	    mac_info.status != HINIC_PF_SET_VF_ALREADY) ||
+	     mac_info.status != HINIC_PF_SET_VF_ALREADY) ||
 	    (mac_info.vlan_id & CHECK_IPSU_15BIT &&
-	    mac_info.status == HINIC_MGMT_STATUS_EXIST)) {
+	     mac_info.status == HINIC_MGMT_STATUS_EXIST)) {
 		nic_err(nic_hwdev->dev_hdl,
 			"Failed to update MAC, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, mac_info.status, out_size);
@@ -344,9 +344,9 @@ int hinic_update_mac(void *hwdev, u8 *old_mac, u8 *new_mac, u16 vlan_id,
 				     &mac_info, &out_size);
 	if (err || !out_size ||
 	    (mac_info.status && mac_info.status != HINIC_MGMT_STATUS_EXIST &&
-	    mac_info.status != HINIC_PF_SET_VF_ALREADY) ||
+	     mac_info.status != HINIC_PF_SET_VF_ALREADY) ||
 	    (mac_info.vlan_id & CHECK_IPSU_15BIT &&
-	    mac_info.status == HINIC_MGMT_STATUS_EXIST)) {
+	     mac_info.status == HINIC_MGMT_STATUS_EXIST)) {
 		nic_err(nic_hwdev->dev_hdl,
 			"Failed to update MAC, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, mac_info.status, out_size);
@@ -711,7 +711,7 @@ int hinic_del_vlan(void *hwdev, u16 vlan_id, u16 func_id)
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_DEL_VLAN,
 				     &vlan_info, sizeof(vlan_info),
-					&vlan_info, &out_size);
+				     &vlan_info, &out_size);
 	if (err || !out_size || vlan_info.status) {
 		nic_err(nic_hwdev->dev_hdl,
 			"Failed to delte vlan, err: %d, status: 0x%x, out size: 0x%x\n",
@@ -2584,7 +2584,7 @@ static void hinic_get_vf_cos_msg_handler(struct hinic_nic_io *nic_io,
 int nic_pf_mbox_handler(void *hwdev, u16 vf_id, u8 cmd, void *buf_in,
 			u16 in_size, void *buf_out, u16 *out_size)
 {
-	u8 size = sizeof(nic_cmd_support_vf) / sizeof(nic_cmd_support_vf[0]);
+	u8 size = ARRAY_SIZE(nic_cmd_support_vf);
 	struct hinic_nic_io *nic_io;
 	int err = 0;
 	u32 timeout = 0;
@@ -3819,6 +3819,7 @@ int hinic_set_link_settings(void *hwdev, struct hinic_link_ksettings *settings)
 
 	return info.status;
 }
+
 int hinic_disable_tx_promisc(void *hwdev)
 {
 	struct hinic_promsic_info info = {0};

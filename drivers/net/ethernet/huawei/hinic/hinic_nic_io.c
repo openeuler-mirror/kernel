@@ -545,9 +545,9 @@ static int init_sq_ctxts(struct hinic_nic_io *nic_io)
 		cmd_buf->size = SQ_CTXT_SIZE(max_ctxts);
 
 		err = hinic_cmdq_direct_resp(hwdev, HINIC_ACK_TYPE_CMDQ,
-					     HINIC_MOD_L2NIC,
+					HINIC_MOD_L2NIC,
 					HINIC_UCODE_CMD_MODIFY_QUEUE_CONTEXT,
-					     cmd_buf, &out_param, 0);
+					cmd_buf, &out_param, 0);
 		if (err || out_param != 0) {
 			nic_err(hwdev->dev_hdl, "Failed to set SQ ctxts, err: %d, out_param: 0x%llx\n",
 				err, out_param);
@@ -602,9 +602,9 @@ static int init_rq_ctxts(struct hinic_nic_io *nic_io)
 		cmd_buf->size = RQ_CTXT_SIZE(max_ctxts);
 
 		err = hinic_cmdq_direct_resp(hwdev, HINIC_ACK_TYPE_CMDQ,
-					     HINIC_MOD_L2NIC,
-					   HINIC_UCODE_CMD_MODIFY_QUEUE_CONTEXT,
-					     cmd_buf, &out_param, 0);
+					HINIC_MOD_L2NIC,
+					HINIC_UCODE_CMD_MODIFY_QUEUE_CONTEXT,
+					cmd_buf, &out_param, 0);
 
 		if (err || out_param != 0) {
 			nic_err(hwdev->dev_hdl, "Failed to set RQ ctxts, err: %d, out_param: 0x%llx\n",
@@ -676,8 +676,8 @@ static int clean_queue_offload_ctxt(struct hinic_nic_io *nic_io,
 
 	err = hinic_cmdq_direct_resp(hwdev, HINIC_ACK_TYPE_CMDQ,
 				     HINIC_MOD_L2NIC,
-					HINIC_UCODE_CMD_CLEAN_QUEUE_CONTEXT,
-					cmd_buf, &out_param, 0);
+				     HINIC_UCODE_CMD_CLEAN_QUEUE_CONTEXT,
+				     cmd_buf, &out_param, 0);
 
 	if ((err) || (out_param)) {
 		nic_err(hwdev->dev_hdl, "Failed to clean queue offload ctxts, err: %d, out_param: 0x%llx\n",

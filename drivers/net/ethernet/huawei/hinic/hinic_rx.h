@@ -30,7 +30,7 @@
 #define HINIC_RX_CSUM_OFFLOAD_EN	0xFFF
 
 #define HINIC_SUPPORT_LRO_ADAP_QPS_MAX	16
-#define HINIC_RX_BUFFER_WRITE			16
+#define HINIC_RX_BUFFER_WRITE		16
 
 struct hinic_rxq_stats {
 	u64	packets;

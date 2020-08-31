@@ -134,11 +134,11 @@ struct hinic_intr_coal_info {
 	u8	user_set_intr_coal_flag;
 };
 
-#define HINIC_NIC_STATS_INC(nic_dev, field)		\
-{							\
-	u64_stats_update_begin(&nic_dev->stats.syncp);	\
-	nic_dev->stats.field++;				\
-	u64_stats_update_end(&nic_dev->stats.syncp);	\
+#define HINIC_NIC_STATS_INC(nic_dev, field)			\
+{								\
+	u64_stats_update_begin(&(nic_dev)->stats.syncp);	\
+	(nic_dev)->stats.field++;				\
+	u64_stats_update_end(&(nic_dev)->stats.syncp);		\
 }
 
 struct hinic_nic_stats {
@@ -268,12 +268,12 @@ int hinic_enable_func_rss(struct hinic_nic_dev *nic_dev);
 
 #define hinic_msg(level, nic_dev, msglvl, format, arg...)	\
 do {								\
-	if (nic_dev->netdev && nic_dev->netdev->reg_state	\
+	if ((nic_dev)->netdev && (nic_dev)->netdev->reg_state	\
 	    == NETREG_REGISTERED)				\
-		nicif_##level(nic_dev, msglvl, nic_dev->netdev,	\
+		nicif_##level((nic_dev), msglvl, (nic_dev)->netdev,	\
 			      format, ## arg);			\
 	else							\
-		nic_##level(&nic_dev->pdev->dev,		\
+		nic_##level(&(nic_dev)->pdev->dev,		\
 			    format, ## arg);			\
 } while (0)
 

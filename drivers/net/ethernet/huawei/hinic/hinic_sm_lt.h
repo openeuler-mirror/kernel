@@ -16,27 +16,27 @@
 #ifndef __CHIPIF_SM_LT_H__
 #define __CHIPIF_SM_LT_H__
 
-#define SM_LT_LOAD                     (0x12)
-#define SM_LT_STORE                    (0x14)
+#define SM_LT_LOAD			0x12
+#define SM_LT_STORE			0x14
 
-#define SM_LT_NUM_OFFSET            13
-#define SM_LT_ABUF_FLG_OFFSET       12
-#define SM_LT_BC_OFFSET             11
+#define SM_LT_NUM_OFFSET		13
+#define SM_LT_ABUF_FLG_OFFSET		12
+#define SM_LT_BC_OFFSET			11
 
-#define SM_LT_ENTRY_16B             16
-#define SM_LT_ENTRY_32B             32
-#define SM_LT_ENTRY_48B             48
-#define SM_LT_ENTRY_64B             64
+#define SM_LT_ENTRY_16B			16
+#define SM_LT_ENTRY_32B			32
+#define SM_LT_ENTRY_48B			48
+#define SM_LT_ENTRY_64B			64
 
-#define TBL_LT_OFFSET_DEFAULT       0
+#define TBL_LT_OFFSET_DEFAULT		0
 
-#define SM_CACHE_LINE_SHFT          4   /* log2(16) */
-#define SM_CACHE_LINE_SIZE          16  /* the size of cache line */
+#define SM_CACHE_LINE_SHFT		4   /* log2(16) */
+#define SM_CACHE_LINE_SIZE		16  /* the size of cache line */
 
-#define MAX_SM_LT_READ_LINE_NUM     4
-#define MAX_SM_LT_WRITE_LINE_NUM    3
+#define MAX_SM_LT_READ_LINE_NUM		4
+#define MAX_SM_LT_WRITE_LINE_NUM	3
 
-#define SM_LT_FULL_BYTEENB          0xFFFF
+#define SM_LT_FULL_BYTEENB		0xFFFF
 
 #define TBL_GET_ENB3_MASK(bitmask)  (u16)(((bitmask) >> 32) & 0xFFFF)
 #define TBL_GET_ENB2_MASK(bitmask)  (u16)(((bitmask) >> 16) & 0xFFFF)
@@ -52,15 +52,15 @@ enum {
 /* lt load request */
 typedef union {
 	struct {
-		u32 offset:8;
-		u32 pad:3;
-		u32 bc:1;
-		u32 abuf_flg:1;
-		u32 num:2;
-		u32 ack:1;
-		u32 op_id:5;
-		u32 instance:6;
-		u32 src:5;
+		u32 offset : 8;
+		u32 pad : 3;
+		u32 bc : 1;
+		u32 abuf_flg : 1;
+		u32 num : 2;
+		u32 ack : 1;
+		u32 op_id : 5;
+		u32 instance : 6;
+		u32 src : 5;
 	} bs;
 
 	u32 value;
@@ -178,30 +178,30 @@ struct hinic_csr_request_api_data {
 
 	union {
 		struct {
-			u32 reserved1:13;
+			u32 reserved1 : 13;
 			/* this field indicates the write/read data size:
 			 * 2'b00: 32 bits
 			 * 2'b01: 64 bits
 			 * 2'b10~2'b11:reserved
 			 */
-			u32 data_size:2;
+			u32 data_size : 2;
 			/* this field indicates that requestor expect receive a
 			 * response data or not.
 			 * 1'b0: expect not to receive a response data.
 			 * 1'b1: expect to receive a response data.
 			 */
-			u32 need_response:1;
+			u32 need_response : 1;
 			/* this field indicates the operation that the requestor
 			 *  expected.
 			 * 5'b1_1110: write value to csr space.
 			 * 5'b1_1111: read register from csr space.
 			 */
-			u32 operation_id:5;
-			u32 reserved2:6;
+			u32 operation_id : 5;
+			u32 reserved2 : 6;
 			/* this field specifies the Src node ID for this API
 			 * request message.
 			 */
-			u32 src_node_id:5;
+			u32 src_node_id : 5;
 		} bits;
 
 		u32 val32;
@@ -210,8 +210,8 @@ struct hinic_csr_request_api_data {
 	union {
 		struct {
 			/* it specifies the CSR address. */
-			u32 csr_addr:26;
-			u32 reserved3:6;
+			u32 csr_addr : 26;
+			u32 reserved3 : 6;
 		} bits;
 
 		u32 val32;

@@ -337,12 +337,12 @@ void hinic_get_io_stats(struct hinic_nic_dev *nic_dev,
 	}
 }
 
-#define LP_DEFAULT_TIME                 (5) /* seconds */
-#define LP_PKT_LEN                      (1514)
-#define OBJ_STR_MAX_LEN			(32)
-#define SET_LINK_STR_MAX_LEN		(128)
+#define LP_DEFAULT_TIME			5 /* seconds */
+#define LP_PKT_LEN			1514
+#define OBJ_STR_MAX_LEN			32
+#define SET_LINK_STR_MAX_LEN		128
 
-#define PORT_DOWN_ERR_IDX  0
+#define PORT_DOWN_ERR_IDX		0
 enum diag_test_index {
 	INTERNAL_LP_TEST = 0,
 	EXTERNAL_LP_TEST = 1,
@@ -684,23 +684,23 @@ static int hinic_get_settings(struct net_device *netdev,
 }
 
 static int hinic_get_link_ksettings(struct net_device *netdev,
-				struct ethtool_link_ksettings *link_settings)
+				    struct ethtool_link_ksettings *cmd)
 {
 	struct cmd_link_settings settings = {0};
-	struct ethtool_link_settings *base = &link_settings->base;
+	struct ethtool_link_settings *base = &cmd->base;
 	int err;
 
-	ethtool_link_ksettings_zero_link_mode(link_settings, supported);
-	ethtool_link_ksettings_zero_link_mode(link_settings, advertising);
+	ethtool_link_ksettings_zero_link_mode(cmd, supported);
+	ethtool_link_ksettings_zero_link_mode(cmd, advertising);
 
 	err = get_link_settings(netdev, &settings);
 	if (err)
 		return err;
 
-	bitmap_copy(link_settings->link_modes.supported,
+	bitmap_copy(cmd->link_modes.supported,
 		    (unsigned long *)&settings.supported,
 		    __ETHTOOL_LINK_MODE_MASK_NBITS);
-	bitmap_copy(link_settings->link_modes.advertising,
+	bitmap_copy(cmd->link_modes.advertising,
 		    (unsigned long *)&settings.advertising,
 		    __ETHTOOL_LINK_MODE_MASK_NBITS);
 
@@ -868,11 +868,11 @@ static int hinic_set_settings(struct net_device *netdev,
 }
 
 static int hinic_set_link_ksettings(struct net_device *netdev,
-			const struct ethtool_link_ksettings *link_settings)
+				    const struct ethtool_link_ksettings *cmd)
 {
 	/* Only support to set autoneg and speed */
-	return set_link_settings(netdev, link_settings->base.autoneg,
-				 link_settings->base.speed);
+	return set_link_settings(netdev, cmd->base.autoneg,
+				 cmd->base.speed);
 }
 
 static void hinic_get_drvinfo(struct net_device *netdev,
@@ -1387,27 +1387,27 @@ static int is_coalesce_legal(struct net_device *netdev,
 
 #define CHECK_COALESCE_ALIGN(coal, item, unit)				\
 do {									\
-	if (coal->item % (unit))					\
+	if ((coal)->item % (unit))					\
 		nicif_warn(nic_dev, drv, netdev,			\
 			   "%s in %d units, change to %d\n",		\
-			   #item, (unit), ALIGN_DOWN(coal->item, unit));\
+			   #item, (unit), ALIGN_DOWN((coal)->item, unit));\
 } while (0)
 
 #define CHECK_COALESCE_CHANGED(coal, item, unit, ori_val, obj_str)	\
 do {									\
-	if ((coal->item / (unit)) != (ori_val))				\
+	if (((coal)->item / (unit)) != (ori_val))			\
 		nicif_info(nic_dev, drv, netdev,			\
 			   "Change %s from %d to %d %s\n",		\
 			   #item, (ori_val) * (unit),			\
-			   ALIGN_DOWN(coal->item, unit), (obj_str));	\
+			   ALIGN_DOWN((coal)->item, unit), (obj_str));\
 } while (0)
 
 #define CHECK_PKT_RATE_CHANGED(coal, item, ori_val, obj_str)		\
 do {									\
-	if (coal->item != (ori_val))					\
+	if ((coal)->item != (ori_val))					\
 		nicif_info(nic_dev, drv, netdev,			\
 			   "Change %s from %llu to %u %s\n",		\
-			   #item, (ori_val), coal->item, (obj_str));	\
+			   #item, (ori_val), (coal)->item, (obj_str));\
 } while (0)
 
 static int __hinic_set_coalesce(struct net_device *netdev,

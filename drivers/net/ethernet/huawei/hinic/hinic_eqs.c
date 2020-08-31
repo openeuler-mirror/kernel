@@ -51,15 +51,15 @@
 
 #define AEQ_CTRL_0_GET(val, member)		\
 				(((val) >> AEQ_CTRL_0_##member##_SHIFT) & \
-				AEQ_CTRL_0_##member##_MASK)
+				 AEQ_CTRL_0_##member##_MASK)
 
 #define AEQ_CTRL_0_SET(val, member)		\
 				(((val) & AEQ_CTRL_0_##member##_MASK) << \
-				AEQ_CTRL_0_##member##_SHIFT)
+				 AEQ_CTRL_0_##member##_SHIFT)
 
 #define AEQ_CTRL_0_CLEAR(val, member)		\
 				((val) & (~(AEQ_CTRL_0_##member##_MASK \
-					<< AEQ_CTRL_0_##member##_SHIFT)))
+					    << AEQ_CTRL_0_##member##_SHIFT)))
 
 #define AEQ_CTRL_1_LEN_SHIFT			0
 #define AEQ_CTRL_1_FUNC_OWN_SHIFT		21
@@ -73,15 +73,15 @@
 
 #define AEQ_CTRL_1_GET(val, member)		\
 				(((val) >> AEQ_CTRL_1_##member##_SHIFT) & \
-				AEQ_CTRL_1_##member##_MASK)
+				 AEQ_CTRL_1_##member##_MASK)
 
 #define AEQ_CTRL_1_SET(val, member)		\
 				(((val) & AEQ_CTRL_1_##member##_MASK) << \
-				AEQ_CTRL_1_##member##_SHIFT)
+				 AEQ_CTRL_1_##member##_SHIFT)
 
 #define AEQ_CTRL_1_CLEAR(val, member)		\
 				((val) & (~(AEQ_CTRL_1_##member##_MASK \
-					<< AEQ_CTRL_1_##member##_SHIFT)))
+					    << AEQ_CTRL_1_##member##_SHIFT)))
 
 #define HINIC_EQ_PROD_IDX_MASK			0xFFFFF
 #define HINIC_TASK_PROCESS_EQE_LIMIT		1024
@@ -118,7 +118,7 @@ MODULE_PARM_DESC(g_num_ceqe_in_tasklet,
 
 #define CEQ_CTRL_0_SET(val, member)		\
 				(((val) & CEQ_CTRL_0_##member##_MASK) << \
-				CEQ_CTRL_0_##member##_SHIFT)
+				 CEQ_CTRL_0_##member##_SHIFT)
 
 #define CEQ_CTRL_1_LEN_SHIFT			0
 #define CEQ_CTRL_1_PAGE_SIZE_SHIFT		28
@@ -128,7 +128,7 @@ MODULE_PARM_DESC(g_num_ceqe_in_tasklet,
 
 #define CEQ_CTRL_1_SET(val, member)		\
 				(((val) & CEQ_CTRL_1_##member##_MASK) << \
-				CEQ_CTRL_1_##member##_SHIFT)
+				 CEQ_CTRL_1_##member##_SHIFT)
 
 #define EQ_ELEM_DESC_TYPE_SHIFT			0
 #define EQ_ELEM_DESC_SRC_SHIFT			7
@@ -142,7 +142,7 @@ MODULE_PARM_DESC(g_num_ceqe_in_tasklet,
 
 #define EQ_ELEM_DESC_GET(val, member)		\
 				(((val) >> EQ_ELEM_DESC_##member##_SHIFT) & \
-				EQ_ELEM_DESC_##member##_MASK)
+				 EQ_ELEM_DESC_##member##_MASK)
 
 #define EQ_CONS_IDX_CONS_IDX_SHIFT		0
 #define EQ_CONS_IDX_XOR_CHKSUM_SHIFT		24
@@ -154,11 +154,11 @@ MODULE_PARM_DESC(g_num_ceqe_in_tasklet,
 
 #define EQ_CONS_IDX_SET(val, member)		\
 				(((val) & EQ_CONS_IDX_##member##_MASK) << \
-				EQ_CONS_IDX_##member##_SHIFT)
+				 EQ_CONS_IDX_##member##_SHIFT)
 
 #define EQ_CONS_IDX_CLEAR(val, member)		\
 				((val) & (~(EQ_CONS_IDX_##member##_MASK \
-					<< EQ_CONS_IDX_##member##_SHIFT)))
+					    << EQ_CONS_IDX_##member##_SHIFT)))
 
 #define EQ_WRAPPED(eq)		((u32)(eq)->wrapped << EQ_VALID_SHIFT)
 
@@ -546,7 +546,7 @@ static bool aeq_irq_handler(struct hinic_eq *eq)
 				&aeqs->aeq_sw_cb_state[sw_event]);
 			if (aeqs->aeq_swe_cb[sw_event] &&
 			    test_bit(HINIC_AEQ_SW_CB_REG,
-			    &aeqs->aeq_sw_cb_state[sw_event])) {
+				     &aeqs->aeq_sw_cb_state[sw_event])) {
 				lev = aeqs->aeq_swe_cb[sw_event](aeqs->hwdev,
 								 ucode_event,
 								 aeqe_data);
@@ -560,7 +560,7 @@ static bool aeq_irq_handler(struct hinic_eq *eq)
 					&aeqs->aeq_hw_cb_state[event]);
 				if (aeqs->aeq_hwe_cb[event] &&
 				    test_bit(HINIC_AEQ_HW_CB_REG,
-				    &aeqs->aeq_hw_cb_state[event]))
+					     &aeqs->aeq_hw_cb_state[event]))
 					aeqs->aeq_hwe_cb[event](aeqs->hwdev,
 						aeqe_pos->aeqe_data, size);
 				clear_bit(HINIC_AEQ_HW_CB_RUNNING,
@@ -1064,6 +1064,7 @@ static void free_eq_pages(struct hinic_eq *eq)
 	kfree(eq->virt_addr);
 	kfree(eq->dma_addr);
 }
+
 static inline u32 get_page_size(struct hinic_eq *eq)
 {
 	u32 total_size;
@@ -1087,6 +1088,7 @@ static inline u32 get_page_size(struct hinic_eq *eq)
 
 	return EQ_MIN_PAGE_SIZE << n;
 }
+
 /**
  * init_eq - initialize eq
  * @eq: the event queue

@@ -71,6 +71,7 @@ struct hinic_eq_work {
 struct hinic_ceq_tasklet_data {
 	void	*data;
 };
+
 struct hinic_eq {
 	struct hinic_hwdev		*hwdev;
 	u16				q_id;
@@ -86,7 +87,7 @@ struct hinic_eq {
 	u16				num_pages;
 	u32				num_elem_in_pg;
 
-	struct irq_info		eq_irq;
+	struct irq_info			eq_irq;
 	char				irq_name[EQ_IRQ_NAME_LEN];
 
 	dma_addr_t			*dma_addr;

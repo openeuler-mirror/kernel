@@ -22,7 +22,7 @@
 #define HINIC_DEFAULT_WQ_PAGE_SIZE	0x40000
 #define HINIC_HW_WQ_PAGE_SIZE		0x1000
 
-#define HINIC_MSG_TO_MGMT_MAX_LEN		2016
+#define HINIC_MSG_TO_MGMT_MAX_LEN	2016
 
 #define HINIC_MGMT_STATUS_ERR_OK          0   /* Ok */
 #define HINIC_MGMT_STATUS_ERR_PARAM       1   /* Invalid parameter */
@@ -48,8 +48,8 @@
 #define HINIC_MGMT_STATUS_ERR_LEN         32  /* Length too short or too long */
 #define HINIC_MGMT_STATUS_ERR_UNSUPPORT   0xFF /* Feature not supported */
 
-#define HINIC_CHIP_PRESENT 1
-#define HINIC_CHIP_ABSENT 0
+#define HINIC_CHIP_PRESENT		1
+#define HINIC_CHIP_ABSENT		0
 
 struct cfg_mgmt_info;
 struct rdma_comp_resource;
@@ -100,7 +100,7 @@ struct mqm_addr_trans_tbl_info {
 #define HINIC_DEV_ACTIVE_FW_TIMEOUT	(35 * 1000)
 #define HINIC_DEV_BUSY_ACTIVE_FW	0xFE
 
-#define HINIC_HW_WQ_NAME	"hinic_hardware"
+#define HINIC_HW_WQ_NAME		"hinic_hardware"
 #define HINIC_HEARTBEAT_PERIOD		1000
 #define HINIC_HEARTBEAT_START_EXPIRE	5000
 
@@ -224,9 +224,9 @@ struct hinic_hw_stats {
 #define HINIC_BOARD_TYPE_MULTI_HOST_ETH_25GE	12
 
 /* new version of roce qp not limited by power of 2 */
-#define HINIC_CMD_VER_ROCE_QP		1
+#define HINIC_CMD_VER_ROCE_QP			1
 /* new version for add function id in multi-host */
-#define HINIC_CMD_VER_FUNC_ID		2
+#define HINIC_CMD_VER_FUNC_ID			2
 
 struct hinic_hwdev {
 	void *adapter_hdl;  /* pointer to hinic_pcidev or NDIS_Adapter */
@@ -341,8 +341,8 @@ int hinic_pf_msg_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 			      void *buf_out, u16 *out_size, u32 timeout);
 
 int hinic_pf_send_clp_cmd(void *hwdev, enum hinic_mod_type mod, u8 cmd,
-			void *buf_in, u16 in_size,
-			void *buf_out, u16 *out_size);
+			  void *buf_in, u16 in_size,
+			  void *buf_out, u16 *out_size);
 
 int hinic_get_bios_pf_bw_limit(void *hwdev, u32 *pf_bw_limit);
 
@@ -354,8 +354,8 @@ int hinic_set_wq_page_size(struct hinic_hwdev *hwdev, u16 func_idx,
 int hinic_phy_init_status_judge(void *hwdev);
 
 int hinic_hilink_info_show(struct hinic_hwdev *hwdev);
-extern int hinic_api_csr_rd32(void *hwdev, u8 dest, u32 addr, u32 *val);
-extern int hinic_api_csr_wr32(void *hwdev, u8 dest, u32 addr, u32 val);
+int hinic_api_csr_rd32(void *hwdev, u8 dest, u32 addr, u32 *val);
+int hinic_api_csr_wr32(void *hwdev, u8 dest, u32 addr, u32 val);
 
 int hinic_ppf_process_mbox_msg(struct hinic_hwdev *hwdev, u16 pf_idx, u16 vf_id,
 			       enum hinic_mod_type mod, u8 cmd, void *buf_in,

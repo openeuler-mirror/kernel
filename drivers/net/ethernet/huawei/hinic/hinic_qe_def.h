@@ -16,22 +16,22 @@
 #ifndef __HINIC_QE_DEF_H__
 #define __HINIC_QE_DEF_H__
 
-#define HINIC_SQ_WQEBB_SIZE	64
-#define HINIC_RQ_WQE_SIZE	32
-#define HINIC_SQ_WQEBB_SHIFT	6
-#define HINIC_RQ_WQEBB_SHIFT	5
+#define HINIC_SQ_WQEBB_SIZE		64
+#define HINIC_RQ_WQE_SIZE		32
+#define HINIC_SQ_WQEBB_SHIFT		6
+#define HINIC_RQ_WQEBB_SHIFT		5
 
 #define HINIC_MAX_QUEUE_DEPTH		4096
 #define HINIC_MIN_QUEUE_DEPTH		128
-#define HINIC_TXD_ALIGN                 1
-#define HINIC_RXD_ALIGN                 1
+#define HINIC_TXD_ALIGN			1
+#define HINIC_RXD_ALIGN			1
 
 #define HINIC_SQ_DEPTH			1024
 #define HINIC_RQ_DEPTH			1024
 
-#define HINIC_RQ_WQE_MAX_SIZE			32
+#define HINIC_RQ_WQE_MAX_SIZE		32
 
-#define SIZE_8BYTES(size)	(ALIGN((u32)(size), 8) >> 3)//lint !e767
+#define SIZE_8BYTES(size)		(ALIGN((u32)(size), 8) >> 3)//lint !e767
 
 /************** SQ_CTRL ***************/
 #define SQ_CTRL_BUFDESC_SECT_LEN_SHIFT			0
@@ -47,11 +47,11 @@
 #define SQ_CTRL_OWNER_MASK				0x1U
 
 #define SQ_CTRL_GET(val, member)	(((val) >> SQ_CTRL_##member##_SHIFT) \
-					& SQ_CTRL_##member##_MASK)
+					 & SQ_CTRL_##member##_MASK)
 
 #define SQ_CTRL_CLEAR(val, member)	((val) & \
-					(~(SQ_CTRL_##member##_MASK << \
-					SQ_CTRL_##member##_SHIFT)))
+					 (~(SQ_CTRL_##member##_MASK << \
+					  SQ_CTRL_##member##_SHIFT)))
 
 #define SQ_CTRL_QUEUE_INFO_PLDOFF_SHIFT			2
 #define SQ_CTRL_QUEUE_INFO_UFO_SHIFT			10
@@ -73,15 +73,15 @@
 
 #define SQ_CTRL_QUEUE_INFO_SET(val, member)	\
 	(((u32)(val) & SQ_CTRL_QUEUE_INFO_##member##_MASK) \
-	<< SQ_CTRL_QUEUE_INFO_##member##_SHIFT)
+	 << SQ_CTRL_QUEUE_INFO_##member##_SHIFT)
 
 #define SQ_CTRL_QUEUE_INFO_GET(val, member)	\
 	(((val) >> SQ_CTRL_QUEUE_INFO_##member##_SHIFT) \
-	& SQ_CTRL_QUEUE_INFO_##member##_MASK)
+	 & SQ_CTRL_QUEUE_INFO_##member##_MASK)
 
 #define SQ_CTRL_QUEUE_INFO_CLEAR(val, member)	\
 	((val) & (~(SQ_CTRL_QUEUE_INFO_##member##_MASK << \
-	SQ_CTRL_QUEUE_INFO_##member##_SHIFT)))
+		  SQ_CTRL_QUEUE_INFO_##member##_SHIFT)))
 
 #define	SQ_TASK_INFO0_L2HDR_LEN_SHIFT		0
 #define	SQ_TASK_INFO0_L4OFFLOAD_SHIFT		8
@@ -103,10 +103,10 @@
 
 #define SQ_TASK_INFO0_SET(val, member)			\
 		(((u32)(val) & SQ_TASK_INFO0_##member##_MASK) <<	\
-		SQ_TASK_INFO0_##member##_SHIFT)
+		 SQ_TASK_INFO0_##member##_SHIFT)
 #define SQ_TASK_INFO0_GET(val, member)			\
 		(((val) >> SQ_TASK_INFO0_##member##_SHIFT) &	\
-		SQ_TASK_INFO0_##member##_MASK)
+		 SQ_TASK_INFO0_##member##_MASK)
 
 #define	SQ_TASK_INFO1_MD_TYPE_SHIFT		8
 #define SQ_TASK_INFO1_INNER_L4LEN_SHIFT		16
@@ -118,10 +118,10 @@
 
 #define SQ_TASK_INFO1_SET(val, member)			\
 		(((val) & SQ_TASK_INFO1_##member##_MASK) <<	\
-		SQ_TASK_INFO1_##member##_SHIFT)
+		 SQ_TASK_INFO1_##member##_SHIFT)
 #define SQ_TASK_INFO1_GET(val, member)			\
 		(((val) >> SQ_TASK_INFO1_##member##_SHIFT) &	\
-		SQ_TASK_INFO1_##member##_MASK)
+		 SQ_TASK_INFO1_##member##_MASK)
 
 #define SQ_TASK_INFO2_TUNNEL_L4LEN_SHIFT	0
 #define SQ_TASK_INFO2_OUTER_L3LEN_SHIFT		8
@@ -135,43 +135,43 @@
 
 #define SQ_TASK_INFO2_SET(val, member)			\
 		(((val) & SQ_TASK_INFO2_##member##_MASK) <<	\
-		SQ_TASK_INFO2_##member##_SHIFT)
+		 SQ_TASK_INFO2_##member##_SHIFT)
 #define SQ_TASK_INFO2_GET(val, member)			\
 		(((val) >> SQ_TASK_INFO2_##member##_SHIFT) &	\
-		SQ_TASK_INFO2_##member##_MASK)
+		 SQ_TASK_INFO2_##member##_MASK)
 
-#define	SQ_TASK_INFO4_L2TYPE_SHIFT			31
+#define	SQ_TASK_INFO4_L2TYPE_SHIFT		31
 
-#define	SQ_TASK_INFO4_L2TYPE_MASK			0x1U
+#define	SQ_TASK_INFO4_L2TYPE_MASK		0x1U
 
 #define SQ_TASK_INFO4_SET(val, member)		\
 		(((u32)(val) & SQ_TASK_INFO4_##member##_MASK) << \
 		SQ_TASK_INFO4_##member##_SHIFT)
 
 /********************* SQ_DB *********************/
-#define SQ_DB_OFF						0x00000800
-#define SQ_DB_INFO_HI_PI_SHIFT					0
-#define SQ_DB_INFO_QID_SHIFT					8
-#define SQ_DB_INFO_CFLAG_SHIFT					23
-#define SQ_DB_INFO_COS_SHIFT					24
-#define SQ_DB_INFO_TYPE_SHIFT					27
-#define SQ_DB_INFO_HI_PI_MASK					0xFFU
-#define SQ_DB_INFO_QID_MASK					0x3FFU
-#define SQ_DB_INFO_CFLAG_MASK					0x1U
-#define SQ_DB_INFO_COS_MASK					0x7U
-#define SQ_DB_INFO_TYPE_MASK					0x1FU
-#define SQ_DB_INFO_SET(val, member)			(((u32)(val) & \
-					SQ_DB_INFO_##member##_MASK) << \
-					SQ_DB_INFO_##member##_SHIFT)
+#define SQ_DB_OFF				0x00000800
+#define SQ_DB_INFO_HI_PI_SHIFT			0
+#define SQ_DB_INFO_QID_SHIFT			8
+#define SQ_DB_INFO_CFLAG_SHIFT			23
+#define SQ_DB_INFO_COS_SHIFT			24
+#define SQ_DB_INFO_TYPE_SHIFT			27
+#define SQ_DB_INFO_HI_PI_MASK			0xFFU
+#define SQ_DB_INFO_QID_MASK			0x3FFU
+#define SQ_DB_INFO_CFLAG_MASK			0x1U
+#define SQ_DB_INFO_COS_MASK			0x7U
+#define SQ_DB_INFO_TYPE_MASK			0x1FU
+#define SQ_DB_INFO_SET(val, member)	\
+		(((u32)(val) & SQ_DB_INFO_##member##_MASK) << \
+		 SQ_DB_INFO_##member##_SHIFT)
 
-#define SQ_DB_PI_LOW_MASK			0xFF
-#define SQ_DB_PI_LOW(pi)			((pi) & SQ_DB_PI_LOW_MASK)
-#define SQ_DB_PI_HI_SHIFT			8
-#define SQ_DB_PI_HIGH(pi)			((pi) >> SQ_DB_PI_HI_SHIFT)
+#define SQ_DB_PI_LOW_MASK		0xFF
+#define SQ_DB_PI_LOW(pi)		((pi) & SQ_DB_PI_LOW_MASK)
+#define SQ_DB_PI_HI_SHIFT		8
+#define SQ_DB_PI_HIGH(pi)		((pi) >> SQ_DB_PI_HI_SHIFT)
 #define SQ_DB_ADDR(sq, pi)		((u64 *)((sq)->db_addr + SQ_DB_OFF) + \
-					SQ_DB_PI_LOW(pi))
-#define SQ_DB					1
-#define SQ_CFLAG_DP				0	/* CFLAG_DATA_PATH */
+					 SQ_DB_PI_LOW(pi))
+#define SQ_DB				1
+#define SQ_CFLAG_DP			0	/* CFLAG_DATA_PATH */
 
 /*********************** RQ_CTRL ******************/
 #define	RQ_CTRL_BUFDESC_SECT_LEN_SHIFT		0
@@ -184,17 +184,17 @@
 #define RQ_CTRL_COMPLETE_LEN_MASK		0x3U
 #define RQ_CTRL_LEN_MASK			0x3U
 
-#define RQ_CTRL_SET(val, member)			(((val) & \
-					RQ_CTRL_##member##_MASK) << \
-					RQ_CTRL_##member##_SHIFT)
+#define RQ_CTRL_SET(val, member)		\
+			(((val) & RQ_CTRL_##member##_MASK) << \
+			 RQ_CTRL_##member##_SHIFT)
 
-#define RQ_CTRL_GET(val, member)			(((val) >> \
-					RQ_CTRL_##member##_SHIFT) & \
-					RQ_CTRL_##member##_MASK)
+#define RQ_CTRL_GET(val, member)		\
+			(((val) >> RQ_CTRL_##member##_SHIFT) & \
+			 RQ_CTRL_##member##_MASK)
 
-#define RQ_CTRL_CLEAR(val, member)			((val) & \
-					(~(RQ_CTRL_##member##_MASK << \
-					RQ_CTRL_##member##_SHIFT)))
+#define RQ_CTRL_CLEAR(val, member)		\
+			((val) & (~(RQ_CTRL_##member##_MASK << \
+				    RQ_CTRL_##member##_SHIFT)))
 
 #define RQ_CQE_STATUS_CSUM_ERR_SHIFT		0
 #define RQ_CQE_STATUS_NUM_LRO_SHIFT		16
@@ -215,49 +215,49 @@
 #define RQ_CQE_STATUS_RXDONE_MASK		0x1U
 #define RQ_CQE_STATUS_FLUSH_MASK		0x1U
 
-#define RQ_CQE_STATUS_GET(val, member)			(((val) >> \
-					RQ_CQE_STATUS_##member##_SHIFT) & \
-					RQ_CQE_STATUS_##member##_MASK)
+#define RQ_CQE_STATUS_GET(val, member)		\
+			(((val) >> RQ_CQE_STATUS_##member##_SHIFT) & \
+			 RQ_CQE_STATUS_##member##_MASK)
 
-#define RQ_CQE_STATUS_CLEAR(val, member)		((val) & \
-					(~(RQ_CQE_STATUS_##member##_MASK << \
-					RQ_CQE_STATUS_##member##_SHIFT)))
+#define RQ_CQE_STATUS_CLEAR(val, member)	\
+			((val) & (~(RQ_CQE_STATUS_##member##_MASK << \
+				    RQ_CQE_STATUS_##member##_SHIFT)))
 
-#define RQ_CQE_SGE_VLAN_SHIFT					0
-#define RQ_CQE_SGE_LEN_SHIFT					16
+#define RQ_CQE_SGE_VLAN_SHIFT			0
+#define RQ_CQE_SGE_LEN_SHIFT			16
 
-#define RQ_CQE_SGE_VLAN_MASK					0xFFFFU
-#define RQ_CQE_SGE_LEN_MASK					0xFFFFU
+#define RQ_CQE_SGE_VLAN_MASK			0xFFFFU
+#define RQ_CQE_SGE_LEN_MASK			0xFFFFU
 
-#define RQ_CQE_SGE_GET(val, member)			(((val) >> \
-					RQ_CQE_SGE_##member##_SHIFT) & \
-					RQ_CQE_SGE_##member##_MASK)
+#define RQ_CQE_SGE_GET(val, member)		\
+			(((val) >> RQ_CQE_SGE_##member##_SHIFT) & \
+			 RQ_CQE_SGE_##member##_MASK)
 
-#define RQ_CQE_PKT_NUM_SHIFT				1
-#define RQ_CQE_PKT_FIRST_LEN_SHIFT			19
-#define RQ_CQE_PKT_LAST_LEN_SHIFT			6
-#define RQ_CQE_SUPER_CQE_EN_SHIFT			0
+#define RQ_CQE_PKT_NUM_SHIFT			1
+#define RQ_CQE_PKT_FIRST_LEN_SHIFT		19
+#define RQ_CQE_PKT_LAST_LEN_SHIFT		6
+#define RQ_CQE_SUPER_CQE_EN_SHIFT		0
 
-#define RQ_CQE_PKT_FIRST_LEN_MASK			0x1FFFU
-#define RQ_CQE_PKT_LAST_LEN_MASK			0x1FFFU
-#define RQ_CQE_PKT_NUM_MASK				0x1FU
-#define RQ_CQE_SUPER_CQE_EN_MASK			0x1
+#define RQ_CQE_PKT_FIRST_LEN_MASK		0x1FFFU
+#define RQ_CQE_PKT_LAST_LEN_MASK		0x1FFFU
+#define RQ_CQE_PKT_NUM_MASK			0x1FU
+#define RQ_CQE_SUPER_CQE_EN_MASK		0x1
 
-#define RQ_CQE_PKT_NUM_GET(val, member)			(((val) >> \
-					RQ_CQE_PKT_##member##_SHIFT) & \
-					RQ_CQE_PKT_##member##_MASK)
+#define RQ_CQE_PKT_NUM_GET(val, member)		\
+			(((val) >> RQ_CQE_PKT_##member##_SHIFT) & \
+			 RQ_CQE_PKT_##member##_MASK)
 #define HINIC_GET_RQ_CQE_PKT_NUM(pkt_info) RQ_CQE_PKT_NUM_GET(pkt_info, NUM)
 
-#define RQ_CQE_SUPER_CQE_EN_GET(val, member)	(((val) >> \
-					RQ_CQE_##member##_SHIFT) & \
-					RQ_CQE_##member##_MASK)
+#define RQ_CQE_SUPER_CQE_EN_GET(val, member)	\
+			(((val) >> RQ_CQE_##member##_SHIFT) & \
+			 RQ_CQE_##member##_MASK)
 #define HINIC_GET_SUPER_CQE_EN(pkt_info)	\
 	RQ_CQE_SUPER_CQE_EN_GET(pkt_info, SUPER_CQE_EN)
 
 #define HINIC_GET_SUPER_CQE_EN_BE(pkt_info)	((pkt_info) & 0x1000000U)
-#define RQ_CQE_PKT_LEN_GET(val, member)			(((val) >> \
-						RQ_CQE_PKT_##member##_SHIFT) & \
-						RQ_CQE_PKT_##member##_MASK)
+#define RQ_CQE_PKT_LEN_GET(val, member)		\
+			(((val) >> RQ_CQE_PKT_##member##_SHIFT) & \
+			 RQ_CQE_PKT_##member##_MASK)
 
 #define RQ_CQE_OFFOLAD_TYPE_VLAN_EN_SHIFT		21
 #define RQ_CQE_OFFOLAD_TYPE_VLAN_EN_MASK		0x1U
@@ -271,23 +271,23 @@
 #define RQ_CQE_OFFOLAD_TYPE_RSS_TYPE_SHIFT		24
 #define RQ_CQE_OFFOLAD_TYPE_RSS_TYPE_MASK		0xFFU
 
-#define RQ_CQE_OFFOLAD_TYPE_GET(val, member)		(((val) >> \
-				RQ_CQE_OFFOLAD_TYPE_##member##_SHIFT) & \
-				RQ_CQE_OFFOLAD_TYPE_##member##_MASK)
+#define RQ_CQE_OFFOLAD_TYPE_GET(val, member)		\
+			(((val) >> RQ_CQE_OFFOLAD_TYPE_##member##_SHIFT) & \
+			 RQ_CQE_OFFOLAD_TYPE_##member##_MASK)
 
-#define RQ_CQE_PKT_TYPES_NON_L2_MASK				0x800U
-#define RQ_CQE_PKT_TYPES_L2_MASK				0x7FU
+#define RQ_CQE_PKT_TYPES_NON_L2_MASK			0x800U
+#define RQ_CQE_PKT_TYPES_L2_MASK			0x7FU
 
-#define RQ_CQE_STATUS_CSUM_BYPASS_VAL				0x80
-#define RQ_CQE_STATUS_CSUM_ERR_IP_MASK				0x31U
-#define RQ_CQE_STATUS_CSUM_ERR_L4_MASK				0x4EU
+#define RQ_CQE_STATUS_CSUM_BYPASS_VAL			0x80
+#define RQ_CQE_STATUS_CSUM_ERR_IP_MASK			0x31U
+#define RQ_CQE_STATUS_CSUM_ERR_L4_MASK			0x4EU
 
-#define SECT_SIZE_BYTES(size)	((size) << 3)
+#define SECT_SIZE_BYTES(size)				((size) << 3)
 
-#define HINIC_PF_SET_VF_ALREADY					0x4
-#define HINIC_MGMT_STATUS_EXIST					0x6
+#define HINIC_PF_SET_VF_ALREADY				0x4
+#define HINIC_MGMT_STATUS_EXIST				0x6
 
-#define WQS_BLOCKS_PER_PAGE		4
+#define WQS_BLOCKS_PER_PAGE				4
 
 #define WQ_SIZE(wq)		(u32)((u64)(wq)->q_depth * (wq)->wqebb_size)
 
@@ -298,7 +298,7 @@
 				((idx) & ((wq)->num_wqebbs_per_page - 1)))
 
 #define WQ_PAGE_ADDR_SIZE		sizeof(u64)
-#define WQ_PAGE_ADDR_SIZE_SHIFT 3
+#define WQ_PAGE_ADDR_SIZE_SHIFT		3
 #define WQ_PAGE_ADDR(wq, idx)		\
 		(u8 *)(*(u64 *)((u64)((wq)->shadow_block_vaddr) + \
 		(WQE_PAGE_NUM(wq, idx) << WQ_PAGE_ADDR_SIZE_SHIFT)))
@@ -310,7 +310,7 @@
 #define CMDQ_BLOCKS_PER_PAGE		8
 #define CMDQ_BLOCK_SIZE			512UL
 #define CMDQ_PAGE_SIZE			ALIGN((CMDQ_BLOCKS_PER_PAGE * \
-						CMDQ_BLOCK_SIZE), PAGE_SIZE)
+					       CMDQ_BLOCK_SIZE), PAGE_SIZE)
 
 #define ADDR_4K_ALIGNED(addr)		(0 == ((addr) & 0xfff))
 #define ADDR_256K_ALIGNED(addr)		(0 == ((addr) & 0x3ffff))
@@ -342,11 +342,11 @@
 
 #define WQE_SHADOW_PAGE(wq, wqe)	\
 		(u16)(((ulong)(wqe) - (ulong)(wq)->shadow_wqe) \
-		/ (wq)->max_wqe_size)
+		      / (wq)->max_wqe_size)
 
 #define WQE_IN_RANGE(wqe, start, end)	\
 		(((ulong)(wqe) >= (ulong)(start)) && \
-		((ulong)(wqe) < (ulong)(end)))
+		 ((ulong)(wqe) < (ulong)(end)))
 
 #define WQ_NUM_PAGES(num_wqs)	\
 	(ALIGN((u32)num_wqs, WQS_BLOCKS_PER_PAGE) / WQS_BLOCKS_PER_PAGE)
@@ -381,7 +381,7 @@ enum hinic_res_state {
 	HINIC_RES_ACTIVE = 1,
 };
 
-#define DEFAULT_RX_BUF_SIZE	((u16)0xB)
+#define DEFAULT_RX_BUF_SIZE			((u16)0xB)
 
 #define BUF_DESC_SIZE_SHIFT			4
 
@@ -434,16 +434,16 @@ enum hinic_res_state {
 	((pkt_types) & RQ_CQE_PKT_TYPES_NON_L2_MASK)
 
 #define HINIC_PKT_TYPES_L2(pkt_types)	 \
-	(pkt_types & RQ_CQE_PKT_TYPES_L2_MASK)
+	((pkt_types) & RQ_CQE_PKT_TYPES_L2_MASK)
 
 #define HINIC_CSUM_ERR_BYPASSED(csum_err)	 \
-	(csum_err == RQ_CQE_STATUS_CSUM_BYPASS_VAL)
+	((csum_err) == RQ_CQE_STATUS_CSUM_BYPASS_VAL)
 
 #define HINIC_CSUM_ERR_IP(csum_err)	 \
-	(csum_err & RQ_CQE_STATUS_CSUM_ERR_IP_MASK)
+	((csum_err) & RQ_CQE_STATUS_CSUM_ERR_IP_MASK)
 
 #define HINIC_CSUM_ERR_L4(csum_err)	 \
-	(csum_err & RQ_CQE_STATUS_CSUM_ERR_L4_MASK)
+	((csum_err) & RQ_CQE_STATUS_CSUM_ERR_L4_MASK)
 
 #define TX_MSS_DEFAULT		0x3E00
 #define TX_MSS_MIN		0x50

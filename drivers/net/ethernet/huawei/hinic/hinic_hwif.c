@@ -796,7 +796,6 @@ void hinic_func_own_free(void *hwdev)
 		hinic_func_own_bit_set(dev, 0);
 
 	up(&dev->func_sem);
-	return;
 }
 
 /**
@@ -969,7 +968,7 @@ EXPORT_SYMBOL(hinic_ppf_idx);
 #define CEQ_CTRL_0_CHIP_MODE_MASK		0xFU
 #define CEQ_CTRL_0_GET(val, member)				\
 		(((val) >> CEQ_CTRL_0_##member##_SHIFT) &	\
-			CEQ_CTRL_0_##member##_MASK)
+		 CEQ_CTRL_0_##member##_MASK)
 
 /**
  * hinic_get_db_size - get db size ceq ctrl: bit26~29: uP write vf mode is

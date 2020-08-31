@@ -120,8 +120,6 @@ void hinic_init_ieee_settings(struct hinic_nic_dev *nic_dev)
 		if (dcb_cfg->tc_cfg[i].pfc_en)
 			pfc->pfc_en |= (u8)BIT(i);
 	}
-
-	return;
 }
 
 static int hinic_set_up_cos_map(struct hinic_nic_dev *nic_dev,
@@ -1273,7 +1271,7 @@ out:
 }
 
 static int hinic_dcbnl_ieee_get_ets(struct net_device *netdev,
-				   struct ieee_ets *ets)
+				    struct ieee_ets *ets)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct ieee_ets *my_ets = &nic_dev->hinic_ieee_ets;
@@ -1288,7 +1286,7 @@ static int hinic_dcbnl_ieee_get_ets(struct net_device *netdev,
 }
 
 static int hinic_dcbnl_ieee_set_ets(struct net_device *netdev,
-				   struct ieee_ets *ets)
+				    struct ieee_ets *ets)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic_dcb_config *dcb_cfg = &nic_dev->dcb_cfg;
@@ -1354,7 +1352,7 @@ static int hinic_dcbnl_ieee_set_ets(struct net_device *netdev,
 }
 
 static int hinic_dcbnl_ieee_get_pfc(struct net_device *netdev,
-				   struct ieee_pfc *pfc)
+				    struct ieee_pfc *pfc)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct ieee_pfc *my_pfc = &nic_dev->hinic_ieee_pfc;
@@ -1366,7 +1364,7 @@ static int hinic_dcbnl_ieee_get_pfc(struct net_device *netdev,
 }
 
 static int hinic_dcbnl_ieee_set_pfc(struct net_device *netdev,
-				   struct ieee_pfc *pfc)
+				    struct ieee_pfc *pfc)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic_dcb_config *dcb_cfg = &nic_dev->dcb_cfg;

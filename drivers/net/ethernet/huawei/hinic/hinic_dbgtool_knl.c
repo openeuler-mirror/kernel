@@ -46,7 +46,7 @@ struct ffm_intr_info {
 	u32 err_csr_value;
 };
 
-#define DBGTOOL_MSG_MAX_SIZE	2048ULL
+#define DBGTOOL_MSG_MAX_SIZE			2048ULL
 #define HINIC_SELF_CMD_UP2PF_FFM		0x26
 
 void *g_card_node_array[MAX_CARD_NUM] = {0};
@@ -57,9 +57,9 @@ struct mutex	g_addr_lock;
 int card_id;
 
 /* dbgtool character device name, class name, dev path */
-#define CHR_DEV_DBGTOOL "dbgtool_chr_dev"
-#define CLASS_DBGTOOL "dbgtool_class"
-#define DBGTOOL_DEV_PATH "/dev/dbgtool_chr_dev"
+#define CHR_DEV_DBGTOOL		"dbgtool_chr_dev"
+#define CLASS_DBGTOOL		"dbgtool_class"
+#define DBGTOOL_DEV_PATH	"/dev/dbgtool_chr_dev"
 
 struct dbgtool_k_glb_info {
 	struct semaphore dbgtool_sem;

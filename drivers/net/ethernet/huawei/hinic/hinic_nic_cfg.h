@@ -41,20 +41,20 @@
 #define HINIC_MIN_MTU_SIZE		256
 #define HINIC_MAX_JUMBO_FRAME_SIZE	9600
 
-#define HINIC_LRO_MAX_WQE_NUM_UPPER	32
-#define HINIC_LRO_MAX_WQE_NUM_LOWER	1
-#define HINIC_LRO_MAX_WQE_NUM_DEFAULT_ARM 4
-#define HINIC_LRO_MAX_WQE_NUM_DEFAULT_X86 8
-#define HINIC_LRO_MAX_WQE_NUM_DEFAULT     8
+#define HINIC_LRO_MAX_WQE_NUM_UPPER		32
+#define HINIC_LRO_MAX_WQE_NUM_LOWER		1
+#define HINIC_LRO_MAX_WQE_NUM_DEFAULT_ARM	4
+#define HINIC_LRO_MAX_WQE_NUM_DEFAULT_X86	8
+#define HINIC_LRO_MAX_WQE_NUM_DEFAULT		8
 #define HINIC_LRO_WQE_NUM_PANGEA_DEFAULT	32
 
-#define HINIC_LRO_RX_TIMER_UPPER	1024
-#define HINIC_LRO_RX_TIMER_LOWER	1
-#define HINIC_LRO_RX_TIMER_DEFAULT	16
-#define HINIC_LRO_RX_TIMER_DEFAULT_25GE	16
-#define HINIC_LRO_RX_TIMER_DEFAULT_100GE 64
+#define HINIC_LRO_RX_TIMER_UPPER		1024
+#define HINIC_LRO_RX_TIMER_LOWER		1
+#define HINIC_LRO_RX_TIMER_DEFAULT		16
+#define HINIC_LRO_RX_TIMER_DEFAULT_25GE		16
+#define HINIC_LRO_RX_TIMER_DEFAULT_100GE	64
 #define HINIC_LRO_RX_TIMER_DEFAULT_PG_10GE	10
-#define HINIC_LRO_RX_TIMER_DEFAULT_PG_100GE 8
+#define HINIC_LRO_RX_TIMER_DEFAULT_PG_100GE	8
 
 #if defined(__aarch64__)
 #define HINIC_LOWEST_LATENCY		1
@@ -83,7 +83,7 @@
 #endif
 
 enum hinic_board_type {
-	HINIC_BOARD_UNKNOWN        = 0,
+	HINIC_BOARD_UNKNOWN       = 0,
 	HINIC_BOARD_10GE          = 1,
 	HINIC_BOARD_25GE          = 2,
 	HINIC_BOARD_40GE          = 3,
@@ -94,13 +94,13 @@ enum hinic_board_type {
 };
 
 enum hinic_os_type {
-	HINIC_OS_UNKNOWN       = 0,
+	HINIC_OS_UNKNOWN      = 0,
 	HINIC_OS_HUAWEI       = 1,
 	HINIC_OS_NON_HUAWEI   = 2,
 };
 
 enum hinic_cpu_type {
-	HINIC_CPU_UNKNOWN      = 0,
+	HINIC_CPU_UNKNOWN     = 0,
 	HINIC_CPU_X86_GENERIC = 1,
 	HINIC_CPU_ARM_GENERIC = 2,
 };
@@ -387,7 +387,7 @@ struct hinic_rq_filter_info {
 
 #define HINIC_MGMT_VERSION_MAX_LEN	32
 
-#define HINIC_FW_VERSION_NAME	16
+#define HINIC_FW_VERSION_NAME		16
 #define HINIC_FW_VERSION_SECTION_CNT	4
 #define HINIC_FW_VERSION_SECTION_BORDER	0xFF
 struct hinic_fw_version {
@@ -627,9 +627,9 @@ int hinic_set_link_settings(void *hwdev, struct hinic_link_ksettings *settings);
 
 int hinic_enable_netq(void *hwdev, u8 en);
 int hinic_add_hw_rqfilter(void *hwdev,
-			struct hinic_rq_filter_info *filter_info);
+			  struct hinic_rq_filter_info *filter_info);
 int hinic_del_hw_rqfilter(void *hwdev,
-			struct hinic_rq_filter_info *filter_info);
+			  struct hinic_rq_filter_info *filter_info);
 int hinic_get_sfp_eeprom(void *hwdev, u8 *data, u16 *len);
 int hinic_get_sfp_type(void *hwdev, u8 *data0, u8 *data1);
 

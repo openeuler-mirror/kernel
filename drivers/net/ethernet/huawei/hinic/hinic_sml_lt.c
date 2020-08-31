@@ -31,11 +31,11 @@
 #include "hinic_hwif.h"
 #include "hinic_dbg.h"
 
-#define ACK 1
-#define NOACK 0
+#define ACK			1
+#define NOACK			0
 
-#define LT_LOAD16_API_SIZE (16 + 4)
-#define LT_STORE16_API_SIZE (32 + 4)
+#define LT_LOAD16_API_SIZE	(16 + 4)
+#define LT_STORE16_API_SIZE	(32 + 4)
 
 #define HINIC_API_RD_8B		8
 #define HINIC_API_RD_4B		4

@@ -47,23 +47,23 @@
 #define HINIC_DEAULT_EQ_MSIX_COALESC_TIMER_CFG	0xFF
 #define HINIC_DEAULT_EQ_MSIX_RESEND_TIMER_CFG	7
 
-#define HINIC_WAIT_IO_STATUS_TIMEOUT	100
+#define HINIC_WAIT_IO_STATUS_TIMEOUT		100
 
-#define HINIC_FLR_TIMEOUT		1000
+#define HINIC_FLR_TIMEOUT			1000
 
-#define HINIC_HT_GPA_PAGE_SIZE 4096UL
+#define HINIC_HT_GPA_PAGE_SIZE			4096UL
 
-#define HINIC_PPF_HT_GPA_SET_RETRY_TIMES 10
+#define HINIC_PPF_HT_GPA_SET_RETRY_TIMES	10
 
 #define HINIC_OK_FLAG_OK			0
 
-#define HINIC_OK_FLAG_FAILED		1
+#define HINIC_OK_FLAG_FAILED			1
 
-#define HINIC_GET_SFP_INFO_REAL_TIME	0x1
+#define HINIC_GET_SFP_INFO_REAL_TIME		0x1
 
-#define HINIC_GLB_SO_RO_CFG_SHIFT	0x0
-#define HINIC_GLB_SO_RO_CFG_MASK	0x1
-#define HINIC_DISABLE_ORDER		0
+#define HINIC_GLB_SO_RO_CFG_SHIFT		0x0
+#define HINIC_GLB_SO_RO_CFG_MASK		0x1
+#define HINIC_DISABLE_ORDER			0
 #define HINIC_GLB_DMA_SO_RO_GET(val, member)	\
 	(((val) >> HINIC_GLB_##member##_SHIFT) & HINIC_GLB_##member##_MASK)
 
@@ -73,10 +73,10 @@
 #define HINIC_GLB_DMA_SO_R0_SET(val, member) \
 	(((val) & HINIC_GLB_##member##_MASK) << HINIC_GLB_##member##_SHIFT)
 
-#define HINIC_MGMT_CHANNEL_STATUS_SHIFT	0x0
-#define HINIC_MGMT_CHANNEL_STATUS_MASK	0x1
-#define HINIC_ACTIVE_STATUS_MASK 0x80000000
-#define HINIC_ACTIVE_STATUS_CLEAR 0x7FFFFFFF
+#define HINIC_MGMT_CHANNEL_STATUS_SHIFT		0x0
+#define HINIC_MGMT_CHANNEL_STATUS_MASK		0x1
+#define HINIC_ACTIVE_STATUS_MASK		0x80000000
+#define HINIC_ACTIVE_STATUS_CLEAR		0x7FFFFFFF
 
 #define HINIC_GET_MGMT_CHANNEL_STATUS(val, member)	\
 	(((val) >> HINIC_##member##_SHIFT) & HINIC_##member##_MASK)
@@ -386,7 +386,7 @@ struct hinic_wq_page_size {
 	u32	rsvd1;
 };
 
-#define MAX_PCIE_DFX_BUF_SIZE (1024)
+#define MAX_PCIE_DFX_BUF_SIZE		1024
 
 struct hinic_pcie_dfx_ntc {
 	u8 status;
@@ -642,10 +642,11 @@ static void __print_status_info(struct hinic_hwdev *dev,
 			mod, cmd, mgmt_status_log[index].log);
 	} else if (mod == HINIC_MOD_L2NIC ||
 		   mod == HINIC_MOD_HILINK) {
-		if (HINIC_IS_VF(dev) && (cmd == HINIC_PORT_CMD_SET_MAC || cmd ==
-		    HINIC_PORT_CMD_DEL_MAC || cmd ==
-		    HINIC_PORT_CMD_UPDATE_MAC) &&
-		    (mgmt_status_log[index].status == HINIC_PF_SET_VF_ALREADY))
+		if (HINIC_IS_VF(dev) &&
+		    (cmd == HINIC_PORT_CMD_SET_MAC ||
+		     cmd == HINIC_PORT_CMD_DEL_MAC ||
+		     cmd == HINIC_PORT_CMD_UPDATE_MAC) &&
+		    mgmt_status_log[index].status == HINIC_PF_SET_VF_ALREADY)
 			return;
 
 		nic_err(dev->dev_hdl, "Mgmt process mod(0x%x) cmd(0x%x) fail: %s",
@@ -694,7 +695,7 @@ static void hinic_print_status_info(void *hwdev, enum hinic_mod_type mod,
 	if (hinic_status_need_special_handle(mod, cmd, status))
 		return;
 
-	size = sizeof(mgmt_status_log) / sizeof(mgmt_status_log[0]);
+	size = ARRAY_SIZE(mgmt_status_log);
 	for (i = 0; i < size; i++) {
 		if (status == mgmt_status_log[i].status) {
 			__print_status_info(dev, mod, cmd, i);
@@ -795,7 +796,8 @@ static int __func_send_mbox(struct hinic_hwdev *hwdev, enum hinic_mod_type mod,
 				       out_size, timeout);
 	else if (NEED_MBOX_FORWARD(hwdev))
 		err = hinic_mbox_to_host_sync(hwdev, mod, cmd, buf_in,
-				      in_size, buf_out, out_size, timeout);
+					      in_size, buf_out, out_size,
+					      timeout);
 	else
 		err = -EFAULT;
 
@@ -1088,8 +1090,7 @@ int hinic_mbox_to_vf(void *hwdev,
 EXPORT_SYMBOL(hinic_mbox_to_vf);
 
 int hinic_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
-			void *buf_in, u16 in_size,
-			void *buf_out, u16 *out_size)
+		      void *buf_in, u16 in_size, void *buf_out, u16 *out_size)
 
 {
 	struct hinic_hwdev *dev = hwdev;
@@ -1108,7 +1109,7 @@ int hinic_clp_to_mgmt(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 		return -EPERM;
 
 	err = hinic_pf_clp_to_mgmt(dev, mod, cmd, buf_in,
-				    in_size, buf_out, out_size);
+				   in_size, buf_out, out_size);
 
 	return err;
 }
@@ -1769,8 +1770,8 @@ static int init_ceqs_msix_attr(struct hinic_hwdev *hwdev)
  */
 static void set_pf_dma_attr_entry(struct hinic_hwdev *hwdev, u32 entry_idx,
 				  u8 st, u8 at, u8 ph,
-				enum hinic_pcie_nosnoop no_snooping,
-				enum hinic_pcie_tph tph_en)
+				  enum hinic_pcie_nosnoop no_snooping,
+				  enum hinic_pcie_tph tph_en)
 {
 	u32 addr, val, dma_attr_entry;
 
@@ -1796,8 +1797,8 @@ static void set_pf_dma_attr_entry(struct hinic_hwdev *hwdev, u32 entry_idx,
 
 static int set_vf_dma_attr_entry(struct hinic_hwdev *hwdev, u8 entry_idx,
 				 u8 st, u8 at, u8 ph,
-				enum hinic_pcie_nosnoop no_snooping,
-				enum hinic_pcie_tph tph_en)
+				 enum hinic_pcie_nosnoop no_snooping,
+				 enum hinic_pcie_tph tph_en)
 {
 	struct hinic_vf_dma_attr_table attr = {0};
 	u16 out_size = sizeof(attr);
@@ -1958,7 +1959,7 @@ int comm_pf_mbox_handler(void *handle, u16 vf_id, u8 cmd, void *buf_in,
 			 u16 in_size, void *buf_out, u16 *out_size)
 {
 	int err = 0;
-	u8 size = sizeof(hw_cmd_support_vf) / sizeof(hw_cmd_support_vf[0]);
+	u8 size = ARRAY_SIZE(hw_cmd_support_vf);
 
 	if (!hinic_mbox_check_cmd_valid(handle, hw_cmd_support_vf, vf_id, cmd,
 					buf_in, in_size, size)) {
@@ -2173,6 +2174,7 @@ static void hinic_comm_pf_to_mgmt_free(struct hinic_hwdev *hwdev)
 
 	hinic_pf_to_mgmt_free(hwdev);
 }
+
 static int hinic_comm_clp_to_mgmt_init(struct hinic_hwdev *hwdev)
 {
 	int err;
@@ -2326,7 +2328,6 @@ static int __get_func_misc_info(struct hinic_hwdev *hwdev)
 
 	return 0;
 }
-
 
 /* initialize communication channel */
 int hinic_init_comm_ch(struct hinic_hwdev *hwdev)
@@ -3289,7 +3290,7 @@ static struct hinic_event_convert __event_convert[] = {
 static enum hinic_event_cmd __get_event_type(u8 mod, u8 cmd)
 {
 	int idx;
-	int arr_size = sizeof(__event_convert) / sizeof(__event_convert[0]);
+	int arr_size = ARRAY_SIZE(__event_convert);
 
 	for (idx = 0; idx < arr_size; idx++) {
 		if (__event_convert[idx].mod == mod &&
@@ -4232,6 +4233,7 @@ static int vf_nic_event_handler(void *hwdev, u8 cmd, void *buf_in,
 
 {
 	enum hinic_event_cmd type = __get_event_type(HINIC_MOD_L2NIC, cmd);
+
 	if (type == HINIC_EVENT_MAX_TYPE) {
 		sdk_warn(((struct hinic_hwdev *)hwdev)->dev_hdl,
 			 "Unsupport L2NIC event: cmd %d\n", cmd);
@@ -4249,6 +4251,7 @@ static int vf_comm_event_handler(void *hwdev, u8 cmd, void *buf_in,
 
 {
 	enum hinic_event_cmd type = __get_event_type(HINIC_MOD_COMM, cmd);
+
 	if (type == HINIC_EVENT_MAX_TYPE) {
 		sdk_warn(((struct hinic_hwdev *)hwdev)->dev_hdl,
 			 "Unsupport COMM event: cmd %d\n", cmd);
@@ -4267,6 +4270,7 @@ static void pf_nic_event_handler(void *hwdev, void *pri_handle, u8 cmd,
 				 void *buf_out, u16 *out_size)
 {
 	enum hinic_event_cmd type = __get_event_type(HINIC_MOD_L2NIC, cmd);
+
 	if (type == HINIC_EVENT_MAX_TYPE) {
 		sdk_warn(((struct hinic_hwdev *)hwdev)->dev_hdl,
 			 "Unsupport L2NIC event: cmd %d\n", cmd);
@@ -4282,6 +4286,7 @@ static void pf_hilink_event_handler(void *hwdev, void *pri_handle, u8 cmd,
 				    void *buf_out, u16 *out_size)
 {
 	enum hinic_event_cmd type = __get_event_type(HINIC_MOD_HILINK, cmd);
+
 	if (type == HINIC_EVENT_MAX_TYPE) {
 		sdk_warn(((struct hinic_hwdev *)hwdev)->dev_hdl,
 			 "Unsupport HILINK event: cmd %d\n", cmd);
@@ -4316,7 +4321,7 @@ void mgmt_fmw_act_event_handler(void *hwdev, void *buf_in, u16 in_size,
 }
 
 void mgmt_pcie_dfx_event_handler(void *hwdev, void *buf_in, u16 in_size,
-				void *buf_out, u16 *out_size)
+				 void *buf_out, u16 *out_size)
 {
 	_event_handler(hwdev, HINIC_EVENT_MGMT_PCIE_DFX, buf_in,
 		       in_size, buf_out, out_size);
@@ -4897,8 +4902,8 @@ int hinic_set_ip_check(void *hwdev, bool ip_check_ctl)
 
 	for (i = 0; i <= HINIC_IPSU_CHANNEL_NUM; i++) {
 		ret = hinic_api_csr_rd32(hwdev, HINIC_NODE_ID_IPSU,
-					(HINIC_IPSU_CHANNEL0_ADDR +
-					i * HINIC_IPSU_CHANNEL_OFFSET), &val);
+					 (HINIC_IPSU_CHANNEL0_ADDR +
+					  i * HINIC_IPSU_CHANNEL_OFFSET), &val);
 		if (ret)
 			return ret;
 
@@ -4910,8 +4915,8 @@ int hinic_set_ip_check(void *hwdev, bool ip_check_ctl)
 
 		val = cpu_to_be32(val);
 		ret = hinic_api_csr_wr32(hwdev, HINIC_NODE_ID_IPSU,
-					(HINIC_IPSU_CHANNEL0_ADDR +
-					i * HINIC_IPSU_CHANNEL_OFFSET), val);
+					 (HINIC_IPSU_CHANNEL0_ADDR +
+					  i * HINIC_IPSU_CHANNEL_OFFSET), val);
 		if (ret)
 			return ret;
 	}
@@ -4957,7 +4962,7 @@ int hinic_set_vxlan_udp_dport(void *hwdev, u32 udp_port)
 		return 0;
 
 	ret = hinic_api_csr_rd32(hwdev, HINIC_NODE_ID_IPSU,
-				HINIC_IPSURX_VXLAN_DPORT_ADDR, &val);
+				 HINIC_IPSURX_VXLAN_DPORT_ADDR, &val);
 	if (ret)
 		return ret;
 
@@ -4970,7 +4975,7 @@ int hinic_set_vxlan_udp_dport(void *hwdev, u32 udp_port)
 
 	udp_port = cpu_to_be32(udp_port);
 	ret = hinic_api_csr_wr32(hwdev, HINIC_NODE_ID_IPSU,
-				HINIC_IPSURX_VXLAN_DPORT_ADDR, udp_port);
+				 HINIC_IPSURX_VXLAN_DPORT_ADDR, udp_port);
 	if (ret)
 		return ret;
 

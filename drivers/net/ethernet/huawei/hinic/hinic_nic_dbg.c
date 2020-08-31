@@ -31,7 +31,7 @@
 #include "hinic_nic.h"
 #include "hinic_dbg.h"
 
-#define INVALID_PI (0xFFFF)
+#define INVALID_PI	0xFFFF
 
 u16 hinic_dbg_get_qp_num(void *hwdev)
 {

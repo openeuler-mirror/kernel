@@ -54,8 +54,8 @@
 #define CMDQ_DB_INFO_SRC_TYPE_MASK			0x1FU
 
 #define CMDQ_DB_INFO_SET(val, member)			\
-				((val & CMDQ_DB_INFO_##member##_MASK) \
-				<< CMDQ_DB_INFO_##member##_SHIFT)
+				(((val) & CMDQ_DB_INFO_##member##_MASK) \
+				 << CMDQ_DB_INFO_##member##_SHIFT)
 
 #define CMDQ_CTRL_PI_SHIFT				0
 #define CMDQ_CTRL_CMD_SHIFT				16
@@ -71,11 +71,11 @@
 
 #define CMDQ_CTRL_SET(val, member)			\
 				(((val) & CMDQ_CTRL_##member##_MASK) \
-					<< CMDQ_CTRL_##member##_SHIFT)
+				 << CMDQ_CTRL_##member##_SHIFT)
 
 #define CMDQ_CTRL_GET(val, member)			\
 				(((val) >> CMDQ_CTRL_##member##_SHIFT) \
-					& CMDQ_CTRL_##member##_MASK)
+				 & CMDQ_CTRL_##member##_MASK)
 
 #define CMDQ_WQE_HEADER_BUFDESC_LEN_SHIFT		0
 #define CMDQ_WQE_HEADER_COMPLETE_FMT_SHIFT		15
@@ -95,69 +95,69 @@
 
 #define CMDQ_WQE_HEADER_SET(val, member)		\
 				(((val) & CMDQ_WQE_HEADER_##member##_MASK) \
-					<< CMDQ_WQE_HEADER_##member##_SHIFT)
+				 << CMDQ_WQE_HEADER_##member##_SHIFT)
 
 #define CMDQ_WQE_HEADER_GET(val, member)		\
 				(((val) >> CMDQ_WQE_HEADER_##member##_SHIFT) \
-					& CMDQ_WQE_HEADER_##member##_MASK)
+				 & CMDQ_WQE_HEADER_##member##_MASK)
 
-#define CMDQ_CTXT_CURR_WQE_PAGE_PFN_SHIFT 0
-#define CMDQ_CTXT_EQ_ID_SHIFT		56
-#define CMDQ_CTXT_CEQ_ARM_SHIFT		61
-#define CMDQ_CTXT_CEQ_EN_SHIFT		62
-#define CMDQ_CTXT_HW_BUSY_BIT_SHIFT	63
+#define CMDQ_CTXT_CURR_WQE_PAGE_PFN_SHIFT		0
+#define CMDQ_CTXT_EQ_ID_SHIFT				56
+#define CMDQ_CTXT_CEQ_ARM_SHIFT				61
+#define CMDQ_CTXT_CEQ_EN_SHIFT				62
+#define CMDQ_CTXT_HW_BUSY_BIT_SHIFT			63
 
-#define CMDQ_CTXT_CURR_WQE_PAGE_PFN_MASK 0xFFFFFFFFFFFFF
-#define CMDQ_CTXT_EQ_ID_MASK		0x1F
-#define CMDQ_CTXT_CEQ_ARM_MASK		0x1
-#define CMDQ_CTXT_CEQ_EN_MASK		0x1
-#define CMDQ_CTXT_HW_BUSY_BIT_MASK	0x1
+#define CMDQ_CTXT_CURR_WQE_PAGE_PFN_MASK		0xFFFFFFFFFFFFF
+#define CMDQ_CTXT_EQ_ID_MASK				0x1F
+#define CMDQ_CTXT_CEQ_ARM_MASK				0x1
+#define CMDQ_CTXT_CEQ_EN_MASK				0x1
+#define CMDQ_CTXT_HW_BUSY_BIT_MASK			0x1
 
 #define CMDQ_CTXT_PAGE_INFO_SET(val, member)		\
 				(((u64)(val) & CMDQ_CTXT_##member##_MASK) \
-				<< CMDQ_CTXT_##member##_SHIFT)
+				 << CMDQ_CTXT_##member##_SHIFT)
 
 #define CMDQ_CTXT_PAGE_INFO_GET(val, member)		\
 				(((u64)(val) >> CMDQ_CTXT_##member##_SHIFT) \
 				 & CMDQ_CTXT_##member##_MASK)
 
-#define CMDQ_CTXT_WQ_BLOCK_PFN_SHIFT	0
-#define CMDQ_CTXT_CI_SHIFT		52
+#define CMDQ_CTXT_WQ_BLOCK_PFN_SHIFT			0
+#define CMDQ_CTXT_CI_SHIFT				52
 
-#define CMDQ_CTXT_WQ_BLOCK_PFN_MASK	0xFFFFFFFFFFFFF
-#define CMDQ_CTXT_CI_MASK		0xFFF
+#define CMDQ_CTXT_WQ_BLOCK_PFN_MASK			0xFFFFFFFFFFFFF
+#define CMDQ_CTXT_CI_MASK				0xFFF
 
 #define CMDQ_CTXT_BLOCK_INFO_SET(val, member)		\
 				(((u64)(val) & CMDQ_CTXT_##member##_MASK) \
-				<< CMDQ_CTXT_##member##_SHIFT)
+				 << CMDQ_CTXT_##member##_SHIFT)
 
 #define CMDQ_CTXT_BLOCK_INFO_GET(val, member)		\
 				(((u64)(val) >> CMDQ_CTXT_##member##_SHIFT) \
 				 & CMDQ_CTXT_##member##_MASK)
 
-#define SAVED_DATA_ARM_SHIFT		31
+#define SAVED_DATA_ARM_SHIFT				31
 
-#define SAVED_DATA_ARM_MASK		0x1U
+#define SAVED_DATA_ARM_MASK				0x1U
 
 #define SAVED_DATA_SET(val, member)	\
 				(((val) & SAVED_DATA_##member##_MASK) \
-				<< SAVED_DATA_##member##_SHIFT)
+				 << SAVED_DATA_##member##_SHIFT)
 
 #define SAVED_DATA_CLEAR(val, member)	\
 				((val) & (~(SAVED_DATA_##member##_MASK \
-				<< SAVED_DATA_##member##_SHIFT)))
+				 << SAVED_DATA_##member##_SHIFT)))
 
-#define WQE_ERRCODE_VAL_SHIFT		20
+#define WQE_ERRCODE_VAL_SHIFT				20
 
-#define WQE_ERRCODE_VAL_MASK		0xF
+#define WQE_ERRCODE_VAL_MASK				0xF
 
 #define WQE_ERRCODE_GET(val, member)	\
 		(((val) >> WQE_ERRCODE_##member##_SHIFT) & \
-		WQE_ERRCODE_##member##_MASK)
+		 WQE_ERRCODE_##member##_MASK)
 
-#define CEQE_CMDQ_TYPE_SHIFT		0
+#define CEQE_CMDQ_TYPE_SHIFT				0
 
-#define CEQE_CMDQ_TYPE_MASK		0x7
+#define CEQE_CMDQ_TYPE_MASK				0x7
 
 #define CEQE_CMDQ_GET(val, member)	\
 	(((val) >> CEQE_CMDQ_##member##_SHIFT) & CEQE_CMDQ_##member##_MASK)
@@ -169,28 +169,28 @@
 #define CMDQ_DB_PI_OFF(pi)		(((u16)LOWER_8_BITS(pi)) << 3)
 
 #define CMDQ_DB_ADDR(db_base, pi)	\
-		(((u8 *)db_base + HINIC_DB_OFF) + CMDQ_DB_PI_OFF(pi))
+		(((u8 *)(db_base) + HINIC_DB_OFF) + CMDQ_DB_PI_OFF(pi))
 
 #define CMDQ_PFN_SHIFT			12
 #define CMDQ_PFN(addr)			((addr) >> CMDQ_PFN_SHIFT)
 
 #define FIRST_DATA_TO_WRITE_LAST	sizeof(u64)
 
-#define WQE_LCMD_SIZE		64
-#define WQE_SCMD_SIZE		64
+#define WQE_LCMD_SIZE			64
+#define WQE_SCMD_SIZE			64
 
-#define COMPLETE_LEN		3
+#define COMPLETE_LEN			3
 
-#define CMDQ_WQEBB_SIZE	        64
-#define CMDQ_WQE_SIZE		64
+#define CMDQ_WQEBB_SIZE			64
+#define CMDQ_WQE_SIZE			64
 
-#define CMDQ_WQ_PAGE_SIZE	4096
+#define CMDQ_WQ_PAGE_SIZE		4096
 
 #define WQE_NUM_WQEBBS(wqe_size, wq)	\
 	 ((u16)(ALIGN((u32)(wqe_size), (wq)->wqebb_size) / (wq)->wqebb_size))
 
 #define cmdq_to_cmdqs(cmdq)	container_of((cmdq) - (cmdq)->cmdq_type, \
-				struct hinic_cmdqs, cmdq[0])
+					     struct hinic_cmdqs, cmdq[0])
 
 #define CMDQ_SEND_CMPT_CODE		10
 #define CMDQ_COMPLETE_CMPT_CODE		11
@@ -385,10 +385,10 @@ static void cmdq_wqe_fill(void *dst, const void *src)
 
 static void cmdq_prepare_wqe_ctrl(struct hinic_cmdq_wqe *wqe, int wrapped,
 				  enum hinic_ack_type ack_type,
-			      enum hinic_mod_type mod, u8 cmd, u16 prod_idx,
-			      enum completion_format complete_format,
-			      enum data_format data_format,
-			      enum bufdesc_len buf_len)
+				  enum hinic_mod_type mod, u8 cmd, u16 prod_idx,
+				  enum completion_format complete_format,
+				  enum data_format data_format,
+				  enum bufdesc_len buf_len)
 {
 	struct hinic_ctrl *ctrl;
 	enum ctrl_sect_len ctrl_len;
@@ -436,10 +436,10 @@ static void cmdq_prepare_wqe_ctrl(struct hinic_cmdq_wqe *wqe, int wrapped,
 
 static void cmdq_set_lcmd_wqe(struct hinic_cmdq_wqe *wqe,
 			      enum cmdq_cmd_type cmd_type,
-				struct hinic_cmd_buf *buf_in,
-				struct hinic_cmd_buf *buf_out, int wrapped,
-				enum hinic_ack_type ack_type,
-				enum hinic_mod_type mod, u8 cmd, u16 prod_idx)
+			      struct hinic_cmd_buf *buf_in,
+			      struct hinic_cmd_buf *buf_out, int wrapped,
+			      enum hinic_ack_type ack_type,
+			      enum hinic_mod_type mod, u8 cmd, u16 prod_idx)
 {
 	struct hinic_cmdq_wqe_lcmd *wqe_lcmd = &wqe->wqe_lcmd;
 	enum completion_format complete_format = COMPLETE_DIRECT;
@@ -465,7 +465,7 @@ static void cmdq_set_lcmd_wqe(struct hinic_cmdq_wqe *wqe,
 
 	cmdq_prepare_wqe_ctrl(wqe, wrapped, ack_type, mod, cmd,
 			      prod_idx, complete_format, DATA_SGE,
-			BUFDESC_LCMD_LEN);
+			      BUFDESC_LCMD_LEN);
 
 	cmdq_set_lcmd_bufdesc(wqe_lcmd, buf_in);
 }
@@ -706,10 +706,10 @@ timeout_check_ok:
 
 static int cmdq_sync_cmd_detail_resp(struct hinic_cmdq *cmdq,
 				     enum hinic_ack_type ack_type,
-				enum hinic_mod_type mod, u8 cmd,
-				struct hinic_cmd_buf *buf_in,
-				struct hinic_cmd_buf *buf_out,
-				u32 timeout)
+				     enum hinic_mod_type mod, u8 cmd,
+				     struct hinic_cmd_buf *buf_in,
+				     struct hinic_cmd_buf *buf_out,
+				     u32 timeout)
 {
 	struct hinic_wq *wq = cmdq->wq;
 	struct hinic_cmdq_wqe *curr_wqe, wqe;
@@ -913,7 +913,7 @@ static int cmdq_set_arm_bit(struct hinic_cmdq *cmdq, void *buf_in, u16 in_size)
 
 	cmdq_set_inline_wqe(&wqe, SYNC_CMD_DIRECT_RESP, buf_in, in_size, NULL,
 			    wrapped, HINIC_ACK_TYPE_CMDQ, HINIC_MOD_COMM,
-			CMDQ_SET_ARM_CMD, curr_prod_idx);
+			    CMDQ_SET_ARM_CMD, curr_prod_idx);
 
 	/* The data that is written to HW should be in Big Endian Format */
 	hinic_cpu_to_be32(&wqe, wqe_size);
@@ -1038,7 +1038,7 @@ EXPORT_SYMBOL(hinic_cmdq_detail_resp);
 
 int hinic_cmdq_async(void *hwdev, enum hinic_ack_type ack_type,
 		     enum hinic_mod_type mod, u8 cmd,
-				     struct hinic_cmd_buf *buf_in)
+		     struct hinic_cmd_buf *buf_in)
 {
 	struct hinic_cmdqs *cmdqs;
 	int err = cmdq_params_valid(hwdev, buf_in);
@@ -1494,7 +1494,7 @@ int hinic_cmdqs_init(struct hinic_hwdev *hwdev)
 
 	cmdqs->cmd_buf_pool = dma_pool_create("hinic_cmdq", hwdev->dev_hdl,
 					      HINIC_CMDQ_BUF_SIZE,
-						HINIC_CMDQ_BUF_SIZE, 0ULL);
+					      HINIC_CMDQ_BUF_SIZE, 0ULL);
 	if (!cmdqs->cmd_buf_pool) {
 		sdk_err(hwdev->dev_hdl, "Failed to create cmdq buffer pool\n");
 		err = -ENOMEM;

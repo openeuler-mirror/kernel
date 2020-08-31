@@ -74,8 +74,8 @@ int hinic_msix_attr_set(struct hinic_hwif *hwif, u16 msix_index,
  */
 int hinic_msix_attr_get(struct hinic_hwif *hwif, u16 msix_index,
 			u8 *pending_limit, u8 *coalesc_timer_cfg,
-			 u8 *lli_timer_cfg, u8 *lli_credit_limit,
-			 u8 *resend_timer_cfg)
+			u8 *lli_timer_cfg, u8 *lli_credit_limit,
+			u8 *resend_timer_cfg)
 {
 	u32 addr, val;
 
@@ -108,8 +108,8 @@ int hinic_msix_attr_get(struct hinic_hwif *hwif, u16 msix_index,
  */
 int hinic_msix_attr_cnt_set(struct hinic_hwif *hwif, u16 msix_index,
 			    u8 lli_timer_cnt, u8 lli_credit_cnt,
-			     u8 coalesc_timer_cnt, u8 pending_cnt,
-			     u8 resend_timer_cnt)
+			    u8 coalesc_timer_cnt, u8 pending_cnt,
+			    u8 resend_timer_cnt)
 {
 	u32 msix_ctrl, addr;
 

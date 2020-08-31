@@ -139,9 +139,9 @@ struct hinic_show_item {
 	u64	value;
 };
 
-#define UP_UPDATEFW_TIME_OUT_VAL		20000U
+#define UP_UPDATEFW_TIME_OUT_VAL	20000U
 #define UCODE_COMP_TIME_OUT_VAL		0xFF00000
-#define NIC_TOOL_MAGIC					'x'
+#define NIC_TOOL_MAGIC			'x'
 
 enum hinic_nictool_drv_cap {
 	NICTOOL_SUPPORT_API_CSR = 0x1,
