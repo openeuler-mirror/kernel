@@ -628,10 +628,8 @@ static void reschedule_eq_handler(struct hinic_eq *eq)
 {
 	if (eq->type == HINIC_AEQ) {
 		struct hinic_aeqs *aeqs = aeq_to_aeqs(eq);
-		struct workqueue_struct *workq = aeqs->workq;
-		struct hinic_eq_work *aeq_work = &eq->aeq_work;
 
-		queue_work(workq, &aeq_work->work);
+		queue_work(aeqs->workq, &eq->aeq_work);
 	} else {
 		tasklet_schedule(&eq->ceq_tasklet);
 	}
@@ -718,11 +716,10 @@ bool hinic_eq_intr_handler(void *hwdev, int msix_entry_idx)
  */
 static void eq_irq_work(struct work_struct *work)
 {
-	struct hinic_eq_work *aeq_work =
-			container_of(work, struct hinic_eq_work, work);
+	struct hinic_eq *eq = container_of(work, struct hinic_eq, aeq_work);
 
-	if (eq_irq_handler(aeq_work->data))
-		reschedule_eq_handler(aeq_work->data);
+	if (eq_irq_handler(eq))
+		reschedule_eq_handler(eq);
 }
 
 /**
@@ -734,19 +731,13 @@ static irqreturn_t aeq_interrupt(int irq, void *data)
 {
 	struct hinic_eq *aeq = (struct hinic_eq *)data;
 	struct hinic_hwdev *hwdev = aeq->hwdev;
-
 	struct hinic_aeqs *aeqs = aeq_to_aeqs(aeq);
-	struct workqueue_struct *workq = aeqs->workq;
-	struct hinic_eq_work *aeq_work;
 
 	/* clear resend timer cnt register */
 	hinic_misx_intr_clear_resend_bit(hwdev, aeq->eq_irq.msix_entry_idx,
 					 EQ_MSIX_RESEND_TIMER_CLEAR);
 
-	aeq_work = &aeq->aeq_work;
-	aeq_work->data = aeq;
-
-	queue_work(workq, &aeq_work->work);
+	queue_work(aeqs->workq, &aeq->aeq_work);
 
 	return IRQ_HANDLED;
 }
@@ -757,14 +748,12 @@ static irqreturn_t aeq_interrupt(int irq, void *data)
  */
 static void ceq_tasklet(ulong ceq_data)
 {
-	struct hinic_ceq_tasklet_data	*ceq_tasklet_data =
-				(struct hinic_ceq_tasklet_data *)ceq_data;
-	struct hinic_eq *eq = (struct hinic_eq *)ceq_tasklet_data->data;
+	struct hinic_eq *eq = (struct hinic_eq *)ceq_data;
 
 	eq->soft_intr_jif = jiffies;
 
-	if (eq_irq_handler(ceq_tasklet_data->data))
-		reschedule_eq_handler(ceq_tasklet_data->data);
+	if (eq_irq_handler(eq))
+		reschedule_eq_handler(eq);
 }
 
 /**
@@ -775,7 +764,6 @@ static void ceq_tasklet(ulong ceq_data)
 static irqreturn_t ceq_interrupt(int irq, void *data)
 {
 	struct hinic_eq *ceq = (struct hinic_eq *)data;
-	struct hinic_ceq_tasklet_data *ceq_tasklet_data;
 
 	ceq->hard_intr_jif = jiffies;
 
@@ -783,8 +771,6 @@ static irqreturn_t ceq_interrupt(int irq, void *data)
 	hinic_misx_intr_clear_resend_bit(ceq->hwdev, ceq->eq_irq.msix_entry_idx,
 					 EQ_MSIX_RESEND_TIMER_CLEAR);
 
-	ceq_tasklet_data = &ceq->ceq_tasklet_data;
-	ceq_tasklet_data->data = data;
 	tasklet_schedule(&ceq->ceq_tasklet);
 
 	return IRQ_HANDLED;
@@ -1149,14 +1135,10 @@ static int init_eq(struct hinic_eq *eq, struct hinic_hwdev *hwdev, u16 q_id,
 	hinic_hwif_write_reg(eq->hwdev->hwif, EQ_PROD_IDX_REG_ADDR(eq), 0);
 	set_eq_cons_idx(eq, HINIC_EQ_ARMED);
 
-	if (type == HINIC_AEQ) {
-		struct hinic_eq_work *aeq_work = &eq->aeq_work;
-
-		INIT_WORK(&aeq_work->work, eq_irq_work);
-	} else {
-		tasklet_init(&eq->ceq_tasklet, ceq_tasklet,
-			     (ulong)(&eq->ceq_tasklet_data));
-	}
+	if (type == HINIC_AEQ)
+		INIT_WORK(&eq->aeq_work, eq_irq_work);
+	else
+		tasklet_init(&eq->ceq_tasklet, ceq_tasklet, (ulong)eq);
 
 	if (type == HINIC_AEQ) {
 		err = snprintf(eq->irq_name, sizeof(eq->irq_name),
@@ -1215,9 +1197,7 @@ static void remove_eq(struct hinic_eq *eq)
 	free_irq(entry->irq_id, eq);
 
 	if (eq->type == HINIC_AEQ) {
-		struct hinic_eq_work *aeq_work = &eq->aeq_work;
-
-		cancel_work_sync(&aeq_work->work);
+		cancel_work_sync(&eq->aeq_work);
 
 		/* clear eq_len to avoid hw access host memory */
 		hinic_hwif_write_reg(eq->hwdev->hwif,
@@ -1453,7 +1433,7 @@ void hinic_dump_aeq_info(struct hinic_hwdev *hwdev)
 		pi = hinic_hwif_read_reg(hwdev->hwif, addr);
 		aeqe_pos = GET_CURR_AEQ_ELEM(eq);
 		sdk_err(hwdev->dev_hdl, "Aeq id: %d, ci: 0x%08x, pi: 0x%x, work_state: 0x%x, wrap: %d, desc: 0x%x\n",
-			q_id, ci, pi, work_busy(&eq->aeq_work.work),
+			q_id, ci, pi, work_busy(&eq->aeq_work),
 			eq->wrapped, be32_to_cpu(aeqe_pos->desc));
 	}
 }

@@ -63,15 +63,6 @@ enum hinic_eq_ci_arm_state {
 	HINIC_EQ_ARMED,
 };
 
-struct hinic_eq_work {
-	struct work_struct	work;
-	void			*data;
-};
-
-struct hinic_ceq_tasklet_data {
-	void	*data;
-};
-
 struct hinic_eq {
 	struct hinic_hwdev		*hwdev;
 	u16				q_id;
@@ -95,9 +86,8 @@ struct hinic_eq {
 	dma_addr_t			*dma_addr_for_free;
 	u8				**virt_addr_for_free;
 
-	struct hinic_eq_work		aeq_work;
+	struct work_struct		aeq_work;
 	struct tasklet_struct		ceq_tasklet;
-	struct hinic_ceq_tasklet_data	ceq_tasklet_data;
 
 	u64	hard_intr_jif;
 	u64	soft_intr_jif;
