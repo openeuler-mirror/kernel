@@ -1252,6 +1252,12 @@ config ARM64_PTR_AUTH
 	  hardware it will not be advertised to userspace nor will it be
 	  enabled.
 
+	  If the feature is present on the boot CPU but not on a late CPU, then
+	  the late CPU will be parked. Also, if the boot CPU does not have
+	  address auth and the late CPU has then the late CPU will still boot
+	  but with the feature disabled. On such a system, this option should
+	  not be selected.
+
 endmenu
 
 config ARM64_SVE
