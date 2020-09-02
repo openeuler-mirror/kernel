@@ -1336,6 +1336,19 @@ static bool has_generic_auth(const struct arm64_cpu_capabilities *entry,
 }
 #endif /* CONFIG_ARM64_PTR_AUTH */
 
+/* Internal helper functions to match cpu capability type */
+static bool
+cpucap_late_cpu_optional(const struct arm64_cpu_capabilities *cap)
+{
+	return !!(cap->type & ARM64_CPUCAP_OPTIONAL_FOR_LATE_CPU);
+}
+
+static bool
+cpucap_late_cpu_permitted(const struct arm64_cpu_capabilities *cap)
+{
+	return !!(cap->type & ARM64_CPUCAP_PERMITTED_FOR_LATE_CPU);
+}
+
 static const struct arm64_cpu_capabilities arm64_features[] = {
 	{
 		.desc = "GIC system register CPU interface",
