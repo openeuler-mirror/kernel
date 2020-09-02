@@ -24,6 +24,7 @@
 #include <linux/init.h>
 #include <linux/irqchip/arm-gic-v3.h>
 
+#include <asm/asm_pointer_auth.h>
 #include <asm/assembler.h>
 #include <asm/boot.h>
 #include <asm/ptrace.h>
@@ -126,7 +127,6 @@ ENTRY(stext)
 	 * On return, the CPU will be ready for the MMU to be turned on and
 	 * the TCR will have been set.
 	 */
-	mov	x0, #ARM64_CPU_BOOT_PRIMARY
 	bl	__cpu_setup			// initialise processor
 	b	__primary_switch
 ENDPROC(stext)
@@ -410,6 +410,10 @@ __primary_switched:
 	add	sp, x4, #THREAD_SIZE
 	adr_l	x5, init_task
 	msr	sp_el0, x5			// Save thread_info
+
+#ifdef CONFIG_ARM64_PTR_AUTH
+	__ptrauth_keys_init_cpu	x5, x6, x7, x8
+#endif
 
 	adr_l	x8, vectors			// load VBAR_EL1 with virtual
 	msr	vbar_el1, x8			// vector table address
@@ -705,7 +709,6 @@ secondary_startup:
 	 * Common entry point for secondary CPUs.
 	 */
 	bl	__cpu_secondary_check52bitva
-	mov	x0, #ARM64_CPU_BOOT_SECONDARY
 	bl	__cpu_setup			// initialise processor
 	bl	__enable_mmu
 	ldr	x8, =__secondary_switched
@@ -724,6 +727,11 @@ __secondary_switched:
 	msr	sp_el0, x2
 	mov	x29, #0
 	mov	x30, #0
+
+#ifdef CONFIG_ARM64_PTR_AUTH
+	ptrauth_keys_init_cpu x2, x3, x4, x5
+#endif
+
 	b	secondary_start_kernel
 ENDPROC(__secondary_switched)
 
