@@ -42,6 +42,7 @@
 #include <linux/threads.h>
 #include <linux/cpumask.h>
 #include <linux/thread_info.h>
+#include <asm/pointer_auth.h>
 
 DECLARE_PER_CPU_READ_MOSTLY(int, cpu_number);
 
@@ -93,6 +94,9 @@ asmlinkage void secondary_start_kernel(void);
 struct secondary_data {
 	void *stack;
 	struct task_struct *task;
+#ifdef CONFIG_ARM64_PTR_AUTH
+	struct ptrauth_keys_kernel ptrauth_key;
+#endif
 	long status;
 };
 
