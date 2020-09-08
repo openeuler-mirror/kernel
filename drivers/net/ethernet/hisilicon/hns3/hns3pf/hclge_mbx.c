@@ -595,6 +595,7 @@ static void hclge_get_link_mode(struct hclge_vport *vport,
 	u8 msg_data[10];
 	u8 dest_vfid;
 
+	memset(msg_data, 0, sizeof(msg_data));
 	advertising = hdev->hw.mac.advertising[0];
 	supported = hdev->hw.mac.supported[0];
 	dest_vfid = mbx_req->mbx_src_vfid;
