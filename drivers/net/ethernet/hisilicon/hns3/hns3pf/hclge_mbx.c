@@ -672,6 +672,21 @@ static void hclge_get_rss_key(struct hclge_vport *vport,
 
 	index = mbx_req->msg.data[0];
 
+	/* The length of RSS key is large than the length of MBX response.
+	 * So multiple times of copy is needed, which is the meaning of "index".
+	 * And RSS key will be copied 'HCLGE_RSS_MBX_RESP_LEN' byte per time.
+	 * If (index * HCLGE_RSS_MBX_RESP_LEN) large than
+	 * (rss_key_size - HCLGE_RSS_MBX_RESP_LEN), it will cause
+	 * "out-of-bounds array" error, So it's necessary to check with it.
+	 */
+	if (((index + 1) * HCLGE_RSS_MBX_RESP_LEN) >
+	      sizeof(vport[0].rss_hash_key)) {
+		dev_warn(&hdev->pdev->dev,
+			 "failed to get the rss hash key, the index(%u) invalid !\n",
+			 index);
+		return;
+	}
+
 	memcpy(resp_msg->data,
 	       &hdev->vport[0].rss_hash_key[index * HCLGE_RSS_MBX_RESP_LEN],
 	       HCLGE_RSS_MBX_RESP_LEN);
