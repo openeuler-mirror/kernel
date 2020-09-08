@@ -2099,8 +2099,8 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	info.high_limit = TASK_SIZE;
 	info.align_mask = 0;
 
-	if (enable_map_dvpp)
-		dvpp_mmap_get_area(info);
+	if (enable_mmap_dvpp)
+		dvpp_mmap_get_area(&info, flags);
 
 	return vm_unmapped_area(&info);
 }
@@ -2148,8 +2148,8 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 	info.high_limit = mm->mmap_base;
 	info.align_mask = 0;
 
-	if (enable_map_dvpp)
-		dvpp_mmap_get_area(info);
+	if (enable_mmap_dvpp)
+		dvpp_mmap_get_area(&info, flags);
 
 	addr = vm_unmapped_area(&info);
 
@@ -2165,8 +2165,8 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 		info.low_limit = TASK_UNMAPPED_BASE;
 		info.high_limit = TASK_SIZE;
 
-		if (enable_map_dvpp)
-			dvpp_mmap_get_area(info);
+		if (enable_mmap_dvpp)
+			dvpp_mmap_get_area(&info, flags);
 
 		addr = vm_unmapped_area(&info);
 	}
@@ -3747,18 +3747,18 @@ subsys_initcall(init_reserve_notifier);
 /*
  *  Enable the MAP_32BIT (mmaps and hugetlb).
  */
-int enable_map_dvpp __read_mostly;
+int enable_mmap_dvpp __read_mostly;
 
 #ifdef CONFIG_ASCEND_DVPP_MMAP
 
-static int __init ascend_enable_map_dvpp(char *s)
+static int __init ascend_enable_mmap_dvpp(char *s)
 {
-	enable_map_dvpp = 1;
+	enable_mmap_dvpp = 1;
 
 	pr_info("Ascend enable dvpp mmap features\n");
 
 	return 1;
 }
-__setup("enable_map_dvpp", ascend_enable_map_dvpp);
+__setup("enable_mmap_dvpp", ascend_enable_mmap_dvpp);
 
 #endif

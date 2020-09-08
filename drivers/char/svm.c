@@ -1526,8 +1526,8 @@ static unsigned long svm_get_unmapped_area(struct file *file,
 		info.low_limit = TASK_UNMAPPED_BASE;
 		info.high_limit = DVPP_MMAP_BASE;
 
-		if (enable_map_dvpp)
-			dvpp_mmap_get_area(info);
+		if (enable_mmap_dvpp)
+			dvpp_mmap_get_area(&info, flags);
 
 		addr = vm_unmapped_area(&info);
 	}

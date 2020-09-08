@@ -8,7 +8,7 @@
 #include <linux/atomic.h>
 #include <uapi/linux/mman.h>
 
-
+extern int enable_mmap_dvpp;
 /*
  * Enable MAP_32BIT for Ascend Platform
  */
@@ -16,39 +16,62 @@
 
 #define MAP_DVPP	0x200
 
-#define DVPP_MMAP_BASE	(TASK_SIZE - 0x100000000UL)
 #define DVPP_MMAP_SIZE	(0x100000000UL)
+#define DVPP_MMAP_BASE	(TASK_SIZE - DVPP_MMAP_SIZE)
 
-#define dvpp_mmap_check(addr, len, flags) \
-	(((enable_map_dvpp) && (flags & MAP_DVPP) && \
-	(addr < DVPP_MMAP_BASE + DVPP_MMAP_SIZE) && \
-	(addr > DVPP_MMAP_BASE)) ? -EINVAL : 0)
+static inline int dvpp_mmap_check(unsigned long addr, unsigned long len,
+				  unsigned long flags)
+{
+	if (enable_mmap_dvpp && (flags & MAP_DVPP) &&
+	    (addr < DVPP_MMAP_BASE + DVPP_MMAP_SIZE) &&
+	    (addr > DVPP_MMAP_BASE))
+		return -EINVAL;
+	else
+		return 0;
+}
 
-#define dvpp_mmap_get_area(info) \
-({ \
-	(info.low_limit = DVPP_MMAP_BASE); \
-	(info.high_limit = DVPP_MMAP_BASE + DVPP_MMAP_SIZE); \
-})
+static inline void dvpp_mmap_get_area(struct vm_unmapped_area_info *info,
+				      unsigned long flags)
+{
+	if (flags & MAP_DVPP) {
+		info->low_limit = DVPP_MMAP_BASE;
+		info->high_limit = DVPP_MMAP_BASE + DVPP_MMAP_SIZE;
+	} else {
+		info->low_limit = max(info->low_limit, TASK_UNMAPPED_BASE);
+		info->high_limit = min(info->high_limit, DVPP_MMAP_BASE);
+	}
+}
 
-#define dvpp_mmap_zone(addr) ((addr > DVPP_MMAP_BASE) ? 1 : 0)
+static inline int dvpp_mmap_zone(unsigned long addr)
+{
+	if (addr >= DVPP_MMAP_BASE)
+		return 1;
+	else
+		return 0;
+}
 
 #else
 
 #define MAP_DVPP (0)
 
-#define dvpp_mmap_check(addr, len, flags) (0)
+static inline int dvpp_mmap_check(unsigned long addr, unsigned long len,
+				  unsigned long flags)
+{
+	return 0;
+}
 
-#define dvpp_mmap_get_area(info)  do { } while (0)
+static inline void dvpp_mmap_get_area(struct vm_unmapped_area_info *info,
+				      unsigned long flags)
+{
+}
 
-#define dvpp_mmap_zone(addr) (0)
+static inline int dvpp_mmap_zone(unsigned long addr) { return 0; }
 
 #define DVPP_MMAP_BASE (0)
 
 #define DVPP_MMAP_SIZE (0)
 
 #endif
-
-extern int enable_map_dvpp;
 
 /*
  * Arrange for legacy / undefined architecture specific flags to be

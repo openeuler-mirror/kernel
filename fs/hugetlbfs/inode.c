@@ -277,8 +277,8 @@ hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 	info.align_mask = PAGE_MASK & ~huge_page_mask(h);
 	info.align_offset = 0;
 
-	if (enable_map_dvpp)
-		dvpp_mmap_get_area(info);
+	if (enable_mmap_dvpp)
+		dvpp_mmap_get_area(&info, flags);
 
 	return vm_unmapped_area(&info);
 }

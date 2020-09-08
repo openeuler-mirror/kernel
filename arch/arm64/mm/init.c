@@ -771,7 +771,7 @@ __setup("keepinitrd", keepinitrd_setup);
 static int __init ascend_enable_setup(char *__unused)
 {
 	if (IS_ENABLED(CONFIG_ASCEND_DVPP_MMAP))
-		enable_map_dvpp = 1;
+		enable_mmap_dvpp = 1;
 
 	if (IS_ENABLED(CONFIG_ASCEND_IOPF_HIPRI))
 		enable_iopf_hipri = 1;
