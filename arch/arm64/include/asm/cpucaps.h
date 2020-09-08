@@ -65,7 +65,8 @@
 #define ARM64_HAS_GENERIC_AUTH_IMP_DEF		44
 #define ARM64_HAS_ADDRESS_AUTH			45
 #define ARM64_HAS_GENERIC_AUTH			46
+#define ARM64_HAS_CNP				47
 
-#define ARM64_NCAPS				47
+#define ARM64_NCAPS				48
 
 #endif /* __ASM_CPUCAPS_H */
