@@ -167,21 +167,31 @@ static int hclge_get_ring_chain_from_mbx(
 			struct hclge_vport *vport)
 {
 	struct hnae3_ring_chain_node *cur_chain, *new_chain;
+	struct hclge_dev *hdev = vport->back;
 	int ring_num;
-	int i = 0;
+	int i;
 
 	ring_num = req->msg.ring_num;
 
 	if (ring_num > HCLGE_MBX_MAX_RING_CHAIN_PARAM_NUM)
 		return -ENOMEM;
 
+	for (i = 0; i < ring_num; i++) {
+		if (req->msg.param[i].tqp_index >= vport->nic.kinfo.rss_size) {
+			dev_err(&hdev->pdev->dev, "tqp index(%u) is out of range(0-%u)\n",
+				req->msg.param[i].tqp_index,
+				vport->nic.kinfo.rss_size - 1);
+			return -EINVAL;
+		}
+	}
+
 	hnae3_set_bit(ring_chain->flag, HNAE3_RING_TYPE_B,
-		      req->msg.param[i].ring_type);
+		      req->msg.param[0].ring_type);
 	ring_chain->tqp_index =
 		hclge_get_queue_id(vport->nic.kinfo.tqp
-				   [req->msg.param[i].tqp_index]);
+				   [req->msg.param[0].tqp_index]);
 	hnae3_set_field(ring_chain->int_gl_idx, HNAE3_RING_GL_IDX_M,
-			HNAE3_RING_GL_IDX_S, req->msg.param[i].int_gl_index);
+			HNAE3_RING_GL_IDX_S, req->msg.param[0].int_gl_index);
 
 	cur_chain = ring_chain;
 
@@ -270,20 +280,12 @@ static int hclge_get_vf_ring_vector_map(struct hclge_vport *vport,
 #define HCLGE_VECTOR_ID_OFFSET			3
 #define HCLGE_RING_VECTOR_MAP_INFO_LEN		4
 	struct hnae3_ring_chain_node ring_chain;
-	struct hclge_dev *hdev = vport->back;
 	struct hclge_desc desc;
 	struct hclge_ctrl_vector_chain_cmd *data =
 		(struct hclge_ctrl_vector_chain_cmd *)desc.data;
 	u16 tqp_type_and_id;
 	u8 int_gl_index;
 	int ret;
-
-	if (req->msg.param[0].tqp_index >= vport->nic.kinfo.rss_size) {
-		dev_err(&hdev->pdev->dev, "tqp index(%u) is out of range(0-%u)\n",
-			req->msg.param[0].tqp_index,
-			vport->nic.kinfo.rss_size - 1);
-		return -EINVAL;
-	}
 
 	req->msg.ring_num = HCLGE_LIMIT_RING_NUM;
 
