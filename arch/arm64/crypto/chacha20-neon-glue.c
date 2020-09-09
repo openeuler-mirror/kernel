@@ -114,7 +114,7 @@ static struct skcipher_alg alg = {
 
 static int __init chacha20_simd_mod_init(void)
 {
-	if (!(elf_hwcap & HWCAP_ASIMD))
+	if (!cpu_have_named_feature(ASIMD))
 		return -ENODEV;
 
 	return crypto_register_skcipher(&alg);
