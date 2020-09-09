@@ -67,7 +67,8 @@
 #define ARM64_HAS_GENERIC_AUTH			46
 #define ARM64_HAS_CNP				47
 #define ARM64_HAS_ARMv8_4_TTL			48
+#define ARM64_HAS_DCPODP			49
 
-#define ARM64_NCAPS				49
+#define ARM64_NCAPS				50
 
 #endif /* __ASM_CPUCAPS_H */
