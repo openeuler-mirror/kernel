@@ -604,6 +604,12 @@ static inline bool system_supports_cnp(void)
 		cpus_have_const_cap(ARM64_HAS_CNP);
 }
 
+static inline bool system_supports_tlb_range(void)
+{
+	return IS_ENABLED(CONFIG_ARM64_TLB_RANGE) &&
+		cpus_have_const_cap(ARM64_HAS_TLB_RANGE);
+}
+
 #define ARM64_SSBD_UNKNOWN		-1
 #define ARM64_SSBD_FORCE_DISABLE	0
 #define ARM64_SSBD_KERNEL		1
