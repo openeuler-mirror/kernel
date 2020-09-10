@@ -68,7 +68,8 @@
 #define ARM64_HAS_CNP				47
 #define ARM64_HAS_ARMv8_4_TTL			48
 #define ARM64_HAS_DCPODP			49
+#define ARM64_HAS_TLB_RANGE			50
 
-#define ARM64_NCAPS				50
+#define ARM64_NCAPS				51
 
 #endif /* __ASM_CPUCAPS_H */
