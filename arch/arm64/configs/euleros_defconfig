@@ -476,6 +476,11 @@ CONFIG_RANDOMIZE_MODULE_REGION_FULL=y
 CONFIG_ARM64_CNP=n
 
 #
+# ARMv8.4 architectural features
+#
+# CONFIG_ARM64_TLB_RANGE is not set
+
+#
 # Boot options
 #
 CONFIG_ARM64_ACPI_PARKING_PROTOCOL=y
