@@ -104,6 +104,7 @@
 #define KERNEL_HWCAP_I8MM		__khwcap2_feature(I8MM)
 #define KERNEL_HWCAP_DGH		__khwcap2_feature(DGH)
 #define KERNEL_HWCAP_BF16		__khwcap2_feature(BF16)
+#define KERNEL_HWCAP_RNG		__khwcap2_feature(RNG)
 
 /*
  * This yields a mask that user programs can use to figure out what
