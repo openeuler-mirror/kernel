@@ -835,11 +835,8 @@ config HARDLOCKUP_DETECTOR_PERF
 	bool
 	select SOFTLOCKUP_DETECTOR
 
-choice
-	prompt "aarch64 NMI watchdog method"
+menu "ARM64 NMI watchdog configuration"
 	depends on ARM64
-	help
-	  Watchdog implementation method configuration.
 
 config SDEI_WATCHDOG
 	bool "SDEI NMI Watchdog support"
@@ -852,7 +849,7 @@ config PMU_WATCHDOG
 	depends on PERF_EVENTS && HAVE_PERF_EVENTS_NMI
 	select HAVE_HARDLOCKUP_DETECTOR_PERF
 
-endchoice
+endmenu # "ARM64 NMI watchdog configuration"
 
 #
 # Enables a timestamp based low pass filter to compensate for perf based

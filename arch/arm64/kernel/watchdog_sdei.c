@@ -24,7 +24,7 @@ static int sdei_watchdog_event_num;
 static bool disable_sdei_nmi_watchdog;
 static bool sdei_watchdog_registered;
 
-int watchdog_nmi_enable(unsigned int cpu)
+int watchdog_sdei_enable(unsigned int cpu)
 {
 	int ret;
 
@@ -47,7 +47,7 @@ int watchdog_nmi_enable(unsigned int cpu)
 	return 0;
 }
 
-void watchdog_nmi_disable(unsigned int cpu)
+void watchdog_sdei_disable(unsigned int cpu)
 {
 	int ret;
 
@@ -92,12 +92,9 @@ void sdei_watchdog_clear_eoi(void)
 		sdei_api_clear_eoi(SDEI_NMI_WATCHDOG_HWIRQ);
 }
 
-int __init watchdog_nmi_probe(void)
+int __init watchdog_sdei_probe(void)
 {
 	int ret;
-
-	if (disable_sdei_nmi_watchdog)
-		return -EINVAL;
 
 	if (!is_hyp_mode_available()) {
 		pr_err("Disable SDEI NMI Watchdog in VM\n");
@@ -134,4 +131,18 @@ int __init watchdog_nmi_probe(void)
 	pr_info("SDEI Watchdog registered successfully\n");
 
 	return 0;
+}
+
+static struct watchdog_operations arch_watchdog_ops = {
+	.watchdog_nmi_stop = &watchdog_nmi_stop,
+	.watchdog_nmi_start = &watchdog_nmi_start,
+	.watchdog_nmi_probe = &watchdog_sdei_probe,
+	.watchdog_nmi_enable = &watchdog_sdei_enable,
+	.watchdog_nmi_disable = &watchdog_sdei_disable,
+};
+
+void watchdog_ops_init(void)
+{
+	if (!disable_sdei_nmi_watchdog)
+		nmi_watchdog_ops = arch_watchdog_ops;
 }
