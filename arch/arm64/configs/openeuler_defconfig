@@ -491,6 +491,11 @@ CONFIG_AS_HAS_PAC=y
 CONFIG_ARM64_TLB_RANGE=y
 
 #
+# ARMv8.5 architectural features
+#
+CONFIG_ARCH_RANDOM=y
+
+#
 # Boot options
 #
 CONFIG_ARM64_ACPI_PARKING_PROTOCOL=y
