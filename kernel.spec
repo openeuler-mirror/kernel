@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.138
-Release: %{hulkrelease}.0039
+Release: %{hulkrelease}.0040
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -555,8 +555,6 @@ popd
 %{perf_make} %{perf_python2} DESTDIR=%{buildroot} lib=%{_lib} install-bin install-traceevent-plugins
 # remove the 'trace' symlink.
 rm -f %{buildroot}%{_bindir}/trace
-# remove the perf-tips
-rm -rf %{buildroot}%{_docdir}/perf-tip
 
 # remove examples
 rm -rf %{buildroot}/usr/lib/perf/examples
@@ -726,6 +724,8 @@ fi
 %{_mandir}/man[1-8]/perf*
 %{_sysconfdir}/bash_completion.d/perf
 %doc linux-%{KernelVer}/tools/perf/Documentation/examples.txt
+%dir %{_datadir}/doc/perf-tip
+%{_datadir}/doc/perf-tip/*
 %license linux-%{KernelVer}/COPYING
 
 %files -n python2-perf
@@ -789,6 +789,9 @@ fi
 %endif
 
 %changelog
+* Sun Sep 14 2020 xinghe <xinghe1@huawei.com> - 4.19.138-2008.1.0.0040
+- add perf-tip file fix cannot load perf-tips warning
+
 * Sat Aug 12 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.138-2008.1.0.0039
 - net/hinic: update hinic version to 2.3.2.15
 - net/hinic: Add the maximum value of the module parameter poll_weight
