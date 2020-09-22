@@ -2169,15 +2169,13 @@ static void nvme_init_subnqn(struct nvme_subsystem *subsys, struct nvme_ctrl *ct
 	memset(subsys->subnqn + off, 0, sizeof(subsys->subnqn) - off);
 }
 
-static void __nvme_release_subsystem(struct nvme_subsystem *subsys)
-{
-	ida_simple_remove(&nvme_subsystems_ida, subsys->instance);
-	kfree(subsys);
-}
-
 static void nvme_release_subsystem(struct device *dev)
 {
-	__nvme_release_subsystem(container_of(dev, struct nvme_subsystem, dev));
+	struct nvme_subsystem *subsys =
+		container_of(dev, struct nvme_subsystem, dev);
+
+	ida_simple_remove(&nvme_subsystems_ida, subsys->instance);
+	kfree(subsys);
 }
 
 static void nvme_destroy_subsystem(struct kref *ref)
@@ -2327,7 +2325,7 @@ static int nvme_init_subsystem(struct nvme_ctrl *ctrl, struct nvme_id_ctrl *id)
 			goto out_unlock;
 		}
 
-		__nvme_release_subsystem(subsys);
+		put_device(&subsys->dev);
 		subsys = found;
 	} else {
 		ret = device_add(&subsys->dev);
