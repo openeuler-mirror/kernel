@@ -1074,6 +1074,63 @@ retry:
 	return 0;
 }
 
+static void bd_clear_claiming(struct block_device *whole, void *holder)
+{
+       lockdep_assert_held(&bdev_lock);
+       /* tell others that we're done */
+       BUG_ON(whole->bd_claiming != holder);
+       whole->bd_claiming = NULL;
+       wake_up_bit(&whole->bd_claiming, 0);
+}
+
+/**
+ * bd_abort_claiming - abort claiming of a block device
+ * @bdev: block device of interest
+ * @whole: whole block device (returned from bd_start_claiming())
+ * @holder: holder that has claimed @bdev
+ *
+ * Abort claiming of a block device when the exclusive open failed. This can be
+ * also used when exclusive open is not actually desired and we just needed
+ * to block other exclusive openers for a while.
+ */
+void bd_abort_claiming(struct block_device *bdev, struct block_device *whole,
+                      void *holder)
+{
+       spin_lock(&bdev_lock);
+       bd_clear_claiming(whole, holder);
+       spin_unlock(&bdev_lock);
+}
+EXPORT_SYMBOL(bd_abort_claiming);
+
+/*
+ * Drop all buffers & page cache for given bdev range. This function bails
+ * with error if bdev has other exclusive owner (such as filesystem).
+ */
+int truncate_bdev_range(struct block_device *bdev, fmode_t mode,
+			loff_t lstart, loff_t lend)
+{
+	struct block_device *claimed_bdev = NULL;
+	int err;
+
+	/*
+	 * If we don't hold exclusive handle for the device, upgrade to it
+	 * while we discard the buffer cache to avoid discarding buffers
+	 * under live filesystem.
+	 */
+	if (!(mode & FMODE_EXCL)) {
+		claimed_bdev = bdev->bd_contains;
+		err = bd_prepare_to_claim(bdev, claimed_bdev,
+					  truncate_bdev_range);
+		if (err)
+			return err;
+	}
+	truncate_inode_pages_range(bdev->bd_inode->i_mapping, lstart, lend);
+	if (claimed_bdev)
+		bd_abort_claiming(bdev, claimed_bdev, truncate_bdev_range);
+	return 0;
+}
+EXPORT_SYMBOL(truncate_bdev_range);
+
 static struct gendisk *bdev_get_gendisk(struct block_device *bdev, int *partno)
 {
 	struct gendisk *disk = get_gendisk(bdev->bd_dev, partno);
@@ -2016,7 +2073,6 @@ static long blkdev_fallocate(struct file *file, int mode, loff_t start,
 			     loff_t len)
 {
 	struct block_device *bdev = I_BDEV(bdev_file_inode(file));
-	struct address_space *mapping;
 	loff_t end = start + len - 1;
 	loff_t isize;
 	int error;
@@ -2044,8 +2100,9 @@ static long blkdev_fallocate(struct file *file, int mode, loff_t start,
 		return -EINVAL;
 
 	/* Invalidate the page cache, including dirty pages. */
-	mapping = bdev->bd_inode->i_mapping;
-	truncate_inode_pages_range(mapping, start, end);
+	error = truncate_bdev_range(bdev, file->f_mode, start, end);
+	if (error)
+		return error;
 
 	switch (mode) {
 	case FALLOC_FL_ZERO_RANGE:
@@ -2072,7 +2129,7 @@ static long blkdev_fallocate(struct file *file, int mode, loff_t start,
 	 * the caller will be given -EBUSY.  The third argument is
 	 * inclusive, so the rounding here is safe.
 	 */
-	return invalidate_inode_pages2_range(mapping,
+	return invalidate_inode_pages2_range(bdev->bd_inode->i_mapping,
 					     start >> PAGE_SHIFT,
 					     end >> PAGE_SHIFT);
 }
