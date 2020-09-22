@@ -1349,6 +1349,30 @@ static inline bool file_mmap_ok(struct file *file, struct inode *inode,
 	return true;
 }
 
+#ifdef CONFIG_ASCEND_AUTO_TUNING_HUGEPAGE
+int mmap_notifier_enable = 0;
+EXPORT_SYMBOL_GPL(mmap_notifier_enable);
+
+static BLOCKING_NOTIFIER_HEAD(mmap_notify_list);
+
+int register_mmap_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&mmap_notify_list, nb);
+}
+EXPORT_SYMBOL_GPL(register_mmap_notifier);
+
+int mmap_notifier_call(unsigned long val, void *v)
+{
+	return blocking_notifier_call_chain(&mmap_notify_list, val, v);
+}
+
+int unregister_mmap_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&mmap_notify_list, nb);
+}
+EXPORT_SYMBOL_GPL(unregister_mmap_notifier);
+#endif
+
 /*
  * The caller must hold down_write(&current->mm->mmap_sem).
  */
@@ -1396,6 +1420,12 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 	if (mm->map_count > sysctl_max_map_count)
 		return -ENOMEM;
 
+
+#ifdef CONFIG_ASCEND_AUTO_TUNING_HUGEPAGE
+	/* only notify flags with MAP_HUGETLB */
+	if (flags & MAP_HUGETLB && mmap_notifier_enable)
+		mmap_notifier_call(len, NULL);
+#endif
 	/* Obtain the address to map to. we verify (or select) it and ensure
 	 * that it represents a valid section of the address space.
 	 */
