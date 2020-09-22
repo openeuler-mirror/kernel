@@ -485,7 +485,41 @@ static ssize_t timeout_show(struct device *dev, struct device_attribute *attr,
 
 	return sprintf(buf, "%u\n", wdd->timeout);
 }
+
+#ifdef CONFIG_ASCEND_WATCHDOG_SYSFS_CONFIGURE
+static int sysfs_write;
+module_param(sysfs_write, int, 0);
+MODULE_PARM_DESC(sysfs_write,
+		 "enable configuring timeout and pretimeout via sysfs");
+
+static ssize_t timeout_store(struct device *dev, struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	int ret;
+	unsigned int val;
+	struct watchdog_device *wdd = dev_get_drvdata(dev);
+	struct watchdog_core_data *wd_data = wdd->wd_data;
+
+	if (!sysfs_write)
+		return -EOPNOTSUPP;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	mutex_lock(&wd_data->lock);
+	ret = watchdog_set_timeout(wdd, val);
+	mutex_unlock(&wd_data->lock);
+
+	if (!ret)
+		ret = count;
+
+	return ret;
+}
+static DEVICE_ATTR_RW(timeout);
+#else
 static DEVICE_ATTR_RO(timeout);
+#endif
 
 static ssize_t pretimeout_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
@@ -494,7 +528,36 @@ static ssize_t pretimeout_show(struct device *dev,
 
 	return sprintf(buf, "%u\n", wdd->pretimeout);
 }
+
+#ifdef CONFIG_ASCEND_WATCHDOG_SYSFS_CONFIGURE
+static ssize_t pretimeout_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned int val;
+	struct watchdog_device *wdd = dev_get_drvdata(dev);
+	struct watchdog_core_data *wd_data = wdd->wd_data;
+
+	if (!sysfs_write)
+		return -EOPNOTSUPP;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	mutex_lock(&wd_data->lock);
+	ret = watchdog_set_pretimeout(wdd, val);
+	mutex_unlock(&wd_data->lock);
+
+	if (!ret)
+		ret = count;
+
+	return ret;
+}
+static DEVICE_ATTR_RW(pretimeout);
+#else
 static DEVICE_ATTR_RO(pretimeout);
+#endif
 
 static ssize_t identity_show(struct device *dev, struct device_attribute *attr,
 				char *buf)

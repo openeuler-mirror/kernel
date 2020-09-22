@@ -1370,6 +1370,16 @@ config ASCEND_CHARGE_MIGRATE_HUGEPAGES
 	  This option enable the feature to charge migrate hugepages to memory
 	  cgroup.
 
+config ASCEND_WATCHDOG_SYSFS_CONFIGURE
+	bool "Configure watchdog timeout and pretimeout via sysfs"
+	depends on WATCHDOG_SYSFS
+	help
+	  Add interface for user to configure timeout and pretimeout through
+	  sysfs. Enable this config carefully since a user could change the
+	  timeout value without notifying the userspace process that pings the
+	  watchdog. The kernel thread could be notified so it's ok to make that
+	  change when the watchdog is pinged by kernel thread.
+
 endif
 
 endmenu
