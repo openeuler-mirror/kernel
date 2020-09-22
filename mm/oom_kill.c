@@ -1062,12 +1062,16 @@ EXPORT_SYMBOL_GPL(register_hisi_oom_notifier);
 static unsigned long last_jiffies;
 int hisi_oom_notifier_call(unsigned long val, void *v)
 {
+	int ret;
+	unsigned long freed = 0;
+
 	/* when enable oom killer, just return */
 	if (sysctl_enable_oom_killer == 1)
 		return 0;
 
+	ret =  blocking_notifier_call_chain(&hisi_oom_notify_list, val, &freed);
 	/* Print time interval to 10 seconds */
-	if (time_after(jiffies, last_jiffies + 10 * HZ)) {
+	if (time_after(jiffies, last_jiffies + 10 * HZ) && freed == 0) {
 		pr_err("OOM_NOTIFIER: oom type %lu\n", val);
 		dump_stack();
 		show_mem(SHOW_MEM_FILTER_NODES, NULL);
@@ -1075,7 +1079,7 @@ int hisi_oom_notifier_call(unsigned long val, void *v)
 		last_jiffies = jiffies;
 	}
 
-	return blocking_notifier_call_chain(&hisi_oom_notify_list, val, v);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(hisi_oom_notifier_call);
 
