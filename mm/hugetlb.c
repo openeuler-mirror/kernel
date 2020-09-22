@@ -3068,6 +3068,19 @@ int hugetlb_sysctl_handler(struct ctl_table *table, int write,
 							buffer, length, ppos);
 }
 
+#ifdef CONFIG_ASCEND_AUTO_TUNING_HUGEPAGE
+int hugetlb_sysctl_store(size_t length)
+{
+	int ret;
+	struct hstate *h = &default_hstate;
+
+	ret = __nr_hugepages_store_common(false, h, NUMA_NO_NODE, length,
+					  length);
+	return ret;
+}
+EXPORT_SYMBOL(hugetlb_sysctl_store);
+#endif
+
 #ifdef CONFIG_NUMA
 int hugetlb_mempolicy_sysctl_handler(struct ctl_table *table, int write,
 			  void __user *buffer, size_t *length, loff_t *ppos)
