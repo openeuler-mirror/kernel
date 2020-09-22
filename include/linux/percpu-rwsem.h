@@ -44,7 +44,7 @@ static inline void percpu_down_read_preempt_disable(struct percpu_rw_semaphore *
 	 * and that one the synchronize_sched() is done, the writer will see
 	 * anything we did within this RCU-sched read-size critical section.
 	 */
-	__this_cpu_inc(*sem->read_count);
+	this_cpu_inc(*sem->read_count);
 	if (unlikely(!rcu_sync_is_idle(&sem->rss)))
 		__percpu_down_read(sem, false); /* Unconditional memory barrier */
 	barrier();
@@ -68,7 +68,7 @@ static inline int percpu_down_read_trylock(struct percpu_rw_semaphore *sem)
 	/*
 	 * Same as in percpu_down_read().
 	 */
-	__this_cpu_inc(*sem->read_count);
+	this_cpu_inc(*sem->read_count);
 	if (unlikely(!rcu_sync_is_idle(&sem->rss)))
 		ret = __percpu_down_read(sem, true); /* Unconditional memory barrier */
 	preempt_enable();
@@ -94,7 +94,7 @@ static inline void percpu_up_read_preempt_enable(struct percpu_rw_semaphore *sem
 	 * Same as in percpu_down_read().
 	 */
 	if (likely(rcu_sync_is_idle(&sem->rss)))
-		__this_cpu_dec(*sem->read_count);
+		this_cpu_dec(*sem->read_count);
 	else
 		__percpu_up_read(sem); /* Unconditional memory barrier */
 	preempt_enable();
