@@ -1380,6 +1380,12 @@ config ASCEND_WATCHDOG_SYSFS_CONFIGURE
 	  watchdog. The kernel thread could be notified so it's ok to make that
 	  change when the watchdog is pinged by kernel thread.
 
+config ASCEND_AUTO_TUNING_HUGEPAGE
+	bool "Enable support for the auto-tuning hugepage"
+	default y
+	help
+	  The hugepage auto-tuning means the kernel dynamically manages the number of
+	  huage pages. To achieve this purpose, custom interfaces are required.
 endif
 
 endmenu
