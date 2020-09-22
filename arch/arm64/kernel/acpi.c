@@ -270,6 +270,10 @@ int acpi_map_cpu(acpi_handle handle, phys_cpuid_t physid, u32 acpi_id,
 	int cpu, nid;
 
 	cpu = acpi_map_cpuid(physid, acpi_id);
+	if (cpu < 0) {
+		pr_info("Unable to map GICC to logical cpu number\n");
+		return cpu;
+	}
 	nid = acpi_get_node(handle);
 	if (nid != NUMA_NO_NODE) {
 		set_cpu_numa_node(cpu, nid);
