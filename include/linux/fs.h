@@ -683,7 +683,6 @@ struct inode {
 		struct rcu_head		i_rcu;
 	};
 	atomic64_t		i_version;
-	atomic64_t		i_sequence; /* see futex */
 	atomic_t		i_count;
 	atomic_t		i_dio_count;
 	atomic_t		i_writecount;
@@ -715,7 +714,11 @@ struct inode {
 
 	void			*i_private; /* fs or device private pointer */
 
+#ifndef __GENKSYMS__
+	atomic64_t		i_sequence; /* see futex */
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 } __randomize_layout;
 
