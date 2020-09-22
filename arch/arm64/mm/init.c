@@ -769,7 +769,7 @@ __setup("keepinitrd", keepinitrd_setup);
 #endif
 
 #ifdef CONFIG_ASCEND_FEATURES
-static int __init ascend_enable_setup(char *__unused)
+void ascend_enable_all_features(void)
 {
 	if (IS_ENABLED(CONFIG_ASCEND_DVPP_MMAP))
 		enable_mmap_dvpp = 1;
@@ -782,6 +782,11 @@ static int __init ascend_enable_setup(char *__unused)
 
 	if (IS_ENABLED(CONFIG_SUSPEND))
 		mem_sleep_current = PM_SUSPEND_ON;
+}
+
+static int __init ascend_enable_setup(char *__unused)
+{
+	ascend_enable_all_features();
 
 	return 1;
 }

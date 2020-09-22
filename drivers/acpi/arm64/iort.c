@@ -25,6 +25,7 @@
 #include <linux/pci.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/init.h>
 
 #define IORT_TYPE_MASK(type)	(1 << (type))
 #define IORT_MSI_TYPE		(1 << ACPI_IORT_NODE_ITS_GROUP)
@@ -1639,6 +1640,26 @@ static void __init iort_init_platform_devices(void)
 	}
 }
 
+/*
+ * This function detects the ascend platform by oem table id.
+ */
+static bool ascend_platform_detected(struct acpi_table_header *h)
+{
+	if (!memcmp(h->oem_table_id, "HI19801P", ACPI_OEM_TABLE_ID_SIZE))
+		return true;
+
+	if (!memcmp(h->oem_table_id, "HI19802P", ACPI_OEM_TABLE_ID_SIZE))
+		return true;
+
+	if (!memcmp(h->oem_table_id, "HI19804P", ACPI_OEM_TABLE_ID_SIZE))
+		return true;
+
+	if (!memcmp(h->oem_table_id, "HI1980\0\0", ACPI_OEM_TABLE_ID_SIZE))
+		return true;
+
+	return false;
+}
+
 void __init acpi_iort_init(void)
 {
 	acpi_status status;
@@ -1653,6 +1674,9 @@ void __init acpi_iort_init(void)
 
 		return;
 	}
+
+	if (ascend_platform_detected(iort_table))
+		ascend_enable_all_features();
 
 	iort_init_platform_devices();
 }

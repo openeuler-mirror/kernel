@@ -306,4 +306,11 @@ void __init parse_early_options(char *cmdline);
 #define __exit_p(x) NULL
 #endif
 
+#ifndef __ASSEMBLY__
+#ifdef CONFIG_ASCEND_FEATURES
+extern void ascend_enable_all_features(void);
+#else
+static inline void ascend_enable_all_features(void) { }
+#endif
+#endif
 #endif /* _LINUX_INIT_H */
