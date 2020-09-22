@@ -3132,7 +3132,7 @@ DECLARE_PER_CPU_ALIGNED(struct softnet_data, softnet_data);
 
 static inline int dev_recursion_level(void)
 {
-	return __this_cpu_read(softnet_data.xmit.recursion);
+	return this_cpu_read(softnet_data.xmit.recursion);
 }
 
 #define XMIT_RECURSION_LIMIT	8
