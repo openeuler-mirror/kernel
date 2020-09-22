@@ -1471,6 +1471,10 @@ static struct page *alloc_fresh_huge_page(struct hstate *h,
 	return page;
 }
 
+#ifdef CONFIG_ASCEND_AUTO_TUNING_HUGEPAGE
+gfp_t hugepage_gfp_mask = 0;
+EXPORT_SYMBOL(hugepage_gfp_mask);
+#endif
 /*
  * Allocates a fresh page to the hugetlb allocator pool in the node interleaved
  * manner.
@@ -1480,7 +1484,12 @@ static int alloc_pool_huge_page(struct hstate *h, nodemask_t *nodes_allowed,
 {
 	struct page *page;
 	int nr_nodes, node;
+#ifdef CONFIG_ASCEND_AUTO_TUNING_HUGEPAGE
+	gfp_t gfp_mask = htlb_alloc_mask(h) | __GFP_THISNODE |
+			 hugepage_gfp_mask;
+#else
 	gfp_t gfp_mask = htlb_alloc_mask(h) | __GFP_THISNODE;
+#endif
 
 	for_each_node_mask_to_alloc(h, nr_nodes, node, nodes_allowed) {
 		page = alloc_fresh_huge_page(h, gfp_mask, node, nodes_allowed,
