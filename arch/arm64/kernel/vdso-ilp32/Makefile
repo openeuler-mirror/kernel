@@ -24,6 +24,9 @@ CFLAGS_gettimeofday-ilp32.o = -O2 -mcmodel=tiny -mabi=ilp32
 
 # Disable gcov profiling for VDSO code
 GCOV_PROFILE := n
+KASAN_SANITIZE := n
+UBSAN_SANITIZE := n
+KCOV_INSTRUMENT := n
 
 # Workaround for bare-metal (ELF) toolchains that neglect to pass -shared
 # down to collect2, resulting in silent corruption of the vDSO image.
