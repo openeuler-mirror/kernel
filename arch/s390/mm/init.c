@@ -229,6 +229,9 @@ int arch_add_memory(int nid, u64 start, u64 size, struct vmem_altmap *altmap,
 	unsigned long size_pages = PFN_DOWN(size);
 	int rc;
 
+	if (WARN_ON_ONCE(restrictions->altmap))
+		return -EINVAL;
+
 	rc = vmem_add_mapping(start, size);
 	if (rc)
 		return rc;
