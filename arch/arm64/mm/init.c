@@ -41,6 +41,7 @@
 #include <linux/kexec.h>
 #include <linux/crash_dump.h>
 #include <linux/iommu.h>
+#include <linux/suspend.h>
 
 #include <asm/boot.h>
 #include <asm/fixmap.h>
@@ -778,6 +779,9 @@ static int __init ascend_enable_setup(char *__unused)
 
 	if (IS_ENABLED(CONFIG_ASCEND_CHARGE_MIGRATE_HUGEPAGES))
 		enable_charge_mighp = 1;
+
+	if (IS_ENABLED(CONFIG_SUSPEND))
+		mem_sleep_current = PM_SUSPEND_ON;
 
 	return 1;
 }
