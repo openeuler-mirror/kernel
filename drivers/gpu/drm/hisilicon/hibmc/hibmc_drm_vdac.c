@@ -143,7 +143,7 @@ static void hibmc_encoder_mode_set(struct drm_encoder *encoder,
 {
 	u32 reg;
 	struct drm_device *dev = encoder->dev;
-	struct hibmc_drm_private *priv = dev->dev_private;
+	struct hibmc_drm_private *priv = to_hibmc_drm_private(dev);
 
 	reg = readl(priv->mmio + HIBMC_DISPLAY_CONTROL_HISILE);
 	reg |= HIBMC_DISPLAY_CONTROL_FPVDDEN(1);
