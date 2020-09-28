@@ -194,4 +194,7 @@ static inline int arch_timer_arch_init(void)
 	return 0;
 }
 
+typedef void (*clock_access_fn)(struct timespec64 *);
+extern int register_persistent_clock(clock_access_fn read_persistent);
+
 #endif
