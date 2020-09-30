@@ -667,11 +667,34 @@ static const struct file_operations spidev_fops = {
 static struct class *spidev_class;
 
 #ifdef CONFIG_OF
+
+static void spi_cpld_init(struct spi_device *spi)
+{
+	int ret;
+	unsigned int chip_select, mode;
+
+	ret = of_property_read_u32(spi->dev.of_node, "reg", &(chip_select));
+	if (ret != 0)
+		dev_warn(&spi->dev, "of_property_read_u8 get chip_select fail\n");
+
+	spi->chip_select = (u8)(chip_select);
+	ret = of_property_read_u32(spi->dev.of_node, "mode", &(mode));
+	if (ret != 0)
+		dev_warn(&spi->dev, "of_property_read_u16 get num-cs fail\n");
+
+	spi->mode = (u16)(mode);
+	ret = of_property_read_u32(spi->dev.of_node, "spi-max-frequency",
+				   &(spi->max_speed_hz));
+	if (ret != 0)
+		dev_warn(&spi->dev, "of_property_read_u32 get spi-max-frequency fail\n");
+}
+
 static const struct of_device_id spidev_dt_ids[] = {
 	{ .compatible = "rohm,dh2228fv" },
 	{ .compatible = "lineartechnology,ltc2488" },
 	{ .compatible = "ge,achc" },
 	{ .compatible = "semtech,sx1301" },
+	{ .compatible = "spi-cpld", .data = spi_cpld_init, },
 	{},
 };
 MODULE_DEVICE_TABLE(of, spidev_dt_ids);
@@ -722,6 +745,8 @@ static int spidev_probe(struct spi_device *spi)
 	int			status;
 	unsigned long		minor;
 
+	void (*spi_init)(struct spi_device *dev);
+
 	/*
 	 * spidev should never be referenced in DT without a specific
 	 * compatible string, it is a Linux implementation thing
@@ -732,6 +757,10 @@ static int spidev_probe(struct spi_device *spi)
 	     "%pOF: buggy DT: spidev listed directly in DT\n", spi->dev.of_node);
 
 	spidev_probe_acpi(spi);
+
+	spi_init = of_device_get_match_data(&spi->dev);
+	if (spi_init)
+		spi_init(spi);
 
 	/* Allocate driver data */
 	spidev = kzalloc(sizeof(*spidev), GFP_KERNEL);
