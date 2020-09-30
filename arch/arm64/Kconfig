@@ -1314,7 +1314,7 @@ endmenu
 menu "ARMv8.4 architectural features"
 
 config AS_HAS_ARMV8_4
-	def_bool $(cc-option,-Wa$(comma)-march=armv8.4-a)
+	def_bool $(as-option,-Wa$(comma)-march=armv8.4-a)
 
 config ARM64_TLB_RANGE
 	bool "Enable support for tlbi range feature"
