@@ -36,14 +36,14 @@ typedef void (*nic_event_fn_t) (struct net_device *netdev,
 				enum hnae3_event_type_custom);
 
 /**
- * nic_register_event - register for nic event listening
+ * nic_register_event - register for nic event handling
  * @event_call:	nic event handler
  * return 0 - success , negative - fail
  */
 int nic_register_event(nic_event_fn_t event_call);
 
 /**
- * nic_unregister_event - quit nic event listening
+ * nic_unregister_event - quit nic event handling
  * return 0 - success , negative - fail
  */
 int nic_unregister_event(void);
