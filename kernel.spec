@@ -59,6 +59,7 @@ Source9998: patches.tar.bz2
 #BuildRequires:
 BuildRequires: module-init-tools, patch >= 2.5.4, bash >= 2.03, tar
 BuildRequires: bzip2, xz, findutils, gzip, m4, perl, make >= 3.78, diffutils, gawk
+BuildRequires: libcap-devel, libcap-ng-devel, rsync
 BuildRequires: gcc >= 3.4.2, binutils >= 2.12
 BuildRequires: hostname, net-tools, bc
 BuildRequires: xmlto, asciidoc
