@@ -77,7 +77,7 @@ void read_persistent_clock64(struct timespec64 *ts)
 	__read_persistent_clock(ts);
 }
 
-int __init register_persistent_clock(clock_access_fn read_persistent)
+int register_persistent_clock(clock_access_fn read_persistent)
 {
 	/* Only allow the clockaccess functions to be registered once */
 	if (__read_persistent_clock == dummy_clock_access) {
