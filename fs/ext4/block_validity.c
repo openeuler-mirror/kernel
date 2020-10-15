@@ -326,8 +326,9 @@ int ext4_inode_block_valid(struct inode *inode, ext4_fsblk_t start_blk,
 		else if (start_blk >= (entry->start_blk + entry->count))
 			n = n->rb_right;
 		else {
-			sbi->s_es->s_last_error_block = cpu_to_le64(start_blk);
 			ret = (entry->ino == inode->i_ino);
+			if (!ret)
+				sbi->s_es->s_last_error_block = cpu_to_le64(start_blk);
 			break;
 		}
 	}
