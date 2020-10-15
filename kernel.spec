@@ -22,9 +22,11 @@
 
 %define with_source 1
 
+%define with_python2 0
+
 Name:	 kernel
 Version: 4.19.148
-Release: %{hulkrelease}.0041
+Release: %{hulkrelease}.0042
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -67,7 +69,11 @@ BuildRequires: ncurses-devel
 BuildRequires: elfutils-libelf-devel
 BuildRequires: rpm >= 4.14.2
 #BuildRequires: sparse >= 0.4.1
-BuildRequires: elfutils-devel zlib-devel binutils-devel newt-devel python-devel perl(ExtUtils::Embed) bison
+%if 0%{?with_python2}
+BuildRequires: python-devel
+%endif
+
+BuildRequires: elfutils-devel zlib-devel binutils-devel newt-devel perl(ExtUtils::Embed) bison
 BuildRequires: audit-libs-devel
 BuildRequires: pciutils-devel gettext
 BuildRequires: rpm-build, elfutils
@@ -136,6 +142,7 @@ Summary: Performance monitoring for the Linux kernel
 This package contains the perf tool, which enables performance monitoring
 of the Linux kernel.
 
+%if 0%{?with_python2}
 %package -n python2-perf
 Provides: python-perf = %{version}-%{release}
 Obsoletes: python-perf
@@ -144,6 +151,7 @@ Summary: Python bindings for apps which will manipulate perf events
 %description -n python2-perf
 A Python module that permits applications written in the Python programming
 language to use the interface to manipulate perf events.
+%endif
 
 %package -n python3-perf
 Summary: Python bindings for apps which will manipulate perf events
@@ -194,9 +202,11 @@ package or when debugging this package.\
 %{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%{_bindir}/perf.*(\.debug)?|.*%{_libexecdir}/perf-core/.*|.*%{_libdir}/traceevent/.*|XXX' -o perf-debugfiles.list}
 
 
+%if 0%{?with_python2}
 %debuginfo_template -n python2-perf
 %files -n python2-perf-debuginfo -f python2-perf-debugfiles.list
 %{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%{python2_sitearch}/perf.*(.debug)?|XXX' -o python2-perf-debugfiles.list}
+%endif
 
 %debuginfo_template -n python3-perf
 %files -n python3-perf-debuginfo -f python3-perf-debugfiles.list
@@ -258,6 +268,8 @@ find . -name .gitignore -exec rm -f {} \; >/dev/null
     cp %{SOURCE11} certs/.
 %endif
 
+pathfix.py -pni "/usr/bin/python" tools/power/pm-graph/sleepgraph.py tools/power/pm-graph/bootgraph.py tools/perf/scripts/python/call-graph-from-sql.py
+
 %if 0%{?with_source}
 # Copy directory backup for kernel-source
 cp -a ../linux-%{KernelVer} ../linux-%{KernelVer}-Source
@@ -301,11 +313,18 @@ make ARCH=%{Arch} modules %{?_smp_mflags}
 # perf
 %global perf_make \
     make EXTRA_CFLAGS="-Wl,-z,now -g -Wall -fstack-protector-strong -fPIC" EXTRA_PERFLIBS="-fpie -pie" %{?_smp_mflags} -s V=1 WERROR=0 NO_LIBUNWIND=1 HAVE_CPLUS_DEMANGLE=1 NO_GTK2=1 NO_LIBNUMA=1 NO_STRLCPY=1 prefix=%{_prefix}
+%if 0%{?with_python2}
 %global perf_python2 -C tools/perf PYTHON=%{__python2}
 %global perf_python3 -C tools/python3-perf PYTHON=%{__python3}
-# perf
+%else
+%global perf_python3 -C tools/perf PYTHON=%{__python3}
+%endif
+
 chmod +x tools/perf/check-headers.sh
+# perf
+%if 0%{?with_python2}
 %{perf_make} %{perf_python2} all
+%endif
 
 # make sure check-headers.sh is executable
 chmod +x tools/python3-perf/check-headers.sh
@@ -552,7 +571,11 @@ popd
 ## install tools
 # perf
 # perf tool binary and supporting scripts/binaries
+%if 0%{?with_python2}
 %{perf_make} %{perf_python2} DESTDIR=%{buildroot} lib=%{_lib} install-bin install-traceevent-plugins
+%else
+%{perf_make} %{perf_python3} DESTDIR=%{buildroot} lib=%{_lib} install-bin install-traceevent-plugins
+%endif
 # remove the 'trace' symlink.
 rm -f %{buildroot}%{_bindir}/trace
 
@@ -563,7 +586,9 @@ rm -rf %{buildroot}/usr/lib/perf/include/bpf/
 
 # python-perf extension
 %{perf_make} %{perf_python3} DESTDIR=%{buildroot} install-python_ext
+%if 0%{?with_python2}
 %{perf_make} %{perf_python2} DESTDIR=%{buildroot} install-python_ext
+%endif
 
 # perf man pages (note: implicit rpm magic compresses them later)
 install -d %{buildroot}/%{_mandir}/man1
@@ -728,9 +753,11 @@ fi
 %{_datadir}/doc/perf-tip/*
 %license linux-%{KernelVer}/COPYING
 
+%if 0%{?with_python2}
 %files -n python2-perf
 %license linux-%{KernelVer}/COPYING
 %{python2_sitearch}/*
+%endif
 
 %files -n python3-perf
 %license linux-%{KernelVer}/COPYING
@@ -789,6 +816,9 @@ fi
 %endif
 
 %changelog
+* Thu Oct 15 2020 Zhipeng Xie<xiezhipeng1@huawei.com> - 4.19.148-2009.1.0.0042
+- delete python2 dependency
+
 * Sun Oct 11 2020 Xie XiuQi <xiexiuqi@huawei.com> - 4.19.148-2009.1.0.0041
 - mm/swapfile: fix and annotate various data races
 - iommu: fix a mistake for iommu_unregister_device_fault_handler
