@@ -181,16 +181,23 @@ int hinic_ndo_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 	}
 
 	sriov_info = hinic_get_sriov_info_by_pcidev(adapter->pdev);
-	if (!is_valid_ether_addr(mac) || /*lint !e574*/
+	if (is_multicast_ether_addr(mac) || /*lint !e574*/
 	    vf >= sriov_info->num_vfs) /*lint !e574*/
 		return -EINVAL;
 
 	err = hinic_set_vf_mac(sriov_info->hwdev, OS_VF_ID_TO_HW(vf), mac);
-	if (err)
+	if (err) {
+		nicif_info(adapter, drv, netdev, "Failed to set MAC %pM on VF %d\n",
+			   mac, vf);
 		return err;
+	}
 
-	nic_info(&sriov_info->pdev->dev, "Setting MAC %pM on VF %d\n", mac, vf);
-	nic_info(&sriov_info->pdev->dev, "Reload the VF driver to make this change effective\n");
+	if (is_zero_ether_addr(mac))
+		nicif_info(adapter, drv, netdev, "Removing MAC on VF %d\n", vf);
+	else
+		nicif_info(adapter, drv, netdev, "Setting MAC %pM on VF %d\n",
+			   mac, vf);
+	nicif_info(adapter, drv, netdev, "Reload the VF driver to make this change effective\n");
 
 	return 0;
 }

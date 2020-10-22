@@ -2848,25 +2848,25 @@ int hinic_set_vf_mac(void *hwdev, int vf, unsigned char *mac_addr)
 	struct hinic_hwdev *hw_dev = (struct hinic_hwdev *)hwdev;
 	struct hinic_nic_io *nic_io = hw_dev->nic_io;
 	struct vf_data_storage *vf_info = nic_io->vf_infos + HW_VF_ID_TO_OS(vf);
+	int del_vf_mac = is_zero_ether_addr(mac_addr);
 	u16 func_id;
 	int err;
 
 	/* duplicate request, so just return success */
-	if (vf_info->pf_set_mac &&
-	    !memcmp(vf_info->vf_mac_addr, mac_addr, ETH_ALEN))
+	if (!memcmp(vf_info->vf_mac_addr, mac_addr, ETH_ALEN))
 		return 0;
 
-	vf_info->pf_set_mac = true;
-
 	func_id = hinic_glb_pf_vf_offset(hw_dev) + vf;
-	err = hinic_update_mac(hw_dev, vf_info->vf_mac_addr,
-			       mac_addr, 0, func_id);
-	if (err) {
-		vf_info->pf_set_mac = false;
+	if (del_vf_mac)
+		err = hinic_del_mac(hwdev, vf_info->vf_mac_addr, 0, func_id);
+	else
+		err = hinic_update_mac(hw_dev, vf_info->vf_mac_addr,
+				       mac_addr, 0, func_id);
+	if (err)
 		return err;
-	}
 
 	memcpy(vf_info->vf_mac_addr, mac_addr, ETH_ALEN);
+	vf_info->pf_set_mac = !del_vf_mac;
 
 	return 0;
 }
