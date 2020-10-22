@@ -69,6 +69,32 @@ static bool check_func_table(struct hinic_hwdev *hwdev, u16 func_idx,
 	return true;
 }
 
+static bool check_rxcsum_setting(struct hinic_hwdev *hwdev, u16 func_idx,
+				 void *buf_in, u16 in_size)
+{
+	struct hinic_checksum_offload *rx_csum_cfg = NULL;
+
+	if (!hinic_mbox_check_func_id_8B(hwdev, func_idx, buf_in, in_size))
+		return false;
+
+	rx_csum_cfg = buf_in;
+	if (rx_csum_cfg->rx_csum_offload != HINIC_RX_CSUM_OFFLOAD_EN)
+		return false;
+
+	return true;
+}
+
+static bool check_force_pkt_drop(struct hinic_hwdev *hwdev, u16 func_idx,
+				 void *buf_in, u16 in_size)
+{
+	struct hinic_force_pkt_drop *pkt_drop = buf_in;
+
+	if (pkt_drop->port != hinic_physical_port_id(hwdev))
+		return false;
+
+	return true;
+}
+
 struct vf_cmd_check_handle nic_cmd_support_vf[] = {
 	{HINIC_PORT_CMD_VF_REGISTER, NULL},
 	{HINIC_PORT_CMD_VF_UNREGISTER, NULL},
@@ -88,7 +114,7 @@ struct vf_cmd_check_handle nic_cmd_support_vf[] = {
 
 	{HINIC_PORT_CMD_GET_LINK_STATE, hinic_mbox_check_func_id_8B},
 	{HINIC_PORT_CMD_SET_LRO, hinic_mbox_check_func_id_8B},
-	{HINIC_PORT_CMD_SET_RX_CSUM, hinic_mbox_check_func_id_8B},
+	{HINIC_PORT_CMD_SET_RX_CSUM, check_rxcsum_setting},
 	{HINIC_PORT_CMD_SET_RX_VLAN_OFFLOAD, hinic_mbox_check_func_id_8B},
 
 	{HINIC_PORT_CMD_GET_VPORT_STAT, hinic_mbox_check_func_id_8B},
@@ -139,6 +165,7 @@ struct vf_cmd_check_handle nic_cmd_support_vf[] = {
 	{HINIC_PORT_CMD_SET_VHD_CFG, hinic_mbox_check_func_id_8B},
 
 	{HINIC_PORT_CMD_SET_VLAN_FILTER, hinic_mbox_check_func_id_8B},
+	{HINIC_PORT_CMD_FORCE_PKT_DROP, check_force_pkt_drop},
 };
 
 int hinic_init_function_table(void *hwdev, u16 rx_buf_sz)

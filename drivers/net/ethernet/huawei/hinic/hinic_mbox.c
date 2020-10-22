@@ -589,6 +589,8 @@ bool hinic_mbox_check_cmd_valid(struct hinic_hwdev *hwdev,
 		}
 	}
 
+	sdk_err(hwdev->dev_hdl, "Unsupported vf cmd %d\n", cmd);
+
 	return false;
 }
 

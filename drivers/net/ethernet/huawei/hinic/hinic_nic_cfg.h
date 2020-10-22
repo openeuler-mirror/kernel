@@ -425,6 +425,8 @@ enum hinic_lro_en_status {
 #define HINIC_VLAN_FILTER_EN		(1U << 0)
 #define HINIC_BROADCAST_FILTER_EX_EN	(1U << 1)
 
+#define HINIC_RX_CSUM_OFFLOAD_EN	0xFFF
+
 /* Set mac_vlan table */
 int hinic_set_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id);
 
