@@ -1928,6 +1928,7 @@ void hinic_lp_test(struct net_device *netdev, struct ethtool_test *eth_test,
 		test_time = LP_DEFAULT_TIME;
 
 	netif_carrier_off(netdev);
+	netif_tx_disable(netdev);
 
 	if (!(test.flags & ETH_TEST_FL_EXTERNAL_LB)) {
 		test_index = INTERNAL_LP_TEST;
@@ -1977,6 +1978,7 @@ resume_link:
 		data[test_index] = 1;
 	}
 
+	netif_tx_wake_all_queues(netdev);
 	err = hinic_get_link_state(nic_dev->hwdev, &link_status);
 	if (!err && link_status)
 		netif_carrier_on(netdev);
