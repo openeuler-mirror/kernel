@@ -77,6 +77,7 @@
 #define HINIC_MGMT_CHANNEL_STATUS_MASK		0x1
 #define HINIC_ACTIVE_STATUS_MASK		0x80000000
 #define HINIC_ACTIVE_STATUS_CLEAR		0x7FFFFFFF
+#define HINIC_ACTIVE_UCODE			0x1F80	/* bit7~bit12 */
 
 #define HINIC_GET_MGMT_CHANNEL_STATUS(val, member)	\
 	(((val) >> HINIC_##member##_SHIFT) & HINIC_##member##_MASK)
@@ -805,8 +806,11 @@ static int __func_send_mbox(struct hinic_hwdev *hwdev, enum hinic_mod_type mod,
 }
 
 static int __pf_to_mgmt_pre_handle(struct hinic_hwdev *hwdev,
-				   enum hinic_mod_type mod, u8 cmd)
+				   enum hinic_mod_type mod, u8 cmd,
+				   void *buf_in)
 {
+	struct hinic_update_active *active_info = buf_in;
+
 	if (hinic_get_mgmt_channel_status(hwdev)) {
 		if (mod == HINIC_MOD_COMM || mod == HINIC_MOD_L2NIC ||
 		    mod == HINIC_MOD_CFGM || mod == HINIC_MOD_HILINK)
@@ -815,8 +819,12 @@ static int __pf_to_mgmt_pre_handle(struct hinic_hwdev *hwdev,
 			return -EBUSY;
 	}
 
-	/* Set channel invalid, don't allowed to send other cmd */
-	if (mod == HINIC_MOD_COMM && cmd == HINIC_MGMT_CMD_ACTIVATE_FW) {
+	/* When only hot activation of ucode, mgmt channel can still be used
+	 * normally, otherwise it is not allowed to send commands to mgmt until
+	 * the hot activation is completed
+	 */
+	if (mod == HINIC_MOD_COMM && cmd == HINIC_MGMT_CMD_ACTIVATE_FW &&
+	    (active_info->update_flag & ~HINIC_ACTIVE_UCODE)) {
 		hinic_set_mgmt_channel_status(hwdev, true);
 
 		/* Sleep 2s wait other pf's mgmt messages to complete */
@@ -868,7 +876,7 @@ int hinic_pf_msg_to_mgmt_sync(void *hwdev, enum hinic_mod_type mod, u8 cmd,
 		if (in_size > HINIC_MSG_TO_MGMT_MAX_LEN)
 			return -EINVAL;
 
-		err = __pf_to_mgmt_pre_handle(hwdev, mod, cmd);
+		err = __pf_to_mgmt_pre_handle(hwdev, mod, cmd, buf_in);
 		if (err)
 			return err;
 
