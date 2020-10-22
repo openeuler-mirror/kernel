@@ -1305,8 +1305,11 @@ static int hinic_set_mac_addr(struct net_device *netdev, void *addr)
 
 	err = hinic_update_mac(nic_dev->hwdev, netdev->dev_addr, saddr->sa_data,
 			       0, func_id);
-	if (err)
-		return err;
+	if (err) {
+		nicif_err(nic_dev, drv, netdev, "Failed to update mac, err: %d\n",
+			  err);
+		return err == HINIC_PF_SET_VF_ALREADY ? -EPERM : err;
+	}
 
 	memcpy(netdev->dev_addr, saddr->sa_data, ETH_ALEN);
 

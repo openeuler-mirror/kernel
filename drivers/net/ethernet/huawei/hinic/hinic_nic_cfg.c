@@ -231,6 +231,23 @@ int hinic_get_fw_support_func(void *hwdev)
 
 #define HINIC_ADD_VLAN_IN_MAC	0x8000
 #define HINIC_VLAN_ID_MASK	0x7FFF
+#define PF_SET_VF_MAC(hwdev, status)	\
+		(HINIC_FUNC_TYPE(hwdev) == TYPE_VF && \
+		 (status) == HINIC_PF_SET_VF_ALREADY)
+
+static int hinic_check_mac_status(struct hinic_hwdev *hwdev, u8 status,
+				  u16 vlan_id)
+{
+	if ((status && status != HINIC_MGMT_STATUS_EXIST) ||
+	    (vlan_id & CHECK_IPSU_15BIT && status == HINIC_MGMT_STATUS_EXIST)) {
+		if (PF_SET_VF_MAC(hwdev, status))
+			return 0;
+
+		return -EINVAL;
+	}
+
+	return 0;
+}
 
 int hinic_set_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id)
 {
@@ -255,17 +272,14 @@ int hinic_set_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id)
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_SET_MAC, &mac_info,
 				     sizeof(mac_info), &mac_info, &out_size);
 	if (err || !out_size ||
-	    (mac_info.status && mac_info.status != HINIC_MGMT_STATUS_EXIST &&
-	     mac_info.status != HINIC_PF_SET_VF_ALREADY) ||
-	    (mac_info.vlan_id & CHECK_IPSU_15BIT &&
-	     mac_info.status == HINIC_MGMT_STATUS_EXIST)) {
+	    hinic_check_mac_status(hwdev, mac_info.status, mac_info.vlan_id)) {
 		nic_err(nic_hwdev->dev_hdl,
 			"Failed to update MAC, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, mac_info.status, out_size);
-		return -EINVAL;
+		return -EIO;
 	}
 
-	if (mac_info.status == HINIC_PF_SET_VF_ALREADY) {
+	if (PF_SET_VF_MAC(nic_hwdev, mac_info.status)) {
 		nic_warn(nic_hwdev->dev_hdl, "PF has already set VF mac, Ignore set operation\n");
 		return HINIC_PF_SET_VF_ALREADY;
 	}
@@ -302,13 +316,13 @@ int hinic_del_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id)
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC_PORT_CMD_DEL_MAC, &mac_info,
 				     sizeof(mac_info), &mac_info, &out_size);
 	if (err || !out_size ||
-	    (mac_info.status && mac_info.status != HINIC_PF_SET_VF_ALREADY)) {
+	    (mac_info.status && !PF_SET_VF_MAC(nic_hwdev, mac_info.status))) {
 		nic_err(nic_hwdev->dev_hdl,
 			"Failed to delete MAC, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, mac_info.status, out_size);
-		return -EINVAL;
+		return -EIO;
 	}
-	if (mac_info.status == HINIC_PF_SET_VF_ALREADY) {
+	if (PF_SET_VF_MAC(nic_hwdev, mac_info.status)) {
 		nic_warn(nic_hwdev->dev_hdl, "PF has already set VF mac, Ignore delete operation\n");
 		return HINIC_PF_SET_VF_ALREADY;
 	}
@@ -343,17 +357,14 @@ int hinic_update_mac(void *hwdev, u8 *old_mac, u8 *new_mac, u16 vlan_id,
 				     &mac_info, sizeof(mac_info),
 				     &mac_info, &out_size);
 	if (err || !out_size ||
-	    (mac_info.status && mac_info.status != HINIC_MGMT_STATUS_EXIST &&
-	     mac_info.status != HINIC_PF_SET_VF_ALREADY) ||
-	    (mac_info.vlan_id & CHECK_IPSU_15BIT &&
-	     mac_info.status == HINIC_MGMT_STATUS_EXIST)) {
+	    hinic_check_mac_status(hwdev, mac_info.status, mac_info.vlan_id)) {
 		nic_err(nic_hwdev->dev_hdl,
 			"Failed to update MAC, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, mac_info.status, out_size);
-		return -EINVAL;
+		return -EIO;
 	}
 
-	if (mac_info.status == HINIC_PF_SET_VF_ALREADY) {
+	if (PF_SET_VF_MAC(nic_hwdev, mac_info.status)) {
 		nic_warn(nic_hwdev->dev_hdl, "PF has already set VF MAC. Ignore update operation\n");
 		return HINIC_PF_SET_VF_ALREADY;
 	}
