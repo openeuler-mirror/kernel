@@ -531,9 +531,16 @@ if [ -d arch/%{Arch}/include ]; then
 fi
 cp -a include $RPM_BUILD_ROOT/lib/modules/%{KernelVer}/build/include
 
+if [ -f arch/%{Arch}/kernel/module.lds ]; then
+    cp -a --parents arch/%{Arch}/kernel/module.lds $RPM_BUILD_ROOT/lib/modules/%{KernelVer}/build/
+fi
+
+# module.lds is moved to scripts by commit 596b0474d3d9 in linux 5.10.
+if [ -f scripts/module.lds ]; then
+    cp -a --parents scripts/module.lds $RPM_BUILD_ROOT/lib/modules/%{KernelVer}/build/
+fi
+
 %ifarch aarch64
-    # Needed for systemtap
-    cp -a --parents arch/arm64/kernel/module.lds $RPM_BUILD_ROOT/lib/modules/%{KernelVer}/build/
     cp -a --parents arch/arm/include/asm $RPM_BUILD_ROOT/lib/modules/%{KernelVer}/build/
 %endif
 
