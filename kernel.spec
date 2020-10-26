@@ -272,8 +272,8 @@ pathfix.py -pni "/usr/bin/python" tools/power/pm-graph/sleepgraph.py tools/power
 
 %if 0%{?with_source}
 # Copy directory backup for kernel-source
-cp -a ../linux-%{KernelVer} ../linux-%{KernelVer}-Source
-find ../linux-%{KernelVer}-Source -type f -name "\.*" -exec rm -rf {} \; >/dev/null
+cp -a ../linux-%{KernelVer} ../linux-%{KernelVer}-source
+find ../linux-%{KernelVer}-source -type f -name "\.*" -exec rm -rf {} \; >/dev/null
 %endif
 
 cp -a tools/perf tools/python3-perf
@@ -382,7 +382,7 @@ popd
 %if 0%{?with_source}
     %define _python_bytecompile_errors_terminate_build 0
     mkdir -p $RPM_BUILD_ROOT/usr/src/
-    mv linux-%{KernelVer}-Source $RPM_BUILD_ROOT/usr/src/linux-%{KernelVer}
+    mv linux-%{KernelVer}-source $RPM_BUILD_ROOT/usr/src/linux-%{KernelVer}
     cp linux-%{KernelVer}/.config $RPM_BUILD_ROOT/usr/src/linux-%{KernelVer}/
     cp linux-%{KernelVer}/.scmversion $RPM_BUILD_ROOT/usr/src/linux-%{KernelVer}/
 %endif
