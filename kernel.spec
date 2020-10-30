@@ -22,12 +22,12 @@
 
 %define with_source 1
 
-Name:    kernel
+Name:	 kernel
 Version: 4.19.90
 Release: %{hulkrelease}.0046
 Summary: Linux Kernel
 License: GPLv2
-URL:     http://www.kernel.org/
+URL:	 http://www.kernel.org/
 %if 0%{?with_patch}
 Source0: linux-%{TarballVer}.tar.gz
 %else
@@ -286,7 +286,7 @@ make ARCH=%{Arch} modules %{?_smp_mflags}
     chmod 0755 %{SOURCE18}
     if [ -e $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} ]; then
         ##%{SOURCE18} -k $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
-    echo "**** NOTE: now don't check Kabi. ****"
+	echo "**** NOTE: now don't check Kabi. ****"
     else
         echo "**** NOTE: Cannot find reference Module.kabi file. ****"
     fi
@@ -424,13 +424,13 @@ collect_modules_list()
 }
 
 collect_modules_list networking \
-             'register_netdev|ieee80211_register_hw|usbnet_probe|phy_driver_register|rt2x00(pci|usb)_probe|register_netdevice'
+			 'register_netdev|ieee80211_register_hw|usbnet_probe|phy_driver_register|rt2x00(pci|usb)_probe|register_netdevice'
 collect_modules_list block \
-         'ata_scsi_ioctl|scsi_add_host|scsi_add_host_with_dma|blk_alloc_queue|blk_init_queue|register_mtd_blktrans|scsi_esp_register|scsi_register_device_handler|blk_queue_physical_block_size|ahci_platform_get_resources' 'pktcdvd.ko|dm-mod.ko'
+		 'ata_scsi_ioctl|scsi_add_host|scsi_add_host_with_dma|blk_alloc_queue|blk_init_queue|register_mtd_blktrans|scsi_esp_register|scsi_register_device_handler|blk_queue_physical_block_size|ahci_platform_get_resources' 'pktcdvd.ko|dm-mod.ko'
 collect_modules_list drm \
-             'drm_open|drm_init'
+			 'drm_open|drm_init'
 collect_modules_list modesetting \
-             'drm_crtc_init'
+			 'drm_crtc_init'
 
 # detect missing or incorrect license tags
 rm -f modinfo
@@ -441,7 +441,7 @@ do
 done < modnames
 
 grep -E -v \
-      'GPL( v2)?$|Dual BSD/GPL$|Dual MPL/GPL$|GPL and additional rights$' \
+	  'GPL( v2)?$|Dual BSD/GPL$|Dual MPL/GPL$|GPL and additional rights$' \
   modinfo && exit 1
 
 rm -f modinfo modnames drivers.undef
@@ -653,7 +653,7 @@ fi
 %{_sbindir}/new-kernel-pkg --package kernel --rpmposttrans %{KernelVer} || exit $?
 if [ `uname -i` == "aarch64" ] &&
         [ -f /boot/EFI/grub2/grub.cfg ]; then
-    /usr/bin/sh %{_sbindir}/mkgrub-menu-%{hulkrelease}.sh %{version}-%{hulkrelease}.aarch64  /boot/EFI/grub2/grub.cfg  update  
+	/usr/bin/sh %{_sbindir}/mkgrub-menu-%{hulkrelease}.sh %{version}-%{hulkrelease}.aarch64  /boot/EFI/grub2/grub.cfg  update  
 fi
 if [ -x %{_sbindir}/weak-modules ]
 then
