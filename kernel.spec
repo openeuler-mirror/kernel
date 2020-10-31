@@ -12,7 +12,7 @@
 %global upstream_sublevel   0
 %global devel_release       1
 %global maintenance_release .0.0
-%global pkg_release         .1
+%global pkg_release         .2
 
 %define with_debuginfo 1
 %define with_source 1
@@ -827,5 +827,8 @@ fi
 %endif
 
 %changelog
+* Sat Oct 31 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-1.0.0.2
+- enable access to .config through /proc/config.gz
+
 * Tue Oct 27 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-1.0.0.1
 - package init based on upstream v5.10-rc1
