@@ -220,8 +220,12 @@ fi
 cp -rl vanilla-%{TarballVer} linux-%{KernelVer}
 %else
 %setup -q -n kernel-%{version} -c
-mv kernel linux-%{version}
-cp -rl linux-%{version} linux-%{KernelVer}
+if [ -d "kernel" ]; then
+    mv kernel linux-%{version}
+    cp -rl linux-%{version} linux-%{KernelVer}
+else
+    echo "**** ERROR: no kernel source directory ****"
+fi
 %endif
 
 cd linux-%{KernelVer}
