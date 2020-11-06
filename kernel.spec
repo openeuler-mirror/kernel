@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       1
+%global devel_release       2
 %global maintenance_release .0.0
-%global pkg_release         .2
+%global pkg_release         .3
 
 %define with_debuginfo 1
 %define with_source 1
@@ -220,8 +220,12 @@ fi
 cp -rl vanilla-%{TarballVer} linux-%{KernelVer}
 %else
 %setup -q -n kernel-%{version} -c
-mv kernel linux-%{version}
-cp -rl linux-%{version} linux-%{KernelVer}
+if [ -d "kernel" ]; then
+    mv kernel linux-%{version}
+    cp -rl linux-%{version} linux-%{KernelVer}
+else
+    echo "**** ERROR: no kernel source directory ****"
+fi
 %endif
 
 cd linux-%{KernelVer}
@@ -403,9 +407,7 @@ popd
 install -m 644 .config $RPM_BUILD_ROOT/boot/config-%{KernelVer}
 install -m 644 System.map $RPM_BUILD_ROOT/boot/System.map-%{KernelVer}
 
-%if 0%{?with_kabichk}
-    gzip -c9 < Module.symvers > $RPM_BUILD_ROOT/boot/symvers-%{KernelVer}.gz
-%endif
+gzip -c9 < Module.symvers > $RPM_BUILD_ROOT/boot/symvers-%{KernelVer}.gz
 
 mkdir -p $RPM_BUILD_ROOT%{_sbindir}
 install -m 755 %{SOURCE200} $RPM_BUILD_ROOT%{_sbindir}/mkgrub-menu-%{devel_release}.sh
@@ -672,7 +674,9 @@ if [ -x %{_sbindir}/weak-modules ]
 then
     %{_sbindir}/weak-modules --remove-kernel %{KernelVer} || exit $?
 fi
-if [ "`ls -A  /lib/modules/%{KernelVer}`" = "" ]; then
+
+# remove empty directory
+if [ -d /lib/modules/%{KernelVer} ] && [ "`ls -A  /lib/modules/%{KernelVer}`" = "" ]; then
     rm -rf /lib/modules/%{KernelVer}
 fi
 
@@ -721,9 +725,7 @@ fi
 %ifarch aarch64
 /boot/dtb-*
 %endif
-%if 0%{?with_kabichk}
 /boot/symvers-*
-%endif
 /boot/System.map-*
 /boot/vmlinuz-*
 %ghost /boot/initramfs-%{KernelVer}.img
@@ -827,6 +829,11 @@ fi
 %endif
 
 %changelog
+* Mon Nov 02 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-2.0.0.3
+- rebase on top of v5.10-rc2
+- provide /boot/symvers-kernelver.gz even no kabichk
+- fix warning on uninstall kernel rpm
+
 * Sat Oct 31 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-1.0.0.2
 - enable access to .config through /proc/config.gz
 
