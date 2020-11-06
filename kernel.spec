@@ -674,7 +674,9 @@ if [ -x %{_sbindir}/weak-modules ]
 then
     %{_sbindir}/weak-modules --remove-kernel %{KernelVer} || exit $?
 fi
-if [ "`ls -A  /lib/modules/%{KernelVer}`" = "" ]; then
+
+# remove empty directory
+if [ -d /lib/modules/%{KernelVer} ] && [ "`ls -A  /lib/modules/%{KernelVer}`" = "" ]; then
     rm -rf /lib/modules/%{KernelVer}
 fi
 
