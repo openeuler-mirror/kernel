@@ -7,6 +7,7 @@
 %global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/)
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
+%global debuginfodir /usr/lib/debug
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
