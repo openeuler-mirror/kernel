@@ -10,7 +10,7 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       2
+%global devel_release       rc2
 %global maintenance_release .0.0
 %global pkg_release         .3
 
@@ -829,13 +829,13 @@ fi
 %endif
 
 %changelog
-* Mon Nov 02 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-2.0.0.3
+* Mon Nov 02 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-rc2.0.0.3
 - rebase on top of v5.10-rc2
 - provide /boot/symvers-kernelver.gz even no kabichk
 - fix warning on uninstall kernel rpm
 
-* Sat Oct 31 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-1.0.0.2
+* Sat Oct 31 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-rc1.0.0.2
 - enable access to .config through /proc/config.gz
 
-* Tue Oct 27 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-1.0.0.1
+* Tue Oct 27 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-rc1.0.0.1
 - package init based on upstream v5.10-rc1
