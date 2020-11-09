@@ -11,9 +11,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       rc2
+%global devel_release       rc3
 %global maintenance_release .0.0
-%global pkg_release         .3
+%global pkg_release         .4
 
 %define with_debuginfo 1
 %define with_source 1
@@ -830,6 +830,11 @@ fi
 %endif
 
 %changelog
+* Mon Nov 09 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-rc3.0.0.4
+- use rcX for v5.10-rcX source release
+- rebase on top of v5.10-rc3
+- kernel.spec: add missing debuginfodir
+
 * Mon Nov 02 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-rc2.0.0.3
 - rebase on top of v5.10-rc2
 - provide /boot/symvers-kernelver.gz even no kabichk
