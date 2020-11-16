@@ -940,6 +940,8 @@ static void gic_check_hisi_workaround(void)
 			break;
 		}
 	}
+
+	acpi_put_table(tbl);
 }
 
 static void gic_compute_nr_gicr(void)
