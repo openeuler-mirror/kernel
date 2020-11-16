@@ -102,6 +102,8 @@ static void cppc_check_hisi_workaround(void)
 			break;
 		}
 	}
+
+	acpi_put_table(tbl);
 }
 
 /* Callback function used to retrieve the max frequency from DMI */
