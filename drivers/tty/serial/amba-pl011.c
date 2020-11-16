@@ -1523,6 +1523,8 @@ static void pl011_check_hisi_workaround(void)
 			break;
 		}
 	}
+
+	acpi_put_table(tbl);
 }
 
 #else
