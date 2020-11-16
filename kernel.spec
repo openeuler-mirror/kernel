@@ -20,6 +20,9 @@
 
 %define with_python2 0
 
+# failed if there is new config options
+%define listnewconfig_fail 0
+
 Name:	 kernel
 Version: %{upstream_version}.%{upstream_sublevel}
 Release: %{devel_release}%{?maintenance_release}%{?pkg_release}%{?extra_release}
@@ -41,15 +44,15 @@ Source200: mkgrub-menu-aarch64.sh
 Source2000: cpupower.service
 Source2001: cpupower.config
 
+Source3000: kernel-5.10.0-aarch64.config
+Source3001: kernel-5.10.0-x86_64.config
+
 %if 0%{?with_patch}
 Source9000: apply-patches
 Source9001: guards
 Source9002: series.conf
 Source9998: patches.tar.bz2
 %endif
-
-Patch0001: 0001-config-add-openeuler_defconfig.patch
-Patch0002: 0001-x86-config-add-openeuler_defconfig.patch
 
 #BuildRequires:
 BuildRequires: module-init-tools, patch >= 2.5.4, bash >= 2.03, tar
@@ -231,9 +234,6 @@ fi
 
 cd linux-%{KernelVer}
 
-%patch0001 -p1
-%patch0002 -p1
-
 %if 0%{?with_patch}
 cp %{SOURCE9000} .
 cp %{SOURCE9001} .
@@ -289,7 +289,21 @@ perl -p -i -e "s/^EXTRAVERSION.*/EXTRAVERSION = -%{release}.%{_target_cpu}/" Mak
 ## make linux
 make mrproper %{_smp_mflags}
 
-make ARCH=%{Arch} openeuler_defconfig
+# prepare configs
+mkdir -p configs
+cp %{SOURCE3000} configs
+cp %{SOURCE3001} configs
+cp configs/kernel-%{version}-%{_target_cpu}.config .config
+
+make ARCH=%{Arch} listnewconfig |grep -E '^CONFIG_' > newconfig || true
+%if %{listnewconfig_fail}
+  if [ -s newconfig ]; then
+    echo "**** NOTE: new config options. ****"
+    cat newconfig
+    exit 1
+  fi
+%endif
+rm -f newconfig
 make ARCH=%{Arch} olddefconfig
 
 TargetImage=$(basename $(make -s image_name))
