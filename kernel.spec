@@ -11,9 +11,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       rc3
+%global devel_release       rc4
 %global maintenance_release .0.0
-%global pkg_release         .4
+%global pkg_release         .5
 
 %define with_debuginfo 1
 %define with_source 1
@@ -844,6 +844,10 @@ fi
 %endif
 
 %changelog
+* Tue Nov 17 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-rc4.0.0.5
+- rebase on top of v5.10-rc4
+- kernel.spec: privode config files in src package
+
 * Mon Nov 09 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-rc3.0.0.4
 - use rcX for v5.10-rcX source release
 - rebase on top of v5.10-rc3
