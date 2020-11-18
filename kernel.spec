@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2010.2.0
+%global hulkrelease 2011.2.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0046
+Release: %{hulkrelease}.0047
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,201 @@ fi
 %endif
 
 %changelog
+* Wed Nov 18 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.2.0.0047
+- nvme-fabrics: modify default value to reconnect forever
+- nvme-rdma: add module param to turn off inline data dynamically
+- nvme-rdma: fix crash casue by destroy id while resolving addr
+- nvme-rdma: avoid race between time out and tear down
+- nvme-core: introduce sync io queues
+- nvme-rdma: avoid repeated request completion
+- nvme-rdma: fix crash due to incorrect cqe
+- nvme-multipath: fix crash in nvme_mpath_clear_ctrl_paths
+- nvme: fix controller removal race with scan work
+- nvme-multipath: fix bogus request queue reference put
+- nvme-multipath: fix deadlock due to head->lock
+- nvme: don't protect ns mutation with ns->head->lock
+- nvme: clear any SGL flags in passthru commands
+- nvme: disable streams when get stream params failed
+- nvme: revalidate after verifying identifiers
+- nvme: release namespace head reference on error
+- nvme: unlink head after removing last namespace
+- nvme: Make nvme_uninit_ctrl symmetric to nvme_init_ctrl
+- nvme: Fix ctrl use-after-free during sysfs deletion
+- nvme-rdma: fix crash when connect rejected
+- nvme-rdma: fix timeout handler
+- nvme: Fix parsing of ANA log page
+- nvme: release ida resources
+- nvme: Add compat_ioctl handler for NVME_IOCTL_SUBMIT_IO
+- nvme: introduce "Command Aborted By host" status code
+- nvme: enable aen regardless of the presence of I/O queues
+- nvme: make nvme_identify_ns propagate errors back
+- nvme: pass status to nvme_error_status
+- nvme: don't abort completed request in nvme_cancel_request
+- nvme: put ns_head ref if namespace fails allocation
+- nvme: implement Enhanced Command Retry
+- nvme: wait until all completed request's complete fn is called
+- blk-mq: introduce blk_mq_tagset_wait_completed_request()
+- blk-mq: introduce blk_mq_request_completed()
+- nvme-rdma: fix a segmentation fault during module unload
+- mlx5: remove support for ib_get_vector_affinity
+- nvme-rdma: fix possible use-after-free in connect timeout
+- nvme-rdma: fix possible use-after-free in connect error flow
+- nvme-rdma: use dynamic dma mapping per command
+- nvme-rdma: remove redundant reference between ib_device and tagset
+- scsi/hifc: add hifc driver compile config module
+- scsi/hifc: add hifc driver FC service module
+- scsi/hifc: add hifc driver scsi module
+- scsi/hifc: add hifc driver io module
+- scsi/hifc: add hifc driver port resource module
+- scsi/hifc: add hifc driver port manager module
+- scsi/hifc: add hifc driver chip resource module
+- perf/core: Fix a memory leak in perf_event_parse_addr_filter()
+- mm/rmap: fixup copying of soft dirty and uffd ptes
+- mm: madvise: fix vma user-after-free
+- svcrdma: fix bounce buffers for unaligned offsets and multiple pages
+- net/mlx5: Don't call timecounter cyc2time directly from 1PPS flow
+- net/tls: sendfile fails with ktls offload
+- tipc: fix the skb_unshare() in tipc_buf_append()
+- mlx4: handle non-napi callers to napi_poll
+- net/mlx5e: Fix VLAN create flow
+- net/mlx5e: Fix VLAN cleanup flow
+- openvswitch: handle DNAT tuple collision
+- xfrmi: drop ignore_df check before updating pmtu
+- net: openvswitch: use div_u64() for 64-by-32 divisions
+- e1000: Do not perform reset in reset_task if we are already down
+- tipc: fix memory leak in service subscripting
+- net: openvswitch: use u64 for meter bucket
+- svcrdma: Fix leak of transport addresses
+- net: sch_generic: aviod concurrent reset and enqueue op for lockless qdisc
+- cpufreq: CPPC: put ACPI table after using it
+- cpufreq : CPPC: Break out if HiSilicon CPPC workaround is matched
+- tty/amba-pl011: Call acpi_put_table() to fix memory leak
+- irqchip/gicv3: Call acpi_put_table() to fix memory leak
+- partitions/efi: Fix partition name parsing in GUID partition entry
+- tty: make FONTX ioctl use the tty pointer they were actually passed
+- vt: keyboard, extend func_buf_lock to readers
+- vt: keyboard, simplify vt_kdgkbsent
+- binder: fix UAF when releasing todo list
+- bpf: Fix clobbering of r2 in bpf_gen_ld_abs
+- bpf: Remove recursion prevention from rcu free callback
+- ipvs: Fix uninit-value in do_ip_vs_set_ctl()
+- xfs: make sure the rt allocator doesn't run off the end
+- ip_gre: set dev->hard_header_len and dev->needed_headroom properly
+- crypto: ccp - fix error handling
+- netfilter: nf_fwd_netdev: clear timestamp in forwarding path
+- netfilter: conntrack: connection timeout after re-register
+- vfio iommu type1: Fix memory leak in vfio_iommu_type1_pin_pages
+- vfio/pci: Clear token on bypass registration failure
+- ext4: limit entries returned when counting fsmap records
+- watchdog: Use put_device on error
+- watchdog: Fix memleak in watchdog_cdev_register
+- watchdog: initialize device before misc_register
+- ramfs: fix nommu mmap with gaps in the page cache
+- lib/crc32.c: fix trivial typo in preprocessor condition
+- xfs: fix high key handling in the rt allocator's query_range function
+- xfs: limit entries returned when counting fsmap records
+- mm, oom_adj: don't loop through tasks in __set_oom_adj when not necessary
+- mm/memcg: fix device private memcg accounting
+- netfilter: nf_log: missing vlan offload tag and proto
+- ipvs: clear skb->tstamp in forwarding path
+- cifs: Return the error from crypt_message when enc/dec key not found.
+- cifs: remove bogus debug code
+- icmp: randomize the global rate limiter
+- tcp: fix to update snd_wl1 in bulk receiver fast path
+- net/sched: act_tunnel_key: fix OOB write in case of IPv6 ERSPAN tunnels
+- net/ipv4: always honour route mtu during forwarding
+- net: fix pos incrementment in ipv6_route_seq_next
+- ipv4: Restore flowi4_oif update before call to xfrm_lookup_route
+- mm: khugepaged: recalculate min_free_kbytes after memory hotplug as expected by khugepaged
+- perf: Fix task_function_call() error handling
+- bonding: set dev->needed_headroom in bond_setup_by_slave()
+- xfrm: Use correct address family in xfrm_state_find
+- xfrm: clone whole liftime_cur structure in xfrm_do_migrate
+- xfrm: clone XFRMA_SEC_CTX in xfrm_do_migrate
+- xfrm: clone XFRMA_REPLAY_ESN_VAL in xfrm_do_migrate
+- xfrm: clone XFRMA_SET_MARK in xfrm_do_migrate
+- sctp: fix sctp_auth_init_hmacs() error path
+- cifs: Fix incomplete memory allocation on setxattr path
+- mm/khugepaged: fix filemap page_to_pgoff(page) != offset
+- nvme-core: put ctrl ref when module ref get fail
+- usermodehelper: reset umask to default before executing user process
+- netfilter: ctnetlink: add a range check for l3/l4 protonum
+- ep_create_wakeup_source(): dentry name can change under you...
+- epoll: EPOLL_CTL_ADD: close the race in decision to take fast path
+- epoll: replace ->visited/visited_list with generation count
+- epoll: do not insert into poll queues until all sanity checks are done
+- mm: don't rely on system state to detect hot-plug operations
+- mm: replace memmap_context by meminit_context
+- random32: Restore __latent_entropy attribute on net_rand_state
+- nfs: Fix security label length not being reset
+- nvme-core: get/put ctrl and transport module in nvme_dev_open/release()
+- ftrace: Move RCU is watching check after recursion check
+- mm, THP, swap: fix allocating cluster for swapfile by mistake
+- kprobes: Fix to check probe enabled before disarm_kprobe_ftrace()
+- tracing: fix double free
+- bpf: Fix a rcu warning for bpffs map pretty-print
+- lockdep: fix order in trace_hardirqs_off_caller()
+- nvme: explicitly update mpath disk capacity on revalidation
+- perf parse-events: Use strcmp() to compare the PMU name
+- vfio/pci: fix racy on error and request eventfd ctx
+- nvme: fix possible deadlock when I/O is blocked
+- cifs: Fix double add page to memcg when cifs_readpages
+- vfio/pci: Clear error and request eventfd ctx after releasing
+- perf kcore_copy: Fix module map when there are no modules loaded
+- perf metricgroup: Free metric_events on error
+- perf util: Fix memory leak of prefix_if_not_in
+- perf stat: Fix duration_time value for higher intervals
+- perf evsel: Fix 2 memory leaks
+- vfio/pci: fix memory leaks of eventfd ctx
+- printk: handle blank console arguments passed in.
+- arm64/cpufeature: Drop TraceFilt feature exposure from ID_DFR0 register
+- fuse: don't check refcount after stealing page
+- perf mem2node: Avoid double free related to realloc
+- bdev: Reduce time holding bd_mutex in sync in blkdev_close()
+- mm/mmap.c: initialize align_offset explicitly for vm_unmapped_area
+- mm/vmscan.c: fix data races using kswapd_classzone_idx
+- mm/filemap.c: clear page error before actual read
+- mm/kmemleak.c: use address-of operator on section symbols
+- NFS: Fix races nfs_page_group_destroy() vs nfs_destroy_unlinked_subrequests()
+- PCI: pciehp: Fix MSI interrupt race
+- SUNRPC: Fix a potential buffer overflow in 'svc_print_xprts()'
+- nvme-multipath: do not reset on unknown status
+- perf cpumap: Fix snprintf overflow check
+- serial: 8250: 8250_omap: Terminate DMA before pushing data on RX timeout
+- serial: 8250_omap: Fix sleeping function called from invalid context during probe
+- serial: 8250_port: Don't service RX FIFO if throttled
+- perf parse-events: Fix 3 use after frees found with clang ASAN
+- xfs: mark dir corrupt when lookup-by-hash fails
+- xfs: don't ever return a stale pointer from __xfs_dir3_free_read
+- mm: avoid data corruption on CoW fault into PFN-mapped VMA
+- perf jevents: Fix leak of mapfile memory
+- random: fix data races at timer_rand_state
+- selinux: sel_avc_get_stat_idx should increase position index
+- audit: CONFIG_CHANGE don't log internal bookkeeping as an event
+- skbuff: fix a data race in skb_queue_len()
+- mm/swapfile.c: swap_next should increase position index
+- tracing: Set kernel_stack's caller size properly
+- ACPI: EC: Reference count query handlers under lock
+- sctp: move trace_sctp_probe_path into sctp_outq_sack
+- ipv6_route_seq_next should increase position index
+- rt_cpu_seq_next should increase position index
+- neigh_stat_seq_next() should increase position index
+- xfs: fix log reservation overflows when allocating large rt extents
+- kernel/sys.c: avoid copying possible padding bytes in copy_to_user
+- xfs: fix attr leaf header freemap.size underflow
+- fix dget_parent() fastpath race
+- net: silence data-races on sk_backlog.tail
+- mm: fix double page fault on arm64 if PTE_AF is cleared
+- sdei_watchdog: avoid possible false hardlockup
+- xen/pciback: use lateeoi irq binding
+- xen/pvcallsback: use lateeoi irq binding
+- xen/scsiback: use lateeoi irq binding
+- xen/netback: use lateeoi irq binding
+- xen/blkback: use lateeoi irq binding
+- xen/events: fix race in evtchn_fifo_unmask()
+- xen/events: add a proper barrier to 2-level uevent unmasking
+- arm64: fix abi change caused by ILP32
+
 * Fri Oct 30 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2010.2.0.0046
 - rtc: cmos: Revert "rtc: Fix the AltCentury value on AMD/Hygon platform"
 - NTB: Fix static check warning in perf_clear_test
