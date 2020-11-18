@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2011.2.0
+%global hulkrelease 2011.3.0
 
 %define with_patch 0
 
@@ -789,7 +789,8 @@ fi
 %endif
 
 %changelog
-* Wed Nov 18 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.2.0.0047
+* Wed Nov 18 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.3.0.0047
+- tools: perf: Fix build error in v4.19.y
 - nvme-fabrics: modify default value to reconnect forever
 - nvme-rdma: add module param to turn off inline data dynamically
 - nvme-rdma: fix crash casue by destroy id while resolving addr
