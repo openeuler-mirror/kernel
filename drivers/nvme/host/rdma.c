@@ -141,6 +141,10 @@ static bool register_always = true;
 module_param(register_always, bool, 0444);
 MODULE_PARM_DESC(register_always,
 	 "Use memory registration even for contiguous memory regions");
+static bool enable_inline_data = true;
+module_param(enable_inline_data, bool, 0644);
+MODULE_PARM_DESC(enable_inline_data,
+	"global switch for inline data when use rdma transport");
 
 static int nvme_rdma_cm_handler(struct rdma_cm_id *cm_id,
 		struct rdma_cm_event *event);
@@ -1254,7 +1258,7 @@ static int nvme_rdma_map_data(struct nvme_rdma_queue *queue,
 
 	if (count <= dev->num_inline_segments) {
 		if (rq_data_dir(rq) == WRITE && nvme_rdma_queue_idx(queue) &&
-		    queue->ctrl->use_inline_data &&
+		    queue->ctrl->use_inline_data && enable_inline_data &&
 		    blk_rq_payload_bytes(rq) <=
 				nvme_rdma_inline_data_size(queue)) {
 			ret = nvme_rdma_map_sg_inline(queue, req, c, count);
