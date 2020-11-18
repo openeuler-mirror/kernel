@@ -23,6 +23,7 @@
 #define NVMF_DEF_RECONNECT_DELAY	10
 /* default to 600 seconds of reconnect attempts before giving up */
 #define NVMF_DEF_CTRL_LOSS_TMO		600
+#define NVMF_DEF_RECONNECT_FOREVER	-1
 
 /*
  * Define a host as seen by the target.  We allocate one at boot, but also
