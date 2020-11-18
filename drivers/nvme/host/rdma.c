@@ -240,7 +240,7 @@ static void nvme_rdma_qp_event(struct ib_event *event, void *context)
 static int nvme_rdma_wait_for_cm(struct nvme_rdma_queue *queue)
 {
 	wait_for_completion_interruptible_timeout(&queue->cm_done,
-			msecs_to_jiffies(NVME_RDMA_CONNECT_TIMEOUT_MS) + 1);
+			msecs_to_jiffies(2 * NVME_RDMA_CONNECT_TIMEOUT_MS));
 	return queue->cm_error;
 }
 
