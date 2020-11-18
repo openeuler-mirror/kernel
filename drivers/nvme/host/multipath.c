@@ -311,15 +311,13 @@ static void nvme_mpath_set_live(struct nvme_ns *ns)
 	if (!head->disk)
 		return;
 
-	mutex_lock(&head->lock);
-	if (!(head->disk->flags & GENHD_FL_UP)) {
+	if (!test_and_set_bit(NVME_NSHEAD_DISK_LIVE, &head->flags)) {
 		device_add_disk(&head->subsys->dev, head->disk);
 		if (sysfs_create_group(&disk_to_dev(head->disk)->kobj,
 				&nvme_ns_id_attr_group))
 			dev_warn(&head->subsys->dev,
 				 "failed to create id group.\n");
 	}
-	mutex_unlock(&head->lock);
 
 	synchronize_srcu(&head->srcu);
 	kblockd_schedule_work(&head->requeue_work);
