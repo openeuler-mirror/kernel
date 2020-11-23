@@ -804,6 +804,8 @@ fi
 - powercap: restrict energy meter to root access
 - Input: sunkbd - avoid use-after-free in teardown paths
 - nbd: don't update block size after device is started
+
+* Mon Nov 18 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.3.0.0047
 - tools: perf: Fix build error in v4.19.y
 - nvme-fabrics: modify default value to reconnect forever
 - nvme-rdma: add module param to turn off inline data dynamically
