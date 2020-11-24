@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2011.3.0
+%global hulkrelease 2011.4.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0047
+Release: %{hulkrelease}.0048
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,22 @@ fi
 %endif
 
 %changelog
+* Mon Nov 23 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.4.0.0048
+- Bluetooth: fix kernel oops in store_pending_adv_report
+- vt: Disable KD_FONT_OP_COPY
+- fbcon: Fix global-out-of-bounds read in fbcon_get_font()
+- Fonts: Support FONT_EXTRA_WORDS macros for built-in fonts
+- fbdev, newport_con: Move FONT_EXTRA_WORDS macros into linux/font.h
+- speakup: Do not let the line discipline be used several times
+- mm/page_idle.c: skip offline pages
+- mm/memory_hotplug: refrain from adding memory into an impossible node
+- khugepaged: drain LRU add pagevec after swapin
+- khugepaged: drain all LRU caches before scanning pages
+- khugepaged: do not stop collapse if less than half PTEs are referenced
+- powercap: restrict energy meter to root access
+- Input: sunkbd - avoid use-after-free in teardown paths
+- nbd: don't update block size after device is started
+
 * Wed Nov 18 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.3.0.0047
 - tools: perf: Fix build error in v4.19.y
 - nvme-fabrics: modify default value to reconnect forever
