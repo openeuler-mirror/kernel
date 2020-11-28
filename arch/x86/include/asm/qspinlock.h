@@ -14,8 +14,8 @@
 
 static __always_inline bool __queued_RMW_btsl(struct qspinlock *lock)
 {
-	GEN_BINARY_RMWcc(LOCK_PREFIX "btsl", lock->val.counter,
-			 "I", _Q_PENDING_OFFSET, "%0", c);
+	return GEN_BINARY_RMWcc(LOCK_PREFIX "btsl", lock->val.counter,
+			c, "I", _Q_PENDING_OFFSET);
 }
 
 static __always_inline u32 queued_fetch_set_pending_acquire(struct qspinlock *lock)
