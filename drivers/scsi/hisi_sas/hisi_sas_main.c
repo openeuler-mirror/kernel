@@ -685,30 +685,31 @@ static struct hisi_sas_device *hisi_sas_alloc_dev(struct domain_device *device)
 	struct hisi_hba *hisi_hba = dev_to_hisi_hba(device);
 	struct hisi_sas_device *sas_dev = NULL;
 	unsigned long flags;
-	int last = hisi_hba->last_dev_id;
 	int first = (hisi_hba->last_dev_id + 1) % HISI_SAS_MAX_DEVICES;
+	int dev_id;
 	int i;
 
 	spin_lock_irqsave(&hisi_hba->lock, flags);
-	for (i = first; i != last; i %= HISI_SAS_MAX_DEVICES) {
-		if (hisi_hba->devices[i].dev_type == SAS_PHY_UNUSED) {
-			int queue = i % hisi_hba->queue_count;
+	for (i = first; i < first + HISI_SAS_MAX_DEVICES; i++) {
+		dev_id = i % HISI_SAS_MAX_DEVICES;
+		if (hisi_hba->devices[dev_id].dev_type == SAS_PHY_UNUSED) {
+			int queue = dev_id % hisi_hba->queue_count;
 			struct hisi_sas_dq *dq = &hisi_hba->dq[queue];
 
-			hisi_hba->devices[i].device_id = i;
-			sas_dev = &hisi_hba->devices[i];
+			hisi_hba->devices[dev_id].device_id = dev_id;
+			sas_dev = &hisi_hba->devices[dev_id];
 			sas_dev->dev_status = HISI_SAS_DEV_INIT;
 			sas_dev->dev_type = device->dev_type;
 			sas_dev->hisi_hba = hisi_hba;
 			sas_dev->sas_device = device;
 			sas_dev->dq = dq;
 			spin_lock_init(&sas_dev->lock);
-			INIT_LIST_HEAD(&hisi_hba->devices[i].list);
+			INIT_LIST_HEAD(&hisi_hba->devices[dev_id].list);
 			break;
 		}
-		i++;
 	}
-	hisi_hba->last_dev_id = i;
+	if (sas_dev)
+		hisi_hba->last_dev_id = i;
 	spin_unlock_irqrestore(&hisi_hba->lock, flags);
 
 	return sas_dev;
