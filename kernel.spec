@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2011.5.0
+%global hulkrelease 2011.6.0
 
 %define with_patch 0
 
@@ -790,6 +790,9 @@ fi
 
 %changelog
 * Sat Nov 28 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.5.0.0049
+- refcount_t: Add ACQUIRE ordering on success for dec(sub)_and_test() variants
+- x86/asm: 'Simplify' GEN_*_RMWcc() macros
+- Revert "refcount_t: Add ACQUIRE ordering on success for dec(sub)_and_test() variants"
 - refcount_t: Add ACQUIRE ordering on success for dec(sub)_and_test() variants
 - powerpc/64s: flush L1D after user accesses
 - powerpc/uaccess: Evaluate macro arguments once, before user access is allowed
