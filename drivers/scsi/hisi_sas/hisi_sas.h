@@ -77,6 +77,8 @@
 #define HISI_SAS_SATA_PROTOCOL_FPDMA		0x8
 #define HISI_SAS_SATA_PROTOCOL_ATAPI		0x10
 
+#define CLEAR_ITCT_TIMEOUT	20
+
 struct hisi_hba;
 
 enum {
@@ -298,7 +300,7 @@ struct hisi_sas_hw {
 	void (*phy_set_linkrate)(struct hisi_hba *hisi_hba, int phy_no,
 			struct sas_phy_linkrates *linkrates);
 	enum sas_linkrate (*phy_get_max_linkrate)(void);
-	void (*clear_itct)(struct hisi_hba *hisi_hba,
+	int (*clear_itct)(struct hisi_hba *hisi_hba,
 			    struct hisi_sas_device *dev);
 	void (*free_device)(struct hisi_sas_device *sas_dev);
 	int (*get_wideport_bitmap)(struct hisi_hba *hisi_hba, int port_id);

@@ -1064,14 +1064,15 @@ static void hisi_sas_dev_gone(struct domain_device *device)
 	struct hisi_sas_device *sas_dev = device->lldd_dev;
 	struct hisi_hba *hisi_hba = dev_to_hisi_hba(device);
 	struct device *dev = hisi_hba->dev;
-	int rc = 0;
+	int rc0 = 0;
+	int rc1 = 0;
 
 	dev_info(dev, "dev[%d:%x] is gone\n",
 		 sas_dev->device_id, sas_dev->dev_type);
 
 	down(&hisi_hba->sem);
 	if (!test_bit(HISI_SAS_RESET_BIT, &hisi_hba->flags)) {
-		rc = hisi_sas_internal_task_abort(hisi_hba, device,
+		rc0 = hisi_sas_internal_task_abort(hisi_hba, device,
 				     HISI_SAS_INT_ABT_DEV, 0);
 
 		hisi_sas_dereg_device(hisi_hba, device);
@@ -1080,16 +1081,20 @@ static void hisi_sas_dev_gone(struct domain_device *device)
 			dev_info(dev, "dev gone: release remain resources anyway.\n");
 		}
 
-		hisi_hba->hw->clear_itct(hisi_hba, sas_dev);
+		rc1 = hisi_hba->hw->clear_itct(hisi_hba, sas_dev);
 		device->lldd_dev = NULL;
 	}
 
 	if (hisi_hba->hw->free_device)
 		hisi_hba->hw->free_device(sas_dev);
-	sas_dev->dev_type = SAS_PHY_UNUSED;
+
+	/* Don't mark it as SAS_PHY_UNUSED if failed to clear ITCT */
+	if (!rc1)
+		sas_dev->dev_type = SAS_PHY_UNUSED;
 	sas_dev->sas_device = NULL;
 	up(&hisi_hba->sem);
-	if (rc == -EIO) {
+
+	if (rc0 == -EIO) {
 		dev_err(dev, "internal abort timeout for dev gone.\n");
 		queue_work(hisi_hba->wq, &hisi_hba->rst_work);
 	}
