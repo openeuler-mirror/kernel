@@ -752,7 +752,7 @@ static void init_reg_v3_hw(struct hisi_hba *hisi_hba)
 			 upper_32_bits(hisi_hba->initial_fis_dma));
 
 	/* RAS registers init */
-	hisi_sas_write32(hisi_hba, SAS_RAS_INTR0_MASK, 0x0);
+	hisi_sas_write32(hisi_hba, SAS_RAS_INTR0_MASK, 0xf80000);
 	hisi_sas_write32(hisi_hba, SAS_RAS_INTR1_MASK, 0x0);
 	hisi_sas_write32(hisi_hba, SAS_RAS_INTR2_MASK, 0x0);
 	hisi_sas_write32(hisi_hba, CFG_SAS_RAS_INTR_MASK, 0x0);
