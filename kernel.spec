@@ -789,7 +789,7 @@ fi
 %endif
 
 %changelog
-* Sat Nov 28 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.5.0.0049
+* Sat Nov 28 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.6.0.0049
 - refcount_t: Add ACQUIRE ordering on success for dec(sub)_and_test() variants
 - x86/asm: 'Simplify' GEN_*_RMWcc() macros
 - Revert "refcount_t: Add ACQUIRE ordering on success for dec(sub)_and_test() variants"
