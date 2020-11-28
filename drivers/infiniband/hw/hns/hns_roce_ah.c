@@ -32,7 +32,6 @@
 #include "roce_k_compat.h"
 
 #include <linux/platform_device.h>
-#include <rdma/hns-abi.h>
 #include <rdma/ib_addr.h>
 #include <rdma/ib_cache.h>
 #include "hns_roce_device.h"
@@ -45,13 +44,11 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 				 struct rdma_ah_attr *ah_attr,
 				 struct ib_udata *udata)
 {
-	struct hns_roce_dev *hr_dev = to_hr_dev(ibpd->device);
-	struct hns_roce_ib_create_ah_resp resp = {};
-	struct device *dev = hr_dev->dev;
 #ifdef CONFIG_KERNEL_419
 	const struct ib_gid_attr *gid_attr;
-	int ret = 0;
 #else
+	struct hns_roce_dev *hr_dev = to_hr_dev(ibpd->device);
+	struct device *dev = hr_dev->dev;
 	struct ib_gid_attr gid_attr;
 	union ib_gid sgid;
 	int ret;
@@ -61,8 +58,6 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 	struct in6_addr in6;
 	const struct ib_global_route *grh = rdma_ah_read_grh(ah_attr);
 	u8 vlan_en = 0;
-
-	rdfx_func_cnt(hr_dev, RDFX_FUNC_CREATE_AH);
 
 	ah = kzalloc(sizeof(*ah), GFP_ATOMIC);
 	if (!ah)
@@ -121,8 +116,6 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 		ah->av.gid_index = grh->sgid_index;
 		ah->av.vlan = vlan_tag;
 		ah->av.vlan_en = vlan_en;
-		dev_dbg(dev, "gid_index = 0x%x,vlan = 0x%x\n", ah->av.gid_index,
-			ah->av.vlan);
 
 		if (rdma_ah_get_static_rate(ah_attr))
 			ah->av.stat_rate = IB_RATE_10_GBPS;
@@ -132,18 +125,6 @@ struct ib_ah *hns_roce_create_ah(struct ib_pd *ibpd,
 		ah->av.sl = rdma_ah_get_sl(ah_attr);
 		ah->av.tclass = grh->traffic_class;
 		ah->av.hop_limit = grh->hop_limit;
-	}
-
-	if (udata) {
-		memcpy(resp.dmac, ah_attr->roce.dmac, ETH_ALEN);
-		resp.vlan = vlan_tag;
-		resp.vlan_en = vlan_en;
-		ret = ib_copy_to_udata(udata, &resp,
-				       min(udata->outlen, sizeof(resp)));
-		if (ret) {
-			kfree(ah);
-			return ERR_PTR(ret);
-		}
 	}
 
 	return &ah->ibah;

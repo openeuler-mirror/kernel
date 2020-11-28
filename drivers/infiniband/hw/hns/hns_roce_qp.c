@@ -465,10 +465,6 @@ static int hns_roce_set_user_sq_size(struct hns_roce_dev *hr_dev,
 		hr_qp->sge.sge_cnt = roundup_pow_of_two(hr_qp->sq.wqe_cnt *
 				     (hr_qp->sq.max_gs - HNS_ROCE_SGE_IN_WQE));
 
-	if (hr_qp->ibqp.qp_type == IB_QPT_UD)
-		hr_qp->sge.sge_cnt = roundup_pow_of_two(hr_qp->sq.wqe_cnt *
-							hr_qp->sq.max_gs);
-
 	if ((hr_qp->sq.max_gs > HNS_ROCE_SGE_IN_WQE) &&
 	    (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_A)) {
 		if (hr_qp->sge.sge_cnt > hr_dev->caps.max_extend_sg) {
@@ -1181,7 +1177,6 @@ struct ib_qp *hns_roce_create_qp(struct ib_pd *pd,
 		if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_XRC))
 			return ERR_PTR(-EINVAL);
 		init_attr->recv_cq = init_attr->send_cq;
-	case IB_QPT_UD:
 	case IB_QPT_UC:
 	case IB_QPT_RC: {
 		hr_qp = kzalloc(sizeof(*hr_qp), GFP_KERNEL);

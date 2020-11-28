@@ -236,7 +236,6 @@ enum {
 	HNS_ROCE_CAP_FLAG_FRMR			= BIT(8),
 	HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL		= BIT(9),
 	HNS_ROCE_CAP_FLAG_ATOMIC		= BIT(10),
-	HNS_ROCE_CAP_FLAG_UD			= BIT(11),
 };
 
 enum hns_roce_mtt_type {

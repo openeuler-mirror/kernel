@@ -352,8 +352,7 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 
 	if (unlikely(ibqp->qp_type != IB_QPT_RC &&
 		     ibqp->qp_type != IB_QPT_UC &&
-		     ibqp->qp_type != IB_QPT_GSI &&
-		     ibqp->qp_type != IB_QPT_UD) &&
+		     ibqp->qp_type != IB_QPT_GSI) &&
 		     (ibqp->qp_type != IB_QPT_XRC_INI) &&
 		     (ibqp->qp_type != IB_QPT_XRC_TGT)) {
 		dev_err(dev, "Not supported QP type, type-0x%x, qpn-0x%x!\n",
@@ -408,7 +407,7 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 		tmp_len = 0;
 
 		/* Corresponding to the QP type, wqe process separately */
-		if (ibqp->qp_type == IB_QPT_GSI || ibqp->qp_type == IB_QPT_UD) {
+		if (ibqp->qp_type == IB_QPT_GSI) {
 			ah = to_hr_ah(ud_wr(wr)->ah);
 			ud_sq_wqe = wqe;
 			memset(ud_sq_wqe, 0, sizeof(*ud_sq_wqe));
@@ -1877,8 +1876,7 @@ static void set_default_caps(struct hns_roce_dev *hr_dev)
 	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
 		caps->flags |= HNS_ROCE_CAP_FLAG_ATOMIC | HNS_ROCE_CAP_FLAG_MW |
 			       HNS_ROCE_CAP_FLAG_SRQ | HNS_ROCE_CAP_FLAG_FRMR |
-			       HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL |
-			       HNS_ROCE_CAP_FLAG_UD;
+			       HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL;
 
 		caps->num_qpc_timer	  = HNS_ROCE_V2_MAX_QPC_TIMER_NUM;
 		caps->qpc_timer_entry_sz  = HNS_ROCE_V2_QPC_TIMER_ENTRY_SZ;
@@ -3896,7 +3894,7 @@ static void modify_qp_reset_to_init(struct ib_qp *ibqp,
 	roce_set_field(qpc_mask->byte_4_sqpn_tst, V2_QPC_BYTE_4_TST_M,
 		       V2_QPC_BYTE_4_TST_S, 0);
 
-	if (ibqp->qp_type == IB_QPT_GSI || ibqp->qp_type == IB_QPT_UD)
+	if (ibqp->qp_type == IB_QPT_GSI)
 		roce_set_field(context->byte_4_sqpn_tst,
 			       V2_QPC_BYTE_4_SGE_SHIFT_M,
 			       V2_QPC_BYTE_4_SGE_SHIFT_S,
@@ -4456,8 +4454,7 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	roce_set_field(context->byte_20_smac_sgid_idx,
 		       V2_QPC_BYTE_20_SGE_HOP_NUM_M,
 		       V2_QPC_BYTE_20_SGE_HOP_NUM_S,
-		       (((ibqp->qp_type == IB_QPT_GSI) ||
-			  ibqp->qp_type == IB_QPT_UD) ||
+		       (ibqp->qp_type == IB_QPT_GSI ||
 			  hr_qp->sq.max_gs > HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE) ?
 		       hr_dev->caps.wqe_sge_hop_num : 0);
 	roce_set_field(qpc_mask->byte_20_smac_sgid_idx,
@@ -4680,8 +4677,7 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 		       V2_QPC_BYTE_168_SQ_CUR_BLK_ADDR_M,
 		       V2_QPC_BYTE_168_SQ_CUR_BLK_ADDR_S, 0);
 
-	context->sq_cur_sge_blk_addr = ((ibqp->qp_type == IB_QPT_GSI ||
-					 ibqp->qp_type == IB_QPT_UD) ||
+	context->sq_cur_sge_blk_addr = (ibqp->qp_type == IB_QPT_GSI ||
 					 hr_qp->sq.max_gs >
 					 HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE) ?
 					 (cpu_to_le32(sge_cur_blk >>
@@ -4689,8 +4685,7 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 	roce_set_field(context->byte_184_irrl_idx,
 		       V2_QPC_BYTE_184_SQ_CUR_SGE_BLK_ADDR_M,
 		       V2_QPC_BYTE_184_SQ_CUR_SGE_BLK_ADDR_S,
-		       ((ibqp->qp_type == IB_QPT_GSI ||
-			 ibqp->qp_type == IB_QPT_UD) ||
+		       (ibqp->qp_type == IB_QPT_GSI ||
 			 hr_qp->sq.max_gs > HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE) ?
 		       (sge_cur_blk >> (32 + PAGE_ADDR_SHIFT)) : 0);
 	qpc_mask->sq_cur_sge_blk_addr = 0;
@@ -5430,9 +5425,7 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 	unsigned long flags;
 	int ret = 0;
 
-	if ((hr_qp->ibqp.qp_type == IB_QPT_RC ||
-	     hr_qp->ibqp.qp_type == IB_QPT_UD) &&
-	    hr_qp->state != IB_QPS_RESET) {
+	if (hr_qp->ibqp.qp_type == IB_QPT_RC && hr_qp->state != IB_QPS_RESET) {
 		/* Modify qp to reset before destroying qp */
 		ret = hns_roce_v2_modify_qp(&hr_qp->ibqp, NULL, 0,
 					    hr_qp->state, IB_QPS_RESET);

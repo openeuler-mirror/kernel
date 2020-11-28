@@ -992,12 +992,6 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 					(1ULL << IB_USER_VERBS_CMD_CLOSE_XRCD);
 	}
 
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_UD) {
-		ib_dev->uverbs_cmd_mask |=
-					(1ULL << IB_USER_VERBS_CMD_CREATE_AH) |
-					(1ULL << IB_USER_VERBS_CMD_DESTROY_AH);
-	}
-
 #ifdef CONFIG_NEW_KERNEL
 	ib_dev->driver_id = RDMA_DRIVER_HNS;
 #endif

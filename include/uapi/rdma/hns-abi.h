@@ -36,13 +36,6 @@
 
 #include <linux/types.h>
 
-struct hns_roce_ib_create_ah_resp {
-	__u8	dmac[6];
-	__u16	vlan;
-	__u8	vlan_en;
-	__u8	reserved[7];
-};
-
 struct hns_roce_ib_create_cq {
 	__aligned_u64 buf_addr;
 	__aligned_u64 db_addr;
