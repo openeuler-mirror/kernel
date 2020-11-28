@@ -1265,8 +1265,10 @@ static int slot_complete_v1_hw(struct hisi_hba *hisi_hba,
 		!(cmplt_hdr_data & CMPLT_HDR_RSPNS_XFRD_MSK)) {
 
 		slot_err_v1_hw(hisi_hba, task, slot);
-		if (unlikely(slot->abort))
+		if (unlikely(slot->abort)) {
+			sas_task_abort(task);
 			return ts->stat;
+		}
 		goto out;
 	}
 

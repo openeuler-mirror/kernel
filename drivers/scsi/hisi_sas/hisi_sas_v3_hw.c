@@ -2415,8 +2415,10 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 				dev_info(dev, "data underflow without sense, rsp_code:0x%x, rc:%d.\n",
 					iu->resp_data[0], rc);
 		}
-		if (unlikely(slot->abort))
+		if (unlikely(slot->abort)) {
+			sas_task_abort(task);
 			return ts->stat;
+		}
 		goto out;
 	}
 
