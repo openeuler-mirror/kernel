@@ -242,6 +242,24 @@ void blk_mq_quiesce_queue(struct request_queue *q)
 }
 EXPORT_SYMBOL_GPL(blk_mq_quiesce_queue);
 
+bool blk_mq_quiesce_queue_without_rcu(struct request_queue *q)
+{
+	struct blk_mq_hw_ctx *hctx;
+	unsigned int i;
+	bool rcu = false;
+
+	blk_mq_quiesce_queue_nowait(q);
+
+	queue_for_each_hw_ctx(q, hctx, i) {
+		if (hctx->flags & BLK_MQ_F_BLOCKING)
+			synchronize_srcu(hctx->srcu);
+		else
+			rcu = true;
+	}
+	return rcu;
+}
+EXPORT_SYMBOL_GPL(blk_mq_quiesce_queue_without_rcu);
+
 /*
  * blk_mq_unquiesce_queue() - counterpart of blk_mq_quiesce_queue()
  * @q: request queue.

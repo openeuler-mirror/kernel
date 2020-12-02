@@ -3876,11 +3876,15 @@ EXPORT_SYMBOL_GPL(nvme_start_freeze);
 void nvme_stop_queues(struct nvme_ctrl *ctrl)
 {
 	struct nvme_ns *ns;
+	bool rcu = false;
 
 	down_read(&ctrl->namespaces_rwsem);
 	list_for_each_entry(ns, &ctrl->namespaces, list)
-		blk_mq_quiesce_queue(ns->queue);
+		rcu = (blk_mq_quiesce_queue_without_rcu(ns->queue) || rcu);
 	up_read(&ctrl->namespaces_rwsem);
+
+	if (rcu)
+		synchronize_rcu();
 }
 EXPORT_SYMBOL_GPL(nvme_stop_queues);
 
