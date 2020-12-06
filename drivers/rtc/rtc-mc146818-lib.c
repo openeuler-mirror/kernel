@@ -265,7 +265,6 @@ int mc146818_set_time(struct rtc_time *time)
 	if (yrs > 255)	/* They are unsigned */
 		return -EINVAL;
 
-	spin_lock_irqsave(&rtc_lock, flags);
 #ifdef CONFIG_MACH_DECSTATION
 	real_yrs = yrs;
 	leap_yr = ((!((yrs + 1900) % 4) && ((yrs + 1900) % 100)) ||
@@ -294,10 +293,8 @@ int mc146818_set_time(struct rtc_time *time)
 	/* These limits and adjustments are independent of
 	 * whether the chip is in binary mode or not.
 	 */
-	if (yrs > 169) {
-		spin_unlock_irqrestore(&rtc_lock, flags);
+	if (yrs > 169)
 		return -EINVAL;
-	}
 
 	if (yrs >= 100)
 		yrs -= 100;
@@ -313,6 +310,7 @@ int mc146818_set_time(struct rtc_time *time)
 		century = bin2bcd(century);
 	}
 
+	spin_lock_irqsave(&rtc_lock, flags);
 	save_control = CMOS_READ(RTC_CONTROL);
 	CMOS_WRITE((save_control|RTC_SET), RTC_CONTROL);
 	if (follow_mc146818_divider_reset()) {
