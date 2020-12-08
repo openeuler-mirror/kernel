@@ -357,10 +357,16 @@ void unf_check_vport_pool_status(struct unf_lport_s *v_lport)
 void unf_vport_fabric_logo(struct unf_lport_s *v_vport)
 {
 	struct unf_rport_s *rport = NULL;
+	unsigned long flag = 0;
 
 	rport = unf_get_rport_by_nport_id(v_vport, UNF_FC_FID_FLOGI);
+
 	UNF_CHECK_VALID(0x1970, UNF_TRUE, rport, return);
-	(void)unf_send_logo(v_vport, rport);
+	spin_lock_irqsave(&rport->rport_state_lock, flag);
+	unf_rport_state_ma(rport, UNF_EVENT_RPORT_LOGO);
+	spin_unlock_irqrestore(&rport->rport_state_lock, flag);
+
+	unf_rport_enter_logo(v_vport, rport);
 }
 
 void unf_vport_deinit(void *v_vport)
