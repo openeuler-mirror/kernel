@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2011.4.0
+%global hulkrelease 2011.6.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0048
+Release: %{hulkrelease}.0049
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,19 @@ fi
 %endif
 
 %changelog
+* Sat Nov 28 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.6.0.0049
+- refcount_t: Add ACQUIRE ordering on success for dec(sub)_and_test() variants
+- x86/asm: 'Simplify' GEN_*_RMWcc() macros
+- Revert "refcount_t: Add ACQUIRE ordering on success for dec(sub)_and_test() variants"
+- refcount_t: Add ACQUIRE ordering on success for dec(sub)_and_test() variants
+- powerpc/64s: flush L1D after user accesses
+- powerpc/uaccess: Evaluate macro arguments once, before user access is allowed
+- powerpc: Fix __clear_user() with KUAP enabled
+- powerpc: Implement user_access_begin and friends
+- powerpc: Add a framework for user access tracking
+- powerpc/64s: flush L1D on kernel entry
+- powerpc/64s: move some exception handlers out of line
+
 * Mon Nov 23 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.4.0.0048
 - Bluetooth: fix kernel oops in store_pending_adv_report
 - vt: Disable KD_FONT_OP_COPY
