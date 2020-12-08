@@ -3801,6 +3801,79 @@ static int delay_250ms_after_flr(struct pci_dev *dev, int probe)
 	return 0;
 }
 
+#define PCI_DEVICE_ID_HINIC_VF      0x375E
+#define HINIC_VF_FLR_TYPE           0x1000
+#define HINIC_VF_FLR_CAP_BIT_SHIFT  6
+#define HINIC_VF_OP                 0xE80
+#define HINIC_VF_FLR_PROC_BIT_SHIFT 10
+#define HINIC_OPERATION_TIMEOUT     15000
+
+/* Device-specific reset method for Huawei Intelligent NIC virtual functions */
+static int reset_hinic_vf_dev(struct pci_dev *pdev, int probe)
+{
+	unsigned long timeout;
+	void __iomem *bar;
+	u16 old_command;
+	u32 val;
+
+	if (probe)
+		return 0;
+
+	bar = pci_iomap(pdev, 0, 0);
+	if (!bar)
+		return -ENOTTY;
+
+	pci_read_config_word(pdev, PCI_COMMAND, &old_command);
+
+	/*
+	 * FLR cap bit bit30, FLR processing bit: bit18, to avoid big-endian
+	 * conversion the big-endian bit6, bit10 is directly operated here.
+	 *
+	 * Get and check firmware capabilities.
+	 */
+	val = readl(bar + HINIC_VF_FLR_TYPE);
+	if (!(val & (1UL << HINIC_VF_FLR_CAP_BIT_SHIFT))) {
+		pci_iounmap(pdev, bar);
+		return -ENOTTY;
+	}
+
+	/*
+	 * Set the processing bit for the start of FLR, which will be cleared
+	 * by the firmware after FLR is completed.
+	 */
+	val = readl(bar + HINIC_VF_OP);
+	val = val | (1UL << HINIC_VF_FLR_PROC_BIT_SHIFT);
+	writel(val, bar + HINIC_VF_OP);
+
+	/* Perform the actual device function reset */
+	pcie_flr(pdev);
+
+	pci_write_config_word(pdev, PCI_COMMAND,
+			      old_command | PCI_COMMAND_MEMORY);
+
+	/* Waiting for device reset complete */
+	timeout = jiffies + msecs_to_jiffies(HINIC_OPERATION_TIMEOUT);
+	do {
+		val = readl(bar + HINIC_VF_OP);
+		if (!(val & (1UL << HINIC_VF_FLR_PROC_BIT_SHIFT)))
+			goto reset_complete;
+		msleep(20);
+	} while (time_before(jiffies, timeout));
+
+	val = readl(bar + HINIC_VF_OP);
+	if (!(val & (1UL << HINIC_VF_FLR_PROC_BIT_SHIFT)))
+		goto reset_complete;
+
+	pci_warn(pdev, "Reset dev timeout, flr ack reg: %x\n",
+		 be32_to_cpu(val));
+
+reset_complete:
+	pci_write_config_word(pdev, PCI_COMMAND, old_command);
+	pci_iounmap(pdev, bar);
+
+	return 0;
+}
+
 static const struct pci_dev_reset_methods pci_dev_reset_methods[] = {
 	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82599_SFP_VF,
 		 reset_intel_82599_sfp_virtfn },
@@ -3812,6 +3885,8 @@ static const struct pci_dev_reset_methods pci_dev_reset_methods[] = {
 	{ PCI_VENDOR_ID_INTEL, 0x0953, delay_250ms_after_flr },
 	{ PCI_VENDOR_ID_CHELSIO, PCI_ANY_ID,
 		reset_chelsio_generic_dev },
+	{ PCI_VENDOR_ID_HUAWEI, PCI_DEVICE_ID_HINIC_VF,
+		reset_hinic_vf_dev },
 	{ 0 }
 };
 
