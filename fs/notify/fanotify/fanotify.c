@@ -117,6 +117,12 @@ static bool fanotify_should_send_event(struct fsnotify_iter_info *iter_info,
 
 		/* Apply ignore mask regardless of ISDIR and ON_CHILD flags */
 		marks_ignored_mask |= mark->ignored_mask;
+		/*
+		 * If the event is on dir and this mark doesn't care about
+		 * events on dir, don't send it!
+		 */
+		if (d_is_dir(path->dentry) && !(mark->mask & FS_ISDIR))
+			continue;
 
 		/*
 		 * If the event is for a child and this mark doesn't care about
@@ -129,10 +135,6 @@ static bool fanotify_should_send_event(struct fsnotify_iter_info *iter_info,
 
 		marks_mask |= mark->mask;
 	}
-
-	if (d_is_dir(path->dentry) &&
-	    !(marks_mask & FS_ISDIR & ~marks_ignored_mask))
-		return false;
 
 	if (event_mask & FAN_ALL_OUTGOING_EVENTS & marks_mask &
 				 ~marks_ignored_mask)
