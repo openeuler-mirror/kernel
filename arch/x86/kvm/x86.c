@@ -940,6 +940,7 @@ void kvm_post_set_cr0(struct kvm_vcpu *vcpu, unsigned long old_cr0, unsigned lon
 	    !kvm_check_has_quirk(vcpu->kvm, KVM_X86_QUIRK_CD_NW_CLEARED))
 		kvm_zap_gfn_range(vcpu->kvm, 0, ~0ULL);
 }
+EXPORT_SYMBOL_GPL(kvm_post_set_cr0);
 
 int kvm_set_cr0(struct kvm_vcpu *vcpu, unsigned long cr0)
 {
