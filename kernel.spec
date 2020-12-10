@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2011.6.0
+%global hulkrelease 2012.1.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0049
+Release: %{hulkrelease}.0050
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,10 @@ fi
 %endif
 
 %changelog
+* Thu Dec 10 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2012.1.0.0050
+- fanotify: fix merging marks masks with FAN_ONDIR
+- scsi/hifc: fix the issue of npiv cannot be deleted
+
 * Sat Nov 28 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2011.6.0.0049
 - refcount_t: Add ACQUIRE ordering on success for dec(sub)_and_test() variants
 - x86/asm: 'Simplify' GEN_*_RMWcc() macros
