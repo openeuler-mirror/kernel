@@ -11,9 +11,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       rc4
+%global devel_release       rc7
 %global maintenance_release .0.0
-%global pkg_release         .5
+%global pkg_release         .6
 
 %define with_debuginfo 1
 %define with_source 1
@@ -844,6 +844,9 @@ fi
 %endif
 
 %changelog
+* Wed Dec 09 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-rc7.0.0.6
+- rebase on top of v5.10-rc7
+
 * Tue Nov 17 2020 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-rc4.0.0.5
 - rebase on top of v5.10-rc4
 - kernel.spec: privode config files in src package
