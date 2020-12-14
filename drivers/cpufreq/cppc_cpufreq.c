@@ -547,14 +547,24 @@ static ssize_t store_energy_perf(struct cpufreq_policy *policy,
 
 cpufreq_freq_attr_rw(auto_act_window);
 cpufreq_freq_attr_rw(energy_perf);
-
-static struct freq_attr *cppc_cpufreq_attr[] = {
-	&auto_act_window,
-	&energy_perf,
-	NULL,
-};
 #endif // CONFIG_CPPC_CPUFREQ_SYSFS_INTERFACE
 
+static ssize_t show_freqdomain_cpus(struct cpufreq_policy *policy, char *buf)
+{
+	unsigned int cpu = policy->cpu;
+
+	return cpufreq_show_cpus(all_cpu_data[cpu]->shared_cpu_map, buf);
+}
+cpufreq_freq_attr_ro(freqdomain_cpus);
+
+static struct freq_attr *cppc_cpufreq_attr[] = {
+	&freqdomain_cpus,
+#ifdef CONFIG_CPPC_CPUFREQ_SYSFS_INTERFACE
+	&auto_act_window,
+	&energy_perf,
+#endif // CONFIG_CPPC_CPUFREQ_SYSFS_INTERFACE
+	NULL,
+};
 
 static struct cpufreq_driver cppc_cpufreq_driver = {
 	.flags = CPUFREQ_CONST_LOOPS,
@@ -564,9 +574,7 @@ static struct cpufreq_driver cppc_cpufreq_driver = {
 	.init = cppc_cpufreq_cpu_init,
 	.stop_cpu = cppc_cpufreq_stop_cpu,
 	.set_boost = cppc_cpufreq_set_boost,
-#ifdef CONFIG_CPPC_CPUFREQ_SYSFS_INTERFACE
 	.attr = cppc_cpufreq_attr,
-#endif
 	.name = "cppc_cpufreq",
 };
 
