@@ -437,7 +437,6 @@ static void hibmc_pci_remove(struct pci_dev *pdev)
 	drm_dev_unregister(dev);
 	hibmc_unload(dev);
 	pci_disable_device(pdev);
-	drm_dev_put(dev);
 }
 
 static void hibmc_pci_shutdown(struct pci_dev *pdev)
