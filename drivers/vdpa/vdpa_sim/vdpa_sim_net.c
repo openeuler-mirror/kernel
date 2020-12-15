@@ -141,6 +141,7 @@ static int __init vdpasim_net_init(void)
 	dev_attr.config_size = sizeof(struct virtio_net_config);
 	dev_attr.get_config = vdpasim_net_get_config;
 	dev_attr.work_fn = vdpasim_net_work;
+	dev_attr.buffer_size = PAGE_SIZE;
 
 	vdpasim_net_dev = vdpasim_create(&dev_attr);
 	if (IS_ERR(vdpasim_net_dev)) {

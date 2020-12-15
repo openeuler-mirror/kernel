@@ -35,6 +35,7 @@ struct vdpasim_virtqueue {
 struct vdpasim_dev_attr {
 	u64 supported_features;
 	size_t config_size;
+	size_t buffer_size;
 	int nvqs;
 	u32 id;
 
