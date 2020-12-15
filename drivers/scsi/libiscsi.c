@@ -2441,7 +2441,17 @@ int iscsi_eh_session_reset(struct scsi_cmnd *sc)
 
 	mutex_lock(&session->eh_mutex);
 	spin_lock_bh(&session->frwd_lock);
-	if (session->state == ISCSI_STATE_TERMINATE) {
+
+	/*
+	 * During shutdown, if session is prematurely disconnected, recovery
+	 * won't happen and there will be hung cmds. To solve this case, all
+	 * cmds would be enter scsi EH, but the EH path will wait for
+	 * wait_event_interruptible() to complete until the state of the
+	 * session is ISCSI_STATE_TERMINATE, ISCSI_STATE_LOGGED_IN or
+	 * ISCSI_STATE_RECOVERY_FAILED.
+	 */
+	if (session->state == ISCSI_STATE_TERMINATE ||
+	    unlikely(system_state != SYSTEM_RUNNING)) {
 failed:
 		ISCSI_DBG_EH(session,
 			     "failing session reset: Could not log back into "
