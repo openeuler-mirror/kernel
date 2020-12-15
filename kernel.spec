@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2012.1.0
+%global hulkrelease 2012.2.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0050
+Release: %{hulkrelease}.0051
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,9 @@ fi
 %endif
 
 %changelog
+* Tue Dec 15 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2012.2.0.0051
+- scsi: libiscsi: Fix cmds hung when sd_shutdown
+
 * Thu Dec 10 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2012.1.0.0050
 - fanotify: fix merging marks masks with FAN_ONDIR
 - scsi/hifc: fix the issue of npiv cannot be deleted
