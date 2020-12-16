@@ -435,6 +435,7 @@ static int hns_roce_set_user_sq_size(struct hns_roce_dev *hr_dev,
 {
 	u32 ex_sge_num;
 	u32 page_size;
+	u32 buf_size;
 	u32 max_cnt;
 	int ret;
 
@@ -491,8 +492,11 @@ static int hns_roce_set_user_sq_size(struct hns_roce_dev *hr_dev,
 					     hr_qp->sq.wqe_shift), PAGE_SIZE);
 	} else {
 		page_size = 1 << (hr_dev->caps.mtt_buf_pg_sz + PAGE_SHIFT);
+		buf_size = ALIGN((hr_qp->sge.sge_cnt << HNS_ROCE_SGE_SHIFT),
+			page_size);
 		hr_qp->sge.sge_cnt = ex_sge_num ?
-		   max(page_size / (1 << hr_qp->sge.sge_shift), ex_sge_num) : 0;
+			max(buf_size / (1 << hr_qp->sge.sge_shift),
+			ex_sge_num) : 0;
 		hr_qp->buff_size = HNS_ROCE_ALIGN_UP((hr_qp->rq.wqe_cnt <<
 					     hr_qp->rq.wqe_shift), page_size) +
 				   HNS_ROCE_ALIGN_UP((hr_qp->sge.sge_cnt <<
@@ -642,6 +646,7 @@ static int hns_roce_set_kernel_sq_size(struct hns_roce_dev *hr_dev,
 				       struct hns_roce_qp *hr_qp)
 {
 	struct device *dev = hr_dev->dev;
+	u32 buf_size;
 	u32 page_size;
 	u32 max_cnt;
 	int size;
@@ -689,7 +694,9 @@ static int hns_roce_set_kernel_sq_size(struct hns_roce_dev *hr_dev,
 
 	if (hr_dev->caps.max_sq_sg > HNS_ROCE_MAX_SGE_NUM &&
 	    hr_qp->sge.sge_cnt) {
-		hr_qp->sge.sge_cnt = max(page_size/(1 << hr_qp->sge.sge_shift),
+		buf_size = ALIGN((hr_qp->sge.sge_cnt << HNS_ROCE_SGE_SHIFT),
+			page_size);
+		hr_qp->sge.sge_cnt = max(buf_size / (1 << hr_qp->sge.sge_shift),
 					(u32)hr_qp->sge.sge_cnt);
 		hr_qp->sge.offset = size;
 		size += HNS_ROCE_ALIGN_UP(hr_qp->sge.sge_cnt <<
