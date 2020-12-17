@@ -2074,6 +2074,9 @@ unsigned int unf_send_rrq(struct unf_lport_s *v_lport,
 	UNF_CHECK_VALID(0x3363, UNF_TRUE, v_rport, return UNF_RETURN_ERROR);
 	UNF_CHECK_VALID(0x3364, UNF_TRUE, v_xchg, return UNF_RETURN_ERROR);
 
+	if (v_xchg->rport_bind_jifs != v_rport->rport_alloc_jifs ||
+	    (v_rport->nport_id == INVALID_VALUE32))
+		return ret;
 	/* Get & Set New free Exchange for RRQ */
 	xchg = unf_get_sfs_free_xchg_and_init(v_lport, v_rport->nport_id,
 					      v_rport, &fc_entry);

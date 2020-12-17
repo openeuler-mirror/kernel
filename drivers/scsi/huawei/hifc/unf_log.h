@@ -58,7 +58,7 @@ enum event_log_e {
 #define UNF_IO_ATT_PRINT_TIMES	2
 #define UNF_LOGIN_ATT_PRINT_TIMES 100
 
-#define UNF_IO_ATT_PRINT_LIMIT msecs_to_jiffies(2 * 1000)
+#define UNF_IO_ATT_PRINT_LIMIT msecs_to_jiffies(6 * 1000)
 
 extern unsigned int unf_dbg_level;
 extern unsigned int log_print_level;
