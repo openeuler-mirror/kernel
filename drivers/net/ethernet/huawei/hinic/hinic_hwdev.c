@@ -655,7 +655,8 @@ static void __print_status_info(struct hinic_hwdev *dev,
 	}
 }
 
-static bool hinic_status_need_special_handle(enum hinic_mod_type mod,
+static bool hinic_status_need_special_handle(struct hinic_hwdev *dev,
+					     enum hinic_mod_type mod,
 					     u8 cmd, u8 status)
 {
 	if (mod == HINIC_MOD_L2NIC) {
@@ -669,6 +670,17 @@ static bool hinic_status_need_special_handle(enum hinic_mod_type mod,
 		     cmd == HINIC_PORT_CMD_UPDATE_MAC) &&
 		     status == HINIC_MGMT_STATUS_ERR_EXIST)
 			return true;
+	}
+
+	if (status == HINIC_MGMT_STATUS_ERR_UNSUPPORT) {
+		if (mod == HINIC_MOD_L2NIC)
+			sdk_warn(dev->dev_hdl, "Mgmt command: mod(0x%x) cmd(0x%x) not supported\n",
+				 mod, cmd);
+		else
+			sdk_warn(dev->dev_hdl, "Mgmt command: mod(0x%x) cmd(0x%x) not supported\n",
+				 mod, cmd);
+
+		return true;
 	}
 
 	return false;
@@ -693,7 +705,7 @@ static void hinic_print_status_info(void *hwdev, enum hinic_mod_type mod,
 	if (!status)
 		return;
 
-	if (hinic_status_need_special_handle(mod, cmd, status))
+	if (hinic_status_need_special_handle(dev, mod, cmd, status))
 		return;
 
 	size = ARRAY_SIZE(mgmt_status_log);
