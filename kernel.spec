@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2012.2.0
+%global hulkrelease 2012.3.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0051
+Release: %{hulkrelease}.0052
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,11 @@ fi
 %endif
 
 %changelog
+* Thu Dec 17 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2012.3.0.0052
+- scsi/hifc: fix the issue that the system is suspended during the pres
+- mm: thp: make the THP mapcount atomic against __split_huge_pmd_locked()
+- romfs: fix uninitialized memory leak in romfs_dev_read()
+
 * Tue Dec 15 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2012.2.0.0051
 - scsi: libiscsi: Fix cmds hung when sd_shutdown
 
