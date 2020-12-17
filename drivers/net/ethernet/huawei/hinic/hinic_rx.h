@@ -37,8 +37,11 @@ struct hinic_rxq_stats {
 	u64	csum_errors;
 	u64	other_errors;
 	u64	dropped;
+	u64	rx_buf_empty;
 
 	u64	alloc_skb_err;
+	u64	alloc_rx_buf_err;
+	u64	map_rx_buf_err;
 
 	struct u64_stats_sync		syncp;
 };

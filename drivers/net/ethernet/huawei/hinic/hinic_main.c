@@ -137,7 +137,8 @@ MODULE_PARM_DESC(qp_coalesc_timer_high, "MSI-X adaptive high coalesce time, rang
 
 #define HINIC_NIC_DEV_WQ_NAME		"hinic_nic_dev_wq"
 
-#define DEFAULT_MSG_ENABLE		(NETIF_MSG_DRV | NETIF_MSG_LINK)
+#define DEFAULT_MSG_ENABLE		(NETIF_MSG_DRV | NETIF_MSG_LINK | \
+					 NETIF_MSG_RX_ERR)
 
 #define QID_MASKED(q_id, nic_dev)	((q_id) & ((nic_dev)->num_qps - 1))
 

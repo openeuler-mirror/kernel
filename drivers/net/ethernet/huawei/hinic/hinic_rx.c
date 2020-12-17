@@ -69,8 +69,7 @@ static bool rx_alloc_mapped_page(struct hinic_rxq *rxq,
 	/* alloc new page for storage */
 	page = alloc_pages_node(NUMA_NO_NODE, GFP_ATOMIC, nic_dev->page_order);
 	if (unlikely(!page)) {
-		nicif_err(nic_dev, drv, netdev, "Alloc rxq: %d page failed\n",
-			  rxq->q_id);
+		RXQ_STATS_INC(rxq, alloc_rx_buf_err);
 		return false;
 	}
 
@@ -82,7 +81,7 @@ static bool rx_alloc_mapped_page(struct hinic_rxq *rxq,
 	 * there isn't much point in holding memory we can't use
 	 */
 	if (unlikely(dma_mapping_error(&pdev->dev, dma))) {
-		nicif_err(nic_dev, drv, netdev, "Failed to map page to rx buffer\n");
+		RXQ_STATS_INC(rxq, map_rx_buf_err);
 		__free_pages(page, nic_dev->page_order);
 		return false;
 	}
@@ -162,9 +161,8 @@ static int hinic_rx_fill_buffers(struct hinic_rxq *rxq)
 				      rxq->next_to_update);
 		rxq->delta -= i;
 		rxq->next_to_alloc = rxq->next_to_update;
-	} else {
-		nicif_err(nic_dev, drv, netdev, "Failed to allocate rx buffers, rxq id: %d\n",
-			  rxq->q_id);
+	} else if (free_wqebbs == rxq->q_depth - 1) {
+		RXQ_STATS_INC(rxq, rx_buf_empty);
 	}
 
 	return i;
@@ -385,6 +383,7 @@ void hinic_rxq_get_stats(struct hinic_rxq *rxq,
 		stats->csum_errors = rxq_stats->csum_errors;
 		stats->other_errors = rxq_stats->other_errors;
 		stats->dropped = rxq_stats->dropped;
+		stats->rx_buf_empty = rxq_stats->rx_buf_empty;
 	} while (u64_stats_fetch_retry(&rxq_stats->syncp, start));
 	u64_stats_update_end(&stats->syncp);
 }
@@ -400,6 +399,9 @@ void hinic_rxq_clean_stats(struct hinic_rxq_stats *rxq_stats)
 	rxq_stats->dropped = 0;
 
 	rxq_stats->alloc_skb_err = 0;
+	rxq_stats->alloc_rx_buf_err = 0;
+	rxq_stats->map_rx_buf_err = 0;
+	rxq_stats->rx_buf_empty = 0;
 	u64_stats_update_end(&rxq_stats->syncp);
 }
 
@@ -486,11 +488,11 @@ static void hinic_copy_lp_data(struct hinic_nic_dev *nic_dev,
 
 	if (nic_dev->lb_test_rx_idx == LP_PKT_CNT) {
 		nic_dev->lb_test_rx_idx = 0;
-		nicif_warn(nic_dev, drv, netdev, "Loopback test warning, recive too more test pkt\n");
+		nicif_warn(nic_dev, rx_err, netdev, "Loopback test warning, recive too more test pkt\n");
 	}
 
 	if (skb->len != nic_dev->lb_pkt_len) {
-		nicif_warn(nic_dev, drv, netdev, "Wrong packet length\n");
+		nicif_warn(nic_dev, rx_err, netdev, "Wrong packet length\n");
 		nic_dev->lb_test_rx_idx++;
 		return;
 	}
