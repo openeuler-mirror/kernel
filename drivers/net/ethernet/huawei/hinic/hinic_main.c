@@ -1491,7 +1491,7 @@ static int set_feature_lro(struct hinic_nic_dev *nic_dev,
 
 static int set_features(struct hinic_nic_dev *nic_dev,
 			netdev_features_t pre_features,
-			netdev_features_t features, bool force_change)
+			netdev_features_t features)
 {
 	netdev_features_t failed_features = 0;
 	u32 err;
@@ -1518,7 +1518,7 @@ static int hinic_set_features(struct net_device *netdev,
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
 	return set_features(nic_dev, nic_dev->netdev->features,
-			    features, false);
+			    features);
 }
 
 static netdev_features_t hinic_fix_features(struct net_device *netdev,
@@ -1563,7 +1563,8 @@ static int hinic_set_default_hw_feature(struct hinic_nic_dev *nic_dev)
 	}
 
 	/* enable all hw features in netdev->features */
-	return set_features(nic_dev, 0, nic_dev->netdev->features, true);
+	return set_features(nic_dev, ~nic_dev->netdev->features,
+			    nic_dev->netdev->features);
 }
 
 static int hinic_setup_tc_mqprio(struct net_device *dev,
