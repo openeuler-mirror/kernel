@@ -3555,7 +3555,7 @@ static int get_walk(struct kvm_vcpu *vcpu, u64 addr, u64 *sptes, int *root_level
 	return leaf;
 }
 
-/* return true if reserved bit is detected on spte. */
+/* return true if reserved bit(s) are detected on a valid, non-MMIO SPTE. */
 static bool get_mmio_spte(struct kvm_vcpu *vcpu, u64 addr, u64 *sptep)
 {
 	u64 sptes[PT64_ROOT_MAX_LEVEL + 1];
@@ -3578,14 +3578,22 @@ static bool get_mmio_spte(struct kvm_vcpu *vcpu, u64 addr, u64 *sptep)
 		return reserved;
 	}
 
+	*sptep = sptes[leaf];
+
+	/*
+	 * Skip reserved bits checks on the terminal leaf if it's not a valid
+	 * SPTE.  Note, this also (intentionally) skips MMIO SPTEs, which, by
+	 * design, always have reserved bits set.  The purpose of the checks is
+	 * to detect reserved bits on non-MMIO SPTEs. i.e. buggy SPTEs.
+	 */
+	if (!is_shadow_present_pte(sptes[leaf]))
+		leaf++;
+
 	rsvd_check = &vcpu->arch.mmu->shadow_zero_check;
 
-	for (level = root; level >= leaf; level--) {
-		if (!is_shadow_present_pte(sptes[level]))
-			break;
+	for (level = root; level >= leaf; level--)
 		reserved |= __is_bad_mt_xwr(rsvd_check, sptes[level]) ||
 			    __is_rsvd_bits_set(rsvd_check, sptes[level], level);
-	}
 
 	if (reserved) {
 		pr_err("%s: detect reserved bits on spte, addr 0x%llx, dump hierarchy:\n",
@@ -3594,8 +3602,6 @@ static bool get_mmio_spte(struct kvm_vcpu *vcpu, u64 addr, u64 *sptep)
 			pr_err("------ spte 0x%llx level %d.\n",
 			       sptes[level], level);
 	}
-
-	*sptep = sptes[leaf];
 
 	return reserved;
 }
