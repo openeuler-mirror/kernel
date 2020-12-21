@@ -348,7 +348,7 @@ static int hibmc_pci_probe(struct pci_dev *pdev,
 	dev->pdev = pdev;
 	pci_set_drvdata(pdev, dev);
 
-	ret = pci_enable_device(pdev);
+	ret = pcim_enable_device(pdev);
 	if (ret) {
 		drm_err(dev, "failed to enable pci device: %d\n", ret);
 		goto err_free;
@@ -357,7 +357,7 @@ static int hibmc_pci_probe(struct pci_dev *pdev,
 	ret = hibmc_load(dev);
 	if (ret) {
 		drm_err(dev, "failed to load hibmc: %d\n", ret);
-		goto err_disable;
+		goto err_free;
 	}
 
 	ret = drm_dev_register(dev, 0);
@@ -373,8 +373,6 @@ static int hibmc_pci_probe(struct pci_dev *pdev,
 
 err_unload:
 	hibmc_unload(dev);
-err_disable:
-	pci_disable_device(pdev);
 err_free:
 	drm_dev_put(dev);
 
