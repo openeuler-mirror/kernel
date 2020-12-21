@@ -11,7 +11,11 @@
 #define _ASM_ARM_HUGETLB_H
 
 #include <asm/page.h>
-#include <asm/hugetlb-3level.h>
+#ifdef CONFIG_ARM_LPAE
+ #include <asm/hugetlb-3level.h>
+#else
+#include <asm/hugetlb-2level.h>
+#endif
 #include <asm-generic/hugetlb.h>
 
 static inline void arch_clear_hugepage_flags(struct page *page)

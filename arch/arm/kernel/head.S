@@ -461,7 +461,11 @@ __enable_mmu:
 #ifdef CONFIG_ARM_LPAE
 	mcrr	p15, 0, r4, r5, c2		@ load TTBR0
 #else
+#ifdef CONFIG_SYS_SUPPORTS_HUGETLBFS
+	ldr	r5, =0x55555555
+#else
 	mov	r5, #DACR_INIT
+#endif
 	mcr	p15, 0, r5, c3, c0, 0		@ load domain access register
 	mcr	p15, 0, r4, c2, c0, 0		@ load page table pointer
 #endif

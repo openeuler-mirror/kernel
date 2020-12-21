@@ -26,6 +26,10 @@
 
 #ifdef CONFIG_MMU
 
+#if defined(CONFIG_SYS_SUPPORTS_HUGETLBFS) && !defined(CONFIG_ARM_LPAE)
+#include <linux/hugetlb.h>
+#endif
+
 /*
  * This is useful to dump out the page tables associated with
  * 'addr' in mm 'mm'.
@@ -76,6 +80,15 @@ void show_pte(const char *lvl, struct mm_struct *mm, unsigned long addr)
 			break;
 
 		if (pmd_bad(*pmd)) {
+#if !defined(CONFIG_ARM_LPAE) && defined(CONFIG_HUGETLBFS)
+			if (pte_huge((pte_t)*pgd)) {
+				pte_t huge_pte = huge_ptep_get((pte_t *)pgd);
+
+				pr_alert("[%08lx] *ppgd=%08llx", addr,
+					(long long)pmd_val(huge_pte));
+				break;
+			}
+#endif
 			pr_cont("(bad)");
 			break;
 		}
@@ -461,19 +474,6 @@ do_translation_fault(unsigned long addr, unsigned int fsr,
 	return 0;
 }
 #endif					/* CONFIG_MMU */
-
-/*
- * Some section permission faults need to be handled gracefully.
- * They can happen due to a __{get,put}_user during an oops.
- */
-#ifndef CONFIG_ARM_LPAE
-static int
-do_sect_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
-{
-	do_bad_area(addr, fsr, regs);
-	return 0;
-}
-#endif /* CONFIG_ARM_LPAE */
 
 /*
  * This abort handler always returns "fault".

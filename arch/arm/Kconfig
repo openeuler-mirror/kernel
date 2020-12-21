@@ -1545,7 +1545,7 @@ config HW_PERF_EVENTS
 
 config SYS_SUPPORTS_HUGETLBFS
        def_bool y
-       depends on ARM_LPAE
+       depends on ARM_LPAE || (!CPU_USE_DOMAINS && !MEMORY_FAILURE && !CPU_SW_DOMAIN_PAN)
 
 config HAVE_ARCH_TRANSPARENT_HUGEPAGE
        def_bool y

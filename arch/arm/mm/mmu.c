@@ -403,6 +403,20 @@ void __set_fixmap(enum fixed_addresses idx, phys_addr_t phys, pgprot_t prot)
 }
 
 /*
+ * If the system supports huge pages and we are running with short descriptors,
+ * then compute the pmd and linux pte prot values for a huge page.
+ *
+ * These values are used by both the HugeTLB and THP code.
+ */
+#if defined(CONFIG_SYS_SUPPORTS_HUGETLBFS) && !defined(CONFIG_ARM_LPAE)
+pmdval_t arm_hugepmdprotval;
+EXPORT_SYMBOL(arm_hugepmdprotval);
+
+pteval_t arm_hugepteprotval;
+EXPORT_SYMBOL(arm_hugepteprotval);
+#endif
+
+/*
  * Adjust the PMD section entries according to the CPU in use.
  */
 static void __init build_mem_type_table(void)
@@ -667,6 +681,17 @@ static void __init build_mem_type_table(void)
 		if (t->prot_sect)
 			t->prot_sect |= PMD_DOMAIN(t->domain);
 	}
+
+#if defined(CONFIG_SYS_SUPPORTS_HUGETLBFS) && !defined(CONFIG_ARM_LPAE)
+	/*
+	 * we assume all huge pages are user pages and that hardware access
+	 * flag updates are disabled (i.e. SCTLR.AFE == 0b).
+	 */
+	arm_hugepteprotval = mem_types[MT_MEMORY_RWX].prot_pte | L_PTE_USER | L_PTE_VALID;
+
+	arm_hugepmdprotval = mem_types[MT_MEMORY_RWX].prot_sect | PMD_SECT_AP_READ
+				| PMD_SECT_nG;
+#endif
 }
 
 #ifdef CONFIG_ARM_DMA_MEM_BUFFERABLE
