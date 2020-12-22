@@ -96,11 +96,56 @@ static inline void flush_icache_range(unsigned long start, unsigned long end)
 }
 #define flush_icache_range flush_icache_range
 
+/*
+ * Ensure that any D-cache lines for the interval [addr, addr+len)
+ * are invalidated.
+ *
+ * addr: kernel address
+ * len: size of the address
+ */
+static inline void inval_dcache_area(void *addr, size_t len)
+{
+	__inval_dcache_area(addr, len);
+}
+
+/* Ensure that any D-cache lines for the interval [addr, addr+len)
+ * are cleaned to the PoC.
+ *
+ * addr: kernel address
+ * len: size of the address
+ */
+static inline void clean_dcache_area(void *addr, size_t len)
+{
+	__clean_dcache_area_poc(addr, len);
+}
+
+/* Ensure that any D-cache lines for the interval [addr, addr+len)
+ * are cleaned and invalidated to the PoC.
+ *
+ * addr: kernel address
+ * len: size of the address
+ */
 static inline void flush_dcache_area(void *addr, size_t len)
 {
 	__flush_dcache_area(addr, len);
 }
 #define flush_dcache_area flush_dcache_area
+
+/* start and end are kernel addresses */
+static inline void inval_dcache_range(unsigned long start, unsigned long end)
+{
+	__inval_dcache_area((void *)start, end - start);
+}
+
+static inline void clean_dcache_range(unsigned long start, unsigned long end)
+{
+	__clean_dcache_area_poc((void *)start, end - start);
+}
+
+static inline void flush_dcache_range(unsigned long start, unsigned long end)
+{
+	__flush_dcache_area((void *)start, end - start);
+}
 
 /*
  * Cache maintenance functions used by the DMA API. No to be used directly.
