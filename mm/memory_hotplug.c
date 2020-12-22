@@ -1058,11 +1058,6 @@ int __ref add_memory_resource(int nid, struct resource *res, bool online)
 	if (ret)
 		return ret;
 
-	if (!node_possible(nid)) {
-		WARN(1, "node %d was absent from the node_possible_map\n", nid);
-		return -EINVAL;
-	}
-
 	mem_hotplug_begin();
 
 	/*
