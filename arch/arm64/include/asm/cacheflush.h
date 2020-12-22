@@ -96,6 +96,12 @@ static inline void flush_icache_range(unsigned long start, unsigned long end)
 }
 #define flush_icache_range flush_icache_range
 
+static inline void flush_dcache_area(void *addr, size_t len)
+{
+	__flush_dcache_area(addr, len);
+}
+#define flush_dcache_area flush_dcache_area
+
 /*
  * Cache maintenance functions used by the DMA API. No to be used directly.
  */
