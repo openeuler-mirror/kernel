@@ -427,7 +427,7 @@ asmlinkage void noinstr el0_sync_handler(struct pt_regs *regs)
 	}
 }
 
-#ifdef CONFIG_COMPAT
+#ifdef CONFIG_AARCH32_EL0
 static void noinstr el0_cp15(struct pt_regs *regs, unsigned long esr)
 {
 	enter_from_user_mode();
@@ -487,4 +487,4 @@ asmlinkage void noinstr el0_sync_compat_handler(struct pt_regs *regs)
 		el0_inv(regs, esr);
 	}
 }
-#endif /* CONFIG_COMPAT */
+#endif /* CONFIG_AARCH32_EL0 */
