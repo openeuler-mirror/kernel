@@ -34,6 +34,7 @@
 #include <linux/rseq.h>
 #include <linux/seqlock.h>
 #include <linux/kcsan.h>
+#include <linux/thread_bits.h>
 
 /* task_struct member predeclarations (sorted alphabetically): */
 struct audit_context;
