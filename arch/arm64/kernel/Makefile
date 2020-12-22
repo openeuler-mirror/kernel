@@ -25,7 +25,7 @@ OBJCOPYFLAGS := --prefix-symbols=__efistub_
 $(obj)/%.stub.o: $(obj)/%.o FORCE
 	$(call if_changed,objcopy)
 
-obj-$(CONFIG_AARCH32_EL0)			+= sys32.o signal32.o			\
+obj-$(CONFIG_AARCH32_EL0)			+= binfmt_elf32.o sys32.o signal32.o			\
 					   sys_compat.o
 obj-$(CONFIG_AARCH32_EL0)			+= sigreturn32.o
 obj-$(CONFIG_KUSER_HELPERS)		+= kuser32.o
