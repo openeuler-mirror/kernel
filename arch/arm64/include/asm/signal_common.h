@@ -123,7 +123,7 @@ static int get_sigframe(struct rt_sigframe_user_layout *user,
 	/*
 	 * Check that we can actually write to the signal frame.
 	 */
-	if (!access_ok(VERIFY_WRITE, user->sigframe, sp_top - sp))
+	if (!access_ok(user->sigframe, sp_top - sp))
 		return -EFAULT;
 
 	return 0;
@@ -252,7 +252,7 @@ static long __sys_rt_sigreturn(struct pt_regs *regs)
 
 	frame = (struct rt_sigframe __user *)regs->sp;
 
-	if (!access_ok(VERIFY_READ, frame, sizeof(*frame)))
+	if (!access_ok(frame, sizeof(*frame)))
 		goto badframe;
 
 	if (restore_sigframe(regs, frame))
