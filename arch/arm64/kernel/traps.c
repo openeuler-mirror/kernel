@@ -276,7 +276,7 @@ void arm64_skip_faulting_instruction(struct pt_regs *regs, unsigned long size)
 	if (user_mode(regs))
 		user_fastforward_single_step(current);
 
-	if (compat_user_mode(regs))
+	if (a32_user_mode(regs))
 		advance_itstate(regs);
 	else
 		regs->pstate &= ~PSR_BTYPE_MASK;
@@ -316,7 +316,7 @@ static int call_undef_hook(struct pt_regs *regs)
 		if (get_kernel_nofault(instr_le, (__force __le32 *)pc))
 			goto exit;
 		instr = le32_to_cpu(instr_le);
-	} else if (compat_thumb_mode(regs)) {
+	} else if (a32_thumb_mode(regs)) {
 		/* 16-bit Thumb instruction */
 		__le16 instr_le;
 		if (get_user(instr_le, (__le16 __user *)pc))
