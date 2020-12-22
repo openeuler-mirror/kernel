@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2012.4.0
+%global hulkrelease 2012.5.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0053
+Release: %{hulkrelease}.0054
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,9 @@ fi
 %endif
 
 %changelog
+* Tue Dec 22 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2012.5.0.0054
+- Revert "mm/memory_hotplug: refrain from adding memory into an impossible node"
+
 * Mon Dec 21 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2012.4.0.0053
 - defconfig: update the defconfigs to support NVDIMM
 
