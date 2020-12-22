@@ -94,6 +94,13 @@ int main(void)
   BLANK();
   DEFINE(PREEMPT_DISABLE_OFFSET, PREEMPT_DISABLE_OFFSET);
   BLANK();
+#ifdef CONFIG_COMPAT
+  DEFINE(COMPAT_TVAL_TV_SEC,	offsetof(struct old_timeval32, tv_sec));
+  DEFINE(COMPAT_TVAL_TV_USEC,	offsetof(struct old_timeval32, tv_usec));
+  DEFINE(COMPAT_TSPEC_TV_SEC,	offsetof(struct old_timespec32, tv_sec));
+  DEFINE(COMPAT_TSPEC_TV_NSEC,	offsetof(struct old_timespec32, tv_nsec));
+  BLANK();
+#endif
   DEFINE(CPU_BOOT_STACK,	offsetof(struct secondary_data, stack));
   DEFINE(CPU_BOOT_TASK,		offsetof(struct secondary_data, task));
   BLANK();
