@@ -78,7 +78,8 @@ void probe_hisi_cpu_type(void)
 	else
 		of_get_hw_cpu_type();
 
-	WARN_ON(hi_cpu_type == UNKNOWN_HI_TYPE);
+	if (hi_cpu_type == UNKNOWN_HI_TYPE)
+		pr_warn("UNKNOWN Hisi cpu type.\n");
 }
 
 #define NCSNP_MMIO_BASE	0x20107E238
