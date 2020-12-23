@@ -309,18 +309,13 @@ error:
 
 static int proc_dpages_open(struct inode *inode, struct file *filp)
 {
-	int ret;
-	struct seq_file *m;
-
 	if (buf_dirty == NULL || buf_size == 0) {
 		pr_warn("please allocate buffer before getting dirty pages\n");
 		return -ENOMEM;
 	}
 
-	ret = single_open(filp, proc_dpages_show, NULL);
-	m = filp->private_data;
+	return single_open(filp, proc_dpages_show, NULL);
 
-	return ret;
 }
 
 static int seq_release_dirty(struct inode *inode, struct file *file)
