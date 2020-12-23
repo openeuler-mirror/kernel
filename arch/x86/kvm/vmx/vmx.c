@@ -364,6 +364,11 @@ static u32 vmx_segment_access_rights(struct kvm_segment *var);
 static __always_inline void vmx_disable_intercept_for_msr(struct kvm_vcpu *vcpu,
 							  u32 msr, int type);
 
+void kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat)
+{
+	vcpu_stat->st_max = 0;
+}
+
 void vmx_vmexit(void);
 
 #define vmx_insn_failed(fmt...)		\
@@ -4996,6 +5001,7 @@ static int handle_cr(struct kvm_vcpu *vcpu)
 	exit_qualification = vmx_get_exit_qual(vcpu);
 	cr = exit_qualification & 15;
 	reg = (exit_qualification >> 8) & 15;
+	vcpu->stat.cr_exits++;
 	switch ((exit_qualification >> 4) & 3) {
 	case 0: /* mov to cr */
 		val = kvm_register_readl(vcpu, reg);
@@ -5240,6 +5246,7 @@ static int handle_apic_write(struct kvm_vcpu *vcpu)
 	u32 offset = exit_qualification & 0xfff;
 
 	/* APIC-write VM exit is trap-like and thus no need to adjust IP */
+	vcpu->stat.apic_wr_exits++;
 	kvm_apic_write_nodecode(vcpu, offset);
 	return 1;
 }
@@ -5308,6 +5315,7 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 	u64 error_code;
 
 	exit_qualification = vmx_get_exit_qual(vcpu);
+	vcpu->stat.ept_vio_exits++;
 
 	/*
 	 * EPT violation happened while executing iret from NMI,
@@ -5366,6 +5374,7 @@ static int handle_ept_misconfig(struct kvm_vcpu *vcpu)
 	 * nGPA here instead of the required GPA.
 	 */
 	gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
+	vcpu->stat.ept_mis_exits++;
 	if (!is_guest_mode(vcpu) &&
 	    !kvm_io_bus_write(vcpu, KVM_FAST_MMIO_BUS, gpa, 0, NULL)) {
 		trace_kvm_fast_mmio(gpa);
@@ -5480,6 +5489,7 @@ static void vmx_enable_tdp(void)
  */
 static int handle_pause(struct kvm_vcpu *vcpu)
 {
+	vcpu->stat.pause_exits++;
 	if (!kvm_pause_in_guest(vcpu->kvm))
 		grow_ple_window(vcpu);
 
