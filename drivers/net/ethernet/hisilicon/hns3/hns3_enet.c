@@ -824,7 +824,6 @@ static void hns3_set_outer_l2l3l4(struct sk_buff *skb, u8 ol4_proto,
 			hns3_set_field(*ol_type_vlan_len_msec,
 				       HNS3_TXD_OL3T_S,
 				       HNS3_OL3T_IPV4_NO_CSUM);
-
 	} else if (skb->protocol == htons(ETH_P_IPV6)) {
 		hns3_set_field(*ol_type_vlan_len_msec, HNS3_TXD_OL3T_S,
 			       HNS3_OL3T_IPV6);
@@ -1260,7 +1259,7 @@ static bool hns3_skb_need_linearized(struct sk_buff *skb, unsigned int *bd_size,
 
 void hns3_shinfo_pack(struct skb_shared_info *shinfo, __u32 *size)
 {
-	int i = 0;
+	int i;
 
 	for (i = 0; i < MAX_SKB_FRAGS; i++)
 		size[i] = skb_frag_size(&shinfo->frags[i]);
@@ -1276,7 +1275,6 @@ static int hns3_nic_maybe_stop_tx(struct hns3_enet_ring *ring,
 
 	bd_num = hns3_tx_bd_num(skb, bd_size);
 	if (unlikely(bd_num > HNS3_MAX_NON_TSO_BD_NUM)) {
-
 		if (bd_num <= HNS3_MAX_TSO_BD_NUM && skb_is_gso(skb) &&
 		    !hns3_skb_need_linearized(skb, bd_size, bd_num)) {
 			trace_hns3_over_8bd(skb);

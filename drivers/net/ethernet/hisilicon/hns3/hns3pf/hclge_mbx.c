@@ -538,6 +538,7 @@ static void hclge_get_vf_media_type(struct hclge_vport *vport,
 #define HCLGE_VF_MEDIA_TYPE_OFFSET	0
 #define HCLGE_VF_MODULE_TYPE_OFFSET	1
 #define HCLGE_VF_MEDIA_TYPE_LENGTH	2
+
 	struct hclge_dev *hdev = vport->back;
 
 	resp_msg->data[HCLGE_VF_MEDIA_TYPE_OFFSET] =

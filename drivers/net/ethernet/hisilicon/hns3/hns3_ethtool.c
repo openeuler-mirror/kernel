@@ -964,11 +964,11 @@ static int hns3_set_ringparam(struct net_device *ndev,
 {
 	struct hns3_nic_priv *priv = netdev_priv(ndev);
 	struct hnae3_handle *h = priv->ae_handle;
-	struct hns3_enet_ring *tmp_rings;
 	bool if_running = netif_running(ndev);
 	u32 old_tx_desc_num, new_tx_desc_num;
 	u32 old_rx_desc_num, new_rx_desc_num;
 	u16 queue_num = h->kinfo.num_tqps;
+	struct hns3_enet_ring *tmp_rings;
 	int ret, i;
 
 	ret = hns3_check_ringparam(ndev, param);
