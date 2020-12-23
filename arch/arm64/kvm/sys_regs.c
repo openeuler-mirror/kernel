@@ -2157,6 +2157,8 @@ static const struct sys_reg_desc *find_reg(const struct sys_reg_params *params,
 int kvm_handle_cp14_load_store(struct kvm_vcpu *vcpu)
 {
 	kvm_inject_undefined(vcpu);
+	vcpu->stat.cp14_ls_exit_stat++;
+
 	return 1;
 }
 
@@ -2327,21 +2329,29 @@ static int kvm_handle_cp_32(struct kvm_vcpu *vcpu,
 
 int kvm_handle_cp15_64(struct kvm_vcpu *vcpu)
 {
+	vcpu->stat.cp15_64_exit_stat++;
+
 	return kvm_handle_cp_64(vcpu, cp15_64_regs, ARRAY_SIZE(cp15_64_regs));
 }
 
 int kvm_handle_cp15_32(struct kvm_vcpu *vcpu)
 {
+	vcpu->stat.cp15_32_exit_stat++;
+
 	return kvm_handle_cp_32(vcpu, cp15_regs, ARRAY_SIZE(cp15_regs));
 }
 
 int kvm_handle_cp14_64(struct kvm_vcpu *vcpu)
 {
+	vcpu->stat.cp14_64_exit_stat++;
+
 	return kvm_handle_cp_64(vcpu, cp14_64_regs, ARRAY_SIZE(cp14_64_regs));
 }
 
 int kvm_handle_cp14_32(struct kvm_vcpu *vcpu)
 {
+	vcpu->stat.cp14_mr_exit_stat++;
+
 	return kvm_handle_cp_32(vcpu, cp14_regs, ARRAY_SIZE(cp14_regs));
 }
 
@@ -2399,6 +2409,7 @@ int kvm_handle_sys_reg(struct kvm_vcpu *vcpu)
 	int ret;
 
 	trace_kvm_handle_sys_reg(esr);
+	vcpu->stat.sys64_exit_stat++;
 
 	params.is_aarch32 = false;
 	params.is_32bit = false;

@@ -223,6 +223,7 @@ static inline bool __hyp_handle_fpsimd(struct kvm_vcpu *vcpu)
 	    esr_ec != ESR_ELx_EC_SVE)
 		return false;
 
+	vcpu->stat.fp_asimd_exit_stat++;
 	/* Don't handle SVE traps for non-SVE vcpus here: */
 	if (!sve_guest)
 		if (esr_ec != ESR_ELx_EC_FP_ASIMD)
