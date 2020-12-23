@@ -552,13 +552,6 @@ struct hnae3_ae_ops {
 	void (*mac_disconnect_phy)(struct hnae3_handle *handle);
 	bool (*reset_done)(struct hnae3_handle *handle, bool done);
 	void (*handle_imp_error)(struct hnae3_handle *handle);
-#ifdef CONFIG_HNS3_TEST
-	int (*send_cmdq)(struct hnae3_handle *handle, void *data, int num);
-	int (*test_cmdq)(struct hnae3_handle *handle, void *data, int *len);
-	int (*ecc_handle)(struct hnae3_ae_dev *ae_dev);
-	int (*priv_ops)(struct hnae3_handle *handle, int opcode,
-			void *data, int length);
-#endif
 	int (*get_vf_config)(struct hnae3_handle *handle, int vf,
 			     struct ifla_vf_info *ivf);
 	int (*set_vf_link_state)(struct hnae3_handle *handle, int vf,
@@ -574,6 +567,18 @@ struct hnae3_ae_ops {
 	bool (*get_cmdq_stat)(struct hnae3_handle *handle);
 	int (*suspend)(struct hnae3_ae_dev *ae_dev);
 	int (*resume)(struct hnae3_ae_dev *ae_dev);
+
+/* Notice! If the function is not for test, the definition must before
+ * CONFIG_HNS3_TEST! Because RoCE will use this head file, and it won't
+ * set CONFIG_HNS3_TEST, that may cause RoCE calling the wrong function.
+ */
+#ifdef CONFIG_HNS3_TEST
+	int (*send_cmdq)(struct hnae3_handle *handle, void *data, int num);
+	int (*test_cmdq)(struct hnae3_handle *handle, void *data, int *len);
+	int (*ecc_handle)(struct hnae3_ae_dev *ae_dev);
+	int (*priv_ops)(struct hnae3_handle *handle, int opcode,
+			void *data, int length);
+#endif
 };
 
 struct hnae3_dcb_ops {
