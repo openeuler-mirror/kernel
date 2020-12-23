@@ -10209,6 +10209,22 @@ static void hclge_clear_resetting_state(struct hclge_dev *hdev)
 	}
 }
 
+static void hclge_clear_hw_resource(struct hclge_dev *hdev)
+{
+	struct hclge_desc desc;
+	int ret;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CLEAR_HW_RESOURCE, false);
+
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	/* To be compatible with the old firmware, which does not support
+	 * command HCLGE_OPC_CLEAR_HW_RESOURCE, just return without warning
+	 */
+	if (ret && ret != -EOPNOTSUPP)
+		dev_warn(&hdev->pdev->dev,
+			 "clear hw resource incomplete, ret = %d\n", ret);
+}
+
 static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 {
 	struct pci_dev *pdev = ae_dev->pdev;
@@ -10247,6 +10263,8 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 	ret = hclge_cmd_init(hdev);
 	if (ret)
 		goto err_cmd_uninit;
+
+	hclge_clear_hw_resource(hdev);
 
 	ret = hclge_get_cap(hdev);
 	if (ret)
