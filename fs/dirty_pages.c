@@ -259,7 +259,7 @@ static ssize_t write_proc(
 	old_buff_num = buff_num;
 	ret = kstrtol(msg, 10, &buff_num);
 	if (ret != 0 || buff_num < 0 || buff_num > MAX_BUFF_SIZE) {
-		buff_num = 0;
+		buff_num = old_buff_num;
 		ret = -EINVAL;
 		goto free;
 	}
