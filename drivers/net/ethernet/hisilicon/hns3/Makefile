@@ -10,8 +10,8 @@ PWD = $(srctree)/drivers/net/ethernet/hisilicon/hns3
 #add include path
 ccflags-y += 	-I$(PWD) \
 		-I$(PWD)/hns3pf \
-		-I$(PWD)/hns-customer \
-		-I$(PWD)/hns-customer/hns3pf \
+		-I$(PWD)/hns3_extension \
+		-I$(PWD)/hns3_extension/hns3pf \
 		-I$(PWD)/hns3vf \
 		-I$(PWD)/hns3_cae
 
@@ -22,7 +22,7 @@ obj-$(CONFIG_HNS3) += hnae3.o
 HNS3_OBJS	=	hns3_enet.o \
 			hns3_ethtool.o \
 			hns3_debugfs.o
-HNS3_OBJS_IT	=	hns-customer/hns3_enet_it.o
+HNS3_OBJS_IT	=	hns3_extension/hns3_enet_it.o
 obj-$(CONFIG_HNS3_ENET) += hns3.o
 hns3-objs = $(HNS3_OBJS) $(HNS3_OBJS_IT)
 
@@ -38,7 +38,7 @@ HCLGE_OBJ = 	hns3pf/hclge_main.o \
 			hns3pf/hclge_err.o
 
 
-HCLGE_OBJ_IT_MAIN	=	hns-customer/hns3pf/hclge_main_it.o
+HCLGE_OBJ_IT_MAIN	=	hns3_extension/hns3pf/hclge_main_it.o
 obj-$(CONFIG_HNS3_HCLGE) += hclge.o
 hclge-objs := $(HCLGE_OBJ) $(HCLGE_OBJ_IT_MAIN)
 hclge-$(CONFIG_HNS3_DCB) += hns3pf/hclge_dcb.o
