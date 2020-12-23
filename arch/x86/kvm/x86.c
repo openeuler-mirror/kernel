@@ -245,6 +245,11 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	{ NULL }
 };
 
+/* debugfs entries of Detail For vcpu stat EXtension */
+struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
+	{ NULL }
+};
+
 u64 __read_mostly host_xcr0;
 u64 __read_mostly supported_xcr0;
 EXPORT_SYMBOL_GPL(supported_xcr0);

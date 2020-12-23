@@ -42,6 +42,19 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	VCPU_STAT("exits", exits),
 	VCPU_STAT("halt_poll_success_ns", halt_poll_success_ns),
 	VCPU_STAT("halt_poll_fail_ns", halt_poll_fail_ns),
+	{ "vcpu_stat", 0, KVM_STAT_DFX },
+	{ NULL }
+};
+
+/* debugfs entries of Detail For vcpu stat EXtension */
+struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
+	DFX_STAT("pid", pid),
+	DFX_STAT("hvc_exit_stat", hvc_exit_stat),
+	DFX_STAT("wfe_exit_stat", wfe_exit_stat),
+	DFX_STAT("wfi_exit_stat", wfi_exit_stat),
+	DFX_STAT("mmio_exit_user", mmio_exit_user),
+	DFX_STAT("mmio_exit_kernel", mmio_exit_kernel),
+	DFX_STAT("exits", exits),
 	{ NULL }
 };
 

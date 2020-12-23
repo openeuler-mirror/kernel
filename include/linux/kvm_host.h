@@ -1151,6 +1151,7 @@ static inline bool kvm_is_error_gpa(struct kvm *kvm, gpa_t gpa)
 enum kvm_stat_kind {
 	KVM_STAT_VM,
 	KVM_STAT_VCPU,
+	KVM_STAT_DFX,   /* Detail For vcpu stat EXtension */
 };
 
 struct kvm_stat_data {
@@ -1172,9 +1173,25 @@ struct kvm_stats_debugfs_item {
 	{ n, offsetof(struct kvm, stat.x), KVM_STAT_VM, ## __VA_ARGS__ }
 #define VCPU_STAT(n, x, ...)							\
 	{ n, offsetof(struct kvm_vcpu, stat.x), KVM_STAT_VCPU, ## __VA_ARGS__ }
+#define DFX_STAT(n, x, ...)							\
+	{ n, offsetof(struct kvm_vcpu_stat, x), DFX_STAT_U64, ## __VA_ARGS__ }
 
 extern struct kvm_stats_debugfs_item debugfs_entries[];
 extern struct dentry *kvm_debugfs_dir;
+
+enum dfx_stat_kind {
+	DFX_STAT_U64,
+	DFX_STAT_CPUTIME,
+};
+
+/* Detail For vcpu stat EXtension debugfs item */
+struct dfx_kvm_stats_debugfs_item {
+	const char *name;
+	int offset;
+	enum dfx_stat_kind dfx_kind;
+	struct dentry *dentry;
+};
+extern struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[];
 
 #if defined(CONFIG_MMU_NOTIFIER) && defined(KVM_ARCH_WANT_MMU_NOTIFIER)
 static inline int mmu_notifier_retry(struct kvm *kvm, unsigned long mmu_seq)
