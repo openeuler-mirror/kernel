@@ -1039,6 +1039,8 @@ enum hnae3_reset_type hclge_get_reset_level(struct hnae3_ae_dev *ae_dev,
 void hclge_task_schedule(struct hclge_dev *hdev, unsigned long delay_time);
 int hclge_query_bd_num_cmd_send(struct hclge_dev *hdev,
 				struct hclge_desc *desc);
+void hclge_report_hw_error(struct hclge_dev *hdev,
+			   enum hnae3_hw_error_type type);
 void hclge_inform_vf_promisc_info(struct hclge_vport *vport);
 void hclge_dbg_dump_rst_info(struct hclge_dev *hdev);
 bool hclge_vf_vlan_need_enable(struct hclge_vport *vport);

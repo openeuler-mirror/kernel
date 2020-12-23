@@ -3420,6 +3420,38 @@ static void hclge_func_reset_sync_vf(struct hclge_dev *hdev)
 	dev_warn(&hdev->pdev->dev, "sync with VF timeout!\n");
 }
 
+void hclge_report_hw_error(struct hclge_dev *hdev,
+                          enum hnae3_hw_error_type type)
+{
+       struct hnae3_client *client = hdev->nic_client;
+       u16 i;
+
+       if (!client || !client->ops->process_hw_error ||
+           !test_bit(HCLGE_STATE_NIC_REGISTERED, &hdev->state))
+               return;
+
+       for (i = 0; i < hdev->num_vmdq_vport + 1; i++)
+               client->ops->process_hw_error(&hdev->vport[i].nic, type);
+}
+
+static void hclge_handle_imp_error(struct hclge_dev *hdev)
+{
+       u32 reg_val;
+
+       reg_val = hclge_read_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG);
+       if (reg_val & BIT(HCLGE_VECTOR0_IMP_RD_POISON_B)) {
+               hclge_report_hw_error(hdev, HNAE3_IMP_RD_POISON_ERROR);
+               reg_val &= ~BIT(HCLGE_VECTOR0_IMP_RD_POISON_B);
+               hclge_write_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG, reg_val);
+       }
+
+       if (reg_val & BIT(HCLGE_VECTOR0_IMP_CMDQ_ERR_B)) {
+               hclge_report_hw_error(hdev, HNAE3_CMDQ_ECC_ERROR);
+               reg_val &= ~BIT(HCLGE_VECTOR0_IMP_CMDQ_ERR_B);
+               hclge_write_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG, reg_val);
+       }
+}
+
 int hclge_func_reset_cmd(struct hclge_dev *hdev, int func_id)
 {
 	struct hclge_desc desc;
@@ -3559,7 +3591,6 @@ static int hclge_func_reset_notify_vf(struct hclge_dev *hdev)
 
 static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 {
-	struct hnae3_handle *handle = &hdev->vport[0].nic;
 	u32 reg_val;
 	int ret = 0;
 
@@ -3590,8 +3621,7 @@ static int hclge_reset_prepare_wait(struct hclge_dev *hdev)
 			return ret;
 		break;
 	case HNAE3_IMP_RESET:
-		if (handle && handle->ae_algo->ops->handle_imp_error)
-			handle->ae_algo->ops->handle_imp_error(handle);
+		hclge_handle_imp_error(hdev);
 		reg_val = hclge_read_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG);
 		hclge_write_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG,
 				BIT(HCLGE_VECTOR0_IMP_RESET_INT_B) | reg_val);
@@ -3961,27 +3991,6 @@ static bool hclge_reset_done(struct hnae3_handle *handle, bool done)
 		dev_err(&hdev->pdev->dev, "Reset fail!\n");
 
 	return done;
-}
-
-static void hclge_handle_imp_error(struct hnae3_handle *handle)
-{
-	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev = vport->back;
-	u32 reg_val;
-
-	if (test_and_clear_bit(HCLGE_IMP_RD_POISON, &hdev->imp_err_state)) {
-		dev_err(&hdev->pdev->dev, "Detected IMP RD poison!\n");
-		reg_val = hclge_read_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG) &
-			  ~BIT(HCLGE_VECTOR0_IMP_RD_POISON_B);
-		hclge_write_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG, reg_val);
-	}
-
-	if (test_and_clear_bit(HCLGE_IMP_CMDQ_ERROR, &hdev->imp_err_state)) {
-		dev_err(&hdev->pdev->dev, "Detected IMP CMDQ error!\n");
-		reg_val = hclge_read_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG) &
-			  ~BIT(HCLGE_VECTOR0_IMP_CMDQ_ERR_B);
-		hclge_write_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG, reg_val);
-	}
 }
 
 static void hclge_reset_subtask(struct hclge_dev *hdev)
@@ -11583,7 +11592,6 @@ struct hnae3_ae_ops hclge_ops = {
 	.mac_connect_phy = hclge_mac_connect_phy,
 	.mac_disconnect_phy = hclge_mac_disconnect_phy,
 	.reset_done = hclge_reset_done,
-	.handle_imp_error = hclge_handle_imp_error,
 	.get_vf_config = hclge_get_vf_config,
 	.set_vf_link_state = hclge_set_vf_link_state,
 	.set_vf_spoofchk = hclge_set_vf_spoofchk,

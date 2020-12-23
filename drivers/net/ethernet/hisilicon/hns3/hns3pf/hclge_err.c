@@ -676,28 +676,6 @@ static int hclge_cmd_query_error(struct hclge_dev *hdev,
 	return ret;
 }
 
-static int hclge_check_imp_poison_err(struct hclge_dev *hdev)
-{
-	struct device *dev = &hdev->pdev->dev;
-	int ret = false;
-	u32 ras_status;
-
-	ras_status = hclge_read_dev(&hdev->hw, HCLGE_PF_OTHER_INT_REG);
-	if (ras_status & HCLGE_RAS_IMP_RD_POISON_MASK) {
-		set_bit(HCLGE_IMP_RD_POISON, &hdev->imp_err_state);
-		/* This error will be handle by IMP reset */
-		dev_info(dev, "IMP RD poison detected!\n");
-		ret = true;
-	} else if (ras_status & HCLGE_RAS_IMP_CMDQ_ERR_MASK) {
-		set_bit(HCLGE_IMP_CMDQ_ERROR, &hdev->imp_err_state);
-		/* This error will be handle by IMP reset */
-		dev_info(dev, "IMP CMDQ error detected!\n");
-		ret = true;
-	}
-
-	return ret;
-}
-
 static int hclge_clear_mac_tnl_int(struct hclge_dev *hdev)
 {
 	struct hclge_desc desc;
@@ -1351,7 +1329,7 @@ static int hclge_handle_pf_ras_error(struct hclge_dev *hdev,
 		hclge_log_error(dev, "PPU_PF_ABNORMAL_INT_ST0",
 				&hclge_ppu_pf_abnormal_int[0], status,
 				&ae_dev->hw_err_reset_req);
-		hdev->ppu_poison_ras_err = true;
+		hclge_report_hw_error(hdev, HNAE3_PPU_POISON_ERROR);
 	}
 
 	/* clear all PF RAS errors */
@@ -1661,16 +1639,12 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct device *dev = &hdev->pdev->dev;
 	u32 status;
-	int ret;
 
 	if (!test_bit(HCLGE_STATE_SERVICE_INITED, &hdev->state)) {
 		dev_err(dev,
 			"Can't recover - RAS error reported during dev init\n");
 		return PCI_ERS_RESULT_NONE;
 	}
-
-	if (hclge_check_imp_poison_err(hdev))
-		return PCI_ERS_RESULT_RECOVERED;
 
 	status = hclge_read_dev(&hdev->hw, HCLGE_RAS_PF_OTHER_INT_STS_REG);
 
@@ -1685,12 +1659,7 @@ pci_ers_result_t hclge_handle_hw_ras_error(struct hnae3_ae_dev *ae_dev)
 		dev_err(dev,
 			"HNS Non-Fatal RAS error(status=0x%x) identified\n",
 			status);
-		ret = hclge_handle_all_ras_errors(hdev);
-		if (ret) {
-			ret = hclge_check_imp_poison_err(hdev);
-			if (ret)
-				return PCI_ERS_RESULT_RECOVERED;
-		}
+		hclge_handle_all_ras_errors(hdev);
 	}
 
 	/* Handling Non-fatal Rocee RAS errors */
