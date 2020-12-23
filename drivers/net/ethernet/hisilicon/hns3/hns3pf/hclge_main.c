@@ -2571,6 +2571,8 @@ static int hclge_restart_autoneg(struct hnae3_handle *handle)
 	struct hclge_dev *hdev = vport->back;
 	int ret;
 
+	dev_dbg(&hdev->pdev->dev, "restart autoneg\n");
+
 	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
 	if (ret)
 		return ret;
