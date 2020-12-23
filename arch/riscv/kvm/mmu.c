@@ -689,11 +689,11 @@ int kvm_test_age_hva(struct kvm *kvm, unsigned long hva)
 
 int kvm_riscv_stage2_map(struct kvm_vcpu *vcpu,
 			 struct kvm_memory_slot *memslot,
-			 gpa_t gpa, unsigned long hva,
-			 bool writeable, bool is_write)
+			 gpa_t gpa, unsigned long hva, bool is_write)
 {
 	int ret;
 	kvm_pfn_t hfn;
+	bool writeable;
 	short vma_pageshift;
 	gfn_t gfn = gpa >> PAGE_SHIFT;
 	struct vm_area_struct *vma;
@@ -742,7 +742,7 @@ int kvm_riscv_stage2_map(struct kvm_vcpu *vcpu,
 
 	mmu_seq = kvm->mmu_notifier_seq;
 
-	hfn = gfn_to_pfn_prot(kvm, gfn, is_write, NULL);
+	hfn = gfn_to_pfn_prot(kvm, gfn, is_write, &writeable);
 	if (hfn == KVM_PFN_ERR_HWPOISON) {
 		send_sig_mceerr(BUS_MCEERR_AR, (void __user *)hva,
 				vma_pageshift, current);

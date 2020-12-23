@@ -445,7 +445,7 @@ static int stage2_page_fault(struct kvm_vcpu *vcpu, struct kvm_run *run,
 		};
 	}
 
-	ret = kvm_riscv_stage2_map(vcpu, memslot, fault_addr, hva, writeable,
+	ret = kvm_riscv_stage2_map(vcpu, memslot, fault_addr, hva,
 		(trap->scause == EXC_STORE_GUEST_PAGE_FAULT) ? true : false);
 	if (ret < 0)
 		return ret;
