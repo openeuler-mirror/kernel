@@ -6520,6 +6520,14 @@ static bool hclge_get_hw_reset_stat(struct hnae3_handle *handle)
 	       (hclge_read_dev(&hdev->hw, HCLGE_FUN_RST_ING) & BIT(0));
 }
 
+static bool hclge_get_cmdq_stat(struct hnae3_handle *handle)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+
+	return test_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
+}
+
 static bool hclge_ae_dev_resetting(struct hnae3_handle *handle)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
@@ -11596,6 +11604,7 @@ struct hnae3_ae_ops hclge_ops = {
 	.set_vf_rate = hclge_set_vf_rate,
 	.set_vf_mac = hclge_set_vf_mac,
 	.get_module_eeprom = hclge_get_module_eeprom,
+	.get_cmdq_stat = hclge_get_cmdq_stat,
 #ifdef CONFIG_PM
 	.suspend = hclge_suspend,
 	.resume = hclge_resume,
