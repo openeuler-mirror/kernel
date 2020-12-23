@@ -927,10 +927,15 @@ struct hclge_reset_tqp_queue_cmd {
 
 #define HCLGE_CFG_RESET_MAC_B		3
 #define HCLGE_CFG_RESET_FUNC_B		7
+#define HCLGE_CFG_RESET_RCB_B		1
 struct hclge_reset_cmd {
 	u8 mac_func_reset;
 	u8 fun_reset_vfid;
-	u8 rsv[22];
+	u8 fun_reset_rcb;
+	__le16 fun_reset_rcb_vqid_start;
+	__le16 fun_reset_rcb_vqid_num;
+	u8 fun_reset_rcb_return_status;
+	u8 rsv[16];
 };
 
 #define HCLGE_PF_RESET_DONE_BIT		BIT(0)
