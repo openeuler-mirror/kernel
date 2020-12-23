@@ -19,13 +19,12 @@ static char *buf_dirty;	/* buffer to store number of dirty pages */
 static unsigned long buf_size;	/* size of buffer in bytes */
 static long buff_num;	/* size of buffer in number of pages */
 static int buff_limit;	/* filter threshold of dirty pages*/
-static spinlock_t inode_sb_list_lock;
 
 static struct proc_dir_entry *dirty_dir;
 
-static bool warn_once;	/* print warn message once */
-static bool buff_used;	/* buffer is in used */
+static struct mutex buff_used;	/* buffer is in used */
 static struct mutex buff_lock;	/* lock when buffer is changed */
+DEFINE_SPINLOCK(inode_sb_list_lock);
 
 /* proc root directory */
 #define DIRTY_ROOT "dirty"
@@ -113,9 +112,6 @@ static void dump_dirtypages_sb(struct super_block *sb, struct seq_file *m)
 	char *tmpname;
 	int limit = READ_ONCE(buff_limit);
 
-	if (warn_once)
-		return;
-
 	if (!is_sb_writable(sb))
 		return;
 
@@ -126,6 +122,7 @@ static void dump_dirtypages_sb(struct super_block *sb, struct seq_file *m)
 	spin_lock(&inode_sb_list_lock);
 	list_for_each_entry(inode, &sb->s_inodes, i_sb_list) {
 		spin_lock(&inode->i_lock);
+
 		/*
 		 * We must skip inodes in unusual state. We may also skip
 		 * inodes without pages but we deliberately won't in case
@@ -160,8 +157,7 @@ static void dump_dirtypages_sb(struct super_block *sb, struct seq_file *m)
 		 * anything, just set m->count = m->size and return. In
 		 * that case, log a warn message in buffer to remind users.
 		 */
-		if (!warn_once && m->size <= m->count) {
-			warn_once = true;
+		if (m->size <= m->count) {
 			seq_set_overflow(m);
 			strncpy(m->buf+m->count-12, "terminated\n\0", 12);
 			goto done;
@@ -199,11 +195,26 @@ static ssize_t seq_read_dirty(
 	size_t n;
 	int err = 0;
 
-	buff_used = true;
+	if (!mutex_trylock(&buff_used))
+		return -EBUSY;
+	/* don't allow buffer to change during read */
+	mutex_lock(&buff_lock);
 	if (m->count == 0) {
+		memset(buf_dirty, 0, buf_size);
+		if (!m->buf) {
+			m->size = buf_size;
+			m->buf = buf_dirty;
+		}
 		err = m->op->show(m, NULL);
 		if (err < 0)
 			goto done;
+	}
+
+	/* if buffer changed somehow */
+	if (m->size != buf_size) {
+		mutex_unlock(&buff_lock);
+		mutex_unlock(&buff_used);
+		return -EFAULT;
 	}
 
 	n = min(m->count - m->from, size);
@@ -219,7 +230,9 @@ done:
 		copied = err;
 	else
 		*ppos += copied;
-	buff_used = false;
+
+	mutex_unlock(&buff_lock);
+	mutex_unlock(&buff_used);
 	return copied;
 }
 
@@ -240,6 +253,9 @@ static ssize_t write_proc(
 	char *msg;
 	int ret = 0;
 	long old_buff_num;
+
+	if (!mutex_trylock(&buff_used))
+		return -EBUSY;
 
 	if (count > PAGE_SIZE) {
 		ret = -EINVAL;
@@ -266,13 +282,6 @@ static ssize_t write_proc(
 
 	mutex_lock(&buff_lock);
 
-	if (buff_used) {
-		ret = -EBUSY;
-		goto out;
-	}
-
-	buff_used = true;
-
 	ret = count;
 	if (buff_num == 0) {
 		free_buf_dirty();
@@ -283,18 +292,18 @@ static ssize_t write_proc(
 
 	free_buf_dirty();
 	buf_size = PAGE_SIZE * buff_num;
-	buf_dirty = vmalloc(buf_size);
+	buf_dirty = vzalloc(buf_size);
 
 	if (!buf_dirty) {
 		ret = -ENOMEM;
 		goto out;
 	}
 out:
-	buff_used = false;
 	mutex_unlock(&buff_lock);
 free:
 	kfree(msg);
 error:
+	mutex_unlock(&buff_used);
 	return ret;
 }
 
@@ -310,21 +319,7 @@ static int proc_dpages_open(struct inode *inode, struct file *filp)
 
 	ret = single_open(filp, proc_dpages_show, NULL);
 	m = filp->private_data;
-	mutex_lock(&buff_lock);
-	if (buff_used) {
-		ret = -EBUSY;
-		goto out;
-	}
-	if (!ret) {
-		warn_once = false;
-		memset(buf_dirty, 0, buf_size);
-		if (!m->buf) {
-			m->size = buf_size;
-			m->buf = buf_dirty;
-		}
-	}
-out:
-	mutex_unlock(&buff_lock);
+
 	return ret;
 }
 
@@ -332,7 +327,6 @@ static int seq_release_dirty(struct inode *inode, struct file *file)
 {
 	struct seq_file *m = file->private_data;
 
-	buff_used = false;
 	/* we don't want to free the buf */
 	m->buf = NULL;
 	single_release(inode, file);
@@ -448,6 +442,7 @@ static int __init dpages_proc_init(void)
 	if (!proc_file)
 		goto fail_limit;
 
+	mutex_init(&buff_used);
 	mutex_init(&buff_lock);
 	return 0;
 
