@@ -303,6 +303,11 @@ static int proc_dpages_open(struct inode *inode, struct file *filp)
 	int ret;
 	struct seq_file *m;
 
+	if (buf_dirty == NULL || buf_size == 0) {
+		pr_warn("please allocate buffer before getting dirty pages\n");
+		return -ENOMEM;
+	}
+
 	ret = single_open(filp, proc_dpages_show, NULL);
 	m = filp->private_data;
 	mutex_lock(&buff_lock);
@@ -311,17 +316,11 @@ static int proc_dpages_open(struct inode *inode, struct file *filp)
 		goto out;
 	}
 	if (!ret) {
-		if (buf_dirty == NULL || buf_size == 0) {
-			pr_info("please allocate buffer before getting dirty pages\n");
-			ret = -ENOMEM;
-			goto out;
-		} else {
-			warn_once = false;
-			memset(buf_dirty, 0, buf_size);
-			if (!m->buf) {
-				m->size = buf_size;
-				m->buf = buf_dirty;
-			}
+		warn_once = false;
+		memset(buf_dirty, 0, buf_size);
+		if (!m->buf) {
+			m->size = buf_size;
+			m->buf = buf_dirty;
 		}
 	}
 out:
