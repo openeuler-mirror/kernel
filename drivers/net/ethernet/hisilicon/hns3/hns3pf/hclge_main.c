@@ -4691,7 +4691,7 @@ static void hclge_rss_init_cfg(struct hclge_dev *hdev)
 		vport[i].rss_tuple_sets.ipv4_udp_en =
 			HCLGE_RSS_INPUT_TUPLE_OTHER;
 		vport[i].rss_tuple_sets.ipv4_sctp_en =
-			HCLGE_RSS_INPUT_TUPLE_SCTP;
+			HCLGE_RSS_INPUT_TUPLE_SCTP4;
 		vport[i].rss_tuple_sets.ipv4_fragment_en =
 			HCLGE_RSS_INPUT_TUPLE_OTHER;
 		vport[i].rss_tuple_sets.ipv6_tcp_en =
@@ -4699,7 +4699,7 @@ static void hclge_rss_init_cfg(struct hclge_dev *hdev)
 		vport[i].rss_tuple_sets.ipv6_udp_en =
 			HCLGE_RSS_INPUT_TUPLE_OTHER;
 		vport[i].rss_tuple_sets.ipv6_sctp_en =
-			HCLGE_RSS_INPUT_TUPLE_SCTP;
+			HCLGE_RSS_INPUT_TUPLE_SCTP6;
 		vport[i].rss_tuple_sets.ipv6_fragment_en =
 			HCLGE_RSS_INPUT_TUPLE_OTHER;
 
