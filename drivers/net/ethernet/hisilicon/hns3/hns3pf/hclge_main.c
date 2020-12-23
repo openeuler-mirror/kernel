@@ -3454,10 +3454,10 @@ static void hclge_do_reset(struct hclge_dev *hdev)
 
 	switch (hdev->reset_type) {
 	case HNAE3_GLOBAL_RESET:
+		dev_info(&pdev->dev, "global reset requested\n");
 		val = hclge_read_dev(&hdev->hw, HCLGE_GLOBAL_RESET_REG);
 		hnae3_set_bit(val, HCLGE_GLOBAL_RESET_BIT, 1);
 		hclge_write_dev(&hdev->hw, HCLGE_GLOBAL_RESET_REG, val);
-		dev_info(&pdev->dev, "global reset requested\n");
 		break;
 	case HNAE3_FUNC_RESET:
 		dev_info(&pdev->dev, "PF reset requested\n");
