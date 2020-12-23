@@ -359,6 +359,11 @@ config COMMON_CLK_FIXED_MMIO
 	help
 	  Support for Memory Mapped IO Fixed clocks
 
+config MCHP_CLK_PFSOC
+	bool "Clk driver for PolarFire SoC"
+	help
+	  Supports Clock Configuration for PolarFire SoC
+
 source "drivers/clk/actions/Kconfig"
 source "drivers/clk/analogbits/Kconfig"
 source "drivers/clk/baikal-t1/Kconfig"
