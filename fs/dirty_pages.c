@@ -36,6 +36,7 @@ static struct mutex buff_lock;	/* lock when buffer is changed */
 /* proc file to filter result */
 #define DIRTY_LIMIT "page_threshold"
 
+#define MAX_BUFF_SIZE 102400
 static void seq_set_overflow(struct seq_file *m)
 {
 	m->count = m->size;
@@ -240,28 +241,27 @@ static ssize_t write_proc(
 	int ret = 0;
 	long old_buff_num;
 
-	msg = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!msg)
-		return -ENOMEM;
-
 	if (count > PAGE_SIZE) {
 		ret = -EINVAL;
 		goto error;
 	}
 
-	msg[count] = '\0';
-
-	if (copy_from_user(msg, buf, count)) {
-		ret = -EINVAL;
+	msg = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!msg) {
+		ret = -ENOMEM;
 		goto error;
 	}
 
+	if (copy_from_user(msg, buf, count)) {
+		ret = -EINVAL;
+		goto free;
+	}
 	old_buff_num = buff_num;
 	ret = kstrtol(msg, 10, &buff_num);
-	if (ret != 0 || buff_num < 0 || buff_num > 102400) {
+	if (ret != 0 || buff_num < 0 || buff_num > MAX_BUFF_SIZE) {
 		buff_num = 0;
 		ret = -EINVAL;
-		goto error;
+		goto free;
 	}
 
 	mutex_lock(&buff_lock);
@@ -292,8 +292,9 @@ static ssize_t write_proc(
 out:
 	buff_used = false;
 	mutex_unlock(&buff_lock);
-error:
+free:
 	kfree(msg);
+error:
 	return ret;
 }
 
@@ -377,31 +378,33 @@ static ssize_t write_limit_proc(
 	int ret = 0;
 	long temp;
 
-	msg = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!msg)
-		return -ENOMEM;
-
 	if (count > PAGE_SIZE) {
 		ret = -EINVAL;
 		goto error;
 	}
 
-	msg[count] = '\0';
-	if (copy_from_user(msg, buf, count)) {
-		ret = -EINVAL;
+	msg = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!msg) {
+		ret = -ENOMEM;
 		goto error;
 	}
+
+	if (copy_from_user(msg, buf, count)) {
+		ret = -EINVAL;
+		goto free;
+	}
 	ret = kstrtol(msg, 10, &temp);
-	if (ret != 0 || temp < 0) {
-	ret = -EINVAL;
-	goto error;
-}
+	if (ret != 0 || temp < 0 || temp > INT_MAX) {
+		ret = -EINVAL;
+		goto free;
+	}
 
 	WRITE_ONCE(buff_limit, temp);
 	ret = count;
 
-error:
+free:
 	kfree(msg);
+error:
 	return ret;
 }
 
