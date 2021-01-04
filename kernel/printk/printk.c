@@ -2572,6 +2572,7 @@ void console_flush_on_panic(void)
 	console_may_schedule = 0;
 	console_unlock();
 }
+EXPORT_SYMBOL(console_flush_on_panic);
 
 /*
  * Return the console tty driver structure and its associated index
