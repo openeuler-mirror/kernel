@@ -1446,6 +1446,7 @@ config ASCEND_WATCHDOG_SYSFS_CONFIGURE
 config ASCEND_AUTO_TUNING_HUGEPAGE
 	bool "Enable support for the auto-tuning hugepage"
 	depends on HUGETLBFS
+	depends on MEMCG
 	default y
 	help
 	  The hugepage auto-tuning means the kernel dynamically manages the number of
