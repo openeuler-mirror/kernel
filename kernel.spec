@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2012.5.0
+%global hulkrelease 2101.1.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0054
+Release: %{hulkrelease}.0055
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,66 @@ fi
 %endif
 
 %changelog
+* Mon Jan 11 2021 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2101.1.0.0055
+- net: hns3: update hns3 version to 1.9.38.9
+- net: hns3: optimize the process of queue reset
+- net: hns3: fix loopback test of serdes and phy is failed if duplex is half
+- net: hns3: format the output of the MAC address
+- net: hns3: rename hns-customer to hns3_extension
+- net: hns3: fix RoCE calling the wrong function problem
+- net: hns3: Clear the CMDQ registers before unmapping BAR region
+- net: hns3: fix for loopback failure when vlan filter is enable
+- net: hns3: replace snprintf with scnprintf in hns3_dbg_cmd_read
+- net: hns3: delete unused codes
+- net: hns3: fix missing help info in debugfs
+- net: hns3: add trace event support for PF/VF mailbox
+- net: hns3: fix loopback failed when phy has no .set_loopback interface
+- net: hns3: clear hardware resource when loading driver
+- net: hns3: fix incorrect print value of vf_id and vport_id
+- net: hns3: fix bug when initialize the RSS tuples for SCTP6
+- net: hns3: solve the problem of array uninitialized
+- net: hns3: clean up for some coding style.
+- net: hns3: adds a kernel message when restart autoneg.
+- net: hns3: modify a print message
+- net: hns3: provide .get_cmdq_stat interface for the client
+- net: hns3: add a hardware error detect type
+- net: hns3: implement .process_hw_error for hns3 client
+- net: hns3: modify location of one print information
+- net/hinic: update hinic version to 2.3.2.17
+- net/hinic: Modify the printing level of some logs
+- net/hinic: Fix oops when memory is insufficient
+- net/hinic: Set default features when probe netdev
+- RDMA/hns: fix eth extended SGE err
+- scsi: hisi_sas: Delete down() when handle Block-IO
+- nvme-fabrics: reject I/O to offline device
+- PCI: Add pci reset quirk for Huawei Intelligent NIC virtual function
+- nvme: fix nvme_stop_queues cost long time error
+- scsi: hisi_sas: fix logic bug when alloc device with MAX device num == 1
+- scsi: hisi_sas: mask corresponding RAS interrupts for hilink DFX exception
+- scsi: hisi_sas: Directly trigger SCSI error handling for completion errors
+- scsi: hisi_sas: use wait_for_completion_timeout() when clearing ITCT
+- scsi: hisi_sas: Fix the conflict between device gone and host reset
+- scsi: hisi_sas: Update all the registers after suspend and resume
+- scsi: hisi_sas: Make slot buf minimum allocation of PAGE_SIZE
+- scsi: hisi_sas: Reduce HISI_SAS_SGE_PAGE_CNT in size
+- scsi: flip the default on use_clustering
+- RDMA/hns: Disable UD on HIP08
+- powerpc/rtas: Restrict RTAS requests from userspace
+- mwifiex: Fix possible buffer overflows in mwifiex_cmd_802_11_ad_hoc_start
+- xenbus/xenbus_backend: Disallow pending watch messages
+- xen/xenbus: Count pending messages for each watch
+- xen/xenbus/xen_bus_type: Support will_handle watch callback
+- xen/xenbus: Add 'will_handle' callback support in xenbus_watch_path()
+- xen/xenbus: Allow watches discard events before queueing
+- xen-blkback: set ring->xenblkd to NULL after kthread_stop()
+- HID: core: Sanitize event code and type when mapping input
+- cfg80211: add missing policy for NL80211_ATTR_STATUS_CODE
+- speakup: Reject setting the speakup line discipline outside of speakup
+- tty: Fix ->session locking
+- tty: Fix ->pgrp locking in tiocspgrp()
+- ALSA: rawmidi: Fix racy buffer resize under concurrent accesses
+- jfs: Fix array index bounds check in dbAdjTree
+
 * Tue Dec 22 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2012.5.0.0054
 - Revert "mm/memory_hotplug: refrain from adding memory into an impossible node"
 
