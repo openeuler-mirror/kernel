@@ -346,7 +346,7 @@ static void svm_remove_sdma(struct svm_process *process,
 	if (null_count)
 		dump_stack();
 
-	kfree(sdma->pages);
+	kvfree(sdma->pages);
 	kfree(sdma);
 }
 
@@ -381,7 +381,7 @@ static int svm_add_sdma(struct svm_process *process,
 	sdma->addr = addr & PAGE_MASK;
 	sdma->nr_pages = (PAGE_ALIGN(size + addr) >> PAGE_SHIFT) -
 			 (sdma->addr >> PAGE_SHIFT);
-	sdma->pages = kcalloc(sdma->nr_pages, sizeof(char *), GFP_KERNEL);
+	sdma->pages = kvcalloc(sdma->nr_pages, sizeof(char *), GFP_KERNEL);
 	if (sdma->pages == NULL) {
 		err = -ENOMEM;
 		goto err_free_sdma;
@@ -411,7 +411,7 @@ err_unpin_pages:
 	while (sdma->nr_pages--)
 		put_page(sdma->pages[sdma->nr_pages]);
 err_free_pages:
-	kfree(sdma->pages);
+	kvfree(sdma->pages);
 err_free_sdma:
 	kfree(sdma);
 
