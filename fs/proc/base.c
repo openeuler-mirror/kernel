@@ -901,18 +901,34 @@ static ssize_t mem_write(struct file *file, const char __user *buf,
 
 loff_t mem_lseek(struct file *file, loff_t offset, int orig)
 {
+	loff_t ret = 0;
+
+	spin_lock(&file->f_lock);
 	switch (orig) {
-	case 0:
-		file->f_pos = offset;
-		break;
-	case 1:
-		file->f_pos += offset;
+	case SEEK_CUR:
+		offset += file->f_pos;
+		/* fall through */
+	case SEEK_SET:
+		/* to avoid userland mistaking f_pos=-9 as -EBADF=-9 */
+		if ((unsigned long long)offset >= -MAX_ERRNO)
+			ret = -EOVERFLOW;
 		break;
 	default:
-		return -EINVAL;
+		ret = -EINVAL;
 	}
-	force_successful_syscall_return();
-	return file->f_pos;
+
+	if (!ret) {
+		if (offset < 0 && !(unsigned_offsets(file))) {
+			ret = -EINVAL;
+		} else {
+			file->f_pos = offset;
+			ret = file->f_pos;
+			force_successful_syscall_return();
+		}
+	}
+
+	spin_unlock(&file->f_lock);
+	return ret;
 }
 
 static int mem_release(struct inode *inode, struct file *file)
