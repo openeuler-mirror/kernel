@@ -2038,6 +2038,26 @@ static int find_later_rq(struct task_struct *task)
 	return -1;
 }
 
+static struct task_struct *pick_next_pushable_dl_task(struct rq *rq)
+{
+	struct task_struct *p;
+
+	if (!has_pushable_dl_tasks(rq))
+		return NULL;
+
+	p = rb_entry(rq->dl.pushable_dl_tasks_root.rb_leftmost,
+		     struct task_struct, pushable_dl_tasks);
+
+	BUG_ON(rq->cpu != task_cpu(p));
+	BUG_ON(task_current(rq, p));
+	BUG_ON(p->nr_cpus_allowed <= 1);
+
+	BUG_ON(!task_on_rq_queued(p));
+	BUG_ON(!dl_task(p));
+
+	return p;
+}
+
 /* Locks the rq it finds */
 static struct rq *find_lock_later_rq(struct task_struct *task, struct rq *rq)
 {
@@ -2067,11 +2087,16 @@ static struct rq *find_lock_later_rq(struct task_struct *task, struct rq *rq)
 
 		/* Retry if something changed. */
 		if (double_lock_balance(rq, later_rq)) {
-			if (unlikely(task_rq(task) != rq ||
-				     !cpumask_test_cpu(later_rq->cpu, task->cpus_ptr) ||
-				     task_running(rq, task) ||
-				     !dl_task(task) ||
-				     !task_on_rq_queued(task))) {
+			struct task_struct *next_task;
+			/*
+			 * We had to unlock the run queue. In
+			 * the mean time, task could have
+			 * migrated already or had its affinity changed.
+			 * Also make sure that it wasn't scheduled on its rq.
+			 */
+			next_task = pick_next_pushable_dl_task(rq);
+			if (unlikely(next_task != task ||
+						!cpumask_test_cpu(later_rq->cpu, task->cpus_ptr))) {
 				double_unlock_balance(rq, later_rq);
 				later_rq = NULL;
 				break;
@@ -2094,26 +2119,6 @@ static struct rq *find_lock_later_rq(struct task_struct *task, struct rq *rq)
 	}
 
 	return later_rq;
-}
-
-static struct task_struct *pick_next_pushable_dl_task(struct rq *rq)
-{
-	struct task_struct *p;
-
-	if (!has_pushable_dl_tasks(rq))
-		return NULL;
-
-	p = rb_entry(rq->dl.pushable_dl_tasks_root.rb_leftmost,
-		     struct task_struct, pushable_dl_tasks);
-
-	BUG_ON(rq->cpu != task_cpu(p));
-	BUG_ON(task_current(rq, p));
-	BUG_ON(p->nr_cpus_allowed <= 1);
-
-	BUG_ON(!task_on_rq_queued(p));
-	BUG_ON(!dl_task(p));
-
-	return p;
 }
 
 /*
