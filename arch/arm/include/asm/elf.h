@@ -99,11 +99,13 @@ typedef struct user_fp elf_fpregset_t;
 extern char elf_platform[];
 
 struct elf32_hdr;
+struct elf64_hdr;
 
 /*
  * This is used to ensure we don't load something for the wrong architecture.
  */
 extern int elf_check_arch(const struct elf32_hdr *);
+extern int elf_check_arch_64(const struct elf64_hdr *);
 #define elf_check_arch elf_check_arch
 
 #define ELFOSABI_ARM_FDPIC  65	/* ARM FDPIC platform */
@@ -111,7 +113,7 @@ extern int elf_check_arch(const struct elf32_hdr *);
 #define elf_check_const_displacement(x)  ((x)->e_flags & EF_ARM_PIC)
 #define ELF_FDPIC_CORE_EFLAGS  0
 
-#define vmcore_elf64_check_arch(x) (0)
+#define vmcore_elf64_check_arch(x) (elf_check_arch_64(x) || vmcore_elf_check_arch_cross(x))
 
 extern int arm_elf_read_implies_exec(int);
 #define elf_read_implies_exec(ex,stk) arm_elf_read_implies_exec(stk)
