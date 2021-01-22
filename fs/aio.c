@@ -2050,10 +2050,17 @@ static long do_io_getevents(aio_context_t ctx_id,
 		struct io_event __user *events,
 		struct timespec64 *ts)
 {
-	ktime_t until = ts ? timespec64_to_ktime(*ts) : KTIME_MAX;
-	struct kioctx *ioctx = lookup_ioctx(ctx_id);
+	ktime_t until = KTIME_MAX;
+	struct kioctx *ioctx = NULL;
 	long ret = -EINVAL;
 
+	if (ts) {
+		if (!timespec64_valid(ts))
+			return ret;
+		until = timespec64_to_ktime(*ts);
+	}
+
+	ioctx = lookup_ioctx(ctx_id);
 	if (likely(ioctx)) {
 		if (likely(min_nr <= nr && min_nr >= 0))
 			ret = read_events(ioctx, min_nr, nr, events, until);
