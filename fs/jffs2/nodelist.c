@@ -469,6 +469,13 @@ void jffs2_del_ino_cache(struct jffs2_sb_info *c, struct jffs2_inode_cache *old)
 	while ((*prev) && (*prev)->ino < old->ino) {
 		prev = &(*prev)->next;
 	}
+
+	/*
+	 * It's possible that we can not find the inocache in
+	 * hash table because it had been removed by
+	 * jffs2_remove_node_refs_from_ino_list(), but it's still not freed,
+	 * so we need go forward and free it.
+	 */
 	if ((*prev) == old) {
 		*prev = old->next;
 	}
