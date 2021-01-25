@@ -184,8 +184,10 @@ static void __l2c210_op_pa_range(void __iomem *reg, unsigned long start,
 	}
 }
 
-static void l2c210_inv_range(unsigned long start, unsigned long end)
+static void l2c210_inv_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	void __iomem *base = l2x0_base;
 
 	if (start & (CACHE_LINE_SIZE - 1)) {
@@ -203,8 +205,10 @@ static void l2c210_inv_range(unsigned long start, unsigned long end)
 	__l2c210_cache_sync(base);
 }
 
-static void l2c210_clean_range(unsigned long start, unsigned long end)
+static void l2c210_clean_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	void __iomem *base = l2x0_base;
 
 	start &= ~(CACHE_LINE_SIZE - 1);
@@ -212,8 +216,10 @@ static void l2c210_clean_range(unsigned long start, unsigned long end)
 	__l2c210_cache_sync(base);
 }
 
-static void l2c210_flush_range(unsigned long start, unsigned long end)
+static void l2c210_flush_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	void __iomem *base = l2x0_base;
 
 	start &= ~(CACHE_LINE_SIZE - 1);
@@ -304,8 +310,10 @@ static unsigned long l2c220_op_pa_range(void __iomem *reg, unsigned long start,
 	return flags;
 }
 
-static void l2c220_inv_range(unsigned long start, unsigned long end)
+static void l2c220_inv_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	void __iomem *base = l2x0_base;
 	unsigned long flags;
 
@@ -331,8 +339,10 @@ static void l2c220_inv_range(unsigned long start, unsigned long end)
 	raw_spin_unlock_irqrestore(&l2x0_lock, flags);
 }
 
-static void l2c220_clean_range(unsigned long start, unsigned long end)
+static void l2c220_clean_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	void __iomem *base = l2x0_base;
 	unsigned long flags;
 
@@ -350,8 +360,10 @@ static void l2c220_clean_range(unsigned long start, unsigned long end)
 	raw_spin_unlock_irqrestore(&l2x0_lock, flags);
 }
 
-static void l2c220_flush_range(unsigned long start, unsigned long end)
+static void l2c220_flush_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	void __iomem *base = l2x0_base;
 	unsigned long flags;
 
@@ -464,8 +476,10 @@ static const struct l2c_init_data l2c220_data = {
  *	Affects: store buffer
  *	store buffer is not automatically drained.
  */
-static void l2c310_inv_range_erratum(unsigned long start, unsigned long end)
+static void l2c310_inv_range_erratum(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	void __iomem *base = l2x0_base;
 
 	if ((start | end) & (CACHE_LINE_SIZE - 1)) {
@@ -496,8 +510,10 @@ static void l2c310_inv_range_erratum(unsigned long start, unsigned long end)
 	__l2c210_cache_sync(base);
 }
 
-static void l2c310_flush_range_erratum(unsigned long start, unsigned long end)
+static void l2c310_flush_range_erratum(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	raw_spinlock_t *lock = &l2x0_lock;
 	unsigned long flags;
 	void __iomem *base = l2x0_base;
@@ -1400,12 +1416,12 @@ static void aurora_pa_range(unsigned long start, unsigned long end,
 		start = range_end;
 	}
 }
-static void aurora_inv_range(unsigned long start, unsigned long end)
+static void aurora_inv_range(phys_addr_t start, phys_addr_t end)
 {
 	aurora_pa_range(start, end, AURORA_INVAL_RANGE_REG);
 }
 
-static void aurora_clean_range(unsigned long start, unsigned long end)
+static void aurora_clean_range(phys_addr_t start, phys_addr_t end)
 {
 	/*
 	 * If L2 is forced to WT, the L2 will always be clean and we
@@ -1415,7 +1431,7 @@ static void aurora_clean_range(unsigned long start, unsigned long end)
 		aurora_pa_range(start, end, AURORA_CLEAN_RANGE_REG);
 }
 
-static void aurora_flush_range(unsigned long start, unsigned long end)
+static void aurora_flush_range(phys_addr_t start, phys_addr_t end)
 {
 	if (l2_wt_override)
 		aurora_pa_range(start, end, AURORA_INVAL_RANGE_REG);
@@ -1604,8 +1620,10 @@ static inline unsigned long bcm_l2_phys_addr(unsigned long addr)
 		return addr + BCM_VC_EMI_OFFSET;
 }
 
-static void bcm_inv_range(unsigned long start, unsigned long end)
+static void bcm_inv_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	unsigned long new_start, new_end;
 
 	BUG_ON(start < BCM_SYS_EMI_START_ADDR);
@@ -1631,8 +1649,10 @@ static void bcm_inv_range(unsigned long start, unsigned long end)
 		new_end);
 }
 
-static void bcm_clean_range(unsigned long start, unsigned long end)
+static void bcm_clean_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	unsigned long new_start, new_end;
 
 	BUG_ON(start < BCM_SYS_EMI_START_ADDR);
@@ -1658,8 +1678,10 @@ static void bcm_clean_range(unsigned long start, unsigned long end)
 		new_end);
 }
 
-static void bcm_flush_range(unsigned long start, unsigned long end)
+static void bcm_flush_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	unsigned long new_start, new_end;
 
 	BUG_ON(start < BCM_SYS_EMI_START_ADDR);

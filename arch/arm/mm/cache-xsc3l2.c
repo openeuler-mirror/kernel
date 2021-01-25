@@ -83,8 +83,10 @@ static inline unsigned long l2_map_va(unsigned long pa, unsigned long prev_va)
 #endif
 }
 
-static void xsc3_l2_inv_range(unsigned long start, unsigned long end)
+static void xsc3_l2_inv_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	unsigned long vaddr;
 
 	if (start == 0 && end == -1ul) {
@@ -127,8 +129,10 @@ static void xsc3_l2_inv_range(unsigned long start, unsigned long end)
 	dsb();
 }
 
-static void xsc3_l2_clean_range(unsigned long start, unsigned long end)
+static void xsc3_l2_clean_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	unsigned long vaddr;
 
 	vaddr = -1;  /* to force the first mapping */
@@ -165,8 +169,10 @@ static inline void xsc3_l2_flush_all(void)
 	dsb();
 }
 
-static void xsc3_l2_flush_range(unsigned long start, unsigned long end)
+static void xsc3_l2_flush_range(phys_addr_t pa_start, phys_addr_t pa_end)
 {
+	unsigned long start = pa_start;
+	unsigned long end = pa_end;
 	unsigned long vaddr;
 
 	if (start == 0 && end == -1ul) {
