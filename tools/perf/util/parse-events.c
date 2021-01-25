@@ -955,7 +955,11 @@ int parse_events_add_breakpoint(struct list_head *list, int *idx,
 	/* Provide some defaults if len is not specified */
 	if (!len) {
 		if (attr.bp_type == HW_BREAKPOINT_X)
+#ifdef HAVE_ARCH_X86_64_SUPPORT
 			len = sizeof(long);
+#else
+			len = HW_BREAKPOINT_LEN_4;
+#endif
 		else
 			len = HW_BREAKPOINT_LEN_4;
 	}
