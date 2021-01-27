@@ -12,7 +12,7 @@
 %global upstream_sublevel   0
 %global devel_release       1
 %global maintenance_release .0.0
-%global pkg_release         .8
+%global pkg_release         .9
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -104,14 +104,23 @@ ExclusiveOS: Linux
 %description
 The Linux Kernel, the operating system core itself.
 
+%package headers
+Summary: Header files for the Linux kernel for use by glibc
+Obsoletes: glibc-kernheaders < 3.0-46
+Provides: glibc-kernheaders = 3.0-46
+%description headers
+Kernel-headers includes the C header files that specify the interface
+between the Linux kernel and userspace libraries and programs.  The
+header files define structures and constants that are needed for
+building most standard programs and are also needed for rebuilding the
+glibc package.
+
+
 %package devel
 Summary: Development package for building kernel modules to match the %{KernelVer} kernel
 AutoReqProv: no
-Provides: %{name}-headers
-Obsoletes: %{name}-headers
-Provides: glibc-kernheaders
 Provides: kernel-devel-uname-r = %{KernelVer}
-Provides: kernel-devel-aarch64 = %{version}-%{release}
+Provides: kernel-devel-%{_target_cpu} = %{version}-%{release}
 Requires: perl findutils
 
 %description devel
@@ -763,6 +772,9 @@ fi
 /lib/modules/%{KernelVer}/source
 /lib/modules/%{KernelVer}/build
 /usr/src/kernels/%{KernelVer}
+
+%files headers
+%defattr (-, root, root)
 /usr/include/*
 
 %files -n perf
@@ -850,6 +862,9 @@ fi
 %endif
 
 %changelog
+* Tue Jan 26 2021 Chunsheng Luo <luochunsheng@huawei.com> - 5.10.0-1.0.0.9
+- split from kernel-devel to kernel-headers and kernel-devel
+
 * Tue Jan 12 2021 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-1.0.0.8
 - kvm: debugfs: Export x86 kvm exits to vcpu_stat
 - kvm: debugfs: aarch64 export cpu time related items to debugfs
