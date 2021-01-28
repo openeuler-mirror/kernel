@@ -70,8 +70,9 @@ static DEFINE_IDR(mtd_idr);
 
 /* These are exported solely for the purpose of mtd_blkdevs.c. You
    should not use them for _anything_ else */
-DEFINE_MUTEX(mtd_table_mutex);
-EXPORT_SYMBOL_GPL(mtd_table_mutex);
+static DEFINE_MUTEX(mtd_table_mutex);
+static int mtd_table_mutex_depth;
+static struct task_struct *mtd_table_mutex_owner;
 
 struct mtd_info *__mtd_next_device(int i)
 {
@@ -84,6 +85,40 @@ static LIST_HEAD(mtd_notifiers);
 
 #define MTD_DEVT(index) MKDEV(MTD_CHAR_MAJOR, (index)*2)
 
+void mtd_table_mutex_lock(void)
+{
+	if (mtd_table_mutex_owner != current) {
+		mutex_lock(&mtd_table_mutex);
+		mtd_table_mutex_owner = current;
+	}
+	mtd_table_mutex_depth++;
+}
+EXPORT_SYMBOL_GPL(mtd_table_mutex_lock);
+
+
+void mtd_table_mutex_unlock(void)
+{
+	if (mtd_table_mutex_owner != current) {
+		pr_err("MTD:lock_owner is %s, but current is %s\n",
+				mtd_table_mutex_owner->comm, current->comm);
+		BUG();
+	}
+	if (--mtd_table_mutex_depth == 0) {
+		mtd_table_mutex_owner =  NULL;
+		mutex_unlock(&mtd_table_mutex);
+	}
+}
+EXPORT_SYMBOL_GPL(mtd_table_mutex_unlock);
+
+void mtd_table_assert_mutex_locked(void)
+{
+	if (mtd_table_mutex_owner != current) {
+		pr_err("MTD:lock_owner is %s, but current is %s\n",
+				mtd_table_mutex_owner->comm, current->comm);
+		BUG();
+	}
+}
+EXPORT_SYMBOL_GPL(mtd_table_assert_mutex_locked);
 /* REVISIT once MTD uses the driver model better, whoever allocates
  * the mtd_info will probably want to use the release() hook...
  */
@@ -610,7 +645,7 @@ int add_mtd_device(struct mtd_info *mtd)
 	     !master->pairing || master->_writev))
 		return -EINVAL;
 
-	mutex_lock(&mtd_table_mutex);
+	mtd_table_mutex_lock();
 
 	i = idr_alloc(&mtd_idr, mtd, 0, 0, GFP_KERNEL);
 	if (i < 0) {
@@ -686,7 +721,7 @@ int add_mtd_device(struct mtd_info *mtd)
 	list_for_each_entry(not, &mtd_notifiers, list)
 		not->add(mtd);
 
-	mutex_unlock(&mtd_table_mutex);
+	mtd_table_mutex_unlock();
 	/* We _know_ we aren't being removed, because
 	   our caller is still holding us here. So none
 	   of this try_ nonsense, and no bitching about it
@@ -700,7 +735,7 @@ fail_added:
 	of_node_put(mtd_get_of_node(mtd));
 	idr_remove(&mtd_idr, i);
 fail_locked:
-	mutex_unlock(&mtd_table_mutex);
+	mtd_table_mutex_unlock();
 	return error;
 }
 
@@ -719,7 +754,7 @@ int del_mtd_device(struct mtd_info *mtd)
 	int ret;
 	struct mtd_notifier *not;
 
-	mutex_lock(&mtd_table_mutex);
+	mtd_table_mutex_lock();
 
 	debugfs_remove_recursive(mtd->dbg.dfs_dir);
 
@@ -752,7 +787,7 @@ int del_mtd_device(struct mtd_info *mtd)
 	}
 
 out_error:
-	mutex_unlock(&mtd_table_mutex);
+	mtd_table_mutex_unlock();
 	return ret;
 }
 
@@ -891,7 +926,7 @@ void register_mtd_user (struct mtd_notifier *new)
 {
 	struct mtd_info *mtd;
 
-	mutex_lock(&mtd_table_mutex);
+	mtd_table_mutex_lock();
 
 	list_add(&new->list, &mtd_notifiers);
 
@@ -900,7 +935,7 @@ void register_mtd_user (struct mtd_notifier *new)
 	mtd_for_each_device(mtd)
 		new->add(mtd);
 
-	mutex_unlock(&mtd_table_mutex);
+	mtd_table_mutex_unlock();
 }
 EXPORT_SYMBOL_GPL(register_mtd_user);
 
@@ -917,7 +952,7 @@ int unregister_mtd_user (struct mtd_notifier *old)
 {
 	struct mtd_info *mtd;
 
-	mutex_lock(&mtd_table_mutex);
+	mtd_table_mutex_lock();
 
 	module_put(THIS_MODULE);
 
@@ -925,7 +960,7 @@ int unregister_mtd_user (struct mtd_notifier *old)
 		old->remove(mtd);
 
 	list_del(&old->list);
-	mutex_unlock(&mtd_table_mutex);
+	mtd_table_mutex_unlock();
 	return 0;
 }
 EXPORT_SYMBOL_GPL(unregister_mtd_user);
@@ -946,7 +981,7 @@ struct mtd_info *get_mtd_device(struct mtd_info *mtd, int num)
 	struct mtd_info *ret = NULL, *other;
 	int err = -ENODEV;
 
-	mutex_lock(&mtd_table_mutex);
+	mtd_table_mutex_lock();
 
 	if (num == -1) {
 		mtd_for_each_device(other) {
@@ -970,7 +1005,7 @@ struct mtd_info *get_mtd_device(struct mtd_info *mtd, int num)
 	if (err)
 		ret = ERR_PTR(err);
 out:
-	mutex_unlock(&mtd_table_mutex);
+	mtd_table_mutex_unlock();
 	return ret;
 }
 EXPORT_SYMBOL_GPL(get_mtd_device);
@@ -1017,7 +1052,7 @@ struct mtd_info *get_mtd_device_nm(const char *name)
 	int err = -ENODEV;
 	struct mtd_info *mtd = NULL, *other;
 
-	mutex_lock(&mtd_table_mutex);
+	mtd_table_mutex_lock();
 
 	mtd_for_each_device(other) {
 		if (!strcmp(name, other->name)) {
@@ -1033,20 +1068,20 @@ struct mtd_info *get_mtd_device_nm(const char *name)
 	if (err)
 		goto out_unlock;
 
-	mutex_unlock(&mtd_table_mutex);
+	mtd_table_mutex_unlock();
 	return mtd;
 
 out_unlock:
-	mutex_unlock(&mtd_table_mutex);
+	mtd_table_mutex_unlock();
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL_GPL(get_mtd_device_nm);
 
 void put_mtd_device(struct mtd_info *mtd)
 {
-	mutex_lock(&mtd_table_mutex);
+	mtd_table_mutex_lock();
 	__put_mtd_device(mtd);
-	mutex_unlock(&mtd_table_mutex);
+	mtd_table_mutex_unlock();
 
 }
 EXPORT_SYMBOL_GPL(put_mtd_device);
@@ -2158,13 +2193,13 @@ static int mtd_proc_show(struct seq_file *m, void *v)
 	struct mtd_info *mtd;
 
 	seq_puts(m, "dev:    size   erasesize  name\n");
-	mutex_lock(&mtd_table_mutex);
+	mtd_table_mutex_lock();
 	mtd_for_each_device(mtd) {
 		seq_printf(m, "mtd%d: %8.8llx %8.8x \"%s\"\n",
 			   mtd->index, (unsigned long long)mtd->size,
 			   mtd->erasesize, mtd->name);
 	}
-	mutex_unlock(&mtd_table_mutex);
+	mtd_table_mutex_unlock();
 	return 0;
 }
 #endif /* CONFIG_PROC_FS */
