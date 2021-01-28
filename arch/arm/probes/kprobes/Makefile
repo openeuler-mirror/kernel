@@ -11,3 +11,7 @@ obj-$(CONFIG_KPROBES)		+= actions-arm.o checkers-arm.o
 obj-$(CONFIG_OPTPROBES)		+= opt-arm.o
 test-kprobes-objs		+= test-arm.o
 endif
+
+# don't warn about intentionally bogus instructions
+CFLAGS_test-arm.o		+= -Wa,--no-warn
+CFLAGS_test-thumb.o		+= -Wa,--no-warn
