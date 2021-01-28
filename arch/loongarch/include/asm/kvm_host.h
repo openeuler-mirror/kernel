@@ -29,7 +29,6 @@
 
 #define LOONGSON_VIRT_REG_BASE	0x1f000000
 #define KVM_MAX_VCPUS		256
-#define KVM_USER_MEM_SLOTS	256
 /* memory slots that does not exposed to userspace */
 #define KVM_PRIVATE_MEM_SLOTS	0
 
