@@ -1914,6 +1914,7 @@ void init_cgroup_root(struct cgroup_fs_context *ctx)
 	atomic_set(&root->nr_cgrps, 1);
 	cgrp->root = root;
 	init_cgroup_housekeeping(cgrp);
+	init_waitqueue_head(&root->wait);
 
 	root->flags = ctx->flags;
 	if (ctx->release_agent)
@@ -2138,6 +2139,17 @@ static void cgroup_kill_sb(struct super_block *sb)
 {
 	struct kernfs_root *kf_root = kernfs_root_from_sb(sb);
 	struct cgroup_root *root = cgroup_root_from_kf(kf_root);
+
+	/*
+	 * Wait if there are cgroups being destroyed, because the destruction
+	 * is asynchronous. On the other hand some controllers like memcg
+	 * may pin cgroups for a very long time, so don't wait forever.
+	 */
+	if (root != &cgrp_dfl_root) {
+		wait_event_timeout(root->wait,
+				   list_empty(&root->cgrp.self.children),
+				   msecs_to_jiffies(500));
+	}
 
 	/*
 	 * If @root doesn't have any children, start killing it.
@@ -5023,8 +5035,10 @@ static void css_release_work_fn(struct work_struct *work)
 		if (cgrp->kn)
 			RCU_INIT_POINTER(*(void __rcu __force **)&cgrp->kn->priv,
 					 NULL);
+		if (css->parent && !css->parent->parent &&
+		    list_empty(&css->parent->children))
+			wake_up(&cgrp->root->wait);
 	}
-
 	mutex_unlock(&cgroup_mutex);
 
 	INIT_RCU_WORK(&css->destroy_rwork, css_free_rwork_fn);
