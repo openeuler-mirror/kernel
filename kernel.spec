@@ -319,22 +319,7 @@ perl -p -i -e "s/^EXTRAVERSION.*/EXTRAVERSION = -%{release}.%{_target_cpu}/" Mak
 ## make linux
 make mrproper %{_smp_mflags}
 
-# prepare configs
-mkdir -p configs
-cp %{SOURCE3000} configs
-cp %{SOURCE3001} configs
-cp configs/kernel-%{version}-%{_target_cpu}.config .config
-
-make ARCH=%{Arch} listnewconfig |grep -E '^CONFIG_' > newconfig || true
-%if %{listnewconfig_fail}
-  if [ -s newconfig ]; then
-    echo "**** NOTE: new config options. ****"
-    cat newconfig
-    exit 1
-  fi
-%endif
-rm -f newconfig
-make ARCH=%{Arch} olddefconfig
+make ARCH=%{Arch} openeuler_defconfig
 
 TargetImage=$(basename $(make -s image_name))
 
