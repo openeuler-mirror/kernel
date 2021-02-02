@@ -11,6 +11,8 @@
 
 #include <kvm/arm_hypercalls.h>
 
+#include "trace.h"
+
 void kvm_update_pvsched_preempted(struct kvm_vcpu *vcpu, u32 preempted)
 {
 	struct kvm *kvm = vcpu->kvm;
@@ -53,6 +55,7 @@ long kvm_pvsched_kick_vcpu(struct kvm_vcpu *vcpu)
 		kvm_vcpu_yield_to(target);
 
 	val = SMCCC_RET_SUCCESS;
+	trace_kvm_pvsched_kick_vcpu(vcpu->vcpu_id, target->vcpu_id);
 
 out:
 	return val;

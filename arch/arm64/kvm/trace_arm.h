@@ -367,6 +367,24 @@ TRACE_EVENT(kvm_timer_emulate,
 		  __entry->timer_idx, __entry->should_fire)
 );
 
+TRACE_EVENT(kvm_pvsched_kick_vcpu,
+	TP_PROTO(int vcpu_id, int target_vcpu_id),
+	TP_ARGS(vcpu_id, target_vcpu_id),
+
+	TP_STRUCT__entry(
+		__field(int, vcpu_id)
+		__field(int, target_vcpu_id)
+	),
+
+	TP_fast_assign(
+		__entry->vcpu_id = vcpu_id;
+		__entry->target_vcpu_id = target_vcpu_id;
+	),
+
+	TP_printk("PV qspinlock: vcpu %d kick target vcpu %d",
+		  __entry->vcpu_id, __entry->target_vcpu_id)
+);
+
 #endif /* _TRACE_ARM_ARM64_KVM_H */
 
 #undef TRACE_INCLUDE_PATH
