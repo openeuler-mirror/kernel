@@ -381,6 +381,11 @@ struct kvm_vcpu_arch {
 		u64 last_steal;
 		gpa_t base;
 	} steal;
+
+	/* Guest PV sched state */
+	struct {
+		gpa_t base;
+	} pvsched;
 };
 
 /* Pointer to the vcpu's SVE FFR for sve_{save,load}_state() */
@@ -590,6 +595,17 @@ static inline bool kvm_arm_is_pvtime_enabled(struct kvm_vcpu_arch *vcpu_arch)
 }
 
 long kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu);
+void kvm_update_pvsched_preempted(struct kvm_vcpu *vcpu, u32 preempted);
+
+static inline void kvm_arm_pvsched_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
+{
+	vcpu_arch->pvsched.base = GPA_INVALID;
+}
+
+static inline bool kvm_arm_is_pvsched_enabled(struct kvm_vcpu_arch *vcpu_arch)
+{
+	return (vcpu_arch->pvsched.base != GPA_INVALID);
+}
 
 void kvm_set_sei_esr(struct kvm_vcpu *vcpu, u64 syndrome);
 
