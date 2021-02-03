@@ -2697,6 +2697,7 @@ int cgroup_migrate_prepare_dst(struct cgroup_mgctx *mgctx)
 int cgroup_migrate(struct task_struct *leader, bool threadgroup,
 		   struct cgroup_mgctx *mgctx)
 {
+	int err = 0;
 	struct task_struct *task;
 
 	/*
@@ -2709,13 +2710,16 @@ int cgroup_migrate(struct task_struct *leader, bool threadgroup,
 	task = leader;
 	do {
 		cgroup_migrate_add_task(task, mgctx);
-		if (!threadgroup)
+		if (!threadgroup) {
+			if (task->flags & PF_EXITING)
+				err = -ESRCH;
 			break;
+		}
 	} while_each_thread(leader, task);
 	rcu_read_unlock();
 	spin_unlock_irq(&css_set_lock);
 
-	return cgroup_migrate_execute(mgctx);
+	return err ? err : cgroup_migrate_execute(mgctx);
 }
 
 /**
