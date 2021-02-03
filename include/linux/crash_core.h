@@ -69,6 +69,9 @@ extern unsigned char *vmcoreinfo_data;
 extern size_t vmcoreinfo_size;
 extern u32 *vmcoreinfo_note;
 
+extern struct resource crashk_res;
+extern struct resource crashk_low_res;
+
 /* raw contents of kernel .notes section */
 extern const void __start_notes __weak;
 extern const void __stop_notes __weak;
