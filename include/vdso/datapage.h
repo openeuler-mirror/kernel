@@ -69,7 +69,8 @@ struct vdso_timestamp {
  * @tz_minuteswest:	minutes west of Greenwich
  * @tz_dsttime:		type of DST correction
  * @hrtimer_res:	hrtimer resolution
- * @__unused:		unused
+ * @vdso_fix:		avoid the clock bug in VDSO
+ * @vdso_shift: 	count of bit to be ignored
  * @arch_data:		architecture specific data (optional, defaults
  *			to an empty struct)
  *
@@ -104,7 +105,8 @@ struct vdso_data {
 	s32			tz_minuteswest;
 	s32			tz_dsttime;
 	u32			hrtimer_res;
-	u32			__unused;
+	u16			vdso_fix;
+	u16			vdso_shift;
 
 	struct arch_vdso_data	arch_data;
 };

@@ -101,6 +101,8 @@ struct clocksource {
 	struct list_head	list;
 	int			rating;
 	enum vdso_clock_mode	vdso_clock_mode;
+	u16			vdso_fix;
+	u16			vdso_shift;
 	unsigned long		flags;
 
 	int			(*enable)(struct clocksource *cs);
