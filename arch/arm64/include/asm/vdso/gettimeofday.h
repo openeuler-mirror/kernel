@@ -83,6 +83,17 @@ static __always_inline u64 __arch_get_hw_counter(s32 clock_mode,
 	 */
 	isb();
 	asm volatile("mrs %0, cntvct_el0" : "=r" (res) :: "memory");
+	if (vd->vdso_fix) {
+		u64 new;
+		int retries = 50;
+
+		asm volatile("mrs %0, cntvct_el0" : "=r" (new) :: "memory");
+		while (unlikely((new - res) >> vd->vdso_shift) && retries) {
+			asm volatile("mrs %0, cntvct_el0" : "=r" (res) :: "memory");
+			asm volatile("mrs %0, cntvct_el0" : "=r" (new) :: "memory");
+			retries--;
+		}
+	}
 	/*
 	 * This isb() is required to prevent that the seq lock is
 	 * speculated.#
