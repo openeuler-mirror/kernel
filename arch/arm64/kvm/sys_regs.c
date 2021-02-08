@@ -1249,6 +1249,8 @@ static int set_id_aa64pfr0_el1(struct kvm_vcpu *vcpu,
 	int err;
 	u64 val;
 	u8 csv2;
+	u32 reg_id = sys_reg((u32)rd->Op0, (u32)rd->Op1, (u32)rd->CRn,
+			     (u32)rd->CRm, (u32)rd->Op2);
 
 	err = reg_from_user(&val, uaddr, id);
 	if (err)
@@ -1264,13 +1266,8 @@ static int set_id_aa64pfr0_el1(struct kvm_vcpu *vcpu,
 	    (csv2 && arm64_get_spectre_v2_state() != SPECTRE_UNAFFECTED))
 		return -EINVAL;
 
-	/* We can only differ with CSV2, and anything else is an error */
-	val ^= read_id_reg(vcpu, rd, false);
-	val &= ~(0xFUL << ID_AA64PFR0_CSV2_SHIFT);
-	if (val)
-		return -EINVAL;
-
 	vcpu->kvm->arch.pfr0_csv2 = csv2;
+	kvm_set_id_reg(vcpu, reg_id, val);
 
 	return 0;
 }
