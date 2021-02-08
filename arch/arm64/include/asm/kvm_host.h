@@ -387,6 +387,8 @@ struct kvm_vcpu_arch {
 		bool pv_unhalted;
 		gpa_t base;
 	} pvsched;
+
+	struct id_registers idregs;
 };
 
 /* Pointer to the vcpu's SVE FFR for sve_{save,load}_state() */

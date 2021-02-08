@@ -269,6 +269,24 @@ int kvm_arch_vcpu_precreate(struct kvm *kvm, unsigned int id)
 	return 0;
 }
 
+static int get_cpu_ftr(u32 id, u64 val, void *argp)
+{
+	struct id_registers *idregs = argp;
+
+	/*
+	 * (Op0, Op1, CRn, CRm, Op2) of ID registers is (3, 0, 0, crm, op2),
+	 * where 1<=crm<8, 0<=op2<8.
+	 */
+	if (sys_reg_Op0(id) == 3 && sys_reg_Op1(id) == 0 &&
+	    sys_reg_CRn(id) == 0 && sys_reg_CRm(id) > 0) {
+		idregs->regs[idregs->num].sys_id = id;
+		idregs->regs[idregs->num].sys_val = val;
+		idregs->num++;
+	}
+
+	return 0;
+}
+
 int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 {
 	int err;
@@ -293,6 +311,10 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	vcpu->arch.hw_mmu = &vcpu->kvm->arch.mmu;
 
 	err = kvm_vgic_vcpu_init(vcpu);
+	if (err)
+		return err;
+
+	err = arm64_cpu_ftr_regs_traverse(get_cpu_ftr, &vcpu->arch.idregs);
 	if (err)
 		return err;
 

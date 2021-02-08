@@ -1112,13 +1112,35 @@ static bool access_arch_timer(struct kvm_vcpu *vcpu,
 	return true;
 }
 
+static struct id_reg_info *kvm_id_reg(struct kvm_vcpu *vcpu, u64 id)
+{
+	int i;
+
+	for (i = 0; i < vcpu->arch.idregs.num; ++i) {
+		if (vcpu->arch.idregs.regs[i].sys_id == id)
+			return &vcpu->arch.idregs.regs[i];
+	}
+	return NULL;
+}
+
+static u64 kvm_get_id_reg(struct kvm_vcpu *vcpu, u64 id)
+{
+	struct id_reg_info *ri = kvm_id_reg(vcpu, id);
+
+	if (!ri) {
+		WARN_ON(1);
+		return 0;
+	}
+	return ri->sys_val;
+}
+
 /* Read a sanitised cpufeature ID register by sys_reg_desc */
-static u64 read_id_reg(const struct kvm_vcpu *vcpu,
+static u64 read_id_reg(struct kvm_vcpu *vcpu,
 		struct sys_reg_desc const *r, bool raz)
 {
 	u32 id = sys_reg((u32)r->Op0, (u32)r->Op1,
 			 (u32)r->CRn, (u32)r->CRm, (u32)r->Op2);
-	u64 val = raz ? 0 : read_sanitised_ftr_reg(id);
+	u64 val = raz ? 0 : kvm_get_id_reg(vcpu, id);
 
 	if (id == SYS_ID_AA64PFR0_EL1) {
 		if (!vcpu_has_sve(vcpu))
@@ -1249,7 +1271,7 @@ static int set_id_aa64pfr0_el1(struct kvm_vcpu *vcpu,
  * are stored, and for set_id_reg() we don't allow the effective value
  * to be changed.
  */
-static int __get_id_reg(const struct kvm_vcpu *vcpu,
+static int __get_id_reg(struct kvm_vcpu *vcpu,
 			const struct sys_reg_desc *rd, void __user *uaddr,
 			bool raz)
 {
@@ -1259,7 +1281,7 @@ static int __get_id_reg(const struct kvm_vcpu *vcpu,
 	return reg_to_user(uaddr, &val, id);
 }
 
-static int __set_id_reg(const struct kvm_vcpu *vcpu,
+static int __set_id_reg(struct kvm_vcpu *vcpu,
 			const struct sys_reg_desc *rd, void __user *uaddr,
 			bool raz)
 {
