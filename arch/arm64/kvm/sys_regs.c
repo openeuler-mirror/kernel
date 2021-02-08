@@ -1134,6 +1134,17 @@ static u64 kvm_get_id_reg(struct kvm_vcpu *vcpu, u64 id)
 	return ri->sys_val;
 }
 
+static void kvm_set_id_reg(struct kvm_vcpu *vcpu, u64 id, u64 value)
+{
+	struct id_reg_info *ri = kvm_id_reg(vcpu, id);
+
+	if (!ri) {
+		WARN_ON(1);
+		return;
+	}
+	ri->sys_val = value;
+}
+
 /* Read a sanitised cpufeature ID register by sys_reg_desc */
 static u64 read_id_reg(struct kvm_vcpu *vcpu,
 		struct sys_reg_desc const *r, bool raz)
@@ -1266,10 +1277,6 @@ static int set_id_aa64pfr0_el1(struct kvm_vcpu *vcpu,
 
 /*
  * cpufeature ID register user accessors
- *
- * For now, these registers are immutable for userspace, so no values
- * are stored, and for set_id_reg() we don't allow the effective value
- * to be changed.
  */
 static int __get_id_reg(struct kvm_vcpu *vcpu,
 			const struct sys_reg_desc *rd, void __user *uaddr,
@@ -1293,9 +1300,14 @@ static int __set_id_reg(struct kvm_vcpu *vcpu,
 	if (err)
 		return err;
 
-	/* This is what we mean by invariant: you can't change it. */
-	if (val != read_id_reg(vcpu, rd, raz))
-		return -EINVAL;
+	if (raz) {
+		if (val != read_id_reg(vcpu, rd, raz))
+			return -EINVAL;
+	} else {
+		u32 reg_id = sys_reg((u32)rd->Op0, (u32)rd->Op1, (u32)rd->CRn,
+				     (u32)rd->CRm, (u32)rd->Op2);
+		kvm_set_id_reg(vcpu, reg_id, val);
+	}
 
 	return 0;
 }
