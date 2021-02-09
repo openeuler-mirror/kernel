@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2101.1.0
+%global hulkrelease 2102.1.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0055
+Release: %{hulkrelease}.0056
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,24 @@ fi
 %endif
 
 %changelog
+
+* Tue Feb 09 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2102.1.0.0056
+- nbd: freeze the queue while we're adding connections
+- nbd: Fix memory leak in nbd_add_socket
+- futex: Handle faults correctly for PI futexes
+- futex: Simplify fixup_pi_state_owner()
+- futex: Use pi_state_update_owner() in put_pi_state()
+- rtmutex: Remove unused argument from rt_mutex_proxy_unlock()
+- futex: Provide and use pi_state_update_owner()
+- futex: Replace pointless printk in fixup_owner()
+- futex: Ensure the correct return value from futex_lock_pi()
+- inet: do not call sublist_rcv on empty list
+- netfilter: add and use nf_hook_slow_list()
+- netfilter: clear skb->next in NF_HOOK_LIST()
+- scsi: target: Fix XCOPY NAA identifier lookup
+- nfsd4: readdirplus shouldn't return parent of export
+- HID: core: Correctly handle ReportSize being zero
+
 * Mon Jan 11 2021 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2101.1.0.0055
 - net: hns3: update hns3 version to 1.9.38.9
 - net: hns3: optimize the process of queue reset
