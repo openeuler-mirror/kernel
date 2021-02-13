@@ -1355,10 +1355,7 @@ void kvm_arch_mmu_enable_log_dirty_pt_masked(struct kvm *kvm,
 
 int kvm_cpu_dirty_log_size(void)
 {
-	if (kvm_x86_ops.cpu_dirty_log_size)
-		return kvm_x86_ops.cpu_dirty_log_size();
-	
-	return 0;
+	return kvm_x86_ops.cpu_dirty_log_size;
 }
 
 bool kvm_mmu_slot_gfn_write_protect(struct kvm *kvm,
