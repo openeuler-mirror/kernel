@@ -128,6 +128,10 @@ void noinstr arch_cpu_idle(void)
 	raw_local_irq_enable();
 }
 
+#if defined(CONFIG_HALTPOLL_CPUIDLE_MODULE)
+EXPORT_SYMBOL(arch_cpu_idle);
+#endif
+
 #ifdef CONFIG_HOTPLUG_CPU
 void arch_cpu_idle_dead(void)
 {
