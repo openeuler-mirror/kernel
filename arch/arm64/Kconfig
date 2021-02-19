@@ -345,6 +345,18 @@ config KASAN_SHADOW_OFFSET
 	default 0xeffffff900000000 if ARM64_VA_BITS_36 && KASAN_SW_TAGS
 	default 0xffffffffffffffff
 
+config ARM64_CPU_PARK
+	bool "Support CPU PARK on kexec"
+	depends on SMP
+	depends on KEXEC_CORE
+	help
+	 This enables support for CPU PARK feature in
+	 order to save time of cpu down to up.
+	 CPU park is a state through kexec, spin loop
+	 instead of cpu die before jumping to new kernel,
+	 jumping out from loop to new kernel entry in
+	 smp_init.
+
 config ARCH_HAS_CPU_RELAX
 	def_bool y
 

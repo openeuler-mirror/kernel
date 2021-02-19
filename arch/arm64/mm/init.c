@@ -275,6 +275,57 @@ static void __init fdt_enforce_memory_region(void)
 		memblock_add(usable_rgns[1].base, usable_rgns[1].size);
 }
 
+#ifdef CONFIG_ARM64_CPU_PARK
+struct cpu_park_info park_info = {
+	.start = 0,
+	.len = PARK_SECTION_SIZE * NR_CPUS,
+	.start_v = 0,
+};
+
+static int __init parse_park_mem(char *p)
+{
+	if (!p)
+		return 0;
+
+	park_info.start = PAGE_ALIGN(memparse(p, NULL));
+	if (park_info.start == 0)
+		pr_info("cpu park mem params[%s]", p);
+
+	return 0;
+}
+early_param("cpuparkmem", parse_park_mem);
+
+static int __init reserve_park_mem(void)
+{
+	if (park_info.start == 0 || park_info.len == 0)
+		return 0;
+
+	park_info.start = PAGE_ALIGN(park_info.start);
+	park_info.len = PAGE_ALIGN(park_info.len);
+
+	if (!memblock_is_region_memory(park_info.start, park_info.len)) {
+		pr_warn("cannot reserve park mem: region is not memory!");
+		goto out;
+	}
+
+	if (memblock_is_region_reserved(park_info.start, park_info.len)) {
+		pr_warn("cannot reserve park mem: region overlaps reserved memory!");
+		goto out;
+	}
+
+	memblock_remove(park_info.start, park_info.len);
+	pr_info("cpu park mem reserved: 0x%016lx - 0x%016lx (%ld MB)",
+		park_info.start, park_info.start + park_info.len,
+		park_info.len >> 20);
+
+	return 0;
+out:
+	park_info.start = 0;
+	park_info.len = 0;
+	return -EINVAL;
+}
+#endif
+
 void __init arm64_memblock_init(void)
 {
 	const s64 linear_region_size = BIT(vabits_actual - 1);
@@ -398,6 +449,10 @@ void __init arm64_memblock_init(void)
 
 #ifdef CONFIG_QUICK_KEXEC
 	reserve_quick_kexec();
+#endif
+
+#ifdef CONFIG_ARM64_CPU_PARK
+	reserve_park_mem();
 #endif
 
 	reserve_elfcorehdr();

@@ -145,6 +145,21 @@ bool cpus_are_stuck_in_kernel(void);
 
 extern void crash_smp_send_stop(void);
 extern bool smp_crash_stop_failed(void);
+#ifdef CONFIG_ARM64_CPU_PARK
+#define PARK_SECTION_SIZE 1024
+struct cpu_park_info {
+	/* Physical address of reserved park memory. */
+	unsigned long start;
+	/* park reserve mem len should be PARK_SECTION_SIZE * NR_CPUS */
+	unsigned long len;
+	/* Virtual address of reserved park memory. */
+	unsigned long start_v;
+};
+extern struct cpu_park_info park_info;
+extern void enter_cpu_park(unsigned long text, unsigned long exit);
+extern void do_cpu_park(unsigned long exit);
+extern int kexec_smp_send_park(void);
+#endif
 
 #endif /* ifndef __ASSEMBLY__ */
 

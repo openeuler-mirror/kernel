@@ -214,7 +214,7 @@ void machine_kexec(struct kimage *kimage)
 	BUG(); /* Should never get here. */
 }
 
-static void machine_kexec_mask_interrupts(void)
+void machine_kexec_mask_interrupts(void)
 {
 	unsigned int i;
 	struct irq_desc *desc;
