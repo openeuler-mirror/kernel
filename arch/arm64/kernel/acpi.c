@@ -27,6 +27,7 @@
 #include <linux/pgtable.h>
 
 #include <acpi/ghes.h>
+#include <acpi/processor.h>
 #include <asm/cputype.h>
 #include <asm/cpu_ops.h>
 #include <asm/daifflags.h>
@@ -401,6 +402,34 @@ int apei_claim_sea(struct pt_regs *regs)
 
 	return err;
 }
+
+int acpi_map_cpu(acpi_handle handle, phys_cpuid_t physid, u32 acpi_id,
+		 int *pcpu)
+{
+	int cpu, nid;
+
+	cpu = acpi_map_cpuid(physid, acpi_id);
+	nid = acpi_get_node(handle);
+	if (nid != NUMA_NO_NODE) {
+		set_cpu_numa_node(cpu, nid);
+		numa_add_cpu(cpu);
+	}
+
+	*pcpu = cpu;
+	set_cpu_present(cpu, true);
+
+	return 0;
+}
+EXPORT_SYMBOL(acpi_map_cpu);
+
+int acpi_unmap_cpu(int cpu)
+{
+	set_cpu_present(cpu, false);
+	numa_clear_node(cpu);
+
+	return 0;
+}
+EXPORT_SYMBOL(acpi_unmap_cpu);
 
 void arch_reserve_mem_area(acpi_physical_address addr, size_t size)
 {
