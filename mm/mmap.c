@@ -1564,9 +1564,8 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 	/* set numa node id into vm_flags,
 	 * hugetlbfs file mmap will use it to check node
 	 */
-	if (is_set_cdmmask() && (flags & MAP_CHECKNODE))
-		vm_flags |= VM_CHECKNODE | ((((flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK)
-					<< CHECKNODE_BITS) & CHECKNODE_MASK);
+	if (flags & MAP_CHECKNODE)
+		set_vm_checknode(vm_flags, flags);
 
 	addr = mmap_region(file, addr, len, vm_flags, pgoff, uf);
 	if (!IS_ERR_VALUE(addr) &&

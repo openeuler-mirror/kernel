@@ -15,9 +15,6 @@ struct ctl_table;
 struct user_struct;
 struct mmu_gather;
 
-#define CHECKNODE_BITS	48
-#define CHECKNODE_MASK	(~((_AC(1, UL) << CHECKNODE_BITS) - 1))
-
 #ifndef is_hugepd
 /*
  * Some architectures requires a hugepage directory format that is

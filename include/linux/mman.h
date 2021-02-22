@@ -73,6 +73,20 @@ static inline int dvpp_mmap_zone(unsigned long addr) { return 0; }
 
 #endif
 
+#ifdef CONFIG_COHERENT_DEVICE
+#define CHECKNODE_BITS  48
+#define CHECKNODE_MASK	(~((_AC(1, UL) << CHECKNODE_BITS) - 1))
+static inline void set_vm_checknode(vm_flags_t vm_flags, unsigned long flags)
+{
+	if (is_set_cdmmask())
+		vm_flags |= VM_CHECKNODE | ((((flags >> MAP_HUGE_SHIFT) &
+			MAP_HUGE_MASK) << CHECKNODE_BITS) & CHECKNODE_MASK);
+}
+#else
+#define CHECKNODE_BITS	(0)
+static inline void set_vm_checknode(vm_flags_t vm_flags, unsigned long flags) {}
+#endif
+
 /*
  * Arrange for legacy / undefined architecture specific flags to be
  * ignored by mmap handling code.

@@ -25,6 +25,7 @@
 #include <linux/swap.h>
 #include <linux/swapops.h>
 #include <linux/jhash.h>
+#include <linux/mman.h>
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
