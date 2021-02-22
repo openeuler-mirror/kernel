@@ -922,11 +922,17 @@ static struct workaround_oem_info gicr_wkrd_info[] = {
 	}
 };
 
-static void gic_check_hisi_workaround(void)
+static void gic_check_hisi_workaround(struct fwnode_handle *handle)
 {
 	struct acpi_table_header *tbl;
 	acpi_status status = AE_OK;
+	struct device_node *node = to_of_node(handle);
 	int i;
+
+	if ((node != NULL) && of_property_read_bool(node, "enable-init-all-gicr")) {
+		its_enable_init_all_gicr();
+		return;
+	}
 
 	status = acpi_get_table(ACPI_SIG_MADT, 0, &tbl);
 	if (ACPI_FAILURE(status) || !tbl)
@@ -1088,11 +1094,11 @@ static void gic_cpu_init_others(void)
 	}
 }
 #else
-static inline void gic_check_hisi_workaround(void) {}
+#define gic_check_hisi_workaround(x)
 
-static inline void gic_compute_nr_gicr(void) {}
+#define gic_compute_nr_gicr()
 
-static inline void gic_cpu_init_others(void) {}
+#define gic_cpu_init_others()
 #endif
 
 #ifdef CONFIG_SMP
@@ -1549,7 +1555,7 @@ static int __init gic_init_bases(void __iomem *dist_base,
 	gic_data.rdists.rdist = alloc_percpu(typeof(*gic_data.rdists.rdist));
 	gic_data.rdists.has_vlpis = true;
 	gic_data.rdists.has_direct_lpi = true;
-	gic_check_hisi_workaround();
+	gic_check_hisi_workaround(handle);
 	gic_compute_nr_gicr();
 
 	if (WARN_ON(!gic_data.domain) || WARN_ON(!gic_data.rdists.rdist)) {
