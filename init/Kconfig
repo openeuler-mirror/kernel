@@ -352,7 +352,7 @@ config AUDIT_TREE
 config KTASK
 	bool "Multithread CPU-intensive kernel work"
 	depends on SMP
-	default y
+	default n
 	help
 	  Parallelize CPU-intensive kernel work.  This feature is designed for
           big machines that can take advantage of their extra CPUs to speed up
