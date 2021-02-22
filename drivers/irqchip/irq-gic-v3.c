@@ -884,8 +884,10 @@ static void gic_cpu_init(void)
 
 	gic_cpu_config(rbase, gic_redist_wait_for_rwp);
 
+#ifdef CONFIG_ARM64_PSEUDO_NMI
 	if (gic_supports_nmi())
 		ipi_set_nmi_prio(rbase, GICD_INT_NMI_PRI);
+#endif
 
 	/* initialise system registers */
 	gic_cpu_sys_reg_init();
