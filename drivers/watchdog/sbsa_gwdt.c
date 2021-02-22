@@ -214,11 +214,14 @@ static irqreturn_t sbsa_gwdt_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static struct watchdog_info sbsa_gwdt_info = {
+static const struct watchdog_info sbsa_gwdt_info = {
 	.identity	= WATCHDOG_NAME,
 	.options	= WDIOF_SETTIMEOUT |
 			  WDIOF_KEEPALIVEPING |
 			  WDIOF_MAGICCLOSE |
+#ifdef CONFIG_ARM_SBSA_WATCHDOG_PANIC_NOTIFIER
+			  WDIOF_PRETIMEOUT |
+#endif
 			  WDIOF_CARDRESET,
 };
 
@@ -369,7 +372,6 @@ static int sbsa_gwdt_probe(struct platform_device *pdev)
 		 * Add WDIOF_PRETIMEOUT flags to enable user to configure it.
 		 */
 		gwdt->wdd.pretimeout = gwdt->wdd.timeout - 1;
-		sbsa_gwdt_info.options |= WDIOF_PRETIMEOUT;
 
 		sbsa_register_panic_notifier(gwdt);
 	}
