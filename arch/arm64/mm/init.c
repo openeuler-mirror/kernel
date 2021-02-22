@@ -769,6 +769,9 @@ __setup("keepinitrd", keepinitrd_setup);
 #endif
 
 #ifdef CONFIG_ASCEND_FEATURES
+
+#include <linux/perf/arm_pmu.h>
+
 void ascend_enable_all_features(void)
 {
 	if (IS_ENABLED(CONFIG_ASCEND_DVPP_MMAP))
@@ -782,6 +785,13 @@ void ascend_enable_all_features(void)
 
 	if (IS_ENABLED(CONFIG_SUSPEND))
 		mem_sleep_current = PM_SUSPEND_ON;
+
+	if (IS_ENABLED(CONFIG_PMU_WATCHDOG))
+		pmu_nmi_enable = true;
+
+#ifdef CONFIG_ARM64_PSEUDO_NMI
+	enable_pseudo_nmi = true;
+#endif
 }
 
 static int __init ascend_enable_setup(char *__unused)
@@ -791,7 +801,7 @@ static int __init ascend_enable_setup(char *__unused)
 	return 1;
 }
 
-__setup("ascend_enable_all", ascend_enable_setup);
+early_param("ascend_enable_all", ascend_enable_setup);
 #endif
 
 

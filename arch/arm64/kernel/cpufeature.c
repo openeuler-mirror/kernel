@@ -1230,7 +1230,7 @@ ssize_t cpu_show_meltdown(struct device *dev, struct device_attribute *attr,
 }
 
 #ifdef CONFIG_ARM64_PSEUDO_NMI
-static bool enable_pseudo_nmi;
+bool enable_pseudo_nmi;
 
 static int __init early_enable_pseudo_nmi(char *p)
 {

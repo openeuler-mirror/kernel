@@ -91,6 +91,10 @@ extern struct arm64_ftr_reg arm64_ftr_reg_ctrel0;
 
 int arm64_cpu_ftr_regs_traverse(int (*op)(u32, u64, void *), void *argp);
 
+#ifdef CONFIG_ARM64_PSEUDO_NMI
+extern bool enable_pseudo_nmi;
+#endif
+
 /*
  * CPU capabilities:
  *
