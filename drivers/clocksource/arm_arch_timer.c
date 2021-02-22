@@ -551,9 +551,14 @@ void arch_timer_enable_workaround(const struct arch_timer_erratum_workaround *wa
 	 * change both the default value and the vdso itself.
 	 */
 	if (wa->read_cntvct_el0) {
-		clocksource_counter.archdata.vdso_direct = true;
-		vdso_default = true;
-		vdso_fix = true;
+		if (wa->read_cntvct_el0 == hisi_161010101_read_cntvct_el0) {
+			clocksource_counter.archdata.vdso_direct = true;
+			vdso_default = true;
+			vdso_fix = true;
+		} else {
+			clocksource_counter.archdata.vdso_direct = false;
+			vdso_default = false;
+		}
 	}
 }
 
