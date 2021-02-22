@@ -71,9 +71,6 @@ int virtio_gpu_gem_create(struct drm_file *file,
 
 	*obj_p = &obj->gem_base;
 
-	/* drop reference from allocate - handle holds it now */
-	drm_gem_object_put_unlocked(&obj->gem_base);
-
 	*handle_p = handle;
 	return 0;
 }
@@ -107,6 +104,7 @@ int virtio_gpu_mode_dumb_create(struct drm_file *file_priv,
 	/* attach the object to the resource */
 	obj = gem_to_virtio_gpu_obj(gobj);
 	ret = virtio_gpu_object_attach(vgdev, obj, resid, NULL);
+	drm_gem_object_put_unlocked(&obj->gem_base);
 	if (ret)
 		goto fail;
 
