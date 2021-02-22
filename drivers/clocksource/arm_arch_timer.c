@@ -1006,7 +1006,9 @@ static void __init arch_counter_register(unsigned type)
 			arch_timer_read_counter = arch_counter_get_cntpct;
 
 		clocksource_counter.archdata.vdso_direct = vdso_default;
+#ifdef CONFIG_ARM64
 		clocksource_counter.archdata.vdso_fix = vdso_fix;
+#endif
 	} else {
 		arch_timer_read_counter = arch_counter_get_cntvct_mem;
 	}
