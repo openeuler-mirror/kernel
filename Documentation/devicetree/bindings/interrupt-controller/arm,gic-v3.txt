@@ -71,6 +71,10 @@ Optional
   region containing only the {SET,CLR}SPI registers to be used if
   isolation is required, and if supported by the HW.
 
+- enable-init-all-gicr: Boolean property. Identifies kernel initializes
+  message interrupt functionality for other GICR not managed by this
+  operating system.
+
 Sub-nodes:
 
 PPI affinity can be expressed as a single "ppi-partitions" node,
