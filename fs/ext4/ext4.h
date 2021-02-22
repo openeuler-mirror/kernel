@@ -55,7 +55,10 @@
 #endif
 
 #define NL_EXT4_ERROR_GROUP    1
+
+#define EXT3_ERROR_MAGIC       0xAE43125U
 #define EXT4_ERROR_MAGIC       0xAE32014U
+
 struct ext4_err_msg {
 	int magic;
 	char s_id[32];
