@@ -189,6 +189,11 @@ task_sched_runtime(struct task_struct *task);
 extern int use_sched_idle_time;
 extern int sched_idle_time_adjust(int cpu, u64 *utime, u64 *stime);
 extern unsigned long long sched_get_idle_time(int cpu);
+
+#ifdef CONFIG_PROC_FS
 extern u64 get_idle_time(int cpu);
+#else
+static inline u64 get_idle_time(int cpu) { return -1ULL; }
+#endif
 
 #endif /* _LINUX_SCHED_CPUTIME_H */

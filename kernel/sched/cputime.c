@@ -593,6 +593,12 @@ int sched_idle_time_adjust(int cpu, u64 *utime, u64 *stime)
 
 	raw_spin_lock(&rq_cputime->lock);
 
+	/* If failed to get idle time, drop adjustment */
+	if (get_idle_time(cpu) == -1ULL) {
+		raw_spin_unlock(&rq_cputime->lock);
+		return 0;
+	}
+
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
 	if (sched_clock_irqtime) {
 		hi = kcpustat_cpu(cpu).cpustat[CPUTIME_IRQ];
