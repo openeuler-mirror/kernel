@@ -458,6 +458,8 @@ void free_task(struct task_struct *tsk)
 	arch_release_task_struct(tsk);
 	if (tsk->flags & PF_KTHREAD)
 		free_kthread_struct(tsk);
+	kfree(tsk->futex_exit_mutex);
+	tsk->futex_exit_mutex = NULL;
 	free_task_struct(tsk);
 }
 EXPORT_SYMBOL(free_task);
@@ -1995,6 +1997,10 @@ static __latent_entropy struct task_struct *copy_process(
 	p->plug = NULL;
 #endif
 	futex_init_task(p);
+	p->futex_exit_mutex = kmalloc(sizeof(struct mutex), GFP_KERNEL);
+	if (!p->futex_exit_mutex)
+		goto bad_fork_free_pid;
+	mutex_init(p->futex_exit_mutex);
 
 	/*
 	 * sigaltstack should be cleared when sharing the same VM
@@ -2040,7 +2046,7 @@ static __latent_entropy struct task_struct *copy_process(
 	 */
 	retval = cgroup_can_fork(p);
 	if (retval)
-		goto bad_fork_free_pid;
+		goto bad_fork_free_futex_mutex;
 
 	/*
 	 * From this point on we must avoid any synchronous user-space
@@ -2164,6 +2170,9 @@ bad_fork_cancel_cgroup:
 	spin_unlock(&current->sighand->siglock);
 	write_unlock_irq(&tasklist_lock);
 	cgroup_cancel_fork(p);
+bad_fork_free_futex_mutex:
+	kfree(p->futex_exit_mutex);
+	p->futex_exit_mutex = NULL;
 bad_fork_free_pid:
 	cgroup_threadgroup_change_end(current);
 	if (pid != &init_struct_pid)

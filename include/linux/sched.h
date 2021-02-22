@@ -1002,8 +1002,6 @@ struct task_struct {
 #endif
 	struct list_head		pi_state_list;
 	struct futex_pi_state		*pi_state_cache;
-	struct mutex			futex_exit_mutex;
-	unsigned int			futex_state;
 #endif
 #ifdef CONFIG_PERF_EVENTS
 	struct perf_event_context	*perf_event_ctxp[perf_nr_task_contexts];
@@ -1218,12 +1216,14 @@ struct task_struct {
 #ifndef __GENKSYMS__
 	u64				parent_exec_id_u64;
 	u64				self_exec_id_u64;
+	struct mutex			*futex_exit_mutex;
+	unsigned long			futex_state;
 #else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
-#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
+#endif
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
