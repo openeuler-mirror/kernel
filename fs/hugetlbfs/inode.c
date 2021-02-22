@@ -211,7 +211,7 @@ static int hugetlbfs_file_mmap(struct file *file, struct vm_area_struct *vma)
 	inode_lock(inode);
 	file_accessed(file);
 
-	if (is_set_cdmmask()) {
+	if (is_set_cdmmask() && (vma->vm_flags & VM_CHECKNODE)) {
 		ret = hugetlb_checknode(vma, len >> huge_page_shift(h));
 		if (ret < 0)
 			goto out;

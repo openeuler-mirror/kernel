@@ -69,7 +69,6 @@ const int mmap_rnd_compat_bits_max = CONFIG_ARCH_MMAP_RND_COMPAT_BITS_MAX;
 int mmap_rnd_compat_bits __read_mostly = CONFIG_ARCH_MMAP_RND_COMPAT_BITS;
 #endif
 
-static unsigned long numanode;
 static bool ignore_rlimit_data;
 core_param(ignore_rlimit_data, ignore_rlimit_data, bool, 0644);
 
@@ -1565,8 +1564,9 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 	/* set numa node id into vm_flags,
 	 * hugetlbfs file mmap will use it to check node
 	 */
-	if (is_set_cdmmask())
-		vm_flags |= ((numanode << CHECKNODE_BITS) & CHECKNODE_MASK);
+	if (is_set_cdmmask() && (flags & MAP_CHECKNODE))
+		vm_flags |= VM_CHECKNODE | ((((flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK)
+					<< CHECKNODE_BITS) & CHECKNODE_MASK);
 
 	addr = mmap_region(file, addr, len, vm_flags, pgoff, uf);
 	if (!IS_ERR_VALUE(addr) &&
@@ -1583,12 +1583,6 @@ unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
 	struct file *file = NULL;
 	unsigned long retval;
 
-	/* get mmap numa node id */
-	if (is_set_cdmmask()) {
-		numanode = (flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK;
-		flags &= ~(MAP_HUGE_MASK << MAP_HUGE_SHIFT);
-	}
-
 	if (!(flags & MAP_ANONYMOUS)) {
 		audit_mmap_fd(fd, flags);
 		file = fget(fd);
@@ -1602,12 +1596,23 @@ unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
 	} else if (flags & MAP_HUGETLB) {
 		struct user_struct *user = NULL;
 		struct hstate *hs;
+		int page_size_log;
 
-		hs = hstate_sizelog((flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK);
+		/*
+		 * If config cdm node, flags bits [26:31] used for
+		 * mmap hugetlb check node
+		 */
+		if (is_set_cdmmask())
+			page_size_log = 0;
+		else
+			page_size_log = (flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK;
+
+		hs = hstate_sizelog(page_size_log);
 		if (!hs)
 			return -EINVAL;
 
 		len = ALIGN(len, huge_page_size(hs));
+
 		/*
 		 * VM_NORESERVE is used because the reservations will be
 		 * taken when vm_ops->mmap() is called
@@ -1616,8 +1621,7 @@ unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
 		 */
 		file = hugetlb_file_setup(HUGETLB_ANON_FILE, len,
 				VM_NORESERVE,
-				&user, HUGETLB_ANONHUGE_INODE,
-				(flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK);
+				&user, HUGETLB_ANONHUGE_INODE, page_size_log);
 		if (IS_ERR(file))
 			return PTR_ERR(file);
 	}

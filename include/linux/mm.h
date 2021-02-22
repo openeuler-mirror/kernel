@@ -234,6 +234,8 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_CDM		0x100000000	/* Contains coherent device memory */
 #endif
 
+#define VM_CHECKNODE 0x200000000
+
 #ifdef CONFIG_ARCH_USES_HIGH_VMA_FLAGS
 #define VM_HIGH_ARCH_BIT_0	32	/* bit only usable on 64-bit architectures */
 #define VM_HIGH_ARCH_BIT_1	33	/* bit only usable on 64-bit architectures */
