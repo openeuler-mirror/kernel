@@ -845,6 +845,29 @@ static int unf_scsi_queue_cmd(struct Scsi_Host *shost,
 		return 0;
 	}
 
+	if (unlikely(!scsi_image_table->wwn_rport_info_table)) {
+		UNF_TRACE(UNF_EVTLOG_DRIVER_INFO, UNF_LOG_ABNORMAL, UNF_WARN,
+			  "[warn]Port(0x%x) WwnRportInfoTable NULL", lport->port_id);
+
+		cmd->result = DID_NO_CONNECT << 16;
+		cmd->scsi_done(cmd);
+		ret_value = DID_NO_CONNECT;
+		UNF_IO_RESULT_CNT(scsi_image_table, scsi_id, ret_value);
+		return 0;
+	}
+
+	if (unlikely(lport->b_port_removing == UNF_TRUE)) {
+		UNF_TRACE(UNF_EVTLOG_DRIVER_INFO, UNF_LOG_ABNORMAL, UNF_WARN,
+			  "[warn]Port(0x%x) scsi_id(0x%x) rport(0x%p) target_id(0x%x) cmd(0x%p) is removing",
+			  lport->port_id, scsi_id, p_rport, p_rport->scsi_target_id, cmd);
+
+		cmd->result = DID_NO_CONNECT << 16;
+		cmd->scsi_done(cmd);
+		ret_value = DID_NO_CONNECT;
+		UNF_IO_RESULT_CNT(scsi_image_table, scsi_id, ret_value);
+		return 0;
+	}
+
 	en_scsi_state = atomic_read(&scsi_image_table->wwn_rport_info_table[scsi_id].en_scsi_state);
 	if (unlikely(en_scsi_state != UNF_SCSI_ST_ONLINE)) {
 		if (en_scsi_state == UNF_SCSI_ST_OFFLINE) {
