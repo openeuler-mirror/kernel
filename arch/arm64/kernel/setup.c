@@ -430,6 +430,8 @@ static int __init register_kernel_offset_dumper(void)
 }
 __initcall(register_kernel_offset_dumper);
 
+#ifdef CONFIG_HOTPLUG_CPU
+
 int arch_register_cpu(int num)
 {
 	struct cpu *cpu = &per_cpu(cpu_data.cpu, num);
@@ -446,3 +448,5 @@ void arch_unregister_cpu(int num)
 	unregister_cpu(cpu);
 }
 EXPORT_SYMBOL(arch_unregister_cpu);
+
+#endif
