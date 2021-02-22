@@ -1361,6 +1361,7 @@ config ASCEND_IOPF_HIPRI
 
 config ASCEND_CHARGE_MIGRATE_HUGEPAGES
 	bool "Enable support for migrate hugepages"
+	depends on HUGETLBFS
 	default y
 	help
 	  When reseved hugepages are used up, we attempts to apply for migrate
@@ -1382,6 +1383,7 @@ config ASCEND_WATCHDOG_SYSFS_CONFIGURE
 
 config ASCEND_AUTO_TUNING_HUGEPAGE
 	bool "Enable support for the auto-tuning hugepage"
+	depends on HUGETLBFS
 	default y
 	help
 	  The hugepage auto-tuning means the kernel dynamically manages the number of

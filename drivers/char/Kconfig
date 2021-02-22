@@ -554,7 +554,7 @@ config ADI
 
 config HISI_SVM
 	bool "Hisilicon svm driver"
-	depends on ARM64 && ARM_SMMU_V3 && MMU_NOTIFIER
+	depends on ARM64 && ARM_SMMU_V3 && MMU_NOTIFIER && HUGETLBFS
 	default y
 	help
 	  This driver provides character-level access to Hisilicon

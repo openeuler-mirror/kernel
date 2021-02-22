@@ -629,6 +629,13 @@ static inline void set_huge_swap_pte_at(struct mm_struct *mm, unsigned long addr
 					pte_t *ptep, pte_t pte, unsigned long sz)
 {
 }
+
+static inline int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
+                                    unsigned long vir_addr,
+                                    pgprot_t prot, unsigned long phy_addr)
+{
+	return 0;
+}
 #endif	/* CONFIG_HUGETLB_PAGE */
 
 static inline spinlock_t *huge_pte_lock(struct hstate *h,
