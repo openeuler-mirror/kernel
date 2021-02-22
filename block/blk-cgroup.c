@@ -364,16 +364,31 @@ static void blkg_destroy(struct blkcg_gq *blkg)
  */
 static void blkg_destroy_all(struct request_queue *q)
 {
+#define BLKG_DESTROY_BATCH 4096
 	struct blkcg_gq *blkg, *n;
+	int count;
 
 	lockdep_assert_held(q->queue_lock);
 
+again:
+	count = BLKG_DESTROY_BATCH;
 	list_for_each_entry_safe(blkg, n, &q->blkg_list, q_node) {
 		struct blkcg *blkcg = blkg->blkcg;
 
 		spin_lock(&blkcg->lock);
 		blkg_destroy(blkg);
 		spin_unlock(&blkcg->lock);
+		/*
+		 * If the list is too long, the loop can took a long time,
+		 * thus relese the lock for a while when a batch of blkg
+		 * were destroyed.
+		 */
+		if (!--count) {
+			spin_unlock_irq(q->queue_lock);
+			cond_resched();
+			spin_lock_irq(q->queue_lock);
+			goto again;
+		}
 	}
 
 	q->root_blkg = NULL;
