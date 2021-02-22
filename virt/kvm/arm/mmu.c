@@ -1754,6 +1754,13 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 	if (vma_pagesize == PMD_SIZE ||
 	    (vma_pagesize == PUD_SIZE && kvm_stage2_has_pmd(kvm)))
 		gfn = (fault_ipa & huge_page_mask(hstate_vma(vma))) >> PAGE_SHIFT;
+
+	/* Only enable PUD_SIZE huge mapping on 1620 serial boards */
+	if (vma_pagesize == PUD_SIZE && !kvm_ncsnp_support) {
+		vma_pagesize = PMD_SIZE;
+		gfn = (fault_ipa & PMD_MASK) >> PAGE_SHIFT;
+	}
+
 	up_read(&current->mm->mmap_sem);
 
 	/* We need minimum second+third level pages */
