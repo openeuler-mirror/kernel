@@ -789,6 +789,11 @@ void ascend_enable_all_features(void)
 	if (IS_ENABLED(CONFIG_PMU_WATCHDOG))
 		pmu_nmi_enable = true;
 
+	if (IS_ENABLED(CONFIG_MEMCG_KMEM)) {
+		extern bool cgroup_memory_nokmem;
+		cgroup_memory_nokmem = false;
+	}
+
 #ifdef CONFIG_ARM64_PSEUDO_NMI
 	enable_pseudo_nmi = true;
 #endif
