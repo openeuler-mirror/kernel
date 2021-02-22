@@ -1565,7 +1565,7 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 	 * hugetlbfs file mmap will use it to check node
 	 */
 	if (flags & MAP_CHECKNODE)
-		set_vm_checknode(vm_flags, flags);
+		set_vm_checknode(&vm_flags, flags);
 
 	addr = mmap_region(file, addr, len, vm_flags, pgoff, uf);
 	if (!IS_ERR_VALUE(addr) &&
