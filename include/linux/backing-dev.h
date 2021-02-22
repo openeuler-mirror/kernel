@@ -17,6 +17,7 @@
 #include <linux/blk-cgroup.h>
 #include <linux/backing-dev-defs.h>
 #include <linux/slab.h>
+#include <linux/device.h>
 
 #define BDI_DEV_NAME_LEN	32
 
