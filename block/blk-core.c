@@ -791,9 +791,12 @@ void blk_cleanup_queue(struct request_queue *q)
 	 * from more than one contexts.
 	 *
 	 * We rely on driver to deal with the race in case that queue
-	 * initialization isn't done.
+	 * initialization isn't done. If driver cannot deal the race,
+	 * we try to call quiesce in kernel for these drivers that have
+	 * set QUEUE_FLAG_FORECE_QUIESCE flag.
 	 */
-	if (q->mq_ops && blk_queue_init_done(q))
+	if (q->mq_ops && (blk_queue_init_done(q) ||
+			test_bit(QUEUE_FLAG_FORECE_QUIESCE, &q->queue_flags)))
 		blk_mq_quiesce_queue(q);
 
 	/* for synchronous bio-based driver finish in-flight integrity i/o */

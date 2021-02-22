@@ -844,6 +844,10 @@ static int scsi_add_lun(struct scsi_device *sdev, unsigned char *inq_result,
 			*bflags |= BLIST_NOREPORTLUN;
 	}
 
+	if (sdev->type == TYPE_ENCLOSURE)
+		set_bit(QUEUE_FLAG_FORECE_QUIESCE,
+				&sdev->request_queue->queue_flags);
+
 	/*
 	 * For a peripheral qualifier (PQ) value of 1 (001b), the SCSI
 	 * spec says: The device server is capable of supporting the
