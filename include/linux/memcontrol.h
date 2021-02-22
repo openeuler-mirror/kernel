@@ -318,6 +318,10 @@ struct mem_cgroup {
 	/* WARNING: nodeinfo must be the last member here */
 };
 
+struct mem_cgroup_extension {
+	struct mem_cgroup memcg;
+};
+
 /*
  * size of first charge trial. "32" comes from vmscan.c's magic value.
  * TODO: maybe necessary to use big numbers in big irons.

@@ -4508,11 +4508,14 @@ static void free_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 static void __mem_cgroup_free(struct mem_cgroup *memcg)
 {
 	int node;
+	struct mem_cgroup_extension *memcg_ext;
 
 	for_each_node(node)
 		free_mem_cgroup_per_node_info(memcg, node);
 	free_percpu(memcg->stat_cpu);
-	kfree(memcg);
+
+	memcg_ext = container_of(memcg, struct mem_cgroup_extension, memcg);
+	kfree(memcg_ext);
 }
 
 static void mem_cgroup_free(struct mem_cgroup *memcg)
@@ -4524,13 +4527,15 @@ static void mem_cgroup_free(struct mem_cgroup *memcg)
 static struct mem_cgroup *mem_cgroup_alloc(void)
 {
 	struct mem_cgroup *memcg;
+	struct mem_cgroup_extension *memcg_ext;
 	size_t size;
 	int node;
 
-	size = sizeof(struct mem_cgroup);
+	size = sizeof(struct mem_cgroup_extension);
 	size += nr_node_ids * sizeof(struct mem_cgroup_per_node *);
 
-	memcg = kzalloc(size, GFP_KERNEL);
+	memcg_ext = kzalloc(size, GFP_KERNEL);
+	memcg = &memcg_ext->memcg;
 	if (!memcg)
 		return NULL;
 
