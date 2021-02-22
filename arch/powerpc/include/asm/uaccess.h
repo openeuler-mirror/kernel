@@ -443,7 +443,7 @@ static inline unsigned long clear_user(void __user *addr, unsigned long size)
 {
 	unsigned long ret = size;
 	might_fault();
-	if (likely(access_ok(VERIFY_WRITE, addr, size))) {
+	if (likely(access_ok(addr, size))) {
 		allow_write_to_user(addr, size);
 		ret = __arch_clear_user(addr, size);
 		prevent_write_to_user(addr, size);
@@ -464,7 +464,7 @@ extern long __copy_from_user_flushcache(void *dst, const void __user *src,
 extern void memcpy_page_flushcache(char *to, struct page *page, size_t offset,
 			   size_t len);
 
-#define user_access_begin(type, ptr, len) access_ok(type, ptr, len)
+#define user_access_begin(ptr, len) access_ok(ptr, len)
 #define user_access_end()		  prevent_user_access(NULL, NULL, ~0ul)
 
 #define unsafe_op_wrap(op, err) do { if (unlikely(op)) goto err; } while (0)
