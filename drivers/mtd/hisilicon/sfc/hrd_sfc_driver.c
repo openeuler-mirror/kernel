@@ -87,8 +87,8 @@ static int _hrd_flashProbe(const char **mtdDrv, struct map_info *map,
 	return HRD_ERR;
 }
 
-static int __init hrd_flashProbe(const char **mtdDrv, struct map_info *map,
-													 struct resource *sfc_regres, struct mtd_info **mtd)
+static int hrd_flashProbe(const char **mtdDrv, struct map_info *map,
+			  struct resource *sfc_regres, struct mtd_info **mtd)
 {
 	int ret;
 
