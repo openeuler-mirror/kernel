@@ -4364,8 +4364,14 @@ void check_move_unevictable_pages(struct page **pages, int nr_pages)
 	for (i = 0; i < nr_pages; i++) {
 		struct page *page = pages[i];
 		struct pglist_data *pagepgdat = page_pgdat(page);
+		int _nr_pages;
 
-		pgscanned++;
+		if (PageTransTail(page))
+			continue;
+
+		_nr_pages = hpage_nr_pages(page);
+		pgscanned += _nr_pages;
+
 		if (pagepgdat != pgdat) {
 			if (pgdat)
 				spin_unlock_irq(&pgdat->lru_lock);
@@ -4384,7 +4390,7 @@ void check_move_unevictable_pages(struct page **pages, int nr_pages)
 			ClearPageUnevictable(page);
 			del_page_from_lru_list(page, lruvec, LRU_UNEVICTABLE);
 			add_page_to_lru_list(page, lruvec, lru);
-			pgrescued++;
+			pgrescued += _nr_pages;
 		}
 	}
 
