@@ -458,8 +458,6 @@ void free_task(struct task_struct *tsk)
 	arch_release_task_struct(tsk);
 	if (tsk->flags & PF_KTHREAD)
 		free_kthread_struct(tsk);
-	kfree(tsk->futex_exit_mutex);
-	tsk->futex_exit_mutex = NULL;
 	free_task_struct(tsk);
 }
 EXPORT_SYMBOL(free_task);
@@ -731,6 +729,8 @@ void __put_task_struct(struct task_struct *tsk)
 	exit_creds(tsk);
 	delayacct_tsk_free(tsk);
 	put_signal_struct(tsk->signal);
+	kfree(tsk->futex_exit_mutex);
+	tsk->futex_exit_mutex = NULL;
 
 	if (!profile_handoff_task(tsk))
 		free_task(tsk);
