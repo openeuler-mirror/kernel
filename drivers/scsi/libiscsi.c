@@ -2025,7 +2025,10 @@ enum blk_eh_timer_return iscsi_eh_cmd_timed_out(struct scsi_cmnd *sc)
 		 * Instead, handle cmd, allow completion to happen and let
 		 * upper layer to deal with the result.
 		 */
-		if (unlikely(system_state != SYSTEM_RUNNING)) {
+		conn = session->leadconn;
+		if (unlikely(system_state != SYSTEM_RUNNING) || (conn &&
+			time_before_eq(conn->last_recv +
+			(cls_session->recovery_tmo * HZ), jiffies))) {
 			sc->result = DID_NO_CONNECT << 16;
 			ISCSI_DBG_EH(session, "sc on shutdown, handled\n");
 			rc = BLK_EH_DONE;
@@ -2471,10 +2474,11 @@ failed:
 	iscsi_conn_failure(conn, ISCSI_ERR_SCSI_EH_SESSION_RST);
 
 	ISCSI_DBG_EH(session, "wait for relogin\n");
-	wait_event_interruptible(conn->ehwait,
+	wait_event_interruptible_timeout(conn->ehwait,
 				 session->state == ISCSI_STATE_TERMINATE ||
 				 session->state == ISCSI_STATE_LOGGED_IN ||
-				 session->state == ISCSI_STATE_RECOVERY_FAILED);
+				 session->state == ISCSI_STATE_RECOVERY_FAILED,
+				 cls_session->recovery_tmo * HZ);
 	if (signal_pending(current))
 		flush_signals(current);
 
