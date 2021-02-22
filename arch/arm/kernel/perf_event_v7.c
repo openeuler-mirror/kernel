@@ -1541,7 +1541,7 @@ static void krait_pmu_disable_event(struct perf_event *event)
 	struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
 
 	/* Disable counter and interrupt */
-	if (!pmu_nmi_enable) {
+	if (!pmu_nmi_enable)
 		raw_spin_lock_irqsave(&events->pmu_lock, flags);
 
 	/* Disable counter */
@@ -1556,7 +1556,7 @@ static void krait_pmu_disable_event(struct perf_event *event)
 	/* Disable interrupt for this counter */
 	armv7_pmnc_disable_intens(idx);
 
-	if (!pmu_nmi_enable) {
+	if (!pmu_nmi_enable)
 		raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
 }
 
@@ -1572,7 +1572,7 @@ static void krait_pmu_enable_event(struct perf_event *event)
 	 * Enable counter and interrupt, and set the counter to count
 	 * the event that we're interested in.
 	 */
-	if (!pmu_nmi_enable) {
+	if (!pmu_nmi_enable)
 		raw_spin_lock_irqsave(&events->pmu_lock, flags);
 
 	/* Disable counter */
@@ -1594,7 +1594,7 @@ static void krait_pmu_enable_event(struct perf_event *event)
 	/* Enable counter */
 	armv7_pmnc_enable_counter(idx);
 
-	if (!pmu_nmi_enable) {
+	if (!pmu_nmi_enable)
 		raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
 }
 
@@ -1878,7 +1878,7 @@ static void scorpion_pmu_disable_event(struct perf_event *event)
 	struct pmu_hw_events *events = this_cpu_ptr(cpu_pmu->hw_events);
 
 	/* Disable counter and interrupt */
-	if (!pmu_nmi_enable) {
+	if (!pmu_nmi_enable)
 		raw_spin_lock_irqsave(&events->pmu_lock, flags);
 
 	/* Disable counter */
@@ -1893,7 +1893,7 @@ static void scorpion_pmu_disable_event(struct perf_event *event)
 	/* Disable interrupt for this counter */
 	armv7_pmnc_disable_intens(idx);
 
-	if (!pmu_nmi_enable) {
+	if (!pmu_nmi_enable)
 		raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
 }
 
@@ -1909,7 +1909,7 @@ static void scorpion_pmu_enable_event(struct perf_event *event)
 	 * Enable counter and interrupt, and set the counter to count
 	 * the event that we're interested in.
 	 */
-	if (!pmu_nmi_enable) {
+	if (!pmu_nmi_enable)
 		raw_spin_lock_irqsave(&events->pmu_lock, flags);
 
 	/* Disable counter */
@@ -1931,7 +1931,7 @@ static void scorpion_pmu_enable_event(struct perf_event *event)
 	/* Enable counter */
 	armv7_pmnc_enable_counter(idx);
 
-	if (!pmu_nmi_enable) {
+	if (!pmu_nmi_enable)
 		raw_spin_unlock_irqrestore(&events->pmu_lock, flags);
 }
 
