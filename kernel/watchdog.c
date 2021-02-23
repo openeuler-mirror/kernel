@@ -48,6 +48,14 @@ static int __read_mostly nmi_watchdog_available;
 struct cpumask watchdog_cpumask __read_mostly;
 unsigned long *watchdog_cpumask_bits = cpumask_bits(&watchdog_cpumask);
 
+struct watchdog_operations nmi_watchdog_ops = {
+	.watchdog_nmi_stop = &watchdog_nmi_stop,
+	.watchdog_nmi_start = &watchdog_nmi_start,
+	.watchdog_nmi_probe = &watchdog_nmi_probe,
+	.watchdog_nmi_enable = &watchdog_nmi_enable,
+	.watchdog_nmi_disable = &watchdog_nmi_disable,
+};
+
 #ifdef CONFIG_HARDLOCKUP_DETECTOR
 
 # ifdef CONFIG_SMP
@@ -465,7 +473,7 @@ static void watchdog_enable(unsigned int cpu)
 	__touch_watchdog();
 	/* Enable the perf event */
 	if (watchdog_enabled & NMI_WATCHDOG_ENABLED)
-		watchdog_nmi_enable(cpu);
+		nmi_watchdog_ops.watchdog_nmi_enable(cpu);
 }
 
 static void watchdog_disable(unsigned int cpu)
@@ -479,7 +487,7 @@ static void watchdog_disable(unsigned int cpu)
 	 * between disabling the timer and disabling the perf event causes
 	 * the perf NMI to detect a false positive.
 	 */
-	watchdog_nmi_disable(cpu);
+	nmi_watchdog_ops.watchdog_nmi_disable(cpu);
 	hrtimer_cancel(hrtimer);
 	wait_for_completion(this_cpu_ptr(&softlockup_completion));
 }
@@ -535,7 +543,7 @@ int lockup_detector_offline_cpu(unsigned int cpu)
 static void lockup_detector_reconfigure(void)
 {
 	cpus_read_lock();
-	watchdog_nmi_stop();
+	nmi_watchdog_ops.watchdog_nmi_stop();
 
 	softlockup_stop_all();
 	set_sample_period();
@@ -543,7 +551,7 @@ static void lockup_detector_reconfigure(void)
 	if (watchdog_enabled && watchdog_thresh)
 		softlockup_start_all();
 
-	watchdog_nmi_start();
+	nmi_watchdog_ops.watchdog_nmi_start();
 	cpus_read_unlock();
 	/*
 	 * Must be called outside the cpus locked section to prevent
@@ -581,9 +589,9 @@ static __init void lockup_detector_setup(void)
 static void lockup_detector_reconfigure(void)
 {
 	cpus_read_lock();
-	watchdog_nmi_stop();
+	nmi_watchdog_ops.watchdog_nmi_stop();
 	lockup_detector_update_enable();
-	watchdog_nmi_start();
+	nmi_watchdog_ops.watchdog_nmi_start();
 	cpus_read_unlock();
 }
 static inline void lockup_detector_setup(void)
@@ -741,15 +749,21 @@ int proc_watchdog_cpumask(struct ctl_table *table, int write,
 }
 #endif /* CONFIG_SYSCTL */
 
+void __weak watchdog_ops_init(void)
+{
+}
+
 void __init lockup_detector_init(void)
 {
+	watchdog_ops_init();
+
 	if (tick_nohz_full_enabled())
 		pr_info("Disabling watchdog on nohz_full cores by default\n");
 
 	cpumask_copy(&watchdog_cpumask,
 		     housekeeping_cpumask(HK_FLAG_TIMER));
 
-	if (!watchdog_nmi_probe())
+	if (!nmi_watchdog_ops.watchdog_nmi_probe())
 		nmi_watchdog_available = true;
 	lockup_detector_setup();
 }
