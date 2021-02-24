@@ -354,8 +354,10 @@ static struct dentry *resctrl_mount(struct file_system_type *fs_type,
 	}
 
 	ret = resctrl_group_init_alloc(&resctrl_group_default);
-	if (ret < 0)
+	if (ret < 0) {
+		dentry = ERR_PTR(ret);
 		goto out_schema;
+	}
 
 	ret = resctrl_group_create_info_dir(resctrl_group_default.kn, &kn_info);
 	if (ret) {
