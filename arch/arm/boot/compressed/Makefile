@@ -84,8 +84,15 @@ compress-$(CONFIG_KERNEL_LZ4)  = lz4
 
 libfdt_objs := fdt_rw.o fdt_ro.o fdt_wip.o fdt.o
 
+ifneq ($(CONFIG_ARM_ATAG_DTB_COMPAT)$(CONFIG_RANDOMIZE_BASE),)
+OBJS	+= $(libfdt_objs)
 ifeq ($(CONFIG_ARM_ATAG_DTB_COMPAT),y)
-OBJS	+= $(libfdt_objs) atags_to_fdt.o
+OBJS	+= atags_to_fdt.o
+endif
+ifeq ($(CONFIG_RANDOMIZE_BASE),y)
+OBJS	+= kaslr.o
+CFLAGS_kaslr.o := -I $(srctree)/scripts/dtc/libfdt
+endif
 endif
 
 # -fstack-protector-strong triggers protection checks in this code,
