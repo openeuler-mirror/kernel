@@ -48,6 +48,11 @@ CHECKFLAGS	+= -D__ARMEL__
 KBUILD_LDFLAGS	+= -EL
 endif
 
+ifeq ($(CONFIG_RELOCATABLE),y)
+KBUILD_CFLAGS		+= -fpic -include $(srctree)/include/linux/hidden.h
+LDFLAGS_vmlinux		+= -pie -shared -Bsymbolic
+endif
+
 #
 # The Scalar Replacement of Aggregates (SRA) optimization pass in GCC 4.9 and
 # later may result in code being generated that handles signed short and signed

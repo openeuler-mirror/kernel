@@ -7,6 +7,7 @@ SECTIONS {
 	/DISCARD/ : {
 		*(.discard)
 		*(.discard.*)
+		*(*.discard.*)
 	}
 
 	__ksymtab		0 : { *(SORT(___ksymtab+*)) }
