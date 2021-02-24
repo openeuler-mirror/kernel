@@ -97,6 +97,7 @@ int func(unsigned int cpu)					\
 }
 
 struct cpu_cacheinfo *get_cpu_cacheinfo(unsigned int cpu);
+struct cacheinfo *cacheinfo_shared_cpu_map_search(void *fw_desc);
 int init_cache_level(unsigned int cpu);
 int populate_cache_leaves(unsigned int cpu);
 int cache_setup_acpi(unsigned int cpu);
