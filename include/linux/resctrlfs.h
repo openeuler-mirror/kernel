@@ -94,4 +94,6 @@ void resctrl_group_kn_unlock(struct kernfs_node *kn);
 
 void post_resctrl_mount (void);
 
+#define RESCTRL_MAX_CBM 32
+
 #endif /* _RESCTRLFS_H */
