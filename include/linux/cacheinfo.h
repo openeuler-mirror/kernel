@@ -119,4 +119,39 @@ int acpi_find_last_cache_level(unsigned int cpu);
 
 const struct attribute_group *cache_get_priv_group(struct cacheinfo *this_leaf);
 
+/* Get the id of a particular cache on @cpu. cpuhp lock must held. */
+static inline struct cacheinfo *get_cpu_cache_leaf(int cpu, int level)
+{
+	int i;
+	struct cpu_cacheinfo *ci = get_cpu_cacheinfo(cpu);
+
+	for (i = 0; i < ci->num_leaves; i++) {
+		/*
+		 * info_list of this cacheinfo instance
+		 * may not be initialized because sometimes
+		 * free_cache_attributes() may free this
+		 * info_list but not set num_leaves to zero,
+		 * for example when PPTT is not supported.
+		 */
+		if (!ci->info_list)
+		    continue;
+
+		if ((ci->info_list[i].type == CACHE_TYPE_UNIFIED) &&
+			(ci->info_list[i].level == level)) {
+			return &ci->info_list[i];
+		}
+	}
+
+	return NULL;
+}
+
+static inline int get_cpu_cacheinfo_id(int cpu, int level)
+{
+	struct cacheinfo *leaf = get_cpu_cache_leaf(cpu, level);
+
+	if (leaf && leaf->attributes & CACHE_ID)
+		return leaf->id;
+	return -1;
+}
+
 #endif /* _LINUX_CACHEINFO_H */
