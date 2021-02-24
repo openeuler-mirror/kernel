@@ -71,42 +71,17 @@ acpi_mpam_label_cache_component_id(struct acpi_table_header *table_hdr,
 	return 0;
 }
 
-/**
- * acpi_mpam_label_memory_component_id() - Use proximity_domain id to
- * label mpam memory node, which be signed by @component_id.
- * @proximity_domain: proximity_domain of ACPI MPAM memory node
- * @component_id: The id labels the structure mpam_node memory
- */
-static int acpi_mpam_label_memory_component_id(u8 proximity_domain,
-					u32 *component_id)
-{
-	u32 nid = (u32)proximity_domain;
-
-	if (nid >= nr_online_nodes) {
-		pr_err_once("Invalid proximity domain\n");
-		return -EINVAL;
-	}
-
-	*component_id = nid;
-	return 0;
-}
-
 static int __init acpi_mpam_parse_memory(struct acpi_mpam_header *h)
 {
-	int ret;
 	u32 component_id;
 	struct mpam_device *dev;
 	struct acpi_mpam_node_memory *node = (struct acpi_mpam_node_memory *)h;
 
-	ret = acpi_mpam_label_memory_component_id(node->proximity_domain,
-							&component_id);
-	if (ret) {
-		pr_err("Failed to label memory component id\n");
-		return -EINVAL;
-	}
+	component_id = acpi_map_pxm_to_node(node->proximity_domain);
+	if (component_id == NUMA_NO_NODE)
+		component_id = 0;
 
-	dev = mpam_device_create_memory(component_id,
-					node->header.base_address);
+	dev = mpam_device_create_memory(component_id, node->header.base_address);
 	if (IS_ERR(dev)) {
 		pr_err("Failed to create memory node\n");
 		return -EINVAL;
