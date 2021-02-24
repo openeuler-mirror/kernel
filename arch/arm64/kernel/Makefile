@@ -63,7 +63,7 @@ arm64-obj-$(CONFIG_CRASH_CORE)		+= crash_core.o
 arm64-obj-$(CONFIG_ARM_SDE_INTERFACE)	+= sdei.o
 arm64-obj-$(CONFIG_ARM64_SSBD)		+= ssbd.o
 arm64-obj-$(CONFIG_SDEI_WATCHDOG) 	+= watchdog_sdei.o
-arm64-obj-$(CONFIG_MPAM)		+= mpam.o mpam_ctrlmon.o mpam_mon.o
+arm64-obj-$(CONFIG_MPAM)		+= mpam/
 
 obj-y					+= $(arm64-obj-y) vdso/ probes/
 obj-$(CONFIG_ARM64_ILP32)		+= vdso-ilp32/
