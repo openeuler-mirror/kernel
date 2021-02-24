@@ -335,7 +335,13 @@ static struct dentry *resctrl_mount(struct file_system_type *fs_type,
 		dentry = ERR_PTR(ret);
 		goto out_options;
 	}
-
+#ifdef CONFIG_ARM64
+	ret = schemata_list_init();
+	if (ret) {
+		dentry = ERR_PTR(ret);
+		goto out_options;
+	}
+#endif
 	resctrl_id_init();
 
 	ret = resctrl_group_create_info_dir(resctrl_group_default.kn);
@@ -505,6 +511,9 @@ static void resctrl_kill_sb(struct super_block *sb)
 	mutex_lock(&resctrl_group_mutex);
 
 	resctrl_resource_reset();
+#ifdef CONFIG_ARM64
+	schemata_list_destroy();
+#endif
 
 	rmdir_all_sub();
 	static_branch_disable_cpuslocked(&resctrl_alloc_enable_key);
