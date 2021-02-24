@@ -12,7 +12,7 @@
 #include <linux/types.h>
 #include <generated/compile.h>
 #include <generated/utsrelease.h>
-#include <asm/pgtable.h>
+#include <linux/pgtable.h>
 
 #include CONFIG_UNCOMPRESS_INCLUDE
 
@@ -64,9 +64,11 @@ static u32 __memparse(const char *val, const char **retptr)
 		case 'g':
 		case 'G':
 			ret <<= 10;
+			/* fall through */
 		case 'm':
 		case 'M':
 			ret <<= 10;
+			/* fall through */
 		case 'k':
 		case 'K':
 			ret <<= 10;

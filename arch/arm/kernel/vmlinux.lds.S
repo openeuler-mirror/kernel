@@ -117,7 +117,7 @@ SECTIONS
 #endif
 	.rel.dyn : ALIGN(8) {
 		__rel_begin = .;
-		*(.rel .rel.* .rel.dyn)
+		*(.rel .rel.* .rel.dyn .rel*)
 	}
 	__rel_end = ADDR(.rel.dyn) + SIZEOF(.rel.dyn);
 
@@ -150,6 +150,15 @@ SECTIONS
 
 	_sdata = .;
 	RW_DATA(L1_CACHE_BYTES, PAGE_SIZE, THREAD_SIZE)
+
+	.data.rel.local : {
+		*(.data.rel.local)
+	}
+
+	.data.rel.ro : {
+		*(.data.rel.ro)
+	}
+
 	_edata = .;
 
 	BSS_SECTION(0, 0, 0)
