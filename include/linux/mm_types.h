@@ -26,7 +26,7 @@
 
 struct address_space;
 struct mem_cgroup;
-
+struct kvm;
 /*
  * Each physical page in the system has a struct page associated with
  * it to keep track of whatever it is we are using the page for at the
@@ -566,6 +566,10 @@ struct mm_struct {
 #endif
 	} __randomize_layout;
 
+#if IS_ENABLED(CONFIG_KVM) && !defined(__GENKSYMS__)
+	struct kvm *kvm;
+#endif
+
 	/*
 	 * The mm_cpumask needs to be at the end of mm_struct, because it
 	 * is dynamically sized based on nr_cpu_ids.
@@ -574,6 +578,18 @@ struct mm_struct {
 };
 
 extern struct mm_struct init_mm;
+
+#if IS_ENABLED(CONFIG_KVM)
+static inline struct kvm *mm_kvm(struct mm_struct *mm)
+{
+	return mm->kvm;
+}
+#else
+static inline struct kvm *mm_kvm(struct mm_struct *mm)
+{
+	return NULL;
+}
+#endif
 
 /* Pointer magic because the dynamic array size confuses some compilers. */
 static inline void mm_init_cpumask(struct mm_struct *mm)
