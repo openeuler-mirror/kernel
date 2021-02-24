@@ -15,6 +15,7 @@
 #include <linux/init.h>
 
 #include <asm/assembler.h>
+#include <asm/extable.h>
 #include <asm/memory.h>
 #include <asm/glue-df.h>
 #include <asm/glue-pf.h>
@@ -535,13 +536,11 @@ ENDPROC(__und_usr)
 4:	str     r4, [sp, #S_PC]			@ retry current instruction
 	ret	r9
 	.popsection
-	.pushsection __ex_table,"a"
-	.long	1b, 4b
+	ex_entry	1b, 4b
 #if CONFIG_ARM_THUMB && __LINUX_ARM_ARCH__ >= 6 && CONFIG_CPU_V7
-	.long	2b, 4b
-	.long	3b, 4b
+	ex_entry	2b, 4b
+	ex_entry	3b, 4b
 #endif
-	.popsection
 
 /*
  * Check whether the instruction is a co-processor instruction.

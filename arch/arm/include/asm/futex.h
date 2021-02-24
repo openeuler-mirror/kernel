@@ -10,10 +10,8 @@
 
 #define __futex_atomic_ex_table(err_reg)			\
 	"3:\n"							\
-	"	.pushsection __ex_table,\"a\"\n"		\
-	"	.align	3\n"					\
-	"	.long	1b, 4f, 2b, 4f\n"			\
-	"	.popsection\n"					\
+	"	ex_entry	1b, 4f\n"			\
+	"	ex_entry	2b, 4f\n"			\
 	"	.pushsection .text.fixup,\"ax\"\n"		\
 	"	.align	2\n"					\
 	"4:	mov	%0, " err_reg "\n"			\
