@@ -16,6 +16,9 @@
  *  which should point to addresses in RAM and cleared to 0 on start.
  *  This allows for a much quicker boot time.
  */
+#ifdef CONFIG_RANDOMIZE_BASE
+#pragma GCC visibility pop
+#endif
 
 unsigned int __machine_arch_type;
 

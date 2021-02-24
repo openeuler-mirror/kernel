@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 #define _LINUX_STRING_H_
 
+#ifdef CONFIG_RANDOMIZE_BASE
+#pragma GCC visibility pop
+#endif
+
 #include <linux/compiler.h>	/* for inline */
 #include <linux/types.h>	/* for size_t */
 #include <linux/stddef.h>	/* for NULL */
