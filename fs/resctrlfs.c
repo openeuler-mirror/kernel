@@ -372,13 +372,13 @@ static struct dentry *resctrl_mount(struct file_system_type *fs_type,
 	ret = resctrl_id_init();
 	if (ret) {
 		dentry = ERR_PTR(ret);
-		goto out_options;
+		goto out_schema;
 	}
 
 	ret = resctrl_group_create_info_dir(resctrl_group_default.kn, &kn_info);
 	if (ret) {
 		dentry = ERR_PTR(ret);
-		goto out_options;
+		goto out_schema;
 	}
 
 	if (resctrl_mon_capable) {
@@ -425,6 +425,8 @@ out_mongrp:
 		kernfs_remove(kn_mongrp);
 out_info:
 	kernfs_remove(kn_info);
+out_schema:
+	schemata_list_destroy();
 out_options:
 	release_resctrl_group_fs_options();
 out:
