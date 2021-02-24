@@ -105,7 +105,7 @@ ENTRY(stext)
 
 	.section ".bss", "aw", %nobits
 	.align	2
-__kaslr_offset:
+ENTRY(__kaslr_offset)
 	.long	0			@ will be wiped before entering C code
 	.previous
 #endif
