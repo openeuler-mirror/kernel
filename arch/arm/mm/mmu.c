@@ -1148,8 +1148,7 @@ void __init debug_ll_io_init(void)
 }
 #endif
 
-static void * __initdata vmalloc_min =
-	(void *)(VMALLOC_END - (240 << 20) - VMALLOC_OFFSET);
+static void * __initdata vmalloc_min = (void *)VMALLOC_DEFAULT_BASE;
 
 /*
  * vmalloc=size forces the vmalloc area to be exactly 'size'
