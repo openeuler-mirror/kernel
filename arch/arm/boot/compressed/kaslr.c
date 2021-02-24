@@ -316,7 +316,7 @@ u32 kaslr_early_init(u32 *kaslr_offset, u32 image_base, u32 image_size,
 	const char *command_line;
 	const char *p;
 	int chosen, len;
-	u32 lowmem_top, count, num;
+	u32 lowmem_top, count, num, mem_fdt;
 
 	if (IS_ENABLED(CONFIG_EFI_STUB)) {
 		extern u32 __efi_kaslr_offset;
@@ -400,8 +400,11 @@ u32 kaslr_early_init(u32 *kaslr_offset, u32 image_base, u32 image_size,
 	}
 
 	/* check the memory nodes for the size of the lowmem region */
-	regions.pa_end = min(regions.pa_end, get_memory_end(fdt)) -
-			 regions.image_size;
+	mem_fdt = get_memory_end(fdt);
+	if (mem_fdt)
+		regions.pa_end = min(regions.pa_end, mem_fdt) - regions.image_size;
+	else
+		regions.pa_end = regions.pa_end - regions.image_size;
 
 	puthex32(regions.image_size);
 	puthex32(regions.pa_start);
