@@ -146,6 +146,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 				.base = 16,
 				.evt = QOS_CAT_CPBM_EVENT_ID,
 				.capable = 1,
+				.ctrl_suffix = "",
 			},
 			[SCHEMA_PRI] = {
 				.type = SCHEMA_PRI,
@@ -153,6 +154,23 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 				.name = "caPrio",
 				.base = 10,
 				.evt = QOS_CAT_INTPRI_EVENT_ID,
+				.ctrl_suffix = "PRI",
+			},
+			[SCHEMA_PBM] = {
+				.type = SCHEMA_PBM,
+				.flags = SCHEMA_COMM,
+				.name = "caPbm",
+				.base = 16,
+				.evt = QOS_CAT_CPBM_EVENT_ID,
+				.ctrl_suffix = "PBM",
+			},
+			[SCHEMA_MAX] = {
+				.type = SCHEMA_MAX,
+				.flags = SCHEMA_COMM,
+				.name = "caMax",
+				.base = 10,
+				.evt = QOS_CAT_CMAX_EVENT_ID,
+				.ctrl_suffix = "MAX",
 			},
 		},
 	},
@@ -172,6 +190,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 				.base = 16,
 				.evt = QOS_CAT_CPBM_EVENT_ID,
 				.capable = 1,
+				.ctrl_suffix = "",
 			},
 			[SCHEMA_PRI] = {
 				.type = SCHEMA_PRI,
@@ -179,6 +198,23 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 				.name = "caPrio",
 				.base = 10,
 				.evt = QOS_CAT_INTPRI_EVENT_ID,
+				.ctrl_suffix = "PRI",
+			},
+			[SCHEMA_PBM] = {
+				.type = SCHEMA_PBM,
+				.flags = SCHEMA_COMM,
+				.name = "caPbm",
+				.base = 16,
+				.evt = QOS_CAT_CPBM_EVENT_ID,
+				.ctrl_suffix = "PBM",
+			},
+			[SCHEMA_MAX] = {
+				.type = SCHEMA_MAX,
+				.flags = SCHEMA_COMM,
+				.name = "caMax",
+				.base = 10,
+				.evt = QOS_CAT_CMAX_EVENT_ID,
+				.ctrl_suffix = "MAX",
 			},
 		},
 	},
@@ -198,6 +234,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 				.base = 10,
 				.evt = QOS_MBA_MAX_EVENT_ID,
 				.capable = 1,
+				.ctrl_suffix = "",
 			},
 			[SCHEMA_PRI] = {
 				.type = SCHEMA_PRI,
@@ -205,6 +242,7 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 				.name = "mbPrio",
 				.base = 10,
 				.evt = QOS_MBA_INTPRI_EVENT_ID,
+				.ctrl_suffix = "PRI",
 			},
 			[SCHEMA_HDL] = {
 				.type = SCHEMA_HDL,
@@ -212,6 +250,31 @@ struct raw_resctrl_resource raw_resctrl_resources_all[] = {
 				.name = "mbHdl",
 				.base = 10,
 				.evt = QOS_MBA_HDL_EVENT_ID,
+				.ctrl_suffix = "HDL",
+			},
+			[SCHEMA_PBM] = {
+				.type = SCHEMA_PBM,
+				.flags = SCHEMA_COMM,
+				.name = "mbPbm",
+				.base = 16,
+				.evt = QOS_MBA_PBM_EVENT_ID,
+				.ctrl_suffix = "PBM",
+			},
+			[SCHEMA_MAX] = {
+				.type = SCHEMA_MAX,
+				.flags = SCHEMA_COMM,
+				.name = "mbMax",
+				.base = 10,
+				.evt = QOS_MBA_MAX_EVENT_ID,
+				.ctrl_suffix = "MAX",
+			},
+			[SCHEMA_MIN] = {
+				.type = SCHEMA_MIN,
+				.flags = SCHEMA_COMM,
+				.name = "mbMin",
+				.base = 10,
+				.evt = QOS_MBA_MIN_EVENT_ID,
+				.ctrl_suffix = "MIN",
 			},
 		},
 	},
@@ -270,6 +333,8 @@ parse_bw(char *buf, struct resctrl_resource *r,
 
 	switch (rr->ctrl_features[type].evt) {
 	case QOS_MBA_MAX_EVENT_ID:
+	case QOS_MBA_MIN_EVENT_ID:
+	case QOS_MBA_PBM_EVENT_ID:
 		if (kstrtoul(buf, rr->ctrl_features[type].base, &data))
 			return -EINVAL;
 		data = (data < r->mbw.min_bw) ? r->mbw.min_bw : data;
@@ -342,6 +407,8 @@ static u64 mbw_rdmsr(struct resctrl_resource *r, struct rdt_domain *d,
 
 	switch (rr->ctrl_features[para->type].evt) {
 	case QOS_MBA_MAX_EVENT_ID:
+	case QOS_MBA_MIN_EVENT_ID:
+	case QOS_MBA_PBM_EVENT_ID:
 		result = roundup(result, r->mbw.bw_gran);
 		break;
 	default:
@@ -1067,14 +1134,21 @@ static int extend_ctrl_enable(char *tok)
 		if (!r->alloc_capable)
 		    continue;
 		rr = r->res;
-		for_each_ctrl_type(type) {
+		for_each_extend_ctrl_type(type) {
 			feature = &rr->ctrl_features[type];
+			if (!feature->capable || !feature->name)
+				continue;
 			if (strcmp(feature->name, tok))
 				continue;
-			if (rr->ctrl_features[type].capable) {
-				rr->ctrl_features[type].enabled = true;
-				match = true;
-			}
+
+			rr->ctrl_features[type].enabled = true;
+			/*
+			 * If we chose to enable a feature also embraces
+			 * SCHEMA_COMM, SCHEMA_COMM will not be selected.
+			 */
+			if (feature->flags == SCHEMA_COMM)
+				rr->ctrl_features[SCHEMA_COMM].enabled = false;;
+			match = true;
 		}
 	}
 
@@ -1088,11 +1162,15 @@ static void extend_ctrl_disable(void)
 {
 	struct raw_resctrl_resource *rr;
 	struct mpam_resctrl_res *res;
+	struct resctrl_ctrl_feature *feature;
+	enum resctrl_ctrl_type type;
 
 	for_each_supported_resctrl_exports(res) {
 		rr = res->resctrl_res.res;
-		rr->ctrl_features[SCHEMA_PRI].enabled = false;
-		rr->ctrl_features[SCHEMA_HDL].enabled = false;
+		for_each_extend_ctrl_type(type) {
+			feature = &rr->ctrl_features[type];
+			feature->enabled = false;
+		}
 	}
 }
 
@@ -1104,6 +1182,7 @@ int parse_rdtgroupfs_options(char *data)
 
 	disable_cdp();
 	extend_ctrl_disable();
+	basic_ctrl_enable();
 
 	while ((token = strsep(&o, ",")) != NULL) {
 		if (!*token) {
@@ -1125,8 +1204,6 @@ int parse_rdtgroupfs_options(char *data)
 				goto out;
 		}
 	}
-
-	basic_ctrl_enable();
 
 	return 0;
 
@@ -2008,21 +2085,42 @@ mpam_update_from_resctrl_cfg(struct mpam_resctrl_res *res,
 	u64 range;
 
 	switch (evt) {
+	case QOS_MBA_PBM_EVENT_ID:
+		/* .. the number of bits we can set */
+		range = res->class->mbw_pbm_bits;
+		mpam_cfg->mbw_pbm =
+				(resctrl_cfg * range) / MAX_MBA_BW;
+		mpam_set_feature(mpam_feat_mbw_part, &mpam_cfg->valid);
+		break;
 	case QOS_MBA_MAX_EVENT_ID:
-		/* .. the number of fractions we can represent */
 		range = MBW_MAX_BWA_FRACT(res->class->bwa_wd);
 		mpam_cfg->mbw_max = (resctrl_cfg * range) / (MAX_MBA_BW - 1);
 		mpam_cfg->mbw_max =
 			(mpam_cfg->mbw_max > range) ? range : mpam_cfg->mbw_max;
 		mpam_set_feature(mpam_feat_mbw_max, &mpam_cfg->valid);
 		break;
+	case QOS_MBA_MIN_EVENT_ID:
+		range = MBW_MAX_BWA_FRACT(res->class->bwa_wd);
+		mpam_cfg->mbw_min = (resctrl_cfg * range) / (MAX_MBA_BW - 1);
+		mpam_cfg->mbw_min =
+			(mpam_cfg->mbw_min > range) ? range : mpam_cfg->mbw_min;
+		mpam_set_feature(mpam_feat_mbw_min, &mpam_cfg->valid);
+		break;
 	case QOS_MBA_HDL_EVENT_ID:
 		mpam_cfg->hdl = resctrl_cfg;
 		mpam_set_feature(mpam_feat_part_hdl, &mpam_cfg->valid);
 		break;
+	case QOS_MBA_INTPRI_EVENT_ID:
+		mpam_cfg->intpri = resctrl_cfg;
+		mpam_set_feature(mpam_feat_intpri_part, &mpam_cfg->valid);
+		break;
 	case QOS_CAT_CPBM_EVENT_ID:
 		mpam_cfg->cpbm = resctrl_cfg;
 		mpam_set_feature(mpam_feat_cpor_part, &mpam_cfg->valid);
+		break;
+	case QOS_CAT_CMAX_EVENT_ID:
+		mpam_cfg->cmax = resctrl_cfg;
+		mpam_set_feature(mpam_feat_ccap_part, &mpam_cfg->valid);
 		break;
 	case QOS_CAT_INTPRI_EVENT_ID:
 		mpam_cfg->intpri = resctrl_cfg;
@@ -2079,7 +2177,7 @@ mpam_resctrl_update_component_cfg(struct resctrl_resource *r,
 
 		resctrl_cfg = d->ctrl_val[type][intpartid];
 		mpam_update_from_resctrl_cfg(res, resctrl_cfg,
-			type, slave_mpam_cfg);
+			rr->ctrl_features[type].evt, slave_mpam_cfg);
 	}
 }
 
