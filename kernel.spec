@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       4
-%global maintenance_release .1.0
-%global pkg_release         .14
+%global maintenance_release .2.0
+%global pkg_release         .15
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -869,6 +869,19 @@ fi
 %endif
 
 %changelog
+* Wed Feb 24 2021 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-4.2.0.15
+- arm64: kgdb: Roundup cpus using IPI as NMI
+- kgdb: Expose default CPUs roundup fallback mechanism
+- arm64: ipi_nmi: Add support for NMI backtrace
+- nmi: backtrace: Allow runtime arch specific override
+- arm64: smp: Assign and setup an IPI as NMI
+- irqchip/gic-v3: Enable support for SGIs to act as NMIs
+- arm64: Add framework to turn IPI as NMI
+- openeuler_defconfig: Enable NMI watchdog
+- arm64: watchdog: add switch to select sdei_watchdog/pmu_watchdog
+- arm64: add new config CONFIG_PMU_WATCHDOG
+- arm64: Add support for hard lockup by using pmu counter
+
 * Wed Feb 24 2021 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-4.1.0.14
 - arm64: Enable cpu park on openEuler
 - arm64: smp: Add support for cpu park
