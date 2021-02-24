@@ -38,6 +38,7 @@
 #include <asm/mpam.h>
 #include <asm/mpam_resource.h>
 #include <asm/resctrl.h>
+#include "mpam_internal.h"
 
 /*
  * Check whether a cache bit mask is valid. The SDM says:
@@ -188,7 +189,7 @@ static int update_domains(struct resctrl_resource *r, struct rdtgroup *g)
 	list_for_each_entry(d, &r->domains, list) {
 		if (d->have_new_ctrl && d->new_ctrl != d->ctrl_val[partid]) {
 			d->ctrl_val[partid] = d->new_ctrl;
-			rr->msr_update(d, partid);
+			rr->msr_update(r, d, NULL, partid);
 		}
 	}
 
@@ -197,13 +198,17 @@ static int update_domains(struct resctrl_resource *r, struct rdtgroup *g)
 
 static int resctrl_group_parse_resource(char *resname, char *tok, int closid)
 {
+	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
 	struct raw_resctrl_resource *rr;
 
-	for_each_resctrl_resource(r) {
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+
 		if (r->alloc_enabled) {
 			rr = (struct raw_resctrl_resource *)r->res;
-			if (!strcmp(resname, r->name) && closid < rr->num_partid)
+			if (!strcmp(resname, r->name) && closid <
+				mpam_sysprops_num_partid())
 				return parse_line(tok, r);
 		}
 	}
@@ -216,6 +221,7 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 {
 	struct rdtgroup *rdtgrp;
 	struct rdt_domain *dom;
+	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
 	char *tok, *resname;
 	int closid, ret = 0;
@@ -234,7 +240,9 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 
 	closid = rdtgrp->closid;
 
-	for_each_resctrl_resource(r) {
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+
 		if (r->alloc_enabled) {
 			list_for_each_entry(dom, &r->domains, list)
 				dom->have_new_ctrl = false;
@@ -258,7 +266,9 @@ ssize_t resctrl_group_schemata_write(struct kernfs_open_file *of,
 			goto out;
 	}
 
-	for_each_resctrl_resource(r) {
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+
 		if (r->alloc_enabled) {
 			ret = update_domains(r, rdtgrp);
 			if (ret)
@@ -292,6 +302,7 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
 			   struct seq_file *s, void *v)
 {
 	struct rdtgroup *rdtgrp;
+	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
 	struct raw_resctrl_resource *rr;
 	int ret = 0;
@@ -300,10 +311,11 @@ int resctrl_group_schemata_show(struct kernfs_open_file *of,
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
 	if (rdtgrp) {
 		partid = rdtgrp->closid;
-		for_each_resctrl_resource(r) {
+		for_each_supported_resctrl_exports(res) {
+			r = &res->resctrl_res;
 			if (r->alloc_enabled) {
 				rr = (struct raw_resctrl_resource *)r->res;
-				if (partid < rr->num_partid)
+				if (partid < mpam_sysprops_num_partid())
 					show_doms(s, r, partid);
 			}
 		}
@@ -367,7 +379,7 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 
 	md.priv = of->kn->priv;
 
-	r = &resctrl_resources_all[md.u.rid];
+	r = mpam_resctrl_get_resource(md.u.rid);
 	rr = r->res;
 
 	/* show monitor data */
@@ -516,6 +528,7 @@ int mkdir_mondata_all(struct kernfs_node *parent_kn,
 			     struct resctrl_group *prgrp,
 			     struct kernfs_node **dest_kn)
 {
+	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
 	struct kernfs_node *kn;
 	int ret;
@@ -534,7 +547,9 @@ int mkdir_mondata_all(struct kernfs_node *parent_kn,
 	 * Create the subdirectories for each domain. Note that all events
 	 * in a domain like L3 are grouped into a resource whose domain is L3
 	 */
-	for_each_resctrl_resource(r) {
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+
 		if (r->mon_enabled) {
 			/* HHA does not support monitor by pmg */
 			if ((prgrp->type == RDTMON_GROUP) &&
@@ -593,11 +608,14 @@ int resctrl_mkdir_ctrlmon_mondata(struct kernfs_node *parent_kn,
 /* Initialize the RDT group's allocations. */
 int rdtgroup_init_alloc(struct rdtgroup *rdtgrp)
 {
+	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
 	struct rdt_domain *d;
 	int ret;
 
-	for_each_resctrl_resource(r) {
+	for_each_supported_resctrl_exports(res) {
+		r = &res->resctrl_res;
+
 		if (!r->alloc_enabled)
 			continue;
 
