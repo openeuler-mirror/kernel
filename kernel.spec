@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       4
-%global maintenance_release .0.0
-%global pkg_release         .13
+%global maintenance_release .1.0
+%global pkg_release         .14
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -869,6 +869,220 @@ fi
 %endif
 
 %changelog
+* Wed Feb 24 2021 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-4.1.0.14
+- arm64: Enable cpu park on openEuler
+- arm64: smp: Add support for cpu park
+- sdei_watchdog: avoid possible false hardlockup
+- kprobes/arm64: Blacklist sdei watchdog callback functions
+- sdei_watchdog: set secure timer period base on 'watchdog_thresh'
+- sdei_watchdog: clear EOI of the secure timer before kdump
+- sdei_watchdog: refresh 'last_timestamp' when enabling nmi_watchdog
+- watchdog: add nmi_watchdog support for arm64 based on SDEI
+- lockup_detector: init lockup detector after all the init_calls
+- firmware: arm_sdei: make 'sdei_api_event_disable/enable' public
+- firmware: arm_sdei: add interrupt binding api
+- watchdog: make hardlockup detect code public
+- config: enable CONFIG_CPU_IDLE_GOV_HALTPOLL and CONFIG_HALTPOLL_CPUIDLE for arm
+- ARM: cpuidle: Add support for cpuidle-haltpoll driver for ARM
+- cpuidle: haltpoll: Only check boot_option_idle_override in x86
+- arm64: Add some definitions of kvm_para*
+- cpuidle-haltpoll: Use arch_cpu_idle() to replace default_idle()
+- arm64: Optimize ttwu IPI
+- kvm: arm64: add KVM_CAP_ARM_CPU_FEATURE extension
+- kvm: arm64: make ID_AA64PFR0_EL1 configurable
+- kvm: arm64: make ID registers configurable
+- kvm: arm64: emulate the ID registers
+- arm64: add a helper function to traverse arm64_ftr_regs
+- kexec: Enable quick kexec on openEuler
+- arm64: Reserve memory for quick kexec
+- kexec: Add quick kexec support for kernel
+- KVM: arm64: Add tracepoints for PV qspinlock
+- KVM: arm64: Enable PV qspinlock
+- KVM: arm64: Add interface to support PV qspinlock
+- KVM: arm64: Implement PV_SCHED_KICK_CPU call
+- KVM: arm64: Add SMCCC PV-sched to kick cpu
+- KVM: arm64: Support the vCPU preemption check
+- KVM: arm64: Add interface to support vCPU preempted check
+- KVM: arm64: Support pvsched preempted via shared structure
+- KVM: arm64: Implement PV_SCHED_FEATURES call
+- KVM: arm64: Document PV-sched interface
+- arm64: Add CPU hotplug support
+- arm64: mark all the GICC nodes in MADT as possible cpu
+- squashfs: add more sanity checks in xattr id lookup
+- squashfs: add more sanity checks in inode lookup
+- squashfs: add more sanity checks in id lookup
+- squashfs: avoid out of bounds writes in decompressors
+- Revert "mm: memcontrol: avoid workload stalls when lowering memory.high"
+- nilfs2: make splice write available again
+- drm/i915: Skip vswing programming for TBT
+- drm/i915: Fix ICL MG PHY vswing handling
+- bpf: Fix verifier jsgt branch analysis on max bound
+- bpf: Fix 32 bit src register truncation on div/mod
+- bpf: Fix verifier jmp32 pruning decision logic
+- regulator: Fix lockdep warning resolving supplies
+- blk-cgroup: Use cond_resched() when destroy blkgs
+- i2c: mediatek: Move suspend and resume handling to NOIRQ phase
+- SUNRPC: Handle 0 length opaque XDR object data properly
+- SUNRPC: Move simple_get_bytes and simple_get_netobj into private header
+- iwlwifi: queue: bail out on invalid freeing
+- iwlwifi: mvm: guard against device removal in reprobe
+- iwlwifi: pcie: add rules to match Qu with Hr2
+- iwlwifi: mvm: invalidate IDs of internal stations at mvm start
+- iwlwifi: pcie: fix context info memory leak
+- iwlwifi: pcie: add a NULL check in iwl_pcie_txq_unmap
+- iwlwifi: mvm: take mutex for calling iwl_mvm_get_sync_time()
+- iwlwifi: mvm: skip power command when unbinding vif during CSA
+- ASoC: Intel: sof_sdw: set proper flags for Dell TGL-H SKU 0A5E
+- ASoC: ak4458: correct reset polarity
+- ALSA: hda: intel-dsp-config: add PCI id for TGL-H
+- pNFS/NFSv4: Improve rejection of out-of-order layouts
+- pNFS/NFSv4: Try to return invalid layout in pnfs_layout_process()
+- chtls: Fix potential resource leak
+- ASoC: Intel: Skylake: Zero snd_ctl_elem_value
+- mac80211: 160MHz with extended NSS BW in CSA
+- drm/nouveau/nvif: fix method count when pushing an array
+- ASoC: wm_adsp: Fix control name parsing for multi-fw
+- regulator: core: avoid regulator_resolve_supply() race condition
+- af_key: relax availability checks for skb size calculation
+- powerpc/64/signal: Fix regression in __kernel_sigtramp_rt64() semantics
+- gpiolib: cdev: clear debounce period if line set to output
+- io_uring: drop mm/files between task_work_submit
+- io_uring: reinforce cancel on flush during exit
+- io_uring: fix sqo ownership false positive warning
+- io_uring: fix list corruption for splice file_get
+- io_uring: fix flush cqring overflow list while TASK_INTERRUPTIBLE
+- io_uring: fix cancellation taking mutex while TASK_UNINTERRUPTIBLE
+- io_uring: replace inflight_wait with tctx->wait
+- io_uring: fix __io_uring_files_cancel() with TASK_UNINTERRUPTIBLE
+- io_uring: if we see flush on exit, cancel related tasks
+- io_uring: account io_uring internal files as REQ_F_INFLIGHT
+- io_uring: fix files cancellation
+- io_uring: always batch cancel in *cancel_files()
+- io_uring: pass files into kill timeouts/poll
+- io_uring: don't iterate io_uring_cancel_files()
+- io_uring: add a {task,files} pair matching helper
+- io_uring: simplify io_task_match()
+- net: sched: replaced invalid qdisc tree flush helper in qdisc_replace
+- net: dsa: mv88e6xxx: override existent unicast portvec in port_fdb_add
+- udp: ipv4: manipulate network header of NATed UDP GRO fraglist
+- net: ip_tunnel: fix mtu calculation
+- neighbour: Prevent a dead entry from updating gc_list
+- igc: Report speed and duplex as unknown when device is runtime suspended
+- md: Set prev_flush_start and flush_bio in an atomic way
+- Input: ili210x - implement pressure reporting for ILI251x
+- Input: xpad - sync supported devices with fork on GitHub
+- Input: goodix - add support for Goodix GT9286 chip
+- x86/apic: Add extra serialization for non-serializing MSRs
+- x86/debug: Prevent data breakpoints on cpu_dr7
+- x86/debug: Prevent data breakpoints on __per_cpu_offset
+- x86/debug: Fix DR6 handling
+- x86/build: Disable CET instrumentation in the kernel
+- mm/filemap: add missing mem_cgroup_uncharge() to __add_to_page_cache_locked()
+- mm: thp: fix MADV_REMOVE deadlock on shmem THP
+- mm/vmalloc: separate put pages and flush VM flags
+- mm, compaction: move high_pfn to the for loop scope
+- mm: hugetlb: remove VM_BUG_ON_PAGE from page_huge_active
+- mm: hugetlb: fix a race between isolating and freeing page
+- mm: hugetlb: fix a race between freeing and dissolving the page
+- mm: hugetlbfs: fix cannot migrate the fallocated HugeTLB page
+- ARM: 9043/1: tegra: Fix misplaced tegra_uart_config in decompressor
+- ARM: footbridge: fix dc21285 PCI configuration accessors
+- ARM: dts; gta04: SPI panel chip select is active low
+- DTS: ARM: gta04: remove legacy spi-cs-high to make display work again
+- KVM: x86: Set so called 'reserved CR3 bits in LM mask' at vCPU reset
+- KVM: x86: Update emulator context mode if SYSENTER xfers to 64-bit mode
+- KVM: x86: fix CPUID entries returned by KVM_GET_CPUID2 ioctl
+- KVM: x86: Allow guests to see MSR_IA32_TSX_CTRL even if tsx=off
+- KVM: x86/mmu: Fix TDP MMU zap collapsible SPTEs
+- KVM: SVM: Treat SVM as unsupported when running as an SEV guest
+- nvme-pci: avoid the deepest sleep state on Kingston A2000 SSDs
+- io_uring: don't modify identity's files uncess identity is cowed
+- drm/amd/display: Revert "Fix EDID parsing after resume from suspend"
+- drm/i915: Power up combo PHY lanes for for HDMI as well
+- drm/i915: Extract intel_ddi_power_up_lanes()
+- drm/i915/display: Prevent double YUV range correction on HDR planes
+- drm/i915/gt: Close race between enable_breadcrumbs and cancel_breadcrumbs
+- drm/i915/gem: Drop lru bumping on display unpinning
+- drm/i915: Fix the MST PBN divider calculation
+- drm/dp/mst: Export drm_dp_get_vc_payload_bw()
+- Fix unsynchronized access to sev members through svm_register_enc_region
+- mmc: core: Limit retries when analyse of SDIO tuples fails
+- mmc: sdhci-pltfm: Fix linking err for sdhci-brcmstb
+- smb3: fix crediting for compounding when only one request in flight
+- smb3: Fix out-of-bounds bug in SMB2_negotiate()
+- iommu: Check dev->iommu in dev_iommu_priv_get() before dereferencing it
+- cifs: report error instead of invalid when revalidating a dentry fails
+- RISC-V: Define MAXPHYSMEM_1GB only for RV32
+- xhci: fix bounce buffer usage for non-sg list case
+- scripts: use pkg-config to locate libcrypto
+- genirq/msi: Activate Multi-MSI early when MSI_FLAG_ACTIVATE_EARLY is set
+- genirq: Prevent [devm_]irq_alloc_desc from returning irq 0
+- libnvdimm/dimm: Avoid race between probe and available_slots_show()
+- libnvdimm/namespace: Fix visibility of namespace resource attribute
+- tracepoint: Fix race between tracing and removing tracepoint
+- tracing: Use pause-on-trace with the latency tracers
+- kretprobe: Avoid re-registration of the same kretprobe earlier
+- tracing/kprobe: Fix to support kretprobe events on unloaded modules
+- fgraph: Initialize tracing_graph_pause at task creation
+- gpiolib: free device name on error path to fix kmemleak
+- mac80211: fix station rate table updates on assoc
+- ovl: implement volatile-specific fsync error behaviour
+- ovl: avoid deadlock on directory ioctl
+- ovl: fix dentry leak in ovl_get_redirect
+- thunderbolt: Fix possible NULL pointer dereference in tb_acpi_add_link()
+- kbuild: fix duplicated flags in DEBUG_CFLAGS
+- memblock: do not start bottom-up allocations with kernel_end
+- vdpa/mlx5: Restore the hardware used index after change map
+- nvmet-tcp: fix out-of-bounds access when receiving multiple h2cdata PDUs
+- ARM: dts: sun7i: a20: bananapro: Fix ethernet phy-mode
+- net: ipa: pass correct dma_handle to dma_free_coherent()
+- r8169: fix WoL on shutdown if CONFIG_DEBUG_SHIRQ is set
+- net: mvpp2: TCAM entry enable should be written after SRAM data
+- net: lapb: Copy the skb before sending a packet
+- net/mlx5e: Release skb in case of failure in tc update skb
+- net/mlx5e: Update max_opened_tc also when channels are closed
+- net/mlx5: Fix leak upon failure of rule creation
+- net/mlx5: Fix function calculation for page trees
+- ibmvnic: device remove has higher precedence over reset
+- i40e: Revert "i40e: don't report link up for a VF who hasn't enabled queues"
+- igc: check return value of ret_val in igc_config_fc_after_link_up
+- igc: set the default return value to -IGC_ERR_NVM in igc_write_nvm_srwr
+- SUNRPC: Fix NFS READs that start at non-page-aligned offsets
+- arm64: dts: ls1046a: fix dcfg address range
+- rxrpc: Fix deadlock around release of dst cached on udp tunnel
+- r8169: work around RTL8125 UDP hw bug
+- arm64: dts: meson: switch TFLASH_VDD_EN pin to open drain on Odroid-C4
+- bpf, preload: Fix build when $(O) points to a relative path
+- um: virtio: free vu_dev only with the contained struct device
+- bpf, inode_storage: Put file handler if no storage was found
+- bpf, cgroup: Fix problematic bounds check
+- bpf, cgroup: Fix optlen WARN_ON_ONCE toctou
+- vdpa/mlx5: Fix memory key MTT population
+- ARM: dts: stm32: Fix GPIO hog flags on DHCOM DRC02
+- ARM: dts: stm32: Disable optional TSC2004 on DRC02 board
+- ARM: dts: stm32: Disable WP on DHCOM uSD slot
+- ARM: dts: stm32: Connect card-detect signal on DHCOM
+- ARM: dts: stm32: Fix polarity of the DH DRC02 uSD card detect
+- arm64: dts: rockchip: Use only supported PCIe link speed on Pinebook Pro
+- arm64: dts: rockchip: fix vopl iommu irq on px30
+- arm64: dts: amlogic: meson-g12: Set FL-adj property value
+- Input: i8042 - unbreak Pegatron C15B
+- arm64: dts: qcom: c630: keep both touchpad devices enabled
+- ARM: OMAP1: OSK: fix ohci-omap breakage
+- usb: xhci-mtk: break loop when find the endpoint to drop
+- usb: xhci-mtk: skip dropping bandwidth of unchecked endpoints
+- usb: xhci-mtk: fix unreleased bandwidth data
+- usb: dwc3: fix clock issue during resume in OTG mode
+- usb: dwc2: Fix endpoint direction check in ep_from_windex
+- usb: renesas_usbhs: Clear pipe running flag in usbhs_pkt_pop()
+- USB: usblp: don't call usb_set_interface if there's a single alt
+- usb: gadget: aspeed: add missing of_node_put
+- USB: gadget: legacy: fix an error code in eth_bind()
+- usb: host: xhci: mvebu: make USB 3.0 PHY optional for Armada 3720
+- USB: serial: option: Adding support for Cinterion MV31
+- USB: serial: cp210x: add new VID/PID for supporting Teraoka AD2000
+- USB: serial: cp210x: add pid/vid for WSDA-200-USB
+
 * Fri Feb 19 2021 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-4.0.0.13
 - net/hinic: Add NIC Layer
 - net/hinic: Update Hardware Abstract Layer
