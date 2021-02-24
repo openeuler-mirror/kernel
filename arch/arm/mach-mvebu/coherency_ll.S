@@ -37,9 +37,7 @@ ENTRY(ll_get_coherency_base)
 	 * MMU is disabled, use the physical address of the coherency
 	 * base address, (or 0x0 if the coherency fabric is not mapped)
 	 */
-	adr	r1, 3f
-	ldr	r3, [r1]
-	ldr	r1, [r1, r3]
+	ldr_l	r1, coherency_phys_base
 	b	2f
 1:
 	/*
@@ -155,7 +153,3 @@ ENTRY(ll_disable_coherency)
 	dsb
 	ret	lr
 ENDPROC(ll_disable_coherency)
-
-	.align 2
-3:
-	.long	coherency_phys_base - .
