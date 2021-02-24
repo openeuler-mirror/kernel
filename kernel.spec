@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2102.2.0
+%global hulkrelease 2102.3.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0057
+Release: %{hulkrelease}.0058
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -789,6 +789,75 @@ fi
 %endif
 
 %changelog
+
+
+* Wed Feb 24 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2102.3.0.0058
+- arm64/mpam: Fix compile warning
+- arm64/mpam: Sort domains when cpu online
+- arm64/mpam: resctrl: Refresh cpu mask for handling cpuhp
+- arm64/mpam: resctrl: Allow setting register MPAMCFG_MBW_MIN to 0
+- arm64/mpam: resctrl: Use resctrl_group_init_alloc() for default group
+- arm64/mpam: resctrl: Add proper error handling to resctrl_mount()
+- arm64/mpam: Supplement additional useful ctrl features for mount options
+- ACPI/MPAM: Use acpi_map_pxm_to_node() to get node id for memory node
+- arm64/mpam: Set per-cpu's closid to none zero for cdp
+- arm64/mpam: Simplify mpamid cdp mapping process
+- arm64/mpam: Filter schema control type with ctrl features
+- arm64/mpam: resctrl: Add rmid file in resctrl sysfs
+- arm64/mpam: Split header files into suitable location
+- arm64/mpam: resctrl: Export resource's properties to info directory
+- arm64/mpam: Add resctrl_ctrl_feature structure to manage ctrl features
+- arm64/mpam: Add wait queue for monitor alloc and free
+- arm64/mpam: Remap reqpartid,pmg to rmid and intpartid to closid
+- arm64/mpam: Separate internal and downstream priority event
+- arm64/mpam: Enabling registering and logging error interrupts
+- arm64/mpam: Fix MPAM_ESR intPARTID_range error
+- arm64/mpam: Integrate monitor data for Memory Bandwidth if cdp enabled
+- arm64/mpam: Add hook-events id for ctrl features
+- arm64/mpam: Re-plan intpartid narrowing process
+- arm64/mpam: Restore extend ctrls' max width for checking schemata input
+- arm64/mpam: Squash default priority from mpam device to class
+- arm64/mpam: Store intpri and dspri for mpam device reset
+- arm64/mpam: resctrl: Support priority and hardlimit(Memory bandwidth) configuration
+- arm64/mpam: resctrl: Support cpus' monitoring for mon group
+- arm64/mpam: resctrl: collect child mon group's monitor data
+- arm64/mpam: Using software-defined id for rdtgroup instead of 32-bit integer
+- arm64/mpam: Implement intpartid narrowing process
+- arm64/mpam: resctrl: Remove unnecessary CONFIG_ARM64
+- arm64/mpam: resctrl: Remove ctrlmon sysfile
+- arm64/mpam: Clean up header files and rearrange declarations
+- arm64/mpam: resctrl: Support cdp on monitoring data
+- arm64/mpam: Support cdp on allocating monitors
+- arm64/mpam: resctrl: Move ctrlmon sysfile write/read function to mpam_ctrlmon.c
+- arm64/mpam: resctrl: Update closid alloc and free process with bitmap
+- arm64/mpam: resctrl: Update resources reset process
+- arm64/mpam: Support cdp in mpam_sched_in()
+- arm64/mpam: resctrl: Write and read schemata by schema_list
+- arm64/mpam: resctrl: Use resctrl_group_init_alloc() to init schema list
+- arm64/mpam: resctrl: Add helpers for init and destroy schemata list
+- arm64/mpam: resctrl: Supplement cdpl2,cdpl3 for mount options
+- arm64/mpam: resctrl: Append schemata CDP definitions
+- arm64/mpam: resctrl: Rebuild configuration and monitoring pipeline
+- arm64/mpam: Probe partid,pmg and feature capabilities' ranges from classes
+- arm64/mpam: Add helper for getting MSCs' configuration
+- arm64/mpam: Migrate old MSCs' discovery process to new branch
+- drivers: base: cacheinfo: Add helper to search cacheinfo by of_node
+- arm64/mpam: Implement helpers for handling configuration and monitoring
+- arm64/mpam: resctrl: Handle cpuhp and resctrl_dom allocation
+- arm64/mpam: resctrl: Re-synchronise resctrl's view of online CPUs
+- arm64/mpam: Init resctrl resources' info from resctrl_res selected
+- arm64/mpam: Pick MPAM resources and events for resctrl_res exported
+- arm64/mpam: Allocate mpam component configuration arrays
+- arm64/mpam: Summarize feature support during mpam_enable()
+- arm64/mpam: Reset controls when CPUs come online
+- arm64/mpam: Add helper for getting mpam sysprops
+- arm64/mpam: Probe the features resctrl supports
+- arm64/mpam: Supplement MPAM MSC register layout definitions
+- arm64/mpam: Probe supported partid/pmg ranges from devices
+- cacheinfo: Provide a helper to find a cacheinfo leaf
+- arm64/mpam: Add mpam driver discovery phase and kbuild boiler plate
+- arm64/mpam: Preparing for MPAM refactoring
+
 
 * Mon Feb 22 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2102.2.0.0057
 - powerpc: fix a compiling error for 'access_ok'
