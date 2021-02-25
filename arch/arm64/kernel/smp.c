@@ -951,12 +951,16 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 		if (err)
 			continue;
 
-		if (acpi_disabled) {
-			set_cpu_present(cpu, true);
-		} else {
+#ifdef CONFIG_ACPI
+		if (!acpi_disabled) {
 			if ((cpu_madt_gicc[cpu].flags & ACPI_MADT_ENABLED))
 				set_cpu_present(cpu, true);
+		} else {
+			set_cpu_present(cpu, true);
 		}
+#else
+		set_cpu_present(cpu, true);
+#endif
 
 		numa_store_cpu_info(cpu);
 	}
