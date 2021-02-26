@@ -19,6 +19,12 @@
 %define debuginfodir /usr/lib/debug
 
 %define with_debuginfo 1
+# Do not recompute the build-id of vmlinux in find-debuginfo.sh
+%global _missing_build_ids_terminate_build 1
+%global _no_recompute_build_ids 1
+%undefine _include_minidebuginfo
+%undefine _include_gdb_index
+%undefine _unique_build_ids
 
 %define with_source 1
 
