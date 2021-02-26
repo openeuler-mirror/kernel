@@ -23,6 +23,13 @@ config RASPBERRYPI_POWER
 	  This enables support for the RPi power domains which can be enabled
 	  or disabled via the RPi firmware.
 
+config OPENEULER_RASPBERRYPI
+	bool "Raspberry Pi specific config for openEuler"
+	default n
+	select ARCH_BCM2835
+	help
+	  This enables support for the Raspberry Pi devices specific code in openEuler kernel.
+
 config SOC_BCM63XX
 	bool "Broadcom 63xx SoC drivers"
 	depends on BMIPS_GENERIC || COMPILE_TEST
