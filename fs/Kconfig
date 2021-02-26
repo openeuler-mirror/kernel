@@ -354,7 +354,7 @@ endmenu
 config RESCTRL
 	bool "Support Memory Partitioning and Monitoring"
 	default n
-	depends on INTEL_RDT || MPAM
+	depends on MPAM
 	select KERNFS
 	help
 	  Memory Partitioning and Monitoring. More exactly Memory system
