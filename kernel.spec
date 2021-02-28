@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       4
-%global maintenance_release .2.0
-%global pkg_release         .15
+%global maintenance_release .3.0
+%global pkg_release         .16
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -869,6 +869,9 @@ fi
 %endif
 
 %changelog
+* Sun Feb 28 2021 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-4.3.0.16
+- arm64: fix compile error when CONFIG_ACPI is not enabled
+
 * Wed Feb 24 2021 Xie XiuQi <xiexiuqi@huawei.com> - 5.10.0-4.2.0.15
 - arm64: kgdb: Roundup cpus using IPI as NMI
 - kgdb: Expose default CPUs roundup fallback mechanism
