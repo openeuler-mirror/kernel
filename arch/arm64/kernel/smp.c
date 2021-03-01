@@ -1024,8 +1024,10 @@ void arch_irq_work_raise(void)
 
 static void local_cpu_stop(void)
 {
+#ifdef CONFIG_ARM64_CPU_PARK
 	int cpu;
 	const struct cpu_operations *ops = NULL;
+#endif
 
 	set_cpu_online(smp_processor_id(), false);
 
