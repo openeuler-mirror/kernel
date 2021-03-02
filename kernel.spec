@@ -281,6 +281,10 @@ perl -p -i -e "s/^EXTRAVERSION.*/EXTRAVERSION = -%{release}.%{_target_cpu}/" Mak
 make mrproper %{_smp_mflags}
 
 make ARCH=%{Arch} openeuler_defconfig
+
+sed -i '/CONFIG_ARM64_64K_PAGES=y/'d .config
+sed -i 's/# CONFIG_ARM64_4K_PAGES is not set/CONFIG_ARM64_4K_PAGES=y/' .config
+
 make ARCH=%{Arch} olddefconfig
 
 TargetImage=$(basename $(make -s image_name))
