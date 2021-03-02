@@ -130,7 +130,7 @@ struct hinic_pcidev {
 #define MAX_CARD_ID 64
 static u64 card_bit_map;
 LIST_HEAD(g_hinic_chip_list);
-struct hinic_uld_info g_uld_info[SERVICE_T_MAX] = { {0} };
+struct hinic_uld_info g_uld_info[SERVICE_T_MAX];
 static const char *s_uld_name[SERVICE_T_MAX] = {
 	"nic", "ovs", "roce", "toe", "iwarp", "fc", "fcoe", "migrate"};
 
