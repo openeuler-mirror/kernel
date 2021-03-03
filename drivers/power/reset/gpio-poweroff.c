@@ -54,7 +54,9 @@ static int gpio_poweroff_probe(struct platform_device *pdev)
 	bool export = false;
 
 	/* If a pm_power_off function has already been added, leave it alone */
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	force = of_property_read_bool(pdev->dev.of_node, "force");
+#endif
 	if (!force && (pm_power_off != NULL)) {
 		dev_err(&pdev->dev,
 			"%s: pm_power_off function already registered\n",

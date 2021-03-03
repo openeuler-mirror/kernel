@@ -445,9 +445,13 @@ static int i2c_gpio_probe(struct platform_device *pdev)
 	adap->dev.parent = dev;
 	adap->dev.of_node = np;
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	if (pdev->id != PLATFORM_DEVID_NONE || !pdev->dev.of_node ||
 	    of_property_read_u32(pdev->dev.of_node, "reg", &adap->nr))
 		adap->nr = pdev->id;
+#else
+	adap->nr = pdev->id;
+#endif
 	ret = i2c_bit_add_numbered_bus(adap);
 	if (ret)
 		return ret;
