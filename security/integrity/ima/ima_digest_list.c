@@ -113,6 +113,9 @@ int ima_parse_compact_list(loff_t size, void *buf, int op)
 	size_t digest_len;
 	int ret = 0, i;
 
+	if (!(ima_digest_list_actions & ima_policy_flag))
+		return -EACCES;
+
 	while (bufp < bufendp) {
 		if (bufp + sizeof(*hdr) > bufendp) {
 			pr_err("compact list, invalid data\n");
@@ -173,4 +176,49 @@ int ima_parse_compact_list(loff_t size, void *buf, int op)
 	}
 
 	return bufp - buf;
+}
+
+/***************************
+ * Digest list usage check *
+ ***************************/
+void ima_check_measured_appraised(struct file *file)
+{
+	struct integrity_iint_cache *iint;
+
+	if (!ima_digest_list_actions)
+		return;
+
+	iint = integrity_iint_find(file_inode(file));
+	if (!iint) {
+		pr_err("%s not processed, disabling digest lists lookup\n",
+		       file_dentry(file)->d_name.name);
+		ima_digest_list_actions = 0;
+		return;
+	}
+
+	mutex_lock(&iint->mutex);
+	if ((ima_digest_list_actions & IMA_MEASURE) &&
+	    !(iint->flags & IMA_MEASURED)) {
+		pr_err("%s not measured, disabling digest lists lookup "
+		       "for measurement\n", file_dentry(file)->d_name.name);
+		ima_digest_list_actions &= ~IMA_MEASURE;
+	}
+
+	if ((ima_digest_list_actions & IMA_APPRAISE) &&
+	    (!(iint->flags & IMA_APPRAISED) ||
+	    !test_bit(IMA_DIGSIG, &iint->atomic_flags))) {
+		pr_err("%s not appraised, disabling digest lists lookup "
+		       "for appraisal\n", file_dentry(file)->d_name.name);
+		ima_digest_list_actions &= ~IMA_APPRAISE;
+	}
+
+	mutex_unlock(&iint->mutex);
+}
+
+struct ima_digest *ima_digest_allow(struct ima_digest *digest, int action)
+{
+	if (!(ima_digest_list_actions & action))
+		return NULL;
+
+	return digest;
 }
