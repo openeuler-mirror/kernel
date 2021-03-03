@@ -4,7 +4,11 @@
 obj-$(CONFIG_LOGO)			+= logo.o
 obj-$(CONFIG_LOGO_LINUX_MONO)		+= logo_linux_mono.o
 obj-$(CONFIG_LOGO_LINUX_VGA16)		+= logo_linux_vga16.o
+ifdef CONFIG_OPENEULER_RASPBERRYPI
+obj-$(CONFIG_LOGO_LINUX_CLUT224)	+= logo_linux_rpi_clut224.o
+else
 obj-$(CONFIG_LOGO_LINUX_CLUT224)	+= logo_linux_clut224.o
+endif
 obj-$(CONFIG_LOGO_DEC_CLUT224)		+= logo_dec_clut224.o
 obj-$(CONFIG_LOGO_MAC_CLUT224)		+= logo_mac_clut224.o
 obj-$(CONFIG_LOGO_PARISC_CLUT224)	+= logo_parisc_clut224.o

@@ -217,6 +217,7 @@ static int framebuffer_check(struct drm_device *dev,
 		if (min_pitch > UINT_MAX)
 			return -ERANGE;
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 		if (r->modifier[i] == DRM_FORMAT_MOD_LINEAR) {
 			if ((uint64_t)height * r->pitches[i] + r->offsets[i] >
 								UINT_MAX)
@@ -228,6 +229,15 @@ static int framebuffer_check(struct drm_device *dev,
 				return -EINVAL;
 			}
 		}
+#else
+		if ((uint64_t) height * r->pitches[i] + r->offsets[i] > UINT_MAX)
+			return -ERANGE;
+
+		if (block_size && r->pitches[i] < min_pitch) {
+			DRM_DEBUG_KMS("bad pitch %u for plane %d\n", r->pitches[i], i);
+			return -EINVAL;
+		}
+#endif
 
 		if (r->modifier[i] && !(r->flags & DRM_MODE_FB_MODIFIERS)) {
 			DRM_DEBUG_KMS("bad fb modifier %llu for plane %d\n",
