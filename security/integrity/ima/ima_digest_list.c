@@ -29,6 +29,31 @@ struct ima_h_table ima_digests_htable = {
 	.queue[0 ... IMA_MEASURE_HTABLE_SIZE - 1] = HLIST_HEAD_INIT
 };
 
+static int __init digest_list_pcr_setup(char *str)
+{
+	int pcr, ret;
+
+	ret = kstrtouint(str, 10, &pcr);
+	if (ret) {
+		pr_err("Invalid PCR number %s\n", str);
+		return 1;
+	}
+
+	if (pcr == CONFIG_IMA_MEASURE_PCR_IDX) {
+		pr_err("Default PCR cannot be used for digest lists\n");
+		return 1;
+	}
+
+	ima_digest_list_pcr = pcr;
+	ima_digest_list_actions |= IMA_MEASURE;
+
+	if (*str == '+')
+		ima_plus_standard_pcr = true;
+
+	return 1;
+}
+__setup("ima_digest_list_pcr=", digest_list_pcr_setup);
+
 /*************************
  * Get/add/del functions *
  *************************/
