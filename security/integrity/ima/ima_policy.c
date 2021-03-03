@@ -175,6 +175,13 @@ static struct ima_rule_entry default_appraise_rules[] __ro_after_init = {
 #endif
 };
 
+static struct ima_rule_entry appraise_exec_rules[] __ro_after_init = {
+	{.action = APPRAISE, .func = BPRM_CHECK,
+	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+	{.action = APPRAISE, .func = MMAP_CHECK,
+	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
+};
+
 static struct ima_rule_entry build_appraise_rules[] __ro_after_init = {
 #ifdef CONFIG_IMA_APPRAISE_REQUIRE_MODULE_SIGS
 	{.action = APPRAISE, .func = MODULE_CHECK,
@@ -228,6 +235,7 @@ static int __init default_measure_policy_setup(char *str)
 __setup("ima_tcb", default_measure_policy_setup);
 
 static bool ima_use_appraise_tcb __initdata;
+static bool ima_use_appraise_exec_tcb __initdata;
 static bool ima_use_secure_boot __initdata;
 static bool ima_fail_unverifiable_sigs __ro_after_init;
 static int __init policy_setup(char *str)
@@ -243,6 +251,8 @@ static int __init policy_setup(char *str)
 			ima_policy = EXEC_TCB;
 		else if (strcmp(p, "appraise_tcb") == 0)
 			ima_use_appraise_tcb = true;
+		else if (strcmp(p, "appraise_exec_tcb") == 0)
+			ima_use_appraise_exec_tcb = true;
 		else if (strcmp(p, "secure_boot") == 0)
 			ima_use_secure_boot = true;
 		else if (strcmp(p, "fail_securely") == 0)
@@ -731,6 +741,15 @@ static void __init add_rules(struct ima_rule_entry *entries, int count,
 					continue;
 		}
 
+		if (ima_use_appraise_exec_tcb) {
+			if (entries == default_appraise_rules) {
+				if (entries[i].action != DONT_APPRAISE)
+					continue;
+				if ((entries[i].flags & IMA_FSMAGIC) &&
+				    entries[i].fsmagic == TMPFS_MAGIC)
+					continue;
+			}
+		}
 		if (policy_rule & IMA_DEFAULT_POLICY)
 			list_add_tail(&entries[i].list, &ima_default_rules);
 
@@ -844,7 +863,7 @@ void __init ima_init_policy(void)
 	 * Insert the builtin "secure_boot" policy rules requiring file
 	 * signatures, prior to other appraise rules.
 	 */
-	if (ima_use_secure_boot)
+	if (ima_use_secure_boot || ima_use_appraise_exec_tcb)
 		add_rules(secure_boot_rules, ARRAY_SIZE(secure_boot_rules),
 			  IMA_DEFAULT_POLICY);
 
@@ -864,9 +883,14 @@ void __init ima_init_policy(void)
 				  IMA_DEFAULT_POLICY | IMA_CUSTOM_POLICY);
 	}
 
-	if (ima_use_appraise_tcb)
+	if (ima_use_appraise_tcb || ima_use_appraise_exec_tcb)
 		add_rules(default_appraise_rules,
 			  ARRAY_SIZE(default_appraise_rules),
+			  IMA_DEFAULT_POLICY);
+
+	if (ima_use_appraise_exec_tcb)
+		add_rules(appraise_exec_rules,
+			  ARRAY_SIZE(appraise_exec_rules),
 			  IMA_DEFAULT_POLICY);
 
 	ima_update_policy_flag();
