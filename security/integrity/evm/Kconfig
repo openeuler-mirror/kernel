@@ -13,6 +13,38 @@ config EVM
 
 	  If you are unsure how to answer this question, answer N.
 
+choice
+	prompt "Default EVM hash algorithm"
+	default EVM_DEFAULT_HASH_SHA256
+	depends on EVM
+	help
+	   Select the default hash algorithm used for the HMAC.
+
+	config EVM_DEFAULT_HASH_SHA1
+		bool "SHA1 (default)"
+		depends on CRYPTO_SHA1=y
+
+	config EVM_DEFAULT_HASH_SHA256
+		bool "SHA256"
+		depends on CRYPTO_SHA256=y
+
+	config EVM_DEFAULT_HASH_SHA512
+		bool "SHA512"
+		depends on CRYPTO_SHA512=y
+
+	config EVM_DEFAULT_HASH_WP512
+		bool "WP512"
+		depends on CRYPTO_WP512=y
+endchoice
+
+config EVM_DEFAULT_HASH
+	string
+	depends on EVM
+	default "sha1" if EVM_DEFAULT_HASH_SHA1
+	default "sha256" if EVM_DEFAULT_HASH_SHA256
+	default "sha512" if EVM_DEFAULT_HASH_SHA512
+	default "wp512" if EVM_DEFAULT_HASH_WP512
+
 config EVM_ATTR_FSUUID
 	bool "FSUUID (version 2)"
 	default y
