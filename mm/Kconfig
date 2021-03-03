@@ -868,3 +868,13 @@ config PIN_MEMORY
 	  the corresponding physical pages mapping info in checkpoint,
 	  and remap the physical pages to restore tasks in restore.
 endmenu
+
+config PID_RESERVE
+	bool "Support for reserve pid"
+	depends on PIN_MEMORY
+	help
+	  Say y here to enable the pid reserved feature for checkpoint.
+	  and restore.
+	  We record the pid of dump task in the reserve memory,
+	  and reserve the pids before init task start. In restore process,
+	  free the reserved pids and realloc them for use.
