@@ -3322,7 +3322,9 @@ static int __spi_validate_bits_per_word(struct spi_controller *ctlr,
  */
 int spi_setup(struct spi_device *spi)
 {
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	struct spi_controller *ctlr = spi->controller;
+#endif
 	unsigned	bad_bits, ugly_bits;
 	int		status;
 
@@ -3341,12 +3343,14 @@ int spi_setup(struct spi_device *spi)
 		 SPI_RX_DUAL | SPI_RX_QUAD | SPI_RX_OCTAL)))
 		return -EINVAL;
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	if (ctlr->use_gpio_descriptors && ctlr->cs_gpiods &&
 	    ctlr->cs_gpiods[spi->chip_select] && !(spi->mode & SPI_CS_HIGH)) {
 		dev_dbg(&spi->dev,
 			"setup: forcing CS_HIGH (use_gpio_descriptors)\n");
 		spi->mode |= SPI_CS_HIGH;
 	}
+#endif
 
 	/* help drivers fail *cleanly* when they need options
 	 * that aren't supported with their current controller

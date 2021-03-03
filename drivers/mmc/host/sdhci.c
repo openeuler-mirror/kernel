@@ -40,8 +40,13 @@
 #define DBG(f, x...) \
 	pr_debug("%s: " DRIVER_NAME ": " f, mmc_hostname(host->mmc), ## x)
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 #define SDHCI_DUMP(f, x...) \
 	pr_debug("%s: " DRIVER_NAME ": " f, mmc_hostname(host->mmc), ## x)
+#else
+#define SDHCI_DUMP(f, x...) \
+	pr_err("%s: " DRIVER_NAME ": " f, mmc_hostname(host->mmc), ## x)
+#endif
 
 #define MAX_TUNING_LOOP 40
 
@@ -3120,8 +3125,13 @@ static void sdhci_timeout_timer(struct timer_list *t)
 	spin_lock_irqsave(&host->lock, flags);
 
 	if (host->cmd && !sdhci_data_line_cmd(host->cmd)) {
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 		pr_debug("%s: Timeout waiting for hardware cmd interrupt.\n",
 		       mmc_hostname(host->mmc));
+#else
+		pr_err("%s: Timeout waiting for hardware cmd interrupt.\n",
+		       mmc_hostname(host->mmc));
+#endif
 		sdhci_dumpregs(host);
 
 		host->cmd->error = -ETIMEDOUT;
@@ -3142,8 +3152,13 @@ static void sdhci_timeout_data_timer(struct timer_list *t)
 
 	if (host->data || host->data_cmd ||
 	    (host->cmd && sdhci_data_line_cmd(host->cmd))) {
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 		pr_debug("%s: Timeout waiting for hardware interrupt.\n",
 		       mmc_hostname(host->mmc));
+#else
+		pr_err("%s: Timeout waiting for hardware interrupt.\n",
+		       mmc_hostname(host->mmc));
+#endif
 		sdhci_dumpregs(host);
 
 		if (host->data) {
