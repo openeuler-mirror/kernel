@@ -569,11 +569,22 @@ int ima_inode_setxattr(struct dentry *dentry, const char *xattr_name,
 	if (result == 1) {
 		if (!xattr_value_len || (xvalue->type >= IMA_XATTR_LAST))
 			return -EINVAL;
-		ima_reset_appraise_flags(d_backing_inode(dentry),
-			xvalue->type == EVM_IMA_XATTR_DIGSIG);
 		result = 0;
 	}
 	return result;
+}
+
+void ima_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
+			     const void *xattr_value, size_t xattr_value_len)
+{
+	const struct evm_ima_xattr_data *xvalue = xattr_value;
+	int result;
+
+	result = ima_protect_xattr(dentry, xattr_name, xattr_value,
+				   xattr_value_len);
+	if (result == 1)
+		ima_reset_appraise_flags(d_backing_inode(dentry),
+			xvalue->type == EVM_IMA_XATTR_DIGSIG);
 }
 
 int ima_inode_removexattr(struct dentry *dentry, const char *xattr_name)
@@ -582,8 +593,16 @@ int ima_inode_removexattr(struct dentry *dentry, const char *xattr_name)
 
 	result = ima_protect_xattr(dentry, xattr_name, NULL, 0);
 	if (result == 1) {
-		ima_reset_appraise_flags(d_backing_inode(dentry), 0);
 		result = 0;
 	}
 	return result;
+}
+
+void ima_inode_post_removexattr(struct dentry *dentry, const char *xattr_name)
+{
+	int result;
+
+	result = ima_protect_xattr(dentry, xattr_name, NULL, 0);
+	if (result == 1)
+		ima_reset_appraise_flags(d_backing_inode(dentry), 0);
 }
