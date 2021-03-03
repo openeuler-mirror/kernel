@@ -16,6 +16,7 @@
 
 #include "ima.h"
 
+static bool ima_appraise_req_evm __ro_after_init;
 static int __init default_appraise_setup(char *str)
 {
 #ifdef CONFIG_IMA_APPRAISE_BOOTPARAM
@@ -43,6 +44,9 @@ static int __init default_appraise_setup(char *str)
 		ima_appraise = appraisal_state;
 	}
 #endif
+	if (strcmp(str, "enforce-evm") == 0 ||
+	    strcmp(str, "log-evm") == 0)
+		ima_appraise_req_evm = true;
 	return 1;
 }
 
@@ -404,7 +408,11 @@ int ima_appraise_measurement(enum ima_hooks func,
 	switch (status) {
 	case INTEGRITY_PASS:
 	case INTEGRITY_PASS_IMMUTABLE:
+		break;
 	case INTEGRITY_UNKNOWN:
+		if (ima_appraise_req_evm &&
+		    xattr_value->type != EVM_IMA_XATTR_DIGSIG)
+			goto out;
 		break;
 	case INTEGRITY_NOXATTRS:	/* No EVM protected xattrs. */
 		/* It's fine not to have xattrs when using a modsig. */
