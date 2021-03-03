@@ -86,3 +86,8 @@ tpm_key_parser-y := \
 
 $(obj)/tpm_parser.o: $(obj)/tpm.asn1.h
 $(obj)/tpm.asn1.o: $(obj)/tpm.asn1.c $(obj)/tpm.asn1.h
+
+#
+# PGP handling
+#
+obj-$(CONFIG_PGP_LIBRARY) += pgp_library.o
