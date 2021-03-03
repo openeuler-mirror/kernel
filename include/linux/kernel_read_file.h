@@ -13,6 +13,7 @@
 	id(KEXEC_IMAGE, kexec-image)		\
 	id(KEXEC_INITRAMFS, kexec-initramfs)	\
 	id(POLICY, security-policy)		\
+	id(DIGEST_LIST, digest-list)		\
 	id(X509_CERTIFICATE, x509-certificate)	\
 	id(MAX_ID, )
 
