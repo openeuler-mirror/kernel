@@ -83,4 +83,11 @@ config SYSTEM_BLACKLIST_HASH_LIST
 	  wrapper to incorporate the list into the kernel.  Each <hash> should
 	  be a string of hex digits.
 
+config PGP_PRELOAD_PUBLIC_KEYS
+	bool "Preload PGP public keys"
+	select PGP_PRELOAD
+	default n
+	help
+	  Provide a keyring of PGP public keys.
+
 endmenu
