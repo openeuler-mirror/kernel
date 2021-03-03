@@ -56,7 +56,7 @@ enum lsm_rule_types { LSM_OBJ_USER, LSM_OBJ_ROLE, LSM_OBJ_TYPE,
 	LSM_SUBJ_USER, LSM_SUBJ_ROLE, LSM_SUBJ_TYPE
 };
 
-enum policy_types { ORIGINAL_TCB = 1, DEFAULT_TCB };
+enum policy_types { ORIGINAL_TCB = 1, DEFAULT_TCB, EXEC_TCB };
 
 enum policy_rule_list { IMA_DEFAULT_POLICY = 1, IMA_CUSTOM_POLICY };
 
@@ -239,6 +239,8 @@ static int __init policy_setup(char *str)
 			continue;
 		if ((strcmp(p, "tcb") == 0) && !ima_policy)
 			ima_policy = DEFAULT_TCB;
+		else if ((strcmp(p, "exec_tcb") == 0) && !ima_policy)
+			ima_policy = EXEC_TCB;
 		else if (strcmp(p, "appraise_tcb") == 0)
 			ima_use_appraise_tcb = true;
 		else if (strcmp(p, "secure_boot") == 0)
@@ -709,13 +711,25 @@ static int ima_appraise_flag(enum ima_hooks func)
 	return 0;
 }
 
-static void add_rules(struct ima_rule_entry *entries, int count,
-		      enum policy_rule_list policy_rule)
+static void __init add_rules(struct ima_rule_entry *entries, int count,
+			     enum policy_rule_list policy_rule)
 {
 	int i = 0;
 
 	for (i = 0; i < count; i++) {
 		struct ima_rule_entry *entry;
+
+		if (ima_policy == EXEC_TCB) {
+			if (entries == dont_measure_rules)
+				if ((entries[i].flags & IMA_FSMAGIC) &&
+				    entries[i].fsmagic == TMPFS_MAGIC)
+					continue;
+
+			if (entries == default_measurement_rules)
+				if ((entries[i].flags & IMA_FUNC) &&
+				    entries[i].func == FILE_CHECK)
+					continue;
+		}
 
 		if (policy_rule & IMA_DEFAULT_POLICY)
 			list_add_tail(&entries[i].list, &ima_default_rules);
@@ -803,6 +817,8 @@ void __init ima_init_policy(void)
 			  ARRAY_SIZE(original_measurement_rules),
 			  IMA_DEFAULT_POLICY);
 		break;
+	case EXEC_TCB:
+		fallthrough;
 	case DEFAULT_TCB:
 		add_rules(default_measurement_rules,
 			  ARRAY_SIZE(default_measurement_rules),
