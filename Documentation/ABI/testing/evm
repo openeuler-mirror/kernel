@@ -49,8 +49,9 @@ Description:
 		modification of EVM-protected metadata and
 		disable all further modification of policy
 
-		Note that once a key has been loaded, it will no longer be
-		possible to enable metadata modification.
+		Note that once an HMAC key has been loaded, it will no longer
+		be possible to enable metadata modification and, if it is
+		already enabled, it will be disabled.
 
 		Until key loading has been signaled EVM can not create
 		or validate the 'security.evm' xattr, but returns
