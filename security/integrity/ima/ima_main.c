@@ -36,6 +36,10 @@ int ima_appraise;
 #endif
 
 int ima_hash_algo = HASH_ALGO_SHA1;
+
+/* Actions (measure/appraisal) for which digest lists can be used */
+int ima_digest_list_actions;
+
 static int hash_setup_done;
 
 static struct notifier_block ima_lsm_policy_notifier = {
