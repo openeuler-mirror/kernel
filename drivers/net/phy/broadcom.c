@@ -263,8 +263,13 @@ static void bcm54xx_adjust_rxrefclk(struct phy_device *phydev)
 static int bcm54xx_config_init(struct phy_device *phydev)
 {
 	int reg, err, val;
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	u32 led_modes[] = {BCM_LED_MULTICOLOR_LINK_ACT,
 			   BCM_LED_MULTICOLOR_LINK};
+#else
+	u32 led_modes[] = {BCM_LED_MULTICOLOR_LINK_ACT,
+			   BCM_LED_MULTICOLOR_LINK_ACT};
+#endif
 	struct device_node *np = phydev->mdio.dev.of_node;
 
 	reg = phy_read(phydev, MII_BCM54XX_ECR);

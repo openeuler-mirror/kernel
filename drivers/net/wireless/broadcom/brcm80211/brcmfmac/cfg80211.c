@@ -2938,7 +2938,11 @@ brcmf_cfg80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *ndev,
 		brcmf_dbg(INFO, "Do not enable power save for P2P clients\n");
 		pm = PM_OFF;
 	}
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	brcmf_info("power save %s\n", (pm ? "enabled" : "disabled"));
+#else
+	brcmf_dbg(INFO, "power save %s\n", (pm ? "enabled" : "disabled"));
+#endif
 
 	err = brcmf_fil_cmd_int_set(ifp, BRCMF_C_SET_PM, pm);
 	if (err) {
@@ -2948,7 +2952,9 @@ brcmf_cfg80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *ndev,
 			bphy_err(drvr, "error (%d)\n", err);
 	}
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	timeout = 2000; /* 2000ms - the maximum */
+#endif
 	err = brcmf_fil_iovar_int_set(ifp, "pm2_sleep_ret",
 				min_t(u32, timeout, BRCMF_PS_MAX_TIMEOUT_MS));
 	if (err)
@@ -7413,6 +7419,7 @@ static void brcmf_cfg80211_reg_notifier(struct wiphy *wiphy,
 	s32 err;
 	int i;
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	err = brcmf_fil_iovar_data_get(ifp, "country", &ccreq, sizeof(ccreq));
 	if (err) {
 		bphy_err(drvr, "Country code iovar returned err = %d\n", err);
@@ -7435,6 +7442,12 @@ static void brcmf_cfg80211_reg_notifier(struct wiphy *wiphy,
 		pr_debug("brcmfmac: substituting saved ccode %c%c\n",
 			 alpha2[0], alpha2[1]);
 	}
+#else
+	/* The country code gets set to "00" by default at boot, ignore */
+	alpha2 = req->alpha2;
+	if (req->alpha2[0] == '0' && req->alpha2[1] == '0')
+		return;
+#endif
 
 	/* ignore non-ISO3166 country codes */
 	for (i = 0; i < 2; i++)
@@ -7446,6 +7459,14 @@ static void brcmf_cfg80211_reg_notifier(struct wiphy *wiphy,
 
 	brcmf_dbg(TRACE, "Enter: initiator=%d, alpha=%c%c\n", req->initiator,
 		  alpha2[0], alpha2[1]);
+
+#ifndef CONFIG_OPENEULER_RASPBERRYPI
+	err = brcmf_fil_iovar_data_get(ifp, "country", &ccreq, sizeof(ccreq));
+	if (err) {
+		bphy_err(drvr, "Country code iovar returned err = %d\n", err);
+		return;
+	}
+#endif
 
 	err = brcmf_translate_country_code(ifp->drvr, alpha2, &ccreq);
 	if (err)

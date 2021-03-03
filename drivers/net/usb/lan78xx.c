@@ -1181,8 +1181,10 @@ static int lan78xx_link_reset(struct lan78xx_net *dev)
 	if (unlikely(ret < 0))
 		return -EIO;
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	/* Acknowledge any pending PHY interrupt, lest it be the last */
 	phy_read(phydev, LAN88XX_INT_STS);
+#endif
 
 	phy_read_status(phydev);
 
@@ -3164,7 +3166,11 @@ static int rx_submit(struct lan78xx_net *dev, struct urb *urb, gfp_t flags)
 	size_t size = dev->rx_urb_size;
 	int ret = 0;
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	skb = netdev_alloc_skb(dev->net, size);
+#else
+	skb = netdev_alloc_skb_ip_align(dev->net, size);
+#endif
 	if (!skb) {
 		usb_free_urb(urb);
 		return -ENOMEM;
