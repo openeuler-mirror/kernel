@@ -203,6 +203,8 @@ void __init integrity_load_keys(void)
 
 	if (!IS_ENABLED(CONFIG_IMA_LOAD_X509))
 		evm_load_x509();
+
+	ima_load_digest_lists();
 }
 
 static int __init integrity_fs_init(void)
