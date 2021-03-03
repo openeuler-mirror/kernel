@@ -211,7 +211,6 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 			evm_status = INTEGRITY_FAIL;
 			goto out;
 		}
-
 		digest.hdr.algo = HASH_ALGO_SHA1;
 		rc = evm_calc_hmac(dentry, xattr_name, xattr_value,
 				   xattr_value_len, &digest);
@@ -618,7 +617,8 @@ bool evm_status_revalidate(const char *xattr_name)
 	if (!xattr_name)
 		return true;
 
-	if (!evm_protected_xattr(xattr_name) && !posix_xattr_acl(xattr_name))
+	if (!evm_protected_xattr(xattr_name) && !posix_xattr_acl(xattr_name) &&
+	    strcmp(xattr_name, XATTR_NAME_EVM))
 		return false;
 
 	return true;
@@ -645,6 +645,9 @@ void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
 
 	evm_reset_status(dentry->d_inode);
 
+	if (!strcmp(xattr_name, XATTR_NAME_EVM))
+		return;
+
 	evm_update_evmxattr(dentry, xattr_name, xattr_value, xattr_value_len);
 }
 
@@ -664,6 +667,9 @@ void evm_inode_post_removexattr(struct dentry *dentry, const char *xattr_name)
 		return;
 
 	evm_reset_status(dentry->d_inode);
+
+	if (!strcmp(xattr_name, XATTR_NAME_EVM))
+		return;
 
 	evm_update_evmxattr(dentry, xattr_name, NULL, 0);
 }
