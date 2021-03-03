@@ -426,6 +426,30 @@ static void evm_reset_status(struct inode *inode)
 }
 
 /**
+ * evm_status_revalidate - report whether EVM status re-validation is necessary
+ * @xattr_name: pointer to the affected extended attribute name
+ *
+ * Report whether callers of evm_verifyxattr() should re-validate the
+ * EVM status.
+ *
+ * Return true if re-validation is necessary, false otherwise.
+ */
+bool evm_status_revalidate(const char *xattr_name)
+{
+	if (!evm_key_loaded())
+		return false;
+
+	/* evm_inode_post_setattr() passes NULL */
+	if (!xattr_name)
+		return true;
+
+	if (!evm_protected_xattr(xattr_name) && !posix_xattr_acl(xattr_name))
+		return false;
+
+	return true;
+}
+
+/**
  * evm_inode_post_setxattr - update 'security.evm' to reflect the changes
  * @dentry: pointer to the affected dentry
  * @xattr_name: pointer to the affected extended attribute name
@@ -441,8 +465,7 @@ static void evm_reset_status(struct inode *inode)
 void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
 			     const void *xattr_value, size_t xattr_value_len)
 {
-	if (!evm_key_loaded() || (!evm_protected_xattr(xattr_name)
-				  && !posix_xattr_acl(xattr_name)))
+	if (!evm_status_revalidate(xattr_name))
 		return;
 
 	evm_reset_status(dentry->d_inode);
@@ -462,7 +485,7 @@ void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
  */
 void evm_inode_post_removexattr(struct dentry *dentry, const char *xattr_name)
 {
-	if (!evm_key_loaded() || !evm_protected_xattr(xattr_name))
+	if (!evm_status_revalidate(xattr_name))
 		return;
 
 	evm_reset_status(dentry->d_inode);
@@ -513,8 +536,10 @@ int evm_inode_setattr(struct dentry *dentry, struct iattr *attr)
  */
 void evm_inode_post_setattr(struct dentry *dentry, int ia_valid)
 {
-	if (!evm_key_loaded())
+	if (!evm_status_revalidate(NULL))
 		return;
+
+	evm_reset_status(dentry->d_inode);
 
 	if (ia_valid & (ATTR_MODE | ATTR_UID | ATTR_GID))
 		evm_update_evmxattr(dentry, NULL, NULL, 0);
