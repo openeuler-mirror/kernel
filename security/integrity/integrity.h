@@ -163,6 +163,7 @@ static inline bool ima_digest_is_immutable(struct ima_digest *digest)
 struct ima_digest *ima_lookup_digest(u8 *digest, enum hash_algo algo,
 				     enum compact_types type);
 struct ima_digest *ima_digest_allow(struct ima_digest *digest, int action);
+void __init ima_load_digest_lists(void);
 #else
 static inline struct ima_digest *ima_lookup_digest(u8 *digest,
 						   enum hash_algo algo,
@@ -174,6 +175,9 @@ static inline struct ima_digest *ima_digest_allow(struct ima_digest *digest,
 						  int action)
 {
 	return NULL;
+}
+static inline void ima_load_digest_lists(void)
+{
 }
 #endif
 
