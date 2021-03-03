@@ -20,6 +20,8 @@
 #include <linux/file.h>
 #include <linux/namei.h>
 #include <linux/xattr.h>
+#include <linux/sched/mm.h>
+#include <linux/magic.h>
 
 #include "ima.h"
 #include "ima_digest_list.h"
@@ -216,6 +218,10 @@ void ima_check_measured_appraised(struct file *file)
 	if (!ima_digest_list_actions)
 		return;
 
+	if (file_inode(file)->i_sb->s_magic == SECURITYFS_MAGIC ||
+	    S_ISDIR(file_inode(file)->i_mode))
+		return;
+
 	iint = integrity_iint_find(file_inode(file));
 	if (!iint) {
 		pr_err("%s not processed, disabling digest lists lookup\n",
@@ -341,4 +347,54 @@ void __init ima_load_digest_lists(void)
 	fput(file);
 out:
 	path_put(&path);
+}
+
+/****************
+ * Parser check *
+ ****************/
+bool ima_check_current_is_parser(void)
+{
+	struct integrity_iint_cache *parser_iint;
+	struct file *parser_file;
+	struct mm_struct *mm;
+
+	mm = get_task_mm(current);
+	if (!mm)
+		return false;
+
+	parser_file = get_mm_exe_file(mm);
+	mmput(mm);
+
+	if (!parser_file)
+		return false;
+
+	parser_iint = integrity_iint_find(file_inode(parser_file));
+	fput(parser_file);
+
+	if (!parser_iint)
+		return false;
+
+	/* flag cannot be cleared due to write protection of executables */
+	if (!(parser_iint->flags & IMA_COLLECTED))
+		return false;
+
+	return ima_lookup_digest(parser_iint->ima_hash->digest,
+				 parser_iint->ima_hash->algo, COMPACT_PARSER);
+}
+
+struct task_struct *parser_task;
+
+void ima_set_parser(void)
+{
+	parser_task = current;
+}
+
+void ima_unset_parser(void)
+{
+	parser_task = NULL;
+}
+
+bool ima_current_is_parser(void)
+{
+	return (current == parser_task);
 }

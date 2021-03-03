@@ -390,6 +390,20 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 		} else {
 			result = ima_parse_add_rule(data);
 		}
+	} else if (dentry == digest_list_data) {
+		if (!ima_current_is_parser()) {
+			result = -EACCES;
+		} else {
+			result = ima_parse_compact_list(datalen, data,
+							DIGEST_LIST_OP_ADD);
+		}
+	} else if (dentry == digest_list_data_del) {
+		if (!ima_current_is_parser()) {
+			result = -EACCES;
+		} else {
+			result = ima_parse_compact_list(datalen, data,
+							DIGEST_LIST_OP_DEL);
+		}
 	} else {
 		pr_err("Unknown data type\n");
 		result = -EINVAL;
@@ -461,6 +475,11 @@ static int ima_open_data_upload(struct inode *inode, struct file *filp)
 	}
 	if (test_and_set_bit(flag, &ima_fs_flags))
 		return -EBUSY;
+
+	if (dentry == digest_list_data || dentry == digest_list_data_del)
+		if (ima_check_current_is_parser())
+			ima_set_parser();
+
 	return 0;
 }
 
@@ -479,6 +498,9 @@ static int ima_release_data_upload(struct inode *inode, struct file *file)
 
 	if ((file->f_flags & O_ACCMODE) == O_RDONLY)
 		return seq_release(inode, file);
+
+	if (dentry == digest_list_data || dentry == digest_list_data_del)
+		ima_unset_parser();
 
 	if (dentry != ima_policy) {
 		clear_bit(flag, &ima_fs_flags);
