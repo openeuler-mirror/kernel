@@ -28,6 +28,7 @@
 #include <linux/fs.h>
 
 #include "ima.h"
+#include "ima_digest_list.h"
 
 #ifdef CONFIG_IMA_APPRAISE
 int ima_appraise = IMA_APPRAISE_ENFORCE;
@@ -39,6 +40,10 @@ int ima_hash_algo = HASH_ALGO_SHA1;
 
 /* Actions (measure/appraisal) for which digest lists can be used */
 int ima_digest_list_actions;
+/* PCR used for digest list measurements */
+int ima_digest_list_pcr = -1;
+/* Flag to include standard measurement if digest list PCR is specified */
+bool ima_plus_standard_pcr;
 
 static int hash_setup_done;
 
@@ -168,6 +173,8 @@ static enum hash_algo ima_get_hash_algo(struct evm_ima_xattr_data *xattr_value,
 			return ima_hash_algo;
 		return sig->hash_algo;
 		break;
+	case EVM_IMA_XATTR_DIGEST_LIST:
+		fallthrough;
 	case IMA_XATTR_DIGEST_NG:
 		/* first byte contains algorithm id */
 		ret = xattr_value->data[0];
@@ -261,6 +268,7 @@ static int process_measurement(struct file *file, const struct cred *cred,
 	const char *pathname = NULL;
 	int rc = 0, action, must_appraise = 0;
 	int pcr = CONFIG_IMA_MEASURE_PCR_IDX;
+	struct ima_digest *found_digest;
 	struct evm_ima_xattr_data *xattr_value = NULL;
 	struct modsig *modsig = NULL;
 	int xattr_len = 0;
@@ -390,10 +398,16 @@ static int process_measurement(struct file *file, const struct cred *cred,
 	if (!pathbuf)	/* ima_rdwr_violation possibly pre-fetched */
 		pathname = ima_d_path(&file->f_path, &pathbuf, filename);
 
+	found_digest = ima_lookup_digest(iint->ima_hash->digest, hash_algo,
+					 COMPACT_FILE);
+
 	if (action & IMA_MEASURE)
 		ima_store_measurement(iint, file, pathname,
 				      xattr_value, xattr_len, modsig, pcr,
-				      template_desc);
+				      template_desc,
+				      ima_digest_allow(found_digest,
+						       IMA_MEASURE));
+
 	if (rc == 0 && (action & IMA_APPRAISE_SUBMASK)) {
 		rc = ima_check_blacklist(iint, modsig, pcr);
 		if (rc != -EPERM) {
@@ -918,7 +932,7 @@ void process_buffer_measurement(struct inode *inode, const void *buf, int size,
 		goto out;
 	}
 
-	ret = ima_store_template(entry, violation, NULL, buf, pcr);
+	ret = ima_store_template(entry, violation, NULL, buf, pcr, NULL);
 	if (ret < 0) {
 		audit_cause = "store_entry";
 		ima_free_template_entry(entry);
