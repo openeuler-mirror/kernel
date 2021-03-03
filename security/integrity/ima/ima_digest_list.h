@@ -24,6 +24,10 @@ extern struct ima_h_table ima_digests_htable;
 
 int ima_parse_compact_list(loff_t size, void *buf, int op);
 void ima_check_measured_appraised(struct file *file);
+bool ima_check_current_is_parser(void);
+void ima_set_parser(void);
+void ima_unset_parser(void);
+bool ima_current_is_parser(void);
 #else
 static inline int ima_parse_compact_list(loff_t size, void *buf, int op)
 {
@@ -31,6 +35,20 @@ static inline int ima_parse_compact_list(loff_t size, void *buf, int op)
 }
 static inline void ima_check_measured_appraised(struct file *file)
 {
+}
+static inline bool ima_check_current_is_parser(void)
+{
+	return false;
+}
+static inline void ima_set_parser(void)
+{
+}
+static inline void ima_unset_parser(void)
+{
+}
+static inline bool ima_current_is_parser(void)
+{
+	return false;
 }
 #endif /*CONFIG_IMA_DIGEST_LIST*/
 #endif /*LINUX_IMA_DIGEST_LIST_H*/
