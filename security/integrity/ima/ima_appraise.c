@@ -578,13 +578,15 @@ void ima_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
 			     const void *xattr_value, size_t xattr_value_len)
 {
 	const struct evm_ima_xattr_data *xvalue = xattr_value;
+	int digsig = 0;
 	int result;
 
 	result = ima_protect_xattr(dentry, xattr_name, xattr_value,
 				   xattr_value_len);
 	if (result == 1)
-		ima_reset_appraise_flags(d_backing_inode(dentry),
-			xvalue->type == EVM_IMA_XATTR_DIGSIG);
+		digsig = (xvalue->type == EVM_IMA_XATTR_DIGSIG);
+	if (result == 1 || evm_status_revalidate(xattr_name))
+		ima_reset_appraise_flags(d_backing_inode(dentry), digsig);
 }
 
 int ima_inode_removexattr(struct dentry *dentry, const char *xattr_name)
@@ -603,6 +605,6 @@ void ima_inode_post_removexattr(struct dentry *dentry, const char *xattr_name)
 	int result;
 
 	result = ima_protect_xattr(dentry, xattr_name, NULL, 0);
-	if (result == 1)
+	if (result == 1 || evm_status_revalidate(xattr_name))
 		ima_reset_appraise_flags(d_backing_inode(dentry), 0);
 }
