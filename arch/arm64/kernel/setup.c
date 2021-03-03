@@ -50,6 +50,9 @@
 #include <asm/efi.h>
 #include <asm/xen/hypervisor.h>
 #include <asm/mmu_context.h>
+#ifdef CONFIG_PIN_MEMORY
+#include <linux/pin_mem.h>
+#endif
 
 static int num_standard_resources;
 static struct resource *standard_resources;
@@ -259,6 +262,12 @@ static void __init request_standard_resources(void)
 		    quick_kexec_res.start >= res->start &&
 		    quick_kexec_res.end <= res->end)
 			request_resource(res, &quick_kexec_res);
+#endif
+#ifdef CONFIG_PIN_MEMORY
+		if (pin_memory_resource.end &&
+			pin_memory_resource.start >= res->start &&
+			pin_memory_resource.end <= res->end)
+			request_resource(res, &pin_memory_resource);
 #endif
 	}
 }

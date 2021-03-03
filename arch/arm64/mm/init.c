@@ -42,6 +42,9 @@
 #include <linux/sizes.h>
 #include <asm/tlb.h>
 #include <asm/alternative.h>
+#ifdef CONFIG_PIN_MEMORY
+#include <linux/pin_mem.h>
+#endif
 
 #define ARM64_ZONE_DMA_BITS	30
 
@@ -77,6 +80,55 @@ static void __init reserve_crashkernel(void)
  * region is always the last range of linux,usable-memory-range if exist.
  */
 #define MAX_USABLE_RANGES	2
+
+#ifdef CONFIG_PIN_MEMORY
+struct resource pin_memory_resource = {
+	.name = "Pin memory",
+	.start = 0,
+	.end = 0,
+	.flags = IORESOURCE_MEM,
+	.desc = IORES_DESC_RESERVED
+};
+
+static void __init reserve_pin_memory_res(void)
+{
+	unsigned long long mem_start, mem_len;
+	int ret;
+
+	ret = parse_pin_memory(boot_command_line, memblock_phys_mem_size(),
+						&mem_len, &mem_start);
+	if (ret || !mem_len)
+		return;
+
+	mem_len = PAGE_ALIGN(mem_len);
+
+	if (!memblock_is_region_memory(mem_start, mem_len)) {
+		pr_warn("cannot reserve for pin memory: region is not memory!\n");
+		return;
+	}
+
+	if (memblock_is_region_reserved(mem_start, mem_len)) {
+		pr_warn("cannot reserve for pin memory: region overlaps reserved memory!\n");
+		return;
+	}
+
+	if (!IS_ALIGNED(mem_start, SZ_2M)) {
+		pr_warn("cannot reserve for pin memory: base address is not 2MB aligned\n");
+		return;
+	}
+
+	memblock_reserve(mem_start, mem_len);
+	pr_debug("pin memory resource reserved: 0x%016llx - 0x%016llx (%lld MB)\n",
+		mem_start, mem_start + mem_len, mem_len >> 20);
+
+	pin_memory_resource.start = mem_start;
+	pin_memory_resource.end = mem_start + mem_len - 1;
+}
+#else
+static void __init reserve_pin_memory_res(void)
+{
+}
+#endif /* CONFIG_PIN_MEMORY */
 
 #ifdef CONFIG_CRASH_DUMP
 static int __init early_init_dt_scan_elfcorehdr(unsigned long node,
@@ -455,6 +507,8 @@ void __init arm64_memblock_init(void)
 	reserve_park_mem();
 #endif
 
+	reserve_pin_memory_res();
+
 	reserve_elfcorehdr();
 
 	high_memory = __va(memblock_end_of_DRAM() - 1) + 1;
@@ -582,6 +636,12 @@ void __init mem_init(void)
 #endif
 	/* this will put all unused low memory onto the freelists */
 	memblock_free_all();
+
+#ifdef CONFIG_PIN_MEMORY
+	/* pre alloc the pages for pin memory */
+	init_reserve_page_map((unsigned long)pin_memory_resource.start,
+		(unsigned long)(pin_memory_resource.end - pin_memory_resource.start + 1));
+#endif
 
 	mem_init_print_info(NULL);
 
