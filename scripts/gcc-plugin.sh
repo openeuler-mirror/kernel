@@ -1,6 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0
+if [ -n "${CONFIG_OPENEULER_RASPBERRYPI}" ]; then
 exit 1 # Disable plugins
+fi
 
 set -e
 
