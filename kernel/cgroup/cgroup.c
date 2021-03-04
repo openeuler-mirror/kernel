@@ -5682,8 +5682,10 @@ int __init cgroup_init_early(void)
 }
 
 static u16 cgroup_disable_mask __initdata;
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 static u16 cgroup_enable_mask __initdata;
 static int __init cgroup_disable(char *str);
+#endif
 
 /**
  * cgroup_init - cgroup initialization
@@ -5723,11 +5725,13 @@ int __init cgroup_init(void)
 
 	mutex_unlock(&cgroup_mutex);
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	/* Apply an implicit disable... */
 	cgroup_disable("memory");
 
 	/* ...knowing that an explicit enable will override it. */
 	cgroup_disable_mask &= ~cgroup_enable_mask;
+#endif
 
 	for_each_subsys(ss, ssid) {
 		if (ss->early_init) {
@@ -6276,6 +6280,7 @@ static int __init cgroup_disable(char *str)
 }
 __setup("cgroup_disable=", cgroup_disable);
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 static int __init cgroup_enable(char *str)
 {
 	struct cgroup_subsys *ss;
@@ -6297,6 +6302,7 @@ static int __init cgroup_enable(char *str)
 	return 1;
 }
 __setup("cgroup_enable=", cgroup_enable);
+#endif
 
 void __init __weak enable_debug_cgroup(void) { }
 

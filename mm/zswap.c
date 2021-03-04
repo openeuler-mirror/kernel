@@ -592,6 +592,7 @@ error:
 	return NULL;
 }
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 static bool zswap_try_pool_create(void)
 {
 	struct zswap_pool *pool;
@@ -646,6 +647,49 @@ static bool zswap_try_pool_create(void)
 
 	return zswap_enabled;
 }
+#else
+static __init struct zswap_pool *__zswap_pool_create_fallback(void)
+{
+	bool has_comp, has_zpool;
+
+	has_comp = crypto_has_comp(zswap_compressor, 0, 0);
+	if (!has_comp && strcmp(zswap_compressor,
+				CONFIG_ZSWAP_COMPRESSOR_DEFAULT)) {
+		pr_err("compressor %s not available, using default %s\n",
+		       zswap_compressor, CONFIG_ZSWAP_COMPRESSOR_DEFAULT);
+		param_free_charp(&zswap_compressor);
+		zswap_compressor = CONFIG_ZSWAP_COMPRESSOR_DEFAULT;
+		has_comp = crypto_has_comp(zswap_compressor, 0, 0);
+	}
+	if (!has_comp) {
+		pr_err("default compressor %s not available\n",
+		       zswap_compressor);
+		param_free_charp(&zswap_compressor);
+		zswap_compressor = ZSWAP_PARAM_UNSET;
+	}
+
+	has_zpool = zpool_has_pool(zswap_zpool_type);
+	if (!has_zpool && strcmp(zswap_zpool_type,
+				 CONFIG_ZSWAP_ZPOOL_DEFAULT)) {
+		pr_err("zpool %s not available, using default %s\n",
+		       zswap_zpool_type, CONFIG_ZSWAP_ZPOOL_DEFAULT);
+		param_free_charp(&zswap_zpool_type);
+		zswap_zpool_type = CONFIG_ZSWAP_ZPOOL_DEFAULT;
+		has_zpool = zpool_has_pool(zswap_zpool_type);
+	}
+	if (!has_zpool) {
+		pr_err("default zpool %s not available\n",
+		       zswap_zpool_type);
+		param_free_charp(&zswap_zpool_type);
+		zswap_zpool_type = ZSWAP_PARAM_UNSET;
+	}
+
+	if (!has_comp || !has_zpool)
+		return NULL;
+
+	return zswap_pool_create(zswap_zpool_type, zswap_compressor);
+}
+#endif
 
 static void zswap_pool_destroy(struct zswap_pool *pool)
 {
@@ -814,6 +858,7 @@ static int zswap_zpool_param_set(const char *val,
 	return __zswap_param_set(val, kp, NULL, zswap_compressor);
 }
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 static int zswap_enabled_param_set(const char *val,
 				   const struct kernel_param *kp)
 {
@@ -831,6 +876,22 @@ static int zswap_enabled_param_set(const char *val,
 
 	return ret;
 }
+#else
+static int zswap_enabled_param_set(const char *val,
+				   const struct kernel_param *kp)
+{
+	if (zswap_init_failed) {
+		pr_err("can't enable, initialization failed\n");
+		return -ENODEV;
+	}
+	if (!zswap_has_pool && zswap_init_started) {
+		pr_err("can't enable, no pool configured\n");
+		return -ENODEV;
+	}
+
+	return param_set_bool(val, kp);
+}
+#endif
 
 /*********************************
 * writeback code
@@ -1328,6 +1389,7 @@ static void __exit zswap_debugfs_exit(void) { }
 /*********************************
 * module init and exit
 **********************************/
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 static int __init init_zswap(void)
 {
 	int ret;
@@ -1376,6 +1438,67 @@ cache_fail:
 	zswap_enabled = false;
 	return -ENOMEM;
 }
+#else
+static int __init init_zswap(void)
+{
+	struct zswap_pool *pool;
+	int ret;
+
+	zswap_init_started = true;
+
+	if (zswap_entry_cache_create()) {
+		pr_err("entry cache creation failed\n");
+		goto cache_fail;
+	}
+
+	ret = cpuhp_setup_state(CPUHP_MM_ZSWP_MEM_PREPARE, "mm/zswap:prepare",
+				zswap_dstmem_prepare, zswap_dstmem_dead);
+	if (ret) {
+		pr_err("dstmem alloc failed\n");
+		goto dstmem_fail;
+	}
+
+	ret = cpuhp_setup_state_multi(CPUHP_MM_ZSWP_POOL_PREPARE,
+				      "mm/zswap_pool:prepare",
+				      zswap_cpu_comp_prepare,
+				      zswap_cpu_comp_dead);
+	if (ret)
+		goto hp_fail;
+
+	pool = __zswap_pool_create_fallback();
+	if (pool) {
+		pr_info("loaded using pool %s/%s\n", pool->tfm_name,
+			zpool_get_type(pool->zpool));
+		list_add(&pool->list, &zswap_pools);
+		zswap_has_pool = true;
+	} else {
+		pr_err("pool creation failed\n");
+		zswap_enabled = false;
+	}
+
+	shrink_wq = create_workqueue("zswap-shrink");
+	if (!shrink_wq)
+		goto fallback_fail;
+
+	frontswap_register_ops(&zswap_frontswap_ops);
+	if (zswap_debugfs_init())
+		pr_warn("debugfs initialization failed\n");
+	return 0;
+
+fallback_fail:
+	if (pool)
+		zswap_pool_destroy(pool);
+hp_fail:
+	cpuhp_remove_state(CPUHP_MM_ZSWP_MEM_PREPARE);
+dstmem_fail:
+	zswap_entry_cache_destroy();
+cache_fail:
+	/* if built-in, we aren't unloaded on failure; don't allow use */
+	zswap_init_failed = true;
+	zswap_enabled = false;
+	return -ENOMEM;
+}
+#endif
 /* must be late so crypto has time to come up */
 late_initcall(init_zswap);
 
