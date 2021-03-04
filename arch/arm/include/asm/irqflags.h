@@ -162,6 +162,7 @@ static inline unsigned long arch_local_save_flags(void)
 	return flags;
 }
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 /*
  * restore saved IRQ state
  */
@@ -184,6 +185,20 @@ static inline void arch_local_irq_restore(unsigned long flags)
 		: "r" (flags)
 		: "memory", "cc");
 }
+#else
+/*
+ * restore saved IRQ & FIQ state
+ */
+#define arch_local_irq_restore arch_local_irq_restore
+static inline void arch_local_irq_restore(unsigned long flags)
+{
+	asm volatile(
+		"	msr	" IRQMASK_REG_NAME_W ", %0	@ local_irq_restore"
+		:
+		: "r" (flags)
+		: "memory", "cc");
+}
+#endif
 
 #define arch_irqs_disabled_flags arch_irqs_disabled_flags
 static inline int arch_irqs_disabled_flags(unsigned long flags)

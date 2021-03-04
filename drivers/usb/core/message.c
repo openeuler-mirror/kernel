@@ -2144,6 +2144,7 @@ free_interfaces:
 	if (cp->string == NULL &&
 			!(dev->quirks & USB_QUIRK_CONFIG_INTF_STRINGS))
 		cp->string = usb_cache_string(dev, cp->desc.iConfiguration);
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 /* Uncomment this define to enable the HS Electrical Test support */
 #define DWC_HS_ELECT_TST 1
 #ifdef DWC_HS_ELECT_TST
@@ -2223,6 +2224,7 @@ free_interfaces:
 			}
 		}
 #endif /* DWC_HS_ELECT_TST */
+#endif /* CONFIG_OPENEULER_RASPBERRYPI */
 
 	/* Now that the interfaces are installed, re-enable LPM. */
 	usb_unlocked_enable_lpm(dev);

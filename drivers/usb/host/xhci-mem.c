@@ -2512,11 +2512,18 @@ int xhci_mem_init(struct xhci_hcd *xhci, gfp_t flags)
 	 * Event ring setup: Allocate a normal ring, but also setup
 	 * the event ring segment table (ERST).  Section 4.9.3.
 	 */
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	val2 = 1 << HCS_ERST_MAX(xhci->hcs_params2);
 	val2 = min_t(unsigned int, ERST_MAX_SEGS, val2);
+#endif
 	xhci_dbg_trace(xhci, trace_xhci_dbg_init, "// Allocating event ring");
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	xhci->event_ring = xhci_ring_alloc(xhci, val2, 1, TYPE_EVENT,
 					   0, flags);
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+	xhci->event_ring = xhci_ring_alloc(xhci, ERST_NUM_SEGS, 1, TYPE_EVENT,
+			0, flags);
+#endif
 	if (!xhci->event_ring)
 		goto fail;
 	if (xhci_check_trb_in_td_math(xhci) < 0)
@@ -2529,7 +2536,11 @@ int xhci_mem_init(struct xhci_hcd *xhci, gfp_t flags)
 	/* set ERST count with the number of entries in the segment table */
 	val = readl(&xhci->ir_set->erst_size);
 	val &= ERST_SIZE_MASK;
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	val |= val2;
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+	val |= ERST_NUM_SEGS;
+#endif
 	xhci_dbg_trace(xhci, trace_xhci_dbg_init,
 			"// Write ERST size = %i to ir_set 0 (some bits preserved)",
 			val);

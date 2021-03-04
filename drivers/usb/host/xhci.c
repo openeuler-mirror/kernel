@@ -196,9 +196,14 @@ int xhci_reset(struct xhci_hcd *xhci)
 	if (xhci->quirks & XHCI_INTEL_HOST)
 		udelay(1000);
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	// Hack: reduce handshake timeout from 10s 0.5s due to unprogrammed vl805
 	ret = xhci_handshake(&xhci->op_regs->command,
-			CMD_RESET, 0, 500 * 1000);
+		CMD_RESET, 0, 500 * 1000);
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+	ret = xhci_handshake(&xhci->op_regs->command,
+		CMD_RESET, 0, 10 * 1000 * 1000);
+#endif
 	if (ret)
 		return ret;
 

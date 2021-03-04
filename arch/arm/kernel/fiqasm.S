@@ -48,6 +48,8 @@ ENTRY(__get_fiq_regs)
 	ret	lr
 ENDPROC(__get_fiq_regs)
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 ENTRY(__FIQ_Branch)
 	mov pc, r8
 ENDPROC(__FIQ_Branch)
+#endif

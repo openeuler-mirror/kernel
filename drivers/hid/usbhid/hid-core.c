@@ -45,7 +45,11 @@
  * Module parameters.
  */
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 static unsigned int hid_mousepoll_interval = ~0;
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+static unsigned int hid_mousepoll_interval;
+#endif
 module_param_named(mousepoll, hid_mousepoll_interval, uint, 0644);
 MODULE_PARM_DESC(mousepoll, "Polling interval of mice");
 
@@ -1114,9 +1118,13 @@ static int usbhid_start(struct hid_device *hid)
 		 */
 		switch (hid->collection->usage) {
 		case HID_GD_MOUSE:
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 			if (hid_mousepoll_interval == ~0 && interval < 16)
 				interval = 16;
 			else if (hid_mousepoll_interval != ~0 && hid_mousepoll_interval != 0)
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+			if (hid_mousepoll_interval > 0)
+#endif
 				interval = hid_mousepoll_interval;
 			break;
 		case HID_GD_JOYSTICK:
@@ -1128,7 +1136,9 @@ static int usbhid_start(struct hid_device *hid)
 				interval = hid_kbpoll_interval;
 			break;
 		}
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 		usb_fixup_endpoint(dev, endpoint->bEndpointAddress, interval);
+#endif
 
 		ret = -ENOMEM;
 		if (usb_endpoint_dir_in(endpoint)) {

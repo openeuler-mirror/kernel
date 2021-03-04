@@ -190,7 +190,9 @@ int usb_choose_configuration(struct usb_device *udev)
 		dev_warn(&udev->dev,
 			"no configuration chosen from %d choice%s\n",
 			num_configs, plural(num_configs));
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 		dev_warn(&udev->dev, "No support over %dmA\n", udev->bus_mA);
+#endif
 	}
 	return i;
 }
