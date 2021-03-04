@@ -17,7 +17,9 @@
 #include <linux/elf.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 #include <linux/of_platform.h>
+#endif
 #include <linux/personality.h>
 #include <linux/preempt.h>
 #include <linux/printk.h>
@@ -138,10 +140,12 @@ static int c_show(struct seq_file *m, void *v)
 {
 	int i, j;
 	bool aarch32 = personality(current->personality) == PER_LINUX32;
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	struct device_node *np;
 	const char *model;
 	const char *serial;
 	u32 revision;
+#endif
 
 	for_each_online_cpu(i) {
 		struct cpuinfo_arm64 *cpuinfo = &per_cpu(cpu_data, i);
@@ -202,6 +206,7 @@ static int c_show(struct seq_file *m, void *v)
 		seq_printf(m, "CPU revision\t: %d\n\n", MIDR_REVISION(midr));
 	}
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	seq_printf(m, "Hardware\t: BCM2835\n");
 
 	np = of_find_node_by_path("/system");
@@ -221,6 +226,7 @@ static int c_show(struct seq_file *m, void *v)
 			seq_printf(m, "Model\t\t: %s\n", model);
 		of_node_put(np);
 	}
+#endif
 
 	return 0;
 }
