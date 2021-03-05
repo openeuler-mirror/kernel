@@ -3316,20 +3316,36 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 	 * the shadow page table may be a PAE or a long mode page table.
 	 */
 	pm_mask = PT_PRESENT_MASK;
-	if (mmu->shadow_root_level >= PT64_ROOT_4LEVEL) {
+	if (mmu->shadow_root_level >= PT64_ROOT_4LEVEL)
 		pm_mask |= PT_ACCESSED_MASK | PT_WRITABLE_MASK | PT_USER_MASK;
 
-		/*
-		 * Allocate the page for the PDPTEs when shadowing 32-bit NPT
-		 * with 64-bit only when needed.  Unlike 32-bit NPT, it doesn't
-		 * need to be in low mem.  See also pml4_root below.
-		 */
-		if (!mmu->pae_root) {
-			WARN_ON_ONCE(!tdp_enabled);
+	/*
+	 * When shadowing 32-bit or PAE NPT with 64-bit NPT, the PML4 and PDP
+	 * tables are allocated and initialized at root creation as there is no
+	 * equivalent level in the guest's NPT to shadow.  Allocate the tables
+	 * on demand, as running a 32-bit L1 VMM is very rare.  Unlike 32-bit
+	 * NPT, the PDP table doesn't need to be in low mem.  Preallocate the
+	 * pages so that the PAE roots aren't leaked on failure.
+	 */
+	if (mmu->shadow_root_level >= PT64_ROOT_4LEVEL &&
+	    (!mmu->pae_root)) {
+		u64 *pml4_root, *pae_root;
 
-			mmu->pae_root = (void *)get_zeroed_page(GFP_KERNEL_ACCOUNT);
-			if (!mmu->pae_root)
+		pae_root = (void *)get_zeroed_page(GFP_KERNEL_ACCOUNT);
+		if (!pae_root)
+			return -ENOMEM;
+
+		if (!mmu->pml4_root) {
+			pml4_root = (void *)get_zeroed_page(GFP_KERNEL_ACCOUNT);
+			if (!pml4_root) {
+				free_page((unsigned long)pae_root);
 				return -ENOMEM;
+			}
+
+			mmu->pae_root = pae_root;
+			mmu->pml4_root = pml4_root;
+
+			pml4_root[0] = __pa(mmu->pae_root) | pm_mask;
 		}
 	}
 
@@ -3352,57 +3368,27 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 			return -ENOSPC;
 		mmu->pae_root[i] = root | pm_mask;
 	}
-	mmu->root_hpa = __pa(mmu->pae_root);
 
-	/*
-	 * When shadowing 32-bit or PAE NPT with 64-bit NPT, the PML4 and PDP
-	 * tables are allocated and initialized at MMU creation as there is no
-	 * equivalent level in the guest's NPT to shadow.  Allocate the tables
-	 * on demand, as running a 32-bit L1 VMM is very rare.  The PDP is
-	 * handled above (to share logic with PAE), deal with the PML4 here.
-	 */
-	if (mmu->shadow_root_level == PT64_ROOT_4LEVEL) {
-		if (mmu->pml4_root == NULL) {
-			u64 *pml4_root;
-
-			pml4_root = (void*)get_zeroed_page(GFP_KERNEL_ACCOUNT);
-			if (!pml4_root)
-				return -ENOMEM;
-
-			pml4_root[0] = __pa(mmu->pae_root) | pm_mask;
-
-			mmu->pml4_root = pml4_root;
-		}
-
-		mmu->root_hpa = __pa(mmu->pml4_root);
-	}
 #ifdef CONFIG_X86_64
-	if (mmu->shadow_root_level == PT64_ROOT_5LEVEL) {
-		if (mmu->pml4_root == NULL) {
-			u64 *pml4_root;
+	if (mmu->shadow_root_level == PT64_ROOT_5LEVEL &&
+	    mmu->pml5_root == NULL) {
+		u64 *pml5_root;
 
-			pml4_root = (void*)get_zeroed_page(GFP_KERNEL_ACCOUNT);
-			if (!pml4_root)
-				return -ENOMEM;
+		pml5_root = (void*)get_zeroed_page(GFP_KERNEL_ACCOUNT);
+		if (!pml5_root)
+			return -ENOMEM;
 
-			pml4_root[0] = __pa(mmu->pae_root) | pm_mask;
-
-			mmu->pml4_root = pml4_root;
-		}
-		if (mmu->pml5_root == NULL) {
-			u64 *pml5_root;
-
-			pml5_root = (void*)get_zeroed_page(GFP_KERNEL_ACCOUNT);
-			if (!pml5_root)
-				return -ENOMEM;
-
-			pml5_root[0] = __pa(mmu->pml4_root) | pm_mask;
-
-			mmu->pml5_root = pml5_root;
-		}
-		mmu->root_hpa = __pa(vcpu->arch.mmu->pml5_root);
+		pml5_root[0] = __pa(mmu->pml4_root) | pm_mask;
+		mmu->pml5_root = pml5_root;
 	}
 #endif
+
+	if (mmu->shadow_root_level == PT64_ROOT_5LEVEL)
+		mmu->root_hpa = __pa(mmu->pml5_root);
+	else if (mmu->shadow_root_level == PT64_ROOT_4LEVEL)
+		mmu->root_hpa = __pa(mmu->pml4_root);
+	else
+		mmu->root_hpa = __pa(mmu->pae_root);
 
 set_root_pgd:
 	mmu->root_pgd = root_pgd;
