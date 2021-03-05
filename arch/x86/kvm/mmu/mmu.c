@@ -3316,37 +3316,13 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 	 * the shadow page table may be a PAE or a long mode page table.
 	 */
 	pm_mask = PT_PRESENT_MASK;
-	if (mmu->shadow_root_level >= PT64_ROOT_4LEVEL)
+	if (mmu->shadow_root_level >= PT64_ROOT_4LEVEL) {
 		pm_mask |= PT_ACCESSED_MASK | PT_WRITABLE_MASK | PT_USER_MASK;
 
-	/*
-	 * When shadowing 32-bit or PAE NPT with 64-bit NPT, the PML4 and PDP
-	 * tables are allocated and initialized at root creation as there is no
-	 * equivalent level in the guest's NPT to shadow.  Allocate the tables
-	 * on demand, as running a 32-bit L1 VMM is very rare.  Unlike 32-bit
-	 * NPT, the PDP table doesn't need to be in low mem.  Preallocate the
-	 * pages so that the PAE roots aren't leaked on failure.
-	 */
-	if (mmu->shadow_root_level >= PT64_ROOT_4LEVEL &&
-	    (!mmu->pae_root)) {
-		u64 *pml4_root, *pae_root;
+		mmu->pml4_root[0] = __pa(mmu->pae_root) | pm_mask;
 
-		pae_root = (void *)get_zeroed_page(GFP_KERNEL_ACCOUNT);
-		if (!pae_root)
-			return -ENOMEM;
-
-		if (!mmu->pml4_root) {
-			pml4_root = (void *)get_zeroed_page(GFP_KERNEL_ACCOUNT);
-			if (!pml4_root) {
-				free_page((unsigned long)pae_root);
-				return -ENOMEM;
-			}
-
-			mmu->pae_root = pae_root;
-			mmu->pml4_root = pml4_root;
-
-			pml4_root[0] = __pa(mmu->pae_root) | pm_mask;
-		}
+		if (mmu->shadow_root_level == PT64_ROOT_5LEVEL)
+			mmu->pml5_root[0] = __pa(mmu->pml4_root) | pm_mask;
 	}
 
 	for (i = 0; i < 4; ++i) {
@@ -3369,20 +3345,6 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 		mmu->pae_root[i] = root | pm_mask;
 	}
 
-#ifdef CONFIG_X86_64
-	if (mmu->shadow_root_level == PT64_ROOT_5LEVEL &&
-	    mmu->pml5_root == NULL) {
-		u64 *pml5_root;
-
-		pml5_root = (void*)get_zeroed_page(GFP_KERNEL_ACCOUNT);
-		if (!pml5_root)
-			return -ENOMEM;
-
-		pml5_root[0] = __pa(mmu->pml4_root) | pm_mask;
-		mmu->pml5_root = pml5_root;
-	}
-#endif
-
 	if (mmu->shadow_root_level == PT64_ROOT_5LEVEL)
 		mmu->root_hpa = __pa(mmu->pml5_root);
 	else if (mmu->shadow_root_level == PT64_ROOT_4LEVEL)
@@ -3394,6 +3356,66 @@ set_root_pgd:
 	mmu->root_pgd = root_pgd;
 
 	return 0;
+}
+
+static int mmu_alloc_special_roots(struct kvm_vcpu *vcpu)
+{
+	struct kvm_mmu *mmu = vcpu->arch.mmu;
+	u64 *pml5_root = NULL;
+	u64 *pml4_root = NULL;
+	u64 *pae_root;
+
+
+	/*
+	 * When shadowing 32-bit or PAE NPT with 64-bit NPT, the PML4 and PDP
+	 * tables are allocated and initialized at root creation as there is no
+	 * equivalent level in the guest's NPT to shadow.  Allocate the tables
+	 * on demand, as running a 32-bit L1 VMM on 64-bit KVM is very rare.
+	 */
+	if (mmu->direct_map || mmu->root_level >= PT64_ROOT_4LEVEL ||
+	    mmu->shadow_root_level < PT64_ROOT_4LEVEL)
+		return 0;
+
+	if (mmu->pae_root && mmu->pml4_root && mmu->pml5_root)
+		return 0;
+
+	/*
+	 * The special roots should always be allocated in concert.  Yell and
+	 * bail if KVM ends up in a state where only one of the roots is valid.
+	 */
+	if (WARN_ON_ONCE(!tdp_enabled || mmu->pae_root || mmu->pml4_root ||
+			 mmu->pml5_root))
+		return -EIO;
+
+	/* Unlike 32-bit NPT, the PDP table doesn't need to be in low mem. */
+	pae_root = (void *)get_zeroed_page(GFP_KERNEL_ACCOUNT);
+	if (!pae_root)
+		return -ENOMEM;
+
+#ifdef CONFIG_X86_64
+	if (!pml4_root)
+		goto err_pml4;
+
+	if (mmu->shadow_root_level > PT64_ROOT_4LEVEL) {
+		pml5_root = (void *)get_zeroed_page(GFP_KERNEL_ACCOUNT);
+		if (!pml5_root)
+			goto err_pml5;
+	}
+#endif
+
+	mmu->pae_root = pae_root;
+	mmu->pml4_root = pml4_root;
+	mmu->pml5_root = pml5_root;
+
+	return 0;
+
+#ifdef CONFIG_X86_64
+err_pml5:
+	free_page((unsigned long)pml4_root);
+err_pml4:
+	free_page((unsigned long)pae_root);
+	return -ENOMEM;
+#endif
 }
 
 static int mmu_alloc_roots(struct kvm_vcpu *vcpu)
@@ -4886,6 +4908,9 @@ int kvm_mmu_load(struct kvm_vcpu *vcpu)
 	int r;
 
 	r = mmu_topup_memory_caches(vcpu, !vcpu->arch.mmu->direct_map);
+	if (r)
+		goto out;
+	r = mmu_alloc_special_roots(vcpu);
 	if (r)
 		goto out;
 	r = mmu_alloc_roots(vcpu);
