@@ -4911,10 +4911,11 @@ int kvm_mmu_load(struct kvm_vcpu *vcpu)
 	else
 		r = mmu_alloc_shadow_roots(vcpu);
 	write_unlock(&vcpu->kvm->mmu_lock);
-
-	kvm_mmu_sync_roots(vcpu);
 	if (r)
 		goto out;
+
+	kvm_mmu_sync_roots(vcpu);
+
 	kvm_mmu_load_pgd(vcpu);
 	kvm_x86_ops.tlb_flush_current(vcpu);
 out:
