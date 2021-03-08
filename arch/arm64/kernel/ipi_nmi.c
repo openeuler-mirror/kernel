@@ -46,13 +46,14 @@ bool arch_trigger_cpumask_backtrace(const cpumask_t *mask, bool exclude_self)
 static irqreturn_t ipi_nmi_handler(int irq, void *data)
 {
 	irqreturn_t ret = IRQ_NONE;
-	unsigned int cpu = smp_processor_id();
 
 	if (nmi_cpu_backtrace(get_irq_regs()))
 		ret = IRQ_HANDLED;
 
-	if (!kgdb_nmicallback(cpu, get_irq_regs()))
+#ifdef CONFIG_KGDB
+	if (!kgdb_nmicallback(smp_processor_id(), get_irq_regs()))
 		ret = IRQ_HANDLED;
+#endif
 
 	return ret;
 }
