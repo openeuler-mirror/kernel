@@ -128,4 +128,7 @@ int perf_pmu__caps_parse(struct perf_pmu *pmu);
 
 int perf_pmu__match(char *pattern, char *name, char *tok);
 
+void perf_pmu__warn_invalid_config(struct perf_pmu *pmu, __u64 config,
+				   char *name);
+
 #endif /* __PMU_H */
