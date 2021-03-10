@@ -8496,5 +8496,5 @@ CONFIG_ARCH_HAS_KCOV=y
 # CONFIG_HYPERV_TESTING is not set
 # end of Kernel Testing and Coverage
 # end of Kernel hacking
-CONFIG_MEMIG_SCAN=m
-CONFIG_MEMIG_SWAP=m
+CONFIG_ETMEM_SCAN=m
+CONFIG_ETMEM_SWAP=m
