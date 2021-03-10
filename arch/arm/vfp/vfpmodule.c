@@ -176,11 +176,16 @@ static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 		 * case the thread migrates to a different CPU. The
 		 * restoring is done lazily.
 		 */
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 		if ((fpexc & FPEXC_EN) && vfp_current_hw_state[cpu]) {
 			/* vfp_save_state oopses on VFP11 if EX bit set */
 			fmxr(FPEXC, fpexc & ~FPEXC_EX);
 			vfp_save_state(vfp_current_hw_state[cpu], fpexc);
 		}
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+		if ((fpexc & FPEXC_EN) && vfp_current_hw_state[cpu])
+			vfp_save_state(vfp_current_hw_state[cpu], fpexc);
+#endif
 #endif
 
 		/*
@@ -457,16 +462,22 @@ static int vfp_pm_suspend(void)
 	/* if vfp is on, then save state for resumption */
 	if (fpexc & FPEXC_EN) {
 		pr_debug("%s: saving vfp state\n", __func__);
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 		/* vfp_save_state oopses on VFP11 if EX bit set */
 		fmxr(FPEXC, fpexc & ~FPEXC_EX);
+#endif
 		vfp_save_state(&ti->vfpstate, fpexc);
 
 		/* disable, just in case */
 		fmxr(FPEXC, fmrx(FPEXC) & ~FPEXC_EN);
 	} else if (vfp_current_hw_state[ti->cpu]) {
 #ifndef CONFIG_SMP
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 		/* vfp_save_state oopses on VFP11 if EX bit set */
 		fmxr(FPEXC, (fpexc & ~FPEXC_EX) | FPEXC_EN);
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+		fmxr(FPEXC, fpexc | FPEXC_EN);
+#endif
 		vfp_save_state(vfp_current_hw_state[ti->cpu], fpexc);
 		fmxr(FPEXC, fpexc);
 #endif
@@ -529,8 +540,12 @@ void vfp_sync_hwstate(struct thread_info *thread)
 		/*
 		 * Save the last VFP state on this CPU.
 		 */
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 		/* vfp_save_state oopses on VFP11 if EX bit set */
 		fmxr(FPEXC, (fpexc & ~FPEXC_EX) | FPEXC_EN);
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+		fmxr(FPEXC, fpexc | FPEXC_EN);
+#endif
 		vfp_save_state(&thread->vfpstate, fpexc | FPEXC_EN);
 		fmxr(FPEXC, fpexc);
 	}
@@ -596,7 +611,9 @@ int vfp_restore_user_hwstate(struct user_vfp *ufp, struct user_vfp_exc *ufp_exc)
 	struct thread_info *thread = current_thread_info();
 	struct vfp_hard_struct *hwstate = &thread->vfpstate.hard;
 	unsigned long fpexc;
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	u32 fpsid = fmrx(FPSID);
+#endif
 
 	/* Disable VFP to avoid corrupting the new thread state. */
 	vfp_flush_hwstate(thread);
@@ -619,11 +636,16 @@ int vfp_restore_user_hwstate(struct user_vfp *ufp, struct user_vfp_exc *ufp_exc)
 	/* Ensure the VFP is enabled. */
 	fpexc |= FPEXC_EN;
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	/* Mask FPXEC_EX and FPEXC_FP2V if not required by VFP arch */
 	if ((fpsid & FPSID_ARCH_MASK) != (1 << FPSID_ARCH_BIT)) {
 		/* Ensure FPINST2 is invalid and the exception flag is cleared. */
 		fpexc &= ~(FPEXC_EX | FPEXC_FP2V);
 	}
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+	/* Ensure FPINST2 is invalid and the exception flag is cleared. */
+	fpexc &= ~(FPEXC_EX | FPEXC_FP2V);
+#endif
 
 	hwstate->fpexc = fpexc;
 
@@ -738,8 +760,12 @@ void kernel_neon_begin(void)
 	cpu = get_cpu();
 
 	fpexc = fmrx(FPEXC) | FPEXC_EN;
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	/* vfp_save_state oopses on VFP11 if EX bit set */
 	fmxr(FPEXC, fpexc & ~FPEXC_EX);
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+	fmxr(FPEXC, fpexc);
+#endif
 
 	/*
 	 * Save the userland NEON/VFP state. Under UP,

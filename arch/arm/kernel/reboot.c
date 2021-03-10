@@ -102,7 +102,13 @@ void machine_shutdown(void)
  */
 void machine_halt(void)
 {
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	machine_power_off();
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+	local_irq_disable();
+	smp_send_stop();
+	while (1);
+#endif
 }
 
 /*

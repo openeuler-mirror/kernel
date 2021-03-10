@@ -287,8 +287,10 @@ __v7_ca17mp_setup:
 	mov	r10, #0
 1:	adr	r0, __v7_setup_stack_ptr
 	ldr	r12, [r0]
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	tst	r12, #0x1f
 	addeq	r12, r12, #4
+#endif
 	add	r12, r12, r0			@ the local stack
 	stmia	r12, {r1-r6, lr}		@ v7_invalidate_l1 touches r0-r6
 	bl      v7_invalidate_l1
@@ -476,8 +478,10 @@ __v7_setup:
 	adr	r0, __v7_setup_stack_ptr
 	ldr	r12, [r0]
 	add	r12, r12, r0			@ the local stack
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	tst	r12, #0x1f
 	addeq	r12, r12, #4
+#endif
 	stmia	r12, {r1-r6, lr}		@ v7_invalidate_l1 touches r0-r6
 	bl      v7_invalidate_l1
 	ldmia	r12, {r1-r6, lr}
@@ -561,7 +565,11 @@ ENDPROC(__v7_setup)
 	.bss
 	.align	2
 __v7_setup_stack:
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	.space	4 * 8				@ 7 registers + 1 spare
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+	.space	4 * 7				@ 7 registers
+#endif
 
 	__INITDATA
 

@@ -71,6 +71,7 @@ ENDPROC(cpu_v6_reset)
  *	IRQs are already disabled.
  */
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 /* See jira SW-5991 for details of this workaround */
 ENTRY(cpu_v6_do_idle)
 	.align 5
@@ -84,6 +85,13 @@ ENTRY(cpu_v6_do_idle)
 	nop
 	bne 1b
 	ret	lr
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+ENTRY(cpu_v6_do_idle)
+	mov     r1, #0
+	mcr     p15, 0, r1, c7, c10, 4          @ DWB - WFI may enter a low-power mode
+	mcr     p15, 0, r1, c7, c0, 4           @ wait for interrupt
+	ret     lr
+#endif
 
 ENTRY(cpu_v6_dcache_clean_area)
 1:	mcr	p15, 0, r0, c7, c10, 1		@ clean D entry

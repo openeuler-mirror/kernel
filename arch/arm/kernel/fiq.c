@@ -56,7 +56,9 @@
 static unsigned long dfl_fiq_insn;
 static struct pt_regs dfl_fiq_regs;
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 extern int irq_activate(struct irq_desc *desc);
+#endif
 
 /* Default reacquire function
  * - we always relinquish FIQ control
@@ -142,8 +144,10 @@ static int fiq_start;
 
 void enable_fiq(int fiq)
 {
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	struct irq_desc *desc = irq_to_desc(fiq + fiq_start);
 	irq_activate(desc);
+#endif
 	enable_irq(fiq + fiq_start);
 }
 

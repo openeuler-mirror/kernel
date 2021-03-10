@@ -198,7 +198,11 @@ ENTRY(v6_flush_kern_dcache_area)
  *	- start   - virtual start address of region
  *	- end     - virtual end address of region
  */
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 ENTRY(v6_dma_inv_range)
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+v6_dma_inv_range:
+#endif
 #ifdef CONFIG_DMA_CACHE_RWFO
 	ldrb	r2, [r0]			@ read for ownership
 	strb	r2, [r0]			@ write for ownership
@@ -243,7 +247,11 @@ ENTRY(v6_dma_inv_range)
  *	- start   - virtual start address of region
  *	- end     - virtual end address of region
  */
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 ENTRY(v6_dma_clean_range)
+#else /* !CONFIG_OPENEULER_RASPBERRYPI */
+v6_dma_clean_range:
+#endif
 	bic	r0, r0, #D_CACHE_LINE_SIZE - 1
 1:
 #ifdef CONFIG_DMA_CACHE_RWFO

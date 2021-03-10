@@ -107,8 +107,12 @@
 
 	.text
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 ENTRY(__copy_from_user_std)
 WEAK(arm_copy_from_user)
+#else
+ENTRY(arm_copy_from_user)
+#endif
 #ifdef CONFIG_CPU_SPECTRE
 	get_thread_info r3
 	ldr	r3, [r3, #TI_ADDR_LIMIT]
@@ -118,7 +122,9 @@ WEAK(arm_copy_from_user)
 #include "copy_template.S"
 
 ENDPROC(arm_copy_from_user)
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 ENDPROC(__copy_from_user_std)
+#endif
 
 	.pushsection .text.fixup,"ax"
 	.align 0

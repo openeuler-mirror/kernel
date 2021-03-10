@@ -516,8 +516,10 @@ do {									\
 extern unsigned long __must_check
 arm_copy_from_user(void *to, const void __user *from, unsigned long n);
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 extern unsigned long __must_check
 __copy_from_user_std(void *to, const void __user *from, unsigned long n);
+#endif
 
 static inline unsigned long __must_check
 raw_copy_from_user(void *to, const void __user *from, unsigned long n)

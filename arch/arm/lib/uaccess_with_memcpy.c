@@ -19,12 +19,14 @@
 #include <asm/current.h>
 #include <asm/page.h>
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 #ifndef COPY_FROM_USER_THRESHOLD
 #define COPY_FROM_USER_THRESHOLD 64
 #endif
 
 #ifndef COPY_TO_USER_THRESHOLD
 #define COPY_TO_USER_THRESHOLD 64
+#endif
 #endif
 
 static int
@@ -51,7 +53,11 @@ pin_page_for_write(const void __user *_addr, pte_t **ptep, spinlock_t **ptlp)
 		return 0;
 
 	pmd = pmd_offset(pud, addr);
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	if (unlikely(pmd_none(*pmd) || pmd_bad(*pmd)))
+#else
+	if (unlikely(pmd_none(*pmd)))
+#endif
 		return 0;
 
 	/*
@@ -94,6 +100,7 @@ pin_page_for_write(const void __user *_addr, pte_t **ptep, spinlock_t **ptlp)
 	return 1;
 }
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 static int
 pin_page_for_read(const void __user *_addr, pte_t **ptep, spinlock_t **ptlp)
 {
@@ -132,8 +139,13 @@ pin_page_for_read(const void __user *_addr, pte_t **ptep, spinlock_t **ptlp)
 
 	return 1;
 }
+#endif
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 unsigned long noinline
+#else
+static unsigned long noinline
+#endif
 __copy_to_user_memcpy(void __user *to, const void *from, unsigned long n)
 {
 	unsigned long ua_flags;
@@ -186,6 +198,7 @@ out:
 	return n;
 }
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 unsigned long noinline
 __copy_from_user_memcpy(void *to, const void __user *from, unsigned long n)
 {
@@ -236,6 +249,7 @@ __copy_from_user_memcpy(void *to, const void __user *from, unsigned long n)
 out:
 	return n;
 }
+#endif
 
 unsigned long
 arm_copy_to_user(void __user *to, const void *from, unsigned long n)
@@ -247,7 +261,11 @@ arm_copy_to_user(void __user *to, const void *from, unsigned long n)
 	 * With frame pointer disabled, tail call optimization kicks in
 	 * as well making this test almost invisible.
 	 */
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 	if (n < COPY_TO_USER_THRESHOLD) {
+#else
+	if (n < 64) {
+#endif
 		unsigned long ua_flags = uaccess_save_and_enable();
 		n = __copy_to_user_std(to, from, n);
 		uaccess_restore(ua_flags);
@@ -258,6 +276,7 @@ arm_copy_to_user(void __user *to, const void *from, unsigned long n)
 	return n;
 }
 
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 unsigned long __must_check
 arm_copy_from_user(void *to, const void __user *from, unsigned long n)
 {
@@ -283,7 +302,8 @@ arm_copy_from_user(void *to, const void __user *from, unsigned long n)
 #endif
 	return n;
 }
-	
+#endif
+
 static unsigned long noinline
 __clear_user_memset(void __user *addr, unsigned long n)
 {

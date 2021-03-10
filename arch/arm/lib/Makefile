@@ -5,6 +5,7 @@
 # Copyright (C) 1995-2000 Russell King
 #
 
+ifeq ($(CONFIG_OPENEULER_RASPBERRYPI),y)
 lib-y		:= changebit.o csumipv6.o csumpartial.o               \
 		   csumpartialcopy.o csumpartialcopyuser.o clearbit.o \
 		   delay.o delay-loop.o findbit.o memchr.o            \
@@ -15,6 +16,18 @@ lib-y		:= changebit.o csumipv6.o csumpartial.o               \
 		   ucmpdi2.o lib1funcs.o div64.o                      \
 		   io-readsb.o io-writesb.o io-readsl.o io-writesl.o  \
 		   call_with_stack.o bswapsdi2.o
+else
+lib-y		:= changebit.o csumipv6.o csumpartial.o               \
+		   csumpartialcopy.o csumpartialcopyuser.o clearbit.o \
+		   delay.o delay-loop.o findbit.o memchr.o memcpy.o   \
+		   memmove.o memset.o setbit.o                        \
+		   strchr.o strrchr.o                                 \
+		   testchangebit.o testclearbit.o testsetbit.o        \
+		   ashldi3.o ashrdi3.o lshrdi3.o muldi3.o             \
+		   ucmpdi2.o lib1funcs.o div64.o                      \
+		   io-readsb.o io-writesb.o io-readsl.o io-writesl.o  \
+		   call_with_stack.o bswapsdi2.o
+endif
 
 mmu-y		:= clear_user.o copy_page.o getuser.o putuser.o       \
 		   copy_from_user.o copy_to_user.o
@@ -25,6 +38,7 @@ else
   lib-y	+= backtrace.o
 endif
 
+ifeq ($(CONFIG_OPENEULER_RASPBERRYPI),y)
 # Choose optimised implementations for Raspberry Pi
 ifeq ($(CONFIG_BCM2835_FAST_MEMCPY),y)
   CFLAGS_uaccess_with_memcpy.o += -DCOPY_FROM_USER_THRESHOLD=1600
@@ -33,6 +47,7 @@ ifeq ($(CONFIG_BCM2835_FAST_MEMCPY),y)
   lib-y        += memcpy_rpi.o memmove_rpi.o memset_rpi.o memcmp_rpi.o
 else
   lib-y        += memcpy.o memmove.o memset.o
+endif
 endif
 
 # using lib_ here won't override already available weak symbols
