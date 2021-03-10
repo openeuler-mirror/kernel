@@ -27,7 +27,7 @@
 #include <asm/kvm_arm.h>
 #include <asm/stage2_pgtable.h>
 #endif
-#include "memig_scan.h"
+#include "etmem_scan.h"
 
 #ifdef CONFIG_X86_64
 /*
