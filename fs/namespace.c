@@ -653,14 +653,14 @@ struct vfsmount *lookup_mnt(const struct path *path)
 	return m;
 }
 
-static inline void lock_ns_list(struct mnt_namespace *ns)
+static inline void lock_ns_list(struct mnt_namespace_wrapper *nsw)
 {
-	spin_lock(&ns->ns_lock);
+	spin_lock(&nsw->ns_lock);
 }
 
-static inline void unlock_ns_list(struct mnt_namespace *ns)
+static inline void unlock_ns_list(struct mnt_namespace_wrapper *nsw)
 {
-	spin_unlock(&ns->ns_lock);
+	spin_unlock(&nsw->ns_lock);
 }
 
 static inline bool mnt_is_cursor(struct mount *mnt)
@@ -686,14 +686,16 @@ static inline bool mnt_is_cursor(struct mount *mnt)
 bool __is_local_mountpoint(struct dentry *dentry)
 {
 	struct mnt_namespace *ns = current->nsproxy->mnt_ns;
+	struct mnt_namespace_wrapper *nsw;
 	struct mount *mnt;
 	bool is_covered = false;
 
 	if (!d_mountpoint(dentry))
 		goto out;
 
+	nsw = container_of(ns, struct mnt_namespace_wrapper, ns);
 	down_read(&namespace_sem);
-	lock_ns_list(ns);
+	lock_ns_list(nsw);
 	list_for_each_entry(mnt, &ns->list, mnt_list) {
 		if (mnt_is_cursor(mnt))
 			continue;
@@ -701,7 +703,7 @@ bool __is_local_mountpoint(struct dentry *dentry)
 		if (is_covered)
 			break;
 	}
-	unlock_ns_list(ns);
+	unlock_ns_list(nsw);
 	up_read(&namespace_sem);
 out:
 	return is_covered;
@@ -1260,8 +1262,11 @@ static struct mount *mnt_list_next(struct mnt_namespace *ns,
 				   struct list_head *p)
 {
 	struct mount *mnt, *ret = NULL;
+	struct mnt_namespace_wrapper *nsw;
 
-	lock_ns_list(ns);
+	nsw = container_of(ns, struct mnt_namespace_wrapper, ns);
+
+	lock_ns_list(nsw);
 	list_for_each_continue(p, &ns->list) {
 		mnt = list_entry(p, typeof(*mnt), mnt_list);
 		if (!mnt_is_cursor(mnt)) {
@@ -1269,7 +1274,7 @@ static struct mount *mnt_list_next(struct mnt_namespace *ns,
 			break;
 		}
 	}
-	unlock_ns_list(ns);
+	unlock_ns_list(nsw);
 
 	return ret;
 }
@@ -1307,13 +1312,16 @@ static void m_stop(struct seq_file *m, void *v)
 {
 	struct proc_mounts *p = m->private;
 	struct mount *mnt = v;
+	struct mnt_namespace_wrapper *nsw;
 
-	lock_ns_list(p->ns);
+	nsw = container_of(p->ns, struct mnt_namespace_wrapper, ns);
+
+	lock_ns_list(nsw);
 	if (mnt)
 		list_move_tail(&p->cursor.mnt_list, &mnt->mnt_list);
 	else
 		list_del_init(&p->cursor.mnt_list);
-	unlock_ns_list(p->ns);
+	unlock_ns_list(nsw);
 	up_read(&namespace_sem);
 }
 
@@ -1333,10 +1341,14 @@ const struct seq_operations mounts_op = {
 
 void mnt_cursor_del(struct mnt_namespace *ns, struct mount *cursor)
 {
+	struct mnt_namespace_wrapper *nsw;
+
+	nsw = container_of(ns, struct mnt_namespace_wrapper, ns);
+
 	down_read(&namespace_sem);
-	lock_ns_list(ns);
+	lock_ns_list(nsw);
 	list_del(&cursor->mnt_list);
-	unlock_ns_list(ns);
+	unlock_ns_list(nsw);
 	up_read(&namespace_sem);
 }
 #endif  /* CONFIG_PROC_FS */
@@ -2868,10 +2880,13 @@ static void dec_mnt_namespaces(struct ucounts *ucounts)
 
 static void free_mnt_ns(struct mnt_namespace *ns)
 {
+	struct mnt_namespace_wrapper *nsw;
+
+	nsw = container_of(ns, struct mnt_namespace_wrapper, ns);
 	ns_free_inum(&ns->ns);
 	dec_mnt_namespaces(ns->ucounts);
 	put_user_ns(ns->user_ns);
-	kfree(ns);
+	kfree(nsw);
 }
 
 /*
@@ -2886,6 +2901,7 @@ static atomic64_t mnt_ns_seq = ATOMIC64_INIT(1);
 static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns)
 {
 	struct mnt_namespace *new_ns;
+	struct mnt_namespace_wrapper *new_nsw;
 	struct ucounts *ucounts;
 	int ret;
 
@@ -2893,14 +2909,15 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns)
 	if (!ucounts)
 		return ERR_PTR(-ENOSPC);
 
-	new_ns = kmalloc(sizeof(struct mnt_namespace), GFP_KERNEL);
-	if (!new_ns) {
+	new_nsw = kmalloc(sizeof(struct mnt_namespace_wrapper), GFP_KERNEL);
+	if (!new_nsw) {
 		dec_mnt_namespaces(ucounts);
 		return ERR_PTR(-ENOMEM);
 	}
+	new_ns = &new_nsw->ns;
 	ret = ns_alloc_inum(&new_ns->ns);
 	if (ret) {
-		kfree(new_ns);
+		kfree(new_nsw);
 		dec_mnt_namespaces(ucounts);
 		return ERR_PTR(ret);
 	}
@@ -2911,7 +2928,7 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns)
 	INIT_LIST_HEAD(&new_ns->list);
 	init_waitqueue_head(&new_ns->poll);
 	new_ns->event = 0;
-	spin_lock_init(&new_ns->ns_lock);
+	spin_lock_init(&new_nsw->ns_lock);
 	new_ns->user_ns = get_user_ns(user_ns);
 	new_ns->ucounts = ucounts;
 	new_ns->mounts = 0;
@@ -3364,9 +3381,12 @@ static bool mnt_already_visible(struct mnt_namespace *ns, struct vfsmount *new,
 	int new_flags = *new_mnt_flags;
 	struct mount *mnt;
 	bool visible = false;
+	struct mnt_namespace_wrapper *nsw;
+
+	nsw = container_of(ns, struct mnt_namespace_wrapper, ns);
 
 	down_read(&namespace_sem);
-	lock_ns_list(ns);
+	lock_ns_list(nsw);
 	list_for_each_entry(mnt, &ns->list, mnt_list) {
 		struct mount *child;
 		int mnt_flags;
@@ -3421,7 +3441,7 @@ static bool mnt_already_visible(struct mnt_namespace *ns, struct vfsmount *new,
 	next:	;
 	}
 found:
-	unlock_ns_list(ns);
+	unlock_ns_list(nsw);
 	up_read(&namespace_sem);
 	return visible;
 }

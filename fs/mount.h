@@ -12,10 +12,10 @@ struct mnt_namespace {
 	/*
 	 * Traversal and modification of .list is protected by either
 	 * - taking namespace_sem for write, OR
-	 * - taking namespace_sem for read AND taking .ns_lock.
+	 * - taking namespace_sem for read AND taking .ns_lock
+	 *   in mnt_namespace_wrapper
 	 */
 	struct list_head	list;
-	spinlock_t		ns_lock;
 	struct user_namespace	*user_ns;
 	struct ucounts		*ucounts;
 	u64			seq;	/* Sequence number to prevent loops */
@@ -24,6 +24,11 @@ struct mnt_namespace {
 	unsigned int		mounts; /* # of mounts in the namespace */
 	unsigned int		pending_mounts;
 } __randomize_layout;
+
+struct mnt_namespace_wrapper {
+	struct mnt_namespace	ns;
+	spinlock_t		ns_lock;
+};
 
 struct mnt_pcp {
 	int mnt_count;
