@@ -293,12 +293,17 @@ static int shmem_reserve_inode(struct super_block *sb, ino_t *inop)
 			ino = sbinfo->next_ino++;
 			if (unlikely(is_zero_ino(ino)))
 				ino = sbinfo->next_ino++;
-			if (unlikely(ino > UINT_MAX)) {
+			if (unlikely(!sbinfo->full_inums &&
+				     ino > UINT_MAX)) {
 				/*
 				 * Emulate get_next_ino uint wraparound for
 				 * compatibility
 				 */
-				ino = 1;
+				if (IS_ENABLED(CONFIG_64BIT))
+					pr_warn("%s: inode number overflow on device %d, consider using inode64 mount option\n",
+						__func__, MINOR(sb->s_dev));
+				sbinfo->next_ino = 1;
+				ino = sbinfo->next_ino++;
 			}
 			*inop = ino;
 		}
@@ -311,6 +316,10 @@ static int shmem_reserve_inode(struct super_block *sb, ino_t *inop)
 		 * unknown contexts. As such, use a per-cpu batched allocator
 		 * which doesn't require the per-sb stat_lock unless we are at
 		 * the batch boundary.
+		 *
+		 * We don't need to worry about inode{32,64} since SB_KERNMOUNT
+		 * shmem mounts are not exposed to userspace, so we don't need
+		 * to worry about things like glibc compatibility.
 		 */
 		ino_t *next_ino;
 		next_ino = per_cpu_ptr(sbinfo->ino_batch, get_cpu());
@@ -3427,9 +3436,12 @@ static int shmem_parse_options(char *options, struct shmem_sb_info *sbinfo,
 		if ((value = strchr(this_char,'=')) != NULL) {
 			*value++ = 0;
 		} else {
-			pr_err("tmpfs: No value for mount option '%s'\n",
-			       this_char);
-			goto error;
+			if (strcmp(this_char,"inode32") &&
+			    strcmp(this_char,"inode64")) {
+				pr_err("tmpfs: No value for mount option '%s'\n",
+				       this_char);
+				goto error;
+			}
 		}
 
 		if (!strcmp(this_char,"size")) {
@@ -3495,6 +3507,14 @@ static int shmem_parse_options(char *options, struct shmem_sb_info *sbinfo,
 			if (mpol_parse_str(value, &mpol))
 				goto bad_val;
 #endif
+		} else if (!strcmp(this_char,"inode32")) {
+			sbinfo->full_inums = false;
+		} else if (!strcmp(this_char,"inode64")) {
+			if (sizeof(ino_t) < 8) {
+				pr_err("tmpfs: Cannot use inode64 with <64bit inums in kernel\n");
+				goto error;
+			}
+			sbinfo->full_inums = true;
 		} else {
 			pr_err("tmpfs: Bad mount option %s\n", this_char);
 			goto error;
@@ -3539,8 +3559,15 @@ static int shmem_remount_fs(struct super_block *sb, int *flags, char *data)
 	if (config.max_inodes && !sbinfo->max_inodes)
 		goto out;
 
+	if (sbinfo->full_inums && !config.full_inums &&
+	    sbinfo->next_ino > UINT_MAX) {
+		pr_err("tmpfs: Current inum too high to switch to 32-bit inums\n");
+		goto out;
+	}
+
 	error = 0;
 	sbinfo->huge = config.huge;
+	sbinfo->full_inums = config.full_inums;
 	sbinfo->max_blocks  = config.max_blocks;
 	sbinfo->max_inodes  = config.max_inodes;
 	sbinfo->free_inodes = config.max_inodes - inodes;
@@ -3574,6 +3601,29 @@ static int shmem_show_options(struct seq_file *seq, struct dentry *root)
 	if (!gid_eq(sbinfo->gid, GLOBAL_ROOT_GID))
 		seq_printf(seq, ",gid=%u",
 				from_kgid_munged(&init_user_ns, sbinfo->gid));
+
+	/*
+	 * Showing inode{64,32} might be useful even if it's the system default,
+	 * since then people don't have to resort to checking both here and
+	 * /proc/config.gz to confirm 64-bit inums were successfully applied
+	 * (which may not even exist if IKCONFIG_PROC isn't enabled).
+	 *
+	 * We hide it when inode64 isn't the default and we are using 32-bit
+	 * inodes, since that probably just means the feature isn't even under
+	 * consideration.
+	 *
+	 * As such:
+	 *
+	 *                     +-----------------+-----------------+
+	 *                     | TMPFS_INODE64=y | TMPFS_INODE64=n |
+	 *  +------------------+-----------------+-----------------+
+	 *  | full_inums=true  | show            | show            |
+	 *  | full_inums=false | show            | hide            |
+	 *  +------------------+-----------------+-----------------+
+	 *
+	 */
+	if (IS_ENABLED(CONFIG_TMPFS_INODE64) || sbinfo->full_inums)
+		seq_printf(seq, ",inode%d", (sbinfo->full_inums ? 64 : 32));
 #ifdef CONFIG_TRANSPARENT_HUGE_PAGECACHE
 	/* Rightly or wrongly, show huge mount option unmasked by shmem_huge */
 	if (sbinfo->huge)
@@ -3622,6 +3672,7 @@ int shmem_fill_super(struct super_block *sb, void *data, int silent)
 	if (!(sb->s_flags & SB_KERNMOUNT)) {
 		sbinfo->max_blocks = shmem_default_max_blocks();
 		sbinfo->max_inodes = shmem_default_max_inodes();
+		sbinfo->full_inums = IS_ENABLED(CONFIG_TMPFS_INODE64);
 		if (shmem_parse_options(data, sbinfo, false)) {
 			err = -EINVAL;
 			goto failed;
