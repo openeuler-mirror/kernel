@@ -695,7 +695,23 @@ static void scsi_run_queue_async(struct scsi_device *sdev)
 		if (!kblockd_schedule_work(&sdev->requeue_work))
 			percpu_ref_put(&q->q_usage_counter);
 	} else {
-		blk_mq_run_hw_queues(q, true);
+		/*
+		 * smp_mb() present in sbitmap_queue_clear() or implied in
+		 * .end_io is for ordering writing .device_busy in
+		 * scsi_device_unbusy() and reading sdev->restarts.
+		 */
+		int old = atomic_read(&sdev->restarts);
+
+		/*
+		 * ->restarts has to be kept as non-zero if new budget
+		 *  contention occurs.
+		 *
+		 *  No need to run queue when either another re-run
+		 *  queue wins in updating ->restarts or a new budget
+		 *  contention occurs.
+		 */
+		if (old && atomic_cmpxchg(&sdev->restarts, old, 0) == old)
+			blk_mq_run_hw_queues(sdev->request_queue, true);
 		percpu_ref_put(&q->q_usage_counter);
 	}
 }
@@ -2136,7 +2152,23 @@ static bool scsi_mq_get_budget(struct blk_mq_hw_ctx *hctx)
 
 out_put_device:
 	put_device(&sdev->sdev_gendev);
+	atomic_inc(&sdev->restarts);
+
+	/*
+	 * Orders atomic_inc(&sdev->restarts) and atomic_read(&sdev->device_busy).
+	 * .restarts must be incremented before .device_busy is read because the
+	 * code in scsi_run_queue_async() depends on the order of these operations.
+	 */
+	smp_mb__after_atomic();
 out:
+	/*
+	 * If all in-flight requests originated from this LUN are completed
+	 * before reading .device_busy, sdev->device_busy will be observed as
+	 * zero, then blk_mq_delay_run_hw_queues() will dispatch this request
+	 * soon. Otherwise, completion of one of these requests will observe
+	 * the .restarts flag, and the request queue will be run for handling
+	 * this request, see scsi_end_request().
+	 */
 	if (atomic_read(&sdev->device_busy) == 0 && !scsi_device_blocked(sdev))
 		blk_mq_delay_run_hw_queue(hctx, SCSI_QUEUE_DELAY);
 	return false;
