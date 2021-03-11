@@ -374,6 +374,11 @@ extern int vm_swappiness;
 extern int remove_mapping(struct address_space *mapping, struct page *page);
 extern unsigned long vm_total_pages;
 
+extern unsigned long reclaim_pages(struct list_head *page_list);
+extern int add_page_for_swap(struct page *page, struct list_head *pagelist);
+extern struct page *get_page_from_vaddr(struct mm_struct *mm,
+					unsigned long vaddr);
+
 #ifdef CONFIG_SHRINK_PAGECACHE
 extern unsigned long vm_cache_limit_ratio;
 extern unsigned long vm_cache_limit_ratio_min;

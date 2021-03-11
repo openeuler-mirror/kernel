@@ -605,6 +605,11 @@ config ETMEM_SCAN
 	 etmem page scan feature
 	 used to scan the virtual address of the target process
 
+config ETMEM_SWAP
+       tristate "module: etmem page swap for etmem support"
+       help
+         etmem page swap feature
+
 config STRING_SELFTEST
 	tristate "Test string functions"
 
