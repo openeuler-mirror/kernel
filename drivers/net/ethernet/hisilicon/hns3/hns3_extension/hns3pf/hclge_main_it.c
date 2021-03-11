@@ -18,6 +18,9 @@
 #include "hclge_main.h"
 #include "hnae3.h"
 #include "hclge_main_it.h"
+#ifdef CONFIG_HNS3_TEST
+#include "hclge_sysfs.h"
+#endif
 
 #ifdef CONFIG_IT_VALIDATION
 #define HCLGE_RESET_MAX_FAIL_CNT	1
@@ -174,8 +177,38 @@ bool hclge_reset_done_it(struct hnae3_handle *handle, bool done)
 	return done;
 }
 
+#ifdef CONFIG_HNS3_TEST
+void hclge_ext_init(struct hnae3_handle *handle)
+{
+	hclge_sysfs_init(handle);
+}
+
+void hclge_ext_uninit(struct hnae3_handle *handle)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+
+	hclge_reset_pf_rate(hdev);
+	hclge_sysfs_uninit(handle);
+}
+
+void hclge_ext_reset_done(struct hnae3_handle *handle)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+
+	hclge_resume_pf_rate(hdev);
+}
+#endif
+
 int hclge_init_it(void)
 {
+#ifdef CONFIG_HNS3_TEST
+	hclge_ops.ext_init = hclge_ext_init;
+	hclge_ops.ext_uninit = hclge_ext_uninit;
+	hclge_ops.ext_reset_done = hclge_ext_reset_done;
+#endif
+
 	hclge_ops.reset_event = hclge_reset_event_it;
 	hclge_ops.reset_done = hclge_reset_done_it;
 	hclge_ops.handle_imp_error = hclge_handle_imp_error_it;

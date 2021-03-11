@@ -9946,6 +9946,11 @@ static int hclge_init_nic_client_instance(struct hnae3_ae_dev *ae_dev,
 	if (ret)
 		return ret;
 
+#ifdef CONFIG_HNS3_TEST
+	if (ae_dev->ops->ext_init)
+		ae_dev->ops->ext_init(&vport->nic);
+#endif
+
 	set_bit(HCLGE_STATE_NIC_REGISTERED, &hdev->state);
 	if (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state) ||
 	    rst_cnt != hdev->rst_stats.reset_cnt) {
@@ -10086,6 +10091,13 @@ static void hclge_uninit_client_instance(struct hnae3_client *client,
 	struct hclge_dev *hdev = ae_dev->priv;
 	struct hclge_vport *vport;
 	int i;
+
+#ifdef CONFIG_HNS3_TEST
+	if (ae_dev->ops->ext_uninit) {
+		vport = &hdev->vport[0];
+		ae_dev->ops->ext_uninit(&vport->nic);
+	}
+#endif
 
 	for (i = 0; i < hdev->num_vmdq_vport + 1; i++) {
 		vport = &hdev->vport[i];
@@ -10816,6 +10828,11 @@ static int hclge_reset_ae_dev(struct hnae3_ae_dev *ae_dev)
 	ret = hclge_resume_vf_rate(hdev);
 	if (ret)
 		return ret;
+
+#ifdef CONFIG_HNS3_TEST
+	if (ae_dev->ops->ext_reset_done)
+		ae_dev->ops->ext_reset_done(&hdev->vport->nic);
+#endif
 
 	dev_info(&pdev->dev, "Reset done, %s driver initialization finished.\n",
 		 HCLGE_DRIVER_NAME);

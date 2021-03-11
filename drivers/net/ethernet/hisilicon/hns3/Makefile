@@ -38,7 +38,8 @@ HCLGE_OBJ = 	hns3pf/hclge_main.o \
 			hns3pf/hclge_err.o
 
 
-HCLGE_OBJ_IT_MAIN	=	hns3_extension/hns3pf/hclge_main_it.o
+HCLGE_OBJ_IT_MAIN	=	hns3_extension/hns3pf/hclge_main_it.o \
+				hns3_extension/hns3pf/hclge_sysfs.o
 obj-$(CONFIG_HNS3_HCLGE) += hclge.o
 hclge-objs := $(HCLGE_OBJ) $(HCLGE_OBJ_IT_MAIN)
 hclge-$(CONFIG_HNS3_DCB) += hns3pf/hclge_dcb.o

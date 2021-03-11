@@ -578,6 +578,9 @@ struct hnae3_ae_ops {
 	int (*ecc_handle)(struct hnae3_ae_dev *ae_dev);
 	int (*priv_ops)(struct hnae3_handle *handle, int opcode,
 			void *data, int length);
+	void (*ext_init)(struct hnae3_handle *handle);
+	void (*ext_uninit)(struct hnae3_handle *handle);
+	void (*ext_reset_done)(struct hnae3_handle *handle);
 #endif
 };
 
@@ -713,6 +716,11 @@ struct hnae3_handle {
 
 	/* Network interface message level enabled bits */
 	u32 msg_enable;
+
+#ifdef CONFIG_HNS3_TEST
+	/* for sysfs */
+	struct kobject *kobj;
+#endif
 };
 
 #define hnae3_set_field(origin, mask, shift, val) \
