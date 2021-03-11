@@ -1942,12 +1942,8 @@ retry:
 			 k, rem_sz));
 
 	schp->bufflen = blk_size;
-	if (rem_sz > 0)	{ /* must have failed */
-		for (i = 0; i < k; i++)
-			__free_pages(schp->pages[i], order);
-
+	if (rem_sz > 0)	/* must have failed */
 		return -ENOMEM;
-	}
 	return 0;
 out:
 	for (i = 0; i < k; i++)
