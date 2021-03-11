@@ -114,7 +114,7 @@ void hclge_sysfs_init(struct hnae3_handle *handle)
 
 	handle->kobj = kobject_create_and_add("kunpeng", &netdev->dev.kobj);
 	if (!handle->kobj) {
-		netdev_err(netdev, "failed to create kobj, ret = %d\n", ret);
+		netdev_err(netdev, "failed to create kobj!\n");
 		return;
 	}
 
