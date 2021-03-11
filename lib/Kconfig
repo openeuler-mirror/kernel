@@ -599,6 +599,12 @@ config PARMAN
 config PRIME_NUMBERS
 	tristate
 
+config ETMEM_SCAN
+	tristate "module: etmem page scan for etmem support"
+	help
+	 etmem page scan feature
+	 used to scan the virtual address of the target process
+
 config STRING_SELFTEST
 	tristate "Test string functions"
 

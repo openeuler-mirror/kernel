@@ -28,6 +28,7 @@ typedef int vm_fault_t;
 struct address_space;
 struct mem_cgroup;
 struct hmm;
+struct kvm;
 
 /*
  * Each physical page in the system has a struct page associated with
@@ -513,7 +514,12 @@ struct mm_struct {
 #endif
 	} __randomize_layout;
 
+#if IS_ENABLED(CONFIG_KVM) && !defined(__GENKSYMS__)
+	struct kvm *kvm;
+#else
 	KABI_RESERVE(1)
+#endif
+
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -530,6 +536,18 @@ struct mm_struct {
 };
 
 extern struct mm_struct init_mm;
+
+#if IS_ENABLED(CONFIG_KVM)
+static inline struct kvm *mm_kvm(struct mm_struct *mm)
+{
+	return mm->kvm;
+}
+#else
+static inline struct kvm *mm_kvm(struct mm_struct *mm)
+{
+	return NULL;
+}
+#endif
 
 /* Pointer magic because the dynamic array size confuses some compilers. */
 static inline void mm_init_cpumask(struct mm_struct *mm)
