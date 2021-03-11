@@ -1543,26 +1543,40 @@ static void set_disk_ro_uevent(struct gendisk *gd, int ro)
 	kobject_uevent_env(&disk_to_dev(gd)->kobj, KOBJ_CHANGE, envp);
 }
 
-void set_device_ro(struct block_device *bdev, int flag)
+void set_device_ro(struct block_device *bdev, bool state)
 {
-	bdev->bd_part->policy = flag;
+	bdev->bd_part->read_only = state;
 }
 
 EXPORT_SYMBOL(set_device_ro);
 
-void set_disk_ro(struct gendisk *disk, int flag)
+bool get_user_ro(struct gendisk *disk, unsigned int partno)
+{
+	/* Is the user read-only bit set for the whole disk device? */
+	if (test_bit(0, disk->user_ro_bitmap))
+		return true;
+
+	/* Is the user read-only bit set for this particular partition? */
+	if (test_bit(partno, disk->user_ro_bitmap))
+		return true;
+
+	return false;
+}
+
+void set_disk_ro(struct gendisk *disk, bool state)
 {
 	struct disk_part_iter piter;
 	struct hd_struct *part;
 
-	if (disk->part0.policy != flag) {
-		set_disk_ro_uevent(disk, flag);
-		disk->part0.policy = flag;
-	}
+	if (disk->part0.read_only != state)
+		set_disk_ro_uevent(disk, state);
 
-	disk_part_iter_init(&piter, disk, DISK_PITER_INCL_EMPTY);
+	disk_part_iter_init(&piter, disk, DISK_PITER_INCL_EMPTY_PART0);
 	while ((part = disk_part_iter_next(&piter)))
-		part->policy = flag;
+		if (get_user_ro(disk, part->partno))
+			part->read_only = true;
+		else
+			part->read_only = state;
 	disk_part_iter_exit(&piter);
 }
 
@@ -1572,7 +1586,7 @@ int bdev_read_only(struct block_device *bdev)
 {
 	if (!bdev)
 		return 0;
-	return bdev->bd_part->policy;
+	return bdev->bd_part->read_only;
 }
 
 EXPORT_SYMBOL(bdev_read_only);

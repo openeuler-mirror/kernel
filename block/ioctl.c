@@ -455,6 +455,10 @@ static int blkdev_roset(struct block_device *bdev, fmode_t mode,
 		return ret;
 	if (get_user(n, (int __user *)arg))
 		return -EFAULT;
+	if (n)
+		set_bit(bdev->bd_partno, bdev->bd_disk->user_ro_bitmap);
+	else
+		clear_bit(bdev->bd_partno, bdev->bd_disk->user_ro_bitmap);
 	set_device_ro(bdev, n);
 	return 0;
 }

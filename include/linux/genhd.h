@@ -116,7 +116,8 @@ struct hd_struct {
 	unsigned int discard_alignment;
 	struct device __dev;
 	struct kobject *holder_dir;
-	int policy, partno;
+	bool read_only;
+	int partno;
 	struct partition_meta_info *info;
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 	int make_it_fail;
@@ -202,6 +203,7 @@ struct gendisk {
 	 */
 	struct disk_part_tbl __rcu *part_tbl;
 	struct hd_struct part0;
+	DECLARE_BITMAP(user_ro_bitmap, DISK_MAX_PARTS);
 
 	const struct block_device_operations *fops;
 	struct request_queue *queue;
@@ -440,12 +442,13 @@ extern void del_gendisk(struct gendisk *gp);
 extern struct gendisk *get_gendisk(dev_t dev, int *partno);
 extern struct block_device *bdget_disk(struct gendisk *disk, int partno);
 
-extern void set_device_ro(struct block_device *bdev, int flag);
-extern void set_disk_ro(struct gendisk *disk, int flag);
+extern void set_device_ro(struct block_device *bdev, bool state);
+extern void set_disk_ro(struct gendisk *disk, bool state);
+extern bool get_user_ro(struct gendisk *disk, unsigned int partno);
 
 static inline int get_disk_ro(struct gendisk *disk)
 {
-	return disk->part0.policy;
+	return disk->part0.read_only;
 }
 
 extern void disk_block_events(struct gendisk *disk);
