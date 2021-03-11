@@ -685,6 +685,21 @@ static void scsi_release_bidi_buffers(struct scsi_cmnd *cmd)
 	cmd->request->next_rq->special = NULL;
 }
 
+static void scsi_run_queue_async(struct scsi_device *sdev)
+{
+	struct request_queue *q = sdev->request_queue;
+
+	percpu_ref_get(&q->q_usage_counter);
+	if (scsi_target(sdev)->single_lun ||
+	    !list_empty(&sdev->host->starved_list)) {
+		if (!kblockd_schedule_work(&sdev->requeue_work))
+			percpu_ref_put(&q->q_usage_counter);
+	} else {
+		blk_mq_run_hw_queues(q, true);
+		percpu_ref_put(&q->q_usage_counter);
+	}
+}
+
 /* Returns false when no more bytes to process, true if there are more */
 static bool scsi_end_request(struct request *req, blk_status_t error,
 		unsigned int bytes, unsigned int bidi_bytes)
@@ -735,14 +750,9 @@ static bool scsi_end_request(struct request *req, blk_status_t error,
 
 		__blk_mq_end_request(req, error);
 
-		if (scsi_target(sdev)->single_lun ||
-		    !list_empty(&sdev->host->starved_list)) {
-			if (!kblockd_schedule_work(&sdev->requeue_work))
-				percpu_ref_put(&q->q_usage_counter);
-		} else {
-			blk_mq_run_hw_queues(q, true);
-			percpu_ref_put(&q->q_usage_counter);
-		}
+		scsi_run_queue_async(sdev);
+
+		percpu_ref_put(&q->q_usage_counter);
 	} else {
 		unsigned long flags;
 
@@ -2206,6 +2216,7 @@ out_put_budget:
 		 */
 		if (req->rq_flags & RQF_DONTPREP)
 			scsi_mq_uninit_cmd(cmd);
+		scsi_run_queue_async(sdev);
 		break;
 	}
 	return ret;
