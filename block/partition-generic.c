@@ -286,6 +286,7 @@ void delete_partition(struct gendisk *disk, int partno)
 	if (!part)
 		return;
 
+	clear_bit(partno, disk->user_ro_bitmap);
 	get_device(disk_to_dev(disk));
 	rcu_assign_pointer(ptbl->part[partno], NULL);
 
