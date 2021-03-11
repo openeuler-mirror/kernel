@@ -1307,6 +1307,7 @@ static void disk_release(struct device *dev)
 	hd_free_part(&disk->part0);
 	if (disk->queue)
 		blk_put_queue(disk->queue);
+	kfree(disk->user_ro_bitmap);
 	kfree(disk);
 }
 struct class block_class = {
@@ -1481,6 +1482,14 @@ struct gendisk *__alloc_disk_node(int minors, int node_id)
 			return NULL;
 		}
 
+		disk->user_ro_bitmap = kzalloc_node(
+				BITS_TO_LONGS(DISK_MAX_PARTS) * sizeof(long),
+				GFP_KERNEL, node_id);
+		if (!disk->user_ro_bitmap) {
+			hd_free_part(&disk->part0);
+			kfree(disk);
+			return NULL;
+		}
 		disk->minors = minors;
 		rand_initialize_disk(disk);
 		disk_to_dev(disk)->class = &block_class;
@@ -1543,40 +1552,40 @@ static void set_disk_ro_uevent(struct gendisk *gd, int ro)
 	kobject_uevent_env(&disk_to_dev(gd)->kobj, KOBJ_CHANGE, envp);
 }
 
-void set_device_ro(struct block_device *bdev, bool state)
+void set_device_ro(struct block_device *bdev, int flag)
 {
-	bdev->bd_part->read_only = state;
+	bdev->bd_part->policy = flag;
 }
 
 EXPORT_SYMBOL(set_device_ro);
 
-bool get_user_ro(struct gendisk *disk, unsigned int partno)
+int get_user_ro(struct gendisk *disk, unsigned int partno)
 {
 	/* Is the user read-only bit set for the whole disk device? */
 	if (test_bit(0, disk->user_ro_bitmap))
-		return true;
+		return 1;
 
 	/* Is the user read-only bit set for this particular partition? */
 	if (test_bit(partno, disk->user_ro_bitmap))
-		return true;
+		return 1;
 
-	return false;
+	return 0;
 }
 
-void set_disk_ro(struct gendisk *disk, bool state)
+void set_disk_ro(struct gendisk *disk, int flag)
 {
 	struct disk_part_iter piter;
 	struct hd_struct *part;
 
-	if (disk->part0.read_only != state)
-		set_disk_ro_uevent(disk, state);
+	if (disk->part0.policy != flag)
+		set_disk_ro_uevent(disk, flag);
 
 	disk_part_iter_init(&piter, disk, DISK_PITER_INCL_EMPTY_PART0);
 	while ((part = disk_part_iter_next(&piter)))
 		if (get_user_ro(disk, part->partno))
-			part->read_only = true;
+			part->policy = 1;
 		else
-			part->read_only = state;
+			part->policy = flag;
 	disk_part_iter_exit(&piter);
 }
 
@@ -1586,7 +1595,7 @@ int bdev_read_only(struct block_device *bdev)
 {
 	if (!bdev)
 		return 0;
-	return bdev->bd_part->read_only;
+	return bdev->bd_part->policy;
 }
 
 EXPORT_SYMBOL(bdev_read_only);
