@@ -228,6 +228,8 @@ struct cacheinfo *cacheinfo_shared_cpu_map_search(void *fw_token)
 
 	for_each_online_cpu(cpu) {
 		cpu_ci = get_cpu_cacheinfo(cpu);
+		if (!cpu_ci->info_list)
+			continue;
 
 		for (index = 0; index < cache_leaves(cpu); index++) {
 			iter = cpu_ci->info_list + index;
