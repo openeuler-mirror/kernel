@@ -131,6 +131,8 @@ static inline int get_cpu_cacheinfo_id(int cpu, int level)
 	int i;
 
 	for (i = 0; i < ci->num_leaves; i++) {
+		if (!ci->info_list)
+			continue;
 		if (ci->info_list[i].level == level) {
 			if (ci->info_list[i].attributes & CACHE_ID)
 				return ci->info_list[i].id;
