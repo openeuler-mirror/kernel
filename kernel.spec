@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2102.3.0
+%global hulkrelease 2103.1.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0058
+Release: %{hulkrelease}.0059
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,88 @@ fi
 
 %changelog
 
+
+* Thu Mar 11 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2103.1.0.0059
+- brcmfmac: Loading the correct firmware for brcm43456
+- config: Enable the config option of the etmem feature
+- etmem: add etmem-swap feature
+- etmem: add etmem-scan feature
+- moduleparam: Save information about built-in modules in separate file
+- ovl: expand warning in ovl_d_real()
+- net: watchdog: hold device global xmit lock during tx disable
+- bfq-iosched: Revert "bfq: Fix computation of shallow depth"
+- ovl: skip getxattr of security labels
+- cap: fix conversions on getxattr
+- ovl: perform vfs_getxattr() with mounter creds
+- tracing: Check length before giving out the filter buffer
+- tracing: Do not count ftrace events in top level enable output
+- blk-mq: don't hold q->sysfs_lock in blk_mq_map_swqueue
+- block: don't hold q->sysfs_lock in elevator_init_mq
+- SUNRPC: Handle 0 length opaque XDR object data properly
+- SUNRPC: Move simple_get_bytes and simple_get_netobj into private header
+- fgraph: Initialize tracing_graph_pause at task creation
+- tracing/kprobe: Fix to support kretprobe events on unloaded modules
+- md: Set prev_flush_start and flush_bio in an atomic way
+- mm: thp: fix MADV_REMOVE deadlock on shmem THP
+- mm: hugetlb: remove VM_BUG_ON_PAGE from page_huge_active
+- mm: hugetlb: fix a race between isolating and freeing page
+- mm: hugetlb: fix a race between freeing and dissolving the page
+- mm: hugetlbfs: fix cannot migrate the fallocated HugeTLB page
+- smb3: Fix out-of-bounds bug in SMB2_negotiate()
+- cifs: report error instead of invalid when revalidating a dentry fails
+- genirq/msi: Activate Multi-MSI early when MSI_FLAG_ACTIVATE_EARLY is set
+- kretprobe: Avoid re-registration of the same kretprobe earlier
+- ovl: fix dentry leak in ovl_get_redirect
+- memblock: do not start bottom-up allocations with kernel_end
+- workqueue: Restrict affinity change to rescuer
+- kthread: Extract KTHREAD_IS_PER_CPU
+- sysctl: handle overflow in proc_get_long
+- fs: fix lazytime expiration handling in __writeback_single_inode()
+- writeback: Drop I_DIRTY_TIME_EXPIRE
+- dm integrity: conditionally disable "recalculate" feature
+- tracing: Fix race in trace_open and buffer resize call
+- Revert "mm/slub: fix a memory leak in sysfs_slab_add()"
+- net/rds: restrict iovecs length for RDS_CMSG_RDMA_ARGS
+- net: fix iteration for sctp transport seq_files
+- netfilter: conntrack: skip identical origin tuple in same zone only
+- netfilter: flowtable: fix tcp and udp header checksum update
+- netfilter: xt_recent: Fix attempt to update deleted entry
+- af_key: relax availability checks for skb size calculation
+- net: ip_tunnel: fix mtu calculation
+- net_sched: gen_estimator: support large ewma log
+- tcp: fix TLP timer not set when CA_STATE changes from DISORDER to OPEN
+- net/mlx5: Fix memory leak on flow table creation error flow
+- xfrm: fix disable_xfrm sysctl when used on xfrm interfaces
+- xfrm: Fix oops in xfrm_replay_advance_bmp
+- netfilter: nft_dynset: add timeout extension to template
+- net: sit: unregister_netdevice on newlink's error path
+- esp: avoid unneeded kmap_atomic call
+- udp: Prevent reuseport_select_sock from reading uninitialized socks
+- vrf: Fix fast path output packet handling with async Netfilter rules
+- livepatch/core: Fix jump_label_apply_nops called multi times
+- gpu: hibmc: Fix stuck when switch GUI to text.
+- gpu: hibmc: Use drm get pci dev api.
+- gpu: hibmc: Fix erratic display during startup stage.
+- net: hns3: update hns3 version to 1.9.38.11
+- net: hns3: fix 'ret' may be used uninitialized problem
+- net: hns3: update hns3 version to 1.9.38.10
+- net: hns3: adds support for setting pf max tx rate via sysfs
+- ext4: find old entry again if failed to rename whiteout
+- config: disable config TMPFS_INODE64 by default
+- tmpfs: restore functionality of nr_inodes=0
+- tmpfs: support 64-bit inums per-sb
+- tmpfs: per-superblock i_ino support
+- Revert "scsi: sg: fix memory leak in sg_build_indirect"
+- scsi: fix kabi for scsi_device
+- scsi: core: Only re-run queue in scsi_end_request() if device queue is busy
+- scsi: core: Run queue in case of I/O resource contention failure
+- Revert "scsi: sd: block: Fix read-only flag residuals when partition table change"
+- scsi: sd: block: Fix kabi change by 'scsi: sd: block: Fix regressions in read-only block device handling'
+- scsi: sd: block: Fix read-only flag residuals when partition table change
+- scsi: sd: block: Fix regressions in read-only block device handling
+- proc/mounts: Fix kabi broken
+- proc/mounts: add cursor
+- list: introduce list_for_each_continue()
 
 * Wed Feb 24 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2102.3.0.0058
 - arm64/mpam: Fix compile warning
