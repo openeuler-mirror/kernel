@@ -1143,6 +1143,9 @@ int unregister_sysrq_key(int key, const struct sysrq_key_op *op_p)
 EXPORT_SYMBOL(unregister_sysrq_key);
 
 #ifdef CONFIG_PROC_FS
+
+static DEFINE_MUTEX(sysrq_mutex);
+
 /*
  * writing 'C' to /proc/sysrq-trigger is like sysrq-C
  */
@@ -1154,7 +1157,10 @@ static ssize_t write_sysrq_trigger(struct file *file, const char __user *buf,
 
 		if (get_user(c, buf))
 			return -EFAULT;
+
+		mutex_lock(&sysrq_mutex);
 		__handle_sysrq(c, false);
+		mutex_unlock(&sysrq_mutex);
 	}
 
 	return count;
