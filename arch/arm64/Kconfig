@@ -360,6 +360,27 @@ config ARM64_CPU_PARK
 config ARCH_HAS_CPU_RELAX
 	def_bool y
 
+config ARM64_PMEM_RESERVE
+	bool "Reserve memory for persistent storage"
+	default n
+	help
+	  Use memmap=nn[KMG]!ss[KMG](memmap=100K!0x1a0000000) reserve
+	  memory for persistent storage.
+
+	  Say y here to enable this feature.
+
+config ARM64_PMEM_LEGACY_DEVICE
+	bool "Create persistent storage"
+	depends on BLK_DEV
+	depends on LIBNVDIMM
+	select ARM64_PMEM_RESERVE
+	help
+	  Use reserved memory for persistent storage when the kernel
+	  restart or update. the data in PMEM will not be lost and
+	  can be loaded faster.
+
+	  Say y if unsure.
+
 source "arch/arm64/Kconfig.platforms"
 
 menu "Kernel Features"

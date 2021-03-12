@@ -132,3 +132,8 @@ config NVDIMM_TEST_BUILD
 	  infrastructure.
 
 endif
+
+config PMEM_LEGACY
+	tristate "Pmem_legacy"
+	select X86_PMEM_LEGACY if X86
+	select ARM64_PMEM_LEGACY_DEVICE if ARM64

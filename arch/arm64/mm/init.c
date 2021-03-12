@@ -66,6 +66,18 @@ EXPORT_SYMBOL(memstart_addr);
 phys_addr_t arm64_dma_phys_limit __ro_after_init;
 phys_addr_t arm64_dma32_phys_limit __ro_after_init;
 
+static unsigned long long pmem_size, pmem_start;
+
+#ifdef CONFIG_ARM64_PMEM_RESERVE
+struct resource pmem_res = {
+	.name = "Persistent Memory (legacy)",
+	.start = 0,
+	.end = 0,
+	.flags = IORESOURCE_MEM,
+	.desc = IORES_DESC_PERSISTENT_MEMORY_LEGACY
+};
+#endif
+
 #ifndef CONFIG_KEXEC_CORE
 static void __init reserve_crashkernel(void)
 {
@@ -378,6 +390,87 @@ out:
 }
 #endif
 
+static int __init is_mem_valid(unsigned long long mem_size, unsigned long long mem_start)
+{
+	if (!memblock_is_region_memory(mem_start, mem_size)) {
+		pr_warn("cannot reserve mem: region is not memory!\n");
+		return -EINVAL;
+	}
+
+	if (memblock_is_region_reserved(mem_start, mem_size)) {
+		pr_warn("cannot reserve mem: region overlaps reserved memory!\n");
+		return -EINVAL;
+	}
+
+	if (!IS_ALIGNED(mem_start, SZ_2M)) {
+		pr_warn("cannot reserve mem: base address is not 2MB aligned!\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int __init parse_memmap_one(char *p)
+{
+	char *oldp;
+	phys_addr_t start_at, mem_size;
+
+	if (!p)
+		return -EINVAL;
+
+	oldp = p;
+	mem_size = memparse(p, &p);
+	if (p == oldp)
+		return -EINVAL;
+
+	if (!mem_size)
+		return -EINVAL;
+
+	mem_size = PAGE_ALIGN(mem_size);
+
+	if (*p == '!') {
+		start_at = memparse(p+1, &p);
+
+		if (is_mem_valid(mem_size, start_at) != 0)
+			return -EINVAL;
+
+		pr_info("pmem reserved: 0x%016llx - 0x%016llx (%lld MB)\n",
+				start_at, start_at + mem_size, mem_size >> 20);
+		pmem_start = start_at;
+		pmem_size = mem_size;
+	} else
+		pr_info("Unrecognized memmap option, please check the parameter.\n");
+
+	return *p == '\0' ? 0 : -EINVAL;
+}
+
+static int __init parse_memmap_opt(char *str)
+{
+	while (str) {
+		char *k = strchr(str, ',');
+
+		if (k)
+			*k++ = 0;
+
+		parse_memmap_one(str);
+		str = k;
+	}
+
+	return 0;
+}
+early_param("memmap", parse_memmap_opt);
+
+#ifdef CONFIG_ARM64_PMEM_RESERVE
+static void __init reserve_pmem(void)
+{
+	memblock_remove(pmem_start, pmem_size);
+	pr_info("pmem reserved: 0x%016llx - 0x%016llx (%lld MB)\n",
+			pmem_start, pmem_start + pmem_size, pmem_size >> 20);
+	pmem_res.start = pmem_start;
+	pmem_res.end = pmem_start + pmem_size - 1;
+}
+#endif
+
 void __init arm64_memblock_init(void)
 {
 	const s64 linear_region_size = BIT(vabits_actual - 1);
@@ -510,6 +603,10 @@ void __init arm64_memblock_init(void)
 	reserve_pin_memory_res();
 
 	reserve_elfcorehdr();
+
+#ifdef CONFIG_ARM64_PMEM_RESERVE
+	reserve_pmem();
+#endif
 
 	high_memory = __va(memblock_end_of_DRAM() - 1) + 1;
 
