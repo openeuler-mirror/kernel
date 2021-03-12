@@ -300,15 +300,15 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 		return ret;
 	}
 
-#ifdef CONFIG_ARM64_CPU_PARK
-	uninstall_cpu_park(cpu);
-#endif
 	/*
 	 * CPU was successfully started, wait for it to come online or
 	 * time out.
 	 */
 	wait_for_completion_timeout(&cpu_running,
 				    msecs_to_jiffies(5000));
+#ifdef CONFIG_ARM64_CPU_PARK
+	uninstall_cpu_park(cpu);
+#endif
 	if (cpu_online(cpu))
 		return 0;
 
