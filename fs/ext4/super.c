@@ -509,8 +509,11 @@ static void ext4_handle_error(struct super_block *sb)
 	if (test_opt(sb, WARN_ON_ERROR))
 		WARN_ON_ONCE(1);
 
-	if (sb_rdonly(sb) || test_opt(sb, ERRORS_CONT))
+	if (sb_rdonly(sb))
 		return;
+
+	if (test_opt(sb, ERRORS_CONT))
+		goto out;
 
 	EXT4_SB(sb)->s_mount_flags |= EXT4_MF_FS_ABORTED;
 	if (journal)
@@ -533,6 +536,7 @@ static void ext4_handle_error(struct super_block *sb)
 			sb->s_id);
 	}
 
+out:
 	ext4_netlink_send_info(sb, 1);
 }
 
