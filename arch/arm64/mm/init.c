@@ -590,32 +590,7 @@ void __init arm64_memblock_init(void)
 	else
 		arm64_dma32_phys_limit = PHYS_MASK + 1;
 
-	/*
-	 * Reserve park memory before crashkernel and quick kexec.
-	 * Because park memory must be specified by address, but
-	 * crashkernel and quickkexec may be specified by memory length,
-	 * then find one sutiable memory region to reserve.
-	 *
-	 * So reserve park memory firstly is better, but it may cause
-	 * crashkernel or quickkexec reserving failed.
-	 */
-#ifdef CONFIG_ARM64_CPU_PARK
-	reserve_park_mem();
-#endif
-
-	reserve_crashkernel();
-
-#ifdef CONFIG_QUICK_KEXEC
-	reserve_quick_kexec();
-#endif
-
-	reserve_pin_memory_res();
-
 	reserve_elfcorehdr();
-
-#ifdef CONFIG_ARM64_PMEM_RESERVE
-	reserve_pmem();
-#endif
 
 	high_memory = __va(memblock_end_of_DRAM() - 1) + 1;
 
@@ -653,6 +628,40 @@ void __init bootmem_init(void)
 	 */
 	sparse_init();
 	zone_sizes_init(min, max);
+
+	/*
+	 * Reserve park memory before crashkernel and quick kexec.
+	 * Because park memory must be specified by address, but
+	 * crashkernel and quickkexec may be specified by memory length,
+	 * then find one sutiable memory region to reserve.
+	 *
+	 * So reserve park memory firstly is better, but it may cause
+	 * crashkernel or quickkexec reserving failed.
+	 */
+#ifdef CONFIG_ARM64_CPU_PARK
+	reserve_park_mem();
+#endif
+
+	/*
+	 * request_standard_resources() depends on crashkernel's memory being
+	 * reserved, so do it here.
+	 */
+	reserve_crashkernel();
+
+#ifdef CONFIG_QUICK_KEXEC
+	reserve_quick_kexec();
+#endif
+
+	/*
+	 * request_standard_resources() depends on crashkernel's memory being
+	 * reserved, so do it here.
+	 */
+	reserve_crashkernel();
+
+	reserve_pin_memory_res();
+#ifdef CONFIG_ARM64_PMEM_RESERVE
+	reserve_pmem();
+#endif
 
 	memblock_dump_all();
 }
