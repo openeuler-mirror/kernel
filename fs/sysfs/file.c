@@ -15,7 +15,6 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/seq_file.h>
-#include <linux/mm.h>
 
 #include "sysfs.h"
 #include "../kernfs/kernfs-internal.h"
@@ -560,6 +559,7 @@ void sysfs_remove_bin_file(struct kobject *kobj,
 }
 EXPORT_SYMBOL_GPL(sysfs_remove_bin_file);
 
+#define offset_in_page(p)	((unsigned long)(p) & ~PAGE_MASK)
 /**
  *	sysfs_emit - scnprintf equivalent, aware of PAGE_SIZE buffer.
  *	@buf:	start of PAGE_SIZE buffer.
