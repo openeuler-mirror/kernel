@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2103.1.0
+%global hulkrelease 2103.2.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0059
+Release: %{hulkrelease}.0060
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,40 @@ fi
 
 %changelog
 
+
+* Mon Mar 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2103.2.0.0060
+- xen-netback: respect gnttab_map_refs()'s return value
+- Xen/gnttab: handle p2m update errors on a per-slot basis
+- sysfs: fix kabi broken when add sysfs_emit and sysfs_emit_at
+- scsi: iscsi: Verify lengths on passthrough PDUs
+- scsi: iscsi: Ensure sysfs attributes are limited to PAGE_SIZE
+- sysfs: Add sysfs_emit and sysfs_emit_at to format sysfs output
+- scsi: iscsi: Restrict sessions and handles to admin capabilities
+- ovl: do not fail because of O_NOATIME
+- ovl: check permission to open real file
+- ovl: call secutiry hook in ovl_real_ioctl()
+- ovl: verify permissions in ovl_path_open()
+- ovl: switch to mounter creds in readdir
+- ovl: pass correct flags for opening real directory
+- mm/swapfile.c: fix potential memory leak in sys_swapon
+- hibernate: Allow uswsusp to write to swap
+- mm/swapfile.c: move inode_lock out of claim_swapfile
+- mm/swapfile.c: fix a comment in sys_swapon()
+- vfs: don't allow writes to swap files
+- mm: set S_SWAPFILE on blockdev swap devices
+- block_dump: remove block_dump feature when dirting inode
+- virtio-blk: modernize sysfs attribute creation
+- nvme: register ns_id attributes as default sysfs groups
+- ext4: Fix not report exception message when mount with errors=continue
+- xen-blkback: fix error handling in xen_blkbk_map()
+- xen-scsiback: don't "handle" error by BUG()
+- xen-netback: don't "handle" error by BUG()
+- xen-blkback: don't "handle" error by BUG()
+- xen/arm: don't ignore return errors from set_phys_to_machine
+- Xen/gntdev: correct error checking in gntdev_map_grant_pages()
+- Xen/gntdev: correct dev_bus_addr handling in gntdev_map_grant_pages()
+- Xen/x86: also check kernel mapping in set_foreign_p2m_mapping()
+- Xen/x86: don't bail early from clear_foreign_p2m_mapping()
 
 * Thu Mar 11 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2103.1.0.0059
 - brcmfmac: Loading the correct firmware for brcm43456
