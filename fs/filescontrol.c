@@ -164,7 +164,7 @@ static void files_cgroup_attach(struct cgroup_taskset *tset)
 
 	task_lock(task);
 	files = task->files;
-	if (!files) {
+	if (!files || files == &init_files) {
 		task_unlock(task);
 		return;
 	}
@@ -325,6 +325,9 @@ void files_cgroup_assign(struct files_struct *files)
 {
 	struct cgroup_subsys_state *css;
 
+	if (files == &init_files)
+		return;
+
 	css = task_get_css(current, files_cgrp_id);
 	files->files_cgroup = container_of(css, struct files_cgroup, css);
 }
@@ -333,6 +336,9 @@ void files_cgroup_remove(struct files_struct *files)
 {
 	struct task_struct *tsk = current;
 	struct files_cgroup *fcg;
+
+	if (files == &init_files)
+		return;
 
 	task_lock(tsk);
 	spin_lock(&files->file_lock);
