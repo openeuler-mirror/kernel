@@ -1661,6 +1661,127 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_PIN_MEMORY
+static int get_pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
+			     struct mm_walk *walk)
+{
+	struct vm_area_struct *vma = walk->vma;
+	struct pagemapread *pm = walk->private;
+	spinlock_t *ptl;
+	pte_t *pte, *orig_pte;
+	int err = 0;
+	pagemap_entry_t pme;
+
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	ptl = pmd_trans_huge_lock(pmdp, vma);
+	if (ptl) {
+		u64 flags = 0, frame = 0;
+		pmd_t pmd = *pmdp;
+		struct page *page = NULL;
+
+		if (pmd_present(pmd)) {
+			page = pmd_page(pmd);
+			flags |= PM_PRESENT;
+			frame = pmd_pfn(pmd) +
+				((addr & ~PMD_MASK) >> PAGE_SHIFT);
+		}
+#ifdef CONFIG_ARCH_ENABLE_THP_MIGRATION
+		else if (is_swap_pmd(pmd)) {
+			swp_entry_t entry = pmd_to_swp_entry(pmd);
+			unsigned long offset;
+
+			offset = swp_offset(entry) +
+				((addr & ~PMD_MASK) >> PAGE_SHIFT);
+			frame = swp_type(entry) |
+				(offset << MAX_SWAPFILES_SHIFT);
+
+			flags |= PM_SWAP;
+			if (pmd_swp_soft_dirty(pmd))
+				flags |= PM_SOFT_DIRTY;
+			VM_BUG_ON(!is_pmd_migration_entry(pmd));
+			page = migration_entry_to_page(entry);
+		}
+#endif
+		pme = make_pme(frame, flags);
+		err = add_to_pagemap(addr, &pme, pm);
+		spin_unlock(ptl);
+		return err;
+	}
+
+	if (pmd_trans_unstable(pmdp))
+		return 0;
+#endif /* CONFIG_TRANSPARENT_HUGEPAGE */
+
+	orig_pte = pte = pte_offset_map_lock(walk->mm, pmdp, addr, &ptl);
+	for (; addr < end; pte++, addr += PAGE_SIZE) {
+		pme = pte_to_pagemap_entry(pm, vma, addr, *pte);
+		err = add_to_pagemap(addr, &pme, pm);
+		if (err)
+			break;
+	}
+	pte_unmap_unlock(orig_pte, ptl);
+	return err;
+}
+
+void *create_pagemapread(void)
+{
+	struct pagemapread *pm;
+
+	pm = kmalloc(sizeof(struct pagemapread), GFP_KERNEL);
+	if (!pm)
+		return NULL;
+	pm->show_pfn = true;
+	pm->len = (PAGEMAP_WALK_SIZE >> PAGE_SHIFT);
+	pm->buffer = kmalloc_array(pm->len, PM_ENTRY_BYTES, GFP_KERNEL);
+	if (!pm->buffer)
+		goto out_free;
+	return (void *)pm;
+out_free:
+	kfree(pm);
+	return NULL;
+}
+
+static const struct mm_walk_ops get_pagemap_ops = {
+	.pmd_entry      = get_pagemap_pmd_range,
+	.pte_hole       = pagemap_pte_hole,
+	.hugetlb_entry  = pagemap_hugetlb_range,
+};
+
+void free_pagemapread(void *pagemap_read)
+{
+	struct pagemapread *pm = (struct pagemapread *)pagemap_read;
+
+	if (pm) {
+		kfree(pm->buffer);
+		pm->buffer = NULL;
+	}
+	kfree(pm);
+}
+
+int pagemap_get(struct mm_struct *mm, void *pagemap_read,
+			unsigned long start_vaddr, unsigned long end_vaddr,
+			unsigned long *pte_entry, unsigned int *count)
+{
+	int i, ret = 0;
+	struct pagemapread *pm = (struct pagemapread *)pagemap_read;
+	unsigned long end;
+
+	if (!pte_entry || !mm || !pm)
+		return -EFAULT;
+	pm->pos = 0;
+	end = (start_vaddr + PAGEMAP_WALK_SIZE) & PAGEMAP_WALK_MASK;
+	if (end > end_vaddr)
+		end = end_vaddr;
+	ret = walk_page_range(mm, start_vaddr, end, &get_pagemap_ops, pm);
+	*count = pm->pos;
+
+	for (i = 0; i < pm->pos; i++)
+		pte_entry[i] = pm->buffer[i].pme;
+
+	return ret;
+}
+#endif
+
 static int pagemap_open(struct inode *inode, struct file *file)
 {
 	struct mm_struct *mm;

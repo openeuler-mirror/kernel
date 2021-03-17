@@ -861,7 +861,7 @@ config MAPPING_DIRTY_HELPERS
 
 config PIN_MEMORY
 	bool "Support for pin memory"
-	depends on CHECKPOINT_RESTORE
+	depends on MMU
 	help
 	  Say y here to enable the pin memory feature for checkpoint
 	  and restore. We can pin the memory data of tasks and collect

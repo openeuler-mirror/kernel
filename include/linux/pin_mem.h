@@ -26,8 +26,16 @@
 #define LIST_POISON4 0xdead000000000400
 #define PAGE_FLAGS_CHECK_RESERVED  (1UL << PG_reserved)
 #define SHA256_DIGEST_SIZE  32
-#define next_pme(pme)  ((unsigned long *)(pme + 1) + pme->nr_pages)
+#define next_pme(pme)  ((unsigned long *)((pme) + 1) + (pme)->nr_pages)
 #define PIN_MEM_DUMP_MAGIC  0xfeab000000001acd
+#define PM_PFRAME_BITS		55
+#define PM_PFRAME_MASK		GENMASK_ULL(PM_PFRAME_BITS - 1, 0)
+#define PM_PRESENT		BIT_ULL(63)
+#define PM_SWAP		BIT_ULL(62)
+#define IS_PTE_PRESENT(entry) (((entry) & PM_PFRAME_MASK) && ((entry) & PM_PRESENT))
+#define NEXT_PIN_ADDR(next, end_addr) ((next) + HPAGE_PMD_SIZE) > (end_addr) ? \
+			(end_addr) : ((next) + HPAGE_PMD_SIZE)
+
 struct page_map_entry {
 	unsigned long virt_addr;
 	unsigned int nr_pages;
@@ -67,7 +75,13 @@ extern int pin_mem_area(struct task_struct *task, struct mm_struct *mm,
 extern vm_fault_t do_anon_huge_page_remap(struct vm_area_struct *vma, unsigned long address,
 		pmd_t *pmd, struct page *page);
 extern int finish_pin_mem_dump(void);
+extern void *create_pagemapread(void);
+extern void free_pagemapread(void *pagemap_read);
+extern int pagemap_get(struct mm_struct *mm, void *pagemap_read,
+			unsigned long start_vaddr, unsigned long end_vaddr,
+			unsigned long *pte_entry, unsigned int *count);
 
+extern int init_pagemap_read(void);
 /* reserve space for pin memory*/
 #ifdef CONFIG_ARM64
 extern struct resource pin_memory_resource;

@@ -20,7 +20,7 @@
 
 #define MAX_PIN_PID_NUM  128
 static DEFINE_SPINLOCK(page_map_entry_lock);
-
+static DEFINE_MUTEX(pin_mem_mutex);
 struct pin_mem_dump_info *pin_mem_dump_start;
 unsigned int pin_pid_num;
 static unsigned int *pin_pid_num_addr;
@@ -32,6 +32,8 @@ unsigned int max_pin_pid_num __read_mostly;
 unsigned long redirect_space_size;
 unsigned long redirect_space_start;
 #define DEFAULT_REDIRECT_SPACE_SIZE  0x100000
+void *pin_mem_pagemapread;
+unsigned long *pagemap_buffer;
 
 static int __init setup_max_pin_pid_num(char *str)
 {
@@ -459,27 +461,58 @@ EXPORT_SYMBOL_GPL(finish_pin_mem_dump);
 int collect_pmd_huge_pages(struct task_struct *task,
 	unsigned long start_addr, unsigned long end_addr, struct page_map_entry *pme)
 {
-	long res;
+	int ret, i, res;
 	int index = 0;
 	unsigned long start = start_addr;
 	struct page *temp_page;
+	unsigned long *pte_entry = pagemap_buffer;
+	unsigned int count;
+	struct mm_struct *mm = task->mm;
 
 	while (start < end_addr) {
 		temp_page = NULL;
-		res = get_user_pages_remote(task->mm, start, 1,
-			FOLL_TOUCH | FOLL_GET, &temp_page, NULL, NULL);
-		if (!res) {
-			pr_warn("Get huge page for addr(%lx) fail.", start);
+		count = 0;
+		ret = pagemap_get(mm, pin_mem_pagemapread,
+			start, start + HPAGE_PMD_SIZE, pte_entry, &count);
+		if (ret || !count) {
+			pr_warn("Get huge page fail: %d.", ret);
 			return COLLECT_PAGES_FAIL;
 		}
-		if (PageHead(temp_page)) {
-			start += HPAGE_PMD_SIZE;
+		/* For huge page, get one map entry per time. */
+		if ((pte_entry[0] & PM_SWAP) && (count == 1)) {
+			res = get_user_pages_remote(mm, start,
+				1, FOLL_TOUCH | FOLL_GET, &temp_page, NULL, NULL);
+			if (!res) {
+				pr_warn("Swap in huge page fail.\n");
+				return COLLECT_PAGES_FAIL;
+			}
 			pme->phy_addr_array[index] = page_to_phys(temp_page);
+			start += HPAGE_PMD_SIZE;
 			index++;
+			continue;
+		}
+		if (IS_PTE_PRESENT(pte_entry[0])) {
+			temp_page = pfn_to_page(pte_entry[0] & PM_PFRAME_MASK);
+			if (PageHead(temp_page)) {
+				atomic_inc(&((temp_page)->_refcount));
+				start += HPAGE_PMD_SIZE;
+				pme->phy_addr_array[index] = page_to_phys(temp_page);
+				index++;
+			} else {
+				/* If the page is not compound head, goto collect normal pages. */
+				pme->nr_pages = index;
+				return COLLECT_PAGES_NEED_CONTINUE;
+			}
 		} else {
-			pme->nr_pages = index;
-			atomic_dec(&((temp_page)->_refcount));
-			return COLLECT_PAGES_NEED_CONTINUE;
+			for (i = 1; i < count; i++) {
+				if (pte_entry[i] & PM_PFRAME_MASK) {
+					pme->nr_pages = index;
+					return COLLECT_PAGES_NEED_CONTINUE;
+				}
+			}
+			start += HPAGE_PMD_SIZE;
+			pme->phy_addr_array[index] = 0;
+			index++;
 		}
 	}
 	pme->nr_pages = index;
@@ -489,52 +522,108 @@ int collect_pmd_huge_pages(struct task_struct *task,
 int collect_normal_pages(struct task_struct *task,
 	unsigned long start_addr, unsigned long end_addr, struct page_map_entry *pme)
 {
-	int res;
+	int ret, res;
 	unsigned long next;
 	unsigned long i, nr_pages;
 	struct page *tmp_page;
 	unsigned long *phy_addr_array = pme->phy_addr_array;
-	struct page **page_array = (struct page **)pme->phy_addr_array;
+	unsigned int count;
+	unsigned long *pte_entry = pagemap_buffer;
+	struct mm_struct *mm = task->mm;
 
 	next = (start_addr & HPAGE_PMD_MASK) + HPAGE_PMD_SIZE;
 	next = (next > end_addr) ? end_addr : next;
 	pme->nr_pages = 0;
 	while (start_addr < next) {
+		count = 0;
 		nr_pages = (PAGE_ALIGN(next) - start_addr) / PAGE_SIZE;
-		res = get_user_pages_remote(task->mm, start_addr, 1,
-				FOLL_TOUCH | FOLL_GET, &tmp_page, NULL, NULL);
-		if (!res) {
-			pr_warn("Get user page of %lx fail.\n", start_addr);
+		ret = pagemap_get(mm, pin_mem_pagemapread,
+			start_addr, next, pte_entry, &count);
+		if (ret || !count) {
+			pr_warn("Get user page fail: %d, count: %u.\n",
+				ret, count);
 			return COLLECT_PAGES_FAIL;
 		}
-		if (PageHead(tmp_page)) {
-			atomic_dec(&(tmp_page->_refcount));
-			return COLLECT_PAGES_NEED_CONTINUE;
+
+		if (IS_PTE_PRESENT(pte_entry[0])) {
+			tmp_page = pfn_to_page(pte_entry[0] & PM_PFRAME_MASK);
+			/* If the page is compound head, goto collect huge pages. */
+			if (PageHead(tmp_page))
+				return COLLECT_PAGES_NEED_CONTINUE;
+			if (PageTail(tmp_page)) {
+				start_addr = next;
+				pme->virt_addr = start_addr;
+				next = NEXT_PIN_ADDR(next, end_addr);
+				continue;
+			}
 		}
-		atomic_dec(&(tmp_page->_refcount));
-		if (PageTail(tmp_page)) {
-			start_addr = next;
-			pme->virt_addr = start_addr;
-			next = (next + HPAGE_PMD_SIZE) > end_addr ?
-				end_addr : (next + HPAGE_PMD_SIZE);
-			continue;
+		for (i = 0; i < count; i++) {
+			if (pte_entry[i] & PM_SWAP) {
+				res = get_user_pages_remote(mm, start_addr + i * PAGE_SIZE,
+					1, FOLL_TOUCH | FOLL_GET, &tmp_page, NULL, NULL);
+				if (!res) {
+					pr_warn("Swap in page fail.\n");
+					return COLLECT_PAGES_FAIL;
+				}
+				phy_addr_array[i] = page_to_phys(tmp_page);
+				continue;
+			}
+			if (!IS_PTE_PRESENT(pte_entry[i])) {
+				phy_addr_array[i] = 0;
+				continue;
+			}
+			tmp_page = pfn_to_page(pte_entry[i] & PM_PFRAME_MASK);
+			atomic_inc(&(tmp_page->_refcount));
+			phy_addr_array[i] = ((pte_entry[i] & PM_PFRAME_MASK) << PAGE_SHIFT);
 		}
-		res = get_user_pages_remote(task->mm, start_addr, nr_pages,
-			FOLL_TOUCH | FOLL_GET, page_array, NULL, NULL);
-		if (!res) {
-			pr_warn("Get user pages of %lx fail.\n", start_addr);
-			return COLLECT_PAGES_FAIL;
-		}
-		for (i = 0; i < nr_pages; i++)
-			phy_addr_array[i] = page_to_phys(page_array[i]);
-		pme->nr_pages += nr_pages;
-		page_array += nr_pages;
-		phy_addr_array += nr_pages;
+		pme->nr_pages += count;
+		phy_addr_array += count;
 		start_addr = next;
-		next = (next + HPAGE_PMD_SIZE) > end_addr ? end_addr : (next + HPAGE_PMD_SIZE);
+		next = NEXT_PIN_ADDR(next, end_addr);
 	}
 	return COLLECT_PAGES_FINISH;
 }
+
+void free_pin_pages(struct page_map_entry *pme)
+{
+	unsigned long i;
+	struct page *tmp_page;
+
+	for (i = 0; i < pme->nr_pages; i++) {
+		if (pme->phy_addr_array[i]) {
+			tmp_page = phys_to_page(pme->phy_addr_array[i]);
+			atomic_dec(&(tmp_page->_refcount));
+			pme->phy_addr_array[i] = 0;
+		}
+	}
+}
+
+int init_pagemap_read(void)
+{
+	int ret = -ENOMEM;
+
+	if (pin_mem_pagemapread)
+		return 0;
+
+	mutex_lock(&pin_mem_mutex);
+	pin_mem_pagemapread = create_pagemapread();
+	if (!pin_mem_pagemapread)
+		goto out;
+	pagemap_buffer = (unsigned long *)kmalloc((PMD_SIZE >> PAGE_SHIFT) *
+		sizeof(unsigned long), GFP_KERNEL);
+	if (!pagemap_buffer)
+		goto free;
+
+	ret = 0;
+out:
+	mutex_unlock(&pin_mem_mutex);
+	return ret;
+free:
+	kfree(pin_mem_pagemapread);
+	pin_mem_pagemapread = NULL;
+	goto out;
+}
+EXPORT_SYMBOL_GPL(init_pagemap_read);
 
 /* Users make sure that the pin memory belongs to anonymous vma. */
 int pin_mem_area(struct task_struct *task, struct mm_struct *mm,
@@ -552,7 +641,7 @@ int pin_mem_area(struct task_struct *task, struct mm_struct *mm,
 
 	if (!page_map_entry_start
 		|| !task || !mm
-		|| start_addr >= end_addr)
+		|| start_addr >= end_addr || !pin_mem_pagemapread)
 		return -EFAULT;
 
 	pid = task->pid;
@@ -582,13 +671,13 @@ int pin_mem_area(struct task_struct *task, struct mm_struct *mm,
 	pme->redirect_start = 0;
 	pme->is_huge_page = is_huge_page;
 	memset(pme->phy_addr_array, 0, nr_pages * sizeof(unsigned long));
-	down_write(&mm->mmap_lock);
+	down_read(&mm->mmap_lock);
 	if (!is_huge_page) {
 		ret = collect_normal_pages(task, start_addr, end_addr, pme);
 		if (ret != COLLECT_PAGES_FAIL && !pme->nr_pages) {
 			if (ret == COLLECT_PAGES_FINISH) {
 				ret = 0;
-				up_write(&mm->mmap_lock);
+				up_read(&mm->mmap_lock);
 				goto finish;
 			}
 			pme->is_huge_page = true;
@@ -600,7 +689,7 @@ int pin_mem_area(struct task_struct *task, struct mm_struct *mm,
 		if (ret != COLLECT_PAGES_FAIL && !pme->nr_pages) {
 			if (ret == COLLECT_PAGES_FINISH) {
 				ret = 0;
-				up_write(&mm->mmap_lock);
+				up_read(&mm->mmap_lock);
 				goto finish;
 			}
 			pme->is_huge_page = false;
@@ -608,7 +697,7 @@ int pin_mem_area(struct task_struct *task, struct mm_struct *mm,
 			ret = collect_normal_pages(task, pme->virt_addr, end_addr, pme);
 		}
 	}
-	up_write(&mm->mmap_lock);
+	up_read(&mm->mmap_lock);
 	if (ret == COLLECT_PAGES_FAIL) {
 		ret = -EFAULT;
 		goto finish;
@@ -641,6 +730,8 @@ int pin_mem_area(struct task_struct *task, struct mm_struct *mm,
 		ret = pin_mem_area(task, mm, pme->virt_addr + pme->nr_pages * page_size, end_addr);
 	return ret;
 finish:
+	if (ret)
+		free_pin_pages(pme);
 	spin_unlock_irqrestore(&page_map_entry_lock, flags);
 	return ret;
 }

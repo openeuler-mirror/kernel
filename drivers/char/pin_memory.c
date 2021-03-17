@@ -38,11 +38,13 @@ struct pin_mem_area_set {
 #define _CLEAR_PIN_MEM_AREA  2
 #define _REMAP_PIN_MEM_AREA  3
 #define _FINISH_PIN_MEM_DUMP 4
-#define _PIN_MEM_IOC_MAX_NR          4
+#define _INIT_PAGEMAP_READ   5
+#define _PIN_MEM_IOC_MAX_NR  5
 #define SET_PIN_MEM_AREA        _IOW(PIN_MEM_MAGIC, _SET_PIN_MEM_AREA, struct pin_mem_area_set)
 #define CLEAR_PIN_MEM_AREA      _IOW(PIN_MEM_MAGIC, _CLEAR_PIN_MEM_AREA, int)
 #define REMAP_PIN_MEM_AREA      _IOW(PIN_MEM_MAGIC, _REMAP_PIN_MEM_AREA, int)
 #define FINISH_PIN_MEM_DUMP     _IOW(PIN_MEM_MAGIC, _FINISH_PIN_MEM_DUMP, int)
+#define INIT_PAGEMAP_READ       _IOW(PIN_MEM_MAGIC, _INIT_PAGEMAP_READ, int)
 static int set_pin_mem(struct pin_mem_area_set *pmas)
 {
 	int i;
@@ -164,6 +166,9 @@ static long pin_memory_ioctl(struct file *file, unsigned int cmd, unsigned long 
 		break;
 	case FINISH_PIN_MEM_DUMP:
 		ret = finish_pin_mem_dump();
+		break;
+	case INIT_PAGEMAP_READ:
+		ret = init_pagemap_read();
 		break;
 	default:
 		return -EINVAL;
