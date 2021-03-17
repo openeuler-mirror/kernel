@@ -102,56 +102,14 @@ u64 files_cgroup_count_fds(struct files_struct *files)
 	return retval;
 }
 
-static u64 files_in_taskset(struct cgroup_taskset *tset)
-{
-	struct task_struct *task;
-	u64 files = 0;
-	struct cgroup_subsys_state *css;
-
-	cgroup_taskset_for_each(task, css, tset) {
-		if (!thread_group_leader(task))
-			continue;
-
-		task_lock(task);
-		files += files_cgroup_count_fds(task->files);
-		task_unlock(task);
-	}
-	return files;
-}
-
 /*
  * If attaching this cgroup would overcommit the resource then deny
- * the attach.
+ * the attach. If not, attach the file resource into new cgroup.
  */
 static int files_cgroup_can_attach(struct cgroup_taskset *tset)
 {
-	struct cgroup_subsys_state *css;
-	unsigned long margin;
-	struct page_counter *cnt;
-	unsigned long counter;
-	u64 files = files_in_taskset(tset);
-
-	cgroup_taskset_first(tset, &css);
-	cnt = css_res_open_handles(css);
-
-	counter = (unsigned long)atomic_long_read(&cnt->usage);
-	if (cnt->max > counter)
-		margin = cnt->max - counter;
-	else
-		margin = 0;
-	if (margin < files)
-		return -ENOMEM;
-	return 0;
-}
-
-/*
- * If resource counts have gone up between can_attach and attach then
- * this may overcommit resources.  In that case just deny further allocation
- * until the resource usage drops.
- */
-static void files_cgroup_attach(struct cgroup_taskset *tset)
-{
 	u64 num_files;
+	bool can_attach;
 	struct cgroup_subsys_state *to_css;
 	struct cgroup_subsys_state *from_css;
 	struct page_counter *from_res;
@@ -166,7 +124,7 @@ static void files_cgroup_attach(struct cgroup_taskset *tset)
 	files = task->files;
 	if (!files || files == &init_files) {
 		task_unlock(task);
-		return;
+		return 0;
 	}
 
 	from_css = &files_cgroup_from_files(files)->css;
@@ -175,14 +133,20 @@ static void files_cgroup_attach(struct cgroup_taskset *tset)
 	spin_lock(&files->file_lock);
 	num_files = files_cgroup_count_fds(files);
 	page_counter_uncharge(from_res, num_files);
-	css_put(from_css);
 
-	if (!page_counter_try_charge(to_res, num_files, &fail_res))
+	if (!page_counter_try_charge(to_res, num_files, &fail_res)) {
+		page_counter_charge(from_res, num_files);
 		pr_err("Open files limit overcommited\n");
-	css_get(to_css);
-	task->files->files_cgroup = css_fcg(to_css);
+		can_attach = false;
+	} else {
+		css_put(from_css);
+		css_get(to_css);
+		task->files->files_cgroup = css_fcg(to_css);
+		can_attach = true;
+	}
 	spin_unlock(&files->file_lock);
 	task_unlock(task);
+	return can_attach ? 0 : -ENOSPC;
 }
 
 int files_cgroup_alloc_fd(struct files_struct *files, u64 n)
@@ -312,7 +276,6 @@ struct cgroup_subsys files_cgrp_subsys = {
 	.css_alloc = files_cgroup_css_alloc,
 	.css_free = files_cgroup_css_free,
 	.can_attach = files_cgroup_can_attach,
-	.attach = files_cgroup_attach,
 	.legacy_cftypes = files,
 	.dfl_cftypes = files,
 };
