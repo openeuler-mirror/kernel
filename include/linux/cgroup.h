@@ -432,6 +432,12 @@ static inline void cgroup_put(struct cgroup *cgrp)
 	css_put(&cgrp->self);
 }
 
+static inline struct cgroup_subsys_state *cgroup_subsys_state(
+	struct cgroup *cgrp, int subsys_id)
+{
+	return cgrp->subsys[subsys_id];
+}
+
 /**
  * task_css_set_check - obtain a task's css_set with extra access conditions
  * @task: the task to obtain css_set for

@@ -1122,6 +1122,16 @@ config SOCK_CGROUP_DATA
 	bool
 	default n
 
+config CGROUP_FILES
+	bool "Files Resource Controller for Control Groups"
+	select PAGE_COUNTER
+	default n
+	help
+	  Provides a cgroup resource controller that limits number of open
+	  file handles within a cgroup.
+	  This supports catching misbehaving processes and
+	  return EMFILE instead of ENOMEM for kernel memory limits.
+
 endif # CGROUPS
 
 menuconfig NAMESPACES
