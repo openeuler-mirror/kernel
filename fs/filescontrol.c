@@ -25,13 +25,16 @@
 #include <linux/seq_file.h>
 #include <linux/fdtable.h>
 #include <linux/sched/signal.h>
+#include <linux/module.h>
 
 #define FILES_MAX ULLONG_MAX
 #define FILES_MAX_STR "max"
 
-
+static bool no_acct;
 struct cgroup_subsys files_cgrp_subsys __read_mostly;
 EXPORT_SYMBOL(files_cgrp_subsys);
+
+module_param(no_acct, bool, 0444);
 
 struct files_cgroup {
 	struct cgroup_subsys_state css;
@@ -194,7 +197,7 @@ int files_cgroup_alloc_fd(struct files_struct *files, u64 n)
 	 *  we don't charge their fds, only issue is that files.usage
 	 *  won't be accurate in root files cgroup.
 	 */
-	if (files != &init_files) {
+	if (!no_acct && files != &init_files) {
 		struct page_counter *fail_res;
 		struct files_cgroup *files_cgroup =
 			files_cgroup_from_files(files);
@@ -212,7 +215,7 @@ void files_cgroup_unalloc_fd(struct files_struct *files, u64 n)
 	 * It's not charged so no need to uncharge, see comments in
 	 * files_cgroup_alloc_fd.
 	 */
-	if (files != &init_files) {
+	if (!no_acct && files != &init_files) {
 		struct files_cgroup *files_cgroup =
 		       files_cgroup_from_files(files);
 		page_counter_uncharge(&files_cgroup->open_handles, n);
@@ -220,6 +223,21 @@ void files_cgroup_unalloc_fd(struct files_struct *files, u64 n)
 }
 EXPORT_SYMBOL(files_cgroup_unalloc_fd);
 
+static u64 files_disabled_read(struct cgroup_subsys_state *css,
+			       struct cftype *cft)
+{
+	return no_acct;
+}
+
+static int files_disabled_write(struct cgroup_subsys_state *css,
+				    struct cftype *cft, u64 val)
+{
+	if (!val)
+		return -EINVAL;
+	no_acct = true;
+
+	return 0;
+}
 
 static int files_limit_read(struct seq_file *sf, void *v)
 {
@@ -280,6 +298,12 @@ static struct cftype files[] = {
 	{
 		.name = "usage",
 		.read_u64 = files_usage_read,
+	},
+	{
+		.name = "no_acct",
+		.flags = CFTYPE_ONLY_ON_ROOT,
+		.read_u64 = files_disabled_read,
+		.write_u64 = files_disabled_write,
 	},
 	{ }
 };
