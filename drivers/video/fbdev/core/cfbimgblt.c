@@ -266,7 +266,8 @@ static inline void fast_imageblit(const struct fb_image *image, struct fb_info *
 		s += spitch;
 	}
 }	
-	
+
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 /*
  * Optimized fast_imageblit for bpp == 16. ppw = 2, bit_mask = 3 folded
  * into the code, main loop unrolled.
@@ -393,6 +394,7 @@ static inline void fast_imageblit32(const struct fb_image *image,
 		s += spitch;
 	}
 }
+#endif
 
 void cfb_imageblit(struct fb_info *p, const struct fb_image *image)
 {
@@ -425,7 +427,8 @@ void cfb_imageblit(struct fb_info *p, const struct fb_image *image)
 			fgcolor = image->fg_color;
 			bgcolor = image->bg_color;
 		}	
-		
+
+#ifdef CONFIG_OPENEULER_RASPBERRYPI
 		if (!start_index && !pitch_index) {
 			if (bpp == 32)
 				fast_imageblit32(image, p, dst1, fgcolor,
@@ -441,6 +444,13 @@ void cfb_imageblit(struct fb_info *p, const struct fb_image *image)
 					       bgcolor,
 					       start_index, pitch_index);
 		} else
+#else
+		if (32 % bpp == 0 && !start_index && !pitch_index &&
+		    ((width & (32/bpp-1)) == 0) &&
+		    bpp >= 8 && bpp <= 32)
+			fast_imageblit(image, p, dst1, fgcolor, bgcolor);
+		else
+#endif
 			slow_imageblit(image, p, dst1, fgcolor, bgcolor,
 					start_index, pitch_index);
 	} else
