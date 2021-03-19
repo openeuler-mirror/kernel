@@ -130,7 +130,7 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 	buf_attr.mtt_only = is_fast;
 
 	err = hns_roce_mtr_create(hr_dev, &mr->pbl_mtr, &buf_attr,
-				  hr_dev->caps.pbl_ba_pg_sz + HNS_HW_PAGE_SHIFT,
+				  hr_dev->caps.pbl_ba_pg_sz + PAGE_SHIFT,
 				  udata, start);
 	if (err)
 		ibdev_err(ibdev, "failed to alloc pbl mtr, ret = %d.\n", err);

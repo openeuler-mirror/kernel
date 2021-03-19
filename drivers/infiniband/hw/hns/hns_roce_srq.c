@@ -226,7 +226,7 @@ static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 	buf_attr.fixed_page = true;
 
 	err = hns_roce_mtr_create(hr_dev, &idx_que->mtr, &buf_attr,
-				  hr_dev->caps.idx_ba_pg_sz + HNS_HW_PAGE_SHIFT,
+				  hr_dev->caps.idx_ba_pg_sz + PAGE_SHIFT,
 				  udata, addr);
 	if (err) {
 		ibdev_err(ibdev, "Failed to alloc SRQ idx mtr, err %d\n", err);
