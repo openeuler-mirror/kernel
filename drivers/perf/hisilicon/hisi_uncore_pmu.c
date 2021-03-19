@@ -119,7 +119,7 @@ ssize_t hisi_uncore_pmu_identifier_attr_show(struct device *dev,
 {
 	struct hisi_pmu *hisi_pmu = to_hisi_pmu(dev_get_drvdata(dev));
 
-	return snprintf(page, PAGE_SIZE, "0x%08x\n", hisi_pmu->identifier);
+	return sysfs_emit(page, "0x%08x\n", hisi_pmu->identifier);
 }
 EXPORT_SYMBOL_NS_GPL(hisi_uncore_pmu_identifier_attr_show, "HISI_PMU");
 
