@@ -865,20 +865,9 @@ struct MR_LD_RAID {
 	u8	regTypeReqOnRead;
 	__le16     seqNum;
 
-struct {
-#ifndef MFI_BIG_ENDIAN
-	u32 ldSyncRequired:1;
-	u32 regTypeReqOnReadIsValid:1;
-	u32 isEPD:1;
-	u32 enableSLDOnAllRWIOs:1;
-	u32 reserved:28;
-#else
-	u32 reserved:28;
-	u32 enableSLDOnAllRWIOs:1;
-	u32 isEPD:1;
-	u32 regTypeReqOnReadIsValid:1;
-	u32 ldSyncRequired:1;
-#endif
+	struct {
+		u32 ldSyncRequired:1;
+		u32 reserved:31;
 	} flags;
 
 	u8	LUN[8]; /* 0x24 8 byte LUN field used for SCSI IO's */
