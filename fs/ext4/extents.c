@@ -3330,7 +3330,7 @@ static int ext4_split_extent_at(handle_t *handle,
 
 		goto out;
 	} else if (err)
-		goto fix_extent_len;
+		goto err;
 
 out:
 	ext4_ext_show_leaf(inode, path);
@@ -3338,6 +3338,7 @@ out:
 
 fix_extent_len:
 	ex->ee_len = orig_ex.ee_len;
+err:
 	ext4_ext_dirty(handle, inode, path + path->p_depth);
 	return err;
 }
