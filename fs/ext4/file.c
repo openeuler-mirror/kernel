@@ -434,7 +434,6 @@ static int ext4_sample_last_mounted(struct super_block *sb,
 		goto out_journal;
 	strlcpy(sbi->s_es->s_last_mounted, cp,
 		sizeof(sbi->s_es->s_last_mounted));
-	ext4_superblock_csum_set(sb);
 	ext4_handle_dirty_super(handle, sb);
 out_journal:
 	ext4_journal_stop(handle);
