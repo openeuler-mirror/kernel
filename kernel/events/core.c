@@ -10245,6 +10245,8 @@ err_ns:
 		put_pid_ns(event->ns);
 	if (event->hw.target)
 		put_task_struct(event->hw.target);
+
+	synchronize_rcu();
 	kfree(event);
 
 	return ERR_PTR(err);
