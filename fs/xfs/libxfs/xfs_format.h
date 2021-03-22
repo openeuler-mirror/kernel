@@ -833,6 +833,18 @@ typedef struct xfs_timestamp {
 } xfs_timestamp_t;
 
 /*
+ * Smallest possible ondisk seconds value with traditional timestamps.  This
+ * corresponds exactly with the incore timestamp Dec 13 20:45:52 UTC 1901.
+ */
+#define XFS_LEGACY_TIME_MIN	((int64_t)S32_MIN)
+
+/*
+ * Largest possible ondisk seconds value with traditional timestamps.  This
+ * corresponds exactly with the incore timestamp Jan 19 03:14:07 UTC 2038.
+ */
+#define XFS_LEGACY_TIME_MAX	((int64_t)S32_MAX)
+
+/*
  * On-disk inode structure.
  *
  * This is just the header or "dinode core", the inode is expanded to fill a

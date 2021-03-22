@@ -584,6 +584,17 @@ xfs_setattr_mode(
 	inode->i_mode |= mode & ~S_IFMT;
 }
 
+static inline struct timespec64 xfs_timestamp_truncate(struct timespec64 t)
+{
+	t.tv_sec = clamp(t.tv_sec, XFS_LEGACY_TIME_MIN, XFS_LEGACY_TIME_MAX);
+
+	if (unlikely(t.tv_sec == XFS_LEGACY_TIME_MIN ||
+		     t.tv_sec == XFS_LEGACY_TIME_MAX))
+		t.tv_sec = 0;
+
+	return t;
+}
+
 void
 xfs_setattr_time(
 	struct xfs_inode	*ip,
@@ -594,11 +605,11 @@ xfs_setattr_time(
 	ASSERT(xfs_isilocked(ip, XFS_ILOCK_EXCL));
 
 	if (iattr->ia_valid & ATTR_ATIME)
-		inode->i_atime = iattr->ia_atime;
+		inode->i_atime = xfs_timestamp_truncate(iattr->ia_atime);
 	if (iattr->ia_valid & ATTR_CTIME)
-		inode->i_ctime = iattr->ia_ctime;
+		inode->i_ctime = xfs_timestamp_truncate(iattr->ia_ctime);
 	if (iattr->ia_valid & ATTR_MTIME)
-		inode->i_mtime = iattr->ia_mtime;
+		inode->i_mtime = xfs_timestamp_truncate(iattr->ia_mtime);
 }
 
 static int
