@@ -363,6 +363,92 @@ static time64_t __ext4_get_tstamp(__le32 *lo, __u8 *hi)
 #define ext4_get_tstamp(es, tstamp) \
 	__ext4_get_tstamp(&(es)->tstamp, &(es)->tstamp ## _hi)
 
+/*
+ * The del_gendisk() function uninitializes the disk-specific data
+ * structures, including the bdi structure, without telling anyone
+ * else.  Once this happens, any attempt to call mark_buffer_dirty()
+ * (for example, by ext4_commit_super), will cause a kernel OOPS.
+ * This is a kludge to prevent these oops until we can put in a proper
+ * hook in del_gendisk() to inform the VFS and file system layers.
+ */
+static int block_device_ejected(struct super_block *sb)
+{
+	struct inode *bd_inode = sb->s_bdev->bd_inode;
+	struct backing_dev_info *bdi = inode_to_bdi(bd_inode);
+
+	return bdi->dev == NULL;
+}
+
+static void ext4_journal_commit_callback(journal_t *journal, transaction_t *txn)
+{
+	struct super_block		*sb = journal->j_private;
+	struct ext4_sb_info		*sbi = EXT4_SB(sb);
+	int				error = is_journal_aborted(journal);
+	struct ext4_journal_cb_entry	*jce;
+
+	BUG_ON(txn->t_state == T_FINISHED);
+
+	ext4_process_freed_data(sb, txn->t_tid);
+
+	spin_lock(&sbi->s_md_lock);
+	while (!list_empty(&txn->t_private_list)) {
+		jce = list_entry(txn->t_private_list.next,
+				 struct ext4_journal_cb_entry, jce_list);
+		list_del_init(&jce->jce_list);
+		spin_unlock(&sbi->s_md_lock);
+		jce->jce_func(sb, jce, error);
+		spin_lock(&sbi->s_md_lock);
+	}
+	spin_unlock(&sbi->s_md_lock);
+}
+
+static bool system_going_down(void)
+{
+	return system_state == SYSTEM_HALT || system_state == SYSTEM_POWER_OFF
+		|| system_state == SYSTEM_RESTART;
+}
+
+static void ext4_netlink_send_info(struct super_block *sb, int ext4_errno)
+{
+	int size;
+	sk_buff_data_t old_tail;
+	struct sk_buff *skb;
+	struct nlmsghdr *nlh;
+	struct ext4_err_msg *msg;
+
+	if (ext4nl) {
+		if (IS_EXT2_SB(sb))
+			return;
+		size = NLMSG_SPACE(sizeof(struct ext4_err_msg));
+		skb = alloc_skb(size, GFP_ATOMIC);
+		if (!skb) {
+			printk(KERN_ERR "Cannot alloc skb!");
+			return;
+		}
+		old_tail = skb->tail;
+		nlh = nlmsg_put(skb, 0, 0, NLMSG_ERROR, size - sizeof(*nlh), 0);
+		if (!nlh)
+			goto nlmsg_failure;
+		msg = (struct ext4_err_msg *)NLMSG_DATA(nlh);
+		if (IS_EXT3_SB(sb))
+			msg->magic = EXT3_ERROR_MAGIC;
+		else
+			msg->magic = EXT4_ERROR_MAGIC;
+		memcpy(msg->s_id, sb->s_id, sizeof(sb->s_id));
+		msg->s_flags = sb->s_flags;
+		msg->ext4_errno = ext4_errno;
+		nlh->nlmsg_len = skb->tail - old_tail;
+		NETLINK_CB(skb).portid = 0;
+		NETLINK_CB(skb).dst_group = NL_EXT4_ERROR_GROUP;
+		netlink_broadcast(ext4nl, skb, 0, NL_EXT4_ERROR_GROUP,
+		 GFP_ATOMIC);
+		return;
+nlmsg_failure:
+		if (skb)
+			kfree_skb(skb);
+	}
+}
+
 static void __save_error_info(struct super_block *sb, int error,
 			      __u32 ino, __u64 block,
 			      const char *func, unsigned int line)
@@ -459,92 +545,6 @@ static void save_error_info(struct super_block *sb, int error,
 	__save_error_info(sb, error, ino, block, func, line);
 	if (!bdev_read_only(sb->s_bdev))
 		ext4_commit_super(sb, 1);
-}
-
-/*
- * The del_gendisk() function uninitializes the disk-specific data
- * structures, including the bdi structure, without telling anyone
- * else.  Once this happens, any attempt to call mark_buffer_dirty()
- * (for example, by ext4_commit_super), will cause a kernel OOPS.
- * This is a kludge to prevent these oops until we can put in a proper
- * hook in del_gendisk() to inform the VFS and file system layers.
- */
-static int block_device_ejected(struct super_block *sb)
-{
-	struct inode *bd_inode = sb->s_bdev->bd_inode;
-	struct backing_dev_info *bdi = inode_to_bdi(bd_inode);
-
-	return bdi->dev == NULL;
-}
-
-static void ext4_journal_commit_callback(journal_t *journal, transaction_t *txn)
-{
-	struct super_block		*sb = journal->j_private;
-	struct ext4_sb_info		*sbi = EXT4_SB(sb);
-	int				error = is_journal_aborted(journal);
-	struct ext4_journal_cb_entry	*jce;
-
-	BUG_ON(txn->t_state == T_FINISHED);
-
-	ext4_process_freed_data(sb, txn->t_tid);
-
-	spin_lock(&sbi->s_md_lock);
-	while (!list_empty(&txn->t_private_list)) {
-		jce = list_entry(txn->t_private_list.next,
-				 struct ext4_journal_cb_entry, jce_list);
-		list_del_init(&jce->jce_list);
-		spin_unlock(&sbi->s_md_lock);
-		jce->jce_func(sb, jce, error);
-		spin_lock(&sbi->s_md_lock);
-	}
-	spin_unlock(&sbi->s_md_lock);
-}
-
-static bool system_going_down(void)
-{
-	return system_state == SYSTEM_HALT || system_state == SYSTEM_POWER_OFF
-		|| system_state == SYSTEM_RESTART;
-}
-
-static void ext4_netlink_send_info(struct super_block *sb, int ext4_errno)
-{
-	int size;
-	sk_buff_data_t old_tail;
-	struct sk_buff *skb;
-	struct nlmsghdr *nlh;
-	struct ext4_err_msg *msg;
-
-	if (ext4nl) {
-		if (IS_EXT2_SB(sb))
-			return;
-		size = NLMSG_SPACE(sizeof(struct ext4_err_msg));
-		skb = alloc_skb(size, GFP_ATOMIC);
-		if (!skb) {
-			printk(KERN_ERR "Cannot alloc skb!");
-			return;
-		}
-		old_tail = skb->tail;
-		nlh = nlmsg_put(skb, 0, 0, NLMSG_ERROR, size - sizeof(*nlh), 0);
-		if (!nlh)
-			goto nlmsg_failure;
-		msg = (struct ext4_err_msg *)NLMSG_DATA(nlh);
-		if (IS_EXT3_SB(sb))
-			msg->magic = EXT3_ERROR_MAGIC;
-		else
-			msg->magic = EXT4_ERROR_MAGIC;
-		memcpy(msg->s_id, sb->s_id, sizeof(sb->s_id));
-		msg->s_flags = sb->s_flags;
-		msg->ext4_errno = ext4_errno;
-		nlh->nlmsg_len = skb->tail - old_tail;
-		NETLINK_CB(skb).portid = 0;
-		NETLINK_CB(skb).dst_group = NL_EXT4_ERROR_GROUP;
-		netlink_broadcast(ext4nl, skb, 0, NL_EXT4_ERROR_GROUP,
-		 GFP_ATOMIC);
-		return;
-nlmsg_failure:
-		if (skb)
-			kfree_skb(skb);
-	}
 }
 
 /* Deal with the reporting of failure conditions on a filesystem such as
