@@ -172,9 +172,11 @@ static int ext4_protect_reserved_inode(struct super_block *sb,
 			err = add_system_zone(system_blks, map.m_pblk, n, ino);
 			if (err < 0) {
 				if (err == -EFSCORRUPTED) {
-					ext4_error(sb, "blocks %llu-%llu from inode %u "
-						   "overlap system zone", map.m_pblk,
-						   map.m_pblk + map.m_len - 1, ino);
+					__ext4_error(sb, __func__, __LINE__, -err,
+						map.m_pblk, "blocks %llu-%llu "
+						"from inode %u overlap system zone",
+						map.m_pblk,
+						map.m_pblk + map.m_len - 1, ino);
 				}
 				break;
 			}
@@ -304,7 +306,6 @@ int ext4_inode_block_valid(struct inode *inode, ext4_fsblk_t start_blk,
 	if ((start_blk <= le32_to_cpu(sbi->s_es->s_first_data_block)) ||
 	    (start_blk + count < start_blk) ||
 	    (start_blk + count > ext4_blocks_count(sbi->s_es))) {
-		sbi->s_es->s_last_error_block = cpu_to_le64(start_blk);
 		return 0;
 	}
 
@@ -327,8 +328,6 @@ int ext4_inode_block_valid(struct inode *inode, ext4_fsblk_t start_blk,
 			n = n->rb_right;
 		else {
 			ret = (entry->ino == inode->i_ino);
-			if (!ret)
-				sbi->s_es->s_last_error_block = cpu_to_le64(start_blk);
 			break;
 		}
 	}
@@ -340,7 +339,6 @@ out_rcu:
 int ext4_check_blockref(const char *function, unsigned int line,
 			struct inode *inode, __le32 *p, unsigned int max)
 {
-	struct ext4_super_block *es = EXT4_SB(inode->i_sb)->s_es;
 	__le32 *bref = p;
 	unsigned int blk;
 
@@ -353,7 +351,6 @@ int ext4_check_blockref(const char *function, unsigned int line,
 		blk = le32_to_cpu(*bref++);
 		if (blk &&
 		    unlikely(!ext4_inode_block_valid(inode, blk, 1))) {
-			es->s_last_error_block = cpu_to_le64(blk);
 			ext4_error_inode(inode, function, line, blk,
 					 "invalid block");
 			return -EFSCORRUPTED;
