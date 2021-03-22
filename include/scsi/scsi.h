@@ -55,6 +55,19 @@ static inline int scsi_status_is_good(int status)
 		(status == SAM_STAT_COMMAND_TERMINATED));
 }
 
+/** scsi_result_is_good - check the result return.
+ *
+ * @result: the result passed up from the driver (including host and
+ *          driver components)
+ *
+ * Drivers may only set other bytes but not status byte.
+ * This checks both the status byte and other bytes.
+ */
+static inline int scsi_result_is_good(int result)
+{
+	return scsi_status_is_good(result) && (result & ~0xff) == 0;
+}
+
 
 /*
  * standard mode-select header prepended to all mode-select commands
