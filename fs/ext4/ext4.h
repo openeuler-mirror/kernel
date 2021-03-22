@@ -1543,6 +1543,27 @@ struct ext4_sb_info {
 	/* Record the errseq of the backing block device */
 	errseq_t s_bdev_wb_err;
 	spinlock_t s_bdev_wb_lock;
+
+	/* Information about errors that happened during this mount */
+	spinlock_t s_error_lock;
+	int s_add_error_count;
+	int s_first_error_code;
+	__u32 s_first_error_line;
+	__u32 s_first_error_ino;
+	__u64 s_first_error_block;
+	const char *s_first_error_func;
+	time64_t s_first_error_time;
+	int s_last_error_code;
+	__u32 s_last_error_line;
+	__u32 s_last_error_ino;
+	__u64 s_last_error_block;
+	const char *s_last_error_func;
+	time64_t s_last_error_time;
+	/*
+	 * If we are in a context where we cannot update error information in
+	 * the on-disk superblock, we queue this work to do it.
+	 */
+	struct work_struct s_error_work;
 };
 
 static inline struct ext4_sb_info *EXT4_SB(struct super_block *sb)
