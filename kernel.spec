@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2103.2.0
+%global hulkrelease 2103.3.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0060
+Release: %{hulkrelease}.0061
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,41 @@ fi
 
 %changelog
 
+
+* Mon Mar 22 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2103.3.0.0061
+- arm64/mpam: fix a memleak in add_schema
+- scsi: check the whole result for reading write protect flag
+- ext4: Fix bug on in ext4_es_cache_extent as ext4_split_extent_at failed
+- md: add checkings before flush md_misc_wq
+- dm: use noio when sending kobject event
+- ext4: fix potential htree index checksum corruption
+- quota: Fix memory leak when handling corrupted quota file
+- quota: Sanity-check quota file headers on load
+- block, bfq: invoke flush_idle_tree after reparent_active_queues in pd_offline
+- block, bfq: make reparent_leaf_entity actually work only on leaf entities
+- block, bfq: turn put_queue into release_process_ref in __bfq_bic_change_cgroup
+- block, bfq: move forward the getting of an extra ref in bfq_bfqq_move
+- block, bfq: get extra ref to prevent a queue from being freed during a group move
+- perf/ftrace: Fix use-after-free in __ftrace_ops_list_func()
+- fs/xfs: fix time overflow
+- ext4: remove set but not used variable 'es' in ext4_jbd2.c
+- ext4: remove set but not used variable 'es'
+- ext4: don't try to processed freed blocks until mballoc is initialized
+- ext4: drop ext4_handle_dirty_super()
+- ext4: use sbi instead of EXT4_SB(sb) in ext4_update_super()
+- ext4: save error info to sb through journal if available
+- ext4: protect superblock modifications with a buffer lock
+- ext4: drop sync argument of ext4_commit_super()
+- ext4: combine ext4_handle_error() and save_error_info()
+- ext4: defer saving error info from atomic context
+- ext4: simplify ext4 error translation
+- ext4: move functions in super.c
+- ext4: make ext4_abort() use __ext4_error()
+- ext4: standardize error message in ext4_protect_reserved_inode()
+- ext4: save all error info in save_error_info() and drop ext4_set_errno()
+- ext4: save the error code which triggered an ext4_error() in the superblock
+- ext4: remove redundant sb checksum recomputation
+- Revert "ext4: Protect superblock modifications with a buffer lock"
 
 * Mon Mar 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2103.2.0.0060
 - xen-netback: respect gnttab_map_refs()'s return value
