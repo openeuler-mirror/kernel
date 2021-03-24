@@ -345,41 +345,8 @@ config KASAN_SHADOW_OFFSET
 	default 0xeffffff900000000 if ARM64_VA_BITS_36 && KASAN_SW_TAGS
 	default 0xffffffffffffffff
 
-config ARM64_CPU_PARK
-	bool "Support CPU PARK on kexec"
-	depends on SMP
-	depends on KEXEC_CORE
-	help
-	 This enables support for CPU PARK feature in
-	 order to save time of cpu down to up.
-	 CPU park is a state through kexec, spin loop
-	 instead of cpu die before jumping to new kernel,
-	 jumping out from loop to new kernel entry in
-	 smp_init.
-
 config ARCH_HAS_CPU_RELAX
 	def_bool y
-
-config ARM64_PMEM_RESERVE
-	bool "Reserve memory for persistent storage"
-	default n
-	help
-	  Use memmap=nn[KMG]!ss[KMG](memmap=100K!0x1a0000000) reserve
-	  memory for persistent storage.
-
-	  Say y here to enable this feature.
-
-config ARM64_PMEM_LEGACY_DEVICE
-	bool "Create persistent storage"
-	depends on BLK_DEV
-	depends on LIBNVDIMM
-	select ARM64_PMEM_RESERVE
-	help
-	  Use reserved memory for persistent storage when the kernel
-	  restart or update. the data in PMEM will not be lost and
-	  can be loaded faster.
-
-	  Say y if unsure.
 
 source "arch/arm64/Kconfig.platforms"
 
@@ -1196,6 +1163,18 @@ config CRASH_DUMP
 
 	  For more details see Documentation/admin-guide/kdump/kdump.rst
 
+config ARM64_CPU_PARK
+	bool "Support CPU PARK on kexec"
+	depends on SMP
+	depends on KEXEC_CORE
+	help
+	 This enables support for CPU PARK feature in
+	 order to save time of cpu down to up.
+	 CPU park is a state through kexec, spin loop
+	 instead of cpu die before jumping to new kernel,
+	 jumping out from loop to new kernel entry in
+	 smp_init.
+
 config XEN_DOM0
 	def_bool y
 	depends on XEN
@@ -1256,6 +1235,27 @@ config RODATA_FULL_DEFAULT_ENABLED
 
 	  This requires the linear region to be mapped down to pages,
 	  which may adversely affect performance in some cases.
+
+config ARM64_PMEM_RESERVE
+	bool "Reserve memory for persistent storage"
+	default n
+	help
+	  Use memmap=nn[KMG]!ss[KMG](memmap=100K!0x1a0000000) reserve
+	  memory for persistent storage.
+
+	  Say y here to enable this feature.
+
+config ARM64_PMEM_LEGACY_DEVICE
+	bool "Create persistent storage"
+	depends on BLK_DEV
+	depends on LIBNVDIMM
+	select ARM64_PMEM_RESERVE
+	help
+	  Use reserved memory for persistent storage when the kernel
+	  restart or update. the data in PMEM will not be lost and
+	  can be loaded faster.
+
+	  Say y if unsure.
 
 config ARM64_SW_TTBR0_PAN
 	bool "Emulate Privileged Access Never using TTBR0_EL1 switching"
