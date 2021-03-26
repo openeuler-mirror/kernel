@@ -712,7 +712,7 @@ static int kvm_unmap_hva_handler(struct kvm *kvm, gfn_t gfn, gfn_t gfn_end,
 	return npages > 0;
 }
 
-int kvm_unmap_hva_range(struct kvm *kvm, unsigned long start, unsigned long end, bool blockable)
+int kvm_unmap_hva_range(struct kvm *kvm, unsigned long start, unsigned long end, unsigned flags)
 {
 	unsigned long npages;
 
