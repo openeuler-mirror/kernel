@@ -652,12 +652,6 @@ void __init bootmem_init(void)
 	reserve_quick_kexec();
 #endif
 
-	/*
-	 * request_standard_resources() depends on crashkernel's memory being
-	 * reserved, so do it here.
-	 */
-	reserve_crashkernel();
-
 	reserve_pin_memory_res();
 #ifdef CONFIG_ARM64_PMEM_RESERVE
 	reserve_pmem();
