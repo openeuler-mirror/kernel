@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2103.3.0
+%global hulkrelease 2103.4.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0061
+Release: %{hulkrelease}.0062
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,24 @@ fi
 
 %changelog
 
+
+* Mon Mar 29 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2103.4.0.0062
+- mm/vmscan: fix uncleaned mem_cgroup_uncharge
+- staging: rtl8188eu: prevent ->ssid overflow in rtw_wx_set_scan()
+- PCI: rpadlpar: Fix potential drc_name corruption in store functions
+- perf/x86/intel: Fix a crash caused by zero PEBS status
+- btrfs: fix race when cloning extent buffer during rewind of an old root
+- bpf: Fix off-by-one for area size in creating mask to left
+- bpf: Prohibit alu ops for pointer types not defining ptr_limit
+- net/x25: prevent a couple of overflows
+- drm/ttm/nouveau: don't call tt destroy callback on alloc failure.
+- cgroup: Fix kabi broken by files_cgroup introduced
+- arm64/mpam: fix a possible deadlock in mpam_enable
+- config: arm64: build TCM driver to modules by default
+- staging: TCM: add GMJS(Nationz Tech) TCM driver.
+- config: enable config TXGBE by default
+- x86/config: Set CONFIG_TXGBE=m by default
+- net: txgbe: Add support for Netswift 10G NIC
 
 * Mon Mar 22 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2103.3.0.0061
 - arm64/mpam: fix a memleak in add_schema
