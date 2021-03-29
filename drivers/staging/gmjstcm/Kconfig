@@ -1,0 +1,21 @@
+menu "GMJS TCM support"
+
+config GMJS_TCM
+	bool
+
+config GMJS_TCM_CORE
+	tristate "GMJS TCM core support"
+	depends on ARM64 || MIPS
+	default m
+	select GMJS_TCM
+	help
+		GMJS TCM core support.
+
+config GMJS_TCM_SPI
+	tristate "GMJS TCM support on SPI interface"
+	depends on GMJS_TCM_CORE && SPI_MASTER
+	default m
+	help
+		GMJS TCM support on SPI interface.
+
+endmenu
