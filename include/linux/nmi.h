@@ -96,7 +96,7 @@ static inline void hardlockup_detector_disable(void) {}
 #endif
 
 #if defined(CONFIG_HARDLOCKUP_DETECTOR)
-#ifndef CONFIG_PPC
+#ifndef CONFIG_PPC_WATCHDOG
 extern void arch_touch_nmi_watchdog(void);
 #endif
 #else

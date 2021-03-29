@@ -26,8 +26,8 @@ static DEFINE_PER_CPU(bool, watchdog_nmi_touch);
 
 static unsigned long hardlockup_allcpu_dumped;
 
-#ifndef CONFIG_PPC
-notrace void __weak arch_touch_nmi_watchdog(void)
+#ifndef CONFIG_PPC_WATCHDOG
+notrace void arch_touch_nmi_watchdog(void)
 {
 	/*
 	 * Using __raw here because some code paths have
