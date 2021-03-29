@@ -70,6 +70,10 @@ SECTIONS
 #endif
 	_etext = .;			/* End of text section */
 
+	.gnu.hash : {
+		*(.gnu.hash)
+	}
+
 	RO_DATA(PAGE_SIZE)
 
 	. = ALIGN(4);
