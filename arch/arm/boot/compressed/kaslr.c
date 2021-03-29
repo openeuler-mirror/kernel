@@ -208,11 +208,15 @@ static void get_cell_sizes(const void *fdt, int node, int *addr_cells,
 		*size_cells = fdt32_to_cpu(*prop);
 }
 
-static u32 get_memory_end(const void *fdt)
+/*
+ * Original method only consider the first memory node in dtb,
+ * but there may be more than one memory nodes, we only consider
+ * the memory node zImage exists.
+ */
+static u32 get_memory_end(const void *fdt, u32 zimage_start)
 {
 	int mem_node, address_cells, size_cells, len;
 	const fdt32_t *reg;
-	u64 memory_end = 0;
 
 	/* Look for a node called "memory" at the lowest level of the tree */
 	mem_node = fdt_path_offset(fdt, "/memory");
@@ -221,32 +225,38 @@ static u32 get_memory_end(const void *fdt)
 
 	get_cell_sizes(fdt, 0, &address_cells, &size_cells);
 
-	/*
-	 * Now find the 'reg' property of the /memory node, and iterate over
-	 * the base/size pairs.
-	 */
-	len = 0;
-	reg = fdt_getprop(fdt, mem_node, "reg", &len);
-	while (len >= 4 * (address_cells + size_cells)) {
-		u64 base, size;
+	while(mem_node >= 0) {
+		/*
+		 * Now find the 'reg' property of the /memory node, and iterate over
+		 * the base/size pairs.
+		 */
+		len = 0;
+		reg = fdt_getprop(fdt, mem_node, "reg", &len);
+		while (len >= 4 * (address_cells + size_cells)) {
+			u64 base, size;
+			base = fdt32_to_cpu(reg[0]);
+			if (address_cells == 2)
+				base = (base << 32) | fdt32_to_cpu(reg[1]);
 
-		base = fdt32_to_cpu(reg[0]);
-		if (address_cells == 2)
-			base = (base << 32) | fdt32_to_cpu(reg[1]);
+			reg += address_cells;
+			len -= 4 * address_cells;
 
-		reg += address_cells;
-		len -= 4 * address_cells;
+			size = fdt32_to_cpu(reg[0]);
+			if (size_cells == 2)
+				size = (size << 32) | fdt32_to_cpu(reg[1]);
 
-		size = fdt32_to_cpu(reg[0]);
-		if (size_cells == 2)
-			size = (size << 32) | fdt32_to_cpu(reg[1]);
+			reg += size_cells;
+			len -= 4 * size_cells;
 
-		reg += size_cells;
-		len -= 4 * size_cells;
-
-		memory_end = max(memory_end, base + size);
+			/* Get the base and size of the zimage memory node */
+			if (zimage_start >= base && zimage_start < base + size)
+				return base + size;
+		}
+		/* If current memory node is not the one zImage exists, then traverse next memory node. */
+		mem_node = fdt_node_offset_by_prop_value(fdt, mem_node, "device_type", "memory", sizeof("memory"));
 	}
-	return min(memory_end, (u64)U32_MAX);
+
+	return 0;
 }
 
 static char *__strstr(const char *s1, const char *s2, int l2)
@@ -399,8 +409,12 @@ u32 kaslr_early_init(u32 *kaslr_offset, u32 image_base, u32 image_size,
 		}
 	}
 
-	/* check the memory nodes for the size of the lowmem region */
-	mem_fdt = get_memory_end(fdt);
+	/*
+	 * check the memory nodes for the size of the lowmem region, traverse
+	 * all memory nodes to find the node in which zImage exists, we
+	 * randomize kernel only in the one zImage exists.
+	 */
+	mem_fdt = get_memory_end(fdt, zimage_start);
 	if (mem_fdt)
 		regions.pa_end = min(regions.pa_end, mem_fdt) - regions.image_size;
 	else
