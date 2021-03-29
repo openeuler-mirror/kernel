@@ -113,6 +113,11 @@ targets       := vmlinux vmlinux.lds piggy_data piggy.o \
 
 clean-files += piggy_data lib1funcs.S ashldi3.S bswapsdi2.S hyp-stub.S
 
+ifeq ($(CONFIG_RELOCATABLE),y)
+HIDDEN_STR := -include $(srctree)/include/linux/hidden.h
+KBUILD_CFLAGS := $(subst $(HIDDEN_STR), , $(KBUILD_CFLAGS))
+endif
+
 KBUILD_CFLAGS += -DDISABLE_BRANCH_PROFILING
 
 ccflags-y := -fpic $(call cc-option,-mno-single-pic-base,) -fno-builtin \
