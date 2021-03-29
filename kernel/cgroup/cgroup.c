@@ -134,6 +134,12 @@ static const char *cgroup_subsys_name[] = {
 	EXPORT_SYMBOL_GPL(_x ## _cgrp_subsys_enabled_key);			\
 	EXPORT_SYMBOL_GPL(_x ## _cgrp_subsys_on_dfl_key);
 #include <linux/cgroup_subsys.h>
+
+#if ((defined __GENKSYMS__) && (defined CONFIG_X86))
+#if IS_ENABLED(CONFIG_CGROUP_FILES)
+SUBSYS(files)
+#endif
+#endif
 #undef SUBSYS
 
 #define SUBSYS(_x) [_x ## _cgrp_id] = &_x ## _cgrp_subsys_enabled_key,

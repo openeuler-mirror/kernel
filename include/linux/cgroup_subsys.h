@@ -68,8 +68,10 @@ SUBSYS(rdma)
 SUBSYS(debug)
 #endif
 
+#if ((!defined __GENKSYMS__) || (!defined CONFIG_X86))
 #if IS_ENABLED(CONFIG_CGROUP_FILES)
 SUBSYS(files)
+#endif
 #endif
 
 /*
