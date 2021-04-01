@@ -1331,6 +1331,9 @@ hinic_vlan_rx_add_vid(struct net_device *netdev,
 	u32 col, line;
 	int err;
 
+	if (vid == 0)
+		return 0;
+
 	col = VID_COL(nic_dev, vid);
 	line = VID_LINE(nic_dev, vid);
 
@@ -1361,6 +1364,12 @@ hinic_vlan_rx_kill_vid(struct net_device *netdev,
 	unsigned long *vlan_bitmap = nic_dev->vlan_bitmap;
 	u16 func_id;
 	int err, col, line;
+
+	/* vlan 0 is used internally by the firmware and must always exist
+	 * after netdev open
+	 */
+	if (vid == 0)
+		return 0;
 
 	col  = VID_COL(nic_dev, vid);
 	line = VID_LINE(nic_dev, vid);
@@ -1490,6 +1499,31 @@ static int set_feature_lro(struct hinic_nic_dev *nic_dev,
 	return err;
 }
 
+static int set_feature_vlan_filter(struct hinic_nic_dev *nic_dev,
+				   netdev_features_t wanted_features,
+				   netdev_features_t features,
+				   netdev_features_t *failed_features)
+{
+	netdev_features_t changed = wanted_features ^ features;
+	bool en = !!(wanted_features & NETIF_F_HW_VLAN_CTAG_FILTER);
+	int err;
+
+	if (!(changed & NETIF_F_HW_VLAN_CTAG_FILTER))
+		return 0;
+
+	err = hinic_set_vlan_fliter(nic_dev->hwdev, en);
+	if (err) {
+		hinic_err(nic_dev, drv, "%s rx vlan filter failed\n",
+			  FEATURES_OP_STR(en));
+		*failed_features |= NETIF_F_HW_VLAN_CTAG_FILTER;
+	} else {
+		hinic_info(nic_dev, drv, "%s rx vlan filter success\n",
+			   FEATURES_OP_STR(en));
+	}
+
+	return err;
+}
+
 static int set_features(struct hinic_nic_dev *nic_dev,
 			netdev_features_t pre_features,
 			netdev_features_t features)
@@ -1505,6 +1539,8 @@ static int set_features(struct hinic_nic_dev *nic_dev,
 				       &failed_features);
 	err |= (u32)set_feature_lro(nic_dev, features, pre_features,
 				    &failed_features);
+	err |= (u32)set_feature_vlan_filter(nic_dev, features, pre_features,
+					    &failed_features);
 	if (err) {
 		nic_dev->netdev->features = features ^ failed_features;
 		return -EIO;
@@ -2100,6 +2136,8 @@ static void netdev_feature_init(struct net_device *netdev)
 		netdev->features |= NETIF_F_HW_VLAN_CTAG_RX;
 	}
 
+	netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER;
+
 	/* copy netdev features into list of user selectable features */
 	hw_features = netdev->hw_features;
 	hw_features |= netdev->features;
@@ -2115,11 +2153,6 @@ static void netdev_feature_init(struct net_device *netdev)
 	}
 
 	netdev->hw_features = hw_features;
-
-	/* Set after hw_features because this could not be part of
-	 * hw_features
-	 */
-	netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER;
 
 	netdev->priv_flags |= IFF_UNICAST_FLT;
 
