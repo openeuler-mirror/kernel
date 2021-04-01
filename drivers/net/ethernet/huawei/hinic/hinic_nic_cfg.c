@@ -166,6 +166,13 @@ struct vf_cmd_check_handle nic_cmd_support_vf[] = {
 
 	{HINIC_PORT_CMD_SET_VLAN_FILTER, hinic_mbox_check_func_id_8B},
 	{HINIC_PORT_CMD_FORCE_PKT_DROP, check_force_pkt_drop},
+	{HINIC_PORT_CMD_Q_FILTER, hinic_mbox_check_func_id_8B},
+	{HINIC_PORT_CMD_TCAM_FILTER, NULL},
+	{HINIC_PORT_CMD_UP_TC_ADD_FLOW, NULL},
+	{HINIC_PORT_CMD_UP_TC_DEL_FLOW, NULL},
+	{HINIC_PORT_CMD_UP_TC_FLUSH_TCAM, hinic_mbox_check_func_id_8B},
+	{HINIC_PORT_CMD_UP_TC_CTRL_TCAM_BLOCK, hinic_mbox_check_func_id_8B},
+	{HINIC_PORT_CMD_UP_TC_ENABLE, hinic_mbox_check_func_id_8B},
 };
 
 int hinic_init_function_table(void *hwdev, u16 rx_buf_sz)
