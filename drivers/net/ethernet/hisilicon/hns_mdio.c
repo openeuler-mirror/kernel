@@ -22,6 +22,7 @@
 
 #define MDIO_DRV_NAME "Hi-HNS_MDIO"
 #define MDIO_BUS_NAME "Hisilicon MII Bus"
+#define MDIO_MOD_VERSION "21.2.1"
 
 #define MDIO_TIMEOUT			1000000
 
@@ -574,3 +575,4 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Huawei Tech. Co., Ltd.");
 MODULE_DESCRIPTION("Hisilicon HNS MDIO driver");
 MODULE_ALIAS("platform:" MDIO_DRV_NAME);
+MODULE_VERSION(MDIO_MOD_VERSION);

@@ -464,5 +464,4 @@ module_exit(hnae_exit);
 MODULE_AUTHOR("Hisilicon, Inc.");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Hisilicon Network Acceleration Engine Framework");
-
-/* vi: set tw=78 noet: */
+MODULE_VERSION(HNAE_DRIVER_VERSION);

@@ -32,7 +32,7 @@
 #include <linux/phy.h>
 #include <linux/types.h>
 
-#define HNAE_DRIVER_VERSION "2.0"
+#define HNAE_DRIVER_VERSION "21.2.1"
 #define HNAE_DRIVER_NAME "hns"
 #define HNAE_COPYRIGHT "Copyright(c) 2015 Huawei Corporation."
 #define HNAE_DRIVER_STRING "Hisilicon Network Subsystem Driver"
