@@ -135,11 +135,6 @@ static int hns_nic_get_link_ksettings(struct net_device *net_dev,
 		return -EINVAL;
 	}
 
-	ethtool_convert_link_mode_to_legacy_u32(&supported,
-						cmd->link_modes.supported);
-	ethtool_convert_link_mode_to_legacy_u32(&advertising,
-						cmd->link_modes.advertising);
-
 	/* When there is no phy, autoneg is off. */
 	cmd->base.autoneg = false;
 	cmd->base.speed = speed;
@@ -147,6 +142,11 @@ static int hns_nic_get_link_ksettings(struct net_device *net_dev,
 
 	if (net_dev->phydev)
 		phy_ethtool_ksettings_get(net_dev->phydev, cmd);
+
+	ethtool_convert_link_mode_to_legacy_u32(&supported,
+						cmd->link_modes.supported);
+	ethtool_convert_link_mode_to_legacy_u32(&advertising,
+						cmd->link_modes.advertising);
 
 	link_stat = hns_nic_get_link(net_dev);
 	if (!link_stat) {
@@ -160,7 +160,6 @@ static int hns_nic_get_link_ksettings(struct net_device *net_dev,
 	supported |= h->if_support;
 	if (h->phy_if == PHY_INTERFACE_MODE_SGMII) {
 		supported |= SUPPORTED_TP;
-		advertising |= ADVERTISED_1000baseT_Full;
 	} else if (h->phy_if == PHY_INTERFACE_MODE_XGMII) {
 		supported |= SUPPORTED_FIBRE;
 		advertising |= ADVERTISED_10000baseKR_Full;
