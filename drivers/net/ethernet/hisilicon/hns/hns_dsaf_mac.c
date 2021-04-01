@@ -470,9 +470,6 @@ void hns_mac_reset(struct hns_mac_cb *mac_cb)
 	if (drv->set_tx_auto_pause_frames)
 		drv->set_tx_auto_pause_frames(drv, mac_cb->tx_pause_frm_time);
 
-	if (drv->set_an_mode)
-		drv->set_an_mode(drv, 1);
-
 	if (drv->mac_pausefrm_cfg) {
 		if (mac_cb->mac_type == HNAE_PORT_DEBUG)
 			drv->mac_pausefrm_cfg(drv, !is_ver1, !is_ver1);
