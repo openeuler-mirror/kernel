@@ -78,7 +78,7 @@ BuildRequires: audit-libs-devel
 BuildRequires: pciutils-devel gettext
 BuildRequires: rpm-build, elfutils
 BuildRequires: numactl-devel python3-devel glibc-static python3-docutils
-BuildRequires: perl-generators perl(Carp) libunwind-devel gtk2-devel libbabeltrace-devel java-1.8.0-openjdk
+BuildRequires: perl-generators perl(Carp) libunwind-devel gtk2-devel libbabeltrace-devel java-1.8.0-openjdk java-1.8.0-openjdk-devel
 AutoReq: no
 AutoProv: yes
 
@@ -722,6 +722,7 @@ fi
 /usr/include/*
 
 %files -n perf
+%{_libdir}/libperf*
 %{_bindir}/perf
 %dir %{_libdir}/traceevent
 %{_libdir}/traceevent/plugins/
