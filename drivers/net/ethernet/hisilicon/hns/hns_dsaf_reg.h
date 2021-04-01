@@ -38,7 +38,7 @@
 #define DSAF_TOTAL_QUEUE_NUM	129
 
 /* reserved a tcam entry for each port to support promisc by fuzzy match */
-#define DSAFV2_MAC_FUZZY_TCAM_NUM    DSAF_MAX_PORT_NUM
+#define DSAFV2_MAC_FUZZY_TCAM_NUM    (DSAF_MAX_PORT_NUM * 2)
 
 #define DSAF_TCAM_SUM		512
 #define DSAF_LINE_SUM		(2048 * 14)

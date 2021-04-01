@@ -1482,7 +1482,7 @@ static u16 hns_dsaf_find_soft_mac_entry(
 	u32 i;
 
 	soft_mac_entry = priv->soft_mac_tbl;
-	for (i = 0; i < dsaf_dev->tcam_max_num; i++) {
+	for (i = 0; i < DSAF_TCAM_SUM; i++) {
 		/* invall tab entry */
 		if ((soft_mac_entry->index != DSAF_INVALID_ENTRY_IDX) &&
 		    (soft_mac_entry->tcam_key.high.val == mac_key->high.val) &&
@@ -1772,7 +1772,7 @@ int hns_dsaf_add_mac_mc_port(struct dsaf_device *dsaf_dev,
 		if (entry_index == DSAF_INVALID_ENTRY_IDX) {
 			/*if hasnot empty, error*/
 			dev_err(dsaf_dev->dev,
-				"set_uc_entry failed, %s Mac key(%#x:%#x)\n",
+				"set_mc_entry failed, %s Mac key(%#x:%#x)\n",
 				dsaf_dev->ae_dev.name, mac_key.high.val,
 				mac_key.low.val);
 			return -EINVAL;
@@ -1801,7 +1801,7 @@ int hns_dsaf_add_mac_mc_port(struct dsaf_device *dsaf_dev,
 	mac_data.tbl_mcast_item_vld = 1;
 
 	dev_dbg(dsaf_dev->dev,
-		"set_uc_entry, %s Mac key(%#x:%#x) entry_index%d\n",
+		"set_mc_entry, %s Mac key(%#x:%#x) entry_index%d\n",
 		dsaf_dev->ae_dev.name, mac_key.high.val,
 		mac_key.low.val, entry_index);
 
@@ -1996,7 +1996,7 @@ int hns_dsaf_clr_mac_mc_port(struct dsaf_device *dsaf_dev, u8 mac_id,
 	if (HNS_DSAF_IS_DEBUG(dsaf_dev))
 		return 0;
 
-	for (i = 0; i < DSAF_TCAM_SUM - DSAFV2_MAC_FUZZY_TCAM_NUM; i++) {
+	for (i = 0; i < dsaf_dev->tcam_max_num; i++) {
 		u8 addr[ETH_ALEN];
 		u8 port;
 
@@ -2775,7 +2775,7 @@ static void set_promisc_tcam_enable(struct dsaf_device *dsaf_dev, u32 port)
 	memset(&temp_key, 0x0, sizeof(temp_key));
 	mask_entry.addr[0] = 0x01;
 	hns_dsaf_set_mac_key(dsaf_dev, &mask_key, mask_entry.in_vlan_id,
-			     0xf, mask_entry.addr);
+			     port, mask_entry.addr);
 	tbl_tcam_mcast.tbl_mcast_item_vld = 1;
 	tbl_tcam_mcast.tbl_mcast_old_en = 0;
 
