@@ -30,6 +30,8 @@
 #include <linux/tcp.h>
 #include <linux/ip.h>
 #include <linux/debugfs.h>
+#include <linux/netlink.h>
+#include <linux/bpf.h>
 
 #include "ossl_knl.h"
 #include "hinic_hw_mgmt.h"
@@ -1262,7 +1264,17 @@ static int hinic_change_mtu(struct net_device *netdev, int new_mtu)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	u32 mtu = (u32)new_mtu;
+	u32 xdp_max_mtu;
 	int err = 0;
+
+	if (hinic_is_xdp_enable(nic_dev)) {
+		xdp_max_mtu = hinic_xdp_max_mtu(nic_dev);
+		if (mtu > xdp_max_mtu) {
+			nicif_err(nic_dev, drv, nic_dev->netdev,
+				  "Max MTU for xdp usage is %d\n", xdp_max_mtu);
+			return -EINVAL;
+		}
+	}
 
 	err = hinic_set_port_mtu(nic_dev->hwdev, mtu);
 	if (err) {
@@ -1483,6 +1495,12 @@ static int set_feature_lro(struct hinic_nic_dev *nic_dev,
 
 	if (!(changed & NETIF_F_LRO))
 		return 0;
+
+	if (en && hinic_is_xdp_enable(nic_dev)) {
+		hinic_err(nic_dev, drv, "Can not enable LRO when xdp is enable\n");
+		*failed_features |= NETIF_F_LRO;
+		return -EINVAL;
+	}
 
 	lro_timer = nic_dev->adaptive_cfg.lro.timer;
 	lro_buf_size = nic_dev->adaptive_cfg.lro.buffer_size;
@@ -2057,6 +2075,66 @@ static void hinic_nic_set_rx_mode(struct net_device *netdev)
 		queue_work(nic_dev->workq, &nic_dev->rx_mode_work);
 }
 
+bool hinic_is_xdp_enable(struct hinic_nic_dev *nic_dev)
+{
+	return !!nic_dev->xdp_prog;
+}
+
+int hinic_xdp_max_mtu(struct hinic_nic_dev *nic_dev)
+{
+	return nic_dev->rx_buff_len - (ETH_HLEN + ETH_FCS_LEN + VLAN_HLEN);
+}
+
+static int hinic_xdp_setup(struct hinic_nic_dev *nic_dev, struct bpf_prog *prog,
+			   struct netlink_ext_ack *extack)
+{
+	struct bpf_prog *old_prog = NULL;
+	int max_mtu = hinic_xdp_max_mtu(nic_dev);
+	int q_id;
+
+	if (prog && nic_dev->netdev->mtu > max_mtu) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Failed to setup xdp program, the current MTU %d is larger than max allowed MTU %d\n",
+			  nic_dev->netdev->mtu, max_mtu);
+		NL_SET_ERR_MSG_MOD(extack,
+				   "MTU is too large to load xdp program");
+		return -EINVAL;
+	}
+
+	if (prog && nic_dev->netdev->features & NETIF_F_LRO) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Failed to setup xdp program while LRO is on\n");
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Failed to setup xdp program while LRO is on\n");
+		return -EINVAL;
+	}
+
+	old_prog = xchg(&nic_dev->xdp_prog, prog);
+	for (q_id = 0; q_id < nic_dev->max_qps; q_id++)
+		xchg(&nic_dev->rxqs[q_id].xdp_prog, nic_dev->xdp_prog);
+
+	if (old_prog)
+		bpf_prog_put(old_prog);
+
+	return 0;
+}
+
+static int hinic_xdp(struct net_device *netdev, struct netdev_bpf *xdp)
+{
+	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
+
+	switch (xdp->command) {
+	case XDP_SETUP_PROG:
+		return hinic_xdp_setup(nic_dev, xdp->prog, xdp->extack);
+	case XDP_QUERY_PROG:
+		xdp->prog_id = nic_dev->xdp_prog ?
+			nic_dev->xdp_prog->aux->id : 0;
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
 static const struct net_device_ops hinic_netdev_ops = {
 	.ndo_open = hinic_open,
 	.ndo_stop = hinic_close,
@@ -2087,6 +2165,7 @@ static const struct net_device_ops hinic_netdev_ops = {
 	.ndo_set_vf_link_state	= hinic_ndo_set_vf_link_state,
 	.ndo_fix_features = hinic_fix_features,
 	.ndo_set_features = hinic_set_features,
+	.ndo_bpf = hinic_xdp,
 };
 
 static const struct net_device_ops hinicvf_netdev_ops = {
@@ -2110,6 +2189,7 @@ static const struct net_device_ops hinicvf_netdev_ops = {
 
 	.ndo_fix_features = hinic_fix_features,
 	.ndo_set_features = hinic_set_features,
+	.ndo_bpf = hinic_xdp,
 };
 
 static void netdev_feature_init(struct net_device *netdev)

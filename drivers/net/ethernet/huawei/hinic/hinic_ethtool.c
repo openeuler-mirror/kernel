@@ -114,6 +114,7 @@ static struct hinic_stats hinic_rx_queue_stats[] = {
 	HINIC_RXQ_STAT(csum_errors),
 	HINIC_RXQ_STAT(other_errors),
 	HINIC_RXQ_STAT(dropped),
+	HINIC_RXQ_STAT(xdp_dropped),
 	HINIC_RXQ_STAT(rx_buf_empty),
 };
 
@@ -121,6 +122,7 @@ static struct hinic_stats hinic_rx_queue_stats_extern[] = {
 	HINIC_RXQ_STAT(alloc_skb_err),
 	HINIC_RXQ_STAT(alloc_rx_buf_err),
 	HINIC_RXQ_STAT(map_rx_buf_err),
+	HINIC_RXQ_STAT(xdp_large_pkt),
 };
 
 static struct hinic_stats hinic_tx_queue_stats[] = {

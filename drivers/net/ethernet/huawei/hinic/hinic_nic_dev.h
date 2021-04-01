@@ -246,6 +246,8 @@ struct hinic_nic_dev {
 	u32			lro_replenish_thld;
 	u16			rx_buff_len;
 	u32			page_order;
+
+	struct bpf_prog		*xdp_prog;
 };
 
 extern struct hinic_uld_info nic_uld_info;
@@ -265,6 +267,9 @@ void hinic_link_status_change(struct hinic_nic_dev *nic_dev, bool status);
 
 int hinic_disable_func_rss(struct hinic_nic_dev *nic_dev);
 int hinic_enable_func_rss(struct hinic_nic_dev *nic_dev);
+
+bool hinic_is_xdp_enable(struct hinic_nic_dev *nic_dev);
+int hinic_xdp_max_mtu(struct hinic_nic_dev *nic_dev);
 
 #define hinic_msg(level, nic_dev, msglvl, format, arg...)	\
 do {								\

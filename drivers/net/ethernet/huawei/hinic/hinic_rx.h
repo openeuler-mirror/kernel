@@ -37,11 +37,13 @@ struct hinic_rxq_stats {
 	u64	csum_errors;
 	u64	other_errors;
 	u64	dropped;
+	u64	xdp_dropped;
 	u64	rx_buf_empty;
 
 	u64	alloc_skb_err;
 	u64	alloc_rx_buf_err;
 	u64	map_rx_buf_err;
+	u64	xdp_large_pkt;
 
 	struct u64_stats_sync		syncp;
 };
@@ -75,6 +77,7 @@ struct hinic_rxq {
 	u16			msix_entry_idx;
 
 	struct hinic_rx_info	*rx_info;
+	struct bpf_prog		*xdp_prog;
 
 	struct hinic_irq	*irq_cfg;
 	u16			next_to_alloc;

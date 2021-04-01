@@ -383,6 +383,7 @@ void hinic_rxq_get_stats(struct hinic_rxq *rxq,
 		stats->csum_errors = rxq_stats->csum_errors;
 		stats->other_errors = rxq_stats->other_errors;
 		stats->dropped = rxq_stats->dropped;
+		stats->xdp_dropped = rxq_stats->xdp_dropped;
 		stats->rx_buf_empty = rxq_stats->rx_buf_empty;
 	} while (u64_stats_fetch_retry(&rxq_stats->syncp, start));
 	u64_stats_update_end(&stats->syncp);
@@ -397,11 +398,13 @@ void hinic_rxq_clean_stats(struct hinic_rxq_stats *rxq_stats)
 	rxq_stats->csum_errors = 0;
 	rxq_stats->other_errors = 0;
 	rxq_stats->dropped = 0;
+	rxq_stats->xdp_dropped = 0;
 
 	rxq_stats->alloc_skb_err = 0;
 	rxq_stats->alloc_rx_buf_err = 0;
 	rxq_stats->map_rx_buf_err = 0;
 	rxq_stats->rx_buf_empty = 0;
+	rxq_stats->xdp_large_pkt = 0;
 	u64_stats_update_end(&rxq_stats->syncp);
 }
 
@@ -510,6 +513,87 @@ static void hinic_copy_lp_data(struct hinic_nic_dev *nic_dev,
 	nic_dev->lb_test_rx_idx++;
 }
 
+enum hinic_xdp_pkt {
+	HINIC_XDP_PKT_PASS,
+	HINIC_XDP_PKT_DROP,
+};
+
+static inline void update_drop_rx_info(struct hinic_rxq *rxq, u16 weqbb_num)
+{
+	struct hinic_rx_info *rx_info = NULL;
+
+	while (weqbb_num) {
+		rx_info = &rxq->rx_info[rxq->cons_idx & rxq->q_mask];
+		if (likely(page_to_nid(rx_info->page) == numa_node_id()))
+			hinic_reuse_rx_page(rxq, rx_info);
+
+		rx_info->buf_dma_addr = 0;
+		rx_info->page = NULL;
+		rxq->cons_idx++;
+		rxq->delta++;
+
+		weqbb_num--;
+	}
+}
+
+int hinic_run_xdp(struct hinic_rxq *rxq, u32 pkt_len)
+{
+	struct bpf_prog *xdp_prog = NULL;
+	struct hinic_rx_info *rx_info = NULL;
+	struct xdp_buff xdp;
+	int result = HINIC_XDP_PKT_PASS;
+	u16 weqbb_num = 1; /* xdp can only use one rx_buff */
+	u8 *va = NULL;
+	u32 act;
+
+	rcu_read_lock();
+	xdp_prog = READ_ONCE(rxq->xdp_prog);
+	if (!xdp_prog)
+		goto unlock_rcu;
+
+	if (unlikely(pkt_len > rxq->buf_len)) {
+		RXQ_STATS_INC(rxq, xdp_large_pkt);
+		weqbb_num = (u16)(pkt_len >> rxq->rx_buff_shift) +
+				((pkt_len & (rxq->buf_len - 1)) ? 1 : 0);
+		result = HINIC_XDP_PKT_DROP;
+		goto xdp_out;
+	}
+
+	rx_info = &rxq->rx_info[rxq->cons_idx & rxq->q_mask];
+	va = (u8 *)page_address(rx_info->page) + rx_info->page_offset;
+	prefetch(va);
+	dma_sync_single_range_for_cpu(rxq->dev, rx_info->buf_dma_addr,
+				      rx_info->page_offset, rxq->buf_len,
+				      DMA_FROM_DEVICE);
+	xdp.data = va;
+	xdp.data_hard_start = xdp.data;
+	xdp.data_end = xdp.data + pkt_len;
+	xdp_set_data_meta_invalid(&xdp);
+	prefetchw(xdp.data_hard_start);
+	act = bpf_prog_run_xdp(xdp_prog, &xdp);
+	switch (act) {
+	case XDP_PASS:
+		break;
+	default:
+		bpf_warn_invalid_xdp_action(act);
+		/* fallthrough */
+	case XDP_DROP:
+		result = HINIC_XDP_PKT_DROP;
+		break;
+	}
+
+xdp_out:
+	if (result == HINIC_XDP_PKT_DROP) {
+		RXQ_STATS_INC(rxq, xdp_dropped);
+		update_drop_rx_info(rxq, weqbb_num);
+	}
+
+unlock_rcu:
+	rcu_read_unlock();
+
+	return result;
+}
+
 int recv_one_pkt(struct hinic_rxq *rxq, struct hinic_rq_cqe *rx_cqe,
 		 u32 pkt_len, u32 vlan_len, u32 status)
 {
@@ -517,6 +601,11 @@ int recv_one_pkt(struct hinic_rxq *rxq, struct hinic_rq_cqe *rx_cqe,
 	struct net_device *netdev = rxq->netdev;
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	u32 offload_type;
+	u32 xdp_status;
+
+	xdp_status = hinic_run_xdp(rxq, pkt_len);
+	if (xdp_status == HINIC_XDP_PKT_DROP)
+		return 0;
 
 	skb = hinic_fetch_rx_buffer(rxq, pkt_len);
 	if (unlikely(!skb)) {
