@@ -3131,8 +3131,8 @@ static void mmu_free_root_page(struct kvm *kvm, hpa_t *root_hpa,
 	if (WARN_ON(!sp))
 		return;
 
-	if (is_tdp_mmu_page(sp) && kvm_tdp_mmu_put_root(kvm, sp))
-		kvm_tdp_mmu_free_root(kvm, sp);
+	if (is_tdp_mmu_page(sp))
+		kvm_tdp_mmu_put_root(kvm, sp);
 	else if (!--sp->root_count && sp->role.invalid)
 		kvm_mmu_prepare_zap_page(kvm, sp, invalid_list);
 
