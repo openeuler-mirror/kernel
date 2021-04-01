@@ -1054,4 +1054,5 @@ void hclge_report_hw_error(struct hclge_dev *hdev,
 void hclge_inform_vf_promisc_info(struct hclge_vport *vport);
 void hclge_dbg_dump_rst_info(struct hclge_dev *hdev);
 bool hclge_vf_vlan_need_enable(struct hclge_vport *vport);
+int hclge_push_vf_link_status(struct hclge_vport *vport);
 #endif
