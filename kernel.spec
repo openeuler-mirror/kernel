@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2103.4.0
+%global hulkrelease 2104.1.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0062
+Release: %{hulkrelease}.0063
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -796,6 +796,36 @@ fi
 
 %changelog
 
+
+* Thu Apr 01 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.1.0.0063
+- configs: add config BMA to config files
+- Huawei BMA: Adding Huawei BMA driver: host_kbox_drv
+- Huawei BMA: Adding Huawei BMA driver: cdev_veth_drv
+- Huawei BMA: Adding Huawei BMA driver: host_veth_drv
+- Huawei BMA: Adding Huawei BMA driver: host_cdev_drv
+- Huawei BMA: Adding Huawei BMA driver: host_edma_drv
+- scsi: ses: Fix crash caused by kfree an invalid pointer
+- net: hns3: PF add support for pushing link status to VFs
+- net: hns: update hns version to 21.2.1
+- net: hns: Remove unused macro AE_NAME_PORT_ID_IDX
+- net: hns: use IRQ_NOAUTOEN to avoid irq is enabled due to request_irq
+- net: hns: Replace zero-length array with flexible-array member
+- hisilicon/hns: convert comma to semicolon
+- net: hns: make arrays static, makes object smaller
+- net: hns: Move static keyword to the front of declaration
+- net: hns: use eth_broadcast_addr() to assign broadcast address
+- net: hns: use true,false for bool variables
+- net: hns: fix wrong display of "Advertised link modes"
+- net: hns: fix ping failed when setting "autoneg off speed 100 duplex half"
+- net: hns: fix variable used when DEBUG is defined
+- net: hns: fix non-promiscuous mode does not take effect problem
+- net: hns: remove redundant variable initialization
+- treewide: Replace GPLv2 boilerplate/reference with SPDX - rule 152
+- net/hinic: update hinic version to 2.3.2.18
+- net/hinic: Add support for hinic PMD on VF
+- net/hinic: Add XDP support for pass and drop actions
+- net/hinic: permit configuration of rx-vlan-filter with ethtool
+- locks: fix a memory leak bug in __break_lease()
 
 * Mon Mar 29 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2103.4.0.0062
 - mm/vmscan: fix uncleaned mem_cgroup_uncharge
