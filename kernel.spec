@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2104.1.0
+%global hulkrelease 2104.2.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0063
+Release: %{hulkrelease}.0064
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -797,6 +797,45 @@ fi
 
 %changelog
 
+
+* Wed Apr 07 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.2.0.0064
+- x86/Kconfig: Drop vendor dependency for X86_UMIP
+- x86/Kconfig: Rename UMIP config parameter
+- iommu/vt-d:Add support for detecting ACPI device in RMRR
+- USB:Fix kernel NULL pointer when unbind UHCI form vfio-pci
+- x86/apic: Mask IOAPIC entries when disabling the local APIC
+- xhci: fix issue with resume from system Sx state
+- xhci: Adjust the UHCI Controllers bit value
+- ALSA: hda: Add support of Zhaoxin NB HDAC codec
+- ALSA: hda: Add support of Zhaoxin NB HDAC
+- ALSA: hda: Add support of Zhaoxin SB HDAC
+- xhci: Show Zhaoxin XHCI root hub speed correctly
+- xhci: fix issue of cross page boundary in TRB prefetch
+- PCI: Add ACS quirk for Zhaoxin Root/Downstream Ports
+- PCI: Add ACS quirk for Zhaoxin multi-function devices
+- xhci: Add Zhaoxin xHCI LPM U1/U2 feature support
+- ata: sata_zhaoxin: Add support for Zhaoxin Serial ATA
+- PCI: Add Zhaoxin Vendor ID
+- x86/perf: Add hardware performance events support for Zhaoxin CPU.
+- crypto: x86/crc32c-intel - Don't match some Zhaoxin CPUs
+- x86/speculation/swapgs: Exclude Zhaoxin CPUs from SWAPGS vulnerability
+- x86/speculation/spectre_v2: Exclude Zhaoxin CPUs from SPECTRE_V2
+- x86/mce: Add Zhaoxin LMCE support
+- x86/mce: Add Zhaoxin CMCI support
+- x86/mce: Add Zhaoxin MCE support
+- x86/acpi/cstate: Add Zhaoxin processors support for cache flush policy in C3
+- x86/power: Optimize C3 entry on Centaur CPUs
+- ACPI, x86: Add Zhaoxin processors support for NONSTOP TSC
+- x86/cpu: Add detect extended topology for Zhaoxin CPUs
+- x86/cpufeatures: Add Zhaoxin feature bits
+- x86/cpu/centaur: Add Centaur family >=7 CPUs initialization support
+- x86/cpu/centaur: Replace two-condition switch-case with an if statement
+- x86/cpu: Remove redundant cpu_detect_cache_sizes() call
+- x86/cpu: Create Zhaoxin processors architecture support file
+- xhci: apply XHCI_PME_STUCK_QUIRK to Intel Comet Lake platforms
+- xhci: Fix memory leak when caching protocol extended capability PSI tables - take 2
+- xhci: fix runtime pm enabling for quirky Intel hosts
+- xhci: Force Maximum Packet size for Full-speed bulk devices to valid range.
 
 * Thu Apr 01 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.1.0.0063
 - configs: add config BMA to config files
