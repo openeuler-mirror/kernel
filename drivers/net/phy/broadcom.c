@@ -26,7 +26,46 @@ MODULE_DESCRIPTION("Broadcom PHY driver");
 MODULE_AUTHOR("Maciej W. Rozycki");
 MODULE_LICENSE("GPL");
 
-static int bcm54xx_config_clock_delay(struct phy_device *phydev);
+static int bcm54xx_config_clock_delay(struct phy_device *phydev)
+{
+	int rc, val;
+
+	/* handling PHY's internal RX clock delay */
+	val = bcm54xx_auxctl_read(phydev, MII_BCM54XX_AUXCTL_SHDWSEL_MISC);
+	val |= MII_BCM54XX_AUXCTL_MISC_WREN;
+	if (phydev->interface == PHY_INTERFACE_MODE_RGMII ||
+	    phydev->interface == PHY_INTERFACE_MODE_RGMII_TXID) {
+		/* Disable RGMII RXC-RXD skew */
+		val &= ~MII_BCM54XX_AUXCTL_SHDWSEL_MISC_RGMII_SKEW_EN;
+	}
+	if (phydev->interface == PHY_INTERFACE_MODE_RGMII_ID ||
+	    phydev->interface == PHY_INTERFACE_MODE_RGMII_RXID) {
+		/* Enable RGMII RXC-RXD skew */
+		val |= MII_BCM54XX_AUXCTL_SHDWSEL_MISC_RGMII_SKEW_EN;
+	}
+	rc = bcm54xx_auxctl_write(phydev, MII_BCM54XX_AUXCTL_SHDWSEL_MISC,
+				  val);
+	if (rc < 0)
+		return rc;
+
+	/* handling PHY's internal TX clock delay */
+	val = bcm_phy_read_shadow(phydev, BCM54810_SHD_CLK_CTL);
+	if (phydev->interface == PHY_INTERFACE_MODE_RGMII ||
+	    phydev->interface == PHY_INTERFACE_MODE_RGMII_RXID) {
+		/* Disable internal TX clock delay */
+		val &= ~BCM54810_SHD_CLK_CTL_GTXCLK_EN;
+	}
+	if (phydev->interface == PHY_INTERFACE_MODE_RGMII_ID ||
+	    phydev->interface == PHY_INTERFACE_MODE_RGMII_TXID) {
+		/* Enable internal TX clock delay */
+		val |= BCM54810_SHD_CLK_CTL_GTXCLK_EN;
+	}
+	rc = bcm_phy_write_shadow(phydev, BCM54810_SHD_CLK_CTL, val);
+	if (rc < 0)
+		return rc;
+
+	return 0;
+}
 
 static int bcm54210e_config_init(struct phy_device *phydev)
 {
@@ -65,47 +104,6 @@ static int bcm54612e_config_init(struct phy_device *phydev)
 		if (err < 0)
 			return err;
 	}
-
-	return 0;
-}
-
-static int bcm54xx_config_clock_delay(struct phy_device *phydev)
-{
-	int rc, val;
-
-	/* handling PHY's internal RX clock delay */
-	val = bcm54xx_auxctl_read(phydev, MII_BCM54XX_AUXCTL_SHDWSEL_MISC);
-	val |= MII_BCM54XX_AUXCTL_MISC_WREN;
-	if (phydev->interface == PHY_INTERFACE_MODE_RGMII ||
-	    phydev->interface == PHY_INTERFACE_MODE_RGMII_TXID) {
-		/* Disable RGMII RXC-RXD skew */
-		val &= ~MII_BCM54XX_AUXCTL_SHDWSEL_MISC_RGMII_SKEW_EN;
-	}
-	if (phydev->interface == PHY_INTERFACE_MODE_RGMII_ID ||
-	    phydev->interface == PHY_INTERFACE_MODE_RGMII_RXID) {
-		/* Enable RGMII RXC-RXD skew */
-		val |= MII_BCM54XX_AUXCTL_SHDWSEL_MISC_RGMII_SKEW_EN;
-	}
-	rc = bcm54xx_auxctl_write(phydev, MII_BCM54XX_AUXCTL_SHDWSEL_MISC,
-				  val);
-	if (rc < 0)
-		return rc;
-
-	/* handling PHY's internal TX clock delay */
-	val = bcm_phy_read_shadow(phydev, BCM54810_SHD_CLK_CTL);
-	if (phydev->interface == PHY_INTERFACE_MODE_RGMII ||
-	    phydev->interface == PHY_INTERFACE_MODE_RGMII_RXID) {
-		/* Disable internal TX clock delay */
-		val &= ~BCM54810_SHD_CLK_CTL_GTXCLK_EN;
-	}
-	if (phydev->interface == PHY_INTERFACE_MODE_RGMII_ID ||
-	    phydev->interface == PHY_INTERFACE_MODE_RGMII_TXID) {
-		/* Enable internal TX clock delay */
-		val |= BCM54810_SHD_CLK_CTL_GTXCLK_EN;
-	}
-	rc = bcm_phy_write_shadow(phydev, BCM54810_SHD_CLK_CTL, val);
-	if (rc < 0)
-		return rc;
 
 	return 0;
 }
