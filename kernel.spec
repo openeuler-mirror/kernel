@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2104.2.0
+%global hulkrelease 2104.3.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0064
+Release: %{hulkrelease}.0065
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,9 @@ fi
 
 %changelog
 
+
+* Wed Apr 07 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.3.0.0065
+- nvme-fabrics: fix kabi broken due to adding fields in struct nvme_ctrl
 
 * Wed Apr 07 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.2.0.0064
 - x86/Kconfig: Drop vendor dependency for X86_UMIP
