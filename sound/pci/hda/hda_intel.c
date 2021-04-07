@@ -250,7 +250,8 @@ MODULE_SUPPORTED_DEVICE("{{Intel, ICH6},"
 			 "{VIA, VT8251},"
 			 "{VIA, VT8237A},"
 			 "{SiS, SIS966},"
-			 "{ULI, M5461}}");
+			 "{ULI, M5461},"
+			 "{ZX, ZhaoxinHDA}}");
 MODULE_DESCRIPTION("Intel HDA driver");
 
 #if defined(CONFIG_PM) && defined(CONFIG_VGA_SWITCHEROO)
@@ -281,6 +282,7 @@ enum {
 	AZX_DRIVER_CTX,
 	AZX_DRIVER_CTHDA,
 	AZX_DRIVER_CMEDIA,
+	AZX_DRIVER_ZHAOXIN,
 	AZX_DRIVER_GENERIC,
 	AZX_NUM_DRIVERS, /* keep this as last entry */
 };
@@ -401,6 +403,7 @@ static char *driver_short_names[] = {
 	[AZX_DRIVER_CTX] = "HDA Creative", 
 	[AZX_DRIVER_CTHDA] = "HDA Creative",
 	[AZX_DRIVER_CMEDIA] = "HDA C-Media",
+	[AZX_DRIVER_ZHAOXIN] = "HDA Zhaoxin",
 	[AZX_DRIVER_GENERIC] = "HD-Audio Generic",
 };
 
@@ -1599,6 +1602,9 @@ static int check_position_fix(struct azx *chip, int fix)
 		dev_dbg(chip->card->dev, "Using FIFO position fix\n");
 		return POS_FIX_FIFO;
 	}
+	if (chip->driver_type == AZX_DRIVER_ZHAOXIN) {
+		return POS_FIX_VIACOMBO;
+	}
 	if (chip->driver_caps & AZX_DCAPS_POSFIX_LPIB) {
 		dev_dbg(chip->card->dev, "Using LPIB position fix\n");
 		return POS_FIX_LPIB;
@@ -1753,6 +1759,15 @@ static void azx_check_snoop_available(struct azx *chip)
 		if (!(val & 0x80) && (chip->pci->revision == 0x30 ||
 				      chip->pci->revision == 0x20))
 			snoop = false;
+	}
+
+	if (azx_get_snoop_type(chip) == AZX_SNOOP_TYPE_NONE &&
+	    chip->driver_type == AZX_DRIVER_ZHAOXIN) {
+		u8 val1;
+		pci_read_config_byte(chip->pci, 0x42, &val1);
+		if (!(val1 & 0x80) && chip->pci->revision == 0x20) {
+			snoop = false;
+		}
 	}
 
 	if (chip->driver_caps & AZX_DCAPS_SNOOP_OFF)
@@ -2800,6 +2815,8 @@ static const struct pci_device_id azx_ids[] = {
 	  .class = PCI_CLASS_MULTIMEDIA_HD_AUDIO << 8,
 	  .class_mask = 0xffffff,
 	  .driver_data = AZX_DRIVER_GENERIC | AZX_DCAPS_PRESET_ATI_HDMI },
+	/* Zhaoxin */
+	{ PCI_DEVICE(0x1d17, 0x3288), .driver_data = AZX_DRIVER_ZHAOXIN  },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, azx_ids);
