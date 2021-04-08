@@ -1730,7 +1730,7 @@ static int soft_offline_huge_page(struct page *page, int flags)
 		if (!list_empty(&pagelist))
 			putback_movable_pages(&pagelist);
 		if (ret > 0)
-			ret = -EIO;
+			ret = -EBUSY;
 	} else {
 		/*
 		 * We set PG_hwpoison only when the migration source hugepage
@@ -1821,11 +1821,11 @@ static int __soft_offline_page(struct page *page, int flags)
 			pr_info("soft offline: %#lx: migration failed %d, type %lx (%pGp)\n",
 				pfn, ret, page->flags, &page->flags);
 			if (ret > 0)
-				ret = -EIO;
+				ret = -EBUSY;
 		}
 	} else {
-		pr_info("soft offline: %#lx: isolation failed: %d, page count %d, type %lx (%pGp)\n",
-			pfn, ret, page_count(page), page->flags, &page->flags);
+		pr_info("soft offline: %#lx: isolation failed, page count %d, type %lx (%pGp)\n",
+			pfn, page_count(page), page->flags, &page->flags);
 	}
 	return ret;
 }
