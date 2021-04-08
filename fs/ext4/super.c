@@ -89,7 +89,6 @@ static void ext4_unregister_li_request(struct super_block *sb);
 static void ext4_clear_request_list(void);
 static struct inode *ext4_get_journal_inode(struct super_block *sb,
 					    unsigned int journal_inum);
-static void ext4_netlink_send_info(struct super_block *sb, int ext4_errno);
 static struct sock *ext4nl;
 
 /*
@@ -590,7 +589,7 @@ static void ext4_handle_error(struct super_block *sb, bool force_ro, int error,
 	smp_wmb();
 	sb->s_flags |= SB_RDONLY;
 out:
-	ext4_netlink_send_info(sb, 1);
+	ext4_netlink_send_info(sb, force_ro ? 2 : 1);
 }
 
 static void flush_stashed_error_work(struct work_struct *work)
