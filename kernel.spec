@@ -19,6 +19,8 @@
 %define debuginfodir /usr/lib/debug
 
 %define with_debuginfo 1
+
+%define with_perf 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
 %global _missing_build_ids_terminate_build 1
 %global _no_recompute_build_ids 1
@@ -30,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0064
+Release: %{hulkrelease}.0065
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -78,7 +80,11 @@ BuildRequires: audit-libs-devel
 BuildRequires: pciutils-devel gettext
 BuildRequires: rpm-build, elfutils
 BuildRequires: numactl-devel python3-devel glibc-static python3-docutils
-BuildRequires: perl-generators perl(Carp) libunwind-devel gtk2-devel libbabeltrace-devel java-1.8.0-openjdk java-1.8.0-openjdk-devel
+BuildRequires: perl-generators perl(Carp) libunwind-devel gtk2-devel
+%if 0%{?with_perf}
+# libbabeltrace-devel >= 1.3.0
+BuildRequires: libbabeltrace-devel java-1.8.0-openjdk-devel
+%endif
 AutoReq: no
 AutoProv: yes
 
@@ -136,6 +142,7 @@ Obsoletes: kernel-tools-libs-devel
 This package contains the development files for the tools/ directory from
 the kernel source.
 
+%if 0%{?with_perf}
 %package -n perf
 Summary: Performance monitoring for the Linux kernel
 %description -n perf
@@ -156,6 +163,7 @@ Summary: Python bindings for apps which will manipulate perf events
 %description -n python3-perf
 A Python module that permits applications written in the Python programming
 language to use the interface to manipulate perf events.
+%endif
 
 %package -n bpftool
 Summary: Inspection and simple manipulation of eBPF programs and maps
@@ -195,6 +203,7 @@ package or when debugging this package.\
 %files -n kernel-tools-debuginfo -f kernel-tools-debugfiles.list
 %{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%{_bindir}/centrino-decode.*(\.debug)?|.*%{_bindir}/powernow-k8-decode.*(\.debug)?|.*%{_bindir}/cpupower.*(\.debug)?|.*%{_libdir}/libcpupower.*|.*%{_libdir}/libcpupower.*|.*%{_bindir}/turbostat.(\.debug)?|.*%{_bindir}/.*gpio.*(\.debug)?|.*%{_bindir}/.*iio.*(\.debug)?|.*%{_bindir}/tmon.*(.debug)?|XXX' -o kernel-tools-debugfiles.list}
 
+%if 0%{?with_perf}
 %debuginfo_template -n perf
 %files -n perf-debuginfo -f perf-debugfiles.list
 %{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%{_bindir}/perf.*(\.debug)?|.*%{_libexecdir}/perf-core/.*|.*%{_libdir}/traceevent/.*|XXX' -o perf-debugfiles.list}
@@ -207,7 +216,7 @@ package or when debugging this package.\
 %debuginfo_template -n python3-perf
 %files -n python3-perf-debuginfo -f python3-perf-debugfiles.list
 %{expand:%%global _find_debuginfo_opts %{?_find_debuginfo_opts} -p '.*%{python3_sitearch}/perf.*(.debug)?|XXX' -o python3-perf-debugfiles.list}
-
+%endif
 %endif
 
 %prep
@@ -270,7 +279,9 @@ cp -a ../linux-%{KernelVer} ../linux-%{KernelVer}-Source
 find ../linux-%{KernelVer}-Source -type f -name "\.*" -exec rm -rf {} \; >/dev/null
 %endif
 
+%if 0%{?with_perf}
 cp -a tools/perf tools/python3-perf
+%endif
 
 %build
 cd linux-%{KernelVer}
@@ -304,6 +315,7 @@ make ARCH=%{Arch} modules %{?_smp_mflags}
 %endif
 
 ## make tools
+%if 0%{?with_perf}
 # perf
 %global perf_make \
     make EXTRA_CFLAGS="-Wl,-z,now -g -Wall -fstack-protector-strong -fPIC" EXTRA_PERFLIBS="-fpie -pie" %{?_smp_mflags} -s V=1 WERROR=0 NO_LIBUNWIND=1 HAVE_CPLUS_DEMANGLE=1 NO_GTK2=1 NO_LIBNUMA=1 NO_STRLCPY=1 prefix=%{_prefix}
@@ -320,6 +332,7 @@ chmod +x tools/python3-perf/check-headers.sh
 pushd tools/perf/Documentation/
 make %{?_smp_mflags} man
 popd
+%endif
 
 # bpftool
 pushd tools/bpf/bpftool
@@ -366,8 +379,8 @@ popd
 
 
 %install
+%define _python_bytecompile_errors_terminate_build 0
 %if 0%{?with_source}
-    %define _python_bytecompile_errors_terminate_build 0
     mkdir -p $RPM_BUILD_ROOT/usr/src/
     mv linux-%{KernelVer}-Source $RPM_BUILD_ROOT/usr/src/linux-%{KernelVer}
     cp linux-%{KernelVer}/.config $RPM_BUILD_ROOT/usr/src/linux-%{KernelVer}/
@@ -556,6 +569,7 @@ popd
 
 
 ## install tools
+%if 0%{?with_perf}
 # perf
 # perf tool binary and supporting scripts/binaries
 %{perf_make} %{perf_python2} DESTDIR=%{buildroot} lib=%{_lib} install-bin install-traceevent-plugins
@@ -570,11 +584,14 @@ rm -rf %{buildroot}/usr/lib/perf/include/bpf/
 # python-perf extension
 %{perf_make} %{perf_python3} DESTDIR=%{buildroot} install-python_ext
 %{perf_make} %{perf_python2} DESTDIR=%{buildroot} install-python_ext
+%endif
 
-# perf man pages (note: implicit rpm magic compresses them later)
 install -d %{buildroot}/%{_mandir}/man1
 install -pm0644 tools/kvm/kvm_stat/kvm_stat.1 %{buildroot}/%{_mandir}/man1/
+# perf man pages (note: implicit rpm magic compresses them later)
+%if 0%{?with_perf}
 install -pm0644 tools/perf/Documentation/*.1 %{buildroot}/%{_mandir}/man1/
+%endif
 
 # bpftool
 pushd tools/bpf/bpftool
@@ -721,6 +738,8 @@ fi
 /usr/src/kernels/%{KernelVer}
 /usr/include/*
 
+
+%if 0%{?with_perf}
 %files -n perf
 %{_libdir}/libperf*
 %{_bindir}/perf
@@ -742,6 +761,7 @@ fi
 %files -n python3-perf
 %license linux-%{KernelVer}/COPYING
 %{python3_sitearch}/*
+%endif
 
 %files -n kernel-tools -f cpupower.lang
 %{_bindir}/cpupower
@@ -797,6 +817,9 @@ fi
 
 %changelog
 
+* Thu Apr 1 2021 Jiachen Fan <fanjiachen3@huawei.com> - 4.19.90-2104.1.0.0065
+- Add the option of "with_perf"
+- Output jvmti plug-in as part of perf building
 
 * Wed Apr 07 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.2.0.0064
 - x86/Kconfig: Drop vendor dependency for X86_UMIP
