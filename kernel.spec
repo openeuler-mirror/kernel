@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2104.3.0
+%global hulkrelease 2104.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0066
+Release: %{hulkrelease}.0067
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -817,6 +817,32 @@ fi
 
 %changelog
 
+
+* Mon Apr 12 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.4.0.0067
+- ext4: fix potential error in ext4_do_update_inode
+- mm, sl[aou]b: guarantee natural alignment for kmalloc(power-of-two)
+- mm,hwpoison: return -EBUSY when migration fails
+- config: Enable files cgroup on x86
+- ext4: Fix unreport netlink message to userspace when fs abort
+- ext4: don't leak old mountpoint samples
+- scsi: libiscsi: convert change of struct iscsi_conn to fix KABI
+- scsi: libiscsi: Reset max/exp cmdsn during recovery
+- scsi: iscsi_tcp: Fix shost can_queue initialization
+- scsi: libiscsi: Add helper to calculate max SCSI cmds per session
+- scsi: libiscsi: Fix iSCSI host workq destruction
+- scsi: libiscsi: Fix iscsi_task use after free()
+- scsi: libiscsi: Drop taskqueuelock
+- scsi: libiscsi: Fix iscsi_prep_scsi_cmd_pdu() error handling
+- scsi: libiscsi: Fix error count for active session
+- ext4: fix timer use-after-free on failed mount
+- loop: fix I/O error on fsync() in detached loop devices
+- md/bitmap: fix memory leak of temporary bitmap
+- md: get sysfs entry after redundancy attr group create
+- md: fix deadlock causing by sysfs_notify
+- md: fix the checking of wrong work queue
+- md: flush md_rdev_misc_wq for HOT_ADD_DISK case
+- md: don't flush workqueue unconditionally in md_open
+- md: add new workqueue for delete rdev
 
 * Mon Apr 12 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.3.0.0066
 - nvme-fabrics: fix kabi broken due to adding fields in struct nvme_ctrl
