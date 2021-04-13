@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2104.2.0
+%global hulkrelease 2104.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0065
+Release: %{hulkrelease}.0066
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -816,6 +816,10 @@ fi
 %endif
 
 %changelog
+
+
+* Tue Apr 13 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.3.0.0066
+- nvme-fabrics: fix kabi broken due to adding fields in struct nvme_ctrl
 
 * Thu Apr 1 2021 Jiachen Fan <fanjiachen3@huawei.com> - 4.19.90-2104.1.0.0065
 - Add the option of "with_perf"
