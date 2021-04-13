@@ -1759,13 +1759,15 @@ void svm_set_cr0(struct kvm_vcpu *vcpu, unsigned long cr0)
 	if (vcpu->arch.efer & EFER_LME) {
 		if (!is_paging(vcpu) && (cr0 & X86_CR0_PG)) {
 			vcpu->arch.efer |= EFER_LMA;
-			if (!vcpu->arch.guest_state_protected)
+			if (!vcpu->arch.guest_state_protected ||
+			    boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
 				svm->vmcb->save.efer |= EFER_LMA | EFER_LME;
 		}
 
 		if (is_paging(vcpu) && !(cr0 & X86_CR0_PG)) {
 			vcpu->arch.efer &= ~EFER_LMA;
-			if (!vcpu->arch.guest_state_protected)
+			if (!vcpu->arch.guest_state_protected ||
+			    boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
 				svm->vmcb->save.efer &= ~(EFER_LMA | EFER_LME);
 		}
 	}
