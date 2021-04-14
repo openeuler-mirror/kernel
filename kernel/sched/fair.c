@@ -3901,6 +3901,7 @@ static inline int idle_balance(struct rq *rq, struct rq_flags *rf)
 
 static inline void rq_idle_stamp_update(struct rq *rq) {}
 static inline void rq_idle_stamp_clear(struct rq *rq) {}
+static inline int try_steal(struct rq *this_rq, struct rq_flags *rf) { return 0; }
 static inline void overload_clear(struct rq *rq) {}
 static inline void overload_set(struct rq *rq) {}
 
