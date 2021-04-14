@@ -973,7 +973,6 @@ static inline int cpu_of(struct rq *rq)
 #endif
 }
 
-
 #ifdef CONFIG_SCHED_SMT
 extern void __update_idle_core(struct rq *rq);
 
@@ -1125,6 +1124,7 @@ extern bool find_numa_distance(int distance);
 #endif
 
 #ifdef CONFIG_NUMA
+extern struct static_key_true sched_steal_allow;
 extern void sched_init_numa(void);
 extern void sched_domains_numa_masks_set(unsigned int cpu);
 extern void sched_domains_numa_masks_clear(unsigned int cpu);
