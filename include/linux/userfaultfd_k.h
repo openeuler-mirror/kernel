@@ -47,7 +47,11 @@ static inline bool is_mergeable_vm_userfaultfd_ctx(struct vm_area_struct *vma,
 
 static inline bool userfaultfd_missing(struct vm_area_struct *vma)
 {
+#ifdef CONFIG_USERSWAP
+	return (vma->vm_flags & VM_UFFD_MISSING) && !(vma->vm_flags & VM_USWAP);
+#else
 	return vma->vm_flags & VM_UFFD_MISSING;
+#endif
 }
 
 static inline bool userfaultfd_armed(struct vm_area_struct *vma)
