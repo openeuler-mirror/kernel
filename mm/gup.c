@@ -632,6 +632,7 @@ static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
  * were pinned, returns -errno. Each page returned must be released
  * with a put_page() call when it is finished with. vmas will only
  * remain valid while mmap_sem is held.
+ * -- 0 return value is possible when the fault would need to be retried.
  *
  * Must be called with mmap_sem held.  It may be released.  See below.
  *
@@ -877,6 +878,10 @@ retry:
 }
 EXPORT_SYMBOL_GPL(fixup_user_fault);
 
+/*
+ * Please note that this function, unlike __get_user_pages will not
+ * return 0 for nr_pages > 0 without FOLL_NOWAIT
+ */
 static __always_inline long __get_user_pages_locked(struct task_struct *tsk,
 						struct mm_struct *mm,
 						unsigned long start,
