@@ -1873,7 +1873,7 @@ static void set_default_caps(struct hns_roce_dev *hr_dev)
 	caps->max_srq_wrs	= HNS_ROCE_V2_MAX_SRQ_WR;
 	caps->max_srq_sges	= HNS_ROCE_V2_MAX_SRQ_SGE;
 
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP08_B) {
 		caps->flags |= HNS_ROCE_CAP_FLAG_ATOMIC | HNS_ROCE_CAP_FLAG_MW |
 			       HNS_ROCE_CAP_FLAG_SRQ | HNS_ROCE_CAP_FLAG_FRMR |
 			       HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL;
@@ -2122,7 +2122,7 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 		   caps->srqc_bt_num, &caps->srqc_buf_pg_sz,
 		   &caps->srqc_ba_pg_sz, HEM_TYPE_SRQC);
 
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP08_B) {
 		caps->qpc_timer_hop_num = HNS_ROCE_HOP_NUM_0;
 		caps->cqc_timer_hop_num = HNS_ROCE_HOP_NUM_0;
 		caps->scc_ctx_hop_num = ctx_hop_num;
@@ -2186,7 +2186,7 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 	if (ret)
 		return ret;
 
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP08_B) {
 		ret = hns_roce_query_pf_timer_resource(hr_dev);
 		if (ret) {
 			dev_err(hr_dev->dev,
@@ -2202,7 +2202,7 @@ static int hns_roce_v2_profile(struct hns_roce_dev *hr_dev)
 		return ret;
 	}
 
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP08_B) {
 		ret = hns_roce_set_vf_switch_param(hr_dev, 0);
 		if (ret) {
 			dev_err(hr_dev->dev,
@@ -2503,7 +2503,7 @@ static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
 			goto err_cqc_timer_failed;
 		}
 	}
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B)
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP08_B)
 		hns_roce_clear_extdb_list_info(hr_dev);
 
 	return 0;
@@ -2531,7 +2531,7 @@ static void hns_roce_v2_exit(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B)
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP08_B)
 		hns_roce_function_clear(hr_dev);
 
 	hns_roce_free_link_table(hr_dev, &priv->tpq);
@@ -4873,10 +4873,10 @@ static int hns_roce_v2_set_path(struct ib_qp *ibqp,
 		       V2_QPC_BYTE_24_HOP_LIMIT_S, 0);
 
 #ifdef CONFIG_KERNEL_419
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B &&
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP08_B &&
 	    gid_attr->gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
 #else
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B &&
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP08_B &&
 	    gid_attr.gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
 #endif
 		roce_set_field(context->byte_24_mtu_tc, V2_QPC_BYTE_24_TC_M,

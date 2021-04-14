@@ -340,7 +340,7 @@ int hns_roce_v2_query_pkt_stat(struct hns_roce_dev *hr_dev,
 	if (status)
 		return status;
 
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP08_B) {
 		hns_roce_cmq_setup_basic_desc(&desc_cnp_rx,
 				HNS_ROCE_OPC_QUEYR_CNP_RX_CNT, true);
 		status = hns_roce_cmq_send(hr_dev, &desc_cnp_rx, 1);
