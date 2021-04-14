@@ -3834,29 +3834,35 @@ static inline bool steal_enabled(void)
 static void overload_clear(struct rq *rq)
 {
 	struct sparsemask *overload_cpus;
+	unsigned long time;
 
 	if (!steal_enabled())
 		return;
 
+	time = schedstat_start_time();
 	rcu_read_lock();
 	overload_cpus = rcu_dereference(rq->cfs_overload_cpus);
 	if (overload_cpus)
 		sparsemask_clear_elem(overload_cpus, rq->cpu);
 	rcu_read_unlock();
+	schedstat_end_time(rq->find_time, time);
 }
 
 static void overload_set(struct rq *rq)
 {
 	struct sparsemask *overload_cpus;
+	unsigned long time;
 
 	if (!steal_enabled())
 		return;
 
+	time = schedstat_start_time();
 	rcu_read_lock();
 	overload_cpus = rcu_dereference(rq->cfs_overload_cpus);
 	if (overload_cpus)
 		sparsemask_set_elem(overload_cpus, rq->cpu);
 	rcu_read_unlock();
+	schedstat_end_time(rq->find_time, time);
 }
 
 static int try_steal(struct rq *this_rq, struct rq_flags *rf);
@@ -6300,6 +6306,16 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 	return cpu;
 }
 
+#define SET_STAT(STAT)							\
+	do {								\
+		if (schedstat_enabled()) {				\
+			struct rq *rq = this_rq();			\
+									\
+			if (rq)						\
+				__schedstat_inc(rq->STAT);		\
+		}							\
+	} while (0)
+
 /*
  * Try and locate an idle core/thread in the LLC cache domain.
  */
@@ -6308,15 +6324,19 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	struct sched_domain *sd;
 	int i, recent_used_cpu;
 
-	if (available_idle_cpu(target) || sched_idle_cpu(target))
+	if (available_idle_cpu(target) || sched_idle_cpu(target)) {
+		SET_STAT(found_idle_cpu_easy);
 		return target;
+	}
 
 	/*
 	 * If the previous CPU is cache affine and idle, don't be stupid:
 	 */
 	if (prev != target && cpus_share_cache(prev, target) &&
-	    (available_idle_cpu(prev) || sched_idle_cpu(prev)))
+	    (available_idle_cpu(prev) || sched_idle_cpu(prev))) {
+		SET_STAT(found_idle_cpu_easy);
 		return prev;
+	}
 
 	/* Check a recently used CPU as a potential idle candidate: */
 	recent_used_cpu = p->recent_used_cpu;
@@ -6329,26 +6349,36 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 		 * Replace recent_used_cpu with prev as it is a potential
 		 * candidate for the next wake:
 		 */
+		SET_STAT(found_idle_cpu_easy);
 		p->recent_used_cpu = prev;
 		return recent_used_cpu;
 	}
 
 	sd = rcu_dereference(per_cpu(sd_llc, target));
-	if (!sd)
+	if (!sd) {
+		SET_STAT(nofound_idle_cpu);
 		return target;
+	}
 
 	i = select_idle_core(p, sd, target);
-	if ((unsigned)i < nr_cpumask_bits)
+	if ((unsigned)i < nr_cpumask_bits) {
+		SET_STAT(found_idle_core);
 		return i;
+	}
 
 	i = select_idle_cpu(p, sd, target);
-	if ((unsigned)i < nr_cpumask_bits)
+	if ((unsigned)i < nr_cpumask_bits) {
+		SET_STAT(found_idle_cpu);
 		return i;
+	}
 
 	i = select_idle_smt(p, sd, target);
-	if ((unsigned)i < nr_cpumask_bits)
+	if ((unsigned)i < nr_cpumask_bits) {
+		SET_STAT(found_idle_cpu);
 		return i;
+	}
 
+	SET_STAT(nofound_idle_cpu);
 	return target;
 }
 
@@ -6533,6 +6563,7 @@ static int wake_cap(struct task_struct *p, int cpu, int prev_cpu)
 static int
 select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_flags)
 {
+	unsigned long time = schedstat_start_time();
 	struct sched_domain *tmp, *sd = NULL;
 	int cpu = smp_processor_id();
 	int new_cpu = prev_cpu;
@@ -6581,6 +6612,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 			current->recent_used_cpu = cpu;
 	}
 	rcu_read_unlock();
+	schedstat_end_time(cpu_rq(cpu)->find_time, time);
 
 	return new_cpu;
 }
@@ -6827,6 +6859,7 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
 	struct sched_entity *se;
 	struct task_struct *p;
 	int new_tasks;
+	unsigned long time;
 
 again:
 	if (!cfs_rq->nr_running)
@@ -6938,6 +6971,8 @@ done: __maybe_unused;
 
 idle:
 
+	time = schedstat_start_time();
+
 	/*
 	 * We must set idle_stamp _before_ calling try_steal() or
 	 * idle_balance(), such that we measure the duration as idle time.
@@ -6950,6 +6985,8 @@ idle:
 
 	if (new_tasks)
 		rq_idle_stamp_clear(rq);
+
+	schedstat_end_time(rq->find_time, time);
 
 	/*
 	 * Because try_steal() and idle_balance() release (and re-acquire)
@@ -9964,6 +10001,7 @@ static int steal_from(struct rq *dst_rq, struct rq_flags *dst_rf, bool *locked,
 		update_rq_clock(dst_rq);
 		attach_task(dst_rq, p);
 		stolen = 1;
+		schedstat_inc(dst_rq->steal);
 	}
 	local_irq_restore(rf.flags);
 
@@ -9988,6 +10026,7 @@ static int try_steal(struct rq *dst_rq, struct rq_flags *dst_rf)
 	int dst_cpu = dst_rq->cpu;
 	bool locked = true;
 	int stolen = 0;
+	bool any_overload = false;
 	struct sparsemask *overload_cpus;
 
 	if (!steal_enabled())
@@ -10030,6 +10069,7 @@ static int try_steal(struct rq *dst_rq, struct rq_flags *dst_rf)
 			stolen = 1;
 			goto out;
 		}
+		any_overload = true;
 	}
 
 out:
@@ -10041,6 +10081,8 @@ out:
 	stolen |= (dst_rq->cfs.h_nr_running > 0);
 	if (dst_rq->nr_running != dst_rq->cfs.h_nr_running)
 		stolen = -1;
+	if (!stolen && any_overload)
+		schedstat_inc(dst_rq->steal_fail);
 	return stolen;
 }
 
