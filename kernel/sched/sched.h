@@ -490,7 +490,6 @@ struct cfs_rq {
 	unsigned long		runnable_weight;
 	unsigned int		nr_running;
 	unsigned int		h_nr_running;      /* SCHED_{NORMAL,BATCH,IDLE} */
-	unsigned int		idle_h_nr_running; /* SCHED_IDLE */
 
 	u64			exec_clock;
 	u64			min_vruntime;
@@ -574,7 +573,15 @@ struct cfs_rq {
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
+#ifndef __GENKSYMS__
+	union {
+		unsigned int		idle_h_nr_running; /* SCHED_IDLE */
+		unsigned long		idle_h_nr_running_padding; /* SCHED_IDLE padding for KABI */
+	};
+#else
 	KABI_RESERVE(1)
+#endif
+
 	KABI_RESERVE(2)
 };
 
