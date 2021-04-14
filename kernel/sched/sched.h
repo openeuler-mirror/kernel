@@ -832,7 +832,7 @@ struct rq {
 	struct cfs_rq		cfs;
 	struct rt_rq		rt;
 	struct dl_rq		dl;
-#ifdef CONFIG_SCHED_STEAL
+#if defined(CONFIG_SCHED_STEAL) && !defined(__GENKSYMS__)
 	struct sparsemask	*cfs_overload_cpus;
 #endif
 
@@ -939,7 +939,7 @@ struct rq {
 	unsigned int		ttwu_count;
 	unsigned int		ttwu_local;
 
-#ifdef CONFIG_SCHED_STEAL
+#if defined(CONFIG_SCHED_STEAL) && !defined(__GENKSYMS__)
 	/* Idle search stats */
 	unsigned int		found_idle_core;
 	unsigned int		found_idle_cpu;
