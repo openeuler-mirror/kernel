@@ -414,7 +414,7 @@ struct io_connect {
 struct io_sr_msg {
 	struct file			*file;
 	union {
-		struct user_msghdr __user *msg;
+		struct user_msghdr __user *umsg;
 		void __user		*buf;
 	};
 	int				msg_flags;
@@ -3501,7 +3501,7 @@ static int io_sendmsg_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 		return -EINVAL;
 
 	sr->msg_flags = READ_ONCE(sqe->msg_flags);
-	sr->msg = u64_to_user_ptr(READ_ONCE(sqe->addr));
+	sr->umsg = u64_to_user_ptr(READ_ONCE(sqe->addr));
 	sr->len = READ_ONCE(sqe->len);
 
 #ifdef CONFIG_COMPAT
@@ -3517,7 +3517,7 @@ static int io_sendmsg_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 
 	io->msg.msg.msg_name = &io->msg.addr;
 	io->msg.iov = io->msg.fast_iov;
-	ret = sendmsg_copy_msghdr(&io->msg.msg, sr->msg, sr->msg_flags,
+	ret = sendmsg_copy_msghdr(&io->msg.msg, sr->umsg, sr->msg_flags,
 					&io->msg.iov);
 	if (!ret)
 		req->flags |= REQ_F_NEED_CLEANUP;
@@ -3549,7 +3549,7 @@ static int io_sendmsg(struct io_kiocb *req, bool force_nonblock)
 			kmsg->msg.msg_name = &io.msg.addr;
 
 			io.msg.iov = io.msg.fast_iov;
-			ret = sendmsg_copy_msghdr(&io.msg.msg, sr->msg,
+			ret = sendmsg_copy_msghdr(&io.msg.msg, sr->umsg,
 					sr->msg_flags, &io.msg.iov);
 			if (ret)
 				return ret;
@@ -3628,8 +3628,8 @@ static int __io_recvmsg_copy_hdr(struct io_kiocb *req, struct io_async_ctx *io)
 	size_t iov_len;
 	int ret;
 
-	ret = __copy_msghdr_from_user(&io->msg.msg, sr->msg, &io->msg.uaddr,
-					&uiov, &iov_len);
+	ret = __copy_msghdr_from_user(&io->msg.msg, sr->umsg,
+					&io->msg.uaddr, &uiov, &iov_len);
 	if (ret)
 		return ret;
 
@@ -3663,7 +3663,7 @@ static int __io_compat_recvmsg_copy_hdr(struct io_kiocb *req,
 	compat_size_t len;
 	int ret;
 
-	msg_compat = (struct compat_msghdr __user *) sr->msg;
+	msg_compat = (struct compat_msghdr __user *) sr->umsg;
 	ret = __get_compat_msghdr(&io->msg.msg, msg_compat, &io->msg.uaddr,
 					&ptr, &len);
 	if (ret)
@@ -3740,7 +3740,7 @@ static int io_recvmsg_prep(struct io_kiocb *req,
 		return -EINVAL;
 
 	sr->msg_flags = READ_ONCE(sqe->msg_flags);
-	sr->msg = u64_to_user_ptr(READ_ONCE(sqe->addr));
+	sr->umsg = u64_to_user_ptr(READ_ONCE(sqe->addr));
 	sr->len = READ_ONCE(sqe->len);
 	sr->bgid = READ_ONCE(sqe->buf_group);
 
@@ -3804,7 +3804,7 @@ static int io_recvmsg(struct io_kiocb *req, bool force_nonblock)
 		else if (force_nonblock)
 			flags |= MSG_DONTWAIT;
 
-		ret = __sys_recvmsg_sock(sock, &kmsg->msg, req->sr_msg.msg,
+		ret = __sys_recvmsg_sock(sock, &kmsg->msg, req->sr_msg.umsg,
 						kmsg->uaddr, flags);
 		if (force_nonblock && ret == -EAGAIN) {
 			ret = io_setup_async_msg(req, kmsg);
