@@ -4264,11 +4264,13 @@ static bool __io_poll_remove_one(struct io_kiocb *req,
 
 static bool io_poll_remove_one(struct io_kiocb *req)
 {
+	struct async_poll *apoll = NULL;
 	bool do_complete;
 
 	if (req->opcode == IORING_OP_POLL_ADD) {
 		do_complete = __io_poll_remove_one(req, &req->poll);
 	} else {
+		apoll = req->apoll;
 		/* non-poll requests have submit ref still */
 		do_complete = __io_poll_remove_one(req, &req->apoll->poll);
 		if (do_complete)
@@ -4276,6 +4278,14 @@ static bool io_poll_remove_one(struct io_kiocb *req)
 	}
 
 	hash_del(&req->hash_node);
+
+	if (apoll) {
+		/*
+		 * restore ->work because we need to call io_req_work_drop_env.
+		 */
+		memcpy(&req->work, &apoll->work, sizeof(req->work));
+		kfree(apoll);
+	}
 
 	if (do_complete) {
 		io_cqring_fill_event(req, -ECANCELED);
