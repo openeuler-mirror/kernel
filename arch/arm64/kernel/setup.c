@@ -68,6 +68,19 @@
 static int num_standard_resources;
 static struct resource *standard_resources;
 
+#ifdef CONFIG_ARM64_BOOTPARAM_HOTPLUG_CPU0
+static int arm64_cpu0_hotpluggable = 1;
+#else
+static int arm64_cpu0_hotpluggable;
+static int __init arm64_enable_cpu0_hotplug(char *str)
+{
+	arm64_cpu0_hotpluggable = 1;
+	return 1;
+}
+
+__setup("arm64_cpu0_hotplug", arm64_enable_cpu0_hotplug);
+#endif
+
 phys_addr_t __fdt_pointer __initdata;
 
 /*
@@ -392,7 +405,10 @@ static int __init topology_init(void)
 
 	for_each_present_cpu(i) {
 		struct cpu *cpu = &per_cpu(cpu_data.cpu, i);
-		cpu->hotpluggable = 1;
+		if (i == 0)
+			cpu->hotpluggable = arm64_cpu0_hotpluggable;
+		else
+			cpu->hotpluggable = 1;
 		register_cpu(cpu, i);
 	}
 
