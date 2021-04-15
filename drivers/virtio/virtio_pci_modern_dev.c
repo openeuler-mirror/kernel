@@ -13,6 +13,7 @@
  * @start: start from the capability
  * @size: map size
  * @len: the length that is actually mapped
+ * @pa: physical address of the capability
  *
  * Returns the io address of for the part of the capability
  */
@@ -20,7 +21,7 @@ void __iomem *vp_modern_map_capability(struct virtio_pci_modern_device *mdev, in
 				       size_t minlen,
 				       u32 align,
 				       u32 start, u32 size,
-				       size_t *len)
+				       size_t *len, resource_size_t *pa)
 {
 	struct pci_dev *dev = mdev->pci_dev;
 	u8 bar;
@@ -88,6 +89,10 @@ void __iomem *vp_modern_map_capability(struct virtio_pci_modern_device *mdev, in
 		dev_err(&dev->dev,
 			"virtio_pci: unable to map virtio %u@%u on bar %i\n",
 			length, offset, bar);
+
+	else if (pa)
+		*pa = pci_resource_start(dev, bar) + offset;
+
 	return p;
 }
 EXPORT_SYMBOL_GPL(vp_modern_map_capability);
@@ -275,12 +280,12 @@ int vp_modern_probe(struct virtio_pci_modern_device *mdev)
 	mdev->common = vp_modern_map_capability(mdev, common,
 				      sizeof(struct virtio_pci_common_cfg), 4,
 				      0, sizeof(struct virtio_pci_common_cfg),
-				      NULL);
+				      NULL, NULL);
 	if (!mdev->common)
 		goto err_map_common;
 	mdev->isr = vp_modern_map_capability(mdev, isr, sizeof(u8), 1,
 					     0, 1,
-					     NULL);
+					     NULL, NULL);
 	if (!mdev->isr)
 		goto err_map_isr;
 
@@ -308,7 +313,8 @@ int vp_modern_probe(struct virtio_pci_modern_device *mdev)
 		mdev->notify_base = vp_modern_map_capability(mdev, notify,
 							     2, 2,
 							     0, notify_length,
-							     &mdev->notify_len);
+							     &mdev->notify_len,
+							     &mdev->notify_pa);
 		if (!mdev->notify_base)
 			goto err_map_notify;
 	} else {
@@ -321,7 +327,8 @@ int vp_modern_probe(struct virtio_pci_modern_device *mdev)
 	if (device) {
 		mdev->device = vp_modern_map_capability(mdev, device, 0, 4,
 							0, PAGE_SIZE,
-							&mdev->device_len);
+							&mdev->device_len,
+							NULL);
 		if (!mdev->device)
 			goto err_map_device;
 	}
@@ -598,11 +605,12 @@ EXPORT_SYMBOL_GPL(vp_modern_get_queue_notify_off);
  * specific virtqueue
  * @mdev: the modern virtio-pci device
  * @index: the queue index
+ * @pa: the pointer to the physical address of the nofity area
  *
  * Returns the address of the notification area
  */
 void *vp_modern_map_vq_notify(struct virtio_pci_modern_device *mdev,
-			      u16 index)
+			      u16 index, resource_size_t *pa)
 {
 	u16 off = vp_modern_get_queue_notify_off(mdev, index);
 
@@ -617,13 +625,16 @@ void *vp_modern_map_vq_notify(struct virtio_pci_modern_device *mdev,
 				 index, mdev->notify_len);
 			return NULL;
 		}
+		if (pa)
+			*pa = mdev->notify_pa +
+			      off * mdev->notify_offset_multiplier;
 		return (void __force *)mdev->notify_base +
 			off * mdev->notify_offset_multiplier;
 	} else {
 		return (void __force *)vp_modern_map_capability(mdev,
 				       mdev->notify_map_cap, 2, 2,
 				       off * mdev->notify_offset_multiplier, 2,
-				       NULL);
+				       NULL, pa);
 	}
 }
 EXPORT_SYMBOL_GPL(vp_modern_map_vq_notify);
