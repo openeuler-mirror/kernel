@@ -690,6 +690,12 @@ struct io_kiocb {
 #define IO_PLUG_THRESHOLD		2
 #define IO_IOPOLL_BATCH			8
 
+struct io_comp_state {
+	unsigned int		nr;
+	struct list_head	list;
+	struct io_ring_ctx	*ctx;
+};
+
 struct io_submit_state {
 	struct blk_plug		plug;
 
@@ -698,6 +704,11 @@ struct io_submit_state {
 	 */
 	void			*reqs[IO_IOPOLL_BATCH];
 	unsigned int		free_reqs;
+
+	/*
+	 * Batch completion logic
+	 */
+	struct io_comp_state	comp;
 
 	/*
 	 * File reference cache
@@ -5904,9 +5915,12 @@ static void io_submit_state_end(struct io_submit_state *state)
  * Start submission side cache.
  */
 static void io_submit_state_start(struct io_submit_state *state,
-				  unsigned int max_ios)
+				  struct io_ring_ctx *ctx, unsigned int max_ios)
 {
 	blk_start_plug(&state->plug);
+	state->comp.nr = 0;
+	INIT_LIST_HEAD(&state->comp.list);
+	state->comp.ctx = ctx;
 	state->free_reqs = 0;
 	state->file = NULL;
 	state->ios_left = max_ios;
@@ -6042,7 +6056,7 @@ static int io_submit_sqes(struct io_ring_ctx *ctx, unsigned int nr,
 		return -EAGAIN;
 
 	if (nr > IO_PLUG_THRESHOLD) {
-		io_submit_state_start(&state, nr);
+		io_submit_state_start(&state, ctx, nr);
 		statep = &state;
 	}
 
