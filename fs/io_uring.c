@@ -2164,6 +2164,8 @@ static int io_ring_submit(struct io_ring_ctx *ctx, unsigned int to_submit)
 
 static unsigned io_cqring_events(struct io_cq_ring *ring)
 {
+	/* See comment at the top of this file */
+	smp_rmb();
 	return READ_ONCE(ring->r.tail) - READ_ONCE(ring->r.head);
 }
 
@@ -2179,8 +2181,6 @@ static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events,
 	DEFINE_WAIT(wait);
 	int ret;
 
-	/* See comment at the top of this file */
-	smp_rmb();
 	if (io_cqring_events(ring) >= min_events)
 		return 0;
 
@@ -2202,8 +2202,6 @@ static int io_cqring_wait(struct io_ring_ctx *ctx, int min_events,
 		prepare_to_wait(&ctx->wait, &wait, TASK_INTERRUPTIBLE);
 
 		ret = 0;
-		/* See comment at the top of this file */
-		smp_rmb();
 		if (io_cqring_events(ring) >= min_events)
 			break;
 
