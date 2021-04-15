@@ -491,7 +491,6 @@ static void io_worker_handle_work(struct io_worker *worker)
 
 	do {
 		struct io_wq_work *work;
-		unsigned int hash;
 get_next:
 		/*
 		 * If we got some work, mark us as busy. If we didn't, but
@@ -514,6 +513,7 @@ get_next:
 		/* handle a whole dependent link */
 		do {
 			struct io_wq_work *old_work, *next_hashed, *linked;
+			unsigned int hash = io_get_work_hash(work);
 
 			next_hashed = wq_next_work(work);
 			io_impersonate_work(worker, work);
@@ -524,7 +524,6 @@ get_next:
 			if (test_bit(IO_WQ_BIT_CANCEL, &wq->state))
 				work->flags |= IO_WQ_WORK_CANCEL;
 
-			hash = io_get_work_hash(work);
 			old_work = work;
 			linked = wq->do_work(work);
 
@@ -543,8 +542,6 @@ get_next:
 				spin_lock_irq(&wqe->lock);
 				wqe->hash_map &= ~BIT_ULL(hash);
 				wqe->flags &= ~IO_WQE_FLAG_STALLED;
-				/* dependent work is not hashed */
-				hash = -1U;
 				/* skip unnecessary unlock-lock wqe->lock */
 				if (!work)
 					goto get_next;
