@@ -1393,6 +1393,15 @@ static void io_cqring_ev_posted(struct io_ring_ctx *ctx)
 		eventfd_signal(ctx->cq_ev_fd, 1);
 }
 
+static void io_cqring_mark_overflow(struct io_ring_ctx *ctx)
+{
+	if (list_empty(&ctx->cq_overflow_list)) {
+		clear_bit(0, &ctx->sq_check_overflow);
+		clear_bit(0, &ctx->cq_check_overflow);
+		ctx->rings->sq_flags &= ~IORING_SQ_CQ_OVERFLOW;
+	}
+}
+
 /* Returns true if there are no backlogged entries after the flush */
 static bool io_cqring_overflow_flush(struct io_ring_ctx *ctx, bool force)
 {
@@ -1437,11 +1446,8 @@ static bool io_cqring_overflow_flush(struct io_ring_ctx *ctx, bool force)
 	}
 
 	io_commit_cqring(ctx);
-	if (cqe) {
-		clear_bit(0, &ctx->sq_check_overflow);
-		clear_bit(0, &ctx->cq_check_overflow);
-		ctx->rings->sq_flags &= ~IORING_SQ_CQ_OVERFLOW;
-	}
+	io_cqring_mark_overflow(ctx);
+
 	spin_unlock_irqrestore(&ctx->completion_lock, flags);
 	io_cqring_ev_posted(ctx);
 
@@ -7943,11 +7949,8 @@ static void io_uring_cancel_files(struct io_ring_ctx *ctx,
 			spin_lock_irq(&ctx->completion_lock);
 			list_del(&cancel_req->compl.list);
 			cancel_req->flags &= ~REQ_F_OVERFLOW;
-			if (list_empty(&ctx->cq_overflow_list)) {
-				clear_bit(0, &ctx->sq_check_overflow);
-				clear_bit(0, &ctx->cq_check_overflow);
-				ctx->rings->sq_flags &= ~IORING_SQ_CQ_OVERFLOW;
-			}
+
+			io_cqring_mark_overflow(ctx);
 			WRITE_ONCE(ctx->rings->cq_overflow,
 				atomic_inc_return(&ctx->cached_cq_overflow));
 			io_commit_cqring(ctx);
