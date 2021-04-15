@@ -1103,7 +1103,7 @@ static inline void io_prep_async_work(struct io_kiocb *req,
 	io_req_init_async(req);
 
 	if (req->flags & REQ_F_ISREG) {
-		if (def->hash_reg_file)
+		if (def->hash_reg_file || (req->ctx->flags & IORING_SETUP_IOPOLL))
 			io_wq_hash_work(&req->work, file_inode(req->file));
 	} else {
 		if (def->unbound_nonreg_file)
@@ -2640,6 +2640,7 @@ static int io_read(struct io_kiocb *req, bool force_nonblock)
 	ret = io_import_iovec(READ, req, &iovec, &iter, !force_nonblock);
 	if (ret < 0)
 		return ret;
+	iov_count = iov_iter_count(&iter);
 
 	/* Ensure we clear previously set non-block flag */
 	if (!force_nonblock)
@@ -2657,7 +2658,6 @@ static int io_read(struct io_kiocb *req, bool force_nonblock)
 	if (force_nonblock && !io_file_supports_async(req->file, READ))
 		goto copy_iov;
 
-	iov_count = iov_iter_count(&iter);
 	ret = rw_verify_area(READ, req->file, &kiocb->ki_pos, iov_count);
 	if (!ret) {
 		ssize_t ret2;
@@ -2671,6 +2671,10 @@ static int io_read(struct io_kiocb *req, bool force_nonblock)
 
 		/* Catch -EAGAIN return for forced non-blocking submission */
 		if (!force_nonblock || ret2 != -EAGAIN) {
+			/* IOPOLL retry should happen for io-wq threads */
+			if ((req->ctx->flags & IORING_SETUP_IOPOLL) &&
+					ret2 == -EAGAIN)
+				goto copy_iov;
 			kiocb_done(kiocb, ret2);
 		} else {
 copy_iov:
@@ -2722,6 +2726,7 @@ static int io_write(struct io_kiocb *req, bool force_nonblock)
 	ret = io_import_iovec(WRITE, req, &iovec, &iter, !force_nonblock);
 	if (ret < 0)
 		return ret;
+	iov_count = iov_iter_count(&iter);
 
 	/* Ensure we clear previously set non-block flag */
 	if (!force_nonblock)
@@ -2744,7 +2749,6 @@ static int io_write(struct io_kiocb *req, bool force_nonblock)
 	    (req->flags & REQ_F_ISREG))
 		goto copy_iov;
 
-	iov_count = iov_iter_count(&iter);
 	ret = rw_verify_area(WRITE, req->file, &kiocb->ki_pos, iov_count);
 	if (!ret) {
 		ssize_t ret2;
@@ -2784,6 +2788,10 @@ static int io_write(struct io_kiocb *req, bool force_nonblock)
 		if (ret2 == -EOPNOTSUPP && (kiocb->ki_flags & IOCB_NOWAIT))
 			ret2 = -EAGAIN;
 		if (!force_nonblock || ret2 != -EAGAIN) {
+			/* IOPOLL retry should happen for io-wq threads */
+			if ((req->ctx->flags & IORING_SETUP_IOPOLL) &&
+					ret2 == -EAGAIN)
+				goto copy_iov;
 			kiocb_done(kiocb, ret2);
 		} else {
 copy_iov:
