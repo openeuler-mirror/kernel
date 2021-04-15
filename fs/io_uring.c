@@ -4412,13 +4412,9 @@ static void io_poll_task_func(struct callback_head *cb)
 	struct io_kiocb *nxt = NULL;
 
 	io_poll_task_handler(req, &nxt);
-	if (nxt) {
-		struct io_ring_ctx *ctx = nxt->ctx;
+	if (nxt)
+		__io_req_task_submit(nxt);
 
-		mutex_lock(&ctx->uring_lock);
-		__io_queue_sqe(nxt, NULL, NULL);
-		mutex_unlock(&ctx->uring_lock);
-	}
 	percpu_ref_put(&ctx->refs);
 }
 
