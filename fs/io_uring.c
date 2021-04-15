@@ -4296,14 +4296,49 @@ static void io_async_queue_proc(struct file *file, struct wait_queue_head *head,
 	__io_queue_proc(&apoll->poll, pt, head, &apoll->double_poll);
 }
 
-static void io_sq_thread_drop_mm(void)
+static void io_sq_thread_drop_mm_files(void)
 {
+	struct files_struct *files = current->files;
 	struct mm_struct *mm = current->mm;
 
 	if (mm) {
 		unuse_mm(mm);
 		mmput(mm);
 		current->mm = NULL;
+	}
+	if (files) {
+		struct nsproxy *nsproxy = current->nsproxy;
+
+		task_lock(current);
+		current->files = NULL;
+		current->nsproxy = NULL;
+		task_unlock(current);
+		put_files_struct(files);
+		put_nsproxy(nsproxy);
+	}
+}
+
+static void __io_sq_thread_acquire_files(struct io_ring_ctx *ctx)
+{
+	if (!current->files) {
+		struct files_struct *files;
+		struct nsproxy *nsproxy;
+
+		task_lock(ctx->sqo_task);
+		files = ctx->sqo_task->files;
+		if (!files) {
+			task_unlock(ctx->sqo_task);
+			return;
+		}
+		atomic_inc(&files->count);
+		get_nsproxy(ctx->sqo_task->nsproxy);
+		nsproxy = ctx->sqo_task->nsproxy;
+		task_unlock(ctx->sqo_task);
+
+		task_lock(current);
+		current->files = files;
+		current->nsproxy = nsproxy;
+		task_unlock(current);
 	}
 }
 
@@ -4332,12 +4367,21 @@ static int __io_sq_thread_acquire_mm(struct io_ring_ctx *ctx)
 	return -EFAULT;
 }
 
-static int io_sq_thread_acquire_mm(struct io_ring_ctx *ctx,
-				   struct io_kiocb *req)
+static int io_sq_thread_acquire_mm_files(struct io_ring_ctx *ctx,
+					 struct io_kiocb *req)
 {
-	if (!io_op_defs[req->opcode].needs_mm)
-		return 0;
-	return __io_sq_thread_acquire_mm(ctx);
+	const struct io_op_def *def = &io_op_defs[req->opcode];
+
+	if (def->needs_mm) {
+		int ret = __io_sq_thread_acquire_mm(ctx);
+		if (unlikely(ret))
+			return ret;
+	}
+
+	if (def->needs_file || def->file_table)
+		__io_sq_thread_acquire_files(ctx);
+
+	return 0;
 }
 
 static void io_async_task_func(struct callback_head *cb)
@@ -4382,6 +4426,7 @@ static void io_async_task_func(struct callback_head *cb)
 			io_cqring_add_event(req, -EFAULT);
 			goto end_req;
 		}
+		__io_sq_thread_acquire_files(ctx);
 		mutex_lock(&ctx->uring_lock);
 		__io_queue_sqe(req, NULL);
 		mutex_unlock(&ctx->uring_lock);
@@ -5521,13 +5566,7 @@ static int io_file_get(struct io_submit_state *state, struct io_kiocb *req,
 static int io_req_set_file(struct io_submit_state *state, struct io_kiocb *req,
 			   int fd)
 {
-	bool fixed;
-
-	fixed = (req->flags & REQ_F_FIXED_FILE) != 0;
-	if (unlikely(!fixed && io_async_submit(req->ctx)))
-		return -EBADF;
-
-	return io_file_get(state, req, fd, &req->file, fixed);
+	return io_file_get(state, req, fd, &req->file, req->flags & REQ_F_FIXED_FILE);
 }
 
 static int io_grab_files(struct io_kiocb *req)
@@ -5932,7 +5971,7 @@ static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 	if (unlikely(req->opcode >= IORING_OP_LAST))
 		return -EINVAL;
 
-	if (unlikely(io_sq_thread_acquire_mm(ctx, req)))
+	if (unlikely(io_sq_thread_acquire_mm_files(ctx, req)))
 		return -EFAULT;
 
 	sqe_flags = READ_ONCE(sqe->flags);
@@ -6059,12 +6098,19 @@ static inline void io_ring_clear_wakeup_flag(struct io_ring_ctx *ctx)
 
 static int io_sq_thread(void *data)
 {
+	struct files_struct *old_files = current->files;
+	struct nsproxy *old_nsproxy = current->nsproxy;
 	struct io_ring_ctx *ctx = data;
 	const struct cred *old_cred;
 	mm_segment_t old_fs;
 	DEFINE_WAIT(wait);
 	unsigned long timeout;
 	int ret = 0;
+
+	task_lock(current);
+	current->files = NULL;
+	current->nsproxy = NULL;
+	task_unlock(current);
 
 	complete(&ctx->sq_thread_comp);
 
@@ -6100,7 +6146,7 @@ static int io_sq_thread(void *data)
 			 * adding ourselves to the waitqueue, as the unuse/drop
 			 * may sleep.
 			 */
-			io_sq_thread_drop_mm();
+			io_sq_thread_drop_mm_files();
 
 			/*
 			 * We're polling. If we're within the defined idle
@@ -6173,8 +6219,13 @@ static int io_sq_thread(void *data)
 		task_work_run();
 
 	set_fs(old_fs);
-	io_sq_thread_drop_mm();
+	io_sq_thread_drop_mm_files();
 	revert_creds(old_cred);
+
+	task_lock(current);
+	current->files = old_files;
+	current->nsproxy = old_nsproxy;
+	task_unlock(current);
 
 	kthread_parkme();
 
@@ -8069,7 +8120,7 @@ static int io_uring_create(unsigned entries, struct io_uring_params *p,
 	p->features = IORING_FEAT_SINGLE_MMAP | IORING_FEAT_NODROP |
 			IORING_FEAT_SUBMIT_STABLE | IORING_FEAT_RW_CUR_POS |
 			IORING_FEAT_CUR_PERSONALITY | IORING_FEAT_FAST_POLL |
-			IORING_FEAT_POLL_32BITS;
+			IORING_FEAT_POLL_32BITS | IORING_FEAT_SQPOLL_NONFIXED;
 
 	if (copy_to_user(params, p, sizeof(*p))) {
 		ret = -EFAULT;
