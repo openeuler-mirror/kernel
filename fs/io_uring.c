@@ -205,7 +205,7 @@ struct fixed_file_data {
 	struct fixed_file_table		*table;
 	struct io_ring_ctx		*ctx;
 
-	struct percpu_ref		*cur_refs;
+	struct fixed_file_ref_node	*node;
 	struct percpu_ref		refs;
 	struct completion		done;
 	struct list_head		ref_list;
@@ -5464,7 +5464,7 @@ static int io_file_get(struct io_submit_state *state, struct io_kiocb *req,
 		fd = array_index_nospec(fd, ctx->nr_user_files);
 		file = io_file_from_index(ctx, fd);
 		if (file) {
-			req->fixed_file_refs = ctx->file_data->cur_refs;
+			req->fixed_file_refs = &ctx->file_data->node->refs;
 			percpu_ref_get(req->fixed_file_refs);
 		}
 	} else {
@@ -6696,7 +6696,7 @@ static int io_sqe_files_register(struct io_ring_ctx *ctx, void __user *arg,
 		return PTR_ERR(ref_node);
 	}
 
-	file_data->cur_refs = &ref_node->refs;
+	file_data->node = ref_node;
 	spin_lock(&file_data->lock);
 	list_add(&ref_node->node, &file_data->ref_list);
 	spin_unlock(&file_data->lock);
@@ -6766,14 +6766,12 @@ static int io_queue_file_removal(struct fixed_file_data *data,
 				 struct file *file)
 {
 	struct io_file_put *pfile;
-	struct percpu_ref *refs = data->cur_refs;
-	struct fixed_file_ref_node *ref_node;
+	struct fixed_file_ref_node *ref_node = data->node;
 
 	pfile = kzalloc(sizeof(*pfile), GFP_KERNEL);
 	if (!pfile)
 		return -ENOMEM;
 
-	ref_node = container_of(refs, struct fixed_file_ref_node, refs);
 	pfile->file = file;
 	list_add(&pfile->list, &ref_node->file_list);
 
@@ -6856,10 +6854,10 @@ static int __io_sqe_files_update(struct io_ring_ctx *ctx,
 	}
 
 	if (needs_switch) {
-		percpu_ref_kill(data->cur_refs);
+		percpu_ref_kill(&data->node->refs);
 		spin_lock(&data->lock);
 		list_add(&ref_node->node, &data->ref_list);
-		data->cur_refs = &ref_node->refs;
+		data->node = ref_node;
 		spin_unlock(&data->lock);
 		percpu_ref_get(&ctx->file_data->refs);
 	} else
