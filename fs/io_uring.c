@@ -4215,8 +4215,10 @@ static int io_poll_double_wake(struct wait_queue_entry *wait, unsigned mode,
 		if (!done)
 			list_del_init(&poll->wait.entry);
 		spin_unlock(&poll->head->lock);
-		if (!done)
-			__io_async_wake(req, poll, mask, io_poll_task_func);
+		if (!done) {
+			/* use wait func handler, so it matches the rq type */
+			poll->wait.func(&poll->wait, mode, sync, key);
+		}
 	}
 	refcount_dec(&req->refs);
 	return 1;
