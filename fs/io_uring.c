@@ -4284,7 +4284,7 @@ static void io_async_queue_proc(struct file *file, struct wait_queue_head *head,
 	__io_queue_proc(&apoll->poll, pt, head, &apoll->double_poll);
 }
 
-static void io_sq_thread_drop_mm(struct io_ring_ctx *ctx)
+static void io_sq_thread_drop_mm(void)
 {
 	struct mm_struct *mm = current->mm;
 
@@ -6066,7 +6066,7 @@ static int io_sq_thread(void *data)
 			 * adding ourselves to the waitqueue, as the unuse/drop
 			 * may sleep.
 			 */
-			io_sq_thread_drop_mm(ctx);
+			io_sq_thread_drop_mm();
 
 			/*
 			 * We're polling. If we're within the defined idle
@@ -6139,7 +6139,7 @@ static int io_sq_thread(void *data)
 		task_work_run();
 
 	set_fs(old_fs);
-	io_sq_thread_drop_mm(ctx);
+	io_sq_thread_drop_mm();
 	revert_creds(old_cred);
 
 	kthread_parkme();
