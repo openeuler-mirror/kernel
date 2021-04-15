@@ -427,10 +427,8 @@ struct io_open {
 	int				dfd;
 	union {
 		umode_t			mode;
-		unsigned		mask;
 	};
 	struct filename			*filename;
-	struct statx __user		*buffer;
 	int				flags;
 	unsigned long			nofile;
 };
@@ -480,6 +478,15 @@ struct io_provide_buf {
 	__u32				bgid;
 	__u16				nbufs;
 	__u16				bid;
+};
+
+struct io_statx {
+	struct file			*file;
+	int				dfd;
+	unsigned int			mask;
+	unsigned int			flags;
+	struct filename			*filename;
+	struct statx __user		*buffer;
 };
 
 struct io_async_connect {
@@ -623,6 +630,7 @@ struct io_kiocb {
 		struct io_epoll		epoll;
 		struct io_splice	splice;
 		struct io_provide_buf	pbuf;
+		struct io_statx		statx;
 	};
 
 	struct io_async_ctx		*io;
@@ -3326,19 +3334,19 @@ static int io_statx_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	if (req->flags & REQ_F_NEED_CLEANUP)
 		return 0;
 
-	req->open.dfd = READ_ONCE(sqe->fd);
-	req->open.mask = READ_ONCE(sqe->len);
+	req->statx.dfd = READ_ONCE(sqe->fd);
+	req->statx.mask = READ_ONCE(sqe->len);
 	fname = u64_to_user_ptr(READ_ONCE(sqe->addr));
-	req->open.buffer = u64_to_user_ptr(READ_ONCE(sqe->addr2));
-	req->open.flags = READ_ONCE(sqe->statx_flags);
+	req->statx.buffer = u64_to_user_ptr(READ_ONCE(sqe->addr2));
+	req->statx.flags = READ_ONCE(sqe->statx_flags);
 
-	if (vfs_stat_set_lookup_flags(&lookup_flags, req->open.flags))
+	if (vfs_stat_set_lookup_flags(&lookup_flags, req->statx.flags))
 		return -EINVAL;
 
-	req->open.filename = getname_flags(fname, lookup_flags, NULL);
-	if (IS_ERR(req->open.filename)) {
-		ret = PTR_ERR(req->open.filename);
-		req->open.filename = NULL;
+	req->statx.filename = getname_flags(fname, lookup_flags, NULL);
+	if (IS_ERR(req->statx.filename)) {
+		ret = PTR_ERR(req->statx.filename);
+		req->statx.filename = NULL;
 		return ret;
 	}
 
@@ -3348,7 +3356,7 @@ static int io_statx_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 
 static int io_statx(struct io_kiocb *req, bool force_nonblock)
 {
-	struct io_open *ctx = &req->open;
+	struct io_statx *ctx = &req->statx;
 	unsigned lookup_flags;
 	struct path path;
 	struct kstat stat;
