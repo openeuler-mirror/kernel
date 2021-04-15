@@ -1159,8 +1159,7 @@ static void __io_req_aux_free(struct io_kiocb *req)
 {
 	struct io_ring_ctx *ctx = req->ctx;
 
-	if (req->io)
-		kfree(req->io);
+	kfree(req->io);
 	if (req->file) {
 		if (req->flags & REQ_F_FIXED_FILE)
 			percpu_ref_put(&ctx->file_data->refs);
