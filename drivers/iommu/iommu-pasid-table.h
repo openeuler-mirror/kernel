@@ -9,7 +9,7 @@
 
 #include <linux/bug.h>
 #include <linux/types.h>
-#include "io-pgtable.h"
+#include "linux/io-pgtable.h"
 
 struct mm_struct;
 

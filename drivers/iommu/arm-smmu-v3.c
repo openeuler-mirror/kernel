@@ -30,6 +30,7 @@
 #include <linux/dma-iommu.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
+#include <linux/io-pgtable.h>
 #include <linux/iommu.h>
 #include <linux/iopoll.h>
 #include <linux/mmu_context.h>
@@ -46,7 +47,6 @@
 #include <linux/irq.h>
 #include <linux/amba/bus.h>
 
-#include "io-pgtable.h"
 #include "iommu-pasid-table.h"
 
 /* MMIO registers */
