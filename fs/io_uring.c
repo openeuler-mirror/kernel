@@ -650,6 +650,7 @@ struct io_kiocb {
 	u8				iopoll_completed;
 
 	u16				buf_index;
+	u32				result;
 
 	struct io_ring_ctx	*ctx;
 	unsigned int		flags;
@@ -657,8 +658,6 @@ struct io_kiocb {
 	struct task_struct	*task;
 	unsigned long		fsize;
 	u64			user_data;
-	u32			result;
-	u32			sequence;
 
 	struct list_head	link_list;
 
@@ -689,6 +688,7 @@ struct io_kiocb {
 struct io_defer_entry {
 	struct list_head	list;
 	struct io_kiocb		*req;
+	u32			seq;
 };
 
 #define IO_PLUG_THRESHOLD		2
@@ -1149,13 +1149,13 @@ err:
 	return NULL;
 }
 
-static inline bool req_need_defer(struct io_kiocb *req)
+static bool req_need_defer(struct io_kiocb *req, u32 seq)
 {
 	if (unlikely(req->flags & REQ_F_IO_DRAIN)) {
 		struct io_ring_ctx *ctx = req->ctx;
 
-		return req->sequence != ctx->cached_cq_tail
-					+ atomic_read(&ctx->cached_cq_overflow);
+		return seq != ctx->cached_cq_tail
+				+ atomic_read(&ctx->cached_cq_overflow);
 	}
 
 	return false;
@@ -1300,7 +1300,7 @@ static void __io_queue_deferred(struct io_ring_ctx *ctx)
 		struct io_defer_entry *de = list_first_entry(&ctx->defer_list,
 						struct io_defer_entry, list);
 
-		if (req_need_defer(de->req))
+		if (req_need_defer(de->req, de->seq))
 			break;
 		list_del_init(&de->list);
 		/* punt-init is done before queueing for defer */
@@ -5295,14 +5295,35 @@ static int io_req_defer_prep(struct io_kiocb *req,
 	return ret;
 }
 
+static u32 io_get_sequence(struct io_kiocb *req)
+{
+	struct io_kiocb *pos;
+	struct io_ring_ctx *ctx = req->ctx;
+	u32 total_submitted, nr_reqs = 1;
+
+	if (req->flags & REQ_F_LINK_HEAD)
+		list_for_each_entry(pos, &req->link_list, link_list)
+			nr_reqs++;
+
+	total_submitted = ctx->cached_sq_head - ctx->cached_sq_dropped;
+	return total_submitted - nr_reqs;
+}
+
 static int io_req_defer(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 {
 	struct io_ring_ctx *ctx = req->ctx;
 	struct io_defer_entry *de;
 	int ret;
+	u32 seq;
 
 	/* Still need defer if there is pending req in defer list. */
-	if (!req_need_defer(req) && list_empty_careful(&ctx->defer_list))
+	if (likely(list_empty_careful(&ctx->defer_list) &&
+		!(req->flags & REQ_F_IO_DRAIN)))
+		return 0;
+
+	seq = io_get_sequence(req);
+	/* Still a chance to pass the sequence check */
+	if (!req_need_defer(req, seq) && list_empty_careful(&ctx->defer_list))
 		return 0;
 
 	if (!req->io) {
@@ -5318,7 +5339,7 @@ static int io_req_defer(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 		return -ENOMEM;
 
 	spin_lock_irq(&ctx->completion_lock);
-	if (!req_need_defer(req) && list_empty(&ctx->defer_list)) {
+	if (!req_need_defer(req, seq) && list_empty(&ctx->defer_list)) {
 		spin_unlock_irq(&ctx->completion_lock);
 		kfree(de);
 		return 0;
@@ -5326,6 +5347,7 @@ static int io_req_defer(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 
 	trace_io_uring_defer(ctx, req, req->user_data);
 	de->req = req;
+	de->seq = seq;
 	list_add_tail(&de->list, &ctx->defer_list);
 	spin_unlock_irq(&ctx->completion_lock);
 	return -EIOCBQUEUED;
@@ -6087,12 +6109,6 @@ static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 	unsigned int sqe_flags;
 	int id;
 
-	/*
-	 * All io need record the previous position, if LINK vs DARIN,
-	 * it can be used to mark the position of the first IO in the
-	 * link list.
-	 */
-	req->sequence = ctx->cached_sq_head - ctx->cached_sq_dropped;
 	req->opcode = READ_ONCE(sqe->opcode);
 	req->user_data = READ_ONCE(sqe->user_data);
 	req->io = NULL;
