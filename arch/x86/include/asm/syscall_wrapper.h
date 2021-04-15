@@ -206,5 +206,8 @@ struct pt_regs;
 asmlinkage long __x64_sys_getcpu(const struct pt_regs *regs);
 asmlinkage long __x64_sys_gettimeofday(const struct pt_regs *regs);
 asmlinkage long __x64_sys_time(const struct pt_regs *regs);
+asmlinkage long __x64_sys_io_uring_setup(const struct pt_regs *regs);
+asmlinkage long __x64_sys_io_uring_enter(const struct pt_regs *regs);
+asmlinkage long __x64_sys_io_uring_register(const struct pt_regs *regs);
 
 #endif /* _ASM_X86_SYSCALL_WRAPPER_H */

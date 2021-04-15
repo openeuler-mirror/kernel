@@ -291,6 +291,13 @@ __visible void do_syscall_64(unsigned long nr, struct pt_regs *regs)
 	if (likely(nr < NR_syscalls)) {
 		nr = array_index_nospec(nr, NR_syscalls);
 		regs->ax = sys_call_table[nr](regs);
+	} else {
+		if (nr == 425)
+			regs->ax = __x64_sys_io_uring_setup(regs);
+		else if (likely(nr == 426))
+			regs->ax = __x64_sys_io_uring_enter(regs);
+		else if (nr == 427)
+			regs->ax = __x64_sys_io_uring_register(regs);
 	}
 
 	syscall_return_slowpath(regs);
