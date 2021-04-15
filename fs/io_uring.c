@@ -1429,10 +1429,11 @@ static void __io_req_aux_free(struct io_kiocb *req)
 
 static void __io_free_req(struct io_kiocb *req)
 {
+	struct io_ring_ctx *ctx = req->ctx;
+
 	__io_req_aux_free(req);
 
 	if (req->flags & REQ_F_INFLIGHT) {
-		struct io_ring_ctx *ctx = req->ctx;
 		unsigned long flags;
 
 		spin_lock_irqsave(&ctx->inflight_lock, flags);
@@ -1442,11 +1443,11 @@ static void __io_free_req(struct io_kiocb *req)
 		spin_unlock_irqrestore(&ctx->inflight_lock, flags);
 	}
 
-	percpu_ref_put(&req->ctx->refs);
 	if (likely(!io_is_fallback_req(req)))
 		kmem_cache_free(req_cachep, req);
 	else
-		clear_bit_unlock(0, (unsigned long *) &req->ctx->fallback_req);
+		clear_bit_unlock(0, (unsigned long *) &ctx->fallback_req);
+	percpu_ref_put(&ctx->refs);
 }
 
 struct req_batch {
