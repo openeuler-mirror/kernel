@@ -1108,18 +1108,16 @@ long do_splice(struct file *in, loff_t __user *off_in,
 	loff_t offset;
 	long ret;
 
+	if (unlikely(!(in->f_mode & FMODE_READ) ||
+		     !(out->f_mode & FMODE_WRITE)))
+		return -EBADF;
+
 	ipipe = get_pipe_info(in);
 	opipe = get_pipe_info(out);
 
 	if (ipipe && opipe) {
 		if (off_in || off_out)
 			return -ESPIPE;
-
-		if (!(in->f_mode & FMODE_READ))
-			return -EBADF;
-
-		if (!(out->f_mode & FMODE_WRITE))
-			return -EBADF;
 
 		/* Splicing to self would be fun, but... */
 		if (ipipe == opipe)
@@ -1139,9 +1137,6 @@ long do_splice(struct file *in, loff_t __user *off_in,
 		} else {
 			offset = out->f_pos;
 		}
-
-		if (unlikely(!(out->f_mode & FMODE_WRITE)))
-			return -EBADF;
 
 		if (unlikely(out->f_flags & O_APPEND))
 			return -EINVAL;
@@ -1421,15 +1416,11 @@ SYSCALL_DEFINE6(splice, int, fd_in, loff_t __user *, off_in,
 	error = -EBADF;
 	in = fdget(fd_in);
 	if (in.file) {
-		if (in.file->f_mode & FMODE_READ) {
-			out = fdget(fd_out);
-			if (out.file) {
-				if (out.file->f_mode & FMODE_WRITE)
-					error = do_splice(in.file, off_in,
-							  out.file, off_out,
-							  len, flags);
-				fdput(out);
-			}
+		out = fdget(fd_out);
+		if (out.file) {
+			error = do_splice(in.file, off_in, out.file, off_out,
+					  len, flags);
+			fdput(out);
 		}
 		fdput(in);
 	}
@@ -1733,6 +1724,10 @@ static long do_tee(struct file *in, struct file *out, size_t len,
 	struct pipe_inode_info *opipe = get_pipe_info(out);
 	int ret = -EINVAL;
 
+	if (unlikely(!(in->f_mode & FMODE_READ) ||
+		     !(out->f_mode & FMODE_WRITE)))
+		return -EBADF;
+
 	/*
 	 * Duplicate the contents of ipipe to opipe without actually
 	 * copying the data.
@@ -1755,7 +1750,7 @@ static long do_tee(struct file *in, struct file *out, size_t len,
 
 SYSCALL_DEFINE4(tee, int, fdin, int, fdout, size_t, len, unsigned int, flags)
 {
-	struct fd in;
+	struct fd in, out;
 	int error;
 
 	if (unlikely(flags & ~SPLICE_F_ALL))
@@ -1767,14 +1762,10 @@ SYSCALL_DEFINE4(tee, int, fdin, int, fdout, size_t, len, unsigned int, flags)
 	error = -EBADF;
 	in = fdget(fdin);
 	if (in.file) {
-		if (in.file->f_mode & FMODE_READ) {
-			struct fd out = fdget(fdout);
-			if (out.file) {
-				if (out.file->f_mode & FMODE_WRITE)
-					error = do_tee(in.file, out.file,
-							len, flags);
-				fdput(out);
-			}
+		out = fdget(fdout);
+		if (out.file) {
+			error = do_tee(in.file, out.file, len, flags);
+			fdput(out);
 		}
  		fdput(in);
  	}
