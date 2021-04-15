@@ -4294,16 +4294,23 @@ static void io_sq_thread_drop_mm(void)
 	}
 }
 
-static int io_sq_thread_acquire_mm(struct io_ring_ctx *ctx,
-				   struct io_kiocb *req)
+static int __io_sq_thread_acquire_mm(struct io_ring_ctx *ctx)
 {
-	if (io_op_defs[req->opcode].needs_mm && !current->mm) {
+	if (!current->mm) {
 		if (unlikely(!mmget_not_zero(ctx->sqo_mm)))
 			return -EFAULT;
 		use_mm(ctx->sqo_mm);
 	}
 
 	return 0;
+}
+
+static int io_sq_thread_acquire_mm(struct io_ring_ctx *ctx,
+				   struct io_kiocb *req)
+{
+	if (!io_op_defs[req->opcode].needs_mm)
+		return 0;
+	return __io_sq_thread_acquire_mm(ctx);
 }
 
 static void io_async_task_func(struct callback_head *cb)
@@ -4344,7 +4351,7 @@ static void io_async_task_func(struct callback_head *cb)
 
 	if (!canceled) {
 		__set_current_state(TASK_RUNNING);
-		if (io_sq_thread_acquire_mm(ctx, req)) {
+		if (__io_sq_thread_acquire_mm(ctx)) {
 			io_cqring_add_event(req, -EFAULT);
 			goto end_req;
 		}
