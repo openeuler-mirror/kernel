@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2104.4.0
+%global hulkrelease 2104.16.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0066
+Release: %{hulkrelease}.0078
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,933 @@ fi
 
 %changelog
 
+
+* Thu Apr 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.16.0.0078
+- config/arm64: fix kabi by disable CONFIG_NVME_MULTIPATH
+
+* Thu Apr 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.15.0.0077
+- config/x86: enable SHRINK_PAGECACHE
+- arm64: Add config switch and kernel parameter for CPU0 hotplug
+
+* Thu Apr 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.14.0.0076
+- arm64: errata: enable HISILICON_ERRATUM_HIP08_RU_PREFETCH
+- arm64: errata: fix kabi changed for cpu_errata
+- arm64: errata: add option to disable cache readunique prefetch on 1620
+
+* Thu Apr 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.13.0.0075
+- firewire: nosy: Fix a use-after-free bug in nosy_ioctl()
+
+* Thu Apr 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.12.0.0074
+- iommu/arm-smmu-v3: Reduce contention during command-queue insertion
+- iommu/arm-smmu-v3: Operate directly on low-level queue where possible
+- iommu/arm-smmu-v3: Move low-level queue fields out of arm_smmu_queue
+- iommu/arm-smmu-v3: Drop unused 'q' argument from Q_OVF macro
+- iommu/arm-smmu-v3: Separate s/w and h/w views of prod and cons indexes
+- iommu/io-pgtable: Rename iommu_gather_ops to iommu_flush_ops
+- iommu/io-pgtable-arm: Remove redundant call to io_pgtable_tlb_sync()
+- iommu/arm-smmu-v3: Increase maximum size of queues
+- iommu/io-pgtable: Replace IO_PGTABLE_QUIRK_NO_DMA with specific flag
+- iommu: Allow io-pgtable to be used outside of drivers/iommu/
+- iommu: Fix flush_tlb_all typo
+- iommu: Change tlb_range_add to iotlb_range_add and tlb_sync to iotlb_sync
+
+* Thu Apr 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.11.0.0073
+- io_uring: order refnode recycling
+- io_uring: get an active ref_node from files_data
+- io_uring: fix racy req->flags modification
+- io_uring: defer file table grabbing request cleanup for locked requests
+- io_uring: batch put_task_struct()
+- tasks: add put_task_struct_many()
+- io_uring: fix missing io_queue_linked_timeout()
+- io_uring: deduplicate io_grab_files() calls
+- io_uring: don't do opcode prep twice
+- io_uring: don't open-code recv kbuf managment
+- io_uring: extract io_put_kbuf() helper
+- io_uring: simplify file ref tracking in submission state
+- io_uring: move BUFFER_SELECT check into *recv[msg]
+- io_uring: free selected-bufs if error'ed
+- io_uring: don't forget cflags in io_recv()
+- io_uring: remove extra checks in send/recv
+- io_uring: indent left {send,recv}[msg]()
+- io-wq: update hash bits
+- io_uring: get rid of atomic FAA for cq_timeouts
+- io_uring: consolidate *_check_overflow accounting
+- io_uring: de-unionise io_kiocb
+- io_uring: follow **iovec idiom in io_import_iovec
+- io_uring: mark ->work uninitialised after cleanup
+- io_uring/io-wq: move RLIMIT_FSIZE to io-wq
+- io_uring: alloc ->io in io_req_defer_prep()
+- io_uring: inline io_req_work_grab_env()
+- io_uring: fix racy IOPOLL completions
+- io_uring: always let io_iopoll_complete() complete polled io
+- io_uring: don't recurse on tsk->sighand->siglock with signalfd
+- io_uring: don't use poll handler if file can't be nonblocking read/written
+- io_uring: fix linked deferred ->files cancellation
+- io_uring: fix cancel of deferred reqs with ->files
+- io_uring: flush timeouts that should already have expired
+- io_uring: find and cancel head link async work on files exit
+- io_uring: always plug for any number of IOs
+- io_uring: fix recursive completion locking on oveflow flush
+- io_uring: enable lookup of links holding inflight files
+- io_uring: place cflags into completion data
+- io_uring: remove sequence from io_kiocb
+- io_uring: use non-intrusive list for defer
+- io_uring: remove init for unused list
+- io_uring: add req->timeout.list
+- io_uring: use completion list for CQ overflow
+- io_uring: use inflight_entry list for iopoll'ing
+- io_uring: rename ctx->poll into ctx->iopoll
+- io_uring: share completion list w/ per-op space
+- io_uring: get rid of __req_need_defer()
+- io_uring: only call kfree() for a non-zero pointer
+- io_uring: fix a use after free in io_async_task_func()
+- io_uring: remove nr_events arg from iopoll_check()
+- io_uring: don't delay iopoll'ed req completion
+- io_uring: fix lost cqe->flags
+- io_uring: keep queue_sqe()'s fail path separately
+- io_uring: fix mis-refcounting linked timeouts
+- io_uring: use new io_req_task_work_add() helper throughout
+- io_uring: abstract out task work running
+- io_uring: do grab_env() just before punting
+- io_uring: factor out grab_env() from defer_prep()
+- io_uring: do init work in grab_env()
+- io_uring: don't pass def into io_req_work_grab_env
+- io_uring: fix function args for !CONFIG_NET
+- io_uring: set @poll->file after @poll init
+- io_uring: remove REQ_F_MUST_PUNT
+- io_uring: remove setting REQ_F_MUST_PUNT in rw
+- io_uring: optimise io_req_find_next() fast check
+- io_uring: kill REQ_F_TIMEOUT_NOSEQ
+- io_uring: kill REQ_F_TIMEOUT
+- io_uring: replace find_next() out param with ret
+- io_uring: fix missing io_grab_files()
+- io_uring: don't mark link's head for_async
+- io_uring: fix feeding io-wq with uninit reqs
+- io_uring: fix punting req w/o grabbed env
+- io_uring: fix req->work corruption
+- io_uring: simplify io_async_task_func()
+- io_uring: fix NULL mm in io_poll_task_func()
+- io_uring: use task_work for links if possible
+- io_uring: do task_work_run() during iopoll
+- io_uring: clean up req->result setting by rw
+- io_uring: cosmetic changes for batch free
+- io_uring: batch-free linked requests as well
+- io_uring: dismantle req early and remove need_iter
+- io_uring: remove inflight batching in free_many()
+- io_uring: fix refs underflow in io_iopoll_queue()
+- io_uring: enable READ/WRITE to use deferred completions
+- io_uring: pass in completion state to appropriate issue side handlers
+- io_uring: pass down completion state on the issue side
+- io_uring: add 'io_comp_state' to struct io_submit_state
+- io_uring: provide generic io_req_complete() helper
+- io_uring: add missing REQ_F_COMP_LOCKED for nested requests
+- io_uring: clean up io_kill_linked_timeout() locking
+- io_uring: deduplicate freeing linked timeouts
+- io_uring: kill REQ_F_LINK_NEXT
+- io_uring: fix stalled deferred requests
+- io_uring: add IORING_OP_OPENAT2 for compatablity
+- arm64: fix kabi with io_uring interface
+- x86: fix kabi with io_uring interface
+- io_uring: fix provide_buffers sign extension
+- io_uring: ignore double poll add on the same waitqueue head
+- io_uring: fix SQPOLL IORING_OP_CLOSE cancelation state
+- io_uring: make ctx cancel on exit targeted to actual ctx
+- io_uring: fix error path cleanup in io_sqe_files_register()
+- io_uring: ensure open/openat2 name is cleaned on cancelation
+- io_uring: sanitize double poll handling
+- io_uring: fail poll arm on queue proc failure
+- io_uring: allow non-fixed files with SQPOLL
+- io_uring: ensure consistent view of original task ->mm from SQPOLL
+- io_uring: stash ctx task reference for SQPOLL
+- io_uring: don't miscount pinned memory
+- io_uring: don't burn CPU for iopoll on exit
+- io_uring: fix imbalanced sqo_mm accounting
+- io_uring: return locked and pinned page accounting
+- io_uring: fix missing ->mm on exit
+- io_uring: fix NULL-mm for linked reqs
+- io_uring: account locked memory before potential error case
+- io_uring: don't touch 'ctx' after installing file descriptor
+- io_uring: remove dead 'ctx' argument and move forward declaration
+- io_uring: fix recvmsg setup with compat buf-select
+- io_uring: fix shift-out-of-bounds when round up cq size
+- io_uring: round-up cq size before comparing with rounded sq size
+- io_uring: use type appropriate io_kiocb handler for double poll
+- io_uring: fix double poll mask init
+- io_uring: Fix sizeof() mismatch
+- io_uring: keep a pointer ref_node in file_data
+- io_uring: refactor *files_register()'s error paths
+- io_uring: clean file_data access in files_register
+- io-wq: fix use-after-free in io_wq_worker_running
+- io_uring: fix potential ABBA deadlock in ->show_fdinfo()
+- io_uring: always delete double poll wait entry on match
+- io-wq: fix hang after cancelling pending hashed work
+- io_uring: fix racy overflow count reporting
+- io_uring: partially inline io_iopoll_getevents()
+- io_uring: briefly loose locks while reaping events
+- io_uring: fix stopping iopoll'ing too early
+- io_uring: fix potential use after free on fallback request free
+- io_uring: set table->files[i] to NULL when io_sqe_file_register failed
+- io_uring: fix removing the wrong file in __io_sqe_files_update()
+- io_uring: fix IOPOLL -EAGAIN retries
+- io_uring: clear req->result on IOPOLL re-issue
+- io_uring: hold 'ctx' reference around task_work queue + execute
+- io_uring: use TWA_SIGNAL for task_work uncondtionally
+- io_uring: Fix NULL pointer dereference in loop_rw_iter()
+- io_uring: clear IORING_SQ_NEED_WAKEUP after executing task works
+- io_uring: add a helper for async rw iovec prep
+- io_uring: simplify io_req_map_rw()
+- io_uring: extract io_sendmsg_copy_hdr()
+- io_uring: use more specific type in rcv/snd msg cp
+- io_uring: rename sr->msg into umsg
+- io_uring: fix sq array offset calculation
+- io_uring: fix lockup in io_fail_links()
+- io_uring: fix ->work corruption with poll_add
+- io_uring: missed req_init_async() for IOSQE_ASYNC
+- io_uring: always allow drain/link/hardlink/async sqe flags
+- io_uring: ensure double poll additions work with both request types
+- io_uring: fix recvmsg memory leak with buffer selection
+- io_uring: fix not initialised work->flags
+- io_uring: fix missing msg_name assignment
+- io_uring: account user memory freed when exit has been queued
+- io_uring: fix memleak in io_sqe_files_register()
+- io_uring: fix memleak in __io_sqe_files_update()
+- io_uring: export cq overflow status to userspace
+- io_uring: fix regression with always ignoring signals in io_cqring_wait()
+- io_uring: use signal based task_work running
+- task_work: teach task_work_add() to do signal_wake_up()
+- io_uring: fix current->mm NULL dereference on exit
+- io_uring: fix hanging iopoll in case of -EAGAIN
+- io_uring: fix io_sq_thread no schedule when busy
+- io-wq: return next work from ->do_work() directly
+- io-wq: compact io-wq flags numbers
+- io_uring: separate reporting of ring pages from registered pages
+- io_uring: report pinned memory usage
+- io_uring: rename ctx->account_mem field
+- io_uring: add wrappers for memory accounting
+- io_uring: use EPOLLEXCLUSIVE flag to aoid thundering herd type behavior
+- io_uring: change the poll type to be 32-bits
+- io_uring: fix possible race condition against REQ_F_NEED_CLEANUP
+- io_uring: reap poll completions while waiting for refs to drop on exit
+- io_uring: acquire 'mm' for task_work for SQPOLL
+- io_uring: add memory barrier to synchronize io_kiocb's result and iopoll_completed
+- io_uring: don't fail links for EAGAIN error in IOPOLL mode
+- io_uring: cancel by ->task not pid
+- io_uring: lazy get task
+- io_uring: batch cancel in io_uring_cancel_files()
+- io_uring: cancel all task's requests on exit
+- io-wq: add an option to cancel all matched reqs
+- io-wq: reorder cancellation pending -> running
+- io_uring: fix lazy work init
+- io_uring: fix io_kiocb.flags modification race in IOPOLL mode
+- io_uring: check file O_NONBLOCK state for accept
+- io_uring: avoid unnecessary io_wq_work copy for fast poll feature
+- io_uring: avoid whole io_wq_work copy for requests completed inline
+- io_uring: allow O_NONBLOCK async retry
+- io_wq: add per-wq work handler instead of per work
+- io_uring: don't arm a timeout through work.func
+- io_uring: remove custom ->func handlers
+- io_uring: don't derive close state from ->func
+- io_uring: use kvfree() in io_sqe_buffer_register()
+- io_uring: validate the full range of provided buffers for access
+- io_uring: re-set iov base/len for buffer select retry
+- io_uring: move send/recv IOPOLL check into prep
+- io_uring: fix {SQ,IO}POLL with unsupported opcodes
+- io_uring: disallow close of ring itself
+- io_uring: fix overflowed reqs cancellation
+- io_uring: off timeouts based only on completions
+- io_uring: move timeouts flushing to a helper
+- statx: hide interfaces no longer used by io_uring
+- io_uring: call statx directly
+- statx: allow system call to be invoked from io_uring
+- io_uring: add io_statx structure
+- io_uring: get rid of manual punting in io_close
+- io_uring: separate DRAIN flushing into a cold path
+- io_uring: don't re-read sqe->off in timeout_prep()
+- io_uring: simplify io_timeout locking
+- io_uring: fix flush req->refs underflow
+- io_uring: don't submit sqes when ctx->refs is dying
+- io_uring: async task poll trigger cleanup
+- io_uring: add tee(2) support
+- splice: export do_tee()
+- io_uring: don't repeat valid flag list
+- io_uring: rename io_file_put()
+- io_uring: remove req->needs_fixed_files
+- io_uring: cleanup io_poll_remove_one() logic
+- io_uring: file registration list and lock optimization
+- io_uring: add IORING_CQ_EVENTFD_DISABLED to the CQ ring flags
+- io_uring: add 'cq_flags' field for the CQ ring
+- io_uring: allow POLL_ADD with double poll_wait() users
+- io_uring: batch reap of dead file registrations
+- io_uring: name sq thread and ref completions
+- io_uring: remove duplicate semicolon at the end of line
+- io_uring: remove obsolete 'state' parameter
+- io_uring: remove 'fd is io_uring' from close path
+- io_uring: reset -EBUSY error when io sq thread is waken up
+- io_uring: don't add non-IO requests to iopoll pending list
+- io_uring: don't use kiocb.private to store buf_index
+- io_uring: cancel work if task_work_add() fails
+- io_uring: remove dead check in io_splice()
+- io_uring: fix FORCE_ASYNC req preparation
+- io_uring: don't prepare DRAIN reqs twice
+- io_uring: initialize ctx->sqo_wait earlier
+- io_uring: polled fixed file must go through free iteration
+- io_uring: fix zero len do_splice()
+- io_uring: don't use 'fd' for openat/openat2/statx
+- splice: move f_mode checks to do_{splice,tee}()
+- io_uring: handle -EFAULT properly in io_uring_setup()
+- io_uring: fix mismatched finish_wait() calls in io_uring_cancel_files()
+- io_uring: punt splice async because of inode mutex
+- io_uring: check non-sync defer_list carefully
+- io_uring: fix extra put in sync_file_range()
+- io_uring: use cond_resched() in io_ring_ctx_wait_and_kill()
+- io_uring: use proper references for fallback_req locking
+- io_uring: only force async punt if poll based retry can't handle it
+- io_uring: enable poll retry for any file with ->read_iter / ->write_iter
+- io_uring: statx must grab the file table for valid fd
+- io_uring: only restore req->work for req that needs do completion
+- io_uring: don't count rqs failed after current one
+- io_uring: kill already cached timeout.seq_offset
+- io_uring: fix cached_sq_head in io_timeout()
+- io_uring: only post events in io_poll_remove_all() if we completed some
+- io_uring: io_async_task_func() should check and honor cancelation
+- io_uring: check for need to re-wait in polled async handling
+- io_uring: correct O_NONBLOCK check for splice punt
+- io_uring: restore req->work when canceling poll request
+- io_uring: move all request init code in one place
+- io_uring: keep all sqe->flags in req->flags
+- io_uring: early submission req fail code
+- io_uring: track mm through current->mm
+- io_uring: remove obsolete @mm_fault
+- io_uring: punt final io_ring_ctx wait-and-free to workqueue
+- io_uring: fix fs cleanup on cqe overflow
+- io_uring: don't read user-shared sqe flags twice
+- io_uring: remove req init from io_get_req()
+- io_uring: alloc req only after getting sqe
+- io_uring: simplify io_get_sqring
+- io_uring: do not always copy iovec in io_req_map_rw()
+- io_uring: ensure openat sets O_LARGEFILE if needed
+- io_uring: initialize fixed_file_data lock
+- io_uring: remove redundant variable pointer nxt and io_wq_assign_next call
+- io_uring: fix ctx refcounting in io_submit_sqes()
+- io_uring: process requests completed with -EAGAIN on poll list
+- io_uring: remove bogus RLIMIT_NOFILE check in file registration
+- io_uring: use io-wq manager as backup task if task is exiting
+- io_uring: grab task reference for poll requests
+- io_uring: retry poll if we got woken with non-matching mask
+- io_uring: add missing finish_wait() in io_sq_thread()
+- io_uring: refactor file register/unregister/update handling
+- io_uring: cleanup io_alloc_async_ctx()
+- io_uring: fix missing 'return' in comment
+- io-wq: handle hashed writes in chains
+- io-uring: drop 'free_pfile' in struct io_file_put
+- io-uring: drop completion when removing file
+- io_uring: Fix ->data corruption on re-enqueue
+- io-wq: close cancel gap for hashed linked work
+- io_uring: make spdxcheck.py happy
+- io_uring: honor original task RLIMIT_FSIZE
+- io-wq: hash dependent work
+- io-wq: split hashing and enqueueing
+- io-wq: don't resched if there is no work
+- io-wq: remove duplicated cancel code
+- io_uring: fix truncated async read/readv and write/writev retry
+- io_uring: dual license io_uring.h uapi header
+- io_uring: io_uring_enter(2) don't poll while SETUP_IOPOLL|SETUP_SQPOLL enabled
+- io_uring: Fix unused function warnings
+- io_uring: add end-of-bits marker and build time verify it
+- io_uring: provide means of removing buffers
+- io_uring: add IOSQE_BUFFER_SELECT support for IORING_OP_RECVMSG
+- net: abstract out normal and compat msghdr import
+- io_uring: add IOSQE_BUFFER_SELECT support for IORING_OP_READV
+- io_uring: support buffer selection for OP_READ and OP_RECV
+- io_uring: add IORING_OP_PROVIDE_BUFFERS
+- io_uring: buffer registration infrastructure
+- io_uring/io-wq: forward submission ref to async
+- io-wq: optimise out *next_work() double lock
+- io-wq: optimise locking in io_worker_handle_work()
+- io-wq: shuffle io_worker_handle_work() code
+- io_uring: get next work with submission ref drop
+- io_uring: remove @nxt from handlers
+- io_uring: make submission ref putting consistent
+- io_uring: clean up io_close
+- io_uring: Ensure mask is initialized in io_arm_poll_handler
+- io_uring: remove io_prep_next_work()
+- io_uring: remove extra nxt check after punt
+- io_uring: use poll driven retry for files that support it
+- io_uring: mark requests that we can do poll async in io_op_defs
+- io_uring: add per-task callback handler
+- io_uring: store io_kiocb in wait->private
+- task_work_run: don't take ->pi_lock unconditionally
+- io-wq: use BIT for ulong hash
+- io_uring: remove IO_WQ_WORK_CB
+- io-wq: remove unused IO_WQ_WORK_HAS_MM
+- io_uring: extract kmsg copy helper
+- io_uring: clean io_poll_complete
+- io_uring: add splice(2) support
+- io_uring: add interface for getting files
+- splice: make do_splice public
+- io_uring: remove req->in_async
+- io_uring: don't do full *prep_worker() from io-wq
+- io_uring: don't call work.func from sync ctx
+- io_uring: io_accept() should hold on to submit reference on retry
+- io_uring: consider any io_read/write -EAGAIN as final
+- io_uring: make sure accept honor rlimit nofile
+- io_uring: make sure openat/openat2 honor rlimit nofile
+- io_uring: NULL-deref for IOSQE_{ASYNC,DRAIN}
+- io_uring: ensure RCU callback ordering with rcu_barrier()
+- io_uring: fix lockup with timeouts
+- io_uring: free fixed_file_data after RCU grace period
+- io-wq: remove io_wq_flush and IO_WQ_WORK_INTERNAL
+- io-wq: fix IO_WQ_WORK_NO_CANCEL cancellation
+- io_uring: fix 32-bit compatability with sendmsg/recvmsg
+- io_uring: define and set show_fdinfo only if procfs is enabled
+- io_uring: drop file set ref put/get on switch
+- io_uring: import_single_range() returns 0/-ERROR
+- io_uring: pick up link work on submit reference drop
+- io-wq: ensure work->task_pid is cleared on init
+- io-wq: remove spin-for-work optimization
+- io_uring: fix poll_list race for SETUP_IOPOLL|SETUP_SQPOLL
+- io_uring: fix personality idr leak
+- io_uring: handle multiple personalities in link chains
+- io_uring: fix __io_iopoll_check deadlock in io_sq_thread
+- io_uring: prevent sq_thread from spinning when it should stop
+- io_uring: fix use-after-free by io_cleanup_req()
+- io_uring: remove unnecessary NULL checks
+- io_uring: add missing io_req_cancelled()
+- io_uring: prune request from overflow list on flush
+- io-wq: don't call kXalloc_node() with non-online node
+- io_uring: retain sockaddr_storage across send/recvmsg async punt
+- io_uring: cancel pending async work if task exits
+- io-wq: add io_wq_cancel_pid() to cancel based on a specific pid
+- io-wq: make io_wqe_cancel_work() take a match handler
+- io_uring: fix openat/statx's filename leak
+- io_uring: fix double prep iovec leak
+- io_uring: fix async close() with f_op->flush()
+- io_uring: allow AT_FDCWD for non-file openat/openat2/statx
+- io_uring: grab ->fs as part of async preparation
+- io-wq: add support for inheriting ->fs
+- io_uring: retry raw bdev writes if we hit -EOPNOTSUPP
+- io_uring: add cleanup for openat()/statx()
+- io_uring: fix iovec leaks
+- io_uring: remove unused struct io_async_open
+- io_uring: flush overflowed CQ events in the io_uring_poll()
+- io_uring: statx/openat/openat2 don't support fixed files
+- io_uring: fix deferred req iovec leak
+- io_uring: fix 1-bit bitfields to be unsigned
+- io_uring: get rid of delayed mm check
+- io_uring: cleanup fixed file data table references
+- io_uring: spin for sq thread to idle on shutdown
+- io_uring: put the flag changing code in the same spot
+- io_uring: iterate req cache backwards
+- io_uring: punt even fadvise() WILLNEED to async context
+- io_uring: fix sporadic double CQE entry for close
+- io_uring: remove extra ->file check
+- io_uring: don't map read/write iovec potentially twice
+- io_uring: use the proper helpers for io_send/recv
+- io_uring: prevent potential eventfd recursion on poll
+- io_uring: add BUILD_BUG_ON() to assert the layout of struct io_uring_sqe
+- io_uring: add ->show_fdinfo() for the io_uring file descriptor
+- io_uring: add support for epoll_ctl(2)
+- eventpoll: support non-blocking do_epoll_ctl() calls
+- eventpoll: abstract out epoll_ctl() handler
+- io_uring: fix linked command file table usage
+- io_uring: support using a registered personality for commands
+- io_uring: allow registering credentials
+- io_uring: add io-wq workqueue sharing
+- io-wq: allow grabbing existing io-wq
+- io_uring/io-wq: don't use static creds/mm assignments
+- io-wq: make the io_wq ref counted
+- io_uring: fix refcounting with batched allocations at OOM
+- io_uring: add comment for drain_next
+- io_uring: don't attempt to copy iovec for READ/WRITE
+- io_uring: honor IOSQE_ASYNC for linked reqs
+- io_uring: prep req when do IOSQE_ASYNC
+- io_uring: use labeled array init in io_op_defs
+- io_uring: optimise sqe-to-req flags translation
+- io_uring: remove REQ_F_IO_DRAINED
+- io_uring: file switch work needs to get flushed on exit
+- io_uring: hide uring_fd in ctx
+- io_uring: remove extra check in __io_commit_cqring
+- io_uring: optimise use of ctx->drain_next
+- io_uring: add support for probing opcodes
+- io_uring: account fixed file references correctly in batch
+- io_uring: add opcode to issue trace event
+- io_uring: remove 'fname' from io_open structure
+- io_uring: enable option to only trigger eventfd for async completions
+- io_uring: change io_ring_ctx bool fields into bit fields
+- io_uring: file set registration should use interruptible waits
+- io_uring: Remove unnecessary null check
+- io_uring: add support for send(2) and recv(2)
+- io_uring: remove extra io_wq_current_is_worker()
+- io_uring: optimise commit_sqring() for common case
+- io_uring: optimise head checks in io_get_sqring()
+- io_uring: clamp to_submit in io_submit_sqes()
+- io_uring: add support for IORING_SETUP_CLAMP
+- io_uring: extend batch freeing to cover more cases
+- io_uring: wrap multi-req freeing in struct req_batch
+- io_uring: batch getting pcpu references
+- pcpu_ref: add percpu_ref_tryget_many()
+- io_uring: add IORING_OP_MADVISE
+- mm: make do_madvise() available internally
+- io_uring: add IORING_OP_FADVISE
+- io_uring: allow use of offset == -1 to mean file position
+- io_uring: add non-vectored read/write commands
+- io_uring: improve poll completion performance
+- io_uring: split overflow state into SQ and CQ side
+- io_uring: add lookup table for various opcode needs
+- io_uring: remove two unnecessary function declarations
+- io_uring: move *queue_link_head() from common path
+- io_uring: rename prev to head
+- io_uring: add IOSQE_ASYNC
+- io-wq: support concurrent non-blocking work
+- io_uring: add support for IORING_OP_STATX
+- fs: make two stat prep helpers available
+- io_uring: avoid ring quiesce for fixed file set unregister and update
+- io_uring: add support for IORING_OP_CLOSE
+- io-wq: add support for uncancellable work
+- percpu-refcount: Introduce percpu_ref_resurrect()
+- percpu_ref: introduce PERCPU_REF_ALLOW_REINIT flag
+- fs: make filename_lookup available externally
+- fs: introduce __close_fd_get_file to support IORING_OP_CLOSE for io_uring
+- io_uring: add support for IORING_OP_OPENAT
+- fs: make build_open_flags() available internally
+- io_uring: add support for fallocate()
+- io_uring: don't cancel all work on process exit
+- Revert "io_uring: only allow submit from owning task"
+- io_uring: fix compat for IORING_REGISTER_FILES_UPDATE
+- io_uring: only allow submit from owning task
+- io_uring: ensure workqueue offload grabs ring mutex for poll list
+- io_uring: clear req->result always before issuing a read/write request
+- io_uring: be consistent in assigning next work from handler
+- io-wq: cancel work if we fail getting a mm reference
+- io_uring: don't setup async context for read/write fixed
+- io_uring: remove punt of short reads to async context
+- io-wq: add cond_resched() to worker thread
+- io-wq: remove unused busy list from io_sqe
+- io_uring: pass in 'sqe' to the prep handlers
+- io_uring: standardize the prep methods
+- io_uring: read 'count' for IORING_OP_TIMEOUT in prep handler
+- io_uring: move all prep state for IORING_OP_{SEND,RECV}_MGS to prep handler
+- io_uring: move all prep state for IORING_OP_CONNECT to prep handler
+- io_uring: add and use struct io_rw for read/writes
+- io_uring: use u64_to_user_ptr() consistently
+- io_uring: io_wq_submit_work() should not touch req->rw
+- io_uring: don't wait when under-submitting
+- io_uring: warn about unhandled opcode
+- io_uring: read opcode and user_data from SQE exactly once
+- io_uring: make IORING_OP_TIMEOUT_REMOVE deferrable
+- io_uring: make IORING_OP_CANCEL_ASYNC deferrable
+- io_uring: make IORING_POLL_ADD and IORING_POLL_REMOVE deferrable
+- io_uring: make HARDLINK imply LINK
+- io_uring: any deferred command must have stable sqe data
+- io_uring: remove 'sqe' parameter to the OP helpers that take it
+- io_uring: fix pre-prepped issue with force_nonblock == true
+- io-wq: re-add io_wq_current_is_worker()
+- io_uring: fix sporadic -EFAULT from IORING_OP_RECVMSG
+- io_uring: fix stale comment and a few typos
+- io_uring: ensure we return -EINVAL on unknown opcode
+- io_uring: add sockets to list of files that support non-blocking issue
+- io_uring: only hash regular files for async work execution
+- io_uring: run next sqe inline if possible
+- io_uring: don't dynamically allocate poll data
+- io_uring: deferred send/recvmsg should assign iov
+- io_uring: sqthread should grab ctx->uring_lock for submissions
+- io-wq: briefly spin for new work after finishing work
+- io-wq: remove worker->wait waitqueue
+- io_uring: allow unbreakable links
+- io_uring: fix a typo in a comment
+- io_uring: hook all linked requests via link_list
+- io_uring: fix error handling in io_queue_link_head
+- io_uring: use hash table for poll command lookups
+- io-wq: clear node->next on list deletion
+- io_uring: ensure deferred timeouts copy necessary data
+- io_uring: allow IO_SQE_* flags on IORING_OP_TIMEOUT
+- io_uring: handle connect -EINPROGRESS like -EAGAIN
+- io_uring: remove io_wq_current_is_worker
+- io_uring: remove parameter ctx of io_submit_state_start
+- io_uring: mark us with IORING_FEAT_SUBMIT_STABLE
+- io_uring: ensure async punted connect requests copy data
+- io_uring: ensure async punted sendmsg/recvmsg requests copy data
+- net: disallow ancillary data for __sys_{send,recv}msg_file()
+- net: separate out the msghdr copy from ___sys_{send,recv}msg()
+- io_uring: ensure async punted read/write requests copy iovec
+- io_uring: add general async offload context
+- io_uring: transform send/recvmsg() -ERESTARTSYS to -EINTR
+- io_uring: use current task creds instead of allocating a new one
+- io_uring: fix missing kmap() declaration on powerpc
+- io_uring: add mapping support for NOMMU archs
+- io_uring: make poll->wait dynamically allocated
+- io-wq: shrink io_wq_work a bit
+- io-wq: fix handling of NUMA node IDs
+- io_uring: use kzalloc instead of kcalloc for single-element allocations
+- io_uring: cleanup io_import_fixed()
+- io_uring: inline struct sqe_submit
+- io_uring: store timeout's sqe->off in proper place
+- io_uring: remove superfluous check for sqe->off in io_accept()
+- io_uring: async workers should inherit the user creds
+- io-wq: have io_wq_create() take a 'data' argument
+- io_uring: fix dead-hung for non-iter fixed rw
+- io_uring: add support for IORING_OP_CONNECT
+- net: add __sys_connect_file() helper
+- io_uring: only return -EBUSY for submit on non-flushed backlog
+- io_uring: only !null ptr to io_issue_sqe()
+- io_uring: simplify io_req_link_next()
+- io_uring: pass only !null to io_req_find_next()
+- io_uring: remove io_free_req_find_next()
+- io_uring: add likely/unlikely in io_get_sqring()
+- io_uring: rename __io_submit_sqe()
+- io_uring: improve trace_io_uring_defer() trace point
+- io_uring: drain next sqe instead of shadowing
+- io_uring: close lookup gap for dependent next work
+- io_uring: allow finding next link independent of req reference count
+- io_uring: io_allocate_scq_urings() should return a sane state
+- io_uring: Always REQ_F_FREE_SQE for allocated sqe
+- io_uring: io_fail_links() should only consider first linked timeout
+- io_uring: Fix leaking linked timeouts
+- io_uring: remove redundant check
+- io_uring: break links for failed defer
+- io-wq: remove extra space characters
+- io-wq: wait for io_wq_create() to setup necessary workers
+- io_uring: request cancellations should break links
+- io_uring: correct poll cancel and linked timeout expiration completion
+- io_uring: remove dead REQ_F_SEQ_PREV flag
+- io_uring: fix sequencing issues with linked timeouts
+- io_uring: make req->timeout be dynamically allocated
+- io_uring: make io_double_put_req() use normal completion path
+- io_uring: cleanup return values from the queueing functions
+- io_uring: io_async_cancel() should pass in 'nxt' request pointer
+- io_uring: make POLL_ADD/POLL_REMOVE scale better
+- io-wq: remove now redundant struct io_wq_nulls_list
+- io_uring: Fix getting file for non-fd opcodes
+- io_uring: introduce req_need_defer()
+- io_uring: clean up io_uring_cancel_files()
+- io-wq: ensure free/busy list browsing see all items
+- io_uring: ensure registered buffer import returns the IO length
+- io-wq: ensure we have a stable view of ->cur_work for cancellations
+- io_wq: add get/put_work handlers to io_wq_create()
+- io_uring: Fix getting file for timeout
+- io_uring: check for validity of ->rings in teardown
+- io_uring: fix potential deadlock in io_poll_wake()
+- io_uring: use correct "is IO worker" helper
+- io_uring: make timeout sequence == 0 mean no sequence
+- io_uring: fix -ENOENT issue with linked timer with short timeout
+- io_uring: don't do flush cancel under inflight_lock
+- io_uring: flag SQPOLL busy condition to userspace
+- io_uring: make ASYNC_CANCEL work with poll and timeout
+- io_uring: provide fallback request for OOM situations
+- io_uring: convert accept4() -ERESTARTSYS into -EINTR
+- io_uring: fix error clear of ->file_table in io_sqe_files_register()
+- io_uring: separate the io_free_req and io_free_req_find_next interface
+- io_uring: keep io_put_req only responsible for release and put req
+- io_uring: remove passed in 'ctx' function parameter ctx if possible
+- io_uring: reduce/pack size of io_ring_ctx
+- io_uring: properly mark async work as bounded vs unbounded
+- io-wq: add support for bounded vs unbunded work
+- io-wq: io_wqe_run_queue() doesn't need to use list_empty_careful()
+- io_uring: add support for backlogged CQ ring
+- io_uring: pass in io_kiocb to fill/add CQ handlers
+- io_uring: make io_cqring_events() take 'ctx' as argument
+- io_uring: add support for linked SQE timeouts
+- io_uring: abstract out io_async_cancel_one() helper
+- io_uring: use inlined struct sqe_submit
+- io_uring: Use submit info inlined into req
+- io_uring: allocate io_kiocb upfront
+- io_uring: io_queue_link*() right after submit
+- io_uring: Merge io_submit_sqes and io_ring_submit
+- io_uring: kill dead REQ_F_LINK_DONE flag
+- io_uring: fixup a few spots where link failure isn't flagged
+- io_uring: enable optimized link handling for IORING_OP_POLL_ADD
+- io-wq: use proper nesting IRQ disabling spinlocks for cancel
+- io_uring: add completion trace event
+- io-wq: use kfree_rcu() to simplify the code
+- io_uring: set -EINTR directly when a signal wakes up in io_cqring_wait
+- io_uring: support for generic async request cancel
+- io_uring: ensure we clear io_kiocb->result before each issue
+- io_uring: io_wq_create() returns an error pointer, not NULL
+- io_uring: fix race with canceling timeouts
+- io_uring: support for larger fixed file sets
+- io_uring: protect fixed file indexing with array_index_nospec()
+- io_uring: add support for IORING_OP_ACCEPT
+- net: add __sys_accept4_file() helper
+- io_uring: io_uring: add support for async work inheriting files
+- io_uring: replace workqueue usage with io-wq
+- io-wq: small threadpool implementation for io_uring
+- sched/core, workqueues: Distangle worker accounting from rq lock
+- sched: Remove stale PF_MUTEX_TESTER bit
+- io_uring: Fix mm_fault with READ/WRITE_FIXED
+- io_uring: remove index from sqe_submit
+- io_uring: add set of tracing events
+- io_uring: add support for canceling timeout requests
+- io_uring: add support for absolute timeouts
+- io_uring: replace s->needs_lock with s->in_async
+- io_uring: allow application controlled CQ ring size
+- io_uring: add support for IORING_REGISTER_FILES_UPDATE
+- io_uring: allow sparse fixed file sets
+- io_uring: run dependent links inline if possible
+- io_uring: don't touch ctx in setup after ring fd install
+- io_uring: Fix leaked shadow_req
+- io_uring: fix bad inflight accounting for SETUP_IOPOLL|SETUP_SQTHREAD
+- io_uring: used cached copies of sq->dropped and cq->overflow
+- io_uring: Fix race for sqes with userspace
+- io_uring: Fix broken links with offloading
+- io_uring: Fix corrupted user_data
+- io_uring: correct timeout req sequence when inserting a new entry
+- io_uring : correct timeout req sequence when waiting timeout
+- io_uring: revert "io_uring: optimize submit_and_wait API"
+- io_uring: fix logic error in io_timeout
+- io_uring: fix up O_NONBLOCK handling for sockets
+- io_uring: consider the overflow of sequence for timeout req
+- io_uring: fix sequence logic for timeout requests
+- io_uring: only flush workqueues on fileset removal
+- io_uring: remove wait loop spurious wakeups
+- io_uring: fix reversed nonblock flag for link submission
+- io_uring: use __kernel_timespec in timeout ABI
+- io_uring: make CQ ring wakeups be more efficient
+- io_uring: compare cached_cq_tail with cq.head in_io_uring_poll
+- io_uring: correctly handle non ->{read,write}_iter() file_operations
+- io_uring: IORING_OP_TIMEOUT support
+- io_uring: use cond_resched() in sqthread
+- io_uring: fix potential crash issue due to io_get_req failure
+- io_uring: ensure poll commands clear ->sqe
+- io_uring: fix use-after-free of shadow_req
+- io_uring: use kmemdup instead of kmalloc and memcpy
+- io_uring: increase IORING_MAX_ENTRIES to 32K
+- io_uring: make sqpoll wakeup possible with getevents
+- io_uring: extend async work merging
+- io_uring: limit parallelism of buffered writes
+- io_uring: add io_queue_async_work() helper
+- io_uring: optimize submit_and_wait API
+- io_uring: add support for link with drain
+- io_uring: fix wrong sequence setting logic
+- io_uring: expose single mmap capability
+- io_uring: allocate the two rings together
+- io_uring: add need_resched() check in inner poll loop
+- io_uring: don't enter poll loop if we have CQEs pending
+- io_uring: fix potential hang with polled IO
+- io_uring: fix an issue when IOSQE_IO_LINK is inserted into defer list
+- io_uring: fix manual setup of iov_iter for fixed buffers
+- io_uring: fix KASAN use after free in io_sq_wq_submit_work
+- io_uring: ensure ->list is initialized for poll commands
+- io_uring: track io length in async_list based on bytes
+- io_uring: don't use iov_iter_advance() for fixed buffers
+- io_uring: add a memory barrier before atomic_read
+- io_uring: fix counter inc/dec mismatch in async_list
+- io_uring: fix the sequence comparison in io_sequence_defer
+- io_uring: fix io_sq_thread_stop running in front of io_sq_thread
+- io_uring: add support for recvmsg()
+- io_uring: add support for sendmsg()
+- io_uring: add support for sqe links
+- io_uring: punt short reads to async context
+- uio: make import_iovec()/compat_import_iovec() return bytes on success
+- io_uring: ensure req->file is cleared on allocation
+- io_uring: fix memory leak of UNIX domain socket inode
+- io_uring: Fix __io_uring_register() false success
+- tools/io_uring: sync with liburing
+- tools/io_uring: fix Makefile for pthread library link
+- select: shift restore_saved_sigmask_unless() into poll_select_copy_remaining()
+- select: change do_poll() to return -ERESTARTNOHAND rather than -EINTR
+- signal: simplify set_user_sigmask/restore_user_sigmask
+- signal: remove the wrong signal_pending() check in restore_user_sigmask()
+- io_uring: use wait_event_interruptible for cq_wait conditional wait
+- io_uring: adjust smp_rmb inside io_cqring_events
+- io_uring: fix infinite wait in khread_park() on io_finish_async()
+- io_uring: remove 'ev_flags' argument
+- io_uring: fix failure to verify SQ_AFF cpu
+- io_uring: fix race condition reading SQE data
+- io_uring: use cpu_online() to check p->sq_thread_cpu instead of cpu_possible()
+- io_uring: fix shadowed variable ret return code being not checked
+- req->error only used for iopoll
+- io_uring: add support for eventfd notifications
+- io_uring: add support for IORING_OP_SYNC_FILE_RANGE
+- io_uring: add support for marking commands as draining
+- fs: add sync_file_range() helper
+- io_uring: avoid page allocation warnings
+- io_uring: drop req submit reference always in async punt
+- io_uring: free allocated io_memory once
+- io_uring: fix SQPOLL cpu validation
+- io_uring: have submission side sqe errors post a cqe
+- io_uring: remove unnecessary barrier after unsetting IORING_SQ_NEED_WAKEUP
+- io_uring: remove unnecessary barrier after incrementing dropped counter
+- io_uring: remove unnecessary barrier before reading SQ tail
+- io_uring: remove unnecessary barrier after updating SQ head
+- io_uring: remove unnecessary barrier before reading cq head
+- io_uring: remove unnecessary barrier before wq_has_sleeper
+- io_uring: fix notes on barriers
+- io_uring: fix handling SQEs requesting NOWAIT
+- io_uring: remove 'state' argument from io_{read,write} path
+- io_uring: fix poll full SQ detection
+- io_uring: fix race condition when sq threads goes sleeping
+- io_uring: fix race condition reading SQ entries
+- io_uring: fail io_uring_register(2) on a dying io_uring instance
+- io_uring: fix CQ overflow condition
+- io_uring: fix possible deadlock between io_uring_{enter,register}
+- io_uring: drop io_file_put() 'file' argument
+- io_uring: only test SQPOLL cpu after we've verified it
+- io_uring: park SQPOLL thread if it's percpu
+- io_uring: restrict IORING_SETUP_SQPOLL to root
+- io_uring: fix double free in case of fileset regitration failure
+- io_uring: offload write to async worker in case of -EAGAIN
+- io_uring: fix big-endian compat signal mask handling
+- io_uring: retry bulk slab allocs as single allocs
+- io_uring: fix poll races
+- io_uring: fix fget/fput handling
+- io_uring: add prepped flag
+- io_uring: make io_read/write return an integer
+- io_uring: use regular request ref counts
+- tools/io_uring: remove IOCQE_FLAG_CACHEHIT
+- io_uring: add a few test tools
+- io_uring: allow workqueue item to handle multiple buffered requests
+- io_uring: add support for IORING_OP_POLL
+- io_uring: add io_kiocb ref count
+- io_uring: add submission polling
+- io_uring: add file set registration
+- net: split out functions related to registering inflight socket files
+- io_uring: add support for pre-mapped user IO buffers
+- io_uring: batch io_kiocb allocation
+- io_uring: use fget/fput_many() for file references
+- fs: add fget_many() and fput_many()
+- io_uring: support for IO polling
+- io_uring: add fsync support
+- Add io_uring IO interface
+- io_pgetevents: use __kernel_timespec
+- pselect6: use __kernel_timespec
+- ppoll: use __kernel_timespec
+- signal: Add restore_user_sigmask()
+- signal: Add set_user_sigmask()
+- block: Initialize BIO I/O priority early
+- block: prevent merging of requests with different priorities
+- aio: Fix fallback I/O priority value
+- block: Introduce get_current_ioprio()
+- aio: Comment use of IOCB_FLAG_IOPRIO aio flag
+- fs: fix kabi change since add iopoll
+- fs: add an iopoll method to struct file_operations
+- signal: Allow cifs and drbd to receive their terminating signals
+- cifs: fix rmmod regression in cifs.ko caused by force_sig changes
+- signal/cifs: Fix cifs_put_tcp_session to call send_sig instead of force_sig
+
+* Wed Apr 14 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.10.0.0072
+- bpf, x86: Validate computation of branch displacements for x86-32
+- bpf, x86: Validate computation of branch displacements for x86-64
+
+* Wed Apr 14 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.9.0.0071
+- mm/vmalloc.c: fix percpu free VM area search criteria
+- mm/vmalloc.c: avoid bogus -Wmaybe-uninitialized warning
+- mm/vmap: add DEBUG_AUGMENT_LOWEST_MATCH_CHECK macro
+- mm/vmap: add DEBUG_AUGMENT_PROPAGATE_CHECK macro
+- mm/vmalloc.c: keep track of free blocks for vmap allocation
+
+* Wed Apr 14 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.8.0.0070
+- config: Enable CONFIG_USERSWAP
+- userswap: support userswap via userfaultfd
+- userswap: add a new flag 'MAP_REPLACE' for mmap()
+- mm, mempolicy: fix up gup usage in lookup_node
+- mm/mempolicy: Allow lookup_node() to handle fatal signal
+- mm/gup: Let __get_user_pages_locked() return -EINTR for fatal signal
+- mm/gup: fix fixup_user_fault() on multiple retries
+- mm/gup: allow VM_FAULT_RETRY for multiple times
+- mm: allow VM_FAULT_RETRY for multiple times
+
+* Wed Apr 14 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.7.0.0069
+- sched/fair: fix kabi broken due to adding fields in rq and sched_domain_shared
+- sched/fair: fix try_steal compile error
+- config: enable CONFIG_SCHED_STEAL by default
+- sched/fair: introduce SCHED_STEAL
+- disable stealing by default
+- sched/fair: Provide idle search schedstats
+- sched/fair: disable stealing if too many NUMA nodes
+- sched/fair: Steal work from an overloaded CPU when CPU goes idle
+- sched/fair: Provide can_migrate_task_llc
+- sched/fair: Generalize the detach_task interface
+- sched/fair: Hoist idle_stamp up from idle_balance
+- sched/fair: Dynamically update cfs_overload_cpus
+- sched/topology: Provide cfs_overload_cpus bitmap
+- sched/topology: Provide hooks to allocate data shared per LLC
+- sched: Provide sparsemask, a reduced contention bitmap
+
+* Wed Apr 14 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.6.0.0068
+- sched/fair: fix kabi broken due to adding idle_h_nr_running in cfs_rq
+- sched/fair: Make sched-idle CPU selection consistent throughout
+- sched/fair: Optimize select_idle_cpu
+- sched/fair: Fall back to sched-idle CPU if idle CPU isn't found
+- sched/fair: Start tracking SCHED_IDLE tasks count in cfs_rq
+- sched/core: Create task_has_idle_policy() helper
+
+* Wed Apr 14 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.5.0.0067
+- ext4: add reclaim checks to xattr code
+- locking/mutex: Fix non debug version of mutex_lock_io_nested()
+- dm verity: add root hash pkcs#7 signature verification
+- Revert "netfilter: x_tables: Update remaining dereference to RCU"
+- netfilter: x_tables: Use correct memory barriers.
+- Revert "netfilter: x_tables: Switch synchronization to RCU"
+- arm64: kdump: update ppos when reading elfcorehdr
+- netfilter: ctnetlink: fix dump of the expect mask attribute
+- dm ioctl: fix out of bounds array access when no devices
+- block: Suppress uevent for hidden device when removed
+- NFS: Correct size calculation for create reply length
+- cifs: Fix preauth hash corruption
+- ext4: do not try to set xattr into ea_inode if value is empty
+- kernel, fs: Introduce and use set_restart_fn() and arch_set_restart_data()
+- nvme-rdma: fix possible hang when failing to set io queues
+- sunrpc: fix refcount leak for rpc auth modules
+- include/linux/sched/mm.h: use rcu_dereference in in_vfork()
+- hrtimer: Update softirq_expires_next correctly after __hrtimer_get_next_event()
+- scsi: target: core: Prevent underflow for service actions
+- scsi: target: core: Add cmd length set before cmd complete
+- PCI: Fix pci_register_io_range() memory leak
+- Revert "mm, slub: consider rest of partial list if acquire_slab() fails"
+- cifs: return proper error code in statfs(2)
+- tcp: add sanity tests to TCP_QUEUE_SEQ
+- tcp: annotate tp->write_seq lockless reads
+- tcp: annotate tp->copied_seq lockless reads
+- netfilter: x_tables: gpf inside xt_find_revision()
+- net: Fix gro aggregation for udp encaps with zero csum
+- dm table: fix zoned iterate_devices based device capability checks
+- dm table: fix DAX iterate_devices based device capability checks
+- dm table: fix iterate_devices based device capability checks
+- dm bufio: subtract the number of initial sectors in dm_bufio_get_device_size
+- swap: fix swapfile read/write offset
+- mm/hugetlb.c: fix unnecessary address expansion of pmd sharing
+- net: fix up truesize of cloned skb in skb_prepare_for_shift()
+- xfs: Fix assert failure in xfs_setattr_size()
+- arm64 module: set plt* section addresses to 0x0
+- hugetlb: fix update_and_free_page contig page struct assumption
+- net: icmp: pass zeroed opts from icmp{,v6}_ndo_send before sending
+- ipv6: silence compilation warning for non-IPV6 builds
+- ipv6: icmp6: avoid indirect call for icmpv6_send()
+- xfrm: interface: use icmp_ndo_send helper
+- sunvnet: use icmp_ndo_send helper
+- gtp: use icmp_ndo_send helper
+- icmp: allow icmpv6_ndo_send to work with CONFIG_IPV6=n
+- icmp: introduce helper for nat'd source address in network device context
+- dm: fix deadlock when swapping to encrypted device
+- printk: fix deadlock when kernel panic
+- module: Ignore _GLOBAL_OFFSET_TABLE_ when warning for undefined symbols
+- hugetlb: fix copy_huge_page_from_user contig page struct assumption
+- x86: fix seq_file iteration for pat/memtype.c
+- ACPI: property: Fix fwnode string properties matching
+- blk-settings: align max_sectors on "logical_block_size" boundary
+- mm/rmap: fix potential pte_unmap on an not mapped pte
+- arm64: Add missing ISB after invalidating TLB in __primary_switch
+- mm/hugetlb: fix potential double free in hugetlb_register_node() error path
+- mm/memory.c: fix potential pte_unmap_unlock pte error
+- ocfs2: fix a use after free on error
+- tracepoint: Do not fail unregistering a probe due to memory failure
+- isofs: release buffer head before return
+- tcp: fix SO_RCVLOWAT related hangs under mem pressure
+- random: fix the RNDRESEEDCRNG ioctl
+- bfq: Avoid false bfq queue merging
+- locking/static_key: Fix false positive warnings on concurrent dec/inc
+- jump_label/lockdep: Assert we hold the hotplug lock for _cpuslocked() operations
+- KVM: fix memory leak in kvm_io_bus_unregister_dev()
+- net: qrtr: fix a kernel-infoleak in qrtr_recvmsg()
+- xen-blkback: don't leak persistent grants from xen_blkbk_map()
+- KVM: SVM: Periodically schedule when unregistering regions on destroy
+- gianfar: fix jumbo packets+napi+rx overrun crash
+- usbip: fix stub_dev usbip_sockfd_store() races leading to gpf
+- media: v4l: ioctl: Fix memory leak in video_usercopy
+- block: only update parent bi_status when bio fail
+- RDMA/hns: fix timer, gid_type, scc cfg
+- block: respect queue limit of max discard segment
+- block: Use non _rcu version of list functions for tag_set_list
 
 * Thu Apr 08 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.4.0.0066
 - ext4: fix potential error in ext4_do_update_inode
