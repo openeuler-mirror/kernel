@@ -2025,6 +2025,7 @@ static int io_sendmsg_prep(struct io_kiocb *req, struct io_async_ctx *io)
 
 	flags = READ_ONCE(sqe->msg_flags);
 	msg = (struct user_msghdr __user *)(unsigned long) READ_ONCE(sqe->addr);
+	io->msg.iov = io->msg.fast_iov;
 	return sendmsg_copy_msghdr(&io->msg.msg, msg, flags, &io->msg.iov);
 #else
 	return 0;
@@ -2060,7 +2061,6 @@ static int io_sendmsg(struct io_kiocb *req, const struct io_uring_sqe *sqe,
 		} else {
 			kmsg = &io.msg.msg;
 			kmsg->msg_name = &addr;
-			io.msg.iov = io.msg.fast_iov;
 			ret = io_sendmsg_prep(req, &io);
 			if (ret)
 				goto out;
@@ -2103,6 +2103,7 @@ static int io_recvmsg_prep(struct io_kiocb *req, struct io_async_ctx *io)
 
 	flags = READ_ONCE(sqe->msg_flags);
 	msg = (struct user_msghdr __user *)(unsigned long) READ_ONCE(sqe->addr);
+	io->msg.iov = io->msg.fast_iov;
 	return recvmsg_copy_msghdr(&io->msg.msg, msg, flags, &io->msg.uaddr,
 					&io->msg.iov);
 #else
@@ -2142,7 +2143,6 @@ static int io_recvmsg(struct io_kiocb *req, const struct io_uring_sqe *sqe,
 		} else {
 			kmsg = &io.msg.msg;
 			kmsg->msg_name = &addr;
-			io.msg.iov = io.msg.fast_iov;
 			ret = io_recvmsg_prep(req, &io);
 			if (ret)
 				goto out;
