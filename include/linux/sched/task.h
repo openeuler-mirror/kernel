@@ -98,6 +98,12 @@ static inline void put_task_struct(struct task_struct *t)
 		__put_task_struct(t);
 }
 
+static inline void put_task_struct_many(struct task_struct *t, int nr)
+{
+	if (atomic_sub_and_test(nr, &t->usage))
+		__put_task_struct(t);
+}
+
 struct task_struct *task_rcu_dereference(struct task_struct **ptask);
 
 #ifdef CONFIG_ARCH_WANTS_DYNAMIC_TASK_STRUCT
