@@ -5236,6 +5236,8 @@ static void io_cleanup_req(struct io_kiocb *req)
 			kfree(req->sr_msg.kbuf);
 		break;
 	case IORING_OP_OPENAT:
+		if (req->open.filename)
+			putname(req->open.filename);
 		break;
 	case IORING_OP_SPLICE:
 	case IORING_OP_TEE:
