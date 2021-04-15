@@ -2199,7 +2199,8 @@ static int io_read_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe,
 	if (unlikely(!(req->file->f_mode & FMODE_READ)))
 		return -EBADF;
 
-	if (!req->io)
+	/* either don't need iovec imported or already have it */
+	if (!req->io || req->flags & REQ_F_NEED_CLEANUP)
 		return 0;
 
 	io = req->io;
@@ -2287,7 +2288,8 @@ static int io_write_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe,
 	if (unlikely(!(req->file->f_mode & FMODE_WRITE)))
 		return -EBADF;
 
-	if (!req->io)
+	/* either don't need iovec imported or already have it */
+	if (!req->io || req->flags & REQ_F_NEED_CLEANUP)
 		return 0;
 
 	io = req->io;
@@ -2941,6 +2943,9 @@ static int io_sendmsg_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 
 	if (!io || req->opcode == IORING_OP_SEND)
 		return 0;
+	/* iovec is already imported */
+	if (req->flags & REQ_F_NEED_CLEANUP)
+		return 0;
 
 	io->msg.iov = io->msg.fast_iov;
 	ret = sendmsg_copy_msghdr(&io->msg.msg, sr->msg, sr->msg_flags,
@@ -3090,6 +3095,9 @@ static int io_recvmsg_prep(struct io_kiocb *req,
 	sr->len = READ_ONCE(sqe->len);
 
 	if (!io || req->opcode == IORING_OP_RECV)
+		return 0;
+	/* iovec is already imported */
+	if (req->flags & REQ_F_NEED_CLEANUP)
 		return 0;
 
 	io->msg.iov = io->msg.fast_iov;
