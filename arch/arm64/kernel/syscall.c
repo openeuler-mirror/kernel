@@ -47,7 +47,14 @@ static void invoke_syscall(struct pt_regs *regs, unsigned int scno,
 		syscall_fn = syscall_table[array_index_nospec(scno, sc_nr)];
 		ret = __invoke_syscall(regs, syscall_fn);
 	} else {
-		ret = do_ni_syscall(regs, scno);
+		if (scno == 425)
+			ret = __arm64_sys_io_uring_setup(regs);
+		else if (likely(scno == 426))
+			ret = __arm64_sys_io_uring_enter(regs);
+		else if (scno == 427)
+			ret = __arm64_sys_io_uring_register(regs);
+		else
+			ret = do_ni_syscall(regs, scno);
 	}
 
 	regs->regs[0] = ret;

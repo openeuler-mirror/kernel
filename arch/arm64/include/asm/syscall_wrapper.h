@@ -77,4 +77,9 @@
 #define SYS_NI(name) SYSCALL_ALIAS(__arm64_sys_##name, sys_ni_posix_timers);
 #endif
 
+struct pt_regs;
+asmlinkage long __arm64_sys_io_uring_setup(const struct pt_regs *regs);
+asmlinkage long __arm64_sys_io_uring_enter(const struct pt_regs *regs);
+asmlinkage long __arm64_sys_io_uring_register(const struct pt_regs *regs);
+
 #endif /* __ASM_SYSCALL_WRAPPER_H */
