@@ -543,7 +543,6 @@ enum {
 	REQ_F_LINK_TIMEOUT_BIT,
 	REQ_F_ISREG_BIT,
 	REQ_F_MUST_PUNT_BIT,
-	REQ_F_TIMEOUT_NOSEQ_BIT,
 	REQ_F_COMP_LOCKED_BIT,
 	REQ_F_NEED_CLEANUP_BIT,
 	REQ_F_OVERFLOW_BIT,
@@ -588,8 +587,6 @@ enum {
 	REQ_F_ISREG		= BIT(REQ_F_ISREG_BIT),
 	/* must be punted even for NONBLOCK */
 	REQ_F_MUST_PUNT		= BIT(REQ_F_MUST_PUNT_BIT),
-	/* no timeout sequence */
-	REQ_F_TIMEOUT_NOSEQ	= BIT(REQ_F_TIMEOUT_NOSEQ_BIT),
 	/* completion under lock */
 	REQ_F_COMP_LOCKED	= BIT(REQ_F_COMP_LOCKED_BIT),
 	/* needs cleanup */
@@ -1072,6 +1069,11 @@ static void io_ring_ctx_ref_free(struct percpu_ref *ref)
 	complete(&ctx->ref_comp);
 }
 
+static inline bool io_is_timeout_noseq(struct io_kiocb *req)
+{
+	return !req->timeout.off;
+}
+
 static struct io_ring_ctx *io_ring_ctx_alloc(struct io_uring_params *p)
 {
 	struct io_ring_ctx *ctx;
@@ -1284,7 +1286,7 @@ static void io_flush_timeouts(struct io_ring_ctx *ctx)
 		struct io_kiocb *req = list_first_entry(&ctx->timeout_list,
 							struct io_kiocb, list);
 
-		if (req->flags & REQ_F_TIMEOUT_NOSEQ)
+		if (io_is_timeout_noseq(req))
 			break;
 		if (req->timeout.target_seq != ctx->cached_cq_tail
 					- atomic_read(&ctx->cq_timeouts))
@@ -5001,8 +5003,7 @@ static int io_timeout(struct io_kiocb *req)
 	 * timeout event to be satisfied. If it isn't set, then this is
 	 * a pure timeout request, sequence isn't used.
 	 */
-	if (!off) {
-		req->flags |= REQ_F_TIMEOUT_NOSEQ;
+	if (io_is_timeout_noseq(req)) {
 		entry = ctx->timeout_list.prev;
 		goto add;
 	}
@@ -5017,7 +5018,7 @@ static int io_timeout(struct io_kiocb *req)
 	list_for_each_prev(entry, &ctx->timeout_list) {
 		struct io_kiocb *nxt = list_entry(entry, struct io_kiocb, list);
 
-		if (nxt->flags & REQ_F_TIMEOUT_NOSEQ)
+		if (io_is_timeout_noseq(nxt))
 			continue;
 		/* nxt.seq is behind @tail, otherwise would've been completed */
 		if (off >= nxt->timeout.target_seq - tail)
