@@ -231,7 +231,6 @@ struct io_ring_ctx {
 	struct task_struct	*sqo_thread;	/* if using sq thread polling */
 	struct mm_struct	*sqo_mm;
 	wait_queue_head_t	sqo_wait;
-	unsigned		sqo_stop;
 
 	struct {
 		/* CQ ring */
@@ -2012,7 +2011,7 @@ static int io_sq_thread(void *data)
 	set_fs(USER_DS);
 
 	timeout = inflight = 0;
-	while (!kthread_should_stop() && !ctx->sqo_stop) {
+	while (!kthread_should_park()) {
 		bool all_fixed, mm_fault = false;
 		int i;
 
@@ -2074,7 +2073,7 @@ static int io_sq_thread(void *data)
 			smp_mb();
 
 			if (!io_get_sqring(ctx, &sqes[0])) {
-				if (kthread_should_stop()) {
+				if (kthread_should_park()) {
 					finish_wait(&ctx->sqo_wait, &wait);
 					break;
 				}
@@ -2124,8 +2123,7 @@ static int io_sq_thread(void *data)
 		mmput(cur_mm);
 	}
 
-	if (kthread_should_park())
-		kthread_parkme();
+	kthread_parkme();
 
 	return 0;
 }
@@ -2257,8 +2255,11 @@ static int io_sqe_files_unregister(struct io_ring_ctx *ctx)
 static void io_sq_thread_stop(struct io_ring_ctx *ctx)
 {
 	if (ctx->sqo_thread) {
-		ctx->sqo_stop = 1;
-		mb();
+		/*
+		 * The park is a bit of a work-around, without it we get
+		 * warning spews on shutdown with SQPOLL set and affinity
+		 * set to a single CPU.
+		 */
 		kthread_park(ctx->sqo_thread);
 		kthread_stop(ctx->sqo_thread);
 		ctx->sqo_thread = NULL;
