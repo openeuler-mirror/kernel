@@ -518,12 +518,20 @@ static int __init readunique_prefetch_switch(char *data)
 }
 early_param("readunique_prefetch", readunique_prefetch_switch);
 
+static const struct midr_range readunique_prefetch_cpus[] = {
+	MIDR_ALL_VERSIONS(MIDR_HISI_TSV110),
+	{},
+};
+
 static bool
-should_disable_hisi_hip08_ru_prefetch(const struct arm64_cpu_capabilities *entry, int unused)
+should_disable_hisi_hip08_ru_prefetch(void)
 {
 	u64 el;
 
 	if (readunique_prefetch_enabled)
+		return false;
+
+	if (!is_midr_in_range_list(read_cpuid_id(), readunique_prefetch_cpus))
 		return false;
 
 	el = read_sysreg(CurrentEL);
@@ -532,10 +540,22 @@ should_disable_hisi_hip08_ru_prefetch(const struct arm64_cpu_capabilities *entry
 
 #define CTLR_HISI_HIP08_RU_PREFETCH    (1L << 40)
 static void __maybe_unused
-hisi_hip08_ru_prefetch_disable(const struct arm64_cpu_capabilities *__unused)
+__hisi_hip08_ru_prefetch_disable(void* unused)
 {
 	sysreg_clear_set(S3_1_c15_c6_4, 0, CTLR_HISI_HIP08_RU_PREFETCH);
 }
+
+static int hisi_hip08_ru_prefetch_disable(void)
+{
+	if (should_disable_hisi_hip08_ru_prefetch()) {
+		on_each_cpu(__hisi_hip08_ru_prefetch_disable, NULL, 1);
+		pr_info("CPU erratum: HiSilicon HIP08 Cache Readunique Prefetch Disable");
+	}
+
+	return 0;
+}
+
+late_initcall(hisi_hip08_ru_prefetch_disable);
 #endif
 
 /* known invulnerable cores */
@@ -916,15 +936,6 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		.capability = ARM64_WORKAROUND_CAVIUM_TX2_219_TVM,
 		ERRATA_MIDR_RANGE_LIST(tx2_family_cpus),
 		.matches = needs_tx2_tvm_workaround,
-	},
-#endif
-#ifdef CONFIG_HISILICON_ERRATUM_HIP08_RU_PREFETCH
-	{
-		.desc = "HiSilicon HIP08 Cache Readunique Prefetch Disable",
-		.capability = ARM64_WORKAROUND_HISI_HIP08_RU_PREFETCH,
-		ERRATA_MIDR_ALL_VERSIONS(MIDR_HISI_TSV110),
-		.matches = should_disable_hisi_hip08_ru_prefetch,
-		.cpu_enable = hisi_hip08_ru_prefetch_disable,
 	},
 #endif
 	{
