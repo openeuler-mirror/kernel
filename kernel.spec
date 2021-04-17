@@ -818,6 +818,8 @@ fi
 
 %changelog
 
+* Sat Apr 17 2021 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2104.16.0.0080
+- add kabi list for aarch64 and x86_64
 
 * Thu Apr 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.16.0.0079
 - config/arm64: fix kabi by disable CONFIG_NVME_MULTIPATH
