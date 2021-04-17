@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0079
+Release: %{hulkrelease}.0080
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -48,6 +48,7 @@ Source12: extra_certificates
 %if 0%{?with_kabichk}
 Source18: check-kabi
 Source20: Module.kabi_aarch64
+Source21: Module.kabi_x86_64
 %endif
 
 Source200: mkgrub-menu-aarch64.sh
@@ -302,7 +303,7 @@ make ARCH=%{Arch} modules %{?_smp_mflags}
 %if 0%{?with_kabichk}
     chmod 0755 %{SOURCE18}
     if [ -e $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} ]; then
-        ##%{SOURCE18} -k $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
+        %{SOURCE18} -k $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
 	echo "**** NOTE: now don't check Kabi. ****"
     else
         echo "**** NOTE: Cannot find reference Module.kabi file. ****"
@@ -817,6 +818,8 @@ fi
 
 %changelog
 
+* Sat Apr 17 2021 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2104.16.0.0080
+- add kabi list for aarch64 and x86_64
 
 * Thu Apr 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.16.0.0079
 - config/arm64: fix kabi by disable CONFIG_NVME_MULTIPATH
