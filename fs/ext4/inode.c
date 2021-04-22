@@ -5548,6 +5548,29 @@ static void ext4_wait_for_tail_page_commit(struct inode *inode)
 	}
 }
 
+static void ext4_timestamp_truncate(struct inode *inode, struct iattr *attr)
+{
+	time64_t max;
+
+	if (!(attr->ia_valid & (ATTR_ATIME | ATTR_CTIME | ATTR_MTIME)))
+		return;
+
+	if (inode->i_sb->s_time_gran == 1)
+		max = EXT4_EXTRA_TIMESTAMP_MAX;
+	else
+		max = EXT4_NON_EXTRA_TIMESTAMP_MAX;
+
+	if (attr->ia_valid & ATTR_ATIME)
+		attr->ia_atime.tv_sec = clamp(attr->ia_atime.tv_sec,
+					(time64_t)EXT4_TIMESTAMP_MIN, max);
+	if (attr->ia_valid & ATTR_CTIME)
+		attr->ia_ctime.tv_sec = clamp(attr->ia_ctime.tv_sec,
+					(time64_t)EXT4_TIMESTAMP_MIN, max);
+	if (attr->ia_valid & ATTR_MTIME)
+		attr->ia_mtime.tv_sec = clamp(attr->ia_mtime.tv_sec,
+					(time64_t)EXT4_TIMESTAMP_MIN, max);
+}
+
 /*
  * ext4_setattr()
  *
@@ -5603,6 +5626,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
 		if (error)
 			return error;
 	}
+
 	if ((ia_valid & ATTR_UID && !uid_eq(attr->ia_uid, inode->i_uid)) ||
 	    (ia_valid & ATTR_GID && !gid_eq(attr->ia_gid, inode->i_gid))) {
 		handle_t *handle;
@@ -5736,6 +5760,7 @@ int ext4_setattr(struct dentry *dentry, struct iattr *attr)
 	}
 
 	if (!error) {
+		ext4_timestamp_truncate(inode, attr);
 		setattr_copy(inode, attr);
 		mark_inode_dirty(inode);
 	}
