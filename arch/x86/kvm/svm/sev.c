@@ -1331,8 +1331,11 @@ void __init sev_hardware_setup(void)
 		goto out;
 
 	sev_reclaim_asid_bitmap = bitmap_zalloc(max_sev_asid, GFP_KERNEL);
-	if (!sev_reclaim_asid_bitmap)
+	if (!sev_reclaim_asid_bitmap) {
+		bitmap_free(sev_asid_bitmap);
+		sev_asid_bitmap = NULL;
 		goto out;
+	}
 
 	pr_info("%s supported: %u ASIDs\n",
 			is_x86_vendor_hygon() ? "CSV" : "SEV",  max_sev_asid - min_sev_asid + 1);
