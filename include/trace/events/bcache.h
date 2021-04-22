@@ -81,6 +81,17 @@ DEFINE_EVENT(bcache_request, bcache_prefetch_request,
 	TP_ARGS(d, bio)
 );
 
+/* interface.c */
+DEFINE_EVENT(bcache_request, bcache_inflight_list_insert,
+	TP_PROTO(struct bcache_device *d, struct bio *bio),
+	TP_ARGS(d, bio)
+);
+
+DEFINE_EVENT(bcache_request, bcache_inflight_list_remove,
+	TP_PROTO(struct bcache_device *d, struct bio *bio),
+	TP_ARGS(d, bio)
+);
+
 /* request.c */
 
 DEFINE_EVENT(bcache_request, bcache_request_start,

@@ -31,6 +31,12 @@ int acache_prefetch_workers = 1000;
 module_param_named(prefetch_workers, acache_prefetch_workers, int, 0444);
 MODULE_PARM_DESC(prefetch_workers, "num of workers for processing prefetch requests");
 
+struct inflight_list_head {
+	struct list_head entry;
+	spinlock_t io_lock;
+	bool initialized;
+};
+
 struct prefetch_worker {
 	struct acache_info s;
 	struct work_struct work;
@@ -49,6 +55,8 @@ struct acache_device {
 	struct acache_info *writebuf;
 
 	struct acache_circ *acache_info_circ;
+
+	struct inflight_list_head inflight_list;
 
 	struct workqueue_struct *wq;
 	struct prefetch_worker *prefetch_workers;
@@ -295,6 +303,7 @@ int acache_dev_init(void)
 	int major;
 	struct device *dev;
 
+	inflight_list_ops.init();
 	major = alloc_chrdev_region(&adev.devno, 0, ACACHE_NR_DEVS, DEV_NAME);
 	if (major < 0) {
 		pr_err("failed to allocate chrdev region: %d", major);
@@ -377,6 +386,7 @@ fail_dev_add:
 fail_class:
 	unregister_chrdev_region(adev.devno, ACACHE_NR_DEVS);
 fail_allocdev:
+	inflight_list_ops.exit();
 	return ret;
 }
 
@@ -395,8 +405,111 @@ void acache_dev_exit(void)
 	kfree(adev.mem_regionp);
 	unregister_chrdev_region(adev.devno, ACACHE_NR_DEVS);
 	class_destroy(adev.class);
+	inflight_list_ops.exit();
 	kfree(adev.prefetch_workers);
 }
+
+static struct search *__inflight_list_lookup_locked(struct search *s)
+{
+	struct search *iter;
+	struct bio *bio, *sbio;
+
+	if (!adev.inflight_list.initialized)
+		return NULL;
+	sbio = &s->bio.bio;
+	list_for_each_entry(iter, &adev.inflight_list.entry, list_node) {
+		bio = &iter->bio.bio;
+		if (sbio->bi_disk == bio->bi_disk &&
+		    sbio->bi_iter.bi_sector < bio_end_sector(bio) &&
+		    bio_end_sector(sbio) > bio->bi_iter.bi_sector) {
+			return iter;
+		}
+	}
+	return NULL;
+}
+
+static void inflight_list_init(void)
+{
+	INIT_LIST_HEAD(&adev.inflight_list.entry);
+	spin_lock_init(&adev.inflight_list.io_lock);
+	adev.inflight_list.initialized = true;
+}
+
+static void inflight_list_exit(void)
+{
+	if (!list_empty(&adev.inflight_list.entry))
+		pr_err("existing with inflight list not empty");
+}
+
+static int inflight_list_insert(struct search *s)
+{
+	if (!adev.inflight_list.initialized)
+		return -1;
+
+	init_waitqueue_head(&s->wqh);
+	spin_lock(&adev.inflight_list.io_lock);
+	list_add_tail(&s->list_node, &adev.inflight_list.entry);
+	spin_unlock(&adev.inflight_list.io_lock);
+
+	trace_bcache_inflight_list_insert(s->d, s->orig_bio);
+	return 0;
+}
+
+static int inflight_list_remove(struct search *s)
+{
+	if (!adev.inflight_list.initialized)
+		return -1;
+
+	spin_lock(&adev.inflight_list.io_lock);
+	list_del_init(&s->list_node);
+	spin_unlock(&adev.inflight_list.io_lock);
+
+	wake_up_interruptible_all(&s->wqh);
+
+	trace_bcache_inflight_list_remove(s->d, s->orig_bio);
+	return 0;
+}
+
+static bool inflight_list_wait(struct search *s)
+{
+	struct search *pfs = NULL;
+	struct cached_dev *dc;
+	DEFINE_WAIT(wqe);
+
+	if (!adev.inflight_list.initialized)
+		return false;
+
+	spin_lock(&adev.inflight_list.io_lock);
+	pfs = __inflight_list_lookup_locked(s);
+	if (pfs == NULL) {
+		spin_unlock(&adev.inflight_list.io_lock);
+		return false;
+	}
+
+	dc = container_of(pfs->d, struct cached_dev, disk);
+	if (!dc->inflight_block_enable) {
+		spin_unlock(&adev.inflight_list.io_lock);
+		return true;
+	}
+
+	prepare_to_wait(&pfs->wqh, &wqe, TASK_INTERRUPTIBLE);
+
+	/* unlock here to ensure pfs not changed. */
+	spin_unlock(&adev.inflight_list.io_lock);
+	schedule();
+
+	finish_wait(&pfs->wqh, &wqe);
+
+	return true;
+}
+
+const struct inflight_queue_ops inflight_list_ops = {
+	.init	= inflight_list_init,
+	.exit	= inflight_list_exit,
+	.insert	= inflight_list_insert,
+	.remove	= inflight_list_remove,
+	.wait	= inflight_list_wait,
+};
 
 struct cached_dev *get_cached_device_by_dev(dev_t dev)
 {
