@@ -813,8 +813,7 @@ static bool __is_pcidev_match_chip_name(const char *ifname,
 			if (dev->init_state < HINIC_INIT_STATE_HW_PART_INITED)
 				return false;
 		} else {
-			if (dev->init_state >=
-			    HINIC_INIT_STATE_HW_PART_INITED &&
+			if (dev->init_state < HINIC_INIT_STATE_HW_PART_INITED ||
 			    hinic_func_type(dev->hwdev) != type)
 				return false;
 		}
@@ -1165,6 +1164,10 @@ void *hinic_get_ppf_hwdev_by_pdev(struct pci_dev *pdev)
 	chip_node = pci_adapter->chip_node;
 	lld_dev_hold();
 	list_for_each_entry(dev, &chip_node->func_list, node) {
+		if (test_bit(HINIC_FUNC_IN_REMOVE, &dev->flag) ||
+		    dev->init_state < HINIC_INIT_STATE_HW_IF_INITED)
+			continue;
+
 		if (dev->hwdev && hinic_func_type(dev->hwdev) == TYPE_PPF) {
 			lld_dev_put();
 			return dev->hwdev;
@@ -1377,6 +1380,10 @@ int hinic_get_pf_id(void *hwdev, u32 port_id, u32 *pf_id, u32 *isvalid)
 
 	lld_dev_hold();
 	list_for_each_entry(dev, &chip_node->func_list, node) {
+		if (test_bit(HINIC_FUNC_IN_REMOVE, &dev->flag) ||
+		    dev->init_state < HINIC_INIT_STATE_HWDEV_INITED)
+			continue;
+
 		if (hinic_physical_port_id(dev->hwdev) == port_id) {
 			*pf_id = hinic_global_func_id(dev->hwdev);
 			*isvalid = 1;
@@ -1864,7 +1871,8 @@ static void send_event_to_all_pf(struct hinic_pcidev *dev,
 
 	lld_dev_hold();
 	list_for_each_entry(des_dev, &dev->chip_node->func_list, node) {
-		if (test_bit(HINIC_FUNC_IN_REMOVE, &des_dev->flag))
+		if (test_bit(HINIC_FUNC_IN_REMOVE, &des_dev->flag) ||
+		    des_dev->init_state < HINIC_INIT_STATE_HW_IF_INITED)
 			continue;
 
 		if (hinic_func_type(des_dev->hwdev) == TYPE_VF)
@@ -1882,7 +1890,8 @@ static void send_event_to_dst_pf(struct hinic_pcidev *dev, u16 func_id,
 
 	lld_dev_hold();
 	list_for_each_entry(des_dev, &dev->chip_node->func_list, node) {
-		if (test_bit(HINIC_FUNC_IN_REMOVE, &des_dev->flag))
+		if (test_bit(HINIC_FUNC_IN_REMOVE, &des_dev->flag) ||
+		    des_dev->init_state < HINIC_INIT_STATE_HW_IF_INITED)
 			continue;
 
 		if (hinic_func_type(des_dev->hwdev) == TYPE_VF)
@@ -2648,8 +2657,11 @@ static void slave_host_init_delay_work(struct work_struct *work)
 	/* Make sure the PPF must be the first one */
 	lld_dev_hold();
 	list_for_each_entry(ppf_pcidev, &chip_node->func_list, node) {
-		if (ppf_pcidev &&
-		    hinic_func_type(ppf_pcidev->hwdev) == TYPE_PPF) {
+		if (test_bit(HINIC_FUNC_IN_REMOVE, &ppf_pcidev->flag) ||
+		    ppf_pcidev->init_state < HINIC_INIT_STATE_HW_IF_INITED)
+			continue;
+
+		if (hinic_func_type(ppf_pcidev->hwdev) == TYPE_PPF) {
 			found = 1;
 			break;
 		}
@@ -2879,7 +2891,8 @@ int hinic_register_micro_log(struct hinic_micro_log_info *micro_log_info)
 	lld_dev_hold();
 	list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
 		list_for_each_entry(dev, &chip_node->func_list, node) {
-			if (test_bit(HINIC_FUNC_IN_REMOVE, &dev->flag))
+			if (test_bit(HINIC_FUNC_IN_REMOVE, &dev->flag) ||
+			    dev->init_state < HINIC_INIT_STATE_HW_IF_INITED)
 				continue;
 
 			if (hinic_func_type(dev->hwdev) == TYPE_PPF) {
@@ -2909,7 +2922,8 @@ void hinic_unregister_micro_log(struct hinic_micro_log_info *micro_log_info)
 	lld_dev_hold();
 	list_for_each_entry(chip_node, &g_hinic_chip_list, node) {
 		list_for_each_entry(dev, &chip_node->func_list, node) {
-			if (test_bit(HINIC_FUNC_IN_REMOVE, &dev->flag))
+			if (test_bit(HINIC_FUNC_IN_REMOVE, &dev->flag) ||
+			    dev->init_state < HINIC_INIT_STATE_HW_IF_INITED)
 				continue;
 
 			if (hinic_func_type(dev->hwdev) == TYPE_PPF)
