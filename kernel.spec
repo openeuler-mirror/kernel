@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0080
+Release: %{hulkrelease}.0083
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -817,6 +817,59 @@ fi
 %endif
 
 %changelog
+
+
+* Thu Apr 22 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.19.0.0083
+- KVM: arm64: Support the vCPU preemption check
+- KVM: arm64: Add interface to support vCPU preempted check
+- KVM: arm64: Support pvsched preempted via shared structure
+- KVM: arm64: Implement PV_SCHED_FEATURES call
+- KVM: arm64: Document PV-sched interface
+- KVM: Check preempted_in_kernel for involuntary preemption
+- KVM: Boost vCPUs that are delivering interrupts
+- arm64/spinlock: fix a -Wunused-function warning
+- locking/osq: Use optimized spinning loop for arm64
+- arm/arm64: Make use of the SMCCC 1.1 wrapper
+- arm/arm64: Provide a wrapper for SMCCC 1.1 calls
+- KVM: Implement kvm_put_guest()
+- KVM: arm/arm64: Factor out hypercall handling from PSCI code
+
+* Thu Apr 22 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.18.0.0082
+- bcache: Add a sample of userspace prefetch client
+- bcache: Delay to invalidate cache data in writearound write
+- bcache: inflight prefetch requests block overlapped normal requests
+- bcache: provide a switch to bypass all IO requests
+- bcache: add a framework to perform prefetch
+
+* Thu Apr 22 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.17.0.0081
+- net/hinic: Fix null pointer dereference in hinic_physical_port_id
+- kvm: debugfs: Export x86 kvm exits to vcpu_stat
+- ext4: fix time overflow
+- ext4: drop legacy pre-1970 encoding workaround
+- fuse: fix live lock in fuse_iget()
+- fuse: fix bad inode
+- net/sctp: fix race condition in sctp_destroy_sock
+- config: set config hip08 prefetch default value
+- ext4: do not set SB_ACTIVE in ext4_orphan_cleanup()
+- RDMA/hns: add eq and cq time cfg compatibility support.
+- nvme: fix incorrect behavior when BLKROSET is called by the user
+- nvme-fc: fix error loop in create_hw_io_queues
+- nvme-fc: Fix wrong return value in __nvme_fc_init_request()
+- nvme-multipath: fix deadlock between ana_work and scan_work
+- nvme: fix deadlock caused by ANA update wrong locking
+- nvme-multipath: Fix memory leak with ana_log_buf
+- nvme-fc: fix module unloads while lports still pending
+- ipmi: remve duplicate code in __ipmi_bmc_register()
+- ipmi_si_intf: Fix race in timer shutdown handling
+- ipmi_ssif: fix unexpected driver unregister warning
+- ipmi_si: fix unexpected driver unregister warning
+- ipmi:ssif: Only unregister the platform driver if it was registered
+- ipmi: Make ipmi_interfaces_srcu variable static
+- ipmi: Fix return value when a message is truncated
+- ipmi: Free the address list on module cleanup
+- net: hns3: clear VF down state bit before request link status
+- config: disable config ARM64_BOOTPARAM_HOTPLUG_CPU0 by default
+- config: disable CONFIG_SATA_ZHAOXIN by default
 
 * Sat Apr 17 2021 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2104.16.0.0080
 - add kabi list for aarch64 and x86_64
