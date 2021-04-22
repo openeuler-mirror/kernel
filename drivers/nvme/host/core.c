@@ -1625,8 +1625,6 @@ static void nvme_update_disk_info(struct gendisk *disk,
 
 	if (id->nsattr & (1 << 0))
 		set_disk_ro(disk, true);
-	else
-		set_disk_ro(disk, false);
 
 	blk_mq_unfreeze_queue(disk->queue);
 }
