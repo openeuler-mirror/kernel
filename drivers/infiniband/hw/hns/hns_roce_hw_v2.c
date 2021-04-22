@@ -1483,15 +1483,23 @@ static int hns_roce_config_global_param(struct hns_roce_dev *hr_dev)
 {
 	struct hns_roce_cfg_global_param *req;
 	struct hns_roce_cmq_desc desc;
+	u32 clock_cycles_of_1us;
 
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_CFG_GLOBAL_PARAM,
 				      false);
 
 	req = (struct hns_roce_cfg_global_param *)desc.data;
 	memset(req, 0, sizeof(*req));
+
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B)
+		clock_cycles_of_1us = HNS_ROCE_1NS_CFG;
+	else
+		clock_cycles_of_1us = HNS_ROCE_1US_CFG;
+
 	roce_set_field(req->time_cfg_udp_port,
 		       CFG_GLOBAL_PARAM_DATA_0_ROCEE_TIME_1US_CFG_M,
-		       CFG_GLOBAL_PARAM_DATA_0_ROCEE_TIME_1US_CFG_S, 0);
+		       CFG_GLOBAL_PARAM_DATA_0_ROCEE_TIME_1US_CFG_S,
+		       clock_cycles_of_1us);
 	roce_set_field(req->time_cfg_udp_port,
 		       CFG_GLOBAL_PARAM_DATA_0_ROCEE_UDP_PORT_M,
 		       CFG_GLOBAL_PARAM_DATA_0_ROCEE_UDP_PORT_S, 0x12b7);
@@ -4943,6 +4951,29 @@ out:
 	return ret;
 }
 
+static bool check_qp_timeout_cfg_range(struct hns_roce_dev *hr_dev, u8 *timeout)
+{
+#define QP_TIMEOUT_MAX_HIP08 20
+#define QP_TIMEOUT_MAX 31
+
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
+		if (*timeout > QP_TIMEOUT_MAX_HIP08) {
+			dev_warn(hr_dev->dev,
+				   "Local ACK timeout shall be 0 to 20.\n");
+			return false;
+		}
+		*timeout += HNS_ROCE_QP_TIMEOUT_OFFSET;
+	} else if (hr_dev->pci_dev->revision > PCI_REVISION_ID_HIP08_B) {
+		if (*timeout > QP_TIMEOUT_MAX) {
+			dev_warn(hr_dev->dev,
+				   "Local ACK timeout shall be 0 to 31.\n");
+			return false;
+		}
+	}
+
+	return true;
+}
+
 static int hns_roce_v2_set_opt_fields(struct ib_qp *ibqp,
 				      const struct ib_qp_attr *attr,
 				      int attr_mask,
@@ -4951,8 +4982,8 @@ static int hns_roce_v2_set_opt_fields(struct ib_qp *ibqp,
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
-	struct device *dev = hr_dev->dev;
 	int ret = 0;
+	u8 timeout;
 
 	/* The AV component shall be modified for RoCEv2 */
 	if (attr_mask & IB_QP_AV) {
@@ -4963,15 +4994,15 @@ static int hns_roce_v2_set_opt_fields(struct ib_qp *ibqp,
 	}
 
 	if (attr_mask & IB_QP_TIMEOUT) {
-		if (attr->timeout < 21) {
+		timeout = attr->timeout;
+		if (check_qp_timeout_cfg_range(hr_dev, &timeout)) {
 			roce_set_field(context->byte_28_at_fl,
 				       V2_QPC_BYTE_28_AT_M, V2_QPC_BYTE_28_AT_S,
-				       attr->timeout + 10);
+				       timeout);
 			roce_set_field(qpc_mask->byte_28_at_fl,
 				       V2_QPC_BYTE_28_AT_M, V2_QPC_BYTE_28_AT_S,
 				       0);
-		} else
-			dev_warn(dev, "Local ACK timeout shall be 0 to 20.\n");
+		}
 	}
 
 	if (attr_mask & IB_QP_RETRY_CNT) {
@@ -5598,14 +5629,17 @@ static int hns_roce_v2_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period)
 		       V2_CQC_BYTE_56_CQ_MAX_CNT_M, V2_CQC_BYTE_56_CQ_MAX_CNT_S,
 		       0);
 
-	if (cq_period * HNS_ROCE_CLOCK_ADJUST > 0xFFFF) {
-		dev_info(hr_dev->dev, "Config cq_period param(0x%x) out of range for modify_cq, adjusted to 65.\n",
-			cq_period);
-		cq_period = HNS_ROCE_MAX_CQ_PERIOD;
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
+		if (cq_period * HNS_ROCE_CLOCK_ADJUST > USHRT_MAX) {
+			dev_info(hr_dev->dev, "cq_period(%d) reached the upper limit, adjusted to 65.\n",
+				 cq_period);
+			cq_period = HNS_ROCE_MAX_CQ_PERIOD;
+		}
+		cq_period *= HNS_ROCE_CLOCK_ADJUST;
 	}
 	roce_set_field(cq_context->byte_56_cqe_period_maxcnt,
 		       V2_CQC_BYTE_56_CQ_PERIOD_M, V2_CQC_BYTE_56_CQ_PERIOD_S,
-		       cq_period * HNS_ROCE_CLOCK_ADJUST);
+		       cq_period);
 	roce_set_field(cqc_mask->byte_56_cqe_period_maxcnt,
 		       V2_CQC_BYTE_56_CQ_PERIOD_M, V2_CQC_BYTE_56_CQ_PERIOD_S,
 		       0);
@@ -6166,10 +6200,14 @@ static void hns_roce_config_eqc(struct hns_roce_dev *hr_dev,
 	eqc = mb_buf;
 	memset(eqc, 0, sizeof(struct hns_roce_eq_context));
 
-	if (eq_period * HNS_ROCE_CLOCK_ADJUST > 0xFFFF) {
-		dev_info(hr_dev->dev, "Config eq_period param(0x%x) out of range for config_eqc, adjusted to 65.\n",
-			eq_period);
-		eq_period = HNS_ROCE_MAX_CQ_PERIOD;
+	eq->eq_period = eq_period;
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08_B) {
+		if (eq->eq_period * HNS_ROCE_CLOCK_ADJUST > USHRT_MAX) {
+			dev_info(hr_dev->dev, "eq_period(%d) reached the upper limit, adjusted to 65.\n",
+				 eq->eq_period);
+			eq->eq_period = HNS_ROCE_MAX_EQ_PERIOD;
+		}
+		eq->eq_period *= HNS_ROCE_CLOCK_ADJUST;
 	}
 
 	/* init eqc */
@@ -6182,7 +6220,6 @@ static void hns_roce_config_eqc(struct hns_roce_dev *hr_dev,
 	eq->eqe_buf_pg_sz = hr_dev->caps.eqe_buf_pg_sz;
 	eq->shift = ilog2((unsigned int)eq->entries);
 	eq->eq_max_cnt = eq_max_cnt;
-	eq->eq_period = eq_period * HNS_ROCE_CLOCK_ADJUST;
 	eq->arm_st = eq_arm_st;
 
 	if (!eq->hop_num)
