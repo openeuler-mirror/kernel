@@ -2197,6 +2197,7 @@ CONFIG_ATA_PIIX=y
 # CONFIG_SATA_ULI is not set
 # CONFIG_SATA_VIA is not set
 # CONFIG_SATA_VITESSE is not set
+# CONFIG_SATA_ZHAOXIN is not set
 
 #
 # PATA SFF controllers with BMDMA
