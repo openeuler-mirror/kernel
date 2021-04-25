@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2104.16.0
+%global hulkrelease 2104.21.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0082
+Release: %{hulkrelease}.0083
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -817,6 +817,13 @@ fi
 
 %changelog
 
+
+* Sun Apr 25 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.21.0.0083
+- bcache: Rewrite patch to delay to invalidate cache data
+- nfc: Avoid endless loops caused by repeated llcp_sock_connect()
+- nfc: fix memory leak in llcp_sock_connect()
+- nfc: fix refcount leak in llcp_sock_connect()
+- nfc: fix refcount leak in llcp_sock_bind()
 
 * Thu Apr 22 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.19.0.0082
 - KVM: arm64: Support the vCPU preemption check
