@@ -738,6 +738,7 @@ struct search *search_alloc(struct bio *bio,
 	s->read_dirty_data	= 0;
 	s->start_time		= jiffies;
 	s->prefetch		= prefetch;
+	s->write_inval_data_putoff = false;
 
 	s->iop.c		= d->c;
 	s->iop.bio		= NULL;
@@ -758,6 +759,10 @@ static void cached_dev_bio_complete(struct closure *cl)
 {
 	struct search *s = container_of(cl, struct search, cl);
 	struct cached_dev *dc = container_of(s->d, struct cached_dev, disk);
+
+	/* eusure this lock is released after data_insert */
+	if (s->write_inval_data_putoff)
+		up_read_non_owner(&dc->writeback_lock);
 
 	search_free(cl);
 	cached_dev_put(dc);
@@ -981,10 +986,10 @@ static void cached_dev_write_complete(struct closure *cl)
 	struct search *s = container_of(cl, struct search, cl);
 	struct cached_dev *dc = container_of(s->d, struct cached_dev, disk);
 
-	if (!s->iop.bypass)
+	if (s->write_inval_data_putoff)
 		closure_call(&s->iop.cl, bch_data_insert, NULL, cl);
-
-	up_read_non_owner(&dc->writeback_lock);
+	else
+		up_read_non_owner(&dc->writeback_lock);
 	continue_at(cl, cached_dev_bio_complete, NULL);
 }
 
@@ -1036,6 +1041,7 @@ static void cached_dev_write(struct cached_dev *dc, struct search *s)
 		bio->bi_end_io = backing_request_endio;
 		closure_bio_submit(s->iop.c, bio, cl);
 
+		s->write_inval_data_putoff = true;
 	} else if (s->iop.writeback) {
 		bch_writeback_add(dc);
 		s->iop.bio = bio;
@@ -1068,7 +1074,7 @@ static void cached_dev_write(struct cached_dev *dc, struct search *s)
 	}
 
 insert_data:
-	if (!s->iop.bypass)
+	if (!s->write_inval_data_putoff)
 		closure_call(&s->iop.cl, bch_data_insert, NULL, cl);
 	continue_at(cl, cached_dev_write_complete, NULL);
 }

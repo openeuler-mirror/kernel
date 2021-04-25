@@ -61,6 +61,18 @@ struct search {
 	unsigned long		start_time;
 	/* for prefetch, we do not need copy data to bio */
 	bool			prefetch;
+	/*
+	 * The function bch_data_insert() is invoked asynchronously as the bio
+	 * subbmited to backend block device, therefore there may be a read
+	 * request subbmited after the bch_data_insert() done and ended before
+	 * the backend bio is end. This read request will read data from the
+	 * backend block device, and insert dirty data to cache device. However
+	 * by writearound cache mode, bcache will not invalidate data again,
+	 * so that read request after will read dirty data from the cache,
+	 * causing a data corruption.
+	 * So that we should put off this invalidation. This switch is for
+	 */
+	bool			write_inval_data_putoff;
 	struct list_head	list_node;
 	wait_queue_head_t	wqh;
 	struct acache_info		smp;
