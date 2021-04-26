@@ -16339,3 +16339,9 @@ HISILICON IO_MGMT SUBSYSTEM RDE DRIVER
 M:	hucheng Hu(Cheng) <hucheng.hu@huawei.com>
 S:	Maintained
 F:	drivers/crypto/hisilicon/rde
+
+HISILICON TRUE RANDOM NUMBER GENERATOR (TRNG) DRIVER
+M:	Weili Qian <qianweili@huawei.com>
+M:	Zaibo Xu <xuzaibo@huawei.com>
+S:	Maintained
+F:	drivers/char/hw_random/hisi-trng-v2.c
