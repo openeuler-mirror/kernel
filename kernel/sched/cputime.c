@@ -649,6 +649,10 @@ unsigned long long sched_get_idle_time(int cpu)
 	struct rq_cputime *rt = &per_cpu(rq_cputimes, cpu);
 	u64 hi = 0, si = 0;
 
+	/* Do not update cpu time when cpu offline */
+	if (!cpu_online(cpu))
+		return rt->sum_idle_time;
+
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
 	if (sched_clock_irqtime) {
 		hi = kcpustat_cpu(cpu).cpustat[CPUTIME_IRQ_IDLE];
