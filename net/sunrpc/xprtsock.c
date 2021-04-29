@@ -2753,6 +2753,7 @@ static int bc_send_request(struct rpc_task *task)
 
 static void bc_close(struct rpc_xprt *xprt)
 {
+	xprt_disconnect_done(xprt);
 }
 
 /*
