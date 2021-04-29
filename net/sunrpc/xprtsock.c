@@ -2698,6 +2698,9 @@ static int bc_sendto(struct rpc_rqst *req)
 
 	tailoff = (unsigned long)xbufp->tail[0].iov_base & ~PAGE_MASK;
 	headoff = (unsigned long)xbufp->head[0].iov_base & ~PAGE_MASK;
+
+	req->rq_xtime = ktime_get();
+
 	len = svc_send_common(sock, xbufp,
 			      virt_to_page(xbufp->head[0].iov_base), headoff,
 			      xbufp->tail[0].iov_base, tailoff);
@@ -2719,7 +2722,6 @@ static int bc_send_request(struct rpc_task *task)
 	struct svc_xprt	*xprt;
 	int len;
 
-	dprintk("sending request with xid: %08x\n", ntohl(req->rq_xid));
 	/*
 	 * Get the server socket associated with this callback xprt
 	 */
