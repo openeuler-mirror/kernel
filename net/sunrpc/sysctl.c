@@ -69,7 +69,13 @@ static int proc_do_xprt(struct ctl_table *table, int write,
 		return 0;
 	}
 	len = svc_print_xprts(tmpbuf, sizeof(tmpbuf));
-	return simple_read_from_buffer(buffer, *lenp, ppos, tmpbuf, len);
+	*lenp = simple_read_from_buffer(buffer, *lenp, ppos, tmpbuf, len);
+
+	if (*lenp < 0) {
+		*lenp = 0;
+		return -EINVAL;
+	}
+	return 0;
 }
 
 static int
