@@ -1203,8 +1203,7 @@ rpcrdma_decode_error(struct rpcrdma_xprt *r_xprt, struct rpcrdma_rep *rep,
 			rqst->rq_task->tk_pid, __func__, be32_to_cpup(p));
 	}
 
-	r_xprt->rx_stats.bad_reply_count++;
-	return -EREMOTEIO;
+	return -EIO;
 }
 
 /* Perform XID lookup, reconstruction of the RPC reply, and
@@ -1249,13 +1248,11 @@ out:
 	spin_unlock(&xprt->recv_lock);
 	return;
 
-/* If the incoming reply terminated a pending RPC, the next
- * RPC call will post a replacement receive buffer as it is
- * being marshaled.
- */
 out_badheader:
 	trace_xprtrdma_reply_hdr(rep);
 	r_xprt->rx_stats.bad_reply_count++;
+	rqst->rq_task->tk_status = status;
+	status = 0;
 	goto out;
 }
 
