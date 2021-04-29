@@ -500,17 +500,15 @@ TRACE_EVENT(xprtrdma_marshal,
 
 TRACE_EVENT(xprtrdma_post_send,
 	TP_PROTO(
-		const struct rpcrdma_req *req,
-		int status
+		const struct rpcrdma_req *req
 	),
 
-	TP_ARGS(req, status),
+	TP_ARGS(req),
 
 	TP_STRUCT__entry(
 		__field(const void *, req)
 		__field(int, num_sge)
 		__field(int, signaled)
-		__field(int, status)
 	),
 
 	TP_fast_assign(
@@ -518,13 +516,11 @@ TRACE_EVENT(xprtrdma_post_send,
 		__entry->num_sge = req->rl_sendctx->sc_wr.num_sge;
 		__entry->signaled = req->rl_sendctx->sc_wr.send_flags &
 				    IB_SEND_SIGNALED;
-		__entry->status = status;
 	),
 
-	TP_printk("req=%p, %d SGEs%s, status=%d",
+	TP_printk("req=%p, %d SGEs%s",
 		__entry->req, __entry->num_sge,
-		(__entry->signaled ? ", signaled" : ""),
-		__entry->status
+		(__entry->signaled ? ", signaled" : "")
 	)
 );
 

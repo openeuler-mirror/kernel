@@ -1517,8 +1517,8 @@ rpcrdma_ep_post(struct rpcrdma_ia *ia,
 		--ep->rep_send_count;
 	}
 
+	trace_xprtrdma_post_send(req);
 	rc = ia->ri_ops->ro_send(ia, req);
-	trace_xprtrdma_post_send(req, rc);
 	if (rc)
 		return -ENOTCONN;
 	return 0;
