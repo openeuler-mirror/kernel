@@ -512,6 +512,18 @@ config USERSWAP
 	  Support for User Swap. This is based on userfaultfd. We can implement
 	  our own swapout and swapin functions in usersapce.
 
+config MEMCG_QOS
+	bool "Enable Memory Cgroup Priority"
+	depends on MEMCG
+	depends on X86 || ARM64
+	default y
+	help
+	  MEMCG_QOS means that we first kill the process from the low priority
+	  memcg if OOM occurs. If the process is not found, then fallback to
+	  normal handle.
+
+	  If unsure, say "n".
+
 config CMA
 	bool "Contiguous Memory Allocator"
 	depends on HAVE_MEMBLOCK && MMU
