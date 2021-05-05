@@ -3311,7 +3311,7 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 		/*
 		 * Allocate the page for the PDPTEs when shadowing 32-bit NPT
 		 * with 64-bit only when needed.  Unlike 32-bit NPT, it doesn't
-		 * need to be in low mem.  See also lm_root below.
+		 * need to be in low mem.  See also pml4_root below.
 		 */
 		if (!vcpu->arch.mmu->pae_root) {
 			WARN_ON_ONCE(!tdp_enabled);
@@ -3351,19 +3351,19 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 	 * handled above (to share logic with PAE), deal with the PML4 here.
 	 */
 	if (vcpu->arch.mmu->shadow_root_level == PT64_ROOT_4LEVEL) {
-		if (vcpu->arch.mmu->lm_root == NULL) {
-			u64 *lm_root;
+		if (vcpu->arch.mmu->pml4_root == NULL) {
+			u64 *pml4_root;
 
-			lm_root = (void*)get_zeroed_page(GFP_KERNEL_ACCOUNT);
-			if (!lm_root)
+			pml4_root = (void*)get_zeroed_page(GFP_KERNEL_ACCOUNT);
+			if (!pml4_root)
 				return -ENOMEM;
 
-			lm_root[0] = __pa(vcpu->arch.mmu->pae_root) | pm_mask;
+			pml4_root[0] = __pa(vcpu->arch.mmu->pae_root) | pm_mask;
 
-			vcpu->arch.mmu->lm_root = lm_root;
+			vcpu->arch.mmu->pml4_root = pml4_root;
 		}
 
-		vcpu->arch.mmu->root_hpa = __pa(vcpu->arch.mmu->lm_root);
+		vcpu->arch.mmu->root_hpa = __pa(vcpu->arch.mmu->pml4_root);
 	}
 
 set_root_pgd:
@@ -5302,7 +5302,7 @@ slot_handle_leaf(struct kvm *kvm, struct kvm_memory_slot *memslot,
 static void free_mmu_pages(struct kvm_mmu *mmu)
 {
 	free_page((unsigned long)mmu->pae_root);
-	free_page((unsigned long)mmu->lm_root);
+	free_page((unsigned long)mmu->pml4_root);
 }
 
 static int __kvm_mmu_create(struct kvm_vcpu *vcpu, struct kvm_mmu *mmu)
