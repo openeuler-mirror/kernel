@@ -634,6 +634,7 @@ void sev_es_vcpu_load(struct vcpu_svm *svm, int cpu);
 void sev_es_vcpu_put(struct vcpu_svm *svm);
 void sev_vcpu_deliver_sipi_vector(struct kvm_vcpu *vcpu, u8 vector);
 int sev_es_ghcb_map(struct vcpu_svm *svm, u64 ghcb_gpa);
+void sev_es_unmap_ghcb(struct vcpu_svm *svm);
 
 /* vmenter.S */
 
