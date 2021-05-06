@@ -1264,8 +1264,8 @@ static int sev_send_update_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	/* Pin guest memory */
 	guest_page = sev_pin_memory(kvm, params.guest_uaddr & PAGE_MASK,
 				    PAGE_SIZE, &n, 0);
-	if (!guest_page)
-		return -EFAULT;
+	if (IS_ERR(guest_page))
+		return PTR_ERR(guest_page);
 
 	/* allocate memory for header and transport buffer */
 	ret = -ENOMEM;
@@ -1490,11 +1490,12 @@ static int sev_receive_update_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	data->trans_len = params.trans_len;
 
 	/* Pin guest memory */
-	ret = -EFAULT;
 	guest_page = sev_pin_memory(kvm, params.guest_uaddr & PAGE_MASK,
 				    PAGE_SIZE, &n, 1);
-	if (!guest_page)
+	if (IS_ERR(guest_page)) {
+		ret = PTR_ERR(guest_page);
 		goto e_free;
+	}
 
 	/*
 	 * Flush (on non-coherent CPUs) before RECEIVE_UPDATE_DATA, the PSP
