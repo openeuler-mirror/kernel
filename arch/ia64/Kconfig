@@ -330,6 +330,7 @@ config NODES_SHIFT
 config VIRTUAL_MEM_MAP
 	bool "Virtual mem map"
 	depends on !SPARSEMEM
+	select HOLES_IN_ZONE
 	default y
 	help
 	  Say Y to compile the kernel with support for a virtual mem map.
@@ -337,10 +338,6 @@ config VIRTUAL_MEM_MAP
 	  1 Gb is found during boot.  You must turn this option on if you
 	  require the DISCONTIGMEM option for your machine. If you are
 	  unsure, say Y.
-
-config HOLES_IN_ZONE
-	bool
-	default y if VIRTUAL_MEM_MAP
 
 config HAVE_ARCH_EARLY_PFN_TO_NID
 	def_bool NUMA && SPARSEMEM
