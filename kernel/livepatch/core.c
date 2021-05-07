@@ -402,27 +402,23 @@ static int disable_patch(struct klp_patch *patch)
 int klp_try_disable_patch(void *data)
 {
 	int ret = 0;
-	int flag = 0;
 	struct patch_data *pd = (struct patch_data *)data;
 
 	if (atomic_inc_return(&pd->cpu_count) == 1) {
 		struct klp_patch *patch = pd->patch;
 
 		if (klp_check_patch_kprobed(patch)) {
-			flag = 1;
 			atomic_inc(&pd->cpu_count);
 			return -EINVAL;
 		}
 
 		ret = klp_check_calltrace(patch, 0);
 		if (ret) {
-			flag = 1;
 			atomic_inc(&pd->cpu_count);
 			return ret;
 		}
 		ret = disable_patch(patch);
 		if (ret) {
-			flag = 1;
 			atomic_inc(&pd->cpu_count);
 			return ret;
 		}
@@ -430,9 +426,7 @@ int klp_try_disable_patch(void *data)
 	} else {
 		while (atomic_read(&pd->cpu_count) <= num_online_cpus())
 			cpu_relax();
-
-		if (!flag)
-			klp_smp_isb();
+		klp_smp_isb();
 	}
 
 	return ret;
@@ -617,27 +611,23 @@ disable:
 int klp_try_enable_patch(void *data)
 {
 	int ret = 0;
-	int flag = 0;
 	struct patch_data *pd = (struct patch_data *)data;
 
 	if (atomic_inc_return(&pd->cpu_count) == 1) {
 		struct klp_patch *patch = pd->patch;
 
 		if (klp_check_patch_kprobed(patch)) {
-			flag = 1;
 			atomic_inc(&pd->cpu_count);
 			return -EINVAL;
 		}
 
 		ret = klp_check_calltrace(patch, 1);
 		if (ret) {
-			flag = 1;
 			atomic_inc(&pd->cpu_count);
 			return ret;
 		}
 		ret = enable_patch(patch);
 		if (ret) {
-			flag = 1;
 			atomic_inc(&pd->cpu_count);
 			return ret;
 		}
@@ -645,9 +635,7 @@ int klp_try_enable_patch(void *data)
 	} else {
 		while (atomic_read(&pd->cpu_count) <= num_online_cpus())
 			cpu_relax();
-
-		if (!flag)
-			klp_smp_isb();
+		klp_smp_isb();
 	}
 
 	return ret;
