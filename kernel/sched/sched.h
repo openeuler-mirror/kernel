@@ -400,11 +400,7 @@ struct task_group {
 
 	struct cfs_bandwidth	cfs_bandwidth;
 
-#if defined(CONFIG_QOS_SCHED) && !defined(__GENKSYMS__)
-	long qos_level;
-#else
 	KABI_RESERVE(1)
-#endif
 	KABI_RESERVE(2)
 };
 
