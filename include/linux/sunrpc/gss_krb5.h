@@ -106,9 +106,9 @@ struct krb5_ctx {
 	struct crypto_skcipher *initiator_enc_aux;
 	u8			Ksess[GSS_KRB5_MAX_KEYLEN]; /* session key */
 	u8			cksum[GSS_KRB5_MAX_KEYLEN];
-	time64_t		endtime;
 	u32			seq_send;
 	u64			seq_send64;
+	time64_t		endtime;
 	struct xdr_netobj	mech_used;
 	u8			initiator_sign[GSS_KRB5_MAX_KEYLEN];
 	u8			acceptor_sign[GSS_KRB5_MAX_KEYLEN];
