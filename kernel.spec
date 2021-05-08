@@ -8,11 +8,11 @@
 
 %global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/)
 
-%global TarballVer 4.19.90
+%global TarballVer 4.19.188
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2104.21.0
+%global hulkrelease 2104.4.0
 
 %define with_patch 0
 
@@ -31,7 +31,7 @@
 %define with_source 1
 
 Name:	 kernel
-Version: 4.19.90
+Version: 4.19.188
 Release: %{hulkrelease}.0083
 Summary: Linux Kernel
 License: GPLv2
@@ -817,6 +817,9 @@ fi
 
 %changelog
 
+
+* Sat May 08 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.188-2104.4.0.0083
+- Initialize SPEC for kernel-4.19. This branch is the next branch of OpenEuler 20.03
 
 * Sun Apr 25 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.21.0.0083
 - bcache: Rewrite patch to delay to invalidate cache data
