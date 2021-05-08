@@ -153,6 +153,22 @@ extern bool smp_crash_stop_failed(void);
 
 void ipi_set_nmi_prio(void __iomem *base, u8 prio);
 
+#ifdef CONFIG_ARM64_CPU_PARK
+#define PARK_SECTION_SIZE 1024
+struct cpu_park_info {
+	/* Physical address of reserved park memory. */
+	unsigned long start;
+	/* park reserve mem len should be PARK_SECTION_SIZE * NR_CPUS */
+	unsigned long len;
+	/* Virtual address of reserved park memory. */
+	unsigned long start_v;
+};
+extern struct cpu_park_info park_info;
+extern void enter_cpu_park(unsigned long text, unsigned long exit);
+extern void do_cpu_park(unsigned long exit);
+extern int kexec_smp_send_park(void);
+#endif
+
 #endif /* ifndef __ASSEMBLY__ */
 
 #endif /* ifndef __ASM_SMP_H */
