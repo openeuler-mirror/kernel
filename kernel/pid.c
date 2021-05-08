@@ -41,6 +41,9 @@
 #include <linux/sched/task.h>
 #include <linux/idr.h>
 #include <linux/kmemleak.h>
+#ifdef CONFIG_PID_RESERVE
+#include <linux/pin_mem.h>
+#endif
 
 struct pid init_struct_pid = {
 	.count 		= ATOMIC_INIT(1),
@@ -185,6 +188,27 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 		if (idr_get_cursor(&tmp->idr) > RESERVED_PIDS)
 			pid_min = RESERVED_PIDS;
 
+#ifdef CONFIG_PID_RESERVE
+		if (!current->fork_pid) {
+			/*
+			 * Store a null pointer so find_pid_ns does not find
+			 * a partially initialized PID (see below).
+			 */
+			nr = idr_alloc_cyclic(&tmp->idr, NULL, pid_min,
+							  tmp->pid_max,
+							  GFP_ATOMIC);
+		} else {
+			/* Try to free the reserved fork_pid, and then use it to alloc pid. */
+			free_reserved_pid(&tmp->idr, current->fork_pid);
+			pid_min = current->fork_pid;
+			current->fork_pid = 0;
+			nr = idr_alloc(&tmp->idr, NULL, pid_min,
+				  pid_min + 1,
+				  GFP_ATOMIC);
+			if (nr == -ENOSPC)
+				nr = -EEXIST;
+		}
+#else
 		/*
 		 * Store a null pointer so find_pid_ns does not find
 		 * a partially initialized PID (see below).
@@ -192,6 +216,7 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 		nr = idr_alloc_cyclic(&tmp->idr, NULL, pid_min,
 				      tmp->pid_max,
 				      GFP_ATOMIC);
+#endif
 		spin_unlock_irq(&pidmap_lock);
 		idr_preload_end();
 
@@ -501,6 +526,10 @@ void __init pid_idr_init(void)
 	init_pid_ns.pid_cachep = KMEM_CACHE(pid,
 			SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_ACCOUNT);
 
+#ifdef CONFIG_PID_RESERVE
+	if (is_need_reserve_pids())
+		reserve_pids(&init_pid_ns.idr, pid_max);
+#endif
 	hdr = register_sysctl_paths(pid_kern_path, pid_ctl_table);
 	kmemleak_not_leak(hdr);
 }

@@ -39,12 +39,20 @@ struct pin_mem_area_set {
 #define _REMAP_PIN_MEM_AREA  3
 #define _FINISH_PIN_MEM_DUMP 4
 #define _INIT_PAGEMAP_READ   5
+#ifdef CONFIG_PID_RESERVE
+#define _SET_FORK_PID        6
+#define _PIN_MEM_IOC_MAX_NR  6
+#else
 #define _PIN_MEM_IOC_MAX_NR  5
+#endif
 #define SET_PIN_MEM_AREA        _IOW(PIN_MEM_MAGIC, _SET_PIN_MEM_AREA, struct pin_mem_area_set)
 #define CLEAR_PIN_MEM_AREA      _IOW(PIN_MEM_MAGIC, _CLEAR_PIN_MEM_AREA, int)
 #define REMAP_PIN_MEM_AREA      _IOW(PIN_MEM_MAGIC, _REMAP_PIN_MEM_AREA, int)
 #define FINISH_PIN_MEM_DUMP     _IOW(PIN_MEM_MAGIC, _FINISH_PIN_MEM_DUMP, int)
 #define INIT_PAGEMAP_READ       _IOW(PIN_MEM_MAGIC, _INIT_PAGEMAP_READ, int)
+#ifdef CONFIG_PID_RESERVE
+#define SET_FORK_PID            _IOW(PIN_MEM_MAGIC, _SET_FORK_PID, int)
+#endif
 static int set_pin_mem(struct pin_mem_area_set *pmas)
 {
 	int i;
@@ -145,6 +153,24 @@ fault:
 	return -EFAULT;
 }
 
+#ifdef CONFIG_PID_RESERVE
+static int set_fork_pid(unsigned long arg)
+{
+	int pid;
+	struct page_map_info *pmi = NULL;
+	void __user *buf = (void __user *)arg;
+
+	if (!access_ok(buf, sizeof(int)))
+		goto fault;
+	if (copy_from_user(&pid, buf, sizeof(int)))
+		goto fault;
+	current->fork_pid = pid;
+	return 0;
+fault:
+	return -EFAULT;
+}
+#endif
+
 static long pin_memory_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	long ret = 0;
@@ -170,6 +196,11 @@ static long pin_memory_ioctl(struct file *file, unsigned int cmd, unsigned long 
 	case INIT_PAGEMAP_READ:
 		ret = init_pagemap_read();
 		break;
+#ifdef CONFIG_PID_RESERVE
+	case SET_FORK_PID:
+		ret = set_fork_pid(arg);
+		break;
+#endif
 	default:
 		return -EINVAL;
 	}

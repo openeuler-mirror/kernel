@@ -1206,6 +1206,9 @@ struct task_struct {
 	/* Used by LSM modules for access restriction: */
 	void				*security;
 #endif
+#ifdef CONFIG_PID_RESERVE
+	int fork_pid;
+#endif
 
 	/*
 	 * New fields for task_struct should be added above here, so that
