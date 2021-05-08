@@ -42,6 +42,9 @@
 #include <linux/crash_dump.h>
 #include <linux/iommu.h>
 #include <linux/suspend.h>
+#ifdef CONFIG_PIN_MEMORY
+#include <linux/pin_mem.h>
+#endif
 
 #include <asm/boot.h>
 #include <asm/fixmap.h>
@@ -91,6 +94,52 @@ early_param("initrd", early_initrd);
  * region.
  */
 #define MAX_USABLE_RANGES	2
+
+#ifdef CONFIG_PIN_MEMORY
+struct resource pin_memory_resource = {
+	.name = "Pin memory",
+	.start = 0,
+	.end = 0,
+	.flags = IORESOURCE_MEM,
+	.desc = IOMMU_RESV_RESERVED
+};
+
+static void __init reserve_pin_memory_res(void)
+{
+	unsigned long long mem_start, mem_len;
+	int ret;
+
+	ret = parse_pin_memory(boot_command_line, memblock_phys_mem_size(),
+		&mem_len, &mem_start);
+	if (ret || !mem_len)
+		return;
+
+	mem_len = PAGE_ALIGN(mem_len);
+
+	if (!memblock_is_region_memory(mem_start, mem_len)) {
+		pr_warn("cannot reserve for pin memory: region is not memory!\n");
+		return;
+	}
+
+	if (memblock_is_region_reserved(mem_start, mem_len)) {
+		pr_warn("cannot reserve for pin memory: region overlaps reserved memory!\n");
+		return;
+	}
+
+	if (!IS_ALIGNED(mem_start, SZ_2M)) {
+		pr_warn("cannot reserve for pin memory: base address is not 2MB aligned\n");
+		return;
+	}
+
+	memblock_reserve(mem_start, mem_len);
+	pin_memory_resource.start = mem_start;
+	pin_memory_resource.end = mem_start + mem_len - 1;
+}
+#else
+static void __init reserve_pin_memory_res(void)
+{
+}
+#endif /* CONFIG_PIN_MEMORY */
 
 #ifdef CONFIG_KEXEC_CORE
 
@@ -582,6 +631,8 @@ void __init arm64_memblock_init(void)
 	else
 		arm64_dma_phys_limit = PHYS_MASK + 1;
 
+	reserve_pin_memory_res();
+
 	reserve_crashkernel();
 
 	reserve_elfcorehdr();
@@ -703,6 +754,12 @@ void __init mem_init(void)
 #endif
 	/* this will put all unused low memory onto the freelists */
 	free_all_bootmem();
+
+#ifdef CONFIG_PIN_MEMORY
+	/* pre alloc the pages for pin memory */
+	init_reserve_page_map((unsigned long)pin_memory_resource.start,
+		(unsigned long)(pin_memory_resource.end - pin_memory_resource.start));
+#endif
 
 	kexec_reserve_crashkres_pages();
 

@@ -562,6 +562,13 @@ config HISI_SVM
 	  svm and share the virtual memory with hisilicon svm device.
 	  When in doubt, say "N".
 
+config PIN_MEMORY_DEV
+	tristate "/dev/pinmem character device"
+	depends on PIN_MEMORY
+	default m
+	help
+	  pin memory driver
+
 endmenu
 
 config RANDOM_TRUST_CPU
