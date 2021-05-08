@@ -189,7 +189,7 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 			pid_min = RESERVED_PIDS;
 
 #ifdef CONFIG_PID_RESERVE
-		if (!current->fork_pid) {
+		if (!current->fork_pid_union.fork_pid) {
 			/*
 			 * Store a null pointer so find_pid_ns does not find
 			 * a partially initialized PID (see below).
@@ -199,9 +199,9 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 							  GFP_ATOMIC);
 		} else {
 			/* Try to free the reserved fork_pid, and then use it to alloc pid. */
-			free_reserved_pid(&tmp->idr, current->fork_pid);
-			pid_min = current->fork_pid;
-			current->fork_pid = 0;
+			free_reserved_pid(&tmp->idr, current->fork_pid_union.fork_pid);
+			pid_min = current->fork_pid_union.fork_pid;
+			current->fork_pid_union.fork_pid = 0;
 			nr = idr_alloc(&tmp->idr, NULL, pid_min,
 				  pid_min + 1,
 				  GFP_ATOMIC);

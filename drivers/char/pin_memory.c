@@ -164,7 +164,7 @@ static int set_fork_pid(unsigned long arg)
 		goto fault;
 	if (copy_from_user(&pid, buf, sizeof(int)))
 		goto fault;
-	current->fork_pid = pid;
+	current->fork_pid_union.fork_pid = pid;
 	return 0;
 fault:
 	return -EFAULT;

@@ -181,7 +181,9 @@ struct task_struct init_task
 	.security	= NULL,
 #endif
 #ifdef CONFIG_PID_RESERVE
-	.fork_pid = 0,
+	.fork_pid_union = {
+		.fork_pid = 0,
+	},
 #endif
 };
 EXPORT_SYMBOL(init_task);

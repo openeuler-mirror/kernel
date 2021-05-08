@@ -596,6 +596,13 @@ struct wake_q_node {
 	struct wake_q_node *next;
 };
 
+#ifdef CONFIG_PID_RESERVE
+typedef union {
+	pid_t fork_pid;
+	unsigned long pid_reserve;
+} fork_pid_t;
+#endif
+
 struct task_struct {
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 	/*
@@ -1206,9 +1213,6 @@ struct task_struct {
 	/* Used by LSM modules for access restriction: */
 	void				*security;
 #endif
-#ifdef CONFIG_PID_RESERVE
-	int fork_pid;
-#endif
 
 	/*
 	 * New fields for task_struct should be added above here, so that
@@ -1227,7 +1231,15 @@ struct task_struct {
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 #endif
+#ifdef CONFIG_PID_RESERVE
+#ifndef __GENKSYMS__
+	fork_pid_t fork_pid_union;
+#else
 	KABI_RESERVE(5)
+#endif
+#else
+	KABI_RESERVE(5)
+#endif
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
