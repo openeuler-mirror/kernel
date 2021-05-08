@@ -243,6 +243,45 @@ static void __init kexec_reserve_crashkres_pages(void)
 }
 #endif /* CONFIG_KEXEC_CORE */
 
+#ifdef CONFIG_QUICK_KEXEC
+static int __init parse_quick_kexec(char *p)
+{
+	if (!p)
+		return 0;
+
+	quick_kexec_res.end = PAGE_ALIGN(memparse(p, NULL));
+
+	return 0;
+}
+early_param("quickkexec", parse_quick_kexec);
+
+static void __init reserve_quick_kexec(void)
+{
+	unsigned long long mem_start, mem_len;
+
+	mem_len = quick_kexec_res.end;
+	if (mem_len == 0)
+		return;
+
+	/* Current arm64 boot protocol requires 2MB alignment */
+	mem_start = memblock_find_in_range(0, ARCH_LOW_ADDRESS_LIMIT,
+			mem_len, CRASH_ALIGN);
+	if (mem_start == 0) {
+		pr_warn("cannot allocate quick kexec mem (size:0x%llx)\n",
+			mem_len);
+		quick_kexec_res.end = 0;
+		return;
+	}
+
+	memblock_reserve(mem_start, mem_len);
+	pr_info("quick kexec mem reserved: 0x%016llx - 0x%016llx (%lld MB)\n",
+		mem_start, mem_start + mem_len,	mem_len >> 20);
+
+	quick_kexec_res.start = mem_start;
+	quick_kexec_res.end = mem_start + mem_len - 1;
+}
+#endif
+
 #ifdef CONFIG_CRASH_DUMP
 static int __init early_init_dt_scan_elfcorehdr(unsigned long node,
 		const char *uname, int depth, void *data)
@@ -698,6 +737,10 @@ void __init arm64_memblock_init(void)
 #endif
 
 	reserve_crashkernel();
+
+#ifdef CONFIG_QUICK_KEXEC
+	reserve_quick_kexec();
+#endif
 
 	reserve_elfcorehdr();
 

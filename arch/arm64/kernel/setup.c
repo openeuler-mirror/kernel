@@ -282,6 +282,13 @@ static void __init request_standard_resources(void)
 			request_resource(res, &pin_memory_resource);
 #endif
 
+#ifdef CONFIG_QUICK_KEXEC
+		if (quick_kexec_res.end &&
+		    quick_kexec_res.start >= res->start &&
+		    quick_kexec_res.end <= res->end)
+			request_resource(res, &quick_kexec_res);
+#endif
+
 		for (j = 0; j < res_mem_count; j++) {
 			if (res_resources[j].start >= res->start &&
 			    res_resources[j].end <= res->end)

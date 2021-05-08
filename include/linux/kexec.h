@@ -233,9 +233,10 @@ struct kimage {
 	unsigned long control_page;
 
 	/* Flags to indicate special processing */
-	unsigned int type : 1;
+	unsigned int type : 2;
 #define KEXEC_TYPE_DEFAULT 0
 #define KEXEC_TYPE_CRASH   1
+#define KEXEC_TYPE_QUICK   2
 	unsigned int preserve_context : 1;
 	/* If set, we are using file mode kexec syscall */
 	unsigned int file_mode:1;
@@ -296,6 +297,11 @@ extern int kexec_load_disabled;
 #define KEXEC_FLAGS    (KEXEC_ON_CRASH | KEXEC_PRESERVE_CONTEXT)
 #endif
 
+#ifdef CONFIG_QUICK_KEXEC
+#undef KEXEC_FLAGS
+#define KEXEC_FLAGS    (KEXEC_ON_CRASH | KEXEC_QUICK)
+#endif
+
 /* List of defined/legal kexec file flags */
 #define KEXEC_FILE_FLAGS	(KEXEC_FILE_UNLOAD | KEXEC_FILE_ON_CRASH | \
 				 KEXEC_FILE_NO_INITRAMFS)
@@ -305,6 +311,9 @@ extern int kexec_load_disabled;
 extern struct resource crashk_res;
 extern struct resource crashk_low_res;
 extern note_buf_t __percpu *crash_notes;
+#ifdef CONFIG_QUICK_KEXEC
+extern struct resource quick_kexec_res;
+#endif
 
 /* flag to track if kexec reboot is in progress */
 extern bool kexec_in_progress;
