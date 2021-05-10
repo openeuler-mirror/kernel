@@ -493,6 +493,7 @@ struct hns_roce_wq {
 	int		wqe_cnt;  /* WQE num */
 	u32		max_post;
 	int		max_gs;
+	u32		rsv_sge;
 	int		offset;
 	int		wqe_shift; /* WQE size */
 	u32		head;
@@ -601,6 +602,7 @@ struct hns_roce_srq {
 	unsigned long		srqn;
 	int			max;
 	int			max_gs;
+	u32			rsv_sge;
 	int			wqe_shift;
 	void __iomem		*db_reg_l;
 

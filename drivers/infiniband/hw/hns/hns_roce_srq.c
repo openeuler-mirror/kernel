@@ -30,7 +30,7 @@
  * SOFTWARE.
  */
 #include "roce_k_compat.h"
-
+#include <linux/pci.h>
 #include <rdma/ib_umem.h>
 #include <rdma/hns-abi.h>
 #include "hns_roce_device.h"
@@ -431,6 +431,28 @@ static void destroy_kernel_srq(struct hns_roce_dev *hr_dev,
 	hns_roce_buf_free(hr_dev, srq_buf_size, &srq->buf);
 }
 
+static u32 proc_srq_sge(struct hns_roce_dev *dev, struct hns_roce_srq *hr_srq,
+	bool user)
+{
+	u32 max_sge = dev->caps.max_srq_sges;
+
+	if (dev->pci_dev->revision > PCI_REVISION_ID_HIP08_B)
+		return max_sge;
+	/* Reserve SGEs only for HIP08 in kernel; The userspace driver will
+	 * calculate number of max_sge with reserved SGEs when allocating wqe
+	 * buf, so there is no need to do this again in kernel. But the number
+	 * may exceed the capacity of SGEs recorded in the firmware, so the
+	 * kernel driver should just adapt the value accordingly.
+	 */
+	if (user)
+		max_sge = roundup_pow_of_two(max_sge + 1);
+	else
+		hr_srq->rsv_sge = 1;
+
+	return max_sge;
+}
+
+
 struct ib_srq *hns_roce_create_srq(struct ib_pd *pd,
 				   struct ib_srq_init_attr *srq_init_attr,
 				   struct ib_udata *udata)
@@ -439,23 +461,26 @@ struct ib_srq *hns_roce_create_srq(struct ib_pd *pd,
 	struct hns_roce_srq *srq;
 	int srq_desc_size;
 	int srq_buf_size;
+	u32 max_sge;
 	int ret;
 	u32 cqn;
-
-	/* Check the actual SRQ wqe and SRQ sge num */
-	if (srq_init_attr->attr.max_wr >= hr_dev->caps.max_srq_wrs ||
-	    srq_init_attr->attr.max_sge > hr_dev->caps.max_srq_sges)
-		return ERR_PTR(-EINVAL);
 
 	srq = kzalloc(sizeof(*srq), GFP_KERNEL);
 	if (!srq)
 		return ERR_PTR(-ENOMEM);
 
+	max_sge = proc_srq_sge(hr_dev, srq, !!udata);
+
+	if (srq_init_attr->attr.max_wr >= hr_dev->caps.max_srq_wrs ||
+	    srq_init_attr->attr.max_sge > max_sge)
+		return ERR_PTR(-EINVAL);
+
 	mutex_init(&srq->mutex);
 	spin_lock_init(&srq->lock);
 
 	srq->max = roundup_pow_of_two(srq_init_attr->attr.max_wr + 1);
-	srq->max_gs = srq_init_attr->attr.max_sge + HNS_ROCE_RESERVED_SGE;
+	srq->max_gs =
+		roundup_pow_of_two(srq_init_attr->attr.max_sge + srq->rsv_sge);
 
 	srq_desc_size = max(HNS_ROCE_SGE_SIZE, HNS_ROCE_SGE_SIZE * srq->max_gs);
 	srq_desc_size = roundup_pow_of_two(srq_desc_size);
@@ -499,6 +524,8 @@ struct ib_srq *hns_roce_create_srq(struct ib_pd *pd,
 
 	srq->event = hns_roce_ib_srq_event;
 	srq->ibsrq.ext.xrc.srq_num = srq->srqn;
+	srq_init_attr->attr.max_wr = srq->max;
+	srq_init_attr->attr.max_sge = srq->max_gs - srq->rsv_sge;
 
 	if (pd->uobject) {
 		if (ib_copy_to_udata(udata, &srq->srqn, sizeof(__u32))) {

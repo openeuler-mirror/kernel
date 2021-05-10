@@ -742,6 +742,7 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 	struct device *dev = hr_dev->dev;
 	unsigned long flags = 0;
 	void *wqe = NULL;
+	u32 max_sge;
 	int ret = 0;
 	int nreq;
 	int ind;
@@ -766,6 +767,7 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 		return -EINVAL;
 	}
 
+	max_sge = hr_qp->rq.max_gs - hr_qp->rq.rsv_sge;
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		if (hns_roce_wq_overflow(&hr_qp->rq, nreq,
 			hr_qp->ibqp.recv_cq)) {
@@ -774,9 +776,9 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 			goto out;
 		}
 
-		if (unlikely(wr->num_sge >= hr_qp->rq.max_gs)) {
-			dev_err(dev, "RQ: sge num(%d) is larger or equal than max sge num(%d)\n",
-				wr->num_sge, hr_qp->rq.max_gs);
+		if (unlikely(wr->num_sge > max_sge)) {
+			dev_err(dev, "RQ: sge num(%d) is larger than max sge num(%d)\n",
+				wr->num_sge, max_sge);
 			ret = -EINVAL;
 			*bad_wr = wr;
 			goto out;
@@ -791,7 +793,7 @@ static int hns_roce_v2_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
 			dseg++;
 		}
 
-		if (wr->num_sge < hr_qp->rq.max_gs) {
+		if (hr_qp->rq.rsv_sge) {
 			dseg->lkey = cpu_to_le32(HNS_ROCE_INVALID_LKEY);
 			dseg->addr = 0;
 			dseg->len = cpu_to_le32(HNS_ROCE_INVALID_SGE_LENGTH);
@@ -1985,10 +1987,12 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 	caps->max_sq_sg		     = le16_to_cpu(resp_a->max_sq_sg);
 	caps->max_sq_inline	     = le16_to_cpu(resp_a->max_sq_inline);
 	caps->max_rq_sg		     = le16_to_cpu(resp_a->max_rq_sg);
+	caps->max_rq_sg		     = roundup_pow_of_two(caps->max_rq_sg);
 	caps->max_extend_sg	     = le32_to_cpu(resp_a->max_extend_sg);
 	caps->num_qpc_timer	     = le16_to_cpu(resp_a->num_qpc_timer);
 	caps->num_cqc_timer	     = le16_to_cpu(resp_a->num_cqc_timer);
 	caps->max_srq_sges	     = le16_to_cpu(resp_a->max_srq_sges);
+	caps->max_srq_sges	     = roundup_pow_of_two(caps->max_srq_sges);
 	caps->num_aeq_vectors	     = resp_a->num_aeq_vectors;
 	caps->num_other_vectors	     = resp_a->num_other_vectors;
 	caps->max_sq_desc_sz	     = resp_a->max_sq_desc_sz;
@@ -5429,7 +5433,7 @@ static int hns_roce_v2_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr,
 done:
 	qp_attr->cur_qp_state = qp_attr->qp_state;
 	qp_attr->cap.max_recv_wr = hr_qp->rq.wqe_cnt;
-	qp_attr->cap.max_recv_sge = hr_qp->rq.max_gs;
+	qp_attr->cap.max_recv_sge = hr_qp->rq.max_gs - hr_qp->rq.rsv_sge;
 
 	if (!ibqp->uobject) {
 		qp_attr->cap.max_send_wr = hr_qp->sq.wqe_cnt;
@@ -7050,7 +7054,7 @@ int hns_roce_v2_query_srq(struct ib_srq *ibsrq, struct ib_srq_attr *attr)
 
 	attr->srq_limit = limit_wl;
 	attr->max_wr    = srq->max - 1;
-	attr->max_sge   = srq->max_gs - HNS_ROCE_RESERVED_SGE;
+	attr->max_sge = srq->max_gs - srq->rsv_sge;
 
 	memcpy(srq_context, mailbox->buf, sizeof(*srq_context));
 
@@ -7100,6 +7104,7 @@ static int hns_roce_v2_post_srq_recv(struct ib_srq *ibsrq,
 	unsigned long flags;
 	int ret = 0;
 	int wqe_idx;
+	u32 max_sge;
 	void *wqe;
 	int nreq;
 	int ind;
@@ -7108,11 +7113,12 @@ static int hns_roce_v2_post_srq_recv(struct ib_srq *ibsrq,
 	spin_lock_irqsave(&srq->lock, flags);
 
 	ind = srq->head & (srq->max - 1);
+	max_sge = srq->max_gs - srq->rsv_sge;
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
-		if (unlikely(wr->num_sge >= srq->max_gs)) {
+		if (unlikely(wr->num_sge > max_sge)) {
 			dev_err(hr_dev->dev,
 				"srq(0x%lx) wr sge num(%d) exceed the max num %d.\n",
-				srq->srqn, wr->num_sge, srq->max_gs);
+				srq->srqn, wr->num_sge, max_sge);
 			ret = -EINVAL;
 			*bad_wr = wr;
 			break;
@@ -7137,7 +7143,7 @@ static int hns_roce_v2_post_srq_recv(struct ib_srq *ibsrq,
 			dseg[i].addr	= cpu_to_le64(wr->sg_list[i].addr);
 		}
 
-		if (wr->num_sge < srq->max_gs) {
+		if (srq->rsv_sge) {
 			dseg[i].len = cpu_to_le32(HNS_ROCE_INVALID_SGE_LENGTH);
 			dseg[i].lkey = cpu_to_le32(HNS_ROCE_INVALID_LKEY);
 			dseg[i].addr = 0;

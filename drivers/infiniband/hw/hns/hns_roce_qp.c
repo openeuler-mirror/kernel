@@ -344,17 +344,42 @@ void hns_roce_release_range_qp(struct hns_roce_dev *hr_dev, int base_qpn,
 }
 EXPORT_SYMBOL_GPL(hns_roce_release_range_qp);
 
+static u32 proc_rq_sge(struct hns_roce_dev *dev, struct hns_roce_qp *hr_qp,
+	int user)
+{
+	u32 max_sge = dev->caps.max_rq_sg;
+
+	if (dev->pci_dev->revision > PCI_REVISION_ID_HIP08_B)
+		return max_sge;
+
+	/* Reserve SGEs only for HIP08 in kernel; The userspace driver will
+	 * calculate number of max_sge with reserved SGEs when allocating wqe
+	 * buf, so there is no need to do this again in kernel. But the number
+	 * may exceed the capacity of SGEs recorded in the firmware, so the
+	 * kernel driver should just adapt the value accordingly.
+	 */
+	if (user)
+		max_sge = roundup_pow_of_two(max_sge + 1);
+	else
+		hr_qp->rq.rsv_sge = 1;
+
+	return max_sge;
+}
+
+
+
 static int hns_roce_set_rq_size(struct hns_roce_dev *hr_dev,
 				struct ib_qp_cap *cap, int is_user, int has_rq,
 				struct hns_roce_qp *hr_qp)
 {
+	u32 max_sge = proc_rq_sge(hr_dev, hr_qp, is_user);
 	struct device *dev = hr_dev->dev;
 	u32 max_cnt;
 
 	/* Check the validity of QP support capacity */
 	if (cap->max_recv_wr > hr_dev->caps.max_wqes ||
-	    cap->max_recv_sge > hr_dev->caps.max_rq_sg) {
-		dev_err(dev, "RQ(0x%lx) WR or sge error!max_recv_wr=%d max_recv_sge=%d\n",
+	    cap->max_recv_sge > max_sge) {
+		dev_err(dev, "RQ(0x%lx) WR or sge error, depth = %u, sge = %u\n",
 			hr_qp->qpn, cap->max_recv_wr, cap->max_recv_sge);
 		return -EINVAL;
 	}
@@ -386,7 +411,7 @@ static int hns_roce_set_rq_size(struct hns_roce_dev *hr_dev,
 
 		max_cnt = max(1U, cap->max_recv_sge);
 		hr_qp->rq.max_gs = roundup_pow_of_two(max_cnt +
-						      HNS_ROCE_RESERVED_SGE);
+					      hr_qp->rq.rsv_sge);
 		if (hr_dev->caps.max_rq_sg <= HNS_ROCE_MAX_SGE_NUM)
 			hr_qp->rq.wqe_shift =
 					ilog2(hr_dev->caps.max_rq_desc_sz);
@@ -397,7 +422,7 @@ static int hns_roce_set_rq_size(struct hns_roce_dev *hr_dev,
 	}
 
 	cap->max_recv_wr = hr_qp->rq.max_post = hr_qp->rq.wqe_cnt;
-	cap->max_recv_sge = hr_qp->rq.max_gs - HNS_ROCE_RESERVED_SGE;
+	cap->max_recv_sge = hr_qp->rq.max_gs - hr_qp->rq.rsv_sge;
 
 	return 0;
 }
