@@ -8,11 +8,11 @@
 
 %global Arch $(echo %{_host_cpu} | sed -e s/i.86/x86/ -e s/x86_64/x86/ -e s/aarch64.*/arm64/)
 
-%global TarballVer 4.19.90
+%global TarballVer 4.19.188
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2104.21.0
+%global hulkrelease 2104.7.0
 
 %define with_patch 0
 
@@ -31,8 +31,8 @@
 %define with_source 1
 
 Name:	 kernel
-Version: 4.19.90
-Release: %{hulkrelease}.0083
+Version: 4.19.188
+Release: %{hulkrelease}.0084
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -817,6 +817,131 @@ fi
 
 %changelog
 
+
+* Sat May 08 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.189-2104.7.0.0084
+- config: enable kernel hotupgrade features by default
+- kexec: Add quick kexec support for kernel
+- arm64: smp: Add support for cpu park
+- pid: add pid reserve method for checkpoint and restore
+- mm: add pin memory method for checkpoint add restore
+- Revert "sched: Introduce qos scheduler for co-location"
+- Revert "sched: Throttle qos cfs_rq when current cpu is running online task"
+- Revert "sched: Enable qos scheduler config"
+- Revert "memcg: support priority for oom"
+- Revert "memcg: enable CONFIG_MEMCG_QOS by default"
+- Linux 4.19.189
+- USB: CDC-ACM: fix poison/unpoison imbalance
+- net: hso: fix NULL-deref on disconnect regression
+- x86/crash: Fix crash_setup_memmap_entries() out-of-bounds access
+- ia64: tools: remove duplicate definition of ia64_mf() on ia64
+- ia64: fix discontig.c section mismatches
+- cavium/liquidio: Fix duplicate argument
+- xen-netback: Check for hotplug-status existence before watching
+- s390/entry: save the caller of psw_idle
+- net: geneve: check skb is large enough for IPv4/IPv6 header
+- ARM: dts: Fix swapped mmc order for omap3
+- HID: wacom: Assign boolean values to a bool variable
+- HID: alps: fix error return code in alps_input_configured()
+- HID: google: add don USB id
+- perf/x86/intel/uncore: Remove uncore extra PCI dev HSWEP_PCI_PCU_3
+- locking/qrwlock: Fix ordering in queued_write_lock_slowpath()
+- pinctrl: lewisburg: Update number of pins in community
+- gup: document and work around "COW can break either way" issue
+- net: phy: marvell: fix detection of PHY on Topaz switches
+- ARM: 9071/1: uprobes: Don't hook on thumb instructions
+- ARM: footbridge: fix PCI interrupt mapping
+- ibmvnic: remove duplicate napi_schedule call in open function
+- ibmvnic: remove duplicate napi_schedule call in do_reset function
+- ibmvnic: avoid calling napi_disable() twice
+- i40e: fix the panic when running bpf in xdpdrv mode
+- net: ip6_tunnel: Unregister catch-all devices
+- net: sit: Unregister catch-all devices
+- net: davicom: Fix regulator not turned off on failed probe
+- netfilter: nft_limit: avoid possible divide error in nft_limit_init
+- netfilter: conntrack: do not print icmpv6 as unknown via /proc
+- scsi: libsas: Reset num_scatter if libata marks qc as NODATA
+- arm64: alternatives: Move length validation in alternative_{insn, endif}
+- arm64: fix inline asm in load_unaligned_zeropad()
+- readdir: make sure to verify directory entry for legacy interfaces too
+- dm verity fec: fix misaligned RS roots IO
+- HID: wacom: set EV_KEY and EV_ABS only for non-HID_GENERIC type of devices
+- Input: i8042 - fix Pegatron C15B ID entry
+- Input: s6sy761 - fix coordinate read bit shift
+- mac80211: clear sta->fast_rx when STA removed from 4-addr VLAN
+- pcnet32: Use pci_resource_len to validate PCI resource
+- net: ieee802154: forbid monitor for add llsec seclevel
+- net: ieee802154: stop dump llsec seclevels for monitors
+- net: ieee802154: forbid monitor for add llsec devkey
+- net: ieee802154: stop dump llsec devkeys for monitors
+- net: ieee802154: forbid monitor for add llsec dev
+- net: ieee802154: stop dump llsec devs for monitors
+- net: ieee802154: stop dump llsec keys for monitors
+- scsi: scsi_transport_srp: Don't block target in SRP_PORT_LOST state
+- ASoC: fsl_esai: Fix TDM slot setup for I2S mode
+- drm/msm: Fix a5xx/a6xx timestamps
+- ARM: keystone: fix integer overflow warning
+- neighbour: Disregard DEAD dst in neigh_update
+- arc: kernel: Return -EFAULT if copy_to_user() fails
+- lockdep: Add a missing initialization hint to the "INFO: Trying to register non-static key" message
+- ARM: dts: Fix moving mmc devices with aliases for omap4 & 5
+- ARM: dts: Drop duplicate sha2md5_fck to fix clk_disable race
+- dmaengine: dw: Make it dependent to HAS_IOMEM
+- gpio: sysfs: Obey valid_mask
+- Input: nspire-keypad - enable interrupts only when opened
+- f2fs: fix to avoid out-of-bounds memory access
+- ext4: Reduce ext4 timestamp warnings
+- livepatch: Restoring code segment permissions after stop_machine completed
+- livepatch: Delete redundant variable 'flag'
+- memcg: enable CONFIG_MEMCG_QOS by default
+- memcg: support priority for oom
+- sched: Enable qos scheduler config
+- sched: Throttle qos cfs_rq when current cpu is running online task
+- sched: Introduce qos scheduler for co-location
+- ipv6: route: convert comma to semicolon
+- ipv6/route: Add a missing check on proc_dointvec
+- netfilter: xtables: avoid BUG_ON
+- SUNRPC: Test whether the task is queued before grabbing the queue spinlocks
+- SUNRPC: If there is no reply expected, bail early from call_decode
+- SUNRPC: Fix backchannel latency metrics
+- sunrpc: convert to time64_t for expiry
+- sunrpc: Fix potential leaks in sunrpc_cache_unhash()
+- SUNRPC: Skip zero-refcount transports
+- SUNRPC: Fix buffer handling of GSS MIC without slack
+- SUNRPC: Don't allow compiler optimisation of svc_xprt_release_slot()
+- SUNRPC/nfs: Fix return value for nfs4_callback_compound()
+- net/sunrpc: return 0 on attempt to write to "transports"
+- net/sunrpc: Fix return value for sysctl sunrpc.transports
+- sunrpc: raise kernel RPC channel buffer size
+- sunrpc: add missing newline when printing parameter 'pool_mode' by sysfs
+- xprtrdma: Fix trace point use-after-free race
+- SUNRPC: Fix backchannel RPC soft lockups
+- SUNRPC/cache: Fix unsafe traverse caused double-free in cache_purge
+- nfsd: export upcalls must not return ESTALE when mountd is down
+- sunrpc/cache: handle missing listeners better.
+- xprtrdma: Fix handling of RDMA_ERROR replies
+- xprtrdma: Expose transport header errors
+- sunrpc: destroy rpc_inode_cachep after unregister_filesystem
+- xprtrdma: fix incorrect header size calculations
+- nvme: fix ns removal hang when failing to revalidate due to a transient error
+- kernel/cputime: do not update cputime when cpu offline
+- irqchip/gic-v3: Do not enable irqs when handling spurious interrups
+- bcache: Rewrite patch to delay to invalidate cache data
+- config: enable CONFIG_HW_RANDOM_HISI_V2 by default
+- hwrng: add data_mode to support rand data with post process
+- hwrng: add HiSilicon TRNG driver
+- share_pool: Update kernel-doc comments
+- share_pool: Fix warning symbol was not declared
+- share_pool: Fix warning missing braces around initializer
+- net/hinic: Fix null pointer dereference in hinic_physical_port_id
+- kvm: debugfs: Export x86 kvm exits to vcpu_stat
+- ext4: fix time overflow
+- ext4: drop legacy pre-1970 encoding workaround
+- fuse: fix live lock in fuse_iget()
+- fuse: fix bad inode
+- net/sctp: fix race condition in sctp_destroy_sock
+
+* Sat May 08 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.188-2104.4.0.0083
+- Initialize SPEC for kernel-4.19. This branch is the next branch of OpenEuler 20.03
 
 * Sun Apr 25 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.21.0.0083
 - bcache: Rewrite patch to delay to invalidate cache data
