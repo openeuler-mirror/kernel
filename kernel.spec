@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2104.21.0
+%global hulkrelease 2104.26.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0082
+Release: %{hulkrelease}.0083
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,63 @@ fi
 
 %changelog
 
+
+* Tue May 11 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.26.0.0083
+- pid: fix pid recover method kabi change
+- config: enable kernel hotupgrade features by default
+- kexec: Add quick kexec support for kernel
+- arm64: smp: Add support for cpu park
+- pid: add pid reserve method for checkpoint and restore
+- mm: add pin memory method for checkpoint add restore
+- Revert "sched: Introduce qos scheduler for co-location"
+- Revert "sched: Throttle qos cfs_rq when current cpu is running online task"
+- Revert "sched: Enable qos scheduler config"
+- Revert "memcg: support priority for oom"
+- Revert "memcg: enable CONFIG_MEMCG_QOS by default"
+- Revert "memcg: fix kabi broken when enable CONFIG_MEMCG_QOS"
+- f2fs: fix to avoid out-of-bounds memory access
+- ext4: Reduce ext4 timestamp warnings
+- livepatch: Restoring code segment permissions after stop_machine completed
+- livepatch: Delete redundant variable 'flag'
+- memcg: fix kabi broken when enable CONFIG_MEMCG_QOS
+- memcg: enable CONFIG_MEMCG_QOS by default
+- memcg: support priority for oom
+- sched: Enable qos scheduler config
+- sched: Throttle qos cfs_rq when current cpu is running online task
+- sched: Introduce qos scheduler for co-location
+- ipv6: route: convert comma to semicolon
+- ipv6/route: Add a missing check on proc_dointvec
+- netfilter: xtables: avoid BUG_ON
+- SUNRPC: Test whether the task is queued before grabbing the queue spinlocks
+- SUNRPC: If there is no reply expected, bail early from call_decode
+- SUNRPC: Fix backchannel latency metrics
+- sunrpc: convert to time64_t for expiry
+- sunrpc: Fix potential leaks in sunrpc_cache_unhash()
+- SUNRPC: Skip zero-refcount transports
+- SUNRPC: Fix buffer handling of GSS MIC without slack
+- SUNRPC: Don't allow compiler optimisation of svc_xprt_release_slot()
+- SUNRPC/nfs: Fix return value for nfs4_callback_compound()
+- net/sunrpc: return 0 on attempt to write to "transports"
+- net/sunrpc: Fix return value for sysctl sunrpc.transports
+- sunrpc: raise kernel RPC channel buffer size
+- sunrpc: add missing newline when printing parameter 'pool_mode' by sysfs
+- xprtrdma: Fix trace point use-after-free race
+- SUNRPC: Fix backchannel RPC soft lockups
+- SUNRPC/cache: Fix unsafe traverse caused double-free in cache_purge
+- nfsd: export upcalls must not return ESTALE when mountd is down
+- sunrpc/cache: handle missing listeners better.
+- xprtrdma: Fix handling of RDMA_ERROR replies
+- xprtrdma: Expose transport header errors
+- sunrpc: destroy rpc_inode_cachep after unregister_filesystem
+- xprtrdma: fix incorrect header size calculations
+- nvme: fix ns removal hang when failing to revalidate due to a transient error
+- kernel/cputime: do not update cputime when cpu offline
+- perf/x86: Always store regs->ip in perf_callchain_kernel()
+- perf/x86: Make perf callchains work without CONFIG_FRAME_POINTER
+- irqchip/gic-v3: Do not enable irqs when handling spurious interrups
+- config: enable CONFIG_HW_RANDOM_HISI_V2 by default
+- hwrng: add data_mode to support rand data with post process
+- hwrng: add HiSilicon TRNG driver
 
 * Sun Apr 25 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.21.0.0082
 - bcache: Rewrite patch to delay to invalidate cache data
