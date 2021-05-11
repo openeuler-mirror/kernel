@@ -488,9 +488,10 @@
 			  a single hierarchy
 			- foo isn't visible as an individually mountable
 			  subsystem
-			{Currently only "memory" controller deal with this and
-			cut the overhead, others just disable the usage. So
-			only cgroup_disable=memory is actually worthy}
+			{Currently "memory" and "files" controller deal with
+			this and cut the overhead, others just disable the usage.
+			So cgroup_disable=memory and cgroup_disable=files are
+			actually worthy}
 
 	cgroup_no_v1=	[KNL] Disable one, multiple, all cgroup controllers in v1
 			Format: { controller[,controller...] | "all" }

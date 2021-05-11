@@ -295,7 +295,8 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 	new_fdt->full_fds_bits = newf->full_fds_bits_init;
 	new_fdt->fd = &newf->fd_array[0];
 #ifdef CONFIG_CGROUP_FILES
-	files_cgroup_assign(newf);
+	if (files_cgroup_enabled())
+		files_cgroup_assign(newf);
 #endif
 
 	spin_lock(&oldf->file_lock);
@@ -361,6 +362,8 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 
 	rcu_assign_pointer(newf->fdt, new_fdt);
 #ifdef CONFIG_CGROUP_FILES
+	if (!files_cgroup_enabled())
+		return newf;
 	spin_lock(&newf->file_lock);
 	if (!files_cgroup_alloc_fd(newf, files_cgroup_count_fds(newf))) {
 		spin_unlock(&newf->file_lock);
@@ -385,7 +388,8 @@ struct files_struct *dup_fd(struct files_struct *oldf, int *errorp)
 
 out_release:
 #ifdef CONFIG_CGROUP_FILES
-	files_cgroup_remove(newf);
+	if (files_cgroup_enabled())
+		files_cgroup_remove(newf);
 #endif
 	kmem_cache_free(files_cachep, newf);
 out:
@@ -413,7 +417,8 @@ static struct fdtable *close_files(struct files_struct * files)
 				struct file * file = xchg(&fdt->fd[i], NULL);
 				if (file) {
 #ifdef CONFIG_CGROUP_FILES
-					files_cgroup_unalloc_fd(files, 1);
+					if (files_cgroup_enabled())
+						files_cgroup_unalloc_fd(files, 1);
 #endif
 					filp_close(file, files);
 					cond_resched();
@@ -424,7 +429,8 @@ static struct fdtable *close_files(struct files_struct * files)
 		}
 	}
 #ifdef CONFIG_CGROUP_FILES
-	files_cgroup_remove(files);
+	if (files_cgroup_enabled())
+		files_cgroup_remove(files);
 #endif
 
 	return fdt;
@@ -546,7 +552,7 @@ repeat:
 	if (error)
 		goto repeat;
 #ifdef CONFIG_CGROUP_FILES
-	if (files_cgroup_alloc_fd(files, 1)) {
+	if (files_cgroup_enabled() && files_cgroup_alloc_fd(files, 1)) {
 		error = -EMFILE;
 		goto out;
 	}
@@ -594,7 +600,7 @@ static void __put_unused_fd(struct files_struct *files, unsigned int fd)
 {
 	struct fdtable *fdt = files_fdtable(files);
 #ifdef CONFIG_CGROUP_FILES
-	if (test_bit(fd, fdt->open_fds))
+	if (files_cgroup_enabled() && test_bit(fd, fdt->open_fds))
 		files_cgroup_unalloc_fd(files, 1);
 #endif
 	__clear_open_fd(fd, fdt);
@@ -919,7 +925,8 @@ __releases(&files->file_lock)
 		goto out;
 	}
 #ifdef CONFIG_CGROUP_FILES
-	if (!tofree && files_cgroup_alloc_fd(files, 1)) {
+	if (files_cgroup_enabled() &&
+	    !tofree && files_cgroup_alloc_fd(files, 1)) {
 		err = -EMFILE;
 		goto out;
 	}
