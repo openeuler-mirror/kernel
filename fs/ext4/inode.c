@@ -1023,19 +1023,20 @@ struct buffer_head *ext4_bread(handle_t *handle, struct inode *inode,
 			       ext4_lblk_t block, int map_flags)
 {
 	struct buffer_head *bh;
+	int ret;
 
 	bh = ext4_getblk(handle, inode, block, map_flags);
 	if (IS_ERR(bh))
 		return bh;
 	if (!bh || ext4_buffer_uptodate(bh))
 		return bh;
-	clear_buffer_verified(bh);
-	ll_rw_block(REQ_OP_READ, REQ_META | REQ_PRIO, 1, &bh);
-	wait_on_buffer(bh);
-	if (buffer_uptodate(bh))
-		return bh;
-	put_bh(bh);
-	return ERR_PTR(-EIO);
+
+	ret = ext4_read_bh_lock(bh, REQ_META | REQ_PRIO, true);
+	if (ret) {
+		put_bh(bh);
+		return ERR_PTR(ret);
+	}
+	return bh;
 }
 
 /* Read a contiguous batch of blocks. */
@@ -1055,11 +1056,8 @@ int ext4_bread_batch(struct inode *inode, ext4_lblk_t block, int bh_count,
 
 	for (i = 0; i < bh_count; i++)
 		/* Note that NULL bhs[i] is valid because of holes. */
-		if (bhs[i] && !ext4_buffer_uptodate(bhs[i])) {
-			clear_buffer_verified(bhs[i]);
-			ll_rw_block(REQ_OP_READ, REQ_META | REQ_PRIO, 1,
-				    &bhs[i]);
-		}
+		if (bhs[i] && !ext4_buffer_uptodate(bhs[i]))
+			ext4_read_bh_lock(bhs[i], REQ_META | REQ_PRIO, false);
 
 	if (!wait)
 		return 0;
@@ -1229,7 +1227,7 @@ static int ext4_block_write_begin(struct page *page, loff_t pos, unsigned len,
 		if (!buffer_uptodate(bh) && !buffer_delay(bh) &&
 		    !buffer_unwritten(bh) &&
 		    (block_start < from || block_end > to)) {
-			ll_rw_block(REQ_OP_READ, 0, 1, &bh);
+			ext4_read_bh_lock(bh, 0, false);
 			*wait_bh++ = bh;
 			decrypt = ext4_encrypted_inode(inode) &&
 				S_ISREG(inode->i_mode);
@@ -4086,11 +4084,8 @@ static int __ext4_block_zero_page_range(handle_t *handle,
 		set_buffer_uptodate(bh);
 
 	if (!buffer_uptodate(bh)) {
-		err = -EIO;
-		ll_rw_block(REQ_OP_READ, 0, 1, &bh);
-		wait_on_buffer(bh);
-		/* Uhhuh. Read error. Complain and punt. */
-		if (!buffer_uptodate(bh))
+		err = ext4_read_bh_lock(bh, 0, true);
+		if (err)
 			goto unlock;
 		if (S_ISREG(inode->i_mode) &&
 		    ext4_encrypted_inode(inode)) {
@@ -4728,9 +4723,7 @@ make_io:
 		 * Read the block from disk.
 		 */
 		trace_ext4_load_inode(inode);
-		get_bh(bh);
-		bh->b_end_io = end_buffer_read_sync;
-		submit_bh(REQ_OP_READ, REQ_META | REQ_PRIO, bh);
+		ext4_read_bh_nowait(bh, REQ_META | REQ_PRIO, NULL);
 		wait_on_buffer(bh);
 		if (!buffer_uptodate(bh)) {
 			ext4_error_inode_block(inode, block, EIO,
