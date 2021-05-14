@@ -1207,14 +1207,12 @@ static int klp_init_patch(struct klp_patch *patch)
 	mutex_lock(&text_mutex);
 	module_disable_ro(patch->mod);
 	jump_label_apply_nops(patch->mod);
-	ret = jump_label_register(patch->mod);
-	if (ret) {
-		module_enable_ro(patch->mod, true);
-		mutex_unlock(&text_mutex);
-		goto free;
-	}
 	module_enable_ro(patch->mod, true);
 	mutex_unlock(&text_mutex);
+	ret = jump_label_register(patch->mod);
+	if (ret) {
+		goto free;
+	}
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
 	klp_for_each_object(patch, obj)
