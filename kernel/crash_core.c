@@ -349,12 +349,18 @@ static int __init reserve_crashkernel_low(void)
 			return 0;
 	}
 
-	low_base = memblock_phys_alloc_range(low_size, CRASH_ALIGN, CRASH_ALIGN,
-			CRASH_ADDR_LOW_MAX);
+	low_base = memblock_find_in_range(CRASH_ALIGN, CRASH_ADDR_LOW_MAX,
+			low_size, CRASH_ALIGN);
 	if (!low_base) {
 		pr_err("Cannot reserve %ldMB crashkernel low memory, please try smaller size.\n",
 		       (unsigned long)(low_size >> 20));
 		return -ENOMEM;
+	}
+
+	ret = memblock_reserve(low_base, low_size);
+	if (ret) {
+		pr_err("%s: Error reserving crashkernel low memblock.\n", __func__);
+		return ret;
 	}
 
 	pr_info("Reserving %ldMB of low memory at %ldMB for crashkernel (low RAM limit: %ldMB)\n",
@@ -406,13 +412,13 @@ void __init reserve_crashkernel(void)
 		 * unless "crashkernel=size[KMG],high" is specified.
 		 */
 		if (!high)
-			crash_base = memblock_phys_alloc_range(crash_size,
-						CRASH_ALIGN, CRASH_ALIGN,
-						CRASH_ADDR_LOW_MAX);
+			crash_base = memblock_find_in_range(CRASH_ALIGN,
+					CRASH_ADDR_LOW_MAX, crash_size,
+					CRASH_ALIGN);
 		if (!crash_base)
-			crash_base = memblock_phys_alloc_range(crash_size,
-						CRASH_ALIGN, CRASH_ALIGN,
-						CRASH_ADDR_HIGH_MAX);
+			crash_base = memblock_find_in_range(CRASH_ALIGN,
+					CRASH_ADDR_HIGH_MAX, crash_size,
+					CRASH_ALIGN);
 		if (!crash_base) {
 			pr_info("crashkernel reservation failed - No suitable area found.\n");
 			return;
@@ -427,12 +433,18 @@ void __init reserve_crashkernel(void)
 			return;
 		}
 
-		start = memblock_phys_alloc_range(crash_size, CRASH_ALIGN, crash_base,
-						  crash_base + crash_size);
+		start = memblock_find_in_range(crash_base,
+				crash_base + crash_size, crash_size,
+				CRASH_ALIGN);
 		if (start != crash_base) {
 			pr_info("crashkernel reservation failed - memory is in use.\n");
 			return;
 		}
+	}
+	ret = memblock_reserve(crash_base, crash_size);
+	if (ret) {
+		pr_err("%s: Error reserving crashkernel memblock.\n", __func__);
+		return;
 	}
 
 	if (crash_base >= CRASH_ADDR_LOW_MAX && reserve_crashkernel_low()) {
