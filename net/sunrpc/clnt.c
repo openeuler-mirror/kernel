@@ -2196,6 +2196,15 @@ call_status(struct rpc_task *task)
 	}
 }
 
+static bool
+rpc_check_connected(const struct rpc_rqst *req)
+{
+	/* No allocated request or transport? return true */
+	if (!req || !req->rq_xprt)
+		return true;
+	return xprt_connected(req->rq_xprt);
+}
+
 /*
  * 6a.	Handle RPC timeout
  * 	We do not release the request slot, so we keep using the
@@ -2214,10 +2223,11 @@ call_timeout(struct rpc_task *task)
 	dprintk("RPC: %5u call_timeout (major)\n", task->tk_pid);
 	task->tk_timeouts++;
 
-	if (RPC_IS_SOFTCONN(task)) {
+	if (RPC_IS_SOFTCONN(task) && !rpc_check_connected(task->tk_rqstp)) {
 		rpc_exit(task, -ETIMEDOUT);
 		return;
 	}
+
 	if (RPC_IS_SOFT(task)) {
 		if (clnt->cl_chatty) {
 			printk(KERN_NOTICE "%s: server %s not responding, timed out\n",
