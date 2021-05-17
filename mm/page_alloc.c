@@ -1688,11 +1688,12 @@ static int __init deferred_init_memmap(void *data)
 		nr_free += atomic64_read(&args.nr_pages);
 	}
 
-	/* Sanity check that the next zone really is unpopulated */
-	WARN_ON(++zid < MAX_NR_ZONES && populated_zone(++zone));
 	VM_BUG_ON(nr_init != nr_free);
 
 	zone->managed_pages += nr_free;
+
+	/* Sanity check that the next zone really is unpopulated */
+	WARN_ON(++zid < MAX_NR_ZONES && populated_zone(++zone));
 
 	pr_info("node %d initialised, %lu pages in %ums\n", nid, nr_free,
 					jiffies_to_msecs(jiffies - start));
