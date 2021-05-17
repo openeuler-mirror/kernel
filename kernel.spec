@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2104.26.0
+%global hulkrelease 2105.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0085
+Release: %{hulkrelease}.0086
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -818,6 +818,82 @@ fi
 
 %changelog
 
+
+* Wed May 12 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.2.0.0086
+- ovl: allow upperdir inside lowerdir
+- ACPI: x86: Call acpi_boot_table_init() after acpi_table_upgrade()
+- ACPI: tables: x86: Reserve memory occupied by ACPI tables
+- x86/crash: Fix crash_setup_memmap_entries() out-of-bounds access
+- locking/qrwlock: Fix ordering in queued_write_lock_slowpath()
+- net: ip6_tunnel: Unregister catch-all devices
+- netfilter: nft_limit: avoid possible divide error in nft_limit_init
+- netfilter: conntrack: do not print icmpv6 as unknown via /proc
+- scsi: libsas: Reset num_scatter if libata marks qc as NODATA
+- arm64: alternatives: Move length validation in alternative_{insn, endif}
+- arm64: fix inline asm in load_unaligned_zeropad()
+- readdir: make sure to verify directory entry for legacy interfaces too
+- neighbour: Disregard DEAD dst in neigh_update
+- driver core: Fix locking bug in deferred_probe_timeout_work_func()
+- netfilter: x_tables: fix compat match/target pad out-of-bound write
+- workqueue: Move the position of debug_work_activate() in __queue_work()
+- xfrm: interface: fix ipv4 pmtu check to honor ip header df
+- net-ipv6: bugfix - raw & sctp - switch to ipv6_can_nonlocal_bind()
+- net: ensure mac header is set in virtio_net_hdr_to_skb()
+- fs: direct-io: fix missing sdio->boundary
+- net: ipv6: check for validity before dereferencing cfg->fc_nlinfo.nlh
+- cifs: Silently ignore unknown oplock break handle
+- cifs: revalidate mapping when we open files for SMB1 POSIX
+- scsi: target: pscsi: Clean up after failure in pscsi_map_sg()
+- mm: fix race by making init_zero_pfn() early_initcall
+- tracing: Fix stack trace event size
+- PM: runtime: Fix ordering in pm_runtime_get_suppliers()
+- PM: runtime: Fix race getting/putting suppliers at probe
+- ext4: do not iput inode under running transaction in ext4_rename()
+- locking/ww_mutex: Simplify use_ww_ctx & ww_ctx handling
+- thermal/core: Add NULL pointer check before using cooling device stats
+- scsi: st: Fix a use after free in st_open()
+- vhost: Fix vhost_vq_reset()
+- rpc: fix NULL dereference on kmalloc failure
+- ext4: fix bh ref count on error paths
+- ipv6: weaken the v4mapped source check
+- tcp: relookup sock for RST+ACK packets handled by obsolete req sock
+- nfs: we don't support removing system.nfs4_acl
+- NFSv4.2: fix return value of _nfs4_get_security_label()
+- nfs: fix PNFS_FLEXFILE_LAYOUT Kconfig default
+- pNFS/NFSv4: Try to return invalid layout in pnfs_layout_process()
+- pNFS/NFSv4: Fix a layout segment leak in pnfs_layout_process()
+- NFSv4.2: condition READDIR's mask for security label based on LSM state
+- NFSv4.2: support EXCHGID4_FLAG_SUPP_FENCE_OPS 4.2 EXCHANGE_ID flag
+- NFS: fix nfs_path in case of a rename retry
+- NFSv4.1 handle ERR_DELAY error reclaiming locking state on delegation recall
+- NFS: Don't return layout segments that are in use
+- NFS: Don't move layouts to plh_return_segs list while in use
+- SUNRPC reverting d03727b248d0 ("NFSv4 fix CLOSE not waiting for direct IO compeletion")
+- NFSv4 fix CLOSE not waiting for direct IO compeletion
+- NFSv4.1 fix rpc_call_done assignment for BIND_CONN_TO_SESSION
+- nfs: Fix potential posix_acl refcnt leak in nfs3_set_acl
+- NFSv4/pnfs: Return valid stateids in nfs_layout_find_inode_by_stateid()
+- NFSv4.1 make cachethis=no for writes
+- NFS/pnfs: Fix pnfs_generic_prepare_to_resend_writes()
+- NFS/pnfs: Bulk destroy of layouts needs to be safe w.r.t. umount
+- cgroup/files: support boot parameter to control if disable files cgroup
+- efi: Fix a race and a buffer overflow while reading efivars via sysfs
+- RDMA/hns: Allocate one more recv SGE for HIP08
+- mm: memcontrol: fix slub memory accounting
+- mm, sl[ou]b: improve memory accounting
+- mm: fix numa stats for thp migration
+- mm/vmscan: count layzfree pages and fix nr_isolated_* mismatch
+- SUNRPC: Close a race with transport setup and module put
+- sunrpc: Change the place of endtime in struct krb5_ctx
+- bpf: Tighten speculative pointer arithmetic mask
+- bpf: Move sanitize_val_alu out of op switch
+- bpf: Refactor and streamline bounds check into helper
+- bpf: Improve verifier error messages for users
+- bpf: Rework ptr_limit into alu_limit and add common error path
+- bpf: Ensure off_reg has no mixed signed bounds for all types
+- bpf: Move off_reg into sanitize_ptr_alu
+- bpf: Add sanity check for upper ptr_limit
+- bpf: Simplify alu_limit masking for pointer arithmetic
 
 * Tue May 11 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2104.26.0.0085
 - add kabi list for aarch64 and x86_64
