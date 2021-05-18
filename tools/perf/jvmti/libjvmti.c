@@ -38,7 +38,11 @@ do_get_line_numbers(jvmtiEnv *jvmti, void *pc, jmethodID m, jint bci,
 	jvmtiError ret;
 
 	ret = (*jvmti)->GetLineNumberTable(jvmti, m, &nr_lines, &loc_tab);
-	if (ret != JVMTI_ERROR_NONE) {
+	if (ret == JVMTI_ERROR_ABSENT_INFORMATION || ret == JVMTI_ERROR_NATIVE_METHOD) {
+		/* No debug information for this method */
+		*nr = 0;
+		return JVMTI_ERROR_NONE;
+	} else if (ret != JVMTI_ERROR_NONE) {
 		print_error(jvmti, "GetLineNumberTable", ret);
 		return ret;
 	}
@@ -90,6 +94,9 @@ get_line_numbers(jvmtiEnv *jvmti, const void *compile_info, jvmti_line_info_t **
 					/* free what was allocated for nothing */
 					(*jvmti)->Deallocate(jvmti, (unsigned char *)lne);
 					nr_total += (int)nr;
+				} else if (ret == JVMTI_ERROR_ABSENT_INFORMATION ||
+					   ret == JVMTI_ERROR_NATIVE_METHOD) {
+					/* No debug information for this method */
 				} else {
 					print_error(jvmti, "GetLineNumberTable", ret);
 				}
@@ -250,7 +257,9 @@ compiled_method_load_cb(jvmtiEnv *jvmti,
 	if (has_line_numbers && map && map_length) {
 		ret = get_line_numbers(jvmti, compile_info, &line_tab, &nr_lines);
 		if (ret != JVMTI_ERROR_NONE) {
-			warnx("jvmti: cannot get line table for method");
+			if (ret != JVMTI_ERROR_NOT_FOUND) {
+				warnx("jvmti: cannot get line table for method");
+			}
 			nr_lines = 0;
 		} else if (nr_lines > 0) {
 			line_file_names = malloc(sizeof(char*) * nr_lines);
