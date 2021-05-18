@@ -1087,6 +1087,12 @@ struct kvm_arch {
 	 * the global KVM_MAX_VCPU_ID may lead to significant memory waste.
 	 */
 	u32 max_vcpu_ids;
+
+	/*
+	 * If set, rmaps have been allocated for all memslots and should be
+	 * allocated for any newly created or modified memslots.
+	 */
+	bool memslots_have_rmaps;
 };
 
 struct kvm_vm_stat {
