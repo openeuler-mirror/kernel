@@ -35,3 +35,4 @@ x86-specific Documentation
    x86_64/index
    sva
    sgx
+   elf_auxvec
