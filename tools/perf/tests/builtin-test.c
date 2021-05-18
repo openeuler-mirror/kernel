@@ -280,6 +280,10 @@ static struct test generic_tests[] = {
 		.func = test__mem2node,
 	},
 	{
+		.desc = "Demangle Java",
+		.func = test__demangle_java,
+	},
+	{
 		.func = NULL,
 	},
 };

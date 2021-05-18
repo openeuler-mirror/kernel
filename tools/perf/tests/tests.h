@@ -104,6 +104,7 @@ const char *test__clang_subtest_get_desc(int subtest);
 int test__clang_subtest_get_nr(void);
 int test__unit_number__scnprint(struct test *test, int subtest);
 int test__mem2node(struct test *t, int subtest);
+int test__demangle_java(struct test *test, int subtest);
 
 bool test__bp_signal_is_supported(void);
 
