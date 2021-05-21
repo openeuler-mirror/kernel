@@ -72,7 +72,7 @@ static int __init setup_redirect_space_size(char *str)
 }
 early_param("redirect_space_size", setup_redirect_space_size);
 
-struct page_map_info *create_page_map_info(int pid)
+static struct page_map_info *create_page_map_info(int pid)
 {
 	struct page_map_info *new;
 
@@ -93,9 +93,20 @@ struct page_map_info *create_page_map_info(int pid)
 	pin_pid_num++;
 	return new;
 }
-EXPORT_SYMBOL_GPL(create_page_map_info);
 
-struct page_map_info *get_page_map_info(int pid)
+struct page_map_info *create_page_map_info_by_pid(int pid)
+{
+	unsigned long flags;
+	struct page_map_info *ret;
+
+	spin_lock_irqsave(&page_map_entry_lock, flags);
+	ret = create_page_map_info(pid);
+	spin_unlock_irqrestore(&page_map_entry_lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(create_page_map_info_by_pid);
+
+static struct page_map_info *get_page_map_info(int pid)
 {
 	int i;
 
@@ -108,7 +119,18 @@ struct page_map_info *get_page_map_info(int pid)
 	}
 	return NULL;
 }
-EXPORT_SYMBOL_GPL(get_page_map_info);
+
+struct page_map_info *get_page_map_info_by_pid(int pid)
+{
+	unsigned long flags;
+	struct page_map_info *ret;
+
+	spin_lock_irqsave(&page_map_entry_lock, flags);
+	ret = get_page_map_info(pid);
+	spin_unlock_irqrestore(&page_map_entry_lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(get_page_map_info_by_pid);
 
 static struct page *find_head_page(struct page *page)
 {
@@ -380,12 +402,12 @@ static void reserve_user_space_map_pages(void)
 			}
 		}
 	}
-	spin_unlock(&page_map_entry_lock);
+	spin_unlock_irqrestore(&page_map_entry_lock, flags);
 	return;
 
 free_pages:
 	free_user_map_pages(index, i, j);
-	spin_unlock(&page_map_entry_lock);
+	spin_unlock_irqrestore(&page_map_entry_lock, flags);
 }
 
 
@@ -672,10 +694,11 @@ int pin_mem_area(struct task_struct *task, struct mm_struct *mm,
 	pid = task->pid;
 	spin_lock_irqsave(&page_map_entry_lock, flags);
 	nr_pages = ((end_addr - start_addr) / PAGE_SIZE);
-	if ((unsigned long)page_map_entry_start + nr_pages * sizeof(struct page *) >=
-		page_map_entry_end) {
+	if ((unsigned long)page_map_entry_start +
+		nr_pages * sizeof(unsigned long) +
+		sizeof(struct page_map_entry) >= page_map_entry_end) {
 		pr_warn("Page map entry use up!\n");
-		ret = -EFAULT;
+		ret = -ENOMEM;
 		goto finish;
 	}
 
@@ -965,13 +988,15 @@ vm_fault_t do_mem_remap(int pid, struct mm_struct *mm)
 
 	if (reserve_user_map_pages_fail || !mm)
 		return -EFAULT;
+
+	spin_lock_irqsave(&page_map_entry_lock, flags);
 	pmi = get_page_map_info(pid);
+	if (pmi)
+		pmi->disable_free_page = true;
+	spin_unlock_irqrestore(&page_map_entry_lock, flags);
 	if (!pmi)
 		return -EFAULT;
 
-	spin_lock_irqsave(&page_map_entry_lock, flags);
-	pmi->disable_free_page = true;
-	spin_unlock(&page_map_entry_lock);
 	down_write(&mm->mmap_sem);
 	pme = pmi->pme;
 	vma = mm->mmap;
@@ -1067,7 +1092,7 @@ void clear_pin_memory_record(void)
 		pin_pid_num = 0;
 		page_map_entry_start = __page_map_entry_start;
 	}
-	spin_unlock(&page_map_entry_lock);
+	spin_unlock_irqrestore(&page_map_entry_lock, flags);
 }
 EXPORT_SYMBOL_GPL(clear_pin_memory_record);
 

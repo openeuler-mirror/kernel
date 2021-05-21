@@ -98,8 +98,6 @@ static int set_pin_mem_area(unsigned long arg)
 	struct pin_mem_area_set pmas;
 	void __user *buf = (void __user *)arg;
 
-	if (!access_ok(buf, sizeof(pmas)))
-		return -EFAULT;
 	if (copy_from_user(&pmas, buf, sizeof(pmas)))
 		return -EINVAL;
 	if (pmas.area_num > MAX_PIN_MEM_AREA_NUM) {
@@ -119,8 +117,6 @@ static int pin_mem_remap(unsigned long arg)
 	void __user *buf = (void __user *)arg;
 	struct pid *pid_s;
 
-	if (!access_ok(buf, sizeof(int)))
-		return -EINVAL;
 	if (copy_from_user(&pid, buf, sizeof(int)))
 		return -EINVAL;
 
@@ -157,11 +153,8 @@ fault:
 static int set_fork_pid(unsigned long arg)
 {
 	int pid;
-	struct page_map_info *pmi = NULL;
 	void __user *buf = (void __user *)arg;
 
-	if (!access_ok(buf, sizeof(int)))
-		goto fault;
 	if (copy_from_user(&pid, buf, sizeof(int)))
 		goto fault;
 	current->fork_pid_union.fork_pid = pid;

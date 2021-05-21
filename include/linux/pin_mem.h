@@ -64,8 +64,8 @@ struct redirect_info {
 	unsigned int redirect_index[0];
 };
 
-extern struct page_map_info *get_page_map_info(int pid);
-extern struct page_map_info *create_page_map_info(int pid);
+extern struct page_map_info *get_page_map_info_by_pid(int pid);
+extern struct page_map_info *create_page_map_info_by_pid(int pid);
 extern vm_fault_t do_mem_remap(int pid, struct mm_struct *mm);
 extern vm_fault_t do_anon_page_remap(struct vm_area_struct *vma, unsigned long address,
 	pmd_t *pmd, struct page *page);
