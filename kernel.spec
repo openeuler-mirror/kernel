@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2105.2.0
+%global hulkrelease 2105.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0086
+Release: %{hulkrelease}.0087
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -818,6 +818,64 @@ fi
 
 %changelog
 
+
+* Mon May 24 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.3.0.0087
+- jbd2: don't abort the journal when freeing buffers
+- jbd2: ensure abort the journal if detect IO error when writing original buffer back
+- jbd2: remove the out label in __jbd2_journal_remove_checkpoint()
+- x86/unwind/orc: Remove boot-time ORC unwind tables sorting
+- scripts/sorttable: Implement build-time ORC unwind table sorting
+- scripts/sorttable: Rename 'sortextable' to 'sorttable'
+- scripts/sortextable: Refactor the do_func() function
+- scripts/sortextable: Remove dead code
+- scripts/sortextable: Clean up the code to meet the kernel coding style better
+- scripts/sortextable: Rewrite error/success handling
+- treewide: Replace GPLv2 boilerplate/reference with SPDX - rule 378
+- ext4: Fix bug on in ext4_es_cache_extent as ext4_split_extent_at failed
+- Revert "ext4: Fix bug on in ext4_es_cache_extent as ext4_split_extent_at failed"
+- nfs4.0: Refetch lease_time after clientid update
+- nfs4: Rename nfs41_setup_state_renewal
+- nfs4: Make nfs4_proc_get_lease_time available for nfs4.0
+- nfs: Fix copy-and-paste error in debug message
+- ext4: cleanup in-core orphan list if ext4_truncate() failed to get a transaction handle
+- bluetooth: eliminate the potential race condition when removing the HCI controller
+- mm: enhance variables check and sync for pin mem
+- perf jit: Fix inaccurate DWARF line table
+- perf jvmti: Remove redundant jitdump line table entries
+- perf jvmti: Fix demangling Java symbols
+- perf tests: Add test for the java demangler
+- perf jvmti: Do not report error when missing debug information
+- perf jvmti: Fix jitdump for methods without debug info
+- bpf: Fix leakage of uninitialized bpf stack under speculation
+- bpf: Fix masking negation logic upon negative dst register
+- bcache: add readahead cache policy options via sysfs interface
+- mm/page_alloc: fix managed_pages of zone is incorrect and out of bounds
+- freezer: Add unsafe version of freezable_schedule_timeout_interruptible() for NFS
+- NFS: Allow signal interruption of NFS4ERR_DELAYed operations
+- SUNRPC: Make "no retrans timeout" soft tasks behave like softconn for timeouts
+- SUNRPC: Don't let RPC_SOFTCONN tasks time out if the transport is connected
+- ext4: fix check to prevent false positive report of incorrect used inodes
+- livepatch/x86_64: Fix the deadlock when insmoding livepatch kernel module
+- tools/testing/selftests: add self-test for verifying load alignment
+- fs/binfmt_elf: use PT_LOAD p_align values for suitable start address
+- ext4: introduce ext4_sb_bread_unmovable() to replace sb_bread_unmovable()
+- ext4: use ext4_sb_bread() instead of sb_bread()
+- ext4: introduce ext4_sb_breadahead_unmovable() to replace sb_breadahead_unmovable()
+- ext4: use ext4_buffer_uptodate() in __ext4_get_inode_loc()
+- ext4: use common helpers in all places reading metadata buffers
+- ext4: introduce new metadata buffer read helpers
+- ext4: treat buffers contining write errors as valid in ext4_sb_bread()
+- bpf: Fix truncation handling for mod32 dst reg wrt zero
+- bpf: Fix 32 bit src register truncation on div/mod
+- arm64: bpf: implement jitting of JMP32
+- x86_64: bpf: implement jitting of JMP32
+- bpf: JIT blinds support JMP32
+- bpf: interpreter support for JMP32
+- tools: bpftool: teach cfg code about JMP32
+- bpf: disassembler support JMP32
+- bpf: verifier support JMP32
+- bpf: refactor verifier min/max code for condition jump
+- bpf: allocate 0x06 to new eBPF instruction class JMP32
 
 * Wed May 12 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.2.0.0086
 - ovl: allow upperdir inside lowerdir
