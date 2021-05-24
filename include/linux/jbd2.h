@@ -781,6 +781,11 @@ struct journal_s
 	unsigned long		j_flags;
 
 	/**
+	 * @j_atomic_flags: Atomic journaling state flags.
+	 */
+	unsigned long		j_atomic_flags;
+
+	/**
 	 * @j_errno:
 	 *
 	 * Is there an outstanding uncleared error on the journal (from a prior
@@ -1275,6 +1280,12 @@ JBD2_FEATURE_INCOMPAT_FUNCS(csum3,		CSUM_V3)
 #define JBD2_ABORT_ON_SYNCDATA_ERR	0x040	/* Abort the journal on file
 						 * data write error in ordered
 						 * mode */
+
+/*
+ * Journal atomic flag definitions
+ */
+#define JBD2_CHECKPOINT_IO_ERROR	0x001	/* Detect io error while writing
+						 * buffer back to disk */
 
 /*
  * Function declarations for the journaling transaction and buffer
