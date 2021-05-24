@@ -49,6 +49,18 @@ static DECLARE_TASKLET(resend_tasklet, resend_irqs, 0);
 
 #endif
 
+static int try_retrigger(struct irq_desc *desc)
+{
+	if (desc->irq_data.chip->irq_retrigger)
+		return desc->irq_data.chip->irq_retrigger(&desc->irq_data);
+
+#ifdef CONFIG_IRQ_DOMAIN_HIERARCHY
+	return irq_chip_retrigger_hierarchy(&desc->irq_data);
+#else
+	return 0;
+#endif
+}
+
 /*
  * IRQ resend
  *
@@ -72,9 +84,7 @@ void check_irq_resend(struct irq_desc *desc)
 		desc->istate &= ~IRQS_PENDING;
 		desc->istate |= IRQS_REPLAY;
 
-		if ((!desc->irq_data.chip->irq_retrigger ||
-		    !desc->irq_data.chip->irq_retrigger(&desc->irq_data)) &&
-		    !handle_enforce_irqctx(&desc->irq_data)) {
+		if (!try_retrigger(desc)) {
 #ifdef CONFIG_HARDIRQS_SW_RESEND
 			unsigned int irq = irq_desc_get_irq(desc);
 
