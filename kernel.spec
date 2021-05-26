@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2105.3.0
+%global hulkrelease 2105.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0087
+Release: %{hulkrelease}.0088
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -818,6 +818,32 @@ fi
 
 %changelog
 
+
+* Wed May 26 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.4.0.0088
+- tools arch x86: Sync asm/cpufeatures.h with the with the kernel
+- cpufreq: intel_pstate: Also use CPPC nominal_perf for base_frequency
+- ACPI / CPPC: Fix guaranteed performance handling
+- perf vendor events: Add JSON metrics for Cascadelake server
+- perf vendor events: Add stepping in CPUID string for x86
+- cpufreq: intel_pstate: Fix compilation for !CONFIG_ACPI
+- cpufreq: intel_pstate: Add base_frequency attribute
+- ACPI / CPPC: Add support for guaranteed performance
+- EDAC, skx: Fix randconfig builds in a better way
+- EDAC, skx: Fix randconfig builds
+- EDAC, skx_edac: Add address translation for non-volatile DIMMs
+- ACPI/ADXL: Add address translation interface using an ACPI DSM
+- x86/mce: Add macros for the corrected error count bit field
+- x86/mce: Use BIT_ULL(x) for bit mask definitions
+- x86/cpufeatures: Enumerate the new AVX512 BFLOAT16 instructions
+- tools/testing/selftests/exec: fix link error
+- NFSv4.1: Don't rebind to the same source port when reconnecting to the server
+- genirq: Sanitize state handling in check_irq_resend()
+- genirq: Add return value to check_irq_resend()
+- irqchip/gic-v2, v3: Prevent SW resends entirely
+- irqchip/git-v3-its: Implement irq_retrigger callback for device-triggered LPIs
+- irqchip/gic-v2, v3: Implement irq_chip->irq_retrigger()
+- genirq: Walk the irq_data hierarchy when resending an interrupt
+- genirq: Add protection against unsafe usage of generic_handle_irq()
 
 * Mon May 24 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.3.0.0087
 - jbd2: don't abort the journal when freeing buffers
