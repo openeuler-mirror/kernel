@@ -105,6 +105,7 @@ static int try_retrigger(struct irq_desc *desc)
  */
 int check_irq_resend(struct irq_desc *desc)
 {
+	int err = 0;
 
 	/*
 	 * We do not resend level type interrupts. Level type interrupts
@@ -118,11 +119,16 @@ int check_irq_resend(struct irq_desc *desc)
 	if (desc->istate & IRQS_REPLAY)
 		return -EBUSY;
 
-	if (desc->istate & IRQS_PENDING) {
-		desc->istate &= ~IRQS_PENDING;
+	if (!(desc->istate & IRQS_PENDING))
+		return 0;
+
+	desc->istate &= ~IRQS_PENDING;
+
+	if (!try_retrigger(desc))
+		err = irq_sw_resend(desc);
+
+	/* If the retrigger was successfull, mark it with the REPLAY bit */
+	if (!err)
 		desc->istate |= IRQS_REPLAY;
-		if (!try_retrigger(desc))
-		    return irq_sw_resend(desc);
-	}
-	return 0;
+	return err;
 }
