@@ -118,13 +118,14 @@ void sea_notify_process(void)
 	}
 }
 
-void ghes_arm_process_error(struct ghes *ghes, struct cper_sec_proc_arm *err)
+void ghes_arm_process_error(struct ghes *ghes,
+	struct cper_sec_proc_arm *err, int sec_sev)
 {
 	int i;
 	bool info_saved = false;
 	struct cper_arm_err_info *err_info;
 
-	log_arm_hw_error(err);
+	log_arm_hw_error(err, sec_sev);
 
 	if ((ghes->generic->notify.type != ACPI_HEST_NOTIFY_SEA) ||
 	    (ghes->estatus->error_severity != CPER_SEV_RECOVERABLE))

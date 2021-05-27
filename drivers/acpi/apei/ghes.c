@@ -465,9 +465,9 @@ static void ghes_handle_aer(struct acpi_hest_generic_data *gdata)
 }
 
 void __weak ghes_arm_process_error(struct ghes *ghes,
-				   struct cper_sec_proc_arm *err)
+				   struct cper_sec_proc_arm *err, int sec_sev)
 {
-	log_arm_hw_error(err);
+	log_arm_hw_error(err, sec_sev);
 }
 
 static void ghes_do_proc(struct ghes *ghes,
@@ -510,7 +510,7 @@ static void ghes_do_proc(struct ghes *ghes,
 		else if (guid_equal(sec_type, &CPER_SEC_PROC_ARM)) {
 			struct cper_sec_proc_arm *err = acpi_hest_get_payload(gdata);
 
-			ghes_arm_process_error(ghes, err);
+			ghes_arm_process_error(ghes, err, sec_sev);
 		} else if (guid_equal(sec_type, &CPER_SEC_TS_CORE)) {
 			blocking_notifier_call_chain(&ghes_ts_err_chain,
 					0, acpi_hest_get_payload(gdata));
