@@ -31,13 +31,13 @@
 
 #if defined (CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY) || \
     defined (CONFIG_LIVEPATCH_WO_FTRACE)
-#define INSN_SIZE	4
+#define LJMP_INSN_SIZE	4
 
 struct klp_func_node {
 	struct list_head node;
 	struct list_head func_stack;
 	void *old_func;
-	u32	old_insn;
+	u32	old_insns[LJMP_INSN_SIZE];
 };
 
 static LIST_HEAD(klp_func_list);
@@ -171,13 +171,22 @@ out:
 #endif
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
+static inline bool offset_in_range(unsigned long pc, unsigned long addr,
+				   long range)
+{
+	long offset = addr - pc;
+
+	return (offset >= -range && offset < range);
+}
+
 int arch_klp_patch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
 	unsigned long pc, new_addr;
-	struct ppc_inst instr;
 	long ret;
 	int memory_flag = 0;
+	int i;
+	u32 insns[LJMP_INSN_SIZE];
 
 	func_node = klp_find_func_node(func->old_func);
 	if (!func_node) {
@@ -188,12 +197,15 @@ int arch_klp_patch_func(struct klp_func *func)
 		memory_flag = 1;
 		INIT_LIST_HEAD(&func_node->func_stack);
 		func_node->old_func = func->old_func;
-		ret = copy_from_kernel_nofault(&func_node->old_insn,
-					       func->old_func, INSN_SIZE);
-		if (ret) {
-			kfree(func_node);
-			return -EPERM;
+		for (i = 0; i < LJMP_INSN_SIZE; i++) {
+			ret = copy_from_kernel_nofault(&func_node->old_insns[i],
+				((u32 *)func->old_func) + i, LJMP_INSN_SIZE);
+			if (ret) {
+				kfree(func_node);
+				return -EPERM;
+			}
 		}
+
 		list_add_rcu(&func_node->node, &klp_func_list);
 	}
 
@@ -201,11 +213,31 @@ int arch_klp_patch_func(struct klp_func *func)
 
 	pc = (unsigned long)func->old_func;
 	new_addr = (unsigned long)func->new_func;
-	create_branch(&instr, (struct ppc_inst *)pc, new_addr, 0);
+	if (offset_in_range(pc, new_addr, SZ_32M)) {
+		struct ppc_inst instr;
 
-	ret = patch_instruction((struct ppc_inst *)pc, instr);
-	if (ret)
-		goto ERR_OUT;
+		create_branch(&instr, (struct ppc_inst *)pc, new_addr, 0);
+		if (patch_instruction((struct ppc_inst *)pc, instr))
+			goto ERR_OUT;
+	} else {
+		/*
+		 * lis r12,sym@ha
+		 * addi r12,r12,sym@l
+		 * mtctr r12
+		 * bctr
+		 */
+		insns[0] = 0x3d800000 + ((new_addr + 0x8000) >> 16);
+		insns[1] = 0x398c0000 + (new_addr & 0xffff);
+		insns[2] = 0x7d8903a6;
+		insns[3] = 0x4e800420;
+
+		for (i = 0; i < LJMP_INSN_SIZE; i++) {
+			ret = patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
+						ppc_inst(insns[i]));
+			if (ret)
+				goto ERR_OUT;
+		}
+	}
 
 	return 0;
 
@@ -224,27 +256,49 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
 	unsigned long pc, new_addr;
-	struct ppc_inst instr;
-	u32 insn;
+	u32 insns[LJMP_INSN_SIZE];
+	int i;
 
 	func_node = klp_find_func_node(func->old_func);
 	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
-		insn = func_node->old_insn;
+		for (i = 0; i < LJMP_INSN_SIZE; i++)
+			insns[i] = func_node->old_insns[i];
+
 		list_del_rcu(&func->stack_node);
 		list_del_rcu(&func_node->node);
 		kfree(func_node);
 
-		patch_instruction((struct ppc_inst *)pc, ppc_inst(insn));
+		for (i = 0; i < LJMP_INSN_SIZE; i++)
+			patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
+					  ppc_inst(insns[i]));
 	} else {
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 					struct klp_func, stack_node);
 
 		new_addr = (unsigned long)next_func->new_func;
-		create_branch(&instr, (struct ppc_inst *)pc, new_addr, 0);
+		if (offset_in_range(pc, new_addr, SZ_32M)) {
+			struct ppc_inst instr;
 
-		patch_instruction((struct ppc_inst *)pc, instr);
+			create_branch(&instr, (struct ppc_inst *)pc, new_addr, 0);
+			patch_instruction((struct ppc_inst *)pc, instr);
+		} else {
+			/*
+			 * lis r12,sym@ha
+			 * addi r12,r12,sym@l
+			 * mtctr r12
+			 * bctr
+			 */
+			insns[0] = 0x3d800000 + ((new_addr + 0x8000) >> 16);
+			insns[1] = 0x398c0000 + (new_addr & 0xffff);
+			insns[2] = 0x7d8903a6;
+			insns[3] = 0x4e800420;
+
+			for (i = 0; i < LJMP_INSN_SIZE; i++)
+				patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
+						  ppc_inst(insns[i]));
+		}
 	}
 }
 #endif
