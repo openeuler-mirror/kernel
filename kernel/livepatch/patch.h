@@ -22,7 +22,9 @@
 struct klp_ops {
 	struct list_head node;
 	struct list_head func_stack;
+#ifdef CONFIG_LIVEPATCH_FTRACE
 	struct ftrace_ops fops;
+#endif
 };
 
 struct klp_ops *klp_find_ops(void *old_func);

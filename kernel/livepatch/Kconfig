@@ -1,20 +1,61 @@
 # SPDX-License-Identifier: GPL-2.0-only
-config HAVE_LIVEPATCH
+config HAVE_LIVEPATCH_FTRACE
 	bool
 	help
-	  Arch supports kernel live patching
+	  Arch supports kernel live patching based on ftrace
+
+config HAVE_LIVEPATCH_WO_FTRACE
+	bool
+	help
+	  Arch supports kernel live patching without ftrace
+
+if HAVE_LIVEPATCH_FTRACE || HAVE_LIVEPATCH_WO_FTRACE
+menu "Enable Livepatch"
+
 
 config LIVEPATCH
 	bool "Kernel Live Patching"
-	depends on DYNAMIC_FTRACE_WITH_REGS
 	depends on MODULES
 	depends on SYSFS
 	depends on KALLSYMS_ALL
-	depends on HAVE_LIVEPATCH
+	depends on HAVE_LIVEPATCH_FTRACE || HAVE_LIVEPATCH_WO_FTRACE
 	depends on !TRIM_UNUSED_KSYMS
+	depends on DEBUG_INFO
+	default n
 	help
 	  Say Y here if you want to support kernel live patching.
 	  This option has no runtime impact until a kernel "patch"
 	  module uses the interface provided by this option to register
 	  a patch, causing calls to patched functions to be redirected
 	  to new function code contained in the patch module.
+
+choice
+	prompt "live patching method"
+	depends on LIVEPATCH
+	help
+	  Live patching implementation method configuration.
+
+config LIVEPATCH_FTRACE
+	bool "based on ftrace"
+	depends on HAVE_LIVEPATCH_FTRACE
+	depends on DYNAMIC_FTRACE_WITH_REGS
+	help
+	  Supports kernel live patching based on ftrace
+
+config LIVEPATCH_WO_FTRACE
+	bool "without ftrace"
+	depends on HAVE_LIVEPATCH_WO_FTRACE
+	help
+	  Supports kernel live patching without ftrace
+
+endchoice
+
+config LIVEPATCH_STACK
+	bool "Enforcing the patch stacking principle"
+	depends on LIVEPATCH_FTRACE || LIVEPATCH_WO_FTRACE
+	default y
+	help
+	  Say N here if you want to remove the patch stacking principle.
+
+endmenu
+endif
