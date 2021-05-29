@@ -968,6 +968,7 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 	struct klp_func *func;
 	int ret;
 
+	module_disable_ro(patch->mod);
 	if (klp_is_module(obj)) {
 		/*
 		 * Only write module-specific relocations here
@@ -976,9 +977,12 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 		 * itself.
 		 */
 		ret = klp_apply_object_relocs(patch, obj);
-		if (ret)
+		if (ret) {
+			module_enable_ro(patch->mod, true);
 			return ret;
+		}
 	}
+	module_enable_ro(patch->mod, true);
 
 	klp_for_each_func(obj, func) {
 		ret = klp_find_object_symbol(obj->name, func->old_name,
@@ -1147,10 +1151,14 @@ static int klp_init_patch(struct klp_patch *patch)
 	}
 
 	set_mod_klp_rel_state(patch->mod, MODULE_KLP_REL_DONE);
+	module_disable_ro(patch->mod);
 	jump_label_apply_nops(patch->mod);
 	ret = jump_label_register(patch->mod);
-	if (ret)
+	if (ret) {
+		module_enable_ro(patch->mod, true);
 		goto out;
+	}
+	module_enable_ro(patch->mod, true);
 
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	klp_for_each_object(patch, obj)
