@@ -152,7 +152,30 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 	};
 
 	for_each_process_thread(g, t) {
-		stack = (unsigned long *)t->thread.ksp;
+		if (t == current) {
+			/*
+			 * Handle the current carefully on each CPUs, we shouldn't
+			 * use saved FP and PC when backtrace current. It's difficult
+			 * to backtrack other CPU currents here. But fortunately,
+			 * all CPUs will stay in this function, so the current's
+			 * backtrace is so similar
+			 */
+			stack = (unsigned long *)current_stack_pointer;
+		} else if (strncmp(t->comm, "migration/", 10) == 0) {
+			/*
+			 * current on other CPU
+			 * we call this in stop_machine, so the current
+			 * of each CPUs is mirgation, just compare the
+			 * task_comm here, because we can't get the
+			 * cpu_curr(task_cpu(t))). This assumes that no
+			 * other thread will pretend to be a stopper via
+			 * task_comm.
+			 */
+			continue;
+		} else {
+			stack = (unsigned long *)t->thread.ksp;
+		}
+
 		frame.sp = (unsigned long)stack;
 		frame.pc = stack[STACK_FRAME_LR_SAVE];
 		klp_walk_stackframe(&frame, klp_check_activeness_func,
