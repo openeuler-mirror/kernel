@@ -4349,6 +4349,7 @@ static vm_fault_t wp_huge_pud(struct vm_fault *vmf, pud_t orig_pud)
 static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 {
 	pte_t entry;
+	bool is_write = vmf->flags & FAULT_FLAG_WRITE;
 
 	if (unlikely(pmd_none(*vmf->pmd))) {
 		/*
@@ -4406,15 +4407,18 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 		update_mmu_tlb(vmf->vma, vmf->address, vmf->pte);
 		goto unlock;
 	}
-	if (vmf->flags & FAULT_FLAG_WRITE) {
+	if (is_write) {
 		if (!pte_write(entry))
 			return do_wp_page(vmf);
 		entry = pte_mkdirty(entry);
 	}
 	entry = pte_mkyoung(entry);
 	if (ptep_set_access_flags(vmf->vma, vmf->address, vmf->pte, entry,
-				vmf->flags & FAULT_FLAG_WRITE)) {
+				  is_write)) {
 		update_mmu_cache(vmf->vma, vmf->address, vmf->pte);
+		if (is_write)
+			mmu_notifier_change_pte(vmf->vma->vm_mm, vmf->address,
+						*vmf->pte);
 	} else {
 		/* Skip spurious TLB flush for retried page fault */
 		if (vmf->flags & FAULT_FLAG_TRIED)
@@ -4425,7 +4429,7 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 		 * This still avoids useless tlb flushes for .text page faults
 		 * with threads.
 		 */
-		if (vmf->flags & FAULT_FLAG_WRITE)
+		if (is_write)
 			flush_tlb_fix_spurious_fault(vmf->vma, vmf->address);
 	}
 unlock:
