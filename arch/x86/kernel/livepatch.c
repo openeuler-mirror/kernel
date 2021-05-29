@@ -26,6 +26,36 @@
 #include <asm/stacktrace.h>
 #include <asm/set_memory.h>
 
+#include <linux/slab.h>
+#include <asm/nops.h>
+#include <asm/sections.h>
+
+#if defined (CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY) || \
+    defined (CONFIG_LIVEPATCH_WO_FTRACE)
+#define	JMP_E9_INSN_SIZE	5
+
+struct klp_func_node {
+	struct list_head node;
+	struct list_head func_stack;
+	void *old_func;
+	unsigned char old_code[JMP_E9_INSN_SIZE];
+};
+
+static LIST_HEAD(klp_func_list);
+
+static struct klp_func_node *klp_find_func_node(void *old_func)
+{
+	struct klp_func_node *func_node;
+
+	list_for_each_entry(func_node, &klp_func_list, node) {
+		if (func_node->old_func == old_func)
+			return func_node;
+	}
+
+	return NULL;
+}
+#endif
+
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 static inline int klp_compare_address(unsigned long stack_addr,
 		unsigned long func_addr, unsigned long func_size,
@@ -48,6 +78,7 @@ static int klp_check_stack_func(struct klp_func *func,
 #endif
 	unsigned long func_addr, func_size, address;
 	const char *func_name;
+	struct klp_func_node *func_node;
 	int i;
 
 #ifdef CONFIG_ARCH_STACKWALK
@@ -59,9 +90,33 @@ static int klp_check_stack_func(struct klp_func *func,
 #endif
 
 		if (enable) {
-			func_addr = (unsigned long)func->old_func;
-			func_size = func->old_size;
+			/*
+			 * When enable, checking the currently active
+			 * functions.
+			 */
+			func_node = klp_find_func_node(func->old_func);
+			if (!func_node ||
+			    list_empty(&func_node->func_stack)) {
+				func_addr = (unsigned long)func->old_func;
+				func_size = func->old_size;
+			} else {
+				/*
+				 * Previously patched function
+				 * [the active one]
+				 */
+				struct klp_func *prev;
+
+				prev = list_first_or_null_rcu(
+						&func_node->func_stack,
+						struct klp_func, stack_node);
+				func_addr = (unsigned long)prev->new_func;
+				func_size = prev->new_size;
+			}
 		} else {
+			/*
+			 * When disable, check for the function itself
+			 * which to be unpatched.
+			 */
 			func_addr = (unsigned long)func->new_func;
 			func_size = func->new_size;
 		}
@@ -191,33 +246,6 @@ out:
 #endif
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
-#include <linux/slab.h>
-#include <asm/nops.h>
-#include <asm/sections.h>
-
-#define	JMP_E9_INSN_SIZE	5
-
-struct klp_func_node {
-	struct list_head node;
-	struct list_head func_stack;
-	void *old_func;
-	unsigned char old_code[JMP_E9_INSN_SIZE];
-};
-
-static LIST_HEAD(klp_func_list);
-
-static struct klp_func_node *klp_find_func_node(void *old_func)
-{
-	struct klp_func_node *func_node;
-
-	list_for_each_entry(func_node, &klp_func_list, node) {
-		if (func_node->old_func == old_func)
-			return func_node;
-	}
-
-	return NULL;
-}
-
 static void *klp_jmp_code(unsigned long ip, unsigned long addr)
 {
 	return text_gen_insn(JMP32_INSN_OPCODE, (void *)ip, (void *)addr);
