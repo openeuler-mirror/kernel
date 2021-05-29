@@ -85,6 +85,7 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 	struct klp_func *func;
 	unsigned long func_addr, func_size;
 	const char *func_name;
+	struct klp_func_node *func_node;
 
 	if (args->ret)
 		return args->ret;
@@ -92,9 +93,37 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
 			if (args->enable) {
-				func_addr = (unsigned long)func->old_func;
-				func_size = func->old_size;
+				/*
+				 * When enable, checking the currently
+				 * active functions.
+				 */
+				func_node = klp_find_func_node(func->old_func);
+				if (!func_node ||
+				    list_empty(&func_node->func_stack)) {
+					/*
+					 * No patched on this function
+					 * [ the origin one ]
+					 */
+					func_addr = (unsigned long)func->old_func;
+					func_size = func->old_size;
+				} else {
+					/*
+					 * Previously patched function
+					 * [ the active one ]
+					 */
+					struct klp_func *prev;
+
+					prev = list_first_or_null_rcu(
+						&func_node->func_stack,
+						struct klp_func, stack_node);
+					func_addr = (unsigned long)prev->new_func;
+					func_size = prev->new_size;
+				}
 			} else {
+				/*
+				 * When disable, check for the function itself
+				 * which to be unpatched.
+				 */
 				func_addr = (unsigned long)func->new_func;
 				func_size = func->new_size;
 			}
