@@ -21,6 +21,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
+#include <linux/moduleloader.h>
 #include <linux/uaccess.h>
 #include <linux/livepatch.h>
 #include <linux/slab.h>
@@ -338,7 +339,7 @@ int arch_klp_patch_func(struct klp_func *func)
 
 	func_node = klp_find_func_node(func->old_func);
 	if (!func_node) {
-		func_node = kzalloc(sizeof(*func_node), GFP_ATOMIC);
+		func_node = module_alloc(sizeof(*func_node));
 		if (!func_node)
 			return -ENOMEM;
 
@@ -349,7 +350,7 @@ int arch_klp_patch_func(struct klp_func *func)
 			ret = copy_from_kernel_nofault(&func_node->old_insns[i],
 				((u32 *)func->old_func) + i, 4);
 			if (ret) {
-				kfree(func_node);
+				module_memfree(func_node);
 				return -EPERM;
 			}
 		}
@@ -380,7 +381,7 @@ ERR_OUT:
 	list_del_rcu(&func->stack_node);
 	if (memory_flag) {
 		list_del_rcu(&func_node->node);
-		kfree(func_node);
+		module_memfree(func_node);
 	}
 
 	return -EPERM;
@@ -402,7 +403,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 
 		list_del_rcu(&func->stack_node);
 		list_del_rcu(&func_node->node);
-		kfree(func_node);
+		module_memfree(func_node);
 
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
 			patch_instruction((struct ppc_inst *)((u32 *)pc + i),
