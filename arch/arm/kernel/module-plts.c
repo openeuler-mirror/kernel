@@ -34,12 +34,14 @@ static bool in_init(const struct module *mod, unsigned long loc)
 	return loc - (u32)mod->init_layout.base < mod->init_layout.size;
 }
 
-u32 get_module_plt(struct module *mod, unsigned long loc, Elf32_Addr val)
+u32 get_module_plt(struct module *mod, Elf32_Shdr *sechdrs,
+		   unsigned long loc, Elf32_Addr val)
 {
 	struct mod_plt_sec *pltsec = !in_init(mod, loc) ? &mod->arch.core :
 							  &mod->arch.init;
 
-	struct plt_entries *plt = (struct plt_entries *)pltsec->plt->sh_addr;
+	struct plt_entries *plt =
+		(struct plt_entries *)sechdrs[pltsec->plt_shndx].sh_addr;
 	int idx = 0;
 
 	/*
@@ -60,7 +62,8 @@ u32 get_module_plt(struct module *mod, unsigned long loc, Elf32_Addr val)
 	}
 
 	pltsec->plt_count++;
-	BUG_ON(pltsec->plt_count * PLT_ENT_SIZE > pltsec->plt->sh_size);
+	BUG_ON(pltsec->plt_count * PLT_ENT_SIZE >
+	       sechdrs[pltsec->plt_shndx].sh_size);
 
 	if (!idx)
 		/* Populate a new set of entries */
@@ -193,21 +196,23 @@ int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
 	unsigned long init_plts = 0;
 	Elf32_Shdr *s, *sechdrs_end = sechdrs + ehdr->e_shnum;
 	Elf32_Sym *syms = NULL;
+	Elf32_Shdr *core_pltsec, *init_pltsec;
+	int i = 0;
 
 	/*
 	 * To store the PLTs, we expand the .text section for core module code
 	 * and for initialization code.
 	 */
-	for (s = sechdrs; s < sechdrs_end; ++s) {
+	for (s = sechdrs; s < sechdrs_end; ++s, ++i) {
 		if (strcmp(".plt", secstrings + s->sh_name) == 0)
-			mod->arch.core.plt = s;
+			mod->arch.core.plt_shndx = i;
 		else if (strcmp(".init.plt", secstrings + s->sh_name) == 0)
-			mod->arch.init.plt = s;
+			mod->arch.init.plt_shndx = i;
 		else if (s->sh_type == SHT_SYMTAB)
 			syms = (Elf32_Sym *)s->sh_addr;
 	}
 
-	if (!mod->arch.core.plt || !mod->arch.init.plt) {
+	if (!mod->arch.core.plt_shndx || !mod->arch.init.plt_shndx) {
 		pr_err("%s: module PLT section(s) missing\n", mod->name);
 		return -ENOEXEC;
 	}
@@ -239,21 +244,23 @@ int module_frob_arch_sections(Elf_Ehdr *ehdr, Elf_Shdr *sechdrs,
 						numrels, s->sh_info);
 	}
 
-	mod->arch.core.plt->sh_type = SHT_NOBITS;
-	mod->arch.core.plt->sh_flags = SHF_EXECINSTR | SHF_ALLOC;
-	mod->arch.core.plt->sh_addralign = L1_CACHE_BYTES;
-	mod->arch.core.plt->sh_size = round_up(core_plts * PLT_ENT_SIZE,
-					       sizeof(struct plt_entries));
+	core_pltsec = sechdrs + mod->arch.core.plt_shndx;
+	core_pltsec->sh_type = SHT_NOBITS;
+	core_pltsec->sh_flags = SHF_EXECINSTR | SHF_ALLOC;
+	core_pltsec->sh_addralign = L1_CACHE_BYTES;
+	core_pltsec->sh_size = round_up(core_plts * PLT_ENT_SIZE,
+					sizeof(struct plt_entries));
 	mod->arch.core.plt_count = 0;
 
-	mod->arch.init.plt->sh_type = SHT_NOBITS;
-	mod->arch.init.plt->sh_flags = SHF_EXECINSTR | SHF_ALLOC;
-	mod->arch.init.plt->sh_addralign = L1_CACHE_BYTES;
-	mod->arch.init.plt->sh_size = round_up(init_plts * PLT_ENT_SIZE,
-					       sizeof(struct plt_entries));
+	init_pltsec = sechdrs + mod->arch.init.plt_shndx;
+	init_pltsec->sh_type = SHT_NOBITS;
+	init_pltsec->sh_flags = SHF_EXECINSTR | SHF_ALLOC;
+	init_pltsec->sh_addralign = L1_CACHE_BYTES;
+	init_pltsec->sh_size = round_up(init_plts * PLT_ENT_SIZE,
+					sizeof(struct plt_entries));
 	mod->arch.init.plt_count = 0;
 
 	pr_debug("%s: plt=%x, init.plt=%x\n", __func__,
-		 mod->arch.core.plt->sh_size, mod->arch.init.plt->sh_size);
+		 core_pltsec->sh_size, init_pltsec->sh_size);
 	return 0;
 }
