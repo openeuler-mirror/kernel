@@ -346,10 +346,12 @@ struct iommu_device {
  *
  * @fault: fault descriptor
  * @list: pending fault event list, used for tracking responses
+ * @expire: time limit in jiffies will wait for page response
  */
 struct iommu_fault_event {
 	struct iommu_fault fault;
 	struct list_head list;
+	u64 expire;
 };
 
 /**
@@ -358,11 +360,13 @@ struct iommu_fault_event {
  * @data: handler private data
  * @faults: holds the pending faults which needs response
  * @lock: protect pending faults list
+ * @timer: track page request pending time limit
  */
 struct iommu_fault_param {
 	iommu_dev_fault_handler_t handler;
 	void *data;
 	struct list_head faults;
+	struct timer_list timer;
 	struct mutex lock;
 };
 
