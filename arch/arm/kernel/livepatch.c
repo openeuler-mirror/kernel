@@ -31,6 +31,41 @@
 #include <asm/insn.h>
 #include <asm/patch.h>
 
+#ifdef CONFIG_ARM_MODULE_PLTS
+#define LJMP_INSN_SIZE	3
+#endif
+
+#ifdef ARM_INSN_SIZE
+#error "ARM_INSN_SIZE have been redefined, please check"
+#else
+#define ARM_INSN_SIZE	4
+#endif
+
+struct klp_func_node {
+	struct list_head node;
+	struct list_head func_stack;
+	void *old_func;
+#ifdef CONFIG_ARM_MODULE_PLTS
+	u32	old_insns[LJMP_INSN_SIZE];
+#else
+	u32	old_insn;
+#endif
+};
+
+static LIST_HEAD(klp_func_list);
+
+static struct klp_func_node *klp_find_func_node(void *old_func)
+{
+	struct klp_func_node *func_node;
+
+	list_for_each_entry(func_node, &klp_func_list, node) {
+		if (func_node->old_func == old_func)
+			return func_node;
+	}
+
+	return NULL;
+}
+
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 struct walk_stackframe_args {
 	struct klp_patch *patch;
@@ -53,6 +88,7 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 	struct walk_stackframe_args *args = data;
 	struct klp_patch *patch = args->patch;
 	struct klp_object *obj;
+	struct klp_func_node *func_node;
 	struct klp_func *func;
 	unsigned long func_addr, func_size;
 	const char *func_name;
@@ -63,9 +99,37 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
 			if (args->enable) {
-				func_addr = (unsigned long)func->old_func;
-				func_size = func->old_size;
+				/*
+				 * When enable, checking the currently
+				 * active functions.
+				 */
+				func_node = klp_find_func_node(func->old_func);
+				if (!func_node ||
+				    list_empty(&func_node->func_stack)) {
+					/*
+					 * No patched on this function
+					 * [ the origin one ]
+					 */
+					func_addr = (unsigned long)func->old_func;
+					func_size = func->old_size;
+				} else {
+					/*
+					 * Previously patched function
+					 * [ the active one ]
+					 */
+					struct klp_func *prev;
+
+					prev = list_first_or_null_rcu(
+						&func_node->func_stack,
+						struct klp_func, stack_node);
+					func_addr = (unsigned long)prev->new_func;
+					func_size = prev->new_size;
+				}
 			} else {
+				/*
+				 * When disable, check for the function itself
+				 * which to be unpatched.
+				 */
 				func_addr = (unsigned long)func->new_func;
 				func_size = func->new_size;
 			}
@@ -129,41 +193,6 @@ out:
 	return ret;
 }
 #endif
-
-#ifdef CONFIG_ARM_MODULE_PLTS
-#define LJMP_INSN_SIZE	3
-#endif
-
-#ifdef ARM_INSN_SIZE
-#error "ARM_INSN_SIZE have been redefined, please check"
-#else
-#define ARM_INSN_SIZE	4
-#endif
-
-struct klp_func_node {
-	struct list_head node;
-	struct list_head func_stack;
-	void *old_func;
-#ifdef CONFIG_ARM_MODULE_PLTS
-	u32	old_insns[LJMP_INSN_SIZE];
-#else
-	u32	old_insn;
-#endif
-};
-
-static LIST_HEAD(klp_func_list);
-
-static struct klp_func_node *klp_find_func_node(void *old_func)
-{
-	struct klp_func_node *func_node;
-
-	list_for_each_entry(func_node, &klp_func_list, node) {
-		if (func_node->old_func == old_func)
-			return func_node;
-	}
-
-	return NULL;
-}
 
 static inline bool offset_in_range(unsigned long pc, unsigned long addr,
 				   long range)
