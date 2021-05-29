@@ -10,6 +10,9 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/livepatch.h>
+#ifdef CONFIG_PPC64
+#include <asm/code-patching.h>
+#endif
 
 /*
  * This (dumb) live patch overrides the function that prints the
@@ -38,7 +41,11 @@ static int livepatch_cmdline_proc_show(struct seq_file *m, void *v)
 
 static struct klp_func funcs[] = {
 	{
+#ifdef CONFIG_PPC64
+		.old_name = ".cmdline_proc_show",
+#else
 		.old_name = "cmdline_proc_show",
+#endif
 		.new_func = livepatch_cmdline_proc_show,
 	}, { }
 };
@@ -57,6 +64,10 @@ static struct klp_patch patch = {
 
 static int livepatch_init(void)
 {
+#ifdef CONFIG_PPC64
+	patch.objs[0].funcs[0].new_func =
+		(void *)ppc_function_entry((void *)livepatch_cmdline_proc_show);
+#endif
 	return klp_enable_patch(&patch);
 }
 
