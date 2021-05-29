@@ -39,12 +39,14 @@ config LIVEPATCH_FTRACE
 	bool "based on ftrace"
 	depends on HAVE_LIVEPATCH_FTRACE
 	depends on DYNAMIC_FTRACE_WITH_REGS
+	select LIVEPATCH_PER_TASK_CONSISTENCY
 	help
 	  Supports kernel live patching based on ftrace
 
 config LIVEPATCH_WO_FTRACE
 	bool "without ftrace"
 	depends on HAVE_LIVEPATCH_WO_FTRACE
+	select LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	help
 	  Supports kernel live patching without ftrace
 
@@ -60,6 +62,7 @@ choice
 
 config LIVEPATCH_PER_TASK_CONSISTENCY
 	bool "per task consistency"
+	depends on LIVEPATCH_FTRACE
 	help
 	  Use basic per-task consistency model
 	  It's a hybrid of kGraft and kpatch:
@@ -70,6 +73,7 @@ config LIVEPATCH_PER_TASK_CONSISTENCY
 
 config LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	bool "stop machine consistency"
+	depends on LIVEPATCH_WO_FTRACE
 	help
 	  Use stop machine consistency model
 	  stop-machine consistency and kpatch's stack
