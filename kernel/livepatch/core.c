@@ -878,8 +878,19 @@ void klp_free_replaced_patches_async(struct klp_patch *new_patch)
 	}
 }
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+int __weak arch_klp_func_can_patch(struct klp_func *func)
+{
+	return 0;
+}
+#endif
+
 static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 {
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	int ret;
+#endif
+
 	if (!func->old_name)
 		return -EINVAL;
 
@@ -895,6 +906,12 @@ static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 
 	INIT_LIST_HEAD(&func->stack_node);
 	func->patched = false;
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	ret = arch_klp_func_can_patch(func);
+	if (ret)
+		return ret;
+#endif
 #ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 	func->transition = false;
 #endif
@@ -1002,14 +1019,23 @@ static int klp_init_object(struct klp_patch *patch, struct klp_object *obj)
 	if (ret)
 		goto out;
 
-	klp_for_each_func(obj, func) {
-		ret = klp_init_func(obj, func);
+	/*
+	 * For livepatch without ftrace, we need to modify the first N
+	 * instructions of the to-be-patched func. So should check if the
+	 * func length enough to allow this modification.
+	 *
+	 * We add check hook in klp_init_func and will using the old_size
+	 * internally, so the klp_init_object_loaded should called first
+	 * to fill the klp_func struct.
+	 */
+	if (klp_is_object_loaded(obj)) {
+		ret = klp_init_object_loaded(patch, obj);
 		if (ret)
 			goto out;
 	}
 
-	if (klp_is_object_loaded(obj)) {
-		ret = klp_init_object_loaded(patch, obj);
+	klp_for_each_func(obj, func) {
+		ret = klp_init_func(obj, func);
 		if (ret)
 			goto out;
 	}
