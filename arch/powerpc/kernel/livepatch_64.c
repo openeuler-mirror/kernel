@@ -54,6 +54,30 @@
  */
 #define LJMP_INSN_SIZE	12
 
+#if defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY) || \
+    defined(CONFIG_LIVEPATCH_WO_FTRACE)
+struct klp_func_node {
+	struct list_head node;
+	struct list_head func_stack;
+	void *old_func;
+	u32	old_insns[LJMP_INSN_SIZE];
+};
+
+static LIST_HEAD(klp_func_list);
+
+static struct klp_func_node *klp_find_func_node(void *old_func)
+{
+	struct klp_func_node *func_node;
+
+	list_for_each_entry(func_node, &klp_func_list, node) {
+		if (func_node->old_func == old_func)
+			return func_node;
+	}
+
+	return NULL;
+}
+#endif
+
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 struct stackframe {
 	unsigned long sp;
@@ -86,6 +110,7 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 	struct klp_func *func;
 	unsigned long func_addr, func_size;
 	const char *func_name;
+	struct klp_func_node *func_node = NULL;
 
 	if (args->ret)
 		return args->ret;
@@ -93,10 +118,40 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
 			if (args->enable) {
-				func_addr = (unsigned long)func->old_func;
-				func_size = func->old_size;
+				/*
+				 * When enable, checking the currently
+				 * active functions.
+				 */
+				func_node = klp_find_func_node(func->old_func);
+				if (!func_node ||
+				    list_empty(&func_node->func_stack)) {
+					/*
+					 * No patched on this function
+					 * [ the origin one ]
+					 */
+					func_addr = (unsigned long)func->old_func;
+					func_size = func->old_size;
+				} else {
+					/*
+					 * Previously patched function
+					 * [ the active one ]
+					 */
+					struct klp_func *prev;
+
+					prev = list_first_or_null_rcu(
+						&func_node->func_stack,
+						struct klp_func, stack_node);
+					func_addr = ppc_function_entry(
+						(void *)prev->new_func);
+					func_size = prev->new_size;
+				}
 			} else {
-				func_addr = ppc_function_entry(func->new_func);
+				/*
+				 * When disable, check for the function itself
+				 * which to be unpatched.
+				 */
+				func_addr = ppc_function_entry(
+						(void *)func->new_func);
 				func_size = func->new_size;
 			}
 			func_name = func->old_name;
@@ -205,27 +260,6 @@ out:
 #endif
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
-struct klp_func_node {
-	struct list_head node;
-	struct list_head func_stack;
-	void *old_func;
-	u32	old_insns[LJMP_INSN_SIZE];
-};
-
-static LIST_HEAD(klp_func_list);
-
-static struct klp_func_node *klp_find_func_node(void *old_func)
-{
-	struct klp_func_node *func_node;
-
-	list_for_each_entry(func_node, &klp_func_list, node) {
-		if (func_node->old_func == old_func)
-			return func_node;
-	}
-
-	return NULL;
-}
-
 int arch_klp_patch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
