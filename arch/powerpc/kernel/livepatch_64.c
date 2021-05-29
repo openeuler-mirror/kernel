@@ -304,7 +304,17 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 			 */
 			continue;
 		} else {
-			stack = (unsigned long *)t->thread.ksp;
+			/*
+			 * Skip the first frame since it does not contain lr
+			 * at notmal position and nip is store ind the lr
+			 * position in the second frame.
+			 * See arch/powerpc/kernel/entry_64.S _switch .
+			 */
+			unsigned long s = *(unsigned long *)t->thread.ksp;
+
+			if (!validate_sp(s, t, STACK_FRAME_OVERHEAD))
+				continue;
+			stack = (unsigned long *)s;
 		}
 
 		frame.sp = (unsigned long)stack;
