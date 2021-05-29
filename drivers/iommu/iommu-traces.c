@@ -11,6 +11,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/iommu.h>
+#include <trace/events/smmu.h>
 
 /* iommu_group_event */
 EXPORT_TRACEPOINT_SYMBOL_GPL(add_device_to_group);
@@ -26,3 +27,15 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(unmap);
 
 /* iommu_error */
 EXPORT_TRACEPOINT_SYMBOL_GPL(io_page_fault);
+
+/* Arm SMMUv3 traces */
+EXPORT_TRACEPOINT_SYMBOL_GPL(smmu_bind_alloc);
+EXPORT_TRACEPOINT_SYMBOL_GPL(smmu_bind_get);
+EXPORT_TRACEPOINT_SYMBOL_GPL(smmu_unbind_put);
+EXPORT_TRACEPOINT_SYMBOL_GPL(smmu_unbind_free);
+EXPORT_TRACEPOINT_SYMBOL_GPL(smmu_mm_release);
+EXPORT_TRACEPOINT_SYMBOL_GPL(smmu_mm_invalidate);
+EXPORT_TRACEPOINT_SYMBOL_GPL(smmu_mn_alloc);
+EXPORT_TRACEPOINT_SYMBOL_GPL(smmu_mn_free);
+EXPORT_TRACEPOINT_SYMBOL_GPL(smmu_mn_get);
+EXPORT_TRACEPOINT_SYMBOL_GPL(smmu_mn_put);
