@@ -132,6 +132,8 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 
 			/* Check func address in stack */
 			if (args->enable) {
+				if (func->force)
+					continue;
 				/*
 				 * When enable, checking the currently
 				 * active functions.

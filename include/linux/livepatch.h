@@ -66,6 +66,7 @@ struct klp_func {
 	 * in kallsyms for the given object is used.
 	 */
 	unsigned long old_sympos;
+	int force;
 
 	/* internal */
 	void *old_func;

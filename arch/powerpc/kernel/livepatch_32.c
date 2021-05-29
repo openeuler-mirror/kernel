@@ -93,6 +93,8 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
 			if (args->enable) {
+				if (func->force)
+					continue;
 				/*
 				 * When enable, checking the currently
 				 * active functions.
