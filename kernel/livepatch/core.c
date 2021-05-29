@@ -258,14 +258,18 @@ static int klp_find_object_symbol(const char *objname, const char *name,
 	return -EINVAL;
 }
 
-static int klp_resolve_symbols(Elf64_Shdr *sechdrs, const char *strtab,
+static int klp_resolve_symbols(Elf_Shdr *sechdrs, const char *strtab,
 			       unsigned int symndx, Elf_Shdr *relasec,
 			       const char *sec_objname)
 {
 	int i, cnt, ret;
 	char sym_objname[MODULE_NAME_LEN];
 	char sym_name[KSYM_NAME_LEN];
+#ifdef CONFIG_MODULES_USE_ELF_RELA
 	Elf_Rela *relas;
+#else
+	Elf_Rel *relas;
+#endif
 	Elf_Sym *sym;
 	unsigned long sympos, addr;
 	bool sym_vmlinux;
@@ -283,10 +287,14 @@ static int klp_resolve_symbols(Elf64_Shdr *sechdrs, const char *strtab,
 	 */
 	BUILD_BUG_ON(MODULE_NAME_LEN < 56 || KSYM_NAME_LEN != 128);
 
+#ifdef CONFIG_MODULES_USE_ELF_RELA
 	relas = (Elf_Rela *) relasec->sh_addr;
+#else
+	relas = (Elf_Rel *) relasec->sh_addr;
+#endif
 	/* For each rela in this klp relocation section */
-	for (i = 0; i < relasec->sh_size / sizeof(Elf_Rela); i++) {
-		sym = (Elf64_Sym *)sechdrs[symndx].sh_addr + ELF_R_SYM(relas[i].r_info);
+	for (i = 0; i < relasec->sh_size / sizeof(*relas); i++) {
+		sym = (Elf_Sym *)sechdrs[symndx].sh_addr + ELF_R_SYM(relas[i].r_info);
 		if (sym->st_shndx != SHN_LIVEPATCH) {
 			pr_err("symbol %s is not marked as a livepatch symbol\n",
 			       strtab + sym->st_name);
@@ -381,7 +389,11 @@ int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
 	if (ret)
 		return ret;
 
+#ifdef CONFIG_MODULES_USE_ELF_RELA
 	return apply_relocate_add(sechdrs, strtab, symndx, secndx, pmod);
+#else
+	return apply_relocate(sechdrs, strtab, symndx, secndx, pmod);
+#endif
 }
 
 /*
