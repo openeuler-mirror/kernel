@@ -790,6 +790,34 @@ static void klp_free_patch_start(struct klp_patch *patch)
 	klp_free_objects(patch);
 }
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+static inline int klp_load_hook(struct klp_object *obj)
+{
+	struct klp_hook *hook;
+
+	if (!obj->hooks_load)
+		return 0;
+
+	for (hook = obj->hooks_load; hook->hook; hook++)
+		(*hook->hook)();
+
+	return 0;
+}
+
+static inline int klp_unload_hook(struct klp_object *obj)
+{
+	struct klp_hook *hook;
+
+	if (!obj->hooks_unload)
+		return 0;
+
+	for (hook = obj->hooks_unload; hook->hook; hook++)
+		(*hook->hook)();
+
+	return 0;
+}
+#endif
+
 /*
  * This function implements the free part that must be called outside
  * klp_mutex.
@@ -800,6 +828,12 @@ static void klp_free_patch_start(struct klp_patch *patch)
  */
 static void klp_free_patch_finish(struct klp_patch *patch)
 {
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	struct klp_object *obj;
+
+	klp_for_each_object(patch, obj)
+		klp_unload_hook(obj);
+#endif
 	/*
 	 * Avoid deadlock with enabled_store() sysfs callback by
 	 * calling this outside klp_mutex. It is safe because
@@ -1073,6 +1107,11 @@ static int klp_init_patch(struct klp_patch *patch)
 		if (ret)
 			goto out;
 	}
+
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	klp_for_each_object(patch, obj)
+		klp_load_hook(obj);
+#endif
 
 	list_add_tail(&patch->list, &klp_patches);
 

@@ -82,6 +82,12 @@ struct klp_func {
 
 struct klp_object;
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+struct klp_hook {
+	void (*hook)(void);
+};
+#endif
+
 /**
  * struct klp_callbacks - pre/post live-(un)patch callback structure
  * @pre_patch:		executed before code patching
@@ -121,6 +127,10 @@ struct klp_object {
 	/* external */
 	const char *name;
 	struct klp_func *funcs;
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	struct klp_hook *hooks_load;
+	struct klp_hook *hooks_unload;
+#endif
 	struct klp_callbacks callbacks;
 
 	/* internal */
