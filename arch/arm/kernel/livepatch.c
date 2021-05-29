@@ -130,13 +130,25 @@ out:
 }
 #endif
 
-#define LJMP_INSN_SIZE	4
+#ifdef CONFIG_ARM_MODULE_PLTS
+#define LJMP_INSN_SIZE	3
+#endif
+
+#ifdef ARM_INSN_SIZE
+#error "ARM_INSN_SIZE have been redefined, please check"
+#else
+#define ARM_INSN_SIZE	4
+#endif
 
 struct klp_func_node {
 	struct list_head node;
 	struct list_head func_stack;
 	void *old_func;
+#ifdef CONFIG_ARM_MODULE_PLTS
+	u32	old_insns[LJMP_INSN_SIZE];
+#else
 	u32	old_insn;
+#endif
 };
 
 static LIST_HEAD(klp_func_list);
@@ -153,12 +165,20 @@ static struct klp_func_node *klp_find_func_node(void *old_func)
 	return NULL;
 }
 
+static inline bool offset_in_range(unsigned long pc, unsigned long addr,
+				   long range)
+{
+	long offset = addr - pc;
+
+	return (offset >= -range && offset < range);
+}
+
 long arm_insn_read(void *addr, u32 *insnp)
 {
 	long ret;
 	u32 val;
 
-	ret = copy_from_kernel_nofault(&val, addr, LJMP_INSN_SIZE);
+	ret = copy_from_kernel_nofault(&val, addr, ARM_INSN_SIZE);
 	if (!ret)
 		*insnp = le32_to_cpu(val);
 
@@ -171,6 +191,10 @@ int arch_klp_patch_func(struct klp_func *func)
 	unsigned long pc, new_addr;
 	u32 insn;
 	long ret;
+#ifdef CONFIG_ARM_MODULE_PLTS
+	int i;
+	u32 insns[LJMP_INSN_SIZE];
+#endif
 
 	func_node = klp_find_func_node(func->old_func);
 	if (!func_node) {
@@ -180,7 +204,16 @@ int arch_klp_patch_func(struct klp_func *func)
 
 		INIT_LIST_HEAD(&func_node->func_stack);
 		func_node->old_func = func->old_func;
+#ifdef CONFIG_ARM_MODULE_PLTS
+		for (i = 0; i < LJMP_INSN_SIZE; i++) {
+			ret = arm_insn_read((u32 *)func->old_func + i,
+					    &func_node->old_insns[i]);
+			if (ret)
+				break;
+		}
+#else
 		ret = arm_insn_read(func->old_func, &func_node->old_insn);
+#endif
 		if (ret) {
 			kfree(func_node);
 			return -EPERM;
@@ -192,9 +225,29 @@ int arch_klp_patch_func(struct klp_func *func)
 
 	pc = (unsigned long)func->old_func;
 	new_addr = (unsigned long)func->new_func;
-	insn = arm_gen_branch(pc, new_addr);
 
+#ifdef CONFIG_ARM_MODULE_PLTS
+	if (!offset_in_range(pc, new_addr, SZ_32M)) {
+		/*
+		 * [0] LDR PC, [PC+8]
+		 * [4] nop
+		 * [8] new_addr_to_jump
+		 */
+		insns[0] = __opcode_to_mem_arm(0xe59ff000);
+		insns[1] = __opcode_to_mem_arm(0xe320f000);
+		insns[2] = new_addr;
+
+		for (i = 0; i < LJMP_INSN_SIZE; i++)
+			__patch_text(((u32 *)pc) + i, insns[i]);
+
+	} else {
+		insn = arm_gen_branch(pc, new_addr);
+		__patch_text((void *)pc, insn);
+	}
+#else
+	insn = arm_gen_branch(pc, new_addr);
 	__patch_text((void *)pc, insn);
+#endif
 
 	return 0;
 }
@@ -205,24 +258,78 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	struct klp_func *next_func;
 	unsigned long pc, new_addr;
 	u32 insn;
+#ifdef CONFIG_ARM_MODULE_PLTS
+	int i;
+	u32 insns[LJMP_INSN_SIZE];
+#endif
 
 	func_node = klp_find_func_node(func->old_func);
 	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
+#ifdef CONFIG_ARM_MODULE_PLTS
+		for (i = 0; i < LJMP_INSN_SIZE; i++) {
+			insns[i] = func_node->old_insns[i];
+			__patch_text(((u32 *)pc) + i, insns[i]);
+		}
+#else
 		insn = func_node->old_insn;
+		__patch_text((void *)pc, insn);
+#endif
 		list_del_rcu(&func->stack_node);
 		list_del_rcu(&func_node->node);
 		kfree(func_node);
-
-		__patch_text((void *)pc, insn);
 	} else {
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 					struct klp_func, stack_node);
 
 		new_addr = (unsigned long)next_func->new_func;
-		insn = arm_gen_branch(pc, new_addr);
+#ifdef CONFIG_ARM_MODULE_PLTS
+		if (!offset_in_range(pc, new_addr, SZ_32M)) {
+			/*
+			 * [0] LDR PC, [PC+8]
+			 * [4] nop
+			 * [8] new_addr_to_jump
+			 */
+			insns[0] = __opcode_to_mem_arm(0xe59ff000);
+			insns[1] = __opcode_to_mem_arm(0xe320f000);
+			insns[2] = new_addr;
 
+			for (i = 0; i < LJMP_INSN_SIZE; i++)
+				__patch_text(((u32 *)pc) + i, insns[i]);
+
+		} else {
+			insn = arm_gen_branch(pc, new_addr);
+			__patch_text((void *)pc, insn);
+		}
+#else
+		insn = arm_gen_branch(pc, new_addr);
 		__patch_text((void *)pc, insn);
+#endif
 	}
 }
+
+#ifdef CONFIG_ARM_MODULE_PLTS
+/* return 0 if the func can be patched */
+int arch_klp_func_can_patch(struct klp_func *func)
+{
+	unsigned long pc = (unsigned long)func->old_func;
+	unsigned long new_addr = (unsigned long)func->new_func;
+	unsigned long old_size = func->old_size;
+
+	if (!old_size)
+		return -EINVAL;
+
+	if (!offset_in_range(pc, new_addr, SZ_32M) &&
+	    (old_size < LJMP_INSN_SIZE * ARM_INSN_SIZE)) {
+		pr_err("func %s size less than limit\n", func->old_name);
+		return -EPERM;
+	}
+	return 0;
+}
+#else
+int arch_klp_func_can_patch(struct klp_func *func)
+{
+	return 0;
+}
+#endif /* #ifdef CONFIG_ARM_MODULE_PLTS */
