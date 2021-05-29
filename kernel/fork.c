@@ -1225,6 +1225,19 @@ struct mm_struct *get_task_mm(struct task_struct *task)
 }
 EXPORT_SYMBOL_GPL(get_task_mm);
 
+/**
+ * mm_access - check access permission to a task and acquire a reference to
+ * its mm.
+ * @task: target task
+ * @mode: selects type of access and caller credentials
+ *
+ * Return the task's mm on success, or %NULL if it cannot be accessed.
+ *
+ * Check if the caller is allowed to read or write the target task's pages.
+ * @mode describes the access mode and credentials using ptrace access flags.
+ * See ptrace_may_access() for more details. On success, a reference to the mm
+ * is taken.
+ */
 struct mm_struct *mm_access(struct task_struct *task, unsigned int mode)
 {
 	struct mm_struct *mm;
@@ -1244,6 +1257,7 @@ struct mm_struct *mm_access(struct task_struct *task, unsigned int mode)
 
 	return mm;
 }
+EXPORT_SYMBOL_GPL(mm_access);
 
 static void complete_vfork_done(struct task_struct *tsk)
 {
