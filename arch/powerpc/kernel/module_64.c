@@ -738,6 +738,9 @@ int apply_relocate_add(Elf64_Shdr *sechdrs,
 		}
 	}
 
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	me->arch.toc = my_r2(sechdrs, me);
+#endif
 	return 0;
 }
 
@@ -797,5 +800,40 @@ int module_finalize_ftrace(struct module *mod, const Elf_Shdr *sechdrs)
 		return -ENOENT;
 
 	return 0;
+}
+#endif
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+#include <asm/livepatch.h>
+#include <asm/cacheflush.h>
+
+/*
+ * Patch stub to reference function and correct r2 value.
+ * see create_stub
+ */
+int livepatch_create_stub(struct ppc64_stub_entry *entry,
+			  unsigned long addr,
+			  struct module *me)
+{
+	long reladdr;
+	unsigned long my_r2 = me ? me->arch.toc : kernel_toc_addr();
+
+	memcpy(entry->jump, ppc64_stub_insns, sizeof(ppc64_stub_insns));
+
+	/* Stub uses address relative to r2. */
+	reladdr = (unsigned long)entry - my_r2;
+	if (reladdr > 0x7FFFFFFF || reladdr < -(0x80000000L)) {
+		pr_err("%s: Address %p of stub out of range of %p.\n",
+		       me->name, (void *)reladdr, (void *)my_r2);
+		return 0;
+	}
+
+	pr_debug("Stub %p get data from reladdr 0x%lx\n", entry, reladdr);
+
+	entry->jump[0] |= PPC_HA(reladdr);
+	entry->jump[1] |= PPC_LO(reladdr);
+	entry->funcdata = func_desc(addr);
+
+	return 1;
 }
 #endif

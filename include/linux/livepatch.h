@@ -78,6 +78,9 @@ struct klp_func {
 #ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 	bool transition;
 #endif
+#if defined(CONFIG_LIVEPATCH_WO_FTRACE) && defined(CONFIG_PPC64)
+	struct module *old_mod;
+#endif
 };
 
 struct klp_object;

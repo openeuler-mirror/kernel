@@ -920,6 +920,12 @@ static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 	func->patched = false;
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
+#ifdef CONFIG_PPC64
+	if (klp_is_module(obj))
+		func->old_mod = obj->mod;
+	else
+		func->old_mod = NULL;
+#endif
 	ret = arch_klp_func_can_patch(func);
 	if (ret)
 		return ret;

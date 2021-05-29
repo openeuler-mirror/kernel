@@ -33,6 +33,9 @@ struct mod_arch_specific {
 	/* For module function descriptor dereference */
 	unsigned long start_opd;
 	unsigned long end_opd;
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+	unsigned long toc;
+#endif
 #else /* powerpc64 */
 	/* Indices of PLT sections within module. */
 	unsigned int core_plt_section;
@@ -81,6 +84,13 @@ static inline int module_finalize_ftrace(struct module *mod, const Elf_Shdr *sec
 {
 	return 0;
 }
+#endif
+
+#ifdef CONFIG_LIVEPATCH_WO_FTRACE
+struct ppc64_stub_entry;
+int livepatch_create_stub(struct ppc64_stub_entry *entry,
+			  unsigned long addr,
+			  struct module *me);
 #endif
 
 #endif /* __KERNEL__ */
