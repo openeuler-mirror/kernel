@@ -75,7 +75,7 @@ struct klp_func {
 	unsigned long old_size, new_size;
 	bool nop;
 	bool patched;
-#ifdef CONFIG_LIVEPATCH_FTRACE
+#ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 	bool transition;
 #endif
 };
@@ -202,7 +202,7 @@ int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
 			     unsigned int symindex, unsigned int secindex,
 			     const char *objname);
 
-#ifdef CONFIG_LIVEPATCH_FTRACE
+#ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 /* Called from the module loader during module coming/going states */
 int klp_module_coming(struct module *mod);
 void klp_module_going(struct module *mod);
@@ -239,7 +239,7 @@ void klp_shadow_free_all(unsigned long id, klp_shadow_dtor_t dtor);
 struct klp_state *klp_get_state(struct klp_patch *patch, unsigned long id);
 struct klp_state *klp_get_prev_state(unsigned long id);
 
-#else /* !CONFIG_LIVEPATCH_FTRACE */
+#else /* !CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY */
 
 static inline int klp_module_coming(struct module *mod) { return 0; }
 static inline void klp_module_going(struct module *mod) {}
@@ -252,7 +252,7 @@ static inline bool klp_have_reliable_stack(void) { return true; }
 #define klp_smp_isb()
 #endif
 
-#endif /* CONFIG_LIVEPATCH_FTRACE */
+#endif /* CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY */
 
 #else /* !CONFIG_LIVEPATCH */
 

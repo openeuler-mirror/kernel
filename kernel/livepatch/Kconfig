@@ -50,6 +50,33 @@ config LIVEPATCH_WO_FTRACE
 
 endchoice
 
+choice
+	prompt "live patching consistency model"
+	depends on LIVEPATCH
+	default LIVEPATCH_PER_TASK_CONSISTENCY if LIVEPATCH_FTRACE
+	default LIVEPATCH_STOP_MACHINE_CONSISTENCY if LIVEPATCH_WO_FTRACE
+	help
+	  Livepatch consistency model configuration.
+
+config LIVEPATCH_PER_TASK_CONSISTENCY
+	bool "per task consistency"
+	help
+	  Use basic per-task consistency model
+	  It's a hybrid of kGraft and kpatch:
+	  uses kGraft's per-task consistency and syscall
+	  barrier switching combined with kpatch's stack
+	  trace switching. There are also a number of
+	  fallback options which make it quite flexible.
+
+config LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	bool "stop machine consistency"
+	help
+	  Use stop machine consistency model
+	  stop-machine consistency and kpatch's stack
+	  trace checking.
+
+endchoice
+
 config LIVEPATCH_STACK
 	bool "Enforcing the patch stacking principle"
 	depends on LIVEPATCH_FTRACE || LIVEPATCH_WO_FTRACE

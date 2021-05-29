@@ -79,7 +79,11 @@ static void notrace klp_ftrace_handler(unsigned long ip,
 	 */
 	smp_rmb();
 
+#ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 	if (unlikely(func->transition)) {
+#else
+	{
+#endif
 
 		/*
 		 * Enforce the order of the func->transition and
