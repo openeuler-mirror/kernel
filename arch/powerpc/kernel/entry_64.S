@@ -1035,8 +1035,9 @@ _GLOBAL(livepatch_branch_stub_end)
 	 */
 _GLOBAL(livepatch_branch_trampoline)
 	mflr	r0
-	std	r0, 32(r1)
+	std	r0, 16(r1)
 	std	r2, 24(r1)
+	stdu    r1, -STACK_FRAME_OVERHEAD(r1)
 
 	/* Load func descr address to R11 */
 	lis	r11, 0		/* saved_entry@highest */
@@ -1058,8 +1059,9 @@ _GLOBAL(livepatch_branch_trampoline)
 	 * caller A. We are free to use r11, r12 and we can use r2 until we
 	 * restore it.
 	 */
+	addi	r1, r1, STACK_FRAME_OVERHEAD
 	ld	r2, 24(r1)
-	ld	r0, 32(r1)
+	ld	r0, 16(r1)
 	mtlr	r0
 
 	/* Return to original caller of live patched function */

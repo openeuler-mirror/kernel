@@ -53,7 +53,7 @@ struct ppc64_klp_bstub_entry {
 
 #ifdef PPC64_ELF_ABI_v1
 struct ppc64_klp_btramp_entry {
-	u32 jump[16];
+	u32 jump[18];
 	u32 magic;
 	union {
 		struct ppc64_opd_entry funcdata;

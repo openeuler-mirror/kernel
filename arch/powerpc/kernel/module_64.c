@@ -869,10 +869,10 @@ static void livepatch_create_btramp(struct ppc64_klp_btramp_entry *entry,
 
 		memcpy(entry->jump, (u32 *)tramp_start, tramp_size);
 
-		entry->jump[3] |= PPC_LIVEPATCH_HIGHEST(reladdr);
-		entry->jump[4] |= PPC_LIVEPATCH_HIGHER(reladdr);
-		entry->jump[6] |= PPC_LIVEPATCH_HIGH(reladdr);
-		entry->jump[7] |= PPC_LIVEPATCH_LOW(reladdr);
+		entry->jump[4] |= PPC_LIVEPATCH_HIGHEST(reladdr);
+		entry->jump[5] |= PPC_LIVEPATCH_HIGHER(reladdr);
+		entry->jump[7] |= PPC_LIVEPATCH_HIGH(reladdr);
+		entry->jump[8] |= PPC_LIVEPATCH_LOW(reladdr);
 
 		entry->magic = BRANCH_TRAMPOLINE_MAGIC;
 	}
