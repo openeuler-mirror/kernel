@@ -80,6 +80,10 @@ struct klp_func {
 #endif
 #if defined(CONFIG_LIVEPATCH_WO_FTRACE) && defined(CONFIG_PPC64)
 	struct module *old_mod;
+#ifdef PPC64_ELF_ABI_v1
+	struct module *this_mod;
+	func_descr_t new_func_descr;
+#endif
 #endif
 };
 

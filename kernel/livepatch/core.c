@@ -895,6 +895,11 @@ int __weak arch_klp_func_can_patch(struct klp_func *func)
 {
 	return 0;
 }
+
+int __weak arch_klp_init_func(struct klp_object *obj, struct klp_func *func)
+{
+	return 0;
+}
 #endif
 
 static int klp_init_func(struct klp_object *obj, struct klp_func *func)
@@ -927,6 +932,10 @@ static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 		func->old_mod = NULL;
 #endif
 	ret = arch_klp_func_can_patch(func);
+	if (ret)
+		return ret;
+
+	ret = arch_klp_init_func(obj, func);
 	if (ret)
 		return ret;
 #endif

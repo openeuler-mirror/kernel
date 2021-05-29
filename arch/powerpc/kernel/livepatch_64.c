@@ -96,7 +96,7 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 				func_addr = (unsigned long)func->old_func;
 				func_size = func->old_size;
 			} else {
-				func_addr = (unsigned long)func->new_func;
+				func_addr = ppc_function_entry(func->new_func);
 				func_size = func->new_size;
 			}
 			func_name = func->old_name;
@@ -320,6 +320,47 @@ int arch_klp_func_can_patch(struct klp_func *func)
 		pr_err("func %s size less than limit\n", func->old_name);
 		return -EPERM;
 	}
+	return 0;
+}
+
+int arch_klp_init_func(struct klp_object *obj, struct klp_func *func)
+{
+#ifdef PPC64_ELF_ABI_v1
+	unsigned long new_addr = (unsigned long)func->new_func;
+
+	/*
+	 * ABI v1 address is address of the OPD entry,
+	 * which contains address of fn. ABI v2 An address
+	 * is simply the address of the function.
+	 *
+	 * The function descriptor is in the data section. So
+	 * If new_addr is in the code segment, we think it is
+	 * a function address, if addr isn't in the code segment,
+	 * we consider it to be a function descriptor.
+	 */
+	if (!is_module_text_address(new_addr)) {
+		new_addr = (unsigned long)ppc_function_entry((void *)new_addr);
+		if (!kallsyms_lookup_size_offset((unsigned long)new_addr,
+			&func->new_size, NULL))
+			return -ENOENT;
+	}
+
+	func->this_mod = __module_text_address(new_addr);
+	if (!func->this_mod)
+		return -EINVAL;
+
+	func->new_func_descr.entry = new_addr;
+	func->new_func_descr.toc = func->this_mod->arch.toc;
+
+	func->new_func = (void *)&func->new_func_descr;
+#endif
+
+	if (obj->name)
+		func->old_mod = obj->mod;
+	else
+		func->old_mod = NULL;
+
+
 	return 0;
 }
 #endif
