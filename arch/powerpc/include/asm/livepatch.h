@@ -36,6 +36,53 @@ struct klp_func;
 
 int arch_klp_patch_func(struct klp_func *func);
 void arch_klp_unpatch_func(struct klp_func *func);
+
+#ifdef CONFIG_PPC64
+/*
+ * use the livepatch stub to jump to the trampoline.
+ * It is similar to stub, but does not need to save
+ * and load R2.
+ * struct ppc64_klp_bstub_entry
+ */
+struct ppc64_klp_bstub_entry {
+	u32 jump[5];
+	u32 magic;
+	/* address for livepatch trampoline  */
+	u64 trampoline;
+};
+
+#ifdef PPC64_ELF_ABI_v1
+struct ppc64_klp_btramp_entry {
+	u32 jump[16];
+	u32 magic;
+	union {
+		struct ppc64_opd_entry funcdata;
+		unsigned long saved_entry[2];
+	};
+};
+#endif /* PPC64_ELF_ABI_v1 */
+
+#define PPC64_INSN_SIZE	4
+#define LJMP_INSN_SIZE	(sizeof(struct ppc64_klp_bstub_entry) / PPC64_INSN_SIZE)
+
+/* STUB_MAGIC 0x73747562 "stub" */
+#define BRANCH_STUB_MAGIC	0x73747563 /* stub + 1	*/
+#define BRANCH_TRAMPOLINE_MAGIC 0x73747564 /* stub + 2	*/
+
+extern void livepatch_branch_stub(void);
+extern void livepatch_branch_stub_end(void);
+
+#ifdef PPC64_ELF_ABI_v1
+extern void livepatch_branch_trampoline(void);
+extern void livepatch_branch_trampoline_end(void);
+#endif /* PPC64_ELF_ABI_v1 */
+
+int livepatch_create_branch(unsigned long pc,
+			    unsigned long trampoline,
+			    unsigned long addr,
+			    struct module *me);
+#endif	/* CONFIG_PPC64 */
+
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY

@@ -86,12 +86,5 @@ static inline int module_finalize_ftrace(struct module *mod, const Elf_Shdr *sec
 }
 #endif
 
-#ifdef CONFIG_LIVEPATCH_WO_FTRACE
-struct ppc64_stub_entry;
-int livepatch_create_stub(struct ppc64_stub_entry *entry,
-			  unsigned long addr,
-			  struct module *me);
-#endif
-
 #endif /* __KERNEL__ */
 #endif	/* _ASM_POWERPC_MODULE_H */

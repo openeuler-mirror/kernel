@@ -33,27 +33,6 @@
 #include <asm/code-patching.h>
 #include <asm/elf.h>
 
-/*
- * see struct ppc64_stub_entry
- *
- * u32 jump[7] :
- *	addis   r11,r2, <high>
- *	addi    r11,r11, <low>
- *	; Save current r2 value in magic place on the stack
- *	std     r2,R2_STACK_OFFSET(r1)
- *	ld      r12,32(r11)
- *	; Set up new r2 from function descriptor, only for ABI V1
- *	ld      r2,40(r11)
- *	mtctr   r12
- *	bctr
- * u32 unused  :
- *	XXXX;	no changed here
- * func_desc_t funcdata :
- *	ulong	funcaddr;
- *	ulong	r2;
- */
-#define LJMP_INSN_SIZE	12
-
 #if defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY) || \
     defined(CONFIG_LIVEPATCH_WO_FTRACE)
 struct klp_func_node {
@@ -61,6 +40,11 @@ struct klp_func_node {
 	struct list_head func_stack;
 	void *old_func;
 	u32	old_insns[LJMP_INSN_SIZE];
+#ifdef PPC64_ELF_ABI_v1
+	struct ppc64_klp_btramp_entry trampoline;
+#else
+	unsigned long   trampoline;
+#endif
 };
 
 static LIST_HEAD(klp_func_list);
@@ -82,6 +66,7 @@ static struct klp_func_node *klp_find_func_node(void *old_func)
 struct stackframe {
 	unsigned long sp;
 	unsigned long pc;
+	unsigned long nip;
 };
 
 struct walk_stackframe_args {
@@ -102,6 +87,31 @@ static inline int klp_compare_address(unsigned long pc,
 	return 0;
 }
 
+static inline int klp_check_activeness_func_addr(
+		struct stackframe *frame,
+		unsigned long func_addr,
+		unsigned long func_size,
+		const char *func_name)
+{
+	int ret;
+
+	/* Check PC first */
+	ret = klp_compare_address(frame->pc, func_addr,
+			func_size, func_name);
+	if (ret)
+		return ret;
+
+	/* Check NIP when the exception stack switching */
+	if (frame->nip != 0) {
+		ret = klp_compare_address(frame->nip, func_addr,
+				func_size, func_name);
+		if (ret)
+			return ret;
+	}
+
+	return ret;
+}
+
 static int klp_check_activeness_func(struct stackframe *frame, void *data)
 {
 	struct walk_stackframe_args *args = data;
@@ -117,12 +127,14 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
+			func_node = klp_find_func_node(func->old_func);
+
+			/* Check func address in stack */
 			if (args->enable) {
 				/*
 				 * When enable, checking the currently
 				 * active functions.
 				 */
-				func_node = klp_find_func_node(func->old_func);
 				if (!func_node ||
 				    list_empty(&func_node->func_stack)) {
 					/*
@@ -155,10 +167,40 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 				func_size = func->new_size;
 			}
 			func_name = func->old_name;
-			args->ret = klp_compare_address(frame->pc, func_addr,
-					func_size, func_name);
+			args->ret = klp_check_activeness_func_addr(frame,
+					func_addr, func_size, func_name);
 			if (args->ret)
 				return args->ret;
+
+#ifdef PPC64_ELF_ABI_v1
+			/*
+			 * Check trampoline in stack
+			 * new_func callchain:
+			 *	old_func
+			 *	-=> trampoline
+			 *	    -=> new_func
+			 * so, we should check all the func in the callchain
+			 */
+			if (func_addr != (unsigned long)func->old_func) {
+				func_addr = (unsigned long)func->old_func;
+				func_size = func->old_size;
+				args->ret = klp_check_activeness_func_addr(frame,
+					func_addr, func_size, "OLD_FUNC");
+				if (args->ret)
+					return args->ret;
+
+				if (func_node == NULL ||
+				    func_node->trampoline.magic != BRANCH_TRAMPOLINE_MAGIC)
+					continue;
+
+				func_addr = (unsigned long)&func_node->trampoline;
+				func_size = sizeof(struct ppc64_klp_btramp_entry);
+				args->ret = klp_check_activeness_func_addr(frame,
+						func_addr, func_size, "trampoline");
+				if (args->ret)
+					return args->ret;
+			}
+#endif
 		}
 	}
 
@@ -173,7 +215,29 @@ static int unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 	if (!validate_sp(frame->sp, tsk, STACK_FRAME_OVERHEAD))
 		return -1;
 
+	if (frame->nip != 0)
+		frame->nip = 0;
+
 	stack = (unsigned long *)frame->sp;
+
+	/*
+	 * When switching to the exception stack,
+	 * we save the NIP in pt_regs
+	 *
+	 * See if this is an exception frame.
+	 * We look for the "regshere" marker in the current frame.
+	 */
+	if (validate_sp(frame->sp, tsk, STACK_INT_FRAME_SIZE)
+	    && stack[STACK_FRAME_MARKER] == STACK_FRAME_REGS_MARKER) {
+		struct pt_regs *regs = (struct pt_regs *)
+			(frame->sp + STACK_FRAME_OVERHEAD);
+		frame->nip = regs->nip;
+		pr_debug("--- interrupt: task = %d/%s, trap %lx at NIP=x%lx/%pS, LR=0x%lx/%pS\n",
+			tsk->pid, tsk->comm, regs->trap,
+			regs->nip, (void *)regs->nip,
+			regs->link, (void *)regs->link);
+	}
+
 	frame->sp = stack[0];
 	frame->pc = stack[STACK_FRAME_LR_SAVE];
 #ifdef CONFIG_FUNCTION_GRAPH_TRACE
@@ -244,12 +308,16 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 
 		frame.sp = (unsigned long)stack;
 		frame.pc = stack[STACK_FRAME_LR_SAVE];
+		frame.nip = 0;
 		klp_walk_stackframe(&frame, klp_check_activeness_func,
 				t, &args);
 		if (args.ret) {
 			ret = args.ret;
+			pr_debug("%s FAILED when %s\n", __func__,
+				 enable ? "enabling" : "disabling");
 			pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
 			show_stack(t, NULL, KERN_INFO);
+
 			goto out;
 		}
 	}
@@ -293,10 +361,18 @@ int arch_klp_patch_func(struct klp_func *func)
 	pc = (unsigned long)func->old_func;
 	new_addr = (unsigned long)func->new_func;
 
-	ret = livepatch_create_stub((struct ppc64_stub_entry *)pc,
-			new_addr, func->old_mod, true);
+	ret = livepatch_create_branch(pc, (unsigned long)&func_node->trampoline,
+				      new_addr, func->old_mod);
 	if (ret)
 		goto ERR_OUT;
+	flush_icache_range((unsigned long)pc,
+			(unsigned long)pc + LJMP_INSN_SIZE * PPC64_INSN_SIZE);
+
+	pr_debug("[%s %d] old = 0x%lx/0x%lx/%pS, new = 0x%lx/0x%lx/%pS\n",
+		 __func__, __LINE__,
+		 pc, ppc_function_entry((void *)pc), (void *)pc,
+		 new_addr, ppc_function_entry((void *)new_addr),
+		 (void *)ppc_function_entry((void *)new_addr));
 
 	return 0;
 
@@ -331,15 +407,27 @@ void arch_klp_unpatch_func(struct klp_func *func)
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
 			patch_instruction((struct ppc_inst *)((u32 *)pc + i),
 					  ppc_inst(insns[i]));
+
+		pr_debug("[%s %d] restore insns at 0x%lx\n", __func__, __LINE__, pc);
 	} else {
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 					struct klp_func, stack_node);
 		new_addr = (unsigned long)next_func->new_func;
 
-		livepatch_create_stub((struct ppc64_stub_entry *)pc,
-			new_addr, func->old_mod, NULL);
+		livepatch_create_branch(pc, (unsigned long)&func_node->trampoline,
+			new_addr, func->old_mod);
+
+		pr_debug("[%s %d] old = 0x%lx/0x%lx/%pS, new = 0x%lx/0x%lx/%pS\n",
+			__func__, __LINE__,
+			pc, ppc_function_entry((void *)pc), (void *)pc,
+			new_addr, ppc_function_entry((void *)new_addr),
+			(void *)ppc_function_entry((void *)new_addr));
+
 	}
+
+	flush_icache_range((unsigned long)pc,
+			(unsigned long)pc + LJMP_INSN_SIZE * PPC64_INSN_SIZE);
 }
 
 /* return 0 if the func can be patched */
