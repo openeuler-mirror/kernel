@@ -202,6 +202,7 @@ config ARM64
 	select SWIOTLB
 	select SYSCTL_EXCEPTION_TRACE
 	select THREAD_INFO_IN_TASK
+	select HAVE_LIVEPATCH_WO_FTRACE
 	help
 	  ARM 64-bit (AArch64) Linux support.
 
@@ -349,6 +350,8 @@ config ARCH_HAS_CPU_RELAX
 	def_bool y
 
 source "arch/arm64/Kconfig.platforms"
+
+source "kernel/livepatch/Kconfig"
 
 menu "Kernel Features"
 

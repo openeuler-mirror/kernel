@@ -84,6 +84,7 @@ void arch_release_task_struct(struct task_struct *tsk);
 #define TIF_SSBD		25	/* Wants SSB mitigation */
 #define TIF_TAGGED_ADDR		26	/* Allow tagged user addresses */
 #define TIF_32BIT_AARCH64	27	/* 32 bit process on AArch64(ILP32) */
+#define TIF_PATCH_PENDING	28	/* pending live patching update */
 
 #define _TIF_SIGPENDING		(1 << TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1 << TIF_NEED_RESCHED)
@@ -101,6 +102,7 @@ void arch_release_task_struct(struct task_struct *tsk);
 #define _TIF_SVE		(1 << TIF_SVE)
 #define _TIF_MTE_ASYNC_FAULT	(1 << TIF_MTE_ASYNC_FAULT)
 #define _TIF_32BIT_AARCH64	(1 << TIF_32BIT_AARCH64)
+#define _TIF_PATCH_PENDING	(1 << TIF_PATCH_PENDING)
 #define _TIF_POLLING_NRFLAG	(1 << TIF_POLLING_NRFLAG)
 
 #define _TIF_WORK_MASK		(_TIF_NEED_RESCHED | _TIF_SIGPENDING | \
