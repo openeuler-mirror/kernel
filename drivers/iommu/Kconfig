@@ -303,6 +303,7 @@ config ARM_SMMU_DISABLE_BYPASS_BY_DEFAULT
 config ARM_SMMU_V3
 	tristate "ARM Ltd. System MMU Version 3 (SMMUv3) Support"
 	depends on ARM64
+	select IOASID
 	select IOMMU_API
 	select IOMMU_IO_PGTABLE_LPAE
 	select GENERIC_MSI_IRQ_DOMAIN

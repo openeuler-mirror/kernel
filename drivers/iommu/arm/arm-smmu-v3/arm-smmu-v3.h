@@ -708,6 +708,7 @@ struct arm_smmu_master {
 	bool				prg_resp_needs_ssid;
 	bool				sva_enabled;
 	bool				iopf_enabled;
+	bool				auxd_enabled;
 	struct list_head		bonds;
 	unsigned int			ssid_bits;
 };
@@ -737,10 +738,16 @@ struct arm_smmu_domain {
 
 	struct iommu_domain		domain;
 
+	/* Unused in aux domains */
 	struct list_head		devices;
 	spinlock_t			devices_lock;
 
 	struct list_head		mmu_notifiers;
+
+	/* Auxiliary domain stuff */
+	struct arm_smmu_domain		*parent;
+	ioasid_t			ssid;
+	unsigned long			aux_nr_devs;
 };
 
 static inline struct arm_smmu_domain *to_smmu_domain(struct iommu_domain *dom)
