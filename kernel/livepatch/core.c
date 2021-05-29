@@ -1260,6 +1260,15 @@ int klp_try_disable_patch(void *data)
 	return ret;
 }
 
+void __weak arch_klp_code_modify_prepare(void)
+{
+}
+
+void __weak arch_klp_code_modify_post_process(void)
+{
+}
+
+
 static int __klp_disable_patch(struct klp_patch *patch)
 {
 	int ret;
@@ -1280,7 +1289,9 @@ static int __klp_disable_patch(struct klp_patch *patch)
 	}
 #endif
 
+	arch_klp_code_modify_prepare();
 	ret = stop_machine(klp_try_disable_patch, &patch_data, cpu_online_mask);
+	arch_klp_code_modify_post_process();
 	if (ret)
 		return ret;
 
@@ -1436,7 +1447,9 @@ static int __klp_enable_patch(struct klp_patch *patch)
 	}
 #endif
 
+	arch_klp_code_modify_prepare();
 	ret = stop_machine(klp_try_enable_patch, &patch_data, cpu_online_mask);
+	arch_klp_code_modify_post_process();
 	if (ret)
 		return ret;
 
