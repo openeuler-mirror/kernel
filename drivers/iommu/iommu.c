@@ -1198,6 +1198,84 @@ unlock:
 }
 EXPORT_SYMBOL_GPL(iommu_unregister_device_fault_handler);
 
+/*
+ * A bunch of sanity-checks. For development only, because it probably adds a
+ * large overhead to the fast path. The fault only comes from the IOMMU driver,
+ * which is obviously bug-free.
+ */
+static bool iommu_fault_valid(struct iommu_fault *fault)
+{
+	u32 flags, perm;
+	size_t struct_end;
+
+	if (fault->padding)
+		return false;
+
+	switch (fault->type) {
+	case IOMMU_FAULT_PAGE_REQ:
+		struct_end = offsetofend(struct iommu_fault, prm.private_data);
+		flags = fault->prm.flags;
+		perm = fault->prm.perm;
+		if (flags & ~(IOMMU_FAULT_PAGE_REQUEST_PASID_VALID |
+			      IOMMU_FAULT_PAGE_REQUEST_LAST_PAGE |
+			      IOMMU_FAULT_PAGE_REQUEST_PRIV_DATA |
+			      IOMMU_FAULT_PAGE_RESPONSE_NEEDS_PASID))
+			return false;
+
+		if (!(flags & IOMMU_FAULT_PAGE_REQUEST_PASID_VALID) &&
+		    fault->prm.pasid)
+			return false;
+
+		if (!(flags & IOMMU_FAULT_PAGE_REQUEST_PRIV_DATA) &&
+		    (fault->prm.private_data[0] || fault->prm.private_data[1]))
+			return false;
+
+		if ((flags & IOMMU_FAULT_PAGE_RESPONSE_NEEDS_PASID) &&
+		    !(flags & IOMMU_FAULT_PAGE_REQUEST_PASID_VALID))
+			return false;
+		break;
+	case IOMMU_FAULT_DMA_UNRECOV:
+		struct_end = offsetofend(struct iommu_fault, event.fetch_addr);
+		flags = fault->event.flags;
+		perm = fault->event.perm;
+		if (flags & ~(IOMMU_FAULT_UNRECOV_PASID_VALID |
+					  IOMMU_FAULT_UNRECOV_ADDR_VALID |
+					  IOMMU_FAULT_UNRECOV_FETCH_ADDR_VALID))
+			return false;
+
+		if (!(flags & IOMMU_FAULT_UNRECOV_PASID_VALID) &&
+		    fault->event.pasid)
+			return false;
+
+		if (!(flags & IOMMU_FAULT_UNRECOV_FETCH_ADDR_VALID) &&
+		    fault->event.fetch_addr)
+			return false;
+
+		if (!(flags & IOMMU_FAULT_UNRECOV_FETCH_ADDR_VALID) &&
+		    fault->event.fetch_addr)
+			return false;
+
+		if (fault->event.reason > IOMMU_FAULT_REASON_OOR_ADDRESS)
+			return false;
+		break;
+	default:
+		return false;
+	}
+
+	if (perm & ~(IOMMU_FAULT_PERM_READ |
+		     IOMMU_FAULT_PERM_WRITE |
+		     IOMMU_FAULT_PERM_EXEC |
+		     IOMMU_FAULT_PERM_PRIV))
+		return false;
+
+	/* Check that bottom padding is zero */
+	if (!bitmap_empty((void *)fault + struct_end,
+			  8 * (sizeof(*fault) - struct_end)))
+		return false;
+
+	return true;
+}
+
 /**
  * iommu_report_device_fault() - Report fault event to device driver
  * @dev: the device
@@ -1218,7 +1296,7 @@ int iommu_report_device_fault(struct device *dev, struct iommu_fault_event *evt)
 	int ret = 0;
 	u64 exp;
 
-	if (!param || !evt)
+	if (!param || !evt || WARN_ON_ONCE(!iommu_fault_valid(&evt->fault)))
 		return -EINVAL;
 
 	/* we only report device fault if there is a handler registered */
