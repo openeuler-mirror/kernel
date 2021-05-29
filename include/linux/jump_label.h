@@ -229,6 +229,7 @@ extern void static_key_enable(struct static_key *key);
 extern void static_key_disable(struct static_key *key);
 extern void static_key_enable_cpuslocked(struct static_key *key);
 extern void static_key_disable_cpuslocked(struct static_key *key);
+extern int jump_label_register(struct module *mod);
 
 /*
  * We should be using ATOMIC_INIT() for initializing .enabled, but
@@ -297,6 +298,11 @@ static inline void jump_label_lock(void) {}
 static inline void jump_label_unlock(void) {}
 
 static inline int jump_label_apply_nops(struct module *mod)
+{
+	return 0;
+}
+
+static inline int jump_label_register(struct module *mod)
 {
 	return 0;
 }

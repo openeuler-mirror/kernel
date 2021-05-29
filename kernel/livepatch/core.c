@@ -1108,6 +1108,12 @@ static int klp_init_patch(struct klp_patch *patch)
 			goto out;
 	}
 
+	set_mod_klp_rel_state(patch->mod, MODULE_KLP_REL_DONE);
+	jump_label_apply_nops(patch->mod);
+	ret = jump_label_register(patch->mod);
+	if (ret)
+		goto out;
+
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	klp_for_each_object(patch, obj)
 		klp_load_hook(obj);
