@@ -12,6 +12,7 @@
 #include <linux/sched/task_stack.h>
 
 #ifdef CONFIG_LIVEPATCH
+#ifdef CONFIG_LIVEPATCH_FTRACE
 static inline void klp_arch_set_pc(struct pt_regs *regs, unsigned long ip)
 {
 	regs->nip = ip;
@@ -26,6 +27,21 @@ static inline unsigned long klp_get_ftrace_location(unsigned long faddr)
 	 */
 	return ftrace_location_range(faddr, faddr + 16);
 }
+
+#elif defined(CONFIG_LIVEPATCH_WO_FTRACE)
+struct klp_func;
+
+/* kernel livepatch instruction barrier */
+#define klp_smp_isb()  __smp_lwsync()
+
+int arch_klp_patch_func(struct klp_func *func);
+void arch_klp_unpatch_func(struct klp_func *func);
+#endif /* CONFIG_LIVEPATCH_FTRACE */
+
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+struct klp_patch;
+int klp_check_calltrace(struct klp_patch *patch, int enable);
+#endif
 
 static inline void klp_init_thread_info(struct task_struct *p)
 {

@@ -94,6 +94,7 @@ obj-$(CONFIG_44x)		+= cpu_setup_44x.o
 obj-$(CONFIG_PPC_FSL_BOOK3E)	+= cpu_setup_fsl_booke.o
 obj-$(CONFIG_PPC_DOORBELL)	+= dbell.o
 obj-$(CONFIG_JUMP_LABEL)	+= jump_label.o
+obj-$(CONFIG_LIVEPATCH_WO_FTRACE) += livepatch_$(BITS).o
 
 extra-$(CONFIG_PPC64)		:= head_64.o
 extra-$(CONFIG_PPC_BOOK3S_32)	:= head_book3s_32.o
