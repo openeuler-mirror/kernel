@@ -44,6 +44,33 @@ static inline bool offset_in_range(unsigned long pc, unsigned long addr,
 }
 #endif
 
+#define LJMP_INSN_SIZE 4
+
+struct klp_func_node {
+	struct list_head node;
+	struct list_head func_stack;
+	unsigned long old_addr;
+#ifdef CONFIG_ARM64_MODULE_PLTS
+	u32	old_insns[LJMP_INSN_SIZE];
+#else
+	u32	old_insn;
+#endif
+};
+
+static LIST_HEAD(klp_func_list);
+
+static struct klp_func_node *klp_find_func_node(unsigned long old_addr)
+{
+	struct klp_func_node *func_node;
+
+	list_for_each_entry(func_node, &klp_func_list, node) {
+		if (func_node->old_addr == old_addr)
+			return func_node;
+	}
+
+	return NULL;
+}
+
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 struct walk_stackframe_args {
 	struct klp_patch *patch;
@@ -69,6 +96,7 @@ static bool klp_check_activeness_func(void *data, unsigned long pc)
 	struct klp_func *func;
 	unsigned long func_addr, func_size;
 	const char *func_name;
+	struct klp_func_node *func_node;
 
 	if (args->ret)
 		return false;
@@ -76,9 +104,33 @@ static bool klp_check_activeness_func(void *data, unsigned long pc)
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
 			if (args->enable) {
-				func_addr = (unsigned long)func->old_func;
-				func_size = func->old_size;
+				/*
+				 * When enable, checking the currently
+				 * active functions.
+				 */
+				func_node = klp_find_func_node((unsigned long)func->old_func);
+				if (!func_node ||
+				    list_empty(&func_node->func_stack)) {
+					func_addr = (unsigned long)func->old_func;
+					func_size = func->old_size;
+				} else {
+					/*
+					 * Previously patched function
+					 * [the active one]
+					 */
+					struct klp_func *prev;
+
+					prev = list_first_or_null_rcu(
+						&func_node->func_stack,
+						struct klp_func, stack_node);
+					func_addr = (unsigned long)prev->new_func;
+					func_size = prev->new_size;
+				}
 			} else {
+				/*
+				 * When disable, check for the function
+				 * itself which to be unpatched.
+				 */
 				func_addr = (unsigned long)func->new_func;
 				func_size = func->new_size;
 			}
@@ -147,33 +199,6 @@ out:
 }
 #endif
 
-#define LJMP_INSN_SIZE 4
-
-struct klp_func_node {
-	struct list_head node;
-	struct list_head func_stack;
-	void   *old_func;
-#ifdef CONFIG_ARM64_MODULE_PLTS
-	u32	old_insns[LJMP_INSN_SIZE];
-#else
-	u32	old_insn;
-#endif
-};
-
-static LIST_HEAD(klp_func_list);
-
-static struct klp_func_node *klp_find_func_node(void *old_func)
-{
-	struct klp_func_node *func_node;
-
-	list_for_each_entry(func_node, &klp_func_list, node) {
-		if (func_node->old_func == old_func)
-			return func_node;
-	}
-
-	return NULL;
-}
-
 int arch_klp_patch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
@@ -186,7 +211,7 @@ int arch_klp_patch_func(struct klp_func *func)
 #endif
 	int ret = 0;
 
-	func_node = klp_find_func_node(func->old_func);
+	func_node = klp_find_func_node((unsigned long)func->old_func);
 	if (!func_node) {
 		func_node = kzalloc(sizeof(*func_node), GFP_ATOMIC);
 		if (!func_node)
@@ -194,7 +219,7 @@ int arch_klp_patch_func(struct klp_func *func)
 		memory_flag = 1;
 
 		INIT_LIST_HEAD(&func_node->func_stack);
-		func_node->old_func = func->old_func;
+		func_node->old_addr = (unsigned long)func->old_func;
 
 #ifdef CONFIG_ARM64_MODULE_PLTS
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
@@ -265,11 +290,11 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	int i;
 	u32 insns[LJMP_INSN_SIZE];
 #endif
-	func_node = klp_find_func_node(func->old_func);
+	func_node = klp_find_func_node((unsigned long)func->old_func);
 	if (WARN_ON(!func_node))
 		return;
 
-	pc = (unsigned long)func_node->old_func;
+	pc = func_node->old_addr;
 	if (list_is_singular(&func_node->func_stack)) {
 #ifdef CONFIG_ARM64_MODULE_PLTS
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
