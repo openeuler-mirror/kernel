@@ -86,6 +86,7 @@ struct klp_func {
 	func_descr_t new_func_descr;
 #endif
 #endif
+	void *func_node;
 };
 
 struct klp_object;

@@ -229,7 +229,7 @@ int arch_klp_patch_func(struct klp_func *func)
 
 	func_node = klp_find_func_node(func->old_func);
 	if (!func_node) {
-		func_node = kzalloc(sizeof(*func_node), GFP_ATOMIC);
+		func_node = func->func_node;
 		if (!func_node)
 			return -ENOMEM;
 
@@ -246,7 +246,6 @@ int arch_klp_patch_func(struct klp_func *func)
 		ret = arm_insn_read(func->old_func, &func_node->old_insn);
 #endif
 		if (ret) {
-			kfree(func_node);
 			return -EPERM;
 		}
 		list_add_rcu(&func_node->node, &klp_func_list);
@@ -308,7 +307,6 @@ void arch_klp_unpatch_func(struct klp_func *func)
 #endif
 		list_del_rcu(&func->stack_node);
 		list_del_rcu(&func_node->node);
-		kfree(func_node);
 	} else {
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
@@ -364,3 +362,33 @@ int arch_klp_func_can_patch(struct klp_func *func)
 	return 0;
 }
 #endif /* #ifdef CONFIG_ARM_MODULE_PLTS */
+
+void arch_klp_mem_prepare(struct klp_patch *patch)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			func->func_node = kzalloc(sizeof(struct klp_func_node),
+					GFP_ATOMIC);
+		}
+	}
+}
+
+void arch_klp_mem_recycle(struct klp_patch *patch)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+	struct klp_func_node *func_node;
+
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			func_node = func->func_node;
+			if (func_node && list_is_singular(&func_node->func_stack)) {
+				kfree(func_node);
+				func->func_node = NULL;
+			}
+		}
+	}
+}
