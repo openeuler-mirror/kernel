@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2105.4.0
+%global hulkrelease 2105.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0088
+Release: %{hulkrelease}.0089
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -818,6 +818,29 @@ fi
 
 %changelog
 
+
+* Tue Jun 01 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.5.0.0089
+- ata: ahci: Disable SXS for Hisilicon Kunpeng920
+- fuse: don't ignore errors from fuse_writepages_fill()
+- NFS: finish_automount() requires us to hold 2 refs to the mount record
+- NFS: If nfs_mountpoint_expiry_timeout < 0, do not expire submounts
+- NFS: remove unused check for negative dentry
+- NFSv3: use nfs_add_or_obtain() to create and reference inodes
+- NFS: Refactor nfs_instantiate() for dentry referencing callers
+- sysfs: Remove address alignment constraint in sysfs_emit{_at}
+- Revert "mm, sl[aou]b: guarantee natural alignment for kmalloc(power-of-two)"
+- Revert "mm, sl[ou]b: improve memory accounting"
+- Revert "mm: memcontrol: fix slub memory accounting"
+- io_uring: truncate lengths larger than MAX_RW_COUNT on provide buffers
+- arm/ras: Report ARM processor information to userspace
+- fuse: update attr_version counter on fuse_notify_inval_inode()
+- alinux: random: speed up the initialization of module
+- net: mac802154: Fix general protection fault
+- cipso,calipso: resolve a number of problems with the DOI refcounts
+- Bluetooth: verify AMP hci_chan before amp_destroy
+- net/nfc: fix use-after-free llcp_sock_bind/connect
+- x86: Select HARDIRQS_SW_RESEND on x86
+- x86/apic/vector: Force interupt handler invocation to irq context
 
 * Wed May 26 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.4.0.0088
 - tools arch x86: Sync asm/cpufeatures.h with the with the kernel
