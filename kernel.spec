@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2105.5.0
+%global hulkrelease 2105.6.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0089
+Release: %{hulkrelease}.0090
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -818,6 +818,41 @@ fi
 
 %changelog
 
+
+* Tue Jun 01 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.6.0.0090
+- cpuidle: fix kabi broken in cpuidle_device and cpuidle_driver
+- config: set default value of haltpoll
+- ARM: cpuidle: Add support for cpuidle-haltpoll driver for ARM
+- arm64: Add some definitions of kvm_para*
+- cpuidle-haltpoll: Use arch_cpu_idle() to replace default_idle()
+- arm64: Optimize ttwu IPI
+- config: enable CONFIG_CPU_IDLE_GOV_HALTPOLL and CONFIG_HALTPOLL_CPUIDLE default
+- KVM: polling: add architecture backend to disable polling
+- cpuidle-haltpoll: Fix small typo
+- cpuidle: haltpoll: allow force loading on hosts without the REALTIME hint
+- cpuidle-haltpoll: Enable kvm guest polling when dedicated physical CPUs are available
+- cpuidle-haltpoll: do not set an owner to allow modunload
+- cpuidle-haltpoll: return -ENODEV on modinit failure
+- cpuidle-haltpoll: vcpu hotplug support
+- cpuidle-haltpoll: set haltpoll as preferred governor
+- cpuidle: allow governor switch on cpuidle_register_driver()
+- cpuidle: governor: Add new governors to cpuidle_governors again
+- cpuidle: Add cpuidle.governor= command line parameter
+- cpuidle-haltpoll: disable host side polling when kvm virtualized
+- kvm: x86: add host poll control msrs
+- cpuidle: add haltpoll governor
+- governors: unify last_state_idx
+- cpuidle: use first valid target residency as poll time
+- cpuidle: header file stubs must be "static inline"
+- cpuidle: add poll_limit_ns to cpuidle_device structure
+- add cpuidle-haltpoll driver
+- cpuidle: poll_state: Fix default time limit
+- cpuidle: poll_state: Disregard disable idle states
+- cpuidle: poll_state: Revise loop termination condition
+- cpuidle: menu: Do not update last_state_idx in menu_select()
+- bpf: No need to simulate speculative domain for immediates
+- bpf: Fix mask direction swap upon off reg sign change
+- bpf: Wrap aux data inside bpf_sanitize_info container
 
 * Tue Jun 01 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.5.0.0089
 - ata: ahci: Disable SXS for Hisilicon Kunpeng920
