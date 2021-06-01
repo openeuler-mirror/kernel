@@ -39,6 +39,10 @@ module_param(guest_halt_poll_grow_start, uint, 0644);
 static bool guest_halt_poll_allow_shrink __read_mostly = true;
 module_param(guest_halt_poll_allow_shrink, bool, 0644);
 
+static bool enable __read_mostly;
+module_param(enable, bool, 0444);
+MODULE_PARM_DESC(enable, "Load unconditionally");
+
 /**
  * haltpoll_select - selects the next idle state to enter
  * @drv: cpuidle driver containing state data
@@ -141,7 +145,7 @@ static struct cpuidle_governor haltpoll_governor = {
 
 static int __init init_haltpoll(void)
 {
-	if (kvm_para_available())
+	if (kvm_para_available() || enable)
 		return cpuidle_register_governor(&haltpoll_governor);
 
 	return 0;
