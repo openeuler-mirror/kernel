@@ -330,11 +330,13 @@ void cpuidle_reflect(struct cpuidle_device *dev, int index)
 u64 cpuidle_poll_time(struct cpuidle_driver *drv,
 		      struct cpuidle_device *dev)
 {
+	struct cpuidle_device_wrapper *devw =
+		container_of(dev, struct cpuidle_device_wrapper, dev);
 	int i;
 	u64 limit_ns;
 
-	if (dev->poll_limit_ns)
-		return dev->poll_limit_ns;
+	if (devw->poll_limit_ns)
+		return devw->poll_limit_ns;
 
 	limit_ns = TICK_NSEC;
 	for (i = 1; i < drv->state_count; i++) {
@@ -346,9 +348,9 @@ u64 cpuidle_poll_time(struct cpuidle_driver *drv,
 		break;
 	}
 
-	dev->poll_limit_ns = limit_ns;
+	devw->poll_limit_ns = limit_ns;
 
-	return dev->poll_limit_ns;
+	return devw->poll_limit_ns;
 }
 
 /**

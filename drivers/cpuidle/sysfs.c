@@ -411,12 +411,14 @@ static ssize_t cpuidle_state_store(struct kobject *kobj, struct attribute *attr,
 	struct cpuidle_state_usage *state_usage = kobj_to_state_usage(kobj);
 	struct cpuidle_state_attr *cattr = attr_to_stateattr(attr);
 	struct cpuidle_device *dev = kobj_to_device(kobj);
+	struct cpuidle_device_wrapper *devw =
+		container_of(dev, struct cpuidle_device_wrapper, dev);
 
 	if (cattr->store)
 		ret = cattr->store(state, state_usage, buf, size);
 
 	/* reset poll time cache */
-	dev->poll_limit_ns = 0;
+	devw->poll_limit_ns = 0;
 
 	return ret;
 }

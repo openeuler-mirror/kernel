@@ -22,7 +22,7 @@ static bool force __read_mostly;
 module_param(force, bool, 0444);
 MODULE_PARM_DESC(force, "Load unconditionally");
 
-static struct cpuidle_device __percpu *haltpoll_cpuidle_devices;
+static struct cpuidle_device_wrapper __percpu *haltpoll_cpuidle_dev_wrap;
 static enum cpuhp_state haltpoll_hp_state;
 
 static int default_enter_idle(struct cpuidle_device *dev,
@@ -36,29 +36,34 @@ static int default_enter_idle(struct cpuidle_device *dev,
 	return index;
 }
 
-static struct cpuidle_driver haltpoll_driver = {
-	.name = "haltpoll",
-	.governor = "haltpoll",
-	.states = {
-		{ /* entry 0 is for polling */ },
-		{
-			.enter			= default_enter_idle,
-			.exit_latency		= 1,
-			.target_residency	= 1,
-			.power_usage		= -1,
-			.name			= "haltpoll idle",
-			.desc			= "default architecture idle",
+static struct cpuidle_driver_wrapper haltpoll_driver_wrapper = {
+	.drv = {
+		.name = "haltpoll",
+		.states = {
+			{ /* entry 0 is for polling */ },
+			{
+				.enter             = default_enter_idle,
+				.exit_latency      = 1,
+				.target_residency  = 1,
+				.power_usage       = -1,
+				.name              = "haltpoll idle",
+				.desc              =
+					"default architecture idle",
+			},
 		},
+		.safe_state_index = 0,
+		.state_count = 2,
 	},
-	.safe_state_index = 0,
-	.state_count = 2,
+	.governor = "haltpoll",
 };
 
 static int haltpoll_cpu_online(unsigned int cpu)
 {
 	struct cpuidle_device *dev;
+	struct cpuidle_device_wrapper *devw;
 
-	dev = per_cpu_ptr(haltpoll_cpuidle_devices, cpu);
+	devw = per_cpu_ptr(haltpoll_cpuidle_dev_wrap, cpu);
+	dev = &(devw->dev);
 	if (!dev->registered) {
 		dev->cpu = cpu;
 		if (cpuidle_register_device(dev)) {
@@ -74,8 +79,10 @@ static int haltpoll_cpu_online(unsigned int cpu)
 static int haltpoll_cpu_offline(unsigned int cpu)
 {
 	struct cpuidle_device *dev;
+	struct cpuidle_device_wrapper *devw;
 
-	dev = per_cpu_ptr(haltpoll_cpuidle_devices, cpu);
+	devw = per_cpu_ptr(haltpoll_cpuidle_dev_wrap, cpu);
+	dev = &(devw->dev);
 	if (dev->registered) {
 		arch_haltpoll_disable(cpu);
 		cpuidle_unregister_device(dev);
@@ -88,10 +95,10 @@ static void haltpoll_uninit(void)
 {
 	if (haltpoll_hp_state)
 		cpuhp_remove_state(haltpoll_hp_state);
-	cpuidle_unregister_driver(&haltpoll_driver);
+	cpuidle_unregister_driver(&(haltpoll_driver_wrapper.drv));
 
-	free_percpu(haltpoll_cpuidle_devices);
-	haltpoll_cpuidle_devices = NULL;
+	free_percpu(haltpoll_cpuidle_dev_wrap);
+	haltpoll_cpuidle_dev_wrap = NULL;
 }
 
 static bool haltpoll_want(void)
@@ -102,7 +109,7 @@ static bool haltpoll_want(void)
 static int __init haltpoll_init(void)
 {
 	int ret;
-	struct cpuidle_driver *drv = &haltpoll_driver;
+	struct cpuidle_driver *drv = &(haltpoll_driver_wrapper.drv);
 
 	cpuidle_poll_state_init(drv);
 
@@ -113,8 +120,8 @@ static int __init haltpoll_init(void)
 	if (ret < 0)
 		return ret;
 
-	haltpoll_cpuidle_devices = alloc_percpu(struct cpuidle_device);
-	if (haltpoll_cpuidle_devices == NULL) {
+	haltpoll_cpuidle_dev_wrap = alloc_percpu(struct cpuidle_device_wrapper);
+	if (haltpoll_cpuidle_dev_wrap == NULL) {
 		cpuidle_unregister_driver(drv);
 		return -ENOMEM;
 	}

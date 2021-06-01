@@ -84,9 +84,7 @@ struct cpuidle_device {
 	unsigned int		poll_time_limit:1;
 	unsigned int		cpu;
 
-	int			last_state_idx;
 	int			last_residency;
-	u64			poll_limit_ns;
 	struct cpuidle_state_usage	states_usage[CPUIDLE_STATE_MAX];
 	struct cpuidle_state_kobj *kobjs[CPUIDLE_STATE_MAX];
 	struct cpuidle_driver_kobj *kobj_driver;
@@ -97,6 +95,12 @@ struct cpuidle_device {
 	cpumask_t		coupled_cpus;
 	struct cpuidle_coupled	*coupled;
 #endif
+};
+
+struct cpuidle_device_wrapper {
+	struct cpuidle_device dev;
+	int                   last_state_idx;
+	u64                   poll_limit_ns;
 };
 
 DECLARE_PER_CPU(struct cpuidle_device *, cpuidle_devices);
@@ -130,9 +134,12 @@ struct cpuidle_driver {
 
 	/* the driver handles the cpus in cpumask */
 	struct cpumask		*cpumask;
+};
 
+struct cpuidle_driver_wrapper {
+	struct cpuidle_driver drv;
 	/* preferred governor to switch at register time */
-	const char		*governor;
+	const char            *governor;
 };
 
 #ifdef CONFIG_CPU_IDLE

@@ -254,16 +254,18 @@ static void __cpuidle_unregister_driver(struct cpuidle_driver *drv)
 int cpuidle_register_driver(struct cpuidle_driver *drv)
 {
 	struct cpuidle_governor *gov;
+	struct cpuidle_driver_wrapper *drvw;
 	int ret;
 
 	spin_lock(&cpuidle_driver_lock);
 	ret = __cpuidle_register_driver(drv);
 	spin_unlock(&cpuidle_driver_lock);
+	drvw = container_of(drv, struct cpuidle_driver_wrapper, drv);
 
-	if (!ret && !strlen(param_governor) && drv->governor &&
+	if (!ret && !strlen(param_governor) && drvw->governor &&
 	    (cpuidle_get_driver() == drv)) {
 		mutex_lock(&cpuidle_lock);
-		gov = cpuidle_find_governor(drv->governor);
+		gov = cpuidle_find_governor(drvw->governor);
 		if (gov) {
 			cpuidle_prev_governor = cpuidle_curr_governor;
 			if (cpuidle_switch_governor(gov) < 0)
