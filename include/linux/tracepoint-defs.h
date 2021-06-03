@@ -45,7 +45,9 @@ struct bpf_raw_event_map {
 	struct tracepoint	*tp;
 	void			*bpf_func;
 	u32			num_args;
+#ifndef __GENKSYMS__
 	u32			writable_size;
+#endif
 } __aligned(32);
 
 #endif
