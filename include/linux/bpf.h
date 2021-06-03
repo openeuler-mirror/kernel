@@ -213,6 +213,14 @@ enum bpf_reg_type {
 	PTR_TO_PACKET_META,	 /* skb->data - meta_len */
 	PTR_TO_PACKET,		 /* reg points to skb->data */
 	PTR_TO_PACKET_END,	 /* skb->data + headlen */
+	PTR_TO_FLOW_KEYS,	 /* reg points to bpf_flow_keys */
+	PTR_TO_SOCKET,		 /* reg points to struct bpf_sock */
+	PTR_TO_SOCKET_OR_NULL,	 /* reg points to struct bpf_sock or NULL */
+	PTR_TO_SOCK_COMMON,	 /* reg points to sock_common */
+	PTR_TO_SOCK_COMMON_OR_NULL, /* reg points to sock_common or NULL */
+	PTR_TO_TCP_SOCK,	 /* reg points to struct tcp_sock */
+	PTR_TO_TCP_SOCK_OR_NULL, /* reg points to struct tcp_sock or NULL */
+	PTR_TO_TP_BUFFER,	 /* reg points to a writable raw tp's buffer */
 };
 
 /* The information passed from prog-specific *_is_valid_access
@@ -276,6 +284,7 @@ struct bpf_prog_aux {
 	atomic_t refcnt;
 	u32 used_map_cnt;
 	u32 max_ctx_offset;
+	u32 max_tp_access;
 	u32 stack_depth;
 	u32 id;
 	u32 func_cnt;
