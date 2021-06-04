@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2105.6.0
+%global hulkrelease 2105.8.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0088
+Release: %{hulkrelease}.0089
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,14 @@ fi
 
 %changelog
 
+
+* Fri Jun 04 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.8.0.0089
+- tools: libbpf: fix compiler error
+- bpf: fix kabi for struct bpf_prog_aux and struct bpf_raw_event_map
+- tools: bpftool: add raw_tracepoint_writable prog type to header
+- tools: sync bpf.h
+- bpf: add writable context for raw tracepoints
+- x86/tsc: Respect tsc command line paraemeter for clocksource_tsc_early
 
 * Tue Jun 01 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.6.0.0088
 - cpuidle: fix kabi broken in cpuidle_device and cpuidle_driver
