@@ -3371,6 +3371,52 @@ TRACE_EVENT(xfs_iunlink_update_bucket,
 		  __entry->new_ptr)
 );
 
+DECLARE_EVENT_CLASS(xfs_file_read,
+		TP_PROTO(struct xfs_writable_file *file, struct xfs_inode *ip,
+			size_t count, loff_t offset),
+		TP_ARGS(file, ip, count, offset),
+		TP_STRUCT__entry(
+			__field(struct xfs_writable_file *, file)
+			__field(dev_t, dev)
+			__field(xfs_ino_t, ino)
+			__field(loff_t, offset)
+			__field(size_t, count)
+		),
+		TP_fast_assign(
+			__entry->file = 0;
+			__entry->dev = VFS_I(ip)->i_sb->s_dev;
+			__entry->ino = ip->i_ino;
+			__entry->offset = offset;
+			__entry->count = count;
+		),
+		TP_printk("dev %d:%d ino 0x%llx offset 0x%llx count 0x%zx",
+			MAJOR(__entry->dev), MINOR(__entry->dev),
+			__entry->ino,
+			__entry->offset,
+			__entry->count)
+);
+
+#ifdef DEFINE_EVENT_WRITABLE
+#undef XFS_DEFINE_EVENT
+#define XFS_DEFINE_EVENT(template, call, proto, args, size)		\
+	DEFINE_EVENT_WRITABLE(template, call, PARAMS(proto),		\
+			      PARAMS(args), size)
+#else
+#undef XFS_DEFINE_EVENT
+#define XFS_DEFINE_EVENT(template, call, proto, args, size)		\
+	DEFINE_EVENT(template, call, PARAMS(proto), PARAMS(args))
+#endif
+
+XFS_DEFINE_EVENT(xfs_file_read, xfs_file_read,
+
+		TP_PROTO(struct xfs_writable_file *file, struct xfs_inode *ip,
+			size_t count, loff_t offset),
+
+		TP_ARGS(file, ip, count, offset),
+
+		sizeof(struct xfs_writable_file)
+);
+
 #endif /* _TRACE_XFS_H */
 
 #undef TRACE_INCLUDE_PATH

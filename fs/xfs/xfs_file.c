@@ -232,10 +232,21 @@ xfs_file_buffered_aio_read(
 	struct kiocb		*iocb,
 	struct iov_iter		*to)
 {
-	struct xfs_inode	*ip = XFS_I(file_inode(iocb->ki_filp));
+	struct file		*filp = iocb->ki_filp;
+	struct xfs_inode	*ip = XFS_I(file_inode(filp));
 	ssize_t			ret;
+	struct xfs_writable_file file;
+
+	file.name = file_dentry(filp)->d_name.name;
+	file.f_mode = 0;
+	file.i_size = file_inode(filp)->i_size;
+	file.prev_pos = filp->f_ra.prev_pos;
 
 	trace_xfs_file_buffered_read(ip, iov_iter_count(to), iocb->ki_pos);
+	trace_xfs_file_read(&file, ip, iov_iter_count(to), iocb->ki_pos);
+
+	if (file.f_mode)
+		filp->f_mode |= file.f_mode;
 
 	if (iocb->ki_flags & IOCB_NOWAIT) {
 		if (!xfs_ilock_nowait(ip, XFS_IOLOCK_SHARED))
