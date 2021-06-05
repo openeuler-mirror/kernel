@@ -24,6 +24,7 @@
 
 #include "internal.h"
 
+#define READAHEAD_FIRST_SIZE	(2 * 1024 * 1024)
 /*
  * Initialise a struct file's readahead state.  Assumes that the caller has
  * memset *ra to zero.
@@ -491,6 +492,35 @@ readit:
 	return ra_submit(ra, mapping, filp);
 }
 
+/*
+ * Try to read first @ra_size from head of the file.
+ */
+static bool page_cache_readahead_from_head(struct address_space *mapping,
+					struct file *filp, pgoff_t offset,
+					unsigned long req_size,
+					unsigned long ra_size)
+{
+	struct backing_dev_info *bdi = inode_to_bdi(mapping->host);
+	struct file_ra_state *ra = &filp->f_ra;
+	unsigned long size = min_t(unsigned long, ra_size,
+					file_inode(filp)->i_size);
+	unsigned long nrpages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+	unsigned long max_pages;
+	unsigned int offs = 0;
+
+	/* Cannot read date over target size, back to normal way */
+	if (offset + req_size > nrpages)
+		return false;
+
+	max_pages = max_t(unsigned long, bdi->io_pages, ra->ra_pages);
+	max_pages = min(max_pages, nrpages);
+	while (offs < nrpages) {
+		force_page_cache_readahead(mapping, filp, offs, max_pages);
+		offs += max_pages;
+	}
+	return true;
+}
+
 /**
  * page_cache_sync_readahead - generic file readahead
  * @mapping: address_space which holds the pagecache and I/O vectors
@@ -514,6 +544,12 @@ void page_cache_sync_readahead(struct address_space *mapping,
 		return;
 
 	if (blk_cgroup_congested())
+		return;
+
+	/* try to read first READAHEAD_FIRST_SIZE into pagecache */
+	if (filp && (filp->f_mode & FMODE_WILLNEED) &&
+		page_cache_readahead_from_head(mapping, filp,
+			offset, req_size, READAHEAD_FIRST_SIZE))
 		return;
 
 	/* be dumb */
