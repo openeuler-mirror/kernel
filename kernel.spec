@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2105.8.0
+%global hulkrelease 2105.9.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0089
+Release: %{hulkrelease}.0090
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,12 @@ fi
 
 %changelog
 
+
+* Sat Jun 05 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.9.0.0090
+- selftests/bpf: add test_xfs_file.c and test_set_xfs_file.c
+- bpf: add bpf_probe_read_str into bpf_helpers.h
+- xfs: add writable tracepoint for xfs file buffer read
+- readahead: introduce FMODE_WILLNEED to read first 2MB of file
 
 * Fri Jun 04 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.8.0.0089
 - tools: libbpf: fix compiler error
