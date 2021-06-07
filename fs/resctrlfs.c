@@ -622,7 +622,7 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 		ret = closid_alloc();
 		if (ret < 0) {
 			rdt_last_cmd_puts("out of CLOSIDs\n");
-			goto out_unlock;
+			goto out_free_rdtgrp;
 		}
 		rdtgrp->closid.intpartid = ret;
 	}
@@ -692,10 +692,11 @@ out_destroy:
 	kernfs_remove(rdtgrp->kn);
 out_free_rmid:
 	rmid_free(rdtgrp->mon.rmid);
-	kfree(rdtgrp);
 out_free_closid:
 	if (rdtgrp->type == RDTCTRL_GROUP)
 		closid_free(rdtgrp->closid.intpartid);
+out_free_rdtgrp:
+	kfree(rdtgrp);
 out_unlock:
 	resctrl_group_kn_unlock(prgrp_kn);
 	return ret;
