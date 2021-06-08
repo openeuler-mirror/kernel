@@ -97,6 +97,7 @@ enum qm_stop_reason {
 	QM_SOFT_RESET,
 	QM_FLR,
 };
+
 enum qm_state {
 	QM_INIT = 0,
 	QM_START,
@@ -287,6 +288,7 @@ struct hisi_qm {
 	u32 qp_num;
 	u32 ctrl_q_num;
 	u32 vfs_num;
+	u32 free_qp_num;
 	struct list_head list;
 	struct hisi_qm_list *qm_list;
 	struct qm_dma qdma;
@@ -302,8 +304,8 @@ struct hisi_qm {
 	struct hisi_qm_status status;
 	struct hisi_qm_err_ini err_ini;
 	struct rw_semaphore qps_lock;
-	unsigned long *qp_bitmap;
-	struct hisi_qp **qp_array;
+	struct idr qp_idr;
+	struct hisi_qp *qp_array;
 
 	struct mutex mailbox_lock;
 
@@ -316,6 +318,7 @@ struct hisi_qm {
 	unsigned long hw_status;
 	bool use_uacce;		/* register to uacce */
 	bool use_sva;
+	bool is_frozen;
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	resource_size_t phys_base;
@@ -332,6 +335,7 @@ struct hisi_qm {
 
 struct hisi_qp_status {
 	atomic_t used;
+	atomic_t send_ref;
 	u16 sq_tail;
 	u16 sq_head;
 	u16 cq_head;

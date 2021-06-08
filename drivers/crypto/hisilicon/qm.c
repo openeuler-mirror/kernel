@@ -6,6 +6,7 @@
 #include <linux/bitmap.h>
 #include <linux/debugfs.h>
 #include <linux/dma-mapping.h>
+#include <linux/idr.h>
 #include <linux/io.h>
 #include <linux/irqreturn.h>
 #include <linux/log2.h>
@@ -494,11 +495,6 @@ static u32 qm_get_irq_num_v2(struct hisi_qm *qm)
 		return QM_IRQ_NUM_VF_V2;
 }
 
-static struct hisi_qp *qm_to_hisi_qp(struct hisi_qm *qm, struct qm_eqe *eqe)
-{
-	return qm->qp_array[le32_to_cpu(eqe->dw0) & QM_EQE_CQN_MASK];
-}
-
 static void qm_sq_head_update(struct hisi_qp *qp)
 {
 	if (qp->qp_status.sq_head == QM_Q_DEPTH - 1)
@@ -570,9 +566,8 @@ static void qm_work_process(struct work_struct *work)
 
 	while (QM_EQE_PHASE(eqe) == qm->status.eqc_phase) {
 		eqe_num++;
-		qp = qm_to_hisi_qp(qm, eqe);
-		if (qp)
-			qm_poll_qp(qp, qm);
+		qp = &qm->qp_array[le32_to_cpu(eqe->dw0) & QM_EQE_CQN_MASK];
+		qm_poll_qp(qp, qm);
 
 		if (qm->status.eq_head == QM_EQ_DEPTH - 1) {
 			qm->status.eqc_phase = !qm->status.eqc_phase;
@@ -738,6 +733,8 @@ static void qm_init_qp_status(struct hisi_qp *qp)
 	qp_status->sq_head = 0;
 	qp_status->cq_head = 0;
 	qp_status->cqc_phase = true;
+	atomic_set(&qp_status->used, 0);
+	atomic_set(&qp_status->send_ref, 0);
 }
 
 static void qm_vft_data_cfg(struct hisi_qm *qm, enum vft_type type, u32 base,
@@ -1250,62 +1247,54 @@ static void *qm_get_avail_sqe(struct hisi_qp *qp)
 	return qp->sqe + sq_tail * qp->qm->sqe_size;
 }
 
+static void hisi_qm_unset_hw_reset(struct hisi_qp *qp)
+{
+	u64 *addr;
+
+	/* Use last 32 bits of DUS to reset status. */
+	addr = (u64 *)(qp->qdma.va + qp->qdma.size) - QM_RESET_STOP_TX_OFFSET;
+	*addr = 0;
+}
+
 static struct hisi_qp *hisi_qm_create_qp_nolock(struct hisi_qm *qm,
 						u8 alg_type)
 {
 	struct device *dev = &qm->pdev->dev;
 	struct hisi_qp *qp;
-	int qp_id, ret;
+	int qp_id;
 
 	if (!qm_qp_avail_state(qm, NULL, QP_INIT))
 		return ERR_PTR(-EPERM);
 
-	qp = kzalloc(sizeof(*qp), GFP_KERNEL);
-	if (!qp)
-		return ERR_PTR(-ENOMEM);
-
-	qp_id = find_first_zero_bit(qm->qp_bitmap, qm->qp_num);
-	if (qp_id >= qm->qp_num) {
-		dev_info_ratelimited(&qm->pdev->dev,
-				     "All %u queues of QM are busy!\n",
-				     qm->qp_num);
-		ret = -EBUSY;
-		goto err_free_qp;
-	}
-	set_bit(qp_id, qm->qp_bitmap);
-	qm->qp_array[qp_id] = qp;
-	qp->qm = qm;
-
-	/* allocate qp dma memory, uacce uses dus region for this */
-	qp->qdma.size = qm->sqe_size * QM_Q_DEPTH +
-			sizeof(struct cqe) * QM_Q_DEPTH;
-	/* one more page for device or qp statuses */
-	qp->qdma.size = PAGE_ALIGN(qp->qdma.size) + PAGE_SIZE;
-	qp->qdma.va = dma_alloc_coherent(dev, qp->qdma.size,
-					 &qp->qdma.dma,
-					 GFP_KERNEL);
-	if (!qp->qdma.va) {
-		ret = -ENOMEM;
-		goto err_clear_bit;
+	if (!qm->free_qp_num) {
+		dev_info_ratelimited(dev, "All %u queues of QM are busy!\n",
+				    qm->qp_num);
+		return ERR_PTR(-EBUSY);
 	}
 
-	dev_dbg(dev, "allocate qp dma buf size=%zx\n", qp->qdma.size);
+	qp_id = idr_alloc_cyclic(&qm->qp_idr, NULL,
+				0, qm->qp_num, GFP_ATOMIC);
+	if (qp_id < 0) {
+		dev_info_ratelimited(dev, "All %u queues of QM are busy!\n",
+				    qm->qp_num);
+		return ERR_PTR(-EBUSY);
+	}
 
-	qp->qp_id = qp_id;
+	qp = &qm->qp_array[qp_id];
+	if (!qp->is_in_kernel)
+		hisi_qm_unset_hw_reset(qp);
+
+	memset(qp->cqe, 0, sizeof(struct qm_cqe) * QM_Q_DEPTH);
+	qp->event_cb = NULL;
+	qp->req_cb = NULL;
 	qp->alg_type = alg_type;
 	qp->c_flag = 1;
 	qp->is_in_kernel = true;
 	init_completion(&qp->completion);
+	qm->free_qp_num--;
 	atomic_set(&qp->qp_status.flags, QP_INIT);
 
 	return qp;
-
-err_clear_bit:
-	qm->qp_array[qp_id] = NULL;
-	clear_bit(qp_id, qm->qp_bitmap);
-err_free_qp:
-	kfree(qp);
-	return ERR_PTR(ret);
 }
 
 /**
@@ -1337,22 +1326,14 @@ EXPORT_SYMBOL_GPL(hisi_qm_create_qp);
 void hisi_qm_release_qp(struct hisi_qp *qp)
 {
 	struct hisi_qm *qm = qp->qm;
-	struct qm_dma *qdma = &qp->qdma;
-	struct device *dev = &qm->pdev->dev;
 
 	down_write(&qm->qps_lock);
 	if (!qm_qp_avail_state(qm, qp, QP_CLOSE)) {
 		up_write(&qm->qps_lock);
 		return;
 	}
-	if (qdma->va)
-		dma_free_coherent(dev, qdma->size, qdma->va, qdma->dma);
-
-	dev_dbg(dev, "release qp %d\n", qp->qp_id);
-	qm->qp_array[qp->qp_id] = NULL;
-	clear_bit(qp->qp_id, qm->qp_bitmap);
-
-	kfree(qp);
+	qm->free_qp_num++;
+	idr_remove(&qm->qp_idr, qp->qp_id);
 	up_write(&qm->qps_lock);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_release_qp);
@@ -1454,31 +1435,10 @@ static int hisi_qm_start_qp_nolock(struct hisi_qp *qp, unsigned long arg)
 	struct device *dev = &qm->pdev->dev;
 	int qp_id = qp->qp_id;
 	int pasid = arg;
-	size_t off = 0;
 	int ret;
 
 	if (!qm_qp_avail_state(qm, qp, QP_START))
 		return -EPERM;
-
-#define QP_INIT_BUF(qp, type, size) do { \
-	(qp)->type = ((qp)->qdma.va + (off)); \
-	(qp)->type##_dma = (qp)->qdma.dma + (off); \
-	off += (size); \
-} while (0)
-
-	if (!qp->qdma.dma) {
-		dev_err(dev, "cannot get qm dma buffer\n");
-		return -EINVAL;
-	}
-
-	/* sq need 128 bytes alignment */
-	if (qp->qdma.dma & QM_SQE_DATA_ALIGN_MASK) {
-		dev_err(dev, "qm sq is not aligned to 128 byte\n");
-		return -EINVAL;
-	}
-
-	QP_INIT_BUF(qp, sqe, qm->sqe_size * QM_Q_DEPTH);
-	QP_INIT_BUF(qp, cqe, sizeof(struct cqe) * QM_Q_DEPTH);
 
 	ret = qm_qp_ctx_cfg(qp, qp_id, pasid);
 	if (ret)
@@ -1708,12 +1668,10 @@ static void hisi_qm_cache_wb(struct hisi_qm *qm)
 
 int hisi_qm_get_free_qp_num(struct hisi_qm *qm)
 {
-	int i, ret;
+	int ret;
 
 	down_read(&qm->qps_lock);
-	for (i = 0, ret = 0; i < qm->qp_num; i++)
-		if (!qm->qp_array[i])
-			ret++;
+	ret = qm->free_qp_num;
 	up_read(&qm->qps_lock);
 
 	return ret;
@@ -1738,8 +1696,8 @@ static void hisi_qm_set_hw_reset(struct hisi_qm *qm, int offset)
 	int i;
 
 	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
-		if (qp) {
+		qp = &qm->qp_array[i];
+		if (!qp->is_in_kernel) {
 			/* Use last 32 bits of DUS to save reset status. */
 			addr = (u32 *)(qp->qdma.va + qp->qdma.size) - offset;
 			*addr = 1;
@@ -1914,6 +1872,27 @@ static enum uacce_dev_state hisi_qm_get_state(struct uacce *uacce)
 		return UACCE_DEV_NORMAL;
 }
 
+static void hisi_qm_uacce_memory_init(struct hisi_qm *qm)
+{
+	unsigned long dus_page_nr, mmio_page_nr;
+	struct uacce *uacce = &qm->uacce;
+
+	/* Add one more page for device or qp status */
+	dus_page_nr = (PAGE_SIZE - 1 + qm->sqe_size * QM_Q_DEPTH +
+			sizeof(struct cqe) * QM_Q_DEPTH + PAGE_SIZE) >>
+					PAGE_SHIFT;
+
+	if (qm->ver == QM_HW_V2)
+		mmio_page_nr = QM_DOORBELL_PAGE_NR +
+			QM_V2_DOORBELL_OFFSET / PAGE_SIZE;
+	else
+		mmio_page_nr = QM_DOORBELL_PAGE_NR;
+
+	uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
+	uacce->qf_pg_start[UACCE_QFRT_DUS] = mmio_page_nr;
+	uacce->qf_pg_start[UACCE_QFRT_SS] = mmio_page_nr + dus_page_nr;
+}
+
 /*
  * the device is set the UACCE_DEV_SVA, but it will be cut if SVA patch is not
  * available
@@ -2005,22 +1984,22 @@ static int qm_unregister_uacce(struct hisi_qm *qm)
  */
 static int hisi_qm_frozen(struct hisi_qm *qm)
 {
-	int count, i;
-
 	down_write(&qm->qps_lock);
-	for (i = 0, count = 0; i < qm->qp_num; i++)
-		if (!qm->qp_array[i])
-			count++;
-
-	if (count == qm->qp_num) {
-		bitmap_set(qm->qp_bitmap, 0, qm->qp_num);
-	} else {
+	if (qm->is_frozen) {
 		up_write(&qm->qps_lock);
-		return -EBUSY;
+		return 0;
 	}
+
+	if (qm->free_qp_num == qm->qp_num) {
+		qm->free_qp_num = 0;
+		qm->is_frozen = true;
+		up_write(&qm->qps_lock);
+		return 0;
+	}
+
 	up_write(&qm->qps_lock);
 
-	return 0;
+	return -EBUSY;
 }
 
 static int qm_try_frozen_vfs(struct pci_dev *pdev,
@@ -2064,6 +2043,172 @@ void hisi_qm_remove_wait_delay(struct hisi_qm *qm,
 }
 EXPORT_SYMBOL_GPL(hisi_qm_remove_wait_delay);
 
+static void hisi_qp_memory_uninit(struct hisi_qm *qm, int num)
+{
+	struct device *dev = &qm->pdev->dev;
+	struct qm_dma *qdma;
+	int i;
+
+	for (i = num - 1; i >= 0; i--) {
+		qdma = &qm->qp_array[i].qdma;
+		dma_free_coherent(dev, qdma->size, qdma->va, qdma->dma);
+	}
+
+	kfree(qm->qp_array);
+}
+
+static int hisi_qp_memory_init(struct hisi_qm *qm, size_t dma_size, int id)
+{
+	struct device *dev = &qm->pdev->dev;
+	size_t off = qm->sqe_size * QM_Q_DEPTH;
+	struct hisi_qp *qp;
+
+	qp = &qm->qp_array[id];
+	qp->qdma.va = dma_alloc_coherent(dev, dma_size,
+				 &qp->qdma.dma, GFP_KERNEL);
+	if (!qp->qdma.va)
+		return -ENOMEM;
+
+	qp->sqe = qp->qdma.va;
+	qp->sqe_dma = qp->qdma.dma;
+	qp->cqe = qp->qdma.va + off;
+	qp->cqe_dma = qp->qdma.dma + off;
+	qp->qdma.size = dma_size;
+	qp->qm = qm;
+	qp->qp_id = id;
+
+	return 0;
+}
+
+static int hisi_qm_memory_init(struct hisi_qm *qm)
+{
+	struct device *dev = &qm->pdev->dev;
+	size_t qp_dma_size;
+	size_t off = 0;
+	int ret = 0;
+	int i;
+
+#define QM_INIT_BUF(qm, type, num) do { \
+	(qm)->type = ((qm)->qdma.va + (off)); \
+	(qm)->type##_dma = (qm)->qdma.dma + (off); \
+	off += QMC_ALIGN(sizeof(struct qm_##type) * (num)); \
+} while (0)
+
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	if (qm->use_uacce)
+		hisi_qm_uacce_memory_init(qm);
+#endif
+
+	idr_init(&qm->qp_idr);
+	qm->qdma.size = QMC_ALIGN(sizeof(struct qm_eqe) * QM_EQ_DEPTH) +
+			QMC_ALIGN(sizeof(struct qm_aeqe) * QM_Q_DEPTH) +
+			QMC_ALIGN(sizeof(struct qm_sqc) * qm->qp_num) +
+			QMC_ALIGN(sizeof(struct qm_cqc) * qm->qp_num);
+	qm->qdma.va = dma_alloc_coherent(dev, qm->qdma.size,
+			&qm->qdma.dma, GFP_ATOMIC | __GFP_ZERO);
+	dev_dbg(dev, "allocate qm dma buf size=%zx)\n", qm->qdma.size);
+	if (!qm->qdma.va)
+		return -ENOMEM;
+
+	QM_INIT_BUF(qm, eqe, QM_EQ_DEPTH);
+	QM_INIT_BUF(qm, aeqe, QM_Q_DEPTH);
+	QM_INIT_BUF(qm, sqc, qm->qp_num);
+	QM_INIT_BUF(qm, cqc, qm->qp_num);
+
+	qm->qp_array = kcalloc(qm->qp_num, sizeof(struct hisi_qp), GFP_KERNEL);
+	if (!qm->qp_array) {
+		ret = -ENOMEM;
+		goto err_alloc_qp_array;
+	}
+
+	/* one more page for device or qp statuses */
+	qp_dma_size = qm->sqe_size * QM_Q_DEPTH +
+			sizeof(struct cqe) * QM_Q_DEPTH;
+	qp_dma_size = PAGE_ALIGN(qp_dma_size) + PAGE_SIZE;
+	for (i = 0; i < qm->qp_num; i++) {
+		ret = hisi_qp_memory_init(qm, qp_dma_size, i);
+		if (ret)
+			goto err_init_qp_mem;
+
+		dev_dbg(dev, "allocate qp dma buf size=%zx)\n", qp_dma_size);
+	}
+
+	return ret;
+err_init_qp_mem:
+	hisi_qp_memory_uninit(qm, i);
+err_alloc_qp_array:
+	dma_free_coherent(dev, qm->qdma.size,
+			qm->qdma.va, qm->qdma.dma);
+	return ret;
+}
+
+static int hisi_qm_pci_init(struct hisi_qm *qm)
+{
+	struct pci_dev *pdev = qm->pdev;
+	struct device *dev = &pdev->dev;
+	unsigned int num_vec;
+	int ret;
+
+	ret = pci_enable_device_mem(pdev);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Failed to enable device mem!\n");
+		return ret;
+	}
+
+	ret = pci_request_mem_regions(pdev, qm->dev_name);
+	if (ret < 0) {
+		dev_err(&pdev->dev, "Failed to request mem regions!\n");
+		goto err_request_mem_regions;
+	}
+
+#ifdef CONFIG_CRYPTO_QM_UACCE
+	qm->phys_base = pci_resource_start(pdev, PCI_BAR_2);
+	qm->size = pci_resource_len(qm->pdev, PCI_BAR_2);
+#endif
+	qm->io_base = devm_ioremap(dev, pci_resource_start(pdev, PCI_BAR_2),
+				   pci_resource_len(qm->pdev, PCI_BAR_2));
+	if (!qm->io_base) {
+		ret = -EIO;
+		goto err_ioremap;
+	}
+
+	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
+	if (ret < 0) {
+		dev_err(dev, "Failed to set 64 bit dma mask %d", ret);
+		goto err_set_mask_and_coherent;
+	}
+	pci_set_master(pdev);
+
+	num_vec = qm->ops->get_irq_num(qm);
+	ret = pci_alloc_irq_vectors(pdev, num_vec, num_vec, PCI_IRQ_MSI);
+	if (ret < 0) {
+		dev_err(dev, "Failed to enable MSI vectors!\n");
+		goto err_set_mask_and_coherent;
+	}
+
+	return 0;
+
+err_set_mask_and_coherent:
+	devm_iounmap(dev, qm->io_base);
+err_ioremap:
+	pci_release_mem_regions(pdev);
+err_request_mem_regions:
+	pci_disable_device(pdev);
+	return ret;
+}
+
+static void hisi_qm_pci_uninit(struct hisi_qm *qm)
+{
+	struct pci_dev *pdev = qm->pdev;
+	struct device *dev = &pdev->dev;
+
+	pci_free_irq_vectors(pdev);
+	devm_iounmap(dev, qm->io_base);
+	pci_release_mem_regions(pdev);
+	pci_disable_device(pdev);
+}
+
 /**
  * hisi_qm_init() - Initialize configures about qm.
  * @qm: The qm needed init.
@@ -2074,7 +2219,6 @@ int hisi_qm_init(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
 	struct device *dev = &pdev->dev;
-	unsigned int num_vec;
 	int ret;
 
 	switch (qm->ver) {
@@ -2099,48 +2243,29 @@ int hisi_qm_init(struct hisi_qm *qm)
 	}
 #endif
 
-	ret = pci_enable_device_mem(pdev);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to enable device mem!\n");
-		goto err_unregister_uacce;
-	}
-
-	ret = pci_request_mem_regions(pdev, qm->dev_name);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "Failed to request mem regions!\n");
-		goto err_disable_pcidev;
-	}
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	qm->phys_base = pci_resource_start(pdev, PCI_BAR_2);
-	qm->size = pci_resource_len(qm->pdev, PCI_BAR_2);
-#endif
-	qm->io_base = devm_ioremap(dev, pci_resource_start(pdev, PCI_BAR_2),
-				   pci_resource_len(qm->pdev, PCI_BAR_2));
-	if (!qm->io_base) {
-		ret = -EIO;
-		goto err_release_mem_regions;
-	}
-
-	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
-	if (ret < 0) {
-		dev_err(dev, "Failed to set 64 bit dma mask %d", ret);
-		goto err_iounmap;
-	}
-	pci_set_master(pdev);
-
-	num_vec = qm->ops->get_irq_num(qm);
-	ret = pci_alloc_irq_vectors(pdev, num_vec, num_vec, PCI_IRQ_MSI);
-	if (ret < 0) {
-		dev_err(dev, "Failed to enable MSI vectors!\n");
-		goto err_iounmap;
-	}
+	ret = hisi_qm_pci_init(qm);
+	if (ret)
+		goto err_pci_init;
 
 	ret = qm_irq_register(qm);
 	if (ret)
-		goto err_free_irq_vectors;
+		goto err_irq_register;
 
 	mutex_init(&qm->mailbox_lock);
+	if (qm->fun_type == QM_HW_VF && qm->ver == QM_HW_V2) {
+		/* v2 or v3 starts to support get vft by mailbox */
+		ret = hisi_qm_get_vft(qm, &qm->qp_base, &qm->qp_num);
+		if (ret)
+			goto err_get_vft;
+	}
+
+	ret = hisi_qm_memory_init(qm);
+	if (ret)
+		goto err_get_vft;
+
+	qm->free_qp_num = qm->qp_num;
+	qm->is_frozen = false;
+
 	init_rwsem(&qm->qps_lock);
 	atomic_set(&qm->status.flags, QM_INIT);
 	INIT_WORK(&qm->work, qm_work_process);
@@ -2149,15 +2274,11 @@ int hisi_qm_init(struct hisi_qm *qm)
 
 	return 0;
 
-err_free_irq_vectors:
-	pci_free_irq_vectors(pdev);
-err_iounmap:
-	devm_iounmap(dev, qm->io_base);
-err_release_mem_regions:
-	pci_release_mem_regions(pdev);
-err_disable_pcidev:
-	pci_disable_device(pdev);
-err_unregister_uacce:
+err_get_vft:
+	qm_irq_unregister(qm);
+err_irq_register:
+	hisi_qm_pci_uninit(qm);
+err_pci_init:
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce)
 		qm_unregister_uacce(qm);
@@ -2183,6 +2304,10 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 		up_write(&qm->qps_lock);
 		return;
 	}
+
+	hisi_qp_memory_uninit(qm, qm->qp_num);
+	idr_destroy(&qm->qp_idr);
+
 	/* qm hardware buffer free on put_queue if no dma api */
 	if (qm->qdma.va) {
 		hisi_qm_cache_wb(qm);
@@ -2192,15 +2317,14 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 	}
 
 	qm_irq_unregister(qm);
-	pci_free_irq_vectors(pdev);
-	pci_release_mem_regions(pdev);
-	pci_disable_device(pdev);
+	hisi_qm_pci_uninit(qm);
+
+	up_write(&qm->qps_lock);
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
 	if (qm->use_uacce)
 		uacce_unregister(&qm->uacce);
 #endif
-	up_write(&qm->qps_lock);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_uninit);
 
@@ -2358,14 +2482,7 @@ static int qm_eq_aeq_ctx_cfg(struct hisi_qm *qm)
 
 static int __hisi_qm_start(struct hisi_qm *qm)
 {
-	size_t off = 0;
 	int ret;
-
-#define QM_INIT_BUF(qm, type, num) do { \
-	(qm)->type = ((qm)->qdma.va + (off)); \
-	(qm)->type##_dma = (qm)->qdma.dma + (off); \
-	off += QMC_ALIGN(sizeof(struct qm_##type) * (num)); \
-} while (0)
 
 	/* dma must be ready before start, nomatter by init or by uacce mmap */
 	WARN_ON(!qm->qdma.dma);
@@ -2382,11 +2499,6 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 		if (ret)
 			return ret;
 	}
-
-	QM_INIT_BUF(qm, eqe, QM_EQ_DEPTH);
-	QM_INIT_BUF(qm, aeqe, QM_Q_DEPTH);
-	QM_INIT_BUF(qm, sqc, qm->qp_num);
-	QM_INIT_BUF(qm, cqc, qm->qp_num);
 
 	ret = qm_eq_aeq_ctx_cfg(qm);
 	if (ret)
@@ -2419,9 +2531,9 @@ int hisi_qm_restart(struct hisi_qm *qm)
 
 	down_write(&qm->qps_lock);
 	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
+		qp = &qm->qp_array[i];
 
-		if (qp && atomic_read(&qp->qp_status.flags) == QP_STOP &&
+		if (atomic_read(&qp->qp_status.flags) == QP_STOP &&
 		    qp->is_resetting && qp->is_in_kernel) {
 			ret = hisi_qm_start_qp_nolock(qp, 0);
 			if (ret < 0) {
@@ -2447,14 +2559,6 @@ EXPORT_SYMBOL_GPL(hisi_qm_restart);
  */
 int hisi_qm_start(struct hisi_qm *qm)
 {
-	struct device *dev = &qm->pdev->dev;
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	struct uacce *uacce = &qm->uacce;
-	unsigned long dus_page_nr = 0;
-	unsigned long dko_page_nr = 0;
-	unsigned long mmio_page_nr;
-#endif
 	int ret;
 
 	down_write(&qm->qps_lock);
@@ -2464,77 +2568,10 @@ int hisi_qm_start(struct hisi_qm *qm)
 		return -EPERM;
 	}
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->use_uacce) {
-		/* Add one more page for device or qp status */
-		dus_page_nr = (PAGE_SIZE - 1 + qm->sqe_size * QM_Q_DEPTH +
-			       sizeof(struct cqe) * QM_Q_DEPTH + PAGE_SIZE) >>
-			       PAGE_SHIFT;
-		dko_page_nr = (PAGE_SIZE - 1 +
-			QMC_ALIGN(sizeof(struct qm_eqe) * QM_EQ_DEPTH) +
-			QMC_ALIGN(sizeof(struct qm_aeqe) * QM_Q_DEPTH) +
-			QMC_ALIGN(sizeof(struct qm_sqc) * qm->qp_num) +
-			QMC_ALIGN(sizeof(struct qm_cqc) * qm->qp_num) +
-			/* let's reserve one page for possible usage */
-			PAGE_SIZE) >> PAGE_SHIFT;
-	}
-#endif
-
-	dev_dbg(dev, "qm start with %d queue pairs\n", qm->qp_num);
-
-	if (!qm->qp_num) {
-		dev_err(dev, "qp_num should not be 0\n");
-		ret = -EINVAL;
-		goto err_unlock;
-	}
-
-	/* reset qfr definition */
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (qm->ver == QM_HW_V2)
-		mmio_page_nr = QM_DOORBELL_PAGE_NR +
-				QM_V2_DOORBELL_OFFSET / PAGE_SIZE;
-	else
-		mmio_page_nr = QM_DOORBELL_PAGE_NR;
-
-	if (qm->use_uacce) {
-		uacce->qf_pg_start[UACCE_QFRT_MMIO] = 0;
-		uacce->qf_pg_start[UACCE_QFRT_DUS] = mmio_page_nr;
-		uacce->qf_pg_start[UACCE_QFRT_SS] = mmio_page_nr + dus_page_nr;
-	}
-#endif
-
-	if (!qm->qp_bitmap) {
-		qm->qp_bitmap = devm_kcalloc(dev, BITS_TO_LONGS(qm->qp_num),
-					     sizeof(long), GFP_ATOMIC);
-		qm->qp_array = devm_kcalloc(dev, qm->qp_num,
-					    sizeof(struct hisi_qp *),
-					    GFP_ATOMIC);
-		if (!qm->qp_bitmap || !qm->qp_array) {
-			ret = -ENOMEM;
-			goto err_unlock;
-		}
-	}
-
-	if (!qm->qdma.va) {
-		qm->qdma.size = QMC_ALIGN(sizeof(struct qm_eqe) * QM_EQ_DEPTH) +
-				QMC_ALIGN(sizeof(struct qm_aeqe) * QM_Q_DEPTH) +
-				QMC_ALIGN(sizeof(struct qm_sqc) * qm->qp_num) +
-				QMC_ALIGN(sizeof(struct qm_cqc) * qm->qp_num);
-		qm->qdma.va = dma_alloc_coherent(dev, qm->qdma.size,
-						 &qm->qdma.dma,
-						 GFP_ATOMIC | __GFP_ZERO);
-		dev_dbg(dev, "allocate qm dma buf size=%zx\n", qm->qdma.size);
-		if (!qm->qdma.va) {
-			ret = -ENOMEM;
-			goto err_unlock;
-		}
-	}
-
 	ret = __hisi_qm_start(qm);
 	if (!ret)
 		atomic_set(&qm->status.flags, QM_START);
 
-err_unlock:
 	up_write(&qm->qps_lock);
 	return ret;
 }
@@ -2548,8 +2585,8 @@ static int qm_stop_started_qp(struct hisi_qm *qm)
 	int i, ret;
 
 	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
-		if (qp && atomic_read(&qp->qp_status.flags) == QP_START) {
+		qp = &qm->qp_array[i];
+		if (atomic_read(&qp->qp_status.flags) == QP_START) {
 			qp->is_resetting = true;
 			ret = hisi_qm_stop_qp_nolock(qp);
 			if (ret < 0) {
@@ -2575,8 +2612,8 @@ static void qm_clear_queues(struct hisi_qm *qm)
 	int i;
 
 	for (i = 0; i < qm->qp_num; i++) {
-		qp = qm->qp_array[i];
-		if (qp && qp->is_in_kernel)
+		qp = &qm->qp_array[i];
+		if (qp->is_in_kernel && qp->is_resetting)
 			/* device state use the last page */
 			memset(qp->qdma.va, 0, qp->qdma.size - PAGE_SIZE);
 	}

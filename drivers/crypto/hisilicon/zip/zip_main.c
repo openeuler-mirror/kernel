@@ -836,13 +836,18 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return -ENOMEM;
 
 	qm = &zip->qm;
-	qm->fun_type = pdev->is_physfn ? QM_HW_PF : QM_HW_VF;
+	qm->fun_type = (pdev->device == PCI_DEVICE_ID_ZIP_PF) ?
+			QM_HW_PF : QM_HW_VF;
 
 	ret = hisi_zip_qm_pre_init(qm, pdev);
 	if (ret)
 		return ret;
 
 	hisi_qm_add_to_list(qm, &zip_devices);
+	if (qm->fun_type == QM_HW_VF && qm->ver == QM_HW_V1) {
+		qm->qp_base = HZIP_PF_DEF_Q_NUM;
+		qm->qp_num = HZIP_QUEUE_NUM_V1 - HZIP_PF_DEF_Q_NUM;
+	}
 
 	ret = hisi_qm_init(qm);
 	if (ret) {
@@ -855,23 +860,6 @@ static int hisi_zip_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		if (ret) {
 			pci_err(pdev, "Failed to init pf probe (%d)!\n", ret);
 			goto err_remove_from_list;
-		}
-	} else if (qm->fun_type == QM_HW_VF) {
-		/*
-		 * have no way to get qm configure in VM in v1 hardware,
-		 * so currently force PF to uses HZIP_PF_DEF_Q_NUM, and force
-		 * to trigger only one VF in v1 hardware.
-		 *
-		 * v2 hardware has no such problem.
-		 */
-		if (qm->ver == QM_HW_V1) {
-			qm->qp_base = HZIP_PF_DEF_Q_NUM;
-			qm->qp_num = HZIP_QUEUE_NUM_V1 - HZIP_PF_DEF_Q_NUM;
-		} else if (qm->ver == QM_HW_V2) {
-			/* v2 starts to support get vft by mailbox */
-			ret = hisi_qm_get_vft(qm, &qm->qp_base, &qm->qp_num);
-			if (ret)
-				goto err_remove_from_list;
 		}
 	}
 
