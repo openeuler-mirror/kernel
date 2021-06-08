@@ -2049,7 +2049,9 @@ static int hisi_qm_stop_qp_nolock(struct hisi_qp *qp)
 		flush_work(&qp->qm->work);
 
 	/* waiting for increase used count in qp send and last poll qp finish */
-	udelay(WAIT_PERIOD);
+	while (atomic_read(&qp->qp_status.send_ref))
+		udelay(WAIT_PERIOD);
+
 	if (unlikely(qp->is_resetting && atomic_read(&qp->qp_status.used)))
 		qp_stop_fail_cb(qp);
 
@@ -2094,25 +2096,27 @@ EXPORT_SYMBOL_GPL(hisi_qm_stop_qp);
 int hisi_qp_send(struct hisi_qp *qp, const void *msg)
 {
 	struct hisi_qp_status *qp_status = &qp->qp_status;
-	u16 sq_tail = qp_status->sq_tail;
-	u16 sq_tail_next = (sq_tail + 1) % QM_Q_DEPTH;
-	void *sqe = qm_get_avail_sqe(qp);
+	void *sqe;
 
 	if (unlikely(atomic_read(&qp->qp_status.flags) == QP_STOP ||
 		     atomic_read(&qp->qm->status.flags) == QM_STOP) ||
 		     qp->is_resetting) {
-		dev_info_ratelimited(&qp->qm->pdev->dev, "QM resetting...\n");
+		dev_info_ratelimited(&qp->qm->pdev->dev, "QP is stopped or resetting\n");
 		return -EAGAIN;
 	}
 
-	if (!sqe)
+	atomic_inc(&qp->qp_status.send_ref);
+	sqe = qm_get_avail_sqe(qp);
+	if (!sqe) {
+		atomic_dec(&qp->qp_status.send_ref);
 		return -EBUSY;
+	}
 
 	memcpy(sqe, msg, qp->qm->sqe_size);
-
-	qm_db(qp->qm, qp->qp_id, QM_DOORBELL_CMD_SQ, sq_tail_next, 0);
+	qp_status->sq_tail = (qp_status->sq_tail + 1) % QM_Q_DEPTH;
+	qm_db(qp->qm, qp->qp_id, QM_DOORBELL_CMD_SQ, qp_status->sq_tail, 0);
 	atomic_inc(&qp->qp_status.used);
-	qp_status->sq_tail = sq_tail_next;
+	atomic_dec(&qp->qp_status.send_ref);
 
 	return 0;
 }
