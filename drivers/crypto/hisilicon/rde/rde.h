@@ -203,7 +203,7 @@ enum {
 	NO_REF = 0, /* no REF domain */
 	REF = 1, /* REF domain without checking */
 	REF_CHECK_LBA = 2, /* REF domain checking with lab */
-	REF_CHECK_PRI = 3, /* REF domain checking with private infoformation */
+	REF_CHECK_PRI = 3, /* REF domain checking with individual information*/
 };
 
 /* RDE IO abort switch */

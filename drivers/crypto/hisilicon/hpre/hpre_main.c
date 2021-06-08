@@ -89,6 +89,9 @@
 #define HPRE_QM_PM_FLR			BIT(11)
 #define HPRE_QM_SRIOV_FLR		BIT(12)
 
+#define HPRE_SQE_MASK_OFFSET		8
+#define HPRE_SQE_MASK_LEN		24
+
 /* function index:
  * 1 for hpre bypass mode,
  * 2 for RDE bypass mode;
@@ -752,6 +755,8 @@ static int hpre_debugfs_init(struct hisi_qm *qm)
 	qm->debug.debug_root = debugfs_create_dir(dev_name(dev),
 						  hpre_debugfs_root);
 
+	qm->debug.sqe_mask_offset = HPRE_SQE_MASK_OFFSET;
+	qm->debug.sqe_mask_len = HPRE_SQE_MASK_LEN;
 	ret = hisi_qm_debug_init(qm);
 	if (ret)
 		goto failed_to_create;

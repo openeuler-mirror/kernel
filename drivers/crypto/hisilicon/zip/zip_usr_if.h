@@ -24,7 +24,7 @@ struct hisi_zip_sqe {
 	__u32 dw8;
 	__u32 dw9;
 	__u32 dw10;
-	__u32 priv_info;
+	__u32 dif_info;
 	__u32 dw12;
 	__u32 tag;
 	__u32 dest_avail_out;

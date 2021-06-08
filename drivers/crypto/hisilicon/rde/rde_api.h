@@ -72,7 +72,7 @@ enum DIF_APP_GEN_CTRL_E {
 enum DIF_REF_GEN_CTRL_E {
 	DIF_REF_GEN_NONE = 0x0,
 	DIF_REF_GEN_FROM_INPUT_LBA = 0x1,
-	DIF_REF_GEN_FROM_PRIVATE_INFO = 0x2,
+	DIF_REF_GEN_FROM_INDIVIDUAL_INFO = 0x2,
 	DIF_REF_GEN_FROM_ZERO = 0x3,
 	DIF_REF_GEN_FROM_SOURCE_DATA = 0x4,
 	DIF_REF_GEN_FROM_RAID_OR_EC = 0x5,
@@ -86,7 +86,7 @@ enum DIF_VERIFY_CTRL_E {
 	DIF_VERIFY_NONE = 0x0,
 	DIF_VERIFY_DO_NOT_VERIFY = 0x1,
 	DIF_VERIFY_ALL_BLOCK = 0x2,
-	DIF_VERIFY_BY_PRIVATE_INFO = 0x3,
+	DIF_VERIFY_BY_INDIVIDUAL_INFO = 0x3,
 	DIF_VERIFY_BUTT
 };
 
@@ -283,7 +283,7 @@ struct dif_ctrl {
 /**
  * @brief general dif structure.
  * @lba: lba for dif ref field
- * @priv: private info for dif ref field
+ * @priv: individual info for dif ref field
  * @ver: 8bit version
  * @app: 8bit application information field
  * @note

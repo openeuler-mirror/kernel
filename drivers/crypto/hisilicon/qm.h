@@ -90,6 +90,8 @@
 #define CURRENT_FUN_MASK		GENMASK(5, 0)
 #define CURRENT_Q_MASK                  GENMASK(31, 16)
 
+#define SQE_ADDR_MASK			GENMASK(7, 0)
+
 #define PCI_BAR_2			2
 
 enum qm_stop_reason {
@@ -130,6 +132,14 @@ enum qm_debug_file {
 	DEBUG_FILE_NUM,
 };
 
+struct qm_dfx {
+	atomic64_t qm_err_irq_cnt;
+	atomic64_t aeq_irq_cnt;
+	atomic64_t abnormal_irq_cnt;
+	atomic64_t qp_err_cnt;
+	atomic64_t mb_err_cnt;
+};
+
 struct debugfs_file {
 	enum qm_debug_file index;
 	struct mutex lock;
@@ -137,7 +147,10 @@ struct debugfs_file {
 };
 
 struct qm_debug {
+	u32 sqe_mask_len;
+	u32 sqe_mask_offset;
 	u32 curr_qm_qp_num;
+	struct qm_dfx dfx;
 	struct dentry *debug_root;
 	struct dentry *qm_d;
 	struct debugfs_file files[DEBUG_FILE_NUM];

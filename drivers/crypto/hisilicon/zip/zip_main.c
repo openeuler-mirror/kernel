@@ -98,6 +98,9 @@
 #define HZIP_BUF_SIZE			22
 #define FORMAT_DECIMAL			10
 
+#define HZIP_SQE_MASK_OFFSET		64
+#define HZIP_SQE_MASK_LEN		48
+
 #define HZIP_CNT_CLR_CE_EN		BIT(0)
 #define HZIP_RO_CNT_CLR_CE_EN		BIT(2)
 #define HZIP_RD_CNT_CLR_CE_EN		(HZIP_CNT_CLR_CE_EN | \
@@ -663,6 +666,8 @@ static int hisi_zip_debugfs_init(struct hisi_qm *qm)
 	if (!dev_d)
 		return -ENOENT;
 
+	qm->debug.sqe_mask_offset = HZIP_SQE_MASK_OFFSET;
+	qm->debug.sqe_mask_len = HZIP_SQE_MASK_LEN;
 	qm->debug.debug_root = dev_d;
 	ret = hisi_qm_debug_init(qm);
 	if (ret)

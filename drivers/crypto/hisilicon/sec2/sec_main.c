@@ -81,6 +81,9 @@
 #define SEC_DBGFS_VAL_MAX_LEN		20
 #define SEC_SINGLE_PORT_MAX_TRANS	0x2060
 
+#define SEC_SQE_MASK_OFFSET		64
+#define SEC_SQE_MASK_LEN		48
+
 #define SEC_ADDR(qm, offset) ((qm)->io_base + (offset) + \
 			     SEC_ENGINE_PF_CFG_OFF + SEC_ACC_COMMON_REG_OFF)
 
@@ -663,6 +666,8 @@ static int sec_debugfs_init(struct hisi_qm *qm)
 
 	qm->debug.debug_root = debugfs_create_dir(dev_name(dev),
 						  sec_debugfs_root);
+	qm->debug.sqe_mask_offset = SEC_SQE_MASK_OFFSET;
+	qm->debug.sqe_mask_len = SEC_SQE_MASK_LEN;
 	ret = hisi_qm_debug_init(qm);
 	if (ret)
 		goto failed_to_create;
