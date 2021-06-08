@@ -404,6 +404,11 @@ static int hclge_setup_tc(struct hnae3_handle *h, u8 tc, u8 *prio_tc)
 	if (ret)
 		goto err_out;
 
+	hclge_rss_indir_init_cfg(hdev);
+	ret = hclge_rss_init_hw(hdev);
+	if (ret)
+		goto err_out;
+
 	hdev->flag &= ~HCLGE_FLAG_DCB_ENABLE;
 
 	if (tc > 1)
