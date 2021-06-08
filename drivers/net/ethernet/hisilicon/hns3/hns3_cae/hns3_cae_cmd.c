@@ -171,7 +171,7 @@ int hns3_cae_cmd_send(struct hclge_dev *hdev, struct hclge_desc *desc, int num)
 	bool complete = false;
 	u32 timeout = 0;
 	int handle = 0;
-	int retval = 0;
+	int retval;
 	int ntc;
 
 	csq = &hdev->hw.cmq.csq;

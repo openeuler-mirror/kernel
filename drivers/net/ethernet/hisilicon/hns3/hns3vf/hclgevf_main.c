@@ -172,7 +172,7 @@ static u8 *hclgevf_tqps_get_strings(struct hnae3_handle *handle, u8 *data)
 {
 	struct hnae3_knic_private_info *kinfo = &handle->kinfo;
 	u8 *buff = data;
-	int i = 0;
+	int i;
 
 	for (i = 0; i < kinfo->num_tqps; i++) {
 		struct hclgevf_tqp *tqp = container_of(kinfo->tqp[i],
@@ -1815,7 +1815,7 @@ static int hclgevf_reset_prepare_wait(struct hclgevf_dev *hdev)
 
 	if (hdev->reset_type == HNAE3_VF_FUNC_RESET) {
 		struct hclge_vf_to_pf_msg send_msg;
-		int ret = 0;
+		int ret;
 
 		hclgevf_build_send_msg(&send_msg, HCLGE_MBX_RESET, 0);
 		ret = hclgevf_send_mbx_msg(hdev, &send_msg, true, NULL, 0);

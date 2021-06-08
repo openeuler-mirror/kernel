@@ -413,7 +413,7 @@ static const struct file_operations fifo_operations = {
 static int if_hns3_cae_exist(void)
 {
 	struct file *fp = NULL;
-	int exist = 0;
+	int exist;
 
 	fp = filp_open("/dev/nic_dev", O_RDONLY, 0);
 	if (IS_ERR(fp)) {
