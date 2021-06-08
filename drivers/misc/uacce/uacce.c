@@ -699,10 +699,7 @@ static void uacce_queue_drain(struct uacce_queue *q)
 		if (is_to_free_region)
 			uacce_destroy_region(q, qfr);
 	}
-#ifdef CONFIG_IOMMU_SVA2
-	if (uacce->flags & UACCE_DEV_SVA)
-		iommu_sva_unbind_device(uacce->pdev, q->pasid);
-#endif
+
 	if (state && uacce->ops->put_queue)
 		uacce->ops->put_queue(q);
 
@@ -749,16 +746,6 @@ static int uacce_get_queue(struct uacce *uacce, struct file *filep)
 	int ret;
 	int pasid = 0;
 
-#ifdef CONFIG_IOMMU_SVA2
-	if (uacce->flags & UACCE_DEV_PASID) {
-		ret = iommu_sva_bind_device(uacce->pdev, current->mm, &pasid,
-					    IOMMU_SVA_FEAT_IOPF, NULL);
-		if (ret) {
-			dev_err(uacce->pdev, "iommu SVA binds fail!\n");
-			return ret;
-		}
-	}
-#endif
 	uacce_qs_wlock();
 
 	ret = uacce->ops->get_queue(uacce, pasid, &q);
@@ -782,10 +769,7 @@ static int uacce_get_queue(struct uacce *uacce, struct file *filep)
 	return 0;
 
 err_unbind:
-#ifdef CONFIG_IOMMU_SVA2
-	if (uacce->flags & UACCE_DEV_PASID)
-		iommu_sva_unbind_device(uacce->pdev, pasid);
-#endif
+
 	return ret;
 }
 
@@ -1297,19 +1281,8 @@ int uacce_register(struct uacce *uacce)
 		return ret;
 	}
 
-	if (uacce->flags & UACCE_DEV_PASID) {
-#ifdef CONFIG_IOMMU_SVA2
-		ret = iommu_sva_init_device(uacce->pdev, IOMMU_SVA_FEAT_IOPF,
-					    0, 0, NULL);
-		if (ret) {
-			dev_err(dev, "uacce sva init fail!\n");
-			uacce_destroy_chrdev(uacce);
-			return ret;
-		}
-#else
+	if (uacce->flags & UACCE_DEV_PASID)
 		uacce->flags &= ~(UACCE_DEV_FAULT_FROM_DEV | UACCE_DEV_PASID);
-#endif
-	}
 
 	dev_dbg(&uacce->dev, "register to uacce!\n");
 	atomic_set(&uacce->ref, 0);
@@ -1333,9 +1306,6 @@ int uacce_unregister(struct uacce *uacce)
 		return -EAGAIN;
 	}
 
-#ifdef CONFIG_IOMMU_SVA2
-	iommu_sva_shutdown_device(uacce->pdev);
-#endif
 	uacce_hw_err_destroy(uacce);
 	uacce_destroy_chrdev(uacce);
 

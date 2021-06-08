@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Copyright (c) 2018-2019 HiSilicon Limited. */
-#ifndef __UACCE_H
-#define __UACCE_H
+#ifndef _LINUX_UACCE_H
+#define _LINUX_UACCE_H
 
 #include <linux/cdev.h>
 #include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/list.h>
 #include <linux/iommu.h>
-#include <uapi/linux/uacce.h>
+#include <uapi/misc/uacce/uacce.h>
 
 struct uacce_queue;
 struct uacce;
@@ -132,4 +132,4 @@ const char *uacce_qfrt_str(struct uacce_qfile_region *qfr);
 struct uacce *dev_to_uacce(struct device *dev);
 int uacce_hw_err_isolate(struct uacce *uacce);
 
-#endif
+#endif /* _LINUX_UACCE_H */
