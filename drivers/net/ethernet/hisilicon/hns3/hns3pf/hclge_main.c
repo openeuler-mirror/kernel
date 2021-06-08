@@ -5937,10 +5937,13 @@ static int hclge_add_fd_entry(struct hnae3_handle *handle,
 		u8 vf = ethtool_get_flow_spec_ring_vf(fs->ring_cookie);
 		u16 tqps;
 
+		/* To keep consistent with user's configuration, minus 1 when
+		 * printing 'vf', because vf id from ethtool is added 1 for vf.
+		 */
 		if (vf > hdev->num_req_vfs) {
 			dev_err(&hdev->pdev->dev,
-				"Error: vf id (%u) > max vf num (%u)\n",
-				vf, hdev->num_req_vfs);
+				"Error: vf id (%u) should be less than %u\n",
+				vf - 1, hdev->num_req_vfs);
 			return -EINVAL;
 		}
 
