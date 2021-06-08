@@ -178,7 +178,8 @@ static const char *hpre_dfx_files[HPRE_DFX_FILE_NUM] = {
 	"send_fail_cnt",
 	"send_busy_cnt",
 	"over_thrhld_cnt",
-	"overtime_thrhld"
+	"overtime_thrhld",
+	"invalid_req_cnt"
 };
 
 #ifdef CONFIG_CRYPTO_QM_UACCE

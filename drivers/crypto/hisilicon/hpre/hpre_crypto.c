@@ -414,9 +414,17 @@ static void hpre_rsa_cb(struct hpre_ctx *ctx, void *resp)
 static void hpre_alg_cb(struct hisi_qp *qp, void *resp)
 {
 	struct hpre_ctx *ctx = qp->qp_ctx;
+	struct hpre_dfx *dfx = ctx->hpre->debug.dfx;
 	struct hpre_sqe *sqe = resp;
+	struct hpre_asym_request *req = ctx->req_list[le16_to_cpu(sqe->tag)];
 
-	ctx->req_list[le16_to_cpu(sqe->tag)]->cb(ctx, resp);
+
+	if (unlikely(!req)) {
+		atomic64_inc(&dfx[HPRE_INVALID_REQ_CNT].value);
+		return;
+	}
+
+	req->cb(ctx, resp);
 }
 
 static int hpre_ctx_init(struct hpre_ctx *ctx)
