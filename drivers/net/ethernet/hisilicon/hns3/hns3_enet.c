@@ -4054,6 +4054,13 @@ static void hns3_info_show(struct hns3_nic_priv *priv)
 	dev_info(priv->dev, "Max mtu size: %u\n", priv->netdev->max_mtu);
 }
 
+static void hns3_state_uninit(struct hnae3_handle *handle)
+{
+	struct hns3_nic_priv *priv  = handle->priv;
+
+	clear_bit(HNS3_NIC_STATE_INITED, &priv->state);
+}
+
 static int hns3_client_init(struct hnae3_handle *handle)
 {
 	struct pci_dev *pdev = handle->pdev;
@@ -4121,12 +4128,6 @@ static int hns3_client_init(struct hnae3_handle *handle)
 	if (ret)
 		goto out_init_phy;
 
-	ret = register_netdev(netdev);
-	if (ret) {
-		dev_err(priv->dev, "probe register netdev fail!\n");
-		goto out_reg_netdev_fail;
-	}
-
 	/* the device can work without cpu rmap, only aRFS needs it */
 	ret = hns3_set_rx_cpu_rmap(netdev);
 	if (ret)
@@ -4156,17 +4157,25 @@ static int hns3_client_init(struct hnae3_handle *handle)
 
 	set_bit(HNS3_NIC_STATE_INITED, &priv->state);
 
+	ret = register_netdev(netdev);
+	if (ret) {
+		dev_err(priv->dev, "probe register netdev fail!\n");
+		goto out_reg_netdev_fail;
+	}
+
 	if (netif_msg_drv(handle))
 		hns3_info_show(priv);
 
 	return ret;
 
+out_reg_netdev_fail:
+	hns3_state_uninit(handle);
+	hns3_dbg_uninit(handle);
+	hns3_client_stop(handle);
 out_client_start:
 	hns3_free_rx_cpu_rmap(netdev);
 	hns3_nic_uninit_irq(priv);
 out_init_irq_fail:
-	unregister_netdev(netdev);
-out_reg_netdev_fail:
 	hns3_uninit_phy(netdev);
 out_init_phy:
 	hns3_uninit_all_ring(priv);
