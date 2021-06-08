@@ -379,6 +379,13 @@ static int hclge_setup_tc(struct hnae3_handle *h, u8 tc, u8 *prio_tc)
 	struct hclge_dev *hdev = vport->back;
 	int ret;
 
+	/* if client unregistered, it's not allowed to change
+	 * mqprio configuration, which may cause uninit ring
+	 * fail.
+	 */
+	if (!test_bit(HCLGE_STATE_NIC_REGISTERED, &hdev->state))
+		return -EBUSY;
+
 	if (hdev->flag & HCLGE_FLAG_DCB_ENABLE)
 		return -EINVAL;
 
