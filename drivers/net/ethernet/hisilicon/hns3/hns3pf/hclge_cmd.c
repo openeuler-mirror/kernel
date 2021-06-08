@@ -407,7 +407,7 @@ err_csq:
 }
 
 /* ask the firmware to enable some features, driver can work without it. */
-static int hclge_firmware_compat_config(struct hclge_dev *hdev)
+static int hclge_firmware_compat_config(struct hclge_dev *hdev, bool en)
 {
 	struct hclge_firmware_compat_cmd *req;
 	struct hclge_desc desc;
@@ -415,11 +415,13 @@ static int hclge_firmware_compat_config(struct hclge_dev *hdev)
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_M7_COMPAT_CFG, false);
 
-	req = (struct hclge_firmware_compat_cmd *)desc.data;
+	if (en) {
+		req = (struct hclge_firmware_compat_cmd *)desc.data;
 
-	hnae3_set_bit(compat, HCLGE_LINK_EVENT_REPORT_EN_B, 1);
-	hnae3_set_bit(compat, HCLGE_NCSI_ERROR_REPORT_EN_B, 1);
-	req->compat = cpu_to_le32(compat);
+		hnae3_set_bit(compat, HCLGE_LINK_EVENT_REPORT_EN_B, 1);
+		hnae3_set_bit(compat, HCLGE_NCSI_ERROR_REPORT_EN_B, 1);
+		req->compat = cpu_to_le32(compat);
+	}
 
 	return hclge_cmd_send(&hdev->hw, &desc, 1);
 }
@@ -473,7 +475,7 @@ int hclge_cmd_init(struct hclge_dev *hdev)
 	/* ask the firmware to enable some features, driver can work without
 	 * it.
 	 */
-	ret = hclge_firmware_compat_config(hdev);
+	ret = hclge_firmware_compat_config(hdev, true);
 	if (ret)
 		dev_warn(&hdev->pdev->dev,
 			 "Firmware compatible features not enabled(%d).\n",
@@ -489,6 +491,8 @@ err_cmd_init:
 
 void hclge_cmd_uninit(struct hclge_dev *hdev)
 {
+	hclge_firmware_compat_config(hdev, false);
+
 	spin_lock_bh(&hdev->hw.cmq.csq.lock);
 	spin_lock(&hdev->hw.cmq.crq.lock);
 	set_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state);
