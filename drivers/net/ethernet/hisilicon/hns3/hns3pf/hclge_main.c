@@ -5963,7 +5963,7 @@ static int hclge_add_fd_entry(struct hnae3_handle *handle,
 		}
 
 		dst_vport_id = vf ? hdev->vport[vf].vport_id : vport->vport_id;
-		tqps = vf ? hdev->vport[vf].alloc_tqps : vport->alloc_tqps;
+		tqps = hdev->vport[vf].nic.kinfo.num_tqps;
 
 		if (ring >= tqps) {
 			dev_err(&hdev->pdev->dev,
