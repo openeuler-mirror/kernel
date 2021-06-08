@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /* Copyright (c) 2016-2019 Hisilicon Limited. */
 
+#ifndef __HNS3_CAE_PFC_STORM_H__
+#define __HNS3_CAE_PFC_STORM_H__
+
 #include "hns3_cae_cmd.h"
 #include "hns3_enet.h"
 
@@ -27,3 +30,5 @@ struct cmd_pfc_storm_param {
 int hns3_cae_pfc_storm_cfg(const struct hns3_nic_priv *net_priv,
 			   void *buf_in, u32 in_size, void *buf_out,
 			   u32 out_size);
+
+#endif
