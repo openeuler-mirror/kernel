@@ -2272,7 +2272,7 @@ nfs_remount(struct super_block *sb, int *flags, char *raw_data)
 					   options->version <= 6))))
 		return 0;
 
-	data = kzalloc(sizeof(*data), GFP_KERNEL);
+	data = nfs_alloc_parsed_mount_data();
 	if (data == NULL)
 		return -ENOMEM;
 
@@ -2312,7 +2312,7 @@ nfs_remount(struct super_block *sb, int *flags, char *raw_data)
 	/* compare new mount options with old ones */
 	error = nfs_compare_remount_data(nfss, data);
 out:
-	kfree(data);
+	nfs_free_parsed_mount_data(data);
 	return error;
 }
 EXPORT_SYMBOL_GPL(nfs_remount);
