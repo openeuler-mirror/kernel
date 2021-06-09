@@ -747,6 +747,7 @@ void del_gendisk(struct gendisk *disk)
 {
 	struct disk_part_iter piter;
 	struct hd_struct *part;
+	struct block_device *bdev;
 
 	blk_integrity_del(disk);
 	disk_del_events(disk);
@@ -756,6 +757,14 @@ void del_gendisk(struct gendisk *disk)
 	 * disk is marked as dead (GENHD_FL_UP cleared).
 	 */
 	down_write(&disk->lookup_sem);
+
+	/*
+	 * If bdev is null, that menas memory allocate fail. Then
+	 * add_partitions can also fail.
+	 */
+	bdev = bdget_disk(disk, 0);
+	if (bdev)
+		mutex_lock(&bdev->bd_mutex);
 	/* invalidate stuff */
 	disk_part_iter_init(&piter, disk,
 			     DISK_PITER_INCL_EMPTY | DISK_PITER_REVERSE);
@@ -765,6 +774,8 @@ void del_gendisk(struct gendisk *disk)
 		delete_partition(disk, part->partno);
 	}
 	disk_part_iter_exit(&piter);
+	if (bdev)
+		mutex_unlock(&bdev->bd_mutex);
 
 	invalidate_partition(disk, 0);
 	bdev_unhash_inode(disk_devt(disk));
