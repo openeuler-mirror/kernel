@@ -82,9 +82,6 @@ static unsigned long nr_allocs, nr_cross_allocs;
 static struct perf_time_interval ptime;
 const char *time_str;
 
-/* output file of 'perf kmem record' */
-static const char *output_name;
-
 static int insert_alloc_stat(unsigned long call_site, unsigned long ptr,
 			     int bytes_req, int bytes_alloc, int cpu)
 {
@@ -1851,8 +1848,6 @@ static int __cmd_record(int argc, const char **argv)
 		rec_argc += ARRAY_SIZE(slab_events);
 	if (kmem_page)
 		rec_argc += ARRAY_SIZE(page_events) + 1; /* for -g */
-	if (output_name)
-		rec_argc += 2;
 
 	rec_argv = calloc(rec_argc + 1, sizeof(char *));
 
@@ -1871,11 +1866,6 @@ static int __cmd_record(int argc, const char **argv)
 
 		for (j = 0; j < ARRAY_SIZE(page_events); j++, i++)
 			rec_argv[i] = strdup(page_events[j]);
-	}
-
-	if (output_name) {
-		rec_argv[i++] = strdup("-o");
-		rec_argv[i++] = strdup(output_name);
 	}
 
 	for (j = 1; j < (unsigned int)argc; j++, i++)
@@ -1909,7 +1899,6 @@ int cmd_kmem(int argc, const char **argv)
 	};
 	const struct option kmem_options[] = {
 	OPT_STRING('i', "input", &input_name, "file", "input file name"),
-	OPT_STRING('o', "output", &output_name, "file", "output file name"),
 	OPT_INCR('v', "verbose", &verbose,
 		    "be more verbose (show symbol address, etc)"),
 	OPT_CALLBACK_NOOPT(0, "caller", NULL, NULL,
@@ -1944,7 +1933,8 @@ int cmd_kmem(int argc, const char **argv)
 		return ret;
 
 	argc = parse_options_subcommand(argc, argv, kmem_options,
-					kmem_subcommands, kmem_usage, 0);
+					kmem_subcommands, kmem_usage,
+					PARSE_OPT_STOP_AT_NON_OPTION);
 
 	if (!argc)
 		usage_with_options(kmem_usage, kmem_options);
