@@ -1755,6 +1755,11 @@ struct acpi_table_prmt_header {
 	u32 module_info_count;
 };
 
+struct acpi_prmt_module_header {
+	u16 revision;
+	u16 length;
+};
+
 struct acpi_prmt_module_info {
 	u16 revision;
 	u16 length;
