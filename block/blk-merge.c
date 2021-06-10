@@ -235,7 +235,8 @@ static unsigned int __blk_recalc_rq_segments(struct request_queue *q,
 {
 	struct bio_vec bv, bvprv = { NULL };
 	int cluster, prev = 0;
-	unsigned int seg_size, nr_phys_segs;
+	unsigned int nr_phys_segs = 0;
+	unsigned int seg_size;
 	struct bio *fbio, *bbio;
 	struct bvec_iter iter;
 
@@ -245,6 +246,12 @@ static unsigned int __blk_recalc_rq_segments(struct request_queue *q,
 	switch (bio_op(bio)) {
 	case REQ_OP_DISCARD:
 	case REQ_OP_SECURE_ERASE:
+		if (queue_max_discard_segments(q) > 1) {
+			for_each_bio(bio)
+				nr_phys_segs++;
+			return nr_phys_segs;
+		}
+		return 1;
 	case REQ_OP_WRITE_ZEROES:
 		return 0;
 	case REQ_OP_WRITE_SAME:
@@ -254,7 +261,6 @@ static unsigned int __blk_recalc_rq_segments(struct request_queue *q,
 	fbio = bio;
 	cluster = blk_queue_cluster(q);
 	seg_size = 0;
-	nr_phys_segs = 0;
 	for_each_bio(bio) {
 		bio_for_each_segment(bv, bio, iter) {
 			/*
