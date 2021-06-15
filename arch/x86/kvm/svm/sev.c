@@ -2943,3 +2943,22 @@ void sev_vcpu_deliver_sipi_vector(struct kvm_vcpu *vcpu, u8 vector)
 
 	ghcb_set_sw_exit_info_2(svm->ghcb, 1);
 }
+
+int sev_es_ghcb_map(struct vcpu_svm *svm, u64 ghcb_gpa)
+{
+	if (kvm_vcpu_map(&svm->vcpu, ghcb_gpa >> PAGE_SHIFT, &svm->ghcb_map)) {
+		/* Unable to map GHCB from guest */
+		vcpu_unimpl(&svm->vcpu, "Missing GHCB [%#llx] from guest\n",
+			    ghcb_gpa);
+
+		svm->receiver_ghcb_map_fail = true;
+		return -EINVAL;
+	}
+
+	svm->ghcb = svm->ghcb_map.hva;
+	svm->receiver_ghcb_map_fail = false;
+
+	pr_info("Mapping GHCB [%#llx] from guest at recipient\n", ghcb_gpa);
+
+	return 0;
+}

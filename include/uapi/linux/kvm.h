@@ -1099,6 +1099,8 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_X86_TRIPLE_FAULT_EVENT 218
 #define KVM_CAP_X86_NOTIFY_VMEXIT 219
 
+#define KVM_CAP_SEV_ES_GHCB 500
+
 #define KVM_CAP_ARM_CPU_FEATURE 555
 
 #define KVM_CAP_ARM_HISI_IPIV 798

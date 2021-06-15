@@ -1543,6 +1543,8 @@ static const u32 emulated_msrs_all[] = {
 
 	MSR_K7_HWCR,
 	MSR_KVM_POLL_CONTROL,
+
+	MSR_AMD64_SEV_ES_GHCB,
 };
 
 static u32 emulated_msrs[ARRAY_SIZE(emulated_msrs_all)];
@@ -4233,6 +4235,17 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		break;
 	case KVM_CAP_X86_NOTIFY_VMEXIT:
 		r = kvm_has_notify_vmexit;
+		break;
+	case KVM_CAP_SEV_ES_GHCB:
+		r = 0;
+
+		/* Both CSV2 and SEV-ES guests support MSR_AMD64_SEV_ES_GHCB,
+		 * but only CSV2 guest support export to emulate
+		 * MSR_AMD64_SEV_ES_GHCB.
+		 */
+		if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+			r = kvm_x86_ops.has_emulated_msr(kvm,
+						MSR_AMD64_SEV_ES_GHCB);
 		break;
 	default:
 		break;
