@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2105.9.0
+%global hulkrelease 2106.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0092
+Release: %{hulkrelease}.0093
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -818,6 +818,80 @@ fi
 
 %changelog
 
+
+* Tue Jun 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2106.1.0.0093
+- fs/buffer.c: add checking buffer head stat before clear
+- Bluetooth: SMP: Fail if remote and local public keys are identical
+- Bluetooth: use correct lock to prevent UAF of hdev object
+- Bluetooth: fix the erroneous flush_work() order
+- iomap: Make sure iomap_end is called after iomap_begin
+- x86/kvm: Add "nopvspin" parameter to disable PV spinlocks
+- scsi: libsas: add lun number check in .slave_alloc callback
+- nfc: fix NULL ptr dereference in llcp_sock_getname() after failed connect
+- USB:ehci:fix Kunpeng920 ehci hardware problem
+- nvme: don't warn on block content change effects
+- block: recalculate segment count for multi-segment discards correctly
+- nbd: Fix NULL pointer in flush_workqueue
+- Bluetooth: Fix slab-out-of-bounds read in hci_extended_inquiry_result_evt()
+- HID: make arrays usage and value to be the same
+- ath10k: Validate first subframe of A-MSDU before processing the list
+- mac80211: extend protection against mixed key and fragment cache attacks
+- mac80211: do not accept/forward invalid EAPOL frames
+- mac80211: prevent attacks on TKIP/WEP as well
+- mac80211: check defrag PN against current frame
+- mac80211: add fragment cache to sta_info
+- mac80211: drop A-MSDUs on old ciphers
+- cfg80211: mitigate A-MSDU aggregation attacks
+- mac80211: properly handle A-MSDUs that start with an RFC 1042 header
+- mac80211: prevent mixed key and fragment cache attacks
+- mac80211: assure all fragments are encrypted
+- mac80211: mark station unauthorized before key removal
+- block: avoid creating invalid symlink file for patitions
+- block: take bd_mutex around delete_partitions in del_gendisk
+- NFSv4: Fix second deadlock in nfs4_evict_inode()
+- NFSv4: Fix deadlock between nfs4_evict_inode() and nfs4_opendata_get_inode()
+- NFSv4.1: fix handling of backchannel binding in BIND_CONN_TO_SESSION
+- NFS: Don't gratuitously clear the inode cache when lookup failed
+- NFS: Don't revalidate the directory permissions on a lookup failure
+- NFS: nfs_delegation_find_inode_server must first reference the superblock
+- nfs4: strengthen error check to avoid unexpected result
+- NFS: Fix interrupted slots by sending a solo SEQUENCE operation
+- NFS: Ensure we time out if a delegreturn does not complete
+- NFSv4.0: nfs4_do_fsinfo() should not do implicit lease renewals
+- NFS: Use kmemdup_nul() in nfs_readdir_make_qstr()
+- NFSv3: FIx bug when using chacl and chmod to change acl
+- NFSv4.x: Handle bad/dead sessions correctly in nfs41_sequence_process()
+- NFSv4.1: Only reap expired delegations
+- NFSv4.1: Fix open stateid recovery
+- NFSv4.1: Don't process the sequence op more than once.
+- NFS: Ensure NFS writeback allocations don't recurse back into NFS.
+- nfs_remount(): don't leak, don't ignore LSM options quietly
+- UACCE backport from mainline
+- crypto: hisilicon-Cap block size at 2^31
+- crypto: hisilicon-hpre add req check when callback
+- crypto: hisilicon- count send_ref when sending bd
+- crypto: hisilicon-enhancement of qm DFX
+- crypto: hisilicon-memory management optimization
+- net: hns3: update hns3 version to 1.9.38.12
+- net: hns3: add match_id to check mailbox response from PF to VF
+- net: hns3: fix possible mismatches resp of mailbox
+- net: hns3: fix the logic for clearing resp_msg
+- net: hns3: fix queue id check error when configure flow director rule by ethtool
+- net: hns3: add check for HNS3_NIC_STATE_INITED before net open
+- net: hns3: add waiting time before cmdq memory is released
+- net: hns3: disable firmware compatible features when uninstall PF
+- net: hns3: fix change RSS 'hfunc' ineffective issue
+- net: hns3: fix inconsistent vf id print
+- net: hns3: remove redundant variable initialization
+- net: hns3: replace the tab before the left brace with one space
+- net: hns3: fix hns3_cae_pfc_storm.h missing header guard problem
+- net: hns3: modify an error type configuration
+- net: hns3: put off calling register_netdev() until client initialize complete
+- net: hns3: replace disable_irq by IRQ_NOAUTOEN flag
+- net: hns3: update rss indirection table after setup tc
+- net: hns3: don't change tc mqprio configuration when client is unregistered
+- net: hns3: remove redundant client_setup_tc handle
+- arm64/mpam: Fix use-after-free in mkdir_resctrl_prepare()
 
 * Sat Jun 05 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2105.9.0.0092
 - selftests/bpf: add test_xfs_file.c and test_set_xfs_file.c
