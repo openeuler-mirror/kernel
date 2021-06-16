@@ -34,6 +34,7 @@
 #include "smc_ism.h"
 #include "smc_sysctl.h"
 #include "smc_netlink.h"
+#include "smc_stats.h"
 
 #define SMC_LGR_NUM_INCR		256
 #define SMC_LGR_FREE_DELAY_SERV		(600 * HZ)
@@ -2228,6 +2229,7 @@ static int __smc_buf_create(struct smc_sock *smc, bool is_smcd, bool is_rmb)
 	struct smc_link_group *lgr = conn->lgr;
 	struct list_head *buf_list;
 	int bufsize, bufsize_comp;
+	bool is_dgraded = false;
 	struct rw_semaphore *lock;	/* lock buffer list */
 
 	if (is_rmb)
@@ -2251,6 +2253,8 @@ static int __smc_buf_create(struct smc_sock *smc, bool is_smcd, bool is_rmb)
 		/* check for reusable slot in the link group */
 		buf_desc = smc_buf_get_slot(bufsize, lock, buf_list);
 		if (buf_desc) {
+			SMC_STAT_RMB_SIZE(is_smcd, is_rmb, bufsize);
+			SMC_STAT_BUF_REUSE(is_smcd, is_rmb);
 			break; /* found reusable slot */
 		}
 
@@ -2261,9 +2265,16 @@ static int __smc_buf_create(struct smc_sock *smc, bool is_smcd, bool is_rmb)
 
 		if (PTR_ERR(buf_desc) == -ENOMEM)
 			break;
-		if (IS_ERR(buf_desc))
+		if (IS_ERR(buf_desc)) {
+			if (!is_dgraded) {
+				is_dgraded = true;
+				SMC_STAT_RMB_DOWNGRADED(is_smcd, is_rmb);
+			}
 			continue;
+		}
 
+		SMC_STAT_RMB_ALLOC(is_smcd, is_rmb);
+		SMC_STAT_RMB_SIZE(is_smcd, is_rmb, bufsize);
 		buf_desc->used = 1;
 		down_write(lock);
 		list_add(&buf_desc->list, buf_list);

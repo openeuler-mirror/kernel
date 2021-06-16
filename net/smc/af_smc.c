@@ -50,6 +50,7 @@
 #include "smc_rx.h"
 #include "smc_close.h"
 #include "smc_sysctl.h"
+#include "smc_stats.h"
 
 static DEFINE_MUTEX(smc_server_lgr_pending);	/* serialize link group
 						 * creation on server
@@ -623,6 +624,37 @@ static void smc_link_save_peer_info(struct smc_link *link,
 	link->peer_mtu = clc->r0.qp_mtu;
 }
 
+static void smc_stat_inc_fback_rsn_cnt(struct smc_sock *smc,
+				       struct smc_stats_fback *fback_arr)
+{
+	int cnt;
+
+	for (cnt = 0; cnt < SMC_MAX_FBACK_RSN_CNT; cnt++) {
+		if (fback_arr[cnt].fback_code == smc->fallback_rsn) {
+			fback_arr[cnt].count++;
+			break;
+		}
+		if (!fback_arr[cnt].fback_code) {
+			fback_arr[cnt].fback_code = smc->fallback_rsn;
+			fback_arr[cnt].count++;
+			break;
+		}
+	}
+}
+
+static void smc_stat_fallback(struct smc_sock *smc)
+{
+	mutex_lock(&smc_stat_fback_rsn);
+	if (smc->listen_smc) {
+		smc_stat_inc_fback_rsn_cnt(smc, fback_rsn.srv);
+		fback_rsn.srv_fback_cnt++;
+	} else {
+		smc_stat_inc_fback_rsn_cnt(smc, fback_rsn.clnt);
+		fback_rsn.clnt_fback_cnt++;
+	}
+	mutex_unlock(&smc_stat_fback_rsn);
+}
+
 /* must be called under rcu read lock */
 static void smc_fback_wakeup_waitqueue(struct smc_sock *smc, void *key)
 {
@@ -748,7 +780,7 @@ static void smc_fback_replace_callbacks(struct smc_sock *smc)
 	write_unlock_bh(&clcsk->sk_callback_lock);
 }
 
-static int smc_switch_to_fallback(struct smc_sock *smc)
+static int smc_switch_to_fallback(struct smc_sock *smc, int reason_code)
 {
 	int rc = 0;
 
@@ -759,6 +791,8 @@ static int smc_switch_to_fallback(struct smc_sock *smc)
 	}
 
 	smc->use_fallback = true;
+	smc->fallback_rsn = reason_code;
+	smc_stat_fallback(smc);
 	if (smc->sk.sk_socket && smc->sk.sk_socket->file) {
 		smc->clcsock->file = smc->sk.sk_socket->file;
 		smc->clcsock->file->private_data = smc->clcsock;
@@ -781,13 +815,12 @@ static int smc_connect_fallback(struct smc_sock *smc, int reason_code)
 {
 	int rc = 0;
 
-	rc = smc_switch_to_fallback(smc);
+	rc = smc_switch_to_fallback(smc, reason_code);
 	if (rc) { /* fallback fails */
 		if (smc->sk.sk_state == SMC_INIT)
 			sock_put(&smc->sk); /* passive closing */
 		return rc;
 	}
-	smc->fallback_rsn = reason_code;
 	smc_copy_sock_settings_to_clc(smc);
 	smc->connect_nonblock = 0;
 	if (smc->sk.sk_state == SMC_INIT)
@@ -802,6 +835,7 @@ static int smc_connect_decline_fallback(struct smc_sock *smc, int reason_code,
 	int rc;
 
 	if (reason_code < 0) { /* error, fallback is not possible */
+		this_cpu_inc(smc_stats->clnt_hshake_err_cnt);
 		if (smc->sk.sk_state == SMC_INIT)
 			sock_put(&smc->sk); /* passive closing */
 		return reason_code;
@@ -809,6 +843,7 @@ static int smc_connect_decline_fallback(struct smc_sock *smc, int reason_code,
 	if (reason_code != SMC_CLC_DECL_PEERDECL) {
 		rc = smc_clc_send_decline(smc, reason_code, version);
 		if (rc < 0) {
+			this_cpu_inc(smc_stats->clnt_hshake_err_cnt);
 			if (smc->sk.sk_state == SMC_INIT)
 				sock_put(&smc->sk); /* passive closing */
 			return rc;
@@ -1263,6 +1298,7 @@ static int __smc_connect(struct smc_sock *smc)
 	if (rc)
 		goto vlan_cleanup;
 
+	SMC_STAT_CLNT_SUCC_INC(aclc);
 	smc_connect_ism_vlan_cleanup(smc, ini);
 	kfree(buf);
 	kfree(ini);
@@ -1638,6 +1674,7 @@ static void smc_listen_out_err(struct smc_sock *new_smc)
 {
 	struct sock *newsmcsk = &new_smc->sk;
 
+	this_cpu_inc(smc_stats->srv_hshake_err_cnt);
 	if (newsmcsk->sk_state == SMC_INIT)
 		sock_put(&new_smc->sk); /* passive closing */
 	newsmcsk->sk_state = SMC_CLOSED;
@@ -1655,12 +1692,11 @@ static void smc_listen_decline(struct smc_sock *new_smc, int reason_code,
 	else
 		smc_conn_free(&new_smc->conn);
 	if (reason_code < 0 ||
-	    smc_switch_to_fallback(new_smc)) {
+	    smc_switch_to_fallback(new_smc, reason_code)) {
 		/* error, no fallback possible */
 		smc_listen_out_err(new_smc);
 		return;
 	}
-	new_smc->fallback_rsn = reason_code;
 	if (reason_code && reason_code != SMC_CLC_DECL_PEERDECL) {
 		if (smc_clc_send_decline(new_smc, reason_code, version) < 0) {
 			smc_listen_out_err(new_smc);
@@ -2020,13 +2056,11 @@ static void smc_listen_work(struct work_struct *work)
 
 	/* check if peer is smc capable */
 	if (!tcp_sk(newclcsock->sk)->syn_smc) {
-		rc = smc_switch_to_fallback(new_smc);
-		if (rc) {
+		rc = smc_switch_to_fallback(new_smc, SMC_CLC_DECL_PEERNOSMC);
+		if (rc)
 			smc_listen_out_err(new_smc);
-		} else {
-			new_smc->fallback_rsn = SMC_CLC_DECL_PEERNOSMC;
+		else
 			smc_listen_out_connected(new_smc);
-		}
 		return;
 	}
 
@@ -2103,6 +2137,7 @@ static void smc_listen_work(struct work_struct *work)
 	}
 	smc_conn_save_peer_info(new_smc, cclc);
 	smc_listen_out_connected(new_smc);
+	SMC_STAT_SERV_SUCC_INC(ini);
 	goto out_free;
 
 out_unlock:
@@ -2320,10 +2355,9 @@ static int smc_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 	if (msg->msg_flags & MSG_FASTOPEN) {
 		/* not connected yet, fallback */
 		if (sk->sk_state == SMC_INIT && !smc->connect_nonblock) {
-			rc = smc_switch_to_fallback(smc);
+			rc = smc_switch_to_fallback(smc, SMC_CLC_DECL_OPTUNSUPP);
 			if (rc)
 				goto out;
-			smc->fallback_rsn = SMC_CLC_DECL_OPTUNSUPP;
 		} else {
 			rc = -EINVAL;
 			goto out;
@@ -2335,10 +2369,12 @@ static int smc_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 		goto out;
 	}
 
-	if (smc->use_fallback)
+	if (smc->use_fallback) {
 		rc = smc->clcsock->ops->sendmsg(smc->clcsock, msg, len);
-	else
+	} else {
 		rc = smc_tx_sendmsg(smc, msg, len);
+		SMC_STAT_TX_PAYLOAD(smc, len, rc);
+	}
 out:
 	release_sock(sk);
 	return rc;
@@ -2373,6 +2409,7 @@ static int smc_recvmsg(struct socket *sock, struct msghdr *msg, size_t len,
 	} else {
 		msg->msg_namelen = 0;
 		rc = smc_rx_recvmsg(smc, msg, NULL, len, flags);
+		SMC_STAT_RX_PAYLOAD(smc, rc, rc);
 	}
 
 out:
@@ -2562,9 +2599,7 @@ static int smc_setsockopt(struct socket *sock, int level, int optname,
 	case TCP_FASTOPEN_NO_COOKIE:
 		/* option not supported by SMC */
 		if (sk->sk_state == SMC_INIT && !smc->connect_nonblock) {
-			rc = smc_switch_to_fallback(smc);
-			if (!rc)
-				smc->fallback_rsn = SMC_CLC_DECL_OPTUNSUPP;
+			rc = smc_switch_to_fallback(smc, SMC_CLC_DECL_OPTUNSUPP);
 		} else {
 			rc = -EINVAL;
 		}
@@ -2574,6 +2609,7 @@ static int smc_setsockopt(struct socket *sock, int level, int optname,
 		    sk->sk_state != SMC_LISTEN &&
 		    sk->sk_state != SMC_CLOSED) {
 			if (val) {
+				SMC_STAT_INC(!smc->conn.lnk, ndly_cnt);
 				smc_tx_pending(&smc->conn);
 				cancel_delayed_work(&smc->conn.tx_work);
 			}
@@ -2584,6 +2620,7 @@ static int smc_setsockopt(struct socket *sock, int level, int optname,
 		    sk->sk_state != SMC_LISTEN &&
 		    sk->sk_state != SMC_CLOSED) {
 			if (!val) {
+				SMC_STAT_INC(!smc->conn.lnk, cork_cnt);
 				smc_tx_pending(&smc->conn);
 				cancel_delayed_work(&smc->conn.tx_work);
 			}
@@ -2719,10 +2756,11 @@ static ssize_t smc_sendpage(struct socket *sock, struct page *page,
 		goto out;
 	}
 	release_sock(sk);
-	if (smc->use_fallback)
+	if (smc->use_fallback) {
 		rc = kernel_sendpage(smc->clcsock, page, offset,
 				     size, flags);
-	else {
+	} else {
+		SMC_STAT_INC(!smc->conn.lnk, sendpage_cnt);
 		lock_sock(sk);
 		rc = smc_tx_sendpage(smc, page, offset, size, flags);
 		release_sock(sk);
@@ -2775,6 +2813,7 @@ static ssize_t smc_splice_read(struct socket *sock, loff_t *ppos,
 			flags = MSG_DONTWAIT;
 		else
 			flags = 0;
+		SMC_STAT_INC(!smc->conn.lnk, splice_cnt);
 		rc = smc_rx_recvmsg(smc, NULL, pipe, len, flags);
 	}
 out:
@@ -2908,10 +2947,16 @@ static int __init smc_init(void)
 	if (!smc_close_wq)
 		goto out_alloc_hs_wq;
 
+	rc = smc_stats_init();
+	if (rc) {
+		pr_err("%s: smc_stats_init fails with %d\n", __func__, rc);
+		goto out_alloc_wqs;
+	}
+
 	rc = smc_core_init();
 	if (rc) {
 		pr_err("%s: smc_core_init fails with %d\n", __func__, rc);
-		goto out_alloc_wqs;
+		goto out_smc_stat;
 	}
 
 	rc = smc_llc_init();
@@ -2963,6 +3008,8 @@ out_proto:
 	proto_unregister(&smc_proto);
 out_core:
 	smc_core_exit();
+out_smc_stat:
+	smc_stats_exit();
 out_alloc_wqs:
 	destroy_workqueue(smc_close_wq);
 out_alloc_hs_wq:
@@ -2988,6 +3035,7 @@ static void __exit smc_exit(void)
 	destroy_workqueue(smc_close_wq);
 	destroy_workqueue(smc_tcp_ls_wq);
 	destroy_workqueue(smc_hs_wq);
+	smc_stats_exit();
 	proto_unregister(&smc_proto6);
 	proto_unregister(&smc_proto);
 	smc_pnet_exit();
