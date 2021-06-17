@@ -1075,6 +1075,38 @@ int bpf_prog_array_copy(struct bpf_prog_array *old_array,
 			struct bpf_prog *include_prog,
 			struct bpf_prog_array **new_array);
 
+/* For BPF_PROG_RUN_ARRAY_FLAGS and __BPF_PROG_RUN_ARRAY,
+ * if bpf_cgroup_storage_set() failed, the rest of programs
+ * will not execute. This should be a really rare scenario
+ * as it requires BPF_CGROUP_STORAGE_NEST_MAX number of
+ * preemptions all between bpf_cgroup_storage_set() and
+ * bpf_cgroup_storage_unset() on the same cpu.
+ */
+#define BPF_PROG_RUN_ARRAY_FLAGS(array, ctx, func, ret_flags)		\
+	({								\
+		struct bpf_prog_array_item *_item;			\
+		struct bpf_prog *_prog;					\
+		struct bpf_prog_array *_array;				\
+		u32 _ret = 1;						\
+		u32 func_ret;						\
+		migrate_disable();					\
+		rcu_read_lock();					\
+		_array = rcu_dereference(array);			\
+		_item = &_array->items[0];				\
+		while ((_prog = READ_ONCE(_item->prog))) {		\
+			if (unlikely(bpf_cgroup_storage_set(_item->cgroup_storage)))	\
+				break;					\
+			func_ret = func(_prog, ctx);			\
+			_ret &= (func_ret & 1);				\
+			*(ret_flags) |= (func_ret >> 1);			\
+			bpf_cgroup_storage_unset();			\
+			_item++;					\
+		}							\
+		rcu_read_unlock();					\
+		migrate_enable();					\
+		_ret;							\
+	 })
+
 #define __BPF_PROG_RUN_ARRAY(array, ctx, func, check_non_null, set_cg_storage) \
 	({						\
 		struct bpf_prog_array_item *_item;	\
@@ -1088,9 +1120,14 @@ int bpf_prog_array_copy(struct bpf_prog_array *old_array,
 			goto _out;			\
 		_item = &_array->items[0];		\
 		while ((_prog = READ_ONCE(_item->prog))) {		\
-			if (set_cg_storage)		\
-				bpf_cgroup_storage_set(_item->cgroup_storage);	\
-			_ret &= func(_prog, ctx);	\
+			if (!set_cg_storage) {			\
+				_ret &= func(_prog, ctx);	\
+			} else {				\
+				if (unlikely(bpf_cgroup_storage_set(_item->cgroup_storage)))	\
+					break;			\
+				_ret &= func(_prog, ctx);	\
+				bpf_cgroup_storage_unset();	\
+			}				\
 			_item++;			\
 		}					\
 _out:							\
