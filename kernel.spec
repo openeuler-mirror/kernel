@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2106.1.0
+%global hulkrelease 2106.2.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0091
+Release: %{hulkrelease}.0092
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,10 @@ fi
 
 %changelog
 
+
+* Wed Jun 16 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2106.2.0.0092
+- sched/membarrier: fix NULL poiner in membarrier_global_expedited
+- writeback: don't warn on an unregistered BDI in __mark_inode_dirty
 
 * Tue Jun 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2106.1.0.0091
 - fs/buffer.c: add checking buffer head stat before clear
