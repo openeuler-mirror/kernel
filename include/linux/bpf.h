@@ -286,10 +286,6 @@ struct bpf_prog_aux {
 	atomic_t refcnt;
 	u32 used_map_cnt;
 	u32 max_ctx_offset;
-	/* not protected by KABI, safe to extend in the middle */
-#ifndef __GENKSYMS__
-	u32 max_tp_access;
-#endif
 	u32 stack_depth;
 	u32 id;
 	u32 func_cnt;
@@ -313,6 +309,10 @@ struct bpf_prog_aux {
 		struct work_struct work;
 		struct rcu_head	rcu;
 	};
+	/* not protected by KABI, safe to extend in the middle */
+#ifndef __GENKSYMS__
+	u32 max_tp_access;
+#endif
 };
 
 struct bpf_array {
