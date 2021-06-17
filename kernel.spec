@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2106.2.0
+%global hulkrelease 2106.3.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0092
+Release: %{hulkrelease}.0093
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,9 @@ fi
 
 %changelog
 
+
+* Thu Jun 17 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2106.3.0.0093
+- cpuidle: fix container_of err in cpuidle_device and cpuidle_driver
 
 * Wed Jun 16 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2106.2.0.0092
 - sched/membarrier: fix NULL poiner in membarrier_global_expedited
