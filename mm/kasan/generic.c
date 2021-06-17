@@ -338,6 +338,8 @@ void kasan_record_aux_stack(void *addr)
 	cache = page->slab_cache;
 	object = nearest_obj(cache, page, addr);
 	alloc_info = get_alloc_info(cache, object);
+	if (!alloc_info)
+		return;
 
 	/*
 	 * record the last two call_rcu() call stacks.
