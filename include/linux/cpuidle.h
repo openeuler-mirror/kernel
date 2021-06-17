@@ -155,7 +155,10 @@ extern int cpuidle_enter(struct cpuidle_driver *drv,
 extern void cpuidle_reflect(struct cpuidle_device *dev, int index);
 extern u64 cpuidle_poll_time(struct cpuidle_driver *drv,
 			     struct cpuidle_device *dev);
+extern u64 cpuidle_haltpoll_time(struct cpuidle_driver *drv,
+				  struct cpuidle_device *dev);
 
+extern void haltpoll_switch_governor(struct cpuidle_driver *drv);
 extern int cpuidle_register_driver(struct cpuidle_driver *drv);
 extern struct cpuidle_driver *cpuidle_get_driver(void);
 extern struct cpuidle_driver *cpuidle_driver_ref(void);
@@ -192,7 +195,12 @@ static inline void cpuidle_reflect(struct cpuidle_device *dev, int index) { }
 static inline u64 cpuidle_poll_time(struct cpuidle_driver *drv,
 			     struct cpuidle_device *dev)
 {return 0; }
+static inline u64 cpuidle_haltpoll_time(struct cpuidle_driver *drv,
+					struct cpuidle_device *dev)
+{return 0; }
 static inline int cpuidle_register_driver(struct cpuidle_driver *drv)
+{return -ENODEV; }
+static inline void haltpoll_switch_governor(struct cpuidle_driver *drv)
 {return -ENODEV; }
 static inline struct cpuidle_driver *cpuidle_get_driver(void) {return NULL; }
 static inline struct cpuidle_driver *cpuidle_driver_ref(void) {return NULL; }

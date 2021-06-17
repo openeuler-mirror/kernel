@@ -241,6 +241,25 @@ static void __cpuidle_unregister_driver(struct cpuidle_driver *drv)
 	__cpuidle_unset_driver(drv);
 }
 
+void haltpoll_switch_governor(struct cpuidle_driver *drv)
+{
+	struct cpuidle_governor *gov;
+	struct cpuidle_driver_wrapper *drvw;
+
+	drvw = container_of(drv, struct cpuidle_driver_wrapper, drv);
+	if (!strlen(param_governor) && drvw->governor &&
+	    (cpuidle_get_driver() == drv)) {
+		mutex_lock(&cpuidle_lock);
+		gov = cpuidle_find_governor(drvw->governor);
+		if (gov) {
+			cpuidle_prev_governor = cpuidle_curr_governor;
+			if (cpuidle_switch_governor(gov) < 0)
+				cpuidle_prev_governor = NULL;
+		}
+		mutex_unlock(&cpuidle_lock);
+	}
+}
+
 /**
  * cpuidle_register_driver - registers a driver
  * @drv: a pointer to a valid struct cpuidle_driver
@@ -253,29 +272,15 @@ static void __cpuidle_unregister_driver(struct cpuidle_driver *drv)
  */
 int cpuidle_register_driver(struct cpuidle_driver *drv)
 {
-	struct cpuidle_governor *gov;
-	struct cpuidle_driver_wrapper *drvw;
 	int ret;
 
 	spin_lock(&cpuidle_driver_lock);
 	ret = __cpuidle_register_driver(drv);
 	spin_unlock(&cpuidle_driver_lock);
-	drvw = container_of(drv, struct cpuidle_driver_wrapper, drv);
-
-	if (!ret && !strlen(param_governor) && drvw->governor &&
-	    (cpuidle_get_driver() == drv)) {
-		mutex_lock(&cpuidle_lock);
-		gov = cpuidle_find_governor(drvw->governor);
-		if (gov) {
-			cpuidle_prev_governor = cpuidle_curr_governor;
-			if (cpuidle_switch_governor(gov) < 0)
-				cpuidle_prev_governor = NULL;
-		}
-		mutex_unlock(&cpuidle_lock);
-	}
 
 	return ret;
 }
+
 EXPORT_SYMBOL_GPL(cpuidle_register_driver);
 
 /**

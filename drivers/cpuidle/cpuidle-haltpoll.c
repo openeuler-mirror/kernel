@@ -117,7 +117,9 @@ static int __init haltpoll_init(void)
 		return -ENODEV;
 
 	ret = cpuidle_register_driver(drv);
-	if (ret < 0)
+	if (ret == 0)
+		haltpoll_switch_governor(drv);
+	else if (ret < 0)
 		return ret;
 
 	haltpoll_cpuidle_dev_wrap = alloc_percpu(struct cpuidle_device_wrapper);

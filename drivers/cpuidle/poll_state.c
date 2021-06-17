@@ -26,7 +26,10 @@ static int __cpuidle poll_idle(struct cpuidle_device *dev,
 		unsigned int loop_count = 0;
 		u64 limit;
 
-		limit = cpuidle_poll_time(drv, dev);
+		if (drv->name && !strcmp(drv->name, "haltpoll"))
+			limit = cpuidle_haltpoll_time(drv, dev);
+		else
+			limit = cpuidle_poll_time(drv, dev);
 
 		while (!need_resched()) {
 			cpu_relax();
