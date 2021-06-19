@@ -3354,6 +3354,7 @@ static void sd_probe_async(void *data, async_cookie_t cookie)
 
 	blk_pm_runtime_init(sdp->request_queue, dev);
 	device_add_disk(dev, gd);
+	blk_delete_region(disk_devt(sdkp->disk), SD_MINORS, sd_default_probe);
 	if (sdkp->capacity)
 		sd_dif_config_host(sdkp);
 
