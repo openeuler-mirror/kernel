@@ -1114,7 +1114,7 @@ static inline struct iommu_sva *
 iommu_sva_bind_group(struct iommu_group *group, struct mm_struct *mm,
 		     void *drvdata)
 {
-	return -ENODEV;
+	return NULL;
 }
 
 #endif /* CONFIG_IOMMU_API */
