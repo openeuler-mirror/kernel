@@ -792,7 +792,7 @@ FNAME(is_self_change_mapping)(struct kvm_vcpu *vcpu,
 	bool self_changed = false;
 
 	if (!(walker->pte_access & ACC_WRITE_MASK ||
-	      (!is_write_protection(vcpu) && !user_fault)))
+	    (!is_cr0_wp(vcpu->arch.mmu) && !user_fault)))
 		return false;
 
 	for (level = walker->level; level <= walker->max_level; level++) {
@@ -890,8 +890,7 @@ static int FNAME(page_fault)(struct kvm_vcpu *vcpu, gpa_t addr, u32 error_code,
 	 * we will cache the incorrect access into mmio spte.
 	 */
 	if (write_fault && !(walker.pte_access & ACC_WRITE_MASK) &&
-	     !is_write_protection(vcpu) && !user_fault &&
-	      !is_noslot_pfn(pfn)) {
+	    !is_cr0_wp(vcpu->arch.mmu) && !user_fault && !is_noslot_pfn(pfn)) {
 		walker.pte_access |= ACC_WRITE_MASK;
 		walker.pte_access &= ~ACC_USER_MASK;
 
