@@ -1666,9 +1666,6 @@ static void __cpufreq_offline(unsigned int cpu, struct cpufreq_policy *policy)
 		policy->cdev = NULL;
 	}
 
-	if (cpufreq_driver->stop_cpu)
-		cpufreq_driver->stop_cpu(policy);
-
 	if (has_target())
 		cpufreq_exit_governor(policy);
 
