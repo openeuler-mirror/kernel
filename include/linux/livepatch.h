@@ -163,6 +163,13 @@ struct klp_state {
 	void *data;
 };
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+struct klp_hook_node {
+	struct klp_hook *hooks_unload;
+	struct klp_hook_node *next;
+};
+#endif
+
 /**
  * struct klp_patch - patch structure for live patching
  * @mod:	reference to the live patch module
@@ -192,6 +199,9 @@ struct klp_patch {
 	bool forced;
 	struct work_struct free_work;
 	struct completion finish;
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	struct klp_hook_node *hook;
+#endif
 };
 
 #define klp_for_each_object_static(patch, obj) \

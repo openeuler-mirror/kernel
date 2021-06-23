@@ -759,11 +759,23 @@ static void klp_free_object_loaded(struct klp_object *obj)
 static void __klp_free_objects(struct klp_patch *patch, bool nops_only)
 {
 	struct klp_object *obj, *tmp_obj;
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	patch->hook = NULL;
+#endif
 
 	klp_for_each_object_safe(patch, obj, tmp_obj) {
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 		if (klp_is_module(obj))
 			module_put(obj->mod);
+		if (obj->hooks_unload) {
+			struct klp_hook_node **pnode = &patch->hook;
+			while (*pnode != NULL)
+				pnode = &(*pnode)->next;
+			*pnode = kzalloc(sizeof(struct klp_hook_node),
+					 GFP_KERNEL);
+			(*pnode)->hooks_unload = obj->hooks_unload;
+			(*pnode)->next = NULL;
+		}
 #endif
 		__klp_free_funcs(obj, nops_only);
 
@@ -816,17 +828,18 @@ static inline int klp_load_hook(struct klp_object *obj)
 	return 0;
 }
 
-static inline int klp_unload_hook(struct klp_object *obj)
+static inline void klp_unload_patch_hooks(struct klp_patch *patch)
 {
 	struct klp_hook *hook;
+	struct klp_hook_node *tmp;
 
-	if (!obj->hooks_unload)
-		return 0;
-
-	for (hook = obj->hooks_unload; hook->hook; hook++)
-		(*hook->hook)();
-
-	return 0;
+	while (patch->hook) {
+		for (hook = patch->hook->hooks_unload; hook->hook; hook++)
+			(*hook->hook)();
+		tmp = patch->hook;
+		patch->hook = patch->hook->next;
+		kfree(tmp);
+	}
 }
 #endif
 
@@ -841,10 +854,7 @@ static inline int klp_unload_hook(struct klp_object *obj)
 static void klp_free_patch_finish(struct klp_patch *patch)
 {
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-	struct klp_object *obj;
-
-	klp_for_each_object(patch, obj)
-		klp_unload_hook(obj);
+	klp_unload_patch_hooks(patch);
 #endif
 	/*
 	 * Avoid deadlock with enabled_store() sysfs callback by
