@@ -2736,12 +2736,35 @@ static int domain_prepare_identity_map(struct device *dev,
 	return iommu_domain_identity_map(domain, start, end);
 }
 
+static struct device *acpi_dev_find_pci_dev(struct device *dev)
+{
+	struct acpi_device_physical_node *pn;
+	struct acpi_device *adev;
+
+	if (dev->bus == &acpi_bus_type) {
+		adev = to_acpi_device(dev);
+
+		mutex_lock(&adev->physical_node_lock);
+		list_for_each_entry(pn, &adev->physical_node_list, node) {
+			if (dev_is_pci(pn->dev)) {
+				mutex_unlock(&adev->physical_node_lock);
+				return pn->dev;
+			}
+		}
+		mutex_unlock(&adev->physical_node_lock);
+	}
+
+	return dev;
+}
+
 static int iommu_prepare_identity_map(struct device *dev,
 				      unsigned long long start,
 				      unsigned long long end)
 {
 	struct dmar_domain *domain;
 	int ret;
+
+	dev = acpi_dev_find_pci_dev(dev);
 
 	domain = get_domain_for_dev(dev, DEFAULT_DOMAIN_ADDRESS_WIDTH);
 	if (!domain)
