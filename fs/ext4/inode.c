@@ -427,6 +427,9 @@ int ext4_issue_zeroout(struct inode *inode, ext4_lblk_t lblk, ext4_fsblk_t pblk,
 	if (ret > 0)
 		ret = 0;
 
+	if (ret == -ENOSPC)
+		ret = -EIO;
+
 	return ret;
 }
 
