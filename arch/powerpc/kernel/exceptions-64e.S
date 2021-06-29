@@ -1576,6 +1576,7 @@ skpinv:	addi	r6,r6,1				/* Increment */
 1:	mflr	r6
 	addi	r6,r6,(2f - 1b)
 	tovirt(r6,r6)
+	add	r6,r6,r19
 	lis	r7,MSR_KERNEL@h
 	ori	r7,r7,MSR_KERNEL@l
 	mtspr	SPRN_SRR0,r6
@@ -1598,6 +1599,7 @@ skpinv:	addi	r6,r6,1				/* Increment */
 
 	/* We translate LR and return */
 	tovirt(r8,r8)
+	add	r8,r8,r19
 	mtlr	r8
 	blr
 
@@ -1726,6 +1728,7 @@ a2_tlbinit_code_end:
  */
 _GLOBAL(start_initialization_book3e)
 	mflr	r28
+	li	r19, 0
 
 	/* First, we need to setup some initial TLBs to map the kernel
 	 * text, data and bss at PAGE_OFFSET. We don't have a real mode
@@ -1768,6 +1771,12 @@ _GLOBAL(book3e_secondary_core_init)
 	cmplwi	r4,0
 	bne	2f
 
+	li	r19, 0
+#ifdef CONFIG_RANDOMIZE_BASE
+	LOAD_REG_ADDR_PIC(r19, __kaslr_offset)
+	ld	r19,0(r19)
+	rlwinm  r19,r19,0,0,5
+#endif
 	/* Setup TLB for this core */
 	bl	initial_tlb_book3e
 
@@ -1800,6 +1809,7 @@ _GLOBAL(book3e_secondary_core_init)
 	lis	r3,PAGE_OFFSET@highest
 	sldi	r3,r3,32
 	or	r28,r28,r3
+	add	r28,r28,r19
 1:	mtlr	r28
 	blr
 
