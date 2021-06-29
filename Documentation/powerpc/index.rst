@@ -21,7 +21,7 @@ powerpc
     hvcs
     imc
     isa-versions
-    kaslr-booke32
+    kaslr-booke
     mpc52xx
     papr_hcalls
     pci_iov_resource_on_powernv
