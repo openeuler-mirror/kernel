@@ -287,6 +287,12 @@ struct mem_cgroup {
 	bool			tcpmem_active;
 	int			tcpmem_pressure;
 
+#ifdef CONFIG_MEMCG_QOS
+	/* Currently support 0 and -1.
+	 * in the future it can expand to other value.
+	 */
+	int	memcg_priority;
+#endif
 #ifdef CONFIG_MEMCG_KMEM
         /* Index in the kmem_cache->memcg_params.memcg_caches array */
 	int kmemcg_id;
@@ -320,6 +326,12 @@ struct mem_cgroup_extension {
 	unsigned long split_queue_len;
 	struct mem_cgroup memcg;
 };
+
+#ifdef CONFIG_MEMCG_QOS
+bool memcg_low_priority_scan_tasks(int (*)(struct task_struct *, void *),
+				   void *);
+void memcg_print_bad_task(void *arg, int ret);
+#endif
 
 /*
  * size of first charge trial. "32" comes from vmscan.c's magic value.
