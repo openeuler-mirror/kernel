@@ -5949,6 +5949,13 @@ static int memory_stat_show(struct seq_file *m, void *v)
 	seq_printf(m, "pgfault %lu\n", acc.events[PGFAULT]);
 	seq_printf(m, "pgmajfault %lu\n", acc.events[PGMAJFAULT]);
 
+	seq_printf(m, "workingset_refault %lu\n",
+		   acc.stat[WORKINGSET_REFAULT]);
+	seq_printf(m, "workingset_activate %lu\n",
+		   acc.stat[WORKINGSET_ACTIVATE]);
+	seq_printf(m, "workingset_nodereclaim %lu\n",
+		   acc.stat[WORKINGSET_NODERECLAIM]);
+
 	seq_printf(m, "pgrefill %lu\n", acc.events[PGREFILL]);
 	seq_printf(m, "pgscan %lu\n", acc.events[PGSCAN_KSWAPD] +
 		   acc.events[PGSCAN_DIRECT]);
@@ -5958,13 +5965,6 @@ static int memory_stat_show(struct seq_file *m, void *v)
 	seq_printf(m, "pgdeactivate %lu\n", acc.events[PGDEACTIVATE]);
 	seq_printf(m, "pglazyfree %lu\n", acc.events[PGLAZYFREE]);
 	seq_printf(m, "pglazyfreed %lu\n", acc.events[PGLAZYFREED]);
-
-	seq_printf(m, "workingset_refault %lu\n",
-		   acc.stat[WORKINGSET_REFAULT]);
-	seq_printf(m, "workingset_activate %lu\n",
-		   acc.stat[WORKINGSET_ACTIVATE]);
-	seq_printf(m, "workingset_nodereclaim %lu\n",
-		   acc.stat[WORKINGSET_NODERECLAIM]);
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	seq_printf(m, "thp_fault_alloc %lu\n", acc.events[THP_FAULT_ALLOC]);
