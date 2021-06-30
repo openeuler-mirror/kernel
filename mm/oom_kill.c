@@ -327,6 +327,8 @@ static bool oom_next_task(struct task_struct *task, struct oom_control *oc,
 {
 	struct mem_cgroup *cur_memcg;
 	struct mem_cgroup *oc_memcg;
+	struct mem_cgroup_extension *cur_ext;
+	struct mem_cgroup_extension *oc_ext;
 
 
 	if (!points)
@@ -337,14 +339,16 @@ static bool oom_next_task(struct task_struct *task, struct oom_control *oc,
 
 	oc_memcg = mem_cgroup_from_task(oc->chosen);
 	cur_memcg = mem_cgroup_from_task(task);
+	oc_ext = to_memcg_ext(oc_memcg);
+	cur_ext = to_memcg_ext(cur_memcg);
 
-	if (cur_memcg->memcg_priority == oc_memcg->memcg_priority) {
+	if (cur_ext->memcg_priority == oc_ext->memcg_priority) {
 		if (points < oc->chosen_points)
 			return true;
 		return false;
 	}
 	/* if oc is low-priority, so skip the task */
-	if (oc_memcg->memcg_priority)
+	if (oc_ext->memcg_priority)
 		return true;
 
 	return false;

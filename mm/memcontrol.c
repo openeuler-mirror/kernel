@@ -3407,29 +3407,42 @@ static int mem_cgroup_move_charge_write(struct cgroup_subsys_state *css,
 static void memcg_qos_init(struct mem_cgroup *memcg)
 {
 	struct mem_cgroup *parent = parent_mem_cgroup(memcg);
+	struct mem_cgroup_extension *memcg_ext;
+	struct mem_cgroup_extension *parent_ext;
 
 	if (!parent)
 		return;
 
-	if (parent->memcg_priority && parent->use_hierarchy)
-		memcg->memcg_priority = parent->memcg_priority;
+	memcg_ext = to_memcg_ext(memcg);
+	parent_ext = to_memcg_ext(parent);
+
+	if (parent_ext->memcg_priority && parent->use_hierarchy)
+		memcg_ext->memcg_priority = parent_ext->memcg_priority;
 }
 
 static s64 memcg_qos_read(struct cgroup_subsys_state *css,
 				      struct cftype *cft)
 {
-	return mem_cgroup_from_css(css)->memcg_priority;
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+	struct mem_cgroup_extension *memcg_ext;
+
+	memcg_ext = to_memcg_ext(memcg);
+
+	return memcg_ext->memcg_priority;
 }
 
 static int memcg_qos_write(struct cgroup_subsys_state *css,
 				       struct cftype *cft, s64 val)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+	struct mem_cgroup_extension *memcg_ext;
+
+	memcg_ext = to_memcg_ext(memcg);
 
 	if (val >= 0)
-		memcg->memcg_priority = 0;
+		memcg_ext->memcg_priority = 0;
 	else
-		memcg->memcg_priority = -1;
+		memcg_ext->memcg_priority = -1;
 
 	return 0;
 }
@@ -3438,13 +3451,15 @@ static struct mem_cgroup *memcg_find_max_usage(struct mem_cgroup *last)
 {
 	struct mem_cgroup *iter, *max_memcg = NULL;
 	struct cgroup_subsys_state *css;
+	struct mem_cgroup_extension *memcg_ext;
 	unsigned long usage, max_usage = 0;
 
 	rcu_read_lock();
 	css_for_each_descendant_pre(css, &root_mem_cgroup->css) {
 		iter = mem_cgroup_from_css(css);
+		memcg_ext = to_memcg_ext(iter);
 
-		if (!iter->memcg_priority || iter == root_mem_cgroup ||
+		if (!memcg_ext->memcg_priority || iter == root_mem_cgroup ||
 			iter == last)
 			continue;
 
@@ -3504,12 +3519,13 @@ retry:
 void memcg_print_bad_task(void *arg, int ret)
 {
 	struct oom_control *oc = arg;
+	struct mem_cgroup *memcg;
+	struct mem_cgroup_extension *memcg_ext;
 
 	if (!ret && oc->chosen) {
-		struct mem_cgroup *memcg;
-
 		memcg = mem_cgroup_from_task(oc->chosen);
-		if (memcg->memcg_priority)
+		memcg_ext = to_memcg_ext(memcg);
+		if (memcg_ext->memcg_priority)
 			pr_info("The bad task [%d:%s] is from low-priority memcg.\n",
 				oc->chosen->pid, oc->chosen->comm);
 	}

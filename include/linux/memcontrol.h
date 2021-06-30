@@ -287,12 +287,6 @@ struct mem_cgroup {
 	bool			tcpmem_active;
 	int			tcpmem_pressure;
 
-#ifdef CONFIG_MEMCG_QOS
-	/* Currently support 0 and -1.
-	 * in the future it can expand to other value.
-	 */
-	int	memcg_priority;
-#endif
 #ifdef CONFIG_MEMCG_KMEM
         /* Index in the kmem_cache->memcg_params.memcg_caches array */
 	int kmemcg_id;
@@ -321,11 +315,20 @@ struct mem_cgroup {
 };
 
 struct mem_cgroup_extension {
+#ifdef CONFIG_MEMCG_QOS
+	/* Currently support 0 and -1.
+	 * in the future it can expand to other value.
+	 */
+	int	memcg_priority;
+#endif
 	spinlock_t split_queue_lock;
 	struct list_head split_queue;
 	unsigned long split_queue_len;
 	struct mem_cgroup memcg;
 };
+
+#define to_memcg_ext(cgroup)	\
+	container_of(cgroup, struct mem_cgroup_extension, memcg)
 
 #ifdef CONFIG_MEMCG_QOS
 bool memcg_low_priority_scan_tasks(int (*)(struct task_struct *, void *),
