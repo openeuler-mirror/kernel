@@ -313,6 +313,7 @@ struct hns3_desc_cb {
 
 	/* desc type, used by the ring user to mark the type of the priv data */
 	u16 type;
+	u16 pagecnt_bias;
 };
 
 enum hns3_pkt_l3type {
