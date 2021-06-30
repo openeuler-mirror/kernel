@@ -1450,6 +1450,17 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= hugetlb_overcommit_handler,
 	},
 #endif
+#ifdef CONFIG_MEMCG_QOS
+	{
+		.procname	= "memcg_qos_enable",
+		.data		= &sysctl_memcg_qos_stat,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_memcg_qos_handler,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+#endif
 	{
 		.procname	= "lowmem_reserve_ratio",
 		.data		= &sysctl_lowmem_reserve_ratio,
