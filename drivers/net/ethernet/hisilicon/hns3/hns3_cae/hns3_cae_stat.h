@@ -24,7 +24,7 @@ enum stats_name_type {
 	SEG_PKT_CNT,
 	TX_PKTS,
 	TX_BYTES,
-	TX_ERR_CNT,
+	TX_MORE,
 	RESTART_QUEUE,
 	TX_BUSY,
 	RX_PKTS,

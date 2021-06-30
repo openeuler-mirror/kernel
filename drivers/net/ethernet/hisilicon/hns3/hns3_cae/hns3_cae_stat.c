@@ -9,7 +9,7 @@ const struct ring_stats_name hns3_ring_stats_name[] = {
 	{"seg_pkt_cnt", SEG_PKT_CNT},
 	{"tx_pkts", TX_PKTS},
 	{"tx_bytes", TX_BYTES},
-	{"tx_err_cnt", TX_ERR_CNT},
+	{"tx_more", TX_MORE},
 	{"restart_queue", RESTART_QUEUE},
 	{"tx_busy", TX_BUSY},
 	{"rx_pkts", RX_PKTS},
@@ -58,8 +58,8 @@ static int hns3_get_stat_val(struct ring_stats *r_stats, char *val_name,
 	case TX_BYTES:
 		*val = &r_stats->tx_bytes;
 		break;
-	case TX_ERR_CNT:
-		*val = &r_stats->tx_err_cnt;
+	case TX_MORE:
+		*val = &r_stats->tx_more;
 		break;
 	case RESTART_QUEUE:
 		*val = &r_stats->restart_queue;
