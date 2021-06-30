@@ -94,8 +94,8 @@ enum mem_cgroup_events_target {
 	MEM_CGROUP_NTARGETS,
 };
 
-struct memcg_vmstats_percpu {
-	long stat[MEMCG_NR_STAT];
+struct mem_cgroup_stat_cpu {
+	long count[MEMCG_NR_STAT];
 	unsigned long events[NR_VM_EVENT_ITEMS];
 	unsigned long nr_page_events;
 	unsigned long targets[MEM_CGROUP_NTARGETS];
@@ -126,9 +126,6 @@ struct memcg_shrinker_map {
 struct mem_cgroup_per_node {
 	struct lruvec		lruvec;
 
-	/* Legacy local VM stats */
-	struct lruvec_stat __percpu *lruvec_stat_local;
-
 	/* Subtree VM stats (batched updates) */
 	struct lruvec_stat __percpu *lruvec_stat_cpu;
 	atomic_long_t		lruvec_stat[NR_VM_NODE_STAT_ITEMS];
@@ -149,6 +146,14 @@ struct mem_cgroup_per_node {
 	struct mem_cgroup	*memcg;		/* Back pointer, we cannot */
 						/* use container_of	   */
 };
+
+struct mem_cgroup_per_node_extension {
+	struct mem_cgroup_per_node	pn;
+	/* Legacy local VM stats */
+	struct lruvec_stat __percpu	*lruvec_stat_local;
+};
+
+#define to_mgpn_ext(pn) container_of(pn, struct mem_cgroup_per_node_extension, pn)
 
 struct mem_cgroup_threshold {
 	struct eventfd_ctx *eventfd;
@@ -276,16 +281,13 @@ struct mem_cgroup {
 	atomic_t		moving_account;
 	struct task_struct	*move_lock_task;
 
-	/* Legacy local VM stats and events */
-	struct memcg_vmstats_percpu __percpu *vmstats_local;
-
 	/* Subtree VM stats and events (batched updates) */
-	struct memcg_vmstats_percpu __percpu *vmstats_percpu;
+	struct mem_cgroup_stat_cpu __percpu *stat_cpu;
 
 	MEMCG_PADDING(_pad2_);
 
-	atomic_long_t		vmstats[MEMCG_NR_STAT];
-	atomic_long_t		vmevents[NR_VM_EVENT_ITEMS];
+	atomic_long_t		stat[MEMCG_NR_STAT];
+	atomic_long_t		events[NR_VM_EVENT_ITEMS];
 
 	/* memory.events */
 	atomic_long_t		memory_events[MEMCG_NR_MEMORY_EVENTS];
@@ -330,6 +332,8 @@ struct mem_cgroup_extension {
 	 */
 	int	memcg_priority;
 #endif
+	/* Legacy local VM stats and events */
+	struct mem_cgroup_stat_cpu __percpu *vmstats_local;
 	spinlock_t split_queue_lock;
 	struct list_head split_queue;
 	unsigned long split_queue_len;
@@ -588,7 +592,7 @@ void unlock_page_memcg(struct page *page);
  */
 static inline unsigned long memcg_page_state(struct mem_cgroup *memcg, int idx)
 {
-	long x = atomic_long_read(&memcg->vmstats[idx]);
+	long x = atomic_long_read(&memcg->stat[idx]);
 #ifdef CONFIG_SMP
 	if (x < 0)
 		x = 0;
@@ -605,9 +609,11 @@ static inline unsigned long memcg_page_state_local(struct mem_cgroup *memcg,
 {
 	long x = 0;
 	int cpu;
+	struct mem_cgroup_extension *mgext;
 
+	mgext = to_memcg_ext(memcg);
 	for_each_possible_cpu(cpu)
-		x += per_cpu(memcg->vmstats_local->stat[idx], cpu);
+		x += per_cpu(mgext->vmstats_local->count[idx], cpu);
 #ifdef CONFIG_SMP
 	if (x < 0)
 		x = 0;
@@ -681,6 +687,7 @@ static inline unsigned long lruvec_page_state_local(struct lruvec *lruvec,
 						    enum node_stat_item idx)
 {
 	struct mem_cgroup_per_node *pn;
+	struct mem_cgroup_per_node_extension *pnext;
 	long x = 0;
 	int cpu;
 
@@ -688,8 +695,9 @@ static inline unsigned long lruvec_page_state_local(struct lruvec *lruvec,
 		return node_page_state(lruvec_pgdat(lruvec), idx);
 
 	pn = container_of(lruvec, struct mem_cgroup_per_node, lruvec);
+	pnext = to_mgpn_ext(pn);
 	for_each_possible_cpu(cpu)
-		x += per_cpu(pn->lruvec_stat_local->count[idx], cpu);
+		x += per_cpu(pnext->lruvec_stat_local->count[idx], cpu);
 #ifdef CONFIG_SMP
 	if (x < 0)
 		x = 0;

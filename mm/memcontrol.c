@@ -695,20 +695,22 @@ void __mod_memcg_state(struct mem_cgroup *memcg, int idx, int val)
 	if (mem_cgroup_disabled())
 		return;
 
-	x = val + __this_cpu_read(memcg->vmstats_percpu->stat[idx]);
+	x = val + __this_cpu_read(memcg->stat_cpu->count[idx]);
 	if (unlikely(abs(x) > MEMCG_CHARGE_BATCH)) {
 		struct mem_cgroup *mi;
+		struct mem_cgroup_extension *mgext;
 
 		/*
 		 * Batch local counters to keep them in sync with
 		 * the hierarchical ones.
 		 */
-		__this_cpu_add(memcg->vmstats_local->stat[idx], x);
+		mgext = to_memcg_ext(memcg);
+		__this_cpu_add(mgext->vmstats_local->count[idx], x);
 		for (mi = memcg; mi; mi = parent_mem_cgroup(mi))
-			atomic_long_add(x, &mi->vmstats[idx]);
+			atomic_long_add(x, &mi->stat[idx]);
 		x = 0;
 	}
-	__this_cpu_write(memcg->vmstats_percpu->stat[idx], x);
+	__this_cpu_write(memcg->stat_cpu->count[idx], x);
 }
 
 static struct mem_cgroup_per_node *
@@ -737,6 +739,7 @@ void __mod_lruvec_state(struct lruvec *lruvec, enum node_stat_item idx,
 {
 	pg_data_t *pgdat = lruvec_pgdat(lruvec);
 	struct mem_cgroup_per_node *pn;
+	struct mem_cgroup_per_node_extension *pnext;
 	struct mem_cgroup *memcg;
 	long x;
 
@@ -753,7 +756,8 @@ void __mod_lruvec_state(struct lruvec *lruvec, enum node_stat_item idx,
 	__mod_memcg_state(memcg, idx, val);
 
 	/* Update lruvec */
-	__this_cpu_add(pn->lruvec_stat_local->count[idx], val);
+	pnext = to_mgpn_ext(pn);
+	__this_cpu_add(pnext->lruvec_stat_local->count[idx], val);
 
 	x = val + __this_cpu_read(pn->lruvec_stat_cpu->count[idx]);
 	if (unlikely(abs(x) > MEMCG_CHARGE_BATCH)) {
@@ -780,34 +784,38 @@ void __count_memcg_events(struct mem_cgroup *memcg, enum vm_event_item idx,
 	if (mem_cgroup_disabled())
 		return;
 
-	x = count + __this_cpu_read(memcg->vmstats_percpu->events[idx]);
+	x = count + __this_cpu_read(memcg->stat_cpu->events[idx]);
 	if (unlikely(x > MEMCG_CHARGE_BATCH)) {
 		struct mem_cgroup *mi;
+		struct mem_cgroup_extension *mgext;
 
 		/*
 		 * Batch local counters to keep them in sync with
 		 * the hierarchical ones.
 		 */
-		__this_cpu_add(memcg->vmstats_local->events[idx], x);
+		mgext = to_memcg_ext(memcg);
+		__this_cpu_add(mgext->vmstats_local->events[idx], x);
 		for (mi = memcg; mi; mi = parent_mem_cgroup(mi))
-			atomic_long_add(x, &mi->vmevents[idx]);
+			atomic_long_add(x, &mi->events[idx]);
 		x = 0;
 	}
-	__this_cpu_write(memcg->vmstats_percpu->events[idx], x);
+	__this_cpu_write(memcg->stat_cpu->events[idx], x);
 }
 
 static unsigned long memcg_events(struct mem_cgroup *memcg, int event)
 {
-	return atomic_long_read(&memcg->vmevents[event]);
+	return atomic_long_read(&memcg->events[event]);
 }
 
 static unsigned long memcg_events_local(struct mem_cgroup *memcg, int event)
 {
 	long x = 0;
 	int cpu;
+	struct mem_cgroup_extension *mgext;
 
+	mgext = to_memcg_ext(memcg);
 	for_each_possible_cpu(cpu)
-		x += per_cpu(memcg->vmstats_local->events[event], cpu);
+		x += per_cpu(mgext->vmstats_local->events[event], cpu);
 	return x;
 }
 
@@ -840,7 +848,7 @@ static void mem_cgroup_charge_statistics(struct mem_cgroup *memcg,
 		nr_pages = -nr_pages; /* for event */
 	}
 
-	__this_cpu_add(memcg->vmstats_percpu->nr_page_events, nr_pages);
+	__this_cpu_add(memcg->stat_cpu->nr_page_events, nr_pages);
 }
 
 static bool mem_cgroup_event_ratelimit(struct mem_cgroup *memcg,
@@ -848,8 +856,8 @@ static bool mem_cgroup_event_ratelimit(struct mem_cgroup *memcg,
 {
 	unsigned long val, next;
 
-	val = __this_cpu_read(memcg->vmstats_percpu->nr_page_events);
-	next = __this_cpu_read(memcg->vmstats_percpu->targets[target]);
+	val = __this_cpu_read(memcg->stat_cpu->nr_page_events);
+	next = __this_cpu_read(memcg->stat_cpu->targets[target]);
 	/* from time_after() in jiffies.h */
 	if ((long)(next - val) < 0) {
 		switch (target) {
@@ -865,7 +873,7 @@ static bool mem_cgroup_event_ratelimit(struct mem_cgroup *memcg,
 		default:
 			break;
 		}
-		__this_cpu_write(memcg->vmstats_percpu->targets[target], next);
+		__this_cpu_write(memcg->stat_cpu->targets[target], next);
 		return true;
 	}
 	return false;
@@ -2238,10 +2246,10 @@ static int memcg_hotplug_cpu_dead(unsigned int cpu)
 			int nid;
 			long x;
 
-			x = this_cpu_xchg(memcg->vmstats_percpu->stat[i], 0);
+			x = this_cpu_xchg(memcg->stat_cpu->count[i], 0);
 			if (x)
 				for (mi = memcg; mi; mi = parent_mem_cgroup(mi))
-					atomic_long_add(x, &memcg->vmstats[i]);
+					atomic_long_add(x, &memcg->stat[i]);
 
 			if (i >= NR_VM_NODE_STAT_ITEMS)
 				continue;
@@ -2261,10 +2269,10 @@ static int memcg_hotplug_cpu_dead(unsigned int cpu)
 		for (i = 0; i < NR_VM_EVENT_ITEMS; i++) {
 			long x;
 
-			x = this_cpu_xchg(memcg->vmstats_percpu->events[i], 0);
+			x = this_cpu_xchg(memcg->stat_cpu->events[i], 0);
 			if (x)
 				for (mi = memcg; mi; mi = parent_mem_cgroup(mi))
-					atomic_long_add(x, &memcg->vmevents[i]);
+					atomic_long_add(x, &memcg->events[i]);
 		}
 	}
 
@@ -3227,11 +3235,11 @@ static void memcg_flush_percpu_vmstats(struct mem_cgroup *memcg)
 
 	for_each_online_cpu(cpu)
 		for (i = 0; i < MEMCG_NR_STAT; i++)
-			stat[i] += per_cpu(memcg->vmstats_percpu->stat[i], cpu);
+			stat[i] += per_cpu(memcg->stat_cpu->count[i], cpu);
 
 	for (mi = memcg; mi; mi = parent_mem_cgroup(mi))
 		for (i = 0; i < MEMCG_NR_STAT; i++)
-			atomic_long_add(stat[i], &mi->vmstats[i]);
+			atomic_long_add(stat[i], &mi->stat[i]);
 
 	for_each_node(node) {
 		struct mem_cgroup_per_node *pn = memcg->nodeinfo[node];
@@ -3262,12 +3270,12 @@ static void memcg_flush_percpu_vmevents(struct mem_cgroup *memcg)
 
 	for_each_online_cpu(cpu)
 		for (i = 0; i < NR_VM_EVENT_ITEMS; i++)
-			events[i] += per_cpu(memcg->vmstats_percpu->events[i],
+			events[i] += per_cpu(memcg->stat_cpu->events[i],
 					     cpu);
 
 	for (mi = memcg; mi; mi = parent_mem_cgroup(mi))
 		for (i = 0; i < NR_VM_EVENT_ITEMS; i++)
-			atomic_long_add(events[i], &mi->vmevents[i]);
+			atomic_long_add(events[i], &mi->events[i]);
 }
 
 #ifdef CONFIG_MEMCG_KMEM
@@ -4323,11 +4331,11 @@ struct wb_domain *mem_cgroup_wb_domain(struct bdi_writeback *wb)
  */
 static unsigned long memcg_exact_page_state(struct mem_cgroup *memcg, int idx)
 {
-	long x = atomic_long_read(&memcg->vmstats[idx]);
+	long x = atomic_long_read(&memcg->stat[idx]);
 	int cpu;
 
 	for_each_online_cpu(cpu)
-		x += per_cpu_ptr(memcg->vmstats_percpu, cpu)->stat[idx];
+		x += per_cpu_ptr(memcg->stat_cpu, cpu)->count[idx];
 	if (x < 0)
 		x = 0;
 	return x;
@@ -4829,6 +4837,7 @@ struct mem_cgroup *mem_cgroup_from_id(unsigned short id)
 static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 {
 	struct mem_cgroup_per_node *pn;
+	struct mem_cgroup_per_node_extension *pnext;
 	int tmp = node;
 	/*
 	 * This routine is called against possible nodes.
@@ -4844,15 +4853,16 @@ static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 	if (!pn)
 		return 1;
 
-	pn->lruvec_stat_local = alloc_percpu(struct lruvec_stat);
-	if (!pn->lruvec_stat_local) {
-		kfree(pn);
+	pnext = to_mgpn_ext(pn);
+	pnext->lruvec_stat_local = alloc_percpu(struct lruvec_stat);
+	if (!pnext->lruvec_stat_local) {
+		kfree(pnext);
 		return 1;
 	}
 
 	pn->lruvec_stat_cpu = alloc_percpu(struct lruvec_stat);
 	if (!pn->lruvec_stat_cpu) {
-		free_percpu(pn->lruvec_stat_local);
+		free_percpu(pnext->lruvec_stat_local);
 		kfree(pn);
 		return 1;
 	}
@@ -4869,12 +4879,14 @@ static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 static void free_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 {
 	struct mem_cgroup_per_node *pn = memcg->nodeinfo[node];
+	struct mem_cgroup_per_node_extension *pnext;
 
 	if (!pn)
 		return;
 
 	free_percpu(pn->lruvec_stat_cpu);
-	free_percpu(pn->lruvec_stat_local);
+	pnext = to_mgpn_ext(pn);
+	free_percpu(pnext->lruvec_stat_local);
 	kfree(pn);
 }
 
@@ -4883,12 +4895,12 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 	int node;
 	struct mem_cgroup_extension *memcg_ext;
 
+	memcg_ext = container_of(memcg, struct mem_cgroup_extension, memcg);
 	for_each_node(node)
 		free_mem_cgroup_per_node_info(memcg, node);
-	free_percpu(memcg->vmstats_percpu);
-	free_percpu(memcg->vmstats_local);
+	free_percpu(memcg->stat_cpu);
+	free_percpu(memcg_ext->vmstats_local);
 
-	memcg_ext = container_of(memcg, struct mem_cgroup_extension, memcg);
 	kfree(memcg_ext);
 }
 
@@ -4925,12 +4937,12 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	if (memcg->id.id < 0)
 		goto fail;
 
-	memcg->vmstats_local = alloc_percpu(struct memcg_vmstats_percpu);
-	if (!memcg->vmstats_local)
+	memcg_ext->vmstats_local = alloc_percpu(struct mem_cgroup_stat_cpu);
+	if (!memcg_ext->vmstats_local)
 		goto fail;
 
-	memcg->vmstats_percpu = alloc_percpu(struct memcg_vmstats_percpu);
-	if (!memcg->vmstats_percpu)
+	memcg->stat_cpu = alloc_percpu(struct mem_cgroup_stat_cpu);
+	if (!memcg->stat_cpu)
 		goto fail;
 
 	for_each_node(node)
@@ -6576,7 +6588,7 @@ static void uncharge_batch(const struct uncharge_gather *ug)
 	__mod_memcg_state(ug->memcg, MEMCG_RSS_HUGE, -ug->nr_huge);
 	__mod_memcg_state(ug->memcg, NR_SHMEM, -ug->nr_shmem);
 	__count_memcg_events(ug->memcg, PGPGOUT, ug->pgpgout);
-	__this_cpu_add(ug->memcg->vmstats_percpu->nr_page_events, nr_pages);
+	__this_cpu_add(ug->memcg->stat_cpu->nr_page_events, nr_pages);
 	memcg_check_events(ug->memcg, ug->dummy_page);
 	local_irq_restore(flags);
 
