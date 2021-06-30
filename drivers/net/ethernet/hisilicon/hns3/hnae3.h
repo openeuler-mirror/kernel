@@ -549,7 +549,7 @@ struct hnae3_ae_ops {
 	void (*set_timer_task)(struct hnae3_handle *handle, bool enable);
 	int (*mac_connect_phy)(struct hnae3_handle *handle);
 	void (*mac_disconnect_phy)(struct hnae3_handle *handle);
-	bool (*reset_done)(struct hnae3_handle *handle, bool done);
+	bool (*reset_end)(struct hnae3_handle *handle, bool done);
 	void (*handle_imp_error)(struct hnae3_handle *handle);
 	int (*get_vf_config)(struct hnae3_handle *handle, int vf,
 			     struct ifla_vf_info *ivf);

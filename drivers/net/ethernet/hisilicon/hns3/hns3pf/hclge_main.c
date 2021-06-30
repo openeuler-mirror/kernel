@@ -3705,8 +3705,8 @@ static bool hclge_reset_err_handle(struct hclge_dev *hdev)
 	/* recover the handshake status when reset fail */
 	hclge_reset_handshake(hdev, true);
 
-	if (handle && handle->ae_algo->ops->reset_done)
-		handle->ae_algo->ops->reset_done(handle, false);
+	if (handle && handle->ae_algo->ops->reset_end)
+		handle->ae_algo->ops->reset_end(handle, false);
 
 	hclge_dbg_dump_rst_info(hdev);
 
@@ -3859,8 +3859,8 @@ static int hclge_reset_rebuild(struct hclge_dev *hdev)
 	if (reset_level != HNAE3_NONE_RESET)
 		set_bit(reset_level, &hdev->reset_request);
 
-	if (handle && handle->ae_algo->ops->reset_done)
-		handle->ae_algo->ops->reset_done(handle, true);
+	if (handle && handle->ae_algo->ops->reset_end)
+		handle->ae_algo->ops->reset_end(handle, true);
 
 	return 0;
 }
@@ -4018,7 +4018,7 @@ static void hclge_reset_timer(struct timer_list *t)
 	hclge_reset_event(hdev->pdev, NULL);
 }
 
-static bool hclge_reset_done(struct hnae3_handle *handle, bool done)
+static bool hclge_reset_end(struct hnae3_handle *handle, bool done)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -11761,7 +11761,7 @@ struct hnae3_ae_ops hclge_ops = {
 	.set_timer_task = hclge_set_timer_task,
 	.mac_connect_phy = hclge_mac_connect_phy,
 	.mac_disconnect_phy = hclge_mac_disconnect_phy,
-	.reset_done = hclge_reset_done,
+	.reset_end = hclge_reset_end,
 	.get_vf_config = hclge_get_vf_config,
 	.set_vf_link_state = hclge_set_vf_link_state,
 	.set_vf_spoofchk = hclge_set_vf_spoofchk,

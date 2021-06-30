@@ -145,7 +145,7 @@ void hclge_reset_event_it(struct pci_dev *pdev, struct hnae3_handle *handle)
 	}
 }
 
-bool hclge_reset_done_it(struct hnae3_handle *handle, bool done)
+bool hclge_reset_end_it(struct hnae3_handle *handle, bool done)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -210,7 +210,7 @@ int hclge_init_it(void)
 #endif
 
 	hclge_ops.reset_event = hclge_reset_event_it;
-	hclge_ops.reset_done = hclge_reset_done_it;
+	hclge_ops.reset_end = hclge_reset_end_it;
 	hclge_ops.handle_imp_error = hclge_handle_imp_error_it;
 
 	return hclge_init();
