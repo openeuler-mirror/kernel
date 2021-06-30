@@ -2572,7 +2572,7 @@ static void hclgevf_ae_stop(struct hnae3_handle *handle)
 
 	set_bit(HCLGEVF_STATE_DOWN, &hdev->state);
 
-	if (!test_bit(HCLGEVF_STATE_RST_HANDLING, &hdev->state))
+	if (hdev->reset_type != HNAE3_VF_RESET)
 		hclgevf_reset_tqp(handle);
 
 	hclgevf_reset_tqp_stats(handle);
