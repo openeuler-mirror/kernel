@@ -565,8 +565,6 @@ struct hnae3_ae_ops {
 	int (*get_module_eeprom)(struct hnae3_handle *handle, u32 offset,
 				 u32 len, u8 *data);
 	bool (*get_cmdq_stat)(struct hnae3_handle *handle);
-	int (*suspend)(struct hnae3_ae_dev *ae_dev);
-	int (*resume)(struct hnae3_ae_dev *ae_dev);
 
 /* Notice! If the function is not for test, the definition must before
  * CONFIG_HNS3_TEST! Because RoCE will use this head file, and it won't
