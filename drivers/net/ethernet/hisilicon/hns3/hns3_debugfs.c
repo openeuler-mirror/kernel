@@ -163,9 +163,7 @@ static int hns3_dbg_bd_info(struct hnae3_handle *h, const char *cmd_buf)
 	int cnt;
 
 	cnt = sscanf(&cmd_buf[8], "%u %u", &q_num, &tx_index);
-	if (cnt == 2) {
-		rx_index = tx_index;
-	} else if (cnt != 1) {
+	if (cnt != 1 && cnt != 2) {
 		dev_err(dev, "bd info: bad command string, cnt=%d\n", cnt);
 		return -EINVAL;
 	}
