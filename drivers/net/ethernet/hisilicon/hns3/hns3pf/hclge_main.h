@@ -904,6 +904,7 @@ struct hclge_rss_tuple_cfg {
 enum HCLGE_VPORT_STATE {
 	HCLGE_VPORT_STATE_ALIVE,
 	HCLGE_VPORT_STATE_MAC_TBL_CHANGE,
+	HCLGE_VPORT_STATE_PROMISC_CHANGE,
 	HCLGE_VPORT_STATE_MAX
 };
 
@@ -926,7 +927,9 @@ struct hclge_vf_info {
 	u32 spoofchk;
 	u32 max_tx_rate;
 	u32 trusted;
-	u16 promisc_enable;
+	u8 request_uc_en;
+	u8 request_mc_en;
+	u8 request_bc_en;
 };
 
 struct hclge_vport {
@@ -1051,7 +1054,6 @@ int hclge_query_bd_num_cmd_send(struct hclge_dev *hdev,
 				struct hclge_desc *desc);
 void hclge_report_hw_error(struct hclge_dev *hdev,
 			   enum hnae3_hw_error_type type);
-void hclge_inform_vf_promisc_info(struct hclge_vport *vport);
 void hclge_dbg_dump_rst_info(struct hclge_dev *hdev);
 bool hclge_vf_vlan_need_enable(struct hclge_vport *vport);
 int hclge_push_vf_link_status(struct hclge_vport *vport);

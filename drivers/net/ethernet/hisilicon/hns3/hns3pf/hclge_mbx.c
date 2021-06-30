@@ -321,35 +321,17 @@ static int hclge_get_vf_ring_vector_map(struct hclge_vport *vport,
 	return ret;
 }
 
-static int hclge_set_vf_promisc_mode(struct hclge_vport *vport,
-				     struct hclge_mbx_vf_to_pf_cmd *req)
+static void hclge_set_vf_promisc_mode(struct hclge_vport *vport,
+				      struct hclge_mbx_vf_to_pf_cmd *req)
 {
-	bool en_bc = req->msg.en_bc ? true : false;
-	bool en_uc = req->msg.en_uc ? true : false;
-	bool en_mc = req->msg.en_mc ? true : false;
-	int ret;
+	struct hclge_dev *hdev = vport->back;
 
-	if (!vport->vf_info.trusted) {
-		en_uc = false;
-		en_mc = false;
-	}
+	vport->vf_info.request_uc_en = req->msg.en_uc;
+	vport->vf_info.request_mc_en = req->msg.en_mc;
+	vport->vf_info.request_bc_en = req->msg.en_bc;
 
-	ret = hclge_set_vport_promisc_mode(vport, en_uc, en_mc, en_bc);
-
-	vport->vf_info.promisc_enable = (en_uc || en_mc) ? 1 : 0;
-
-	return ret;
-}
-
-void hclge_inform_vf_promisc_info(struct hclge_vport *vport)
-{
-	u8 dest_vfid = (u8)vport->vport_id;
-	u8 msg_data[2];
-
-	memcpy(&msg_data[0], &vport->vf_info.promisc_enable, sizeof(u16));
-
-	hclge_send_mbx_msg(vport, msg_data, sizeof(msg_data),
-			   HCLGE_MBX_PUSH_PROMISC_INFO, dest_vfid);
+	set_bit(HCLGE_VPORT_STATE_PROMISC_CHANGE, &vport->state);
+	hclge_task_schedule(hdev, 0);
 }
 
 static int hclge_set_vf_uc_mac_addr(struct hclge_vport *vport,
@@ -837,11 +819,7 @@ void hclge_mbx_handler(struct hclge_dev *hdev)
 					ret);
 			break;
 		case HCLGE_MBX_SET_PROMISC_MODE:
-			ret = hclge_set_vf_promisc_mode(vport, req);
-			if (ret)
-				dev_err(&hdev->pdev->dev,
-					"PF fail(%d) to set VF promisc mode\n",
-					ret);
+			hclge_set_vf_promisc_mode(vport, req);
 			break;
 		case HCLGE_MBX_SET_UNICAST:
 			ret = hclge_set_vf_uc_mac_addr(vport, req);
