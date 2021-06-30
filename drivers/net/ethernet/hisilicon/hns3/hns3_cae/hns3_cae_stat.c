@@ -4,7 +4,6 @@
 #include "hns3_cae_stat.h"
 
 const struct ring_stats_name hns3_ring_stats_name[] = {
-	{"io_err_cnt", IO_ERR_CNT},
 	{"sw_err_cnt", SW_ERR_CNT},
 	{"seg_pkt_cnt", SEG_PKT_CNT},
 	{"tx_pkts", TX_PKTS},
@@ -43,9 +42,6 @@ static int hns3_get_stat_val(struct ring_stats *r_stats, char *val_name,
 		}
 	}
 	switch (stats_name_id) {
-	case IO_ERR_CNT:
-		*val = &r_stats->io_err_cnt;
-		break;
 	case SW_ERR_CNT:
 		*val = &r_stats->sw_err_cnt;
 		break;
