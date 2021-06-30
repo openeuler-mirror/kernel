@@ -2947,6 +2947,16 @@ static bool hns3_parse_vlan_tag(struct hns3_enet_ring *ring,
 	}
 }
 
+static void hns3_rx_ring_move_fw(struct hns3_enet_ring *ring)
+{
+	ring->desc[ring->next_to_clean].rx.bd_base_info &=
+		cpu_to_le32(~BIT(HNS3_RXD_VLD_B));
+	ring->next_to_clean += 1;
+
+	if (unlikely(ring->next_to_clean == ring->desc_num))
+		ring->next_to_clean = 0;
+}
+
 static int hns3_alloc_skb(struct hns3_enet_ring *ring, unsigned int length,
 			  unsigned char *va)
 {
@@ -2982,7 +2992,7 @@ static int hns3_alloc_skb(struct hns3_enet_ring *ring, unsigned int length,
 			__page_frag_cache_drain(desc_cb->priv,
 						desc_cb->pagecnt_bias);
 
-		ring_ptr_move_fw(ring, next_to_clean);
+		hns3_rx_ring_move_fw(ring);
 		return 0;
 	}
 	u64_stats_update_begin(&ring->syncp);
@@ -2993,7 +3003,7 @@ static int hns3_alloc_skb(struct hns3_enet_ring *ring, unsigned int length,
 	__skb_put(skb, ring->pull_len);
 	hns3_nic_reuse_page(skb, ring->frag_num++, ring, ring->pull_len,
 			    desc_cb);
-	ring_ptr_move_fw(ring, next_to_clean);
+	hns3_rx_ring_move_fw(ring);
 
 	return 0;
 }
@@ -3048,7 +3058,7 @@ static int hns3_add_frag(struct hns3_enet_ring *ring)
 
 		hns3_nic_reuse_page(skb, ring->frag_num++, ring, 0, desc_cb);
 		trace_hns3_rx_desc(ring);
-		ring_ptr_move_fw(ring, next_to_clean);
+		hns3_rx_ring_move_fw(ring);
 		ring->pending_buf++;
 	} while (!(bd_base_info & BIT(HNS3_RXD_FE_B)));
 
@@ -3190,35 +3200,35 @@ static int hns3_handle_rx_bd(struct hns3_enet_ring *ring)
 
 	prefetch(desc);
 
-	length = le16_to_cpu(desc->rx.size);
-	bd_base_info = le32_to_cpu(desc->rx.bd_base_info);
-
-	/* Check valid BD */
-	if (unlikely(!(bd_base_info & BIT(HNS3_RXD_VLD_B))))
-		return -ENXIO;
-
 	if (!skb) {
+		bd_base_info = le32_to_cpu(desc->rx.bd_base_info);
+
+		/* Check valid BD */
+		if (unlikely(!(bd_base_info & BIT(HNS3_RXD_VLD_B))))
+			return -ENXIO;
+
+		dma_rmb();
+		length = le16_to_cpu(desc->rx.size);
+
 		ring->va = desc_cb->buf + desc_cb->page_offset;
 
 		dma_sync_single_for_cpu(ring_to_dev(ring),
 				desc_cb->dma + desc_cb->page_offset,
 				hns3_buf_size(ring),
 				DMA_FROM_DEVICE);
-	}
 
-	/* Prefetch first cache line of first page
-	 * Idea is to cache few bytes of the header of the packet. Our L1 Cache
-	 * line size is 64B so need to prefetch twice to make it 128B. But in
-	 * actual we can have greater size of caches with 128B Level 1 cache
-	 * lines. In such a case, single fetch would suffice to cache in the
-	 * relevant part of the header.
-	 */
-	prefetch(ring->va);
+		/* Prefetch first cache line of first page.
+		 * Idea is to cache few bytes of the header of the packet.
+		 * Our L1 Cache line size is 64B so need to prefetch twice to make
+		 * it 128B. But in actual we can have greater size of caches with
+		 * 128B Level 1 cache lines. In such a case, single fetch would
+		 * suffice to cache in the relevant part of the header.
+		 */
+		prefetch(ring->va);
 #if L1_CACHE_BYTES < 128
-	prefetch(ring->va + L1_CACHE_BYTES);
+		prefetch(ring->va + L1_CACHE_BYTES);
 #endif
 
-	if (!skb) {
 		ret = hns3_alloc_skb(ring, length, ring->va);
 		skb = ring->skb;
 
@@ -3258,19 +3268,11 @@ int hns3_clean_rx_ring(struct hns3_enet_ring *ring, int budget,
 #define RCB_NOF_ALLOC_RX_BUFF_ONCE 16
 	int unused_count = hns3_desc_unused(ring);
 	int recv_pkts = 0;
-	int recv_bds = 0;
-	int err, num;
+	int err;
 
-	num = readl_relaxed(ring->tqp->io_base + HNS3_RING_RX_RING_FBDNUM_REG);
-	num -= unused_count;
 	unused_count -= ring->pending_buf;
 
-	if (num <= 0)
-		goto out;
-
-	rmb(); /* Make sure num taken effect before the other data is touched */
-
-	while (recv_pkts < budget && recv_bds < num) {
+	while (recv_pkts < budget) {
 		/* Reuse or realloc buffers */
 		if (unused_count >= RCB_NOF_ALLOC_RX_BUFF_ONCE) {
 			hns3_nic_alloc_rx_buffers(ring, unused_count);
@@ -3288,7 +3290,6 @@ int hns3_clean_rx_ring(struct hns3_enet_ring *ring, int budget,
 			recv_pkts++;
 		}
 
-		recv_bds += ring->pending_buf;
 		unused_count += ring->pending_buf;
 		ring->skb = NULL;
 		ring->pending_buf = 0;
