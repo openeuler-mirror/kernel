@@ -130,10 +130,10 @@ static void set_frmr_seg(struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
 
 #ifdef CONFIG_KERNEL_419
 static void set_extend_sge(struct hns_roce_qp *qp, const struct ib_send_wr *wr,
-			   unsigned int *sge_ind)
+			   unsigned int *sge_ind, int valid_num_sge)
 #else
 static void set_extend_sge(struct hns_roce_qp *qp, struct ib_send_wr *wr,
-			   unsigned int *sge_ind)
+			   unsigned int *sge_ind, int valid_num_sge)
 #endif
 {
 	struct hns_roce_v2_wqe_data_seg *dseg;
@@ -147,7 +147,7 @@ static void set_extend_sge(struct hns_roce_qp *qp, struct ib_send_wr *wr,
 
 	if (qp->ibqp.qp_type == IB_QPT_RC || qp->ibqp.qp_type == IB_QPT_UC)
 		num_in_wqe = HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE;
-	extend_sge_num = wr->num_sge - num_in_wqe;
+	extend_sge_num = valid_num_sge - num_in_wqe;
 	sg = wr->sg_list + num_in_wqe;
 	shift = qp->hr_buf.page_shift;
 
@@ -248,20 +248,23 @@ static int set_atomic_seg(struct ib_qp *ibqp, struct ib_send_wr *wr,
 static int set_rwqe_data_seg(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 			     struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
 			     void *wqe, unsigned int *sge_ind,
+			     int valid_num_sge,
 			     const struct ib_send_wr **bad_wr)
 #else
 static int set_rwqe_data_seg(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			     struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
 			     void *wqe, unsigned int *sge_ind,
+			     int valid_num_sge,
 			     struct ib_send_wr **bad_wr)
 #endif
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_v2_wqe_data_seg *dseg = wqe;
 	struct hns_roce_qp *qp = to_hr_qp(ibqp);
+	int j = 0;
 	int i;
 
-	if (wr->send_flags & IB_SEND_INLINE && wr->num_sge) {
+	if (wr->send_flags & IB_SEND_INLINE && valid_num_sge) {
 		if (le32_to_cpu(rc_sq_wqe->msg_len) >
 		    hr_dev->caps.max_sq_inline) {
 			*bad_wr = wr;
@@ -285,7 +288,7 @@ static int set_rwqe_data_seg(struct ib_qp *ibqp, struct ib_send_wr *wr,
 		roce_set_bit(rc_sq_wqe->byte_4, V2_RC_SEND_WQE_BYTE_4_INLINE_S,
 			     1);
 	} else {
-		if (wr->num_sge <= HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE) {
+		if (valid_num_sge <= HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE) {
 			for (i = 0; i < wr->num_sge; i++) {
 				if (likely(wr->sg_list[i].length)) {
 					set_data_seg_v2(dseg, wr->sg_list + i);
@@ -293,19 +296,21 @@ static int set_rwqe_data_seg(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				}
 			}
 		} else {
-			for (i = 0; i < HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE; i++) {
+			for (i = 0; i < wr->num_sge &&
+			     j < HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE; i++) {
 				if (likely(wr->sg_list[i].length)) {
 					set_data_seg_v2(dseg, wr->sg_list + i);
 					dseg++;
+					j++;
 				}
 			}
 
-			set_extend_sge(qp, wr, sge_ind);
+			set_extend_sge(qp, wr, sge_ind, valid_num_sge);
 		}
 
 		roce_set_field(rc_sq_wqe->byte_16,
 			       V2_RC_SEND_WQE_BYTE_16_SGE_NUM_M,
-			       V2_RC_SEND_WQE_BYTE_16_SGE_NUM_S, wr->num_sge);
+			       V2_RC_SEND_WQE_BYTE_16_SGE_NUM_S, valid_num_sge);
 	}
 
 	return 0;
@@ -342,6 +347,7 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 	unsigned int sge_ind;
 	unsigned int owner_bit;
 	unsigned long flags = 0;
+	int valid_num_sge;
 	unsigned int ind;
 	void *wqe = NULL;
 	u32 tmp_len;
@@ -404,7 +410,15 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 
 		owner_bit =
 		       ~(((qp->sq.head + nreq) >> ilog2(qp->sq.wqe_cnt)) & 0x1);
+		valid_num_sge = 0;
 		tmp_len = 0;
+
+		for (i = 0; i < wr->num_sge; i++) {
+			if (likely(wr->sg_list[i].length)) {
+				tmp_len += wr->sg_list[i].length;
+				valid_num_sge++;
+			}
+		}
 
 		/* Corresponding to the QP type, wqe process separately */
 		if (ibqp->qp_type == IB_QPT_GSI) {
@@ -433,9 +447,6 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			roce_set_bit(ud_sq_wqe->byte_40,
 				     V2_UD_SEND_WQE_BYTE_40_LBI_S,
 				     hr_dev->loop_idc);
-
-			for (i = 0; i < wr->num_sge; i++)
-				tmp_len += wr->sg_list[i].length;
 
 			ud_sq_wqe->msg_len =
 			 cpu_to_le32(le32_to_cpu(ud_sq_wqe->msg_len) + tmp_len);
@@ -480,7 +491,7 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			roce_set_field(ud_sq_wqe->byte_16,
 				       V2_UD_SEND_WQE_BYTE_16_SGE_NUM_M,
 				       V2_UD_SEND_WQE_BYTE_16_SGE_NUM_S,
-				       wr->num_sge);
+				       valid_num_sge);
 
 			roce_set_field(ud_sq_wqe->byte_20,
 				     V2_UD_SEND_WQE_BYTE_20_MSG_START_SGE_IDX_M,
@@ -534,14 +545,12 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 			memcpy(&ud_sq_wqe->dgid[0], &ah->av.dgid[0],
 			       GID_LEN_V2);
 
-			set_extend_sge(qp, wr, &sge_ind);
+			set_extend_sge(qp, wr, &sge_ind, valid_num_sge);
 			ind++;
 		} else if (ibqp->qp_type == IB_QPT_RC ||
 			   ibqp->qp_type == IB_QPT_UC) {
 			rc_sq_wqe = wqe;
 			memset(rc_sq_wqe, 0, sizeof(*rc_sq_wqe));
-			for (i = 0; i < wr->num_sge; i++)
-				tmp_len += wr->sg_list[i].length;
 
 			rc_sq_wqe->msg_len =
 			 cpu_to_le32(le32_to_cpu(rc_sq_wqe->msg_len) + tmp_len);
@@ -668,10 +677,11 @@ static int hns_roce_v2_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
 				roce_set_field(rc_sq_wqe->byte_16,
 					       V2_RC_SEND_WQE_BYTE_16_SGE_NUM_M,
 					       V2_RC_SEND_WQE_BYTE_16_SGE_NUM_S,
-					       wr->num_sge);
+					       valid_num_sge);
 			} else if (wr->opcode != IB_WR_REG_MR) {
 				ret = set_rwqe_data_seg(ibqp, wr, rc_sq_wqe,
-							wqe, &sge_ind, bad_wr);
+							wqe, &sge_ind,
+							valid_num_sge, bad_wr);
 				if (ret)
 					goto out;
 			}
