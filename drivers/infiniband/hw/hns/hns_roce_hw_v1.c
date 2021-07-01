@@ -2004,7 +2004,7 @@ static int hns_roce_v1_write_mtpt(void *mb_buf, struct hns_roce_mr *mr,
 
 static void *get_cqe(struct hns_roce_cq *hr_cq, int n)
 {
-	return hns_roce_buf_offset(&hr_cq->hr_buf.hr_buf,
+	return hns_roce_buf_offset(hr_cq->hr_buf.hr_buf,
 				   n * HNS_ROCE_V1_CQE_ENTRY_SIZE);
 }
 
@@ -3680,7 +3680,6 @@ static int hns_roce_v1_destroy_cq(struct ib_cq *ibcq)
 	struct device *dev = &hr_dev->pdev->dev;
 	u32 cqe_cnt_ori;
 	u32 cqe_cnt_cur;
-	u32 cq_buf_size;
 	int wait_time = 0;
 	int ret = 0;
 
@@ -3714,11 +3713,8 @@ static int hns_roce_v1_destroy_cq(struct ib_cq *ibcq)
 
 	if (ibcq->uobject)
 		ib_umem_release(hr_cq->umem);
-	else {
-		/* Free the buff of stored cq */
-		cq_buf_size = (ibcq->cqe + 1) * hr_dev->caps.cq_entry_sz;
-		hns_roce_buf_free(hr_dev, cq_buf_size, &hr_cq->hr_buf.hr_buf);
-	}
+	else
+		hns_roce_buf_free(hr_dev, hr_cq->hr_buf.hr_buf);
 
 	kfree(hr_cq);
 

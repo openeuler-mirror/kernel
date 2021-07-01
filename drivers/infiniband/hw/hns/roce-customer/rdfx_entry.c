@@ -145,7 +145,7 @@ void rdfx_cp_sq_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
 	memcpy(dfx_qp_buf, dfx_hns_wqe_sge,
 		2 * sizeof(struct hns_roce_v2_wqe_data_seg));
 	dfx_qp_buf = hns_roce_buf_offset(rdfx_qp->buf, qp->sge.offset);
-	dfx_hns_wqe_sge = hns_roce_buf_offset(&qp->hr_buf, qp->sge.offset);
+	dfx_hns_wqe_sge = hns_roce_buf_offset(qp->hr_buf, qp->sge.offset);
 	rdfx_change_sq_buf(wr, atomic_en, dfx_qp_buf,
 			   dfx_hns_wqe_sge, sq, hr_dev, qp);
 }

@@ -149,7 +149,7 @@ static void set_extend_sge(struct hns_roce_qp *qp, struct ib_send_wr *wr,
 		num_in_wqe = HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE;
 	extend_sge_num = valid_num_sge - num_in_wqe;
 	sg = wr->sg_list + num_in_wqe;
-	shift = qp->hr_buf.page_shift;
+	shift = qp->hr_buf->page_shift;
 
 	/*
 	 * Check whether wr->num_sge sges are in the same page. If not, we
@@ -3001,7 +3001,7 @@ static int hns_roce_v2_mw_write_mtpt(void *mb_buf, struct hns_roce_mw *mw)
 
 static void *get_cqe_v2(struct hns_roce_cq *hr_cq, int n)
 {
-	return hns_roce_buf_offset(&hr_cq->hr_buf.hr_buf,
+	return hns_roce_buf_offset(hr_cq->hr_buf.hr_buf,
 				   n * HNS_ROCE_V2_CQE_ENTRY_SIZE);
 }
 
@@ -3021,7 +3021,7 @@ static struct hns_roce_v2_cqe *next_cqe_sw_v2(struct hns_roce_cq *hr_cq)
 
 static void *get_srq_wqe(struct hns_roce_srq *srq, int n)
 {
-	return hns_roce_buf_offset(&srq->buf, n << srq->wqe_shift);
+	return hns_roce_buf_offset(srq->buf, n << srq->wqe_shift);
 }
 
 static void hns_roce_free_srq_wqe(struct hns_roce_srq *srq, int wqe_index)
@@ -7051,7 +7051,7 @@ static void fill_idx_queue(struct hns_roce_idx_que *idx_que,
 {
 	unsigned int *addr;
 
-	addr = (unsigned int *)hns_roce_buf_offset(&idx_que->idx_buf,
+	addr = (unsigned int *)hns_roce_buf_offset(idx_que->idx_buf,
 		cur_idx * idx_que->entry_sz);
 	*addr = wqe_idx;
 }

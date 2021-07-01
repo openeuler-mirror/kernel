@@ -400,7 +400,7 @@ static int set_rq_size(struct hns_roce_dev *hr_dev,
 	}
 
 	max_cnt = max(1U, cap->max_recv_sge);
-	hr_qp->rq.max_gs = roundup_pow_of_two(max_cnt);
+	hr_qp->rq.max_gs = roundup_pow_of_two(max_cnt) + hr_qp->rq.rsv_sge;
 
 	if (hr_dev->caps.max_rq_sg <= HNS_ROCE_SGE_IN_WQE)
 		hr_qp->rq.wqe_shift = ilog2(hr_dev->caps.max_rq_desc_sz);
@@ -847,7 +847,7 @@ static int map_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 					page_shift);
 		else
 			buf_count = hns_roce_get_kmem_bufs(hr_dev, buf_list[i],
-					r->count, r->offset, &hr_qp->hr_buf);
+					r->count, r->offset, hr_qp->hr_buf);
 
 		if (buf_count != r->count) {
 			dev_err(hr_dev->dev, "Failed to get %s WQE buf, expect %d = %d.\n",
@@ -878,7 +878,7 @@ done:
 
 static int alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct ib_qp_init_attr *init_attr,
-			struct ib_udata *udata, unsigned long addr)
+			struct ib_uobject *uobject, unsigned long addr)
 {
 	u32 page_shift = PAGE_SHIFT + hr_dev->caps.mtt_buf_pg_sz;
 	bool is_rq_buf_inline;
@@ -894,21 +894,26 @@ static int alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		}
 	}
 
-	if (hr_qp->ibqp.pd->uobject->context) {
-		hr_qp->umem = ib_umem_get(hr_qp->ibqp.pd->uobject->context, addr, hr_qp->buff_size, 0, 0);
+	if (uobject) {
+		hr_qp->umem = ib_umem_get(uobject->context, addr,
+					  hr_qp->buff_size, 0, 0);
 		if (IS_ERR(hr_qp->umem)) {
 			ret = PTR_ERR(hr_qp->umem);
 			goto err_inline;
 		}
 	} else {
-		ret = hns_roce_buf_alloc(hr_dev, hr_qp->buff_size,
-					 (1 << page_shift) * 2,
-					 &hr_qp->hr_buf, page_shift);
-		if (ret)
+		struct hns_roce_buf *kmem;
+
+		kmem = hns_roce_buf_alloc(hr_dev, hr_qp->buff_size, page_shift,
+					  0);
+		if (IS_ERR(hr_qp->umem)) {
+			ret = PTR_ERR(hr_qp->umem);
 			goto err_inline;
+		}
+		hr_qp->hr_buf = kmem;
 	}
 
-	ret = map_wqe_buf(hr_dev, hr_qp, page_shift, udata);
+	ret = map_wqe_buf(hr_dev, hr_qp, page_shift, !!uobject);
 	if (ret)
 		goto err_alloc;
 
@@ -919,11 +924,12 @@ err_inline:
 		hns_roce_free_recv_inline_buffer(hr_qp);
 
 err_alloc:
-	if (udata) {
+	if (uobject) {
 		ib_umem_release(hr_qp->umem);
 		hr_qp->umem = NULL;
 	} else {
-		hns_roce_buf_free(hr_dev, hr_qp->buff_size, &hr_qp->hr_buf);
+		hns_roce_buf_free(hr_dev, hr_qp->hr_buf);
+		hr_qp->hr_buf = NULL;
 	}
 
 	dev_err(hr_dev->dev, "Failed to alloc WQE buffer, ret %d.\n", ret);
@@ -937,10 +943,10 @@ static void free_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 	if (hr_qp->umem) {
 		ib_umem_release(hr_qp->umem);
 		hr_qp->umem = NULL;
+	} else {
+		hns_roce_buf_free(hr_dev, hr_qp->hr_buf);
+		hr_qp->hr_buf = NULL;
 	}
-
-	if (hr_qp->hr_buf.nbufs > 0)
-		hns_roce_buf_free(hr_dev, hr_qp->buff_size, &hr_qp->hr_buf);
 
 	if ((hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE) &&
 	     hr_qp->rq.wqe_cnt)
@@ -1104,7 +1110,8 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 		}
 	}
 
-	ret = alloc_qp_buf(hr_dev, hr_qp, init_attr, udata, ucmd.buf_addr);
+	ret = alloc_qp_buf(hr_dev, hr_qp, init_attr, ib_pd->uobject,
+			   ucmd.buf_addr);
 	if (ret) {
 		dev_err(hr_dev->dev, "Failed to alloc QP buffer\n");
 		goto err_db;
@@ -1532,8 +1539,7 @@ EXPORT_SYMBOL_GPL(hns_roce_unlock_cqs);
 
 static void *get_wqe(struct hns_roce_qp *hr_qp, int offset)
 {
-
-	return hns_roce_buf_offset(&hr_qp->hr_buf, offset);
+	return hns_roce_buf_offset(hr_qp->hr_buf, offset);
 }
 
 void *get_recv_wqe(struct hns_roce_qp *hr_qp, int n)
@@ -1550,7 +1556,7 @@ EXPORT_SYMBOL_GPL(get_send_wqe);
 
 void *get_send_extend_sge(struct hns_roce_qp *hr_qp, int n)
 {
-	return hns_roce_buf_offset(&hr_qp->hr_buf, hr_qp->sge.offset +
+	return hns_roce_buf_offset(hr_qp->hr_buf, hr_qp->sge.offset +
 					(n << hr_qp->sge.sge_shift));
 }
 EXPORT_SYMBOL_GPL(get_send_extend_sge);

@@ -318,6 +318,10 @@ static inline void hns_roce_inc_rdma_hw_stats(struct ib_device *dev, int stats)
 
 #define HNS_ROCE_MTT_ENTRY_PER_SEG		8
 
+/* The minimum page size is 4K for hardware */
+#define HNS_HW_PAGE_SHIFT			12
+#define HNS_HW_PAGE_SIZE			(1 << HNS_HW_PAGE_SHIFT)
+
 #define PAGE_ADDR_SHIFT				12
 
 #define HNS_ROCE_IS_RESETTING			1
@@ -511,12 +515,27 @@ struct hns_roce_buf_list {
 	dma_addr_t	map;
 };
 
+/*
+ * %HNS_ROCE_BUF_DIRECT indicates that the all memory must be in a continuous
+ * dma address range.
+ *
+ * %HNS_ROCE_BUF_NOSLEEP indicates that the caller cannot sleep.
+ *
+ * %HNS_ROCE_BUF_NOFAIL allocation only failed when allocated size is zero, even
+ * the allocated size is smaller than the required size.
+ */
+enum {
+	HNS_ROCE_BUF_DIRECT = BIT(0),
+	HNS_ROCE_BUF_NOSLEEP = BIT(1),
+	HNS_ROCE_BUF_NOFAIL = BIT(2),
+};
+
 struct hns_roce_buf {
-	struct hns_roce_buf_list	direct;
-	struct hns_roce_buf_list	*page_list;
-	int				nbufs;
+	struct hns_roce_buf_list	*trunk_list;
+	u32				ntrunks;
 	u32				npages;
-	int				page_shift;
+	unsigned int			trunk_shift;
+	unsigned int			page_shift;
 };
 
 struct hns_roce_db_pgdir {
@@ -548,7 +567,7 @@ struct hns_roce_db {
 };
 
 struct hns_roce_cq_buf {
-	struct hns_roce_buf hr_buf;
+	struct hns_roce_buf *hr_buf;
 	struct hns_roce_mtt hr_mtt;
 };
 
@@ -587,7 +606,7 @@ struct hns_roce_cq {
 };
 
 struct hns_roce_idx_que {
-	struct hns_roce_buf		idx_buf;
+	struct hns_roce_buf		*idx_buf;
 	int				entry_sz;
 	u32				buf_size;
 	struct ib_umem			*umem;
@@ -608,7 +627,7 @@ struct hns_roce_srq {
 	refcount_t		refcount;
 	struct completion	free;
 
-	struct hns_roce_buf	buf;
+	struct hns_roce_buf    *buf;
 	u64		       *wrid;
 	struct ib_umem	       *umem;
 	struct hns_roce_mtt	mtt;
@@ -754,7 +773,7 @@ enum hns_roce_qp_dfx_cnt {
 
 struct hns_roce_qp {
 	struct ib_qp		ibqp;
-	struct hns_roce_buf	hr_buf;
+	struct hns_roce_buf	*hr_buf;
 	struct hns_roce_wq	rq;
 	struct hns_roce_db	rdb;
 	struct hns_roce_db	sdb;
@@ -1305,15 +1324,23 @@ static inline struct hns_roce_qp
 				 qpn & (hr_dev->caps.num_qps - 1));
 }
 
-static inline void *hns_roce_buf_offset(struct hns_roce_buf *buf, int offset)
+static inline void *hns_roce_buf_offset(struct hns_roce_buf *buf,
+					unsigned int offset)
 {
-	u32 page_size = 1 << buf->page_shift;
+	return (char *)(buf->trunk_list[offset >> buf->trunk_shift].buf) +
+			(offset & ((1 << buf->trunk_shift) - 1));
+}
 
-	if (buf->nbufs == 1)
-		return (char *)(buf->direct.buf) + offset;
-	else
-		return (char *)(buf->page_list[offset >> buf->page_shift].buf) +
-		       (offset & (page_size - 1));
+static inline dma_addr_t hns_roce_buf_dma_addr(struct hns_roce_buf *buf,
+					       unsigned int offset)
+{
+	return buf->trunk_list[offset >> buf->trunk_shift].map +
+			(offset & ((1 << buf->trunk_shift) - 1));
+}
+
+static inline dma_addr_t hns_roce_buf_page(struct hns_roce_buf *buf, u32 idx)
+{
+	return hns_roce_buf_dma_addr(buf, idx << buf->page_shift);
 }
 
 static inline u8 to_rdma_port_num(u8 phy_port_num)
@@ -1425,10 +1452,9 @@ struct ib_mw *hns_roce_alloc_mw(struct ib_pd *pd, enum ib_mw_type,
 				struct ib_udata *udata);
 int hns_roce_dealloc_mw(struct ib_mw *ibmw);
 
-void hns_roce_buf_free(struct hns_roce_dev *hr_dev, u32 size,
-		       struct hns_roce_buf *buf);
-int hns_roce_buf_alloc(struct hns_roce_dev *hr_dev, u32 size, u32 max_direct,
-		       struct hns_roce_buf *buf, u32 page_shift);
+void hns_roce_buf_free(struct hns_roce_dev *hr_dev, struct hns_roce_buf *buf);
+struct hns_roce_buf *hns_roce_buf_alloc(struct hns_roce_dev *hr_dev, u32 size,
+					u32 page_shift, u32 flags);
 
 int hns_roce_ib_umem_write_mtt(struct hns_roce_dev *hr_dev,
 			       struct hns_roce_mtt *mtt, struct ib_umem *umem);
@@ -1443,7 +1469,7 @@ int hns_roce_get_kmem_bufs(struct hns_roce_dev *hr_dev, dma_addr_t *bufs,
 			   int buf_cnt, int start, struct hns_roce_buf *buf);
 int hns_roce_get_umem_bufs(struct hns_roce_dev *hr_dev, dma_addr_t *bufs,
 			   int buf_cnt, int start, struct ib_umem *umem,
-			   int page_shift);
+			   unsigned int page_shift);
 
 struct ib_srq *hns_roce_create_srq(struct ib_pd *pd,
 				   struct ib_srq_init_attr *srq_init_attr,

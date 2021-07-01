@@ -275,29 +275,32 @@ err_buf:
 static int hns_roce_ib_alloc_cq_buf(struct hns_roce_dev *hr_dev,
 				    struct hns_roce_cq_buf *buf, u32 nent)
 {
-	int ret;
 	u32 page_shift = PAGE_SHIFT + hr_dev->caps.cqe_buf_pg_sz;
+	struct hns_roce_buf *kbuf;
+	int ret;
 
-	ret = hns_roce_buf_alloc(hr_dev, nent * hr_dev->caps.cq_entry_sz,
-				 (1 << page_shift) * 2, &buf->hr_buf,
-				 page_shift);
-	if (ret)
+	kbuf = hns_roce_buf_alloc(hr_dev, nent * hr_dev->caps.cq_entry_sz,
+				  page_shift, 0);
+	if (IS_ERR(kbuf)) {
+		ret = -ENOMEM;
 		goto out;
+	}
 
+	buf->hr_buf = kbuf;
 	if (hns_roce_check_whether_mhop(hr_dev, HEM_TYPE_CQE))
 		buf->hr_mtt.mtt_type = MTT_TYPE_CQE;
 	else
 		buf->hr_mtt.mtt_type = MTT_TYPE_WQE;
 
-	ret = hns_roce_mtt_init(hr_dev, buf->hr_buf.npages,
-				buf->hr_buf.page_shift, &buf->hr_mtt);
+	ret = hns_roce_mtt_init(hr_dev, kbuf->npages, kbuf->page_shift,
+				&buf->hr_mtt);
 	if (ret) {
 		dev_err(hr_dev->dev, "hns_roce_mtt_init error(%d) for kernel create cq.\n",
 			ret);
 		goto err_buf;
 	}
 
-	ret = hns_roce_buf_write_mtt(hr_dev, &buf->hr_mtt, &buf->hr_buf);
+	ret = hns_roce_buf_write_mtt(hr_dev, &buf->hr_mtt, buf->hr_buf);
 	if (ret) {
 		dev_err(hr_dev->dev, "hns_roce_ib_umem_write_mtt error(%d) for kernel create cq.\n",
 			ret);
@@ -310,8 +313,7 @@ err_mtt:
 	hns_roce_mtt_cleanup(hr_dev, &buf->hr_mtt);
 
 err_buf:
-	hns_roce_buf_free(hr_dev, nent * hr_dev->caps.cq_entry_sz,
-			  &buf->hr_buf);
+	hns_roce_buf_free(hr_dev, buf->hr_buf);
 out:
 	return ret;
 }
@@ -319,8 +321,7 @@ out:
 static void hns_roce_ib_free_cq_buf(struct hns_roce_dev *hr_dev,
 				    struct hns_roce_cq_buf *buf, int cqe)
 {
-	hns_roce_buf_free(hr_dev, (cqe + 1) * hr_dev->caps.cq_entry_sz,
-			  &buf->hr_buf);
+	hns_roce_buf_free(hr_dev, buf->hr_buf);
 }
 
 static int create_user_cq(struct hns_roce_dev *hr_dev,

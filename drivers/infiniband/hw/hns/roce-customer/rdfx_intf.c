@@ -23,17 +23,17 @@ struct rdfx_cq_info *rdfx_find_rdfx_cq(struct rdfx_info *rdfx,
 static void rdfx_v2_free_cqe_dma_buf(struct rdfx_cq_info *rdfx_cq)
 {
 	struct hns_roce_dev *hr_dev = (struct hns_roce_dev *)rdfx_cq->priv;
-	u32 size = (rdfx_cq->cq_depth) * hr_dev->caps.cq_entry_sz;
 
-	hns_roce_buf_free(hr_dev, size, (struct hns_roce_buf *)rdfx_cq->buf);
+	hns_roce_buf_free(hr_dev, (struct hns_roce_buf *)rdfx_cq->buf);
+	rdfx_cq->buf = NULL;
 }
 
 static void rdfx_v2_free_wqe_dma_buf(struct rdfx_qp_info *rdfx_qp)
 {
 	struct hns_roce_dev *hr_dev = (struct hns_roce_dev *)rdfx_qp->priv;
-	u32 size = rdfx_qp->buf_size;
 
-	hns_roce_buf_free(hr_dev, size, (struct hns_roce_buf *)rdfx_qp->buf);
+	hns_roce_buf_free(hr_dev, (struct hns_roce_buf *)rdfx_qp->buf);
+	rdfx_qp->buf = NULL;
 }
 
 void qp_release(struct kref *ref)
@@ -41,7 +41,6 @@ void qp_release(struct kref *ref)
 	struct rdfx_qp_info *rdfx_qp =
 		container_of(ref, struct rdfx_qp_info, cnt);
 	rdfx_v2_free_wqe_dma_buf(rdfx_qp);
-	kfree(rdfx_qp->buf);
 	kfree(rdfx_qp);
 }
 EXPORT_SYMBOL_GPL(qp_release);
@@ -51,7 +50,6 @@ void cq_release(struct kref *ref)
 	struct rdfx_cq_info *rdfx_cq =
 		container_of(ref, struct rdfx_cq_info, cnt);
 	rdfx_v2_free_cqe_dma_buf(rdfx_cq);
-	kfree(rdfx_cq->buf);
 	kfree(rdfx_cq);
 }
 EXPORT_SYMBOL_GPL(cq_release);
@@ -647,21 +645,16 @@ void rdfx_alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 	unsigned long flags;
 	u32 page_shift;
 	int cq_entries;
-	int ret;
 
 	cq_entries = hr_cq->cq_depth;
 
-	dfx_cq_buf = kzalloc(sizeof(struct hns_roce_buf), GFP_KERNEL);
-	if (ZERO_OR_NULL_PTR(dfx_cq_buf))
-		return;
-
 	page_shift = PAGE_SHIFT + hr_dev->caps.cqe_buf_pg_sz;
-
-	ret = hns_roce_buf_alloc(hr_dev, cq_entries * hr_dev->caps.cq_entry_sz,
-				 (1 << page_shift) * 2, dfx_cq_buf, page_shift);
-	if (ret) {
+	dfx_cq_buf = hns_roce_buf_alloc(hr_dev,
+					cq_entries * hr_dev->caps.cq_entry_sz,
+					page_shift, 0);
+	if (IS_ERR(dfx_cq_buf)) {
 		dev_err(hr_dev->dev, "hns_roce_dfx_buf_alloc error!\n");
-		goto err_dfx_buf;
+		return;
 	}
 
 #ifdef CONFIG_INFINIBAND_HNS_DFX_ENHANCE
@@ -690,10 +683,7 @@ void rdfx_alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 	return;
 
 err_buf:
-	hns_roce_buf_free(hr_dev, cq_entries * hr_dev->caps.cq_entry_sz,
-		dfx_cq_buf);
-err_dfx_buf:
-	kfree(dfx_cq_buf);
+	hns_roce_buf_free(hr_dev, dfx_cq_buf);
 }
 
 void rdfx_free_cq_buff(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
@@ -711,15 +701,10 @@ void rdfx_alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 	u32 page_shift = 0;
 	unsigned long flags;
 
-	dfx_qp_buf = kzalloc(sizeof(struct hns_roce_buf), GFP_KERNEL);
-	if (ZERO_OR_NULL_PTR(dfx_qp_buf))
-		return;
-
 	page_shift = PAGE_SHIFT + hr_dev->caps.mtt_buf_pg_sz;
-
-	if (hns_roce_buf_alloc(hr_dev, hr_qp->buff_size, (1 << page_shift) * 2,
-		dfx_qp_buf, page_shift)) {
-		kfree(dfx_qp_buf);
+	dfx_qp_buf = hns_roce_buf_alloc(hr_dev, hr_qp->buff_size, page_shift,
+					0);
+	if (IS_ERR(dfx_qp_buf)) {
 		dev_err(hr_dev->dev, "alloc dfx qp 0x%lx buff failed!\n",
 			hr_qp->qpn);
 		return;
@@ -727,8 +712,7 @@ void rdfx_alloc_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 
 	rdfx_qp = kzalloc(sizeof(*rdfx_qp), GFP_KERNEL);
 	if (ZERO_OR_NULL_PTR(rdfx_qp)) {
-		hns_roce_buf_free(hr_dev, hr_qp->buff_size, dfx_qp_buf);
-		kfree(dfx_qp_buf);
+		hns_roce_buf_free(hr_dev, dfx_qp_buf);
 		return;
 	}
 
