@@ -421,7 +421,7 @@ static int hns_roce_set_rq_size(struct hns_roce_dev *hr_dev,
 					      * hr_qp->rq.max_gs);
 	}
 
-	cap->max_recv_wr = hr_qp->rq.max_post = hr_qp->rq.wqe_cnt;
+	cap->max_recv_wr = hr_qp->rq.wqe_cnt;
 	cap->max_recv_sge = hr_qp->rq.max_gs - hr_qp->rq.rsv_sge;
 
 	return 0;
@@ -736,7 +736,7 @@ static int hns_roce_set_kernel_sq_size(struct hns_roce_dev *hr_dev,
 	hr_qp->buff_size = size;
 
 	/* Get wr and sge number which send */
-	cap->max_send_wr = hr_qp->sq.max_post = hr_qp->sq.wqe_cnt;
+	cap->max_send_wr = hr_qp->sq.wqe_cnt;
 	cap->max_send_sge = hr_qp->sq.max_gs;
 
 	/* We don't support inline sends for kernel QPs (yet) */
@@ -1522,7 +1522,7 @@ bool hns_roce_wq_overflow(struct hns_roce_wq *hr_wq, int nreq,
 	u32 cur;
 
 	cur = hr_wq->head - hr_wq->tail;
-	if (likely(cur + nreq < hr_wq->max_post))
+	if (likely(cur + nreq < hr_wq->wqe_cnt))
 		return false;
 
 	hr_cq = to_hr_cq(ib_cq);
@@ -1530,7 +1530,7 @@ bool hns_roce_wq_overflow(struct hns_roce_wq *hr_wq, int nreq,
 	cur = hr_wq->head - hr_wq->tail;
 	spin_unlock(&hr_cq->lock);
 
-	return cur + nreq >= hr_wq->max_post;
+	return cur + nreq >= hr_wq->wqe_cnt;
 }
 EXPORT_SYMBOL_GPL(hns_roce_wq_overflow);
 

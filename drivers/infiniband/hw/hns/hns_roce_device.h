@@ -491,7 +491,6 @@ struct hns_roce_wq {
 	u64		*wrid;     /* Work request ID */
 	spinlock_t	lock;
 	int		wqe_cnt;  /* WQE num */
-	u32		max_post;
 	int		max_gs;
 	u32		rsv_sge;
 	int		offset;
