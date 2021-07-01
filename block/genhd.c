@@ -920,6 +920,7 @@ void del_gendisk(struct gendisk *disk)
 	bdev = bdget_disk(disk, 0);
 	if (bdev)
 		mutex_lock(&bdev->bd_mutex);
+	disk->flags &= ~GENHD_FL_UP;
 	/* invalidate stuff */
 	disk_part_iter_init(&piter, disk,
 			     DISK_PITER_INCL_EMPTY | DISK_PITER_REVERSE);
@@ -935,7 +936,6 @@ void del_gendisk(struct gendisk *disk)
 
 	invalidate_partition(disk, 0);
 	set_capacity(disk, 0);
-	disk->flags &= ~GENHD_FL_UP;
 	up_write(&disk->lookup_sem);
 
 	if (!(disk->flags & GENHD_FL_HIDDEN))
