@@ -366,9 +366,7 @@ static u32 proc_rq_sge(struct hns_roce_dev *dev, struct hns_roce_qp *hr_qp,
 	return max_sge;
 }
 
-
-
-static int hns_roce_set_rq_size(struct hns_roce_dev *hr_dev,
+static int set_rq_size(struct hns_roce_dev *hr_dev,
 				struct ib_qp_cap *cap, int is_user, int has_rq,
 				struct hns_roce_qp *hr_qp)
 {
@@ -452,10 +450,9 @@ static int check_sq_size_with_integrity(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
-static int hns_roce_set_user_sq_size(struct hns_roce_dev *hr_dev,
-				     struct ib_qp_cap *cap,
-				     struct hns_roce_qp *hr_qp,
-				     struct hns_roce_ib_create_qp *ucmd)
+static int set_user_sq_size(struct hns_roce_dev *hr_dev,
+			    struct ib_qp_cap *cap, struct hns_roce_qp *hr_qp,
+			    struct hns_roce_ib_create_qp *ucmd)
 {
 	u32 ex_sge_num;
 	u32 page_size;
@@ -668,9 +665,8 @@ static int set_extend_sge_param(struct hns_roce_dev *hr_dev,
 	return 0;
 }
 
-static int hns_roce_set_kernel_sq_size(struct hns_roce_dev *hr_dev,
-				       struct ib_qp_cap *cap,
-				       struct hns_roce_qp *hr_qp)
+static int set_kernel_sq_size(struct hns_roce_dev *hr_dev,
+			      struct ib_qp_cap *cap, struct hns_roce_qp *hr_qp)
 {
 	struct device *dev = hr_dev->dev;
 	u32 buf_size;
@@ -965,6 +961,56 @@ static void free_qp_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 		hns_roce_free_recv_inline_buffer(hr_qp);
 }
 
+static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
+			struct ib_qp_init_attr *init_attr,
+			struct ib_udata *udata,
+			struct hns_roce_ib_create_qp *ucmd)
+{
+	int ret;
+
+	hr_qp->ibqp.qp_type = init_attr->qp_type;
+
+	if (init_attr->sq_sig_type == IB_SIGNAL_ALL_WR)
+		hr_qp->sq_signal_bits = IB_SIGNAL_ALL_WR;
+	else
+		hr_qp->sq_signal_bits = IB_SIGNAL_REQ_WR;
+
+	ret = set_rq_size(hr_dev, &init_attr->cap, !!udata,
+			  hns_roce_qp_has_rq(init_attr), hr_qp);
+	if (ret) {
+		dev_err(hr_dev->dev, "Failed to set user RQ size\n");
+		return ret;
+	}
+
+	if (udata) {
+		if (ib_copy_from_udata(ucmd, udata, sizeof(*ucmd))) {
+			dev_err(hr_dev->dev, "Failed to copy QP ucmd\n");
+			return -EFAULT;
+		}
+
+		ret = set_user_sq_size(hr_dev, &init_attr->cap, hr_qp, ucmd);
+		if (ret)
+			dev_err(hr_dev->dev, "Failed to set user SQ size\n");
+	} else {
+		if (init_attr->create_flags &
+		    IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK) {
+			dev_err(hr_dev->dev, "Failed to check multicast loopback\n");
+			return -EINVAL;
+		}
+
+		if (init_attr->create_flags & IB_QP_CREATE_IPOIB_UD_LSO) {
+			dev_err(hr_dev->dev, "Failed to check ipoib ud lso\n");
+			return -EINVAL;
+		}
+
+		ret = set_kernel_sq_size(hr_dev, &init_attr->cap, hr_qp);
+		if (ret)
+			dev_err(hr_dev->dev, "Failed to set kernel SQ size\n");
+	}
+
+	return ret;
+}
+
 static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 				     struct ib_pd *ib_pd,
 				     struct ib_qp_init_attr *init_attr,
@@ -984,35 +1030,13 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 	hr_qp->state = IB_QPS_RESET;
 	hr_qp->next_state = IB_QPS_RESET;
 
-	hr_qp->ibqp.qp_type = init_attr->qp_type;
-
-	if (init_attr->sq_sig_type == IB_SIGNAL_ALL_WR)
-		hr_qp->sq_signal_bits = cpu_to_le32(IB_SIGNAL_ALL_WR);
-	else
-		hr_qp->sq_signal_bits = cpu_to_le32(IB_SIGNAL_REQ_WR);
-
-	ret = hns_roce_set_rq_size(hr_dev, &init_attr->cap, !!ib_pd->uobject,
-				   hns_roce_qp_has_rq(init_attr), hr_qp);
+	ret = set_qp_param(hr_dev, hr_qp, init_attr, udata, &ucmd);
 	if (ret) {
 		dev_err(dev, "hns_roce_set_rq_size failed(%d).\n", ret);
-		goto err_out;
+		return ret;
 	}
 
 	if (ib_pd->uobject) {
-		if (ib_copy_from_udata(&ucmd, udata, sizeof(ucmd))) {
-			dev_err(dev, "ib_copy_from_udata error for create qp.\n");
-			ret = -EFAULT;
-			goto err_out;
-		}
-
-		ret = hns_roce_set_user_sq_size(hr_dev, &init_attr->cap, hr_qp,
-						&ucmd);
-		if (ret) {
-			dev_err(dev, "hns_roce_set_user_sq_size error(%d) for create qp.\n",
-				ret);
-			goto err_out;
-		}
-
 		if ((hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_SQ_RECORD_DB) &&
 		    (udata->inlen >= sizeof(ucmd)) &&
 		    (udata->outlen >= sizeof(resp)) &&
@@ -1048,30 +1072,6 @@ static int hns_roce_create_qp_common(struct hns_roce_dev *hr_dev,
 			hr_qp->rdb_en = 1;
 		}
 	} else {
-		if (init_attr->create_flags &
-		    IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK) {
-			dev_err(dev, "init_attr->create_flags error(%d) for BLOCK_MULTICAST_LOOPBACK!\n",
-				init_attr->create_flags);
-			ret = -EINVAL;
-			goto err_out;
-		}
-
-		if (init_attr->create_flags & IB_QP_CREATE_IPOIB_UD_LSO) {
-			dev_err(dev, "init_attr->create_flags error(%d) for IPOIB_UD_LSO!\n",
-				init_attr->create_flags);
-			ret = -EINVAL;
-			goto err_out;
-		}
-
-		/* Set SQ size */
-		ret = hns_roce_set_kernel_sq_size(hr_dev, &init_attr->cap,
-						  hr_qp);
-		if (ret) {
-			dev_err(dev, "hns_roce_set_kernel_sq_size error(%d)!\n",
-				ret);
-			goto err_out;
-		}
-
 		/* QP doorbell register address */
 		hr_qp->sq.db_reg_l = hr_dev->reg_base + hr_dev->sdb_offset +
 				     DB_REG_OFFSET * hr_dev->priv_uar.index;
