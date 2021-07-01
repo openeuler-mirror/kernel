@@ -255,102 +255,49 @@ struct hns_roce_buf *hns_roce_buf_alloc(struct hns_roce_dev *hr_dev, u32 size,
 EXPORT_SYMBOL_GPL(hns_roce_buf_alloc);
 
 int hns_roce_get_kmem_bufs(struct hns_roce_dev *hr_dev, dma_addr_t *bufs,
-			   int buf_cnt, int start, struct hns_roce_buf *buf)
+			   int buf_cnt, struct hns_roce_buf *buf,
+			   unsigned int page_shift)
 {
-	int i, end;
-	int total;
+	unsigned int offset, max_size;
+	int total = 0;
+	int i;
 
-	end = start + buf_cnt;
-	if (end > buf->npages) {
-		dev_err(hr_dev->dev,
-			"failed to check kmem bufs, end %d + %d total %u!\n",
-			start, buf_cnt, buf->npages);
+	if (page_shift > buf->trunk_shift) {
+		dev_err(hr_dev->dev, "failed to check kmem buf shift %u > %u\n",
+			page_shift, buf->trunk_shift);
 		return -EINVAL;
 	}
 
-	total = 0;
-	for (i = start; i < end; i++)
-		bufs[total++] = hns_roce_buf_page(buf, i);
+	offset = 0;
+	max_size = buf->ntrunks << buf->trunk_shift;
+	for (i = 0; i < buf_cnt && offset < max_size; i++) {
+		bufs[total++] = hns_roce_buf_dma_addr(buf, offset);
+		offset += (1 << page_shift);
+	}
 
 	return total;
 }
 EXPORT_SYMBOL_GPL(hns_roce_get_kmem_bufs);
 
 int hns_roce_get_umem_bufs(struct hns_roce_dev *hr_dev, dma_addr_t *bufs,
-			   int buf_cnt, int start, struct ib_umem *umem,
+			   int buf_cnt, struct ib_umem *umem,
 			   unsigned int page_shift)
 {
 	struct ib_block_iter biter;
 	int total = 0;
-	int idx = 0;
-	u64 addr;
-
-	if (page_shift < HNS_HW_PAGE_SHIFT) {
-		dev_err(hr_dev->dev, "failed to check umem page shift %u!\n",
-			page_shift);
-		return -EINVAL;
-	}
 
 	/* convert system page cnt to hw page cnt */
 	rdma_for_each_block(umem->sg_head.sgl, &biter, umem->nmap,
 			    1 << page_shift) {
-		addr = rdma_block_iter_dma_address(&biter);
-		if (idx >= start) {
-			bufs[total++] = addr;
-			if (total >= buf_cnt)
-				goto done;
-		}
-		idx++;
+		bufs[total++] = rdma_block_iter_dma_address(&biter);
+		if (total >= buf_cnt)
+			goto done;
 	}
 
 done:
 	return total;
 }
-
-void hns_roce_init_buf_region(struct hns_roce_buf_region *region, int hopnum,
-			      int offset, int buf_cnt)
-{
-	if (hopnum == HNS_ROCE_HOP_NUM_0)
-		region->hopnum = 0;
-	else
-		region->hopnum = hopnum;
-
-	region->offset = offset;
-	region->count = buf_cnt;
-}
-
-void hns_roce_free_buf_list(dma_addr_t **bufs, int region_cnt)
-{
-	int i;
-
-	for (i = 0; i < region_cnt; i++) {
-		if (bufs[i]) {
-			kfree(bufs[i]);
-			bufs[i] = NULL;
-		}
-	}
-}
-
-int hns_roce_alloc_buf_list(struct hns_roce_buf_region *regions,
-			    dma_addr_t **bufs, int region_cnt)
-{
-	struct hns_roce_buf_region *r;
-	int i;
-
-	for (i = 0; i < region_cnt; i++) {
-		r = &regions[i];
-		bufs[i] = kcalloc(r->count, sizeof(dma_addr_t), GFP_KERNEL);
-		if (!bufs[i])
-			goto err_alloc;
-	}
-
-	return 0;
-
-err_alloc:
-	hns_roce_free_buf_list(bufs, i);
-
-	return -ENOMEM;
-}
+EXPORT_SYMBOL_GPL(hns_roce_get_umem_bufs);
 
 void hns_roce_cleanup_bitmap(struct hns_roce_dev *hr_dev)
 {

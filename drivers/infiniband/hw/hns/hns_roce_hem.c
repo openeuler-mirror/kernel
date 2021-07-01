@@ -1177,9 +1177,8 @@ static struct roce_hem_item *hem_list_alloc_item(struct hns_roce_dev *hr_dev,
 		return NULL;
 
 	if (exist_bt) {
-		hem->addr = dma_alloc_coherent(hr_dev->dev,
-						   count * BA_BYTE_LEN,
-						   &hem->dma_addr, GFP_KERNEL);
+		hem->addr = dma_alloc_coherent(hr_dev->dev, count * BA_BYTE_LEN,
+					       &hem->dma_addr, GFP_KERNEL);
 		if (!hem->addr) {
 			kfree(hem);
 			return NULL;
@@ -1351,7 +1350,7 @@ static int hem_list_alloc_mid_bt(struct hns_roce_dev *hr_dev,
 	}
 
 	if (offset < r->offset) {
-		dev_err(hr_dev->dev, "invalid offset %d,min %d!\n",
+		dev_err(hr_dev->dev, "invalid offset %d,min %u!\n",
 			offset, r->offset);
 		return -EINVAL;
 	}
@@ -1415,8 +1414,8 @@ static int hem_list_alloc_root_bt(struct hns_roce_dev *hr_dev,
 				  const struct hns_roce_buf_region *regions,
 				  int region_cnt)
 {
-	struct roce_hem_item *hem, *temp_hem, *root_hem;
 	struct list_head temp_list[HNS_ROCE_MAX_BT_REGION];
+	struct roce_hem_item *hem, *temp_hem, *root_hem;
 	const struct hns_roce_buf_region *r;
 	struct list_head temp_root;
 	struct list_head temp_btm;
@@ -1438,12 +1437,16 @@ static int hem_list_alloc_root_bt(struct hns_roce_dev *hr_dev,
 	if (ba_num < 1)
 		return -ENOMEM;
 
+	if (ba_num > unit)
+		return -ENOBUFS;
+
+	ba_num = min_t(int, ba_num, unit);
 	INIT_LIST_HEAD(&temp_root);
 	offset = r->offset;
 	/* indicate to last region */
 	r = &regions[region_cnt - 1];
 	root_hem = hem_list_alloc_item(hr_dev, offset, r->offset + r->count - 1,
-		ba_num, true, 0);
+				       ba_num, true, 0);
 	if (!root_hem)
 		return -ENOMEM;
 	list_add(&root_hem->list, &temp_root);
@@ -1487,9 +1490,9 @@ static int hem_list_alloc_root_bt(struct hns_roce_dev *hr_dev,
 			}
 			/* if exist mid bt, link L1 to L0 */
 			list_for_each_entry_safe(hem, temp_hem,
-			    &hem_list->mid_bt[i][1], list) {
-				offset = ((hem->start - r->offset) / step) *
-						 BA_BYTE_LEN;
+					  &hem_list->mid_bt[i][1], list) {
+				offset = (hem->start - r->offset) / step *
+					  BA_BYTE_LEN;
 				hem_list_link_bt(hr_dev, cpu_base + offset,
 						 hem->dma_addr);
 				total++;
@@ -1517,12 +1520,12 @@ err_exit:
 int hns_roce_hem_list_request(struct hns_roce_dev *hr_dev,
 			      struct hns_roce_hem_list *hem_list,
 			      const struct hns_roce_buf_region *regions,
-			      int region_cnt)
+			      int region_cnt, unsigned int bt_pg_shift)
 {
 	const struct hns_roce_buf_region *r;
 	int ofs, end;
-	int ret = 0;
 	int unit;
+	int ret;
 	int i;
 
 	if (region_cnt > HNS_ROCE_MAX_BT_REGION) {
@@ -1531,7 +1534,7 @@ int hns_roce_hem_list_request(struct hns_roce_dev *hr_dev,
 		return -EINVAL;
 	}
 
-	unit = (1 << hem_list->bt_pg_shift) / BA_BYTE_LEN;
+	unit = (1 << bt_pg_shift) / BA_BYTE_LEN;
 	for (i = 0; i < region_cnt; i++) {
 		r = &regions[i];
 		if (!r->count)
@@ -1578,8 +1581,7 @@ void hns_roce_hem_list_release(struct hns_roce_dev *hr_dev,
 	hem_list->root_ba = 0;
 }
 
-void hns_roce_hem_list_init(struct hns_roce_hem_list *hem_list,
-			    int bt_page_order)
+void hns_roce_hem_list_init(struct hns_roce_hem_list *hem_list)
 {
 	int i, j;
 
@@ -1588,8 +1590,6 @@ void hns_roce_hem_list_init(struct hns_roce_hem_list *hem_list,
 	for (i = 0; i < HNS_ROCE_MAX_BT_REGION; i++)
 		for (j = 0; j < HNS_ROCE_MAX_BT_LEVEL; j++)
 			INIT_LIST_HEAD(&hem_list->mid_bt[i][j]);
-
-	hem_list->bt_pg_shift = bt_page_order;
 }
 
 void *hns_roce_hem_list_find_mtt(struct hns_roce_dev *hr_dev,
@@ -1620,4 +1620,3 @@ void *hns_roce_hem_list_find_mtt(struct hns_roce_dev *hr_dev,
 
 	return cpu_base;
 }
-

@@ -149,7 +149,7 @@ static void set_extend_sge(struct hns_roce_qp *qp, struct ib_send_wr *wr,
 		num_in_wqe = HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE;
 	extend_sge_num = valid_num_sge - num_in_wqe;
 	sg = wr->sg_list + num_in_wqe;
-	shift = qp->hr_buf->page_shift;
+	shift = qp->mtr.kmem->page_shift;
 
 	/*
 	 * Check whether wr->num_sge sges are in the same page. If not, we
@@ -3898,18 +3898,10 @@ static void set_qpc_wqe_cnt(struct hns_roce_qp *hr_qp,
 			    struct hns_roce_v2_qp_context *context,
 			    struct hns_roce_v2_qp_context *qpc_mask)
 {
-	if (hr_qp->ibqp.qp_type == IB_QPT_GSI)
-		roce_set_field(context->byte_4_sqpn_tst,
-			       V2_QPC_BYTE_4_SGE_SHIFT_M,
-			       V2_QPC_BYTE_4_SGE_SHIFT_S,
-			       ilog2((unsigned int)hr_qp->sge.sge_cnt));
-	else
-		roce_set_field(context->byte_4_sqpn_tst,
-			       V2_QPC_BYTE_4_SGE_SHIFT_M,
-			       V2_QPC_BYTE_4_SGE_SHIFT_S,
-			       hr_qp->sq.max_gs >
-			       HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE ?
-			       ilog2((unsigned int)hr_qp->sge.sge_cnt) : 0);
+	roce_set_field(context->byte_4_sqpn_tst, V2_QPC_BYTE_4_SGE_SHIFT_M,
+		       V2_QPC_BYTE_4_SGE_SHIFT_S,
+		       to_hr_hem_entries_shift(hr_qp->sge.sge_cnt,
+					       hr_qp->sge.sge_shift));
 
 	roce_set_field(qpc_mask->byte_4_sqpn_tst, V2_QPC_BYTE_4_SGE_SHIFT_M,
 		       V2_QPC_BYTE_4_SGE_SHIFT_S, 0);
@@ -4369,31 +4361,6 @@ static void modify_qp_init_to_init(struct ib_qp *ibqp,
 	}
 }
 
-static bool check_wqe_rq_mtt_count(struct hns_roce_dev *hr_dev,
-				   struct hns_roce_qp *hr_qp, int mtt_cnt,
-				   u32 page_size)
-{
-	struct device *dev = hr_dev->dev;
-
-	if (hr_qp->rq.wqe_cnt < 1)
-		return true;
-
-	if (mtt_cnt < 1) {
-		dev_err(dev, "qp(0x%lx) rqwqe buf ba find failed\n",
-			hr_qp->qpn);
-		return false;
-	}
-
-	if (mtt_cnt < MTT_MIN_COUNT &&
-		(hr_qp->rq.offset + page_size) < hr_qp->buff_size) {
-		dev_err(dev, "qp(0x%lx) next rqwqe buf ba find failed\n",
-			hr_qp->qpn);
-		return false;
-	}
-
-	return true;
-}
-
 static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 				 const struct ib_qp_attr *attr, int attr_mask,
 				 struct hns_roce_v2_qp_context *context,
@@ -4407,7 +4374,6 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	dma_addr_t dma_handle_3;
 	dma_addr_t dma_handle_2;
 	u64 wqe_sge_ba;
-	u32 page_size;
 	u8 port_num;
 	u64 *mtts_3;
 	u64 *mtts_2;
@@ -4416,13 +4382,13 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	int port;
 
 	/* Search qp buf's mtts */
-	page_size = 1 << (hr_dev->caps.mtt_buf_pg_sz + PAGE_SHIFT);
-	count = hns_roce_mtr_find(hr_dev, &hr_qp->mtr,
-				  hr_qp->rq.offset / page_size, mtts,
-				  MTT_MIN_COUNT, &wqe_sge_ba);
-	if (!ibqp->srq)
-		if (!check_wqe_rq_mtt_count(hr_dev, hr_qp, count, page_size))
-			return -EINVAL;
+	count = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->rq.offset,
+				  mtts, ARRAY_SIZE(mtts), &wqe_sge_ba);
+	if (hr_qp->rq.wqe_cnt && count < 1) {
+		dev_err(dev, "failed to find RQ WQE, QPN = 0x%lx.\n",
+			hr_qp->qpn);
+		return -EINVAL;
+	}
 
 	/* Search IRRL's mtts */
 	mtts_2 = hns_roce_table_find(hr_dev, &hr_dev->qp_table.irrl_table,
@@ -4462,17 +4428,16 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 
 	roce_set_field(context->byte_12_sq_hop, V2_QPC_BYTE_12_SQ_HOP_NUM_M,
 		       V2_QPC_BYTE_12_SQ_HOP_NUM_S,
-		       hr_dev->caps.wqe_sq_hop_num == HNS_ROCE_HOP_NUM_0 ?
-		       0 : hr_dev->caps.wqe_sq_hop_num);
+		       to_hr_hem_hopnum(hr_dev->caps.wqe_sq_hop_num,
+					hr_qp->sq.wqe_cnt));
 	roce_set_field(qpc_mask->byte_12_sq_hop, V2_QPC_BYTE_12_SQ_HOP_NUM_M,
 		       V2_QPC_BYTE_12_SQ_HOP_NUM_S, 0);
 
 	roce_set_field(context->byte_20_smac_sgid_idx,
 		       V2_QPC_BYTE_20_SGE_HOP_NUM_M,
 		       V2_QPC_BYTE_20_SGE_HOP_NUM_S,
-		       (ibqp->qp_type == IB_QPT_GSI ||
-			  hr_qp->sq.max_gs > HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE) ?
-		       hr_dev->caps.wqe_sge_hop_num : 0);
+		       to_hr_hem_hopnum(hr_dev->caps.wqe_sge_hop_num,
+					hr_qp->sge.sge_cnt));
 	roce_set_field(qpc_mask->byte_20_smac_sgid_idx,
 		       V2_QPC_BYTE_20_SGE_HOP_NUM_M,
 		       V2_QPC_BYTE_20_SGE_HOP_NUM_S, 0);
@@ -4480,8 +4445,8 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	roce_set_field(context->byte_20_smac_sgid_idx,
 		       V2_QPC_BYTE_20_RQ_HOP_NUM_M,
 		       V2_QPC_BYTE_20_RQ_HOP_NUM_S,
-		       hr_dev->caps.wqe_rq_hop_num == HNS_ROCE_HOP_NUM_0 ?
-		       0 : hr_dev->caps.wqe_rq_hop_num);
+		       to_hr_hem_hopnum(hr_dev->caps.wqe_rq_hop_num,
+					hr_qp->rq.wqe_cnt));
 	roce_set_field(qpc_mask->byte_20_smac_sgid_idx,
 		       V2_QPC_BYTE_20_RQ_HOP_NUM_M,
 		       V2_QPC_BYTE_20_RQ_HOP_NUM_S, 0);
@@ -4489,7 +4454,7 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	roce_set_field(context->byte_16_buf_ba_pg_sz,
 		       V2_QPC_BYTE_16_WQE_SGE_BA_PG_SZ_M,
 		       V2_QPC_BYTE_16_WQE_SGE_BA_PG_SZ_S,
-		       hr_qp->wqe_bt_pg_shift + PG_SHIFT_OFFSET);
+		       to_hr_hw_page_shift(hr_qp->mtr.hem_cfg.ba_pg_shift));
 	roce_set_field(qpc_mask->byte_16_buf_ba_pg_sz,
 		       V2_QPC_BYTE_16_WQE_SGE_BA_PG_SZ_M,
 		       V2_QPC_BYTE_16_WQE_SGE_BA_PG_SZ_S, 0);
@@ -4497,7 +4462,7 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	roce_set_field(context->byte_16_buf_ba_pg_sz,
 		       V2_QPC_BYTE_16_WQE_SGE_BUF_PG_SZ_M,
 		       V2_QPC_BYTE_16_WQE_SGE_BUF_PG_SZ_S,
-		       hr_dev->caps.mtt_buf_pg_sz + PG_SHIFT_OFFSET);
+		       to_hr_hw_page_shift(hr_qp->mtr.hem_cfg.buf_pg_shift));
 	roce_set_field(qpc_mask->byte_16_buf_ba_pg_sz,
 		       V2_QPC_BYTE_16_WQE_SGE_BUF_PG_SZ_M,
 		       V2_QPC_BYTE_16_WQE_SGE_BUF_PG_SZ_S, 0);
@@ -4648,23 +4613,22 @@ static int modify_qp_rtr_to_rts(struct ib_qp *ibqp,
 	struct device *dev = hr_dev->dev;
 	u64 sge_cur_blk = 0;
 	u64 sq_cur_blk = 0;
-	u32 page_size;
 	int count;
 
-	/* Search qp buf's mtts */
-	count = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, 0, &sq_cur_blk, 1, NULL);
+	/* search qp buf's mtts */
+	count = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->sq.offset,
+				  &sq_cur_blk, 1, NULL);
 	if (count < 1) {
-		dev_err(dev, "qp(0x%lx) buf pa find failed\n", hr_qp->qpn);
+		dev_err(dev, "failed to find QP(0x%lx) SQ buf.\n", hr_qp->qpn);
 		return -EINVAL;
 	}
 
 	if (hr_qp->sge.sge_cnt > 0) {
-		page_size = 1 << (hr_dev->caps.mtt_buf_pg_sz + PAGE_SHIFT);
 		count = hns_roce_mtr_find(hr_dev, &hr_qp->mtr,
-					  hr_qp->sge.offset / page_size,
-					  &sge_cur_blk, 1, NULL);
+					  hr_qp->sge.offset, &sge_cur_blk,
+					  1, NULL);
 		if (count < 1) {
-			dev_err(dev, "qp(0x%lx) sge pa find failed\n",
+			dev_err(dev, "failed to find QP(0x%lx) SGE buf.\n",
 				hr_qp->qpn);
 			return -EINVAL;
 		}
