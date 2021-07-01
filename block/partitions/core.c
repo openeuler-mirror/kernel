@@ -519,17 +519,26 @@ int bdev_add_partition(struct block_device *bdev, int partno,
 		sector_t start, sector_t length)
 {
 	struct hd_struct *part;
+	struct gendisk *disk = bdev->bd_disk;
+	int ret;
 
 	mutex_lock(&bdev->bd_mutex);
-	if (partition_overlaps(bdev->bd_disk, start, length, -1)) {
-		mutex_unlock(&bdev->bd_mutex);
-		return -EBUSY;
+	if (!(disk->flags & GENHD_FL_UP)) {
+		ret = -ENXIO;
+		goto out;
 	}
 
-	part = add_partition(bdev->bd_disk, partno, start, length,
+	if (partition_overlaps(disk, start, length, -1)) {
+		ret = -EBUSY;
+		goto out;
+	}
+
+	part = add_partition(disk, partno, start, length,
 			ADDPART_FLAG_NONE, NULL);
+	ret = PTR_ERR_OR_ZERO(part);
+out:
 	mutex_unlock(&bdev->bd_mutex);
-	return PTR_ERR_OR_ZERO(part);
+	return ret;
 }
 
 int bdev_del_partition(struct block_device *bdev, int partno)
