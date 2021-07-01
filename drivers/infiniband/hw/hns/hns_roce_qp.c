@@ -374,50 +374,39 @@ static int set_rq_size(struct hns_roce_dev *hr_dev,
 	struct device *dev = hr_dev->dev;
 	u32 max_cnt;
 
-	/* Check the validity of QP support capacity */
-	if (cap->max_recv_wr > hr_dev->caps.max_wqes ||
-	    cap->max_recv_sge > max_sge) {
-		dev_err(dev, "RQ(0x%lx) WR or sge error, depth = %u, sge = %u\n",
-			hr_qp->qpn, cap->max_recv_wr, cap->max_recv_sge);
-		return -EINVAL;
-	}
-
 	/* If srq exist, set zero for relative number of rq */
 	if (!has_rq) {
 		hr_qp->rq.wqe_cnt = 0;
 		hr_qp->rq.max_gs = 0;
 		cap->max_recv_wr = 0;
 		cap->max_recv_sge = 0;
-	} else {
-		if (is_user && (!cap->max_recv_wr || !cap->max_recv_sge)) {
-			dev_err(dev, "User space no need config max_recv_wr max_recv_sge\n");
-			return -EINVAL;
-		}
-
-		if (hr_dev->caps.min_wqes)
-			max_cnt = max(cap->max_recv_wr, hr_dev->caps.min_wqes);
-		else
-			max_cnt = cap->max_recv_wr;
-
-		hr_qp->rq.wqe_cnt = roundup_pow_of_two(max_cnt);
-
-		if ((u32)hr_qp->rq.wqe_cnt > hr_dev->caps.max_wqes) {
-			dev_err(dev, "while setting rq(0x%lx) size, rq.wqe_cnt too large\n",
-				hr_qp->qpn);
-			return -EINVAL;
-		}
-
-		max_cnt = max(1U, cap->max_recv_sge);
-		hr_qp->rq.max_gs = roundup_pow_of_two(max_cnt +
-					      hr_qp->rq.rsv_sge);
-		if (hr_dev->caps.max_rq_sg <= HNS_ROCE_MAX_SGE_NUM)
-			hr_qp->rq.wqe_shift =
-					ilog2(hr_dev->caps.max_rq_desc_sz);
-		else
-			hr_qp->rq.wqe_shift =
-					ilog2(hr_dev->caps.max_rq_desc_sz
-					      * hr_qp->rq.max_gs);
+		return 0;
 	}
+
+	if (!cap->max_recv_wr || cap->max_recv_wr > hr_dev->caps.max_wqes ||
+	    cap->max_recv_sge > max_sge) {
+		dev_err(dev, "RQ config error, depth=%u, sge=%d\n",
+			  cap->max_recv_wr, cap->max_recv_sge);
+		return -EINVAL;
+	}
+
+	max_cnt = max(cap->max_recv_wr, hr_dev->caps.min_wqes);
+
+	hr_qp->rq.wqe_cnt = roundup_pow_of_two(max_cnt);
+	if ((u32)hr_qp->rq.wqe_cnt > hr_dev->caps.max_wqes) {
+		dev_err(dev, "rq depth %u too large\n",
+			  cap->max_recv_wr);
+		return -EINVAL;
+	}
+
+	max_cnt = max(1U, cap->max_recv_sge);
+	hr_qp->rq.max_gs = roundup_pow_of_two(max_cnt);
+
+	if (hr_dev->caps.max_rq_sg <= HNS_ROCE_SGE_IN_WQE)
+		hr_qp->rq.wqe_shift = ilog2(hr_dev->caps.max_rq_desc_sz);
+	else
+		hr_qp->rq.wqe_shift = ilog2(hr_dev->caps.max_rq_desc_sz *
+					    hr_qp->rq.max_gs);
 
 	cap->max_recv_wr = hr_qp->rq.wqe_cnt;
 	cap->max_recv_sge = hr_qp->rq.max_gs - hr_qp->rq.rsv_sge;
@@ -675,7 +664,7 @@ static int set_kernel_sq_size(struct hns_roce_dev *hr_dev,
 	int size;
 	int ret;
 
-	if (cap->max_send_wr  > hr_dev->caps.max_wqes  ||
+	if (!cap->max_send_wr || cap->max_send_wr > hr_dev->caps.max_wqes ||
 	    cap->max_send_sge > hr_dev->caps.max_sq_sg ||
 	    cap->max_inline_data > hr_dev->caps.max_sq_inline) {
 		dev_err(dev, "SQ WR or sge or inline data error!\n");
@@ -684,10 +673,7 @@ static int set_kernel_sq_size(struct hns_roce_dev *hr_dev,
 
 	hr_qp->sq.wqe_shift = ilog2(hr_dev->caps.max_sq_desc_sz);
 
-	if (hr_dev->caps.min_wqes)
-		max_cnt = max(cap->max_send_wr, hr_dev->caps.min_wqes);
-	else
-		max_cnt = cap->max_send_wr;
+	max_cnt = max(cap->max_send_wr, hr_dev->caps.min_wqes);
 
 	hr_qp->sq.wqe_cnt = roundup_pow_of_two(max_cnt);
 	if ((u32)hr_qp->sq.wqe_cnt > hr_dev->caps.max_wqes) {
@@ -1473,10 +1459,9 @@ int hns_roce_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		goto out;
 
 	if (cur_state == new_state && cur_state == IB_QPS_RESET) {
-		if (hr_dev->caps.min_wqes) {
+		if (hr_dev->hw_rev == HNS_ROCE_HW_VER1) {
 			ret = -EPERM;
-			dev_err(dev, "cur_state=%d new_state=%d.\n", cur_state,
-				new_state);
+			dev_err(dev, "RST2RST state is not supported\n");
 		}
 
 		goto out;
