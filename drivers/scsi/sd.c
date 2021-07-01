@@ -3488,6 +3488,7 @@ static int sd_probe(struct device *dev)
 			sdp->host->hostt->rpm_autosuspend_delay);
 	}
 	device_add_disk(dev, gd, NULL);
+	blk_delete_region(disk_devt(sdkp->disk), SD_MINORS, sd_default_probe);
 	if (sdkp->capacity)
 		sd_dif_config_host(sdkp);
 

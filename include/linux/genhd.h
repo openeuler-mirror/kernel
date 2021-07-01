@@ -349,6 +349,8 @@ extern void blk_register_region(dev_t devt, unsigned long range,
 			int (*lock)(dev_t, void *),
 			void *data);
 extern void blk_unregister_region(dev_t devt, unsigned long range);
+extern void blk_delete_region(dev_t devt, unsigned long range,
+			struct kobject *(*probe)(dev_t, int *, void *));
 
 #define alloc_disk_node(minors, node_id)				\
 ({									\
