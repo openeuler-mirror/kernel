@@ -5499,41 +5499,6 @@ static int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 		hns_roce_unlock_cqs(send_cq, recv_cq);
 	spin_unlock_irqrestore(&hr_dev->qp_lock, flags);
 
-	hns_roce_qp_free(hr_dev, hr_qp);
-
-	/* Not special_QP, free their QPN */
-	if ((hr_qp->ibqp.qp_type == IB_QPT_RC) ||
-	    (hr_qp->ibqp.qp_type == IB_QPT_UC) ||
-	    (hr_qp->ibqp.qp_type == IB_QPT_UD))
-		hns_roce_release_range_qp(hr_dev, hr_qp->qpn, 1);
-
-	hns_roce_mtr_cleanup(hr_dev, &hr_qp->mtr);
-
-	if (is_user) {
-		if (hr_qp->sq.wqe_cnt && (hr_qp->sdb_en == 1))
-			hns_roce_db_unmap_user(
-				to_hr_ucontext(hr_qp->ibqp.uobject->context),
-				&hr_qp->sdb);
-
-		if (hr_qp->rq.wqe_cnt && (hr_qp->rdb_en == 1))
-			hns_roce_db_unmap_user(
-				to_hr_ucontext(hr_qp->ibqp.uobject->context),
-				&hr_qp->rdb);
-		ib_umem_release(hr_qp->umem);
-	} else {
-		kfree(hr_qp->sq.wrid);
-		kfree(hr_qp->rq.wrid);
-		hns_roce_buf_free(hr_dev, hr_qp->buff_size, &hr_qp->hr_buf);
-		if (hr_qp->rq.wqe_cnt && (hr_qp->rdb_en == 1))
-			hns_roce_free_db(hr_dev, &hr_qp->rdb);
-	}
-
-	if ((hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_RQ_INLINE) &&
-	     hr_qp->rq.wqe_cnt) {
-		kfree(hr_qp->rq_inl_buf.wqe_list[0].sg_list);
-		kfree(hr_qp->rq_inl_buf.wqe_list);
-	}
-
 	return ret;
 }
 
@@ -5553,7 +5518,7 @@ static int hns_roce_v2_destroy_qp(struct ib_qp *ibqp)
 		dev_err(hr_dev->dev, "Destroy qp 0x%06lx failed(%d)\n",
 			hr_qp->qpn, ret);
 
-	kfree(hr_qp);
+	hns_roce_qp_destroy(hr_dev, hr_qp);
 	return 0;
 }
 
