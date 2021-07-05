@@ -3,10 +3,12 @@
 #include <linux/spinlock.h>
 #include <linux/once.h>
 #include <linux/random.h>
+#include <linux/module.h>
 
 struct once_work {
 	struct work_struct work;
 	struct static_key_true *key;
+	struct module *module;
 };
 
 static void once_deferred(struct work_struct *w)
@@ -16,11 +18,24 @@ static void once_deferred(struct work_struct *w)
 	work = container_of(w, struct once_work, work);
 	BUG_ON(!static_key_enabled(work->key));
 	static_branch_disable(work->key);
+	module_put(work->module);
 	kfree(work);
+}
+
+static struct module *find_module_by_key(struct static_key_true *key)
+{
+	struct module *mod;
+
+	preempt_disable();
+	mod = __module_address((unsigned long)key);
+	preempt_enable();
+
+	return mod;
 }
 
 static void once_disable_jump(struct static_key_true *key)
 {
+	struct module *mod = find_module_by_key(key);
 	struct once_work *w;
 
 	w = kmalloc(sizeof(*w), GFP_ATOMIC);
@@ -29,6 +44,8 @@ static void once_disable_jump(struct static_key_true *key)
 
 	INIT_WORK(&w->work, once_deferred);
 	w->key = key;
+	w->module = mod;
+	__module_get(mod);
 	schedule_work(&w->work);
 }
 
