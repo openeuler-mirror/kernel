@@ -997,6 +997,34 @@ config HOTPLUG_CPU
 	  Say Y here to experiment with turning CPUs off and on.  CPUs
 	  can be controlled through /sys/devices/system/cpu.
 
+config ARM64_BOOTPARAM_HOTPLUG_CPU0
+	bool "Set default setting of arm64_cpu0_hotpluggable"
+	default n
+	depends on HOTPLUG_CPU
+	help
+	  Set whether default state of arm64_cpu0_hotpluggable is on or off.
+
+	  Say Y here to set arm64_cpu0_hotpluggable on by default. If this
+	  switch is turned on, there is no need to give arm64_cpu0_hotplug
+	  kernel parameter and arm64_cpu0_hotpluggable is on by default.
+
+	  Please note: there may be some CPU0 dependencies if you want
+	  to enable the CPU0 hotplug feature either by this switch or by
+	  arm64_cpu0_hotplug kernel parameter.
+
+	  For example:
+	  We found the following issue related to CPU0 dependency:
+	  1. echo 0 > /sys/devices/system/cpu/cpu0/online
+	  2. reboot
+	  MegaRAID Tri-Mode SAS3508 may block the reboot process.
+
+	  Please make sure the dependencies are under your control before
+	  you enable this feature.
+
+	  Say N if you don't want to enable CPU0 hotplug feature by default.
+	  You still can set arm64_cpu0_hotpluggable on at boot by kernel
+	  parameter arm64_cpu0_hotplug.
+
 config MPAM
 	bool "Support Memory Partitioning and Monitoring"
 	default n

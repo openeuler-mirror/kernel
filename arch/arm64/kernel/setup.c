@@ -54,6 +54,19 @@
 static int num_standard_resources;
 static struct resource *standard_resources;
 
+#ifdef CONFIG_ARM64_BOOTPARAM_HOTPLUG_CPU0
+static int arm64_cpu0_hotpluggable = 1;
+#else
+static int arm64_cpu0_hotpluggable;
+static int __init arm64_enable_cpu0_hotplug(char *str)
+{
+	arm64_cpu0_hotpluggable = 1;
+	return 1;
+}
+
+__setup("arm64_cpu0_hotplug", arm64_enable_cpu0_hotplug);
+#endif
+
 phys_addr_t __fdt_pointer __initdata;
 
 /*
@@ -395,8 +408,12 @@ static inline bool cpu_can_disable(unsigned int cpu)
 #ifdef CONFIG_HOTPLUG_CPU
 	const struct cpu_operations *ops = get_cpu_ops(cpu);
 
-	if (ops && ops->cpu_can_disable)
-		return ops->cpu_can_disable(cpu);
+	if (ops && ops->cpu_can_disable) {
+		if (cpu == 0)
+			return ops->cpu_can_disable(0) && arm64_cpu0_hotpluggable;
+		else
+			return ops->cpu_can_disable(cpu);
+	}
 #endif
 	return false;
 }

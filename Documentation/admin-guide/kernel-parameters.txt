@@ -3457,6 +3457,14 @@
 			If the dependencies are under your control, you can
 			turn on cpu0_hotplug.
 
+	arm64_cpu0_hotplug [ARM64] Turn on arm64_cpu0_hotpluggable when
+			CONFIG_ARM64_BOOTPARAM_HOTPLUG_CPU0 is off.
+			Some features depend on CPU0. Known dependency is:
+			MegaRAID Tri-Mode SAS3508 may block the reboot process
+			after offline CPU0.
+			If the dependencies are under your control, you can
+			turn on arm64_cpu0_hotplug.
+
 	nps_mtm_hs_ctr=	[KNL,ARC]
 			This parameter sets the maximum duration, in
 			cycles, each HW thread of the CTOP can run
