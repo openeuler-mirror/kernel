@@ -741,10 +741,6 @@ void __init alternative_instructions(void)
 	}
 #endif
 
-#if defined(CONFIG_NUMA_AWARE_SPINLOCKS)
-	cna_configure_spin_lock_slowpath();
-#endif
-
 	apply_paravirt(__parainstructions, __parainstructions_end);
 
 	restart_nmi();
