@@ -305,6 +305,49 @@ static enum oom_constraint constrained_alloc(struct oom_control *oc)
 	return CONSTRAINT_NONE;
 }
 
+#ifdef CONFIG_MEMCG_QOS
+/**
+ * We choose the task in low-priority memcg firstly. For the same state, we
+ * choose the task with the highest number of 'points'.
+ */
+static bool oom_next_task(struct task_struct *task, struct oom_control *oc,
+			unsigned long points)
+{
+	struct mem_cgroup *cur_memcg;
+	struct mem_cgroup *oc_memcg;
+
+
+	if (!points)
+		return true;
+
+	if (!oc->chosen)
+		return false;
+
+	oc_memcg = mem_cgroup_from_task(oc->chosen);
+	cur_memcg = mem_cgroup_from_task(task);
+
+	if (cur_memcg->memcg_priority == oc_memcg->memcg_priority) {
+		if (points < oc->chosen_points)
+			return true;
+		return false;
+	}
+	/* if oc is low-priority, so skip the task */
+	if (oc_memcg->memcg_priority)
+		return true;
+
+	return false;
+}
+#else
+static inline bool oom_next_task(struct task_struct *task,
+				struct oom_control *oc, unsigned long points)
+{
+	if (!points || points < oc->chosen_points)
+		return true;
+
+	return false;
+}
+#endif
+
 static int oom_evaluate_task(struct task_struct *task, void *arg)
 {
 	struct oom_control *oc = arg;
@@ -339,7 +382,7 @@ static int oom_evaluate_task(struct task_struct *task, void *arg)
 	}
 
 	points = oom_badness(task, oc->totalpages);
-	if (points == LONG_MIN || points < oc->chosen_points)
+	if (oom_next_task(task, oc, points))
 		goto next;
 
 select:
@@ -370,6 +413,10 @@ static void select_bad_process(struct oom_control *oc)
 	else {
 		struct task_struct *p;
 
+#ifdef CONFIG_MEMCG_QOS
+		if (memcg_low_priority_scan_tasks(oom_evaluate_task, oc))
+			return;
+#endif
 		rcu_read_lock();
 		for_each_process(p)
 			if (oom_evaluate_task(p, oc))
