@@ -3957,9 +3957,15 @@ static int mem_cgroup_move_charge_write(struct cgroup_subsys_state *css,
 #endif
 
 #ifdef CONFIG_MEMCG_QOS
+int sysctl_memcg_qos_stat = DISABLE_MEMCG_QOS;
+DEFINE_STATIC_KEY_FALSE(memcg_qos_stat_key);
+
 static void memcg_qos_init(struct mem_cgroup *memcg)
 {
 	struct mem_cgroup *parent = parent_mem_cgroup(memcg);
+
+	if (!static_branch_likely(&memcg_qos_stat_key))
+		return;
 
 	if (!parent)
 		return;
@@ -3971,6 +3977,9 @@ static void memcg_qos_init(struct mem_cgroup *memcg)
 static s64 memcg_qos_read(struct cgroup_subsys_state *css,
 				      struct cftype *cft)
 {
+	if (!static_branch_likely(&memcg_qos_stat_key))
+		return 0;
+
 	return mem_cgroup_from_css(css)->memcg_priority;
 }
 
@@ -3978,6 +3987,9 @@ static int memcg_qos_write(struct cgroup_subsys_state *css,
 				       struct cftype *cft, s64 val)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+
+	if (!static_branch_likely(&memcg_qos_stat_key))
+		return -EACCES;
 
 	if (val >= 0)
 		memcg->memcg_priority = 0;
@@ -4022,6 +4034,8 @@ bool memcg_low_priority_scan_tasks(int (*fn)(struct task_struct *, void *),
 	int ret = 0;
 	bool retry = true;
 
+	if (!static_branch_likely(&memcg_qos_stat_key))
+		return false;
 retry:
 	max = memcg_find_max_usage(last);
 	if (!max)
@@ -4058,6 +4072,9 @@ void memcg_print_bad_task(void *arg, int ret)
 {
 	struct oom_control *oc = arg;
 
+	if (!static_branch_likely(&memcg_qos_stat_key))
+		return;
+
 	if (!ret && oc->chosen) {
 		struct mem_cgroup *memcg;
 
@@ -4066,6 +4083,41 @@ void memcg_print_bad_task(void *arg, int ret)
 			pr_info("The bad task [%d:%s] is from low-priority memcg.\n",
 				oc->chosen->pid, oc->chosen->comm);
 	}
+}
+
+static void memcg_qos_reset(void)
+{
+	struct mem_cgroup *iter;
+	struct cgroup_subsys_state *css;
+
+	rcu_read_lock();
+	css_for_each_descendant_pre(css, &root_mem_cgroup->css) {
+		iter = mem_cgroup_from_css(css);
+		iter->memcg_priority = 0;
+	}
+	rcu_read_unlock();
+}
+
+int sysctl_memcg_qos_handler(struct ctl_table *table, int write,
+		void __user *buffer, size_t *length, loff_t *ppos)
+{
+	int ret;
+
+	ret = proc_dointvec_minmax(table, write, buffer, length, ppos);
+	if (ret)
+		return ret;
+	if (write) {
+		if (sysctl_memcg_qos_stat == ENABLE_MEMCG_QOS) {
+			static_branch_enable(&memcg_qos_stat_key);
+			pr_info("enable memcg priority.\n");
+		} else {
+			static_branch_disable(&memcg_qos_stat_key);
+			memcg_qos_reset();
+			pr_info("disable memcg priority.\n");
+		}
+	}
+
+	return ret;
 }
 #endif
 
