@@ -316,6 +316,8 @@ static bool oom_next_task(struct task_struct *task, struct oom_control *oc,
 	struct mem_cgroup *cur_memcg;
 	struct mem_cgroup *oc_memcg;
 
+	if (!static_branch_likely(&memcg_qos_stat_key))
+		return !points || points < oc->chosen_points;
 
 	if (!points)
 		return true;
@@ -341,10 +343,7 @@ static bool oom_next_task(struct task_struct *task, struct oom_control *oc,
 static inline bool oom_next_task(struct task_struct *task,
 				struct oom_control *oc, unsigned long points)
 {
-	if (!points || points < oc->chosen_points)
-		return true;
-
-	return false;
+	return !points || points < oc->chosen_points;
 }
 #endif
 
