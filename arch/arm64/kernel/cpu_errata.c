@@ -13,6 +13,11 @@
 #include <asm/cpufeature.h>
 #include <asm/kvm_asm.h>
 #include <asm/smp_plat.h>
+#ifdef CONFIG_HISILICON_ERRATUM_HIP08_RU_PREFETCH
+#include <asm/ptrace.h>
+#include <asm/sysreg.h>
+#include <linux/smp.h>
+#endif
 
 static bool __maybe_unused
 is_affected_midr_range(const struct arm64_cpu_capabilities *entry, int scope)
@@ -122,6 +127,48 @@ cpu_enable_cache_maint_trap(const struct arm64_cpu_capabilities *__unused)
 {
 	sysreg_clear_set(sctlr_el1, SCTLR_EL1_UCI, 0);
 }
+
+#ifdef CONFIG_HISILICON_ERRATUM_HIP08_RU_PREFETCH
+# ifdef CONFIG_HISILICON_HIP08_RU_PREFETCH_DEFAULT_OFF
+static bool readunique_prefetch_enabled;
+# else
+static bool readunique_prefetch_enabled = true;
+# endif
+static int __init readunique_prefetch_switch(char *data)
+{
+	if (!data)
+		return -EINVAL;
+
+	if (strcmp(data, "off") == 0)
+		readunique_prefetch_enabled = false;
+	else if (strcmp(data, "on") == 0)
+		readunique_prefetch_enabled = true;
+	else
+		return -EINVAL;
+
+	return 0;
+}
+early_param("readunique_prefetch", readunique_prefetch_switch);
+
+static bool
+should_disable_hisi_hip08_ru_prefetch(const struct arm64_cpu_capabilities *entry, int unused)
+{
+	u64 el;
+
+	if (readunique_prefetch_enabled)
+		return false;
+
+	el = read_sysreg(CurrentEL);
+	return el == CurrentEL_EL2;
+}
+
+#define CTLR_HISI_HIP08_RU_PREFETCH    (1L << 40)
+static void __maybe_unused
+hisi_hip08_ru_prefetch_disable(const struct arm64_cpu_capabilities *__unused)
+{
+	sysreg_clear_set(S3_1_c15_c6_4, 0, CTLR_HISI_HIP08_RU_PREFETCH);
+}
+#endif
 
 #define CAP_MIDR_RANGE(model, v_min, r_min, v_max, r_max)	\
 	.matches = is_affected_midr_range,			\
@@ -533,6 +580,15 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		ERRATA_MIDR_RANGE(MIDR_CORTEX_A77,
 				  0, 0,
 				  1, 0),
+	},
+#endif
+#ifdef CONFIG_HISILICON_ERRATUM_HIP08_RU_PREFETCH
+	{
+		.desc = "HiSilicon HIP08 Cache Readunique Prefetch Disable",
+		.capability = ARM64_WORKAROUND_HISI_HIP08_RU_PREFETCH,
+		ERRATA_MIDR_ALL_VERSIONS(MIDR_HISI_TSV110),
+		.matches = should_disable_hisi_hip08_ru_prefetch,
+		.cpu_enable = hisi_hip08_ru_prefetch_disable,
 	},
 #endif
 	{

@@ -820,6 +820,24 @@ config SOCIONEXT_SYNQUACER_PREITS
 
 	  If unsure, say Y.
 
+config HISILICON_ERRATUM_HIP08_RU_PREFETCH
+	bool "HIP08 RU: HiSilicon HIP08 cache readunique might cause performance drop"
+	default y
+	help
+	  The HiSilicon HIP08 cache readunique might compromise performance,
+	  use cmdline "readunique_prefetch_disable" to disable RU prefetch.
+
+	  If unsure, say Y.
+
+config HISILICON_HIP08_RU_PREFETCH_DEFAULT_OFF
+	bool "HIP08 RU: disable HiSilicon HIP08 cache readunique by default"
+	depends on HISILICON_ERRATUM_HIP08_RU_PREFETCH
+	default n
+	help
+	  Disable HiSilicon HIP08 cache readunique by default.
+
+	  If unsure, say N.
+
 endmenu
 
 
