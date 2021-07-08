@@ -86,7 +86,7 @@ BuildRequires: audit-libs-devel
 BuildRequires: pciutils-devel gettext
 BuildRequires: rpm-build, elfutils
 BuildRequires: numactl-devel python3-devel glibc-static python3-docutils
-BuildRequires: perl-generators perl(Carp) libunwind-devel gtk2-devel libbabeltrace-devel java-1.8.0-openjdk
+BuildRequires: perl-generators perl(Carp) libunwind-devel gtk2-devel libbabeltrace-devel java-1.8.0-openjdk perl-devel
 AutoReq: no
 AutoProv: yes
 
@@ -105,7 +105,7 @@ ExclusiveArch: noarch aarch64 i686 x86_64
 ExclusiveOS: Linux
 
 %if %{with_perf}
-BuildRequires: flex xz-devel libzstd-devel 
+BuildRequires: flex xz-devel libzstd-devel
 BuildRequires: java-devel
 %endif
 
@@ -719,7 +719,7 @@ fi
 %{_sbindir}/new-kernel-pkg --package kernel --rpmposttrans %{KernelVer} || exit $?
 if [ `uname -i` == "aarch64" ] &&
         [ -f /boot/EFI/grub2/grub.cfg ]; then
-	/usr/bin/sh %{_sbindir}/mkgrub-menu-%{devel_release}.sh %{version}-%{devel_release}.aarch64  /boot/EFI/grub2/grub.cfg  update  
+	/usr/bin/sh %{_sbindir}/mkgrub-menu-%{devel_release}.sh %{version}-%{devel_release}.aarch64  /boot/EFI/grub2/grub.cfg  update
 fi
 if [ -x %{_sbindir}/weak-modules ]
 then
