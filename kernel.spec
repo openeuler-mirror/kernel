@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0095
+Release: %{hulkrelease}.0096
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -84,7 +84,7 @@ BuildRequires: numactl-devel python3-devel glibc-static python3-docutils
 BuildRequires: perl-generators perl(Carp) libunwind-devel gtk2-devel
 %if 0%{?with_perf}
 # libbabeltrace-devel >= 1.3.0
-BuildRequires: libbabeltrace-devel java-1.8.0-openjdk-devel
+BuildRequires: libbabeltrace-devel java-1.8.0-openjdk-devel perl-devel
 %endif
 AutoReq: no
 AutoProv: yes
@@ -817,7 +817,8 @@ fi
 %endif
 
 %changelog
-
+* Thu July 8 2021 Senlin Xia <xiasenlin1@huawei.com> - 4.19.90-2106.3.0.0096
+- add buildrequire: perl-devel for with_perf
 
 * Thu Jun 17 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2106.3.0.0095
 - cpuidle: fix container_of err in cpuidle_device and cpuidle_driver
