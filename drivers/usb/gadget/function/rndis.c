@@ -506,6 +506,10 @@ static int gen_ndis_set_resp(struct rndis_params *params, u32 OID,
 
 	switch (OID) {
 	case RNDIS_OID_GEN_CURRENT_PACKET_FILTER:
+		if (buf_len < 2) {
+			pr_err("%s:Not support for buf_len < 2\n", __func__);
+			break;
+		}
 
 		/* these NDIS_PACKET_TYPE_* bitflags are shared with
 		 * cdc_filter; it's not RNDIS-specific
@@ -592,6 +596,7 @@ static int rndis_query_response(struct rndis_params *params,
 				rndis_query_msg_type *buf)
 {
 	rndis_query_cmplt_type *resp;
+	u32 BufOffset, BufLength;
 	rndis_resp_t *r;
 
 	/* pr_debug("%s: OID = %08X\n", __func__, cpu_to_le32(buf->OID)); */
@@ -612,12 +617,25 @@ static int rndis_query_response(struct rndis_params *params,
 
 	resp->MessageType = cpu_to_le32(RNDIS_MSG_QUERY_C);
 	resp->RequestID = buf->RequestID; /* Still LE in msg buffer */
+	BufOffset = le32_to_cpu(buf->InformationBufferOffset);
+	BufLength = le32_to_cpu(buf->InformationBufferLength);
+
+	/*
+	 * If the address of the buf to be accessed exceeds the valid
+	 * range of the buf, then return RNDIS_STATUS_NOT_SUPPORTED.
+	 */
+	if (8 + BufOffset + BufLength >= USB_COMP_EP0_BUFSIZ) {
+		resp->Status = cpu_to_le32(RNDIS_STATUS_NOT_SUPPORTED);
+		resp->MessageLength = cpu_to_le32(sizeof(*resp));
+		resp->InformationBufferLength = cpu_to_le32(0);
+		resp->InformationBufferOffset = cpu_to_le32(0);
+		params->resp_avail(params->v);
+		return 0;
+	}
 
 	if (gen_ndis_query_resp(params, le32_to_cpu(buf->OID),
-			le32_to_cpu(buf->InformationBufferOffset)
-					+ 8 + (u8 *)buf,
-			le32_to_cpu(buf->InformationBufferLength),
-			r)) {
+				BufOffset + 8 + (u8 *)buf, BufLength,
+				r)) {
 		/* OID not supported */
 		resp->Status = cpu_to_le32(RNDIS_STATUS_NOT_SUPPORTED);
 		resp->MessageLength = cpu_to_le32(sizeof *resp);
@@ -660,6 +678,17 @@ static int rndis_set_response(struct rndis_params *params,
 	resp->MessageType = cpu_to_le32(RNDIS_MSG_SET_C);
 	resp->MessageLength = cpu_to_le32(16);
 	resp->RequestID = buf->RequestID; /* Still LE in msg buffer */
+
+	/*
+	 * If the address of the buf to be accessed exceeds the valid
+	 * range of the buf, then return RNDIS_STATUS_NOT_SUPPORTED.
+	 */
+	if (8 + BufOffset + BufLength >= USB_COMP_EP0_BUFSIZ) {
+		resp->Status = cpu_to_le32(RNDIS_STATUS_NOT_SUPPORTED);
+		params->resp_avail(params->v);
+		return 0;
+	}
+
 	if (gen_ndis_set_resp(params, le32_to_cpu(buf->OID),
 			((u8 *)buf) + 8 + BufOffset, BufLength, r))
 		resp->Status = cpu_to_le32(RNDIS_STATUS_NOT_SUPPORTED);
