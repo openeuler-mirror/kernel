@@ -1372,17 +1372,15 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 			desc_ret = le16_to_cpu(desc[handle].retval);
 			if (unlikely(desc_ret != CMD_EXEC_SUCCESS))
 				ret = -EIO;
-			priv->cmq.last_status = desc_ret;
+
 			ntc++;
 			handle++;
 			if (ntc == csq->desc_num)
 				ntc = 0;
 		}
-	}
-
-	if (!complete)
+	} else {
 		ret = -EAGAIN;
-
+	}
 	/* clean the command send queue */
 	handle = hns_roce_cmq_csq_clean(hr_dev);
 	if (handle != num)
