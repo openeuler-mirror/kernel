@@ -105,6 +105,8 @@ typedef struct jbd2_journal_handle handle_t;	/* Atomic operation type */
  * This is an opaque datatype.
  **/
 typedef struct journal_s	journal_t;	/* Journal control structure */
+
+typedef struct journal_wrapper_s journal_wrapper_t;
 #endif
 
 /*
@@ -781,11 +783,6 @@ struct journal_s
 	unsigned long		j_flags;
 
 	/**
-	 * @j_atomic_flags: Atomic journaling state flags.
-	 */
-	unsigned long		j_atomic_flags;
-
-	/**
 	 * @j_errno:
 	 *
 	 * Is there an outstanding uncleared error on the journal (from a prior
@@ -1197,6 +1194,22 @@ struct journal_s
 	 */
 	struct lockdep_map	j_trans_commit_map;
 #endif
+};
+
+/**
+ * struct journal_wrapper_s - The wrapper of journal_s to fix KABI.
+ */
+struct journal_wrapper_s
+{
+	/**
+	 * @jw_journal: real journal.
+	 */
+	journal_t		jw_journal;
+
+	/**
+	 * @j_atomic_flags: Atomic journaling state flags.
+	 */
+	unsigned long		j_atomic_flags;
 };
 
 #define jbd2_might_wait_for_commit(j) \

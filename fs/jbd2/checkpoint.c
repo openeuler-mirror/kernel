@@ -562,6 +562,7 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 	struct transaction_chp_stats_s *stats;
 	transaction_t *transaction;
 	journal_t *journal;
+	journal_wrapper_t *journal_wrapper;
 	struct buffer_head *bh = jh2bh(jh);
 
 	JBUFFER_TRACE(jh, "entry");
@@ -572,6 +573,8 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 		return 0;
 	}
 	journal = transaction->t_journal;
+	journal_wrapper = container_of(journal, journal_wrapper_t,
+				       jw_journal);
 
 	JBUFFER_TRACE(jh, "removing from transaction");
 
@@ -583,7 +586,7 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 	 * journal here and we abort the journal later from a better context.
 	 */
 	if (buffer_write_io_error(bh))
-		set_bit(JBD2_CHECKPOINT_IO_ERROR, &journal->j_atomic_flags);
+		set_bit(JBD2_CHECKPOINT_IO_ERROR, &journal_wrapper->j_atomic_flags);
 
 	__buffer_unlink(jh);
 	jh->b_cp_transaction = NULL;
