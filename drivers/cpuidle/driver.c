@@ -259,6 +259,7 @@ void haltpoll_switch_governor(struct cpuidle_driver *drv)
 		mutex_unlock(&cpuidle_lock);
 	}
 }
+EXPORT_SYMBOL_GPL(haltpoll_switch_governor);
 
 /**
  * cpuidle_register_driver - registers a driver
