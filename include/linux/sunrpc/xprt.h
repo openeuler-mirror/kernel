@@ -200,8 +200,12 @@ struct rpc_xprt {
 	unsigned int		min_reqs;	/* min number of slots */
 	unsigned int		num_reqs;	/* total slots */
 	unsigned long		state;		/* transport state */
+#ifdef __GENKSYMS__
+	unsigned char		resvport   : 1; /* use a reserved port */
+#else
 	unsigned char		resvport   : 1,	/* use a reserved port */
 				reuseport  : 1; /* reuse port on reconnect */
+#endif
 	atomic_t		swapper;	/* we're swapping over this
 						   transport */
 	unsigned int		bind_index;	/* bind function index */
