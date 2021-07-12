@@ -115,6 +115,10 @@ int __weak arch_asym_cpu_priority(int cpu)
 
 #endif
 
+#ifdef CONFIG_QOS_SCHED
+static DEFINE_PER_CPU_SHARED_ALIGNED(struct list_head, qos_throttled_cfs_rq);
+#endif
+
 #ifdef CONFIG_CFS_BANDWIDTH
 /*
  * Amount of runtime to allocate from global (tg) to local (per-cfs_rq) pool
@@ -7034,6 +7038,124 @@ preempt:
 		set_last_buddy(se);
 }
 
+#ifdef CONFIG_QOS_SCHED
+static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
+{
+	struct rq *rq = rq_of(cfs_rq);
+	struct sched_entity *se;
+	long task_delta, idle_task_delta, dequeue = 1;
+
+	se = cfs_rq->tg->se[cpu_of(rq_of(cfs_rq))];
+
+	/* freeze hierarchy runnable averages while throttled */
+	rcu_read_lock();
+	walk_tg_tree_from(cfs_rq->tg, tg_throttle_down, tg_nop, (void *)rq);
+	rcu_read_unlock();
+
+	task_delta = cfs_rq->h_nr_running;
+	idle_task_delta = cfs_rq->idle_h_nr_running;
+	for_each_sched_entity(se) {
+		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
+		/* throttled entity or throttle-on-deactivate */
+		if (!se->on_rq)
+			break;
+
+		if (dequeue)
+			dequeue_entity(qcfs_rq, se, DEQUEUE_SLEEP);
+		qcfs_rq->h_nr_running -= task_delta;
+		qcfs_rq->idle_h_nr_running -= idle_task_delta;
+
+		if (qcfs_rq->load.weight)
+			dequeue = 0;
+	}
+
+	if (!se)
+		sub_nr_running(rq, task_delta);
+
+	cfs_rq->throttled = 1;
+	cfs_rq->throttled_clock = rq_clock(rq);
+
+	list_add(&cfs_rq->throttled_list, &per_cpu(qos_throttled_cfs_rq, cpu_of(rq)));
+}
+
+static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
+{
+	struct rq *rq = rq_of(cfs_rq);
+	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
+	struct sched_entity *se;
+	int enqueue = 1;
+	long task_delta, idle_task_delta;
+
+	se = cfs_rq->tg->se[cpu_of(rq)];
+
+	cfs_rq->throttled = 0;
+
+	update_rq_clock(rq);
+
+	cfs_b->throttled_time += rq_clock(rq) - cfs_rq->throttled_clock;
+	list_del_init(&cfs_rq->throttled_list);
+
+	/* update hierarchical throttle state */
+	walk_tg_tree_from(cfs_rq->tg, tg_nop, tg_unthrottle_up, (void *)rq);
+
+	if (!cfs_rq->load.weight)
+		return;
+
+	task_delta = cfs_rq->h_nr_running;
+	idle_task_delta = cfs_rq->idle_h_nr_running;
+	for_each_sched_entity(se) {
+		if (se->on_rq)
+			enqueue = 0;
+
+		cfs_rq = cfs_rq_of(se);
+		if (enqueue)
+			enqueue_entity(cfs_rq, se, ENQUEUE_WAKEUP);
+		cfs_rq->h_nr_running += task_delta;
+		cfs_rq->idle_h_nr_running += idle_task_delta;
+
+		if (cfs_rq_throttled(cfs_rq))
+			break;
+	}
+
+	assert_list_leaf_cfs_rq(rq);
+
+	if (!se)
+		add_nr_running(rq, task_delta);
+
+	/* Determine whether we need to wake up potentially idle CPU: */
+	if (rq->curr == rq->idle && rq->cfs.nr_running)
+		resched_curr(rq);
+}
+
+static int unthrottle_qos_cfs_rqs(int cpu)
+{
+	struct cfs_rq *cfs_rq, *tmp_rq;
+	int res = 0;
+
+	list_for_each_entry_safe(cfs_rq, tmp_rq, &per_cpu(qos_throttled_cfs_rq, cpu),
+				throttled_list) {
+		if (cfs_rq_throttled(cfs_rq)) {
+			unthrottle_qos_cfs_rq(cfs_rq);
+			res++;
+		}
+	}
+
+	return res;
+}
+
+static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
+{
+	if (unlikely(cfs_rq && cfs_rq->tg->qos_level < 0 &&
+		     !sched_idle_cpu(smp_processor_id()) &&
+		     cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running)) {
+		throttle_qos_cfs_rq(cfs_rq);
+		return true;
+	}
+
+	return false;
+}
+#endif
+
 struct task_struct *
 pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
@@ -7091,6 +7213,16 @@ again:
 
 		se = pick_next_entity(cfs_rq, curr);
 		cfs_rq = group_cfs_rq(se);
+#ifdef CONFIG_QOS_SCHED
+		if (check_qos_cfs_rq(cfs_rq)) {
+			cfs_rq = &rq->cfs;
+			WARN(cfs_rq->nr_running == 0,
+			    "rq->nr_running=%u, cfs_rq->idle_h_nr_running=%u\n",
+			    rq->nr_running, cfs_rq->idle_h_nr_running);
+			if (unlikely(!cfs_rq->nr_running))
+				return NULL;
+		}
+#endif
 	} while (cfs_rq);
 
 	p = task_of(se);
@@ -7169,6 +7301,12 @@ idle:
 	if (new_tasks > 0)
 		goto again;
 
+#ifdef CONFIG_QOS_SCHED
+	if (unthrottle_qos_cfs_rqs(cpu_of(rq))) {
+		rq->idle_stamp = 0;
+		goto again;
+	}
+#endif
 	/*
 	 * rq is about to be idle, check if we need to update the
 	 * lost_idle_time of clock_pelt
@@ -11309,6 +11447,13 @@ void show_numa_stats(struct task_struct *p, struct seq_file *m)
 
 __init void init_sched_fair_class(void)
 {
+#ifdef CONFIG_QOS_SCHED
+	int i;
+
+	for_each_possible_cpu(i)
+		INIT_LIST_HEAD(&per_cpu(qos_throttled_cfs_rq, i));
+#endif
+
 #ifdef CONFIG_SMP
 	open_softirq(SCHED_SOFTIRQ, run_rebalance_domains);
 
