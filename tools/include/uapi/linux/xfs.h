@@ -6,6 +6,7 @@
 
 #define FMODE_RANDOM	(0x1000)
 #define FMODE_WILLNEED	(0x400000)
+#define FMODE_SPC_READAHEAD	(0x800000)
 
 struct xfs_writable_file {
 	const unsigned char *name;
