@@ -2091,4 +2091,8 @@ int sched_trace_rq_nr_running(struct rq *rq);
 
 const struct cpumask *sched_trace_rd_span(struct root_domain *rd);
 
+#ifdef CONFIG_QOS_SCHED
+void sched_move_offline_task(struct task_struct *p);
+#endif
+
 #endif

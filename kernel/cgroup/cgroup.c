@@ -2842,6 +2842,28 @@ void cgroup_procs_write_finish(struct task_struct *task, bool locked)
 			ss->post_attach();
 }
 
+#ifdef CONFIG_QOS_SCHED
+void cgroup_move_task_to_root(struct task_struct *tsk)
+{
+	struct css_set *css;
+	struct cgroup *cpu_cgrp;
+	struct cgroup *cpu_root_cgrp;
+
+	mutex_lock(&cgroup_mutex);
+	percpu_down_write(&cgroup_threadgroup_rwsem);
+
+	spin_lock_irq(&css_set_lock);
+	css = task_css_set(tsk);
+	cpu_cgrp = css->subsys[cpu_cgrp_id]->cgroup;
+	cpu_root_cgrp = &cpu_cgrp->root->cgrp;
+	spin_unlock_irq(&css_set_lock);
+
+	(void)cgroup_attach_task(cpu_root_cgrp, tsk, false);
+	percpu_up_write(&cgroup_threadgroup_rwsem);
+	mutex_unlock(&cgroup_mutex);
+}
+#endif
+
 static void cgroup_print_ss_mask(struct seq_file *seq, u16 ss_mask)
 {
 	struct cgroup_subsys *ss;

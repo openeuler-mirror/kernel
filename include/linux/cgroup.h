@@ -959,4 +959,8 @@ static inline void cgroup_bpf_put(struct cgroup *cgrp) {}
 
 #endif /* CONFIG_CGROUP_BPF */
 
+#ifdef CONFIG_QOS_SCHED
+void cgroup_move_task_to_root(struct task_struct *tsk);
+#endif
+
 #endif /* _LINUX_CGROUP_H */
