@@ -7451,6 +7451,38 @@ static void sched_change_qos_group(struct task_struct *tsk, struct task_group *t
 		__setscheduler(rq, tsk, &attr, 0);
 	}
 }
+
+struct offline_args {
+	struct work_struct work;
+	struct task_struct *p;
+};
+
+static void sched_move_work(struct work_struct *work)
+{
+	struct sched_param param = { .sched_priority = 0 };
+	struct offline_args *args = container_of(work, struct offline_args, work);
+
+	cgroup_move_task_to_root(args->p);
+	sched_setscheduler(args->p, SCHED_NORMAL, &param);
+	put_task_struct(args->p);
+	kfree(args);
+}
+
+void sched_move_offline_task(struct task_struct *p)
+{
+	struct offline_args *args;
+
+	if (unlikely(task_group(p)->qos_level != -1))
+		return;
+
+	args = kmalloc(sizeof(struct offline_args), GFP_ATOMIC);
+	if (args) {
+		get_task_struct(p);
+		args->p = p;
+		INIT_WORK(&args->work, sched_move_work);
+		queue_work(system_highpri_wq, &args->work);
+	}
+}
 #endif
 
 static inline void alloc_uclamp_sched_group(struct task_group *tg,
