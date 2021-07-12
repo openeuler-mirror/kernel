@@ -609,11 +609,11 @@ static inline unsigned long memcg_page_state_local(struct mem_cgroup *memcg,
 {
 	long x = 0;
 	int cpu;
-	struct mem_cgroup_extension *mgext;
+	struct mem_cgroup_extension *memcg_ext;
 
-	mgext = to_memcg_ext(memcg);
+	memcg_ext = to_memcg_ext(memcg);
 	for_each_possible_cpu(cpu)
-		x += per_cpu(mgext->vmstats_local->count[idx], cpu);
+		x += per_cpu(memcg_ext->vmstats_local->count[idx], cpu);
 #ifdef CONFIG_SMP
 	if (x < 0)
 		x = 0;
@@ -687,7 +687,7 @@ static inline unsigned long lruvec_page_state_local(struct lruvec *lruvec,
 						    enum node_stat_item idx)
 {
 	struct mem_cgroup_per_node *pn;
-	struct mem_cgroup_per_node_extension *pnext;
+	struct mem_cgroup_per_node_extension *pn_ext;
 	long x = 0;
 	int cpu;
 
@@ -695,9 +695,9 @@ static inline unsigned long lruvec_page_state_local(struct lruvec *lruvec,
 		return node_page_state(lruvec_pgdat(lruvec), idx);
 
 	pn = container_of(lruvec, struct mem_cgroup_per_node, lruvec);
-	pnext = to_mgpn_ext(pn);
+	pn_ext = to_mgpn_ext(pn);
 	for_each_possible_cpu(cpu)
-		x += per_cpu(pnext->lruvec_stat_local->count[idx], cpu);
+		x += per_cpu(pn_ext->lruvec_stat_local->count[idx], cpu);
 #ifdef CONFIG_SMP
 	if (x < 0)
 		x = 0;

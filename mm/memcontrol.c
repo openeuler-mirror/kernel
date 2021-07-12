@@ -698,14 +698,14 @@ void __mod_memcg_state(struct mem_cgroup *memcg, int idx, int val)
 	x = val + __this_cpu_read(memcg->stat_cpu->count[idx]);
 	if (unlikely(abs(x) > MEMCG_CHARGE_BATCH)) {
 		struct mem_cgroup *mi;
-		struct mem_cgroup_extension *mgext;
+		struct mem_cgroup_extension *memcg_ext;
 
 		/*
 		 * Batch local counters to keep them in sync with
 		 * the hierarchical ones.
 		 */
-		mgext = to_memcg_ext(memcg);
-		__this_cpu_add(mgext->vmstats_local->count[idx], x);
+		memcg_ext = to_memcg_ext(memcg);
+		__this_cpu_add(memcg_ext->vmstats_local->count[idx], x);
 		for (mi = memcg; mi; mi = parent_mem_cgroup(mi))
 			atomic_long_add(x, &mi->stat[idx]);
 		x = 0;
@@ -739,7 +739,7 @@ void __mod_lruvec_state(struct lruvec *lruvec, enum node_stat_item idx,
 {
 	pg_data_t *pgdat = lruvec_pgdat(lruvec);
 	struct mem_cgroup_per_node *pn;
-	struct mem_cgroup_per_node_extension *pnext;
+	struct mem_cgroup_per_node_extension *pn_ext;
 	struct mem_cgroup *memcg;
 	long x;
 
@@ -756,8 +756,8 @@ void __mod_lruvec_state(struct lruvec *lruvec, enum node_stat_item idx,
 	__mod_memcg_state(memcg, idx, val);
 
 	/* Update lruvec */
-	pnext = to_mgpn_ext(pn);
-	__this_cpu_add(pnext->lruvec_stat_local->count[idx], val);
+	pn_ext = to_mgpn_ext(pn);
+	__this_cpu_add(pn_ext->lruvec_stat_local->count[idx], val);
 
 	x = val + __this_cpu_read(pn->lruvec_stat_cpu->count[idx]);
 	if (unlikely(abs(x) > MEMCG_CHARGE_BATCH)) {
@@ -787,14 +787,14 @@ void __count_memcg_events(struct mem_cgroup *memcg, enum vm_event_item idx,
 	x = count + __this_cpu_read(memcg->stat_cpu->events[idx]);
 	if (unlikely(x > MEMCG_CHARGE_BATCH)) {
 		struct mem_cgroup *mi;
-		struct mem_cgroup_extension *mgext;
+		struct mem_cgroup_extension *memcg_ext;
 
 		/*
 		 * Batch local counters to keep them in sync with
 		 * the hierarchical ones.
 		 */
-		mgext = to_memcg_ext(memcg);
-		__this_cpu_add(mgext->vmstats_local->events[idx], x);
+		memcg_ext = to_memcg_ext(memcg);
+		__this_cpu_add(memcg_ext->vmstats_local->events[idx], x);
 		for (mi = memcg; mi; mi = parent_mem_cgroup(mi))
 			atomic_long_add(x, &mi->events[idx]);
 		x = 0;
@@ -811,11 +811,11 @@ static unsigned long memcg_events_local(struct mem_cgroup *memcg, int event)
 {
 	long x = 0;
 	int cpu;
-	struct mem_cgroup_extension *mgext;
+	struct mem_cgroup_extension *memcg_ext;
 
-	mgext = to_memcg_ext(memcg);
+	memcg_ext = to_memcg_ext(memcg);
 	for_each_possible_cpu(cpu)
-		x += per_cpu(mgext->vmstats_local->events[event], cpu);
+		x += per_cpu(memcg_ext->vmstats_local->events[event], cpu);
 	return x;
 }
 
@@ -4837,7 +4837,7 @@ struct mem_cgroup *mem_cgroup_from_id(unsigned short id)
 static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 {
 	struct mem_cgroup_per_node *pn;
-	struct mem_cgroup_per_node_extension *pnext;
+	struct mem_cgroup_per_node_extension *pn_ext;
 	int tmp = node;
 	/*
 	 * This routine is called against possible nodes.
@@ -4849,21 +4849,21 @@ static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 	 */
 	if (!node_state(node, N_NORMAL_MEMORY))
 		tmp = -1;
-	pn = kzalloc_node(sizeof(*pn), GFP_KERNEL, tmp);
+	pn_ext = kzalloc_node(sizeof(*pn_ext), GFP_KERNEL, tmp);
+	pn = &pn_ext->pn;
 	if (!pn)
 		return 1;
 
-	pnext = to_mgpn_ext(pn);
-	pnext->lruvec_stat_local = alloc_percpu(struct lruvec_stat);
-	if (!pnext->lruvec_stat_local) {
-		kfree(pnext);
+	pn_ext->lruvec_stat_local = alloc_percpu(struct lruvec_stat);
+	if (!pn_ext->lruvec_stat_local) {
+		kfree(pn_ext);
 		return 1;
 	}
 
 	pn->lruvec_stat_cpu = alloc_percpu(struct lruvec_stat);
 	if (!pn->lruvec_stat_cpu) {
-		free_percpu(pnext->lruvec_stat_local);
-		kfree(pn);
+		free_percpu(pn_ext->lruvec_stat_local);
+		kfree(pn_ext);
 		return 1;
 	}
 
@@ -4879,15 +4879,15 @@ static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 static void free_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 {
 	struct mem_cgroup_per_node *pn = memcg->nodeinfo[node];
-	struct mem_cgroup_per_node_extension *pnext;
+	struct mem_cgroup_per_node_extension *pn_ext;
 
 	if (!pn)
 		return;
 
+	pn_ext = to_mgpn_ext(pn);
 	free_percpu(pn->lruvec_stat_cpu);
-	pnext = to_mgpn_ext(pn);
-	free_percpu(pnext->lruvec_stat_local);
-	kfree(pn);
+	free_percpu(pn_ext->lruvec_stat_local);
+	kfree(pn_ext);
 }
 
 static void __mem_cgroup_free(struct mem_cgroup *memcg)
