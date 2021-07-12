@@ -949,6 +949,14 @@ menuconfig CGROUP_SCHED
 	  tasks.
 
 if CGROUP_SCHED
+config QOS_SCHED
+    bool "Qos task scheduling"
+    depends on CGROUP_SCHED
+    depends on CFS_BANDWIDTH
+    depends on X86
+
+    default n
+
 config FAIR_GROUP_SCHED
 	bool "Group scheduling for SCHED_OTHER"
 	depends on CGROUP_SCHED

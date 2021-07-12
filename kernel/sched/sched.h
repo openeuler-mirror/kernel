@@ -422,6 +422,10 @@ struct task_group {
 
 	struct cfs_bandwidth	cfs_bandwidth;
 
+#ifdef CONFIG_QOS_SCHED
+	long qos_level;
+#endif
+
 #ifdef CONFIG_UCLAMP_TASK_GROUP
 	/* The two decimal precision [%] value requested from user-space */
 	unsigned int		uclamp_pct[UCLAMP_CNT];
