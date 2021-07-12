@@ -5,7 +5,7 @@
 #include <linux/types.h>
 
 #define FMODE_RANDOM	(0x1000)
-#define FMODE_WILLNEED	(0x40000000)
+#define FMODE_WILLNEED	(0x400000)
 
 struct xfs_writable_file {
 	const unsigned char *name;

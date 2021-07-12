@@ -160,6 +160,12 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 /* File is stream-like */
 #define FMODE_STREAM		((__force fmode_t)0x200000)
 
+/* File will try to read head of the file into pagecache */
+#define FMODE_WILLNEED		((__force fmode_t)0x400000)
+
+/* File will do specail readahead */
+#define FMODE_SPC_READAHEAD	((__force fmode_t)0x800000)
+
 /* File was opened by fanotify and shouldn't generate fanotify events */
 #define FMODE_NONOTIFY		((__force fmode_t)0x4000000)
 
@@ -168,9 +174,6 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 
 /* File does not contribute to nr_files count */
 #define FMODE_NOACCOUNT	((__force fmode_t)0x20000000)
-
-/* File will try to read head of the file into pagecache */
-#define FMODE_WILLNEED		((__force fmode_t)0x40000000)
 
 /*
  * Flag for rw_copy_check_uvector and compat_rw_copy_check_uvector

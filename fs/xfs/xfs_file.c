@@ -35,6 +35,8 @@
 #include <linux/mman.h>
 #include <linux/fadvise.h>
 
+#define FMODE_MASK     (FMODE_RANDOM | FMODE_WILLNEED | FMODE_SPC_READAHEAD)
+
 static const struct vm_operations_struct xfs_file_vm_ops;
 
 int
@@ -238,15 +240,17 @@ xfs_file_buffered_aio_read(
 	struct xfs_writable_file file;
 
 	file.name = file_dentry(filp)->d_name.name;
+	file.clear_f_mode = 0;
 	file.f_mode = 0;
 	file.i_size = file_inode(filp)->i_size;
-	file.prev_pos = filp->f_ra.prev_pos;
+	file.prev_pos = filp->f_ra.prev_pos >> PAGE_SHIFT;
+	file.pos = iocb->ki_pos >> PAGE_SHIFT;
 
 	trace_xfs_file_buffered_read(ip, iov_iter_count(to), iocb->ki_pos);
 	trace_xfs_file_read(&file, ip, iov_iter_count(to), iocb->ki_pos);
 
-	if (file.f_mode)
-		filp->f_mode |= file.f_mode;
+	filp->f_mode |= file.f_mode & FMODE_MASK;
+	filp->f_mode &= ~(file.clear_f_mode & FMODE_MASK);
 
 	if (iocb->ki_flags & IOCB_NOWAIT) {
 		if (!xfs_ilock_nowait(ip, XFS_IOLOCK_SHARED))
