@@ -18,16 +18,21 @@
 
 int main(int argc, char *argv[])
 {
-	const char *file = "./test_set_xfs_file.o";
+	const char *set_file = "./test_set_xfs_file.o";
+	const char *clear_file = "./test_clear_xfs_file.o";
+	const char *file = set_file;
 	struct bpf_object *obj;
 	int efd, err, prog_fd;
 	int delay = SLEEP_SECS;
 	char *endptr, *str;
 
-	if (argc == 2) {
-		str = argv[1];
+	if (argc == 3) {
+		str = argv[2];
 		delay = strtol(str, &endptr, 10);
 	}
+
+	if (argc >= 2 && !strcmp("clear", argv[1]))
+		file = clear_file;
 
 	err = bpf_prog_load(file, BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE, &obj,
 			&prog_fd);
