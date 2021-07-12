@@ -25,6 +25,9 @@
 #include "internal.h"
 
 #define READAHEAD_FIRST_SIZE	(2 * 1024 * 1024)
+#define READAHEAD_MIN_SIZE	(2 * 1024 * 1024)
+#define READAHEAD_ASYNC_RATIO	2
+#define FILE_READAHEAD_TIMES	4
 /*
  * Initialise a struct file's readahead state.  Assumes that the caller has
  * memset *ra to zero.
@@ -563,6 +566,30 @@ void page_cache_sync_readahead(struct address_space *mapping,
 }
 EXPORT_SYMBOL_GPL(page_cache_sync_readahead);
 
+static void do_special_async_readahead(struct address_space *mapping,
+			struct file_ra_state *ra, struct file *filp)
+{
+	loff_t isize = i_size_read(file_inode(filp));
+	unsigned long nrpages = DIV_ROUND_UP(isize, PAGE_SIZE);
+	unsigned long size = DIV_ROUND_UP(nrpages, FILE_READAHEAD_TIMES);
+	unsigned int each_ra_size = READAHEAD_MIN_SIZE / PAGE_SIZE;
+	unsigned long set_page_readahead = size / READAHEAD_ASYNC_RATIO;
+
+	while (size > 0) {
+		if (ra->start + ra->size > nrpages)
+			break;
+		ra->start += ra->size;
+		ra->size = each_ra_size;
+		/* SetPageReadahead to do next async readahead */
+		if (size == set_page_readahead)
+			ra->async_size = ra->size;
+		else
+			ra->async_size = 0;
+		ra_submit(ra, mapping, filp);
+		size -= min_t(unsigned long, size, each_ra_size);
+	}
+}
+
 /**
  * page_cache_async_readahead - file readahead for marked pages
  * @mapping: address_space which holds the pagecache and I/O vectors
@@ -604,6 +631,11 @@ page_cache_async_readahead(struct address_space *mapping,
 
 	if (blk_cgroup_congested())
 		return;
+
+	if (filp && (filp->f_mode & FMODE_SPC_READAHEAD)) {
+		do_special_async_readahead(mapping, ra, filp);
+		return;
+	}
 
 	/* do read-ahead */
 	ondemand_readahead(mapping, ra, filp, true, offset, req_size);
