@@ -1,0 +1,13 @@
+#
+# Netswift driver configuration
+#
+
+config TXGBE
+	tristate "Netswift 10G Network Interface Card"
+	default n
+	depends on PCI_MSI && NUMA && PCI_IOV && DCB
+	help
+	  This driver supports Netswift 10G Ethernet cards.
+	  To compile this driver as part of the kernel, choose Y here.
+	  If unsure, choose N.
+	  The default is N.
