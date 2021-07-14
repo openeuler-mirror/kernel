@@ -70,7 +70,7 @@ BuildRequires: libcap-devel, libcap-ng-devel, rsync
 BuildRequires: gcc >= 3.4.2, binutils >= 2.12
 BuildRequires: hostname, net-tools, bc
 BuildRequires: xmlto, asciidoc
-BuildRequires: openssl-devel
+BuildRequires: openssl-devel openssl
 BuildRequires: hmaccalc
 BuildRequires: ncurses-devel
 #BuildRequires: pesign >= 0.109-4
