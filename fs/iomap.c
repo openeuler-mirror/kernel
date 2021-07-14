@@ -649,7 +649,6 @@ __iomap_write_begin(struct inode *inode, loff_t pos, unsigned len,
 	loff_t block_start = pos & ~(block_size - 1);
 	loff_t block_end = (pos + len + block_size - 1) & ~(block_size - 1);
 	unsigned from = offset_in_page(pos), to = from + len, poff, plen;
-	int status = 0;
 
 	if (PageUptodate(page))
 		return 0;
@@ -668,14 +667,14 @@ __iomap_write_begin(struct inode *inode, loff_t pos, unsigned len,
 		if (iomap->type != IOMAP_MAPPED ||
 		    block_start >= i_size_read(inode)) {
 			zero_user_segments(page, poff, from, to, poff + plen);
-			iomap_set_range_uptodate(page, poff, plen);
-			continue;
+		} else {
+			int status = iomap_read_page_sync(block_start, page,
+					poff, plen, iomap);
+			if (status)
+				return status;
 		}
-		status = iomap_read_page_sync(block_start, page, poff, plen,
-				iomap);
-		if (status)
-			return status;
 
+		iomap_set_range_uptodate(page, poff, plen);
 	} while ((block_start += plen) < block_end);
 
 	return 0;
