@@ -12,7 +12,7 @@
 %global upstream_sublevel   0
 %global devel_release       5
 %global maintenance_release .0.0
-%global pkg_release         .14
+%global pkg_release         .15
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -869,6 +869,10 @@ fi
 %endif
 
 %changelog
+* Wed Jul 14 2021 Cheng Jian <cj.chengjian@huawei.com> - 5.10.0-5.0.0.15
+- add buildrequire: openssl for kernel build
+- add buildrequire: perl-devel for perf binary
+
 * Wed Jul 7 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.0.0.14
 - arm64: errata: enable HISILICON_ERRATUM_HIP08_RU_PREFETCH
 - arm64: errata: add option to disable cache readunique prefetch on HIP08
