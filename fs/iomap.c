@@ -626,18 +626,11 @@ iomap_write_failed(struct inode *inode, loff_t pos, unsigned len)
 }
 
 static int
-iomap_read_page_sync(struct inode *inode, loff_t block_start, struct page *page,
-		unsigned poff, unsigned plen, unsigned from, unsigned to,
-		struct iomap *iomap)
+iomap_read_page_sync(loff_t block_start, struct page *page, unsigned poff,
+		unsigned plen, struct iomap *iomap)
 {
 	struct bio_vec bvec;
 	struct bio bio;
-
-	if (iomap->type != IOMAP_MAPPED || block_start >= i_size_read(inode)) {
-		zero_user_segments(page, poff, from, to, poff + plen);
-		iomap_set_range_uptodate(page, poff, plen);
-		return 0;
-	}
 
 	bio_init(&bio, &bvec, 1);
 	bio.bi_opf = REQ_OP_READ;
@@ -667,17 +660,24 @@ __iomap_write_begin(struct inode *inode, loff_t pos, unsigned len,
 		if (plen == 0)
 			break;
 
-		if ((from > poff && from < poff + plen) ||
-		    (to > poff && to < poff + plen)) {
-			status = iomap_read_page_sync(inode, block_start, page,
-					poff, plen, from, to, iomap);
-			if (status)
-				break;
+		if ((from <= poff || from >= poff + plen) &&
+		    (to <= poff || to >= poff + plen))
+			continue;
+
+		if (iomap->type != IOMAP_MAPPED ||
+		    block_start >= i_size_read(inode)) {
+			zero_user_segments(page, poff, from, to, poff + plen);
+			iomap_set_range_uptodate(page, poff, plen);
+			continue;
 		}
+		status = iomap_read_page_sync(block_start, page, poff, plen,
+				iomap);
+		if (status)
+			return status;
 
 	} while ((block_start += plen) < block_end);
 
-	return status;
+	return 0;
 }
 
 static int
