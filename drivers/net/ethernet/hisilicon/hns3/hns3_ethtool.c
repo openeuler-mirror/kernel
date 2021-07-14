@@ -1107,9 +1107,9 @@ static int hns3_get_coalesce_per_queue(struct net_device *netdev, u32 queue,
 	rx_vector = priv->ring[queue_num + queue].tqp_vector;
 
 	cmd->use_adaptive_tx_coalesce =
-			tx_vector->tx_group.coal.gl_adapt_enable;
+			tx_vector->tx_group.coal.adapt_enable;
 	cmd->use_adaptive_rx_coalesce =
-			rx_vector->rx_group.coal.gl_adapt_enable;
+			rx_vector->rx_group.coal.adapt_enable;
 
 	cmd->tx_coalesce_usecs = tx_vector->tx_group.coal.int_gl;
 	cmd->rx_coalesce_usecs = rx_vector->rx_group.coal.int_gl;
@@ -1270,9 +1270,9 @@ static void hns3_set_coalesce_per_queue(struct net_device *netdev,
 	tx_vector = priv->ring[queue].tqp_vector;
 	rx_vector = priv->ring[queue_num + queue].tqp_vector;
 
-	tx_vector->tx_group.coal.gl_adapt_enable =
+	tx_vector->tx_group.coal.adapt_enable =
 				cmd->use_adaptive_tx_coalesce;
-	rx_vector->rx_group.coal.gl_adapt_enable =
+	rx_vector->rx_group.coal.adapt_enable =
 				cmd->use_adaptive_rx_coalesce;
 
 	tx_vector->tx_group.coal.int_gl = cmd->tx_coalesce_usecs;
