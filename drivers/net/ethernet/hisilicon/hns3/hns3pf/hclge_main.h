@@ -280,6 +280,7 @@ struct hclge_mac {
 
 struct hclge_hw {
 	void __iomem *io_base;
+	void __iomem *mem_base;
 	struct hclge_mac mac;
 	int num_vec;
 	struct hclge_cmq cmq;
