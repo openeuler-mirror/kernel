@@ -12,6 +12,7 @@
 #include <asm/types.h>
 
 /* Hyp Configuration Register (HCR) bits */
+#define HCR_TWEDEN	(UL(1) << 59)
 #define HCR_ATA		(UL(1) << 56)
 #define HCR_FWB		(UL(1) << 46)
 #define HCR_API		(UL(1) << 41)
@@ -55,6 +56,13 @@
 #define HCR_PTW		(UL(1) << 2)
 #define HCR_SWIO	(UL(1) << 1)
 #define HCR_VM		(UL(1) << 0)
+
+#ifdef CONFIG_ARM64_TWED
+#define HCR_TWEDEL_SHIFT	60
+#define HCR_TWEDEL_MAX		(UL(0xf))
+#define HCR_TWEDEL_MASK		(HCR_TWEDEL_MAX << HCR_TWEDEL_SHIFT)
+#define HCR_TWEDEL		(UL(1) << HCR_TWEDEL_SHIFT)
+#endif
 
 /*
  * The bits we set in HCR:
