@@ -69,7 +69,8 @@
 #define ARM64_HAS_MPAM				59
 #define ARM64_WORKAROUND_HISI_HIP08_RU_PREFETCH 60
 #define ARM64_CLEARPAGE_STNP			61
+#define ARM64_HAS_TWED				62
 
-#define ARM64_NCAPS				62
+#define ARM64_NCAPS				63
 
 #endif /* __ASM_CPUCAPS_H */
