@@ -73,6 +73,7 @@ struct vfio_iommu {
 	unsigned int		dma_avail;
 	uint64_t		pgsize_bitmap;
 	uint64_t		num_non_pinned_groups;
+	uint64_t		num_non_hwdbm_domains;
 	bool			v2;
 	bool			nesting;
 	bool			dirty_page_tracking;
@@ -84,6 +85,7 @@ struct vfio_domain {
 	struct list_head	group_list;
 	int			prot;		/* IOMMU_CACHE */
 	bool			fgsp;		/* Fine-grained super pages */
+	bool			iommu_hwdbm;	/* Hardware dirty management */
 };
 
 struct vfio_dma {
@@ -2189,6 +2191,26 @@ out_reattach:
 	return 1;
 }
 
+/*
+ * Called after a new group is added to the iommu_domain, or an old group is
+ * removed from the iommu_domain. Update the HWDBM status of vfio_domain and
+ * vfio_iommu.
+ */
+static void vfio_iommu_update_hwdbm(struct vfio_iommu *iommu,
+				    struct vfio_domain *domain,
+				    bool attach)
+{
+	bool old_hwdbm = domain->iommu_hwdbm;
+	bool new_hwdbm = iommu_support_dirty_log(domain->domain);
+
+	if (old_hwdbm && !new_hwdbm && attach) {
+		iommu->num_non_hwdbm_domains++;
+	} else if (!old_hwdbm && new_hwdbm && !attach) {
+		iommu->num_non_hwdbm_domains--;
+	}
+	domain->iommu_hwdbm = new_hwdbm;
+}
+
 static int vfio_iommu_type1_attach_group(void *iommu_data,
 					 struct iommu_group *iommu_group)
 {
@@ -2340,6 +2362,7 @@ static int vfio_iommu_type1_attach_group(void *iommu_data,
 			goto out_domain;
 		} else if (!ret) {
 			list_add(&group->next, &d->group_list);
+			vfio_iommu_update_hwdbm(iommu, d, true);
 			iommu_domain_free(domain->domain);
 			kfree(domain);
 			goto done;
@@ -2365,6 +2388,7 @@ static int vfio_iommu_type1_attach_group(void *iommu_data,
 
 	list_add(&domain->next, &iommu->domain_list);
 	vfio_update_pgsize_bitmap(iommu);
+	vfio_iommu_update_hwdbm(iommu, domain, true);
 done:
 	/* Delete the old one and insert new iova list */
 	vfio_iommu_iova_insert_copy(iommu, &iova_copy);
@@ -2554,6 +2578,7 @@ static void vfio_iommu_type1_detach_group(void *iommu_data,
 			group->sva_enabled = false;
 		}
 		vfio_iommu_detach_group(domain, group);
+		vfio_iommu_update_hwdbm(iommu, domain, false);
 		update_dirty_scope = !group->pinned_page_dirty_scope;
 		list_del(&group->next);
 		kfree(group);
