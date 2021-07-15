@@ -699,4 +699,12 @@ bool kvm_arm_vcpu_is_finalized(struct kvm_vcpu *vcpu);
 #define kvm_arm_vcpu_sve_finalized(vcpu) \
 	((vcpu)->arch.flags & KVM_ARM64_VCPU_SVE_FINALIZED)
 
+#ifdef CONFIG_ARM64_TWED
+#define use_twed() (has_twed() && twed_enable)
+extern bool twed_enable;
+extern unsigned int twedel;
+#else
+#define use_twed() (false)
+#endif
+
 #endif /* __ARM64_KVM_HOST_H__ */
