@@ -82,6 +82,14 @@ struct io_pgtable_cfg {
 	 *
 	 * IO_PGTABLE_QUIRK_ARM_TTBR1: (ARM LPAE format) Configure the table
 	 *	for use in the upper half of a split address space.
+	 *
+	 * IO_PGTABLE_QUIRK_ARM_HD: Support hardware management of dirty status.
+	 *
+	 * IO_PGTABLE_QUIRK_ARM_BBML1: ARM SMMU supports BBM Level 1 behavior
+	 *	when changing block size.
+	 *
+	 * IO_PGTABLE_QUIRK_ARM_BBML2: ARM SMMU supports BBM Level 2 behavior
+	 *	when changing block size.
 	 */
 	#define IO_PGTABLE_QUIRK_ARM_NS		BIT(0)
 	#define IO_PGTABLE_QUIRK_NO_PERMS	BIT(1)
@@ -89,6 +97,9 @@ struct io_pgtable_cfg {
 	#define IO_PGTABLE_QUIRK_ARM_MTK_EXT	BIT(3)
 	#define IO_PGTABLE_QUIRK_NON_STRICT	BIT(4)
 	#define IO_PGTABLE_QUIRK_ARM_TTBR1	BIT(5)
+	#define IO_PGTABLE_QUIRK_ARM_HD		BIT(6)
+	#define IO_PGTABLE_QUIRK_ARM_BBML1	BIT(7)
+	#define IO_PGTABLE_QUIRK_ARM_BBML2	BIT(8)
 	unsigned long			quirks;
 	unsigned long			pgsize_bitmap;
 	unsigned int			ias;
