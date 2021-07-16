@@ -291,6 +291,18 @@ static void do_cpuid_1_ent(struct kvm_cpuid_entry2 *entry, u32 function,
 
 	cpuid_count(entry->function, entry->index,
 		    &entry->eax, &entry->ebx, &entry->ecx, &entry->edx);
+
+	switch (function) {
+	case 2:
+		entry->flags |= KVM_CPUID_FLAG_STATEFUL_FUNC;
+		break;
+	case 4:
+	case 7:
+	case 0xb:
+	case 0xd:
+		entry->flags |= KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
+		break;
+	}
 }
 
 static int __do_cpuid_func_emulated(struct kvm_cpuid_entry2 *entry,
@@ -493,14 +505,12 @@ static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
 	case 2: {
 		int t, times = entry->eax & 0xff;
 
-		entry->flags |= KVM_CPUID_FLAG_STATEFUL_FUNC;
 		entry->flags |= KVM_CPUID_FLAG_STATE_READ_NEXT;
 		for (t = 1; t < times; ++t) {
 			if (*nent >= maxnent)
 				goto out;
 
 			do_cpuid_1_ent(&entry[t], function, 0);
-			entry[t].flags |= KVM_CPUID_FLAG_STATEFUL_FUNC;
 			++*nent;
 		}
 		break;
@@ -509,7 +519,6 @@ static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
 	case 4: {
 		int i, cache_type;
 
-		entry->flags |= KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
 		/* read more entries until cache_type is zero */
 		for (i = 1; ; ++i) {
 			if (*nent >= maxnent)
@@ -519,8 +528,6 @@ static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
 			if (!cache_type)
 				break;
 			do_cpuid_1_ent(&entry[i], function, i);
-			entry[i].flags |=
-			       KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
 			++*nent;
 		}
 		break;
@@ -535,7 +542,6 @@ static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
 	case 7: {
 		int i;
 
-		entry->flags |= KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
 		for (i = 0; ; ) {
 			do_cpuid_7_mask(&entry[i], i);
 			if (i == entry->eax)
@@ -545,8 +551,6 @@ static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
 
 			++i;
 			do_cpuid_1_ent(&entry[i], function, i);
-			entry[i].flags |=
-			       KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
 			++*nent;
 		}
 		break;
@@ -586,7 +590,6 @@ static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
 	case 0xb: {
 		int i, level_type;
 
-		entry->flags |= KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
 		/* read more entries until level_type is zero */
 		for (i = 1; ; ++i) {
 			if (*nent >= maxnent)
@@ -596,8 +599,6 @@ static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
 			if (!level_type)
 				break;
 			do_cpuid_1_ent(&entry[i], function, i);
-			entry[i].flags |=
-			       KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
 			++*nent;
 		}
 		break;
@@ -610,7 +611,6 @@ static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
 		entry->ebx = xstate_required_size(supported, false);
 		entry->ecx = entry->ebx;
 		entry->edx &= supported >> 32;
-		entry->flags |= KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
 		if (!supported)
 			break;
 
@@ -636,8 +636,6 @@ static inline int __do_cpuid_func(struct kvm_cpuid_entry2 *entry, u32 function,
 			}
 			entry[i].ecx = 0;
 			entry[i].edx = 0;
-			entry[i].flags |=
-			       KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
 			++*nent;
 			++i;
 		}
