@@ -27,7 +27,7 @@
 #include <linux/sched/signal.h>
 #include <linux/module.h>
 
-#define FILES_MAX ULLONG_MAX
+#define FILES_MAX ULONG_MAX
 #define FILES_MAX_STR "max"
 
 static bool no_acct;
