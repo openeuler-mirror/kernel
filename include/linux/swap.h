@@ -54,6 +54,16 @@ static inline int current_is_kswapd(void)
  */
 
 /*
+ * Userswap entry type
+ */
+#ifdef CONFIG_USERSWAP
+#define SWP_USERSWAP_NUM 1
+#define SWP_USERSWAP_ENTRY (MAX_SWAPFILES+SWP_HWPOISON_NUM+SWP_MIGRATION_NUM+SWP_DEVICE_NUM)
+#else
+#define SWP_USERSWAP_NUM 0
+#endif
+
+/*
  * Unaddressable device memory support. See include/linux/hmm.h and
  * Documentation/vm/hmm.rst. Short description is we need struct pages for
  * device memory that is unaddressable (inaccessible) by CPU, so that we can
@@ -93,7 +103,7 @@ static inline int current_is_kswapd(void)
 
 #define MAX_SWAPFILES \
 	((1 << MAX_SWAPFILES_SHIFT) - SWP_DEVICE_NUM - \
-	SWP_MIGRATION_NUM - SWP_HWPOISON_NUM)
+	SWP_MIGRATION_NUM - SWP_HWPOISON_NUM - SWP_USERSWAP_NUM)
 
 /*
  * Magic header for a swap area. The first part of the union is
