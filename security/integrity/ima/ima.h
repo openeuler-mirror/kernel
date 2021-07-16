@@ -57,6 +57,10 @@ extern int ima_digest_list_pcr;
 extern bool ima_plus_standard_pcr;
 extern const char boot_aggregate_name[];
 extern int ima_digest_list_actions;
+#ifdef CONFIG_IMA_DIGEST_LIST
+extern size_t ima_digest_db_max_size __ro_after_init;
+extern size_t ima_digest_db_size;
+#endif
 
 /* IMA event related data */
 struct ima_event_data {

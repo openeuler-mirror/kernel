@@ -14,6 +14,9 @@
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+#define MIN_DB_SIZE (8 * 1024 * 1024)
+#define MAX_DB_SIZE (64 * 1024 * 1024)
+#define DEFAULT_DB_SIZE (CONFIG_IMA_DIGEST_DB_MEGABYTES * 1024 * 1024)
 
 #include <linux/vmalloc.h>
 #include <linux/module.h>
@@ -26,10 +29,30 @@
 #include "ima.h"
 #include "ima_digest_list.h"
 
+size_t ima_digest_db_max_size __ro_after_init = DEFAULT_DB_SIZE;
+size_t ima_digest_db_size;
+
 struct ima_h_table ima_digests_htable = {
 	.len = ATOMIC_LONG_INIT(0),
 	.queue[0 ... IMA_MEASURE_HTABLE_SIZE - 1] = HLIST_HEAD_INIT
 };
+
+static int __init digest_db_max_size_setup(char *str)
+{
+	int size;
+	char *retptr;
+
+	size = memparse(str, &retptr);
+	if (size < MIN_DB_SIZE || size > MAX_DB_SIZE || *retptr != '\0') {
+		pr_err("DB size should range from 8M to 64M\n");
+		return 0;
+	}
+
+	ima_digest_db_max_size = size;
+
+	return 1;
+}
+__setup("ima_digest_db_size=", digest_db_max_size_setup);
 
 static int __init digest_list_pcr_setup(char *str)
 {
