@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.194
-Release: %{hulkrelease}.0085
+Release: %{hulkrelease}.0086
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -83,7 +83,7 @@ BuildRequires: numactl-devel python3-devel glibc-static python3-docutils
 BuildRequires: perl-generators perl(Carp) libunwind-devel gtk2-devel
 %if 0%{?with_perf}
 # libbabeltrace-devel >= 1.3.0
-BuildRequires: libbabeltrace-devel java-1.8.0-openjdk-devel
+BuildRequires: libbabeltrace-devel java-1.8.0-openjdk-devel perl-devel
 %endif
 AutoReq: no
 AutoProv: yes
@@ -817,6 +817,9 @@ fi
 
 %changelog
 
+
+* Thu July 8 2021 Senlin Xia <xiasenlin1@huawei.com> - 4.19.90-2106.3.0.0096
+- add buildrequire: perl-devel for with_perf
 
 * Tue Jun 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.194-2106.1.0.0085
 - openeuler_defconfig: Enable ARCH_PHYTIUM and ARM_GIC_PHYTIUM_2500
