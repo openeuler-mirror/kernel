@@ -498,6 +498,21 @@ config MEMCG_QOS
 
 	  If unsure, say "n".
 
+config ETMEM_SCAN
+	tristate "module: etmem page scan for etmem support"
+        depends on MMU
+        depends on X86 || ARM64
+	help
+	 etmem page scan feature
+	 used to scan the virtual address of the target process
+
+config ETMEM_SWAP
+	tristate "module: etmem page swap for etmem support"
+	depends on MMU
+	depends on X86 || ARM64
+	help
+	 etmem page swap feature
+
 config CMA
 	bool "Contiguous Memory Allocator"
 	depends on MMU
