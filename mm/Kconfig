@@ -513,6 +513,15 @@ config ETMEM_SWAP
 	help
 	 etmem page swap feature
 
+config USERSWAP
+	bool "Enable User Swap"
+	depends on MMU && USERFAULTFD
+	depends on X86 || ARM64
+	default n
+	help
+	  Support for User Swap. This is based on userfaultfd. We can implement
+	  our own swapout and swapin functions in usersapce.
+
 config CMA
 	bool "Contiguous Memory Allocator"
 	depends on MMU
