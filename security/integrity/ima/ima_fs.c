@@ -319,6 +319,12 @@ static ssize_t ima_read_file(char *path, struct dentry *dentry)
 			rc = ima_parse_add_rule(p);
 		} else if (dentry == digest_list_data ||
 			   dentry == digest_list_data_del) {
+			/* Only check size when adding digest lists */
+			if (dentry == digest_list_data &&
+			    size > ima_digest_db_max_size - ima_digest_db_size) {
+				rc = -ENOMEM;
+				break;
+			}
 			/*
 			 * Disable usage of digest lists if not measured
 			 * or appraised.
@@ -334,6 +340,11 @@ static ssize_t ima_read_file(char *path, struct dentry *dentry)
 		if (rc < 0)
 			break;
 		size -= rc;
+
+		if (dentry == digest_list_data)
+			ima_digest_db_size += rc;
+		if (dentry == digest_list_data_del)
+			ima_digest_db_size -= rc;
 	}
 
 	vfree(data);

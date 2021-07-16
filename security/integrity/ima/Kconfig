@@ -353,6 +353,33 @@ config IMA_DIGEST_LISTS_DIR
 	   This option defines the path of the directory containing digest
 	   lists.
 
+choice
+	prompt "Defalut maximum data uploaded to the IMA digest database"
+	default IMA_STANDARD_DIGEST_DB_SIZE
+	depends on IMA_DIGEST_LIST
+	help
+	  This option defines the maximum data uploaded to the IMA digest
+	  database. The compiled default limit can be overwritten using the
+	  kernel command line "ima_digest_db_size".
+
+	config IMA_MIN_DIGEST_DB_SIZE
+		bool "minimum"
+	config IMA_STANDARD_DIGEST_DB_SIZE
+		bool "standard (default)"
+	config IMA_MAX_DIGEST_DB_SIZE
+		bool "maximum"
+	config IMA_CUSTOM_DIGEST_DB_SIZE
+		bool "custom"
+endchoice
+
+config IMA_DIGEST_DB_MEGABYTES
+	int
+	depends on IMA_DIGEST_LIST
+	range 8 64
+	default 8 if IMA_MIN_DIGEST_DB_SIZE
+	default 16 if IMA_STANDARD_DIGEST_DB_SIZE
+	default 64 if IMA_MAX_DIGEST_DB_SIZE
+
 config IMA_PARSER_BINARY_PATH
 	string "Path of the parser binary"
 	depends on IMA_DIGEST_LIST

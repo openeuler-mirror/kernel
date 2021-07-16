@@ -1777,6 +1777,10 @@
 			with PCR 10, according to the existing behavior.
 			Format: { [+]<unsigned int> }
 
+	ima_digest_db_size=nn[M]
+			[IMA]
+			Sets the maximum data uploaded to IMA digest database.
+
 	ima_hash=	[IMA]
 			Format: { md5 | sha1 | rmd160 | sha256 | sha384
 				   | sha512 | ... }
