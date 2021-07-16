@@ -22,6 +22,7 @@
 #include <linux/parser.h>
 #include <linux/vmalloc.h>
 #include <linux/file.h>
+#include <linux/ctype.h>
 
 #include "ima.h"
 #include "ima_digest_list.h"
@@ -363,6 +364,7 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 	char *data;
 	ssize_t result;
 	struct dentry *dentry = file_dentry(file);
+	int i;
 
 	/* No partial writes. */
 	result = -EINVAL;
@@ -383,6 +385,13 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 		goto out_free;
 
 	data[datalen] = '\0';
+	for (i = 0; data[i] != '\n' && data[i] != '\0'; i++) {
+		if (iscntrl(data[i])) {
+			pr_err_once("invalid path (control characters are not allowed)\n");
+			result = -EINVAL;
+			goto out_free;
+		}
+	}
 
 	result = mutex_lock_interruptible(&ima_write_mutex);
 	if (result < 0)
