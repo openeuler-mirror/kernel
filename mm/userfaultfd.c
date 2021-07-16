@@ -88,6 +88,10 @@ static int mcopy_atomic_pte(struct mm_struct *dst_mm,
 		*pagep = NULL;
 	}
 
+#ifdef CONFIG_USERSWAP
+	if (dst_vma->vm_flags & VM_USWAP)
+		ClearPageDirty(page);
+#endif
 	/*
 	 * The memory barrier inside __SetPageUptodate makes sure that
 	 * preceding stores to the page contents become visible before
@@ -106,6 +110,10 @@ static int mcopy_atomic_pte(struct mm_struct *dst_mm,
 		else
 			_dst_pte = pte_mkwrite(_dst_pte);
 	}
+#ifdef CONFIG_USERSWAP
+	if (dst_vma->vm_flags & VM_USWAP)
+		_dst_pte = pte_mkclean(_dst_pte);
+#endif
 
 	dst_pte = pte_offset_map_lock(dst_mm, dst_pmd, dst_addr, &ptl);
 	if (dst_vma->vm_file) {
@@ -117,9 +125,27 @@ static int mcopy_atomic_pte(struct mm_struct *dst_mm,
 		if (unlikely(offset >= max_off))
 			goto out_release_uncharge_unlock;
 	}
+
+#ifdef CONFIG_USERSWAP
+	if (!(dst_vma->vm_flags & VM_USWAP)) {
+		ret = -EEXIST;
+		if (!pte_none(*dst_pte))
+			goto out_release_uncharge_unlock;
+	} else {
+		/*
+		 * The userspace may swap in a large area. Part of the area is
+		 * not swapped out. Skip those pages.
+		 */
+		ret = 0;
+		if (swp_type(pte_to_swp_entry(*dst_pte)) != SWP_USERSWAP_ENTRY ||
+		    pte_present(*dst_pte))
+			goto out_release_uncharge_unlock;
+	}
+#else
 	ret = -EEXIST;
 	if (!pte_none(*dst_pte))
 		goto out_release_uncharge_unlock;
+#endif
 
 	inc_mm_counter(dst_mm, MM_ANONPAGES);
 	page_add_new_anon_rmap(page, dst_vma, dst_addr, false);

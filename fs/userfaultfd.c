@@ -329,6 +329,10 @@ static inline bool userfaultfd_must_wait(struct userfaultfd_ctx *ctx,
 	 * Lockless access: we're in a wait_event so it's ok if it
 	 * changes under us.
 	 */
+#ifdef CONFIG_USERSWAP
+	if ((reason & VM_USWAP) && (!pte_present(*pte)))
+		ret = true;
+#endif
 	if (pte_none(*pte))
 		ret = true;
 	if (!pte_write(*pte) && (reason & VM_UFFD_WP))
@@ -1281,10 +1285,30 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 	ret = -EINVAL;
 	if (!uffdio_register.mode)
 		goto out;
+	vm_flags = 0;
+#ifdef CONFIG_USERSWAP
+	/*
+	 * register the whole vma overlapping with the address range to avoid
+	 * splitting the vma.
+	 */
+	if (uffdio_register.mode & UFFDIO_REGISTER_MODE_USWAP) {
+		uffdio_register.mode &= ~UFFDIO_REGISTER_MODE_USWAP;
+		vm_flags |= VM_USWAP;
+		end = uffdio_register.range.start + uffdio_register.range.len - 1;
+		vma = find_vma(mm, uffdio_register.range.start);
+		if (!vma)
+			goto out;
+		uffdio_register.range.start = vma->vm_start;
+
+		vma = find_vma(mm, end);
+		if (!vma)
+			goto out;
+		uffdio_register.range.len = vma->vm_end - uffdio_register.range.start;
+	}
+#endif
 	if (uffdio_register.mode & ~(UFFDIO_REGISTER_MODE_MISSING|
 				     UFFDIO_REGISTER_MODE_WP))
 		goto out;
-	vm_flags = 0;
 	if (uffdio_register.mode & UFFDIO_REGISTER_MODE_MISSING)
 		vm_flags |= VM_UFFD_MISSING;
 	if (uffdio_register.mode & UFFDIO_REGISTER_MODE_WP)
