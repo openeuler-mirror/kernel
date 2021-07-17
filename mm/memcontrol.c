@@ -4850,8 +4850,7 @@ static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 	if (!node_state(node, N_NORMAL_MEMORY))
 		tmp = -1;
 	pn_ext = kzalloc_node(sizeof(*pn_ext), GFP_KERNEL, tmp);
-	pn = &pn_ext->pn;
-	if (!pn)
+	if (!pn_ext)
 		return 1;
 
 	pn_ext->lruvec_stat_local = alloc_percpu(struct lruvec_stat);
@@ -4860,6 +4859,7 @@ static int alloc_mem_cgroup_per_node_info(struct mem_cgroup *memcg, int node)
 		return 1;
 	}
 
+	pn = &pn_ext->pn;
 	pn->lruvec_stat_cpu = alloc_percpu(struct lruvec_stat);
 	if (!pn->lruvec_stat_cpu) {
 		free_percpu(pn_ext->lruvec_stat_local);
@@ -4927,10 +4927,10 @@ static struct mem_cgroup *mem_cgroup_alloc(void)
 	size += nr_node_ids * sizeof(struct mem_cgroup_per_node *);
 
 	memcg_ext = kzalloc(size, GFP_KERNEL);
-	memcg = &memcg_ext->memcg;
-	if (!memcg)
+	if (!memcg_ext)
 		return NULL;
 
+	memcg = &memcg_ext->memcg;
 	memcg->id.id = idr_alloc(&mem_cgroup_idr, NULL,
 				 1, MEM_CGROUP_ID_MAX,
 				 GFP_KERNEL);
