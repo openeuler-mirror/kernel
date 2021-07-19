@@ -400,8 +400,12 @@ static arm_lpae_iopte arm_lpae_prot_to_pte(struct arm_lpae_io_pgtable *data,
 		pte = ARM_LPAE_PTE_HAP_FAULT;
 		if (prot & IOMMU_READ)
 			pte |= ARM_LPAE_PTE_HAP_READ;
-		if (prot & IOMMU_WRITE)
+		if (prot & IOMMU_WRITE) {
 			pte |= ARM_LPAE_PTE_HAP_WRITE;
+			if (data->iop.fmt == ARM_64_LPAE_S2 &&
+			    cfg->quirks & IO_PGTABLE_QUIRK_ARM_HD)
+				pte |= ARM_LPAE_PTE_DBM;
+		}
 	}
 
 	/*
