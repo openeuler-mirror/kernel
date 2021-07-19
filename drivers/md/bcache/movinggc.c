@@ -123,7 +123,7 @@ static void read_moving_submit(struct closure *cl)
 	continue_at(cl, write_moving, io->op.wq);
 }
 
-static void read_moving(struct cache_set *c)
+static void read_moving(struct cache_set *c, bool only_move_dirty)
 {
 	struct keybuf_key *w;
 	struct moving_io *io;
@@ -140,7 +140,8 @@ static void read_moving(struct cache_set *c)
 		if (!w)
 			break;
 
-		if (ptr_stale(c, &w->key, 0)) {
+		if (ptr_stale(c, &w->key, 0) ||
+			(only_move_dirty && (!KEY_DIRTY(&w->key)))) {
 			bch_keybuf_del(&c->moving_gc_keys, w);
 			continue;
 		}
@@ -187,21 +188,42 @@ static bool bucket_cmp(struct bucket *l, struct bucket *r)
 	return GC_SECTORS_USED(l) < GC_SECTORS_USED(r);
 }
 
-static unsigned int bucket_heap_top(struct cache *ca)
+static bool bucket_cmp_dirty(struct bucket *l, struct bucket *r)
 {
-	struct bucket *b;
-
-	return (b = heap_peek(&ca->heap)) ? GC_SECTORS_USED(b) : 0;
+	return GC_DIRTY_SECTORS(l) < GC_DIRTY_SECTORS(r);
 }
 
-void bch_moving_gc(struct cache_set *c)
+static unsigned int bucket_heap_top(struct cache *ca, bool only_dirty)
+{
+	struct bucket *b;
+	if (only_dirty)
+		return (b = heap_peek(&ca->heap)) ? GC_DIRTY_SECTORS(b) : 0;
+	else
+		return (b = heap_peek(&ca->heap)) ? GC_SECTORS_USED(b) : 0;
+}
+
+static unsigned bucket_sectors(struct bucket *b, bool only_dirty)
+{
+	if (only_dirty)
+		return GC_DIRTY_SECTORS(b);
+	else
+		return GC_SECTORS_USED(b);
+}
+
+void bch_moving_gc(struct cache_set *c, bool only_move_dirty)
 {
 	struct cache *ca;
 	struct bucket *b;
 	unsigned int i;
+	bool (*cmp)(struct bucket*, struct bucket*);
 
 	if (!c->copy_gc_enabled)
 		return;
+
+	if (only_move_dirty)
+		cmp = &bucket_cmp_dirty;
+	else
+		cmp = &bucket_cmp;
 
 	mutex_lock(&c->bucket_lock);
 
@@ -214,29 +236,30 @@ void bch_moving_gc(struct cache_set *c)
 
 		for_each_bucket(b, ca) {
 			if (GC_MARK(b) == GC_MARK_METADATA ||
-			    !GC_SECTORS_USED(b) ||
-			    GC_SECTORS_USED(b) == ca->sb.bucket_size ||
+			    !bucket_sectors(b, only_move_dirty) ||
+			    ((!only_move_dirty) &&
+			    (GC_SECTORS_USED(b) == ca->sb.bucket_size)) ||
 			    atomic_read(&b->pin))
 				continue;
 
 			if (!heap_full(&ca->heap)) {
-				sectors_to_move += GC_SECTORS_USED(b);
-				heap_add(&ca->heap, b, bucket_cmp);
-			} else if (bucket_cmp(b, heap_peek(&ca->heap))) {
-				sectors_to_move -= bucket_heap_top(ca);
-				sectors_to_move += GC_SECTORS_USED(b);
+				sectors_to_move += bucket_sectors(b, only_move_dirty);
+				heap_add(&ca->heap, b, (*cmp));
+			} else if ((*cmp)(b, heap_peek(&ca->heap))) {
+				sectors_to_move -= bucket_heap_top(ca, only_move_dirty);
+				sectors_to_move += bucket_sectors(b, only_move_dirty);
 
 				ca->heap.data[0] = b;
-				heap_sift(&ca->heap, 0, bucket_cmp);
+				heap_sift(&ca->heap, 0, (*cmp));
 			}
 		}
 
 		while (sectors_to_move > reserve_sectors) {
-			heap_pop(&ca->heap, b, bucket_cmp);
-			sectors_to_move -= GC_SECTORS_USED(b);
+			heap_pop(&ca->heap, b, (*cmp));
+			sectors_to_move -= bucket_sectors(b, only_move_dirty);
 		}
 
-		while (heap_pop(&ca->heap, b, bucket_cmp))
+		while (heap_pop(&ca->heap, b, (*cmp)))
 			SET_GC_MOVE(b, 1);
 	}
 
@@ -244,7 +267,7 @@ void bch_moving_gc(struct cache_set *c)
 
 	c->moving_gc_keys.last_scanned = ZERO_KEY;
 
-	read_moving(c);
+	read_moving(c, only_move_dirty);
 }
 
 void bch_moving_init_cache_set(struct cache_set *c)
