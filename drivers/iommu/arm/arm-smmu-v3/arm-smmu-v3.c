@@ -3621,7 +3621,6 @@ arm_smmu_cache_invalidate(struct iommu_domain *domain, struct device *dev,
 		    !(granule_size & smmu_domain->domain.pgsize_bitmap)) {
 			tg = __ffs(smmu_domain->domain.pgsize_bitmap);
 			granule_size = 1 << tg;
-			size = size >> tg;
 		}
 
 		arm_smmu_tlb_inv_range_domain(info->addr, size,
