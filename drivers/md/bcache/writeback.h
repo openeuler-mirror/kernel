@@ -3,7 +3,8 @@
 #define _BCACHE_WRITEBACK_H
 
 #define CUTOFF_WRITEBACK	40
-#define CUTOFF_WRITEBACK_SYNC	70
+#define MIN_CUTOFF_WRITEBACK_SYNC	70
+#define MAX_CUTOFF_WRITEBACK_SYNC	90
 
 #define MAX_WRITEBACKS_IN_PASS  5
 #define MAX_WRITESIZE_IN_PASS   5000	/* *512b */
@@ -57,10 +58,11 @@ static inline bool should_writeback(struct cached_dev *dc, struct bio *bio,
 				    unsigned int cache_mode, bool would_skip)
 {
 	unsigned int in_use = dc->disk.c->gc_stats.in_use;
+	unsigned int cutoff = dc->disk.c->cutoff_writeback_sync;
 
 	if (cache_mode != CACHE_MODE_WRITEBACK ||
 	    test_bit(BCACHE_DEV_DETACHING, &dc->disk.flags) ||
-	    in_use > CUTOFF_WRITEBACK_SYNC)
+	    in_use > cutoff)
 		return false;
 
 	if (bio_op(bio) == REQ_OP_DISCARD)

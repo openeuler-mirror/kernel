@@ -1210,6 +1210,8 @@ static void cached_dev_free(struct closure *cl)
 {
 	struct cached_dev *dc = container_of(cl, struct cached_dev, disk.cl);
 
+	del_timer_sync(&dc->io_stat_timer);
+	del_timer_sync(&dc->token_assign_timer);
 	if (test_and_clear_bit(BCACHE_DEV_WB_RUNNING, &dc->disk.flags))
 		cancel_writeback_rate_update_dwork(dc);
 
@@ -1250,6 +1252,36 @@ static void cached_dev_flush(struct closure *cl)
 	continue_at(cl, cached_dev_free, system_wq);
 }
 
+static void cached_dev_io_stat(struct timer_list *t)
+{
+	struct cached_dev *dc = from_timer(dc, t, io_stat_timer);
+
+	dc->io_stat_timer.expires = jiffies + HZ;
+	add_timer(&dc->io_stat_timer);
+
+	dc->writeback_sector_size_per_sec =
+		atomic_read(&dc->writeback_sector_size);
+	dc->writeback_io_num_per_sec = atomic_read(&dc->writeback_io_num);
+	dc->front_io_num_per_sec = atomic_read(&dc->front_io_num);
+	atomic_set(&dc->writeback_sector_size, 0);
+	atomic_set(&dc->writeback_io_num, 0);
+	atomic_set(&dc->front_io_num, 0);
+}
+
+static void cached_dev_timer_init(struct cached_dev *dc)
+{
+	dc->writeback_sector_size_per_sec = 0;
+	dc->writeback_io_num_per_sec = 0;
+	dc->front_io_num_per_sec = 0;
+	atomic_set(&dc->writeback_sector_size, 0);
+	atomic_set(&dc->writeback_io_num, 0);
+	atomic_set(&dc->front_io_num, 0);
+
+	timer_setup(&dc->io_stat_timer, cached_dev_io_stat, 0);
+	dc->io_stat_timer.expires = jiffies + HZ;
+	add_timer(&dc->io_stat_timer);
+}
+
 static int cached_dev_init(struct cached_dev *dc, unsigned int block_size)
 {
 	int ret;
@@ -1266,6 +1298,8 @@ static int cached_dev_init(struct cached_dev *dc, unsigned int block_size)
 	INIT_LIST_HEAD(&dc->io_lru);
 	spin_lock_init(&dc->io_lock);
 	bch_cache_accounting_init(&dc->accounting, &dc->disk.cl);
+	cached_dev_timer_init(dc);
+	bch_traffic_policy_init(dc);
 
 	dc->sequential_cutoff		= 4 << 20;
 	dc->inflight_block_enable	= 1;
@@ -1774,6 +1808,7 @@ struct cache_set *bch_cache_set_alloc(struct cache_sb *sb)
 	c->congested_read_threshold_us	= 2000;
 	c->congested_write_threshold_us	= 20000;
 	c->error_limit	= DEFAULT_IO_ERROR_LIMIT;
+	c->cutoff_writeback_sync = MIN_CUTOFF_WRITEBACK_SYNC;
 	WARN_ON(test_and_clear_bit(CACHE_SET_IO_DISABLE, &c->flags));
 
 	return c;

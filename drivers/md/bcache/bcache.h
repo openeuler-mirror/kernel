@@ -399,6 +399,28 @@ struct cached_dev {
 	unsigned int		offline_seconds;
 
 	char			backing_dev_name[BDEVNAME_SIZE];
+
+	/* Count the front and writeback io bandwidth per second */
+	atomic_t		writeback_sector_size;
+	atomic_t		writeback_io_num;
+	atomic_t		front_io_num;
+	unsigned int		writeback_sector_size_per_sec;
+	unsigned int		writeback_io_num_per_sec;
+	unsigned int		front_io_num_per_sec;
+	struct timer_list	io_stat_timer;
+
+	unsigned int		writeback_state;
+#define WRITEBACK_DEFAULT	0
+#define WRITEBACK_QUICK		1
+#define WRITEBACK_SLOW		2
+
+	/* realize for token bucket */
+	spinlock_t		token_lock;
+	unsigned int		max_sector_size;
+	unsigned int		max_io_num;
+	unsigned int		write_token_sector_size;
+	unsigned int		write_token_io_num;
+	struct timer_list	token_assign_timer;
 };
 
 enum alloc_reserve {
@@ -717,6 +739,10 @@ struct cache_set {
 
 #define BUCKET_HASH_BITS	12
 	struct hlist_head	bucket_hash[1 << BUCKET_HASH_BITS];
+	unsigned int		cutoff_writeback_sync;
+	bool			traffic_policy_start;
+	bool			force_write_through;
+	unsigned int		gc_sectors;
 };
 
 struct bbio {
@@ -731,6 +757,29 @@ struct bbio {
 	};
 	struct bio		bio;
 };
+
+struct get_bcache_status {
+	unsigned int		writeback_sector_size_per_sec;
+	unsigned int		writeback_io_num_per_sec;
+	unsigned int		front_io_num_per_sec;
+	uint64_t		dirty_rate;
+	unsigned int		available;
+};
+
+struct set_bcache_status {
+	unsigned int		write_token_sector_size;
+	unsigned int		write_token_io_num;
+	bool			traffic_policy_start;
+	bool			force_write_through;
+	bool			copy_gc_enabled;
+	bool			trigger_gc;
+	unsigned int		writeback_state;
+	unsigned int		gc_sectors;
+	unsigned int		cutoff_writeback_sync;
+};
+#define BCACHE_MAJOR		'B'
+#define BCACHE_GET_WRITE_STATUS _IOR(BCACHE_MAJOR, 0x0, struct get_bcache_status)
+#define BCACHE_SET_WRITE_STATUS _IOW(BCACHE_MAJOR, 0x1, struct set_bcache_status)
 
 #define BTREE_PRIO		USHRT_MAX
 #define INITIAL_PRIO		32768U

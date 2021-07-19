@@ -222,7 +222,13 @@ static unsigned int writeback_delay(struct cached_dev *dc,
 	    !dc->writeback_percent)
 		return 0;
 
-	return bch_next_delay(&dc->writeback_rate, sectors);
+	if (dc->writeback_state == WRITEBACK_DEFAULT) {
+		return bch_next_delay(&dc->writeback_rate, sectors);
+	} else if (dc->writeback_state == WRITEBACK_QUICK) {
+		return 0;
+	} else {
+		return msecs_to_jiffies(1000);
+	}
 }
 
 struct dirty_io {
@@ -286,6 +292,9 @@ static void write_dirty_finish(struct closure *cl)
 				? &dc->disk.c->writeback_keys_failed
 				: &dc->disk.c->writeback_keys_done);
 	}
+
+	atomic_add(KEY_SIZE(&w->key), &dc->writeback_sector_size);
+	atomic_inc(&dc->writeback_io_num);
 
 	bch_keybuf_del(&dc->writeback_keys, w);
 	up(&dc->in_flight);
