@@ -2079,7 +2079,10 @@ static void __arm_smmu_tlb_inv_range(struct arm_smmu_cmdq_ent *cmd,
 
 	if (smmu->features & ARM_SMMU_FEAT_RANGE_INV) {
 		/* Get the leaf page size */
+		size_t leaf_pgsize;
+
 		tg = __ffs(smmu_domain->domain.pgsize_bitmap);
+		leaf_pgsize = 1 << tg;
 
 		/* Convert page size of 12,14,16 (log2) to 1,2,3 */
 		cmd->tlbi.tg = (tg - 10) / 2;
@@ -2087,6 +2090,8 @@ static void __arm_smmu_tlb_inv_range(struct arm_smmu_cmdq_ent *cmd,
 		/* Determine what level the granule is at */
 		cmd->tlbi.ttl = 4 - ((ilog2(granule) - 3) / (tg - 3));
 
+		/* Align size with the leaf page size upwards */
+		size = ALIGN(size, leaf_pgsize);
 		num_pages = size >> tg;
 	}
 
