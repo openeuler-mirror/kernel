@@ -370,6 +370,7 @@ unsigned int bch_get_congested(struct cache_set *c)
 	return i > 0 ? i : 1;
 }
 
+#if IS_ENABLED(CONFIG_BCACHE)
 static void add_sequential(struct task_struct *t)
 {
 	ewma_add(t->sequential_io_avg,
@@ -377,6 +378,7 @@ static void add_sequential(struct task_struct *t)
 
 	t->sequential_io = 0;
 }
+#endif
 
 static struct hlist_head *iohash(struct cached_dev *dc, uint64_t k)
 {
@@ -388,7 +390,9 @@ static bool check_should_bypass(struct cached_dev *dc, struct bio *bio)
 	struct cache_set *c = dc->disk.c;
 	unsigned int mode = cache_mode(dc);
 	unsigned int sectors, congested = bch_get_congested(c);
+#if IS_ENABLED(CONFIG_BCACHE)
 	struct task_struct *task = current;
+#endif
 	struct io *i;
 
 	if (test_bit(BCACHE_DEV_DETACHING, &dc->disk.flags) ||
@@ -443,7 +447,9 @@ static bool check_should_bypass(struct cached_dev *dc, struct bio *bio)
 
 	i = list_first_entry(&dc->io_lru, struct io, lru);
 
+#if IS_ENABLED(CONFIG_BCACHE)
 	add_sequential(task);
+#endif
 	i->sequential = 0;
 found:
 	if (i->sequential + bio->bi_iter.bi_size > i->sequential)
@@ -451,7 +457,9 @@ found:
 
 	i->last			 = bio_end_sector(bio);
 	i->jiffies		 = jiffies + msecs_to_jiffies(5000);
+#if IS_ENABLED(CONFIG_BCACHE)
 	task->sequential_io	 = i->sequential;
+#endif
 
 	hlist_del(&i->hash);
 	hlist_add_head(&i->hash, iohash(dc, i->last));
@@ -459,8 +467,12 @@ found:
 
 	spin_unlock(&dc->io_lock);
 
+#if IS_ENABLED(CONFIG_BCACHE)
 	sectors = max(task->sequential_io,
 		      task->sequential_io_avg) >> 9;
+#else
+	sectors = i->sequential >> 9;
+#endif
 
 	if (dc->sequential_cutoff &&
 	    sectors >= dc->sequential_cutoff >> 9) {
