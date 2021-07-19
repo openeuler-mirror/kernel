@@ -159,6 +159,23 @@ static inline bool iopte_leaf(arm_lpae_iopte pte, int lvl,
 	return iopte_type(pte, lvl) == ARM_LPAE_PTE_TYPE_BLOCK;
 }
 
+static inline bool arm_lpae_pte_writable(struct arm_lpae_io_pgtable *data,
+					   arm_lpae_iopte pte, int lvl)
+{
+	if (iopte_leaf(pte, lvl, data->iop.fmt)) {
+		if (data->iop.fmt == ARM_64_LPAE_S1 ||
+		    data->iop.fmt == ARM_32_LPAE_S1) {
+			if (!(pte & ARM_LPAE_PTE_AP_RDONLY))
+				return true;
+		} else {
+			if (pte & ARM_LPAE_PTE_HAP_WRITE)
+				return true;
+		}
+	}
+
+	return false;
+}
+
 static arm_lpae_iopte paddr_to_iopte(phys_addr_t paddr,
 				     struct arm_lpae_io_pgtable *data)
 {
@@ -751,7 +768,7 @@ static size_t __arm_lpae_split_block(struct arm_lpae_io_pgtable *data,
 	if (size == ARM_LPAE_BLOCK_SIZE(lvl, data)) {
 		if (iopte_leaf(pte, lvl, iop->fmt)) {
 			if (lvl == (ARM_LPAE_MAX_LEVELS - 1) ||
-			    (pte & ARM_LPAE_PTE_AP_RDONLY))
+			    !arm_lpae_pte_writable(data, pte, lvl))
 				return size;
 
 			/* We find a writable block, split it. */
@@ -905,7 +922,7 @@ static int __arm_lpae_sync_dirty_log(struct arm_lpae_io_pgtable *data,
 
 	if (size == ARM_LPAE_BLOCK_SIZE(lvl, data)) {
 		if (iopte_leaf(pte, lvl, iop->fmt)) {
-			if (pte & ARM_LPAE_PTE_AP_RDONLY)
+			if (!arm_lpae_pte_writable(data, pte, lvl))
 				return 0;
 
 			/* It is writable, set the bitmap */
@@ -926,7 +943,7 @@ static int __arm_lpae_sync_dirty_log(struct arm_lpae_io_pgtable *data,
 		}
 		return 0;
 	} else if (iopte_leaf(pte, lvl, iop->fmt)) {
-		if (pte & ARM_LPAE_PTE_AP_RDONLY)
+		if (!arm_lpae_pte_writable(data, pte, lvl))
 			return 0;
 
 		/* Though the size is too small, also set bitmap */
@@ -993,7 +1010,7 @@ static int __arm_lpae_clear_dirty_log(struct arm_lpae_io_pgtable *data,
 
 	if (size == ARM_LPAE_BLOCK_SIZE(lvl, data)) {
 		if (iopte_leaf(pte, lvl, iop->fmt)) {
-			if (pte & ARM_LPAE_PTE_AP_RDONLY)
+			if (!arm_lpae_pte_writable(data, pte, lvl))
 				return 0;
 
 			/* Ensure all corresponding bits are set */
@@ -1005,7 +1022,11 @@ static int __arm_lpae_clear_dirty_log(struct arm_lpae_io_pgtable *data,
 			}
 
 			/* Race does not exist */
-			pte |= ARM_LPAE_PTE_AP_RDONLY;
+			if ((data->iop.fmt == ARM_64_LPAE_S1) ||
+			    (data->iop.fmt == ARM_32_LPAE_S1))
+				pte |= ARM_LPAE_PTE_AP_RDONLY;
+			else
+				pte &= ~ARM_LPAE_PTE_HAP_WRITE;
 			__arm_lpae_set_pte(ptep, pte, &iop->cfg);
 			return 0;
 		}
@@ -1022,7 +1043,7 @@ static int __arm_lpae_clear_dirty_log(struct arm_lpae_io_pgtable *data,
 		return 0;
 	} else if (iopte_leaf(pte, lvl, iop->fmt)) {
 		/* Though the size is too small, it is already clean */
-		if (pte & ARM_LPAE_PTE_AP_RDONLY)
+		if (!arm_lpae_pte_writable(data, pte, lvl))
 			return 0;
 
 		return -EINVAL;
