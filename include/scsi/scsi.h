@@ -30,32 +30,6 @@ enum scsi_timeouts {
  */
 #define SCAN_WILD_CARD	~0
 
-/** scsi_status_is_good - check the status return.
- *
- * @status: the status passed up from the driver (including host and
- *          driver components)
- *
- * This returns true for known good conditions that may be treated as
- * command completed normally
- */
-static inline int scsi_status_is_good(int status)
-{
-	/*
-	 * FIXME: bit0 is listed as reserved in SCSI-2, but is
-	 * significant in SCSI-3.  For now, we follow the SCSI-2
-	 * behaviour and ignore reserved bits.
-	 */
-	status &= 0xfe;
-	return ((status == SAM_STAT_GOOD) ||
-		(status == SAM_STAT_CONDITION_MET) ||
-		/* Next two "intermediate" statuses are obsolete in SAM-4 */
-		(status == SAM_STAT_INTERMEDIATE) ||
-		(status == SAM_STAT_INTERMEDIATE_CONDITION_MET) ||
-		/* FIXME: this is obsolete in SAM-3 */
-		(status == SAM_STAT_COMMAND_TERMINATED));
-}
-
-
 /*
  * standard mode-select header prepended to all mode-select commands
  */
@@ -278,6 +252,34 @@ static inline int scsi_is_wlun(u64 lun)
 static inline __u32 scsi_to_u32(__u8 *ptr)
 {
 	return (ptr[0]<<24) + (ptr[1]<<16) + (ptr[2]<<8) + ptr[3];
+}
+
+/** scsi_status_is_good - check the status return.
+ *
+ * @status: the status passed up from the driver (including host and
+ *          driver components)
+ *
+ * This returns true for known good conditions that may be treated as
+ * command completed normally
+ */
+static inline int scsi_status_is_good(int status)
+{
+	if (host_byte(status) == DID_NO_CONNECT)
+		return 0;
+
+	/*
+	 * FIXME: bit0 is listed as reserved in SCSI-2, but is
+	 * significant in SCSI-3.  For now, we follow the SCSI-2
+	 * behaviour and ignore reserved bits.
+	 */
+	status &= 0xfe;
+	return ((status == SAM_STAT_GOOD) ||
+		(status == SAM_STAT_CONDITION_MET) ||
+		/* Next two "intermediate" statuses are obsolete in SAM-4 */
+		(status == SAM_STAT_INTERMEDIATE) ||
+		(status == SAM_STAT_INTERMEDIATE_CONDITION_MET) ||
+		/* FIXME: this is obsolete in SAM-3 */
+		(status == SAM_STAT_COMMAND_TERMINATED));
 }
 
 #endif /* _SCSI_SCSI_H */
