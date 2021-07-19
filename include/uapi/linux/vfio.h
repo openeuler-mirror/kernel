@@ -356,6 +356,7 @@ struct vfio_region_info_cap_type {
 
 /* sub-types for VFIO_REGION_TYPE_NESTED */
 #define VFIO_REGION_SUBTYPE_NESTED_DMA_FAULT	(1)
+#define VFIO_REGION_SUBTYPE_NESTED_DMA_FAULT_RESPONSE	(2)
 
 /**
  * struct vfio_region_gfx_edid - EDID region layout.
@@ -1034,6 +1035,17 @@ struct vfio_region_info_cap_fault {
 };
 
 /*
+ * Capability exposed by the DMA fault response region
+ * @version: ABI version
+ */
+#define VFIO_REGION_INFO_CAP_DMA_FAULT_RESPONSE	7
+
+struct vfio_region_info_cap_fault_response {
+	struct vfio_info_cap_header header;
+	__u32 version;
+};
+
+/*
  * DMA Fault Region Layout
  * @tail: index relative to the start of the ring buffer at which the
  *        consumer finds the next item in the buffer
@@ -1051,6 +1063,26 @@ struct vfio_region_dma_fault {
 	__u32	nb_entries;
 	__u32	offset;
 	__u32   head;
+};
+
+/*
+ * DMA Fault Response Region Layout
+ * @head: index relative to the start of the ring buffer at which the
+ *        producer (userspace) insert responses into the buffer
+ * @entry_size: fault ring buffer entry size in bytes
+ * @nb_entries: max capacity of the fault ring buffer
+ * @offset: ring buffer offset relative to the start of the region
+ * @tail: index relative to the start of the ring buffer at which the
+ *        consumer (kernel) finds the next item in the buffer
+ */
+struct vfio_region_dma_fault_response {
+	/* Write-Only */
+	__u32   head;
+	/* Read-Only */
+	__u32   entry_size;
+	__u32	nb_entries;
+	__u32	offset;
+	__u32   tail;
 };
 
 /* -------- API for Type1 VFIO IOMMU -------- */
