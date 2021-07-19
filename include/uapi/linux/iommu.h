@@ -363,30 +363,33 @@ struct iommu_pasid_smmuv3 {
 /**
  * struct iommu_pasid_table_config - PASID table data used to bind guest PASID
  *     table to the host IOMMU
+ * @argsz: User filled size of this data
  * @version: API version to prepare for future extensions
- * @format: format of the PASID table
  * @base_ptr: guest physical address of the PASID table
+ * @format: format of the PASID table
  * @pasid_bits: number of PASID bits used in the PASID table
  * @config: indicates whether the guest translation stage must
  *          be translated, bypassed or aborted.
  * @padding: reserved for future use (should be zero)
- * @smmuv3: table information when @format is %IOMMU_PASID_FORMAT_SMMUV3
+ * @vendor_data.smmuv3: table information when @format is
+ * %IOMMU_PASID_FORMAT_SMMUV3
  */
 struct iommu_pasid_table_config {
+	__u32	argsz;
 #define PASID_TABLE_CFG_VERSION_1 1
 	__u32	version;
+	__u64	base_ptr;
 #define IOMMU_PASID_FORMAT_SMMUV3	1
 	__u32	format;
-	__u64	base_ptr;
 	__u8	pasid_bits;
 #define IOMMU_PASID_CONFIG_TRANSLATE	1
 #define IOMMU_PASID_CONFIG_BYPASS	2
 #define IOMMU_PASID_CONFIG_ABORT	3
 	__u8	config;
-	__u8    padding[6];
+	__u8    padding[2];
 	union {
 		struct iommu_pasid_smmuv3 smmuv3;
-	};
+	} vendor_data;
 };
 
 #endif /* _UAPI_IOMMU_H */
