@@ -329,6 +329,7 @@ struct vfio_region_info_cap_type {
 #define VFIO_REGION_TYPE_GFX                    (1)
 #define VFIO_REGION_TYPE_CCW			(2)
 #define VFIO_REGION_TYPE_MIGRATION              (3)
+#define VFIO_REGION_TYPE_NESTED			(4)
 
 /* sub-types for VFIO_REGION_TYPE_PCI_* */
 
@@ -352,6 +353,9 @@ struct vfio_region_info_cap_type {
 
 /* sub-types for VFIO_REGION_TYPE_GFX */
 #define VFIO_REGION_SUBTYPE_GFX_EDID            (1)
+
+/* sub-types for VFIO_REGION_TYPE_NESTED */
+#define VFIO_REGION_SUBTYPE_NESTED_DMA_FAULT	(1)
 
 /**
  * struct vfio_region_gfx_edid - EDID region layout.
@@ -997,6 +1001,37 @@ struct vfio_device_feature {
  * (__u8 b[16]), representing a UUID.
  */
 #define VFIO_DEVICE_FEATURE_PCI_VF_TOKEN	(0)
+
+/*
+ * Capability exposed by the DMA fault region
+ * @version: ABI version
+ */
+#define VFIO_REGION_INFO_CAP_DMA_FAULT	6
+
+struct vfio_region_info_cap_fault {
+	struct vfio_info_cap_header header;
+	__u32 version;
+};
+
+/*
+ * DMA Fault Region Layout
+ * @tail: index relative to the start of the ring buffer at which the
+ *        consumer finds the next item in the buffer
+ * @entry_size: fault ring buffer entry size in bytes
+ * @nb_entries: max capacity of the fault ring buffer
+ * @offset: ring buffer offset relative to the start of the region
+ * @head: index relative to the start of the ring buffer at which the
+ *        producer (kernel) inserts items into the buffers
+ */
+struct vfio_region_dma_fault {
+	/* Write-Only */
+	__u32   tail;
+	/* Read-Only */
+	__u32   entry_size;
+	__u32	nb_entries;
+	__u32	offset;
+	__u32   head;
+};
 
 /* -------- API for Type1 VFIO IOMMU -------- */
 
