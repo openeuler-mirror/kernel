@@ -979,10 +979,6 @@ static int arm_lpae_sync_dirty_log(struct io_pgtable_ops *ops,
 	if (WARN_ON(iaext))
 		return -EINVAL;
 
-	if (data->iop.fmt != ARM_64_LPAE_S1 &&
-	    data->iop.fmt != ARM_32_LPAE_S1)
-		return -EINVAL;
-
 	return __arm_lpae_sync_dirty_log(data, iova, size, lvl, ptep,
 					 bitmap, base_iova, bitmap_pgshift);
 }
@@ -1073,10 +1069,6 @@ static int arm_lpae_clear_dirty_log(struct io_pgtable_ops *ops,
 	if (cfg->quirks & IO_PGTABLE_QUIRK_ARM_TTBR1)
 		iaext = ~iaext;
 	if (WARN_ON(iaext))
-		return -EINVAL;
-
-	if (data->iop.fmt != ARM_64_LPAE_S1 &&
-	    data->iop.fmt != ARM_32_LPAE_S1)
 		return -EINVAL;
 
 	return __arm_lpae_clear_dirty_log(data, iova, size, lvl, ptep,
