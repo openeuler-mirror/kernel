@@ -1414,6 +1414,11 @@ static void arm_smmu_write_strtab_ent(struct arm_smmu_master *master, u32 sid,
 			 STRTAB_STE_2_S2PTW | STRTAB_STE_2_S2AA64 |
 			 STRTAB_STE_2_S2R);
 
+		if (smmu->features & ARM_SMMU_FEAT_HA)
+			dst[2] |= cpu_to_le64(STRTAB_STE_2_S2HA);
+		if (smmu->features & ARM_SMMU_FEAT_HD)
+			dst[2] |= cpu_to_le64(STRTAB_STE_2_S2HD);
+
 		dst[3] = cpu_to_le64(vttbr);
 
 		val |= FIELD_PREP(STRTAB_STE_0_CFG, STRTAB_STE_0_CFG_S2_TRANS);
