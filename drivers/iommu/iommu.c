@@ -2352,6 +2352,56 @@ int iommu_attach_pasid_table(struct iommu_domain *domain,
 }
 EXPORT_SYMBOL_GPL(iommu_attach_pasid_table);
 
+int iommu_uapi_attach_pasid_table(struct iommu_domain *domain,
+				  void __user *uinfo)
+{
+	struct iommu_pasid_table_config pasid_table_data = { 0 };
+	u32 minsz;
+
+	if (unlikely(!domain->ops->attach_pasid_table))
+		return -ENODEV;
+
+	/*
+	 * No new spaces can be added before the variable sized union, the
+	 * minimum size is the offset to the union.
+	 */
+	minsz = offsetof(struct iommu_pasid_table_config, vendor_data);
+
+	/* Copy minsz from user to get flags and argsz */
+	if (copy_from_user(&pasid_table_data, uinfo, minsz))
+		return -EFAULT;
+
+	/* Fields before the variable size union are mandatory */
+	if (pasid_table_data.argsz < minsz)
+		return -EINVAL;
+
+	/* PASID and address granu require additional info beyond minsz */
+	if (pasid_table_data.version != PASID_TABLE_CFG_VERSION_1)
+		return -EINVAL;
+	if (pasid_table_data.format == IOMMU_PASID_FORMAT_SMMUV3 &&
+	    pasid_table_data.argsz <
+		offsetofend(struct iommu_pasid_table_config, vendor_data.smmuv3))
+		return -EINVAL;
+
+	/*
+	 * User might be using a newer UAPI header which has a larger data
+	 * size, we shall support the existing flags within the current
+	 * size. Copy the remaining user data _after_ minsz but not more
+	 * than the current kernel supported size.
+	 */
+	if (copy_from_user((void *)&pasid_table_data + minsz, uinfo + minsz,
+			   min_t(u32, pasid_table_data.argsz, sizeof(pasid_table_data)) - minsz))
+		return -EFAULT;
+
+	/* Now the argsz is validated, check the content */
+	if (pasid_table_data.config < IOMMU_PASID_CONFIG_TRANSLATE ||
+	    pasid_table_data.config > IOMMU_PASID_CONFIG_ABORT)
+		return -EINVAL;
+
+	return domain->ops->attach_pasid_table(domain, &pasid_table_data);
+}
+EXPORT_SYMBOL_GPL(iommu_uapi_attach_pasid_table);
+
 void iommu_detach_pasid_table(struct iommu_domain *domain)
 {
 	if (unlikely(!domain->ops->detach_pasid_table))
