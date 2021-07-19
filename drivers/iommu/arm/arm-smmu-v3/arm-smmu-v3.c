@@ -2088,6 +2088,11 @@ static void __arm_smmu_tlb_inv_range(struct arm_smmu_cmdq_ent *cmd,
 		cmd->tlbi.tg = (tg - 10) / 2;
 
 		/* Determine what level the granule is at */
+		if (!(granule & smmu_domain->domain.pgsize_bitmap) ||
+		    (granule & (granule - 1))) {
+			granule = leaf_pgsize;
+			iova = ALIGN_DOWN(iova, leaf_pgsize);
+		}
 		cmd->tlbi.ttl = 4 - ((ilog2(granule) - 3) / (tg - 3));
 
 		/* Align size with the leaf page size upwards */
