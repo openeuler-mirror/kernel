@@ -888,8 +888,11 @@ int blk_init_rl(struct request_list *rl, struct request_queue *q,
 	if (!rl->rq_pool)
 		return -ENOMEM;
 
-	if (rl != &q->root_rl)
-		WARN_ON_ONCE(!blk_get_queue(q));
+	if (rl != &q->root_rl && !blk_get_queue(q)) {
+		mempool_destroy(rl->rq_pool);
+		rl->rq_pool = NULL;
+		return -ENODEV;
+	}
 
 	return 0;
 }
