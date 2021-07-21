@@ -56,6 +56,16 @@ static inline void clear_page(void *page)
 
 void copy_page(void *to, void *from);
 
+void copy_page_nocache(void *to, void *from);
+void copy_page_nocache_barrir(void);
+
+struct page;
+struct ctl_table;
+# define __HAVE_ARCH_COPY_HUGEPAGES 1
+void copy_highpages(struct page *to, struct page *from, int nr_pages);
+int sysctl_hugepage_nocache_copy(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
+
 #endif	/* !__ASSEMBLY__ */
 
 #ifdef CONFIG_X86_VSYSCALL_EMULATION

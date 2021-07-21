@@ -3147,6 +3147,17 @@ static struct ctl_table vm_table[] = {
 		.extra1         = SYSCTL_ZERO,
 		.extra2         = SYSCTL_ONE,
 	},
+#if defined(CONFIG_X86_64)
+	{
+		.procname       = "hugepage_nocache_copy",
+		.data           = NULL, /* filled in by handler */
+		.maxlen         = sizeof(unsigned int),
+		.mode           = 0600,
+		.proc_handler   = sysctl_hugepage_nocache_copy,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
+#endif
 	{ }
 };
 

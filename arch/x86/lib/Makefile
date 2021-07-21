@@ -70,4 +70,5 @@ else
         lib-y += memmove_64.o memset_64.o
         lib-y += copy_user_64.o
 	lib-y += cmpxchg16b_emu.o
+	lib-y += copy_highpages.o
 endif

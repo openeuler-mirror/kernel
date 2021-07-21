@@ -345,4 +345,18 @@ static inline void copy_highpage(struct page *to, struct page *from)
 
 #endif
 
+#ifndef __HAVE_ARCH_COPY_HUGEPAGES
+
+static inline void copy_highpages(struct page *to, struct page *from, int nr_pages)
+{
+	int i;
+
+	for (i = 0; i < nr_pages; i++) {
+		cond_resched();
+		copy_highpage(to + i, from + i);
+	}
+}
+
+#endif /* __HAVE_ARCH_COPY_HUGEPAGES */
+
 #endif /* _LINUX_HIGHMEM_H */
