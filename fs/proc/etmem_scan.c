@@ -892,6 +892,7 @@ static ssize_t vm_idle_read(struct file *file, char *buf,
 	ret = pic->bytes_copied;
 	*ppos = pic->next_hva;
 out_kvm:
+	kfree(pic);
 	return ret;
 
 }
