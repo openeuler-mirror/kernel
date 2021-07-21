@@ -976,7 +976,7 @@ static int __init debugfs_sw64(void)
 {
 	struct dentry *d;
 
-	d = debugfs_create_dir("sw_64", NULL);
+	d = debugfs_create_dir("sw64", NULL);
 	if (!d)
 		return -ENOMEM;
 	sw64_debugfs_dir = d;
