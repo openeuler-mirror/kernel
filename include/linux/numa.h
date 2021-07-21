@@ -58,4 +58,7 @@ static inline int phys_to_target_node(u64 start)
 }
 #endif
 
+void set_node_pmem(int nid);
+int is_node_pmem(int nid);
+
 #endif /* _LINUX_NUMA_H */

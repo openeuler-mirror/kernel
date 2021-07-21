@@ -179,6 +179,8 @@ DEFINE_STATIC_KEY_FALSE(init_on_free);
 #endif
 EXPORT_SYMBOL(init_on_free);
 
+nodemask_t numa_nodes_pmem;
+
 static int __init early_init_on_alloc(char *buf)
 {
 	int ret;
@@ -8882,3 +8884,13 @@ bool take_page_off_buddy(struct page *page)
 	return ret;
 }
 #endif
+
+void set_node_pmem(int nid)
+{
+	node_set(nid, numa_nodes_pmem);
+}
+
+int is_node_pmem(int nid)
+{
+	return node_isset(nid, numa_nodes_pmem);
+}
