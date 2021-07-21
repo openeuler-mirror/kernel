@@ -84,6 +84,28 @@
 
 #endif
 
+#define RET_RESCAN_FLAG 0x10000
+
+static int set_walk_step(const char *val, const struct kernel_param *kp)
+{
+	int ret;
+	unsigned int n;
+
+	ret = kstrtouint(val, 0, &n);
+	if (ret != 0 || n == 0)
+		return -EINVAL;
+
+	return param_set_uint(val, kp);
+}
+
+static struct kernel_param_ops walk_step_ops = {
+	.set = set_walk_step,
+	.get = param_get_uint,
+};
+
+static unsigned int __read_mostly walk_step = 512; // in PAGE_SIZE
+module_param_cb(walk_step, &walk_step_ops, &walk_step, 0644);
+
 static unsigned long pagetype_size[16] = {
 	[PTE_ACCESSED]	= PAGE_SIZE,	/* 4k page */
 	[PMD_ACCESSED]	= PMD_SIZE,	/* 2M page */
@@ -249,26 +271,13 @@ static int page_idle_copy_user(struct page_idle_ctrl *pic,
 				unsigned long start, unsigned long end)
 {
 	int bytes_read;
-	int lc = 0;	/* last copy? */
 	int ret;
 
 	dump_pic(pic);
 
-	/* Break out of loop on no more progress. */
-	if (!pic->pie_read) {
-		lc = 1;
-		if (start < end)
-			start = end;
-	}
-
-	if (start >= end && start > pic->next_hva) {
-		set_next_hva(start, "TAIL-HOLE");
-		pic_report_addr(pic, start);
-	}
-
 	bytes_read = pic->pie_read;
 	if (!bytes_read)
-		return 1;
+		return 0;
 
 	ret = copy_to_user(pic->buf, pic->kpie, bytes_read);
 	if (ret)
@@ -278,8 +287,6 @@ static int page_idle_copy_user(struct page_idle_ctrl *pic,
 	pic->bytes_copied += bytes_read;
 	if (pic->bytes_copied >= pic->buf_size)
 		return PAGE_IDLE_BUF_FULL;
-	if (lc)
-		return lc;
 
 	ret = init_page_idle_ctrl_buffer(pic);
 	if (ret)
@@ -299,17 +306,24 @@ static int vm_walk_host_range(unsigned long long start,
 	unsigned long tmp_gpa_to_hva = pic->gpa_to_hva;
 
 	pic->gpa_to_hva = 0;
-	local_irq_enable();
+	spin_unlock_irq(&pic->kvm->mmu_lock);
 	down_read(&walk->mm->mmap_lock);
 	local_irq_disable();
 	ret = walk_page_range(walk->mm, start + tmp_gpa_to_hva, end + tmp_gpa_to_hva,
 			walk->ops, walk->private);
+	local_irq_enable();
 	up_read(&walk->mm->mmap_lock);
 	pic->gpa_to_hva = tmp_gpa_to_hva;
 	if (pic->flags & VM_SCAN_HOST) {
 		pic->restart_gpa -= tmp_gpa_to_hva;
 		pic->flags &= ~VM_SCAN_HOST;
 	}
+	if (ret != PAGE_IDLE_KBUF_FULL && end > pic->restart_gpa)
+		pic->restart_gpa = end;
+
+	// ept page table may change after spin_unlock, rescan vm from root ept
+	ret |= RET_RESCAN_FLAG;
+
 	return ret;
 }
 
@@ -515,31 +529,40 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 
 	WARN_ON(addr >= end);
 
-	spin_lock(&pic->kvm->mmu_lock);
+	spin_lock_irq(&pic->kvm->mmu_lock);
 
 	vcpu = kvm_get_vcpu(pic->kvm, 0);
 	if (!vcpu) {
-		spin_unlock(&pic->kvm->mmu_lock);
+		pic->gpa_to_hva = 0;
+		set_restart_gpa(TASK_SIZE, "NO-VCPU");
+		spin_unlock_irq(&pic->kvm->mmu_lock);
 		return -EINVAL;
 	}
 
 	mmu = kvm_arch_mmu_pointer(vcpu);
 	if (!VALID_PAGE(mmu->root_hpa)) {
-		spin_unlock(&pic->kvm->mmu_lock);
+		pic->gpa_to_hva = 0;
+		set_restart_gpa(TASK_SIZE, "NO-HPA");
+		spin_unlock_irq(&pic->kvm->mmu_lock);
 		return -EINVAL;
 	}
 
 	ept_root = __va(mmu->root_hpa);
 
-	spin_unlock(&pic->kvm->mmu_lock);
-	local_irq_disable();
 	// walk start at p4d when host enable 5 level table pages but
 	// vm only get 4 level table pages
 	if (mmu->shadow_root_level == 4 + (!!pgtable_l5_enabled()))
 		err = ept_pgd_range(pic, (pgd_t *)ept_root, addr, end, walk);
 	else
 		err = ept_p4d_range(pic, (p4d_t *)ept_root, addr, end, walk);
-	local_irq_enable();
+
+	// mmu_lock is unlock in vm_walk_host_range which will unlock mmu_lock
+	// and RET_RESCAN_FLAG will be set in ret value
+	if (!(err & RET_RESCAN_FLAG))
+		spin_unlock_irq(&pic->kvm->mmu_lock);
+	else
+		err &= ~RET_RESCAN_FLAG;
+
 	return err;
 }
 
@@ -808,6 +831,8 @@ static int vm_idle_walk_hva_range(struct page_idle_ctrl *pic,
 				   struct mm_walk *walk)
 {
 	unsigned long gpa_addr;
+	unsigned long gpa_next;
+	unsigned long gpa_end;
 	unsigned long addr_range;
 	unsigned long va_end;
 	int ret;
@@ -837,12 +862,20 @@ static int vm_idle_walk_hva_range(struct page_idle_ctrl *pic,
 			}
 		} else {
 			pic->gpa_to_hva = start - gpa_addr;
+			gpa_end = gpa_addr + addr_range;
+			for (; gpa_addr < gpa_end;) {
+				gpa_next = min(gpa_end, gpa_addr + walk_step * PAGE_SIZE);
 #ifdef CONFIG_ARM64
-			arm_page_range(pic, gpa_addr, gpa_addr + addr_range);
+				ret = arm_page_range(pic, gpa_addr, gpa_next);
 #else
-			ept_page_range(pic, gpa_addr, gpa_addr + addr_range, walk);
+				ret = ept_page_range(pic, gpa_addr, gpa_next, walk);
 #endif
-			va_end = pic->gpa_to_hva + gpa_addr + addr_range;
+				gpa_addr = pic->restart_gpa;
+
+				if (ret)
+					break;
+			}
+			va_end = pic->gpa_to_hva + gpa_end;
 		}
 
 		start = pic->restart_gpa + pic->gpa_to_hva;
@@ -850,6 +883,9 @@ static int vm_idle_walk_hva_range(struct page_idle_ctrl *pic,
 		if (ret)
 			break;
 	}
+
+	if (start > pic->next_hva)
+		set_next_hva(start, "NEXT-START");
 
 	if (pic->bytes_copied)
 		ret = 0;
@@ -1051,9 +1087,10 @@ static int mm_idle_pmd_entry(pmd_t *pmd, unsigned long addr,
 	 * Skip duplicate PMD_IDLE_PTES: when the PMD crosses VMA boundary,
 	 * walk_page_range() can call on the same PMD twice.
 	 */
-	if ((addr & PMD_MASK) == (pic->last_va & PMD_MASK)) {
+	if ((addr & PMD_MASK) == (pic->last_va & PMD_MASK) && (pic->flags & SCAN_HUGE_PAGE)) {
 		debug_printk("ignore duplicate addr %pK %pK\n",
 				 addr, pic->last_va);
+		set_restart_gpa(round_up(next, PMD_SIZE), "DUP_ADDR");
 		return 0;
 	}
 	pic->last_va = addr;
@@ -1145,11 +1182,16 @@ static int mm_idle_walk_range(struct page_idle_ctrl *pic,
 		up_read(&walk->mm->mmap_lock);
 
 		WARN_ONCE(pic->gpa_to_hva, "non-zero gpa_to_hva");
+		if (ret != PAGE_IDLE_KBUF_FULL && end > pic->restart_gpa)
+			pic->restart_gpa = end;
 		start = pic->restart_gpa;
 		ret = page_idle_copy_user(pic, start, end);
 		if (ret)
 			break;
 	}
+
+	if (start > pic->next_hva)
+		set_next_hva(start, "NEXT-START");
 
 	if (pic->bytes_copied) {
 		if (ret != PAGE_IDLE_BUF_FULL && pic->next_hva < end)
