@@ -2414,6 +2414,7 @@ static inline unsigned long get_num_physpages(void)
 	return phys_pages;
 }
 
+int find_best_peer_node(int nid);
 /*
  * Using memblock node mappings, an architecture may initialise its
  * zones, allocate the backing mem_map and account for memory holes in an

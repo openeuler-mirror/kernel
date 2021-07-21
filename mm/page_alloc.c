@@ -7401,6 +7401,34 @@ static void check_for_memory(pg_data_t *pgdat, int nid)
 }
 
 /*
+ * Return the nearest peer node in terms of *locality*
+ * E.g. peer of node 0 is node 2 per SLIT
+ * node distances:
+ * node   0   1   2   3
+ *   0:  10  21  17  28
+ *   1:  21  10  28  17
+ *   2:  17  28  10  28
+ *   3:  28  17  28  10
+ */
+int find_best_peer_node(int nid)
+{
+	int n, val;
+	int min_val = INT_MAX;
+	int peer = NUMA_NO_NODE;
+
+	for_each_online_node(n) {
+		if (n == nid)
+			continue;
+		val = node_distance(nid, n);
+		if (val < min_val) {
+			min_val = val;
+			peer = n;
+		}
+	}
+	return peer;
+}
+
+/*
  * Some architecturs, e.g. ARC may have ZONE_HIGHMEM below ZONE_NORMAL. For
  * such cases we allow max_zone_pfn sorted in the descending order
  */
@@ -7506,6 +7534,7 @@ void __init free_area_init(unsigned long *max_zone_pfn)
 		if (pgdat->node_present_pages)
 			node_set_state(nid, N_MEMORY);
 		check_for_memory(pgdat, nid);
+		pgdat->peer_node = find_best_peer_node(nid);
 	}
 }
 
