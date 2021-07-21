@@ -3158,6 +3158,15 @@ static struct ctl_table vm_table[] = {
 		.extra2         = SYSCTL_ONE,
 	},
 #endif
+	{
+		.procname       = "vmemmap_block_from_dram",
+		.data           = &sysctl_vmemmap_block_from_dram,
+		.maxlen         = sizeof(sysctl_vmemmap_block_from_dram),
+		.mode           = 0600,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
 	{ }
 };
 

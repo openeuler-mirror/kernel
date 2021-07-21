@@ -30,6 +30,8 @@
 #include <asm/dma.h>
 #include <asm/pgalloc.h>
 
+unsigned int sysctl_vmemmap_block_from_dram;
+
 /*
  * Allocate a block of memory to be used to back the virtual memory map
  * or to back the page tables that are used to create the mapping.
@@ -53,6 +55,12 @@ void * __meminit vmemmap_alloc_block(unsigned long size, int node)
 		int order = get_order(size);
 		static bool warned;
 		struct page *page;
+
+		/* if node is pmem node, alloc_pages from it's peer
+		 * dram node to accelerate access to page struct
+		 */
+		if (is_node_pmem(node) && sysctl_vmemmap_block_from_dram)
+			node = NODE_DATA(node)->peer_node;
 
 		page = alloc_pages_node(node, gfp_mask, order);
 		if (page)
