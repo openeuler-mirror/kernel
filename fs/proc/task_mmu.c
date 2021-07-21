@@ -1867,11 +1867,20 @@ static int mm_idle_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static long mm_idle_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	if (proc_page_scan_operations.unlocked_ioctl)
+		return proc_page_scan_operations.unlocked_ioctl(filp, cmd, arg);
+
+	return 0;
+}
+
 const struct file_operations proc_mm_idle_operations = {
 	.llseek		= mem_lseek, /* borrow this */
 	.read		= mm_idle_read,
 	.open		= mm_idle_open,
 	.release	= mm_idle_release,
+	.unlocked_ioctl = mm_idle_ioctl,
 };
 
 /*swap pages*/
