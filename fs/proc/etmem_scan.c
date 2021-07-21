@@ -454,14 +454,13 @@ next:
 }
 
 static int ept_p4d_range(struct page_idle_ctrl *pic,
-			 pgd_t *pgd, unsigned long addr, unsigned long end,
+			 p4d_t *p4d, unsigned long addr, unsigned long end,
 			 struct mm_walk *walk)
 {
-	p4d_t *p4d;
 	unsigned long next;
 	int err = 0;
 
-	p4d = p4d_offset(pgd, addr);
+	p4d += p4d_index(addr);
 	do {
 		next = p4d_addr_end(addr, end);
 		if (!ept_p4d_present(*p4d)) {
@@ -477,6 +476,33 @@ static int ept_p4d_range(struct page_idle_ctrl *pic,
 	return err;
 }
 
+static int ept_pgd_range(struct page_idle_ctrl *pic,
+		pgd_t *pgd,
+		unsigned long addr,
+		unsigned long end,
+		struct mm_walk *walk)
+{
+	p4d_t *p4d;
+	unsigned long next;
+	int err = 0;
+
+	pgd = pgd_offset_pgd(pgd, addr);
+	do {
+		next = pgd_addr_end(addr, end);
+		if (!ept_pgd_present(*pgd)) {
+			set_restart_gpa(next, "PGD_HOLE");
+			continue;
+		}
+
+		p4d = (p4d_t *)pgd_page_vaddr(*pgd);
+		err = ept_p4d_range(pic, p4d, addr, next, walk);
+		if (err)
+			break;
+	} while (pgd++, addr = next, addr != end);
+
+	return err;
+}
+
 static int ept_page_range(struct page_idle_ctrl *pic,
 			  unsigned long addr,
 			  unsigned long end,
@@ -484,9 +510,7 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 {
 	struct kvm_vcpu *vcpu;
 	struct kvm_mmu *mmu;
-	pgd_t *ept_root;
-	pgd_t *pgd;
-	unsigned long next;
+	uint64_t *ept_root;
 	int err = 0;
 
 	WARN_ON(addr >= end);
@@ -509,18 +533,12 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 
 	spin_unlock(&pic->kvm->mmu_lock);
 	local_irq_disable();
-	pgd = pgd_offset_pgd(ept_root, addr);
-	do {
-		next = pgd_addr_end(addr, end);
-		if (!ept_pgd_present(*pgd)) {
-			set_restart_gpa(next, "PGD_HOLE");
-			continue;
-		}
-
-		err = ept_p4d_range(pic, pgd, addr, next, walk);
-		if (err)
-			break;
-	} while (pgd++, addr = next, addr != end);
+	// walk start at p4d when host enable 5 level table pages but
+	// vm only get 4 level table pages
+	if (mmu->shadow_root_level == 4 + (!!pgtable_l5_enabled()))
+		err = ept_pgd_range(pic, (pgd_t *)ept_root, addr, end, walk);
+	else
+		err = ept_p4d_range(pic, (p4d_t *)ept_root, addr, end, walk);
 	local_irq_enable();
 	return err;
 }
@@ -540,7 +558,8 @@ static int ept_idle_supports_cpu(struct kvm *kvm)
 		if (kvm_mmu_ad_disabled(mmu)) {
 			printk(KERN_NOTICE "CPU does not support EPT A/D bits tracking\n");
 			ret = -EINVAL;
-		} else if (mmu->shadow_root_level != 4 + (!!pgtable_l5_enabled())) {
+		} else if (mmu->shadow_root_level < 4 ||
+				(mmu->shadow_root_level == 5 && !pgtable_l5_enabled())) {
 			printk(KERN_NOTICE "Unsupported EPT level %d\n", mmu->shadow_root_level);
 			ret = -EINVAL;
 		} else
