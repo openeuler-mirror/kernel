@@ -86,6 +86,11 @@
 
 #define RET_RESCAN_FLAG 0x10000
 
+/* error return IDLE_PAGE_TYPE_MAX or return valid page type */
+enum ProcIdlePageType (*vm_handle_pte_hole)(unsigned long addr,
+		unsigned long next, int depth, struct mm_walk *walk) = NULL;
+EXPORT_SYMBOL_GPL(vm_handle_pte_hole);
+
 static int set_walk_step(const char *val, const struct kernel_param *kp)
 {
 	int ret;
@@ -794,6 +799,11 @@ static unsigned long vm_idle_find_gpa(struct page_idle_ctrl *pic,
 	return INVALID_PAGE;
 }
 
+static inline unsigned long mask_to_size(unsigned long mask)
+{
+	return ~mask + 1;
+}
+
 static int mm_idle_hugetlb_entry(pte_t *pte, unsigned long hmask,
 		unsigned long addr, unsigned long next,
 		struct mm_walk *walk);
@@ -802,9 +812,36 @@ static int vm_idle_hugetlb_entry(pte_t *pte, unsigned long hmask,
 		struct mm_walk *walk)
 {
 	struct page_idle_ctrl *pic = walk->private;
+	enum ProcIdlePageType page_type;
 
 	pic->flags |= VM_SCAN_HOST;
+
+	// hugetlb page table entry of vm maybe not present while page is resident in address_space
+	if (mask_to_size(hmask) != PUD_PRESENT && !pte_present(*pte) &&
+			vm_handle_pte_hole != NULL) {
+		page_type = vm_handle_pte_hole(addr, next, -1, walk);
+		if (page_type < IDLE_PAGE_TYPE_MAX)
+			return pic_add_page(pic, addr, next, page_type);
+	}
+
 	return mm_idle_hugetlb_entry(pte, hmask, addr, next, walk);
+}
+
+static int vm_idle_pte_hole(unsigned long addr, unsigned long next, int depth, struct mm_walk *walk)
+{
+	struct page_idle_ctrl *pic = walk->private;
+	enum ProcIdlePageType pagetype;
+
+	if (vm_handle_pte_hole == NULL)
+		return 0;
+
+	pagetype = vm_handle_pte_hole(addr, next, depth, walk);
+	if (pagetype >= IDLE_PAGE_TYPE_MAX)
+		return 0;
+
+	debug_printk("scan pte hole addr %pK type %d\n", addr, pagetype);
+	pic->flags |= VM_SCAN_HOST;
+	return pic_add_page(pic, addr, next, pagetype);
 }
 
 static int mm_idle_pmd_entry(pmd_t *pmd, unsigned long addr,
@@ -925,6 +962,7 @@ static ssize_t vm_idle_read(struct file *file, char *buf,
 	mm_walk_ops.pmd_entry = vm_idle_pmd_entry;
 	mm_walk_ops.pud_entry = vm_idle_pud_entry;
 	mm_walk_ops.hugetlb_entry = vm_idle_hugetlb_entry;
+	mm_walk_ops.pte_hole = vm_idle_pte_hole;
 	mm_walk_ops.test_walk = mm_idle_test_walk;
 
 	mm_walk.mm = mm;
@@ -1050,11 +1088,6 @@ static int mm_idle_pte_range(struct page_idle_ctrl *pic, pmd_t *pmd,
 	} while (pte++, addr += PAGE_SIZE, addr != next);
 
 	return err;
-}
-
-static inline unsigned long mask_to_size(unsigned long mask)
-{
-	return ~mask + 1;
 }
 
 static int mm_idle_hugetlb_entry(pte_t *pte, unsigned long hmask,
