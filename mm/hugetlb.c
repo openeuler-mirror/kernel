@@ -79,6 +79,9 @@ DEFINE_SPINLOCK(hugetlb_lock);
 static int num_fault_mutexes;
 struct mutex *hugetlb_fault_mutex_table ____cacheline_aligned_in_smp;
 
+int sysctl_hugetlb_mig_noalloc;
+int sysctl_hugetlb_pmem_allocall;
+
 static inline bool PageHugeFreed(struct page *head)
 {
 	return page_private(head + 4) == -1UL;
@@ -1736,6 +1739,8 @@ static int alloc_pool_huge_page(struct hstate *h, nodemask_t *nodes_allowed,
 	gfp_t gfp_mask = htlb_alloc_mask(h) | __GFP_THISNODE;
 
 	for_each_node_mask_to_alloc(h, nr_nodes, node, nodes_allowed) {
+		if (is_node_pmem(node) && sysctl_hugetlb_pmem_allocall)
+			gfp_mask |= __GFP_MEMALLOC;
 		page = alloc_fresh_huge_page(h, gfp_mask, node, nodes_allowed,
 						node_alloc_noretry);
 		if (page)
@@ -1980,7 +1985,7 @@ struct page *alloc_huge_page_nodemask(struct hstate *h, int preferred_nid,
 		struct page *page;
 
 		page = dequeue_huge_page_nodemask(h, gfp_mask, preferred_nid, nmask);
-		if (page) {
+		if (page || sysctl_hugetlb_mig_noalloc) {
 			spin_unlock(&hugetlb_lock);
 			return page;
 		}

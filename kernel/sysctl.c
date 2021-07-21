@@ -3129,6 +3129,24 @@ static struct ctl_table vm_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 #endif
+	{
+		.procname       = "hugepage_mig_noalloc",
+		.data           = &sysctl_hugetlb_mig_noalloc,
+		.maxlen         = sizeof(sysctl_hugetlb_mig_noalloc),
+		.mode           = 0600,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
+	{
+		.procname       = "hugepage_pmem_allocall",
+		.data           = &sysctl_hugetlb_pmem_allocall,
+		.maxlen         = sizeof(sysctl_hugetlb_pmem_allocall),
+		.mode           = 0600,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
 	{ }
 };
 

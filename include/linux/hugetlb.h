@@ -159,6 +159,9 @@ struct address_space *hugetlb_page_mapping_lock_write(struct page *hpage);
 extern int sysctl_hugetlb_shm_group;
 extern struct list_head huge_boot_pages;
 
+extern int sysctl_hugetlb_mig_noalloc;
+extern int sysctl_hugetlb_pmem_allocall;
+
 /* arch callbacks */
 
 pte_t *huge_pte_alloc(struct mm_struct *mm,
