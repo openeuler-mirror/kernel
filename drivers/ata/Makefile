@@ -46,6 +46,7 @@ obj-$(CONFIG_SATA_SVW)		+= sata_svw.o
 obj-$(CONFIG_SATA_ULI)		+= sata_uli.o
 obj-$(CONFIG_SATA_VIA)		+= sata_via.o
 obj-$(CONFIG_SATA_VITESSE)	+= sata_vsc.o
+obj-$(CONFIG_SATA_ZHAOXIN)		+= sata_zhaoxin.o
 
 # SFF PATA w/ BMDMA
 obj-$(CONFIG_PATA_ALI)		+= pata_ali.o
