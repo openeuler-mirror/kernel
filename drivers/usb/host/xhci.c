@@ -5186,6 +5186,7 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
 	 */
 	struct device		*dev = hcd->self.sysdev;
 	unsigned int		minor_rev;
+	u8			i, j;
 	int			retval;
 
 	/* Accept arbitrarily long scatter-gather lists */
@@ -5240,6 +5241,24 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
 			hcd->self.root_hub->speed = USB_SPEED_SUPER_PLUS;
 			break;
 		}
+
+		/* usb3.1 has gen1 and gen2, Some zx's xHCI controller that follow usb3.1 spec
+		 * but only support gen1
+		 */
+		if (xhci->quirks & XHCI_ZHAOXIN_HOST) {
+			minor_rev = 0;
+			for (j = 0; j < xhci->num_port_caps; j++) {
+				for (i = 0; i < xhci->port_caps[j].psi_count; i++) {
+					if (XHCI_EXT_PORT_PSIV(xhci->port_caps[j].psi[i]) >= 5)
+						minor_rev = 1;
+				}
+				if (minor_rev != 1) {
+					hcd->speed = HCD_USB3;
+					hcd->self.root_hub->speed = USB_SPEED_SUPER;
+				}
+			}
+		}
+
 		xhci_info(xhci, "Host supports USB 3.%x %sSuperSpeed\n",
 			  minor_rev,
 			  minor_rev ? "Enhanced " : "");
