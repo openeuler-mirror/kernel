@@ -240,8 +240,8 @@ MODULE_SUPPORTED_DEVICE("{{Intel, ICH6},"
 			 "{ATI, RV770},"
 			 "{VIA, VT8251},"
 			 "{VIA, VT8237A},"
-			 "{SiS, SIS966},"
-			 "{ULI, M5461}}");
+			 "{ULI, M5461},"
+			 "{ZX, ZhaoxinHDA}}");
 MODULE_DESCRIPTION("Intel HDA driver");
 
 #if defined(CONFIG_PM) && defined(CONFIG_VGA_SWITCHEROO)
@@ -1741,6 +1741,15 @@ static void azx_check_snoop_available(struct azx *chip)
 		pci_read_config_byte(chip->pci, 0x42, &val);
 		if (!(val & 0x80) && (chip->pci->revision == 0x30 ||
 				      chip->pci->revision == 0x20))
+			snoop = false;
+	}
+
+	if (azx_get_snoop_type(chip) == AZX_SNOOP_TYPE_NONE &&
+		chip->driver_type == AZX_DRIVER_ZHAOXIN) {
+		u8 val1;
+
+		pci_read_config_byte(chip->pci, 0x42, &val1);
+		if (!(val1 & 0x80) && chip->pci->revision == 0x20)
 			snoop = false;
 	}
 
