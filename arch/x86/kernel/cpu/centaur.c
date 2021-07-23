@@ -122,6 +122,9 @@ static void early_init_centaur(struct cpuinfo_x86 *c)
 		if (edx & (1U << 28))
 			c->x86_coreid_bits = get_count_order((ebx >> 16) & 0xff);
 	}
+
+	if (detect_extended_topology_early(c) < 0)
+		detect_ht_early(c);
 }
 
 static void init_centaur(struct cpuinfo_x86 *c)
@@ -140,11 +143,14 @@ static void init_centaur(struct cpuinfo_x86 *c)
 	clear_cpu_cap(c, 0*32+31);
 #endif
 	early_init_centaur(c);
+	detect_extended_topology(c);
 	init_intel_cacheinfo(c);
-	detect_num_cpu_cores(c);
+	if (!cpu_has(c, X86_FEATURE_XTOPOLOGY)) {
+		detect_num_cpu_cores(c);
 #ifdef CONFIG_X86_32
 	detect_ht(c);
 #endif
+	}
 
 	if (c->cpuid_level > 9) {
 		unsigned int eax = cpuid_eax(10);
