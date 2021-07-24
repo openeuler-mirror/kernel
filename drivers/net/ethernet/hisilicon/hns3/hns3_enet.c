@@ -4115,7 +4115,7 @@ out_when_alloc_ring_memory:
 	return -ENOMEM;
 }
 
-int hns3_uninit_all_ring(struct hns3_nic_priv *priv)
+static void hns3_uninit_all_ring(struct hns3_nic_priv *priv)
 {
 	struct hnae3_handle *h = priv->ae_handle;
 	int i;
@@ -4124,7 +4124,6 @@ int hns3_uninit_all_ring(struct hns3_nic_priv *priv)
 		hns3_fini_ring(&priv->ring[i]);
 		hns3_fini_ring(&priv->ring[i + h->kinfo.num_tqps]);
 	}
-	return 0;
 }
 
 /* Set mac addr if it is configured. or leave it to the AE driver */
@@ -4352,7 +4351,6 @@ static void hns3_client_uninit(struct hnae3_handle *handle, bool reset)
 {
 	struct net_device *netdev = handle->kinfo.netdev;
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
-	int ret;
 
 	if (netdev->reg_state != NETREG_UNINITIALIZED)
 		unregister_netdev(netdev);
@@ -4378,9 +4376,7 @@ static void hns3_client_uninit(struct hnae3_handle *handle, bool reset)
 
 	hns3_nic_dealloc_vector_data(priv);
 
-	ret = hns3_uninit_all_ring(priv);
-	if (ret)
-		netdev_err(netdev, "uninit ring error\n");
+	hns3_uninit_all_ring(priv);
 
 	hns3_put_ring_config(priv);
 
@@ -4698,9 +4694,7 @@ static int hns3_reset_notify_uninit_enet(struct hnae3_handle *handle)
 
 	hns3_nic_dealloc_vector_data(priv);
 
-	ret = hns3_uninit_all_ring(priv);
-	if (ret)
-		netdev_err(netdev, "uninit ring error\n");
+	hns3_uninit_all_ring(priv);
 
 	hns3_put_ring_config(priv);
 
