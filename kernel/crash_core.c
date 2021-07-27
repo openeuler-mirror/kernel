@@ -462,6 +462,17 @@ void __init reserve_crashkernel(void)
 }
 #endif /* CONFIG_ARCH_WANT_RESERVE_CRASH_KERNEL */
 
+#ifdef CONFIG_PIN_MEMORY
+int __init parse_pin_memory(char *cmdline,
+		unsigned long long system_ram,
+		unsigned long long *pin_size,
+		unsigned long long *pin_base)
+{
+	return __parse_crashkernel(cmdline, system_ram, pin_size, pin_base,
+		"pinmemory=", NULL);
+}
+#endif
+
 Elf_Word *append_elf_note(Elf_Word *buf, char *name, unsigned int type,
 			  void *data, size_t data_len)
 {
