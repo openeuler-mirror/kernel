@@ -5318,3 +5318,68 @@ void ptlock_free(struct page *page)
 	kmem_cache_free(page_ptl_cachep, page->ptl);
 }
 #endif
+
+#ifdef CONFIG_PIN_MEMORY
+vm_fault_t do_anon_page_remap(struct vm_area_struct *vma, unsigned long address,
+	pmd_t *pmd, struct page *page)
+{
+	pte_t entry;
+	spinlock_t *ptl;
+	pte_t *pte;
+	vm_fault_t ret = 0;
+
+	if (pte_alloc(vma->vm_mm, pmd))
+		return VM_FAULT_OOM;
+
+	/* See the comment in pte_alloc_one_map() */
+	if (unlikely(pmd_trans_unstable(pmd)))
+		return 0;
+
+	/* Allocate our own private page. */
+	if (unlikely(anon_vma_prepare(vma)))
+		goto oom;
+
+	if (mem_cgroup_charge(page, vma->vm_mm, GFP_KERNEL))
+		goto oom_free_page;
+
+	/*
+	 * The memory barrier inside __SetPageUptodate makes sure that
+	 * preceding stores to the page contents become visible before
+	 * the set_pte_at() write.
+	 */
+	__SetPageUptodate(page);
+
+	entry = mk_pte(page, vma->vm_page_prot);
+	if (vma->vm_flags & VM_WRITE)
+		entry = pte_mkwrite(pte_mkdirty(entry));
+	pte = pte_offset_map_lock(vma->vm_mm, pmd, address,
+		&ptl);
+	if (!pte_none(*pte)) {
+		ret = VM_FAULT_FALLBACK;
+		goto release;
+	}
+
+	ret = check_stable_address_space(vma->vm_mm);
+	if (ret)
+		goto release;
+	inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
+	page_add_new_anon_rmap(page, vma, address, false);
+	lru_cache_add_inactive_or_unevictable(page, vma);
+
+	set_pte_at(vma->vm_mm, address, pte, entry);
+	/* No need to invalidate - it was non-present before */
+	update_mmu_cache(vma, address, pte);
+
+unlock:
+	pte_unmap_unlock(pte, ptl);
+	return ret;
+
+release:
+	put_page(page);
+	goto unlock;
+oom_free_page:
+	put_page(page);
+oom:
+	return VM_FAULT_OOM;
+}
+#endif

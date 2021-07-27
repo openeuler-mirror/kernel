@@ -898,4 +898,12 @@ config ARCH_HAS_HUGEPD
 config MAPPING_DIRTY_HELPERS
         bool
 
+config PIN_MEMORY
+	bool "Support for pin memory"
+	depends on MMU && ARM64
+	help
+	  Say y here to enable the pin memory feature for checkpoint
+	  and restore. We can pin the memory data of tasks and collect
+	  the corresponding physical pages mapping info in checkpoint,
+	  and remap the physical pages to restore tasks in restore.
 endmenu

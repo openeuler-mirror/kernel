@@ -3015,3 +3015,66 @@ void remove_migration_pmd(struct page_vma_mapped_walk *pvmw, struct page *new)
 	update_mmu_cache_pmd(vma, address, pvmw->pmd);
 }
 #endif
+
+#ifdef CONFIG_PIN_MEMORY
+vm_fault_t do_anon_huge_page_remap(struct vm_area_struct *vma, unsigned long address,
+		pmd_t *pmd, struct page *page)
+{
+	gfp_t gfp;
+	pgtable_t pgtable;
+	spinlock_t *ptl;
+	pmd_t entry;
+	vm_fault_t ret = 0;
+
+	if (unlikely(anon_vma_prepare(vma)))
+		return VM_FAULT_OOM;
+	if (unlikely(khugepaged_enter(vma, vma->vm_flags)))
+		return VM_FAULT_OOM;
+	gfp = alloc_hugepage_direct_gfpmask(vma);
+
+	prep_transhuge_page(page);
+	if (mem_cgroup_charge(page, vma->vm_mm, gfp)) {
+		put_page(page);
+		count_vm_event(THP_FAULT_FALLBACK);
+		count_vm_event(THP_FAULT_FALLBACK_CHARGE);
+		return VM_FAULT_FALLBACK;
+	}
+	cgroup_throttle_swaprate(page, gfp);
+
+	pgtable = pte_alloc_one(vma->vm_mm);
+	if (unlikely(!pgtable)) {
+		ret = VM_FAULT_OOM;
+		goto release;
+	}
+	__SetPageUptodate(page);
+	ptl = pmd_lock(vma->vm_mm, pmd);
+	if (unlikely(!pmd_none(*pmd))) {
+		goto unlock_release;
+	} else {
+		ret = check_stable_address_space(vma->vm_mm);
+		if (ret)
+			goto unlock_release;
+		entry = mk_huge_pmd(page, vma->vm_page_prot);
+		entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
+		page_add_new_anon_rmap(page, vma, address, true);
+		lru_cache_add_inactive_or_unevictable(page, vma);
+		pgtable_trans_huge_deposit(vma->vm_mm, pmd, pgtable);
+		set_pmd_at(vma->vm_mm, address, pmd, entry);
+		add_mm_counter(vma->vm_mm, MM_ANONPAGES, HPAGE_PMD_NR);
+		mm_inc_nr_ptes(vma->vm_mm);
+		spin_unlock(ptl);
+		count_vm_event(THP_FAULT_ALLOC);
+		count_memcg_event_mm(vma->vm_mm, THP_FAULT_ALLOC);
+	}
+
+	return 0;
+
+unlock_release:
+	spin_unlock(ptl);
+release:
+	if (pgtable)
+		pte_free(vma->vm_mm, pgtable);
+	put_page(page);
+	return ret;
+}
+#endif

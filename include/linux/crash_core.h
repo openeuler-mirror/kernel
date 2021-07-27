@@ -87,4 +87,9 @@ int parse_crashkernel_high(char *cmdline, unsigned long long system_ram,
 int parse_crashkernel_low(char *cmdline, unsigned long long system_ram,
 		unsigned long long *crash_size, unsigned long long *crash_base);
 
+#ifdef CONFIG_PIN_MEMORY
+int __init parse_pin_memory(char *cmdline, unsigned long long system_ram,
+	unsigned long long *pin_size, unsigned long long *pin_base);
+#endif
+
 #endif /* LINUX_CRASH_CORE_H */
