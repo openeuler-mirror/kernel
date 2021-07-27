@@ -269,9 +269,10 @@ struct kimage {
 	unsigned long control_page;
 
 	/* Flags to indicate special processing */
-	unsigned int type : 1;
+	unsigned int type : 2;
 #define KEXEC_TYPE_DEFAULT 0
 #define KEXEC_TYPE_CRASH   1
+#define KEXEC_TYPE_QUICK   2
 	unsigned int preserve_context : 1;
 	/* If set, we are using file mode kexec syscall */
 	unsigned int file_mode:1;
@@ -338,11 +339,23 @@ extern int kexec_load_disabled;
 #endif
 
 /* List of defined/legal kexec flags */
-#ifndef CONFIG_KEXEC_JUMP
-#define KEXEC_FLAGS    KEXEC_ON_CRASH
+#define __KEXEC_FLAGS_CRASH	KEXEC_ON_CRASH
+
+#ifdef CONFIG_KEXEC_JUMP
+#define __KEXEC_FLAGS_JUMP	KEXEC_PRESERVE_CONTEXT
 #else
-#define KEXEC_FLAGS    (KEXEC_ON_CRASH | KEXEC_PRESERVE_CONTEXT)
+#define __KEXEC_FLAGS_JUMP	0
 #endif
+
+#ifdef CONFIG_QUICK_KEXEC
+#define __KEXEC_FLAGS_QUICK	KEXEC_QUICK
+#else
+#define __KEXEC_FLAGS_QUICK	0
+#endif
+
+#define KEXEC_FLAGS	\
+	(__KEXEC_FLAGS_CRASH | __KEXEC_FLAGS_JUMP | __KEXEC_FLAGS_QUICK)
+
 
 /* List of defined/legal kexec file flags */
 #define KEXEC_FILE_FLAGS	(KEXEC_FILE_UNLOAD | KEXEC_FILE_ON_CRASH | \
@@ -351,6 +364,9 @@ extern int kexec_load_disabled;
 /* Location of a reserved region to hold the crash kernel.
  */
 extern note_buf_t __percpu *crash_notes;
+#ifdef CONFIG_QUICK_KEXEC
+extern struct resource quick_kexec_res;
+#endif
 
 /* flag to track if kexec reboot is in progress */
 extern bool kexec_in_progress;
