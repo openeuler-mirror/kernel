@@ -4685,14 +4685,15 @@ static int arm_smmu_device_reset(struct arm_smmu_device *smmu, bool bypass)
 
 static int arm_smmu_ecmdq_layout(struct arm_smmu_device *smmu)
 {
-	int cpu;
-	struct arm_smmu_ecmdq *ecmdq;
+	int cpu, node, nr_remain, nr_nodes = 0;
+	int *nr_ecmdqs;
+	struct arm_smmu_ecmdq *ecmdq, **ecmdqs;
+
+	ecmdq = devm_alloc_percpu(smmu->dev, *ecmdq);
+	if (!ecmdq)
+		return -ENOMEM;
 
 	if (num_possible_cpus() <= smmu->nr_ecmdq) {
-		ecmdq = devm_alloc_percpu(smmu->dev, *ecmdq);
-		if (!ecmdq)
-			return -ENOMEM;
-
 		for_each_possible_cpu(cpu)
 			*per_cpu_ptr(smmu->ecmdq, cpu) = per_cpu_ptr(ecmdq, cpu);
 
@@ -4702,7 +4703,79 @@ static int arm_smmu_ecmdq_layout(struct arm_smmu_device *smmu)
 		return 0;
 	}
 
-	return -ENOSPC;
+	for_each_node(node)
+		if (nr_cpus_node(node))
+			nr_nodes++;
+
+	if (nr_nodes >= smmu->nr_ecmdq) {
+		dev_err(smmu->dev, "%d ECMDQs is less than %d nodes\n", smmu->nr_ecmdq, nr_nodes);
+		return -ENOSPC;
+	}
+
+	nr_ecmdqs = kcalloc(MAX_NUMNODES, sizeof(int), GFP_KERNEL);
+	if (!nr_ecmdqs)
+		return -ENOMEM;
+
+	ecmdqs = kcalloc(smmu->nr_ecmdq, sizeof(*ecmdqs), GFP_KERNEL);
+	if (!ecmdqs) {
+		kfree(nr_ecmdqs);
+		return -ENOMEM;
+	}
+
+	/* [1] Ensure that each node has at least one ECMDQ */
+	nr_remain = smmu->nr_ecmdq - nr_nodes;
+	for_each_node(node) {
+		/*
+		 * Calculate the number of ECMDQs to be allocated to this node.
+		 * NR_ECMDQS_PER_CPU = nr_remain / num_possible_cpus();
+		 * When nr_cpus_node(node) is not zero, less than one ECMDQ
+		 * may be left due to truncation rounding.
+		 */
+		nr_ecmdqs[node] = nr_cpus_node(node) * nr_remain / num_possible_cpus();
+		nr_remain -= nr_ecmdqs[node];
+	}
+
+	/* Divide the remaining ECMDQs */
+	while (nr_remain) {
+		for_each_node(node) {
+			if (!nr_remain)
+				break;
+
+			if (nr_ecmdqs[node] >= nr_cpus_node(node))
+				continue;
+
+			nr_ecmdqs[node]++;
+			nr_remain--;
+		}
+	}
+
+	for_each_node(node) {
+		int i, round, shared = 0;
+
+		if (!nr_cpus_node(node))
+			continue;
+
+		/* An ECMDQ has been reserved for each node at above [1] */
+		nr_ecmdqs[node]++;
+
+		if (nr_ecmdqs[node] < nr_cpus_node(node))
+			shared = 1;
+
+		i = 0;
+		for_each_cpu(cpu, cpumask_of_node(node)) {
+			round = i % nr_ecmdqs[node];
+			if (i++ < nr_ecmdqs[node]) {
+				ecmdqs[round] = per_cpu_ptr(ecmdq, cpu);
+				ecmdqs[round]->cmdq.shared = shared;
+			}
+			*per_cpu_ptr(smmu->ecmdq, cpu) = ecmdqs[round];
+		}
+	}
+
+	kfree(nr_ecmdqs);
+	kfree(ecmdqs);
+
+	return 0;
 }
 
 static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
@@ -4767,9 +4840,19 @@ static int arm_smmu_ecmdq_probe(struct arm_smmu_device *smmu)
 		struct arm_smmu_queue *q;
 
 		ecmdq = *per_cpu_ptr(smmu->ecmdq, cpu);
-		ecmdq->base = cp_base + addr;
-
 		q = &ecmdq->cmdq.q;
+
+		/*
+		 * The boot option "maxcpus=" can limit the number of online
+		 * CPUs. The CPUs that are not selected are not showed in
+		 * cpumask_of_node(node), their 'ecmdq' may be NULL.
+		 *
+		 * (q->ecmdq_prod & ECMDQ_PROD_EN) indicates that the ECMDQ is
+		 * shared by multiple cores and has been initialized.
+		 */
+		if (!ecmdq || (q->ecmdq_prod & ECMDQ_PROD_EN))
+			continue;
+		ecmdq->base = cp_base + addr;
 
 		q->llq.max_n_shift = ECMDQ_MAX_SZ_SHIFT + shift_increment;
 		ret = arm_smmu_init_one_queue(smmu, q, ecmdq->base, ARM_SMMU_ECMDQ_PROD,
