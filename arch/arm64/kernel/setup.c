@@ -267,6 +267,12 @@ static void __init request_standard_resources(void)
 		    crashk_res.end <= res->end)
 			request_resource(res, &crashk_res);
 #endif
+#ifdef CONFIG_QUICK_KEXEC
+		if (quick_kexec_res.end &&
+		    quick_kexec_res.start >= res->start &&
+		    quick_kexec_res.end <= res->end)
+			request_resource(res, &quick_kexec_res);
+#endif
 	}
 }
 
