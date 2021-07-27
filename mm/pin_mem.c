@@ -1088,4 +1088,55 @@ void clear_pin_memory_record(void)
 }
 EXPORT_SYMBOL_GPL(clear_pin_memory_record);
 
+#ifdef CONFIG_PID_RESERVE
+struct idr *reserve_idr;
+
+/* test if there exist pin memory tasks */
+bool is_need_reserve_pids(void)
+{
+	return (pin_pid_num > 0);
+}
+
+void free_reserved_pid(struct idr *idr, int pid)
+{
+	unsigned int index;
+	struct page_map_info *pmi;
+
+	if (!max_pin_pid_num || idr != reserve_idr)
+		return;
+
+	for (index = 0; index < pin_pid_num; index++) {
+		pmi = &(user_space_reserve_start[index]);
+		if (pmi->pid == pid && pmi->pid_reserved) {
+			idr_remove(idr, pid);
+			return;
+		}
+	}
+}
+
+/* reserve pids for check point tasks which pinned memory */
+void reserve_pids(struct idr *idr, int pid_max)
+{
+	int alloc_pid;
+	unsigned int index;
+	struct page_map_info *pmi;
+
+	if (!max_pin_pid_num)
+		return;
+	reserve_idr = idr;
+	for (index = 0; index < pin_pid_num; index++) {
+		pmi = &(user_space_reserve_start[index]);
+		pmi->pid_reserved = true;
+		alloc_pid = idr_alloc(idr, NULL, pmi->pid, pid_max, GFP_ATOMIC);
+		if (alloc_pid != pmi->pid) {
+			if (alloc_pid > 0)
+				idr_remove(idr, alloc_pid);
+			pr_warn("Reserve pid (%d) fail, real pid is %d.\n", alloc_pid, pmi->pid);
+			pmi->pid_reserved = false;
+			continue;
+		}
+	}
+}
+#endif /* CONFIG_PID_RESERVE */
+
 #endif /* CONFIG_PIN_MEMORY */

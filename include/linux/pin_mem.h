@@ -89,5 +89,11 @@ extern struct resource pin_memory_resource;
 #endif
 extern void init_reserve_page_map(unsigned long map_addr, unsigned long map_size);
 
+#ifdef CONFIG_PID_RESERVE
+extern bool is_need_reserve_pids(void);
+extern void free_reserved_pid(struct idr *idr, int pid);
+extern void reserve_pids(struct idr *idr, int pid_max);
+#endif
+
 #endif /* CONFIG_PIN_MEMORY */
 #endif /* _LINUX_PIN_MEMORY_H */
