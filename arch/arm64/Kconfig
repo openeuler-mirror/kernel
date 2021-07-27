@@ -1229,6 +1229,18 @@ config CRASH_DUMP
 
 	  For more details see Documentation/admin-guide/kdump/kdump.rst
 
+config ARM64_CPU_PARK
+	bool "Support CPU PARK on kexec"
+	depends on SMP
+	depends on KEXEC_CORE
+	help
+	 This enables support for CPU PARK feature in
+	 order to save time of cpu down to up.
+	 CPU park is a state through kexec, spin loop
+	 instead of cpu die before jumping to new kernel,
+	 jumping out from loop to new kernel entry in
+	 smp_init.
+
 config XEN_DOM0
 	def_bool y
 	depends on XEN

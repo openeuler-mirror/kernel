@@ -32,6 +32,11 @@
 
 #define CRASH_ADDR_HIGH_MAX	MEMBLOCK_ALLOC_ACCESSIBLE
 
+#ifdef CONFIG_ARM64_CPU_PARK
+/* CPU park state flag: "park" */
+#define PARK_MAGIC 0x7061726b
+#endif
+
 #ifndef __ASSEMBLY__
 
 /**
@@ -100,6 +105,7 @@ static inline void crash_post_resume(void) {}
 #ifdef CONFIG_KEXEC_CORE
 extern void __init reserve_crashkernel(void);
 #endif
+void machine_kexec_mask_interrupts(void);
 
 #ifdef CONFIG_KEXEC_FILE
 #define ARCH_HAS_KIMAGE_ARCH
