@@ -18,6 +18,16 @@ config KEXEC_CORE
 	select CRASH_CORE
 	bool
 
+config QUICK_KEXEC
+	bool "Support for quick kexec"
+	depends on KEXEC_CORE
+	help
+	  It uses pre-reserved memory to accelerate kexec, just like
+	  crash kexec, loads new kernel and initrd to reserved memory,
+	  and boots new kernel on that memory. It will save the time
+	  of relocating kernel.
+
+
 config KEXEC_ELF
 	bool
 

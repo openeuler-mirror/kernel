@@ -44,6 +44,9 @@ static int kimage_alloc_init(struct kimage **rimage, unsigned long entry,
 	int ret;
 	struct kimage *image;
 	bool kexec_on_panic = flags & KEXEC_ON_CRASH;
+#ifdef CONFIG_QUICK_KEXEC
+	bool kexec_on_quick = flags & KEXEC_QUICK;
+#endif
 
 	if (kexec_on_panic) {
 		/* Verify we have a valid entry point */
@@ -68,6 +71,13 @@ static int kimage_alloc_init(struct kimage **rimage, unsigned long entry,
 		image->control_page = crashk_res.start;
 		image->type = KEXEC_TYPE_CRASH;
 	}
+
+#ifdef CONFIG_QUICK_KEXEC
+	if (kexec_on_quick) {
+		image->control_page = quick_kexec_res.start;
+		image->type = KEXEC_TYPE_QUICK;
+	}
+#endif
 
 	ret = sanity_check_segment_list(image);
 	if (ret)
