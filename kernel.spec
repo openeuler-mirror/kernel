@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2107.4.0
+%global hulkrelease 2107.5.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0095
+Release: %{hulkrelease}.0096
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,26 @@ fi
 
 %changelog
 
+
+* Tue Jul 27 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2107.5.0.0096
+- mm: vmalloc: prevent use after free in _vm_unmap_aliases
+- PCI/sysfs: Take reference on device to be removed
+- seq_file: disallow extremely large seq buffer allocations
+- ARM: footbridge: remove personal server platform
+- mm: slab: fix kmem_cache_create failed when sysfs node not destroyed
+- ARM: ensure the signal page contains defined contents
+- nvme-pci: use atomic bitops to mark a queue enabled
+- nvme: check the PRINFO bit before deciding the host buffer length
+- nvme: fix compat address handling in several ioctls
+- nvme-core: make implicit seed truncation explicit
+- nvme-core: don't use NVME_NSID_ALL for command effects and supported log
+- nvme-pci: fix NULL req in completion handler
+- nvme-pci: cancel nvme device request before disabling
+- nvme: copy MTFA field from identify controller
+- nvme-pci: Unblock reset_work on IO failure
+- nvme-pci: Don't disable on timeout in reset state
+- nvme-pci: Fix controller freeze wait disabling
+- block: error out if blk_get_queue() failed in blk_init_rl()
 
 * Tue Jul 20 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2107.4.0.0095
 - Revert "smp: Fix smp_call_function_single_async prototype"
