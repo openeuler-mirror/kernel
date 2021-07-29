@@ -884,7 +884,7 @@ static int userfaultfd_release(struct inode *inode, struct file *file)
 	struct vm_area_struct *vma, *prev;
 	/* len == 0 means wake all */
 	struct userfaultfd_wake_range range = { .len = 0, };
-	unsigned long new_flags;
+	unsigned long new_flags, userfault_flags;
 	bool still_valid;
 
 	WRITE_ONCE(ctx->released, true);
@@ -904,14 +904,18 @@ static int userfaultfd_release(struct inode *inode, struct file *file)
 	still_valid = mmget_still_valid(mm);
 	prev = NULL;
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
+		userfault_flags = VM_UFFD_MISSING | VM_UFFD_WP;
+#ifdef CONFIG_USERSWAP
+		userfault_flags |= VM_USWAP;
+#endif
 		cond_resched();
 		BUG_ON(!!vma->vm_userfaultfd_ctx.ctx ^
-		       !!(vma->vm_flags & (VM_UFFD_MISSING | VM_UFFD_WP)));
+		       !!(vma->vm_flags & userfault_flags));
 		if (vma->vm_userfaultfd_ctx.ctx != ctx) {
 			prev = vma;
 			continue;
 		}
-		new_flags = vma->vm_flags & ~(VM_UFFD_MISSING | VM_UFFD_WP);
+		new_flags = vma->vm_flags & ~userfault_flags;
 		if (still_valid) {
 			prev = vma_merge(mm, prev, vma->vm_start, vma->vm_end,
 					 new_flags, vma->anon_vma,
@@ -1333,6 +1337,8 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 	 */
 	if (uffdio_register.mode & UFFDIO_REGISTER_MODE_USWAP) {
 		uffdio_register.mode &= ~UFFDIO_REGISTER_MODE_USWAP;
+		if (!uffdio_register.mode)
+			goto out;
 		vm_flags |= VM_USWAP;
 		end = uffdio_register.range.start + uffdio_register.range.len - 1;
 		vma = find_vma(mm, uffdio_register.range.start);
