@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       5
-%global maintenance_release .0.0
-%global pkg_release         .15
+%global maintenance_release .1.0
+%global pkg_release         .16
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -869,6 +869,772 @@ fi
 %endif
 
 %changelog
+* Tue Jul 27 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.1.0.16
+- config: enable kernel hotupgrade features by default
+- pid: add pid reserve method for checkpoint and recover
+- mm: add pin memory method for checkpoint add restore
+- arm64: Add memmap parameter and register pmem
+- arm64: smp: Add support for cpu park
+- arm64: Reserve memory for quick kexec
+- kexec: Add quick kexec support for kernel
+- openeuler_defconfig: Enable CONFIG_SMMU_BYPASS_DEV by default
+- iommu: Enable smmu-v3 when 3408iMR/3416iMRraid card exist
+- net: hns3: fix rx VLAN offload state inconsistent issue
+- net: hns3: disable port VLAN filter when support function level VLAN filter control
+- net: hns3: add match_id to check mailbox response from PF to VF
+- net: hns3: fix possible mismatches resp of mailbox
+- iommu/arm-smmu-v3: Add support for less than one ECMDQ per core
+- iommu/arm-smmu-v3: Add arm_smmu_ecmdq_issue_cmdlist() for non-shared ECMDQ
+- iommu/arm-smmu-v3: Ensure that a set of associated commands are inserted in the same ECMDQ
+- iommu/arm-smmu-v3: Add support for ECMDQ register mode
+- iommu/arm-smmu-v3: Extract reusable function __arm_smmu_cmdq_skip_err()
+- iommu/arm-smmu-v3: Add and use static helper function arm_smmu_get_cmdq()
+- iommu/arm-smmu-v3: Add and use static helper function arm_smmu_cmdq_issue_cmd_with_sync()
+- iommu/arm-smmu-v3: Use command queue batching helpers to improve performance
+- sched: Add /debug/sched_preempt
+- preempt/dynamic: Support dynamic preempt with preempt= boot option
+- preempt/dynamic: Provide irqentry_exit_cond_resched() static call
+- preempt/dynamic: Provide preempt_schedule[_notrace]() static calls
+- preempt/dynamic: Provide cond_resched() and might_resched() static calls
+- preempt: Introduce CONFIG_PREEMPT_DYNAMIC
+- static_call: Provide DEFINE_STATIC_CALL_RET0()
+- static_call/x86: Add __static_call_return0()
+- openeuler_defconfig: Enable Phytium FT-2500 support by default
+- irqchip/gic-phytium-2500: Add support for GIC of Phytium S2500
+- sched/fair: Merge select_idle_core/cpu()
+- sched/fair: Remove select_idle_smt()
+- sched/fair: Move avg_scan_cost calculations under SIS_PROP
+- sched/fair: Remove SIS_AVG_CPU
+- net: hns3: add support for dumping MAC umv counter in debugfs
+- net: hns3: add support for FD counter in debugfs
+- net: hns3: Fix a memory leak in an error handling path in 'hclge_handle_error_info_log()'
+- net: hns3: fix different snprintf() limit
+- net: hns3: fix reuse conflict of the rx page
+- net: hns3: use bounce buffer when rx page can not be reused
+- net: hns3: optimize the rx page reuse handling process
+- net: hns3: support dma_map_sg() for multi frags skb
+- net: hns3: add support to query tx spare buffer size for pf
+- net: hns3: use tx bounce buffer for small packets
+- net: hns3: refactor for hns3_fill_desc() function
+- net: hns3: minor refactor related to desc_cb handling
+- net: hns3: fix a double shift bug
+- net: hns3: add debugfs support for ptp info
+- net: hns3: add support for PTP
+- net: hns3: use list_move_tail instead of list_del/list_add_tail in hclge_main.c
+- net: hns3: use list_move_tail instead of list_del/list_add_tail in hclgevf_main.c
+- net: hns3: add error handling compatibility during initialization
+- net: hns3: update error recovery module and type
+- net: hns3: add support for imp-handle ras capability
+- net: hns3: add the RAS compatibility adaptation solution
+- net: hns3: add support for handling all errors through MSI-X
+- net: hns3: remove now redundant logic related to HNAE3_UNKNOWN_RESET
+- net: hns3: add scheduling logic for error handling task
+- net: hns3: add a separate error handling task
+- net: hns3: add debugfs support for vlan configuration
+- net: hns3: add support for VF modify VLAN filter state
+- net: hns3: add query basic info support for VF
+- net: hns3: add support for modify VLAN filter state
+- net: hns3: refine function hclge_set_vf_vlan_cfg()
+- net: hns3: remove unnecessary updating port based VLAN
+- net: hns3: refine for hclge_push_vf_port_base_vlan_info()
+- net: hns3: add 'QoS' support for port based VLAN configuration
+- net: hns3: switch to dim algorithm for adaptive interrupt moderation
+- net: hns3: use HCLGE_VPORT_STATE_PROMISC_CHANGE to replace HCLGE_STATE_PROMISC_CHANGED
+- net: hns3: configure promisc mode for VF asynchronously
+- net: hns3: Fix return of uninitialized variable ret
+- net: hns3: remove the useless debugfs file node cmd
+- net: hns3: refactor dump serv info of debugfs
+- net: hns3: refactor dump mac tnl status of debugfs
+- net: hns3: refactor dump qs shaper of debugfs
+- net: hns3: refactor dump qos buf cfg of debugfs
+- net: hns3: refactor dump qos pri map of debugfs
+- net: hns3: refactor dump qos pause cfg of debugfs
+- net: hns3: refactor dump tc of debugfs
+- net: hns3: refactor dump tm of debugfs
+- net: hns3: refactor dump tm map of debugfs
+- net: hns3: refactor dump fd tcam of debugfs
+- net: hns3: refactor queue info of debugfs
+- net: hns3: refactor queue map of debugfs
+- net: hns3: refactor dump reg dcb info of debugfs
+- net: hns3: refactor dump reg of debugfs
+- net: hns3: fix user's coalesce configuration lost issue
+- net: hns3: refactor dump ncl config of debugfs
+- net: hns3: refactor dump m7 info of debugfs
+- net: hns3: refactor dump reset info of debugfs
+- net: hns3: refactor dump intr of debugfs
+- net: hns3: refactor dump loopback of debugfs
+- net: hns3: refactor dump mng tbl of debugfs
+- net: hns3: refactor dump mac list of debugfs
+- net: hns3: refactor dump bd info of debugfs
+- net: hns3: refactor dev capability and dev spec of debugfs
+- net: hns3: refactor the debugfs process
+- net: hns3: refactor out RX completion checksum
+- net: hns3: support RXD advanced layout
+- net: hns3: clear unnecessary reset request in hclge_reset_rebuild
+- net: hns3: change the value of the SEPARATOR_VALUE macro in hclgevf_main.c
+- net: hns3: cleanup inappropriate spaces in struct hlcgevf_tqp_stats
+- net: hns3: remove a duplicate pf reset counting
+- net: hns3: VF not request link status when PF support push link status feature
+- net: hns3: PF add support for pushing link status to VFs
+- net: hns3: Fix potential null pointer defererence of null ae_dev
+- net: hns3: Trivial spell fix in hns3 driver
+- net: hns3: add suspend and resume pm_ops
+- net: hns3: change flr_prepare/flr_done function names
+- net: hns3: Remove un-necessary 'else-if' in the hclge_reset_event()
+- net: hns3: Remove the left over redundant check & assignment
+- net: hns3: add stats logging when skb padding fails
+- net: hns3: expand the tc config command
+- net: hns3: add tx send size handling for tso skb
+- net: hns3: optimize the process of queue reset
+- net: hns3: remove the rss_size limitation by vector num
+- net: hns3: fix use-after-free issue for hclge_add_fd_entry_common()
+- net: hns3: fix missing rule state assignment
+- net: hns3: no return statement in hclge_clear_arfs_rules
+- net: hns3: split out hclge_tm_vport_tc_info_update()
+- net: hns3: split function hclge_reset_rebuild()
+- net: hns3: fix some typos in hclge_main.c
+- net: hns3: fix prototype warning
+- net: hns3: remove unused parameter from hclge_dbg_dump_loopback()
+- net: hns3: remove unused parameter from hclge_set_vf_vlan_common()
+- net: hns3: remove redundant query in hclge_config_tm_hw_err_int()
+- net: hns3: remove redundant blank lines
+- net: hns3: remove unused code of vmdq
+- net: hns3: add support for user-def data of flow director
+- net: hns3: refine for hns3_del_all_fd_entries()
+- net: hns3: refactor flow director configuration
+- net: hns3: add support for traffic class tuple support for flow director by ethtool
+- net: hns3: refactor for function hclge_fd_convert_tuple
+- net: hns3: refactor out hclge_fd_get_tuple()
+- net: hns3: refactor out hclge_add_fd_entry()
+- net: hns3: add phy loopback support for imp-controlled PHYs
+- net: hns3: add ioctl support for imp-controlled PHYs
+- net: hns3: add get/set pause parameters support for imp-controlled PHYs
+- net: hns3: add support for imp-controlled PHYs
+- net: hns3: use pause capability queried from firmware
+- net: hns3: use FEC capability queried from firmware
+- net: hns3: refactor out hclge_rm_vport_all_mac_table()
+- net: hns3: refactor out hclgevf_set_rss_tuple()
+- net: hns3: refactor out hclge_set_rss_tuple()
+- net: hns3: split out hclgevf_cmd_send()
+- net: hns3: split out hclge_cmd_send()
+- net: hns3: split out hclge_dbg_dump_qos_buf_cfg()
+- net: hns3: refactor out hclgevf_get_rss_tuple()
+- net: hns3: refactor out hclge_get_rss_tuple()
+- net: hns3: refactor out hclge_set_vf_vlan_common()
+- net: hns3: use ipv6_addr_any() helper
+- net: hns3: clean up hns3_dbg_cmd_write()
+- net: hns3: refactor out hclgevf_cmd_convert_err_code()
+- net: hns3: refactor out hclge_cmd_convert_err_code()
+- net: hns3: fix return of random stack value
+- net: hns3: cleanup for endian issue for VF RSS
+- net: hns3: remove unused macro definition
+- net: hns3: remove an unused parameter in hclge_vf_rate_param_check()
+- net: hns3: remove redundant return value of hns3_uninit_all_ring()
+- net: hns3: change hclge_query_bd_num() param type
+- net: hns3: change hclge_parse_speed() param type
+- net: hns3: modify some unmacthed types print parameter
+- net: hns3: clean up unnecessary parentheses in macro definitions
+- net: hns3: remove the shaper param magic number
+- net: hns3: remove redundant client_setup_tc handle
+- net: hns3: clean up some incorrect variable types in hclge_dbg_dump_tm_map()
+- net: hns3: replace macro of max qset number with specification
+- net: hns3: debugfs add max tm rate specification print
+- net: hns3: add support for obtaining the maximum frame size
+- net: hns3: optimize the code when update the tc info
+- net: hns3: RSS indirection table use device specification
+- net: hns3: add api capability bits for firmware
+- net: hns3: remove redundant null check of an array
+- net: hns3: add debugfs support for tm nodes, priority and qset info
+- net: hns3: add interfaces to query information of tm priority/qset
+- x86/perf: Add uncore performance monitor support for Zhaoxin CPUs
+- iommu/vt-d:Add support for detecting ACPI device, in RMRR
+- USB:Fix kernel NULL pointer when unbind UHCI form vfio-pci
+- xhci: fix issue with resume from system Sx state
+- xhci: Adjust the UHCI Controllers bit value
+- ALSA: hda: Add support of Zhaoxin NB HDAC codec
+- ALSA: hda: Add support of Zhaoxin NB HDAC
+- ALSA: hda: Add Zhaoxin SB HDAC non snoop
+- xhci: Show Zhaoxin XHCI root hub speed correctly
+- xhci: fix issue of cross page boundary in TRB prefetch
+- xhci: Add Zhaoxin xHCI LPM U1/U2 feature support
+- ata: sata_zhaoxin: Add support for Zhaoxin Serial ATA
+- crypto: x86/crc32c-intel - Don't match some Zhaoxin CPUs
+- Add MCA supprot for X86_VENDOR_CENTAUR CPUs
+- Add support for extended topology detection
+- Get locgical processors numbers bits per package
+- ima: fix CONFIG_IMA_DIGEST_DB_MEGABYTES in openeuler_defconfig
+- usb: gadget: rndis: Fix info leak of rndis
+- crypto: hisilicon/qm - implement for querying hardware tasks status.
+- crypto: hisilicon/sec - Fix spelling mistake "fallbcak" -> "fallback"
+- crypto: hisilicon/zip - adds the max shaper type rate
+- crypto: hisilicon/hpre - adds the max shaper type rate
+- crypto: hisilicon/sec - adds the max shaper type rate
+- crypto: hisilicon/qm - supports to inquiry each function's QoS
+- crypto: hisilicon/qm - add pf ping single vf function
+- crypto: hisilicon/qm - merges the work initialization process into a single function
+- crypto: hisilicon/qm - add the "alg_qos" file node
+- crypto: hisilicon/qm - supports writing QoS int the host
+- uacce: add print information if not enable sva
+- crypto: hisilicon/sec - modify the SEC request structure
+- crypto: hisilicon/sec - add hardware integrity check value process
+- crypto: hisilicon/sec - add fallback tfm supporting for aeads
+- crypto: hisilicon/sec - add new algorithm mode for AEAD
+- crypto: hisilicon/qm - update reset flow
+- crypto: hisilicon/qm - add callback to support communication
+- crypto: hisilicon/qm - enable PF and VFs communication
+- crypto: hisilicon/qm - adjust reset interface
+- crypto: hisilicon/hpre - register ecdh NIST P384
+- crypto: hisilicon/hpre - add check before gx modulo p
+- crypto: hisilicon/hpre - fix ecdh self test issue
+- crypto: hisilicon/sec - fixup 3des minimum key size declaration
+- crypto: hisilicon/sec - add fallback tfm supporting for XTS mode
+- crypto: hisilicon/sec - add new skcipher mode for SEC
+- crypto: hisilicon/sec - driver adapt to new SQE
+- crypto: hisilicon/sec - add new type of SQE
+- crypto: hisilicon - switch to memdup_user_nul()
+- crypto: ecdh - add test suite for NIST P384
+- crypto: ecdh - register NIST P384 tfm
+- crypto: ecdh - fix 'ecdh_init'
+- crypto: ecdh - fix ecdh-nist-p192's entry in testmgr
+- crypto: hisilicon/qm - support address prefetching
+- crypto: hisilicon/qm - add MSI detection steps on Kunpeng930
+- crypto: hisilicon/qm - fix the process of VF's list adding
+- crypto: hisilicon/qm - add dfx log if not use hardware crypto algs
+- crypto: hisilicon/qm - enable to close master ooo when NFE occurs
+- crypto: hisilicon/qm - adjust order of device error configuration
+- crypto: hisilicon/qm - modify 'QM_RESETTING' clearing error
+- crypto: hisilicon/qm - initialize the device before doing tasks
+- crypto: hisilicon/hpre - add 'default' for switch statement
+- crypto: hisilicon/hpre - delete rudundant macro definition
+- crypto: hisilicon/hpre - use 'GENMASK' to generate mask value
+- crypto: hisilicon/hpre - delete rudundant initialization
+- crypto: hisilicon/hpre - remove the macro of 'HPRE_DEV'
+- crypto: hisilicon/hpre - replace macro with inline function
+- crypto: hisilicon/hpre - init a structure member each line
+- crypto: hisilicon/hpre - the macro 'HPRE_ADDR' expands
+- crypto: hisilicon/hpre - fix unmapping invalid dma address
+- crypto: hisilicon/hpre - extend 'cra_driver_name' with curve name
+- crypto: ecdh - extend 'cra_driver_name' with curve name
+- crypto: testmgr - fix initialization of 'secret_size'
+- crypto: hisilicon - enable new error types for QM
+- crypto: hisilicon - add new error type for SEC
+- crypto: hisilicon - support new error types for ZIP
+- crypto: hisilicon - dynamic configuration 'err_info'
+- crypto: hisilicon/hpre - delete redundant log and return in advance
+- crypto: hisilicon/hpre - add debug log
+- crypto: hisilicon/hpre - use the correct variable type
+- crypto: hisilicon/hpre - delete the rudundant space after return
+- crypto: hisilicon/sgl - fix the sg buf unmap
+- crypto: hisilicon/sgl - fix the soft sg map to hardware sg
+- crypto: hisilicon/sgl - add some dfx logs
+- crypto: hisilicon/sgl - delete unneeded variable initialization
+- crypto: hisilicon/sgl - add a comment for block size initialization
+- crypto: hisilicon/sec - use the correct print format
+- crypto: hisilicon/trng - add version to adapt new algorithm
+- crypto: hisilicon/qm - add stop queue by hardware
+- crypto: ecc - delete a useless function declaration
+- crypto: hisilicon/qm - delete redundant code
+- crypto: hisilicon/sec - fixup checking the 3DES weak key
+- crypto: hisilicon/hpre - fix a typo in hpre_crypto.c
+- crypto: hisilicon/sec - Fix a module parameter error
+- crypto: hisilicon/sec - Fixes AES algorithm mode parameter problem
+- crypto: hisilicon/hpre - Add processing of src_data in 'CURVE25519'
+- crypto: hisilicon/hpre - delete redundant '\n'
+- crypto: hisilicon/hpre - fix a typo and delete redundant blank line
+- crypto: hisilicon/hpre - fix PASID setting on kunpeng 920
+- crypto: hisilicon/zip - support new 'sqe' type in Kunpeng930
+- crypto: hisilicon/zip - initialize operations about 'sqe' in 'acomp_alg.init'
+- crypto: hisilicon/zip - add comments for 'hisi_zip_sqe'
+- crypto: hisilicon/zip - adjust functions location
+- uacce: delete unneeded variable initialization
+- crypto: hisilicon - use the correct HiSilicon copyright
+- crypto: hisilicon/qm - add queue isolation support for Kunpeng930
+- crypto: hisilicon/qm - set the number of queues for function
+- crypto: hisilicon/qm - move 'CURRENT_QM' code to qm.c
+- crypto: hisilicon/qm - set the total number of queues
+- crypto: hisilicon/hpre - fix Kconfig
+- crypto: hisilicon/hpre - fix "hpre_ctx_init" resource leak
+- crypto: hisilicon - fix the check on dma address
+- crypto: hisilicon/hpre - optimise 'hpre_algs_register' error path
+- crypto: hisilicon/hpre - delete wrap of 'CONFIG_CRYPTO_DH'
+- crypto: ecc - Correct an error in the comments
+- crypto: hisilicon/sec - Supply missing description for 'sec_queue_empty()'s 'queue' param
+- crypto: ecdsa - Register NIST P384 and extend test suite
+- crypto: ecc - Add math to support fast NIST P384
+- crypto: ecc - Add NIST P384 curve parameters
+- crypto: ecdsa - Add support for ECDSA signature verification
+- oid_registry: Add OIDs for ECDSA with SHA224/256/384/512
+- crypto: hisilicon/sec - fixes some driver coding style
+- crypto: hisilicon/sec - fixes some coding style
+- crypto: hisilicon/hpre - add 'CURVE25519' algorithm
+- crypto: hisilicon/hpre - add 'ECDH' algorithm
+- crypto: ecc - add curve25519 params and expose them
+- crypto: ecc - expose ecc curves
+- crypto: ecdh - move curve_id of ECDH from the key to algorithm name
+- crypto: hisilicon/hpre - add algorithm type
+- crypto: hisilicon/hpre - add version adapt to new algorithms
+- crypto: hisilicon/qm - fix printing format issue
+- crypto: hisilicon/qm - do not reset hardware when CE happens
+- crypto: hisilicon/qm - update irqflag
+- crypto: hisilicon/qm - fix the value of 'QM_SQC_VFT_BASE_MASK_V2'
+- crypto: hisilicon/qm - fix request missing error
+- crypto: hisilicon/qm - removing driver after reset
+- crypto: hisilicon/hpre - enable Elliptic curve cryptography
+- crypto: hisilicon - PASID fixed on Kunpeng 930
+- crypto: hisilicon/qm - fix use of 'dma_map_single'
+- crypto: hisilicon/hpre - tiny fix
+- crypto: hisilicon/hpre - adapt the number of clusters
+- crypto: hisilicon/hpre - add ecc algorithm inqury for uacce device
+- crypto: hisilicon/hpre - add two RAS correctable errors processing
+- crypto: hisilicon/hpre - delete ECC 1bit error reported threshold
+- crypto: hisilicon/sec - register SEC device to uacce
+- crypto: hisilicon/hpre - register HPRE device to uacce
+- crypto: hisilicon - add ZIP device using mode parameter
+- crypto: hisilicon/qm - SVA bugfixed on Kunpeng920
+- crypto: hisilicon/trng - replace atomic_add_return()
+- crypto: hisilicon/trng - add support for PRNG
+- crypto: hisilicon/trng - add HiSilicon TRNG driver support
+- hwrng: hisi - remove HiSilicon TRNG driver
+- crypto: hisilicon/zip - add a work_queue for zip irq
+- crypto: sha - split sha.h into sha1.h and sha2.h
+- uacce: modify the module author information.
+- uacce: delete some redundant code.
+- crypto: hisilicon/sec2 - Fix aead authentication setting key error
+- crypto: hisilicon/qm - split 'hisi_qm_init' into smaller pieces
+- crypto: hisilicon/qm - split 'qm_eq_ctx_cfg' into smaller pieces
+- crypto: hisilicon/qm - split 'qm_qp_ctx_cfg' into smaller pieces
+- crypto: hisilicon/qm - replace 'sprintf' with 'scnprintf'
+- crypto: hisilicon/qm - modify return type of 'qm_set_sqctype'
+- crypto: hisilicon/qm - modify the return type of debugfs interface
+- crypto: hisilicon/qm - modify the return type of function
+- crypto: hisilicon/qm - numbers are replaced by macros
+- crypto: hisilicon - fixes some coding style
+- crypto: hisilicon - delete unused structure member variables
+- crypto: hisilicon - Fix doc warnings in sgl.c and qm.c
+- RDMA/hns: Add window selection field of congestion control
+- RDMA/hns: Fix incorrect vlan enable bit in QPC
+- RDMA/hns: Add vendor_err info to error WC
+- RDMA/hns: Fix spelling mistakes of original
+- RDMA/hns: Simplify the judgment in hns_roce_v2_post_send()
+- RDMA/hns: Encapsulate flushing CQE as a function
+- RDMA/hns: Modify function return value type
+- RDMA/hns: Clean definitions of EQC structure
+- RDMA/hns: Delete unnecessary branch of hns_roce_v2_query_qp
+- RDMA/hns: Add member assignments for qp_init_attr
+- RDMA/hns: Fix some print issues
+- RDMA/hns: Fix uninitialized variable
+- RDMA/hns: Force rewrite inline flag of WQE
+- RDMA/hns: Use IDA interface to manage xrcd index
+- RDMA/hns: Use IDA interface to manage pd index
+- RDMA/hns: Use IDA interface to manage mtpt index
+- RDMA/hns: Remove unused RR mechanism
+- RDMA/hns: Remove the unused hns_roce_bitmap_free_range function
+- RDMA/hns: Remove the unused hns_roce_bitmap_alloc_range function
+- RDMA/hns: Clean SRQC structure definition
+- RDMA/hns: Use new interface to write DB related fields
+- RDMA/hns: Use new interface to write FRMR fields
+- RDMA/hns: Use new interface to get CQE fields
+- RDMA/hns: Use new interface to modify QP context
+- RDMA/hns: Use new interface to write CQ context.
+- RDMA/hns: Add hr_reg_write_bool()
+- RDMA/hns: Add a check to ensure integer mtu is positive
+- RDMA/hns: Do not use !! for values that are already bool when calling hr_reg_write()
+- RDMA/hns: Clear extended doorbell info before using
+- RDMA/hns: Support getting max QP number from firmware
+- RDMA/hns: Use refcount_t instead of atomic_t for QP reference counting
+- RDMA/hns: Use refcount_t instead of atomic_t for SRQ reference counting
+- RDMA/hns: Use refcount_t instead of atomic_t for CQ reference counting
+- RDMA/hns: Refactor capability configuration flow of VF
+- RDMA/hns: Clean the hardware related code for HEM
+- RDMA/hns: Use refcount_t APIs for HEM
+- RDMA/hns: Fix wrong timer context buffer page size
+- RDMA/hns: Refactor root BT allocation for MTR
+- RDMA/hns: Remove unused CMDQ member
+- RDMA/hns: Remove Receive Queue of CMDQ
+- RDMA/hns: Rename CMDQ head/tail pointer to PI/CI
+- RDMA/hns: Refactor extend link table allocation
+- RDMA/hns: Remove unused parameter udata
+- RDMA/hns: Remove the condition of light load for posting DWQE
+- RDMA/hns: Remove duplicated hem page size config code
+- RDMA/hns: Enable RoCE on virtual functions
+- RDMA/hns: Set parameters of all the functions belong to a PF
+- RDMA/hns: Reserve the resource for the VFs
+- RDMA/hns: Query the number of functions supported by the PF
+- RDMA/hns: Simplify function's resource related command
+- RDMA/hns: Remove unnecessary flush operation for workqueue
+- RDMA/hns: Prevent le32 from being implicitly converted to u32
+- RDMA/hns: Simplify the function config_eqc()
+- RDMA/hns: Add XRC subtype in QPC and XRC type in SRQC
+- RDMA/hns: Remove unsupported QP types
+- RDMA/hns: Delete unused members in the structure hns_roce_hw
+- RDMA/hns: Delete redundant abnormal interrupt status
+- RDMA/hns: Delete redundant condition judgment related to eq
+- RDMA/hns: Fix missing assignment of max_inline_data
+- RDMA/hns: Avoid enabling RQ inline on UD
+- RDMA/hns: Modify prints for mailbox and command queue
+- RDMA/hns: Support more return types of command queue
+- RDMA/hns: Enable all CMDQ context
+- RDMA/hns: Use GFP_ATOMIC under spin lock
+- RDMA/hns: Reorganize doorbell update interfaces for all queues
+- RDMA/hns: Support configuring doorbell mode of RQ and CQ
+- RDMA/hns: Simplify command fields for HEM base address configuration
+- RDMA/hns: Reorganize process of setting HEM
+- RDMA/hns: Refactor reset state checking flow
+- RDMA/hns: Reorganize hns_roce_create_cq()
+- RDMA/hns: Refactor hns_roce_v2_poll_one()
+- RDMA/hns: Support congestion control type selection according to the FW
+- RDMA/hns: Support query information of functions from FW
+- RDMA/hns: Fix a spelling mistake in hns_roce_hw_v1.c
+- RDMA/hns: Support to query firmware version
+- RDMA/hns: Fix memory corruption when allocating XRCDN
+- RDMA/hns: Fix bug during CMDQ initialization
+- RDMA/hns: Add support for XRC on HIP09
+- RDMA/hns: Use new SQ doorbell register for HIP09
+- RDMA/hns: Adjust definition of FRMR fields
+- RDMA/hns: Refactor process of posting CMDQ
+- RDMA/hns: Adjust fields and variables about CMDQ tail/head
+- RDMA/hns: Remove redundant operations on CMDQ
+- RDMA/hns: Remove unused member and variable of CMDQ
+- RDMA/hns: Delete redundant judgment when preparing descriptors
+- RDMA/hns: Remove unnecessary wrap around for EQ's consumer index
+- RDMA/hns: Avoid unnecessary memset on WQEs in post_send
+- RDMA/hns: Remove some magic numbers
+- RDMA/hns: Move HIP06 related definitions into hns_roce_hw_v1.h
+- RDMA/hns: Replace wmb&__raw_writeq with writeq
+- RDMA/hns: Skip qp_flow_control_init() for HIP09
+- RDMA/hns: Add mapped page count checking for MTR
+- RDMA/hns: Avoid filling sgid index when modifying QP to RTR
+- RDMA/hns: Add support of direct wqe
+- RDMA/hns: Add verification of QP type when post_recv
+- RDMA/hns: Refactor hns_roce_v2_post_srq_recv()
+- RDMA/hns: Clear remaining unused sges when post_recv
+- RDMA/hns: Refactor post recv flow
+- RDMA/hns: Use new interfaces to write SRQC
+- RDMA/hns: Refactor code about SRQ Context
+- RDMA/hns: Refactor hns_roce_create_srq()
+- RDMA/hns: Remove the reserved WQE of SRQ
+- RDMA/hns: Force srq_limit to 0 when creating SRQ
+- RDMA/hns: Bugfix for checking whether the srq is full when post wr
+- RDMA/hns: Allocate one more recv SGE for HIP08
+- RDMA/hns: Use new interface to set MPT related fields
+- RDMA/hns: Optimize the MR registration process
+- RDMA/hns: Refactor the MTR creation flow
+- RDMA/hw/hns/hns_roce_mr: Add missing description for 'hr_dev' param
+- RDMA/hw/hns/hns_roce_hw_v1: Fix doc-rot issue relating to 'rereset'
+- RDMA/hns: Use mutex instead of spinlock for ida allocation
+- RDMA/hns: Create CQ with selected CQN for bank load balance
+- RDMA/hns: remove h from printk format specifier
+- RDMA/hns: Simplify AEQE process for different types of queue
+- RDMA/hns: Fix inaccurate prints
+- RDMA/hns: Fix incorrect symbol types
+- RDMA/hns: Clear redundant variable initialization
+- RDMA/hns: Fix coding style issues
+- RDMA/hns: Remove unnecessary access right set during INIT2INIT
+- RDMA/hns: WARN_ON if get a reserved sl from users
+- RDMA/hns: Move capability flags of QP and CQ to hns-abi.h
+- RDMA/hns: Refactor process of setting extended sge
+- RDMA/hns: Add support for QP stash
+- RDMA/hns: Add support for CQ stash
+- RDMA/hns: Create QP with selected QPN for bank load balance
+- RDMA/hns: Add UD support for HIP09
+- RDMA/hns: Simplify process of filling UD SQ WQE
+- RDMA/hns: Remove the portn field in UD SQ WQE
+- RDMA/hns: Refactor the hns_roce_buf allocation flow
+- RDMA/hns: Add new PCI device ID matching for HIP09
+- RDMA/hns: Support owner mode doorbell
+- RDMA/hns: Fix double free of the pointer to TSQ/TPQ
+- RDMA/hns: Add support for filling GMV table
+- RDMA/hns: Add support for configuring GMV table
+- iommu/arm-smmu-v3: Remove the redundant shift operation of 'size'
+- iommu/arm-smmu-v3: Standardize granule size when support RIL
+- iommu/arm-smmu-v3: Align invalid range with leaf page size upwards when support RIL
+- iommu/arm-smmu-v3: Change the TLBI CMD in arm_smmu_cache_invalidate()
+- iommu/io-pgtable-arm: Remove the limitation on the page table format of sync/clear_dirty_log()
+- iommu/io-pgtable-arm: Make data access permissions of stage1/2 compatible
+- iommu/arm-smmu-v3: Using HTTU with SMMU STE and stage 2 TTD
+- vfio/pci: Inject page response upon response region fill
+- vfio/pci: Register a DMA fault response region
+- vfio: Document nested stage control
+- vfio/pci: Register and allow DMA FAULT IRQ signaling
+- vfio: Add new IRQ for DMA fault reporting
+- vfio/pci: Add framework for custom interrupt indices
+- vfio: Use capability chains to handle device specific irq
+- vfio/pci: Allow to mmap the fault queue
+- vfio/pci: Register an iommu fault handler
+- vfio/pci: Add VFIO_REGION_TYPE_NESTED region type
+- vfio: VFIO_IOMMU_SET_MSI_BINDING
+- vfio: VFIO_IOMMU_CACHE_INVALIDATE
+- vfio: VFIO_IOMMU_SET_PASID_TABLE
+- iommu/smmuv3: report additional recoverable faults
+- iommu/smmuv3: Implement bind/unbind_guest_msi
+- iommu/smmuv3: Enforce incompatibility between nested mode and HW MSI regions
+- iommu/smmuv3: Nested mode single MSI doorbell per domain enforcement
+- dma-iommu: Implement NESTED_MSI cookie
+- iommu/smmuv3: Implement cache_invalidate
+- iommu/smmuv3: Allow stage 1 invalidation with unmanaged ASIDs
+- iommu/smmuv3: Implement attach/detach_pasid_table
+- iommu/smmuv3: Get prepared for nested stage support
+- iommu/smmuv3: Allow s1 and s2 configs to coexist
+- iommu: Introduce bind/unbind_guest_msi
+- iommu: Introduce attach/detach_pasid_table API
+- config: Enable CONFIG_USERSWAP
+- userswap: support userswap via userfaultfd
+- userswap: add a new flag 'MAP_REPLACE' for mmap()
+- ima: don't allow control characters in policy path
+- ima: Add max size for IMA digest database
+- net: hns3: replace skb->csum_not_inet with skb_csum_is_sctp
+- net: ixgbevf: use skb_csum_is_sctp instead of protocol check
+- net: ixgbe: use skb_csum_is_sctp instead of protocol check
+- net: igc: use skb_csum_is_sctp instead of protocol check
+- net: igbvf: use skb_csum_is_sctp instead of protocol check
+- net: igb: use skb_csum_is_sctp instead of protocol check
+- net: add inline function skb_csum_is_sctp
+- net: hns3: fix expression that is currently always true
+- net: hns3: adjust rss tc mode configure command
+- net: hns3: adjust rss indirection table configure command
+- net: hns3: add support for max 512 rss size
+- net: hns3: add support for hw tc offload of tc flower
+- net: hns3: add support for forwarding packet to queues of specified TC when flow director rule hit
+- net: hns3: add support for tc mqprio offload
+- net: hns3: refine the struct hane3_tc_info
+- hisilicon/hns3: convert comma to semicolon
+- net: use the new dev_page_is_reusable() instead of private versions
+- net: introduce common dev_page_is_reusable()
+- skbuff: constify skb_propagate_pfmemalloc() "page" argument
+- mm: constify page_is_pfmemalloc() argument
+- net: hns3: refine the VLAN tag handle for port based VLAN
+- net: hns3: add priv flags support to switch limit promisc mode
+- net: hns3: add support for extended promiscuous command
+- KVM: arm64: GICv4.1: Give a chance to save VLPI state
+- KVM: arm64: GICv4.1: Restore VLPI pending state to physical side
+- KVM: arm64: GICv4.1: Try to save VLPI state in save_pending_tables
+- KVM: arm64: GICv4.1: Add function to get VLPI state
+- irqchip/gic-v3-its: Drop the setting of PTZ altogether
+- irqchip/gic-v3-its: Add a cache invalidation right after vPE unmapping
+- net: hns3: keep MAC pause mode when multiple TCs are enabled
+- net: hns3: add a check for devcie's verion in hns3_tunnel_csum_bug()
+- net: hns3: add more info to hns3_dbg_bd_info()
+- net: hns3: add udp tunnel checksum segmentation support
+- net: hns3: remove unsupported NETIF_F_GSO_UDP_TUNNEL_CSUM
+- net: hns3: add support for TX hardware checksum offload
+- net: hns3: add support for RX completion checksum
+- vfio/iommu_type1: Add support for manual dirty log clear
+- vfio/iommu_type1: Optimize dirty bitmap population based on iommu HWDBM
+- vfio/iommu_type1: Add HWDBM status maintenance
+- iommu/arm-smmu-v3: Realize support_dirty_log iommu ops
+- iommu/arm-smmu-v3: Realize clear_dirty_log iommu ops
+- iommu/arm-smmu-v3: Realize sync_dirty_log iommu ops
+- iommu/arm-smmu-v3: Realize switch_dirty_log iommu ops
+- iommu/arm-smmu-v3: Add feature detection for BBML
+- iommu/arm-smmu-v3: Enable HTTU for stage1 with io-pgtable mapping
+- iommu/io-pgtable-arm: Add and realize clear_dirty_log ops
+- iommu/io-pgtable-arm: Add and realize sync_dirty_log ops
+- iommu/io-pgtable-arm: Add and realize merge_page ops
+- iommu/io-pgtable-arm: Add and realize split_block ops
+- iommu/io-pgtable-arm: Add quirk ARM_HD and ARM_BBMLx
+- iommu: Introduce dirty log tracking framework
+- vfio/iommu_type1: Mantain a counter for non_pinned_groups
+- fs/filescontrol.c: fix warning:large integer implicitly truncated to unsigned type
+- irqchip/gic-v4.1: Reduce the delay when polling GICR_VPENDBASER.Dirty
+- KVM: arm64: Delay the polling of the GICR_VPENDBASER.Dirty bit
+- KVM: arm64: Make use of TWED feature
+- arm64: cpufeature: TWED support detection
+- move ETMEM feature CONFIG to mm/Kconfig and add architecture dependency
+- x86/config: Set CONFIG_TXGBE=m by default
+- net: txgbe: Add support for Netswift 10G NIC
+- net: hns3: fix spelling mistake "memroy" -> "memory"
+- net: hns3: adds debugfs to dump more info of shaping parameters
+- net: hns3: add support to utilize the firmware calculated shaping parameters
+- net: hns3: add support for pf querying new interrupt resources
+- net: hns3: add support for mapping device memory
+- net: hns3: add support for 1280 queues
+- net: hns3: rename gl_adapt_enable in struct hns3_enet_coalesce
+- net: hns3: add support for 1us unit GL configuration
+- net: hns3: add support for querying maximum value of GL
+- net: hns3: add support for configuring interrupt quantity limiting
+- net: hns3: Remove duplicated include
+- locking/qspinlock: Disable CNA by default
+- locking/qspinlock: Add CNA support for ARM64
+- KVM: arm64: Rename 'struct pv_sched_ops'
+- locking/qspinlock: Introduce the shuffle reduction optimization into CNA
+- locking/qspinlock: Avoid moving certain threads between waiting queues in CNA
+- locking/qspinlock: Introduce starvation avoidance into CNA
+- locking/qspinlock: Introduce CNA into the slow path of qspinlock
+- locking/qspinlock: Refactor the qspinlock slow path
+- locking/qspinlock: Rename mcs lock/unlock macros and make them more generic
+- mm/page_alloc: do bulk array bounds check after checking populated elements
+- mm/page_alloc: __alloc_pages_bulk(): do bounds check before accessing array
+- net: page_pool: use alloc_pages_bulk in refill code path
+- net: page_pool: refactor dma_map into own function page_pool_dma_map
+- SUNRPC: refresh rq_pages using a bulk page allocator
+- SUNRPC: set rq_page_end differently
+- mm/page_alloc: inline __rmqueue_pcplist
+- mm/page_alloc: optimize code layout for __alloc_pages_bulk
+- mm/page_alloc: add an array-based interface to the bulk page allocator
+- mm/page_alloc: add a bulk page allocator
+- mm/page_alloc: rename alloced to allocated
+- mm/mempolicy: fix mpol_misplaced kernel-doc
+- mm/mempolicy: rewrite alloc_pages_vma documentation
+- mm/mempolicy: rewrite alloc_pages documentation
+- mm/mempolicy: rename alloc_pages_current to alloc_pages
+- mm/page_alloc: combine __alloc_pages and __alloc_pages_nodemask
+- mm/page_alloc: rename gfp_mask to gfp
+- mm/page_alloc: rename alloc_mask to alloc_gfp
+- mm/filemap: fix infinite loop in generic_file_buffered_read()
+- mm/filemap.c: generic_file_buffered_read() now uses find_get_pages_contig
+- mm/filemap/c: break generic_file_buffered_read up into multiple functions
+- powerpc/mm: enable HAVE_MOVE_PMD support
+- powerpc/book3s64/mm: update flush_tlb_range to flush page walk cache
+- mm/mremap: allow arch runtime override
+- powerpc/64s/radix: refactor TLB flush type selection
+- mm/mremap: hold the rmap lock in write mode when moving page table entries.
+- mm/mremap: use pmd/pud_poplulate to update page table entries
+- mm/mremap: don't enable optimized PUD move if page table levels is 2
+- mm/mremap: convert huge PUD move to separate helper
+- selftest/mremap_test: avoid crash with static build
+- selftest/mremap_test: update the test to handle pagesize other than 4K
+- mm: rename p4d_page_vaddr to p4d_pgtable and make it return pud_t *
+- mm: rename pud_page_vaddr to pud_pgtable and make it return pmd_t *
+- mm/mremap.c: fix extent calculation
+- arm64: mremap speedup - enable HAVE_MOVE_PUD
+- x86: mremap speedup - Enable HAVE_MOVE_PUD
+- mm: speedup mremap on 1GB or larger regions
+- kselftests: vm: add mremap tests
+- sched: Limit the amount of NUMA imbalance that can exist at fork time
+- sched/numa: Allow a floating imbalance between NUMA nodes
+- sched: Avoid unnecessary calculation of load imbalance at clone time
+- sched/numa: Rename nr_running and break out the magic number
+- mm/vmstat.c: erase latency in vmstat_shepherd
+- mm, slub: splice cpu and page freelists in deactivate_slab()
+- mm: memcontrol: optimize per-lruvec stats counter memory usage
+- vsprintf: dump full information of page flags in pGp
+- mm, slub: don't combine pr_err with INFO
+- mm, slub: use pGp to print page flags
+- RDMA/umem: batch page unpin in __ib_umem_release()
+- mm/gup: add a range variant of unpin_user_pages_dirty_lock()
+- mm/gup: decrement head page once for group of subpages
+- mm/gup: add compound page list iterator
+- mm, slab, slub: stop taking cpu hotplug lock
+- mm, slab, slub: stop taking memory hotplug lock
+- mm, slub: stop freeing kmem_cache_node structures on node offline
+- sched: Unthrottle qos cfs rq when free a task group
+- sched: Fix offline task can't be killed in a timely
+- sched: Unthrottle the throttled cfs rq when offline rq
+- sched: Enable qos scheduler config
+- sched: Throttle qos cfs_rq when current cpu is running online task
+- sched: Introduce qos scheduler for co-location
+- smp: Inline on_each_cpu_cond() and on_each_cpu()
+- x86/mm/tlb: Remove unnecessary uses of the inline keyword
+- cpumask: Mark functions as pure
+- x86/mm/tlb: Do not make is_lazy dirty for no reason
+- x86/mm/tlb: Privatize cpu_tlbstate
+- x86/mm/tlb: Flush remote and local TLBs concurrently
+- x86/mm/tlb: Open-code on_each_cpu_cond_mask() for tlb_is_not_lazy()
+- x86/mm/tlb: Unify flush_tlb_func_local() and flush_tlb_func_remote()
+- smp: Run functions concurrently in smp_call_function_many_cond()
+- smp: Cleanup smp_call_function*()
+- mm: migrate: fix missing update page_private to hugetlb_page_subpool
+- arm64: mm: hugetlb: add support for free vmemmap pages of HugeTLB
+- mm: hugetlb: introduce CONFIG_HUGETLB_PAGE_FREE_VMEMMAP_DEFAULT_ON
+- mm: sparsemem: use huge PMD mapping for vmemmap pages
+- mm: sparsemem: split the huge PMD mapping of vmemmap pages
+- mm: hugetlb: introduce nr_free_vmemmap_pages in the struct hstate
+- mm: hugetlb: add a kernel parameter hugetlb_free_vmemmap
+- mm: hugetlb: alloc the vmemmap pages associated with each HugeTLB page
+- mm: hugetlb: defer freeing of HugeTLB pages
+- mm: hugetlb: free the vmemmap pages associated with each HugeTLB page
+- mm: hugetlb: gather discrete indexes of tail page
+- mm: hugetlb: introduce a new config HUGETLB_PAGE_FREE_VMEMMAP
+- mm: memory_hotplug: factor out bootmem core functions to bootmem_info.c
+- hugetlb: add lockdep_assert_held() calls for hugetlb_lock
+- hugetlb: make free_huge_page irq safe
+- hugetlb: change free_pool_huge_page to remove_pool_huge_page
+- hugetlb: call update_and_free_page without hugetlb_lock
+- hugetlb: create remove_hugetlb_page() to separate functionality
+- hugetlb: add per-hstate mutex to synchronize user adjustments
+- hugetlb: no need to drop hugetlb_lock to call cma_release
+- mm/cma: change cma mutex to irq safe spinlock
+- hugetlb: convert PageHugeFreed to HPageFreed flag
+- hugetlb: convert PageHugeTemporary() to HPageTemporary flag
+- hugetlb: convert page_huge_active() HPageMigratable flag
+- hugetlb: use page.private for hugetlb specific page flags
+- powerpc: Fix reverse map real-mode address lookup with huge vmalloc
+- mm/vmalloc: unbreak kasan vmalloc support
+- KVM: s390: prepare for hugepage vmalloc
+- mm/vmalloc: add vmalloc_no_huge
+- mm/ioremap: fix iomap_max_page_shift
+- mm/vmalloc: improve allocation failure error messages
+- mm/vmalloc: use free_vm_area() if an allocation fails
+- powerpc/64s/radix: Enable huge vmalloc mappings
+- mm/vmalloc: hugepage vmalloc mappings
+- mm/vmalloc: add vmap_range_noflush variant
+- mm: move vmap_range from mm/ioremap.c to mm/vmalloc.c
+- mm/vmalloc: provide fallback arch huge vmap support functions
+- x86: inline huge vmap supported functions
+- arm64: inline huge vmap supported functions
+- powerpc: inline huge vmap supported functions
+- mm: HUGE_VMAP arch support cleanup
+- mm/ioremap: rename ioremap_*_range to vmap_*_range
+- mm/vmalloc: rename vmap_*_range vmap_pages_*_range
+- mm: apply_to_pte_range warn and fail if a large pte is encountered
+- mm/vmalloc: fix HUGE_VMAP regression by enabling huge pages in vmalloc_to_page
+- ARM: mm: add missing pud_page define to 2-level page tables
+- mm/vmalloc.c:__vmalloc_area_node(): avoid 32-bit overflow
+- mm/lru: revise the comments of lru_lock
+- mm/lru: introduce relock_page_lruvec()
+- mm/lru: replace pgdat lru_lock with lruvec lock
+- mm/swap.c: serialize memcg changes in pagevec_lru_move_fn
+- mm/compaction: do page isolation first in compaction
+- mm/lru: introduce TestClearPageLRU()
+- mm/mlock: remove __munlock_isolate_lru_page()
+- mm/mlock: remove lru_lock on TestClearPageMlocked
+- mm/vmscan: remove lruvec reget in move_pages_to_lru
+- mm/lru: move lock into lru_note_cost
+- mm/swap.c: fold vm event PGROTATED into pagevec_move_tail_fn
+- mm/memcg: add debug checking in lock_page_memcg
+- mm: page_idle_get_page() does not need lru_lock
+- mm/rmap: stop store reordering issue on page->mapping
+- mm/vmscan: remove unnecessary lruvec adding
+- mm/thp: narrow lru locking
+- mm/thp: simplify lru_add_page_tail()
+- mm/thp: use head for head page in lru_add_page_tail()
+- mm/thp: move lru_add_page_tail() to huge_memory.c
+- mm/swap: remove unused local variable nr_shadows
+- mm: remove nrexceptional from inode: remove BUG_ON
+- mm: remove nrexceptional from inode
+- dax: account DAX entries as nrpages
+- mm: stop accounting shadow entries
+- mm: introduce and use mapping_empty()
+- mm/filemap: fix find_lock_entries hang on 32-bit THP
+- mm/filemap: fix mapping_seek_hole_data on THP & 32-bit
+- mm/highmem.c: fix zero_user_segments() with start > end
+- mm: remove pagevec_lookup_entries
+- mm: pass pvec directly to find_get_entries
+- mm: remove nr_entries parameter from pagevec_lookup_entries
+- mm: add an 'end' parameter to pagevec_lookup_entries
+- mm: add an 'end' parameter to find_get_entries
+- mm: add and use find_lock_entries
+- iomap: use mapping_seek_hole_data
+- mm/filemap: add mapping_seek_hole_data
+- mm/filemap: add helper for finding pages
+- mm/filemap: rename find_get_entry to mapping_get_entry
+- mm: add FGP_ENTRY
+- mm/swap: optimise get_shadow_from_swap_cache
+- mm/shmem: use pagevec_lookup in shmem_unlock_mapping
+- mm: make pagecache tagged lookups return only head pages
+- mm: support THPs in zero_user_segments
+- mm: vmstat: add cma statistics
+- memcg: enable memcg oom-kill for __GFP_NOFAIL
+- mm/page_alloc: count CMA pages per zone and print them in /proc/zoneinfo
+- mm/page_owner: record the timestamp of all pages during free
+- mm/page_owner: record timestamp and pid
+- mm/vmalloc: rework the drain logic
+- arm64: clear_page: Add new implementation of clear_page() by STNP
+- memcg: update the child's qos_level synchronously in memcg_qos_write()
+- memcg: Add static key for memcg priority
+- memcg: enable CONFIG_MEMCG_QOS by default
+- memcg: support priority for oom
+
 * Wed Jul 14 2021 Cheng Jian <cj.chengjian@huawei.com> - 5.10.0-5.0.0.15
 - add buildrequire: openssl for kernel build
 - add buildrequire: perl-devel for perf binary
