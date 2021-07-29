@@ -1570,7 +1570,7 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 			prot |= PROT_EXEC;
 
 #ifdef CONFIG_USERSWAP
-	if (flags & MAP_REPLACE) {
+	if (enable_userswap && (flags & MAP_REPLACE)) {
 		if (offset_in_page(addr) || (len % PAGE_SIZE))
 			return -EINVAL;
 		page_num = len / PAGE_SIZE;
@@ -1754,7 +1754,7 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 
 #ifdef CONFIG_USERSWAP
 	/* mark the vma as special to avoid merging with other vmas */
-	if (flags & MAP_REPLACE)
+	if (enable_userswap && (flags & MAP_REPLACE))
 		vm_flags |= VM_SPECIAL;
 #endif
 
@@ -1766,7 +1766,7 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 #ifndef CONFIG_USERSWAP
 	return addr;
 #else
-	if (!(flags & MAP_REPLACE))
+	if (!enable_userswap || !(flags & MAP_REPLACE))
 		return addr;
 
 	if (IS_ERR_VALUE(addr)) {
