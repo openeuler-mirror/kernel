@@ -1129,16 +1129,13 @@ static journal_t *journal_init_common(struct block_device *bdev,
 {
 	static struct lock_class_key jbd2_trans_commit_key;
 	journal_t *journal;
-	journal_wrapper_t *journal_wrapper;
 	int err;
 	struct buffer_head *bh;
 	int n;
 
-	journal_wrapper = kzalloc(sizeof(*journal_wrapper), GFP_KERNEL);
-	if (!journal_wrapper)
+	journal = kzalloc(sizeof(*journal), GFP_KERNEL);
+	if (!journal)
 		return NULL;
-
-	journal = &(journal_wrapper->jw_journal);
 
 	init_waitqueue_head(&journal->j_wait_transaction_locked);
 	init_waitqueue_head(&journal->j_wait_done_commit);
@@ -1198,7 +1195,7 @@ static journal_t *journal_init_common(struct block_device *bdev,
 err_cleanup:
 	kfree(journal->j_wbuf);
 	jbd2_journal_destroy_revoke(journal);
-	kfree(journal_wrapper);
+	kfree(journal);
 	return NULL;
 }
 
@@ -1428,13 +1425,11 @@ int jbd2_journal_update_sb_log_tail(journal_t *journal, tid_t tail_tid,
 				     unsigned long tail_block, int write_op)
 {
 	journal_superblock_t *sb = journal->j_superblock;
-	journal_wrapper_t *journal_wrapper = container_of(journal,
-					     journal_wrapper_t, jw_journal);
 	int ret;
 
 	if (is_journal_aborted(journal))
 		return -EIO;
-	if (test_bit(JBD2_CHECKPOINT_IO_ERROR, &journal_wrapper->j_atomic_flags)) {
+	if (test_bit(JBD2_CHECKPOINT_IO_ERROR, &journal->j_atomic_flags)) {
 		jbd2_journal_abort(journal, -EIO);
 		return -EIO;
 	}
@@ -1759,8 +1754,6 @@ recovery_error:
 int jbd2_journal_destroy(journal_t *journal)
 {
 	int err = 0;
-	journal_wrapper_t *journal_wrapper = container_of(journal,
-					     journal_wrapper_t, jw_journal);
 
 	/* Wait for the commit thread to wake up and die. */
 	journal_kill_thread(journal);
@@ -1802,7 +1795,7 @@ int jbd2_journal_destroy(journal_t *journal)
 	 * may become inconsistent.
 	 */
 	if (!is_journal_aborted(journal) &&
-	    test_bit(JBD2_CHECKPOINT_IO_ERROR, &journal_wrapper->j_atomic_flags))
+	    test_bit(JBD2_CHECKPOINT_IO_ERROR, &journal->j_atomic_flags))
 		jbd2_journal_abort(journal, -EIO);
 
 	if (journal->j_sb_buffer) {
@@ -1830,7 +1823,7 @@ int jbd2_journal_destroy(journal_t *journal)
 	if (journal->j_chksum_driver)
 		crypto_free_shash(journal->j_chksum_driver);
 	kfree(journal->j_wbuf);
-	kfree(journal_wrapper);
+	kfree(journal);
 
 	return err;
 }
