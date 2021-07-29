@@ -13,6 +13,7 @@
 
 /* A global variable is a bit ugly, but it keeps the code simple */
 int sysctl_drop_caches;
+unsigned int sysctl_drop_caches_loop_limit __read_mostly;
 
 static void drop_pagecache_sb(struct super_block *sb, void *unused)
 {

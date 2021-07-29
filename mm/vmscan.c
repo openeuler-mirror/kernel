@@ -735,6 +735,9 @@ out:
 void drop_slab_node(int nid)
 {
 	unsigned long freed;
+#ifdef CONFIG_SYSCTL
+	unsigned int counts = 0;
+#endif
 
 	do {
 		struct mem_cgroup *memcg = NULL;
@@ -747,6 +750,18 @@ void drop_slab_node(int nid)
 		do {
 			freed += shrink_slab(GFP_KERNEL, nid, memcg, 0);
 		} while ((memcg = mem_cgroup_iter(NULL, memcg, NULL)) != NULL);
+
+#ifdef CONFIG_SYSCTL
+		if (unlikely(sysctl_drop_caches_loop_limit)) {
+			counts++;
+			if (counts >= sysctl_drop_caches_loop_limit) {
+				pr_info("%s (%d): drop_caches early break: %u loops\n",
+					current->comm, task_pid_nr(current),
+					counts);
+				return;
+			}
+		}
+#endif
 	} while (freed > 10);
 }
 
