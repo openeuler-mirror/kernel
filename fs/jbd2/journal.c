@@ -1815,6 +1815,7 @@ int jbd2_journal_register_shrinker(journal_t *journal)
 
 	return 0;
 }
+EXPORT_SYMBOL(jbd2_journal_register_shrinker);
 
 /**
  * jbd2_journal_unregister_shrinker()
@@ -1827,6 +1828,7 @@ void jbd2_journal_unregister_shrinker(journal_t *journal)
 	percpu_counter_destroy(&journal->j_jh_shrink_count);
 	unregister_shrinker(&journal->j_shrinker);
 }
+EXPORT_SYMBOL(jbd2_journal_unregister_shrinker);
 
 /**
  * void jbd2_journal_destroy() - Release a journal_t structure.
