@@ -1161,6 +1161,7 @@ static void ext4_put_super(struct super_block *sb)
 	destroy_workqueue(sbi->rsv_conversion_wq);
 
 	if (sbi->s_journal) {
+		jbd2_journal_unregister_shrinker(sbi->s_journal);
 		aborted = is_journal_aborted(sbi->s_journal);
 		err = jbd2_journal_destroy(sbi->s_journal);
 		sbi->s_journal = NULL;
@@ -4852,6 +4853,7 @@ failed_mount_wq:
 		sbi->s_ea_block_cache = NULL;
 	}
 	if (sbi->s_journal) {
+		jbd2_journal_unregister_shrinker(sbi->s_journal);
 		jbd2_journal_destroy(sbi->s_journal);
 		sbi->s_journal = NULL;
 	}
@@ -5168,6 +5170,12 @@ static int ext4_load_journal(struct super_block *sb,
 
 		/* Make sure we flush the recovery flag to disk. */
 		ext4_commit_super(sb);
+	}
+
+	err = jbd2_journal_register_shrinker(journal);
+	if (err) {
+		EXT4_SB(sb)->s_journal = NULL;
+		goto err_out;
 	}
 
 	return 0;
