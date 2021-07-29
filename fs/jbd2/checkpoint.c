@@ -562,13 +562,13 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 	struct transaction_chp_stats_s *stats;
 	transaction_t *transaction;
 	journal_t *journal;
+	int ret = 0;
 
 	JBUFFER_TRACE(jh, "entry");
 
-	transaction = jh->b_cp_transaction;
-	if (!transaction) {
+	if ((transaction = jh->b_cp_transaction) == NULL) {
 		JBUFFER_TRACE(jh, "not on transaction");
-		return 0;
+		goto out;
 	}
 	journal = transaction->t_journal;
 
@@ -577,9 +577,9 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 	jh->b_cp_transaction = NULL;
 	jbd2_journal_put_journal_head(jh);
 
-	/* Is this transaction empty? */
-	if (transaction->t_checkpoint_list || transaction->t_checkpoint_io_list)
-		return 0;
+	if (transaction->t_checkpoint_list != NULL ||
+	    transaction->t_checkpoint_io_list != NULL)
+		goto out;
 
 	/*
 	 * There is one special case to worry about: if we have just pulled the
@@ -591,12 +591,10 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 	 * See the comment at the end of jbd2_journal_commit_transaction().
 	 */
 	if (transaction->t_state != T_FINISHED)
-		return 0;
+		goto out;
 
-	/*
-	 * OK, that was the last buffer for the transaction, we can now
-	 * safely remove this transaction from the log.
-	 */
+	/* OK, that was the last buffer for the transaction: we can now
+	   safely remove this transaction from the log */
 	stats = &transaction->t_chp_stats;
 	if (stats->cs_chp_time)
 		stats->cs_chp_time = jbd2_time_diff(stats->cs_chp_time,
@@ -606,7 +604,9 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 
 	__jbd2_journal_drop_transaction(journal, transaction);
 	jbd2_journal_free_transaction(transaction);
-	return 1;
+	ret = 1;
+out:
+	return ret;
 }
 
 /*
