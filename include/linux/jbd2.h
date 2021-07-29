@@ -105,6 +105,8 @@ typedef struct jbd2_journal_handle handle_t;	/* Atomic operation type */
  * This is an opaque datatype.
  **/
 typedef struct journal_s	journal_t;	/* Journal control structure */
+
+typedef struct journal_wrapper_s journal_wrapper_t;
 #endif
 
 /*
@@ -781,11 +783,6 @@ struct journal_s
 	unsigned long		j_flags;
 
 	/**
-	 * @j_atomic_flags: Atomic journaling state flags.
-	 */
-	unsigned long		j_atomic_flags;
-
-	/**
 	 * @j_errno:
 	 *
 	 * Is there an outstanding uncleared error on the journal (from a prior
@@ -900,29 +897,6 @@ struct journal_s
 	 * @j_checkpoint_mutex.  [j_checkpoint_mutex]
 	 */
 	struct buffer_head	*j_chkpt_bhs[JBD2_NR_BATCH];
-
-	/**
-	 * @j_shrinker:
-	 *
-	 * Journal head shrinker, reclaim buffer's journal head which
-	 * has been written back.
-	 */
-	struct shrinker		j_shrinker;
-
-	/**
-	 * @j_checkpoint_jh_count:
-	 *
-	 * Number of journal buffers on the checkpoint list. [j_list_lock]
-	 */
-	struct percpu_counter	j_checkpoint_jh_count;
-
-	/**
-	 * @j_shrink_transaction:
-	 *
-	 * Record next transaction will shrink on the checkpoint list.
-	 * [j_list_lock]
-	 */
-	transaction_t		*j_shrink_transaction;
 
 	/**
 	 * @j_head:
@@ -1220,6 +1194,45 @@ struct journal_s
 	 */
 	struct lockdep_map	j_trans_commit_map;
 #endif
+};
+
+/**
+ * struct journal_wrapper_s - The wrapper of journal_s to fix KABI.
+ */
+struct journal_wrapper_s
+{
+	/**
+	 * @jw_journal: real journal.
+	 */
+	journal_t		jw_journal;
+
+	/**
+	 * @j_atomic_flags: Atomic journaling state flags.
+	 */
+	unsigned long		j_atomic_flags;
+
+	/**
+	 * @j_shrinker:
+	 *
+	 * Journal head shrinker, reclaim buffer's journal head which
+	 * has been written back.
+	 */
+	struct shrinker		j_shrinker;
+
+	/**
+	 * @j_checkpoint_jh_count:
+	 *
+	 * Number of journal buffers on the checkpoint list. [j_list_lock]
+	 */
+	struct percpu_counter	j_checkpoint_jh_count;
+
+	/**
+	 * @j_shrink_transaction:
+	 *
+	 * Record next transaction will shrink on the checkpoint list.
+	 * [j_list_lock]
+	 */
+	transaction_t		*j_shrink_transaction;
 };
 
 #define jbd2_might_wait_for_commit(j) \

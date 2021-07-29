@@ -1123,17 +1123,19 @@ static int jbd2_min_tag_size(void)
 static unsigned long jbd2_journal_shrink_scan(struct shrinker *shrink,
 					      struct shrink_control *sc)
 {
-	journal_t *journal = container_of(shrink, journal_t, j_shrinker);
+	journal_wrapper_t *journal_wrapper = container_of(shrink,
+						journal_wrapper_t, j_shrinker);
+	journal_t *journal = &journal_wrapper->jw_journal;
 	unsigned long nr_to_scan = sc->nr_to_scan;
 	unsigned long nr_shrunk;
 	unsigned long count;
 
-	count = percpu_counter_read_positive(&journal->j_checkpoint_jh_count);
+	count = percpu_counter_read_positive(&journal_wrapper->j_checkpoint_jh_count);
 	trace_jbd2_shrink_scan_enter(journal, sc->nr_to_scan, count);
 
 	nr_shrunk = jbd2_journal_shrink_checkpoint_list(journal, &nr_to_scan);
 
-	count = percpu_counter_read_positive(&journal->j_checkpoint_jh_count);
+	count = percpu_counter_read_positive(&journal_wrapper->j_checkpoint_jh_count);
 	trace_jbd2_shrink_scan_exit(journal, nr_to_scan, nr_shrunk, count);
 
 	return nr_shrunk;
@@ -1147,10 +1149,12 @@ static unsigned long jbd2_journal_shrink_scan(struct shrinker *shrink,
 static unsigned long jbd2_journal_shrink_count(struct shrinker *shrink,
 					       struct shrink_control *sc)
 {
-	journal_t *journal = container_of(shrink, journal_t, j_shrinker);
+	journal_wrapper_t *journal_wrapper = container_of(shrink,
+						journal_wrapper_t, j_shrinker);
+	journal_t *journal = &journal_wrapper->jw_journal;
 	unsigned long count;
 
-	count = percpu_counter_read_positive(&journal->j_checkpoint_jh_count);
+	count = percpu_counter_read_positive(&journal_wrapper->j_checkpoint_jh_count);
 	trace_jbd2_shrink_count(journal, sc->nr_to_scan, count);
 
 	return count;
@@ -1171,13 +1175,16 @@ static journal_t *journal_init_common(struct block_device *bdev,
 {
 	static struct lock_class_key jbd2_trans_commit_key;
 	journal_t *journal;
+	journal_wrapper_t *journal_wrapper;
 	int err;
 	struct buffer_head *bh;
 	int n;
 
-	journal = kzalloc(sizeof(*journal), GFP_KERNEL);
-	if (!journal)
+	journal_wrapper = kzalloc(sizeof(*journal_wrapper), GFP_KERNEL);
+	if (!journal_wrapper)
 		return NULL;
+
+	journal = &(journal_wrapper->jw_journal);
 
 	init_waitqueue_head(&journal->j_wait_transaction_locked);
 	init_waitqueue_head(&journal->j_wait_done_commit);
@@ -1232,17 +1239,17 @@ static journal_t *journal_init_common(struct block_device *bdev,
 	journal->j_sb_buffer = bh;
 	journal->j_superblock = (journal_superblock_t *)bh->b_data;
 
-	journal->j_shrink_transaction = NULL;
-	journal->j_shrinker.scan_objects = jbd2_journal_shrink_scan;
-	journal->j_shrinker.count_objects = jbd2_journal_shrink_count;
-	journal->j_shrinker.seeks = DEFAULT_SEEKS;
-	journal->j_shrinker.batch = journal->j_max_transaction_buffers;
+	journal_wrapper->j_shrink_transaction = NULL;
+	journal_wrapper->j_shrinker.scan_objects = jbd2_journal_shrink_scan;
+	journal_wrapper->j_shrinker.count_objects = jbd2_journal_shrink_count;
+	journal_wrapper->j_shrinker.seeks = DEFAULT_SEEKS;
+	journal_wrapper->j_shrinker.batch = journal->j_max_transaction_buffers;
 
-	if (percpu_counter_init(&journal->j_checkpoint_jh_count, 0, GFP_KERNEL))
+	if (percpu_counter_init(&journal_wrapper->j_checkpoint_jh_count, 0, GFP_KERNEL))
 		goto err_cleanup;
 
-	if (register_shrinker(&journal->j_shrinker)) {
-		percpu_counter_destroy(&journal->j_checkpoint_jh_count);
+	if (register_shrinker(&journal_wrapper->j_shrinker)) {
+		percpu_counter_destroy(&journal_wrapper->j_checkpoint_jh_count);
 		goto err_cleanup;
 	}
 	return journal;
@@ -1251,7 +1258,7 @@ err_cleanup:
 	brelse(journal->j_sb_buffer);
 	kfree(journal->j_wbuf);
 	jbd2_journal_destroy_revoke(journal);
-	kfree(journal);
+	kfree(journal_wrapper);
 	return NULL;
 }
 
@@ -1481,11 +1488,13 @@ int jbd2_journal_update_sb_log_tail(journal_t *journal, tid_t tail_tid,
 				     unsigned long tail_block, int write_op)
 {
 	journal_superblock_t *sb = journal->j_superblock;
+	journal_wrapper_t *journal_wrapper = container_of(journal,
+					     journal_wrapper_t, jw_journal);
 	int ret;
 
 	if (is_journal_aborted(journal))
 		return -EIO;
-	if (test_bit(JBD2_CHECKPOINT_IO_ERROR, &journal->j_atomic_flags)) {
+	if (test_bit(JBD2_CHECKPOINT_IO_ERROR, &journal_wrapper->j_atomic_flags)) {
 		jbd2_journal_abort(journal, -EIO);
 		return -EIO;
 	}
@@ -1810,6 +1819,8 @@ recovery_error:
 int jbd2_journal_destroy(journal_t *journal)
 {
 	int err = 0;
+	journal_wrapper_t *journal_wrapper = container_of(journal,
+					     journal_wrapper_t, jw_journal);
 
 	/* Wait for the commit thread to wake up and die. */
 	journal_kill_thread(journal);
@@ -1851,7 +1862,7 @@ int jbd2_journal_destroy(journal_t *journal)
 	 * may become inconsistent.
 	 */
 	if (!is_journal_aborted(journal) &&
-	    test_bit(JBD2_CHECKPOINT_IO_ERROR, &journal->j_atomic_flags))
+	    test_bit(JBD2_CHECKPOINT_IO_ERROR, &journal_wrapper->j_atomic_flags))
 		jbd2_journal_abort(journal, -EIO);
 
 	if (journal->j_sb_buffer) {
@@ -1871,9 +1882,9 @@ int jbd2_journal_destroy(journal_t *journal)
 		brelse(journal->j_sb_buffer);
 	}
 
-	if (journal->j_shrinker.flags & SHRINKER_REGISTERED) {
-		percpu_counter_destroy(&journal->j_checkpoint_jh_count);
-		unregister_shrinker(&journal->j_shrinker);
+	if (journal_wrapper->j_shrinker.flags & SHRINKER_REGISTERED) {
+		percpu_counter_destroy(&journal_wrapper->j_checkpoint_jh_count);
+		unregister_shrinker(&journal_wrapper->j_shrinker);
 	}
 	if (journal->j_proc_entry)
 		jbd2_stats_proc_exit(journal);
@@ -1883,7 +1894,7 @@ int jbd2_journal_destroy(journal_t *journal)
 	if (journal->j_chksum_driver)
 		crypto_free_shash(journal->j_chksum_driver);
 	kfree(journal->j_wbuf);
-	kfree(journal);
+	kfree(journal_wrapper);
 
 	return err;
 }

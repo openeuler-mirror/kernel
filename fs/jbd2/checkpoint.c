@@ -509,6 +509,8 @@ unsigned long jbd2_journal_shrink_checkpoint_list(journal_t *journal,
 	tid_t tid = 0;
 	unsigned long nr_freed = 0;
 	unsigned long nr_scanned = *nr_to_scan;
+	journal_wrapper_t *journal_wrapper = container_of(journal,
+						journal_wrapper_t, jw_journal);
 
 again:
 	spin_lock(&journal->j_list_lock);
@@ -523,8 +525,8 @@ again:
 	 * from the checkpoint list, we ignore saved j_shrink_transaction
 	 * and start over unconditionally.
 	 */
-	if (journal->j_shrink_transaction)
-		transaction = journal->j_shrink_transaction;
+	if (journal_wrapper->j_shrink_transaction)
+		transaction = journal_wrapper->j_shrink_transaction;
 	else
 		transaction = journal->j_checkpoint_transactions;
 
@@ -557,10 +559,10 @@ again:
 	} while (transaction != last_transaction);
 
 	if (transaction != last_transaction) {
-		journal->j_shrink_transaction = next_transaction;
+		journal_wrapper->j_shrink_transaction = next_transaction;
 		next_tid = next_transaction->t_tid;
 	} else {
-		journal->j_shrink_transaction = NULL;
+		journal_wrapper->j_shrink_transaction = NULL;
 		next_tid = 0;
 	}
 
@@ -674,6 +676,7 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 	struct transaction_chp_stats_s *stats;
 	transaction_t *transaction;
 	journal_t *journal;
+	journal_wrapper_t *journal_wrapper;
 	struct buffer_head *bh = jh2bh(jh);
 
 	JBUFFER_TRACE(jh, "entry");
@@ -684,6 +687,7 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 		return 0;
 	}
 	journal = transaction->t_journal;
+	journal_wrapper = container_of(journal, journal_wrapper_t, jw_journal);
 
 	JBUFFER_TRACE(jh, "removing from transaction");
 
@@ -695,11 +699,11 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 	 * journal here and we abort the journal later from a better context.
 	 */
 	if (buffer_write_io_error(bh))
-		set_bit(JBD2_CHECKPOINT_IO_ERROR, &journal->j_atomic_flags);
+		set_bit(JBD2_CHECKPOINT_IO_ERROR, &journal_wrapper->j_atomic_flags);
 
 	__buffer_unlink(jh);
 	jh->b_cp_transaction = NULL;
-	percpu_counter_dec(&journal->j_checkpoint_jh_count);
+	percpu_counter_dec(&journal_wrapper->j_checkpoint_jh_count);
 	jbd2_journal_put_journal_head(jh);
 
 	/* Is this transaction empty? */
@@ -745,6 +749,8 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 void __jbd2_journal_insert_checkpoint(struct journal_head *jh,
 			       transaction_t *transaction)
 {
+	journal_wrapper_t *journal_wrapper;
+
 	JBUFFER_TRACE(jh, "entry");
 	J_ASSERT_JH(jh, buffer_dirty(jh2bh(jh)) || buffer_jbddirty(jh2bh(jh)));
 	J_ASSERT_JH(jh, jh->b_cp_transaction == NULL);
@@ -762,7 +768,9 @@ void __jbd2_journal_insert_checkpoint(struct journal_head *jh,
 		jh->b_cpnext->b_cpprev = jh;
 	}
 	transaction->t_checkpoint_list = jh;
-	percpu_counter_inc(&transaction->t_journal->j_checkpoint_jh_count);
+
+	journal_wrapper = container_of(transaction->t_journal, journal_wrapper_t, jw_journal);
+	percpu_counter_inc(&journal_wrapper->j_checkpoint_jh_count);
 }
 
 /*
@@ -777,9 +785,11 @@ void __jbd2_journal_insert_checkpoint(struct journal_head *jh,
 
 void __jbd2_journal_drop_transaction(journal_t *journal, transaction_t *transaction)
 {
+	journal_wrapper_t *journal_wrapper = container_of(journal,
+						journal_wrapper_t, jw_journal);
 	assert_spin_locked(&journal->j_list_lock);
 
-	journal->j_shrink_transaction = NULL;
+	journal_wrapper->j_shrink_transaction = NULL;
 	if (transaction->t_cpnext) {
 		transaction->t_cpnext->t_cpprev = transaction->t_cpprev;
 		transaction->t_cpprev->t_cpnext = transaction->t_cpnext;
