@@ -88,7 +88,8 @@ static void sev_irq_handler(int irq, void *data, unsigned int status)
 
 	/* Check if it is SEV command completion: */
 	reg = ioread32(sev->io_regs + sev->vdata->cmdresp_reg);
-	if (FIELD_GET(PSP_CMDRESP_RESP, reg)) {
+	if (FIELD_GET(PSP_CMDRESP_RESP, reg) ||
+	    (is_vendor_hygon() && csv_in_ring_buffer_mode())) {
 		sev->int_rcvd = 1;
 		wake_up(&sev->int_queue);
 	}
