@@ -1780,6 +1780,7 @@ void sev_vm_destroy(struct kvm *kvm)
 /* Code to set all of the function and vaiable pointers */
 void sev_install_hooks(void)
 {
+	hygon_kvm_hooks.sev_enabled = &sev_enabled;
 	hygon_kvm_hooks.sev_issue_cmd = sev_issue_cmd;
 	hygon_kvm_hooks.get_num_contig_pages = get_num_contig_pages;
 	hygon_kvm_hooks.sev_pin_memory = sev_pin_memory;
