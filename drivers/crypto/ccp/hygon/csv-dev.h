@@ -14,9 +14,16 @@
 #include <linux/psp-sev.h>
 
 extern u32 hygon_csv_build;
+extern int csv_comm_mode;
 extern const struct file_operations csv_fops;
 
 void csv_update_api_version(struct sev_user_data_status *status);
 int csv_cmd_buffer_len(int cmd);
+void csv_restore_mailbox_mode_postprocess(void);
+
+static inline bool csv_in_ring_buffer_mode(void)
+{
+	return csv_comm_mode == CSV_COMM_RINGBUFFER_ON;
+}
 
 #endif	/* __CCP_HYGON_CSV_DEV_H__ */
