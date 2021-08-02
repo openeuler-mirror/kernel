@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2107.5.0
+%global hulkrelease 2108.1.0
 
 %define with_patch 0
 
@@ -24,7 +24,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0096
+Release: %{hulkrelease}.0097
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +790,163 @@ fi
 
 %changelog
 
+
+* Mon Aug 02 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.1.0.0097
+- bcache: always record start time of a sample
+- bcache: do not collect data insert info created by write_moving
+- tcp_comp: open configs for tcp compression
+- tcp_comp: implement recvmsg for tcp compression
+- tcp_comp: implement sendmsg for tcp compression
+- tcp_comp: add stub proto ops for tcp compression socket
+- tcp_comp: allow ignore local tcp connections
+- tcp_comp: only enable compression for give server ports
+- tcp_comp: add sysctl for enable/disable compression
+- tcp_comp: add init and cleanup hook for compression
+- tcp_comp: add tcp comp option to SYN and SYN-ACK
+- tcp_comp: add Kconfig for tcp payload compression
+- tracing: Fix bug in rb_per_cpu_empty() that might cause deadloop.
+- proc: Avoid mixing integer types in mem_rw()
+- net: sched: cls_api: Fix the the wrong parameter
+- sctp: update active_key for asoc when old key is being replaced
+- nvme-pci: don't WARN_ON in nvme_reset_work if ctrl.state is not RESETTING
+- net/sched: act_skbmod: Skip non-Ethernet packets
+- net/tcp_fastopen: fix data races around tfo_active_disable_stamp
+- scsi: target: Fix protect handling in WRITE SAME(32)
+- scsi: iscsi: Fix iface sysfs attr detection
+- nvme-pci: do not call nvme_dev_remove_admin from nvme_remove
+- ipv6: fix 'disable_policy' for fwd packets
+- net: ip_tunnel: fix mtu calculation for ETHER tunnel devices
+- udp: annotate data races around unix_sk(sk)->gso_size
+- ipv6: tcp: drop silly ICMPv6 packet too big messages
+- tcp: annotate data races around tp->mtu_info
+- dma-buf/sync_file: Don't leak fences on merge failure
+- net: validate lwtstate->data before returning from skb_tunnel_info()
+- net: send SYNACK packet with accepted fwmark
+- net: bridge: sync fdb to new unicast-filtering ports
+- netfilter: ctnetlink: suspicious RCU usage in ctnetlink_dump_helpinfo
+- dm writecache: fix writing beyond end of underlying device when shrinking
+- dm writecache: return the exact table values that were set
+- dm multipath: use updated MPATHF_QUEUE_IO on mapping for bio-based mpath
+- dm writecache: fix data corruption when reloading the target
+- dm verity fec: fix hash block number in verity_fec_decode
+- sched/fair: Fix CFS bandwidth hrtimer expiry type
+- scsi: libfc: Fix array index out of bound exception
+- scsi: scsi_dh_alua: Fix signedness bug in alua_rtpg()
+- net: bridge: multicast: fix PIM hello router port marking race
+- NFSv4/pNFS: Don't call _nfs4_pnfs_v3_ds_connect multiple times
+- virtio_net: move tx vq operation under tx queue lock
+- x86/fpu: Limit xstate copy size in xstateregs_set()
+- nfs: fix acl memory leak of posix_acl_create()
+- NFSv4: Initialise connection to the server in nfs4_alloc_client()
+- PCI/sysfs: Fix dsm_label_utf16s_to_utf8s() buffer overrun
+- virtio_console: Assure used length from device is limited
+- virtio_net: Fix error handling in virtnet_restore()
+- virtio-blk: Fix memory leak among suspend/resume procedure
+- NFS: nfs_find_open_context() may only select open files
+- lib/decompress_unlz4.c: correctly handle zero-padding around initrds.
+- i2c: core: Disable client irq on reboot/shutdown
+- scsi: qedi: Fix null ref during abort handling
+- scsi: iscsi: Fix shost->max_id use
+- scsi: iscsi: Add iscsi_cls_conn refcount helpers
+- scsi: scsi_dh_alua: Check for negative result value
+- tracing: Do not reference char * as a string in histograms
+- scsi: core: Fix bad pointer dereference when ehandler kthread is invalid
+- seq_buf: Fix overflow in seq_buf_putmem_hex()
+- ipmi/watchdog: Stop watchdog timer when the current action is 'none'
+- net: ip: avoid OOM kills with large UDP sends over loopback
+- vsock: notify server to shutdown when client has pending signal
+- xfrm: Fix error reporting in xfrm_state_construct.
+- virtio_net: Remove BUG() to avoid machine dead
+- dm space maps: don't reset space map allocation cursor when committing
+- ipv6: use prandom_u32() for ID generation
+- mm/huge_memory.c: don't discard hugepage if other processes are mapping it
+- vfio/pci: Handle concurrent vma faults
+- vfio-pci: Use io_remap_pfn_range() for PCI IO memory
+- writeback: fix obtain a reference to a freeing memcg css
+- ipv6: fix out-of-bound access in ip6_parse_tlv()
+- bpf: Do not change gso_size during bpf_skb_change_proto()
+- ipv6: exthdrs: do not blindly use init_net
+- net/ipv4: swap flow ports when validating source
+- vxlan: add missing rcu_read_lock() in neigh_reduce()
+- pkt_sched: sch_qfq: fix qfq_change_class() error path
+- netfilter: nft_tproxy: restrict support to TCP and UDP transport protocols
+- netfilter: nft_osf: check for TCP packet before further processing
+- netfilter: nft_exthdr: check for IPv6 packet before further processing
+- netlabel: Fix memory leak in netlbl_mgmt_add_common
+- ACPI: sysfs: Fix a buffer overrun problem with description_show()
+- evm: fix writing <securityfs>/evm overflow
+- lib: vsprintf: Fix handling of number field widths in vsscanf
+- ACPI: processor idle: Fix up C-state latency if not ordered
+- fuse: check connected before queueing on fpq->io
+- evm: Refuse EVM_ALLOW_METADATA_WRITES only if an HMAC key is loaded
+- evm: Execute evm_inode_init_security() only when an HMAC key is loaded
+- seq_buf: Make trace_seq_putmem_hex() support data longer than 8
+- ext4: use ext4_grp_locked_error in mb_find_extent
+- ext4: fix avefreec in find_group_orlov
+- ext4: remove check for zero nr_to_scan in ext4_es_scan()
+- ext4: correct the cache_nr in tracepoint ext4_es_shrink_exit
+- ext4: return error code when ext4_fill_flex_info() fails
+- ext4: fix kernel infoleak via ext4_extent_header
+- iov_iter_fault_in_readable() should do nothing in xarray case
+- scsi: core: Retry I/O for Notify (Enable Spinup) Required error
+- kthread: prevent deadlock when kthread_mod_delayed_work() races with kthread_cancel_delayed_work_sync()
+- kthread_worker: split code for canceling the delayed work timer
+- scsi: sr: Return appropriate error code when disk is ejected
+- mm, futex: fix shared futex pgoff on shmem huge page
+- mm/thp: another PVMW_SYNC fix in page_vma_mapped_walk()
+- mm/thp: fix page_vma_mapped_walk() if THP mapped by ptes
+- mm: page_vma_mapped_walk(): get vma_address_end() earlier
+- mm: page_vma_mapped_walk(): use goto instead of while (1)
+- mm: page_vma_mapped_walk(): add a level of indentation
+- mm: page_vma_mapped_walk(): crossing page table boundary
+- mm: page_vma_mapped_walk(): prettify PVMW_MIGRATION block
+- mm: page_vma_mapped_walk(): use pmde for *pvmw->pmd
+- mm: page_vma_mapped_walk(): settle PageHuge on entry
+- mm: page_vma_mapped_walk(): use page for pvmw->page
+- mm: thp: replace DEBUG_VM BUG with VM_WARN when unmap fails for split
+- mm/thp: unmap_mapping_page() to fix THP truncate_cleanup_page()
+- mm/thp: fix page_address_in_vma() on file THP tails
+- mm/thp: fix vma_address() if virtual address below file offset
+- mm/thp: try_to_unmap() use TTU_SYNC for safe splitting
+- mm/thp: make is_huge_zero_pmd() safe and quicker
+- mm/thp: fix __split_huge_pmd_locked() on shmem migration entry
+- mm/rmap: use page_not_mapped in try_to_unmap()
+- mm/rmap: remove unneeded semicolon in page_not_mapped()
+- mm: add VM_WARN_ON_ONCE_PAGE() macro
+- sctp: add param size validation for SCTP_PARAM_SET_PRIMARY
+- sctp: validate chunk size in __rcv_asconf_lookup
+- stop_machine: Avoid potential race behaviour
+- KVM: PPC: Book3S: Fix H_RTAS rets buffer overflow
+- can: raw: fix raw_rcv panic for sock UAF
+- mm/page_isolation: do not isolate the max order page
+- mm/zswap: fix passing zero to 'PTR_ERR' warning
+- mm/page_alloc: speed up the iteration of max_order
+- mm: hugetlb: fix type of delta parameter and related local variables in gather_surplus_pages()
+- mm/vmalloc.c:__vmalloc_area_node(): avoid 32-bit overflow
+- sctp: add size validation when walking chunks
+- sctp: validate from_addr_param return
+- jbd2: fix kabi broken in struct journal_s
+- ext4: inline jbd2_journal_[un]register_shrinker()
+- jbd2: export jbd2_journal_[un]register_shrinker()
+- fs: remove bdev_try_to_free_page callback
+- ext4: remove bdev_try_to_free_page() callback
+- jbd2: simplify journal_clean_one_cp_list()
+- jbd2,ext4: add a shrinker to release checkpointed buffers
+- jbd2: remove redundant buffer io error checks
+- jbd2: don't abort the journal when freeing buffers
+- jbd2: ensure abort the journal if detect IO error when writing original buffer back
+- jbd2: remove the out label in __jbd2_journal_remove_checkpoint()
+- mm: vmscan: use a new flag to indicate shrinker is registered
+- Revert "jbd2: remove the out label in __jbd2_journal_remove_checkpoint()"
+- Revert "jbd2: ensure abort the journal if detect IO error when writing original buffer back"
+- Revert "jbd2: fix kabi broken in struct journal_s"
+- Revert "jbd2: don't abort the journal when freeing buffers"
+- mm/vmscan: add drop_caches_loop_limit to break loop in drop_slab_node
+- mm/vmscan: fix infinite loop in drop_slab_node
+- userswap: add a kernel parameter to enable userswap
+- userfaultfd: fix BUG_ON() in userfaultfd_release()
+- kprobes: Warn if the kprobe is reregistered
+- Revert "kretprobe: check re-registration of the same kretprobe earlier"
 
 * Tue Jul 27 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2107.5.0.0096
 - mm: vmalloc: prevent use after free in _vm_unmap_aliases
