@@ -2214,8 +2214,11 @@ void clean_acked_data_disable(struct inet_connection_sock *icsk);
 extern struct static_key_false tcp_have_comp;
 
 extern unsigned long *sysctl_tcp_compression_ports;
+extern int sysctl_tcp_compression_local;
 
-bool tcp_syn_comp_enabled(const struct sock *sk, bool active);
+bool tcp_syn_comp_enabled(const struct sock *sk);
+bool tcp_synack_comp_enabled(const struct sock *sk,
+			     const struct inet_request_sock *ireq);
 void tcp_init_compression(struct sock *sk);
 void tcp_cleanup_compression(struct sock *sk);
 #else
@@ -2223,6 +2226,13 @@ static inline bool tcp_syn_comp_enabled(const struct tcp_sock *tp)
 {
 	return false;
 }
+
+static inline bool tcp_synack_comp_enabled(const struct sock *sk,
+					   const struct inet_request_sock *ireq)
+{
+	return false;
+}
+
 static inline void tcp_init_compression(struct sock *sk)
 {
 }
