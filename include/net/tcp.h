@@ -192,6 +192,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
  */
 #define TCPOPT_FASTOPEN_MAGIC	0xF989
 #define TCPOPT_SMC_MAGIC	0xE2D4C3D9
+#define TCPOPT_COMP_MAGIC	0x7954
 
 /*
  *     TCP option lengths
@@ -205,6 +206,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_FASTOPEN_BASE  2
 #define TCPOLEN_EXP_FASTOPEN_BASE  4
 #define TCPOLEN_EXP_SMC_BASE   6
+#define TCPOLEN_EXP_COMP_BASE  4
 
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
@@ -2206,6 +2208,16 @@ void clean_acked_data_enable(struct inet_connection_sock *icsk,
 			     void (*cad)(struct sock *sk, u32 ack_seq));
 void clean_acked_data_disable(struct inet_connection_sock *icsk);
 
+#endif
+
+#if IS_ENABLED(CONFIG_TCP_COMP)
+extern struct static_key_false tcp_have_comp;
+bool tcp_syn_comp_enabled(const struct tcp_sock *tp);
+#else
+static inline bool tcp_syn_comp_enabled(const struct tcp_sock *tp)
+{
+	return false;
+}
 #endif
 
 #endif	/* _TCP_H */

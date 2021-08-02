@@ -401,6 +401,7 @@ static inline bool tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_WSCALE		(1 << 3)
 #define OPTION_FAST_OPEN_COOKIE	(1 << 8)
 #define OPTION_SMC		(1 << 9)
+#define OPTION_COMP		(1 << 10)
 
 static void smc_options_write(__be32 *ptr, u16 *options)
 {
@@ -412,6 +413,19 @@ static void smc_options_write(__be32 *ptr, u16 *options)
 				       (TCPOPT_EXP <<  8) |
 				       (TCPOLEN_EXP_SMC_BASE));
 			*ptr++ = htonl(TCPOPT_SMC_MAGIC);
+		}
+	}
+#endif
+}
+
+static void comp_options_write(__be32 *ptr, u16 *options)
+{
+#if IS_ENABLED(CONFIG_TCP_COMP)
+	if (static_branch_unlikely(&tcp_have_comp)) {
+		if (unlikely(OPTION_COMP & *options)) {
+			*ptr++ = htonl((TCPOPT_EXP  << 24) |
+				       (TCPOLEN_EXP_COMP_BASE  << 16) |
+				       (TCPOPT_COMP_MAGIC));
 		}
 	}
 #endif
@@ -536,6 +550,8 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 	}
 
 	smc_options_write(ptr, &options);
+
+	comp_options_write(ptr, &options);
 }
 
 static void smc_set_option(const struct tcp_sock *tp,
@@ -565,6 +581,39 @@ static void smc_set_option_cond(const struct tcp_sock *tp,
 			if (*remaining >= TCPOLEN_EXP_SMC_BASE_ALIGNED) {
 				opts->options |= OPTION_SMC;
 				*remaining -= TCPOLEN_EXP_SMC_BASE_ALIGNED;
+			}
+		}
+	}
+#endif
+}
+
+static void comp_set_option(const struct tcp_sock *tp,
+			    struct tcp_out_options *opts,
+			    unsigned int *remaining)
+{
+#if IS_ENABLED(CONFIG_TCP_COMP)
+	if (static_branch_unlikely(&tcp_have_comp)) {
+		if (tcp_syn_comp_enabled(tp)) {
+			if (*remaining >= TCPOLEN_EXP_COMP_BASE) {
+				opts->options |= OPTION_COMP;
+				*remaining -= TCPOLEN_EXP_COMP_BASE;
+			}
+		}
+	}
+#endif
+}
+
+static void comp_set_option_cond(const struct tcp_sock *tp,
+				 const struct inet_request_sock *ireq,
+				 struct tcp_out_options *opts,
+				 unsigned int *remaining)
+{
+#if IS_ENABLED(CONFIG_TCP_COMP)
+	if (static_branch_unlikely(&tcp_have_comp)) {
+		if (tcp_syn_comp_enabled(tp) && ireq->comp_ok) {
+			if (*remaining >= TCPOLEN_EXP_COMP_BASE) {
+				opts->options |= OPTION_COMP;
+				*remaining -= TCPOLEN_EXP_COMP_BASE;
 			}
 		}
 	}
@@ -639,6 +688,8 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 
 	smc_set_option(tp, opts, &remaining);
 
+	comp_set_option(tp, opts, &remaining);
+
 	return MAX_TCP_OPTION_SPACE - remaining;
 }
 
@@ -703,6 +754,8 @@ static unsigned int tcp_synack_options(const struct sock *sk,
 	}
 
 	smc_set_option_cond(tcp_sk(sk), ireq, opts, &remaining);
+
+	comp_set_option_cond(tcp_sk(sk), ireq, opts, &remaining);
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }

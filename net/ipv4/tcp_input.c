@@ -3779,7 +3779,7 @@ static void tcp_parse_fastopen_option(int len, const unsigned char *cookie,
 	foc->exp = exp_opt;
 }
 
-static void smc_parse_options(const struct tcphdr *th,
+static bool smc_parse_options(const struct tcphdr *th,
 			      struct tcp_options_received *opt_rx,
 			      const unsigned char *ptr,
 			      int opsize)
@@ -3788,10 +3788,31 @@ static void smc_parse_options(const struct tcphdr *th,
 	if (static_branch_unlikely(&tcp_have_smc)) {
 		if (th->syn && !(opsize & 1) &&
 		    opsize >= TCPOLEN_EXP_SMC_BASE &&
-		    get_unaligned_be32(ptr) == TCPOPT_SMC_MAGIC)
+		    get_unaligned_be32(ptr) == TCPOPT_SMC_MAGIC) {
 			opt_rx->smc_ok = 1;
+			return true;
+		}
 	}
 #endif
+	return false;
+}
+
+static bool tcp_parse_comp_option(const struct tcphdr *th,
+				  struct tcp_options_received *opt_rx,
+				  const unsigned char *ptr,
+				  int opsize)
+{
+#if IS_ENABLED(CONFIG_TCP_COMP)
+	if (static_branch_unlikely(&tcp_have_comp)) {
+		if (th->syn && !(opsize & 1) &&
+		    opsize >= TCPOLEN_EXP_COMP_BASE &&
+		    get_unaligned_be16(ptr) == TCPOPT_COMP_MAGIC) {
+			opt_rx->smc_ok = 1;
+			return true;
+		}
+	}
+#endif
+	return false;
 }
 
 /* Look for tcp options. Normally only called on SYN and SYNACK packets.
@@ -3897,15 +3918,21 @@ void tcp_parse_options(const struct net *net,
 				 */
 				if (opsize >= TCPOLEN_EXP_FASTOPEN_BASE &&
 				    get_unaligned_be16(ptr) ==
-				    TCPOPT_FASTOPEN_MAGIC)
+				    TCPOPT_FASTOPEN_MAGIC) {
 					tcp_parse_fastopen_option(opsize -
 						TCPOLEN_EXP_FASTOPEN_BASE,
 						ptr + 2, th->syn, foc, true);
-				else
-					smc_parse_options(th, opt_rx, ptr,
-							  opsize);
-				break;
+					break;
+				}
 
+				if (smc_parse_options(th, opt_rx, ptr, opsize))
+					break;
+
+				if (tcp_parse_comp_option(th, opt_rx, ptr,
+				    opsize))
+					break;
+
+				break;
 			}
 			ptr += opsize-2;
 			length -= opsize;
@@ -6361,6 +6388,9 @@ static void tcp_openreq_init(struct request_sock *req,
 	ireq->ir_mark = inet_request_mark(sk, skb);
 #if IS_ENABLED(CONFIG_SMC)
 	ireq->smc_ok = rx_opt->smc_ok;
+#endif
+#if IS_ENABLED(CONFIG_TCP_COMP)
+	ireq->comp_ok = rx_opt->smc_ok;
 #endif
 }
 
