@@ -1299,14 +1299,13 @@ static blk_qc_t cached_dev_make_request(struct request_queue *q,
 			atomic_inc(&dc->front_io_num);
 			s->iop.bypass = check_should_bypass(dc, bio);
 
-			if (!s->iop.bypass && bio->bi_iter.bi_size && !rw) {
-				s->smp.offset = bio->bi_iter.bi_sector - dc->sb.data_offset;
-				s->smp.length = bio->bi_iter.bi_size;
-				s->smp.type = rw;
-				s->smp.dev = dc->bdev->bd_dev;
-				s->smp.start_time = ktime_get_ns();
+			s->smp.offset = bio->bi_iter.bi_sector - dc->sb.data_offset;
+			s->smp.length = bio->bi_iter.bi_size;
+			s->smp.type = rw;
+			s->smp.dev = dc->bdev->bd_dev;
+			s->smp.start_time = ktime_get_ns();
+			if (!s->iop.bypass && bio->bi_iter.bi_size && !rw)
 				save_circ_item(&s->smp);
-			}
 
 			if (rw) {
 				if ((s->iop.bypass == false) &&
