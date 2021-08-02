@@ -328,12 +328,14 @@ void bch_data_insert(struct closure *cl)
 	trace_bcache_write(op->c, op->inode, op->bio,
 			   op->writeback, op->bypass);
 
-	msg.offset = op->bio->bi_iter.bi_sector;
-	msg.length = op->bio->bi_iter.bi_size;
-	msg.type = ACACHE_INFO_CACHE_INSERT;
-	msg.dev = bio_dev(op->bio);
-	msg.start_time = ktime_get_ns();
-	save_circ_item(&msg);
+        if (op->bio->bi_disk) {
+		msg.offset = op->bio->bi_iter.bi_sector;
+		msg.length = op->bio->bi_iter.bi_size;
+		msg.type = ACACHE_INFO_CACHE_INSERT;
+		msg.dev = bio_dev(op->bio);
+		msg.start_time = ktime_get_ns();
+		save_circ_item(&msg);
+        }
 
 	bch_keylist_init(&op->insert_keys);
 	bio_get(op->bio);
