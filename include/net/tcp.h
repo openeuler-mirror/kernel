@@ -2212,6 +2212,9 @@ void clean_acked_data_disable(struct inet_connection_sock *icsk);
 
 #if IS_ENABLED(CONFIG_TCP_COMP)
 extern struct static_key_false tcp_have_comp;
+
+extern unsigned long *sysctl_tcp_compression_ports;
+
 bool tcp_syn_comp_enabled(const struct tcp_sock *tp);
 void tcp_init_compression(struct sock *sk);
 void tcp_cleanup_compression(struct sock *sk);
