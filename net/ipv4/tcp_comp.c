@@ -11,3 +11,11 @@ bool tcp_syn_comp_enabled(const struct tcp_sock *tp)
 {
 	return true;
 }
+
+void tcp_init_compression(struct sock *sk)
+{
+}
+
+void tcp_cleanup_compression(struct sock *sk)
+{
+}
