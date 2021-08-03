@@ -200,8 +200,7 @@ static inline u64 cpuidle_haltpoll_time(struct cpuidle_driver *drv,
 {return 0; }
 static inline int cpuidle_register_driver(struct cpuidle_driver *drv)
 {return -ENODEV; }
-static inline void haltpoll_switch_governor(struct cpuidle_driver *drv)
-{return -ENODEV; }
+static inline void haltpoll_switch_governor(struct cpuidle_driver *drv) { }
 static inline struct cpuidle_driver *cpuidle_get_driver(void) {return NULL; }
 static inline struct cpuidle_driver *cpuidle_driver_ref(void) {return NULL; }
 static inline void cpuidle_driver_unref(void) {}
