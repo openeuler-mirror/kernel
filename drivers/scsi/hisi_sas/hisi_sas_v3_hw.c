@@ -4573,6 +4573,7 @@ static void hisi_sas_v3_remove(struct pci_dev *pdev)
 		del_timer(&hisi_hba->timer);
 
 	sas_unregister_ha(sha);
+	flush_workqueue(hisi_hba->wq);
 	sas_remove_host(sha->core.shost);
 
 	hisi_sas_v3_destroy_irqs(pdev, hisi_hba);
