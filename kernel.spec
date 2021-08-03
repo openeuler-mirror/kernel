@@ -30,15 +30,12 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0099
+Release: %{hulkrelease}.0100
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
-%if 0%{?with_patch}
-Source0: linux-%{TarballVer}.tar.gz
-%else
-Source0: linux-%{version}.tar.gz#/kernel.tar.gz
-%endif
+
+Source0: kernel.tar.gz
 Source10: sign-modules
 Source11: x509.genkey
 Source12: extra_certificates
@@ -211,20 +208,14 @@ package or when debugging this package.\
 %endif
 
 %prep
-%if 0%{?with_patch}
-if [ ! -d kernel-%{version}/vanilla-%{TarballVer} ];then
-%setup -q -n kernel-%{version} -a 9998 -c
-    mv linux-%{TarballVer} vanilla-%{TarballVer}
-else
-    cd kernel-%{version}
-fi
-cp -rl vanilla-%{TarballVer} linux-%{KernelVer}
-%else
+
 %setup -q -n kernel-%{version} -c
-mv kernel linux-%{version}
-cp -rl linux-%{version} linux-%{KernelVer}
+
+%if 0%{?with_patch}
+tar -xjf %{SOURCE9998}
 %endif
 
+mv kernel linux-%{KernelVer}
 cd linux-%{KernelVer}
 
 %if 0%{?with_patch}
@@ -796,6 +787,9 @@ fi
 
 %changelog
 
+
+* Fri Aug 10 2021 Gou Hao <gouhao@uniontech.com> -4.19.90-2108.4.0.0100
+- fix rpmbuild error with patches
 
 * Tue Aug 10 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.4.0.0099
 - openeuler_defconfig: Enable ARCH_PHYTIUM and ARM_GIC_PHYTIUM_2500
