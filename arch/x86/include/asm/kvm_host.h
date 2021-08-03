@@ -1139,7 +1139,14 @@ struct kvm_vm_stat {
 	ulong mmu_cache_miss;
 	ulong mmu_unsync;
 	ulong remote_tlb_flush;
-	ulong lpages;
+	union {
+		struct {
+			atomic64_t pages_4k;
+			atomic64_t pages_2m;
+			atomic64_t pages_1g;
+		};
+		atomic64_t pages[KVM_NR_PAGE_SIZES];
+	};
 	ulong nx_lpage_splits;
 	ulong max_mmu_page_hash_collisions;
 	u64 max_mmu_rmap_size;
