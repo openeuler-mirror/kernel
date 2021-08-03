@@ -660,6 +660,10 @@ struct x86_hybrid_pmu {
 	struct event_constraint		*event_constraints;
 	struct event_constraint		*pebs_constraints;
 	struct extra_reg		*extra_regs;
+
+	unsigned int			late_ack	:1,
+					mid_ack		:1,
+					enabled_ack	:1;
 };
 
 static __always_inline struct x86_hybrid_pmu *hybrid_pmu(struct pmu *pmu)
@@ -689,6 +693,16 @@ extern struct static_key_false perf_is_hybrid;
 							\
 	__Fp;						\
 }))
+
+#define hybrid_bit(_pmu, _field)			\
+({							\
+	bool __Fp = x86_pmu._field;			\
+							\
+	if (is_hybrid() && (_pmu))			\
+		__Fp = hybrid_pmu(_pmu)->_field;	\
+							\
+	__Fp;						\
+})
 
 enum hybrid_pmu_type {
 	hybrid_big		= 0x40,
@@ -759,6 +773,7 @@ struct x86_pmu {
 
 	/* PMI handler bits */
 	unsigned int	late_ack		:1,
+			mid_ack			:1,
 			enabled_ack		:1,
 			counter_freezing	:1;
 	/*
