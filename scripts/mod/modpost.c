@@ -160,19 +160,11 @@ char *read_text_file(const char *filename)
 
 char *get_line(char **stringp)
 {
-	char *orig = *stringp, *next;
-
 	/* do not return the unwanted extra line at EOF */
-	if (!orig || *orig == '\0')
+	if (*stringp && **stringp == '\0')
 		return NULL;
 
-	next = strchr(orig, '\n');
-	if (next)
-		*next++ = '\0';
-
-	*stringp = next;
-
-	return orig;
+	return strsep(stringp, "\n");
 }
 
 /* A list of all modules we processed */
