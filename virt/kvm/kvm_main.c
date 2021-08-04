@@ -476,6 +476,7 @@ static void kvm_vcpu_init(struct kvm_vcpu *vcpu, struct kvm *kvm, unsigned id)
 	vcpu->preempted = false;
 	vcpu->ready = false;
 	preempt_notifier_init(&vcpu->preempt_notifier, &kvm_preempt_ops);
+	vcpu->last_used_slot = 0;
 }
 
 void kvm_vcpu_destroy(struct kvm_vcpu *vcpu)
@@ -2176,7 +2177,26 @@ EXPORT_SYMBOL_GPL(gfn_to_memslot);
 
 struct kvm_memory_slot *kvm_vcpu_gfn_to_memslot(struct kvm_vcpu *vcpu, gfn_t gfn)
 {
-	return __gfn_to_memslot(kvm_vcpu_memslots(vcpu), gfn);
+	struct kvm_memslots *slots = kvm_vcpu_memslots(vcpu);
+	struct kvm_memory_slot *slot;
+	int slot_index;
+
+	slot = try_get_memslot(slots, vcpu->last_used_slot, gfn);
+	if (slot)
+		return slot;
+
+	/*
+	 * Fall back to searching all memslots. We purposely use
+	 * search_memslots() instead of __gfn_to_memslot() to avoid
+	 * thrashing the VM-wide last_used_index in kvm_memslots.
+	 */
+	slot = search_memslots(slots, gfn, &slot_index);
+	if (slot) {
+		vcpu->last_used_slot = slot_index;
+		return slot;
+	}
+
+	return NULL;
 }
 
 bool kvm_is_visible_gfn(struct kvm *kvm, gfn_t gfn)
