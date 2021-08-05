@@ -64,9 +64,16 @@ static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user 
 			}
 			disk_part_iter_exit(&piter);
 
+			down_read(&disk->lookup_sem);
+			if (!(disk->flags & GENHD_FL_UP)) {
+				up_read(&disk->lookup_sem);
+				mutex_unlock(&bdev->bd_mutex);
+				return -ENXIO;
+			}
 			/* all seems OK */
 			part = add_partition(disk, partno, start, length,
 					     ADDPART_FLAG_NONE, NULL);
+			up_read(&disk->lookup_sem);
 			mutex_unlock(&bdev->bd_mutex);
 			return PTR_ERR_OR_ZERO(part);
 		case BLKPG_DEL_PARTITION:
@@ -90,7 +97,9 @@ static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user 
 			invalidate_bdev(bdevp);
 
 			mutex_lock_nested(&bdev->bd_mutex, 1);
+			down_read(&disk->lookup_sem);
 			delete_partition(disk, partno);
+			up_read(&disk->lookup_sem);
 			mutex_unlock(&bdev->bd_mutex);
 			mutex_unlock(&bdevp->bd_mutex);
 			bdput(bdevp);
@@ -162,6 +171,7 @@ static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user 
 int __blkdev_reread_part(struct block_device *bdev)
 {
 	struct gendisk *disk = bdev->bd_disk;
+	int err;
 
 	if (!disk_part_scan_enabled(disk) || bdev != bdev->bd_contains)
 		return -EINVAL;
@@ -170,7 +180,14 @@ int __blkdev_reread_part(struct block_device *bdev)
 
 	lockdep_assert_held(&bdev->bd_mutex);
 
-	return rescan_partitions(disk, bdev);
+	down_read(&disk->lookup_sem);
+	if (disk->flags & GENHD_FL_UP)
+		err = rescan_partitions(disk, bdev);
+	else
+		err = -ENXIO;
+	up_read(&disk->lookup_sem);
+
+	return err;
 }
 EXPORT_SYMBOL(__blkdev_reread_part);
 
