@@ -19,12 +19,18 @@
 %define debuginfodir /usr/lib/debug
 
 %define with_debuginfo 1
+# Do not recompute the build-id of vmlinux in find-debuginfo.sh
+%global _missing_build_ids_terminate_build 1
+%global _no_recompute_build_ids 1
+%undefine _include_minidebuginfo
+%undefine _include_gdb_index
+%undefine _unique_build_ids
 
 %define with_source 1
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0097
+Release: %{hulkrelease}.0098
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -790,6 +796,9 @@ fi
 
 %changelog
 
+
+* Mon Aug 05 2021 Liu Xinpeng <liuxp11@chinatelecom.cn> - 4.19.90-2108.1.0.0098
+- systemtap: buildid mismatched
 
 * Mon Aug 02 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.1.0.0097
 - bcache: always record start time of a sample
