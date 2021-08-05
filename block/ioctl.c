@@ -50,10 +50,6 @@ static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user 
 				return -EINVAL;
 
 			mutex_lock(&bdev->bd_mutex);
-			if (!(disk->flags & GENHD_FL_UP)) {
-				mutex_unlock(&bdev->bd_mutex);
-				return -ENXIO;
-			}
 
 			/* overlap? */
 			disk_part_iter_init(&piter, disk,
