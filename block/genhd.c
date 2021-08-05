@@ -783,10 +783,8 @@ void del_gendisk(struct gendisk *disk)
 		delete_partition(disk, part->partno);
 	}
 	disk_part_iter_exit(&piter);
-	if (bdev) {
+	if (bdev)
 		mutex_unlock(&bdev->bd_mutex);
-		bdput(bdev);
-	}
 
 	invalidate_partition(disk, 0);
 	bdev_unhash_inode(disk_devt(disk));
