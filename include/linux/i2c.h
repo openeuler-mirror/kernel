@@ -794,6 +794,8 @@ i2c_unlock_bus(struct i2c_adapter *adapter, unsigned int flags)
  */
 #if IS_ENABLED(CONFIG_I2C)
 extern int i2c_add_adapter(struct i2c_adapter *);
+extern int devm_i2c_add_adapter(struct device *dev,
+				struct i2c_adapter *adapter);
 extern void i2c_del_adapter(struct i2c_adapter *);
 extern int i2c_add_numbered_adapter(struct i2c_adapter *);
 
