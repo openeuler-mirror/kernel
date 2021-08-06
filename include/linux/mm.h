@@ -2769,7 +2769,7 @@ extern bool process_shares_mm(struct task_struct *p, struct mm_struct *mm);
 
 #ifdef CONFIG_SYSCTL
 extern int sysctl_drop_caches;
-extern unsigned int sysctl_drop_caches_loop_limit;
+extern unsigned int drop_caches_loop_limit;
 int drop_caches_sysctl_handler(struct ctl_table *, int,
 					void __user *, size_t *, loff_t *);
 #endif

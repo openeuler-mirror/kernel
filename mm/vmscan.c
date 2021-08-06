@@ -723,12 +723,21 @@ out:
 	return freed;
 }
 
+unsigned int drop_caches_loop_limit __read_mostly;
+static int __init drop_caches_loop_limit_setup(char *s)
+{
+	int ret = kstrtouint(s, 10, &drop_caches_loop_limit);
+
+	if (ret)
+		pr_info("Parse drop_caches_loop_limit failed: ret: %d\n", ret);
+	return 1;
+}
+__setup("drop_caches_loop_limit=", drop_caches_loop_limit_setup);
+
 void drop_slab_node(int nid)
 {
 	unsigned long freed;
-#ifdef CONFIG_SYSCTL
 	unsigned int counts = 0;
-#endif
 
 	do {
 		struct mem_cgroup *memcg = NULL;
@@ -742,17 +751,15 @@ void drop_slab_node(int nid)
 			freed += shrink_slab(GFP_KERNEL, nid, memcg, 0);
 		} while ((memcg = mem_cgroup_iter(NULL, memcg, NULL)) != NULL);
 
-#ifdef CONFIG_SYSCTL
-		if (unlikely(sysctl_drop_caches_loop_limit)) {
+		if (unlikely(drop_caches_loop_limit)) {
 			counts++;
-			if (counts >= sysctl_drop_caches_loop_limit) {
+			if (counts >= drop_caches_loop_limit) {
 				pr_info("%s (%d): drop_caches early break: %u loops\n",
 					current->comm, task_pid_nr(current),
 					counts);
 				return;
 			}
 		}
-#endif
 	} while (freed > 10);
 }
 

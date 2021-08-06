@@ -1479,7 +1479,7 @@ static struct ctl_table vm_table[] = {
 	},
 	{
 		.procname	= "drop_caches_loop_limit",
-		.data		= &sysctl_drop_caches_loop_limit,
+		.data		= &drop_caches_loop_limit,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= proc_douintvec,
