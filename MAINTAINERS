@@ -6649,6 +6649,13 @@ F:      drivers/net/ethernet/hisilicon/hns3/hns-customer/
 F:      drivers/net/ethernet/hisilicon/hns3/hns3_cae/
 F:      drivers/net/ethernet/hisilicon/hns3/Makefile
 
+HISILICON I2C CONTROLLER DRIVER
+M:	Yicong Yang <yangyicong@hisilicon.com>
+L:	linux-i2c@vger.kernel.org
+S:	Maintained
+W:	https://www.hisilicon.com
+F:	drivers/i2c/busses/i2c-hisi.c
+
 HISILICON LPC BUS DRIVER
 M:	john.garry@huawei.com
 W:	http://www.hisilicon.com
