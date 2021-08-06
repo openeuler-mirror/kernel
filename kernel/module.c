@@ -3302,7 +3302,7 @@ static int check_module_license_and_versions(struct module *mod)
 	return 0;
 }
 
-static void flush_module_icache(const struct module *mod)
+void flush_module_icache(const struct module *mod)
 {
 	mm_segment_t old_fs;
 

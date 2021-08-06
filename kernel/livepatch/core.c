@@ -1062,6 +1062,7 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 	}
 
 	arch_klp_init_object_loaded(patch, obj);
+	flush_module_icache(patch->mod);
 	module_enable_ro(patch->mod, true);
 
 	mutex_unlock(&text_mutex);
