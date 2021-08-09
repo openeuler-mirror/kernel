@@ -31,6 +31,9 @@
 int sysctl_unprivileged_userfaultfd __read_mostly = 1;
 
 static struct kmem_cache *userfaultfd_ctx_cachep __read_mostly;
+#ifdef CONFIG_USERSWAP
+int enable_userswap;
+#endif
 
 enum userfaultfd_state {
 	UFFD_STATE_WAIT_API,
@@ -863,7 +866,8 @@ static int userfaultfd_release(struct inode *inode, struct file *file)
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
 		userfault_flags = VM_UFFD_MISSING | VM_UFFD_WP;
 #ifdef CONFIG_USERSWAP
-		userfault_flags |= VM_USWAP;
+		if (enable_userswap)
+			userfault_flags |= VM_USWAP;
 #endif
 		cond_resched();
 		BUG_ON(!!vma->vm_userfaultfd_ctx.ctx ^
@@ -1295,7 +1299,7 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 	 * register the whole vma overlapping with the address range to avoid
 	 * splitting the vma.
 	 */
-	if (uffdio_register.mode & UFFDIO_REGISTER_MODE_USWAP) {
+	if (enable_userswap && (uffdio_register.mode & UFFDIO_REGISTER_MODE_USWAP)) {
 		uffdio_register.mode &= ~UFFDIO_REGISTER_MODE_USWAP;
 		if (!uffdio_register.mode)
 			goto out;
@@ -2023,6 +2027,15 @@ SYSCALL_DEFINE1(userfaultfd, int, flags)
 	}
 	return fd;
 }
+
+#ifdef CONFIG_USERSWAP
+static int __init enable_userswap_setup(char *str)
+{
+	enable_userswap = true;
+	return 1;
+}
+__setup("enable_userswap", enable_userswap_setup);
+#endif
 
 static int __init userfaultfd_init(void)
 {

@@ -31,6 +31,9 @@
 #define UFFD_FLAGS_SET (EFD_SHARED_FCNTL_FLAGS)
 
 extern int sysctl_unprivileged_userfaultfd;
+#ifdef CONFIG_USERSWAP
+extern int enable_userswap;
+#endif
 
 extern vm_fault_t handle_userfault(struct vm_fault *vmf, unsigned long reason);
 
