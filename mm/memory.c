@@ -3317,7 +3317,6 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 					vmf->address, vma->vm_flags);
 			goto skip_uswap;
 		}
-		BUG_ON(!(vma->vm_flags & VM_UFFD_MISSING));
 		ret = handle_userfault(vmf, VM_UFFD_MISSING | VM_USWAP);
 		return ret;
 	}
