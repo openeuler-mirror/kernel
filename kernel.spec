@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       5
-%global maintenance_release .1.0
-%global pkg_release         .16
+%global maintenance_release .2.0
+%global pkg_release         .17
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -869,6 +869,90 @@ fi
 %endif
 
 %changelog
+* Mon Aug 9 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.2.0.17
+- userswap: add a kernel parameter to enable userswap
+- userfaultfd: fix BUG_ON() in userfaultfd_release()
+- spi: hisi-kunpeng: Fix Woverflow warning on conversion
+- spi: Add HiSilicon SPI Controller Driver for Kunpeng SoCs
+- scsi: hisi_sas: Speed up error handling when internal abort timeout occurs
+- scsi: hisi_sas: Reset controller for internal abort timeout
+- scsi: hisi_sas: Include HZ in timer macros
+- scsi: hisi_sas: Run I_T nexus resets in parallel for clear nexus reset
+- scsi: hisi_sas: Put a limit of link reset retries
+- scsi: libsas: Introduce more SAM status code aliases in enum exec_status
+- scsi: hisi_sas: Propagate errors in interrupt_init_v1_hw()
+- scsi: hisi_sas: Print SATA device SAS address for soft reset failure
+- scsi: hisi_sas: Warn in v3 hw channel interrupt handler when status reg cleared
+- scsi: hisi_sas: Directly snapshot registers when executing a reset
+- scsi: hisi_sas: Call sas_unregister_ha() to roll back if .hw_init() fails
+- scsi: hisi_sas: Print SAS address for v3 hw erroneous completion print
+- scsi: hisi_sas: Delete some unused callbacks
+- scsi: hisi_sas: Add trace FIFO debugfs support
+- scsi: hisi_sas: Flush workqueue in hisi_sas_v3_remove()
+- scsi: hisi_sas: Enable debugfs support by default
+- scsi: hisi_sas: Don't check .nr_hw_queues in hisi_sas_task_prep()
+- scsi: hisi_sas: Remove deferred probe check in hisi_sas_v2_probe()
+- scsi: libsas: Remove temporarily-added _gfp() API variants
+- scsi: mvsas: Switch back to original libsas event notifiers
+- scsi: isci: Switch back to original libsas event notifiers
+- scsi: libsas: Switch back to original event notifiers API
+- scsi: pm80xx: Switch back to original libsas event notifiers
+- scsi: aic94xx: Switch back to original libsas event notifiers
+- scsi: hisi_sas: Switch back to original libsas event notifiers
+- scsi: libsas: Add gfp_t flags parameter to event notifications
+- scsi: hisi_sas: Pass gfp_t flags to libsas event notifiers
+- scsi: aic94xx: Pass gfp_t flags to libsas event notifiers
+- scsi: pm80xx: Pass gfp_t flags to libsas event notifiers
+- scsi: libsas: Pass gfp_t flags to event notifiers
+- scsi: hisi_sas: Remove auto_affine_msi_experimental module_param
+- scsi: hisi_sas: Expose HW queues for v2 hw
+- driver core: platform: Add devm_platform_get_irqs_affinity()
+- ACPI: Drop acpi_dev_irqresource_disabled()
+- resource: Add irqresource_disabled()
+- genirq/affinity: Add irq_update_affinity_desc()
+- mm: fix some spelling mistakes in comments
+- scsi: hisi_sas: Remove preemptible()
+- scsi: hisi_sas: Move debugfs code to v3 hw driver
+- scsi: hisi_sas: Reduce some indirection in v3 hw driver
+- scsi: hisi_sas_v3_hw: Remove extra function calls for runtime pm
+- scsi: hisi_sas_v3_hw: Don't use PCI helper functions
+- scsi: hisi_sas_v3_hw: Drop PCI Wakeup calls from .resume
+- ACPI: APEI: fix synchronous external aborts in user-mode
+- Revert "kretprobe: check re-registration of the same kretprobe earlier"
+- i2c: add support for HiSilicon I2C controller
+- i2c: core: add api to provide frequency mode strings
+- i2c: core: add managed function for adding i2c adapters
+- fs/buffer.c: add checking buffer head stat before clear
+- watchdog: sbsa: Support architecture version 1
+- perf/smmuv3: Don't trample existing events with global filter
+- arm_pmu: move to use request_irq by IRQF_NO_AUTOEN flag
+- genirq: Add IRQF_NO_AUTOEN for request_irq/nmi()
+- drivers/perf: hisi: Fix data source control
+- perf/hisi: Use irq_set_affinity()
+- perf/arm-smmuv3: Use irq_set_affinity()
+- genirq: Export affinity setter for modules
+- drivers/perf: hisi: Add support for HiSilicon PA PMU driver
+- drivers/perf: hisi: Add support for HiSilicon SLLC PMU driver
+- drivers/perf: hisi: Update DDRC PMU for programmable counter
+- drivers/perf: hisi: Add new functions for HHA PMU
+- drivers/perf: hisi: Add new functions for L3C PMU
+- drivers/perf: hisi: Add PMU version for uncore PMU drivers.
+- drivers/perf: hisi: Refactor code for more uncore PMUs
+- drivers/perf: hisi: Remove unnecessary check of counter index
+- driver/perf: Remove ARM_SMMU_V3_PMU dependency on ARM_SMMU_V3
+- drivers/perf: Add support for ARMv8.3-SPE
+- perf/smmuv3: Support sysfs identifier file
+- drivers/perf: hisi: Add identifier sysfs file
+- net: hns3: change the method of obtaining default ptp cycle
+- net: hns3: add devlink reload support for VF
+- net: hns3: add devlink reload support for PF
+- net: hns3: add support for devlink get info for VF
+- net: hns3: add support for devlink get info for PF
+- net: hns3: add support for registering devlink for VF
+- net: hns3: add support for registering devlink for PF
+- devlink: add documentation for hns3 driver
+- seq_file: disallow extremely large seq buffer allocations
+
 * Tue Jul 27 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.1.0.16
 - config: enable kernel hotupgrade features by default
 - pid: add pid reserve method for checkpoint and recover
