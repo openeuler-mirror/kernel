@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2108.1.0
+%global hulkrelease 2108.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0099
+Release: %{hulkrelease}.0100
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -818,6 +818,42 @@ fi
 
 %changelog
 
+
+* Tue Aug 10 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.4.0.0100
+- openeuler_defconfig: Enable ARCH_PHYTIUM and ARM_GIC_PHYTIUM_2500
+- config: Enable Phytium FT-2500 support configs for hulk_defconfig
+- irqchip: phytium-2500: Add interrupt controller driver
+- mm/vmscan: setup drop_caches_loop_limit in cmdline
+- mm/memcg: optimize memory.numa_stat like memory.stat
+- livepatch: Fix crash when access the global variable in hook
+- timer: Use hlist_unhashed_lockless() in timer_pending()
+- list: Add hlist_unhashed_lockless()
+- config: Enable CONFIG_GPIO_HISI by default
+- gpio: gpio-hisi: Add HiSilicon GPIO support
+- config: Enable CONFIG_I2C_HISI by default
+- i2c: add support for HiSilicon I2C controller
+- i2c: core: add api to provide frequency mode strings
+- i2c: core: add managed function for adding i2c adapters
+- blk: reuse lookup_sem to serialize partition operations
+- Revert "block: take bd_mutex around delete_partitions in del_gendisk"
+- Revert "block: avoid creating invalid symlink file for patitions"
+- Revert "block: call bdput() to avoid memleak"
+- sctp: fix return value check in __sctp_rcv_asconf_lookup
+- workqueue: fix UAF in pwq_unbound_release_workfn()
+- exit: Move preemption fixup up, move blocking operations down
+- Input: joydev - prevent use of not validated data in JSIOCSBTNMAP ioctl
+- Input: joydev - prevent potential read overflow in ioctl
+- srcu: Take early exit on memory-allocation failure
+- Revert "modpost: add read_text_file() and get_line() helpers"
+- Revert "modpost: use read_text_file() and get_line() for reading text files"
+- Revert "modpost: remove use of non-standard strsep() in HOSTCC code"
+- Revert "modpost: explain why we can't use strsep"
+- cpuidle: fix return type err in haltpoll_switch_governor
+- mm/slab: add naive detection of double free
+- mm/mempool: fix a data race in mempool_free()
+- mm/list_lru: fix a data race in list_lru_count_one
+- mm/cma.c: fix NULL pointer dereference when cma could not be activated
+- iommu/amd: Prevent NULL pointer dereference
 
 * Mon Aug 02 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.1.0.0099
 - bcache: always record start time of a sample
