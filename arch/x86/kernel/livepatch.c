@@ -210,9 +210,8 @@ static int klp_check_stack(struct task_struct *task,
 	ret = save_stack_trace_tsk_reliable(task, &trace);
 	WARN_ON_ONCE(ret == -ENOSYS);
 	if (ret) {
-		pr_info("%s: %s:%d has an unreliable stack\n",
+		pr_debug("%s: %s:%d has an unreliable stack\n",
 			 __func__, task->comm, task->pid);
-		return ret;
 	}
 
 	klp_for_each_object(patch, obj) {
