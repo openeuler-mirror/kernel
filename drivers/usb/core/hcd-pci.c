@@ -67,8 +67,8 @@ static void for_each_companion(struct pci_dev *pdev, struct usb_hcd *hcd,
 			continue;
 
 		if (strncmp(drv->name, "uhci_hcd", sizeof("uhci_hcd") - 1) &&
-			strncmp(drv->name, "ooci_hcd", sizeof("uhci_hcd") - 1) &&
-			strncmp(drv->name, "ehci_hcd", sizeof("uhci_hcd") - 1))
+			strncmp(drv->name, "ohci-pci", sizeof("ohci-pci") - 1) &&
+			strncmp(drv->name, "ehci-pci", sizeof("ehci-pci") - 1))
 			continue;
 
 		/*
