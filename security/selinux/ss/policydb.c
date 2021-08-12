@@ -2552,11 +2552,17 @@ int policydb_read(struct policydb *p, void *fp)
 	if (rc)
 		goto bad;
 
+	/* just in case ebitmap_init() becomes more than just a memset(0): */
 	for (i = 0; i < p->p_types.nprim; i++) {
 		struct ebitmap *e = flex_array_get(p->type_attr_map_array, i);
 
 		BUG_ON(!e);
 		ebitmap_init(e);
+	}
+
+	for (i = 0; i < p->p_types.nprim; i++) {
+		struct ebitmap *e = flex_array_get(p->type_attr_map_array, i);
+
 		if (p->policyvers >= POLICYDB_VERSION_AVTAB) {
 			rc = ebitmap_read(e, fp);
 			if (rc)
