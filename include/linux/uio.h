@@ -97,6 +97,11 @@ bool _copy_from_iter_full(void *addr, size_t bytes, struct iov_iter *i);
 size_t _copy_from_iter_nocache(void *addr, size_t bytes, struct iov_iter *i);
 bool _copy_from_iter_full_nocache(void *addr, size_t bytes, struct iov_iter *i);
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+size_t copy_page_to_iter_generic_read(struct page *page, size_t offset,
+				      size_t bytes, struct iov_iter *i);
+#endif
+
 static __always_inline __must_check
 size_t copy_to_iter(const void *addr, size_t bytes, struct iov_iter *i)
 {

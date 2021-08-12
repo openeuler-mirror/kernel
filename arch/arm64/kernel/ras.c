@@ -92,6 +92,13 @@ void sea_notify_process(void)
 	if (!si)
 		panic("Lost physical address for consumed uncorrectable error");
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+	if (test_thread_flag(TIF_UCE_KERNEL_RECOVERY)) {
+		flags |= MF_UCE_KERNEL_RECOVERY;
+		clear_thread_flag(TIF_UCE_KERNEL_RECOVERY);
+	}
+#endif
+
 	clear_thread_flag(TIF_SEA_NOTIFY);
 	do {
 		pfn = si->paddr >> PAGE_SHIFT;

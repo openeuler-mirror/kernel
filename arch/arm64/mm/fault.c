@@ -662,6 +662,7 @@ int kernel_access_sea_recovery;
 #define UCE_KER_REC_NUM   ARRAY_SIZE(reco_info)
 static struct uce_kernel_recovery_info reco_info[] = {
 	{copy_page_cow_sea_fallback, "copy_page_cow", (unsigned long)copy_page_cow, 0},
+	{copy_generic_read_sea_fallback, "__arch_copy_to_user_generic_read", (unsigned long)__arch_copy_to_user_generic_read, 0},
 };
 
 static int __init kernel_access_sea_recovery_init(void)
@@ -706,6 +707,11 @@ __setup("uce_kernel_recovery=", enable_kernel_access_sea_recovery);
 int is_cow_kernel_recovery_enable(void)
 {
 	return kernel_access_sea_recovery & 0x1;
+}
+
+int is_pagecache_reading_kernel_recovery_enable(void)
+{
+	return kernel_access_sea_recovery & 0x2;
 }
 
 /*
@@ -827,6 +833,7 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 
 		idx = is_in_kernel_recovery(esr, regs);
 		if (idx >= 0 && idx < UCE_KER_REC_NUM) {
+			set_thread_flag(TIF_UCE_KERNEL_RECOVERY);
 			clear_siginfo(&info);
 			info.si_signo = inf->sig;
 			info.si_errno = 0;

@@ -1403,6 +1403,13 @@ int memory_failure(unsigned long pfn, int flags)
 	if (!PageTransTail(p) && !PageLRU(p) && !PageWriteback(p))
 		goto identify_page_state;
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+	if ((flags & MF_UCE_KERNEL_RECOVERY) && PageWriteback(p)) {
+		panic("UCE in memory failure while Page writeback, panic on page %lx, flags %x",
+		      pfn, flags);
+	}
+#endif
+
 	/*
 	 * It's very difficult to mess with pages currently under IO
 	 * and in many cases impossible, so we just avoid it here.

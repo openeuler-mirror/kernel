@@ -71,6 +71,25 @@ ENTRY(__arch_copy_to_user)
 	ret
 ENDPROC(__arch_copy_to_user)
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+ENTRY(__arch_copy_to_user_generic_read)
+	uaccess_enable_not_uao x3, x4, x5
+	add	end, x0, x2
+#include "copy_template_generic_read.S"
+	uaccess_disable_not_uao x3, x4
+
+	mov     x0, #0
+	ret
+
+	.global copy_generic_read_sea_fallback
+copy_generic_read_sea_fallback:
+	uaccess_disable_not_uao x3, x4
+
+	mov	x0, #-1
+	ret
+ENDPROC(__arch_copy_to_user_generic_read)
+#endif
+
 	.section .fixup,"ax"
 	.align	2
 9998:	sub	x0, end, dst			// bytes not copied

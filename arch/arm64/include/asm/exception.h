@@ -50,6 +50,7 @@ struct uce_kernel_recovery_info {
 };
 
 extern int copy_page_cow_sea_fallback(void);
+extern int copy_generic_read_sea_fallback(void);
 #endif
 
 #endif	/* __ASM_EXCEPTION_H */

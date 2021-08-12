@@ -408,6 +408,14 @@ extern unsigned long __must_check __arch_copy_from_user(void *to, const void __u
 	__arch_copy_from_user((to), __uaccess_mask_ptr(from), (n));	\
 })
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+extern unsigned long __must_check __arch_copy_to_user_generic_read(void __user *to, const void *from, unsigned long n);
+#define raw_copy_to_user_generic_read(to, from, n)					\
+({									\
+	__arch_copy_to_user_generic_read(__uaccess_mask_ptr(to), (from), (n));	\
+})
+#endif
+
 extern unsigned long __must_check __arch_copy_to_user(void __user *to, const void *from, unsigned long n);
 #define raw_copy_to_user(to, from, n)					\
 ({									\

@@ -2292,8 +2292,14 @@ page_ok:
 		 * Ok, we have the page, and it's up-to-date, so
 		 * now we can copy it to user space...
 		 */
-
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+		if (is_pagecache_reading_kernel_recovery_enable())
+			ret = copy_page_to_iter_generic_read(page, offset, nr, iter);
+		else
+			ret = copy_page_to_iter(page, offset, nr, iter);
+#else
 		ret = copy_page_to_iter(page, offset, nr, iter);
+#endif
 		offset += ret;
 		index += offset >> PAGE_SHIFT;
 		offset &= ~PAGE_MASK;

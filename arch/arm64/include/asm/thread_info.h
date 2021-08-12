@@ -94,6 +94,10 @@ void arch_release_task_struct(struct task_struct *tsk);
 #define TIF_SSBD		25	/* Wants SSB mitigation */
 #define TIF_32BIT_AARCH64	26	/* 32 bit process on AArch64(ILP32) */
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+#define TIF_UCE_KERNEL_RECOVERY 27
+#endif
+
 #define _TIF_SIGPENDING		(1 << TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1 << TIF_NEED_RESCHED)
 #define _TIF_NOTIFY_RESUME	(1 << TIF_NOTIFY_RESUME)
@@ -110,6 +114,10 @@ void arch_release_task_struct(struct task_struct *tsk);
 #define _TIF_SVE		(1 << TIF_SVE)
 #define _TIF_32BIT_AARCH64	(1 << TIF_32BIT_AARCH64)
 #define _TIF_POLLING_NRFLAG	(1 << TIF_POLLING_NRFLAG)
+
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+#define _TIF_UCE_KERNEL_RECOVERY       (1 << TIF_UCE_KERNEL_RECOVERY)
+#endif
 
 #define _TIF_WORK_MASK		(_TIF_NEED_RESCHED | _TIF_SIGPENDING | \
 				 _TIF_NOTIFY_RESUME | _TIF_FOREIGN_FPSTATE | \
