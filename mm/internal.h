@@ -588,4 +588,9 @@ static inline bool is_migrate_highatomic_page(struct page *page)
 
 void setup_zone_pageset(struct zone *zone);
 extern struct page *alloc_new_node_page(struct page *page, unsigned long node);
+
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+extern int is_cow_kernel_recovery_enable(void);
+#endif
+
 #endif	/* __MM_INTERNAL_H */

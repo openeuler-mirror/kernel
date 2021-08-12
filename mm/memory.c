@@ -2126,7 +2126,15 @@ static inline bool cow_user_page(struct page *dst, struct page *src,
 	debug_dma_assert_idle(src);
 
 	if (likely(src)) {
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+		if (is_cow_kernel_recovery_enable()) {
+			if (copy_user_highpage_cow(dst, src, addr, vma))
+				return false;
+		} else
+			copy_user_highpage(dst, src, addr, vma);
+#else
 		copy_user_highpage(dst, src, addr, vma);
+#endif
 		return true;
 	}
 

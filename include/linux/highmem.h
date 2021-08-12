@@ -235,6 +235,23 @@ static inline void copy_user_highpage(struct page *to, struct page *from,
 	kunmap_atomic(vfrom);
 }
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+static inline int copy_user_highpage_cow(struct page *to, struct page *from,
+	unsigned long vaddr, struct vm_area_struct *vma)
+{
+	char *vfrom, *vto;
+	int ret;
+
+	vfrom = kmap_atomic(from);
+	vto = kmap_atomic(to);
+	ret = copy_user_page_cow(vto, vfrom, vaddr, to);
+	kunmap_atomic(vto);
+	kunmap_atomic(vfrom);
+
+	return ret;
+}
+#endif
+
 #endif
 
 #ifndef __HAVE_ARCH_COPY_HIGHPAGE

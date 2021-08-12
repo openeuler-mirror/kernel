@@ -35,6 +35,14 @@ extern void clear_page(void *to);
 #define clear_user_page(addr,vaddr,pg)  __cpu_clear_user_page(addr, vaddr)
 #define copy_user_page(to,from,vaddr,pg) __cpu_copy_user_page(to, from, vaddr)
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+extern int copy_page_cow(void *to, const void *from);
+extern int __cpu_copy_user_page_cow(void *to, const void *from,
+				unsigned long user);
+#define copy_user_page_cow(to, from, vaddr, pg)      \
+	__cpu_copy_user_page_cow(to, from, vaddr)
+#endif
+
 typedef struct page *pgtable_t;
 
 #ifdef CONFIG_HAVE_ARCH_PFN_VALID

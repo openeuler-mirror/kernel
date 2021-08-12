@@ -538,6 +538,10 @@ extern int sysctl_panic_on_stackoverflow;
 
 extern bool crash_kexec_post_notifiers;
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+extern int kernel_access_sea_recovery;
+#endif
+
 /*
  * panic_cpu is used for synchronizing panic() and crash_kexec() execution. It
  * holds a CPU number which is executing panic() currently. A value of

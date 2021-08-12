@@ -656,6 +656,126 @@ static int do_bad(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 	return 1; /* "fault" */
 }
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+int kernel_access_sea_recovery;
+
+#define UCE_KER_REC_NUM   ARRAY_SIZE(reco_info)
+static struct uce_kernel_recovery_info reco_info[] = {
+	{copy_page_cow_sea_fallback, "copy_page_cow", (unsigned long)copy_page_cow, 0},
+};
+
+static int __init kernel_access_sea_recovery_init(void)
+{
+	unsigned long addr, size, offset;
+	unsigned int i;
+
+	for (i = 0; i < UCE_KER_REC_NUM; i++) {
+		addr = reco_info[i].addr;
+		if (!kallsyms_lookup_size_offset(addr, &size, &offset)) {
+			pr_info("UCE: symbol %s lookup addr fail.\n",
+				reco_info[i].name);
+			size = 0;
+		}
+
+		reco_info[i].size = size;
+	}
+
+	return 1;
+}
+fs_initcall(kernel_access_sea_recovery_init);
+
+static int __init enable_kernel_access_sea_recovery(char *str)
+{
+	int max = (1 << UCE_KER_REC_NUM) - 1;
+	int val;
+
+	if (kstrtoint(str, 0, &val))
+		return -EINVAL;
+
+	if (val < 0 || val > max) {
+		pr_info("UCE: invalid uce_kernel_recovery value %d", val);
+		return -EINVAL;
+	}
+
+	kernel_access_sea_recovery = val;
+
+	return 1;
+}
+__setup("uce_kernel_recovery=", enable_kernel_access_sea_recovery);
+
+int is_cow_kernel_recovery_enable(void)
+{
+	return kernel_access_sea_recovery & 0x1;
+}
+
+/*
+ * what is kernel recovery?
+ * If the process's private data is accessed in the kernel mode to trigger
+ * special sea fault, it can controlled by killing the process and isolating
+ * the failure pages instead of die.
+ */
+static int is_in_kernel_recovery(unsigned int esr, struct pt_regs *regs)
+{
+	/*
+	 * target insn: ldp-pre, ldp-post, ldp-offset,
+	 * ldr-64bit-pre/pose, ldr-32bit-pre/post, ldrb-pre/post, ldrh-pre/post
+	 */
+	u32 target_insn[] = {0xa8c, 0xa9c, 0xa94, 0xf84, 0x784, 0x384, 0xb84};
+	void  *pc = (void  *)instruction_pointer(regs);
+	struct uce_kernel_recovery_info *info;
+	bool insn_match = false;
+	u32 insn;
+	int i;
+
+	pr_emerg("UCE: %s-%d, kernel recovery: 0x%x, esr: 0x%08x -- %s, %pS\n",
+		 current->comm, current->pid, kernel_access_sea_recovery, esr,
+		 esr_get_class_string(esr), pc);
+
+	if (aarch64_insn_read((void *)pc, &insn)) {
+		pr_emerg("UCE: insn read fail.\n");
+		return -EFAULT;
+	}
+
+	/*
+	 * We process special ESR:
+	 * EC : 0b100101   Data Abort taken without a change in Exception level.
+	 * DFSC : 0b010000 Synchronous External abort, not on translation table
+	 * walk or hardware update of translation table.
+	 * eg: 0x96000610
+	 */
+	if (ESR_ELx_EC(esr) != ESR_ELx_EC_DABT_CUR ||
+		(esr & ESR_ELx_FSC) != ESR_ELx_FSC_EXTABT) {
+		pr_emerg("UCE: esr not match.\n");
+		return -EINVAL;
+	}
+
+	insn = (insn >> 20) & 0xffc;
+	for (i = 0; i < ARRAY_SIZE(target_insn); i++) {
+		if (insn == target_insn[i]) {
+			insn_match = true;
+			break;
+		}
+	}
+
+	if (!insn_match) {
+		pr_emerg("UCE: insn 0x%x is not match.\n", insn);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < UCE_KER_REC_NUM; i++) {
+		info = &reco_info[i];
+		if (info->fn && regs->pc >= info->addr &&
+		    regs->pc < (info->addr + info->size)) {
+			pr_emerg("UCE: total match %s success.\n", info->name);
+			return i;
+		}
+	}
+
+	pr_emerg("UCE: symbol is not match.\n");
+	return -EINVAL;
+}
+#endif
+
 static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 {
 	struct siginfo info;
@@ -693,8 +813,41 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 
 		arm64_notify_die(inf->name, regs, &info, esr);
 	} else {
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+		int idx;
+
+		if (!current->mm || !kernel_access_sea_recovery) {
+			pr_emerg("UCE: kernel recovery %d, %s-%d is %s-thread.\n",
+				 kernel_access_sea_recovery,
+				 current->comm, current->pid,
+				 (current->mm) ? "user" : "kernel");
+			die("Uncorrected hardware memory error in kernel-access\n",
+			    regs, esr);
+		}
+
+		idx = is_in_kernel_recovery(esr, regs);
+		if (idx >= 0 && idx < UCE_KER_REC_NUM) {
+			clear_siginfo(&info);
+			info.si_signo = inf->sig;
+			info.si_errno = 0;
+			info.si_code = inf->code;
+			info.si_addr = NULL;
+
+			current->thread.fault_address = regs->pc;
+			current->thread.fault_code = esr;
+			regs->pc = (unsigned long)reco_info[idx].fn;
+			arm64_force_sig_info(&info,
+				"Uncorrected hardware memory use with kernel recovery in kernel-access\n",
+				current);
+		} else {
+			die("Uncorrected hardware memory error (kernel recovery on but not match idx) in kernel-access\n",
+			    regs, esr);
+		}
+
+#else
 		die("Uncorrected hardware memory error in kernel-access\n",
 		    regs, esr);
+#endif
 	}
 
 	return 0;

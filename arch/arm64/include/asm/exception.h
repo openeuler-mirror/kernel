@@ -41,4 +41,15 @@ static inline u32 disr_to_esr(u64 disr)
 	return esr;
 }
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+struct uce_kernel_recovery_info {
+	int (*fn)(void);
+	const char *name;
+	unsigned long addr;
+	unsigned long size;
+};
+
+extern int copy_page_cow_sea_fallback(void);
+#endif
+
 #endif	/* __ASM_EXCEPTION_H */

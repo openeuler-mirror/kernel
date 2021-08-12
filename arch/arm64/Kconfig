@@ -1565,6 +1565,16 @@ config ARCH_HIBERNATION_HEADER
 config ARCH_SUSPEND_POSSIBLE
 	def_bool y
 
+config UCE_KERNEL_RECOVERY
+	bool "uce kernel recovery from special scenario"
+	def_bool y
+	depends on ARM64_ERR_RECOV
+	help
+	  With ARM v8.2 RAS Extension, SEA are usually triggered when memory errors
+	  are consumed. In some cases, if the error address is in a user page  there
+	  is a chance to recover. Such as error occurs in COW and pagecache reading
+	  scenario, we can isolate this page and killing process instead of die.
+
 endmenu
 
 menu "CPU Power Management"

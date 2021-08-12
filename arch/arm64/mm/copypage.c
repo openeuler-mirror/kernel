@@ -30,6 +30,20 @@ void __cpu_copy_user_page(void *kto, const void *kfrom, unsigned long vaddr)
 }
 EXPORT_SYMBOL_GPL(__cpu_copy_user_page);
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+int __cpu_copy_user_page_cow(void *kto, const void *kfrom, unsigned long vaddr)
+{
+	int ret;
+
+	struct page *page = virt_to_page(kto);
+	ret = copy_page_cow(kto, kfrom);
+	flush_dcache_page(page);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(__cpu_copy_user_page_cow);
+#endif
+
 void __cpu_clear_user_page(void *kaddr, unsigned long vaddr)
 {
 	clear_page(kaddr);

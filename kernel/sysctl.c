@@ -126,6 +126,7 @@ static int __maybe_unused neg_one = -1;
 static int zero;
 static int __maybe_unused one = 1;
 static int __maybe_unused two = 2;
+static int __maybe_unused three = 3;
 static int __maybe_unused four = 4;
 static unsigned long zero_ul;
 static unsigned long one_ul = 1;
@@ -1244,6 +1245,18 @@ static struct ctl_table kern_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
+#if defined(CONFIG_UCE_KERNEL_RECOVERY)
+	{
+		.procname	= "uce_kernel_recovery",
+		.data		= &kernel_access_sea_recovery,
+		.maxlen		= sizeof(kernel_access_sea_recovery),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &three,
+	},
+
+#endif
 	{ }
 };
 
