@@ -1206,6 +1206,7 @@ iommu_sva_bind_group(struct iommu_group *group, struct mm_struct *mm,
 	return NULL;
 }
 
+static inline
 int iommu_bind_guest_msi(struct iommu_domain *domain,
 			 dma_addr_t giova, phys_addr_t gpa, size_t size)
 {
