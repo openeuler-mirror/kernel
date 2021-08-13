@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0101
+Release: %{hulkrelease}.0102
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -659,7 +659,7 @@ if [ -x %{_sbindir}/weak-modules ]
 then
     %{_sbindir}/weak-modules --remove-kernel %{KernelVer} || exit $?
 fi
-if [ "`ls -A  /lib/modules/%{KernelVer}`" = "" ]; then
+if [ -d /lib/modules/%{KernelVer} ] && [ "`ls -A  /lib/modules/%{KernelVer}`" = "" ]; then
     rm -rf /lib/modules/%{KernelVer}
 fi
 
@@ -809,6 +809,9 @@ fi
 
 %changelog
 
+
+* Tue Aug 13 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.4.0.0102
+- test modules directory existed when ls
 
 * Fri Aug 10 2021 Gou Hao <gouhao@uniontech.com> -4.19.90-2108.4.0.0101
 - fix rpmbuild error with patches
