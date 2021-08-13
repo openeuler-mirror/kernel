@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       5
-%global maintenance_release .2.0
-%global pkg_release         .17
+%global maintenance_release .3.0
+%global pkg_release         .18
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -869,6 +869,11 @@ fi
 %endif
 
 %changelog
+* Fri Aug 13 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.3.0.18
+- srcu: Take early exit on memory-allocation failure
+- iommu: fix build error when CONFIG_IOMMU_API is off
+- USB: Fix some clerical mistakes
+
 * Mon Aug 9 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.2.0.17
 - userswap: add a kernel parameter to enable userswap
 - userfaultfd: fix BUG_ON() in userfaultfd_release()
