@@ -2,19 +2,18 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 5.1.0
+%global hulkrelease 5.3.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.1
+Release: %{hulkrelease}.2
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
 Source0: kernel.tar.gz
 Patch0000: 0000-raspberrypi-kernel.patch
-Patch0001: 0001-fix-error-for-openEuler.patch
 
 BuildRequires: module-init-tools, patch >= 2.5.4, bash >= 2.03, tar
 BuildRequires: bzip2, xz, findutils, gzip, m4, perl, make >= 3.78, diffutils, gawk
@@ -50,7 +49,6 @@ cp -a linux-%{version} linux-%{KernelVer}
 
 cd linux-%{KernelVer}
 %patch0000 -p1
-%patch0001 -p1
 
 find . \( -name "*.orig" -o -name "*~" \) -exec rm -f {} \; >/dev/null
 find . -name .gitignore -exec rm -f {} \; >/dev/null
@@ -176,5 +174,8 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Mon Aug 16 2021 Yafen Fang<yafen@iscas.ac.cn> - 5.10.0-5.3.0.2
+- package init based on openEuler 5.10.0-5.3.0
+
 * Mon Aug 9  2021 Yafen Fang<yafen@iscas.ac.cn> - 5.10.0-5.1.0.1
 - package init based on openEuler 5.10.0-5.1.0
