@@ -136,14 +136,16 @@ void blk_mq_in_flight_rw(struct request_queue *q, struct hd_struct *part,
 
 void blk_freeze_queue_start(struct request_queue *q)
 {
-	mutex_lock(&q->mq_freeze_lock);
-	if (++q->mq_freeze_depth == 1) {
+	struct request_queue_wrapper *q_wrapper = queue_to_wrapper(q);
+
+	mutex_lock(&q_wrapper->mq_freeze_lock);
+	if (++q_wrapper->mq_freeze_depth == 1) {
 		percpu_ref_kill(&q->q_usage_counter);
-		mutex_unlock(&q->mq_freeze_lock);
+		mutex_unlock(&q_wrapper->mq_freeze_lock);
 		if (q->mq_ops)
 			blk_mq_run_hw_queues(q, false);
 	} else {
-		mutex_unlock(&q->mq_freeze_lock);
+		mutex_unlock(&q_wrapper->mq_freeze_lock);
 	}
 }
 EXPORT_SYMBOL_GPL(blk_freeze_queue_start);
@@ -194,14 +196,18 @@ EXPORT_SYMBOL_GPL(blk_mq_freeze_queue);
 
 void blk_mq_unfreeze_queue(struct request_queue *q)
 {
-	mutex_lock(&q->mq_freeze_lock);
-	q->mq_freeze_depth--;
-	WARN_ON_ONCE(q->mq_freeze_depth < 0);
-	if (!q->mq_freeze_depth) {
+	struct request_queue_wrapper *q_wrapper = queue_to_wrapper(q);
+
+	mutex_lock(&q_wrapper->mq_freeze_lock);
+	q_wrapper->mq_freeze_depth--;
+
+	WARN_ON_ONCE(q_wrapper->mq_freeze_depth < 0);
+	if (!q_wrapper->mq_freeze_depth) {
 		percpu_ref_reinit(&q->q_usage_counter);
 		wake_up_all(&q->mq_freeze_wq);
 	}
-	mutex_unlock(&q->mq_freeze_lock);
+
+	mutex_unlock(&q_wrapper->mq_freeze_lock);
 }
 EXPORT_SYMBOL_GPL(blk_mq_unfreeze_queue);
 

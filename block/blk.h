@@ -37,6 +37,22 @@ struct blk_flush_queue {
 	spinlock_t		mq_flush_lock;
 };
 
+/*
+ * The wrapper of request_queue to fix kabi while adding members.
+ */
+struct request_queue_wrapper {
+	struct request_queue q;
+	/*
+	 * Protect concurrent access to q_usage_counter by
+	 * percpu_ref_kill() and percpu_ref_reinit().
+	 */
+	struct mutex            mq_freeze_lock;
+	int			mq_freeze_depth;
+};
+
+#define queue_to_wrapper(q) \
+	container_of(q, struct request_queue_wrapper, q)
+
 extern struct kmem_cache *blk_requestq_cachep;
 extern struct kmem_cache *request_cachep;
 extern struct kobj_type blk_queue_ktype;

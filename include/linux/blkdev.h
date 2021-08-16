@@ -655,7 +655,12 @@ struct request_queue {
 	spinlock_t      unused_hctx_lock;
 
 	int			bypass_depth;
-	int			mq_freeze_depth;
+	/*
+	 * use 'mq_freeze_depth' in request_queue_wrapper instead of here, which
+	 * is protected by 'mq_freeze_lock' in request_queue_wrapper. The reason
+	 * to keep unused 'mq_freeze_depth' here is to avoid kabi broken.
+	 */
+	atomic_t		mq_freeze_depth;
 
 #if defined(CONFIG_BLK_DEV_BSG)
 	bsg_job_fn		*bsg_job_fn;
@@ -668,11 +673,6 @@ struct request_queue {
 #endif
 	struct rcu_head		rcu_head;
 	wait_queue_head_t	mq_freeze_wq;
-	/*
-	 * Protect concurrent access to q_usage_counter by
-	 * percpu_ref_kill() and percpu_ref_reinit().
-	 */
-	struct mutex            mq_freeze_lock;
 	struct percpu_ref	q_usage_counter;
 	struct list_head	all_q_node;
 

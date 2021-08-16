@@ -955,7 +955,7 @@ int blk_queue_enter(struct request_queue *q, blk_mq_req_flags_t flags)
 		smp_rmb();
 
 		wait_event(q->mq_freeze_wq,
-			   (!q->mq_freeze_depth &&
+			   (!queue_to_wrapper(q)->mq_freeze_depth &&
 			    (pm || !blk_queue_pm_only(q))) ||
 			   blk_queue_dying(q));
 		if (blk_queue_dying(q))
@@ -1004,13 +1004,15 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id,
 					   spinlock_t *lock)
 {
 	struct request_queue *q;
+	struct request_queue_wrapper *q_wrapper;
 	int ret;
 
-	q = kmem_cache_alloc_node(blk_requestq_cachep,
-				gfp_mask | __GFP_ZERO, node_id);
-	if (!q)
+	q_wrapper = kmem_cache_alloc_node(blk_requestq_cachep,
+					  gfp_mask | __GFP_ZERO, node_id);
+	if (!q_wrapper)
 		return NULL;
 
+	q = &q_wrapper->q;
 	INIT_LIST_HEAD(&q->queue_head);
 	q->last_merge = NULL;
 	q->end_sector = 0;
@@ -1071,7 +1073,7 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id,
 	queue_flag_set_unlocked(QUEUE_FLAG_BYPASS, q);
 
 	init_waitqueue_head(&q->mq_freeze_wq);
-	mutex_init(&q->mq_freeze_lock);
+	mutex_init(&q_wrapper->mq_freeze_lock);
 
 	/*
 	 * Init percpu_ref in atomic mode so that it's faster to shutdown.
@@ -1098,7 +1100,7 @@ fail_split:
 fail_id:
 	ida_simple_remove(&blk_queue_ida, q->id);
 fail_q:
-	kmem_cache_free(blk_requestq_cachep, q);
+	kmem_cache_free(blk_requestq_cachep, q_wrapper);
 	return NULL;
 }
 EXPORT_SYMBOL(blk_alloc_queue_node);
@@ -3961,7 +3963,8 @@ int __init blk_dev_init(void)
 			sizeof(struct request), 0, SLAB_PANIC, NULL);
 
 	blk_requestq_cachep = kmem_cache_create("request_queue",
-			sizeof(struct request_queue), 0, SLAB_PANIC, NULL);
+			sizeof(struct request_queue_wrapper), 0, SLAB_PANIC,
+			NULL);
 
 #ifdef CONFIG_DEBUG_FS
 	blk_debugfs_root = debugfs_create_dir("block", NULL);
