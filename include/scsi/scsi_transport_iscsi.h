@@ -258,6 +258,18 @@ struct iscsi_cls_session {
 	struct device dev;	/* sysfs transport/container device */
 };
 
+struct iscsi_cls_session_wrapper {
+	/* abort */
+	wait_queue_head_t       ehwait;         /* used in eh_abort() */
+	struct iscsi_tm         tmhdr;
+	struct timer_list       tmf_timer;
+	int                     tmf_state;      /* see TMF_INITIAL, etc.*/
+	struct iscsi_cls_session cls_sess;
+};
+
+#define iscsi_cls_session_to_wrapper(session) \
+	container_of(session, struct iscsi_cls_session_wrapper, cls_sess)
+
 #define iscsi_dev_to_session(_dev) \
 	container_of(_dev, struct iscsi_cls_session, dev)
 
