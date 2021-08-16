@@ -1705,12 +1705,14 @@ EXPORT_SYMBOL_GPL(iscsi_is_session_online);
 static void iscsi_session_release(struct device *dev)
 {
 	struct iscsi_cls_session *session = iscsi_dev_to_session(dev);
+	struct iscsi_cls_session_wrapper *session_wrapper =
+				iscsi_cls_session_to_wrapper(session);
 	struct Scsi_Host *shost;
 
 	shost = iscsi_session_to_shost(session);
 	scsi_host_put(shost);
 	ISCSI_DBG_TRANS_SESSION(session, "Completing session release\n");
-	kfree(session);
+	kfree(session_wrapper);
 }
 
 int iscsi_is_session_dev(const struct device *dev)
@@ -2014,13 +2016,14 @@ struct iscsi_cls_session *
 iscsi_alloc_session(struct Scsi_Host *shost, struct iscsi_transport *transport,
 		    int dd_size)
 {
+	struct iscsi_cls_session_wrapper *session_wrapper;
 	struct iscsi_cls_session *session;
 
-	session = kzalloc(sizeof(*session) + dd_size,
-			  GFP_KERNEL);
-	if (!session)
+	session_wrapper = kzalloc(sizeof(*session_wrapper) + dd_size,
+				  GFP_KERNEL);
+	if (!session_wrapper)
 		return NULL;
-
+	session = &session_wrapper->cls_sess;
 	session->transport = transport;
 	session->creator = -1;
 	session->recovery_tmo = 120;
