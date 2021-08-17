@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2108.4.0
+%global hulkrelease 2108.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0102
+Release: %{hulkrelease}.0103
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,32 @@ fi
 %endif
 
 %changelog
+
+* Tue Aug 17 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.5.0.0103
+- iscsi: Fix KABI change for 'Fix conn use after free during resets'
+- iscsi: alloc iscsi_cls_session with iscsi_cls_session_warpper
+- iscsi: introduce iscsi_cls_session_warapper and helper
+- scsi: iscsi: Fix conn use after free during resets
+- scsi: sr: Return correct event when media event code is 3
+- net: xilinx_emaclite: Do not print real IOMEM pointer
+- sctp: move the active_key update after sh_keys is added
+- usb: max-3421: Prevent corruption of freed memory
+- net: ll_temac: Fix bug causing buffer descriptor overrun
+- tcp_comp: Avoiding the null pointer problem of ctx in comp_stream_read
+- nbd: add the check to prevent overflow in __nbd_ioctl()
+- ext4: fix potential uninitialized access to retval in kmmpd
+- blk-mq: fix kabi broken by "blk-mq: fix hang caused by freeze/unfreeze sequence"
+- blk-mq: fix hang caused by freeze/unfreeze sequence
+- config: Enable CONFIG_UCE_KERNEL_RECOVERY by default
+- EDAC/ghes: Remove intermediate buffer pvt->detail_location
+- USB: fix some clerical mistakes
+- uce: pagecache reading scenario support kernel recovery
+- uce: cow scenario support kernel recovery
+- selinux: fix NULL dereference in policydb_destroy()
+- livepatch/x86: Ignore return code of save_stack_trace_tsk_reliable()
+- mm,hwpoison: return -EHWPOISON to denote that the page has already been poisoned
+- mm/memory-failure: use a mutex to avoid memory_failure() races
+- arm64: mm: account for hotplug memory when randomizing the linear region
 
 
 * Tue Aug 13 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.4.0.0102
