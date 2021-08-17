@@ -1089,6 +1089,7 @@ static int FNAME(sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp)
 
 	for (i = 0; i < PT64_ENT_PER_PAGE; i++) {
 		u64 *sptep, spte;
+		struct kvm_memory_slot *slot;
 		unsigned pte_access;
 		pt_element_t gpte;
 		gpa_t pte_gpa;
@@ -1125,7 +1126,8 @@ static int FNAME(sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp)
 		sptep = &sp->spt[i];
 		spte = *sptep;
 		host_writable = spte & shadow_host_writable_mask;
-		make_spte(vcpu, sp, pte_access, gfn,
+		slot = kvm_vcpu_gfn_to_memslot(vcpu, gfn);
+		make_spte(vcpu, sp, slot, pte_access, gfn,
 			  spte_to_pfn(spte), spte, true, false,
 			  host_writable, &spte);
 
