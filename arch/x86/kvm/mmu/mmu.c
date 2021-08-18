@@ -3305,7 +3305,7 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 	 * the shadow page table may be a PAE or a long mode page table.
 	 */
 	pm_mask = PT_PRESENT_MASK;
-	if (vcpu->arch.mmu->shadow_root_level == PT64_ROOT_4LEVEL) {
+	if (vcpu->arch.mmu->shadow_root_level >= PT64_ROOT_4LEVEL) {
 		pm_mask |= PT_ACCESSED_MASK | PT_WRITABLE_MASK | PT_USER_MASK;
 
 		/*
@@ -3365,6 +3365,33 @@ static int mmu_alloc_shadow_roots(struct kvm_vcpu *vcpu)
 
 		vcpu->arch.mmu->root_hpa = __pa(vcpu->arch.mmu->pml4_root);
 	}
+#ifdef CONFIG_X86_64
+	if (vcpu->arch.mmu->shadow_root_level == PT64_ROOT_5LEVEL) {
+		if (vcpu->arch.mmu->pml4_root == NULL) {
+			u64 *pml4_root;
+
+			pml4_root = (void*)get_zeroed_page(GFP_KERNEL_ACCOUNT);
+			if (!pml4_root)
+				return -ENOMEM;
+
+			pml4_root[0] = __pa(vcpu->arch.mmu->pae_root) | pm_mask;
+
+			vcpu->arch.mmu->pml4_root = pml4_root;
+		}
+		if (vcpu->arch.mmu->pml5_root == NULL) {
+			u64 *pml5_root;
+
+			pml5_root = (void*)get_zeroed_page(GFP_KERNEL_ACCOUNT);
+			if (!pml5_root)
+				return -ENOMEM;
+
+			pml5_root[0] = __pa(vcpu->arch.mmu->pml4_root) | pm_mask;
+
+			vcpu->arch.mmu->pml5_root = pml5_root;
+		}
+		vcpu->arch.mmu->root_hpa = __pa(vcpu->arch.mmu->pml5_root);
+	}
+#endif
 
 set_root_pgd:
 	vcpu->arch.mmu->root_pgd = root_pgd;
@@ -5303,6 +5330,9 @@ static void free_mmu_pages(struct kvm_mmu *mmu)
 {
 	free_page((unsigned long)mmu->pae_root);
 	free_page((unsigned long)mmu->pml4_root);
+#ifdef CONFIG_X86_64
+	free_page((unsigned long)mmu->pml5_root);
+#endif
 }
 
 static int __kvm_mmu_create(struct kvm_vcpu *vcpu, struct kvm_mmu *mmu)
