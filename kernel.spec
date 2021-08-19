@@ -244,24 +244,13 @@ package or when debugging this package.\
 
 %prep
 
-%if 0%{?with_patch}
-if [ ! -d kernel-%{version}/vanilla-%{TarballVer} ];then
-%setup -q -n kernel-%{version} -a 9998 -c
-    mv linux-%{TarballVer} vanilla-%{TarballVer}
-else
-    cd kernel-%{version}
-fi
-cp -rl vanilla-%{TarballVer} linux-%{KernelVer}
-%else
 %setup -q -n kernel-%{version} -c
-if [ -d "kernel" ]; then
-    mv kernel linux-%{version}
-    cp -rl linux-%{version} linux-%{KernelVer}
-else
-    echo "**** ERROR: no kernel source directory ****"
-fi
+
+%if 0%{?with_patch}
+tar -xjf %{SOURCE9998}
 %endif
 
+mv kernel linux-%{KernelVer}
 cd linux-%{KernelVer}
 
 %if 0%{?with_patch}
