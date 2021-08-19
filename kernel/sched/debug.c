@@ -806,15 +806,10 @@ void sysrq_sched_debug_show(void)
 static void print_cpu_tidy(struct seq_file *m, int cpu)
 {
 	struct rq *run_queue = cpu_rq(cpu);
-	unsigned long flags;
 
 	SEQ_printf(m, "cpu#%d\n", cpu);
-	spin_lock_irqsave(&sched_debug_lock, flags);
-
 	print_rq(m, run_queue, cpu);
-	spin_unlock_irqrestore(&sched_debug_lock, flags);
 	SEQ_printf(m, "\n");
-
 }
 
 void sysrq_sched_debug_tidy(void)
