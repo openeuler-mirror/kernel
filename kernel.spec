@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0102
+Release: %{hulkrelease}.0103
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -787,6 +787,10 @@ fi
 
 %changelog
 
+
+* Tue Aug 17 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.5.0.0103
+- spec: fixed the mistake for dates in kernel.spec
+
 * Tue Aug 17 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.5.0.0102
 - iscsi: Fix KABI change for 'Fix conn use after free during resets'
 - iscsi: alloc iscsi_cls_session with iscsi_cls_session_warpper
@@ -814,10 +818,10 @@ fi
 - arm64: mm: account for hotplug memory when randomizing the linear region
 
 
-* Tue Aug 13 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.4.0.0101
+* Fri Aug 13 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.4.0.0101
 - test modules directory existed when ls
 
-* Fri Aug 10 2021 Gou Hao <gouhao@uniontech.com> -4.19.90-2108.4.0.0100
+* Tue Aug 10 2021 Gou Hao <gouhao@uniontech.com> -4.19.90-2108.4.0.0100
 - fix rpmbuild error with patches
 
 * Tue Aug 10 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.4.0.0099
@@ -1408,7 +1412,7 @@ fi
 - perf tools: Use %define api.pure full instead of %pure-parser
 - bpf: move new add member to the end of the struct bpf_prog_aux
 
-* Thu July 8 2021 Senlin Xia <xiasenlin1@huawei.com> - 4.19.90-2106.3.0.0094
+* Thu Jul 08 2021 Senlin Xia <xiasenlin1@huawei.com> - 4.19.90-2106.3.0.0094
 - add buildrequire: perl-devel for with_perf
 
 * Thu Jun 17 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2106.3.0.0093
@@ -4693,7 +4697,7 @@ fi
 - config: add certs dir to CONFIG_MODULE_SIG_KEY
 - net/hinic: Fix Oops when probing hinic driver
 
-* Sun Sep 14 2020 xinghe <xinghe1@huawei.com> - 4.19.90-2008.6.0.0044
+* Mon Sep 14 2020 xinghe <xinghe1@huawei.com> - 4.19.90-2008.6.0.0044
 - add perf-tip file fix cannot load perf-tips warning
 
 * Mon Aug 31 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2008.6.0.0043
@@ -4848,7 +4852,7 @@ fi
 - net/hinic: Delete unused functions and macro definitions in ossl
 - netfilter: nat: check the bounds of nf_nat_l3protos and nf_nat_l4protos
 
-* Fri Jul 29 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2007.2.0.0041
+* Web Jul 29 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2007.2.0.0041
 - mm, vmstat: reduce zone->lock holding time by /proc/pagetypeinfo
 - kernel/notifier.c: intercept duplicate registrations to avoid infinite loops
 - macvlan: use skb_reset_mac_header() in macvlan_queue_xmit()
@@ -5046,7 +5050,7 @@ fi
 - fs/binfmt_elf.c: allocate initialized memory in fill_thread_core_info()
 - USB: gadget: fix illegal array access in binding with UDC
 
-* Wed Jun 3 2020 Xie XiuQi <xiexiuqi@huawei.com> - 4.19.90-2005.2.0.0040
+* Wed Jun 03 2020 Xie XiuQi <xiexiuqi@huawei.com> - 4.19.90-2005.2.0.0040
 - update req_distinguished_name for x509.genkey
 
 * Fri May 22 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.2.0.0039
@@ -5088,7 +5092,7 @@ fi
 - pcie_cae support getting chipnums of this system
 - net: hns3: remove the unnecessary ccflags
 
-* Wed May 6 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.1.0.0038
+* Wed May 06 2020 Yang Yingliang <yangyingliang@huawei.com> - 4.19.90-2005.1.0.0038
 - perf: Make perf able to build with latest libbfd
 - nbd: use blk_mq_queue_tag_inflight_iter()
 - blk-mq: use blk_mq_queue_tag_inflight_iter() in debugfs
@@ -6007,7 +6011,7 @@ fi
 * Mon Jan 13 2020 luochunsheng<luochunsheng@huawei.com> - 4.19.90-vhulk1912.2.1.0025
 - update kernel code from https://gitee.com/openeuler/kernel/ 
 
-* Mon Jan  6 2020 zhanghailiang<zhang.zhanghailiang@huawei.com> - 4.19.90-vhulk1912.2.1.0024
+* Mon Jan 06 2020 zhanghailiang<zhang.zhanghailiang@huawei.com> - 4.19.90-vhulk1912.2.1.0024
 - support more than 256 vcpus for VM
 
 * Tue Dec 31 2019 linfeilong<linfeilong@huawei.com> - 4.19.90-vhulk1912.2.1.0023
