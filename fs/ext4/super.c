@@ -4831,14 +4831,15 @@ failed_mount_wq:
 		ext4_xattr_destroy_cache(sbi->s_ea_block_cache);
 		sbi->s_ea_block_cache = NULL;
 	}
-	if (sbi->s_journal) {
-		jbd2_journal_destroy(sbi->s_journal);
-		sbi->s_journal = NULL;
-	}
 failed_mount3a:
 	ext4_es_unregister_shrinker(sbi);
 failed_mount3:
 	flush_work(&sbi->s_error_work);
+
+	if (sbi->s_journal) {
+		jbd2_journal_destroy(sbi->s_journal);
+		sbi->s_journal = NULL;
+	}
 	del_timer_sync(&sbi->s_err_report);
 	ext4_stop_mmpd(sbi);
 failed_mount2:
