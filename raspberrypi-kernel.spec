@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 5.3.0
+%global hulkrelease 5.4.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.2
+Release: %{hulkrelease}.3
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -174,6 +174,15 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Sat Aug 21 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.4.0.3
+- vfio/pci: Fix wrong return value when get iommu attribute DOMAIN_ATTR_NESTING
+- net: hns3: remove always exist devlink pointer check
+- net: hns3: add support ethtool extended link state
+- net: hns3: add header file hns3_ethtoo.h
+- ethtool: add two link extended substates of bad signal integrity
+- docs: ethtool: Add two link extended substates of bad signal integrity
+- net: hns3: add support for triggering reset by ethtool
+
 * Mon Aug 16 2021 Yafen Fang<yafen@iscas.ac.cn> - 5.10.0-5.3.0.2
 - package init based on openEuler 5.10.0-5.3.0
 

@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       5
-%global maintenance_release .3.0
-%global pkg_release         .18
+%global maintenance_release .4.0
+%global pkg_release         .19
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -869,6 +869,15 @@ fi
 %endif
 
 %changelog
+* Sat Aug 21 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.4.0.19
+- vfio/pci: Fix wrong return value when get iommu attribute DOMAIN_ATTR_NESTING
+- net: hns3: remove always exist devlink pointer check
+- net: hns3: add support ethtool extended link state
+- net: hns3: add header file hns3_ethtoo.h
+- ethtool: add two link extended substates of bad signal integrity
+- docs: ethtool: Add two link extended substates of bad signal integrity
+- net: hns3: add support for triggering reset by ethtool
+
 * Fri Aug 13 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.3.0.18
 - srcu: Take early exit on memory-allocation failure
 - iommu: fix build error when CONFIG_IOMMU_API is off
