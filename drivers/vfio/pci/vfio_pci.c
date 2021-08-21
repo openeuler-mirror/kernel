@@ -502,8 +502,12 @@ static int vfio_pci_dma_fault_init(struct vfio_pci_device *vdev)
 		return 0;
 
 	ret = iommu_domain_get_attr(domain, DOMAIN_ATTR_NESTING, &nested);
-	if (ret || !nested)
-		return ret;
+	if (ret || !nested) {
+		if (ret)
+			pr_warn("%s: Get DOMAIN_ATTR_NESTING failed: %d.\n",
+				__func__, ret);
+		return 0;
+	}
 
 	mutex_init(&vdev->fault_queue_lock);
 
@@ -592,8 +596,12 @@ static int vfio_pci_dma_fault_response_init(struct vfio_pci_device *vdev)
 		return 0;
 
 	ret = iommu_domain_get_attr(domain, DOMAIN_ATTR_NESTING, &nested);
-	if (ret || !nested)
-		return ret;
+	if (ret || !nested) {
+		if (ret)
+			pr_warn("%s: Get DOMAIN_ATTR_NESTING failed: %d.\n",
+				__func__, ret);
+		return 0;
+	}
 
 	mutex_init(&vdev->fault_response_queue_lock);
 
