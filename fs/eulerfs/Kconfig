@@ -1,0 +1,10 @@
+config EULER_FS
+	tristate "EulerFS: filesystem for non-volatile memories"
+	depends on ARM64 || X86_64
+	depends on FS_DAX
+	select CRC32
+	select LIBCRC32C
+	help
+		EulerFS is NVDIMM filesystem. It uses soft updates and
+		pointer-based dual views to delay synchronous cache flushes
+		and reduce latency significantly in critical path.
