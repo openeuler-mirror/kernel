@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       5
-%global maintenance_release .4.0
-%global pkg_release         .19
+%global maintenance_release .6.0
+%global pkg_release         .20
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -869,6 +869,26 @@ fi
 %endif
 
 %changelog
+* Mon Aug 23 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.6.0.20
+- eulerfs: change default config file
+- eulerfs: add Kconfig and Makefile
+- eulerfs: add super_operations and module_init/exit
+- eulerfs: add inode_operations for symlink inode
+- eulerfs: add file_operations for dir inode
+- eulerfs: add inode_operations for dir inode and special inode
+- eulerfs: add file operations and inode operations for regular file
+- eulerfs: add dax operations
+- eulerfs: add inode related interfaces
+- eulerfs: add dependency operations
+- eulerfs: add nv dict operations
+- eulerfs: add filename interfaces
+- eulerfs: add interfaces for page wear
+- eulerfs: add interfaces for inode lock transfer
+- eulerfs: add flush interfaces
+- eulerfs: add memory allocation interfaces
+- eulerfs: add kmeme_cache definitions and interfaces
+- eulerfs: common definitions
+
 * Sat Aug 21 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.4.0.19
 - vfio/pci: Fix wrong return value when get iommu attribute DOMAIN_ATTR_NESTING
 - net: hns3: remove always exist devlink pointer check

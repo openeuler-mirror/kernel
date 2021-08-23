@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 5.4.0
+%global hulkrelease 5.6.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.3
+Release: %{hulkrelease}.4
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -174,6 +174,26 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Mon Aug 23 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.6.0.4
+- eulerfs: change default config file
+- eulerfs: add Kconfig and Makefile
+- eulerfs: add super_operations and module_init/exit
+- eulerfs: add inode_operations for symlink inode
+- eulerfs: add file_operations for dir inode
+- eulerfs: add inode_operations for dir inode and special inode
+- eulerfs: add file operations and inode operations for regular file
+- eulerfs: add dax operations
+- eulerfs: add inode related interfaces
+- eulerfs: add dependency operations
+- eulerfs: add nv dict operations
+- eulerfs: add filename interfaces
+- eulerfs: add interfaces for page wear
+- eulerfs: add interfaces for inode lock transfer
+- eulerfs: add flush interfaces
+- eulerfs: add memory allocation interfaces
+- eulerfs: add kmeme_cache definitions and interfaces
+- eulerfs: common definitions
+
 * Sat Aug 21 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.4.0.3
 - vfio/pci: Fix wrong return value when get iommu attribute DOMAIN_ATTR_NESTING
 - net: hns3: remove always exist devlink pointer check
