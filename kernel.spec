@@ -11,7 +11,7 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       5
-%global maintenance_release .5.0
+%global maintenance_release .6.0
 %global pkg_release         .20
 
 %define with_debuginfo 1
@@ -869,7 +869,8 @@ fi
 %endif
 
 %changelog
-* Mon Aug 23 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.5.0.20
+* Mon Aug 23 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.6.0.20
+- eulerfs: change default config file
 - eulerfs: add Kconfig and Makefile
 - eulerfs: add super_operations and module_init/exit
 - eulerfs: add inode_operations for symlink inode
