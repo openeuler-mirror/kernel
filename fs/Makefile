@@ -139,3 +139,4 @@ obj-$(CONFIG_RESCTRL)		+= resctrlfs.o
 obj-$(CONFIG_EROFS_FS)		+= erofs/
 obj-$(CONFIG_VBOXSF_FS)		+= vboxsf/
 obj-$(CONFIG_ZONEFS_FS)		+= zonefs/
+obj-$(CONFIG_EULER_FS)		+= eulerfs/
