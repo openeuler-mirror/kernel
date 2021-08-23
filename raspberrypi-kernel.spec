@@ -2,7 +2,7 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 5.5.0
+%global hulkrelease 5.6.0
 
 %global debug_package %{nil}
 
@@ -174,7 +174,8 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
-* Mon Aug 23 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.5.0.4
+* Mon Aug 23 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.6.0.4
+- eulerfs: change default config file
 - eulerfs: add Kconfig and Makefile
 - eulerfs: add super_operations and module_init/exit
 - eulerfs: add inode_operations for symlink inode
