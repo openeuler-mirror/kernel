@@ -12,7 +12,7 @@
 %global upstream_sublevel   0
 %global devel_release       5
 %global maintenance_release .3.0
-%global pkg_release         .18
+%global pkg_release         .19
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,9 @@ fi
 %endif
 
 %changelog
+* Mon Aug 23 2021 ShiYuan HU <hushiyuan@huwei.com> - 5.10.0-5.3.0.19
+- check-kabi: check-kabi support python3 and python2
+
 * Fri Aug 13 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.3.0.18
 - srcu: Take early exit on memory-allocation failure
 - iommu: fix build error when CONFIG_IOMMU_API is off
