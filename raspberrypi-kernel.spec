@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 5.6.0
+%global hulkrelease 5.7.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.4
+Release: %{hulkrelease}.5
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -174,6 +174,9 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Tue Aug 24 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.7.0.5
+- X86/config: Enable CONFIG_USERSWAP
+
 * Mon Aug 23 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.6.0.4
 - eulerfs: change default config file
 - eulerfs: add Kconfig and Makefile
