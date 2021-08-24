@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2108.7.0
+%global hulkrelease 2108.8.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0105
+Release: %{hulkrelease}.0106
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,13 @@ fi
 %endif
 
 %changelog
+
+* Tue Aug 24 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.8.0.0106
+- bpf: Fix leakage due to insufficient speculative store bypass mitigation
+- bpf: Introduce BPF nospec instruction for mitigating Spectre v4
+- bpf: track spill/fill of constants
+- bpf/verifier: per-register parent pointers
+- blk-mq: clear active_queues before clearing BLK_MQ_F_TAG_QUEUE_SHARED
 
 * Mon Aug 23 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.7.0.0105
 - scsi: hisi_sas: Flush workqueue in hisi_sas_v3_remove()
