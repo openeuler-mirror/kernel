@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2108.5.0
+%global hulkrelease 2108.7.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0104
+Release: %{hulkrelease}.0105
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,20 @@ fi
 %endif
 
 %changelog
+
+* Mon Aug 23 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.7.0.0105
+- scsi: hisi_sas: Flush workqueue in hisi_sas_v3_remove()
+- nvme: force complete cancelled requests
+- blk-mq: blk-mq: provide forced completion method
+- ext4: flush s_error_work before journal destroy in ext4_fill_super
+- Revert "net: make get_net_ns return error if NET_NS is disabled"
+- kthread: Fix PF_KTHREAD vs to_kthread() race
+- sched/debug: Fix 'sched_debug_lock' undeclared error
+- Remove MODULE_ALIAS() calls that take undefined macro
+- scripts/dtc: Remove redundant YYLOC global declaration
+- x86/boot/compressed: Don't declare __force_order in kaslr_64.c
+- usb: hso: fix error handling code of hso_create_net_device
+- hso: fix bailout in error case of probe
 
 
 * Tue Aug 17 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.5.0.0104
