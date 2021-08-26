@@ -311,15 +311,15 @@ static enum oom_constraint constrained_alloc(struct oom_control *oc)
  * choose the task with the highest number of 'points'.
  */
 static bool oom_next_task(struct task_struct *task, struct oom_control *oc,
-			unsigned long points)
+			long points)
 {
 	struct mem_cgroup *cur_memcg;
 	struct mem_cgroup *oc_memcg;
 
 	if (!static_branch_likely(&memcg_qos_stat_key))
-		return !points || points < oc->chosen_points;
+		return (points == LONG_MIN || points < oc->chosen_points);
 
-	if (!points)
+	if (points == LONG_MIN)
 		return true;
 
 	if (!oc->chosen)
@@ -341,9 +341,9 @@ static bool oom_next_task(struct task_struct *task, struct oom_control *oc,
 }
 #else
 static inline bool oom_next_task(struct task_struct *task,
-				struct oom_control *oc, unsigned long points)
+				struct oom_control *oc, long points)
 {
-	return !points || points < oc->chosen_points;
+	return (points == LONG_MIN || points < oc->chosen_points);
 }
 #endif
 
