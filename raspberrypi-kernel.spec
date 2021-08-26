@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 5.7.0
+%global hulkrelease 5.8.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.5
+Release: %{hulkrelease}.6
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -174,6 +174,10 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Thu Aug 26 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.8.0.6
+- mm/page_alloc: correct return value of populated elements if bulk array is populated
+- mm: fix oom killing for disabled pid
+
 * Tue Aug 24 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.7.0.5
 - X86/config: Enable CONFIG_USERSWAP
 
