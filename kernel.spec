@@ -66,7 +66,7 @@ BuildRequires: bzip2, xz, findutils, gzip, m4, perl, make >= 3.78, diffutils, ga
 BuildRequires: gcc >= 3.4.2, binutils >= 2.12
 BuildRequires: hostname, net-tools, bc
 BuildRequires: xmlto, asciidoc
-BuildRequires: openssl-devel
+BuildRequires: openssl openssl-devel
 BuildRequires: hmaccalc
 BuildRequires: ncurses-devel
 #BuildRequires: pesign >= 0.109-4
