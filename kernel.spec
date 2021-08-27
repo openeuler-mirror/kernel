@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       5
-%global maintenance_release .7.0
-%global pkg_release         .21
+%global maintenance_release .8.0
+%global pkg_release         .22
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -869,6 +869,10 @@ fi
 %endif
 
 %changelog
+* Thu Aug 26 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.8.0.22
+- mm/page_alloc: correct return value of populated elements if bulk array is populated
+- mm: fix oom killing for disabled pid
+
 * Tue Aug 24 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.7.0.21
 - X86/config: Enable CONFIG_USERSWAP
 
