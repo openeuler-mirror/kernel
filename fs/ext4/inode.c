@@ -4824,8 +4824,13 @@ static int __ext4_get_inode_loc(struct inode *inode,
 			}
 			brelse(bitmap_bh);
 			if (i == start + inodes_per_block) {
+				struct ext4_inode *raw_inode =
+					(struct ext4_inode *) (bh->b_data + iloc->offset);
+
 				/* all other inodes are free, so skip I/O */
 				memset(bh->b_data, 0, bh->b_size);
+				if (!ext4_test_inode_state(inode, EXT4_STATE_NEW))
+					ext4_fill_raw_inode(inode, raw_inode);
 				set_buffer_uptodate(bh);
 				unlock_buffer(bh);
 				goto has_buffer;
