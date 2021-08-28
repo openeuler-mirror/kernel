@@ -738,6 +738,7 @@ void drop_slab_node(int nid)
 {
 	unsigned long freed;
 	unsigned int counts = 0;
+	int shift = 0;
 
 	do {
 		struct mem_cgroup *memcg = NULL;
@@ -760,7 +761,7 @@ void drop_slab_node(int nid)
 				return;
 			}
 		}
-	} while (freed > 10);
+	} while ((freed >> shift++) > 1);
 }
 
 void drop_slab(void)
