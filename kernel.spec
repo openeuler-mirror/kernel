@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2108.8.0
+%global hulkrelease 2108.9.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0105
+Release: %{hulkrelease}.0106
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,26 @@ fi
 %endif
 
 %changelog
+
+* Mon Aug 30 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.9.0.0106
+- tcp_comp: Fix comp_read_size return value
+- virtio-blk: Add validation for block size in config space
+- blk-mq: fix divide by zero crash in tg_may_dispatch()
+- mm, vmscan: guarantee drop_slab_node() termination
+- jump_label: skip resource release if jump label is not relocated
+- ext4: prevent getting empty inode buffer
+- ext4: move ext4_fill_raw_inode() related functions before __ext4_get_inode_loc()
+- ext4: factor out ext4_fill_raw_inode()
+- ext4: make the updating inode data procedure atomic
+- KVM: X86: MMU: Use the correct inherited permissions to get shadow page
+- x86/config: Enable CONFIG_USERSWAP for openeuler_defconfig
+- ext4: fix panic when mount failed with parallel flush_stashed_error_work
+- device core: Consolidate locking and unlocking of parent and device
+- Revert "ext4: flush s_error_work before journal destroy in ext4_fill_super"
+- ext2: Strengthen xattr block checks
+- ext2: Merge loops in ext2_xattr_set()
+- ext2: introduce helper for xattr entry validation
+- mm: rmap: explicitly reset vma->anon_vma in unlink_anon_vmas()
 
 * Tue Aug 24 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.8.0.0105
 - bpf: Fix leakage due to insufficient speculative store bypass mitigation
