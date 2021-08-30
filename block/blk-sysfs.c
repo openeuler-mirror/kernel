@@ -940,6 +940,7 @@ int blk_register_queue(struct gendisk *disk)
 	wbt_enable_default(q);
 
 	blk_throtl_register_queue(q);
+	blk_queue_flag_set(QUEUE_FLAG_THROTL_INIT_DONE, q);
 
 	if (q->request_fn || (q->mq_ops && q->elevator)) {
 		ret = elv_register_queue(q);
@@ -977,6 +978,7 @@ void blk_unregister_queue(struct gendisk *disk)
 	if (!test_bit(QUEUE_FLAG_REGISTERED, &q->queue_flags))
 		return;
 
+	blk_queue_flag_clear(QUEUE_FLAG_THROTL_INIT_DONE, q);
 	/*
 	 * Since sysfs_remove_dir() prevents adding new directory entries
 	 * before removal of existing entries starts, protect against

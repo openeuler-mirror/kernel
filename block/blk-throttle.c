@@ -11,6 +11,8 @@
 #include <linux/bio.h>
 #include <linux/blktrace_api.h>
 #include <linux/blk-cgroup.h>
+#include <linux/sched/signal.h>
+#include <linux/delay.h>
 #include "blk.h"
 
 /* Max dispatch from a group in 1 round */
@@ -1434,6 +1436,31 @@ static void tg_conf_updated(struct throtl_grp *tg, bool global)
 	}
 }
 
+static inline int throtl_check_init_done(struct request_queue *q)
+{
+	if (test_bit(QUEUE_FLAG_THROTL_INIT_DONE, &q->queue_flags))
+		return 0;
+
+	return blk_queue_dying(q) ? -ENODEV : -EBUSY;
+}
+
+/*
+ * If throtl_check_init_done() return -EBUSY, we should retry after a short
+ * msleep(), since that throttle init will be completed in blk_register_queue()
+ * soon.
+ */
+static inline int throtl_restart_syscall_when_busy(int errno)
+{
+	int ret = errno;
+
+	if (ret == -EBUSY) {
+		msleep(10);
+		ret = restart_syscall();
+	}
+
+	return ret;
+}
+
 static ssize_t tg_set_conf(struct kernfs_open_file *of,
 			   char *buf, size_t nbytes, loff_t off, bool is_u64)
 {
@@ -1447,6 +1474,10 @@ static ssize_t tg_set_conf(struct kernfs_open_file *of,
 	if (ret)
 		return ret;
 
+	ret = throtl_check_init_done(ctx.disk->queue);
+	if (ret)
+		goto out_finish;
+
 	ret = -EINVAL;
 	if (sscanf(ctx.body, "%llu", &v) != 1)
 		goto out_finish;
@@ -1454,7 +1485,6 @@ static ssize_t tg_set_conf(struct kernfs_open_file *of,
 		v = U64_MAX;
 
 	tg = blkg_to_tg(ctx.blkg);
-
 	if (is_u64)
 		*(u64 *)((void *)tg + of_cft(of)->private) = v;
 	else
@@ -1464,6 +1494,8 @@ static ssize_t tg_set_conf(struct kernfs_open_file *of,
 	ret = 0;
 out_finish:
 	blkg_conf_finish(&ctx);
+	ret = throtl_restart_syscall_when_busy(ret);
+
 	return ret ?: nbytes;
 }
 
@@ -1613,8 +1645,11 @@ static ssize_t tg_set_limit(struct kernfs_open_file *of,
 	if (ret)
 		return ret;
 
-	tg = blkg_to_tg(ctx.blkg);
+	ret = throtl_check_init_done(ctx.disk->queue);
+	if (ret)
+		goto out_finish;
 
+	tg = blkg_to_tg(ctx.blkg);
 	v[0] = tg->bps_conf[READ][index];
 	v[1] = tg->bps_conf[WRITE][index];
 	v[2] = tg->iops_conf[READ][index];
@@ -1710,6 +1745,8 @@ static ssize_t tg_set_limit(struct kernfs_open_file *of,
 	ret = 0;
 out_finish:
 	blkg_conf_finish(&ctx);
+	ret = throtl_restart_syscall_when_busy(ret);
+
 	return ret ?: nbytes;
 }
 
