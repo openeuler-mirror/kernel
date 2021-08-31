@@ -78,7 +78,7 @@ static void vdpasim_vq_reset(struct vdpasim *vdpasim,
 			  VDPASIM_QUEUE_MAX, false, NULL, NULL, NULL);
 }
 
-static void vdpasim_reset(struct vdpasim *vdpasim)
+static void vdpasim_do_reset(struct vdpasim *vdpasim)
 {
 	int i;
 
@@ -424,9 +424,19 @@ static void vdpasim_set_status(struct vdpa_device *vdpa, u8 status)
 
 	spin_lock(&vdpasim->lock);
 	vdpasim->status = status;
-	if (status == 0)
-		vdpasim_reset(vdpasim);
 	spin_unlock(&vdpasim->lock);
+}
+
+static int vdpasim_reset(struct vdpa_device *vdpa)
+{
+	struct vdpasim *vdpasim = vdpa_to_sim(vdpa);
+
+	spin_lock(&vdpasim->lock);
+	vdpasim->status = 0;
+	vdpasim_do_reset(vdpasim);
+	spin_unlock(&vdpasim->lock);
+
+	return 0;
 }
 
 static size_t vdpasim_get_config_size(struct vdpa_device *vdpa)
@@ -563,6 +573,7 @@ static const struct vdpa_config_ops vdpasim_net_config_ops = {
 	.get_vendor_id          = vdpasim_get_vendor_id,
 	.get_status             = vdpasim_get_status,
 	.set_status             = vdpasim_set_status,
+	.reset			= vdpasim_reset,
 	.get_config_size        = vdpasim_get_config_size,
 	.get_config             = vdpasim_get_config,
 	.set_config             = vdpasim_set_config,
@@ -591,6 +602,7 @@ static const struct vdpa_config_ops vdpasim_net_batch_config_ops = {
 	.get_vendor_id          = vdpasim_get_vendor_id,
 	.get_status             = vdpasim_get_status,
 	.set_status             = vdpasim_set_status,
+	.reset			= vdpasim_reset,
 	.get_config_size        = vdpasim_get_config_size,
 	.get_config             = vdpasim_get_config,
 	.set_config             = vdpasim_set_config,
