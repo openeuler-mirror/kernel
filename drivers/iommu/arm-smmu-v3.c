@@ -3089,10 +3089,10 @@ static struct iommu_ops arm_smmu_ops = {
 	.of_xlate		= arm_smmu_of_xlate,
 	.get_resv_regions	= arm_smmu_get_resv_regions,
 	.put_resv_regions	= arm_smmu_put_resv_regions,
+	.pgsize_bitmap		= -1UL, /* Restricted during device attach */
 #ifdef CONFIG_SMMU_BYPASS_DEV
 	.device_domain_type	= arm_smmu_device_domain_type,
 #endif
-	.pgsize_bitmap		= -1UL, /* Restricted during device attach */
 };
 
 /* Probing and initialisation functions */
