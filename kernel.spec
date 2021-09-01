@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2108.9.0
+%global hulkrelease 2109.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0107
+Release: %{hulkrelease}.0108
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,20 @@ fi
 %endif
 
 %changelog
+
+* Wed Sep 01 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2109.1.0.0108
+- iommu: smmuv2: Using the SMMU_BYPASS_DEV to bypass SMMU for some SoCs
+- iommu: dev_bypass: cleanup dev bypass code
+- arm64: phytium: using MIDR_PHYTIUM_FT2000PLUS instead of ARM_CPU_IMP_PHYTIUM
+- arm64: Add MIDR encoding for PHYTIUM CPUs
+- arm64: Add MIDR encoding for HiSilicon Taishan CPUs
+- sched: Fix sched_fork() access an invalid sched_task_group
+- KVM: nSVM: avoid picking up unsupported bits from L2 in int_ctl (CVE-2021-3653)
+- KVM: nSVM: always intercept VMLOAD/VMSAVE when nested (CVE-2021-3656)
+- Bluetooth: switch to lock_sock in SCO
+- Bluetooth: avoid circular locks in sco_sock_connect
+- Bluetooth: schedule SCO timeouts with delayed_work
+- Bluetooth: defer cleanup of resources in hci_unregister_dev()
 
 * Mon Aug 30 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2108.9.0.0107
 - tcp_comp: Fix comp_read_size return value
