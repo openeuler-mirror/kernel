@@ -444,9 +444,17 @@ config QCOM_IOMMU
 	  Support for IOMMU on certain Qualcomm SoCs.
 
 config  SMMU_BYPASS_DEV
-	bool "SMMU bypass streams for some specific devices"
+	bool "SMMU bypass streams for some specific devices or CPU SoCs"
 	help
-	  according smmu.bypassdev cmdline, SMMU performs attribute
-	  transformation only,with no address translation.
+	  Using the smmu.bypassdev cmdline, to collect the devices that SMMU
+	  performs attribute transformation only, with no address translation.
+	  This function will be replaced by IORT RMR node, which will be
+	  upstreamed in mainline.
+	  Also extended this function to support SMMU bypass for some CPU SoCs
+	  which the SMMU for some platform is not functional well. Since mainline
+	  kernel already has the .def_domain_type hook for iommu_ops, so if we
+	  update the kernel in the future, we can add the SMMU bypass code for
+	  some CPU SoCs in the .def_domain_type hook, for now we just reuse the
+	  dev bypass.
 
 endif # IOMMU_SUPPORT

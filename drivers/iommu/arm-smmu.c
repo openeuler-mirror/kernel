@@ -1608,6 +1608,31 @@ static void arm_smmu_put_resv_regions(struct device *dev,
 		kfree(entry);
 }
 
+#ifdef CONFIG_SMMU_BYPASS_DEV
+
+#ifdef CONFIG_ARM64
+#include <asm/cputype.h>
+static int phytium_smmu_def_domain_type(struct device *dev, unsigned int *type)
+{
+	u32 midr = read_cpuid_id();
+
+	if (((midr & MIDR_CPU_MODEL_MASK) == MIDR_PHYTIUM_FT2000PLUS)
+		|| ((midr & MIDR_CPU_MODEL_MASK) == MIDR_PHYTIUM_FT2500)) {
+		*type = IOMMU_DOMAIN_IDENTITY;
+		return 0;
+	}
+
+	return -EINVAL;
+}
+#else
+static inline int phytium_smmu_def_domain_type(struct device *dev, unsigned int *type)
+{
+	return -EINVAL;
+}
+#endif
+
+#endif
+
 static struct iommu_ops arm_smmu_ops = {
 	.capable		= arm_smmu_capable,
 	.domain_alloc		= arm_smmu_domain_alloc,
@@ -1627,6 +1652,9 @@ static struct iommu_ops arm_smmu_ops = {
 	.get_resv_regions	= arm_smmu_get_resv_regions,
 	.put_resv_regions	= arm_smmu_put_resv_regions,
 	.pgsize_bitmap		= -1UL, /* Restricted during device attach */
+#ifdef CONFIG_SMMU_BYPASS_DEV
+	.device_domain_type = phytium_smmu_def_domain_type,
+#endif
 };
 
 static void arm_smmu_device_reset(struct arm_smmu_device *smmu)
