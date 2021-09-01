@@ -310,8 +310,10 @@ static int xhci_pci_setup(struct usb_hcd *hcd)
 #include <asm/cputype.h>
 static void phytium_xhci_pci_workaround(struct pci_dev *dev)
 {
+	u32 midr = read_cpuid_id();
+
 	/* Firmware bug, DMA mask is not reported by the firmware */
-	if (read_cpuid_implementor() == ARM_CPU_IMP_PHYTIUM)
+	if ((midr & MIDR_CPU_MODEL_MASK) == MIDR_PHYTIUM_FT2000PLUS)
 		dma_set_mask(&dev->dev, DMA_BIT_MASK(64));
 }
 #else

@@ -290,10 +290,10 @@ void store_cpu_topology(unsigned int cpuid)
 	cpuid_topo->core_id    = cpuid;
 	cpuid_topo->package_id = cpu_to_node(cpuid);
 
-	if (!(mpidr & MPIDR_MT_BITMASK) &&
-	    read_cpuid_implementor() == ARM_CPU_IMP_PHYTIUM) {
+	/* Some PHYTIUM FT2000PLUS platform firmware has no PPTT table */
+	if ((read_cpuid_id() & MIDR_CPU_MODEL_MASK) == MIDR_PHYTIUM_FT2000PLUS
+		&& cpu_to_node(cpuid) == NUMA_NO_NODE) {
 		cpuid_topo->thread_id  = 0;
-		cpuid_topo->core_id  = cpuid;
 		cpuid_topo->package_id = 0;
 	}
 
