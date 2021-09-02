@@ -143,7 +143,6 @@ static void set_extend_sge(struct hns_roce_qp *qp, struct ib_send_wr *wr,
 	int fi_sge_num;
 	int se_sge_num;
 	int shift;
-	int i;
 
 	if (qp->ibqp.qp_type == IB_QPT_RC || qp->ibqp.qp_type == IB_QPT_UC)
 		num_in_wqe = HNS_ROCE_V2_UC_RC_SGE_NUM_IN_WQE;
@@ -162,20 +161,32 @@ static void set_extend_sge(struct hns_roce_qp *qp, struct ib_send_wr *wr,
 		      sizeof(struct hns_roce_v2_wqe_data_seg);
 	if (extend_sge_num > fi_sge_num) {
 		se_sge_num = extend_sge_num - fi_sge_num;
-		for (i = 0; i < fi_sge_num; i++) {
-			set_data_seg_v2(dseg++, sg + i);
-			(*sge_ind)++;
+		while (fi_sge_num > 0) {
+			if (likely(sg->length)) {
+				set_data_seg_v2(dseg++, sg);
+				(*sge_ind)++;
+				fi_sge_num--;
+			}
+			sg++;
 		}
 		dseg = get_send_extend_sge(qp,
 					   (*sge_ind) & (qp->sge.sge_cnt - 1));
-		for (i = 0; i < se_sge_num; i++) {
-			set_data_seg_v2(dseg++, sg + fi_sge_num + i);
-			(*sge_ind)++;
+		while (se_sge_num > 0) {
+			if (likely(sg->length)) {
+				set_data_seg_v2(dseg++, sg + fi_sge_num);
+				(*sge_ind)++;
+				se_sge_num--;
+			}
+			sg++;
 		}
 	} else {
-		for (i = 0; i < extend_sge_num; i++) {
-			set_data_seg_v2(dseg++, sg + i);
-			(*sge_ind)++;
+		while (extend_sge_num > 0) {
+			if (likely(sg->length)) {
+				set_data_seg_v2(dseg++, sg);
+				(*sge_ind)++;
+				extend_sge_num--;
+			}
+			sg++;
 		}
 	}
 }
