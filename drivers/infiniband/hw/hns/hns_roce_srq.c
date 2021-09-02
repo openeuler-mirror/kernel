@@ -529,6 +529,7 @@ struct ib_srq *hns_roce_create_srq(struct ib_pd *pd,
 	srq->ibsrq.ext.xrc.srq_num = srq->srqn;
 	srq_init_attr->attr.max_wr = srq->max;
 	srq_init_attr->attr.max_sge = srq->max_gs - srq->rsv_sge;
+	srq_init_attr->attr.srq_limit = 0;
 
 	if (pd->uobject) {
 		if (ib_copy_to_udata(udata, &srq->srqn, sizeof(__u32))) {
