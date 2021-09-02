@@ -635,6 +635,8 @@ struct hns_roce_idx_que {
 	struct ib_umem			*umem;
 	struct hns_roce_mtt		mtt;
 	unsigned long			*bitmap;
+	u32				head;
+	u32				tail;
 };
 
 struct hns_roce_srq {
@@ -656,8 +658,6 @@ struct hns_roce_srq {
 	struct hns_roce_mtt	mtt;
 	struct hns_roce_idx_que idx_que;
 	spinlock_t		lock;
-	int			head;
-	int			tail;
 	u16			wqe_ctr;
 	struct mutex		mutex;
 };
@@ -713,6 +713,7 @@ struct hns_roce_av {
 	u8	    stat_rate;
 	u8	    hop_limit;
 	u32         flowlabel;
+	u16 udp_sport;
 	u8          sl;
 	u8          tclass;
 	u8	    dgid[HNS_ROCE_GID_SIZE];

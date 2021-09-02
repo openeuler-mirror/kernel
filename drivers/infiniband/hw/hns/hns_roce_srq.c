@@ -336,6 +336,9 @@ static int hns_roce_create_idx_que(struct ib_pd *pd, struct hns_roce_srq *srq,
 	for (i = 0; i < bitmap_num; i++)
 		idx_que->bitmap[i] = ~(0UL);
 
+	idx_que->head = 0;
+	idx_que->tail = 0;
+
 	return 0;
 }
 
@@ -352,8 +355,6 @@ static int create_kernel_srq(struct ib_pd *pd, struct hns_roce_srq *srq,
 		return -ENOMEM;
 
 	srq->buf = kbuf;
-	srq->head = 0;
-	srq->tail = srq->max - 1;
 	srq->wqe_ctr = 0;
 
 	ret = hns_roce_mtt_init(hr_dev, kbuf->npages, kbuf->page_shift,

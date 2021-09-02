@@ -3035,7 +3035,7 @@ static void hns_roce_free_srq_wqe(struct hns_roce_srq *srq, int wqe_index)
 	bitmap_num = wqe_index / BITS_PER_LONG_LONG;
 	bit_num = wqe_index % BITS_PER_LONG_LONG;
 	srq->idx_que.bitmap[bitmap_num] |= (1ULL << bit_num);
-	srq->tail++;
+	srq->idx_que.tail++;
 
 	spin_unlock(&srq->lock);
 }
@@ -7002,6 +7002,15 @@ out:
 	return ret;
 }
 
+int hns_roce_srqwq_overflow(struct hns_roce_srq *srq, int nreq)
+{
+	struct hns_roce_idx_que *idx_que = &srq->idx_que;
+	unsigned int cur;
+
+	cur = idx_que->head - idx_que->tail;
+	return cur + nreq >= srq->max - 1;
+}
+
 static int find_empty_entry(struct hns_roce_idx_que *idx_que)
 {
 	int bit_num;
@@ -7051,7 +7060,7 @@ static int hns_roce_v2_post_srq_recv(struct ib_srq *ibsrq,
 
 	spin_lock_irqsave(&srq->lock, flags);
 
-	ind = srq->head & (srq->max - 1);
+	ind = srq->idx_que.head & (srq->max - 1);
 	max_sge = srq->max_gs - srq->rsv_sge;
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		if (unlikely(wr->num_sge > max_sge)) {
@@ -7063,7 +7072,7 @@ static int hns_roce_v2_post_srq_recv(struct ib_srq *ibsrq,
 			break;
 		}
 
-		if (unlikely(srq->head == srq->tail)) {
+		if (unlikely(hns_roce_srqwq_overflow(srq, nreq))) {
 			dev_err(hr_dev->dev, "srq(0x%lx) head equals tail\n",
 				srq->srqn);
 			ret = -ENOMEM;
@@ -7093,7 +7102,7 @@ static int hns_roce_v2_post_srq_recv(struct ib_srq *ibsrq,
 	}
 
 	if (likely(nreq)) {
-		srq->head += nreq;
+		srq->idx_que.head += nreq;
 
 		/*
 		 * Make sure that descriptors are written before
@@ -7104,7 +7113,7 @@ static int hns_roce_v2_post_srq_recv(struct ib_srq *ibsrq,
 		srq_db.byte_4 = cpu_to_le32(HNS_ROCE_V2_SRQ_DB <<
 					    V2_DB_BYTE_4_CMD_S |
 					    (srq->srqn & V2_DB_BYTE_4_TAG_M));
-		srq_db.parameter = cpu_to_le32(srq->head);
+		srq_db.parameter = cpu_to_le32(srq->idx_que.head);
 
 		hns_roce_write64(hr_dev, (__le32 *)&srq_db, srq->db_reg_l);
 
