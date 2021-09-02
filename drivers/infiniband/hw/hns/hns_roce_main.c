@@ -701,6 +701,19 @@ static void hns_roce_disassociate_ucontext(struct ib_ucontext *ibcontext)
 	mutex_unlock(&context->vma_list_mutex);
 }
 
+static void hns_roce_get_fw_ver(struct ib_device *device, char *str)
+{
+	u64 fw_ver = to_hr_dev(device)->caps.fw_ver;
+	unsigned int major, minor, sub_minor;
+
+	major = upper_32_bits(fw_ver);
+	minor = high_16_bits(lower_32_bits(fw_ver));
+	sub_minor = low_16_bits(fw_ver);
+
+	snprintf(str, IB_FW_VERSION_NAME_MAX, "%u.%u.%04u", major, minor,
+		 sub_minor);
+}
+
 static const char * const hns_roce_hw_stats_name[] = {
 	"pd_alloc",
 	"pd_dealloc",
@@ -922,6 +935,9 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 	ib_dev->alloc_ucontext		= hns_roce_alloc_ucontext;
 	ib_dev->dealloc_ucontext	= hns_roce_dealloc_ucontext;
 	ib_dev->mmap			= hns_roce_mmap;
+
+	/* FW */
+	ib_dev->get_dev_fw_str		= hns_roce_get_fw_ver;
 
 	/* PD */
 	ib_dev->alloc_pd		= hns_roce_alloc_pd;
