@@ -1922,8 +1922,8 @@ static void calc_pg_sz(int obj_num, int obj_size, int hop_num, int ctx_bt_num,
 		       int *buf_page_size, int *bt_page_size, u32 hem_type)
 {
 	u64 obj_per_chunk;
-	int bt_chunk_sz = 1 << PAGE_SHIFT;
-	int obj_chunk_sz = 1 << PAGE_SHIFT;
+	u64 bt_chunk_sz = 1 << PAGE_SHIFT;
+	u64 obj_chunk_sz = 1 << PAGE_SHIFT;
 
 	*buf_page_size = 0;
 	*bt_page_size = 0;
@@ -4143,8 +4143,6 @@ static void modify_qp_reset_to_init(struct ib_qp *ibqp,
 		       V2_QPC_BYTE_168_IRRL_IDX_LSB_M,
 		       V2_QPC_BYTE_168_IRRL_IDX_LSB_S, 0);
 
-	roce_set_field(context->byte_172_sq_psn, V2_QPC_BYTE_172_ACK_REQ_FREQ_M,
-		       V2_QPC_BYTE_172_ACK_REQ_FREQ_S, 4);
 	roce_set_field(qpc_mask->byte_172_sq_psn,
 		       V2_QPC_BYTE_172_ACK_REQ_FREQ_M,
 		       V2_QPC_BYTE_172_ACK_REQ_FREQ_S, 0);
@@ -4377,6 +4375,8 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	dma_addr_t dma_handle_3;
 	dma_addr_t dma_handle_2;
 	u64 wqe_sge_ba;
+	u8 lp_pktn_ini;
+	enum ib_mtu mtu;
 	u8 port_num;
 	u64 *mtts_3;
 	u64 *mtts_2;
@@ -4553,21 +4553,25 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	roce_set_field(qpc_mask->byte_52_udpspn_dmac, V2_QPC_BYTE_52_DMAC_M,
 		       V2_QPC_BYTE_52_DMAC_S, 0);
 
-	/* mtu*(2^LP_PKTN_INI) should not bigger then 1 message length 64kb */
+	if (ibqp->qp_type == IB_QPT_GSI || ibqp->qp_type == IB_QPT_UD)
+		mtu = IB_MTU_4096;
+	else
+		mtu = attr->path_mtu;
+
+	if (attr_mask & IB_QP_PATH_MTU) {
+		roce_set_field(context->byte_24_mtu_tc, V2_QPC_BYTE_24_MTU_M,
+				V2_QPC_BYTE_24_MTU_S, mtu);
+		roce_set_field(qpc_mask->byte_24_mtu_tc, V2_QPC_BYTE_24_MTU_M,
+				V2_QPC_BYTE_24_MTU_S, 0);
+	}
+
+#define MAX_LP_MSG_LEN 65536
+	/* MTU * (2 ^ LP_PKTN_INI) shouldn't be bigger than 64KB */
+	lp_pktn_ini = ilog2(MAX_LP_MSG_LEN / ib_mtu_enum_to_int(mtu));
 	roce_set_field(context->byte_56_dqpn_err, V2_QPC_BYTE_56_LP_PKTN_INI_M,
-		       V2_QPC_BYTE_56_LP_PKTN_INI_S, 0);
+		       V2_QPC_BYTE_56_LP_PKTN_INI_S, lp_pktn_ini);
 	roce_set_field(qpc_mask->byte_56_dqpn_err, V2_QPC_BYTE_56_LP_PKTN_INI_M,
 		       V2_QPC_BYTE_56_LP_PKTN_INI_S, 0);
-
-	if (ibqp->qp_type == IB_QPT_GSI || ibqp->qp_type == IB_QPT_UD)
-		roce_set_field(context->byte_24_mtu_tc, V2_QPC_BYTE_24_MTU_M,
-			       V2_QPC_BYTE_24_MTU_S, IB_MTU_4096);
-	else if (attr_mask & IB_QP_PATH_MTU)
-		roce_set_field(context->byte_24_mtu_tc, V2_QPC_BYTE_24_MTU_M,
-			       V2_QPC_BYTE_24_MTU_S, attr->path_mtu);
-
-	roce_set_field(qpc_mask->byte_24_mtu_tc, V2_QPC_BYTE_24_MTU_M,
-		       V2_QPC_BYTE_24_MTU_S, 0);
 
 	roce_set_field(context->byte_84_rq_ci_pi,
 		       V2_QPC_BYTE_84_RQ_PRODUCER_IDX_M,
@@ -4579,6 +4583,12 @@ static int modify_qp_init_to_rtr(struct ib_qp *ibqp,
 	roce_set_field(qpc_mask->byte_84_rq_ci_pi,
 		       V2_QPC_BYTE_84_RQ_CONSUMER_IDX_M,
 		       V2_QPC_BYTE_84_RQ_CONSUMER_IDX_S, 0);
+	/* ACK_REQ_FREQ should be larger than or equal to LP_PKTN_INI */
+	roce_set_field(context->byte_172_sq_psn, V2_QPC_BYTE_172_ACK_REQ_FREQ_M,
+		       V2_QPC_BYTE_172_ACK_REQ_FREQ_S, lp_pktn_ini);
+	roce_set_field(qpc_mask->byte_172_sq_psn,
+		       V2_QPC_BYTE_172_ACK_REQ_FREQ_M,
+		       V2_QPC_BYTE_172_ACK_REQ_FREQ_S, 0);
 	roce_set_bit(qpc_mask->byte_108_rx_reqepsn,
 		     V2_QPC_BYTE_108_RX_REQ_PSN_ERR_S, 0);
 	roce_set_field(qpc_mask->byte_96_rx_reqmsn, V2_QPC_BYTE_96_RX_REQ_MSN_M,
