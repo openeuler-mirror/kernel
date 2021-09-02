@@ -312,29 +312,22 @@ static int hns_roce_create_idx_que(struct ib_pd *pd, struct hns_roce_srq *srq,
 	struct hns_roce_dev *hr_dev = to_hr_dev(pd->device);
 	struct hns_roce_idx_que *idx_que = &srq->idx_que;
 	struct hns_roce_buf *kbuf;
-	u32 bitmap_num;
-	int i;
 
 	idx_que->entry_sz = HNS_ROCE_IDX_QUE_ENTRY_SZ;
-	bitmap_num = HNS_ROCE_ALIGN_UP(srq->max, BITS_PER_LONG_LONG);
 
-	idx_que->bitmap = kcalloc(1, bitmap_num / BITS_PER_BYTE, GFP_KERNEL);
+	idx_que->bitmap = bitmap_zalloc(srq->max, GFP_KERNEL);
 	if (!idx_que->bitmap)
 		return -ENOMEM;
-
-	bitmap_num = bitmap_num / BITS_PER_LONG_LONG;
 
 	idx_que->buf_size = srq->max * idx_que->entry_sz;
 
 	kbuf = hns_roce_buf_alloc(hr_dev, idx_que->buf_size, page_shift, 0);
 	if (IS_ERR(kbuf)) {
-		kfree(idx_que->bitmap);
+		bitmap_free(idx_que->bitmap);
 		return -ENOMEM;
 	}
 
 	idx_que->idx_buf = kbuf;
-	for (i = 0; i < bitmap_num; i++)
-		idx_que->bitmap[i] = ~(0UL);
 
 	idx_que->head = 0;
 	idx_que->tail = 0;
@@ -405,7 +398,7 @@ err_kernel_idx_buf:
 
 err_kernel_create_idx:
 	hns_roce_buf_free(hr_dev, srq->idx_que.idx_buf);
-	kfree(srq->idx_que.bitmap);
+	bitmap_free(srq->idx_que.bitmap);
 
 err_kernel_srq_mtt:
 	hns_roce_mtt_cleanup(hr_dev, &srq->mtt);
