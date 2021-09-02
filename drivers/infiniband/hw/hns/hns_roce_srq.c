@@ -222,8 +222,7 @@ static int create_user_srq(struct ib_pd *pd, struct hns_roce_srq *srq,
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(pd->device);
 	struct hns_roce_ib_create_srq  ucmd;
-	u32 page_shift;
-	u32 npages;
+	struct hns_roce_buf *buf;
 	int ret;
 
 	if (ib_copy_from_udata(&ucmd, udata, sizeof(ucmd)))
@@ -235,11 +234,13 @@ static int create_user_srq(struct ib_pd *pd, struct hns_roce_srq *srq,
 		return PTR_ERR(srq->umem);
 
 	if (hr_dev->caps.srqwqe_buf_pg_sz) {
-		npages = (ib_umem_page_count(srq->umem) +
-			 (1 << hr_dev->caps.srqwqe_buf_pg_sz) - 1) /
-			 (1 << hr_dev->caps.srqwqe_buf_pg_sz);
-		page_shift = PAGE_SHIFT + hr_dev->caps.srqwqe_buf_pg_sz;
-		ret = hns_roce_mtt_init(hr_dev, npages, page_shift, &srq->mtt);
+		buf = srq->buf;
+		buf->npages = (ib_umem_page_count(srq->umem) +
+		       (1 << hr_dev->caps.srqwqe_buf_pg_sz) - 1) /
+		      (1 << hr_dev->caps.srqwqe_buf_pg_sz);
+		buf->page_shift = PAGE_SHIFT + hr_dev->caps.srqwqe_buf_pg_sz;
+		ret = hns_roce_mtt_init(hr_dev, buf->npages, buf->page_shift,
+				&srq->mtt);
 	} else
 		ret = hns_roce_mtt_init(hr_dev, ib_umem_page_count(srq->umem),
 					srq->umem->page_shift, &srq->mtt);
@@ -262,12 +263,12 @@ static int create_user_srq(struct ib_pd *pd, struct hns_roce_srq *srq,
 	}
 
 	if (hr_dev->caps.idx_buf_pg_sz) {
-		npages = (ib_umem_page_count(srq->idx_que.umem) +
-			 (1 << hr_dev->caps.idx_buf_pg_sz) - 1) /
-			 (1 << hr_dev->caps.idx_buf_pg_sz);
-		page_shift = PAGE_SHIFT + hr_dev->caps.idx_buf_pg_sz;
-		ret = hns_roce_mtt_init(hr_dev, npages, page_shift,
-					&srq->idx_que.mtt);
+		buf = srq->idx_que.idx_buf;
+		buf->npages = DIV_ROUND_UP(ib_umem_page_count(srq->idx_que.umem),
+				   1 << hr_dev->caps.idx_buf_pg_sz);
+		buf->page_shift = PAGE_SHIFT + hr_dev->caps.idx_buf_pg_sz;
+		ret = hns_roce_mtt_init(hr_dev, buf->npages, buf->page_shift,
+				&srq->idx_que.mtt);
 	} else {
 		ret = hns_roce_mtt_init(hr_dev,
 					ib_umem_page_count(srq->idx_que.umem),
