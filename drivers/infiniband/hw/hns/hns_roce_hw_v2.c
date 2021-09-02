@@ -2167,10 +2167,6 @@ static int hns_roce_query_pf_caps(struct hns_roce_dev *hr_dev)
 			   &caps->scc_ctx_buf_pg_sz,
 			   &caps->scc_ctx_ba_pg_sz,
 			   HEM_TYPE_SCC_CTX);
-		calc_pg_sz(caps->num_cqc_timer, caps->cqc_timer_entry_sz,
-			   caps->cqc_timer_hop_num, caps->cqc_timer_bt_num,
-			   &caps->cqc_timer_buf_pg_sz,
-			   &caps->cqc_timer_ba_pg_sz, HEM_TYPE_CQC_TIMER);
 	}
 
 	calc_pg_sz(caps->num_cqe_segs, caps->mtt_entry_sz, caps->cqe_hop_num,
@@ -5420,11 +5416,11 @@ static int hns_roce_v2_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr,
 					      V2_QPC_BYTE_28_AT_M,
 					      V2_QPC_BYTE_28_AT_S);
 	qp_attr->retry_cnt = roce_get_field(context->byte_212_lsn,
-					    V2_QPC_BYTE_212_RETRY_CNT_M,
-					    V2_QPC_BYTE_212_RETRY_CNT_S);
+					    V2_QPC_BYTE_212_RETRY_NUM_INIT_M,
+					    V2_QPC_BYTE_212_RETRY_NUM_INIT_S);
 	qp_attr->rnr_retry = roce_get_field(context->byte_244_rnr_rxack,
-					    V2_QPC_BYTE_244_RNR_CNT_M,
-					    V2_QPC_BYTE_244_RNR_CNT_S);
+					    V2_QPC_BYTE_244_RNR_NUM_INIT_M,
+					    V2_QPC_BYTE_244_RNR_NUM_INIT_S);
 
 done:
 	qp_attr->cur_qp_state = qp_attr->qp_state;
