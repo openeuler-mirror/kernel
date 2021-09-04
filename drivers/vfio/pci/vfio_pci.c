@@ -74,6 +74,61 @@ static inline bool vfio_vga_disabled(void)
 #endif
 }
 
+static struct vfio_pci {
+	struct mutex		vendor_drivers_lock;
+	struct list_head	vendor_drivers_list;
+} vfio_pci;
+
+struct pci_dev *vfio_pci_pdev(void *device_data)
+{
+	struct vfio_pci_device *vdev = device_data;
+
+	return vdev->pdev;
+}
+EXPORT_SYMBOL_GPL(vfio_pci_pdev);
+
+int vfio_pci_num_regions(void *device_data)
+{
+	struct vfio_pci_device *vdev = device_data;
+
+	return vdev->num_regions;
+}
+EXPORT_SYMBOL_GPL(vfio_pci_num_regions);
+
+int vfio_pci_irq_type(void *device_data)
+{
+	struct vfio_pci_device *vdev = device_data;
+
+	return vdev->irq_type;
+}
+EXPORT_SYMBOL_GPL(vfio_pci_irq_type);
+
+void *vfio_pci_vendor_data(void *device_data)
+{
+	struct vfio_pci_device *vdev = device_data;
+
+	return vdev->vendor_data;
+}
+EXPORT_SYMBOL_GPL(vfio_pci_vendor_data);
+
+int vfio_pci_set_vendor_regions(void *device_data, int num_vendor_regions)
+{
+	struct vfio_pci_device *vdev = device_data;
+
+	vdev->num_vendor_regions = num_vendor_regions;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(vfio_pci_set_vendor_regions);
+
+int vfio_pci_set_vendor_irqs(void *device_data, int num_vendor_irqs)
+{
+	struct vfio_pci_device *vdev = device_data;
+
+	vdev->num_vendor_irqs = num_vendor_irqs;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(vfio_pci_set_vendor_irqs);
+
 static bool vfio_pci_dev_in_denylist(struct pci_dev *pdev)
 {
 	switch (pdev->vendor) {
@@ -914,7 +969,7 @@ static void vfio_pci_vf_token_user_add(struct vfio_pci_device *vdev, int val)
 	vfio_device_put(pf_dev);
 }
 
-static void vfio_pci_release(void *device_data)
+void vfio_pci_release(void *device_data)
 {
 	struct vfio_pci_device *vdev = device_data;
 
@@ -941,8 +996,9 @@ static void vfio_pci_release(void *device_data)
 
 	module_put(THIS_MODULE);
 }
+EXPORT_SYMBOL_GPL(vfio_pci_release);
 
-static int vfio_pci_open(void *device_data)
+int vfio_pci_open(void *device_data)
 {
 	struct vfio_pci_device *vdev = device_data;
 	int ret = 0;
@@ -967,6 +1023,7 @@ error:
 		module_put(THIS_MODULE);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(vfio_pci_open);
 
 static int vfio_pci_get_irq_count(struct vfio_pci_device *vdev, int irq_type)
 {
@@ -1161,7 +1218,7 @@ struct vfio_devices {
 	int max_index;
 };
 
-static long vfio_pci_ioctl(void *device_data,
+long vfio_pci_ioctl(void *device_data,
 			   unsigned int cmd, unsigned long arg)
 {
 	struct vfio_pci_device *vdev = device_data;
@@ -1193,8 +1250,10 @@ static long vfio_pci_ioctl(void *device_data,
 		if (vdev->reset_works)
 			info.flags |= VFIO_DEVICE_FLAGS_RESET;
 
-		info.num_regions = VFIO_PCI_NUM_REGIONS + vdev->num_regions;
-		info.num_irqs = VFIO_PCI_NUM_IRQS + vdev->num_ext_irqs;
+		info.num_regions = VFIO_PCI_NUM_REGIONS + vdev->num_regions +
+						   vdev->num_vendor_regions;
+		info.num_irqs = VFIO_PCI_NUM_IRQS + vdev->num_ext_irqs +
+						vdev->num_vendor_irqs;
 
 		if (IS_ENABLED(CONFIG_VFIO_PCI_ZDEV)) {
 			int ret = vfio_pci_info_zdev_add_caps(vdev, &caps);
@@ -1819,6 +1878,7 @@ hot_reset_release:
 
 	return -ENOTTY;
 }
+EXPORT_SYMBOL_GPL(vfio_pci_ioctl);
 
 static ssize_t vfio_pci_rw(void *device_data, char __user *buf,
 			   size_t count, loff_t *ppos, bool iswrite)
@@ -1852,7 +1912,7 @@ static ssize_t vfio_pci_rw(void *device_data, char __user *buf,
 	return -EINVAL;
 }
 
-static ssize_t vfio_pci_read(void *device_data, char __user *buf,
+ssize_t vfio_pci_read(void *device_data, char __user *buf,
 			     size_t count, loff_t *ppos)
 {
 	if (!count)
@@ -1860,8 +1920,9 @@ static ssize_t vfio_pci_read(void *device_data, char __user *buf,
 
 	return vfio_pci_rw(device_data, buf, count, ppos, false);
 }
+EXPORT_SYMBOL_GPL(vfio_pci_read);
 
-static ssize_t vfio_pci_write(void *device_data, const char __user *buf,
+ssize_t vfio_pci_write(void *device_data, const char __user *buf,
 			      size_t count, loff_t *ppos)
 {
 	if (!count)
@@ -1869,6 +1930,7 @@ static ssize_t vfio_pci_write(void *device_data, const char __user *buf,
 
 	return vfio_pci_rw(device_data, (char __user *)buf, count, ppos, true);
 }
+EXPORT_SYMBOL_GPL(vfio_pci_write);
 
 /* Return 1 on zap and vma_lock acquired, 0 on contention (only with @try) */
 static int vfio_pci_zap_and_vma_lock(struct vfio_pci_device *vdev, bool try)
@@ -2064,7 +2126,7 @@ static const struct vm_operations_struct vfio_pci_mmap_ops = {
 	.fault = vfio_pci_mmap_fault,
 };
 
-static int vfio_pci_mmap(void *device_data, struct vm_area_struct *vma)
+int vfio_pci_mmap(void *device_data, struct vm_area_struct *vma)
 {
 	struct vfio_pci_device *vdev = device_data;
 	struct pci_dev *pdev = vdev->pdev;
@@ -2133,8 +2195,9 @@ static int vfio_pci_mmap(void *device_data, struct vm_area_struct *vma)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(vfio_pci_mmap);
 
-static void vfio_pci_request(void *device_data, unsigned int count)
+void vfio_pci_request(void *device_data, unsigned int count)
 {
 	struct vfio_pci_device *vdev = device_data;
 	struct pci_dev *pdev = vdev->pdev;
@@ -2154,6 +2217,7 @@ static void vfio_pci_request(void *device_data, unsigned int count)
 
 	mutex_unlock(&vdev->igate);
 }
+EXPORT_SYMBOL_GPL(vfio_pci_request);
 
 static int vfio_pci_validate_vf_token(struct vfio_pci_device *vdev,
 				      bool vf_token, uuid_t *uuid)
@@ -2250,7 +2314,7 @@ static int vfio_pci_validate_vf_token(struct vfio_pci_device *vdev,
 
 #define VF_TOKEN_ARG "vf_token="
 
-static int vfio_pci_match(void *device_data, char *buf)
+int vfio_pci_match(void *device_data, char *buf)
 {
 	struct vfio_pci_device *vdev = device_data;
 	bool vf_token = false;
@@ -2298,6 +2362,7 @@ static int vfio_pci_match(void *device_data, char *buf)
 
 	return 1; /* Match */
 }
+EXPORT_SYMBOL_GPL(vfio_pci_match);
 
 static const struct vfio_device_ops vfio_pci_ops = {
 	.name		= "vfio-pci",
@@ -2404,6 +2469,35 @@ static void vfio_pci_vga_uninit(struct vfio_pci_device *vdev)
 					      VGA_RSRC_LEGACY_MEM);
 }
 
+static int probe_vendor_drivers(struct vfio_pci_device *vdev)
+{
+	struct vfio_pci_vendor_driver *driver;
+	int ret = -ENODEV;
+
+	request_module("vfio-pci:%x-%x", vdev->pdev->vendor,
+					 vdev->pdev->device);
+
+	mutex_lock(&vfio_pci.vendor_drivers_lock);
+	list_for_each_entry(driver, &vfio_pci.vendor_drivers_list, next) {
+		void *data;
+
+		if (!try_module_get(driver->ops->owner))
+			continue;
+
+		data = driver->ops->probe(vdev->pdev);
+		if (IS_ERR(data)) {
+			module_put(driver->ops->owner);
+			continue;
+		}
+		vdev->vendor_driver = driver;
+		vdev->vendor_data = data;
+		ret = 0;
+		break;
+	}
+	mutex_unlock(&vfio_pci.vendor_drivers_lock);
+	return ret;
+}
+
 static int vfio_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct vfio_pci_device *vdev;
@@ -2477,7 +2571,11 @@ static int vfio_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		vfio_pci_set_power_state(vdev, PCI_D3hot);
 	}
 
-	ret = vfio_add_group_dev(&pdev->dev, &vfio_pci_ops, vdev);
+	if (probe_vendor_drivers(vdev))
+		ret = vfio_add_group_dev(&pdev->dev, &vfio_pci_ops, vdev);
+	else
+		ret = vfio_add_group_dev(&pdev->dev,
+				vdev->vendor_driver->ops->device_ops, vdev);
 	if (ret)
 		goto out_power;
 	return 0;
@@ -2517,6 +2615,12 @@ static void vfio_pci_remove(struct pci_dev *pdev)
 		vfio_pci_set_power_state(vdev, PCI_D0);
 
 	mutex_destroy(&vdev->ioeventfds_lock);
+
+	if (vdev->vendor_driver) {
+		vdev->vendor_driver->ops->remove(vdev->vendor_data);
+		module_put(vdev->vendor_driver->ops->owner);
+	}
+
 	kfree(vdev->region);
 	kfree(vdev->pm_save);
 	kfree(vdev);
@@ -2868,6 +2972,9 @@ static int __init vfio_pci_init(void)
 	if (ret)
 		return ret;
 
+	mutex_init(&vfio_pci.vendor_drivers_lock);
+	INIT_LIST_HEAD(&vfio_pci.vendor_drivers_list);
+
 	/* Register and scan for devices */
 	ret = pci_register_driver(&vfio_pci_driver);
 	if (ret)
@@ -2884,6 +2991,60 @@ out_driver:
 	vfio_pci_uninit_perm_bits();
 	return ret;
 }
+
+int __vfio_pci_register_vendor_driver(struct vfio_pci_vendor_driver_ops *ops)
+{
+	struct vfio_pci_vendor_driver *driver, *tmp;
+
+	if (!ops || !ops->device_ops)
+		return -EINVAL;
+
+	driver = kzalloc(sizeof(*driver), GFP_KERNEL);
+	if (!driver)
+		return -ENOMEM;
+
+	driver->ops = ops;
+
+	mutex_lock(&vfio_pci.vendor_drivers_lock);
+
+	/* Check for duplicates */
+	list_for_each_entry(tmp, &vfio_pci.vendor_drivers_list, next) {
+		if (tmp->ops->device_ops == ops->device_ops) {
+			mutex_unlock(&vfio_pci.vendor_drivers_lock);
+			kfree(driver);
+			return -EINVAL;
+		}
+	}
+
+	list_add(&driver->next, &vfio_pci.vendor_drivers_list);
+
+	mutex_unlock(&vfio_pci.vendor_drivers_lock);
+
+	if (!try_module_get(THIS_MODULE))
+		return -ENODEV;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(__vfio_pci_register_vendor_driver);
+
+void vfio_pci_unregister_vendor_driver(struct vfio_device_ops *device_ops)
+{
+	struct vfio_pci_vendor_driver *driver, *tmp;
+
+	mutex_lock(&vfio_pci.vendor_drivers_lock);
+	list_for_each_entry_safe(driver, tmp,
+				 &vfio_pci.vendor_drivers_list, next) {
+		if (driver->ops->device_ops == device_ops) {
+			list_del(&driver->next);
+			mutex_unlock(&vfio_pci.vendor_drivers_lock);
+			kfree(driver);
+			module_put(THIS_MODULE);
+			return;
+		}
+	}
+	mutex_unlock(&vfio_pci.vendor_drivers_lock);
+}
+EXPORT_SYMBOL_GPL(vfio_pci_unregister_vendor_driver);
 
 module_init(vfio_pci_init);
 module_exit(vfio_pci_cleanup);

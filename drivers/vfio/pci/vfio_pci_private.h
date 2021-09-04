@@ -112,6 +112,11 @@ struct vfio_pci_mmap_vma {
 	struct list_head	vma_next;
 };
 
+struct vfio_pci_vendor_driver {
+	const struct vfio_pci_vendor_driver_ops *ops;
+	struct list_head                        next;
+};
+
 struct vfio_pci_device {
 	struct pci_dev		*pdev;
 	void __iomem		*barmap[PCI_STD_NUM_BARS];
@@ -127,6 +132,8 @@ struct vfio_pci_device {
 	struct vfio_ext_irq	*ext_irqs;
 	int			num_ext_irqs;
 	int			num_regions;
+	int			num_vendor_regions;
+	int			num_vendor_irqs;
 	struct vfio_pci_region	*region;
 	u8			msi_qmax;
 	u8			msix_bar;
@@ -163,6 +170,8 @@ struct vfio_pci_device {
 	struct mutex		vma_lock;
 	struct list_head	vma_list;
 	struct rw_semaphore	memory_lock;
+	void			*vendor_data;
+	struct vfio_pci_vendor_driver	*vendor_driver;
 };
 
 #define is_intx(vdev) (vdev->irq_type == VFIO_PCI_INTX_IRQ_INDEX)
