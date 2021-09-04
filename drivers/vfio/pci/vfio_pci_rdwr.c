@@ -224,6 +224,16 @@ static int vfio_pci_setup_barmap(struct vfio_pci_device *vdev, int bar)
 	return 0;
 }
 
+void __iomem *vfio_pci_get_barmap(void *device_data, int bar)
+{
+	int ret;
+	struct vfio_pci_device *vdev = device_data;
+
+	ret = vfio_pci_setup_barmap(vdev, bar);
+	return ret ? ERR_PTR(ret) : vdev->barmap[bar];
+}
+EXPORT_SYMBOL_GPL(vfio_pci_get_barmap);
+
 ssize_t vfio_pci_bar_rw(struct vfio_pci_device *vdev, char __user *buf,
 			size_t count, loff_t *ppos, bool iswrite)
 {
