@@ -81,3 +81,10 @@ config CRYPTO_DEV_HISI_TRNG
 	select CRYPTO_RNG
 	help
 	  Support for HiSilicon TRNG Driver.
+
+config CRYPTO_DEV_HISI_MIGRATION
+	tristate "Support for HISI MIGRATION Driver"
+	depends on ARM64 && ACPI
+	select PCI_IOV
+	help
+	  Support for HiSilicon vfio pci to support VF live migration.
