@@ -369,7 +369,7 @@ unsigned int hifc_config_port_table(struct hifc_hba_s *v_hba)
 			   v_hba->port_cfg.port_id,
 			   (unsigned char)v_hba->port_topo_cfg);
 
-		return UNF_RETURN_ERROR;
+		goto exit;
 	}
 
 	/* About speed */
