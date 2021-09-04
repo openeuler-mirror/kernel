@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 5.8.0
+%global hulkrelease 5.9.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.6
+Release: %{hulkrelease}.7
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -174,6 +174,46 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Sat Sep 4 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.9.0.7
+- mm/page_alloc: further fix __alloc_pages_bulk() return value
+- mm/page_alloc: correct return value when failing at preparing
+- mm/page_alloc: avoid page allocator recursion with pagesets.lock held
+- mm: vmscan: shrink deferred objects proportional to priority
+- mm: memcontrol: reparent nr_deferred when memcg offline
+- mm: vmscan: don't need allocate shrinker->nr_deferred for memcg aware shrinkers
+- mm: vmscan: use per memcg nr_deferred of shrinker
+- mm: vmscan: add per memcg shrinker nr_deferred
+- mm: vmscan: use a new flag to indicate shrinker is registered
+- mm: vmscan: add shrinker_info_protected() helper
+- mm: memcontrol: rename shrinker_map to shrinker_info
+- mm: vmscan: use kvfree_rcu instead of call_rcu
+- mm: vmscan: remove memcg_shrinker_map_size
+- mm: vmscan: use shrinker_rwsem to protect shrinker_maps allocation
+- mm: vmscan: consolidate shrinker_maps handling code
+- mm: vmscan: use nid from shrink_control for tracepoint
+- scsi/hifc: Fix memory leakage bug
+- crypto: hisilicon/qm - set a qp error flag for userspace
+- vfio/hisilicon: add acc live migration driver
+- vfio/hisilicon: modify QM for live migration driver
+- vfio/pci: provide customized live migration VFIO driver framework
+- PCI: Set dma-can-stall for HiSilicon chips
+- PCI: Add a quirk to set pasid_no_tlp for HiSilicon chips
+- PCI: PASID can be enabled without TLP prefix
+- crypto: hisilicon/sec - fix the CTR mode BD configuration
+- crypto: hisilicon/sec - fix the max length of AAD for the CCM mode
+- crypto: hisilicon/sec - fixup icv checking enabled on Kunpeng 930
+- crypto: hisilicon - check _PS0 and _PR0 method
+- crypto: hisilicon - change parameter passing of debugfs function
+- crypto: hisilicon - support runtime PM for accelerator device
+- crypto: hisilicon - add runtime PM ops
+- crypto: hisilicon - using 'debugfs_create_file' instead of 'debugfs_create_regset32'
+- crypto: hisilicon/sec - modify the hardware endian configuration
+- crypto: hisilicon/sec - fix the abnormal exiting process
+- crypto: hisilicon - enable hpre device clock gating
+- crypto: hisilicon - enable sec device clock gating
+- crypto: hisilicon - enable zip device clock gating
+- crypto: hisilicon/sec - fix the process of disabling sva prefetching
+
 * Thu Aug 26 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.8.0.6
 - mm/page_alloc: correct return value of populated elements if bulk array is populated
 - mm: fix oom killing for disabled pid
