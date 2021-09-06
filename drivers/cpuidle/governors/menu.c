@@ -197,10 +197,11 @@ static void menu_update(struct cpuidle_driver *drv, struct cpuidle_device *dev);
  * of points is below a threshold. If it is... then use the
  * average of these 8 points as the estimated value.
  */
-static unsigned int get_typical_interval(struct menu_device *data)
+static unsigned int get_typical_interval(struct menu_device *data,
+					 unsigned int predicted_us)
 {
 	int i, divisor;
-	unsigned int max, thresh, avg;
+	unsigned int max, min, thresh, avg;
 	uint64_t sum, variance;
 
 	thresh = INT_MAX; /* Discard outliers above this value */
@@ -208,6 +209,7 @@ static unsigned int get_typical_interval(struct menu_device *data)
 again:
 
 	/* First calculate the average of past intervals */
+	min = UINT_MAX;
 	max = 0;
 	sum = 0;
 	divisor = 0;
@@ -218,8 +220,18 @@ again:
 			divisor++;
 			if (value > max)
 				max = value;
+			if (value < min)
+				min = value;
 		}
 	}
+
+	/*
+	 * If the result of the computation is going to be discarded anyway,
+	 * avoid the computation altogether.
+	 */
+	if (min >= predicted_us)
+		return UINT_MAX;
+
 	if (divisor == INTERVALS)
 		avg = sum >> INTERVAL_SHIFT;
 	else
@@ -319,7 +331,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 					 data->correction_factor[data->bucket],
 					 RESOLUTION * DECAY);
 
-	expected_interval = get_typical_interval(data);
+	expected_interval = get_typical_interval(data, data->predicted_us);
 	expected_interval = min(expected_interval, data->next_timer_us);
 
 	first_idx = 0;
