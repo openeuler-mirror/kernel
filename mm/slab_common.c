@@ -445,7 +445,6 @@ kmem_cache_create_usercopy(const char *name,
 	int err;
 
 	get_online_cpus();
-	get_online_mems();
 	memcg_get_cache_ids();
 
 	mutex_lock(&slab_mutex);
@@ -497,7 +496,6 @@ out_unlock:
 	mutex_unlock(&slab_mutex);
 
 	memcg_put_cache_ids();
-	put_online_mems();
 	put_online_cpus();
 
 	if (err) {
@@ -888,7 +886,6 @@ void kmem_cache_destroy(struct kmem_cache *s)
 		return;
 
 	get_online_cpus();
-	get_online_mems();
 
 	mutex_lock(&slab_mutex);
 
@@ -901,13 +898,11 @@ void kmem_cache_destroy(struct kmem_cache *s)
 
 	mutex_unlock(&slab_mutex);
 
-	put_online_mems();
 	put_online_cpus();
 
 	flush_memcg_workqueue(s);
 
 	get_online_cpus();
-	get_online_mems();
 
 	mutex_lock(&slab_mutex);
 
@@ -934,7 +929,6 @@ void kmem_cache_destroy(struct kmem_cache *s)
 out_unlock:
 	mutex_unlock(&slab_mutex);
 
-	put_online_mems();
 	put_online_cpus();
 }
 EXPORT_SYMBOL(kmem_cache_destroy);
@@ -951,10 +945,10 @@ int kmem_cache_shrink(struct kmem_cache *cachep)
 	int ret;
 
 	get_online_cpus();
-	get_online_mems();
+
 	kasan_cache_shrink(cachep);
 	ret = __kmem_cache_shrink(cachep);
-	put_online_mems();
+
 	put_online_cpus();
 	return ret;
 }
