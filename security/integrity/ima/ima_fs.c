@@ -58,11 +58,12 @@ static ssize_t ima_show_htable_value(struct file *filp, char __user *buf,
 	atomic_long_t *val = NULL;
 	char tmpbuf[32];	/* greater than largest 'long' string value */
 	ssize_t len;
+	struct ima_namespace *ima_ns = get_current_ns();
 
 	if (filp->f_path.dentry == violations)
 		val = &ima_htable.violations;
 	else if (filp->f_path.dentry == runtime_measurements_count)
-		val = &ima_htable.len;
+		val = (ima_ns == &init_ima_ns) ? &ima_ml_len : &ima_ns->ml_len;
 #ifdef CONFIG_IMA_DIGEST_LIST
 	else if (filp->f_path.dentry == digests_count)
 		val = &ima_digests_htable.len;
@@ -82,32 +83,57 @@ static void *ima_measurements_start(struct seq_file *m, loff_t *pos)
 {
 	loff_t l = *pos;
 	struct ima_queue_entry *qe;
+	struct ima_namespace *ima_ns = get_current_ns();
 
-	/* we need a lock since pos could point beyond last element */
-	rcu_read_lock();
-	list_for_each_entry_rcu(qe, &ima_measurements, later) {
-		if (!l--) {
-			rcu_read_unlock();
-			return qe;
+	if (ima_ns == &init_ima_ns) {
+		/* we need a lock since pos could point beyond last element */
+		rcu_read_lock();
+		list_for_each_entry_rcu(qe, &ima_measurements, later) {
+			if (!l--) {
+				rcu_read_unlock();
+				return qe;
+			}
 		}
+		rcu_read_unlock();
+	} else {
+		rcu_read_lock();
+		list_for_each_entry_rcu(qe, &ima_ns->ns_measurements, ns_later) {
+			if (!l--) {
+				rcu_read_unlock();
+				return qe;
+			}
+		}
+		rcu_read_unlock();
 	}
-	rcu_read_unlock();
+
 	return NULL;
 }
 
 static void *ima_measurements_next(struct seq_file *m, void *v, loff_t *pos)
 {
 	struct ima_queue_entry *qe = v;
+	struct ima_namespace *ima_ns = get_current_ns();
 
 	/* lock protects when reading beyond last element
 	 * against concurrent list-extension
 	 */
-	rcu_read_lock();
-	qe = list_entry_rcu(qe->later.next, struct ima_queue_entry, later);
-	rcu_read_unlock();
-	(*pos)++;
+	if (ima_ns == &init_ima_ns) {
+		rcu_read_lock();
+		qe = list_entry_rcu(qe->later.next, struct ima_queue_entry,
+				    later);
+		rcu_read_unlock();
+		(*pos)++;
 
-	return (&qe->later == &ima_measurements) ? NULL : qe;
+		return (&qe->later == &ima_measurements) ? NULL : qe;
+	} else {
+		rcu_read_lock();
+		qe = list_entry_rcu(qe->ns_later.next, struct ima_queue_entry,
+				    ns_later);
+		rcu_read_unlock();
+		(*pos)++;
+
+		return (&qe->ns_later == &ima_ns->ns_measurements) ? NULL : qe;
+	}
 }
 
 static void ima_measurements_stop(struct seq_file *m, void *v)

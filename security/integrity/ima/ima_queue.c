@@ -25,6 +25,7 @@
 /* pre-allocated array of tpm_digest structures to extend a PCR */
 static struct tpm_digest *digests;
 
+atomic_long_t ima_ml_len = ATOMIC_LONG_INIT(0); /* number of stored measurements in the list */
 LIST_HEAD(ima_measurements);	/* list of all measurements */
 #ifdef CONFIG_IMA_KEXEC
 static unsigned long binary_runtime_size;
@@ -113,6 +114,8 @@ static int ima_add_digest_entry(struct ima_template_entry *entry,
 	list_add_tail_rcu(&qe->ns_later, &ima_ns->ns_measurements);
 
 	atomic_long_inc(&ima_htable.len);
+	atomic_long_inc(&ima_ml_len);
+	atomic_long_inc(&ima_ns->ml_len);
 	if (update_htable) {
 		key = ima_hash_key(entry->digests[ima_hash_algo_idx].digest);
 		spin_lock(&ima_htable_lock);
