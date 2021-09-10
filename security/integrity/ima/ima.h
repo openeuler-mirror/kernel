@@ -363,12 +363,23 @@ static inline enum integrity_status ima_get_cache_status(struct integrity_iint_c
 
 #endif /* CONFIG_IMA_APPRAISE */
 
+extern struct list_head ima_ns_list;
+extern struct rw_semaphore ima_ns_list_lock;
+
 #ifdef CONFIG_IMA_NS
+int __init ima_init_namespace(void);
+
 static inline struct ima_namespace *get_current_ns(void)
 {
 	return current->nsproxy->ima_ns;
 }
 #else
+static inline int __init ima_init_namespace(void)
+{
+	list_add_tail(&init_ima_ns.list, &ima_ns_list);
+	return 0;
+}
+
 static inline struct ima_namespace *get_current_ns(void)
 {
 	return &init_ima_ns;
