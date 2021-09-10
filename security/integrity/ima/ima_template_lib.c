@@ -514,3 +514,16 @@ int ima_eventevmsig_init(struct ima_event_data *event_data,
 	kfree(xattr_data);
 	return rc;
 }
+
+/*
+ *  ima_eventns_init - include the ima namespace id as part of the
+ *  template data
+ */
+int ima_eventns_init(struct ima_event_data *event_data,
+		     struct ima_field_data *field_data)
+{
+	return ima_write_template_field_data(&(event_data->ns_id),
+					     sizeof(event_data->ns_id),
+					     DATA_FMT_HEX,
+					     field_data);
+}

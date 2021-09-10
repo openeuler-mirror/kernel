@@ -22,6 +22,7 @@ static struct ima_template_desc builtin_templates[] = {
 	{.name = "ima-sig", .fmt = "d-ng|n-ng|sig"},
 	{.name = "ima-buf", .fmt = "d-ng|n-ng|buf"},
 	{.name = "ima-modsig", .fmt = "d-ng|n-ng|sig|d-modsig|modsig"},
+	{.name = "ima-ns", .fmt = "d-ng|n-ng|ns"},
 	{.name = "", .fmt = ""},	/* placeholder for a custom format */
 };
 
@@ -47,6 +48,8 @@ static const struct ima_template_field supported_fields[] = {
 	 .field_show = ima_show_template_sig},
 	{.field_id = "evmsig", .field_init = ima_eventevmsig_init,
 	 .field_show = ima_show_template_sig},
+	{.field_id = "ns", .field_init = ima_eventns_init,
+	 .field_show = ima_show_template_buf},
 };
 
 /*
@@ -54,7 +57,7 @@ static const struct ima_template_field supported_fields[] = {
  * need to be accounted for since they shouldn't be defined in the same template
  * description as 'd-ng' and 'n-ng' respectively.
  */
-#define MAX_TEMPLATE_NAME_LEN sizeof("d-ng|n-ng|sig|buf|d-modisg|modsig")
+#define MAX_TEMPLATE_NAME_LEN sizeof("d-ng|n-ng|sig|buf|d-modisg|modsig|ns")
 
 static struct ima_template_desc *ima_template;
 
