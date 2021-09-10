@@ -1291,6 +1291,17 @@ bool current_in_userns(const struct user_namespace *target_ns)
 }
 EXPORT_SYMBOL(current_in_userns);
 
+bool userns_set_uidmap(const struct user_namespace *ns)
+{
+	bool mapping_defined;
+
+	mutex_lock(&userns_state_mutex);
+	mapping_defined = ns->uid_map.nr_extents != 0;
+	mutex_unlock(&userns_state_mutex);
+
+	return mapping_defined;
+}
+
 static inline struct user_namespace *to_user_ns(struct ns_common *ns)
 {
 	return container_of(ns, struct user_namespace, ns);

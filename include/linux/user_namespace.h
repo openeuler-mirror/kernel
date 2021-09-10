@@ -141,6 +141,7 @@ extern bool in_userns(const struct user_namespace *ancestor,
 		       const struct user_namespace *child);
 extern bool current_in_userns(const struct user_namespace *target_ns);
 struct ns_common *ns_get_owner(struct ns_common *ns);
+extern bool userns_set_uidmap(const struct user_namespace *ns);
 #else
 
 static inline struct user_namespace *get_user_ns(struct user_namespace *ns)
@@ -184,6 +185,11 @@ static inline bool current_in_userns(const struct user_namespace *target_ns)
 static inline struct ns_common *ns_get_owner(struct ns_common *ns)
 {
 	return ERR_PTR(-EPERM);
+}
+
+static inline bool userns_set_uidmap(const struct user_namespace *ns)
+{
+	return true;
 }
 #endif
 
