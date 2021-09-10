@@ -36,6 +36,7 @@ struct ima_namespace init_ima_ns = {
 	.policy_data = &init_policy_data,
 	.iint_tree = &init_iint_tree,
 	.ns_measurements = LIST_HEAD_INIT(init_ima_ns.ns_measurements),
+	.ml_len = ATOMIC_LONG_INIT(0),
 };
 EXPORT_SYMBOL(init_ima_ns);
 
