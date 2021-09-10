@@ -11,10 +11,12 @@
 #include <linux/fs.h>
 #include <linux/security.h>
 #include <linux/kexec.h>
-struct linux_binprm;
 
+struct linux_binprm;
 struct nsproxy;
 struct task_struct;
+struct list_head;
+struct llist_node;
 
 #ifdef CONFIG_IMA
 extern int ima_bprm_check(struct linux_binprm *bprm);
@@ -206,6 +208,10 @@ struct ima_namespace {
 	struct ns_common ns;
 	struct ucounts *ucounts;
 	struct user_namespace *user_ns;
+	struct list_head list;
+	struct llist_node cleanup_list; /* namespaces on a death row */
+	atomic_t inactive; /* set only when ns is added to the cleanup list */
+	bool frozen;
 } __randomize_layout;
 
 extern struct ima_namespace init_ima_ns;

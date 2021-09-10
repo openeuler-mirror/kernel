@@ -32,6 +32,7 @@ struct ima_namespace init_ima_ns = {
 #ifdef CONFIG_IMA_NS
 	.ns.ops = &imans_operations,
 #endif
+	.frozen = true
 };
 EXPORT_SYMBOL(init_ima_ns);
 
@@ -157,6 +158,10 @@ int __init ima_init(void)
 		return rc;
 
 	ima_init_policy();
+
+	rc = ima_init_namespace();
+	if (rc != 0)
+		return rc;
 
 	rc = ima_fs_init();
 	if (rc != 0)

@@ -21,8 +21,19 @@
 #include <linux/user_namespace.h>
 #include <linux/nsproxy.h>
 #include <linux/sched.h>
+#include <linux/list.h>
+#include <linux/llist.h>
+#include <linux/rwsem.h>
+#include <linux/workqueue.h>
+#include <linux/mutex.h>
 
 #include "ima.h"
+
+static LLIST_HEAD(cleanup_list);
+static struct workqueue_struct *imans_wq;
+
+/* Protects tasks entering the same, not yet active namespace */
+static DEFINE_MUTEX(frozen_lock);
 
 static struct ucounts *inc_ima_namespaces(struct user_namespace *ns)
 {
@@ -78,6 +89,7 @@ static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
 	ns->ns.ops = &imans_operations;
 	ns->user_ns = get_user_ns(user_ns);
 	ns->ucounts = ucounts;
+	ns->frozen = false;
 
 	return ns;
 
@@ -109,6 +121,19 @@ struct ima_namespace *copy_ima_ns(unsigned long flags,
 	return clone_ima_ns(user_ns, old_ns);
 }
 
+int __init ima_init_namespace(void)
+{
+	/* Create workqueue for cleanup */
+	imans_wq = create_singlethread_workqueue("imans");
+	if (unlikely(!imans_wq))
+		return -ENOMEM;
+
+	/* No other reader or writer at this stage */
+	list_add_tail(&init_ima_ns.list, &ima_ns_list);
+
+	return 0;
+}
+
 static void destroy_ima_ns(struct ima_namespace *ns)
 {
 	dec_ima_namespaces(ns->ucounts);
@@ -117,13 +142,46 @@ static void destroy_ima_ns(struct ima_namespace *ns)
 	kfree(ns);
 }
 
+static void cleanup_ima(struct work_struct *work)
+{
+	struct ima_namespace *ima_ns, *tmp;
+	struct llist_node *ima_kill_list;
+
+	/* Atomically snapshot the list of namespaces to cleanup */
+	ima_kill_list = llist_del_all(&cleanup_list);
+
+	/* Remove ima namespace from the namespace list */
+	down_write(&ima_ns_list_lock);
+	llist_for_each_entry(ima_ns, ima_kill_list, cleanup_list)
+		list_del(&ima_ns->list);
+	up_write(&ima_ns_list_lock);
+
+	/* After removing ima namespace from the ima_ns_list, memory can be
+	 * freed. At this stage nothing should keep a reference to the given
+	 * namespace.
+	 */
+	llist_for_each_entry_safe(ima_ns, tmp, ima_kill_list, cleanup_list)
+		destroy_ima_ns(ima_ns);
+}
+
+static DECLARE_WORK(ima_cleanup_work, cleanup_ima);
+
 void free_ima_ns(struct kref *kref)
 {
-	struct ima_namespace *ns;
+	struct ima_namespace *ima_ns;
 
-	ns = container_of(kref, struct ima_namespace, kref);
+	ima_ns = container_of(kref, struct ima_namespace, kref);
+	/* Namespace can be destroyed instantly if no process ever was born
+	 * into it - it was never added to the ima_ns_list.
+	 */
+	if (!ima_ns->frozen) {
+		destroy_ima_ns(ima_ns);
+		return;
+	}
 
-	destroy_ima_ns(ns);
+	atomic_set(&ima_ns->inactive, 1);
+	if (llist_add(&ima_ns->cleanup_list, &cleanup_list))
+		queue_work(imans_wq, &ima_cleanup_work);
 }
 
 static inline struct ima_namespace *to_ima_ns(struct ns_common *ns)
@@ -168,8 +226,32 @@ static void imans_put(struct ns_common *ns)
 	put_ima_ns(to_ima_ns(ns));
 }
 
+static int imans_activate(struct ima_namespace *ima_ns)
+{
+	if (ima_ns == &init_ima_ns)
+		return 0;
+
+	if (ima_ns->frozen)
+		return 0;
+
+	mutex_lock(&frozen_lock);
+	if (ima_ns->frozen)
+		goto out;
+
+	ima_ns->frozen = true;
+
+	down_write(&ima_ns_list_lock);
+	list_add_tail(&ima_ns->list, &ima_ns_list);
+	up_write(&ima_ns_list_lock);
+out:
+	mutex_unlock(&frozen_lock);
+
+	return 0;
+}
+
 static int imans_install(struct nsset *nsset, struct ns_common *new)
 {
+	int res;
 	struct nsproxy *nsproxy = nsset->nsproxy;
 	struct ima_namespace *ns = to_ima_ns(new);
 
@@ -180,6 +262,10 @@ static int imans_install(struct nsset *nsset, struct ns_common *new)
 	    !ns_capable(nsset->cred->user_ns, CAP_SYS_ADMIN))
 		return -EPERM;
 
+	res = imans_activate(ns);
+	if (res)
+		return res;
+
 	get_ima_ns(ns);
 	put_ima_ns(nsproxy->ima_ns);
 	nsproxy->ima_ns = ns;
@@ -188,11 +274,12 @@ static int imans_install(struct nsset *nsset, struct ns_common *new)
 	put_ima_ns(nsproxy->ima_ns_for_children);
 	nsproxy->ima_ns_for_children = ns;
 
-	return 0;
+	return res;
 }
 
 int imans_on_fork(struct nsproxy *nsproxy, struct task_struct *tsk)
 {
+	int res;
 	struct ns_common *nsc = &nsproxy->ima_ns_for_children->ns;
 	struct ima_namespace *ns = to_ima_ns(nsc);
 
@@ -200,11 +287,15 @@ int imans_on_fork(struct nsproxy *nsproxy, struct task_struct *tsk)
 	if (nsproxy->ima_ns == nsproxy->ima_ns_for_children)
 		return 0;
 
+	res = imans_activate(ns);
+	if (res)
+		return res;
+
 	get_ima_ns(ns);
 	put_ima_ns(nsproxy->ima_ns);
 	nsproxy->ima_ns = ns;
 
-	return 0;
+	return res;
 }
 
 static struct user_namespace *imans_owner(struct ns_common *ns)

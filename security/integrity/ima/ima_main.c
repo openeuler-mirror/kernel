@@ -47,6 +47,9 @@ bool ima_plus_standard_pcr;
 
 static int hash_setup_done;
 
+DECLARE_RWSEM(ima_ns_list_lock);
+LIST_HEAD(ima_ns_list);
+
 static struct notifier_block ima_lsm_policy_notifier = {
 	.notifier_call = ima_lsm_policy_change,
 };
