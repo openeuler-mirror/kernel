@@ -239,6 +239,30 @@ static void ima_check_last_writer(struct integrity_iint_cache *iint,
 }
 
 /**
+ * ima_file_alloc - called on __alloc_file()
+ * @file: pointer to file structure being created
+ *
+ * Bind IMA namespace to the file descriptor. This is necessary, because
+ * __fput can be called after exit_task_namespaces() in do_exit().
+ * In that case nsproxy is already NULL and ima ns has to be found
+ * differently in ima_file_free(). If process joins different ima ns, files
+ * opened in the old ns will point to that (old) ns.
+ */
+int ima_file_alloc(struct file *file)
+{
+	/* It is possible that ima_file_alloc() is called after
+	 * exit_task_namespaces(), when IMA does the last writer check from
+	 * __fput(). In that case it's not necessary to store the namespace
+	 * information */
+	if (!current->nsproxy)
+		return 0;
+
+	file->f_ima = get_current_ns();
+	get_ima_ns((struct ima_namespace *)file->f_ima);
+	return 0;
+}
+
+/**
  * ima_file_free - called on __fput()
  * @file: pointer to file structure being freed
  *
@@ -248,15 +272,24 @@ void ima_file_free(struct file *file)
 {
 	struct inode *inode = file_inode(file);
 	struct integrity_iint_cache *iint;
+	struct ima_namespace *ima_ns = (struct ima_namespace *)file->f_ima;
+
+	if (!ima_ns)
+		return;
+
+	if (unlikely(!(file->f_mode & FMODE_OPENED)))
+		goto out;
 
 	if (!ima_policy_flag || !S_ISREG(inode->i_mode))
-		return;
+		goto out;
 
 	iint = integrity_iint_find(inode);
 	if (!iint)
-		return;
+		goto out;
 
 	ima_check_last_writer(iint, inode, file);
+out:
+	put_ima_ns(ima_ns);
 }
 
 static int process_measurement(struct file *file, const struct cred *cred,
