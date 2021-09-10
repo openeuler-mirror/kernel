@@ -311,6 +311,16 @@ void *ima_policy_next(struct seq_file *m, void *v, loff_t *pos);
 void ima_policy_stop(struct seq_file *m, void *v);
 int ima_policy_show(struct seq_file *m, void *v);
 
+int ima_policy_setup(char *str,
+		     struct ima_policy_setup_data *policy_setup_data,
+		     bool *fail_unverifiable_sigs);
+int ima_default_measure_policy_setup(const char *str,
+				     struct ima_policy_setup_data *setup_data);
+int ima_default_appraise_policy_setup(const char *str,
+				      struct ima_policy_setup_data *setup_data);
+int ima_default_appraise_setup(const char *str,
+			       struct ima_policy_setup_data *setup_data);
+
 /* Appraise integrity measurements */
 #define IMA_APPRAISE_ENFORCE	0x01
 #define IMA_APPRAISE_FIX	0x02

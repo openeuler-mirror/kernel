@@ -246,6 +246,15 @@ struct ima_policy_data init_policy_data = {
 	.ima_temp_rules = LIST_HEAD_INIT(init_policy_data.ima_temp_rules),
 };
 
+int ima_default_measure_policy_setup(const char *str,
+				     struct ima_policy_setup_data *setup_data)
+{
+	/* Currently unused. It will be implemented after namespacing ima
+	 * policy, when global variables are removed.
+	 */
+	return 1;
+}
+
 static int __init default_measure_policy_setup(char *str)
 {
 	if (ima_policy)
@@ -261,6 +270,25 @@ static bool ima_use_appraise_exec_tcb __initdata;
 static bool ima_use_appraise_exec_immutable __initdata;
 static bool ima_use_secure_boot __initdata;
 static bool ima_fail_unverifiable_sigs __ro_after_init;
+
+/**
+ * ima_policy_setup - parse policy configuration string "ima_policy="
+ * @str: string to be parsed
+ * @setup_data: pointer to a structure where parsed data is stored
+ * @fail_unverifiable_sigs: boolean flag treated separately to preserve
+ * __ro_after_init
+ */
+int ima_policy_setup(char *str,
+		     struct ima_policy_setup_data *setup_data,
+		     bool *fail_unverifiable_sigs)
+{
+
+	/* Currently unused. It will be implemented after namespacing ima
+	 * policy, when global variables are removed.
+	 */
+	return 1;
+}
+
 static int __init policy_setup(char *str)
 {
 	char *p;
@@ -289,6 +317,15 @@ static int __init policy_setup(char *str)
 	return 1;
 }
 __setup("ima_policy=", policy_setup);
+
+int ima_default_appraise_policy_setup(const char *str,
+				      struct ima_policy_setup_data *setup_data)
+{
+	/* Currently unused. It will be implemented after namespacing ima
+	 * policy, when global variables are removed.
+	 */
+	return 1;
+}
 
 static int __init default_appraise_policy_setup(char *str)
 {
