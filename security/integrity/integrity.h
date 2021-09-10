@@ -256,11 +256,14 @@ static inline int __init integrity_load_cert(const unsigned int id,
 #endif /* CONFIG_INTEGRITY_SIGNATURE */
 
 #ifdef CONFIG_INTEGRITY_ASYMMETRIC_KEYS
-int asymmetric_verify(struct key *keyring, const char *sig,
-		      int siglen, const char *data, int datalen);
+int asymmetric_verify(struct key *keyring, struct key_tag *domain_tag,
+		      const char *sig, int siglen,
+		      const char *data, int datalen);
 #else
-static inline int asymmetric_verify(struct key *keyring, const char *sig,
-				    int siglen, const char *data, int datalen)
+static inline int asymmetric_verify(struct key *keyring,
+				    struct key_tag *domain_tag,
+				    const char *sig, int siglen,
+				    const char *data, int datalen)
 {
 	return -EOPNOTSUPP;
 }

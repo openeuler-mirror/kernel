@@ -44,13 +44,16 @@ struct signature_hdr {
 
 #if defined(CONFIG_SIGNATURE) || defined(CONFIG_SIGNATURE_MODULE)
 
-int digsig_verify(struct key *keyring, const char *sig, int siglen,
-					const char *digest, int digestlen);
+int digsig_verify(struct key *keyring, struct key_tag *domain_tag,
+		  const char *sig, int siglen, const char *digest,
+		  int digestlen);
 
 #else
 
-static inline int digsig_verify(struct key *keyring, const char *sig,
-				int siglen, const char *digest, int digestlen)
+static inline int digsig_verify(struct key *keyring,
+				struct key_tag *domain_tag,
+				const char *sig, int siglen, const char *digest,
+				int digestlen)
 {
 	return -EOPNOTSUPP;
 }
