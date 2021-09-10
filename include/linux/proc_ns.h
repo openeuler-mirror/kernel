@@ -16,7 +16,7 @@ struct inode;
 struct proc_ns_operations {
 	const char *name;
 	const char *real_ns_name;
-	int type;
+	uint64_t type;
 	struct ns_common *(*get)(struct task_struct *task);
 	void (*put)(struct ns_common *ns);
 	int (*install)(struct nsset *nsset, struct ns_common *ns);
@@ -34,6 +34,8 @@ extern const struct proc_ns_operations mntns_operations;
 extern const struct proc_ns_operations cgroupns_operations;
 extern const struct proc_ns_operations timens_operations;
 extern const struct proc_ns_operations timens_for_children_operations;
+extern const struct proc_ns_operations imans_operations;
+extern const struct proc_ns_operations imans_for_children_operations;
 
 /*
  * We always define these enumerators
@@ -46,6 +48,7 @@ enum {
 	PROC_PID_INIT_INO	= 0xEFFFFFFCU,
 	PROC_CGROUP_INIT_INO	= 0xEFFFFFFBU,
 	PROC_TIME_INIT_INO	= 0xEFFFFFFAU,
+	PROC_IMA_INIT_INO	= 0xEFFFFFF9U,
 };
 
 #ifdef CONFIG_PROC_FS

@@ -37,6 +37,10 @@ static const struct proc_ns_operations *ns_entries[] = {
 	&timens_operations,
 	&timens_for_children_operations,
 #endif
+#ifdef CONFIG_IMA_NS
+	&imans_operations,
+	&imans_for_children_operations,
+#endif
 };
 
 static const char *proc_ns_get_link(struct dentry *dentry,

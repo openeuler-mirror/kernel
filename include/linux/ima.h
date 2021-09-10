@@ -13,6 +13,9 @@
 #include <linux/kexec.h>
 struct linux_binprm;
 
+struct nsproxy;
+struct task_struct;
+
 #ifdef CONFIG_IMA
 extern int ima_bprm_check(struct linux_binprm *bprm);
 extern int ima_file_check(struct file *file, int mask);
@@ -197,4 +200,58 @@ static inline bool ima_appraise_signature(enum kernel_read_file_id func)
 	return false;
 }
 #endif /* CONFIG_IMA_APPRAISE && CONFIG_INTEGRITY_TRUSTED_KEYRING */
+
+struct ima_namespace {
+	struct kref kref;
+	struct ns_common ns;
+	struct ucounts *ucounts;
+	struct user_namespace *user_ns;
+} __randomize_layout;
+
+extern struct ima_namespace init_ima_ns;
+
+#ifdef CONFIG_IMA_NS
+struct ima_namespace *copy_ima_ns(unsigned long flags,
+				  struct user_namespace *user_ns,
+				  struct ima_namespace *old_ns);
+
+void free_ima_ns(struct kref *kref);
+
+int imans_on_fork(struct nsproxy *nsproxy, struct task_struct *tsk);
+
+static inline struct ima_namespace *get_ima_ns(struct ima_namespace *ns)
+{
+	if (ns)
+		kref_get(&ns->kref);
+	return ns;
+}
+static inline void put_ima_ns(struct ima_namespace *ns)
+{
+	if (ns)
+		kref_put(&ns->kref, free_ima_ns);
+}
+
+#else
+static inline struct ima_namespace *copy_ima_ns(unsigned long flags,
+						struct user_namespace *user_ns,
+						struct ima_namespace *old_ns)
+{
+	return old_ns;
+}
+
+static inline int imans_on_fork(struct nsproxy *nsproxy,
+				struct task_struct *tsk)
+{
+	return 0;
+}
+
+static inline struct ima_namespace *get_ima_ns(struct ima_namespace *ns)
+{
+	return ns;
+}
+
+static inline void put_ima_ns(struct ima_namespace *ns)
+{
+}
+#endif /* CONFIG_IMA_NS */
 #endif /* _LINUX_IMA_H */

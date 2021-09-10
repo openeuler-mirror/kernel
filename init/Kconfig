@@ -1206,6 +1206,18 @@ config NET_NS
 	  Allow user space to create what appear to be multiple instances
 	  of the network stack.
 
+config IMA_NS
+	bool "IMA namespace"
+	depends on IMA
+	default n
+	help
+	  This allows container engines to use ima namespaces to provide
+	  different IMA policy rules for different containers. Also, it allows
+	  to create what appear to be multiple instances of the IMA measurement
+	  list and other IMA related resources.
+
+	  If unsure, say N.
+
 endif # NAMESPACES
 
 config CHECKPOINT_RESTORE

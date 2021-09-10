@@ -1922,11 +1922,24 @@ static __latent_entropy struct task_struct *copy_process(
 	}
 
 	/*
-	 * If the new process will be in a different time namespace
-	 * do not allow it to share VM or a thread group with the forking task.
+	 * If the new process will be in a different time namespace or a
+	 * different ima namespace, do not allow it to share VM or a thread
+	 * group with the forking task.
 	 */
 	if (clone_flags & (CLONE_THREAD | CLONE_VM)) {
-		if (nsp->time_ns != nsp->time_ns_for_children)
+		if ((nsp->time_ns != nsp->time_ns_for_children) ||
+		    ((clone_flags & CLONE_NEWIMA) ||
+		     (nsp->ima_ns != nsp->ima_ns_for_children)))
+			return ERR_PTR(-EINVAL);
+	}
+
+	/*
+	 * If the new process will be in a different ima namespace
+	 * do not allow it to share the same file descriptor table.
+	 */
+	if (clone_flags & CLONE_FILES) {
+		if ((clone_flags & CLONE_NEWIMA) ||
+		    (nsp->ima_ns != nsp->ima_ns_for_children))
 			return ERR_PTR(-EINVAL);
 	}
 
@@ -2701,7 +2714,8 @@ static bool clone3_args_valid(struct kernel_clone_args *kargs)
 {
 	/* Verify that no unknown flags are passed along. */
 	if (kargs->flags &
-	    ~(CLONE_LEGACY_FLAGS | CLONE_CLEAR_SIGHAND | CLONE_INTO_CGROUP))
+	    ~(CLONE_LEGACY_FLAGS |
+	      CLONE_CLEAR_SIGHAND | CLONE_INTO_CGROUP | CLONE_NEWIMA))
 		return false;
 
 	/*
@@ -2848,7 +2862,7 @@ static int check_unshare_flags(unsigned long unshare_flags)
 				CLONE_VM|CLONE_FILES|CLONE_SYSVSEM|
 				CLONE_NEWUTS|CLONE_NEWIPC|CLONE_NEWNET|
 				CLONE_NEWUSER|CLONE_NEWPID|CLONE_NEWCGROUP|
-				CLONE_NEWTIME))
+				CLONE_NEWTIME|CLONE_NEWIMA))
 		return -EINVAL;
 	/*
 	 * Not implemented, but pretend it works if there is nothing

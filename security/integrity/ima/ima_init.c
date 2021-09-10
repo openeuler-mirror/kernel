@@ -15,12 +15,25 @@
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/err.h>
+#include <linux/kref.h>
+#include <linux/proc_ns.h>
+#include <linux/user_namespace.h>
 
 #include "ima.h"
 
 /* name for boot aggregate entry */
 const char boot_aggregate_name[] = "boot_aggregate";
 struct tpm_chip *ima_tpm_chip;
+
+struct ima_namespace init_ima_ns = {
+	.kref = KREF_INIT(2),
+	.user_ns = &init_user_ns,
+	.ns.inum = PROC_IMA_INIT_INO,
+#ifdef CONFIG_IMA_NS
+	.ns.ops = &imans_operations,
+#endif
+};
+EXPORT_SYMBOL(init_ima_ns);
 
 /* Add the boot aggregate to the IMA measurement list and extend
  * the PCR register.

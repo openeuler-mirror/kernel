@@ -20,6 +20,7 @@
 #include <linux/hash.h>
 #include <linux/tpm.h>
 #include <linux/audit.h>
+#include <linux/ima.h>
 #include <crypto/hash_info.h>
 
 #include "../integrity.h"
@@ -361,6 +362,18 @@ static inline enum integrity_status ima_get_cache_status(struct integrity_iint_c
 }
 
 #endif /* CONFIG_IMA_APPRAISE */
+
+#ifdef CONFIG_IMA_NS
+static inline struct ima_namespace *get_current_ns(void)
+{
+	return current->nsproxy->ima_ns;
+}
+#else
+static inline struct ima_namespace *get_current_ns(void)
+{
+	return &init_ima_ns;
+}
+#endif /* CONFIG_IMA_NS */
 
 #ifdef CONFIG_IMA_APPRAISE_MODSIG
 int ima_read_modsig(enum ima_hooks func, const void *buf, loff_t buf_len,
