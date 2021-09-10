@@ -55,6 +55,7 @@ struct key_match_data {
 	unsigned	lookup_type;	/* Type of lookup for this search. */
 #define KEYRING_SEARCH_LOOKUP_DIRECT	0x0000	/* Direct lookup by description. */
 #define KEYRING_SEARCH_LOOKUP_ITERATE	0x0001	/* Iterative search. */
+	struct key_tag  *domain_tag;    /* Key domain tag */
 };
 
 /*
