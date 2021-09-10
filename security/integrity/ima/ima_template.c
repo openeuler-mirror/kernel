@@ -373,6 +373,7 @@ int ima_restore_measurement_list(loff_t size, void *buf)
 	struct ima_template_desc *template_desc;
 	DECLARE_BITMAP(hdr_mask, HDR__LAST);
 	unsigned long count = 0;
+	unsigned int init_ns_id = get_ns_id(&init_ima_ns);
 	int ret = 0;
 
 	if (!buf || size < sizeof(*khdr))
@@ -472,6 +473,7 @@ int ima_restore_measurement_list(loff_t size, void *buf)
 
 		entry->pcr = !ima_canonical_fmt ? *(u32 *)(hdr[HDR_PCR].data) :
 			     le32_to_cpu(*(u32 *)(hdr[HDR_PCR].data));
+		entry->ns_id = init_ns_id;
 		ret = ima_restore_measurement_entry(entry);
 		if (ret < 0)
 			break;

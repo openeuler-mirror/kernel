@@ -80,6 +80,7 @@ struct ima_event_data {
 	const char *violation;
 	const void *buf;
 	int buf_len;
+	unsigned int ns_id;
 };
 
 /* IMA template field data definition */
@@ -108,6 +109,7 @@ struct ima_template_desc {
 
 struct ima_template_entry {
 	int pcr;
+	unsigned int ns_id;
 	struct tpm_digest *digests;
 	struct ima_template_desc *template_desc; /* template descriptor */
 	u32 template_data_len;
@@ -158,7 +160,8 @@ int ima_calc_field_array_hash(struct ima_field_data *field_data,
 int ima_calc_boot_aggregate(struct ima_digest_data *hash);
 void ima_add_violation(struct file *file, const unsigned char *filename,
 		       struct integrity_iint_cache *iint,
-		       const char *op, const char *cause);
+		       const char *op, const char *cause,
+		       struct ima_namespace *ima_ns);
 int ima_init_crypto(void);
 void ima_putc(struct seq_file *m, void *data, int datalen);
 void ima_print_digest(struct seq_file *m, u8 *digest, u32 size);
@@ -408,6 +411,11 @@ extern struct ima_policy_setup_data init_policy_setup_data;
 
 extern struct list_head ima_ns_list;
 extern struct rw_semaphore ima_ns_list_lock;
+
+static inline unsigned int get_ns_id(const struct ima_namespace *ima_ns)
+{
+	return ima_ns->ns.inum;
+}
 
 #ifdef CONFIG_IMA_NS
 int __init ima_init_namespace(void);
