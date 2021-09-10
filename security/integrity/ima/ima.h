@@ -187,6 +187,7 @@ int ima_lsm_policy_change(struct notifier_block *nb, unsigned long event,
  * used to protect h_table and sha_table
  */
 extern spinlock_t ima_queue_lock;
+extern spinlock_t ima_htable_lock;
 
 struct ima_h_table {
 	atomic_long_t len;	/* number of stored measurements in the list */
