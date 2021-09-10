@@ -285,10 +285,14 @@ struct key *key_alloc(struct key_type *type, const char *desc,
 
 		/* set domain tag if it's not predefined for the key type */
 		if ((!type->flags) && (flags & KEY_ALLOC_DOMAIN_IMA))
-			/* Set it to something meaningful after adding a key
-			 * domain to the ima namespace.
+			/* Use ima_ns_for_children, not ima_ns. ima_ns_for
+			 * children is equal to ima_ns, unless ima namespace was
+			 * unshared and the new namespace is being configured.
+			 * In that case, new keys should be associated with the
+			 * new ima namespace.
 			 */
-			key->index_key.domain_tag = NULL;
+			key->index_key.domain_tag =
+				current->nsproxy->ima_ns_for_children->key_domain;
 	}
 
 	key->index_key.desc_len = desclen;
