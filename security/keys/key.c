@@ -278,6 +278,19 @@ struct key *key_alloc(struct key_type *type, const char *desc,
 	if (!key)
 		goto no_memory_2;
 
+	if (flags & KEY_ALLOC_DOMAIN_MASK) {
+		/* set alloc domain for all keys added to this keyring */
+		if (type == &key_type_keyring)
+			key->key_alloc_domain = (flags & KEY_ALLOC_DOMAIN_MASK);
+
+		/* set domain tag if it's not predefined for the key type */
+		if ((!type->flags) && (flags & KEY_ALLOC_DOMAIN_IMA))
+			/* Set it to something meaningful after adding a key
+			 * domain to the ima namespace.
+			 */
+			key->index_key.domain_tag = NULL;
+	}
+
 	key->index_key.desc_len = desclen;
 	key->index_key.description = kmemdup(desc, desclen + 1, GFP_KERNEL);
 	if (!key->index_key.description)
@@ -926,6 +939,9 @@ key_ref_t key_create_or_update(key_ref_t keyring_ref,
 		    index_key.type->update)
 			perm |= KEY_POS_WRITE;
 	}
+
+	if (keyring->key_alloc_domain)
+		flags |= keyring->key_alloc_domain;
 
 	/* allocate a new key */
 	key = key_alloc(index_key.type, index_key.description,
