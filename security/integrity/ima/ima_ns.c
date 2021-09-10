@@ -49,6 +49,66 @@ static void dec_ima_namespaces(struct ucounts *ucounts)
 	return dec_ucount(ucounts, UCOUNT_IMA_NAMESPACES);
 }
 
+static int ima_ns_add_boot_aggregate(struct ima_namespace *ima_ns)
+{
+	static const char op[] = "ns_add_boot_aggregate";
+	static const char ns_aggregate_name_prefix[] = "ns_aggregate_";
+	const char *audit_cause = "ENOMEM";
+	struct ima_template_entry *entry;
+	struct integrity_iint_cache tmp_iint, *iint = &tmp_iint;
+	struct ima_event_data event_data = { .iint = iint };
+	int result = -ENOMEM;
+	int violation = 0;
+	struct {
+		struct ima_digest_data hdr;
+		char digest[TPM_DIGEST_SIZE];
+	} hash;
+	unsigned int ns_id = get_ns_id(ima_ns);
+	char *ns_aggregate_name;
+
+	ns_aggregate_name = kmalloc(sizeof(ns_aggregate_name_prefix) +
+				    sizeof(unsigned int),
+				    GFP_KERNEL);
+	if (!ns_aggregate_name)
+		goto err_out;
+
+	sprintf(ns_aggregate_name, "%s%u", ns_aggregate_name_prefix, ns_id);
+
+	event_data.filename = ns_aggregate_name;
+	event_data.ns_id = ns_id;
+
+	memset(iint, 0, sizeof(*iint));
+	memset(&hash, 0, sizeof(hash));
+	iint->ima_hash = &hash.hdr;
+	iint->ima_hash->algo = HASH_ALGO_SHA1;
+	iint->ima_hash->length = SHA1_DIGEST_SIZE;
+
+	result = ima_alloc_init_template(&event_data, &entry, NULL);
+	if (result < 0) {
+		audit_cause = "alloc_entry";
+		goto err_out;
+	}
+
+	result = ima_store_template(entry, violation, NULL,
+				    ns_aggregate_name,
+				    CONFIG_IMA_MEASURE_PCR_IDX,
+				    NULL,
+				    ima_ns);
+	if (result < 0) {
+		ima_free_template_entry(entry);
+		audit_cause = "store_entry";
+	}
+
+err_out:
+	if (result < 0)
+		integrity_audit_msg(AUDIT_INTEGRITY_PCR, NULL,
+				    ns_aggregate_name, op, audit_cause,
+				    result, 0);
+	kfree(ns_aggregate_name);
+
+	return result;
+}
+
 #ifdef CONFIG_IMA_LOAD_X509
 static int ima_ns_load_x509(struct ima_namespace *ima_ns)
 {
@@ -384,6 +444,8 @@ static int imans_activate(struct ima_namespace *ima_ns)
 	down_write(&ima_ns_list_lock);
 	list_add_tail(&ima_ns->list, &ima_ns_list);
 	up_write(&ima_ns_list_lock);
+
+	ima_ns_add_boot_aggregate(ima_ns);
 
 	/* The x509 certificate has to be measured in the new namespace as
 	 * well as in the parent namespace, therefore it has to be loaded
