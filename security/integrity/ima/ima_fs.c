@@ -61,7 +61,7 @@ static ssize_t ima_show_htable_value(struct file *filp, char __user *buf,
 	struct ima_namespace *ima_ns = get_current_ns();
 
 	if (filp->f_path.dentry == violations)
-		val = &ima_htable.violations;
+		val = &ima_ns->violations;
 	else if (filp->f_path.dentry == runtime_measurements_count)
 		val = (ima_ns == &init_ima_ns) ? &ima_ml_len : &ima_ns->ml_len;
 #ifdef CONFIG_IMA_DIGEST_LIST
@@ -646,7 +646,7 @@ int __init ima_fs_init(void)
 		goto out;
 
 	violations =
-	    securityfs_create_file("violations", S_IRUSR | S_IRGRP,
+	    securityfs_create_file("violations", S_IRUSR | S_IRGRP | S_IROTH,
 				   ima_dir, NULL, &ima_htable_value_ops);
 	if (IS_ERR(violations))
 		goto out;
