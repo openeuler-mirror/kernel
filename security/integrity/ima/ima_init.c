@@ -48,6 +48,7 @@ struct ima_namespace init_ima_ns = {
 #ifdef CONFIG_KEYS
 	.key_domain = &init_ima_key_domain,
 #endif
+	.ima_template = NULL,
 };
 EXPORT_SYMBOL(init_ima_ns);
 
