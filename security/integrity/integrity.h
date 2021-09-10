@@ -18,6 +18,7 @@
 #include <linux/key.h>
 #include <linux/audit.h>
 #include <linux/hash_info.h>
+#include <linux/atomic.h>
 
 /* iint action cache flags */
 #define IMA_MEASURE		0x00000001
@@ -142,6 +143,9 @@ struct integrity_iint_cache {
 	enum integrity_status ima_creds_status:4;
 	enum integrity_status evm_status:4;
 	struct ima_digest_data *ima_hash;
+	atomic_t readcount; /* Reader counter, incremented only in FILE_CHECK or
+			     * MMAP_CHECK hooks, used for ima violation check.
+			     */
 };
 
 enum compact_types { COMPACT_KEY, COMPACT_PARSER, COMPACT_FILE,
@@ -336,5 +340,19 @@ void __init add_to_platform_keyring(const char *source, const void *data,
 static inline void __init add_to_platform_keyring(const char *source,
 						  const void *data, size_t len)
 {
+}
+#endif
+
+#ifdef CONFIG_IMA
+static inline void iint_readcount_inc(struct integrity_iint_cache *iint)
+{
+	atomic_inc(&iint->readcount);
+}
+static inline void iint_readcount_dec(struct integrity_iint_cache *iint)
+{
+	if (WARN_ON(!atomic_read(&iint->readcount)))
+		return;
+
+	atomic_dec(&iint->readcount);
 }
 #endif
