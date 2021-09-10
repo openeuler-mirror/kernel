@@ -204,7 +204,7 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk)
 		return ret;
 	}
 
-	ret = imans_on_fork(new_ns, tsk);
+	ret = imans_on_fork(new_ns, tsk, user_ns);
 	if (ret) {
 		free_nsproxy(new_ns);
 		return ret;
