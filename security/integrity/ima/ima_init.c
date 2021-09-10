@@ -34,6 +34,7 @@ struct ima_namespace init_ima_ns = {
 #endif
 	.frozen = true,
 	.policy_data = &init_policy_data,
+	.iint_tree = &init_iint_tree,
 };
 EXPORT_SYMBOL(init_ima_ns);
 
