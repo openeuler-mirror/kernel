@@ -362,6 +362,13 @@ SYSCALL_DEFINE5(kexec_file_load, int, kernel_fd, int, initrd_fd,
 	if (!capable(CAP_SYS_BOOT) || kexec_load_disabled)
 		return -EPERM;
 
+	/* Allow only from the initial IMA namespace, so that the user can't
+	 * spawn a new IMA namespace with the empty policy and circumvent the
+	 * appraisal protection.
+	 */
+	if (!ima_is_root_namespace())
+		return -EPERM;
+
 	/* Make sure we have a legal set of flags */
 	if (flags != (flags & KEXEC_FILE_FLAGS))
 		return -EINVAL;

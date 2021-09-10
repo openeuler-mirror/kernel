@@ -29,6 +29,16 @@ void ima_post_key_create_or_update(struct key *keyring, struct key *key,
 				   unsigned long flags, bool create)
 {
 	bool queued = false;
+	/* Measure the keys according to the current ima namespace's policy
+	 * rules. If the new ima namespace with empty policy is created to hide
+	 * the log, parent can join it to inspect the log until the child
+	 * namespace exists. After its destruction, log can be accessed only
+	 * by the processes from the initial ima namespace that see all
+	 * measurement list entries. If this is a problem, maybe the solution
+	 * is to track in which namespaces the key was measured and re-measure
+	 * it when necessary.
+	 */
+	struct ima_namespace *ima_ns = get_current_ns();
 
 	/* Only asymmetric keys are handled by this hook. */
 	if (key->type != &key_type_asymmetric)
@@ -60,6 +70,5 @@ void ima_post_key_create_or_update(struct key *keyring, struct key *key,
 	 */
 	process_buffer_measurement(NULL, payload, payload_len,
 				   keyring->description, KEY_CHECK, 0,
-				   keyring->description,
-				   NULL);
+				   keyring->description, ima_ns);
 }

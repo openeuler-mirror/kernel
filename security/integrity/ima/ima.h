@@ -44,15 +44,11 @@ enum tpm_pcrs { TPM_PCR0 = 0, TPM_PCR8 = 8, TPM_PCR10 = 10 };
 
 #define NR_BANKS(chip) ((chip != NULL) ? chip->nr_allocated_banks : 0)
 
-/* current content of the policy */
-extern int ima_policy_flag;
-
 /* set during initialization */
 extern int ima_hash_algo;
 extern int ima_sha1_idx __ro_after_init;
 extern int ima_hash_algo_idx __ro_after_init;
 extern int ima_extra_slots __ro_after_init;
-extern int ima_appraise;
 extern struct tpm_chip *ima_tpm_chip;
 extern int ima_digest_list_pcr;
 extern bool ima_plus_standard_pcr;
@@ -69,6 +65,8 @@ struct ima_policy_setup_data {
 	int ima_appraise;
 	bool ima_use_secure_boot;
 	bool ima_use_appraise_tcb;
+	bool ima_use_appraise_exec_tcb;
+	bool ima_use_appraise_exec_immutable;
 };
 
 /* IMA event related data */
@@ -402,6 +400,9 @@ struct ima_policy_data {
 	int temp_ima_appraise;
 };
 
+extern struct list_head ima_ns_list;
+extern struct rw_semaphore ima_ns_list_lock;
+
 extern struct ima_policy_data init_policy_data;
 extern struct ima_policy_setup_data init_policy_setup_data;
 
@@ -415,6 +416,9 @@ static inline struct ima_namespace *get_current_ns(void)
 {
 	return current->nsproxy->ima_ns;
 }
+
+void ima_delete_ns_rules(struct ima_policy_data *policy_data,
+			 bool is_root_ns);
 #else
 static inline int __init ima_init_namespace(void)
 {

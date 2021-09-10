@@ -49,8 +49,6 @@
 #define INVALID_PCR(a) (((a) < 0) || \
 	(a) >= (sizeof_field(struct integrity_iint_cache, measured_pcrs) * 8))
 
-int ima_policy_flag;
-static int temp_ima_appraise;
 static int build_ima_appraise __ro_after_init;
 
 #define MAX_LSM_RULES 6
@@ -225,15 +223,10 @@ static struct ima_rule_entry ima_parser_appraise_rule __ro_after_init = {
 	.flags = IMA_PARSER | IMA_DIGSIG_REQUIRED
 };
 
+/* Number of architecture specific rules found */
+static int arch_entries_size __ro_after_init;
 /* An array of architecture specific rules */
 static struct ima_rule_entry *arch_policy_entry __ro_after_init;
-
-static LIST_HEAD(ima_default_rules);
-static LIST_HEAD(ima_policy_rules);
-static LIST_HEAD(ima_temp_rules);
-static struct list_head *ima_rules = &ima_default_rules;
-
-static int ima_policy __initdata;
 
 struct ima_policy_setup_data init_policy_setup_data = {
 #ifdef CONFIG_IMA_APPRAISE
@@ -244,31 +237,25 @@ struct ima_policy_data init_policy_data = {
 	.ima_default_rules = LIST_HEAD_INIT(init_policy_data.ima_default_rules),
 	.ima_policy_rules = LIST_HEAD_INIT(init_policy_data.ima_policy_rules),
 	.ima_temp_rules = LIST_HEAD_INIT(init_policy_data.ima_temp_rules),
+	.ima_rules = &init_policy_data.ima_default_rules,
 };
 
 int ima_default_measure_policy_setup(const char *str,
 				     struct ima_policy_setup_data *setup_data)
 {
-	/* Currently unused. It will be implemented after namespacing ima
-	 * policy, when global variables are removed.
-	 */
+	if (setup_data->ima_policy)
+		return 1;
+
+	setup_data->ima_policy = ORIGINAL_TCB;
 	return 1;
 }
 
 static int __init default_measure_policy_setup(char *str)
 {
-	if (ima_policy)
-		return 1;
-
-	ima_policy = ORIGINAL_TCB;
-	return 1;
+	return ima_default_measure_policy_setup(str, &init_policy_setup_data);
 }
 __setup("ima_tcb", default_measure_policy_setup);
 
-static bool ima_use_appraise_tcb __initdata;
-static bool ima_use_appraise_exec_tcb __initdata;
-static bool ima_use_appraise_exec_immutable __initdata;
-static bool ima_use_secure_boot __initdata;
 static bool ima_fail_unverifiable_sigs __ro_after_init;
 
 /**
@@ -276,61 +263,55 @@ static bool ima_fail_unverifiable_sigs __ro_after_init;
  * @str: string to be parsed
  * @setup_data: pointer to a structure where parsed data is stored
  * @fail_unverifiable_sigs: boolean flag treated separately to preserve
- * __ro_after_init
+ *                          __ro_after_init
  */
 int ima_policy_setup(char *str,
 		     struct ima_policy_setup_data *setup_data,
 		     bool *fail_unverifiable_sigs)
-{
-
-	/* Currently unused. It will be implemented after namespacing ima
-	 * policy, when global variables are removed.
-	 */
-	return 1;
-}
-
-static int __init policy_setup(char *str)
 {
 	char *p;
 
 	while ((p = strsep(&str, " |\n")) != NULL) {
 		if (*p == ' ')
 			continue;
-		if ((strcmp(p, "tcb") == 0) && !ima_policy)
-			ima_policy = DEFAULT_TCB;
-		else if ((strcmp(p, "exec_tcb") == 0) && !ima_policy)
-			ima_policy = EXEC_TCB;
+		if ((strcmp(p, "tcb") == 0) && !setup_data->ima_policy)
+			setup_data->ima_policy = DEFAULT_TCB;
+		else if ((strcmp(p, "exec_tcb") == 0) && !setup_data->ima_policy)
+			setup_data->ima_policy = EXEC_TCB;
 		else if (strcmp(p, "appraise_tcb") == 0)
-			ima_use_appraise_tcb = true;
+			setup_data->ima_use_appraise_tcb = true;
 		else if (strcmp(p, "appraise_exec_tcb") == 0)
-			ima_use_appraise_exec_tcb = true;
+			setup_data->ima_use_appraise_exec_tcb = true;
 		else if (strcmp(p, "appraise_exec_immutable") == 0)
-			ima_use_appraise_exec_immutable = true;
+			setup_data->ima_use_appraise_exec_immutable = true;
 		else if (strcmp(p, "secure_boot") == 0)
-			ima_use_secure_boot = true;
+			setup_data->ima_use_secure_boot = true;
 		else if (strcmp(p, "fail_securely") == 0)
-			ima_fail_unverifiable_sigs = true;
+			*fail_unverifiable_sigs = true;
 		else
 			pr_err("policy \"%s\" not found", p);
 	}
 
 	return 1;
 }
+
+static int __init policy_setup(char *str)
+{
+	return ima_policy_setup(str, &init_policy_setup_data,
+				&ima_fail_unverifiable_sigs);
+}
 __setup("ima_policy=", policy_setup);
 
 int ima_default_appraise_policy_setup(const char *str,
 				      struct ima_policy_setup_data *setup_data)
 {
-	/* Currently unused. It will be implemented after namespacing ima
-	 * policy, when global variables are removed.
-	 */
+	setup_data->ima_use_appraise_tcb = true;
 	return 1;
 }
 
 static int __init default_appraise_policy_setup(char *str)
 {
-	ima_use_appraise_tcb = true;
-	return 1;
+	return ima_default_appraise_policy_setup(str, &init_policy_setup_data);
 }
 __setup("ima_appraise_tcb", default_appraise_policy_setup);
 
@@ -505,9 +486,11 @@ static bool ima_rule_contains_lsm_cond(struct ima_rule_entry *entry)
 static void ima_lsm_update_rules(void)
 {
 	struct ima_rule_entry *entry, *e;
+	struct ima_namespace *ima_ns = get_current_ns();
 	int result;
 
-	list_for_each_entry_safe(entry, e, &ima_policy_rules, list) {
+	list_for_each_entry_safe(entry, e,
+				 &ima_ns->policy_data->ima_policy_rules, list) {
 		if (!ima_rule_contains_lsm_cond(entry))
 			continue;
 
@@ -709,12 +692,13 @@ int ima_match_policy(struct inode *inode, const struct cred *cred, u32 secid,
 {
 	struct ima_rule_entry *entry;
 	int action = 0, actmask = flags | (flags << 1);
+	bool fail_unverifiable_sigs;
 
 	if (template_desc)
 		*template_desc = ima_template_desc_current();
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(entry, ima_rules, list) {
+	list_for_each_entry_rcu(entry, ima_ns->policy_data->ima_rules, list) {
 
 		if (!(entry->action & actmask))
 			continue;
@@ -729,7 +713,10 @@ int ima_match_policy(struct inode *inode, const struct cred *cred, u32 secid,
 		if (entry->action & IMA_APPRAISE) {
 			action |= get_subaction(entry, func);
 			action &= ~IMA_HASH;
-			if (ima_fail_unverifiable_sigs)
+			fail_unverifiable_sigs = (ima_ns == &init_ima_ns) ?
+				ima_fail_unverifiable_sigs :
+				ima_ns->policy_data->ima_fail_unverifiable_sigs;
+			if (fail_unverifiable_sigs)
 				action |= IMA_FAIL_UNVERIFIABLE_SIGS;
 		}
 
@@ -764,14 +751,15 @@ void ima_update_policy_flag(struct ima_namespace *ima_ns)
 {
 	struct ima_rule_entry *entry;
 
-	list_for_each_entry(entry, ima_rules, list) {
+	list_for_each_entry(entry, ima_ns->policy_data->ima_rules, list) {
 		if (entry->action & IMA_DO_MASK)
-			ima_policy_flag |= entry->action;
+			ima_ns->policy_data->ima_policy_flag |= entry->action;
 	}
 
-	ima_appraise |= (build_ima_appraise | temp_ima_appraise);
-	if (!ima_appraise)
-		ima_policy_flag &= ~IMA_APPRAISE;
+	ima_ns->policy_data->ima_appraise |=
+		(build_ima_appraise | ima_ns->policy_data->temp_ima_appraise);
+	if (!ima_ns->policy_data->ima_appraise)
+		ima_ns->policy_data->ima_policy_flag &= ~IMA_APPRAISE;
 }
 
 static int ima_appraise_flag(enum ima_hooks func)
@@ -789,16 +777,17 @@ static int ima_appraise_flag(enum ima_hooks func)
 	return 0;
 }
 
-static void __init add_rules(struct ima_policy_data *policy_data,
-			     struct ima_rule_entry *entries, int count,
-			     enum policy_rule_list policy_rule)
+static void add_rules(struct ima_namespace *ima_ns,
+		      struct ima_rule_entry *entries, int count,
+		      enum policy_rule_list policy_rule,
+		      const struct ima_policy_setup_data *setup_data)
 {
 	int i = 0;
 
 	for (i = 0; i < count; i++) {
 		struct ima_rule_entry *entry;
 
-		if (ima_policy == EXEC_TCB) {
+		if (setup_data->ima_policy == EXEC_TCB) {
 			if (entries == dont_measure_rules)
 				if ((entries[i].flags & IMA_FSMAGIC) &&
 				    entries[i].fsmagic == TMPFS_MAGIC)
@@ -810,7 +799,7 @@ static void __init add_rules(struct ima_policy_data *policy_data,
 					continue;
 		}
 
-		if (ima_use_appraise_exec_tcb) {
+		if (setup_data->ima_use_appraise_exec_tcb) {
 			if (entries == default_appraise_rules) {
 				if (entries[i].action != DONT_APPRAISE)
 					continue;
@@ -820,14 +809,24 @@ static void __init add_rules(struct ima_policy_data *policy_data,
 			}
 		}
 
-		if (ima_use_appraise_exec_immutable)
+		if (setup_data->ima_use_appraise_exec_immutable)
 			if (entries == appraise_exec_rules &&
 			    (entries[i].flags & IMA_FUNC) &&
 			    entries[i].func == BPRM_CHECK)
 				entries[i].flags |= IMA_META_IMMUTABLE_REQUIRED;
 
-		if (policy_rule & IMA_DEFAULT_POLICY)
-			list_add_tail(&entries[i].list, &ima_default_rules);
+		if (policy_rule & IMA_DEFAULT_POLICY) {
+			entry = &entries[i];
+			if (ima_ns != &init_ima_ns) {
+				entry = kmemdup(&entries[i], sizeof(*entry),
+						GFP_KERNEL);
+				if (!entry)
+					continue;
+			}
+
+			list_add_tail(&entry->list,
+				      &ima_ns->policy_data->ima_default_rules);
+		}
 
 		if (policy_rule & IMA_CUSTOM_POLICY) {
 			entry = kmemdup(&entries[i], sizeof(*entry),
@@ -835,11 +834,12 @@ static void __init add_rules(struct ima_policy_data *policy_data,
 			if (!entry)
 				continue;
 
-			list_add_tail(&entry->list, &ima_policy_rules);
+			list_add_tail(&entry->list,
+				      &ima_ns->policy_data->ima_policy_rules);
 		}
 		if (entries[i].action == APPRAISE) {
 			if (entries != build_appraise_rules)
-				temp_ima_appraise |=
+				ima_ns->policy_data->temp_ima_appraise |=
 					ima_appraise_flag(entries[i].func);
 			else
 				build_ima_appraise |=
@@ -850,7 +850,7 @@ static void __init add_rules(struct ima_policy_data *policy_data,
 
 static int ima_parse_rule(char *rule, struct ima_rule_entry *entry);
 
-static int __init ima_init_arch_policy(void)
+static int ima_init_arch_policy(void)
 {
 	const char * const *arch_rules;
 	const char * const *rules;
@@ -899,69 +899,71 @@ static int __init ima_init_arch_policy(void)
 void ima_init_ns_policy(struct ima_namespace *ima_ns,
 			const struct ima_policy_setup_data *setup_data)
 {
-	/* Set policy rules to the empty set of default rules. The rest will be
-	 * implemented after namespacing policy.
-	 */
-	ima_ns->policy_data->ima_rules =
-		&ima_ns->policy_data->ima_default_rules;
-}
+	int build_appraise_entries;
 
-/**
- * ima_init_policy - initialize the default measure rules.
- *
- * ima_rules points to either the ima_default_rules or the
- * the new ima_policy_rules.
- */
-void __init ima_init_policy(void)
-{
-	int build_appraise_entries, arch_entries;
+	ima_ns->policy_data->ima_appraise = setup_data->ima_appraise;
+
+	if (ima_ns == &init_ima_ns) {
+		/*
+		 * Based on runtime secure boot flags, insert arch specific
+		 * measurement and appraise rules requiring file signatures for
+		 * both the initial and custom policies, prior to other
+		 * appraise rules. (Highest priority)
+		 */
+		arch_entries_size = ima_init_arch_policy();
+		if (!arch_entries_size)
+			pr_info("No architecture policies found\n");
+
+		ima_ns->policy_data->ima_fail_unverifiable_sigs =
+			ima_fail_unverifiable_sigs;
+	}
 
 	/* if !ima_policy, we load NO default rules */
-	if (ima_policy)
-		add_rules(NULL,
-			  dont_measure_rules, ARRAY_SIZE(dont_measure_rules),
-			  IMA_DEFAULT_POLICY);
+	if (setup_data->ima_policy)
+		add_rules(ima_ns, dont_measure_rules,
+			  ARRAY_SIZE(dont_measure_rules),
+			  IMA_DEFAULT_POLICY,
+			  setup_data);
 
-	switch (ima_policy) {
+	switch (setup_data->ima_policy) {
 	case ORIGINAL_TCB:
-		add_rules(NULL, original_measurement_rules,
+		add_rules(ima_ns, original_measurement_rules,
 			  ARRAY_SIZE(original_measurement_rules),
-			  IMA_DEFAULT_POLICY);
+			  IMA_DEFAULT_POLICY,
+			  setup_data);
 		break;
 	case EXEC_TCB:
 		fallthrough;
 	case DEFAULT_TCB:
-		add_rules(NULL, default_measurement_rules,
+		add_rules(ima_ns, default_measurement_rules,
 			  ARRAY_SIZE(default_measurement_rules),
-			  IMA_DEFAULT_POLICY);
+			  IMA_DEFAULT_POLICY,
+			  setup_data);
 	default:
 		break;
 	}
 
-	if (ima_policy)
-		add_rules(NULL, &ima_parser_measure_rule, 1, IMA_DEFAULT_POLICY);
+	if (setup_data->ima_policy)
+		add_rules(ima_ns, &ima_parser_measure_rule, 1, IMA_DEFAULT_POLICY,
+			  setup_data);
 
-	/*
-	 * Based on runtime secure boot flags, insert arch specific measurement
-	 * and appraise rules requiring file signatures for both the initial
-	 * and custom policies, prior to other appraise rules.
-	 * (Highest priority)
-	 */
-	arch_entries = ima_init_arch_policy();
-	if (!arch_entries)
-		pr_info("No architecture policies found\n");
-	else
-		add_rules(NULL, arch_policy_entry, arch_entries,
-			  IMA_DEFAULT_POLICY | IMA_CUSTOM_POLICY);
+	if (arch_entries_size)
+		add_rules(ima_ns,
+			  arch_policy_entry,
+			  arch_entries_size,
+			  IMA_DEFAULT_POLICY | IMA_CUSTOM_POLICY,
+			  setup_data);
 
 	/*
 	 * Insert the builtin "secure_boot" policy rules requiring file
 	 * signatures, prior to other appraise rules.
 	 */
-	if (ima_use_secure_boot || ima_use_appraise_exec_tcb)
-		add_rules(NULL,
-			  secure_boot_rules, ARRAY_SIZE(secure_boot_rules),
-			  IMA_DEFAULT_POLICY);
+	if (setup_data->ima_use_secure_boot ||
+	    setup_data->ima_use_appraise_exec_tcb)
+		add_rules(ima_ns, secure_boot_rules,
+			  ARRAY_SIZE(secure_boot_rules),
+			  IMA_DEFAULT_POLICY,
+			  setup_data);
 
 	/*
 	 * Insert the build time appraise rules requiring file signatures
@@ -970,38 +972,53 @@ void __init ima_init_policy(void)
 	 * rules, include either one or the other set of rules, but not both.
 	 */
 	build_appraise_entries = ARRAY_SIZE(build_appraise_rules);
-	if (build_appraise_entries) {
-		if (ima_use_secure_boot)
-			add_rules(NULL,
-				  build_appraise_rules, build_appraise_entries,
-				  IMA_CUSTOM_POLICY);
+	if (build_appraise_entries && (ima_ns == &init_ima_ns)) {
+		if (setup_data->ima_use_secure_boot)
+			add_rules(ima_ns, build_appraise_rules,
+				  build_appraise_entries,
+				  IMA_CUSTOM_POLICY,
+				  setup_data);
 		else
-			add_rules(NULL,
-				  build_appraise_rules, build_appraise_entries,
-				  IMA_DEFAULT_POLICY | IMA_CUSTOM_POLICY);
+			add_rules(ima_ns, build_appraise_rules,
+				  build_appraise_entries,
+				  IMA_DEFAULT_POLICY | IMA_CUSTOM_POLICY,
+				  setup_data);
 	}
 
-	if (ima_use_appraise_tcb || ima_use_appraise_exec_tcb)
-		add_rules(NULL, default_appraise_rules,
+	if (setup_data->ima_use_appraise_tcb ||
+	    setup_data->ima_use_appraise_exec_tcb)
+		add_rules(ima_ns, default_appraise_rules,
 			  ARRAY_SIZE(default_appraise_rules),
-			  IMA_DEFAULT_POLICY);
+			  IMA_DEFAULT_POLICY, setup_data);
 
-	if (ima_use_appraise_exec_tcb)
-		add_rules(NULL, appraise_exec_rules,
+	if (setup_data->ima_use_appraise_exec_tcb)
+		add_rules(ima_ns, appraise_exec_rules,
 			  ARRAY_SIZE(appraise_exec_rules),
-			  IMA_DEFAULT_POLICY);
+			  IMA_DEFAULT_POLICY, setup_data);
 
-	if (ima_use_secure_boot || ima_use_appraise_tcb ||
-	    ima_use_appraise_exec_tcb)
-		add_rules(NULL, &ima_parser_appraise_rule, 1, IMA_DEFAULT_POLICY);
+	if (setup_data->ima_use_secure_boot ||
+	    setup_data->ima_use_appraise_tcb ||
+	    setup_data->ima_use_appraise_exec_tcb)
+		add_rules(ima_ns, &ima_parser_appraise_rule, 1,
+			  IMA_DEFAULT_POLICY, setup_data);
 
-	ima_update_policy_flag(NULL);
+	ima_ns->policy_data->ima_rules =
+		&ima_ns->policy_data->ima_default_rules;
+	ima_update_policy_flag(ima_ns);
+}
+
+/**
+ * ima_init_policy - initialize the default measure rules for the initial ima ns
+ */
+void __init ima_init_policy(void)
+{
+	ima_init_ns_policy(&init_ima_ns, &init_policy_setup_data);
 }
 
 /* Make sure we have a valid policy, at least containing some rules. */
 int ima_check_policy(const struct ima_namespace *ima_ns)
 {
-	if (list_empty(&ima_temp_rules))
+	if (list_empty(&ima_ns->policy_data->ima_temp_rules))
 		return -EINVAL;
 	return 0;
 }
@@ -1019,14 +1036,18 @@ int ima_check_policy(const struct ima_namespace *ima_ns)
  */
 void ima_update_policy(void)
 {
-	struct list_head *policy = &ima_policy_rules;
+	/* Update only the current ima namespace */
+	struct ima_namespace *ima_ns = get_current_ns();
+	struct list_head *policy = &ima_ns->policy_data->ima_policy_rules;
 
-	list_splice_tail_init_rcu(&ima_temp_rules, policy, synchronize_rcu);
+	list_splice_tail_init_rcu(&ima_ns->policy_data->ima_temp_rules,
+				  policy, synchronize_rcu);
 
-	if (ima_rules != policy) {
-		ima_policy_flag = 0;
-		ima_rules = policy;
+	if (ima_ns->policy_data->ima_rules != policy) {
+		ima_ns->policy_data->ima_policy_flag = 0;
+		ima_ns->policy_data->ima_rules = policy;
 
+#ifndef CONFIG_IMA_NS
 		/*
 		 * IMA architecture specific policy rules are specified
 		 * as strings and converted to an array of ima_entry_rules
@@ -1034,8 +1055,9 @@ void ima_update_policy(void)
 		 * architecture specific rules stored as an array.
 		 */
 		kfree(arch_policy_entry);
+#endif
 	}
-	ima_update_policy_flag(NULL);
+	ima_update_policy_flag(ima_ns);
 
 	/* Custom IMA policy has been loaded */
 	ima_process_queued_keys();
@@ -1099,6 +1121,7 @@ static int ima_lsm_rule_init(struct ima_rule_entry *entry,
 			     substring_t *args, int lsm_rule, int audit_type)
 {
 	int result;
+	struct ima_namespace *ima_ns = get_current_ns();
 
 	if (entry->lsm[lsm_rule].rule)
 		return -EINVAL;
@@ -1115,7 +1138,8 @@ static int ima_lsm_rule_init(struct ima_rule_entry *entry,
 		pr_warn("rule for LSM \'%s\' is undefined\n",
 			entry->lsm[lsm_rule].args_p);
 
-		if (ima_rules == &ima_default_rules) {
+		if (ima_ns->policy_data->ima_rules ==
+		    &ima_ns->policy_data->ima_default_rules) {
 			kfree(entry->lsm[lsm_rule].args_p);
 			entry->lsm[lsm_rule].args_p = NULL;
 			result = -EINVAL;
@@ -1279,6 +1303,7 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 	bool uid_token;
 	struct ima_template_desc *template_desc;
 	int result = 0;
+	struct ima_namespace *ima_ns = get_current_ns();
 
 	ab = integrity_audit_log_start(audit_context(), GFP_KERNEL,
 				       AUDIT_INTEGRITY_POLICY_RULE);
@@ -1640,7 +1665,8 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 	if (!result && !ima_validate_rule(entry))
 		result = -EINVAL;
 	else if (entry->action == APPRAISE)
-		temp_ima_appraise |= ima_appraise_flag(entry->func);
+		ima_ns->policy_data->temp_ima_appraise |=
+			ima_appraise_flag(entry->func);
 
 	if (!result && entry->flags & IMA_MODSIG_ALLOWED) {
 		template_desc = entry->template ? entry->template :
@@ -1667,6 +1693,8 @@ ssize_t ima_parse_add_rule(char *rule)
 	struct ima_rule_entry *entry;
 	ssize_t result, len;
 	int audit_info = 0;
+	/* Add rules only to the current ima namespace */
+	struct ima_namespace *ima_ns = get_current_ns();
 
 	p = strsep(&rule, "\n");
 	len = strlen(p) + 1;
@@ -1693,7 +1721,7 @@ ssize_t ima_parse_add_rule(char *rule)
 		return result;
 	}
 
-	list_add_tail(&entry->list, &ima_temp_rules);
+	list_add_tail(&entry->list, &ima_ns->policy_data->ima_temp_rules);
 
 	return len;
 }
@@ -1706,14 +1734,50 @@ ssize_t ima_parse_add_rule(char *rule)
  */
 void ima_delete_rules(void)
 {
+	/* Delete rules only from the current ima namespace */
+	struct ima_namespace *ima_ns = get_current_ns();
 	struct ima_rule_entry *entry, *tmp;
 
-	temp_ima_appraise = 0;
-	list_for_each_entry_safe(entry, tmp, &ima_temp_rules, list) {
+	ima_ns->policy_data->temp_ima_appraise = 0;
+	list_for_each_entry_safe(entry, tmp,
+				 &ima_ns->policy_data->ima_temp_rules, list) {
 		list_del(&entry->list);
 		ima_free_rule(entry);
 	}
 }
+
+#ifdef CONFIG_IMA_NS
+/**
+ * ima_delete_ns_rules - delete policy rules and free the memory
+ * @policy_data: a pointer to the policy data of the given namespace
+ * @is_root_ns: indicates if the namespace being cleaned up is the root
+ * namespace
+ *
+ * This function should be called only for the inactive namespace, when it is
+ * being destroyed.
+ */
+void ima_delete_ns_rules(struct ima_policy_data *policy_data,
+			 bool is_root_ns)
+{
+	struct ima_rule_entry *entry, *tmp;
+
+	/* no locks necessary, namespace is inactive */
+	list_for_each_entry_safe(entry, tmp,
+				 &policy_data->ima_policy_rules, list) {
+		list_del(&entry->list);
+		ima_free_rule(entry);
+	}
+
+	if (!is_root_ns) {
+		list_for_each_entry_safe(entry, tmp,
+					 &policy_data->ima_default_rules,
+					 list) {
+			list_del(&entry->list);
+			ima_free_rule(entry);
+		}
+	}
+}
+#endif
 
 #define __ima_hook_stringify(func, str)	(#func),
 
@@ -1737,9 +1801,10 @@ void *ima_policy_start(struct seq_file *m, loff_t *pos)
 {
 	loff_t l = *pos;
 	struct ima_rule_entry *entry;
+	struct ima_namespace *ima_ns = get_current_ns();
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(entry, ima_rules, list) {
+	list_for_each_entry_rcu(entry, ima_ns->policy_data->ima_rules, list) {
 		if (!l--) {
 			rcu_read_unlock();
 			return entry;
@@ -1751,6 +1816,7 @@ void *ima_policy_start(struct seq_file *m, loff_t *pos)
 
 void *ima_policy_next(struct seq_file *m, void *v, loff_t *pos)
 {
+	struct ima_namespace *ima_ns = get_current_ns();
 	struct ima_rule_entry *entry = v;
 
 	rcu_read_lock();
@@ -1758,7 +1824,7 @@ void *ima_policy_next(struct seq_file *m, void *v, loff_t *pos)
 	rcu_read_unlock();
 	(*pos)++;
 
-	return (&entry->list == ima_rules) ? NULL : entry;
+	return (&entry->list == ima_ns->policy_data->ima_rules) ? NULL : entry;
 }
 
 void ima_policy_stop(struct seq_file *m, void *v)
@@ -1956,6 +2022,7 @@ int ima_policy_show(struct seq_file *m, void *v)
  */
 bool ima_appraise_signature(enum kernel_read_file_id id)
 {
+	struct ima_namespace *ima_ns = get_current_ns();
 	struct ima_rule_entry *entry;
 	bool found = false;
 	enum ima_hooks func;
@@ -1966,7 +2033,7 @@ bool ima_appraise_signature(enum kernel_read_file_id id)
 	func = read_idmap[id] ?: FILE_CHECK;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(entry, ima_rules, list) {
+	list_for_each_entry_rcu(entry, ima_ns->policy_data->ima_rules, list) {
 		if (entry->action != APPRAISE)
 			continue;
 

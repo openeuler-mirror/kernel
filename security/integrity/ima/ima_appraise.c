@@ -22,17 +22,9 @@ static bool ima_appraise_req_evm __ro_after_init;
 int ima_default_appraise_setup(const char *str,
 			       struct ima_policy_setup_data *setup_data)
 {
-	/* Currently unused. It will be implemented after namespacing ima
-	 * policy, when global variables are removed.
-	 */
-	return 1;
-}
-
-static int __init default_appraise_setup(char *str)
-{
 #ifdef CONFIG_IMA_APPRAISE_BOOTPARAM
 	bool sb_state = arch_ima_get_secureboot();
-	int appraisal_state = ima_appraise;
+	int appraisal_state = setup_data->ima_appraise;
 
 	if (strncmp(str, "off", 3) == 0)
 		appraisal_state = 0;
@@ -52,13 +44,18 @@ static int __init default_appraise_setup(char *str)
 			pr_info("Secure boot enabled: ignoring ima_appraise=%s option",
 				str);
 	} else {
-		ima_appraise = appraisal_state;
+		setup_data->ima_appraise = appraisal_state;
 	}
 #endif
 	if (strcmp(str, "enforce-evm") == 0 ||
 	    strcmp(str, "log-evm") == 0)
 		ima_appraise_req_evm = true;
 	return 1;
+}
+
+static int __init default_appraise_setup(char *str)
+{
+	return ima_default_appraise_setup(str, &init_policy_setup_data);
 }
 
 __setup("ima_appraise=", default_appraise_setup);
@@ -87,7 +84,10 @@ __setup("ima_appraise_digest_list=", appraise_digest_list_setup);
  */
 bool is_ima_appraise_enabled(const struct ima_namespace *ima_ns)
 {
-	return ima_appraise & IMA_APPRAISE_ENFORCE;
+	if (!ima_ns)
+		return false;
+
+	return ima_ns->policy_data->ima_appraise & IMA_APPRAISE_ENFORCE;
 }
 
 /*
@@ -95,18 +95,18 @@ bool is_ima_appraise_enabled(const struct ima_namespace *ima_ns)
  *
  * Return 1 to appraise or hash
  */
-int ima_must_appraise(struct inode *inode, int mask, enum ima_hooks func,
-		      struct ima_namespace *ima_ns)
+int ima_must_appraise(struct inode *inode, int mask,
+		      enum ima_hooks func, struct ima_namespace *ima_ns)
 {
 	u32 secid;
 
-	if (!ima_appraise)
+	if (!ima_ns->policy_data->ima_appraise)
 		return 0;
 
 	security_task_getsecid(current, &secid);
 	return ima_match_policy(inode, current_cred(), secid, func, mask,
 				IMA_APPRAISE | IMA_HASH, NULL, NULL, NULL,
-				NULL);
+				ima_ns);
 }
 
 static int ima_fix_xattr(struct dentry *dentry,
@@ -352,7 +352,7 @@ int ima_check_blacklist(struct integrity_iint_cache *iint,
 		if ((rc == -EPERM) && (iint->flags & IMA_MEASURE))
 			process_buffer_measurement(NULL, digest, digestsize,
 						   "blacklisted-hash", NONE,
-						   pcr, NULL, NULL);
+						   pcr, NULL, ima_ns);
 	}
 
 	return rc;
@@ -381,6 +381,7 @@ int ima_appraise_measurement(enum ima_hooks func,
 	int rc = xattr_len, rc_evm;
 	char _buf[sizeof(struct evm_ima_xattr_data) + 1 + SHA512_DIGEST_SIZE];
 	bool try_modsig = iint->flags & IMA_MODSIG_ALLOWED && modsig;
+	struct ima_namespace *ima_ns = get_current_ns();
 
 	/* If not appraising a modsig, we need an xattr. */
 	if (!(inode->i_opflags & IOP_XATTR) && !try_modsig)
@@ -509,7 +510,8 @@ out:
 				    op, cause, rc, 0);
 	} else if (status != INTEGRITY_PASS) {
 		/* Fix mode, but don't replace file signatures. */
-		if ((ima_appraise & IMA_APPRAISE_FIX) && !try_modsig &&
+		if ((ima_ns->policy_data->ima_appraise & IMA_APPRAISE_FIX) &&
+		    !try_modsig &&
 		    (!xattr_value ||
 		     xattr_value->type != EVM_IMA_XATTR_DIGSIG)) {
 			if (!ima_fix_xattr(dentry, iint))
@@ -574,18 +576,30 @@ void ima_inode_post_setattr(struct dentry *dentry)
 	struct inode *inode = d_backing_inode(dentry);
 	struct integrity_iint_cache *iint;
 	int action;
+	struct ima_namespace *ima_ns;
 
-	if (!(ima_policy_flag & IMA_APPRAISE) || !S_ISREG(inode->i_mode)
-	    || !(inode->i_opflags & IOP_XATTR))
+	if (!S_ISREG(inode->i_mode) ||
+	    !(inode->i_opflags & IOP_XATTR))
 		return;
 
-	action = ima_must_appraise(inode, MAY_ACCESS, POST_SETATTR, NULL);
-	iint = integrity_iint_find(inode);
-	if (iint) {
-		set_bit(IMA_CHANGE_ATTR, &iint->atomic_flags);
-		if (!action)
-			clear_bit(IMA_UPDATE_XATTR, &iint->atomic_flags);
+	down_read(&ima_ns_list_lock);
+	list_for_each_entry(ima_ns, &ima_ns_list, list) {
+		if (atomic_read(&ima_ns->inactive))
+			continue;
+		if (!(ima_ns->policy_data->ima_policy_flag & IMA_APPRAISE))
+			continue;
+
+		action = ima_must_appraise(inode, MAY_ACCESS, POST_SETATTR,
+					   ima_ns);
+		iint = integrity_iint_rb_find(ima_ns->iint_tree, inode);
+		if (iint) {
+			set_bit(IMA_CHANGE_ATTR, &iint->atomic_flags);
+			if (!action)
+				clear_bit(IMA_UPDATE_XATTR,
+					  &iint->atomic_flags);
+		}
 	}
+	up_read(&ima_ns_list_lock);
 }
 
 /*
@@ -607,19 +621,30 @@ static int ima_protect_xattr(struct dentry *dentry, const char *xattr_name,
 static void ima_reset_appraise_flags(struct inode *inode, int digsig)
 {
 	struct integrity_iint_cache *iint;
+	struct ima_namespace *ima_ns;
 
-	if (!(ima_policy_flag & IMA_APPRAISE) || !S_ISREG(inode->i_mode))
+	if (!S_ISREG(inode->i_mode))
 		return;
 
-	iint = integrity_iint_find(inode);
-	if (!iint)
-		return;
-	iint->measured_pcrs = 0;
-	set_bit(IMA_CHANGE_XATTR, &iint->atomic_flags);
-	if (digsig)
-		set_bit(IMA_DIGSIG, &iint->atomic_flags);
-	else
-		clear_bit(IMA_DIGSIG, &iint->atomic_flags);
+	down_read(&ima_ns_list_lock);
+	list_for_each_entry(ima_ns, &ima_ns_list, list) {
+		if (atomic_read(&ima_ns->inactive))
+			continue;
+		if (!(ima_ns->policy_data->ima_policy_flag & IMA_APPRAISE))
+			continue;
+
+		iint = integrity_iint_rb_find(ima_ns->iint_tree, inode);
+		if (!iint)
+			continue;
+
+		iint->measured_pcrs = 0;
+		set_bit(IMA_CHANGE_XATTR, &iint->atomic_flags);
+		if (digsig)
+			set_bit(IMA_DIGSIG, &iint->atomic_flags);
+		else
+			clear_bit(IMA_DIGSIG, &iint->atomic_flags);
+	}
+	up_read(&ima_ns_list_lock);
 }
 
 int ima_inode_setxattr(struct dentry *dentry, const char *xattr_name,

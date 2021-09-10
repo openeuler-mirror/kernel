@@ -167,7 +167,7 @@ int ima_parse_compact_list(loff_t size, void *buf, int op)
 	size_t digest_len;
 	int ret = 0, i;
 
-	if (!(ima_digest_list_actions & ima_policy_flag))
+	if (!(ima_digest_list_actions & init_policy_data.ima_policy_flag))
 		return -EACCES;
 
 	while (bufp < bufendp) {
@@ -383,7 +383,7 @@ void __init ima_load_digest_lists(void)
 		.ctx.actor = load_digest_list,
 	};
 
-	if (!(ima_digest_list_actions & ima_policy_flag))
+	if (!(ima_digest_list_actions & init_policy_data.ima_policy_flag))
 		return;
 
 	ret = kern_path(CONFIG_IMA_DIGEST_LISTS_DIR, 0, &path);
