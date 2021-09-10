@@ -30,6 +30,11 @@
 #include "ima.h"
 #include "ima_digest_list.h"
 
+struct ima_file_data {
+	struct ima_namespace *ima_ns;
+	bool is_readcount;
+};
+
 int ima_hash_algo = HASH_ALGO_SHA1;
 
 /* Actions (measure/appraisal) for which digest lists can be used */
@@ -131,8 +136,8 @@ static void ima_rdwr_violation_check(struct file *file,
 				iint = integrity_iint_rb_find(ima_ns->iint_tree,
 							      inode);
 			/* IMA_MEASURE is set from reader side */
-			if (iint && test_bit(IMA_MUST_MEASURE,
-						&iint->atomic_flags))
+			if (iint && atomic_read(&iint->readcount) &&
+			    test_bit(IMA_MUST_MEASURE, &iint->atomic_flags))
 				send_tomtou = true;
 		}
 	} else {
@@ -240,7 +245,7 @@ static void ima_check_last_writer(struct integrity_iint_cache *iint,
 {
 	fmode_t mode = file->f_mode;
 	bool update;
-	struct ima_namespace *ima_ns = (struct ima_namespace *)file->f_ima;
+	struct ima_file_data *f_data = (struct ima_file_data *)file->f_ima;
 
 	if (!(mode & FMODE_WRITE))
 		return;
@@ -255,7 +260,7 @@ static void ima_check_last_writer(struct integrity_iint_cache *iint,
 			iint->flags &= ~(IMA_DONE_MASK | IMA_NEW_FILE);
 			iint->measured_pcrs = 0;
 
-			ima_check_active_ns(ima_ns, inode);
+			ima_check_active_ns(f_data->ima_ns, inode);
 
 			if (update)
 				ima_update_xattr(iint, file);
@@ -276,6 +281,8 @@ static void ima_check_last_writer(struct integrity_iint_cache *iint,
  */
 int ima_file_alloc(struct file *file)
 {
+	struct ima_file_data *f_data;
+
 	/* It is possible that ima_file_alloc() is called after
 	 * exit_task_namespaces(), when IMA does the last writer check from
 	 * __fput(). In that case it's not necessary to store the namespace
@@ -283,8 +290,16 @@ int ima_file_alloc(struct file *file)
 	if (!current->nsproxy)
 		return 0;
 
-	file->f_ima = get_current_ns();
-	get_ima_ns((struct ima_namespace *)file->f_ima);
+	f_data = kmalloc(sizeof(struct ima_file_data), GFP_KERNEL);
+	if (!f_data)
+		return -ENOMEM;
+
+	f_data->ima_ns = get_current_ns();
+	f_data->is_readcount = false;
+	get_ima_ns(f_data->ima_ns);
+
+	file->f_ima = f_data;
+
 	return 0;
 }
 
@@ -298,30 +313,36 @@ void ima_file_free(struct file *file)
 {
 	struct inode *inode = file_inode(file);
 	struct integrity_iint_cache *iint;
-	struct ima_namespace *ima_ns = (struct ima_namespace *)file->f_ima;
+	struct ima_file_data *f_data = (struct ima_file_data *)file->f_ima;
 
-	if (!ima_ns)
+	if (!f_data)
 		return;
 
 	if (unlikely(!(file->f_mode & FMODE_OPENED)))
 		goto out;
 
-	if (!ima_ns->policy_data->ima_policy_flag || !S_ISREG(inode->i_mode))
+	if (!f_data->ima_ns->policy_data->ima_policy_flag ||
+	    !S_ISREG(inode->i_mode))
 		goto out;
 
-	iint = integrity_iint_rb_find(ima_ns->iint_tree, inode);
+	iint = integrity_iint_rb_find(f_data->ima_ns->iint_tree, inode);
 	if (!iint)
 		goto out;
 
 	ima_check_last_writer(iint, inode, file);
+
+	if (f_data->is_readcount)
+		iint_readcount_dec(iint);
 out:
-	put_ima_ns(ima_ns);
+	put_ima_ns(f_data->ima_ns);
+	kfree(f_data);
 }
 
 static int process_ns_measurement(struct file *file, const struct cred *cred,
 				  u32 secid, char *buf, loff_t size, int mask,
 				  enum ima_hooks func,
-				  struct ima_namespace *ima_ns)
+				  struct ima_namespace *ima_ns,
+				  bool readcount_open)
 {
 	struct inode *inode = file_inode(file);
 	struct integrity_iint_cache *iint = NULL;
@@ -341,6 +362,12 @@ static int process_ns_measurement(struct file *file, const struct cred *cred,
 
 	if (!ima_ns->policy_data->ima_policy_flag)
 		return 0;
+
+	if (ima_ns != current_ima_ns) {
+		iint = integrity_iint_rb_find(ima_ns->iint_tree, inode);
+		if (!iint)
+			return 0;
+	}
 
 	/* Return an IMA_MEASURE, IMA_APPRAISE, IMA_AUDIT action
 	 * bitmask based on the appraise/audit/measurement policy.
@@ -362,10 +389,16 @@ static int process_ns_measurement(struct file *file, const struct cred *cred,
 
 	inode_lock(inode);
 
-	if (action) {
+	if (action && !iint) {
 		iint = integrity_inode_rb_get(ima_ns->iint_tree, inode);
 		if (!iint)
 			rc = -ENOMEM;
+	}
+
+	if ((ima_ns == current_ima_ns) && iint && readcount_open &&
+	    ((file->f_mode & (FMODE_READ | FMODE_WRITE)) == FMODE_READ)) {
+		iint_readcount_inc(iint);
+		((struct ima_file_data *)file->f_ima)->is_readcount = true;
 	}
 
 	if (!rc && violation_check)
@@ -518,7 +551,7 @@ out:
 
 static int process_measurement(struct file *file, const struct cred *cred,
 			       u32 secid, char *buf, loff_t size, int mask,
-			       enum ima_hooks func)
+			       enum ima_hooks func, bool readcount_open)
 {
 	int ret;
 	struct ima_namespace *ima_ns;
@@ -533,7 +566,7 @@ static int process_measurement(struct file *file, const struct cred *cred,
 			continue;
 
 		ret = process_ns_measurement(file, cred, secid, buf, size, mask,
-					     func, ima_ns);
+					     func, ima_ns, readcount_open);
 		if (ret != 0)
 			break;
 	}
@@ -560,7 +593,7 @@ int ima_file_mmap(struct file *file, unsigned long prot)
 	if (file && (prot & PROT_EXEC)) {
 		security_task_getsecid(current, &secid);
 		return process_measurement(file, current_cred(), secid, NULL,
-					   0, MAY_EXEC, MMAP_CHECK);
+					   0, MAY_EXEC, MMAP_CHECK, true);
 	}
 
 	return 0;
@@ -640,13 +673,13 @@ int ima_bprm_check(struct linux_binprm *bprm)
 
 	security_task_getsecid(current, &secid);
 	ret = process_measurement(bprm->file, current_cred(), secid, NULL, 0,
-				  MAY_EXEC, BPRM_CHECK);
+				  MAY_EXEC, BPRM_CHECK, false);
 	if (ret)
 		return ret;
 
 	security_cred_getsecid(bprm->cred, &secid);
 	return process_measurement(bprm->file, bprm->cred, secid, NULL, 0,
-				   MAY_EXEC, CREDS_CHECK);
+				   MAY_EXEC, CREDS_CHECK, false);
 }
 
 /**
@@ -667,7 +700,7 @@ int ima_file_check(struct file *file, int mask)
 	security_task_getsecid(current, &secid);
 	rc = process_measurement(file, current_cred(), secid, NULL, 0,
 				 mask & (MAY_READ | MAY_WRITE | MAY_EXEC |
-					 MAY_APPEND), FILE_CHECK);
+					 MAY_APPEND), FILE_CHECK, true);
 	if (ima_current_is_parser() && !rc)
 		ima_check_measured_appraised(file);
 	return rc;
@@ -843,7 +876,7 @@ int ima_read_file(struct file *file, enum kernel_read_file_id read_id,
 	func = read_idmap[read_id] ?: FILE_CHECK;
 	security_task_getsecid(current, &secid);
 	return process_measurement(file, current_cred(), secid, NULL,
-				   0, MAY_READ, func);
+				   0, MAY_READ, func, false);
 }
 
 const int read_idmap[READING_MAX_ID] = {
@@ -888,7 +921,7 @@ int ima_post_read_file(struct file *file, void *buf, loff_t size,
 	func = read_idmap[read_id] ?: FILE_CHECK;
 	security_task_getsecid(current, &secid);
 	return process_measurement(file, current_cred(), secid, buf, size,
-				   MAY_READ, func);
+				   MAY_READ, func, false);
 }
 
 /**
