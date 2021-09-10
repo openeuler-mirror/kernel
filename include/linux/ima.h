@@ -220,6 +220,7 @@ struct ima_namespace {
 	atomic_t inactive; /* set only when ns is added to the cleanup list */
 	bool frozen;
 	struct ima_policy_data *policy_data;
+	struct integrity_iint_tree *iint_tree;
 } __randomize_layout;
 
 extern struct ima_namespace init_ima_ns;
