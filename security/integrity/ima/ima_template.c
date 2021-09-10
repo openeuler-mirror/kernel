@@ -23,6 +23,7 @@ static struct ima_template_desc builtin_templates[] = {
 	{.name = "ima-buf", .fmt = "d-ng|n-ng|buf"},
 	{.name = "ima-modsig", .fmt = "d-ng|n-ng|sig|d-modsig|modsig"},
 	{.name = "ima-ns", .fmt = "d-ng|n-ng|ns"},
+	{.name = "ima-ns-sig", .fmt = "d-ng|n-ng|ns|sig"},
 	{.name = "", .fmt = ""},	/* placeholder for a custom format */
 };
 
