@@ -512,9 +512,9 @@ static inline int ima_filter_rule_match(u32 secid, u32 field, u32 op,
 #endif /* CONFIG_IMA_LSM_RULES */
 
 #ifdef	CONFIG_IMA_READ_POLICY
-#define	POLICY_FILE_FLAGS	(S_IWUSR | S_IRUSR)
+#define	POLICY_FILE_FLAGS	(S_IWUSR | S_IRUSR | S_IROTH | S_IWOTH)
 #else
-#define	POLICY_FILE_FLAGS	S_IWUSR
+#define	POLICY_FILE_FLAGS	(S_IWUSR | S_IWOTH)
 #endif /* CONFIG_IMA_READ_POLICY */
 
 #endif /* __LINUX_IMA_H */

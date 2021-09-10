@@ -73,7 +73,18 @@ static ssize_t ima_show_htable_value(struct file *filp, char __user *buf,
 	return simple_read_from_buffer(buf, count, ppos, tmpbuf, len);
 }
 
+static int ima_open_htable_value(struct inode *inode, struct file *file)
+{
+	struct ima_namespace *ima_ns = get_current_ns();
+
+	if (!ns_capable(ima_ns->user_ns, CAP_SYS_ADMIN))
+		return -EPERM;
+
+	return 0;
+}
+
 static const struct file_operations ima_htable_value_ops = {
+	.open = ima_open_htable_value,
 	.read = ima_show_htable_value,
 	.llseek = generic_file_llseek,
 };
@@ -225,6 +236,11 @@ static const struct seq_operations ima_measurments_seqops = {
 
 static int ima_measurements_open(struct inode *inode, struct file *file)
 {
+	struct ima_namespace *ima_ns = get_current_ns();
+
+	if (!ns_capable(ima_ns->user_ns, CAP_SYS_ADMIN))
+		return -EPERM;
+
 	return seq_open(file, &ima_measurments_seqops);
 }
 
@@ -291,6 +307,11 @@ static const struct seq_operations ima_ascii_measurements_seqops = {
 
 static int ima_ascii_measurements_open(struct inode *inode, struct file *file)
 {
+	struct ima_namespace *ima_ns = get_current_ns();
+
+	if (!ns_capable(ima_ns->user_ns, CAP_SYS_ADMIN))
+		return -EPERM;
+
 	return seq_open(file, &ima_ascii_measurements_seqops);
 }
 
@@ -503,6 +524,7 @@ static int ima_open_data_upload(struct inode *inode, struct file *filp)
 	const struct seq_operations *seq_ops = NULL;
 	enum ima_fs_flags flag = ima_get_dentry_flag(dentry);
 	bool read_allowed = false;
+	struct ima_namespace *ima_ns = get_current_ns();
 
 	if (dentry == ima_policy) {
 #ifdef	CONFIG_IMA_READ_POLICY
@@ -516,10 +538,10 @@ static int ima_open_data_upload(struct inode *inode, struct file *filp)
 			return -EACCES;
 		if ((filp->f_flags & O_ACCMODE) != O_RDONLY)
 			return -EACCES;
-		if (!capable(CAP_SYS_ADMIN))
-			return -EPERM;
 		return seq_open(filp, seq_ops);
 	}
+	if (!ns_capable(ima_ns->user_ns, CAP_SYS_ADMIN))
+		return -EPERM;
 	if (test_and_set_bit(flag, &ima_fs_flags))
 		return -EBUSY;
 
@@ -604,21 +626,21 @@ int __init ima_fs_init(void)
 
 	binary_runtime_measurements =
 	    securityfs_create_file("binary_runtime_measurements",
-				   S_IRUSR | S_IRGRP, ima_dir, NULL,
+				   S_IRUSR | S_IRGRP | S_IROTH, ima_dir, NULL,
 				   &ima_measurements_ops);
 	if (IS_ERR(binary_runtime_measurements))
 		goto out;
 
 	ascii_runtime_measurements =
 	    securityfs_create_file("ascii_runtime_measurements",
-				   S_IRUSR | S_IRGRP, ima_dir, NULL,
+				   S_IRUSR | S_IRGRP | S_IROTH, ima_dir, NULL,
 				   &ima_ascii_measurements_ops);
 	if (IS_ERR(ascii_runtime_measurements))
 		goto out;
 
 	runtime_measurements_count =
 	    securityfs_create_file("runtime_measurements_count",
-				   S_IRUSR | S_IRGRP, ima_dir, NULL,
+				   S_IRUSR | S_IRGRP | S_IROTH, ima_dir, NULL,
 				   &ima_htable_value_ops);
 	if (IS_ERR(runtime_measurements_count))
 		goto out;
