@@ -109,6 +109,8 @@ static struct file *__alloc_file(int flags, const struct cred *cred)
 		return ERR_PTR(error);
 	}
 
+	ima_file_alloc(f);
+
 	atomic_long_set(&f->f_count, 1);
 	rwlock_init(&f->f_owner.lock);
 	spin_lock_init(&f->f_lock);
@@ -259,8 +261,10 @@ static void __fput(struct file *file)
 	struct inode *inode = file->f_inode;
 	fmode_t mode = file->f_mode;
 
-	if (unlikely(!(file->f_mode & FMODE_OPENED)))
+	if (unlikely(!(file->f_mode & FMODE_OPENED))) {
+		ima_file_free(file);
 		goto out;
+	}
 
 	might_sleep();
 
