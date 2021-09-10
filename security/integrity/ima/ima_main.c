@@ -124,7 +124,8 @@ static void ima_rdwr_violation_check(struct file *file,
 				     int must_measure,
 				     char **pathbuf,
 				     const char **pathname,
-				     char *filename)
+				     char *filename,
+				     struct ima_namespace *ima_ns)
 {
 	struct inode *inode = file_inode(file);
 	fmode_t mode = file->f_mode;
@@ -294,7 +295,8 @@ out:
 
 static int process_measurement(struct file *file, const struct cred *cred,
 			       u32 secid, char *buf, loff_t size, int mask,
-			       enum ima_hooks func)
+			       enum ima_hooks func,
+			       struct ima_namespace *ima_ns)
 {
 	struct inode *inode = file_inode(file);
 	struct integrity_iint_cache *iint = NULL;
@@ -319,7 +321,7 @@ static int process_measurement(struct file *file, const struct cred *cred,
 	 * Included is the appraise submask.
 	 */
 	action = ima_get_action(inode, cred, secid, mask, func, &pcr,
-				&template_desc, NULL);
+				&template_desc, NULL, ima_ns);
 	violation_check = ((func == FILE_CHECK || func == MMAP_CHECK) &&
 			   (ima_policy_flag & IMA_MEASURE));
 	if (!action && !violation_check)
@@ -341,7 +343,7 @@ static int process_measurement(struct file *file, const struct cred *cred,
 
 	if (!rc && violation_check)
 		ima_rdwr_violation_check(file, iint, action & IMA_MEASURE,
-					 &pathbuf, &pathname, filename);
+					 &pathbuf, &pathname, filename, ima_ns);
 
 	inode_unlock(inode);
 
@@ -442,10 +444,11 @@ static int process_measurement(struct file *file, const struct cred *cred,
 				      xattr_value, xattr_len, modsig, pcr,
 				      template_desc,
 				      ima_digest_allow(found_digest,
-						       IMA_MEASURE));
+						       IMA_MEASURE),
+				      ima_ns);
 
 	if (rc == 0 && (action & IMA_APPRAISE_SUBMASK)) {
-		rc = ima_check_blacklist(iint, modsig, pcr);
+		rc = ima_check_blacklist(iint, modsig, pcr, ima_ns);
 		if (rc != -EPERM) {
 			inode_lock(inode);
 			rc = ima_appraise_measurement(func, iint, file,
@@ -501,7 +504,7 @@ int ima_file_mmap(struct file *file, unsigned long prot)
 	if (file && (prot & PROT_EXEC)) {
 		security_task_getsecid(current, &secid);
 		return process_measurement(file, current_cred(), secid, NULL,
-					   0, MAY_EXEC, MMAP_CHECK);
+					   0, MAY_EXEC, MMAP_CHECK, NULL);
 	}
 
 	return 0;
@@ -540,7 +543,7 @@ int ima_file_mprotect(struct vm_area_struct *vma, unsigned long prot)
 	security_task_getsecid(current, &secid);
 	inode = file_inode(vma->vm_file);
 	action = ima_get_action(inode, current_cred(), secid, MAY_EXEC,
-				MMAP_CHECK, &pcr, &template, 0);
+				MMAP_CHECK, &pcr, &template, 0, NULL);
 
 	/* Is the mmap'ed file in policy? */
 	if (!(action & (IMA_MEASURE | IMA_APPRAISE_SUBMASK)))
@@ -579,13 +582,13 @@ int ima_bprm_check(struct linux_binprm *bprm)
 
 	security_task_getsecid(current, &secid);
 	ret = process_measurement(bprm->file, current_cred(), secid, NULL, 0,
-				  MAY_EXEC, BPRM_CHECK);
+				  MAY_EXEC, BPRM_CHECK, NULL);
 	if (ret)
 		return ret;
 
 	security_cred_getsecid(bprm->cred, &secid);
 	return process_measurement(bprm->file, bprm->cred, secid, NULL, 0,
-				   MAY_EXEC, CREDS_CHECK);
+				   MAY_EXEC, CREDS_CHECK, NULL);
 }
 
 /**
@@ -606,7 +609,7 @@ int ima_file_check(struct file *file, int mask)
 	security_task_getsecid(current, &secid);
 	rc = process_measurement(file, current_cred(), secid, NULL, 0,
 				 mask & (MAY_READ | MAY_WRITE | MAY_EXEC |
-					 MAY_APPEND), FILE_CHECK);
+					 MAY_APPEND), FILE_CHECK, NULL);
 	if (ima_current_is_parser() && !rc)
 		ima_check_measured_appraised(file);
 	return rc;
@@ -685,7 +688,7 @@ void ima_post_create_tmpfile(struct inode *inode)
 	struct integrity_iint_cache *iint;
 	int must_appraise;
 
-	must_appraise = ima_must_appraise(inode, MAY_ACCESS, FILE_CHECK);
+	must_appraise = ima_must_appraise(inode, MAY_ACCESS, FILE_CHECK, NULL);
 	if (!must_appraise)
 		return;
 
@@ -712,7 +715,7 @@ void ima_post_path_mknod(struct dentry *dentry)
 	struct inode *inode = dentry->d_inode;
 	int must_appraise;
 
-	must_appraise = ima_must_appraise(inode, MAY_ACCESS, FILE_CHECK);
+	must_appraise = ima_must_appraise(inode, MAY_ACCESS, FILE_CHECK, NULL);
 	if (!must_appraise)
 		return;
 
@@ -763,7 +766,7 @@ int ima_read_file(struct file *file, enum kernel_read_file_id read_id,
 	func = read_idmap[read_id] ?: FILE_CHECK;
 	security_task_getsecid(current, &secid);
 	return process_measurement(file, current_cred(), secid, NULL,
-				   0, MAY_READ, func);
+				   0, MAY_READ, func, NULL);
 }
 
 const int read_idmap[READING_MAX_ID] = {
@@ -807,7 +810,7 @@ int ima_post_read_file(struct file *file, void *buf, loff_t size,
 	func = read_idmap[read_id] ?: FILE_CHECK;
 	security_task_getsecid(current, &secid);
 	return process_measurement(file, current_cred(), secid, buf, size,
-				   MAY_READ, func);
+				   MAY_READ, func, NULL);
 }
 
 /**
@@ -905,7 +908,8 @@ int ima_post_load_data(char *buf, loff_t size,
  */
 void process_buffer_measurement(struct inode *inode, const void *buf, int size,
 				const char *eventname, enum ima_hooks func,
-				int pcr, const char *keyring)
+				int pcr, const char *keyring,
+				struct ima_namespace *ima_ns)
 {
 	int ret = 0;
 	const char *audit_cause = "ENOMEM";
@@ -937,7 +941,7 @@ void process_buffer_measurement(struct inode *inode, const void *buf, int size,
 	if (func) {
 		security_task_getsecid(current, &secid);
 		action = ima_get_action(inode, current_cred(), secid, 0, func,
-					&pcr, &template, keyring);
+					&pcr, &template, keyring, NULL);
 		if (!(action & IMA_MEASURE))
 			return;
 	}
@@ -1009,7 +1013,8 @@ void ima_kexec_cmdline(int kernel_fd, const void *buf, int size)
 		return;
 
 	process_buffer_measurement(file_inode(f.file), buf, size,
-				   "kexec-cmdline", KEXEC_CMDLINE, 0, NULL);
+				   "kexec-cmdline", KEXEC_CMDLINE, 0, NULL,
+				   NULL);
 	fdput(f);
 }
 
@@ -1038,7 +1043,7 @@ static int __init init_ima(void)
 		pr_warn("Couldn't register LSM notifier, error %d\n", error);
 
 	if (!error)
-		ima_update_policy_flag();
+		ima_update_policy_flag(&init_ima_ns);
 
 	return error;
 }

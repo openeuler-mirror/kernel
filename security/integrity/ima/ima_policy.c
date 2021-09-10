@@ -692,6 +692,7 @@ static int get_subaction(struct ima_rule_entry *rule, enum ima_hooks func)
  * @template_desc: the template that should be used for this rule
  * @keyring: the keyring name, if given, to be used to check in the policy.
  *           keyring can be NULL if func is anything other than KEY_CHECK.
+ * @ima_ns: IMA namespace whose policies are being checked
  *
  * Measure decision based on func/mask/fsmagic and LSM(subj/obj/type)
  * conditions.
@@ -703,7 +704,8 @@ static int get_subaction(struct ima_rule_entry *rule, enum ima_hooks func)
 int ima_match_policy(struct inode *inode, const struct cred *cred, u32 secid,
 		     enum ima_hooks func, int mask, int flags, int *pcr,
 		     struct ima_template_desc **template_desc,
-		     const char *keyring)
+		     const char *keyring,
+		     struct ima_namespace *ima_ns)
 {
 	struct ima_rule_entry *entry;
 	int action = 0, actmask = flags | (flags << 1);
@@ -756,8 +758,9 @@ int ima_match_policy(struct inode *inode, const struct cred *cred, u32 secid,
  * loaded policy.  Based on this flag, the decision to short circuit
  * out of a function or not call the function in the first place
  * can be made earlier.
+ * @ima_ns: pointer to the ima namespace whose policy flag is updated
  */
-void ima_update_policy_flag(void)
+void ima_update_policy_flag(struct ima_namespace *ima_ns)
 {
 	struct ima_rule_entry *entry;
 
@@ -786,7 +789,8 @@ static int ima_appraise_flag(enum ima_hooks func)
 	return 0;
 }
 
-static void __init add_rules(struct ima_rule_entry *entries, int count,
+static void __init add_rules(struct ima_policy_data *policy_data,
+			     struct ima_rule_entry *entries, int count,
 			     enum policy_rule_list policy_rule)
 {
 	int i = 0;
@@ -914,19 +918,20 @@ void __init ima_init_policy(void)
 
 	/* if !ima_policy, we load NO default rules */
 	if (ima_policy)
-		add_rules(dont_measure_rules, ARRAY_SIZE(dont_measure_rules),
+		add_rules(NULL,
+			  dont_measure_rules, ARRAY_SIZE(dont_measure_rules),
 			  IMA_DEFAULT_POLICY);
 
 	switch (ima_policy) {
 	case ORIGINAL_TCB:
-		add_rules(original_measurement_rules,
+		add_rules(NULL, original_measurement_rules,
 			  ARRAY_SIZE(original_measurement_rules),
 			  IMA_DEFAULT_POLICY);
 		break;
 	case EXEC_TCB:
 		fallthrough;
 	case DEFAULT_TCB:
-		add_rules(default_measurement_rules,
+		add_rules(NULL, default_measurement_rules,
 			  ARRAY_SIZE(default_measurement_rules),
 			  IMA_DEFAULT_POLICY);
 	default:
@@ -934,7 +939,7 @@ void __init ima_init_policy(void)
 	}
 
 	if (ima_policy)
-		add_rules(&ima_parser_measure_rule, 1, IMA_DEFAULT_POLICY);
+		add_rules(NULL, &ima_parser_measure_rule, 1, IMA_DEFAULT_POLICY);
 
 	/*
 	 * Based on runtime secure boot flags, insert arch specific measurement
@@ -946,7 +951,7 @@ void __init ima_init_policy(void)
 	if (!arch_entries)
 		pr_info("No architecture policies found\n");
 	else
-		add_rules(arch_policy_entry, arch_entries,
+		add_rules(NULL, arch_policy_entry, arch_entries,
 			  IMA_DEFAULT_POLICY | IMA_CUSTOM_POLICY);
 
 	/*
@@ -954,7 +959,8 @@ void __init ima_init_policy(void)
 	 * signatures, prior to other appraise rules.
 	 */
 	if (ima_use_secure_boot || ima_use_appraise_exec_tcb)
-		add_rules(secure_boot_rules, ARRAY_SIZE(secure_boot_rules),
+		add_rules(NULL,
+			  secure_boot_rules, ARRAY_SIZE(secure_boot_rules),
 			  IMA_DEFAULT_POLICY);
 
 	/*
@@ -966,32 +972,34 @@ void __init ima_init_policy(void)
 	build_appraise_entries = ARRAY_SIZE(build_appraise_rules);
 	if (build_appraise_entries) {
 		if (ima_use_secure_boot)
-			add_rules(build_appraise_rules, build_appraise_entries,
+			add_rules(NULL,
+				  build_appraise_rules, build_appraise_entries,
 				  IMA_CUSTOM_POLICY);
 		else
-			add_rules(build_appraise_rules, build_appraise_entries,
+			add_rules(NULL,
+				  build_appraise_rules, build_appraise_entries,
 				  IMA_DEFAULT_POLICY | IMA_CUSTOM_POLICY);
 	}
 
 	if (ima_use_appraise_tcb || ima_use_appraise_exec_tcb)
-		add_rules(default_appraise_rules,
+		add_rules(NULL, default_appraise_rules,
 			  ARRAY_SIZE(default_appraise_rules),
 			  IMA_DEFAULT_POLICY);
 
 	if (ima_use_appraise_exec_tcb)
-		add_rules(appraise_exec_rules,
+		add_rules(NULL, appraise_exec_rules,
 			  ARRAY_SIZE(appraise_exec_rules),
 			  IMA_DEFAULT_POLICY);
 
 	if (ima_use_secure_boot || ima_use_appraise_tcb ||
 	    ima_use_appraise_exec_tcb)
-		add_rules(&ima_parser_appraise_rule, 1, IMA_DEFAULT_POLICY);
+		add_rules(NULL, &ima_parser_appraise_rule, 1, IMA_DEFAULT_POLICY);
 
-	ima_update_policy_flag();
+	ima_update_policy_flag(NULL);
 }
 
 /* Make sure we have a valid policy, at least containing some rules. */
-int ima_check_policy(void)
+int ima_check_policy(const struct ima_namespace *ima_ns)
 {
 	if (list_empty(&ima_temp_rules))
 		return -EINVAL;
@@ -1027,7 +1035,7 @@ void ima_update_policy(void)
 		 */
 		kfree(arch_policy_entry);
 	}
-	ima_update_policy_flag();
+	ima_update_policy_flag(NULL);
 
 	/* Custom IMA policy has been loaded */
 	ima_process_queued_keys();

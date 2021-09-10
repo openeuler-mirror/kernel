@@ -81,10 +81,11 @@ __setup("ima_appraise_digest_list=", appraise_digest_list_setup);
 
 /*
  * is_ima_appraise_enabled - return appraise status
+ * @ima_ns: pointer to the ima namespace being checked
  *
  * Only return enabled, if not in ima_appraise="fix" or "log" modes.
  */
-bool is_ima_appraise_enabled(void)
+bool is_ima_appraise_enabled(const struct ima_namespace *ima_ns)
 {
 	return ima_appraise & IMA_APPRAISE_ENFORCE;
 }
@@ -94,7 +95,8 @@ bool is_ima_appraise_enabled(void)
  *
  * Return 1 to appraise or hash
  */
-int ima_must_appraise(struct inode *inode, int mask, enum ima_hooks func)
+int ima_must_appraise(struct inode *inode, int mask, enum ima_hooks func,
+		      struct ima_namespace *ima_ns)
 {
 	u32 secid;
 
@@ -103,7 +105,8 @@ int ima_must_appraise(struct inode *inode, int mask, enum ima_hooks func)
 
 	security_task_getsecid(current, &secid);
 	return ima_match_policy(inode, current_cred(), secid, func, mask,
-				IMA_APPRAISE | IMA_HASH, NULL, NULL, NULL);
+				IMA_APPRAISE | IMA_HASH, NULL, NULL, NULL,
+				NULL);
 }
 
 static int ima_fix_xattr(struct dentry *dentry,
@@ -331,7 +334,8 @@ static int modsig_verify(enum ima_hooks func, const struct modsig *modsig,
  * Returns -EPERM if the hash is blacklisted.
  */
 int ima_check_blacklist(struct integrity_iint_cache *iint,
-			const struct modsig *modsig, int pcr)
+			const struct modsig *modsig, int pcr,
+			struct ima_namespace *ima_ns)
 {
 	enum hash_algo hash_algo;
 	const u8 *digest = NULL;
@@ -348,7 +352,7 @@ int ima_check_blacklist(struct integrity_iint_cache *iint,
 		if ((rc == -EPERM) && (iint->flags & IMA_MEASURE))
 			process_buffer_measurement(NULL, digest, digestsize,
 						   "blacklisted-hash", NONE,
-						   pcr, NULL);
+						   pcr, NULL, NULL);
 	}
 
 	return rc;
@@ -575,7 +579,7 @@ void ima_inode_post_setattr(struct dentry *dentry)
 	    || !(inode->i_opflags & IOP_XATTR))
 		return;
 
-	action = ima_must_appraise(inode, MAY_ACCESS, POST_SETATTR);
+	action = ima_must_appraise(inode, MAY_ACCESS, POST_SETATTR, NULL);
 	iint = integrity_iint_find(inode);
 	if (iint) {
 		set_bit(IMA_CHANGE_ATTR, &iint->atomic_flags);

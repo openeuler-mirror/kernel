@@ -152,7 +152,7 @@ static inline void ima_post_key_create_or_update(struct key *keyring,
 #endif  /* CONFIG_IMA_MEASURE_ASYMMETRIC_KEYS */
 
 #ifdef CONFIG_IMA_APPRAISE
-extern bool is_ima_appraise_enabled(void);
+extern bool is_ima_appraise_enabled(const struct ima_namespace *ima_ns);
 extern void ima_inode_post_setattr(struct dentry *dentry);
 extern int ima_inode_setxattr(struct dentry *dentry, const char *xattr_name,
 		       const void *xattr_value, size_t xattr_value_len);
@@ -164,7 +164,7 @@ extern int ima_inode_removexattr(struct dentry *dentry, const char *xattr_name);
 extern void ima_inode_post_removexattr(struct dentry *dentry,
 				       const char *xattr_name);
 #else
-static inline bool is_ima_appraise_enabled(void)
+static inline bool is_ima_appraise_enabled(const struct ima_namespace *ima_ns)
 {
 	return 0;
 }

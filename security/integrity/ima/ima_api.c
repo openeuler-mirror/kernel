@@ -191,6 +191,7 @@ err_out:
  * @pcr: pointer filled in if matched measure policy sets pcr=
  * @template_desc: pointer filled in if matched measure policy sets template=
  * @keyring: keyring name used to determine the action
+ * @ima_ns: ima namespace whose policy data will be used
  *
  * The policy is defined in terms of keypairs:
  *		subj=, obj=, type=, func=, mask=, fsmagic=
@@ -206,14 +207,15 @@ err_out:
 int ima_get_action(struct inode *inode, const struct cred *cred, u32 secid,
 		   int mask, enum ima_hooks func, int *pcr,
 		   struct ima_template_desc **template_desc,
-		   const char *keyring)
+		   const char *keyring,
+		   struct ima_namespace *ima_ns)
 {
 	int flags = IMA_MEASURE | IMA_AUDIT | IMA_APPRAISE | IMA_HASH;
 
 	flags &= ima_policy_flag;
 
 	return ima_match_policy(inode, cred, secid, func, mask, flags, pcr,
-				template_desc, keyring);
+				template_desc, keyring, ima_ns);
 }
 
 /*
@@ -318,7 +320,8 @@ void ima_store_measurement(struct integrity_iint_cache *iint,
 			   struct evm_ima_xattr_data *xattr_value,
 			   int xattr_len, const struct modsig *modsig, int pcr,
 			   struct ima_template_desc *template_desc,
-			   struct ima_digest *digest)
+			   struct ima_digest *digest,
+			   struct ima_namespace *ima_ns)
 {
 	static const char op[] = "add_template_measure";
 	static const char audit_cause[] = "ENOMEM";
