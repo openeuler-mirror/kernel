@@ -240,9 +240,13 @@ struct ima_policy_data init_policy_data = {
 	.ima_rules = &init_policy_data.ima_default_rules,
 };
 
-int ima_default_measure_policy_setup(const char *str,
-				     struct ima_policy_setup_data *setup_data)
+int ima_default_measure_policy_setup(char *str, struct ima_namespace *ima_ns)
 {
+	struct ima_policy_setup_data *setup_data;
+
+	setup_data = (ima_ns == &init_ima_ns) ?
+		&init_policy_setup_data : ima_ns->policy_setup_for_children;
+
 	if (setup_data->ima_policy)
 		return 1;
 
@@ -252,7 +256,7 @@ int ima_default_measure_policy_setup(const char *str,
 
 static int __init default_measure_policy_setup(char *str)
 {
-	return ima_default_measure_policy_setup(str, &init_policy_setup_data);
+	return ima_default_measure_policy_setup(str, &init_ima_ns);
 }
 __setup("ima_tcb", default_measure_policy_setup);
 
@@ -261,15 +265,15 @@ static bool ima_fail_unverifiable_sigs __ro_after_init;
 /**
  * ima_policy_setup - parse policy configuration string "ima_policy="
  * @str: string to be parsed
- * @setup_data: pointer to a structure where parsed data is stored
- * @fail_unverifiable_sigs: boolean flag treated separately to preserve
- *                          __ro_after_init
+ * @ima_ns: pointer to the ima namespace which policy is being set
  */
-int ima_policy_setup(char *str,
-		     struct ima_policy_setup_data *setup_data,
-		     bool *fail_unverifiable_sigs)
+int ima_policy_setup(char *str, struct ima_namespace *ima_ns)
 {
 	char *p;
+	struct ima_policy_setup_data *setup_data;
+
+	setup_data = (ima_ns == &init_ima_ns) ?
+		&init_policy_setup_data : ima_ns->policy_setup_for_children;
 
 	while ((p = strsep(&str, " |\n")) != NULL) {
 		if (*p == ' ')
@@ -287,7 +291,7 @@ int ima_policy_setup(char *str,
 		else if (strcmp(p, "secure_boot") == 0)
 			setup_data->ima_use_secure_boot = true;
 		else if (strcmp(p, "fail_securely") == 0)
-			*fail_unverifiable_sigs = true;
+			setup_data->fail_unverifiable_sigs = true;
 		else
 			pr_err("policy \"%s\" not found", p);
 	}
@@ -297,21 +301,27 @@ int ima_policy_setup(char *str,
 
 static int __init policy_setup(char *str)
 {
-	return ima_policy_setup(str, &init_policy_setup_data,
-				&ima_fail_unverifiable_sigs);
+	ima_policy_setup(str, &init_ima_ns);
+	ima_fail_unverifiable_sigs =
+		init_policy_setup_data.fail_unverifiable_sigs;
+	return 1;
 }
 __setup("ima_policy=", policy_setup);
 
-int ima_default_appraise_policy_setup(const char *str,
-				      struct ima_policy_setup_data *setup_data)
+int ima_default_appraise_policy_setup(char *str, struct ima_namespace *ima_ns)
 {
+	struct ima_policy_setup_data *setup_data;
+
+	setup_data = (ima_ns == &init_ima_ns) ?
+		&init_policy_setup_data : ima_ns->policy_setup_for_children;
+
 	setup_data->ima_use_appraise_tcb = true;
 	return 1;
 }
 
 static int __init default_appraise_policy_setup(char *str)
 {
-	return ima_default_appraise_policy_setup(str, &init_policy_setup_data);
+	return ima_default_appraise_policy_setup(str, &init_ima_ns);
 }
 __setup("ima_appraise_tcb", default_appraise_policy_setup);
 

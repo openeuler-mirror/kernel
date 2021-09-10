@@ -235,6 +235,8 @@ struct ima_namespace {
 	struct list_head ns_measurements;
 	atomic_long_t ml_len; /* number of stored measurements in the list */
 	atomic_long_t violations;
+	char *x509_path_for_children;
+	struct ima_policy_setup_data *policy_setup_for_children;
 } __randomize_layout;
 
 extern struct ima_namespace init_ima_ns;
