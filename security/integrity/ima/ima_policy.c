@@ -19,6 +19,7 @@
 #include <linux/genhd.h>
 #include <linux/seq_file.h>
 #include <linux/ima.h>
+#include <linux/user_namespace.h>
 
 #include "ima.h"
 #include "ima_digest_list.h"
@@ -86,6 +87,10 @@ struct ima_rule_entry {
 	char *fsname;
 	struct ima_rule_opt_list *keyrings; /* Measure keys added to these keyrings */
 	struct ima_template_desc *template;
+	bool remap_uid; /* IDs of all subject oriented rules, added before the
+			 * user namespace mapping is defined,
+			 * have to be remapped.
+			 */
 };
 
 /*
@@ -573,6 +578,8 @@ static bool ima_match_rules(struct ima_rule_entry *rule, struct inode *inode,
 			    const char *keyring)
 {
 	int i;
+	kuid_t remapped_kuid;
+	struct ima_namespace *current_ima_ns = get_current_ns();
 
 	if (func == KEY_CHECK) {
 		return (rule->flags & IMA_FUNC) && (rule->func == func) &&
@@ -596,24 +603,49 @@ static bool ima_match_rules(struct ima_rule_entry *rule, struct inode *inode,
 	if ((rule->flags & IMA_FSUUID) &&
 	    !uuid_equal(&rule->fsuuid, &inode->i_sb->s_uuid))
 		return false;
-	if ((rule->flags & IMA_UID) && !rule->uid_op(cred->uid, rule->uid))
-		return false;
-	if (rule->flags & IMA_EUID) {
-		if (has_capability_noaudit(current, CAP_SETUID)) {
-			if (!rule->uid_op(cred->euid, rule->uid)
-			    && !rule->uid_op(cred->suid, rule->uid)
-			    && !rule->uid_op(cred->uid, rule->uid))
+	if (rule->flags & IMA_UID) {
+		if (rule->remap_uid) {
+			remapped_kuid = make_kuid(current_ima_ns->user_ns,
+						  __kuid_val(rule->uid));
+			if (!uid_valid(remapped_kuid))
 				return false;
-		} else if (!rule->uid_op(cred->euid, rule->uid))
+		} else
+			remapped_kuid = rule->uid;
+		if (!rule->uid_op(cred->uid, remapped_kuid))
+			return false;
+	}
+	if (rule->flags & IMA_EUID) {
+		if (rule->remap_uid) {
+			remapped_kuid = make_kuid(current_ima_ns->user_ns,
+						  __kuid_val(rule->uid));
+			if (!uid_valid(remapped_kuid))
+				return false;
+		} else
+			remapped_kuid = rule->uid;
+		if (has_capability_noaudit(current, CAP_SETUID)) {
+			if (!rule->uid_op(cred->euid, remapped_kuid)
+			    && !rule->uid_op(cred->suid, remapped_kuid)
+			    && !rule->uid_op(cred->uid, remapped_kuid))
+				return false;
+		} else if (!rule->uid_op(cred->euid, remapped_kuid))
 			return false;
 	}
 
-	if ((rule->flags & IMA_FOWNER) &&
-	    !rule->fowner_op(inode->i_uid, rule->fowner))
-		return false;
+	if (rule->flags & IMA_FOWNER) {
+		if (rule->remap_uid) {
+			remapped_kuid = make_kuid(current_ima_ns->user_ns,
+						  __kuid_val(rule->fowner));
+			if (!uid_valid(remapped_kuid))
+				return false;
+		} else
+			remapped_kuid = rule->fowner;
+		if (!rule->fowner_op(inode->i_uid, remapped_kuid))
+			return false;
+	}
 	if ((rule->flags & IMA_PARSER) &&
 	    !ima_current_is_parser())
 		return false;
+
 	for (i = 0; i < MAX_LSM_RULES; i++) {
 		int rc = 0;
 		u32 osid;
@@ -796,6 +828,9 @@ static void add_rules(struct ima_namespace *ima_ns,
 
 	for (i = 0; i < count; i++) {
 		struct ima_rule_entry *entry;
+		bool set_uidmap;
+
+		set_uidmap = userns_set_uidmap(ima_ns->user_ns);
 
 		if (setup_data->ima_policy == EXEC_TCB) {
 			if (entries == dont_measure_rules)
@@ -832,6 +867,17 @@ static void add_rules(struct ima_namespace *ima_ns,
 						GFP_KERNEL);
 				if (!entry)
 					continue;
+
+				if (!set_uidmap)
+					entry->remap_uid = true;
+				else {
+					entry->uid =
+						make_kuid(ima_ns->user_ns,
+							  __kuid_val(entry->uid));
+					entry->fowner =
+						make_kuid(ima_ns->user_ns,
+							  __kuid_val(entry->fowner));
+				}
 			}
 
 			list_add_tail(&entry->list,
@@ -843,6 +889,19 @@ static void add_rules(struct ima_namespace *ima_ns,
 					GFP_KERNEL);
 			if (!entry)
 				continue;
+
+			if (ima_ns != &init_ima_ns) {
+				if (!set_uidmap)
+					entry->remap_uid = true;
+				else {
+					entry->uid =
+						make_kuid(ima_ns->user_ns,
+							  __kuid_val(entry->uid));
+					entry->fowner =
+						make_kuid(ima_ns->user_ns,
+							  __kuid_val(entry->fowner));
+				}
+			}
 
 			list_add_tail(&entry->list,
 				      &ima_ns->policy_data->ima_policy_rules);
@@ -1318,6 +1377,10 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry,
 	ab = integrity_audit_log_start(audit_context(), GFP_KERNEL,
 				       AUDIT_INTEGRITY_POLICY_RULE);
 
+	if ((ima_ns != &init_ima_ns) &&
+	    (!userns_set_uidmap(ima_ns->user_ns)))
+		entry->remap_uid = true;
+
 	entry->uid = INVALID_UID;
 	entry->fowner = INVALID_UID;
 	entry->uid_op = &uid_eq;
@@ -1534,8 +1597,13 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry,
 
 			result = kstrtoul(args[0].from, 10, &lnum);
 			if (!result) {
-				entry->uid = make_kuid(current_user_ns(),
-						       (uid_t) lnum);
+				if (!entry->remap_uid)
+					entry->uid =
+						make_kuid(current_user_ns(),
+							  (uid_t) lnum);
+				else
+					entry->uid = KUIDT_INIT((uid_t) lnum);
+
 				if (!uid_valid(entry->uid) ||
 				    (uid_t)lnum != lnum)
 					result = -EINVAL;
@@ -1562,7 +1630,14 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry,
 
 			result = kstrtoul(args[0].from, 10, &lnum);
 			if (!result) {
-				entry->fowner = make_kuid(current_user_ns(), (uid_t)lnum);
+				if (!entry->remap_uid)
+					entry->fowner =
+						make_kuid(current_user_ns(),
+							  (uid_t) lnum);
+				else
+					entry->fowner =
+						KUIDT_INIT((uid_t) lnum);
+
 				if (!uid_valid(entry->fowner) || (((uid_t)lnum) != lnum))
 					result = -EINVAL;
 				else
