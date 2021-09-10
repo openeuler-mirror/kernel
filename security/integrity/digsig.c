@@ -171,8 +171,8 @@ out:
 	return __integrity_init_keyring(id, perm, restriction);
 }
 
-int __init integrity_add_key(const unsigned int id, const void *data,
-			     off_t size, key_perm_t perm)
+int integrity_add_key(const unsigned int id, const void *data,
+		      off_t size, key_perm_t perm)
 {
 	key_ref_t key;
 	int rc = 0;
@@ -196,7 +196,7 @@ int __init integrity_add_key(const unsigned int id, const void *data,
 
 }
 
-int __init integrity_load_x509(const unsigned int id, const char *path)
+int integrity_load_x509(const unsigned int id, const char *path)
 {
 	void *data = NULL;
 	size_t size;

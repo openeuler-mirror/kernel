@@ -49,6 +49,30 @@ static void dec_ima_namespaces(struct ucounts *ucounts)
 	return dec_ucount(ucounts, UCOUNT_IMA_NAMESPACES);
 }
 
+#ifdef CONFIG_IMA_LOAD_X509
+static int ima_ns_load_x509(struct ima_namespace *ima_ns)
+{
+	int res = 0;
+	int unset_flags =
+		ima_ns->policy_data->ima_policy_flag & IMA_APPRAISE;
+
+	if (!ima_ns->x509_path_for_children)
+		return res;
+
+	ima_ns->policy_data->ima_policy_flag &= ~unset_flags;
+	res = integrity_load_x509(INTEGRITY_KEYRING_IMA,
+				  ima_ns->x509_path_for_children);
+	ima_ns->policy_data->ima_policy_flag |= unset_flags;
+
+	return res;
+}
+#else
+static inline int ima_ns_load_x509(struct ima_namespace *ima_ns)
+{
+	return 0;
+}
+#endif
+
 static struct ima_namespace *ima_ns_alloc(void)
 {
 	struct ima_namespace *ima_ns;
@@ -361,6 +385,22 @@ static int imans_activate(struct ima_namespace *ima_ns)
 	list_add_tail(&ima_ns->list, &ima_ns_list);
 	up_write(&ima_ns_list_lock);
 
+	/* The x509 certificate has to be measured in the new namespace as
+	 * well as in the parent namespace, therefore it has to be loaded
+	 * after adding the namespace to the list of active namespaces. If
+	 * defined in the policy, the parent IMA ns can also appraise the
+	 * certificate, appraisal is disabled only in the new namespace. If
+	 * loading the certificate fails, print a warning but don't return an
+	 * error - there is no way to handle it well at this point, in
+	 * the worst case, user will end up with a failed appraisal */
+	ima_ns->activating_tsk = current;
+	res = ima_ns_load_x509(ima_ns);
+	ima_ns->activating_tsk = NULL;
+	if (res < 0) {
+		pr_err("IMA ns x509 cert. loading failed, appraisal will fail\n");
+		res = 0;
+	}
+
 	destroy_child_config(ima_ns);
 out:
 	mutex_unlock(&frozen_lock);
@@ -370,9 +410,10 @@ out:
 
 static int imans_install(struct nsset *nsset, struct ns_common *new)
 {
-	int res;
+	int res = 0;
 	struct nsproxy *nsproxy = nsset->nsproxy;
 	struct ima_namespace *ns = to_ima_ns(new);
+	struct ima_namespace *old_ns = nsproxy->ima_ns;
 
 	if (!current_is_single_threaded())
 		return -EUSERS;
@@ -381,19 +422,20 @@ static int imans_install(struct nsset *nsset, struct ns_common *new)
 	    !ns_capable(nsset->cred->user_ns, CAP_SYS_ADMIN))
 		return -EPERM;
 
-	res = imans_activate(ns);
-	if (res)
-		return res;
-
 	get_ima_ns(ns);
-	put_ima_ns(nsproxy->ima_ns);
+	put_ima_ns(old_ns);
 	nsproxy->ima_ns = ns;
 
 	get_ima_ns(ns);
 	put_ima_ns(nsproxy->ima_ns_for_children);
 	nsproxy->ima_ns_for_children = ns;
 
-	return res;
+	if (!ns->frozen && (ns->user_ns != nsset->cred->user_ns)) {
+		res = ima_swap_user_ns(ns, nsset->cred->user_ns);
+		if (res)
+			return res;
+	}
+	return imans_activate(ns);
 }
 
 int imans_on_fork(struct nsproxy *nsproxy, struct task_struct *tsk,
@@ -401,6 +443,7 @@ int imans_on_fork(struct nsproxy *nsproxy, struct task_struct *tsk,
 {
 	int res;
 	struct ima_namespace *ima_ns = nsproxy->ima_ns_for_children;
+	struct ima_namespace *old_ima_ns = nsproxy->ima_ns;
 
 	/* create_new_namespaces() already incremented the ref counter */
 	if (nsproxy->ima_ns == ima_ns)
@@ -416,15 +459,11 @@ int imans_on_fork(struct nsproxy *nsproxy, struct task_struct *tsk,
 			return res;
 	}
 
-	res = imans_activate(ima_ns);
-	if (res)
-		return res;
-
 	get_ima_ns(ima_ns);
-	put_ima_ns(nsproxy->ima_ns);
+	put_ima_ns(old_ima_ns);
 	nsproxy->ima_ns = ima_ns;
 
-	return res;
+	return imans_activate(ima_ns);
 }
 
 static struct user_namespace *imans_owner(struct ns_common *ns)
