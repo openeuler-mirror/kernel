@@ -196,8 +196,8 @@ err1:
  * Normally hash of the content is used as a data for this function.
  *
  */
-int digsig_verify(struct key *keyring, const char *sig, int siglen,
-						const char *data, int datalen)
+int digsig_verify(struct key *keyring, struct key_tag *domain_tag,
+		  const char *sig, int siglen, const char *data, int datalen)
 {
 	int err = -ENOMEM;
 	struct signature_hdr *sh = (struct signature_hdr *)sig;
@@ -217,14 +217,15 @@ int digsig_verify(struct key *keyring, const char *sig, int siglen,
 	if (keyring) {
 		/* search in specific keyring */
 		key_ref_t kref;
-		kref = keyring_search(make_key_ref(keyring, 1UL),
-				      &key_type_user, name, true);
+		kref = keyring_search_tag(make_key_ref(keyring, 1UL),
+					  &key_type_user, name,
+					  domain_tag, true);
 		if (IS_ERR(kref))
 			key = ERR_CAST(kref);
 		else
 			key = key_ref_to_ptr(kref);
 	} else {
-		key = request_key(&key_type_user, name, NULL);
+		key = request_key_tag(&key_type_user, name, domain_tag, NULL);
 	}
 	if (IS_ERR(key)) {
 		pr_err("key not found, id: %s\n", name);

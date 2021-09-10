@@ -20,7 +20,9 @@
 /*
  * Request an asymmetric key.
  */
-static struct key *request_asymmetric_key(struct key *keyring, uint32_t keyid)
+static struct key *request_asymmetric_key(struct key *keyring,
+					  struct key_tag *domain_tag,
+					  uint32_t keyid)
 {
 	struct key *key;
 	char name[12];
@@ -45,14 +47,16 @@ static struct key *request_asymmetric_key(struct key *keyring, uint32_t keyid)
 		/* search in specific keyring */
 		key_ref_t kref;
 
-		kref = keyring_search(make_key_ref(keyring, 1),
-				      &key_type_asymmetric, name, true);
+		kref = keyring_search_tag(make_key_ref(keyring, 1),
+					  &key_type_asymmetric, name,
+					  domain_tag, true);
 		if (IS_ERR(kref))
 			key = ERR_CAST(kref);
 		else
 			key = key_ref_to_ptr(kref);
 	} else {
-		key = request_key(&key_type_asymmetric, name, NULL);
+		key = request_key_tag(&key_type_asymmetric,
+				      name, domain_tag, NULL);
 	}
 
 	if (IS_ERR(key)) {
@@ -89,8 +93,9 @@ static struct key *request_asymmetric_key(struct key *keyring, uint32_t keyid)
 	return key;
 }
 
-int asymmetric_verify(struct key *keyring, const char *sig,
-		      int siglen, const char *data, int datalen)
+int asymmetric_verify(struct key *keyring, struct key_tag *domain_tag,
+		      const char *sig, int siglen,
+		      const char *data, int datalen)
 {
 	struct public_key_signature pks;
 	struct signature_v2_hdr *hdr = (struct signature_v2_hdr *)sig;
@@ -108,7 +113,8 @@ int asymmetric_verify(struct key *keyring, const char *sig,
 	if (hdr->hash_algo >= HASH_ALGO__LAST)
 		return -ENOPKG;
 
-	key = request_asymmetric_key(keyring, be32_to_cpu(hdr->keyid));
+	key = request_asymmetric_key(keyring, domain_tag,
+				     be32_to_cpu(hdr->keyid));
 	if (IS_ERR(key))
 		return PTR_ERR(key);
 
