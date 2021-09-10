@@ -19,6 +19,7 @@
 #include <net/net_namespace.h>
 #include <linux/ipc_namespace.h>
 #include <linux/time_namespace.h>
+#include <linux/ima.h>
 #include <linux/fs_struct.h>
 #include <linux/proc_fs.h>
 #include <linux/proc_ns.h>
@@ -46,6 +47,10 @@ struct nsproxy init_nsproxy = {
 #ifdef CONFIG_TIME_NS
 	.time_ns		= &init_time_ns,
 	.time_ns_for_children	= &init_time_ns,
+#endif
+#ifdef CONFIG_IMA_NS
+	.ima_ns			= &init_ima_ns,
+	.ima_ns_for_children	= &init_ima_ns,
 #endif
 };
 
@@ -121,8 +126,19 @@ static struct nsproxy *create_new_namespaces(unsigned long flags,
 	}
 	new_nsp->time_ns = get_time_ns(tsk->nsproxy->time_ns);
 
+	new_nsp->ima_ns_for_children = copy_ima_ns(flags, user_ns,
+					tsk->nsproxy->ima_ns_for_children);
+	if (IS_ERR(new_nsp->ima_ns_for_children)) {
+		err = PTR_ERR(new_nsp->ima_ns_for_children);
+		goto out_ima;
+	}
+	new_nsp->ima_ns = get_ima_ns(tsk->nsproxy->ima_ns);
+
 	return new_nsp;
 
+out_ima:
+	put_time_ns(new_nsp->time_ns);
+	put_time_ns(new_nsp->time_ns_for_children);
 out_time:
 	put_net(new_nsp->net_ns);
 out_net:
@@ -157,8 +173,10 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk)
 
 	if (likely(!(flags & (CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC |
 			      CLONE_NEWPID | CLONE_NEWNET |
-			      CLONE_NEWCGROUP | CLONE_NEWTIME)))) {
-		if (likely(old_ns->time_ns_for_children == old_ns->time_ns)) {
+			      CLONE_NEWCGROUP | CLONE_NEWTIME |
+			      CLONE_NEWIMA)))) {
+		if (likely((old_ns->time_ns_for_children == old_ns->time_ns) &&
+			   (old_ns->ima_ns_for_children == old_ns->ima_ns))) {
 			get_nsproxy(old_ns);
 			return 0;
 		}
@@ -186,6 +204,12 @@ int copy_namespaces(unsigned long flags, struct task_struct *tsk)
 		return ret;
 	}
 
+	ret = imans_on_fork(new_ns, tsk);
+	if (ret) {
+		free_nsproxy(new_ns);
+		return ret;
+	}
+
 	tsk->nsproxy = new_ns;
 	return 0;
 }
@@ -204,6 +228,10 @@ void free_nsproxy(struct nsproxy *ns)
 		put_time_ns(ns->time_ns);
 	if (ns->time_ns_for_children)
 		put_time_ns(ns->time_ns_for_children);
+	if (ns->ima_ns)
+		put_ima_ns(ns->ima_ns);
+	if (ns->ima_ns_for_children)
+		put_ima_ns(ns->ima_ns_for_children);
 	put_cgroup_ns(ns->cgroup_ns);
 	put_net(ns->net_ns);
 	kmem_cache_free(nsproxy_cachep, ns);
@@ -221,7 +249,7 @@ int unshare_nsproxy_namespaces(unsigned long unshare_flags,
 
 	if (!(unshare_flags & (CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWIPC |
 			       CLONE_NEWNET | CLONE_NEWPID | CLONE_NEWCGROUP |
-			       CLONE_NEWTIME)))
+			       CLONE_NEWTIME | CLONE_NEWIMA)))
 		return 0;
 
 	user_ns = new_cred ? new_cred->user_ns : current_user_ns();
@@ -471,6 +499,14 @@ static int validate_nsset(struct nsset *nsset, struct pid *pid)
 #ifdef CONFIG_TIME_NS
 	if (flags & CLONE_NEWTIME) {
 		ret = validate_ns(nsset, &nsp->time_ns->ns);
+		if (ret)
+			goto out;
+	}
+#endif
+
+#ifdef CONFIG_IMA_NS
+	if (flags & CLONE_NEWIMA) {
+		ret = validate_ns(nsset, &nsp->ima_ns->ns);
 		if (ret)
 			goto out;
 	}

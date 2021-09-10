@@ -275,7 +275,7 @@ static const struct file_operations ima_ascii_measurements_ops = {
 	.release = seq_release,
 };
 
-static ssize_t ima_read_file(char *path, struct dentry *dentry)
+static ssize_t ima_read_sfs_file(char *path, struct dentry *dentry)
 {
 	void *data = NULL;
 	char *datap;
@@ -398,7 +398,7 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 		goto out_free;
 
 	if (data[0] == '/') {
-		result = ima_read_file(data, dentry);
+		result = ima_read_sfs_file(data, dentry);
 	} else if (dentry == ima_policy) {
 		if (ima_appraise & IMA_APPRAISE_POLICY) {
 			pr_err("signed policy file (specified "
