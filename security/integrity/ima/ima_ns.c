@@ -181,11 +181,14 @@ int __init ima_init_namespace(void)
 
 static void destroy_ima_ns(struct ima_namespace *ns)
 {
+	bool is_init_ns = (ns == &init_ima_ns);
+
 	dec_ima_namespaces(ns->ucounts);
 	put_user_ns(ns->user_ns);
 	ns_free_inum(&ns->ns);
 	integrity_iint_tree_free(ns->iint_tree);
 	kfree(ns->iint_tree);
+	ima_delete_ns_rules(ns->policy_data, is_init_ns);
 	kfree(ns->policy_data);
 	kfree(ns);
 }

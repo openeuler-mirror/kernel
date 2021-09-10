@@ -118,15 +118,16 @@ err_out:
 #ifdef CONFIG_IMA_LOAD_X509
 void __init ima_load_x509(void)
 {
-	int unset_flags = ima_policy_flag & IMA_APPRAISE;
+	int unset_flags =
+		init_ima_ns.policy_data->ima_policy_flag & IMA_APPRAISE;
 
-	ima_policy_flag &= ~unset_flags;
+	init_ima_ns.policy_data->ima_policy_flag &= ~unset_flags;
 	integrity_load_x509(INTEGRITY_KEYRING_IMA, CONFIG_IMA_X509_PATH);
 
 	/* load also EVM key to avoid appraisal */
 	evm_load_x509();
 
-	ima_policy_flag |= unset_flags;
+	init_ima_ns.policy_data->ima_policy_flag |= unset_flags;
 }
 #endif
 

@@ -110,8 +110,11 @@ bool ima_queue_key(struct key *keyring, const void *payload,
 	if (!entry)
 		return false;
 
+	/* Queued keys will be processed according to the root IMA namespace
+	 * policy, therefore allow queueing only for the root namespace.
+	 */
 	mutex_lock(&ima_keys_lock);
-	if (!ima_process_keys) {
+	if (!ima_process_keys && (get_current_ns() == &init_ima_ns)) {
 		list_add_tail(&entry->list, &ima_keys);
 		queued = true;
 	}
@@ -158,12 +161,15 @@ void ima_process_queued_keys(void)
 
 	list_for_each_entry_safe(entry, tmp, &ima_keys, list) {
 		if (!timer_expired)
+			/* Queued keys are always measured according to the
+			 * initial namespace policy.
+			 */
 			process_buffer_measurement(NULL, entry->payload,
 						   entry->payload_len,
 						   entry->keyring_name,
 						   KEY_CHECK, 0,
 						   entry->keyring_name,
-						   NULL);
+						   &init_ima_ns);
 		list_del(&entry->list);
 		ima_free_key_entry(entry);
 	}

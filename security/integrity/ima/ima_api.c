@@ -212,7 +212,7 @@ int ima_get_action(struct inode *inode, const struct cred *cred, u32 secid,
 {
 	int flags = IMA_MEASURE | IMA_AUDIT | IMA_APPRAISE | IMA_HASH;
 
-	flags &= ima_policy_flag;
+	flags &= ima_ns->policy_data->ima_policy_flag;
 
 	return ima_match_policy(inode, cred, secid, func, mask, flags, pcr,
 				template_desc, keyring, ima_ns);
