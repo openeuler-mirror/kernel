@@ -753,7 +753,9 @@ static u32 stmmac_riwt2usec(u32 riwt, struct stmmac_priv *priv)
 }
 
 static int stmmac_get_coalesce(struct net_device *dev,
-			       struct ethtool_coalesce *ec)
+			       struct ethtool_coalesce *ec,
+			       struct kernel_ethtool_coalesce *kernel_coal,
+			       struct netlink_ext_ack *extack)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
 
@@ -769,7 +771,9 @@ static int stmmac_get_coalesce(struct net_device *dev,
 }
 
 static int stmmac_set_coalesce(struct net_device *dev,
-			       struct ethtool_coalesce *ec)
+			       struct ethtool_coalesce *ec,
+			       struct kernel_ethtool_coalesce *kernel_coal,
+			       struct netlink_ext_ack *extack)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
 	u32 rx_cnt = priv->plat->rx_queues_to_use;

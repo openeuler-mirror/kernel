@@ -623,7 +623,10 @@ static void ql_get_regs(struct net_device *ndev,
 		regs->len = sizeof(struct ql_reg_dump);
 }
 
-static int ql_get_coalesce(struct net_device *dev, struct ethtool_coalesce *c)
+static int ql_get_coalesce(struct net_device *dev,
+			   struct ethtool_coalesce *c,
+			   struct kernel_ethtool_coalesce *kernel_coal,
+			   struct netlink_ext_ack *extack)
 {
 	struct ql_adapter *qdev = netdev_priv(dev);
 
@@ -646,7 +649,10 @@ static int ql_get_coalesce(struct net_device *dev, struct ethtool_coalesce *c)
 	return 0;
 }
 
-static int ql_set_coalesce(struct net_device *ndev, struct ethtool_coalesce *c)
+static int ql_set_coalesce(struct net_device *ndev,
+			   struct ethtool_coalesce *c,
+			   struct kernel_ethtool_coalesce *kernel_coal,
+			   struct netlink_ext_ack *extack)
 {
 	struct ql_adapter *qdev = netdev_priv(ndev);
 
