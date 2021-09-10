@@ -312,10 +312,10 @@ int ima_match_policy(struct inode *inode, const struct cred *cred, u32 secid,
 void ima_init_policy(void);
 void ima_init_ns_policy(struct ima_namespace *ima_ns,
 			const struct ima_policy_setup_data *policy_setup_data);
-void ima_update_policy(void);
+void ima_update_policy(struct ima_namespace *ima_ns);
 void ima_update_policy_flag(struct ima_namespace *ima_ns);
-ssize_t ima_parse_add_rule(char *);
-void ima_delete_rules(void);
+ssize_t ima_parse_add_rule(char *rule, struct ima_namespace *ima_ns);
+void ima_delete_rules(struct ima_namespace *ima_ns);
 int ima_check_policy(const struct ima_namespace *ima_ns);
 void *ima_policy_start(struct seq_file *m, loff_t *pos);
 void *ima_policy_next(struct seq_file *m, void *v, loff_t *pos);

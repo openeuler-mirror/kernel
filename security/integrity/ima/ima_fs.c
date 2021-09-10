@@ -328,7 +328,8 @@ static const struct file_operations ima_ascii_measurements_ops = {
 	.release = seq_release,
 };
 
-static ssize_t ima_read_sfs_file(char *path, struct dentry *dentry)
+static ssize_t ima_read_sfs_file(char *path, struct dentry *dentry,
+				 struct ima_namespace *ima_ns)
 {
 	void *data = NULL;
 	char *datap;
@@ -370,7 +371,7 @@ static ssize_t ima_read_sfs_file(char *path, struct dentry *dentry)
 				break;
 
 			pr_debug("rule: %s\n", p);
-			rc = ima_parse_add_rule(p);
+			rc = ima_parse_add_rule(p, ima_ns);
 		} else if (dentry == digest_list_data ||
 			   dentry == digest_list_data_del) {
 			/* Only check size when adding digest lists */
@@ -452,7 +453,7 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 		goto out_free;
 
 	if (data[0] == '/') {
-		result = ima_read_sfs_file(data, dentry);
+		result = ima_read_sfs_file(data, dentry, ima_ns);
 	} else if (dentry == ima_policy) {
 		if (ima_ns->policy_data->ima_appraise & IMA_APPRAISE_POLICY) {
 			pr_err("signed policy file (specified "
@@ -462,7 +463,7 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 					    "signed policy required", 1, 0);
 			result = -EACCES;
 		} else {
-			result = ima_parse_add_rule(data);
+			result = ima_parse_add_rule(data, ima_ns);
 		}
 	} else if (dentry == digest_list_data) {
 		if (!ima_current_is_parser()) {
@@ -593,13 +594,13 @@ static int ima_release_data_upload(struct inode *inode, struct file *file)
 			    "policy_update", cause, !valid_policy, 0);
 
 	if (!valid_policy) {
-		ima_delete_rules();
+		ima_delete_rules(ima_ns);
 		valid_policy = 1;
 		clear_bit(flag, &ima_fs_flags);
 		return 0;
 	}
 
-	ima_update_policy();
+	ima_update_policy(ima_ns);
 #if !defined(CONFIG_IMA_WRITE_POLICY) && !defined(CONFIG_IMA_READ_POLICY)
 	securityfs_remove(ima_policy);
 	ima_policy = NULL;
