@@ -737,7 +737,7 @@ int ima_match_policy(struct inode *inode, const struct cred *cred, u32 secid,
 	bool fail_unverifiable_sigs;
 
 	if (template_desc)
-		*template_desc = ima_template_desc_current();
+		*template_desc = ima_template_desc_ns(ima_ns);
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(entry, ima_ns->policy_data->ima_rules, list) {

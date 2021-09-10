@@ -49,6 +49,28 @@ static void dec_ima_namespaces(struct ucounts *ucounts)
 	return dec_ucount(ucounts, UCOUNT_IMA_NAMESPACES);
 }
 
+static int ima_set_ns_template(struct ima_namespace *ima_ns)
+{
+	int result;
+
+	if (!ima_ns->ima_template)
+		ima_ns->ima_template =
+			lookup_template_desc(CONFIG_IMA_DEFAULT_TEMPLATE);
+
+	result = template_desc_init_fields(ima_ns->ima_template->fmt,
+					   &(ima_ns->ima_template->fields),
+					   &(ima_ns->ima_template->num_fields));
+	if (result < 0) {
+		pr_err("template %s init failed, result: %d\n",
+		       (strlen(ima_ns->ima_template->name) ?
+		       ima_ns->ima_template->name :
+		       ima_ns->ima_template->fmt), result);
+		ima_ns->ima_template = NULL;
+	}
+
+	return result;
+}
+
 static int ima_ns_add_boot_aggregate(struct ima_namespace *ima_ns)
 {
 	static const char op[] = "ns_add_boot_aggregate";
@@ -245,6 +267,7 @@ static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
 #endif
 	ns->x509_path_for_children = NULL;
 	ns->policy_setup_for_children = NULL;
+	ns->ima_template = NULL;
 
 	INIT_LIST_HEAD(&ns->ns_measurements);
 	INIT_LIST_HEAD(&ns->policy_data->ima_default_rules);
@@ -437,6 +460,10 @@ static int imans_activate(struct ima_namespace *ima_ns)
 	if (ima_ns->frozen)
 		goto out;
 
+	res = ima_set_ns_template(ima_ns);
+	if (res < 0)
+		goto out;
+
 	ima_set_ns_policy(ima_ns);
 
 	ima_ns->frozen = true;
@@ -556,10 +583,11 @@ struct ima_kernel_param {
 	int (*set)(char *val, struct ima_namespace *ima_ns);
 };
 
-/* TODO: add ima_template, ima_template_fmt, ima_hash, ... */
+/* TODO: add ima_template_fmt, ima_hash, ... */
 static const struct ima_kernel_param ima_kernel_params[] = {
 	{"ima_appraise", ima_default_appraise_setup},
 	{"ima_policy", ima_policy_setup},
+	{"ima_template", ima_template_setup},
 };
 static const size_t ima_kernel_params_size = ARRAY_SIZE(ima_kernel_params);
 
