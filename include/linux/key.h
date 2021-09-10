@@ -417,10 +417,11 @@ extern int restrict_link_reject(struct key *keyring,
 
 extern int keyring_clear(struct key *keyring);
 
-extern key_ref_t keyring_search(key_ref_t keyring,
-				struct key_type *type,
-				const char *description,
-				bool recurse);
+extern key_ref_t keyring_search_tag(key_ref_t keyring,
+				    struct key_type *type,
+				    const char *description,
+				    struct key_tag *domain_tag,
+				    bool recurse);
 
 extern int keyring_add_key(struct key *keyring,
 			   struct key *key);
@@ -429,6 +430,14 @@ extern int keyring_restrict(key_ref_t keyring, const char *type,
 			    const char *restriction);
 
 extern struct key *key_lookup(key_serial_t id);
+
+static inline key_ref_t keyring_search(key_ref_t keyring,
+				       struct key_type *type,
+				       const char *description,
+				       bool recurse)
+{
+	return keyring_search_tag(keyring, type, description, NULL, recurse);
+}
 
 static inline key_serial_t key_serial(const struct key *key)
 {
