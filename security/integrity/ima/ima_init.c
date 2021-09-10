@@ -68,6 +68,8 @@ static int __init ima_add_boot_aggregate(void)
 		char digest[TPM_MAX_DIGEST_SIZE];
 	} hash;
 
+	event_data.ns_id = get_ns_id(&init_ima_ns);
+
 	memset(iint, 0, sizeof(*iint));
 	memset(&hash, 0, sizeof(hash));
 	iint->ima_hash = &hash.hdr;

@@ -76,6 +76,8 @@ int ima_alloc_init_template(struct ima_event_data *event_data,
 		(*entry)->template_data_len += sizeof(len);
 		(*entry)->template_data_len += len;
 	}
+
+	(*entry)->ns_id = event_data->ns_id;
 	return 0;
 out:
 	ima_free_template_entry(*entry);
@@ -152,7 +154,8 @@ int ima_store_template(struct ima_template_entry *entry,
  */
 void ima_add_violation(struct file *file, const unsigned char *filename,
 		       struct integrity_iint_cache *iint,
-		       const char *op, const char *cause)
+		       const char *op, const char *cause,
+		       struct ima_namespace *ima_ns)
 {
 	struct ima_template_entry *entry;
 	struct inode *inode = file_inode(file);
@@ -162,6 +165,8 @@ void ima_add_violation(struct file *file, const unsigned char *filename,
 					     .violation = cause };
 	int violation = 1;
 	int result;
+
+	event_data.ns_id = get_ns_id(ima_ns);
 
 	/* can overflow, only indicator */
 	atomic_long_inc(&ima_htable.violations);
@@ -336,6 +341,7 @@ void ima_store_measurement(struct integrity_iint_cache *iint,
 					     .modsig = modsig };
 	int violation = 0;
 
+	event_data.ns_id = get_ns_id(ima_ns);
 	/*
 	 * We still need to store the measurement in the case of MODSIG because
 	 * we only have its contents to put in the list at the time of

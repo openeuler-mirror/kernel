@@ -149,10 +149,10 @@ static void ima_rdwr_violation_check(struct file *file,
 
 	if (send_tomtou)
 		ima_add_violation(file, *pathname, iint,
-				  "invalid_pcr", "ToMToU");
+				  "invalid_pcr", "ToMToU", ima_ns);
 	if (send_writers)
 		ima_add_violation(file, *pathname, iint,
-				  "invalid_pcr", "open_writers");
+				  "invalid_pcr", "open_writers", ima_ns);
 }
 
 static enum hash_algo ima_get_hash_algo(struct evm_ima_xattr_data *xattr_value,
@@ -1068,6 +1068,7 @@ void process_buffer_measurement(struct inode *inode, const void *buf, int size,
 		goto out;
 	}
 
+	event_data.ns_id = get_ns_id(ima_ns);
 	ret = ima_alloc_init_template(&event_data, &entry, template);
 	if (ret < 0) {
 		audit_cause = "alloc_entry";
