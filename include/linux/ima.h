@@ -232,6 +232,7 @@ struct ima_namespace {
 	bool frozen;
 	struct ima_policy_data *policy_data;
 	struct integrity_iint_tree *iint_tree;
+	struct list_head ns_measurements;
 } __randomize_layout;
 
 extern struct ima_namespace init_ima_ns;

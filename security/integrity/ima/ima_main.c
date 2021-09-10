@@ -1075,7 +1075,8 @@ void process_buffer_measurement(struct inode *inode, const void *buf, int size,
 		goto out;
 	}
 
-	ret = ima_store_template(entry, violation, NULL, buf, pcr, NULL);
+	ret = ima_store_template(entry, violation, NULL, buf, pcr, NULL,
+				 ima_ns);
 	if (ret < 0) {
 		audit_cause = "store_entry";
 		ima_free_template_entry(entry);
