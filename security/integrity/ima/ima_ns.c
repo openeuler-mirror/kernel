@@ -26,6 +26,7 @@
 #include <linux/rwsem.h>
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
+#include <linux/spinlock.h>
 
 #include "ima.h"
 
@@ -180,10 +181,28 @@ int __init ima_init_namespace(void)
 	return 0;
 }
 
+static void imans_remove_hash_entries(struct ima_namespace *ima_ns)
+{
+	struct list_head *ele;
+	struct ima_queue_entry *qe;
+
+	/* The namespace is inactive, no lock is needed */
+	list_for_each(ele, &ima_ns->ns_measurements) {
+		qe = list_entry(ele, struct ima_queue_entry, ns_later);
+		/* Don't free the queue entry, it should stay on the global
+		 * measurement list, remove only the hash table entry */
+		spin_lock(&ima_htable_lock);
+		hlist_del_rcu(&qe->hnext);
+		spin_unlock(&ima_htable_lock);
+		atomic_long_dec(&ima_htable.len);
+	}
+}
+
 static void destroy_ima_ns(struct ima_namespace *ns)
 {
 	bool is_init_ns = (ns == &init_ima_ns);
 
+	imans_remove_hash_entries(ns);
 	dec_ima_namespaces(ns->ucounts);
 	put_user_ns(ns->user_ns);
 	ns_free_inum(&ns->ns);
