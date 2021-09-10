@@ -67,6 +67,7 @@ struct ima_policy_setup_data {
 	bool ima_use_appraise_tcb;
 	bool ima_use_appraise_exec_tcb;
 	bool ima_use_appraise_exec_immutable;
+	bool fail_unverifiable_sigs;
 };
 
 /* IMA event related data */
@@ -321,15 +322,10 @@ void *ima_policy_next(struct seq_file *m, void *v, loff_t *pos);
 void ima_policy_stop(struct seq_file *m, void *v);
 int ima_policy_show(struct seq_file *m, void *v);
 
-int ima_policy_setup(char *str,
-		     struct ima_policy_setup_data *policy_setup_data,
-		     bool *fail_unverifiable_sigs);
-int ima_default_measure_policy_setup(const char *str,
-				     struct ima_policy_setup_data *setup_data);
-int ima_default_appraise_policy_setup(const char *str,
-				      struct ima_policy_setup_data *setup_data);
-int ima_default_appraise_setup(const char *str,
-			       struct ima_policy_setup_data *setup_data);
+int ima_policy_setup(char *str, struct ima_namespace *ima_ns);
+int ima_default_measure_policy_setup(char *str, struct ima_namespace *ima_ns);
+int ima_default_appraise_policy_setup(char *str, struct ima_namespace *ima_ns);
+int ima_default_appraise_setup(char *str, struct ima_namespace *ima_ns);
 
 /* Appraise integrity measurements */
 #define IMA_APPRAISE_ENFORCE	0x01
@@ -432,6 +428,11 @@ static inline struct ima_namespace *get_current_ns(void)
 
 void ima_delete_ns_rules(struct ima_policy_data *policy_data,
 			 bool is_root_ns);
+
+ssize_t ima_ns_write_x509_for_children(struct ima_namespace *ima_ns,
+				       char *x509_path);
+ssize_t ima_ns_write_kcmd_for_children(struct ima_namespace *ima_ns,
+				       char *kcmd);
 #else
 static inline int __init ima_init_namespace(void)
 {

@@ -31,6 +31,8 @@ struct ima_namespace init_ima_ns = {
 	.ns.inum = PROC_IMA_INIT_INO,
 #ifdef CONFIG_IMA_NS
 	.ns.ops = &imans_operations,
+	.x509_path_for_children = NULL,
+	.policy_setup_for_children = NULL,
 #endif
 	.frozen = true,
 	.policy_data = &init_policy_data,

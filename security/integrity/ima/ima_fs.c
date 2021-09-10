@@ -23,6 +23,8 @@
 #include <linux/vmalloc.h>
 #include <linux/file.h>
 #include <linux/ctype.h>
+#include <linux/string.h>
+#include <linux/kernel.h>
 
 #include "ima.h"
 #include "ima_digest_list.h"
@@ -39,6 +41,10 @@ static struct dentry *ima_policy;
 static struct dentry *digests_count;
 static struct dentry *digest_list_data;
 static struct dentry *digest_list_data_del;
+#ifdef CONFIG_IMA_NS
+static struct dentry *x509_for_children;
+static struct dentry *kcmd_for_children;
+#endif /* CONFIG_IMA_NS */
 
 bool ima_canonical_fmt;
 static int __init default_canonical_fmt_setup(char *str)
@@ -51,6 +57,16 @@ static int __init default_canonical_fmt_setup(char *str)
 __setup("ima_canonical_fmt", default_canonical_fmt_setup);
 
 static int valid_policy = 1;
+
+static int ima_open_simple(struct inode *inode, struct file *file)
+{
+	struct ima_namespace *ima_ns = get_current_ns();
+
+	if (!ns_capable(ima_ns->user_ns, CAP_SYS_ADMIN))
+		return -EPERM;
+
+	return 0;
+}
 
 static ssize_t ima_show_htable_value(struct file *filp, char __user *buf,
 				     size_t count, loff_t *ppos)
@@ -73,18 +89,8 @@ static ssize_t ima_show_htable_value(struct file *filp, char __user *buf,
 	return simple_read_from_buffer(buf, count, ppos, tmpbuf, len);
 }
 
-static int ima_open_htable_value(struct inode *inode, struct file *file)
-{
-	struct ima_namespace *ima_ns = get_current_ns();
-
-	if (!ns_capable(ima_ns->user_ns, CAP_SYS_ADMIN))
-		return -EPERM;
-
-	return 0;
-}
-
 static const struct file_operations ima_htable_value_ops = {
-	.open = ima_open_htable_value,
+	.open = ima_open_simple,
 	.read = ima_show_htable_value,
 	.llseek = generic_file_llseek,
 };
@@ -613,6 +619,79 @@ static const struct file_operations ima_data_upload_ops = {
 	.llseek = generic_file_llseek,
 };
 
+#ifdef CONFIG_IMA_NS
+static int ima_open_for_children(struct inode *inode, struct file *file)
+{
+	struct ima_namespace *ima_ns = get_current_ns();
+
+	/* Allow to set children configuration only after unshare() */
+	if (ima_ns == current->nsproxy->ima_ns_for_children)
+		return -EPERM;
+
+	return ima_open_simple(inode, file);
+}
+
+static ssize_t ima_write_x509_for_children(struct file *file,
+					   const char __user *buf,
+					   size_t count, loff_t *ppos)
+{
+	ssize_t res;
+	char *x509_path;
+	struct ima_namespace *ima_ns = current->nsproxy->ima_ns_for_children;
+
+	/* Only allow < page size writes at the beginning of the file */
+	if ((*ppos != 0) || (count >= PAGE_SIZE))
+		return -EINVAL;
+
+	x509_path = memdup_user_nul(buf, count);
+	if (IS_ERR(x509_path))
+		return PTR_ERR(x509_path);
+
+	res = ima_ns_write_x509_for_children(ima_ns, x509_path);
+	if (res) {
+		kfree(x509_path);
+		count = res;
+	}
+
+	return count;
+}
+
+static const struct file_operations ima_x509_for_children_ops = {
+	.open = ima_open_for_children,
+	.write = ima_write_x509_for_children,
+};
+
+static ssize_t ima_write_kcmd_for_children(struct file *file,
+					   const char __user *buf,
+					   size_t count, loff_t *ppos)
+{
+	ssize_t res;
+	char *kcmd;
+	struct ima_namespace *ima_ns = current->nsproxy->ima_ns_for_children;
+
+	/* Only allow < page size writes at the beginning of the file */
+	if ((*ppos != 0) || (count >= PAGE_SIZE))
+		return -EINVAL;
+
+	kcmd = memdup_user_nul(buf, count);
+	if (IS_ERR(kcmd))
+		return PTR_ERR(kcmd);
+
+	res = ima_ns_write_kcmd_for_children(ima_ns, kcmd);
+	if (res)
+		count = res;
+
+	kfree(kcmd);
+
+	return count;
+}
+
+static const struct file_operations ima_kcmd_for_children_ops = {
+	.open = ima_open_for_children,
+	.write = ima_write_kcmd_for_children,
+};
+#endif /* CONFIG_IMA_NS */
+
 int __init ima_fs_init(void)
 {
 	ima_dir = securityfs_create_dir("ima", integrity_dir);
@@ -676,6 +755,22 @@ int __init ima_fs_init(void)
 	if (IS_ERR(digest_list_data_del))
 		goto out;
 #endif
+#ifdef CONFIG_IMA_NS
+	x509_for_children = securityfs_create_file("x509_for_children",
+						  0202,
+						  ima_dir, NULL,
+						  &ima_x509_for_children_ops);
+	if (IS_ERR(x509_for_children))
+		goto out;
+
+	kcmd_for_children = securityfs_create_file("kcmd_for_children",
+						   0202,
+						   ima_dir, NULL,
+						   &ima_kcmd_for_children_ops);
+	if (IS_ERR(kcmd_for_children))
+		goto out;
+#endif /* CONFIG_IMA_NS */
+
 	return 0;
 out:
 	securityfs_remove(digest_list_data_del);
@@ -688,5 +783,9 @@ out:
 	securityfs_remove(ima_symlink);
 	securityfs_remove(ima_dir);
 	securityfs_remove(ima_policy);
+#ifdef CONFIG_IMA_NS
+	securityfs_remove(x509_for_children);
+	securityfs_remove(kcmd_for_children);
+#endif /* CONFIG_IMA_NS */
 	return -1;
 }
