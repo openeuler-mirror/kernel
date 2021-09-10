@@ -565,7 +565,13 @@ int restrict_link_reject(struct key *keyring,
 bool key_default_cmp(const struct key *key,
 		     const struct key_match_data *match_data)
 {
-	return strcmp(key->description, match_data->raw_data) == 0;
+	bool match;
+
+	match = strcmp(key->description, match_data->raw_data) == 0;
+	if (match_data->domain_tag)
+		match &= key->index_key.domain_tag == match_data->domain_tag;
+
+	return match;
 }
 
 /*
@@ -957,6 +963,8 @@ key_ref_t keyring_search_tag(key_ref_t keyring,
 
 	if (recurse)
 		ctx.flags |= KEYRING_SEARCH_RECURSE;
+	if (domain_tag)
+		ctx.match_data.domain_tag = domain_tag;
 	if (type->match_preparse) {
 		ret = type->match_preparse(&ctx.match_data);
 		if (ret < 0)
