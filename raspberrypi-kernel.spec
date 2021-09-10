@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 5.9.0
+%global hulkrelease 5.10.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.7
+Release: %{hulkrelease}.8
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -174,6 +174,54 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Fri Sep 10 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.10.0.8
+- net: hns3: add ethtool support for CQE/EQE mode configuration
+- net: hns3: add support for EQE/CQE mode configuration
+- ethtool: extend coalesce setting uAPI with CQE mode
+- ethtool: add two coalesce attributes for CQE mode
+- ethtool: add ETHTOOL_COALESCE_ALL_PARAMS define
+- net: hns3: fix get wrong pfc_en when query PFC configuration
+- net: hns3: fix GRO configuration error after reset
+- net: hns3: change the method of getting cmd index in debugfs
+- net: hns3: fix duplicate node in VLAN list
+- net: hns3: fix speed unknown issue in bond 4
+- net: hns3: add waiting time before cmdq memory is released
+- net: hns3: clear hardware resource when loading driver
+- net: hns3: make array spec_opcode static const, makes object smaller
+- digest list: disable digest lists in non-root ima namespaces
+- ima: Introduce ima-ns-sig template
+- ima: fix a potential crash owing to the compiler optimisation
+- ima: Set ML template per ima namespace
+- ima: Add dummy boot aggregate to per ima namespace measurement list
+- ima: Load per ima namespace x509 certificate
+- integrity: Add key domain tag to the search criteria
+- ima: Add key domain to the ima namespace
+- keys: Allow to set key domain tag separately from the key type
+- keys: Include key domain tag in the iterative search
+- keys: Add domain tag to the keyring search criteria
+- ima: Remap IDs of subject based rules if necessary
+- user namespace: Add function that checks if the UID map is defined
+- ima: Parse per ima namespace policy file
+- ima: Configure the new ima namespace from securityfs
+- ima: Change the owning user namespace of the ima namespace if necessary
+- ima: Add the violation counter to the namespace
+- ima: Extend permissions to the ima securityfs entries
+- ima: Add a reader counter to the integrity inode data
+- ima: Add per namespace view of the measurement list
+- ima: Add a new ima template that includes namespace ID
+- ima: Check ima namespace ID during digest entry lookup
+- ima: Keep track of the measurment list per ima namespace
+- ima: Add ima namespace id to the measurement list related structures
+- ima: Enable per ima namespace policy settings
+- ima: Add integrity inode related data to the ima namespace
+- ima: Extend the APIs in the integrity subsystem
+- ima: Add ima namespace to the ima subsystem APIs
+- ima: Add methods for parsing ima policy configuration string
+- ima: Add ima policy related data to the ima namespace
+- ima: Bind ima namespace to the file descriptor
+- ima: Add a list of the installed ima namespaces
+- ima: Introduce ima namespace
+
 * Sat Sep 4 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-5.9.0.7
 - mm/page_alloc: further fix __alloc_pages_bulk() return value
 - mm/page_alloc: correct return value when failing at preparing
