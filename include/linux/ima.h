@@ -240,6 +240,7 @@ struct ima_namespace {
 #ifdef CONFIG_KEYS
 	struct key_tag *key_domain;
 #endif
+	struct task_struct *activating_tsk; /* used only for the ns activation */
 } __randomize_layout;
 
 extern struct ima_namespace init_ima_ns;

@@ -223,7 +223,7 @@ int integrity_digsig_verify(const unsigned int id, const char *sig, int siglen,
 int integrity_modsig_verify(unsigned int id, const struct modsig *modsig);
 
 int __init integrity_init_keyring(const unsigned int id);
-int __init integrity_load_x509(const unsigned int id, const char *path);
+int integrity_load_x509(const unsigned int id, const char *path);
 int __init integrity_load_cert(const unsigned int id, const char *source,
 			       const void *data, size_t len, key_perm_t perm);
 #else
