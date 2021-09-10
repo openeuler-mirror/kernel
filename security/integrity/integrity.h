@@ -184,10 +184,19 @@ static inline void ima_load_digest_lists(void)
 }
 #endif
 
+struct integrity_iint_tree {
+	rwlock_t lock;
+	struct rb_root root;
+};
+
 /* rbtree tree calls to lookup, insert, delete
  * integrity data associated with an inode.
  */
 struct integrity_iint_cache *integrity_iint_find(struct inode *inode);
+
+struct integrity_iint_cache *integrity_iint_rb_find(struct integrity_iint_tree
+						    *iint_tree,
+						    const struct inode *inode);
 
 int integrity_kernel_read(struct file *file, loff_t offset,
 			  void *addr, unsigned long count);
@@ -198,6 +207,8 @@ int integrity_kernel_read(struct file *file, loff_t offset,
 #define INTEGRITY_KEYRING_MAX		3
 
 extern struct dentry *integrity_dir;
+
+extern struct integrity_iint_tree init_iint_tree;
 
 struct modsig;
 
