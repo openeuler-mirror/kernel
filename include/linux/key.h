@@ -272,6 +272,12 @@ struct key {
 	 * restriction.
 	 */
 	struct key_restriction *restrict_link;
+
+	/* This is set on a keyring to indicate that every key added to this
+	 * keyring should be tagged with a given key domain tag. It is ignored
+	 * for the non-keyring keys and can be overridden by the key-type flags.
+	 */
+	unsigned long key_alloc_domain;
 };
 
 extern struct key *key_alloc(struct key_type *type,
@@ -290,6 +296,10 @@ extern struct key *key_alloc(struct key_type *type,
 #define KEY_ALLOC_BYPASS_RESTRICTION	0x0008	/* Override the check on restricted keyrings */
 #define KEY_ALLOC_UID_KEYRING		0x0010	/* allocating a user or user session keyring */
 #define KEY_ALLOC_SET_KEEP		0x0020	/* Set the KEEP flag on the key/keyring */
+
+/* Only one domain can be set */
+#define KEY_ALLOC_DOMAIN_IMA		0x0100  /* add IMA domain tag, based on the "current" */
+#define KEY_ALLOC_DOMAIN_MASK		0xFF00
 
 extern void key_revoke(struct key *key);
 extern void key_invalidate(struct key *key);
