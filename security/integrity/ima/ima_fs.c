@@ -60,10 +60,16 @@ static int valid_policy = 1;
 
 static int ima_open_simple(struct inode *inode, struct file *file)
 {
+	struct dentry *dentry = file_dentry(file);
 	struct ima_namespace *ima_ns = get_current_ns();
 
 	if (!ns_capable(ima_ns->user_ns, CAP_SYS_ADMIN))
 		return -EPERM;
+
+	if (dentry == digests_count) {
+		if (&init_ima_ns != get_current_ns())
+			return -EACCES;
+	}
 
 	return 0;
 }
@@ -552,9 +558,12 @@ static int ima_open_data_upload(struct inode *inode, struct file *filp)
 	if (test_and_set_bit(flag, &ima_fs_flags))
 		return -EBUSY;
 
-	if (dentry == digest_list_data || dentry == digest_list_data_del)
+	if (dentry == digest_list_data || dentry == digest_list_data_del) {
+		if (&init_ima_ns != get_current_ns())
+			return -EACCES;
 		if (ima_check_current_is_parser())
 			ima_set_parser();
+	}
 
 	return 0;
 }
