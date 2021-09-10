@@ -18,6 +18,16 @@
 #include "ima_digest_list.h"
 
 static bool ima_appraise_req_evm __ro_after_init;
+
+int ima_default_appraise_setup(const char *str,
+			       struct ima_policy_setup_data *setup_data)
+{
+	/* Currently unused. It will be implemented after namespacing ima
+	 * policy, when global variables are removed.
+	 */
+	return 1;
+}
+
 static int __init default_appraise_setup(char *str)
 {
 #ifdef CONFIG_IMA_APPRAISE_BOOTPARAM
