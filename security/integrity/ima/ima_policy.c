@@ -235,6 +235,17 @@ static struct list_head *ima_rules = &ima_default_rules;
 
 static int ima_policy __initdata;
 
+struct ima_policy_setup_data init_policy_setup_data = {
+#ifdef CONFIG_IMA_APPRAISE
+	.ima_appraise = IMA_APPRAISE_ENFORCE,
+#endif
+};
+struct ima_policy_data init_policy_data = {
+	.ima_default_rules = LIST_HEAD_INIT(init_policy_data.ima_default_rules),
+	.ima_policy_rules = LIST_HEAD_INIT(init_policy_data.ima_policy_rules),
+	.ima_temp_rules = LIST_HEAD_INIT(init_policy_data.ima_temp_rules),
+};
+
 static int __init default_measure_policy_setup(char *str)
 {
 	if (ima_policy)
@@ -837,6 +848,21 @@ static int __init ima_init_arch_policy(void)
 		i++;
 	}
 	return i;
+}
+
+/**
+ * ima_init_ns_policy - initialize the default measure rules.
+ * @ima_ns: pointer to the namespace whose rules are being initialized
+ * @setup_data: pointer to the policy setup data
+ */
+void ima_init_ns_policy(struct ima_namespace *ima_ns,
+			const struct ima_policy_setup_data *setup_data)
+{
+	/* Set policy rules to the empty set of default rules. The rest will be
+	 * implemented after namespacing policy.
+	 */
+	ima_ns->policy_data->ima_rules =
+		&ima_ns->policy_data->ima_default_rules;
 }
 
 /**
