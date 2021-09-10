@@ -858,7 +858,8 @@ static void add_rules(struct ima_namespace *ima_ns,
 	}
 }
 
-static int ima_parse_rule(char *rule, struct ima_rule_entry *entry);
+static int ima_parse_rule(char *rule, struct ima_rule_entry *entry,
+			  struct ima_namespace *ima_ns);
 
 static int ima_init_arch_policy(void)
 {
@@ -888,7 +889,8 @@ static int ima_init_arch_policy(void)
 		result = strlcpy(rule, *rules, sizeof(rule));
 
 		INIT_LIST_HEAD(&arch_policy_entry[i].list);
-		result = ima_parse_rule(rule, &arch_policy_entry[i]);
+		result = ima_parse_rule(rule, &arch_policy_entry[i],
+					&init_ima_ns);
 		if (result) {
 			pr_warn("Skipping unknown architecture policy rule: %s\n",
 				rule);
@@ -1044,10 +1046,8 @@ int ima_check_policy(const struct ima_namespace *ima_ns)
  * Policy rules are never deleted so ima_policy_flag gets zeroed only once when
  * we switch from the default policy to user defined.
  */
-void ima_update_policy(void)
+void ima_update_policy(struct ima_namespace *ima_ns)
 {
-	/* Update only the current ima namespace */
-	struct ima_namespace *ima_ns = get_current_ns();
 	struct list_head *policy = &ima_ns->policy_data->ima_policy_rules;
 
 	list_splice_tail_init_rcu(&ima_ns->policy_data->ima_temp_rules,
@@ -1305,7 +1305,8 @@ static bool ima_validate_rule(struct ima_rule_entry *entry)
 	return true;
 }
 
-static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
+static int ima_parse_rule(char *rule, struct ima_rule_entry *entry,
+			  struct ima_namespace *ima_ns)
 {
 	struct audit_buffer *ab;
 	char *from;
@@ -1313,7 +1314,6 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 	bool uid_token;
 	struct ima_template_desc *template_desc;
 	int result = 0;
-	struct ima_namespace *ima_ns = get_current_ns();
 
 	ab = integrity_audit_log_start(audit_context(), GFP_KERNEL,
 				       AUDIT_INTEGRITY_POLICY_RULE);
@@ -1692,19 +1692,18 @@ static int ima_parse_rule(char *rule, struct ima_rule_entry *entry)
 /**
  * ima_parse_add_rule - add a rule to ima_policy_rules
  * @rule - ima measurement policy rule
+ * @ima_ns - pointer to the ima namespace the rule will be added to
  *
  * Avoid locking by allowing just one writer at a time in ima_write_policy()
  * Returns the length of the rule parsed, an error code on failure
  */
-ssize_t ima_parse_add_rule(char *rule)
+ssize_t ima_parse_add_rule(char *rule, struct ima_namespace *ima_ns)
 {
 	static const char op[] = "update_policy";
 	char *p;
 	struct ima_rule_entry *entry;
 	ssize_t result, len;
 	int audit_info = 0;
-	/* Add rules only to the current ima namespace */
-	struct ima_namespace *ima_ns = get_current_ns();
 
 	p = strsep(&rule, "\n");
 	len = strlen(p) + 1;
@@ -1722,7 +1721,7 @@ ssize_t ima_parse_add_rule(char *rule)
 
 	INIT_LIST_HEAD(&entry->list);
 
-	result = ima_parse_rule(p, entry);
+	result = ima_parse_rule(p, entry, ima_ns);
 	if (result) {
 		ima_free_rule(entry);
 		integrity_audit_msg(AUDIT_INTEGRITY_STATUS, NULL,
@@ -1742,10 +1741,8 @@ ssize_t ima_parse_add_rule(char *rule)
  * different from the active one.  There is also only one user of
  * ima_delete_rules() at a time.
  */
-void ima_delete_rules(void)
+void ima_delete_rules(struct ima_namespace *ima_ns)
 {
-	/* Delete rules only from the current ima namespace */
-	struct ima_namespace *ima_ns = get_current_ns();
 	struct ima_rule_entry *entry, *tmp;
 
 	ima_ns->policy_data->temp_ima_appraise = 0;
