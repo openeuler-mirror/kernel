@@ -925,22 +925,25 @@ key_ref_t keyring_search_rcu(key_ref_t keyring_ref,
 }
 
 /**
- * keyring_search - Search the supplied keyring tree for a matching key
+ * keyring_search_tag - Search the supplied keyring tree for a matching key
  * @keyring: The root of the keyring tree to be searched.
  * @type: The type of keyring we want to find.
  * @description: The name of the keyring we want to find.
+ * @domain_tag: The domain_tag of the key we want to find.
  * @recurse: True to search the children of @keyring also
  *
  * As keyring_search_rcu() above, but using the current task's credentials and
  * type's default matching function and preferred search method.
  */
-key_ref_t keyring_search(key_ref_t keyring,
-			 struct key_type *type,
-			 const char *description,
-			 bool recurse)
+key_ref_t keyring_search_tag(key_ref_t keyring,
+			     struct key_type *type,
+			     const char *description,
+			     struct key_tag *domain_tag,
+			     bool recurse)
 {
 	struct keyring_search_context ctx = {
 		.index_key.type		= type,
+		.index_key.domain_tag   = domain_tag,
 		.index_key.description	= description,
 		.index_key.desc_len	= strlen(description),
 		.cred			= current_cred(),
@@ -968,7 +971,7 @@ key_ref_t keyring_search(key_ref_t keyring,
 		type->match_free(&ctx.match_data);
 	return key;
 }
-EXPORT_SYMBOL(keyring_search);
+EXPORT_SYMBOL(keyring_search_tag);
 
 static struct key_restriction *keyring_restriction_alloc(
 	key_restrict_link_func_t check)
