@@ -8,6 +8,10 @@
 #define _LINUX_INTEGRITY_H
 
 #include <linux/fs.h>
+#include <linux/rwlock_types.h>
+
+struct rb_root;
+struct integrity_iint_tree;
 
 enum integrity_status {
 	INTEGRITY_PASS = 0,
@@ -22,12 +26,28 @@ enum integrity_status {
 /* List of EVM protected security xattrs */
 #ifdef CONFIG_INTEGRITY
 extern struct integrity_iint_cache *integrity_inode_get(struct inode *inode);
+extern struct integrity_iint_cache *integrity_inode_rb_get(struct
+							   integrity_iint_tree
+							   *iint_tree,
+							   struct inode *inode);
 extern void integrity_inode_free(struct inode *inode);
+extern void integrity_inode_rb_free(struct integrity_iint_tree *iint_tree,
+				    struct inode *inode);
 extern void __init integrity_load_keys(void);
+extern void integrity_iint_tree_free(struct integrity_iint_tree *iint_tree);
 
 #else
 static inline struct integrity_iint_cache *
 				integrity_inode_get(struct inode *inode)
+{
+	return NULL;
+}
+
+static inline struct integrity_iint_cache *
+				integrity_inode_rb_get(struct
+						       integrity_iint_tree
+						       *iint_tree,
+						       struct inode *inode)
 {
 	return NULL;
 }
@@ -37,7 +57,18 @@ static inline void integrity_inode_free(struct inode *inode)
 	return;
 }
 
+static inline void integrity_inode_rb_free(struct integrity_iint_tree
+					   *iint_tree,
+					   struct inode *inode)
+{
+}
+
 static inline void integrity_load_keys(void)
+{
+}
+
+static inline void integrity_iint_tree_free(struct integrity_iint_tree
+					    *iint_tree)
 {
 }
 #endif /* CONFIG_INTEGRITY */

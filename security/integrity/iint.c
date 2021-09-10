@@ -21,19 +21,29 @@
 #include <linux/lsm_hooks.h>
 #include "integrity.h"
 
-static struct rb_root integrity_iint_tree = RB_ROOT;
-static DEFINE_RWLOCK(integrity_iint_lock);
+struct integrity_iint_tree init_iint_tree = {
+	.lock = __RW_LOCK_UNLOCKED(init_iint_tree.lock),
+	.root = RB_ROOT
+};
+
 static struct kmem_cache *iint_cache __read_mostly;
 
 struct dentry *integrity_dir;
 
 /*
- * __integrity_iint_find - return the iint associated with an inode
+ * __integrity_iint_rb_find - return the iint associated with an inode
+ * @iint_rb_root: pointer to the root of the iint tree
+ * @inode: pointer to the inode
+ * @return: pointer to the iint if found, NULL otherwise
  */
-static struct integrity_iint_cache *__integrity_iint_find(struct inode *inode)
+static struct integrity_iint_cache *
+				__integrity_iint_rb_find(const struct rb_root
+							 *iint_rb_root,
+							 const struct inode
+							 *inode)
 {
 	struct integrity_iint_cache *iint;
-	struct rb_node *n = integrity_iint_tree.rb_node;
+	struct rb_node *n = iint_rb_root->rb_node;
 
 	while (n) {
 		iint = rb_entry(n, struct integrity_iint_cache, rb_node);
@@ -52,20 +62,35 @@ static struct integrity_iint_cache *__integrity_iint_find(struct inode *inode)
 }
 
 /*
- * integrity_iint_find - return the iint associated with an inode
+ * integrity_iint_rb_find - return the iint associated with an inode
+ * @iint_tree: pointer to the iint tree root node and the associated lock
+ * @inode: pointer to the inode
+ * @return: pointer to the iint if found, NULL otherwise
  */
-struct integrity_iint_cache *integrity_iint_find(struct inode *inode)
+struct integrity_iint_cache *integrity_iint_rb_find(struct integrity_iint_tree
+						    *iint_tree,
+						    const struct inode *inode)
 {
 	struct integrity_iint_cache *iint;
 
 	if (!IS_IMA(inode))
 		return NULL;
 
-	read_lock(&integrity_iint_lock);
-	iint = __integrity_iint_find(inode);
-	read_unlock(&integrity_iint_lock);
+	read_lock(&iint_tree->lock);
+	iint = __integrity_iint_rb_find(&iint_tree->root, inode);
+	read_unlock(&iint_tree->lock);
 
 	return iint;
+}
+
+/*
+ * integrity_iint_find - return the iint associated with an inode
+ * @inode: pointer to the inode
+ * @return: pointer to the iint if found, NULL otherwise
+ */
+struct integrity_iint_cache *integrity_iint_find(struct inode *inode)
+{
+	return integrity_iint_rb_find(&init_iint_tree, inode);
 }
 
 static void iint_free(struct integrity_iint_cache *iint)
@@ -86,13 +111,36 @@ static void iint_free(struct integrity_iint_cache *iint)
 }
 
 /**
- * integrity_inode_get - find or allocate an iint associated with an inode
+ * integrity_iint_tree_free - traverse the tree and free all nodes
+ * @iint_tree: pointer to the iint tree root node and the associated lock
+ *
+ * The tree cannot be in use. This function should be called only from the
+ * destructor when no locks are required.
+ */
+void integrity_iint_tree_free(struct integrity_iint_tree *iint_tree)
+{
+	struct rb_root *root = &iint_tree->root;
+	struct integrity_iint_cache *iint, *tmp;
+
+	rbtree_postorder_for_each_entry_safe(iint, tmp, root, rb_node) {
+		iint_free(iint);
+	}
+
+	iint_tree->root = RB_ROOT;
+}
+
+/**
+ * integrity_inode_rb_get - find or allocate an iint associated with an inode
+ * @iint_tree: pointer to the iint tree root node and the associated lock
  * @inode: pointer to the inode
- * @return: allocated iint
+ * @return: pointer to the existing iint if found, pointer to the allocated iint
+ * if it didn't exist, NULL in case of error
  *
  * Caller must lock i_mutex
  */
-struct integrity_iint_cache *integrity_inode_get(struct inode *inode)
+struct integrity_iint_cache *integrity_inode_rb_get(struct integrity_iint_tree
+						    *iint_tree,
+						    struct inode *inode)
 {
 	struct rb_node **p;
 	struct rb_node *node, *parent = NULL;
@@ -106,7 +154,7 @@ struct integrity_iint_cache *integrity_inode_get(struct inode *inode)
 	if (!iint_cache)
 		panic("%s: lsm=integrity required.\n", __func__);
 
-	iint = integrity_iint_find(inode);
+	iint = integrity_iint_rb_find(iint_tree, inode);
 	if (iint)
 		return iint;
 
@@ -114,9 +162,9 @@ struct integrity_iint_cache *integrity_inode_get(struct inode *inode)
 	if (!iint)
 		return NULL;
 
-	write_lock(&integrity_iint_lock);
+	write_lock(&iint_tree->lock);
 
-	p = &integrity_iint_tree.rb_node;
+	p = &iint_tree->root.rb_node;
 	while (*p) {
 		parent = *p;
 		test_iint = rb_entry(parent, struct integrity_iint_cache,
@@ -131,10 +179,50 @@ struct integrity_iint_cache *integrity_inode_get(struct inode *inode)
 	node = &iint->rb_node;
 	inode->i_flags |= S_IMA;
 	rb_link_node(node, parent, p);
-	rb_insert_color(node, &integrity_iint_tree);
+	rb_insert_color(node, &iint_tree->root);
 
-	write_unlock(&integrity_iint_lock);
+	write_unlock(&iint_tree->lock);
 	return iint;
+}
+
+/**
+ * integrity_inode_get - find or allocate an iint associated with an inode
+ * @inode: pointer to the inode
+ * @return: pointer to the existing iint if found, pointer to the allocated iint
+ * if it didn't exist, NULL in case of error
+ *
+ * Caller must lock i_mutex
+ */
+struct integrity_iint_cache *integrity_inode_get(struct inode *inode)
+{
+	return integrity_inode_rb_get(&init_iint_tree, inode);
+}
+
+/**
+ * integrity_inode_rb_free - called on security_inode_free
+ * @iint_tree: pointer to the iint tree root node and the associated lock
+ * @inode: pointer to the inode
+ *
+ * Free the integrity information(iint) associated with an inode.
+ */
+void integrity_inode_rb_free(struct integrity_iint_tree *iint_tree,
+			     struct inode *inode)
+{
+	struct integrity_iint_cache *iint;
+
+	if (!IS_IMA(inode))
+		return;
+
+	write_lock(&iint_tree->lock);
+	iint = __integrity_iint_rb_find(&iint_tree->root, inode);
+	if (!iint) {
+		write_unlock(&iint_tree->lock);
+		return;
+	}
+	rb_erase(&iint->rb_node, &iint_tree->root);
+	write_unlock(&iint_tree->lock);
+
+	iint_free(iint);
 }
 
 /**
@@ -145,17 +233,7 @@ struct integrity_iint_cache *integrity_inode_get(struct inode *inode)
  */
 void integrity_inode_free(struct inode *inode)
 {
-	struct integrity_iint_cache *iint;
-
-	if (!IS_IMA(inode))
-		return;
-
-	write_lock(&integrity_iint_lock);
-	iint = __integrity_iint_find(inode);
-	rb_erase(&iint->rb_node, &integrity_iint_tree);
-	write_unlock(&integrity_iint_lock);
-
-	iint_free(iint);
+	integrity_inode_rb_free(&init_iint_tree, inode);
 }
 
 static void init_once(void *foo)
