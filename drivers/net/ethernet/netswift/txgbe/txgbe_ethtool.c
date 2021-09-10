@@ -2215,7 +2215,9 @@ static int txgbe_set_phys_id(struct net_device *netdev,
 }
 
 static int txgbe_get_coalesce(struct net_device *netdev,
-			      struct ethtool_coalesce *ec)
+			      struct ethtool_coalesce *ec,
+			      struct kernel_ethtool_coalesce *kernel_coal,
+			      struct netlink_ext_ack *extack)
 {
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 
@@ -2271,7 +2273,9 @@ static bool txgbe_update_rsc(struct txgbe_adapter *adapter)
 }
 
 static int txgbe_set_coalesce(struct net_device *netdev,
-			      struct ethtool_coalesce *ec)
+			      struct ethtool_coalesce *ec,
+			      struct kernel_ethtool_coalesce *kernel_coal,
+			      struct netlink_ext_ack *extack)
 {
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 	struct txgbe_hw *hw = &adapter->hw;
