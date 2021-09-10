@@ -128,6 +128,7 @@ static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
 	ns->ucounts = ucounts;
 	ns->frozen = false;
 	atomic_long_set(&ns->ml_len, 0);
+	atomic_long_set(&ns->violations, 0);
 
 	rwlock_init(&ns->iint_tree->lock);
 	ns->iint_tree->root = RB_ROOT;

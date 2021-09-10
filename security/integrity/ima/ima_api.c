@@ -171,7 +171,7 @@ void ima_add_violation(struct file *file, const unsigned char *filename,
 	event_data.ns_id = get_ns_id(ima_ns);
 
 	/* can overflow, only indicator */
-	atomic_long_inc(&ima_htable.violations);
+	atomic_long_inc(&ima_ns->violations);
 
 	result = ima_alloc_init_template(&event_data, &entry, NULL);
 	if (result < 0) {
