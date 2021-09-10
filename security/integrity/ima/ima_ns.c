@@ -51,9 +51,38 @@ static struct ima_namespace *ima_ns_alloc(void)
 
 	ima_ns = kzalloc(sizeof(*ima_ns), GFP_KERNEL);
 	if (!ima_ns)
-		return NULL;
+		goto out;
+
+	ima_ns->policy_data = kzalloc(sizeof(struct ima_policy_data),
+				      GFP_KERNEL);
+	if (!ima_ns->policy_data)
+		goto out_free;
 
 	return ima_ns;
+
+out_free:
+	kfree(ima_ns);
+out:
+	return NULL;
+}
+
+static void ima_set_ns_policy(struct ima_namespace *ima_ns,
+			      char *policy_setup_str)
+{
+	struct ima_policy_setup_data setup_data;
+
+#ifdef CONFIG_IMA_APPRAISE
+	setup_data.ima_appraise = IMA_APPRAISE_ENFORCE;
+#endif
+	/* Configuring IMA namespace will be implemented in the following
+	 * patches. When it is done, parse configuration string and store result
+	 * in setup_data. Temporarily use init_policy_setup_data.
+	 */
+	setup_data = init_policy_setup_data;
+	ima_ns->policy_data->ima_fail_unverifiable_sigs =
+		init_ima_ns.policy_data->ima_fail_unverifiable_sigs;
+
+	ima_init_ns_policy(ima_ns, &setup_data);
 }
 
 /**
@@ -64,7 +93,7 @@ static struct ima_namespace *ima_ns_alloc(void)
  * Return:	ERR_PTR(-ENOMEM) on error (failure to kmalloc), new ns otherwise
  */
 static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
-					   struct ima_namespace *old_ns)
+					  struct ima_namespace *old_ns)
 {
 	struct ima_namespace *ns;
 	struct ucounts *ucounts;
@@ -91,9 +120,14 @@ static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
 	ns->ucounts = ucounts;
 	ns->frozen = false;
 
+	INIT_LIST_HEAD(&ns->policy_data->ima_default_rules);
+	INIT_LIST_HEAD(&ns->policy_data->ima_policy_rules);
+	INIT_LIST_HEAD(&ns->policy_data->ima_temp_rules);
+
 	return ns;
 
 fail_free:
+	kfree(ns->policy_data);
 	kfree(ns);
 fail_dec:
 	dec_ima_namespaces(ucounts);
@@ -139,6 +173,7 @@ static void destroy_ima_ns(struct ima_namespace *ns)
 	dec_ima_namespaces(ns->ucounts);
 	put_user_ns(ns->user_ns);
 	ns_free_inum(&ns->ns);
+	kfree(ns->policy_data);
 	kfree(ns);
 }
 
@@ -237,6 +272,8 @@ static int imans_activate(struct ima_namespace *ima_ns)
 	mutex_lock(&frozen_lock);
 	if (ima_ns->frozen)
 		goto out;
+
+	ima_set_ns_policy(ima_ns, NULL);
 
 	ima_ns->frozen = true;
 
