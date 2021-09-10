@@ -130,6 +130,7 @@ static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
 	rwlock_init(&ns->iint_tree->lock);
 	ns->iint_tree->root = RB_ROOT;
 
+	INIT_LIST_HEAD(&ns->ns_measurements);
 	INIT_LIST_HEAD(&ns->policy_data->ima_default_rules);
 	INIT_LIST_HEAD(&ns->policy_data->ima_policy_rules);
 	INIT_LIST_HEAD(&ns->policy_data->ima_temp_rules);

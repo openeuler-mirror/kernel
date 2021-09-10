@@ -119,6 +119,7 @@ struct ima_template_entry {
 struct ima_queue_entry {
 	struct hlist_node hnext;	/* place in hash collision list */
 	struct list_head later;		/* place in ima_measurements list */
+	struct list_head ns_later;	/* place in ima namespace list */
 	struct ima_template_entry *entry;
 };
 extern struct list_head ima_measurements;	/* list of all measurements */
@@ -151,7 +152,8 @@ int ima_init(void);
 int ima_fs_init(void);
 int ima_add_template_entry(struct ima_template_entry *entry, int violation,
 			   const char *op, struct inode *inode,
-			   const unsigned char *filename);
+			   const unsigned char *filename,
+			   struct ima_namespace *ima_ns);
 int ima_calc_file_hash(struct file *file, struct ima_digest_data *hash);
 int ima_calc_buffer_hash(const void *buf, loff_t len,
 			 struct ima_digest_data *hash);
@@ -293,7 +295,8 @@ int ima_alloc_init_template(struct ima_event_data *event_data,
 			    struct ima_template_desc *template_desc);
 int ima_store_template(struct ima_template_entry *entry, int violation,
 		       struct inode *inode, const unsigned char *filename,
-		       int pcr, struct ima_digest *digest);
+		       int pcr, struct ima_digest *digest,
+		       struct ima_namespace *ima_ns);
 void ima_free_template_entry(struct ima_template_entry *entry);
 const char *ima_d_path(const struct path *path, char **pathbuf, char *filename);
 

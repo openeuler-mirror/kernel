@@ -35,6 +35,7 @@ struct ima_namespace init_ima_ns = {
 	.frozen = true,
 	.policy_data = &init_policy_data,
 	.iint_tree = &init_iint_tree,
+	.ns_measurements = LIST_HEAD_INIT(init_ima_ns.ns_measurements),
 };
 EXPORT_SYMBOL(init_ima_ns);
 
@@ -104,7 +105,8 @@ static int __init ima_add_boot_aggregate(void)
 
 	result = ima_store_template(entry, violation, NULL,
 				    boot_aggregate_name,
-				    CONFIG_IMA_MEASURE_PCR_IDX, NULL);
+				    CONFIG_IMA_MEASURE_PCR_IDX, NULL,
+				    &init_ima_ns);
 	if (result < 0) {
 		ima_free_template_entry(entry);
 		audit_cause = "store_entry";
