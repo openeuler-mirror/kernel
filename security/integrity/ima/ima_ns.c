@@ -29,6 +29,7 @@
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/kernel.h>
+#include <linux/key.h>
 
 #include "ima.h"
 
@@ -66,8 +67,16 @@ static struct ima_namespace *ima_ns_alloc(void)
 	if (!ima_ns->iint_tree)
 		goto policy_free;
 
+#ifdef CONFIG_KEYS
+	ima_ns->key_domain = kzalloc(sizeof(struct key_tag), GFP_KERNEL);
+	if (!ima_ns->key_domain)
+		goto iint_free;
+#endif
+
 	return ima_ns;
 
+iint_free:
+	kfree(ima_ns->iint_tree);
 policy_free:
 	kfree(ima_ns->policy_data);
 ns_free:
@@ -147,6 +156,9 @@ static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
 	rwlock_init(&ns->iint_tree->lock);
 	ns->iint_tree->root = RB_ROOT;
 
+#ifdef CONFIG_KEYS
+	refcount_set(&ns->key_domain->usage, 1);
+#endif
 	ns->x509_path_for_children = NULL;
 	ns->policy_setup_for_children = NULL;
 
@@ -160,6 +172,7 @@ static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
 fail_free:
 	kfree(ns->iint_tree);
 	kfree(ns->policy_data);
+	kfree(ns->key_domain);
 	kfree(ns);
 fail_dec:
 	dec_ima_namespaces(ucounts);
@@ -231,6 +244,7 @@ static void destroy_ima_ns(struct ima_namespace *ns)
 
 	imans_remove_hash_entries(ns);
 	dec_ima_namespaces(ns->ucounts);
+	key_remove_domain(ns->key_domain);
 	put_user_ns(ns->user_ns);
 	ns_free_inum(&ns->ns);
 	integrity_iint_tree_free(ns->iint_tree);

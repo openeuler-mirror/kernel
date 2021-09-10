@@ -18,12 +18,17 @@
 #include <linux/kref.h>
 #include <linux/proc_ns.h>
 #include <linux/user_namespace.h>
+#include <linux/key.h>
 
 #include "ima.h"
 
 /* name for boot aggregate entry */
 const char boot_aggregate_name[] = "boot_aggregate";
 struct tpm_chip *ima_tpm_chip;
+
+#ifdef CONFIG_KEYS
+static struct key_tag init_ima_key_domain = { .usage = REFCOUNT_INIT(1) };
+#endif
 
 struct ima_namespace init_ima_ns = {
 	.kref = KREF_INIT(2),
@@ -40,6 +45,9 @@ struct ima_namespace init_ima_ns = {
 	.ns_measurements = LIST_HEAD_INIT(init_ima_ns.ns_measurements),
 	.ml_len = ATOMIC_LONG_INIT(0),
 	.violations = ATOMIC_LONG_INIT(0),
+#ifdef CONFIG_KEYS
+	.key_domain = &init_ima_key_domain,
+#endif
 };
 EXPORT_SYMBOL(init_ima_ns);
 

@@ -237,6 +237,9 @@ struct ima_namespace {
 	atomic_long_t violations;
 	char *x509_path_for_children;
 	struct ima_policy_setup_data *policy_setup_for_children;
+#ifdef CONFIG_KEYS
+	struct key_tag *key_domain;
+#endif
 } __randomize_layout;
 
 extern struct ima_namespace init_ima_ns;
