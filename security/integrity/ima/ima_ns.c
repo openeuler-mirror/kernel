@@ -93,6 +93,24 @@ static void ima_set_ns_policy(struct ima_namespace *ima_ns,
 	ima_init_ns_policy(ima_ns, &setup_data);
 }
 
+static int ima_swap_user_ns(struct ima_namespace *ima_ns,
+			    struct user_namespace *user_ns)
+{
+	struct ucounts *ucounts;
+
+	dec_ima_namespaces(ima_ns->ucounts);
+	put_user_ns(ima_ns->user_ns);
+
+	ucounts = inc_ima_namespaces(user_ns);
+	if (!ucounts)
+		return -ENOSPC;
+
+	ima_ns->user_ns = get_user_ns(user_ns);
+	ima_ns->ucounts = ucounts;
+
+	return 0;
+}
+
 /**
  * Clone a new ns copying an original ima namespace, setting refcount to 1
  *
@@ -352,23 +370,33 @@ static int imans_install(struct nsset *nsset, struct ns_common *new)
 	return res;
 }
 
-int imans_on_fork(struct nsproxy *nsproxy, struct task_struct *tsk)
+int imans_on_fork(struct nsproxy *nsproxy, struct task_struct *tsk,
+		  struct user_namespace *user_ns)
 {
 	int res;
-	struct ns_common *nsc = &nsproxy->ima_ns_for_children->ns;
-	struct ima_namespace *ns = to_ima_ns(nsc);
+	struct ima_namespace *ima_ns = nsproxy->ima_ns_for_children;
 
 	/* create_new_namespaces() already incremented the ref counter */
-	if (nsproxy->ima_ns == nsproxy->ima_ns_for_children)
+	if (nsproxy->ima_ns == ima_ns)
 		return 0;
 
-	res = imans_activate(ns);
+	/* It's possible that the user first unshares the IMA namespace and
+	 * then creates a new user namespace on clone3(). In that case swap
+	 * user namespace for the "current" one.
+	 */
+	if (ima_ns->user_ns != user_ns) {
+		res = ima_swap_user_ns(ima_ns, user_ns);
+		if (res)
+			return res;
+	}
+
+	res = imans_activate(ima_ns);
 	if (res)
 		return res;
 
-	get_ima_ns(ns);
+	get_ima_ns(ima_ns);
 	put_ima_ns(nsproxy->ima_ns);
-	nsproxy->ima_ns = ns;
+	nsproxy->ima_ns = ima_ns;
 
 	return res;
 }
