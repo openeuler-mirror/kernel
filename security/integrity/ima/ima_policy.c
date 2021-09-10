@@ -208,6 +208,13 @@ static struct ima_rule_entry build_appraise_rules[] __ro_after_init = {
 	{.action = APPRAISE, .func = POLICY_CHECK,
 	 .flags = IMA_FUNC | IMA_DIGSIG_REQUIRED},
 #endif
+#if !defined(CONFIG_IMA_APPRAISE_REQUIRE_MODULE_SIGS) && \
+	!defined(CONFIG_IMA_APPRAISE_REQUIRE_FIRMWARE_SIGS) && \
+	!defined(CONFIG_IMA_APPRAISE_REQUIRE_KEXEC_SIGS) && \
+	!defined(CONFIG_IMA_APPRAISE_REQUIRE_POLICY_SIGS)
+	/* Add a member to avoid a zero length array */
+	{.action = UNKNOWN, .func = NONE, .flags = 0},
+#endif
 };
 
 static struct ima_rule_entry secure_boot_rules[] __ro_after_init = {
