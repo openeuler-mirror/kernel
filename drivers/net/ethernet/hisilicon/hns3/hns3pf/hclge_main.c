@@ -8431,8 +8431,7 @@ static int hclge_enable_vlan_filter(struct hnae3_handle *handle, bool enable)
 }
 
 static int hclge_set_vf_vlan_common(struct hclge_dev *hdev, u16 vfid,
-				    bool is_kill, u16 vlan,
-				    __be16 proto)
+				    bool is_kill, u16 vlan)
 {
 	struct hclge_vport *vport = &hdev->vport[vfid];
 	struct hclge_vlan_filter_vf_cfg_cmd *req0;
@@ -8563,8 +8562,7 @@ static int hclge_set_vlan_filter_hw(struct hclge_dev *hdev, __be16 proto,
 	if (vlan_id >= VLAN_N_VID)
 		return -EINVAL;
 
-	ret = hclge_set_vf_vlan_common(hdev, vport_id, is_kill, vlan_id,
-				       proto);
+	ret = hclge_set_vf_vlan_common(hdev, vport_id, is_kill, vlan_id);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"Set %u vport vlan filter config fail, ret =%d.\n",
@@ -9104,8 +9102,7 @@ static int hclge_update_vlan_filter_entries(struct hclge_vport *vport,
 	vport->port_base_vlan_cfg.tbl_sta = false;
 
 	/* force add vlan 0 */
-	ret = hclge_set_vf_vlan_common(hdev, vport->vport_id, false, 0,
-				       htons(ETH_P_8021Q));
+	ret = hclge_set_vf_vlan_common(hdev, vport->vport_id, false, 0);
 	if (ret)
 		return ret;
 
