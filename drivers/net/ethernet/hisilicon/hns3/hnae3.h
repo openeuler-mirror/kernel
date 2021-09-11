@@ -78,6 +78,9 @@
 #define hnae3_dev_vlan_fltr_mdf_supported(hdev) \
 	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_DEV_SUPPORT_VLAN_FLTR_MDF_B)
 
+enum HNAE3_PF_CAP_BITS {
+	HNAE3_PF_SUPPORT_VLAN_FLTR_MDF_B = 0,
+};
 #define ring_ptr_move_fw(ring, p) \
 	((ring)->p = ((ring)->p + 1) % (ring)->desc_num)
 #define ring_ptr_move_bw(ring, p) \
