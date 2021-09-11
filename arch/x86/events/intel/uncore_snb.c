@@ -286,7 +286,7 @@ void skl_uncore_cpu_init(void)
 
 static struct intel_uncore_type icl_uncore_cbox = {
 	.name		= "cbox",
-	.num_counters   = 4,
+	.num_counters   = 2,
 	.perf_ctr_bits	= 44,
 	.perf_ctr	= ICL_UNC_CBO_0_PER_CTR0,
 	.event_ctl	= SNB_UNC_CBO_0_PERFEVTSEL0,
