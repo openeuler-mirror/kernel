@@ -4253,7 +4253,12 @@ static int hns3_client_init(struct hnae3_handle *handle)
 
 	hns3_dcbnl_setup(handle);
 
-	hns3_dbg_init(handle);
+	ret = hns3_dbg_init(handle);
+	if (ret) {
+		dev_err(priv->dev, "failed to init debugfs, ret = %d\n",
+			ret);
+		goto out_client_start;
+	}
 
 #ifdef HAVE_NETDEVICE_MIN_MAX_MTU
 	/* MTU range: (ETH_MIN_MTU(kernel default) - 9702) */
