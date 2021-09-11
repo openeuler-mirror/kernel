@@ -11639,7 +11639,6 @@ struct hnae3_ae_ops hclge_ops = {
 	.restore_fd_rules = hclge_restore_fd_entries,
 	.enable_fd = hclge_enable_fd,
 	.add_arfs_entry = hclge_add_fd_entry_by_arfs,
-	.dbg_run_cmd = hclge_dbg_run_cmd,
 	.dbg_read_cmd = hclge_dbg_read_cmd,
 	.handle_hw_ras_error = hclge_handle_hw_ras_error,
 	.get_hw_reset_stat = hclge_get_hw_reset_stat,
