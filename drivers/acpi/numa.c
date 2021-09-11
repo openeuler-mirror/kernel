@@ -340,7 +340,7 @@ acpi_numa_x2apic_affinity_init(struct acpi_srat_x2apic_cpu_affinity *pa)
 }
 
 static int __init
-acpi_parse_x2apic_affinity(struct acpi_subtable_header *header,
+acpi_parse_x2apic_affinity(union acpi_subtable_headers *header,
 			   const unsigned long end)
 {
 	struct acpi_srat_x2apic_cpu_affinity *processor_affinity;
@@ -349,7 +349,7 @@ acpi_parse_x2apic_affinity(struct acpi_subtable_header *header,
 	if (!processor_affinity)
 		return -EINVAL;
 
-	acpi_table_print_srat_entry(header);
+	acpi_table_print_srat_entry(&header->common);
 
 	/* let architecture-dependent part to do it */
 	acpi_numa_x2apic_affinity_init(processor_affinity);
@@ -358,7 +358,7 @@ acpi_parse_x2apic_affinity(struct acpi_subtable_header *header,
 }
 
 static int __init
-acpi_parse_processor_affinity(struct acpi_subtable_header *header,
+acpi_parse_processor_affinity(union acpi_subtable_headers *header,
 			      const unsigned long end)
 {
 	struct acpi_srat_cpu_affinity *processor_affinity;
@@ -367,7 +367,7 @@ acpi_parse_processor_affinity(struct acpi_subtable_header *header,
 	if (!processor_affinity)
 		return -EINVAL;
 
-	acpi_table_print_srat_entry(header);
+	acpi_table_print_srat_entry(&header->common);
 
 	/* let architecture-dependent part to do it */
 	acpi_numa_processor_affinity_init(processor_affinity);
@@ -376,7 +376,7 @@ acpi_parse_processor_affinity(struct acpi_subtable_header *header,
 }
 
 static int __init
-acpi_parse_gicc_affinity(struct acpi_subtable_header *header,
+acpi_parse_gicc_affinity(union acpi_subtable_headers *header,
 			 const unsigned long end)
 {
 	struct acpi_srat_gicc_affinity *processor_affinity;
@@ -385,7 +385,7 @@ acpi_parse_gicc_affinity(struct acpi_subtable_header *header,
 	if (!processor_affinity)
 		return -EINVAL;
 
-	acpi_table_print_srat_entry(header);
+	acpi_table_print_srat_entry(&header->common);
 
 	/* let architecture-dependent part to do it */
 	acpi_numa_gicc_affinity_init(processor_affinity);
@@ -396,7 +396,7 @@ acpi_parse_gicc_affinity(struct acpi_subtable_header *header,
 static int __initdata parsed_numa_memblks;
 
 static int __init
-acpi_parse_memory_affinity(struct acpi_subtable_header * header,
+acpi_parse_memory_affinity(union acpi_subtable_headers * header,
 			   const unsigned long end)
 {
 	struct acpi_srat_mem_affinity *memory_affinity;
@@ -405,7 +405,7 @@ acpi_parse_memory_affinity(struct acpi_subtable_header * header,
 	if (!memory_affinity)
 		return -EINVAL;
 
-	acpi_table_print_srat_entry(header);
+	acpi_table_print_srat_entry(&header->common);
 
 	/* let architecture-dependent part to do it */
 	if (!acpi_numa_memory_affinity_init(memory_affinity))
