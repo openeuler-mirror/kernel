@@ -32,7 +32,7 @@
 #include <linux/types.h>
 #include <net/pkt_cls.h>
 
-#define HNAE3_MOD_VERSION "1.9.40.24"
+#define HNAE3_MOD_VERSION "21.9.2"
 
 #define HNAE3_MIN_VECTOR_NUM	2 /* first one for misc, another for IO */
 
