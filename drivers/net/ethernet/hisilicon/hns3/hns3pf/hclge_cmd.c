@@ -413,7 +413,7 @@ static int hclge_firmware_compat_config(struct hclge_dev *hdev, bool en)
 	struct hclge_desc desc;
 	u32 compat = 0;
 
-	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_M7_COMPAT_CFG, false);
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_IMP_COMPAT_CFG, false);
 
 	if (en) {
 		req = (struct hclge_firmware_compat_cmd *)desc.data;
