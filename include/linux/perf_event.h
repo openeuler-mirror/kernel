@@ -279,7 +279,6 @@ struct pmu {
 	struct module			*module;
 	struct device			*dev;
 	const struct attribute_group	**attr_groups;
-	const struct attribute_group	**attr_update;
 	const char			*name;
 	int				type;
 
@@ -896,6 +895,9 @@ extern void perf_event_itrace_started(struct perf_event *event);
 
 extern int perf_pmu_register(struct pmu *pmu, const char *name, int type);
 extern void perf_pmu_unregister(struct pmu *pmu);
+
+extern int pmu_attr_update_register_notifier(struct notifier_block *nb);
+extern int pmu_attr_update_unregister_notifier(struct notifier_block *nb);
 
 extern int perf_num_counters(void);
 extern const char *perf_pmu_name(void);

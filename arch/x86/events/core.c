@@ -1810,6 +1810,22 @@ ssize_t x86_event_sysfs_show(char *page, u64 config, u64 event)
 static struct attribute_group x86_pmu_attr_group;
 static struct attribute_group x86_pmu_caps_group;
 
+static int x86_pmu_attr_update_notify(struct notifier_block *nb,
+					unsigned long ret, void *group)
+{
+	struct pmu *tmp = group;
+
+	if (tmp != &pmu)
+		return NOTIFY_DONE;
+
+	*(int *)ret = sysfs_update_groups(&tmp->dev->kobj, x86_pmu.attr_update);
+	return NOTIFY_STOP;
+}
+
+static struct notifier_block x86_pmu_attr_update_notifier = {
+	.notifier_call = &x86_pmu_attr_update_notify,
+};
+
 static int __init init_hw_perf_events(void)
 {
 	struct x86_pmu_quirk *quirk;
@@ -1868,7 +1884,7 @@ static int __init init_hw_perf_events(void)
 	if (!x86_pmu.events_sysfs_show)
 		x86_pmu_events_group.attrs = &empty_attrs;
 
-	pmu.attr_update = x86_pmu.attr_update;
+	pmu_attr_update_register_notifier(&x86_pmu_attr_update_notifier);
 
 	pr_info("... version:                %d\n",     x86_pmu.version);
 	pr_info("... bit width:              %d\n",     x86_pmu.cntval_bits);

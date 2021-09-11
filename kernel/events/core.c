@@ -9690,6 +9690,30 @@ static struct bus_type pmu_bus = {
 	.name		= "event_source",
 	.dev_groups	= pmu_dev_groups,
 };
+static BLOCKING_NOTIFIER_HEAD(pmu_attr_update_notifier_chain);
+
+int pmu_attr_update_register_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(
+		&pmu_attr_update_notifier_chain, nb);
+}
+EXPORT_SYMBOL_GPL(pmu_attr_update_register_notifier);
+
+int pmu_attr_update_unregister_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(
+		&pmu_attr_update_notifier_chain, nb);
+}
+EXPORT_SYMBOL_GPL(pmu_attr_update_unregister_notifier);
+
+static int pmu_attr_update_notifier_call_chain(struct pmu *pmu)
+{
+	int ret = 0;
+
+	blocking_notifier_call_chain(&pmu_attr_update_notifier_chain,
+		(unsigned long)&ret, (void *)pmu);
+	return ret;
+}
 
 static void pmu_dev_release(struct device *dev)
 {
@@ -9724,9 +9748,7 @@ static int pmu_dev_alloc(struct pmu *pmu)
 	if (ret)
 		goto del_dev;
 
-	if (pmu->attr_update)
-		ret = sysfs_update_groups(&pmu->dev->kobj, pmu->attr_update);
-
+	ret = pmu_attr_update_notifier_call_chain(pmu);
 	if (ret)
 		goto del_dev;
 
