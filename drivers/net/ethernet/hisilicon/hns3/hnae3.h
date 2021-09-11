@@ -58,6 +58,7 @@
 #define HNAE3_ROCE_CLIENT_INITED_B		0x5
 #define HNAE3_DEV_SUPPORT_FD_B			0x6
 #define HNAE3_DEV_SUPPORT_GRO_B			0x7
+#define HNAE3_DEV_SUPPORT_VLAN_FLTR_MDF_B	0x8
 
 #define HNAE3_DEV_SUPPORT_ROCE_DCB_BITS (BIT(HNAE3_DEV_SUPPORT_DCB_B) |\
 		BIT(HNAE3_DEV_SUPPORT_ROCE_B))
@@ -73,6 +74,9 @@
 
 #define hnae3_dev_gro_supported(hdev) \
 	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_DEV_SUPPORT_GRO_B)
+
+#define hnae3_dev_vlan_fltr_mdf_supported(hdev) \
+	hnae3_get_bit((hdev)->ae_dev->flag, HNAE3_DEV_SUPPORT_VLAN_FLTR_MDF_B)
 
 #define ring_ptr_move_fw(ring, p) \
 	((ring)->p = ((ring)->p + 1) % (ring)->desc_num)
@@ -543,7 +547,7 @@ struct hnae3_ae_ops {
 	void (*get_mdix_mode)(struct hnae3_handle *handle,
 			      u8 *tp_mdix_ctrl, u8 *tp_mdix);
 
-	void (*enable_vlan_filter)(struct hnae3_handle *handle, bool enable);
+	int (*enable_vlan_filter)(struct hnae3_handle *handle, bool enable);
 	int (*set_vlan_filter)(struct hnae3_handle *handle, __be16 proto,
 			       u16 vlan_id, bool is_kill);
 	int (*set_vf_vlan_filter)(struct hnae3_handle *handle, int vfid,

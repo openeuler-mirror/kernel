@@ -83,7 +83,6 @@ static const struct hns3_stats hns3_rxq_stats[] = {
 static int hns3_lp_setup(struct net_device *ndev, enum hnae3_loop loop, bool en)
 {
 	struct hnae3_handle *h = hns3_get_handle(ndev);
-	bool vlan_filter_enable;
 	int ret;
 
 	if (!h->ae_algo->ops->set_loopback ||
@@ -105,14 +104,11 @@ static int hns3_lp_setup(struct net_device *ndev, enum hnae3_loop loop, bool en)
 	if (ret || h->pdev->revision >= 0x21)
 		return ret;
 
-	if (en) {
+	if (en)
 		h->ae_algo->ops->set_promisc_mode(h, true, true);
-	} else {
+	else
 		/* recover promisc mode before loopback test */
 		hns3_request_update_promisc_mode(h);
-		vlan_filter_enable = ndev->flags & IFF_PROMISC ? false : true;
-		hns3_enable_vlan_filter(ndev, vlan_filter_enable);
-	}
 
 	return ret;
 }

@@ -498,6 +498,8 @@ struct hclge_pf_res_cmd {
 #define HCLGE_CFG_RSS_SIZE_M	GENMASK(31, 24)
 #define HCLGE_CFG_SPEED_ABILITY_S	0
 #define HCLGE_CFG_SPEED_ABILITY_M	GENMASK(7, 0)
+#define HCLGE_CFG_VLAN_FLTR_CAP_S	8
+#define HCLGE_CFG_VLAN_FLTR_CAP_M	GENMASK(9, 8)
 #define HCLGE_CFG_UMV_TBL_SPACE_S	16
 #define HCLGE_CFG_UMV_TBL_SPACE_M	GENMASK(31, 16)
 
@@ -789,6 +791,14 @@ struct hclge_vlan_filter_vf_cfg_cmd {
 	u8  vlan_cfg;
 	u8  rsv1[3];
 	u8  vf_bitmap[HCLGE_MAX_VF_BYTES];
+};
+
+#define HCLGE_INGRESS_BYPASS_B		0
+struct hclge_port_vlan_filter_bypass_cmd {
+	u8 bypass_state;
+	u8 rsv1[3];
+	u8 vf_id;
+	u8 rsv2[19];
 };
 
 #define HCLGE_SWITCH_ANTI_SPOOF_B	0U
