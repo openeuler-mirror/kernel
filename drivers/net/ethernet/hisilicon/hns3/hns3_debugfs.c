@@ -177,6 +177,13 @@ static struct hns3_dbg_cmd_info hns3_dbg_cmd[] = {
 		.init = hns3_dbg_common_file_init,
 	},
 	{
+		.name = "mac_tnl_status",
+		.cmd = HNAE3_DBG_CMD_MAC_TNL_STATUS,
+		.dentry = HNS3_DBG_DENTRY_COMMON,
+		.buf_len = HNS3_DBG_READ_LEN,
+		.init = hns3_dbg_common_file_init,
+	},
+	{
 		.name = "bios_common",
 		.cmd = HNAE3_DBG_CMD_REG_BIOS_COMMON,
 		.dentry = HNS3_DBG_DENTRY_REG,
@@ -700,7 +707,6 @@ static void hns3_dbg_help(struct hnae3_handle *h)
 		return;
 
 	dev_info(&h->pdev->dev, "dump mac tbl\n");
-	dev_info(&h->pdev->dev, "dump mac tnl status\n");
 	dev_info(&h->pdev->dev, "dump umv info <func id>\n");
 	dev_info(&h->pdev->dev, "dump vlan filter <func id>\n");
 }
