@@ -438,6 +438,8 @@ static int hclge_set_vf_vlan_cfg(struct hclge_vport *vport,
 		resp_msg->data[0] = vport->port_base_vlan_cfg.state;
 		resp_msg->len = sizeof(u8);
 		return 0;
+	case HCLGE_MBX_ENABLE_VLAN_FILTER:
+		return hclge_enable_vport_vlan_filter(vport, msg_cmd->enable);
 	default:
 		return 0;
 	}
