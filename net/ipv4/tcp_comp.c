@@ -44,10 +44,7 @@ struct tcp_comp_context_rx {
 	ZSTD_DStream *dstream;
 	void *dworkspace;
 	void *plaintext_data;
-	void *compressed_data;
-	void *remaining_data;
 
-	size_t data_offset;
 	struct strparser strp;
 	void (*saved_data_ready)(struct sock *sk);
 	struct sk_buff *pkt;
@@ -573,24 +570,8 @@ static int tcp_comp_rx_context_init(struct tcp_comp_context *ctx)
 	if (!ctx->rx.plaintext_data)
 		goto err_dstream;
 
-	ctx->rx.compressed_data = kvmalloc(TCP_COMP_MAX_CSIZE, GFP_KERNEL);
-	if (!ctx->rx.compressed_data)
-		goto err_compressed;
-
-	ctx->rx.remaining_data = kvmalloc(TCP_COMP_MAX_CSIZE, GFP_KERNEL);
-	if (!ctx->rx.remaining_data)
-		goto err_remaining;
-
-	ctx->rx.data_offset = 0;
-
 	return 0;
 
-err_remaining:
-	kvfree(ctx->rx.compressed_data);
-	ctx->rx.compressed_data = NULL;
-err_compressed:
-	kvfree(ctx->rx.plaintext_data);
-	ctx->rx.plaintext_data = NULL;
 err_dstream:
 	kfree(ctx->rx.dworkspace);
 	ctx->rx.dworkspace = NULL;
@@ -612,11 +593,12 @@ static int tcp_comp_decompress(struct sock *sk, struct sk_buff *skb, int flags)
 {
 	struct tcp_comp_context *ctx = comp_get_ctx(sk);
 	struct strp_msg *rxm = strp_msg(skb);
-	const int plen = skb->len;
+	size_t ret, compressed_len = 0;
+	int nr_frags_over = 0;
 	ZSTD_outBuffer outbuf;
 	ZSTD_inBuffer inbuf;
 	struct sk_buff *nskb;
-	int len;
+	int len, plen;
 	void *to;
 
 	to = tcp_comp_get_rx_stream(sk);
@@ -626,62 +608,54 @@ static int tcp_comp_decompress(struct sock *sk, struct sk_buff *skb, int flags)
 	if (skb_linearize_cow(skb))
 		return -ENOMEM;
 
-	if (plen + ctx->rx.data_offset > TCP_COMP_MAX_CSIZE)
-		return -ENOMEM;
-
 	nskb = skb_copy(skb, GFP_KERNEL);
 	if (!nskb)
 		return -ENOMEM;
 
-	if (ctx->rx.data_offset)
-		memcpy(ctx->rx.compressed_data, ctx->rx.remaining_data,
-		       ctx->rx.data_offset);
+	while (compressed_len < (skb->len - rxm->offset)) {
+		len = 0;
+		plen = skb->len - rxm->offset - compressed_len;
+		if (plen > TCP_COMP_MAX_CSIZE)
+			plen = TCP_COMP_MAX_CSIZE;
 
-	memcpy((char *)ctx->rx.compressed_data + ctx->rx.data_offset,
-	       (char *)skb->data + rxm->offset, plen - rxm->offset);
+		inbuf.src = (char *)skb->data + rxm->offset + compressed_len;
+		inbuf.pos = 0;
+		inbuf.size = plen;
 
-	inbuf.src = ctx->rx.compressed_data;
-	inbuf.pos = 0;
-	inbuf.size = plen - rxm->offset + ctx->rx.data_offset;
-	ctx->rx.data_offset = 0;
+		outbuf.dst = ctx->rx.plaintext_data;
+		outbuf.pos = 0;
+		outbuf.size = TCP_COMP_MAX_CSIZE * 32;
 
-	outbuf.dst = ctx->rx.plaintext_data;
-	outbuf.pos = 0;
-	outbuf.size = TCP_COMP_MAX_CSIZE * 32;
-
-	while (1) {
-		size_t ret;
-
-		to = outbuf.dst;
 		ret = ZSTD_decompressStream(ctx->rx.dstream, &outbuf, &inbuf);
 		if (ZSTD_isError(ret)) {
 			kfree_skb(nskb);
 			return -EIO;
 		}
 
-		len = outbuf.pos - plen;
-		if (len > skb_tailroom(nskb))
-			len = skb_tailroom(nskb);
+		if (!compressed_len) {
+			len = outbuf.pos - skb->len;
+			if (len > skb_tailroom(nskb))
+				len = skb_tailroom(nskb);
 
-		__skb_put(nskb, len);
+			__skb_put(nskb, len);
 
-		len += plen;
-		skb_copy_to_linear_data(nskb, to, len);
+			len += skb->len;
+			skb_copy_to_linear_data(nskb, to, len);
+		}
 
 		while ((to += len, outbuf.pos -= len) > 0) {
 			struct page *pages;
 			skb_frag_t *frag;
 
-			if (WARN_ON(skb_shinfo(nskb)->nr_frags >= MAX_SKB_FRAGS)) {
-				kfree_skb(nskb);
-				return -EMSGSIZE;
+			if (skb_shinfo(nskb)->nr_frags >= MAX_SKB_FRAGS) {
+				nr_frags_over = 1;
+				break;
 			}
 
 			frag = skb_shinfo(nskb)->frags +
 			       skb_shinfo(nskb)->nr_frags;
 			pages = alloc_pages(__GFP_NOWARN | GFP_KERNEL | __GFP_COMP,
 					    TCP_COMP_ALLOC_ORDER);
-
 			if (!pages) {
 				kfree_skb(nskb);
 				return -ENOMEM;
@@ -702,25 +676,17 @@ static int tcp_comp_decompress(struct sock *sk, struct sk_buff *skb, int flags)
 			skb_shinfo(nskb)->nr_frags++;
 		}
 
-		if (ret == 0)
+		if (nr_frags_over)
 			break;
 
-		if (inbuf.pos >= plen || !inbuf.pos) {
-			if (inbuf.pos < inbuf.size) {
-				memcpy((char *)ctx->rx.remaining_data,
-				       (char *)inbuf.src + inbuf.pos,
-				       inbuf.size - inbuf.pos);
-				ctx->rx.data_offset = inbuf.size - inbuf.pos;
-			}
-			break;
-		}
+		compressed_len += inbuf.pos;
 	}
 
 	ctx->rx.dpkt = nskb;
 	rxm = strp_msg(nskb);
 	rxm->full_len = nskb->len;
 	rxm->offset = 0;
-	comp_advance_skb(sk, skb, plen - rxm->offset);
+	comp_advance_skb(sk, skb, compressed_len);
 
 	return 0;
 }
@@ -758,6 +724,7 @@ static int tcp_comp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 				goto recv_end;
 			}
 		}
+
 		skb = ctx->rx.dpkt;
 		rxm = strp_msg(skb);
 		chunk = min_t(unsigned int, rxm->full_len, len);
@@ -916,12 +883,6 @@ static void tcp_comp_context_rx_free(struct tcp_comp_context *ctx)
 
 	kvfree(ctx->rx.plaintext_data);
 	ctx->rx.plaintext_data = NULL;
-
-	kvfree(ctx->rx.compressed_data);
-	ctx->rx.compressed_data = NULL;
-
-	kvfree(ctx->rx.remaining_data);
-	ctx->rx.remaining_data = NULL;
 }
 
 static void tcp_comp_context_free(struct rcu_head *head)
@@ -953,6 +914,7 @@ void tcp_cleanup_compression(struct sock *sk)
 		kfree_skb(ctx->rx.pkt);
 		ctx->rx.pkt = NULL;
 	}
+
 	if (ctx->rx.dpkt) {
 		kfree_skb(ctx->rx.dpkt);
 		ctx->rx.dpkt = NULL;
