@@ -66,10 +66,10 @@ MODULE_PARM_DESC(sgl_threshold,
 static int io_queue_depth_set(const char *val, const struct kernel_param *kp);
 static const struct kernel_param_ops io_queue_depth_ops = {
 	.set = io_queue_depth_set,
-	.get = param_get_int,
+	.get = param_get_uint,
 };
 
-static int io_queue_depth = 1024;
+static unsigned int io_queue_depth = 1024;
 module_param_cb(io_queue_depth, &io_queue_depth_ops, &io_queue_depth, 0644);
 MODULE_PARM_DESC(io_queue_depth, "set io queue depth, should >= 2");
 
@@ -93,7 +93,7 @@ struct nvme_dev {
 	unsigned online_queues;
 	unsigned max_qid;
 	unsigned int num_vecs;
-	int q_depth;
+	u16 q_depth;
 	u32 db_stride;
 	void __iomem *bar;
 	unsigned long bar_mapped_size;
@@ -126,13 +126,14 @@ struct nvme_dev {
 
 static int io_queue_depth_set(const char *val, const struct kernel_param *kp)
 {
-	int n = 0, ret;
+	int ret;
+	u16 n;
 
-	ret = kstrtoint(val, 10, &n);
+	ret = kstrtou16(val, 10, &n);
 	if (ret != 0 || n < 2)
 		return -EINVAL;
 
-	return param_set_int(val, kp);
+	return param_set_ushort(val, kp);
 }
 
 static inline unsigned int sq_idx(unsigned int qid, u32 stride)
@@ -2062,8 +2063,8 @@ static int nvme_dev_add(struct nvme_dev *dev)
 		dev->tagset.nr_hw_queues = dev->online_queues - 1;
 		dev->tagset.timeout = NVME_IO_TIMEOUT;
 		dev->tagset.numa_node = dev_to_node(dev->dev);
-		dev->tagset.queue_depth =
-				min_t(int, dev->q_depth, BLK_MQ_MAX_DEPTH) - 1;
+		dev->tagset.queue_depth = min_t(unsigned int, dev->q_depth,
+						BLK_MQ_MAX_DEPTH) - 1;
 		dev->tagset.cmd_size = nvme_pci_cmd_size(dev, false);
 		if ((dev->ctrl.sgls & ((1 << 0) | (1 << 1))) && sgl_threshold) {
 			dev->tagset.cmd_size = max(dev->tagset.cmd_size,
@@ -2121,7 +2122,7 @@ static int nvme_pci_enable(struct nvme_dev *dev)
 
 	dev->ctrl.cap = lo_hi_readq(dev->bar + NVME_REG_CAP);
 
-	dev->q_depth = min_t(int, NVME_CAP_MQES(dev->ctrl.cap) + 1,
+	dev->q_depth = min_t(u16, NVME_CAP_MQES(dev->ctrl.cap) + 1,
 				io_queue_depth);
 	dev->db_stride = 1 << NVME_CAP_STRIDE(dev->ctrl.cap);
 	dev->dbs = dev->bar + 4096;
