@@ -2020,7 +2020,6 @@ static void hclge_dbg_dump_vlan_filter(struct hclge_dev *hdev,
 	struct hclge_vlan_filter_ctrl_cmd *req;
 	struct hclge_vport *vport;
 	struct hclge_desc desc;
-	bool has_vlan_used;
 	u32 vf_id;
 	int ret;
 
@@ -2049,19 +2048,12 @@ static void hclge_dbg_dump_vlan_filter(struct hclge_dev *hdev,
 	}
 
 	vport = &hdev->vport[vf_id];
-	has_vlan_used = hclge_vf_vlan_need_enable(vport);
 
 	dev_info(&hdev->pdev->dev, "vf_id:%u\n", req->vf_id);
 	dev_info(&hdev->pdev->dev, "vlan_type:%u\n", req->vlan_type);
 	dev_info(&hdev->pdev->dev, "vlan_fe:%u\n", req->vlan_fe);
-	dev_info(&hdev->pdev->dev, "vf_vlan_en:%u\n", vport->vf_vlan_en);
-	dev_info(&hdev->pdev->dev, "vlan_mode:%s\n",
-		 (hdev->vlan_mode == HCLGE_VLAN_DEFAULT_MODE) ? "default" :
-		 "dynamic");
 	dev_info(&hdev->pdev->dev, "netdev_flags:%x\n",
 		 vport->nic.netdev_flags);
-	dev_info(&hdev->pdev->dev, "has_vlan_used:%s\n",
-		 has_vlan_used ? "true" : "false");
 	dev_info(&hdev->pdev->dev, "port_base_vlan_cfg_state:%u\n",
 		 vport->port_base_vlan_cfg.state);
 }

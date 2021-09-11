@@ -320,10 +320,17 @@ enum hclge_fc_mode {
 	HCLGE_FC_DEFAULT
 };
 
-enum hclge_vlan_mode_sel {
-	HCLGE_VLAN_DEFAULT_MODE,
-	HCLGE_VLAN_DYNAMIC_MODE,
-};
+#define HCLGE_FILTER_TYPE_VF		0
+#define HCLGE_FILTER_TYPE_PORT		1
+#define HCLGE_FILTER_FE_EGRESS_V1_B	BIT(0)
+#define HCLGE_FILTER_FE_NIC_INGRESS_B	BIT(0)
+#define HCLGE_FILTER_FE_NIC_EGRESS_B	BIT(1)
+#define HCLGE_FILTER_FE_ROCE_INGRESS_B	BIT(2)
+#define HCLGE_FILTER_FE_ROCE_EGRESS_B	BIT(3)
+#define HCLGE_FILTER_FE_EGRESS		(HCLGE_FILTER_FE_NIC_EGRESS_B \
+					| HCLGE_FILTER_FE_ROCE_EGRESS_B)
+#define HCLGE_FILTER_FE_INGRESS		(HCLGE_FILTER_FE_NIC_INGRESS_B \
+					| HCLGE_FILTER_FE_ROCE_INGRESS_B)
 
 enum hclge_link_fail_code {
 	HCLGE_LF_NORMAL,
@@ -365,7 +372,6 @@ struct hclge_cfg {
 	u8 default_speed;
 	u32 numa_node_map;
 	u8 speed_ability;
-	u8 vlan_mode_sel;
 	u16 umv_space;
 };
 
@@ -857,7 +863,6 @@ struct hclge_dev {
 	enum HCLGE_FD_ACTIVE_RULE_TYPE fd_active_type;
 	u8 fd_en;
 
-	u8 vlan_mode;
 
 	u16 wanted_umv_size;
 	/* max available unicast mac vlan space */
@@ -955,7 +960,6 @@ struct hclge_vport {
 	u32 bw_limit;		/* VSI BW Limit (0 = disabled) */
 	u8  dwrr;
 
-	bool vf_vlan_en;
 	unsigned long vlan_del_fail_bmap[BITS_TO_LONGS(VLAN_N_VID)];
 	struct hclge_port_base_vlan_config port_base_vlan_cfg;
 	struct hclge_tx_vtag_cfg  txvlan_cfg;
@@ -1064,6 +1068,5 @@ int hclge_query_bd_num_cmd_send(struct hclge_dev *hdev,
 void hclge_report_hw_error(struct hclge_dev *hdev,
 			   enum hnae3_hw_error_type type);
 int hclge_dbg_dump_rst_info(struct hclge_dev *hdev, char *buf, int len);
-bool hclge_vf_vlan_need_enable(struct hclge_vport *vport);
 int hclge_push_vf_link_status(struct hclge_vport *vport);
 #endif

@@ -110,8 +110,7 @@ static int hns3_lp_setup(struct net_device *ndev, enum hnae3_loop loop, bool en)
 	} else {
 		/* recover promisc mode before loopback test */
 		hns3_request_update_promisc_mode(h);
-		vlan_filter_enable = (h->netdev_flags & HNAE3_VLAN_FLTR_EN) ?
-			false : true;
+		vlan_filter_enable = ndev->flags & IFF_PROMISC ? false : true;
 		hns3_enable_vlan_filter(ndev, vlan_filter_enable);
 	}
 
@@ -401,7 +400,7 @@ static void hns3_self_test(struct net_device *ndev,
 #if IS_ENABLED(CONFIG_VLAN_8021Q)
 	if (dis_vlan_filter)
 		h->ae_algo->ops->enable_vlan_filter(h,
-					h->netdev_flags & HNAE3_VF_VLAN_EN);
+					ndev->flags & IFF_PROMISC);
 #endif
 
 	if (if_running)
