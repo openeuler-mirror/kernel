@@ -113,7 +113,7 @@ struct hclge_dbg_func {
 			    char *buf, int len);
 };
 
-static struct hclge_dbg_dfx_message hclge_dbg_bios_common_reg[] = {
+static const struct hclge_dbg_dfx_message hclge_dbg_bios_common_reg[] = {
 	{false, "Reserved"},
 	{true,	"BP_CPU_STATE"},
 	{true,	"DFX_MSIX_INFO_NIC_0"},
