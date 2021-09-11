@@ -1424,12 +1424,20 @@ static void hclge_dbg_dump_serv_info(struct hclge_dev *hdev)
 		 hdev->serv_processed_cnt);
 }
 
-static void hclge_dbg_dump_interrupt(struct hclge_dev *hdev)
+static int hclge_dbg_dump_interrupt(struct hclge_dev *hdev, char *buf, int len)
 {
-	dev_info(&hdev->pdev->dev, "num_nic_msi: %u\n", hdev->num_nic_msi);
-	dev_info(&hdev->pdev->dev, "num_roce_msi: %u\n", hdev->num_roce_msi);
-	dev_info(&hdev->pdev->dev, "num_msi_used: %u\n", hdev->num_msi_used);
-	dev_info(&hdev->pdev->dev, "num_msi_left: %u\n", hdev->num_msi_left);
+	int pos = 0;
+
+	pos += scnprintf(buf + pos, len - pos, "num_nic_msi: %u\n",
+			 hdev->num_nic_msi);
+	pos += scnprintf(buf + pos, len - pos, "num_roce_msi: %u\n",
+			 hdev->num_roce_msi);
+	pos += scnprintf(buf + pos, len - pos, "num_msi_used: %u\n",
+			 hdev->num_msi_used);
+	pos += scnprintf(buf + pos, len - pos, "num_msi_left: %u\n",
+			 hdev->num_msi_left);
+
+	return 0;
 }
 
 static void hclge_dbg_get_m7_stats_info(struct hclge_dev *hdev)
@@ -1874,7 +1882,6 @@ static void hclge_dbg_dump_vlan_filter(struct hclge_dev *hdev,
 int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf)
 {
 #define DUMP_REG	"dump reg"
-#define DUMP_INTERRUPT	"dump intr"
 #define DUMP_VLAN_FILTER "dump vlan filter"
 #define DUMP_UMV_INFO "dump umv info"
 
@@ -1913,9 +1920,6 @@ int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf)
 	} else if (strncmp(cmd_buf, "dump qs shaper", 14) == 0) {
 		hclge_dbg_dump_qs_shaper(hdev,
 					 &cmd_buf[sizeof("dump qs shaper")]);
-	} else if (strncmp(cmd_buf, DUMP_INTERRUPT,
-		   strlen(DUMP_INTERRUPT)) == 0) {
-		hclge_dbg_dump_interrupt(hdev);
 	} else if (strncmp(cmd_buf, DUMP_VLAN_FILTER,
 		   strlen(DUMP_VLAN_FILTER)) == 0) {
 		hclge_dbg_dump_vlan_filter(hdev,
@@ -1955,6 +1959,10 @@ static const struct hclge_dbg_func hclge_dbg_cmd_func[] = {
 	{
 		.cmd = HNAE3_DBG_CMD_LOOPBACK,
 		.dbg_dump = hclge_dbg_dump_loopback,
+	},
+	{
+		.cmd = HNAE3_DBG_CMD_INTERRUPT_INFO,
+		.dbg_dump = hclge_dbg_dump_interrupt,
 	},
 };
 
