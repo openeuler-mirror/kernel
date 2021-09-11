@@ -645,49 +645,45 @@ static int hclge_dbg_dump_reg_cmd(struct hclge_dev *hdev,
 	return ret;
 }
 
-static void hclge_title_idx_print(struct hclge_dev *hdev, bool flag, int index,
-				  char *title_buf, char *true_buf,
-				  char *false_buf)
-{
-	if (flag)
-		dev_info(&hdev->pdev->dev, "%s(%d): %s weight: %u\n",
-			 title_buf, index, true_buf,
-			 hdev->tm_info.pg_info[0].tc_dwrr[index]);
-	else
-		dev_info(&hdev->pdev->dev, "%s(%d): %s\n", title_buf, index,
-			 false_buf);
-}
-
-static void hclge_dbg_dump_tc(struct hclge_dev *hdev)
+static int hclge_dbg_dump_tc(struct hclge_dev *hdev, char *buf, int len)
 {
 	struct hclge_ets_tc_weight_cmd *ets_weight;
 	struct hclge_desc desc;
-	int i, ret;
+	char *sch_mode_str;
+	int pos = 0;
+	int ret;
+	u8 i;
 
 	if (!hnae3_dev_dcb_supported(hdev)) {
-		dev_info(&hdev->pdev->dev,
-			 "Only DCB-supported dev supports tc\n");
-		return;
+		dev_err(&hdev->pdev->dev,
+			"Only DCB-supported dev supports tc\n");
+		return -EOPNOTSUPP;
 	}
 
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_ETS_TC_WEIGHT, true);
-
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
-		dev_err(&hdev->pdev->dev, "dump tc fail, ret = %d\n", ret);
-		return;
+		dev_err(&hdev->pdev->dev, "failed to get tc weight, ret = %d\n",
+			ret);
+		return ret;
 	}
 
 	ets_weight = (struct hclge_ets_tc_weight_cmd *)desc.data;
 
-	dev_info(&hdev->pdev->dev, "dump tc: %u tc enabled\n",
-		 hdev->tm_info.num_tc);
-	dev_info(&hdev->pdev->dev, "weight_offset: %u\n",
-		 ets_weight->weight_offset);
+	pos += scnprintf(buf + pos, len - pos, "enabled tc number: %u\n",
+			 hdev->tm_info.num_tc);
+	pos += scnprintf(buf + pos, len - pos, "weight_offset: %u\n",
+			 ets_weight->weight_offset);
 
-	for (i = 0; i < HNAE3_MAX_TC; i++)
-		hclge_title_idx_print(hdev, ets_weight->tc_weight[i], i,
-				      "tc", "no sp mode", "sp mode");
+	pos += scnprintf(buf + pos, len - pos, "TC    MODE  WEIGHT\n");
+	for (i = 0; i < HNAE3_MAX_TC; i++) {
+		sch_mode_str = ets_weight->tc_weight[i] ? "dwrr" : "sp";
+		pos += scnprintf(buf + pos, len - pos, "%u     %4s    %3u\n",
+				 i, sch_mode_str,
+				 hdev->tm_info.pg_info[0].tc_dwrr[i]);
+	}
+
+	return 0;
 }
 
 static const struct hclge_dbg_item tm_pg_items[] = {
@@ -2012,9 +2008,7 @@ int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf)
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
 
-	if (strncmp(cmd_buf, "dump tc", 7) == 0) {
-		hclge_dbg_dump_tc(hdev);
-	} else if (strncmp(cmd_buf, "dump qos pause cfg", 18) == 0) {
+	if (strncmp(cmd_buf, "dump qos pause cfg", 18) == 0) {
 		hclge_dbg_dump_qos_pause_cfg(hdev);
 	} else if (strncmp(cmd_buf, "dump qos pri map", 16) == 0) {
 		hclge_dbg_dump_qos_pri_map(hdev);
@@ -2064,6 +2058,10 @@ static const struct hclge_dbg_func hclge_dbg_cmd_func[] = {
 	{
 		.cmd = HNAE3_DBG_CMD_TM_PORT,
 		.dbg_dump = hclge_dbg_dump_tm_port,
+	},
+	{
+		.cmd = HNAE3_DBG_CMD_TC_SCH_INFO,
+		.dbg_dump = hclge_dbg_dump_tc,
 	},
 	{
 		.cmd = HNAE3_DBG_CMD_MAC_UC,
