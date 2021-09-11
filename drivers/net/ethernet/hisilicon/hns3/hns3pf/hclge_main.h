@@ -869,7 +869,6 @@ struct hclge_dev {
 	enum HCLGE_FD_ACTIVE_RULE_TYPE fd_active_type;
 	u8 fd_en;
 
-
 	u16 wanted_umv_size;
 	/* max available unicast mac vlan space */
 	u16 max_umv_size;
