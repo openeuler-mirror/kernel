@@ -118,8 +118,13 @@ static int hns3_dbg_queue_info(struct hnae3_handle *h,
 
 		value = readl_relaxed(ring->tqp->io_base +
 				      HNS3_RING_TX_RING_PKTNUM_RECORD_REG);
-		dev_info(&h->pdev->dev, "TX(%u) RING PKTNUM: %u\n\n", i,
-			 value);
+		dev_info(&h->pdev->dev, "TX(%u) RING PKTNUM: %u\n", i, value);
+
+		value = readl_relaxed(ring->tqp->io_base + HNS3_RING_EN_REG);
+		dev_info(&h->pdev->dev, "TX/RX(%u) RING EN: %s\n", i,
+			 value ? "enable" : "disable");
+
+		dev_info(&h->pdev->dev, "\n");
 	}
 
 	return 0;
