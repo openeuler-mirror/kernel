@@ -593,8 +593,8 @@ static void *tcp_comp_get_rx_stream(struct sock *sk)
 static int tcp_comp_decompress(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_comp_context *ctx = comp_get_ctx(sk);
+	struct strp_msg *rxm = strp_msg(skb);
 	const int plen = skb->len;
-	struct strp_msg *rxm;
 	ZSTD_outBuffer outbuf;
 	ZSTD_inBuffer inbuf;
 	int len;
@@ -615,11 +615,11 @@ static int tcp_comp_decompress(struct sock *sk, struct sk_buff *skb)
 		       ctx->rx.data_offset);
 
 	memcpy((char *)ctx->rx.compressed_data + ctx->rx.data_offset,
-	       skb->data, plen);
+	       (char *)skb->data + rxm->offset, plen - rxm->offset);
 
 	inbuf.src = ctx->rx.compressed_data;
 	inbuf.pos = 0;
-	inbuf.size = plen + ctx->rx.data_offset;
+	inbuf.size = plen - rxm->offset + ctx->rx.data_offset;
 	ctx->rx.data_offset = 0;
 
 	outbuf.dst = ctx->rx.plaintext_data;
@@ -630,7 +630,6 @@ static int tcp_comp_decompress(struct sock *sk, struct sk_buff *skb)
 		size_t ret;
 
 		to = outbuf.dst;
-
 		ret = ZSTD_decompressStream(ctx->rx.dstream, &outbuf, &inbuf);
 		if (ZSTD_isError(ret))
 			return -EIO;
@@ -640,8 +639,8 @@ static int tcp_comp_decompress(struct sock *sk, struct sk_buff *skb)
 			len = skb_tailroom(skb);
 
 		__skb_put(skb, len);
-		rxm = strp_msg(skb);
-		rxm->full_len += len;
+		rxm->full_len += (len + rxm->offset);
+		rxm->offset = 0;
 
 		len += plen;
 		skb_copy_to_linear_data(skb, to, len);
