@@ -259,7 +259,9 @@ enum pci_bus_speed {
 	PCIE_SPEED_5_0GT		= 0x15,
 	PCIE_SPEED_8_0GT		= 0x16,
 	PCIE_SPEED_16_0GT		= 0x17,
+#ifndef __GENKSYMS__
 	PCIE_SPEED_32_0GT		= 0x18,
+#endif
 	PCI_SPEED_UNKNOWN		= 0xff,
 };
 
