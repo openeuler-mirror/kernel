@@ -1452,15 +1452,12 @@ static int hclge_configure(struct hclge_dev *hdev)
 
 	hclge_init_kdump_kernel_config(hdev);
 
-	/* Set the init affinity based on pci func number */
+	/* Set the affinity based on numa node */
 	node = dev_to_node(&hdev->pdev->dev);
 	if (node != NUMA_NO_NODE)
 		cpumask = cpumask_of_node(node);
 
-	i = cpumask_weight(cpumask);
-	i = i ? PCI_FUNC(hdev->pdev->devfn) % i : 0;
-	cpumask_set_cpu(cpumask_local_spread(i, dev_to_node(&hdev->pdev->dev)),
-			&hdev->affinity_mask);
+	cpumask_copy(&hdev->affinity_mask, cpumask);
 
 	return ret;
 }
