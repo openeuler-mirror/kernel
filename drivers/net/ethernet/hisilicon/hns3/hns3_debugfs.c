@@ -701,7 +701,6 @@ static void hns3_dbg_help(struct hnae3_handle *h)
 
 	dev_info(&h->pdev->dev, "dump mac tbl\n");
 	dev_info(&h->pdev->dev, "dump mac tnl status\n");
-	dev_info(&h->pdev->dev, "dump qs shaper [qs id]\n");
 	dev_info(&h->pdev->dev, "dump umv info <func id>\n");
 	dev_info(&h->pdev->dev, "dump vlan filter <func id>\n");
 }
