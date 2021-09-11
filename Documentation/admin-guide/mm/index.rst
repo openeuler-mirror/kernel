@@ -30,6 +30,7 @@ the Linux memory management.
    idle_page_tracking
    ksm
    numa_memory_policy
+   numaperf
    pagemap
    soft-dirty
    transhuge
