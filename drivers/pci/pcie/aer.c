@@ -1425,7 +1425,8 @@ static int aer_probe(struct pcie_device *dev)
 		aer_remove(dev);
 		return -ENOMEM;
 	}
-
+	
+	INIT_KFIFO(rpc->aer_fifo);
 	/* Request IRQ ISR */
 	status = request_irq(dev->irq, aer_irq, IRQF_SHARED, "aerdrv", dev);
 	if (status) {
