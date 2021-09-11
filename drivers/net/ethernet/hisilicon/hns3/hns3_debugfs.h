@@ -32,6 +32,7 @@ enum hns3_dbg_dentry_type {
 	HNS3_DBG_DENTRY_RX_BD,
 	HNS3_DBG_DENTRY_MAC,
 	HNS3_DBG_DENTRY_REG,
+	HNS3_DBG_DENTRY_QUEUE,
 	HNS3_DBG_DENTRY_COMMON,
 };
 
@@ -51,6 +52,7 @@ struct hns3_dbg_cmd_info {
 
 struct hns3_dbg_func {
 	enum hnae3_dbg_cmd cmd;
+	int (*dbg_dump)(struct hnae3_handle *handle, char *buf, int len);
 	int (*dbg_dump_bd)(struct hns3_dbg_data *data, char *buf, int len);
 };
 
