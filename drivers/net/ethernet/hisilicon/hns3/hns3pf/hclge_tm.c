@@ -1645,3 +1645,47 @@ int hclge_tm_get_pri_shaper(struct hclge_dev *hdev, u8 pri_id,
 
 	return 0;
 }
+
+int hclge_tm_get_q_to_qs_map(struct hclge_dev *hdev, u16 q_id, u16 *qset_id)
+{
+	struct hclge_nq_to_qs_link_cmd *map;
+	struct hclge_desc desc;
+	int ret;
+
+	map = (struct hclge_nq_to_qs_link_cmd *)desc.data;
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TM_NQ_TO_QS_LINK, true);
+	map->nq_id = cpu_to_le16(q_id);
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to get queue to qset map, ret = %d\n", ret);
+		return ret;
+	}
+
+	*qset_id = hnae3_get_field(le16_to_cpu(map->qset_id),
+				   HCLGE_TM_QS_ID_MSK,
+				   HCLGE_TM_QS_ID_S);
+	return 0;
+}
+
+int hclge_tm_get_q_to_tc(struct hclge_dev *hdev, u16 q_id, u8 *tc_id)
+{
+#define HCLGE_TM_TC_MASK		0x7
+
+	struct hclge_tqp_tx_queue_tc_cmd *tc;
+	struct hclge_desc desc;
+	int ret;
+
+	tc = (struct hclge_tqp_tx_queue_tc_cmd *)desc.data;
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TQP_TX_QUEUE_TC, true);
+	tc->queue_id = cpu_to_le16(q_id);
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to get queue to tc map, ret = %d\n", ret);
+		return ret;
+	}
+
+	*tc_id = tc->tc_id & HCLGE_TM_TC_MASK;
+	return 0;
+}

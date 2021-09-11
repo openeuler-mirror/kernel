@@ -182,6 +182,7 @@ enum hnae3_port_base_vlan_state {
 enum hnae3_dbg_cmd {
 	HNAE3_DBG_CMD_TM_PRI,
 	HNAE3_DBG_CMD_TM_QSET,
+	HNAE3_DBG_CMD_TM_MAP,
 	HNAE3_DBG_CMD_TX_BD,
 	HNAE3_DBG_CMD_RX_BD,
 	HNAE3_DBG_CMD_MAC_UC,
