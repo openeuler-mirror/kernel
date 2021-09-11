@@ -88,6 +88,12 @@ int hns3_get_port_info(const struct hns3_nic_priv *net_priv,
 	desc_data = (__le32 *)(&desc.data[0]);
 	bd_num = le32_to_cpu(*desc_data);
 
+	if (bd_num > hdev->hw.cmq.csq.desc_num) {
+		dev_err(&hdev->pdev->dev, "get invalid BD num %u(max %u)\n",
+			bd_num, hdev->hw.cmq.csq.desc_num);
+		return -EINVAL;
+	}
+
 	port_desc = kcalloc(bd_num, sizeof(struct hclge_desc), GFP_KERNEL);
 	if (ZERO_OR_NULL_PTR(port_desc))
 		return -ENOMEM;
