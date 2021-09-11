@@ -1994,47 +1994,34 @@ static int hclge_dbg_dump_mac_mc(struct hclge_dev *hdev, char *buf, int len)
 	return 0;
 }
 
-static void hclge_dbg_dump_umv_info(struct hclge_dev *hdev, const char *cmd_buf)
+static int hclge_dbg_dump_umv_info(struct hclge_dev *hdev, char *buf, int len)
 {
+	u8 func_num = pci_num_vf(hdev->pdev) + 1;
 	struct hclge_vport *vport;
-	u16 share_umv_size;
-	u16 priv_umv_size;
-	u16 used_umv_num;
-	u32 vf_id;
-	int ret;
+	int pos = 0;
+	u8 i;
 
-	ret = kstrtouint(cmd_buf, 0, &vf_id);
-	if (ret < 0) {
-		dev_err(&hdev->pdev->dev,
-			"failed to dump umv info: bad command string, ret = %d\n",
-			ret);
-		return;
-	}
+	pos += scnprintf(buf, len, "num_alloc_vport   : %u\n",
+			  hdev->num_alloc_vport);
+	pos += scnprintf(buf + pos, len - pos, "max_umv_size     : %u\n",
+			 hdev->max_umv_size);
+	pos += scnprintf(buf + pos, len - pos, "wanted_umv_size  : %u\n",
+			 hdev->wanted_umv_size);
+	pos += scnprintf(buf + pos, len - pos, "priv_umv_size    : %u\n",
+			 hdev->priv_umv_size);
 
-	if (vf_id >= hdev->num_alloc_vport) {
-		dev_err(&hdev->pdev->dev,
-			"vf id(%u) is out of range(0-%u)\n", vf_id,
-			hdev->num_alloc_vport - 1);
-		return;
-	}
-
-	vport = &hdev->vport[vf_id];
 	mutex_lock(&hdev->vport_lock);
-	priv_umv_size = hdev->priv_umv_size;
-	share_umv_size = hdev->share_umv_size;
-	used_umv_num = vport->used_umv_num;
+	pos += scnprintf(buf + pos, len - pos, "share_umv_size   : %u\n",
+			 hdev->share_umv_size);
+	for (i = 0; i < func_num; i++) {
+		vport = &hdev->vport[i];
+		pos += scnprintf(buf + pos, len - pos,
+				 "vport(%u) used_umv_num : %u\n",
+				 i, vport->used_umv_num);
+	}
 	mutex_unlock(&hdev->vport_lock);
 
-	dev_info(&hdev->pdev->dev, "num_alloc_vport  : %u\n",
-		 hdev->num_alloc_vport);
-	dev_info(&hdev->pdev->dev, "max_umv_size     : %u\n",
-		 hdev->max_umv_size);
-	dev_info(&hdev->pdev->dev, "wanted_umv_size  : %u\n",
-		 hdev->wanted_umv_size);
-	dev_info(&hdev->pdev->dev, "priv_umv_size    : %u\n", priv_umv_size);
-	dev_info(&hdev->pdev->dev, "share_umv_size   : %u\n", share_umv_size);
-	dev_info(&hdev->pdev->dev, "vport(%u) used_umv_num : %u\n",
-		 vf_id, used_umv_num);
+	return 0;
 }
 
 static void hclge_dbg_dump_vlan_filter(struct hclge_dev *hdev,
@@ -2092,7 +2079,6 @@ static void hclge_dbg_dump_vlan_filter(struct hclge_dev *hdev,
 int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf)
 {
 #define DUMP_VLAN_FILTER "dump vlan filter"
-#define DUMP_UMV_INFO "dump umv info"
 
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -2103,9 +2089,6 @@ int hclge_dbg_run_cmd(struct hnae3_handle *handle, const char *cmd_buf)
 		   strlen(DUMP_VLAN_FILTER)) == 0) {
 		hclge_dbg_dump_vlan_filter(hdev,
 					   &cmd_buf[sizeof(DUMP_VLAN_FILTER)]);
-	} else if (strncmp(cmd_buf, DUMP_UMV_INFO,
-		   strlen(DUMP_UMV_INFO)) == 0) {
-		hclge_dbg_dump_umv_info(hdev, &cmd_buf[sizeof(DUMP_UMV_INFO)]);
 	} else {
 		dev_info(&hdev->pdev->dev, "unknown command\n");
 		return -EINVAL;
@@ -2238,6 +2221,10 @@ static const struct hclge_dbg_func hclge_dbg_cmd_func[] = {
 	{
 		.cmd = HNAE3_DBG_CMD_SERV_INFO,
 		.dbg_dump = hclge_dbg_dump_serv_info,
+	},
+	{
+		.cmd = HNAE3_DBG_CMD_UMV_INFO,
+		.dbg_dump = hclge_dbg_dump_umv_info,
 	},
 };
 

@@ -295,6 +295,13 @@ static struct hns3_dbg_cmd_info hns3_dbg_cmd[] = {
 		.buf_len = HNS3_DBG_READ_LEN,
 		.init = hns3_dbg_common_file_init,
 	},
+	{
+		.name = "umv_info",
+		.cmd = HNAE3_DBG_CMD_UMV_INFO,
+		.dentry = HNS3_DBG_DENTRY_COMMON,
+		.buf_len = HNS3_DBG_READ_LEN,
+		.init = hns3_dbg_common_file_init,
+	},
 };
 
 static void hns3_dbg_fill_content(char *content, u16 len,
@@ -714,7 +721,6 @@ static void hns3_dbg_help(struct hnae3_handle *h)
 		return;
 
 	dev_info(&h->pdev->dev, "dump mac tbl\n");
-	dev_info(&h->pdev->dev, "dump umv info <func id>\n");
 	dev_info(&h->pdev->dev, "dump vlan filter <func id>\n");
 }
 
