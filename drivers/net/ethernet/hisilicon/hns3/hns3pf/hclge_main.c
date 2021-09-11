@@ -8351,10 +8351,14 @@ static int hclge_set_vport_vlan_filter(struct hclge_vport *vport, bool enable)
 	if (ret)
 		return ret;
 
-	if (!vport->vport_id)
+	if (!vport->vport_id) {
+		if (hnae3_dev_vlan_fltr_mdf_supported(hdev))
+			enable = false;
+
 		ret = hclge_set_vlan_filter_ctrl(hdev, HCLGE_FILTER_TYPE_PORT,
 						 HCLGE_FILTER_FE_INGRESS,
 						 enable, 0);
+	}
 
 	return ret;
 }
