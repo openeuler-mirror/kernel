@@ -88,6 +88,11 @@ struct hclge_mac_vlan_idx_rd_mc {
 	u8  mg_vf_mb[32];
 };
 
+struct hclge_dbg_tcam_msg {
+	u8 stage;
+	u32 loc;
+};
+
 #define	HCLGE_DBG_MAX_DFX_MSG_LEN	60
 struct hclge_dbg_dfx_message {
 	int flag;
