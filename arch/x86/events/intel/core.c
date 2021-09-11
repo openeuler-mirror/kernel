@@ -4224,6 +4224,11 @@ static struct attribute_group group_format_extra = {
 	.is_visible = exra_is_visible,
 };
 
+static struct attribute_group group_format_extra_skl = {
+	.name       = "format",
+	.is_visible = exra_is_visible,
+};
+
 static const struct attribute_group *attr_update[] = {
 	&group_events_td,
 	&group_events_mem,
@@ -4231,6 +4236,7 @@ static const struct attribute_group *attr_update[] = {
 	&group_caps_gen,
 	&group_caps_lbr,
 	&group_format_extra,
+	&group_format_extra_skl,
 	NULL,
 };
 
@@ -4238,11 +4244,11 @@ static struct attribute *empty_attrs;
 
 __init int intel_pmu_init(void)
 {
+	struct attribute **extra_skl_attr = &empty_attrs;
 	struct attribute **extra_attr = &empty_attrs;
 	struct attribute **td_attr    = &empty_attrs;
 	struct attribute **mem_attr   = &empty_attrs;
 	struct attribute **tsx_attr   = &empty_attrs;
-	struct attribute **to_free = NULL;
 	union cpuid10_edx edx;
 	union cpuid10_eax eax;
 	union cpuid10_ebx ebx;
@@ -4723,8 +4729,7 @@ __init int intel_pmu_init(void)
 		x86_pmu.get_event_constraints = hsw_get_event_constraints;
 		extra_attr = boot_cpu_has(X86_FEATURE_RTM) ?
 			hsw_format_attr : nhm_format_attr;
-		extra_attr = merge_attr(extra_attr, skl_format_attr);
-		to_free = extra_attr;
+		extra_skl_attr = skl_format_attr;
 		td_attr  = hsw_events_attrs;
 		mem_attr = hsw_mem_events_attrs;
 		tsx_attr = hsw_tsx_events_attrs;
@@ -4765,7 +4770,7 @@ __init int intel_pmu_init(void)
 		x86_pmu.get_event_constraints = icl_get_event_constraints;
 		extra_attr = boot_cpu_has(X86_FEATURE_RTM) ?
 			hsw_format_attr : nhm_format_attr;
-		extra_attr = merge_attr(extra_attr, skl_format_attr);
+		extra_skl_attr = skl_format_attr;
 		mem_attr = icl_events_attrs;
 		tsx_attr = icl_tsx_events_attrs;
 		x86_pmu.lbr_pt_coexist = true;
@@ -4798,6 +4803,7 @@ __init int intel_pmu_init(void)
 	group_events_mem.attrs = mem_attr;
 	group_events_tsx.attrs = tsx_attr;
 	group_format_extra.attrs = extra_attr;
+	group_format_extra_skl.attrs = extra_skl_attr;
 
 	x86_pmu.attr_update = attr_update;
 
@@ -4871,7 +4877,6 @@ __init int intel_pmu_init(void)
 		pr_cont("full-width counters, ");
 	}
 
-	kfree(to_free);
 	return 0;
 }
 
