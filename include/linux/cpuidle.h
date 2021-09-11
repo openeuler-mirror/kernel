@@ -70,6 +70,7 @@ struct cpuidle_state {
 #define CPUIDLE_FLAG_POLLING	BIT(0) /* polling state */
 #define CPUIDLE_FLAG_COUPLED	BIT(1) /* state applies to multiple cpus */
 #define CPUIDLE_FLAG_TIMER_STOP BIT(2) /* timer is stopped on this state */
+#define CPUIDLE_FLAG_OFF       BIT(4) /* disable this state by default */
 
 struct cpuidle_device_kobj;
 struct cpuidle_state_kobj;
@@ -117,6 +118,7 @@ static inline int cpuidle_get_last_residency(struct cpuidle_device *dev)
 /****************************
  * CPUIDLE DRIVER INTERFACE *
  ****************************/
+#define CPUIDLE_STATE_DISABLED_BY_USER		BIT(0)
 
 struct cpuidle_driver {
 	const char		*name;
