@@ -368,6 +368,8 @@ struct hnae3_ae_dev {
  *   Enable/disable HW GRO
  * add_arfs_entry
  *   Check the 5-tuples of flow, and create flow director rule
+ * dbg_read_cmd
+ *   Execute debugfs read command.
  * get_vf_config
  *   Get the VF configuration setting by the host
  * set_vf_link_state
@@ -540,6 +542,8 @@ struct hnae3_ae_ops {
 	int (*add_arfs_entry)(struct hnae3_handle *handle, u16 queue_id,
 			      u16 flow_id, struct flow_keys *fkeys);
 	int (*dbg_run_cmd)(struct hnae3_handle *handle, const char *cmd_buf);
+	int (*dbg_read_cmd)(struct hnae3_handle *handle, const char *cmd_buf,
+			    char *buf, int len);
 	pci_ers_result_t (*handle_hw_ras_error)(struct hnae3_ae_dev *ae_dev);
 	bool (*get_hw_reset_stat)(struct hnae3_handle *handle);
 	bool (*ae_dev_resetting)(struct hnae3_handle *handle);
@@ -731,6 +735,9 @@ struct hnae3_handle {
 	hnae3_set_field((origin), (0x1 << (shift)), (shift), (val))
 #define hnae3_get_bit(origin, shift) \
 	hnae3_get_field((origin), (0x1 << (shift)), (shift))
+
+#define HNAE3_DBG_TM_PRI		"tm_priority"
+#define HNAE3_DBG_TM_QSET		"tm_qset"
 
 int hnae3_register_ae_dev(struct hnae3_ae_dev *ae_dev);
 void hnae3_unregister_ae_dev(struct hnae3_ae_dev *ae_dev);
