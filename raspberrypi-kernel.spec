@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 2109.1.0
+%global hulkrelease 2109.2.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0028
+Release: %{hulkrelease}.0029
 Summary: Linux Kernel
 License: GPL-1.0 and GPL+ and GPLv2 and GPLv2+ and LGPLv2 and LGPLv2+ and LGPLv2.1 and LGPLv2.1+ and ISC and BSD and Apache-2.0 and MIT
 URL:	 http://www.kernel.org/
@@ -174,6 +174,31 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Mon Sep 13 2021 Yafen Fang<yafen@iscas.ac.cn> - 4.19.90-2109.2.0.0029
+- cpuidle: menu: Avoid computations when result will be discarded
+- virtio_blk: fix handling single range discard request
+- virtio_blk: add discard and write zeroes support
+- iommu/arm-smmu-v3: add bit field SFM into GERROR_ERR_MASK
+- page_alloc: consider highatomic reserve in watermark fast
+- mm/filemap.c: fix a data race in filemap_fault()
+- scsi/hifc: Fix memory leakage bug
+- RDMA/hns: Fix wrong timer context buffer page size
+- RDMA/hns: Bugfix for posting multiple srq work request
+- RDMA/hns: Fix 0-length sge calculation error
+- RDMA/hns: Fix configuration of ack_req_freq in QPC
+- RDMA/hns: Add check for the validity of sl configuration
+- RDMA/hns: Fix bug during CMDQ initialization
+- RDMA/hns: Fixed wrong judgments in the goto branch
+- RDMA/hns: Bugfix for checking whether the srq is full when post wr
+- RDMA/hns: Fix wrong parameters when initial mtt of srq->idx_que
+- RDMA/hns: Force rewrite inline flag of WQE
+- RDMA/hns: Fix missing assignment of max_inline_data
+- RDMA/hns: Avoid enabling RQ inline on UD
+- RDMA/hns: Support to query firmware version
+- RDMA/hns: Force srq_limit to 0 when creating SRQ
+- RDMA/hns: Add interception for resizing SRQs
+- RDMA/hns: Fix an cmd queue issue when resetting
+
 * Fri Sep 3  2021 Yafen Fang<yafen@iscas.ac.cn> - 4.19.90-2109.1.0.0028
 - iommu: smmuv2: Using the SMMU_BYPASS_DEV to bypass SMMU for some SoCs
 - iommu: dev_bypass: cleanup dev bypass code
