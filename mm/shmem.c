@@ -2661,12 +2661,7 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 		 * Ok, we have the page, and it's up-to-date, so
 		 * now we can copy it to user space...
 		 */
-#ifdef CONFIG_UCE_KERNEL_RECOVERY
-		if (is_pagecache_reading_kernel_recovery_enable())
-			ret = copy_page_to_iter_generic_read(page, offset, nr, to);
-		else
-			ret = copy_page_to_iter(page, offset, nr, to);
-#endif
+		ret = copy_page_to_iter(page, offset, nr, to);
 		retval += ret;
 		offset += ret;
 		index += offset >> PAGE_SHIFT;
