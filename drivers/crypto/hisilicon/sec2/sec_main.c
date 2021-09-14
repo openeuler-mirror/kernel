@@ -816,7 +816,7 @@ static int sec_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 	int ret;
 
 #ifdef CONFIG_CRYPTO_QM_UACCE
-	qm->algs = "sec\ncipher\ndigest\n";
+	qm->algs = "sec\ncipher\ndigest\naead\n";
 	qm->uacce_mode = uacce_mode;
 #endif
 	qm->pdev = pdev;
