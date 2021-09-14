@@ -321,13 +321,14 @@ static int uacce_alloc_dma_buffers(struct uacce_queue *q,
 	unsigned long start = vma->vm_start;
 	struct uacce *uacce = q->uacce;
 	struct uacce_dma_slice *slice;
-	int i, ss_num;
+	unsigned long ss_num;
+	int i;
 
 	/* Set maximum slice size is 128MB */
 	if (max_size > UACCE_GRAN_NUM_MASK << UACCE_GRAN_SHIFT)
 		max_size = (UACCE_GRAN_NUM_MASK + 1) << (UACCE_GRAN_SHIFT - 1);
 
-	ss_num = (size + max_size - 1) / max_size;
+	ss_num = size / max_size + (size % max_size ? 1 : 0);
 	slice = kcalloc(ss_num + 1, sizeof(*slice), GFP_KERNEL | __GFP_ZERO);
 	if (!slice)
 		return -ENOMEM;
