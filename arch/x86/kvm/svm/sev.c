@@ -1503,6 +1503,13 @@ static int sev_receive_update_data(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	if (!guest_page)
 		goto e_free;
 
+	/*
+	 * Flush (on non-coherent CPUs) before RECEIVE_UPDATE_DATA, the PSP
+	 * encrypts the written data with the guest's key, and the cache may
+	 * contain dirty, unencrypted data.
+	 */
+	sev_clflush_pages(guest_page, n);
+
 	/* The RECEIVE_UPDATE_DATA command requires C-bit to be always set. */
 	data->guest_address = (page_to_pfn(guest_page[0]) << PAGE_SHIFT) +
 				offset;
