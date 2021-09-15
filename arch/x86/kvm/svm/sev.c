@@ -577,43 +577,61 @@ static int sev_es_sync_vmsa(struct vcpu_svm *svm)
 	return 0;
 }
 
-static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
+static int __sev_launch_update_vmsa(struct kvm *kvm, struct kvm_vcpu *vcpu,
+									int *error)
 {
 	struct kvm_sev_info *sev = &to_kvm_svm(kvm)->sev_info;
 	struct sev_data_launch_update_vmsa *vmsa;
+	struct vcpu_svm *svm = to_svm(vcpu);
+	int ret;
+
+	vmsa = kzalloc(sizeof(*vmsa), GFP_KERNEL);
+	if (!vmsa)
+		return -ENOMEM;
+
+	/* Perform some pre-encryption checks against the VMSA */
+	ret = sev_es_sync_vmsa(svm);
+	if (ret)
+		goto e_free;
+
+	/*
+	 * The LAUNCH_UPDATE_VMSA command will perform in-place
+	 * encryption of the VMSA memory content (i.e it will write
+	 * the same memory region with the guest's key), so invalidate
+	 * it first.
+	 */
+	clflush_cache_range(svm->vmsa, PAGE_SIZE);
+
+	vmsa->handle = sev->handle;
+	vmsa->address = __sme_pa(svm->vmsa);
+	vmsa->len = PAGE_SIZE;
+	ret = sev_issue_cmd(kvm, SEV_CMD_LAUNCH_UPDATE_VMSA, vmsa, error);
+
+e_free:
+	kfree(vmsa);
+	return ret;
+}
+
+static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
+{
+
 	struct kvm_vcpu *vcpu;
 	int i, ret;
 
 	if (!sev_es_guest(kvm))
 		return -ENOTTY;
 
-	vmsa = kzalloc(sizeof(*vmsa), GFP_KERNEL);
-	if (!vmsa)
-		return -ENOMEM;
-
 	kvm_for_each_vcpu(i, vcpu, kvm) {
 		struct vcpu_svm *svm = to_svm(vcpu);
 
-		/* Perform some pre-encryption checks against the VMSA */
-		ret = sev_es_sync_vmsa(svm);
+		ret = mutex_lock_killable(&vcpu->mutex);
 		if (ret)
-			goto e_free;
+			return ret;
 
-		/*
-		 * The LAUNCH_UPDATE_VMSA command will perform in-place
-		 * encryption of the VMSA memory content (i.e it will write
-		 * the same memory region with the guest's key), so invalidate
-		 * it first.
-		 */
-		clflush_cache_range(svm->vmsa, PAGE_SIZE);
-
-		vmsa->handle = sev->handle;
-		vmsa->address = __sme_pa(svm->vmsa);
-		vmsa->len = PAGE_SIZE;
-		ret = sev_issue_cmd(kvm, SEV_CMD_LAUNCH_UPDATE_VMSA, vmsa,
-				    &argp->error);
+		ret = __sev_launch_update_vmsa(kvm, vcpu, &argp->error);
+		mutex_unlock(&vcpu->mutex);
 		if (ret)
-			goto e_free;
+			return ret;
 
 		/*
 		* SEV-ES guests maintain an encrypted version of their FPU
@@ -622,11 +640,8 @@ static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 		* do xsave/xrstor on it.
 		*/
 		fpstate_set_confidential(&svm->vcpu.arch.guest_fpu);
-		svm->vcpu.arch.guest_state_protected = true;
 	}
 
-e_free:
-	kfree(vmsa);
 	return ret;
 }
 
