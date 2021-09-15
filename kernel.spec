@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2109.5.0
+%global hulkrelease 2109.6.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0109
+Release: %{hulkrelease}.0110
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,15 @@ fi
 %endif
 
 %changelog
+
+* Wed Sep 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2109.6.0.0110
+- ext4: fix race writing to an inline_data file while its xattrs are changing
+- uce: pagecache reading scenario add shmem support
+- Revert "uce: pagecache reading scenario add shmem support"
+- memcg: enable accounting of ipc resources
+- uce: pagecache reading scenario add shmem support
+- misc/uacce: fixup out-of-bounds array write
+- crypto/sec: add aead support for user-side
 
 * Mon Sep 13 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2109.5.0.0109
 - nvme-pci: Use u32 for nvme_dev.q_depth and nvme_queue.q_depth
