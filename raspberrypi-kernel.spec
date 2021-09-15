@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 2109.1.0
+%global hulkrelease 2109.5.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0028
+Release: %{hulkrelease}.0030
 Summary: Linux Kernel
 License: GPL-1.0 and GPL+ and GPLv2 and GPLv2+ and LGPLv2 and LGPLv2+ and LGPLv2.1 and LGPLv2.1+ and ISC and BSD and Apache-2.0 and MIT
 URL:	 http://www.kernel.org/
@@ -174,6 +174,124 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Tue Sep 14 2021 Yafen Fang <yafen@iscas.ac.cn> - 4.19.90-2109.5.0.0030
+- nvme-pci: Use u32 for nvme_dev.q_depth and nvme_queue.q_depth
+- nvme-pci: use unsigned for io queue depth
+- net: hns3: update hns3 version to 21.9.2
+- net: hns3: the pointer is cast to another pointer in a different type, which is incompatible.
+- net: hns3: cleanup for some print type miss match and blank lines
+- net: hns3: remove tc enable checking
+- net: hns3: Constify static structs
+- net: hns3: fix kernel crash when unload VF while it is being reset
+- net: hns3: fix memory override when bd_num is bigger than the ring size
+- net: hns3: pad the short tunnel frame before sending to hardware
+- net: hns3: check the return of skb_checksum_help()
+- net: hns3: add 'QoS' support for port based VLAN configuration
+- net: hns3: remove unused parameter from hclge_set_vf_vlan_common()
+- net: hns3: disable port VLAN filter when support function level VLAN filter control
+- net: hns3: remove redundant param mbx_event_pending
+- net: hns3: remove the useless debugfs file node cmd
+- net: hns3: fix get wrong pfc_en when query PFC configuration
+- net: hns3: fix mixed flag HCLGE_FLAG_MQPRIO_ENABLE and HCLGE_FLAG_DCB_ENABLE
+- net: hns3: add support for tc mqprio offload
+- net: hns3: add debugfs support for vlan configuration
+- net: hns3: add support for VF modify VLAN filter state
+- net: hns3: add query basic info support for VF
+- net: hns3: add support for modify VLAN filter state
+- Revert: net: hns3: adds support for extended VLAN mode and 'QOS' in vlan 802.1Q protocol.
+- net: hns3: change the method of getting cmd index in debugfs
+- net: hns3: refactor dump mac tbl of debugfs
+- net: hns3: add support for dumping MAC umv counter in debugfs
+- net: hns3: refactor dump serv info of debugfs
+- net: hns3: refactor dump mac tnl status of debugfs
+- net: hns3: refactor dump qs shaper of debugfs
+- net: hns3: refactor dump qos buf cfg of debugfs
+- net: hns3: split out hclge_dbg_dump_qos_buf_cfg()
+- net: hns3: refactor dump qos pri map of debugfs
+- net: hns3: refactor dump qos pause cfg of debugfs
+- net: hns3: refactor dump tc of debugfs
+- net: hns3: refactor dump tm of debugfs
+- net: hns3: refactor dump tm map of debugfs
+- net: hns3: refactor dump fd tcam of debugfs
+- net: hns3: refactor queue info of debugfs
+- net: hns3: refactor queue map of debugfs
+- net: hns3: refactor dump reg dcb info of debugfs
+- net: hns3: refactor dump reg of debugfs
+- net: hns3: Constify static structs
+- net: hns3: refactor dump ncl config of debugfs
+- net: hns3: refactor dump m7 info of debugfs
+- net: hns3: refactor dump reset info of debugfs
+- net: hns3: refactor dump intr of debugfs
+- net: hns3: refactor dump loopback of debugfs
+- net: hns3: refactor dump mng tbl of debugfs
+- net: hns3: refactor dump mac list of debugfs
+- net: hns3: refactor dump bd info of debugfs
+- net: hns3: refactor the debugfs process
+- net: hns3: add debugfs support for tm priority and qset info
+- net: hns3: add interfaces to query information of tm priority/qset
+- net: hns3: change the value of the SEPARATOR_VALUE macro in hclgevf_main.c
+- net: hns3: fix for vxlan gpe tx checksum bug
+- net: hns3: Fix for geneve tx checksum bug
+- net: hns3: refine the struct hane3_tc_info
+- net: hns3: VF not request link status when PF support push link status feature
+- net: hns3: remove a duplicate pf reset counting
+- net: hns3: remediate a potential overflow risk of bd_num_list
+- net: hns3: fix query vlan mask value error for flow director
+- net: hns3: fix error mask definition of flow director
+- net: hns3: cleanup for endian issue for VF RSS
+- net: hns3: fix incorrect handling of sctp6 rss tuple
+- net: hns3: refine function hclge_set_vf_vlan_cfg()
+- net: hns3: dump tqp enable status in debugfs
+- hisilicon/hns3: convert comma to semicolon
+- net: hns3: remove a misused pragma packed
+- net: hns3: add debugfs of dumping pf interrupt resources
+- net: hns3: Supply missing hclge_dcb.h include file
+- net: hns3: print out speed info when parsing speed fails
+- net: hns3: add a missing mutex destroy in hclge_init_ad_dev()
+- net: hns3: add a print for initializing CMDQ when reset pending
+- net: hns3: replace snprintf with scnprintf in hns3_update_strings
+- net: hns3: change affinity_mask to numa node range
+- net: hns3: change hclge/hclgevf workqueue to WQ_UNBOUND mode
+- tcp_comp: Del compressed_data and remaining_data from tcp_comp_context_rx
+- tcp_comp: Add dpkt to save decompressed skb
+- tcp_comp: Fix ZSTD_decompressStream failed
+- mm: downgrade the print level in do_shrink_slab
+- uio: introduce UIO_MEM_IOVA
+- mm/mempolicy.c: fix checking unmapped holes for mbind
+- mm/mempolicy.c: check range first in queue_pages_test_walk
+- net: qrtr: fix another OOB Read in qrtr_endpoint_post
+- net: qrtr: fix OOB Read in qrtr_endpoint_post
+- mm, slab, slub: stop taking cpu hotplug lock
+- mm, slab, slub: stop taking memory hotplug lock
+- mm, slub: stop freeing kmem_cache_node structures on node offline
+- kernel/hung_task.c: introduce sysctl to print all traces when a hung task is detected
+- vt_kdsetmode: extend console locking
+
+* Mon Sep 13 2021 Yafen Fang<yafen@iscas.ac.cn> - 4.19.90-2109.2.0.0029
+- cpuidle: menu: Avoid computations when result will be discarded
+- virtio_blk: fix handling single range discard request
+- virtio_blk: add discard and write zeroes support
+- iommu/arm-smmu-v3: add bit field SFM into GERROR_ERR_MASK
+- page_alloc: consider highatomic reserve in watermark fast
+- mm/filemap.c: fix a data race in filemap_fault()
+- scsi/hifc: Fix memory leakage bug
+- RDMA/hns: Fix wrong timer context buffer page size
+- RDMA/hns: Bugfix for posting multiple srq work request
+- RDMA/hns: Fix 0-length sge calculation error
+- RDMA/hns: Fix configuration of ack_req_freq in QPC
+- RDMA/hns: Add check for the validity of sl configuration
+- RDMA/hns: Fix bug during CMDQ initialization
+- RDMA/hns: Fixed wrong judgments in the goto branch
+- RDMA/hns: Bugfix for checking whether the srq is full when post wr
+- RDMA/hns: Fix wrong parameters when initial mtt of srq->idx_que
+- RDMA/hns: Force rewrite inline flag of WQE
+- RDMA/hns: Fix missing assignment of max_inline_data
+- RDMA/hns: Avoid enabling RQ inline on UD
+- RDMA/hns: Support to query firmware version
+- RDMA/hns: Force srq_limit to 0 when creating SRQ
+- RDMA/hns: Add interception for resizing SRQs
+- RDMA/hns: Fix an cmd queue issue when resetting
+
 * Fri Sep 3  2021 Yafen Fang<yafen@iscas.ac.cn> - 4.19.90-2109.1.0.0028
 - iommu: smmuv2: Using the SMMU_BYPASS_DEV to bypass SMMU for some SoCs
 - iommu: dev_bypass: cleanup dev bypass code
