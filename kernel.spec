@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       5
-%global maintenance_release .3.0
-%global pkg_release         .19
+%global devel_release       6
+%global maintenance_release .0.0
+%global pkg_release         .0
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,36 @@ fi
 %endif
 
 %changelog
+* Wed Sep 15 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-6.0.0.0
+- mm/page_alloc: correct return value of populated elements if bulk array is populated
+- mm: fix oom killing for disabled pid
+- X86/config: Enable CONFIG_USERSWAP
+- eulerfs: change default config file
+- eulerfs: add Kconfig and Makefile
+- eulerfs: add super_operations and module_init/exit
+- eulerfs: add inode_operations for symlink inode
+- eulerfs: add file_operations for dir inode
+- eulerfs: add inode_operations for dir inode and special inode
+- eulerfs: add file operations and inode operations for regular file
+- eulerfs: add dax operations
+- eulerfs: add inode related interfaces
+- eulerfs: add dependency operations
+- eulerfs: add nv dict operations
+- eulerfs: add filename interfaces
+- eulerfs: add interfaces for page wear
+- eulerfs: add interfaces for inode lock transfer
+- eulerfs: add flush interfaces
+- eulerfs: add memory allocation interfaces
+- eulerfs: add kmeme_cache definitions and interfaces
+- eulerfs: common definitions
+- vfio/pci: Fix wrong return value when get iommu attribute DOMAIN_ATTR_NESTING
+- net: hns3: remove always exist devlink pointer check
+- net: hns3: add support ethtool extended link state
+- net: hns3: add header file hns3_ethtoo.h
+- ethtool: add two link extended substates of bad signal integrity
+- docs: ethtool: Add two link extended substates of bad signal integrity
+- net: hns3: add support for triggering reset by ethtool
+
 * Mon Aug 23 2021 ShiYuan HU <hushiyuan@huwei.com> - 5.10.0-5.3.0.19
 - check-kabi: check-kabi support python3 and python2
 
