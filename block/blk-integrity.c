@@ -436,6 +436,8 @@ void blk_integrity_unregister(struct gendisk *disk)
 	if (!bi->profile)
 		return;
 
+	/* ensure all bios are off the integrity workqueue */
+	blk_flush_integrity();
 	disk->queue->backing_dev_info->capabilities &= ~BDI_CAP_STABLE_WRITES;
 	memset(bi, 0, sizeof(*bi));
 }
