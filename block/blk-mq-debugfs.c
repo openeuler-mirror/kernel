@@ -427,8 +427,7 @@ struct show_busy_params {
  * Note: the state of a request may change while this function is in progress,
  * e.g. due to a concurrent blk_mq_finish_request() call.
  */
-static void hctx_show_busy_rq(struct blk_mq_hw_ctx *hctx,
-		struct request *rq, void *data, bool reserved)
+static void hctx_show_busy_rq(struct request *rq, void *data, bool reserved)
 {
 	const struct show_busy_params *params = data;
 
@@ -443,7 +442,7 @@ static int hctx_busy_show(void *data, struct seq_file *m)
 	struct blk_mq_hw_ctx *hctx = data;
 	struct show_busy_params params = { .m = m, .hctx = hctx };
 
-	blk_mq_queue_tag_inflight_iter(hctx->queue, hctx_show_busy_rq,
+	blk_mq_tagset_busy_iter(hctx->queue->tag_set, hctx_show_busy_rq,
 				&params);
 
 	return 0;
