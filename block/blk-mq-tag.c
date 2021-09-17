@@ -217,51 +217,37 @@ struct bt_iter_data {
 	busy_iter_fn *fn;
 	void *data;
 	bool reserved;
-	bool inflight;
 };
 
 static bool bt_iter(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 {
 	struct bt_iter_data *iter_data = data;
 	struct blk_mq_hw_ctx *hctx = iter_data->hctx;
+	struct blk_mq_tags *tags = hctx->tags;
 	bool reserved = iter_data->reserved;
-	struct blk_mq_tags *tags;
 	struct request *rq;
-
-	tags = hctx->sched_tags ? hctx->sched_tags : hctx->tags;
 
 	if (!reserved)
 		bitnr += tags->nr_reserved_tags;
+	rq = tags->rqs[bitnr];
 
 	/*
-	 * Because tags->rqs[] will not been cleaned when free driver tag
-	 * and there is a window between get driver tag and write tags->rqs[],
-	 * so we may see stale rq in tags->rqs[] which may have been freed.
-	 * Using static_rqs[] is safer.
+	 * We can hit rq == NULL here, because the tagging functions
+	 * test and set the bit before assining ->rqs[].
 	 */
-	rq = tags->static_rqs[bitnr];
-
-	/*
-	 * There is a small window between get tag and blk_mq_rq_ctx_init,
-	 * so rq->q and rq->mq_hctx maybe different.
-	 */
-	if (rq && rq->q == hctx->queue &&
-	    (!iter_data->inflight ||
-	     blk_mq_rq_state(rq) == MQ_RQ_IN_FLIGHT))
+	if (rq && rq->q == hctx->queue)
 		iter_data->fn(hctx, rq, iter_data->data, reserved);
 	return true;
 }
 
-static void bt_for_each(struct blk_mq_hw_ctx *hctx,
-		struct sbitmap_queue *bt, busy_iter_fn *fn,
-		void *data, bool reserved, bool inflight)
+static void bt_for_each(struct blk_mq_hw_ctx *hctx, struct sbitmap_queue *bt,
+			busy_iter_fn *fn, void *data, bool reserved)
 {
 	struct bt_iter_data iter_data = {
 		.hctx = hctx,
 		.fn = fn,
 		.data = data,
 		.reserved = reserved,
-		.inflight = inflight,
 	};
 
 	sbitmap_for_each_set(&bt->sb, bt_iter, &iter_data);
@@ -359,23 +345,22 @@ void blk_mq_tagset_wait_completed_request(struct blk_mq_tag_set *tagset)
 }
 EXPORT_SYMBOL(blk_mq_tagset_wait_completed_request);
 
-static void __blk_mq_queue_tag_busy_iter(struct request_queue *q,
-		busy_iter_fn *fn, void *priv, bool inflight)
+void blk_mq_queue_tag_busy_iter(struct request_queue *q, busy_iter_fn *fn,
+		void *priv)
 {
 	struct blk_mq_hw_ctx *hctx;
 	int i;
 
 	/*
-	 * Get a reference of the queue unless it has been zero. We use this
-	 * to avoid the race with the code that would modify the hctxs after
-	 * freeze and drain the queue, including updating nr_hw_queues, io
-	 * scheduler switching and queue clean up.
+	 * __blk_mq_update_nr_hw_queues will update the nr_hw_queues and
+	 * queue_hw_ctx after freeze the queue, so we use q_usage_counter
+	 * to avoid race with it.
 	 */
 	if (!percpu_ref_tryget(&q->q_usage_counter))
 		return;
 
 	queue_for_each_hw_ctx(q, hctx, i) {
-		struct blk_mq_tags *tags;
+		struct blk_mq_tags *tags = hctx->tags;
 
 		/*
 		 * If not software queues are currently mapped to this
@@ -384,44 +369,12 @@ static void __blk_mq_queue_tag_busy_iter(struct request_queue *q,
 		if (!blk_mq_hw_queue_mapped(hctx))
 			continue;
 
-		tags = hctx->sched_tags ? hctx->sched_tags : hctx->tags;
-
 		if (tags->nr_reserved_tags)
-			bt_for_each(hctx, &tags->breserved_tags,
-				    fn, priv, true, inflight);
-		bt_for_each(hctx, &tags->bitmap_tags,
-			    fn, priv, false, inflight);
-		/*
-		 * flush_rq represents the rq with REQ_PREFLUSH and REQ_FUA
-		 * (if FUA is not supported by device) to be issued to
-		 * device. So we need to consider it when iterate inflight
-		 * rqs, but needn't to count it when iterate busy tags.
-		 */
-		if (inflight &&
-		    blk_mq_rq_state(hctx->fq->flush_rq) == MQ_RQ_IN_FLIGHT)
-			fn(hctx, hctx->fq->flush_rq, priv, false);
+			bt_for_each(hctx, &tags->breserved_tags, fn, priv, true);
+		bt_for_each(hctx, &tags->bitmap_tags, fn, priv, false);
 	}
 	blk_queue_exit(q);
 }
-
-/*
- * Iterate all the busy tags including pending and in-flight ones.
- */
-void blk_mq_queue_tag_busy_iter(struct request_queue *q, busy_iter_fn *fn,
-				void *priv)
-{
-	__blk_mq_queue_tag_busy_iter(q, fn, priv, false);
-}
-
-/*
- * Iterate all the inflight tags.
- */
-void blk_mq_queue_tag_inflight_iter(struct request_queue *q,
-				    busy_iter_fn *fn, void *priv)
-{
-	__blk_mq_queue_tag_busy_iter(q, fn, priv, true);
-}
-EXPORT_SYMBOL(blk_mq_queue_tag_inflight_iter);
 
 static int bt_alloc(struct sbitmap_queue *bt, unsigned int depth,
 		    bool round_robin, int node)

@@ -112,7 +112,7 @@ void blk_mq_in_flight(struct request_queue *q, struct hd_struct *part,
 	struct mq_inflight mi = { .part = part, .inflight = inflight, };
 
 	inflight[0] = inflight[1] = 0;
-	blk_mq_queue_tag_inflight_iter(q, blk_mq_check_inflight, &mi);
+	blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight, &mi);
 }
 
 static void blk_mq_check_inflight_rw(struct blk_mq_hw_ctx *hctx,
@@ -131,7 +131,7 @@ void blk_mq_in_flight_rw(struct request_queue *q, struct hd_struct *part,
 	struct mq_inflight mi = { .part = part, .inflight = inflight, };
 
 	inflight[0] = inflight[1] = 0;
-	blk_mq_queue_tag_inflight_iter(q, blk_mq_check_inflight_rw, &mi);
+	blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight_rw, &mi);
 }
 
 void blk_freeze_queue_start(struct request_queue *q)
@@ -917,7 +917,7 @@ static void blk_mq_timeout_work(struct work_struct *work)
 	if (!percpu_ref_tryget(&q->q_usage_counter))
 		return;
 
-	blk_mq_queue_tag_inflight_iter(q, blk_mq_check_expired, &next);
+	blk_mq_queue_tag_busy_iter(q, blk_mq_check_expired, &next);
 
 	if (next != 0) {
 		mod_timer(&q->timeout, next);
