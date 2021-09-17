@@ -114,7 +114,7 @@ static int membarrier_global_expedited(void)
 		 * leaves the prior task mm in place as an optimization when
 		 * scheduling a kthread.
 		 */
-		p = task_rcu_dereference(&cpu_rq(cpu)->curr);
+		p = rcu_dereference(cpu_rq(cpu)->curr);
 		if (p->flags & PF_KTHREAD)
 			continue;
 
@@ -183,7 +183,7 @@ static int membarrier_private_expedited(int flags)
 		 */
 		if (cpu == raw_smp_processor_id())
 			continue;
-		p = task_rcu_dereference(&cpu_rq(cpu)->curr);
+		p = rcu_dereference(cpu_rq(cpu)->curr);
 		if (p && p->mm == mm)
 			__cpumask_set_cpu(cpu, tmpmask);
 	}
@@ -249,7 +249,7 @@ static int sync_runqueues_membarrier_state(struct mm_struct *mm)
 		struct rq *rq = cpu_rq(cpu);
 		struct task_struct *p;
 
-		p = task_rcu_dereference(&rq->curr);
+		p = rcu_dereference(rq->curr);
 		if (p && p->mm == mm)
 			__cpumask_set_cpu(cpu, tmpmask);
 	}
