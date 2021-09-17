@@ -255,7 +255,7 @@ static bool bt_iter(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 
 	if (rq->q == hctx->queue)
 		iter_data->fn(hctx, rq, iter_data->data, reserved);
-	blk_mq_put_rq_ref(rq, hctx);
+	blk_mq_put_rq_ref(rq);
 	return true;
 }
 
@@ -299,7 +299,7 @@ static bool bt_tags_iter(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 
 	if (blk_mq_request_started(rq))
 		iter_data->fn(rq, iter_data->data, reserved);
-	blk_mq_put_rq_ref(rq, blk_mq_map_queue(rq->q, rq->mq_ctx->cpu));
+	blk_mq_put_rq_ref(rq);
 
 	return true;
 }
