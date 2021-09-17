@@ -2039,8 +2039,8 @@ static void blk_mq_clear_rq_mapping(struct blk_mq_tag_set *set,
 	 * Request reference is cleared and it is guaranteed to be observed
 	 * after the ->lock is released.
 	 */
-	spin_lock_irqsave(&drv_tags->lock, flags);
-	spin_unlock_irqrestore(&drv_tags->lock, flags);
+	blk_mq_tags_lock_irqsave(drv_tags, flags);
+	blk_mq_tags_unlock_irqrestore(drv_tags, flags);
 }
 
 void blk_mq_free_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
@@ -2277,8 +2277,8 @@ static void blk_mq_clear_flush_rq_mapping(struct blk_mq_tags *tags,
 	 * Request reference is cleared and it is guaranteed to be observed
 	 * after the ->lock is released.
 	 */
-	spin_lock_irqsave(&tags->lock, flags);
-	spin_unlock_irqrestore(&tags->lock, flags);
+	blk_mq_tags_lock_irqsave(tags, flags);
+	blk_mq_tags_unlock_irqrestore(tags, flags);
 }
 
 /* hctx->ctxs will be freed in queue's release handler */

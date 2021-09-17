@@ -225,11 +225,11 @@ static struct request *blk_mq_find_and_get_req(struct blk_mq_tags *tags,
 	struct request *rq;
 	unsigned long flags;
 
-	spin_lock_irqsave(&tags->lock, flags);
+	blk_mq_tags_lock_irqsave(tags, flags);
 	rq = tags->rqs[bitnr];
 	if (!rq || !refcount_inc_not_zero(&rq->ref))
 		rq = NULL;
-	spin_unlock_irqrestore(&tags->lock, flags);
+	blk_mq_tags_unlock_irqrestore(tags, flags);
 	return rq;
 }
 
@@ -422,7 +422,7 @@ static struct blk_mq_tags *blk_mq_init_bitmap_tags(struct blk_mq_tags *tags,
 free_bitmap_tags:
 	sbitmap_queue_free(&tags->bitmap_tags);
 free_tags:
-	kfree(tags);
+	kfree(blk_mq_tags_to_wrapper(tags));
 	return NULL;
 }
 
@@ -431,19 +431,21 @@ struct blk_mq_tags *blk_mq_init_tags(unsigned int total_tags,
 				     int node, int alloc_policy)
 {
 	struct blk_mq_tags *tags;
+	struct blk_mq_tags_wrapper *tags_wrapper;
 
 	if (total_tags > BLK_MQ_TAG_MAX) {
 		pr_err("blk-mq: tag depth too large\n");
 		return NULL;
 	}
 
-	tags = kzalloc_node(sizeof(*tags), GFP_KERNEL, node);
-	if (!tags)
+	tags_wrapper = kzalloc_node(sizeof(*tags_wrapper), GFP_KERNEL, node);
+	if (!tags_wrapper)
 		return NULL;
 
+	tags = &tags_wrapper->tags;
 	tags->nr_tags = total_tags;
 	tags->nr_reserved_tags = reserved_tags;
-	spin_lock_init(&tags->lock);
+	spin_lock_init(&tags_wrapper->lock);
 
 	return blk_mq_init_bitmap_tags(tags, node, alloc_policy);
 }
@@ -452,7 +454,7 @@ void blk_mq_free_tags(struct blk_mq_tags *tags)
 {
 	sbitmap_queue_free(&tags->bitmap_tags);
 	sbitmap_queue_free(&tags->breserved_tags);
-	kfree(tags);
+	kfree(blk_mq_tags_to_wrapper(tags));
 }
 
 int blk_mq_tag_update_depth(struct blk_mq_hw_ctx *hctx,

@@ -19,6 +19,10 @@ struct blk_mq_tags {
 	struct request **rqs;
 	struct request **static_rqs;
 	struct list_head page_list;
+};
+
+struct blk_mq_tags_wrapper {
+	struct blk_mq_tags tags;
 
 	/*
 	 * used to clear request reference in rqs[] before freeing one
@@ -27,6 +31,12 @@ struct blk_mq_tags {
 	spinlock_t lock;
 };
 
+#define blk_mq_tags_to_wrapper(t) \
+	container_of(t, struct blk_mq_tags_wrapper, tags)
+#define blk_mq_tags_lock_irqsave(tags, flags) \
+	spin_lock_irqsave(&blk_mq_tags_to_wrapper(tags)->lock, flags)
+#define blk_mq_tags_unlock_irqrestore(tags, flags) \
+	spin_unlock_irqrestore(&blk_mq_tags_to_wrapper(tags)->lock, flags)
 
 extern struct blk_mq_tags *blk_mq_init_tags(unsigned int nr_tags, unsigned int reserved_tags, int node, int alloc_policy);
 extern void blk_mq_free_tags(struct blk_mq_tags *tags);
