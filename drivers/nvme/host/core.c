@@ -3370,8 +3370,6 @@ static void nvme_ns_remove(struct nvme_ns *ns)
 	if (ns->disk && ns->disk->flags & GENHD_FL_UP) {
 		del_gendisk(ns->disk);
 		blk_cleanup_queue(ns->queue);
-		if (blk_get_integrity(ns->disk))
-			blk_integrity_unregister(ns->disk);
 	}
 
 	down_write(&ns->ctrl->namespaces_rwsem);
