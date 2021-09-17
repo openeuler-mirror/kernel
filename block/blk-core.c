@@ -183,7 +183,7 @@ void blk_queue_congestion_threshold(struct request_queue *q)
 	q->nr_congestion_off = nr;
 }
 
-void blk_rq_init(struct request_queue *q, struct request *rq)
+void __blk_rq_init(struct request_queue *q, struct request *rq)
 {
 	memset(rq, 0, sizeof(*rq));
 
@@ -198,6 +198,11 @@ void blk_rq_init(struct request_queue *q, struct request *rq)
 	rq->internal_tag = -1;
 	rq->start_time_ns = ktime_get_ns();
 	rq->part = NULL;
+}
+
+void blk_rq_init(struct request_queue *q, struct request *rq)
+{
+	__blk_rq_init(q, rq);
 	refcount_set(&rq->ref, 1);
 }
 EXPORT_SYMBOL(blk_rq_init);

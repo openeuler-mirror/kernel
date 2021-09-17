@@ -262,6 +262,7 @@ int elevator_switch_mq(struct request_queue *q,
 void elevator_exit(struct request_queue *, struct elevator_queue *);
 int elv_register_queue(struct request_queue *q);
 void elv_unregister_queue(struct request_queue *q);
+void __blk_rq_init(struct request_queue *q, struct request *rq);
 
 struct hd_struct *__disk_get_part(struct gendisk *disk, int partno);
 
