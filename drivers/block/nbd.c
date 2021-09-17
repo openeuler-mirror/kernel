@@ -763,8 +763,7 @@ static void recv_work(struct work_struct *work)
 	kfree(args);
 }
 
-static void nbd_clear_req(struct blk_mq_hw_ctx *hctx,
-		struct request *req, void *data, bool reserved)
+static void nbd_clear_req(struct request *req, void *data, bool reserved)
 {
 	struct nbd_cmd *cmd = blk_mq_rq_to_pdu(req);
 
@@ -778,7 +777,7 @@ static void nbd_clear_req(struct blk_mq_hw_ctx *hctx,
 static void nbd_clear_que(struct nbd_device *nbd)
 {
 	blk_mq_quiesce_queue(nbd->disk->queue);
-	blk_mq_queue_tag_inflight_iter(nbd->disk->queue, nbd_clear_req, NULL);
+	blk_mq_tagset_busy_iter(&nbd->tag_set, nbd_clear_req, NULL);
 	blk_mq_unquiesce_queue(nbd->disk->queue);
 	dev_dbg(disk_to_dev(nbd->disk), "queue cleared\n");
 }
