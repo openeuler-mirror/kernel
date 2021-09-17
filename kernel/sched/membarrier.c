@@ -115,7 +115,7 @@ static int membarrier_global_expedited(void)
 		 * scheduling a kthread.
 		 */
 		p = task_rcu_dereference(&cpu_rq(cpu)->curr);
-		if (p && p->flags & PF_KTHREAD)
+		if (p->flags & PF_KTHREAD)
 			continue;
 
 		__cpumask_set_cpu(cpu, tmpmask);
