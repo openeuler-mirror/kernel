@@ -1087,10 +1087,14 @@ struct task_struct {
 
 	struct tlbflush_unmap_batch	tlb_ubc;
 
+#ifndef __GENKSYMS__
 	union {
 		refcount_t		rcu_users;
 		struct rcu_head		rcu;
 	};
+#else
+	struct rcu_head			rcu;
+#endif
 
 	/* Cache last used pipe for splice(): */
 	struct pipe_inode_info		*splice_pipe;
