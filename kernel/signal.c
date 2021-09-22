@@ -4103,7 +4103,7 @@ void __init signals_init(void)
 		!= offsetof(struct siginfo, _sifields._pad));
 	BUILD_BUG_ON(sizeof(struct siginfo) != SI_MAX_SIZE);
 
-	sigqueue_cachep = KMEM_CACHE(sigqueue, SLAB_PANIC);
+	sigqueue_cachep = KMEM_CACHE(sigqueue, SLAB_PANIC | SLAB_ACCOUNT);
 }
 
 #ifdef CONFIG_KGDB_KDB
