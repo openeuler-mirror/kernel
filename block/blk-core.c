@@ -783,6 +783,16 @@ void blk_cleanup_queue(struct request_queue *q)
 	 */
 	blk_freeze_queue(q);
 
+	/*
+	 * All throttled io will never be issued after blk_throtl_exit(), which
+	 * will lead to hung. Thus we need to issue them before calling
+	 * blk_throtl_exit() from blk_exit_queue().
+	 */
+	if (q->mq_ops) {
+		spin_lock_irq(lock);
+		blkcg_drain_queue(q);
+		spin_unlock_irq(lock);
+	}
 	rq_qos_exit(q);
 
 	spin_lock_irq(lock);
