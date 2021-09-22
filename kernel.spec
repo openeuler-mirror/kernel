@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2109.6.0
+%global hulkrelease 2109.7.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0110
+Release: %{hulkrelease}.0111
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,42 @@ fi
 %endif
 
 %changelog
+
+* Wed Sep 22 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2109.7.0.0111
+- memcg: enable accounting for ldt_struct objects
+- memcg: enable accounting for posix_timers_cache slab
+- memcg: enable accounting for signals
+- memcg: enable accounting for new namesapces and struct nsproxy
+- memcg: enable accounting for fasync_cache
+- memcg: enable accounting for mnt_cache entries
+- memcg: enable accounting for pids in nested pid namespaces
+- KVM: do not allow mapping valid but non-reference-counted pages
+- nvme: remove the call to nvme_update_disk_info in nvme_ns_remove
+- block: flush the integrity workqueue in blk_integrity_unregister
+- block: check if a profile is actually registered in blk_integrity_unregister
+- blk-mq: fix kabi broken in blk_mq_tags
+- blk-mq: fix is_flush_rq
+- blk-mq: fix kernel panic during iterating over flush request
+- block: factor out a new helper from blk_rq_init()
+- blk-mq: don't grab rq's refcount in blk_mq_check_expired()
+- blk-mq: clearing flush request reference in tags->rqs[]
+- blk-mq: clear stale request in tags->rq[] before freeing one request pool
+- blk-mq: grab rq->refcount before calling ->fn in blk_mq_tagset_busy_iter
+- Revert "blk-mq: use static_rqs instead of rqs to iterate tags"
+- Revert "blk-mq: use blk_mq_queue_tag_inflight_iter() in debugfs"
+- Revert "nbd: use blk_mq_queue_tag_inflight_iter()"
+- blk-cgroup: fix UAF by grabbing blkcg lock before destroying blkg pd
+- tasks: Fix kabi broken for struct task_struct
+- tasks, sched/core: RCUify the assignment of rq->curr
+- tasks, sched/core: With a grace period after finish_task_switch(), remove unnecessary code
+- tasks, sched/core: Ensure tasks are available for a grace period after leaving the runqueue
+- tasks: Add a count of task RCU users
+- Revert "sched/membarrier: fix NULL poiner in membarrier_global_expedited"
+- ext4: update last_pos for the case ext4_htree_fill_tree return fail
+- blk-throttle: fix UAF by deleteing timer in blk_throtl_exit()
+- nvme-rdma: don't update queue count when failing to set io queues
+- scsi: hisi_sas: replace spin_lock_irqsave/spin_unlock_restore with spin_lock/spin_unlock
+- scsi: hisi_sas: use threaded irq to process CQ interrupts
 
 * Wed Sep 15 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2109.6.0.0110
 - ext4: fix race writing to an inline_data file while its xattrs are changing
