@@ -2910,7 +2910,7 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns)
 	if (!ucounts)
 		return ERR_PTR(-ENOSPC);
 
-	new_nsw = kmalloc(sizeof(struct mnt_namespace_wrapper), GFP_KERNEL);
+	new_nsw = kmalloc(sizeof(struct mnt_namespace_wrapper), GFP_KERNEL_ACCOUNT);
 	if (!new_nsw) {
 		dec_mnt_namespaces(ucounts);
 		return ERR_PTR(-ENOMEM);
