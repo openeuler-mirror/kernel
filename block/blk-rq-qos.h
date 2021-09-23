@@ -6,7 +6,9 @@
 #include <linux/blk_types.h>
 #include <linux/atomic.h>
 #include <linux/wait.h>
+#ifndef __GENKSYMS__
 #include <linux/blk-mq.h>
+#endif
 
 enum rq_qos_id {
 	RQ_QOS_WBT,
