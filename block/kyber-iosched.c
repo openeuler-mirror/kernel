@@ -333,6 +333,7 @@ static struct kyber_queue_data *kyber_queue_data_alloc(struct request_queue *q)
 
 	kqd->read_lat_nsec = 2000000ULL;
 	kqd->write_lat_nsec = 10000000ULL;
+	kqd->async_depth = 0;
 
 	return kqd;
 
