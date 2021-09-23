@@ -288,15 +288,6 @@ static void kyber_stat_timer_fn(struct blk_stat_callback *cb)
 		blk_stat_activate_msecs(kqd->cb, 100);
 }
 
-static unsigned int kyber_sched_tags_shift(struct kyber_queue_data *kqd)
-{
-	/*
-	 * All of the hardware queues have the same depth, so we can just grab
-	 * the shift of the first one.
-	 */
-	return kqd->q->queue_hw_ctx[0]->sched_tags->bitmap_tags.sb.shift;
-}
-
 static int kyber_bucket_fn(const struct request *rq)
 {
 	return kyber_sched_domain(rq->cmd_flags);
@@ -306,7 +297,6 @@ static struct kyber_queue_data *kyber_queue_data_alloc(struct request_queue *q)
 {
 	struct kyber_queue_data *kqd;
 	unsigned int max_tokens;
-	unsigned int shift;
 	int ret = -ENOMEM;
 	int i;
 
@@ -340,9 +330,6 @@ static struct kyber_queue_data *kyber_queue_data_alloc(struct request_queue *q)
 		}
 		sbitmap_queue_resize(&kqd->domain_tokens[i], kyber_depth[i]);
 	}
-
-	shift = kyber_sched_tags_shift(kqd);
-	kqd->async_depth = (1U << shift) * KYBER_ASYNC_PERCENT / 100U;
 
 	kqd->read_lat_nsec = 2000000ULL;
 	kqd->write_lat_nsec = 10000000ULL;
@@ -403,9 +390,19 @@ static void kyber_ctx_queue_init(struct kyber_ctx_queue *kcq)
 		INIT_LIST_HEAD(&kcq->rq_list[i]);
 }
 
-static int kyber_init_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
+static void kyber_depth_updated(struct blk_mq_hw_ctx *hctx)
 {
 	struct kyber_queue_data *kqd = hctx->queue->elevator->elevator_data;
+	struct blk_mq_tags *tags = hctx->sched_tags;
+	unsigned int shift = tags->bitmap_tags.sb.shift;
+
+	kqd->async_depth = (1U << shift) * KYBER_ASYNC_PERCENT / 100U;
+
+	sbitmap_queue_min_shallow_depth(&tags->bitmap_tags, kqd->async_depth);
+}
+
+static int kyber_init_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
+{
 	struct kyber_hctx_data *khd;
 	int i;
 
@@ -446,8 +443,7 @@ static int kyber_init_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_idx)
 	khd->batching = 0;
 
 	hctx->sched_data = khd;
-	sbitmap_queue_min_shallow_depth(&hctx->sched_tags->bitmap_tags,
-					kqd->async_depth);
+	kyber_depth_updated(hctx);
 
 	return 0;
 
@@ -966,6 +962,7 @@ static struct elevator_type kyber_sched = {
 		.completed_request = kyber_completed_request,
 		.dispatch_request = kyber_dispatch_request,
 		.has_work = kyber_has_work,
+		.depth_updated = kyber_depth_updated,
 	},
 	.uses_mq = true,
 #ifdef CONFIG_BLK_DEBUG_FS
