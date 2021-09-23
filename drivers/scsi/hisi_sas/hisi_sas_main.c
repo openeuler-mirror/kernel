@@ -105,6 +105,23 @@ u8 hisi_sas_get_ata_protocol(struct host_to_dev_fis *fis, int direction)
 }
 EXPORT_SYMBOL_GPL(hisi_sas_get_ata_protocol);
 
+void hisi_sas_set_sense_data(struct sas_task *task,
+			     struct hisi_sas_slot *slot)
+{
+	struct ssp_response_iu *iu =
+			hisi_sas_status_buf_addr_mem(slot) +
+			sizeof(struct hisi_sas_err_record);
+	if (iu->datapres == 2) {
+		struct task_status_struct *ts = &task->task_status;
+
+		ts->buf_valid_size =
+			min_t(int, SAS_STATUS_BUF_SIZE,
+			      be32_to_cpu(iu->sense_data_len));
+		memcpy(ts->buf, iu->sense_data, ts->buf_valid_size);
+	}
+}
+EXPORT_SYMBOL_GPL(hisi_sas_set_sense_data);
+
 void hisi_sas_sata_done(struct sas_task *task,
 			    struct hisi_sas_slot *slot)
 {
