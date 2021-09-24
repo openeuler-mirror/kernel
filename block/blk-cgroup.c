@@ -1314,6 +1314,13 @@ void blkcg_drain_queue(struct request_queue *q)
 	if (!q->root_blkg)
 		return;
 
+	/*
+	 * @q could be exiting and q->td has not been initialized.
+	 * If so, don't need drain any throttled bios.
+	 */
+	if (!q->td)
+		return;
+
 	blk_throtl_drain(q);
 }
 
