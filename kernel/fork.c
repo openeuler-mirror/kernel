@@ -2000,8 +2000,10 @@ static __latent_entropy struct task_struct *copy_process(
 #endif
 	futex_init_task(p);
 	p->futex_exit_mutex = kmalloc(sizeof(struct mutex), GFP_KERNEL);
-	if (!p->futex_exit_mutex)
+	if (!p->futex_exit_mutex) {
+		retval = -ENOMEM;
 		goto bad_fork_free_pid;
+	}
 	mutex_init(p->futex_exit_mutex);
 
 	/*
