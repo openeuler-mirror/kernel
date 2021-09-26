@@ -2176,10 +2176,10 @@ bad_fork_cancel_cgroup:
 	write_unlock_irq(&tasklist_lock);
 	cgroup_cancel_fork(p);
 bad_fork_free_futex_mutex:
+	cgroup_threadgroup_change_end(current);
 	kfree(p->futex_exit_mutex);
 	p->futex_exit_mutex = NULL;
 bad_fork_free_pid:
-	cgroup_threadgroup_change_end(current);
 	if (pid != &init_struct_pid)
 		free_pid(pid);
 bad_fork_cleanup_thread:
