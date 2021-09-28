@@ -191,11 +191,6 @@ static bool cfg_partition_funcs(struct cfg *cfg, struct bpf_insn *cur,
 	return false;
 }
 
-static bool is_jmp_insn(u8 code)
-{
-	return BPF_CLASS(code) == BPF_JMP || BPF_CLASS(code) == BPF_JMP32;
-}
-
 static bool func_partition_bb_head(struct func_node *func)
 {
 	struct bpf_insn *cur, *end;
@@ -209,7 +204,7 @@ static bool func_partition_bb_head(struct func_node *func)
 		return true;
 
 	for (; cur <= end; cur++) {
-		if (is_jmp_insn(cur->code)) {
+		if (BPF_CLASS(cur->code) == BPF_JMP) {
 			u8 opcode = BPF_OP(cur->code);
 
 			if (opcode == BPF_EXIT || opcode == BPF_CALL)
@@ -335,7 +330,7 @@ static bool func_add_bb_edges(struct func_node *func)
 		e->src = bb;
 
 		insn = bb->tail;
-		if (!is_jmp_insn(insn->code) ||
+		if (BPF_CLASS(insn->code) != BPF_JMP ||
 		    BPF_OP(insn->code) == BPF_EXIT) {
 			e->dst = bb_next(bb);
 			e->flags |= EDGE_FLAG_FALLTHROUGH;
