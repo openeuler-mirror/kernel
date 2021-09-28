@@ -1318,7 +1318,7 @@ void blkcg_drain_queue(struct request_queue *q)
 	 * @q could be exiting and q->td has not been initialized.
 	 * If so, don't need drain any throttled bios.
 	 */
-#ifdef CONFIG_BLK_DEV_THROTTLIN
+#ifdef CONFIG_BLK_DEV_THROTTLING
 	if (!q->td)
 		return;
 #endif
