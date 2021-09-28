@@ -55,8 +55,8 @@ extern bool ima_plus_standard_pcr;
 extern const char boot_aggregate_name[];
 extern int ima_digest_list_actions;
 #ifdef CONFIG_IMA_DIGEST_LIST
-extern size_t ima_digest_db_max_size __ro_after_init;
-extern size_t ima_digest_db_size;
+extern int ima_digest_db_max_size __ro_after_init;
+extern int ima_digest_db_size;
 #endif
 
 /* IMA policy setup data */
