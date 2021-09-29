@@ -1581,10 +1581,32 @@ static void arm_smmu_get_resv_regions(struct device *dev,
 	iommu_dma_get_resv_regions(dev, head);
 }
 
+#ifdef CONFIG_ARM64
+#include <asm/cputype.h>
+static bool cpu_using_identity_iommu_domain(struct device *dev)
+{
+	u32 midr = read_cpuid_id();
+
+	if (((midr & MIDR_CPU_MODEL_MASK) == MIDR_PHYTIUM_FT2000PLUS)
+		|| ((midr & MIDR_CPU_MODEL_MASK) == MIDR_PHYTIUM_FT2500))
+		return true;
+
+	return false;
+}
+#else
+static bool cpu_using_identity_iommu_domain(struct device *dev)
+{
+	return false;
+}
+#endif
+
 static int arm_smmu_def_domain_type(struct device *dev)
 {
 	struct arm_smmu_master_cfg *cfg = dev_iommu_priv_get(dev);
 	const struct arm_smmu_impl *impl = cfg->smmu->impl;
+
+	if (cpu_using_identity_iommu_domain(dev))
+		return IOMMU_DOMAIN_IDENTITY;
 
 	if (impl && impl->def_domain_type)
 		return impl->def_domain_type(dev);
