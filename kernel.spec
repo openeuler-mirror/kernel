@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2109.7.0
+%global hulkrelease 2109.8.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0111
+Release: %{hulkrelease}.0112
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,38 @@ fi
 %endif
 
 %changelog
+
+* Wed Sep 29 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2109.8.0.0112
+- Bluetooth: fix use-after-free error in lock_sock_nested()
+- bpf, mips: Validate conditional branch offsets
+- scsi: qla2xxx: Fix crash in qla2xxx_mqueuecommand()
+- crypto: ccp - fix resource leaks in ccp_run_aes_gcm_cmd()
+- bpf: Fix truncation handling for mod32 dst reg wrt zero
+- bpf: Fix 32 bit src register truncation on div/mod
+- bpf: Do not use ax register in interpreter on div/mod
+- Revert "bpf: allocate 0x06 to new eBPF instruction class JMP32"
+- Revert "bpf: refactor verifier min/max code for condition jump"
+- Revert "bpf: verifier support JMP32"
+- Revert "bpf: disassembler support JMP32"
+- Revert "tools: bpftool: teach cfg code about JMP32"
+- Revert "bpf: interpreter support for JMP32"
+- Revert "bpf: JIT blinds support JMP32"
+- Revert "x86_64: bpf: implement jitting of JMP32"
+- Revert "arm64: bpf: implement jitting of JMP32"
+- Revert "bpf: Fix 32 bit src register truncation on div/mod"
+- Revert "bpf: Fix truncation handling for mod32 dst reg wrt zero"
+- block: fix wrong define name
+- block: fix compile error when CONFIG_BLK_DEV_THROTTLING disable
+- pid: fix imbalanced calling of cgroup_threadgroup_change_begin/end()
+- pid: fix return value when copy_process() failed
+- block: fix NULL pointer in blkcg_drain_queue()
+- block: clean up ABI breakage
+- block: mark queue init done at the end of blk_register_queue
+- block: fix race between adding/removing rq qos and normal IO
+- scsi: hisi_sas: set sense data when the sas disk's I/O abnormally completed
+- kyber: initialize 'async_depth' in kyber_queue_data_alloc()
+- kyber: introduce kyber_depth_updated()
+- blk-mq: handle all throttled io in blk_cleanup_queue()
 
 * Wed Sep 22 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2109.7.0.0111
 - memcg: enable accounting for ldt_struct objects
