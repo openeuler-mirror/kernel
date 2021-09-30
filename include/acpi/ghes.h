@@ -52,6 +52,24 @@ enum {
 	GHES_SEV_PANIC = 0x3,
 };
 
+#ifdef CONFIG_ACPI_APEI_GHES
+/**
+ * ghes_register_vendor_record_notifier - register a notifier for vendor
+ * records that the kernel would otherwise ignore.
+ * @nb: pointer to the notifier_block structure of the event handler.
+ *
+ * return 0 : SUCCESS, non-zero : FAIL
+ */
+int ghes_register_vendor_record_notifier(struct notifier_block *nb);
+
+/**
+ * ghes_unregister_vendor_record_notifier - unregister the previously
+ * registered vendor record notifier.
+ * @nb: pointer to the notifier_block structure of the vendor record handler.
+ */
+void ghes_unregister_vendor_record_notifier(struct notifier_block *nb);
+#endif
+
 /* From drivers/edac/ghes_edac.c */
 
 #ifdef CONFIG_EDAC_GHES
