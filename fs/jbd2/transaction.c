@@ -1580,11 +1580,13 @@ int jbd2_journal_forget (handle_t *handle, struct buffer_head *bh)
 
 	BUFFER_TRACE(bh, "entry");
 
-	jbd_lock_bh_state(bh);
+	jh = jbd2_journal_grab_journal_head(bh);
+	if (!jh) {
+		__bforget(bh);
+		return 0;
+	}
 
-	if (!buffer_jbd(bh))
-		goto not_jbd;
-	jh = bh2jh(bh);
+	jbd_lock_bh_state(bh);
 
 	/* Critical error: attempting to delete a bitmap buffer, maybe?
 	 * Don't do any jbd operations, and return an error. */
@@ -1704,18 +1706,14 @@ int jbd2_journal_forget (handle_t *handle, struct buffer_head *bh)
 		spin_unlock(&journal->j_list_lock);
 	}
 drop:
-	jbd_unlock_bh_state(bh);
 	__brelse(bh);
+	jbd_unlock_bh_state(bh);
+	jbd2_journal_put_journal_head(jh);
 	if (drop_reserve) {
 		/* no need to reserve log space for this block -bzzz */
 		handle->h_total_credits++;
 	}
 	return err;
-
-not_jbd:
-	jbd_unlock_bh_state(bh);
-	__bforget(bh);
-	goto drop;
 }
 
 /**
