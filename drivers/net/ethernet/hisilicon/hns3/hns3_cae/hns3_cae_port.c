@@ -88,9 +88,9 @@ int hns3_get_port_info(const struct hns3_nic_priv *net_priv,
 	desc_data = (__le32 *)(&desc.data[0]);
 	bd_num = le32_to_cpu(*desc_data);
 
-	if (bd_num > hdev->hw.cmq.csq.desc_num) {
-		dev_err(&hdev->pdev->dev, "get invalid BD num %u(max %u)\n",
-			bd_num, hdev->hw.cmq.csq.desc_num);
+	if (bd_num * sizeof(struct hclge_desc) >
+	    sizeof(struct hclge_port_info)) {
+		dev_err(&hdev->pdev->dev, "get invalid BD num %u\n", bd_num);
 		return -EINVAL;
 	}
 
