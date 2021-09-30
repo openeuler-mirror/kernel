@@ -102,6 +102,12 @@ enum hisi_sas_dev_type {
 	HISI_SAS_DEV_TYPE_SATA,
 };
 
+enum datapres_field {
+	NO_DATA         = 0,
+	RESPONSE_DATA   = 1,
+	SENSE_DATA      = 2,
+};
+
 struct hisi_sas_hw_error {
 	u32 irq_msk;
 	u32 msk;
@@ -571,8 +577,6 @@ extern void hisi_sas_free(struct hisi_hba *hisi_hba);
 extern u8 hisi_sas_get_ata_protocol(struct host_to_dev_fis *fis,
 				int direction);
 extern struct hisi_sas_port *to_hisi_sas_port(struct asd_sas_port *sas_port);
-extern void hisi_sas_set_sense_data(struct sas_task *task,
-				    struct hisi_sas_slot *slot);
 extern void hisi_sas_sata_done(struct sas_task *task,
 			    struct hisi_sas_slot *slot);
 extern int hisi_sas_get_fw_info(struct hisi_hba *hisi_hba);

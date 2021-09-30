@@ -395,6 +395,8 @@
 #define CMPLT_HDR_ERROR_PHASE_MSK   (0xff << CMPLT_HDR_ERROR_PHASE_OFF)
 #define CMPLT_HDR_RSPNS_XFRD_OFF	10
 #define CMPLT_HDR_RSPNS_XFRD_MSK	(0x1 << CMPLT_HDR_RSPNS_XFRD_OFF)
+#define CMPLT_HDR_RSPNS_GOOD_OFF	11
+#define CMPLT_HDR_RSPNS_GOOD_MSK	(0x1 << CMPLT_HDR_RSPNS_GOOD_OFF)
 #define CMPLT_HDR_ERX_OFF		12
 #define CMPLT_HDR_ERX_MSK		(0x1 << CMPLT_HDR_ERX_OFF)
 #define CMPLT_HDR_ABORT_STAT_OFF	13
@@ -2208,6 +2210,24 @@ static irqreturn_t fatal_axi_int_v3_hw(int irq_no, void *p)
 	return IRQ_HANDLED;
 }
 
+static void hisi_sas_set_sense_data(struct sas_task *task,
+		struct hisi_sas_slot *slot)
+{
+	struct ssp_response_iu *iu =
+			hisi_sas_status_buf_addr_mem(slot) +
+			sizeof(struct hisi_sas_err_record);
+	if ((iu->status == SAM_STAT_CHECK_CONDITION) &&
+		(iu->datapres == SENSE_DATA)) {
+		struct task_status_struct *ts = &task->task_status;
+
+		ts->buf_valid_size =
+			min_t(int, SAS_STATUS_BUF_SIZE,
+				be32_to_cpu(iu->sense_data_len));
+		memcpy(ts->buf, iu->sense_data, ts->buf_valid_size);
+		ts->stat = SAM_STAT_CHECK_CONDITION;
+	}
+}
+
 static void
 slot_err_v3_hw(struct hisi_hba *hisi_hba, struct sas_task *task,
 	       struct hisi_sas_slot *slot)
@@ -2224,17 +2244,20 @@ slot_err_v3_hw(struct hisi_hba *hisi_hba, struct sas_task *task,
 
 	switch (task->task_proto) {
 	case SAS_PROTOCOL_SSP:
-		if (complete_hdr->dw3 & CMPLT_HDR_IO_IN_TARGET_MSK) {
-			ts->stat = SAS_QUEUE_FULL;
-			slot->abort = 1;
-		} else if (dma_rx_err_type & RX_DATA_LEN_UNDERFLOW_MSK) {
+		if (dma_rx_err_type & RX_DATA_LEN_UNDERFLOW_MSK) {
 			ts->residual = trans_tx_fail_type;
 			ts->stat = SAS_DATA_UNDERRUN;
+			if ((!(complete_hdr->dw0 & CMPLT_HDR_RSPNS_GOOD_MSK)) &&
+			      (complete_hdr->dw0 & CMPLT_HDR_RSPNS_XFRD_MSK)) {
+				hisi_sas_set_sense_data(task, slot);
+			}
+		} else if (complete_hdr->dw3 & CMPLT_HDR_IO_IN_TARGET_MSK) {
+			ts->stat = SAS_QUEUE_FULL;
+			slot->abort = 1;
 		} else {
 			ts->stat = SAS_OPEN_REJECT;
 			ts->open_rej_reason = SAS_OREJ_RSVD_RETRY;
 		}
-		hisi_sas_set_sense_data(task, slot);
 		break;
 	case SAS_PROTOCOL_SATA:
 	case SAS_PROTOCOL_STP:
