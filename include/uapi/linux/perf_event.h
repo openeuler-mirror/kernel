@@ -1153,7 +1153,8 @@ union perf_mem_data_src {
 			mem_rsvd:24;
 #else
 			mem_blk:3,	/* access blocked */
-			mem_rsvd:21;
+			mem_hops:3,	/* hop level */
+			mem_rsvd:18;
 #endif
 	};
 };
@@ -1164,7 +1165,8 @@ union perf_mem_data_src {
 #ifdef __GENKSYMS__
 		__u64	mem_rsvd:24,
 #else
-		__u64	mem_rsvd:21,
+		__u64	mem_rsvd:18,
+			mem_hops:3,	/* hop level */
 			mem_blk:3,	/* access blocked */
 #endif
 			mem_snoopx:2,	/* snoop mode, ext */
@@ -1254,6 +1256,11 @@ union perf_mem_data_src {
 #define PERF_MEM_BLK_DATA	0x02 /* data could not be forwarded */
 #define PERF_MEM_BLK_ADDR	0x04 /* address conflict */
 #define PERF_MEM_BLK_SHIFT	40
+
+/* hop level */
+#define PERF_MEM_HOPS_0		0x01 /* remote core, same node */
+/* 2-7 available */
+#define PERF_MEM_HOPS_SHIFT	43
 
 #define PERF_MEM_S(a, s) \
 	(((__u64)PERF_MEM_##a##_##s) << PERF_MEM_##a##_SHIFT)
