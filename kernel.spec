@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       6
+%global devel_release       7
 %global maintenance_release .0.0
-%global pkg_release         .0
+%global pkg_release         .1
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,140 @@ fi
 %endif
 
 %changelog
+* Thu Sep 30 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-7.0.0.1
+- IOMMU: SMMUv2: Bypass SMMU in default for some SoCs
+- arm64: phytium: using MIDR_PHYTIUM_FT2000PLUS instead of ARM_CPU_IMP_PHYTIUM
+- arm64: Add MIDR encoding for PHYTIUM CPUs
+- arm64: Add MIDR encoding for HiSilicon Taishan CPUs
+- usb: xhci: Add workaround for phytium
+- arm64: topology: Support PHYTIUM CPU
+- hugetlb: pass head page to remove_hugetlb_page()
+- userfaultfd: hugetlbfs: fix new flag usage in error path
+- hugetlb: fix uninitialized subpool pointer
+- percpu: flush tlb in pcpu_reclaim_populated()
+- percpu: implement partial chunk depopulation
+- percpu: use pcpu_free_slot instead of pcpu_nr_slots - 1
+- percpu: factor out pcpu_check_block_hint()
+- percpu: split __pcpu_balance_workfn()
+- percpu: fix a comment about the chunks ordering
+- slub: fix kmalloc_pagealloc_invalid_free unit test
+- slub: fix unreclaimable slab stat for bulk free
+- net: hns3: remove unnecessary spaces
+- net: hns3: add some required spaces
+- net: hns3: clean up a type mismatch warning
+- net: hns3: refine function hns3_set_default_feature()
+- net: hns3: uniform parameter name of hclge_ptp_clean_tx_hwts()
+- net: hnss3: use max() to simplify code
+- net: hns3: modify a print format of hns3_dbg_queue_map()
+- net: hns3: refine function hclge_dbg_dump_tm_pri()
+- net: hns3: reconstruct function hclge_ets_validate()
+- net: hns3: reconstruct function hns3_self_test
+- net: hns3: initialize each member of structure array on a separate line
+- net: hns3: add required space in comment
+- net: hns3: remove unnecessary "static" of local variables in function
+- net: hns3: don't config TM DWRR twice when set ETS
+- net: hns3: add new function hclge_get_speed_bit()
+- net: hns3: refactor function hclgevf_parse_capability()
+- net: hns3: refactor function hclge_parse_capability()
+- net: hns3: add trace event in hclge_gen_resp_to_vf()
+- net: hns3: uniform type of function parameter cmd
+- net: hns3: merge some repetitive macros
+- net: hns3: package new functions to simplify hclgevf_mbx_handler code
+- net: hns3: remove redundant param to simplify code
+- net: hns3: use memcpy to simplify code
+- net: hns3: remove redundant param mbx_event_pending
+- net: hns3: add hns3_state_init() to do state initialization
+- net: hns3: add macros for mac speeds of firmware command
+- sched: bugfix setscheduler unlock cpuset_rwsem
+- ima: fix db size overflow and Kconfig issues
+- mm: page_poison: print page info when corruption is caught
+- kasan: fix conflict with page poisoning
+- mm: fix page_owner initializing issue for arm32
+- net: hns3: add ethtool support for CQE/EQE mode configuration
+- net: hns3: add support for EQE/CQE mode configuration
+- ethtool: extend coalesce setting uAPI with CQE mode
+- ethtool: add two coalesce attributes for CQE mode
+- ethtool: add ETHTOOL_COALESCE_ALL_PARAMS define
+- net: hns3: fix get wrong pfc_en when query PFC configuration
+- net: hns3: fix GRO configuration error after reset
+- net: hns3: change the method of getting cmd index in debugfs
+- net: hns3: fix duplicate node in VLAN list
+- net: hns3: fix speed unknown issue in bond 4
+- net: hns3: add waiting time before cmdq memory is released
+- net: hns3: clear hardware resource when loading driver
+- net: hns3: make array spec_opcode static const, makes object smaller
+- digest list: disable digest lists in non-root ima namespaces
+- ima: Introduce ima-ns-sig template
+- ima: fix a potential crash owing to the compiler optimisation
+- ima: Set ML template per ima namespace
+- ima: Add dummy boot aggregate to per ima namespace measurement list
+- ima: Load per ima namespace x509 certificate
+- integrity: Add key domain tag to the search criteria
+- ima: Add key domain to the ima namespace
+- keys: Allow to set key domain tag separately from the key type
+- keys: Include key domain tag in the iterative search
+- keys: Add domain tag to the keyring search criteria
+- ima: Remap IDs of subject based rules if necessary
+- user namespace: Add function that checks if the UID map is defined
+- ima: Parse per ima namespace policy file
+- ima: Configure the new ima namespace from securityfs
+- ima: Change the owning user namespace of the ima namespace if necessary
+- ima: Add the violation counter to the namespace
+- ima: Extend permissions to the ima securityfs entries
+- ima: Add a reader counter to the integrity inode data
+- ima: Add per namespace view of the measurement list
+- ima: Add a new ima template that includes namespace ID
+- ima: Check ima namespace ID during digest entry lookup
+- ima: Keep track of the measurment list per ima namespace
+- ima: Add ima namespace id to the measurement list related structures
+- ima: Enable per ima namespace policy settings
+- ima: Add integrity inode related data to the ima namespace
+- ima: Extend the APIs in the integrity subsystem
+- ima: Add ima namespace to the ima subsystem APIs
+- ima: Add methods for parsing ima policy configuration string
+- ima: Add ima policy related data to the ima namespace
+- ima: Bind ima namespace to the file descriptor
+- ima: Add a list of the installed ima namespaces
+- ima: Introduce ima namespace
+- mm/page_alloc: further fix __alloc_pages_bulk() return value
+- mm/page_alloc: correct return value when failing at preparing
+- mm/page_alloc: avoid page allocator recursion with pagesets.lock held
+- mm: vmscan: shrink deferred objects proportional to priority
+- mm: memcontrol: reparent nr_deferred when memcg offline
+- mm: vmscan: don't need allocate shrinker->nr_deferred for memcg aware shrinkers
+- mm: vmscan: use per memcg nr_deferred of shrinker
+- mm: vmscan: add per memcg shrinker nr_deferred
+- mm: vmscan: use a new flag to indicate shrinker is registered
+- mm: vmscan: add shrinker_info_protected() helper
+- mm: memcontrol: rename shrinker_map to shrinker_info
+- mm: vmscan: use kvfree_rcu instead of call_rcu
+- mm: vmscan: remove memcg_shrinker_map_size
+- mm: vmscan: use shrinker_rwsem to protect shrinker_maps allocation
+- mm: vmscan: consolidate shrinker_maps handling code
+- mm: vmscan: use nid from shrink_control for tracepoint
+- scsi/hifc: Fix memory leakage bug
+- crypto: hisilicon/qm - set a qp error flag for userspace
+- vfio/hisilicon: add acc live migration driver
+- vfio/hisilicon: modify QM for live migration driver
+- vfio/pci: provide customized live migration VFIO driver framework
+- PCI: Set dma-can-stall for HiSilicon chips
+- PCI: Add a quirk to set pasid_no_tlp for HiSilicon chips
+- PCI: PASID can be enabled without TLP prefix
+- crypto: hisilicon/sec - fix the CTR mode BD configuration
+- crypto: hisilicon/sec - fix the max length of AAD for the CCM mode
+- crypto: hisilicon/sec - fixup icv checking enabled on Kunpeng 930
+- crypto: hisilicon - check _PS0 and _PR0 method
+- crypto: hisilicon - change parameter passing of debugfs function
+- crypto: hisilicon - support runtime PM for accelerator device
+- crypto: hisilicon - add runtime PM ops
+- crypto: hisilicon - using 'debugfs_create_file' instead of 'debugfs_create_regset32'
+- crypto: hisilicon/sec - modify the hardware endian configuration
+- crypto: hisilicon/sec - fix the abnormal exiting process
+- crypto: hisilicon - enable hpre device clock gating
+- crypto: hisilicon - enable sec device clock gating
+- crypto: hisilicon - enable zip device clock gating
+- crypto: hisilicon/sec - fix the process of disabling sva prefetching
+
 * Wed Sep 15 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-6.0.0.0
 - mm/page_alloc: correct return value of populated elements if bulk array is populated
 - mm: fix oom killing for disabled pid
