@@ -12,7 +12,12 @@ struct timerqueue_node {
 };
 
 struct timerqueue_head {
+#ifndef __GENKSYMS__
 	struct rb_root_cached rb_root;
+#else
+	struct rb_root head;
+	struct timerqueue_node *next;
+#endif
 };
 
 
