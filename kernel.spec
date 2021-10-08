@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2109.8.0
+%global hulkrelease 2110.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0113
+Release: %{hulkrelease}.0114
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,25 @@ fi
 %endif
 
 %changelog
+
+* Fri Oct 08 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.1.0.0114
+- timerqueue: fix kabi for struct timerqueue_head
+- lib/timerqueue: Rely on rbtree semantics for next timer
+- ACPI / APEI: Notify all ras err to driver
+- ACPI / APEI: Add a notifier chain for unknown (vendor) CPER records
+- blk-mq-sched: Fix blk_mq_sched_alloc_tags() error handling
+- jbd2: protect jh by grab a ref in jbd2_journal_forget
+- jbd2: Don't call __bforget() unnecessarily
+- jbd2: Drop unnecessary branch from jbd2_journal_forget()
+- ipc: replace costly bailout check in sysvipc_find_ipc()
+- sched/topology: fix the issue groups don't span domain->span for NUMA diameter > 2
+- sched/topology: Warn when NUMA diameter > 2
+- USB: ehci: fix an interrupt calltrace error
+- net: hns3: update hns3 version to 21.9.4
+- net: hns3: expand buffer len for fd tcam of debugfs
+- net: hns3: fix hns3 debugfs queue info print coverage bugs
+- net: hns3: fix memory override when bd_num is bigger than port info size
+- scsi: hisi_sas: Optimize the code flow of setting sense data when ssp I/O abnormally completed
 
 * Wed Sep 29 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2109.8.0.0113
 - Bluetooth: fix use-after-free error in lock_sock_nested()
