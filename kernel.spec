@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       7
+%global devel_release       8
 %global maintenance_release .0.0
-%global pkg_release         .1
+%global pkg_release         .2
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,9 @@ fi
 %endif
 
 %changelog
+* Mon Oct 11 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-8.0.0.2
+- imans: Use initial ima namespace domain tag when IMANS is disabled.
+
 * Thu Sep 30 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-7.0.0.1
 - IOMMU: SMMUv2: Bypass SMMU in default for some SoCs
 - arm64: phytium: using MIDR_PHYTIUM_FT2000PLUS instead of ARM_CPU_IMP_PHYTIUM
