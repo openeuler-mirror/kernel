@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2110.2.0
+%global hulkrelease 2110.3.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0114
+Release: %{hulkrelease}.0115
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,9 @@ fi
 %endif
 
 %changelog
+
+* Tue Oct 12 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.3.0.0115
+- net: 6pack: fix slab-out-of-bounds in decode_data
 
 * Mon Oct 11 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.2.0.0114
 - bpf: Fix integer overflow in prealloc_elems_and_freelist()
