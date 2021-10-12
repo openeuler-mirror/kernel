@@ -178,13 +178,18 @@ static u32 count_suitable_regions(const void *fdt, struct regions *regions,
 	return ret;
 }
 
-static u32 get_region_number(u32 num, u32 *bitmap)
+/* The caller ensures that num is within the range of regions.*/
+static u32 get_region_number(u32 num, u32 *bitmap, u32 size)
 {
-	u32 i;
+	u32 i, cnt = size * BITS_PER_BYTE * sizeof(u32);
 
-	for (i = 0; num > 0; i++)
-		if (!(bitmap[i >> 5] & BIT(i & 0x1f)))
-			num--;
+	for (i = 0; i < cnt; i++) {
+		if (bitmap[i >> 5] & BIT(i & 0x1f))
+			continue;
+		if (num-- == 0)
+			break;
+	}
+
 	return i;
 }
 
@@ -453,7 +458,7 @@ u32 kaslr_early_init(u32 *kaslr_offset, u32 image_base, u32 image_size,
 	num = ((u16)seed * count) >> 16;
 	puthex32(num);
 
-	*kaslr_offset = get_region_number(num, bitmap) * SZ_2M;
+	*kaslr_offset = get_region_number(num, bitmap, sizeof(bitmap) / sizeof(u32)) * SZ_2M;
 	puthex32(*kaslr_offset);
 
 	return *kaslr_offset;
