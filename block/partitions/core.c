@@ -192,7 +192,7 @@ static ssize_t part_ro_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
 {
 	struct hd_struct *p = dev_to_part(dev);
-	return sprintf(buf, "%d\n", p->policy ? 1 : 0);
+	return sprintf(buf, "%d\n", p->read_only ? 1 : 0);
 }
 
 static ssize_t part_alignment_offset_show(struct device *dev,
@@ -414,7 +414,7 @@ static struct hd_struct *add_partition(struct gendisk *disk, int partno,
 	p->start_sect = start;
 	p->nr_sects = len;
 	p->partno = partno;
-	p->policy = get_disk_ro(disk);
+	p->read_only = get_disk_ro(disk) | test_bit(partno, disk->user_ro_bitmap);
 
 	if (info) {
 		struct partition_meta_info *pinfo;
