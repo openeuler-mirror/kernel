@@ -701,7 +701,7 @@ int pin_mem_area(struct task_struct *task, struct mm_struct *mm,
 		goto finish;
 	}
 	if (start_addr == (start_addr & HPAGE_PMD_MASK) &&
-		transparent_hugepage_enabled(vma)) {
+		transparent_hugepage_active(vma)) {
 		page_size = HPAGE_PMD_SIZE;
 		is_huge_page = true;
 	} else {
