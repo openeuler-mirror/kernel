@@ -621,6 +621,7 @@ void acpi_bus_put_acpi_device(struct acpi_device *adev)
 {
 	put_device(&adev->dev);
 }
+EXPORT_SYMBOL_GPL(acpi_bus_get_acpi_device);
 
 static struct acpi_device_bus_id *acpi_device_bus_id_match(const char *dev_id)
 {
