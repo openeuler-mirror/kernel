@@ -4832,7 +4832,6 @@ failed_mount_wq:
 		sbi->s_ea_block_cache = NULL;
 	}
 	if (sbi->s_journal) {
-		flush_work(&sbi->s_error_work);
 		jbd2_journal_destroy(sbi->s_journal);
 		sbi->s_journal = NULL;
 	}
