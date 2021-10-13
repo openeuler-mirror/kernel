@@ -52,14 +52,6 @@ enum sphw_pcie_tph {
 	SPHW_PCIE_TPH_DISABLE = 0,
 	SPHW_PCIE_TPH_ENABLE = 1,
 };
-#define SPNIC_NIC_DRV_NAME	"spnic"
-#define SPNIC_DRV_VERSION	"B090"
-#define SPNIC_DRV_DESC		"Ramaxel(R) Network Interface Card Driver"
-
-MODULE_AUTHOR("Ramaxel Technologies CO., Ltd");
-MODULE_DESCRIPTION(SPNIC_DRV_DESC);
-MODULE_VERSION(SPNIC_DRV_VERSION);
-MODULE_LICENSE("GPL");
 
 #define SPHW_DMA_ATTR_INDIR_IDX_SHIFT				0
 
