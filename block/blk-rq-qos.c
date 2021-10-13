@@ -72,6 +72,12 @@ void rq_qos_throttle(struct request_queue *q, struct bio *bio,
 {
 	struct rq_qos *rqos;
 
+	/*
+	 * BIO_TRACKED lets controllers know that a bio went through the
+	 * normal rq_qos path.
+	 */
+	bio_set_flag(bio, BIO_TRACKED);
+
 	for(rqos = q->rq_qos; rqos; rqos = rqos->next) {
 		if (rqos->ops->throttle)
 			rqos->ops->throttle(rqos, bio, lock);
