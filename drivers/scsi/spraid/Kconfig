@@ -1,0 +1,11 @@
+#
+# Ramaxel driver configuration
+#
+
+config RAMAXEL_SPRAID
+	tristate "Ramaxel spraid Adapter"
+	depends on PCI && SCSI
+	depends on ARM64 || X86_64
+	default m
+	help
+	  This driver supports Ramaxel spraid driver.
