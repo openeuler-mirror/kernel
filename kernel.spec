@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       8
+%global devel_release       9
 %global maintenance_release .0.0
-%global pkg_release         .2
+%global pkg_release         .3
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,40 @@ fi
 %endif
 
 %changelog
+* Wed Oct 13 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-9.0.0.3
+- scsi: core: Treat device offline as a failure
+- blk-wbt: make sure throttle is enabled properly
+- blk-wbt: introduce a new disable state to prevent false positive by rwb_enabled()
+- arm64: fpsimd: run kernel mode NEON with softirqs disabled
+- arm64: assembler: introduce wxN aliases for wN registers
+- arm64: assembler: remove conditional NEON yield macros
+- crypto: arm64/crc-t10dif - move NEON yield to C code
+- crypto: arm64/aes-ce-mac - simplify NEON yield
+- crypto: arm64/aes-neonbs - remove NEON yield calls
+- crypto: arm64/sha512-ce - simplify NEON yield
+- crypto: arm64/sha3-ce - simplify NEON yield
+- crypto: arm64/sha2-ce - simplify NEON yield
+- crypto: arm64/sha1-ce - simplify NEON yield
+- arm64: assembler: add cond_yield macro
+- mm: fix page reference leak in soft_offline_page()
+- block_dump: remove comments in docs
+- block_dump: remove block_dump feature
+- block_dump: remove block_dump feature in mark_inode_dirty()
+- crypto: sun8i-ce - fix error return code in sun8i_ce_prng_generate()
+- crypto: nx - add missing call to of_node_put()
+- net: hns3: fix a return value error in hclge_get_reset_status()
+- net: hns3: check vlan id before using it
+- net: hns3: check queue id range before using
+- net: hns3: fix misuse vf id and vport id in some logs
+- net: hns3: fix inconsistent vf id print
+- net: hns3: fix change RSS 'hfunc' ineffective issue
+- net: hns3: fix the timing issue of VF clearing interrupt sources
+- net: hns3: fix the exception when query imp info
+- net: hns3: disable mac in flr process
+- net: hns3: change affinity_mask to numa node range
+- net: hns3: pad the short tunnel frame before sending to hardware
+- net: hns3: make hclgevf_cmd_caps_bit_map0 and hclge_cmd_caps_bit_map0 static
+
 * Mon Oct 11 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-8.0.0.2
 - imans: Use initial ima namespace domain tag when IMANS is disabled.
 
