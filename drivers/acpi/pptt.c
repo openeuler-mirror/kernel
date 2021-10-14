@@ -21,6 +21,9 @@
 #include <linux/cacheinfo.h>
 #include <acpi/processor.h>
 
+/* Root pointer to the mapped PPTT table */
+static struct acpi_table_header *pptt_table;
+
 static struct acpi_subtable_header *fetch_pptt_subtable(struct acpi_table_header *table_hdr,
 							u32 pptt_ref)
 {
@@ -667,19 +670,13 @@ static int topology_get_acpi_cpu_tag(struct acpi_table_header *table,
 
 static int find_acpi_cpu_topology_tag(unsigned int cpu, int level, int flag)
 {
-	struct acpi_table_header *table;
-	acpi_status status;
 	int retval;
 
-	status = acpi_get_table(ACPI_SIG_PPTT, 0, &table);
-	if (ACPI_FAILURE(status)) {
-		acpi_pptt_warn_missing();
+	if (!pptt_table)
 		return -ENOENT;
-	}
-	retval = topology_get_acpi_cpu_tag(table, cpu, level, flag);
+	retval = topology_get_acpi_cpu_tag(pptt_table, cpu, level, flag);
 	pr_debug("Topology Setup ACPI CPU %d, level %d ret = %d\n",
 		 cpu, level, retval);
-	acpi_put_table(table);
 
 	return retval;
 }
@@ -699,25 +696,18 @@ static int find_acpi_cpu_topology_tag(unsigned int cpu, int level, int flag)
  */
 static int check_acpi_cpu_flag(unsigned int cpu, int rev, u32 flag)
 {
-	struct acpi_table_header *table;
-	acpi_status status;
 	u32 acpi_cpu_id = get_acpi_id_for_cpu(cpu);
 	struct acpi_pptt_processor *cpu_node = NULL;
 	int ret = -ENOENT;
 
-	status = acpi_get_table(ACPI_SIG_PPTT, 0, &table);
-	if (ACPI_FAILURE(status)) {
-		acpi_pptt_warn_missing();
-		return ret;
-	}
+	if (!pptt_table)
+		return -ENOENT;
 
-	if (table->revision >= rev)
-		cpu_node = acpi_find_processor_node(table, acpi_cpu_id);
+	if (pptt_table->revision >= rev)
+		cpu_node = acpi_find_processor_node(pptt_table, acpi_cpu_id);
 
 	if (cpu_node)
 		ret = (cpu_node->flags & flag) != 0;
-
-	acpi_put_table(table);
 
 	return ret;
 }
@@ -735,20 +725,14 @@ static int check_acpi_cpu_flag(unsigned int cpu, int rev, u32 flag)
 int acpi_find_last_cache_level(unsigned int cpu)
 {
 	u32 acpi_cpu_id;
-	struct acpi_table_header *table;
 	int number_of_levels = 0;
-	acpi_status status;
 
 	pr_debug("Cache Setup find last level CPU=%d\n", cpu);
 
 	acpi_cpu_id = get_acpi_id_for_cpu(cpu);
-	status = acpi_get_table(ACPI_SIG_PPTT, 0, &table);
-	if (ACPI_FAILURE(status)) {
-		acpi_pptt_warn_missing();
-	} else {
-		number_of_levels = acpi_find_cache_levels(table, acpi_cpu_id);
-		acpi_put_table(table);
-	}
+	if (pptt_table)
+		number_of_levels = acpi_find_cache_levels(pptt_table, acpi_cpu_id);
+
 	pr_debug("Cache Setup find last level level=%d\n", number_of_levels);
 
 	return number_of_levels;
@@ -769,21 +753,14 @@ int acpi_find_last_cache_level(unsigned int cpu)
  */
 int cache_setup_acpi(unsigned int cpu)
 {
-	struct acpi_table_header *table;
-	acpi_status status;
-
 	pr_debug("Cache Setup ACPI CPU %d\n", cpu);
 
-	status = acpi_get_table(ACPI_SIG_PPTT, 0, &table);
-	if (ACPI_FAILURE(status)) {
-		acpi_pptt_warn_missing();
+	if (!pptt_table)
 		return -ENOENT;
-	}
 
-	cache_setup_acpi_cpu(table, cpu);
-	acpi_put_table(table);
+	cache_setup_acpi_cpu(pptt_table, cpu);
 
-	return status;
+	return 0;
 }
 
 /**
@@ -835,27 +812,20 @@ int find_acpi_cpu_topology(unsigned int cpu, int level)
  */
 int find_acpi_cpu_cache_topology(unsigned int cpu, int level)
 {
-	struct acpi_table_header *table;
 	struct acpi_pptt_cache *found_cache;
-	acpi_status status;
 	u32 acpi_cpu_id = get_acpi_id_for_cpu(cpu);
 	struct acpi_pptt_processor *cpu_node = NULL;
 	int ret = -1;
 
-	status = acpi_get_table(ACPI_SIG_PPTT, 0, &table);
-	if (ACPI_FAILURE(status)) {
-		acpi_pptt_warn_missing();
+	if (!pptt_table)
 		return -ENOENT;
-	}
 
-	found_cache = acpi_find_cache_node(table, acpi_cpu_id,
+	found_cache = acpi_find_cache_node(pptt_table, acpi_cpu_id,
 					   CACHE_TYPE_UNIFIED,
 					   level,
 					   &cpu_node);
 	if (found_cache)
-		ret = ACPI_PTR_DIFF(cpu_node, table);
-
-	acpi_put_table(table);
+		ret = ACPI_PTR_DIFF(cpu_node, pptt_table);
 
 	return ret;
 }
@@ -903,4 +873,21 @@ int find_acpi_cpu_topology_hetero_id(unsigned int cpu)
 {
 	return find_acpi_cpu_topology_tag(cpu, PPTT_ABORT_PACKAGE,
 					  ACPI_PPTT_ACPI_IDENTICAL);
+}
+
+int __init acpi_pptt_init(void)
+{
+	acpi_status status;
+
+	/*
+	 * pptt_table will be used at runtime after acpi_pptt_init, so we don't
+	 * need to call acpi_put_table() to release the PPTT table mapping.
+	 */
+	status = acpi_get_table(ACPI_SIG_PPTT, 0, &pptt_table);
+	if (ACPI_FAILURE(status)) {
+		acpi_pptt_warn_missing();
+		return -ENOENT;
+	}
+
+	return 0;
 }

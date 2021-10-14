@@ -90,10 +90,14 @@ static bool __init acpi_cpu_is_threaded(int cpu)
  */
 int __init parse_acpi_topology(void)
 {
-	int cpu, topology_id;
+	int cpu, topology_id, ret;
 
 	if (acpi_disabled)
 		return 0;
+
+	ret = acpi_pptt_init();
+	if (ret)
+		return ret;
 
 	for_each_possible_cpu(cpu) {
 		int i, cache_id;
