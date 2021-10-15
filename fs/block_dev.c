@@ -1427,14 +1427,16 @@ int bdev_disk_changed(struct block_device *bdev, bool invalidate)
 	int ret;
 
 	lockdep_assert_held(&bdev->bd_mutex);
-
-	if (!(disk->flags & GENHD_FL_UP))
-		return -ENXIO;
+	down_read(&disk->lookup_sem);
+	if (!(disk->flags & GENHD_FL_UP)) {
+		ret = -ENXIO;
+		goto out;
+	}
 
 rescan:
 	ret = blk_drop_partitions(bdev);
 	if (ret)
-		return ret;
+		goto out;
 
 	clear_bit(GD_NEED_PART_SCAN, &disk->state);
 
@@ -1469,6 +1471,8 @@ rescan:
 		kobject_uevent(&disk_to_dev(disk)->kobj, KOBJ_CHANGE);
 	}
 
+out:
+	up_read(&disk->lookup_sem);
 	return ret;
 }
 /*

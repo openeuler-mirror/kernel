@@ -523,6 +523,7 @@ int bdev_add_partition(struct block_device *bdev, int partno,
 	int ret;
 
 	mutex_lock(&bdev->bd_mutex);
+	down_read(&disk->lookup_sem);
 	if (!(disk->flags & GENHD_FL_UP)) {
 		ret = -ENXIO;
 		goto out;
@@ -537,6 +538,7 @@ int bdev_add_partition(struct block_device *bdev, int partno,
 			ADDPART_FLAG_NONE, NULL);
 	ret = PTR_ERR_OR_ZERO(part);
 out:
+	up_read(&disk->lookup_sem);
 	mutex_unlock(&bdev->bd_mutex);
 	return ret;
 }
@@ -553,6 +555,7 @@ int bdev_del_partition(struct block_device *bdev, int partno)
 
 	mutex_lock(&bdevp->bd_mutex);
 	mutex_lock_nested(&bdev->bd_mutex, 1);
+	down_read(&bdev->bd_disk->lookup_sem);
 
 	ret = -ENXIO;
 	part = disk_get_part(bdev->bd_disk, partno);
@@ -569,6 +572,7 @@ int bdev_del_partition(struct block_device *bdev, int partno)
 	delete_partition(part);
 	ret = 0;
 out_unlock:
+	up_read(&bdev->bd_disk->lookup_sem);
 	mutex_unlock(&bdev->bd_mutex);
 	mutex_unlock(&bdevp->bd_mutex);
 	bdput(bdevp);
