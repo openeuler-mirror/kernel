@@ -229,6 +229,11 @@ static void blkdev_bio_end_io_simple(struct bio *bio)
 {
 	struct task_struct *waiter = bio->bi_private;
 
+	/*
+	 * Paired with smp_rmb() in __blkdev_direct_IO_simple() to ensure
+	 * the order between bi_private and bi_xxx.
+	 */
+	smp_wmb();
 	WRITE_ONCE(bio->bi_private, NULL);
 	blk_wake_io_task(waiter);
 }
@@ -288,8 +293,15 @@ __blkdev_direct_IO_simple(struct kiocb *iocb, struct iov_iter *iter,
 	qc = submit_bio(&bio);
 	for (;;) {
 		set_current_state(TASK_UNINTERRUPTIBLE);
-		if (!READ_ONCE(bio.bi_private))
+		if (!READ_ONCE(bio.bi_private)) {
+			/*
+			 * Paired with smp_wmb() in
+			 * blkdev_bio_end_io_simple().
+			 */
+			smp_rmb();
 			break;
+		}
+
 		if (!(iocb->ki_flags & IOCB_HIPRI) ||
 		    !blk_poll(bdev_get_queue(bdev), qc, true))
 			blk_io_schedule();
@@ -358,6 +370,11 @@ static void blkdev_bio_end_io(struct bio *bio)
 		} else {
 			struct task_struct *waiter = dio->waiter;
 
+			/*
+			 * Paired with smp_rmb() in __blkdev_direct_IO() to
+			 * ensure the order between dio->waiter and bio->bi_xxx.
+			 */
+			smp_wmb();
 			WRITE_ONCE(dio->waiter, NULL);
 			blk_wake_io_task(waiter);
 		}
@@ -483,8 +500,11 @@ __blkdev_direct_IO(struct kiocb *iocb, struct iov_iter *iter, int nr_pages)
 
 	for (;;) {
 		set_current_state(TASK_UNINTERRUPTIBLE);
-		if (!READ_ONCE(dio->waiter))
+		if (!READ_ONCE(dio->waiter)) {
+			/* Paired with smp_wmb() in blkdev_bio_end_io(). */
+			smp_rmb();
 			break;
+		}
 
 		if (!(iocb->ki_flags & IOCB_HIPRI) ||
 		    !blk_poll(bdev_get_queue(bdev), qc, true))
