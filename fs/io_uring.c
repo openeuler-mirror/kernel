@@ -1858,6 +1858,16 @@ static int io_req_task_work_add(struct io_kiocb *req, struct callback_head *cb,
 	return ret;
 }
 
+static void io_req_task_work_add_fallback(struct io_kiocb *req,
+					  void (*cb)(struct callback_head *))
+{
+	struct task_struct *tsk = io_wq_get_task(req->ctx->io_wq);
+
+	init_task_work(&req->task_work, cb);
+	task_work_add(tsk, &req->task_work, 0);
+	wake_up_process(tsk);
+}
+
 static void __io_req_task_cancel(struct io_kiocb *req, int error)
 {
 	struct io_ring_ctx *ctx = req->ctx;
@@ -1875,8 +1885,11 @@ static void __io_req_task_cancel(struct io_kiocb *req, int error)
 static void io_req_task_cancel(struct callback_head *cb)
 {
 	struct io_kiocb *req = container_of(cb, struct io_kiocb, task_work);
+	struct io_ring_ctx *ctx = req->ctx;
 
+	mutex_lock(&ctx->uring_lock);
 	__io_req_task_cancel(req, -ECANCELED);
+	mutex_unlock(&ctx->uring_lock);
 }
 
 static void __io_req_task_submit(struct io_kiocb *req)
@@ -5764,7 +5777,10 @@ static struct io_wq_work *io_wq_submit_work(struct io_wq_work *work)
 	/* if NO_CANCEL is set, we must still run the work */
 	if ((work->flags & (IO_WQ_WORK_CANCEL|IO_WQ_WORK_NO_CANCEL)) ==
 				IO_WQ_WORK_CANCEL) {
-		ret = -ECANCELED;
+		/* io-wq is going to take down one */
+		refcount_inc(&req->refs);
+		io_req_task_work_add_fallback(req, io_req_task_cancel);
+		return io_steal_work(req);
 	}
 
 	if (!ret) {
