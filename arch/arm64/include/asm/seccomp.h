@@ -25,7 +25,7 @@ static inline const int *get_compat_mode1_syscalls(void)
 #ifdef CONFIG_AARCH32_EL0
 	static const int mode1_syscalls_a32[] = {
 		__NR_compat_read, __NR_compat_write,
-		__NR_compat_read, __NR_compat_sigreturn,
+		__NR_compat_exit, __NR_compat_sigreturn,
 		0, /* null terminated */
 	};
 #endif
