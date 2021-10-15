@@ -94,11 +94,7 @@ static __always_inline u64 __arch_get_hw_counter(s32 clock_mode,
 			retries--;
 		}
 	}
-	/*
-	 * This isb() is required to prevent that the seq lock is
-	 * speculated.#
-	 */
-	isb();
+	arch_counter_enforce_ordering(res);
 
 	return res;
 }
