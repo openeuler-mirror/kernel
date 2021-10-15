@@ -607,6 +607,15 @@ static int __sev_launch_update_vmsa(struct kvm *kvm, struct kvm_vcpu *vcpu,
 	vmsa->len = PAGE_SIZE;
 	ret = sev_issue_cmd(kvm, SEV_CMD_LAUNCH_UPDATE_VMSA, vmsa, error);
 
+	/*
+	* SEV-ES guests maintain an encrypted version of their FPU
+	* state which is restored and saved on VMRUN and VMEXIT.
+	* Mark vcpu->arch.guest_fpu->fpstate as scratch so it won't
+	* do xsave/xrstor on it.
+	*/
+	fpstate_set_confidential(&vcpu->arch.guest_fpu);
+	vcpu->arch.guest_state_protected = true;
+
 e_free:
 	kfree(vmsa);
 	return ret;
@@ -622,8 +631,6 @@ static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 		return -ENOTTY;
 
 	kvm_for_each_vcpu(i, vcpu, kvm) {
-		struct vcpu_svm *svm = to_svm(vcpu);
-
 		ret = mutex_lock_killable(&vcpu->mutex);
 		if (ret)
 			return ret;
@@ -632,14 +639,6 @@ static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 		mutex_unlock(&vcpu->mutex);
 		if (ret)
 			return ret;
-
-		/*
-		* SEV-ES guests maintain an encrypted version of their FPU
-		* state which is restored and saved on VMRUN and VMEXIT.
-		* Mark vcpu->arch.guest_fpu->fpstate as scratch so it won't
-		* do xsave/xrstor on it.
-		*/
-		fpstate_set_confidential(&svm->vcpu.arch.guest_fpu);
 	}
 
 	return ret;
