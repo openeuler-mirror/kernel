@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.194
-Release: %{hulkrelease}.0087
+Release: %{hulkrelease}.0088
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -41,6 +41,7 @@ Source0: kernel.tar.gz
 Source10: sign-modules
 Source11: x509.genkey
 Source12: extra_certificates
+Source13: pubring.gpg
 
 %if 0%{?with_kabichk}
 Source18: check-kabi
@@ -226,6 +227,8 @@ tar -xjf %{SOURCE9998}
 
 mv kernel linux-%{KernelVer}
 cd linux-%{KernelVer}
+
+cp %{SOURCE13} certs
 
 %if 0%{?with_patch}
 cp %{SOURCE9000} .
@@ -807,6 +810,8 @@ fi
 %endif
 
 %changelog
+* Mon Oct 18 2021 Zhang Tianxing <zhangtianxing3@huawei.com> -4.19.194-2106.1.0.0088
+- add pubring.gpg for IMA digest list extension
 
 * Fri July 30 2021 Gou Hao <gouhao@uniontech.com> -4.19.194-2106.1.0.0087
 - fix rpmbuild error with patches
