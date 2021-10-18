@@ -131,7 +131,7 @@ err:
 
 int schemata_list_init(void)
 {
-	int ret;
+	int ret = 0;
 	struct mpam_resctrl_res *res;
 	struct resctrl_resource *r;
 
