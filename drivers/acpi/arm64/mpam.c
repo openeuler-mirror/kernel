@@ -255,7 +255,7 @@ int __init acpi_mpam_parse(void)
 		return -ENOENT;
 
 	/* PPTT is optional, there may be no mpam cache controls */
-	acpi_get_table(ACPI_SIG_PPTT, 0, &pptt);
+	status = acpi_get_table(ACPI_SIG_PPTT, 0, &pptt);
 	if (ACPI_FAILURE(status))
 		pptt = NULL;
 
