@@ -320,6 +320,10 @@ STAT RECORD
 -----------
 Stores stat data into perf data file.
 
+--quiet::
+Don't print output. This is useful with perf stat record below to only
+write data to the perf.data file.
+
 -o file::
 --output file::
 Output file name.
