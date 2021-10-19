@@ -25,6 +25,7 @@
 #include <asm/text-patching.h>
 #include <asm/stacktrace.h>
 #include <asm/set_memory.h>
+#include <asm/insn.h>
 
 #include <linux/slab.h>
 #include <asm/nops.h>
@@ -32,7 +33,7 @@
 
 #if defined (CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY) || \
     defined (CONFIG_LIVEPATCH_WO_FTRACE)
-#define	JMP_E9_INSN_SIZE	5
+#define JMP_E9_INSN_SIZE 5
 
 struct klp_func_node {
 	struct list_head node;
@@ -57,6 +58,30 @@ static struct klp_func_node *klp_find_func_node(void *old_func)
 #endif
 
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+/*
+ * The instruction set on x86 is CISC.
+ * The instructions of call in same segment are 11101000(direct),
+ * 11111111(register indirect) and 11111111(memory indirect).
+ * The instructions of call in other segment are 10011010(direct),
+ * 11111111(indirect).
+ */
+static bool is_jump_insn(u8 *insn)
+{
+	if ((insn[0] == 0xE8) || (insn[0] == 0x9a))
+		return true;
+	else if ((insn[0] == 0xFF) && ((insn[1] & 0x30) == 0x10))
+		return true;
+	return false;
+}
+
+struct klp_func_list {
+	struct klp_func_list *next;
+	unsigned long func_addr;
+	unsigned long func_size;
+	const char *func_name;
+	int force;
+};
+
 static inline unsigned long klp_size_to_check(unsigned long func_size,
 		int force)
 {
@@ -78,67 +103,136 @@ static inline int klp_compare_address(unsigned long stack_addr,
 	return 0;
 }
 
-static int klp_check_stack_func(struct klp_func *func,
-		void *trace_ptr, int trace_len, int enable)
+static bool check_jump_insn(unsigned long func_addr)
 {
-#ifdef CONFIG_ARCH_STACKWALK
-	unsigned long *trace = trace_ptr;
-#else
-	struct stack_trace *trace = trace_ptr;
-#endif
-	unsigned long func_addr, func_size, address;
-	const char *func_name;
-	struct klp_func_node *func_node;
-	int i;
+	int len = JMP_E9_INSN_SIZE;
+	struct insn insn;
+	u8 *addr = (u8*)func_addr;
 
-#ifdef CONFIG_ARCH_STACKWALK
-	for (i = 0; i < trace_len; i++) {
-		address = trace[i];
-#else
-	for (i = 0; i < trace->nr_entries; i++) {
-		address = trace->entries[i];
-#endif
+	do {
+		if (is_jump_insn(addr))
+			return true;
+		insn_init(&insn, addr, MAX_INSN_SIZE, 1);
+		insn_get_length(&insn);
+		if (!insn.length || !insn_complete(&insn))
+			return true;
+		len -= insn.length;
+		addr += insn.length;
+	} while (len > 0);
 
-		if (enable) {
-			if (func->force == KLP_ENFORCEMENT)
-				continue;
-			/*
-			 * When enable, checking the currently active
-			 * functions.
-			 */
+	return false;
+}
+
+static int add_func_to_list(struct klp_func_list **funcs, struct klp_func_list **func,
+		unsigned long func_addr, unsigned long func_size, const char *func_name,
+		int force)
+{
+	if (*func == NULL) {
+		*funcs = (struct klp_func_list*)kzalloc(sizeof(**funcs), GFP_ATOMIC);
+		if (!(*funcs))
+			return -ENOMEM;
+		*func = *funcs;
+	} else {
+		(*func)->next = (struct klp_func_list*)kzalloc(sizeof(**funcs),
+				GFP_ATOMIC);
+		if (!(*func)->next)
+			return -ENOMEM;
+		*func = (*func)->next;
+	}
+	(*func)->func_addr = func_addr;
+	(*func)->func_size = func_size;
+	(*func)->func_name = func_name;
+	(*func)->force = force;
+	(*func)->next = NULL;
+	return 0;
+}
+
+static int klp_check_activeness_func(struct klp_patch *patch, int enable,
+		struct klp_func_list **nojump_funcs,
+		struct klp_func_list **other_funcs)
+{
+	int ret;
+	struct klp_object *obj;
+	struct klp_func *func;
+	unsigned long func_addr, func_size;
+	struct klp_func_node *func_node = NULL;
+	struct klp_func_list *pnojump = NULL;
+	struct klp_func_list *pother = NULL;
+
+
+	for (obj = patch->objs; obj->funcs; obj++) {
+		for (func = obj->funcs; func->old_name; func++) {
 			func_node = klp_find_func_node(func->old_func);
-			if (!func_node ||
-			    list_empty(&func_node->func_stack)) {
-				func_addr = (unsigned long)func->old_func;
-				func_size = func->old_size;
-			} else {
-				/*
-				 * Previously patched function
-				 * [the active one]
-				 */
-				struct klp_func *prev;
 
-				prev = list_first_or_null_rcu(
+			/* Check func address in stack */
+			if (enable) {
+				if (func->force == KLP_ENFORCEMENT)
+					continue;
+				/*
+				 * When enable, checking the currently
+				 * active functions.
+				 */
+				if (!func_node ||
+				    list_empty(&func_node->func_stack)) {
+					func_addr = (unsigned long)func->old_func;
+					func_size = func->old_size;
+				} else {
+					/*
+					 * Previously patched function
+					 * [the active one]
+					 */
+					struct klp_func *prev;
+
+					prev = list_first_or_null_rcu(
 						&func_node->func_stack,
 						struct klp_func, stack_node);
-				func_addr = (unsigned long)prev->new_func;
-				func_size = prev->new_size;
+					func_addr = (unsigned long)prev->new_func;
+					func_size = prev->new_size;
+				}
+				if ((func->force == KLP_STACK_OPTIMIZE) &&
+					!check_jump_insn(func_addr))
+					ret = add_func_to_list(nojump_funcs, &pnojump,
+							func_addr, func_size,
+							func->old_name, func->force);
+				else
+					ret = add_func_to_list(other_funcs, &pother,
+							func_addr, func_size,
+							func->old_name, func->force);
+				if (ret)
+					return ret;
+			} else {
+				/*
+				 * When disable, check for the function
+				 * itself which to be unpatched.
+				 */
+				if (!func_node)
+					return -EINVAL;
+				if (list_is_singular(&func_node->func_stack)) {
+					func_addr = (unsigned long)func->old_func;
+					func_size = func->old_size;
+				} else {
+					struct klp_func *prev;
+
+					prev = list_first_or_null_rcu(
+						&func_node->func_stack,
+						struct klp_func, stack_node);
+					func_addr = (unsigned long)prev->new_func;
+					func_size = prev->new_size;
+				}
+				ret = add_func_to_list(other_funcs, &pother, func_addr,
+						func_size, func->old_name, 0);
+				if (ret)
+					return ret;
+
+				func_addr = (unsigned long)func->new_func;
+				func_size = func->new_size;
+				ret = add_func_to_list(other_funcs, &pother, func_addr,
+						func_size, func->old_name, 0);
+				if (ret)
+					return ret;
 			}
-		} else {
-			/*
-			 * When disable, check for the function itself
-			 * which to be unpatched.
-			 */
-			func_addr = (unsigned long)func->new_func;
-			func_size = func->new_size;
 		}
-		func_name = func->old_name;
-
-		if (klp_compare_address(address, func_addr, func_name,
-				klp_size_to_check(func_size, func->force)))
-			return -EAGAIN;
 	}
-
 	return 0;
 }
 
@@ -173,86 +267,121 @@ static void klp_print_stack_trace(void *trace_ptr, int trace_len)
 #endif
 #define MAX_STACK_ENTRIES  100
 
-/*
- * Determine whether it's safe to transition the task to the target patch state
- * by looking for any to-be-patched or to-be-unpatched functions on its stack.
- */
-static int klp_check_stack(struct task_struct *task,
-		struct klp_patch *patch, int enable)
-
+static bool check_func_list(struct klp_func_list *funcs, int *ret, unsigned long pc)
 {
-	static unsigned long trace_entries[MAX_STACK_ENTRIES];
-#ifdef CONFIG_ARCH_STACKWALK
-	int trace_len;
-#else
-	struct stack_trace trace;
-#endif
-	struct klp_object *obj;
-	struct klp_func *func;
-	int ret;
-
-	if (!strncmp(task->comm, "migration/", 10))
-		return 0;
-
-#ifdef CONFIG_ARCH_STACKWALK
-	ret = stack_trace_save_tsk_reliable(task, trace_entries, MAX_STACK_ENTRIES);
-	if (ret < 0)
-		return ret;
-	trace_len = ret;
-	ret = 0;
-#else
-	trace.skip = 0;
-	trace.nr_entries = 0;
-	trace.max_entries = MAX_STACK_ENTRIES;
-	trace.entries = trace_entries;
-	ret = save_stack_trace_tsk_reliable(task, &trace);
-#endif
-	WARN_ON_ONCE(ret == -ENOSYS);
-	if (ret) {
-		pr_info("%s: %s:%d has an unreliable stack\n",
-			 __func__, task->comm, task->pid);
-		return ret;
+	while (funcs != NULL) {
+		*ret = klp_compare_address(pc, funcs->func_addr, funcs->func_name,
+				klp_size_to_check(funcs->func_size, funcs->force));
+		if (*ret) {
+			return false;
+		}
+		funcs = funcs->next;
 	}
+	return true;
+}
 
-	klp_for_each_object(patch, obj) {
-		klp_for_each_func(obj, func) {
+static int klp_check_stack(void *trace_ptr, int trace_len,
+		struct klp_func_list *other_funcs)
+{
 #ifdef CONFIG_ARCH_STACKWALK
-			ret = klp_check_stack_func(func, &trace_entries, MAX_STACK_ENTRIES, enable);
+	unsigned long *trace = trace_ptr;
 #else
-			ret = klp_check_stack_func(func, &trace, 0, enable);
+	struct stack_trace *trace = trace_ptr;
 #endif
-			if (ret) {
-				pr_info("%s: %s:%d is sleeping on function %s\n",
-				__func__, task->comm, task->pid,
-				func->old_name);
+	unsigned long address;
+	int i, ret;
 
 #ifdef CONFIG_ARCH_STACKWALK
-				klp_print_stack_trace(&trace_entries, trace_len);
+	for (i = 0; i < trace_len; i++) {
+		address = trace[i];
 #else
-				klp_print_stack_trace(&trace, 0);
+	for (i = 0; i < trace->nr_entries; i++) {
+		address = trace->entries[i];
 #endif
-
-				return ret;
-
-			}
+		if (!check_func_list(other_funcs, &ret, address)) {
+#ifdef CONFIG_ARCH_STACKWALK
+			klp_print_stack_trace(trace_ptr, trace_len);
+#else
+			klp_print_stack_trace(trace_ptr, 0);
+#endif
+			return ret;
 		}
 	}
 
 	return 0;
 }
 
+static void free_list(struct klp_func_list **funcs)
+{
+	struct klp_func_list *p;
+
+	while (*funcs != NULL) {
+		p = *funcs;
+		*funcs = (*funcs)->next;
+		kfree(p);
+	}
+}
+
 int klp_check_calltrace(struct klp_patch *patch, int enable)
 {
 	struct task_struct *g, *t;
 	int ret = 0;
+	struct klp_func_list *nojump_funcs = NULL;
+	struct klp_func_list *other_funcs = NULL;
+	static unsigned long trace_entries[MAX_STACK_ENTRIES];
+#ifdef CONFIG_ARCH_STACKWALK
+	int trace_len;
+#else
+	struct stack_trace trace;
+#endif
 
+	ret = klp_check_activeness_func(patch, enable, &nojump_funcs, &other_funcs);
+	if (ret)
+		goto out;
 	for_each_process_thread(g, t) {
-		ret = klp_check_stack(t, patch, enable);
+		if (!strncmp(t->comm, "migration/", 10))
+			continue;
+
+#ifdef CONFIG_ARCH_STACKWALK
+		ret = stack_trace_save_tsk_reliable(t, trace_entries, MAX_STACK_ENTRIES);
+		if (ret < 0)
+			goto out;
+		trace_len = ret;
+		ret = 0;
+#else
+		trace.skip = 0;
+		trace.nr_entries = 0;
+		trace.max_entries = MAX_STACK_ENTRIES;
+		trace.entries = trace_entries;
+		ret = save_stack_trace_tsk_reliable(t, &trace);
+#endif
+		WARN_ON_ONCE(ret == -ENOSYS);
+		if (ret) {
+			pr_info("%s: %s:%d has an unreliable stack\n",
+				 __func__, t->comm, t->pid);
+			goto out;
+		}
+#ifdef CONFIG_ARCH_STACKWALK
+		if (!check_func_list(nojump_funcs, &ret, trace_entries[0])) {
+			klp_print_stack_trace(&trace_entries, trace_len);
+#else
+		if (!check_func_list(nojump_funcs, &ret, trace->entries[0])) {
+			klp_print_stack_trace(&trace, 0);
+#endif
+			goto out;
+		}
+#ifdef CONFIG_ARCH_STACKWALK
+		ret = klp_check_stack(trace_entries, trace_len, other_funcs);
+#else
+		ret = klp_check_stack(&trace, 0, other_funcs);
+#endif
 		if (ret)
 			goto out;
 	}
 
 out:
+	free_list(&nojump_funcs);
+	free_list(&other_funcs);
 	return ret;
 }
 #endif
