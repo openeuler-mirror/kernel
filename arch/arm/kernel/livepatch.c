@@ -40,8 +40,11 @@
 #ifdef CONFIG_ARM_MODULE_PLTS
 #define LJMP_INSN_SIZE	3
 #define MAX_SIZE_TO_CHECK (LJMP_INSN_SIZE * ARM_INSN_SIZE)
+#define CHECK_JUMP_RANGE LJMP_INSN_SIZE
+
 #else
 #define MAX_SIZE_TO_CHECK ARM_INSN_SIZE
+#define CHECK_JUMP_RANGE 1
 #endif
 
 struct klp_func_node {
@@ -49,9 +52,9 @@ struct klp_func_node {
 	struct list_head func_stack;
 	void *old_func;
 #ifdef CONFIG_ARM_MODULE_PLTS
-	u32	old_insns[LJMP_INSN_SIZE];
+	u32 old_insns[LJMP_INSN_SIZE];
 #else
-	u32	old_insn;
+	u32 old_insn;
 #endif
 };
 
@@ -70,9 +73,38 @@ static struct klp_func_node *klp_find_func_node(void *old_func)
 }
 
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+/*
+ * The instruction set on arm is A32.
+ * The instruction of BL is xxxx1011xxxxxxxxxxxxxxxxxxxxxxxx, and first four
+ * bits could not be 1111.
+ * The instruction of BLX(immediate) is 1111101xxxxxxxxxxxxxxxxxxxxxxxxx.
+ * The instruction of BLX(register) is xxxx00010010xxxxxxxxxxxx0011xxxx, and
+ * first four bits could not be 1111.
+ */
+static bool is_jump_insn(u32 insn)
+{
+	if (((insn & 0x0f000000) == 0x0b000000) &&
+		((insn & 0xf0000000) != 0xf0000000))
+		return true;
+	if ((insn & 0xfe000000) == 0xfa000000)
+		return true;
+	if (((insn & 0x0ff000f0) == 0x01200030) &&
+		((insn & 0xf0000000) != 0xf0000000))
+		return true;
+	return false;
+}
+
+struct klp_func_list {
+	struct klp_func_list *next;
+	unsigned long func_addr;
+	unsigned long func_size;
+	const char *func_name;
+	int force;
+};
+
 struct walk_stackframe_args {
-	struct klp_patch *patch;
 	int enable;
+	struct klp_func_list *other_funcs;
 	int ret;
 };
 
@@ -96,22 +128,59 @@ static inline int klp_compare_address(unsigned long pc, unsigned long func_addr,
 	return 0;
 }
 
-static int klp_check_activeness_func(struct stackframe *frame, void *data)
+static bool check_jump_insn(unsigned long func_addr)
 {
-	struct walk_stackframe_args *args = data;
-	struct klp_patch *patch = args->patch;
+	unsigned long i;
+	u32 *insn = (u32*)func_addr;
+
+	for (i = 0; i < CHECK_JUMP_RANGE; i++) {
+		if (is_jump_insn(*insn)) {
+			return true;
+		}
+		insn++;
+	}
+	return false;
+}
+
+static int add_func_to_list(struct klp_func_list **funcs, struct klp_func_list **func,
+		unsigned long func_addr, unsigned long func_size, const char *func_name,
+		int force)
+{
+	if (*func == NULL) {
+		*funcs = (struct klp_func_list*)kzalloc(sizeof(**funcs), GFP_ATOMIC);
+		if (!(*funcs))
+			return -ENOMEM;
+		*func = *funcs;
+	} else {
+		(*func)->next = (struct klp_func_list*)kzalloc(sizeof(**funcs),
+				GFP_ATOMIC);
+		if (!(*func)->next)
+			return -ENOMEM;
+		*func = (*func)->next;
+	}
+	(*func)->func_addr = func_addr;
+	(*func)->func_size = func_size;
+	(*func)->func_name = func_name;
+	(*func)->force = force;
+	(*func)->next = NULL;
+	return 0;
+}
+
+static int klp_check_activeness_func(struct klp_patch *patch, int enable,
+		struct klp_func_list **nojump_funcs,
+		struct klp_func_list **other_funcs)
+{
+	int ret;
 	struct klp_object *obj;
 	struct klp_func_node *func_node;
 	struct klp_func *func;
 	unsigned long func_addr, func_size;
-	const char *func_name;
-
-	if (args->ret)
-		return args->ret;
+	struct klp_func_list *pnjump = NULL;
+	struct klp_func_list *pother = NULL;
 
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
-			if (args->enable) {
+			if (enable) {
 				if (func->force == KLP_ENFORCEMENT)
 					continue;
 				/*
@@ -140,23 +209,86 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 					func_addr = (unsigned long)prev->new_func;
 					func_size = prev->new_size;
 				}
+				if ((func->force == KLP_STACK_OPTIMIZE) &&
+					!check_jump_insn(func_addr))
+					ret = add_func_to_list(nojump_funcs, &pnjump,
+							func_addr, func_size,
+							func->old_name, func->force);
+				else
+					ret = add_func_to_list(other_funcs, &pother,
+							func_addr, func_size,
+							func->old_name, func->force);
+				if (ret)
+					return ret;
 			} else {
 				/*
-				 * When disable, check for the function itself
+				 * When disable, check for the previously
+				 * patched function and the function itself
 				 * which to be unpatched.
 				 */
+				func_node = klp_find_func_node(func->old_func);
+				if (!func_node)
+					return -EINVAL;
+				if (list_is_singular(&func_node->func_stack)) {
+					func_addr = (unsigned long)func->old_func;
+					func_size = func->old_size;
+				} else {
+					struct klp_func *prev;
+
+					prev = list_first_or_null_rcu(
+						&func_node->func_stack,
+						struct klp_func, stack_node);
+					func_addr = (unsigned long)prev->new_func;
+					func_size = prev->new_size;
+				}
+				ret = add_func_to_list(other_funcs, &pother,
+						func_addr, func_size,
+						func->old_name, 0);
+				if (ret)
+					return ret;
 				func_addr = (unsigned long)func->new_func;
 				func_size = func->new_size;
+				ret = add_func_to_list(other_funcs, &pother,
+						func_addr, func_size,
+						func->old_name, 0);
+				if (ret)
+					return ret;
 			}
-			func_name = func->old_name;
-			args->ret = klp_compare_address(frame->pc, func_addr, func_name,
-					klp_size_to_check(func_size, func->force));
-			if (args->ret)
-				return args->ret;
 		}
 	}
+	return 0;
+}
 
-	return args->ret;
+static bool check_func_list(struct klp_func_list *funcs, int *ret, unsigned long pc)
+{
+	while (funcs != NULL) {
+		*ret = klp_compare_address(pc, funcs->func_addr, funcs->func_name,
+				klp_size_to_check(funcs->func_size, funcs->force));
+		if (*ret) {
+			return false;
+		}
+		funcs = funcs->next;
+	}
+	return true;
+}
+
+static int klp_check_jump_func(struct stackframe *frame, void *data)
+{
+	struct walk_stackframe_args *args = data;
+	struct klp_func_list *other_funcs = args->other_funcs;
+
+	return check_func_list(other_funcs, &args->ret, frame->pc);
+}
+
+static void free_list(struct klp_func_list **funcs)
+{
+	struct klp_func_list *p;
+
+	while (*funcs != NULL) {
+		p = *funcs;
+		*funcs = (*funcs)->next;
+		kfree(p);
+	}
 }
 
 int klp_check_calltrace(struct klp_patch *patch, int enable)
@@ -164,10 +296,15 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 	struct task_struct *g, *t;
 	struct stackframe frame;
 	int ret = 0;
+	struct klp_func_list *nojump_funcs = NULL;
+	struct klp_func_list *other_funcs = NULL;
+
+	ret = klp_check_activeness_func(patch, enable, &nojump_funcs, &other_funcs);
+	if (ret)
+		goto out;
 
 	struct walk_stackframe_args args = {
-		.patch = patch,
-		.enable = enable,
+		.other_funcs = other_funcs,
 		.ret = 0
 	};
 
@@ -194,17 +331,25 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 			frame.lr = 0;           /* recovered from the stack */
 			frame.pc = thread_saved_pc(t);
 		}
-
-		walk_stackframe(&frame, klp_check_activeness_func, &args);
-		if (args.ret) {
-			ret = args.ret;
+		if (!check_func_list(nojump_funcs, &ret, frame.pc)) {
 			pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
 			show_stack(t, NULL, KERN_INFO);
 			goto out;
 		}
+		if (other_funcs != NULL) {
+			walk_stackframe(&frame, klp_check_jump_func, &args);
+			if (args.ret) {
+				ret = args.ret;
+				pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
+				show_stack(t, NULL, KERN_INFO);
+				goto out;
+			}
+		}
 	}
 
 out:
+	free_list(&nojump_funcs);
+	free_list(&other_funcs);
 	return ret;
 }
 #endif
