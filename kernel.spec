@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2110.5.0
+%global hulkrelease 2110.6.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0116
+Release: %{hulkrelease}.0117
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,10 @@ fi
 %endif
 
 %changelog
+
+* Tue Oct 19 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.6.0.0117
+- Revert "cache: Workaround HiSilicon Taishan DC CVAU"
+- Revert "config: disable CONFIG_HISILICON_ERRATUM_1980005 by default"
 
 * Tue Oct 19 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.5.0.0116
 - soc: aspeed: lpc-ctrl: Fix boundary check for mmap
