@@ -1682,11 +1682,13 @@ static struct ctl_table ias_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 	{
-		.procname	= "sched_load_tracking_latency",
+		.procname	= "sched_load_tracking_aware_enable",
 		.data		= NULL,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= sysctl_update_load_latency,
+		.proc_handler	= sysctl_update_load_tracking_aware,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
 	},
 #endif
 	{ }
