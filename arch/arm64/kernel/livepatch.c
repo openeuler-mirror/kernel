@@ -291,16 +291,15 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 	int ret = 0;
 	struct klp_func_list *nojump_funcs = NULL;
 	struct klp_func_list *other_funcs = NULL;
+	struct walk_stackframe_args args = {
+		.enable = enable,
+		.ret = 0
+	};
 
 	ret = klp_check_activeness_func(patch, enable, &nojump_funcs, &other_funcs);
 	if (ret)
 		goto out;
-
-	struct walk_stackframe_args args = {
-		.enable = enable,
-		.other_funcs = other_funcs,
-		.ret = 0
-	};
+	args.other_funcs = other_funcs;
 
 	for_each_process_thread(g, t) {
 		/*
