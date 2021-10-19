@@ -8,6 +8,19 @@
 #include <asm/proc-fns.h>
 #include <asm/system_misc.h>
 
+/*
+ * 32-bit ARM spectre hardening, enabled by default, can be disabled via boot
+ * cmdline param 'nospectre_v2' to avoid performance regression.
+ */
+int nospectre_v2 __read_mostly;
+
+static int __init nospectre_v2_setup(char *str)
+{
+	nospectre_v2 = 1;
+	return 0;
+}
+early_param("nospectre_v2", nospectre_v2_setup);
+
 #ifdef CONFIG_HARDEN_BRANCH_PREDICTOR
 DEFINE_PER_CPU(harden_branch_predictor_fn_t, harden_branch_predictor_fn);
 
@@ -40,6 +53,11 @@ static void cpu_v7_spectre_init(void)
 {
 	const char *spectre_v2_method = NULL;
 	int cpu = smp_processor_id();
+
+	if (nospectre_v2) {
+		pr_info_once("Spectre v2: hardening is disabled\n");
+		return;
+	}
 
 	if (per_cpu(harden_branch_predictor_fn, cpu))
 		return;
