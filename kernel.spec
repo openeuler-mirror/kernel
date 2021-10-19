@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2110.3.0
+%global hulkrelease 2110.5.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0115
+Release: %{hulkrelease}.0116
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,329 @@ fi
 %endif
 
 %changelog
+
+* Tue Oct 19 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.5.0.0116
+- soc: aspeed: lpc-ctrl: Fix boundary check for mmap
+- mmap: userswap: fix some format issues
+- mmap: userswap: fix memory leak in do_mmap
+- arm64/mpam: fix the problem that the ret variable is not initialized
+- NFS: Fix a race in __nfs_list_for_each_server()
+- NFSv4: Clean up nfs_client_return_marked_delegations()
+- NFS: Add a helper nfs_client_for_each_server()
+- blktrace: Fix uaf in blk_trace access after removing by sysfs
+- io_uring: don't take uring_lock during iowq cancel
+- io_uring: hold uring_lock while completing failed polled io in io_wq_submit_work()
+- block: fix UAF from race of ioc_release_fn() and __ioc_clear_queue()
+- Driver/SMMUV3: Bugfix for the softlockup when the driver processes events
+- net_sched: remove need_resched() from qdisc_run()
+- ath10k: Fix TKIP Michael MIC verification for PCIe
+- ath10k: drop fragments with multicast DA for PCIe
+- ath10k: add CCMP PN replay protection for fragmented frames for PCIe
+- ath10k: add struct for high latency PN replay protection
+- config: disable CONFIG_HISILICON_ERRATUM_1980005 by default
+- cache: Workaround HiSilicon Taishan DC CVAU
+- kabi: Fix "Intel: perf/core: Add attr_groups_update into struct pmu"
+- x86: Fix kabi broken for struct cpuinfo_x86
+- kabi: Fix "perf/x86/intel: Support per-thread RDPMC TopDown metrics"
+- PCI: kabi: fix kabi broken for struct pci_dev
+- kabi: Fix "PCI: Decode PCIe 32 GT/s link speed"
+- openeuler_defconfig: Adjust some configs for Intel icelake support
+- hulk_defconfig: Adjust some configs for Intel icelake support
+- perf/x86/intel/uncore: Fix M2M event umask for Ice Lake server
+- node: fix device cleanups in error handling code
+- device-dax/core: Fix memory leak when rmmod dax.ko
+- ntb: intel: Fix memleak in intel_ntb_pci_probe
+- perf/x86/intel/uncore: Fix the scale of the IMC free-running events
+- intel_idle: Ignore _CST if control cannot be taken from the platform
+- intel_idle: Fix max_cstate for processor models without C-state tables
+- perf/x86/intel/uncore: Reduce the number of CBOX counters
+- powercap: RAPL: remove unused local MSR define
+- PCI/ERR: Update error status after reset_link()
+- PCI/ERR: Combine pci_channel_io_frozen cases
+- intel_th: msu: Fix the unexpected state warning
+- intel_th: msu: Fix window switching without windows
+- intel_th: Fix freeing IRQs
+- PCI: Do not use bus number zero from EA capability
+- perf/x86/intel/uncore: Fix missing marker for snr_uncore_imc_freerunning_events
+- intel_th: msu: Fix possible memory leak in mode_store()
+- intel_th: msu: Fix overflow in shift of an unsigned int
+- intel_th: msu: Fix missing allocation failure check on a kstrndup
+- intel_th: msu: Fix an uninitialized mutex
+- intel_th: gth: Fix the window switching sequence
+- tools/power/x86/intel-speed-select: Fix a read overflow in isst_set_tdp_level_msr()
+- intel_rapl: need linux/cpuhotplug.h for enum cpuhp_state
+- device-dax: fix memory and resource leak if hotplug fails
+- MAINTAINERS: Add entry for EDAC-I10NM
+- MAINTAINERS: Update entry for EDAC-SKYLAKE
+- tools x86 uapi asm: Sync the pt_regs.h copy with the kernel sources
+- docs: fix numaperf.rst and add it to the doc tree
+- acpi/hmat: fix an uninitialized memory_target
+- acpi/hmat: Update acpi_hmat_type enum with ACPI_HMAT_TYPE_PROXIMITY
+- acpi/hmat: fix memory leaks in hmat_init()
+- drivers/dax: Allow to include DEV_DAX_PMEM as builtin
+- doc: trace: fix reference to cpuidle documentation file
+- openeuler_defconfig: Enable some Icelake support configs
+- hulk_defconfig: Enable some Icelake support configs
+- tools/power turbostat: Fix Haswell Core systems
+- tools/power turbostat: Support Ice Lake server
+- tools/power turbostat: consolidate duplicate model numbers
+- tools/power turbostat: reduce debug output
+- intel_th: msu-sink: An example msu buffer "sink"
+- intel_th: msu: Introduce buffer interface
+- intel_th: msu: Start read iterator from a non-empty window
+- intel_th: msu: Split sgt array and pointer in multiwindow mode
+- intel_th: msu: Support multipage blocks
+- intel_th: msu: Remove set but not used variable 'last'
+- intel_th: msu: Fix unused variable warning on arm64 platform
+- intel_th: msu: Add current window tracking
+- intel_th: msu: Add a sysfs attribute to trigger window switch
+- intel_th: msu: Correct the block wrap detection
+- intel_th: Add switch triggering support
+- intel_th: gth: Factor out trace start/stop
+- intel_th: msu: Factor out pipeline draining
+- intel_th: msu: Switch over to scatterlist
+- intel_th: msu: Replace open-coded list_{first,last,next}_entry variants
+- intel_th: Only report useful IRQs to subdevices
+- intel_th: msu: Start handling IRQs
+- intel_th: pci: Use MSI interrupt signalling
+- intel_th: Communicate IRQ via resource
+- intel_th: Add "rtit" source device
+- intel_th: Skip subdevices if their MMIO is missing
+- intel_th: Rework resource passing between glue layers and core
+- intel_th: pti: Use sysfs_match_string() helper
+- intel_th: Only create useful device nodes
+- intel_th: Mark expected switch fall-throughs
+- perf/x86/amd: Fix sampling Large Increment per Cycle events
+- Intel: hardirq/nmi: Allow nested nmi_enter()
+- Intel: platform/x86: ISST: Increase timeout
+- Intel: ICX: platform/x86: ISST: Fix wrong unregister type
+- Intel: ICX: platform/x86: ISST: Allow additional core-power mailbox commands
+- Intel: EDAC/i10nm: Update driver to support different bus number config register offsets
+- Intel: EDAC, {skx,i10nm}: Make some configurations CPU model specific
+- Intel: intel_idle: Customize IceLake server support
+- Intel: x86/uaccess: Move copy_user_handle_tail() into asm
+- Intel: x86/insn-eval: Add support for 64-bit kernel mode
+- Intel: x86/extable: Introduce _ASM_EXTABLE_UA for uaccess fixups
+- x86/traps: Stop using ist_enter/exit() in do_int3()
+- Intel: EDAC, skx: Retrieve and print retry_rd_err_log registers
+- Intel: EDAC, skx_common: Refactor so that we initialize "dev" in result of adxl decode.
+- Intel: perf/x86: Fix n_metric for cancelled txn
+- Intel: perf/x86/intel: Check perf metrics feature for each CPU
+- Intel: perf/x86/intel: Support per-thread RDPMC TopDown metrics
+- Intel: perf/x86/intel: Support TopDown metrics on Ice Lake
+- Intel: perf/x86: Add a macro for RDPMC offset of fixed counters
+- Intel: perf/x86/intel: Generic support for hardware TopDown metrics
+- Intel: perf/core: Add a new PERF_EV_CAP_SIBLING event capability
+- Intel: perf/x86/intel: Use switch in intel_pmu_disable/enable_event
+- Intel: perf/x86/intel: Fix the name of perf METRICS
+- Intel: perf/x86/intel: Move BTS index to 47
+- Intel: perf/x86/intel: Introduce the fourth fixed counter
+- Intel: perf/x86/intel: Name the global status bit in NMI handler
+- Intel: perf/x86: Use event_base_rdpmc for the RDPMC userspace support
+- Intel: perf/x86: Keep LBR records unchanged in host context for guest usage
+- Intel: perf/x86: Add constraint to create guest LBR event without hw counter
+- Intel: perf/x86/lbr: Add interface to get LBR information
+- perf/x86/core: Refactor hw->idx checks and cleanup
+- Intel: perf/x86: Fix variable types for LBR registers
+- perf/x86/amd: Add support for Large Increment per Cycle Events
+- Intel: perf/x86/amd: Constrain Large Increment per Cycle events
+- Intel: perf/x86/intel: Fix SLOTS PEBS event constraint
+- Intel: perf/x86: Use update attribute groups for default attributes
+- intel: perf/x86/intel: Use update attributes for skylake format
+- Intel: perf/x86: Use update attribute groups for extra format
+- Intel: perf/x86: Use update attribute groups for caps
+- Intel: perf/x86: Add is_visible attribute_group callback for base events
+- Intel: perf/x86: Use the new pmu::update_attrs attribute group
+- Intel: perf/x86: Get rid of x86_pmu::event_attrs
+- Intel: perf/core: Add attr_groups_update into struct pmu
+- Intel: sysfs: Add sysfs_update_groups function
+- perf/x86/intel: Export mem events only if there's PEBS support
+- Intel: perf/x86/intel: Factor out common code of PMI handler
+- PCI: pciehp: Add DMI table for in-band presence detection disabled
+- Intel:PCI: pciehp: Wait for PDS if in-band presence is disabled
+- Intel:PCI: pciehp: Disable in-band presence detect when possible
+- Intel:PCI/AER: Fix the broken interrupt injection
+- genirq: Provide interrupt injection mechanism
+- Intel:PCI/DPC: Add "pcie_ports=dpc-native" to allow DPC without AER control
+- Intel:PCI/AER: Fix kernel-doc warnings
+- Intel:PCI/AER: Use for_each_set_bit() to simplify code
+- Intel:PCI/AER: Save AER Capability for suspend/resume
+- Intel:PCI: Get rid of dev->has_secondary_link flag
+- Intel:PCI: Make pcie_downstream_port() available outside of access.c
+- Intel:PCI: Assign bus numbers present in EA capability for bridges
+- Intel:PCI/AER: Log messages with pci_dev, not pcie_device
+- Intel:PCI/DPC: Log messages with pci_dev, not pcie_device
+- Intel:PCI: Replace dev_printk(KERN_DEBUG) with dev_info(), etc
+- Intel:PCI: Replace printk(KERN_INFO) with pr_info(), etc
+- Intel:PCI: Use dev_printk() when possible
+- Intel:PCI/portdrv: Support PCIe services on subtractive decode bridges
+- Intel:PCI/portdrv: Use conventional Device ID table formatting
+- Intel:PCI/ASPM: Save LTR Capability for suspend/resume
+- Intel:PCI: Enable SERR# forwarding for all bridges
+- Intel:PCI/AER: Use match_string() helper to simplify the code
+- Intel:PCI/AER: Queue one GHES event, not several uninitialized ones
+- Intel:PCI/AER: Abstract AER interrupt handling
+- Intel:PCI/AER: Reuse existing pcie_port_find_device() interface
+- Intel:PCI/AER: Use managed resource allocations
+- Intel:PCI/AER: Use threaded IRQ for bottom half
+- Intel:PCI/AER: Use kfifo_in_spinlocked() to insert locked elements
+- Intel:PCI/AER: Remove unused aer_error_resume()
+- Intel:PCI/ERR: Remove duplicated include from err.c
+- Intel:PCI: Make link active reporting detection generic
+- PCI: Unify device inaccessible
+- Intel:PCI/ERR: Always report current recovery status for udev
+- PCI/ERR: Simplify broadcast callouts
+- PCI/ERR: Handle fatal error recovery
+- Intel:PCI/DPC: Save and restore config state
+- PCI: portdrv: Restore PCI config state on slot reset
+- PCI: Simplify disconnected marking
+- Intel: ntb: intel: add hw workaround for NTB BAR alignment
+- Intel: ntb: intel: fix static declaration
+- Intel: ntb: intel: Add Icelake (gen4) support for Intel NTB
+- Intel: NTB: add new parameter to peer_db_addr() db_bit and db_data
+- Intel: perf/x86/intel: Fix invalid Bit 13 for Icelake MSR_OFFCORE_RSP_x register
+- Intel: perf/x86/intel/uncore: Add Ice Lake server uncore support
+- Intel: perf/x86/intel/uncore: Add box_offsets for free-running counters
+- Intel: perf/x86/intel/uncore: Factor out __snr_uncore_mmio_init_box
+- Intel: perf/x86/intel/uncore: Add IMC uncore support for Snow Ridge
+- Intel: perf/x86/intel/uncore: Clean up client IMC
+- Intel: perf/x86/intel/uncore: Support MMIO type uncore blocks
+- Intel: perf/x86/intel/uncore: Factor out box ref/unref functions
+- Intel: perf/x86/intel/uncore: Add uncore support for Snow Ridge server
+- Intel: perf/x86/intel: Add more Icelake CPUIDs
+- Intel: Documentation: admin-guide: PM: Add intel_idle document
+- Intel: ACPI: processor: Make ACPI_PROCESSOR_CSTATE depend on ACPI_PROCESSOR
+- Intel: intel_idle: Use ACPI _CST on server systems
+- Intel: intel_idle: Add module parameter to prevent ACPI _CST from being used
+- Intel: intel_idle: Allow ACPI _CST to be used for selected known processors
+- Intel: cpuidle: Allow idle states to be disabled by default
+- Intel: Documentation: admin-guide: PM: Add cpuidle document
+- Intel: cpuidle: use BIT() for idle state flags and remove CPUIDLE_DRIVER_FLAGS_MASK
+- Intel: intel_idle: Use ACPI _CST for processor models without C-state tables
+- Intel: intel_idle: Refactor intel_idle_cpuidle_driver_init()
+- Intel: ACPI: processor: Export acpi_processor_evaluate_cst()
+- Intel: ACPI: processor: Clean up acpi_processor_evaluate_cst()
+- Intel: ACPI: processor: Introduce acpi_processor_evaluate_cst()
+- Intel: ACPI: processor: Export function to claim _CST control
+- Intel: tools/power/x86: A tool to validate Intel Speed Select commands
+- Intel: platform/x86: ISST: Restore state on resume
+- Intel: platform/x86: ISST: Add Intel Speed Select PUNIT MSR interface
+- Intel: platform/x86: ISST: Add Intel Speed Select mailbox interface via MSRs
+- Intel: platform/x86: ISST: Add Intel Speed Select mailbox interface via PCI
+- Intel: platform/x86: ISST: Add Intel Speed Select mmio interface
+- Intel: platform/x86: ISST: Add IOCTL to Translate Linux logical CPU to PUNIT CPU number
+- Intel: platform/x86: ISST: Store per CPU information
+- Intel: platform/x86: ISST: Add common API to register and handle ioctls
+- Intel: platform/x86: ISST: Update ioctl-number.txt for Intel Speed Select interface
+- Intel: EDAC, skx, i10nm: Fix source ID register offset
+- Intel: EDAC, i10nm: Check ECC enabling status per channel
+- Intel: EDAC, i10nm: Add Intel additional Ice-Lake support
+- Intel: EDAC, skx, i10nm: Make skx_common.c a pure library
+- Intel: EDAC, skx_common: Add code to recognise new compound error code
+- Intel: EDAC, i10nm: Add a driver for Intel 10nm server processors
+- EDAC, skx_edac: Delete duplicated code
+- Intel: EDAC, skx_common: Separate common code out from skx_edac
+- Intel: powercap/intel_rapl: add support for ICX-D
+- Intel: powercap/intel_rapl: add support for ICX
+- Intel: powercap/intel_rapl: add support for IceLake desktop
+- Intel: intel_rapl: Fix module autoloading issue
+- Intel: intel_rapl: support two power limits for every RAPL domain
+- Intel: intel_rapl: support 64 bit register
+- intel_rapl: abstract RAPL common code
+- Intel: intel_rapl: cleanup hardcoded MSR access
+- Intel: intel_rapl: cleanup some functions
+- Intel: intel_rapl: abstract register access operations
+- Intel: intel_rapl: abstract register address
+- Intel: intel_rapl: introduce struct rapl_if_private
+- Intel: intel_rapl: introduce intel_rapl.h
+- Intel: intel_rapl: remove hardcoded register index
+- Intel: intel_rapl: use reg instead of msr
+- Intel: powercap/intel_rapl: Update RAPL domain name and debug messages
+- Intel: powercap/intel_rapl: Support multi-die/package
+- Intel: powercap/intel_rapl: Simplify rapl_find_package()
+- Intel: x86/topology: Define topology_logical_die_id()
+- Intel: x86/topology: Define topology_die_id()
+- Intel: cpu/topology: Export die_id
+- Intel: x86/topology: Create topology_max_die_per_package()
+- Intel: x86/topology: Add CPUID.1F multi-die/package support
+- Intel: topology: Simplify cputopology.txt formatting and wording
+- Intel: perf/x86/regs: Use PERF_REG_EXTENDED_MASK
+- Intel: perf/x86: Remove pmu->pebs_no_xmm_regs
+- Intel: perf/x86: Clean up PEBS_XMM_REGS
+- Intel: perf/x86/regs: Check reserved bits
+- Intel: perf/x86: Disable extended registers for non-supported PMUs
+- Intel: perf/core: Add PERF_PMU_CAP_NO_EXCLUDE for exclusion incapable PMUs
+- Intel: perf/core: Add function to test for event exclusion flags
+- Intel: perf/x86/intel/pt: Remove software double buffering PMU capability
+- Intel: perf/ring_buffer: Fix AUX software double buffering
+- Intel: perf regs x86: Add X86 specific arch__intr_reg_mask()
+- Intel: perf parse-regs: Add generic support for arch__intr/user_reg_mask()
+- Intel: perf parse-regs: Split parse_regs
+- Intel: perf parse-regs: Improve error output when faced with unknown register name
+- Intel: perf record: Fix suggestion to get list of registers usable with --user-regs and --intr-regs
+- Intel: perf tools x86: Add support for recording and printing XMM registers
+- Intel: perf/x86/intel/uncore: Add Intel Icelake uncore support
+- Intel: perf/x86/lbr: Avoid reading the LBRs when adaptive PEBS handles them
+- Intel: perf/x86/intel: Support adaptive PEBS v4
+- Intel: perf/x86/intel/ds: Extract code of event update in short period
+- Intel: perf/x86/intel: Extract memory code PEBS parser for reuse
+- Intel: perf/x86: Support outputting XMM registers
+- Intel: doc/mm: New documentation for memory performance
+- Intel: acpi/hmat: Register memory side cache attributes
+- Intel: acpi/hmat: Register performance attributes
+- Intel: acpi/hmat: Register processor domain to its memory
+- Intel: node: Add memory-side caching attributes
+- Intel: node: Add heterogenous memory access attributes
+- node: Link memory nodes to their compute nodes
+- Intel: acpi/hmat: Parse and report heterogeneous memory
+- Intel: acpi: Add HMAT to generic parsing tables
+- irqchip: phytium-2500: Fix compilation issues
+- Intel: acpi: Create subtable parsing infrastructure
+- Intel: ACPICA: ACPI 6.3: HMAT updates
+- Intel: device-dax: "Hotplug" persistent memory for use like normal RAM
+- mm/resource: Let walk_system_ram_range() search child resources
+- Intel: mm/memory-hotplug: Allow memory resources to be children
+- Intel: mm/resource: Move HMM pr_debug() deeper into resource code
+- Intel: device-dax: Add a 'modalias' attribute to DAX 'bus' devices
+- Intel: device-dax: Add a 'target_node' attribute
+- Intel: device-dax: Auto-bind device after successful new_id
+- Intel: acpi/nfit, device-dax: Identify differentiated memory with a unique numa-node
+- Intel: device-dax: Add /sys/class/dax backwards compatibility
+- Intel: device-dax: Add support for a dax override driver
+- Intel: device-dax: Move resource pinning+mapping into the common driver
+- Intel: device-dax: Introduce bus + driver model
+- Intel: device-dax: Start defining a dax bus model
+- Intel: device-dax: Remove multi-resource infrastructure
+- Intel: device-dax: Kill dax_region base
+- Intel: device-dax: Kill dax_region ida
+- Intel: dmaengine: ioatdma: support latency tolerance report (LTR) for v3.4
+- Intel: dmaengine: ioatdma: add descriptor pre-fetch support for v3.4
+- Intel: dmaengine: ioatdma: disable DCA enabling on IOATDMA v3.4
+- Intel: dmaengine: ioatdma: Add Snow Ridge ioatdma device id
+- perf/x86/intel: Add Tremont core PMU support
+- perf/x86/intel: Add Icelake support
+- perf/x86: Support constraint ranges
+- PCI/PME: Fix kernel-doc of pcie_pme_resume() and pcie_pme_remove()
+- PCI: Add PCIE_LNKCAP2_SLS2SPEED() macro
+- PCI: Use pci_speed_string() for all PCI/PCI-X/PCIe strings
+- PCI: Add pci_speed_string()
+- PCI: Add 32 GT/s decoding in some macros
+- PCI: Decode PCIe 32 GT/s link speed
+- PCI/AER: Log which device prevents error recovery
+- PCI/AER: Initialize aer_fifo
+- PCI/AER: Use kfifo for tracking events instead of reimplementing it
+- PCI/AER: Remove error source from AER struct aer_rpc
+- Intel: PCI: Add support for Immediate Readiness
+- ia64: ensure proper NUMA distance and possible map initialization
+- sched/topology: Make sched_init_numa() use a set for the deduplicating sort
+- block: don't call rq_qos_ops->done_bio if the bio isn't tracked
+- block: fix blk-iolatency accounting underflow
+- ovl: fix missing negative dentry check in ovl_rename()
+- ext4: flush s_error_work before journal destroy in ext4_fill_super
+- Revert "ext4: fix panic when mount failed with parallel flush_stashed_error_work"
+- ext4: refresh the ext4_ext_path struct after dropping i_data_sem.
+- ext4: ensure enough credits in ext4_ext_shift_path_extents
+- ext4: use true,false for bool variable
 
 * Tue Oct 12 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.3.0.0115
 - net: 6pack: fix slab-out-of-bounds in decode_data
