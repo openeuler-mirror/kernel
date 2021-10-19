@@ -1323,11 +1323,11 @@ static int __klp_disable_patch(struct klp_patch *patch)
 
 	arch_klp_code_modify_prepare();
 	ret = stop_machine(klp_try_disable_patch, &patch_data, cpu_online_mask);
-	arch_klp_mem_recycle(patch);
 	arch_klp_code_modify_post_process();
 	if (ret)
 		return ret;
 
+	arch_klp_mem_recycle(patch);
 	klp_free_patch_async(patch);
 	return 0;
 }
