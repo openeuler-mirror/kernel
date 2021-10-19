@@ -352,7 +352,7 @@ static int __init load_digest_list(struct dir_context *__ctx, const char *name,
 			goto out;
 	}
 
-	file = file_open_root(dir->dentry, dir->mnt, name, O_RDONLY, 0);
+	file = file_open_root(dir, name, O_RDONLY, 0);
 	if (IS_ERR(file)) {
 		pr_err("Unable to open file: %s (%ld)", name, PTR_ERR(file));
 		goto out;

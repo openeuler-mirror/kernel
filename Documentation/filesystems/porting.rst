@@ -865,3 +865,12 @@ no matter what.  Everything is handled by the caller.
 
 clone_private_mount() returns a longterm mount now, so the proper destructor of
 its result is kern_unmount() or kern_unmount_array().
+
+---
+
+**mandatory**
+
+Calling conventions for file_open_root() changed; now it takes struct path *
+instead of passing mount and dentry separately.  For callers that used to
+pass <mnt, mnt->mnt_root> pair (i.e. the root of given mount), a new helper
+is provided - file_open_root_mnt().  In-tree users adjusted.
