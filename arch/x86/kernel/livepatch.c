@@ -57,11 +57,21 @@ static struct klp_func_node *klp_find_func_node(void *old_func)
 #endif
 
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-static inline int klp_compare_address(unsigned long stack_addr,
-		unsigned long func_addr, unsigned long func_size,
-		const char *func_name)
+static inline unsigned long klp_size_to_check(unsigned long func_size,
+		int force)
 {
-	if (stack_addr >= func_addr && stack_addr < func_addr + func_size) {
+	unsigned long size = func_size;
+
+	if (force == KLP_STACK_OPTIMIZE && size > JMP_E9_INSN_SIZE)
+		size = JMP_E9_INSN_SIZE;
+	return size;
+}
+
+static inline int klp_compare_address(unsigned long stack_addr,
+		unsigned long func_addr, const char *func_name,
+		unsigned long check_size)
+{
+	if (stack_addr >= func_addr && stack_addr < func_addr + check_size) {
 		pr_err("func %s is in use!\n", func_name);
 		return -EBUSY;
 	}
@@ -124,8 +134,8 @@ static int klp_check_stack_func(struct klp_func *func,
 		}
 		func_name = func->old_name;
 
-		if (klp_compare_address(address, func_addr,
-				func_size, func_name))
+		if (klp_compare_address(address, func_addr, func_name,
+				klp_size_to_check(func_size, func->force)))
 			return -EAGAIN;
 	}
 

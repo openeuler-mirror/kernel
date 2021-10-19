@@ -32,6 +32,7 @@
 #if defined (CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY) || \
     defined (CONFIG_LIVEPATCH_WO_FTRACE)
 #define LJMP_INSN_SIZE	4
+#define MAX_SIZE_TO_CHECK (LJMP_INSN_SIZE * sizeof(u32))
 
 struct klp_func_node {
 	struct list_head node;
@@ -67,10 +68,20 @@ struct walk_stackframe_args {
 	int ret;
 };
 
-static inline int klp_compare_address(unsigned long pc, unsigned long func_addr,
-				unsigned long func_size, const char *func_name)
+static inline unsigned long klp_size_to_check(unsigned long func_size,
+		int force)
 {
-	if (pc >= func_addr && pc < func_addr + func_size) {
+	unsigned long size = func_size;
+
+	if (force == KLP_STACK_OPTIMIZE && size > MAX_SIZE_TO_CHECK)
+		size = MAX_SIZE_TO_CHECK;
+	return size;
+}
+
+static inline int klp_compare_address(unsigned long pc, unsigned long func_addr,
+		const char *func_name, unsigned long check_size)
+{
+	if (pc >= func_addr && pc < func_addr + check_size) {
 		pr_err("func %s is in use!\n", func_name);
 		return -EBUSY;
 	}
@@ -130,8 +141,8 @@ static int klp_check_activeness_func(struct stackframe *frame, void *data)
 				func_size = func->new_size;
 			}
 			func_name = func->old_name;
-			args->ret = klp_compare_address(frame->pc, func_addr,
-					func_size, func_name);
+			args->ret = klp_compare_address(frame->pc, func_addr, func_name,
+					klp_size_to_check(func_size, func->force));
 			if (args->ret)
 				return args->ret;
 		}
