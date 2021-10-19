@@ -1172,8 +1172,10 @@ _out:							\
 		_array = rcu_dereference(array);	\
 		_item = &_array->items[0];		\
 		while ((_prog = READ_ONCE(_item->prog))) {		\
-			bpf_cgroup_storage_set(_item->cgroup_storage);	\
+			if (unlikely(bpf_cgroup_storage_set(_item->cgroup_storage)))	\
+				break;			\
 			ret = func(_prog, ctx);		\
+			bpf_cgroup_storage_unset();	\
 			_ret &= (ret & 1);		\
 			_cn |= (ret & 2);		\
 			_item++;			\
