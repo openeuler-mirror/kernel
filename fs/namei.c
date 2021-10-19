@@ -504,7 +504,7 @@ struct nameidata {
 	struct qstr	last;
 	struct path	root;
 	struct inode	*inode; /* path.dentry.d_inode */
-	unsigned int	flags;
+	unsigned int	flags, state;
 	unsigned	seq, m_seq, r_seq;
 	int		last_type;
 	unsigned	depth;
@@ -523,6 +523,10 @@ struct nameidata {
 	umode_t		dir_mode;
 } __randomize_layout;
 
+#define ND_ROOT_PRESET 1
+#define ND_ROOT_GRABBED 2
+#define ND_JUMPED 4
+
 static void set_nameidata(struct nameidata *p, int dfd, struct filename *name)
 {
 	struct nameidata *old = current->nameidata;
@@ -531,6 +535,7 @@ static void set_nameidata(struct nameidata *p, int dfd, struct filename *name)
 	p->name = name;
 	p->total_link_count = old ? old->total_link_count : 0;
 	p->saved = old;
+	p->state = 0;
 	current->nameidata = p;
 }
 
@@ -593,9 +598,9 @@ static void terminate_walk(struct nameidata *nd)
 		path_put(&nd->path);
 		for (i = 0; i < nd->depth; i++)
 			path_put(&nd->stack[i].link);
-		if (nd->flags & LOOKUP_ROOT_GRABBED) {
+		if (nd->state & ND_ROOT_GRABBED) {
 			path_put(&nd->root);
-			nd->flags &= ~LOOKUP_ROOT_GRABBED;
+			nd->state &= ~ND_ROOT_GRABBED;
 		}
 	} else {
 		nd->flags &= ~LOOKUP_RCU;
@@ -651,9 +656,9 @@ static bool legitimize_root(struct nameidata *nd)
 	if (!nd->root.mnt && (nd->flags & LOOKUP_IS_SCOPED))
 		return false;
 	/* Nothing to do if nd->root is zero or is managed by the VFS user. */
-	if (!nd->root.mnt || (nd->flags & LOOKUP_ROOT))
+	if (!nd->root.mnt || (nd->state & ND_ROOT_PRESET))
 		return true;
-	nd->flags |= LOOKUP_ROOT_GRABBED;
+	nd->state |= ND_ROOT_GRABBED;
 	return legitimize_path(nd, &nd->root, nd->root_seq);
 }
 
@@ -790,8 +795,9 @@ static int complete_walk(struct nameidata *nd)
 		 * We don't want to zero nd->root for scoped-lookups or
 		 * externally-managed nd->root.
 		 */
-		if (!(nd->flags & (LOOKUP_ROOT | LOOKUP_IS_SCOPED)))
-			nd->root.mnt = NULL;
+		if (!(nd->state & ND_ROOT_PRESET))
+			if (!(nd->flags & LOOKUP_IS_SCOPED))
+				nd->root.mnt = NULL;
 		if (!try_to_unlazy(nd))
 			return -ECHILD;
 	}
@@ -817,7 +823,7 @@ static int complete_walk(struct nameidata *nd)
 			return -EXDEV;
 	}
 
-	if (likely(!(nd->flags & LOOKUP_JUMPED)))
+	if (likely(!(nd->state & ND_JUMPED)))
 		return 0;
 
 	if (likely(!(dentry->d_flags & DCACHE_OP_WEAK_REVALIDATE)))
@@ -855,7 +861,7 @@ static int set_root(struct nameidata *nd)
 		} while (read_seqcount_retry(&fs->seq, seq));
 	} else {
 		get_fs_root(fs, &nd->root);
-		nd->flags |= LOOKUP_ROOT_GRABBED;
+		nd->state |= ND_ROOT_GRABBED;
 	}
 	return 0;
 }
@@ -888,7 +894,7 @@ static int nd_jump_root(struct nameidata *nd)
 		path_get(&nd->path);
 		nd->inode = nd->path.dentry->d_inode;
 	}
-	nd->flags |= LOOKUP_JUMPED;
+	nd->state |= ND_JUMPED;
 	return 0;
 }
 
@@ -916,7 +922,7 @@ int nd_jump_link(struct path *path)
 	path_put(&nd->path);
 	nd->path = *path;
 	nd->inode = nd->path.dentry->d_inode;
-	nd->flags |= LOOKUP_JUMPED;
+	nd->state |= ND_JUMPED;
 	return 0;
 
 err:
@@ -1338,7 +1344,7 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 			if (mounted) {
 				path->mnt = &mounted->mnt;
 				dentry = path->dentry = mounted->mnt.mnt_root;
-				nd->flags |= LOOKUP_JUMPED;
+				nd->state |= ND_JUMPED;
 				*seqp = read_seqcount_begin(&dentry->d_seq);
 				*inode = dentry->d_inode;
 				/*
@@ -1383,7 +1389,7 @@ static inline int handle_mounts(struct nameidata *nd, struct dentry *dentry,
 		if (unlikely(nd->flags & LOOKUP_NO_XDEV))
 			ret = -EXDEV;
 		else
-			nd->flags |= LOOKUP_JUMPED;
+			nd->state |= ND_JUMPED;
 	}
 	if (unlikely(ret)) {
 		dput(path->dentry);
@@ -2129,7 +2135,7 @@ static int link_path_walk(const char *name, struct nameidata *nd)
 			case 2:
 				if (name[1] == '.') {
 					type = LAST_DOTDOT;
-					nd->flags |= LOOKUP_JUMPED;
+					nd->state |= ND_JUMPED;
 				}
 				break;
 			case 1:
@@ -2137,7 +2143,7 @@ static int link_path_walk(const char *name, struct nameidata *nd)
 		}
 		if (likely(type == LAST_NORM)) {
 			struct dentry *parent = nd->path.dentry;
-			nd->flags &= ~LOOKUP_JUMPED;
+			nd->state &= ~ND_JUMPED;
 			if (unlikely(parent->d_flags & DCACHE_OP_HASH)) {
 				struct qstr this = { { .hash_len = hash_len }, .name = name };
 				err = parent->d_op->d_hash(parent, &this);
@@ -2207,14 +2213,15 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
 	if (flags & LOOKUP_RCU)
 		rcu_read_lock();
 
-	nd->flags = flags | LOOKUP_JUMPED;
+	nd->flags = flags;
+	nd->state |= ND_JUMPED;
 	nd->depth = 0;
 
 	nd->m_seq = __read_seqcount_begin(&mount_lock.seqcount);
 	nd->r_seq = __read_seqcount_begin(&rename_lock.seqcount);
 	smp_rmb();
 
-	if (flags & LOOKUP_ROOT) {
+	if (nd->state & ND_ROOT_PRESET) {
 		struct dentry *root = nd->root.dentry;
 		struct inode *inode = root->d_inode;
 		if (*s && unlikely(!d_can_lookup(root)))
@@ -2291,7 +2298,7 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
 			nd->root_seq = nd->seq;
 		} else {
 			path_get(&nd->root);
-			nd->flags |= LOOKUP_ROOT_GRABBED;
+			nd->state |= ND_ROOT_GRABBED;
 		}
 	}
 	return s;
@@ -2330,7 +2337,7 @@ static int path_lookupat(struct nameidata *nd, unsigned flags, struct path *path
 		;
 	if (!err && unlikely(nd->flags & LOOKUP_MOUNTPOINT)) {
 		err = handle_lookup_down(nd);
-		nd->flags &= ~LOOKUP_JUMPED; // no d_weak_revalidate(), please...
+		nd->state &= ~ND_JUMPED; // no d_weak_revalidate(), please...
 	}
 	if (!err)
 		err = complete_walk(nd);
@@ -2354,11 +2361,11 @@ int filename_lookup(int dfd, struct filename *name, unsigned flags,
 	struct nameidata nd;
 	if (IS_ERR(name))
 		return PTR_ERR(name);
+	set_nameidata(&nd, dfd, name);
 	if (unlikely(root)) {
 		nd.root = *root;
-		flags |= LOOKUP_ROOT;
+		nd.state = ND_ROOT_PRESET;
 	}
-	set_nameidata(&nd, dfd, name);
 	retval = path_lookupat(&nd, flags | LOOKUP_RCU, path);
 	if (unlikely(retval == -ECHILD))
 		retval = path_lookupat(&nd, flags, path);
@@ -3399,7 +3406,7 @@ struct file *do_file_open_root(const struct path *root,
 	struct nameidata nd;
 	struct file *file;
 	struct filename *filename;
-	int flags = op->lookup_flags | LOOKUP_ROOT;
+	int flags = op->lookup_flags;
 
 	if (d_is_symlink(root->dentry) && op->intent & LOOKUP_OPEN)
 		return ERR_PTR(-ELOOP);
@@ -3408,8 +3415,9 @@ struct file *do_file_open_root(const struct path *root,
 	if (IS_ERR(filename))
 		return ERR_CAST(filename);
 
-	nd.root = *root;
 	set_nameidata(&nd, -1, filename);
+	nd.root = *root;
+	nd.state = ND_ROOT_PRESET;
 	file = path_openat(&nd, op, flags | LOOKUP_RCU);
 	if (unlikely(file == ERR_PTR(-ECHILD)))
 		file = path_openat(&nd, op, flags);
