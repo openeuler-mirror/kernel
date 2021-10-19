@@ -90,7 +90,7 @@ static int klp_check_stack_func(struct klp_func *func,
 #endif
 
 		if (enable) {
-			if (func->force)
+			if (func->force == KLP_ENFORCEMENT)
 				continue;
 			/*
 			 * When enable, checking the currently active

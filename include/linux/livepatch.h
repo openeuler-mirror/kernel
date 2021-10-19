@@ -23,6 +23,10 @@
 #define KLP_UNPATCHED	 0
 #define KLP_PATCHED	 1
 
+#define KLP_NORMAL_FORCE	0
+#define KLP_ENFORCEMENT		1
+#define KLP_STACK_OPTIMIZE	2
+
 /**
  * struct klp_func - function structure for live patching
  * @old_name:	name of the function to be patched

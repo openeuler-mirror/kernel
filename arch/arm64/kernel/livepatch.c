@@ -104,7 +104,7 @@ static bool klp_check_activeness_func(void *data, unsigned long pc)
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
 			if (args->enable) {
-				if (func->force)
+				if (func->force == KLP_ENFORCEMENT)
 					continue;
 				/*
 				 * When enable, checking the currently
