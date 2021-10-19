@@ -167,13 +167,6 @@ struct klp_state {
 	void *data;
 };
 
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-struct klp_hook_node {
-	struct klp_hook *hooks_unload;
-	struct klp_hook_node *next;
-};
-#endif
-
 /**
  * struct klp_patch - patch structure for live patching
  * @mod:	reference to the live patch module
@@ -203,9 +196,6 @@ struct klp_patch {
 	bool forced;
 	struct work_struct free_work;
 	struct completion finish;
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-	struct klp_hook_node *hook;
-#endif
 };
 
 #define klp_for_each_object_static(patch, obj) \
@@ -228,7 +218,12 @@ struct klp_patch {
 #define klp_for_each_func(obj, func)	\
 	list_for_each_entry(func, &obj->func_list, node)
 
+#ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 int klp_enable_patch(struct klp_patch *);
+#elif defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY)
+int klp_register_patch(struct klp_patch *patch);
+int klp_unregister_patch(struct klp_patch *patch);
+#endif
 
 int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
 			     const char *shstrtab, const char *strtab,

@@ -409,6 +409,7 @@ int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
  */
 static int __klp_disable_patch(struct klp_patch *patch);
 
+#ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
 			     const char *buf, size_t count)
 {
@@ -430,7 +431,6 @@ static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
 		goto out;
 	}
 
-#if defined(CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY)
 	/*
 	 * Allow to reverse a pending transition in both ways. It might be
 	 * necessary to complete the transition without forcing and breaking
@@ -444,15 +444,6 @@ static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
 		ret = __klp_disable_patch(patch);
 	else
 		ret = -EINVAL;
-#elif defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY)
-	if (enabled) {
-		ret = -EINVAL;
-	} else {
-		ret = __klp_disable_patch(patch);
-		if (ret)
-			goto out;
-	}
-#endif
 
 out:
 	mutex_unlock(&klp_mutex);
@@ -461,6 +452,64 @@ out:
 		return ret;
 	return count;
 }
+
+#elif defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY)
+
+static bool klp_is_patch_registered(struct klp_patch *patch)
+{
+	struct klp_patch *mypatch;
+
+	list_for_each_entry(mypatch, &klp_patches, list)
+		if (mypatch == patch)
+			return true;
+
+	return false;
+}
+
+static int __klp_enable_patch(struct klp_patch *patch);
+static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
+			     const char *buf, size_t count)
+{
+	struct klp_patch *patch;
+	int ret;
+	bool enabled;
+
+	ret = kstrtobool(buf, &enabled);
+	if (ret)
+		return ret;
+
+	patch = container_of(kobj, struct klp_patch, kobj);
+
+	mutex_lock(&klp_mutex);
+
+	if (!klp_is_patch_registered(patch)) {
+		/*
+		 * Module with the patch could either disappear meanwhile or is
+		 * not properly initialized yet.
+		 */
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (patch->enabled == enabled) {
+		/* already in requested state */
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (enabled)
+		ret = __klp_enable_patch(patch);
+	else
+		ret = __klp_disable_patch(patch);
+
+out:
+	mutex_unlock(&klp_mutex);
+
+	if (ret)
+		return ret;
+	return count;
+}
+#endif
 
 static ssize_t enabled_show(struct kobject *kobj,
 			    struct kobj_attribute *attr, char *buf)
@@ -759,23 +808,11 @@ static void klp_free_object_loaded(struct klp_object *obj)
 static void __klp_free_objects(struct klp_patch *patch, bool nops_only)
 {
 	struct klp_object *obj, *tmp_obj;
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-	patch->hook = NULL;
-#endif
 
 	klp_for_each_object_safe(patch, obj, tmp_obj) {
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 		if (klp_is_module(obj))
 			module_put(obj->mod);
-		if (obj->hooks_unload) {
-			struct klp_hook_node **pnode = &patch->hook;
-			while (*pnode != NULL)
-				pnode = &(*pnode)->next;
-			*pnode = kzalloc(sizeof(struct klp_hook_node),
-					 GFP_KERNEL);
-			(*pnode)->hooks_unload = obj->hooks_unload;
-			(*pnode)->next = NULL;
-		}
 #endif
 		__klp_free_funcs(obj, nops_only);
 
@@ -828,18 +865,17 @@ static inline int klp_load_hook(struct klp_object *obj)
 	return 0;
 }
 
-static inline void klp_unload_patch_hooks(struct klp_patch *patch)
+static inline int klp_unload_hook(struct klp_object *obj)
 {
 	struct klp_hook *hook;
-	struct klp_hook_node *tmp;
 
-	while (patch->hook) {
-		for (hook = patch->hook->hooks_unload; hook->hook; hook++)
-			(*hook->hook)();
-		tmp = patch->hook;
-		patch->hook = patch->hook->next;
-		kfree(tmp);
-	}
+	if (!obj->hooks_unload)
+		return 0;
+
+	for (hook = obj->hooks_unload; hook->hook; hook++)
+		(*hook->hook)();
+
+	return 0;
 }
 #endif
 
@@ -853,9 +889,6 @@ static inline void klp_unload_patch_hooks(struct klp_patch *patch)
  */
 static void klp_free_patch_finish(struct klp_patch *patch)
 {
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-	klp_unload_patch_hooks(patch);
-#endif
 	/*
 	 * Avoid deadlock with enabled_store() sysfs callback by
 	 * calling this outside klp_mutex. It is safe because
@@ -1133,8 +1166,14 @@ static int klp_init_patch_early(struct klp_patch *patch)
 		}
 	}
 
+	/*
+	 * For stop_machine model, we only need to module_get and module_put once when
+	 * enable_patch and disable_patch respectively.
+	 */
+#ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
 	if (!try_module_get(patch->mod))
 		return -ENODEV;
+#endif
 
 	return 0;
 }
@@ -1328,7 +1367,6 @@ static int __klp_disable_patch(struct klp_patch *patch)
 		return ret;
 
 	arch_klp_mem_recycle(patch);
-	klp_free_patch_async(patch);
 	return 0;
 }
 #endif /* if defined(CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY) */
@@ -1388,6 +1426,79 @@ err:
 	klp_cancel_transition();
 	return ret;
 }
+
+/**
+ * klp_enable_patch() - enable the livepatch
+ * @patch:	patch to be enabled
+ *
+ * Initializes the data structure associated with the patch, creates the sysfs
+ * interface, performs the needed symbol lookups and code relocations,
+ * registers the patched functions with ftrace.
+ *
+ * This function is supposed to be called from the livepatch module_init()
+ * callback.
+ *
+ * Return: 0 on success, otherwise error
+ */
+int klp_enable_patch(struct klp_patch *patch)
+{
+	int ret;
+
+	if (!patch || !patch->mod)
+		return -EINVAL;
+
+	if (!is_livepatch_module(patch->mod)) {
+		pr_err("module %s is not marked as a livepatch module\n",
+		       patch->mod->name);
+		return -EINVAL;
+	}
+
+	if (!klp_initialized())
+		return -ENODEV;
+
+	if (!klp_have_reliable_stack()) {
+		pr_warn("This architecture doesn't have support for the livepatch consistency model.\n");
+		pr_warn("The livepatch transition may never complete.\n");
+	}
+
+	mutex_lock(&klp_mutex);
+
+	if (!klp_is_patch_compatible(patch)) {
+		pr_err("Livepatch patch (%s) is not compatible with the already installed livepatches.\n",
+			patch->mod->name);
+		mutex_unlock(&klp_mutex);
+		return -EINVAL;
+	}
+
+	ret = klp_init_patch_early(patch);
+	if (ret) {
+		mutex_unlock(&klp_mutex);
+		return ret;
+	}
+
+	ret = klp_init_patch(patch);
+	if (ret)
+		goto err;
+
+	ret = __klp_enable_patch(patch);
+	if (ret)
+		goto err;
+
+	mutex_unlock(&klp_mutex);
+
+	return 0;
+
+err:
+	klp_free_patch_start(patch);
+
+	mutex_unlock(&klp_mutex);
+
+	klp_free_patch_finish(patch);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(klp_enable_patch);
+
 #elif defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY)
 /*
  * This function is called from stop_machine() context.
@@ -1497,22 +1608,17 @@ static int __klp_enable_patch(struct klp_patch *patch)
 
 	return 0;
 }
-#endif /* #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY */
 
 /**
- * klp_enable_patch() - enable the livepatch
- * @patch:	patch to be enabled
+ * klp_register_patch() - registers a patch
+ * @patch:      Patch to be registered
  *
- * Initializes the data structure associated with the patch, creates the sysfs
- * interface, performs the needed symbol lookups and code relocations,
- * registers the patched functions with ftrace.
- *
- * This function is supposed to be called from the livepatch module_init()
- * callback.
+ * Initializes the data structure associated with the patch and
+ * creates the sysfs interface.
  *
  * Return: 0 on success, otherwise error
  */
-int klp_enable_patch(struct klp_patch *patch)
+int klp_register_patch(struct klp_patch *patch)
 {
 	int ret;
 
@@ -1521,28 +1627,19 @@ int klp_enable_patch(struct klp_patch *patch)
 
 	if (!is_livepatch_module(patch->mod)) {
 		pr_err("module %s is not marked as a livepatch module\n",
-		       patch->mod->name);
+			patch->mod->name);
 		return -EINVAL;
 	}
 
 	if (!klp_initialized())
 		return -ENODEV;
 
-	if (!klp_have_reliable_stack()) {
-		pr_warn("This architecture doesn't have support for the livepatch consistency model.\n");
-		pr_warn("The livepatch transition may never complete.\n");
-	}
-
 	mutex_lock(&klp_mutex);
 
-#ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
-	if (!klp_is_patch_compatible(patch)) {
-		pr_err("Livepatch patch (%s) is not compatible with the already installed livepatches.\n",
-			patch->mod->name);
+	if (klp_is_patch_registered(patch)) {
 		mutex_unlock(&klp_mutex);
 		return -EINVAL;
 	}
-#endif
 
 	ret = klp_init_patch_early(patch);
 	if (ret) {
@@ -1551,10 +1648,6 @@ int klp_enable_patch(struct klp_patch *patch)
 	}
 
 	ret = klp_init_patch(patch);
-	if (ret)
-		goto err;
-
-	ret = __klp_enable_patch(patch);
 	if (ret)
 		goto err;
 
@@ -1567,12 +1660,56 @@ err:
 
 	mutex_unlock(&klp_mutex);
 
-	klp_free_patch_finish(patch);
+	kobject_put(&patch->kobj);
+	wait_for_completion(&patch->finish);
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(klp_enable_patch);
+EXPORT_SYMBOL_GPL(klp_register_patch);
 
+/**
+ * klp_unregister_patch() - unregisters a patch
+ * @patch:	Disabled patch to be unregistered
+ *
+ * Frees the data structures and removes the sysfs interface.
+ *
+ * Return: 0 on success, otherwise error
+ */
+int klp_unregister_patch(struct klp_patch *patch)
+{
+	int ret = 0;
+	struct klp_object *obj;
+
+	mutex_lock(&klp_mutex);
+
+	if (!klp_is_patch_registered(patch)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (patch->enabled) {
+		ret = -EBUSY;
+		goto out;
+	}
+
+	klp_for_each_object(patch, obj)
+		klp_unload_hook(obj);
+
+	klp_free_patch_start(patch);
+
+	mutex_unlock(&klp_mutex);
+
+	kobject_put(&patch->kobj);
+	wait_for_completion(&patch->finish);
+
+	return 0;
+out:
+	mutex_unlock(&klp_mutex);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(klp_unregister_patch);
+
+#endif /* #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY */
 /*
  * This function unpatches objects from the replaced livepatches.
  *
