@@ -23,6 +23,9 @@
 #include <linux/slab.h>
 #include <linux/backing-dev.h>
 #include <linux/swap.h>
+#ifndef __GENKSYMS__
+#include <linux/blk-mq.h>
+#endif
 
 #include "blk-wbt.h"
 #include "blk-rq-qos.h"
@@ -824,9 +827,16 @@ int wbt_init(struct request_queue *q)
 	rq_qos_add(q, &rwb->rqos);
 	blk_stat_add_callback(q, rwb->cb);
 
-	rwb->min_lat_nsec = wbt_default_latency_nsec(q);
+	/*
+	 * Ensure that the queue is idled by freezing the queue
+	 * while enabling wbt, there is no inflight rq running.
+	 */
+	blk_mq_freeze_queue(q);
 
+	rwb->min_lat_nsec = wbt_default_latency_nsec(q);
 	wbt_set_queue_depth(q, blk_queue_depth(q));
+
+	blk_mq_unfreeze_queue(q);
 	wbt_set_write_cache(q, test_bit(QUEUE_FLAG_WC, &q->queue_flags));
 
 	return 0;
