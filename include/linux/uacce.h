@@ -128,7 +128,6 @@ struct uacce {
 int uacce_register(struct uacce *uacce);
 int uacce_unregister(struct uacce *uacce);
 void uacce_wake_up(struct uacce_queue *q);
-const char *uacce_qfrt_str(struct uacce_qfile_region *qfr);
 struct uacce *dev_to_uacce(struct device *dev);
 int uacce_hw_err_isolate(struct uacce *uacce);
 

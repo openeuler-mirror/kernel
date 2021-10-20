@@ -126,11 +126,10 @@ static void uacce_hw_err_destroy(struct uacce *uacce)
 	}
 }
 
-const char *uacce_qfrt_str(struct uacce_qfile_region *qfr)
+static const char *uacce_qfrt_str(struct uacce_qfile_region *qfr)
 {
 	return qfrt_str[qfr->type];
 }
-EXPORT_SYMBOL_GPL(uacce_qfrt_str);
 
 /**
  * uacce_wake_up - Wake up the process who is waiting this queue
@@ -1302,6 +1301,9 @@ EXPORT_SYMBOL_GPL(uacce_register);
  */
 int uacce_unregister(struct uacce *uacce)
 {
+	if (!uacce)
+		return -ENODEV;
+
 	if (atomic_read(&uacce->ref) > 0) {
 		printk_ratelimited("Fail to unregister uacce, please close all uacce queues!\n");
 		return -EAGAIN;
