@@ -2122,7 +2122,7 @@ static inline struct page *__rmqueue_cma_fallback(struct zone *zone,
 #endif
 
 /*
- * Move the free pages in a range to the free lists of the requested type.
+ * Move the free pages in a range to the freelist tail of the requested type.
  * Note that start_page and end_pages are not aligned on a pageblock
  * boundary. If alignment is required, use move_freepages_block()
  */
@@ -2174,8 +2174,14 @@ static int move_freepages(struct zone *zone,
 		}
 
 		order = page_order(page);
-		list_move(&page->lru,
-			  &zone->free_area[order].free_list[migratetype]);
+		/*
+		 * Used for pages which are on another list. Move the pages to
+		 * the tail of the list - so the moved pages won't immediately
+		 * be considered for allocation again (e.g., optimization for
+		 * memory onlining).
+		 */
+		list_move_tail(&page->lru,
+			&zone->free_area[order].free_list[migratetype]);
 		page += 1 << order;
 		pages_moved += 1 << order;
 	}
