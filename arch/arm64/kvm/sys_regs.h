@@ -63,8 +63,13 @@ struct sys_reg_desc {
 #define REG_RAZ			(1 << 1) /* RAZ from userspace and guest */
 
 static __printf(2, 3)
+#if defined(CONFIG_OPTIMIZE_INLINING)
 inline void print_sys_reg_msg(const struct sys_reg_params *p,
 				       char *fmt, ...)
+#else
+void print_sys_reg_msg(const struct sys_reg_params *p,
+				       char *fmt, ...)
+#endif
 {
 	va_list va;
 

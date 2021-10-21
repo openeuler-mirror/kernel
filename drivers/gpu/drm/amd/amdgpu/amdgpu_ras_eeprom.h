@@ -88,8 +88,11 @@ int amdgpu_ras_eeprom_process_recods(struct amdgpu_ras_eeprom_control *control,
 					    struct eeprom_table_record *records,
 					    bool write,
 					    int num);
-
+#if defined(CONFIG_OPTIMIZE_INLINING)
 inline uint32_t amdgpu_ras_eeprom_get_record_max_length(void);
+#else
+uint32_t amdgpu_ras_eeprom_get_record_max_length(void);
+#endif
 
 void amdgpu_ras_eeprom_test(struct amdgpu_ras_eeprom_control *control);
 

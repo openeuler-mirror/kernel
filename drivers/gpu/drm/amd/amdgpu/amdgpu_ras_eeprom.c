@@ -168,8 +168,13 @@ static uint32_t  __calc_hdr_byte_sum(struct amdgpu_ras_eeprom_control *control)
 	return tbl_sum;
 }
 
+#if defined(CONFIG_OPTIMIZE_INLINING)
+static inline uint32_t  __calc_recs_byte_sum(struct eeprom_table_record *records,
+				      int num)
+#else
 static uint32_t  __calc_recs_byte_sum(struct eeprom_table_record *records,
 				      int num)
+#endif
 {
 	int i, j;
 	uint32_t tbl_sum = 0;
