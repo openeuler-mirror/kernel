@@ -1122,8 +1122,7 @@ static int cdn_dp_suspend(struct device *dev)
 	return ret;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int cdn_dp_resume(struct device *dev)
+static __maybe_unused int cdn_dp_resume(struct device *dev)
 {
 	struct cdn_dp_device *dp = dev_get_drvdata(dev);
 
@@ -1135,7 +1134,6 @@ static int cdn_dp_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static int cdn_dp_probe(struct platform_device *pdev)
 {
