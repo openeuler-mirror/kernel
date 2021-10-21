@@ -87,6 +87,8 @@ libfdt_objs := fdt_rw.o fdt_ro.o fdt_wip.o fdt.o
 ifneq ($(CONFIG_ARM_ATAG_DTB_COMPAT)$(CONFIG_RANDOMIZE_BASE),)
 OBJS	+= $(libfdt_objs)
 ifeq ($(CONFIG_ARM_ATAG_DTB_COMPAT),y)
+CFLAGS_REMOVE_atags_to_fdt.o += -Wframe-larger-than=${CONFIG_FRAME_WARN}
+CFLAGS_atags_to_fdt.o += -Wframe-larger-than=1280
 OBJS	+= atags_to_fdt.o
 endif
 ifeq ($(CONFIG_RANDOMIZE_BASE),y)
