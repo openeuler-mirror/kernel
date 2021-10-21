@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2110.6.0
+%global hulkrelease 2110.7.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0118
+Release: %{hulkrelease}.0119
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,23 @@ fi
 %endif
 
 %changelog
+
+* Thu Oct 21 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.7.0.0119
+- sched/topology: Fix sched_domain_topology_level alloc in sched_init_numa()
+- uacce: misc fixes
+- mm/page_alloc: place pages to tail in __free_pages_core()
+- mm/page_alloc: move pages to tail in move_to_free_list()
+- mm/page_alloc: place pages to tail in __putback_isolated_page()
+- mm/page_alloc: convert "report" flag of __free_one_page() to a proper flag
+- mm: add function __putback_isolated_page
+- mm/page_alloc.c: memory hotplug: free pages as higher order
+- raid1: ensure write behind bio has less than BIO_MAX_VECS sectors
+- blk-wbt: fix IO hang due to negative inflight counter
+- Export sysboml for bbox to use.
+- ovl: use a private non-persistent ino pool
+- ovl: simplify i_ino initialization
+- ovl: factor out helper ovl_get_root()
+- ovl: fix out of date comment and unreachable code
 
 * Tue Oct 19 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.6.0.0118
 - Revert "cache: Workaround HiSilicon Taishan DC CVAU"
