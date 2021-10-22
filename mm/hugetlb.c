@@ -5227,7 +5227,7 @@ void move_hugetlb_state(struct page *oldpage, struct page *newpage, int reason)
 	}
 }
 
-#ifdef CONFIG_ARM64
+#ifdef CONFIG_ASCEND_FEATURES
 const struct hstate *hugetlb_get_hstate(void)
 {
 	return &default_hstate;

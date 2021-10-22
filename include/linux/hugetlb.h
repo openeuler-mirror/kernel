@@ -373,11 +373,27 @@ struct page *alloc_huge_page_vma(struct hstate *h, struct vm_area_struct *vma,
 int huge_add_to_page_cache(struct page *page, struct address_space *mapping,
 			pgoff_t idx);
 
-#ifdef CONFIG_ARM64
+#ifdef CONFIG_ASCEND_FEATURES
 const struct hstate *hugetlb_get_hstate(void);
 struct page *hugetlb_alloc_hugepage(int nid);
 int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
 			      pgprot_t prot, struct page *hpage);
+#else
+static inline const struct hstate *hugetlb_get_hstate(void)
+{
+	return NULL;
+}
+
+static inline struct page *hugetlb_alloc_hugepage(int nid)
+{
+	return  NULL;
+}
+
+static inline int hugetlb_insert_hugepage_pte(struct mm_struct *mm,
+		unsigned long addr, pgprot_t prot, struct page *hpage)
+{
+	return -EPERM;
+}
 #endif
 
 /* arch callback */
@@ -614,12 +630,6 @@ static inline void set_huge_swap_pte_at(struct mm_struct *mm, unsigned long addr
 {
 }
 
-static inline int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
-                                    unsigned long vir_addr,
-                                    pgprot_t prot, unsigned long phy_addr)
-{
-	return 0;
-}
 #endif	/* CONFIG_HUGETLB_PAGE */
 
 static inline spinlock_t *huge_pte_lock(struct hstate *h,
@@ -631,5 +641,14 @@ static inline spinlock_t *huge_pte_lock(struct hstate *h,
 	spin_lock(ptl);
 	return ptl;
 }
+
+#ifndef CONFIG_ASCEND_FEATURES
+static inline int hugetlb_insert__hugepage_pte_by_pa(struct mm_struct *mm,
+				unsigned long vir_addr,
+				pgprot_t prot, unsigned long phy_addr)
+{
+	return -EPERM;
+}
+#endif
 
 #endif /* _LINUX_HUGETLB_H */
