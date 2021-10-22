@@ -1550,9 +1550,17 @@ static int svm_mmap(struct file *file, struct vm_area_struct *vma)
 		if ((vma->vm_end < vma->vm_start) || (vm_size > MMAP_PHY32_MAX))
 			return -EINVAL;
 
-		page = alloc_pages(GFP_KERNEL | GFP_DMA32, get_order(vm_size));
+		/* vma->vm_pgoff transfer the nid */
+		if (vma->vm_pgoff == 0)
+			page = alloc_pages(GFP_KERNEL | GFP_DMA32,
+					get_order(vm_size));
+		else
+			page = alloc_pages_node((int)vma->vm_pgoff,
+					GFP_KERNEL | __GFP_THISNODE,
+					get_order(vm_size));
 		if (!page) {
-			dev_err(sdev->dev, "fail to alloc page\n");
+			dev_err(sdev->dev, "fail to alloc page on node 0x%lx\n",
+					vma->vm_pgoff);
 			return -ENOMEM;
 		}
 
