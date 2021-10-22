@@ -5234,17 +5234,48 @@ const struct hstate *hugetlb_get_hstate(void)
 }
 EXPORT_SYMBOL_GPL(hugetlb_get_hstate);
 
+static struct page *hugetlb_alloc_hugepage_normal(struct hstate *h,
+		gfp_t gfp_mask, int nid)
+{
+	struct page *page = NULL;
+
+	spin_lock(&hugetlb_lock);
+	if (h->free_huge_pages - h->resv_huge_pages > 0)
+		page = dequeue_huge_page_nodemask(h, gfp_mask, nid, NULL, NULL);
+	spin_unlock(&hugetlb_lock);
+
+	return page;
+}
+
 /*
  * Allocate hugepage without reserve
  */
-struct page *hugetlb_alloc_hugepage(int nid)
+struct page *hugetlb_alloc_hugepage(int nid, int flag)
 {
+	struct hstate *h = &default_hstate;
+	gfp_t gfp_mask = htlb_alloc_mask(h);
+	struct page *page = NULL;
+
 	VM_WARN_ON(nid < 0 || nid >= MAX_NUMNODES);
+
+	if (flag & ~HUGETLB_ALLOC_MASK)
+		return NULL;
 
 	if (nid == NUMA_NO_NODE)
 		nid = numa_mem_id();
 
-	return alloc_huge_page_node(&default_hstate, nid);
+	gfp_mask |= __GFP_THISNODE;
+
+	if (flag & HUGETLB_ALLOC_NORMAL)
+		page = hugetlb_alloc_hugepage_normal(h, gfp_mask, nid);
+	else if (flag & HUGETLB_ALLOC_BUDDY) {
+		if (enable_charge_mighp)
+			gfp_mask |= __GFP_ACCOUNT;
+		page = alloc_migrate_huge_page(h, gfp_mask, nid, NULL);
+	} else
+		page = alloc_huge_page_node(h, nid);
+
+	return page;
 }
 EXPORT_SYMBOL_GPL(hugetlb_alloc_hugepage);
 

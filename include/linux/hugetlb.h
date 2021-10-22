@@ -374,8 +374,15 @@ int huge_add_to_page_cache(struct page *page, struct address_space *mapping,
 			pgoff_t idx);
 
 #ifdef CONFIG_ASCEND_FEATURES
+#define HUGETLB_ALLOC_NONE             0x00
+#define HUGETLB_ALLOC_NORMAL           0x01    /* normal hugepage */
+#define HUGETLB_ALLOC_BUDDY            0x02    /* buddy hugepage */
+#define HUGETLB_ALLOC_MASK             (HUGETLB_ALLOC_NONE | \
+                                        HUGETLB_ALLOC_NORMAL | \
+                                        HUGETLB_ALLOC_BUDDY)
+
 const struct hstate *hugetlb_get_hstate(void);
-struct page *hugetlb_alloc_hugepage(int nid);
+struct page *hugetlb_alloc_hugepage(int nid, int flag);
 int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
 			      pgprot_t prot, struct page *hpage);
 #else
@@ -384,7 +391,7 @@ static inline const struct hstate *hugetlb_get_hstate(void)
 	return NULL;
 }
 
-static inline struct page *hugetlb_alloc_hugepage(int nid)
+static inline struct page *hugetlb_alloc_hugepage(int nid, int flag)
 {
 	return  NULL;
 }
