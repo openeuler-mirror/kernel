@@ -104,6 +104,8 @@
 
 #ifndef __ASSEMBLY__
 
+#define _PAGE_IOREMAP		pgprot_val(PAGE_KERNEL_SUC)
+
 #define pgprot_noncached pgprot_noncached
 
 static inline pgprot_t pgprot_noncached(pgprot_t _prot)
