@@ -808,6 +808,11 @@ static void unset_rmid_remap_bmp_occ(unsigned long *bmp)
 	set_bit(0, bmp);
 }
 
+static int is_rmid_remap_bmp_bdr_set(unsigned long *bmp, int b)
+{
+	return (test_bit(b + 1, bmp) == 0) ? 1 : 0;
+}
+
 static void rmid_remap_bmp_bdr_set(unsigned long *bmp, int b)
 {
 	set_bit(b + 1, bmp);
@@ -914,11 +919,11 @@ static int rmid_to_partid_pmg(int rmid, int *partid, int *pmg)
 	return 0;
 }
 
-static int __rmid_alloc(int partid)
+static int __rmid_alloc(int partid, int pmg)
 {
 	int stride = 0;
 	int partid_sel = 0;
-	int ret, pmg;
+	int ret;
 	int rmid[2] = {-1, -1};
 	unsigned long **cmp, **bmp;
 
@@ -933,10 +938,19 @@ static int __rmid_alloc(int partid)
 				continue;
 			set_rmid_remap_bmp_occ(*bmp);
 
-			ret = rmid_remap_bmp_alloc_pmg(*bmp);
-			if (ret < 0)
-				goto out;
-			pmg = ret;
+			if (pmg >= 0) {
+				if (is_rmid_remap_bmp_bdr_set(*bmp, pmg)) {
+					ret = -EEXIST;
+					goto out;
+				}
+				rmid_remap_bmp_bdr_clear(*bmp, pmg);
+			} else {
+				ret = rmid_remap_bmp_alloc_pmg(*bmp);
+				if (ret < 0)
+					goto out;
+				pmg = ret;
+			}
+
 			rmid[stride] = to_rmid(partid + stride, pmg);
 			if (STRIDE_INC_CHK(stride))
 				break;
@@ -976,7 +990,7 @@ out:
 
 int rmid_alloc(int partid)
 {
-	return __rmid_alloc(partid);
+	return __rmid_alloc(partid, -1);
 }
 
 void rmid_free(int rmid)
@@ -1851,6 +1865,103 @@ static int resctrl_group_rmid_show(struct kernfs_open_file *of,
 	return ret;
 }
 
+static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
+		char *buf, size_t nbytes, loff_t off)
+{
+	struct rdtgroup *rdtgrp;
+	int ret = 0;
+	int partid;
+	int pmg;
+	int rmid;
+	int old_rmid;
+	int old_reqpartid;
+	struct task_struct *p, *t;
+
+	if (kstrtoint(strstrip(buf), 0, &rmid) || rmid < 0)
+		return -EINVAL;
+
+	rdtgrp = resctrl_group_kn_lock_live(of->kn);
+	if (!rdtgrp) {
+		ret = -ENOENT;
+		goto unlock;
+	}
+
+	rdt_last_cmd_clear();
+
+	if (rmid == 0 || rdtgrp->mon.rmid == 0) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	ret = rmid_to_partid_pmg(rmid, &partid, &pmg);
+	if (ret < 0) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	if (rmid == rdtgrp->mon.rmid)
+		goto unlock;
+
+	if (rdtgrp->type != RDTCTRL_GROUP ||
+			!list_empty(&rdtgrp->mon.crdtgrp_list)) {
+		rdt_last_cmd_puts("unsupported operation\n");
+		goto unlock;
+	}
+
+	ret = __rmid_alloc(partid, pmg);
+	if (ret < 0) {
+		rdt_last_cmd_puts("set rmid failed\n");
+		goto unlock;
+	}
+
+	old_rmid = rdtgrp->mon.rmid;
+	old_reqpartid = rdtgrp->closid.reqpartid;
+
+	/*
+	 * we use intpartid as group control, use reqpartid for config
+	 * synchronization and monitor, only update the reqpartid
+	 */
+	rdtgrp->closid.reqpartid = partid;
+	rdtgrp->mon.rmid = rmid;
+
+	read_lock(&tasklist_lock);
+	for_each_process_thread(p, t) {
+		if (t->closid == rdtgrp->closid.intpartid) {
+			ret = __resctrl_group_move_task(t, rdtgrp);
+			if (ret) {
+				read_unlock(&tasklist_lock);
+				goto rollback;
+			}
+		}
+	}
+	read_unlock(&tasklist_lock);
+
+	update_closid_rmid(&rdtgrp->cpu_mask, rdtgrp);
+	rmid_free(old_rmid);
+
+unlock:
+	resctrl_group_kn_unlock(of->kn);
+	if (ret)
+		return ret;
+
+	return nbytes;
+
+rollback:
+	rdtgrp->mon.rmid = old_rmid;
+	rdtgrp->closid.reqpartid = old_reqpartid;
+
+	read_lock(&tasklist_lock);
+	for_each_process_thread(p, t) {
+		if (t->closid == rdtgrp->closid.intpartid)
+			WARN_ON_ONCE(__resctrl_group_move_task(t, rdtgrp));
+	}
+	read_unlock(&tasklist_lock);
+
+	rmid_free(rmid);
+	resctrl_group_kn_unlock(of->kn);
+	return ret;
+}
+
 /* rdtgroup information files for one cache resource. */
 static struct rftype res_specific_files[] = {
 	{
@@ -1950,8 +2061,9 @@ static struct rftype res_specific_files[] = {
 	},
 	{
 		.name		= "rmid",
-		.mode		= 0444,
+		.mode		= 0644,
 		.kf_ops		= &resctrl_group_kf_single_ops,
+		.write		= resctrl_group_rmid_write,
 		.seq_show	= resctrl_group_rmid_show,
 		.fflags		= RFTYPE_BASE,
 	},
