@@ -588,6 +588,23 @@ int arm_smmu_set_cd_mpam(struct iommu_pasid_table_ops *ops,
 	return 0;
 }
 
+int arm_smmu_get_cd_mpam(struct iommu_pasid_table_ops *ops,
+		int ssid, int *partid, int *pmg)
+{
+	struct arm_smmu_cd_tables *tbl = pasid_ops_to_tables(ops);
+	u64 val;
+	__le64 *cdptr = arm_smmu_get_cd_ptr(tbl, ssid);
+
+	if (!cdptr)
+		return -ENOMEM;
+
+	val = le64_to_cpu(cdptr[5]);
+	*partid = FIELD_GET(CTXDESC_CD_5_PARTID_MASK, val);
+	*pmg = FIELD_GET(CTXDESC_CD_5_PMG_MASK, val);
+
+	return 0;
+}
+
 static void arm_smmu_clear_cd(struct iommu_pasid_table_ops *ops, int pasid,
 			      struct iommu_pasid_entry *entry)
 {

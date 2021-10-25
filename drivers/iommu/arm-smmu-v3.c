@@ -4194,8 +4194,37 @@ static int arm_smmu_set_ste_mpam(struct arm_smmu_device *smmu,
 	return 0;
 }
 
+static int arm_smmu_get_ste_mpam(struct arm_smmu_device *smmu,
+		int sid, int *partid, int *pmg, int *s1mpam)
+{
+	u64 val;
+	__le64 *ste;
+
+	if (!arm_smmu_sid_in_range(smmu, sid))
+		return -ERANGE;
+
+	/* get ste ptr */
+	ste = arm_smmu_get_step_for_sid(smmu, sid);
+
+	val = le64_to_cpu(ste[1]);
+	*s1mpam = FIELD_GET(STRTAB_STE_1_S1MPAM, val);
+	if (*s1mpam)
+		return 0;
+
+	val = le64_to_cpu(ste[4]);
+	*partid = FIELD_GET(STRTAB_STE_4_PARTID_MASK, val);
+
+	val = le64_to_cpu(ste[5]);
+	*pmg = FIELD_GET(STRTAB_STE_5_PMG_MASK, val);
+
+	return 0;
+}
+
 int arm_smmu_set_cd_mpam(struct iommu_pasid_table_ops *ops,
 			 int ssid, int partid, int pmg);
+
+int arm_smmu_get_cd_mpam(struct iommu_pasid_table_ops *ops,
+		int ssid, int *partid, int *pmg);
 
 static int arm_smmu_set_mpam(struct arm_smmu_device *smmu,
 		int sid, int ssid, int partid, int pmg, int s1mpam)
@@ -4274,6 +4303,48 @@ int arm_smmu_set_dev_mpam(struct device *dev, int ssid, int partid, int pmg,
 	return arm_smmu_set_mpam(smmu, sid, ssid, partid, pmg, s1mpam);
 }
 EXPORT_SYMBOL(arm_smmu_set_dev_mpam);
+
+static int arm_smmu_get_mpam(struct arm_smmu_device *smmu,
+		int sid, int ssid, int *partid, int *pmg, int *s1mpam)
+{
+	struct arm_smmu_master_data *master = arm_smmu_find_master(smmu, sid);
+	struct arm_smmu_s1_cfg *cfg = master ? master->ste.s1_cfg : NULL;
+	int ret;
+
+	if (!(smmu->features & ARM_SMMU_FEAT_MPAM))
+		return -ENODEV;
+
+	ret = arm_smmu_get_ste_mpam(smmu, sid, partid, pmg, s1mpam);
+	if (ret)
+		return ret;
+
+	/* return STE mpam configuration when s1mpam == 0 */
+	if (!(*s1mpam))
+		return 0;
+
+	if (WARN_ON(!cfg))
+		return -EINVAL;
+
+	if (WARN_ON(ssid >= (1 << master->ssid_bits)))
+		return -E2BIG;
+
+	return arm_smmu_get_cd_mpam(cfg->ops, ssid, partid, pmg);
+}
+
+/**
+ * arm_smmu_get_dev_mpam() - get mpam configuration
+ * @dev: the device
+ */
+int arm_smmu_get_dev_mpam(struct device *dev, int ssid, int *partid, int *pmg,
+		int *s1mpam)
+{
+	struct arm_smmu_master_data *master = dev->iommu_fwspec->iommu_priv;
+	struct arm_smmu_device *smmu = master->domain->smmu;
+	int sid = master->streams->id;
+
+	return arm_smmu_get_mpam(smmu, sid, ssid, partid, pmg, s1mpam);
+}
+EXPORT_SYMBOL(arm_smmu_get_dev_mpam);
 
 static int arm_smmu_device_probe(struct platform_device *pdev)
 {
