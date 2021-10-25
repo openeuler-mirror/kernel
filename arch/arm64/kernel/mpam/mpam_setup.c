@@ -335,6 +335,7 @@ static void mpam_resctrl_pick_event_mbm_local(void)
 
 	if (mpam_has_feature(mpam_feat_msmon_mbwu, res->class->features)) {
 		res->resctrl_res.mon_capable = true;
+		rdt_mon_capable = true;
 		mpam_resctrl_events[QOS_L3_MBM_LOCAL_EVENT_ID] = *res;
 	}
 }
