@@ -3933,6 +3933,7 @@ static void hclge_set_def_reset_request(struct hnae3_ae_dev *ae_dev,
 static void hclge_reset_timer(struct timer_list *t)
 {
 	struct hclge_dev *hdev = from_timer(hdev, t, reset_timer);
+	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 
 	/* if default_reset_request has no value, it means that this reset
 	 * request has already be handled, so just return here
@@ -3942,7 +3943,9 @@ static void hclge_reset_timer(struct timer_list *t)
 
 	dev_info(&hdev->pdev->dev,
 		 "triggering reset in reset timer\n");
-	hclge_reset_event(hdev->pdev, NULL);
+
+	if (ae_dev->ops->reset_event)
+		ae_dev->ops->reset_event(hdev->pdev, NULL);
 }
 
 static bool hclge_reset_end(struct hnae3_handle *handle, bool done)
