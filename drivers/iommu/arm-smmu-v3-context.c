@@ -66,6 +66,9 @@
 
 #define CTXDESC_CD_1_TTB0_MASK		GENMASK_ULL(51, 4)
 
+#define CTXDESC_CD_5_PARTID_MASK	GENMASK_ULL(47, 32)
+#define CTXDESC_CD_5_PMG_MASK		GENMASK_ULL(55, 48)
+
 /* Convert between AArch64 (CPU) TCR format and SMMU CD format */
 #define ARM_SMMU_TCR2CD(tcr, fld)	FIELD_PREP(CTXDESC_CD_0_TCR_##fld, \
 					FIELD_GET(ARM64_TCR_##fld, tcr))
@@ -561,6 +564,28 @@ static int arm_smmu_set_cd(struct iommu_pasid_table_ops *ops, int pasid,
 	cd->users++;
 	cd->pasid = pasid;
 	return arm_smmu_write_ctx_desc(tbl, pasid, cd);
+}
+
+int arm_smmu_set_cd_mpam(struct iommu_pasid_table_ops *ops,
+			 int ssid, int partid, int pmg)
+{
+	struct arm_smmu_cd_tables *tbl = pasid_ops_to_tables(ops);
+	u64 val;
+	__le64 *cdptr = arm_smmu_get_cd_ptr(tbl, ssid);
+
+	if (!cdptr)
+		return -ENOMEM;
+
+	val = le64_to_cpu(cdptr[5]);
+	val &= ~CTXDESC_CD_5_PARTID_MASK;
+	val |= FIELD_PREP(CTXDESC_CD_5_PARTID_MASK, partid);
+	val &= ~CTXDESC_CD_5_PMG_MASK;
+	val |= FIELD_PREP(CTXDESC_CD_5_PMG_MASK, pmg);
+	WRITE_ONCE(cdptr[5], cpu_to_le64(val));
+
+	iommu_pasid_flush(&tbl->pasid, ssid, true);
+
+	return 0;
 }
 
 static void arm_smmu_clear_cd(struct iommu_pasid_table_ops *ops, int pasid,
