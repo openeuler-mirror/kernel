@@ -1010,7 +1010,6 @@ struct device {
 	struct dev_pin_info	*pins;
 #endif
 #ifdef CONFIG_GENERIC_MSI_IRQ
-	raw_spinlock_t		msi_lock;
 	struct list_head	msi_list;
 #endif
 
@@ -1062,7 +1061,23 @@ struct device {
 	bool			offline:1;
 	bool			of_node_reused:1;
 
+#ifdef CONFIG_GENERIC_MSI_IRQ
+#if !defined(CONFIG_DEBUG_SPINLOCK) && !defined(CONFIG_DEBUG_LOCK_ALLOC)
+#ifndef __GENKSYMS__
+	union {
+		raw_spinlock_t	msi_lock;
+		unsigned long	kabi_reserve1;
+	};
+#else
 	KABI_RESERVE(1)
+#endif
+#else
+	raw_spinlock_t  msi_lock;
+	KABI_RESERVE(1)
+#endif
+#else
+	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
