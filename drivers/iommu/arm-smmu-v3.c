@@ -194,6 +194,9 @@
 #define MPAMIDR_PMG_MAX			GENMASK(23, 16)
 #define MPAMIDR_PARTID_MAX		GENMASK(15, 0)
 
+#define ARM_SMMU_USER_CFG0		0xe00
+#define ARM_SMMU_USER_MPAM_EN		(1UL << 30)
+
 /* Common MSI config fields */
 #define MSI_CFG0_ADDR_MASK		GENMASK_ULL(51, 2)
 #define MSI_CFG2_SH			GENMASK(5, 4)
@@ -4345,6 +4348,40 @@ int arm_smmu_get_dev_mpam(struct device *dev, int ssid, int *partid, int *pmg,
 	return arm_smmu_get_mpam(smmu, sid, ssid, partid, pmg, s1mpam);
 }
 EXPORT_SYMBOL(arm_smmu_get_dev_mpam);
+
+/**
+ * arm_smmu_set_dev_user_mpam_en() - set user_mpam_en to smmu user cfg0
+ */
+int arm_smmu_set_dev_user_mpam_en(struct device *dev, int user_mpam_en)
+{
+	struct arm_smmu_master_data *master = dev->iommu_fwspec->iommu_priv;
+	struct arm_smmu_device *smmu = master->domain->smmu;
+	u32 reg, __iomem *cfg = smmu->base + ARM_SMMU_USER_CFG0;
+
+	reg = readl_relaxed(cfg);
+	reg &= ~ARM_SMMU_USER_MPAM_EN;
+	reg |= FIELD_PREP(ARM_SMMU_USER_MPAM_EN, user_mpam_en);
+	writel_relaxed(reg, cfg);
+
+	return 0;
+}
+EXPORT_SYMBOL(arm_smmu_set_dev_user_mpam_en);
+
+/**
+ * arm_smmu_get_dev_user_mpam_en() - get user_mpam_en from smmu user cfg0
+ */
+int arm_smmu_get_dev_user_mpam_en(struct device *dev, int *user_mpam_en)
+{
+	struct arm_smmu_master_data *master = dev->iommu_fwspec->iommu_priv;
+	struct arm_smmu_device *smmu = master->domain->smmu;
+	u32 reg, __iomem *cfg = smmu->base + ARM_SMMU_USER_CFG0;
+
+	reg = readl_relaxed(cfg);
+	*user_mpam_en = FIELD_GET(ARM_SMMU_USER_MPAM_EN, reg);
+
+	return 0;
+}
+EXPORT_SYMBOL(arm_smmu_get_dev_user_mpam_en);
 
 static int arm_smmu_device_probe(struct platform_device *pdev)
 {
