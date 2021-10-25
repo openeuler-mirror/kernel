@@ -189,6 +189,55 @@ resctrl_dom_ctrl_config(bool cdp_both_ctrl, struct resctrl_resource *r,
 	}
 }
 
+/**
+ * Resync resctrl group domain ctrls, use rdtgrp->resync to indicate
+ * whether the resync procedure will be called. When resync==1, all
+ * domain ctrls of this group be synchronized again. This happens
+ * when rmid of this group is changed, and all configurations need to
+ * be remapped again accordingly.
+ */
+static void resctrl_group_resync_domain_ctrls(struct rdtgroup *rdtgrp,
+			struct resctrl_resource *r, struct rdt_domain *dom)
+{
+	int i;
+	int staged_start, staged_end;
+	struct resctrl_staged_config *cfg;
+	struct sd_closid closid;
+	struct list_head *head;
+	struct rdtgroup *entry;
+	struct msr_param para;
+	bool cdp_both_ctrl;
+
+	cfg = dom->staged_cfg;
+	para.closid = &closid;
+
+	staged_start = (r->cdp_enable) ? CDP_CODE : CDP_BOTH;
+	staged_end = (r->cdp_enable) ? CDP_DATA : CDP_BOTH;
+
+	for (i = staged_start; i <= staged_end; i++) {
+		cdp_both_ctrl = cfg[i].cdp_both_ctrl;
+		/*
+		 * for ctrl group configuration, hw_closid of cfg[i] equals
+		 * to rdtgrp->closid.intpartid.
+		 */
+		closid.intpartid = hw_closid_val(cfg[i].hw_closid);
+		resctrl_cdp_mpamid_map_val(rdtgrp->closid.reqpartid,
+				cfg[i].conf_type, closid.reqpartid);
+		resctrl_dom_ctrl_config(cdp_both_ctrl, r, dom, &para);
+
+		/*
+		 * we should synchronize all child mon groups'
+		 * configuration from this ctrl rdtgrp
+		 */
+		head = &rdtgrp->mon.crdtgrp_list;
+		list_for_each_entry(entry, head, mon.crdtgrp_list) {
+			resctrl_cdp_mpamid_map_val(entry->closid.reqpartid,
+					cfg[i].conf_type, closid.reqpartid);
+			resctrl_dom_ctrl_config(cdp_both_ctrl, r, dom, &para);
+		}
+	}
+}
+
 static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 			struct resctrl_resource *r, struct rdt_domain *dom)
 {
@@ -251,8 +300,12 @@ static int resctrl_group_update_domains(struct rdtgroup *rdtgrp,
 {
 	struct rdt_domain *d;
 
-	list_for_each_entry(d, &r->domains, list)
-		resctrl_group_update_domain_ctrls(rdtgrp, r, d);
+	list_for_each_entry(d, &r->domains, list) {
+		if (rdtgrp->resync)
+			resctrl_group_resync_domain_ctrls(rdtgrp, r, d);
+		else
+			resctrl_group_update_domain_ctrls(rdtgrp, r, d);
+	}
 
 	return 0;
 }
@@ -667,19 +720,30 @@ static int resctrl_mkdir_mondata_dom(struct kernfs_node *parent_kn,
 
 	md.u.cdp_both_mon = s->cdp_mc_both;
 
-	snprintf(name, sizeof(name), "mon_%s_%02d", s->name, d->id);
-	kn = __kernfs_create_file(parent_kn, name, 0444,
-				  GLOBAL_ROOT_UID, GLOBAL_ROOT_GID, 0,
-				  &kf_mondata_ops, md.priv, NULL, NULL);
-	if (IS_ERR(kn))
-		return PTR_ERR(kn);
-
-	ret = resctrl_group_kn_set_ugid(kn);
-	if (ret) {
-		pr_info("%s: create name %s, error ret %d\n", __func__, name, ret);
-		kernfs_remove(kn);
-		return ret;
+	if (!parent_kn) {
+		pr_err("%s: error parent_kn null\n", __func__);
+		return -EINVAL;
 	}
+
+	snprintf(name, sizeof(name), "mon_%s_%02d", s->name, d->id);
+	kn = kernfs_find_and_get(parent_kn, name);
+	if (!kn) {
+		kn = __kernfs_create_file(parent_kn, name, 0444,
+					  GLOBAL_ROOT_UID, GLOBAL_ROOT_GID, 0,
+					  &kf_mondata_ops, md.priv, NULL, NULL);
+		if (IS_ERR(kn))
+			return PTR_ERR(kn);
+
+		ret = resctrl_group_kn_set_ugid(kn);
+		if (ret) {
+			pr_info("%s: create name %s, error ret %d\n",
+					__func__, name, ret);
+			kernfs_remove(kn);
+			return ret;
+		}
+	}
+
+	kn->priv = md.priv;
 
 	/* Could we remove the MATCH_* param ? */
 	rr->mon_write(d, md.priv);
@@ -957,6 +1021,9 @@ int resctrl_update_groups_config(struct rdtgroup *rdtgrp)
 				break;
 		}
 	}
+
+	/* after resync all configurations, restore resync to 0 */
+	rdtgrp->resync = 0;
 
 	return ret;
 }

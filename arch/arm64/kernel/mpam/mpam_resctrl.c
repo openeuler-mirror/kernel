@@ -1924,6 +1924,21 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 	rdtgrp->closid.reqpartid = partid;
 	rdtgrp->mon.rmid = rmid;
 
+	/* update rmid for mondata */
+	ret = resctrl_mkdir_mondata_all_subdir(rdtgrp->mon.mon_data_kn, rdtgrp);
+	if (ret) {
+		rdt_last_cmd_puts("update rmid for mondata failed\n");
+		goto rollback;
+	}
+
+	/* resync groups configuration */
+	rdtgrp->resync = 1;
+	ret = resctrl_update_groups_config(rdtgrp);
+	if (ret) {
+		rdt_last_cmd_puts("update groups config failed\n");
+		goto rollback;
+	}
+
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
 		if (t->closid == rdtgrp->closid.intpartid) {
@@ -1949,6 +1964,12 @@ unlock:
 rollback:
 	rdtgrp->mon.rmid = old_rmid;
 	rdtgrp->closid.reqpartid = old_reqpartid;
+
+	/* the old rmid is valid, so mkdir mondata here won't fail */
+	resctrl_mkdir_mondata_all_subdir(rdtgrp->mon.mon_data_kn, rdtgrp);
+
+	rdtgrp->resync = 1;
+	WARN_ON_ONCE(resctrl_update_groups_config(rdtgrp));
 
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {

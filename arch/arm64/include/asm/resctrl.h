@@ -162,6 +162,7 @@ struct rdtgroup {
 	atomic_t        waitcount;
 	enum rdt_group_type type;
 	struct mongroup     mon;
+	int                 resync;
 };
 
 enum resctrl_ctrl_type {
