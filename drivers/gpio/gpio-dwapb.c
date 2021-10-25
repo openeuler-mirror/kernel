@@ -50,6 +50,9 @@
 #define GPIO_EXT_PORTB		0x54
 #define GPIO_EXT_PORTC		0x58
 #define GPIO_EXT_PORTD		0x5c
+#define GPIO_INTCOMB_MASK	0xffc
+#define GPIO_INT_MASK_REG	0x3804
+#define MEM_PERI_SUBCTRL_IOBASE	0x1
 
 #define DWAPB_MAX_PORTS		4
 #define GPIO_EXT_PORT_STRIDE	0x04 /* register stride 32 bits */
@@ -64,6 +67,8 @@
 #define GPIO_INTSTATUS_V2	0x3c
 #define GPIO_PORTA_EOI_V2	0x40
 
+bool enable_ascend_mini_gpio_dwapb;
+bool enable_ascend_gpio_dwapb;
 struct dwapb_gpio;
 
 #ifdef CONFIG_PM_SLEEP
@@ -77,10 +82,11 @@ struct dwapb_context {
 	u32 int_type;
 	u32 int_pol;
 	u32 int_deb;
+	u32 int_comb_mask;
 	u32 wake_en;
 };
 #endif
-
+static void __iomem *peri_subctrl_base_addr;
 struct dwapb_gpio_port {
 	struct gpio_chip	gc;
 	bool			is_registered;
@@ -232,6 +238,11 @@ static void dwapb_irq_enable(struct irq_data *d)
 	val = dwapb_read(gpio, GPIO_INTEN);
 	val |= BIT(d->hwirq);
 	dwapb_write(gpio, GPIO_INTEN, val);
+	if (enable_ascend_gpio_dwapb) {
+		val = dwapb_read(gpio, GPIO_INTMASK);
+		val &= ~BIT(d->hwirq);
+		dwapb_write(gpio, GPIO_INTMASK, val);
+	}
 	spin_unlock_irqrestore(&gc->bgpio_lock, flags);
 }
 
@@ -244,6 +255,11 @@ static void dwapb_irq_disable(struct irq_data *d)
 	u32 val;
 
 	spin_lock_irqsave(&gc->bgpio_lock, flags);
+	if (enable_ascend_gpio_dwapb) {
+		val = dwapb_read(gpio, GPIO_INTMASK);
+		val |= BIT(d->hwirq);
+		dwapb_write(gpio, GPIO_INTMASK, val);
+	}
 	val = dwapb_read(gpio, GPIO_INTEN);
 	val &= ~BIT(d->hwirq);
 	dwapb_write(gpio, GPIO_INTEN, val);
@@ -393,6 +409,7 @@ static void dwapb_configure_irqs(struct dwapb_gpio *gpio,
 	unsigned int hwirq, ngpio = gc->ngpio;
 	struct irq_chip_type *ct;
 	int err, i;
+	u32 val;
 
 	gpio->domain = irq_domain_create_linear(fwnode, ngpio,
 						 &irq_generic_chip_ops, gpio);
@@ -470,6 +487,12 @@ static void dwapb_configure_irqs(struct dwapb_gpio *gpio,
 		irq_create_mapping(gpio->domain, hwirq);
 
 	port->gc.to_irq = dwapb_gpio_to_irq;
+
+	if (enable_ascend_gpio_dwapb) {
+		val = dwapb_read(gpio, GPIO_INTCOMB_MASK);
+		val |= BIT(0);
+		dwapb_write(gpio, GPIO_INTCOMB_MASK, val);
+	}
 }
 
 static void dwapb_irq_teardown(struct dwapb_gpio *gpio)
@@ -478,6 +501,7 @@ static void dwapb_irq_teardown(struct dwapb_gpio *gpio)
 	struct gpio_chip *gc = &port->gc;
 	unsigned int ngpio = gc->ngpio;
 	irq_hw_number_t hwirq;
+	u32 val;
 
 	if (!gpio->domain)
 		return;
@@ -487,6 +511,12 @@ static void dwapb_irq_teardown(struct dwapb_gpio *gpio)
 
 	irq_domain_remove(gpio->domain);
 	gpio->domain = NULL;
+
+	if (enable_ascend_gpio_dwapb) {
+		val = dwapb_read(gpio, GPIO_INTCOMB_MASK);
+		val &= ~BIT(0);
+		dwapb_write(gpio, GPIO_INTCOMB_MASK, val);
+	}
 }
 
 static int dwapb_gpio_add_port(struct dwapb_gpio *gpio,
@@ -660,6 +690,22 @@ static int dwapb_gpio_probe(struct platform_device *pdev)
 	int err;
 	struct device *dev = &pdev->dev;
 	struct dwapb_platform_data *pdata = dev_get_platdata(dev);
+	struct device_node *np = dev->of_node;
+	unsigned int value;
+
+	if (enable_ascend_mini_gpio_dwapb && enable_ascend_gpio_dwapb) {
+		peri_subctrl_base_addr = of_iomap(np, MEM_PERI_SUBCTRL_IOBASE);
+		if (!peri_subctrl_base_addr) {
+			dev_err(&pdev->dev, "sysctrl iomap not find!\n");
+		} else {
+			dev_dbg(&pdev->dev, "sysctrl iomap find!\n");
+			value = readl(peri_subctrl_base_addr +
+						GPIO_INT_MASK_REG);
+			value &= ~1UL;
+			writel(value, peri_subctrl_base_addr +
+						GPIO_INT_MASK_REG);
+		}
+	}
 
 	if (!pdata) {
 		pdata = dwapb_gpio_get_pdata(dev);
@@ -742,6 +788,10 @@ static int dwapb_gpio_remove(struct platform_device *pdev)
 	reset_control_assert(gpio->rst);
 	clk_disable_unprepare(gpio->clk);
 
+	if ((peri_subctrl_base_addr != NULL) && enable_ascend_mini_gpio_dwapb &&
+		 enable_ascend_gpio_dwapb)
+		iounmap(peri_subctrl_base_addr);
+
 	return 0;
 }
 
@@ -778,6 +828,9 @@ static int dwapb_gpio_suspend(struct device *dev)
 			ctx->int_pol	= dwapb_read(gpio, GPIO_INT_POLARITY);
 			ctx->int_type	= dwapb_read(gpio, GPIO_INTTYPE_LEVEL);
 			ctx->int_deb	= dwapb_read(gpio, GPIO_PORTA_DEBOUNCE);
+			if (enable_ascend_gpio_dwapb)
+				ctx->int_comb_mask =
+					dwapb_read(gpio, GPIO_INTCOMB_MASK);
 
 			/* Mask out interrupts */
 			dwapb_write(gpio, GPIO_INTMASK,
@@ -798,6 +851,7 @@ static int dwapb_gpio_resume(struct device *dev)
 	struct gpio_chip *gc	= &gpio->ports[0].gc;
 	unsigned long flags;
 	int i;
+	unsigned int value;
 
 	if (!IS_ERR(gpio->clk))
 		clk_prepare_enable(gpio->clk);
@@ -826,12 +880,22 @@ static int dwapb_gpio_resume(struct device *dev)
 			dwapb_write(gpio, GPIO_PORTA_DEBOUNCE, ctx->int_deb);
 			dwapb_write(gpio, GPIO_INTEN, ctx->int_en);
 			dwapb_write(gpio, GPIO_INTMASK, ctx->int_mask);
+			if (enable_ascend_gpio_dwapb)
+				dwapb_write(gpio,
+					GPIO_INTCOMB_MASK, ctx->int_comb_mask);
 
 			/* Clear out spurious interrupts */
 			dwapb_write(gpio, GPIO_PORTA_EOI, 0xffffffff);
 		}
 	}
 	spin_unlock_irqrestore(&gc->bgpio_lock, flags);
+
+	if ((peri_subctrl_base_addr != NULL) && enable_ascend_mini_gpio_dwapb &&
+		 enable_ascend_gpio_dwapb) {
+		value = readl(peri_subctrl_base_addr + GPIO_INT_MASK_REG);
+		value &= ~1UL;
+		writel(value, peri_subctrl_base_addr + GPIO_INT_MASK_REG);
+	}
 
 	return 0;
 }

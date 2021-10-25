@@ -941,6 +941,12 @@ __setup("keepinitrd", keepinitrd_setup);
 
 void ascend_enable_all_features(void)
 {
+#ifdef CONFIG_GPIO_DWAPB
+	extern bool enable_ascend_gpio_dwapb;
+
+	enable_ascend_gpio_dwapb = true;
+#endif
+
 	if (IS_ENABLED(CONFIG_ASCEND_DVPP_MMAP))
 		enable_mmap_dvpp = 1;
 
@@ -974,6 +980,17 @@ static int __init ascend_enable_setup(char *__unused)
 }
 
 early_param("ascend_enable_all", ascend_enable_setup);
+
+static int __init ascend_mini_enable_setup(char *s)
+{
+#ifdef CONFIG_GPIO_DWAPB
+	extern bool enable_ascend_mini_gpio_dwapb;
+
+	enable_ascend_mini_gpio_dwapb = true;
+#endif
+	return 1;
+}
+__setup("ascend_mini_enable", ascend_mini_enable_setup);
 #endif
 
 
