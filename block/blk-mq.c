@@ -600,6 +600,20 @@ void blk_mq_force_complete_rq(struct request *rq)
 	if (rq->internal_tag != -1)
 		blk_mq_sched_completed_request(rq);
 
+	/*
+	 * Most of single queue controllers, there is only one irq vector
+	 * for handling IO completion, and the only irq's affinity is set
+	 * as all possible CPUs. On most of ARCHs, this affinity means the
+	 * irq is handled on one specific CPU.
+	 *
+	 * So complete IO reqeust in softirq context in case of single queue
+	 * for not degrading IO performance by irqsoff latency.
+	 */
+	if (rq->q->nr_hw_queues == 1) {
+		__blk_complete_request(rq);
+		return;
+	}
+
 	if (!test_bit(QUEUE_FLAG_SAME_COMP, &rq->q->queue_flags)) {
 		rq->q->softirq_done_fn(rq);
 		return;
