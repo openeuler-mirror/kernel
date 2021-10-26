@@ -37,3 +37,4 @@ x86-specific Documentation
    sva
    sgx
    elf_auxvec
+   xstate
