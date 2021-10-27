@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2110.7.0
+%global hulkrelease 2110.8.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0118
+Release: %{hulkrelease}.0119
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,92 @@ fi
 %endif
 
 %changelog
+
+* Wed Oct 27 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.8.0.0119
+- blk-mq: complete req in softirq context in case of single queue
+- ovl: fix leaked dentry
+- ovl: fix incorrect extent info in metacopy case
+- ovl: warn about orphan metacopy
+- ovl: fix lookup of indexed hardlinks with metacopy
+- ovl: fix redirect traversal on metacopy dentries
+- ovl: initialize OVL_UPPERDATA in ovl_lookup()
+- ovl: use only uppermetacopy state in ovl_lookup()
+- ovl: simplify setting of origin for index lookup
+- net: hns3: update hns3 version to 21.10.1
+- net: hns3: fix buffer length not enough problem in debugfs
+- net: hns3: use ae_dev->ops->reset_event to do reset.
+- media: firewire: firedtv-avc: fix a buffer overflow in avc_ca_pmt()
+- GPIO : support ascend gpio driver
+- mpam: update monitor rmid and group configuration
+- mpam: Add support for group rmid modify
+- mpam: enable rdt_mon_capable for mbw monitor
+- svm: Add svm_set_user_mpam_en to enable/disable mpam for smmu
+- svm: Add support to set svm mpam configuration
+- svm: Add support to get svm mpam configuration
+- iommu/arm-smmu-v3: Add support to enable/disable SMMU user_mpam_en
+- iommu/arm-smmu-v3: Add support to get SMMU mpam configuration
+- iommu/arm-smmu-v3: Add support to configure mpam in STE/CD context
+- nvme-rdma: destroy cm id before destroy qp to avoid use after free
+- arm64: Errata: fix kabi changed by cpu_errata
+- config: disable CONFIG_HISILICON_ERRATUM_1980005 by default
+- cache: Workaround HiSilicon Taishan DC CVAU
+- kabi: fix kabi broken in struct device
+- virtio_pci: Support surprise removal of virtio pci device
+- ip_gre: add validation for csum_start
+- netfilter: nft_exthdr: fix endianness of tcp option cast
+- tracing / histogram: Fix NULL pointer dereference on strcmp() on NULL event name
+- scsi: core: Avoid printing an error if target_alloc() returns -ENXIO
+- scsi: scsi_dh_rdac: Avoid crash during rdac_bus_attach()
+- x86/fpu: Make init_fpstate correct with optimized XSAVE
+- iommu/vt-d: Fix agaw for a supported 48 bit guest address width
+- PCI/MSI: Enforce MSI[X] entry updates to be visible
+- PCI/MSI: Enforce that MSI-X table entry is masked for update
+- PCI/MSI: Mask all unused MSI-X entries
+- PCI/MSI: Protect msi_desc::masked for multi-MSI
+- PCI/MSI: Use msi_mask_irq() in pci_msi_shutdown()
+- PCI/MSI: Correct misleading comments
+- PCI/MSI: Do not set invalid bits in MSI mask
+- PCI/MSI: Enable and mask MSI-X early
+- genirq/msi: Ensure deactivation on teardown
+- x86/ioapic: Force affinity setup before startup
+- x86/msi: Force affinity setup before startup
+- genirq: Provide IRQCHIP_AFFINITY_PRE_STARTUP
+- tcp_bbr: fix u32 wrap bug in round logic if bbr_init() called after 2B packets
+- net: bridge: fix memleak in br_add_if()
+- net: igmp: fix data-race in igmp_ifc_timer_expire()
+- ACPI: NFIT: Fix support for virtual SPA ranges
+- ovl: prevent private clone if bind mount is not allowed
+- tracing: Reject string operand in the histogram expression
+- reiserfs: add check for root_inode in reiserfs_fill_super
+- serial: 8250: Mask out floating 16/32-bit bus bits
+- ext4: fix potential htree corruption when growing large_dir directories
+- pipe: increase minimum default pipe size to 2 pages
+- tracing/histogram: Rename "cpu" to "common_cpu"
+- tracing / histogram: Give calculation hist_fields a size
+- blk-iolatency: error out if blk_get_queue() failed in iolatency_set_limit()
+- net: Fix zero-copy head len calculation.
+- netfilter: nft_nat: allow to specify layer 4 protocol NAT only
+- netfilter: conntrack: adjust stop timestamp to real expiry value
+- virtio_net: Do not pull payload in skb->head
+- virtio_net: Add XDP meta data support
+- net: check untrusted gso_size at kernel entry
+- sctp: move 198 addresses from unusable to private scope
+- net: annotate data race around sk_ll_usec
+- net/802/garp: fix memleak in garp_request_join()
+- net/802/mrp: fix memleak in mrp_request_join()
+- af_unix: fix garbage collect vs MSG_PEEK
+- efi: Change down_interruptible() in virt_efi_reset_system() to down_trylock()
+- svm: Use vma->vm_pgoff for the nid
+- Ascend/hugetlb:support alloc normal and buddy hugepage
+- Ascend/memcg: Use CONFIG_ASCEND_FEATURES for customized interfaces
+- Ascend/cdm:alloc hugepage from the specified CDM node
+- ascend/svm: Support pinned memory size greater than 2GB
+- mm: ascend: Fix compilation error of mem_cgroup_from_css()
+- fuse: truncate pagecache on atomic_o_trunc
+- ext4: drop unnecessary journal handle in delalloc write
+- ext4: factor out write end code of inline file
+- ext4: correct the error path of ext4_write_inline_data_end()
+- ext4: check and update i_disksize properly
 
 * Thu Oct 21 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.7.0.0118
 - sched/topology: Fix sched_domain_topology_level alloc in sched_init_numa()
