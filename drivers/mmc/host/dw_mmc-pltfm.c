@@ -31,11 +31,17 @@ int dw_mci_pltfm_register(struct platform_device *pdev,
 {
 	struct dw_mci *host;
 	struct resource	*regs;
+	int ret;
 
 	host = devm_kzalloc(&pdev->dev, sizeof(struct dw_mci), GFP_KERNEL);
 	if (!host)
 		return -ENOMEM;
 
+	if (mmc_is_ascend_customized(&pdev->dev)) {
+		regs = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+		if (!regs)
+			return -ENXIO;
+	}
 	host->irq = platform_get_irq(pdev, 0);
 	if (host->irq < 0)
 		return host->irq;
@@ -52,6 +58,13 @@ int dw_mci_pltfm_register(struct platform_device *pdev,
 
 	/* Get registers' physical base address */
 	host->phy_regs = regs->start;
+	if (mmc_is_ascend_customized(host->dev)) {
+		if (drv_data && drv_data->init) {
+			ret = drv_data->init(host);
+			if (ret)
+				return ret;
+		}
+	}
 
 	platform_set_drvdata(pdev, host);
 	return dw_mci_probe(host);

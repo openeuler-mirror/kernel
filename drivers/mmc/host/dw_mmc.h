@@ -20,6 +20,13 @@
 #include <linux/reset.h>
 #include <linux/interrupt.h>
 
+#ifdef CONFIG_ASCEND_HISI_MMC
+#include "dw_mmc_hisi.h"
+#define MAX_MCI_SLOTS	2
+#define TUNING_INIT_CONFIG_NUM 7
+#define TUNING_INIT_TIMING_MODE 10
+#endif
+
 enum dw_mci_state {
 	STATE_IDLE = 0,
 	STATE_SENDING_CMD,
@@ -234,6 +241,58 @@ struct dw_mci {
 	struct timer_list       cmd11_timer;
 	struct timer_list       cto_timer;
 	struct timer_list       dto_timer;
+#ifdef CONFIG_ASCEND_HISI_MMC
+	struct work_struct	card_work;
+	u32			num_slots;
+	u16			data_offset;
+	struct clk		*parent_clk;
+	int wifi_sdio_sdr104_160M;
+	int wifi_sdio_sdr104_177M;
+	struct dw_mci_slot	*cur_slot;
+	struct mmc_command	stop;
+	bool			stop_snd;
+	int			saved_tuning_phase;
+	int			tuning_result_flag;
+	unsigned int		desc_sz;
+	u64			dma_mask;		/* custom DMA mask */
+
+	struct workqueue_struct	*card_workqueue;
+	/* S/W reset timer */
+	struct timer_list       timer;
+	/* pinctrl handles */
+	struct pinctrl		*pinctrl;
+	struct pinctrl_state	*pins_default;
+	struct pinctrl_state	*pins_idle;
+
+	struct regulator	*vmmc;	 /* Power regulator */
+	struct regulator	*vqmmc;	 /* Signaling regulator (vccq) */
+	unsigned int		flags;		/* Host attributes */
+#define DWMMC_IN_TUNING		(1 << 5)	/* Host is doing tuning */
+#define DWMMC_TUNING_DONE	(1 << 6) /* Host initialization tuning done */
+	/* Workaround flags */
+	u32			quirks;
+	int		current_div;           /* record current div */
+	int		tuning_current_sample; /* record current sample */
+	int		tuning_init_sample;    /* record the initial sample */
+	int		tuning_move_sample;    /* record the move sample */
+	int		tuning_move_count;     /* record the move count */
+	unsigned int	tuning_sample_flag;    /* record the sample OK or NOT */
+	int		tuning_move_start;     /* tuning move start flag */
+
+
+#define DWMMC_EMMC_ID		0
+#define DWMMC_SD_ID			1
+#define DWMMC_SDIO_ID		2
+	int		hw_mmc_id;		/* Hardware mmc id */
+	int		sd_reinit;
+	int		sd_hw_timeout;
+
+	u32		clock;			/* Current clock (MHz) */
+	/* Saved clock for dynamic clock gating (MHz) */
+	u32		clock_to_restore;
+	bool		tuning_done;
+	bool		tuning_needed;		/* tuning move start flag */
+#endif
 };
 
 /* DMA ops for Internal/External DMAC interface */
@@ -246,6 +305,40 @@ struct dw_mci_dma_ops {
 	void (*cleanup)(struct dw_mci *host);
 	void (*exit)(struct dw_mci *host);
 };
+
+#ifdef CONFIG_ASCEND_HISI_MMC
+/* IP Quirks/flags. */
+/* DTO fix for command transmission with IDMAC configured */
+#define DW_MCI_QUIRK_IDMAC_DTO			BIT(0)
+/* delay needed between retries on some 2.11a implementations */
+#define DW_MCI_QUIRK_RETRY_DELAY		BIT(1)
+/* High Speed Capable - Supports HS cards (up to 50MHz) */
+#define DW_MCI_QUIRK_HIGHSPEED			BIT(2)
+/* Unreliable card detection */
+#define DW_MCI_QUIRK_BROKEN_CARD_DETECTION	BIT(3)
+/* No write protect */
+#define DW_MCI_QUIRK_NO_WRITE_PROTECT		BIT(4)
+
+/* Slot level quirks */
+/* This slot has no write protect */
+#define DW_MCI_SLOT_QUIRK_NO_WRITE_PROTECT	BIT(0)
+
+
+struct block_settings {
+	unsigned short	max_segs;	/* see blk_queue_max_segments */
+	unsigned int	max_blk_size;	/* maximum size of one mmc block */
+	unsigned int	max_blk_count;	/* maximum number of blocks in one req*/
+	unsigned int	max_req_size;	/* maximum number of bytes in one req*/
+	unsigned int	max_seg_size;	/* see blk_queue_max_segment_size */
+};
+#define HISI_DISC_DZ(x)  x->desc_sz
+#define HISI_DEL_TIMER_SYNC(x) del_timer_sync(&((x)->timer))
+#define HISI_DESTROY_CARD_WORKQUEUE(x) destroy_workqueue((x)->card_workqueue)
+#else
+#define HISI_DISC_DZ(x) 1
+#define HISI_DEL_TIMER_SYNC(x)
+#define HISI_DESTROY_CARD_WORKQUEUE(x)
+#endif /* CONFIG_ASCEND_HISI_MMC */
 
 struct dma_pdata;
 
@@ -269,6 +362,23 @@ struct dw_mci_board {
 	struct reset_control *rstc;
 	struct dw_mci_dma_ops *dma_ops;
 	struct dma_pdata *data;
+#ifdef CONFIG_ASCEND_HISI_MMC
+	u32 num_slots;
+	u32 quirks; /* Workaround / Quirk flags */
+
+	struct block_settings *blk_settings;
+	int (*get_cd)(struct dw_mci *host, u32 slot_id);
+	int (*get_ocr)(u32 slot_id);
+	int (*get_bus_wd)(u32 slot_id);
+	/*
+	 * Enable power to selected slot and set voltage to desired level.
+	 * Voltage levels are specified using MMC_VDD_xxx defines defined
+	 * in linux/mmc/host.h file.
+	 */
+	void (*setpower)(u32 slot_id, u32 volt);
+	void (*exit)(u32 slot_id);
+	void (*select_slot)(u32 slot_id);
+#endif
 };
 
 #define DW_MMC_240A		0x240a
@@ -505,6 +615,30 @@ extern int dw_mci_runtime_suspend(struct device *device);
 extern int dw_mci_runtime_resume(struct device *device);
 #endif
 
+#define SDMMC_64_BIT_DMA		1
+#define SDMMC_32_BIT_DMA		0
+#ifdef CONFIG_ASCEND_HISI_MMC
+#define SDMMC_CMD_ONLY_CLK		(SDMMC_CMD_START | SDMMC_CMD_UPD_CLK | \
+						SDMMC_CMD_PRV_DAT_WAIT)
+#define SDMMC_SET_RD_THLD(v, x)         (((v) & 0x1FFF) << 16 | (x))
+
+extern void dw_mci_set_cd(struct dw_mci *host);
+extern void dw_mci_stop_dma(struct dw_mci *host);
+extern void dw_mci_request_end(struct dw_mci *host, struct mmc_request *mrq);
+void dw_mci_idmac_reset(struct dw_mci *host);
+
+#ifdef CONFIG_PM
+extern int dw_mci_suspend(struct dw_mci *host);
+extern int dw_mci_resume(struct dw_mci *host);
+#endif /* CONFIG_PM */
+int hisi_dw_mci_get_cd(struct mmc_host *mmc);
+#else
+static inline int hisi_dw_mci_get_cd(struct mmc_host *mmc)
+{
+	return 0;
+}
+#endif /* CONFIG_ASCEND_HISI_MMC */
+
 /**
  * struct dw_mci_slot - MMC slot state
  * @mmc: The mmc_host representing this slot.
@@ -541,6 +675,12 @@ struct dw_mci_slot {
 #define DW_MMC_CARD_NEEDS_POLL	4
 	int			id;
 	int			sdio_id;
+#ifdef CONFIG_ASCEND_HISI_MMC
+	unsigned int		quirks;
+	int			wp_gpio;
+	int			last_detect_state;
+	int			sdio_wakelog_switch;
+#endif
 };
 
 /**
@@ -567,5 +707,20 @@ struct dw_mci_drv_data {
 						struct mmc_ios *ios);
 	int		(*switch_voltage)(struct mmc_host *mmc,
 					  struct mmc_ios *ios);
+#ifdef CONFIG_ASCEND_HISI_MMC
+	int	(*setup_clock)(struct dw_mci *host);
+	void	(*prepare_command)(struct dw_mci *host, u32 *cmdr);
+	int	(*cd_detect_init)(struct dw_mci *host);
+
+	int	(*tuning_find_condition)(struct dw_mci *host, int timing);
+	void	(*tuning_set_current_state)(struct dw_mci *host, int ok);
+	int	(*tuning_move)(struct dw_mci *host, int timing, int start);
+	int	(*slowdown_clk)(struct dw_mci *host, int timing);
+	int	(*execute_tuning_hisi)(struct dw_mci_slot *slot,
+			u32 opcode, struct dw_mci_tuning_data *tuning_data);
+	int	(*start_signal_voltage_switch)(struct mmc_host *mmc,
+						struct mmc_ios *ios);
+	void	(*work_fail_reset)(struct dw_mci *host);
+#endif
 };
 #endif /* _DW_MMC_H_ */
