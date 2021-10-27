@@ -387,6 +387,52 @@ static inline bool mmc_op_multi(u32 opcode)
 
 #define EXT_CSD_PACKED_EVENT_EN	BIT(3)
 
+#ifdef CONFIG_ASCEND_HISI_MMC
+#define MMC_FLUSH_REQ_TIMEOUT_MS 90000 /* msec */
+
+/* EXT_CSD field definitions for hisi mmc */
+#define EXT_CSD_CMDQ_MODE		15	/* R/W */
+#define EXT_CSD_FFU_STATUS		26	/* R */
+#define EXT_CSD_MODE_OPERATION_CODES	29	/* W */
+#define EXT_CSD_MODE_CONFIG		30	/* R/W */
+#define EXT_CSD_BARRIER_CTRL		31	/* W */
+#define EXT_CSD_VENDOR_FEATURE_SUPPORT	124	/* Reserved R */
+#define EXT_CSD_USER_WP			171	/* R/W */
+#define EXT_CSD_RPMB_REGION1_SIZE_MULT	180	/* Reserved R/W */
+#define EXT_CSD_RPMB_REGION2_SIZE_MULT	182	/* Reserved R/W */
+#define EXT_CSD_RPMB_REGION3_SIZE_MULT	186	/* Reserved R/W */
+#define EXT_CSD_RPMB_REGION4_SIZE_MULT	188	/* Reserved R/W */
+#define EXT_CSD_SLEEP_NOTIFICATION_TIME 216	/* Ro */
+#define EXT_CSD_CACHE_FLUSH_POLICY	240	/* RO */
+#define EXT_CSD_HEALTH_REPORT		270	/* RO 32 bits*/
+#define EXT_CSD_NUM_OF_FW_SEC_PROG	302	/* RO */
+#define EXT_CSD_BARRIER_SUPPORT		486	/* RO */
+#define EXT_CSD_FFU_ARG			487	/* RO, 4 bytes */
+#define EXT_CSD_OPERATION_CODE_TIMEOUT	491	/* RO */
+#define EXT_CSD_FFU_FEATURES		492	/* RO */
+#define EXT_CSD_RPMB_REL_WR_EN			(1<<4)
+#define EXT_CSD_SLEEP_NOTIFICATION	4
+
+#define EXT_CSD_TIMING_BC	0	/* Backwards compatility */
+#define EXT_CSD_TIMING_HS	1	/* High speed */
+#define EXT_CSD_TIMING_HS200	2	/* HS200 */
+#define EXT_CSD_TIMING_HS400	3	/* HS400 */
+
+#define EXT_CSD_DRVIER_STRENGTH_SHIFT	4 /*Hight 4bit of EXT_CSD_HS_TIMING*/
+#define EXT_CSD_DRVIER_STRENGTH_50		0x0
+#define EXT_CSD_DRVIER_STRENGTH_33		0x1
+#define EXT_CSD_DRVIER_STRENGTH_66		0x2
+#define EXT_CSD_DRVIER_STRENGTH_100		0x3
+#define EXT_CSD_DRVIER_STRENGTH_40		0x4
+
+#define EXT_CSD_STROBE_ENHANCED			BIT(7)
+#define EXT_CSD_TRIGGER_CACHE_FLUSH		BIT(0)
+#define EXT_CSD_SET_CACHE_FLUSH_BARRIER		BIT(1)
+#define EXT_CSD_CACHE_FLUSH_POLICY_FIFO		BIT(0)
+#define EXT_CSD_BKOPS_MANUAL_EN			BIT(0)
+#define EXT_CSD_BKOPS_AUTO_EN			BIT(1)
+#endif /* CONFIG_ASCEND_HISI_MMC */
+
 /*
  * EXCEPTION_EVENT_STATUS field
  */

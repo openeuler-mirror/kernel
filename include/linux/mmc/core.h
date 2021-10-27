@@ -108,7 +108,9 @@ struct mmc_command {
  * ENOMEDIUM    Host can determine that the slot is empty and is
  *              actively failing requests
  */
-
+#ifdef CONFIG_ASCEND_HISI_MMC
+#define MMC_TIMEOUT_INVALID (0xFFFFFFFF)
+#endif
 	unsigned int		busy_timeout;	/* busy detect timeout in ms */
 	/* Set this flag only for blocking sanitize request */
 	bool			sanitize_busy;

@@ -128,6 +128,26 @@ struct mmc_ext_csd {
 
 	unsigned int            feature_support;
 #define MMC_DISCARD_FEATURE	BIT(0)                  /* CMD38 feature */
+#ifdef CONFIG_ASCEND_HISI_MMC
+	unsigned int		sleep_notification_time;	/* Units: ms */
+	u8			raw_vendor_feature_support;	/* 124 */
+	u8			raw_wr_rel_param;/* 166 */
+	u8			raw_rpmb_region1_size_mult;	/* 180 */
+	u8			raw_rpmb_region2_size_mult;	/* 182 */
+	u8			raw_rpmb_region3_size_mult;	/* 186 */
+	u8			raw_rpmb_region4_size_mult;	/* 188 */
+	u8			raw_sleep_noti_time;    /* 216 */
+	u8			cmdq_mode_en;			/* 15 */
+	/* 184 enhanced strobe support */
+	u8			strobe_enhanced;
+	u8			strobe_enhanced_en;
+	/* 486 barrier support */
+	u8			cache_flush_barrier;
+	u8			cache_flush_barrier_en;	/* barrier enable */
+	u8			cache_flush_policy;		/* 240 */
+	/* 163 bit(1) background op auto enable */
+	u8			bkops_auto_en;
+#endif
 };
 
 struct sd_scr {
@@ -145,6 +165,9 @@ struct sd_ssr {
 	unsigned int		au;			/* In sectors */
 	unsigned int		erase_timeout;		/* In milliseconds */
 	unsigned int		erase_offset;		/* In milliseconds */
+#ifdef CONFIG_ASCEND_HISI_MMC
+	unsigned int		speed_class;
+#endif
 };
 
 struct sd_switch_caps {
@@ -252,6 +275,18 @@ struct mmc_card {
 #define MMC_TYPE_SDIO		2		/* SDIO card */
 #define MMC_TYPE_SD_COMBO	3		/* SD combo (IO+mem) card */
 	unsigned int		state;		/* (our) card state */
+#ifdef CONFIG_ASCEND_HISI_MMC
+#define MMC_STATE_PRESENT	(1<<0)		/* present in sysfs */
+#define MMC_STATE_READONLY	(1<<1)		/* card is read-only */
+#define MMC_STATE_BLOCKADDR	(1<<2)		/* card uses block-addressing */
+#define MMC_CARD_SDXC		(1<<3)		/* card is SDXC */
+#define MMC_CARD_REMOVED	(1<<4)		/* card has been removed */
+#define MMC_STATE_DOING_BKOPS	(1<<5)		/* card is doing BKOPS */
+/* card is in ultra high speed mode */
+#define MMC_STATE_ULTRAHIGHSPEED (1<<14)
+#define MMC_STATE_SUSPENDED	(1<<6)		/* card is suspended */
+#define MMC_STATE_CMDQ         (1<<7)         /* card is in cmd queue mode */
+#endif
 	unsigned int		quirks; 	/* card quirks */
 	unsigned int		quirk_max_rate;	/* max rate set by quirks */
 #define MMC_QUIRK_LENIENT_FN0	(1<<0)		/* allow SDIO FN0 writes outside of the VS CCCR range */
@@ -259,6 +294,10 @@ struct mmc_card {
 						/* for byte mode */
 #define MMC_QUIRK_NONSTD_SDIO	(1<<2)		/* non-standard SDIO card attached */
 						/* (missing CIA registers) */
+#ifdef CONFIG_ASCEND_HISI_MMC
+/* clock gating the sdio bus will make card fail */
+#define MMC_QUIRK_BROKEN_CLK_GATING (1<<3)
+#endif
 #define MMC_QUIRK_NONSTD_FUNC_IF (1<<4)		/* SDIO card has nonstd function interfaces */
 #define MMC_QUIRK_DISABLE_CD	(1<<5)		/* disconnect CD/DAT[3] resistor */
 #define MMC_QUIRK_INAND_CMD38	(1<<6)		/* iNAND devices have broken CMD38 */
@@ -322,4 +361,70 @@ bool mmc_card_is_blockaddr(struct mmc_card *card);
 #define mmc_card_sd(c)		((c)->type == MMC_TYPE_SD)
 #define mmc_card_sdio(c)	((c)->type == MMC_TYPE_SDIO)
 
+#ifdef CONFIG_ASCEND_HISI_MMC
+#define MMC_CARD_CMDQ_BLK_SIZE 512
+#define EXT_CSD_PRE_EOL_INFO_NORMAL     0x01
+#define EXT_CSD_PRE_EOL_INFO_WARNING     0x02
+#define EXT_CSD_PRE_EOL_INFO_URGENT     0x03
+
+#define mmc_card_present(c)	((c)->state & MMC_STATE_PRESENT)
+#define mmc_card_readonly(c)	((c)->state & MMC_STATE_READONLY)
+#define mmc_card_blockaddr(c)	((c)->state & MMC_STATE_BLOCKADDR)
+#define mmc_card_ext_capacity(c) ((c)->state & MMC_CARD_SDXC)
+#define mmc_card_removed(c)	((c) && ((c)->state & MMC_CARD_REMOVED))
+#define mmc_card_doing_bkops(c)	((c)->state & MMC_STATE_DOING_BKOPS)
+
+#define mmc_sd_card_uhs(c)	((c)->state & MMC_STATE_ULTRAHIGHSPEED)
+
+#define mmc_card_suspended(c)  ((c)->state & MMC_STATE_SUSPENDED)
+
+#define mmc_card_set_present(c)	((c)->state |= MMC_STATE_PRESENT)
+#define mmc_card_set_readonly(c) ((c)->state |= MMC_STATE_READONLY)
+#define mmc_card_set_highspeed(c) ((c)->state |= MMC_STATE_HIGHSPEED)
+#define mmc_card_set_blockaddr(c) ((c)->state |= MMC_STATE_BLOCKADDR)
+#define mmc_card_set_ext_capacity(c) ((c)->state |= MMC_CARD_SDXC)
+#define mmc_card_set_removed(c) ((c)->state |= MMC_CARD_REMOVED)
+#define mmc_card_set_doing_bkops(c)	((c)->state |= MMC_STATE_DOING_BKOPS)
+#define mmc_card_clr_doing_bkops(c)	((c)->state &= ~MMC_STATE_DOING_BKOPS)
+#define mmc_card_set_suspended(c) ((c)->state |= MMC_STATE_SUSPENDED)
+#define mmc_card_clr_suspended(c) ((c)->state &= ~MMC_STATE_SUSPENDED)
+#define mmc_card_cmdq(c)   ((c)->state & MMC_STATE_CMDQ)
+#define mmc_card_set_cmdq(c)       ((c)->state |= MMC_STATE_CMDQ)
+#define mmc_card_clr_cmdq(c)       ((c)->state &= ~MMC_STATE_CMDQ)
+#define mmc_sd_card_set_uhs(c) ((c)->state |= MMC_STATE_ULTRAHIGHSPEED)
+
+#define mmc_card_name(c)	((c)->cid.prod_name)
+#define mmc_card_id(c)		(dev_name(&(c)->dev))
+
+#define mmc_dev_to_card(d)	container_of(d, struct mmc_card, dev)
+
+/*
+ *  The world is not perfect and supplies us with broken mmc/sdio devices.
+ *  For at least some of these bugs we need a work-around.
+ */
+#define CID_MANFID_SANDISK	0x2
+#define CID_MANFID_TOSHIBA	0x11
+#define CID_MANFID_MICRON	0x13
+#define CID_MANFID_SAMSUNG	0x15
+#define CID_MANFID_KINGSTON	0x70
+#define CID_MANFID_HYNIX	0x90
+
+#define CID_MANFID_ANY (-1u)
+#define CID_OEMID_ANY ((unsigned short) -1)
+#define CID_NAME_ANY (NULL)
+
+#define END_FIXUP { NULL }
+
+#define cid_rev(hwrev, fwrev, year, month)	\
+	(((u64) hwrev) << 40 |                  \
+	 ((u64) fwrev) << 32 |                  \
+	 ((u64) year) << 16 |                   \
+	 ((u64) month))
+
+#define cid_rev_card(card)		  \
+	cid_rev(card->cid.hwrev,	  \
+		    card->cid.fwrev,      \
+		    card->cid.year,	  \
+		    card->cid.month)
+#endif /* CONFIG_ASCEND_HISI_MMC */
 #endif /* LINUX_MMC_CARD_H */

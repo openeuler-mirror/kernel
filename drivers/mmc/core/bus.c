@@ -134,6 +134,17 @@ static void mmc_bus_shutdown(struct device *dev)
 	struct mmc_host *host = card->host;
 	int ret;
 
+	if (mmc_is_ascend_customized(host->parent)) {
+		int present = 1;
+
+		host->rescan_disable = 1;
+		if (host->ops->get_cd)
+			present = host->ops->get_cd(host);
+
+		if (present == 0)
+			return;
+	}
+
 	if (dev->driver && drv->shutdown)
 		drv->shutdown(card);
 
