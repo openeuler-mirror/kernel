@@ -1,0 +1,36 @@
+* Hisilicon specific extensions for Synopsys DW Memory Card
+  Storage Host Controller
+
+Read hi3xxx-dw-mshc.txt for more details
+
+The Synopsys designware storage host controller is used to interface
+a SoC with storage medium such as eMMC or SD/MMC cards. This file documents
+differences between the core Synopsys dw mshc hi3xxx controller properties described
+by hi3xxx-dw-mshc.txt and the properties used by the Hisilicon hi3xxx
+specific extensions to the Synopsys Designware Storage Host Controller.
+
+Required Properties:
+- compatible: Should contain "hisilicon,davinci-dw-mshc".
+- customized: Should have this property.
+
+Example:
+
+        dwmmc0: dwmmc0@10CF90000 {
+                compatible = "hisilicon,davinci-dw-mshc";
+                reg = <0x1 0x0CF90000 0x0 0x1000>,
+                          <0x1 0x0c000000 0x0 0x10000>,
+                          <0x1 0x100c0000 0x0 0x10000>;
+                interrupts = <0 39 4>;
+                customized;
+                num-slots = <1>;
+                fifo-depth = <0x100>;
+                card-detect-delay = <200>;
+                broken-cd;
+                non-removable;
+                supports-highspeed;
+                caps2-mmc-hs200-1_8v;
+                caps2-mmc-cache-ctrl;
+                keep-power-in-suspend;
+                caps2-mmc-bkops_auto-ctrl;
+                pinctrl-names = "default", "idle";
+        }
