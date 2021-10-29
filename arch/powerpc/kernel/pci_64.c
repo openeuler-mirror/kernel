@@ -144,7 +144,8 @@ static int pcibios_map_phb_io_space(struct pci_controller *hose)
 	 * with incomplete address decoding but I'd rather not deal with
 	 * those outside of the reserved 64K legacy region.
 	 */
-	area = __get_vm_area(size_page, 0, PHB_IO_BASE, PHB_IO_END);
+	area = __get_vm_area_caller(size_page, 0, PHB_IO_BASE, PHB_IO_END,
+				    __builtin_return_address(0));
 	if (area == NULL)
 		return -ENOMEM;
 	hose->io_base_alloc = area->addr;
