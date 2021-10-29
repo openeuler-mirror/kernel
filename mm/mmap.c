@@ -3094,6 +3094,40 @@ int vm_munmap(unsigned long start, size_t len)
 }
 EXPORT_SYMBOL(vm_munmap);
 
+/*
+ * Must acquire an additional reference to the mm struct to prevent the
+ * mm struct of other process from being released.
+ *
+ * This interface is applicable only to kernel thread scenarios.
+ */
+unsigned long do_vm_mmap(struct mm_struct *mm, unsigned long addr,
+			 unsigned long len, unsigned long prot,
+			 unsigned long flag, unsigned long pgoff)
+{
+	unsigned long ret;
+	unsigned long populate;
+	LIST_HEAD(uf);
+
+	if (mm == NULL || current->mm)
+		return -EINVAL;
+
+	if (down_write_killable(&mm->mmap_sem))
+		return -EINTR;
+
+	current->mm = mm;
+	ret = do_mmap_pgoff(0, addr, len, prot, flag, pgoff,
+			    &populate, &uf);
+
+	current->mm = NULL;
+	up_write(&mm->mmap_sem);
+	userfaultfd_unmap_complete(mm, &uf);
+	if (populate)
+		mm_populate(ret, populate);
+
+	return ret;
+}
+EXPORT_SYMBOL(do_vm_mmap);
+
 SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
 {
 	profile_munmap(addr);

@@ -2436,6 +2436,9 @@ static inline void mm_populate(unsigned long addr, unsigned long len) {}
 extern int __must_check vm_brk(unsigned long, unsigned long);
 extern int __must_check vm_brk_flags(unsigned long, unsigned long, unsigned long);
 extern int vm_munmap(unsigned long, size_t);
+extern unsigned long do_vm_mmap(struct mm_struct *mm, unsigned long addr,
+				unsigned long len, unsigned long prot,
+				unsigned long flag, unsigned long pgoff);
 extern unsigned long __must_check vm_mmap(struct file *, unsigned long,
         unsigned long, unsigned long,
         unsigned long, unsigned long);
