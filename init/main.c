@@ -521,7 +521,6 @@ static void __init mm_init(void)
 	kmem_cache_init();
 	pgtable_init();
 	vmalloc_init();
-	ioremap_huge_init();
 	/* Should be run before the first non-init thread is created */
 	init_espfix_bsp();
 	/* Should be run after espfix64 is set up. */
