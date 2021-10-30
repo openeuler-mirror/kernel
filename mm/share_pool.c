@@ -220,8 +220,6 @@ static DEFINE_SPINLOCK(sp_area_lock);
 static struct rb_root sp_area_root = RB_ROOT;
 static bool host_svm_sp_enable = false;
 
-int sysctl_share_pool_hugepage_enable = 1;
-
 static unsigned long spa_size(struct sp_area *spa)
 {
 	return spa->real_size;

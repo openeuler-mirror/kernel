@@ -1780,16 +1780,6 @@ static struct ctl_table vm_table[] = {
 		.extra2		= &one,
 	},
 	{
-		/* 0: disable, 1: enable */
-		.procname	= "share_pool_hugepage_enable",
-		.data		= &sysctl_share_pool_hugepage_enable,
-		.maxlen		= sizeof(int),
-		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= &zero,
-		.extra2		= &one,
-	},
-	{
 		/* 0: map_unlock, 1: map_lock */
 		.procname	= "share_pool_map_lock_enable",
 		.data		= &sysctl_share_pool_map_lock_enable,
