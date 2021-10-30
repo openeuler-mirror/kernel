@@ -151,12 +151,16 @@ static inline size_t get_vm_area_size(const struct vm_struct *area)
 extern struct vm_struct *get_vm_area(unsigned long size, unsigned long flags);
 extern struct vm_struct *get_vm_area_caller(unsigned long size,
 					unsigned long flags, const void *caller);
+extern struct vm_struct *__get_vm_area(unsigned long size, unsigned long flags,
+					unsigned long start, unsigned long end);
 extern struct vm_struct *__get_vm_area_caller(unsigned long size,
 					unsigned long flags,
 					unsigned long start, unsigned long end,
 					const void *caller);
 extern struct vm_struct *remove_vm_area(const void *addr);
 extern struct vm_struct *find_vm_area(const void *addr);
+extern int map_vm_area(struct vm_struct *area, pgprot_t prot,
+					struct page **pages);
 
 #ifdef CONFIG_MMU
 int vmap_range(unsigned long addr, unsigned long end,

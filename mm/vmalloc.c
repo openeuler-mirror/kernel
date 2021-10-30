@@ -2206,6 +2206,17 @@ void unmap_kernel_range(unsigned long addr, unsigned long size)
 	flush_tlb_kernel_range(addr, end);
 }
 
+int map_vm_area(struct vm_struct *area, pgprot_t prot, struct page **pages)
+{
+	unsigned long addr = (unsigned long)area->addr;
+	int err;
+
+	err = map_kernel_range(addr, get_vm_area_size(area), prot, pages);
+
+	return err > 0 ? 0 : err;
+}
+EXPORT_SYMBOL_GPL(map_vm_area);
+
 static void setup_vmalloc_vm(struct vm_struct *vm, struct vmap_area *va,
 			      unsigned long flags, const void *caller)
 {
@@ -2263,6 +2274,14 @@ static struct vm_struct *__get_vm_area_node(unsigned long size,
 
 	return area;
 }
+
+struct vm_struct *__get_vm_area(unsigned long size, unsigned long flags,
+						unsigned long start, unsigned long end)
+{
+	return __get_vm_area_node(size, 1, flags, start, end, NUMA_NO_NODE,
+				  GFP_KERNEL, __builtin_return_address(0));
+}
+EXPORT_SYMBOL_GPL(__get_vm_area);
 
 struct vm_struct *__get_vm_area_caller(unsigned long size, unsigned long flags,
 				       unsigned long start, unsigned long end,

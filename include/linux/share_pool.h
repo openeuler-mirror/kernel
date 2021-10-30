@@ -26,12 +26,6 @@
 
 #define MAX_DEVID 2	/* the max num of Da-vinci devices */
 
-/* to align the pointer to the (next) PMD boundary */
-#define PMD_ALIGN(addr)		ALIGN(addr, PMD_SIZE)
-
-/* test whether an address (unsigned long or pointer) is aligned to PMD_SIZE */
-#define PMD_ALIGNED(addr)	IS_ALIGNED((unsigned long)(addr), PMD_SIZE)
-
 extern int sysctl_share_pool_hugepage_enable;
 
 extern int sysctl_ac_mode;
