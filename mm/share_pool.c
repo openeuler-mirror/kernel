@@ -1704,6 +1704,19 @@ static void sp_fallocate(struct sp_area *spa)
 		WARN(1, "sp fallocate failed %d\n", ret);
 }
 
+static void sp_free_unmap_fallocate(struct sp_area *spa)
+{
+	if (spa->spg != spg_none) {
+		down_read(&spa->spg->rw_lock);
+		__sp_free(spa->spg, spa->va_start, spa_size(spa), NULL);
+		sp_fallocate(spa);
+		up_read(&spa->spg->rw_lock);
+	} else {
+		sp_munmap(current->mm, spa->va_start, spa_size(spa));
+		sp_fallocate(spa);
+	}
+}
+
 #define FREE_CONT	1
 #define FREE_END	2
 
@@ -1719,8 +1732,6 @@ static int sp_free_get_spa(struct sp_free_context *fc)
 	int ret = 0;
 	unsigned long addr = fc->addr;
 	struct sp_area *spa;
-	struct sp_group_node *spg_node;
-	bool found = false;
 
 	fc->state = FREE_CONT;
 
@@ -1737,39 +1748,51 @@ static int sp_free_get_spa(struct sp_free_context *fc)
 	}
 	fc->spa = spa;
 
-	/*
-	 * Access control: an sp addr can only be freed by
-	 * 1. another task in the same spg
-	 * 2. a kthread
-	 */
-	if (!current->mm)
-		goto check_spa;
+	if (spa->spg != spg_none) {
+		struct sp_group_node *spg_node;
+		bool found = false;
 
-	down_read(&spa->spg->rw_lock);
-	list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
-		if (spg_node->master->mm == current->mm) {
-			found = true;
-			break;
+		/*
+		 * Access control: an sp addr can only be freed by
+		 * 1. another task in the same spg
+		 * 2. a kthread
+		 *
+		 * a passthrough addr can only be freed by the applier process
+		 */
+		if (!current->mm)
+			goto check_spa;
+
+		down_read(&spa->spg->rw_lock);
+		list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
+			if (spg_node->master->mm == current->mm) {
+				found = true;
+				break;
+			}
 		}
-	}
-	up_read(&spa->spg->rw_lock);
-	if (!found) {
-		ret = -EPERM;
-		goto drop_spa;
-	}
+		up_read(&spa->spg->rw_lock);
+		if (!found) {
+			ret = -EPERM;
+			goto drop_spa;
+		}
 
 check_spa:
-	down_write(&spa->spg->rw_lock);
-	if (!spg_valid(spa->spg)) {
-		/* we must return success(0) in this situation */
-		fc->state = FREE_END;
+		down_write(&spa->spg->rw_lock);
+		if (!spg_valid(spa->spg)) {
+			fc->state = FREE_END;
+			up_write(&spa->spg->rw_lock);
+			goto drop_spa;
+			/* we must return success(0) in this situation */
+		}
+		/* the life cycle of spa has a direct relation with sp group */
+		spa->is_dead = true;
 		up_write(&spa->spg->rw_lock);
-		goto drop_spa;
-	}
-	/* the life cycle of spa has a direct relation with sp group */
-	spa->is_dead = true;
-	up_write(&spa->spg->rw_lock);
 
+	} else {
+		if (current->tgid != spa->applier) {
+			ret = -EPERM;
+			goto drop_spa;
+		}
+	}
 	return 0;
 
 drop_spa:
@@ -1789,7 +1812,6 @@ drop_spa:
 int sp_free(unsigned long addr)
 {
 	int ret = 0;
-	struct sp_area *spa;
 	struct sp_free_context fc = {
 		.addr = addr,
 	};
@@ -1800,20 +1822,15 @@ int sp_free(unsigned long addr)
 	if (ret || fc.state == FREE_END)
 		goto out;
 
-	spa = fc.spa;
-
-	down_read(&spa->spg->rw_lock);
-	__sp_free(spa->spg, spa->va_start, spa_size(spa), NULL);
-	sp_fallocate(spa);
-	up_read(&spa->spg->rw_lock);
+	sp_free_unmap_fallocate(fc.spa);
 
 	/* current->mm == NULL: allow kthread */
 	if (current->mm == NULL)
-		atomic64_sub(spa->real_size, &kthread_stat.alloc_size);
+		atomic64_sub(fc.spa->real_size, &kthread_stat.alloc_size);
 	else
-		sp_update_process_stat(current, false, spa);
+		sp_update_process_stat(current, false, fc.spa);
 
-	__sp_area_drop(spa);  /* match __find_sp_area in sp_free_get_spa */
+	__sp_area_drop(fc.spa);  /* match __find_sp_area in sp_free_get_spa */
 out:
 	sp_dump_stack();
 	sp_try_to_compact();
@@ -1870,8 +1887,7 @@ struct sp_alloc_context {
 static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	int spg_id, struct sp_alloc_context *ac)
 {
-	int ret;
-	struct sp_group *spg, *spg_tmp;
+	struct sp_group *spg;
 
 	check_interrupt_context();
 
@@ -1897,44 +1913,23 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	if (sp_flags & SP_HUGEPAGE_ONLY)
 		sp_flags |= SP_HUGEPAGE;
 
-	spg = __sp_find_spg(current->pid, SPG_ID_DEFAULT);
-	if (!spg) {  /* DVPP pass through scene: first call sp_alloc() */
-		/* mdc scene hack */
-		unsigned long prot = PROT_READ | PROT_WRITE;
-		if (enable_mdc_default_group)
-			ret = sp_group_add_task(current->tgid, prot, spg_id);
-		else
-			ret = sp_group_add_task(current->tgid, prot,
-					SPG_ID_DVPP_PASS_THROUGH);
-		/*
-		 * The multi-thread contention may cause repeated joins to the group.
-		 * The judgment is added to prevent exit in this case.
-		 */
-		if (ret < 0 && (ret != -EEXIST)) {
-			pr_err_ratelimited("allocation failed, add group error %d in DVPP pass through\n", ret);
-			return ret;
+	if (spg_id != SPG_ID_DEFAULT) {
+		spg = __sp_find_spg(current->pid, spg_id);
+		if (!spg) {
+			pr_err_ratelimited("allocation failed, task not in group\n");
+			return -ENODEV;
 		}
-		spg = get_first_group(current->mm);
-	} else {  /* other scenes */
-		if (spg_id != SPG_ID_DEFAULT) {
-			spg_tmp = __sp_find_spg(current->pid, spg_id);
-			if (spg != spg_tmp) {
-				sp_group_drop(spg);
-				if (spg_tmp)
-					sp_group_drop(spg_tmp);
-				return -ENODEV;
-			}
-			sp_group_drop(spg_tmp);
-		}
-	}
 
-	/* up_read will be at the end of sp_alloc */
-	down_read(&spg->rw_lock);
-	if (!spg_valid(spg)) {
-		up_read(&spg->rw_lock);
-		sp_group_drop(spg);
-		pr_err_ratelimited("sp alloc failed, spg is dead\n");
-		return -ENODEV;
+		/* up_read will be at the end of sp_alloc */
+		down_read(&spg->rw_lock);
+		if (!spg_valid(spg)) {
+			up_read(&spg->rw_lock);
+			sp_group_drop(spg);
+			pr_err_ratelimited("allocation failed, spg is dead\n");
+			return -ENODEV;
+		}
+	} else {  /* alocation pass through scene */
+		spg = spg_none;
 	}
 
 	if (sp_flags & SP_HUGEPAGE) {
@@ -1956,7 +1951,8 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 static void sp_alloc_unmap(struct mm_struct *mm, struct sp_area *spa,
 	struct sp_group_node *spg_node)
 {
-	__sp_free(spa->spg, spa->va_start, spa->real_size, mm);
+	if (spa->spg != spg_none)
+		__sp_free(spa->spg, spa->va_start, spa->real_size, mm);
 }
 
 static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
@@ -1964,7 +1960,8 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 {
 	int ret = 0;
 	unsigned long mmap_addr;
-	unsigned long prot;
+	/* pass through default permission */
+	unsigned long prot = PROT_READ | PROT_WRITE;
 	unsigned long sp_addr = spa->va_start;
 	unsigned long populate = 0;
 	struct vm_area_struct *vma;
@@ -1978,7 +1975,8 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 		return -EFAULT;
 	}
 
-	prot = spg_node->prot;
+	if (spg_node)
+		prot = spg_node->prot;
 
 	/* when success, mmap_addr == spa->va_start */
 	mmap_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
@@ -2012,7 +2010,10 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 	return ret;
 
 unmap:
-	sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
+	if (spa->spg != spg_none)
+		sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
+	else
+		sp_munmap(mm, spa->va_start, spa->real_size);
 	return ret;
 }
 
@@ -2071,7 +2072,11 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 			sp_add_work_compact();
 	}
 	if (ret) {
-		sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
+		if (spa->spg != spg_none)
+			sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
+		else
+			sp_munmap(mm, spa->va_start, spa->real_size);
+
 		if (unlikely(fatal_signal_pending(current)))
 			pr_warn_ratelimited("allocation failed, current thread is killed\n");
 		else
@@ -2111,12 +2116,16 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 	struct mm_struct *mm;
 	struct sp_group_node *spg_node;
 
-	/* create mapping for each process in the group */
-	list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
-		mm = spg_node->master->mm;
-		ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
-		if (ret)
-			return ret;
+	if (spa->spg == spg_none) {
+		ret = __sp_alloc_mmap_populate(current->mm, spa, NULL, ac);
+	} else {
+		/* create mapping for each process in the group */
+		list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
+			mm = spg_node->master->mm;
+			ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
+			if (ret)
+				return ret;
+		}
 	}
 	return ret;
 }
@@ -2124,8 +2133,11 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 /* spa maybe an error pointer, so introduce param spg */
 static void sp_alloc_finish(int result, struct sp_area *spa, struct sp_group *spg)
 {
+	bool is_pass_through = spg == spg_none ? true : false;
+
 	/* match sp_alloc_check_prepare */
-	up_read(&spg->rw_lock);
+	if (!is_pass_through)
+		up_read(&spg->rw_lock);
 
 	if (!result)
 		sp_update_process_stat(current, true, spa);
@@ -2134,7 +2146,8 @@ static void sp_alloc_finish(int result, struct sp_area *spa, struct sp_group *sp
 	if (spa && !IS_ERR(spa))
 		__sp_area_drop(spa);
 
-	sp_group_drop(spg);
+	if (!is_pass_through)
+		sp_group_drop(spg);
 
 	sp_dump_stack();
 	sp_try_to_compact();
