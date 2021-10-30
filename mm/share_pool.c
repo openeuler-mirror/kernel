@@ -164,6 +164,7 @@ struct sp_area {
 	unsigned long va_start;
 	unsigned long va_end;		/* va_end always align to hugepage */
 	unsigned long real_size;	/* real size with alignment */
+	unsigned long region_vstart;	/* belong to normal region or DVPP region */
 	bool is_hugepage;
 	atomic_t use_count;		/* How many vmas use this VA region */
 	struct rb_node rb_node;		/* address sorted rbtree */
@@ -863,6 +864,7 @@ found:
 	spa->va_start = addr;
 	spa->va_end = addr + size_align;
 	spa->real_size = size;
+	spa->region_vstart = vstart;
 	spa->is_hugepage = (flags & SP_HUGEPAGE);
 	spa->spg = spg;
 	atomic_set(&spa->use_count, 1);
@@ -937,6 +939,15 @@ static void sp_free_area(struct sp_area *spa)
 		cache = rb_entry(free_sp_area_cache, struct sp_area, rb_node);
 		if (spa->va_start <= cache->va_start) {
 			free_sp_area_cache = rb_prev(&spa->rb_node);
+			/*
+			 * the new cache node may be changed to another region,
+			 * i.e. from DVPP region to normal region
+			 */
+			if (free_sp_area_cache) {
+				cache = rb_entry(free_sp_area_cache,
+						 struct sp_area, rb_node);
+				cached_vstart = cache->region_vstart;
+			}
 			/*
 			 * We don't try to update cached_hole_size,
 			 * but it won't go very wrong.
