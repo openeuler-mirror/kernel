@@ -1848,9 +1848,8 @@ out:
 EXPORT_SYMBOL_GPL(sp_make_share_u2k);
 
 /*
- * Input parameters uva and spg_id are now useless. spg_id will be useful when
- * supporting a process in multiple sp groups.
- * Always use process pid. Using thread pid is hard to check sanity.
+ * Input parameters uva, pid and spg_id are now useless. spg_id will be useful
+ * when supporting a process in multiple sp groups.
  *
  * Procedure of unshare uva must be compatible with:
  *
@@ -1868,7 +1867,6 @@ EXPORT_SYMBOL_GPL(sp_make_share_u2k);
 static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int spg_id)
 {
 	int ret = 0;
-	struct task_struct *tsk;
 	struct mm_struct *mm;
 	struct sp_area *spa;
 	unsigned long uva_aligned;
@@ -1924,35 +1922,26 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 			goto out_drop_area;
 		}
 
-		rcu_read_lock();
-		tsk = find_task_by_vpid(pid);
-		if (!tsk || !tsk->mm || (tsk->flags & PF_EXITING)) {
-			if (printk_ratelimit())
-				pr_info("share pool: no need to unshare uva(to task), "
-					"target process not found or do_exit\n");
-			rcu_read_unlock();
-			sp_dump_stack();
-			goto out_drop_area;
-		}
-		get_task_struct(tsk);
-		rcu_read_unlock();
-
 		if (!spa->mm) {
 			if (printk_ratelimit())
 				pr_err("share pool: unshare uva(to task) failed, "
 				       "none spa owner\n");
 			ret = -EINVAL;
-			put_task_struct(tsk);
 			goto out_drop_area;
 		}
 
-		/* current thread may be exiting in a multithread process */
-		mm = get_task_mm(tsk->group_leader);
+		/*
+		 * current thread may be exiting in a multithread process
+		 *
+		 * 1. never need a kthread to make unshare when process has exited
+		 * 2. in dvpp channel destroy procedure, exit_mm() has been called
+		 *    and don't need to make unshare
+		 */
+		mm = get_task_mm(current->group_leader);
 		if (!mm) {
 			if (printk_ratelimit())
 				pr_info("share pool: no need to unshare uva(to task), "
 					"target process mm is exiting\n");
-			put_task_struct(tsk);
 			goto out_drop_area;
 		}
 
@@ -1962,24 +1951,11 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 				       "spa not belong to the task\n");
 			ret = -EINVAL;
 			mmput(mm);
-			put_task_struct(tsk);
-			goto out_drop_area;
-		}
-
-		/* alway allow kthread and dvpp channel destroy procedure */
-		if (current->mm && current->mm != mm) {
-			if (printk_ratelimit())
-				pr_err("share pool: unshare uva(to task failed, caller "
-				       "process %d not match target process %d\n)",
-				       current->pid, pid);
-			ret = -EINVAL;
-			mmput(mm);
-			put_task_struct(tsk);
 			goto out_drop_area;
 		}
 
 		down_write(&mm->mmap_sem);
-		ret = do_munmap(tsk->mm, uva_aligned, size_aligned, NULL);
+		ret = do_munmap(mm, uva_aligned, size_aligned, NULL);
 		up_write(&mm->mmap_sem);
 		mmput(mm);
 		if (ret) {
@@ -1987,7 +1963,6 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 			pr_err("share pool: failed to unmap VA %pK when munmap in unshare uva\n",
 			       (void *)uva_aligned);
 		}
-		put_task_struct(tsk);
 	} else if (spa->type == SPA_TYPE_K2SPG) {
 		if (spg_id < 0) {
 			if (printk_ratelimit())
