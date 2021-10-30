@@ -91,6 +91,7 @@ struct sp_proc_stat {
 	 * another task in the same sp group.
 	 */
 	long alloc_size;
+	long k2u_size;
 };
 
 /* for kthread buff_module_guard_work */
@@ -121,7 +122,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk) {
 		return ERR_PTR(-ENOMEM);
 	}
 
-	stat->alloc_size = 0;
+	stat->alloc_size = stat->k2u_size = 0;
 	stat->mm = mm;
 	get_task_comm(stat->comm, tsk);
 	ret = idr_alloc(&sp_stat_idr, stat, tgid, tgid + 1, GFP_KERNEL);
@@ -750,11 +751,13 @@ void sp_group_post_exit(struct mm_struct *mm)
 	 *
 	 * We decide to print a info when seeing both of the scenarios.
 	 */
-	if (stat && stat->alloc_size != 0)
+	if (stat && (stat->alloc_size != 0 || stat->k2u_size != 0))
 		pr_info("share pool: process %s(%d) of sp group %d exits. "
-			"It applied %ld aligned KB\n",
+			"It applied %ld aligned KB, k2u shared %ld aligned "
+			"KB\n",
 			stat->comm, mm->sp_stat_id,
-			mm->sp_group->id, byte2kb(stat->alloc_size));
+			mm->sp_group->id, byte2kb(stat->alloc_size),
+			byte2kb(stat->k2u_size));
 
 	idr_remove(&sp_stat_idr, mm->sp_stat_id);
 
@@ -1692,6 +1695,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	unsigned int page_size = PAGE_SIZE;
 	struct task_struct *tsk;
 	struct mm_struct *mm;
+	struct sp_proc_stat *stat;
 	int ret = 0, is_hugepage;
 
 	if (sp_flags & ~SP_DVPP) {
@@ -1733,6 +1737,18 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	}
 
 	mutex_lock(&sp_mutex);
+	/*
+	 * Process statistics initialization. if the target process has been
+	 * added to a sp group, then stat will be returned immediately.
+	 * I believe there is no need to free stat in error handling branches.
+	 */
+	stat = sp_init_proc_stat(tsk);
+	if (IS_ERR(stat)) {
+		uva = stat;
+		pr_err("share pool: init proc stat failed, ret %lx\n", PTR_ERR(stat));
+		goto out_unlock;
+	}
+
 	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
 	if (spg == NULL) {
 		/* k2u to task */
@@ -1797,6 +1813,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 
 	if (!IS_ERR(uva)) {
 		uva = uva + (kva - kva_aligned);
+		stat->k2u_size += size_aligned;
 	} else {
 		/* associate vma and spa */
 		if (!vmalloc_area_clr_flag(spa, kva_aligned, VM_SHAREPOOL))
@@ -2082,6 +2099,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	unsigned long uva_aligned;
 	unsigned long size_aligned;
 	unsigned int page_size;
+	struct sp_proc_stat *stat;
 
 	mutex_lock(&sp_mutex);
 	/*
@@ -2202,6 +2220,16 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	}
 
 	sp_dump_stack();
+	/* pointer stat may be invalid because of kthread buff_module_guard_work */
+	if (current->mm == NULL) {
+		kthread_stat.k2u_size -= spa->real_size;
+	} else {
+		stat = idr_find(&sp_stat_idr, current->mm->sp_stat_id);
+		if (stat)
+			stat->k2u_size -= spa->real_size;
+		else
+			WARN(1, "share_pool: %s: null process stat\n", __func__);
+	}
 
 out_clr_flag:
 	/* deassociate vma and spa */
@@ -2566,6 +2594,7 @@ static int spa_stat_show(struct seq_file *seq, void *offset)
 
 static int idr_proc_stat_cb(int id, void *p, void *data)
 {
+	int spg_id;
 	struct sp_group *spg;
 	struct sp_proc_stat *stat = p;
 	struct seq_file *seq = data;
@@ -2579,11 +2608,21 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	long sp_alloc_nsize, non_sp_res, non_sp_shm;
 
 	mutex_lock(&sp_mutex);
-	spg = __sp_find_spg(id, SPG_ID_DEFAULT);
-	if (!spg_valid(spg) || !mmget_not_zero(mm))
+	if (!mmget_not_zero(mm))
 		goto out_unlock;
+	/*
+	 * a task which is the target of k2u(to task) but without adding to a
+	 * sp group should be handled correctly.
+	 */
+	spg = __sp_find_spg(id, SPG_ID_DEFAULT);
+	if (!spg_valid(spg)) {
+		spg_id = 0;
+		sp_alloc_nsize = 0;
+	} else {
+		spg_id = spg->id;
+		sp_alloc_nsize = byte2kb(atomic64_read(&spg->alloc_nsize));
+	}
 
-	sp_alloc_nsize = byte2kb(atomic64_read(&spg->alloc_nsize));
 	anon = get_mm_counter(mm, MM_ANONPAGES);
 	file = get_mm_counter(mm, MM_FILEPAGES);
 	shmem = get_mm_counter(mm, MM_SHMEMPAGES);
@@ -2592,10 +2631,15 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	non_sp_shm = page2kb(shmem) - sp_alloc_nsize;
 	non_sp_shm = non_sp_shm < 0 ? 0 : non_sp_shm;  /* to be investigated */
 
-	seq_printf(seq, "%-8d %-8d %-9ld %-10ld %-8ld %-7ld %-7ld %-10ld\n",
-		   id, spg->id, byte2kb(stat->alloc_size), non_sp_res,
-		   page2kb(mm->total_vm), page2kb(total_rss), page2kb(shmem),
-		   non_sp_shm);
+	seq_printf(seq, "%-8d ", id);
+	if (spg_id == 0)
+		seq_printf(seq, "%-8c ", '-');
+	else
+		seq_printf(seq, "%-8d ", spg_id);
+	seq_printf(seq, "%-9ld %-9ld %-10ld %-8ld %-7ld %-7ld %-10ld\n",
+		   byte2kb(stat->alloc_size), byte2kb(stat->k2u_size),
+		   non_sp_res, page2kb(mm->total_vm), page2kb(total_rss),
+		   page2kb(shmem), non_sp_shm);
 	mmput(mm);
 
 out_unlock:
@@ -2609,12 +2653,13 @@ static int proc_stat_show(struct seq_file *seq, void *offset)
 	spg_overview_show(seq);
 	spa_overview_show(seq);
 	/* print the file header */
-	seq_printf(seq, "%-8s %-8s %-9s %-10s %-8s %-7s %-7s %-10s\n",
-		   "PID", "Group_ID", "SP_ALLOC", "Non-SP_RES", "VIRT", "RES",
-		   "Shm", "Non-SP_Shm");
+	seq_printf(seq, "%-8s %-8s %-9s %-9s %-10s %-8s %-7s %-7s %-10s\n",
+		   "PID", "Group_ID", "SP_ALLOC", "SP_K2U", "Non-SP_RES",
+		   "VIRT", "RES", "Shm", "Non-SP_Shm");
 	/* print kthread buff_module_guard_work */
-	seq_printf(seq, "%-8s %-8s %-9ld\n",
-		   "guard", "-", byte2kb(kthread_stat.alloc_size));
+	seq_printf(seq, "%-8s %-8s %-9ld %-9ld\n",
+		   "guard", "-", byte2kb(kthread_stat.alloc_size),
+		   byte2kb(kthread_stat.k2u_size));
 	idr_for_each(&sp_stat_idr, idr_proc_stat_cb, seq);
 	return 0;
 }
