@@ -2797,7 +2797,7 @@ void *vmalloc_hugepage(unsigned long size)
 	/* PMD hugepage aligned */
 	size = PMD_ALIGN(size);
 
-	return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+	return __vmalloc_node_range(size, PMD_SIZE, VMALLOC_START, VMALLOC_END,
 			GFP_KERNEL, PAGE_KERNEL,
 			VM_HUGE_PAGES, NUMA_NO_NODE,
 			__builtin_return_address(0));
@@ -2820,7 +2820,7 @@ void *vmalloc_hugepage_user(unsigned long size)
 	/* PMD hugepage aligned */
 	size = PMD_ALIGN(size);
 
-	return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+	return __vmalloc_node_range(size, PMD_SIZE, VMALLOC_START, VMALLOC_END,
 			GFP_KERNEL | __GFP_ZERO, PAGE_KERNEL,
 			VM_HUGE_PAGES | VM_USERMAP, NUMA_NO_NODE,
 			__builtin_return_address(0));
@@ -2866,7 +2866,7 @@ void *buff_vzalloc_hugepage_user(unsigned long size)
 	/* PMD hugepage aligned */
 	size = PMD_ALIGN(size);
 
-	return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+	return __vmalloc_node_range(size, PMD_SIZE, VMALLOC_START, VMALLOC_END,
 			GFP_KERNEL | __GFP_ZERO | __GFP_ACCOUNT, PAGE_KERNEL,
 			VM_HUGE_PAGES | VM_USERMAP, NUMA_NO_NODE,
 			__builtin_return_address(0));
