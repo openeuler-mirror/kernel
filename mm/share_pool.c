@@ -268,15 +268,20 @@ static int spa_dec_usage(enum spa_type type, unsigned long size, bool is_dvpp)
 static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 		     struct sp_area *spa, unsigned long *populate);
 
+static void free_sp_group_id(unsigned int spg_id)
+{
+	if ((spg_id >= SPG_ID_AUTO_MIN && spg_id <= SPG_ID_AUTO_MAX) ||
+	    (spg_id >= SPG_ID_DVPP_PASS_THROUGH_MIN &&
+	     spg_id <= SPG_ID_DVPP_PASS_THROUGH_MAX))
+		ida_free(&sp_group_id_ida, spg_id);
+}
+
 static void free_sp_group(struct sp_group *spg)
 {
 	fput(spg->file);
 	fput(spg->file_hugetlb);
 	idr_remove(&sp_group_idr, spg->id);
-	if ((spg->id >= SPG_ID_AUTO_MIN && spg->id <= SPG_ID_AUTO_MAX) ||
-	    (spg->id >= SPG_ID_DVPP_PASS_THROUGH_MIN &&
-	     spg->id <= SPG_ID_DVPP_PASS_THROUGH_MAX))
-		ida_free(&sp_group_id_ida, (unsigned int)spg->id);
+	free_sp_group_id((unsigned int)spg->id);
 	kfree(spg);
 }
 
@@ -535,12 +540,15 @@ int sp_group_add_task(int pid, int spg_id)
 		get_task_struct(tsk);
 
 	rcu_read_unlock();
-	if (ret)
+	if (ret) {
+		free_sp_group_id((unsigned int)spg_id);
 		goto out_unlock;
+	}
 
 	spg = find_or_alloc_sp_group(spg_id);
 	if (IS_ERR(spg)) {
 		ret = PTR_ERR(spg);
+		free_sp_group_id((unsigned int)spg_id);
 		goto out_put_task;
 	}
 
