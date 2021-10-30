@@ -443,8 +443,7 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct list_head *stop)
 		if (&spa->link == stop)
 			break;
 
-		if (prev)
-			__sp_area_drop_locked(prev);
+		__sp_area_drop_locked(prev);
 		prev = spa;
 
 		atomic_inc(&spa->use_count);
@@ -459,8 +458,7 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct list_head *stop)
 
 		spin_lock(&sp_area_lock);
 	}
-	if (prev)
-		__sp_area_drop_locked(prev);
+	__sp_area_drop_locked(prev);
 
 	spin_unlock(&sp_area_lock);
 }
@@ -607,8 +605,7 @@ int sp_group_add_task(int pid, int spg_id)
 		struct file *file = spa_file(spa);
 		unsigned long addr;
 
-		if (prev)
-			__sp_area_drop_locked(prev);
+		__sp_area_drop_locked(prev);
 		prev = spa;
 
 		atomic_inc(&spa->use_count);
@@ -651,8 +648,7 @@ int sp_group_add_task(int pid, int spg_id)
 
 		spin_lock(&sp_area_lock);
 	}
-	if (prev)
-		__sp_area_drop_locked(prev);
+	__sp_area_drop_locked(prev);
 	spin_unlock(&sp_area_lock);
 
 	if (unlikely(ret)) {
