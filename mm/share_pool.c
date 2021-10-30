@@ -661,7 +661,9 @@ int sp_group_add_task(int pid, int spg_id)
 						"failed (potential no enough memory): %d "
 						"spa type is %d\n", ret, spa->type);
 				}
+				down_write(&mm->mmap_sem);
 				sp_munmap_task_areas(mm, spa->link.next);
+				up_write(&mm->mmap_sem);
 				spin_lock(&sp_area_lock);
 				break;
 			}
