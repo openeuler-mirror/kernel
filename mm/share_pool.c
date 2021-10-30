@@ -895,6 +895,7 @@ found:
 	atomic_set(&spa->use_count, 1);
 	spa->type = type;
 	spa->mm = NULL;
+	spa->kva = 0;   /* NULL pointer */
 
 	if (spa_inc_usage(type, size, (flags & SP_DVPP))) {
 		err = ERR_PTR(-EINVAL);
@@ -1105,6 +1106,7 @@ int sp_free(unsigned long addr)
 	}
 
 	if (spa->type != SPA_TYPE_ALLOC) {
+		ret = -EINVAL;
 		if (printk_ratelimit())
 			pr_err("share pool: sp free failed, addr %pK is not from sp_alloc\n",
 			       (void *)addr);
@@ -2062,7 +2064,6 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
 	unsigned long step;
 	bool is_hugepage = true;
 	int ret;
-	struct vm_struct *area;
 
 	ret = is_vmap_hugepage(kva);
 	if (ret > 0) {
@@ -2097,11 +2098,6 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
 			pr_err("share pool: vmalloc %pK to page/hugepage failed\n",
 			       (void *)addr);
 	}
-
-	/* deassociate vma and spa */
-	area = find_vm_area((void *)kva_aligned);
-	if (area)
-		area->flags &= ~VM_SHAREPOOL;
 
 	vunmap((void *)kva_aligned);
 
