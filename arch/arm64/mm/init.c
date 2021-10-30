@@ -938,6 +938,9 @@ __setup("keepinitrd", keepinitrd_setup);
 #ifdef CONFIG_ASCEND_FEATURES
 
 #include <linux/perf/arm_pmu.h>
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+#include <linux/nmi.h>
+#endif
 
 void ascend_enable_all_features(void)
 {
@@ -969,6 +972,10 @@ void ascend_enable_all_features(void)
 
 #ifdef CONFIG_ARM64_PSEUDO_NMI
 	enable_pseudo_nmi = true;
+#endif
+
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+	enable_corelockup_detector = true;
 #endif
 }
 
