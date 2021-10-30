@@ -40,6 +40,10 @@ extern int enable_ascend_share_pool;
 
 extern int sysctl_share_pool_map_lock_enable;
 
+extern int sysctl_sp_compact_enable;
+extern unsigned long sysctl_sp_compact_interval;
+extern unsigned long sysctl_sp_compact_interval_max;
+
 #ifdef CONFIG_HAVE_ARCH_HUGE_VMALLOC
 extern bool vmap_allow_huge;
 #endif

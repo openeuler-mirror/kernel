@@ -1789,6 +1789,24 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
+	{
+		.procname	= "sharepool_compact_enable",
+		.data		= &sysctl_sp_compact_enable,
+		.maxlen		= sizeof(sysctl_sp_compact_enable),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+	{
+		.procname	= "sharepool_compact_interval",
+		.data		= &sysctl_sp_compact_interval,
+		.maxlen		= sizeof(sysctl_sp_compact_interval),
+		.mode		= 0600,
+		.proc_handler	= proc_doulongvec_minmax,
+		.extra1		= &zero_ul,
+		.extra2		= &sysctl_sp_compact_interval_max,
+	},
 #endif
 	{ }
 };
