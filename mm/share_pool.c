@@ -374,7 +374,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 		atomic64_set(&spg->alloc_nsize, 0);
 		atomic64_set(&spg->alloc_hsize, 0);
 		atomic64_set(&spg->alloc_size, 0);
-		spg->is_alive = true;
+		spg->is_alive = false;
 		spg->hugepage_failures = 0;
 		spg->dvpp_multi_spaces = false;
 		spg->owner = current->group_leader;
@@ -591,6 +591,8 @@ int sp_group_add_task(int pid, int spg_id)
 	}
 
 	mm->sp_group = spg;
+	/* We reactive the spg even the spg exists already. */
+	spg->is_alive = true;
 	list_add_tail(&tsk->mm->sp_node, &spg->procs);
 	/*
 	 * create mappings of existing shared memory segments into this
