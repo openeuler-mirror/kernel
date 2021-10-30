@@ -6,6 +6,7 @@
 #include <linux/notifier.h>
 #include <linux/vmalloc.h>
 #include <linux/printk.h>
+#include <linux/hashtable.h>
 
 #define SP_HUGEPAGE		(1 << 0)
 #define SP_HUGEPAGE_ONLY	(1 << 1)
@@ -146,11 +147,16 @@ struct sp_walk_data {
 	pmd_t *pmd;
 };
 
+/* we estimate a process ususally belongs to at most 16 sp-group */
+#define SP_PROC_HASH_BITS 4
+
 /* per process memory usage statistics indexed by tgid */
 struct sp_proc_stat {
 	atomic_t use_count;
 	int tgid;
 	struct mm_struct *mm;
+	struct mutex lock;  /* protect hashtable */
+	DECLARE_HASHTABLE(hash, SP_PROC_HASH_BITS);
 	char comm[TASK_COMM_LEN];
 	/*
 	 * alloc amount minus free amount, may be negative when freed by

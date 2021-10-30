@@ -63,6 +63,8 @@
 #define MAX_GROUP_FOR_TASK	3000
 #define MAX_PROC_PER_GROUP	1024
 
+#define GROUP_NONE		0
+
 #define PF_DOMAIN_CORE		0x10000000	/* AOS CORE processes in sched.h */
 
 /* mdc scene hack */
@@ -153,67 +155,6 @@ static struct sp_proc_stat *sp_get_proc_stat_ref_locked(int tgid)
 	return stat;
 }
 
-/*
- * The caller must
- * 1. ensure no concurrency problem for task_struct and mm_struct.
- * 2. hold sp_group_sem for sp_group_master (pay attention to ABBA deadlock)
- */
-static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
-					      struct mm_struct *mm)
-{
-	struct sp_group_master *master;
-	bool exist;
-	struct sp_proc_stat *stat;
-	int id, tgid = tsk->tgid;
-	int ret;
-
-	master = sp_init_group_master_locked(mm, &exist);
-	if (IS_ERR(master))
-		return (struct sp_proc_stat *)master;
-
-	down_write(&sp_proc_stat_sem);
-	id = master->sp_stat_id;
-	if (id) {
-		/* other threads in the same process may have initialized it */
-		stat = sp_get_proc_stat_locked(tgid);
-		if (stat) {
-			up_write(&sp_proc_stat_sem);
-			return stat;
-		} else {
-			up_write(&sp_proc_stat_sem);
-			/* if enter this branch, that's our mistake */
-			pr_err_ratelimited("share pool: proc stat invalid id %d\n", id);
-			return ERR_PTR(-EBUSY);
-		}
-	}
-
-	stat = kzalloc(sizeof(*stat), GFP_KERNEL);
-	if (stat == NULL) {
-		up_write(&sp_proc_stat_sem);
-		pr_err_ratelimited("share pool: alloc proc stat failed due to lack of memory\n");
-		return ERR_PTR(-ENOMEM);
-	}
-
-	atomic_set(&stat->use_count, 1);
-	atomic64_set(&stat->alloc_size, 0);
-	atomic64_set(&stat->k2u_size, 0);
-	stat->tgid = tgid;
-	stat->mm = mm;
-	get_task_comm(stat->comm, tsk);
-
-	ret = idr_alloc(&sp_proc_stat_idr, stat, tgid, tgid + 1, GFP_KERNEL);
-	if (ret < 0) {
-		up_write(&sp_proc_stat_sem);
-		pr_err_ratelimited("share pool: proc stat idr alloc failed %d\n", ret);
-		kfree(stat);
-		return ERR_PTR(ret);
-	}
-
-	master->sp_stat_id = ret;
-	up_write(&sp_proc_stat_sem);
-	return stat;
-}
-
 static struct sp_proc_stat *sp_get_proc_stat(int tgid)
 {
 	struct sp_proc_stat *stat;
@@ -233,6 +174,193 @@ struct sp_proc_stat *sp_get_proc_stat_ref(int tgid)
 	stat = sp_get_proc_stat_ref_locked(tgid);
 	up_read(&sp_proc_stat_sem);
 	return stat;
+}
+
+static struct sp_proc_stat *create_proc_stat(struct mm_struct *mm,
+					     struct task_struct *tsk)
+{
+	struct sp_proc_stat *stat;
+
+	stat = kmalloc(sizeof(*stat), GFP_KERNEL);
+	if (stat == NULL) {
+		pr_err_ratelimited("share pool: alloc proc stat failed, lack of memory\n");
+		return ERR_PTR(-ENOMEM);
+	}
+
+	atomic_set(&stat->use_count, 1);
+	atomic64_set(&stat->alloc_size, 0);
+	atomic64_set(&stat->k2u_size, 0);
+	stat->tgid = tsk->tgid;
+	stat->mm = mm;
+	mutex_init(&stat->lock);
+	hash_init(stat->hash);
+	get_task_comm(stat->comm, tsk);
+
+	return stat;
+}
+
+static struct sp_proc_stat *sp_init_proc_stat(struct sp_group_master *master,
+	struct mm_struct *mm, struct task_struct *tsk)
+{
+	struct sp_proc_stat *stat;
+	int id, alloc_id, tgid = tsk->tgid;
+
+	down_write(&sp_proc_stat_sem);
+	id = master->sp_stat_id;
+	if (id) {
+		/* may have been initialized */
+		stat = sp_get_proc_stat_locked(tgid);
+		up_write(&sp_proc_stat_sem);
+		if (stat) {
+			return stat;
+		} else {
+			up_write(&sp_proc_stat_sem);
+			/* if enter this branch, that's our mistake */
+			WARN(1, "share pool: proc stat invalid id %d\n", id);
+			return ERR_PTR(-EBUSY);
+		}
+	}
+
+	stat = create_proc_stat(mm, tsk);
+	if (IS_ERR(stat)) {
+		up_write(&sp_proc_stat_sem);
+		return stat;
+	}
+
+	alloc_id = idr_alloc(&sp_proc_stat_idr, stat, tgid, tgid + 1, GFP_KERNEL);
+	if (alloc_id < 0) {
+		up_write(&sp_proc_stat_sem);
+		pr_err_ratelimited("share pool: proc stat idr alloc failed %d\n", alloc_id);
+		kfree(stat);
+		return ERR_PTR(alloc_id);
+	}
+
+	master->sp_stat_id = alloc_id;
+	up_write(&sp_proc_stat_sem);
+
+	return stat;
+}
+
+/* per process/sp-group memory usage statistics */
+struct spg_proc_stat {
+	int tgid;
+	int spg_id;  /* 0 for non-group data, such as k2u_task */
+	struct hlist_node pnode;  /* hlist node in sp_proc_stat->hash */
+	struct sp_proc_stat *proc_stat;
+	/*
+	 * alloc amount minus free amount, may be negative when freed by
+	 * another task in the same sp group.
+	 */
+	atomic64_t alloc_size;
+	atomic64_t k2u_size;
+};
+
+static void update_spg_proc_stat_alloc(unsigned long size, bool inc,
+	struct spg_proc_stat *stat)
+{
+	struct sp_proc_stat *proc_stat = stat->proc_stat;
+
+	if (inc) {
+		atomic64_add(size, &stat->alloc_size);
+		atomic64_add(size, &proc_stat->alloc_size);
+	} else {
+		atomic64_sub(size, &stat->alloc_size);
+		atomic64_sub(size, &proc_stat->alloc_size);
+	}
+}
+
+static void update_spg_proc_stat_k2u(unsigned long size, bool inc,
+	struct spg_proc_stat *stat)
+{
+	struct sp_proc_stat *proc_stat = stat->proc_stat;
+
+	if (inc) {
+		atomic64_add(size, &stat->k2u_size);
+		atomic64_add(size, &proc_stat->k2u_size);
+
+	} else {
+		atomic64_sub(size, &stat->k2u_size);
+		atomic64_sub(size, &proc_stat->k2u_size);
+	}
+}
+
+static struct spg_proc_stat *find_spg_proc_stat(
+	struct sp_proc_stat *proc_stat, int tgid, int spg_id)
+{
+	struct spg_proc_stat *stat = NULL;
+
+	mutex_lock(&proc_stat->lock);
+	hash_for_each_possible(proc_stat->hash, stat, pnode, spg_id) {
+		if (stat->spg_id == spg_id)
+			break;
+	}
+	mutex_unlock(&proc_stat->lock);
+
+	return stat;
+}
+
+static struct spg_proc_stat *create_spg_proc_stat(
+	struct sp_proc_stat *proc_stat, int tgid, int spg_id)
+{
+	struct spg_proc_stat *stat;
+
+	stat = kmalloc(sizeof(struct spg_proc_stat), GFP_KERNEL);
+	if (stat == NULL) {
+		pr_err_ratelimited("share pool: no memory for spg proc stat\n");
+		return ERR_PTR(-ENOMEM);
+	}
+
+	stat->tgid = tgid;
+	stat->spg_id = spg_id;
+	stat->proc_stat = proc_stat;
+	atomic64_set(&stat->alloc_size, 0);
+	atomic64_set(&stat->k2u_size, 0);
+
+	return stat;
+}
+
+static struct spg_proc_stat *sp_init_spg_proc_stat(
+	struct sp_proc_stat *proc_stat, int tgid, int spg_id)
+{
+	struct spg_proc_stat *stat;
+
+	stat = find_spg_proc_stat(proc_stat, tgid, spg_id);
+	if (stat)
+		return stat;
+
+	stat = create_spg_proc_stat(proc_stat, tgid, spg_id);
+	if (IS_ERR(stat))
+		return stat;
+
+	mutex_lock(&proc_stat->lock);
+	hash_add(proc_stat->hash, &stat->pnode, stat->spg_id);
+	mutex_unlock(&proc_stat->lock);
+	return stat;
+}
+
+/*
+ * The caller must
+ * 1. ensure no concurrency problem for task_struct and mm_struct.
+ * 2. hold sp_group_sem for sp_group_master (pay attention to ABBA deadlock)
+ */
+static struct spg_proc_stat *sp_init_process_stat(struct task_struct *tsk,
+	struct mm_struct *mm, int spg_id)
+{
+	struct sp_group_master *master;
+	bool exist;
+	struct sp_proc_stat *proc_stat;
+	struct spg_proc_stat *spg_proc_stat;
+
+	master = sp_init_group_master_locked(mm, &exist);
+	if (IS_ERR(master))
+		return (struct spg_proc_stat *)master;
+
+	proc_stat = sp_init_proc_stat(master, mm, tsk);
+	if (IS_ERR(proc_stat))
+		return (struct spg_proc_stat *)proc_stat;
+
+	spg_proc_stat = sp_init_spg_proc_stat(proc_stat, tsk->tgid, spg_id);
+	return spg_proc_stat;
 }
 
 /* statistics of all sp area, protected by sp_area_lock */
@@ -371,6 +499,44 @@ static int spa_dec_usage(enum spa_type type, unsigned long size, bool is_dvpp)
 	spa_stat.total_num -= 1;
 	spa_stat.total_size -= size;
 	return 0;
+}
+
+static void update_spg_proc_stat(unsigned long size, bool inc,
+	struct spg_proc_stat *stat, enum spa_type type)
+{
+	if (unlikely(!stat)) {
+		sp_dump_stack();
+		WARN(1, "share pool: null process stat\n");
+		return;
+	}
+
+	switch (type) {
+	case SPA_TYPE_ALLOC:
+		update_spg_proc_stat_alloc(size, inc, stat);
+		break;
+	case SPA_TYPE_K2TASK:
+	case SPA_TYPE_K2SPG:
+		update_spg_proc_stat_k2u(size, inc, stat);
+		break;
+	default:
+		WARN(1, "share pool: invalid stat type\n");
+	}
+}
+
+static void sp_update_process_stat(struct task_struct *tsk, bool inc,
+	int spg_id, struct sp_area *spa)
+{
+	struct spg_proc_stat *stat;
+	unsigned long size = spa->real_size;
+	enum spa_type type = spa->type;
+
+	down_write(&sp_group_sem);
+	stat = sp_init_process_stat(tsk, tsk->mm, spg_id);
+	up_write(&sp_group_sem);
+	if (unlikely(IS_ERR(stat)))
+		return;
+
+	update_spg_proc_stat(size, inc, stat, type);
 }
 
 static inline void check_interrupt_context(void)
@@ -751,7 +917,7 @@ int sp_group_add_task(int pid, int spg_id)
 	int ret = 0;
 	bool id_newly_generated = false;
 	struct sp_area *spa, *prev = NULL;
-	struct sp_proc_stat *stat;
+	struct spg_proc_stat *stat;
 
 	check_interrupt_context();
 
@@ -872,10 +1038,10 @@ int sp_group_add_task(int pid, int spg_id)
 	}
 
 	/* per process statistics initialization */
-	stat = sp_init_proc_stat(tsk, mm);
+	stat = sp_init_process_stat(tsk, mm, spg_id);
 	if (IS_ERR(stat)) {
 		ret = PTR_ERR(stat);
-		pr_err_ratelimited("share pool: init proc stat failed, ret %lx\n", PTR_ERR(stat));
+		pr_err_ratelimited("share pool: init process stat failed, ret %lx\n", PTR_ERR(stat));
 		goto out_drop_group;
 	}
 
@@ -954,9 +1120,7 @@ int sp_group_add_task(int pid, int spg_id)
 	spin_unlock(&sp_area_lock);
 	up_write(&spg->rw_lock);
 
-	if (unlikely(ret))
-		sp_proc_stat_drop(stat);
-
+	/* no need to free spg_proc_stat, will be freed when process exits */
 out_drop_group:
 	if (unlikely(ret)) {
 		if (mm->sp_group_master->count == 0) {
@@ -1406,7 +1570,6 @@ static void __sp_free(struct sp_group *spg, unsigned long addr,
 int sp_free(unsigned long addr)
 {
 	struct sp_area *spa;
-	struct sp_proc_stat *stat;
 	int mode;
 	loff_t offset;
 	int ret = 0;
@@ -1474,15 +1637,10 @@ int sp_free(unsigned long addr)
 	up_read(&spa->spg->rw_lock);
 
 	/* pointer stat may be invalid because of kthread buff_module_guard_work */
-	if (current->mm == NULL) {
+	if (current->mm == NULL)
 		atomic64_sub(spa->real_size, &kthread_stat.alloc_size);
-	} else {
-		stat = sp_get_proc_stat(current->mm->sp_group_master->sp_stat_id);
-		if (stat)
-			atomic64_sub(spa->real_size, &stat->alloc_size);
-		else
-			WARN(1, "share pool: %s: null process stat\n", __func__);
-	}
+	else
+		sp_update_process_stat(current, false, spa->spg->id, spa);
 
 drop_spa:
 	__sp_area_drop(spa);
@@ -1540,7 +1698,6 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 {
 	struct sp_group *spg, *spg_tmp;
 	struct sp_area *spa = NULL;
-	struct sp_proc_stat *stat;
 	unsigned long sp_addr;
 	unsigned long mmap_addr;
 	void *p;  /* return value */
@@ -1732,13 +1889,8 @@ try_again:
 out:
 	up_read(&spg->rw_lock);
 
-	if (!IS_ERR(p)) {
-		stat = sp_get_proc_stat(current->mm->sp_group_master->sp_stat_id);
-		if (stat)
-			atomic64_add(size_aligned, &stat->alloc_size);
-		else
-			WARN(1, "share pool: %s: null process stat\n", __func__);
-	}
+	if (!IS_ERR(p))
+		sp_update_process_stat(current, true, spg->id, spa);
 
 	/* this will free spa if mmap failed */
 	if (spa && !IS_ERR(spa))
@@ -1983,7 +2135,6 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	unsigned int page_size = PAGE_SIZE;
 	struct task_struct *tsk;
 	struct mm_struct *mm;
-	struct sp_proc_stat *stat;
 	int ret = 0, is_hugepage;
 
 	check_interrupt_context();
@@ -2025,25 +2176,27 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		goto out_put_task;
 	}
 
-	/*
-	 * Process statistics initialization. if the target process has been
-	 * added to a sp group, then stat will be returned immediately.
-	 */
-	stat = sp_init_proc_stat(tsk, mm);
-	if (IS_ERR(stat)) {
-		uva = stat;
-		pr_err_ratelimited("share pool: init proc stat failed, ret %lx\n", PTR_ERR(stat));
-		goto out_put_mm;
-	}
-
 	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
 	if (spg == NULL) {
 		/* k2u to task */
+		struct spg_proc_stat *stat;
+
 		if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT) {
 			pr_err_ratelimited("share pool: k2task invalid spg id %d\n", spg_id);
 			uva = ERR_PTR(-EINVAL);
 			goto out_put_mm;
 		}
+
+		down_write(&sp_group_sem);
+		stat = sp_init_process_stat(tsk, mm, GROUP_NONE);
+		up_write(&sp_group_sem);
+		if (IS_ERR(stat)) {
+			uva = stat;
+			pr_err_ratelimited("share pool: k2u(task) init process stat failed, ret %lx\n",
+					   PTR_ERR(stat));
+			goto out_put_mm;
+		}
+
 		spa = sp_alloc_area(size_aligned, sp_flags, NULL, SPA_TYPE_K2TASK, tsk->tgid);
 		if (IS_ERR(spa)) {
 			pr_err_ratelimited("share pool: k2u(task) failed due to alloc spa failure "
@@ -2058,7 +2211,12 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		}
 
 		uva = sp_make_share_kva_to_task(kva_aligned, spa, mm);
-		goto accounting;
+
+		if (!IS_ERR(uva))
+			update_spg_proc_stat(size_aligned, true, stat,
+					     SPA_TYPE_K2TASK);
+
+		goto finish;
 	}
 
 	down_read(&spg->rw_lock);
@@ -2094,7 +2252,6 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			uva = sp_make_share_kva_to_spg(kva_aligned, spa, spg);
 		else
 			uva = sp_make_share_kva_to_task(kva_aligned, spa, mm);
-
 	} else {
 		/* group is dead, return -ENODEV */
 		pr_err_ratelimited("share pool: failed to make k2u, sp group is dead\n");
@@ -2102,10 +2259,12 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	}
 	up_read(&spg->rw_lock);
 
-accounting:
+	if (!IS_ERR(uva))
+		sp_update_process_stat(tsk, true, spg_id, spa);
+
+finish:
 	if (!IS_ERR(uva)) {
 		uva = uva + (kva - kva_aligned);
-		atomic64_add(size_aligned, &stat->k2u_size);
 	} else {
 		/* associate vma and spa */
 		if (!vmalloc_area_clr_flag(spa, kva_aligned, VM_SHAREPOOL))
@@ -2445,7 +2604,6 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	unsigned long uva_aligned;
 	unsigned long size_aligned;
 	unsigned int page_size;
-	struct sp_proc_stat *stat;
 	struct sp_group_node *spg_node;
 
 	/*
@@ -2533,6 +2691,12 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 			pr_err("share pool: failed to unmap VA %pK when munmap in unshare uva\n",
 			       (void *)uva_aligned);
 		}
+
+		if (unlikely(!current->mm))
+			WARN(1, "share pool: unshare uva(to task) unexpected active kthread");
+		else
+			sp_update_process_stat(current, false, GROUP_NONE, spa);
+
 	} else if (spa->type == SPA_TYPE_K2SPG) {
 		if (spg_id < 0) {
 			pr_err_ratelimited("share pool: unshare uva(to group) failed, invalid spg id %d\n", spg_id);
@@ -2574,20 +2738,16 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 		down_read(&spa->spg->rw_lock);
 		__sp_free(spa->spg, uva_aligned, size_aligned, NULL);
 		up_read(&spa->spg->rw_lock);
+
+		if (current->mm == NULL)
+			atomic64_sub(spa->real_size, &kthread_stat.k2u_size);
+		else
+			sp_update_process_stat(current, false, spa->spg->id, spa);
+	} else {
+		WARN(1, "share pool: unshare uva invalid spa type");
 	}
 
 	sp_dump_stack();
-
-	/* pointer stat may be invalid because of kthread buff_module_guard_work */
-	if (current->mm == NULL) {
-		atomic64_sub(spa->real_size, &kthread_stat.k2u_size);
-	} else {
-		stat = sp_get_proc_stat(current->mm->sp_group_master->sp_stat_id);
-		if (stat)
-			atomic64_sub(spa->real_size, &stat->k2u_size);
-		else
-			WARN(1, "share pool: %s: null process stat\n", __func__);
-	}
 
 out_clr_flag:
 	/* deassociate vma and spa */
@@ -2874,8 +3034,23 @@ __setup("enable_sp_multi_group_mode", enable_sp_multi_group_mode);
 
 /*** Statistical and maintenance functions ***/
 
+static void free_process_spg_proc_stat(struct sp_proc_stat *proc_stat)
+{
+	int i;
+	struct spg_proc_stat *stat;
+	struct hlist_node *tmp;
+
+	/* traverse proc_stat->hash locklessly as process is exiting */
+	hash_for_each_safe(proc_stat->hash, i, tmp, stat, pnode) {
+		hash_del(&stat->pnode);
+		kfree(stat);
+	}
+}
+
 static void free_sp_proc_stat(struct sp_proc_stat *stat)
 {
+	free_process_spg_proc_stat(stat);
+
 	down_write(&sp_proc_stat_sem);
 	stat->mm->sp_group_master->sp_stat_id = 0;
 	idr_remove(&sp_proc_stat_idr, stat->tgid);
