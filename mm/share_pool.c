@@ -1329,6 +1329,11 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	if (enable_mdc_default_group)
 		spg_id = mdc_default_group_id;
 
+	if (unlikely(!size)) {
+		pr_err_ratelimited("share pool: allocation failed, invalid size %lu\n", size);
+		return ERR_PTR(-EINVAL);
+	}
+
 	if (spg_id != SPG_ID_DEFAULT && spg_id < SPG_ID_MIN) {
 		pr_err_ratelimited("share pool: allocation failed, invalid group id %d\n", spg_id);
 		return ERR_PTR(-EINVAL);
@@ -2962,7 +2967,7 @@ EXPORT_SYMBOL(sharepool_no_page);
 void sp_group_exit(struct mm_struct *mm)
 {
 	struct sp_group *spg = mm->sp_group;
-	bool is_alive;
+	bool is_alive = true;
 
 	if (!spg || !enable_ascend_share_pool)
 		return;
