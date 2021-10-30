@@ -93,6 +93,8 @@ struct sp_group {
 	unsigned long	 dvpp_va_start;
 	unsigned long	 dvpp_size;
 	atomic_t	 use_count;
+	/* protect the group internal elements */
+	struct rw_semaphore	rw_lock;
 };
 
 struct sp_walk_data {
@@ -237,6 +239,8 @@ extern void *vmalloc_hugepage(unsigned long size);
 extern void *vmalloc_hugepage_user(unsigned long size);
 extern void *buff_vzalloc_user(unsigned long size);
 extern void *buff_vzalloc_hugepage_user(unsigned long size);
+
+void sp_exit_mm(struct mm_struct *mm);
 
 #else
 
@@ -400,6 +404,7 @@ static inline void *buff_vzalloc_hugepage_user(unsigned long size)
 {
 	return NULL;
 }
+
 #endif
 
 #endif /* LINUX_SHARE_POOL_H */
