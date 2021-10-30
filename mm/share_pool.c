@@ -241,6 +241,7 @@ struct sp_area {
 	struct mm_struct *mm;		/* owner of k2u(task) */
 	unsigned long kva;		/* shared kva */
 	pid_t applier;			/* the original applier process */
+	int node_id;			/* memory node */
 };
 static DEFINE_SPINLOCK(sp_area_lock);
 static struct rb_root sp_area_root = RB_ROOT;
@@ -863,11 +864,13 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 	unsigned long vend = MMAP_SHARE_POOL_16G_START;
 	unsigned long addr;
 	unsigned long size_align = PMD_ALIGN(size); /* va aligned to 2M */
+	int node_id = (flags >> DEVICE_ID_SHIFT) & DEVICE_ID_MASK;
 
 	if ((flags & SP_DVPP)) {
 		if (sp_area_customized == false) {
-			vstart = MMAP_SHARE_POOL_16G_START;
-			vend = MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE;
+			vstart = MMAP_SHARE_POOL_16G_START +
+				node_id * MMAP_SHARE_POOL_16G_SIZE;
+			vend = vstart + MMAP_SHARE_POOL_16G_SIZE;
 		} else {
 			if (!spg) {
 				pr_err_ratelimited("share pool: don't allow k2u(task) in host svm multiprocess scene\n");
@@ -878,7 +881,7 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 		}
 	}
 
-	spa = kmalloc(sizeof(struct sp_area), GFP_KERNEL);
+	spa = __kmalloc_node(sizeof(struct sp_area), GFP_KERNEL, node_id);
 	if (unlikely(!spa)) {
 		pr_err_ratelimited("share pool: alloc spa failed due to lack of memory\n");
 		return ERR_PTR(-ENOMEM);
@@ -973,6 +976,7 @@ found:
 	spa->mm = NULL;
 	spa->kva = 0;   /* NULL pointer */
 	spa->applier = applier;
+	spa->node_id = node_id;
 
 	if (spa_inc_usage(type, size, (flags & SP_DVPP))) {
 		err = ERR_PTR(-EINVAL);
@@ -1379,7 +1383,7 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (sp_flags & ~(SP_HUGEPAGE_ONLY | SP_HUGEPAGE | SP_DVPP)) {
+	if (sp_flags & (~SP_FLAG_MASK)) {
 		pr_err_ratelimited("share pool: allocation failed, invalid flag %lx\n", sp_flags);
 		return ERR_PTR(-EINVAL);
 	}
@@ -2606,7 +2610,8 @@ EXPORT_SYMBOL_GPL(sp_config_dvpp_range);
 static bool is_sp_normal_addr(unsigned long addr)
 {
 	return addr >= MMAP_SHARE_POOL_START &&
-		addr < MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE;
+		addr < MMAP_SHARE_POOL_16G_START +
+			MAX_DEVID * MMAP_SHARE_POOL_16G_SIZE;
 }
 
 /**
@@ -2633,6 +2638,26 @@ bool is_sharepool_addr(unsigned long addr)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(is_sharepool_addr);
+
+int sp_node_id(struct vm_area_struct *vma)
+{
+	struct sp_area *spa;
+	int node_id = numa_node_id();
+
+	if (!enable_ascend_share_pool)
+		return node_id;
+
+	if (vma) {
+		spa = __find_sp_area(vma->vm_start);
+		if (spa) {
+			node_id = spa->node_id;
+			__sp_area_drop(spa);
+		}
+	}
+
+	return node_id;
+}
+EXPORT_SYMBOL_GPL(sp_node_id);
 
 static int __init mdc_default_group(char *s)
 {
@@ -2999,6 +3024,16 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 	unsigned long haddr = address & huge_page_mask(h);
 	bool new_page = false;
 	int err;
+	int node_id;
+	struct sp_area *spa;
+
+	spa = __find_sp_area(vma->vm_start);
+	if (!spa) {
+		pr_err("share pool: vma is invalid, not from sp mmap\n");
+		return ret;
+	}
+	node_id = spa->node_id;
+	__sp_area_drop(spa);
 
 retry:
 	page = find_lock_page(mapping, idx);
@@ -3010,7 +3045,7 @@ retry:
 		page = alloc_huge_page(vma, haddr, 0);
 		if (IS_ERR(page)) {
 			page = alloc_huge_page_node(hstate_file(vma->vm_file),
-						    numa_mem_id());
+						    node_id);
 			if (!page)
 				page = ERR_PTR(-ENOMEM);
 		}

@@ -10,6 +10,10 @@
 #define SP_HUGEPAGE		(1 << 0)
 #define SP_HUGEPAGE_ONLY	(1 << 1)
 #define SP_DVPP			(1 << 2)
+#define DEVICE_ID_MASK		0x3ff
+#define DEVICE_ID_SHIFT		32
+#define SP_FLAG_MASK		(SP_HUGEPAGE | SP_HUGEPAGE_ONLY | SP_DVPP | \
+				(_AC(DEVICE_ID_MASK, UL) << DEVICE_ID_SHIFT))
 
 #define SPG_ID_NONE	-1	/* not associated with sp_group, only for specified thread */
 #define SPG_ID_DEFAULT	0	/* use the spg id of current thread */
@@ -22,7 +26,7 @@
 #define SPG_ID_DVPP_PASS_THROUGH_MAX	899999
 #define SPG_ID_DVPP_PASS_THROUGH	900000
 
-#define MAX_DEVID 1	/* the max num of Da-vinci devices */
+#define MAX_DEVID 2	/* the max num of Da-vinci devices */
 
 /* to align the pointer to the (next) PMD boundary */
 #define PMD_ALIGN(addr)		ALIGN(addr, PMD_SIZE)
@@ -54,9 +58,9 @@ extern bool vmap_allow_huge;
  * |-------------------- 8T -------------------|---|------ 8T ------------|
  * |		Device 0	   |  Device 1 |...|                      |
  * |----------------------------------------------------------------------|
- * |- 16G -|- 16G -|- 16G -|- 16G -|     |     |   |                      |
+ * |------------- 16G -------------|    16G    |   |                      |
  * | DVPP GROUP0   | DVPP GROUP1   | ... | ... |...|  sp normal memory    |
- * | svm   |  sp   |  svm  |  sp   |     |     |   |                      |
+ * |     sp        |    sp         |     |     |   |                      |
  * |----------------------------------------------------------------------|
  *
  * The host SVM feature reserves 8T virtual memory by mmap, and due to the
@@ -181,6 +185,7 @@ extern void sp_proc_stat_drop(struct sp_proc_stat *stat);
 extern void spa_overview_show(struct seq_file *seq);
 extern void spg_overview_show(struct seq_file *seq);
 extern void proc_sharepool_init(void);
+extern int sp_node_id(struct vm_area_struct *vma);
 
 static inline struct task_struct *sp_get_task(struct mm_struct *mm)
 {
@@ -485,6 +490,10 @@ static inline void sp_free_pages(struct page *page, struct vm_struct *area)
 {
 }
 
+static inline int sp_node_id(struct vm_area_struct *vma)
+{
+	return numa_node_id();
+}
 #endif
 
 #endif /* LINUX_SHARE_POOL_H */
