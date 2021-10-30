@@ -199,31 +199,55 @@ static inline void sp_init_mm(struct mm_struct *mm)
 	mm->sp_group_master = NULL;
 }
 
-extern int sp_group_add_task(int pid, unsigned long prot, int spg_id);
+extern int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id);
+extern int sp_group_add_task(int pid, int spg_id);
+
 extern int sp_group_exit(struct mm_struct *mm);
 extern void sp_group_post_exit(struct mm_struct *mm);
-extern int sp_group_id_by_pid(int pid, int *spg_ids, int *num);
+
+extern int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num);
+extern int sp_group_id_by_pid(int pid);
+
 extern int sp_group_walk(int spg_id, void *data, int (*func)(struct mm_struct *mm, void *));
 extern int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task);
 
-extern void *sp_alloc(unsigned long size, unsigned long sp_flags, int sp_id);
+extern void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id);
+extern void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id);
+
 extern int sp_free(unsigned long addr);
+extern int mg_sp_free(unsigned long addr);
+
 extern void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			unsigned long sp_flags, int pid, int spg_id);
+extern void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
+			unsigned long sp_flags, int pid, int spg_id);
+
 extern void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid);
-extern int sp_unshare(unsigned long va, unsigned long size);
+extern void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int pid);
+
+extern int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id);
+extern int mg_sp_unshare(unsigned long va, unsigned long size);
 
 extern void sp_area_drop(struct vm_area_struct *vma);
 
 extern int sp_walk_page_range(unsigned long uva, unsigned long size,
-			      struct task_struct *tsk, struct sp_walk_data *sp_walk_data);
+	struct task_struct *tsk, struct sp_walk_data *sp_walk_data);
+extern int mg_sp_walk_page_range(unsigned long uva, unsigned long size,
+	struct task_struct *tsk, struct sp_walk_data *sp_walk_data);
+
 extern void sp_walk_page_free(struct sp_walk_data *sp_walk_data);
+extern void mg_sp_walk_page_free(struct sp_walk_data *sp_walk_data);
 
 extern int sp_register_notifier(struct notifier_block *nb);
 extern int sp_unregister_notifier(struct notifier_block *nb);
+
 extern bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid);
+extern bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid);
+
 extern bool is_sharepool_addr(unsigned long addr);
+extern bool mg_is_sharepool_addr(unsigned long addr);
+
 extern struct sp_proc_stat *sp_get_proc_stat_ref(struct mm_struct *mm);
 extern void sp_proc_stat_drop(struct sp_proc_stat *stat);
 extern void spa_overview_show(struct seq_file *seq);
@@ -341,6 +365,11 @@ extern bool sp_check_mmap_addr(unsigned long addr, unsigned long flags);
 
 #else
 
+static inline int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
+{
+	return -EPERM;
+}
+
 static inline int sp_group_add_task(int pid, int spg_id)
 {
 	return -EPERM;
@@ -353,6 +382,11 @@ static inline int sp_group_exit(struct mm_struct *mm)
 
 static inline void sp_group_post_exit(struct mm_struct *mm)
 {
+}
+
+static inline int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num)
+{
+	return -EPERM;
 }
 
 static inline int sp_group_id_by_pid(int pid)
@@ -371,13 +405,29 @@ static inline void *sp_alloc(unsigned long size, unsigned long sp_flags, int sp_
 	return NULL;
 }
 
+static inline void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
+{
+	return NULL;
+}
+
 static inline int sp_free(unsigned long addr)
 {
 	return -EPERM;
 }
 
+static inline int mg_sp_free(unsigned long addr)
+{
+	return -EPERM;
+}
+
 static inline void *sp_make_share_k2u(unsigned long kva, unsigned long size,
-				      unsigned long sp_flags, int pid, int spg_id)
+		      unsigned long sp_flags, int pid, int spg_id)
+{
+	return NULL;
+}
+
+static inline void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
+			unsigned long sp_flags, int pid, int spg_id)
 {
 	return NULL;
 }
@@ -386,10 +436,22 @@ static inline void *sp_make_share_u2k(unsigned long uva, unsigned long size, int
 {
 	return NULL;
 }
+
+static inline void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
+{
+	return NULL;
+}
+
 static inline int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
 {
 	return -EPERM;
 }
+
+static inline int mg_sp_unshare(unsigned long va, unsigned long size)
+{
+	return -EPERM;
+}
+
 
 static inline void sp_init_mm(struct mm_struct *mm)
 {
@@ -400,12 +462,22 @@ static inline void sp_area_drop(struct vm_area_struct *vma)
 }
 
 static inline int sp_walk_page_range(unsigned long uva, unsigned long size,
-				     struct task_struct *tsk, struct sp_walk_data *sp_walk_data)
+	struct task_struct *tsk, struct sp_walk_data *sp_walk_data)
+{
+	return 0;
+}
+
+static inline int mg_sp_walk_page_range(unsigned long uva, unsigned long size,
+	struct task_struct *tsk, struct sp_walk_data *sp_walk_data)
 {
 	return 0;
 }
 
 static inline void sp_walk_page_free(struct sp_walk_data *sp_walk_data)
+{
+}
+
+static inline void mg_sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 {
 }
 
@@ -424,7 +496,17 @@ static inline bool sp_config_dvpp_range(size_t start, size_t size, int device_id
 	return false;
 }
 
+static inline bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
+{
+	return false;
+}
+
 static inline bool is_sharepool_addr(unsigned long addr)
+{
+	return false;
+}
+
+static inline bool mg_is_sharepool_addr(unsigned long addr)
 {
 	return false;
 }

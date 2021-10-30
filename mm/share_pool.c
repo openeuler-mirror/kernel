@@ -826,10 +826,39 @@ static struct sp_group *__sp_find_spg(int pid, int spg_id)
 }
 
 /**
- * sp_group_id_by_pid() - Get the sp_group ID array of a process.
+ * sp_group_id_by_pid() - Get the sp_group ID of a process.
  * @pid: pid of target process.
- * @spg_ids point to an array to save the group ids the process belongs to
- * @num input the spg_ids array size; output the spg number of the process
+ *
+ * Return:
+ * >0		- the sp_group ID.
+ * -ENODEV	- target process doesn't belong to any sp_group.
+ */
+int sp_group_id_by_pid(int pid)
+{
+	struct sp_group *spg;
+	int spg_id = -ENODEV;
+
+	check_interrupt_context();
+
+	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
+	if (!spg)
+		return -ENODEV;
+
+	down_read(&spg->rw_lock);
+	if (spg_valid(spg))
+		spg_id = spg->id;
+	up_read(&spg->rw_lock);
+
+	sp_group_drop(spg);
+	return spg_id;
+}
+EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
+
+/**
+ * mp_sp_group_id_by_pid() - Get the sp_group ID array of a process.
+ * @pid: pid of target process.
+ * @spg_ids: point to an array to save the group ids the process belongs to
+ * @num: input the spg_ids array size; output the spg number of the process
  *
  * Return:
  * >0		- the sp_group ID.
@@ -837,7 +866,7 @@ static struct sp_group *__sp_find_spg(int pid, int spg_id)
  * -EINVAL	- spg_ids or num is NULL.
  * -E2BIG	- the num of groups process belongs to is larger than *num
  */
-int sp_group_id_by_pid(int pid, int *spg_ids, int *num)
+int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num)
 {
 	int ret = 0;
 	struct sp_group_node *node;
@@ -882,7 +911,7 @@ out_up_read:
 	put_task_struct(tsk);
 	return ret;
 }
-EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
+EXPORT_SYMBOL_GPL(mg_sp_group_id_by_pid);
 
 static bool is_online_node_id(int node_id)
 {
@@ -1154,7 +1183,7 @@ static void free_spg_node(struct mm_struct *mm, struct sp_group *spg,
  * The automatically allocated ID is between [SPG_ID_AUTO_MIN, SPG_ID_AUTO_MAX].
  * When negative, the return value is -errno.
  */
-int sp_group_add_task(int pid, unsigned long prot, int spg_id)
+int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 {
 	struct task_struct *tsk;
 	struct mm_struct *mm;
@@ -1390,6 +1419,12 @@ out_put_task:
 	put_task_struct(tsk);
 out:
 	return ret == 0 ? spg_id : ret;
+}
+EXPORT_SYMBOL_GPL(mg_sp_group_add_task);
+
+int sp_group_add_task(int pid, int spg_id)
+{
+	return mg_sp_group_add_task(pid, PROT_READ | PROT_WRITE, spg_id);
 }
 EXPORT_SYMBOL_GPL(sp_group_add_task);
 
@@ -1920,6 +1955,12 @@ out:
 }
 EXPORT_SYMBOL_GPL(sp_free);
 
+int mg_sp_free(unsigned long addr)
+{
+	return sp_free(addr);
+}
+EXPORT_SYMBOL_GPL(mg_sp_free);
+
 /* wrapper of __do_mmap() and the caller must hold down_write(&mm->mmap_sem). */
 static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 			     struct sp_area *spa, unsigned long *populate,
@@ -2027,30 +2068,72 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	if (sp_flags & SP_HUGEPAGE_ONLY)
 		sp_flags |= SP_HUGEPAGE;
 
-	if (spg_id != SPG_ID_DEFAULT) {
-		spg = __sp_find_spg(current->pid, spg_id);
-		if (!spg) {
-			pr_err_ratelimited("allocation failed, can't find group\n");
-			return -ENODEV;
-		}
+	if (share_pool_group_mode == SINGLE_GROUP_MODE) {
+		spg = __sp_find_spg(current->pid, SPG_ID_DEFAULT);
+		if (spg) {
+			if (spg_id != SPG_ID_DEFAULT && spg->id != spg_id) {
+				sp_group_drop(spg);
+				return -ENODEV;
+			}
 
-		/* up_read will be at the end of sp_alloc */
-		down_read(&spg->rw_lock);
-		if (!spg_valid(spg)) {
-			up_read(&spg->rw_lock);
-			sp_group_drop(spg);
-			pr_err_ratelimited("allocation failed, spg is dead\n");
-			return -ENODEV;
-		}
+			/* up_read will be at the end of sp_alloc */
+			down_read(&spg->rw_lock);
+			if (!spg_valid(spg)) {
+				up_read(&spg->rw_lock);
+				sp_group_drop(spg);
+				pr_err_ratelimited("allocation failed, spg is dead\n");
+				return -ENODEV;
+			}
+		} else {  /* alocation pass through scene */
+			if (enable_mdc_default_group) {
+				int ret = 0;
 
-		if (!is_process_in_group(spg, current->mm)) {
-			up_read(&spg->rw_lock);
-			sp_group_drop(spg);
-			pr_err_ratelimited("allocation failed, task not in group\n");
-			return -ENODEV;
+				ret = sp_group_add_task(current->tgid, spg_id);
+				if (ret < 0) {
+					pr_err_ratelimited("add group failed in pass through\n");
+					return ret;
+				}
+
+				spg = __sp_find_spg(current->pid, SPG_ID_DEFAULT);
+
+				/* up_read will be at the end of sp_alloc */
+				down_read(&spg->rw_lock);
+				if (!spg_valid(spg)) {
+					up_read(&spg->rw_lock);
+					sp_group_drop(spg);
+					pr_err_ratelimited("pass through allocation failed, spg is dead\n");
+					return -ENODEV;
+				}
+			} else {
+				spg = spg_none;
+			}
 		}
-	} else {  /* alocation pass through scene */
-		spg = spg_none;
+	} else {
+		if (spg_id != SPG_ID_DEFAULT) {
+			spg = __sp_find_spg(current->pid, spg_id);
+			if (!spg) {
+				pr_err_ratelimited("allocation failed, can't find group\n");
+				return -ENODEV;
+			}
+
+			/* up_read will be at the end of sp_alloc */
+			down_read(&spg->rw_lock);
+			if (!spg_valid(spg)) {
+				up_read(&spg->rw_lock);
+				sp_group_drop(spg);
+				pr_err_ratelimited("allocation failed, spg is dead\n");
+				return -ENODEV;
+			}
+
+			if (!is_process_in_group(spg, current->mm)) {
+				up_read(&spg->rw_lock);
+				sp_group_drop(spg);
+				pr_err_ratelimited("allocation failed, task not in group\n");
+				return -ENODEV;
+			}
+		} else {  /* alocation pass through scene */
+			spg = spg_none;
+		}
 	}
 
 	if (sp_flags & SP_HUGEPAGE) {
@@ -2321,6 +2404,12 @@ out:
 		return (void *)(spa->va_start);
 }
 EXPORT_SYMBOL_GPL(sp_alloc);
+
+void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
+{
+	return sp_alloc(size, sp_flags, spg_id);
+}
+EXPORT_SYMBOL_GPL(mg_sp_alloc);
 
 /**
  * is_vmap_hugepage() - Check if a kernel address belongs to vmalloc family.
@@ -2726,6 +2815,13 @@ out:
 }
 EXPORT_SYMBOL_GPL(sp_make_share_k2u);
 
+void *mg_sp_make_share_k2u(unsigned long kva, unsigned long size,
+	unsigned long sp_flags, int pid, int spg_id)
+{
+	return sp_make_share_k2u(kva, size, sp_flags, pid, spg_id);
+}
+EXPORT_SYMBOL_GPL(mg_sp_make_share_k2u);
+
 static int sp_pmd_entry(pmd_t *pmd, unsigned long addr,
 			unsigned long next, struct mm_walk *walk)
 {
@@ -3000,6 +3096,12 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 }
 EXPORT_SYMBOL_GPL(sp_make_share_u2k);
 
+void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
+{
+	return sp_make_share_u2k(uva, size, pid);
+}
+EXPORT_SYMBOL_GPL(mg_sp_make_share_u2k);
+
 /*
  * Input parameters uva, pid and spg_id are now useless. spg_id will be useful
  * when supporting a process in multiple sp groups.
@@ -3218,7 +3320,7 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
  *
  * Return: 0 for success, -errno on failure.
  */
-int sp_unshare(unsigned long va, unsigned long size)
+int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
 {
 	int ret = 0;
 
@@ -3239,6 +3341,12 @@ int sp_unshare(unsigned long va, unsigned long size)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(sp_unshare);
+
+int mg_sp_unshare(unsigned long va, unsigned long size)
+{
+	return sp_unshare(va, size, 0, 0);
+}
+EXPORT_SYMBOL_GPL(mg_sp_unshare);
 
 /**
  * sp_walk_page_range() - Walk page table with caller specific callbacks.
@@ -3291,6 +3399,13 @@ int sp_walk_page_range(unsigned long uva, unsigned long size,
 }
 EXPORT_SYMBOL_GPL(sp_walk_page_range);
 
+int mg_sp_walk_page_range(unsigned long uva, unsigned long size,
+	struct task_struct *tsk, struct sp_walk_data *sp_walk_data)
+{
+	return sp_walk_page_range(uva, size, tsk, sp_walk_data);
+}
+EXPORT_SYMBOL_GPL(mg_sp_walk_page_range);
+
 /**
  * sp_walk_page_free() - Free the sp_walk_data structure.
  * @sp_walk_data: a structure of a page pointer array to be freed.
@@ -3305,6 +3420,12 @@ void sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 	__sp_walk_page_free(sp_walk_data);
 }
 EXPORT_SYMBOL_GPL(sp_walk_page_free);
+
+void mg_sp_walk_page_free(struct sp_walk_data *sp_walk_data)
+{
+	return sp_walk_page_free(sp_walk_data);
+}
+EXPORT_SYMBOL_GPL(mg_sp_walk_page_free);
 
 int sp_register_notifier(struct notifier_block *nb)
 {
@@ -3343,6 +3464,12 @@ bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 }
 EXPORT_SYMBOL_GPL(sp_config_dvpp_range);
 
+bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
+{
+	return sp_config_dvpp_range(start, size, device_id, pid);
+}
+EXPORT_SYMBOL_GPL(mg_sp_config_dvpp_range);
+
 static bool is_sp_normal_addr(unsigned long addr)
 {
 	return addr >= MMAP_SHARE_POOL_START &&
@@ -3364,6 +3491,12 @@ bool is_sharepool_addr(unsigned long addr)
 	return is_sp_normal_addr(addr) || is_device_addr(addr);
 }
 EXPORT_SYMBOL_GPL(is_sharepool_addr);
+
+bool mg_is_sharepool_addr(unsigned long addr)
+{
+	return is_sharepool_addr(addr);
+}
+EXPORT_SYMBOL_GPL(mg_is_sharepool_addr);
 
 int sp_node_id(struct vm_area_struct *vma)
 {
