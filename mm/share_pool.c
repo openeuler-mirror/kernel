@@ -500,6 +500,7 @@ int sp_group_add_task(int pid, int spg_id)
 	struct mm_struct *mm;
 	struct sp_group *spg;
 	int ret = 0;
+	bool id_newly_generated = false;
 	struct sp_area *spa, *prev = NULL;
 	struct sp_proc_stat *stat;
 
@@ -538,6 +539,7 @@ int sp_group_add_task(int pid, int spg_id)
 				       "generate group id failed\n");
 			return spg_id;
 		}
+		id_newly_generated = true;
 	}
 
 	if (spg_id == SPG_ID_DVPP_PASS_THROUGH) {
@@ -550,6 +552,7 @@ int sp_group_add_task(int pid, int spg_id)
 				       "generate group id failed in DVPP pass through\n");
 			return spg_id;
 		}
+		id_newly_generated = true;
 	}
 
 	mutex_lock(&sp_mutex);
@@ -564,7 +567,8 @@ int sp_group_add_task(int pid, int spg_id)
 
 	rcu_read_unlock();
 	if (ret) {
-		free_sp_group_id((unsigned int)spg_id);
+		if (id_newly_generated)
+			free_sp_group_id((unsigned int)spg_id);
 		goto out_unlock;
 	}
 
@@ -581,7 +585,8 @@ int sp_group_add_task(int pid, int spg_id)
 	spg = find_or_alloc_sp_group(spg_id);
 	if (IS_ERR(spg)) {
 		ret = PTR_ERR(spg);
-		free_sp_group_id((unsigned int)spg_id);
+		if (id_newly_generated)
+			free_sp_group_id((unsigned int)spg_id);
 		goto out_put_mm;
 	}
 
