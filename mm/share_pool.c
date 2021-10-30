@@ -730,6 +730,11 @@ static void __insert_sp_area(struct sp_area *spa)
 	rb_insert_color(&spa->rb_node, &sp_area_root);
 }
 
+/* The sp_area cache globals are protected by sp_area_lock */
+static struct rb_node *free_sp_area_cache;
+static unsigned long cached_hole_size;
+static unsigned long cached_vstart;  /* affected by SP_DVPP and sp_config_dvpp_range() */
+
 /*
  * Allocate a region of VA from the share pool.
  * @size - the size of VA to allocate
@@ -741,7 +746,7 @@ static void __insert_sp_area(struct sp_area *spa)
 static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 				     struct sp_group *spg, enum spa_type type)
 {
-	struct sp_area *spa, *err;
+	struct sp_area *spa, *first, *err;
 	struct rb_node *n;
 	unsigned long vstart = MMAP_SHARE_POOL_START;
 	unsigned long vend = MMAP_SHARE_POOL_16G_START;
@@ -763,8 +768,6 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 		}
 	}
 
-	addr = vstart;
-
 	spa = kmalloc(sizeof(struct sp_area), GFP_KERNEL);
 	if (unlikely(!spa)) {
 		if (printk_ratelimit())
@@ -774,45 +777,75 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 
 	spin_lock(&sp_area_lock);
 
-	n = sp_area_root.rb_node;
-	if (n) {
-		struct sp_area *first = NULL;
+	/*
+	 * Invalidate cache if we have more permissive parameters.
+	 * cached_hole_size notes the largest hole noticed _below_
+	 * the sp_area cached in free_sp_area_cache: if size fits
+	 * into that hole, we want to scan from vstart to reuse
+	 * the hole instead of allocating above free_sp_area_cache.
+	 * Note that sp_free_area may update free_sp_area_cache
+	 * without updating cached_hole_size.
+	 */
+	if (!free_sp_area_cache || size_align < cached_hole_size ||
+	    vstart != cached_vstart) {
+		cached_hole_size = 0;
+		free_sp_area_cache = NULL;
+	}
 
-		do {
+	/* record if we encounter less permissive parameters */
+	cached_vstart = vstart;
+
+	/* find starting point for our search */
+	if (free_sp_area_cache) {
+		first = rb_entry(free_sp_area_cache, struct sp_area, rb_node);
+		addr = first->va_end;
+		if (addr + size_align < addr) {
+			err = ERR_PTR(-EOVERFLOW);
+			goto error;
+		}
+	} else {
+		addr = vstart;
+		if (addr + size_align < addr) {
+			err = ERR_PTR(-EOVERFLOW);
+			goto error;
+		}
+
+		n = sp_area_root.rb_node;
+		first = NULL;
+
+		while (n) {
 			struct sp_area *tmp;
 			tmp = rb_entry(n, struct sp_area, rb_node);
 			if (tmp->va_end >= addr) {
-				if (!first && tmp->va_start < addr + size_align)
-					first = tmp;
-				n = n->rb_left;
-			} else {
 				first = tmp;
+				if (tmp->va_start <= addr)
+					break;
+				n = n->rb_left;
+			} else
 				n = n->rb_right;
-			}
-		} while (n);
+		}
 
 		if (!first)
 			goto found;
-
-		if (first->va_end < addr) {
-			n = rb_next(&first->rb_node);
-			if (n)
-				first = rb_entry(n, struct sp_area, rb_node);
-			else
-				goto found;
-		}
-
-		while (addr + size_align >= first->va_start &&
-		       addr + size_align <= vend) {
-			addr = first->va_end;
-
-			n = rb_next(&first->rb_node);
-			if (n)
-				first = rb_entry(n, struct sp_area, rb_node);
-			else
-				goto found;
-		}
 	}
+
+	/* from the starting point, traverse areas until a suitable hole is found */
+	while (addr + size_align > first->va_start && addr + size_align <= vend) {
+		if (addr + cached_hole_size < first->va_start)
+			cached_hole_size = first->va_start - addr;
+		addr = first->va_end;
+		if (addr + size_align < addr) {
+			err = ERR_PTR(-EOVERFLOW);
+			goto error;
+		}
+
+		n = rb_next(&first->rb_node);
+		if (n)
+			first = rb_entry(n, struct sp_area, rb_node);
+		else
+			goto found;
+	}
+
 found:
 	if (addr + size_align > vend) {
 		err = ERR_PTR(-EOVERFLOW);
@@ -833,6 +866,7 @@ found:
 	}
 
 	__insert_sp_area(spa);
+	free_sp_area_cache = &spa->rb_node;
 	if (spa->spg) {
 		atomic_inc(&spg->spa_num);
 		atomic64_add(size, &spg->size);
@@ -888,6 +922,18 @@ static struct sp_area *__find_sp_area(unsigned long addr)
 static void sp_free_area(struct sp_area *spa)
 {
 	lockdep_assert_held(&sp_area_lock);
+
+	if (free_sp_area_cache) {
+		struct sp_area *cache;
+		cache = rb_entry(free_sp_area_cache, struct sp_area, rb_node);
+		if (spa->va_start <= cache->va_start) {
+			free_sp_area_cache = rb_prev(&spa->rb_node);
+			/*
+			 * We don't try to update cached_hole_size,
+			 * but it won't go very wrong.
+			 */
+		}
+	}
 
 	spa_dec_usage(spa->type, spa->real_size);  /* won't fail */
 	if (spa->spg) {
