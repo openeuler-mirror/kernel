@@ -2351,11 +2351,11 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	if (len > TASK_SIZE - mmap_min_addr)
 		return -ENOMEM;
 
-	if (flags & MAP_FIXED)
-		return addr;
-
 	if (sp_check_mmap_addr(addr, flags))
 		return -EINVAL;
+
+	if (flags & MAP_FIXED)
+		return addr;
 
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
@@ -2405,11 +2405,11 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 	if (len > TASK_SIZE - mmap_min_addr)
 		return -ENOMEM;
 
-	if (flags & MAP_FIXED)
-		return addr;
-
 	if (sp_check_mmap_addr(addr, flags))
 		return -EINVAL;
+
+	if (flags & MAP_FIXED)
+		return addr;
 
 	/* requesting a specific address */
 	if (addr) {
