@@ -1641,6 +1641,19 @@ static struct sp_area *__find_sp_area(unsigned long addr)
 	return n;
 }
 
+static bool vmalloc_area_clr_flag(unsigned long kva, unsigned long flags)
+{
+	struct vm_struct *area;
+
+	area = find_vm_area((void *)kva);
+	if (area) {
+		area->flags &= ~flags;
+		return true;
+	}
+
+	return false;
+}
+
 /*
  * Free the VA region starting from addr to the share pool
  */
@@ -1667,6 +1680,11 @@ static void sp_free_area(struct sp_area *spa)
 			 * but it won't go very wrong.
 			 */
 		}
+	}
+
+	if (spa->kva) {
+		if (!vmalloc_area_clr_flag(spa->kva, VM_SHAREPOOL))
+			pr_debug("clear spa->kva %ld is not valid\n", spa->kva);
 	}
 
 	spa_dec_usage(spa);
@@ -2624,19 +2642,6 @@ static bool vmalloc_area_set_flag(unsigned long kva, unsigned long flags)
 	area = find_vm_area((void *)kva);
 	if (area) {
 		area->flags |= flags;
-		return true;
-	}
-
-	return false;
-}
-
-static bool vmalloc_area_clr_flag(unsigned long kva, unsigned long flags)
-{
-	struct vm_struct *area;
-
-	area = find_vm_area((void *)kva);
-	if (area) {
-		area->flags &= ~flags;
 		return true;
 	}
 
