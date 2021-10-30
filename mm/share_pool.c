@@ -129,7 +129,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 			return stat;
 		} else {
 			/* if enter this branch, that's our mistake */
-			pr_err("share pool: sp_init_proc_stat invalid id %d\n", id);
+			pr_err_ratelimited("share pool: proc stat invalid id %d\n", id);
 			return ERR_PTR(-EBUSY);
 		}
 	}
@@ -137,8 +137,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 	stat = kzalloc(sizeof(*stat), GFP_KERNEL);
 	if (stat == NULL) {
 		up_write(&sp_stat_sem);
-		if (printk_ratelimit())
-			pr_err("share pool: alloc proc stat failed due to lack of memory\n");
+		pr_err_ratelimited("share pool: alloc proc stat failed due to lack of memory\n");
 		return ERR_PTR(-ENOMEM);
 	}
 
@@ -153,8 +152,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 	ret = idr_alloc(&sp_stat_idr, stat, tgid, tgid + 1, GFP_KERNEL);
 	if (ret < 0) {
 		up_write(&sp_stat_sem);
-		if (printk_ratelimit())
-			pr_err("share pool: proc stat idr alloc failed %d\n", ret);
+		pr_err_ratelimited("share pool: proc stat idr alloc failed %d\n", ret);
 		kfree(stat);
 		return ERR_PTR(ret);
 	}
@@ -428,16 +426,14 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 
 		spg = kzalloc(sizeof(*spg), GFP_KERNEL);
 		if (spg == NULL) {
-			if (printk_ratelimit())
-				pr_err("share pool: alloc spg failed due to lack of memory\n");
+			pr_err_ratelimited("share pool: alloc spg failed due to lack of memory\n");
 			return ERR_PTR(-ENOMEM);
 		}
 		ret = idr_alloc(&sp_group_idr, spg, spg_id, spg_id + 1,
 				GFP_KERNEL);
 		up_write(&sp_group_sem);
 		if (ret < 0) {
-			if (printk_ratelimit())
-				pr_err("share pool: create group idr alloc failed\n");
+			pr_err_ratelimited("share pool: create group idr alloc failed\n");
 			goto out_kfree;
 		}
 
@@ -461,9 +457,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 		spg->file = shmem_kernel_file_setup(name, MAX_LFS_FILESIZE,
 						    VM_NORESERVE);
 		if (IS_ERR(spg->file)) {
-			if (printk_ratelimit())
-				pr_err("share pool: file setup for small page failed %ld\n",
-				       PTR_ERR(spg->file));
+			pr_err("share pool: file setup for small page failed %ld\n", PTR_ERR(spg->file));
 			ret = PTR_ERR(spg->file);
 			goto out_idr;
 		}
@@ -472,9 +466,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 					VM_NORESERVE, &user,
 					HUGETLB_ANONHUGE_INODE, hsize_log);
 		if (IS_ERR(spg->file_hugetlb)) {
-			if (printk_ratelimit())
-				pr_err("share pool: file setup for hugepage failed %ld\n",
-				       PTR_ERR(spg->file_hugetlb));
+			pr_err("share pool: file setup for hugepage failed %ld\n", PTR_ERR(spg->file_hugetlb));
 			ret = PTR_ERR(spg->file_hugetlb);
 			goto out_fput;
 		}
@@ -566,8 +558,7 @@ int sp_group_add_task(int pid, int spg_id)
 
 	if ((spg_id < SPG_ID_MIN || spg_id > SPG_ID_AUTO)
 	    && spg_id != SPG_ID_DVPP_PASS_THROUGH) {
-		if (printk_ratelimit())
-			pr_err("share pool: task add group failed due to invalid group id %d\n", spg_id);
+		pr_err_ratelimited("share pool: task add group failed, invalid group id %d\n", spg_id);
 		return -EINVAL;
 	}
 
@@ -575,17 +566,14 @@ int sp_group_add_task(int pid, int spg_id)
 		spg = __sp_find_spg(pid, spg_id);
 
 		if (!spg) {
-			if (printk_ratelimit())
-				pr_err("share pool: spg %d hasn't been created\n", spg_id);
+			pr_err_ratelimited("share pool: spg %d hasn't been created\n", spg_id);
 			return -EINVAL;
 		}
 
 		down_read(&spg->rw_lock);
 		if (!spg_valid(spg)) {
 			up_read(&spg->rw_lock);
-			if (printk_ratelimit())
-				pr_err("share pool: task add group failed because group id %d "
-				       "is dead\n", spg_id);
+			pr_err_ratelimited("share pool: task add group failed, group id %d is dead\n", spg_id);
 			sp_group_drop(spg);
 			return -EINVAL;
 		}
@@ -598,9 +586,7 @@ int sp_group_add_task(int pid, int spg_id)
 		spg_id = ida_alloc_range(&sp_group_id_ida, SPG_ID_AUTO_MIN,
 					 SPG_ID_AUTO_MAX, GFP_ATOMIC);
 		if (spg_id < 0) {
-			if (printk_ratelimit())
-				pr_err("share pool: task add group failed when automatically "
-				       "generate group id failed\n");
+			pr_err_ratelimited("share pool: task add group failed, auto generate group id failed\n");
 			return spg_id;
 		}
 		id_newly_generated = true;
@@ -611,9 +597,7 @@ int sp_group_add_task(int pid, int spg_id)
 			SPG_ID_DVPP_PASS_THROUGH_MIN,
 			SPG_ID_DVPP_PASS_THROUGH_MAX, GFP_ATOMIC);
 		if (spg_id < 0) {
-			if (printk_ratelimit())
-				pr_err("share pool: task add group failed when automatically "
-				       "generate group id failed in DVPP pass through\n");
+			pr_err_ratelimited("share pool: task add group failed, DVPP auto generate group id failed\n");
 			return spg_id;
 		}
 		id_newly_generated = true;
@@ -677,7 +661,7 @@ int sp_group_add_task(int pid, int spg_id)
 	stat = sp_init_proc_stat(tsk, mm);
 	if (IS_ERR(stat)) {
 		ret = PTR_ERR(stat);
-		pr_err("share pool: init proc stat failed, ret %lx\n", PTR_ERR(stat));
+		pr_err_ratelimited("share pool: init proc stat failed, ret %lx\n", PTR_ERR(stat));
 		goto out_drop_group;
 	}
 
@@ -726,11 +710,9 @@ int sp_group_add_task(int pid, int spg_id)
 		if (populate) {
 			ret = do_mm_populate(mm, spa->va_start, populate, 0);
 			if (ret) {
-				if (printk_ratelimit()) {
-					pr_warn("share pool: task add group failed when mm populate "
-						"failed (potential no enough memory): %d "
-						"spa type is %d\n", ret, spa->type);
-				}
+				pr_warn_ratelimited("share pool: task add group failed, mm populate failed "
+					"(potential no enough memory when -12): %d, spa type is %d\n",
+					ret, spa->type);
 				down_write(&mm->mmap_sem);
 				sp_munmap_task_areas(mm, spa->link.next);
 				up_write(&mm->mmap_sem);
@@ -821,8 +803,7 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 			vend = MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE;
 		} else {
 			if (!spg) {
-				if (printk_ratelimit())
-					pr_err("share pool: don't allow k2u(task) in host svm multiprocess scene\n");
+				pr_err_ratelimited("share pool: don't allow k2u(task) in host svm multiprocess scene\n");
 				return ERR_PTR(-EINVAL);
 			}
 			vstart = spg->dvpp_va_start;
@@ -832,8 +813,7 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 
 	spa = kmalloc(sizeof(struct sp_area), GFP_KERNEL);
 	if (unlikely(!spa)) {
-		if (printk_ratelimit())
-			pr_err("share pool: alloc spa failed due to lack of memory\n");
+		pr_err_ratelimited("share pool: alloc spa failed due to lack of memory\n");
 		return ERR_PTR(-ENOMEM);
 	}
 
@@ -1183,16 +1163,13 @@ int sp_free(unsigned long addr)
 		}
 	} else {  /* spa == NULL */
 		ret = -EINVAL;
-		if (printk_ratelimit())
-			pr_err("share pool: sp free invalid input addr %pK\n", (void *)addr);
+		pr_debug("share pool: sp free invalid input addr %lx\n", (unsigned long)addr);
 		goto out;
 	}
 
 	if (spa->type != SPA_TYPE_ALLOC) {
 		ret = -EINVAL;
-		if (printk_ratelimit())
-			pr_err("share pool: sp free failed, addr %pK is not from sp_alloc\n",
-			       (void *)addr);
+		pr_debug("share pool: sp free failed, addr %lx is not from sp alloc\n", (unsigned long)addr);
 		goto drop_spa;
 	}
 
@@ -1296,14 +1273,12 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 		spg_id = mdc_default_group_id;
 
 	if (spg_id != SPG_ID_DEFAULT && spg_id < SPG_ID_MIN) {
-		if (printk_ratelimit())
-			pr_err("share pool: allocation failed due to invalid group id %d\n", spg_id);
+		pr_err_ratelimited("share pool: allocation failed, invalid group id %d\n", spg_id);
 		return ERR_PTR(-EINVAL);
 	}
 
 	if (sp_flags & ~(SP_HUGEPAGE_ONLY | SP_HUGEPAGE | SP_DVPP)) {
-		if (printk_ratelimit())
-			pr_err("share pool: allocation failed due to invalid flag %lu\n", sp_flags);
+		pr_err_ratelimited("share pool: allocation failed, invalid flag %lx\n", sp_flags);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -1323,8 +1298,7 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 		 * The judgment is added to prevent exit in this case.
 		 */
 		if (ret < 0 && (ret != -EEXIST)) {
-			pr_err("share pool: allocation failed due to add group error %d in DVPP pass through scenario",
-			       ret);
+			pr_err_ratelimited("share pool: allocation failed, add group error %d in DVPP pass through\n", ret);
 			return ERR_PTR(ret);
 		}
 		spg = current->mm->sp_group;
@@ -1350,7 +1324,7 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	if (!spg_valid(spg)) {
 		up_read(&spg->rw_lock);
 		sp_group_drop(spg);
-		pr_err("share pool: sp alloc failed, spg is dead\n");
+		pr_err_ratelimited("share pool: sp alloc failed, spg is dead\n");
 		return ERR_PTR(-ENODEV);
 	}
 
@@ -1364,10 +1338,8 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 try_again:
 	spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_ALLOC);
 	if (IS_ERR(spa)) {
-		if (printk_ratelimit())
-			pr_err("share pool: allocation failed due to alloc spa failure "
-			       "(potential no enough virtual memory when -75): %ld\n",
-			       PTR_ERR(spa));
+		pr_err_ratelimited("share pool: allocation failed due to alloc spa failure "
+			"(potential no enough virtual memory when -75): %ld\n", PTR_ERR(spa));
 		p = spa;
 		goto out;
 	}
@@ -1397,8 +1369,7 @@ try_again:
 		vma = find_vma(mm, sp_addr);
 		if (unlikely(!vma)) {
 			up_write(&mm->mmap_sem);
-			pr_err("share pool: allocation failed due to find %pK vma failure\n",
-			       (void *)sp_addr);
+			pr_debug("share pool: allocation failed due to find %lx vma failure\n", (unsigned long)sp_addr);
 			p = ERR_PTR(-EINVAL);
 			goto out;
 		}
@@ -1435,10 +1406,8 @@ try_again:
 		if (ret) {
 			__sp_free(spg, sp_addr, size_aligned,
 					list_next_entry(mm, sp_node));
-
-			if (printk_ratelimit())
-				pr_warn("share pool: allocation failed due to mm populate failed"
-					"(potential no enough memory when -12): %d\n", ret);
+			pr_warn_ratelimited("share pool: allocation failed due to mm populate failed"
+				"(potential no enough memory when -12): %d\n", ret);
 			p = ERR_PTR(ret);
 
 			mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
@@ -1496,15 +1465,13 @@ static int is_vmap_hugepage(unsigned long addr)
 	struct vm_struct *area;
 
 	if (unlikely(!addr)) {
-		if (printk_ratelimit())
-			pr_err("share pool: null pointer when judge vmap addr\n");
+		pr_err_ratelimited("share pool: null pointer when judge vmap addr\n");
 		return -EINVAL;
 	}
 
 	area = find_vm_area((void *)addr);
 	if (unlikely(!area)) {
-		if (printk_ratelimit())
-			pr_err("share pool: failed to find vm area(%lx)\n", addr);
+		pr_err_ratelimited("share pool: failed to find vm area(%lx)\n", addr);
 		return -EINVAL;
 	}
 
@@ -1570,8 +1537,8 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 		ret = remap_vmalloc_hugepage_range(vma, (void *)kva, 0);
 		if (ret) {
 			do_munmap(mm, ret_addr, spa_size(spa), NULL);
-			pr_err("share pool: remap vmalloc hugepage failed, "
-			       "ret %d, kva is %pK\n", ret, (void *)kva);
+			pr_debug("share pool: remap vmalloc hugepage failed, "
+				 "ret %d, kva is %lx\n", ret, (unsigned long)kva);
 			ret_addr = ret;
 			goto put_mm;
 		}
@@ -1711,8 +1678,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	check_interrupt_context();
 
 	if (sp_flags & ~SP_DVPP) {
-		if (printk_ratelimit())
-			pr_err("share pool: k2u sp_flags %lu error\n", sp_flags);
+		pr_err_ratelimited("share pool: k2u sp_flags %lx error\n", sp_flags);
 		return ERR_PTR(-EINVAL);
 	}
 
@@ -1723,7 +1689,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	} else if (is_hugepage == 0) {
 		/* do nothing */
 	} else {
-		pr_err("share pool: k2u kva not vmalloc address\n");
+		pr_err_ratelimited("share pool: k2u kva not vmalloc address\n");
 		return ERR_PTR(is_hugepage);
 	}
 
@@ -1755,7 +1721,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	stat = sp_init_proc_stat(tsk, mm);
 	if (IS_ERR(stat)) {
 		uva = stat;
-		pr_err("share pool: init proc stat failed, ret %lx\n", PTR_ERR(stat));
+		pr_err_ratelimited("share pool: init proc stat failed, ret %lx\n", PTR_ERR(stat));
 		goto out_put_mm;
 	}
 
@@ -1763,24 +1729,21 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	if (spg == NULL) {
 		/* k2u to task */
 		if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT) {
-			if (printk_ratelimit())
-				pr_err("share pool: k2task invalid spg id %d\n", spg_id);
+			pr_err_ratelimited("share pool: k2task invalid spg id %d\n", spg_id);
 			uva = ERR_PTR(-EINVAL);
 			goto out_drop_proc_stat;
 		}
 		spa = sp_alloc_area(size_aligned, sp_flags, NULL, SPA_TYPE_K2TASK);
 		if (IS_ERR(spa)) {
-			if (printk_ratelimit())
-				pr_err("share pool: k2u(task) failed due to alloc spa failure "
-				       "(potential no enough virtual memory when -75): %ld\n",
-				       PTR_ERR(spa));
+			pr_err_ratelimited("share pool: k2u(task) failed due to alloc spa failure "
+				"(potential no enough virtual memory when -75): %ld\n", PTR_ERR(spa));
 			uva = spa;
 			goto out_drop_proc_stat;
 		}
 
 		if (!vmalloc_area_set_flag(spa, kva_aligned, VM_SHAREPOOL)) {
 			up_read(&spg->rw_lock);
-			pr_err("share pool: %s: the kva %pK is not valid\n", __func__, (void *)kva_aligned);
+			pr_debug("share pool: %s: the kva %lx is not valid\n", __func__, (unsigned long)kva_aligned);
 			goto out_drop_spa;
 		}
 
@@ -1793,8 +1756,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		/* k2u to group */
 		if (spg_id != SPG_ID_DEFAULT && spg_id != spg->id) {
 			up_read(&spg->rw_lock);
-			if (printk_ratelimit())
-				pr_err("share pool: k2spg invalid spg id %d\n", spg_id);
+			pr_err_ratelimited("share pool: k2spg invalid spg id %d\n", spg_id);
 			uva = ERR_PTR(-EINVAL);
 			goto out_drop_spg;
 		}
@@ -1806,17 +1768,15 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 
 		if (IS_ERR(spa)) {
 			up_read(&spg->rw_lock);
-			if (printk_ratelimit())
-				pr_err("share pool: k2u(spg) failed due to alloc spa failure "
-				       "(potential no enough virtual memory when -75): %ld\n",
-				       PTR_ERR(spa));
+			pr_err_ratelimited("share pool: k2u(spg) failed due to alloc spa failure "
+				"(potential no enough virtual memory when -75): %ld\n", PTR_ERR(spa));
 			uva = spa;
 			goto out_drop_spg;
 		}
 
 		if (!vmalloc_area_set_flag(spa, kva_aligned, VM_SHAREPOOL)) {
 			up_read(&spg->rw_lock);
-			pr_err("share pool: %s: the kva %pK is not valid\n", __func__, (void *)kva_aligned);
+			pr_err("share pool: %s: the kva %lx is not valid\n", __func__, (unsigned long)kva_aligned);
 			goto out_drop_spa;
 		}
 
@@ -1827,7 +1787,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 
 	} else {
 		/* group is dead, return -ENODEV */
-		pr_err("share pool: failed to make k2u, sp group is dead\n");
+		pr_err_ratelimited("share pool: failed to make k2u, sp group is dead\n");
 		uva = ERR_PTR(-ENODEV);
 	}
 	up_read(&spg->rw_lock);
@@ -1839,8 +1799,8 @@ accounting:
 	} else {
 		/* associate vma and spa */
 		if (!vmalloc_area_clr_flag(spa, kva_aligned, VM_SHAREPOOL))
-			pr_warn("share pool: %s: the kva %pK is not valid\n",
-				__func__, (void *)kva_aligned);
+			pr_warn("share pool: %s: the kva %lx is not valid\n",
+				__func__, (unsigned long)kva_aligned);
 	}
 
 out_drop_spa:
@@ -1867,8 +1827,7 @@ static int sp_pte_entry(pte_t *pte, unsigned long addr,
 	struct sp_walk_data *sp_walk_data;
 
 	if (unlikely(!pte_present(*pte))) {
-		if (printk_ratelimit())
-			pr_err("share pool: the page of addr %pK unexpectedly not in RAM\n", (void *)addr);
+		pr_debug("share pool: the page of addr %lx unexpectedly not in RAM\n", (unsigned long)addr);
 		return -EFAULT;
 	}
 
@@ -1894,9 +1853,7 @@ static int sp_test_walk(unsigned long addr, unsigned long next,
 static int sp_pte_hole(unsigned long start, unsigned long end,
 		       struct mm_walk *walk)
 {
-	if (printk_ratelimit())
-		pr_err("share pool: hole [%pK, %pK) appeared unexpectedly\n",
-		       (void *)start, (void *)end);
+	pr_debug("share pool: hole [%lx, %lx) appeared unexpectedly\n", (unsigned long)start, (unsigned long)end);
 	return -EFAULT;
 }
 
@@ -1909,9 +1866,7 @@ static int sp_hugetlb_entry(pte_t *ptep, unsigned long hmask,
 	struct sp_walk_data *sp_walk_data;
 
 	if (unlikely(!pte_present(pte))) {
-		if (printk_ratelimit())
-			pr_err("share pool: the page of addr %pK unexpectedly "
-			       "not in RAM\n", (void *)addr);
+		pr_err_ratelimited("share pool: the page of addr %lx unexpectedly not in RAM\n", (unsigned long)addr);
 		return -EFAULT;
 	}
 
@@ -1967,8 +1922,7 @@ static int __sp_walk_page_range(unsigned long uva, unsigned long size,
 	 */
 	vma = find_vma(mm, uva);
 	if (!vma) {
-		if (printk_ratelimit())
-			pr_err("share pool: u2k input uva %pK is invalid\n", (void *)uva);
+		pr_debug("share pool: u2k input uva %lx is invalid\n", (unsigned long)uva);
 		return -EINVAL;
 	}
 	if ((is_vm_hugetlb_page(vma)) || is_vm_huge_special(vma))
@@ -1995,16 +1949,14 @@ static int __sp_walk_page_range(unsigned long uva, unsigned long size,
 		size_aligned = ALIGN(uva + size, page_size) - uva_aligned;
 
 	if (uva_aligned + size_aligned < uva_aligned) {
-		if (printk_ratelimit())
-			pr_err("share pool: overflow happened in walk page range\n");
+		pr_err_ratelimited("share pool: overflow happened in walk page range\n");
 		return -EINVAL;
 	}
 
 	page_nr = size_aligned / page_size;
 	pages = kvmalloc(page_nr * sizeof(struct page *), GFP_KERNEL);
 	if (!pages) {
-		if (printk_ratelimit())
-			pr_err("share pool: alloc page array failed in walk page range\n");
+		pr_err_ratelimited("share pool: alloc page array failed in walk page range\n");
 		return -ENOMEM;
 	}
 	sp_walk_data->pages = pages;
@@ -2076,7 +2028,7 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	down_write(&mm->mmap_sem);
 	ret = __sp_walk_page_range(uva, size, mm, &sp_walk_data);
 	if (ret) {
-		pr_err("share pool: walk page range failed, ret %d\n", ret);
+		pr_err_ratelimited("share pool: walk page range failed, ret %d\n", ret);
 		up_write(&mm->mmap_sem);
 		mmput(mm);
 		p = ERR_PTR(ret);
@@ -2093,8 +2045,7 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	mmput(mm);
 
 	if (!p) {
-		if (printk_ratelimit())
-			pr_err("share pool: vmap(huge) in u2k failed\n");
+		pr_err("share pool: vmap(huge) in u2k failed\n");
 		__sp_walk_page_free(&sp_walk_data);
 		p = ERR_PTR(-ENOMEM);
 		goto out_put_task;
@@ -2154,15 +2105,13 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 		spa = __find_sp_area(ALIGN_DOWN(uva, PAGE_SIZE));
 		if (!spa) {
 			ret = -EINVAL;
-			if (printk_ratelimit())
-				pr_err("share pool: invalid input uva %pK in unshare uva\n",
-				       (void *)uva);
+			pr_debug("share pool: invalid input uva %lx in unshare uva\n", (unsigned long)uva);
 			goto out;
 		}
 	}
 
 	if (spa->type != SPA_TYPE_K2TASK && spa->type != SPA_TYPE_K2SPG) {
-		pr_err("share pool: this spa should not be unshare here\n");
+		pr_err_ratelimited("share pool: this spa should not be unshare here\n");
 		ret = -EINVAL;
 		goto out_drop_area;
 	}
@@ -2178,25 +2127,19 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 
 	if (size_aligned < ALIGN(size, page_size)) {
 		ret = -EINVAL;
-		if (printk_ratelimit())
-			pr_err("share pool: unshare uva failed due to invalid parameter size %lu\n",
-			       size);
+		pr_err_ratelimited("share pool: unshare uva failed due to invalid parameter size %lu\n", size);
 		goto out_drop_area;
 	}
 
 	if (spa->type == SPA_TYPE_K2TASK) {
 		if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT) {
-			if (printk_ratelimit())
-				pr_err("share pool: unshare uva(to task) failed, "
-				       "invalid spg id %d\n", spg_id);
+			pr_err_ratelimited("share pool: unshare uva(to task) failed, invalid spg id %d\n", spg_id);
 			ret = -EINVAL;
 			goto out_drop_area;
 		}
 
 		if (!spa->mm) {
-			if (printk_ratelimit())
-				pr_err("share pool: unshare uva(to task) failed, "
-				       "none spa owner\n");
+			pr_err_ratelimited("share pool: unshare uva(to task) failed, none spa owner\n");
 			ret = -EINVAL;
 			goto out_drop_area;
 		}
@@ -2210,16 +2153,13 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 		 */
 		mm = get_task_mm(current->group_leader);
 		if (!mm) {
-			if (printk_ratelimit())
-				pr_info("share pool: no need to unshare uva(to task), "
-					"target process mm is exiting\n");
+			pr_info_ratelimited("share pool: no need to unshare uva(to task), "
+					    "target process mm is exiting\n");
 			goto out_clr_flag;
 		}
 
 		if (spa->mm != mm) {
-			if (printk_ratelimit())
-				pr_err("share pool: unshare uva(to task) failed, "
-				       "spa not belong to the task\n");
+			pr_err_ratelimited("share pool: unshare uva(to task) failed, spa not belong to the task\n");
 			ret = -EINVAL;
 			mmput(mm);
 			goto out_drop_area;
@@ -2236,9 +2176,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 		}
 	} else if (spa->type == SPA_TYPE_K2SPG) {
 		if (spg_id < 0) {
-			if (printk_ratelimit())
-				pr_err("share pool: unshare uva(to group) failed, "
-				       "invalid spg id %d\n", spg_id);
+			pr_err_ratelimited("share pool: unshare uva(to group) failed, invalid spg id %d\n", spg_id);
 			ret = -EINVAL;
 			goto out_drop_area;
 		}
@@ -2252,18 +2190,16 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 		down_read(&spa->spg->rw_lock);
 		if (!spg_valid(spa->spg)) {
 			up_read(&spa->spg->rw_lock);
-			if (printk_ratelimit())
-				pr_info("share pool: no need to unshare uva(to group), "
-					"sp group of spa is dead\n");
+			pr_info_ratelimited("share pool: no need to unshare uva(to group), "
+					    "sp group of spa is dead\n");
 			goto out_clr_flag;
 		}
 		up_read(&spa->spg->rw_lock);
 
 		/* alway allow kthread and dvpp channel destroy procedure */
 		if (current->mm && current->mm->sp_group != spa->spg) {
-			if (printk_ratelimit())
-				pr_err("share pool: unshare uva(to group) failed, "
-				       "caller process doesn't belong to target group\n");
+			pr_err_ratelimited("share pool: unshare uva(to group) failed, "
+					   "caller process doesn't belong to target group\n");
 			ret = -EINVAL;
 			goto out_drop_area;
 		}
@@ -2318,14 +2254,12 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
 		step = PAGE_SIZE;
 		is_hugepage = false;
 	} else {
-		if (printk_ratelimit())
-			pr_err("share pool: check vmap hugepage failed, ret %d\n", ret);
+		pr_err_ratelimited("share pool: check vmap hugepage failed, ret %d\n", ret);
 		return -EINVAL;
 	}
 
 	if (kva_aligned + size_aligned < kva_aligned) {
-		if (printk_ratelimit())
-			pr_err("share pool: overflow happened in unshare kva\n");
+		pr_err_ratelimited("share pool: overflow happened in unshare kva\n");
 		return -EINVAL;
 	}
 
@@ -2371,8 +2305,7 @@ int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
 		ret = sp_unshare_kva(va, size);
 	} else {
 		/* regard user and kernel address ranges as bad address */
-		if (printk_ratelimit())
-			pr_err("share pool: unshare addr %pK is not a user or kernel addr", (void *)va);
+		pr_debug("share pool: unshare addr %lx is not a user or kernel addr\n", (unsigned long)va);
 		ret = -EFAULT;
 	}
 
@@ -2393,8 +2326,7 @@ int sp_walk_page_range(unsigned long uva, unsigned long size,
 	check_interrupt_context();
 
 	if (unlikely(!sp_walk_data)) {
-		if (printk_ratelimit())
-			pr_err("share pool: null pointer when walk page range\n");
+		pr_err_ratelimited("share pool: null pointer when walk page range\n");
 		return -EINVAL;
 	}
 	if (!tsk || (tsk->flags & PF_EXITING))
