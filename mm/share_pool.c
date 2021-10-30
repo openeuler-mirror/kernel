@@ -574,7 +574,18 @@ int sp_group_add_task(int pid, int spg_id)
 		goto out_unlock;
 	}
 
-	/* current thread may be exiting in a multithread process */
+	/*
+	 * group_leader: current thread may be exiting in a multithread process
+	 *
+	 * DESIGN IDEA
+	 * We increase mm->mm_users deliberately to ensure it's decreased in
+	 * share pool under only 2 circumstances, which will simply the overall
+	 * design as mm won't be freed unexpectedly.
+	 *
+	 * The corresponding refcount decrements are as follows:
+	 * 1. the error handling branch of THIS function.
+	 * 2. In sp_group_exit(). It's called only when process is exiting.
+	 */
 	mm = get_task_mm(tsk->group_leader);
 	if (!mm) {
 		ret = -ESRCH;
@@ -677,6 +688,7 @@ int sp_group_add_task(int pid, int spg_id)
 		idr_remove(&sp_stat_idr, mm->sp_stat_id);
 		kfree(stat);
 		mm->sp_stat_id = 0;
+		/* spg->procs is modified, spg->rw_lock should be put below */
 		list_del(&mm->sp_node);
 		mm->sp_group = NULL;
 	}
@@ -686,7 +698,7 @@ out_drop_group:
 	if (unlikely(ret))
 		__sp_group_drop_locked(spg);
 out_put_mm:
-	/* No need to put the mm if the sp group add this mm success.*/
+	/* No need to put the mm if the sp group adds this mm successfully */
 	if (unlikely(ret))
 		mmput(mm);
 out_put_task:
@@ -1504,6 +1516,7 @@ static unsigned long __sp_remap_get_pfn(unsigned long kva)
 	return pfn;
 }
 
+/* when called by k2u to group, always make sure rw_lock of spg is down */
 static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 					 struct mm_struct *mm)
 {
@@ -2857,8 +2870,11 @@ void sp_group_exit(struct mm_struct *mm)
 
 	spg = mm->sp_group;
 
-	/* If the mm_users is 2, it means that the mm is ready to be freed
-	   because the last owner of this mm is in exiting process.
+	/*
+	 * Recall we add mm->users by 1 deliberately in sp_group_add_task().
+	 * If the mm_users is 2, it means that the mm is ready to be freed
+	 * because the last owner of this mm is in exiting procedure:
+	 * do_exit() -> exit_mm() -> mmput() -> THIS function.
 	 */
 	if (spg_valid(spg) && atomic_read(&mm->mm_users) == MM_WOULD_FREE) {
 		spg_exit_lock(&unlock);
@@ -2870,6 +2886,7 @@ void sp_group_exit(struct mm_struct *mm)
 		if (!is_alive)
 			blocking_notifier_call_chain(&sp_notifier_chain, 0,
 						     mm->sp_group);
+		/* match with get_task_mm() in sp_group_add_task() */
 		atomic_dec(&mm->mm_users);
 		spg_exit_unlock(unlock);
 	}

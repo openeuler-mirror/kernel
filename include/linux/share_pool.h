@@ -74,7 +74,7 @@ struct sp_group {
 	struct file	 *file_hugetlb;
 	/* list head of processes */
 	struct list_head procs;
-	/* list of sp_area */
+	/* list of sp_area. it is protected by spin_lock sp_area_lock */
 	struct list_head spa_list;
 	/* number of sp_area */
 	atomic_t	 spa_num;
@@ -95,7 +95,7 @@ struct sp_group {
 	unsigned long	 dvpp_va_start;
 	unsigned long	 dvpp_size;
 	atomic_t	 use_count;
-	/* protect the group internal elements */
+	/* protect the group internal elements, except spa_list */
 	struct rw_semaphore	rw_lock;
 };
 
