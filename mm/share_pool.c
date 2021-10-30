@@ -2788,9 +2788,14 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	file = get_mm_counter(mm, MM_FILEPAGES);
 	shmem = get_mm_counter(mm, MM_SHMEMPAGES);
 	total_rss = anon + file + shmem;
+	/*
+	 * Statistics of RSS has a maximum 64 pages deviation (256KB).
+	 * Please check_sync_rss_stat().
+	 */
 	non_sp_res = page2kb(total_rss) - sp_alloc_nsize;
+	non_sp_res = non_sp_res < 0 ? 0 : non_sp_res;
 	non_sp_shm = page2kb(shmem) - sp_alloc_nsize;
-	non_sp_shm = non_sp_shm < 0 ? 0 : non_sp_shm;  /* to be investigated */
+	non_sp_shm = non_sp_shm < 0 ? 0 : non_sp_shm;
 
 	seq_printf(seq, "%-8d ", id);
 	if (spg_id == 0)
