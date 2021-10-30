@@ -1061,6 +1061,7 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct sp_group *spg, str
 	spin_unlock(&sp_area_lock);
 }
 
+/* the caller must hold sp_group_sem */
 static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
 {
 	struct sp_group_master *master = mm->sp_group_master;
@@ -1092,39 +1093,61 @@ static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
 	return 0;
 }
 
-static int mm_add_group_finish(struct mm_struct *mm, struct sp_group *spg, unsigned long prot)
+/* the caller must hold sp_group_sem */
+static struct sp_group_node *create_spg_node(struct mm_struct *mm,
+	unsigned long prot, struct sp_group *spg)
 {
-	struct sp_group_master *master;
+	struct sp_group_master *master = mm->sp_group_master;
 	struct sp_group_node *spg_node;
 
 	spg_node = kzalloc(sizeof(struct sp_group_node), GFP_KERNEL);
 	if (spg_node == NULL) {
 		pr_err_ratelimited("no memory for spg node\n");
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 	}
 
-	master = mm->sp_group_master;
 	INIT_LIST_HEAD(&spg_node->group_node);
 	INIT_LIST_HEAD(&spg_node->proc_node);
 	spg_node->spg = spg;
 	spg_node->master = master;
 	spg_node->prot = prot;
 
-	down_write(&spg->rw_lock);
-	if (spg->proc_num + 1 == MAX_PROC_PER_GROUP) {
-		up_write(&spg->rw_lock);
-		pr_err_ratelimited("add group: group reaches max process num\n");
-		kfree(spg_node);
-		return -ENOSPC;
-	}
-	spg->proc_num++;
-	list_add_tail(&spg_node->proc_node, &spg->procs);
-	up_write(&spg->rw_lock);
-
 	list_add_tail(&spg_node->group_node, &master->node_list);
 	master->count++;
 
+	return spg_node;
+}
+
+/* the caller must down_write(&spg->rw_lock) */
+static int insert_spg_node(struct sp_group *spg, struct sp_group_node *node)
+{
+	if (spg->proc_num + 1 == MAX_PROC_PER_GROUP) {
+		pr_err_ratelimited("add group: group reaches max process num\n");
+		return -ENOSPC;
+	}
+
+	spg->proc_num++;
+	list_add_tail(&node->proc_node, &spg->procs);
 	return 0;
+}
+
+/* the caller must down_write(&spg->rw_lock) */
+static void delete_spg_node(struct sp_group *spg, struct sp_group_node *node)
+{
+	list_del(&node->proc_node);
+	spg->proc_num--;
+}
+
+/* the caller must hold sp_group_sem */
+static void free_spg_node(struct mm_struct *mm, struct sp_group *spg,
+	struct sp_group_node *spg_node)
+{
+	struct sp_group_master *master = mm->sp_group_master;
+
+	list_del(&spg_node->group_node);
+	master->count--;
+
+	kfree(spg_node);
 }
 
 /**
@@ -1147,6 +1170,7 @@ int sp_group_add_task(int pid, unsigned long prot, int spg_id)
 	struct task_struct *tsk;
 	struct mm_struct *mm;
 	struct sp_group *spg;
+	struct sp_group_node *node = NULL;
 	int ret = 0;
 	bool id_newly_generated = false;
 	struct sp_area *spa, *prev = NULL;
@@ -1245,10 +1269,6 @@ int sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		goto out_put_mm;
 	}
 
-	ret = mm_add_group_init(mm, spg);
-	if (ret)
-		goto out_drop_group;
-
 	/* access control permission check */
 	if (sysctl_ac_mode == AC_SINGLE_OWNER) {
 		if (spg->owner != current->group_leader) {
@@ -1257,15 +1277,31 @@ int sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		}
 	}
 
+	ret = mm_add_group_init(mm, spg);
+	if (ret)
+		goto out_drop_group;
+
+	node = create_spg_node(mm, prot, spg);
+	if (unlikely(IS_ERR(node))) {
+		ret = PTR_ERR(node);
+		goto out_drop_spg_node;
+	}
+
 	/* per process statistics initialization */
 	stat = sp_init_process_stat(tsk, mm, spg);
 	if (IS_ERR(stat)) {
 		ret = PTR_ERR(stat);
 		pr_err_ratelimited("init process stat failed %lx\n", PTR_ERR(stat));
-		goto out_drop_group;
+		goto out_drop_spg_node;
 	}
 
 	down_write(&spg->rw_lock);
+	ret = insert_spg_node(spg, node);
+	if (unlikely(ret)) {
+		up_write(&spg->rw_lock);
+		goto out_drop_spg_node;
+	}
+
 	/*
 	 * create mappings of existing shared memory segments into this
 	 * new process' page table.
@@ -1338,21 +1374,25 @@ int sp_group_add_task(int pid, unsigned long prot, int spg_id)
 	}
 	__sp_area_drop_locked(prev);
 	spin_unlock(&sp_area_lock);
+
+	if (unlikely(ret))
+		delete_spg_node(spg, node);
 	up_write(&spg->rw_lock);
 
-	/* no need to free spg_proc_stat, will be freed when process exits */
+out_drop_spg_node:
+	if (unlikely(ret))
+		free_spg_node(mm, spg, node);
+	/*
+	 * to simplify design, we don't release the resource of
+	 * group_master and proc_stat, they will be freed when
+	 * process is exiting.
+	 */
 out_drop_group:
 	if (unlikely(ret)) {
-		if (mm->sp_group_master->count == 0) {
-			kfree(mm->sp_group_master);
-			mm->sp_group_master = NULL;
-		}
 		up_write(&sp_group_sem);
 		sp_group_drop(spg);
-	} else {
-		mm_add_group_finish(mm, spg, prot);
+	} else
 		up_write(&sp_group_sem);
-	}
 out_put_mm:
 	/* No need to put the mm if the sp group adds this mm successfully */
 	if (unlikely(ret))
@@ -3834,13 +3874,6 @@ void sp_group_post_exit(struct mm_struct *mm)
 	if (!enable_ascend_share_pool || !master)
 		return;
 
-	stat = sp_get_proc_stat(master->sp_stat_id);
-	if (stat) {
-		alloc_size = atomic64_read(&stat->alloc_size);
-		k2u_size = atomic64_read(&stat->k2u_size);
-	} else
-		WARN(1, "can't find sp proc stat\n");
-
 	/*
 	 * There are two basic scenarios when a process in the share pool is
 	 * exiting but its share pool memory usage is not 0.
@@ -3856,17 +3889,20 @@ void sp_group_post_exit(struct mm_struct *mm)
 	 * A process not in an sp group doesn't need to print because there
 	 * wont't be any memory which is not freed.
 	 */
-	if (master) {
+	stat = sp_get_proc_stat(master->sp_stat_id);
+	if (stat) {
+		alloc_size = atomic64_read(&stat->alloc_size);
+		k2u_size = atomic64_read(&stat->k2u_size);
+
 		if (alloc_size != 0 || k2u_size != 0)
 			pr_info("process %s(%d) exits. "
 				"It applied %ld aligned KB, k2u shared %ld aligned KB\n",
 				stat->comm, master->sp_stat_id,
 				byte2kb(alloc_size), byte2kb(k2u_size));
 
+		/* match with sp_init_proc_stat, we expect stat is released after this call */
+		sp_proc_stat_drop(stat);
 	}
-
-	/* match with sp_init_proc_stat, we expect stat is released after this call */
-	sp_proc_stat_drop(stat);
 
 	/* lockless traverse */
 	list_for_each_entry_safe(spg_node, tmp, &master->node_list, group_node) {
