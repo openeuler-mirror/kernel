@@ -2547,35 +2547,6 @@ static bool vmalloc_area_clr_flag(unsigned long kva, unsigned long flags)
 	return false;
 }
 
-/*
- * return
- * 1 k2task
- * 0 k2group
- * <0 error code
- */
-static int is_k2task(int spg_id)
-{
-	if (share_pool_group_mode == SINGLE_GROUP_MODE) {
-		struct sp_group *spg = get_first_group(current->mm);
-
-		if (!spg) {
-			if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT)
-				return -EINVAL;
-			else
-				return 1;
-		} else {
-			int ret = 0;
-
-			if (spg_id != SPG_ID_DEFAULT && spg_id != spg->id)
-				ret = -EINVAL;
-			sp_group_drop(spg);
-
-			return ret;
-		}
-	} else
-		return (spg_id == SPG_ID_DEFAULT || spg_id == SPG_ID_NONE) ? 1 : 0;
-}
-
 struct sp_k2u_context {
 	unsigned long kva;
 	unsigned long kva_aligned;
@@ -2583,6 +2554,7 @@ struct sp_k2u_context {
 	unsigned long size_aligned;
 	unsigned long sp_flags;
 	int spg_id;
+	bool to_task;
 	struct timespec64 start;
 	struct timespec64 end;
 };
@@ -2595,7 +2567,7 @@ static void trace_sp_k2u_begin(struct sp_k2u_context *kc)
 	ktime_get_ts64(&kc->start);
 }
 
-static void trace_sp_k2u_finish(struct sp_k2u_context *kc, void *uva, int to_task)
+static void trace_sp_k2u_finish(struct sp_k2u_context *kc, void *uva)
 {
 	unsigned long cost;
 
@@ -2610,7 +2582,8 @@ static void trace_sp_k2u_finish(struct sp_k2u_context *kc, void *uva, int to_tas
 		pr_err("Task %s(%d/%d) sp_k2u returns 0x%lx consumes %luus, size is %luKB, size_aligned is %luKB, "
 		       "sp_flags is %lx, to_task is %d\n",
 		       current->comm, current->tgid, current->pid,
-		       (unsigned long)uva, cost, byte2kb(kc->size), byte2kb(kc->size_aligned), kc->sp_flags, to_task);
+		       (unsigned long)uva, cost, byte2kb(kc->size), byte2kb(kc->size_aligned),
+		       kc->sp_flags, kc->to_task);
 	}
 }
 static int sp_k2u_prepare(unsigned long kva, unsigned long size,
@@ -2658,17 +2631,43 @@ static int sp_k2u_prepare(unsigned long kva, unsigned long size,
 	kc->size_aligned = size_aligned;
 	kc->sp_flags = sp_flags;
 	kc->spg_id = spg_id;
+	kc->to_task = false;
 	return 0;
 }
 
-static void *sp_k2u_finish(void *uva, int to_task, struct sp_k2u_context *kc)
+static int sp_check_k2task(struct sp_k2u_context *kc)
+{
+	int ret = 0;
+	int spg_id = kc->spg_id;
+
+	if (share_pool_group_mode == SINGLE_GROUP_MODE) {
+		struct sp_group *spg = get_first_group(current->mm);
+
+		if (!spg) {
+			if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT)
+				ret = -EINVAL;
+			else
+				kc->to_task = true;
+		} else {
+			if (spg_id != SPG_ID_DEFAULT && spg_id != spg->id)
+				ret = -EINVAL;
+			sp_group_drop(spg);
+		}
+	} else {
+		if (spg_id == SPG_ID_DEFAULT || spg_id == SPG_ID_NONE)
+			kc->to_task = true;
+	}
+	return ret;
+}
+
+static void *sp_k2u_finish(void *uva, struct sp_k2u_context *kc)
 {
 	if (IS_ERR(uva))
 		vmalloc_area_clr_flag(kc->kva_aligned, VM_SHAREPOOL);
 	else
 		uva = uva + (kc->kva - kc->kva_aligned);
 
-	trace_sp_k2u_finish(kc, uva, to_task);
+	trace_sp_k2u_finish(kc, uva);
 	sp_dump_stack();
 	return uva;
 }
@@ -2694,7 +2693,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			unsigned long sp_flags, int pid, int spg_id)
 {
 	void *uva;
-	int ret, to_task;
+	int ret;
 	struct sp_k2u_context kc;
 
 	check_interrupt_context();
@@ -2703,10 +2702,15 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	if (ret)
 		return ERR_PTR(ret);
 
-	to_task = is_k2task(kc.spg_id);
-	if (to_task == 1)
+	ret = sp_check_k2task(&kc);
+	if (ret) {
+		uva = ERR_PTR(ret);
+		goto out;
+	}
+
+	if (kc.to_task)
 		uva = sp_make_share_kva_to_task(kc.kva_aligned, kc.size_aligned, kc.sp_flags);
-	else if (to_task == 0) {
+	else {
 		struct sp_group *spg;
 
 		spg = __sp_find_spg(current->pid, kc.spg_id);
@@ -2715,10 +2719,10 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			sp_group_drop(spg);
 		} else
 			uva = ERR_PTR(-ENODEV);
-	} else
-		uva = ERR_PTR(to_task);
+	}
 
-	return sp_k2u_finish(uva, to_task, &kc);
+out:
+	return sp_k2u_finish(uva, &kc);
 }
 EXPORT_SYMBOL_GPL(sp_make_share_k2u);
 
