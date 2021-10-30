@@ -66,6 +66,8 @@ extern bool vmap_allow_huge;
  */
 struct sp_group {
 	int		 id;
+	/* record the number of hugepage allocation failures */
+	int		 hugepage_failures;
 	struct file	 *file;
 	struct file	 *file_hugetlb;
 	/* list head of processes */
@@ -76,12 +78,14 @@ struct sp_group {
 	atomic_t	 spa_num;
 	/* total size of all sp_area from sp_alloc and k2u(spg) */
 	atomic64_t	 size;
-	/* record the number of hugepage allocation failures */
-	int		 hugepage_failures;
-	/* is_alive == false means it's being destroyed */
-	bool		 is_alive;
+	/* total size of all sp_area from sp_alloc normal page */
+	atomic64_t	 alloc_nsize;
+	/* total size of all sp_area from sp_alloc hugepage */
+	atomic64_t	 alloc_hsize;
 	/* we define the creator process of a sp_group as owner */
 	struct task_struct *owner;
+	/* is_alive == false means it's being destroyed */
+	bool		 is_alive;
 	/* dvpp_multi_spaces == true means multiple dvpp 16G spaces are set */
 	bool		 dvpp_multi_spaces;
 	unsigned long	 dvpp_va_start;

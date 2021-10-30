@@ -52,8 +52,8 @@
 #define spg_valid(spg)		((spg) && ((spg)->is_alive == true))
 #define ESPGMMEXIT		4000
 
-#define byte2kb(size)		((size) / 1024)
-#define byte2mb(size)		((size) / 1024 / 1024)
+#define byte2kb(size)		((size) >> 10)
+#define byte2mb(size)		((size) >> 20)
 
 /* mdc scene hack */
 int enable_mdc_default_group;
@@ -366,6 +366,8 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 		spg->id = spg_id;
 		atomic_set(&spg->spa_num, 0);
 		atomic64_set(&spg->size, 0);
+		atomic64_set(&spg->alloc_nsize, 0);
+		atomic64_set(&spg->alloc_hsize, 0);
 		spg->is_alive = true;
 		spg->hugepage_failures = 0;
 		spg->dvpp_multi_spaces = false;
@@ -925,6 +927,12 @@ found:
 	if (spa->spg) {
 		atomic_inc(&spg->spa_num);
 		atomic64_add(size, &spg->size);
+		if (type == SPA_TYPE_ALLOC) {
+			if (spa->is_hugepage)
+				atomic64_add(size, &spg->alloc_hsize);
+			else
+				atomic64_add(size, &spg->alloc_nsize);
+		}
 		atomic_inc(&spg_stat.spa_total_num);
 		atomic64_add(size, &spg_stat.spa_total_size);
 		list_add_tail(&spa->link, &spg->spa_list);
@@ -1003,6 +1011,12 @@ static void sp_free_area(struct sp_area *spa)
 	if (spa->spg) {
 		atomic_dec(&spa->spg->spa_num);
 		atomic64_sub(spa->real_size, &spa->spg->size);
+		if (spa->type == SPA_TYPE_ALLOC) {
+			if (spa->is_hugepage)
+				atomic64_sub(spa->real_size, &spa->spg->alloc_hsize);
+			else
+				atomic64_sub(spa->real_size, &spa->spg->alloc_nsize);
+		}
 		atomic_dec(&spg_stat.spa_total_num);
 		atomic64_sub(spa->real_size, &spg_stat.spa_total_size);
 		list_del(&spa->link);
@@ -2509,16 +2523,18 @@ static int idr_spg_stat_cb(int id, void *p, void *data)
 	struct sp_group *spg = p;
 	struct seq_file *seq = data;
 
-	seq_printf(seq, "Group %-10d size: %13ld KB, spa num: %d.\n",
-		   id, byte2kb(atomic64_read(&spg->size)),
-		   atomic_read(&spg->spa_num));
+	seq_printf(seq, "Group %6d size: %ld KB, spa num: %d, normal alloc: %ld KB, "
+		   "huge alloc: %ld KB\n",
+		   id, byte2kb(atomic64_read(&spg->size)), atomic_read(&spg->spa_num),
+		   byte2kb(atomic64_read(&spg->alloc_nsize)),
+		   byte2kb(atomic64_read(&spg->alloc_hsize)));
 
 	return 0;
 }
 
 static void spg_overview_show(struct seq_file *seq)
 {
-	seq_printf(seq, "Share pool total size: %13ld KB, spa total num: %d.\n",
+	seq_printf(seq, "Share pool total size: %ld KB, spa total num: %d.\n",
 		   byte2kb(atomic64_read(&spg_stat.spa_total_size)),
 		   atomic_read(&spg_stat.spa_total_num));
 	mutex_lock(&sp_mutex);
