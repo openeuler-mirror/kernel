@@ -589,13 +589,16 @@ __read_extent_tree_block(const char *function, unsigned int line,
 		if (err < 0)
 			goto errout;
 	}
-	if (buffer_verified(bh) && !(flags & EXT4_EX_FORCE_CACHE))
-		return bh;
-	err = __ext4_ext_check(function, line, inode, ext_block_hdr(bh),
-			       depth, pblk, le32_to_cpu(idx->ei_block));
-	if (err)
-		goto errout;
-	set_buffer_verified(bh);
+	if (buffer_verified(bh)) {
+		if (!(flags & EXT4_EX_FORCE_CACHE))
+			return bh;
+	} else {
+		err = __ext4_ext_check(function, line, inode, ext_block_hdr(bh),
+				       depth, pblk, le32_to_cpu(idx->ei_block));
+		if (err)
+			goto errout;
+		set_buffer_verified(bh);
+	}
 	/*
 	 * If this is a leaf block, cache all of its entries
 	 */
