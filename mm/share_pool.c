@@ -1901,6 +1901,13 @@ check_spa:
 			/* we must return success(0) in this situation */
 		}
 		/* the life cycle of spa has a direct relation with sp group */
+		if (unlikely(spa->is_dead)) {
+			up_write(&spa->spg->rw_lock);
+			pr_err_ratelimited("unexpected double sp free\n");
+			dump_stack();
+			ret = -EINVAL;
+			goto drop_spa;
+		}
 		spa->is_dead = true;
 		up_write(&spa->spg->rw_lock);
 
@@ -3236,6 +3243,13 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size)
 			goto out_clr_flag;
 		}
 		/* the life cycle of spa has a direct relation with sp group */
+		if (unlikely(spa->is_dead)) {
+			up_write(&spa->spg->rw_lock);
+			pr_err_ratelimited("unexpected double sp unshare\n");
+			dump_stack();
+			ret = -EINVAL;
+			goto out_drop_area;
+		}
 		spa->is_dead = true;
 		up_write(&spa->spg->rw_lock);
 
@@ -3264,6 +3278,7 @@ out:
 	return ret;
 }
 
+/* No possible concurrent protection, take care when use */
 static int sp_unshare_kva(unsigned long kva, unsigned long size)
 {
 	unsigned long addr, kva_aligned;
