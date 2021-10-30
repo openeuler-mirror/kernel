@@ -267,7 +267,10 @@ static int spa_dec_usage(enum spa_type type, unsigned long size, bool is_dvpp)
 }
 
 static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
-		     struct sp_area *spa, unsigned long *populate);
+			     struct sp_area *spa, unsigned long *populate);
+static void sp_munmap(struct mm_struct *mm, unsigned long addr, unsigned long size);
+static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
+					 struct mm_struct *mm);
 
 static void free_sp_group_id(unsigned int spg_id)
 {
@@ -596,6 +599,15 @@ int sp_group_add_task(int pid, int spg_id)
 		atomic_inc(&spa->use_count);
 		spin_unlock(&sp_area_lock);
 
+		if (spa->type == SPA_TYPE_K2SPG && spa->kva) {
+			addr = sp_remap_kva_to_vma(spa->kva, spa, mm);
+			if (IS_ERR_VALUE(addr))
+				pr_warn("share pool: task add group remap k2u failed, ret %ld\n", addr);
+
+			spin_lock(&sp_area_lock);
+			continue;
+		}
+
 		down_write(&mm->mmap_sem);
 		addr = sp_mmap(mm, file, spa, &populate);
 		if (IS_ERR_VALUE(addr)) {
@@ -611,9 +623,11 @@ int sp_group_add_task(int pid, int spg_id)
 		if (populate) {
 			ret = do_mm_populate(mm, spa->va_start, populate, 0);
 			if (ret) {
-				if (printk_ratelimit())
+				if (printk_ratelimit()) {
 					pr_warn("share pool: task add group failed when mm populate "
-						"failed (potential no enough memory): %d\n", ret);
+						"failed (potential no enough memory): %d "
+						"spa flag is %d\n", ret, spa->type);
+				}
 				sp_munmap_task_areas(mm, spa->link.next);
 				spin_lock(&sp_area_lock);
 				break;
@@ -1480,12 +1494,16 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	int hsize_log = MAP_HUGE_2MB >> MAP_HUGE_SHIFT;
 	unsigned long addr, buf, offset;
 
-	if (spa->is_hugepage) {
-		file = hugetlb_file_setup(HUGETLB_ANON_FILE, spa_size(spa), VM_NORESERVE,
-					  &user, HUGETLB_ANONHUGE_INODE, hsize_log);
-		if (IS_ERR(file)) {
-			pr_err("share pool: file setup for k2u hugepage failed %ld\n", PTR_ERR(file));
-			return PTR_ERR(file);
+	if (spg_valid(spa->spg)) {
+		file = spa_file(spa);
+	} else {
+		if (spa->is_hugepage) {
+			file = hugetlb_file_setup(HUGETLB_ANON_FILE, spa_size(spa), VM_NORESERVE,
+						  &user, HUGETLB_ANONHUGE_INODE, hsize_log);
+			if (IS_ERR(file)) {
+				pr_err("share pool: file setup for k2u hugepage failed %ld\n", PTR_ERR(file));
+				return PTR_ERR(file);
+			}
 		}
 	}
 
@@ -1510,7 +1528,8 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 		ret = remap_vmalloc_hugepage_range(vma, (void *)kva, 0);
 		if (ret) {
 			do_munmap(mm, ret_addr, spa_size(spa), NULL);
-			pr_err("share pool: remap vmalloc hugepage failed, ret %d\n", ret);
+			pr_err("share pool: remap vmalloc hugepage failed, "
+			       "ret %d, kva is %lx\n", ret, kva);
 			ret_addr = ret;
 			goto put_mm;
 		}
@@ -1538,7 +1557,7 @@ put_mm:
 	up_write(&mm->mmap_sem);
 	mmput(mm);
 put_file:
-	if (file)
+	if (!spa->spg && file)
 		fput(file);
 
 	return ret_addr;
@@ -1615,6 +1634,35 @@ out:
 	return p;
 }
 
+static bool vmalloc_area_set_flag(struct sp_area *spa, unsigned long kva, unsigned long flags)
+{
+	struct vm_struct *area;
+
+	area = find_vm_area((void *)kva);
+	if (area) {
+		area->flags |= flags;
+		spa->kva = kva;
+		return true;
+	}
+
+	return false;
+}
+
+static bool vmalloc_area_clr_flag(struct sp_area *spa, unsigned long kva, unsigned long flags)
+{
+	struct vm_struct *area;
+
+	spa->kva = 0;
+
+	area = find_vm_area((void *)kva);
+	if (area) {
+		area->flags &= ~flags;
+		return true;
+	}
+
+	return false;
+}
+
 /**
  * Share kernel memory to a specified process or sp_group
  * @kva: the VA of shared kernel memory
@@ -1638,7 +1686,6 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	unsigned long size_aligned;
 	unsigned int page_size = PAGE_SIZE;
 	int ret;
-	struct vm_struct *area;
 
 	if (sp_flags & ~SP_DVPP) {
 		if (printk_ratelimit())
@@ -1679,8 +1726,13 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 				       PTR_ERR(spa));
 			return spa;
 		}
+
+		if (!vmalloc_area_set_flag(spa, kva_aligned, VM_SHAREPOOL)) {
+			pr_err("%s: the kva %ld is not valid\n", __func__, kva_aligned);
+			goto out;
+		}
+
 		uva = sp_make_share_kva_to_task(kva_aligned, spa, pid);
-		mutex_unlock(&sp_mutex);
 	} else if (spg_valid(spg)) {
 		/* k2u to group */
 		if (spg_id != SPG_ID_DEFAULT && spg_id != spg->id) {
@@ -1699,26 +1751,31 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			return spa;
 		}
 
+		if (!vmalloc_area_set_flag(spa, kva_aligned, VM_SHAREPOOL)) {
+			pr_err("%s: the kva %ld is not valid\n", __func__, kva_aligned);
+			goto out;
+		}
+
 		uva = sp_make_share_kva_to_spg(kva_aligned, spa, spg);
-		mutex_unlock(&sp_mutex);
 	} else {
 		mutex_unlock(&sp_mutex);
 		pr_err("share pool: failed to make k2u\n");
 		return NULL;
 	}
 
-	if (!IS_ERR(uva))
-		uva = uva + (kva - kva_aligned);
-
-	__sp_area_drop(spa);
-
 	if (!IS_ERR(uva)) {
+		uva = uva + (kva - kva_aligned);
+	} else {
 		/* associate vma and spa */
-		area = find_vm_area((void *)kva);
-		if (area)
-			area->flags |= VM_SHAREPOOL;
-		spa->kva = kva;
+		if (!vmalloc_area_clr_flag(spa, kva_aligned, VM_SHAREPOOL))
+			pr_warn("share pool: %s: the kva %ld is not valid \n",
+				__func__, kva_aligned);
 	}
+
+out:
+	__sp_area_drop(spa);
+	mutex_unlock(&sp_mutex);
+
 	sp_dump_stack();
 
 	return uva;
@@ -1990,7 +2047,6 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	unsigned long uva_aligned;
 	unsigned long size_aligned;
 	unsigned int page_size;
-	struct vm_struct *area;
 
 	mutex_lock(&sp_mutex);
 	/*
@@ -2061,7 +2117,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 			if (printk_ratelimit())
 				pr_info("share pool: no need to unshare uva(to task), "
 					"target process mm is exiting\n");
-			goto out_drop_area;
+			goto out_clr_flag;
 		}
 
 		if (spa->mm != mm) {
@@ -2095,7 +2151,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 			if (printk_ratelimit())
 				pr_info("share pool: no need to unshare uva(to group), "
 					"spa doesn't belong to a sp group or group is dead\n");
-			goto out_drop_area;
+			goto out_clr_flag;
 		}
 
 		/* alway allow kthread and dvpp channel destroy procedure */
@@ -2112,11 +2168,12 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 
 	sp_dump_stack();
 
-out_drop_area:
+out_clr_flag:
 	/* deassociate vma and spa */
-	area = find_vm_area((void *)spa->kva);
-	if (area)
-		area->flags &= ~VM_SHAREPOOL;
+	if (!vmalloc_area_clr_flag(spa, spa->kva, VM_SHAREPOOL))
+		pr_warn("share pool: %s: the spa->kva %ld is not valid\n", __func__, spa->kva);
+
+out_drop_area:
 	__sp_area_drop(spa);
 out_unlock:
 	mutex_unlock(&sp_mutex);
@@ -2162,7 +2219,7 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
 		if (page)
 			put_page(page);
 		else
-			pr_err("share pool: vmalloc %pK to page/hugepage failed\n",
+			pr_warn("share pool: vmalloc %pK to page/hugepage failed\n",
 			       (void *)addr);
 	}
 
