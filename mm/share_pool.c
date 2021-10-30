@@ -23,6 +23,7 @@
 #include <linux/mm_types.h>
 #include <linux/idr.h>
 #include <linux/mutex.h>
+#include <linux/rwsem.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 #include <linux/rbtree.h>
@@ -83,6 +84,8 @@ static DEFINE_IDA(sp_group_id_ida);
 
 /* idr of all sp_proc_stats */
 static DEFINE_IDR(sp_stat_idr);
+/* rw semaphore for sp_stat_idr */
+static DECLARE_RWSEM(sp_stat_sem);
 
 /* for kthread buff_module_guard_work */
 static struct sp_proc_stat kthread_stat = {0};
@@ -100,7 +103,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 	int ret;
 
 	if (id) {
-		stat = idr_find(&sp_stat_idr, id);
+		stat = sp_get_proc_stat(id);
 		/* other threads in the same process may have initialized it */
 		if (stat)
 			return stat;
@@ -117,7 +120,10 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 	atomic64_set(&stat->k2u_size, 0);
 	stat->mm = mm;
 	get_task_comm(stat->comm, tsk);
+
+	down_write(&sp_stat_sem);
 	ret = idr_alloc(&sp_stat_idr, stat, tgid, tgid + 1, GFP_KERNEL);
+	up_write(&sp_stat_sem);
 	if (ret < 0) {
 		if (printk_ratelimit())
 			pr_err("share pool: proc stat idr alloc failed %d\n", ret);
@@ -686,15 +692,20 @@ int sp_group_add_task(int pid, int spg_id)
 	spin_unlock(&sp_area_lock);
 
 	if (unlikely(ret)) {
-		idr_remove(&sp_stat_idr, mm->sp_stat_id);
-		kfree(stat);
-		mm->sp_stat_id = 0;
 		/* spg->procs is modified, spg->rw_lock should be put below */
 		list_del(&mm->sp_node);
 		mm->sp_group = NULL;
 	}
-
 	up_write(&spg->rw_lock);
+
+	if (unlikely(ret)) {
+		down_write(&sp_stat_sem);
+		idr_remove(&sp_stat_idr, mm->sp_stat_id);
+		up_write(&sp_stat_sem);
+		kfree(stat);
+		mm->sp_stat_id = 0;
+	}
+
 out_drop_group:
 	if (unlikely(ret))
 		__sp_group_drop_locked(spg);
@@ -743,10 +754,7 @@ void sp_group_post_exit(struct mm_struct *mm)
 	if (!enable_ascend_share_pool || !mm->sp_group)
 		return;
 
-	spg_exit_lock(&unlock);
-
-	/* pointer stat must be valid, we don't need to check sanity */
-	stat = idr_find(&sp_stat_idr, mm->sp_stat_id);
+	stat = sp_get_proc_stat(mm->sp_stat_id);
 	/*
 	 * There are two basic scenarios when a process in the share pool is
 	 * exiting but its share pool memory usage is not 0.
@@ -769,8 +777,11 @@ void sp_group_post_exit(struct mm_struct *mm)
 				byte2kb(alloc_size), byte2kb(k2u_size));
 	}
 
+	down_write(&sp_stat_sem);
 	idr_remove(&sp_stat_idr, mm->sp_stat_id);
+	up_write(&sp_stat_sem);
 
+	spg_exit_lock(&unlock);
 	__sp_group_drop_locked(mm->sp_group);
 	spg_exit_unlock(unlock);
 
@@ -1223,7 +1234,7 @@ int sp_free(unsigned long addr)
 	if (current->mm == NULL) {
 		atomic64_sub(spa->real_size, &kthread_stat.alloc_size);
 	} else {
-		stat = idr_find(&sp_stat_idr, current->mm->sp_stat_id);
+		stat = sp_get_proc_stat(current->mm->sp_stat_id);
 		if (stat)
 			atomic64_sub(spa->real_size, &stat->alloc_size);
 		else
@@ -1466,7 +1477,7 @@ out:
 
 	mutex_lock(&sp_mutex);
 	if (!IS_ERR(p)) {
-		stat = idr_find(&sp_stat_idr, current->mm->sp_stat_id);
+		stat = sp_get_proc_stat(current->mm->sp_stat_id);
 		if (stat)
 			atomic64_add(size_aligned, &stat->alloc_size);
 	}
@@ -2260,7 +2271,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	if (current->mm == NULL) {
 		atomic64_sub(spa->real_size, &kthread_stat.k2u_size);
 	} else {
-		stat = idr_find(&sp_stat_idr, current->mm->sp_stat_id);
+		stat = sp_get_proc_stat(current->mm->sp_stat_id);
 		if (stat)
 			atomic64_sub(spa->real_size, &stat->k2u_size);
 		else
@@ -2488,9 +2499,9 @@ struct sp_proc_stat *sp_get_proc_stat(int tgid)
 {
 	struct sp_proc_stat *stat;
 
-	mutex_lock(&sp_mutex);
+	down_read(&sp_stat_sem);
 	stat = idr_find(&sp_stat_idr, tgid);
-	mutex_unlock(&sp_mutex);
+	up_read(&sp_stat_sem);
 
 	/* maybe NULL or not, we always return it */
 	return stat;
@@ -2501,22 +2512,28 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 {
 	struct sp_group *spg = NULL;
 	struct sp_proc_stat *stat;
+	int spg_id, hugepage_failures;
 
 	mutex_lock(&sp_mutex);
 	spg = __sp_find_spg(task->pid, SPG_ID_DEFAULT);
 	if (spg_valid(spg)) {
-		stat = idr_find(&sp_stat_idr, task->mm->sp_stat_id);
-		if (!stat) {
-			mutex_unlock(&sp_mutex);
+		spg_id = spg->id;
+		hugepage_failures = spg->hugepage_failures;
+		mutex_unlock(&sp_mutex);
+
+		/* eliminate potential ABBA deadlock */
+		stat = sp_get_proc_stat(task->mm->sp_stat_id);
+		if (!stat)
 			return 0;
-		}
+
 		/* print the file header */
 		seq_printf(m, "%-8s %-9s %-13s\n",
 			   "Group_ID", "SP_ALLOC", "HugePage Fail");
 		seq_printf(m, "%-8d %-9ld %-13d\n",
-			   spg->id,
+			   spg_id,
 			   byte2kb(atomic64_read(&stat->alloc_size)),
-			   spg->hugepage_failures);
+			   hugepage_failures);
+		return 0;
 	}
 	mutex_unlock(&sp_mutex);
 
@@ -2704,11 +2721,11 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	long sp_alloc_nsize, non_sp_res, sp_res, non_sp_shm;
 
 	mutex_lock(&sp_mutex);
-	if (!mmget_not_zero(mm))
-		goto out_unlock;
 	/*
 	 * a task which is the target of k2u(to task) but without adding to a
 	 * sp group should be handled correctly.
+	 * No longer mmget_not_zero(mm) but a process (k2u to task) may have
+	 * problem
 	 */
 	spg = __sp_find_spg(id, SPG_ID_DEFAULT);
 	if (!spg_valid(spg)) {
@@ -2740,7 +2757,6 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 		   sp_res, non_sp_res,
 		   page2kb(mm->total_vm), page2kb(total_rss),
 		   page2kb(shmem), non_sp_shm);
-	mmput(mm);
 
 out_unlock:
 	mutex_unlock(&sp_mutex);
@@ -2761,7 +2777,11 @@ static int proc_stat_show(struct seq_file *seq, void *offset)
 		   "guard", "-",
 		   byte2kb(atomic64_read(&kthread_stat.alloc_size)),
 		   byte2kb(atomic64_read(&kthread_stat.k2u_size)));
+
+	/* pay attention to potential ABBA deadlock */
+	down_read(&sp_stat_sem);
 	idr_for_each(&sp_stat_idr, idr_proc_stat_cb, seq);
+	up_read(&sp_stat_sem);
 	return 0;
 }
 
