@@ -93,7 +93,7 @@ struct sp_spg_stat {
  * tell us which 16G memory range is reserved for share pool .
  *
  * In some scenarios where there is no host SVM feature, share pool uses
- * the default memory setting for DVPP.
+ * the default 8G memory setting for DVPP.
  */
 struct sp_group {
 	int		 id;
@@ -111,10 +111,6 @@ struct sp_group {
 	struct task_struct *owner;
 	/* is_alive == false means it's being destroyed */
 	bool		 is_alive;
-	/* dvpp_multi_spaces == true means multiple dvpp 16G spaces are set */
-	bool		 dvpp_multi_spaces;
-	unsigned long	 dvpp_va_start;
-	unsigned long	 dvpp_size;
 	atomic_t	 use_count;
 	/* protect the group internal elements, except spa_list */
 	struct rw_semaphore	rw_lock;

@@ -47,6 +47,7 @@
 #include <linux/compaction.h>
 #include <linux/preempt.h>
 #include <linux/swapops.h>
+#include <linux/mmzone.h>
 
 /* access control mode macros  */
 #define AC_NONE			0
@@ -86,6 +87,10 @@ int sysctl_share_pool_map_lock_enable;
 static int share_pool_group_mode = SINGLE_GROUP_MODE;
 
 static int system_group_count;
+
+static bool enable_sp_dev_addr;
+static unsigned long sp_dev_va_start[MAX_DEVID];
+static unsigned long sp_dev_va_size[MAX_DEVID];
 
 /* idr of all sp_groups */
 static DEFINE_IDR(sp_group_idr);
@@ -534,7 +539,6 @@ struct sp_area {
 };
 static DEFINE_SPINLOCK(sp_area_lock);
 static struct rb_root sp_area_root = RB_ROOT;
-static bool sp_area_customized;
 
 static unsigned long spa_size(struct sp_area *spa)
 {
@@ -872,6 +876,29 @@ out_up_read:
 }
 EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
 
+static bool is_online_node_id(int node_id)
+{
+	pg_data_t *pgdat;
+
+	for_each_online_pgdat(pgdat) {
+		if (node_id == pgdat->node_id)
+			return true;
+	}
+	return false;
+}
+
+static bool is_device_addr(unsigned long addr)
+{
+	int i;
+
+	for (i = 0; i < MAX_DEVID; i++) {
+		if (addr >= sp_dev_va_start[i] &&
+		    addr < sp_dev_va_start[i] + sp_dev_va_size[i])
+			return true;
+	}
+	return false;
+}
+
 static loff_t addr_offset(struct sp_area *spa)
 {
 	unsigned long addr;
@@ -882,13 +909,10 @@ static loff_t addr_offset(struct sp_area *spa)
 	}
 	addr = spa->va_start;
 
-	if (sp_area_customized == false)
+	if (!enable_sp_dev_addr || !is_device_addr(addr))
 		return (loff_t)(addr - MMAP_SHARE_POOL_START);
 
-	if (spa->spg != spg_none)
-		return (loff_t)(addr - spa->spg->dvpp_va_start);
-	else
-		return (loff_t)(addr - MMAP_SHARE_POOL_START);
+	return (loff_t)(addr - sp_dev_va_start[spa->node_id]);
 }
 
 static struct sp_group *create_spg(int spg_id)
@@ -919,7 +943,6 @@ static struct sp_group *create_spg(int spg_id)
 	spg->id = spg_id;
 	spg->is_alive = true;
 	spg->proc_num = 0;
-	spg->dvpp_multi_spaces = false;
 	spg->owner = current->group_leader;
 	atomic_set(&spg->use_count, 1);
 	INIT_LIST_HEAD(&spg->procs);
@@ -1375,18 +1398,20 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 	unsigned long size_align = PMD_ALIGN(size); /* va aligned to 2M */
 	int node_id = (flags >> DEVICE_ID_SHIFT) & DEVICE_ID_MASK;
 
+	if (!is_online_node_id(node_id) ||
+	    node_id < 0 || node_id >= MAX_DEVID) {
+		pr_err_ratelimited("invalid numa node id %d\n", node_id);
+		return ERR_PTR(-EINVAL);
+	}
+
 	if ((flags & SP_DVPP)) {
-		if (sp_area_customized == false) {
+		if (!enable_sp_dev_addr) {
 			vstart = MMAP_SHARE_POOL_16G_START +
 				node_id * MMAP_SHARE_POOL_16G_SIZE;
 			vend = vstart + MMAP_SHARE_POOL_16G_SIZE;
 		} else {
-			if (!spg) {
-				pr_err_ratelimited("don't allow k2u(task) in host svm multiprocess scene\n");
-				return ERR_PTR(-EINVAL);
-			}
-			vstart = spg->dvpp_va_start;
-			vend = spg->dvpp_va_start + spg->dvpp_size;
+			vstart = sp_dev_va_start[node_id];
+			vend = vstart + sp_dev_va_size[node_id];
 		}
 	}
 
@@ -3164,35 +3189,19 @@ EXPORT_SYMBOL_GPL(sp_unregister_notifier);
  * @device_id: the num of Da-vinci device
  * @pid: the pid of device process
  *
- * Return true for success, false if parameter invalid of has been set up.
+ * Return true for success.
+ * Return false if parameter invalid or has been set up.
+ * This functuon has no concurrent problem.
  */
 bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 {
-	struct sp_group *spg;
-
-	check_interrupt_context();
-
-	if (device_id < 0 || device_id >= MAX_DEVID || pid < 0 || size <= 0 ||
-	    size > MMAP_SHARE_POOL_16G_SIZE)
+	if (!is_online_node_id(device_id) || device_id < 0 || device_id >= MAX_DEVID ||
+	    pid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE || enable_sp_dev_addr)
 		return false;
 
-	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
-	if (!spg)
-		return false;
-
-	down_write(&spg->rw_lock);
-	if (!spg_valid(spg) || spg->dvpp_multi_spaces == true) {
-		up_write(&spg->rw_lock);
-		return false;
-	}
-	spg->dvpp_va_start = start;
-	spg->dvpp_size = size;
-	spg->dvpp_multi_spaces = true;
-	up_write(&spg->rw_lock);
-
-	sp_area_customized = true;
-
-	sp_group_drop(spg);
+	sp_dev_va_start[device_id] = start;
+	sp_dev_va_size[device_id] = size;
+	enable_sp_dev_addr = true;
 	return true;
 }
 EXPORT_SYMBOL_GPL(sp_config_dvpp_range);
@@ -3212,20 +3221,10 @@ static bool is_sp_normal_addr(unsigned long addr)
  */
 bool is_sharepool_addr(unsigned long addr)
 {
-	struct sp_area *spa;
-	bool ret = false;
-
-	if (sp_area_customized == false)
+	if (!enable_sp_dev_addr)
 		return is_sp_normal_addr(addr);
 
-	spa = __find_sp_area(addr);
-	if (spa && spa->spg != spg_none)
-		ret = is_sp_normal_addr(addr) ||
-			(addr >= spa->spg->dvpp_va_start &&
-			 addr < spa->spg->dvpp_va_start + spa->spg->dvpp_size);
-
-	__sp_area_drop(spa);
-	return ret;
+	return is_sp_normal_addr(addr) || is_device_addr(addr);
 }
 EXPORT_SYMBOL_GPL(is_sharepool_addr);
 
