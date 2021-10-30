@@ -470,11 +470,6 @@ struct mm_struct {
 #endif
 		struct user_namespace *user_ns;
 
-#ifdef CONFIG_ASCEND_SHARE_POOL
-		struct sp_group *sp_group;
-		struct list_head sp_node;       /* link to sp_group->procs */
-		int sp_stat_id;
-#endif
 		/* store ref to file /proc/<pid>/exe symlink points to */
 		struct file __rcu *exe_file;
 #ifdef CONFIG_MMU_NOTIFIER
@@ -523,6 +518,10 @@ struct mm_struct {
 	struct kvm *kvm;
 #else
 	KABI_RESERVE(1)
+#endif
+
+#ifdef CONFIG_ASCEND_SHARE_POOL
+	struct sp_group_master *sp_group_master;
 #endif
 
 	KABI_RESERVE(2)

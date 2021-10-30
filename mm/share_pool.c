@@ -39,11 +39,9 @@
 #include <linux/kernel.h>
 #include <linux/falloc.h>
 #include <linux/types.h>
-#include <linux/idr.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/rmap.h>
-#include <linux/hugetlb.h>
 #include <linux/compaction.h>
 #include <linux/preempt.h>
 #include <linux/swapops.h>
@@ -57,6 +55,12 @@
 #define byte2kb(size)		((size) >> 10)
 #define byte2mb(size)		((size) >> 20)
 #define page2kb(page_num)	((page_num) << (PAGE_SHIFT - 10))
+
+#define SINGLE_GROUP_MODE	1
+#define MULTI_GROUP_MODE	2
+
+#define MAX_GROUP_FOR_SYSTEM	50000
+#define MAX_GROUP_FOR_TASK	3000
 
 #define PF_DOMAIN_CORE		0x10000000	/* AOS CORE processes in sched.h */
 
@@ -74,9 +78,11 @@ int sysctl_sp_debug_mode;
 
 int sysctl_share_pool_map_lock_enable;
 
+static int share_pool_group_mode = SINGLE_GROUP_MODE;
+
 /* idr of all sp_groups */
 static DEFINE_IDR(sp_group_idr);
-/* rw semaphore for sp_group_idr */
+/* rw semaphore for sp_group_idr and mm->sp_group_master */
 static DECLARE_RWSEM(sp_group_sem);
 
 static BLOCKING_NOTIFIER_HEAD(sp_notifier_chain);
@@ -129,7 +135,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 	int ret;
 
 	down_write(&sp_stat_sem);
-	id = mm->sp_stat_id;
+	id = mm->sp_group_master->sp_stat_id;
 	if (id) {
 		/* other threads in the same process may have initialized it */
 		stat = sp_get_proc_stat_locked(tgid);
@@ -166,7 +172,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 		return ERR_PTR(ret);
 	}
 
-	mm->sp_stat_id = ret;
+	mm->sp_group_master->sp_stat_id = ret;
 	up_write(&sp_stat_sem);
 	return stat;
 }
@@ -350,7 +356,7 @@ static void sp_munmap(struct mm_struct *mm, unsigned long addr, unsigned long si
 static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 					 struct mm_struct *mm);
 
-static void free_sp_group_id(unsigned int spg_id)
+static void free_sp_group_id(int spg_id)
 {
 	/* ida operation is protected by an internal spin_lock */
 	if ((spg_id >= SPG_ID_AUTO_MIN && spg_id <= SPG_ID_AUTO_MAX) ||
@@ -382,14 +388,34 @@ static void sp_group_drop(struct sp_group *spg)
 		free_sp_group(spg);
 }
 
+static struct sp_group *get_first_group(struct mm_struct *mm)
+{
+	struct sp_group *spg = NULL;
+	struct sp_group_master *master = mm->sp_group_master;
+
+	if (master && master->count >= 1) {
+		struct sp_group_node *spg_node = NULL;
+
+		spg_node = list_first_entry(&master->node_list,
+					struct sp_group_node, group_node);
+		spg = spg_node->spg;
+
+		/* don't revive a dead group */
+		if (!spg || !atomic_inc_not_zero(&spg->use_count))
+			spg = NULL;
+	}
+
+	return spg;
+}
+
 /* user must call sp_group_drop() after use */
 static struct sp_group *__sp_find_spg_locked(int pid, int spg_id)
 {
-	struct sp_group *spg;
+	struct sp_group *spg = NULL;
+	struct task_struct *tsk = NULL;
 	int ret = 0;
 
 	if (spg_id == SPG_ID_DEFAULT) {
-		struct task_struct *tsk;
 		rcu_read_lock();
 		tsk = find_task_by_vpid(pid);
 		if (!tsk || (tsk->flags & PF_EXITING))
@@ -408,12 +434,9 @@ static struct sp_group *__sp_find_spg_locked(int pid, int spg_id)
 		task_lock(tsk);
 		if (tsk->mm == NULL)
 			spg = NULL;
-		else {
-			spg = tsk->mm->sp_group;
-			/* don't revive a dead group */
-			if (!spg || !atomic_inc_not_zero(&spg->use_count))
-				spg = NULL;
-		}
+		else
+			spg = get_first_group(tsk->mm);
+
 		task_unlock(tsk);
 
 		put_task_struct(tsk);
@@ -561,14 +584,14 @@ out_kfree:
 static void __sp_area_drop_locked(struct sp_area *spa);
 
 /* The caller must down_write(&mm->mmap_sem) */
-static void sp_munmap_task_areas(struct mm_struct *mm, struct list_head *stop)
+static void sp_munmap_task_areas(struct mm_struct *mm, struct sp_group *spg, struct list_head *stop)
 {
 	struct sp_area *spa, *prev = NULL;
 	int err;
 
-	spin_lock(&sp_area_lock);
 
-	list_for_each_entry(spa, &mm->sp_group->spa_list, link) {
+	spin_lock(&sp_area_lock);
+	list_for_each_entry(spa, &spg->spa_list, link) {
 		if (&spa->link == stop)
 			break;
 
@@ -590,6 +613,75 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct list_head *stop)
 	__sp_area_drop_locked(prev);
 
 	spin_unlock(&sp_area_lock);
+}
+
+static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
+{
+	struct sp_group_master *master = mm->sp_group_master;
+	struct sp_group_node *spg_node;
+
+	if (share_pool_group_mode == SINGLE_GROUP_MODE && master &&
+	    master->count == 1) {
+		pr_err("share pool: at most one sp group for a task is allowed in single mode\n");
+		return -EEXIST;
+	}
+
+	if (!master) {
+		master = kzalloc(sizeof(struct sp_group_master), GFP_KERNEL);
+		if (master == NULL) {
+			pr_err_ratelimited("share pool: no memory for spg master\n");
+			return -ENOMEM;
+		}
+	} else {
+		list_for_each_entry(spg_node, &master->node_list, group_node) {
+			if (spg_node->spg == spg) {
+				pr_err("share pool: task is already in target group\n");
+				return -EEXIST;
+			}
+		}
+	}
+
+	if (!mm->sp_group_master) {
+		INIT_LIST_HEAD(&master->node_list);
+		master->count = 0;
+		master->mm = mm;
+		master->sp_stat_id = 0;
+		mm->sp_group_master = master;
+	} else {
+		if (master->count + 1 == MAX_GROUP_FOR_TASK) {
+			pr_err("share pool: task reaches max group num\n");
+			return -ENOSPC;
+		}
+	}
+
+	return 0;
+}
+
+static int mm_add_group_finish(struct mm_struct *mm, struct sp_group *spg)
+{
+	struct sp_group_master *master;
+	struct sp_group_node *spg_node;
+
+	spg_node = kzalloc(sizeof(struct sp_group_node), GFP_KERNEL);
+	if (spg_node == NULL) {
+		pr_err_ratelimited("share pool: no memory for spg node\n");
+		return -ENOMEM;
+	}
+
+	master = mm->sp_group_master;
+	INIT_LIST_HEAD(&spg_node->group_node);
+	INIT_LIST_HEAD(&spg_node->proc_node);
+	spg_node->spg = spg;
+	spg_node->master = master;
+
+	down_write(&spg->rw_lock);
+	list_add_tail(&spg_node->proc_node, &spg->procs);
+	up_write(&spg->rw_lock);
+
+	list_add_tail(&spg_node->group_node, &master->node_list);
+	master->count++;
+
+	return 0;
 }
 
 /**
@@ -711,11 +803,6 @@ int sp_group_add_task(int pid, int spg_id)
 		ret = -ESRCH;
 		free_new_spg_id(id_newly_generated, spg_id);
 		goto out_put_task;
-	} else if (mm->sp_group) {
-		up_write(&sp_group_sem);
-		ret = -EEXIST;
-		free_new_spg_id(id_newly_generated, spg_id);
-		goto out_put_mm;
 	}
 
 	spg = find_or_alloc_sp_group(spg_id);
@@ -726,17 +813,17 @@ int sp_group_add_task(int pid, int spg_id)
 		goto out_put_mm;
 	}
 
+	ret = mm_add_group_init(mm, spg);
+	if (ret)
+		goto out_drop_group;
+
 	/* access control permission check */
 	if (sysctl_ac_mode == AC_SINGLE_OWNER) {
 		if (spg->owner != current->group_leader) {
 			ret = -EPERM;
-			up_write(&sp_group_sem);
 			goto out_drop_group;
 		}
 	}
-
-	mm->sp_group = spg;
-	up_write(&sp_group_sem);
 
 	/* per process statistics initialization */
 	stat = sp_init_proc_stat(tsk, mm);
@@ -746,7 +833,7 @@ int sp_group_add_task(int pid, int spg_id)
 		goto out_drop_group;
 	}
 
-	down_read(&spg->rw_lock);
+	down_write(&spg->rw_lock);
 	/*
 	 * create mappings of existing shared memory segments into this
 	 * new process' page table.
@@ -779,7 +866,7 @@ int sp_group_add_task(int pid, int spg_id)
 
 		down_write(&mm->mmap_sem);
 		if (unlikely(mm->core_state)) {
-			sp_munmap_task_areas(mm, &spa->link);
+			sp_munmap_task_areas(mm, spg, &spa->link);
 			up_write(&mm->mmap_sem);
 			ret = -EBUSY;
 			pr_err("share pool: task add group: encountered coredump, abort\n");
@@ -789,7 +876,7 @@ int sp_group_add_task(int pid, int spg_id)
 
 		addr = sp_mmap(mm, file, spa, &populate);
 		if (IS_ERR_VALUE(addr)) {
-			sp_munmap_task_areas(mm, &spa->link);
+			sp_munmap_task_areas(mm, spg, &spa->link);
 			up_write(&mm->mmap_sem);
 			ret = addr;
 			pr_err("share pool: task add group sp mmap failed, ret %d\n", ret);
@@ -808,7 +895,7 @@ int sp_group_add_task(int pid, int spg_id)
 							    "(potential no enough memory when -12): %d, spa type is %d\n",
 					ret, spa->type);
 				down_write(&mm->mmap_sem);
-				sp_munmap_task_areas(mm, spa->link.next);
+				sp_munmap_task_areas(mm, spg, spa->link.next);
 				up_write(&mm->mmap_sem);
 				spin_lock(&sp_area_lock);
 				break;
@@ -819,21 +906,22 @@ int sp_group_add_task(int pid, int spg_id)
 	}
 	__sp_area_drop_locked(prev);
 	spin_unlock(&sp_area_lock);
-	up_read(&spg->rw_lock);
+	up_write(&spg->rw_lock);
 
 	if (unlikely(ret))
 		sp_proc_stat_drop(stat);
 
 out_drop_group:
 	if (unlikely(ret)) {
-		down_write(&sp_group_sem);
-		mm->sp_group = NULL;
+		if (mm->sp_group_master->count == 0) {
+			kfree(mm->sp_group_master);
+			mm->sp_group_master = NULL;
+		}
 		up_write(&sp_group_sem);
 		sp_group_drop(spg);
 	} else {
-		down_write(&spg->rw_lock);
-		list_add_tail(&mm->sp_node, &spg->procs);
-		up_write(&spg->rw_lock);
+		mm_add_group_finish(mm, spg);
+		up_write(&sp_group_sem);
 	}
 out_put_mm:
 	/* No need to put the mm if the sp group adds this mm successfully */
@@ -1250,9 +1338,10 @@ static void __sp_free(struct sp_group *spg, unsigned long addr,
 		      unsigned long size, struct mm_struct *stop)
 {
 	struct mm_struct *mm;
-	struct mm_struct *tmp;
+	struct sp_group_node *spg_node = NULL;
 
-	list_for_each_entry_safe(mm, tmp, &spg->procs, sp_node) {
+	list_for_each_entry(spg_node, &spg->procs, proc_node) {
+		mm = spg_node->master->mm;
 		if (mm == stop)
 			break;
 		sp_munmap(mm, addr, size);
@@ -1285,11 +1374,32 @@ int sp_free(unsigned long addr)
 	spa = __find_sp_area(addr);
 	if (spa) {
 		if (current->mm != NULL) {
-			if (current->mm->sp_group != spa->spg) {
+			struct sp_group_node *spg_node;
+			bool found = false;
+
+			down_read(&spa->spg->rw_lock);
+			list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
+				if (spg_node->master->mm == current->mm) {
+					found = true;
+					break;
+				}
+			}
+			up_read(&spa->spg->rw_lock);
+			if (!found) {
 				ret = -EPERM;
 				goto drop_spa;
 			}
 		}
+
+		down_write(&spa->spg->rw_lock);
+		if (!spg_valid(spa->spg)) {
+			up_write(&spa->spg->rw_lock);
+			goto drop_spa;
+		}
+		/* the life cycle of spa has a direct relation with sp group */
+		spa->is_dead = true;
+		up_write(&spa->spg->rw_lock);
+
 	} else {  /* spa == NULL */
 		ret = -EINVAL;
 		pr_debug("share pool: sp free invalid input addr %lx\n", (unsigned long)addr);
@@ -1302,14 +1412,7 @@ int sp_free(unsigned long addr)
 		goto drop_spa;
 	}
 
-	down_write(&spa->spg->rw_lock);
-	if (!spg_valid(spa->spg)) {
-		up_write(&spa->spg->rw_lock);
-		goto drop_spa;
-	}
-	/* the life cycle of spa has a direct relation with sp group */
-	spa->is_dead = true;
-	up_write(&spa->spg->rw_lock);
+	sp_dump_stack();
 
 	down_read(&spa->spg->rw_lock);
 
@@ -1328,7 +1431,7 @@ int sp_free(unsigned long addr)
 	if (current->mm == NULL) {
 		atomic64_sub(spa->real_size, &kthread_stat.alloc_size);
 	} else {
-		stat = sp_get_proc_stat(current->mm->sp_stat_id);
+		stat = sp_get_proc_stat(current->mm->sp_group_master->sp_stat_id);
 		if (stat)
 			atomic64_sub(spa->real_size, &stat->alloc_size);
 		else
@@ -1399,9 +1502,9 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	struct file *file;
 	unsigned long size_aligned;
 	int ret = 0;
-	struct mm_struct *tmp;
 	unsigned long mode, offset;
 	unsigned int noreclaim_flag;
+	struct sp_group_node *spg_node;
 
 	check_interrupt_context();
 
@@ -1443,12 +1546,7 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 			pr_err_ratelimited("share pool: allocation failed, add group error %d in DVPP pass through\n", ret);
 			return ERR_PTR(ret);
 		}
-		spg = current->mm->sp_group;
-		/*
-		 * increase use_count deliberately, due to __sp_find_spg is
-		 * matched with sp_group_drop
-		 */
-		atomic_inc(&spg->use_count);
+		spg = get_first_group(current->mm);
 	} else {  /* other scenes */
 		if (spg_id != SPG_ID_DEFAULT) {
 			spg_tmp = __sp_find_spg(current->pid, spg_id);
@@ -1488,9 +1586,10 @@ try_again:
 	sp_addr = spa->va_start;
 
 	/* create mapping for each process in the group */
-	list_for_each_entry_safe(mm, tmp, &spg->procs, sp_node) {
+	list_for_each_entry(spg_node, &spg->procs, proc_node) {
 		unsigned long populate = 0;
 		struct vm_area_struct *vma;
+		mm = spg_node->master->mm;
 
 		down_write(&mm->mmap_sem);
 		if (unlikely(mm->core_state)) {
@@ -1552,7 +1651,8 @@ try_again:
 				sp_add_work_compact();
 		}
 		if (ret) {
-			__sp_free(spg, sp_addr, size_aligned, list_next_entry(mm, sp_node));
+			__sp_free(spg, sp_addr, size_aligned,
+				  (list_next_entry(spg_node, proc_node))->master->mm);
 			if (unlikely(fatal_signal_pending(current)))
 				pr_warn_ratelimited("share pool: allocation failed, current thread is killed\n");
 			else
@@ -1587,7 +1687,7 @@ out:
 	up_read(&spg->rw_lock);
 
 	if (!IS_ERR(p)) {
-		stat = sp_get_proc_stat(current->mm->sp_stat_id);
+		stat = sp_get_proc_stat(current->mm->sp_group_master->sp_stat_id);
 		if (stat)
 			atomic64_add(size_aligned, &stat->alloc_size);
 		else
@@ -1760,12 +1860,13 @@ static void *sp_make_share_kva_to_spg(unsigned long kva, struct sp_area *spa,
 				      struct sp_group *spg)
 {
 	struct mm_struct *mm;
-	struct mm_struct *tmp;
 	unsigned long ret_addr = -ENODEV;
 	unsigned long uva = -ENODEV;
 	void *p = ERR_PTR(-ENODEV);
+	struct sp_group_node *spg_node;
 
-	list_for_each_entry_safe(mm, tmp, &spg->procs, sp_node) {
+	list_for_each_entry(spg_node, &spg->procs, proc_node) {
+		mm = spg_node->master->mm;
 		ret_addr = sp_remap_kva_to_vma(kva, spa, mm);
 		if (IS_ERR_VALUE(ret_addr)) {
 			pr_err("share pool: remap k2u to spg failed, ret %ld \n", ret_addr);
@@ -1906,7 +2007,6 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		}
 
 		if (!vmalloc_area_set_flag(spa, kva_aligned, VM_SHAREPOOL)) {
-			up_read(&spg->rw_lock);
 			pr_debug("share pool: %s: the kva %lx is not valid\n", __func__, (unsigned long)kva_aligned);
 			goto out_drop_spa;
 		}
@@ -2293,12 +2393,14 @@ EXPORT_SYMBOL_GPL(sp_make_share_u2k);
 static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int spg_id)
 {
 	int ret = 0;
+	bool found = false;
 	struct mm_struct *mm;
 	struct sp_area *spa;
 	unsigned long uva_aligned;
 	unsigned long size_aligned;
 	unsigned int page_size;
 	struct sp_proc_stat *stat;
+	struct sp_group_node *spg_node;
 
 	/*
 	 * at first we guess it's a hugepage addr
@@ -2392,19 +2494,25 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 			goto out_drop_area;
 		}
 
-		if (unlikely(!spa->spg)) {
-			WARN(1, "share pool: unshare uva NULL spg pointer\n");
-			ret = -EINVAL;
-			goto out_drop_area;
+		down_read(&spa->spg->rw_lock);
+		/* always allow kthread and dvpp channel destroy procedure */
+		if (current->mm) {
+			list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
+				if (spg_node->master->mm == current->mm) {
+					found = true;
+					break;
+				}
+			}
 		}
 
-		/* alway allow kthread and dvpp channel destroy procedure */
-		if (current->mm && current->mm->sp_group != spa->spg) {
+		if (!found) {
+			up_read(&spa->spg->rw_lock);
 			pr_err_ratelimited("share pool: unshare uva(to group) failed, "
 					   "caller process doesn't belong to target group\n");
 			ret = -EINVAL;
 			goto out_drop_area;
 		}
+		up_read(&spa->spg->rw_lock);
 
 		down_write(&spa->spg->rw_lock);
 		if (!spg_valid(spa->spg)) {
@@ -2428,7 +2536,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	if (current->mm == NULL) {
 		atomic64_sub(spa->real_size, &kthread_stat.k2u_size);
 	} else {
-		stat = sp_get_proc_stat(current->mm->sp_stat_id);
+		stat = sp_get_proc_stat(current->mm->sp_group_master->sp_stat_id);
 		if (stat)
 			atomic64_sub(spa->real_size, &stat->k2u_size);
 		else
@@ -2711,12 +2819,19 @@ static int __init enable_share_k2u_to_group(char *s)
 }
 __setup("enable_sp_share_k2u_spg", enable_share_k2u_to_group);
 
+static int __init enable_sp_multi_group_mode(char *s)
+{
+	share_pool_group_mode = MULTI_GROUP_MODE;
+	return 1;
+}
+__setup("enable_sp_multi_group_mode", enable_sp_multi_group_mode);
+
 /*** Statistical and maintenance functions ***/
 
 static void free_sp_proc_stat(struct sp_proc_stat *stat)
 {
 	down_write(&sp_stat_sem);
-	stat->mm->sp_stat_id = 0;
+	stat->mm->sp_group_master->sp_stat_id = 0;
 	idr_remove(&sp_stat_idr, stat->tgid);
 	up_write(&sp_stat_sem);
 	kfree(stat);
@@ -2747,7 +2862,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		up_read(&spg->rw_lock);
 
 		/* eliminate potential ABBA deadlock */
-		stat = sp_get_proc_stat_ref(task->mm->sp_stat_id);
+		stat = sp_get_proc_stat_ref(task->mm->sp_group_master->sp_stat_id);
 		if (unlikely(!stat)) {
 			sp_group_drop(spg);
 			return 0;
@@ -3166,65 +3281,93 @@ backout:
 }
 EXPORT_SYMBOL(sharepool_no_page);
 
-#define MM_WOULD_FREE	2
+#define MM_WOULD_FREE	1
 
+/*
+ * Recall we add mm->users by 1 deliberately in sp_group_add_task().
+ * If the mm_users == sp_group_master->count + 1, it means that the mm is ready
+ * to be freed because the last owner of this mm is in exiting procedure:
+ * do_exit() -> exit_mm() -> mmput() -> sp_group_exit -> THIS function.
+ */
+static bool need_free_sp_group(struct mm_struct *mm,
+			      struct sp_group_master *master)
+{
+	/* thread exits but process is still alive */
+	if ((unsigned int)atomic_read(&mm->mm_users) != master->count + MM_WOULD_FREE) {
+		if (atomic_dec_and_test(&mm->mm_users))
+			WARN(1, "Invalid user counting\n");
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * Return:
+ * 1	- let mmput() return immediately
+ * 0	- let mmput() decrease mm_users and try __mmput()
+ */
 int sp_group_exit(struct mm_struct *mm)
 {
-	struct sp_group *spg = mm->sp_group;
+	struct sp_group *spg;
+	struct sp_group_master *master;
+	struct sp_group_node *spg_node, *tmp;
 	bool is_alive = true;
 
-	if (!spg || !enable_ascend_share_pool)
+	if (!enable_ascend_share_pool)
 		return 0;
 
-	/*
-	 * The judgment of mm->mm_users == MM_WOULD_FREE and atomic_dec_and_test
-	 * must be atomic. Otherwise, mm->mm_users == MM_WOULD_FREE may never be
-	 * true due to the gap in the middle.
-	 */
-	down_write(&spg->rw_lock);
-	/*
-	 * Recall we add mm->users by 1 deliberately in sp_group_add_task().
-	 * If the mm_users is 2, it means that the mm is ready to be freed
-	 * because the last owner of this mm is in exiting procedure:
-	 * do_exit() -> exit_mm() -> mmput() -> THIS function.
-	 */
-	if (atomic_read(&mm->mm_users) == MM_WOULD_FREE) {
+	down_write(&sp_group_sem);
+
+	master = mm->sp_group_master;
+	if (!master) {
+		up_write(&sp_group_sem);
+		return 0;
+	}
+
+	if (!need_free_sp_group(mm, master)) {
+		up_write(&sp_group_sem);
+		return 1;
+	}
+
+	list_for_each_entry_safe(spg_node, tmp, &master->node_list, group_node) {
+		spg = spg_node->spg;
+		down_write(&spg->rw_lock);
 		/* a dead group should NOT be reactive again */
 		if (spg_valid(spg) && list_is_singular(&spg->procs))
 			is_alive = spg->is_alive = false;
-		if (mm->sp_group)  /* concurrency handle of sp_group_add_task */
-			list_del(&mm->sp_node);   /* affect spg->procs */
-		/* match with get_task_mm() in sp_group_add_task() */
-		atomic_dec(&mm->mm_users);
+		list_del(&spg_node->proc_node);
 		up_write(&spg->rw_lock);
 
 		if (!is_alive)
 			blocking_notifier_call_chain(&sp_notifier_chain, 0,
-						     mm->sp_group);
-
-		return 0;
+						     spg);
 	}
 
-	if (atomic_dec_and_test(&mm->mm_users)) {
-		up_write(&spg->rw_lock);
+	/* match with get_task_mm() in sp_group_add_task() */
+	if (atomic_sub_and_test(master->count, &mm->mm_users)) {
+		up_write(&sp_group_sem);
 		WARN(1, "Invalid user counting\n");
-		return 0;
+		return 1;
 	}
 
-	up_write(&spg->rw_lock);
-	return 1;
+	up_write(&sp_group_sem);
+	return 0;
 }
 
 void sp_group_post_exit(struct mm_struct *mm)
 {
 	struct sp_proc_stat *stat;
-	struct sp_group *spg = mm->sp_group;
 	long alloc_size, k2u_size;
+	/* lockless visit */
+	struct sp_group_master *master = mm->sp_group_master;
+	struct sp_group_node *spg_node, *tmp;
+	struct sp_group *spg;
 
-	if (!enable_ascend_share_pool || !mm->sp_stat_id)
+	if (!enable_ascend_share_pool || !master)
 		return;
 
-	stat = sp_get_proc_stat(mm->sp_stat_id);
+	stat = sp_get_proc_stat(master->sp_stat_id);
 	if (stat) {
 		alloc_size = atomic64_read(&stat->alloc_size);
 		k2u_size = atomic64_read(&stat->k2u_size);
@@ -3246,19 +3389,27 @@ void sp_group_post_exit(struct mm_struct *mm)
 	 * A process not in an sp group doesn't need to print because there
 	 * wont't be any memory which is not freed.
 	 */
-	if (spg) {
+	if (master) {
 		if (alloc_size != 0 || k2u_size != 0)
-			pr_info("share pool: process %s(%d) of sp group %d exits. "
+			pr_info("share pool: process %s(%d) exits. "
 				"It applied %ld aligned KB, k2u shared %ld aligned KB\n",
-				stat->comm, mm->sp_stat_id, mm->sp_group->id,
+				stat->comm, master->sp_stat_id,
 				byte2kb(alloc_size), byte2kb(k2u_size));
 
-		/* match with sp_group_add_task -> find_or_alloc_sp_group */
-		sp_group_drop(spg);
 	}
 
 	/* match with sp_init_proc_stat, we expect stat is released after this call */
 	sp_proc_stat_drop(stat);
+
+	/* lockless traverse */
+	list_for_each_entry_safe(spg_node, tmp, &master->node_list, group_node) {
+		spg = spg_node->spg;
+		/* match with refcount inc in sp_group_add_task */
+		sp_group_drop(spg);
+		kfree(spg_node);
+	}
+
+	kfree(master);
 }
 
 struct page *sp_alloc_pages(struct vm_struct *area, gfp_t mask,

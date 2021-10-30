@@ -80,9 +80,9 @@ struct sp_group {
 	int		 hugepage_failures;
 	struct file	 *file;
 	struct file	 *file_hugetlb;
-	/* list head of processes */
+	/* list head of processes (sp_group_node, each represents a process) */
 	struct list_head procs;
-	/* list of sp_area. it is protected by spin_lock sp_area_lock */
+	/* list head of sp_area. it is protected by spin_lock sp_area_lock */
 	struct list_head spa_list;
 	/* number of sp_area */
 	atomic_t	 spa_num;
@@ -105,6 +105,34 @@ struct sp_group {
 	atomic_t	 use_count;
 	/* protect the group internal elements, except spa_list */
 	struct rw_semaphore	rw_lock;
+};
+
+/* a per-process(per mm) struct which manages a sp_group_node list */
+struct sp_group_master {
+	/*
+	 * number of sp groups the process belongs to,
+	 * a.k.a the number of sp_node in node_list
+	 */
+	unsigned int count;
+	int sp_stat_id;
+	/* list head of sp_node */
+	struct list_head node_list;
+	struct mm_struct *mm;
+};
+
+/*
+ * each instance represents an sp group the process belongs to
+ * sp_group_master    : sp_group_node   = 1 : N
+ * sp_group_node->spg : sp_group        = 1 : 1
+ * sp_group_node      : sp_group->procs = N : 1
+ */
+struct sp_group_node {
+	/* list node in sp_group->procs */
+	struct list_head proc_node;
+	/* list node in sp_group_maseter->node_list */
+	struct list_head group_node;
+	struct sp_group_master *master;
+	struct sp_group *spg;
 };
 
 struct sp_walk_data {
@@ -150,9 +178,7 @@ struct sp_proc_stat {
 
 static inline void sp_init_mm(struct mm_struct *mm)
 {
-	mm->sp_group = NULL;
-	INIT_LIST_HEAD(&mm->sp_node);
-	mm->sp_stat_id = 0;
+	mm->sp_group_master = NULL;
 }
 
 extern int sp_group_add_task(int pid, int spg_id);
