@@ -520,11 +520,15 @@ struct mm_struct {
 	KABI_RESERVE(1)
 #endif
 
-#ifdef CONFIG_ASCEND_SHARE_POOL
-	struct sp_group_master *sp_group_master;
+#if IS_ENABLED(CONFIG_ASCEND_SHARE_POOL) && !defined(__GENKSYMS__)
+	union {
+		struct sp_group_master *sp_group_master;
+		unsigned long kabi_reserve1;
+	};
+#else
+	KABI_RESERVE(2)
 #endif
 
-	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
