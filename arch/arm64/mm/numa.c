@@ -45,6 +45,57 @@ inline int arch_check_node_cdm(int nid)
 	return node_isset(nid, cdmmask);
 }
 
+#ifdef CONFIG_ASCEND_CLEAN_CDM
+/**
+ * cdm_node_to_ddr_node - Convert the cdm node to the ddr node of the
+ *                        same partion.
+ * @nid: input node ID
+ *
+ * Here is a typical memory topology in usage.
+ * There are some DDR and HBM in each partion and DDRs present at first, then
+ * come all the HBMs of the first partion, then HBMs of the second partion, etc.
+ *
+ * -------------------------
+ * |   P0      |    P1     |
+ * ----------- | -----------
+ * |node0 DDR| | |node1 DDR|
+ * |---------- | ----------|
+ * |node2 HBM| | |node4 HBM|
+ * |---------- | ----------|
+ * |node3 HBM| | |node5 HBM|
+ * ----------- | -----------
+ *
+ * Return:
+ * This function returns a ddr node which is of the same partion with the input
+ * node if the input node is a HBM node.
+ * The input nid is returned if it is a DDR node or if the memory topology of
+ * the system doesn't apply to the above model.
+ */
+int __init cdm_node_to_ddr_node(int nid)
+{
+	nodemask_t ddr_mask;
+	int nr_ddr, cdm_per_part, fake_nid;
+	int nr_cdm = nodes_weight(cdmmask);
+
+	if (!nr_cdm || nodes_empty(numa_nodes_parsed))
+		return nid;
+
+	if (!node_isset(nid, cdmmask))
+		return nid;
+
+	nodes_xor(ddr_mask, cdmmask, numa_nodes_parsed);
+	nr_ddr = nodes_weight(ddr_mask);
+	cdm_per_part = nr_cdm / nr_ddr ? : 1;
+
+	fake_nid = (nid - nr_ddr) / cdm_per_part;
+	fake_nid = !node_isset(fake_nid, cdmmask) ? fake_nid : nid;
+
+	pr_info("nid: %d, fake_nid: %d\n", nid, fake_nid);
+
+	return fake_nid;
+}
+#endif
+
 static int __init cdm_nodes_setup(char *s)
 {
 	int nid;
@@ -264,11 +315,12 @@ static void __init setup_node_data(int nid, u64 start_pfn, u64 end_pfn)
 	u64 nd_pa;
 	void *nd;
 	int tnid;
+	int fake_nid = cdm_node_to_ddr_node(nid);
 
 	if (start_pfn >= end_pfn)
 		pr_info("Initmem setup node %d [<memory-less node>]\n", nid);
 
-	nd_pa = memblock_alloc_try_nid(nd_size, SMP_CACHE_BYTES, nid);
+	nd_pa = memblock_alloc_try_nid(nd_size, SMP_CACHE_BYTES, fake_nid);
 	nd = __va(nd_pa);
 
 	/* report and initialize */

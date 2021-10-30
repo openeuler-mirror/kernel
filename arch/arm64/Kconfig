@@ -1470,6 +1470,16 @@ config ASCEND_SHARE_POOL
 	help
 	  This feature allows multiple processes to share virtual memory both
 	  in kernel and user level, which is only enabled for ascend platform.
+
+config ASCEND_CLEAN_CDM
+	bool "move the management structure for HBM to DDR"
+	def_bool n
+	depends on COHERENT_DEVICE
+	help
+	  The cdm nodes sometimes are easiler to raise an ECC error and it may
+	  cause the kernel crash if the essential structures went wrong. So move
+	  the management structures for hbm nodes to the ddr nodes of the same
+	  partion to reduce the probability of kernel crashes.
 endif
 
 endmenu

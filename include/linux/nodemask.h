@@ -508,6 +508,12 @@ static inline int node_random(const nodemask_t *mask)
 #ifdef CONFIG_COHERENT_DEVICE
 extern int arch_check_node_cdm(int nid);
 
+#ifdef CONFIG_ASCEND_CLEAN_CDM
+extern int cdm_node_to_ddr_node(int nid);
+#else
+static inline int cdm_node_to_ddr_node(int nid) { return nid; }
+#endif
+
 static inline nodemask_t system_mem_nodemask(void)
 {
 	nodemask_t system_mem;
@@ -551,6 +557,7 @@ static inline void node_clear_state_cdm(int node)
 #else
 
 static inline int arch_check_node_cdm(int nid) { return 0; }
+static inline int cdm_node_to_ddr_node(int nid) { return nid; }
 
 static inline nodemask_t system_mem_nodemask(void)
 {

@@ -458,21 +458,23 @@ static void __init sparse_init_nid(int nid, unsigned long pnum_begin,
 {
 	unsigned long pnum, usemap_longs, *usemap;
 	struct page *map;
+	int fake_nid = cdm_node_to_ddr_node(nid);
 
 	usemap_longs = BITS_TO_LONGS(SECTION_BLOCKFLAGS_BITS);
-	usemap = sparse_early_usemaps_alloc_pgdat_section(NODE_DATA(nid),
+	usemap = sparse_early_usemaps_alloc_pgdat_section(NODE_DATA(fake_nid),
 							  usemap_size() *
 							  map_count);
 	if (!usemap) {
 		pr_err("%s: node[%d] usemap allocation failed", __func__, nid);
 		goto failed;
 	}
-	sparse_buffer_init(map_count * section_map_size(), nid);
+
+	sparse_buffer_init(map_count * section_map_size(), fake_nid);
 	for_each_present_section_nr(pnum_begin, pnum) {
 		if (pnum >= pnum_end)
 			break;
 
-		map = sparse_mem_map_populate(pnum, nid, NULL);
+		map = sparse_mem_map_populate(pnum, fake_nid, NULL);
 		if (!map) {
 			pr_err("%s: node[%d] memory map backing failed. Some memory will not be available.",
 			       __func__, nid);
