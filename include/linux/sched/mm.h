@@ -124,13 +124,13 @@ extern void exit_mm_release(struct task_struct *, struct mm_struct *);
 /* Remove the current tasks stale references to the old mm_struct on exec() */
 extern void exec_mm_release(struct task_struct *, struct mm_struct *);
 
-#ifdef CONFIG_MEMCG
+#ifdef CONFIG_MM_OWNER
 extern void mm_update_next_owner(struct mm_struct *mm);
 #else
 static inline void mm_update_next_owner(struct mm_struct *mm)
 {
 }
-#endif /* CONFIG_MEMCG */
+#endif /* CONFIG_MM_OWNER */
 
 #ifdef CONFIG_MMU
 extern void arch_pick_mmap_layout(struct mm_struct *mm,

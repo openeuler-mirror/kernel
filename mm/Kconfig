@@ -302,7 +302,7 @@ config VIRT_TO_BUS
 config MM_OWNER
 	bool "Enable the ownership the mm owner"
 	help
-	  This option enables mm_struct's to have an owner.
+	  This option allows to record the canonical user of an mm struct
 
 config MMU_NOTIFIER
 	bool
