@@ -80,6 +80,8 @@ int sysctl_share_pool_map_lock_enable;
 
 static int share_pool_group_mode = SINGLE_GROUP_MODE;
 
+static int system_group_count;
+
 /* idr of all sp_groups */
 static DEFINE_IDR(sp_group_idr);
 /* rw semaphore for sp_group_idr and mm->sp_group_master */
@@ -380,6 +382,8 @@ static void free_sp_group(struct sp_group *spg)
 	up_write(&sp_group_sem);
 	free_sp_group_id((unsigned int)spg->id);
 	kfree(spg);
+	system_group_count--;
+	WARN(system_group_count < 0, "unexpected group count\n");
 }
 
 static void sp_group_drop(struct sp_group *spg)
@@ -514,6 +518,11 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 		struct user_struct *user = NULL;
 		int hsize_log = MAP_HUGE_2MB >> MAP_HUGE_SHIFT;
 
+		if (unlikely(system_group_count + 1 == MAX_GROUP_FOR_SYSTEM)) {
+			pr_err_ratelimited("share pool: reach system max group num\n");
+			return ERR_PTR(-ENOSPC);
+		}
+
 		spg = kzalloc(sizeof(*spg), GFP_KERNEL);
 		if (spg == NULL) {
 			pr_err_ratelimited("share pool: alloc spg failed due to lack of memory\n");
@@ -559,6 +568,8 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 			ret = PTR_ERR(spg->file_hugetlb);
 			goto out_fput;
 		}
+
+		system_group_count++;
 	} else {
 		down_read(&spg->rw_lock);
 		if (!spg_valid(spg)) {
