@@ -1460,6 +1460,15 @@ config ASCEND_AUTO_TUNING_HUGEPAGE
 	help
 	  The hugepage auto-tuning means the kernel dynamically manages the number of
 	  huage pages. To achieve this purpose, custom interfaces are required.
+
+config ASCEND_SHARE_POOL
+	bool "Enable support for the Share Pool Memory"
+	default n
+	select ARCH_USES_HIGH_VMA_FLAGS
+	select MM_OWNER
+	help
+	  This feature allows multiple processes to share virtual memory both
+	  in kernel and user level, which is only enabled for ascend platform.
 endif
 
 endmenu
