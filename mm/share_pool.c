@@ -1704,6 +1704,79 @@ static void sp_fallocate(struct sp_area *spa)
 		WARN(1, "sp fallocate failed %d\n", ret);
 }
 
+#define FREE_CONT	1
+#define FREE_END	2
+
+struct sp_free_context {
+	unsigned long addr;
+	struct sp_area *spa;
+	int state;
+};
+
+/* when success, __sp_area_drop(spa) should be used */
+static int sp_free_get_spa(struct sp_free_context *fc)
+{
+	int ret = 0;
+	unsigned long addr = fc->addr;
+	struct sp_area *spa;
+	struct sp_group_node *spg_node;
+	bool found = false;
+
+	fc->state = FREE_CONT;
+
+	spa = __find_sp_area(addr);
+	if (!spa) {
+		pr_debug("sp free invalid input addr %lx\n", addr);
+		return -EINVAL;
+	}
+
+	if (spa->type != SPA_TYPE_ALLOC) {
+		ret = -EINVAL;
+		pr_debug("sp free failed, %lx is not sp alloc addr\n", addr);
+		goto drop_spa;
+	}
+	fc->spa = spa;
+
+	/*
+	 * Access control: an sp addr can only be freed by
+	 * 1. another task in the same spg
+	 * 2. a kthread
+	 */
+	if (!current->mm)
+		goto check_spa;
+
+	down_read(&spa->spg->rw_lock);
+	list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
+		if (spg_node->master->mm == current->mm) {
+			found = true;
+			break;
+		}
+	}
+	up_read(&spa->spg->rw_lock);
+	if (!found) {
+		ret = -EPERM;
+		goto drop_spa;
+	}
+
+check_spa:
+	down_write(&spa->spg->rw_lock);
+	if (!spg_valid(spa->spg)) {
+		/* we must return success(0) in this situation */
+		fc->state = FREE_END;
+		up_write(&spa->spg->rw_lock);
+		goto drop_spa;
+	}
+	/* the life cycle of spa has a direct relation with sp group */
+	spa->is_dead = true;
+	up_write(&spa->spg->rw_lock);
+
+	return 0;
+
+drop_spa:
+	__sp_area_drop(spa);
+	return ret;
+}
+
 /**
  * sp_free() - Free the memory allocated by sp_alloc().
  * @addr: the starting VA of the memory.
@@ -1715,72 +1788,32 @@ static void sp_fallocate(struct sp_area *spa)
  */
 int sp_free(unsigned long addr)
 {
-	struct sp_area *spa;
 	int ret = 0;
+	struct sp_area *spa;
+	struct sp_free_context fc = {
+		.addr = addr,
+	};
 
 	check_interrupt_context();
 
-	/*
-	 * Access control: a share pool addr can only be freed by another task
-	 * in the same spg or a kthread (such as buff_module_guard_work)
-	 */
-	spa = __find_sp_area(addr);
-	if (spa) {
-		if (current->mm != NULL) {
-			struct sp_group_node *spg_node;
-			bool found = false;
-
-			down_read(&spa->spg->rw_lock);
-			list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
-				if (spg_node->master->mm == current->mm) {
-					found = true;
-					break;
-				}
-			}
-			up_read(&spa->spg->rw_lock);
-			if (!found) {
-				ret = -EPERM;
-				goto drop_spa;
-			}
-		}
-
-		down_write(&spa->spg->rw_lock);
-		if (!spg_valid(spa->spg)) {
-			up_write(&spa->spg->rw_lock);
-			goto drop_spa;
-		}
-		/* the life cycle of spa has a direct relation with sp group */
-		spa->is_dead = true;
-		up_write(&spa->spg->rw_lock);
-
-	} else {  /* spa == NULL */
-		ret = -EINVAL;
-		pr_debug("sp free invalid input addr %lx\n", (unsigned long)addr);
+	ret = sp_free_get_spa(&fc);
+	if (ret || fc.state == FREE_END)
 		goto out;
-	}
 
-	if (spa->type != SPA_TYPE_ALLOC) {
-		ret = -EINVAL;
-		pr_debug("sp free failed, addr %lx is not from sp alloc\n", (unsigned long)addr);
-		goto drop_spa;
-	}
-
-	sp_dump_stack();
+	spa = fc.spa;
 
 	down_read(&spa->spg->rw_lock);
-
 	__sp_free(spa->spg, spa->va_start, spa_size(spa), NULL);
 	sp_fallocate(spa);
 	up_read(&spa->spg->rw_lock);
 
-	/* pointer stat may be invalid because of kthread buff_module_guard_work */
+	/* current->mm == NULL: allow kthread */
 	if (current->mm == NULL)
 		atomic64_sub(spa->real_size, &kthread_stat.alloc_size);
 	else
 		sp_update_process_stat(current, false, spa);
 
-drop_spa:
-	__sp_area_drop(spa);
+	__sp_area_drop(spa);  /* match __find_sp_area in sp_free_get_spa */
 out:
 	sp_dump_stack();
 	sp_try_to_compact();
