@@ -1106,10 +1106,6 @@ int sp_free(unsigned long addr)
 	if (!spg_valid(spa->spg))
 		goto drop_spa;
 
-	pr_notice("share pool: [sp free] caller %s(%d/%d); "
-		  "group id %d addr 0x%pK, size %ld\n",
-		  current->comm, current->tgid, current->pid, spa->spg->id,
-		  (void *)spa->va_start, spa->real_size);
 	sp_dump_stack();
 
 	__sp_free(spa->spg, spa->va_start, spa_size(spa), NULL);
@@ -1356,13 +1352,7 @@ out:
 	if (spa && !IS_ERR(spa))
 		__sp_area_drop(spa);
 
-	if (!IS_ERR(p)) {
-		pr_notice("share pool: [sp alloc] caller %s(%d/%d); group id %d; "
-			  "return addr 0x%pK, size %ld\n",
-			  current->comm, current->tgid, current->pid, spa->spg->id,
-			  (void *)spa->va_start, spa->real_size);
-		sp_dump_stack();
-	}
+	sp_dump_stack();
 	return p;
 }
 EXPORT_SYMBOL_GPL(sp_alloc);
@@ -1572,7 +1562,6 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	unsigned long kva_aligned;
 	unsigned long size_aligned;
 	unsigned int page_size = PAGE_SIZE;
-	enum spa_type type;
 	int ret;
 	struct vm_struct *area;
 
@@ -1599,14 +1588,14 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	mutex_lock(&sp_mutex);
 	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
 	if (spg == NULL) {
-		type = SPA_TYPE_K2TASK;
+		/* k2u to task */
 		if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT) {
 			mutex_unlock(&sp_mutex);
 			if (printk_ratelimit())
 				pr_err("share pool: k2task invalid spg id %d\n", spg_id);
 			return ERR_PTR(-EINVAL);
 		}
-		spa = sp_alloc_area(size_aligned, sp_flags, NULL, type);
+		spa = sp_alloc_area(size_aligned, sp_flags, NULL, SPA_TYPE_K2TASK);
 		if (IS_ERR(spa)) {
 			mutex_unlock(&sp_mutex);
 			if (printk_ratelimit())
@@ -1618,14 +1607,14 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		uva = sp_make_share_kva_to_task(kva_aligned, spa, pid);
 		mutex_unlock(&sp_mutex);
 	} else if (spg_valid(spg)) {
-		type = SPA_TYPE_K2SPG;
+		/* k2u to group */
 		if (spg_id != SPG_ID_DEFAULT && spg_id != spg->id) {
 			mutex_unlock(&sp_mutex);
 			if (printk_ratelimit())
 				pr_err("share pool: k2spg invalid spg id %d\n", spg_id);
 			return ERR_PTR(-EINVAL);
 		}
-		spa = sp_alloc_area(size_aligned, sp_flags, spg, type);
+		spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_K2SPG);
 		if (IS_ERR(spa)) {
 			mutex_unlock(&sp_mutex);
 			if (printk_ratelimit())
@@ -1649,20 +1638,13 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	__sp_area_drop(spa);
 
 	if (!IS_ERR(uva)) {
-		if (spg_valid(spa->spg))
-			spg_id = spa->spg->id;
-		pr_notice("share pool: [sp k2u type %d] caller %s(%d/%d); group id %d; "
-			  "return addr 0x%pK size %ld\n",
-			  type, current->comm, current->tgid, current->pid, spg_id,
-			  (void *)spa->va_start, spa->real_size);
-		sp_dump_stack();
-
 		/* associate vma and spa */
 		area = find_vm_area((void *)kva);
 		if (area)
 			area->flags |= VM_SHAREPOOL;
 		spa->kva = kva;
 	}
+	sp_dump_stack();
 
 	return uva;
 }
@@ -2051,15 +2033,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 		__sp_free(spa->spg, uva_aligned, size_aligned, NULL);
 	}
 
-	if (!ret) {
-		if (spg_valid(spa->spg))
-			spg_id = spa->spg->id;
-		pr_notice("share pool: [sp unshare uva type %d] caller %s(%d/%d); "
-			  "group id %d addr 0x%pK size %ld\n",
-			  spa->type, current->comm, current->tgid, current->pid,
-			  spg_id, (void *)spa->va_start, spa->real_size);
-		sp_dump_stack();
-	}
+	sp_dump_stack();
 
 out_drop_area:
 	/* deassociate vma and spa */
@@ -2538,8 +2512,8 @@ void __init proc_sharepool_init(void)
 	if (!proc_mkdir("sharepool", NULL))
 		return;
 
-	proc_create_single_data("sharepool/proc_stat", 0, NULL, proc_stat_show, NULL);
-	proc_create_single_data("sharepool/spa_stat", 0, NULL, spa_stat_show, NULL);
+	proc_create_single_data("sharepool/proc_stat", S_IRUSR, NULL, proc_stat_show, NULL);
+	proc_create_single_data("sharepool/spa_stat", S_IRUSR, NULL, spa_stat_show, NULL);
 }
 
 struct page *sp_alloc_pages(struct vm_struct *area, gfp_t mask,
