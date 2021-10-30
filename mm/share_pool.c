@@ -2019,6 +2019,22 @@ static int __sp_walk_page_range(unsigned long uva, unsigned long size,
 	return ret;
 }
 
+static void __sp_walk_page_free(struct sp_walk_data *data)
+{
+	int i = 0;
+	struct page *page;
+
+	while (i < data->page_count) {
+		page = data->pages[i++];
+		put_page(page);
+	}
+
+	kvfree(data->pages);
+	/* prevent repeated release */
+	data->page_count = 0;
+	data->pages = NULL;
+}
+
 /**
  * Share user memory of a specified process to kernel
  * @uva: the VA of shared user memory
@@ -2078,8 +2094,9 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	if (!p) {
 		if (printk_ratelimit())
 			pr_err("share pool: vmap(huge) in u2k failed\n");
+		__sp_walk_page_free(&sp_walk_data);
 		p = ERR_PTR(-ENOMEM);
-		goto out_free_pages;
+		goto out_put_task;
 	} else {
 		p = p + (uva - sp_walk_data.uva_aligned);
 	}
@@ -2092,7 +2109,6 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	area = find_vm_area(p);
 	area->flags |= VM_USERMAP;
 
-out_free_pages:
 	kvfree(sp_walk_data.pages);
 out_put_task:
 	put_task_struct(tsk);
@@ -2393,20 +2409,12 @@ EXPORT_SYMBOL_GPL(sp_walk_page_range);
 
 void sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 {
-	struct page *page;
-	unsigned int i = 0;
-
 	check_interrupt_context();
 
 	if (!sp_walk_data)
 		return;
 
-	while (i < sp_walk_data->page_count) {
-		page = sp_walk_data->pages[i++];
-		put_page(page);
-	}
-
-	kvfree(sp_walk_data->pages);
+	__sp_walk_page_free(sp_walk_data);
 }
 EXPORT_SYMBOL_GPL(sp_walk_page_free);
 
