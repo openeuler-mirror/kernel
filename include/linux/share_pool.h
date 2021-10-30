@@ -47,6 +47,8 @@ extern unsigned long sysctl_sp_compact_interval;
 extern unsigned long sysctl_sp_compact_interval_max;
 extern int sysctl_sp_perf_alloc;
 
+extern int sysctl_sp_perf_k2u;
+
 #ifdef CONFIG_HAVE_ARCH_HUGE_VMALLOC
 extern bool vmap_allow_huge;
 #endif

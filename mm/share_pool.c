@@ -91,6 +91,8 @@ int sysctl_share_pool_map_lock_enable;
 
 int sysctl_sp_perf_alloc;
 
+int sysctl_sp_perf_k2u;
+
 static int share_pool_group_mode = SINGLE_GROUP_MODE;
 
 static int system_group_count;
@@ -2581,14 +2583,44 @@ struct sp_k2u_context {
 	unsigned long size_aligned;
 	unsigned long sp_flags;
 	int spg_id;
+	struct timespec64 start;
+	struct timespec64 end;
 };
 
+static void trace_sp_k2u_begin(struct sp_k2u_context *kc)
+{
+	if (!sysctl_sp_perf_k2u)
+		return;
+
+	ktime_get_ts64(&kc->start);
+}
+
+static void trace_sp_k2u_finish(struct sp_k2u_context *kc, void *uva, int to_task)
+{
+	unsigned long cost;
+
+	if (!sysctl_sp_perf_k2u)
+		return;
+
+	ktime_get_ts64(&kc->end);
+
+	cost = SEC2US(kc->end.tv_sec - kc->start.tv_sec) +
+		NS2US(kc->end.tv_nsec - kc->start.tv_nsec);
+	if (cost >= (unsigned long)sysctl_sp_perf_k2u) {
+		pr_err("Task %s(%d/%d) sp_k2u returns 0x%lx consumes %luus, size is %luKB, size_aligned is %luKB, "
+		       "sp_flags is %lx, to_task is %d\n",
+		       current->comm, current->tgid, current->pid,
+		       (unsigned long)uva, cost, byte2kb(kc->size), byte2kb(kc->size_aligned), kc->sp_flags, to_task);
+	}
+}
 static int sp_k2u_prepare(unsigned long kva, unsigned long size,
 	unsigned long sp_flags, int spg_id, struct sp_k2u_context *kc)
 {
 	int is_hugepage;
 	unsigned int page_size = PAGE_SIZE;
 	unsigned long kva_aligned, size_aligned;
+
+	trace_sp_k2u_begin(kc);
 
 	if (sp_flags & ~SP_DVPP) {
 		pr_err_ratelimited("k2u sp_flags %lx error\n", sp_flags);
@@ -2629,13 +2661,14 @@ static int sp_k2u_prepare(unsigned long kva, unsigned long size,
 	return 0;
 }
 
-static void *sp_k2u_finish(void *uva, struct sp_k2u_context *kc)
+static void *sp_k2u_finish(void *uva, int to_task, struct sp_k2u_context *kc)
 {
 	if (IS_ERR(uva))
 		vmalloc_area_clr_flag(kc->kva_aligned, VM_SHAREPOOL);
 	else
 		uva = uva + (kc->kva - kc->kva_aligned);
 
+	trace_sp_k2u_finish(kc, uva, to_task);
 	sp_dump_stack();
 	return uva;
 }
@@ -2685,7 +2718,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	} else
 		uva = ERR_PTR(to_task);
 
-	return sp_k2u_finish(uva, &kc);
+	return sp_k2u_finish(uva, to_task, &kc);
 }
 EXPORT_SYMBOL_GPL(sp_make_share_k2u);
 

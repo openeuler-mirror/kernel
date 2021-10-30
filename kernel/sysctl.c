@@ -1816,6 +1816,15 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero,
 		.extra2		= &ten_thousand,
 	},
+	{
+		.procname	= "sharepool_perf_k2u",
+		.data		= &sysctl_sp_perf_k2u,
+		.maxlen		= sizeof(sysctl_sp_perf_k2u),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &ten_thousand,
+	},
 #endif
 	{ }
 };
