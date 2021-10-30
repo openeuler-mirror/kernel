@@ -664,10 +664,8 @@ int sp_group_add_task(int pid, int spg_id)
 
 	rcu_read_unlock();
 	if (ret) {
-		if (id_newly_generated)
-			free_sp_group_id((unsigned int)spg_id);
 		up_write(&sp_group_sem);
-		goto out_unlock;
+		goto out_free_id;
 	}
 
 	/*
@@ -695,10 +693,8 @@ int sp_group_add_task(int pid, int spg_id)
 
 	spg = find_or_alloc_sp_group(spg_id);
 	if (IS_ERR(spg)) {
-		ret = PTR_ERR(spg);
-		if (id_newly_generated)
-			free_sp_group_id((unsigned int)spg_id);
 		up_write(&sp_group_sem);
+		ret = PTR_ERR(spg);
 		goto out_put_mm;
 	}
 
@@ -817,7 +813,9 @@ out_put_mm:
 		mmput(mm);
 out_put_task:
 	put_task_struct(tsk);
-out_unlock:
+out_free_id:
+	if (unlikely(ret) && id_newly_generated)
+		free_sp_group_id((unsigned int)spg_id);
 	return ret == 0 ? spg_id : ret;
 }
 EXPORT_SYMBOL_GPL(sp_group_add_task);
