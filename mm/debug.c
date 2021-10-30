@@ -129,7 +129,7 @@ void dump_mm(const struct mm_struct *mm)
 #ifdef CONFIG_AIO
 		"ioctx_table %px\n"
 #endif
-#ifdef CONFIG_MEMCG
+#ifdef CONFIG_MM_OWNER
 		"owner %px "
 #endif
 		"exe_file %px\n"

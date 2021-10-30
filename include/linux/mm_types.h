@@ -455,7 +455,7 @@ struct mm_struct {
 		spinlock_t			ioctx_lock;
 		struct kioctx_table __rcu	*ioctx_table;
 #endif
-#ifdef CONFIG_MEMCG
+#ifdef CONFIG_MM_OWNER
 		/*
 		 * "owner" points to a task that is regarded as the canonical
 		 * user/owner of this mm. All of the following must be true in

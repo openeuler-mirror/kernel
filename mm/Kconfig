@@ -299,6 +299,10 @@ config VIRT_TO_BUS
 	  deprecated interface virt_to_bus().  All new architectures
 	  should probably not select this.
 
+config MM_OWNER
+	bool "Enable the ownership the mm owner"
+	help
+	  This option enables mm_struct's to have an owner.
 
 config MMU_NOTIFIER
 	bool

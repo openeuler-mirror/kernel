@@ -962,7 +962,7 @@ static void mm_init_aio(struct mm_struct *mm)
 static __always_inline void mm_clear_owner(struct mm_struct *mm,
 					   struct task_struct *p)
 {
-#ifdef CONFIG_MEMCG
+#ifdef CONFIG_MM_OWNER
 	if (mm->owner == p)
 		WRITE_ONCE(mm->owner, NULL);
 #endif
@@ -970,7 +970,7 @@ static __always_inline void mm_clear_owner(struct mm_struct *mm,
 
 static void mm_init_owner(struct mm_struct *mm, struct task_struct *p)
 {
-#ifdef CONFIG_MEMCG
+#ifdef CONFIG_MM_OWNER
 	mm->owner = p;
 #endif
 }

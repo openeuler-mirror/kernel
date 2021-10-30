@@ -704,6 +704,7 @@ config MEMCG
 	bool "Memory controller"
 	select PAGE_COUNTER
 	select EVENTFD
+	select MM_OWNER
 	help
 	  Provides control over the memory footprint of tasks in a cgroup.
 
