@@ -28,6 +28,7 @@
 #include <linux/io.h>
 #include <linux/personality.h>
 #include <linux/random.h>
+#include <linux/share_pool.h>
 
 #include <asm/cputype.h>
 
@@ -80,7 +81,10 @@ static unsigned long mmap_base(unsigned long rnd, struct rlimit *rlim_stack)
 	else if (gap > MAX_GAP)
 		gap = MAX_GAP;
 
-	return PAGE_ALIGN(STACK_TOP - gap - rnd);
+	if (sp_is_enabled())
+		return ALIGN_DOWN(MMAP_SHARE_POOL_START - rnd, PAGE_SIZE);
+	else
+		return PAGE_ALIGN(STACK_TOP - gap - rnd);
 }
 
 /*

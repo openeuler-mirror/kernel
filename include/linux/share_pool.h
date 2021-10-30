@@ -130,8 +130,6 @@ struct sp_proc_stat {
 	atomic64_t k2u_size;
 };
 
-#ifdef CONFIG_ASCEND_SHARE_POOL
-
 #define MAP_SHARE_POOL			0x100000
 
 #define MMAP_TOP_4G_SIZE		0x100000000UL
@@ -147,6 +145,8 @@ struct sp_proc_stat {
 #define MMAP_SHARE_POOL_END		((TASK_SIZE - MMAP_SHARE_POOL_DVPP_SIZE) & ~((1 << 21) - 1))
 #define MMAP_SHARE_POOL_START		(MMAP_SHARE_POOL_END - MMAP_SHARE_POOL_SIZE)
 #define MMAP_SHARE_POOL_16G_START	(MMAP_SHARE_POOL_END - MMAP_SHARE_POOL_DVPP_SIZE)
+
+#ifdef CONFIG_ASCEND_SHARE_POOL
 
 static inline void sp_init_mm(struct mm_struct *mm)
 {
