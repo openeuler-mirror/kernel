@@ -1435,7 +1435,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	ret_addr = sp_mmap(mm, file, spa, &populate);
 	if (IS_ERR_VALUE(ret_addr)) {
 		pr_err("share pool: k2u mmap failed %lx\n", ret_addr);
-		goto out;
+		goto put_mm;
 	}
 	BUG_ON(ret_addr != spa->va_start);
 
@@ -1446,9 +1446,10 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	if (is_vm_hugetlb_page(vma)) {
 		ret = remap_vmalloc_hugepage_range(vma, (void *)kva, 0);
 		if (ret) {
+			do_munmap(mm, ret_addr, spa_size(spa), NULL);
 			pr_err("share pool: remap vmalloc hugepage failed, ret %d\n", ret);
 			ret_addr = ret;
-			goto out;
+			goto put_mm;
 		}
 		vma->vm_flags |= VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP;
 	} else {
@@ -1459,9 +1460,10 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 			ret = remap_pfn_range(vma, buf, __sp_remap_get_pfn(addr), PAGE_SIZE,
 					__pgprot(vma->vm_page_prot.pgprot));
 			if (ret) {
+				do_munmap(mm, ret_addr, spa_size(spa), NULL);
 				pr_err("share pool: remap_pfn_range failed, ret %d\n", ret);
 				ret_addr = ret;
-				goto out;
+				goto put_mm;
 			}
 			offset += PAGE_SIZE;
 			buf += PAGE_SIZE;
@@ -1469,7 +1471,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 		} while (offset < spa_size(spa));
 	}
 
-out:
+put_mm:
 	up_write(&mm->mmap_sem);
 	mmput(mm);
 put_file:
@@ -1501,7 +1503,6 @@ static void *sp_make_share_kva_to_task(unsigned long kva, struct sp_area *spa,
 	ret_addr = sp_remap_kva_to_vma(kva, spa, tsk->mm);
 	if (IS_ERR_VALUE(ret_addr)) {
 		pr_err("share pool: remap k2u to task failed, ret %ld\n", ret_addr);
-		sp_munmap(tsk->mm, spa->va_start, spa_size(spa));
 		p = ERR_PTR(ret_addr);
 		goto out;
 	}
@@ -1509,10 +1510,12 @@ static void *sp_make_share_kva_to_task(unsigned long kva, struct sp_area *spa,
 	p = (void *)ret_addr;
 
 	task_lock(tsk);
-	if (tsk->mm == NULL)
+	if (tsk->mm == NULL) {
+		sp_munmap(tsk->mm, spa->va_start, spa_size(spa));
 		p = ERR_PTR(-ESRCH);
-	else
+	} else {
 		spa->mm = tsk->mm;
+	}
 	task_unlock(tsk);
 out:
 	put_task_struct(tsk);
@@ -1532,8 +1535,7 @@ static void *sp_make_share_kva_to_spg(unsigned long kva, struct sp_area *spa,
 		ret_addr = sp_remap_kva_to_vma(kva, spa, mm);
 		if (IS_ERR_VALUE(ret_addr) && (ret_addr != -ESPGMMEXIT)) {
 			pr_err("share pool: remap k2u to spg failed, ret %ld \n", ret_addr);
-			__sp_free(spg, spa->va_start, spa_size(spa),
-				  list_next_entry(mm, sp_node));
+			__sp_free(spg, spa->va_start, spa_size(spa), mm);
 			p = ERR_PTR(ret_addr);
 			goto out;
 		}
