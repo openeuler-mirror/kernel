@@ -58,6 +58,8 @@ extern bool vmap_allow_huge;
 
 struct sp_spg_stat {
 	int spg_id;
+	/* record the number of hugepage allocation failures */
+	atomic_t hugepage_failures;
 	/* number of sp_area */
 	atomic_t	 spa_num;
 	/* total size of all sp_area from sp_alloc and k2u */
@@ -98,8 +100,6 @@ struct sp_spg_stat {
  */
 struct sp_group {
 	int		 id;
-	/* record the number of hugepage allocation failures */
-	int		 hugepage_failures;
 	struct file	 *file;
 	struct file	 *file_hugetlb;
 	/* number of process in this group */

@@ -425,6 +425,7 @@ static struct sp_spg_stat *create_spg_stat(int spg_id)
 	}
 
 	stat->spg_id = spg_id;
+	atomic_set(&stat->hugepage_failures, 0);
 	atomic_set(&stat->spa_num, 0);
 	atomic64_set(&stat->size, 0);
 	atomic64_set(&stat->alloc_nsize, 0);
@@ -878,7 +879,6 @@ static struct sp_group *create_spg(int spg_id)
 	spg->id = spg_id;
 	spg->is_alive = true;
 	spg->proc_num = 0;
-	spg->hugepage_failures = 0;
 	spg->dvpp_multi_spaces = false;
 	spg->owner = current->group_leader;
 	atomic_set(&spg->use_count, 1);
@@ -1831,6 +1831,7 @@ struct sp_alloc_context {
 	unsigned long sp_flags;
 	unsigned long populate;
 	int state;
+	bool need_fallocate;
 };
 
 static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
@@ -1915,7 +1916,176 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	ac->size = size;
 	ac->sp_flags = sp_flags;
 	ac->state = ALLOC_NORMAL;
+	ac->need_fallocate = false;
 	return 0;
+}
+
+static void sp_alloc_unmap(struct mm_struct *mm, struct sp_area *spa,
+	struct sp_group_node *spg_node)
+{
+	__sp_free(spa->spg, spa->va_start, spa->real_size, mm);
+}
+
+static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
+	struct sp_group_node *spg_node, struct sp_alloc_context *ac)
+{
+	int ret = 0;
+	unsigned long mmap_addr;
+	unsigned long prot;
+	unsigned long sp_addr = spa->va_start;
+	unsigned long populate = 0;
+	struct vm_area_struct *vma;
+
+	down_write(&mm->mmap_sem);
+	if (unlikely(mm->core_state)) {
+		up_write(&mm->mmap_sem);
+		sp_alloc_unmap(mm, spa, spg_node);
+		ac->state = ALLOC_NOMEM;
+		pr_info("allocation encountered coredump\n");
+		return -EFAULT;
+	}
+
+	prot = spg_node->prot;
+
+	/* when success, mmap_addr == spa->va_start */
+	mmap_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
+	if (IS_ERR_VALUE(mmap_addr)) {
+		up_write(&mm->mmap_sem);
+		sp_alloc_unmap(mm, spa, spg_node);
+		pr_err("sp mmap in allocation failed %ld\n", mmap_addr);
+		return PTR_ERR((void *)mmap_addr);
+	}
+
+	if (unlikely(populate == 0)) {
+		up_write(&mm->mmap_sem);
+		pr_err("allocation sp mmap populate failed\n");
+		ret = -EFAULT;
+		goto unmap;
+	}
+	ac->populate = populate;
+
+	vma = find_vma(mm, sp_addr);
+	if (unlikely(!vma)) {
+		up_write(&mm->mmap_sem);
+		WARN(1, "allocation failed, can't find %lx vma\n", sp_addr);
+		ret = -EINVAL;
+		goto unmap;
+	}
+	/* clean PTE_RDONLY flags or trigger SMMU event */
+	if (prot & PROT_WRITE)
+		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
+	up_write(&mm->mmap_sem);
+
+	return ret;
+
+unmap:
+	sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
+	return ret;
+}
+
+static void sp_alloc_fallback(struct sp_area *spa, struct sp_alloc_context *ac)
+{
+	struct sp_spg_stat *stat = ac->spg->stat;
+
+	if (ac->file == ac->spg->file) {
+		ac->state = ALLOC_NOMEM;
+		return;
+	}
+
+	atomic_inc(&stat->hugepage_failures);
+	if (!(ac->sp_flags & SP_HUGEPAGE_ONLY)) {
+		ac->file = ac->spg->file;
+		ac->size_aligned = ALIGN(ac->size, PAGE_SIZE);
+		ac->sp_flags &= ~SP_HUGEPAGE;
+		ac->state = ALLOC_RETRY;
+		__sp_area_drop(spa);
+		return;
+	}
+	ac->state = ALLOC_NOMEM;
+}
+
+static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
+	struct sp_group_node *spg_node, struct sp_alloc_context *ac)
+{
+	int ret = 0;
+	unsigned long sp_addr = spa->va_start;
+	unsigned int noreclaim_flag = 0;
+
+	/*
+	 * The direct reclaim and compact may take a long
+	 * time. As a result, sp mutex will be hold for too
+	 * long time to casue the hung task problem. In this
+	 * case, set the PF_MEMALLOC flag to prevent the
+	 * direct reclaim and compact from being executed.
+	 * Since direct reclaim and compact are not performed
+	 * when the fragmentation is severe or the memory is
+	 * insufficient, 2MB continuous physical pages fail
+	 * to be allocated. This situation is allowed.
+	 */
+	if (spa->is_hugepage)
+		noreclaim_flag = memalloc_noreclaim_save();
+
+	/*
+	 * We are not ignoring errors, so if we fail to allocate
+	 * physical memory we just return failure, so we won't encounter
+	 * page fault later on, and more importantly sp_make_share_u2k()
+	 * depends on this feature (and MAP_LOCKED) to work correctly.
+	 */
+	ret = do_mm_populate(mm, sp_addr, ac->populate, 0);
+	if (spa->is_hugepage) {
+		memalloc_noreclaim_restore(noreclaim_flag);
+		if (ret)
+			sp_add_work_compact();
+	}
+	if (ret) {
+		sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
+		if (unlikely(fatal_signal_pending(current)))
+			pr_warn_ratelimited("allocation failed, current thread is killed\n");
+		else
+			pr_warn_ratelimited("allocation failed due to mm populate failed"
+					    "(potential no enough memory when -12): %d\n", ret);
+		sp_fallocate(spa);  /* need this, otherwise memleak */
+		sp_alloc_fallback(spa, ac);
+	} else {
+		ac->need_fallocate = true;
+	}
+	return ret;
+}
+
+static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
+	struct sp_group_node *spg_node, struct sp_alloc_context *ac)
+{
+	int ret;
+
+	ret = sp_alloc_mmap(mm, spa, spg_node, ac);
+	if (ret < 0) {
+		if (ac->need_fallocate) {
+			/* e.g. second sp_mmap fail */
+			sp_fallocate(spa);
+			ac->need_fallocate = false;
+		}
+		return ret;
+	}
+
+	ret = sp_alloc_populate(mm, spa, spg_node, ac);
+	return ret;
+}
+
+static int sp_alloc_mmap_populate(struct sp_area *spa,
+				  struct sp_alloc_context *ac)
+{
+	int ret;
+	struct mm_struct *mm;
+	struct sp_group_node *spg_node;
+
+	/* create mapping for each process in the group */
+	list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
+		mm = spg_node->master->mm;
+		ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
+		if (ret)
+			return ret;
+	}
+	return ret;
 }
 
 /**
@@ -1934,15 +2104,7 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 {
 	struct sp_group *spg;
 	struct sp_area *spa = NULL;
-	unsigned long sp_addr;
-	unsigned long mmap_addr;
-	void *p;  /* return value */
-	struct mm_struct *mm;
-	struct file *file;
-	unsigned long size_aligned;
 	int ret = 0;
-	unsigned int noreclaim_flag;
-	struct sp_group_node *spg_node;
 	struct sp_alloc_context ac;
 
 	ret = sp_alloc_prepare(size, sp_flags, spg_id, &ac);
@@ -1958,99 +2120,10 @@ try_again:
 		ret = PTR_ERR(spa);
 		goto out;
 	}
-	sp_addr = spa->va_start;
 
-	/* create mapping for each process in the group */
-	list_for_each_entry(spg_node, &spg->procs, proc_node) {
-		unsigned long populate = 0;
-		struct vm_area_struct *vma;
-		mm = spg_node->master->mm;
-
-		down_write(&mm->mmap_sem);
-		if (unlikely(mm->core_state)) {
-			up_write(&mm->mmap_sem);
-			pr_info("allocation encountered coredump\n");
-			continue;
-		}
-
-		mmap_addr = sp_mmap(mm, file, spa, &populate, spg_node->prot);
-		if (IS_ERR_VALUE(mmap_addr)) {
-			up_write(&mm->mmap_sem);
-			p = (void *)mmap_addr;
-			__sp_free(spg, sp_addr, size_aligned, mm);
-			pr_err("sp mmap in allocation failed %ld\n", mmap_addr);
-			goto out;
-		}
-
-		p = (void *)mmap_addr;  /* success */
-		if (populate == 0) {
-			up_write(&mm->mmap_sem);
-			continue;
-		}
-
-		vma = find_vma(mm, sp_addr);
-		if (unlikely(!vma)) {
-			up_write(&mm->mmap_sem);
-			pr_debug("allocation failed, can't find %lx vma\n", (unsigned long)sp_addr);
-			p = ERR_PTR(-EINVAL);
-			goto out;
-		}
-		/* clean PTE_RDONLY flags or trigger SMMU event */
-		if (spg_node->prot & PROT_WRITE)
-			vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
-		up_write(&mm->mmap_sem);
-
-		/*
-		 * The direct reclaim and compact may take a long
-		 * time. As a result, sp mutex will be hold for too
-		 * long time to casue the hung task problem. In this
-		 * case, set the PF_MEMALLOC flag to prevent the
-		 * direct reclaim and compact from being executed.
-		 * Since direct reclaim and compact are not performed
-		 * when the fragmentation is severe or the memory is
-		 * insufficient, 2MB continuous physical pages fail
-		 * to be allocated. This situation is allowed.
-		 */
-		if (spa->is_hugepage)
-			noreclaim_flag = memalloc_noreclaim_save();
-
-		/*
-		 * We are not ignoring errors, so if we fail to allocate
-		 * physical memory we just return failure, so we won't encounter
-		 * page fault later on, and more importantly sp_make_share_u2k()
-		 * depends on this feature (and MAP_LOCKED) to work correctly.
-		 */
-		ret = do_mm_populate(mm, sp_addr, populate, 0);
-		if (spa->is_hugepage) {
-			memalloc_noreclaim_restore(noreclaim_flag);
-			if (ret)
-				sp_add_work_compact();
-		}
-		if (ret) {
-			__sp_free(spg, sp_addr, size_aligned,
-				  (list_next_entry(spg_node, proc_node))->master->mm);
-			if (unlikely(fatal_signal_pending(current)))
-				pr_warn_ratelimited("allocation failed, current thread is killed\n");
-			else
-				pr_warn_ratelimited("allocation failed due to mm populate failed"
-						    "(potential no enough memory when -12): %d\n", ret);
-
-			sp_fallocate(spa);
-			if (file == spg->file_hugetlb) {
-				spg->hugepage_failures++;
-
-				/* fallback to small pages */
-				if (!(sp_flags & SP_HUGEPAGE_ONLY)) {
-					file = spg->file;
-					size_aligned = ALIGN(size, PAGE_SIZE);
-					sp_flags &= ~SP_HUGEPAGE;
-					__sp_area_drop(spa);
-					goto try_again;
-				}
-			}
-			break;
-		}
-	}
+	ret = sp_alloc_mmap_populate(spa, &ac);
+	if (ret && ac.state == ALLOC_RETRY)
+		goto try_again;
 
 out:
 	up_read(&spg->rw_lock);
@@ -3186,7 +3259,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	down_read(&spg->rw_lock);
 	if (spg_valid(spg)) {
 		spg_id = spg->id;
-		hugepage_failures = spg->hugepage_failures;
+		hugepage_failures = atomic_read(&spg->stat->hugepage_failures);
 		up_read(&spg->rw_lock);
 
 		/* eliminate potential ABBA deadlock */
