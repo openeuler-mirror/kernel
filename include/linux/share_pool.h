@@ -24,8 +24,6 @@
 
 #define MAX_DEVID 1	/* the max num of Da-vinci devices */
 
-#define VM_HUGE_PAGES           0x00001000      /* use for huge pages */
-
 /* to align the pointer to the (next) PMD boundary */
 #define PMD_ALIGN(addr)		ALIGN(addr, PMD_SIZE)
 

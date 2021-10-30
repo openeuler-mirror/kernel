@@ -178,6 +178,7 @@ struct sp_area {
 	struct sp_group *spg;
 	enum spa_type type;		/* where spa born from */
 	struct mm_struct *mm;		/* owner of k2u(task) */
+	unsigned long kva;		/* shared kva */
 };
 static DEFINE_SPINLOCK(sp_area_lock);
 static struct rb_root sp_area_root = RB_ROOT;
@@ -1393,6 +1394,17 @@ static int is_vmap_hugepage(unsigned long addr)
 		return 0;
 }
 
+static unsigned long __sp_remap_get_pfn(unsigned long kva)
+{
+	unsigned long pfn;
+	if (is_vmalloc_addr((void *)kva))
+		pfn = vmalloc_to_pfn((void *)kva);
+	else
+		pfn = virt_to_pfn(kva);
+
+	return pfn;
+}
+
 static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 					 struct mm_struct *mm)
 {
@@ -1403,6 +1415,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	int ret = 0;
 	struct user_struct *user = NULL;
 	int hsize_log = MAP_HUGE_2MB >> MAP_HUGE_SHIFT;
+	unsigned long addr, buf, offset;
 
 	if (spa->is_hugepage) {
 		file = hugetlb_file_setup(HUGETLB_ANON_FILE, spa_size(spa), VM_NORESERVE,
@@ -1437,13 +1450,23 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 			ret_addr = ret;
 			goto out;
 		}
+		vma->vm_flags |= VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP;
 	} else {
-		ret = remap_vmalloc_range(vma, (void *)kva, 0);
-		if (ret) {
-			pr_err("share pool: remap vmalloc failed, ret %d\n", ret);
-			ret_addr = ret;
-			goto out;
-		}
+		buf = ret_addr;
+		addr = kva;
+		offset = 0;
+		do {
+			ret = remap_pfn_range(vma, buf, __sp_remap_get_pfn(addr), PAGE_SIZE,
+					__pgprot(vma->vm_page_prot.pgprot));
+			if (ret) {
+				pr_err("share pool: remap_pfn_range failed, ret %d\n", ret);
+				ret_addr = ret;
+				goto out;
+			}
+			offset += PAGE_SIZE;
+			buf += PAGE_SIZE;
+			addr += PAGE_SIZE;
+		} while (offset < spa_size(spa));
 	}
 
 out:
@@ -1551,6 +1574,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	unsigned int page_size = PAGE_SIZE;
 	enum spa_type type;
 	int ret;
+	struct vm_struct *area;
 
 	if (sp_flags & ~SP_DVPP) {
 		if (printk_ratelimit())
@@ -1632,6 +1656,12 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			  type, current->comm, current->tgid, current->pid, spg_id,
 			  (void *)spa->va_start, spa->real_size);
 		sp_dump_stack();
+
+		/* associate vma and spa */
+		area = find_vm_area((void *)kva);
+		if (area)
+			area->flags |= VM_SHAREPOOL;
+		spa->kva = kva;
 	}
 
 	return uva;
@@ -1901,6 +1931,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	unsigned long uva_aligned;
 	unsigned long size_aligned;
 	unsigned int page_size;
+	struct vm_struct *area;
 
 	mutex_lock(&sp_mutex);
 	/*
@@ -2031,6 +2062,10 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	}
 
 out_drop_area:
+	/* deassociate vma and spa */
+	area = find_vm_area((void *)spa->kva);
+	if (area)
+		area->flags &= ~VM_SHAREPOOL;
 	__sp_area_drop(spa);
 out_unlock:
 	mutex_unlock(&sp_mutex);
@@ -2045,6 +2080,7 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
 	unsigned long step;
 	bool is_hugepage = true;
 	int ret;
+	struct vm_struct *area;
 
 	ret = is_vmap_hugepage(kva);
 	if (ret > 0) {
@@ -2079,6 +2115,11 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
 			pr_err("share pool: vmalloc %pK to page/hugepage failed\n",
 			       (void *)addr);
 	}
+
+	/* deassociate vma and spa */
+	area = find_vm_area((void *)kva_aligned);
+	if (area)
+		area->flags &= ~VM_SHAREPOOL;
 
 	vunmap((void *)kva_aligned);
 

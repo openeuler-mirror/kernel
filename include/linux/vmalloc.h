@@ -23,6 +23,10 @@ struct notifier_block;		/* in notifier.h */
 #define VM_UNINITIALIZED	0x00000020	/* vm_struct is not fully initialized */
 #define VM_NO_GUARD		0x00000040      /* don't add guard page */
 #define VM_KASAN		0x00000080      /* has allocated kasan shadow memory */
+#ifdef CONFIG_ASCEND_SHARE_POOL
+#define VM_HUGE_PAGES		0x00001000      /* use for huge pages */
+#define VM_SHAREPOOL		0x00002000      /* remapped to sharepool */
+#endif
 /* bits [20..32] reserved for arch specific ioremap internals */
 
 /*

@@ -2369,6 +2369,14 @@ static void __vunmap(const void *addr, int deallocate_pages)
 		return;
 	}
 
+#ifdef CONFIG_ASCEND_SHARE_POOL
+	/* unmap a sharepool vm area will cause meamleak! */
+	if (area->flags & VM_SHAREPOOL) {
+		WARN(1, KERN_ERR "Memory leak due to vfree() sharepool vm area (%p) !\n", addr);
+		return;
+	}
+#endif
+
 	debug_check_no_locks_freed(area->addr, get_vm_area_size(area));
 	debug_check_no_obj_freed(area->addr, get_vm_area_size(area));
 

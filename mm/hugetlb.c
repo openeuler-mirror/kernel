@@ -3647,6 +3647,13 @@ void __unmap_hugepage_range(struct mmu_gather *tlb, struct vm_area_struct *vma,
 
 		pte = huge_ptep_get_and_clear(mm, address, ptep);
 		tlb_remove_huge_tlb_entry(h, tlb, ptep, address);
+
+		/* sharepool k2u mapped pages are marked special */
+		if (sp_check_vm_share_pool(vma->vm_flags) && pte_special(pte)) {
+			spin_unlock(ptl);
+			continue;
+		}
+
 		if (huge_pte_dirty(pte))
 			set_page_dirty(page);
 

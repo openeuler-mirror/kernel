@@ -1543,7 +1543,8 @@ int vm_insert_page(struct vm_area_struct *vma, unsigned long addr,
 	}
 
 	if (sp_check_hugepage(page))
-		return hugetlb_insert_hugepage(vma, addr, page, vma->vm_page_prot);
+		return hugetlb_insert_hugepage_pte_by_pa(vma->vm_mm, addr,
+					vma->vm_page_prot, page_to_phys(page));
 	else
 		return insert_page(vma, addr, page, vma->vm_page_prot);
 }
