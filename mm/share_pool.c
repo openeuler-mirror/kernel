@@ -213,6 +213,7 @@ struct sp_area {
 	enum spa_type type;		/* where spa born from */
 	struct mm_struct *mm;		/* owner of k2u(task) */
 	unsigned long kva;		/* shared kva */
+	pid_t applier;			/* the original applier process */
 };
 static DEFINE_SPINLOCK(sp_area_lock);
 static struct rb_root sp_area_root = RB_ROOT;
@@ -797,7 +798,8 @@ static unsigned long cached_vstart;  /* affected by SP_DVPP and sp_config_dvpp_r
  * Return NULL if fail.
  */
 static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
-				     struct sp_group *spg, enum spa_type type)
+				     struct sp_group *spg, enum spa_type type,
+				     pid_t applier)
 {
 	struct sp_area *spa, *first, *err;
 	struct rb_node *n;
@@ -914,6 +916,7 @@ found:
 	spa->type = type;
 	spa->mm = NULL;
 	spa->kva = 0;   /* NULL pointer */
+	spa->applier = applier;
 
 	if (spa_inc_usage(type, size, (flags & SP_DVPP))) {
 		err = ERR_PTR(-EINVAL);
@@ -1350,7 +1353,7 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 		size_aligned = ALIGN(size, PAGE_SIZE);
 	}
 try_again:
-	spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_ALLOC);
+	spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_ALLOC, current->tgid);
 	if (IS_ERR(spa)) {
 		pr_err_ratelimited("share pool: allocation failed due to alloc spa failure "
 			"(potential no enough virtual memory when -75): %ld\n", PTR_ERR(spa));
@@ -1758,7 +1761,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			uva = ERR_PTR(-EINVAL);
 			goto out_drop_proc_stat;
 		}
-		spa = sp_alloc_area(size_aligned, sp_flags, NULL, SPA_TYPE_K2TASK);
+		spa = sp_alloc_area(size_aligned, sp_flags, NULL, SPA_TYPE_K2TASK, tsk->tgid);
 		if (IS_ERR(spa)) {
 			pr_err_ratelimited("share pool: k2u(task) failed due to alloc spa failure "
 				"(potential no enough virtual memory when -75): %ld\n", PTR_ERR(spa));
@@ -1787,9 +1790,9 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		}
 
 		if (enable_share_k2u_spg)
-			spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_K2SPG);
+			spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_K2SPG, tsk->tgid);
 		else
-			spa = sp_alloc_area(size_aligned, sp_flags, NULL, SPA_TYPE_K2TASK);
+			spa = sp_alloc_area(size_aligned, sp_flags, NULL, SPA_TYPE_K2TASK, tsk->tgid);
 
 		if (IS_ERR(spa)) {
 			up_read(&spg->rw_lock);
@@ -2577,7 +2580,7 @@ static void rb_spa_stat_show(struct seq_file *seq)
 			up_read(&spa->spg->rw_lock);
 		}
 
-		seq_printf(seq, "%2s%-14lx %2s%-14lx %-13ld ",
+		seq_printf(seq, "%2s%-14lx %2s%-14lx %-10ld ",
 			   "0x", spa->va_start,
 			   "0x", spa->va_end,
 			   byte2kb(spa->real_size));
@@ -2602,7 +2605,8 @@ static void rb_spa_stat_show(struct seq_file *seq)
 		else
 			seq_printf(seq, "%-5s ", "N");
 
-		seq_printf(seq, "%-10d\n", atomic_read(&spa->use_count));
+		seq_printf(seq, "%-8d ",  spa->applier);
+		seq_printf(seq, "%-8d\n", atomic_read(&spa->use_count));
 
 		spin_lock(&sp_area_lock);
 	}
@@ -2712,8 +2716,8 @@ static int spa_stat_show(struct seq_file *seq, void *offset)
 	spg_overview_show(seq);
 	spa_overview_show(seq);
 	/* print the file header */
-	seq_printf(seq, "%-10s %-16s %-16s %-13s %-7s %-5s %-10s\n",
-		   "Group ID", "va_start", "va_end", "Aligned KB", "Type", "Huge", "Ref");
+	seq_printf(seq, "%-10s %-16s %-16s %-10s %-7s %-5s %-8s %-8s\n",
+		   "Group ID", "va_start", "va_end", "Size(KB)", "Type", "Huge", "PID", "Ref");
 	rb_spa_stat_show(seq);
 	return 0;
 }
