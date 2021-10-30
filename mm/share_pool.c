@@ -3110,14 +3110,20 @@ EXPORT_SYMBOL(sharepool_no_page);
 
 #define MM_WOULD_FREE	2
 
-void sp_group_exit(struct mm_struct *mm)
+int sp_group_exit(struct mm_struct *mm)
 {
 	struct sp_group *spg = mm->sp_group;
 	bool is_alive = true;
 
 	if (!spg || !enable_ascend_share_pool)
-		return;
+		return 0;
 
+	/*
+	 * The judgment of mm->mm_users == MM_WOULD_FREE and atomic_dec_and_test
+	 * must be atomic. Otherwise, mm->mm_users == MM_WOULD_FREE may never be
+	 * true due to the gap in the middle.
+	 */
+	down_write(&spg->rw_lock);
 	/*
 	 * Recall we add mm->users by 1 deliberately in sp_group_add_task().
 	 * If the mm_users is 2, it means that the mm is ready to be freed
@@ -3125,21 +3131,30 @@ void sp_group_exit(struct mm_struct *mm)
 	 * do_exit() -> exit_mm() -> mmput() -> THIS function.
 	 */
 	if (atomic_read(&mm->mm_users) == MM_WOULD_FREE) {
-		down_write(&spg->rw_lock);
 		/* a dead group should NOT be reactive again */
 		if (spg_valid(spg) && list_is_singular(&spg->procs))
 			is_alive = spg->is_alive = false;
 		if (mm->sp_group)  /* concurrency handle of sp_group_add_task */
 			list_del(&mm->sp_node);   /* affect spg->procs */
+		/* match with get_task_mm() in sp_group_add_task() */
+		atomic_dec(&mm->mm_users);
 		up_write(&spg->rw_lock);
 
 		if (!is_alive)
 			blocking_notifier_call_chain(&sp_notifier_chain, 0,
 						     mm->sp_group);
 
-		/* match with get_task_mm() in sp_group_add_task() */
-		atomic_dec(&mm->mm_users);
+		return 0;
 	}
+
+	if (atomic_dec_and_test(&mm->mm_users)) {
+		up_write(&spg->rw_lock);
+		WARN(1, "Invalid user counting\n");
+		return 0;
+	}
+
+	up_write(&spg->rw_lock);
+	return 1;
 }
 
 void sp_group_post_exit(struct mm_struct *mm)

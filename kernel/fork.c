@@ -1086,7 +1086,8 @@ void mmput(struct mm_struct *mm)
 {
 	might_sleep();
 
-	sp_group_exit(mm);
+	if (sp_group_exit(mm))
+		return;
 
 	if (atomic_dec_and_test(&mm->mm_users))
 		__mmput(mm);
