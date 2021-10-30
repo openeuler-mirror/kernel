@@ -46,6 +46,7 @@
 #include <linux/hugetlb.h>
 #include <linux/compaction.h>
 #include <linux/preempt.h>
+#include <linux/swapops.h>
 
 /* access control mode macros  */
 #define AC_NONE			0
@@ -1893,21 +1894,50 @@ out_put_task:
 }
 EXPORT_SYMBOL_GPL(sp_make_share_k2u);
 
+static int sp_pmd_entry(pmd_t *pmd, unsigned long addr,
+			unsigned long next, struct mm_walk *walk)
+{
+	struct sp_walk_data *sp_walk_data = walk->private;
+
+	sp_walk_data->pmd = pmd;
+	return 0;
+}
+
 static int sp_pte_entry(pte_t *pte, unsigned long addr,
 			unsigned long next, struct mm_walk *walk)
 {
-	struct page *page = pte_page(*pte);
-	struct sp_walk_data *sp_walk_data;
+	struct page *page;
+	struct sp_walk_data *sp_walk_data = walk->private;
+	pmd_t *pmd = sp_walk_data->pmd;
+	spinlock_t *ptl;
+
+retry:
+	pte = pte_offset_map_lock(walk->mm, pmd, addr, &ptl);
 
 	if (unlikely(!pte_present(*pte))) {
-		pr_debug("share pool: the page of addr %lx unexpectedly not in RAM\n", (unsigned long)addr);
-		return -EFAULT;
+		swp_entry_t entry;
+
+		if (pte_none(*pte))
+			goto no_page;
+		entry = pte_to_swp_entry(*pte);
+		if (!is_migration_entry(entry))
+			goto no_page;
+		pte_unmap_unlock(pte, ptl);
+		migration_entry_wait(walk->mm, pmd, addr);
+		goto retry;
 	}
 
-	sp_walk_data = walk->private;
+	page = pte_page(*pte);
 	get_page(page);
+	pte_unmap_unlock(pte, ptl);
 	sp_walk_data->pages[sp_walk_data->page_count++] = page;
 	return 0;
+
+no_page:
+	pte_unmap_unlock(pte, ptl);
+	pr_debug("share pool: the page of addr %lx unexpectedly not in RAM\n",
+		 (unsigned long)addr);
+	return -EFAULT;
 }
 
 static int sp_test_walk(unsigned long addr, unsigned long next,
@@ -2010,6 +2040,7 @@ static int __sp_walk_page_range(unsigned long uva, unsigned long size,
 	} else {
 		sp_walk_data->is_hugepage = false;
 		sp_walk.pte_entry = sp_pte_entry;
+		sp_walk.pmd_entry = sp_pmd_entry;
 	}
 
 	sp_walk_data->page_size = page_size;

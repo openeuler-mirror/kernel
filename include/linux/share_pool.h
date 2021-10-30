@@ -105,6 +105,7 @@ struct sp_walk_data {
 	unsigned long uva_aligned;
 	unsigned long page_size;
 	bool is_hugepage;
+	pmd_t *pmd;
 };
 
 /* per process memory usage statistics indexed by tgid */
