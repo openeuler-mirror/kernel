@@ -135,6 +135,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 			up_write(&sp_stat_sem);
 			return stat;
 		} else {
+			up_write(&sp_stat_sem);
 			/* if enter this branch, that's our mistake */
 			pr_err_ratelimited("share pool: proc stat invalid id %d\n", id);
 			return ERR_PTR(-EBUSY);
