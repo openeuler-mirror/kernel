@@ -46,6 +46,85 @@ inline int arch_check_node_cdm(int nid)
 }
 
 #ifdef CONFIG_ASCEND_CLEAN_CDM
+
+#define MAX_PARTATION_COUNT 8
+#define MAX_CDM_PER_PATRATION 8
+
+/*
+ * Here we provide a way to precisely specify the target node to which we want
+ * to move the kernel structrue for a cdm node, instead of guessing the hardware
+ * topologies. Even the node isn't a cdm node, the movement could be reasonable.
+ * Suppose a node is designed to be used only by some certern processes and
+ * devices, the kernel structure of that node could be overwritten by a broken
+ * process.
+ *
+ * A possible configure in bootargs:
+ *            cdm_move_map=0,2,3,6;1,4,5,7
+ * That means to move the kernel structure for node 2,3,6 to node 0 and kernel
+ * structure for node 4,5,7 to node 1.
+ */
+static bool cdm_to_ddr_hardcode = true;
+static int cdm_to_ddr_map[MAX_PARTATION_COUNT][MAX_CDM_PER_PATRATION + 1];
+
+static int __init cdm_to_ddr_parse_param(char *str)
+{
+	int i, j;
+	char *p, *n;
+
+	cdm_to_ddr_hardcode = false;
+	for (i = 0; i < MAX_PARTATION_COUNT; i++)
+		for (j = 0; j < MAX_CDM_PER_PATRATION + 1; j++)
+			cdm_to_ddr_map[i][j] = -1;
+
+	for (p = n = str, i = 0; strsep(&p, ";"); i++, n = p) {
+		char *s = n;
+
+		for (j = 0; strsep(&n, ","); j++, s = n) {
+			int err;
+			unsigned long long nid;
+
+			if (j >= MAX_CDM_PER_PATRATION + 1) {
+				pr_warn("the cdm nodes in this partation is more than supported\n");
+				break;
+			}
+
+			err = kstrtoull(s, 0, &nid);
+			if (err) {
+				pr_err("bootargs for cdm_move_map invalid, %d\n",
+					err);
+				return err;
+			}
+
+			cdm_to_ddr_map[i][j] = (int)nid;
+			if (j > 0)
+				pr_info("node %d moved to node %d\n",
+					cdm_to_ddr_map[i][j],
+					cdm_to_ddr_map[i][0]);
+		}
+	}
+
+	return 0;
+}
+early_param("cdm_move_map", cdm_to_ddr_parse_param);
+
+static int __init cdm_node_to_ddr_node_mapped(int nid)
+{
+	int i, j;
+
+	for (i = 0; i < MAX_PARTATION_COUNT; i++) {
+		if (cdm_to_ddr_map[i][0] == -1)
+			break;
+		for (j = 1; j < MAX_CDM_PER_PATRATION + 1; j++) {
+			if (cdm_to_ddr_map[i][j] == -1)
+				break;
+			else if (cdm_to_ddr_map[i][j] == nid)
+				return cdm_to_ddr_map[i][0];
+		}
+	}
+
+	return nid;
+}
+
 /**
  * cdm_node_to_ddr_node - Convert the cdm node to the ddr node of the
  *                        same partion.
@@ -84,6 +163,9 @@ int __init cdm_node_to_ddr_node(int nid)
 	 * for extending
 	 */
 	int hbm_per_part = 2;
+
+	if (!cdm_to_ddr_hardcode)
+		return cdm_node_to_ddr_node_mapped(nid);
 
 	if (!nr_cdm || nodes_empty(numa_nodes_parsed))
 		return nid;
