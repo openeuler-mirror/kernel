@@ -668,6 +668,9 @@ static void show_smap_vma_flags(struct seq_file *m, struct vm_area_struct *vma)
 #ifdef CONFIG_USERSWAP
 		[ilog2(VM_USWAP)]	= "us",
 #endif
+#ifdef CONFIG_ASCEND_SHARE_POOL
+		[ilog2(VM_SHARE_POOL)]	= "sp",
+#endif
 	};
 	size_t i;
 
