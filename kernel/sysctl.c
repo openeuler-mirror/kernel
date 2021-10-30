@@ -1807,6 +1807,15 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero_ul,
 		.extra2		= &sysctl_sp_compact_interval_max,
 	},
+	{
+		.procname	= "sharepool_perf_alloc",
+		.data		= &sysctl_sp_perf_alloc,
+		.maxlen		= sizeof(sysctl_sp_perf_alloc),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &ten_thousand,
+	},
 #endif
 	{ }
 };

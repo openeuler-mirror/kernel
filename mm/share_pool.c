@@ -48,6 +48,8 @@
 #include <linux/preempt.h>
 #include <linux/swapops.h>
 #include <linux/mmzone.h>
+#include <linux/timekeeping.h>
+#include <linux/time64.h>
 
 /* access control mode macros  */
 #define AC_NONE			0
@@ -68,6 +70,9 @@
 
 #define GROUP_NONE		0
 
+#define SEC2US(sec)		((sec) * 1000000)
+#define NS2US(ns)		((ns) / 1000)
+
 #define PF_DOMAIN_CORE		0x10000000	/* AOS CORE processes in sched.h */
 
 /* mdc scene hack */
@@ -83,6 +88,8 @@ int sysctl_ac_mode = AC_NONE;
 int sysctl_sp_debug_mode;
 
 int sysctl_share_pool_map_lock_enable;
+
+int sysctl_sp_perf_alloc;
 
 static int share_pool_group_mode = SINGLE_GROUP_MODE;
 
@@ -1955,7 +1962,37 @@ struct sp_alloc_context {
 	unsigned long populate;
 	int state;
 	bool need_fallocate;
+	struct timespec64 start;
+	struct timespec64 end;
 };
+
+static void trace_sp_alloc_begin(struct sp_alloc_context *ac)
+{
+	if (!sysctl_sp_perf_alloc)
+		return;
+
+	ktime_get_ts64(&ac->start);
+}
+
+static void trace_sp_alloc_finish(struct sp_alloc_context *ac, unsigned long va)
+{
+	unsigned long cost;
+	bool is_pass_through = ac->spg == spg_none ? true : false;
+
+	if (!sysctl_sp_perf_alloc)
+		return;
+
+	ktime_get_ts64(&ac->end);
+
+	cost = SEC2US(ac->end.tv_sec - ac->start.tv_sec) +
+		NS2US(ac->end.tv_nsec - ac->start.tv_nsec);
+	if (cost >= (unsigned long)sysctl_sp_perf_alloc) {
+		pr_err("Task %s(%d/%d) sp_alloc returns 0x%lx consumes %luus, size is %luKB, "
+		       "size_aligned is %luKB, sp_flags is %lx, pass through is %d\n",
+		       current->comm, current->tgid, current->pid,
+		       va, cost, byte2kb(ac->size), byte2kb(ac->size_aligned), ac->sp_flags, is_pass_through);
+	}
+}
 
 static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	int spg_id, struct sp_alloc_context *ac)
@@ -1963,6 +2000,8 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	struct sp_group *spg;
 
 	check_interrupt_context();
+
+	trace_sp_alloc_begin(ac);
 
 	/* mdc scene hack */
 	if (enable_mdc_default_group)
@@ -2210,9 +2249,11 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 	return ret;
 }
 
-/* spa maybe an error pointer, so introduce param spg */
-static void sp_alloc_finish(int result, struct sp_area *spa, struct sp_group *spg)
+/* spa maybe an error pointer, so introduce variable spg */
+static void sp_alloc_finish(int result, struct sp_area *spa,
+	struct sp_alloc_context *ac)
 {
+	struct sp_group *spg = ac->spg;
 	bool is_pass_through = spg == spg_none ? true : false;
 
 	/* match sp_alloc_check_prepare */
@@ -2229,6 +2270,7 @@ static void sp_alloc_finish(int result, struct sp_area *spa, struct sp_group *sp
 	if (!is_pass_through)
 		sp_group_drop(spg);
 
+	trace_sp_alloc_finish(ac, spa->va_start);
 	sp_dump_stack();
 	sp_try_to_compact();
 }
@@ -2270,7 +2312,7 @@ try_again:
 		goto try_again;
 
 out:
-	sp_alloc_finish(ret, spa, ac.spg);
+	sp_alloc_finish(ret, spa, &ac);
 	if (ret)
 		return ERR_PTR(ret);
 	else
