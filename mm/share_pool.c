@@ -2220,15 +2220,17 @@ static bool vmalloc_area_clr_flag(struct sp_area *spa, unsigned long kva, unsign
 }
 
 /**
- * sp_make_share_k2u() - Share kernel memory to a specified process or sp_group.
+ * sp_make_share_k2u() - Share kernel memory to current process or an sp_group.
  * @kva: the VA of shared kernel memory.
  * @size: the size of shared kernel memory.
  * @sp_flags: how to allocate the memory. We only support SP_DVPP.
- * @pid:  the pid of the specified process
+ * @pid:  the pid of the specified process (Not currently in use).
  * @spg_id: the share group that the memory is shared to.
  *
- * Use spg_id of current thread if spg_id == SPG_ID_DEFAULT.
- * Share kernel memory to a specified task if spg_id == SPG_ID_NONE.
+ * Return: the shared target user address to start at
+ *
+ * Share kernel memory to current task if spg_id == SPG_ID_NONE
+ * or SPG_ID_DEFAULT in multi-group mode.
  *
  * Return:
  * * if succeed, return the shared user address to start at.
@@ -2243,15 +2245,19 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	unsigned long kva_aligned;
 	unsigned long size_aligned;
 	unsigned int page_size = PAGE_SIZE;
-	struct task_struct *tsk;
-	struct mm_struct *mm;
-	int ret = 0, is_hugepage;
+	struct mm_struct *mm = current->mm;
+	int is_hugepage;
 
 	check_interrupt_context();
 
 	if (sp_flags & ~SP_DVPP) {
 		pr_err_ratelimited("share pool: k2u sp_flags %lx error\n", sp_flags);
 		return ERR_PTR(-EINVAL);
+	}
+
+	if (mm == NULL) {
+		pr_err_ratelimited("k2u: kthread is not allowed\n");
+		return ERR_PTR(-EPERM);
 	}
 
 	is_hugepage = is_vmap_hugepage(kva);
@@ -2269,50 +2275,30 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	kva_aligned = ALIGN_DOWN(kva, page_size);
 	size_aligned = ALIGN(kva + size, page_size) - kva_aligned;
 
-	rcu_read_lock();
-	tsk = find_task_by_vpid(pid);
-	if (!tsk || (tsk->flags & PF_EXITING))
-		ret = -ESRCH;
-	else
-		get_task_struct(tsk);
-
-	rcu_read_unlock();
-	if (ret)
-		return ERR_PTR(ret);
-
-	mm = get_task_mm(tsk);
-	if (mm == NULL) {
-		uva = ERR_PTR(-ESRCH);
-		goto out_put_task;
-	}
-
-	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
+	spg = get_first_group(mm);
 	if (spg == NULL) {
 		/* k2u to task */
 		struct spg_proc_stat *stat;
 
 		if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT) {
 			pr_err_ratelimited("share pool: k2task invalid spg id %d\n", spg_id);
-			uva = ERR_PTR(-EINVAL);
-			goto out_put_mm;
+			return ERR_PTR(-EINVAL);
 		}
 
 		down_write(&sp_group_sem);
-		stat = sp_init_process_stat(tsk, mm, spg_none);
+		stat = sp_init_process_stat(current, mm, spg_none);
 		up_write(&sp_group_sem);
 		if (IS_ERR(stat)) {
-			uva = stat;
 			pr_err_ratelimited("share pool: k2u(task) init process stat failed, ret %lx\n",
 					   PTR_ERR(stat));
-			goto out_put_mm;
+			return stat;
 		}
 
-		spa = sp_alloc_area(size_aligned, sp_flags, spg_none, SPA_TYPE_K2TASK, tsk->tgid);
+		spa = sp_alloc_area(size_aligned, sp_flags, spg_none, SPA_TYPE_K2TASK, current->tgid);
 		if (IS_ERR(spa)) {
 			pr_err_ratelimited("share pool: k2u(task) failed due to alloc spa failure "
 				"(potential no enough virtual memory when -75): %ld\n", PTR_ERR(spa));
-			uva = spa;
-			goto out_put_mm;
+			return spa;
 		}
 
 		if (!vmalloc_area_set_flag(spa, kva_aligned, VM_SHAREPOOL)) {
@@ -2340,9 +2326,9 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		}
 
 		if (enable_share_k2u_spg)
-			spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_K2SPG, tsk->tgid);
+			spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_K2SPG, current->tgid);
 		else
-			spa = sp_alloc_area(size_aligned, sp_flags, spg_none, SPA_TYPE_K2TASK, tsk->tgid);
+			spa = sp_alloc_area(size_aligned, sp_flags, spg_none, SPA_TYPE_K2TASK, current->tgid);
 
 		if (IS_ERR(spa)) {
 			up_read(&spg->rw_lock);
@@ -2370,7 +2356,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	up_read(&spg->rw_lock);
 
 	if (!IS_ERR(uva))
-		sp_update_process_stat(tsk, true, spa);
+		sp_update_process_stat(current, true, spa);
 
 finish:
 	if (!IS_ERR(uva)) {
@@ -2387,10 +2373,6 @@ out_drop_spa:
 out_drop_spg:
 	if (spg)
 		sp_group_drop(spg);
-out_put_mm:
-	mmput(mm);
-out_put_task:
-	put_task_struct(tsk);
 
 	sp_dump_stack();
 	return uva;
@@ -2605,7 +2587,7 @@ static void __sp_walk_page_free(struct sp_walk_data *data)
  * sp_make_share_u2k() - Share user memory of a specified process to kernel.
  * @uva: the VA of shared user memory
  * @size: the size of shared user memory
- * @pid: the pid of the specified process
+ * @pid: the pid of the specified process(Not currently in use)
  *
  * Return:
  * * if success, return the starting kernel address of the shared memory.
@@ -2614,8 +2596,7 @@ static void __sp_walk_page_free(struct sp_walk_data *data)
 void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 {
 	int ret = 0;
-	struct task_struct *tsk;
-	struct mm_struct *mm;
+	struct mm_struct *mm = current->mm;
 	void *p = ERR_PTR(-ESRCH);
 	struct sp_walk_data sp_walk_data = {
 		.page_count = 0,
@@ -2624,34 +2605,23 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 
 	check_interrupt_context();
 
-	rcu_read_lock();
-	tsk = find_task_by_vpid(pid);
-	if (!tsk || (tsk->flags & PF_EXITING))
-		ret = -ESRCH;
-	else
-		get_task_struct(tsk);
-	rcu_read_unlock();
-	if (ret)
-		goto out;
+	if (mm == NULL) {
+		pr_err("u2k: kthread is not allowed\n");
+		return ERR_PTR(-EPERM);
+	}
 
-	mm = get_task_mm(tsk);
-	if (mm == NULL)
-		goto out_put_task;
 	down_write(&mm->mmap_sem);
 	if (unlikely(mm->core_state)) {
 		up_write(&mm->mmap_sem);
 		pr_err("share pool: u2k: encountered coredump, abort\n");
-		mmput(mm);
-		goto out_put_task;
+		return p;
 	}
 
 	ret = __sp_walk_page_range(uva, size, mm, &sp_walk_data);
 	if (ret) {
 		pr_err_ratelimited("share pool: walk page range failed, ret %d\n", ret);
 		up_write(&mm->mmap_sem);
-		mmput(mm);
-		p = ERR_PTR(ret);
-		goto out_put_task;
+		return ERR_PTR(ret);
 	}
 
 	if (sp_walk_data.is_hugepage)
@@ -2661,16 +2631,14 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 		p = vmap(sp_walk_data.pages, sp_walk_data.page_count, VM_MAP,
 			 PAGE_KERNEL);
 	up_write(&mm->mmap_sem);
-	mmput(mm);
 
 	if (!p) {
 		pr_err("share pool: vmap(huge) in u2k failed\n");
 		__sp_walk_page_free(&sp_walk_data);
-		p = ERR_PTR(-ENOMEM);
-		goto out_put_task;
-	} else {
-		p = p + (uva - sp_walk_data.uva_aligned);
+		return ERR_PTR(-ENOMEM);
 	}
+
+	p = p + (uva - sp_walk_data.uva_aligned);
 
 	/*
 	 * kva p may be used later in k2u. Since p comes from uva originally,
@@ -2681,9 +2649,6 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	area->flags |= VM_USERMAP;
 
 	kvfree(sp_walk_data.pages);
-out_put_task:
-	put_task_struct(tsk);
-out:
 	return p;
 }
 EXPORT_SYMBOL_GPL(sp_make_share_u2k);
