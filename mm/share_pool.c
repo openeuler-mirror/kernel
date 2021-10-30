@@ -1428,6 +1428,134 @@ int sp_group_add_task(int pid, int spg_id)
 }
 EXPORT_SYMBOL_GPL(sp_group_add_task);
 
+static void free_spg_proc_stat(struct mm_struct *mm, int spg_id)
+{
+	int i;
+	struct sp_proc_stat *proc_stat = sp_get_proc_stat(mm);
+	struct spg_proc_stat *stat;
+	struct sp_spg_stat *spg_stat;
+	struct hlist_node *tmp;
+
+	hash_for_each_safe(proc_stat->hash, i, tmp, stat, pnode) {
+		if (stat->spg_id == spg_id) {
+			spg_stat = stat->spg_stat;
+			mutex_lock(&spg_stat->lock);
+			hash_del(&stat->gnode);
+			mutex_unlock(&spg_stat->lock);
+			hash_del(&stat->pnode);
+			kfree(stat);
+			break;
+		}
+	}
+}
+
+/**
+ * mg_sp_group_del_task() - delete a process from a sp group.
+ * @pid: the pid of the task to be deleted
+ * @spg_id: sharepool group id
+ *
+ * the group's spa list must be empty, or deletion will fail.
+ *
+ * Return:
+ * * if success, return 0.
+ * * -EINVAL, spg_id invalid or spa_lsit not emtpy or spg dead
+ * * -ESRCH, the task group of pid is not in group / process dead
+ */
+int mg_sp_group_del_task(int pid, int spg_id)
+{
+	int ret = 0;
+	struct sp_group *spg;
+	struct sp_group_node *spg_node;
+	struct task_struct *tsk = NULL;
+	struct mm_struct *mm = NULL;
+	bool is_alive = true;
+
+	if (spg_id < SPG_ID_MIN || spg_id > SPG_ID_AUTO) {
+		pr_err_ratelimited("del from group failed, invalid group id %d\n", spg_id);
+		return -EINVAL;
+	}
+
+	spg = __sp_find_spg(pid, spg_id);
+	if (!spg) {
+		pr_err_ratelimited("spg not found or get task failed.");
+		return -EINVAL;
+	}
+	down_write(&sp_group_sem);
+
+	if (!spg_valid(spg)) {
+		up_write(&sp_group_sem);
+		pr_err_ratelimited("spg dead.");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (!list_empty(&spg->spa_list)) {
+		up_write(&sp_group_sem);
+		pr_err_ratelimited("spa is not empty");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = get_task(pid, &tsk);
+	if (ret) {
+		up_write(&sp_group_sem);
+		pr_err_ratelimited("task is not found");
+		goto out;
+	}
+	mm = get_task_mm(tsk->group_leader);
+	if (!mm) {
+		up_write(&sp_group_sem);
+		pr_err_ratelimited("mm is not found");
+		ret = -ESRCH;
+		goto out_put_task;
+	}
+
+	spg_node = is_process_in_group(spg, mm);
+	if (!spg_node) {
+		up_write(&sp_group_sem);
+		pr_err_ratelimited("process not in group");
+		ret = -ESRCH;
+		goto out_put_mm;
+	}
+
+	down_write(&spg->rw_lock);
+	if (list_is_singular(&spg->procs))
+		is_alive = spg->is_alive = false;
+	spg->proc_num--;
+	list_del(&spg_node->proc_node);
+	sp_group_drop(spg);
+	up_write(&spg->rw_lock);
+	if (!is_alive)
+		blocking_notifier_call_chain(&sp_notifier_chain, 0, spg);
+
+	list_del(&spg_node->group_node);
+	mm->sp_group_master->count--;
+	kfree(spg_node);
+	if (atomic_sub_and_test(1, &mm->mm_users)) {
+		up_write(&sp_group_sem);
+		WARN(1, "Invalid user counting\n");
+		return -EINVAL;
+	}
+
+	free_spg_proc_stat(mm, spg_id);
+	up_write(&sp_group_sem);
+
+out_put_mm:
+	mmput(mm);
+out_put_task:
+	put_task_struct(tsk);
+out:
+	sp_group_drop(spg); /* if spg dead, freed here */
+	return ret;
+}
+EXPORT_SYMBOL_GPL(mg_sp_group_del_task);
+
+int sp_group_del_task(int pid, int spg_id)
+{
+	return mg_sp_group_del_task(pid, spg_id);
+}
+EXPORT_SYMBOL_GPL(sp_group_del_task);
+
 /* the caller must hold sp_area_lock */
 static void __insert_sp_area(struct sp_area *spa)
 {
