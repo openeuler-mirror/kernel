@@ -771,6 +771,23 @@ static struct sp_group *get_first_group(struct mm_struct *mm)
 	return spg;
 }
 
+/*
+ * the caller must:
+ * 1. hold spg->rw_lock
+ * 2. ensure no concurrency problem for mm_struct
+ */
+static struct sp_group_node *is_process_in_group(struct sp_group *spg,
+						 struct mm_struct *mm)
+{
+	struct sp_group_node *spg_node;
+
+	list_for_each_entry(spg_node, &spg->procs, proc_node)
+		if (spg_node->master->mm == mm)
+			return spg_node;
+
+	return NULL;
+}
+
 /* user must call sp_group_drop() after use */
 static struct sp_group *__sp_find_spg_locked(int pid, int spg_id)
 {
@@ -778,11 +795,11 @@ static struct sp_group *__sp_find_spg_locked(int pid, int spg_id)
 	struct task_struct *tsk = NULL;
 	int ret = 0;
 
-	if (spg_id == SPG_ID_DEFAULT) {
-		ret = get_task(pid, &tsk);
-		if (ret)
-			return NULL;
+	ret = get_task(pid, &tsk);
+	if (ret)
+		return NULL;
 
+	if (spg_id == SPG_ID_DEFAULT) {
 		/*
 		 * Once we encounter a concurrency problem here.
 		 * To fix it, we believe get_task_mm() and mmput() is too
@@ -793,18 +810,20 @@ static struct sp_group *__sp_find_spg_locked(int pid, int spg_id)
 			spg = NULL;
 		else
 			spg = get_first_group(tsk->mm);
-
 		task_unlock(tsk);
-
-		put_task_struct(tsk);
 	} else {
 		spg = idr_find(&sp_group_idr, spg_id);
 		/* don't revive a dead group */
 		if (!spg || !atomic_inc_not_zero(&spg->use_count))
-			spg = NULL;
+			goto fail;
 	}
 
+	put_task_struct(tsk);
 	return spg;
+
+fail:
+	put_task_struct(tsk);
+	return NULL;
 }
 
 static struct sp_group *__sp_find_spg(int pid, int spg_id)
@@ -1046,7 +1065,6 @@ static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
 {
 	struct sp_group_master *master = mm->sp_group_master;
 	bool exist = false;
-	struct sp_group_node *spg_node;
 
 	if (share_pool_group_mode == SINGLE_GROUP_MODE && master &&
 	    master->count == 1) {
@@ -1061,11 +1079,9 @@ static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
 	if (!exist)
 		return 0;
 
-	list_for_each_entry(spg_node, &master->node_list, group_node) {
-		if (spg_node->spg == spg) {
-			pr_err_ratelimited("task already in target group, id = %d\n", spg->id);
-			return -EEXIST;
-		}
+	if (is_process_in_group(spg, mm)) {
+		pr_err_ratelimited("task already in target group, id=%d\n", spg->id);
+		return -EEXIST;
 	}
 
 	if (master->count + 1 == MAX_GROUP_FOR_TASK) {
@@ -1794,9 +1810,6 @@ static int sp_free_get_spa(struct sp_free_context *fc)
 	fc->spa = spa;
 
 	if (spa->spg != spg_none) {
-		struct sp_group_node *spg_node;
-		bool found = false;
-
 		/*
 		 * Access control: an sp addr can only be freed by
 		 * 1. another task in the same spg
@@ -1808,17 +1821,12 @@ static int sp_free_get_spa(struct sp_free_context *fc)
 			goto check_spa;
 
 		down_read(&spa->spg->rw_lock);
-		list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
-			if (spg_node->master->mm == current->mm) {
-				found = true;
-				break;
-			}
-		}
-		up_read(&spa->spg->rw_lock);
-		if (!found) {
+		if (!is_process_in_group(spa->spg, current->mm)) {
+			up_read(&spa->spg->rw_lock);
 			ret = -EPERM;
 			goto drop_spa;
 		}
+		up_read(&spa->spg->rw_lock);
 
 check_spa:
 		down_write(&spa->spg->rw_lock);
@@ -1961,7 +1969,7 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	if (spg_id != SPG_ID_DEFAULT) {
 		spg = __sp_find_spg(current->pid, spg_id);
 		if (!spg) {
-			pr_err_ratelimited("allocation failed, task not in group\n");
+			pr_err_ratelimited("allocation failed, can't find group\n");
 			return -ENODEV;
 		}
 
@@ -1971,6 +1979,13 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 			up_read(&spg->rw_lock);
 			sp_group_drop(spg);
 			pr_err_ratelimited("allocation failed, spg is dead\n");
+			return -ENODEV;
+		}
+
+		if (!is_process_in_group(spg, current->mm)) {
+			up_read(&spg->rw_lock);
+			sp_group_drop(spg);
+			pr_err_ratelimited("allocation failed, task not in group\n");
 			return -ENODEV;
 		}
 	} else {  /* alocation pass through scene */
@@ -2874,13 +2889,11 @@ EXPORT_SYMBOL_GPL(sp_make_share_u2k);
 static int sp_unshare_uva(unsigned long uva, unsigned long size)
 {
 	int ret = 0;
-	bool found = false;
 	struct mm_struct *mm;
 	struct sp_area *spa;
 	unsigned long uva_aligned;
 	unsigned long size_aligned;
 	unsigned int page_size;
-	struct sp_group_node *spg_node;
 
 	/*
 	 * at first we guess it's a hugepage addr
@@ -2972,20 +2985,13 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size)
 		down_read(&spa->spg->rw_lock);
 		/* always allow kthread and dvpp channel destroy procedure */
 		if (current->mm) {
-			list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
-				if (spg_node->master->mm == current->mm) {
-					found = true;
-					break;
-				}
+			if (!is_process_in_group(spa->spg, current->mm)) {
+				up_read(&spa->spg->rw_lock);
+				pr_err_ratelimited("unshare uva(to group) failed, "
+					"caller process doesn't belong to target group\n");
+				ret = -EPERM;
+				goto out_drop_area;
 			}
-		}
-
-		if (!found) {
-			up_read(&spa->spg->rw_lock);
-			pr_err_ratelimited("unshare uva(to group) failed, "
-					   "caller process doesn't belong to target group\n");
-			ret = -EPERM;
-			goto out_drop_area;
 		}
 		up_read(&spa->spg->rw_lock);
 
