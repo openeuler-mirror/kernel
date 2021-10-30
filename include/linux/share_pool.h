@@ -216,7 +216,7 @@ extern int sp_free(unsigned long addr);
 extern void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			unsigned long sp_flags, int pid, int spg_id);
 extern void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid);
-extern int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id);
+extern int sp_unshare(unsigned long va, unsigned long size);
 
 extern void sp_area_drop(struct vm_area_struct *vma);
 

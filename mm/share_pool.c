@@ -2705,7 +2705,7 @@ EXPORT_SYMBOL_GPL(sp_make_share_u2k);
  *
  * This also means we must trust DVPP channel destroy and guard worker code.
  */
-static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int spg_id)
+static int sp_unshare_uva(unsigned long uva, unsigned long size)
 {
 	int ret = 0;
 	bool found = false;
@@ -2752,11 +2752,6 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	}
 
 	if (spa->type == SPA_TYPE_K2TASK) {
-		if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT) {
-			pr_err_ratelimited("share pool: unshare uva(to task) failed, invalid spg id %d\n", spg_id);
-			ret = -EINVAL;
-			goto out_drop_area;
-		}
 
 		if (!spa->mm) {
 			pr_err_ratelimited("share pool: unshare uva(to task) failed, none spa owner\n");
@@ -2808,12 +2803,6 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 			sp_update_process_stat(current, false, spa);
 
 	} else if (spa->type == SPA_TYPE_K2SPG) {
-		if (spg_id < 0) {
-			pr_err_ratelimited("share pool: unshare uva(to group) failed, invalid spg id %d\n", spg_id);
-			ret = -EINVAL;
-			goto out_drop_area;
-		}
-
 		down_read(&spa->spg->rw_lock);
 		/* always allow kthread and dvpp channel destroy procedure */
 		if (current->mm) {
@@ -2921,14 +2910,12 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
  *                sp_make_share_{k2u,u2k}().
  * @va: the specified virtual address of memory
  * @size: the size of unshared memory
- * @pid:  the pid of the specified process if the VA is user address
- * @spg_id: the ID of the specified sp_group if the VA is user address
  *
  * Use spg_id of current thread if spg_id == SPG_ID_DEFAULT.
  *
  * Return: 0 for success, -errno on failure.
  */
-int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
+int sp_unshare(unsigned long va, unsigned long size)
 {
 	int ret = 0;
 
@@ -2936,7 +2923,7 @@ int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
 
 	if (va < TASK_SIZE) {
 		/* user address */
-		ret = sp_unshare_uva(va, size, pid, spg_id);
+		ret = sp_unshare_uva(va, size);
 	} else if (va >= VA_START) {
 		/* kernel address */
 		ret = sp_unshare_kva(va, size);
