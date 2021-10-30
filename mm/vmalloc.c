@@ -43,7 +43,7 @@
 #include "internal.h"
 
 #ifdef CONFIG_HAVE_ARCH_HUGE_VMALLOC
-bool __ro_after_init vmap_allow_huge;
+bool __ro_after_init vmap_allow_huge = true;
 
 static int __init set_nohugevmalloc(char *str)
 {
@@ -2574,9 +2574,6 @@ void *vmap_hugepage(struct page **pages, unsigned int count,
 }
 EXPORT_SYMBOL(vmap_hugepage);
 
-static void *__vmalloc_node(unsigned long size, unsigned long align,
-			    gfp_t gfp_mask, pgprot_t prot,
-			    int node, const void *caller);
 static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 				 pgprot_t prot, unsigned int page_shift, int node)
 {
@@ -2599,7 +2596,7 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 	/* Please note that the recursion is strictly bounded. */
 	if (array_size > PAGE_SIZE) {
 		pages = __vmalloc_node(array_size, 1, nested_gfp|highmem_mask,
-				PAGE_KERNEL, node, area->caller);
+				PAGE_KERNEL, 0, node, area->caller);
 	} else {
 		pages = kmalloc_node(array_size, nested_gfp, node);
 	}
@@ -2732,6 +2729,7 @@ fail:
  *	@size:		allocation size
  *	@align:		desired alignment
  *	@gfp_mask:	flags for the page level allocator
+ *	@vm_flags:	flags for vm_struct
  *	@prot:		protection mask for the allocated pages
  *	@node:		node to use for allocation or NUMA_NO_NODE
  *	@caller:	caller's return address
@@ -2747,17 +2745,18 @@ fail:
  *	with mm people.
  *
  */
-static void *__vmalloc_node(unsigned long size, unsigned long align,
-			    gfp_t gfp_mask, pgprot_t prot,
+void *__vmalloc_node(unsigned long size, unsigned long align,
+			    gfp_t gfp_mask, pgprot_t prot, unsigned long vm_flags,
 			    int node, const void *caller)
 {
 	return __vmalloc_node_range(size, align, VMALLOC_START, VMALLOC_END,
-				gfp_mask, prot, 0, node, caller);
+				gfp_mask, prot, vm_flags, node, caller);
 }
+EXPORT_SYMBOL(__vmalloc_node);
 
 void *__vmalloc(unsigned long size, gfp_t gfp_mask, pgprot_t prot)
 {
-	return __vmalloc_node(size, 1, gfp_mask, prot, NUMA_NO_NODE,
+	return __vmalloc_node(size, 1, gfp_mask, prot, 0, NUMA_NO_NODE,
 				__builtin_return_address(0));
 }
 EXPORT_SYMBOL(__vmalloc);
@@ -2765,7 +2764,7 @@ EXPORT_SYMBOL(__vmalloc);
 static inline void *__vmalloc_node_flags(unsigned long size,
 					int node, gfp_t flags)
 {
-	return __vmalloc_node(size, 1, flags, PAGE_KERNEL,
+	return __vmalloc_node(size, 1, flags, PAGE_KERNEL, 0,
 					node, __builtin_return_address(0));
 }
 
@@ -2773,7 +2772,7 @@ static inline void *__vmalloc_node_flags(unsigned long size,
 void *__vmalloc_node_flags_caller(unsigned long size, int node, gfp_t flags,
 				  void *caller)
 {
-	return __vmalloc_node(size, 1, flags, PAGE_KERNEL, node, caller);
+	return __vmalloc_node(size, 1, flags, PAGE_KERNEL, 0, node, caller);
 }
 
 /**
@@ -2823,7 +2822,7 @@ void *vmalloc_user(unsigned long size)
 
 	ret = __vmalloc_node(size, SHMLBA,
 			     GFP_KERNEL | __GFP_ZERO,
-			     PAGE_KERNEL, NUMA_NO_NODE,
+			     PAGE_KERNEL, 0, NUMA_NO_NODE,
 			     __builtin_return_address(0));
 	if (ret) {
 		area = find_vm_area(ret);
@@ -2846,7 +2845,7 @@ EXPORT_SYMBOL(vmalloc_user);
  */
 void *vmalloc_node(unsigned long size, int node)
 {
-	return __vmalloc_node(size, 1, GFP_KERNEL, PAGE_KERNEL,
+	return __vmalloc_node(size, 1, GFP_KERNEL, PAGE_KERNEL, 0,
 					node, __builtin_return_address(0));
 }
 EXPORT_SYMBOL(vmalloc_node);
@@ -2884,7 +2883,7 @@ EXPORT_SYMBOL(vzalloc_node);
 
 void *vmalloc_exec(unsigned long size)
 {
-	return __vmalloc_node(size, 1, GFP_KERNEL, PAGE_KERNEL_EXEC,
+	return __vmalloc_node(size, 1, GFP_KERNEL, PAGE_KERNEL_EXEC, 0,
 			      NUMA_NO_NODE, __builtin_return_address(0));
 }
 
@@ -2909,7 +2908,7 @@ void *vmalloc_exec(unsigned long size)
  */
 void *vmalloc_32(unsigned long size)
 {
-	return __vmalloc_node(size, 1, GFP_VMALLOC32, PAGE_KERNEL,
+	return __vmalloc_node(size, 1, GFP_VMALLOC32, PAGE_KERNEL, 0,
 			      NUMA_NO_NODE, __builtin_return_address(0));
 }
 EXPORT_SYMBOL(vmalloc_32);
@@ -2927,7 +2926,7 @@ void *vmalloc_32_user(unsigned long size)
 	void *ret;
 
 	ret = __vmalloc_node(size, 1, GFP_VMALLOC32 | __GFP_ZERO, PAGE_KERNEL,
-			     NUMA_NO_NODE, __builtin_return_address(0));
+			     0, NUMA_NO_NODE, __builtin_return_address(0));
 	if (ret) {
 		area = find_vm_area(ret);
 		area->flags |= VM_USERMAP;
@@ -2936,6 +2935,49 @@ void *vmalloc_32_user(unsigned long size)
 }
 EXPORT_SYMBOL(vmalloc_32_user);
 
+#ifdef CONFIG_ASCEND_SHARE_POOL
+/**
+ * vmalloc_hugepage - allocate virtually contiguous hugetlb memory
+ * 	@size:          allocation size
+ *
+ * Allocate enough huge pages to cover @size and map them into
+ * contiguous kernel virtual space.
+ *
+ * The allocation size is aligned to PMD_SIZE automatically
+ */
+void *vmalloc_hugepage(unsigned long size)
+{
+	/* PMD hugepage aligned */
+	size = PMD_ALIGN(size);
+
+	return __vmalloc_node(size, 1, GFP_KERNEL, PAGE_KERNEL,
+			      VM_HUGE_PAGES, NUMA_NO_NODE,
+			      __builtin_return_address(0));
+}
+EXPORT_SYMBOL(vmalloc_hugepage);
+
+/**
+ * vmalloc_hugepage_user - allocate virtually contiguous hugetlb memory
+ * for userspace
+ *	@size:          allocation size
+ *
+ * Allocate enough huge pages to cover @size and map them into
+ * contiguous kernel virtual space. The resulting memory area
+ * is zeroed so it can be mapped to userspace without leaking data.
+ *
+ * The allocation size is aligned to PMD_SIZE automatically
+ */
+void *vmalloc_hugepage_user(unsigned long size)
+{
+	/* PMD hugepage aligned */
+	size = PMD_ALIGN(size);
+
+	return __vmalloc_node(size, 1, GFP_KERNEL | __GFP_ZERO, PAGE_KERNEL,
+			      VM_HUGE_PAGES | VM_USERMAP, NUMA_NO_NODE,
+			      __builtin_return_address(0));
+}
+EXPORT_SYMBOL(vmalloc_hugepage_user);
+#endif
 
 /*
  * small helper routine , copy contents to buf from addr.

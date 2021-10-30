@@ -1467,7 +1467,6 @@ config ASCEND_SHARE_POOL
 	default n
 	select ARCH_USES_HIGH_VMA_FLAGS
 	select MM_OWNER
-	depends on HAVE_ARCH_HUGE_VMALLOC
 	help
 	  This feature allows multiple processes to share virtual memory both
 	  in kernel and user level, which is only enabled for ascend platform.
