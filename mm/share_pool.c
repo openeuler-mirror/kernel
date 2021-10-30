@@ -80,7 +80,7 @@ static int __read_mostly enable_mdc_default_group;
 static const int mdc_default_group_id = 1;
 
 /* share the uva to the whole group */
-static int __read_mostly enable_share_k2u_spg;
+static int __read_mostly enable_share_k2u_spg = 1;
 
 /* access control mode */
 int sysctl_ac_mode = AC_NONE;
