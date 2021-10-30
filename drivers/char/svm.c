@@ -348,7 +348,7 @@ static void svm_set_slot_valid(unsigned long index, unsigned long phys)
 
 	*((unsigned long *)slot->data) = phys;
 	slot->image_word = SVM_IMAGE_WORD_VALID;
-	slot->pid = current->pid;
+	slot->pid = current->tgid;
 	slot->data_type = SVM_VA2PA_TYPE_DMA;
 	__bitmap_set(va2pa_trunk.bitmap, index, 1);
 	va2pa_trunk.slot_used++;
