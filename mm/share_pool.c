@@ -218,12 +218,12 @@ struct sp_spa_stat {
 static struct sp_spa_stat spa_stat;
 
 /* statistics of all sp group born from sp_alloc and k2u(spg) */
-struct sp_spg_stat {
+struct sp_overall_stat {
 	atomic_t spa_total_num;
 	atomic64_t spa_total_size;
 };
 
-static struct sp_spg_stat spg_stat;
+static struct sp_overall_stat sp_overall_stat;
 
 /*** Global share pool VA allocator ***/
 
@@ -1134,8 +1134,8 @@ found:
 				atomic64_add(size, &spg->alloc_nsize);
 			atomic64_add(size, &spg->alloc_size);
 		}
-		atomic_inc(&spg_stat.spa_total_num);
-		atomic64_add(size, &spg_stat.spa_total_size);
+		atomic_inc(&sp_overall_stat.spa_total_num);
+		atomic64_add(size, &sp_overall_stat.spa_total_size);
 		list_add_tail(&spa->link, &spg->spa_list);
 	}
 	spin_unlock(&sp_area_lock);
@@ -1219,8 +1219,8 @@ static void sp_free_area(struct sp_area *spa)
 				atomic64_sub(spa->real_size, &spa->spg->alloc_nsize);
 			atomic64_sub(spa->real_size, &spa->spg->alloc_size);
 		}
-		atomic_dec(&spg_stat.spa_total_num);
-		atomic64_sub(spa->real_size, &spg_stat.spa_total_size);
+		atomic_dec(&sp_overall_stat.spa_total_num);
+		atomic64_sub(spa->real_size, &sp_overall_stat.spa_total_size);
 		list_del(&spa->link);
 	}
 	rb_erase(&spa->rb_node, &sp_area_root);
@@ -3045,12 +3045,12 @@ void spg_overview_show(struct seq_file *seq)
 
 	if (seq != NULL) {
 		seq_printf(seq, "Share pool total size: %ld KB, spa total num: %d.\n",
-			   byte2kb(atomic64_read(&spg_stat.spa_total_size)),
-			   atomic_read(&spg_stat.spa_total_num));
+			   byte2kb(atomic64_read(&sp_overall_stat.spa_total_size)),
+			   atomic_read(&sp_overall_stat.spa_total_num));
 	} else {
 		pr_info("Share pool total size: %ld KB, spa total num: %d.\n",
-			byte2kb(atomic64_read(&spg_stat.spa_total_size)),
-			atomic_read(&spg_stat.spa_total_num));
+			byte2kb(atomic64_read(&sp_overall_stat.spa_total_size)),
+			atomic_read(&sp_overall_stat.spa_total_num));
 	}
 
 	down_read(&sp_group_sem);
