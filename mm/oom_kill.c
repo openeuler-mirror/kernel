@@ -41,6 +41,7 @@
 #include <linux/kthread.h>
 #include <linux/init.h>
 #include <linux/mmu_notifier.h>
+#include <linux/share_pool.h>
 
 #include <asm/tlb.h>
 #include "internal.h"
@@ -454,9 +455,16 @@ static void dump_tasks(struct mem_cgroup *memcg, const nodemask_t *nodemask)
 {
 	struct task_struct *p;
 	struct task_struct *task;
+	struct sp_proc_stat *stat;
 
-	pr_info("Tasks state (memory values in pages):\n");
-	pr_info("[  pid  ]   uid  tgid total_vm      rss pgtables_bytes swapents oom_score_adj name\n");
+	if (ascend_sp_oom_show()) {
+		pr_info("Tasks state (memory values in pages, share pool memory values in KB):\n");
+		pr_info("[  pid  ]   uid  tgid total_vm      rss sp_alloc  sp_k2u    pgtables_bytes swapents oom_score_adj name\n");
+	} else {
+		pr_info("Tasks state (memory values in pages):\n");
+		pr_info("[  pid  ]   uid  tgid total_vm      rss pgtables_bytes swapents oom_score_adj name\n");
+	}
+
 	rcu_read_lock();
 	for_each_process(p) {
 		if (oom_unkillable_task(p, memcg, nodemask))
@@ -472,12 +480,28 @@ static void dump_tasks(struct mem_cgroup *memcg, const nodemask_t *nodemask)
 			continue;
 		}
 
-		pr_info("[%7d] %5d %5d %8lu %8lu %8ld %8lu         %5hd %s\n",
-			task->pid, from_kuid(&init_user_ns, task_uid(task)),
-			task->tgid, task->mm->total_vm, get_mm_rss(task->mm),
-			mm_pgtables_bytes(task->mm),
-			get_mm_counter(task->mm, MM_SWAPENTS),
-			task->signal->oom_score_adj, task->comm);
+		if (ascend_sp_oom_show()) {
+			stat = sp_get_proc_stat(task->tgid);
+
+			pr_cont("[%7d] %5d %5d %8lu %8lu ",
+				task->pid, from_kuid(&init_user_ns, task_uid(task)),
+				task->tgid, task->mm->total_vm, get_mm_rss(task->mm));
+			if (!stat)
+				pr_cont("%-9c %-9c ", '-', '-');
+			else
+				pr_cont("%-9ld %-9ld ", (stat->alloc_size) >> 10, (stat->k2u_size) >> 10); /* byte to KB */
+			pr_cont("%8ld %8lu         %5hd %s\n",
+				mm_pgtables_bytes(task->mm),
+				get_mm_counter(task->mm, MM_SWAPENTS),
+				task->signal->oom_score_adj, task->comm);
+		} else {
+			pr_info("[%7d] %5d %5d %8lu %8lu %8ld %8lu         %5hd %s\n",
+				task->pid, from_kuid(&init_user_ns, task_uid(task)),
+				task->tgid, task->mm->total_vm, get_mm_rss(task->mm),
+				mm_pgtables_bytes(task->mm),
+				get_mm_counter(task->mm, MM_SWAPENTS),
+				task->signal->oom_score_adj, task->comm);
+		}
 		task_unlock(task);
 	}
 	rcu_read_unlock();
@@ -1141,6 +1165,8 @@ int hisi_oom_notifier_call(unsigned long val, void *v)
 		pr_err("OOM_NOTIFIER: oom type %lu\n", val);
 		dump_stack();
 		show_mem(SHOW_MEM_FILTER_NODES, NULL);
+		spg_overview_show(NULL);
+		spa_overview_show(NULL);
 		dump_tasks(NULL, 0);
 		last_jiffies = jiffies;
 	}

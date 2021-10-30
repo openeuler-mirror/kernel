@@ -83,18 +83,6 @@ static DEFINE_IDA(sp_group_id_ida);
 /* idr of all sp_proc_stats */
 static DEFINE_IDR(sp_stat_idr);
 
-/* per process memory usage statistics indexed by tgid */
-struct sp_proc_stat {
-	struct mm_struct *mm;
-	char comm[TASK_COMM_LEN];
-	/*
-	 * alloc amount minus free amount, may be negative when freed by
-	 * another task in the same sp group.
-	 */
-	long alloc_size;
-	long k2u_size;
-};
-
 /* for kthread buff_module_guard_work */
 static struct sp_proc_stat kthread_stat = {0};
 
@@ -2475,6 +2463,18 @@ __setup("enable_sp_share_k2u_spg", enable_share_k2u_to_group);
 
 /*** Statistical and maintenance functions ***/
 
+struct sp_proc_stat *sp_get_proc_stat(int tgid)
+{
+	struct sp_proc_stat *stat;
+
+	mutex_lock(&sp_mutex);
+	stat = idr_find(&sp_stat_idr, tgid);
+	mutex_unlock(&sp_mutex);
+
+	/* maybe NULL or not, we always return it */
+	return stat;
+}
+
 int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
 {
@@ -2484,12 +2484,12 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	mutex_lock(&sp_mutex);
 	spg = __sp_find_spg(task->pid, SPG_ID_DEFAULT);
 	if (spg_valid(spg)) {
-		/* print the file header */
 		stat = idr_find(&sp_stat_idr, task->mm->sp_stat_id);
 		if (!stat) {
 			mutex_unlock(&sp_mutex);
 			return 0;
 		}
+		/* print the file header */
 		seq_printf(m, "%-8s %-9s %-13s\n",
 			   "Group_ID", "SP_ALLOC", "HugePage Fail");
 		seq_printf(m, "%-8d %-9ld %-13d\n",
@@ -2553,11 +2553,14 @@ static void rb_spa_stat_show(struct seq_file *seq)
 	spin_unlock(&sp_area_lock);
 }
 
-static void spa_overview_show(struct seq_file *seq)
+void spa_overview_show(struct seq_file *seq)
 {
 	unsigned int total_num, alloc_num, k2u_task_num, k2u_spg_num;
 	unsigned long total_size, alloc_size, k2u_task_size, k2u_spg_size;
 	unsigned long dvpp_size, dvpp_va_size;
+
+	if (!enable_ascend_share_pool)
+		return;
 
 	spin_lock(&sp_area_lock);
 	total_num     = spa_stat.total_num;
@@ -2572,16 +2575,29 @@ static void spa_overview_show(struct seq_file *seq)
 	dvpp_va_size  = spa_stat.dvpp_va_size;
 	spin_unlock(&sp_area_lock);
 
-	seq_printf(seq, "Spa total num %u.\n", total_num);
-	seq_printf(seq, "Spa alloc num %u, k2u(task) num %u, k2u(spg) num %u.\n",
-		   alloc_num, k2u_task_num, k2u_spg_num);
-	seq_printf(seq, "Spa total size:     %13lu KB\n", byte2kb(total_size));
-	seq_printf(seq, "Spa alloc size:     %13lu KB\n", byte2kb(alloc_size));
-	seq_printf(seq, "Spa k2u(task) size: %13lu KB\n", byte2kb(k2u_task_size));
-	seq_printf(seq, "Spa k2u(spg) size:  %13lu KB\n", byte2kb(k2u_spg_size));
-	seq_printf(seq, "Spa dvpp size:      %13lu KB\n", byte2kb(dvpp_size));
-	seq_printf(seq, "Spa dvpp va size:   %13lu MB\n", byte2mb(dvpp_va_size));
-	seq_printf(seq, "\n");
+	if (seq != NULL) {
+		seq_printf(seq, "Spa total num %u.\n", total_num);
+		seq_printf(seq, "Spa alloc num %u, k2u(task) num %u, k2u(spg) num %u.\n",
+			   alloc_num, k2u_task_num, k2u_spg_num);
+		seq_printf(seq, "Spa total size:     %13lu KB\n", byte2kb(total_size));
+		seq_printf(seq, "Spa alloc size:     %13lu KB\n", byte2kb(alloc_size));
+		seq_printf(seq, "Spa k2u(task) size: %13lu KB\n", byte2kb(k2u_task_size));
+		seq_printf(seq, "Spa k2u(spg) size:  %13lu KB\n", byte2kb(k2u_spg_size));
+		seq_printf(seq, "Spa dvpp size:      %13lu KB\n", byte2kb(dvpp_size));
+		seq_printf(seq, "Spa dvpp va size:   %13lu MB\n", byte2mb(dvpp_va_size));
+		seq_puts(seq, "\n");
+	} else {
+		pr_info("Spa total num %u.\n", total_num);
+		pr_info("Spa alloc num %u, k2u(task) num %u, k2u(spg) num %u.\n",
+			alloc_num, k2u_task_num, k2u_spg_num);
+		pr_info("Spa total size:     %13lu KB\n", byte2kb(total_size));
+		pr_info("Spa alloc size:     %13lu KB\n", byte2kb(alloc_size));
+		pr_info("Spa k2u(task) size: %13lu KB\n", byte2kb(k2u_task_size));
+		pr_info("Spa k2u(spg) size:  %13lu KB\n", byte2kb(k2u_spg_size));
+		pr_info("Spa dvpp size:      %13lu KB\n", byte2kb(dvpp_size));
+		pr_info("Spa dvpp va size:   %13lu MB\n", byte2mb(dvpp_va_size));
+		pr_info("\n");
+	}
 }
 
 /* the caller must hold sp_mutex */
@@ -2590,25 +2606,48 @@ static int idr_spg_stat_cb(int id, void *p, void *data)
 	struct sp_group *spg = p;
 	struct seq_file *seq = data;
 
-	seq_printf(seq, "Group %6d size: %ld KB, spa num: %d, total alloc: %ld KB, "
-		   "normal alloc: %ld KB, huge alloc: %ld KB\n",
-		   id, byte2kb(atomic64_read(&spg->size)), atomic_read(&spg->spa_num),
-		   byte2kb(atomic64_read(&spg->alloc_size)),
-		   byte2kb(atomic64_read(&spg->alloc_nsize)),
-		   byte2kb(atomic64_read(&spg->alloc_hsize)));
+	if (seq != NULL) {
+		seq_printf(seq, "Group %6d size: %ld KB, spa num: %d, total alloc: %ld KB, "
+			   "normal alloc: %ld KB, huge alloc: %ld KB\n",
+			   id, byte2kb(atomic64_read(&spg->size)), atomic_read(&spg->spa_num),
+			   byte2kb(atomic64_read(&spg->alloc_size)),
+			   byte2kb(atomic64_read(&spg->alloc_nsize)),
+			   byte2kb(atomic64_read(&spg->alloc_hsize)));
+	} else {
+		pr_info("Group %6d size: %ld KB, spa num: %d, total alloc: %ld KB, "
+			"normal alloc: %ld KB, huge alloc: %ld KB\n",
+			id, byte2kb(atomic64_read(&spg->size)), atomic_read(&spg->spa_num),
+			byte2kb(atomic64_read(&spg->alloc_size)),
+			byte2kb(atomic64_read(&spg->alloc_nsize)),
+			byte2kb(atomic64_read(&spg->alloc_hsize)));
+	}
 
 	return 0;
 }
 
-static void spg_overview_show(struct seq_file *seq)
+void spg_overview_show(struct seq_file *seq)
 {
-	seq_printf(seq, "Share pool total size: %ld KB, spa total num: %d.\n",
-		   byte2kb(atomic64_read(&spg_stat.spa_total_size)),
-		   atomic_read(&spg_stat.spa_total_num));
+	if (!enable_ascend_share_pool)
+		return;
+
+	if (seq != NULL) {
+		seq_printf(seq, "Share pool total size: %ld KB, spa total num: %d.\n",
+			   byte2kb(atomic64_read(&spg_stat.spa_total_size)),
+			   atomic_read(&spg_stat.spa_total_num));
+	} else {
+		pr_info("Share pool total size: %ld KB, spa total num: %d.\n",
+			byte2kb(atomic64_read(&spg_stat.spa_total_size)),
+			atomic_read(&spg_stat.spa_total_num));
+	}
+
 	mutex_lock(&sp_mutex);
 	idr_for_each(&sp_group_idr, idr_spg_stat_cb, seq);
 	mutex_unlock(&sp_mutex);
-	seq_printf(seq, "\n");
+
+	if (seq != NULL)
+		seq_puts(seq, "\n");
+	else
+		pr_info("\n");
 }
 
 static int spa_stat_show(struct seq_file *seq, void *offset)

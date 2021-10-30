@@ -105,6 +105,18 @@ struct sp_walk_data {
 	bool is_hugepage;
 };
 
+/* per process memory usage statistics indexed by tgid */
+struct sp_proc_stat {
+	struct mm_struct *mm;
+	char comm[TASK_COMM_LEN];
+	/*
+	 * alloc amount minus free amount, may be negative when freed by
+	 * another task in the same sp group.
+	 */
+	long alloc_size;
+	long k2u_size;
+};
+
 #ifdef CONFIG_ASCEND_SHARE_POOL
 
 #define MAP_SHARE_POOL			0x100000
@@ -155,6 +167,9 @@ extern int sp_register_notifier(struct notifier_block *nb);
 extern int sp_unregister_notifier(struct notifier_block *nb);
 extern bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid);
 extern bool is_sharepool_addr(unsigned long addr);
+extern struct sp_proc_stat *sp_get_proc_stat(int tgid);
+extern void spa_overview_show(struct seq_file *seq);
+extern void spg_overview_show(struct seq_file *seq);
 extern void proc_sharepool_init(void);
 
 static inline struct task_struct *sp_get_task(struct mm_struct *mm)
@@ -228,6 +243,11 @@ static inline void sp_dump_stack(void)
 {
 	if (sysctl_sp_debug_mode)
 		dump_stack();
+}
+
+static inline bool ascend_sp_oom_show(void)
+{
+	return enable_ascend_share_pool ? true : false;
 }
 
 vm_fault_t sharepool_no_page(struct mm_struct *mm,
@@ -310,6 +330,7 @@ static inline int sp_walk_page_range(unsigned long uva, unsigned long size,
 static inline void sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 {
 }
+
 static inline int sp_register_notifier(struct notifier_block *nb)
 {
 	return -EPERM;
@@ -319,6 +340,7 @@ static inline int sp_unregister_notifier(struct notifier_block *nb)
 {
 	return -EPERM;
 }
+
 static inline bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 {
 	return false;
@@ -329,6 +351,19 @@ static inline bool is_sharepool_addr(unsigned long addr)
 	return false;
 }
 
+static inline struct sp_proc_stat *sp_get_proc_stat(int tgid)
+{
+	return NULL;
+}
+
+static inline void spa_overview_show(struct seq_file *seq)
+{
+}
+
+static inline void spg_overview_show(struct seq_file *seq)
+{
+}
+
 static inline void proc_sharepool_init(void)
 {
 }
@@ -337,6 +372,7 @@ static inline struct task_struct  *sp_get_task(struct mm_struct *mm)
 {
 	return current;
 }
+
 static inline bool sp_check_hugepage(struct page *p)
 {
 	return false;
@@ -383,6 +419,11 @@ static inline bool sp_mmap_check(unsigned long flags)
 
 static inline void sp_dump_stack(void)
 {
+}
+
+static inline bool ascend_sp_oom_show(void)
+{
+	return false;
 }
 
 static inline void *vmalloc_hugepage(unsigned long size)
