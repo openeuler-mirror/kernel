@@ -54,6 +54,7 @@
 
 #define byte2kb(size)		((size) >> 10)
 #define byte2mb(size)		((size) >> 20)
+#define page2kb(page_num)	((page_num) << (PAGE_SHIFT - 10))
 
 /* mdc scene hack */
 int enable_mdc_default_group;
@@ -83,12 +84,13 @@ static DEFINE_IDR(sp_stat_idr);
 
 /* per process memory usage statistics indexed by tgid */
 struct sp_proc_stat {
+	struct mm_struct *mm;
 	char comm[TASK_COMM_LEN];
 	/*
 	 * alloc amount minus free amount, may be negative when freed by
 	 * another task in the same sp group.
 	 */
-	long amount;
+	long alloc_size;
 };
 
 /* for kthread buff_module_guard_work */
@@ -100,7 +102,8 @@ static struct sp_proc_stat kthread_stat = {0};
  */
 static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk) {
 	struct sp_proc_stat *stat;
-	int id = tsk->mm->sp_stat_id;
+	struct mm_struct *mm = tsk->mm;
+	int id = mm->sp_stat_id;
 	int tgid = tsk->tgid;
 	int ret;
 
@@ -118,7 +121,8 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk) {
 		return ERR_PTR(-ENOMEM);
 	}
 
-	stat->amount = 0;
+	stat->alloc_size = 0;
+	stat->mm = mm;
 	get_task_comm(stat->comm, tsk);
 	ret = idr_alloc(&sp_stat_idr, stat, tgid, tgid + 1, GFP_KERNEL);
 	if (ret < 0) {
@@ -128,7 +132,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk) {
 		return ERR_PTR(ret);
 	}
 
-	tsk->mm->sp_stat_id = ret;
+	mm->sp_stat_id = ret;
 	return stat;
 }
 
@@ -746,11 +750,11 @@ void sp_group_post_exit(struct mm_struct *mm)
 	 *
 	 * We decide to print a info when seeing both of the scenarios.
 	 */
-	if (stat && stat->amount != 0)
+	if (stat && stat->alloc_size != 0)
 		pr_info("share pool: process %s(%d) of sp group %d exits. "
 			"It applied %ld aligned KB\n",
 			stat->comm, mm->sp_stat_id,
-			mm->sp_group->id, byte2kb(stat->amount));
+			mm->sp_group->id, byte2kb(stat->alloc_size));
 
 	idr_remove(&sp_stat_idr, mm->sp_stat_id);
 
@@ -1200,11 +1204,11 @@ int sp_free(unsigned long addr)
 
 	/* pointer stat may be invalid because of kthread buff_module_guard_work */
 	if (current->mm == NULL) {
-		kthread_stat.amount -= spa->real_size;
+		kthread_stat.alloc_size -= spa->real_size;
 	} else {
 		stat = idr_find(&sp_stat_idr, current->mm->sp_stat_id);
 		if (stat)
-			stat->amount -= spa->real_size;
+			stat->alloc_size -= spa->real_size;
 		else
 			BUG();
 	}
@@ -1445,7 +1449,7 @@ try_again:
 	if (!IS_ERR(p)) {
 		stat = idr_find(&sp_stat_idr, current->mm->sp_stat_id);
 		if (stat)
-			stat->amount += size_aligned;
+			stat->alloc_size += size_aligned;
 	}
 
 out:
@@ -2424,10 +2428,10 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			mutex_unlock(&sp_mutex);
 			return 0;
 		}
-		seq_printf(m, "%-10s %-18s %-15s\n",
-			   "Group ID", "Aligned Apply(KB)", "HugePage Fails");
-		seq_printf(m, "%-10d %-18ld %-15d\n",
-			   spg->id, byte2kb(stat->amount), spg->hugepage_failures);
+		seq_printf(m, "%-8s %-9s %-13s\n",
+			   "Group_ID", "SP_ALLOC", "HugePage Fail");
+		seq_printf(m, "%-8d %-9ld %-13d\n",
+			   spg->id, byte2kb(stat->alloc_size), spg->hugepage_failures);
 	}
 	mutex_unlock(&sp_mutex);
 
@@ -2559,13 +2563,36 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	struct sp_group *spg;
 	struct sp_proc_stat *stat = p;
 	struct seq_file *seq = data;
+	struct mm_struct *mm = stat->mm;
+	unsigned long anon, file, shmem, total_rss;
+	/*
+	 * non_sp_res: resident memory size excluding share pool memory
+	 * non_sp_shm: resident shared memory size size excluding share pool
+	 *             memory
+	 */
+	long sp_alloc_nsize, non_sp_res, non_sp_shm;
 
 	mutex_lock(&sp_mutex);
 	spg = __sp_find_spg(id, SPG_ID_DEFAULT);
-	if (spg_valid(spg)) {
-		seq_printf(seq, "%-12d %-10d %-18ld\n",
-			   id, spg->id, byte2kb(stat->amount));
-	}
+	if (!spg_valid(spg) || !mmget_not_zero(mm))
+		goto out_unlock;
+
+	sp_alloc_nsize = byte2kb(atomic64_read(&spg->alloc_nsize));
+	anon = get_mm_counter(mm, MM_ANONPAGES);
+	file = get_mm_counter(mm, MM_FILEPAGES);
+	shmem = get_mm_counter(mm, MM_SHMEMPAGES);
+	total_rss = anon + file + shmem;
+	non_sp_res = page2kb(total_rss) - sp_alloc_nsize;
+	non_sp_shm = page2kb(shmem) - sp_alloc_nsize;
+	non_sp_shm = non_sp_shm < 0 ? 0 : non_sp_shm;  /* to be investigated */
+
+	seq_printf(seq, "%-8d %-8d %-9ld %-10ld %-8ld %-7ld %-7ld %-10ld\n",
+		   id, spg->id, byte2kb(stat->alloc_size), non_sp_res,
+		   page2kb(mm->total_vm), page2kb(total_rss), page2kb(shmem),
+		   non_sp_shm);
+	mmput(mm);
+
+out_unlock:
 	mutex_unlock(&sp_mutex);
 
 	return 0;
@@ -2573,12 +2600,15 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 
 static int proc_stat_show(struct seq_file *seq, void *offset)
 {
+	spg_overview_show(seq);
+	spa_overview_show(seq);
 	/* print the file header */
-	seq_printf(seq, "%-12s %-10s %-18s\n",
-		   "Process ID", "Group ID", "Aligned Apply(KB)");
+	seq_printf(seq, "%-8s %-8s %-9s %-10s %-8s %-7s %-7s %-10s\n",
+		   "PID", "Group_ID", "SP_ALLOC", "Non-SP_RES", "VIRT", "RES",
+		   "Shm", "Non-SP_Shm");
 	/* print kthread buff_module_guard_work */
-	seq_printf(seq, "%-12s %-10s %-18ld\n",
-		   "guard", "-", byte2kb(kthread_stat.amount));
+	seq_printf(seq, "%-8s %-8s %-9ld\n",
+		   "guard", "-", byte2kb(kthread_stat.alloc_size));
 	idr_for_each(&sp_stat_idr, idr_proc_stat_cb, seq);
 	return 0;
 }
