@@ -1746,7 +1746,7 @@ static int sp_hugetlb_entry(pte_t *ptep, unsigned long hmask,
  * ALIGN(uva+size) - uva_aligned
  */
 static int __sp_walk_page_range(unsigned long uva, unsigned long size,
-	struct task_struct *tsk, struct sp_walk_data *sp_walk_data)
+	struct mm_struct *mm, struct sp_walk_data *sp_walk_data)
 {
 	int ret = 0;
 	struct vm_area_struct *vma;
@@ -1767,7 +1767,7 @@ static int __sp_walk_page_range(unsigned long uva, unsigned long size,
 	 * In this situation, the correctness of the parameters is mainly
 	 * guaranteed by the caller.
 	 */
-	vma = find_vma(tsk->mm, uva);
+	vma = find_vma(mm, uva);
 	if (!vma) {
 		if (printk_ratelimit())
 			pr_err("share pool: u2k input uva %pK is invalid\n", (void *)uva);
@@ -1811,7 +1811,7 @@ static int __sp_walk_page_range(unsigned long uva, unsigned long size,
 	}
 	sp_walk_data->pages = pages;
 
-	sp_walk.mm = tsk->mm;
+	sp_walk.mm = mm;
 	sp_walk.private = sp_walk_data;
 
 	ret = walk_page_range(uva_aligned, uva_aligned + size_aligned,
@@ -1835,6 +1835,7 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 {
 	int ret = 0;
 	struct task_struct *tsk;
+	struct mm_struct *mm;
 	void *p = ERR_PTR(-ENODEV);
 	struct sp_walk_data sp_walk_data = {
 		.page_count = 0,
@@ -1853,14 +1854,15 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 		goto out;
 	}
 
-	if (!mmget_not_zero(tsk->mm))
+	mm = get_task_mm(tsk);
+	if (mm == NULL)
 		goto out_put_task;
-	down_write(&tsk->mm->mmap_sem);
-	ret = __sp_walk_page_range(uva, size, tsk, &sp_walk_data);
+	down_write(&mm->mmap_sem);
+	ret = __sp_walk_page_range(uva, size, mm, &sp_walk_data);
 	if (ret) {
 		pr_err("share pool: walk page range failed, ret %d\n", ret);
-		up_write(&tsk->mm->mmap_sem);
-		mmput(tsk->mm);
+		up_write(&mm->mmap_sem);
+		mmput(mm);
 		p = ERR_PTR(ret);
 		goto out_put_task;
 	}
@@ -1871,8 +1873,8 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	else
 		p = vmap(sp_walk_data.pages, sp_walk_data.page_count, VM_MAP,
 			 PAGE_KERNEL);
-	up_write(&tsk->mm->mmap_sem);
-	mmput(tsk->mm);
+	up_write(&mm->mmap_sem);
+	mmput(mm);
 
 	if (!p) {
 		if (printk_ratelimit())
@@ -2145,6 +2147,7 @@ EXPORT_SYMBOL_GPL(sp_unshare);
 int sp_walk_page_range(unsigned long uva, unsigned long size,
 	struct task_struct *tsk, struct sp_walk_data *sp_walk_data)
 {
+	struct mm_struct *mm;
 	int ret = 0;
 
 	if (unlikely(!sp_walk_data)) {
@@ -2155,17 +2158,19 @@ int sp_walk_page_range(unsigned long uva, unsigned long size,
 	if (!tsk || (tsk->flags & PF_EXITING))
 		return -ESRCH;
 
-	sp_walk_data->page_count = 0;
-
 	get_task_struct(tsk);
-	if (!mmget_not_zero(tsk->mm)) {
+	mm = get_task_mm(tsk);
+	if (!mm) {
 		put_task_struct(tsk);
 		return -ESRCH;
 	}
-	down_write(&tsk->mm->mmap_sem);
-	ret = __sp_walk_page_range(uva, size, tsk, sp_walk_data);
-	up_write(&tsk->mm->mmap_sem);
-	mmput(tsk->mm);
+
+	sp_walk_data->page_count = 0;
+	down_write(&mm->mmap_sem);
+	ret = __sp_walk_page_range(uva, size, mm, sp_walk_data);
+	up_write(&mm->mmap_sem);
+
+	mmput(mm);
 	put_task_struct(tsk);
 
 	return ret;
