@@ -1399,12 +1399,10 @@ static inline bool file_mmap_ok(struct file *file, struct inode *inode,
 	return true;
 }
 
-static inline
-unsigned long __do_mmap(struct file *file, unsigned long addr,
-			unsigned long len, unsigned long prot,
-			unsigned long flags, vm_flags_t vm_flags,
-			unsigned long pgoff, unsigned long *populate,
-			struct list_head *uf)
+static inline unsigned long
+__do_mmap(struct file *file, unsigned long addr, unsigned long len,
+	  unsigned long prot, unsigned long flags, vm_flags_t vm_flags,
+	  unsigned long pgoff, unsigned long *populate,	struct list_head *uf)
 {
 	struct mm_struct *mm = current->mm;
 	int pkey = 0;
@@ -1593,13 +1591,13 @@ unsigned long __do_mmap(struct file *file, unsigned long addr,
  * the reference of the pages and return the pages through input parameters
  * 'ppages'.
  */
-int pages_can_be_swapped(struct mm_struct *mm, unsigned long addr,
-			 unsigned long len, struct page ***ppages)
+static int pages_can_be_swapped(struct mm_struct *mm, unsigned long addr,
+				unsigned long len, struct page ***ppages)
 {
 	struct vm_area_struct *vma;
 	struct page *page = NULL;
 	struct page **pages = NULL;
-	unsigned long addr_start, addr_end;
+	unsigned long addr_end = addr + len;
 	unsigned long ret;
 	int i, page_num = 0;
 
@@ -1607,13 +1605,11 @@ int pages_can_be_swapped(struct mm_struct *mm, unsigned long addr,
 	if (!pages)
 		return -ENOMEM;
 
-	addr_start = addr;
-	addr_end = addr + len;
 	while (addr < addr_end) {
 		vma = find_vma(mm, addr);
-		if (!vma || !vma_is_anonymous(vma) ||
-				(vma->vm_flags & VM_LOCKED) || vma->vm_file
-				|| (vma->vm_flags & VM_STACK) || (vma->vm_flags & (VM_IO | VM_PFNMAP))) {
+		if (!vma || !vma_is_anonymous(vma) || vma->vm_file ||
+		    (vma->vm_flags & VM_LOCKED) || (vma->vm_flags & VM_STACK) ||
+		    (vma->vm_flags & (VM_IO | VM_PFNMAP))) {
 			ret = -EINVAL;
 			goto out;
 		}
@@ -1628,9 +1624,9 @@ get_again:
 			ret = -ENODEV;
 			goto out;
 		}
-		pages[page_num] = page;
-		page_num++;
-		if (!PageAnon(page) || !PageSwapBacked(page) || PageHuge(page) || PageSwapCache(page)) {
+		pages[page_num++] = page;
+		if (!PageAnon(page) || !PageSwapBacked(page) ||
+		    PageHuge(page) || PageSwapCache(page)) {
 			ret = -EINVAL;
 			goto out;
 		} else if (PageTransCompound(page)) {
@@ -1650,7 +1646,8 @@ get_again:
 				goto out;
 			}
 		}
-		if (page_mapcount(page) > 1 || page_mapcount(page) + 1 != page_count(page)) {
+		if (page_mapcount(page) > 1 ||
+		    page_mapcount(page) + 1 != page_count(page)) {
 			ret = -EBUSY;
 			goto out;
 		}
@@ -1676,8 +1673,9 @@ out:
 #define USWAP_PAGES_DIRTY	1
 
 /* unmap the pages between 'addr ~ addr+len' and remap them to a new address */
-unsigned long do_user_swap(struct mm_struct *mm, unsigned long addr_start,
-		unsigned long len, struct page **pages, unsigned long new_addr)
+static unsigned long
+do_user_swap(struct mm_struct *mm, unsigned long addr_start, unsigned long len,
+	     struct page **pages, unsigned long new_addr)
 {
 	struct vm_area_struct *vma;
 	struct page *page;
@@ -1685,28 +1683,25 @@ unsigned long do_user_swap(struct mm_struct *mm, unsigned long addr_start,
 	pmd_t *pmd;
 	pte_t *pte, old_pte;
 	spinlock_t *ptl;
-	unsigned long addr, addr_end;
+	unsigned long addr;
 	bool pages_dirty = false;
-	int i, err;
+	int i = 0;
 
-	addr_end = addr_start + len;
-	lru_add_drain();
 	addr = addr_start;
+	lru_add_drain();
 	i = 0;
-	while (addr < addr_end) {
+	while (addr < addr_start + len) {
 		page = pages[i];
 		vma = find_vma(mm, addr);
-		if (!vma) {
-			WARN_ON("find_vma failed\n");
+		if (!vma)
 			return -EINVAL;
-		}
+
 		mmu_notifier_range_init(&range, MMU_NOTIFY_UNMAP, 0, vma,
-				vma->vm_mm, addr_start, addr_start + PAGE_SIZE);
+				vma->vm_mm, addr, addr + PAGE_SIZE);
 		mmu_notifier_invalidate_range_start(&range);
 		pmd = mm_find_pmd(mm, addr);
 		if (!pmd) {
 			mmu_notifier_invalidate_range_end(&range);
-			WARN_ON("mm_find_pmd failed, addr:%llx\n");
 			return -ENXIO;
 		}
 		pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
@@ -1714,7 +1709,8 @@ unsigned long do_user_swap(struct mm_struct *mm, unsigned long addr_start,
 		old_pte = ptep_clear_flush(vma, addr, pte);
 		if (pte_dirty(old_pte)  || PageDirty(page))
 			pages_dirty = true;
-		set_pte(pte, swp_entry_to_pte(swp_entry(SWP_USERSWAP_ENTRY, page_to_pfn(page))));
+		set_pte(pte, swp_entry_to_pte(swp_entry(SWP_USERSWAP_ENTRY,
+							page_to_pfn(page))));
 		dec_mm_counter(mm, MM_ANONPAGES);
 		page_remove_rmap(page, false);
 		put_page(page);
@@ -1727,20 +1723,19 @@ unsigned long do_user_swap(struct mm_struct *mm, unsigned long addr_start,
 		i++;
 	}
 
-	addr_start = new_addr;
-	addr_end = new_addr + len;
-	addr = addr_start;
+	addr = new_addr;
 	vma = find_vma(mm, addr);
 	i = 0;
-	while (addr < addr_end) {
-		page = pages[i];
+	while (addr < new_addr + len) {
 		if (addr > vma->vm_end - 1)
 			vma = find_vma(mm, addr);
-		err = vm_insert_page(vma, addr, page);
-		if (err) {
-			pr_err("vm_insert_page failed:%d\n", err);
-		}
-		i++;
+		if (!vma)
+			return -ENODEV;
+
+		page = pages[i++];
+		if (vm_insert_page(vma, addr, page))
+			return -EFAULT;
+
 		addr += PAGE_SIZE;
 	}
 	vma->vm_flags |= VM_USWAP;
@@ -1751,22 +1746,20 @@ unsigned long do_user_swap(struct mm_struct *mm, unsigned long addr_start,
 	return new_addr;
 }
 
-static inline
-unsigned long do_uswap_mmap(struct file *file, unsigned long addr,
-			unsigned long len, unsigned long prot,
-			unsigned long flags, unsigned long pgoff,
-			unsigned long *populate, struct list_head *uf)
+static inline unsigned long
+do_uswap_mmap(struct file *file, unsigned long addr, unsigned long len,
+	      unsigned long prot, unsigned long flags, unsigned long pgoff,
+	      unsigned long *populate, struct list_head *uf)
 {
 	struct mm_struct *mm = current->mm;
-	unsigned long addr_start = addr;
+	unsigned long old_addr = addr;
 	struct page **pages = NULL;
 	unsigned long ret;
-	int i, page_num = 0;
+	int i;
 
 	if (!len || offset_in_page(addr) || (len % PAGE_SIZE))
 		return -EINVAL;
 
-	page_num = len / PAGE_SIZE;
 	ret = pages_can_be_swapped(mm, addr, len, &pages);
 	if (ret)
 		return ret;
@@ -1779,12 +1772,11 @@ unsigned long do_uswap_mmap(struct file *file, unsigned long addr,
 		goto out;
 	}
 
-	ret = do_user_swap(mm, addr_start, len, pages, addr);
+	ret = do_user_swap(mm, old_addr, len, pages, addr);
 out:
 	/* follow_page() above increased the reference*/
-	for (i = 0; i < page_num; i++)
+	for (i = 0; i < len / PAGE_SIZE; i++)
 		put_page(pages[i]);
-
 	if (pages)
 		kfree(pages);
 
