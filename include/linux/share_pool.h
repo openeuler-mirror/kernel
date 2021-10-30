@@ -220,6 +220,11 @@ static inline void sp_dump_stack(void)
 		dump_stack();
 }
 
+vm_fault_t sharepool_no_page(struct mm_struct *mm,
+			struct vm_area_struct *vma,
+			struct address_space *mapping, pgoff_t idx,
+			unsigned long address, pte_t *ptep, unsigned int flags);
+
 #else
 
 static inline int sp_group_add_task(int pid, int spg_id)

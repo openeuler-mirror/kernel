@@ -41,6 +41,8 @@
 #include <linux/idr.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/rmap.h>
+#include <linux/hugetlb.h>
 
 /* access control mode macros  */
 #define AC_NONE			0
@@ -2398,6 +2400,94 @@ static int spa_stat_show(struct seq_file *seq, void *offset)
 	rb_spa_stat_show(seq);
 	return 0;
 }
+
+vm_fault_t sharepool_no_page(struct mm_struct *mm,
+			struct vm_area_struct *vma,
+			struct address_space *mapping, pgoff_t idx,
+			unsigned long address, pte_t *ptep, unsigned int flags)
+{
+	struct hstate *h = hstate_vma(vma);
+	vm_fault_t ret = VM_FAULT_SIGBUS;
+	unsigned long size;
+	struct page *page;
+	pte_t new_pte;
+	spinlock_t *ptl;
+	unsigned long haddr = address & huge_page_mask(h);
+	bool new_page = false;
+	int err;
+
+retry:
+	page = find_lock_page(mapping, idx);
+	if (!page) {
+		size = i_size_read(mapping->host) >> huge_page_shift(h);
+		if (idx >= size)
+			goto out;
+
+		page = alloc_huge_page(vma, haddr, 0);
+		if (IS_ERR(page)) {
+			page = alloc_huge_page_node(hstate_file(vma->vm_file),
+						    numa_mem_id());
+			if (!page)
+				page = ERR_PTR(-ENOMEM);
+		}
+		if (IS_ERR(page)) {
+			ptl = huge_pte_lock(h, mm, ptep);
+			if (!huge_pte_none(huge_ptep_get(ptep))) {
+				ret = 0;
+				spin_unlock(ptl);
+				goto out;
+			}
+			spin_unlock(ptl);
+			ret = vmf_error(PTR_ERR(page));
+			goto out;
+		}
+		__SetPageUptodate(page);
+		new_page = true;
+
+		/* sharepool pages are all shared */
+		err = huge_add_to_page_cache(page, mapping, idx);
+		if (err) {
+			put_page(page);
+			if (err == -EEXIST)
+				goto retry;
+			goto out;
+		}
+	}
+
+
+	ptl = huge_pte_lock(h, mm, ptep);
+	size = i_size_read(mapping->host) >> huge_page_shift(h);
+	if (idx >= size)
+		goto backout;
+
+	ret = 0;
+	if (!huge_pte_none(huge_ptep_get(ptep)))
+		goto backout;
+
+	page_dup_rmap(page, true);
+	new_pte = make_huge_pte(vma, page, ((vma->vm_flags & VM_WRITE)
+				&& (vma->vm_flags & VM_SHARED)));
+	set_huge_pte_at(mm, haddr, ptep, new_pte);
+
+	hugetlb_count_add(pages_per_huge_page(h), mm);
+
+	spin_unlock(ptl);
+
+	if (new_page) {
+		SetPagePrivate(&page[1]);
+	}
+
+	unlock_page(page);
+out:
+	return ret;
+
+backout:
+	spin_unlock(ptl);
+	unlock_page(page);
+	put_page(page);
+	goto out;
+}
+EXPORT_SYMBOL(sharepool_no_page);
 
 /*
  * Called by proc_root_init() to initialize the /proc/sharepool subtree

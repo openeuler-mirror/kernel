@@ -660,4 +660,8 @@ static inline int hugetlb_insert__hugepage_pte_by_pa(struct mm_struct *mm,
 }
 #endif
 
+#ifdef CONFIG_ASCEND_SHARE_POOL
+pte_t make_huge_pte(struct vm_area_struct *vma, struct page *page, int writable);
+#endif
+
 #endif /* _LINUX_HUGETLB_H */
