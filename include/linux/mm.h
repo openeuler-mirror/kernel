@@ -2448,9 +2448,10 @@ extern int do_mm_populate(struct mm_struct *mm, unsigned long addr, unsigned lon
 			  int ignore_errors);
 #else
 static inline void mm_populate(unsigned long addr, unsigned long len) {}
-int do_mm_populate(struct mm_struct *mm, unsigned long addr, unsigned long len,
-		   int ignore_errors)
+static inline int do_mm_populate(struct mm_struct *mm, unsigned long addr,
+				 unsigned long len, int ignore_errors)
 {
+	return -EPERM;
 }
 #endif
 
