@@ -2354,6 +2354,7 @@ struct vm_struct *remove_vm_area(const void *addr)
 static void __vunmap(const void *addr, int deallocate_pages)
 {
 	struct vm_struct *area;
+	unsigned int page_order = 0;
 
 	if (!addr)
 		return;
@@ -2369,13 +2370,14 @@ static void __vunmap(const void *addr, int deallocate_pages)
 		return;
 	}
 
-#ifdef CONFIG_ASCEND_SHARE_POOL
 	/* unmap a sharepool vm area will cause meamleak! */
-	if (area->flags & VM_SHAREPOOL) {
+	if (is_vmalloc_sharepool(area->flags)) {
 		WARN(1, KERN_ERR "Memory leak due to vfree() sharepool vm area (%p) !\n", addr);
 		return;
 	}
-#endif
+
+	if (is_vmalloc_huge(area->flags))
+		page_order = PMD_SHIFT - PAGE_SHIFT;
 
 	debug_check_no_locks_freed(area->addr, get_vm_area_size(area));
 	debug_check_no_obj_freed(area->addr, get_vm_area_size(area));
@@ -2384,14 +2386,14 @@ static void __vunmap(const void *addr, int deallocate_pages)
 	if (deallocate_pages) {
 		int i;
 
-		for (i = 0; i < area->nr_pages; i += 1U << area->page_order) {
+		for (i = 0; i < area->nr_pages; i += 1U << page_order) {
 			struct page *page = area->pages[i];
 
 			BUG_ON(!page);
 			if (sp_is_enabled())
 				sp_free_pages(page, area);
 			else
-				__free_pages(page, area->page_order);
+				__free_pages(page, page_order);
 		}
 
 		kvfree(area->pages);
@@ -2591,7 +2593,6 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 
 	area->pages = pages;
 	area->nr_pages = nr_pages;
-	area->page_order = page_order;
 
 	for (i = 0; i < area->nr_pages; i += 1U << page_order) {
 		struct page *page;
@@ -2659,27 +2660,17 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 	if (!size || (size >> PAGE_SHIFT) > totalram_pages)
 		goto fail;
 
-	if (vmap_allow_huge && (pgprot_val(prot) == pgprot_val(PAGE_KERNEL))) {
-		unsigned long size_per_node;
-
+	if (vmap_allow_huge && (pgprot_val(prot) == pgprot_val(PAGE_KERNEL)) && is_vmalloc_huge(vm_flags)) {
 		/*
-		 * Try huge pages. Only try for PAGE_KERNEL allocations,
-		 * others like modules don't yet expect huge pages in
-		 * their allocations due to apply_to_page_range not
-		 * supporting them.
+		 * Alloc huge pages. Only valid for PAGE_KERNEL allocations and
+		 * VM_HUGE_PAGES flags.
 		 */
 
-		size_per_node = size;
-		if (node == NUMA_NO_NODE && !sp_is_enabled())
-			size_per_node /= num_online_nodes();
-		if (size_per_node >= PMD_SIZE) {
-			shift = PMD_SHIFT;
-			align = max(real_align, 1UL << shift);
-			size = ALIGN(real_size, 1UL << shift);
-		}
+		shift = PMD_SHIFT;
+		align = max(real_align, 1UL << shift);
+		size = ALIGN(real_size, 1UL << shift);
 	}
 
-again:
 	size = PAGE_ALIGN(size);
 	area = __get_vm_area_node(size, align, VM_ALLOC | VM_UNINITIALIZED |
 				vm_flags, start, end, node, gfp_mask, caller);
@@ -2708,12 +2699,6 @@ again:
 	return addr;
 
 fail:
-	if (shift > PAGE_SHIFT) {
-		shift = PAGE_SHIFT;
-		align = real_align;
-		size = real_size;
-		goto again;
-	}
 
 	if (!area) {
 		/* Warn for area allocation, page allocations already warn */
@@ -3778,7 +3763,7 @@ static int s_show(struct seq_file *m, void *p)
 		seq_printf(m, " %pS", v->caller);
 
 	if (v->nr_pages)
-		seq_printf(m, " pages=%d order=%d", v->nr_pages, v->page_order);
+		seq_printf(m, " pages=%d", v->nr_pages);
 
 	if (v->phys_addr)
 		seq_printf(m, " phys=%pa", &v->phys_addr);
@@ -3798,8 +3783,8 @@ static int s_show(struct seq_file *m, void *p)
 	if (is_vmalloc_addr(v->pages))
 		seq_puts(m, " vpages");
 
-	if (sp_is_enabled())
-		seq_printf(m, " order=%d", v->page_order);
+	if (is_vmalloc_huge(v->flags))
+		seq_printf(m, " order=%d", PMD_SHIFT - PAGE_SHIFT);
 
 	show_numa_info(m, v);
 	seq_putc(m, '\n');

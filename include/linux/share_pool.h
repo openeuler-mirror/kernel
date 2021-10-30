@@ -211,15 +211,6 @@ static inline void sp_area_work_around(struct vm_unmapped_area_info *info)
 
 extern struct page *sp_alloc_pages(struct vm_struct *area, gfp_t mask,
 						 unsigned int page_order, int node);
-
-static inline void sp_free_pages(struct page *page, struct vm_struct *area)
-{
-	if (PageHuge(page))
-		put_page(page);
-	else
-		__free_pages(page, area->page_order);
-}
-
 static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 {
 	if (enable_ascend_share_pool && (vm_flags & VM_SHARE_POOL))
@@ -263,6 +254,30 @@ extern void *buff_vzalloc_user(unsigned long size);
 extern void *buff_vzalloc_hugepage_user(unsigned long size);
 
 void sp_exit_mm(struct mm_struct *mm);
+
+static inline bool is_vmalloc_huge(unsigned long vm_flags)
+{
+	if (enable_ascend_share_pool && (vm_flags & VM_HUGE_PAGES))
+		return true;
+
+	return false;
+}
+
+static inline bool is_vmalloc_sharepool(unsigned long vm_flags)
+{
+	if (enable_ascend_share_pool && (vm_flags & VM_SHAREPOOL))
+		return true;
+
+	return false;
+}
+
+static inline void sp_free_pages(struct page *page, struct vm_struct *area)
+{
+	if (PageHuge(page))
+		put_page(page);
+	else
+		__free_pages(page, is_vmalloc_huge(area->flags) ? PMD_SHIFT - PAGE_SHIFT : 0);
+}
 
 #else
 
@@ -400,10 +415,6 @@ static inline struct page *sp_alloc_pages(void *area, gfp_t mask,
 	return NULL;
 }
 
-static inline void sp_free_pages(struct page *page, struct vm_struct *area)
-{
-}
-
 static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 {
 	return false;
@@ -446,6 +457,20 @@ static inline void *buff_vzalloc_user(unsigned long size)
 static inline void *buff_vzalloc_hugepage_user(unsigned long size)
 {
 	return NULL;
+}
+
+static inline bool is_vmalloc_huge(struct vm_struct *vm)
+{
+	return NULL;
+}
+
+static inline bool is_vmalloc_sharepool(struct vm_struct *vm)
+{
+	return NULL;
+}
+
+static inline void sp_free_pages(struct page *page, struct vm_struct *area)
+{
 }
 
 #endif
