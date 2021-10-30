@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       15
+%global devel_release       16
 %global maintenance_release .0.0
-%global pkg_release         .5
+%global pkg_release         .6
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,28 @@ fi
 %endif
 
 %changelog
+* Sat Oct 30 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-16.0.0.6
+- openeuler_defconfig: Enable CONFIG_HW_RANDOM_HISI_GM by default
+- hwrng: add hisilicon GM auth trng driver
+- cgroup/files: support boot parameter to control if disable files cgroup
+- files_cgroup: Fix soft lockup when refcnt overflow.
+- filescontrol: silence suspicious RCU warning
+- mm/memcg: fix NULL pointer dereference in memcg_slab_free_hook()
+- mm: memcontrol: move PageMemcgKmem to the scope of CONFIG_MEMCG_KMEM
+- mm: memcontrol: inline __memcg_kmem_{un}charge() into obj_cgroup_{un}charge_pages()
+- mm: memcontrol: use obj_cgroup APIs to charge kmem pages
+- mm: memcontrol: change ug->dummy_page only if memcg changed
+- mm: memcontrol: directly access page->memcg_data in mm/page_alloc.c
+- mm: memcontrol: introduce obj_cgroup_{un}charge_pages
+- mm: Convert page kmemcg type to a page memcg flag
+- mm: Introduce page memcg flags
+- mm: memcontrol/slab: Use helpers to access slab page's memcg_data
+- mm: memcontrol: Use helpers to read page's memcg data
+- scsi: spfc: initial commit the spfc module
+- mmap: userswap: fix some format issues
+- mmap: userswap: fix memory leak in do_mmap
+- perf stat: Add --quiet option
+
 * Tue Oct 26 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-15.0.0.5
 - net: dsa: bcm_sf2: Fix array overrun in bcm_sf2_num_active_ports()
 - bnxt_en: Fix error recovery regression
