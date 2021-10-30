@@ -67,6 +67,7 @@
 #include <linux/bpf.h>
 #include <linux/mount.h>
 #include <linux/pipe_fs_i.h>
+#include <linux/share_pool.h>
 
 #include "../lib/kstrtox.h"
 
@@ -1268,6 +1269,18 @@ static struct ctl_table kern_table[] = {
 	},
 
 #endif
+#ifdef CONFIG_ASCEND_SHARE_POOL
+	{
+		/* 0: disable, 1: enable */
+		.procname	= "share_pool_hugepage_enable",
+		.data		= &sysctl_share_pool_hugepage_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+#endif
 	{ }
 };
 
@@ -1757,6 +1770,17 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= (void *)&mmap_rnd_compat_bits_min,
 		.extra2		= (void *)&mmap_rnd_compat_bits_max,
+	},
+#endif
+#ifdef CONFIG_ASCEND_SHARE_POOL
+	{
+		.procname	= "sharepool_ac_mode",
+		.data		= &sysctl_ac_mode,
+		.maxlen		= sizeof(sysctl_ac_mode),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
 	},
 #endif
 	{ }
