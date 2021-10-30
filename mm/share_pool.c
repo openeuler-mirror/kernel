@@ -59,11 +59,11 @@
 #define page2kb(page_num)	((page_num) << (PAGE_SHIFT - 10))
 
 /* mdc scene hack */
-int enable_mdc_default_group;
+static int __read_mostly enable_mdc_default_group;
 static const int mdc_default_group_id = 1;
 
 /* share the uva to the whole group */
-int enable_share_k2u_spg;
+static int __read_mostly enable_share_k2u_spg;
 
 /* access control mode */
 int sysctl_ac_mode = AC_NONE;
