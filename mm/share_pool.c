@@ -3089,22 +3089,22 @@ void sp_group_exit(struct mm_struct *mm)
 	 * because the last owner of this mm is in exiting procedure:
 	 * do_exit() -> exit_mm() -> mmput() -> THIS function.
 	 */
-	down_write(&spg->rw_lock);
-	if (spg_valid(spg) && atomic_read(&mm->mm_users) == MM_WOULD_FREE) {
+	if (atomic_read(&mm->mm_users) == MM_WOULD_FREE) {
+		down_write(&spg->rw_lock);
 		/* a dead group should NOT be reactive again */
-		if (list_is_singular(&spg->procs))
+		if (spg_valid(spg) && list_is_singular(&spg->procs))
 			is_alive = spg->is_alive = false;
-		list_del(&mm->sp_node);   /* affect spg->procs */
+		if (mm->sp_group)  /* concurrency handle of sp_group_add_task */
+			list_del(&mm->sp_node);   /* affect spg->procs */
 		up_write(&spg->rw_lock);
 
 		if (!is_alive)
 			blocking_notifier_call_chain(&sp_notifier_chain, 0,
 						     mm->sp_group);
+
 		/* match with get_task_mm() in sp_group_add_task() */
 		atomic_dec(&mm->mm_users);
-		return;
 	}
-	up_write(&spg->rw_lock);
 }
 
 void sp_group_post_exit(struct mm_struct *mm)
