@@ -203,7 +203,7 @@ static inline void sp_init_mm(struct mm_struct *mm)
 extern int sp_group_add_task(int pid, unsigned long prot, int spg_id);
 extern int sp_group_exit(struct mm_struct *mm);
 extern void sp_group_post_exit(struct mm_struct *mm);
-extern int sp_group_id_by_pid(int pid);
+extern int sp_group_id_by_pid(int pid, int *spg_ids, int *num);
 extern int sp_group_walk(int spg_id, void *data, int (*func)(struct mm_struct *mm, void *));
 extern int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task);

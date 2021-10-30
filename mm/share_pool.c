@@ -814,31 +814,61 @@ static struct sp_group *__sp_find_spg(int pid, int spg_id)
 }
 
 /**
- * sp_group_id_by_pid() - Get the sp_group ID of a process.
+ * sp_group_id_by_pid() - Get the sp_group ID array of a process.
  * @pid: pid of target process.
+ * @spg_ids point to an array to save the group ids the process belongs to
+ * @num input the spg_ids array size; output the spg number of the process
  *
  * Return:
  * >0		- the sp_group ID.
  * -ENODEV	- target process doesn't belong to any sp_group.
+ * -EINVAL	- spg_ids or num is NULL.
+ * -E2BIG	- the num of groups process belongs to is larger than *num
  */
-int sp_group_id_by_pid(int pid)
+int sp_group_id_by_pid(int pid, int *spg_ids, int *num)
 {
-	struct sp_group *spg;
-	int spg_id = -ENODEV;
+	int ret = 0;
+	struct sp_group_node *node;
+	struct sp_group_master *master = NULL;
+	struct task_struct *tsk;
 
 	check_interrupt_context();
 
-	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
-	if (!spg)
-		return -ENODEV;
+	if (!spg_ids || num <= 0)
+		return -EINVAL;
 
-	down_read(&spg->rw_lock);
-	if (spg_valid(spg))
-		spg_id = spg->id;
-	up_read(&spg->rw_lock);
+	ret = get_task(pid, &tsk);
+	if (ret)
+		return ret;
 
-	sp_group_drop(spg);
-	return spg_id;
+	down_read(&sp_group_sem);
+	task_lock(tsk);
+	if (tsk->mm)
+		master = tsk->mm->sp_group_master;
+	task_unlock(tsk);
+
+	if (!master) {
+		ret = -ENODEV;
+		goto out_up_read;
+	}
+
+	if (!master->count) {
+		ret = -ENODEV;
+		goto out_up_read;
+	}
+	if ((unsigned int)*num < master->count) {
+		ret = -E2BIG;
+		goto out_up_read;
+	}
+	*num = master->count;
+
+	list_for_each_entry(node, &master->node_list, group_node)
+		*(spg_ids++) = node->spg->id;
+
+out_up_read:
+	up_read(&sp_group_sem);
+	put_task_struct(tsk);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
 
