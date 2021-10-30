@@ -38,6 +38,10 @@ extern int sysctl_sp_debug_mode;
 
 extern int enable_ascend_share_pool;
 
+#ifdef CONFIG_HAVE_ARCH_HUGE_VMALLOC
+extern bool vmap_allow_huge;
+#endif
+
 /* Processes in the same sp_group can share memory.
  * Memory layout for share pool:
  *
@@ -223,6 +227,11 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 			struct address_space *mapping, pgoff_t idx,
 			unsigned long address, pte_t *ptep, unsigned int flags);
 
+extern void *vmalloc_hugepage(unsigned long size);
+extern void *vmalloc_hugepage_user(unsigned long size);
+extern void *buff_vzalloc_user(unsigned long size);
+extern void *buff_vzalloc_hugepage_user(unsigned long size);
+
 #else
 
 static inline int sp_group_add_task(int pid, int spg_id)
@@ -364,6 +373,26 @@ static inline bool sp_mmap_check(unsigned long flags)
 
 static inline void sp_dump_stack(void)
 {
+}
+
+static inline void *vmalloc_hugepage(unsigned long size)
+{
+	return NULL;
+}
+
+static inline void *vmalloc_hugepage_user(unsigned long size)
+{
+	return NULL;
+}
+
+static inline void *buff_vzalloc_user(unsigned long size)
+{
+	return NULL;
+}
+
+static inline void *buff_vzalloc_hugepage_user(unsigned long size)
+{
+	return NULL;
 }
 #endif
 

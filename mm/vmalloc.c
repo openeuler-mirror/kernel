@@ -43,7 +43,7 @@
 #include "internal.h"
 
 #ifdef CONFIG_HAVE_ARCH_HUGE_VMALLOC
-static bool __ro_after_init vmap_allow_huge = true;
+bool __ro_after_init vmap_allow_huge;
 
 static int __init set_nohugevmalloc(char *str)
 {
@@ -52,7 +52,7 @@ static int __init set_nohugevmalloc(char *str)
 }
 early_param("nohugevmalloc", set_nohugevmalloc);
 #else /* CONFIG_HAVE_ARCH_HUGE_VMALLOC */
-static const bool vmap_allow_huge = false;
+static const bool vmap_allow_huge;
 #endif	/* CONFIG_HAVE_ARCH_HUGE_VMALLOC */
 
 struct vfree_deferred {
@@ -2932,54 +2932,6 @@ void *vmalloc_32_user(unsigned long size)
 	return ret;
 }
 EXPORT_SYMBOL(vmalloc_32_user);
-
-/**
- * vmalloc_hugepage - allocate virtually contiguous hugetlb memory
- * 	@size:          allocation size
- *
- * Allocate enough huge pages to cover @size and map them into
- * contiguous kernel virtual space.
- *
- * The allocation size is aligned to PMD_SIZE automatically
- */
-void *vmalloc_hugepage(unsigned long size)
-{
-	/* PMD hugepage aligned */
-	size = PMD_ALIGN(size);
-
-	return __vmalloc_node(size, 1, GFP_KERNEL, PAGE_KERNEL,
-			      NUMA_NO_NODE, __builtin_return_address(0));
-}
-EXPORT_SYMBOL(vmalloc_hugepage);
-
-/**
- * vmalloc_hugepage_user - allocate virtually contiguous hugetlb memory
- * for userspace
- *	@size:          allocation size
- *
- * Allocate enough huge pages to cover @size and map them into
- * contiguous kernel virtual space. The resulting memory area
- * is zeroed so it can be mapped to userspace without leaking data.
- *
- * The allocation size is aligned to PMD_SIZE automatically
- */
-void *vmalloc_hugepage_user(unsigned long size)
-{
-	struct vm_struct *area;
-	void *ret;
-
-	/* 2M hugepa aligned */
-	size = PMD_ALIGN(size);
-
-	ret = __vmalloc_node(size, 1, GFP_KERNEL | __GFP_ZERO, PAGE_KERNEL,
-			     NUMA_NO_NODE, __builtin_return_address(0));
-	if (ret) {
-		area = find_vm_area(ret);
-		area->flags |= VM_USERMAP;
-	}
-	return ret;
-}
-EXPORT_SYMBOL(vmalloc_hugepage_user);
 
 
 /*

@@ -105,6 +105,7 @@ config ARM64
 	select HAVE_ARCH_AUDITSYSCALL
 	select HAVE_ARCH_BITREVERSE
 	select HAVE_ARCH_HUGE_VMAP
+	select HAVE_ARCH_HUGE_VMALLOC
 	select HAVE_ARCH_JUMP_LABEL
 	select HAVE_ARCH_KASAN if !(ARM64_16K_PAGES && ARM64_VA_BITS_48)
 	select HAVE_ARCH_KGDB
@@ -1466,6 +1467,7 @@ config ASCEND_SHARE_POOL
 	default n
 	select ARCH_USES_HIGH_VMA_FLAGS
 	select MM_OWNER
+	depends on HAVE_ARCH_HUGE_VMALLOC
 	help
 	  This feature allows multiple processes to share virtual memory both
 	  in kernel and user level, which is only enabled for ascend platform.

@@ -562,6 +562,10 @@ config HAVE_ARCH_HUGE_VMAP
 config HAVE_ARCH_HUGE_VMALLOC
 	depends on HAVE_ARCH_HUGE_VMAP
 	bool
+	help
+	  Archs that select this would be capable of PMD-sized vmaps (i.e.,
+	  arch_vmap_pmd_supported() returns true), and they must make no
+	  assumptions that vmalloc memory is mapped with PAGE_SIZE ptes.
 
 config HAVE_ARCH_SOFT_DIRTY
 	bool

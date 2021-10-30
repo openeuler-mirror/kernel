@@ -2674,11 +2674,102 @@ struct page *sp_alloc_pages(struct vm_struct *area, gfp_t mask,
 		return alloc_pages_node(node, mask, page_order);
 }
 
+/**
+ * vmalloc_hugepage - allocate virtually contiguous hugetlb memory
+ * @size: allocation size
+ *
+ * Allocate enough huge pages to cover @size and map them into
+ * contiguous kernel virtual space.
+ *
+ * The allocation size is aligned to PMD_SIZE automatically
+ */
+void *vmalloc_hugepage(unsigned long size)
+{
+	/* PMD hugepage aligned */
+	size = PMD_ALIGN(size);
+
+	return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+			GFP_KERNEL, PAGE_KERNEL,
+			VM_HUGE_PAGES, NUMA_NO_NODE,
+			__builtin_return_address(0));
+}
+EXPORT_SYMBOL(vmalloc_hugepage);
+
+/**
+ * vmalloc_hugepage_user - allocate virtually contiguous hugetlb memory
+ * for userspace
+ * @size: allocation size
+ *
+ * Allocate enough huge pages to cover @size and map them into
+ * contiguous kernel virtual space. The resulting memory area
+ * is zeroed so it can be mapped to userspace without leaking data.
+ *
+ * The allocation size is aligned to PMD_SIZE automatically
+ */
+void *vmalloc_hugepage_user(unsigned long size)
+{
+	/* PMD hugepage aligned */
+	size = PMD_ALIGN(size);
+
+	return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+			GFP_KERNEL | __GFP_ZERO, PAGE_KERNEL,
+			VM_HUGE_PAGES | VM_USERMAP, NUMA_NO_NODE,
+			__builtin_return_address(0));
+}
+EXPORT_SYMBOL(vmalloc_hugepage_user);
+
+/**
+ * buff_vzalloc_user - allocate zeroed virtually contiguous memory
+ * for userspace
+ * @size: allocation size
+ *
+ * The resulting memory area is zeroed so it can be mapped to userspace
+ * without leaking data.
+ *
+ * Compare to vmalloc_user(), this is a customized function because
+ * __GFP_ACCOUNT is used to limit memory usage.
+ */
+void *buff_vzalloc_user(unsigned long size)
+{
+	return __vmalloc_node_range(size, SHMLBA, VMALLOC_START, VMALLOC_END,
+			GFP_KERNEL | __GFP_ZERO | __GFP_ACCOUNT, PAGE_KERNEL,
+			VM_USERMAP, NUMA_NO_NODE,
+			__builtin_return_address(0));
+}
+EXPORT_SYMBOL(buff_vzalloc_user);
+
+/**
+ * buff_vzalloc_hugepage_user - allocate virtually contiguous hugetlb memory
+ * for userspace
+ * @size: allocation size
+ *
+ * Allocate enough huge pages to cover @size and map them into
+ * contiguous kernel virtual space. The resulting memory area
+ * is zeroed so it can be mapped to userspace without leaking data.
+ *
+ * The allocation size is aligned to PMD_SIZE automatically
+ *
+ * Compare to vmalloc_hugepage_user(), this is a customized function because
+ * __GFP_ACCOUNT is used to limit memory usage.
+ */
+void *buff_vzalloc_hugepage_user(unsigned long size)
+{
+	/* PMD hugepage aligned */
+	size = PMD_ALIGN(size);
+
+	return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+			GFP_KERNEL | __GFP_ZERO | __GFP_ACCOUNT, PAGE_KERNEL,
+			VM_HUGE_PAGES | VM_USERMAP, NUMA_NO_NODE,
+			__builtin_return_address(0));
+}
+EXPORT_SYMBOL(buff_vzalloc_hugepage_user);
+
 int enable_ascend_share_pool;
 
 static int __init enable_share_pool(char *s)
 {
 	enable_ascend_share_pool = 1;
+	vmap_allow_huge = true;
 
 	pr_info("Ascend enable share pool features\n");
 
