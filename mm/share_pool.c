@@ -831,16 +831,23 @@ int sp_group_id_by_pid(int pid)
 }
 EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
 
-static loff_t addr_to_offset(unsigned long addr, struct sp_area *spa)
+static loff_t addr_offset(struct sp_area *spa)
 {
+	unsigned long addr;
+
+	if (unlikely(!spa)) {
+		WARN(1, "invalid spa when calculate addr offset\n");
+		return 0;
+	}
+	addr = spa->va_start;
+
 	if (sp_area_customized == false)
 		return (loff_t)(addr - MMAP_SHARE_POOL_START);
 
-	if (spa && spa->spg != spg_none)
+	if (spa->spg != spg_none)
 		return (loff_t)(addr - spa->spg->dvpp_va_start);
-
-	pr_err("addr doesn't belong to share pool range\n");
-	return addr;
+	else
+		return (loff_t)(addr - MMAP_SHARE_POOL_START);
 }
 
 static struct sp_group *create_spg(int spg_id)
@@ -1685,6 +1692,18 @@ static void __sp_free(struct sp_group *spg, unsigned long addr,
 	}
 }
 
+/* Free the memory of the backing shmem or hugetlbfs */
+static void sp_fallocate(struct sp_area *spa)
+{
+	int ret;
+	unsigned long mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
+	unsigned long offset = addr_offset(spa);
+
+	ret = vfs_fallocate(spa_file(spa), mode, offset, spa_size(spa));
+	if (ret)
+		WARN(1, "sp fallocate failed %d\n", ret);
+}
+
 /**
  * sp_free() - Free the memory allocated by sp_alloc().
  * @addr: the starting VA of the memory.
@@ -1697,8 +1716,6 @@ static void __sp_free(struct sp_group *spg, unsigned long addr,
 int sp_free(unsigned long addr)
 {
 	struct sp_area *spa;
-	int mode;
-	loff_t offset;
 	int ret = 0;
 
 	check_interrupt_context();
@@ -1753,14 +1770,7 @@ int sp_free(unsigned long addr)
 	down_read(&spa->spg->rw_lock);
 
 	__sp_free(spa->spg, spa->va_start, spa_size(spa), NULL);
-
-	/* Free the memory of the backing shmem or hugetlbfs */
-	mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
-	offset = addr_to_offset(addr, spa);
-	ret = vfs_fallocate(spa_file(spa), mode, offset, spa_size(spa));
-	if (ret)
-		pr_err("fallocate in sp free failed: %d\n", ret);
-
+	sp_fallocate(spa);
 	up_read(&spa->spg->rw_lock);
 
 	/* pointer stat may be invalid because of kthread buff_module_guard_work */
@@ -1788,7 +1798,7 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 	unsigned long flags = MAP_FIXED | MAP_SHARED | MAP_POPULATE |
 			      MAP_SHARE_POOL;
 	unsigned long vm_flags = VM_NORESERVE | VM_SHARE_POOL | VM_DONTCOPY;
-	unsigned long pgoff = addr_to_offset(addr, spa) >> PAGE_SHIFT;
+	unsigned long pgoff = addr_offset(spa) >> PAGE_SHIFT;
 
 	/* Mark the mapped region to be locked. After the MAP_LOCKED is enable,
 	 * multiple tasks will preempt resources, causing performance loss.
@@ -1931,7 +1941,6 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	struct file *file;
 	unsigned long size_aligned;
 	int ret = 0;
-	unsigned long mode, offset;
 	unsigned int noreclaim_flag;
 	struct sp_group_node *spg_node;
 	struct sp_alloc_context ac;
@@ -2026,13 +2035,7 @@ try_again:
 				pr_warn_ratelimited("allocation failed due to mm populate failed"
 						    "(potential no enough memory when -12): %d\n", ret);
 
-			mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
-			offset = addr_to_offset(sp_addr, spa);
-
-			ret = vfs_fallocate(spa_file(spa), mode, offset, spa_size(spa));
-			if (ret)
-				pr_err("fallocate in allocation failed %d\n", ret);
-
+			sp_fallocate(spa);
 			if (file == spg->file_hugetlb) {
 				spg->hugepage_failures++;
 
