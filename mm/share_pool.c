@@ -2088,6 +2088,25 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 	return ret;
 }
 
+/* spa maybe an error pointer, so introduce param spg */
+static void sp_alloc_finish(int result, struct sp_area *spa, struct sp_group *spg)
+{
+	/* match sp_alloc_check_prepare */
+	up_read(&spg->rw_lock);
+
+	if (!result)
+		sp_update_process_stat(current, true, spa);
+
+	/* this will free spa if mmap failed */
+	if (spa && !IS_ERR(spa))
+		__sp_area_drop(spa);
+
+	sp_group_drop(spg);
+
+	sp_dump_stack();
+	sp_try_to_compact();
+}
+
 /**
  * sp_alloc() - Allocate shared memory for all the processes in a sp_group.
  * @size: the size of memory to allocate.
@@ -2102,7 +2121,6 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
  */
 void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 {
-	struct sp_group *spg;
 	struct sp_area *spa = NULL;
 	int ret = 0;
 	struct sp_alloc_context ac;
@@ -2126,19 +2144,7 @@ try_again:
 		goto try_again;
 
 out:
-	up_read(&spg->rw_lock);
-
-	if (!ret)
-		sp_update_process_stat(current, true, spa);
-
-	/* this will free spa if mmap failed */
-	if (spa && !IS_ERR(spa))
-		__sp_area_drop(spa);
-
-	sp_group_drop(spg);
-
-	sp_dump_stack();
-	sp_try_to_compact();
+	sp_alloc_finish(ret, spa, ac.spg);
 	if (ret)
 		return ERR_PTR(ret);
 	else
