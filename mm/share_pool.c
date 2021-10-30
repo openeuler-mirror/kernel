@@ -358,7 +358,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 		spg->hugepage_failures = 0;
 		spg->dvpp_multi_spaces = false;
 		spg->owner = current->group_leader;
-		atomic_set(&spg->use_count, 0);
+		atomic_set(&spg->use_count, 1);
 		INIT_LIST_HEAD(&spg->procs);
 		INIT_LIST_HEAD(&spg->spa_list);
 
@@ -391,6 +391,10 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 			ret = PTR_ERR(spg->file_hugetlb);
 			goto out_fput;
 		}
+	} else {
+		if (!spg_valid(spg))
+			return ERR_PTR(-ENODEV);
+		atomic_inc(&spg->use_count);
 	}
 
 	return spg;
@@ -539,12 +543,6 @@ int sp_group_add_task(int pid, int spg_id)
 		ret = PTR_ERR(spg);
 		goto out_put_task;
 	}
-
-	if (!spg_valid(spg)) {
-		ret = -ENODEV;
-		goto out_put_task;
-	}
-	atomic_inc(&spg->use_count);
 
 	/* access control permission check */
 	if (sysctl_ac_mode == AC_SINGLE_OWNER) {
@@ -1102,6 +1100,7 @@ int sp_free(unsigned long addr)
 		if (printk_ratelimit())
 			pr_err("share pool: sp free failed, addr %pK is not from sp_alloc\n",
 			       (void *)addr);
+		goto drop_spa;
 	}
 
 	if (!spg_valid(spa->spg))
@@ -1312,20 +1311,6 @@ try_again:
 			__sp_free(spg, sp_addr, size_aligned,
 					list_next_entry(mm, sp_node));
 
-			if (file == spg->file_hugetlb) {
-				spg->hugepage_failures++;
-
-				/* fallback to small pages */
-				if (!(sp_flags & SP_HUGEPAGE_ONLY)) {
-					file = spg->file;
-					spa->is_hugepage = false;
-					size_aligned = ALIGN(size, PAGE_SIZE);
-					__sp_area_drop(spa);
-					mmput(mm);
-					goto try_again;
-				}
-			}
-
 			if (printk_ratelimit())
 				pr_warn("share pool: allocation failed due to mm populate failed"
 					"(potential no enough memory when -12): %d\n", ret);
@@ -1333,9 +1318,24 @@ try_again:
 
 			mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
 			offset = sp_addr - MMAP_SHARE_POOL_START;
+
 			ret = vfs_fallocate(spa_file(spa), mode, offset, spa_size(spa));
 			if (ret)
-				pr_err("share pool: fallocate failed %d\n", ret);
+				pr_err("share pool: sp alloc normal page fallocate failed %d\n", ret);
+
+			if (file == spg->file_hugetlb) {
+				spg->hugepage_failures++;
+
+				/* fallback to small pages */
+				if (!(sp_flags & SP_HUGEPAGE_ONLY)) {
+					file = spg->file;
+					size_aligned = ALIGN(size, PAGE_SIZE);
+					sp_flags &= ~SP_HUGEPAGE;
+					__sp_area_drop(spa);
+					mmput(mm);
+					goto try_again;
+				}
+			}
 
 			mmput(mm);
 			break;
