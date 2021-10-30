@@ -1860,6 +1860,18 @@ static void sp_free_unmap_fallocate(struct sp_area *spa)
 	}
 }
 
+static int sp_check_caller_permission(struct sp_group *spg, struct mm_struct *mm)
+{
+	int ret = 0;
+
+	down_read(&spg->rw_lock);
+	if (!is_process_in_group(spg, mm))
+		ret = -EPERM;
+	up_read(&spg->rw_lock);
+	return ret;
+}
+
+
 #define FREE_CONT	1
 #define FREE_END	2
 
@@ -1902,13 +1914,9 @@ static int sp_free_get_spa(struct sp_free_context *fc)
 		if (!current->mm)
 			goto check_spa;
 
-		down_read(&spa->spg->rw_lock);
-		if (!is_process_in_group(spa->spg, current->mm)) {
-			up_read(&spa->spg->rw_lock);
-			ret = -EPERM;
+		ret = sp_check_caller_permission(spa->spg, current->mm);
+		if (ret < 0)
 			goto drop_spa;
-		}
-		up_read(&spa->spg->rw_lock);
 
 check_spa:
 		down_write(&spa->spg->rw_lock);
@@ -2816,6 +2824,12 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 
 		spg = __sp_find_spg(current->pid, kc.spg_id);
 		if (spg) {
+			ret = sp_check_caller_permission(spg, current->mm);
+			if (ret < 0) {
+				sp_group_drop(spg);
+				uva = ERR_PTR(ret);
+				goto out;
+			}
 			uva = sp_make_share_kva_to_spg(kc.kva_aligned, kc.size_aligned, kc.sp_flags, spg);
 			sp_group_drop(spg);
 		} else
