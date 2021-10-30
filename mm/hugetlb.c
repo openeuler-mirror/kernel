@@ -5374,7 +5374,8 @@ int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
 
 	entry = pfn_pte(phy_addr >> PAGE_SHIFT, prot);
 	entry = huge_pte_mkdirty(entry);
-	entry = huge_pte_mkwrite(entry);
+	if (!(pgprot_val(prot) & PTE_RDONLY))
+		entry = huge_pte_mkwrite(entry);
 	entry = pte_mkyoung(entry);
 	entry = pte_mkhuge(entry);
 	entry = pte_mkspecial(entry);
