@@ -253,8 +253,8 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 
 extern void *vmalloc_hugepage(unsigned long size);
 extern void *vmalloc_hugepage_user(unsigned long size);
-extern void *buff_vzalloc_user(unsigned long size);
-extern void *buff_vzalloc_hugepage_user(unsigned long size);
+extern void *vzalloc_user_account(unsigned long size, int node);
+extern void *vzalloc_hugepage_user_account(unsigned long size, int node);
 
 void sp_exit_mm(struct mm_struct *mm);
 
@@ -456,12 +456,12 @@ static inline void *vmalloc_hugepage_user(unsigned long size)
 	return NULL;
 }
 
-static inline void *buff_vzalloc_user(unsigned long size)
+static inline void *vzalloc_user_account(unsigned long size, int node)
 {
 	return NULL;
 }
 
-static inline void *buff_vzalloc_hugepage_user(unsigned long size)
+static inline void *vzalloc_hugepage_user_account(unsigned long size, int node)
 {
 	return NULL;
 }

@@ -3043,9 +3043,10 @@ void *vmalloc_hugepage_user(unsigned long size)
 EXPORT_SYMBOL(vmalloc_hugepage_user);
 
 /**
- * buff_vzalloc_user - allocate zeroed virtually contiguous memory
+ * vzalloc_user_account - allocate zeroed virtually contiguous memory
  * for userspace
  * @size: allocation size
+ * @node: NUMA node id
  *
  * The resulting memory area is zeroed so it can be mapped to userspace
  * without leaking data.
@@ -3053,19 +3054,20 @@ EXPORT_SYMBOL(vmalloc_hugepage_user);
  * Compare to vmalloc_user(), this is a customized function because
  * __GFP_ACCOUNT is used to limit memory usage.
  */
-void *buff_vzalloc_user(unsigned long size)
+void *vzalloc_user_account(unsigned long size, int node)
 {
 	return __vmalloc_node_range(size, SHMLBA, VMALLOC_START, VMALLOC_END,
 			GFP_KERNEL | __GFP_ZERO | __GFP_ACCOUNT, PAGE_KERNEL,
-			VM_USERMAP, NUMA_NO_NODE,
+			VM_USERMAP, node,
 			__builtin_return_address(0));
 }
-EXPORT_SYMBOL(buff_vzalloc_user);
+EXPORT_SYMBOL(vzalloc_user_account);
 
 /**
- * buff_vzalloc_hugepage_user - allocate virtually contiguous hugetlb memory
+ * vzalloc_hugepage_user_account - allocate virtually contiguous hugetlb memory
  * for userspace
  * @size: allocation size
+ * @node: NUMA node id
  *
  * Allocate enough huge pages to cover @size and map them into
  * contiguous kernel virtual space. The resulting memory area
@@ -3076,17 +3078,17 @@ EXPORT_SYMBOL(buff_vzalloc_user);
  * Compare to vmalloc_hugepage_user(), this is a customized function because
  * __GFP_ACCOUNT is used to limit memory usage.
  */
-void *buff_vzalloc_hugepage_user(unsigned long size)
+void *vzalloc_hugepage_user_account(unsigned long size, int node)
 {
 	/* PMD hugepage aligned */
 	size = PMD_ALIGN(size);
 
 	return __vmalloc_node_range(size, PMD_SIZE, VMALLOC_START, VMALLOC_END,
 			GFP_KERNEL | __GFP_ZERO | __GFP_ACCOUNT, PAGE_KERNEL,
-			VM_HUGE_PAGES | VM_USERMAP, NUMA_NO_NODE,
+			VM_HUGE_PAGES | VM_USERMAP, node,
 			__builtin_return_address(0));
 }
-EXPORT_SYMBOL(buff_vzalloc_hugepage_user);
+EXPORT_SYMBOL(vzalloc_hugepage_user_account);
 
 int enable_ascend_share_pool;
 
