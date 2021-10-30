@@ -135,7 +135,7 @@ static struct sp_group_master *sp_init_group_master_locked(
 
 	INIT_LIST_HEAD(&master->node_list);
 	master->count = 0;
-	master->sp_stat_id = 0;
+	master->stat = NULL;
 	master->mm = mm;
 	mm->sp_group_master = master;
 
@@ -143,48 +143,37 @@ static struct sp_group_master *sp_init_group_master_locked(
 	return master;
 }
 
-/* The caller must hold sp_stat_sem */
-static struct sp_proc_stat *sp_get_proc_stat_locked(int tgid)
+static struct sp_proc_stat *sp_get_proc_stat(struct mm_struct *mm)
 {
 	struct sp_proc_stat *stat;
 
-	stat = idr_find(&sp_proc_stat_idr, tgid);
-
-	/* maybe NULL or not, we always return it */
-	return stat;
-}
-
-/* The caller must hold sp_stat_sem */
-static struct sp_proc_stat *sp_get_proc_stat_ref_locked(int tgid)
-{
-	struct sp_proc_stat *stat;
-
-	stat = idr_find(&sp_proc_stat_idr, tgid);
-	if (!stat || !atomic_inc_not_zero(&stat->use_count))
-		stat = NULL;
-
-	/* maybe NULL or not, we always return it */
-	return stat;
-}
-
-static struct sp_proc_stat *sp_get_proc_stat(int tgid)
-{
-	struct sp_proc_stat *stat;
+	if (!mm->sp_group_master)
+		return NULL;
 
 	down_read(&sp_proc_stat_sem);
-	stat = sp_get_proc_stat_locked(tgid);
+	stat = mm->sp_group_master->stat;
 	up_read(&sp_proc_stat_sem);
+
+	/* maybe NULL or not, we always return it */
 	return stat;
 }
 
 /* user must call sp_proc_stat_drop() after use */
-struct sp_proc_stat *sp_get_proc_stat_ref(int tgid)
+struct sp_proc_stat *sp_get_proc_stat_ref(struct mm_struct *mm)
 {
 	struct sp_proc_stat *stat;
 
+	if (!mm->sp_group_master)
+		return NULL;
+
 	down_read(&sp_proc_stat_sem);
-	stat = sp_get_proc_stat_ref_locked(tgid);
+	stat = mm->sp_group_master->stat;
 	up_read(&sp_proc_stat_sem);
+
+	if (!stat || !atomic_inc_not_zero(&stat->use_count))
+		stat = NULL;
+
+	/* maybe NULL or not, we always return it */
 	return stat;
 }
 
@@ -215,22 +204,13 @@ static struct sp_proc_stat *sp_init_proc_stat(struct sp_group_master *master,
 	struct mm_struct *mm, struct task_struct *tsk)
 {
 	struct sp_proc_stat *stat;
-	int id, alloc_id, tgid = tsk->tgid;
+	int alloc_id, tgid = tsk->tgid;
 
 	down_write(&sp_proc_stat_sem);
-	id = master->sp_stat_id;
-	if (id) {
-		/* may have been initialized */
-		stat = sp_get_proc_stat_locked(tgid);
+	stat = master->stat;
+	if (stat) {
 		up_write(&sp_proc_stat_sem);
-		if (stat) {
-			return stat;
-		} else {
-			up_write(&sp_proc_stat_sem);
-			/* if enter this branch, that's our mistake */
-			WARN(1, "proc stat invalid id %d\n", id);
-			return ERR_PTR(-EBUSY);
-		}
+		return stat;
 	}
 
 	stat = create_proc_stat(mm, tsk);
@@ -247,7 +227,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct sp_group_master *master,
 		return ERR_PTR(alloc_id);
 	}
 
-	master->sp_stat_id = alloc_id;
+	master->stat = stat;
 	up_write(&sp_proc_stat_sem);
 
 	return stat;
@@ -3341,7 +3321,7 @@ static void free_sp_proc_stat(struct sp_proc_stat *stat)
 	free_process_spg_proc_stat(stat);
 
 	down_write(&sp_proc_stat_sem);
-	stat->mm->sp_group_master->sp_stat_id = 0;
+	stat->mm->sp_group_master->stat = NULL;
 	idr_remove(&sp_proc_stat_idr, stat->tgid);
 	up_write(&sp_proc_stat_sem);
 	kfree(stat);
@@ -3372,7 +3352,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		up_read(&spg->rw_lock);
 
 		/* eliminate potential ABBA deadlock */
-		stat = sp_get_proc_stat_ref(task->mm->sp_group_master->sp_stat_id);
+		stat = sp_get_proc_stat_ref(task->mm);
 		if (unlikely(!stat)) {
 			sp_group_drop(spg);
 			return 0;
@@ -3889,7 +3869,7 @@ void sp_group_post_exit(struct mm_struct *mm)
 	 * A process not in an sp group doesn't need to print because there
 	 * wont't be any memory which is not freed.
 	 */
-	stat = sp_get_proc_stat(master->sp_stat_id);
+	stat = sp_get_proc_stat(mm);
 	if (stat) {
 		alloc_size = atomic64_read(&stat->alloc_size);
 		k2u_size = atomic64_read(&stat->k2u_size);
@@ -3897,7 +3877,7 @@ void sp_group_post_exit(struct mm_struct *mm)
 		if (alloc_size != 0 || k2u_size != 0)
 			pr_info("process %s(%d) exits. "
 				"It applied %ld aligned KB, k2u shared %ld aligned KB\n",
-				stat->comm, master->sp_stat_id,
+				stat->comm, stat->tgid,
 				byte2kb(alloc_size), byte2kb(k2u_size));
 
 		/* match with sp_init_proc_stat, we expect stat is released after this call */

@@ -73,6 +73,25 @@ struct sp_spg_stat {
 	DECLARE_HASHTABLE(hash, SP_SPG_HASH_BITS);
 };
 
+/* we estimate a process ususally belongs to at most 16 sp-group */
+#define SP_PROC_HASH_BITS 4
+
+/* per process memory usage statistics indexed by tgid */
+struct sp_proc_stat {
+	atomic_t use_count;
+	int tgid;
+	struct mm_struct *mm;
+	struct mutex lock;  /* protect hashtable */
+	DECLARE_HASHTABLE(hash, SP_PROC_HASH_BITS);
+	char comm[TASK_COMM_LEN];
+	/*
+	 * alloc amount minus free amount, may be negative when freed by
+	 * another task in the same sp group.
+	 */
+	atomic64_t alloc_size;
+	atomic64_t k2u_size;
+};
+
 /* Processes in the same sp_group can share memory.
  * Memory layout for share pool:
  *
@@ -123,10 +142,10 @@ struct sp_group_master {
 	 * a.k.a the number of sp_node in node_list
 	 */
 	unsigned int count;
-	int sp_stat_id;
 	/* list head of sp_node */
 	struct list_head node_list;
 	struct mm_struct *mm;
+	struct sp_proc_stat *stat;
 };
 
 /*
@@ -152,25 +171,6 @@ struct sp_walk_data {
 	unsigned long page_size;
 	bool is_hugepage;
 	pmd_t *pmd;
-};
-
-/* we estimate a process ususally belongs to at most 16 sp-group */
-#define SP_PROC_HASH_BITS 4
-
-/* per process memory usage statistics indexed by tgid */
-struct sp_proc_stat {
-	atomic_t use_count;
-	int tgid;
-	struct mm_struct *mm;
-	struct mutex lock;  /* protect hashtable */
-	DECLARE_HASHTABLE(hash, SP_PROC_HASH_BITS);
-	char comm[TASK_COMM_LEN];
-	/*
-	 * alloc amount minus free amount, may be negative when freed by
-	 * another task in the same sp group.
-	 */
-	atomic64_t alloc_size;
-	atomic64_t k2u_size;
 };
 
 #define MAP_SHARE_POOL			0x100000
@@ -221,7 +221,7 @@ extern int sp_register_notifier(struct notifier_block *nb);
 extern int sp_unregister_notifier(struct notifier_block *nb);
 extern bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid);
 extern bool is_sharepool_addr(unsigned long addr);
-extern struct sp_proc_stat *sp_get_proc_stat_ref(int tgid);
+extern struct sp_proc_stat *sp_get_proc_stat_ref(struct mm_struct *mm);
 extern void sp_proc_stat_drop(struct sp_proc_stat *stat);
 extern void spa_overview_show(struct seq_file *seq);
 extern void spg_overview_show(struct seq_file *seq);
@@ -426,7 +426,7 @@ static inline bool is_sharepool_addr(unsigned long addr)
 	return false;
 }
 
-static inline struct sp_proc_stat *sp_get_proc_stat_ref(int tgid)
+static inline struct sp_proc_stat *sp_get_proc_stat_ref(struct mm_struct *mm)
 {
 	return NULL;
 }
