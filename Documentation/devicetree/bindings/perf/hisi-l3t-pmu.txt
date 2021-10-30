@@ -1,0 +1,17 @@
+Hisilicon L3T PMU comtrollers
+
+Required properties:
+  - compatible : should be "hisilicon,l3t-pmu".
+  - reg : should contain at least address and length of the L3T PMU
+    register set for the device.
+  - interrupts : one L3T interrupt should be described here.
+
+Example
+    l3t0@81170000 {
+        compatible = "hisilicon,l3t-pmu";
+        hisilicon,scl-id = <1>;
+        hisilicon,ccl-id = <0>;
+        hisilicon,index-id = <1>;
+        reg = <0x0 0x81170000 0x0 0x10000>;
+        interrupts = <0x0 316 0x4>;
+    };
