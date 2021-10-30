@@ -33,6 +33,7 @@
 #include <linux/bitops.h>
 #include <linux/overflow.h>
 #include <linux/rbtree_augmented.h>
+#include <linux/share_pool.h>
 
 #include <linux/uaccess.h>
 #include <asm/tlbflush.h>
@@ -478,6 +479,37 @@ static int vmap_pages_range(unsigned long addr, unsigned long end,
 	return err;
 }
 
+static int vmap_hugepages_range_noflush(unsigned long addr, unsigned long end,
+		pgprot_t prot, struct page **pages, unsigned int page_shift)
+{
+	unsigned int i, nr = (end - addr) >> page_shift;
+
+	for (i = 0; i < nr; i++) {
+		int err;
+
+		err = vmap_range_noflush(addr, addr + (1UL << page_shift),
+					__pa(page_address(pages[i])), prot,
+					page_shift);
+		if (err)
+			return err;
+
+		addr += 1UL << page_shift;
+	}
+
+	return 0;
+}
+
+static int vmap_hugepages_range(unsigned long addr, unsigned long end,
+				pgprot_t prot, struct page **pages,
+				unsigned int page_shift)
+{
+	int err;
+
+	err = vmap_hugepages_range_noflush(addr, end, prot, pages, page_shift);
+	flush_cache_vmap(addr, end);
+	return err;
+}
+
 /**
  * map_kernel_range_noflush - map kernel VM area with the specified pages
  * @addr: start of the VM area to map
@@ -588,6 +620,22 @@ struct page *vmalloc_to_page(const void *vmalloc_addr)
 	return page;
 }
 EXPORT_SYMBOL(vmalloc_to_page);
+
+/*
+ * Walk a hugepage vmap address to the struct page it maps.
+ * return the head page that corresponds to the base page address.
+ */
+struct page *vmalloc_to_hugepage(const void *vmalloc_addr)
+{
+	struct page *huge;
+
+	huge = vmalloc_to_page(vmalloc_addr);
+	if (huge && PageHuge(huge))
+		return huge;
+	else
+		return NULL;
+}
+EXPORT_SYMBOL(vmalloc_to_hugepage);
 
 /*
  * Map a vmalloc()-space virtual address to the physical page frame number.
@@ -2243,7 +2291,12 @@ struct vm_struct *get_vm_area(unsigned long size, unsigned long flags)
 struct vm_struct *get_vm_area_caller(unsigned long size, unsigned long flags,
 				const void *caller)
 {
-	return __get_vm_area_node(size, 1, flags, VMALLOC_START, VMALLOC_END,
+	unsigned long align = 1;
+
+	if (sp_check_vm_huge_page(flags))
+		align = PMD_SIZE;
+
+	return __get_vm_area_node(size, align, flags, VMALLOC_START, VMALLOC_END,
 				  NUMA_NO_NODE, GFP_KERNEL, caller);
 }
 
@@ -2327,7 +2380,10 @@ static void __vunmap(const void *addr, int deallocate_pages)
 			struct page *page = area->pages[i];
 
 			BUG_ON(!page);
-			__free_pages(page, area->page_order);
+			if (sp_is_enabled())
+				sp_free_pages(page, area);
+			else
+				__free_pages(page, area->page_order);
 		}
 
 		kvfree(area->pages);
@@ -2452,6 +2508,43 @@ void *vmap(struct page **pages, unsigned int count,
 }
 EXPORT_SYMBOL(vmap);
 
+/**
+ *	vmap_hugepag  -  map an array of huge pages into virtually contiguous space
+ *	@pages:		array of huge page pointers
+ *	@count:		number of pages to map
+ *	@flags:		vm_area->flags
+ *	@prot:		page protection for the mapping
+ *
+ *	Maps @count pages from @pages into contiguous kernel virtual
+ *	space.
+ */
+void *vmap_hugepage(struct page **pages, unsigned int count,
+		    unsigned long flags, pgprot_t prot)
+{
+	struct vm_struct *area;
+	unsigned long size;		/* In bytes */
+
+	might_sleep();
+
+	if (count > totalram_pages)
+		return NULL;
+
+	size = (unsigned long)count << PMD_SHIFT;
+	area = get_vm_area_caller(size, flags, __builtin_return_address(0));
+	if (!area)
+		return NULL;
+
+	if (vmap_hugepages_range((unsigned long)area->addr,
+				 (unsigned long)area->addr + size, prot,
+				 pages, PMD_SHIFT) < 0) {
+		vunmap(area->addr);
+		return NULL;
+	}
+
+	return area->addr;
+}
+EXPORT_SYMBOL(vmap_hugepage);
+
 static void *__vmalloc_node(unsigned long size, unsigned long align,
 			    gfp_t gfp_mask, pgprot_t prot,
 			    int node, const void *caller);
@@ -2496,7 +2589,12 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 		struct page *page;
 		int p;
 
-		page = alloc_pages_node(node, alloc_mask|highmem_mask, page_order);
+		if (sp_is_enabled())
+			page = sp_alloc_pages(area, alloc_mask|highmem_mask,
+					      page_order, node);
+		else
+			page = alloc_pages_node(node, alloc_mask|highmem_mask,
+						page_order);
 		if (unlikely(!page)) {
 			/* Successfully allocated i pages, free them in __vunmap() */
 			area->nr_pages = i;
@@ -2564,7 +2662,7 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 		 */
 
 		size_per_node = size;
-		if (node == NUMA_NO_NODE)
+		if (node == NUMA_NO_NODE && !sp_is_enabled())
 			size_per_node /= num_online_nodes();
 		if (size_per_node >= PMD_SIZE) {
 			shift = PMD_SHIFT;
@@ -2826,6 +2924,55 @@ void *vmalloc_32_user(unsigned long size)
 	return ret;
 }
 EXPORT_SYMBOL(vmalloc_32_user);
+
+/**
+ * vmalloc_hugepage - allocate virtually contiguous hugetlb memory
+ * 	@size:          allocation size
+ *
+ * Allocate enough huge pages to cover @size and map them into
+ * contiguous kernel virtual space.
+ *
+ * The allocation size is aligned to PMD_SIZE automatically
+ */
+void *vmalloc_hugepage(unsigned long size)
+{
+	/* PMD hugepage aligned */
+	size = PMD_ALIGN(size);
+
+	return __vmalloc_node(size, 1, GFP_KERNEL, PAGE_KERNEL,
+			      NUMA_NO_NODE, __builtin_return_address(0));
+}
+EXPORT_SYMBOL(vmalloc_hugepage);
+
+/**
+ * vmalloc_hugepage_user - allocate virtually contiguous hugetlb memory
+ * for userspace
+ *	@size:          allocation size
+ *
+ * Allocate enough huge pages to cover @size and map them into
+ * contiguous kernel virtual space. The resulting memory area
+ * is zeroed so it can be mapped to userspace without leaking data.
+ *
+ * The allocation size is aligned to PMD_SIZE automatically
+ */
+void *vmalloc_hugepage_user(unsigned long size)
+{
+	struct vm_struct *area;
+	void *ret;
+
+	/* 2M hugepa aligned */
+	size = PMD_ALIGN(size);
+
+	ret = __vmalloc_node(size, 1, GFP_KERNEL | __GFP_ZERO, PAGE_KERNEL,
+			     NUMA_NO_NODE, __builtin_return_address(0));
+	if (ret) {
+		area = find_vm_area(ret);
+		area->flags |= VM_USERMAP;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(vmalloc_hugepage_user);
+
 
 /*
  * small helper routine , copy contents to buf from addr.
@@ -3151,6 +3298,85 @@ int remap_vmalloc_range(struct vm_area_struct *vma, void *addr,
 					   vma->vm_end - vma->vm_start);
 }
 EXPORT_SYMBOL(remap_vmalloc_range);
+
+/**
+ *	remap_vmalloc_hugepage_range_partial - map vmalloc hugepages
+ *	to userspace
+ *	@vma:		vma to cover
+ *	@uaddr:		target user address to start at
+ *	@kaddr:		virtual address of vmalloc hugepage kernel memory
+ *	@size:		size of map area
+ *
+ *	Returns:	0 for success, -Exxx on failure
+ *
+ *	This function checks that @kaddr is a valid vmalloc'ed area,
+ *	and that it is big enough to cover the range starting at
+ *	@uaddr in @vma. Will return failure if that criteria isn't
+ *	met.
+ *
+ *	Similar to remap_pfn_range() (see mm/memory.c)
+ */
+int remap_vmalloc_hugepage_range_partial(struct vm_area_struct *vma,
+					 unsigned long uaddr, void *kaddr, unsigned long size)
+{
+	struct vm_struct *area;
+
+	size = PMD_ALIGN(size);
+
+	if (!PMD_ALIGNED(uaddr) || !PMD_ALIGNED(kaddr))
+		return -EINVAL;
+
+	area = find_vm_area(kaddr);
+	if (!area)
+		return -EINVAL;
+
+	if (!(area->flags & VM_USERMAP))
+		return -EINVAL;
+
+	if (kaddr + size > area->addr + get_vm_area_size(area))
+		return -EINVAL;
+
+	do {
+		struct page *page = vmalloc_to_hugepage(kaddr);
+		int ret;
+
+		ret = vm_insert_page(vma, uaddr, page);
+		if (ret)
+			return ret;
+
+		uaddr += PMD_SIZE;
+		kaddr += PMD_SIZE;
+		size -= PMD_SIZE;
+	} while (size > 0);
+
+	vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
+
+	return 0;
+}
+EXPORT_SYMBOL(remap_vmalloc_hugepage_range_partial);
+
+/**
+ *	remap_vmalloc_hugepage_range - map vmalloc hugepages to userspace
+ *	@vma:           vma to cover (map full range of vma)
+ *	@addr:          vmalloc memory
+ *	@pgoff:         number of hugepages into addr before first page to map
+ *
+ *	Returns:        0 for success, -Exxx on failure
+ *
+ *	This function checks that addr is a valid vmalloc'ed area, and
+ *	that it is big enough to cover the vma. Will return failure if
+ *	that criteria isn't met.
+ *
+ *	Similar to remap_pfn_range() (see mm/memory.c)
+ */
+int remap_vmalloc_hugepage_range(struct vm_area_struct *vma, void *addr,
+				 unsigned long pgoff)
+{
+	return remap_vmalloc_hugepage_range_partial(vma, vma->vm_start,
+						    addr + (pgoff << PMD_SHIFT),
+						    vma->vm_end - vma->vm_start);
+}
+EXPORT_SYMBOL(remap_vmalloc_hugepage_range);
 
 /*
  * Implement stubs for vmalloc_sync_[un]mappings () if the architecture chose
@@ -3612,6 +3838,9 @@ static int s_show(struct seq_file *m, void *p)
 
 	if (is_vmalloc_addr(v->pages))
 		seq_puts(m, " vpages");
+
+	if (sp_is_enabled())
+		seq_printf(m, " order=%d", v->page_order);
 
 	show_numa_info(m, v);
 	seq_putc(m, '\n');

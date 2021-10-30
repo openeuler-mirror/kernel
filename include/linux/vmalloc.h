@@ -95,6 +95,8 @@ extern void *__vmalloc_node_range(unsigned long size, unsigned long align,
 			unsigned long start, unsigned long end, gfp_t gfp_mask,
 			pgprot_t prot, unsigned long vm_flags, int node,
 			const void *caller);
+extern void *vmalloc_hugepage(unsigned long size);
+extern void *vmalloc_hugepage_user(unsigned long size);
 #ifndef CONFIG_MMU
 extern void *__vmalloc_node_flags(unsigned long size, int node, gfp_t flags);
 static inline void *__vmalloc_node_flags_caller(unsigned long size, int node,
@@ -123,6 +125,13 @@ extern int remap_vmalloc_range(struct vm_area_struct *vma, void *addr,
 void vmalloc_sync_mappings(void);
 void vmalloc_sync_unmappings(void);
 
+extern void *vmap_hugepage(struct page **pages, unsigned int count,
+			   unsigned long flags, pgprot_t prot);
+extern int remap_vmalloc_hugepage_range_partial(struct vm_area_struct *vma,
+						unsigned long uaddr, void *kaddr,
+						unsigned long size);
+extern int remap_vmalloc_hugepage_range(struct vm_area_struct *vma,
+					void *addr, unsigned long pgoff);
 /*
  *	Lowlevel-APIs (not for driver use!)
  */
