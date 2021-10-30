@@ -466,12 +466,12 @@ static inline void *buff_vzalloc_hugepage_user(unsigned long size)
 	return NULL;
 }
 
-static inline bool is_vmalloc_huge(struct vm_struct *vm)
+static inline bool is_vmalloc_huge(unsigned long vm_flags)
 {
 	return NULL;
 }
 
-static inline bool is_vmalloc_sharepool(struct vm_struct *vm)
+static inline bool is_vmalloc_sharepool(unsigned long vm_flags)
 {
 	return NULL;
 }
