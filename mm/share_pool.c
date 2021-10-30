@@ -503,7 +503,7 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct list_head *stop)
 }
 
 /* The caller must hold sp_mutex. */
-static void __sp_group_drop_locked(struct sp_group *spg)
+static void sp_group_drop(struct sp_group *spg)
 {
 	if (atomic_dec_and_test(&spg->use_count))
 		free_sp_group(spg);
@@ -732,7 +732,7 @@ int sp_group_add_task(int pid, int spg_id)
 
 out_drop_group:
 	if (unlikely(ret))
-		__sp_group_drop_locked(spg);
+		sp_group_drop(spg);
 out_put_mm:
 	/* No need to put the mm if the sp group adds this mm successfully */
 	if (unlikely(ret))
@@ -781,7 +781,7 @@ void sp_group_post_exit(struct mm_struct *mm)
 	idr_remove(&sp_stat_idr, mm->sp_stat_id);
 	up_write(&sp_stat_sem);
 
-	__sp_group_drop_locked(spg);
+	sp_group_drop(spg);
 
 	kfree(stat);
 }
@@ -2922,6 +2922,7 @@ void sp_group_exit(struct mm_struct *mm)
 	 */
 	down_write(&spg->rw_lock);
 	if (spg_valid(spg) && atomic_read(&mm->mm_users) == MM_WOULD_FREE) {
+		/* a dead group should NOT be reactive again */
 		if (list_is_singular(&spg->procs))
 			is_alive = spg->is_alive = false;
 		list_del(&mm->sp_node);   /* affect spg->procs */
