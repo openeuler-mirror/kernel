@@ -2513,12 +2513,15 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 static void rb_spa_stat_show(struct seq_file *seq)
 {
 	struct rb_node *node;
-	struct sp_area *spa;
+	struct sp_area *spa, *prev = NULL;
 
 	spin_lock(&sp_area_lock);
 
 	for (node = rb_first(&sp_area_root); node; node = rb_next(node)) {
+		__sp_area_drop_locked(prev);
+
 		spa = rb_entry(node, struct sp_area, rb_node);
+		prev = spa;
 		atomic_inc(&spa->use_count);
 		spin_unlock(&sp_area_lock);
 
@@ -2557,9 +2560,8 @@ static void rb_spa_stat_show(struct seq_file *seq)
 		seq_printf(seq, "%-10d\n", atomic_read(&spa->use_count));
 
 		spin_lock(&sp_area_lock);
-		__sp_area_drop_locked(spa);
 	}
-
+	__sp_area_drop_locked(prev);
 	spin_unlock(&sp_area_lock);
 }
 
