@@ -85,7 +85,11 @@ int __init cdm_node_to_ddr_node(int nid)
 
 	nodes_xor(ddr_mask, cdmmask, numa_nodes_parsed);
 	nr_ddr = nodes_weight(ddr_mask);
-	cdm_per_part = nr_cdm / nr_ddr ? : 1;
+	cdm_per_part = nr_cdm / nr_ddr;
+
+	if (cdm_per_part == 0 || nid < nr_ddr)
+		/* our assumption has borken, just return the original nid. */
+		return nid;
 
 	fake_nid = (nid - nr_ddr) / cdm_per_part;
 	fake_nid = !node_isset(fake_nid, cdmmask) ? fake_nid : nid;
