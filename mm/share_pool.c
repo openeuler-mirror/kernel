@@ -549,14 +549,17 @@ int sp_group_add_task(int pid, int spg_id)
 	tsk = find_task_by_vpid(pid);
 	if (!tsk || (tsk->flags & PF_EXITING))
 		ret = -ESRCH;
-	else if (tsk->mm->sp_group)	/* if it's already in a sp_group */
-		ret = -EEXIST;
 	else
 		get_task_struct(tsk);
 
 	rcu_read_unlock();
 	if (ret) {
 		free_sp_group_id((unsigned int)spg_id);
+		goto out_unlock;
+	}
+
+	if (!tsk->mm || tsk->mm->sp_group) {	/* if it's already in a sp_group */
+		ret = -EEXIST;
 		goto out_unlock;
 	}
 
