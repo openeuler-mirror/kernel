@@ -349,6 +349,12 @@ static void free_sp_group_id(unsigned int spg_id)
 		ida_free(&sp_group_id_ida, spg_id);
 }
 
+static void free_new_spg_id(bool new, int spg_id)
+{
+	if (new)
+		free_sp_group_id(spg_id);
+}
+
 static void free_sp_group(struct sp_group *spg)
 {
 	fput(spg->file);
@@ -665,7 +671,8 @@ int sp_group_add_task(int pid, int spg_id)
 	rcu_read_unlock();
 	if (ret) {
 		up_write(&sp_group_sem);
-		goto out_free_id;
+		free_new_spg_id(id_newly_generated, spg_id);
+		goto out;
 	}
 
 	/*
@@ -682,12 +689,14 @@ int sp_group_add_task(int pid, int spg_id)
 	 */
 	mm = get_task_mm(tsk->group_leader);
 	if (!mm) {
-		ret = -ESRCH;
 		up_write(&sp_group_sem);
+		ret = -ESRCH;
+		free_new_spg_id(id_newly_generated, spg_id);
 		goto out_put_task;
 	} else if (mm->sp_group) {
-		ret = -EEXIST;
 		up_write(&sp_group_sem);
+		ret = -EEXIST;
+		free_new_spg_id(id_newly_generated, spg_id);
 		goto out_put_mm;
 	}
 
@@ -695,6 +704,7 @@ int sp_group_add_task(int pid, int spg_id)
 	if (IS_ERR(spg)) {
 		up_write(&sp_group_sem);
 		ret = PTR_ERR(spg);
+		free_new_spg_id(id_newly_generated, spg_id);
 		goto out_put_mm;
 	}
 
@@ -813,9 +823,7 @@ out_put_mm:
 		mmput(mm);
 out_put_task:
 	put_task_struct(tsk);
-out_free_id:
-	if (unlikely(ret) && id_newly_generated)
-		free_sp_group_id((unsigned int)spg_id);
+out:
 	return ret == 0 ? spg_id : ret;
 }
 EXPORT_SYMBOL_GPL(sp_group_add_task);
