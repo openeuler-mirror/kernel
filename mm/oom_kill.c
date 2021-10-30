@@ -489,9 +489,9 @@ static void dump_tasks(struct mem_cgroup *memcg, const nodemask_t *nodemask)
 			if (!stat)
 				pr_cont("%-9c %-9c ", '-', '-');
 			else {
-				pr_cont("%-9ld %-9ld ", /* byte to KB */
-					atomic64_read(&stat->alloc_size) >> 10,
-					atomic64_read(&stat->k2u_size) >> 10);
+				pr_cont("%-9lld %-9lld ", /* byte to KB */
+					(long long)atomic64_read(&stat->alloc_size) >> 10,
+					(long long)atomic64_read(&stat->k2u_size) >> 10);
 				sp_proc_stat_drop(stat);
 			}
 			pr_cont("%8ld %8lu         %5hd %s\n",
