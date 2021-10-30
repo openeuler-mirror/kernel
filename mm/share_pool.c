@@ -214,7 +214,7 @@ struct sp_area {
 };
 static DEFINE_SPINLOCK(sp_area_lock);
 static struct rb_root sp_area_root = RB_ROOT;
-static bool host_svm_sp_enable = false;
+static bool sp_area_customized;
 
 static unsigned long spa_size(struct sp_area *spa)
 {
@@ -408,6 +408,18 @@ int sp_group_id_by_pid(int pid)
 	return spg_id;
 }
 EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
+
+static loff_t addr_to_offset(unsigned long addr, struct sp_area *spa)
+{
+	if (sp_area_customized == false)
+		return (loff_t)(addr - MMAP_SHARE_POOL_START);
+
+	if (spa && spa->spg)
+		return (loff_t)(addr - spa->spg->dvpp_va_start);
+
+	pr_err("share pool: the addr is not belong to share pool range\n");
+	return addr;
+}
 
 /* the caller must hold sp_group_sem */
 static struct sp_group *find_or_alloc_sp_group(int spg_id)
@@ -812,7 +824,7 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 	unsigned long size_align = PMD_ALIGN(size); /* va aligned to 2M */
 
 	if ((flags & SP_DVPP)) {
-		if (host_svm_sp_enable == false) {
+		if (sp_area_customized == false) {
 			vstart = MMAP_SHARE_POOL_16G_START;
 			vend = MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE;
 		} else {
@@ -1204,7 +1216,7 @@ int sp_free(unsigned long addr)
 
 	/* Free the memory of the backing shmem or hugetlbfs */
 	mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
-	offset = addr - MMAP_SHARE_POOL_START;
+	offset = addr_to_offset(addr, spa);
 	ret = vfs_fallocate(spa_file(spa), mode, offset, spa_size(spa));
 	if (ret)
 		pr_err("share pool: sp free fallocate failed: %d\n", ret);
@@ -1241,7 +1253,7 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 	unsigned long flags = MAP_FIXED | MAP_SHARED | MAP_POPULATE |
 			      MAP_SHARE_POOL;
 	unsigned long vm_flags = VM_NORESERVE | VM_SHARE_POOL | VM_DONTCOPY;
-	unsigned long pgoff = (addr - MMAP_SHARE_POOL_START) >> PAGE_SHIFT;
+	unsigned long pgoff = addr_to_offset(addr, spa) >> PAGE_SHIFT;
 
 	/* Mark the mapped region to be locked. After the MAP_LOCKED is enable,
 	 * multiple tasks will preempt resources, causing performance loss.
@@ -1439,7 +1451,7 @@ try_again:
 			p = ERR_PTR(ret);
 
 			mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
-			offset = sp_addr - MMAP_SHARE_POOL_START;
+			offset = addr_to_offset(sp_addr, spa);
 
 			ret = vfs_fallocate(spa_file(spa), mode, offset, spa_size(spa));
 			if (ret)
@@ -2457,7 +2469,7 @@ bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 	spg->dvpp_multi_spaces = true;
 	up_write(&spg->rw_lock);
 
-	host_svm_sp_enable = true;
+	sp_area_customized = true;
 
 	sp_group_drop(spg);
 	return true;
@@ -2467,10 +2479,20 @@ EXPORT_SYMBOL_GPL(sp_config_dvpp_range);
 /* Check whether the address belongs to the share pool. */
 bool is_sharepool_addr(unsigned long addr)
 {
-	if (host_svm_sp_enable == false)
-		return addr >= MMAP_SHARE_POOL_START && addr < (MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE);
+	struct sp_area *spa;
+	bool ret = false;
 
-	return addr >= MMAP_SHARE_POOL_START && addr < MMAP_SHARE_POOL_END;
+	if (sp_area_customized == false)
+		return addr >= MMAP_SHARE_POOL_START &&
+		       addr < (MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE);
+
+	spa = __find_sp_area(addr);
+	if (spa && spa->spg)
+		ret = addr >= spa->spg->dvpp_va_start &&
+		      addr < (spa->spg->dvpp_va_start + spa->spg->dvpp_size);
+
+	__sp_area_drop(spa);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(is_sharepool_addr);
 
