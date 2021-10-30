@@ -36,6 +36,7 @@
 #include <linux/uio.h>
 #include <linux/khugepaged.h>
 #include <linux/hugetlb.h>
+#include <linux/share_pool.h>
 
 #include <asm/tlbflush.h> /* for arch/microblaze update_mmu_cache() */
 
@@ -1769,7 +1770,8 @@ repeat:
 	 * bring it back from swap or allocate.
 	 */
 	sbinfo = SHMEM_SB(inode->i_sb);
-	charge_mm = vma ? vma->vm_mm : current->mm;
+	charge_mm = vma && !sp_check_vm_share_pool(vma->vm_flags) ?
+			vma->vm_mm : current->mm;
 
 	if (swap.val) {
 		/* Look it up and read it in.. */
