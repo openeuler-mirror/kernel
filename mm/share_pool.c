@@ -59,6 +59,9 @@
 int enable_mdc_default_group;
 static const int mdc_default_group_id = 1;
 
+/* share the uva to the whole group */
+int enable_share_k2u_spg;
+
 /* access control mode */
 int sysctl_ac_mode = AC_NONE;
 /* debug mode */
@@ -1741,7 +1744,12 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 				pr_err("share pool: k2spg invalid spg id %d\n", spg_id);
 			return ERR_PTR(-EINVAL);
 		}
-		spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_K2SPG);
+
+		if (enable_share_k2u_spg)
+			spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_K2SPG);
+		else
+			spa = sp_alloc_area(size_aligned, sp_flags, NULL, SPA_TYPE_K2TASK);
+
 		if (IS_ERR(spa)) {
 			mutex_unlock(&sp_mutex);
 			if (printk_ratelimit())
@@ -1756,7 +1764,10 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			goto out;
 		}
 
-		uva = sp_make_share_kva_to_spg(kva_aligned, spa, spg);
+		if (spa->spg)
+			uva = sp_make_share_kva_to_spg(kva_aligned, spa, spg);
+		else
+			uva = sp_make_share_kva_to_task(kva_aligned, spa, pid);
 	} else {
 		mutex_unlock(&sp_mutex);
 		pr_err("share pool: failed to make k2u\n");
@@ -2374,6 +2385,13 @@ static int __init mdc_default_group(char *s)
 	return 1;
 }
 __setup("enable_mdc_default_group", mdc_default_group);
+
+static int __init enable_share_k2u_to_group(char *s)
+{
+	enable_share_k2u_spg = 1;
+	return 1;
+}
+__setup("enable_sp_share_k2u_spg", enable_share_k2u_to_group);
 
 int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
