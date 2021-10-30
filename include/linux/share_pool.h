@@ -292,6 +292,9 @@ static inline void sp_free_pages(struct page *page, struct vm_struct *area)
 		__free_pages(page, is_vmalloc_huge(area->flags) ? PMD_SHIFT - PAGE_SHIFT : 0);
 }
 
+extern bool sp_check_addr(unsigned long addr);
+extern bool sp_check_mmap_addr(unsigned long addr, unsigned long flags);
+
 #else
 
 static inline int sp_group_add_task(int pid, int spg_id)
@@ -495,6 +498,17 @@ static inline int sp_node_id(struct vm_area_struct *vma)
 {
 	return numa_node_id();
 }
+
+static inline bool sp_check_addr(unsigned long addr)
+{
+	return false;
+}
+
+static inline bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
+{
+	return false;
+}
+
 #endif
 
 #endif /* LINUX_SHARE_POOL_H */

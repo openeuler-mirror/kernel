@@ -58,6 +58,8 @@
 #define byte2mb(size)		((size) >> 20)
 #define page2kb(page_num)	((page_num) << (PAGE_SHIFT - 10))
 
+#define PF_DOMAIN_CORE		0x10000000	/* AOS CORE processes in sched.h */
+
 /* mdc scene hack */
 static int __read_mostly enable_mdc_default_group;
 static const int mdc_default_group_id = 1;
@@ -332,6 +334,14 @@ static inline void check_interrupt_context(void)
 {
 	if (unlikely(in_interrupt()))
 		panic("share_pool: can't be used in interrupt context\n");
+}
+
+static inline bool check_aoscore_process(struct task_struct *tsk)
+{
+	if (tsk->flags & PF_DOMAIN_CORE)
+		return true;
+	else
+		return false;
 }
 
 static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
@@ -673,6 +683,14 @@ int sp_group_add_task(int pid, int spg_id)
 		up_write(&sp_group_sem);
 		free_new_spg_id(id_newly_generated, spg_id);
 		goto out;
+	}
+
+	if (check_aoscore_process(tsk)) {
+		up_write(&sp_group_sem);
+		ret = -EACCES;
+		free_new_spg_id(id_newly_generated, spg_id);
+		sp_dump_stack();
+		goto out_put_task;
 	}
 
 	/*
@@ -3029,6 +3047,26 @@ void __init proc_sharepool_init(void)
 }
 
 /*** End of tatistical and maintenance functions ***/
+
+bool sp_check_addr(unsigned long addr)
+{
+	if (enable_ascend_share_pool && is_sharepool_addr(addr) &&
+	    !check_aoscore_process(current)) {
+		sp_dump_stack();
+		return true;
+	} else
+		return false;
+}
+
+bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
+{
+	if (enable_ascend_share_pool && is_sharepool_addr(addr) &&
+	    !check_aoscore_process(current) && !(flags & MAP_SHARE_POOL)) {
+		sp_dump_stack();
+		return true;
+	} else
+		return false;
+}
 
 vm_fault_t sharepool_no_page(struct mm_struct *mm,
 			struct vm_area_struct *vma,

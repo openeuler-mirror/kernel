@@ -2354,6 +2354,9 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	if (flags & MAP_FIXED)
 		return addr;
 
+	if (sp_check_mmap_addr(addr, flags))
+		return -EINVAL;
+
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
 
@@ -2404,6 +2407,9 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 
 	if (flags & MAP_FIXED)
 		return addr;
+
+	if (sp_check_mmap_addr(addr, flags))
+		return -EINVAL;
 
 	/* requesting a specific address */
 	if (addr) {
@@ -3111,6 +3117,9 @@ int vm_munmap(unsigned long start, size_t len)
 	struct mm_struct *mm = current->mm;
 	LIST_HEAD(uf);
 
+	if (sp_check_addr(start))
+		return -EINVAL;
+
 	if (down_write_killable(&mm->mmap_sem))
 		return -EINTR;
 
@@ -3127,6 +3136,9 @@ int do_vm_munmap(struct mm_struct *mm, unsigned long start, size_t len)
 	LIST_HEAD(uf);
 
 	if (mm == NULL)
+		return -EINVAL;
+
+	if (sp_check_addr(start))
 		return -EINVAL;
 
 	if (down_write_killable(&mm->mmap_sem))
