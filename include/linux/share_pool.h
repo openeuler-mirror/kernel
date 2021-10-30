@@ -82,6 +82,8 @@ struct sp_group {
 	atomic64_t	 alloc_nsize;
 	/* total size of all sp_area from sp_alloc hugepage */
 	atomic64_t	 alloc_hsize;
+	/* total size of all sp_area from ap_alloc */
+	atomic64_t	 alloc_size;
 	/* we define the creator process of a sp_group as owner */
 	struct task_struct *owner;
 	/* is_alive == false means it's being destroyed */

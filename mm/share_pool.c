@@ -373,6 +373,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 		atomic64_set(&spg->size, 0);
 		atomic64_set(&spg->alloc_nsize, 0);
 		atomic64_set(&spg->alloc_hsize, 0);
+		atomic64_set(&spg->alloc_size, 0);
 		spg->is_alive = true;
 		spg->hugepage_failures = 0;
 		spg->dvpp_multi_spaces = false;
@@ -939,6 +940,7 @@ found:
 				atomic64_add(size, &spg->alloc_hsize);
 			else
 				atomic64_add(size, &spg->alloc_nsize);
+			atomic64_add(size, &spg->alloc_size);
 		}
 		atomic_inc(&spg_stat.spa_total_num);
 		atomic64_add(size, &spg_stat.spa_total_size);
@@ -1023,6 +1025,7 @@ static void sp_free_area(struct sp_area *spa)
 				atomic64_sub(spa->real_size, &spa->spg->alloc_hsize);
 			else
 				atomic64_sub(spa->real_size, &spa->spg->alloc_nsize);
+			atomic64_sub(spa->real_size, &spa->spg->alloc_size);
 		}
 		atomic_dec(&spg_stat.spa_total_num);
 		atomic64_sub(spa->real_size, &spg_stat.spa_total_size);
@@ -2561,9 +2564,10 @@ static int idr_spg_stat_cb(int id, void *p, void *data)
 	struct sp_group *spg = p;
 	struct seq_file *seq = data;
 
-	seq_printf(seq, "Group %6d size: %ld KB, spa num: %d, normal alloc: %ld KB, "
-		   "huge alloc: %ld KB\n",
+	seq_printf(seq, "Group %6d size: %ld KB, spa num: %d, total alloc: %ld KB, "
+		   "normal alloc: %ld KB, huge alloc: %ld KB\n",
 		   id, byte2kb(atomic64_read(&spg->size)), atomic_read(&spg->spa_num),
+		   byte2kb(atomic64_read(&spg->alloc_size)),
 		   byte2kb(atomic64_read(&spg->alloc_nsize)),
 		   byte2kb(atomic64_read(&spg->alloc_hsize)));
 
@@ -2602,10 +2606,12 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	unsigned long anon, file, shmem, total_rss;
 	/*
 	 * non_sp_res: resident memory size excluding share pool memory
+	 * sp_res:     resident memory size of share pool, including normal
+	 *             page and hugepage memory
 	 * non_sp_shm: resident shared memory size size excluding share pool
 	 *             memory
 	 */
-	long sp_alloc_nsize, non_sp_res, non_sp_shm;
+	long sp_alloc_nsize, non_sp_res, sp_res, non_sp_shm;
 
 	mutex_lock(&sp_mutex);
 	if (!mmget_not_zero(mm))
@@ -2618,9 +2624,11 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	if (!spg_valid(spg)) {
 		spg_id = 0;
 		sp_alloc_nsize = 0;
+		sp_res = 0;
 	} else {
 		spg_id = spg->id;
 		sp_alloc_nsize = byte2kb(atomic64_read(&spg->alloc_nsize));
+		sp_res = byte2kb(atomic64_read(&spg->alloc_size));
 	}
 
 	anon = get_mm_counter(mm, MM_ANONPAGES);
@@ -2636,8 +2644,8 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 		seq_printf(seq, "%-8c ", '-');
 	else
 		seq_printf(seq, "%-8d ", spg_id);
-	seq_printf(seq, "%-9ld %-9ld %-10ld %-8ld %-7ld %-7ld %-10ld\n",
-		   byte2kb(stat->alloc_size), byte2kb(stat->k2u_size),
+	seq_printf(seq, "%-9ld %-9ld %-9ld %-10ld %-8ld %-7ld %-7ld %-10ld\n",
+		   byte2kb(stat->alloc_size), byte2kb(stat->k2u_size), sp_res,
 		   non_sp_res, page2kb(mm->total_vm), page2kb(total_rss),
 		   page2kb(shmem), non_sp_shm);
 	mmput(mm);
@@ -2653,9 +2661,9 @@ static int proc_stat_show(struct seq_file *seq, void *offset)
 	spg_overview_show(seq);
 	spa_overview_show(seq);
 	/* print the file header */
-	seq_printf(seq, "%-8s %-8s %-9s %-9s %-10s %-8s %-7s %-7s %-10s\n",
-		   "PID", "Group_ID", "SP_ALLOC", "SP_K2U", "Non-SP_RES",
-		   "VIRT", "RES", "Shm", "Non-SP_Shm");
+	seq_printf(seq, "%-8s %-8s %-9s %-9s %-9s %-10s %-8s %-7s %-7s %-10s\n",
+		   "PID", "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES",
+		   "Non-SP_RES", "VIRT", "RES", "Shm", "Non-SP_Shm");
 	/* print kthread buff_module_guard_work */
 	seq_printf(seq, "%-8s %-8s %-9ld %-9ld\n",
 		   "guard", "-", byte2kb(kthread_stat.alloc_size),
