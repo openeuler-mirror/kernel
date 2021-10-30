@@ -687,10 +687,11 @@ static inline bool check_aoscore_process(struct task_struct *tsk)
 }
 
 static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
-			     struct sp_area *spa, unsigned long *populate);
+			     struct sp_area *spa, unsigned long *populate,
+			     unsigned long prot);
 static void sp_munmap(struct mm_struct *mm, unsigned long addr, unsigned long size);
 static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
-					 struct mm_struct *mm);
+					 struct mm_struct *mm, unsigned long prot);
 
 static void free_sp_group_id(int spg_id)
 {
@@ -1004,7 +1005,7 @@ static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
 	return 0;
 }
 
-static int mm_add_group_finish(struct mm_struct *mm, struct sp_group *spg)
+static int mm_add_group_finish(struct mm_struct *mm, struct sp_group *spg, unsigned long prot)
 {
 	struct sp_group_master *master;
 	struct sp_group_node *spg_node;
@@ -1020,6 +1021,7 @@ static int mm_add_group_finish(struct mm_struct *mm, struct sp_group *spg)
 	INIT_LIST_HEAD(&spg_node->proc_node);
 	spg_node->spg = spg;
 	spg_node->master = master;
+	spg_node->prot = prot;
 
 	down_write(&spg->rw_lock);
 	if (spg->proc_num + 1 == MAX_PROC_PER_GROUP) {
@@ -1041,9 +1043,11 @@ static int mm_add_group_finish(struct mm_struct *mm, struct sp_group *spg)
 /**
  * sp_group_add_task() - Add a process to an share group (sp_group).
  * @pid: the pid of the task to be added.
+ * @prot: the prot of task for this spg.
  * @spg_id: the ID of the sp_group.
  *
- * A thread group can't be added to more than one sp_group.
+ * A process can't be added to more than one sp_group in single group mode
+ * and can in multiple group mode.
  *
  * Return: A postive group number for success, -errno on failure.
  *
@@ -1051,7 +1055,7 @@ static int mm_add_group_finish(struct mm_struct *mm, struct sp_group *spg)
  * The automatically allocated ID is between [SPG_ID_AUTO_MIN, SPG_ID_AUTO_MAX].
  * When negative, the return value is -errno.
  */
-int sp_group_add_task(int pid, int spg_id)
+int sp_group_add_task(int pid, unsigned long prot, int spg_id)
 {
 	struct task_struct *tsk;
 	struct mm_struct *mm;
@@ -1062,6 +1066,13 @@ int sp_group_add_task(int pid, int spg_id)
 	struct spg_proc_stat *stat;
 
 	check_interrupt_context();
+
+	/* only allow READ, READ | WRITE */
+	if (!((prot == PROT_READ)
+	      || (prot == (PROT_READ | PROT_WRITE)))) {
+		pr_err_ratelimited("share pool: prot is invalid 0x%lx\n", prot);
+		return -EINVAL;
+	}
 
 	/* mdc scene hack */
 	if (enable_mdc_default_group)
@@ -1210,7 +1221,7 @@ int sp_group_add_task(int pid, int spg_id)
 		spin_unlock(&sp_area_lock);
 
 		if (spa->type == SPA_TYPE_K2SPG && spa->kva) {
-			addr = sp_remap_kva_to_vma(spa->kva, spa, mm);
+			addr = sp_remap_kva_to_vma(spa->kva, spa, mm, prot);
 			if (IS_ERR_VALUE(addr))
 				pr_warn("share pool: task add group remap k2u failed, ret %ld\n", addr);
 
@@ -1228,7 +1239,7 @@ int sp_group_add_task(int pid, int spg_id)
 			break;
 		}
 
-		addr = sp_mmap(mm, file, spa, &populate);
+		addr = sp_mmap(mm, file, spa, &populate, prot);
 		if (IS_ERR_VALUE(addr)) {
 			sp_munmap_task_areas(mm, spg, &spa->link);
 			up_write(&mm->mmap_sem);
@@ -1272,7 +1283,7 @@ out_drop_group:
 		up_write(&sp_group_sem);
 		sp_group_drop(spg);
 	} else {
-		mm_add_group_finish(mm, spg);
+		mm_add_group_finish(mm, spg, prot);
 		up_write(&sp_group_sem);
 	}
 out_put_mm:
@@ -1769,11 +1780,11 @@ EXPORT_SYMBOL_GPL(sp_free);
 
 /* wrapper of __do_mmap() and the caller must hold down_write(&mm->mmap_sem). */
 static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
-			       struct sp_area *spa, unsigned long *populate)
+			     struct sp_area *spa, unsigned long *populate,
+			     unsigned long prot)
 {
 	unsigned long addr = spa->va_start;
 	unsigned long size = spa_size(spa);
-	unsigned long prot = PROT_READ | PROT_WRITE;
 	unsigned long flags = MAP_FIXED | MAP_SHARED | MAP_POPULATE |
 			      MAP_SHARE_POOL;
 	unsigned long vm_flags = VM_NORESERVE | VM_SHARE_POOL | VM_DONTCOPY;
@@ -1852,10 +1863,11 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	spg = __sp_find_spg(current->pid, SPG_ID_DEFAULT);
 	if (!spg) {  /* DVPP pass through scene: first call sp_alloc() */
 		/* mdc scene hack */
+		unsigned long prot = PROT_READ | PROT_WRITE;
 		if (enable_mdc_default_group)
-			ret = sp_group_add_task(current->tgid, spg_id);
+			ret = sp_group_add_task(current->tgid, prot, spg_id);
 		else
-			ret = sp_group_add_task(current->tgid,
+			ret = sp_group_add_task(current->tgid, prot,
 					SPG_ID_DVPP_PASS_THROUGH);
 		/*
 		 * The multi-thread contention may cause repeated joins to the group.
@@ -1917,7 +1929,7 @@ try_again:
 			continue;
 		}
 
-		mmap_addr = sp_mmap(mm, file, spa, &populate);
+		mmap_addr = sp_mmap(mm, file, spa, &populate, spg_node->prot);
 		if (IS_ERR_VALUE(mmap_addr)) {
 			up_write(&mm->mmap_sem);
 			p = (void *)mmap_addr;
@@ -1940,7 +1952,8 @@ try_again:
 			goto out;
 		}
 		/* clean PTE_RDONLY flags or trigger SMMU event */
-		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
+		if (spg_node->prot & PROT_WRITE)
+			vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
 		up_write(&mm->mmap_sem);
 
 		/*
@@ -2063,7 +2076,7 @@ static unsigned long __sp_remap_get_pfn(unsigned long kva)
 
 /* when called by k2u to group, always make sure rw_lock of spg is down */
 static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
-					 struct mm_struct *mm)
+					 struct mm_struct *mm, unsigned long prot)
 {
 	struct vm_area_struct *vma;
 	unsigned long ret_addr;
@@ -2078,7 +2091,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 		goto put_mm;
 	}
 
-	ret_addr = sp_mmap(mm, spa_file(spa), spa, &populate);
+	ret_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
 	if (IS_ERR_VALUE(ret_addr)) {
 		pr_debug("share pool: k2u mmap failed %lx\n", ret_addr);
 		goto put_mm;
@@ -2087,7 +2100,8 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 
 	vma = find_vma(mm, ret_addr);
 	BUG_ON(vma == NULL);
-	vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
+	if (prot & PROT_WRITE)
+		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
 
 	if (is_vm_hugetlb_page(vma)) {
 		ret = remap_vmalloc_hugepage_range(vma, (void *)kva, 0);
@@ -2138,8 +2152,9 @@ static void *sp_make_share_kva_to_task(unsigned long kva, struct sp_area *spa,
 				       struct mm_struct *mm)
 {
 	unsigned long ret_addr;
+	unsigned long prot = PROT_READ | PROT_WRITE;
 
-	ret_addr = sp_remap_kva_to_vma(kva, spa, mm);
+	ret_addr = sp_remap_kva_to_vma(kva, spa, mm, prot);
 	if (IS_ERR_VALUE(ret_addr)) {
 		pr_err("share pool: remap k2u to task failed, ret %ld\n", ret_addr);
 		return ERR_PTR(ret_addr);
@@ -2160,7 +2175,7 @@ static void *sp_make_share_kva_to_spg(unsigned long kva, struct sp_area *spa,
 
 	list_for_each_entry(spg_node, &spg->procs, proc_node) {
 		mm = spg_node->master->mm;
-		ret_addr = sp_remap_kva_to_vma(kva, spa, mm);
+		ret_addr = sp_remap_kva_to_vma(kva, spa, mm, spg_node->prot);
 		if (IS_ERR_VALUE(ret_addr)) {
 			pr_err("share pool: remap k2u to spg failed, ret %ld \n", ret_addr);
 			__sp_free(spg, spa->va_start, spa_size(spa), mm);

@@ -149,6 +149,7 @@ struct sp_group_node {
 	struct list_head group_node;
 	struct sp_group_master *master;
 	struct sp_group *spg;
+	unsigned long prot;
 };
 
 struct sp_walk_data {
@@ -202,7 +203,7 @@ static inline void sp_init_mm(struct mm_struct *mm)
 	mm->sp_group_master = NULL;
 }
 
-extern int sp_group_add_task(int pid, int spg_id);
+extern int sp_group_add_task(int pid, unsigned long prot, int spg_id);
 extern int sp_group_exit(struct mm_struct *mm);
 extern void sp_group_post_exit(struct mm_struct *mm);
 extern int sp_group_id_by_pid(int pid);
