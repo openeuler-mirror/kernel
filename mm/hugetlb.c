@@ -26,6 +26,7 @@
 #include <linux/swapops.h>
 #include <linux/jhash.h>
 #include <linux/mman.h>
+#include <linux/share_pool.h>
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
@@ -4010,6 +4011,12 @@ retry:
 		}
 
 		page = alloc_huge_page(vma, haddr, 0);
+		if (IS_ERR(page) && sp_check_vm_share_pool(vma->vm_flags)) {
+			page = alloc_huge_page_node(hstate_file(vma->vm_file),
+						    numa_mem_id());
+			if (!page)
+				page = ERR_PTR(-ENOMEM);
+		}
 		if (IS_ERR(page)) {
 			/*
 			 * Returning error will result in faulting task being
@@ -5358,6 +5365,41 @@ int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte_by_pa);
+
+int hugetlb_insert_hugepage(struct vm_area_struct *vma, unsigned long addr,
+			    struct page *hpage, pgprot_t prot)
+{
+	struct hstate *h = hstate_vma(vma);
+	int anon_rmap = 0;
+	spinlock_t *ptl;
+	pte_t *ptep;
+	pte_t pte;
+	struct mm_struct *mm = vma->vm_mm;
+
+	ptep = hugetlb_huge_pte_alloc(mm, addr, huge_page_size(h));
+	if (!ptep)
+		return -ENXIO;
+
+	get_page(hpage);
+
+	ptl = huge_pte_lock(h, mm, ptep);
+	if (anon_rmap) {
+		ClearPagePrivate(hpage);
+		hugepage_add_new_anon_rmap(hpage, vma, addr);
+	} else {
+		page_dup_rmap(hpage, true);
+	}
+
+	pte = make_huge_pte(vma, hpage, ((vma->vm_flags & VM_WRITE)
+			    && (vma->vm_flags & VM_SHARED)));
+	set_huge_pte_at(mm, addr, ptep, pte);
+
+	hugetlb_count_add(pages_per_huge_page(h), mm);
+
+	spin_unlock(ptl);
+
+	return 0;
+}
 
 #ifdef CONFIG_ASCEND_CHARGE_MIGRATE_HUGEPAGES
 

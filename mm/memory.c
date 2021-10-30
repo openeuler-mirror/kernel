@@ -70,6 +70,7 @@
 #include <linux/dax.h>
 #include <linux/oom.h>
 #include <linux/ktask.h>
+#include <linux/share_pool.h>
 
 #include <asm/io.h>
 #include <asm/mmu_context.h>
@@ -1540,7 +1541,11 @@ int vm_insert_page(struct vm_area_struct *vma, unsigned long addr,
 		BUG_ON(vma->vm_flags & VM_PFNMAP);
 		vma->vm_flags |= VM_MIXEDMAP;
 	}
-	return insert_page(vma, addr, page, vma->vm_page_prot);
+
+	if (sp_check_hugepage(page))
+		return hugetlb_insert_hugepage(vma, addr, page, vma->vm_page_prot);
+	else
+		return insert_page(vma, addr, page, vma->vm_page_prot);
 }
 EXPORT_SYMBOL(vm_insert_page);
 

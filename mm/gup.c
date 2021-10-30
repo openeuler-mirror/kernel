@@ -13,6 +13,7 @@
 #include <linux/sched/signal.h>
 #include <linux/rwsem.h>
 #include <linux/hugetlb.h>
+#include <linux/share_pool.h>
 
 #include <asm/mmu_context.h>
 #include <asm/pgtable.h>
@@ -1228,6 +1229,7 @@ long populate_vma_page_range(struct vm_area_struct *vma,
 	struct mm_struct *mm = vma->vm_mm;
 	unsigned long nr_pages = (end - start) / PAGE_SIZE;
 	int gup_flags;
+	struct task_struct *tsk;
 
 	VM_BUG_ON(start & ~PAGE_MASK);
 	VM_BUG_ON(end   & ~PAGE_MASK);
@@ -1253,24 +1255,22 @@ long populate_vma_page_range(struct vm_area_struct *vma,
 	if (vma->vm_flags & (VM_READ | VM_WRITE | VM_EXEC))
 		gup_flags |= FOLL_FORCE;
 
+	tsk = sp_get_task(mm);
 	/*
 	 * We made sure addr is within a VMA, so the following will
 	 * not result in a stack expansion that recurses back here.
 	 */
-	return __get_user_pages(current, mm, start, nr_pages, gup_flags,
+	return __get_user_pages(tsk, mm, start, nr_pages, gup_flags,
 				NULL, NULL, nonblocking);
 }
 
 /*
- * __mm_populate - populate and/or mlock pages within a range of address space.
- *
- * This is used to implement mlock() and the MAP_POPULATE / MAP_LOCKED mmap
- * flags. VMAs must be already marked with the desired vm_flags, and
- * mmap_sem must not be held.
+ * do_mm_populate - populate and/or mlock pages within a range of
+ * address space for the specified mm_struct.
  */
-int __mm_populate(unsigned long start, unsigned long len, int ignore_errors)
+int do_mm_populate(struct mm_struct *mm, unsigned long start, unsigned long len,
+		   int ignore_errors)
 {
-	struct mm_struct *mm = current->mm;
 	unsigned long end, nstart, nend;
 	struct vm_area_struct *vma = NULL;
 	int locked = 0;
@@ -1319,6 +1319,18 @@ int __mm_populate(unsigned long start, unsigned long len, int ignore_errors)
 	if (locked)
 		up_read(&mm->mmap_sem);
 	return ret;	/* 0 or negative error code */
+}
+
+/*
+ * __mm_populate - populate and/or mlock pages within a range of address space.
+ *
+ * This is used to implement mlock() and the MAP_POPULATE / MAP_LOCKED mmap
+ * flags. VMAs must be already marked with the desired vm_flags, and
+ * mmap_sem must not be held.
+ */
+int __mm_populate(unsigned long start, unsigned long len, int ignore_errors)
+{
+	return do_mm_populate(current->mm, start, len, ignore_errors);
 }
 
 /**
