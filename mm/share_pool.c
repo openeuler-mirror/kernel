@@ -102,6 +102,33 @@ static DECLARE_RWSEM(sp_proc_stat_sem);
 /* for kthread buff_module_guard_work */
 static struct sp_proc_stat kthread_stat;
 
+/* The caller must hold sp_group_sem */
+static struct sp_group_master *sp_init_group_master_locked(
+	struct mm_struct *mm, bool *exist)
+{
+	struct sp_group_master *master = mm->sp_group_master;
+
+	if (master) {
+		*exist = true;
+		return master;
+	}
+
+	master = kmalloc(sizeof(struct sp_group_master), GFP_KERNEL);
+	if (master == NULL) {
+		pr_err_ratelimited("share pool: no memory for spg master\n");
+		return ERR_PTR(-ENOMEM);
+	}
+
+	INIT_LIST_HEAD(&master->node_list);
+	master->count = 0;
+	master->sp_stat_id = 0;
+	master->mm = mm;
+	mm->sp_group_master = master;
+
+	*exist = false;
+	return master;
+}
+
 /* The caller must hold sp_stat_sem */
 static struct sp_proc_stat *sp_get_proc_stat_locked(int tgid)
 {
@@ -127,18 +154,25 @@ static struct sp_proc_stat *sp_get_proc_stat_ref_locked(int tgid)
 }
 
 /*
- * The caller must ensure no concurrency problem
- * for task_struct and mm_struct.
+ * The caller must
+ * 1. ensure no concurrency problem for task_struct and mm_struct.
+ * 2. hold sp_group_sem for sp_group_master (pay attention to ABBA deadlock)
  */
 static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 					      struct mm_struct *mm)
 {
+	struct sp_group_master *master;
+	bool exist;
 	struct sp_proc_stat *stat;
 	int id, tgid = tsk->tgid;
 	int ret;
 
+	master = sp_init_group_master_locked(mm, &exist);
+	if (IS_ERR(master))
+		return (struct sp_proc_stat *)master;
+
 	down_write(&sp_proc_stat_sem);
-	id = mm->sp_group_master->sp_stat_id;
+	id = master->sp_stat_id;
 	if (id) {
 		/* other threads in the same process may have initialized it */
 		stat = sp_get_proc_stat_locked(tgid);
@@ -175,7 +209,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 		return ERR_PTR(ret);
 	}
 
-	mm->sp_group_master->sp_stat_id = ret;
+	master->sp_stat_id = ret;
 	up_write(&sp_proc_stat_sem);
 	return stat;
 }
@@ -631,6 +665,7 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct sp_group *spg, str
 static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
 {
 	struct sp_group_master *master = mm->sp_group_master;
+	bool exist = false;
 	struct sp_group_node *spg_node;
 
 	if (share_pool_group_mode == SINGLE_GROUP_MODE && master &&
@@ -639,32 +674,23 @@ static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
 		return -EEXIST;
 	}
 
-	if (!master) {
-		master = kzalloc(sizeof(struct sp_group_master), GFP_KERNEL);
-		if (master == NULL) {
-			pr_err_ratelimited("share pool: no memory for spg master\n");
-			return -ENOMEM;
-		}
-	} else {
-		list_for_each_entry(spg_node, &master->node_list, group_node) {
-			if (spg_node->spg == spg) {
-				pr_err("share pool: task is already in target group\n");
-				return -EEXIST;
-			}
+	master = sp_init_group_master_locked(mm, &exist);
+	if (IS_ERR(master))
+		return PTR_ERR(master);
+
+	if (!exist)
+		return 0;
+
+	list_for_each_entry(spg_node, &master->node_list, group_node) {
+		if (spg_node->spg == spg) {
+			pr_err("share pool: task is already in target group\n");
+			return -EEXIST;
 		}
 	}
 
-	if (!mm->sp_group_master) {
-		INIT_LIST_HEAD(&master->node_list);
-		master->count = 0;
-		master->mm = mm;
-		master->sp_stat_id = 0;
-		mm->sp_group_master = master;
-	} else {
-		if (master->count + 1 == MAX_GROUP_FOR_TASK) {
-			pr_err("share pool: task reaches max group num\n");
-			return -ENOSPC;
-		}
+	if (master->count + 1 == MAX_GROUP_FOR_TASK) {
+		pr_err("share pool: task reaches max group num\n");
+		return -ENOSPC;
 	}
 
 	return 0;
