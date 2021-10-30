@@ -51,7 +51,6 @@
 #define AC_SINGLE_OWNER		1
 
 #define spg_valid(spg)		((spg) && ((spg)->is_alive == true))
-#define ESPGMMEXIT		4000
 
 #define byte2kb(size)		((size) >> 10)
 #define byte2mb(size)		((size) >> 20)
@@ -1617,16 +1616,11 @@ static void *sp_make_share_kva_to_spg(unsigned long kva, struct sp_area *spa,
 
 	list_for_each_entry_safe(mm, tmp, &spg->procs, sp_node) {
 		ret_addr = sp_remap_kva_to_vma(kva, spa, mm);
-		if (IS_ERR_VALUE(ret_addr) && (ret_addr != -ESPGMMEXIT)) {
+		if (IS_ERR_VALUE(ret_addr)) {
 			pr_err("share pool: remap k2u to spg failed, ret %ld \n", ret_addr);
 			__sp_free(spg, spa->va_start, spa_size(spa), mm);
 			p = ERR_PTR(ret_addr);
 			goto out;
-		}
-
-		if (ret_addr == -ESPGMMEXIT) {
-			pr_info("share pool: remap k2u, ret is -ESPGMMEXIT\n");
-			continue;
 		}
 
 		uva = ret_addr;
