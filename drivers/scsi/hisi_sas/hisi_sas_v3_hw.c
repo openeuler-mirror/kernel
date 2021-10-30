@@ -3332,6 +3332,7 @@ static const struct hisi_sas_hw hisi_sas_v3_hw = {
 	.snapshot_restore = debugfs_snapshot_restore_v3_hw,
 	.set_bist = debugfs_set_bist_v3_hw,
 	.get_managed_irq_aff = get_managed_irq_aff_v3_hw,
+	.debugfs_work_handler = hisi_sas_debugfs_work_handler,
 };
 
 static struct Scsi_Host *

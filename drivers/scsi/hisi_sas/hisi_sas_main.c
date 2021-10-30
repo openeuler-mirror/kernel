@@ -1596,15 +1596,15 @@ static int hisi_sas_controller_reset(struct hisi_hba *hisi_hba)
 	struct Scsi_Host *shost = hisi_hba->shost;
 	int rc;
 
-	if (hisi_sas_debugfs_enable && hisi_hba->debugfs_itct &&
-	    !hisi_hba->debugfs_dump_dentry)
-		queue_work(hisi_hba->wq, &hisi_hba->debugfs_work);
-
 	if (!hisi_hba->hw->soft_reset)
 		return -EINVAL;
 
 	if (test_and_set_bit(HISI_SAS_RESET_BIT, &hisi_hba->flags))
 		return -EPERM;
+
+	if (hisi_sas_debugfs_enable && hisi_hba->debugfs_itct &&
+	    !hisi_hba->debugfs_dump_dentry)
+		hisi_hba->hw->debugfs_work_handler(&hisi_hba->debugfs_work);
 
 	dev_info(dev, "controller resetting...\n");
 	hisi_sas_controller_reset_prepare(hisi_hba);

@@ -322,6 +322,7 @@ struct hisi_sas_hw {
 	void (*snapshot_restore)(struct hisi_hba *hisi_hba);
 	const struct cpumask *(*get_managed_irq_aff)(struct hisi_hba
 			*hisi_hba, int queue);
+	void (*debugfs_work_handler)(struct work_struct *work);
 	int max_command_entries;
 	int complete_hdr_size;
 	struct scsi_host_template *sht;
