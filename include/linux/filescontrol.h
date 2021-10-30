@@ -19,6 +19,7 @@
 #define _LINUX_FILESCONTROL_H
 
 #include <linux/fdtable.h>
+#include <linux/cgroup.h>
 
 #ifdef CONFIG_CGROUP_FILES
 
@@ -29,6 +30,11 @@ extern struct files_struct init_files;
 
 void files_cgroup_assign(struct files_struct *files);
 void files_cgroup_remove(struct files_struct *files);
+
+static inline bool files_cgroup_enabled(void)
+{
+	return cgroup_subsys_enabled(files_cgrp_subsys);
+}
 
 #endif /* CONFIG_CGROUP_FILES */
 #endif /* _LINUX_FILESCONTROL_H */
