@@ -322,7 +322,6 @@ static void free_sp_group(struct sp_group *spg)
 	kfree(spg);
 }
 
-/* The caller must hold sp_mutex. */
 static struct sp_group *__sp_find_spg(int pid, int spg_id)
 {
 	struct sp_group *spg;
@@ -382,7 +381,6 @@ int sp_group_id_by_pid(int pid)
 }
 EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
 
-/* The caller must hold sp_mutex. */
 static struct sp_group *find_or_alloc_sp_group(int spg_id)
 {
 	struct sp_group *spg;
@@ -470,7 +468,7 @@ out_kfree:
 
 static void __sp_area_drop_locked(struct sp_area *spa);
 
-/* The caller must hold sp_mutex. */
+/* The caller must down_write(&mm->mmap_sem) */
 static void sp_munmap_task_areas(struct mm_struct *mm, struct list_head *stop)
 {
 	struct sp_area *spa, *prev = NULL;
@@ -502,7 +500,6 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct list_head *stop)
 	spin_unlock(&sp_area_lock);
 }
 
-/* The caller must hold sp_mutex. */
 static void sp_group_drop(struct sp_group *spg)
 {
 	if (atomic_dec_and_test(&spg->use_count))
@@ -817,8 +814,6 @@ static unsigned long cached_vstart;  /* affected by SP_DVPP and sp_config_dvpp_r
 /*
  * Allocate a region of VA from the share pool.
  * @size - the size of VA to allocate
- *
- * The caller must hold must sp_mutex when input parameter spg is not NULL
  *
  * Return NULL if fail.
  */
@@ -1135,7 +1130,12 @@ static void sp_try_to_compact(void)
 	sp_add_work_compact();
 }
 
-/* The caller must hold sp_mutex. */
+/*
+ * The function calls of do_munmap() won't change any non-atomic member
+ * of struct sp_group. Please review the following chain:
+ * do_munmap -> remove_vma_list -> remove_vma -> sp_area_drop ->
+ * __sp_area_drop_locked -> sp_free_area
+ */
 static void sp_munmap(struct mm_struct *mm, unsigned long addr,
 			   unsigned long size)
 {
@@ -1152,7 +1152,6 @@ static void sp_munmap(struct mm_struct *mm, unsigned long addr,
 	up_write(&mm->mmap_sem);
 }
 
-/* The caller must hold sp_mutex. */
 static void __sp_free(struct sp_group *spg, unsigned long addr,
 		      unsigned long size, struct mm_struct *stop)
 {
@@ -2657,7 +2656,7 @@ void spa_overview_show(struct seq_file *seq)
 	}
 }
 
-/* the caller must hold sp_mutex */
+/* the caller must hold sp_group_sem */
 static int idr_spg_stat_cb(int id, void *p, void *data)
 {
 	struct sp_group *spg = p;
