@@ -635,7 +635,7 @@ int sp_group_add_task(int pid, int spg_id)
 				if (printk_ratelimit()) {
 					pr_warn("share pool: task add group failed when mm populate "
 						"failed (potential no enough memory): %d "
-						"spa flag is %d\n", ret, spa->type);
+						"spa type is %d\n", ret, spa->type);
 				}
 				sp_munmap_task_areas(mm, spa->link.next);
 				spin_lock(&sp_area_lock);
@@ -1516,8 +1516,10 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	unsigned long addr, buf, offset;
 
 	if (spg_valid(spa->spg)) {
+		/* k2u to group */
 		file = spa_file(spa);
 	} else {
+		/* k2u to task */
 		if (spa->is_hugepage) {
 			file = hugetlb_file_setup(HUGETLB_ANON_FILE, spa_size(spa), VM_NORESERVE,
 						  &user, HUGETLB_ANONHUGE_INODE, hsize_log);
@@ -1550,7 +1552,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 		if (ret) {
 			do_munmap(mm, ret_addr, spa_size(spa), NULL);
 			pr_err("share pool: remap vmalloc hugepage failed, "
-			       "ret %d, kva is %lx\n", ret, kva);
+			       "ret %d, kva is %pK\n", ret, (void *)kva);
 			ret_addr = ret;
 			goto put_mm;
 		}
@@ -1721,7 +1723,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	} else if (ret == 0) {
 		/* do nothing */
 	} else {
-		pr_err("it is not vmalloc address\n");
+		pr_err("share pool: k2u kva not vmalloc address\n");
 		return ERR_PTR(ret);
 	}
 	/* aligned down kva is convenient for caller to start with any valid kva */
@@ -1749,7 +1751,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		}
 
 		if (!vmalloc_area_set_flag(spa, kva_aligned, VM_SHAREPOOL)) {
-			pr_err("%s: the kva %ld is not valid\n", __func__, kva_aligned);
+			pr_err("share pool: %s: the kva %pK is not valid\n", __func__, (void *)kva_aligned);
 			goto out;
 		}
 
@@ -1778,7 +1780,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		}
 
 		if (!vmalloc_area_set_flag(spa, kva_aligned, VM_SHAREPOOL)) {
-			pr_err("%s: the kva %ld is not valid\n", __func__, kva_aligned);
+			pr_err("share pool: %s: the kva %pK is not valid\n", __func__, (void *)kva_aligned);
 			goto out;
 		}
 
@@ -1797,8 +1799,8 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	} else {
 		/* associate vma and spa */
 		if (!vmalloc_area_clr_flag(spa, kva_aligned, VM_SHAREPOOL))
-			pr_warn("share pool: %s: the kva %ld is not valid \n",
-				__func__, kva_aligned);
+			pr_warn("share pool: %s: the kva %pK is not valid\n",
+				__func__, (void *)kva_aligned);
 	}
 
 out:
