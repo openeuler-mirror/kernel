@@ -3,6 +3,7 @@
 #include <linux/highmem.h>
 #include <linux/sched.h>
 #include <linux/hugetlb.h>
+#include <linux/share_pool.h>
 
 static int walk_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 			  struct mm_walk *walk)
@@ -178,7 +179,7 @@ static int walk_hugetlb_range(unsigned long addr, unsigned long end,
 			      struct mm_walk *walk)
 {
 	struct vm_area_struct *vma = walk->vma;
-	struct hstate *h = hstate_vma(vma);
+	struct hstate *h = is_vm_huge_special(vma) ? &default_hstate : hstate_vma(vma);
 	unsigned long next;
 	unsigned long hmask = huge_page_mask(h);
 	unsigned long sz = huge_page_size(h);
@@ -247,7 +248,7 @@ static int __walk_page_range(unsigned long start, unsigned long end,
 	int err = 0;
 	struct vm_area_struct *vma = walk->vma;
 
-	if (vma && is_vm_hugetlb_page(vma)) {
+	if (vma && ((is_vm_hugetlb_page(vma)) || is_vm_huge_special(vma))) {
 		if (walk->hugetlb_entry)
 			err = walk_hugetlb_range(start, end, walk);
 	} else

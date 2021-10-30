@@ -23,6 +23,7 @@
 #include <linux/pid_namespace.h>
 #include <linux/parser.h>
 #include <linux/cred.h>
+#include <linux/share_pool.h>
 
 #include "internal.h"
 
@@ -140,6 +141,7 @@ void __init proc_root_init(void)
 	proc_tty_init();
 	proc_mkdir("bus", NULL);
 	proc_sys_init();
+	proc_sharepool_init();
 
 	register_filesystem(&proc_fs_type);
 }
