@@ -1809,32 +1809,25 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 	return addr;
 }
 
-/**
- * sp_alloc() - Allocate shared memory for all the processes in a sp_group.
- * @size: the size of memory to allocate.
- * @sp_flags: how to allocate the memory.
- * @spg_id: the share group that the memory is allocated to.
- *
- * Use spg_id of current thread if spg_id == SPG_ID_DEFAULT.
- *
- * Return:
- * * if succeed, return the starting kernel address of the shared memory.
- * * if fail, return the pointer of -errno.
- */
-void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
-{
-	struct sp_group *spg, *spg_tmp;
-	struct sp_area *spa = NULL;
-	unsigned long sp_addr;
-	unsigned long mmap_addr;
-	void *p;  /* return value */
-	struct mm_struct *mm;
+#define ALLOC_NORMAL	1
+#define ALLOC_RETRY	2
+#define ALLOC_NOMEM	3
+
+struct sp_alloc_context {
+	struct sp_group *spg;
 	struct file *file;
+	unsigned long size;
 	unsigned long size_aligned;
-	int ret = 0;
-	unsigned long mode, offset;
-	unsigned int noreclaim_flag;
-	struct sp_group_node *spg_node;
+	unsigned long sp_flags;
+	unsigned long populate;
+	int state;
+};
+
+static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
+	int spg_id, struct sp_alloc_context *ac)
+{
+	int ret;
+	struct sp_group *spg, *spg_tmp;
 
 	check_interrupt_context();
 
@@ -1842,19 +1835,19 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	if (enable_mdc_default_group)
 		spg_id = mdc_default_group_id;
 
-	if (unlikely(!size)) {
+	if (unlikely(!size || (size >> PAGE_SHIFT) > totalram_pages)) {
 		pr_err_ratelimited("allocation failed, invalid size %lu\n", size);
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 	}
 
 	if (spg_id != SPG_ID_DEFAULT && spg_id < SPG_ID_MIN) {
 		pr_err_ratelimited("allocation failed, invalid group id %d\n", spg_id);
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 	}
 
 	if (sp_flags & (~SP_FLAG_MASK)) {
 		pr_err_ratelimited("allocation failed, invalid flag %lx\n", sp_flags);
-		return ERR_PTR(-EINVAL);
+		return -EINVAL;
 	}
 
 	if (sp_flags & SP_HUGEPAGE_ONLY)
@@ -1874,8 +1867,8 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 		 * The judgment is added to prevent exit in this case.
 		 */
 		if (ret < 0 && (ret != -EEXIST)) {
-			pr_err_ratelimited("share pool: allocation failed, add group error %d in DVPP pass through\n", ret);
-			return ERR_PTR(ret);
+			pr_err_ratelimited("allocation failed, add group error %d in DVPP pass through\n", ret);
+			return ret;
 		}
 		spg = get_first_group(current->mm);
 	} else {  /* other scenes */
@@ -1885,33 +1878,75 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 				sp_group_drop(spg);
 				if (spg_tmp)
 					sp_group_drop(spg_tmp);
-				return ERR_PTR(-ENODEV);
+				return -ENODEV;
 			}
 			sp_group_drop(spg_tmp);
 		}
 	}
 
+	/* up_read will be at the end of sp_alloc */
 	down_read(&spg->rw_lock);
 	if (!spg_valid(spg)) {
 		up_read(&spg->rw_lock);
 		sp_group_drop(spg);
 		pr_err_ratelimited("sp alloc failed, spg is dead\n");
-		return ERR_PTR(-ENODEV);
+		return -ENODEV;
 	}
 
 	if (sp_flags & SP_HUGEPAGE) {
-		file = spg->file_hugetlb;
-		size_aligned = ALIGN(size, PMD_SIZE);
+		ac->file = spg->file_hugetlb;
+		ac->size_aligned = ALIGN(size, PMD_SIZE);
 	} else {
-		file = spg->file;
-		size_aligned = ALIGN(size, PAGE_SIZE);
+		ac->file = spg->file;
+		ac->size_aligned = ALIGN(size, PAGE_SIZE);
 	}
+
+	ac->spg = spg;
+	ac->size = size;
+	ac->sp_flags = sp_flags;
+	ac->state = ALLOC_NORMAL;
+	return 0;
+}
+
+/**
+ * sp_alloc() - Allocate shared memory for all the processes in a sp_group.
+ * @size: the size of memory to allocate.
+ * @sp_flags: how to allocate the memory.
+ * @spg_id: the share group that the memory is allocated to.
+ *
+ * Use pass through allocation if spg_id == SPG_ID_DEFAULT in multi-group mode.
+ *
+ * Return:
+ * * if succeed, return the starting kernel address of the shared memory.
+ * * if fail, return the pointer of -errno.
+ */
+void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
+{
+	struct sp_group *spg;
+	struct sp_area *spa = NULL;
+	unsigned long sp_addr;
+	unsigned long mmap_addr;
+	void *p;  /* return value */
+	struct mm_struct *mm;
+	struct file *file;
+	unsigned long size_aligned;
+	int ret = 0;
+	unsigned long mode, offset;
+	unsigned int noreclaim_flag;
+	struct sp_group_node *spg_node;
+	struct sp_alloc_context ac;
+
+	ret = sp_alloc_prepare(size, sp_flags, spg_id, &ac);
+	if (ret)
+		return ERR_PTR(ret);
+
 try_again:
-	spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_ALLOC, current->tgid);
+	spa = sp_alloc_area(ac.size_aligned, ac.sp_flags, ac.spg,
+			    SPA_TYPE_ALLOC, current->tgid);
 	if (IS_ERR(spa)) {
 		pr_err_ratelimited("alloc spa failed in allocation"
 			"(potential no enough virtual memory when -75): %ld\n", PTR_ERR(spa));
-		p = spa;
+		ret = PTR_ERR(spa);
 		goto out;
 	}
 	sp_addr = spa->va_start;
@@ -1990,7 +2025,6 @@ try_again:
 			else
 				pr_warn_ratelimited("allocation failed due to mm populate failed"
 						    "(potential no enough memory when -12): %d\n", ret);
-			p = ERR_PTR(ret);
 
 			mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
 			offset = addr_to_offset(sp_addr, spa);
@@ -2018,7 +2052,7 @@ try_again:
 out:
 	up_read(&spg->rw_lock);
 
-	if (!IS_ERR(p))
+	if (!ret)
 		sp_update_process_stat(current, true, spa);
 
 	/* this will free spa if mmap failed */
@@ -2029,7 +2063,10 @@ out:
 
 	sp_dump_stack();
 	sp_try_to_compact();
-	return p;
+	if (ret)
+		return ERR_PTR(ret);
+	else
+		return (void *)(spa->va_start);
 }
 EXPORT_SYMBOL_GPL(sp_alloc);
 
