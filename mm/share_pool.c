@@ -729,6 +729,24 @@ static void sp_group_drop(struct sp_group *spg)
 		free_sp_group(spg);
 }
 
+/* use with put_task_struct(task) */
+static int get_task(int pid, struct task_struct **task)
+{
+	struct task_struct *tsk;
+
+	rcu_read_lock();
+	tsk = find_task_by_vpid(pid);
+	if (!tsk || (tsk->flags & PF_EXITING)) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+	get_task_struct(tsk);
+	rcu_read_unlock();
+
+	*task = tsk;
+	return 0;
+}
+
 static struct sp_group *get_first_group(struct mm_struct *mm)
 {
 	struct sp_group *spg = NULL;
@@ -757,13 +775,7 @@ static struct sp_group *__sp_find_spg_locked(int pid, int spg_id)
 	int ret = 0;
 
 	if (spg_id == SPG_ID_DEFAULT) {
-		rcu_read_lock();
-		tsk = find_task_by_vpid(pid);
-		if (!tsk || (tsk->flags & PF_EXITING))
-			ret = -ESRCH;
-		else
-			get_task_struct(tsk);
-		rcu_read_unlock();
+		ret = get_task(pid, &tsk);
 		if (ret)
 			return NULL;
 
@@ -1121,15 +1133,7 @@ int sp_group_add_task(int pid, unsigned long prot, int spg_id)
 
 	down_write(&sp_group_sem);
 
-	rcu_read_lock();
-
-	tsk = find_task_by_vpid(pid);
-	if (!tsk || (tsk->flags & PF_EXITING))
-		ret = -ESRCH;
-	else
-		get_task_struct(tsk);
-
-	rcu_read_unlock();
+	ret = get_task(pid, &tsk);
 	if (ret) {
 		up_write(&sp_group_sem);
 		free_new_spg_id(id_newly_generated, spg_id);
