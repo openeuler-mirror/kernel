@@ -2393,6 +2393,8 @@ static int __init enable_share_k2u_to_group(char *s)
 }
 __setup("enable_sp_share_k2u_spg", enable_share_k2u_to_group);
 
+/*** Statistical and maintenance functions ***/
+
 int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
 {
@@ -2415,35 +2417,6 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	}
 	mutex_unlock(&sp_mutex);
 
-	return 0;
-}
-
-static int idr_proc_stat_cb(int id, void *p, void *data)
-{
-	struct sp_group *spg;
-	struct sp_proc_stat *stat = p;
-	struct seq_file *seq = data;
-
-	mutex_lock(&sp_mutex);
-	spg = __sp_find_spg(id, SPG_ID_DEFAULT);
-	if (spg_valid(spg)) {
-		seq_printf(seq, "%-12d %-10d %-18ld\n",
-			   id, spg->id, byte2kb(stat->amount));
-	}
-	mutex_unlock(&sp_mutex);
-
-	return 0;
-}
-
-static int proc_stat_show(struct seq_file *seq, void *offset)
-{
-	/* print the file header */
-	seq_printf(seq, "%-12s %-10s %-18s\n",
-		   "Process ID", "Group ID", "Aligned Apply(KB)");
-	/* print kthread buff_module_guard_work */
-	seq_printf(seq, "%-12s %-10s %-18ld\n",
-		   "guard", "-", byte2kb(kthread_stat.amount));
-	idr_for_each(&sp_stat_idr, idr_proc_stat_cb, seq);
 	return 0;
 }
 
@@ -2565,6 +2538,49 @@ static int spa_stat_show(struct seq_file *seq, void *offset)
 	return 0;
 }
 
+static int idr_proc_stat_cb(int id, void *p, void *data)
+{
+	struct sp_group *spg;
+	struct sp_proc_stat *stat = p;
+	struct seq_file *seq = data;
+
+	mutex_lock(&sp_mutex);
+	spg = __sp_find_spg(id, SPG_ID_DEFAULT);
+	if (spg_valid(spg)) {
+		seq_printf(seq, "%-12d %-10d %-18ld\n",
+			   id, spg->id, byte2kb(stat->amount));
+	}
+	mutex_unlock(&sp_mutex);
+
+	return 0;
+}
+
+static int proc_stat_show(struct seq_file *seq, void *offset)
+{
+	/* print the file header */
+	seq_printf(seq, "%-12s %-10s %-18s\n",
+		   "Process ID", "Group ID", "Aligned Apply(KB)");
+	/* print kthread buff_module_guard_work */
+	seq_printf(seq, "%-12s %-10s %-18ld\n",
+		   "guard", "-", byte2kb(kthread_stat.amount));
+	idr_for_each(&sp_stat_idr, idr_proc_stat_cb, seq);
+	return 0;
+}
+
+/*
+ * Called by proc_root_init() to initialize the /proc/sharepool subtree
+ */
+void __init proc_sharepool_init(void)
+{
+	if (!proc_mkdir("sharepool", NULL))
+		return;
+
+	proc_create_single_data("sharepool/proc_stat", 0400, NULL, proc_stat_show, NULL);
+	proc_create_single_data("sharepool/spa_stat", 0400, NULL, spa_stat_show, NULL);
+}
+
+/*** End of tatistical and maintenance functions ***/
+
 vm_fault_t sharepool_no_page(struct mm_struct *mm,
 			struct vm_area_struct *vma,
 			struct address_space *mapping, pgoff_t idx,
@@ -2652,18 +2668,6 @@ backout:
 	goto out;
 }
 EXPORT_SYMBOL(sharepool_no_page);
-
-/*
- * Called by proc_root_init() to initialize the /proc/sharepool subtree
- */
-void __init proc_sharepool_init(void)
-{
-	if (!proc_mkdir("sharepool", NULL))
-		return;
-
-	proc_create_single_data("sharepool/proc_stat", S_IRUSR, NULL, proc_stat_show, NULL);
-	proc_create_single_data("sharepool/spa_stat", S_IRUSR, NULL, spa_stat_show, NULL);
-}
 
 struct page *sp_alloc_pages(struct vm_struct *area, gfp_t mask,
 					  unsigned int page_order, int node)
