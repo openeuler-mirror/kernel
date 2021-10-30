@@ -43,6 +43,7 @@
 #include <linux/seq_file.h>
 #include <linux/rmap.h>
 #include <linux/hugetlb.h>
+#include <linux/compaction.h>
 
 /* access control mode macros  */
 #define AC_NONE			0
@@ -1036,6 +1037,45 @@ void sp_area_drop(struct vm_area_struct *vma)
 	spin_unlock(&sp_area_lock);
 }
 
+static unsigned long last_jiffies;
+static void sp_compact_nodes(struct work_struct *work)
+{
+	sysctl_compaction_handler(NULL, 1, NULL, NULL, NULL);
+
+	kfree(work);
+}
+
+static void sp_add_work_compact(void)
+{
+	struct work_struct *compact_work;
+
+	if (!time_after(jiffies, last_jiffies + 10 * HZ))
+		return;
+
+	compact_work = kzalloc(sizeof(*compact_work), GFP_KERNEL);
+	if (!compact_work)
+		return;
+
+	last_jiffies = jiffies;
+	INIT_WORK(compact_work, sp_compact_nodes);
+	schedule_work(compact_work);
+}
+
+static void sp_try_to_compact(void)
+{
+	unsigned long totalram;
+	unsigned long freeram;
+
+	totalram = totalram_pages;
+	freeram = global_zone_page_state(NR_FREE_PAGES);
+
+	/* free < total / 3 */
+	if ((freeram + (freeram << 1)) > totalram)
+		return;
+
+	sp_add_work_compact();
+}
+
 /* The caller must hold sp_mutex. */
 static void sp_munmap(struct mm_struct *mm, unsigned long addr,
 			   unsigned long size)
@@ -1143,6 +1183,7 @@ drop_spa:
 out:
 	mutex_unlock(&sp_mutex);
 
+	sp_try_to_compact();
 	return ret;
 }
 EXPORT_SYMBOL_GPL(sp_free);
@@ -1194,6 +1235,7 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	int ret = 0;
 	struct mm_struct *tmp;
 	unsigned long mode, offset;
+	unsigned int noreclaim_flag;
 
 	/* mdc scene hack */
 	if (enable_mdc_default_group)
@@ -1306,6 +1348,21 @@ try_again:
 		/* clean PTE_RDONLY flags or trigger SMMU event */
 		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
 		up_write(&mm->mmap_sem);
+
+		/*
+		 * The direct reclaim and compact may take a long
+		 * time. As a result, sp mutex will be hold for too
+		 * long time to casue the hung task problem. In this
+		 * case, set the PF_MEMALLOC flag to prevent the
+		 * direct reclaim and compact from being executed.
+		 * Since direct reclaim and compact are not performed
+		 * when the fragmentation is severe or the memory is
+		 * insufficient, 2MB continuous physical pages fail
+		 * to be allocated. This situation is allowed.
+		 */
+		if (spa->is_hugepage)
+			noreclaim_flag = memalloc_noreclaim_save();
+
 		/*
 		 * We are not ignoring errors, so if we fail to allocate
 		 * physical memory we just return failure, so we won't encounter
@@ -1313,6 +1370,11 @@ try_again:
 		 * depends on this feature (and MAP_LOCKED) to work correctly.
 		 */
 		ret = do_mm_populate(mm, sp_addr, populate, 0);
+		if (spa->is_hugepage) {
+			memalloc_noreclaim_restore(noreclaim_flag);
+			if (ret)
+				sp_add_work_compact();
+		}
 		if (ret) {
 			__sp_free(spg, sp_addr, size_aligned,
 					list_next_entry(mm, sp_node));
@@ -1363,6 +1425,7 @@ out:
 		__sp_area_drop(spa);
 
 	sp_dump_stack();
+	sp_try_to_compact();
 	return p;
 }
 EXPORT_SYMBOL_GPL(sp_alloc);
