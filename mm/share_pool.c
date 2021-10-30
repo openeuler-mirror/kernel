@@ -2603,6 +2603,12 @@ bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 }
 EXPORT_SYMBOL_GPL(sp_config_dvpp_range);
 
+static bool is_sp_normal_addr(unsigned long addr)
+{
+	return addr >= MMAP_SHARE_POOL_START &&
+		addr < MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE;
+}
+
 /**
  * is_sharepool_addr() - Check if a user memory address belongs to share pool.
  * @addr: the userspace address to be checked.
@@ -2615,13 +2621,13 @@ bool is_sharepool_addr(unsigned long addr)
 	bool ret = false;
 
 	if (sp_area_customized == false)
-		return addr >= MMAP_SHARE_POOL_START &&
-		       addr < (MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE);
+		return is_sp_normal_addr(addr);
 
 	spa = __find_sp_area(addr);
 	if (spa && spa->spg)
-		ret = addr >= spa->spg->dvpp_va_start &&
-		      addr < (spa->spg->dvpp_va_start + spa->spg->dvpp_size);
+		ret = (addr >= spa->spg->dvpp_va_start &&
+		       addr < spa->spg->dvpp_va_start + spa->spg->dvpp_size) ||
+			is_sp_normal_addr(addr);
 
 	__sp_area_drop(spa);
 	return ret;
