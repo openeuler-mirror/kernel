@@ -233,6 +233,7 @@ struct sp_area {
 	unsigned long region_vstart;	/* belong to normal region or DVPP region */
 	unsigned long flags;
 	bool is_hugepage;
+	bool is_dead;
 	atomic_t use_count;		/* How many vmas use this VA region */
 	struct rb_node rb_node;		/* address sorted rbtree */
 	struct list_head link;		/* link to the spg->head */
@@ -736,6 +737,10 @@ int sp_group_add_task(int pid, int spg_id)
 		prev = spa;
 
 		atomic_inc(&spa->use_count);
+
+		if (spa->is_dead == true)
+			continue;
+
 		spin_unlock(&sp_area_lock);
 
 		if (spa->type == SPA_TYPE_K2SPG && spa->kva) {
@@ -970,6 +975,7 @@ found:
 	spa->region_vstart = vstart;
 	spa->flags = flags;
 	spa->is_hugepage = (flags & SP_HUGEPAGE);
+	spa->is_dead = false;
 	spa->spg = spg;
 	atomic_set(&spa->use_count, 1);
 	spa->type = type;
@@ -1271,10 +1277,14 @@ int sp_free(unsigned long addr)
 		goto drop_spa;
 	}
 
-	if (!spg_valid(spa->spg))
+	down_write(&spa->spg->rw_lock);
+	if (!spg_valid(spa->spg)) {
+		up_write(&spa->spg->rw_lock);
 		goto drop_spa;
-
-	sp_dump_stack();
+	}
+	/* the life cycle of spa has a direct relation with sp group */
+	spa->is_dead = true;
+	up_write(&spa->spg->rw_lock);
 
 	down_read(&spa->spg->rw_lock);
 
@@ -1303,6 +1313,7 @@ int sp_free(unsigned long addr)
 drop_spa:
 	__sp_area_drop(spa);
 out:
+	sp_dump_stack();
 	sp_try_to_compact();
 	return ret;
 }
@@ -2362,15 +2373,6 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 			goto out_drop_area;
 		}
 
-		down_read(&spa->spg->rw_lock);
-		if (!spg_valid(spa->spg)) {
-			up_read(&spa->spg->rw_lock);
-			pr_info_ratelimited("share pool: no need to unshare uva(to group), "
-					    "sp group of spa is dead\n");
-			goto out_clr_flag;
-		}
-		up_read(&spa->spg->rw_lock);
-
 		/* alway allow kthread and dvpp channel destroy procedure */
 		if (current->mm && current->mm->sp_group != spa->spg) {
 			pr_err_ratelimited("share pool: unshare uva(to group) failed, "
@@ -2378,6 +2380,17 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 			ret = -EINVAL;
 			goto out_drop_area;
 		}
+
+		down_write(&spa->spg->rw_lock);
+		if (!spg_valid(spa->spg)) {
+			up_write(&spa->spg->rw_lock);
+			pr_info_ratelimited("share pool: no need to unshare uva(to group), "
+					    "sp group of spa is dead\n");
+			goto out_clr_flag;
+		}
+		/* the life cycle of spa has a direct relation with sp group */
+		spa->is_dead = true;
+		up_write(&spa->spg->rw_lock);
 
 		down_read(&spa->spg->rw_lock);
 		__sp_free(spa->spg, uva_aligned, size_aligned, NULL);
