@@ -71,9 +71,6 @@ int sysctl_sp_debug_mode;
 
 int sysctl_share_pool_map_lock_enable;
 
-/* for inter-group operations */
-static DEFINE_MUTEX(sp_mutex);
-
 /* idr of all sp_groups */
 static DEFINE_IDR(sp_group_idr);
 /* rw semaphore for sp_group_idr */
@@ -412,13 +409,13 @@ int sp_group_id_by_pid(int pid)
 }
 EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
 
+/* the caller must hold sp_group_sem */
 static struct sp_group *find_or_alloc_sp_group(int spg_id)
 {
 	struct sp_group *spg;
 	int ret;
 	char name[20];
 
-	down_write(&sp_group_sem);
 	spg = __sp_find_spg_locked(current->pid, spg_id);
 
 	if (!spg) {
@@ -432,7 +429,6 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 		}
 		ret = idr_alloc(&sp_group_idr, spg, spg_id, spg_id + 1,
 				GFP_KERNEL);
-		up_write(&sp_group_sem);
 		if (ret < 0) {
 			pr_err_ratelimited("share pool: create group idr alloc failed\n");
 			goto out_kfree;
@@ -472,7 +468,6 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 			goto out_fput;
 		}
 	} else {
-		up_write(&sp_group_sem);
 		down_read(&spg->rw_lock);
 		if (!spg_valid(spg)) {
 			up_read(&spg->rw_lock);
@@ -488,9 +483,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 out_fput:
 	fput(spg->file);
 out_idr:
-	down_write(&sp_group_sem);
 	idr_remove(&sp_group_idr, spg_id);
-	up_write(&sp_group_sem);
 out_kfree:
 	kfree(spg);
 	return ERR_PTR(ret);
@@ -604,7 +597,7 @@ int sp_group_add_task(int pid, int spg_id)
 		id_newly_generated = true;
 	}
 
-	mutex_lock(&sp_mutex);
+	down_write(&sp_group_sem);
 
 	rcu_read_lock();
 
@@ -618,6 +611,7 @@ int sp_group_add_task(int pid, int spg_id)
 	if (ret) {
 		if (id_newly_generated)
 			free_sp_group_id((unsigned int)spg_id);
+		up_write(&sp_group_sem);
 		goto out_unlock;
 	}
 
@@ -636,9 +630,11 @@ int sp_group_add_task(int pid, int spg_id)
 	mm = get_task_mm(tsk->group_leader);
 	if (!mm) {
 		ret = -ESRCH;
+		up_write(&sp_group_sem);
 		goto out_put_task;
 	} else if (mm->sp_group) {
 		ret = -EEXIST;
+		up_write(&sp_group_sem);
 		goto out_put_mm;
 	}
 
@@ -647,6 +643,7 @@ int sp_group_add_task(int pid, int spg_id)
 		ret = PTR_ERR(spg);
 		if (id_newly_generated)
 			free_sp_group_id((unsigned int)spg_id);
+		up_write(&sp_group_sem);
 		goto out_put_mm;
 	}
 
@@ -654,9 +651,13 @@ int sp_group_add_task(int pid, int spg_id)
 	if (sysctl_ac_mode == AC_SINGLE_OWNER) {
 		if (spg->owner != current->group_leader) {
 			ret = -EPERM;
+			up_write(&sp_group_sem);
 			goto out_drop_group;
 		}
 	}
+
+	mm->sp_group = spg;
+	up_write(&sp_group_sem);
 
 	/* per process statistics initialization */
 	stat = sp_init_proc_stat(tsk, mm);
@@ -666,10 +667,7 @@ int sp_group_add_task(int pid, int spg_id)
 		goto out_drop_group;
 	}
 
-	mm->sp_group = spg;
-
-	down_write(&spg->rw_lock);
-	list_add_tail(&mm->sp_node, &spg->procs);
+	down_read(&spg->rw_lock);
 	/*
 	 * create mappings of existing shared memory segments into this
 	 * new process' page table.
@@ -735,22 +733,25 @@ int sp_group_add_task(int pid, int spg_id)
 	}
 	__sp_area_drop_locked(prev);
 	spin_unlock(&sp_area_lock);
+	up_read(&spg->rw_lock);
 
-	if (unlikely(ret)) {
-		/* spg->procs is modified, spg->rw_lock should be put below */
-		list_del(&mm->sp_node);
-		mm->sp_group = NULL;
-	}
-	up_write(&spg->rw_lock);
+	sp_proc_stat_drop(stat);  /* match with sp_init_proc_stat */
 
 	/* double drop when fail: ensure release stat */
 	if (unlikely(ret))
 		sp_proc_stat_drop(stat);
-	sp_proc_stat_drop(stat);  /* match with sp_init_proc_stat */
 
 out_drop_group:
-	if (unlikely(ret))
+	if (unlikely(ret)) {
+		down_write(&sp_group_sem);
+		mm->sp_group = NULL;
+		up_write(&sp_group_sem);
 		sp_group_drop(spg);
+	} else {
+		down_write(&spg->rw_lock);
+		list_add_tail(&mm->sp_node, &spg->procs);
+		up_write(&spg->rw_lock);
+	}
 out_put_mm:
 	/* No need to put the mm if the sp group adds this mm successfully */
 	if (unlikely(ret))
@@ -758,7 +759,6 @@ out_put_mm:
 out_put_task:
 	put_task_struct(tsk);
 out_unlock:
-	mutex_unlock(&sp_mutex);
 	return ret == 0 ? spg_id : ret;
 }
 EXPORT_SYMBOL_GPL(sp_group_add_task);
