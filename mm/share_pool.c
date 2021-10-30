@@ -3711,6 +3711,40 @@ static int proc_stat_show(struct seq_file *seq, void *offset)
 	return 0;
 }
 
+static int idr_proc_overview_cb(int id, void *p, void *data)
+{
+	struct sp_proc_stat *proc_stat = p;
+	struct seq_file *seq = data;
+	struct mm_struct *mm = proc_stat->mm;
+	unsigned long anon, file, shmem, total_rss;
+	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
+
+	get_mm_rss_info(mm, &anon, &file, &shmem, &total_rss);
+	get_process_sp_res(proc_stat, &sp_res, &sp_res_nsize);
+	get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
+			       &non_sp_res, &non_sp_shm);
+
+	seq_printf(seq, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
+		   id, proc_stat->comm,
+		   get_proc_alloc(proc_stat),
+		   get_proc_k2u(proc_stat),
+		   sp_res, non_sp_res, non_sp_shm,
+		   page2kb(mm->total_vm));
+	return 0;
+}
+
+static int proc_overview_show(struct seq_file *seq, void *offset)
+{
+	seq_printf(seq, "%-8s %-16s %-9s %-9s %-9s %-10s %-10s %-8s\n",
+		   "PID", "COMM", "SP_ALLOC", "SP_K2U", "SP_RES", "Non-SP_RES",
+		   "Non-SP_Shm", "VIRT");
+
+	down_read(&sp_proc_stat_sem);
+	idr_for_each(&sp_proc_stat_idr, idr_proc_overview_cb, seq);
+	up_read(&sp_proc_stat_sem);
+	return 0;
+}
+
 /*
  * Called by proc_root_init() to initialize the /proc/sharepool subtree
  */
@@ -3721,6 +3755,7 @@ void __init proc_sharepool_init(void)
 
 	proc_create_single_data("sharepool/proc_stat", 0400, NULL, proc_stat_show, NULL);
 	proc_create_single_data("sharepool/spa_stat", 0400, NULL, spa_stat_show, NULL);
+	proc_create_single_data("sharepool/proc_overview", 0400, NULL, proc_overview_show, NULL);
 }
 
 /*** End of tatistical and maintenance functions ***/
