@@ -3416,6 +3416,31 @@ static long get_sp_res_by_spg_proc(struct spg_proc_stat *stat)
 	return byte2kb(atomic64_read(&stat->spg_stat->alloc_size));
 }
 
+static unsigned long get_process_prot_locked(int spg_id, struct mm_struct *mm)
+{
+	unsigned long prot = 0;
+	struct sp_group_node *spg_node;
+	struct sp_group_master *master = mm->sp_group_master;
+
+	list_for_each_entry(spg_node, &master->node_list, group_node) {
+		if (spg_node->spg->id == spg_id) {
+			prot = spg_node->prot;
+			break;
+		}
+	}
+	return prot;
+}
+
+static void print_process_prot(struct seq_file *seq, unsigned long prot)
+{
+	if (prot == PROT_READ)
+		seq_puts(seq, "R");
+	else if (prot == (PROT_READ | PROT_WRITE))
+		seq_puts(seq, "RW");
+	else  /* e.g. spg_none */
+		seq_puts(seq, "-");
+}
+
 int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
 {
@@ -3424,7 +3449,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	struct sp_proc_stat *proc_stat;
 	struct spg_proc_stat *spg_proc_stat;
 	int i;
-	unsigned long anon, file, shmem, total_rss;
+	unsigned long anon, file, shmem, total_rss, prot;
 	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
 
 	if (!master)
@@ -3448,17 +3473,24 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		   page2kb(mm->total_vm));
 
 	seq_puts(m, "\n\nProcess in Each SP Group\n\n");
-	seq_printf(m, "%-8s %-9s %-9s %-9s\n",
-		   "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES");
+	seq_printf(m, "%-8s %-9s %-9s %-9s %-4s\n",
+		   "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES", "PROT");
+
+	/* to prevent ABBA deadlock, first hold sp_group_sem */
+	down_read(&sp_group_sem);
 	mutex_lock(&proc_stat->lock);
 	hash_for_each(proc_stat->hash, i, spg_proc_stat, pnode) {
-		seq_printf(m, "%-8d %-9ld %-9ld %-9ld\n",
+		prot = get_process_prot_locked(spg_proc_stat->spg_id, mm);
+		seq_printf(m, "%-8d %-9ld %-9ld %-9ld ",
 			spg_proc_stat->spg_id,
 			get_spg_proc_alloc(spg_proc_stat),
 			get_spg_proc_k2u(spg_proc_stat),
 			get_sp_res_by_spg_proc(spg_proc_stat));
+		print_process_prot(m, prot);
+		seq_putc(m, '\n');
 	}
 	mutex_unlock(&proc_stat->lock);
+	up_read(&sp_group_sem);
 
 	return 0;
 }
@@ -3652,7 +3684,7 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	struct spg_proc_stat *spg_proc_stat;
 
 	struct mm_struct *mm;
-	unsigned long anon, file, shmem, total_rss;
+	unsigned long anon, file, shmem, total_rss, prot;
 	/*
 	 * non_sp_res: resident memory size excluding share pool memory
 	 * sp_res:     resident memory size of share pool, including normal
@@ -3662,6 +3694,8 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	 */
 	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
 
+	/* to prevent ABBA deadlock, first hold sp_group_sem */
+	down_read(&sp_group_sem);
 	mutex_lock(&spg_stat->lock);
 	hash_for_each(spg_stat->hash, i, spg_proc_stat, gnode) {
 		proc_stat = spg_proc_stat->proc_stat;
@@ -3672,21 +3706,25 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 		get_process_sp_res(proc_stat, &sp_res, &sp_res_nsize);
 		get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
 				       &non_sp_res, &non_sp_shm);
+		prot = get_process_prot_locked(id, mm);
 
 		seq_printf(seq, "%-8d ", tgid);
 		if (id == 0)
 			seq_printf(seq, "%-8c ", '-');
 		else
 			seq_printf(seq, "%-8d ", id);
-		seq_printf(seq, "%-9ld %-9ld %-9ld %-10ld %-10ld %-8ld %-7ld %-7ld %-10ld\n",
+		seq_printf(seq, "%-9ld %-9ld %-9ld %-10ld %-10ld %-8ld %-7ld %-7ld %-10ld ",
 			   get_spg_proc_alloc(spg_proc_stat),
 			   get_spg_proc_k2u(spg_proc_stat),
 			   get_sp_res_by_spg_proc(spg_proc_stat),
 			   sp_res, non_sp_res,
 			   page2kb(mm->total_vm), page2kb(total_rss),
 			   page2kb(shmem), non_sp_shm);
+		print_process_prot(seq, prot);
+		seq_putc(seq, '\n');
 	}
 	mutex_unlock(&spg_stat->lock);
+	up_read(&sp_group_sem);
 	return 0;
 }
 
@@ -3695,9 +3733,9 @@ static int proc_stat_show(struct seq_file *seq, void *offset)
 	spg_overview_show(seq);
 	spa_overview_show(seq);
 	/* print the file header */
-	seq_printf(seq, "%-8s %-8s %-9s %-9s %-9s %-10s %-10s %-8s %-7s %-7s %-10s\n",
+	seq_printf(seq, "%-8s %-8s %-9s %-9s %-9s %-10s %-10s %-8s %-7s %-7s %-10s %-4s\n",
 		   "PID", "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES", "SP_RES_T",
-		   "Non-SP_RES", "VIRT", "RES", "Shm", "Non-SP_Shm");
+		   "Non-SP_RES", "VIRT", "RES", "Shm", "Non-SP_Shm", "PROT");
 	/* print kthread buff_module_guard_work */
 	seq_printf(seq, "%-8s %-8s %-9ld %-9ld\n",
 		   "guard", "-",
