@@ -96,8 +96,19 @@ static struct sp_proc_stat *sp_get_proc_stat_locked(int tgid)
 	struct sp_proc_stat *stat;
 
 	stat = idr_find(&sp_stat_idr, tgid);
-	if (stat)
-		atomic_inc(&stat->use_count);
+
+	/* maybe NULL or not, we always return it */
+	return stat;
+}
+
+/* The caller must hold sp_stat_sem */
+static struct sp_proc_stat *sp_get_proc_stat_ref_locked(int tgid)
+{
+	struct sp_proc_stat *stat;
+
+	stat = idr_find(&sp_stat_idr, tgid);
+	if (!stat || !atomic_inc_not_zero(&stat->use_count))
+		stat = NULL;
 
 	/* maybe NULL or not, we always return it */
 	return stat;
@@ -106,8 +117,6 @@ static struct sp_proc_stat *sp_get_proc_stat_locked(int tgid)
 /*
  * The caller must ensure no concurrency problem
  * for task_struct and mm_struct.
- *
- *  The user must call sp_proc_stat_drop() after use.
  */
 static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 					      struct mm_struct *mm)
@@ -138,8 +147,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	/* use_count = 2: match with sp_proc_stat_drop */
-	atomic_set(&stat->use_count, 2);
+	atomic_set(&stat->use_count, 1);
 	atomic64_set(&stat->alloc_size, 0);
 	atomic64_set(&stat->k2u_size, 0);
 	stat->tgid = tgid;
@@ -156,6 +164,27 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 
 	mm->sp_stat_id = ret;
 	up_write(&sp_stat_sem);
+	return stat;
+}
+
+static struct sp_proc_stat *sp_get_proc_stat(int tgid)
+{
+	struct sp_proc_stat *stat;
+
+	down_read(&sp_stat_sem);
+	stat = sp_get_proc_stat_locked(tgid);
+	up_read(&sp_stat_sem);
+	return stat;
+}
+
+/* user must call sp_proc_stat_drop() after use */
+struct sp_proc_stat *sp_get_proc_stat_ref(int tgid)
+{
+	struct sp_proc_stat *stat;
+
+	down_read(&sp_stat_sem);
+	stat = sp_get_proc_stat_ref_locked(tgid);
+	up_read(&sp_stat_sem);
 	return stat;
 }
 
@@ -750,9 +779,6 @@ int sp_group_add_task(int pid, int spg_id)
 	spin_unlock(&sp_area_lock);
 	up_read(&spg->rw_lock);
 
-	sp_proc_stat_drop(stat);  /* match with sp_init_proc_stat */
-
-	/* double drop when fail: ensure release stat */
 	if (unlikely(ret))
 		sp_proc_stat_drop(stat);
 
@@ -1228,11 +1254,10 @@ int sp_free(unsigned long addr)
 		atomic64_sub(spa->real_size, &kthread_stat.alloc_size);
 	} else {
 		stat = sp_get_proc_stat(current->mm->sp_stat_id);
-		if (stat) {
+		if (stat)
 			atomic64_sub(spa->real_size, &stat->alloc_size);
-			sp_proc_stat_drop(stat);
-		} else
-			BUG();
+		else
+			WARN(1, "share pool: %s: null process stat\n", __func__);
 	}
 
 drop_spa:
@@ -1478,10 +1503,10 @@ out:
 
 	if (!IS_ERR(p)) {
 		stat = sp_get_proc_stat(current->mm->sp_stat_id);
-		if (stat) {
+		if (stat)
 			atomic64_add(size_aligned, &stat->alloc_size);
-			sp_proc_stat_drop(stat);
-		}
+		else
+			WARN(1, "share pool: %s: null process stat\n", __func__);
 	}
 
 	/* this will free spa if mmap failed */
@@ -1776,14 +1801,14 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT) {
 			pr_err_ratelimited("share pool: k2task invalid spg id %d\n", spg_id);
 			uva = ERR_PTR(-EINVAL);
-			goto out_drop_proc_stat;
+			goto out_put_mm;
 		}
 		spa = sp_alloc_area(size_aligned, sp_flags, NULL, SPA_TYPE_K2TASK, tsk->tgid);
 		if (IS_ERR(spa)) {
 			pr_err_ratelimited("share pool: k2u(task) failed due to alloc spa failure "
 				"(potential no enough virtual memory when -75): %ld\n", PTR_ERR(spa));
 			uva = spa;
-			goto out_drop_proc_stat;
+			goto out_put_mm;
 		}
 
 		if (!vmalloc_area_set_flag(spa, kva_aligned, VM_SHAREPOOL)) {
@@ -1853,8 +1878,6 @@ out_drop_spa:
 out_drop_spg:
 	if (spg)
 		sp_group_drop(spg);
-out_drop_proc_stat:
-	sp_proc_stat_drop(stat);
 out_put_mm:
 	mmput(mm);
 out_put_task:
@@ -2273,10 +2296,9 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 		atomic64_sub(spa->real_size, &kthread_stat.k2u_size);
 	} else {
 		stat = sp_get_proc_stat(current->mm->sp_stat_id);
-		if (stat) {
+		if (stat)
 			atomic64_sub(spa->real_size, &stat->k2u_size);
-			sp_proc_stat_drop(stat);
-		} else
+		else
 			WARN(1, "share pool: %s: null process stat\n", __func__);
 	}
 
@@ -2512,21 +2534,10 @@ __setup("enable_sp_share_k2u_spg", enable_share_k2u_to_group);
 
 /*** Statistical and maintenance functions ***/
 
-/* user must call sp_proc_stat_drop() after use */
-struct sp_proc_stat *sp_get_proc_stat(int tgid)
-{
-	struct sp_proc_stat *stat;
-
-	down_read(&sp_stat_sem);
-	stat = sp_get_proc_stat_locked(tgid);
-	up_read(&sp_stat_sem);
-	return stat;
-}
-
 static void free_sp_proc_stat(struct sp_proc_stat *stat)
 {
-	stat->mm->sp_stat_id = 0;
 	down_write(&sp_stat_sem);
+	stat->mm->sp_stat_id = 0;
 	idr_remove(&sp_stat_idr, stat->tgid);
 	up_write(&sp_stat_sem);
 	kfree(stat);
@@ -2557,7 +2568,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		up_read(&spg->rw_lock);
 
 		/* eliminate potential ABBA deadlock */
-		stat = sp_get_proc_stat(task->mm->sp_stat_id);
+		stat = sp_get_proc_stat_ref(task->mm->sp_stat_id);
 		if (unlikely(!stat)) {
 			sp_group_drop(spg);
 			return 0;
@@ -2986,10 +2997,16 @@ void sp_group_post_exit(struct mm_struct *mm)
 	struct sp_group *spg = mm->sp_group;
 	long alloc_size, k2u_size;
 
-	if (!spg || !enable_ascend_share_pool)
+	if (!enable_ascend_share_pool || !mm->sp_stat_id)
 		return;
 
 	stat = sp_get_proc_stat(mm->sp_stat_id);
+	if (stat) {
+		alloc_size = atomic64_read(&stat->alloc_size);
+		k2u_size = atomic64_read(&stat->k2u_size);
+	} else
+		WARN(1, "share pool: can't find sp proc stat\n");
+
 	/*
 	 * There are two basic scenarios when a process in the share pool is
 	 * exiting but its share pool memory usage is not 0.
@@ -3000,25 +3017,24 @@ void sp_group_post_exit(struct mm_struct *mm)
 	 *    called sp_free(u). Now A's share pool memory usage is a negative
 	 *    number. Notice B's memory usage will be a positive number.
 	 *
-	 * We decide to print a info when seeing both of the scenarios.
+	 * We decide to print an info when seeing both of the scenarios.
+	 *
+	 * A process not in an sp group doesn't need to print because there
+	 * wont't be any memory which is not freed.
 	 */
-	if (stat) {
-		alloc_size = atomic64_read(&stat->alloc_size);
-		k2u_size = atomic64_read(&stat->k2u_size);
+	if (spg) {
 		if (alloc_size != 0 || k2u_size != 0)
 			pr_info("share pool: process %s(%d) of sp group %d exits. "
 				"It applied %ld aligned KB, k2u shared %ld aligned KB\n",
 				stat->comm, mm->sp_stat_id, mm->sp_group->id,
 				byte2kb(alloc_size), byte2kb(k2u_size));
 
-		/* match with sp_get_proc_stat in THIS function */
-		sp_proc_stat_drop(stat);
-		/* match with sp_init_proc_stat, we expect stat is released after this call */
-		sp_proc_stat_drop(stat);
+		/* match with sp_group_add_task -> find_or_alloc_sp_group */
+		sp_group_drop(spg);
 	}
 
-	/* match with sp_group_add_task -> find_or_alloc_sp_group */
-	sp_group_drop(spg);
+	/* match with sp_init_proc_stat, we expect stat is released after this call */
+	sp_proc_stat_drop(stat);
 }
 
 struct page *sp_alloc_pages(struct vm_struct *area, gfp_t mask,

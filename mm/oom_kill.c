@@ -481,7 +481,7 @@ static void dump_tasks(struct mem_cgroup *memcg, const nodemask_t *nodemask)
 		}
 
 		if (ascend_sp_oom_show()) {
-			stat = sp_get_proc_stat(task->tgid);
+			stat = sp_get_proc_stat_ref(task->tgid);
 
 			pr_cont("[%7d] %5d %5d %8lu %8lu ",
 				task->pid, from_kuid(&init_user_ns, task_uid(task)),

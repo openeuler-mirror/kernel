@@ -171,7 +171,7 @@ extern int sp_register_notifier(struct notifier_block *nb);
 extern int sp_unregister_notifier(struct notifier_block *nb);
 extern bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid);
 extern bool is_sharepool_addr(unsigned long addr);
-extern struct sp_proc_stat *sp_get_proc_stat(int tgid);
+extern struct sp_proc_stat *sp_get_proc_stat_ref(int tgid);
 extern void sp_proc_stat_drop(struct sp_proc_stat *stat);
 extern void spa_overview_show(struct seq_file *seq);
 extern void spg_overview_show(struct seq_file *seq);
@@ -371,7 +371,7 @@ static inline bool is_sharepool_addr(unsigned long addr)
 	return false;
 }
 
-static inline struct sp_proc_stat *sp_get_proc_stat(int tgid)
+static inline struct sp_proc_stat *sp_get_proc_stat_ref(int tgid)
 {
 	return NULL;
 }
