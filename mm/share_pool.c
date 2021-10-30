@@ -2766,15 +2766,17 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	 */
 	long sp_alloc_nsize, non_sp_res, sp_res, non_sp_shm;
 
+	anon = get_mm_counter(mm, MM_ANONPAGES);
+	file = get_mm_counter(mm, MM_FILEPAGES);
+	shmem = get_mm_counter(mm, MM_SHMEMPAGES);
+	total_rss = anon + file + shmem;
+
 	/*
-	 * a task which is the target of k2u(to task) but without adding to a
-	 * sp group should be handled correctly.
-	 * No longer mmget_not_zero(mm) but a process (k2u to task) may have
-	 * problem
+	 * a task without adding to an sp group should be handled correctly.
 	 */
 	spg = __sp_find_spg(id, SPG_ID_DEFAULT);
 	if (!spg)
-		goto out;
+		goto non_spg;
 
 	down_read(&spg->rw_lock);
 	if (!spg_valid(spg)) {
@@ -2789,10 +2791,6 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	up_read(&spg->rw_lock);
 	sp_group_drop(spg);
 
-	anon = get_mm_counter(mm, MM_ANONPAGES);
-	file = get_mm_counter(mm, MM_FILEPAGES);
-	shmem = get_mm_counter(mm, MM_SHMEMPAGES);
-	total_rss = anon + file + shmem;
 	/*
 	 * Statistics of RSS has a maximum 64 pages deviation (256KB).
 	 * Please check_sync_rss_stat().
@@ -2813,8 +2811,15 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 		   sp_res, non_sp_res,
 		   page2kb(mm->total_vm), page2kb(total_rss),
 		   page2kb(shmem), non_sp_shm);
+	return 0;
 
-out:
+non_spg:
+	seq_printf(seq, "%-8d %-8c %-9d %-9ld %-9d %-10ld %-8ld %-7ld %-7ld %-10ld\n",
+		   id, '-', 0,
+		   byte2kb(atomic64_read(&stat->k2u_size)),
+		   0, page2kb(total_rss),
+		   page2kb(mm->total_vm), page2kb(total_rss),
+		   page2kb(shmem), page2kb(shmem));
 	return 0;
 }
 
