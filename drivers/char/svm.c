@@ -33,6 +33,7 @@
 #include <linux/msi.h>
 #include <linux/acpi.h>
 #include <linux/ascend_smmu.h>
+#include <linux/share_pool.h>
 
 #define SVM_DEVICE_NAME "svm"
 #define ASID_SHIFT		48
@@ -40,11 +41,11 @@
 #define SVM_IOCTL_PROCESS_BIND		0xffff
 #define SVM_IOCTL_GET_PHYS		0xfff9
 #define SVM_IOCTL_SET_RC		0xfffc
-#define SVM_IOCTL_GET_L2PTE_BASE	0xfffb
 #define SVM_IOCTL_LOAD_FLAG		0xfffa
 #define SVM_IOCTL_PIN_MEMORY		0xfff7
 #define SVM_IOCTL_UNPIN_MEMORY		0xfff5
 #define SVM_IOCTL_GETHUGEINFO		0xfff6
+#define SVM_IOCTL_GET_PHYMEMINFO	0xfff8
 #define SVM_IOCTL_REMAP_PROC		0xfff4
 
 #define SVM_REMAP_MEM_LEN_MAX		(16 * 1024 * 1024)
@@ -52,6 +53,9 @@
 #define SVM_IOCTL_RELEASE_PHYS32	0xfff3
 #define MMAP_PHY32_MAX (16 * 1024 * 1024)
 
+#define SVM_IOCTL_SP_ALLOC		0xfff2
+#define SVM_IOCTL_SP_FREE		0xfff1
+#define SPG_DEFAULT_ID			0
 #define CORE_SID		0
 static int probe_index;
 static LIST_HEAD(child_list);
@@ -141,6 +145,24 @@ struct svm_mpam {
 	int user_mpam_en;
 };
 
+struct phymeminfo {
+	unsigned long normal_total;
+	unsigned long normal_free;
+	unsigned long huge_total;
+	unsigned long huge_free;
+};
+
+struct phymeminfo_ioctl {
+	struct phymeminfo *info;
+	unsigned long nodemask;
+};
+
+struct spalloc {
+	unsigned long addr;
+	unsigned long size;
+	unsigned long flag;
+};
+
 static struct bus_type svm_bus_type = {
 	.name		= "svm_bus",
 };
@@ -154,14 +176,14 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "get phys";
 	case SVM_IOCTL_SET_RC:
 		return "set rc";
-	case SVM_IOCTL_GET_L2PTE_BASE:
-		return "get l2pte base";
 	case SVM_IOCTL_PIN_MEMORY:
 		return "pin memory";
 	case SVM_IOCTL_UNPIN_MEMORY:
 		return "unpin memory";
 	case SVM_IOCTL_GETHUGEINFO:
 		return "get hugeinfo";
+	case SVM_IOCTL_GET_PHYMEMINFO:
+		return "get physical memory info";
 	case SVM_IOCTL_REMAP_PROC:
 		return "remap proc";
 	case SVM_IOCTL_LOAD_FLAG:
@@ -176,6 +198,223 @@ static char *svm_cmd_to_string(unsigned int cmd)
 }
 
 extern void sysrq_sched_debug_tidy(void);
+
+/*
+ * image word of slot
+ * SVM_IMAGE_WORD_INIT: initial value, indicating that the slot is not used.
+ * SVM_IMAGE_WORD_VALID: valid data is filled in the slot
+ * SVM_IMAGE_WORD_DONE: the DMA operation is complete when the TS uses this address,
+                        so, this slot can be freed.
+ */
+#define SVM_IMAGE_WORD_INIT	0x0
+#define SVM_IMAGE_WORD_VALID	0xaa55aa55
+#define SVM_IMAGE_WORD_DONE	0x55ff55ff
+
+/*
+ * The length of this structure must be 64 bytes, which is the agreement with the TS.
+ * And the data type and sequence cannot be changed, because the TS core reads data
+ * based on the data type and sequence.
+ * image_word: slot status. For details, see SVM_IMAGE_WORD_xxx
+ * pid: pid of process which ioctl svm device to get physical addr, it is used for
+        verification by TS.
+ * data_type: used to determine the data type by TS. Currently, data type must be
+              SVM_VA2PA_TYPE_DMA.
+ * char data[48]: for the data type SVM_VA2PA_TYPE_DMA, the DMA address is stored.
+ */
+struct svm_va2pa_slot {
+	int image_word;
+	int resv;
+	int pid;
+	int data_type;
+	char data[48];
+};
+
+struct svm_va2pa_trunk {
+	struct svm_va2pa_slot *slots;
+	int slot_total;
+	int slot_used;
+	unsigned long *bitmap;
+	struct mutex mutex;
+};
+
+struct svm_va2pa_trunk va2pa_trunk;
+
+#define SVM_VA2PA_TRUNK_SIZE_MAX	0x3200000
+#define SVM_VA2PA_MEMORY_ALIGN		64
+#define SVM_VA2PA_SLOT_SIZE		sizeof(struct svm_va2pa_slot)
+#define SVM_VA2PA_TYPE_DMA		0x1
+#define SVM_MEM_REG			"va2pa trunk"
+#define SVM_VA2PA_CLEAN_BATCH_NUM	0x80
+
+struct device_node *svm_find_mem_reg_node(struct device *dev, const char *compat)
+{
+	int index = 0;
+	struct device_node *tmp = NULL;
+	struct device_node *np = dev->of_node;
+
+	for (; ; index++) {
+		tmp = of_parse_phandle(np, "memory-region", index);
+		if (!tmp)
+			break;
+
+		if (of_device_is_compatible(tmp, compat))
+			return tmp;
+
+		of_node_put(tmp);
+	}
+
+	return NULL;
+}
+
+static int svm_parse_trunk_memory(struct device *dev, phys_addr_t *base, unsigned long *size)
+{
+	int err;
+	struct resource r;
+	struct device_node *trunk = NULL;
+
+	trunk = svm_find_mem_reg_node(dev, SVM_MEM_REG);
+	if (!trunk) {
+		dev_err(dev, "Didn't find reserved memory\n");
+		return -EINVAL;
+	}
+
+	err = of_address_to_resource(trunk, 0, &r);
+	of_node_put(trunk);
+	if (err) {
+		dev_err(dev, "Couldn't address to resource for reserved memory\n");
+		return -ENOMEM;
+	}
+
+	*base = r.start;
+	*size = resource_size(&r);
+
+	return 0;
+}
+
+static int svm_setup_trunk(struct device *dev, phys_addr_t base, unsigned long size)
+{
+	int slot_total;
+	unsigned long *bitmap = NULL;
+	struct svm_va2pa_slot *slot = NULL;
+
+	if (!IS_ALIGNED(base, SVM_VA2PA_MEMORY_ALIGN)) {
+		dev_err(dev, "Didn't aligned to %u\n", SVM_VA2PA_MEMORY_ALIGN);
+		return -EINVAL;
+	}
+
+	if ((size == 0) || (size > SVM_VA2PA_TRUNK_SIZE_MAX)) {
+		dev_err(dev, "Size of reserved memory is not right\n");
+		return -EINVAL;
+	}
+
+	slot_total = size / SVM_VA2PA_SLOT_SIZE;
+	if (slot_total < BITS_PER_LONG)
+		return -EINVAL;
+
+	bitmap = kvcalloc(slot_total / BITS_PER_LONG, sizeof(unsigned long), GFP_KERNEL);
+	if (!bitmap) {
+		dev_err(dev, "alloc memory failed\n");
+		return -ENOMEM;
+	}
+
+	slot = ioremap(base, size);
+	if (!slot) {
+		kvfree(bitmap);
+		dev_err(dev, "Ioremap trunk failed\n");
+		return -ENXIO;
+	}
+
+	va2pa_trunk.slots = slot;
+	va2pa_trunk.slot_used = 0;
+	va2pa_trunk.slot_total = slot_total;
+	va2pa_trunk.bitmap = bitmap;
+	mutex_init(&va2pa_trunk.mutex);
+
+	return 0;
+}
+
+static void svm_remove_trunk(struct device *dev)
+{
+	iounmap(va2pa_trunk.slots);
+	kvfree(va2pa_trunk.bitmap);
+
+	va2pa_trunk.slots = NULL;
+	va2pa_trunk.bitmap = NULL;
+}
+
+static void svm_set_slot_valid(unsigned long index, unsigned long phys)
+{
+	struct svm_va2pa_slot *slot = &va2pa_trunk.slots[index];
+
+	*((unsigned long *)slot->data) = phys;
+	slot->image_word = SVM_IMAGE_WORD_VALID;
+	slot->pid = current->pid;
+	slot->data_type = SVM_VA2PA_TYPE_DMA;
+	__bitmap_set(va2pa_trunk.bitmap, index, 1);
+	va2pa_trunk.slot_used++;
+}
+
+static void svm_set_slot_init(unsigned long index)
+{
+	struct svm_va2pa_slot *slot = &va2pa_trunk.slots[index];
+
+	slot->image_word = SVM_IMAGE_WORD_INIT;
+	__bitmap_clear(va2pa_trunk.bitmap, index, 1);
+	va2pa_trunk.slot_used--;
+}
+
+static void svm_clean_done_slots(void)
+{
+	int used = va2pa_trunk.slot_used;
+	int count = 0;
+	long temp = -1;
+	phys_addr_t addr;
+	unsigned long *bitmap = va2pa_trunk.bitmap;
+
+	for (; count < used && count < SVM_VA2PA_CLEAN_BATCH_NUM;) {
+		temp = find_next_bit(bitmap, va2pa_trunk.slot_total, temp + 1);
+		if (temp == va2pa_trunk.slot_total)
+			break;
+
+		count++;
+		if (va2pa_trunk.slots[temp].image_word != SVM_IMAGE_WORD_DONE)
+			continue;
+
+		addr = *((phys_addr_t *)(va2pa_trunk.slots[temp].data));
+		put_page(pfn_to_page(PHYS_PFN(addr)));
+		svm_set_slot_init(temp);
+	}
+}
+
+static int svm_find_slot_init(unsigned long *index)
+{
+	int temp;
+	unsigned long *bitmap = va2pa_trunk.bitmap;
+
+	temp = find_first_zero_bit(bitmap, va2pa_trunk.slot_total);
+	if (temp == va2pa_trunk.slot_total)
+		return -ENOSPC;
+
+	*index = temp;
+	return 0;
+}
+
+static int svm_va2pa_trunk_init(struct device *dev)
+{
+	int err;
+	phys_addr_t base;
+	unsigned long size;
+
+	err = svm_parse_trunk_memory(dev, &base, &size);
+	if (err)
+		return err;
+
+	err = svm_setup_trunk(dev, base, size);
+	if (err)
+		return err;
+
+	return 0;
+}
 
 void sysrq_sched_debug_show_export(void)
 {
@@ -1100,56 +1339,91 @@ static pte_t *svm_get_pte(struct vm_area_struct *vma,
 	return pte;
 }
 
+/* Must be called with mmap_sem held */
 static pte_t *svm_walk_pt(unsigned long addr, unsigned long *page_size,
 			  unsigned long *offset)
 {
 	pgd_t *pgd = NULL;
 	pud_t *pud = NULL;
-	pte_t *pte = NULL;
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma = NULL;
 
-	down_read(&mm->mmap_sem);
 	vma = find_vma(mm, addr);
 	if (!vma)
-		goto err;
+		return NULL;
 
 	pgd = pgd_offset(mm, addr);
 	if (pgd_none_or_clear_bad(pgd))
-		goto err;
+		return NULL;
 
 	pud = pud_offset(pgd, addr);
 	if (pud_none_or_clear_bad(pud))
-		goto err;
+		return NULL;
 
-	pte = svm_get_pte(vma, pud, addr, page_size, offset);
-
-err:
-	up_read(&mm->mmap_sem);
-	return pte;
+	return svm_get_pte(vma, pud, addr, page_size, offset);
 }
 
 static int svm_get_phys(unsigned long __user *arg)
 {
-	pte_t *pte = NULL;
+	int err;
+	pte_t *ptep = NULL;
+	pte_t pte;
+	unsigned long index = 0;
+	struct page *page;
 	unsigned long addr, phys, offset;
+	struct mm_struct *mm = current->mm;
 
 	if (!acpi_disabled)
 		return -EPERM;
 
-	if (arg == NULL)
-		return -EINVAL;
-
 	if (get_user(addr, arg))
 		return -EFAULT;
 
-	pte = svm_walk_pt(addr, NULL, &offset);
-	if (pte && pte_present(*pte)) {
-		phys = PFN_PHYS(pte_pfn(*pte)) + offset;
-		return put_user(phys, arg);
+	down_read(&mm->mmap_sem);
+	ptep = svm_walk_pt(addr, NULL, &offset);
+	if (!ptep) {
+		up_read(&mm->mmap_sem);
+		return -EINVAL;
 	}
 
-	return -EINVAL;
+	pte = READ_ONCE(*ptep);
+	if (!pte_present(pte) || !(pfn_present(pte_pfn(pte)))) {
+		up_read(&mm->mmap_sem);
+		return -EINVAL;
+	}
+
+	page = pte_page(pte);
+	get_page(page);
+
+	phys = PFN_PHYS(pte_pfn(pte)) + offset;
+	up_read(&mm->mmap_sem);
+
+	mutex_lock(&va2pa_trunk.mutex);
+	svm_clean_done_slots();
+	if (va2pa_trunk.slot_used == va2pa_trunk.slot_total) {
+		err = -ENOSPC;
+		goto err_mutex_unlock;
+	}
+
+	err = svm_find_slot_init(&index);
+	if (err)
+		goto err_mutex_unlock;
+
+	svm_set_slot_valid(index, phys);
+
+	err = put_user(index * SVM_VA2PA_SLOT_SIZE, (unsigned long __user *)arg);
+	if (err)
+		goto err_slot_init;
+
+	mutex_unlock(&va2pa_trunk.mutex);
+	return 0;
+
+err_slot_init:
+	svm_set_slot_init(index);
+err_mutex_unlock:
+	mutex_unlock(&va2pa_trunk.mutex);
+	put_page(page);
+	return err;
 }
 
 int svm_get_pasid(pid_t vpid, int dev_id __maybe_unused)
@@ -1414,6 +1688,7 @@ static int svm_set_rc(unsigned long __user *arg)
 	unsigned long addr, size, rc;
 	unsigned long end, page_size, offset;
 	pte_t *pte = NULL;
+	struct mm_struct *mm = current->mm;
 
 	if (acpi_disabled)
 		return -EPERM;
@@ -1434,82 +1709,19 @@ static int svm_set_rc(unsigned long __user *arg)
 	if (addr >= end)
 		return -EINVAL;
 
+	down_read(&mm->mmap_sem);
 	while (addr < end) {
 		pte = svm_walk_pt(addr, &page_size, &offset);
-		if (!pte)
+		if (!pte) {
+			up_read(&mm->mmap_sem);
 			return -ESRCH;
+		}
 		pte->pte |= (rc & (u64)0x0f) << 59;
 		addr += page_size - offset;
 	}
+	up_read(&mm->mmap_sem);
 
 	return 0;
-}
-
-static int svm_get_l2pte_base(struct svm_device *sdev,
-			      unsigned long __user *arg)
-{
-	int i = 0, err = -EINVAL;
-	unsigned long *base = NULL;
-	unsigned long vaddr, size;
-	struct mm_struct *mm = current->mm;
-
-	if (!acpi_disabled)
-		return -EPERM;
-
-	if (arg == NULL)
-		return -EINVAL;
-
-	if (get_user(vaddr, arg))
-		return -EFAULT;
-
-	if (!IS_ALIGNED(vaddr, sdev->l2size))
-		return -EINVAL;
-
-	if (get_user(size, arg + 1))
-		return -EFAULT;
-
-	if (size != sdev->l2size || size != sdev->l2size)
-		return -EINVAL;
-
-	size = ALIGN(size, PMD_SIZE) / PMD_SIZE;
-	base = kmalloc_array(size, sizeof(*base), GFP_KERNEL);
-	if (base == NULL)
-		return -ENOMEM;
-
-	while (size) {
-		pgd_t *pgd = NULL;
-		pud_t *pud = NULL;
-		pmd_t *pmd = NULL;
-
-		pgd = pgd_offset(mm, vaddr);
-		if (pgd_none(*pgd) || pgd_bad(*pgd))
-			goto err_out;
-
-		pud = pud_offset(pgd, vaddr);
-		if (pud_none(*pud) || pud_bad(*pud))
-			goto err_out;
-
-		pmd = pmd_offset(pud, vaddr);
-		if (pmd_none(*pmd) || pmd_bad(*pmd))
-			goto err_out;
-
-		/*
-		 * For small page base address, it should use pte_pfn
-		 * instead of pmd_pfn.
-		 */
-		base[i] = PFN_PHYS(pte_pfn(*((pte_t *)pmd)));
-		vaddr += PMD_SIZE;
-		size--;
-		i++;
-	}
-
-	/* lint !e647 */
-	err = copy_to_user((void __user *)arg, base, i * sizeof(*base));
-	if (err)
-		err = -EFAULT;
-err_out:
-	kfree(base);
-	return err;
 }
 
 static long svm_get_hugeinfo(unsigned long __user *arg)
@@ -1539,6 +1751,64 @@ static long svm_get_hugeinfo(unsigned long __user *arg)
 			h->nr_huge_pages,
 			h->free_huge_pages,
 			h->resv_huge_pages);
+
+	return 0;
+}
+
+static void svm_get_node_memory_info_inc(unsigned long nid, struct phymeminfo *info)
+{
+	struct sysinfo i;
+	struct hstate *h = &default_hstate;
+	unsigned long huge_free = 0;
+	unsigned long huge_total = 0;
+
+	if (hugepages_supported()) {
+		huge_free = h->free_huge_pages_node[nid] * (PAGE_SIZE << huge_page_order(h));
+		huge_total = h->nr_huge_pages_node[nid] * (PAGE_SIZE << huge_page_order(h));
+	}
+
+#ifdef CONFIG_NUMA
+	si_meminfo_node(&i, nid);
+#else
+	si_meminfo(&i);
+#endif
+	info->normal_free += i.freeram * PAGE_SIZE;
+	info->normal_total += i.totalram * PAGE_SIZE - huge_total;
+	info->huge_total += huge_total;
+	info->huge_free += huge_free;
+}
+
+static void __svm_get_memory_info(unsigned long nodemask, struct phymeminfo *info)
+{
+	memset(info, 0x0, sizeof(struct phymeminfo));
+
+	nodemask = nodemask & ((1UL << MAX_NUMNODES) - 1);
+
+	while (nodemask) {
+		unsigned long nid = find_first_bit(&nodemask, BITS_PER_LONG);
+		if (node_isset(nid, node_online_map)) {
+			(void)svm_get_node_memory_info_inc(nid, info);
+		}
+
+		nodemask &= ~(1UL << nid);
+	}
+}
+
+static long svm_get_phy_memory_info(unsigned long __user *arg)
+{
+	struct phymeminfo info;
+	struct phymeminfo_ioctl para;
+
+	if (arg == NULL)
+		return -EINVAL;
+
+	if (copy_from_user(&para, (void __user *)arg, sizeof(para)))
+		return -EFAULT;
+
+	__svm_get_memory_info(para.nodemask, &info);
+
+	if (copy_to_user((void __user *)para.info, &info, sizeof(info)))
+		return -EFAULT;
 
 	return 0;
 }
@@ -1835,13 +2105,15 @@ static int svm_release_phys32(unsigned long __user *arg)
 	if (get_user(addr, arg))
 		return -EFAULT;
 
-	pte = svm_walk_pt(addr, NULL, &offset);
-	if (pte && pte_present(*pte))
-		phys = PFN_PHYS(pte_pfn(*pte)) + offset;
-	else
-		return -EINVAL;
-
 	down_read(&mm->mmap_sem);
+	pte = svm_walk_pt(addr, NULL, &offset);
+	if (pte && pte_present(*pte)) {
+		phys = PFN_PHYS(pte_pfn(*pte)) + offset;
+	} else {
+		up_read(&mm->mmap_sem);
+		return -EINVAL;
+	}
+
 	vma = find_vma(mm, addr);
 	if (!vma) {
 		up_read(&mm->mmap_sem);
@@ -1854,6 +2126,77 @@ static int svm_release_phys32(unsigned long __user *arg)
 	__free_pages(page, get_order(len));
 
 	up_read(&mm->mmap_sem);
+
+	return 0;
+}
+
+static unsigned long svm_sp_alloc_mem(unsigned long __user *arg)
+{
+	struct spalloc spallocinfo;
+	void *addr;
+	int ret;
+
+	if (arg == NULL) {
+		pr_err("arg is invalid value.\n");
+		return EFAULT;
+	}
+
+	ret = copy_from_user(&spallocinfo, (void __user *)arg, sizeof(spallocinfo));
+	if (ret) {
+		pr_err("failed to copy args from user space.\n");
+		return EFAULT;
+	}
+
+	addr = sp_alloc(spallocinfo.size, spallocinfo.flag, SPG_DEFAULT_ID);
+	if (IS_ERR_VALUE(addr)) {
+		pr_err("svm: sp alloc failed with %ld\n", PTR_ERR(addr));
+		return EFAULT;
+	}
+
+	pr_notice("svm: [sp alloc] caller %s(%d/%d); return addr 0x%pK, size %lu\n",
+		  current->comm, current->tgid, current->pid, addr, spallocinfo.size);
+	sp_dump_stack();
+
+	spallocinfo.addr = (uintptr_t)addr;
+	if (copy_to_user((void __user *)arg, &spallocinfo, sizeof(struct spalloc))) {
+		sp_free(spallocinfo.addr);
+		return EFAULT;
+	}
+
+	return 0;
+}
+
+static int svm_sp_free_mem(unsigned long __user *arg)
+{
+	int ret;
+	struct spalloc spallocinfo;
+
+	if (arg == NULL) {
+		pr_err("arg ivalue.\n");
+		return -EFAULT;
+	}
+
+	ret = copy_from_user(&spallocinfo, (void __user *)arg, sizeof(spallocinfo));
+	if (ret) {
+		pr_err("failed to copy args from user space.\n");
+		return -EFAULT;
+	}
+
+	ret = is_sharepool_addr(spallocinfo.addr);
+	if (ret == FALSE){
+		pr_err("svm: sp free failed because the addr is not from sp.\n");
+		return -EINVAL;
+	}
+
+	ret = sp_free(spallocinfo.addr);
+	if (ret != 0) {
+		pr_err("svm: sp free failed with %d.\n", ret);
+		return -EFAULT;
+	}
+
+	pr_notice("svm: [sp free] caller %s(%d/%d); addr 0x%pK\n",
+		  current->comm, current->tgid, current->pid, (void *)spallocinfo.addr);
+	sp_dump_stack();
 
 	return 0;
 }
@@ -1909,9 +2252,6 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 	case SVM_IOCTL_SET_RC:
 		err = svm_set_rc((unsigned long __user *)arg);
 		break;
-	case SVM_IOCTL_GET_L2PTE_BASE:
-		err = svm_get_l2pte_base(sdev, (unsigned long __user *)arg);
-		break;
 	case SVM_IOCTL_PIN_MEMORY:
 		err = svm_pin_memory((unsigned long __user *)arg);
 		break;
@@ -1921,6 +2261,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 	case SVM_IOCTL_GETHUGEINFO:
 		err = svm_get_hugeinfo((unsigned long __user *)arg);
 		break;
+	case SVM_IOCTL_GET_PHYMEMINFO:
+		err = svm_get_phy_memory_info((unsigned long __user *)arg);
+		break;
 	case SVM_IOCTL_REMAP_PROC:
 		err = svm_remap_proc((unsigned long __user *)arg);
 		break;
@@ -1929,6 +2272,12 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 		break;
 	case SVM_IOCTL_RELEASE_PHYS32:
 		err = svm_release_phys32((unsigned long __user *)arg);
+		break;
+	case SVM_IOCTL_SP_ALLOC:
+		err = svm_sp_alloc_mem((unsigned long __user *)arg);
+		break;
+	case SVM_IOCTL_SP_FREE:
+		err = svm_sp_free_mem((unsigned long __user *)arg);
 		break;
 	default:
 			err = -EINVAL;
@@ -2041,10 +2390,15 @@ static int svm_device_probe(struct platform_device *pdev)
 		if (err)
 			dev_warn(dev, "Cannot get l2buff\n");
 
+		if (svm_va2pa_trunk_init(dev)) {
+			dev_err(dev, "failed to init va2pa trunk\n");
+			goto err_unregister_misc;
+		}
+
 		err = svm_dt_init_core(sdev, np);
 		if (err) {
 			dev_err(dev, "failed to init dt cores\n");
-			goto err_unregister_misc;
+			goto err_remove_trunk;
 		}
 
 		probe_index++;
@@ -2053,6 +2407,9 @@ static int svm_device_probe(struct platform_device *pdev)
 	mutex_init(&svm_process_mutex);
 
 	return err;
+
+err_remove_trunk:
+	svm_remove_trunk(dev);
 
 err_unregister_misc:
 	misc_deregister(&sdev->miscdev);
