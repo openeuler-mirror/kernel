@@ -50,6 +50,7 @@
 #define ESPGMMEXIT		4000
 
 #define byte2kb(size)		((size) / 1024)
+#define byte2mb(size)		((size) / 1024 / 1024)
 
 /* mdc scene hack */
 int enable_mdc_default_group;
@@ -135,6 +136,8 @@ struct sp_spa_stat {
 	unsigned long alloc_size;
 	unsigned long k2u_task_size;
 	unsigned long k2u_spg_size;
+	unsigned long dvpp_size;
+	unsigned long dvpp_va_size;
 };
 
 static struct sp_spa_stat spa_stat = {0};
@@ -165,6 +168,7 @@ struct sp_area {
 	unsigned long va_end;		/* va_end always align to hugepage */
 	unsigned long real_size;	/* real size with alignment */
 	unsigned long region_vstart;	/* belong to normal region or DVPP region */
+	unsigned long flags;
 	bool is_hugepage;
 	atomic_t use_count;		/* How many vmas use this VA region */
 	struct rb_node rb_node;		/* address sorted rbtree */
@@ -193,14 +197,8 @@ static struct file *spa_file(struct sp_area *spa)
 }
 
 /* the caller should hold sp_area_lock */
-static int spa_inc_usage(enum spa_type type, unsigned long size)
+static int spa_inc_usage(enum spa_type type, unsigned long size, bool is_dvpp)
 {
-	/*
-	 * all the calculations won't overflow due to system limitation and
-	 * parameter checking in sp_alloc_area()
-	 */
-	spa_stat.total_num += 1;
-	spa_stat.total_size += size;
 	switch (type) {
 	case SPA_TYPE_ALLOC:
 		spa_stat.alloc_num += 1;
@@ -218,11 +216,23 @@ static int spa_inc_usage(enum spa_type type, unsigned long size)
 		/* usually impossible, perhaps a developer's mistake */
 		return -EINVAL;
 	}
+
+	if (is_dvpp) {
+		spa_stat.dvpp_size += size;
+		spa_stat.dvpp_va_size += PMD_ALIGN(size);
+	}
+
+	/*
+	 * all the calculations won't overflow due to system limitation and
+	 * parameter checking in sp_alloc_area()
+	 */
+	spa_stat.total_num += 1;
+	spa_stat.total_size += size;
 	return 0;
 }
 
 /* the caller should hold sp_area_lock */
-static int spa_dec_usage(enum spa_type type, unsigned long size)
+static int spa_dec_usage(enum spa_type type, unsigned long size, bool is_dvpp)
 {
 	switch (type) {
 	case SPA_TYPE_ALLOC:
@@ -239,9 +249,14 @@ static int spa_dec_usage(enum spa_type type, unsigned long size)
 		break;
 	default:
 		/* usually impossible, perhaps a developer's mistake */
-		spin_unlock(&sp_area_lock);
 		return -EINVAL;
 	}
+
+	if (is_dvpp) {
+		spa_stat.dvpp_size -= size;
+		spa_stat.dvpp_va_size -= PMD_ALIGN(size);
+	}
+
 	spa_stat.total_num -= 1;
 	spa_stat.total_size -= size;
 	return 0;
@@ -760,7 +775,7 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 	unsigned long vstart = MMAP_SHARE_POOL_START;
 	unsigned long vend = MMAP_SHARE_POOL_16G_START;
 	unsigned long addr;
-	unsigned long size_align = ALIGN(size, 1 << 21); /* align to 2M */
+	unsigned long size_align = PMD_ALIGN(size); /* va aligned to 2M */
 
 	if ((flags & SP_DVPP)) {
 		if (host_svm_sp_enable == false) {
@@ -865,13 +880,14 @@ found:
 	spa->va_end = addr + size_align;
 	spa->real_size = size;
 	spa->region_vstart = vstart;
+	spa->flags = flags;
 	spa->is_hugepage = (flags & SP_HUGEPAGE);
 	spa->spg = spg;
 	atomic_set(&spa->use_count, 1);
 	spa->type = type;
 	spa->mm = NULL;
 
-	if (spa_inc_usage(type, size)) {
+	if (spa_inc_usage(type, size, (flags & SP_DVPP))) {
 		err = ERR_PTR(-EINVAL);
 		goto error;
 	}
@@ -955,7 +971,7 @@ static void sp_free_area(struct sp_area *spa)
 		}
 	}
 
-	spa_dec_usage(spa->type, spa->real_size);  /* won't fail */
+	spa_dec_usage(spa->type, spa->real_size, (spa->flags & SP_DVPP));  /* won't fail */
 	if (spa->spg) {
 		atomic_dec(&spa->spg->spa_num);
 		atomic64_sub(spa->real_size, &spa->spg->size);
@@ -2321,6 +2337,7 @@ static void spa_overview_show(struct seq_file *seq)
 {
 	unsigned int total_num, alloc_num, k2u_task_num, k2u_spg_num;
 	unsigned long total_size, alloc_size, k2u_task_size, k2u_spg_size;
+	unsigned long dvpp_size, dvpp_va_size;
 
 	spin_lock(&sp_area_lock);
 	total_num     = spa_stat.total_num;
@@ -2331,6 +2348,8 @@ static void spa_overview_show(struct seq_file *seq)
 	alloc_size    = spa_stat.alloc_size;
 	k2u_task_size = spa_stat.k2u_task_size;
 	k2u_spg_size  = spa_stat.k2u_spg_size;
+	dvpp_size     = spa_stat.dvpp_size;
+	dvpp_va_size  = spa_stat.dvpp_va_size;
 	spin_unlock(&sp_area_lock);
 
 	seq_printf(seq, "Spa total num %u.\n", total_num);
@@ -2340,6 +2359,8 @@ static void spa_overview_show(struct seq_file *seq)
 	seq_printf(seq, "Spa alloc size:     %13lu KB\n", byte2kb(alloc_size));
 	seq_printf(seq, "Spa k2u(task) size: %13lu KB\n", byte2kb(k2u_task_size));
 	seq_printf(seq, "Spa k2u(spg) size:  %13lu KB\n", byte2kb(k2u_spg_size));
+	seq_printf(seq, "Spa dvpp size:      %13lu KB\n", byte2kb(dvpp_size));
+	seq_printf(seq, "Spa dvpp va size:   %13lu MB\n", byte2mb(dvpp_va_size));
 	seq_printf(seq, "\n");
 }
 
@@ -2358,12 +2379,13 @@ static int idr_spg_stat_cb(int id, void *p, void *data)
 
 static void spg_overview_show(struct seq_file *seq)
 {
+	seq_printf(seq, "Share pool total size: %13ld KB, spa total num: %d.\n",
+		   byte2kb(atomic64_read(&spg_stat.spa_total_size)),
+		   atomic_read(&spg_stat.spa_total_num));
 	mutex_lock(&sp_mutex);
 	idr_for_each(&sp_group_idr, idr_spg_stat_cb, seq);
 	mutex_unlock(&sp_mutex);
-	seq_printf(seq, "Share pool total size: %13ld KB, spa total num: %d.\n\n",
-		   byte2kb(atomic64_read(&spg_stat.spa_total_size)),
-		   atomic_read(&spg_stat.spa_total_num));
+	seq_printf(seq, "\n");
 }
 
 static int spa_stat_show(struct seq_file *seq, void *offset)
