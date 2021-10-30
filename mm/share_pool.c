@@ -3334,45 +3334,132 @@ void sp_proc_stat_drop(struct sp_proc_stat *stat)
 		free_sp_proc_stat(stat);
 }
 
+static void get_mm_rss_info(struct mm_struct *mm, unsigned long *anon,
+	unsigned long *file, unsigned long *shmem, unsigned long *total_rss)
+{
+	*anon = get_mm_counter(mm, MM_ANONPAGES);
+	*file = get_mm_counter(mm, MM_FILEPAGES);
+	*shmem = get_mm_counter(mm, MM_SHMEMPAGES);
+	*total_rss = *anon + *file + *shmem;
+}
+
+static long get_proc_alloc(struct sp_proc_stat *stat)
+{
+	return byte2kb(atomic64_read(&stat->alloc_size));
+}
+
+static long get_proc_k2u(struct sp_proc_stat *stat)
+{
+	return byte2kb(atomic64_read(&stat->k2u_size));
+}
+
+static long get_spg_alloc(struct sp_spg_stat *stat)
+{
+	return byte2kb(atomic64_read(&stat->alloc_size));
+}
+
+static long get_spg_alloc_nsize(struct sp_spg_stat *stat)
+{
+	return byte2kb(atomic64_read(&stat->alloc_nsize));
+}
+
+static long get_spg_proc_alloc(struct spg_proc_stat *stat)
+{
+	return byte2kb(atomic64_read(&stat->alloc_size));
+}
+
+static long get_spg_proc_k2u(struct spg_proc_stat *stat)
+{
+	return byte2kb(atomic64_read(&stat->k2u_size));
+}
+
+static void get_process_sp_res(struct sp_proc_stat *stat,
+	long *sp_res_out, long *sp_res_nsize_out)
+{
+	int i;
+	struct spg_proc_stat *spg_proc_stat;
+	struct sp_spg_stat *spg_stat;
+	long sp_res = 0, sp_res_nsize = 0;
+
+	mutex_lock(&stat->lock);
+	hash_for_each(stat->hash, i, spg_proc_stat, pnode) {
+		spg_stat = spg_proc_stat->spg_stat;
+		sp_res += get_spg_alloc(spg_stat);
+		sp_res_nsize += get_spg_alloc_nsize(spg_stat);
+	}
+	mutex_unlock(&stat->lock);
+
+	*sp_res_out = sp_res;
+	*sp_res_nsize_out = sp_res_nsize;
+}
+
+/*
+ *  Statistics of RSS has a maximum 64 pages deviation (256KB).
+ *  Please check_sync_rss_stat().
+ */
+static void get_process_non_sp_res(unsigned long total_rss, unsigned long shmem,
+	long sp_res_nsize, long *non_sp_res_out, long *non_sp_shm_out)
+{
+	long non_sp_res, non_sp_shm;
+
+	non_sp_res = page2kb(total_rss) - sp_res_nsize;
+	non_sp_res = non_sp_res < 0 ? 0 : non_sp_res;
+	non_sp_shm = page2kb(shmem) - sp_res_nsize;
+	non_sp_shm = non_sp_shm < 0 ? 0 : non_sp_shm;
+
+	*non_sp_res_out = non_sp_res;
+	*non_sp_shm_out = non_sp_shm;
+}
+
+static long get_sp_res_by_spg_proc(struct spg_proc_stat *stat)
+{
+	return byte2kb(atomic64_read(&stat->spg_stat->alloc_size));
+}
+
 int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
 {
-	struct sp_group *spg = NULL;
-	struct sp_proc_stat *stat;
-	int spg_id, hugepage_failures;
+	struct mm_struct *mm = task->mm;
+	struct sp_group_master *master = mm->sp_group_master;
+	struct sp_proc_stat *proc_stat;
+	struct spg_proc_stat *spg_proc_stat;
+	int i;
+	unsigned long anon, file, shmem, total_rss;
+	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
 
-	spg = __sp_find_spg(task->pid, SPG_ID_DEFAULT);
-	if (!spg)
+	if (!master)
 		return 0;
 
-	down_read(&spg->rw_lock);
-	if (spg_valid(spg)) {
-		spg_id = spg->id;
-		hugepage_failures = atomic_read(&spg->stat->hugepage_failures);
-		up_read(&spg->rw_lock);
+	get_mm_rss_info(mm, &anon, &file, &shmem, &total_rss);
+	proc_stat = master->stat;
+	get_process_sp_res(proc_stat, &sp_res, &sp_res_nsize);
+	get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
+			       &non_sp_res, &non_sp_shm);
 
-		/* eliminate potential ABBA deadlock */
-		stat = sp_get_proc_stat_ref(task->mm);
-		if (unlikely(!stat)) {
-			sp_group_drop(spg);
-			return 0;
-		}
+	seq_puts(m, "Share Pool Aggregate Data of This Process\n\n");
+	seq_printf(m, "%-8s %-16s %-9s %-9s %-9s %-10s %-10s %-8s\n",
+		   "PID", "COMM", "SP_ALLOC", "SP_K2U", "SP_RES", "Non-SP_RES",
+		   "Non-SP_Shm", "VIRT");
+	seq_printf(m, "%-8d %-16s %-9ld %-9ld %-9ld %-10ld %-10ld %-8ld\n",
+		   proc_stat->tgid, proc_stat->comm,
+		   get_proc_alloc(proc_stat),
+		   get_proc_k2u(proc_stat),
+		   sp_res, non_sp_res, non_sp_shm,
+		   page2kb(mm->total_vm));
 
-		/* print the file header */
-		seq_printf(m, "%-8s %-9s %-13s\n",
-			   "Group_ID", "SP_ALLOC", "HugePage Fail");
-		seq_printf(m, "%-8d %-9ld %-13d\n",
-			   spg_id,
-			   byte2kb(atomic64_read(&stat->alloc_size)),
-			   hugepage_failures);
-
-		sp_proc_stat_drop(stat);
-		sp_group_drop(spg);
-		return 0;
+	seq_puts(m, "\n\nProcess in Each SP Group\n\n");
+	seq_printf(m, "%-8s %-9s %-9s %-9s\n",
+		   "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES");
+	mutex_lock(&proc_stat->lock);
+	hash_for_each(proc_stat->hash, i, spg_proc_stat, pnode) {
+		seq_printf(m, "%-8d %-9ld %-9ld %-9ld\n",
+			spg_proc_stat->spg_id,
+			get_spg_proc_alloc(spg_proc_stat),
+			get_spg_proc_k2u(spg_proc_stat),
+			get_sp_res_by_spg_proc(spg_proc_stat));
 	}
-	up_read(&spg->rw_lock);
+	mutex_unlock(&proc_stat->lock);
 
-	sp_group_drop(spg);
 	return 0;
 }
 
@@ -3573,7 +3660,7 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	 * non_sp_shm: resident shared memory size size excluding share pool
 	 *             memory
 	 */
-	long sp_alloc_nsize, non_sp_res, sp_res, non_sp_shm;
+	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
 
 	mutex_lock(&spg_stat->lock);
 	hash_for_each(spg_stat->hash, i, spg_proc_stat, gnode) {
@@ -3581,30 +3668,20 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 		tgid = proc_stat->tgid;
 		mm = proc_stat->mm;
 
-		anon = get_mm_counter(mm, MM_ANONPAGES);
-		file = get_mm_counter(mm, MM_FILEPAGES);
-		shmem = get_mm_counter(mm, MM_SHMEMPAGES);
-		total_rss = anon + file + shmem;
-
-		/*
-		 *  Statistics of RSS has a maximum 64 pages deviation (256KB).
-		 *  Please check_sync_rss_stat().
-		 */
-		sp_alloc_nsize = byte2kb(atomic64_read(&spg_stat->alloc_nsize));
-		sp_res = byte2kb(atomic64_read(&spg_stat->alloc_size));
-		non_sp_res = page2kb(total_rss) - sp_alloc_nsize;
-		non_sp_res = non_sp_res < 0 ? 0 : non_sp_res;
-		non_sp_shm = page2kb(shmem) - sp_alloc_nsize;
-		non_sp_shm = non_sp_shm < 0 ? 0 : non_sp_shm;
+		get_mm_rss_info(mm, &anon, &file, &shmem, &total_rss);
+		get_process_sp_res(proc_stat, &sp_res, &sp_res_nsize);
+		get_process_non_sp_res(total_rss, shmem, sp_res_nsize,
+				       &non_sp_res, &non_sp_shm);
 
 		seq_printf(seq, "%-8d ", tgid);
 		if (id == 0)
 			seq_printf(seq, "%-8c ", '-');
 		else
 			seq_printf(seq, "%-8d ", id);
-		seq_printf(seq, "%-9ld %-9ld %-9ld %-10ld %-8ld %-7ld %-7ld %-10ld\n",
-			   byte2kb(atomic64_read(&spg_proc_stat->alloc_size)),
-			   byte2kb(atomic64_read(&spg_proc_stat->k2u_size)),
+		seq_printf(seq, "%-9ld %-9ld %-9ld %-10ld %-10ld %-8ld %-7ld %-7ld %-10ld\n",
+			   get_spg_proc_alloc(spg_proc_stat),
+			   get_spg_proc_k2u(spg_proc_stat),
+			   get_sp_res_by_spg_proc(spg_proc_stat),
 			   sp_res, non_sp_res,
 			   page2kb(mm->total_vm), page2kb(total_rss),
 			   page2kb(shmem), non_sp_shm);
@@ -3618,8 +3695,8 @@ static int proc_stat_show(struct seq_file *seq, void *offset)
 	spg_overview_show(seq);
 	spa_overview_show(seq);
 	/* print the file header */
-	seq_printf(seq, "%-8s %-8s %-9s %-9s %-9s %-10s %-8s %-7s %-7s %-10s\n",
-		   "PID", "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES",
+	seq_printf(seq, "%-8s %-8s %-9s %-9s %-9s %-10s %-10s %-8s %-7s %-7s %-10s\n",
+		   "PID", "Group_ID", "SP_ALLOC", "SP_K2U", "SP_RES", "SP_RES_T",
 		   "Non-SP_RES", "VIRT", "RES", "Shm", "Non-SP_Shm");
 	/* print kthread buff_module_guard_work */
 	seq_printf(seq, "%-8s %-8s %-9ld %-9ld\n",
