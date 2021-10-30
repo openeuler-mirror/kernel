@@ -516,8 +516,13 @@ int sp_group_add_task(int pid, int spg_id)
 		goto out_unlock;
 
 	spg = find_or_alloc_sp_group(spg_id);
-	if (IS_ERR(spg) || !spg_valid(spg)) {
+	if (IS_ERR(spg)) {
 		ret = PTR_ERR(spg);
+		goto out_put_task;
+	}
+
+	if (!spg_valid(spg)) {
+		ret = -ENODEV;
 		goto out_put_task;
 	}
 	atomic_inc(&spg->use_count);
@@ -1191,8 +1196,7 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 		if (ret < 0 && (ret != -EEXIST)) {
 			pr_err("share pool: allocation failed due to add group error %d in DVPP pass through scenario",
 			       ret);
-			p = ERR_PTR(ret);
-			goto out;
+			return ERR_PTR(ret);
 		}
 		mutex_lock(&sp_mutex);
 		spg = current->mm->sp_group;
