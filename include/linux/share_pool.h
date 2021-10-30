@@ -109,6 +109,8 @@ struct sp_walk_data {
 
 /* per process memory usage statistics indexed by tgid */
 struct sp_proc_stat {
+	atomic_t use_count;
+	int tgid;
 	struct mm_struct *mm;
 	char comm[TASK_COMM_LEN];
 	/*
@@ -170,6 +172,7 @@ extern int sp_unregister_notifier(struct notifier_block *nb);
 extern bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid);
 extern bool is_sharepool_addr(unsigned long addr);
 extern struct sp_proc_stat *sp_get_proc_stat(int tgid);
+extern void sp_proc_stat_drop(struct sp_proc_stat *stat);
 extern void spa_overview_show(struct seq_file *seq);
 extern void spg_overview_show(struct seq_file *seq);
 extern void proc_sharepool_init(void);
@@ -371,6 +374,10 @@ static inline bool is_sharepool_addr(unsigned long addr)
 static inline struct sp_proc_stat *sp_get_proc_stat(int tgid)
 {
 	return NULL;
+}
+
+static inline void sp_proc_stat_drop(struct sp_proc_stat *stat)
+{
 }
 
 static inline void spa_overview_show(struct seq_file *seq)
