@@ -2717,6 +2717,11 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size)
 	}
 
 	if (spa->type == SPA_TYPE_K2TASK) {
+		if (!current->mm || spa->applier != current->tgid) {
+			pr_err_ratelimited("share pool: unshare uva(to task) no permission\n");
+			ret = -EPERM;
+			goto out_drop_area;
+		}
 
 		if (!spa->mm) {
 			pr_err_ratelimited("share pool: unshare uva(to task) failed, none spa owner\n");
@@ -2761,11 +2766,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size)
 			pr_err("share pool: failed to unmap VA %pK when munmap in unshare uva\n",
 			       (void *)uva_aligned);
 		}
-
-		if (unlikely(!current->mm))
-			WARN(1, "share pool: unshare uva(to task) unexpected active kthread");
-		else
-			sp_update_process_stat(current, false, spa);
+		sp_update_process_stat(current, false, spa);
 
 	} else if (spa->type == SPA_TYPE_K2SPG) {
 		down_read(&spa->spg->rw_lock);
@@ -2783,7 +2784,7 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size)
 			up_read(&spa->spg->rw_lock);
 			pr_err_ratelimited("share pool: unshare uva(to group) failed, "
 					   "caller process doesn't belong to target group\n");
-			ret = -EINVAL;
+			ret = -EPERM;
 			goto out_drop_area;
 		}
 		up_read(&spa->spg->rw_lock);
