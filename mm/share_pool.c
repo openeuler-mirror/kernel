@@ -718,8 +718,11 @@ int sp_group_add_task(int pid, int spg_id)
 		if (populate) {
 			ret = do_mm_populate(mm, spa->va_start, populate, 0);
 			if (ret) {
-				pr_warn_ratelimited("share pool: task add group failed, mm populate failed "
-					"(potential no enough memory when -12): %d, spa type is %d\n",
+				if (unlikely(fatal_signal_pending(current)))
+					pr_warn_ratelimited("share pool: task add group failed, current thread is killed\n");
+				else
+					pr_warn_ratelimited("share pool: task add group failed, mm populate failed "
+							    "(potential no enough memory when -12): %d, spa type is %d\n",
 					ret, spa->type);
 				down_write(&mm->mmap_sem);
 				sp_munmap_task_areas(mm, spa->link.next);
@@ -1427,10 +1430,12 @@ try_again:
 				sp_add_work_compact();
 		}
 		if (ret) {
-			__sp_free(spg, sp_addr, size_aligned,
-					list_next_entry(mm, sp_node));
-			pr_warn_ratelimited("share pool: allocation failed due to mm populate failed"
-				"(potential no enough memory when -12): %d\n", ret);
+			__sp_free(spg, sp_addr, size_aligned, list_next_entry(mm, sp_node));
+			if (unlikely(fatal_signal_pending(current)))
+				pr_warn_ratelimited("share pool: allocation failed, current thread is killed\n");
+			else
+				pr_warn_ratelimited("share pool: allocation failed due to mm populate failed"
+						    "(potential no enough memory when -12): %d\n", ret);
 			p = ERR_PTR(ret);
 
 			mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
