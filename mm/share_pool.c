@@ -3219,9 +3219,15 @@ void sp_group_post_exit(struct mm_struct *mm)
 struct page *sp_alloc_pages(struct vm_struct *area, gfp_t mask,
 					  unsigned int page_order, int node)
 {
-	if (area->flags & VM_HUGE_PAGES)
-		return hugetlb_alloc_hugepage(NUMA_NO_NODE, HUGETLB_ALLOC_NONE);
-	else
+	struct page *page;
+	unsigned int noreclaim_flag = 0;
+
+	if (area->flags & VM_HUGE_PAGES) {
+		noreclaim_flag = memalloc_noreclaim_save();
+		page = hugetlb_alloc_hugepage(NUMA_NO_NODE, HUGETLB_ALLOC_NONE);
+		memalloc_noreclaim_restore(noreclaim_flag);
+		return page;
+	} else
 		return alloc_pages_node(node, mask, page_order);
 }
 
