@@ -2574,6 +2574,72 @@ static int is_k2task(int spg_id)
 		return (spg_id == SPG_ID_DEFAULT || spg_id == SPG_ID_NONE) ? 1 : 0;
 }
 
+struct sp_k2u_context {
+	unsigned long kva;
+	unsigned long kva_aligned;
+	unsigned long size;
+	unsigned long size_aligned;
+	unsigned long sp_flags;
+	int spg_id;
+};
+
+static int sp_k2u_prepare(unsigned long kva, unsigned long size,
+	unsigned long sp_flags, int spg_id, struct sp_k2u_context *kc)
+{
+	int is_hugepage;
+	unsigned int page_size = PAGE_SIZE;
+	unsigned long kva_aligned, size_aligned;
+
+	if (sp_flags & ~SP_DVPP) {
+		pr_err_ratelimited("k2u sp_flags %lx error\n", sp_flags);
+		return -EINVAL;
+	}
+
+	if (!current->mm) {
+		pr_err_ratelimited("k2u: kthread is not allowed\n");
+		return -EPERM;
+	}
+
+	is_hugepage = is_vmap_hugepage(kva);
+	if (is_hugepage > 0) {
+		sp_flags |= SP_HUGEPAGE;
+		page_size = PMD_SIZE;
+	} else if (is_hugepage == 0) {
+		/* do nothing */
+	} else {
+		pr_err_ratelimited("k2u kva is not vmalloc address\n");
+		return is_hugepage;
+	}
+
+	/* aligned down kva is convenient for caller to start with any valid kva */
+	kva_aligned = ALIGN_DOWN(kva, page_size);
+	size_aligned = ALIGN(kva + size, page_size) - kva_aligned;
+
+	if (!vmalloc_area_set_flag(kva_aligned, VM_SHAREPOOL)) {
+		pr_debug("k2u_task kva %lx is not valid\n", kva_aligned);
+		return -EINVAL;
+	}
+
+	kc->kva = kva;
+	kc->kva_aligned = kva_aligned;
+	kc->size = size;
+	kc->size_aligned = size_aligned;
+	kc->sp_flags = sp_flags;
+	kc->spg_id = spg_id;
+	return 0;
+}
+
+static void *sp_k2u_finish(void *uva, struct sp_k2u_context *kc)
+{
+	if (IS_ERR(uva))
+		vmalloc_area_clr_flag(kc->kva_aligned, VM_SHAREPOOL);
+	else
+		uva = uva + (kc->kva - kc->kva_aligned);
+
+	sp_dump_stack();
+	return uva;
+}
+
 /**
  * sp_make_share_k2u() - Share kernel memory to current process or an sp_group.
  * @kva: the VA of shared kernel memory.
@@ -2595,65 +2661,31 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			unsigned long sp_flags, int pid, int spg_id)
 {
 	void *uva;
-	unsigned long kva_aligned;
-	unsigned long size_aligned;
-	unsigned int page_size = PAGE_SIZE;
-	int is_hugepage, to_task;
+	int ret, to_task;
+	struct sp_k2u_context kc;
 
 	check_interrupt_context();
 
-	if (sp_flags & ~SP_DVPP) {
-		pr_err_ratelimited("k2u sp_flags %lx error\n", sp_flags);
-		return ERR_PTR(-EINVAL);
-	}
+	ret = sp_k2u_prepare(kva, size, sp_flags, spg_id, &kc);
+	if (ret)
+		return ERR_PTR(ret);
 
-	if (!current->mm) {
-		pr_err_ratelimited("k2u: kthread is not allowed\n");
-		return ERR_PTR(-EPERM);
-	}
-
-	is_hugepage = is_vmap_hugepage(kva);
-	if (is_hugepage > 0) {
-		sp_flags |= SP_HUGEPAGE;
-		page_size = PMD_SIZE;
-	} else if (is_hugepage == 0) {
-		/* do nothing */
-	} else {
-		pr_err_ratelimited("k2u kva is not vmalloc address\n");
-		return ERR_PTR(is_hugepage);
-	}
-
-	/* aligned down kva is convenient for caller to start with any valid kva */
-	kva_aligned = ALIGN_DOWN(kva, page_size);
-	size_aligned = ALIGN(kva + size, page_size) - kva_aligned;
-
-	if (!vmalloc_area_set_flag(kva_aligned, VM_SHAREPOOL)) {
-		pr_debug("k2u_task kva %lx is not valid\n", kva_aligned);
-		return ERR_PTR(-EINVAL);
-	}
-
-	to_task = is_k2task(spg_id);
+	to_task = is_k2task(kc.spg_id);
 	if (to_task == 1)
-		uva = sp_make_share_kva_to_task(kva_aligned, size_aligned, sp_flags);
+		uva = sp_make_share_kva_to_task(kc.kva_aligned, kc.size_aligned, kc.sp_flags);
 	else if (to_task == 0) {
 		struct sp_group *spg;
 
-		spg = __sp_find_spg(current->pid, spg_id);
+		spg = __sp_find_spg(current->pid, kc.spg_id);
 		if (spg) {
-			uva = sp_make_share_kva_to_spg(kva_aligned, size_aligned, sp_flags, spg);
+			uva = sp_make_share_kva_to_spg(kc.kva_aligned, kc.size_aligned, kc.sp_flags, spg);
 			sp_group_drop(spg);
 		} else
 			uva = ERR_PTR(-ENODEV);
 	} else
 		uva = ERR_PTR(to_task);
 
-	if (IS_ERR(uva))
-		vmalloc_area_clr_flag(kva_aligned, VM_SHAREPOOL);
-	else
-		uva = uva + (kva - kva_aligned);
-
-	sp_dump_stack();
-	return uva;
+	return sp_k2u_finish(uva, &kc);
 }
 EXPORT_SYMBOL_GPL(sp_make_share_k2u);
 
