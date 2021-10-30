@@ -101,9 +101,10 @@ static struct sp_proc_stat kthread_stat = {0};
  * The caller must hold sp_mutex and ensure no concurrency problem
  * for task_struct and mm_struct.
  */
-static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk) {
+static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
+					      struct mm_struct *mm)
+{
 	struct sp_proc_stat *stat;
-	struct mm_struct *mm = tsk->mm;
 	int id = mm->sp_stat_id;
 	int tgid = tsk->tgid;
 	int ret;
@@ -558,16 +559,21 @@ int sp_group_add_task(int pid, int spg_id)
 		goto out_unlock;
 	}
 
-	if (!tsk->mm || tsk->mm->sp_group) {	/* if it's already in a sp_group */
+	/* current thread may be exiting in a multithread process */
+	mm = get_task_mm(tsk->group_leader);
+	if (!mm) {
+		ret = -ESRCH;
+		goto out_put_task;
+	} else if (mm->sp_group) {
 		ret = -EEXIST;
-		goto out_unlock;
+		goto out_put_mm;
 	}
 
 	spg = find_or_alloc_sp_group(spg_id);
 	if (IS_ERR(spg)) {
 		ret = PTR_ERR(spg);
 		free_sp_group_id((unsigned int)spg_id);
-		goto out_put_task;
+		goto out_put_mm;
 	}
 
 	/* access control permission check */
@@ -578,25 +584,18 @@ int sp_group_add_task(int pid, int spg_id)
 		}
 	}
 
-	/* current thread may be exiting in a multithread process */
-	mm = get_task_mm(tsk->group_leader);
-	if (!mm) {
-		ret = -ESRCH;
-		goto out_drop_group;
-	}
-
 	/* per process statistics initialization */
-	stat = sp_init_proc_stat(tsk);
+	stat = sp_init_proc_stat(tsk, mm);
 	if (IS_ERR(stat)) {
 		ret = PTR_ERR(stat);
 		pr_err("share pool: init proc stat failed, ret %lx\n", PTR_ERR(stat));
-		goto out_put_mm;
+		goto out_drop_group;
 	}
 
 	mm->sp_group = spg;
 	/* We reactive the spg even the spg exists already. */
 	spg->is_alive = true;
-	list_add_tail(&tsk->mm->sp_node, &spg->procs);
+	list_add_tail(&mm->sp_node, &spg->procs);
 	/*
 	 * create mappings of existing shared memory segments into this
 	 * new process' page table.
@@ -664,11 +663,11 @@ int sp_group_add_task(int pid, int spg_id)
 		mm->sp_group = NULL;
 	}
 
-out_put_mm:
-	mmput(mm);
 out_drop_group:
 	if (unlikely(ret))
 		__sp_group_drop_locked(spg);
+out_put_mm:
+	mmput(mm);
 out_put_task:
 	put_task_struct(tsk);
 out_unlock:
@@ -1750,7 +1749,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	 * added to a sp group, then stat will be returned immediately.
 	 * I believe there is no need to free stat in error handling branches.
 	 */
-	stat = sp_init_proc_stat(tsk);
+	stat = sp_init_proc_stat(tsk, mm);
 	if (IS_ERR(stat)) {
 		uva = stat;
 		pr_err("share pool: init proc stat failed, ret %lx\n", PTR_ERR(stat));
