@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 14.0.0
+%global hulkrelease 15.0.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.2
+Release: %{hulkrelease}.3
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -174,6 +174,9 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Mon Oct 25 2021 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-15.0.0.3
+- update kernel version to openEuler 5.10.0-15.0.0
+
 * Wed Oct 20 2021 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-14.0.0.2
 - update Raspberry Pi patch, last commit (03ab8875d1fc756bd6d2fd8fdb211532eff33062): gpio: bcm-virt: Fix the get() method
 
