@@ -331,6 +331,12 @@ static void free_sp_group(struct sp_group *spg)
 	kfree(spg);
 }
 
+static void sp_group_drop(struct sp_group *spg)
+{
+	if (atomic_dec_and_test(&spg->use_count))
+		free_sp_group(spg);
+}
+
 /* user must call sp_group_drop() after use */
 static struct sp_group *__sp_find_spg_locked(int pid, int spg_id)
 {
@@ -384,12 +390,6 @@ static struct sp_group *__sp_find_spg(int pid, int spg_id)
 	spg = __sp_find_spg_locked(pid, spg_id);
 	up_read(&sp_group_sem);
 	return spg;
-}
-
-static void sp_group_drop(struct sp_group *spg)
-{
-	if (atomic_dec_and_test(&spg->use_count))
-		free_sp_group(spg);
 }
 
 int sp_group_id_by_pid(int pid)
@@ -770,47 +770,6 @@ out_unlock:
 	return ret == 0 ? spg_id : ret;
 }
 EXPORT_SYMBOL_GPL(sp_group_add_task);
-
-void sp_group_post_exit(struct mm_struct *mm)
-{
-	struct sp_proc_stat *stat;
-	struct sp_group *spg = mm->sp_group;
-	long alloc_size, k2u_size;
-
-	if (!spg || !enable_ascend_share_pool)
-		return;
-
-	stat = sp_get_proc_stat(mm->sp_stat_id);
-	/*
-	 * There are two basic scenarios when a process in the share pool is
-	 * exiting but its share pool memory usage is not 0.
-	 * 1. Process A called sp_alloc(), but it terminates without calling
-	 *    sp_free(). Then its share pool memory usage is a positive number.
-	 * 2. Process A never called sp_alloc(), and process B in the same spg
-	 *    called sp_alloc() to get an addr u. Then A gets u somehow and
-	 *    called sp_free(u). Now A's share pool memory usage is a negative
-	 *    number. Notice B's memory usage will be a positive number.
-	 *
-	 * We decide to print a info when seeing both of the scenarios.
-	 */
-	if (stat) {
-		alloc_size = atomic64_read(&stat->alloc_size);
-		k2u_size = atomic64_read(&stat->k2u_size);
-		if (alloc_size != 0 || k2u_size != 0)
-			pr_info("share pool: process %s(%d) of sp group %d exits. "
-				"It applied %ld aligned KB, k2u shared %ld aligned KB\n",
-				stat->comm, mm->sp_stat_id, mm->sp_group->id,
-				byte2kb(alloc_size), byte2kb(k2u_size));
-
-		/* match with sp_get_proc_stat in THIS function */
-		sp_proc_stat_drop(stat);
-		/* match with sp_init_proc_stat, we expect stat is released after this call */
-		sp_proc_stat_drop(stat);
-	}
-
-	/* match with sp_group_add_task -> find_or_alloc_sp_group */
-	sp_group_drop(spg);
-}
 
 /* the caller must hold sp_area_lock */
 static void __insert_sp_area(struct sp_area *spa)
@@ -3004,6 +2963,47 @@ void sp_group_exit(struct mm_struct *mm)
 		return;
 	}
 	up_write(&spg->rw_lock);
+}
+
+void sp_group_post_exit(struct mm_struct *mm)
+{
+	struct sp_proc_stat *stat;
+	struct sp_group *spg = mm->sp_group;
+	long alloc_size, k2u_size;
+
+	if (!spg || !enable_ascend_share_pool)
+		return;
+
+	stat = sp_get_proc_stat(mm->sp_stat_id);
+	/*
+	 * There are two basic scenarios when a process in the share pool is
+	 * exiting but its share pool memory usage is not 0.
+	 * 1. Process A called sp_alloc(), but it terminates without calling
+	 *    sp_free(). Then its share pool memory usage is a positive number.
+	 * 2. Process A never called sp_alloc(), and process B in the same spg
+	 *    called sp_alloc() to get an addr u. Then A gets u somehow and
+	 *    called sp_free(u). Now A's share pool memory usage is a negative
+	 *    number. Notice B's memory usage will be a positive number.
+	 *
+	 * We decide to print a info when seeing both of the scenarios.
+	 */
+	if (stat) {
+		alloc_size = atomic64_read(&stat->alloc_size);
+		k2u_size = atomic64_read(&stat->k2u_size);
+		if (alloc_size != 0 || k2u_size != 0)
+			pr_info("share pool: process %s(%d) of sp group %d exits. "
+				"It applied %ld aligned KB, k2u shared %ld aligned KB\n",
+				stat->comm, mm->sp_stat_id, mm->sp_group->id,
+				byte2kb(alloc_size), byte2kb(k2u_size));
+
+		/* match with sp_get_proc_stat in THIS function */
+		sp_proc_stat_drop(stat);
+		/* match with sp_init_proc_stat, we expect stat is released after this call */
+		sp_proc_stat_drop(stat);
+	}
+
+	/* match with sp_group_add_task -> find_or_alloc_sp_group */
+	sp_group_drop(spg);
 }
 
 struct page *sp_alloc_pages(struct vm_struct *area, gfp_t mask,
