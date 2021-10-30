@@ -115,8 +115,8 @@ struct sp_proc_stat {
 	 * alloc amount minus free amount, may be negative when freed by
 	 * another task in the same sp group.
 	 */
-	long alloc_size;
-	long k2u_size;
+	atomic64_t alloc_size;
+	atomic64_t k2u_size;
 };
 
 #ifdef CONFIG_ASCEND_SHARE_POOL

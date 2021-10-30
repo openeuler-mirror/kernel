@@ -113,7 +113,8 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	stat->alloc_size = stat->k2u_size = 0;
+	atomic64_set(&stat->alloc_size, 0);
+	atomic64_set(&stat->k2u_size, 0);
 	stat->mm = mm;
 	get_task_comm(stat->comm, tsk);
 	ret = idr_alloc(&sp_stat_idr, stat, tgid, tgid + 1, GFP_KERNEL);
@@ -736,6 +737,7 @@ static void spg_exit_unlock(bool unlock)
 void sp_group_post_exit(struct mm_struct *mm)
 {
 	struct sp_proc_stat *stat;
+	long alloc_size, k2u_size;
 	bool unlock;
 
 	if (!enable_ascend_share_pool || !mm->sp_group)
@@ -757,13 +759,15 @@ void sp_group_post_exit(struct mm_struct *mm)
 	 *
 	 * We decide to print a info when seeing both of the scenarios.
 	 */
-	if (stat && (stat->alloc_size != 0 || stat->k2u_size != 0))
-		pr_info("share pool: process %s(%d) of sp group %d exits. "
-			"It applied %ld aligned KB, k2u shared %ld aligned "
-			"KB\n",
-			stat->comm, mm->sp_stat_id,
-			mm->sp_group->id, byte2kb(stat->alloc_size),
-			byte2kb(stat->k2u_size));
+	if (stat) {
+		alloc_size = atomic64_read(&stat->alloc_size);
+		k2u_size = atomic64_read(&stat->k2u_size);
+		if (alloc_size != 0 || k2u_size != 0)
+			pr_info("share pool: process %s(%d) of sp group %d exits. "
+				"It applied %ld aligned KB, k2u shared %ld aligned KB\n",
+				stat->comm, mm->sp_stat_id, mm->sp_group->id,
+				byte2kb(alloc_size), byte2kb(k2u_size));
+	}
 
 	idr_remove(&sp_stat_idr, mm->sp_stat_id);
 
@@ -1217,11 +1221,11 @@ int sp_free(unsigned long addr)
 	mutex_lock(&sp_mutex);
 	/* pointer stat may be invalid because of kthread buff_module_guard_work */
 	if (current->mm == NULL) {
-		kthread_stat.alloc_size -= spa->real_size;
+		atomic64_sub(spa->real_size, &kthread_stat.alloc_size);
 	} else {
 		stat = idr_find(&sp_stat_idr, current->mm->sp_stat_id);
 		if (stat)
-			stat->alloc_size -= spa->real_size;
+			atomic64_sub(spa->real_size, &stat->alloc_size);
 		else
 			BUG();
 	}
@@ -1464,7 +1468,7 @@ out:
 	if (!IS_ERR(p)) {
 		stat = idr_find(&sp_stat_idr, current->mm->sp_stat_id);
 		if (stat)
-			stat->alloc_size += size_aligned;
+			atomic64_add(size_aligned, &stat->alloc_size);
 	}
 	mutex_unlock(&sp_mutex);
 
@@ -1824,7 +1828,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	if (!IS_ERR(uva)) {
 		mutex_lock(&sp_mutex);
 		uva = uva + (kva - kva_aligned);
-		stat->k2u_size += size_aligned;
+		atomic64_add(size_aligned, &stat->k2u_size);
 		mutex_unlock(&sp_mutex);
 	} else {
 		/* associate vma and spa */
@@ -2254,11 +2258,11 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	mutex_lock(&sp_mutex);
 	/* pointer stat may be invalid because of kthread buff_module_guard_work */
 	if (current->mm == NULL) {
-		kthread_stat.k2u_size -= spa->real_size;
+		atomic64_sub(spa->real_size, &kthread_stat.k2u_size);
 	} else {
 		stat = idr_find(&sp_stat_idr, current->mm->sp_stat_id);
 		if (stat)
-			stat->k2u_size -= spa->real_size;
+			atomic64_sub(spa->real_size, &stat->k2u_size);
 		else
 			WARN(1, "share_pool: %s: null process stat\n", __func__);
 	}
@@ -2510,7 +2514,9 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		seq_printf(m, "%-8s %-9s %-13s\n",
 			   "Group_ID", "SP_ALLOC", "HugePage Fail");
 		seq_printf(m, "%-8d %-9ld %-13d\n",
-			   spg->id, byte2kb(stat->alloc_size), spg->hugepage_failures);
+			   spg->id,
+			   byte2kb(atomic64_read(&stat->alloc_size)),
+			   spg->hugepage_failures);
 	}
 	mutex_unlock(&sp_mutex);
 
@@ -2729,8 +2735,10 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	else
 		seq_printf(seq, "%-8d ", spg_id);
 	seq_printf(seq, "%-9ld %-9ld %-9ld %-10ld %-8ld %-7ld %-7ld %-10ld\n",
-		   byte2kb(stat->alloc_size), byte2kb(stat->k2u_size), sp_res,
-		   non_sp_res, page2kb(mm->total_vm), page2kb(total_rss),
+		   byte2kb(atomic64_read(&stat->alloc_size)),
+		   byte2kb(atomic64_read(&stat->k2u_size)),
+		   sp_res, non_sp_res,
+		   page2kb(mm->total_vm), page2kb(total_rss),
 		   page2kb(shmem), non_sp_shm);
 	mmput(mm);
 
@@ -2750,8 +2758,9 @@ static int proc_stat_show(struct seq_file *seq, void *offset)
 		   "Non-SP_RES", "VIRT", "RES", "Shm", "Non-SP_Shm");
 	/* print kthread buff_module_guard_work */
 	seq_printf(seq, "%-8s %-8s %-9ld %-9ld\n",
-		   "guard", "-", byte2kb(kthread_stat.alloc_size),
-		   byte2kb(kthread_stat.k2u_size));
+		   "guard", "-",
+		   byte2kb(atomic64_read(&kthread_stat.alloc_size)),
+		   byte2kb(atomic64_read(&kthread_stat.k2u_size)));
 	idr_for_each(&sp_stat_idr, idr_proc_stat_cb, seq);
 	return 0;
 }
