@@ -696,6 +696,15 @@ int sp_group_add_task(int pid, int spg_id)
 		}
 
 		down_write(&mm->mmap_sem);
+		if (unlikely(mm->core_state)) {
+			sp_munmap_task_areas(mm, &spa->link);
+			up_write(&mm->mmap_sem);
+			ret = -EBUSY;
+			pr_err("share pool: task add group: encountered coredump, abort\n");
+			spin_lock(&sp_area_lock);
+			break;
+		}
+
 		addr = sp_mmap(mm, file, spa, &populate);
 		if (IS_ERR_VALUE(addr)) {
 			sp_munmap_task_areas(mm, &spa->link);
@@ -1110,6 +1119,11 @@ static void sp_munmap(struct mm_struct *mm, unsigned long addr,
 	int err;
 
 	down_write(&mm->mmap_sem);
+	if (unlikely(mm->core_state)) {
+		up_write(&mm->mmap_sem);
+		pr_info("share pool: munmap: encoutered coredump\n");
+		return;
+	}
 
 	err = do_munmap(mm, addr, size, NULL);
 	if (err) {
@@ -1351,6 +1365,12 @@ try_again:
 		struct vm_area_struct *vma;
 
 		down_write(&mm->mmap_sem);
+		if (unlikely(mm->core_state)) {
+			up_write(&mm->mmap_sem);
+			pr_info("share pool: allocation encountered coredump\n");
+			continue;
+		}
+
 		mmap_addr = sp_mmap(mm, file, spa, &populate);
 		if (IS_ERR_VALUE(mmap_addr)) {
 			up_write(&mm->mmap_sem);
@@ -1521,6 +1541,11 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	}
 
 	down_write(&mm->mmap_sem);
+	if (unlikely(mm->core_state)) {
+		pr_err("share pool: k2u mmap: encountered coredump, abort\n");
+		ret_addr = -EBUSY;
+		goto put_mm;
+	}
 
 	ret_addr = sp_mmap(mm, file, spa, &populate);
 	if (IS_ERR_VALUE(ret_addr)) {
@@ -2002,7 +2027,7 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	int ret = 0;
 	struct task_struct *tsk;
 	struct mm_struct *mm;
-	void *p = ERR_PTR(-ENODEV);
+	void *p = ERR_PTR(-ESRCH);
 	struct sp_walk_data sp_walk_data = {
 		.page_count = 0,
 	};
@@ -2017,15 +2042,20 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	else
 		get_task_struct(tsk);
 	rcu_read_unlock();
-	if (ret) {
-		p = ERR_PTR(ret);
+	if (ret)
 		goto out;
-	}
 
 	mm = get_task_mm(tsk);
 	if (mm == NULL)
 		goto out_put_task;
 	down_write(&mm->mmap_sem);
+	if (unlikely(mm->core_state)) {
+		up_write(&mm->mmap_sem);
+		pr_err("share pool: u2k: encountered coredump, abort\n");
+		mmput(mm);
+		goto out_put_task;
+	}
+
 	ret = __sp_walk_page_range(uva, size, mm, &sp_walk_data);
 	if (ret) {
 		pr_err_ratelimited("share pool: walk page range failed, ret %d\n", ret);
@@ -2166,6 +2196,13 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 		}
 
 		down_write(&mm->mmap_sem);
+		if (unlikely(mm->core_state)) {
+			ret = 0;
+			up_write(&mm->mmap_sem);
+			mmput(mm);
+			goto out_drop_area;
+		}
+
 		ret = do_munmap(mm, uva_aligned, size_aligned, NULL);
 		up_write(&mm->mmap_sem);
 		mmput(mm);
@@ -2341,7 +2378,12 @@ int sp_walk_page_range(unsigned long uva, unsigned long size,
 
 	sp_walk_data->page_count = 0;
 	down_write(&mm->mmap_sem);
-	ret = __sp_walk_page_range(uva, size, mm, sp_walk_data);
+	if (likely(!mm->core_state))
+		ret = __sp_walk_page_range(uva, size, mm, sp_walk_data);
+	else {
+		pr_err("share pool: walk page range: encoutered coredump\n");
+		ret = -ESRCH;
+	}
 	up_write(&mm->mmap_sem);
 
 	mmput(mm);
