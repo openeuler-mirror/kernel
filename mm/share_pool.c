@@ -699,9 +699,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 static void free_sp_group_id(int spg_id)
 {
 	/* ida operation is protected by an internal spin_lock */
-	if ((spg_id >= SPG_ID_AUTO_MIN && spg_id <= SPG_ID_AUTO_MAX) ||
-	    (spg_id >= SPG_ID_DVPP_PASS_THROUGH_MIN &&
-	     spg_id <= SPG_ID_DVPP_PASS_THROUGH_MAX))
+	if (spg_id >= SPG_ID_AUTO_MIN && spg_id <= SPG_ID_AUTO_MAX)
 		ida_free(&sp_group_id_ida, spg_id);
 }
 
@@ -1086,8 +1084,7 @@ int sp_group_add_task(int pid, unsigned long prot, int spg_id)
 	if (enable_mdc_default_group)
 		spg_id = mdc_default_group_id;
 
-	if ((spg_id < SPG_ID_MIN || spg_id > SPG_ID_AUTO)
-	    && spg_id != SPG_ID_DVPP_PASS_THROUGH) {
+	if (spg_id < SPG_ID_MIN || spg_id > SPG_ID_AUTO) {
 		pr_err_ratelimited("add group failed, invalid group id %d\n", spg_id);
 		return -EINVAL;
 	}
@@ -1117,17 +1114,6 @@ int sp_group_add_task(int pid, unsigned long prot, int spg_id)
 					 SPG_ID_AUTO_MAX, GFP_ATOMIC);
 		if (spg_id < 0) {
 			pr_err_ratelimited("add group failed, auto generate group id failed\n");
-			return spg_id;
-		}
-		id_newly_generated = true;
-	}
-
-	if (spg_id == SPG_ID_DVPP_PASS_THROUGH) {
-		spg_id = ida_alloc_range(&sp_group_id_ida,
-			SPG_ID_DVPP_PASS_THROUGH_MIN,
-			SPG_ID_DVPP_PASS_THROUGH_MAX, GFP_ATOMIC);
-		if (spg_id < 0) {
-			pr_err_ratelimited("add group failed, DVPP auto generate group id failed\n");
 			return spg_id;
 		}
 		id_newly_generated = true;

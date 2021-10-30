@@ -16,16 +16,13 @@
 #define SP_FLAG_MASK		(SP_HUGEPAGE | SP_HUGEPAGE_ONLY | SP_DVPP | \
 				(_AC(DEVICE_ID_MASK, UL) << DEVICE_ID_SHIFT))
 
-#define SPG_ID_NONE	-1	/* not associated with sp_group, only for specified thread */
+#define SPG_ID_NONE	(-1)	/* not associated with sp_group, only for specified thread */
 #define SPG_ID_DEFAULT	0	/* use the spg id of current thread */
 #define SPG_ID_MIN	1	/* valid id should be >= 1 */
 #define SPG_ID_MAX	99999
 #define SPG_ID_AUTO_MIN 100000
 #define SPG_ID_AUTO_MAX 199999
 #define SPG_ID_AUTO     200000  /* generate group id automatically */
-#define SPG_ID_DVPP_PASS_THROUGH_MIN	800000
-#define SPG_ID_DVPP_PASS_THROUGH_MAX	899999
-#define SPG_ID_DVPP_PASS_THROUGH	900000
 
 #define MAX_DEVID 2	/* the max num of Da-vinci devices */
 
