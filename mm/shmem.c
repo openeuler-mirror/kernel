@@ -1737,7 +1737,7 @@ static int shmem_getpage_gfp(struct inode *inode, pgoff_t index,
 	int error;
 	int once = 0;
 	int alloced = 0;
-	int node_id;
+	int node_id = shmem_node_id(vma);
 
 	if (index > (MAX_LFS_FILESIZE >> PAGE_SHIFT))
 		return -EFBIG;
@@ -1889,7 +1889,6 @@ repeat:
 			goto alloc_nohuge;
 		}
 
-		node_id = shmem_node_id(vma);
 
 alloc_huge:
 		page = shmem_alloc_and_acct_page(gfp, inode, index, true,
