@@ -281,9 +281,13 @@ static inline bool sp_check_vm_huge_page(unsigned long flags)
 	return false;
 }
 
-static inline void sp_area_work_around(struct vm_unmapped_area_info *info)
+static inline void sp_area_work_around(struct vm_unmapped_area_info *info,
+				       unsigned long flags)
 {
-	if (enable_ascend_share_pool)
+	/* the MAP_DVPP couldn't work with MAP_SHARE_POOL. In addition, the
+	 * address ranges corresponding to the two flags must not overlap.
+	 */
+	if (enable_ascend_share_pool && !(flags & MAP_DVPP))
 		info->high_limit = min(info->high_limit, MMAP_SHARE_POOL_START);
 }
 
@@ -554,7 +558,8 @@ static inline bool sp_check_vm_huge_page(unsigned long flags)
 	return false;
 }
 
-static inline void sp_area_work_around(struct vm_unmapped_area_info *info)
+static inline void sp_area_work_around(struct vm_unmapped_area_info *info,
+				       unsigned long flags)
 {
 }
 

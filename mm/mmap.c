@@ -2380,7 +2380,7 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	if (enable_mmap_dvpp)
 		dvpp_mmap_get_area(&info, flags);
 
-	sp_area_work_around(&info);
+	sp_area_work_around(&info, flags);
 
 	return vm_unmapped_area(&info);
 }
@@ -2435,7 +2435,7 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 	if (enable_mmap_dvpp)
 		dvpp_mmap_get_area(&info, flags);
 
-	sp_area_work_around(&info);
+	sp_area_work_around(&info, flags);
 
 	addr = vm_unmapped_area(&info);
 
@@ -2454,7 +2454,7 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 		if (enable_mmap_dvpp)
 			dvpp_mmap_get_area(&info, flags);
 
-		sp_area_work_around(&info);
+		sp_area_work_around(&info, flags);
 
 		addr = vm_unmapped_area(&info);
 	}
