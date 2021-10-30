@@ -772,6 +772,7 @@ static void recv_work(struct work_struct *work)
 						     work);
 	struct nbd_device *nbd = args->nbd;
 	struct nbd_config *config = nbd->config;
+	struct request_queue *q = nbd->disk->queue;
 	struct nbd_sock *nsock;
 	struct nbd_cmd *cmd;
 
@@ -781,11 +782,26 @@ static void recv_work(struct work_struct *work)
 		if (nbd_read_reply(nbd, args->index, &reply))
 			break;
 
-		cmd = nbd_handle_reply(nbd, args->index, &reply);
-		if (IS_ERR(cmd))
+		/*
+		 * Grab .q_usage_counter so request pool won't go away, then no
+		 * request use-after-free is possible during nbd_handle_reply().
+		 * If queue is frozen, there won't be any inflight requests, we
+		 * needn't to handle the incoming garbage message.
+		 */
+		if (!percpu_ref_tryget(&q->q_usage_counter)) {
+			dev_err(disk_to_dev(nbd->disk), "%s: no io inflight\n",
+				__func__);
 			break;
+		}
+
+		cmd = nbd_handle_reply(nbd, args->index, &reply);
+		if (IS_ERR(cmd)) {
+			percpu_ref_put(&q->q_usage_counter);
+			break;
+		}
 
 		blk_mq_complete_request(blk_mq_rq_from_pdu(cmd));
+		percpu_ref_put(&q->q_usage_counter);
 	}
 
 	nsock = config->socks[args->index];
