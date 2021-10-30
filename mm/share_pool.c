@@ -418,6 +418,14 @@ static struct sp_group *__sp_find_spg(int pid, int spg_id)
 	return spg;
 }
 
+/**
+ * sp_group_id_by_pid() - Get the sp_group ID of a process.
+ * @pid: pid of target process.
+ *
+ * Return:
+ * >0		- the sp_group ID.
+ * -ENODEV	- target process doesn't belong to any sp_group.
+ */
 int sp_group_id_by_pid(int pid)
 {
 	struct sp_group *spg;
@@ -566,14 +574,16 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct list_head *stop)
 }
 
 /**
- * sp_group_add_task - add a process to an sp_group
- * @pid: the pid of the task to be added
- * @spg_id: the ID of the sp_group
+ * sp_group_add_task() - Add a process to an share group (sp_group).
+ * @pid: the pid of the task to be added.
+ * @spg_id: the ID of the sp_group.
  *
  * A thread group can't be added to more than one sp_group.
  *
- * Return: The manually allocated ID is between [SPG_ID_MIN, SPG_ID_MAX]
- * The automatically allocated ID is between [SPG_ID_AUTO_MIN, SPG_ID_AUTO_MAX]
+ * Return: A postive group number for success, -errno on failure.
+ *
+ * The manually specified ID is between [SPG_ID_MIN, SPG_ID_MAX].
+ * The automatically allocated ID is between [SPG_ID_AUTO_MIN, SPG_ID_AUTO_MAX].
  * When negative, the return value is -errno.
  */
 int sp_group_add_task(int pid, int spg_id)
@@ -833,11 +843,15 @@ static struct rb_node *free_sp_area_cache;
 static unsigned long cached_hole_size;
 static unsigned long cached_vstart;  /* affected by SP_DVPP and sp_config_dvpp_range() */
 
-/*
- * Allocate a region of VA from the share pool.
- * @size - the size of VA to allocate
+/**
+ * sp_alloc_area() - Allocate a region of VA from the share pool.
+ * @size: the size of VA to allocate.
+ * @flags: how to allocate the memory.
+ * @spg: the share group that the memory is allocated to.
+ * @type: the type of the region.
+ * @applier: the pid of the task which allocates the region.
  *
- * Return NULL if fail.
+ * Return: a valid pointer for success, NULL on failure.
  */
 static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 				     struct sp_group *spg, enum spa_type type,
@@ -1192,11 +1206,14 @@ static void __sp_free(struct sp_group *spg, unsigned long addr,
 	}
 }
 
-/*
- * Free the memory allocated by sp_alloc()
- * @addr - the starting VA of the memory
+/**
+ * sp_free() - Free the memory allocated by sp_alloc().
+ * @addr: the starting VA of the memory.
  *
- * Return fail if the memory can't be found or was not allocted by share pool.
+ * Return:
+ * * 0		- success.
+ * * -EINVAL	- the memory can't be found or was not allocted by share pool.
+ * * -EPERM	- the caller has no permision to free the memory.
  */
 int sp_free(unsigned long addr)
 {
@@ -1301,12 +1318,16 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 }
 
 /**
- * Allocate shared memory for all the processes in the same sp_group
- * size - the size of memory to allocate
- * sp_flags - how to allocate the memory
- * spg_id - the share group that the memory is allocated to.
+ * sp_alloc() - Allocate shared memory for all the processes in a sp_group.
+ * @size: the size of memory to allocate.
+ * @sp_flags: how to allocate the memory.
+ * @spg_id: the share group that the memory is allocated to.
  *
  * Use spg_id of current thread if spg_id == SPG_ID_DEFAULT.
+ *
+ * Return:
+ * * if succeed, return the starting kernel address of the shared memory.
+ * * if fail, return the pointer of -errno.
  */
 void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 {
@@ -1527,9 +1548,14 @@ out:
 }
 EXPORT_SYMBOL_GPL(sp_alloc);
 
-/*
- * return value: >0 means this is a hugepage addr
- * =0 means a normal addr. <0 means an errno.
+/**
+ * is_vmap_hugepage() - Check if a kernel address belongs to vmalloc family.
+ * @addr: the kernel space address to be checked.
+ *
+ * Return:
+ * * >0		- a vmalloc hugepage addr.
+ * * =0		- a normal vmalloc addr.
+ * * -errno	- failure.
  */
 static int is_vmap_hugepage(unsigned long addr)
 {
@@ -1648,12 +1674,14 @@ put_mm:
 }
 
 /**
- * Share kernel memory to a specified task
+ * sp_make_share_kva_to_task() - Share kernel memory to a specified task.
  * @kva: the VA of shared kernel memory
  * @spa: the sp area associated with the shared user address
  * @mm:  mm_struct of target task
  *
- * Return: the shared user address to start at
+ * Return:
+ * * if succeed, return the shared user address to start at.
+ * * if fail, return the pointer of -errno.
  */
 static void *sp_make_share_kva_to_task(unsigned long kva, struct sp_area *spa,
 				       struct mm_struct *mm)
@@ -1725,17 +1753,19 @@ static bool vmalloc_area_clr_flag(struct sp_area *spa, unsigned long kva, unsign
 }
 
 /**
- * Share kernel memory to a specified process or sp_group
- * @kva: the VA of shared kernel memory
- * @size: the size of shared kernel memory
+ * sp_make_share_k2u() - Share kernel memory to a specified process or sp_group.
+ * @kva: the VA of shared kernel memory.
+ * @size: the size of shared kernel memory.
  * @sp_flags: how to allocate the memory. We only support SP_DVPP.
  * @pid:  the pid of the specified process
- * @spg_id: currently, only support default value(SPG_ID_DEFAULT) and other values
- * are useless.
- *
- * Return: the shared target user address to start at
+ * @spg_id: the share group that the memory is shared to.
  *
  * Use spg_id of current thread if spg_id == SPG_ID_DEFAULT.
+ * Share kernel memory to a specified task if spg_id == SPG_ID_NONE.
+ *
+ * Return:
+ * * if succeed, return the shared user address to start at.
+ * * if fail, return the pointer of -errno.
  */
 void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			unsigned long sp_flags, int pid, int spg_id)
@@ -1980,6 +2010,12 @@ static int sp_hugetlb_entry(pte_t *ptep, unsigned long hmask,
 }
 
 /**
+ * __sp_walk_page_range() - Walk page table with caller specific callbacks.
+ * @uva: the start VA of user memory.
+ * @size: the size of user memory.
+ * @mm: mm struct of the target task.
+ * @sp_walk_data: a structure of a page pointer array.
+ *
  * the caller must hold mm->mmap_sem
  *
  * Notes for parameter alignment:
@@ -2093,13 +2129,14 @@ static void __sp_walk_page_free(struct sp_walk_data *data)
 }
 
 /**
- * Share user memory of a specified process to kernel
+ * sp_make_share_u2k() - Share user memory of a specified process to kernel.
  * @uva: the VA of shared user memory
  * @size: the size of shared user memory
  * @pid: the pid of the specified process
  *
- * Return: if success, return the starting kernel address of the shared memory.
- *         if failed, return the pointer of -errno.
+ * Return:
+ * * if success, return the starting kernel address of the shared memory.
+ * * if failed, return the pointer of -errno.
  */
 void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 {
@@ -2396,15 +2433,16 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
 }
 
 /**
- * Unshare the kernel or user memory which shared by calling sp_make_share_{k2u,u2k}().
+ * sp_unshare() - Unshare the kernel or user memory which shared by calling
+ *                sp_make_share_{k2u,u2k}().
  * @va: the specified virtual address of memory
  * @size: the size of unshared memory
  * @pid:  the pid of the specified process if the VA is user address
  * @spg_id: the ID of the specified sp_group if the VA is user address
  *
- * Return -errno if fail.
- *
  * Use spg_id of current thread if spg_id == SPG_ID_DEFAULT.
+ *
+ * Return: 0 for success, -errno on failure.
  */
 int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
 {
@@ -2429,8 +2467,16 @@ int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
 EXPORT_SYMBOL_GPL(sp_unshare);
 
 /**
- * Return 0 when success.
- * When return value < 0, information in sp_walk_data is useless
+ * sp_walk_page_range() - Walk page table with caller specific callbacks.
+ * @uva: the start VA of user memory.
+ * @size: the size of user memory.
+ * @tsk: task struct of the target task.
+ * @sp_walk_data: a structure of a page pointer array.
+ *
+ * Return: 0 for success, -errno on failure.
+ *
+ * When return 0, sp_walk_data describing [uva, uva+size) can be used.
+ * When return -errno, information in sp_walk_data is useless.
  */
 int sp_walk_page_range(unsigned long uva, unsigned long size,
 	struct task_struct *tsk, struct sp_walk_data *sp_walk_data)
@@ -2471,6 +2517,10 @@ int sp_walk_page_range(unsigned long uva, unsigned long size,
 }
 EXPORT_SYMBOL_GPL(sp_walk_page_range);
 
+/**
+ * sp_walk_page_free() - Free the sp_walk_data structure.
+ * @sp_walk_data: a structure of a page pointer array to be freed.
+ */
 void sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 {
 	check_interrupt_context();
@@ -2495,13 +2545,14 @@ int sp_unregister_notifier(struct notifier_block *nb)
 EXPORT_SYMBOL_GPL(sp_unregister_notifier);
 
 /**
- * user can config the share pool start addrese of each Da-vinci device
+ * sp_config_dvpp_range() - User can config the share pool start address
+ *                          of each Da-vinci device.
  * @start: the value of share pool start
  * @size: the value of share pool
  * @device_id: the num of Da-vinci device
  * @pid: the pid of device process
  *
- * Return false if parameter invalid of has been set up.
+ * Return true for success, false if parameter invalid of has been set up.
  */
 bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 {
@@ -2534,7 +2585,12 @@ bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 }
 EXPORT_SYMBOL_GPL(sp_config_dvpp_range);
 
-/* Check whether the address belongs to the share pool. */
+/**
+ * is_sharepool_addr() - Check if a user memory address belongs to share pool.
+ * @addr: the userspace address to be checked.
+ *
+ * Return true if addr belongs to share pool, or false vice versa.
+ */
 bool is_sharepool_addr(unsigned long addr)
 {
 	struct sp_area *spa;
