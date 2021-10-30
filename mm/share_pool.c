@@ -89,7 +89,7 @@ static DEFINE_IDR(sp_stat_idr);
 static DECLARE_RWSEM(sp_stat_sem);
 
 /* for kthread buff_module_guard_work */
-static struct sp_proc_stat kthread_stat = {0};
+static struct sp_proc_stat kthread_stat;
 
 /* The caller must hold sp_stat_sem */
 static struct sp_proc_stat *sp_get_proc_stat_locked(int tgid)
@@ -203,7 +203,7 @@ struct sp_spa_stat {
 	unsigned long dvpp_va_size;
 };
 
-static struct sp_spa_stat spa_stat = {0};
+static struct sp_spa_stat spa_stat;
 
 /* statistics of all sp group born from sp_alloc and k2u(spg) */
 struct sp_spg_stat {
@@ -211,7 +211,7 @@ struct sp_spg_stat {
 	atomic64_t spa_total_size;
 };
 
-static struct sp_spg_stat spg_stat = {0};
+static struct sp_spg_stat spg_stat;
 
 /*** Global share pool VA allocator ***/
 
