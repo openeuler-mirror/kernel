@@ -5,6 +5,7 @@
 #include <linux/mm_types.h>
 #include <linux/notifier.h>
 #include <linux/vmalloc.h>
+#include <linux/printk.h>
 
 #define SP_HUGEPAGE		(1 << 0)
 #define SP_HUGEPAGE_ONLY	(1 << 1)
@@ -34,6 +35,8 @@
 extern int sysctl_share_pool_hugepage_enable;
 
 extern int sysctl_ac_mode;
+
+extern int sysctl_sp_debug_mode;
 
 extern int enable_ascend_share_pool;
 
@@ -70,7 +73,7 @@ struct sp_group {
 	/* number of sp_area */
 	atomic_t	 spa_num;
 	/* total size of all sp_area from sp_alloc and k2u(spg) */
-	atomic_t	 size;
+	atomic64_t	 size;
 	/* record the number of hugepage allocation failures */
 	int		 hugepage_failures;
 	/* is_alive == false means it's being destroyed */
@@ -211,6 +214,12 @@ static inline bool sp_mmap_check(unsigned long flags)
 	return false;
 }
 
+static inline void sp_dump_stack(void)
+{
+	if (sysctl_sp_debug_mode)
+		dump_stack();
+}
+
 #else
 
 static inline int sp_group_add_task(int pid, int spg_id)
@@ -348,6 +357,10 @@ static inline bool is_vm_huge_special(struct vm_area_struct *vma)
 static inline bool sp_mmap_check(unsigned long flags)
 {
 	return false;
+}
+
+static inline void sp_dump_stack(void)
+{
 }
 #endif
 

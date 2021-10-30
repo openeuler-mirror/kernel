@@ -57,6 +57,8 @@ static const int mdc_default_group_id = 1;
 
 /* access control mode */
 int sysctl_ac_mode = AC_NONE;
+/* debug mode */
+int sysctl_sp_debug_mode;
 
 /* idr of all sp_groups */
 static DEFINE_IDR(sp_group_idr);
@@ -85,9 +87,11 @@ struct sp_proc_stat {
 /* for kthread buff_module_guard_work */
 static struct sp_proc_stat kthread_stat = {0};
 
-/* The caller must hold sp_mutex. */
-static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk)
-{
+/*
+ * The caller must hold sp_mutex and ensure no concurrency problem
+ * for task_struct and mm_struct.
+ */
+static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk) {
 	struct sp_proc_stat *stat;
 	int id = tsk->mm->sp_stat_id;
 	int tgid = tsk->tgid;
@@ -138,7 +142,7 @@ static struct sp_spa_stat spa_stat = {0};
 /* statistics of all sp group born from sp_alloc and k2u(spg) */
 struct sp_spg_stat {
 	atomic_t spa_total_num;
-	atomic_t spa_total_size;
+	atomic64_t spa_total_size;
 };
 
 static struct sp_spg_stat spg_stat = {0};
@@ -166,10 +170,11 @@ struct sp_area {
 	struct list_head link;		/* link to the spg->head */
 	struct sp_group *spg;
 	enum spa_type type;		/* where spa born from */
+	struct mm_struct *mm;		/* owner of k2u(task) */
 };
 static DEFINE_SPINLOCK(sp_area_lock);
 static struct rb_root sp_area_root = RB_ROOT;
-bool host_svm_sp_enable = false;
+static bool host_svm_sp_enable = false;
 
 int sysctl_share_pool_hugepage_enable = 1;
 
@@ -241,7 +246,7 @@ static int spa_dec_usage(enum spa_type type, unsigned long size)
 	return 0;
 }
 
-static void *sp_mmap(struct mm_struct *mm, struct file *file,
+static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 		     struct sp_area *spa, unsigned long *populate);
 
 static void free_sp_group(struct sp_group *spg)
@@ -274,7 +279,18 @@ static struct sp_group *__sp_find_spg(int pid, int spg_id)
 		if (ret)
 			return NULL;
 
-		spg = tsk->mm->sp_group;
+		/*
+		 * Once we encounter a concurrency problem here.
+		 * To fix it, we believe get_task_mm() and mmput() is too
+		 * heavy because we just get the pointer of sp_group.
+		 */
+		task_lock(tsk);
+		if (tsk->mm == NULL)
+			spg = NULL;
+		else
+			spg = tsk->mm->sp_group;
+		task_unlock(tsk);
+
 		put_task_struct(tsk);
 	} else {
 		spg = idr_find(&sp_group_idr, spg_id);
@@ -318,7 +334,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 		}
 		spg->id = spg_id;
 		atomic_set(&spg->spa_num, 0);
-		atomic_set(&spg->size, 0);
+		atomic64_set(&spg->size, 0);
 		spg->is_alive = true;
 		spg->hugepage_failures = 0;
 		spg->dvpp_multi_spaces = false;
@@ -377,9 +393,6 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct list_head *stop)
 	struct sp_area *spa, *prev = NULL;
 	int err;
 
-	if (!mmget_not_zero(mm))
-		return;
-	down_write(&mm->mmap_sem);
 	spin_lock(&sp_area_lock);
 
 	list_for_each_entry(spa, &mm->sp_group->spa_list, link) {
@@ -406,8 +419,17 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct list_head *stop)
 		__sp_area_drop_locked(prev);
 
 	spin_unlock(&sp_area_lock);
-	up_write(&mm->mmap_sem);
-	mmput(mm);
+}
+
+/* The caller must hold sp_mutex. */
+static void __sp_group_drop_locked(struct sp_group *spg)
+{
+	bool is_alive = spg->is_alive;
+
+	if (atomic_dec_and_test(&spg->use_count)) {
+		BUG_ON(is_alive);
+		free_sp_group(spg);
+	}
 }
 
 /**
@@ -446,8 +468,9 @@ int sp_group_add_task(int pid, int spg_id)
 		spg = idr_find(&sp_group_idr, spg_id);
 		if (!spg_valid(spg)) {
 			mutex_unlock(&sp_mutex);
-			pr_err("share pool: task add group failed because group id %d hasn't been create or dead\n",
-			       spg_id);
+			if (printk_ratelimit())
+				pr_err("share pool: task add group failed because group id %d "
+				       "hasn't been create or dead\n", spg_id);
 			return -EINVAL;
 		}
 		mutex_unlock(&sp_mutex);
@@ -457,7 +480,9 @@ int sp_group_add_task(int pid, int spg_id)
 		spg_id = ida_alloc_range(&sp_group_id_ida, SPG_ID_AUTO_MIN,
 					 SPG_ID_AUTO_MAX, GFP_ATOMIC);
 		if (spg_id < 0) {
-			pr_err("share pool: task add group failed when automatically generate group id failed\n");
+			if (printk_ratelimit())
+				pr_err("share pool: task add group failed when automatically "
+				       "generate group id failed\n");
 			return spg_id;
 		}
 	}
@@ -467,8 +492,9 @@ int sp_group_add_task(int pid, int spg_id)
 			SPG_ID_DVPP_PASS_THROUGH_MIN,
 			SPG_ID_DVPP_PASS_THROUGH_MAX, GFP_ATOMIC);
 		if (spg_id < 0) {
-			pr_err("share pool: task add group failed when automatically generate group id failed"
-			       "in DVPP pass through\n");
+			if (printk_ratelimit())
+				pr_err("share pool: task add group failed when automatically "
+				       "generate group id failed in DVPP pass through\n");
 			return spg_id;
 		}
 	}
@@ -494,12 +520,20 @@ int sp_group_add_task(int pid, int spg_id)
 		ret = PTR_ERR(spg);
 		goto out_put_task;
 	}
+	atomic_inc(&spg->use_count);
+
 	/* access control permission check */
 	if (sysctl_ac_mode == AC_SINGLE_OWNER) {
 		if (spg->owner != current->group_leader) {
 			ret = -EPERM;
-			goto out_put_task;
+			goto out_drop_group;
 		}
+	}
+
+	mm = get_task_mm(tsk);
+	if (!mm) {
+		ret = -ESRCH;
+		goto out_drop_group;
 	}
 
 	/* per process statistics initialization */
@@ -507,12 +541,10 @@ int sp_group_add_task(int pid, int spg_id)
 	if (IS_ERR(stat)) {
 		ret = PTR_ERR(stat);
 		pr_err("share pool: init proc stat failed, ret %lx\n", PTR_ERR(stat));
-		goto out_put_task;
+		goto out_put_mm;
 	}
 
-	mm = tsk->mm;
 	mm->sp_group = spg;
-	atomic_inc(&spg->use_count);
 	list_add_tail(&tsk->mm->sp_node, &spg->procs);
 	/*
 	 * create mappings of existing shared memory segments into this
@@ -523,7 +555,7 @@ int sp_group_add_task(int pid, int spg_id)
 	list_for_each_entry(spa, &spg->spa_list, link) {
 		unsigned long populate = 0;
 		struct file *file = spa_file(spa);
-		void *p;
+		unsigned long addr;
 
 		if (prev)
 			__sp_area_drop_locked(prev);
@@ -532,28 +564,24 @@ int sp_group_add_task(int pid, int spg_id)
 		atomic_inc(&spa->use_count);
 		spin_unlock(&sp_area_lock);
 
-		p = sp_mmap(mm, file, spa, &populate);
-		if (IS_ERR(p) && (PTR_ERR(p) != -ESPGMMEXIT)) {
+		down_write(&mm->mmap_sem);
+		addr = sp_mmap(mm, file, spa, &populate);
+		if (IS_ERR_VALUE(addr)) {
 			sp_munmap_task_areas(mm, &spa->link);
-			ret = PTR_ERR(p);
+			up_write(&mm->mmap_sem);
+			ret = addr;
 			pr_err("share pool: task add group sp mmap failed, ret %d\n", ret);
 			spin_lock(&sp_area_lock);
 			break;
 		}
-
-		if (PTR_ERR(p) == -ESPGMMEXIT) {
-			pr_err("share pool: task add group sp mmap failed, ret -ESPGMEXIT\n");
-			spin_lock(&sp_area_lock);
-			ret = -ESPGMMEXIT;
-			break;
-		}
+		up_write(&mm->mmap_sem);
 
 		if (populate) {
 			ret = do_mm_populate(mm, spa->va_start, populate, 0);
 			if (ret) {
 				if (printk_ratelimit())
-					pr_err("share pool: task add group failed when mm populate failed: %d\n",
-					       ret);
+					pr_warn("share pool: task add group failed when mm populate "
+						"failed (potential no enough memory): %d\n", ret);
 				sp_munmap_task_areas(mm, spa->link.next);
 			}
 		}
@@ -567,8 +595,16 @@ int sp_group_add_task(int pid, int spg_id)
 	if (unlikely(ret)) {
 		idr_remove(&sp_stat_idr, mm->sp_stat_id);
 		kfree(stat);
+		mm->sp_stat_id = 0;
+		list_del(&mm->sp_node);
+		mm->sp_group = NULL;
 	}
 
+out_put_mm:
+	mmput(mm);
+out_drop_group:
+	if (unlikely(ret))
+		__sp_group_drop_locked(spg);
 out_put_task:
 	put_task_struct(tsk);
 out_unlock:
@@ -609,9 +645,6 @@ void sp_group_exit(struct mm_struct *mm)
 	bool is_alive = true;
 	bool unlock;
 
-	if (!enable_ascend_share_pool)
-		return;
-
 	/*
 	 * Nothing to do if this thread group doesn't belong to any sp_group.
 	 * No need to protect this check with lock because we can add a task
@@ -638,18 +671,13 @@ void sp_group_exit(struct mm_struct *mm)
 
 void sp_group_post_exit(struct mm_struct *mm)
 {
-	bool is_alive;
 	struct sp_proc_stat *stat;
 	bool unlock;
-
-	if (!enable_ascend_share_pool)
-		return;
 
 	if (!mm->sp_group)
 		return;
 
 	spg_exit_lock(&unlock);
-	is_alive = mm->sp_group->is_alive;
 
 	/* pointer stat must be valid, we don't need to check sanity */
 	stat = idr_find(&sp_stat_idr, mm->sp_stat_id);
@@ -673,10 +701,7 @@ void sp_group_post_exit(struct mm_struct *mm)
 
 	idr_remove(&sp_stat_idr, mm->sp_stat_id);
 
-	if (atomic_dec_and_test(&mm->sp_group->use_count)) {
-		BUG_ON(is_alive);
-		free_sp_group(mm->sp_group);
-	}
+	__sp_group_drop_locked(mm->sp_group);
 	spg_exit_unlock(unlock);
 
 	kfree(stat);
@@ -716,7 +741,7 @@ static void __insert_sp_area(struct sp_area *spa)
 static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 				     struct sp_group *spg, enum spa_type type)
 {
-	struct sp_area *spa;
+	struct sp_area *spa, *err;
 	struct rb_node *n;
 	unsigned long vstart = MMAP_SHARE_POOL_START;
 	unsigned long vend = MMAP_SHARE_POOL_16G_START;
@@ -728,6 +753,11 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 			vstart = MMAP_SHARE_POOL_16G_START;
 			vend = MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE;
 		} else {
+			if (!spg) {
+				if (printk_ratelimit())
+					pr_err("share pool: don't allow k2u(task) in host svm multiprocess scene\n");
+				return ERR_PTR(-EINVAL);
+			}
 			vstart = spg->dvpp_va_start;
 			vend = spg->dvpp_va_start + spg->dvpp_size;
 		}
@@ -735,14 +765,11 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 
 	addr = vstart;
 
-	if (!sysctl_share_pool_hugepage_enable)
-		flags &= ~(SP_HUGEPAGE_ONLY | SP_HUGEPAGE);
-
 	spa = kmalloc(sizeof(struct sp_area), GFP_KERNEL);
 	if (unlikely(!spa)) {
 		if (printk_ratelimit())
 			pr_err("share pool: alloc spa failed due to lack of memory\n");
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	spin_lock(&sp_area_lock);
@@ -788,6 +815,7 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 	}
 found:
 	if (addr + size_align > vend) {
+		err = ERR_PTR(-EOVERFLOW);
 		goto error;
 	}
 
@@ -799,15 +827,17 @@ found:
 	atomic_set(&spa->use_count, 1);
 	spa->type = type;
 
-	if (spa_inc_usage(type, size))
+	if (spa_inc_usage(type, size)) {
+		err = ERR_PTR(-EINVAL);
 		goto error;
+	}
 
 	__insert_sp_area(spa);
 	if (spa->spg) {
 		atomic_inc(&spg->spa_num);
-		atomic_add(size, &spg->size);
+		atomic64_add(size, &spg->size);
 		atomic_inc(&spg_stat.spa_total_num);
-		atomic_add(size, &spg_stat.spa_total_size);
+		atomic64_add(size, &spg_stat.spa_total_size);
 		list_add_tail(&spa->link, &spg->spa_list);
 	}
 	spin_unlock(&sp_area_lock);
@@ -817,7 +847,7 @@ found:
 error:
 	spin_unlock(&sp_area_lock);
 	kfree(spa);
-	return NULL;
+	return err;
 }
 
 /* the caller should hold sp_area_lock */
@@ -862,9 +892,9 @@ static void sp_free_area(struct sp_area *spa)
 	spa_dec_usage(spa->type, spa->real_size);  /* won't fail */
 	if (spa->spg) {
 		atomic_dec(&spa->spg->spa_num);
-		atomic_sub(spa->real_size, &spa->spg->size);
+		atomic64_sub(spa->real_size, &spa->spg->size);
 		atomic_dec(&spg_stat.spa_total_num);
-		atomic_sub(spa->real_size, &spg_stat.spa_total_size);
+		atomic64_sub(spa->real_size, &spg_stat.spa_total_size);
 		list_del(&spa->link);
 	}
 	rb_erase(&spa->rb_node, &sp_area_root);
@@ -898,7 +928,7 @@ void sp_area_drop(struct vm_area_struct *vma)
 {
 	struct sp_area *spa;
 
-	if (!sp_check_vm_share_pool(vma->vm_flags))
+	if (!(vma->vm_flags & VM_SHARE_POOL))
 		return;
 
 	/*
@@ -979,12 +1009,24 @@ int sp_free(unsigned long addr)
 	} else {  /* spa == NULL */
 		ret = -EINVAL;
 		if (printk_ratelimit())
-			pr_err("share pool: sp_free invalid input addr %pK\n", (void *)addr);
+			pr_err("share pool: sp free invalid input addr %pK\n", (void *)addr);
 		goto out;
+	}
+
+	if (spa->type != SPA_TYPE_ALLOC) {
+		if (printk_ratelimit())
+			pr_err("share pool: sp free failed, addr %pK is not from sp_alloc\n",
+			       (void *)addr);
 	}
 
 	if (!spg_valid(spa->spg))
 		goto drop_spa;
+
+	pr_notice("share pool: [sp free] caller %s(%d/%d); "
+		  "group id %d addr 0x%pK, size %ld\n",
+		  current->comm, current->tgid, current->pid, spa->spg->id,
+		  (void *)spa->va_start, spa->real_size);
+	sp_dump_stack();
 
 	__sp_free(spa->spg, spa->va_start, spa_size(spa), NULL);
 
@@ -993,7 +1035,7 @@ int sp_free(unsigned long addr)
 	offset = addr - MMAP_SHARE_POOL_START;
 	ret = vfs_fallocate(spa_file(spa), mode, offset, spa_size(spa));
 	if (ret)
-		pr_err("share pool: fallocate failed: %d\n", ret);
+		pr_err("share pool: sp free fallocate failed: %d\n", ret);
 
 	/* pointer stat may be invalid because of kthread buff_module_guard_work */
 	if (current->mm == NULL) {
@@ -1016,7 +1058,7 @@ out:
 EXPORT_SYMBOL_GPL(sp_free);
 
 /* wrapper of __do_mmap() and the caller must hold down_write(&mm->mmap_sem). */
-static unsigned long __sp_mmap(struct mm_struct *mm, struct file *file,
+static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 			       struct sp_area *spa, unsigned long *populate)
 {
 	unsigned long addr = spa->va_start;
@@ -1033,28 +1075,11 @@ static unsigned long __sp_mmap(struct mm_struct *mm, struct file *file,
 	if (IS_ERR_VALUE(addr)) {
 		atomic_dec(&spa->use_count);
 		pr_err("share pool: do_mmap fails %ld\n", addr);
+	} else {
+		BUG_ON(addr != spa->va_start);
 	}
 
 	return addr;
-}
-
-static void *sp_mmap(struct mm_struct *mm, struct file *file,
-		     struct sp_area *spa, unsigned long *populate)
-{
-	unsigned long addr;
-
-	if (!mmget_not_zero(mm))
-		return ERR_PTR(-ESPGMMEXIT);
-	down_write(&mm->mmap_sem);
-	addr = __sp_mmap(mm, file, spa, populate);
-	up_write(&mm->mmap_sem);
-	mmput(mm);
-
-	if (IS_ERR_VALUE(addr))
-		return ERR_PTR(addr);
-
-	BUG_ON(addr != spa->va_start);
-	return (void *)addr;
 }
 
 /**
@@ -1071,12 +1096,14 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	struct sp_area *spa = NULL;
 	struct sp_proc_stat *stat;
 	unsigned long sp_addr;
-	void *p_mmap, *p = ERR_PTR(-ENODEV);
+	unsigned long mmap_addr;
+	void *p = ERR_PTR(-ENODEV);
 	struct mm_struct *mm;
 	struct file *file;
 	unsigned long size_aligned;
 	int ret = 0;
 	struct mm_struct *tmp;
+	unsigned long mode, offset;
 
 	/* mdc scene hack */
 	if (enable_mdc_default_group)
@@ -1133,9 +1160,6 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 		goto out;
 	}
 
-	if (!sysctl_share_pool_hugepage_enable)
-		sp_flags &= ~(SP_HUGEPAGE_ONLY | SP_HUGEPAGE);
-
 	if (sp_flags & SP_HUGEPAGE) {
 		file = spg->file_hugetlb;
 		size_aligned = ALIGN(size, PMD_SIZE);
@@ -1145,10 +1169,12 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	}
 try_again:
 	spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_ALLOC);
-	if (!spa) {
+	if (IS_ERR(spa)) {
 		if (printk_ratelimit())
-			pr_err("share pool: allocation failed due to alloc spa failure\n");
-		p = ERR_PTR(-ENOMEM);
+			pr_err("share pool: allocation failed due to alloc spa failure "
+			       "(potential no enough virtual memory when -75): %ld\n",
+			       PTR_ERR(spa));
+		p = spa;
 		goto out;
 	}
 	sp_addr = spa->va_start;
@@ -1158,33 +1184,34 @@ try_again:
 		unsigned long populate = 0;
 		struct vm_area_struct *vma;
 
-		p_mmap = sp_mmap(mm, file, spa, &populate);
-		if (IS_ERR(p_mmap) && (PTR_ERR(p_mmap) != -ESPGMMEXIT)) {
-			p = p_mmap;
-			__sp_free(spg, sp_addr, size_aligned, mm);
-			pr_err("share pool: allocation sp mmap failed, ret %ld\n", PTR_ERR(p_mmap));
-			break;
-		}
-
-		if (PTR_ERR(p_mmap) == -ESPGMMEXIT) {
-			pr_info("share pool: allocation sp mmap failed, ret -ESPGMMEXIT\n");
-			continue;
-		}
-
-		p = p_mmap;  /* success */
-		if (populate == 0)
-			continue;
-
 		if (!mmget_not_zero(mm))
 			continue;
+
 		down_write(&mm->mmap_sem);
+		mmap_addr = sp_mmap(mm, file, spa, &populate);
+		if (IS_ERR_VALUE(mmap_addr)) {
+			up_write(&mm->mmap_sem);
+			p = (void *)mmap_addr;
+			__sp_free(spg, sp_addr, size_aligned, mm);
+			mmput(mm);
+			pr_err("share pool: allocation sp mmap failed, ret %ld\n", mmap_addr);
+			goto out;
+		}
+
+		p =(void *)mmap_addr;  /* success */
+		if (populate == 0) {
+			up_write(&mm->mmap_sem);
+			mmput(mm);
+			continue;
+		}
+
 		vma = find_vma(mm, sp_addr);
 		if (unlikely(!vma)) {
+			up_write(&mm->mmap_sem);
+			mmput(mm);
 			pr_err("share pool: allocation failed due to find %pK vma failure\n",
 			       (void *)sp_addr);
 			p = ERR_PTR(-EINVAL);
-			up_write(&mm->mmap_sem);
-			mmput(mm);
 			goto out;
 		}
 		/* clean PTE_RDONLY flags or trigger SMMU event */
@@ -1216,9 +1243,17 @@ try_again:
 			}
 
 			if (printk_ratelimit())
-				pr_err("share pool: allocation failed due to mm populate failed: %d\n",
-				       ret);
+				pr_warn("share pool: allocation failed due to mm populate failed"
+					"(potential no enough memory when -12): %d\n", ret);
 			p = ERR_PTR(ret);
+			__sp_area_drop(spa);
+
+			mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
+			offset = sp_addr - MMAP_SHARE_POOL_START;
+			ret = vfs_fallocate(spa_file(spa), mode, offset, spa_size(spa));
+			if (ret)
+				pr_err("share pool: fallocate failed %d\n", ret);
+
 			mmput(mm);
 			break;
 		}
@@ -1235,23 +1270,19 @@ out:
 	mutex_unlock(&sp_mutex);
 
 	/* this will free spa if mmap failed */
-	if (spa)
+	if (spa && !IS_ERR(spa))
 		__sp_area_drop(spa);
 
+	if (!IS_ERR(p)) {
+		pr_notice("share pool: [sp alloc] caller %s(%d/%d); group id %d; "
+			  "return addr 0x%pK, size %ld\n",
+			  current->comm, current->tgid, current->pid, spa->spg->id,
+			  (void *)spa->va_start, spa->real_size);
+		sp_dump_stack();
+	}
 	return p;
 }
 EXPORT_SYMBOL_GPL(sp_alloc);
-
-static unsigned long __sp_remap_get_pfn(unsigned long kva)
-{
-	unsigned long pfn;
-	if (is_vmalloc_addr((void *)kva))
-		pfn = vmalloc_to_pfn((void *)kva);
-	else
-		pfn = virt_to_pfn(kva);
-
-	return pfn;
-}
 
 /*
  * return value: >0 means this is a hugepage addr
@@ -1286,7 +1317,6 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	struct vm_area_struct *vma;
 	unsigned long ret_addr;
 	unsigned long populate = 0;
-	unsigned long addr, buf, offset;
 	struct file *file = NULL;
 	int ret = 0;
 	struct user_struct *user = NULL;
@@ -1307,7 +1337,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	}
 	down_write(&mm->mmap_sem);
 
-	ret_addr = __sp_mmap(mm, file, spa, &populate);
+	ret_addr = sp_mmap(mm, file, spa, &populate);
 	if (IS_ERR_VALUE(ret_addr)) {
 		pr_err("share pool: k2u mmap failed %lx\n", ret_addr);
 		goto out;
@@ -1326,20 +1356,12 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 			goto out;
 		}
 	} else {
-		buf = ret_addr;
-		addr = kva;
-		offset = 0;
-		do {
-			ret = remap_pfn_range(vma, buf, __sp_remap_get_pfn(addr), PAGE_SIZE,
-					      __pgprot(vma->vm_page_prot.pgprot));
-			if (ret) {
-				ret_addr = ret;
-				goto out;
-			}
-			offset += PAGE_SIZE;
-			buf += PAGE_SIZE;
-			addr += PAGE_SIZE;
-		} while (offset < spa_size(spa));
+		ret = remap_vmalloc_range(vma, (void *)kva, 0);
+		if (ret) {
+			pr_err("share pool: remap vmalloc failed, ret %d\n", ret);
+			ret_addr = ret;
+			goto out;
+		}
 	}
 
 out:
@@ -1380,6 +1402,13 @@ static void *sp_make_share_kva_to_task(unsigned long kva, struct sp_area *spa,
 	}
 
 	p = (void *)ret_addr;
+
+	task_lock(tsk);
+	if (tsk->mm == NULL)
+		p = ERR_PTR(-ESRCH);
+	else
+		spa->mm = tsk->mm;
+	task_unlock(tsk);
 out:
 	put_task_struct(tsk);
 	return p;
@@ -1438,6 +1467,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	unsigned long kva_aligned;
 	unsigned long size_aligned;
 	unsigned int page_size = PAGE_SIZE;
+	enum spa_type type;
 	int ret;
 
 	if (sp_flags & ~SP_DVPP) {
@@ -1453,6 +1483,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	} else if (ret == 0) {
 		/* do nothing */
 	} else {
+		pr_err("it is not vmalloc address\n");
 		return ERR_PTR(ret);
 	}
 	/* aligned down kva is convenient for caller to start with any valid kva */
@@ -1460,24 +1491,42 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	size_aligned = ALIGN(kva + size, page_size) - kva_aligned;
 
 	mutex_lock(&sp_mutex);
-	spg = __sp_find_spg(pid, spg_id);
+	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
 	if (spg == NULL) {
-		spa = sp_alloc_area(size_aligned, sp_flags, NULL, SPA_TYPE_K2TASK);
-		if (!spa) {
+		type = SPA_TYPE_K2TASK;
+		if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT) {
 			mutex_unlock(&sp_mutex);
 			if (printk_ratelimit())
-				pr_err("share pool: k2u failed due to alloc spa failure\n");
-			return ERR_PTR(-ENOMEM);
+				pr_err("share pool: k2task invalid spg id %d\n", spg_id);
+			return ERR_PTR(-EINVAL);
+		}
+		spa = sp_alloc_area(size_aligned, sp_flags, NULL, type);
+		if (IS_ERR(spa)) {
+			mutex_unlock(&sp_mutex);
+			if (printk_ratelimit())
+				pr_err("share pool: k2u(task) failed due to alloc spa failure "
+				       "(potential no enough virtual memory when -75): %ld\n",
+				       PTR_ERR(spa));
+			return spa;
 		}
 		uva = sp_make_share_kva_to_task(kva_aligned, spa, pid);
 		mutex_unlock(&sp_mutex);
 	} else if (spg_valid(spg)) {
-		spa = sp_alloc_area(size_aligned, sp_flags, spg, SPA_TYPE_K2SPG);
-		if (!spa) {
+		type = SPA_TYPE_K2SPG;
+		if (spg_id != SPG_ID_DEFAULT && spg_id != spg->id) {
 			mutex_unlock(&sp_mutex);
 			if (printk_ratelimit())
-				pr_err("share pool: k2u failed due to alloc spa failure\n");
-			return ERR_PTR(-ENOMEM);
+				pr_err("share pool: k2spg invalid spg id %d\n", spg_id);
+			return ERR_PTR(-EINVAL);
+		}
+		spa = sp_alloc_area(size_aligned, sp_flags, spg, type);
+		if (IS_ERR(spa)) {
+			mutex_unlock(&sp_mutex);
+			if (printk_ratelimit())
+				pr_err("share pool: k2u(spg) failed due to alloc spa failure "
+				       "(potential no enough virtual memory when -75): %ld\n",
+				       PTR_ERR(spa));
+			return spa;
 		}
 
 		uva = sp_make_share_kva_to_spg(kva_aligned, spa, spg);
@@ -1492,6 +1541,17 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 		uva = uva + (kva - kva_aligned);
 
 	__sp_area_drop(spa);
+
+	if (!IS_ERR(uva)) {
+		if (spg_valid(spa->spg))
+			spg_id = spa->spg->id;
+		pr_notice("share pool: [sp k2u type %d] caller %s(%d/%d); group id %d; "
+			  "return addr 0x%pK size %ld\n",
+			  type, current->comm, current->tgid, current->pid, spg_id,
+			  (void *)spa->va_start, spa->real_size);
+		sp_dump_stack();
+	}
+
 	return uva;
 }
 EXPORT_SYMBOL_GPL(sp_make_share_k2u);
@@ -1531,7 +1591,8 @@ static int sp_pte_hole(unsigned long start, unsigned long end,
 		       struct mm_walk *walk)
 {
 	if (printk_ratelimit())
-		pr_err("share pool: hole [%pK, %pK) appeared unexpectedly\n", (void *)start, (void *)end);
+		pr_err("share pool: hole [%pK, %pK) appeared unexpectedly\n",
+		       (void *)start, (void *)end);
 	return -EFAULT;
 }
 
@@ -1545,7 +1606,8 @@ static int sp_hugetlb_entry(pte_t *ptep, unsigned long hmask,
 
 	if (unlikely(!pte_present(pte))) {
 		if (printk_ratelimit())
-			pr_err("share pool: the page of addr %pK unexpectedly not in RAM\n", (void *)addr);
+			pr_err("share pool: the page of addr %pK unexpectedly "
+			       "not in RAM\n", (void *)addr);
 		return -EFAULT;
 	}
 
@@ -1758,6 +1820,11 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 		}
 	}
 
+	if (spa->type != SPA_TYPE_K2TASK && spa->type != SPA_TYPE_K2SPG) {
+		pr_err("share pool: this spa should not be unshare here\n");
+		ret = -EINVAL;
+		goto out_drop_area;
+	}
 	/*
 	 * 1. overflow actually won't happen due to an spa must be valid.
 	 * 2. we must unshare [spa->va_start, spa->va_start + spa->real_size) completely
@@ -1771,32 +1838,57 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 	if (size_aligned < ALIGN(size, page_size)) {
 		ret = -EINVAL;
 		if (printk_ratelimit())
-			pr_err("share pool: unshare uva failed due to invalid parameter size %lu\n", size);
+			pr_err("share pool: unshare uva failed due to invalid parameter size %lu\n",
+			       size);
 		goto out_drop_area;
 	}
 
-	if (spg_id == SPG_ID_NONE) {
-		if (spa->spg) {
-			ret = -EINVAL;
+	if (spa->type == SPA_TYPE_K2TASK) {
+		if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT) {
 			if (printk_ratelimit())
-				pr_err("share pool: unshare uva failed, SPG_ID_NONE is invalid\n");
+				pr_err("share pool: unshare uva(to task) failed, "
+				       "invalid spg id %d\n", spg_id);
+			ret = -EINVAL;
 			goto out_drop_area;
 		}
 
 		rcu_read_lock();
 		tsk = find_task_by_vpid(pid);
-		if (!tsk || (tsk->flags & PF_EXITING))
-			ret = -ESRCH;
-		else
-			get_task_struct(tsk);
-
-		rcu_read_unlock();
-		if (ret)
+		if (!tsk || !tsk->mm || (tsk->flags & PF_EXITING)) {
+			if (printk_ratelimit())
+				pr_info("share pool: no need to unshare uva(to task), "
+					"target process not found or do_exit\n");
+			ret = -EINVAL;
+			rcu_read_unlock();
+			sp_dump_stack();
 			goto out_drop_area;
+		}
+		get_task_struct(tsk);
+		rcu_read_unlock();
+
+		if (!spa->mm ||
+		    (current->mm && (current->mm != tsk->mm || tsk->mm != spa->mm))) {
+			if (printk_ratelimit())
+				pr_err("share pool: unshare uva(to task) failed, "
+				       "wrong pid or invalid spa\n");
+			ret = -EINVAL;
+			goto out_drop_area;
+		}
+
+		if (spa->mm != tsk->mm) {
+			if (printk_ratelimit())
+				pr_err("share pool: unshare uva(to task) failed, "
+				       "spa not belong to the task\n");
+			ret = -EINVAL;
+			goto out_drop_area;
+		}
 
 		if (!mmget_not_zero(tsk->mm)) {
 			put_task_struct(tsk);
-			pr_info("share pool: no need to unshare uva, target process is exiting\n");
+			if (printk_ratelimit())
+				pr_info("share pool: no need to unshare uva(to task), "
+					"target process mm is not existing\n");
+			sp_dump_stack();
 			goto out_drop_area;
 		}
 		down_write(&tsk->mm->mmap_sem);
@@ -1809,32 +1901,51 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size, int pid, int sp
 			       (void *)uva_aligned);
 		}
 		put_task_struct(tsk);
-	} else {
-		/*
-		 * k2u to task, then unshare_uva(..., spg_id) is invalid due to potential
-		 * spa memory leak.
-		 */
-		if (!spa->spg) {
-			ret = -EINVAL;
+	} else if (spa->type == SPA_TYPE_K2SPG) {
+		if (!spa->spg || spg_id == SPG_ID_NONE) {
 			if (printk_ratelimit())
-				pr_err("share pool: unshare uva failed, sp group id %d is invalid\n", spg_id);
+				pr_err("share pool: unshare uva(to group) failed, "
+				       "invalid spg id %d\n", spg_id);
+			ret = -EINVAL;
 			goto out_drop_area;
 		}
 
-		spg = __sp_find_spg(pid, spg_id);
-		if (spg_valid(spg)) {
-			__sp_free(spg, uva_aligned, size_aligned, NULL);
-		} else {
-			if (!spg) {
-				if (printk_ratelimit())
-					pr_err("share pool: unshare uva failed, doesn't belong to group %d\n",
-					       spg_id);
-				ret = -EINVAL;
-				goto out_drop_area;
-			} else {
-				pr_info("share pool: no need to unshare uva, target process is exiting\n");
-			}
+		spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
+		if (!spg_valid(spg)) {
+			if (printk_ratelimit())
+				pr_err("share pool: unshare uva(to group) invalid pid, "
+				       "process not in sp group or group is dead\n");
+			ret = -EINVAL;
+			goto out_drop_area;
 		}
+
+		if (spa->spg != spg) {
+			if (printk_ratelimit())
+				pr_err("share pool: unshare uva(to group) failed, "
+				       "spa not belong to the group\n");
+			ret = -EINVAL;
+			goto out_drop_area;
+		}
+
+		if (current->mm && current->mm->sp_group != spg) {
+			if (printk_ratelimit())
+				pr_err("share pool: unshare uva(to group) failed, "
+				       "caller process doesn't belong to target group\n");
+			ret = -EINVAL;
+			goto out_drop_area;
+		}
+
+		__sp_free(spg, uva_aligned, size_aligned, NULL);
+	}
+
+	if (!ret) {
+		if (spg_valid(spa->spg))
+			spg_id = spa->spg->id;
+		pr_notice("share pool: [sp unshare uva type %d] caller %s(%d/%d); "
+			  "group id %d addr 0x%pK size %ld\n",
+			  spa->type, current->comm, current->tgid, current->pid,
+			  spg_id, (void *)spa->va_start, spa->real_size);
+		sp_dump_stack();
 	}
 
 out_drop_area:
@@ -1864,7 +1975,8 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
 		step = PAGE_SIZE;
 		is_hugepage = false;
 	} else {
-		pr_err("share pool: check vmap hugepage failed, ret %d\n", ret);
+		if (printk_ratelimit())
+			pr_err("share pool: check vmap hugepage failed, ret %d\n", ret);
 		return -EINVAL;
 	}
 
@@ -1882,7 +1994,8 @@ static int sp_unshare_kva(unsigned long kva, unsigned long size)
 		if (page)
 			put_page(page);
 		else
-			pr_err("share pool: vmalloc to hugepage failed\n");
+			pr_err("share pool: vmalloc %pK to page/hugepage failed\n",
+			       (void *)addr);
 	}
 
 	vunmap((void *)kva_aligned);
@@ -1944,7 +2057,7 @@ int sp_walk_page_range(unsigned long uva, unsigned long size,
 	get_task_struct(tsk);
 	if (!mmget_not_zero(tsk->mm)) {
 		put_task_struct(tsk);
-		return -EINVAL;
+		return -ESRCH;
 	}
 	down_write(&tsk->mm->mmap_sem);
 	ret = __sp_walk_page_range(uva, size, tsk, sp_walk_data);
@@ -1973,46 +2086,6 @@ void sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 }
 EXPORT_SYMBOL_GPL(sp_walk_page_free);
 
-/**
- * Walk the mm_struct of processes in the specified sp_group
- * and call CALLBACK once for each mm_struct.
- * @spg_id: the ID of the specified sp_group
- * @data: the param for callback function
- * @func: caller specific callback function
- *
- * Return -errno if fail.
- */
-int sp_group_walk(int spg_id, void *data, int (*func)(struct mm_struct *mm, void *))
-{
-	struct sp_group *spg;
-	int ret = -ESRCH;
-
-	if (!func) {
-		if (printk_ratelimit())
-			pr_err("share pool: null func pointer\n");
-		return -EINVAL;
-	}
-
-	mutex_lock(&sp_mutex);
-	spg = idr_find(&sp_group_idr, spg_id);
-	if (spg_valid(spg)) {
-		struct mm_struct *mm;
-		struct mm_struct *tmp;
-		list_for_each_entry_safe(mm, tmp, &spg->procs, sp_node) {
-			if (func) {
-				ret = func(mm, data);
-				if (ret)
-					goto out_unlock;
-			}
-		}
-	}
-out_unlock:
-	mutex_unlock(&sp_mutex);
-
-	return ret;
-}
-EXPORT_SYMBOL_GPL(sp_group_walk);
-
 int sp_register_notifier(struct notifier_block *nb)
 {
 	return blocking_notifier_chain_register(&sp_notifier_chain, nb);
@@ -2039,7 +2112,7 @@ bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 	struct sp_group *spg;
 
 	if (device_id < 0 || device_id >= MAX_DEVID || pid < 0 || size <= 0 ||
-	    size > MMAP_SHARE_POOL_16G_SIZE)
+	    size> MMAP_SHARE_POOL_16G_SIZE)
 		return false;
 
 	mutex_lock(&sp_mutex);
@@ -2061,11 +2134,9 @@ EXPORT_SYMBOL_GPL(sp_config_dvpp_range);
 /* Check whether the address belongs to the share pool. */
 bool is_sharepool_addr(unsigned long addr)
 {
-	if (host_svm_sp_enable == false)
-		return (addr >= MMAP_SHARE_POOL_START) &&
-			addr < (MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE);
-
-	return addr >= MMAP_SHARE_POOL_START && addr < MMAP_SHARE_POOL_END;
+       if (host_svm_sp_enable == false)
+               return addr >= MMAP_SHARE_POOL_START && addr < (MMAP_SHARE_POOL_16G_START + MMAP_SHARE_POOL_16G_SIZE);
+       return addr >= MMAP_SHARE_POOL_START && addr < MMAP_SHARE_POOL_END;
 }
 EXPORT_SYMBOL_GPL(is_sharepool_addr);
 
@@ -2109,7 +2180,7 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 
 	mutex_lock(&sp_mutex);
 	spg = __sp_find_spg(id, SPG_ID_DEFAULT);
-	if (spg) {
+	if (spg_valid(spg)) {
 		seq_printf(seq, "%-12d %-10d %-18ld\n",
 			   id, spg->id, byte2kb(stat->amount));
 	}
@@ -2130,8 +2201,7 @@ static int proc_stat_show(struct seq_file *seq, void *offset)
 	return 0;
 }
 
-static void rb_spa_stat_show(struct seq_file *seq)
-{
+static void rb_spa_stat_show(struct seq_file *seq) {
 	struct rb_node *node;
 	struct sp_area *spa;
 
@@ -2215,8 +2285,8 @@ static int idr_spg_stat_cb(int id, void *p, void *data)
 	struct sp_group *spg = p;
 	struct seq_file *seq = data;
 
-	seq_printf(seq, "Group %-10d size: %13d KB, spa num: %d.\n",
-		   id, byte2kb(atomic_read(&spg->size)),
+	seq_printf(seq, "Group %-10d size: %13ld KB, spa num: %d.\n",
+		   id, byte2kb(atomic64_read(&spg->size)),
 		   atomic_read(&spg->spa_num));
 
 	return 0;
@@ -2227,8 +2297,8 @@ static void spg_overview_show(struct seq_file *seq)
 	mutex_lock(&sp_mutex);
 	idr_for_each(&sp_group_idr, idr_spg_stat_cb, seq);
 	mutex_unlock(&sp_mutex);
-	seq_printf(seq, "Share pool total size: %13d KB, spa total num: %d.\n\n",
-		   byte2kb(atomic_read(&spg_stat.spa_total_size)),
+	seq_printf(seq, "Share pool total size: %13ld KB, spa total num: %d.\n\n",
+		   byte2kb(atomic64_read(&spg_stat.spa_total_size)),
 		   atomic_read(&spg_stat.spa_total_num));
 }
 
@@ -2254,7 +2324,6 @@ void __init proc_sharepool_init(void)
 	proc_create_single_data("sharepool/proc_stat", 0, NULL, proc_stat_show, NULL);
 	proc_create_single_data("sharepool/spa_stat", 0, NULL, spa_stat_show, NULL);
 }
-
 
 struct page *sp_alloc_pages(struct vm_struct *area, gfp_t mask,
 					  unsigned int page_order, int node)
