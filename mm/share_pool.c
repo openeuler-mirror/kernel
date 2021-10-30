@@ -1601,7 +1601,7 @@ static int is_vmap_hugepage(unsigned long addr)
 
 	area = find_vm_area((void *)addr);
 	if (unlikely(!area)) {
-		pr_err_ratelimited("share pool: failed to find vm area(%lx)\n", addr);
+		pr_debug("share pool: failed to find vm area(%lx)\n", addr);
 		return -EINVAL;
 	}
 
@@ -1659,7 +1659,7 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 
 	ret_addr = sp_mmap(mm, file, spa, &populate);
 	if (IS_ERR_VALUE(ret_addr)) {
-		pr_err("share pool: k2u mmap failed %lx\n", ret_addr);
+		pr_debug("share pool: k2u mmap failed %lx\n", ret_addr);
 		goto put_mm;
 	}
 	BUG_ON(ret_addr != spa->va_start);
@@ -1915,7 +1915,7 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 
 		if (!vmalloc_area_set_flag(spa, kva_aligned, VM_SHAREPOOL)) {
 			up_read(&spg->rw_lock);
-			pr_err("share pool: %s: the kva %lx is not valid\n", __func__, (unsigned long)kva_aligned);
+			pr_debug("share pool: %s: the kva %lx is not valid\n", __func__, (unsigned long)kva_aligned);
 			goto out_drop_spa;
 		}
 
@@ -1938,7 +1938,7 @@ accounting:
 	} else {
 		/* associate vma and spa */
 		if (!vmalloc_area_clr_flag(spa, kva_aligned, VM_SHAREPOOL))
-			pr_warn("share pool: %s: the kva %lx is not valid\n",
+			pr_debug("share pool: %s: the kva %lx is not valid\n",
 				__func__, (unsigned long)kva_aligned);
 	}
 
@@ -2032,7 +2032,7 @@ static int sp_hugetlb_entry(pte_t *ptep, unsigned long hmask,
 	struct sp_walk_data *sp_walk_data;
 
 	if (unlikely(!pte_present(pte))) {
-		pr_err_ratelimited("share pool: the page of addr %lx unexpectedly not in RAM\n", (unsigned long)addr);
+		pr_debug("share pool: the page of addr %lx unexpectedly not in RAM\n", (unsigned long)addr);
 		return -EFAULT;
 	}
 
