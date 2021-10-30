@@ -44,6 +44,7 @@
 #include <linux/rmap.h>
 #include <linux/hugetlb.h>
 #include <linux/compaction.h>
+#include <linux/preempt.h>
 
 /* access control mode macros  */
 #define AC_NONE			0
@@ -275,6 +276,12 @@ static int spa_dec_usage(enum spa_type type, unsigned long size, bool is_dvpp)
 	return 0;
 }
 
+static inline void check_interrupt_context(void)
+{
+	if (unlikely(in_interrupt()))
+		panic("share_pool: can't be used in interrupt context\n");
+}
+
 static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 			     struct sp_area *spa, unsigned long *populate);
 static void sp_munmap(struct mm_struct *mm, unsigned long addr, unsigned long size);
@@ -340,6 +347,8 @@ int sp_group_id_by_pid(int pid)
 {
 	struct sp_group *spg;
 	int spg_id = -ENODEV;
+
+	check_interrupt_context();
 
 	mutex_lock(&sp_mutex);
 	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
@@ -493,6 +502,8 @@ int sp_group_add_task(int pid, int spg_id)
 	int ret = 0;
 	struct sp_area *spa, *prev = NULL;
 	struct sp_proc_stat *stat;
+
+	check_interrupt_context();
 
 	/* mdc scene hack */
 	if (enable_mdc_default_group)
@@ -1165,6 +1176,8 @@ int sp_free(unsigned long addr)
 	loff_t offset;
 	int ret = 0;
 
+	check_interrupt_context();
+
 	mutex_lock(&sp_mutex);
 
 	/*
@@ -1277,6 +1290,8 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	struct mm_struct *tmp;
 	unsigned long mode, offset;
 	unsigned int noreclaim_flag;
+
+	check_interrupt_context();
 
 	/* mdc scene hack */
 	if (enable_mdc_default_group)
@@ -1701,6 +1716,8 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	struct sp_proc_stat *stat;
 	int ret = 0, is_hugepage;
 
+	check_interrupt_context();
+
 	if (sp_flags & ~SP_DVPP) {
 		if (printk_ratelimit())
 			pr_err("share pool: k2u sp_flags %lu error\n", sp_flags);
@@ -2017,6 +2034,8 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	};
 	struct vm_struct *area;
 
+	check_interrupt_context();
+
 	rcu_read_lock();
 	tsk = find_task_by_vpid(pid);
 	if (!tsk || (tsk->flags & PF_EXITING))
@@ -2309,6 +2328,8 @@ int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
 {
 	int ret = 0;
 
+	check_interrupt_context();
+
 	if (va < TASK_SIZE) {
 		/* user address */
 		ret = sp_unshare_uva(va, size, pid, spg_id);
@@ -2335,6 +2356,8 @@ int sp_walk_page_range(unsigned long uva, unsigned long size,
 {
 	struct mm_struct *mm;
 	int ret = 0;
+
+	check_interrupt_context();
 
 	if (unlikely(!sp_walk_data)) {
 		if (printk_ratelimit())
@@ -2367,6 +2390,8 @@ void sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 {
 	struct page *page;
 	unsigned int i = 0;
+
+	check_interrupt_context();
 
 	if (!sp_walk_data)
 		return;
@@ -2404,6 +2429,8 @@ EXPORT_SYMBOL_GPL(sp_unregister_notifier);
 bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 {
 	struct sp_group *spg;
+
+	check_interrupt_context();
 
 	if (device_id < 0 || device_id >= MAX_DEVID || pid < 0 || size <= 0 ||
 	    size> MMAP_SHARE_POOL_16G_SIZE)
