@@ -53,6 +53,27 @@ extern unsigned long sysctl_sp_compact_interval_max;
 extern bool vmap_allow_huge;
 #endif
 
+/* we estimate an sp-group ususally contains at most 64 sp-group */
+#define SP_SPG_HASH_BITS 6
+
+struct sp_spg_stat {
+	int spg_id;
+	/* number of sp_area */
+	atomic_t	 spa_num;
+	/* total size of all sp_area from sp_alloc and k2u */
+	atomic64_t	 size;
+	/* total size of all sp_area from sp_alloc 0-order page */
+	atomic64_t	 alloc_nsize;
+	/* total size of all sp_area from sp_alloc hugepage */
+	atomic64_t	 alloc_hsize;
+	/* total size of all sp_area from ap_alloc */
+	atomic64_t	 alloc_size;
+	/* total size of all sp_area from sp_k2u */
+	atomic64_t	 k2u_size;
+	struct mutex	 lock;  /* protect hashtable */
+	DECLARE_HASHTABLE(hash, SP_SPG_HASH_BITS);
+};
+
 /* Processes in the same sp_group can share memory.
  * Memory layout for share pool:
  *
@@ -87,16 +108,8 @@ struct sp_group {
 	struct list_head procs;
 	/* list head of sp_area. it is protected by spin_lock sp_area_lock */
 	struct list_head spa_list;
-	/* number of sp_area */
-	atomic_t	 spa_num;
-	/* total size of all sp_area from sp_alloc and k2u(spg) */
-	atomic64_t	 size;
-	/* total size of all sp_area from sp_alloc normal page */
-	atomic64_t	 alloc_nsize;
-	/* total size of all sp_area from sp_alloc hugepage */
-	atomic64_t	 alloc_hsize;
-	/* total size of all sp_area from ap_alloc */
-	atomic64_t	 alloc_size;
+	/* group statistics */
+	struct sp_spg_stat *stat;
 	/* we define the creator process of a sp_group as owner */
 	struct task_struct *owner;
 	/* is_alive == false means it's being destroyed */
