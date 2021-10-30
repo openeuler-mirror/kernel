@@ -95,9 +95,9 @@ static DEFINE_IDA(sp_group_id_ida);
 /*** Statistical and maintenance tools ***/
 
 /* idr of all sp_proc_stats */
-static DEFINE_IDR(sp_stat_idr);
-/* rw semaphore for sp_stat_idr and mm->sp_stat_id */
-static DECLARE_RWSEM(sp_stat_sem);
+static DEFINE_IDR(sp_proc_stat_idr);
+/* rw semaphore for sp_proc_stat_idr */
+static DECLARE_RWSEM(sp_proc_stat_sem);
 
 /* for kthread buff_module_guard_work */
 static struct sp_proc_stat kthread_stat;
@@ -107,7 +107,7 @@ static struct sp_proc_stat *sp_get_proc_stat_locked(int tgid)
 {
 	struct sp_proc_stat *stat;
 
-	stat = idr_find(&sp_stat_idr, tgid);
+	stat = idr_find(&sp_proc_stat_idr, tgid);
 
 	/* maybe NULL or not, we always return it */
 	return stat;
@@ -118,7 +118,7 @@ static struct sp_proc_stat *sp_get_proc_stat_ref_locked(int tgid)
 {
 	struct sp_proc_stat *stat;
 
-	stat = idr_find(&sp_stat_idr, tgid);
+	stat = idr_find(&sp_proc_stat_idr, tgid);
 	if (!stat || !atomic_inc_not_zero(&stat->use_count))
 		stat = NULL;
 
@@ -137,16 +137,16 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 	int id, tgid = tsk->tgid;
 	int ret;
 
-	down_write(&sp_stat_sem);
+	down_write(&sp_proc_stat_sem);
 	id = mm->sp_group_master->sp_stat_id;
 	if (id) {
 		/* other threads in the same process may have initialized it */
 		stat = sp_get_proc_stat_locked(tgid);
 		if (stat) {
-			up_write(&sp_stat_sem);
+			up_write(&sp_proc_stat_sem);
 			return stat;
 		} else {
-			up_write(&sp_stat_sem);
+			up_write(&sp_proc_stat_sem);
 			/* if enter this branch, that's our mistake */
 			pr_err_ratelimited("share pool: proc stat invalid id %d\n", id);
 			return ERR_PTR(-EBUSY);
@@ -155,7 +155,7 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 
 	stat = kzalloc(sizeof(*stat), GFP_KERNEL);
 	if (stat == NULL) {
-		up_write(&sp_stat_sem);
+		up_write(&sp_proc_stat_sem);
 		pr_err_ratelimited("share pool: alloc proc stat failed due to lack of memory\n");
 		return ERR_PTR(-ENOMEM);
 	}
@@ -167,16 +167,16 @@ static struct sp_proc_stat *sp_init_proc_stat(struct task_struct *tsk,
 	stat->mm = mm;
 	get_task_comm(stat->comm, tsk);
 
-	ret = idr_alloc(&sp_stat_idr, stat, tgid, tgid + 1, GFP_KERNEL);
+	ret = idr_alloc(&sp_proc_stat_idr, stat, tgid, tgid + 1, GFP_KERNEL);
 	if (ret < 0) {
-		up_write(&sp_stat_sem);
+		up_write(&sp_proc_stat_sem);
 		pr_err_ratelimited("share pool: proc stat idr alloc failed %d\n", ret);
 		kfree(stat);
 		return ERR_PTR(ret);
 	}
 
 	mm->sp_group_master->sp_stat_id = ret;
-	up_write(&sp_stat_sem);
+	up_write(&sp_proc_stat_sem);
 	return stat;
 }
 
@@ -184,9 +184,9 @@ static struct sp_proc_stat *sp_get_proc_stat(int tgid)
 {
 	struct sp_proc_stat *stat;
 
-	down_read(&sp_stat_sem);
+	down_read(&sp_proc_stat_sem);
 	stat = sp_get_proc_stat_locked(tgid);
-	up_read(&sp_stat_sem);
+	up_read(&sp_proc_stat_sem);
 	return stat;
 }
 
@@ -195,9 +195,9 @@ struct sp_proc_stat *sp_get_proc_stat_ref(int tgid)
 {
 	struct sp_proc_stat *stat;
 
-	down_read(&sp_stat_sem);
+	down_read(&sp_proc_stat_sem);
 	stat = sp_get_proc_stat_ref_locked(tgid);
-	up_read(&sp_stat_sem);
+	up_read(&sp_proc_stat_sem);
 	return stat;
 }
 
@@ -2850,10 +2850,10 @@ __setup("enable_sp_multi_group_mode", enable_sp_multi_group_mode);
 
 static void free_sp_proc_stat(struct sp_proc_stat *stat)
 {
-	down_write(&sp_stat_sem);
+	down_write(&sp_proc_stat_sem);
 	stat->mm->sp_group_master->sp_stat_id = 0;
-	idr_remove(&sp_stat_idr, stat->tgid);
-	up_write(&sp_stat_sem);
+	idr_remove(&sp_proc_stat_idr, stat->tgid);
+	up_write(&sp_proc_stat_sem);
 	kfree(stat);
 }
 
@@ -3163,9 +3163,9 @@ static int proc_stat_show(struct seq_file *seq, void *offset)
 		   byte2kb(atomic64_read(&kthread_stat.k2u_size)));
 
 	/* pay attention to potential ABBA deadlock */
-	down_read(&sp_stat_sem);
-	idr_for_each(&sp_stat_idr, idr_proc_stat_cb, seq);
-	up_read(&sp_stat_sem);
+	down_read(&sp_proc_stat_sem);
+	idr_for_each(&sp_proc_stat_idr, idr_proc_stat_cb, seq);
+	up_read(&sp_proc_stat_sem);
 	return 0;
 }
 
