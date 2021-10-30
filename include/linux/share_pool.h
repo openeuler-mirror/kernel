@@ -80,6 +80,8 @@ struct sp_group {
 	int		 hugepage_failures;
 	struct file	 *file;
 	struct file	 *file_hugetlb;
+	/* number of process in this group */
+	int		 proc_num;
 	/* list head of processes (sp_group_node, each represents a process) */
 	struct list_head procs;
 	/* list head of sp_area. it is protected by spin_lock sp_area_lock */

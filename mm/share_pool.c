@@ -61,6 +61,7 @@
 
 #define MAX_GROUP_FOR_SYSTEM	50000
 #define MAX_GROUP_FOR_TASK	3000
+#define MAX_PROC_PER_GROUP	1024
 
 #define PF_DOMAIN_CORE		0x10000000	/* AOS CORE processes in sched.h */
 
@@ -536,6 +537,7 @@ static struct sp_group *find_or_alloc_sp_group(int spg_id)
 		}
 
 		spg->id = spg_id;
+		spg->proc_num = 0;
 		atomic_set(&spg->spa_num, 0);
 		atomic64_set(&spg->size, 0);
 		atomic64_set(&spg->alloc_nsize, 0);
@@ -686,6 +688,13 @@ static int mm_add_group_finish(struct mm_struct *mm, struct sp_group *spg)
 	spg_node->master = master;
 
 	down_write(&spg->rw_lock);
+	if (spg->proc_num + 1 == MAX_PROC_PER_GROUP) {
+		up_write(&spg->rw_lock);
+		pr_err_ratelimited("add group: group reaches max process num\n");
+		kfree(spg_node);
+		return -ENOSPC;
+	}
+	spg->proc_num++;
 	list_add_tail(&spg_node->proc_node, &spg->procs);
 	up_write(&spg->rw_lock);
 
@@ -3347,6 +3356,7 @@ int sp_group_exit(struct mm_struct *mm)
 		/* a dead group should NOT be reactive again */
 		if (spg_valid(spg) && list_is_singular(&spg->procs))
 			is_alive = spg->is_alive = false;
+		spg->proc_num--;
 		list_del(&spg_node->proc_node);
 		up_write(&spg->rw_lock);
 
