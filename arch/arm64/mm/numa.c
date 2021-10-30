@@ -63,7 +63,9 @@ inline int arch_check_node_cdm(int nid)
  * |node2 HBM| | |node4 HBM|
  * |---------- | ----------|
  * |node3 HBM| | |node5 HBM|
- * ----------- | -----------
+ * |---------- | ----------|
+ * |   ...   | | |   ...   |
+ * |---------- | ----------|
  *
  * Return:
  * This function returns a ddr node which is of the same partion with the input
@@ -76,6 +78,12 @@ int __init cdm_node_to_ddr_node(int nid)
 	nodemask_t ddr_mask;
 	int nr_ddr, cdm_per_part, fake_nid;
 	int nr_cdm = nodes_weight(cdmmask);
+	/*
+	 * Specify the count of hbm nodes whoes management structrue would be
+	 * moved. Here number 2 is a magic and we should make it configable
+	 * for extending
+	 */
+	int hbm_per_part = 2;
 
 	if (!nr_cdm || nodes_empty(numa_nodes_parsed))
 		return nid;
@@ -87,11 +95,12 @@ int __init cdm_node_to_ddr_node(int nid)
 	nr_ddr = nodes_weight(ddr_mask);
 	cdm_per_part = nr_cdm / nr_ddr;
 
-	if (cdm_per_part == 0 || nid < nr_ddr)
+	if (cdm_per_part == 0 || nid < nr_ddr ||
+			nid >= (hbm_per_part + 1) * nr_ddr)
 		/* our assumption has borken, just return the original nid. */
 		return nid;
 
-	fake_nid = (nid - nr_ddr) / cdm_per_part;
+	fake_nid = (nid - nr_ddr) / hbm_per_part;
 	fake_nid = !node_isset(fake_nid, cdmmask) ? fake_nid : nid;
 
 	pr_info("nid: %d, fake_nid: %d\n", nid, fake_nid);
