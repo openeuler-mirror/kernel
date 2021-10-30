@@ -69,6 +69,8 @@ int sysctl_ac_mode = AC_NONE;
 /* debug mode */
 int sysctl_sp_debug_mode;
 
+int sysctl_share_pool_map_lock_enable;
+
 /* idr of all sp_groups */
 static DEFINE_IDR(sp_group_idr);
 
@@ -1227,10 +1229,16 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 	unsigned long addr = spa->va_start;
 	unsigned long size = spa_size(spa);
 	unsigned long prot = PROT_READ | PROT_WRITE;
-	unsigned long flags = MAP_FIXED | MAP_SHARED | MAP_LOCKED |
-			      MAP_POPULATE | MAP_SHARE_POOL;
+	unsigned long flags = MAP_FIXED | MAP_SHARED | MAP_POPULATE |
+			      MAP_SHARE_POOL;
 	unsigned long vm_flags = VM_NORESERVE | VM_SHARE_POOL | VM_DONTCOPY;
 	unsigned long pgoff = (addr - MMAP_SHARE_POOL_START) >> PAGE_SHIFT;
+
+	/* Mark the mapped region to be locked. After the MAP_LOCKED is enable,
+	 * multiple tasks will preempt resources, causing performance loss.
+	 */
+	if (sysctl_share_pool_map_lock_enable)
+		flags |= MAP_LOCKED;
 
 	atomic_inc(&spa->use_count);
 	addr = __do_mmap(mm, file, addr, size, prot, flags, vm_flags, pgoff,
