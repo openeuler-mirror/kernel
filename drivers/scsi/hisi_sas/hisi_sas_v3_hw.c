@@ -3357,8 +3357,13 @@ hisi_sas_shost_alloc_pci(struct pci_dev *pdev)
 	hisi_hba->dev = dev;
 	hisi_hba->shost = shost;
 	SHOST_TO_SAS_HA(shost) = &hisi_hba->sha;
-	hisi_hba->enable_dix_dif = enable_dix_dif;
 	hisi_hba->user_ctl_irq = user_ctl_irq;
+
+	if (enable_dix_dif & ~HISI_SAS_PROT_MASK)
+		dev_err(dev, "unsupported protection mask 0x%x, using default (0x0)\n",
+			enable_dix_dif);
+	else
+		hisi_hba->enable_dix_dif = enable_dix_dif;
 
 	timer_setup(&hisi_hba->timer, NULL, 0);
 
