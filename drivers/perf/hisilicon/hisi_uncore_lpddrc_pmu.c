@@ -241,7 +241,7 @@ static int hisi_lpddrc_pmu_init_irq(struct hisi_pmu *lpddrc_pmu,
 static const struct of_device_id lpddrc_of_match[] = {
 	{ .compatible = "hisilicon,lpddrc-pmu", },
 	{},
-}
+};
 MODULE_DEVICE_TABLE(of, lpddrc_of_match);
 
 static int hisi_lpddrc_pmu_init_data(struct platform_device *pdev,
