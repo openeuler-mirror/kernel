@@ -521,4 +521,16 @@ static inline bool sk_psock_strp_enabled(struct sk_psock *psock)
 		return false;
 	return psock->parser.enabled;
 }
+
+static inline bool sk_is_tcp(const struct sock *sk)
+{
+	return sk->sk_type == SOCK_STREAM &&
+	       sk->sk_protocol == IPPROTO_TCP;
+}
+
+static inline bool sk_is_udp(const struct sock *sk)
+{
+	return sk->sk_type == SOCK_DGRAM &&
+	       sk->sk_protocol == IPPROTO_UDP;
+}
 #endif /* _LINUX_SKMSG_H */
