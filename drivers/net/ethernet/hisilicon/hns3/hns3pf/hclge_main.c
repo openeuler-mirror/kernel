@@ -11180,6 +11180,8 @@ out:
 
 static int hclge_get_dfx_reg(struct hclge_dev *hdev, void *data)
 {
+#define HCLGE_DFX_BD_NUM_MAX 64
+
 	u32 dfx_reg_type_num = ARRAY_SIZE(hclge_dfx_bd_offset_list);
 	int bd_num, bd_num_max, buf_len, i;
 	struct hclge_desc *desc_src;
@@ -11201,6 +11203,13 @@ static int hclge_get_dfx_reg(struct hclge_dev *hdev, void *data)
 	bd_num_max = bd_num_list[0];
 	for (i = 1; i < dfx_reg_type_num; i++)
 		bd_num_max = max_t(int, bd_num_max, bd_num_list[i]);
+
+	if (bd_num_max > HCLGE_DFX_BD_NUM_MAX) {
+		dev_err(&hdev->pdev->dev,
+			"Get dfx reg fail, invalid bd number: %d\n",
+			bd_num_max);
+		goto out;
+	}
 
 	buf_len = sizeof(*desc_src) * bd_num_max;
 	desc_src = kzalloc(buf_len, GFP_KERNEL);
