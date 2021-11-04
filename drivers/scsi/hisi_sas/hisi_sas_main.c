@@ -1248,10 +1248,10 @@ static int hisi_sas_exec_internal_tmf_task(struct domain_device *device,
 					struct hisi_sas_cq *cq =
 						&hisi_hba->cq[slot->dlvry_queue];
 					/*
-					 * sync irq to avoid free'ing task
+					 * flush tasklet to avoid free'ing task
 					 * before using task in IO completion
 					 */
-					synchronize_irq(cq->irq_no);
+					tasklet_kill(&cq->tasklet);
 					slot->task = NULL;
 				}
 
@@ -1655,11 +1655,11 @@ static int hisi_sas_abort_task(struct sas_task *task)
 
 		if (slot) {
 			/*
-			 * sync irq to avoid free'ing task
+			 * flush tasklet to avoid free'ing task
 			 * before using task in IO completion
 			 */
 			cq = &hisi_hba->cq[slot->dlvry_queue];
-			synchronize_irq(cq->irq_no);
+			tasklet_kill(&cq->tasklet);
 		}
 		spin_unlock_irqrestore(&task->task_state_lock, flags);
 		rc = TMF_RESP_FUNC_COMPLETE;
@@ -1722,10 +1722,10 @@ static int hisi_sas_abort_task(struct sas_task *task)
 		if (((rc < 0) || (rc == TMF_RESP_FUNC_FAILED)) &&
 					task->lldd_task) {
 			/*
-			 * sync irq to avoid free'ing task
+			 * flush tasklet to avoid free'ing task
 			 * before using task in IO completion
 			 */
-			synchronize_irq(cq->irq_no);
+			tasklet_kill(&cq->tasklet);
 			slot->task = NULL;
 		}
 	}
@@ -2097,10 +2097,10 @@ _hisi_sas_internal_task_abort(struct hisi_hba *hisi_hba,
 				struct hisi_sas_cq *cq =
 					&hisi_hba->cq[slot->dlvry_queue];
 				/*
-				 * sync irq to avoid free'ing task
+				 * flush tasklet to avoid free'ing task
 				 * before using task in IO completion
 				 */
-				synchronize_irq(cq->irq_no);
+				tasklet_kill(&cq->tasklet);
 				slot->task = NULL;
 			}
 			dev_err(dev, "internal task abort: timeout and not done.\n");
@@ -2258,17 +2258,17 @@ void hisi_sas_phy_down(struct hisi_hba *hisi_hba, int phy_no, int rdy)
 }
 EXPORT_SYMBOL_GPL(hisi_sas_phy_down);
 
-void hisi_sas_sync_irqs(struct hisi_hba *hisi_hba)
+void hisi_sas_kill_tasklets(struct hisi_hba *hisi_hba)
 {
 	int i;
 
 	for (i = 0; i < hisi_hba->nvecs; i++) {
 		struct hisi_sas_cq *cq = &hisi_hba->cq[i];
 
-		synchronize_irq(cq->irq_no);
+		tasklet_kill(&cq->tasklet);
 	}
 }
-EXPORT_SYMBOL_GPL(hisi_sas_sync_irqs);
+EXPORT_SYMBOL_GPL(hisi_sas_kill_tasklets);
 
 int hisi_sas_host_reset(struct Scsi_Host *shost, int reset_type)
 {
