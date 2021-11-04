@@ -423,6 +423,7 @@ static int hclge_mac_update_stats_defective(struct hclge_dev *hdev)
 	int i, k, n;
 	int ret;
 
+	memset(desc, 0, sizeof(desc));
 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_STATS_MAC, true);
 	ret = hclge_cmd_send(&hdev->hw, desc, HCLGE_MAC_CMD_NUM);
 	if (ret) {
