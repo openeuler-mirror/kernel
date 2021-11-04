@@ -514,6 +514,10 @@ static int hclge_mac_query_reg_num(struct hclge_dev *hdev, u32 *desc_num)
 
 	*desc_num = 1 + ((reg_num - 3) >> 2) +
 		    (u32)(((reg_num - 3) & 0x3) ? 1 : 0);
+	if (!(*desc_num)) {
+		dev_err(&hdev->pdev->dev, "Invalid desc num: %u\n", *desc_num);
+		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -11205,7 +11209,7 @@ static int hclge_get_dfx_reg(struct hclge_dev *hdev, void *data)
 	for (i = 1; i < dfx_reg_type_num; i++)
 		bd_num_max = max_t(int, bd_num_max, bd_num_list[i]);
 
-	if (bd_num_max > HCLGE_DFX_BD_NUM_MAX) {
+	if (bd_num_max <= 0 || bd_num_max > HCLGE_DFX_BD_NUM_MAX) {
 		dev_err(&hdev->pdev->dev,
 			"Get dfx reg fail, invalid bd number: %d\n",
 			bd_num_max);
