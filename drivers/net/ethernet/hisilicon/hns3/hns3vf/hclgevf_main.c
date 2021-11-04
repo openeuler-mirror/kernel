@@ -2907,9 +2907,9 @@ static void hclgevf_uninit_client_instance(struct hnae3_client *client,
 	/* un-init nic/unic, if this was not called by roce client */
 	if (client->ops->uninit_instance && hdev->nic_client &&
 	    client->type != HNAE3_CLIENT_ROCE) {
-		clear_bit(HCLGEVF_STATE_NIC_REGISTERED, &hdev->state);
 		while (test_bit(HCLGEVF_STATE_RST_HANDLING, &hdev->state))
 		       msleep(100);
+		clear_bit(HCLGEVF_STATE_NIC_REGISTERED, &hdev->state);
 
 		client->ops->uninit_instance(&hdev->nic, 0);
 		hdev->nic_client = NULL;
