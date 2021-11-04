@@ -11217,6 +11217,7 @@ static int hclge_get_dfx_reg(struct hclge_dev *hdev, void *data)
 		dev_err(&hdev->pdev->dev,
 			"Get dfx reg fail, invalid bd number: %d\n",
 			bd_num_max);
+		ret = -EINVAL;
 		goto out;
 	}
 
