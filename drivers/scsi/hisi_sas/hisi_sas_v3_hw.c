@@ -2419,6 +2419,19 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 			error_info[0], error_info[1],
 			error_info[2], error_info[3]);
 
+		if ((complete_hdr->dw0 & CMPLT_HDR_RSPNS_XFRD_MSK) &&
+			(task->task_proto & SAS_PROTOCOL_SATA ||
+			task->task_proto & SAS_PROTOCOL_STP)) {
+			struct hisi_sas_status_buffer *status_buf =
+				hisi_sas_status_buf_addr_mem(slot);
+			u8 *iu = &status_buf->iu[0];
+			struct dev_to_host_fis *d2h =
+				(struct dev_to_host_fis *)iu;
+
+			dev_info(dev, "sata d2h status 0x%02x, error 0x%02x\n",
+				d2h->status, d2h->error);
+		}
+
 		if ((error_info[3] & RX_DATA_LEN_UNDERFLOW_MSK) &&
 			(task->task_proto == SAS_PROTOCOL_SSP)) {
 			/*print detail sense info when data underflow happened*/
