@@ -172,11 +172,13 @@ static void hisi_sas_slot_index_clear(struct hisi_hba *hisi_hba, int slot_idx)
 
 static void hisi_sas_slot_index_free(struct hisi_hba *hisi_hba, int slot_idx)
 {
+	unsigned long flags;
+
 	if (hisi_hba->hw->slot_index_alloc || (slot_idx >=
 	    hisi_hba->hw->max_command_entries - HISI_SAS_RESERVED_IPTT_CNT)) {
-		spin_lock(&hisi_hba->lock);
+		spin_lock_irqsave(&hisi_hba->lock, flags);
 		hisi_sas_slot_index_clear(hisi_hba, slot_idx);
-		spin_unlock(&hisi_hba->lock);
+		spin_unlock_irqrestore(&hisi_hba->lock, flags);
 	}
 }
 
@@ -192,12 +194,13 @@ static int hisi_sas_slot_index_alloc(struct hisi_hba *hisi_hba,
 {
 	int index;
 	void *bitmap = hisi_hba->slot_index_tags;
+	unsigned long flags;
 
 	if (scsi_cmnd) {
 		return scsi_cmnd->request->tag;
 	}
 
-	spin_lock(&hisi_hba->lock);
+	spin_lock_irqsave(&hisi_hba->lock, flags);
 	index = find_next_zero_bit(bitmap, hisi_hba->slot_index_count,
 			hisi_hba->last_slot_index + 1);
 	if (index >= hisi_hba->slot_index_count) {
@@ -206,13 +209,13 @@ static int hisi_sas_slot_index_alloc(struct hisi_hba *hisi_hba,
 				hisi_hba->hw->max_command_entries -
 				HISI_SAS_RESERVED_IPTT_CNT);
 		if (index >= hisi_hba->slot_index_count) {
-			spin_unlock(&hisi_hba->lock);
+			spin_unlock_irqrestore(&hisi_hba->lock, flags);
 			return -SAS_QUEUE_FULL;
 		}
 	}
 	hisi_sas_slot_index_set(hisi_hba, index);
 	hisi_hba->last_slot_index = index;
-	spin_unlock(&hisi_hba->lock);
+	spin_unlock_irqrestore(&hisi_hba->lock, flags);
 
 	return index;
 }
@@ -228,6 +231,7 @@ static void hisi_sas_slot_index_init(struct hisi_hba *hisi_hba)
 void hisi_sas_slot_task_free(struct hisi_hba *hisi_hba, struct sas_task *task,
 			     struct hisi_sas_slot *slot)
 {
+	unsigned long flags;
 	int device_id = slot->device_id;
 	struct hisi_sas_device *sas_dev = &hisi_hba->devices[device_id];
 
@@ -256,9 +260,9 @@ void hisi_sas_slot_task_free(struct hisi_hba *hisi_hba, struct sas_task *task,
 		}
 	}
 
-	spin_lock(&sas_dev->lock);
+	spin_lock_irqsave(&sas_dev->lock, flags);
 	list_del_init(&slot->entry);
-	spin_unlock(&sas_dev->lock);
+	spin_unlock_irqrestore(&sas_dev->lock, flags);
 
 	memset(slot, 0, offsetof(struct hisi_sas_slot, buf));
 
@@ -510,14 +514,14 @@ static int hisi_sas_task_prep(struct sas_task *task,
 	slot_idx = rc;
 	slot = &hisi_hba->slot_info[slot_idx];
 
-	spin_lock(&dq->lock);
+	spin_lock_irqsave(&dq->lock, flags);
 	wr_q_index = dq->wr_point;
 	dq->wr_point = (dq->wr_point + 1) % HISI_SAS_QUEUE_SLOTS;
 	list_add_tail(&slot->delivery, &dq->list);
-	spin_unlock(&dq->lock);
-	spin_lock(&sas_dev->lock);
+	spin_unlock_irqrestore(&dq->lock, flags);
+	spin_lock_irqsave(&sas_dev->lock, flags);
 	list_add_tail(&slot->entry, &sas_dev->list);
-	spin_unlock(&sas_dev->lock);
+	spin_unlock_irqrestore(&sas_dev->lock, flags);
 
 	dlvry_queue = dq->id;
 	dlvry_queue_slot = wr_q_index;
@@ -583,6 +587,7 @@ static int hisi_sas_task_exec(struct sas_task *task, gfp_t gfp_flags,
 {
 	u32 rc;
 	u32 pass = 0;
+	unsigned long flags;
 	struct hisi_hba *hisi_hba;
 	struct device *dev;
 	struct domain_device *device = task->dev;
@@ -616,9 +621,9 @@ static int hisi_sas_task_exec(struct sas_task *task, gfp_t gfp_flags,
 		dev_err(dev, "task exec: failed[%d]!\n", rc);
 
 	if (likely(pass)) {
-		spin_lock(&dq->lock);
+		spin_lock_irqsave(&dq->lock, flags);
 		hisi_hba->hw->start_delivery(dq);
-		spin_unlock(&dq->lock);
+		spin_unlock_irqrestore(&dq->lock, flags);
 	}
 
 	return rc;
@@ -669,11 +674,12 @@ static struct hisi_sas_device *hisi_sas_alloc_dev(struct domain_device *device)
 {
 	struct hisi_hba *hisi_hba = dev_to_hisi_hba(device);
 	struct hisi_sas_device *sas_dev = NULL;
+	unsigned long flags;
 	int first = (hisi_hba->last_dev_id + 1) % HISI_SAS_MAX_DEVICES;
 	int dev_id;
 	int i;
 
-	spin_lock(&hisi_hba->lock);
+	spin_lock_irqsave(&hisi_hba->lock, flags);
 	for (i = first; i < first + HISI_SAS_MAX_DEVICES; i++) {
 		dev_id = i % HISI_SAS_MAX_DEVICES;
 		if (hisi_hba->devices[dev_id].dev_type == SAS_PHY_UNUSED) {
@@ -694,7 +700,7 @@ static struct hisi_sas_device *hisi_sas_alloc_dev(struct domain_device *device)
 	}
 	if (sas_dev)
 		hisi_hba->last_dev_id = i;
-	spin_unlock(&hisi_hba->lock);
+	spin_unlock_irqrestore(&hisi_hba->lock, flags);
 
 	return sas_dev;
 }
@@ -1964,7 +1970,7 @@ hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba,
 	struct asd_sas_port *sas_port = device->port;
 	struct hisi_sas_cmd_hdr *cmd_hdr_base;
 	int dlvry_queue_slot, dlvry_queue, n_elem = 0, rc, slot_idx;
-	unsigned long flags;
+	unsigned long flags, flags_dq = 0;
 	int wr_q_index;
 
 	if (unlikely(test_bit(HISI_SAS_REJECT_CMD_BIT, &hisi_hba->flags)))
@@ -1983,14 +1989,14 @@ hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba,
 	slot_idx = rc;
 	slot = &hisi_hba->slot_info[slot_idx];
 
-	spin_lock(&dq->lock);
+	spin_lock_irqsave(&dq->lock, flags_dq);
 	wr_q_index = dq->wr_point;
 	dq->wr_point = (dq->wr_point + 1) % HISI_SAS_QUEUE_SLOTS;
 	list_add_tail(&slot->delivery, &dq->list);
-	spin_unlock(&dq->lock);
-	spin_lock(&sas_dev->lock);
+	spin_unlock_irqrestore(&dq->lock, flags_dq);
+	spin_lock_irqsave(&sas_dev->lock, flags);
 	list_add_tail(&slot->entry, &sas_dev->list);
-	spin_unlock(&sas_dev->lock);
+	spin_unlock_irqrestore(&sas_dev->lock, flags);
 
 	dlvry_queue = dq->id;
 	dlvry_queue_slot = wr_q_index;
@@ -2019,9 +2025,9 @@ hisi_sas_internal_abort_task_exec(struct hisi_hba *hisi_hba,
 	spin_unlock_irqrestore(&task->task_state_lock, flags);
 	WRITE_ONCE(slot->ready, 1);
 	/* send abort command to the chip */
-	spin_lock(&dq->lock);
+	spin_lock_irqsave(&dq->lock, flags);
 	hisi_hba->hw->start_delivery(dq);
-	spin_unlock(&dq->lock);
+	spin_unlock_irqrestore(&dq->lock, flags);
 
 	return 0;
 
