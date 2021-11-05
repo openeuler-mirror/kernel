@@ -38,6 +38,7 @@
 #include <linux/uuid.h>
 #include <linux/errseq.h>
 #include <linux/ioprio.h>
+#include <linux/tracepoint-defs.h>
 
 #include <asm/byteorder.h>
 #include <uapi/linux/fs.h>
@@ -3602,4 +3603,16 @@ struct fs_file_read_ctx {
 	long long index;
 };
 
+#ifdef CONFIG_TRACEPOINTS
+DECLARE_TRACEPOINT(fs_file_read);
+extern void fs_file_read_update_args_by_trace(struct kiocb *iocb);
+#else
+static inline void fs_file_read_update_args_by_trace(struct kiocb *iocb) {}
+#endif
+
+static inline void fs_file_read_do_trace(struct kiocb *iocb)
+{
+	if (tracepoint_enabled(fs_file_read))
+		fs_file_read_update_args_by_trace(iocb);
+}
 #endif /* _LINUX_FS_H */
