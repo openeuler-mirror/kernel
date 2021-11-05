@@ -24,6 +24,8 @@
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
+#define CREATE_TRACE_POINTS
+#include <trace/events/fs.h>
 
 const struct file_operations generic_ro_fops = {
 	.llseek		= generic_file_llseek,
@@ -2164,3 +2166,6 @@ out:
 	return ret;
 }
 EXPORT_SYMBOL(vfs_dedupe_file_range);
+
+EXPORT_TRACEPOINT_SYMBOL_GPL(fs_file_read);
+EXPORT_TRACEPOINT_SYMBOL_GPL(fs_file_release);

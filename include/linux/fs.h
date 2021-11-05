@@ -3585,4 +3585,21 @@ static inline struct sock *io_uring_get_socket(struct file *file)
 }
 #endif
 
+struct fs_file_read_ctx {
+	const unsigned char *name;
+	unsigned int f_mode;
+	unsigned int rsvd;
+	/* clear from f_mode */
+	unsigned int clr_f_mode;
+	/* set into f_mode */
+	unsigned int set_f_mode;
+	unsigned long key;
+	/* file size */
+	long long i_size;
+	/* previous page index */
+	long long prev_index;
+	/* current page index */
+	long long index;
+};
+
 #endif /* _LINUX_FS_H */
