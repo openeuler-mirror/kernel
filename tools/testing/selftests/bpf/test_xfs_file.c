@@ -20,7 +20,6 @@ int main(int argc, char *argv[])
 {
 	const char *set_file = "./test_set_xfs_file.o";
 	const char *clear_file = "./test_clear_xfs_file.o";
-	const char *spec_readahead_file = "./test_spec_readahead_xfs_file.o";
 	const char *file = set_file;
 	struct bpf_object *obj;
 	int efd, err, prog_fd;
@@ -32,12 +31,8 @@ int main(int argc, char *argv[])
 		delay = strtol(str, &endptr, 10);
 	}
 
-	if (argc >= 2) {
-		if (!strcmp("clear", argv[1]))
-			file = clear_file;
-		if (!strcmp("spec_readahead", argv[1]))
-			file = spec_readahead_file;
-	}
+	if (argc >= 2 && !strcmp("clear", argv[1]))
+		file = clear_file;
 
 	err = bpf_prog_load(file, BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE, &obj,
 			&prog_fd);
