@@ -104,6 +104,7 @@ static inline void HISI_INIT_PMU(struct pmu *pmu, const char *name,
 			    const struct attribute_group **attr_groups)
 {
 	pmu->name		= name;
+	pmu->module		= THIS_MODULE;
 	pmu->task_ctx_nr	= perf_invalid_context;
 	pmu->event_init		= hisi_uncore_pmu_event_init;
 	pmu->pmu_enable		= hisi_uncore_pmu_enable;
