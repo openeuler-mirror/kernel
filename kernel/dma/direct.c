@@ -91,9 +91,15 @@ static int dma_set_decrypted(struct device *dev, void *vaddr, size_t size)
 
 static int dma_set_encrypted(struct device *dev, void *vaddr, size_t size)
 {
+	int ret;
+
 	if (!force_dma_unencrypted(dev))
 		return 0;
-	return set_memory_encrypted((unsigned long)vaddr, PFN_UP(size));
+
+	ret = set_memory_encrypted((unsigned long)vaddr, PFN_UP(size));
+	if (ret)
+		pr_warn_ratelimited("leaking DMA memory that can't be re-encrypted\n");
+	return ret;
 }
 
 static void __dma_direct_free_pages(struct device *dev, struct page *page,
@@ -265,7 +271,6 @@ done:
 	return ret;
 
 out_encrypt_pages:
-	/* If memory cannot be re-encrypted, it must be leaked */
 	if (dma_set_encrypted(dev, page_address(page), size))
 		return NULL;
 
@@ -298,7 +303,8 @@ void dma_direct_free(struct device *dev, size_t size,
 	    dma_free_from_pool(dev, cpu_addr, PAGE_ALIGN(size)))
 		return;
 
-	dma_set_encrypted(dev, cpu_addr, size);
+	if (dma_set_encrypted(dev, cpu_addr, size))
+		return;
 
 	if (IS_ENABLED(CONFIG_DMA_REMAP) && is_vmalloc_addr(cpu_addr))
 		vunmap(cpu_addr);
@@ -358,7 +364,8 @@ void dma_direct_free_pages(struct device *dev, size_t size,
 	    dma_free_from_pool(dev, vaddr, size))
 		return;
 
-	dma_set_encrypted(dev, vaddr, size);
+	if (dma_set_encrypted(dev, vaddr, size))
+		return;
 
 	__dma_direct_free_pages(dev, page, size);
 }
