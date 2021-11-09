@@ -70,13 +70,6 @@ config ARM_DSU_PMU
 	  system, control logic. The PMU allows counting various events related
 	  to DSU.
 
-config HISI_PMU
-       bool "HiSilicon SoC PMU"
-       depends on ARM64
-       help
-         Support for HiSilicon SoC uncore performance monitoring
-         unit (PMU), such as: L3C, HHA and DDRC.
-
 config QCOM_L2_PMU
 	bool "Qualcomm Technologies L2-cache PMU"
 	depends on ARCH_QCOM && ARM64 && ACPI
@@ -110,5 +103,7 @@ config ARM_SPE_PMU
 	  Enable perf support for the ARMv8.2 Statistical Profiling
 	  Extension, which provides periodic sampling of operations in
 	  the CPU pipeline and reports this via the perf AUX interface.
+
+source "drivers/perf/hisilicon/Kconfig"
 
 endmenu
