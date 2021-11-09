@@ -59,11 +59,23 @@ static int hibmc_valid_mode(int w, int h)
 static int hibmc_connector_get_modes(struct drm_connector *connector)
 {
 	int count;
+	void *edid;
+	struct hibmc_connector *hibmc_connector = to_hibmc_connector(connector);
+
+	edid = drm_get_edid(connector, &hibmc_connector->adapter);
+	if (edid) {
+		drm_connector_update_edid_property(connector, edid);
+		count = drm_add_edid_modes(connector, edid);
+		if (count)
+			goto out;
+	}
 
 	drm_connector_update_edid_property(connector, NULL);
 	count = drm_add_modes_noedid(connector, 1920, 1200);
 	drm_set_preferred_mode(connector, 1024, 768);
 
+out:
+	kfree(edid);
 	return count;
 }
 
@@ -93,39 +105,41 @@ static const struct drm_connector_helper_funcs
 	.best_encoder = hibmc_connector_best_encoder,
 };
 
+static void hibmc_connector_destroy(struct drm_connector *connector)
+{
+	struct hibmc_connector *hibmc_connector = to_hibmc_connector(connector);
+
+	i2c_del_adapter(&hibmc_connector->adapter);
+	drm_connector_cleanup(connector);
+}
+
 static const struct drm_connector_funcs hibmc_connector_funcs = {
 	.fill_modes = drm_helper_probe_single_connector_modes,
-	.destroy = drm_connector_cleanup,
+	.destroy = hibmc_connector_destroy,
 	.reset = drm_atomic_helper_connector_reset,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
 
-static struct drm_connector *
+static int
 hibmc_connector_init(struct hibmc_drm_private *priv)
 {
 	struct drm_device *dev = priv->dev;
-	struct drm_connector *connector;
+	struct drm_connector *connector = &priv->connector.base;
 	int ret;
-
-	connector = devm_kzalloc(dev->dev, sizeof(*connector), GFP_KERNEL);
-	if (!connector) {
-		DRM_ERROR("failed to alloc memory when init connector\n");
-		return ERR_PTR(-ENOMEM);
-	}
 
 	ret = drm_connector_init(dev, connector,
 				 &hibmc_connector_funcs,
 				 DRM_MODE_CONNECTOR_VGA);
 	if (ret) {
 		DRM_ERROR("failed to init connector: %d\n", ret);
-		return ERR_PTR(ret);
+		return ret;
 	}
 	drm_connector_helper_add(connector,
 				 &hibmc_connector_helper_funcs);
 	drm_connector_register(connector);
 
-	return connector;
+	return 0;
 }
 
 static void hibmc_encoder_mode_set(struct drm_encoder *encoder,
@@ -155,15 +169,21 @@ static const struct drm_encoder_funcs hibmc_encoder_funcs = {
 int hibmc_vdac_init(struct hibmc_drm_private *priv)
 {
 	struct drm_device *dev = priv->dev;
+	struct hibmc_connector *hibmc_connector = &priv->connector;
 	struct drm_encoder *encoder;
-	struct drm_connector *connector;
+	struct drm_connector *connector = &hibmc_connector->base;
 	int ret;
 
-	connector = hibmc_connector_init(priv);
-	if (IS_ERR(connector)) {
-		DRM_ERROR("failed to create connector: %ld\n",
-			  PTR_ERR(connector));
-		return PTR_ERR(connector);
+	ret = hibmc_connector_init(priv);
+	if (ret) {
+		DRM_ERROR("failed to init connector: %d\n", ret);
+		return ret;
+	}
+
+	ret = hibmc_ddc_create(dev, hibmc_connector);
+	if (ret) {
+		DRM_ERROR("failed to create ddc: %d\n", ret);
+		return ret;
 	}
 
 	encoder = devm_kzalloc(dev->dev, sizeof(*encoder), GFP_KERNEL);
