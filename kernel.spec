@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2110.8.0
+%global hulkrelease 2111.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0120
+Release: %{hulkrelease}.0121
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,297 @@ fi
 %endif
 
 %changelog
+
+* Tue Nov 09 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2111.3.0.0121
+- bonding: Fix a use-after-free problem when bond_sysfs_slave_add() failed
+- ANDROID: staging: ion: move buffer kmap from begin/end_cpu_access()
+- ath9k: Postpone key cache entry deletion for TXQ frames reference it
+- ath: Modify ath_key_delete() to not need full key entry
+- ath: Export ath_hw_keysetmac()
+- ath9k: Clear key cache explicitly on disabling hardware
+- ath: Use safer key clearing with key cache entries
+- ext4: if zeroout fails fall back to splitting the extent node
+- dccp: don't duplicate ccid when cloning dccp sock
+- selftests/bpf: add demo for file read pattern detection
+- libbpf: Support detecting writable tracepoint program
+- ext4: add trace for the read and release of regular file
+- xfs: add trace for read and release of regular file
+- fs: add helper fs_file_read_do_trace()
+- vfs: add bare tracepoints for vfs read and release
+- bpf: Support writable context for bare tracepoint
+- trace: bpf: Allow bpf to attach to bare tracepoints
+- tracepoints: Add helper to test if tracepoint is enabled in a header
+- Revert "xfs: add writable tracepoint for xfs file buffer read"
+- Revert "selftests/bpf: add test_xfs_file.c and test_set_xfs_file.c"
+- Partially revert "xfs: let writable tracepoint enable to clear flag of f_mode"
+- Revert "selftests/bpf: test_xfs_file support to clear FMODE_RANDOM"
+- Revert "selftests/bpf: add test_spec_readahead_xfs_file to support specail async readahead"
+- EMMC: fix ascend hisi emmc probe failed problem according to mmc_host struct
+- Bluetooth: cmtp: fix file refcount when cmtp_attach_device fails
+- scsi: hisi_sas: print status and error when sata io abnormally completed
+- Revert "scsi: hisi_sas: use threaded irq to process CQ interrupts"
+- Revert "scsi: hisi_sas: replace spin_lock_irqsave/spin_unlock_restore with spin_lock/spin_unlock"
+- net: hns3: update hns3 version to 21.10.5
+- net: hns3: remove an unnecessary 'goto' in hclge_init_ae_dev()
+- net: hns3: fix ret not initialized problem in hclge_get_dfx_reg()
+- net: hns3: refix kernel crash when unload VF while it is being reset
+- net: hns3: ignore reset event before initialization process is done
+- net: hns3: fix vf reset workqueue cannot exit
+- net: hns3: reset DWRR of unused tc to zero
+- net: hns3: fix a return value error in hclge_get_reset_status()
+- net: hns3: fix the timing issue of VF clearing interrupt sources
+- net: hns3: disable mac in flr process
+- net: hns3: add trace event in hclge_gen_resp_to_vf()
+- net: hns3: remove an unnecessary check in hclge_set_umv_space()
+- net: hns3: remove unnecessary parameter 'is_alloc' in hclge_set_umv_space()
+- net: hns3: remove the rss_size limitation by vector num
+- net: hns3: bd_num from fireware should not be zero
+- net: hns3: fix the exception when query imp info
+- net: hns3: fix local variable "desc" not initialized problem
+- net: hns3: limit bd numbers when getting dfx regs.
+- s390/bpf: Fix optimizing out zero-extensions
+- s390/bpf: Fix 64-bit subtraction of the -0x80000000 constant
+- nbd: add sanity check for first_minor
+- perf: hisi: Fix compile error if defined MODULE
+- nfc: nci: fix the UAF of rf_conn_info object
+- ipv6: make exception cache less predictible
+- ipv6: use siphash in rt6_exception_hash()
+- ipv4: make exception cache less predictible
+- ipv4: use siphash instead of Jenkins in fnhe_hashfun()
+- README: README optimize
+- PM: hibernate: Get block device exclusively in swsusp_check()
+- isdn: cpai: check ctr->cnr to avoid array index out of bound
+- blk-cgroup: synchronize blkg creation against policy deactivation
+- iommu/arm-smmu-v3: Add suspend and resume support
+- nbd: Fix use-after-free in pid_show
+- scsi: scsi_debug: Fix out-of-bound read in resp_report_tgtpgs()
+- scsi: scsi_debug: Fix out-of-bound read in resp_readcap16()
+- scsi: hisi_sas: unsupported DIX between OS and HBA only for SATA device
+- scsi: hisi_sas: queue debugfs dump work before FLR
+- mm/mempolicy: fix a race between offset_il_node and mpol_rebind_task
+- jbd2: avoid transaction reuse after reformatting
+- jbd2: clean up checksum verification in do_one_pass()
+- ext4: check magic even the extent block bh is verified
+- ext4: avoid recheck extent for EXT4_EX_FORCE_CACHE
+- ext4: prevent partial update of the extent blocks
+- ext4: check for inconsistent extents between index and leaf block
+- ext4: check for out-of-order index extents in ext4_valid_extent_entries()
+- quota: correct error number in free_dqentry()
+- quota: check block number when reading the block in quota file
+- nbd: fix uaf in nbd_handle_reply()
+- nbd: partition nbd_read_stat() into nbd_read_reply() and nbd_handle_reply()
+- nbd: clean up return value checking of sock_xmit()
+- nbd: don't start request if nbd_queue_rq() failed
+- nbd: check sock index in nbd_read_stat()
+- nbd: make sure request completion won't concurrent
+- nbd: don't handle response without a corresponding request message
+- config: enable CONFIG_ASCEND_CLEAN_CDM by default
+- numa/cdm: Introduce a bootarg to specify the target nodes to move to
+- numa/cdm: Introduce a hbm_per_part variable
+- numa: Restrict the usage of cdm_node_to_ddr_node()
+- numa: Move the management structures for cdm nodes to ddr
+- perf: hisi: Add support for HiSilicon SoC L3T PMU driver
+- perf: hisi: Add support for HiSilicon SoC LPDDRC PMU driver
+- Documentation: Add documentation for Hisilicon SoC PMU DTS binding
+- perf: hisi: Add support for HiSilicon SoC PMU driver dt probe
+- watchdog/corelockup: Depends on the hardlockup detection switch
+- watchdog/corelockup: Add interface to control the detection sensitivity.
+- watchdog/corelockup: Optimized core lockup detection judgment rules
+- config/arm64: Enable corelockup detector for hulk defconfig
+- corelockup: Add detector enable support by cmdline
+- corelockup: Disable wfi/wfe mode for pmu based nmi
+- corelockup: Add support of cpu core hang check
+- driver/svm: used tgid when get phys
+- share pool:Solving the 4G DVPP Address coexist
+- share_pool: Default enable enable_share_k2u_spg
+- share_pool: Export __vmalloc_node()
+- share pool: Add export __get_vm_area map_vm_area for ascend driver
+- share_pool: add sp_group_del_task api
+- share_pool: Extract sp_check_caller_permission
+- share_pool: Clear VM_SHAREPOOL when drop sp area
+- share_pool: Don't allow concurrent sp_free or sp_unshare_uva calls
+- share_pool: Add compatible interface for multi-group mode
+- share_pool: Rename function is_k2task to sp_check_k2task
+- share_pool: Add sp_k2u trace
+- share_pool: Extract sp_k2u_prepare and sp_k2u_finish
+- share_pool: Add sp_alloc trace
+- share_pool: Show process prot in an sp_group
+- share_pool: Add proc node to show process overview info
+- share_pool: Apply proc_sp_group_state to multi-group-mode
+- share_pool: Put the pointer of sp_proc_stat in sp_group_master
+- share_pool: Free spg_node when group adding failed
+- share_pool: Extract is_process_in_group
+- share_pool: Apply sp_config_dvpp_range to to multi-group-mode
+- share_pool: Apply sp_make_share_k2u() to multi-group-mode
+- share_pool: Apply sp_group_id_by_pid() to multi-group-mode
+- share_pool: Extract function get_task
+- share_pool: Clean outdated DVPP pass through macros
+- share_pool: Redesign sp_alloc pass through
+- share_pool: Extract sp_free_get_spa
+- share_pool: Extract sp_alloc_finish
+- share_pool: Extract sp_alloc_mmap_populate
+- share_pool: Extract sp_fallocate
+- share_pool: Extract sp_alloc_prepare
+- share_pool: Using pr_fmt in printing
+- share_pool: Add access control for sp_unshare_uva
+- ascend: share pool: Only memory of current process is allowed to u2k/k2u
+- ascend: share pool: Remove unnecessary params of sp_unshare
+- share_pool: k2u hugepage READONLY prot bug fix
+- ascend: share pool: Add parameter prot in sp_group_add_task
+- share_pool: Introduce struct sp_spg_stat
+- share_pool: Introduce struct spg_proc_stat
+- share_pool: Initialize sp_group_master when call k2u_task
+- share_pool: Rename sp_stat_idr to sp_proc_stat_idr
+- share_pool: Rename sp_spg_stat to sp_overall_stat
+- share_pool: Add group max process num limitation
+- share_pool: Add system max group num limitation
+- ascend/config: enable share pool feature
+- kabi: fix kabi broken in struct mm_struct
+- ascend: sharepool: support multi-group mode
+- sharepool: Fix ASLR broken
+- share_pool: Adjust the position of do_mmap checker
+- share_pool: share_pool: Don't allow non-sp mmap in sp address range
+- share_pool: Free newly generated id only when necessary
+- share_pool: Show sp vmflags in /proc/$pid/smaps
+- share_pool: Free newly generated id when failed
+- share_pool: Fix missing semaphore operation in error branch
+- share_pool: Use pr_debug to print addresses
+- share_pool: Add compact switch for vmalloc_huge* funcs
+- share_pool: Don't do direct reclaim or compact for vmalloc_huge* funcs
+- share_pool: Eliminate compiler warning for atomic64_t in arm32
+- share_pool: Fix memleak of concurrent sp_free and sp_group_add_task
+- share_pool: Set initial value to variable node_id
+- ascend/share pool: bugfix, sp exit is not atomic
+- share_pool: Alloc shared memory on a specified memory node
+- share_pool: Alloc sp memory on a specified memory node
+- share_pool: Fix concurrency problem when a process adding sp_group is killed
+- share_pool: Fix address checker
+- share_pool: Optimize compact procedure
+- shmem/ascend: charge pages to the memcg of current task
+- share_pool: Update kernel-doc comments
+- share_pool: Fix warning symbol was not declared
+- share_pool: Fix warning missing braces around initializer
+- share_pool: Waiting for the migration to complete
+- share_pool: Add parameter checking
+- share_pool: Fix struct sp_proc_stat memleak
+- share_pool: Show k2u_to_task processes in proc_stat interface
+- ascend: sharepool: calculate the correct offset of the address which is customized
+- share_pool: Print info when thread is being killed
+- share pool: Clean sp_mutex for sp_add_group_task
+- share_pool: Rename buff_vzalloc_user and buff_vzalloc_hugepage_user
+- share_pool: Support showing pid of applier process in spa_stat
+- share_pool: Fix coredump hungtask
+- share_pool: change printk_ratelimit to pr_level_ratelimited
+- share_pool: Turn the negative statistics into zeros
+- share_pool: Put relevant functions together
+- share_pool: Remove redundant sysctl_share_pool_hugepage_enable
+- ascend: sharepool: fix compile warning when the sharepool is turned off
+- share_pool: move sysctl interface of share pool from kern_table to vm table
+- share_pool: Introduce refcount for struct sp_proc_stat
+- share_pool: Increase refcount of sp_group when call __sp_find_spg
+- share_pool: Update the comments after removing sp_mutex
+- share_pool: Rename __sp_group_drop_locked to sp_group_drop
+- share_pool: Introduce an rw semaphore sp_group_sem and remove sp_mutex
+- share_pool: Introduce an rw semaphore for per process stat idr
+- share_pool: Use type atomic64_t for process stat
+- share_pool: Add comments for fine grained locking design
+- share_pool: Remove residual macro ESPGMMEXIT
+- share_pool: Fix use-after-free of spa in rb_spa_stat_show
+- share_pool: Fix the bug of not down_write mm->mmap_sem
+- ascend: sharepool: don't enable the vmalloc to use hugepage default
+- share_pool: add sysctl_share_pool_map_lock_enable to control the mapped region to be locked
+- mm/vmalloc: fix pud_page compile error on arm32
+- mm, share_pool: Print share pool info of a process when oom
+- ascend: share pool: optimize the big lock for memory processing
+- share_pool: Fix memleak if fail in sp_make_share_u2k()
+- share_pool: Free sp group id only when it is auto generated
+- share_pool: Add interrupt context checker
+- share_pool: Use PMD_SIZE alignment in hugepage allocation functions
+- share_pool: Remove redundant null pointer check
+- mm: Fix compilation error of mm_update_next_owner()
+- share_pool: Fix compilation error of do_mm_populate()
+- sharepool: Fix null pointer dereference on adding exiting task
+- share_pool: Check tsk->mm before use it
+- share_pool: Fix a potential bug branch
+- x86/mm/ioremap: Fix HUGE_VMAP interface redefinition
+- share_pool: Calculate sp_alloc() size for a task
+- share_pool: Calculate k2u size for a task
+- share_pool: Refactor sp_make_share_k2u()
+- share_pool: Fix error message printing
+- share_pool: Calculate non-sharepool memory usage for a task
+- share_pool: Calculate sp_alloc() size for a sp_group
+- share_pool: Do cleanups for statistical functions
+- mm/vmalloc: Fix a double free in __vmalloc_node_range
+- share_pool: Add and export buff_vzalloc_user()
+- ascend: share_pool: don't share the k2u to spg by default
+- ascend: share_pool: make the function share_k2u_to_spg work
+- share pool: Try to compact when memory is insufficient
+- share_pool: Fix null pointer of mm in concurrency scenes
+- share pool: Roll back when sp mmap failed
+- share_pool: Set errno when fail in sp_free()
+- share_pool: Release spg id when fail in sp_group_add_task()
+- share_pool: Remove memleak debug printing
+- ascend: share_pool: enable svm to use share pool memory
+- share_pool: Fix series of bugs
+- ascend: share_pool: Use remap_pfn_range to share kva to uva
+- ascend: share_pool: Use sharepool_no_page to alloc hugepage
+- share_pool: Add dvpp size statistics
+- share_pool: Fix rbtree searching bugs
+- share_pool: Don't use input param pid in sp_unshare_uva()
+- share pool: Solve processing errors of some abnormal branches
+- share_pool: Fix spa memleak in dvpp channel destroy procedure
+- share_pool: Add sp_area cache
+- ascend: share_pool: support debug mode and refactor some functions
+- ascend: share_pool: support share pool features for ascend platform
+- ascend: share_pool: support fork() and exit() to handle the mm
+- ascend: share_pool: add support proc_sharepool_init and is_vm_huge_special
+- ascend: share_pool: add /proc/sys/kernel/share_pool_hugepage_enable and ac_mode
+- ascend: share_pool: add /proc/<pid>/sp_group
+- ascend: memory: introduce do_mm_populate and hugetlb_insert_hugepage
+- ascend: mm_struct: introduce new parameter for share pool features
+- ascend: vmalloc: export new function for share pool
+- ascend: mm: add an owner for mm_struct
+- mm/vmalloc: Hugepage vmalloc mappings
+- mm/vmalloc: add vmap_range_noflush variant
+- mm: Move vmap_range from mm/ioremap.c to mm/vmalloc.c
+- arm64: inline huge vmap supported functions
+- mm: HUGE_VMAP arch support cleanup
+- mm/ioremap: rename ioremap_*_range to vmap_*_range
+- mm/vmalloc: rename vmap_*_range vmap_pages_*_range
+- mm: apply_to_pte_range warn and fail if a large pte is encountered
+- mm/vmalloc: fix vmalloc_to_page for huge vmap mappings
+- mm: move lib/ioremap.c to mm/
+- mm/ioremap: probe platform for p4d huge map support
+- mm: remove map_vm_range
+- mm: don't return the number of pages from map_kernel_range{, _noflush}
+- mm: rename vmap_page_range to map_kernel_range
+- mm: remove vmap_page_range_noflush and vunmap_page_range
+- mm: pass addr as unsigned long to vb_free
+- mm: only allow page table mappings for built-in zsmalloc
+- mm: unexport unmap_kernel_range_noflush
+- mm: remove __get_vm_area
+- arm64: mm: add p?d_leaf() definitions
+- mm: add generic p?d_leaf() macros
+- mm/memory.c: add apply_to_existing_page_range() helper
+- mm/vmalloc: Add empty <asm/vmalloc.h> headers and use them from <linux/vmalloc.h>
+- lib/ioremap: ensure break-before-make is used for huge p4d mappings
+- lib/ioremap: ensure phys_addr actually corresponds to a physical address
+- ioremap: rework pXd_free_pYd_page() API
+- mm: add do_vm_mmap
+- config: update hulk_defconfig
+- configs: remove euleros_defconfig
+- iommu/amd: Fix incorrect PASID decoding from event log
+- mm: compaction: avoid 100% CPU usage during compaction when a task is killed
+- iommu/vt-d: Unlink device if failed to add to group
+- iommu/arm-smmu: Prevent forced unbinding of Arm SMMU drivers
+- EMMC: open CONFIG_ASCEND_HISI_MMC
+- EMMC: add dts bindings documents
+- EMMC: hisi extensions for dw mmc host controller
+- EMMC: adaption for ascend customized host layer
+- EMMC: adaption for ascend customized sd card
+- EMMC: adaption for ascend customized emmc card
+- EMMC: add hisi_mmc_core
+- EMMC: ascend customized emmc host
 
 * Wed Oct 27 2021 Cheng Jian <cj.chengjian@huawei.com> - 4.19.90-2110.8.0.0120
 - blk-mq: complete req in softirq context in case of single queue
