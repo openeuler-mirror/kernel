@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-only
 obj-$(CONFIG_SPFC) += spfc.o
 
-subdir-ccflags-y += -I$(src)/../../net/ethernet/ramaxel/spnic/hw
-subdir-ccflags-y += -I$(src)/hw
-subdir-ccflags-y += -I$(src)/common
+subdir-ccflags-y += -I$(srctree)/$(src)/../../net/ethernet/ramaxel/spnic/hw
+subdir-ccflags-y += -I$(srctree)/$(src)/hw
+subdir-ccflags-y += -I$(srctree)/$(src)/common
 
 spfc-objs := common/unf_init.o \
 		common/unf_event.o \
@@ -33,15 +33,15 @@ spfc-objs := common/unf_init.o \
 		hw/spfc_cqm_bitmap_table.o \
 		hw/spfc_cqm_main.o \
 		hw/spfc_cqm_object.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_hwdev.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_hw_cfg.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_hw_comm.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_prof_adap.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_common.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_hwif.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_wq.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_cmdq.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_eqs.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_mbox.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_mgmt.o \
-		../../net/ethernet/ramaxel/spnic/hw/sphw_api_cmd.o
+		sphw_hwdev.o \
+		sphw_hw_cfg.o \
+		sphw_hw_comm.o \
+		sphw_prof_adap.o \
+		sphw_common.o \
+		sphw_hwif.o \
+		sphw_wq.o \
+		sphw_cmdq.o \
+		sphw_eqs.o \
+		sphw_mbox.o \
+		sphw_mgmt.o \
+		sphw_api_cmd.o

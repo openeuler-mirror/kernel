@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 obj-$(CONFIG_SPNIC) += spnic.o
 
-subdir-ccflags-y += -I$(src)/hw
+subdir-ccflags-y += -I$(srctree)/$(src)/hw
 
 spnic-objs := hw/sphw_common.o \
 		hw/sphw_hwif.o \
