@@ -85,6 +85,20 @@
 #define ARMV8_PMUV3_PERFCTR_L2I_TLB_REFILL			0x2E
 #define ARMV8_PMUV3_PERFCTR_L2D_TLB				0x2F
 #define ARMV8_PMUV3_PERFCTR_L2I_TLB				0x30
+#define ARMV8_PMUV3_PERFCTR_REMOTE_ACCESS                       0x31
+#define ARMV8_PMUV3_PERFCTR_LL_CACHE                            0x32
+#define ARMV8_PMUV3_PERFCTR_LL_CACHE_MISS                       0x33
+#define ARMV8_PMUV3_PERFCTR_DTLB_WALK                           0x34
+#define ARMV8_PMUV3_PERFCTR_ITLB_WALK                           0x35
+#define ARMV8_PMUV3_PERFCTR_LL_CACHE_RD                         0x36
+#define ARMV8_PMUV3_PERFCTR_LL_CACHE_MISS_RD                    0x37
+#define ARMV8_PMUV3_PERFCTR_REMOTE_ACCESS_RD                    0x38
+
+/* Statistical profiling extension microarchitectural events */
+#define ARMV8_SPE_PERFCTR_SAMPLE_POP                            0x4000
+#define ARMV8_SPE_PERFCTR_SAMPLE_FEED                           0x4001
+#define ARMV8_SPE_PERFCTR_SAMPLE_FILTRATE                       0x4002
+#define ARMV8_SPE_PERFCTR_SAMPLE_COLLISION                      0x4003
 
 /* ARMv8 recommended implementation defined event types */
 #define ARMV8_IMPDEF_PERFCTR_L1D_CACHE_RD			0x40
@@ -370,6 +384,18 @@ ARMV8_EVENT_ATTR(l2d_tlb_refill, ARMV8_PMUV3_PERFCTR_L2D_TLB_REFILL);
 ARMV8_EVENT_ATTR(l2i_tlb_refill, ARMV8_PMUV3_PERFCTR_L2I_TLB_REFILL);
 ARMV8_EVENT_ATTR(l2d_tlb, ARMV8_PMUV3_PERFCTR_L2D_TLB);
 ARMV8_EVENT_ATTR(l2i_tlb, ARMV8_PMUV3_PERFCTR_L2I_TLB);
+ARMV8_EVENT_ATTR(remote_access, ARMV8_PMUV3_PERFCTR_REMOTE_ACCESS);
+ARMV8_EVENT_ATTR(ll_cache, ARMV8_PMUV3_PERFCTR_LL_CACHE);
+ARMV8_EVENT_ATTR(ll_cache_miss, ARMV8_PMUV3_PERFCTR_LL_CACHE_MISS);
+ARMV8_EVENT_ATTR(dtlb_walk, ARMV8_PMUV3_PERFCTR_DTLB_WALK);
+ARMV8_EVENT_ATTR(itlb_walk, ARMV8_PMUV3_PERFCTR_ITLB_WALK);
+ARMV8_EVENT_ATTR(ll_cache_rd, ARMV8_PMUV3_PERFCTR_LL_CACHE_RD);
+ARMV8_EVENT_ATTR(ll_cache_miss_rd, ARMV8_PMUV3_PERFCTR_LL_CACHE_MISS_RD);
+ARMV8_EVENT_ATTR(remote_access_rd, ARMV8_PMUV3_PERFCTR_REMOTE_ACCESS_RD);
+ARMV8_EVENT_ATTR(sample_pop, ARMV8_SPE_PERFCTR_SAMPLE_POP);
+ARMV8_EVENT_ATTR(sample_feed, ARMV8_SPE_PERFCTR_SAMPLE_FEED);
+ARMV8_EVENT_ATTR(sample_filtrate, ARMV8_SPE_PERFCTR_SAMPLE_FILTRATE);
+ARMV8_EVENT_ATTR(sample_collision, ARMV8_SPE_PERFCTR_SAMPLE_COLLISION);
 
 static struct attribute *armv8_pmuv3_event_attrs[] = {
 	&armv8_event_attr_sw_incr.attr.attr,
@@ -420,6 +446,18 @@ static struct attribute *armv8_pmuv3_event_attrs[] = {
 	&armv8_event_attr_l2i_tlb_refill.attr.attr,
 	&armv8_event_attr_l2d_tlb.attr.attr,
 	&armv8_event_attr_l2i_tlb.attr.attr,
+	&armv8_event_attr_remote_access.attr.attr,
+	&armv8_event_attr_ll_cache.attr.attr,
+	&armv8_event_attr_ll_cache_miss.attr.attr,
+	&armv8_event_attr_dtlb_walk.attr.attr,
+	&armv8_event_attr_itlb_walk.attr.attr,
+	&armv8_event_attr_ll_cache_rd.attr.attr,
+	&armv8_event_attr_ll_cache_miss_rd.attr.attr,
+	&armv8_event_attr_remote_access_rd.attr.attr,
+	&armv8_event_attr_sample_pop.attr.attr,
+	&armv8_event_attr_sample_feed.attr.attr,
+	&armv8_event_attr_sample_filtrate.attr.attr,
+	&armv8_event_attr_sample_collision.attr.attr,
 	NULL,
 };
 
