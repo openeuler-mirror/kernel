@@ -93,12 +93,39 @@
 #define ARMV8_PMUV3_PERFCTR_LL_CACHE_RD                         0x36
 #define ARMV8_PMUV3_PERFCTR_LL_CACHE_MISS_RD                    0x37
 #define ARMV8_PMUV3_PERFCTR_REMOTE_ACCESS_RD                    0x38
+#define ARMV8_PMUV3_PERFCTR_L1D_CACHE_LMISS_RD			0x39
+#define ARMV8_PMUV3_PERFCTR_OP_RETIRED				0x3A
+#define ARMV8_PMUV3_PERFCTR_OP_SPEC				0x3B
+#define ARMV8_PMUV3_PERFCTR_STALL				0x3C
+#define ARMV8_PMUV3_PERFCTR_STALL_SLOT_BACKEND			0x3D
+#define ARMV8_PMUV3_PERFCTR_STALL_SLOT_FRONTEND			0x3E
+#define ARMV8_PMUV3_PERFCTR_STALL_SLOT				0x3F
 
 /* Statistical profiling extension microarchitectural events */
 #define ARMV8_SPE_PERFCTR_SAMPLE_POP                            0x4000
 #define ARMV8_SPE_PERFCTR_SAMPLE_FEED                           0x4001
 #define ARMV8_SPE_PERFCTR_SAMPLE_FILTRATE                       0x4002
 #define ARMV8_SPE_PERFCTR_SAMPLE_COLLISION                      0x4003
+
+/* AMUv1 architecture events */
+#define	ARMV8_AMU_PERFCTR_CNT_CYCLES				0x4004
+#define	ARMV8_AMU_PERFCTR_STALL_BACKEND_MEM			0x4005
+
+/* long-latency read miss events */
+#define	ARMV8_PMUV3_PERFCTR_L1I_CACHE_LMISS			0x4006
+#define	ARMV8_PMUV3_PERFCTR_L2D_CACHE_LMISS_RD			0x4009
+#define	ARMV8_PMUV3_PERFCTR_L2I_CACHE_LMISS			0x400A
+#define	ARMV8_PMUV3_PERFCTR_L3D_CACHE_LMISS_RD			0x400B
+
+/* additional latency from alignment events */
+#define	ARMV8_PMUV3_PERFCTR_LDST_ALIGN_LAT			0x4020
+#define	ARMV8_PMUV3_PERFCTR_LD_ALIGN_LAT			0x4021
+#define	ARMV8_PMUV3_PERFCTR_ST_ALIGN_LAT			0x4022
+
+/* Armv8.5 Memory Tagging Extension events */
+#define	ARMV8_MTE_PERFCTR_MEM_ACCESS_CHECKED			0x4024
+#define	ARMV8_MTE_PERFCTR_MEM_ACCESS_CHECKED_RD			0x4025
+#define	ARMV8_MTE_PERFCTR_MEM_ACCESS_CHECKED_WR			0x4026
 
 /* ARMv8 recommended implementation defined event types */
 #define ARMV8_IMPDEF_PERFCTR_L1D_CACHE_RD			0x40
@@ -392,10 +419,30 @@ ARMV8_EVENT_ATTR(itlb_walk, ARMV8_PMUV3_PERFCTR_ITLB_WALK);
 ARMV8_EVENT_ATTR(ll_cache_rd, ARMV8_PMUV3_PERFCTR_LL_CACHE_RD);
 ARMV8_EVENT_ATTR(ll_cache_miss_rd, ARMV8_PMUV3_PERFCTR_LL_CACHE_MISS_RD);
 ARMV8_EVENT_ATTR(remote_access_rd, ARMV8_PMUV3_PERFCTR_REMOTE_ACCESS_RD);
+ARMV8_EVENT_ATTR(l1d_cache_lmiss_rd, ARMV8_PMUV3_PERFCTR_L1D_CACHE_LMISS_RD);
+ARMV8_EVENT_ATTR(op_retired, ARMV8_PMUV3_PERFCTR_OP_RETIRED);
+ARMV8_EVENT_ATTR(op_spec, ARMV8_PMUV3_PERFCTR_OP_SPEC);
+ARMV8_EVENT_ATTR(stall, ARMV8_PMUV3_PERFCTR_STALL);
+ARMV8_EVENT_ATTR(stall_slot_backend, ARMV8_PMUV3_PERFCTR_STALL_SLOT_BACKEND);
+ARMV8_EVENT_ATTR(stall_slot_frontend, ARMV8_PMUV3_PERFCTR_STALL_SLOT_FRONTEND);
+ARMV8_EVENT_ATTR(stall_slot, ARMV8_PMUV3_PERFCTR_STALL_SLOT);
 ARMV8_EVENT_ATTR(sample_pop, ARMV8_SPE_PERFCTR_SAMPLE_POP);
 ARMV8_EVENT_ATTR(sample_feed, ARMV8_SPE_PERFCTR_SAMPLE_FEED);
 ARMV8_EVENT_ATTR(sample_filtrate, ARMV8_SPE_PERFCTR_SAMPLE_FILTRATE);
 ARMV8_EVENT_ATTR(sample_collision, ARMV8_SPE_PERFCTR_SAMPLE_COLLISION);
+ARMV8_EVENT_ATTR(cnt_cycles, ARMV8_AMU_PERFCTR_CNT_CYCLES);
+ARMV8_EVENT_ATTR(stall_backend_mem, ARMV8_AMU_PERFCTR_STALL_BACKEND_MEM);
+ARMV8_EVENT_ATTR(l1i_cache_lmiss, ARMV8_PMUV3_PERFCTR_L1I_CACHE_LMISS);
+ARMV8_EVENT_ATTR(l2d_cache_lmiss_rd, ARMV8_PMUV3_PERFCTR_L2D_CACHE_LMISS_RD);
+ARMV8_EVENT_ATTR(l2i_cache_lmiss, ARMV8_PMUV3_PERFCTR_L2I_CACHE_LMISS);
+ARMV8_EVENT_ATTR(l3d_cache_lmiss_rd, ARMV8_PMUV3_PERFCTR_L3D_CACHE_LMISS_RD);
+ARMV8_EVENT_ATTR(ldst_align_lat, ARMV8_PMUV3_PERFCTR_LDST_ALIGN_LAT);
+ARMV8_EVENT_ATTR(ld_align_lat, ARMV8_PMUV3_PERFCTR_LD_ALIGN_LAT);
+ARMV8_EVENT_ATTR(st_align_lat, ARMV8_PMUV3_PERFCTR_ST_ALIGN_LAT);
+ARMV8_EVENT_ATTR(mem_access_checked, ARMV8_MTE_PERFCTR_MEM_ACCESS_CHECKED);
+ARMV8_EVENT_ATTR(mem_access_checked_rd, ARMV8_MTE_PERFCTR_MEM_ACCESS_CHECKED_RD);
+ARMV8_EVENT_ATTR(mem_access_checked_wr, ARMV8_MTE_PERFCTR_MEM_ACCESS_CHECKED_WR);
+
 
 static struct attribute *armv8_pmuv3_event_attrs[] = {
 	&armv8_event_attr_sw_incr.attr.attr,
@@ -454,11 +501,30 @@ static struct attribute *armv8_pmuv3_event_attrs[] = {
 	&armv8_event_attr_ll_cache_rd.attr.attr,
 	&armv8_event_attr_ll_cache_miss_rd.attr.attr,
 	&armv8_event_attr_remote_access_rd.attr.attr,
+        &armv8_event_attr_l1d_cache_lmiss_rd.attr.attr,
+        &armv8_event_attr_op_retired.attr.attr,
+        &armv8_event_attr_op_spec.attr.attr,
+        &armv8_event_attr_stall.attr.attr,
+        &armv8_event_attr_stall_slot_backend.attr.attr,
+        &armv8_event_attr_stall_slot_frontend.attr.attr,
+        &armv8_event_attr_stall_slot.attr.attr,
 	&armv8_event_attr_sample_pop.attr.attr,
 	&armv8_event_attr_sample_feed.attr.attr,
 	&armv8_event_attr_sample_filtrate.attr.attr,
 	&armv8_event_attr_sample_collision.attr.attr,
-	NULL,
+        &armv8_event_attr_cnt_cycles.attr.attr,
+        &armv8_event_attr_stall_backend_mem.attr.attr,
+        &armv8_event_attr_l1i_cache_lmiss.attr.attr,
+        &armv8_event_attr_l2d_cache_lmiss_rd.attr.attr,
+        &armv8_event_attr_l2i_cache_lmiss.attr.attr,
+        &armv8_event_attr_l3d_cache_lmiss_rd.attr.attr,
+        &armv8_event_attr_ldst_align_lat.attr.attr,
+        &armv8_event_attr_ld_align_lat.attr.attr,
+        &armv8_event_attr_st_align_lat.attr.attr,
+        &armv8_event_attr_mem_access_checked.attr.attr,
+        &armv8_event_attr_mem_access_checked_rd.attr.attr,
+        &armv8_event_attr_mem_access_checked_wr.attr.attr,
+        NULL,
 };
 
 static umode_t
