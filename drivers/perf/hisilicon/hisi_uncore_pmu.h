@@ -17,6 +17,7 @@
 #include <linux/cpumask.h>
 #include <linux/device.h>
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/perf_event.h>
 #include <linux/types.h>
 
