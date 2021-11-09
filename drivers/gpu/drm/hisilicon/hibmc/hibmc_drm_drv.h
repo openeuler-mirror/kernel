@@ -19,11 +19,17 @@
 #ifndef HIBMC_DRM_DRV_H
 #define HIBMC_DRM_DRV_H
 
+#include <linux/gpio/consumer.h>
+#include <linux/i2c-algo-bit.h>
+#include <linux/i2c.h>
+
+#include <drm/drm_edid.h>
 #include <drm/drmP.h>
 #include <drm/drm_atomic.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_gem.h>
 #include <drm/ttm/ttm_bo_driver.h>
+
 
 struct hibmc_framebuffer {
 	struct drm_framebuffer fb;
@@ -36,6 +42,13 @@ struct hibmc_fbdev {
 	int size;
 };
 
+struct hibmc_connector {
+	struct drm_connector base;
+
+	struct i2c_adapter adapter;
+	struct i2c_algo_bit_data bit_data;
+};
+
 struct hibmc_drm_private {
 	/* hw */
 	void __iomem   *mmio;
@@ -46,6 +59,7 @@ struct hibmc_drm_private {
 
 	/* drm */
 	struct drm_device  *dev;
+	struct hibmc_connector connector;
 	bool mode_config_initialized;
 	struct drm_atomic_state *suspend_state;
 
@@ -59,6 +73,16 @@ struct hibmc_drm_private {
 	struct hibmc_fbdev *fbdev;
 	bool mm_inited;
 };
+
+static inline struct hibmc_connector *to_hibmc_connector(struct drm_connector *connector)
+{
+	return container_of(connector, struct hibmc_connector, base);
+}
+
+static inline struct hibmc_drm_private *to_hibmc_drm_private(struct drm_device *dev)
+{
+	return dev->dev_private;
+}
 
 #define to_hibmc_framebuffer(x) container_of(x, struct hibmc_framebuffer, fb)
 
@@ -110,6 +134,7 @@ int hibmc_dumb_create(struct drm_file *file, struct drm_device *dev,
 int hibmc_dumb_mmap_offset(struct drm_file *file, struct drm_device *dev,
 			   u32 handle, u64 *offset);
 int hibmc_mmap(struct file *filp, struct vm_area_struct *vma);
+int hibmc_ddc_create(struct drm_device *drm_dev, struct hibmc_connector *connector);
 
 extern const struct drm_mode_config_funcs hibmc_mode_funcs;
 
