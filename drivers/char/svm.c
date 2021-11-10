@@ -226,7 +226,14 @@ struct svm_va2pa_slot {
 	int resv;
 	int pid;
 	int data_type;
-	char data[48];
+	union {
+		char user_defined_data[48];
+		struct {
+			unsigned long phys;
+			unsigned long len;
+			char reserved[32];
+		};
+	};
 };
 
 struct svm_va2pa_trunk {
@@ -342,11 +349,12 @@ static void svm_remove_trunk(struct device *dev)
 	va2pa_trunk.bitmap = NULL;
 }
 
-static void svm_set_slot_valid(unsigned long index, unsigned long phys)
+static void svm_set_slot_valid(unsigned long index, unsigned long phys, unsigned long len)
 {
 	struct svm_va2pa_slot *slot = &va2pa_trunk.slots[index];
 
-	*((unsigned long *)slot->data) = phys;
+	slot->phys = phys;
+	slot->len = len;
 	slot->image_word = SVM_IMAGE_WORD_VALID;
 	slot->pid = current->tgid;
 	slot->data_type = SVM_VA2PA_TYPE_DMA;
@@ -380,7 +388,7 @@ static void svm_clean_done_slots(void)
 		if (va2pa_trunk.slots[temp].image_word != SVM_IMAGE_WORD_DONE)
 			continue;
 
-		addr = *((phys_addr_t *)(va2pa_trunk.slots[temp].data));
+		addr = (phys_addr_t)va2pa_trunk.slots[temp].phys;
 		put_page(pfn_to_page(PHYS_PFN(addr)));
 		svm_set_slot_init(temp);
 	}
@@ -1372,6 +1380,8 @@ static int svm_get_phys(unsigned long __user *arg)
 	struct page *page;
 	unsigned long addr, phys, offset;
 	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma = NULL;
+	unsigned long len;
 
 	if (!acpi_disabled)
 		return -EPERM;
@@ -1396,6 +1406,13 @@ static int svm_get_phys(unsigned long __user *arg)
 	get_page(page);
 
 	phys = PFN_PHYS(pte_pfn(pte)) + offset;
+
+	/* fix ts problem, which need the len to check out memory */
+	len = 0;
+	vma = find_vma(mm, addr);
+	if (vma)
+		len = vma->vm_end - addr;
+
 	up_read(&mm->mmap_sem);
 
 	mutex_lock(&va2pa_trunk.mutex);
@@ -1409,7 +1426,7 @@ static int svm_get_phys(unsigned long __user *arg)
 	if (err)
 		goto err_mutex_unlock;
 
-	svm_set_slot_valid(index, phys);
+	svm_set_slot_valid(index, phys, len);
 
 	err = put_user(index * SVM_VA2PA_SLOT_SIZE, (unsigned long __user *)arg);
 	if (err)
