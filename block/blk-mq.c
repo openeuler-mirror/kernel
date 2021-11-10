@@ -2804,8 +2804,6 @@ static void blk_mq_realloc_hw_ctxs(struct blk_mq_tag_set *set,
 		struct blk_mq_hw_ctx *hctx = hctxs[j];
 
 		if (hctx) {
-			if (hctx->tags)
-				blk_mq_free_map_and_requests(set, j);
 			blk_mq_exit_hctx(q, set, hctx, j);
 			hctxs[j] = NULL;
 		}
@@ -3236,8 +3234,13 @@ fallback:
 	list_for_each_entry(q, &set->tag_list, tag_set_list) {
 		blk_mq_realloc_hw_ctxs(set, q);
 		if (q->nr_hw_queues != set->nr_hw_queues) {
+			int i = prev_nr_hw_queues;
+
 			pr_warn("Increasing nr_hw_queues to %d fails, fallback to %d\n",
 					nr_hw_queues, prev_nr_hw_queues);
+			for (; i < set->nr_hw_queues; i++)
+				blk_mq_free_map_and_requests(set, i);
+
 			set->nr_hw_queues = prev_nr_hw_queues;
 			blk_mq_map_queues(set);
 			goto fallback;
