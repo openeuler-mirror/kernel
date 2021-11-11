@@ -1085,7 +1085,6 @@ static inline int cpu_of(struct rq *rq)
 #endif
 }
 
-
 #ifdef CONFIG_SCHED_SMT
 extern void __update_idle_core(struct rq *rq);
 
@@ -1348,6 +1347,8 @@ this_rq_lock_irq(struct rq_flags *rf)
 }
 
 #ifdef CONFIG_NUMA
+extern struct static_key_true sched_steal_allow;
+
 enum numa_topology_type {
 	NUMA_DIRECT,
 	NUMA_GLUELESS_MESH,
