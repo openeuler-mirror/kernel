@@ -4153,6 +4153,16 @@ static inline void update_misfit_status(struct task_struct *p, struct rq *rq)
 	rq->misfit_task_load = max_t(unsigned long, task_h_load(p), 1);
 }
 
+static inline void rq_idle_stamp_update(struct rq *rq)
+{
+	rq->idle_stamp = rq_clock(rq);
+}
+
+static inline void rq_idle_stamp_clear(struct rq *rq)
+{
+	rq->idle_stamp = 0;
+}
+
 static void overload_clear(struct rq *rq)
 {
 	struct sparsemask *overload_cpus;
@@ -4198,6 +4208,8 @@ static inline int newidle_balance(struct rq *rq, struct rq_flags *rf)
 	return 0;
 }
 
+static inline void rq_idle_stamp_update(struct rq *rq) {}
+static inline void rq_idle_stamp_clear(struct rq *rq) {}
 static inline void overload_clear(struct rq *rq) {}
 static inline void overload_set(struct rq *rq) {}
 
@@ -7437,7 +7449,17 @@ idle:
 	if (!rf)
 		return NULL;
 
+	/*
+	 * We must set idle_stamp _before_ calling idle_balance(), such that we
+	 * measure the duration of idle_balance() as idle time.
+	 */
+	rq_idle_stamp_update(rq);
+
 	new_tasks = newidle_balance(rq, rf);
+
+	if (new_tasks)
+		rq_idle_stamp_clear(rq);
+
 
 	/*
 	 * Because newidle_balance() releases (and re-acquires) rq->lock, it is
@@ -10906,11 +10928,6 @@ static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 	u64 curr_cost = 0;
 
 	update_misfit_status(NULL, this_rq);
-	/*
-	 * We must set idle_stamp _before_ calling idle_balance(), such that we
-	 * measure the duration of idle_balance() as idle time.
-	 */
-	this_rq->idle_stamp = rq_clock(this_rq);
 
 	/*
 	 * Do not pull tasks towards !active CPUs...
@@ -10999,9 +11016,6 @@ out:
 	/* Is there a task of a high priority class? */
 	if (this_rq->nr_running != this_rq->cfs.h_nr_running)
 		pulled_task = -1;
-
-	if (pulled_task)
-		this_rq->idle_stamp = 0;
 
 	rq_repin_lock(this_rq, rf);
 
