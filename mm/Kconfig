@@ -916,4 +916,7 @@ config PID_RESERVE
 	  We record the pid of dump task in the reserve memory,
 	  and reserve the pids before init task start. In restore process,
 	  free the reserved pids and realloc them for use.
+
+source "mm/damon/Kconfig"
+
 endmenu
