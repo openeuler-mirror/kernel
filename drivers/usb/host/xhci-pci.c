@@ -313,7 +313,7 @@ static void phytium_xhci_pci_workaround(struct pci_dev *dev)
 	u32 midr = read_cpuid_id();
 
 	/* Firmware bug, DMA mask is not reported by the firmware */
-	if ((midr & MIDR_CPU_MODEL_MASK) == MIDR_PHYTIUM_FT2000PLUS)
+	if ((midr & MIDR_CPU_MODEL_MASK) == MIDR_FT_2000PLUS)
 		dma_set_mask(&dev->dev, DMA_BIT_MASK(64));
 }
 #else
