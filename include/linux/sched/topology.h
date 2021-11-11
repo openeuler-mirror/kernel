@@ -74,7 +74,9 @@ struct sched_domain_shared {
 	atomic_t	ref;
 	atomic_t	nr_busy_cpus;
 	int		has_idle_cores;
+#ifdef CONFIG_SCHED_STEAL
 	struct sparsemask *cfs_overload_cpus;
+#endif
 };
 
 struct sched_domain {

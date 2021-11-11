@@ -3,7 +3,9 @@
  * Scheduler topology setup/handling methods
  */
 #include "sched.h"
+#ifdef CONFIG_SCHED_STEAL
 #include "sparsemask.h"
+#endif
 
 DEFINE_MUTEX(sched_domains_mutex);
 
@@ -11,11 +13,17 @@ DEFINE_MUTEX(sched_domains_mutex);
 static cpumask_var_t sched_domains_tmpmask;
 static cpumask_var_t sched_domains_tmpmask2;
 
+#ifdef CONFIG_SCHED_STEAL
 struct s_data;
 static int sd_llc_alloc(struct sched_domain *sd);
 static void sd_llc_free(struct sched_domain *sd);
 static int sd_llc_alloc_all(const struct cpumask *cpu_map, struct s_data *d);
 static void sd_llc_free_all(const struct cpumask *cpu_map);
+#else
+static inline void sd_llc_free(struct sched_domain *sd) {}
+static inline int sd_llc_alloc_all(const struct cpumask *cpu_map, struct s_data *d) { return 0; }
+static inline void sd_llc_free_all(const struct cpumask *cpu_map) {}
+#endif
 
 #ifdef CONFIG_SCHED_DEBUG
 
@@ -647,9 +655,11 @@ DEFINE_STATIC_KEY_FALSE(sched_asym_cpucapacity);
 
 static void update_top_cache_domain(int cpu)
 {
-	struct sparsemask *cfs_overload_cpus = NULL;
-	struct sched_domain_shared *sds = NULL;
+#ifdef CONFIG_SCHED_STEAL
 	struct rq *rq = cpu_rq(cpu);
+	struct sparsemask *cfs_overload_cpus = NULL;
+#endif
+	struct sched_domain_shared *sds = NULL;
 	struct sched_domain *sd;
 	int id = cpu;
 	int size = 1;
@@ -659,10 +669,14 @@ static void update_top_cache_domain(int cpu)
 		id = cpumask_first(sched_domain_span(sd));
 		size = cpumask_weight(sched_domain_span(sd));
 		sds = sd->shared;
+#ifdef CONFIG_SCHED_STEAL
 		cfs_overload_cpus = sds->cfs_overload_cpus;
+#endif
 	}
 
+#ifdef CONFIG_SCHED_STEAL
 	rcu_assign_pointer(rq->cfs_overload_cpus, cfs_overload_cpus);
+#endif
 	rcu_assign_pointer(per_cpu(sd_llc, cpu), sd);
 	per_cpu(sd_llc_size, cpu) = size;
 	per_cpu(sd_llc_id, cpu) = id;
@@ -1563,6 +1577,7 @@ static void init_numa_topology_type(void)
 	}
 }
 
+#ifdef CONFIG_SCHED_STEAL
 DEFINE_STATIC_KEY_TRUE(sched_steal_allow);
 static int sched_steal_node_limit;
 #define SCHED_STEAL_NODE_LIMIT_DEFAULT 2
@@ -1586,6 +1601,9 @@ static void check_node_limit(void)
 		pr_debug("Suppressing sched STEAL. To enable, reboot with sched_steal_node_limit=%d", n);
 	}
 }
+#else
+static inline void check_node_limit(void) { }
+#endif /* CONFIG_SCHED_STEAL */
 
 void sched_init_numa(void)
 {
@@ -1888,6 +1906,7 @@ static void __sdt_free(const struct cpumask *cpu_map)
 	}
 }
 
+#ifdef CONFIG_SCHED_STEAL
 static int sd_llc_alloc(struct sched_domain *sd)
 {
 	struct sched_domain_shared *sds = sd->shared;
@@ -1959,6 +1978,7 @@ static void sd_llc_free_all(const struct cpumask *cpu_map)
 		}
 	}
 }
+#endif
 
 static struct sched_domain *build_sched_domain(struct sched_domain_topology_level *tl,
 		const struct cpumask *cpu_map, struct sched_domain_attr *attr,

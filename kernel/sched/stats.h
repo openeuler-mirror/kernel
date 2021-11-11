@@ -39,8 +39,9 @@ rq_sched_info_dequeued(struct rq *rq, unsigned long long delta)
 #define   schedstat_set(var, val)	do { if (schedstat_enabled()) { var = (val); } } while (0)
 #define   schedstat_val(var)		(var)
 #define   schedstat_val_or_zero(var)	((schedstat_enabled()) ? (var) : 0)
+#ifdef CONFIG_SCHED_STEAL
 #define   schedstat_start_time()	schedstat_val_or_zero(local_clock())
-#define   schedstat_end_time(stat, time)			\
+#define   __schedstat_end_time(stat, time)			\
 	do {							\
 		unsigned long endtime;				\
 								\
@@ -49,7 +50,13 @@ rq_sched_info_dequeued(struct rq *rq, unsigned long long delta)
 			schedstat_add((stat), endtime);		\
 		}						\
 	} while (0)
+#define   schedstat_end_time(rq, time)				\
+	__schedstat_end_time(((rq)->find_time), time)
 extern unsigned long schedstat_skid;
+#else /* !CONFIG_SCHED_STEAL */
+# define   schedstat_start_time()	0
+# define   schedstat_end_time(rq, t)	do { } while (0)
+#endif /* CONFIG_SCHED_STEAL */
 
 #else /* !CONFIG_SCHEDSTATS: */
 static inline void rq_sched_info_arrive  (struct rq *rq, unsigned long long delta) { }
@@ -65,7 +72,7 @@ static inline void rq_sched_info_depart  (struct rq *rq, unsigned long long delt
 # define   schedstat_val(var)		0
 # define   schedstat_val_or_zero(var)	0
 # define   schedstat_start_time()	0
-# define   schedstat_end_time(stat, t)	do { } while (0)
+# define   schedstat_end_time(rq, t)	do { } while (0)
 #endif /* CONFIG_SCHEDSTATS */
 
 #ifdef CONFIG_PSI

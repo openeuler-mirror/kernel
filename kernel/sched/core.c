@@ -3146,6 +3146,7 @@ int sysctl_numa_balancing(struct ctl_table *table, int write,
 DEFINE_STATIC_KEY_FALSE(sched_schedstats);
 static bool __initdata __sched_schedstats = false;
 
+#ifdef CONFIG_SCHED_STEAL
 unsigned long schedstat_skid;
 
 static void compute_skid(void)
@@ -3169,6 +3170,9 @@ static void compute_skid(void)
 		schedstat_skid = 0;
 	pr_info("schedstat_skid = %lu\n", schedstat_skid);
 }
+#else
+static inline void compute_skid(void) {}
+#endif
 
 static void set_schedstats(bool enabled)
 {
