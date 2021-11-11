@@ -912,6 +912,19 @@ static bool has_cache_idc(const struct arm64_cpu_capabilities *entry,
 {
 	u64 ctr;
 
+#ifndef CONFIG_HISILICON_ERRATUM_1980005
+	/* Fix kABI compatible for CONFIG_HISILICON_ERRATUM_1980005 */
+	static const struct midr_range idc_support_list[] = {
+		MIDR_ALL_VERSIONS(MIDR_HISI_TSV110),
+		MIDR_REV(MIDR_HISI_TSV200, 1, 0),
+		{ /* sentinel */ }
+	};
+	if (is_midr_in_range_list(read_cpuid_id(), idc_support_list)) {
+		pr_info("CPU features: detected: Taishan IDC coherence workaround\n");
+		return true;
+	}
+#endif
+
 	if (scope == SCOPE_SYSTEM)
 		ctr = arm64_ftr_reg_ctrel0.sys_val;
 	else
