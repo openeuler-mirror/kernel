@@ -188,7 +188,6 @@ static struct debugfs_reg32 hrde_ooo_dfx_regs[] = {
 	{"HRDE_AM_CURR_WR_TXID_STS_2", 0x300178ull},
 };
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 {
 	return mode_set(val, kp);
@@ -202,7 +201,6 @@ static const struct kernel_param_ops uacce_mode_ops = {
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
 MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
-#endif
 
 static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 {
@@ -681,11 +679,8 @@ static int hisi_rde_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 {
 	int ret;
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	qm->algs = "ec\n";
 	qm->uacce_mode = uacce_mode;
-#endif
-
 	qm->pdev = pdev;
 	ret = hisi_qm_pre_init(qm, pf_q_num, HRDE_PF_DEF_Q_BASE);
 	if (ret)

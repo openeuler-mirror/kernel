@@ -10,11 +10,7 @@
 #include <linux/pci.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
 #include <linux/uacce.h>
-#endif
-
 #include "qm_usr_if.h"
 
 #define QNUM_V1				4096
@@ -333,13 +329,12 @@ struct hisi_qm {
 	bool use_sva;
 	bool is_frozen;
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	resource_size_t phys_base;
 	resource_size_t size;
 	struct uacce uacce;
 	const char *algs;
 	int uacce_mode;
-#endif
+
 	struct workqueue_struct *wq;
 	struct work_struct work;
 	/* design for module not support aer, such as rde */
@@ -350,7 +345,6 @@ struct hisi_qp_status {
 	atomic_t used;
 	atomic_t send_ref;
 	u16 sq_tail;
-	u16 sq_head;
 	u16 cq_head;
 	bool cqc_phase;
 	atomic_t flags;
@@ -373,7 +367,6 @@ struct hisi_qp {
 	dma_addr_t cqe_dma;
 
 	struct hisi_qp_status qp_status;
-	struct completion completion;
 	struct hisi_qp_ops *hw_ops;
 	void *qp_ctx;
 	void (*req_cb)(struct hisi_qp *qp, void *data);
@@ -382,11 +375,8 @@ struct hisi_qp {
 	struct hisi_qm *qm;
 	bool is_resetting;
 	bool is_in_kernel;
-
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	u16 pasid;
 	struct uacce_queue *uacce_q;
-#endif
 };
 
 static inline int q_num_set(const char *val, const struct kernel_param *kp,
@@ -444,7 +434,6 @@ static inline int vf_num_set(const char *val, const struct kernel_param *kp)
 	return param_set_int(val, kp);
 }
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 static inline int mode_set(const char *val, const struct kernel_param *kp)
 {
 	u32 n;
@@ -460,7 +449,6 @@ static inline int mode_set(const char *val, const struct kernel_param *kp)
 
 	return param_set_int(val, kp);
 }
-#endif
 
 static inline void hisi_qm_add_to_list(struct hisi_qm *qm,
 				       struct hisi_qm_list *qm_list)
@@ -495,7 +483,6 @@ static inline int hisi_qm_pre_init(struct hisi_qm *qm,
 
 	pci_set_drvdata(pdev, qm);
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	switch (qm->uacce_mode) {
 	case UACCE_MODE_NOUACCE:
 		qm->use_uacce = false;
@@ -507,9 +494,7 @@ static inline int hisi_qm_pre_init(struct hisi_qm *qm,
 		pci_err(pdev, "uacce mode error!\n");
 		return -EINVAL;
 	}
-#else
-	qm->use_uacce = false;
-#endif
+
 	if (qm->fun_type == QM_HW_PF) {
 		qm->qp_base = def_q_num;
 		qm->qp_num = pf_q_num;
@@ -534,7 +519,6 @@ int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg);
 int hisi_qm_stop_qp(struct hisi_qp *qp);
 void hisi_qm_release_qp(struct hisi_qp *qp);
 int hisi_qp_send(struct hisi_qp *qp, const void *msg);
-int hisi_qp_wait(struct hisi_qp *qp);
 int hisi_qm_get_free_qp_num(struct hisi_qm *qm);
 int hisi_qm_get_vft(struct hisi_qm *qm, u32 *base, u32 *number);
 void hisi_qm_debug_regs_clear(struct hisi_qm *qm);

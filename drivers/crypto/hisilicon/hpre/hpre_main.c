@@ -182,7 +182,6 @@ static const char *hpre_dfx_files[HPRE_DFX_FILE_NUM] = {
 	"invalid_req_cnt"
 };
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 static int uacce_mode_set(const char *val, const struct kernel_param *kp)
 {
 	return mode_set(val, kp);
@@ -196,7 +195,6 @@ static const struct kernel_param_ops uacce_mode_ops = {
 static int uacce_mode = UACCE_MODE_NOUACCE;
 module_param_cb(uacce_mode, &uacce_mode_ops, &uacce_mode, 0444);
 MODULE_PARM_DESC(uacce_mode, "Mode of UACCE can be 0(default), 2");
-#endif
 
 static int pf_q_num_set(const char *val, const struct kernel_param *kp)
 {
@@ -786,10 +784,8 @@ static int hpre_qm_pre_init(struct hisi_qm *qm, struct pci_dev *pdev)
 {
 	int ret;
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	qm->algs = "rsa\ndh\n";
 	qm->uacce_mode = uacce_mode;
-#endif
 	qm->pdev = pdev;
 	ret = hisi_qm_pre_init(qm, pf_q_num, HPRE_PF_DEF_Q_BASE);
 	if (ret)
@@ -960,10 +956,8 @@ static void hpre_remove(struct pci_dev *pdev)
 	struct hisi_qm *qm = pci_get_drvdata(pdev);
 	int ret;
 
-#ifdef CONFIG_CRYPTO_QM_UACCE
-	if (uacce_mode != UACCE_MODE_NOUACCE)
-		hisi_qm_remove_wait_delay(qm, &hpre_devices);
-#endif
+	hisi_qm_remove_wait_delay(qm, &hpre_devices);
+
 	hpre_algs_unregister();
 	hisi_qm_del_from_list(qm, &hpre_devices);
 	if (qm->fun_type == QM_HW_PF && qm->vfs_num) {
@@ -990,10 +984,8 @@ static void hpre_remove(struct pci_dev *pdev)
 static const struct pci_error_handlers hpre_err_handler = {
 	.error_detected		= hisi_qm_dev_err_detected,
 	.slot_reset		= hisi_qm_dev_slot_reset,
-#ifdef CONFIG_CRYPTO_QM_UACCE
 	.reset_prepare		= hisi_qm_reset_prepare,
 	.reset_done		= hisi_qm_reset_done,
-#endif
 };
 
 static struct pci_driver hpre_pci_driver = {
