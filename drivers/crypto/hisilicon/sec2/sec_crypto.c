@@ -171,10 +171,13 @@ static int sec_bd_send(struct sec_ctx *ctx, struct sec_req *req)
 	struct sec_qp_ctx *qp_ctx = req->qp_ctx;
 	int ret;
 
+	if (ctx->fake_req_limit <=
+	    atomic_read(&qp_ctx->qp->qp_status.used) &&
+	    !(req->flag & CRYPTO_TFM_REQ_MAY_BACKLOG))
+		return -EBUSY;
+
 	mutex_lock(&qp_ctx->req_lock);
-
 	ret = hisi_qp_send(qp_ctx->qp, &req->sec_sqe);
-
 	if (ctx->fake_req_limit <=
 	    atomic_read(&qp_ctx->qp->qp_status.used) && !ret) {
 		list_add_tail(&req->backlog_head, &qp_ctx->backlog);
@@ -917,7 +920,8 @@ static int sec_process(struct sec_ctx *ctx, struct sec_req *req)
 		sec_update_iv(req, ctx->alg_type);
 
 	ret = ctx->req_op->bd_send(ctx, req);
-	if (unlikely(ret != -EBUSY && ret != -EINPROGRESS)) {
+	if (unlikely((ret != -EBUSY && ret != -EINPROGRESS) ||
+		(ret == -EBUSY && !(req->flag & CRYPTO_TFM_REQ_MAY_BACKLOG)))) {
 		dev_err_ratelimited(SEC_CTX_DEV(ctx),
 				    "send sec request failed!\n");
 		goto err_send_req;
@@ -1009,6 +1013,7 @@ static int sec_skcipher_crypto(struct skcipher_request *sk_req, bool encrypt)
 	if (!sk_req->cryptlen)
 		return 0;
 
+	req->flag = sk_req->base.flags;
 	req->c_req.sk_req = sk_req;
 	req->c_req.encrypt = encrypt;
 	req->ctx = ctx;

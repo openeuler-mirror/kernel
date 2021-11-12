@@ -43,6 +43,7 @@ struct sec_req {
 
 	int err_type;
 	int req_id;
+	u32 flag;
 
 	/* Status of the SEC request */
 	bool fake_busy;
