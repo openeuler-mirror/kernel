@@ -348,11 +348,6 @@ int mmc_of_parse(struct mmc_host *host)
 
 EXPORT_SYMBOL(mmc_of_parse);
 
-static inline int mmc_is_ascend_hi_mci_1(struct device *dev)
-{
-	return !strncmp(dev_name(dev), "hi_mci.1", strlen("hi_mci.1"));
-}
-
 /**
  *	mmc_alloc_host - initialise the per-host structure.
  *	@extra: sizeof private data structure
@@ -379,10 +374,7 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 	}
 
 	host->index = err;
-	if (mmc_is_ascend_customized(dev)) {
-		if (mmc_is_ascend_hi_mci_1(dev))
-			host->index = 1;
-	}
+
 	dev_set_name(&host->class_dev, "mmc%d", host->index);
 
 	host->parent = dev;
@@ -391,13 +383,12 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 	device_initialize(&host->class_dev);
 	device_enable_async_suspend(&host->class_dev);
 
-	if (!mmc_is_ascend_customized(host->parent))
-		if (mmc_gpio_alloc(host)) {
-			put_device(&host->class_dev);
-			ida_simple_remove(&mmc_host_ida, host->index);
-			kfree(host);
-			return NULL;
-		}
+	if (mmc_gpio_alloc(host)) {
+		put_device(&host->class_dev);
+		ida_simple_remove(&mmc_host_ida, host->index);
+		kfree(host);
+		return NULL;
+	}
 
 	spin_lock_init(&host->lock);
 	init_waitqueue_head(&host->wq);
@@ -450,9 +441,7 @@ int mmc_add_host(struct mmc_host *host)
 #endif
 
 	mmc_start_host(host);
-	if (!mmc_is_ascend_customized(host->parent) ||
-		!(host->pm_flags & MMC_PM_IGNORE_PM_NOTIFY))
-		mmc_register_pm_notifier(host);
+	mmc_register_pm_notifier(host);
 
 	return 0;
 }
@@ -469,9 +458,7 @@ EXPORT_SYMBOL(mmc_add_host);
  */
 void mmc_remove_host(struct mmc_host *host)
 {
-	if (!mmc_is_ascend_customized(host->parent) ||
-		!(host->pm_flags & MMC_PM_IGNORE_PM_NOTIFY))
-		mmc_unregister_pm_notifier(host);
+	mmc_unregister_pm_notifier(host);
 	mmc_stop_host(host);
 
 #ifdef CONFIG_DEBUG_FS
@@ -498,19 +485,3 @@ void mmc_free_host(struct mmc_host *host)
 }
 
 EXPORT_SYMBOL(mmc_free_host);
-
-
-int mmc_is_ascend_customized(struct device *dev)
-{
-#ifdef CONFIG_ASCEND_HISI_MMC
-	static int is_ascend_customized = -1;
-
-	if (is_ascend_customized == -1)
-		is_ascend_customized = ((dev == NULL) ? 0 :
-		of_find_property(dev->of_node, "customized", NULL) != NULL);
-	return is_ascend_customized;
-#else
-	return 0;
-#endif
-}
-EXPORT_SYMBOL(mmc_is_ascend_customized);

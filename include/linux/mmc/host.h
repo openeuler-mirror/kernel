@@ -19,9 +19,6 @@
 #include <linux/mmc/pm.h>
 #include <linux/dma-direction.h>
 
-#include <linux/jiffies.h>
-#include <linux/version.h>
-
 struct mmc_ios {
 	unsigned int	clock;			/* clock rate */
 	unsigned short	vdd;
@@ -66,7 +63,6 @@ struct mmc_ios {
 #define MMC_TIMING_MMC_DDR52	8
 #define MMC_TIMING_MMC_HS200	9
 #define MMC_TIMING_MMC_HS400	10
-#define MMC_TIMING_NEW_SD    MMC_TIMING_UHS_SDR12
 
 	unsigned char	signal_voltage;		/* signalling voltage (1.8V or 3.3V) */
 
@@ -82,25 +78,7 @@ struct mmc_ios {
 #define MMC_SET_DRIVER_TYPE_D	3
 
 	bool enhanced_strobe;			/* hs400es selection */
-#ifdef CONFIG_ASCEND_HISI_MMC
-	unsigned int    clock_store;    /*store the clock before power off*/
-#endif
 };
-
-#ifdef CONFIG_ASCEND_HISI_MMC
-struct mmc_cmdq_host_ops {
-	int (*enable)(struct mmc_host *mmc);
-	int (*disable)(struct mmc_host *mmc, bool soft);
-	int (*restore_irqs)(struct mmc_host *mmc);
-	int (*request)(struct mmc_host *mmc, struct mmc_request *mrq);
-	int (*halt)(struct mmc_host *mmc, bool halt);
-	void (*post_req)(struct mmc_host *mmc, struct mmc_request *mrq,
-		int err);
-	void (*disable_immediately)(struct mmc_host *mmc);
-	int (*clear_and_halt)(struct mmc_host *mmc);
-};
-#endif
-
 
 struct mmc_host;
 
@@ -190,12 +168,6 @@ struct mmc_host_ops {
 	 */
 	int	(*multi_io_quirk)(struct mmc_card *card,
 				  unsigned int direction, int blk_size);
-#ifdef CONFIG_ASCEND_HISI_MMC
-    /* Slow down clk for ascend chip SD cards */
-	void (*slowdown_clk)(struct mmc_host *host, int timing);
-	int (*enable_enhanced_strobe)(struct mmc_host *host);
-	int (*send_cmd_direct)(struct mmc_host *host, struct mmc_request *mrq);
-#endif
 };
 
 struct mmc_cqe_ops {
@@ -283,30 +255,6 @@ struct mmc_context_info {
 	wait_queue_head_t	wait;
 };
 
-#ifdef CONFIG_ASCEND_HISI_MMC
-/**
- * mmc_cmdq_context_info - describes the contexts of cmdq
- * @active_reqs		requests being processed
- * @active_dcmd		dcmd in progress, don't issue any
- *			more dcmd requests
- * @rpmb_in_wait	do not pull any more reqs till rpmb is handled
- * @cmdq_state		state of cmdq engine
- * @req_starved		completion should invoke the request_fn since
- *			no tags were available
- * @cmdq_ctx_lock	acquire this before accessing this structure
- */
-struct mmc_cmdq_context_info {
-	unsigned long	active_reqs; /* in-flight requests */
-	bool		active_dcmd;
-	bool		rpmb_in_wait;
-	unsigned long   curr_state;
-
-	/* no free tag available */
-	unsigned long	req_starved;
-	spinlock_t	cmdq_ctx_lock;
-};
-#endif
-
 struct regulator;
 struct mmc_pwrseq;
 
@@ -380,9 +328,6 @@ struct mmc_host {
 #define MMC_CAP_UHS_SDR50	(1 << 18)	/* Host supports UHS SDR50 mode */
 #define MMC_CAP_UHS_SDR104	(1 << 19)	/* Host supports UHS SDR104 mode */
 #define MMC_CAP_UHS_DDR50	(1 << 20)	/* Host supports UHS DDR50 mode */
-#ifdef CONFIG_ASCEND_HISI_MMC
-#define MMC_CAP_RUNTIME_RESUME	(1 << 20)	/* Resume at runtime_resume. */
-#endif
 #define MMC_CAP_UHS		(MMC_CAP_UHS_SDR12 | MMC_CAP_UHS_SDR25 | \
 				 MMC_CAP_UHS_SDR50 | MMC_CAP_UHS_SDR104 | \
 				 MMC_CAP_UHS_DDR50)
@@ -422,34 +367,6 @@ struct mmc_host {
 #define MMC_CAP2_CQE		(1 << 23)	/* Has eMMC command queue engine */
 #define MMC_CAP2_CQE_DCMD	(1 << 24)	/* CQE can issue a direct command */
 #define MMC_CAP2_AVOID_3_3V	(1 << 25)	/* Host must negotiate down from 3.3V */
-#ifdef CONFIG_ASCEND_HISI_MMC
-#define MMC_CAP2_CACHE_CTRL	(1 << 1)	/* Allow cache control */
-#define MMC_CAP2_NO_MULTI_READ	(1 << 3)	/* Multiblock read don't work */
-#define MMC_CAP2_NO_SLEEP_CMD	(1 << 4)	/* Don't allow sleep command */
-#define MMC_CAP2_BROKEN_VOLTAGE	(1 << 7)	/* Use the broken voltage */
-#define MMC_CAP2_DETECT_ON_ERR	(1 << 8)	/* I/O err check card removal */
-#define MMC_CAP2_HC_ERASE_SZ	(1 << 9)	/* High-capacity erase size */
-#define MMC_CAP2_PACKED_RD	(1 << 12)	/* Allow packed read */
-#define MMC_CAP2_PACKED_WR	(1 << 13)	/* Allow packed write */
-#define MMC_CAP2_PACKED_CMD	(MMC_CAP2_PACKED_RD | \
-				 MMC_CAP2_PACKED_WR)
-#define MMC_CAP2_CMD_QUEUE	(1 << 18)	/* support eMMC command queue */
-#define MMC_CAP2_ENHANCED_STROBE	(1 << 19)
-#define MMC_CAP2_CACHE_FLUSH_BARRIER	(1 << 20)
-/* Allow background operations auto enable control */
-#define MMC_CAP2_BKOPS_AUTO_CTRL	(1 << 21)
-/* Allow background operations manual enable control */
-#define MMC_CAP2_BKOPS_MANUAL_CTRL	(1 << 22)
-
-/* host is connected by via modem through sdio */
-#define MMC_CAP2_SUPPORT_VIA_MODEM		(1 << 26)
-/* host is connected by wifi through sdio */
-#define MMC_CAP2_SUPPORT_WIFI			(1 << 27)
-/* host is connected to 1102 wifi */
-#define MMC_CAP2_SUPPORT_WIFI_CMD11		(1 << 28)
-/* host do not support low power for wifi*/
-#define MMC_CAP2_WIFI_NO_LOWPWR		(1 << 29)
-#endif
 
 	int			fixed_drv_type;	/* fixed driver type for non-removable media */
 
@@ -543,12 +460,6 @@ struct mmc_host {
 	bool			cqe_on;
 
 	unsigned long		private[0] ____cacheline_aligned;
-#ifdef CONFIG_ASCEND_HISI_MMC
-	const struct mmc_cmdq_host_ops *cmdq_ops;
-	int					sdio_present;
-	unsigned int    cmdq_slots;
-	struct mmc_cmdq_context_info    cmdq_ctx;
-#endif
 };
 
 struct device_node;
@@ -675,31 +586,5 @@ static inline enum dma_data_direction mmc_get_dma_dir(struct mmc_data *data)
 
 int mmc_send_tuning(struct mmc_host *host, u32 opcode, int *cmd_error);
 int mmc_abort_tuning(struct mmc_host *host, u32 opcode);
-
-#ifdef CONFIG_ASCEND_HISI_MMC
-int mmc_cache_ctrl(struct mmc_host *host, u8 enable);
-int mmc_card_awake(struct mmc_host *host);
-int mmc_card_sleep(struct mmc_host *host);
-int mmc_card_can_sleep(struct mmc_host *host);
-#else
-static inline int mmc_cache_ctrl(struct mmc_host *host, u8 enable)
-{
-	return 0;
-}
-static inline int mmc_card_awake(struct mmc_host *host)
-{
-	return 0;
-}
-static inline int mmc_card_sleep(struct mmc_host *host)
-{
-	return 0;
-}
-static inline int mmc_card_can_sleep(struct mmc_host *host)
-{
-	return 0;
-}
-#endif
-
-int mmc_is_ascend_customized(struct device *dev);
 
 #endif /* LINUX_MMC_HOST_H */
