@@ -28,7 +28,6 @@
 #include "mmc_ops.h"
 #include "sd.h"
 #include "sd_ops.h"
-#include "hisi_core_mmc.h"
 
 static const unsigned int tran_exp[] = {
 	10000,		100000,		1000000,	10000000,
@@ -165,19 +164,6 @@ static int mmc_decode_csd(struct mmc_card *card)
 		m = UNSTUFF_BITS(resp, 48, 22);
 		csd->capacity     = (1 + m) << 10;
 
-		/*
-		 * Bit 12 - temporary write protection
-		 * Bit 13 - permanent write protection
-		 * while do sd card detection, check write protection attribute
-		 */
-		if (mmc_is_ascend_customized(card->host->parent))
-			if (UNSTUFF_BITS(resp, 12, 1) ||
-				UNSTUFF_BITS(resp, 13, 1)) {
-				pr_info("%s, SD is on write protection\n",
-					mmc_hostname(card->host));
-				mmc_card_set_readonly(card);
-			}
-
 		csd->read_blkbits = 9;
 		csd->read_partial = 0;
 		csd->write_misalign = 0;
@@ -269,10 +255,7 @@ static int mmc_read_ssr(struct mmc_card *card)
 
 	for (i = 0; i < 16; i++)
 		card->raw_ssr[i] = be32_to_cpu(raw_ssr[i]);
-#ifdef CONFIG_ASCEND_HISI_MMC
-	if (mmc_is_ascend_customized(card->host->parent))
-		card->ssr.speed_class = UNSTUFF_BITS(raw_ssr, 440 - 384, 8);
-#endif
+
 	kfree(raw_ssr);
 
 	/*
@@ -1056,10 +1039,6 @@ retry:
 		err = mmc_sd_init_uhs_card(card);
 		if (err)
 			goto free_card;
-#ifdef CONFIG_ASCEND_HISI_MMC
-		if (mmc_is_ascend_customized(card->host->parent))
-			mmc_sd_card_set_uhs(card);
-#endif
 	} else {
 		/*
 		 * Attempt to change to high-speed (if supported)
@@ -1069,8 +1048,7 @@ retry:
 			mmc_set_timing(card->host, MMC_TIMING_SD_HS);
 		else if (err)
 			goto free_card;
-		else if (mmc_is_ascend_customized(card->host->parent))
-			mmc_set_timing(card->host, MMC_TIMING_NEW_SD);
+
 		/*
 		 * Set bus speed.
 		 */
@@ -1163,10 +1141,7 @@ static int _mmc_sd_suspend(struct mmc_host *host)
 		err = mmc_deselect_cards(host);
 
 	if (!err) {
-		if (!(mmc_is_ascend_customized(host->parent)))
-			mmc_power_off(host);
-		else if (mmc_card_keep_power(host))
-			mmc_power_off(host);
+		mmc_power_off(host);
 		mmc_card_set_suspended(host->card);
 	}
 
@@ -1203,23 +1178,9 @@ static int _mmc_sd_resume(struct mmc_host *host)
 
 	if (!mmc_card_suspended(host->card))
 		goto out;
-	if (mmc_is_ascend_customized(host->parent)) {
-		if (!mmc_card_keep_power(host)) {
-			mmc_power_up(host, host->card->ocr);
-			err = mmc_sd_init_card(
-				host, host->card->ocr, host->card);
-			err = mmc_sd_init_card(
-				host, host->card->ocr, host->card);
-		} else {
-			err = mmc_select_card(host->card);
-			if (err)
-				err = mmc_sd_reset(host);
-		}
 
-	} else {
-		mmc_power_up(host, host->card->ocr);
-		err = mmc_sd_init_card(host, host->card->ocr, host->card);
-	}
+	mmc_power_up(host, host->card->ocr);
+	err = mmc_sd_init_card(host, host->card->ocr, host->card);
 	mmc_card_clr_suspended(host->card);
 
 out:
@@ -1269,42 +1230,8 @@ static int mmc_sd_runtime_resume(struct mmc_host *host)
 	return 0;
 }
 
-#ifdef CONFIG_ASCEND_HISI_MMC
-/*********************sd ops begin**********************/
-static int mmc_do_sd_reset(struct mmc_host *host)
-{
-	struct mmc_card *card = host->card;
-
-	if (!host->bus_ops->power_restore)
-		return -EOPNOTSUPP;
-
-	if (!card)
-		return -EINVAL;
-
-	/* hw_reset for ip reset */
-	if (host->ops->hw_reset)
-		host->ops->hw_reset(host);
-
-	/* Only for K930/920 SD slow down clk*/
-	if (host->ops->slowdown_clk)
-		host->ops->slowdown_clk(host, host->ios.timing);
-
-	mmc_power_off(host);
-	mmc_set_clock(host, host->f_init);
-	/* Wait at least 200 ms */
-	mmc_delay(200);
-	mmc_power_up(host, host->card->ocr);
-	(void)mmc_select_voltage(host, host->card->ocr);
-
-	return host->bus_ops->power_restore(host);
-}
-#endif
 static int mmc_sd_hw_reset(struct mmc_host *host)
 {
-#ifdef CONFIG_ASCEND_HISI_MMC
-	if (mmc_is_ascend_customized(host->parent))
-		return mmc_do_sd_reset(host);
-#endif
 	mmc_power_cycle(host, host->card->ocr);
 	return mmc_sd_init_card(host, host->card->ocr, host->card);
 }
