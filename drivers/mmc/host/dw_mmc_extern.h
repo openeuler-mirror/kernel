@@ -8,7 +8,7 @@
 
 #include "dw_mmc.h"
 
-#if defined(CONFIG_MMC_DW_HI3XXX) || defined(CONFIG_MMC_DW_HI3XXX_MODULE)
+#ifdef CONFIG_MMC_DW_HI3XXX_MODULE
 extern void dw_mci_reg_dump(struct dw_mci *host);
 extern void dw_mci_set_timeout(struct dw_mci *host);
 extern bool dw_mci_stop_abort_cmd(struct mmc_command *cmd);

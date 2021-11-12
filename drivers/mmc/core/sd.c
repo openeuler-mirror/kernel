@@ -1163,9 +1163,9 @@ static int _mmc_sd_suspend(struct mmc_host *host)
 		err = mmc_deselect_cards(host);
 
 	if (!err) {
-		if (!mmc_is_ascend_customized(host->parent))
+		if (!(mmc_is_ascend_customized(host->parent)))
 			mmc_power_off(host);
-		else if (!mmc_card_keep_power(host))
+		else if (mmc_card_keep_power(host))
 			mmc_power_off(host);
 		mmc_card_set_suspended(host->card);
 	}
@@ -1269,10 +1269,42 @@ static int mmc_sd_runtime_resume(struct mmc_host *host)
 	return 0;
 }
 
+#ifdef CONFIG_ASCEND_HISI_MMC
+/*********************sd ops begin**********************/
+static int mmc_do_sd_reset(struct mmc_host *host)
+{
+	struct mmc_card *card = host->card;
+
+	if (!host->bus_ops->power_restore)
+		return -EOPNOTSUPP;
+
+	if (!card)
+		return -EINVAL;
+
+	/* hw_reset for ip reset */
+	if (host->ops->hw_reset)
+		host->ops->hw_reset(host);
+
+	/* Only for K930/920 SD slow down clk*/
+	if (host->ops->slowdown_clk)
+		host->ops->slowdown_clk(host, host->ios.timing);
+
+	mmc_power_off(host);
+	mmc_set_clock(host, host->f_init);
+	/* Wait at least 200 ms */
+	mmc_delay(200);
+	mmc_power_up(host, host->card->ocr);
+	(void)mmc_select_voltage(host, host->card->ocr);
+
+	return host->bus_ops->power_restore(host);
+}
+#endif
 static int mmc_sd_hw_reset(struct mmc_host *host)
 {
+#ifdef CONFIG_ASCEND_HISI_MMC
 	if (mmc_is_ascend_customized(host->parent))
-		return mmc_sd_reset(host);
+		return mmc_do_sd_reset(host);
+#endif
 	mmc_power_cycle(host, host->card->ocr);
 	return mmc_sd_init_card(host, host->card->ocr, host->card);
 }

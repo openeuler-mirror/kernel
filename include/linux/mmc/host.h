@@ -542,13 +542,13 @@ struct mmc_host {
 	bool			cqe_enabled;
 	bool			cqe_on;
 
+	unsigned long		private[0] ____cacheline_aligned;
 #ifdef CONFIG_ASCEND_HISI_MMC
 	const struct mmc_cmdq_host_ops *cmdq_ops;
 	int					sdio_present;
 	unsigned int    cmdq_slots;
 	struct mmc_cmdq_context_info    cmdq_ctx;
 #endif
-	unsigned long           private[0] ____cacheline_aligned;
 };
 
 struct device_node;
