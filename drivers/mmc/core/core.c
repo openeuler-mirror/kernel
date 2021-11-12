@@ -36,12 +36,8 @@
 #include <linux/mmc/sd.h>
 #include <linux/mmc/slot-gpio.h>
 
-#include <linux/jiffies.h>
-
 #define CREATE_TRACE_POINTS
 #include <trace/events/mmc.h>
-#include <linux/version.h>
-
 
 #include "core.h"
 #include "card.h"
@@ -928,7 +924,7 @@ EXPORT_SYMBOL(mmc_put_card);
  * Internal function that does the actual ios call to the host driver,
  * optionally printing some debug output.
  */
-void mmc_set_ios(struct mmc_host *host)
+static inline void mmc_set_ios(struct mmc_host *host)
 {
 	struct mmc_ios *ios = &host->ios;
 
@@ -1025,8 +1021,7 @@ void mmc_set_initial_state(struct mmc_host *host)
 		host->ios.chip_select = MMC_CS_HIGH;
 	else
 		host->ios.chip_select = MMC_CS_DONTCARE;
-	if (!mmc_is_ascend_customized(host->parent))
-		host->ios.bus_mode = MMC_BUSMODE_PUSHPULL;
+	host->ios.bus_mode = MMC_BUSMODE_PUSHPULL;
 	host->ios.bus_width = MMC_BUS_WIDTH_1;
 	host->ios.timing = MMC_TIMING_LEGACY;
 	host->ios.drv_type = 0;
@@ -1538,15 +1533,7 @@ int mmc_set_uhs_voltage(struct mmc_host *host, u32 ocr)
 
 	cmd.opcode = SD_SWITCH_VOLTAGE;
 	cmd.arg = 0;
-	if (mmc_is_ascend_customized(host->parent))
-		/*
-		 * Here for using Kingsdon SD produced after 03-2015,
-		 * We set long resp and delete CRC flag for cmd11.
-		 */
-		cmd.flags = MMC_RSP_PRESENT | MMC_RSP_OPCODE |
-			    MMC_CMD_AC | MMC_RSP_136;
-	else
-		cmd.flags = MMC_RSP_R1 | MMC_CMD_AC;
+	cmd.flags = MMC_RSP_R1 | MMC_CMD_AC;
 
 	err = mmc_wait_for_cmd(host, &cmd, 0);
 	if (err)
@@ -1664,8 +1651,6 @@ void mmc_power_up(struct mmc_host *host, u32 ocr)
 	mmc_pwrseq_pre_power_on(host);
 
 	host->ios.vdd = fls(ocr) - 1;
-	if (mmc_is_ascend_customized(host->parent))
-		host->ios.bus_mode = MMC_BUSMODE_PUSHPULL;
 	host->ios.power_mode = MMC_POWER_UP;
 	/* Set initial state and call mmc_set_ios */
 	mmc_set_initial_state(host);
@@ -1702,9 +1687,6 @@ void mmc_power_off(struct mmc_host *host)
 	host->ios.clock = 0;
 	host->ios.vdd = 0;
 
-	if (!mmc_host_is_spi(host) && mmc_is_ascend_customized(host->parent))
-		host->ios.bus_mode = MMC_BUSMODE_OPENDRAIN;
-
 	host->ios.power_mode = MMC_POWER_OFF;
 	/* Set initial state and call mmc_set_ios */
 	mmc_set_initial_state(host);
@@ -1738,7 +1720,7 @@ static void __mmc_release_bus(struct mmc_host *host)
 /*
  * Increase reference count of bus operator
  */
-void mmc_bus_get(struct mmc_host *host)
+static inline void mmc_bus_get(struct mmc_host *host)
 {
 	unsigned long flags;
 
@@ -1751,7 +1733,7 @@ void mmc_bus_get(struct mmc_host *host)
  * Decrease reference count of bus operator and free it if
  * it is the last reference.
  */
-void mmc_bus_put(struct mmc_host *host)
+static inline void mmc_bus_put(struct mmc_host *host)
 {
 	unsigned long flags;
 
@@ -2533,10 +2515,9 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 		mmc_send_if_cond(host, host->ocr_avail);
 
 	/* Order's important: probe SDIO, then SD, then MMC */
-	if (!mmc_is_ascend_customized(host->parent))
-		if (!(host->caps2 & MMC_CAP2_NO_SDIO))
-			if (!mmc_attach_sdio(host))
-				return 0;
+	if (!(host->caps2 & MMC_CAP2_NO_SDIO))
+		if (!mmc_attach_sdio(host))
+			return 0;
 
 	if (!(host->caps2 & MMC_CAP2_NO_SD))
 		if (!mmc_attach_sd(host))
@@ -2623,18 +2604,12 @@ void mmc_rescan(struct work_struct *work)
 		container_of(work, struct mmc_host, detect.work);
 	int i;
 
-	if (host->rescan_disable) {
-		if (mmc_is_ascend_customized(host->parent))
-			goto out;
+	if (host->rescan_disable)
 		return;
-	}
 
 	/* If there is a non-removable card registered, only scan once */
-	if (!mmc_card_is_removable(host) && host->rescan_entered) {
-		if (mmc_is_ascend_customized(host->parent))
-			goto out;
+	if (!mmc_card_is_removable(host) && host->rescan_entered)
 		return;
-	}
 	host->rescan_entered = 1;
 
 	if (host->trigger_card_event && host->ops->card_event) {
@@ -2685,13 +2660,6 @@ void mmc_rescan(struct work_struct *work)
 	for (i = 0; i < ARRAY_SIZE(freqs); i++) {
 		if (!mmc_rescan_try_freq(host, max(freqs[i], host->f_min)))
 			break;
-		else if (mmc_is_ascend_customized(host->parent)) {
-			if (host->index == 0) {
-				pr_err("%s emmc init failed,\n", __func__);
-				pr_err("need to reinit\n");
-				continue;
-			}
-		}
 		if (freqs[i] <= host->f_min)
 			break;
 	}
@@ -2713,18 +2681,17 @@ void mmc_start_host(struct mmc_host *host)
 		mmc_power_up(host, host->ocr_avail);
 		mmc_release_host(host);
 	}
-	if (!mmc_is_ascend_customized(host->parent))
-		mmc_gpiod_request_cd_irq(host);
+
+	mmc_gpiod_request_cd_irq(host);
 	_mmc_detect_change(host, 0, false);
 }
 
 void mmc_stop_host(struct mmc_host *host)
 {
-	if (!mmc_is_ascend_customized(host->parent))
-		if (host->slot.cd_irq >= 0) {
-			mmc_gpio_set_cd_wake(host, false);
-			disable_irq(host->slot.cd_irq);
-		}
+	if (host->slot.cd_irq >= 0) {
+		mmc_gpio_set_cd_wake(host, false);
+		disable_irq(host->slot.cd_irq);
+	}
 
 	host->rescan_disable = 1;
 	cancel_delayed_work_sync(&host->detect);

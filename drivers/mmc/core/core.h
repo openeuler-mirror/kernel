@@ -32,13 +32,6 @@ struct mmc_bus_ops {
 	int (*shutdown)(struct mmc_host *);
 	int (*hw_reset)(struct mmc_host *);
 	int (*sw_reset)(struct mmc_host *);
-#ifdef CONFIG_ASCEND_HISI_MMC
-	int (*awake)(struct mmc_host *host);
-	int (*sleep)(struct mmc_host *host);
-	int (*power_save)(struct mmc_host *host);
-	int (*power_restore)(struct mmc_host *host);
-	int (*reinit_card)(struct mmc_host *host);
-#endif
 };
 
 void mmc_attach_bus(struct mmc_host *host, const struct mmc_bus_ops *ops);
@@ -66,17 +59,6 @@ void mmc_power_up(struct mmc_host *host, u32 ocr);
 void mmc_power_off(struct mmc_host *host);
 void mmc_power_cycle(struct mmc_host *host, u32 ocr);
 void mmc_set_initial_state(struct mmc_host *host);
-#ifdef CONFIG_ASCEND_HISI_MMC
-void mmc_power_up_vcc(struct mmc_host *host, u32 ocr);
-void mmc_power_off_vcc(struct mmc_host *host);
-#else
-static inline void mmc_power_up_vcc(struct mmc_host *host, u32 ocr) {}
-static inline void mmc_power_off_vcc(struct mmc_host *host) {}
-#endif
-void mmc_set_ios(struct mmc_host *host);
-void mmc_bus_get(struct mmc_host *host);
-void mmc_bus_put(struct mmc_host *host);
-
 
 static inline void mmc_delay(unsigned int ms)
 {

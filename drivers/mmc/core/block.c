@@ -2247,9 +2247,6 @@ enum mmc_issued mmc_blk_mq_issue_rq(struct mmc_queue *mq, struct request *req)
 
 static inline int mmc_blk_readonly(struct mmc_card *card)
 {
-	if (mmc_is_ascend_customized(card->host->parent))
-		return 0;
-
 	return mmc_card_readonly(card) ||
 	       !(card->csd.cmdclass & CCC_BLOCK_WRITE);
 }
