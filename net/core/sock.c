@@ -1012,8 +1012,7 @@ set_sndbuf:
 
 		if (val & SOF_TIMESTAMPING_OPT_ID &&
 		    !(sk->sk_tsflags & SOF_TIMESTAMPING_OPT_ID)) {
-			if (sk->sk_protocol == IPPROTO_TCP &&
-			    sk->sk_type == SOCK_STREAM) {
+			if (sk_is_tcp(sk)) {
 				if ((1 << sk->sk_state) &
 				    (TCPF_CLOSE | TCPF_LISTEN)) {
 					ret = -EINVAL;
@@ -1202,8 +1201,7 @@ set_sndbuf:
 
 	case SO_ZEROCOPY:
 		if (sk->sk_family == PF_INET || sk->sk_family == PF_INET6) {
-			if (!((sk->sk_type == SOCK_STREAM &&
-			       sk->sk_protocol == IPPROTO_TCP) ||
+			if (!(sk_is_tcp(sk) ||
 			      (sk->sk_type == SOCK_DGRAM &&
 			       sk->sk_protocol == IPPROTO_UDP)))
 				ret = -ENOTSUPP;
