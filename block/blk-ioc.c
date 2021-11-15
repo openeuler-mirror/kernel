@@ -242,9 +242,9 @@ void ioc_clear_queue(struct request_queue *q)
 
 	spin_lock_irq(&q->queue_lock);
 	list_splice_init(&q->icq_list, &icq_list);
-	spin_unlock_irq(&q->queue_lock);
 
 	__ioc_clear_queue(&icq_list);
+	spin_unlock_irq(&q->queue_lock);
 }
 
 int create_task_io_context(struct task_struct *task, gfp_t gfp_flags, int node)
