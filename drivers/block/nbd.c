@@ -1385,6 +1385,7 @@ static int __nbd_ioctl(struct block_device *bdev, struct nbd_device *nbd,
 		       unsigned int cmd, unsigned long arg)
 {
 	struct nbd_config *config = nbd->config;
+	loff_t bytesize;
 
 	switch (cmd) {
 	case NBD_DISCONNECT:
@@ -1407,6 +1408,8 @@ static int __nbd_ioctl(struct block_device *bdev, struct nbd_device *nbd,
 			     div_s64(arg, config->blksize));
 		return 0;
 	case NBD_SET_SIZE_BLOCKS:
+		if (check_mul_overflow((loff_t)arg, config->blksize, &bytesize))
+			return -EINVAL;
 		nbd_size_set(nbd, config->blksize, arg);
 		return 0;
 	case NBD_SET_TIMEOUT:
