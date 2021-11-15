@@ -828,24 +828,6 @@ static int find_fm_anchor(struct ubi_attach_info *ai)
 	return ret;
 }
 
-static struct ubi_ainf_peb *clone_aeb(struct ubi_attach_info *ai,
-				      struct ubi_ainf_peb *old)
-{
-	struct ubi_ainf_peb *new;
-
-	new = ubi_alloc_aeb(ai, old->pnum, old->ec);
-	if (!new)
-		return NULL;
-
-	new->vol_id = old->vol_id;
-	new->sqnum = old->sqnum;
-	new->lnum = old->lnum;
-	new->scrub = old->scrub;
-	new->copy_flag = old->copy_flag;
-
-	return new;
-}
-
 /**
  * ubi_scan_fastmap - scan the fastmap.
  * @ubi: UBI device object
@@ -875,15 +857,11 @@ int ubi_scan_fastmap(struct ubi_device *ubi, struct ubi_attach_info *ai,
 	if (fm_anchor < 0)
 		return UBI_NO_FASTMAP;
 
-	/* Copy all (possible) fastmap blocks into our new attach structure. */
+	/* Add fastmap blocks(pnum < UBI_FM_MAX_START) into attach structure. */
 	list_for_each_entry(aeb, &scan_ai->fastmap, u.list) {
-		struct ubi_ainf_peb *new;
-
-		new = clone_aeb(ai, aeb);
-		if (!new)
-			return -ENOMEM;
-
-		list_add(&new->u.list, &ai->fastmap);
+		ret = add_aeb(ai, &ai->fastmap, aeb->pnum, aeb->ec, 0);
+		if (ret)
+			return ret;
 	}
 
 	down_write(&ubi->fm_protect);
@@ -1028,6 +1006,17 @@ int ubi_scan_fastmap(struct ubi_device *ubi, struct ubi_attach_info *ai,
 			ubi_err(ubi, "unable to read fastmap block# %i (PEB: %i, "
 				"err: %i)", i, pnum, ret);
 			goto free_hdr;
+		}
+
+		/*
+		 * Add left fastmap blocks (pnum >= UBI_FM_MAX_START) into
+		 * attach structure.
+		 */
+		if (pnum >= UBI_FM_MAX_START) {
+			ret = add_aeb(ai, &ai->fastmap, pnum,
+				      be64_to_cpu(ech->ec), 0);
+			if (ret)
+				goto free_hdr;
 		}
 	}
 
