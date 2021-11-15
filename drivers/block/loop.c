@@ -2176,11 +2176,6 @@ static int loop_add(struct loop_device **l, int i)
 	disk->private_data	= lo;
 	disk->queue		= lo->lo_queue;
 	sprintf(disk->disk_name, "loop%d", i);
-	/*
-	 * There won't be io before add_disk, QUEUE_FLAG_NO_INIT_IO can help
-	 * to save time while elevator_init_mq.
-	 */
-	blk_queue_flag_set(QUEUE_FLAG_NO_INIT_IO, lo->lo_queue);
 	add_disk(disk);
 	*l = lo;
 	return lo->lo_number;

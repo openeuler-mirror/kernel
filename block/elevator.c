@@ -665,7 +665,6 @@ void elevator_init_mq(struct request_queue *q)
 {
 	struct elevator_type *e;
 	int err;
-	bool no_init_io;
 
 	if (!elv_support_iosched(q))
 		return;
@@ -682,18 +681,13 @@ void elevator_init_mq(struct request_queue *q)
 	if (!e)
 		return;
 
-	no_init_io = blk_queue_no_init_io(q);
-	if (!no_init_io) {
-		blk_mq_freeze_queue(q);
-		blk_mq_quiesce_queue(q);
-	}
+	blk_mq_freeze_queue(q);
+	blk_mq_quiesce_queue(q);
 
 	err = blk_mq_init_sched(q, e);
 
-	if (!no_init_io) {
-		blk_mq_unquiesce_queue(q);
-		blk_mq_unfreeze_queue(q);
-	}
+	blk_mq_unquiesce_queue(q);
+	blk_mq_unfreeze_queue(q);
 
 	if (err) {
 		pr_warn("\"%s\" elevator initialization failed, "
