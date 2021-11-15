@@ -1634,8 +1634,7 @@ static void arm_smmu_put_resv_regions(struct device *dev,
 
 #ifdef CONFIG_SMMU_BYPASS_DEV
 
-#ifdef CONFIG_ARM64
-#include <asm/cputype.h>
+#ifdef CONFIG_ARCH_PHYTIUM
 static int phytium_smmu_def_domain_type(struct device *dev, unsigned int *type)
 {
 	if (typeof_ft2000plus() || typeof_s2500()) {
