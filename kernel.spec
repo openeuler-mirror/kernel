@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       16
+%global devel_release       17
 %global maintenance_release .0.0
-%global pkg_release         .6
+%global pkg_release         .7
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,68 @@ fi
 %endif
 
 %changelog
+* Thu Nov 11 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-17.0.0.7
+- net: phy: realtek: net: Fix less than zero comparison of a u16
+- net: phy: realtek: add dt property to enable ALDPS mode
+- net: phy: realtek: add dt property to disable CLKOUT clock
+- openeuler_defconfig: Build HISI PMU drivers as modules.
+- configs: add config BMA to config files
+- Huawei BMA: Adding Huawei BMA driver: cdev_veth_drv
+- Huawei BMA: Adding Huawei BMA driver: host_kbox_drv
+- Huawei BMA: Adding Huawei BMA driver: host_veth_drv
+- Huawei BMA: Adding Huawei BMA driver: host_cdev_drv
+- Huawei BMA: Adding Huawei BMA driver: host_edma_drv
+- page_pool: disable dma mapping support for 32-bit arch with 64-bit DMA
+- page_pool: use relaxed atomic for release side accounting
+- net: hns3: add option to turn off page pool feature
+- net: hns3: support skb's frag page recycling based on page pool
+- page_pool: add frag page recycling support in page pool
+- page_pool: add interface to manipulate frag count in page pool
+- page_pool: keep pp info as long as page pool owns the page
+- page_pool: mask the page->signature before the checking
+- skbuff: Fix a potential race while recycling page_pool packets
+- net: ti: add pp skb recycling support
+- mvpp2: prefetch page
+- mvpp2: prefetch right address
+- mvneta: recycle buffers
+- mvpp2: recycle buffers
+- page_pool: Allow drivers to hint on SKB recycling
+- skbuff: add a parameter to __skb_frag_unref
+- mm: add a signature in struct page
+- net: page_pool: simplify page recycling condition tests
+- skbuff: Call skb_zcopy_clear() before unref'ing fragments
+- net: page_pool: Add bulk support for ptr_ring
+- MAINTAINERS: update for DAMON
+- mm/damon: add user space selftests
+- mm/damon: add kunit tests
+- Documentation: add documents for DAMON
+- mm/damon/dbgfs: support multiple contexts
+- mm/damon/dbgfs: export kdamond pid to the user space
+- mm/damon: implement a debugfs-based user space interface
+- mm/damon: add a tracepoint
+- mm/damon: implement primitives for the virtual memory address spaces
+- mm/idle_page_tracking: make PG_idle reusable
+- mm/damon: adaptively adjust regions
+- mm/damon/core: implement region-based sampling
+- mm: introduce Data Access MONitor (DAMON)
+- sched/fair: fix try_steal compile error
+- config: enable CONFIG_SCHED_STEAL by default
+- sched/fair: introduce SCHED_STEAL
+- disable stealing by default
+- sched/fair: Provide idle search schedstats
+- sched/fair: disable stealing if too many NUMA nodes
+- sched/fair: Steal work from an overloaded CPU when CPU goes idle
+- sched/fair: Provide can_migrate_task_llc
+- sched/fair: Generalize the detach_task interface
+- sched/fair: Hoist idle_stamp up from idle_balance
+- sched/fair: Dynamically update cfs_overload_cpus
+- sched/topology: Provide cfs_overload_cpus bitmap
+- sched/topology: Provide hooks to allocate data shared per LLC
+- sched: Provide sparsemask, a reduced contention bitmap
+- psi: introduce psi_v1 boot parameter
+- psi: support psi under cgroup v1
+- spfc: Fix compile errors when O=xxx is specified
+
 * Sat Oct 30 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-16.0.0.6
 - openeuler_defconfig: Enable CONFIG_HW_RANDOM_HISI_GM by default
 - hwrng: add hisilicon GM auth trng driver
