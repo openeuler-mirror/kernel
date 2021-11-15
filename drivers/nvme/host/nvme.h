@@ -338,6 +338,8 @@ struct nvme_ctrl {
 	u16 icdoff;
 	u16 maxcmd;
 	int nr_reconnects;
+	unsigned long flags;
+#define NVME_CTRL_ADMIN_Q_STOPPED	0
 	struct nvmf_ctrl_options *opts;
 
 	struct page *discard_page;
@@ -449,6 +451,7 @@ struct nvme_ns {
 #define NVME_NS_REMOVING	0
 #define NVME_NS_DEAD     	1
 #define NVME_NS_ANA_PENDING	2
+#define NVME_NS_STOPPED		3
 
 	struct nvme_fault_inject fault_inject;
 
