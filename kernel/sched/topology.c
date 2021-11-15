@@ -13,8 +13,8 @@ DEFINE_MUTEX(sched_domains_mutex);
 static cpumask_var_t sched_domains_tmpmask;
 static cpumask_var_t sched_domains_tmpmask2;
 
-#ifdef CONFIG_SCHED_STEAL
 struct s_data;
+#ifdef CONFIG_SCHED_STEAL
 static int sd_llc_alloc(struct sched_domain *sd);
 static void sd_llc_free(struct sched_domain *sd);
 static int sd_llc_alloc_all(const struct cpumask *cpu_map, struct s_data *d);
