@@ -29,6 +29,8 @@ struct plt_entries {
 };
 
 struct mod_plt_sec {
+	struct elf32_shdr       *plt;
+	struct plt_entries	*plt_ent;
 	int			plt_shndx;
 	int			plt_count;
 };
