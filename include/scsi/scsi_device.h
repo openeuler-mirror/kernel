@@ -204,6 +204,7 @@ struct scsi_device {
 	unsigned unmap_limit_for_ws:1;	/* Use the UNMAP limit for WRITE SAME */
 	unsigned rpm_autosuspend:1;	/* Enable runtime autosuspend at device
 					 * creation time */
+	unsigned queue_stopped:1;	/* request queue is quiesced */
 
 	bool offline_already;		/* Device offline message logged */
 
