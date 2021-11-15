@@ -1332,6 +1332,8 @@ static int do_rename(struct inode *old_dir, struct dentry *old_dentry,
 
 		err = do_tmpfile(old_dir, old_dentry, S_IFCHR | WHITEOUT_MODE, &whiteout);
 		if (err) {
+			if (whiteout)
+				iput(whiteout);
 			kfree(dev);
 			goto out_release;
 		}
