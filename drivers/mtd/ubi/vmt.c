@@ -409,6 +409,7 @@ int ubi_resize_volume(struct ubi_volume_desc *desc, int reserved_pebs)
 	struct ubi_device *ubi = vol->ubi;
 	struct ubi_vtbl_record vtbl_rec;
 	struct ubi_eba_table *new_eba_tbl = NULL;
+	struct ubi_eba_table *old_eba_tbl = NULL;
 	int vol_id = vol->vol_id;
 
 	if (ubi->ro_mode)
@@ -454,10 +455,13 @@ int ubi_resize_volume(struct ubi_volume_desc *desc, int reserved_pebs)
 			err = -ENOSPC;
 			goto out_free;
 		}
+
 		ubi->avail_pebs -= pebs;
 		ubi->rsvd_pebs += pebs;
 		ubi_eba_copy_table(vol, new_eba_tbl, vol->reserved_pebs);
-		ubi_eba_replace_table(vol, new_eba_tbl);
+		old_eba_tbl = vol->eba_tbl;
+		vol->eba_tbl = new_eba_tbl;
+		vol->reserved_pebs = reserved_pebs;
 		spin_unlock(&ubi->volumes_lock);
 	}
 
@@ -465,14 +469,16 @@ int ubi_resize_volume(struct ubi_volume_desc *desc, int reserved_pebs)
 		for (i = 0; i < -pebs; i++) {
 			err = ubi_eba_unmap_leb(ubi, vol, reserved_pebs + i);
 			if (err)
-				goto out_acc;
+				goto out_free;
 		}
 		spin_lock(&ubi->volumes_lock);
 		ubi->rsvd_pebs += pebs;
 		ubi->avail_pebs -= pebs;
 		ubi_update_reserved(ubi);
 		ubi_eba_copy_table(vol, new_eba_tbl, reserved_pebs);
-		ubi_eba_replace_table(vol, new_eba_tbl);
+		old_eba_tbl = vol->eba_tbl;
+		vol->eba_tbl = new_eba_tbl;
+		vol->reserved_pebs = reserved_pebs;
 		spin_unlock(&ubi->volumes_lock);
 	}
 
@@ -494,27 +500,32 @@ int ubi_resize_volume(struct ubi_volume_desc *desc, int reserved_pebs)
 	if (err)
 		goto out_acc;
 
-	vol->reserved_pebs = reserved_pebs;
 	if (vol->vol_type == UBI_DYNAMIC_VOLUME) {
 		vol->used_ebs = reserved_pebs;
 		vol->last_eb_bytes = vol->usable_leb_size;
 		vol->used_bytes =
 			(long long)vol->used_ebs * vol->usable_leb_size;
 	}
-
+	/* destroy old table */
+	ubi_eba_destroy_table(old_eba_tbl);
 	ubi_volume_notify(ubi, vol, UBI_VOLUME_RESIZED);
 	self_check_volumes(ubi);
 	return err;
 
 out_acc:
+	spin_lock(&ubi->volumes_lock);
+	vol->reserved_pebs = reserved_pebs - pebs;
 	if (pebs > 0) {
-		spin_lock(&ubi->volumes_lock);
 		ubi->rsvd_pebs -= pebs;
 		ubi->avail_pebs += pebs;
-		spin_unlock(&ubi->volumes_lock);
+		ubi_eba_copy_table(vol, old_eba_tbl, vol->reserved_pebs);
+	} else {
+		ubi_eba_copy_table(vol, old_eba_tbl, reserved_pebs);
 	}
+	vol->eba_tbl = old_eba_tbl;
+	spin_unlock(&ubi->volumes_lock);
 out_free:
-	kfree(new_eba_tbl);
+	ubi_eba_destroy_table(new_eba_tbl);
 	return err;
 }
 
