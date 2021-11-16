@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2111.3.0
+%global hulkrelease 2111.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0121
+Release: %{hulkrelease}.0122
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,106 @@ fi
 %endif
 
 %changelog
+
+* Tue Nov 16 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2111.4.0.0122
+- io_uring: fix ltout double free on completion race
+- iommu: smmuv2: fix compile error when CONFIG_ARCH_PHYTIUM is off
+- crypto: hisilicon delete invlaid api and config
+- crypto: hisilicon - add CRYPTO_TFM_REQ_MAY_BACKLOG flag judge in sec_process()
+- tcp: adjust rto_base in retransmits_timed_out()
+- tcp: create a helper to model exponential backoff
+- tcp: always set retrans_stamp on recovery
+- profiling: fix shift-out-of-bounds bugs
+- prctl: allow to setup brk for et_dyn executables
+- dmaengine: acpi: Avoid comparison GSI with Linux vIRQ
+- tracing/kprobe: Fix kprobe_on_func_entry() modification
+- rcu: Fix missed wakeup of exp_wq waiters
+- netfilter: socket: icmp6: fix use-after-scope
+- PCI: Sync __pci_register_driver() stub for CONFIG_PCI=n
+- PCI: Fix pci_dev_str_match_path() alloc while atomic bug
+- block, bfq: honor already-setup queue merges
+- mm/memory_hotplug: use "unsigned long" for PFN in zone_for_pfn_range()
+- tcp: fix tp->undo_retrans accounting in tcp_sacktag_one()
+- net/af_unix: fix a data-race in unix_dgram_poll
+- events: Reuse value read using READ_ONCE instead of re-reading it
+- x86/mm: Fix kern_addr_valid() to cope with existing but not present entries
+- arm64/sve: Use correct size when reinitialising SVE state
+- mm/hugetlb: initialize hugetlb_usage in mm_init
+- scsi: BusLogic: Fix missing pr_cont() use
+- ovl: fix BUG_ON() in may_delete() when called from ovl_cleanup()
+- cifs: fix wrong release in sess_alloc_buffer() failed path
+- bonding: 3ad: fix the concurrency between __bond_release_one() and bond_3ad_state_machine_handler()
+- PCI: Use pci_update_current_state() in pci_enable_device_flags()
+- userfaultfd: prevent concurrent API initialization
+- PCI: Return ~0 data on pciconfig_read() CAP_SYS_ADMIN failure
+- block: bfq: fix bfq_set_next_ioprio_data()
+- arm64: head: avoid over-mapping in map_memory
+- bpf: Fix pointer arithmetic mask tightening under state pruning
+- bpf: verifier: Allocate idmap scratch in verifier env
+- selftests/bpf: fix tests due to const spill/fill
+- selftests/bpf: Test variable offset stack access
+- bpf: Sanity check max value for var_off stack access
+- bpf: Reject indirect var_off stack access in unpriv mode
+- bpf: Reject indirect var_off stack access in raw mode
+- bpf: Support variable offset stack access from helpers
+- bpf: correct slot_type marking logic to allow more stack slot sharing
+- PCI/MSI: Skip masking MSI-X on Xen PV
+- tty: Fix data race between tiocsti() and flush_to_ldisc()
+- net: sched: Fix qdisc_rate_table refcount leak when get tcf_block failed
+- tty: serial: fsl_lpuart: fix the wrong mapbase value
+- CIFS: Fix a potencially linear read overflow
+- PCI: PM: Enable PME if it can be signaled from D3cold
+- PCI: PM: Avoid forcing PCI_D0 for wakeup reasons inconsistently
+- tcp: seq_file: Avoid skipping sk during tcp_seek_last_pos
+- fcntl: fix potential deadlock for &fasync_struct.fa_lock
+- hrtimer: Avoid double reprogramming in __hrtimer_start_range_ns()
+- sched/deadline: Fix missing clock update in migrate_task_rq_dl()
+- sched/deadline: Fix reset_on_fork reporting of DL tasks
+- locking/mutex: Fix HANDOFF condition
+- ipv4/icmp: l3mdev: Perform icmp error route lookup on source device routing table (v2)
+- perf/x86/intel/pt: Fix mask of num_address_ranges
+- Revert "EMMC: ascend customized emmc host"
+- Revert "EMMC: add hisi_mmc_core"
+- Revert "EMMC: adaption for ascend customized emmc card"
+- Revert "EMMC: adaption for ascend customized sd card"
+- Revert "EMMC: adaption for ascend customized host layer"
+- Revert "EMMC: hisi extensions for dw mmc host controller"
+- Revert "EMMC: add dts bindings documents"
+- Revert "EMMC: open CONFIG_ASCEND_HISI_MMC"
+- Revert "EMMC: fix ascend hisi emmc probe failed problem according to mmc_host struct"
+- iommu: support phytium ft2000plus and S2500 iommu function
+- arm64: Errata: fix kabi changed by cpu_errata and enable idc
+- blk-mq: don't free tags if the tag_set is used by other device in queue initialztion
+- nbd: add a flush_workqueue in nbd_start_device
+- svm: Fix ts problem, which need the len to check out memory
+- sctp: add vtag check in sctp_sf_ootb
+- sctp: add vtag check in sctp_sf_do_8_5_1_E_sa
+- sctp: add vtag check in sctp_sf_violation
+- sctp: fix the processing for COOKIE_ECHO chunk
+- sctp: fix the processing for INIT_ACK chunk
+- sctp: fix the processing for INIT chunk
+- sctp: use init_tag from inithdr for ABORT chunk
+- openeuler_defconfig: Build HISI PMU drivers as modules.
+- arm64: perf: Expose some new events via sysfs
+- arm64: perf: Hook up new events
+- arm64: perf: Correct the event index in sysfs
+- arm64: perf: Add support for Armv8.1 PMCEID register format
+- perf/smmuv3: Don't trample existing events with global filter
+- drivers/perf: hisi: Add missing include of linux/module.h
+- drivers/perf: Prevent forced unbinding of PMU drivers
+- drivers/perf: Fix kernel panic when rmmod PMU modules during perf sampling
+- drivers/perf: hisi: Fix wrong value for all counters enable
+- pmu/smmuv3: Clear IRQ affinity hint on device removal
+- drivers/perf: hisi: Permit modular builds of HiSilicon uncore drivers
+- drivers/perf: hisi: Fix typo in events attribute array
+- drivers/perf: hisi: Simplify hisi_read_sccl_and_ccl_id and its comment
+- drivers/perf: hisi: update the sccl_id/ccl_id for certain HiSilicon platform
+- perf/smmuv3: Validate groups for global filtering
+- perf/smmuv3: Validate group size
+- drivers/perf: arm_spe: Don't error on high-order pages for aux buf
+- drm/hisilicon: Features to support reading resolutions from EDID
+- drm/hisilicon: Support i2c driver algorithms for bit-shift adapters
+- compiler.h: fix barrier_data() on clang
 
 * Tue Nov 09 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2111.3.0.0121
 - bonding: Fix a use-after-free problem when bond_sysfs_slave_add() failed
