@@ -1119,6 +1119,10 @@ config ARCH_SPLIT_ARG64
 	   If a 32-bit architecture requires 64-bit arguments to be split into
 	   pairs of 32-bit arguments, select this option.
 
+# Select, if arch has a named attribute group bound to NUMA device nodes.
+config HAVE_ARCH_NODE_DEV_GROUP
+	bool
+
 source "kernel/gcov/Kconfig"
 
 source "scripts/gcc-plugins/Kconfig"
