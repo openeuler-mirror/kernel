@@ -918,6 +918,13 @@ static void intel_pstate_hwp_offline(struct cpudata *cpu)
 		value &= ~GENMASK_ULL(31, 24);
 		value |= HWP_ENERGY_PERF_PREFERENCE(cpu->epp_cached);
 		WRITE_ONCE(cpu->hwp_req_cached, value);
+
+		/*
+		 * However, make sure that EPP will be set to "performance" when
+		 * the CPU is brought back online again and the "performance"
+		 * scaling algorithm is still in effect.
+		 */
+		cpu->epp_policy = CPUFREQ_POLICY_UNKNOWN;
 	}
 
 	value &= ~GENMASK_ULL(31, 0);
