@@ -47,11 +47,14 @@
  * 0(%ebp) arg6
  */
 ENTRY(entry_SYSENTER_compat)
+	UNWIND_HINT_EMPTY
 	/* Interrupts are off on entry. */
 	SWAPGS
 
 	/* We are about to clobber %rsp anyway, clobbering here is OK */
-	SWITCH_TO_KERNEL_CR3 scratch_reg=%rsp
+	pushq	%rax
+	SWITCH_TO_KERNEL_CR3 scratch_reg=%rax
+	popq	%rax
 
 	movq	PER_CPU_VAR(cpu_current_top_of_stack), %rsp
 
@@ -104,6 +107,9 @@ ENTRY(entry_SYSENTER_compat)
 	xorl	%r14d, %r14d		/* nospec   r14 */
 	pushq   $0			/* pt_regs->r15 = 0 */
 	xorl	%r15d, %r15d		/* nospec   r15 */
+
+	UNWIND_HINT_REGS
+
 	cld
 
 	/*
@@ -147,7 +153,7 @@ ENTRY(entry_SYSENTER_compat)
 	popfq
 	jmp	.Lsysenter_flags_fixed
 GLOBAL(__end_entry_SYSENTER_compat)
-ENDPROC(entry_SYSENTER_compat)
+END(entry_SYSENTER_compat)
 
 /*
  * 32-bit SYSCALL entry.
@@ -197,6 +203,7 @@ ENDPROC(entry_SYSENTER_compat)
  * 0(%esp) arg6
  */
 ENTRY(entry_SYSCALL_compat)
+	UNWIND_HINT_EMPTY
 	/* Interrupts are off on entry. */
 	swapgs
 
@@ -246,6 +253,8 @@ GLOBAL(entry_SYSCALL_compat_after_hwframe)
 	xorl	%r14d, %r14d		/* nospec   r14 */
 	pushq   $0			/* pt_regs->r15 = 0 */
 	xorl	%r15d, %r15d		/* nospec   r15 */
+
+	UNWIND_HINT_REGS
 
 	/*
 	 * User mode is traced as though IRQs are on, and SYSENTER
@@ -335,6 +344,7 @@ END(entry_SYSCALL_compat)
  * ebp  arg6
  */
 ENTRY(entry_INT80_compat)
+	UNWIND_HINT_EMPTY
 	/*
 	 * Interrupts are off on entry.
 	 */
@@ -396,6 +406,9 @@ ENTRY(entry_INT80_compat)
 	xorl	%r14d, %r14d		/* nospec   r14 */
 	pushq   %r15                    /* pt_regs->r15 */
 	xorl	%r15d, %r15d		/* nospec   r15 */
+
+	UNWIND_HINT_REGS
+
 	cld
 
 	/*
