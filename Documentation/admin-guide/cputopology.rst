@@ -18,6 +18,11 @@ die_id:
 	identifier (rather than the kernel's).  The actual value is
 	architecture and platform dependent.
 
+cluster_id:
+	the cluster ID of cpuX.  Typically it is the hardware platform's
+	identifier (rather than the kernel's). The actual value is
+	architecture and platform dependent.
+
 core_id:
 
 	the CPU core ID of cpuX. Typically it is the hardware platform's
@@ -64,6 +69,15 @@ die_cpus_list:
 
 	human-readable list of CPUs within the same die.
 
+cluster_cpus:
+
+	internal kernel map of CPUs within the same cluster
+
+cluster_cpus_list:
+
+	human-readable list of CPUs within the same cluster.
+	The format is like 0-3, 8-11, 14,17.
+
 book_siblings:
 
 	internal kernel map of cpuX's hardware threads within the same
@@ -96,11 +110,13 @@ these macros in include/asm-XXX/topology.h::
 
 	#define topology_physical_package_id(cpu)
 	#define topology_die_id(cpu)
+	#define topology_cluster_id(cpu)
 	#define topology_core_id(cpu)
 	#define topology_book_id(cpu)
 	#define topology_drawer_id(cpu)
 	#define topology_sibling_cpumask(cpu)
 	#define topology_core_cpumask(cpu)
+	#define topology_cluster_cpumask(cpu)
 	#define topology_die_cpumask(cpu)
 	#define topology_book_cpumask(cpu)
 	#define topology_drawer_cpumask(cpu)
@@ -116,10 +132,12 @@ not defined by include/asm-XXX/topology.h:
 
 1) topology_physical_package_id: -1
 2) topology_die_id: -1
-3) topology_core_id: 0
-4) topology_sibling_cpumask: just the given CPU
-5) topology_core_cpumask: just the given CPU
-6) topology_die_cpumask: just the given CPU
+3) topology_cluster_id: -1
+4) topology_core_id: 0
+5) topology_sibling_cpumask: just the given CPU
+6) topology_core_cpumask: just the given CPU
+7) topology_cluster_cpumask: just the given CPU
+8) topology_die_cpumask: just the given CPU
 
 For architectures that don't support books (CONFIG_SCHED_BOOK) there are no
 default definitions for topology_book_id() and topology_book_cpumask().
