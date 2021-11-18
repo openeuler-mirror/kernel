@@ -238,9 +238,11 @@ static void hns3_lb_clear_tx_ring(struct hns3_nic_priv *priv, u32 start_ringid,
 }
 
 /**
- * hns3_lp_run_test -  run loopback test
+ * hns3_lp_run_test - run loopback test
  * @ndev: net device
  * @mode: loopback type
+ *
+ * Return: %0 for success or a NIC loopback test error code on failure
  */
 static int hns3_lp_run_test(struct net_device *ndev, enum hnae3_loop mode)
 {
