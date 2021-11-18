@@ -12,7 +12,7 @@
 %global upstream_sublevel   0
 %global devel_release       19
 %global maintenance_release .0.0
-%global pkg_release         .9
+%global pkg_release         .10
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,96 @@ fi
 %endif
 
 %changelog
+* Thu Nov 18 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-19.0.0.10
+- net: hns3: allow configure ETS bandwidth of all TCs
+- net: hns3: remove check VF uc mac exist when set by PF
+- net: hns3: fix some mac statistics is always 0 in device version V2
+- net: hns3: fix kernel crash when unload VF while it is being reset
+- net: hns3: sync rx ring head in echo common pull
+- net: hns3: fix pfc packet number incorrect after querying pfc parameters
+- net: hns3: fix ROCE base interrupt vector initialization bug
+- net: hns3: fix failed to add reuse multicast mac addr to hardware when mc mac table is full
+- net: hisilicon: fix hsn3_ethtool kernel-doc warnings
+- net: hns3: adjust string spaces of some parameters of tx bd info in debugfs
+- net: hns3: expand buffer len for some debugfs command
+- net: hns3: add more string spaces for dumping packets number of queue info in debugfs
+- net: hns3: fix data endian problem of some functions of debugfs
+- net: hns3: ignore reset event before initialization process is done
+- net: hns3: change hclge/hclgevf workqueue to WQ_UNBOUND mode
+- net: hns3: add error recovery module and type for himac
+- net: hns3: add new ras error type for roce
+- net: hns3: add update ethtool advertised link modes for FIBRE port when autoneg off
+- net: hns3: modify functions of converting speed ability to ethtool link mode
+- net: hns3: add support pause/pfc durations for mac statistics
+- net: hns3: device specifications add number of mac statistics
+- net: hns3: modify mac statistics update process for compatibility
+- net: hns3: add debugfs support for interrupt coalesce
+- net: hns3: schedule the polling again when allocation fails
+- net: hns3: fix for miscalculation of rx unused desc
+- net: hns3: Add configuration of TM QCN error event
+- net: hns3: use dev_driver_string() instead of pci_dev->driver->name
+- net: hns3: debugfs add support dumping page pool info
+- net: hns3: disable firmware compatible features when uninstall PF
+- net: hns3: PF enable promisc for VF when mac table is overflow
+- net: hns3: don't rollback when destroy mqprio fail
+- net: hns3: remove tc enable checking
+- net: hns3: fix hclge_dbg_dump_tm_pg() stack usage
+- net: hns3: PF support get multicast MAC address space assigned by firmware
+- net: hns3: PF support get unicast MAC address space assigned by firmware
+- mm/damon: remove return value from before_terminate callback
+- mm/damon: fix a few spelling mistakes in comments and a pr_debug message
+- Docs/admin-guide/mm/pagemap: wordsmith page flags descriptions
+- Docs/admin-guide/mm/damon/start: simplify the content
+- Docs/admin-guide/mm/damon/start: fix a wrong link
+- Docs/admin-guide/mm/damon/start: fix wrong example commands
+- mm/damon: simplify stop mechanism
+- mm/damon/dbgfs: add adaptive_targets list check before enable monitor_on
+- mm/damon: remove unnecessary variable initialization
+- Documentation/admin-guide/mm/damon: add a document for DAMON_RECLAIM
+- mm/damon: introduce DAMON-based Reclamation (DAMON_RECLAIM)
+- selftests/damon: support watermarks
+- mm/damon/dbgfs: support watermarks
+- mm/damon/schemes: activate schemes based on a watermarks mechanism
+- tools/selftests/damon: update for regions prioritization of schemes
+- mm/damon/dbgfs: support prioritization weights
+- mm/damon/vaddr,paddr: support pageout prioritization
+- mm/damon/schemes: prioritize regions within the quotas
+- mm/damon/selftests: support schemes quotas
+- mm/damon/dbgfs: support quotas of schemes
+- mm/damon/schemes: implement time quota
+- mm/damon/schemes: skip already charged targets and regions
+- mm/damon/schemes: implement size quota for schemes application speed control
+- mm/damon/paddr: support the pageout scheme
+- mm/damon/dbgfs: remove unnecessary variables
+- mm/damon/vaddr: constify static mm_walk_ops
+- Docs/DAMON: document physical memory monitoring support
+- mm/damon/dbgfs: support physical memory monitoring
+- mm/damon: implement primitives for physical address space monitoring
+- mm/damon/vaddr: separate commonly usable functions
+- Docs/admin-guide/mm/damon: document 'init_regions' feature
+- mm/damon/dbgfs-test: add a unit test case for 'init_regions'
+- mm/damon/dbgfs: allow users to set initial monitoring target regions
+- Docs/admin-guide/mm/damon: document DAMON-based Operation Schemes
+- selftests/damon: add 'schemes' debugfs tests
+- mm/damon/schemes: implement statistics feature
+- mm/damon/dbgfs: support DAMON-based Operation Schemes
+- mm/damon/vaddr: support DAMON-based Operation Schemes
+- mm/damon/core: implement DAMON-based Operation Schemes (DAMOS)
+- mm/damon/core: account age of target regions
+- mm/damon/core: nullify pointer ctx->kdamond with a NULL
+- mm/damon: needn't hold kdamond_lock to print pid of kdamond
+- mm/damon: remove unnecessary do_exit() from kdamond
+- mm/damon/core: print kdamond start log in debug mode only
+- include/linux/damon.h: fix kernel-doc comments for 'damon_callback'
+- docs/vm/damon: remove broken reference
+- MAINTAINERS: update SeongJae's email address
+- Documentation/vm: move user guides to admin-guide/mm/
+- mm/damon: grammar s/works/work/
+- mm/damon/core-test: fix wrong expectations for 'damon_split_regions_of()'
+- mm/damon: don't use strnlen() with known-bogus source length
+- sched: Add cluster scheduler level in core and related Kconfig for ARM64
+- topology: Represent clusters of CPUs within a die
+
 * Tue Nov 16 2021 sdlzx <hdu_sdlzx@163.com> - 5.10.0-19.0.0.9
 - remove unused linux-kernel-test.patch
 
