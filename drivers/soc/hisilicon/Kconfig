@@ -1,2 +1,0 @@
-source "drivers/soc/hisilicon/sysctl/Kconfig"
-
