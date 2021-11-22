@@ -549,8 +549,8 @@ static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
 	if (!has_sleeper && rq_wait_inc_below(rqw, get_limit(rwb, rw)))
 		return;
 
-	prepare_to_wait_exclusive(&rqw->wait, &data.wq, TASK_UNINTERRUPTIBLE);
-	has_sleeper = !wq_has_single_sleeper(&rqw->wait);
+	has_sleeper = !__prepare_to_wait_exclusive(&rqw->wait, &data.wq,
+						 TASK_UNINTERRUPTIBLE);
 	do {
 		/* The memory barrier in set_task_state saves us here. */
 		if (data.got_token)
