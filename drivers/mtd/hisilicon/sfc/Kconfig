@@ -1,3 +1,0 @@
-config MTD_HISILICON_SFC
-	tristate
-	default m

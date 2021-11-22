@@ -1,1 +1,0 @@
-obj-$(CONFIG_MTD_HISILICON_SFC)	+= sfc/

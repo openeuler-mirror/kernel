@@ -5904,11 +5904,6 @@ F:	drivers/ptp/ptp_qoriq.c
 F:	include/linux/fsl/ptp_qoriq.h
 F:	Documentation/devicetree/bindings/ptp/ptp-qoriq.txt
 
-HISILICON SFC DRIVER
-M:	Feng Sheng <fengsheng5@huawei.com>
-S:	Maintained
-F:	drivers/mtd/hisilicon/sfc/
-
 FREESCALE QUAD SPI DRIVER
 M:	Han Xu <han.xu@nxp.com>
 L:	linux-mtd@lists.infradead.org

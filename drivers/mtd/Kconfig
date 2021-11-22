@@ -339,6 +339,4 @@ source "drivers/mtd/spi-nor/Kconfig"
 
 source "drivers/mtd/ubi/Kconfig"
 
-source "drivers/mtd/hisilicon/Kconfig"
-
 endif # MTD
