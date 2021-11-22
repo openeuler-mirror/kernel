@@ -1,3 +1,2 @@
-source "drivers/soc/hisilicon/lbc/Kconfig"
 source "drivers/soc/hisilicon/sysctl/Kconfig"
 

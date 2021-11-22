@@ -2219,7 +2219,6 @@ CONFIG_CLKSRC_VERSATILE=y
 # Xilinx SoC drivers
 #
 # CONFIG_XILINX_VCU is not set
-CONFIG_SOC_HISILICON_LBC=m
 # CONFIG_PM_DEVFREQ is not set
 # CONFIG_EXTCON is not set
 # CONFIG_MEMORY is not set

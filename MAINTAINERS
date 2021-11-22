@@ -16332,11 +16332,6 @@ S:	Buried alive in reporters
 F:	*
 F:	*/
 
-HISILICON LOCALBUS DRIVER
-M:	Feng Sheng <fengsheng5@huawei.com>
-S:	Maintained
-F:	drivers/soc/hisilicon/lbc/
-
 HISILICON SYSCTRL DRIVER
 M:	Feng Sheng <fengsheng5@huawei.com>
 S:	Maintained

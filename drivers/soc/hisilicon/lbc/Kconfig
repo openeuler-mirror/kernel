@@ -1,3 +1,0 @@
-config SOC_HISILICON_LBC
-	tristate
-	default m
