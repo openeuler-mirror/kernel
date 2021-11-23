@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2111.4.0
+%global hulkrelease 2111.5.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0121
+Release: %{hulkrelease}.0122
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,17 @@ fi
 %endif
 
 %changelog
+
+* Tue Nov 23 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2111.5.0.0122
+- rq-qos: fix missed wake-ups in rq_qos_throttle try two
+- atlantic: Fix OOB read and write in hw_atl_utils_fw_rpc_wait
+- drivers : remove drivers/mtd/hisilicon/sfc
+- drivers : remove drivers/soc/hisilicon/sysctl
+- drivers : remove drivers/soc/hisilicon/lbc
+- ipv4: fix uninitialized warnings in fnhe_remove_oldest()
+- crypto: public_key: fix overflow during implicit conversion
+- net: bridge: fix stale eth hdr pointer in br_dev_xmit
+- x86/entry: Make entry_64_compat.S objtool clean
 
 * Tue Nov 16 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2111.4.0.0121
 - io_uring: fix ltout double free on completion race
