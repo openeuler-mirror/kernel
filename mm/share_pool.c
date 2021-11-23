@@ -3851,13 +3851,17 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
 {
 	struct mm_struct *mm = task->mm;
-	struct sp_group_master *master = mm->sp_group_master;
+	struct sp_group_master *master;
 	struct sp_proc_stat *proc_stat;
 	struct spg_proc_stat *spg_proc_stat;
 	int i;
 	unsigned long anon, file, shmem, total_rss, prot;
 	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
 
+	if (unlikely(!mm))
+		return 0;
+
+	master = mm->sp_group_master;
 	if (!master)
 		return 0;
 
