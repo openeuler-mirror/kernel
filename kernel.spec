@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       19
+%global devel_release       20
 %global maintenance_release .0.0
-%global pkg_release         .10
+%global pkg_release         .11
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,9 @@ fi
 %endif
 
 %changelog
+* Tue Nov 23 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-20.0.0.11
+- atlantic: Fix OOB read and write in hw_atl_utils_fw_rpc_wait
+
 * Thu Nov 18 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-19.0.0.10
 - net: hns3: allow configure ETS bandwidth of all TCs
 - net: hns3: remove check VF uc mac exist when set by PF
