@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2111.5.0
+%global hulkrelease 2111.6.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0123
+Release: %{hulkrelease}.0124
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,11 @@ fi
 %endif
 
 %changelog
+
+* Wed Nov 24 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2111.6.0.0124
+- drm/ioctl: Ditch DRM_UNLOCKED except for the legacy vblank ioctl
+- config: Enable some configs for test
+- share_pool: add mm address check when access the process's sp_group file
 
 * Tue Nov 23 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2111.5.0.0123
 - rq-qos: fix missed wake-ups in rq_qos_throttle try two
