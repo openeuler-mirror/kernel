@@ -39,6 +39,8 @@ void spnic_get_channels(struct net_device *netdev, struct ethtool_channels *chan
 
 int spnic_set_channels(struct net_device *netdev, struct ethtool_channels *channels);
 
+u32 spnic_get_rxfh_indir_size(struct net_device *netdev);
+
 u32 spnic_get_rxfh_key_size(struct net_device *netdev);
 
 int spnic_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key, u8 *hfunc);

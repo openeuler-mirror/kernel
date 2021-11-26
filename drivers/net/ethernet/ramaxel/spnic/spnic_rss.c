@@ -681,6 +681,11 @@ static int set_rss_rxfh(struct net_device *netdev, const u32 *indir, const u8 *k
 	return 0;
 }
 
+u32 spnic_get_rxfh_indir_size(struct net_device *netdev)
+{
+	return SPNIC_RSS_INDIR_SIZE;
+}
+
 u32 spnic_get_rxfh_key_size(struct net_device *netdev)
 {
 	return SPNIC_RSS_KEY_SIZE;

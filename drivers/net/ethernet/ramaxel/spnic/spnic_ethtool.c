@@ -939,6 +939,7 @@ static const struct ethtool_ops spnic_ethtool_ops = {
 	.get_module_info	= spnic_get_module_info,
 	.get_module_eeprom	= spnic_get_module_eeprom,
 
+	.get_rxfh_indir_size    = spnic_get_rxfh_indir_size,
 	.get_rxfh_key_size	= spnic_get_rxfh_key_size,
 	.get_rxfh		= spnic_get_rxfh,
 	.set_rxfh		= spnic_set_rxfh,
@@ -972,6 +973,7 @@ static const struct ethtool_ops spnicvf_ethtool_ops = {
 	.get_channels		= spnic_get_channels,
 	.set_channels		= spnic_set_channels,
 
+	.get_rxfh_indir_size	= spnic_get_rxfh_indir_size,
 	.get_rxfh_key_size	= spnic_get_rxfh_key_size,
 	.get_rxfh		= spnic_get_rxfh,
 	.set_rxfh		= spnic_set_rxfh,
