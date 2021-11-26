@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       20
+%global devel_release       21
 %global maintenance_release .0.0
-%global pkg_release         .11
+%global pkg_release         .12
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,39 @@ fi
 %endif
 
 %changelog
+* Fri Nov 26 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-21.0.0.12
+- gpio: gpio-hisi: Add HiSilicon GPIO support
+- hugetlbfs: avoid overflow in hugetlbfs_fallocate
+- config: Open CONFIG_CORELOCKUP_DETECTOR
+- watchdog/corelockup: Depends on the hardlockup detection switch
+- watchdog/corelockup: Add interface to control the detection sensitivity.
+- watchdog/corelockup: Optimized core lockup detection judgment rules
+- corelockup: Add detector enable support by cmdline
+- corelockup: Disable wfi/wfe mode for pmu based nmi
+- corelockup: Add support of cpu core hang check
+- KVM: arm64: vgic-its: Flush pending LPIs when nuking DT
+- KVM: arm64: Mark the page dirty only if the fault is handled successfully
+- KVM: arm64: Filter out the case of only changing permissions from stage-2 map path
+- KVM: arm64: Adjust partial code of hyp stage-1 map and guest stage-2 map
+- KVM: arm64: Add support for probing Hisi ncsnp capability
+- KVM: arm64: Probe Hisi CPU TYPE from ACPI/DTB
+- perf, kvm/arm64: perf-kvm-stat to report VM TRAP
+- perf, kvm/arm64: Add stat support on arm64
+- KVM: arm64: Adjust entry/exit and trap related tracepoints
+- openeuler_defconfig: Build HiSilicon I2C/SPI/SFC driver as module
+- kvm: arm/arm64: add irqsave for lpi_cache_lock
+- KVM: arm/arm64: vgic-its: Do not execute invalidate MSI-LPI translation cache on movi command
+- KVM: arm/arm64: vgic-its: Introduce multiple LPI translation caches
+- net:spnic:Clear the flag of CSUM and TSO when VXLAN is not supported
+- net:spnic:Support to configure DMA atrribute thru firmware.
+- net:spnic: Add the get_rxfh_indir_size in ethtool_ops structure.
+- iscsi: use dynamic single thread workqueue to improve performance
+- workqueue: implement NUMA affinity for single thread workqueue
+- iscsi: add member for NUMA aware order workqueue
+- livepatch: Fix crash when access the global variable in hook
+- jump_label: skip resource release if jump label is not relocated
+- SCSI: spfc: fix typo of last_cmsn
+
 * Tue Nov 23 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-20.0.0.11
 - atlantic: Fix OOB read and write in hw_atl_utils_fw_rpc_wait
 
