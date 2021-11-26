@@ -15,8 +15,23 @@
 #define nops(n)		asm volatile(__nops(n))
 
 #define sev()		asm volatile("sev" : : : "memory")
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+extern unsigned int close_wfi_wfe;
+#define wfe()							\
+	do {							\
+		if (likely(close_wfi_wfe == 0))		\
+			asm volatile("wfe" : : : "memory");	\
+	} while (0)
+#define wfi()							\
+	do {							\
+		if (likely(close_wfi_wfe == 0))		\
+			asm volatile("wfi" : : : "memory");	\
+	} while (0)
+
+#else
 #define wfe()		asm volatile("wfe" : : : "memory")
 #define wfi()		asm volatile("wfi" : : : "memory")
+#endif
 
 #define isb()		asm volatile("isb" : : : "memory")
 #define dmb(opt)	asm volatile("dmb " #opt : : : "memory")
