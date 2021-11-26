@@ -135,7 +135,7 @@ struct comm_cmd_msix_config {
 	u8 rsvd2[5];
 };
 
-struct comm_cmd_dma_attr {
+struct comm_cmd_dma_attr_config {
 	struct mgmt_msg_head head;
 
 	u16 func_id;

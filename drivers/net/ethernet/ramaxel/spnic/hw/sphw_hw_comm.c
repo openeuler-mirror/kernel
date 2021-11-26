@@ -403,6 +403,33 @@ int sphw_set_ceq_ctrl_reg(struct sphw_hwdev *hwdev, u16 q_id, u32 ctrl0, u32 ctr
 	return 0;
 }
 
+int sphw_set_dma_attr_tbl(struct sphw_hwdev *hwdev, u8 entry_idx, u8 st, u8 at, u8 ph,
+			  u8 no_snooping, u8 tph_en)
+{
+	struct comm_cmd_dma_attr_config dma_attr;
+	u16 out_size = sizeof(dma_attr);
+	int err;
+
+	memset(&dma_attr, 0, sizeof(dma_attr));
+	dma_attr.func_id = sphw_global_func_id(hwdev);
+	dma_attr.entry_idx = entry_idx;
+	dma_attr.st = st;
+	dma_attr.at = at;
+	dma_attr.ph = ph;
+	dma_attr.no_snooping = no_snooping;
+	dma_attr.tph_en = tph_en;
+
+	err = comm_msg_to_mgmt_sync(hwdev, COMM_MGMT_CMD_SET_DMA_ATTR, &dma_attr, sizeof(dma_attr),
+				    &dma_attr, &out_size);
+	if (err || !out_size || dma_attr.head.status) {
+		sdk_err(hwdev->dev_hdl, "Failed to set dma_attr, err: %d, status: 0x%x, out_size: 0x%x\n",
+			err, dma_attr.head.status, out_size);
+		return -EIO;
+	}
+
+	return 0;
+}
+
 int sphw_set_bdf_ctxt(void *hwdev, u8 bus, u8 device, u8 function)
 {
 	struct comm_cmd_bdf_info bdf_info;

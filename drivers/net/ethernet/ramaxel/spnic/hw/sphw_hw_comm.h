@@ -34,6 +34,9 @@ int sphw_ppf_ext_db_deinit(void *dev);
 
 int sphw_set_ceq_ctrl_reg(struct sphw_hwdev *hwdev, u16 q_id, u32 ctrl0, u32 ctrl1);
 
+int sphw_set_dma_attr_tbl(struct sphw_hwdev *hwdevm, u8 entry_idx, u8 st, u8 at, u8 ph,
+			  u8 no_snooping, u8 tph_en);
+
 int sphw_get_comm_features(void *hwdev, u64 *s_feature, u16 size);
 int sphw_set_comm_features(void *hwdev, u64 *s_feature, u16 size);
 

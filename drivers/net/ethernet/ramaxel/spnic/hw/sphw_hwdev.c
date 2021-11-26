@@ -366,89 +366,37 @@ void sphw_detect_hw_present(void *hwdev)
 }
 
 /**
- * set_pf_dma_attr_entry - set the dma attributes for entry
- * @hwif: the hardware interface of a pci function device
- * @entry_idx: the entry index in the dma table
- * @st: PCIE TLP steering tag
- * @at:	PCIE TLP AT field
- * @ph: PCIE TLP Processing Hint field
- * @no_snooping: PCIE TLP No snooping
- * @tph_en: PCIE TLP Processing Hint Enable
+ * dma_attr_table_init - initialize the default dma attributes
+ * @hwdev: the pointer to hw device
  **/
-static void set_pf_dma_attr_entry(struct sphw_hwdev *hwdev, u32 entry_idx,
-				  u8 st, u8 at, u8 ph,
-				  enum sphw_pcie_nosnoop no_snooping,
-				  enum sphw_pcie_tph tph_en)
+static int dma_attr_table_init(struct sphw_hwdev *hwdev)
 {
-	u32 addr, val, dma_attr_entry;
+	u32 addr, val, dst_attr;
 
 	/* Use indirect access should set entry_idx first*/
 	addr = SPHW_CSR_DMA_ATTR_INDIR_IDX_ADDR;
 	val = sphw_hwif_read_reg(hwdev->hwif, addr);
 	val = SPHW_DMA_ATTR_INDIR_IDX_CLEAR(val, IDX);
 
-	entry_idx = SPHW_DMA_ATTR_INDIR_IDX_SET(entry_idx, IDX);
-
-	val |= entry_idx;
+	val |= SPHW_DMA_ATTR_INDIR_IDX_SET(PCIE_MSIX_ATTR_ENTRY, IDX);
 
 	sphw_hwif_write_reg(hwdev->hwif, addr, val);
 
 	wmb(); /* write index before config */
 
 	addr = SPHW_CSR_DMA_ATTR_TBL_ADDR;
-
 	val = sphw_hwif_read_reg(hwdev->hwif, addr);
-	val = SPHW_DMA_ATTR_ENTRY_CLEAR(val, ST)	&
-		SPHW_DMA_ATTR_ENTRY_CLEAR(val, AT)	&
-		SPHW_DMA_ATTR_ENTRY_CLEAR(val, PH)	&
-		SPHW_DMA_ATTR_ENTRY_CLEAR(val, NO_SNOOPING)	&
-		SPHW_DMA_ATTR_ENTRY_CLEAR(val, TPH_EN);
+	dst_attr = SPHW_DMA_ATTR_ENTRY_SET(SPHW_PCIE_ST_DISABLE, ST)	|
+		SPHW_DMA_ATTR_ENTRY_SET(SPHW_PCIE_AT_DISABLE, AT)	|
+		SPHW_DMA_ATTR_ENTRY_SET(SPHW_PCIE_PH_DISABLE, PH)	|
+		SPHW_DMA_ATTR_ENTRY_SET(SPHW_PCIE_SNOOP, NO_SNOOPING)	|
+		SPHW_DMA_ATTR_ENTRY_SET(SPHW_PCIE_TPH_DISABLE, TPH_EN);
+	if (dst_attr == val)
+		return 0;
 
-	dma_attr_entry = SPHW_DMA_ATTR_ENTRY_SET(st, ST)	|
-			 SPHW_DMA_ATTR_ENTRY_SET(at, AT)	|
-			 SPHW_DMA_ATTR_ENTRY_SET(ph, PH)	|
-			 SPHW_DMA_ATTR_ENTRY_SET(no_snooping, NO_SNOOPING) |
-			 SPHW_DMA_ATTR_ENTRY_SET(tph_en, TPH_EN);
-
-	val |= dma_attr_entry;
-	sphw_hwif_write_reg(hwdev->hwif, addr, val);
-}
-
-static int set_vf_dma_attr_entry(struct sphw_hwdev *hwdev, u8 entry_idx,
-				 u8 st, u8 at, u8 ph,
-				enum sphw_pcie_nosnoop no_snooping,
-				enum sphw_pcie_tph tph_en)
-{
-	/* SPHW_MGMT_CMD_DMA_ATTR_SET */
-	/*to do vf set dma attr by mpu*/
-	return 0;
-}
-
-/**
- * dma_attr_table_init - initialize the default dma attributes
- * @hwif: the hardware interface of a pci function device
- **/
-static int dma_attr_table_init(struct sphw_hwdev *hwdev)
-{
-	int err = 0;
-
-	/* TODO: check if set pf dma attr through uP, the same as vf */
-	if (SPHW_IS_VF(hwdev))
-		err = set_vf_dma_attr_entry(hwdev, PCIE_MSIX_ATTR_ENTRY,
-					    SPHW_PCIE_ST_DISABLE,
-					    SPHW_PCIE_AT_DISABLE,
-					    SPHW_PCIE_PH_DISABLE,
-					    SPHW_PCIE_SNOOP,
-					    SPHW_PCIE_TPH_DISABLE);
-	else
-		set_pf_dma_attr_entry(hwdev, PCIE_MSIX_ATTR_ENTRY,
-				      SPHW_PCIE_ST_DISABLE,
-				      SPHW_PCIE_AT_DISABLE,
-				      SPHW_PCIE_PH_DISABLE,
-				      SPHW_PCIE_SNOOP,
-				      SPHW_PCIE_TPH_DISABLE);
-
-	return err;
+	return sphw_set_dma_attr_tbl(hwdev, PCIE_MSIX_ATTR_ENTRY, SPHW_PCIE_ST_DISABLE,
+				     SPHW_PCIE_AT_DISABLE, SPHW_PCIE_PH_DISABLE,
+				     SPHW_PCIE_SNOOP, SPHW_PCIE_TPH_DISABLE);
 }
 
 static int init_aeqs_msix_attr(struct sphw_hwdev *hwdev)
