@@ -695,6 +695,9 @@ static void jump_label_del_module(struct module *mod)
 	struct static_key *key = NULL;
 	struct static_key_mod *jlm, **prev;
 
+	if (unlikely(!mod_klp_rel_completed(mod)))
+		return;
+
 	for (iter = iter_start; iter < iter_stop; iter++) {
 		if (jump_entry_key(iter) == key)
 			continue;
