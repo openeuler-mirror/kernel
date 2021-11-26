@@ -235,8 +235,11 @@ static void netdev_feature_init(struct net_device *netdev)
 
 	netdev->priv_flags |= IFF_UNICAST_FLT;
 
-	netdev->hw_enc_features |= dft_fts | cso_fts;
-	netdev->hw_enc_features |= tso_fts | NETIF_F_TSO_ECN;
+	netdev->hw_enc_features |= dft_fts;
+	if (SPNIC_SUPPORT_VXLAN_OFFLOAD(nic_dev->hwdev)) {
+		netdev->hw_enc_features |= cso_fts;
+		netdev->hw_enc_features |= tso_fts | NETIF_F_TSO_ECN;
+	}
 }
 
 static void init_intr_coal_param(struct spnic_nic_dev *nic_dev)
