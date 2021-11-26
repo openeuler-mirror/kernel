@@ -597,7 +597,7 @@ struct spfc_parent_ssq_info {
 	u32 wqe_offset;
 	u16 head_start_cmsn;
 	u16 head_end_cmsn;
-	u16 last_cmsn;
+	u16 last_pmsn;
 	u16 last_pi_owner;
 	u32 queue_style;
 	atomic_t sq_valid;

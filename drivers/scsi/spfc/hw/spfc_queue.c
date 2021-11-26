@@ -1027,7 +1027,7 @@ u32 spfc_create_ssq(void *handle)
 			sq_ctrl->wqe_offset = 0;
 			sq_ctrl->head_start_cmsn = 0;
 			sq_ctrl->head_end_cmsn = SPFC_GET_WP_END_CMSN(0, sq_ctrl->wqe_num_per_buf);
-			sq_ctrl->last_cmsn = 0;
+			sq_ctrl->last_pmsn = 0;
 			 /* Linked List SQ Owner Bit 1 valid,0 invalid */
 			sq_ctrl->last_pi_owner = 1;
 			atomic_set(&sq_ctrl->sq_valid, true);
@@ -3127,7 +3127,7 @@ static u32 spfc_parent_sq_ring_direct_wqe_doorbell(struct spfc_parent_ssq_info *
 	struct spfc_hba_info *hba;
 
 	hba = (struct spfc_hba_info *)sq->hba;
-	pmsn = sq->last_cmsn;
+	pmsn = sq->last_pmsn;
 
 	if (sq->cache_id == INVALID_VALUE32) {
 		FC_DRV_PRINT(UNF_LOG_IO_ATT, UNF_ERR,
@@ -3166,7 +3166,7 @@ u32 spfc_parent_sq_ring_doorbell(struct spfc_parent_ssq_info *sq, u8 qos_level, 
 	struct spfc_parent_sq_db door_bell;
 
 	hba = (struct spfc_hba_info *)sq->hba;
-	pmsn = sq->last_cmsn;
+	pmsn = sq->last_pmsn;
 	/* Obtain the low 8 Bit of PMSN */
 	pmsn_lo = (u8)(pmsn & SPFC_PMSN_MASK);
 	/* Obtain the high 8 Bit of PMSN */
@@ -3231,10 +3231,10 @@ u32 spfc_direct_sq_enqueue(struct spfc_parent_ssq_info *ssq, struct spfc_sqe *io
 		FC_DRV_PRINT(UNF_LOG_NORMAL, UNF_INFO,
 			     "[info]Ssq(0x%x), xid(0x%x) qid(0x%x) add wqepage at Pmsn(0x%x), sqe_minus_cqe_cnt(0x%x)",
 			     ssq->sqn, ssq->context_id, ssq->sq_queue_id,
-			     ssq->last_cmsn,
+			     ssq->last_pmsn,
 			     atomic_read(&ssq->sqe_minus_cqe_cnt));
 
-		link_wqe_msn = SPFC_MSN_DEC(ssq->last_cmsn);
+		link_wqe_msn = SPFC_MSN_DEC(ssq->last_pmsn);
 		link_wqe = (struct spfc_linkwqe *)spfc_get_wqe_page_entry(tail_wpg,
 									  ssq->wqe_offset);
 		msn_wd = be32_to_cpu(link_wqe->val_wd1);
@@ -3250,7 +3250,7 @@ u32 spfc_direct_sq_enqueue(struct spfc_parent_ssq_info *ssq, struct spfc_sqe *io
 	}
 	sqe_in_wp =
 	    (struct spfc_sqe *)spfc_get_wqe_page_entry(tail_wpg, ssq->wqe_offset);
-	spfc_build_wqe_owner_pmsn(io_sqe, (ssq->last_pi_owner), ssq->last_cmsn);
+	spfc_build_wqe_owner_pmsn(io_sqe, (ssq->last_pi_owner), ssq->last_pmsn);
 	SPFC_IO_STAT((struct spfc_hba_info *)ssq->hba, wqe_type);
 
 	wqe_gpa = tail_wpg->wpg_phy_addr + (ssq->wqe_offset * sizeof(struct spfc_sqe));
@@ -3260,11 +3260,11 @@ u32 spfc_direct_sq_enqueue(struct spfc_parent_ssq_info *ssq, struct spfc_sqe *io
 	dre_door_bell.wd0.cos = 0;
 	dre_door_bell.wd0.c = 0;
 	dre_door_bell.wd0.pi_hi =
-	    (u32)(ssq->last_cmsn >> UNF_SHIFT_12) & SPFC_DB_WD0_PI_H_MASK;
+	    (u32)(ssq->last_pmsn >> UNF_SHIFT_12) & SPFC_DB_WD0_PI_H_MASK;
 	dre_door_bell.wd0.cntx_size = SPFC_CNTX_SIZE_T_256B;
 	dre_door_bell.wd0.xid = ssq->context_id;
 	dre_door_bell.wd1.sm_data = ssq->cache_id;
-	dre_door_bell.wd1.pi_lo = (u32)(ssq->last_cmsn & SPFC_DB_WD0_PI_L_MASK);
+	dre_door_bell.wd1.pi_lo = (u32)(ssq->last_pmsn & SPFC_DB_WD0_PI_L_MASK);
 	io_sqe->db_val = *(u64 *)&dre_door_bell;
 
 	spfc_convert_parent_wqe_to_big_endian(io_sqe);
@@ -3275,7 +3275,7 @@ u32 spfc_direct_sq_enqueue(struct spfc_parent_ssq_info *ssq, struct spfc_sqe *io
 		     "[INFO]Ssq(0x%x) xid:0x%x,qid:0x%x wqegpa:0x%llx,o:0x%x,outstandind:0x%x,pmsn:0x%x,cmsn:0x%x",
 		     ssq->sqn, ssq->context_id, ssq->sq_queue_id, wqe_gpa,
 		     ssq->last_pi_owner, atomic_read(&ssq->sqe_minus_cqe_cnt),
-		     ssq->last_cmsn, SPFC_GET_QUEUE_CMSN(ssq));
+		     ssq->last_pmsn, SPFC_GET_QUEUE_CMSN(ssq));
 
 	ssq->accum_wqe_cnt++;
 	if (ssq->accum_wqe_cnt == accum_db_num) {
@@ -3286,7 +3286,7 @@ u32 spfc_direct_sq_enqueue(struct spfc_parent_ssq_info *ssq, struct spfc_sqe *io
 	}
 
 	ssq->wqe_offset += 1;
-	ssq->last_cmsn = SPFC_MSN_INC(ssq->last_cmsn);
+	ssq->last_pmsn = SPFC_MSN_INC(ssq->last_pmsn);
 	atomic_inc(&ssq->sq_wqe_cnt);
 	atomic_inc(&ssq->sqe_minus_cqe_cnt);
 	SPFC_SQ_IO_STAT(ssq, wqe_type);
@@ -3319,7 +3319,7 @@ u32 spfc_parent_ssq_enqueue(struct spfc_parent_ssq_info *ssq, struct spfc_sqe *i
 		FC_DRV_PRINT(UNF_LOG_NORMAL, UNF_INFO,
 			     "[info]Ssq(0x%x), xid(0x%x) qid(0x%x) add wqepage at Pmsn(0x%x), WpgCnt(0x%x)",
 			     ssq->sqn, ssq->context_id, ssq->sq_queue_id,
-			     ssq->last_cmsn,
+			     ssq->last_pmsn,
 			     atomic_read(&ssq->wqe_page_cnt));
 		cur_cmsn = SPFC_GET_QUEUE_CMSN(ssq);
 		spfc_free_sq_wqe_page(ssq, cur_cmsn);
@@ -3335,7 +3335,7 @@ u32 spfc_parent_ssq_enqueue(struct spfc_parent_ssq_info *ssq, struct spfc_sqe *i
 		link_wqe->next_page_addr_hi = cpu_to_be32(addr_wd);
 		addr_wd = SPFC_LSD(new_wqe_page->wpg_phy_addr);
 		link_wqe->next_page_addr_lo = cpu_to_be32(addr_wd);
-		link_wqe_msn = SPFC_MSN_DEC(ssq->last_cmsn);
+		link_wqe_msn = SPFC_MSN_DEC(ssq->last_pmsn);
 		msn_wd = be32_to_cpu(link_wqe->val_wd1);
 		msn_wd |= ((u32)(link_wqe_msn & SPFC_MSNWD_L_MASK));
 		msn_wd |= (((u32)(link_wqe_msn & SPFC_MSNWD_H_MASK)) << UNF_SHIFT_16);
@@ -3351,7 +3351,7 @@ u32 spfc_parent_ssq_enqueue(struct spfc_parent_ssq_info *ssq, struct spfc_sqe *i
 		atomic_inc(&ssq->wqe_page_cnt);
 	}
 
-	spfc_build_wqe_owner_pmsn(io_sqe, !(ssq->last_pi_owner), ssq->last_cmsn);
+	spfc_build_wqe_owner_pmsn(io_sqe, !(ssq->last_pi_owner), ssq->last_pmsn);
 	SPFC_IO_STAT((struct spfc_hba_info *)ssq->hba, wqe_type);
 	spfc_convert_parent_wqe_to_big_endian(io_sqe);
 	sqe_in_wp = (struct spfc_sqe *)spfc_get_wqe_page_entry(tail_wpg, ssq->wqe_offset);
@@ -3371,7 +3371,7 @@ u32 spfc_parent_ssq_enqueue(struct spfc_parent_ssq_info *ssq, struct spfc_sqe *i
 		ssq->accum_wqe_cnt = 0;
 	}
 	ssq->wqe_offset += 1;
-	ssq->last_cmsn = SPFC_MSN_INC(ssq->last_cmsn);
+	ssq->last_pmsn = SPFC_MSN_INC(ssq->last_pmsn);
 	atomic_inc(&ssq->sq_wqe_cnt);
 	atomic_inc(&ssq->sqe_minus_cqe_cnt);
 	SPFC_SQ_IO_STAT(ssq, wqe_type);
