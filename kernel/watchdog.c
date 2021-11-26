@@ -516,15 +516,23 @@ static void softlockup_start_all(void)
 
 int lockup_detector_online_cpu(unsigned int cpu)
 {
-	if (cpumask_test_cpu(cpu, &watchdog_allowed_mask))
+	if (cpumask_test_cpu(cpu, &watchdog_allowed_mask)) {
 		watchdog_enable(cpu);
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+		corelockup_detector_online_cpu(cpu);
+#endif
+	}
 	return 0;
 }
 
 int lockup_detector_offline_cpu(unsigned int cpu)
 {
-	if (cpumask_test_cpu(cpu, &watchdog_allowed_mask))
+	if (cpumask_test_cpu(cpu, &watchdog_allowed_mask)) {
 		watchdog_disable(cpu);
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+		corelockup_detector_offline_cpu(cpu);
+#endif
+	}
 	return 0;
 }
 
@@ -754,4 +762,7 @@ void __init lockup_detector_init(void)
 	if (!nmi_watchdog_ops.watchdog_nmi_probe())
 		nmi_watchdog_available = true;
 	lockup_detector_setup();
+#ifdef CONFIG_CORELOCKUP_DETECTOR
+	corelockup_detector_init();
+#endif
 }
