@@ -41,6 +41,7 @@ struct vdpa_mgmt_dev;
  * vDPA device - representation of a vDPA device
  * @dev: underlying device
  * @dma_dev: the actual device that is performing DMA
+ * @driver_override: driver name to force a match
  * @config: the configuration ops for this device.
  * @index: device index
  * @features_valid: were features initialized? for legacy guests
@@ -51,6 +52,7 @@ struct vdpa_mgmt_dev;
 struct vdpa_device {
 	struct device dev;
 	struct device *dma_dev;
+	const char *driver_override;
 	const struct vdpa_config_ops *config;
 	unsigned int index;
 	bool features_valid;
