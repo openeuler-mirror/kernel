@@ -1214,6 +1214,7 @@ static int klp_init_patch(struct klp_patch *patch)
 			goto out;
 	}
 
+	flush_module_icache(patch->mod);
 	set_mod_klp_rel_state(patch->mod, MODULE_KLP_REL_DONE);
 	module_disable_ro(patch->mod);
 	jump_label_apply_nops(patch->mod);
