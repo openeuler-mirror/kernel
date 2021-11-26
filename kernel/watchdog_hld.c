@@ -83,6 +83,7 @@ static DEFINE_PER_CPU(unsigned long, hrint_saved);
 static DEFINE_PER_CPU(unsigned long, hrint_missed);
 static unsigned long corelockup_allcpu_dumped;
 bool enable_corelockup_detector;
+int __read_mostly corelockup_miss_thresh = 5;
 
 static int __init enable_corelockup_detector_setup(char *str)
 {
@@ -169,7 +170,8 @@ void watchdog_check_hrtimer(void)
 	}
 	__this_cpu_inc(nmi_cnt_missed);
 
-	if ((__this_cpu_read(hrint_missed) > 5) && (__this_cpu_read(nmi_cnt_missed) > 5)) {
+	if ((__this_cpu_read(hrint_missed) > corelockup_miss_thresh)
+		 && (__this_cpu_read(nmi_cnt_missed) > corelockup_miss_thresh)) {
 		pr_emerg("Watchdog detected core LOCKUP on cpu %d\n", cpu);
 
 		if (!test_and_set_bit(0, &corelockup_allcpu_dumped)) {
