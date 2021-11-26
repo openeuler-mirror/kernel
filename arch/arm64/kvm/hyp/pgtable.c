@@ -643,7 +643,7 @@ int kvm_pgtable_stage2_map(struct kvm_pgtable *pgt, u64 addr, u64 size,
 
 static void stage2_flush_dcache(void *addr, u64 size)
 {
-	if (cpus_have_const_cap(ARM64_HAS_STAGE2_FWB))
+	if (kvm_ncsnp_support || cpus_have_const_cap(ARM64_HAS_STAGE2_FWB))
 		return;
 
 	__flush_dcache_area(addr, size);
@@ -847,7 +847,7 @@ int kvm_pgtable_stage2_flush(struct kvm_pgtable *pgt, u64 addr, u64 size)
 		.flags	= KVM_PGTABLE_WALK_LEAF,
 	};
 
-	if (cpus_have_const_cap(ARM64_HAS_STAGE2_FWB))
+	if (kvm_ncsnp_support || cpus_have_const_cap(ARM64_HAS_STAGE2_FWB))
 		return 0;
 
 	return kvm_pgtable_walk(pgt, addr, size, &walker);

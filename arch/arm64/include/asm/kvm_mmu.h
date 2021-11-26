@@ -150,7 +150,7 @@ static inline void __clean_dcache_guest_page(kvm_pfn_t pfn, unsigned long size)
 	 * faulting in pages. Furthermore, FWB implies IDC, so cleaning to
 	 * PoU is not required either in this case.
 	 */
-	if (cpus_have_const_cap(ARM64_HAS_STAGE2_FWB))
+	if (kvm_ncsnp_support || cpus_have_const_cap(ARM64_HAS_STAGE2_FWB))
 		return;
 
 	kvm_flush_dcache_to_poc(va, size);
