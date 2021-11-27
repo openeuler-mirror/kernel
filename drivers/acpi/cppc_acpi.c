@@ -415,7 +415,7 @@ end:
  *
  *	Return: 0 for success or negative value for err.
  */
-int acpi_get_psd_map(struct cppc_cpudata **all_cpu_data)
+static int __acpi_get_psd_map(struct cppc_cpudata **all_cpu_data, struct cpc_desc **cpc_pptr)
 {
 	int count_target;
 	int retval = 0;
@@ -441,7 +441,7 @@ int acpi_get_psd_map(struct cppc_cpudata **all_cpu_data)
 		if (cpumask_test_cpu(i, covered_cpus))
 			continue;
 
-		cpc_ptr = per_cpu(cpc_desc_ptr, i);
+		cpc_ptr = cpc_pptr[i];
 		if (!cpc_ptr) {
 			retval = -EFAULT;
 			goto err_ret;
@@ -466,7 +466,7 @@ int acpi_get_psd_map(struct cppc_cpudata **all_cpu_data)
 			if (i == j)
 				continue;
 
-			match_cpc_ptr = per_cpu(cpc_desc_ptr, j);
+			match_cpc_ptr = cpc_pptr[j];
 			if (!match_cpc_ptr) {
 				retval = -EFAULT;
 				goto err_ret;
@@ -499,7 +499,7 @@ int acpi_get_psd_map(struct cppc_cpudata **all_cpu_data)
 			if (!match_pr)
 				continue;
 
-			match_cpc_ptr = per_cpu(cpc_desc_ptr, j);
+			match_cpc_ptr = cpc_pptr[j];
 			if (!match_cpc_ptr) {
 				retval = -EFAULT;
 				goto err_ret;
@@ -531,6 +531,91 @@ err_ret:
 
 	free_cpumask_var(covered_cpus);
 	return retval;
+}
+
+static acpi_status acpi_parse_cpc(acpi_handle handle, u32 lvl, void *data,
+				  void **ret_p)
+{
+	struct acpi_device *adev = NULL;
+	struct cpc_desc *cpc_ptr, **cpc_pptr;
+	acpi_status status = AE_OK;
+	const int device_declaration = 1;
+	unsigned long long uid;
+	phys_cpuid_t phys_id;
+	int logical_id, ret;
+	int *parsed_core_num = (int *)ret_p;
+
+	if (acpi_bus_get_device(handle, &adev))
+		return AE_OK;
+
+	if (strcmp(acpi_device_hid(adev), ACPI_PROCESSOR_DEVICE_HID))
+		return AE_OK;
+
+	status = acpi_evaluate_integer(handle, METHOD_NAME__UID, NULL, &uid);
+	if (ACPI_FAILURE(status))
+		return AE_OK;
+	phys_id = acpi_get_phys_id(handle, device_declaration, uid);
+	if (invalid_phys_cpuid(phys_id))
+		return AE_OK;
+	logical_id = acpi_map_cpuid(phys_id, uid);
+	if (logical_id < 0)
+		return AE_OK;
+
+	cpc_pptr = (struct cpc_desc **)data;
+	cpc_ptr = cpc_pptr[logical_id];
+	cpc_ptr->cpu_id = logical_id;
+
+	ret = acpi_get_psd(cpc_ptr, handle);
+	if (ret)
+		return ret;
+
+	(*parsed_core_num)++;
+
+	return AE_OK;
+}
+
+int acpi_get_psd_map(struct cppc_cpudata **all_cpu_data)
+{
+	struct cpc_desc **cpc_pptr, *cpc_ptr;
+	int parsed_core_num = 0;
+	int i, ret;
+
+	cpc_pptr = kcalloc(num_possible_cpus(), sizeof(void *), GFP_KERNEL);
+	if (!cpc_pptr)
+		return -ENOMEM;
+	for_each_possible_cpu(i) {
+		cpc_pptr[i] = kzalloc(sizeof(struct cpc_desc), GFP_KERNEL);
+		if (!cpc_pptr[i]) {
+			ret = -ENOMEM;
+			goto out;
+		}
+	}
+
+	/*
+	 * We can not use acpi_get_devices() to walk the processor devices
+	 * because some processor device is not present.
+	 */
+	ret = acpi_walk_namespace(ACPI_TYPE_DEVICE, ACPI_ROOT_OBJECT,
+				  ACPI_UINT32_MAX, acpi_parse_cpc, NULL,
+				  cpc_pptr, (void **)&parsed_core_num);
+	if (ret)
+		goto out;
+	if (parsed_core_num != num_possible_cpus()) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = __acpi_get_psd_map(all_cpu_data, cpc_pptr);
+
+out:
+	for_each_possible_cpu(i) {
+		cpc_ptr = cpc_pptr[i];
+		if (cpc_ptr)
+			kfree(cpc_ptr);
+	}
+	kfree(cpc_pptr);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(acpi_get_psd_map);
 
