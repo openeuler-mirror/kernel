@@ -486,6 +486,18 @@ config FRONTSWAP
 
 	  If unsure, say Y to enable frontswap.
 
+config SHRINK_PAGECACHE
+        bool "Enable shrinking the page cache"
+        depends on MMU
+        default n
+        help
+          SHRINK_PAGECACHE means that we do not want to keep the large number
+          of page cache in the system, even though page cache can greatly improve
+	  the performance of the machine. Large number of page cache may result
+	  in short of memory, which will result OOM at the same time, so in order
+	  to keep page cache in a reasonable range, the number of page cache
+	  should be limited, and that is what SHRINK_PAGECACHE does.
+
 config MEMCG_QOS
 	bool "Enable Memory Cgroup Priority"
 	depends on MEMCG
