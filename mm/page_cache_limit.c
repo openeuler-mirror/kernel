@@ -104,10 +104,60 @@ void wakeup_all_kpagecache_limitd(void)
 		wakeup_kpagecache_limitd(nid);
 }
 
+static unsigned long node_nr_page_cache(int nid)
+{
+	struct pglist_data *pgdat;
+	unsigned long num = 0;
+
+	pgdat = NODE_DATA(nid);
+	if (!pgdat)
+		return 0;
+
+	num = node_page_state(pgdat, NR_FILE_PAGES);
+	num -= node_page_state(pgdat, NR_SHMEM);
+
+	return num;
+}
+
+static unsigned long node_nr_page_reclaim(int nid)
+{
+	unsigned long nr_page_cache;
+	unsigned long nr_to_reclaim;
+	unsigned long total_pages;
+
+	if (!node_pagecache_limit_pages[nid])
+		return 0;
+
+	nr_page_cache = node_nr_page_cache(nid);
+	if (!nr_page_cache)
+		return 0;
+
+	if (nr_page_cache < node_pagecache_limit_pages[nid])
+		return 0;
+
+	total_pages = get_node_total_pages(nid);
+	nr_to_reclaim = nr_page_cache - node_pagecache_limit_pages[nid];
+	nr_to_reclaim += total_pages * pagecache_reclaim_ratio / 100;
+
+	return nr_to_reclaim;
+}
+
+static void shrink_node_page_cache(int nid)
+{
+	unsigned long nr_to_reclaim;
+
+	nr_to_reclaim = node_nr_page_reclaim(nid);
+}
+
 static void shrink_page_cache(void)
 {
-	if (!pagecache_overlimit())
+	int nid;
+
+	if (!pagecache_reclaim_enable || !pagecache_overlimit())
 		return;
+
+	for_each_node_state(nid, N_MEMORY)
+		shrink_node_page_cache(nid);
 }
 
 static DECLARE_COMPLETION(setup_done);
