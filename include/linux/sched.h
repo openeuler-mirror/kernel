@@ -1951,4 +1951,8 @@ static inline void rseq_syscall(struct pt_regs *regs)
 
 #endif
 
+#ifdef CONFIG_QOS_SCHED
+void sched_move_offline_task(struct task_struct *p);
+#endif
+
 #endif

@@ -886,4 +886,8 @@ static inline void put_cgroup_ns(struct cgroup_namespace *ns)
 		free_cgroup_ns(ns);
 }
 
+#ifdef CONFIG_QOS_SCHED
+void cgroup_move_task_to_root(struct task_struct *tsk);
+#endif
+
 #endif /* _LINUX_CGROUP_H */
