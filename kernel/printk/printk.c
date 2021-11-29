@@ -1747,9 +1747,6 @@ void zap_locks(void)
 	if (raw_spin_is_locked(&logbuf_lock)) {
 		debug_locks_off();
 		raw_spin_lock_init(&logbuf_lock);
-
-		console_suspended = 1;
-		sema_init(&console_sem, 1);
 	}
 
 	if (raw_spin_is_locked(&console_owner_lock)) {

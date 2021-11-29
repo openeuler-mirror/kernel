@@ -265,7 +265,32 @@ void panic(const char *fmt, ...)
 		crash_smp_send_stop();
 	}
 
+	/*
+	 * ZAP console related locks when nmi broadcast. If a crash is occurring,
+	 * make sure we can't deadlock. And make sure that we print immediately.
+	 *
+	 * A deadlock caused by logbuf_lock can be occured when panic:
+	 *	a) Panic CPU is running in non-NMI context;
+	 *	b) Panic CPU sends out shutdown IPI via NMI vector;
+	 *      c) One of the CPUs that we bring down via NMI vector holded logbuf_lock;
+	 *	d) Panic CPU try to hold logbuf_lock, then deadlock occurs.
+	 *
+	 * At present, only try to solve this problem for the ARCH with NMI,
+	 * by reinit lock, this situation is more complicated when NMI is not
+	 * used.
+	 * 1).	Non-stopped CPUs are in unknown state, most likely in a busy loop.
+	 *	Nobody knows whether printk() is repeatedly called in the loop.
+	 *	When it was called, re-initializing any lock would cause double
+	 *      unlock and deadlock.
+	 *
+	 * 2).	It would be possible to add some more hacks. One problem is that
+	 *	there are two groups of users. One prefer to risk a deadlock and
+	 *	have a chance to see the messages. Others prefer to always
+	 *      reach emergency_restart() and reboot the machine.
+	 */
+#ifdef CONFIG_X86
 	zap_locks();
+#endif
 
 	/*
 	 * Run any panic handlers, including those that might need to
