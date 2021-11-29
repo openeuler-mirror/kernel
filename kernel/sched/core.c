@@ -6445,8 +6445,7 @@ static void sched_change_group(struct task_struct *tsk, int type)
 	 * No need to re-setcheduler when a task is exiting or the task
 	 * is in an autogroup.
 	 */
-	if (!rt_task(tsk)
-	    && !(tsk->flags & PF_EXITING)
+	if (!(tsk->flags & PF_EXITING)
 	    && !task_group_is_autogroup(tg)) {
 		struct rq *rq = task_rq(tsk);
 		struct sched_attr attr = {
@@ -6455,12 +6454,9 @@ static void sched_change_group(struct task_struct *tsk, int type)
 
 		if (tg->qos_level == -1) {
 			attr.sched_policy = SCHED_IDLE;
-		} else {
-			attr.sched_policy = SCHED_NORMAL;
+			attr.sched_nice = PRIO_TO_NICE(tsk->static_prio);
+			__setscheduler(rq, tsk, &attr, 0);
 		}
-		attr.sched_nice = PRIO_TO_NICE(tsk->static_prio);
-
-		__setscheduler(rq, tsk, &attr, 0);
 	}
 #endif
 
@@ -6927,7 +6923,7 @@ static u64 cpu_rt_period_read_uint(struct cgroup_subsys_state *css,
 #ifdef CONFIG_QOS_SCHED
 static int tg_change_scheduler(struct task_group *tg, void *data)
 {
-	int pid, policy;
+	int policy;
 	struct css_task_iter it;
 	struct sched_param param;
 	struct task_struct *tsk;
@@ -6945,12 +6941,8 @@ static int tg_change_scheduler(struct task_group *tg, void *data)
 
 	param.sched_priority = 0;
 	css_task_iter_start(css, 0, &it);
-	while ((tsk = css_task_iter_next(&it))) {
-		pid = task_tgid_vnr(tsk);
-
-		if (pid > 0 && !rt_task(tsk))
-			sched_setscheduler(tsk, policy, &param);
-	}
+	while ((tsk = css_task_iter_next(&it)))
+		sched_setscheduler(tsk, policy, &param);
 	css_task_iter_end(&it);
 
 	return 0;
