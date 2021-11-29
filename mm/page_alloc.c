@@ -5981,6 +5981,16 @@ static void build_zonelists(pg_data_t *pgdat)
 
 	memset(node_order, 0, sizeof(node_order));
 	while ((node = find_next_best_node(local_node, &used_mask)) >= 0) {
+#ifdef CONFIG_COHERENT_DEVICE
+		/*
+		 * CDM node's own zones should not be part of any other
+		 * node's fallback zonelist but only it's own fallback
+		 * zonelist.
+		 */
+		if (is_cdm_node(node) && (pgdat->node_id != node))
+			continue;
+#endif
+
 		/*
 		 * We don't want to pressure a particular node.
 		 * So adding penalty to the first node in same
