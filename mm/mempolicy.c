@@ -1935,6 +1935,13 @@ static int policy_node(gfp_t gfp, struct mempolicy *policy, int nd)
 		WARN_ON_ONCE(policy->mode == MPOL_BIND && (gfp & __GFP_THISNODE));
 	}
 
+	if (policy->mode == MPOL_BIND) {
+		if (unlikely(!node_isset(nd, policy->v.nodes))) {
+			if (is_cdm_node(first_node(policy->v.nodes)))
+				nd = first_node(policy->v.nodes);
+		}
+	}
+
 	return nd;
 }
 
