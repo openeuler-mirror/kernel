@@ -1751,9 +1751,10 @@ void zap_locks(void)
 
 	if (raw_spin_is_locked(&console_owner_lock)) {
 		raw_spin_lock_init(&console_owner_lock);
-		console_owner = NULL;
-		console_waiter = false;
 	}
+
+	console_owner = NULL;
+	console_waiter = false;
 }
 
 /**
