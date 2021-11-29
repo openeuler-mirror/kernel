@@ -1742,6 +1742,7 @@ static DEFINE_RAW_SPINLOCK(console_owner_lock);
 static struct task_struct *console_owner;
 static bool console_waiter;
 
+#if defined(CONFIG_X86) || defined(CONFIG_ARM64_PSEUDO_NMI)
 void zap_locks(void)
 {
 	if (raw_spin_is_locked(&logbuf_lock)) {
@@ -1758,6 +1759,7 @@ void zap_locks(void)
 
 	sema_init(&console_sem, 1);
 }
+#endif
 
 /**
  * console_lock_spinning_enable - mark beginning of code where another

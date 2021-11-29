@@ -265,6 +265,7 @@ void panic(const char *fmt, ...)
 		crash_smp_send_stop();
 	}
 
+#if defined(CONFIG_X86) || defined(CONFIG_ARM64_PSEUDO_NMI)
 	/*
 	 * ZAP console related locks when nmi broadcast. If a crash is occurring,
 	 * make sure we can't deadlock. And make sure that we print immediately.
@@ -288,7 +289,6 @@ void panic(const char *fmt, ...)
 	 *	have a chance to see the messages. Others prefer to always
 	 *      reach emergency_restart() and reboot the machine.
 	 */
-#ifdef CONFIG_X86
 	zap_locks();
 #endif
 

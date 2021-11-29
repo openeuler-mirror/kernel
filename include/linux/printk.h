@@ -209,7 +209,11 @@ void show_regs_print_info(const char *log_lvl);
 extern asmlinkage void dump_stack(void) __cold;
 extern void printk_safe_flush(void);
 extern void printk_safe_flush_on_panic(void);
+#if defined(CONFIG_X86) || defined(CONFIG_ARM64_PSEUDO_NMI)
 extern void zap_locks(void);
+#else
+static inline void zap_locks(void) { }
+#endif
 #else
 static inline __printf(1, 0)
 int vprintk(const char *s, va_list args)
