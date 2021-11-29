@@ -6984,21 +6984,6 @@ static int unthrottle_qos_cfs_rqs(int cpu)
 
 	return res;
 }
-
-static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
-{
-	if (!cfs_bandwidth_used())
-		return false;
-
-	if (cfs_rq && cfs_rq->tg->qos_level < 0 &&
-	    !sched_idle_cpu(cpu_of(rq_of(cfs_rq))) &&
-	     cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running) {
-		throttle_qos_cfs_rq(cfs_rq);
-		return true;
-	}
-
-	return false;
-}
 #endif
 
 static struct task_struct *
@@ -7060,9 +7045,12 @@ again:
 		se = pick_next_entity(cfs_rq, curr);
 		cfs_rq = group_cfs_rq(se);
 #ifdef CONFIG_QOS_SCHED
-		if (check_qos_cfs_rq(cfs_rq)) {
+		if (unlikely(cfs_rq && cfs_rq->tg->qos_level < 0 &&
+			     !sched_idle_cpu(cpu_of(rq)) &&
+			     cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running)) {
+			throttle_qos_cfs_rq(cfs_rq);
 			cfs_rq = &rq->cfs;
-			BUG_ON(cfs_rq->nr_running == 0);
+			WARN_ON(cfs_rq->nr_running == 0);
 		}
 #endif
 	} while (cfs_rq);
