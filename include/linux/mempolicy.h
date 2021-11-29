@@ -181,6 +181,20 @@ extern int mpol_parse_str(char *str, struct mempolicy **mpol);
 
 extern void mpol_to_str(char *buffer, int maxlen, struct mempolicy *pol);
 
+#ifdef CONFIG_COHERENT_DEVICE
+static inline bool is_cdm_vma(struct vm_area_struct *vma)
+{
+	if (vma->vm_flags & VM_CDM)
+		return true;
+	return false;
+}
+#else
+static inline bool is_cdm_vma(struct vm_area_struct *vma)
+{
+	return false;
+}
+#endif
+
 /* Check if a vma is migratable */
 extern bool vma_migratable(struct vm_area_struct *vma);
 
