@@ -1,5 +1,9 @@
 #include <linux/mm.h>
 #include <linux/sysctl.h>
+#include <linux/freezer.h>
+#include <linux/kthread.h>
+#include <linux/module.h>
+#include <linux/err.h>
 
 int pagecache_reclaim_enable;
 int pagecache_limit_ratio;
@@ -7,6 +11,8 @@ int pagecache_reclaim_ratio;
 
 static unsigned long pagecache_limit_pages;
 static unsigned long node_pagecache_limit_pages[MAX_NUMNODES];
+static wait_queue_head_t *pagecache_limitd_wait_queue[MAX_NUMNODES];
+static struct task_struct *pagecache_limitd_tasks[MAX_NUMNODES];
 
 static unsigned long get_node_total_pages(int nid)
 {
@@ -49,3 +55,130 @@ int proc_page_cache_limit(struct ctl_table *table, int write,
 
 	return ret;
 }
+
+void kpagecache_limitd_stop(int nid)
+{
+	if (nid < 0 || nid >= MAX_NUMNODES)
+		return;
+
+	if (pagecache_limitd_tasks[nid]) {
+		kthread_stop(pagecache_limitd_tasks[nid]);
+		pagecache_limitd_tasks[nid] = NULL;
+	}
+
+	if (pagecache_limitd_wait_queue[nid]) {
+		kvfree(pagecache_limitd_wait_queue[nid]);
+		pagecache_limitd_wait_queue[nid] = NULL;
+	}
+}
+
+static void wakeup_kpagecache_limitd(int nid)
+{
+	if (!pagecache_limitd_wait_queue[nid])
+		return;
+
+	if (!waitqueue_active(pagecache_limitd_wait_queue[nid]))
+		return;
+
+	wake_up_interruptible(pagecache_limitd_wait_queue[nid]);
+}
+
+static bool pagecache_overlimit(void)
+{
+	unsigned long total_pagecache;
+
+	total_pagecache = global_node_page_state(NR_FILE_PAGES);
+	total_pagecache -= global_node_page_state(NR_SHMEM);
+
+	return total_pagecache > pagecache_limit_pages;
+}
+
+void wakeup_all_kpagecache_limitd(void)
+{
+	int nid;
+
+	if (!pagecache_reclaim_enable || !pagecache_overlimit())
+		return;
+
+	for_each_node_state(nid, N_MEMORY)
+		wakeup_kpagecache_limitd(nid);
+}
+
+static void shrink_page_cache(void)
+{
+	if (!pagecache_overlimit())
+		return;
+}
+
+static DECLARE_COMPLETION(setup_done);
+static int pagecache_limitd(void *arg)
+{
+	DEFINE_WAIT(wait);
+	int nid = *(int *)arg;
+
+	if (nid < 0 || nid >= MAX_NUMNODES)
+		nid = numa_node_id();
+
+	complete(&setup_done);
+	set_freezable();
+	for (;;) {
+		try_to_freeze();
+		shrink_page_cache();
+
+		prepare_to_wait(pagecache_limitd_wait_queue[nid], &wait,
+				TASK_INTERRUPTIBLE);
+		if (kthread_should_stop())
+			break;
+		schedule();
+		finish_wait(pagecache_limitd_wait_queue[nid], &wait);
+	}
+
+	finish_wait(pagecache_limitd_wait_queue[nid], &wait);
+
+	return 0;
+}
+
+int kpagecache_limitd_run(int nid)
+{
+	int ret = 0;
+	wait_queue_head_t *queue_head = NULL;
+
+	if (pagecache_limitd_tasks[nid] && pagecache_limitd_wait_queue[nid])
+		return 0;
+
+	queue_head = kvmalloc(sizeof(wait_queue_head_t), GFP_KERNEL);
+	if (!queue_head)
+		return -ENOMEM;
+
+	init_waitqueue_head(queue_head);
+	pagecache_limitd_wait_queue[nid] = queue_head;
+	pagecache_limitd_tasks[nid] = kthread_run(pagecache_limitd,
+			(void *)&nid, "kpagecache_limitd%d", nid);
+
+	if (IS_ERR(pagecache_limitd_tasks[nid])) {
+		BUG_ON(system_state < SYSTEM_RUNNING);
+		ret = PTR_ERR(pagecache_limitd_tasks[nid]);
+		pr_err("Failed to start pagecache_limitd on node %d\n", nid);
+		pagecache_limitd_tasks[nid] = NULL;
+		kvfree(queue_head);
+	} else
+		wait_for_completion(&setup_done);
+
+	return ret;
+}
+
+static int __init kpagecache_limitd_init(void)
+{
+	int nid;
+	int ret;
+
+	for_each_node_state(nid, N_MEMORY) {
+		ret = kpagecache_limitd_run(nid);
+		if (ret == -ENOMEM)
+			break;
+	}
+
+	return 0;
+}
+
+module_init(kpagecache_limitd_init);
