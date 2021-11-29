@@ -42,6 +42,7 @@
 #include <linux/psi.h>
 #include <linux/ramfs.h>
 #include <linux/page_idle.h>
+#include <linux/page_cache_limit.h>
 #include "internal.h"
 
 #define CREATE_TRACE_POINTS
@@ -923,6 +924,7 @@ int add_to_page_cache_lru(struct page *page, struct address_space *mapping,
 	void *shadow = NULL;
 	int ret;
 
+	wakeup_all_kpagecache_limitd();
 	__SetPageLocked(page);
 	ret = __add_to_page_cache_locked(page, mapping, offset,
 					 gfp_mask, &shadow);

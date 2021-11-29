@@ -19,9 +19,11 @@ unsigned long __shrink_node_page_cache(int nid, gfp_t mask,
 		unsigned long nr_to_reclaim, enum page_cache_reclaim_flag flag);
 void kpagecache_limitd_stop(int nid);
 int kpagecache_limitd_run(int nid);
+void wakeup_all_kpagecache_limitd(void);
 #else
 static inline void kpagecache_limitd_stop(int nid) {}
 static inline int kpagecache_limitd_run(int nid) { return 0; }
+static inline void wakeup_all_kpagecache_limitd(void) {}
 #endif
 
 #endif
