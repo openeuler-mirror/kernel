@@ -274,6 +274,9 @@ static int mpol_set_nodemask(struct mempolicy *pol,
 	nodes_and(nsc->mask1,
 		  cpuset_current_mems_allowed, node_states[N_MEMORY]);
 
+#ifdef CONFIG_COHERENT_DEVICE
+	nodes_or(nsc->mask1, cdmmask, nsc->mask1);
+#endif
 	VM_BUG_ON(!nodes);
 	if (pol->mode == MPOL_PREFERRED && nodes_empty(*nodes))
 		nodes = NULL;	/* explicit local allocation */
@@ -1915,7 +1918,8 @@ nodemask_t *policy_nodemask(gfp_t gfp, struct mempolicy *policy)
 	/* Lower zones don't get a nodemask applied for MPOL_BIND */
 	if (unlikely(policy->mode == MPOL_BIND) &&
 			apply_policy_zone(policy, gfp_zone(gfp)) &&
-			cpuset_nodemask_valid_mems_allowed(&policy->v.nodes))
+			(cpuset_nodemask_valid_mems_allowed(&policy->v.nodes) ||
+			nodemask_has_cdm(policy->v.nodes)))
 		return &policy->v.nodes;
 
 	return NULL;

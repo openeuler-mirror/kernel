@@ -283,10 +283,6 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_NORESERVE	0x00200000	/* should the VM suppress accounting */
 #define VM_HUGETLB	0x00400000	/* Huge TLB Page VM */
 
-#ifdef CONFIG_COHERENT_DEVICE
-#define VM_CDM		0x00800000	/* Contains coherent device memory */
-#endif
-
 #define VM_SYNC		0x00800000	/* Synchronous page faults */
 #define VM_ARCH_1	0x01000000	/* Architecture-specific flag */
 #define VM_WIPEONFORK	0x02000000	/* Wipe VMA contents in child. */
@@ -302,6 +298,10 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_HUGEPAGE	0x20000000	/* MADV_HUGEPAGE marked this vma */
 #define VM_NOHUGEPAGE	0x40000000	/* MADV_NOHUGEPAGE marked this vma */
 #define VM_MERGEABLE	0x80000000	/* KSM may merge identical pages */
+
+#ifdef CONFIG_COHERENT_DEVICE
+#define VM_CDM		0x100000000	/* Contains coherent device memory */
+#endif
 
 #ifdef CONFIG_USERSWAP
 /* bit[32:36] is the protection key of intel, so use a large value for VM_USWAP */

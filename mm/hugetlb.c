@@ -1091,13 +1091,20 @@ static struct page *dequeue_huge_page_node_exact(struct hstate *h, int nid)
 }
 
 static struct page *dequeue_huge_page_nodemask(struct hstate *h, gfp_t gfp_mask, int nid,
-		nodemask_t *nmask)
+		nodemask_t *nmask, struct mempolicy *mpol)
 {
 	unsigned int cpuset_mems_cookie;
 	struct zonelist *zonelist;
 	struct zone *zone;
 	struct zoneref *z;
 	int node = NUMA_NO_NODE;
+	bool mbind_cdmnode = false;
+
+#ifdef CONFIG_COHERENT_DEVICE
+	if (is_cdm_node(nid) && ((mpol != NULL && mpol->mode == MPOL_BIND) ||
+							(gfp_mask & __GFP_THISNODE)))
+		mbind_cdmnode = true;
+#endif
 
 	zonelist = node_zonelist(nid, gfp_mask);
 
@@ -1106,7 +1113,8 @@ retry_cpuset:
 	for_each_zone_zonelist_nodemask(zone, z, zonelist, gfp_zone(gfp_mask), nmask) {
 		struct page *page;
 
-		if (!cpuset_zone_allowed(zone, gfp_mask))
+		if (!cpuset_zone_allowed(zone, gfp_mask) &&
+		    mbind_cdmnode == false)
 			continue;
 		/*
 		 * no need to ask again on the same node. Pool is node rather than
@@ -1152,7 +1160,7 @@ static struct page *dequeue_huge_page_vma(struct hstate *h,
 
 	gfp_mask = htlb_alloc_mask(h);
 	nid = huge_node(vma, address, gfp_mask, &mpol, &nodemask);
-	page = dequeue_huge_page_nodemask(h, gfp_mask, nid, nodemask);
+	page = dequeue_huge_page_nodemask(h, gfp_mask, nid, nodemask, mpol);
 	if (page && !avoid_reserve && vma_has_reserves(vma, chg)) {
 		SetHPageRestoreReserve(page);
 		h->resv_huge_pages--;
@@ -2032,7 +2040,7 @@ struct page *alloc_huge_page_nodemask(struct hstate *h, int preferred_nid,
 	if (h->free_huge_pages - h->resv_huge_pages > 0) {
 		struct page *page;
 
-		page = dequeue_huge_page_nodemask(h, gfp_mask, preferred_nid, nmask);
+		page = dequeue_huge_page_nodemask(h, gfp_mask, preferred_nid, nmask, NULL);
 		if (page) {
 			spin_unlock_irq(&hugetlb_lock);
 			return page;

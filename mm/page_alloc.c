@@ -3829,7 +3829,11 @@ retry:
 
 		if (cpusets_enabled() &&
 			(alloc_flags & ALLOC_CPUSET) &&
-			!__cpuset_zone_allowed(zone, gfp_mask))
+			!__cpuset_zone_allowed(zone, gfp_mask)
+#ifdef CONFIG_COHERENT_DEVICE
+			&& !(alloc_flags & ALLOC_CDM)
+#endif
+		)
 				continue;
 		/*
 		 * When allocating a page cache page for writing, we
@@ -4908,8 +4912,12 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 		 */
 		if (!in_interrupt() && !ac->nodemask)
 			ac->nodemask = &cpuset_current_mems_allowed;
-		else
+		else {
 			*alloc_flags |= ALLOC_CPUSET;
+#ifdef CONFIG_COHERENT_DEVICE
+			*alloc_flags |= ALLOC_CDM;
+#endif
+		}
 	}
 
 	fs_reclaim_acquire(gfp_mask);
