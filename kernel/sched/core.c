@@ -6925,25 +6925,16 @@ static u64 cpu_rt_period_read_uint(struct cgroup_subsys_state *css,
 #endif /* CONFIG_RT_GROUP_SCHED */
 
 #ifdef CONFIG_QOS_SCHED
-static int cpu_qos_write(struct cgroup_subsys_state *css,
-			struct cftype *cftype, s64 qos_level)
+static int tg_change_scheduler(struct task_group *tg, void *data)
 {
-	struct css_task_iter it;
-	struct task_struct *tsk;
-	struct task_group *tg;
-	struct sched_param param;
 	int pid, policy;
-	tg = css_tg(css);
+	struct css_task_iter it;
+	struct sched_param param;
+	struct task_struct *tsk;
+	s64 qos_level = *(s64 *)data;
+	struct cgroup_subsys_state *css = &tg->css;
 
-	if (!tg->se[0])
-		return -EINVAL;
-
-	if (qos_level != -1 && qos_level != 0)
-		return -EINVAL;
-
-	if (tg->qos_level == qos_level)
-		goto done;
-
+	tg->qos_level = qos_level;
 	if (qos_level == -1) {
 		policy = SCHED_IDLE;
 		cfs_bandwidth_usage_inc();
@@ -6951,8 +6942,6 @@ static int cpu_qos_write(struct cgroup_subsys_state *css,
 		policy = SCHED_NORMAL;
 		cfs_bandwidth_usage_dec();
 	}
-
-	tg->qos_level = qos_level;
 
 	param.sched_priority = 0;
 	css_task_iter_start(css, 0, &it);
@@ -6964,6 +6953,29 @@ static int cpu_qos_write(struct cgroup_subsys_state *css,
 	}
 	css_task_iter_end(&it);
 
+	return 0;
+}
+
+static int cpu_qos_write(struct cgroup_subsys_state *css,
+			 struct cftype *cftype, s64 qos_level)
+{
+	struct task_group *tg = css_tg(css);
+
+	if (!tg->se[0])
+		return -EINVAL;
+
+	if (qos_level != -1 && qos_level != 0)
+		return -EINVAL;
+
+	if (tg->qos_level == qos_level)
+		goto done;
+
+	if (tg->qos_level == -1 && qos_level == 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	walk_tg_tree_from(tg, tg_change_scheduler, tg_nop, (void *)(&qos_level));
+	rcu_read_unlock();
 done:
 	return 0;
 }
