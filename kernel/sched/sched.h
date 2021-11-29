@@ -994,6 +994,9 @@ static inline int cpu_of(struct rq *rq)
 #endif
 }
 
+#ifdef CONFIG_QOS_SCHED
+void init_qos_hrtimer(int cpu);
+#endif
 
 #ifdef CONFIG_SCHED_SMT
 extern void __update_idle_core(struct rq *rq);

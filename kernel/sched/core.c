@@ -6115,6 +6115,9 @@ void __init sched_init(void)
 		 * directly in rq->cfs (i.e root_task_group->se[] = NULL).
 		 */
 		init_cfs_bandwidth(&root_task_group.cfs_bandwidth);
+#ifdef CONFIG_QOS_SCHED
+		init_qos_hrtimer(i);
+#endif
 		init_tg_cfs_entry(&root_task_group, &rq->cfs, NULL, i, NULL);
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 

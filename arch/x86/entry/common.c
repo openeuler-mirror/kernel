@@ -162,6 +162,10 @@ static void exit_to_usermode_loop(struct pt_regs *regs, u32 cached_flags)
 		if (cached_flags & _TIF_SIGPENDING)
 			do_signal(regs);
 
+#ifdef CONFIG_QOS_SCHED
+		sched_qos_offline_wait();
+#endif
+
 		if (cached_flags & _TIF_NOTIFY_RESUME) {
 			clear_thread_flag(TIF_NOTIFY_RESUME);
 			tracehook_notify_resume(regs);
@@ -194,7 +198,8 @@ __visible inline void prepare_exit_to_usermode(struct pt_regs *regs)
 
 	cached_flags = READ_ONCE(ti->flags);
 
-	if (unlikely(cached_flags & EXIT_TO_USERMODE_LOOP_FLAGS))
+	if (unlikely((cached_flags & EXIT_TO_USERMODE_LOOP_FLAGS) ||
+		     sched_qos_cpu_overload()))
 		exit_to_usermode_loop(regs, cached_flags);
 
 #ifdef CONFIG_COMPAT
