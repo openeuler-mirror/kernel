@@ -23,6 +23,9 @@ SYM_FUNC_START(__arch_clear_user)
 	mov	x2, x1			// save the size for fixup return
 	subs	x1, x1, #8
 	b.mi	2f
+#ifdef CONFIG_ARCH_HISI
+	.align 5
+#endif
 1:
 uao_user_alternative 9f, str, sttr, xzr, x0, 8
 	subs	x1, x1, #8
