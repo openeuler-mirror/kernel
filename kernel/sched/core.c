@@ -6946,8 +6946,10 @@ static int cpu_qos_write(struct cgroup_subsys_state *css,
 
 	if (qos_level == -1) {
 		policy = SCHED_IDLE;
+		cfs_bandwidth_usage_inc();
 	} else {
 		policy = SCHED_NORMAL;
+		cfs_bandwidth_usage_dec();
 	}
 
 	tg->qos_level = qos_level;
