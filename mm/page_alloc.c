@@ -3812,6 +3812,21 @@ retry:
 		struct page *page;
 		unsigned long mark;
 
+		/*
+		 * CDM nodes get skipped if the requested gfp flag
+		 * does not have __GFP_THISNODE set or the nodemask
+		 * does not have any CDM nodes in case the nodemask
+		 * is non NULL (explicit allocation requests from
+		 * kernel or user process MPOL_BIND policy which has
+		 * CDM nodes).
+		 */
+		if (is_cdm_node(zone->zone_pgdat->node_id)) {
+			if (!(gfp_mask & __GFP_THISNODE)) {
+				if (!ac->nodemask)
+					continue;
+			}
+		}
+
 		if (cpusets_enabled() &&
 			(alloc_flags & ALLOC_CPUSET) &&
 			!__cpuset_zone_allowed(zone, gfp_mask))
