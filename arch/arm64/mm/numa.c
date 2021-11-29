@@ -26,10 +26,30 @@ static u8 *numa_distance;
 bool numa_off;
 
 #ifdef CONFIG_COHERENT_DEVICE
+nodemask_t cdmmask;
+
 inline int arch_check_node_cdm(int nid)
 {
+	return node_isset(nid, cdmmask);
+}
+
+static int __init cdm_nodes_setup(char *s)
+{
+	int nid;
+	unsigned long tmpmask;
+	int err;
+
+	err = kstrtoul(s, 0, &tmpmask);
+	if (err)
+		return err;
+
+	for (nid = 0; nid < MAX_NUMNODES; nid++) {
+		if ((tmpmask >> nid) & 1)
+			node_set(nid, cdmmask);
+	}
 	return 0;
 }
+early_param("cdm-nodes", cdm_nodes_setup);
 #endif
 
 static __init int numa_parse_early_param(char *opt)

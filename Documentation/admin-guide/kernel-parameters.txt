@@ -493,6 +493,12 @@
 	ccw_timeout_log	[S390]
 			See Documentation/s390/common_io.rst for details.
 
+	cdm-nodes=      [KNL]
+			Format: hexadecimal expression
+			One bit express one node, if the node is HBM, set the
+			bit to 1. Then transform Binary to hexadecimal.
+			Example: node1, node2 is HBM, cdm-nodes=0x06.
+
 	cgroup_disable=	[KNL] Disable a particular controller
 			Format: {name of the controller(s) to disable}
 			The effects of cgroup_disable=foo are:
