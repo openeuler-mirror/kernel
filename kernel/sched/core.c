@@ -6338,6 +6338,15 @@ void ia64_set_curr_task(int cpu, struct task_struct *p)
 /* task_group_lock serializes the addition/removal of task groups */
 static DEFINE_SPINLOCK(task_group_lock);
 
+#ifdef CONFIG_QOS_SCHED
+static int alloc_qos_sched_group(struct task_group *tg, struct task_group *parent)
+{
+	tg->qos_level = parent->qos_level;
+
+	return 1;
+}
+#endif
+
 static void sched_free_group(struct task_group *tg)
 {
 	free_fair_sched_group(tg);
@@ -6357,6 +6366,11 @@ struct task_group *sched_create_group(struct task_group *parent)
 
 	if (!alloc_fair_sched_group(tg, parent))
 		goto err;
+
+#ifdef CONFIG_QOS_SCHED
+	if (!alloc_qos_sched_group(tg, parent))
+		goto err;
+#endif
 
 	if (!alloc_rt_sched_group(tg, parent))
 		goto err;
@@ -6425,6 +6439,30 @@ static void sched_change_group(struct task_struct *tsk, int type)
 			  struct task_group, css);
 	tg = autogroup_task_group(tsk, tg);
 	tsk->sched_task_group = tg;
+
+#ifdef CONFIG_QOS_SCHED
+	/*
+	 * No need to re-setcheduler when a task is exiting or the task
+	 * is in an autogroup.
+	 */
+	if (!rt_task(tsk)
+	    && !(tsk->flags & PF_EXITING)
+	    && !task_group_is_autogroup(tg)) {
+		struct rq *rq = task_rq(tsk);
+		struct sched_attr attr = {
+			.sched_priority = 0,
+		};
+
+		if (tg->qos_level == -1) {
+			attr.sched_policy = SCHED_IDLE;
+		} else {
+			attr.sched_policy = SCHED_NORMAL;
+		}
+		attr.sched_nice = PRIO_TO_NICE(tsk->static_prio);
+
+		__setscheduler(rq, tsk, &attr, 0);
+	}
+#endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	if (tsk->sched_class->task_change_group)
@@ -6886,6 +6924,54 @@ static u64 cpu_rt_period_read_uint(struct cgroup_subsys_state *css,
 }
 #endif /* CONFIG_RT_GROUP_SCHED */
 
+#ifdef CONFIG_QOS_SCHED
+static int cpu_qos_write(struct cgroup_subsys_state *css,
+			struct cftype *cftype, s64 qos_level)
+{
+	struct css_task_iter it;
+	struct task_struct *tsk;
+	struct task_group *tg;
+	struct sched_param param;
+	int pid, policy;
+	tg = css_tg(css);
+
+	if (!tg->se[0])
+		return -EINVAL;
+
+	if (qos_level != -1 && qos_level != 0)
+		return -EINVAL;
+
+	if (tg->qos_level == qos_level)
+		goto done;
+
+	if (qos_level == -1) {
+		policy = SCHED_IDLE;
+	} else {
+		policy = SCHED_NORMAL;
+	}
+
+	tg->qos_level = qos_level;
+
+	param.sched_priority = 0;
+	css_task_iter_start(css, 0, &it);
+	while ((tsk = css_task_iter_next(&it))) {
+		pid = task_tgid_vnr(tsk);
+
+		if (pid > 0 && !rt_task(tsk))
+			sched_setscheduler(tsk, policy, &param);
+	}
+	css_task_iter_end(&it);
+
+done:
+	return 0;
+}
+
+static s64 cpu_qos_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return css_tg(css)->qos_level;
+}
+#endif /* CONFIG_QOS_SCHED */
+
 static struct cftype cpu_legacy_files[] = {
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	{
@@ -6920,6 +7006,13 @@ static struct cftype cpu_legacy_files[] = {
 		.name = "rt_period_us",
 		.read_u64 = cpu_rt_period_read_uint,
 		.write_u64 = cpu_rt_period_write_uint,
+	},
+#endif
+#ifdef CONFIG_QOS_SCHED
+	{
+		.name = "qos_level",
+		.read_s64 = cpu_qos_read,
+		.write_s64 = cpu_qos_write,
 	},
 #endif
 	{ }	/* Terminate */
