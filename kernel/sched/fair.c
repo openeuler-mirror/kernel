@@ -7050,7 +7050,11 @@ again:
 			     cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running)) {
 			throttle_qos_cfs_rq(cfs_rq);
 			cfs_rq = &rq->cfs;
-			WARN_ON(cfs_rq->nr_running == 0);
+			WARN(cfs_rq->nr_running == 0,
+			     "rq->nr_running=%u, cfs_rq->idle_h_nr_running=%u\n",
+			     rq->nr_running, cfs_rq->idle_h_nr_running);
+			if (unlikely(!cfs_rq->nr_running))
+				return NULL;
 		}
 #endif
 	} while (cfs_rq);
