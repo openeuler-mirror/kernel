@@ -25,6 +25,13 @@ static int numa_distance_cnt;
 static u8 *numa_distance;
 bool numa_off;
 
+#ifdef CONFIG_COHERENT_DEVICE
+inline int arch_check_node_cdm(int nid)
+{
+	return 0;
+}
+#endif
+
 static __init int numa_parse_early_param(char *opt)
 {
 	if (!opt)

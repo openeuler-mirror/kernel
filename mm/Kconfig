@@ -145,6 +145,13 @@ config NUMA_KEEP_MEMINFO
 config MEMORY_ISOLATION
 	bool
 
+config COHERENT_DEVICE
+	bool "coherent device memory"
+	def_bool n
+	depends on CPUSETS && ARM64 && NUMA
+	help
+	  Enable coherent device memory (CDM) support.
+
 #
 # Only be set on architectures that have completely implemented memory hotplug
 # feature. If you are not sure, don't touch it.
