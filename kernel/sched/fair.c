@@ -6991,7 +6991,8 @@ static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
 		return false;
 
 	if (cfs_rq && cfs_rq->tg->qos_level < 0 &&
-	    !sched_idle_cpu(cpu_of(rq_of(cfs_rq)))) {
+	    !sched_idle_cpu(cpu_of(rq_of(cfs_rq))) &&
+	     cfs_rq->h_nr_running == cfs_rq->idle_h_nr_running) {
 		throttle_qos_cfs_rq(cfs_rq);
 		return true;
 	}

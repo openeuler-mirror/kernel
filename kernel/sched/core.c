@@ -4333,6 +4333,18 @@ recheck:
 	}
 change:
 
+#ifdef CONFIG_QOS_SCHED
+	/*
+	 * If the scheduling policy of an offline task is set to a policy
+	 * other than SCHED_IDLE, the online task preemption will be invalid,
+	 * so return -EINVAL in this case.
+	 */
+	if (unlikely(task_group(p)->qos_level == -1 && !idle_policy(policy))) {
+		task_rq_unlock(rq, p, &rf);
+		return -EINVAL;
+	}
+#endif
+
 	if (user) {
 #ifdef CONFIG_RT_GROUP_SCHED
 		/*
