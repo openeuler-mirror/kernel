@@ -7144,6 +7144,7 @@ idle:
 
 #ifdef CONFIG_QOS_SCHED
 	if (unthrottle_qos_cfs_rqs(cpu_of(rq))) {
+		rq->idle_stamp = 0;
 		goto again;
 	}
 #endif
