@@ -4896,7 +4896,11 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 	ac->nodemask = nodemask;
 	ac->migratetype = gfp_migratetype(gfp_mask);
 
+#ifdef CONFIG_COHERENT_DEVICE
+	if (cpusets_enabled() && !(*alloc_gfp & __GFP_THISNODE)) {
+#else
 	if (cpusets_enabled()) {
+#endif
 		*alloc_gfp |= __GFP_HARDWALL;
 		/*
 		 * When we are in the interrupt context, it is irrelevant
