@@ -1755,6 +1755,8 @@ void zap_locks(void)
 
 	console_owner = NULL;
 	console_waiter = false;
+
+	sema_init(&console_sem, 1);
 }
 
 /**
