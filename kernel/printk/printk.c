@@ -1742,6 +1742,23 @@ static DEFINE_RAW_SPINLOCK(console_owner_lock);
 static struct task_struct *console_owner;
 static bool console_waiter;
 
+void zap_locks(void)
+{
+	if (raw_spin_is_locked(&logbuf_lock)) {
+		debug_locks_off();
+		raw_spin_lock_init(&logbuf_lock);
+
+		console_suspended = 1;
+		sema_init(&console_sem, 1);
+	}
+
+	if (raw_spin_is_locked(&console_owner_lock)) {
+		raw_spin_lock_init(&console_owner_lock);
+		console_owner = NULL;
+		console_waiter = false;
+	}
+}
+
 /**
  * console_lock_spinning_enable - mark beginning of code where another
  *	thread might safely busy wait
