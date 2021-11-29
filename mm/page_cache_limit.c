@@ -5,11 +5,13 @@
 #include <linux/module.h>
 #include <linux/err.h>
 #include <linux/swap.h>
+#include <linux/fs.h>
 #include <linux/page_cache_limit.h>
 
 int pagecache_reclaim_enable;
 int pagecache_limit_ratio;
 int pagecache_reclaim_ratio;
+int node_to_shrink;
 
 static unsigned long pagecache_limit_pages;
 static unsigned long node_pagecache_limit_pages[MAX_NUMNODES];

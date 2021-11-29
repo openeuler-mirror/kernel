@@ -12,6 +12,7 @@ enum page_cache_reclaim_flag {
 extern int pagecache_reclaim_enable;
 extern int pagecache_limit_ratio;
 extern int pagecache_reclaim_ratio;
+extern int node_to_shrink;
 
 int proc_page_cache_limit(struct ctl_table *table, int write,
 		void __user *buffer, size_t *lenp, loff_t *ppos);
@@ -20,6 +21,8 @@ unsigned long __shrink_node_page_cache(int nid, gfp_t mask,
 void kpagecache_limitd_stop(int nid);
 int kpagecache_limitd_run(int nid);
 void wakeup_all_kpagecache_limitd(void);
+int proc_shrink_node_caches(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
 #else
 static inline void kpagecache_limitd_stop(int nid) {}
 static inline int kpagecache_limitd_run(int nid) { return 0; }

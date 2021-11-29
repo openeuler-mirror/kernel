@@ -465,7 +465,7 @@ void truncate_inode_pages_final(struct address_space *mapping)
 EXPORT_SYMBOL(truncate_inode_pages_final);
 
 static unsigned long __invalidate_mapping_pages(struct address_space *mapping,
-		pgoff_t start, pgoff_t end, unsigned long *nr_pagevec)
+		pgoff_t start, pgoff_t end, unsigned long *nr_pagevec, int nid)
 {
 	pgoff_t indices[PAGEVEC_SIZE];
 	struct pagevec pvec;
@@ -487,6 +487,10 @@ static unsigned long __invalidate_mapping_pages(struct address_space *mapping,
 							     page);
 				continue;
 			}
+
+			if (nid != NUMA_NO_NODE && page_to_nid(page) != nid)
+				continue;
+
 			index += thp_nr_pages(page) - 1;
 
 			ret = invalidate_inode_page(page);
@@ -529,10 +533,34 @@ static unsigned long __invalidate_mapping_pages(struct address_space *mapping,
 unsigned long invalidate_mapping_pages(struct address_space *mapping,
 		pgoff_t start, pgoff_t end)
 {
-	return __invalidate_mapping_pages(mapping, start, end, NULL);
+	return __invalidate_mapping_pages(mapping, start, end, NULL, NUMA_NO_NODE);
 }
 EXPORT_SYMBOL(invalidate_mapping_pages);
 
+
+/**
+ * node_invalidate_mapping_pages - Invalidate all the unlocked pages in @nid of one inode
+ * @mapping: the address_space which holds the pages to invalidate
+ * @nid: pages belong to this node will be invalidate
+ * @start: the offset 'from' which to invalidate
+ * @end: the offset 'to' which to invalidate (inclusive)
+ *
+ * This function only removes the unlocked pages, if you want to
+ * remove all the pages of one inode, you must call truncate_inode_pages.
+ *
+ * node_invalidate_mapping_pages() will not block on IO activity. It will not
+ * invalidate pages which are dirty, locked, under writeback or mapped into
+ * pagetables.
+ *
+ * Return: the number of the pages that were invalidated
+ */
+#ifdef CONFIG_SHRINK_PAGECACHE
+unsigned long node_invalidate_mapping_pages(struct address_space *mapping,
+		int nid, pgoff_t start, pgoff_t end)
+{
+	return __invalidate_mapping_pages(mapping, start, end, NULL, nid);
+}
+#endif
 /**
  * This helper is similar with the above one, except that it accounts for pages
  * that are likely on a pagevec and count them in @nr_pagevec, which will used by
@@ -541,7 +569,7 @@ EXPORT_SYMBOL(invalidate_mapping_pages);
 void invalidate_mapping_pagevec(struct address_space *mapping,
 		pgoff_t start, pgoff_t end, unsigned long *nr_pagevec)
 {
-	__invalidate_mapping_pages(mapping, start, end, nr_pagevec);
+	__invalidate_mapping_pages(mapping, start, end, nr_pagevec, NUMA_NO_NODE);
 }
 
 /*

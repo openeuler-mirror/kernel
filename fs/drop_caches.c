@@ -9,12 +9,17 @@
 #include <linux/writeback.h>
 #include <linux/sysctl.h>
 #include <linux/gfp.h>
+
+#ifdef CONFIG_SHRINK_PAGECACHE
+#include <linux/page_cache_limit.h>
+#endif
+
 #include "internal.h"
 
 /* A global variable is a bit ugly, but it keeps the code simple */
 int sysctl_drop_caches;
 
-static void drop_pagecache_sb(struct super_block *sb, void *unused)
+static void drop_pagecache_sb(struct super_block *sb, void *nid)
 {
 	struct inode *inode, *toput_inode = NULL;
 
@@ -35,7 +40,12 @@ static void drop_pagecache_sb(struct super_block *sb, void *unused)
 		spin_unlock(&inode->i_lock);
 		spin_unlock(&sb->s_inode_list_lock);
 
-		invalidate_mapping_pages(inode->i_mapping, 0, -1);
+		if (!nid)
+			invalidate_mapping_pages(inode->i_mapping, 0, -1);
+		else
+			node_invalidate_mapping_pages(inode->i_mapping,
+						      *(int *)nid, 0, -1);
+
 		iput(toput_inode);
 		toput_inode = inode;
 
@@ -74,3 +84,25 @@ int drop_caches_sysctl_handler(struct ctl_table *table, int write,
 	}
 	return 0;
 }
+
+#ifdef CONFIG_SHRINK_PAGECACHE
+int proc_shrink_node_caches(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret || !write)
+		return ret;
+
+	if (node_to_shrink >= MAX_NUMNODES)
+		return -EINVAL;
+
+	if (!node_isset(node_to_shrink, node_states[N_MEMORY]))
+		return 0;
+
+	iterate_supers(drop_pagecache_sb, &node_to_shrink);
+
+	return 0;
+}
+#endif

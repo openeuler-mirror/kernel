@@ -2613,6 +2613,15 @@ extern bool is_bad_inode(struct inode *);
 unsigned long invalidate_mapping_pages(struct address_space *mapping,
 					pgoff_t start, pgoff_t end);
 
+#ifdef CONFIG_SHRINK_PAGECACHE
+unsigned long node_invalidate_mapping_pages(struct address_space *mapping,
+					int nid, pgoff_t start, pgoff_t end);
+#else
+static inline unsigned long
+node_invalidate_mapping_pages(struct address_space *mapping, int nid,
+		pgoff_t start, pgoff_t end) { return 0; }
+#endif
+
 void invalidate_mapping_pagevec(struct address_space *mapping,
 				pgoff_t start, pgoff_t end,
 				unsigned long *nr_pagevec);
