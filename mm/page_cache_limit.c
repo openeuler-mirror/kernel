@@ -4,6 +4,8 @@
 #include <linux/kthread.h>
 #include <linux/module.h>
 #include <linux/err.h>
+#include <linux/swap.h>
+#include <linux/page_cache_limit.h>
 
 int pagecache_reclaim_enable;
 int pagecache_limit_ratio;
@@ -142,14 +144,31 @@ static unsigned long node_nr_page_reclaim(int nid)
 	return nr_to_reclaim;
 }
 
-static void shrink_node_page_cache(int nid)
+static void shrink_node_page_cache(int nid, gfp_t mask)
 {
+	int i;
 	unsigned long nr_to_reclaim;
+	unsigned long nr_reclaimed;
+	enum page_cache_reclaim_flag flag;
 
 	nr_to_reclaim = node_nr_page_reclaim(nid);
+	if (nr_to_reclaim <= 0)
+		return;
+
+	flag = 0;
+	for (i = PAGE_CACHE_RECLAIM_NO_UNMAP;
+			i < PAGE_CACHE_RECLAIM_NR_FLAGS; i++) {
+		nr_reclaimed = __shrink_node_page_cache(nid, mask, nr_to_reclaim, flag);
+		nr_to_reclaim -= nr_reclaimed;
+
+		if (nr_to_reclaim <= 0)
+			break;
+
+		flag |= i;
+	}
 }
 
-static void shrink_page_cache(void)
+static void shrink_page_cache(gfp_t mask)
 {
 	int nid;
 
@@ -157,7 +176,7 @@ static void shrink_page_cache(void)
 		return;
 
 	for_each_node_state(nid, N_MEMORY)
-		shrink_node_page_cache(nid);
+		shrink_node_page_cache(nid, mask);
 }
 
 static DECLARE_COMPLETION(setup_done);
@@ -173,7 +192,7 @@ static int pagecache_limitd(void *arg)
 	set_freezable();
 	for (;;) {
 		try_to_freeze();
-		shrink_page_cache();
+		shrink_page_cache(GFP_KERNEL | __GFP_HIGHMEM);
 
 		prepare_to_wait(pagecache_limitd_wait_queue[nid], &wait,
 				TASK_INTERRUPTIBLE);
