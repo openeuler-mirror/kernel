@@ -413,9 +413,11 @@ static void guarantee_online_cpus(struct cpuset *cs, struct cpumask *pmask)
  */
 static void guarantee_online_mems(struct cpuset *cs, nodemask_t *pmask)
 {
-	while (!nodes_intersects(cs->effective_mems, node_states[N_MEMORY]))
+	nodemask_t ram_nodes = system_mem_nodemask();
+
+	while (!nodes_intersects(cs->effective_mems, ram_nodes))
 		cs = parent_cs(cs);
-	nodes_and(*pmask, cs->effective_mems, node_states[N_MEMORY]);
+	nodes_and(*pmask, cs->effective_mems, ram_nodes);
 }
 
 /*
@@ -3168,7 +3170,7 @@ static void cpuset_hotplug_workfn(struct work_struct *work)
 
 	/* fetch the available cpus/mems and find out which changed how */
 	cpumask_copy(&new_cpus, cpu_active_mask);
-	new_mems = node_states[N_MEMORY];
+	new_mems = system_mem_nodemask();
 
 	/*
 	 * If subparts_cpus is populated, it is likely that the check below
@@ -3291,11 +3293,11 @@ static struct notifier_block cpuset_track_online_nodes_nb = {
 void __init cpuset_init_smp(void)
 {
 	cpumask_copy(top_cpuset.cpus_allowed, cpu_active_mask);
-	top_cpuset.mems_allowed = node_states[N_MEMORY];
+	top_cpuset.mems_allowed = system_mem_nodemask();
 	top_cpuset.old_mems_allowed = top_cpuset.mems_allowed;
 
 	cpumask_copy(top_cpuset.effective_cpus, cpu_active_mask);
-	top_cpuset.effective_mems = node_states[N_MEMORY];
+	top_cpuset.effective_mems = system_mem_nodemask();
 
 	register_hotmemory_notifier(&cpuset_track_online_nodes_nb);
 
