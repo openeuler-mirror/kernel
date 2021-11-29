@@ -190,6 +190,42 @@ static void mpol_relative_nodemask(nodemask_t *ret, const nodemask_t *orig,
 	nodes_onto(*ret, tmp, *rel);
 }
 
+#ifdef CONFIG_COHERENT_DEVICE
+static inline void set_vm_cdm(struct vm_area_struct *vma)
+{
+	vma->vm_flags |= VM_CDM;
+}
+
+static inline void clr_vm_cdm(struct vm_area_struct *vma)
+{
+	vma->vm_flags &= ~VM_CDM;
+}
+
+static void mark_vma_cdm(nodemask_t *nmask,
+		struct page *page, struct vm_area_struct *vma)
+{
+	if (!page || !vma)
+		return;
+
+	if (vma->vm_flags & VM_CDM)
+		return;
+
+	if (nmask && !nodemask_has_cdm(*nmask))
+		return;
+
+	if (is_cdm_node(page_to_nid(page)))
+		vma->vm_flags |= VM_CDM;
+}
+#else
+static inline void set_vm_cdm(struct vm_area_struct *vma) { }
+static inline void clr_vm_cdm(struct vm_area_struct *vma) { }
+
+static void mark_vma_cdm(nodemask_t *nmask,
+		struct page *page, struct vm_area_struct *vma)
+{
+}
+#endif
+
 static int mpol_new_interleave(struct mempolicy *pol, const nodemask_t *nodes)
 {
 	if (nodes_empty(*nodes))
@@ -821,6 +857,10 @@ static int mbind_range(struct mm_struct *mm, unsigned long start,
 		next = vma->vm_next;
 		vmstart = max(start, vma->vm_start);
 		vmend   = min(end, vma->vm_end);
+
+		if (new_pol && (new_pol->mode == MPOL_BIND) &&
+				nodemask_has_cdm(new_pol->v.nodes))
+			set_vm_cdm(vma);
 
 		if (mpol_equal(vma_policy(vma), new_pol))
 			continue;
@@ -2224,6 +2264,7 @@ struct page *alloc_pages_vma(gfp_t gfp, int order, struct vm_area_struct *vma,
 	nmask = policy_nodemask(gfp, pol);
 	preferred_nid = policy_node(gfp, pol, node);
 	page = __alloc_pages(gfp, order, preferred_nid, nmask);
+	mark_vma_cdm(nmask, page, vma);
 	mpol_cond_put(pol);
 out:
 	return page;
