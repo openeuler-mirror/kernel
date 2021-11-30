@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       21
+%global devel_release       22
 %global maintenance_release .0.0
-%global pkg_release         .12
+%global pkg_release         .13
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,39 @@ fi
 %endif
 
 %changelog
+* Tue Nov 30 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-22.0.0.13
+- printk: enable zap_locks on X86 and ARM64
+- printk: fix potential deadlock in printk()
+- printk/panic: prevent spin waiting in printk()
+- panic/printk: fix zap_lock
+- printk/panic: Avoid deadlock in printk()
+- lib/clear_user: ensure loop in __arch_clear_user cache-aligned v2
+- mm/cdm: enable CONFIG_COHERENT_DEVICE in openeuler_defconfig
+- mm: Be allowed to alloc CDM node memory for MPOL_BIND
+- mm: Add DDR and HBM to nodes by cmdline
+- mm: Change mbind(MPOL_BIND) implementation for CDM nodes
+- mm: Ignore cpuset enforcement when allocation flag has __GFP_THISNODE
+- mm: Ignore madvise(MADV_MERGEABLE) request for VM_CDM marked VMAs
+- mm: Exclude CDM marked VMAs from auto NUMA
+- mm: Exclude CDM nodes from task->mems_allowed and root cpuset
+- mm: Tag VMA with VM_CDM flag explicitly during mbind(MPOL_BIND) and page fault
+- mm: Enable Buddy allocation isolation for CDM nodes
+- mm: Change generic FALLBACK zonelist creation process
+- mm: Define coherent device memory (CDM) node
+- fs/dcache.c: avoid softlock since too many negative dentry
+- fs/dcache.c: avoid panic while lockref of dentry overflow
+- ACPI/MPAM: Use acpi_map_pxm_to_node() to get node id for memory node
+- arm64/mpam: Fix use-after-free in mkdir_resctrl_prepare()
+- mm/page_cache_limit: add support for droping caches for target node
+- mm/page_cache_limit: do shrink_page_cache when adding page to page cache
+- mm/page_cache_limit: reconfiguration about page cache limit when memory plug/unplug
+- mm/page_cache_limit: shrink page cache
+- mm/page_cache_limit: calculate reclaim pages for each node
+- mm/page_cache_limit: create kernel thread for page cache limit
+- mm/page_cache_limit: add pagecache limit proc interface
+- openeuler_defconfig: Enable some Icelake support configs
+- timer_list: avoid other cpu soft lockup when printing timer list
+
 * Fri Nov 26 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-21.0.0.12
 - gpio: gpio-hisi: Add HiSilicon GPIO support
 - hugetlbfs: avoid overflow in hugetlbfs_fallocate
