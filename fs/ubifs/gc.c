@@ -756,8 +756,14 @@ int ubifs_garbage_collect(struct ubifs_info *c, int anyway)
 				 * caller instead of the original '-EAGAIN'.
 				 */
 				err = ubifs_return_leb(c, lp.lnum);
-				if (err)
+				if (err) {
 					ret = err;
+					/* LEB may always be "taken". So set
+					 * the ubifs to read-only. Sync wbuf
+					 * will return -EROFS, then go "out".
+					 */
+					ubifs_ro_mode(c, ret);
+				}
 				/*  Maybe double return if go out */
 				lp.lnum = -1;
 				break;
