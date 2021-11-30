@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2111.6.0
+%global hulkrelease 2111.7.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0123
+Release: %{hulkrelease}.0124
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,26 @@ fi
 %endif
 
 %changelog
+
+* Tue Nov 30 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2111.7.0.0124
+- defconfig: update the defconfigs to support 9P
+- sched: Introduce handle priority reversion mechanism
+- sched: unthrottle qos cfs rq when free a task group
+- sched: Avoid sched entity null pointer panic
+- sched: Clear idle_stamp when unthrottle offline tasks
+- sched: Fix offline task can't be killed in a timely
+- sched: Optimizing qos scheduler performance
+- sched: Fix throttle offline task trigger panic
+- sched: Remove residual checkings for qos scheduler
+- sched: Change cgroup task scheduler policy
+- sched: Unthrottle the throttled cfs rq when offline rq
+- sched: Enable qos scheduler config
+- sched: Throttle qos cfs_rq when current cpu is running online task
+- sched: Introduce qos scheduler for co-location
+- io_uring: return back safer resurrect
+- cpufreq: Fix get_cpu_device() failed in add_cpu_dev_symlink()
+- ACPI: CPPC: Fix cppc_cpufreq_init failed in CPU Hotplug situation
+- lib/clear_user: ensure loop in __arch_clear_user cache-aligned v2
 
 * Wed Nov 24 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2111.6.0.0123
 - drm/ioctl: Ditch DRM_UNLOCKED except for the legacy vblank ioctl
