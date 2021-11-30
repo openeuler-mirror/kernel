@@ -278,11 +278,11 @@ static bool check_func_list(struct klp_func_list *funcs, int *ret, unsigned long
 		*ret = klp_compare_address(pc, funcs->func_addr, funcs->func_name,
 				klp_size_to_check(funcs->func_size, funcs->force));
 		if (*ret) {
-			return false;
+			return true;
 		}
 		funcs = funcs->next;
 	}
-	return true;
+	return false;
 }
 
 static int klp_check_jump_func(struct stackframe *frame, void *data)
