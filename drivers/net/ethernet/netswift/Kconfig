@@ -17,4 +17,70 @@ if NET_VENDOR_NETSWIFT
 
 source "drivers/net/ethernet/netswift/txgbe/Kconfig"
 
+config NGBE
+	tristate "Netswift PCI-Express Gigabit Ethernet support"
+	depends on PCI
+	imply PTP_1588_CLOCK
+	---help---
+	  This driver supports Netswift gigabit ethernet adapters.
+	  For more information on how to identify your adapter, go
+	  to <http://www.net-swift.com>
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called ngbe.
+
+config NGBE_HWMON
+	bool "Netswift PCI-Express Gigabit adapters HWMON support"
+	default n
+	depends on NGBE && HWMON && !(NGBE=y && HWMON=m)
+	---help---
+	  Say Y if you want to expose thermal sensor data on these devices.
+
+	  If unsure, say N.
+
+config NGBE_PROCFS
+	bool "Netswift PCI-Express Gigabit adapters procfs support"
+	default n
+	depends on NGBE && !NGBE_SYSFS
+	---help---
+	  Say Y if you want to setup procfs for these devices.
+
+	  If unsure, say N.
+
+config NGBE_NO_LLI
+	bool "Netswift PCI-Express Gigabit adapters NO Low Latency Interrupt support"
+	default n
+	depends on NGBE
+	---help---
+	  Say N if you want to enable LLI for these devices.
+
+	  If unsure, say Y.
+
+config NGBE_DEBUG_FS
+	bool "Netswift PCI-Express Gigabit adapters debugfs support"
+	default n
+	depends on NGBE
+	---help---
+	  Say Y if you want to setup debugfs for these devices.
+
+	  If unsure, say N.
+
+config NGBE_POLL_LINK_STATUS
+	bool "Netswift PCI-Express Gigabit adapters poll mode support"
+	default n
+	depends on NGBE
+	---help---
+	  Say Y if you want to turn these devices to poll mode instead of interrupt-trigged TX/RX.
+
+	  If unsure, say N.
+
+config NGBE_SYSFS
+	bool "Netswift PCI-Express Gigabit adapters sysfs support"
+	default n
+	depends on NGBE
+	---help---
+	  Say Y if you want to setup sysfs for these devices.
+
+	  If unsure, say N.
+
 endif # NET_VENDOR_NETSWIFT
