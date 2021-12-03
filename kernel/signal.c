@@ -56,6 +56,8 @@
 #include <asm/siginfo.h>
 #include <asm/cacheflush.h>
 
+EXPORT_TRACEPOINT_SYMBOL(signal_generate);
+
 /*
  * SLAB caches for signal bits.
  */
