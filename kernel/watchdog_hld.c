@@ -504,14 +504,17 @@ void __init hardlockup_detector_perf_restart(void)
  */
 int __init hardlockup_detector_perf_init(void)
 {
-	int ret = hardlockup_detector_event_create();
+	int ret;
 
+	preempt_disable();
+	ret = hardlockup_detector_event_create();
 	if (ret) {
 		pr_info("Perf NMI watchdog permanently disabled\n");
 	} else {
 		perf_event_release_kernel(this_cpu_read(watchdog_ev));
 		this_cpu_write(watchdog_ev, NULL);
 	}
+	preempt_enable();
 	return ret;
 }
 #endif /* CONFIG_HARDLOCKUP_DETECTOR_PERF */
