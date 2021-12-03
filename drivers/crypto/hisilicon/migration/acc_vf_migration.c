@@ -657,19 +657,17 @@ static int pf_qm_state_pre_save(struct hisi_qm *qm,
 	int vf_id = acc_vf_dev->vf_id;
 	int ret;
 
-	/* vf acc type save */
+	/* Vf acc type save */
 	vf_data->acc_type = acc_vf_dev->acc_type;
 
-	/* vf qp num save from PF */
-	ret = pf_qm_get_qp_num(qm, vf_id, &qm->qp_base, &qm->qp_num);
-	if (ret || qm->qp_num <= 1) {
+	/* Vf qp num save from PF */
+	ret = pf_qm_get_qp_num(qm, vf_id, &vf_data->qp_base, &vf_data->qp_num);
+	if (ret) {
 		dev_err(dev, "failed to get vft qp nums!\n");
 		return -EINVAL;
 	}
-	vf_data->qp_base = qm->qp_base;
-	vf_data->qp_num = qm->qp_num;
 
-	/* vf isolation state save from PF */
+	/* Vf isolation state save from PF */
 	ret = qm_read_reg(qm, QM_QUE_ISO_CFG_V, &vf_data->que_iso_cfg, 1);
 	if (ret) {
 		dev_err(dev, "failed to read QM_QUE_ISO_CFG_V!\n");
