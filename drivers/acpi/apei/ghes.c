@@ -665,11 +665,13 @@ static bool ghes_do_proc(struct ghes *ghes,
 		} else {
 			void *err = acpi_hest_get_payload(gdata);
 
-			ghes_defer_non_standard_event(gdata, sev);
 			log_non_standard_event(sec_type, fru_id, fru_text,
 					       sec_sev, err,
 					       gdata->error_data_length);
 		}
+
+		/* Customization deliver all types error to driver. */
+		ghes_defer_non_standard_event(gdata, sev);
 	}
 
 	return queued;
