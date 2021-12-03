@@ -35,6 +35,7 @@
 
 #define SVM_DEVICE_NAME "svm"
 
+#define CORE_SID		0
 static int probe_index;
 static LIST_HEAD(child_list);
 static DECLARE_RWSEM(svm_sem);
@@ -86,6 +87,10 @@ struct svm_process {
 	struct iommu_sva	*sva;
 };
 
+static struct bus_type svm_bus_type = {
+	.name		= "svm_bus",
+};
+
 static int svm_open(struct inode *inode, struct file *file)
 {
 	return 0;
@@ -103,22 +108,292 @@ static const struct file_operations svm_fops = {
 	.unlocked_ioctl		= svm_ioctl,
 };
 
+static inline struct core_device *to_core_device(struct device *d)
+{
+	return container_of(d, struct core_device, dev);
+}
+
+static void cdev_device_release(struct device *dev)
+{
+	struct core_device *cdev = to_core_device(dev);
+
+	if (!acpi_disabled)
+		list_del(&cdev->entry);
+
+	kfree(cdev);
+}
+
 static int svm_remove_core(struct device *dev, void *data)
 {
-	/* TODO remove core */
+	struct core_device *cdev = to_core_device(dev);
+
+	if (!cdev->smmu_bypass) {
+		iommu_dev_disable_feature(dev, IOMMU_DEV_FEAT_SVA);
+		iommu_detach_group(cdev->domain, cdev->group);
+		iommu_group_put(cdev->group);
+		iommu_domain_free(cdev->domain);
+	}
+
+	device_unregister(&cdev->dev);
+
+	return 0;
+}
+
+#ifdef CONFIG_ACPI
+static int svm_acpi_add_core(struct svm_device *sdev,
+		struct acpi_device *children, int id)
+{
+	int err;
+	struct core_device *cdev = NULL;
+	char *name = NULL;
+	enum dev_dma_attr attr;
+
+	name = devm_kasprintf(sdev->dev, GFP_KERNEL, "svm_child_dev%d", id);
+	if (name == NULL)
+		return -ENOMEM;
+
+	cdev = kzalloc(sizeof(*cdev), GFP_KERNEL);
+	if (cdev == NULL)
+		return -ENOMEM;
+	cdev->dev.fwnode = &children->fwnode;
+	cdev->dev.parent = sdev->dev;
+	cdev->dev.bus = &svm_bus_type;
+	cdev->dev.release = cdev_device_release;
+	cdev->smmu_bypass = 0;
+	list_add(&cdev->entry, &child_list);
+	dev_set_name(&cdev->dev, "%s", name);
+
+	err = device_register(&cdev->dev);
+	if (err) {
+		dev_info(&cdev->dev, "core_device register failed\n");
+		list_del(&cdev->entry);
+		kfree(cdev);
+		return err;
+	}
+
+	attr = acpi_get_dma_attr(children);
+	if (attr != DEV_DMA_NOT_SUPPORTED) {
+		err = acpi_dma_configure(&cdev->dev, attr);
+		if (err) {
+			dev_dbg(&cdev->dev, "acpi_dma_configure failed\n");
+			return err;
+		}
+	}
+
+	err = acpi_dev_prop_read_single(children, "hisi,smmu-bypass",
+			DEV_PROP_U8, &cdev->smmu_bypass);
+	if (err)
+		dev_info(&children->dev, "read smmu bypass failed\n");
+
+	cdev->group = iommu_group_get(&cdev->dev);
+	if (IS_ERR_OR_NULL(cdev->group)) {
+		dev_err(&cdev->dev, "smmu is not right configured\n");
+		return -ENXIO;
+	}
+
+	cdev->domain = iommu_domain_alloc(sdev->dev->bus);
+	if (cdev->domain == NULL) {
+		dev_info(&cdev->dev, "failed to alloc domain\n");
+		return -ENOMEM;
+	}
+
+	err = iommu_attach_group(cdev->domain, cdev->group);
+	if (err) {
+		dev_err(&cdev->dev, "failed group to domain\n");
+		return err;
+	}
+
+	err = iommu_dev_enable_feature(&cdev->dev, IOMMU_DEV_FEAT_IOPF);
+	if (err) {
+		dev_err(&cdev->dev, "failed to enable iopf feature, %d\n", err);
+		return err;
+	}
+
+	err = iommu_dev_enable_feature(&cdev->dev, IOMMU_DEV_FEAT_SVA);
+	if (err) {
+		dev_err(&cdev->dev, "failed to enable sva feature\n");
+		return err;
+	}
+
 	return 0;
 }
 
 static int svm_acpi_init_core(struct svm_device *sdev)
 {
-	/* TODO acpi init core */
+	int err = 0;
+	struct device *dev = sdev->dev;
+	struct acpi_device *adev = ACPI_COMPANION(sdev->dev);
+	struct acpi_device *cdev = NULL;
+	int id = 0;
+
+	down_write(&svm_sem);
+	if (!svm_bus_type.iommu_ops) {
+		err = bus_register(&svm_bus_type);
+		if (err) {
+			up_write(&svm_sem);
+			dev_err(dev, "failed to register svm_bus_type\n");
+			return err;
+		}
+
+		err = bus_set_iommu(&svm_bus_type, dev->bus->iommu_ops);
+		if (err) {
+			up_write(&svm_sem);
+			dev_err(dev, "failed to set iommu for svm_bus_type\n");
+			goto err_unregister_bus;
+		}
+	} else if (svm_bus_type.iommu_ops != dev->bus->iommu_ops) {
+		err = -EBUSY;
+		up_write(&svm_sem);
+		dev_err(dev, "iommu_ops configured, but changed!\n");
+		return err;
+	}
+	up_write(&svm_sem);
+
+	list_for_each_entry(cdev, &adev->children, node) {
+		err = svm_acpi_add_core(sdev, cdev, id++);
+		if (err)
+			device_for_each_child(dev, NULL, svm_remove_core);
+	}
+
+	return err;
+
+err_unregister_bus:
+	bus_unregister(&svm_bus_type);
+
+	return err;
+}
+#else
+static int svm_acpi_init_core(struct svm_device *sdev) { return 0; }
+#endif
+
+static int svm_of_add_core(struct svm_device *sdev, struct device_node *np)
+{
+	int err;
+	struct resource res;
+	struct core_device *cdev = NULL;
+	char *name = NULL;
+
+	name = devm_kasprintf(sdev->dev, GFP_KERNEL, "svm%llu_%s",
+			sdev->id, np->name);
+	if (name == NULL)
+		return -ENOMEM;
+
+	cdev = kzalloc(sizeof(*cdev), GFP_KERNEL);
+	if (cdev == NULL)
+		return -ENOMEM;
+
+	cdev->dev.of_node = np;
+	cdev->dev.parent = sdev->dev;
+	cdev->dev.bus = &svm_bus_type;
+	cdev->dev.release = cdev_device_release;
+	cdev->smmu_bypass = of_property_read_bool(np, "hisi,smmu_bypass");
+	dev_set_name(&cdev->dev, "%s", name);
+
+	err = device_register(&cdev->dev);
+	if (err) {
+		dev_info(&cdev->dev, "core_device register failed\n");
+		kfree(cdev);
+		return err;
+	}
+
+	err = of_dma_configure(&cdev->dev, np, true);
+	if (err) {
+		dev_dbg(&cdev->dev, "of_dma_configure failed\n");
+		return err;
+	}
+
+	err = of_address_to_resource(np, 0, &res);
+	if (err) {
+		dev_info(&cdev->dev, "no reg, FW should install the sid\n");
+	} else {
+		/* If the reg specified, install sid for the core */
+		void __iomem *core_base = NULL;
+		int sid = cdev->dev.iommu->fwspec->ids[0];
+
+		core_base = ioremap(res.start, resource_size(&res));
+		if (core_base == NULL) {
+			dev_err(&cdev->dev, "ioremap failed\n");
+			return -ENOMEM;
+		}
+
+		writel_relaxed(sid, core_base + CORE_SID);
+		iounmap(core_base);
+	}
+
+	cdev->group = iommu_group_get(&cdev->dev);
+	if (IS_ERR_OR_NULL(cdev->group)) {
+		dev_err(&cdev->dev, "smmu is not right configured\n");
+		return -ENXIO;
+	}
+
+	cdev->domain = iommu_domain_alloc(sdev->dev->bus);
+	if (cdev->domain == NULL) {
+		dev_info(&cdev->dev, "failed to alloc domain\n");
+		return -ENOMEM;
+	}
+
+	err = iommu_attach_group(cdev->domain, cdev->group);
+	if (err) {
+		dev_err(&cdev->dev, "failed group to domain\n");
+		return err;
+	}
+
+	err = iommu_dev_enable_feature(&cdev->dev, IOMMU_DEV_FEAT_IOPF);
+	if (err) {
+		dev_err(&cdev->dev, "failed to enable iopf feature, %d\n", err);
+		return err;
+	}
+
+	err = iommu_dev_enable_feature(&cdev->dev, IOMMU_DEV_FEAT_SVA);
+	if (err) {
+		dev_err(&cdev->dev, "failed to enable sva feature, %d\n", err);
+		return err;
+	}
+
 	return 0;
 }
 
 static int svm_dt_init_core(struct svm_device *sdev, struct device_node *np)
 {
-	/* TODO dt init core */
-	return 0;
+	int err = 0;
+	struct device_node *child = NULL;
+	struct device *dev = sdev->dev;
+
+	down_write(&svm_sem);
+	if (svm_bus_type.iommu_ops == NULL) {
+		err = bus_register(&svm_bus_type);
+		if (err) {
+			up_write(&svm_sem);
+			dev_err(dev, "failed to register svm_bus_type\n");
+			return err;
+		}
+
+		err = bus_set_iommu(&svm_bus_type, dev->bus->iommu_ops);
+		if (err) {
+			up_write(&svm_sem);
+			dev_err(dev, "failed to set iommu for svm_bus_type\n");
+			goto err_unregister_bus;
+		}
+	} else if (svm_bus_type.iommu_ops != dev->bus->iommu_ops) {
+		err = -EBUSY;
+		up_write(&svm_sem);
+		dev_err(dev, "iommu_ops configured, but changed!\n");
+		return err;
+	}
+	up_write(&svm_sem);
+
+	for_each_available_child_of_node(np, child) {
+		err = svm_of_add_core(sdev, child);
+		if (err)
+			device_for_each_child(dev, NULL, svm_remove_core);
+	}
+
+	return err;
+
+err_unregister_bus:
+	bus_unregister(&svm_bus_type);
+
+	return err;
 }
 
 static int svm_device_probe(struct platform_device *pdev)
