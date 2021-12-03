@@ -241,10 +241,8 @@ int proc_watchdog_cpumask(struct ctl_table *, int, void *, size_t *, loff_t *);
 
 #ifdef CONFIG_SDEI_WATCHDOG
 void sdei_watchdog_clear_eoi(void);
-extern bool disable_sdei_nmi_watchdog;
 #else
 static inline void sdei_watchdog_clear_eoi(void) { }
-#define disable_sdei_nmi_watchdog 1
 #endif
 
 #endif
