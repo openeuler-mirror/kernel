@@ -145,4 +145,6 @@ int ghes_notify_sea(void);
 static inline int ghes_notify_sea(void) { return -ENOENT; }
 #endif
 
+extern struct blocking_notifier_head ghes_ts_err_chain;
+
 #endif /* GHES_H */
