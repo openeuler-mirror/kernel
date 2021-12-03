@@ -42,6 +42,7 @@
 static int probe_index;
 static LIST_HEAD(child_list);
 static DECLARE_RWSEM(svm_sem);
+static struct rb_root svm_process_root = RB_ROOT;
 static struct mutex svm_process_mutex;
 
 struct core_device {
@@ -104,18 +105,51 @@ static char *svm_cmd_to_string(unsigned int cmd)
 
 static struct svm_process *find_svm_process(unsigned long asid)
 {
-	/* TODO */
-	return 0;
+	struct rb_node *node = svm_process_root.rb_node;
+
+	while (node) {
+		struct svm_process *process = NULL;
+
+		process = rb_entry(node, struct svm_process, rb_node);
+		if (asid < process->asid)
+			node = node->rb_left;
+		else if (asid > process->asid)
+			node = node->rb_right;
+		else
+			return process;
+	}
+
+	return NULL;
 }
 
 static void insert_svm_process(struct svm_process *process)
 {
-	/* TODO */
+	struct rb_node **p = &svm_process_root.rb_node;
+	struct rb_node *parent = NULL;
+
+	while (*p) {
+		struct svm_process *tmp_process = NULL;
+
+		parent = *p;
+		tmp_process = rb_entry(parent, struct svm_process, rb_node);
+		if (process->asid < tmp_process->asid)
+			p = &(*p)->rb_left;
+		else if (process->asid > tmp_process->asid)
+			p = &(*p)->rb_right;
+		else {
+			WARN_ON_ONCE("asid already in the tree");
+			return;
+		}
+	}
+
+	rb_link_node(&process->rb_node, parent, p);
+	rb_insert_color(&process->rb_node, &svm_process_root);
 }
 
 static void delete_svm_process(struct svm_process *process)
 {
-	/* TODO */
+	rb_erase(&process->rb_node, &svm_process_root);
+	RB_CLEAR_NODE(&process->rb_node);
 }
 
 static struct svm_device *file_to_sdev(struct file *file)
