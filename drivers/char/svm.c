@@ -158,14 +158,76 @@ static struct svm_device *file_to_sdev(struct file *file)
 			struct svm_device, miscdev);
 }
 
+static inline struct core_device *to_core_device(struct device *d)
+{
+	return container_of(d, struct core_device, dev);
+}
+
+static int svm_acpi_bind_core(struct core_device *cdev,	void *data)
+{
+	struct task_struct *task = NULL;
+	struct svm_process *process = data;
+
+	if (cdev->smmu_bypass)
+		return 0;
+
+	task = get_pid_task(process->pid, PIDTYPE_PID);
+	if (!task) {
+		pr_err("failed to get task_struct\n");
+		return -ESRCH;
+	}
+
+	process->sva = iommu_sva_bind_device(&cdev->dev, task->mm, NULL);
+	if (!process->sva) {
+		pr_err("failed to bind device\n");
+		return PTR_ERR(process->sva);
+	}
+
+	process->pasid = task->mm->pasid;
+	put_task_struct(task);
+
+	return 0;
+}
+
+static int svm_dt_bind_core(struct device *dev, void *data)
+{
+	struct task_struct *task = NULL;
+	struct svm_process *process = data;
+	struct core_device *cdev = to_core_device(dev);
+
+	if (cdev->smmu_bypass)
+		return 0;
+
+	task = get_pid_task(process->pid, PIDTYPE_PID);
+	if (!task) {
+		pr_err("failed to get task_struct\n");
+		return -ESRCH;
+	}
+
+	process->sva = iommu_sva_bind_device(dev, task->mm, NULL);
+	if (!process->sva) {
+		pr_err("failed to bind device\n");
+		return PTR_ERR(process->sva);
+	}
+
+	process->pasid = task->mm->pasid;
+	put_task_struct(task);
+
+	return 0;
+}
+
 static void svm_dt_bind_cores(struct svm_process *process)
 {
-	/* TODO */
+	device_for_each_child(process->sdev->dev, process, svm_dt_bind_core);
 }
 
 static void svm_acpi_bind_cores(struct svm_process *process)
 {
-	/* TODO */
+	struct core_device *pos = NULL;
+
+	list_for_each_entry(pos, &child_list, entry) {
+		svm_acpi_bind_core(pos, process);
+	}
 }
 
 static void svm_process_free(struct mmu_notifier *mn)
@@ -409,11 +471,6 @@ static const struct file_operations svm_fops = {
 	.open			= svm_open,
 	.unlocked_ioctl		= svm_ioctl,
 };
-
-static inline struct core_device *to_core_device(struct device *d)
-{
-	return container_of(d, struct core_device, dev);
-}
 
 static void cdev_device_release(struct device *dev)
 {
