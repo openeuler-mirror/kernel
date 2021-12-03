@@ -25,6 +25,7 @@
 
 #ifdef CONFIG_ARM64
 #include <linux/arm_sdei.h>
+#include <asm/arch_gicv3.h>
 #endif
 
 /*
@@ -223,6 +224,7 @@ static int multi_cpu_stop(void *data)
 				local_irq_disable();
 				hard_irq_disable();
 #ifdef CONFIG_ARM64
+				gic_arch_disable_irqs();
 				sdei_mask_local_cpu();
 #endif
 				break;
@@ -247,6 +249,7 @@ static int multi_cpu_stop(void *data)
 
 #ifdef CONFIG_ARM64
 	sdei_unmask_local_cpu();
+	gic_arch_restore_irqs(flags);
 #endif
 	local_irq_restore(flags);
 	return err;
