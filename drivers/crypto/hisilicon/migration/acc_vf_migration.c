@@ -500,11 +500,12 @@ static void vf_qm_fun_restart(struct hisi_qm *qm,
 	int i;
 
 	/*
-	 * When the system is rebooted, the SMMU page table is destroyed,
-	 * and the QP queue cannot be returned normally at this time.
-	 * if vf_ready == 0x2, don't need to restart QP.
+	 * When the Guest is rebooted or reseted, the SMMU page table
+	 * will be destroyed, and the QP queue cannot be returned
+	 * normally at this time. so if Guest acc driver have removed,
+	 * don't need to restart QP.
 	 */
-	if (vf_data->vf_state == VF_PREPARE) {
+	if (vf_data->vf_state != VF_READY) {
 		dev_err(dev, "failed to restart VF!\n");
 		return;
 	}
@@ -805,12 +806,7 @@ static int acc_vf_set_device_state(struct acc_vf_migration *acc_vf_dev,
 
 		break;
 	case VFIO_DEVICE_STATE_STOP:
-		/* restart all  VF's QP */
-		vf_qm_fun_restart(qm, acc_vf_dev);
-
-		break;
 	case VFIO_DEVICE_STATE_RESUMING:
-
 		break;
 	default:
 		ret = -EFAULT;
@@ -1210,12 +1206,30 @@ static void acc_vf_release(void *device_data)
 	module_put(THIS_MODULE);
 }
 
+static void acc_vf_reset(void *device_data)
+{
+	struct acc_vf_migration *acc_vf_dev =
+		vfio_pci_vendor_data(device_data);
+	struct hisi_qm *qm = acc_vf_dev->vf_qm;
+	struct device *dev = &qm->pdev->dev;
+	u32 vf_state = VF_NOT_READY;
+	int ret;
+
+	dev_info(dev, "QEMU prepare to Reset Guest!\n");
+	ret = qm_write_reg(qm, QM_VF_STATE, &vf_state, 1);
+	if (ret)
+		dev_err(dev, "failed to write QM_VF_STATE\n");
+}
+
 static long acc_vf_ioctl(void *device_data,
 			  unsigned int cmd, unsigned long arg)
 {
 	switch (cmd) {
 	case VFIO_DEVICE_GET_REGION_INFO:
 		return acc_vf_get_region_info(device_data, cmd, arg);
+	case VFIO_DEVICE_RESET:
+		acc_vf_reset(device_data);
+		return vfio_pci_ioctl(device_data, cmd, arg);
 	default:
 		return vfio_pci_ioctl(device_data, cmd, arg);
 	}
