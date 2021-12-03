@@ -39,6 +39,10 @@
 #define SVM_IOCTL_PROCESS_BIND		0xffff
 
 #define CORE_SID		0
+
+#define SVM_IOCTL_RELEASE_PHYS32	0xfff3
+#define MMAP_PHY32_MAX (16 * 1024 * 1024)
+
 static int probe_index;
 static LIST_HEAD(child_list);
 static DECLARE_RWSEM(svm_sem);
@@ -96,6 +100,8 @@ static char *svm_cmd_to_string(unsigned int cmd)
 	switch (cmd) {
 	case SVM_IOCTL_PROCESS_BIND:
 		return "bind";
+	case SVM_IOCTL_RELEASE_PHYS32:
+		return "release phys";
 	default:
 		return "unsupported";
 	}
@@ -402,12 +408,240 @@ err_put_pid:
 	return err;
 }
 
+static pte_t *svm_get_pte(struct vm_area_struct *vma,
+			  pud_t *pud,
+			  unsigned long addr,
+			  unsigned long *page_size,
+			  unsigned long *offset)
+{
+	pte_t *pte = NULL;
+	unsigned long size = 0;
+
+	if (is_vm_hugetlb_page(vma)) {
+		if (pud_present(*pud)) {
+			if (pud_huge(*pud)) {
+				pte = (pte_t *)pud;
+				*offset = addr & (PUD_SIZE - 1);
+				size = PUD_SIZE;
+			} else {
+				pte = (pte_t *)pmd_offset(pud, addr);
+				*offset = addr & (PMD_SIZE - 1);
+				size = PMD_SIZE;
+			}
+		} else {
+			pr_err("%s:hugetlb but pud not present\n", __func__);
+		}
+	} else {
+		pmd_t *pmd = pmd_offset(pud, addr);
+
+		if (pmd_none(*pmd))
+			return NULL;
+
+		if (pmd_trans_huge(*pmd)) {
+			pte = (pte_t *)pmd;
+			*offset = addr & (PMD_SIZE - 1);
+			size = PMD_SIZE;
+		} else if (pmd_trans_unstable(pmd)) {
+			pr_warn("%s: thp unstable\n", __func__);
+		} else {
+			pte = pte_offset_map(pmd, addr);
+			*offset = addr & (PAGE_SIZE - 1);
+			size = PAGE_SIZE;
+		}
+	}
+
+	if (page_size)
+		*page_size = size;
+
+	return pte;
+}
+
+/* Must be called with mmap_lock held */
+static pte_t *svm_walk_pt(unsigned long addr, unsigned long *page_size,
+			  unsigned long *offset)
+{
+	pgd_t *pgd = NULL;
+	p4d_t *p4d = NULL;
+	pud_t *pud = NULL;
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma = NULL;
+
+	vma = find_vma(mm, addr);
+	if (!vma)
+		return NULL;
+
+	pgd = pgd_offset(mm, addr);
+	if (pgd_none_or_clear_bad(pgd))
+		return NULL;
+
+	p4d = p4d_offset(pgd, addr);
+	if (p4d_none_or_clear_bad(p4d))
+		return NULL;
+
+	pud = pud_offset(p4d, addr);
+	if (pud_none_or_clear_bad(pud))
+		return NULL;
+
+	return svm_get_pte(vma, pud, addr, page_size, offset);
+}
+
 static struct bus_type svm_bus_type = {
 	.name		= "svm_bus",
 };
 
 static int svm_open(struct inode *inode, struct file *file)
 {
+	return 0;
+}
+
+static unsigned long svm_get_unmapped_area(struct file *file,
+		unsigned long addr0, unsigned long len,
+		unsigned long pgoff, unsigned long flags)
+{
+	unsigned long addr = addr0;
+	struct mm_struct *mm = current->mm;
+	struct vm_unmapped_area_info info;
+	struct svm_device *sdev = file_to_sdev(file);
+
+	if (!acpi_disabled)
+		return -EPERM;
+
+	if (flags & MAP_FIXED) {
+		if (IS_ALIGNED(addr, len))
+			return addr;
+
+		dev_err(sdev->dev, "MAP_FIXED but not aligned\n");
+		return -EINVAL; //lint !e570
+	}
+
+	if (addr) {
+		struct vm_area_struct *vma = NULL;
+
+		addr = ALIGN(addr, len);
+
+		vma = find_vma(mm, addr);
+		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
+		   (vma == NULL || addr + len <= vm_start_gap(vma)))
+			return addr;
+	}
+
+	info.flags = VM_UNMAPPED_AREA_TOPDOWN;
+	info.length = len;
+	info.low_limit = max(PAGE_SIZE, mmap_min_addr);
+	info.high_limit = mm->mmap_base;
+	info.align_mask = ((len >> PAGE_SHIFT) - 1) << PAGE_SHIFT;
+	info.align_offset = pgoff << PAGE_SHIFT;
+
+	addr = vm_unmapped_area(&info);
+
+	if (offset_in_page(addr)) {
+		VM_BUG_ON(addr != -ENOMEM);
+		info.flags = 0;
+		info.low_limit = TASK_UNMAPPED_BASE;
+		info.high_limit = TASK_SIZE;
+
+		addr = vm_unmapped_area(&info);
+	}
+
+	return addr;
+}
+
+static int svm_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	int err;
+	struct svm_device *sdev = file_to_sdev(file);
+
+	if (!acpi_disabled)
+		return -EPERM;
+
+	if (vma->vm_flags & VM_PA32BIT) {
+		unsigned long vm_size = vma->vm_end - vma->vm_start;
+		struct page *page = NULL;
+
+		if ((vma->vm_end < vma->vm_start) || (vm_size > MMAP_PHY32_MAX))
+			return -EINVAL;
+
+		/* vma->vm_pgoff transfer the nid */
+		if (vma->vm_pgoff == 0)
+			page = alloc_pages(GFP_KERNEL | GFP_DMA32,
+					get_order(vm_size));
+		else
+			page = alloc_pages_node((int)vma->vm_pgoff,
+					GFP_KERNEL | __GFP_THISNODE,
+					get_order(vm_size));
+		if (!page) {
+			dev_err(sdev->dev, "fail to alloc page on node 0x%lx\n",
+					vma->vm_pgoff);
+			return -ENOMEM;
+		}
+
+		err = remap_pfn_range(vma,
+				vma->vm_start,
+				page_to_pfn(page),
+				vm_size, vma->vm_page_prot);
+		if (err)
+			dev_err(sdev->dev,
+				"fail to remap 0x%pK err=%d\n",
+				(void *)vma->vm_start, err);
+	} else {
+		if ((vma->vm_end < vma->vm_start) ||
+		    ((vma->vm_end - vma->vm_start) > sdev->l2size))
+			return -EINVAL;
+
+		vma->vm_page_prot = __pgprot((~PTE_SHARED) &
+				    vma->vm_page_prot.pgprot);
+
+		err = remap_pfn_range(vma,
+				vma->vm_start,
+				sdev->l2buff >> PAGE_SHIFT,
+				vma->vm_end - vma->vm_start,
+				__pgprot(vma->vm_page_prot.pgprot | PTE_DIRTY));
+		if (err)
+			dev_err(sdev->dev,
+				"fail to remap 0x%pK err=%d\n",
+				(void *)vma->vm_start, err);
+	}
+
+	return err;
+}
+
+static int svm_release_phys32(unsigned long __user *arg)
+{
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma = NULL;
+	struct page *page = NULL;
+	pte_t *pte = NULL;
+	unsigned long phys, addr, offset;
+	unsigned int len = 0;
+
+	if (arg == NULL)
+		return -EINVAL;
+
+	if (get_user(addr, arg))
+		return -EFAULT;
+
+	down_read(&mm->mmap_lock);
+	pte = svm_walk_pt(addr, NULL, &offset);
+	if (pte && pte_present(*pte)) {
+		phys = PFN_PHYS(pte_pfn(*pte)) + offset;
+	} else {
+		up_read(&mm->mmap_lock);
+		return -EINVAL;
+	}
+
+	vma = find_vma(mm, addr);
+	if (!vma) {
+		up_read(&mm->mmap_lock);
+		return -EFAULT;
+	}
+
+	page = phys_to_page(phys);
+	len = vma->vm_end - vma->vm_start;
+
+	__free_pages(page, get_order(len));
+
+	up_read(&mm->mmap_lock);
+
 	return 0;
 }
 
@@ -455,6 +689,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 			return -EFAULT;
 		}
 		break;
+	case SVM_IOCTL_RELEASE_PHYS32:
+		err = svm_release_phys32((unsigned long __user *)arg);
+		break;
 	default:
 			err = -EINVAL;
 		}
@@ -469,6 +706,8 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 static const struct file_operations svm_fops = {
 	.owner			= THIS_MODULE,
 	.open			= svm_open,
+	.mmap			= svm_mmap,
+	.get_unmapped_area = svm_get_unmapped_area,
 	.unlocked_ioctl		= svm_ioctl,
 };
 

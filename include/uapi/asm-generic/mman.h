@@ -9,6 +9,7 @@
 #define MAP_EXECUTABLE	0x1000		/* mark it as an executable */
 #define MAP_LOCKED	0x2000		/* pages are locked */
 #define MAP_NORESERVE	0x4000		/* don't check for reservations */
+#define MAP_PA32BIT		0x400000        /* physical address is within 4G */
 
 /*
  * Bits [26:31] are reserved, see asm-generic/hugetlb_encode.h
