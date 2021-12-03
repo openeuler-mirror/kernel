@@ -2118,6 +2118,9 @@ int register_kretprobe(struct kretprobe *rp)
 	int i;
 	void *addr;
 
+	if ((ssize_t)rp->data_size < 0)
+		return -EINVAL;
+
 	ret = kprobe_on_func_entry(rp->kp.addr, rp->kp.symbol_name, rp->kp.offset);
 	if (ret)
 		return ret;
