@@ -356,16 +356,18 @@ static __printf(1, 0) int vprintk_safe(const char *fmt, va_list args)
 }
 
 /* Can be preempted by NMI. */
-void __printk_safe_enter(void)
+void printk_safe_enter(void)
 {
 	this_cpu_inc(printk_context);
 }
+EXPORT_SYMBOL_GPL(printk_safe_enter);
 
 /* Can be preempted by NMI. */
-void __printk_safe_exit(void)
+void printk_safe_exit(void)
 {
 	this_cpu_dec(printk_context);
 }
+EXPORT_SYMBOL_GPL(printk_safe_exit);
 
 __printf(1, 0) int vprintk_func(const char *fmt, va_list args)
 {

@@ -161,6 +161,46 @@ static inline void printk_nmi_direct_enter(void) { }
 static inline void printk_nmi_direct_exit(void) { }
 #endif /* PRINTK_NMI */
 
+#ifdef CONFIG_PRINTK
+extern void printk_safe_enter(void);
+extern void printk_safe_exit(void);
+
+#define printk_safe_enter_irqsave(flags)	\
+	do {					\
+		local_irq_save(flags);		\
+		printk_safe_enter();		\
+	} while (0)
+
+#define printk_safe_exit_irqrestore(flags)	\
+	do {					\
+		printk_safe_exit();		\
+		local_irq_restore(flags);	\
+	} while (0)
+
+#define printk_safe_enter_irq()			\
+	do {					\
+		local_irq_disable();		\
+		printk_safe_enter();		\
+	} while (0)
+
+#define printk_safe_exit_irq()			\
+	do {					\
+		printk_safe_exit();		\
+		local_irq_enable();		\
+	} while (0)
+#else
+/*
+ * On !PRINTK builds we still export console output related locks
+ * and some functions (console_unlock()/tty/etc.), so printk-safe
+ * must preserve the existing local IRQ guarantees.
+ */
+#define printk_safe_enter_irqsave(flags) local_irq_save(flags)
+#define printk_safe_exit_irqrestore(flags) local_irq_restore(flags)
+
+#define printk_safe_enter_irq() local_irq_disable()
+#define printk_safe_exit_irq() local_irq_enable()
+#endif
+
 struct dev_printk_info;
 
 #ifdef CONFIG_PRINTK
