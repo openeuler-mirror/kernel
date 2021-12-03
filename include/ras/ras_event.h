@@ -182,9 +182,10 @@ TRACE_EVENT(arm_event,
 			const u32 ctx_len,
 			const u8 *oem,
 			const u32 oem_len,
-			u8 sev),
+			u8 sev,
+			int cpu),
 
-	TP_ARGS(proc, pei_err, pei_len, ctx_err, ctx_len, oem, oem_len, sev),
+	TP_ARGS(proc, pei_err, pei_len, ctx_err, ctx_len, oem, oem_len, sev, cpu),
 
 	TP_STRUCT__entry(
 		__field(u64, mpidr)
@@ -199,6 +200,7 @@ TRACE_EVENT(arm_event,
 		__field(u32, oem_len)
 		__dynamic_array(u8, buf2, oem_len)
 		__field(u8, sev)
+		__field(int, cpu)
 	),
 
 	TP_fast_assign(
@@ -225,11 +227,13 @@ TRACE_EVENT(arm_event,
 		__entry->oem_len = oem_len;
 		memcpy(__get_dynamic_array(buf2), oem, oem_len);
 		__entry->sev = sev;
+		__entry->cpu = cpu;
 	),
 
-	TP_printk("error: %d; affinity level: %d; MPIDR: %016llx; MIDR: %016llx; "
+	TP_printk("cpu: %d; error: %d; affinity level: %d; MPIDR: %016llx; MIDR: %016llx; "
 		  "running state: %d; PSCI state: %d; "
 		  "%s: %d; %s: %s; %s: %d; %s: %s; %s: %d; %s: %s",
+		  __entry->cpu,
 		  __entry->sev,
 		  __entry->affinity, __entry->mpidr, __entry->midr,
 		  __entry->running_state, __entry->psci_state,

@@ -32,6 +32,7 @@ void log_arm_hw_error(struct cper_sec_proc_arm *err, const u8 sev)
 	struct cper_arm_err_info *err_info;
 	struct cper_arm_ctx_info *ctx_info;
 	int n, sz;
+	int cpu;
 
 	pei_len = sizeof(struct cper_arm_err_info) * err->err_info_num;
 	pei_err = (u8 *)err + sizeof(struct cper_sec_proc_arm);
@@ -58,8 +59,13 @@ void log_arm_hw_error(struct cper_sec_proc_arm *err, const u8 sev)
 	}
 	ven_err_data = (u8 *)ctx_info;
 
+	cpu = GET_LOGICAL_INDEX(err->mpidr);
+	/* when the return value is invalid, set cpu index to a large integer */
+	if (cpu < 0)
+		cpu = 0xFFFF;
+
 	trace_arm_event(err, pei_err, pei_len, ctx_err, ctx_len,
-			ven_err_data, vsei_len, sev);
+			ven_err_data, vsei_len, sev, cpu);
 }
 
 static int __init ras_init(void)
