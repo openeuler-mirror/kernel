@@ -502,6 +502,9 @@ static int process_ns_measurement(struct file *file, const struct cred *cred,
 	if (!pathbuf)	/* ima_rdwr_violation possibly pre-fetched */
 		pathname = ima_d_path(&file->f_path, &pathbuf, filename);
 
+	if (!pathname || strlen(pathname) > IMA_EVENT_NAME_LEN_MAX)
+		pathname = file->f_path.dentry->d_name.name;
+
 	found_digest = ima_lookup_digest(iint->ima_hash->digest, hash_algo,
 					 COMPACT_FILE);
 
