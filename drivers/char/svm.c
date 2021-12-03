@@ -35,6 +35,11 @@
 
 #define SVM_DEVICE_NAME "svm"
 
+static int probe_index;
+static LIST_HEAD(child_list);
+static DECLARE_RWSEM(svm_sem);
+static struct mutex svm_process_mutex;
+
 struct core_device {
 	struct device	dev;
 	struct iommu_group	*group;
@@ -98,15 +103,112 @@ static const struct file_operations svm_fops = {
 	.unlocked_ioctl		= svm_ioctl,
 };
 
+static int svm_remove_core(struct device *dev, void *data)
+{
+	/* TODO remove core */
+	return 0;
+}
+
+static int svm_acpi_init_core(struct svm_device *sdev)
+{
+	/* TODO acpi init core */
+	return 0;
+}
+
+static int svm_dt_init_core(struct svm_device *sdev, struct device_node *np)
+{
+	/* TODO dt init core */
+	return 0;
+}
+
 static int svm_device_probe(struct platform_device *pdev)
 {
-	/*TODO svm device init*/
-	return 0;
+	int err = -1;
+	struct device *dev = &pdev->dev;
+	struct svm_device *sdev = NULL;
+	struct device_node *np = dev->of_node;
+	int alias_id;
+
+	if (acpi_disabled && np == NULL)
+		return -ENODEV;
+
+	if (!dev->bus) {
+		dev_dbg(dev, "this dev bus is NULL\n");
+		return -EPROBE_DEFER;
+	}
+
+	if (!dev->bus->iommu_ops) {
+		dev_dbg(dev, "defer probe svm device\n");
+		return -EPROBE_DEFER;
+	}
+
+	sdev = devm_kzalloc(dev, sizeof(*sdev), GFP_KERNEL);
+	if (sdev == NULL)
+		return -ENOMEM;
+
+	if (!acpi_disabled) {
+		err = device_property_read_u64(dev, "svmid", &sdev->id);
+		if (err) {
+			dev_err(dev, "failed to get this svm device id\n");
+			return err;
+		}
+	} else {
+		alias_id = of_alias_get_id(np, "svm");
+		if (alias_id < 0)
+			sdev->id = probe_index;
+		else
+			sdev->id = alias_id;
+	}
+
+	sdev->dev = dev;
+	sdev->miscdev.minor = MISC_DYNAMIC_MINOR;
+	sdev->miscdev.fops = &svm_fops;
+	sdev->miscdev.name = devm_kasprintf(dev, GFP_KERNEL,
+			SVM_DEVICE_NAME"%llu", sdev->id);
+	if (sdev->miscdev.name == NULL)
+		return -ENOMEM;
+
+	dev_set_drvdata(dev, sdev);
+	err = misc_register(&sdev->miscdev);
+	if (err) {
+		dev_err(dev, "Unable to register misc device\n");
+		return err;
+	}
+
+	if (!acpi_disabled) {
+		err = svm_acpi_init_core(sdev);
+		if (err) {
+			dev_err(dev, "failed to init acpi cores\n");
+			goto err_unregister_misc;
+		}
+	} else {
+		err = svm_dt_init_core(sdev, np);
+		if (err) {
+			dev_err(dev, "failed to init dt cores\n");
+			goto err_unregister_misc;
+		}
+
+		probe_index++;
+	}
+
+	mutex_init(&svm_process_mutex);
+
+	return err;
+
+err_unregister_misc:
+	misc_deregister(&sdev->miscdev);
+
+	return err;
 }
 
 static int svm_device_remove(struct platform_device *pdev)
 {
-	/*TODO svm device remove*/
+	struct device *dev = &pdev->dev;
+	struct svm_device *sdev = dev_get_drvdata(dev);
+
+	device_for_each_child(sdev->dev, NULL, svm_remove_core);
+	misc_deregister(&sdev->miscdev);
+
 	return 0;
 }
 
