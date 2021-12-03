@@ -42,6 +42,7 @@
 #define SVM_IOCTL_PIN_MEMORY		0xfff7
 #define SVM_IOCTL_GET_PHYMEMINFO	0xfff8
 #define SVM_IOCTL_LOAD_FLAG			0xfffa
+#define SVM_IOCTL_SET_RC			0xfffc
 #define SVM_IOCTL_PROCESS_BIND		0xffff
 
 #define CORE_SID		0
@@ -140,6 +141,8 @@ static char *svm_cmd_to_string(unsigned int cmd)
 	switch (cmd) {
 	case SVM_IOCTL_PROCESS_BIND:
 		return "bind";
+	case SVM_IOCTL_SET_RC:
+		return "set rc";
 	case SVM_IOCTL_PIN_MEMORY:
 		return "pin memory";
 	case SVM_IOCTL_UNPIN_MEMORY:
@@ -219,331 +222,6 @@ static struct svm_device *file_to_sdev(struct file *file)
 static inline struct core_device *to_core_device(struct device *d)
 {
 	return container_of(d, struct core_device, dev);
-}
-
-static int svm_acpi_bind_core(struct core_device *cdev,	void *data)
-{
-	struct task_struct *task = NULL;
-	struct svm_process *process = data;
-
-	if (cdev->smmu_bypass)
-		return 0;
-
-	task = get_pid_task(process->pid, PIDTYPE_PID);
-	if (!task) {
-		pr_err("failed to get task_struct\n");
-		return -ESRCH;
-	}
-
-	process->sva = iommu_sva_bind_device(&cdev->dev, task->mm, NULL);
-	if (!process->sva) {
-		pr_err("failed to bind device\n");
-		return PTR_ERR(process->sva);
-	}
-
-	process->pasid = task->mm->pasid;
-	put_task_struct(task);
-
-	return 0;
-}
-
-static int svm_dt_bind_core(struct device *dev, void *data)
-{
-	struct task_struct *task = NULL;
-	struct svm_process *process = data;
-	struct core_device *cdev = to_core_device(dev);
-
-	if (cdev->smmu_bypass)
-		return 0;
-
-	task = get_pid_task(process->pid, PIDTYPE_PID);
-	if (!task) {
-		pr_err("failed to get task_struct\n");
-		return -ESRCH;
-	}
-
-	process->sva = iommu_sva_bind_device(dev, task->mm, NULL);
-	if (!process->sva) {
-		pr_err("failed to bind device\n");
-		return PTR_ERR(process->sva);
-	}
-
-	process->pasid = task->mm->pasid;
-	put_task_struct(task);
-
-	return 0;
-}
-
-static void svm_dt_bind_cores(struct svm_process *process)
-{
-	device_for_each_child(process->sdev->dev, process, svm_dt_bind_core);
-}
-
-static void svm_acpi_bind_cores(struct svm_process *process)
-{
-	struct core_device *pos = NULL;
-
-	list_for_each_entry(pos, &child_list, entry) {
-		svm_acpi_bind_core(pos, process);
-	}
-}
-
-static void svm_process_free(struct mmu_notifier *mn)
-{
-	struct svm_process *process = NULL;
-
-	process = container_of(mn, struct svm_process, notifier);
-	arm64_mm_context_put(process->mm);
-	kfree(process);
-}
-
-static void svm_process_release(struct svm_process *process)
-{
-	delete_svm_process(process);
-	put_pid(process->pid);
-
-	mmu_notifier_put(&process->notifier);
-}
-
-static void svm_notifier_release(struct mmu_notifier *mn,
-					struct mm_struct *mm)
-{
-	struct svm_process *process = NULL;
-
-	process = container_of(mn, struct svm_process, notifier);
-
-	/*
-	 * No need to call svm_unbind_cores(), as iommu-sva will do the
-	 * unbind in its mm_notifier callback.
-	 */
-
-	mutex_lock(&svm_process_mutex);
-	svm_process_release(process);
-	mutex_unlock(&svm_process_mutex);
-}
-
-static struct mmu_notifier_ops svm_process_mmu_notifier = {
-	.release	= svm_notifier_release,
-	.free_notifier = svm_process_free,
-};
-
-static struct svm_process *
-svm_process_alloc(struct svm_device *sdev, struct pid *pid,
-		struct mm_struct *mm, unsigned long asid)
-{
-	struct svm_process *process = kzalloc(sizeof(*process), GFP_ATOMIC);
-
-	if (!process)
-		return ERR_PTR(-ENOMEM);
-
-	process->sdev = sdev;
-	process->pid = pid;
-	process->mm = mm;
-	process->asid = asid;
-	process->sdma_list = RB_ROOT; //lint !e64
-	mutex_init(&process->mutex);
-	process->notifier.ops = &svm_process_mmu_notifier;
-
-	return process;
-}
-
-static struct task_struct *svm_get_task(struct svm_bind_process params)
-{
-	struct task_struct *task = NULL;
-
-	if (params.flags & ~SVM_BIND_PID)
-		return ERR_PTR(-EINVAL);
-
-	if (params.flags & SVM_BIND_PID) {
-		struct mm_struct *mm = NULL;
-
-		rcu_read_lock();
-		task = find_task_by_vpid(params.vpid);
-		if (task)
-			get_task_struct(task);
-		rcu_read_unlock();
-		if (task == NULL)
-			return ERR_PTR(-ESRCH);
-
-		/* check the permission */
-		mm = mm_access(task, PTRACE_MODE_ATTACH_REALCREDS);
-		if (IS_ERR_OR_NULL(mm)) {
-			pr_err("cannot access mm\n");
-			put_task_struct(task);
-			return ERR_PTR(-ESRCH);
-		}
-
-		mmput(mm);
-	} else {
-		get_task_struct(current);
-		task = current;
-	}
-
-	return task;
-}
-
-static int svm_process_bind(struct task_struct *task,
-		struct svm_device *sdev, u64 *ttbr, u64 *tcr, int *pasid)
-{
-	int err;
-	unsigned long asid;
-	struct pid *pid = NULL;
-	struct svm_process *process = NULL;
-	struct mm_struct *mm = NULL;
-
-	if ((ttbr == NULL) || (tcr == NULL) || (pasid == NULL))
-		return -EINVAL;
-
-	pid = get_task_pid(task, PIDTYPE_PID);
-	if (pid == NULL)
-		return -EINVAL;
-
-	mm = get_task_mm(task);
-	if (!mm) {
-		err = -EINVAL;
-		goto err_put_pid;
-	}
-
-	asid = arm64_mm_context_get(mm);
-	if (!asid) {
-		err = -ENOSPC;
-		goto err_put_mm;
-	}
-
-	/* If a svm_process already exists, use it */
-	mutex_lock(&svm_process_mutex);
-	process = find_svm_process(asid);
-	if (process == NULL) {
-		process = svm_process_alloc(sdev, pid, mm, asid);
-		if (IS_ERR(process)) {
-			err = PTR_ERR(process);
-			mutex_unlock(&svm_process_mutex);
-			goto err_put_mm_context;
-		}
-		err = mmu_notifier_register(&process->notifier, mm);
-		if (err) {
-			mutex_unlock(&svm_process_mutex);
-			goto err_free_svm_process;
-		}
-
-		insert_svm_process(process);
-
-		if (acpi_disabled)
-			svm_dt_bind_cores(process);
-		else
-			svm_acpi_bind_cores(process);
-
-		mutex_unlock(&svm_process_mutex);
-	} else {
-		mutex_unlock(&svm_process_mutex);
-		arm64_mm_context_put(mm);
-		put_pid(pid);
-	}
-
-
-	*ttbr = virt_to_phys(mm->pgd) | asid << ASID_SHIFT;
-	*tcr  = read_sysreg(tcr_el1);
-	*pasid = process->pasid;
-
-	mmput(mm);
-	return 0;
-
-err_free_svm_process:
-	kfree(process);
-err_put_mm_context:
-	arm64_mm_context_put(mm);
-err_put_mm:
-	mmput(mm);
-err_put_pid:
-	put_pid(pid);
-
-	return err;
-}
-
-static pte_t *svm_get_pte(struct vm_area_struct *vma,
-			  pud_t *pud,
-			  unsigned long addr,
-			  unsigned long *page_size,
-			  unsigned long *offset)
-{
-	pte_t *pte = NULL;
-	unsigned long size = 0;
-
-	if (is_vm_hugetlb_page(vma)) {
-		if (pud_present(*pud)) {
-			if (pud_huge(*pud)) {
-				pte = (pte_t *)pud;
-				*offset = addr & (PUD_SIZE - 1);
-				size = PUD_SIZE;
-			} else {
-				pte = (pte_t *)pmd_offset(pud, addr);
-				*offset = addr & (PMD_SIZE - 1);
-				size = PMD_SIZE;
-			}
-		} else {
-			pr_err("%s:hugetlb but pud not present\n", __func__);
-		}
-	} else {
-		pmd_t *pmd = pmd_offset(pud, addr);
-
-		if (pmd_none(*pmd))
-			return NULL;
-
-		if (pmd_trans_huge(*pmd)) {
-			pte = (pte_t *)pmd;
-			*offset = addr & (PMD_SIZE - 1);
-			size = PMD_SIZE;
-		} else if (pmd_trans_unstable(pmd)) {
-			pr_warn("%s: thp unstable\n", __func__);
-		} else {
-			pte = pte_offset_map(pmd, addr);
-			*offset = addr & (PAGE_SIZE - 1);
-			size = PAGE_SIZE;
-		}
-	}
-
-	if (page_size)
-		*page_size = size;
-
-	return pte;
-}
-
-/* Must be called with mmap_lock held */
-static pte_t *svm_walk_pt(unsigned long addr, unsigned long *page_size,
-			  unsigned long *offset)
-{
-	pgd_t *pgd = NULL;
-	p4d_t *p4d = NULL;
-	pud_t *pud = NULL;
-	struct mm_struct *mm = current->mm;
-	struct vm_area_struct *vma = NULL;
-
-	vma = find_vma(mm, addr);
-	if (!vma)
-		return NULL;
-
-	pgd = pgd_offset(mm, addr);
-	if (pgd_none_or_clear_bad(pgd))
-		return NULL;
-
-	p4d = p4d_offset(pgd, addr);
-	if (p4d_none_or_clear_bad(p4d))
-		return NULL;
-
-	pud = pud_offset(p4d, addr);
-	if (pud_none_or_clear_bad(pud))
-		return NULL;
-
-	return svm_get_pte(vma, pud, addr, page_size, offset);
-}
-
-static struct bus_type svm_bus_type = {
-	.name		= "svm_bus",
-};
-
-static int svm_open(struct inode *inode, struct file *file)
-{
-	return 0;
 }
 
 static struct svm_sdma *svm_find_sdma(struct svm_process *process,
@@ -798,6 +476,383 @@ out:
 	arm64_mm_context_put(current->mm);
 
 	return err;
+}
+
+static void svm_unpin_all(struct svm_process *process)
+{
+	struct rb_node *node = NULL;
+
+	while ((node = rb_first(&process->sdma_list)))
+		svm_remove_sdma(process,
+				rb_entry(node, struct svm_sdma, node),
+				false);
+}
+
+static int svm_acpi_bind_core(struct core_device *cdev,	void *data)
+{
+	struct task_struct *task = NULL;
+	struct svm_process *process = data;
+
+	if (cdev->smmu_bypass)
+		return 0;
+
+	task = get_pid_task(process->pid, PIDTYPE_PID);
+	if (!task) {
+		pr_err("failed to get task_struct\n");
+		return -ESRCH;
+	}
+
+	process->sva = iommu_sva_bind_device(&cdev->dev, task->mm, NULL);
+	if (!process->sva) {
+		pr_err("failed to bind device\n");
+		return PTR_ERR(process->sva);
+	}
+
+	process->pasid = task->mm->pasid;
+	put_task_struct(task);
+
+	return 0;
+}
+
+static int svm_dt_bind_core(struct device *dev, void *data)
+{
+	struct task_struct *task = NULL;
+	struct svm_process *process = data;
+	struct core_device *cdev = to_core_device(dev);
+
+	if (cdev->smmu_bypass)
+		return 0;
+
+	task = get_pid_task(process->pid, PIDTYPE_PID);
+	if (!task) {
+		pr_err("failed to get task_struct\n");
+		return -ESRCH;
+	}
+
+	process->sva = iommu_sva_bind_device(dev, task->mm, NULL);
+	if (!process->sva) {
+		pr_err("failed to bind device\n");
+		return PTR_ERR(process->sva);
+	}
+
+	process->pasid = task->mm->pasid;
+	put_task_struct(task);
+
+	return 0;
+}
+
+static void svm_dt_bind_cores(struct svm_process *process)
+{
+	device_for_each_child(process->sdev->dev, process, svm_dt_bind_core);
+}
+
+static void svm_acpi_bind_cores(struct svm_process *process)
+{
+	struct core_device *pos = NULL;
+
+	list_for_each_entry(pos, &child_list, entry) {
+		svm_acpi_bind_core(pos, process);
+	}
+}
+
+static void svm_process_free(struct mmu_notifier *mn)
+{
+	struct svm_process *process = NULL;
+
+	process = container_of(mn, struct svm_process, notifier);
+	svm_unpin_all(process);
+	arm64_mm_context_put(process->mm);
+	kfree(process);
+}
+
+static void svm_process_release(struct svm_process *process)
+{
+	delete_svm_process(process);
+	put_pid(process->pid);
+
+	mmu_notifier_put(&process->notifier);
+}
+
+static void svm_notifier_release(struct mmu_notifier *mn,
+					struct mm_struct *mm)
+{
+	struct svm_process *process = NULL;
+
+	process = container_of(mn, struct svm_process, notifier);
+
+	/*
+	 * No need to call svm_unbind_cores(), as iommu-sva will do the
+	 * unbind in its mm_notifier callback.
+	 */
+
+	mutex_lock(&svm_process_mutex);
+	svm_process_release(process);
+	mutex_unlock(&svm_process_mutex);
+}
+
+static struct mmu_notifier_ops svm_process_mmu_notifier = {
+	.release	= svm_notifier_release,
+	.free_notifier = svm_process_free,
+};
+
+static struct svm_process *
+svm_process_alloc(struct svm_device *sdev, struct pid *pid,
+		struct mm_struct *mm, unsigned long asid)
+{
+	struct svm_process *process = kzalloc(sizeof(*process), GFP_ATOMIC);
+
+	if (!process)
+		return ERR_PTR(-ENOMEM);
+
+	process->sdev = sdev;
+	process->pid = pid;
+	process->mm = mm;
+	process->asid = asid;
+	process->sdma_list = RB_ROOT; //lint !e64
+	mutex_init(&process->mutex);
+	process->notifier.ops = &svm_process_mmu_notifier;
+
+	return process;
+}
+
+static struct task_struct *svm_get_task(struct svm_bind_process params)
+{
+	struct task_struct *task = NULL;
+
+	if (params.flags & ~SVM_BIND_PID)
+		return ERR_PTR(-EINVAL);
+
+	if (params.flags & SVM_BIND_PID) {
+		struct mm_struct *mm = NULL;
+
+		rcu_read_lock();
+		task = find_task_by_vpid(params.vpid);
+		if (task)
+			get_task_struct(task);
+		rcu_read_unlock();
+		if (task == NULL)
+			return ERR_PTR(-ESRCH);
+
+		/* check the permission */
+		mm = mm_access(task, PTRACE_MODE_ATTACH_REALCREDS);
+		if (IS_ERR_OR_NULL(mm)) {
+			pr_err("cannot access mm\n");
+			put_task_struct(task);
+			return ERR_PTR(-ESRCH);
+		}
+
+		mmput(mm);
+	} else {
+		get_task_struct(current);
+		task = current;
+	}
+
+	return task;
+}
+
+static int svm_process_bind(struct task_struct *task,
+		struct svm_device *sdev, u64 *ttbr, u64 *tcr, int *pasid)
+{
+	int err;
+	unsigned long asid;
+	struct pid *pid = NULL;
+	struct svm_process *process = NULL;
+	struct mm_struct *mm = NULL;
+
+	if ((ttbr == NULL) || (tcr == NULL) || (pasid == NULL))
+		return -EINVAL;
+
+	pid = get_task_pid(task, PIDTYPE_PID);
+	if (pid == NULL)
+		return -EINVAL;
+
+	mm = get_task_mm(task);
+	if (!mm) {
+		err = -EINVAL;
+		goto err_put_pid;
+	}
+
+	asid = arm64_mm_context_get(mm);
+	if (!asid) {
+		err = -ENOSPC;
+		goto err_put_mm;
+	}
+
+	/* If a svm_process already exists, use it */
+	mutex_lock(&svm_process_mutex);
+	process = find_svm_process(asid);
+	if (process == NULL) {
+		process = svm_process_alloc(sdev, pid, mm, asid);
+		if (IS_ERR(process)) {
+			err = PTR_ERR(process);
+			mutex_unlock(&svm_process_mutex);
+			goto err_put_mm_context;
+		}
+		err = mmu_notifier_register(&process->notifier, mm);
+		if (err) {
+			mutex_unlock(&svm_process_mutex);
+			goto err_free_svm_process;
+		}
+
+		insert_svm_process(process);
+
+		if (acpi_disabled)
+			svm_dt_bind_cores(process);
+		else
+			svm_acpi_bind_cores(process);
+
+		mutex_unlock(&svm_process_mutex);
+	} else {
+		mutex_unlock(&svm_process_mutex);
+		arm64_mm_context_put(mm);
+		put_pid(pid);
+	}
+
+
+	*ttbr = virt_to_phys(mm->pgd) | asid << ASID_SHIFT;
+	*tcr  = read_sysreg(tcr_el1);
+	*pasid = process->pasid;
+
+	mmput(mm);
+	return 0;
+
+err_free_svm_process:
+	kfree(process);
+err_put_mm_context:
+	arm64_mm_context_put(mm);
+err_put_mm:
+	mmput(mm);
+err_put_pid:
+	put_pid(pid);
+
+	return err;
+}
+
+static pte_t *svm_get_pte(struct vm_area_struct *vma,
+			  pud_t *pud,
+			  unsigned long addr,
+			  unsigned long *page_size,
+			  unsigned long *offset)
+{
+	pte_t *pte = NULL;
+	unsigned long size = 0;
+
+	if (is_vm_hugetlb_page(vma)) {
+		if (pud_present(*pud)) {
+			if (pud_huge(*pud)) {
+				pte = (pte_t *)pud;
+				*offset = addr & (PUD_SIZE - 1);
+				size = PUD_SIZE;
+			} else {
+				pte = (pte_t *)pmd_offset(pud, addr);
+				*offset = addr & (PMD_SIZE - 1);
+				size = PMD_SIZE;
+			}
+		} else {
+			pr_err("%s:hugetlb but pud not present\n", __func__);
+		}
+	} else {
+		pmd_t *pmd = pmd_offset(pud, addr);
+
+		if (pmd_none(*pmd))
+			return NULL;
+
+		if (pmd_trans_huge(*pmd)) {
+			pte = (pte_t *)pmd;
+			*offset = addr & (PMD_SIZE - 1);
+			size = PMD_SIZE;
+		} else if (pmd_trans_unstable(pmd)) {
+			pr_warn("%s: thp unstable\n", __func__);
+		} else {
+			pte = pte_offset_map(pmd, addr);
+			*offset = addr & (PAGE_SIZE - 1);
+			size = PAGE_SIZE;
+		}
+	}
+
+	if (page_size)
+		*page_size = size;
+
+	return pte;
+}
+
+/* Must be called with mmap_lock held */
+static pte_t *svm_walk_pt(unsigned long addr, unsigned long *page_size,
+			  unsigned long *offset)
+{
+	pgd_t *pgd = NULL;
+	p4d_t *p4d = NULL;
+	pud_t *pud = NULL;
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma = NULL;
+
+	vma = find_vma(mm, addr);
+	if (!vma)
+		return NULL;
+
+	pgd = pgd_offset(mm, addr);
+	if (pgd_none_or_clear_bad(pgd))
+		return NULL;
+
+	p4d = p4d_offset(pgd, addr);
+	if (p4d_none_or_clear_bad(p4d))
+		return NULL;
+
+	pud = pud_offset(p4d, addr);
+	if (pud_none_or_clear_bad(pud))
+		return NULL;
+
+	return svm_get_pte(vma, pud, addr, page_size, offset);
+}
+
+static struct bus_type svm_bus_type = {
+	.name		= "svm_bus",
+};
+
+static int svm_open(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static int svm_set_rc(unsigned long __user *arg)
+{
+	unsigned long addr, size, rc;
+	unsigned long end, page_size, offset;
+	pte_t *pte = NULL;
+	struct mm_struct *mm = current->mm;
+
+	if (acpi_disabled)
+		return -EPERM;
+
+	if (arg == NULL)
+		return -EINVAL;
+
+	if (get_user(addr, arg))
+		return -EFAULT;
+
+	if (get_user(size, arg + 1))
+		return -EFAULT;
+
+	if (get_user(rc, arg + 2))
+		return -EFAULT;
+
+	end = addr + size;
+	if (addr >= end)
+		return -EINVAL;
+
+	down_read(&mm->mmap_lock);
+	while (addr < end) {
+		pte = svm_walk_pt(addr, &page_size, &offset);
+		if (!pte) {
+			up_read(&mm->mmap_lock);
+			return -ESRCH;
+		}
+		pte->pte |= (rc & (u64)0x0f) << 59;
+		addr += page_size - offset;
+	}
+	up_read(&mm->mmap_lock);
+
+	return 0;
 }
 
 static long svm_get_hugeinfo(unsigned long __user *arg)
@@ -1247,6 +1302,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 			dev_err(sdev->dev, "failed to copy to user!\n");
 			return -EFAULT;
 		}
+		break;
+	case SVM_IOCTL_SET_RC:
+		err = svm_set_rc((unsigned long __user *)arg);
 		break;
 	case SVM_IOCTL_PIN_MEMORY:
 		err = svm_pin_memory((unsigned long __user *)arg);
