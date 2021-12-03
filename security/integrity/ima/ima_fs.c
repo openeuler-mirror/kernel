@@ -637,12 +637,16 @@ static const struct file_operations ima_data_upload_ops = {
 static int ima_open_for_children(struct inode *inode, struct file *file)
 {
 	struct ima_namespace *ima_ns = get_current_ns();
+	struct ima_namespace *ima_ns_for_children = current->nsproxy->ima_ns_for_children;
 
 	/* Allow to set children configuration only after unshare() */
 	if (ima_ns == current->nsproxy->ima_ns_for_children)
 		return -EPERM;
 
-	return ima_open_simple(inode, file);
+	if (!ns_capable(ima_ns_for_children->user_ns, CAP_SYS_ADMIN))
+		return -EPERM;
+
+	return 0;
 }
 
 static ssize_t ima_write_x509_for_children(struct file *file,
