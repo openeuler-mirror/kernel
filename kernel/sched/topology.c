@@ -1557,8 +1557,16 @@ static struct sched_domain_topology_level default_topology[] = {
 static struct sched_domain_topology_level *sched_domain_topology =
 	default_topology;
 
+static struct sched_domain_topology_level *next_tl(struct sched_domain_topology_level *tl)
+{
+	++tl;
+	while (tl->mask && tl->flags & SDTL_SKIP)
+		++tl;
+	return tl;
+}
+
 #define for_each_sd_topology(tl)			\
-	for (tl = sched_domain_topology; tl->mask; tl++)
+	for (tl = sched_domain_topology; tl->mask; tl = next_tl(tl))
 
 void set_sched_topology(struct sched_domain_topology_level *tl)
 {

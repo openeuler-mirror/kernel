@@ -191,6 +191,7 @@ typedef const struct cpumask *(*sched_domain_mask_f)(int cpu);
 typedef int (*sched_domain_flags_f)(void);
 
 #define SDTL_OVERLAP	0x01
+#define SDTL_SKIP	0x02
 
 struct sd_data {
 	struct sched_domain *__percpu *sd;
