@@ -36,6 +36,7 @@
 #define SVM_DEVICE_NAME "svm"
 #define ASID_SHIFT		48
 
+#define SVM_IOCTL_LOAD_FLAG			0xfffa
 #define SVM_IOCTL_PROCESS_BIND		0xffff
 
 #define CORE_SID		0
@@ -100,6 +101,8 @@ static char *svm_cmd_to_string(unsigned int cmd)
 	switch (cmd) {
 	case SVM_IOCTL_PROCESS_BIND:
 		return "bind";
+	case SVM_IOCTL_LOAD_FLAG:
+		return "load flag";
 	case SVM_IOCTL_RELEASE_PHYS32:
 		return "release phys";
 	default:
@@ -494,6 +497,25 @@ static int svm_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static int svm_proc_load_flag(int __user *arg)
+{
+	static atomic_t l2buf_load_flag = ATOMIC_INIT(0);
+	int flag;
+
+	if (!acpi_disabled)
+		return -EPERM;
+
+	if (arg == NULL)
+		return -EINVAL;
+
+	if (0 == (atomic_cmpxchg(&l2buf_load_flag, 0, 1)))
+		flag = 0;
+	else
+		flag = 1;
+
+	return put_user(flag, arg);
+}
+
 static unsigned long svm_get_unmapped_area(struct file *file,
 		unsigned long addr0, unsigned long len,
 		unsigned long pgoff, unsigned long flags)
@@ -688,6 +710,9 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 			dev_err(sdev->dev, "failed to copy to user!\n");
 			return -EFAULT;
 		}
+		break;
+	case SVM_IOCTL_LOAD_FLAG:
+		err = svm_proc_load_flag((int __user *)arg);
 		break;
 	case SVM_IOCTL_RELEASE_PHYS32:
 		err = svm_release_phys32((unsigned long __user *)arg);
