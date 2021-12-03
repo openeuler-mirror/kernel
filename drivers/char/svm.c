@@ -803,6 +803,27 @@ put_task:
 }
 EXPORT_SYMBOL_GPL(svm_get_pasid);
 
+static int svm_dt_setup_l2buff(struct svm_device *sdev, struct device_node *np)
+{
+	struct device_node *l2buff = of_parse_phandle(np, "memory-region", 0);
+
+	if (l2buff) {
+		struct resource r;
+		int err = of_address_to_resource(l2buff, 0, &r);
+
+		if (err) {
+			of_node_put(l2buff);
+			return err;
+		}
+
+		sdev->l2buff = r.start;
+		sdev->l2size = resource_size(&r);
+	}
+
+	of_node_put(l2buff);
+	return 0;
+}
+
 static int svm_device_probe(struct platform_device *pdev)
 {
 	int err = -1;
@@ -864,6 +885,14 @@ static int svm_device_probe(struct platform_device *pdev)
 			goto err_unregister_misc;
 		}
 	} else {
+		/*
+		 * Get the l2buff phys address and size, if it do not exist
+		 * just warn and continue, and runtime can not use L2BUFF.
+		 */
+		err = svm_dt_setup_l2buff(sdev, np);
+		if (err)
+			dev_warn(dev, "Cannot get l2buff\n");
+
 		err = svm_dt_init_core(sdev, np);
 		if (err) {
 			dev_err(dev, "failed to init dt cores\n");
