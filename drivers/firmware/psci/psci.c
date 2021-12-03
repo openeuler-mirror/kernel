@@ -47,6 +47,8 @@
  */
 static int resident_cpu = -1;
 struct psci_operations psci_ops;
+EXPORT_SYMBOL(psci_ops);
+
 static enum arm_smccc_conduit psci_conduit = SMCCC_CONDUIT_NONE;
 
 bool psci_tos_resident_on(int cpu)
