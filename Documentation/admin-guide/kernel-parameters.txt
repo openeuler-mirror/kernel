@@ -4978,6 +4978,10 @@
 
 	sched_debug	[KNL] Enables verbose scheduler debug messages.
 
+	sched_cluster=  Enable or disable cluster scheduling.
+			0 -- disable.
+			1 -- enable.
+
 	schedstats=	[KNL,X86] Enable or disable scheduled statistics.
 			Allowed values are enable and disable. This feature
 			incurs a small amount of overhead in the scheduler
