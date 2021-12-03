@@ -2029,13 +2029,13 @@
 
 	iommu.strict=	[ARM64] Configure TLB invalidation behaviour
 			Format: { "0" | "1" }
-			0 - Lazy mode.
+			0 - Lazy mode (default).
 			  Request that DMA unmap operations use deferred
 			  invalidation of hardware TLBs, for increased
 			  throughput at the cost of reduced device isolation.
 			  Will fall back to strict mode if not supported by
 			  the relevant IOMMU driver.
-			1 - Strict mode (default).
+			1 - Strict mode.
 			  DMA unmap operations invalidate IOMMU hardware TLBs
 			  synchronously.
 
