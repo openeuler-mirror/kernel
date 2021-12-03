@@ -755,6 +755,54 @@ err_unregister_bus:
 	return err;
 }
 
+int svm_get_pasid(pid_t vpid, int dev_id __maybe_unused)
+{
+	int pasid;
+	unsigned long asid;
+	struct task_struct *task = NULL;
+	struct mm_struct *mm = NULL;
+	struct svm_process *process = NULL;
+	struct svm_bind_process params;
+
+	params.flags = SVM_BIND_PID;
+	params.vpid = vpid;
+	params.pasid = -1;
+	params.ttbr = 0;
+	params.tcr = 0;
+	task = svm_get_task(params);
+	if (IS_ERR(task))
+		return PTR_ERR(task);
+
+	mm = get_task_mm(task);
+	if (mm == NULL) {
+		pasid = -EINVAL;
+		goto put_task;
+	}
+
+	asid = arm64_mm_context_get(mm);
+	if (!asid) {
+		pasid = -ENOSPC;
+		goto put_mm;
+	}
+
+	mutex_lock(&svm_process_mutex);
+	process = find_svm_process(asid);
+	mutex_unlock(&svm_process_mutex);
+	if (process)
+		pasid = process->pasid;
+	else
+		pasid = -ESRCH;
+
+	arm64_mm_context_put(mm);
+put_mm:
+	mmput(mm);
+put_task:
+	put_task_struct(task);
+
+	return pasid;
+}
+EXPORT_SYMBOL_GPL(svm_get_pasid);
+
 static int svm_device_probe(struct platform_device *pdev)
 {
 	int err = -1;
