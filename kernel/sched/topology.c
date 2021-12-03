@@ -1557,6 +1557,70 @@ static struct sched_domain_topology_level default_topology[] = {
 static struct sched_domain_topology_level *sched_domain_topology =
 	default_topology;
 
+#ifdef CONFIG_SCHED_CLUSTER
+void set_sched_cluster(void)
+{
+	struct sched_domain_topology_level *tl;
+
+	for (tl = sched_domain_topology; tl->mask; tl++) {
+		if (tl->sd_flags && (tl->sd_flags() & SD_CLUSTER)) {
+			if (!sysctl_sched_cluster)
+				tl->flags |= SDTL_SKIP;
+			else
+				tl->flags &= ~SDTL_SKIP;
+			break;
+		}
+	}
+}
+
+/* set via /proc/sys/kernel/sched_cluster */
+unsigned int __read_mostly sysctl_sched_cluster = 1;
+
+static DEFINE_MUTEX(sched_cluster_mutex);
+int sched_cluster_handler(struct ctl_table *table, int write,
+		void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	unsigned int oldval;
+
+	if (write && !capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	mutex_lock(&sched_cluster_mutex);
+	oldval = sysctl_sched_cluster;
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (!ret && write) {
+		if (oldval != sysctl_sched_cluster) {
+			set_sched_cluster();
+			arch_rebuild_cpu_topology();
+		}
+	}
+	mutex_unlock(&sched_cluster_mutex);
+
+	return ret;
+}
+
+static struct ctl_table sched_cluster_sysctls[] = {
+	{
+		.procname       = "sched_cluster",
+		.data           = &sysctl_sched_cluster,
+		.maxlen         = sizeof(unsigned int),
+		.mode           = 0644,
+		.proc_handler   = sched_cluster_handler,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
+	{}
+};
+
+static int __init sched_cluster_sysctl_init(void)
+{
+	register_sysctl_init("kernel", sched_cluster_sysctls);
+	return 0;
+}
+late_initcall(sched_cluster_sysctl_init);
+#endif
+
 static struct sched_domain_topology_level *next_tl(struct sched_domain_topology_level *tl)
 {
 	++tl;

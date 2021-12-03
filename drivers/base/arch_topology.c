@@ -114,16 +114,21 @@ int topology_update_cpu_topology(void)
 	return update_topology;
 }
 
+void __weak arch_rebuild_cpu_topology(void)
+{
+	update_topology = 1;
+	rebuild_sched_domains();
+	pr_debug("sched_domain hierarchy rebuilt, flags updated\n");
+	update_topology = 0;
+}
+
 /*
  * Updating the sched_domains can't be done directly from cpufreq callbacks
  * due to locking, so queue the work for later.
  */
 static void update_topology_flags_workfn(struct work_struct *work)
 {
-	update_topology = 1;
-	rebuild_sched_domains();
-	pr_debug("sched_domain hierarchy rebuilt, flags updated\n");
-	update_topology = 0;
+	arch_rebuild_cpu_topology();
 }
 
 static DEFINE_PER_CPU(u32, freq_factor) = 1;
