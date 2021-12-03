@@ -44,6 +44,7 @@
 		if (nr_cpus_node(node))
 
 int arch_update_cpu_topology(void);
+void arch_rebuild_cpu_topology(void);
 
 /* Conform to ACPI 2.0 SLIT distance definitions */
 #define LOCAL_DISTANCE		10

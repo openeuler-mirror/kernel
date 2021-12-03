@@ -1880,6 +1880,12 @@ this_rq_lock_irq(struct rq_flags *rf)
 	return rq;
 }
 
+#ifdef CONFIG_SCHED_CLUSTER
+extern void set_sched_cluster(void);
+#else
+static inline void set_sched_cluster(void) { }
+#endif
+
 #ifdef CONFIG_NUMA
 #ifdef CONFIG_SCHED_STEAL
 extern struct static_key_true sched_steal_allow;
