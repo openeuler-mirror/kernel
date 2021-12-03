@@ -2647,6 +2647,7 @@ void console_flush_on_panic(enum con_flush_mode mode)
 	}
 	console_unlock();
 }
+EXPORT_SYMBOL(console_flush_on_panic);
 
 /*
  * Return the console tty driver structure and its associated index
