@@ -381,12 +381,6 @@ static int qm_rw_regs_write(struct hisi_qm *qm, struct acc_vf_data *vf_data)
 		return ret;
 	}
 
-	ret = qm_write_reg(qm, QM_QUE_ISO_CFG_V, &vf_data->que_iso_cfg, 1);
-	if (ret) {
-		dev_err(dev, "failed to write QM_QUE_ISO_CFG_V!\n");
-		return ret;
-	}
-
 	ret = qm_write_reg(qm, QM_PAGE_SIZE, &vf_data->page_size, 1);
 	if (ret) {
 		dev_err(dev, "failed to write QM_PAGE_SIZE!\n");
@@ -518,6 +512,7 @@ static int vf_match_info_check(struct hisi_qm *qm,
 	struct acc_vf_migration *acc_vf_dev)
 {
 	struct acc_vf_data *vf_data = acc_vf_dev->vf_data;
+	struct hisi_qm *pf_qm = acc_vf_dev->pf_qm;
 	struct device *dev = &qm->pdev->dev;
 	u32 que_iso_state;
 	int ret;
@@ -541,7 +536,7 @@ static int vf_match_info_check(struct hisi_qm *qm,
 	}
 
 	/* vf isolation state check */
-	ret = qm_read_reg(qm, QM_QUE_ISO_CFG_V, &que_iso_state, 1);
+	ret = qm_read_reg(pf_qm, QM_QUE_ISO_CFG_V, &que_iso_state, 1);
 	if (ret) {
 		dev_err(dev, "failed to read QM_QUE_ISO_CFG_V!\n");
 		return ret;
