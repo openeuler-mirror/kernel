@@ -34,6 +34,9 @@
 #include <linux/acpi.h>
 
 #define SVM_DEVICE_NAME "svm"
+#define ASID_SHIFT		48
+
+#define SVM_IOCTL_PROCESS_BIND		0xffff
 
 #define CORE_SID		0
 static int probe_index;
@@ -87,6 +90,222 @@ struct svm_process {
 	struct iommu_sva	*sva;
 };
 
+static char *svm_cmd_to_string(unsigned int cmd)
+{
+	switch (cmd) {
+	case SVM_IOCTL_PROCESS_BIND:
+		return "bind";
+	default:
+		return "unsupported";
+	}
+
+	return NULL;
+}
+
+static struct svm_process *find_svm_process(unsigned long asid)
+{
+	/* TODO */
+	return 0;
+}
+
+static void insert_svm_process(struct svm_process *process)
+{
+	/* TODO */
+}
+
+static void delete_svm_process(struct svm_process *process)
+{
+	/* TODO */
+}
+
+static struct svm_device *file_to_sdev(struct file *file)
+{
+	return container_of(file->private_data,
+			struct svm_device, miscdev);
+}
+
+static void svm_dt_bind_cores(struct svm_process *process)
+{
+	/* TODO */
+}
+
+static void svm_acpi_bind_cores(struct svm_process *process)
+{
+	/* TODO */
+}
+
+static void svm_process_free(struct mmu_notifier *mn)
+{
+	struct svm_process *process = NULL;
+
+	process = container_of(mn, struct svm_process, notifier);
+	arm64_mm_context_put(process->mm);
+	kfree(process);
+}
+
+static void svm_process_release(struct svm_process *process)
+{
+	delete_svm_process(process);
+	put_pid(process->pid);
+
+	mmu_notifier_put(&process->notifier);
+}
+
+static void svm_notifier_release(struct mmu_notifier *mn,
+					struct mm_struct *mm)
+{
+	struct svm_process *process = NULL;
+
+	process = container_of(mn, struct svm_process, notifier);
+
+	/*
+	 * No need to call svm_unbind_cores(), as iommu-sva will do the
+	 * unbind in its mm_notifier callback.
+	 */
+
+	mutex_lock(&svm_process_mutex);
+	svm_process_release(process);
+	mutex_unlock(&svm_process_mutex);
+}
+
+static struct mmu_notifier_ops svm_process_mmu_notifier = {
+	.release	= svm_notifier_release,
+	.free_notifier = svm_process_free,
+};
+
+static struct svm_process *
+svm_process_alloc(struct svm_device *sdev, struct pid *pid,
+		struct mm_struct *mm, unsigned long asid)
+{
+	struct svm_process *process = kzalloc(sizeof(*process), GFP_ATOMIC);
+
+	if (!process)
+		return ERR_PTR(-ENOMEM);
+
+	process->sdev = sdev;
+	process->pid = pid;
+	process->mm = mm;
+	process->asid = asid;
+	process->sdma_list = RB_ROOT; //lint !e64
+	mutex_init(&process->mutex);
+	process->notifier.ops = &svm_process_mmu_notifier;
+
+	return process;
+}
+
+static struct task_struct *svm_get_task(struct svm_bind_process params)
+{
+	struct task_struct *task = NULL;
+
+	if (params.flags & ~SVM_BIND_PID)
+		return ERR_PTR(-EINVAL);
+
+	if (params.flags & SVM_BIND_PID) {
+		struct mm_struct *mm = NULL;
+
+		rcu_read_lock();
+		task = find_task_by_vpid(params.vpid);
+		if (task)
+			get_task_struct(task);
+		rcu_read_unlock();
+		if (task == NULL)
+			return ERR_PTR(-ESRCH);
+
+		/* check the permission */
+		mm = mm_access(task, PTRACE_MODE_ATTACH_REALCREDS);
+		if (IS_ERR_OR_NULL(mm)) {
+			pr_err("cannot access mm\n");
+			put_task_struct(task);
+			return ERR_PTR(-ESRCH);
+		}
+
+		mmput(mm);
+	} else {
+		get_task_struct(current);
+		task = current;
+	}
+
+	return task;
+}
+
+static int svm_process_bind(struct task_struct *task,
+		struct svm_device *sdev, u64 *ttbr, u64 *tcr, int *pasid)
+{
+	int err;
+	unsigned long asid;
+	struct pid *pid = NULL;
+	struct svm_process *process = NULL;
+	struct mm_struct *mm = NULL;
+
+	if ((ttbr == NULL) || (tcr == NULL) || (pasid == NULL))
+		return -EINVAL;
+
+	pid = get_task_pid(task, PIDTYPE_PID);
+	if (pid == NULL)
+		return -EINVAL;
+
+	mm = get_task_mm(task);
+	if (!mm) {
+		err = -EINVAL;
+		goto err_put_pid;
+	}
+
+	asid = arm64_mm_context_get(mm);
+	if (!asid) {
+		err = -ENOSPC;
+		goto err_put_mm;
+	}
+
+	/* If a svm_process already exists, use it */
+	mutex_lock(&svm_process_mutex);
+	process = find_svm_process(asid);
+	if (process == NULL) {
+		process = svm_process_alloc(sdev, pid, mm, asid);
+		if (IS_ERR(process)) {
+			err = PTR_ERR(process);
+			mutex_unlock(&svm_process_mutex);
+			goto err_put_mm_context;
+		}
+		err = mmu_notifier_register(&process->notifier, mm);
+		if (err) {
+			mutex_unlock(&svm_process_mutex);
+			goto err_free_svm_process;
+		}
+
+		insert_svm_process(process);
+
+		if (acpi_disabled)
+			svm_dt_bind_cores(process);
+		else
+			svm_acpi_bind_cores(process);
+
+		mutex_unlock(&svm_process_mutex);
+	} else {
+		mutex_unlock(&svm_process_mutex);
+		arm64_mm_context_put(mm);
+		put_pid(pid);
+	}
+
+
+	*ttbr = virt_to_phys(mm->pgd) | asid << ASID_SHIFT;
+	*tcr  = read_sysreg(tcr_el1);
+	*pasid = process->pasid;
+
+	mmput(mm);
+	return 0;
+
+err_free_svm_process:
+	kfree(process);
+err_put_mm_context:
+	arm64_mm_context_put(mm);
+err_put_mm:
+	mmput(mm);
+err_put_pid:
+	put_pid(pid);
+
+	return err;
+}
+
 static struct bus_type svm_bus_type = {
 	.name		= "svm_bus",
 };
@@ -99,9 +318,58 @@ static int svm_open(struct inode *inode, struct file *file)
 static long svm_ioctl(struct file *file, unsigned int cmd,
 		unsigned long arg)
 {
-	/*TODO add svm ioctl*/
-	return 0;
+	int err = -EINVAL;
+	struct svm_bind_process params;
+	struct svm_device *sdev = file_to_sdev(file);
+	struct task_struct *task;
+
+	if (!arg)
+		return -EINVAL;
+
+	if (cmd == SVM_IOCTL_PROCESS_BIND) {
+		err = copy_from_user(&params, (void __user *)arg,
+				sizeof(params));
+		if (err) {
+			dev_err(sdev->dev, "fail to copy params %d\n", err);
+			return -EFAULT;
+		}
+	}
+
+	switch (cmd) {
+	case SVM_IOCTL_PROCESS_BIND:
+		task = svm_get_task(params);
+		if (IS_ERR(task)) {
+			dev_err(sdev->dev, "failed to get task\n");
+			return PTR_ERR(task);
+		}
+
+		err = svm_process_bind(task, sdev, &params.ttbr,
+				&params.tcr, &params.pasid);
+		if (err) {
+			put_task_struct(task);
+			dev_err(sdev->dev, "failed to bind task %d\n", err);
+			return err;
+		}
+
+		put_task_struct(task);
+		err = copy_to_user((void __user *)arg, &params,
+				sizeof(params));
+		if (err) {
+			dev_err(sdev->dev, "failed to copy to user!\n");
+			return -EFAULT;
+		}
+		break;
+	default:
+			err = -EINVAL;
+		}
+
+		if (err)
+			dev_err(sdev->dev, "%s: %s failed err = %d\n", __func__,
+					svm_cmd_to_string(cmd), err);
+
+	return err;
 }
+
 static const struct file_operations svm_fops = {
 	.owner			= THIS_MODULE,
 	.open			= svm_open,
