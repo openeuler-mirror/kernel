@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       22
+%global devel_release       23
 %global maintenance_release .0.0
-%global pkg_release         .13
+%global pkg_release         .14
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,72 @@ fi
 %endif
 
 %changelog
+* Mon Dec 06 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-23.0.0.14
+- memcg: unify memcg stat flushing
+- memcg: flush stats only if updated
+- blk-cgroup: blk_cgroup_bio_start() should use irq-safe operations on blkg->iostat_cpu
+- memcg: flush lruvec stats in the refault
+- mm, memcg: remove unused functions
+- memcg: infrastructure to flush memcg stats
+- memcg: switch lruvec stats to rstat
+- mm: memcontrol: fix blocking rstat function called from atomic cgroup1 thresholding code
+- cgroup: rstat: fix A-A deadlock on 32bit around u64_stats_sync
+- kselftests: cgroup: update kmem test for new vmstat implementation
+- mm: memcontrol: consolidate lruvec stat flushing
+- mm: memcontrol: switch to rstat
+- cgroup: rstat: punt root-level optimization to individual controllers
+- cgroup: rstat: support cgroup1
+- mm: memcontrol: privatize memcg_page_state query functions
+- mm: memcontrol: kill mem_cgroup_nodeinfo()
+- mm: memcontrol: fix cpuhotplug statistics flushing
+- hugetlbfs: flush TLBs correctly after huge_pmd_unshare
+- rsi: fix control-message timeout
+- media: staging/intel-ipu3: css: Fix wrong size comparison imgu_css_fw_init
+- staging: rtl8192u: fix control-message timeouts
+- staging: r8712u: fix control-message timeout
+- comedi: vmk80xx: fix bulk and interrupt message timeouts
+- comedi: vmk80xx: fix bulk-buffer overflow
+- comedi: vmk80xx: fix transfer-buffer overflows
+- comedi: ni_usb6501: fix NULL-deref in command paths
+- comedi: dt9812: fix DMA buffers on stack
+- isofs: Fix out of bound access for corrupted isofs image
+- staging: rtl8712: fix use-after-free in rtl8712_dl_fw
+- printk/console: Allow to disable console output by using console="" or console=null
+- binder: don't detect sender/target during buffer cleanup
+- usb-storage: Add compatibility quirk flags for iODD 2531/2541
+- usb: musb: Balance list entry in musb_gadget_queue
+- usb: gadget: Mark USB_FSL_QE broken on 64-bit
+- usb: ehci: handshake CMD_RUN instead of STS_HALT
+- Revert "x86/kvm: fix vcpu-id indexed array sizes"
+- KVM: x86: avoid warning with -Wbitwise-instead-of-logical
+- ovl: warn about orphan metacopy
+- ext4: fix e2fsprogs checksum failure for mounted filesystem
+- ima: Fix warning: no previous prototype for function 'ima_add_kexec_buffer'
+- kfence: default to dynamic branch instead of static keys mode
+- kfence: always use static branches to guard kfence_alloc()
+- kfence: shorten critical sections of alloc/free
+- kfence: add note to documentation about skipping covered allocations
+- kfence: limit currently covered allocations when pool nearly full
+- kfence: move saving stack trace of allocations into __kfence_alloc()
+- kfence: count unexpectedly skipped allocations
+- stacktrace: move filter_irq_stacks() to kernel/stacktrace.c
+- powerpc: Don't provide __kernel_map_pages() without ARCH_SUPPORTS_DEBUG_PAGEALLOC
+- powerpc/booke: Disable STRICT_KERNEL_RWX, DEBUG_PAGEALLOC and KFENCE
+- bpf: Fix toctou on read-only map's constant scalar tracking
+- block: avoid quiesce while elevator init
+- mwifiex_usb: Fix skb_over_panic in mwifiex_usb_recv
+- bonding: Fix a use-after-free problem when bond_sysfs_slave_add() failed
+- drm/nouveau: clean up all clients on device removal
+- drm/nouveau: Add a dedicated mutex for the clients list
+- drm/nouveau: use drm_dev_unplug() during device removal
+- locks: Fix UBSAN undefined behaviour in flock64_to_posix_lock
+- livepatch/arm: fix incorrect stack detection
+- sched/rt: Try to restart rt period timer when rt runtime exceeded
+- blkcg: Remove extra blkcg_bio_issue_init
+- ubifs: read-only if LEB may always be taken in ubifs_garbage_collect
+- ubifs: fix double return leb in ubifs_garbage_collect
+- ubifs: fix slab-out-of-bounds in ubifs_change_lp
+
 * Tue Nov 30 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-22.0.0.13
 - printk: enable zap_locks on X86 and ARM64
 - printk: fix potential deadlock in printk()
