@@ -1194,8 +1194,6 @@ static blk_status_t scsi_setup_scsi_cmnd(struct scsi_device *sdev,
 
 	cmd->cmd_len = scsi_req(req)->cmd_len;
 	cmd->cmnd = scsi_req(req)->cmd;
-	if (cmd->cmd_len == 0)
-		cmd->cmd_len = scsi_command_size(cmd->cmnd);
 	cmd->transfersize = blk_rq_bytes(req);
 	cmd->allowed = scsi_req(req)->retries;
 	return BLK_STS_OK;
