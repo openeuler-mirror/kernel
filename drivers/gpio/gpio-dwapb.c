@@ -71,6 +71,14 @@ bool enable_ascend_mini_gpio_dwapb;
 bool enable_ascend_gpio_dwapb;
 struct dwapb_gpio;
 
+static int __init enable_ascend_gpio_dwapb_setup(char *str)
+{
+	enable_ascend_gpio_dwapb = true;
+
+	return 1;
+}
+__setup("enable_ascend_gpio_dwapb", enable_ascend_gpio_dwapb_setup);
+
 #ifdef CONFIG_PM_SLEEP
 /* Store GPIO context across system-wide suspend/resume transitions */
 struct dwapb_context {
