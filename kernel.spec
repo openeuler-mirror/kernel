@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2111.7.0
+%global hulkrelease 2112.1.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0124
+Release: %{hulkrelease}.0125
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,20 @@ fi
 %endif
 
 %changelog
+
+* Tue Dec 07 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.1.0.0125
+- arm64: Fix conflict for capability when cpu hotplug
+- mm: memcontrol: fix cpuhotplug statistics flushing
+- mm, memcg: fix error return value of mem_cgroup_css_alloc()
+- mm/memcontrol: fix a data race in scan count
+- GPIO : support ascend_gpio_dwapb_enable switch
+- ext4: always panic when errors=panic is specified
+- config: disable CONFIG_NGBE by default in hulk_defconfig
+- x86/config: Enable netswift Giga NIC driver for x86
+- net: ngbe: Add Netswift Giga NIC driver
+- ras: report cpu logical index to userspace in arm event
+- arm64: Avoid premature usercopy failure
+- hugetlb: before freeing hugetlb page set dtor to appropriate value
 
 * Tue Nov 30 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2111.7.0.0124
 - defconfig: update the defconfigs to support 9P
