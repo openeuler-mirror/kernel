@@ -1316,6 +1316,17 @@ config INTEL_UNCORE_FREQ_CONTROL
 	  To compile this driver as a module, choose M here: the module
 	  will be called intel-uncore-frequency.
 
+config INTEL_VSEC
+	tristate "Intel Vendor Specific Extended Capabilities Driver"
+	depends on PCI
+	select AUXILIARY_BUS
+	help
+	  Adds support for feature drivers exposed using Intel PCIe VSEC and
+	  DVSEC.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called intel_vsec.
+
 config INTEL_BXTWC_PMIC_TMU
 	tristate "Intel BXT Whiskey Cove TMU Driver"
 	depends on REGMAP
@@ -1392,7 +1403,7 @@ config INTEL_PMT_CLASS
 
 config INTEL_PMT_TELEMETRY
 	tristate "Intel Platform Monitoring Technology (PMT) Telemetry driver"
-	depends on MFD_INTEL_PMT
+	depends on INTEL_VSEC
 	select INTEL_PMT_CLASS
 	help
 	  The Intel Platform Monitory Technology (PMT) Telemetry driver provides
@@ -1404,7 +1415,7 @@ config INTEL_PMT_TELEMETRY
 
 config INTEL_PMT_CRASHLOG
 	tristate "Intel Platform Monitoring Technology (PMT) Crashlog driver"
-	depends on MFD_INTEL_PMT
+	depends on INTEL_VSEC
 	select INTEL_PMT_CLASS
 	help
 	  The Intel Platform Monitoring Technology (PMT) crashlog driver provides
