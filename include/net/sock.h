@@ -472,7 +472,9 @@ struct sock {
 	u32			sk_ack_backlog;
 	u32			sk_max_ack_backlog;
 	kuid_t			sk_uid;
+#if defined(CONFIG_DEBUG_SPINLOCK) || defined(CONFIG_DEBUG_LOCK_ALLOC)
 	spinlock_t		sk_peer_lock;
+#endif
 	struct pid		*sk_peer_pid;
 	const struct cred	*sk_peer_cred;
 
@@ -513,7 +515,18 @@ struct sock {
 	struct sock_reuseport __rcu	*sk_reuseport_cb;
 	struct rcu_head		sk_rcu;
 
+#if !defined(CONFIG_DEBUG_SPINLOCK) && !defined(CONFIG_DEBUG_LOCK_ALLOC)
+#ifndef __GENKSYMS__
+	union {
+		spinlock_t	sk_peer_lock;
+		unsigned long   kabi_reserve1;
+	};
+#else
 	KABI_RESERVE(1)
+#endif
+#else
+	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
