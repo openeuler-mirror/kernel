@@ -211,15 +211,39 @@ void blk_mq_unfreeze_queue(struct request_queue *q)
 }
 EXPORT_SYMBOL_GPL(blk_mq_unfreeze_queue);
 
+static void __blk_mq_quiesce_queue_nowait(struct request_queue *q,
+					  unsigned int flag)
+{
+	blk_queue_flag_set(flag, q);
+}
+
 /*
  * FIXME: replace the scsi_internal_device_*block_nowait() calls in the
  * mpt3sas driver such that this function can be removed.
  */
 void blk_mq_quiesce_queue_nowait(struct request_queue *q)
 {
-	blk_queue_flag_set(QUEUE_FLAG_QUIESCED, q);
+	__blk_mq_quiesce_queue_nowait(q, QUEUE_FLAG_QUIESCED);
 }
 EXPORT_SYMBOL_GPL(blk_mq_quiesce_queue_nowait);
+
+static void __blk_mq_quiesce_queue(struct request_queue *q, unsigned int flag)
+{
+	struct blk_mq_hw_ctx *hctx;
+	unsigned int i;
+	bool rcu = false;
+
+	__blk_mq_quiesce_queue_nowait(q, flag);
+
+	queue_for_each_hw_ctx(q, hctx, i) {
+		if (hctx->flags & BLK_MQ_F_BLOCKING)
+			synchronize_srcu(hctx->srcu);
+		else
+			rcu = true;
+	}
+	if (rcu)
+		synchronize_rcu();
+}
 
 /**
  * blk_mq_quiesce_queue() - wait until all ongoing dispatches have finished
@@ -232,30 +256,18 @@ EXPORT_SYMBOL_GPL(blk_mq_quiesce_queue_nowait);
  */
 void blk_mq_quiesce_queue(struct request_queue *q)
 {
-	struct blk_mq_hw_ctx *hctx;
-	unsigned int i;
-	bool rcu = false;
-
-	blk_mq_quiesce_queue_nowait(q);
-
-	queue_for_each_hw_ctx(q, hctx, i) {
-		if (hctx->flags & BLK_MQ_F_BLOCKING)
-			synchronize_srcu(hctx->srcu);
-		else
-			rcu = true;
-	}
-	if (rcu)
-		synchronize_rcu();
+	__blk_mq_quiesce_queue(q, QUEUE_FLAG_QUIESCED);
 }
 EXPORT_SYMBOL_GPL(blk_mq_quiesce_queue);
 
-bool blk_mq_quiesce_queue_without_rcu(struct request_queue *q)
+static bool __blk_mq_quiesce_queue_without_rcu(struct request_queue *q,
+					       unsigned int flag)
 {
 	struct blk_mq_hw_ctx *hctx;
 	unsigned int i;
 	bool rcu = false;
 
-	blk_mq_quiesce_queue_nowait(q);
+	__blk_mq_quiesce_queue_nowait(q, flag);
 
 	queue_for_each_hw_ctx(q, hctx, i) {
 		if (hctx->flags & BLK_MQ_F_BLOCKING)
@@ -265,7 +277,20 @@ bool blk_mq_quiesce_queue_without_rcu(struct request_queue *q)
 	}
 	return rcu;
 }
+
+bool blk_mq_quiesce_queue_without_rcu(struct request_queue *q)
+{
+	return __blk_mq_quiesce_queue_without_rcu(q, QUEUE_FLAG_QUIESCED);
+}
 EXPORT_SYMBOL_GPL(blk_mq_quiesce_queue_without_rcu);
+
+static void __blk_mq_unquiesce_queue(struct request_queue *q, unsigned int flag)
+{
+	blk_queue_flag_clear(flag, q);
+
+	/* dispatch requests which are inserted during quiescing */
+	blk_mq_run_hw_queues(q, true);
+}
 
 /*
  * blk_mq_unquiesce_queue() - counterpart of blk_mq_quiesce_queue()
@@ -276,10 +301,7 @@ EXPORT_SYMBOL_GPL(blk_mq_quiesce_queue_without_rcu);
  */
 void blk_mq_unquiesce_queue(struct request_queue *q)
 {
-	blk_queue_flag_clear(QUEUE_FLAG_QUIESCED, q);
-
-	/* dispatch requests which are inserted during quiescing */
-	blk_mq_run_hw_queues(q, true);
+	__blk_mq_unquiesce_queue(q, QUEUE_FLAG_QUIESCED);
 }
 EXPORT_SYMBOL_GPL(blk_mq_unquiesce_queue);
 
