@@ -822,23 +822,21 @@ struct request *attempt_front_merge(struct request_queue *q, struct request *rq)
 	return NULL;
 }
 
-int blk_attempt_req_merge(struct request_queue *q, struct request *rq,
+/*
+ * Try to merge 'next' into 'rq'. Return true if the merge happened, false
+ * otherwise. The caller is responsible for freeing 'next' if the merge
+ * happened.
+ */
+bool blk_attempt_req_merge(struct request_queue *q, struct request *rq,
 			  struct request *next)
 {
 	struct elevator_queue *e = q->elevator;
-	struct request *free;
 
 	if (!e->uses_mq && e->type->ops.sq.elevator_allow_rq_merge_fn)
 		if (!e->type->ops.sq.elevator_allow_rq_merge_fn(q, rq, next))
 			return 0;
 
-	free = attempt_merge(q, rq, next);
-	if (free) {
-		__blk_put_request(q, free);
-		return 1;
-	}
-
-	return 0;
+	return attempt_merge(q, rq, next);
 }
 
 bool blk_rq_merge_ok(struct request *rq, struct bio *bio)

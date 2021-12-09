@@ -220,4 +220,14 @@ static inline void blk_mq_clear_mq_map(struct blk_mq_tag_set *set)
 		set->mq_map[cpu] = 0;
 }
 
+static inline void blk_mq_free_requests(struct list_head *list)
+{
+	while (!list_empty(list)) {
+		struct request *rq = list_entry_rq(list->next);
+
+		list_del_init(&rq->queuelist);
+		blk_mq_free_request(rq);
+	}
+}
+
 #endif

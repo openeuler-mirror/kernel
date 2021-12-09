@@ -469,9 +469,11 @@ enum elv_merge elv_merge(struct request_queue *q, struct request **req,
  * we can append 'rq' to an existing request, so we can throw 'rq' away
  * afterwards.
  *
- * Returns true if we merged, false otherwise
+ * Returns true if we merged, false otherwise. 'free' will contain all
+ * requests that need to be freed.
  */
-bool elv_attempt_insert_merge(struct request_queue *q, struct request *rq)
+bool elv_attempt_insert_merge(struct request_queue *q, struct request *rq,
+			      struct list_head *free)
 {
 	struct request *__rq;
 	bool ret;
@@ -482,8 +484,10 @@ bool elv_attempt_insert_merge(struct request_queue *q, struct request *rq)
 	/*
 	 * First try one-hit cache.
 	 */
-	if (q->last_merge && blk_attempt_req_merge(q, q->last_merge, rq))
+	if (q->last_merge && blk_attempt_req_merge(q, q->last_merge, rq)) {
+		list_add(&rq->queuelist, free);
 		return true;
+	}
 
 	if (blk_queue_noxmerges(q))
 		return false;
@@ -497,6 +501,7 @@ bool elv_attempt_insert_merge(struct request_queue *q, struct request *rq)
 		if (!__rq || !blk_attempt_req_merge(q, __rq, rq))
 			break;
 
+		list_add(&rq->queuelist, free);
 		/* The merged request could be merged with others, try again */
 		ret = true;
 		rq = __rq;
@@ -618,6 +623,7 @@ void elv_drain_elevator(struct request_queue *q)
 
 void __elv_add_request(struct request_queue *q, struct request *rq, int where)
 {
+	LIST_HEAD(free);
 	trace_block_rq_insert(q, rq);
 
 	blk_pm_add_request(q, rq);
@@ -665,8 +671,10 @@ void __elv_add_request(struct request_queue *q, struct request *rq, int where)
 		 * queue already, we are done - rq has now been freed,
 		 * so no need to do anything further.
 		 */
-		if (elv_attempt_insert_merge(q, rq))
+		if (elv_attempt_insert_merge(q, rq, &free)) {
+			blk_mq_free_requests(&free);
 			break;
+		}
 		/* fall through */
 	case ELEVATOR_INSERT_SORT:
 		BUG_ON(blk_rq_is_passthrough(rq));
