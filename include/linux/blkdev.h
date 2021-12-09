@@ -725,8 +725,11 @@ struct request_queue {
 #define QUEUE_FLAG_POLL_STATS  25	/* collecting stats for hybrid polling */
 #define QUEUE_FLAG_REGISTERED  26	/* queue has been registered to a disk */
 #define QUEUE_FLAG_SCSI_PASSTHROUGH 27	/* queue supports SCSI commands */
-#define QUEUE_FLAG_QUIESCED    28	/* queue has been quiesced */
+/* queue has been quiesced, used in driver */
+#define QUEUE_FLAG_QUIESCED    28
 #define QUEUE_FLAG_FORECE_QUIESCE 29 /* force quiesce when cleanup queue */
+/* queue has bee quiesced, used in block layer */
+#define QUEUE_FLAG_QUIESCED_INTERNAL 30
 
 #define QUEUE_FLAG_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_SAME_COMP)	|	\
@@ -763,7 +766,9 @@ bool blk_queue_flag_test_and_clear(unsigned int flag, struct request_queue *q);
 #define blk_noretry_request(rq) \
 	((rq)->cmd_flags & (REQ_FAILFAST_DEV|REQ_FAILFAST_TRANSPORT| \
 			     REQ_FAILFAST_DRIVER))
-#define blk_queue_quiesced(q)	test_bit(QUEUE_FLAG_QUIESCED, &(q)->queue_flags)
+#define blk_queue_quiesced(q) test_bit(QUEUE_FLAG_QUIESCED, &(q)->queue_flags)
+#define blk_queue_quiesced_internal(q) \
+	test_bit(QUEUE_FLAG_QUIESCED_INTERNAL, &(q)->queue_flags)
 #define blk_queue_pm_only(q)	atomic_read(&(q)->pm_only)
 #define blk_queue_fua(q)	test_bit(QUEUE_FLAG_FUA, &(q)->queue_flags)
 

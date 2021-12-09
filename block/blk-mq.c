@@ -260,6 +260,11 @@ void blk_mq_quiesce_queue(struct request_queue *q)
 }
 EXPORT_SYMBOL_GPL(blk_mq_quiesce_queue);
 
+void blk_mq_quiesce_queue_internal(struct request_queue *q)
+{
+	__blk_mq_quiesce_queue(q, QUEUE_FLAG_QUIESCED_INTERNAL);
+}
+
 static bool __blk_mq_quiesce_queue_without_rcu(struct request_queue *q,
 					       unsigned int flag)
 {
@@ -304,6 +309,11 @@ void blk_mq_unquiesce_queue(struct request_queue *q)
 	__blk_mq_unquiesce_queue(q, QUEUE_FLAG_QUIESCED);
 }
 EXPORT_SYMBOL_GPL(blk_mq_unquiesce_queue);
+
+void blk_mq_unquiesce_queue_internal(struct request_queue *q)
+{
+	__blk_mq_unquiesce_queue(q, QUEUE_FLAG_QUIESCED_INTERNAL);
+}
 
 void blk_mq_wake_waiters(struct request_queue *q)
 {
@@ -1491,6 +1501,7 @@ bool blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async)
 	 */
 	hctx_lock(hctx, &srcu_idx);
 	need_run = !blk_queue_quiesced(hctx->queue) &&
+		!blk_queue_quiesced_internal(hctx->queue) &&
 		blk_mq_hctx_has_pending(hctx);
 	hctx_unlock(hctx, srcu_idx);
 
@@ -1844,7 +1855,8 @@ static blk_status_t __blk_mq_try_issue_directly(struct blk_mq_hw_ctx *hctx,
 	 * blk_mq_request_issue_directly(), and return BLK_STS_OK to caller,
 	 * and avoid driver to try to dispatch again.
 	 */
-	if (blk_mq_hctx_stopped(hctx) || blk_queue_quiesced(q)) {
+	if (blk_mq_hctx_stopped(hctx) || blk_queue_quiesced(q) ||
+	    blk_queue_quiesced_internal(q)) {
 		run_queue = false;
 		bypass_insert = false;
 		goto insert;
