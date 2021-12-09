@@ -3125,7 +3125,7 @@ int blk_mq_update_nr_requests(struct request_queue *q, unsigned int nr)
 		return -EINVAL;
 
 	blk_mq_freeze_queue(q);
-	blk_mq_quiesce_queue(q);
+	blk_mq_quiesce_queue_internal(q);
 
 	ret = 0;
 	queue_for_each_hw_ctx(q, hctx, i) {
@@ -3151,7 +3151,7 @@ int blk_mq_update_nr_requests(struct request_queue *q, unsigned int nr)
 	if (!ret)
 		q->nr_requests = nr;
 
-	blk_mq_unquiesce_queue(q);
+	blk_mq_unquiesce_queue_internal(q);
 	blk_mq_unfreeze_queue(q);
 
 	return ret;

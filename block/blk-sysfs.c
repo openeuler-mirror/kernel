@@ -461,7 +461,7 @@ static ssize_t queue_wb_lat_store(struct request_queue *q, const char *page,
 	 */
 	if (q->mq_ops) {
 		blk_mq_freeze_queue(q);
-		blk_mq_quiesce_queue(q);
+		blk_mq_quiesce_queue_internal(q);
 	} else
 		blk_queue_bypass_start(q);
 
@@ -469,7 +469,7 @@ static ssize_t queue_wb_lat_store(struct request_queue *q, const char *page,
 	wbt_update_limits(q);
 
 	if (q->mq_ops) {
-		blk_mq_unquiesce_queue(q);
+		blk_mq_unquiesce_queue_internal(q);
 		blk_mq_unfreeze_queue(q);
 	} else
 		blk_queue_bypass_end(q);

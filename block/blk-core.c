@@ -812,7 +812,7 @@ void blk_cleanup_queue(struct request_queue *q)
 	 */
 	if (q->mq_ops && (blk_queue_init_done(q) ||
 			test_bit(QUEUE_FLAG_FORECE_QUIESCE, &q->queue_flags)))
-		blk_mq_quiesce_queue(q);
+		blk_mq_quiesce_queue_internal(q);
 
 	/* for synchronous bio-based driver finish in-flight integrity i/o */
 	blk_flush_integrity();

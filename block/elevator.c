@@ -1021,11 +1021,11 @@ static int elevator_switch(struct request_queue *q, struct elevator_type *new_e)
 
 	if (q->mq_ops) {
 		blk_mq_freeze_queue(q);
-		blk_mq_quiesce_queue(q);
+		blk_mq_quiesce_queue_internal(q);
 
 		err = elevator_switch_mq(q, new_e);
 
-		blk_mq_unquiesce_queue(q);
+		blk_mq_unquiesce_queue_internal(q);
 		blk_mq_unfreeze_queue(q);
 
 		return err;
