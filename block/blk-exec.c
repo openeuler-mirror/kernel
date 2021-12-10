@@ -21,7 +21,7 @@ static void blk_end_sync_rq(struct request *rq, blk_status_t error)
 {
 	struct completion *waiting = rq->end_io_data;
 
-	rq->end_io_data = NULL;
+	rq->end_io_data = (void *)(uintptr_t)error;
 
 	/*
 	 * complete last, if this is a stack request the process (and thus
@@ -75,8 +75,9 @@ EXPORT_SYMBOL_GPL(blk_execute_rq_nowait);
  * Description:
  *    Insert a fully prepared request at the back of the I/O scheduler queue
  *    for execution and wait for completion.
+ *    Return: The blk_status_t result provided to blk_mq_end_request().
  */
-void blk_execute_rq(struct request_queue *q, struct gendisk *bd_disk,
+blk_status_t blk_execute_rq(struct request_queue *q, struct gendisk *bd_disk,
 		   struct request *rq, int at_head)
 {
 	DECLARE_COMPLETION_ONSTACK(wait);
@@ -91,5 +92,7 @@ void blk_execute_rq(struct request_queue *q, struct gendisk *bd_disk,
 		while (!wait_for_completion_io_timeout(&wait, hang_check * (HZ/2)));
 	else
 		wait_for_completion_io(&wait);
+
+	return (blk_status_t)(uintptr_t)rq->end_io_data;
 }
 EXPORT_SYMBOL(blk_execute_rq);
