@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       23
+%global devel_release       24
 %global maintenance_release .0.0
-%global pkg_release         .14
+%global pkg_release         .15
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,62 @@ fi
 %endif
 
 %changelog
+* Mon Dec 06 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-24.0.0.15
+- kprobe : fix out-of-bounds in register_kretprobe when parsing negative data_size
+- ima: Fix the pathname to relative path when get absolute path failed
+- Revert "init: only move down lockup_detector_init() when
+- pci: Enable acs for QLogic HBA cards
+- config: enable SVA feature
+- vfio/migration: bugfix queue isolation configuration
+- acc/migration: bugfix Guest reset scene
+- vfio/acc: Modify operation to get queues number
+- crypto: hisilicon/qm - modify the uacce mode check
+- crypto: hisilicon/zip - Fix spelling mistake "COMSUMED" -> "CONSUMED"
+- crypto: hisilicon - Fix sscanf format signedness
+- arm64/numa: cdm: Cacheline aligned cdmmask to improve performance
+- ntp: Avoid undefined behaviour in second_overflow()
+- arm64: kexec: only clear EOI for SDEI in NMI context
+- iommu/iova: wait 'fq_timer' handler to finish before destroying 'fq'
+- ilp32: fix compile problem when ARM64_ILP32 and UBSAN are both enabled
+- acpi/arm64: check the returned logical CPU number of 'acpi_map_cpuid()'
+- arm64: fix abi change caused by ILP32
+- arm64: cpufeature: add cmdline option for disable lse
+- cache: Workaround HiSilicon Taishan DC CVAU
+- signal: Export tracepoint symbol signal_generate
+- suspend: export cpu_suspend/cpu_resume/psci_ops
+- printk: export log_buf_addr_get/log_buf_len_get
+- printk: Export a symbol.
+- ACPI / APEI: Notify all ras err to driver
+- Export sysboml for bbox to use.
+- tty: fix possible deadlock in console_unlock
+- printk: move printk_safe macros to printk header
+- iommu: set the default iommu-dma mode as non-strict
+- iommu/iova: avoid softlockup in fq_flush_timeout
+- svm: Enable CONFIG_HISI_SVM by default
+- svm: Add svm_get_phys to get phys addr for ts core
+- svm: add set l2 cache read count functions
+- svm: implement svm pin/unpin pages to forbid page migrtate
+- svm: Add ioctl to get meminfo
+- svm: implement the process remap features
+- svm: implement the svm process load flag
+- svm: add support for allocing memory which is within 4G physical address in svm_mmap
+- svm: driver probe to read l2buff addr
+- svm: Add and export svm_get_pasid
+- svm: implement svm bind and unbind
+- svm: using a rbtree to manage the svm_process
+- svm: add svm bind ioctl and add some functions
+- svm: init the children device of svm device
+- svm: init the svm device and remove the svm device
+- svm: add svm drv framework for ascend
+- arm64/crypto: Accelerated CRC T10 DIF computation
+- watchdog: Fix check_preemption_disabled() error
+- ext4: stop IO for page without buffer_head
+- driver: support ts core ras process
+- imans: Check CAP_SYS_ADMIN in userns associated with IMA NS during configuration.
+- stop_machine: mask pseudo nmi before running the callback
+- stop_machine: mask sdei before running the callback
+- hugetlb: before freeing hugetlb page set dtor to appropriate value
+
 * Mon Dec 06 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-23.0.0.14
 - memcg: unify memcg stat flushing
 - memcg: flush stats only if updated
