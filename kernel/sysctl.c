@@ -128,6 +128,9 @@ static int one_thousand = 1000;
 #ifdef CONFIG_PRINTK
 static int ten_thousand = 10000;
 #endif
+#ifdef CONFIG_QOS_SCHED
+static int hundred_thousand = 100000;
+#endif
 #ifdef CONFIG_PERF_EVENTS
 static int six_hundred_forty_kb = 640 * 1024;
 #endif
@@ -2725,6 +2728,26 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0555,
 		.child		= ias_table,
 	},
+#ifdef CONFIG_QOS_SCHED
+	{
+		.procname	= "qos_overload_detect_period_ms",
+		.data		= &sysctl_overload_detect_period,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &one_thousand,
+		.extra2		= &hundred_thousand,
+	},
+	{
+		.procname	= "qos_offline_wait_interval_ms",
+		.data		= &sysctl_offline_wait_interval,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &one_hundred,
+		.extra2		= &one_thousand,
+	},
+#endif
 	{ }
 };
 

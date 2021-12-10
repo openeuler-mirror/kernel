@@ -160,6 +160,10 @@ static unsigned long exit_to_user_mode_loop(struct pt_regs *regs,
 		if (ti_work & _TIF_SIGPENDING)
 			arch_do_signal(regs);
 
+#ifdef CONFIG_QOS_SCHED
+		sched_qos_offline_wait();
+#endif
+
 		if (ti_work & _TIF_NOTIFY_RESUME) {
 			tracehook_notify_resume(regs);
 			rseq_handle_notify_resume(NULL, regs);
@@ -187,7 +191,8 @@ static void exit_to_user_mode_prepare(struct pt_regs *regs)
 
 	lockdep_assert_irqs_disabled();
 
-	if (unlikely(ti_work & EXIT_TO_USER_MODE_WORK))
+	if (unlikely((ti_work & EXIT_TO_USER_MODE_WORK) ||
+		      sched_qos_cpu_overload()))
 		ti_work = exit_to_user_mode_loop(regs, ti_work);
 
 	arch_exit_to_user_mode_prepare(regs, ti_work);

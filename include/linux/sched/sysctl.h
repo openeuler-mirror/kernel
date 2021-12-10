@@ -74,6 +74,11 @@ extern unsigned int sysctl_sched_uclamp_util_min_rt_default;
 extern unsigned int sysctl_sched_cfs_bandwidth_slice;
 #endif
 
+#ifdef CONFIG_QOS_SCHED
+extern unsigned int sysctl_overload_detect_period;
+extern unsigned int sysctl_offline_wait_interval;
+#endif
+
 #ifdef CONFIG_SCHED_AUTOGROUP
 extern unsigned int sysctl_sched_autogroup_enabled;
 #endif
