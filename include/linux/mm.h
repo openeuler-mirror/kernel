@@ -97,6 +97,15 @@ extern const int mmap_rnd_compat_bits_max;
 extern int mmap_rnd_compat_bits __read_mostly;
 #endif
 
+#ifdef CONFIG_COHERENT_DEVICE
+static inline bool is_set_cdmmask(void)
+{
+	return !nodes_empty(cdmmask);
+}
+#else
+#define is_set_cdmmask() (0)
+#endif
+
 #include <asm/page.h>
 #include <asm/processor.h>
 
@@ -303,6 +312,8 @@ extern unsigned int kobjsize(const void *objp);
 #ifdef CONFIG_COHERENT_DEVICE
 #define VM_CDM		0x100000000	/* Contains coherent device memory */
 #endif
+
+#define VM_CHECKNODE	0x200000000
 
 #ifdef CONFIG_USERSWAP
 /* bit[32:36] is the protection key of intel, so use a large value for VM_USWAP */

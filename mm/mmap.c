@@ -1581,6 +1581,12 @@ __do_mmap(struct file *file, unsigned long addr, unsigned long len,
 			vm_flags |= VM_NORESERVE;
 	}
 
+	/* set numa node id into vm_flags,
+	 * hugetlbfs file mmap will use it to check node
+	 */
+	if (flags & MAP_CHECKNODE)
+		set_vm_checknode(&vm_flags, flags);
+
 	addr = mmap_region(file, addr, len, vm_flags, pgoff, uf);
 	if (!IS_ERR_VALUE(addr) &&
 	    ((vm_flags & VM_LOCKED) ||
@@ -1825,12 +1831,23 @@ unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
 	} else if (flags & MAP_HUGETLB) {
 		struct user_struct *user = NULL;
 		struct hstate *hs;
+		int page_size_log;
 
-		hs = hstate_sizelog((flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK);
+		/*
+		 * If config cdm node, flags bits [26:31] used for
+		 * mmap hugetlb check node
+		 */
+		if (is_set_cdmmask())
+			page_size_log = 0;
+		else
+			page_size_log = (flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK;
+
+		hs = hstate_sizelog(page_size_log);
 		if (!hs)
 			return -EINVAL;
 
 		len = ALIGN(len, huge_page_size(hs));
+
 		/*
 		 * VM_NORESERVE is used because the reservations will be
 		 * taken when vm_ops->mmap() is called
@@ -1839,8 +1856,7 @@ unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
 		 */
 		file = hugetlb_file_setup(HUGETLB_ANON_FILE, len,
 				VM_NORESERVE,
-				&user, HUGETLB_ANONHUGE_INODE,
-				(flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK);
+				&user, HUGETLB_ANONHUGE_INODE, page_size_log);
 		if (IS_ERR(file))
 			return PTR_ERR(file);
 	}

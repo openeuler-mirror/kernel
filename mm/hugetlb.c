@@ -30,6 +30,7 @@
 #include <linux/numa.h>
 #include <linux/llist.h>
 #include <linux/cma.h>
+#include <linux/mman.h>
 
 #include <asm/page.h>
 #include <asm/pgalloc.h>
@@ -1164,6 +1165,8 @@ static struct page *dequeue_huge_page_vma(struct hstate *h,
 	if (page && !avoid_reserve && vma_has_reserves(vma, chg)) {
 		SetHPageRestoreReserve(page);
 		h->resv_huge_pages--;
+		if (is_set_cdmmask() && (vma->vm_flags & VM_CHECKNODE))
+			h->resv_huge_pages_node[vma->vm_flags >> CHECKNODE_BITS]--;
 	}
 
 	mpol_cond_put(mpol);

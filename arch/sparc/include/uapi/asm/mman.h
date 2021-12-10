@@ -22,5 +22,6 @@
 #define MCL_FUTURE      0x4000          /* lock all additions to address space */
 #define MCL_ONFAULT	0x8000		/* lock all pages that are faulted in */
 #define MAP_PA32BIT	0x400000	/* physical address is within 4G */
+#define MAP_CHECKNODE	0x800000	/* hugetlb numa node check */
 
 #endif /* _UAPI__SPARC_MMAN_H__ */
