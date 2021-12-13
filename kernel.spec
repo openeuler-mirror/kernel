@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2112.1.0
+%global hulkrelease 2112.3.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0125
+Release: %{hulkrelease}.0126
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,53 @@ fi
 %endif
 
 %changelog
+
+* Mon Dec 13 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.3.0.0126
+- ixgbe: fix large MTU request from VF
+- block, bfq: move bfqq to root_group if parent group is offlined
+- io_uring: use bottom half safe lock for fixed file data
+- io_uring: fix soft lockup when call __io_remove_buffers
+- block: Fix fsync always failed if once failed
+- blk-mq: use the new flag to quiesce/unquiesce queue in block layer
+- blk-mq: add a new queue flag to quiesce/unquiesce queue
+- blk-mq: factor out some helps to quiesce/unquiesce queue
+- blk: Fix lock inversion between ioc lock and bfqd lock
+- bfq: Remove merged request already in bfq_requests_merged()
+- md: fix a warning caused by a race between concurrent md_ioctl()s
+- net: hns3: update hns3 version to 21.12.2
+- net: hns3: fix race condition in debugfs
+- kabi: fix kabi broken in struct sock
+- tracing: Have all levels of checks prevent recursion
+- netfilter: Kconfig: use 'default y' instead of 'm' for bool config option
+- mm, slub: fix mismatch between reconstructed freelist depth and cnt
+- vfs: check fd has read access in kernel_read_file_from_fd()
+- dma-debug: fix sg checks in debug_dma_map_sg()
+- acpi/arm64: fix next_platform_timer() section mismatch error
+- x86/resctrl: Free the ctrlval arrays when domain_setup_mon_state() fails
+- sched: Always inline is_percpu_thread()
+- perf/x86: Reset destroy callback on event init failure
+- net: prevent user from passing illegal stab size
+- netfilter: ip6_tables: zero-initialize fragment offset
+- rtnetlink: fix if_nlmsg_stats_size() under estimation
+- netlink: annotate data races around nlk->bound
+- net: bridge: use nla_total_size_64bit() in br_get_linkxstats_size()
+- net_sched: fix NULL deref in fifo_set_limit()
+- phy: mdio: fix memory leak
+- bpf, arm: Fix register clobbering in div/mod implementation
+- scsi: sd: Free scsi_disk device via put_device()
+- cred: allow get_cred() and put_cred() to be given NULL.
+- net: udp: annotate data race around udp_sk(sk)->corkflag
+- elf: don't use MAP_FIXED_NOREPLACE for elf interpreter mappings
+- af_unix: fix races in sk_peer_pid and sk_peer_cred accesses
+- cpufreq: schedutil: Use kobject release() method to free sugov_tunables
+- tty: Fix out-of-bound vmalloc access in imageblit
+- tcp: address problems caused by EDT misshaps
+- arm64: Mark __stack_chk_guard as __ro_after_init
+- md: fix a lock order reversal in md_alloc
+- irqchip/gic-v3-its: Fix potential VPE leak on error
+- scsi: iscsi: Adjust iface sysfs attr detection
+- serial: mvebu-uart: fix driver's tx_empty callback
+- cifs: fix incorrect check for null pointer in header_assemble
 
 * Tue Dec 07 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.1.0.0125
 - arm64: Fix conflict for capability when cpu hotplug
