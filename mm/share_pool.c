@@ -137,10 +137,8 @@ static struct sp_group_master *sp_init_group_master_locked(
 	}
 
 	master = kmalloc(sizeof(struct sp_group_master), GFP_KERNEL);
-	if (master == NULL) {
-		pr_err_ratelimited("no memory for spg master\n");
+	if (master == NULL)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	INIT_LIST_HEAD(&master->node_list);
 	master->count = 0;
@@ -192,10 +190,8 @@ static struct sp_proc_stat *create_proc_stat(struct mm_struct *mm,
 	struct sp_proc_stat *stat;
 
 	stat = kmalloc(sizeof(*stat), GFP_KERNEL);
-	if (stat == NULL) {
-		pr_err_ratelimited("no memory for proc stat\n");
+	if (stat == NULL)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	atomic_set(&stat->use_count, 1);
 	atomic64_set(&stat->alloc_size, 0);
@@ -342,10 +338,8 @@ static struct spg_proc_stat *create_spg_proc_stat(int tgid, int spg_id)
 	struct spg_proc_stat *stat;
 
 	stat = kmalloc(sizeof(struct spg_proc_stat), GFP_KERNEL);
-	if (stat == NULL) {
-		pr_err_ratelimited("no memory for spg proc stat\n");
+	if (stat == NULL)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	stat->tgid = tgid;
 	stat->spg_id = spg_id;
@@ -413,10 +407,8 @@ static struct sp_spg_stat *create_spg_stat(int spg_id)
 	struct sp_spg_stat *stat;
 
 	stat = kmalloc(sizeof(*stat), GFP_KERNEL);
-	if (stat == NULL) {
-		pr_err_ratelimited("no memory for spg stat\n");
+	if (stat == NULL)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	stat->spg_id = spg_id;
 	atomic_set(&stat->hugepage_failures, 0);
@@ -1624,10 +1616,8 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 	}
 
 	spa = __kmalloc_node(sizeof(struct sp_area), GFP_KERNEL, node_id);
-	if (unlikely(!spa)) {
-		pr_err_ratelimited("no memory for spa\n");
+	if (unlikely(!spa))
 		return ERR_PTR(-ENOMEM);
-	}
 
 	spin_lock(&sp_area_lock);
 
