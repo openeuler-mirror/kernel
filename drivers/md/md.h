@@ -47,8 +47,16 @@ struct md_rdev {
 
 	sector_t sectors;		/* Device size (in 512bytes sectors) */
 	struct mddev *mddev;		/* RAID array if running */
-	long long last_events;		/* IO event timestamp */
 
+	/*
+	 * IO event timestamp, this pos has 64 bit space,
+	 * can enlarge it solving its small size.
+	 */
+#ifndef __GENKSYMS__
+	long long last_events;
+#else
+	int last_events;
+#endif
 	/*
 	 * If meta_bdev is non-NULL, it means that a separate device is
 	 * being used to store the metadata (superblock/bitmap) which
