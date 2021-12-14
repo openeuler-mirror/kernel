@@ -212,7 +212,6 @@ struct gendisk {
 	struct kobject *slave_dir;
 
 	struct timer_rand_state *random;
-	atomic_t sync_io;		/* RAID */
 	struct disk_events *ev;
 #ifdef  CONFIG_BLK_DEV_INTEGRITY
 	struct kobject integrity_kobj;
@@ -220,6 +219,7 @@ struct gendisk {
 	int node_id;
 	struct badblocks *bb;
 	struct lockdep_map lockdep_map;
+	atomic64_t sync_io_sectors;         /* RAID */
 
 #ifndef __GENKSYMS__
 	unsigned long *user_ro_bitmap;
