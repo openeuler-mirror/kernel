@@ -3157,6 +3157,8 @@ static umode_t nvme_dev_attrs_are_visible(struct kobject *kobj,
 		return 0;
 	if (a == &dev_attr_address.attr && !ctrl->ops->get_address)
 		return 0;
+	if (a == &dev_attr_fast_io_fail_tmo.attr && !ctrl->opts)
+		return 0;
 
 	return a->mode;
 }
