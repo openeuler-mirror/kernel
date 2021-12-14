@@ -3219,7 +3219,7 @@ static int nvme_init_ns_head(struct nvme_ns *ns, unsigned nsid,
 		}
 	}
 
-	list_add_tail(&ns->siblings, &head->list);
+	list_add_tail_rcu(&ns->siblings, &head->list);
 	ns->head = head;
 
 out_unlock:
