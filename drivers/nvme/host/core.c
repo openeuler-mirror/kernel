@@ -132,24 +132,31 @@ static void nvme_queue_scan(struct nvme_ctrl *ctrl)
 
 static void nvme_failfast_work(struct work_struct *work)
 {
-	struct nvme_ctrl *ctrl = container_of(to_delayed_work(work),
-			struct nvme_ctrl, failfast_work);
+	struct nvme_ctrl_plus *ctrl_plus = container_of(to_delayed_work(work),
+			struct nvme_ctrl_plus, failfast_work);
+	struct nvme_ctrl *ctrl = &ctrl_plus->ctrl;
 
 	if (ctrl->state != NVME_CTRL_CONNECTING)
 		return;
 
-	set_bit(NVME_CTRL_FAILFAST_EXPIRED, &ctrl->flags);
+	set_bit(NVME_CTRL_FAILFAST_EXPIRED, &ctrl_plus->flags);
 	dev_info(ctrl->device, "failfast expired\n");
 	nvme_kick_requeue_lists(ctrl);
 }
 
 static inline void nvme_start_failfast_work(struct nvme_ctrl *ctrl)
 {
-	if (!ctrl->opts || ctrl->opts->fast_io_fail_tmo == -1)
+	struct nvmf_ctrl_options_plus *ops_plus = NULL;
+
+	if (!ctrl->opts)
 		return;
 
-	schedule_delayed_work(&ctrl->failfast_work,
-			      ctrl->opts->fast_io_fail_tmo * HZ);
+	ops_plus = nvmf_opt_to_plus(ctrl->opts);
+	if (ops_plus->fast_io_fail_tmo == -1)
+		return;
+
+	schedule_delayed_work(&nvme_ctrl_to_plus(ctrl)->failfast_work,
+				ops_plus->fast_io_fail_tmo * HZ);
 }
 
 static inline void nvme_stop_failfast_work(struct nvme_ctrl *ctrl)
@@ -157,8 +164,8 @@ static inline void nvme_stop_failfast_work(struct nvme_ctrl *ctrl)
 	if (!ctrl->opts)
 		return;
 
-	cancel_delayed_work_sync(&ctrl->failfast_work);
-	clear_bit(NVME_CTRL_FAILFAST_EXPIRED, &ctrl->flags);
+	cancel_delayed_work_sync(&nvme_ctrl_to_plus(ctrl)->failfast_work);
+	clear_bit(NVME_CTRL_FAILFAST_EXPIRED, &nvme_ctrl_to_plus(ctrl)->flags);
 }
 
 int nvme_reset_ctrl(struct nvme_ctrl *ctrl)
@@ -3105,10 +3112,11 @@ static ssize_t nvme_ctrl_fast_io_fail_tmo_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct nvme_ctrl *ctrl = dev_get_drvdata(dev);
+	int value = nvmf_opt_to_plus(ctrl->opts)->fast_io_fail_tmo;
 
-	if (ctrl->opts->fast_io_fail_tmo == -1)
+	if (value == -1)
 		return sysfs_emit(buf, "off\n");
-	return sysfs_emit(buf, "%d\n", ctrl->opts->fast_io_fail_tmo);
+	return sysfs_emit(buf, "%d\n", value);
 }
 
 static ssize_t nvme_ctrl_fast_io_fail_tmo_store(struct device *dev,
@@ -3123,9 +3131,9 @@ static ssize_t nvme_ctrl_fast_io_fail_tmo_store(struct device *dev,
 		return -EINVAL;
 
 	if (fast_io_fail_tmo < 0)
-		opts->fast_io_fail_tmo = -1;
+		nvmf_opt_to_plus(opts)->fast_io_fail_tmo = -1;
 	else
-		opts->fast_io_fail_tmo = fast_io_fail_tmo;
+		nvmf_opt_to_plus(opts)->fast_io_fail_tmo = fast_io_fail_tmo;
 	return count;
 }
 static DEVICE_ATTR(fast_io_fail_tmo, S_IRUGO | S_IWUSR,
@@ -3854,7 +3862,7 @@ int nvme_init_ctrl(struct nvme_ctrl *ctrl, struct device *dev,
 	int ret;
 
 	ctrl->state = NVME_CTRL_NEW;
-	clear_bit(NVME_CTRL_FAILFAST_EXPIRED, &ctrl->flags);
+	clear_bit(NVME_CTRL_FAILFAST_EXPIRED, &nvme_ctrl_to_plus(ctrl)->flags);
 	spin_lock_init(&ctrl->lock);
 	mutex_init(&ctrl->scan_lock);
 	INIT_LIST_HEAD(&ctrl->namespaces);
@@ -3870,7 +3878,8 @@ int nvme_init_ctrl(struct nvme_ctrl *ctrl, struct device *dev,
 	INIT_DELAYED_WORK(&ctrl->ka_work, nvme_keep_alive_work);
 	memset(&ctrl->ka_cmd, 0, sizeof(ctrl->ka_cmd));
 	ctrl->ka_cmd.common.opcode = nvme_admin_keep_alive;
-	INIT_DELAYED_WORK(&ctrl->failfast_work, nvme_failfast_work);
+	INIT_DELAYED_WORK(&nvme_ctrl_to_plus(ctrl)->failfast_work,
+						nvme_failfast_work);
 
 	BUILD_BUG_ON(NVME_DSM_MAX_RANGES * sizeof(struct nvme_dsm_range) >
 			PAGE_SIZE);

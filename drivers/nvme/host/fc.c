@@ -162,7 +162,10 @@ struct nvme_fc_ctrl {
 
 	struct nvme_fc_fcp_op	aen_ops[NVME_NR_AEN_COMMANDS];
 
-	struct nvme_ctrl	ctrl;
+	union {
+		struct nvme_ctrl	ctrl;
+		struct nvme_ctrl_plus	ctrl_plus;
+	};
 };
 
 static inline struct nvme_fc_ctrl *

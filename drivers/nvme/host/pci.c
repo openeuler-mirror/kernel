@@ -105,7 +105,10 @@ struct nvme_dev {
 	u64 cmb_size;
 	u32 cmbsz;
 	u32 cmbloc;
-	struct nvme_ctrl ctrl;
+	union {
+		struct nvme_ctrl	ctrl;
+		struct nvme_ctrl_plus	ctrl_plus;
+	};
 	struct completion ioq_wait;
 
 	mempool_t *iod_mempool;

@@ -42,7 +42,10 @@ struct nvme_loop_ctrl {
 	struct list_head	list;
 	struct blk_mq_tag_set	tag_set;
 	struct nvme_loop_iod	async_event_iod;
-	struct nvme_ctrl	ctrl;
+	union {
+		struct nvme_ctrl	ctrl;
+		struct nvme_ctrl_plus	ctrl_plus;
+	};
 
 	struct nvmet_ctrl	*target_ctrl;
 	struct nvmet_port	*port;

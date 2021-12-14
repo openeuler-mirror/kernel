@@ -106,8 +106,15 @@ struct nvmf_ctrl_options {
 	unsigned int		kato;
 	struct nvmf_host	*host;
 	int			max_reconnects;
-	int			fast_io_fail_tmo;
 };
+
+struct nvmf_ctrl_options_plus {
+	struct nvmf_ctrl_options ops;
+	int fast_io_fail_tmo;
+};
+
+#define nvmf_opt_to_plus(ps) \
+		container_of(ps, struct nvmf_ctrl_options_plus, ops)
 
 /*
  * struct nvmf_transport_ops - used to register a specific

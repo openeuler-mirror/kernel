@@ -550,7 +550,8 @@ blk_status_t nvmf_fail_nonready_command(struct nvme_ctrl *ctrl,
 {
 	if (ctrl->state != NVME_CTRL_DELETING &&
 	    ctrl->state != NVME_CTRL_DEAD &&
-	    !test_bit(NVME_CTRL_FAILFAST_EXPIRED, &ctrl->flags) &&
+		!test_bit(NVME_CTRL_FAILFAST_EXPIRED,
+					&nvme_ctrl_to_plus(ctrl)->flags) &&
 	    !blk_noretry_request(rq) && !(rq->cmd_flags & REQ_NVME_MPATH))
 		return BLK_STS_RESOURCE;
 
@@ -628,7 +629,7 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 	opts->reconnect_delay = NVMF_DEF_RECONNECT_DELAY;
 	opts->kato = NVME_DEFAULT_KATO;
 	opts->duplicate_connect = false;
-	opts->fast_io_fail_tmo = NVMF_DEF_FAIL_FAST_TMO;
+	nvmf_opt_to_plus(opts)->fast_io_fail_tmo = NVMF_DEF_FAIL_FAST_TMO;
 
 	options = o = kstrdup(buf, GFP_KERNEL);
 	if (!options)
@@ -762,7 +763,7 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 			if (token >= 0)
 				pr_warn("I/O will fail on after %d sec reconnect\n",
 					token);
-			opts->fast_io_fail_tmo = token;
+			nvmf_opt_to_plus(opts)->fast_io_fail_tmo = token;
 			break;
 		case NVMF_OPT_HOSTNQN:
 			if (opts->host) {
@@ -850,9 +851,9 @@ static int nvmf_parse_options(struct nvmf_ctrl_options *opts,
 	} else {
 		opts->max_reconnects = DIV_ROUND_UP(ctrl_loss_tmo,
 						opts->reconnect_delay);
-		if (ctrl_loss_tmo < opts->fast_io_fail_tmo)
+		if (ctrl_loss_tmo < nvmf_opt_to_plus(opts)->fast_io_fail_tmo)
 			pr_warn("failfast tmo (%d) > ctrl_loss_tmo (%d)\n",
-				opts->fast_io_fail_tmo,
+				nvmf_opt_to_plus(opts)->fast_io_fail_tmo,
 				ctrl_loss_tmo);
 	}
 
@@ -916,7 +917,7 @@ void nvmf_free_options(struct nvmf_ctrl_options *opts)
 	kfree(opts->trsvcid);
 	kfree(opts->subsysnqn);
 	kfree(opts->host_traddr);
-	kfree(opts);
+	kfree(nvmf_opt_to_plus(opts));
 }
 EXPORT_SYMBOL_GPL(nvmf_free_options);
 
@@ -925,18 +926,21 @@ EXPORT_SYMBOL_GPL(nvmf_free_options);
 				 NVMF_OPT_KATO | NVMF_OPT_HOSTNQN | \
 				 NVMF_OPT_HOST_ID | NVMF_OPT_DUP_CONNECT |\
 				 NVMF_OPT_FAIL_FAST_TMO)
+
 static struct nvme_ctrl *
 nvmf_create_ctrl(struct device *dev, const char *buf, size_t count)
 {
+	struct nvmf_ctrl_options_plus *opts_plus;
 	struct nvmf_ctrl_options *opts;
 	struct nvmf_transport_ops *ops;
 	struct nvme_ctrl *ctrl;
 	int ret;
 
-	opts = kzalloc(sizeof(*opts), GFP_KERNEL);
-	if (!opts)
+	opts_plus = kzalloc(sizeof(*opts_plus), GFP_KERNEL);
+	if (!opts_plus)
 		return ERR_PTR(-ENOMEM);
 
+	opts = &opts_plus->ops;
 	ret = nvmf_parse_options(opts, buf);
 	if (ret)
 		goto out_free_opts;

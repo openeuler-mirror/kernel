@@ -118,7 +118,10 @@ struct nvme_rdma_ctrl {
 	struct sockaddr_storage addr;
 	struct sockaddr_storage src_addr;
 
-	struct nvme_ctrl	ctrl;
+	union {
+		struct nvme_ctrl	ctrl;
+		struct nvme_ctrl_plus	ctrl_plus;
+	};
 	bool			use_inline_data;
 };
 
