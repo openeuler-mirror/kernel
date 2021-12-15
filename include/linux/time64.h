@@ -62,6 +62,8 @@ static inline int timespec64_equal(const struct timespec64 *a,
  * lhs < rhs:  return <0
  * lhs == rhs: return 0
  * lhs > rhs:  return >0
+ *
+ * Note: Both lhs and rhs must be normalized.
  */
 static inline int timespec64_compare(const struct timespec64 *lhs, const struct timespec64 *rhs)
 {
