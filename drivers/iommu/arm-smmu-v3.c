@@ -4048,15 +4048,6 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
 
 	/* IDR3 */
 	reg = readl_relaxed(smmu->base + ARM_SMMU_IDR3);
-
-	if (!(reg & IDR3_MPAM)) {
-		reg |= FIELD_PREP(IDR3_MPAM, 1);
-		writel(reg, smmu->base + ARM_SMMU_IDR3_CFG);
-		reg = readl_relaxed(smmu->base + ARM_SMMU_IDR3);
-		if (!(reg & IDR3_MPAM))
-			dev_warn(smmu->dev, "enable smmu mpam failed\n");
-	}
-
 	if (reg & IDR3_MPAM) {
 		reg = readl_relaxed(smmu->base + ARM_SMMU_MPAMIDR);
 		smmu->mpam_partid_max = FIELD_GET(MPAMIDR_PARTID_MAX, reg);
