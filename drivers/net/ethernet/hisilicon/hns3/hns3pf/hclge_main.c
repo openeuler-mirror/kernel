@@ -9258,15 +9258,23 @@ static int hclge_set_vf_vlan_filter(struct hnae3_handle *handle, int vfid,
 	vlan_info.qos = qos;
 	vlan_info.vlan_proto = ntohs(proto);
 
-	if (!test_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state)) {
-		return hclge_update_port_base_vlan_cfg(vport, state,
-						       &vlan_info);
-	} else {
-		ret = hclge_push_vf_port_base_vlan_info(&hdev->vport[0],
-							vport->vport_id,
-							state, &vlan_info);
+	ret = hclge_update_port_base_vlan_cfg(vport, state, &vlan_info);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to update port base vlan for vf %d, ret = %d\n",
+			vfid, ret);
 		return ret;
 	}
+
+	/* there is a timewindow for PF to know VF unalive, it may
+	 * cause send mailbox fail, but it doesn't matter, VF will
+	 * query it when reinit.
+	 */
+	if (test_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state))
+		(void)hclge_push_vf_port_base_vlan_info(&hdev->vport[0],
+							vport->vport_id,
+							state, &vlan_info);
+	return 0;
 }
 
 int hclge_set_vlan_filter(struct hnae3_handle *handle, __be16 proto,
