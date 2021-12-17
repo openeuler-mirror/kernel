@@ -120,3 +120,8 @@ config EXT4_DEBUG
 	  If you select Y here, then you will be able to turn on debugging
 	  with a command such as:
 		echo 1 > /sys/module/ext4/parameters/mballoc_debug
+config EXT4_PARALLEL_DIO_READ
+	bool "EXT4 parallel dio reads"
+	depends on EXT4_FS
+	help
+	  Enable parallel dio read.

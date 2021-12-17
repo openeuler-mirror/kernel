@@ -3795,15 +3795,31 @@ out:
 
 static ssize_t ext4_direct_IO_read(struct kiocb *iocb, struct iov_iter *iter)
 {
+	struct address_space *mapping = iocb->ki_filp->f_mapping;
+	struct inode *inode = mapping->host;
+#ifdef CONFIG_EXT4_PARALLEL_DIO_READ
+	size_t count = iov_iter_count(iter);
+#else
 	int unlocked = 0;
-	struct inode *inode = iocb->ki_filp->f_mapping->host;
+#endif
 	ssize_t ret;
 	loff_t offset = iocb->ki_pos;
 	loff_t size = i_size_read(inode);
 
 	if (offset >= size)
 		return 0;
-
+#ifdef CONFIG_EXT4_PARALLEL_DIO_READ
+	/*
+	 * Shared inode_lock is enough for us - it protects against concurrent
+	 * writes & truncates and since we take care of writing back page cache,
+	 * we are protected against page writeback as well.
+	 */
+	inode_lock_shared(inode);
+	ret = filemap_write_and_wait_range(mapping, iocb->ki_pos,
+					   iocb->ki_pos + count - 1);
+	if (ret)
+		goto out_unlock;
+#else
 	if (ext4_should_dioread_nolock(inode)) {
 		/*
 		 * Nolock dioread optimization may be dynamically disabled
@@ -3813,18 +3829,24 @@ static ssize_t ext4_direct_IO_read(struct kiocb *iocb, struct iov_iter *iter)
 		inode_dio_begin(inode);
 		smp_mb();
 		if (unlikely(ext4_test_inode_state(inode,
-						    EXT4_STATE_DIOREAD_LOCK)))
+						   EXT4_STATE_DIOREAD_LOCK)))
 			inode_dio_end(inode);
 		else
 			unlocked = 1;
 	}
-	ret = __blockdev_direct_IO(iocb, inode, inode->i_sb->s_bdev,
-				   iter, ext4_dio_get_block,
-				   NULL, NULL,
-				   unlocked ? 0 : DIO_LOCKING);
+#endif
 
+	ret = __blockdev_direct_IO(iocb, inode, inode->i_sb->s_bdev,
+				   iter, ext4_dio_get_block, NULL, NULL,
+#ifdef CONFIG_EXT4_PARALLEL_DIO_READ
+				   0);
+out_unlock:
+	inode_unlock_shared(inode);
+#else
+				   unlocked ? 0 : DIO_LOCKING);
 	if (unlocked)
 		inode_dio_end(inode);
+#endif
 	return ret;
 }
 
