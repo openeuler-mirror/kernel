@@ -1631,8 +1631,10 @@ enum {
 	EXT4_STATE_EXT_MIGRATE,		/* Inode is migrating */
 	EXT4_STATE_DIO_UNWRITTEN,	/* need convert on dio done*/
 	EXT4_STATE_NEWENTRY,		/* File just added to dir */
+#ifndef CONFIG_EXT4_PARALLEL_DIO_READ
 	EXT4_STATE_DIOREAD_LOCK,	/* Disable support for dio read
 					   nolocking */
+#endif
 	EXT4_STATE_MAY_INLINE_DATA,	/* may have in-inode data */
 	EXT4_STATE_EXT_PRECACHED,	/* extents have been precached */
 	EXT4_STATE_LUSTRE_EA_INODE,	/* Lustre-style ea_inode */
@@ -3341,6 +3343,7 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
 	set_bit(BH_BITMAP_UPTODATE, &(bh)->b_state);
 }
 
+#ifndef CONFIG_EXT4_PARALLEL_DIO_READ
 /*
  * Disable DIO read nolock optimization, so new dioreaders will be forced
  * to grab i_mutex
@@ -3355,6 +3358,10 @@ static inline void ext4_inode_resume_unlocked_dio(struct inode *inode)
 	smp_mb();
 	ext4_clear_inode_state(inode, EXT4_STATE_DIOREAD_LOCK);
 }
+#else
+#define ext4_inode_block_unlocked_dio(inode)
+#define ext4_inode_resume_unlocked_dio(inode)
+#endif
 
 #define in_range(b, first, len)	((b) >= (first) && (b) <= (first) + (len) - 1)
 
