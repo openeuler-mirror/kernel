@@ -5381,6 +5381,7 @@ static void bfq_exit_queue(struct elevator_queue *e)
 {
 	struct bfq_data *bfqd = e->elevator_data;
 	struct bfq_queue *bfqq, *n;
+	struct request_queue *q = bfqd->queue;
 
 	hrtimer_cancel(&bfqd->idle_slice_timer);
 
@@ -5404,6 +5405,9 @@ static void bfq_exit_queue(struct elevator_queue *e)
 #endif
 
 	kfree(bfqd);
+
+	/* Re-enable throttling in case elevator disabled it */
+	wbt_enable_default(q);
 }
 
 static void bfq_init_root_group(struct bfq_group *root_group,
