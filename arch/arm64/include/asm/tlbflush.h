@@ -139,6 +139,13 @@
  *	on top of these routines, since that is our interface to the mmu_gather
  *	API as used by munmap() and friends.
  */
+
+void flush_tlb_mm(struct mm_struct *mm);
+void flush_tlb_page_nosync(struct vm_area_struct *vma,
+				unsigned long uaddr);
+void __flush_tlb_range(struct vm_area_struct *vma, unsigned long start,
+		unsigned long end, unsigned long stride, bool last_level);
+
 static inline void local_flush_tlb_all(void)
 {
 	dsb(nshst);
@@ -155,24 +162,14 @@ static inline void flush_tlb_all(void)
 	isb();
 }
 
-static inline void flush_tlb_mm(struct mm_struct *mm)
+static inline void local_flush_tlb_mm(struct mm_struct *mm)
 {
 	unsigned long asid = __TLBI_VADDR(0, ASID(mm));
 
-	dsb(ishst);
-	__tlbi(aside1is, asid);
-	__tlbi_user(aside1is, asid);
-	dsb(ish);
-}
-
-static inline void flush_tlb_page_nosync(struct vm_area_struct *vma,
-					 unsigned long uaddr)
-{
-	unsigned long addr = __TLBI_VADDR(uaddr, ASID(vma->vm_mm));
-
-	dsb(ishst);
-	__tlbi(vale1is, addr);
-	__tlbi_user(vale1is, addr);
+	dsb(nshst);
+	__tlbi(aside1, asid);
+	__tlbi_user(aside1, asid);
+	dsb(nsh);
 }
 
 static inline void flush_tlb_page(struct vm_area_struct *vma,
@@ -187,40 +184,6 @@ static inline void flush_tlb_page(struct vm_area_struct *vma,
  * necessarily a performance improvement.
  */
 #define MAX_TLBI_OPS	PTRS_PER_PTE
-
-static inline void __flush_tlb_range(struct vm_area_struct *vma,
-				     unsigned long start, unsigned long end,
-				     unsigned long stride, bool last_level)
-{
-	unsigned long asid = ASID(vma->vm_mm);
-	unsigned long addr;
-
-	start = round_down(start, stride);
-	end = round_up(end, stride);
-
-	if ((end - start) >= (MAX_TLBI_OPS * stride)) {
-		flush_tlb_mm(vma->vm_mm);
-		return;
-	}
-
-	/* Convert the stride into units of 4k */
-	stride >>= 12;
-
-	start = __TLBI_VADDR(start, asid);
-	end = __TLBI_VADDR(end, asid);
-
-	dsb(ishst);
-	for (addr = start; addr < end; addr += stride) {
-		if (last_level) {
-			__tlbi(vale1is, addr);
-			__tlbi_user(vale1is, addr);
-		} else {
-			__tlbi(vae1is, addr);
-			__tlbi_user(vae1is, addr);
-		}
-	}
-	dsb(ish);
-}
 
 static inline void flush_tlb_range(struct vm_area_struct *vma,
 				   unsigned long start, unsigned long end)

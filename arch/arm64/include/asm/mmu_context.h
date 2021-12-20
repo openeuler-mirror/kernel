@@ -229,8 +229,13 @@ static inline void
 switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	  struct task_struct *tsk)
 {
-	if (prev != next)
+	unsigned int cpu = smp_processor_id();
+
+	if (prev != next) {
 		__switch_mm(next);
+		cpumask_clear_cpu(cpu, mm_cpumask(prev));
+		local_flush_tlb_mm(prev);
+	}
 
 	/*
 	 * Update the saved TTBR0_EL1 of the scheduled-in task as the previous
