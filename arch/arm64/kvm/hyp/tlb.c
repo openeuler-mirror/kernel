@@ -149,7 +149,7 @@ void __hyp_text __kvm_tlb_flush_vmid(struct kvm *kvm)
 	__tlb_switch_to_host()(kvm, flags);
 }
 
-void __hyp_text __kvm_tlb_flush_local_vmid(struct kvm_vcpu *vcpu)
+void __hyp_text __kvm_flush_cpu_context(struct kvm_vcpu *vcpu)
 {
 	struct kvm *kvm = kern_hyp_va(kern_hyp_va(vcpu)->kvm);
 	unsigned long flags;
@@ -158,6 +158,7 @@ void __hyp_text __kvm_tlb_flush_local_vmid(struct kvm_vcpu *vcpu)
 	__tlb_switch_to_guest()(kvm, &flags);
 
 	__tlbi(vmalle1);
+	asm volatile("ic iallu");
 	dsb(nsh);
 	isb();
 
