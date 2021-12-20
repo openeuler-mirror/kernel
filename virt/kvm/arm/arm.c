@@ -74,6 +74,14 @@ static bool vgic_present;
 enum hisi_cpu_type hi_cpu_type = UNKNOWN_HI_TYPE;
 bool kvm_ncsnp_support;
 
+bool kvm_hcr_nofb;
+
+static int __init early_hcr_nofb_cfg(char *buf)
+{
+	return strtobool(buf, &kvm_hcr_nofb);
+}
+early_param("kvm-arm.hcr_nofb", early_hcr_nofb_cfg);
+
 static DEFINE_PER_CPU(unsigned char, kvm_arm_hardware_enabled);
 
 static void kvm_arm_set_running_vcpu(struct kvm_vcpu *vcpu)
@@ -419,6 +427,7 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
 	int *last_ran;
 	kvm_host_data_t *cpu_data;
+	bool flushed = false;
 
 	last_ran = this_cpu_ptr(vcpu->kvm->arch.last_vcpu_ran);
 	cpu_data = this_cpu_ptr(&kvm_host_data);
@@ -435,7 +444,16 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	if (*last_ran != vcpu->vcpu_id) {
 		kvm_call_hyp(__kvm_flush_cpu_context, vcpu);
 		*last_ran = vcpu->vcpu_id;
+		flushed = true;
 	}
+
+	/*
+	 * If FB (Force broadcast) is cleared, we have to nuke the
+	 * vcpu context as well in case it is loaded on to the new
+	 * physical CPU.
+	 */
+	if (unlikely(kvm_hcr_nofb) && vcpu->pre_pcpu != cpu && !flushed)
+		kvm_call_hyp(__kvm_flush_cpu_context, vcpu);
 
 	vcpu->cpu = cpu;
 	vcpu->arch.host_cpu_context = &cpu_data->host_ctxt;

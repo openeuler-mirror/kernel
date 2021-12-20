@@ -52,6 +52,8 @@ static inline bool vcpu_el1_is_32bit(struct kvm_vcpu *vcpu)
 	return !(vcpu->arch.hcr_el2 & HCR_RW);
 }
 
+extern bool kvm_hcr_nofb;
+
 static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
 {
 	vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS;
@@ -76,6 +78,9 @@ static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
 	 */
 	if (!vcpu_el1_is_32bit(vcpu))
 		vcpu->arch.hcr_el2 |= HCR_TID3;
+
+	if (unlikely(kvm_hcr_nofb))
+		vcpu->arch.hcr_el2 &= ~HCR_FB;
 }
 
 static inline unsigned long *vcpu_hcr(struct kvm_vcpu *vcpu)
