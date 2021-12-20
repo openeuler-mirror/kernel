@@ -145,6 +145,7 @@ void flush_tlb_page_nosync(struct vm_area_struct *vma,
 				unsigned long uaddr);
 void __flush_tlb_range(struct vm_area_struct *vma, unsigned long start,
 		unsigned long end, unsigned long stride, bool last_level);
+bool test_tlbi_ipi_switch(void);
 
 static inline void local_flush_tlb_all(void)
 {

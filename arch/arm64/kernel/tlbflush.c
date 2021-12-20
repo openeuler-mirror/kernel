@@ -2,6 +2,7 @@
 // Copyright (C) 2019 FUJITSU LIMITED
 
 #include <linux/smp.h>
+#include <linux/ctype.h>
 #include <asm/tlbflush.h>
 
 #ifdef CONFIG_ARM64_TLBI_IPI
@@ -13,15 +14,79 @@ struct tlb_args {
 	bool ta_last_level;
 };
 
-int disable_tlbflush_is;
 
+unsigned int disable_tlbflush_is;
+
+#define FLAG_TLBFLUSH_RANGE	0x0001
+#define FLAG_TLBFLUSH_PAGE	0x0002
+#define FLAG_TLBFLUSH_SWITCH	0x0004
+#define FLAG_TLBFLUSH_MM	0x0008
+
+#define TEST_TLBFLUSH_FLAG_EXTERN(flag, FLAG)			\
+bool test_tlbi_ipi_##flag(void)					\
+{								\
+	return !!(disable_tlbflush_is & FLAG_TLBFLUSH_##FLAG);	\
+}
+#else
+#define TEST_TLBFLUSH_FLAG_EXTERN(flag, FLAG)			\
+bool test_tlbi_ipi_##flag(void)					\
+{								\
+	return false;						\
+}
+#endif
+
+#define TEST_TLBFLUSH_FLAG(flag, FLAG)				\
+static __always_inline TEST_TLBFLUSH_FLAG_EXTERN(flag, FLAG)
+
+TEST_TLBFLUSH_FLAG(mm, MM)
+TEST_TLBFLUSH_FLAG(page, PAGE)
+TEST_TLBFLUSH_FLAG(range, RANGE)
+TEST_TLBFLUSH_FLAG_EXTERN(switch, SWITCH)
+
+#ifdef CONFIG_ARM64_TLBI_IPI
 static int __init disable_tlbflush_is_setup(char *str)
 {
-	disable_tlbflush_is = 1;
+	unsigned int flags = 0;
+
+	while (isalpha(*str)) {
+		if (!strncmp(str, "range,", 6)) {
+			str += 6;
+			flags |= FLAG_TLBFLUSH_RANGE;
+			continue;
+		}
+
+		if (!strncmp(str, "page,", 5)) {
+			str += 5;
+			flags |= FLAG_TLBFLUSH_PAGE;
+			continue;
+		}
+
+		if (!strncmp(str, "switch,", 7)) {
+			str += 7;
+			flags |= FLAG_TLBFLUSH_SWITCH;
+			continue;
+		}
+
+		if (!strcmp(str, "mm")) {
+			str += 2;
+			flags |= FLAG_TLBFLUSH_MM;
+			break;
+		}
+
+		pr_warn("disable_tlbflush_is: Error, unknown flag\n");
+		return 0;
+	}
+
+	disable_tlbflush_is = flags;
+	pr_info("DISABLE_TLBFLUSH_IS : [%s] [%s] [%s] [%s]\n",
+		test_tlbi_ipi_page() ? "PAGE" : "NA",
+		test_tlbi_ipi_range() ? "RANGE" : "NA",
+		test_tlbi_ipi_switch() ? "SWITCH" : "NA",
+		test_tlbi_ipi_mm() ? "MM" : "NA");
 
 	return 0;
 }
-__setup("disable_tlbflush_is", disable_tlbflush_is_setup);
+early_param("disable_tlbflush_is", disable_tlbflush_is_setup);
 #endif
 
 static inline void __flush_tlb_mm(struct mm_struct *mm)
@@ -46,7 +111,7 @@ static inline void ipi_flush_tlb_mm(void *arg)
 void flush_tlb_mm(struct mm_struct *mm)
 {
 #ifdef CONFIG_ARM64_TLBI_IPI
-	if (unlikely(disable_tlbflush_is))
+	if (unlikely(test_tlbi_ipi_mm()))
 		on_each_cpu_mask(mm_cpumask(mm), ipi_flush_tlb_mm,
 				 (void *)mm, true);
 	else
@@ -83,7 +148,7 @@ void flush_tlb_page_nosync(struct vm_area_struct *vma, unsigned long uaddr)
 	unsigned long addr = __TLBI_VADDR(uaddr, ASID(vma->vm_mm));
 
 #ifdef CONFIG_ARM64_TLBI_IPI
-	if (unlikely(disable_tlbflush_is))
+	if (unlikely(test_tlbi_ipi_page()))
 		on_each_cpu_mask(mm_cpumask(vma->vm_mm),
 				ipi_flush_tlb_page_nosync, &addr, true);
 	else
@@ -156,7 +221,7 @@ void __flush_tlb_range(struct vm_area_struct *vma, unsigned long start,
 
 
 #ifdef CONFIG_ARM64_TLBI_IPI
-	if (unlikely(disable_tlbflush_is)) {
+	if (unlikely(test_tlbi_ipi_range())) {
 		struct tlb_args ta = {
 			.ta_start	= start,
 			.ta_end		= end,

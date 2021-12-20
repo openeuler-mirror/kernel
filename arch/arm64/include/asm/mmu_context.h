@@ -234,8 +234,10 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	if (prev != next) {
 		__switch_mm(next);
 #ifdef CONFIG_ARM64_TLBI_IPI
-		cpumask_clear_cpu(cpu, mm_cpumask(prev));
-		local_flush_tlb_mm(prev);
+		if (unlikely(test_tlbi_ipi_switch())) {
+			cpumask_clear_cpu(cpu, mm_cpumask(prev));
+			local_flush_tlb_mm(prev);
+		}
 #endif
 	}
 

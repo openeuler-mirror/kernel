@@ -844,9 +844,14 @@
 	disable=	[IPV6]
 			See Documentation/networking/ipv6.txt.
 
-	disable_tlbflush_is
+	disable_tlbflush_is= [page,range,switch,]mm
 			[ARM64] Disable using TLB instruction to flush
 			all PE within the same inner shareable domain.
+
+		range	use tlb invalidation ipi for flush_tlb_range
+		page	use tlb invalidation ipi for flush_tlb_page
+		switch  don't local_flush_tlb_mm when switch_mm
+		mm	use tlb invalidation ipi for flush_tlb_mm
 
 	hardened_usercopy=
                         [KNL] Under CONFIG_HARDENED_USERCOPY, whether
