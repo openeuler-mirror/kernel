@@ -228,7 +228,7 @@ static inline void blk_mq_free_requests(struct list_head *list)
 		struct request *rq = list_entry_rq(list->next);
 
 		list_del_init(&rq->queuelist);
-		blk_mq_free_request(rq);
+		__blk_put_request(rq->q, rq);
 	}
 }
 
