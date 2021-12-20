@@ -848,6 +848,12 @@
 			[ARM64] Disable using TLB instruction to flush
 			all PE within the same inner shareable domain.
 
+			NOTE(Important)
+			This feature is used for learning and debugging
+			only. Please don't enable it on commercial products.
+			If you know exactly what the impact of the feature is,
+			you can configure it as you do.
+
 		range	use tlb invalidation ipi for flush_tlb_range
 		page	use tlb invalidation ipi for flush_tlb_page
 		switch  don't local_flush_tlb_mm when switch_mm

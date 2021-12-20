@@ -1610,7 +1610,7 @@ endmenu
 menu "TLB options"
 
 config ARM64_TLBI_IPI
-	bool "IPI based ARM64 TLB invalidation"
+	bool "IPI based ARM64 TLB invalidation(EXPERIMENTAL)"
 	depends on ARM64
 	default n
 	help
@@ -1625,7 +1625,14 @@ config ARM64_TLBI_IPI
 	  performance noise, especially at large-scale HPC environment, which
 	  has more than thousand nodes with low latency interconnect.
 
+	  NOTE(Important)
+	  This feature is used for learning and debugging only. Please don't
+	  enable it on commercial products.
+	  If you know exactly what the impact of the feature is, you can
+	  configure it as you do.
+
 	  If unsure, say N.
+
 endmenu
 
 menu "CPU Power Management"
