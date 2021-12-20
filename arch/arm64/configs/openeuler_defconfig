@@ -493,6 +493,11 @@ CONFIG_AARCH32_EL0=y
 CONFIG_SYSVIPC_COMPAT=y
 
 #
+# TLB options
+#
+CONFIG_ARM64_TLBI_IPI=y
+
+#
 # Power management options
 #
 CONFIG_SUSPEND=y
