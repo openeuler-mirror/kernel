@@ -466,6 +466,7 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 	kvm_vgic_put(vcpu);
 	kvm_vcpu_pmu_restore_host(vcpu);
 
+	vcpu->pre_pcpu = vcpu->cpu;
 	vcpu->cpu = -1;
 
 	kvm_arm_set_running_vcpu(NULL);
