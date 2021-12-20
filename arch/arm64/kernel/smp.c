@@ -387,6 +387,7 @@ asmlinkage notrace void secondary_start_kernel(void)
 	 */
 	mmgrab(mm);
 	current->active_mm = mm;
+	cpumask_set_cpu(cpu, mm_cpumask(mm));
 
 	/*
 	 * TTBR0 is only used for the identity mapping at this stage. Make it
@@ -488,6 +489,11 @@ int __cpu_disable(void)
 	 * OK - migrate IRQs away from this CPU
 	 */
 	irq_migrate_all_off_this_cpu();
+
+	/*
+	 * Remove this CPU from the vm mask set of all processes.
+	 */
+	clear_tasks_mm_cpumask(cpu);
 
 	return 0;
 }
