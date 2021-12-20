@@ -1607,6 +1607,27 @@ config UCE_KERNEL_RECOVERY
 
 endmenu
 
+menu "TLB options"
+
+config ARM64_TLBI_IPI
+	bool "IPI based ARM64 TLB invalidation"
+	depends on ARM64
+	default n
+	help
+	  adds new boot parameter 'disable_tlbflush_is' to disable TLB flush
+	  within the same inner shareable domain for performance tuning.
+
+	  When this new parameter is specified, TLB entry is invalidated by
+	  __tlbi(aside1, asid) only on the CPUs specified by mm_cpumask(mm).
+
+	  By using TLB.IS, all CPUs within the same inner shareable domain
+	  check if there are TLB entries which have this ASID, this causes
+	  performance noise, especially at large-scale HPC environment, which
+	  has more than thousand nodes with low latency interconnect.
+
+	  If unsure, say N.
+endmenu
+
 menu "CPU Power Management"
 
 source "drivers/cpuidle/Kconfig"

@@ -229,12 +229,14 @@ static inline void
 switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	  struct task_struct *tsk)
 {
-	unsigned int cpu = smp_processor_id();
+	unsigned int __maybe_unused cpu = smp_processor_id();
 
 	if (prev != next) {
 		__switch_mm(next);
+#ifdef CONFIG_ARM64_TLBI_IPI
 		cpumask_clear_cpu(cpu, mm_cpumask(prev));
 		local_flush_tlb_mm(prev);
+#endif
 	}
 
 	/*
