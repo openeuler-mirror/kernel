@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2112.3.0
+%global hulkrelease 2112.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0127
+Release: %{hulkrelease}.0128
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,75 @@ fi
 %endif
 
 %changelog
+
+* Tue Dec 21 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.4.0.0128
+- block, bfq: don't move oom_bfqq
+- blk-mq: fix abnormal free in single queue process
+- scsi: hisi_sas: Add support for sata disk I/O errors report to libsas
+- KVM: arm64: Allow vcpus running without HCR_EL2.FB
+- KVM: arm64: Set kvm_vcpu::pre_pcpu properly
+- KVM: arm64: Ensure I-cache isolation between vcpus of a same VM
+- arm64/tlbi: mark tlbi ipi as EXPERIMENTAL
+- arm64/tlb: restore no IPi code
+- arm64/configs: enable TLBI_IPI
+- arm64/tlbi: split disable_tlbflush_is to control flush
+- arm64/tlb: add CONFIG_ARM64_TLBI_IPI
+- arm64: tlb: Add boot parameter to disable TLB flush within the same inner shareable domain
+- arm64: mm: Restore mm_cpumask (revert commit 38d96287504a ("arm64: mm: kill mm_cpumask usage"))
+- audit: ensure userspace is penalized the same as the kernel when under pressure
+- audit: improve robustness of the audit queue handling
+- block/wbt: fix negative inflight counter when remove scsi device
+- nbd: Fix use-after-free in blk_mq_free_rqs
+- block, bfq: fix use after free in bfq_bfqq_expire
+- block, bfq: fix queue removal from weights tree
+- block, bfq: fix decrement of num_active_groups
+- block, bfq: fix asymmetric scenarios detection
+- block, bfq: improve asymmetric scenarios detection
+- fget: check that the fd still exists after getting a ref to it
+- config: Enable CONFIG_EXT4_PARALLEL_DIO_READ as default
+- ext4: update direct I/O read lock pattern for IOCB_NOWAIT
+- Revert "Revert "ext4: remove EXT4_STATE_DIOREAD_LOCK flag""
+- Revert "Revert "ext4: Allow parallel DIO reads""
+- net: hns3: update hns3 version to 21.12.3
+- net: hns3: fix the VLAN of a vf cannot be added problem
+- net: hns3: fix pfc packet number incorrect after querying pfc parameters
+- net: hns3: fix VF RSS failed problem after PF enable multi-TCs
+- usb: gadget: configfs: Fix use-after-free issue with udc_name
+- hugetlbfs: flush TLBs correctly after huge_pmd_unshare
+- mm: share_pool: adjust sp_alloc behavior when coredump
+- mm: share_pool: adjust sp_make_share_k2u behavior when coredump
+- Revert "timekeeping: Fix ktime_add overflow in tk_set_wall_to_mono"
+- Revert "timekeeping: Avoid undefined behaviour in 'ktime_get_with_offset()'"
+- Revert "posix-cpu-timers: Avoid undefined behaviour in timespec64_to_ns()"
+- time: Normalize timespec64 before timespec64_compare()
+- iommu/arm-smmu-v3: remove unnecessary mpam enable procedure
+- fix kabi effect by change in md_rdev
+- Revert "dm space maps: don't reset space map allocation cursor when committing"
+- nvme-fabrics: fix kabi broken by "reject I/O to offline device"
+- nvme: fix NULL derefence in nvme_ctrl_fast_io_fail_tmo_show/store
+- nvme: export fast_io_fail_tmo to sysfs
+- nvme-fabrics: reject I/O to offline device
+- nvme: add a Identify Namespace Identification Descriptor list quirk
+- nvme: fix identify error status silent ignore
+- nvme: fix possible hang when ns scanning fails during error recovery
+- nvme: refactor nvme_identify_ns_descs error handling
+- nvme: Namepace identification descriptor list is optional
+- nvmet: use new ana_log_size instead the old one
+- nvme-multipath: fix double initialization of ANA state
+- nvme-core: use list_add_tail_rcu instead of list_add_tail for nvme_init_ns_head
+- nvme: make nvme_report_ns_ids propagate error back
+- nvme-multipath: avoid crash on invalid subsystem cntlid enumeration
+- nvme-multipath: split bios with the ns_head bio_set before submitting
+- nvme: add proper discard setup for the multipath device
+- fix kabi change
+- md: Fix undefined behaviour in is_mddev_idle
+- xfs: fix up non-directory creation in SGID directories
+- xfs: remove the kuid/kgid conversion wrappers
+- xfs: remove the icdinode di_uid/di_gid members
+- xfs: ensure that the inode uid/gid match values match the icdinode ones
+- configfs: fix a use-after-free in __configfs_open_file
+- share_pool: don't trace the invalid spa address
+- share_pool: Remove the redundant warning message
 
 * Mon Dec 13 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.3.0.0127
 - ixgbe: fix large MTU request from VF
