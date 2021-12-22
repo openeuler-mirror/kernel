@@ -1,0 +1,13 @@
+#
+# Ramaxel driver configuration
+#
+
+config RAMAXEL_SPRAID
+	tristate "Ramaxel spraid Adapter"
+	depends on PCI && SCSI
+	select BLK_DEV_BSGLIB
+	depends on ARM64 || X86_64
+	help
+	This driver supports Ramaxel SPRxxx serial
+	raid controller, which has PCIE Gen4 interface
+	with host and supports SAS/SATA Hdd/ssd.
