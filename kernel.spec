@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2112.4.0
+%global hulkrelease 2112.5.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0127
+Release: %{hulkrelease}.0128
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,13 @@ fi
 %endif
 
 %changelog
+
+* Wed Dec 22 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.5.0.0128
+- config: enable CONFIG_RAMAXEL_SPRAID by default
+- scsi:spraid: support Ramaxel's spraid driver
+- USB: gadget: bRequestType is a bitfield, not a enum
+- phonet: refcount leak in pep_sock_accep
+- USB: gadget: detect too-big endpoint 0 requests
 
 * Tue Dec 21 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.4.0.0127
 - block, bfq: don't move oom_bfqq
