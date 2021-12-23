@@ -4163,6 +4163,25 @@ static int arm_smmu_set_mpam(struct arm_smmu_device *smmu,
 	return 0;
 }
 
+static int arm_smmu_set_dev_user_mpam_en(struct device *dev, int user_mpam_en)
+{
+	struct arm_smmu_master *master = dev_iommu_priv_get(dev);
+	struct arm_smmu_device *smmu;
+	u32 reg, __iomem *cfg;
+
+	if (WARN_ON(!master))
+		return -EINVAL;
+
+	smmu = master->domain->smmu;
+	cfg = smmu->base + ARM_SMMU_USER_CFG0;
+
+	reg = readl_relaxed(cfg);
+	reg &= ~ARM_SMMU_USER_MPAM_EN;
+	reg |= FIELD_PREP(ARM_SMMU_USER_MPAM_EN, user_mpam_en);
+	writel(reg, cfg);
+	return 0;
+}
+
 static int arm_smmu_device_set_mpam(struct device *dev,
 				    struct arm_smmu_mpam *mpam)
 {
@@ -4179,6 +4198,12 @@ static int arm_smmu_device_set_mpam(struct device *dev,
 					mpam->partid,
 					mpam->pmg,
 					mpam->s1mpam);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (mpam->flags & ARM_SMMU_DEV_SET_USER_MPAM_EN) {
+		ret = arm_smmu_set_dev_user_mpam_en(dev, mpam->user_mpam_en);
 		if (ret < 0)
 			return ret;
 	}
@@ -4232,6 +4257,22 @@ static int arm_smmu_get_mpam(struct arm_smmu_device *smmu,
 	return 0;
 }
 
+static int arm_smmu_get_dev_user_mpam_en(struct device *dev, int *user_mpam_en)
+{
+	struct arm_smmu_master *master = dev_iommu_priv_get(dev);
+	struct arm_smmu_device *smmu;
+	u32 reg;
+
+	if (WARN_ON(!master))
+		return -EINVAL;
+
+	smmu = master->domain->smmu;
+
+	reg = readl_relaxed(smmu->base + ARM_SMMU_USER_CFG0);
+	*user_mpam_en = FIELD_GET(ARM_SMMU_USER_MPAM_EN, reg);
+	return 0;
+}
+
 static int arm_smmu_device_get_mpam(struct device *dev,
 				    struct arm_smmu_mpam *mpam)
 {
@@ -4248,6 +4289,12 @@ static int arm_smmu_device_get_mpam(struct device *dev,
 					&mpam->partid,
 					&mpam->pmg,
 					&mpam->s1mpam);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (mpam->flags & ARM_SMMU_DEV_GET_USER_MPAM_EN) {
+		ret = arm_smmu_get_dev_user_mpam_en(dev, &mpam->user_mpam_en);
 		if (ret < 0)
 			return ret;
 	}
