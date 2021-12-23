@@ -3567,3 +3567,25 @@ u32 iommu_sva_get_pasid(struct iommu_sva *handle)
 	return ops->sva_get_pasid(handle);
 }
 EXPORT_SYMBOL_GPL(iommu_sva_get_pasid);
+
+int iommu_dev_set_config(struct device *dev, int type, void *data)
+{
+	const struct iommu_ops *ops = dev->bus->iommu_ops;
+
+	if (ops && ops->dev_set_config)
+		return ops->dev_set_config(dev, type, data);
+
+	return -ENODEV;
+}
+EXPORT_SYMBOL_GPL(iommu_dev_set_config);
+
+int iommu_dev_get_config(struct device *dev, int type, void *data)
+{
+	const struct iommu_ops *ops = dev->bus->iommu_ops;
+
+	if (ops && ops->dev_get_config)
+		return ops->dev_get_config(dev, type, data);
+
+	return -ENODEV;
+}
+EXPORT_SYMBOL_GPL(iommu_dev_get_config);

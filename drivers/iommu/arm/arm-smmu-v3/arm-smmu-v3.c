@@ -4081,6 +4081,22 @@ static int arm_smmu_device_domain_type(struct device *dev)
 }
 #endif
 
+static int arm_smmu_device_get_config(struct device *dev, int type, void *data)
+{
+	switch (type) {
+	default:
+		return -EINVAL;
+	}
+}
+
+static int arm_smmu_device_set_config(struct device *dev, int type, void *data)
+{
+	switch (type) {
+	default:
+		return -EINVAL;
+	}
+}
+
 static struct iommu_ops arm_smmu_ops = {
 	.capable		= arm_smmu_capable,
 	.domain_alloc		= arm_smmu_domain_alloc,
@@ -4122,6 +4138,8 @@ static struct iommu_ops arm_smmu_ops = {
 #ifdef CONFIG_SMMU_BYPASS_DEV
 	.def_domain_type	= arm_smmu_device_domain_type,
 #endif
+	.dev_get_config		= arm_smmu_device_get_config,
+	.dev_set_config		= arm_smmu_device_set_config,
 	.pgsize_bitmap		= -1UL, /* Restricted during device attach */
 };
 

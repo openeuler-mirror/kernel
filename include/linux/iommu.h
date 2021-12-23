@@ -348,6 +348,9 @@ struct iommu_ops {
 			      dma_addr_t giova, phys_addr_t gpa, size_t size);
 	void (*unbind_guest_msi)(struct iommu_domain *domain, dma_addr_t giova);
 
+	int (*dev_get_config)(struct device *dev, int type, void *data);
+	int (*dev_set_config)(struct device *dev, int type, void *data);
+
 	unsigned long pgsize_bitmap;
 	struct module *owner;
 };
@@ -583,6 +586,9 @@ extern int iommu_clear_dirty_log(struct iommu_domain *domain, unsigned long iova
 				 size_t dma_size, unsigned long *bitmap,
 				 unsigned long base_iova,
 				 unsigned long bitmap_pgshift);
+
+extern int iommu_dev_set_config(struct device *dev, int type, void *data);
+extern int iommu_dev_get_config(struct device *dev, int type, void *data);
 
 /* Window handling function prototypes */
 extern int iommu_domain_window_enable(struct iommu_domain *domain, u32 wnd_nr,
@@ -1214,6 +1220,18 @@ int iommu_bind_guest_msi(struct iommu_domain *domain,
 }
 static inline
 void iommu_unbind_guest_msi(struct iommu_domain *domain, dma_addr_t giova) {}
+
+static inline
+int iommu_dev_set_config(struct device *dev, int type, void *data)
+{
+	return -ENODEV;
+}
+
+static inline
+int iommmu_dev_get_config(struct device *dev, int type, void *data)
+{
+	return -ENODEV;
+}
 
 #endif /* CONFIG_IOMMU_API */
 
