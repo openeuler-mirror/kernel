@@ -11,6 +11,7 @@
 
 #include <linux/acpi.h>
 #include <linux/acpi_iort.h>
+#include <linux/arm-smmu.h>
 #include <linux/bitops.h>
 #include <linux/crash_dump.h>
 #include <linux/delay.h>
@@ -4081,6 +4082,111 @@ static int arm_smmu_device_domain_type(struct device *dev)
 }
 #endif
 
+static int arm_smmu_set_mpam(struct arm_smmu_device *smmu,
+		int sid, int ssid, int partid, int pmg, int s1mpam)
+{
+	struct arm_smmu_master *master = arm_smmu_find_master(smmu, sid);
+	struct arm_smmu_domain *domain = master ? master->domain : NULL;
+	u64 val;
+	__le64 *ste, *cd;
+
+	struct arm_smmu_cmdq_ent prefetch_cmd = {
+		.opcode		= CMDQ_OP_PREFETCH_CFG,
+		.prefetch	= {
+			.sid	= sid,
+		},
+	};
+
+	if (WARN_ON(!domain))
+		return -EINVAL;
+	if (WARN_ON(!domain->s1_cfg.set))
+		return -EINVAL;
+	if (WARN_ON(ssid >= (1 << domain->s1_cfg.s1cdmax)))
+		return -E2BIG;
+
+	if (!(smmu->features & ARM_SMMU_FEAT_MPAM))
+		return -ENODEV;
+
+	if (partid > smmu->mpam_partid_max || pmg > smmu->mpam_pmg_max) {
+		dev_err(smmu->dev,
+			"mpam rmid out of range: partid[0, %d] pmg[0, %d]\n",
+			smmu->mpam_partid_max, smmu->mpam_pmg_max);
+		return -ERANGE;
+	}
+
+	/* get ste ptr */
+	ste = arm_smmu_get_step_for_sid(smmu, sid);
+
+	/* write s1mpam to ste */
+	val = le64_to_cpu(ste[1]);
+	val &= ~STRTAB_STE_1_S1MPAM;
+	val |= FIELD_PREP(STRTAB_STE_1_S1MPAM, s1mpam);
+	WRITE_ONCE(ste[1], cpu_to_le64(val));
+
+	val = le64_to_cpu(ste[4]);
+	val &= ~STRTAB_STE_4_PARTID_MASK;
+	val |= FIELD_PREP(STRTAB_STE_4_PARTID_MASK, partid);
+	WRITE_ONCE(ste[4], cpu_to_le64(val));
+
+	val = le64_to_cpu(ste[5]);
+	val &= ~STRTAB_STE_5_PMG_MASK;
+	val |= FIELD_PREP(STRTAB_STE_5_PMG_MASK, pmg);
+	WRITE_ONCE(ste[5], cpu_to_le64(val));
+	arm_smmu_sync_ste_for_sid(smmu, sid);
+
+	/* do not modify cd table which owned by guest */
+	if (domain->stage == ARM_SMMU_DOMAIN_NESTED) {
+		dev_err(smmu->dev,
+			"mpam: smmu cd is owned by guest, not modified\n");
+		return 0;
+	}
+
+	/* get cd ptr */
+	cd = arm_smmu_get_cd_ptr(domain, ssid);
+	if (s1mpam && WARN_ON(!cd))
+		return -ENOMEM;
+
+	val = le64_to_cpu(cd[5]);
+	val &= ~CTXDESC_CD_5_PARTID_MASK;
+	val &= ~CTXDESC_CD_5_PMG_MASK;
+	val |= FIELD_PREP(CTXDESC_CD_5_PARTID_MASK, partid);
+	val |= FIELD_PREP(CTXDESC_CD_5_PMG_MASK, pmg);
+	WRITE_ONCE(cd[5], cpu_to_le64(val));
+	arm_smmu_sync_cd(domain, ssid, true);
+
+	/* It's likely that we'll want to use the new STE soon */
+	if (!(smmu->options & ARM_SMMU_OPT_SKIP_PREFETCH))
+		arm_smmu_cmdq_issue_cmd(smmu, &prefetch_cmd);
+
+	dev_info(smmu->dev, "partid %d, pmg %d\n", partid, pmg);
+
+	return 0;
+}
+
+static int arm_smmu_device_set_mpam(struct device *dev,
+				    struct arm_smmu_mpam *mpam)
+{
+	struct arm_smmu_master *master = dev_iommu_priv_get(dev);
+	int ret;
+
+	if (WARN_ON(!master) || WARN_ON(!mpam))
+		return -EINVAL;
+
+	if (mpam->flags & ARM_SMMU_DEV_SET_MPAM) {
+		ret = arm_smmu_set_mpam(master->domain->smmu,
+					master->streams->id,
+					mpam->pasid,
+					mpam->partid,
+					mpam->pmg,
+					mpam->s1mpam);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+
+}
+
 static int arm_smmu_device_get_config(struct device *dev, int type, void *data)
 {
 	switch (type) {
@@ -4092,6 +4198,8 @@ static int arm_smmu_device_get_config(struct device *dev, int type, void *data)
 static int arm_smmu_device_set_config(struct device *dev, int type, void *data)
 {
 	switch (type) {
+	case ARM_SMMU_MPAM:
+		return arm_smmu_device_set_mpam(dev, data);
 	default:
 		return -EINVAL;
 	}
@@ -5209,6 +5317,14 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
 
 	if (FIELD_GET(IDR3_RIL, reg))
 		smmu->features |= ARM_SMMU_FEAT_RANGE_INV;
+
+	if (reg & IDR3_MPAM) {
+		reg = readl_relaxed(smmu->base + ARM_SMMU_MPAMIDR);
+		smmu->mpam_partid_max = FIELD_GET(MPAMIDR_PARTID_MAX, reg);
+		smmu->mpam_pmg_max = FIELD_GET(MPAMIDR_PMG_MAX, reg);
+		if (smmu->mpam_partid_max || smmu->mpam_pmg_max)
+			smmu->features |= ARM_SMMU_FEAT_MPAM;
+	}
 
 	/* IDR5 */
 	reg = readl_relaxed(smmu->base + ARM_SMMU_IDR5);

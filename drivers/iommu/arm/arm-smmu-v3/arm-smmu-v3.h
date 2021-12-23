@@ -61,6 +61,8 @@
 #define IDR3_BBML1			1
 #define IDR3_BBML2			2
 #define IDR3_RIL			(1 << 10)
+#define IDR3_MPAM			(1 << 7)
+#define ARM_SMMU_IDR3_CFG		0x140C
 
 #define ARM_SMMU_IDR5			0x14
 #define IDR5_STALL_MAX			GENMASK(31, 16)
@@ -162,6 +164,10 @@
 #define ARM_SMMU_PRIQ_IRQ_CFG1		0xd8
 #define ARM_SMMU_PRIQ_IRQ_CFG2		0xdc
 
+#define ARM_SMMU_MPAMIDR		0x130
+#define MPAMIDR_PMG_MAX			GENMASK(23, 16)
+#define MPAMIDR_PARTID_MAX		GENMASK(15, 0)
+
 #define ARM_SMMU_IDR6			0x190
 #define IDR6_LOG2NUMP			GENMASK(27, 24)
 #define IDR6_LOG2NUMQ			GENMASK(19, 16)
@@ -258,6 +264,7 @@
 #define STRTAB_STE_1_S1CSH		GENMASK_ULL(7, 6)
 
 #define STRTAB_STE_1_PPAR		(1UL << 18)
+#define STRTAB_STE_1_S1MPAM		(1UL << 26)
 #define STRTAB_STE_1_S1STALLD		(1UL << 27)
 
 #define STRTAB_STE_1_EATS		GENMASK_ULL(29, 28)
@@ -289,6 +296,11 @@
 #define STRTAB_STE_2_S2R		(1UL << 58)
 
 #define STRTAB_STE_3_S2TTB_MASK		GENMASK_ULL(51, 4)
+
+#define STRTAB_STE_4_PARTID_MASK	GENMASK_ULL(31, 16)
+
+#define STRTAB_STE_5_MPAM_NS		(1UL << 8)
+#define STRTAB_STE_5_PMG_MASK		GENMASK_ULL(7, 0)
 
 /*
  * Context descriptors.
@@ -330,6 +342,9 @@
 #define CTXDESC_CD_0_ASID		GENMASK_ULL(63, 48)
 
 #define CTXDESC_CD_1_TTB0_MASK		GENMASK_ULL(51, 4)
+
+#define CTXDESC_CD_5_PARTID_MASK	GENMASK_ULL(47, 32)
+#define CTXDESC_CD_5_PMG_MASK		GENMASK_ULL(55, 48)
 
 /*
  * When the SMMU only supports linear context descriptor tables, pick a
@@ -698,6 +713,7 @@ struct arm_smmu_device {
 #define ARM_SMMU_FEAT_BBML1		(1 << 21)
 #define ARM_SMMU_FEAT_BBML2		(1 << 22)
 #define ARM_SMMU_FEAT_ECMDQ		(1 << 23)
+#define ARM_SMMU_FEAT_MPAM		(1 << 24)
 	u32				features;
 
 #define ARM_SMMU_OPT_SKIP_PREFETCH	(1 << 0)
@@ -739,6 +755,9 @@ struct arm_smmu_device {
 
 	struct rb_root			streams;
 	struct mutex			streams_mutex;
+
+	unsigned int			mpam_partid_max;
+	unsigned int			mpam_pmg_max;
 };
 
 struct arm_smmu_stream {
