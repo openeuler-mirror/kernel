@@ -78,7 +78,7 @@ int hibmc_vdac_init(struct hibmc_drm_private *priv)
 {
 	struct drm_device *dev = priv->dev;
 	struct drm_encoder *encoder = &priv->encoder;
-	struct drm_connector *connector = &priv->connector;
+	struct drm_connector *connector = &priv->connector.base;
 	int ret;
 
 	encoder->possible_crtcs = 0x1;
