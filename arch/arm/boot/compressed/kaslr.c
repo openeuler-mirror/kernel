@@ -410,7 +410,7 @@ u32 kaslr_early_init(u32 *kaslr_offset, u32 image_base, u32 image_size,
 		}
 		if (start != 0 && end != 0 && start < U32_MAX) {
 			regions.initrd_start = start;
-			regions.initrd_size = max_t(u64, end, U32_MAX) - start;
+			regions.initrd_size = min_t(u64, end, U32_MAX) - start;
 		}
 	}
 
