@@ -641,7 +641,8 @@ static int read_balance(struct r1conf *conf, struct r1bio *r1_bio, int *max_sect
 		rdev = rcu_dereference(conf->mirrors[disk].rdev);
 		if (r1_bio->bios[disk] == IO_BLOCKED
 		    || rdev == NULL
-		    || test_bit(Faulty, &rdev->flags))
+		    || test_bit(Faulty, &rdev->flags)
+			|| test_bit(WantRemove, &rdev->flags))
 			continue;
 		if (!test_bit(In_sync, &rdev->flags) &&
 		    rdev->recovery_offset < this_sector + sectors)
@@ -770,7 +771,8 @@ static int read_balance(struct r1conf *conf, struct r1bio *r1_bio, int *max_sect
 
 	if (best_disk >= 0) {
 		rdev = rcu_dereference(conf->mirrors[best_disk].rdev);
-		if (!rdev)
+		if (!rdev || test_bit(Faulty, &rdev->flags)
+				|| test_bit(WantRemove, &rdev->flags))
 			goto retry;
 		atomic_inc(&rdev->nr_pending);
 		sectors = best_good_sectors;
@@ -1382,7 +1384,8 @@ static void raid1_write_request(struct mddev *mddev, struct bio *bio,
 			break;
 		}
 		r1_bio->bios[i] = NULL;
-		if (!rdev || test_bit(Faulty, &rdev->flags)) {
+		if (!rdev || test_bit(Faulty, &rdev->flags)
+				|| test_bit(WantRemove, &rdev->flags)) {
 			if (i < conf->raid_disks)
 				set_bit(R1BIO_Degraded, &r1_bio->state);
 			continue;
@@ -1759,6 +1762,7 @@ static int raid1_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 
 			p->head_position = 0;
 			rdev->raid_disk = mirror;
+			clear_bit(WantRemove, &rdev->flags);
 			err = 0;
 			/* As all devices are equivalent, we don't need a full recovery
 			 * if this was recently any drive of the array
@@ -1773,6 +1777,7 @@ static int raid1_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 			/* Add this device as a replacement */
 			clear_bit(In_sync, &rdev->flags);
 			set_bit(Replacement, &rdev->flags);
+			clear_bit(WantRemove, &rdev->flags);
 			rdev->raid_disk = mirror;
 			err = 0;
 			conf->fullsync = 1;
@@ -1812,16 +1817,26 @@ static int raid1_remove_disk(struct mddev *mddev, struct md_rdev *rdev)
 			err = -EBUSY;
 			goto abort;
 		}
-		p->rdev = NULL;
+
+		/*
+		 * Before set p->rdev = NULL, we set WantRemove bit avoiding
+		 * race between rdev remove and issue bio, which can cause
+		 * NULL pointer deference of rdev by conf->mirrors[i].rdev.
+		 */
+		set_bit(WantRemove, &rdev->flags);
+
 		if (!test_bit(RemoveSynchronized, &rdev->flags)) {
 			synchronize_rcu();
 			if (atomic_read(&rdev->nr_pending)) {
 				/* lost the race, try later */
 				err = -EBUSY;
-				p->rdev = rdev;
+				clear_bit(WantRemove, &rdev->flags);
 				goto abort;
 			}
 		}
+
+		p->rdev = NULL;
+
 		if (conf->mirrors[conf->raid_disks + number].rdev) {
 			/* We just removed a device that is being replaced.
 			 * Move down the replacement.  We drain all IO before
@@ -2716,7 +2731,8 @@ static sector_t raid1_sync_request(struct mddev *mddev, sector_t sector_nr,
 
 		rdev = rcu_dereference(conf->mirrors[i].rdev);
 		if (rdev == NULL ||
-		    test_bit(Faulty, &rdev->flags)) {
+		    test_bit(Faulty, &rdev->flags) ||
+			test_bit(WantRemove, &rdev->flags)) {
 			if (i < conf->raid_disks)
 				still_degraded = 1;
 		} else if (!test_bit(In_sync, &rdev->flags)) {

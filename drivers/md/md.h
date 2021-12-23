@@ -213,6 +213,10 @@ enum flag_bits {
 				 * check if there is collision between raid1
 				 * serial bios.
 				 */
+	WantRemove,		/* Before set conf->mirrors[i] as NULL,
+				 * we set the bit first, avoiding access the
+				 * conf->mirrors[i] after it set NULL.
+				 */
 };
 
 static inline int is_badblock(struct md_rdev *rdev, sector_t s, int sectors,
