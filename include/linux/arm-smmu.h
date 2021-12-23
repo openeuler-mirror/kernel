@@ -7,6 +7,7 @@ enum arm_smmu_device_config_type {
 
 struct arm_smmu_mpam {
 #define ARM_SMMU_DEV_SET_MPAM	(1 << 0)
+#define ARM_SMMU_DEV_GET_MPAM	(1 << 1)
 	int flags;
 	int pasid;
 	int partid;

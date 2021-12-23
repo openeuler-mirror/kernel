@@ -4187,9 +4187,79 @@ static int arm_smmu_device_set_mpam(struct device *dev,
 
 }
 
+static int arm_smmu_get_mpam(struct arm_smmu_device *smmu,
+		int sid, int ssid, int *partid, int *pmg, int *s1mpam)
+{
+	struct arm_smmu_master *master = arm_smmu_find_master(smmu, sid);
+	struct arm_smmu_domain *domain = master ? master->domain : NULL;
+	u64 val;
+	__le64 *ste, *cd;
+
+	if (WARN_ON(!domain))
+		return -EINVAL;
+	if (WARN_ON(!domain->s1_cfg.set))
+		return -EINVAL;
+	if (WARN_ON(ssid >= (1 << domain->s1_cfg.s1cdmax)))
+		return -E2BIG;
+
+	if (!(smmu->features & ARM_SMMU_FEAT_MPAM))
+		return -ENODEV;
+
+	/* get ste ptr */
+	ste = arm_smmu_get_step_for_sid(smmu, sid);
+
+	val = le64_to_cpu(ste[4]);
+	*partid = FIELD_GET(STRTAB_STE_4_PARTID_MASK, val);
+
+	val = le64_to_cpu(ste[5]);
+	*pmg = FIELD_GET(STRTAB_STE_5_PMG_MASK, val);
+
+	val = le64_to_cpu(ste[1]);
+	*s1mpam = FIELD_GET(STRTAB_STE_1_S1MPAM, val);
+	/* return STE mpam configuration when s1mpam == 0 */
+	if (!(*s1mpam))
+		return 0;
+
+	/* get cd ptr */
+	cd = arm_smmu_get_cd_ptr(domain, ssid);
+	if (WARN_ON(!cd))
+		return -ENOMEM;
+
+	val = le64_to_cpu(cd[5]);
+	*partid = FIELD_GET(CTXDESC_CD_5_PARTID_MASK, val);
+	*pmg = FIELD_GET(CTXDESC_CD_5_PMG_MASK, val);
+
+	return 0;
+}
+
+static int arm_smmu_device_get_mpam(struct device *dev,
+				    struct arm_smmu_mpam *mpam)
+{
+	struct arm_smmu_master *master = dev_iommu_priv_get(dev);
+	int ret;
+
+	if (WARN_ON(!master) || WARN_ON(!mpam))
+		return -EINVAL;
+
+	if (mpam->flags & ARM_SMMU_DEV_GET_MPAM) {
+		ret = arm_smmu_get_mpam(master->domain->smmu,
+					master->streams->id,
+					mpam->pasid,
+					&mpam->partid,
+					&mpam->pmg,
+					&mpam->s1mpam);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
 static int arm_smmu_device_get_config(struct device *dev, int type, void *data)
 {
 	switch (type) {
+	case ARM_SMMU_MPAM:
+		return arm_smmu_device_get_mpam(dev, data);
 	default:
 		return -EINVAL;
 	}
