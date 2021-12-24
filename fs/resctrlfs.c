@@ -1029,7 +1029,7 @@ out:
  *
  * Return: 0 on success or -errno
  */
-int __init resctrl_group_init(void)
+int resctrl_group_init(void)
 {
 	int ret = 0;
 

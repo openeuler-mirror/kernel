@@ -16,7 +16,7 @@ enum mpam_class_types {
 	MPAM_CLASS_UNKNOWN, /* Everything else, e.g. TLBs etc */
 };
 
-struct mpam_device * __init
+struct mpam_device *
 __mpam_device_create(u8 level_idx, enum mpam_class_types type,
 			int component_id, const struct cpumask *fw_affinity,
 			phys_addr_t hwpage_address);
@@ -54,9 +54,9 @@ mpam_device_create_memory(int nid, phys_addr_t hwpage_address)
 	return __mpam_device_create(~0, MPAM_CLASS_MEMORY, nid,
 			&dev_affinity, hwpage_address);
 }
-int __init mpam_discovery_start(void);
-int __init mpam_discovery_complete(void);
-void __init mpam_discovery_failed(void);
+int mpam_discovery_start(void);
+int mpam_discovery_complete(void);
+void mpam_discovery_failed(void);
 
 enum mpam_enable_type {
 	MPAM_ENABLE_DENIED = 0,
@@ -71,12 +71,12 @@ extern enum mpam_enable_type mpam_enabled;
 #define mpam_irq_flags_to_acpi(x) ((x & MPAM_IRQ_MODE_LEVEL) ?  \
 			ACPI_LEVEL_SENSITIVE : ACPI_EDGE_SENSITIVE)
 
-void __init mpam_device_set_error_irq(struct mpam_device *dev, u32 irq,
+void mpam_device_set_error_irq(struct mpam_device *dev, u32 irq,
 			u32 flags);
-void __init mpam_device_set_overflow_irq(struct mpam_device *dev, u32 irq,
+void mpam_device_set_overflow_irq(struct mpam_device *dev, u32 irq,
 			u32 flags);
 
-static inline int __init mpam_register_device_irq(struct mpam_device *dev,
+static inline int mpam_register_device_irq(struct mpam_device *dev,
 			u32 overflow_interrupt, u32 overflow_flags,
 			u32 error_interrupt, u32 error_flags)
 {
