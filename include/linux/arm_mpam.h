@@ -61,6 +61,7 @@ void mpam_discovery_failed(void);
 enum mpam_enable_type {
 	MPAM_ENABLE_DENIED = 0,
 	MPAM_ENABLE_ACPI,
+	MPAM_ENABLE_OF,
 };
 
 extern enum mpam_enable_type mpam_enabled;
@@ -114,5 +115,7 @@ static inline int mpam_register_device_irq(struct mpam_device *dev,
 
 	return ret;
 }
+
+int __init acpi_mpam_parse(void);
 
 #endif
