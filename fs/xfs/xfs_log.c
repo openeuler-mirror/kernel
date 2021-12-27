@@ -463,28 +463,6 @@ out_error:
 	return error;
 }
 
-static bool
-__xlog_state_release_iclog(
-	struct xlog		*log,
-	struct xlog_in_core	*iclog)
-{
-	lockdep_assert_held(&log->l_icloglock);
-
-	if (iclog->ic_state == XLOG_STATE_WANT_SYNC) {
-		/* update tail before writing to iclog */
-		xfs_lsn_t tail_lsn = xlog_assign_tail_lsn(log->l_mp);
-
-		iclog->ic_state = XLOG_STATE_SYNCING;
-		iclog->ic_header.h_tail_lsn = cpu_to_be64(tail_lsn);
-		xlog_verify_tail_lsn(log, iclog, tail_lsn);
-		/* cycle incremented when incrementing curr_block */
-		return true;
-	}
-
-	ASSERT(iclog->ic_state == XLOG_STATE_ACTIVE);
-	return false;
-}
-
 /*
  * Flush iclog to disk if this is the last reference to the given iclog and the
  * it is in the WANT_SYNC state.
@@ -494,18 +472,29 @@ xlog_state_release_iclog(
 	struct xlog		*log,
 	struct xlog_in_core	*iclog)
 {
+	xfs_lsn_t		tail_lsn;
 	lockdep_assert_held(&log->l_icloglock);
 
 	if (iclog->ic_state == XLOG_STATE_IOERROR)
 		return -EIO;
 
-	if (atomic_dec_and_test(&iclog->ic_refcnt) &&
-	    __xlog_state_release_iclog(log, iclog)) {
-		spin_unlock(&log->l_icloglock);
-		xlog_sync(log, iclog);
-		spin_lock(&log->l_icloglock);
+	if (!atomic_dec_and_test(&iclog->ic_refcnt))
+		return 0;
+
+	if (iclog->ic_state != XLOG_STATE_WANT_SYNC) {
+		ASSERT(iclog->ic_state == XLOG_STATE_ACTIVE);
+		return 0;
 	}
 
+	/* update tail before writing to iclog */
+	tail_lsn = xlog_assign_tail_lsn(log->l_mp);
+	iclog->ic_state = XLOG_STATE_SYNCING;
+	iclog->ic_header.h_tail_lsn = cpu_to_be64(tail_lsn);
+	xlog_verify_tail_lsn(log, iclog, tail_lsn);
+
+	spin_unlock(&log->l_icloglock);
+	xlog_sync(log, iclog);
+	spin_lock(&log->l_icloglock);
 	return 0;
 }
 
