@@ -557,7 +557,7 @@ xfs_ioc_attrmulti_one(
 	case ATTR_OP_REMOVE:
 		value = NULL;
 		*len = 0;
-		/* fall through */
+		fallthrough;
 	case ATTR_OP_SET:
 		error = mnt_want_write_file(parfilp);
 		if (error)
@@ -1669,7 +1669,7 @@ xfs_ioc_getbmap(
 	switch (cmd) {
 	case XFS_IOC_GETBMAPA:
 		bmx.bmv_iflags = BMV_IF_ATTRFORK;
-		/*FALLTHRU*/
+		fallthrough;
 	case XFS_IOC_GETBMAP:
 		if (file->f_mode & FMODE_NOCMTIME)
 			bmx.bmv_iflags |= BMV_IF_NO_DMAPI_READ;

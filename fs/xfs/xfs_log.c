@@ -2547,6 +2547,7 @@ xlog_covered_state(
 	case XLOG_STATE_COVER_IDLE:
 		if (iclogs_changed == 1)
 			return XLOG_STATE_COVER_IDLE;
+		fallthrough;
 	case XLOG_STATE_COVER_NEED:
 	case XLOG_STATE_COVER_NEED2:
 		break;
