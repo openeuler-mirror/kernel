@@ -1727,10 +1727,12 @@ int freeze_super(struct super_block *sb)
 	if (sb_rdonly(sb)) {
 		/* Nothing to do really... */
 		sb->s_writers.frozen = SB_FREEZE_COMPLETE;
+		sb->s_writers.frozen_ro = 1;
 		up_write(&sb->s_umount);
 		return 0;
 	}
 
+	sb->s_writers.frozen_ro = 0;
 	sb->s_writers.frozen = SB_FREEZE_WRITE;
 	/* Release s_umount to preserve sb_start_write -> s_umount ordering */
 	up_write(&sb->s_umount);
@@ -1786,7 +1788,12 @@ static int thaw_super_locked(struct super_block *sb)
 		return -EINVAL;
 	}
 
-	if (sb_rdonly(sb)) {
+	/*
+	 * Was the fs frozen in read-only state? Note that we cannot just check
+	 * sb_rdonly(sb) as the filesystem might have switched to read-only
+	 * state due to internal errors or so.
+	 */
+	if (sb->s_writers.frozen_ro) {
 		sb->s_writers.frozen = SB_UNFROZEN;
 		goto out;
 	}
