@@ -131,7 +131,7 @@ xfs_file_fsync(
 	struct xfs_mount	*mp = ip->i_mount;
 	int			error = 0;
 	int			log_flushed = 0;
-	xfs_lsn_t		lsn = 0;
+	xfs_csn_t		seq = 0;
 
 	trace_xfs_file_fsync(ip);
 
@@ -163,7 +163,7 @@ xfs_file_fsync(
 	 * that we don't get a racing sync operation that does not wait for the
 	 * metadata to hit the journal before returning. If we race with
 	 * clearing the ili_fsync_fields, then all that will happen is the log
-	 * force will do nothing as the lsn will already be on disk. We can't
+	 * force will do nothing as the seq will already be on disk. We can't
 	 * race with setting ili_fsync_fields because that is done under
 	 * XFS_ILOCK_EXCL, and that can't happen because we hold the lock shared
 	 * until after the ili_fsync_fields is cleared.
@@ -172,11 +172,11 @@ xfs_file_fsync(
 	if (xfs_ipincount(ip)) {
 		if (!datasync ||
 		    (iip->ili_fsync_fields & ~XFS_ILOG_TIMESTAMP))
-			lsn = iip->ili_last_lsn;
+			seq = iip->ili_commit_seq;
 	}
 
-	if (lsn) {
-		error = xfs_log_force_lsn(mp, lsn, XFS_LOG_SYNC, &log_flushed);
+	if (seq) {
+		error = xfs_log_force_seq(mp, seq, XFS_LOG_SYNC, &log_flushed);
 		spin_lock(&iip->ili_lock);
 		iip->ili_fsync_fields = 0;
 		spin_unlock(&iip->ili_lock);
