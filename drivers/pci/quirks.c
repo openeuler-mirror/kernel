@@ -5622,6 +5622,31 @@ static void quirk_switchtec_ntb_dma_alias(struct pci_dev *pdev)
 	pci_iounmap(pdev, mmio);
 	pci_disable_device(pdev);
 }
+
+static void pci_quirk_hisi_fixup_class(struct pci_dev *dev)
+{
+	dev->class = PCI_BASE_CLASS_NETWORK << 8;
+	pci_info(dev, "force hisi class type to network\n");
+}
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_HUAWEI, PCIE_DEVICE_ID_HISI_5896,
+			pci_quirk_hisi_fixup_class);
+
+static void pci_quirk_hisi_fixup_bar(struct pci_dev *dev)
+{
+	int i, start = 3;
+
+	for (i = start; i < PCI_NUM_RESOURCES; i++) {
+		dev->resource[i].start = 0;
+		dev->resource[i].end = 0;
+		dev->resource[i].flags = 0;
+	}
+
+	pci_info(dev, "force disable hisilicon np bar\n");
+}
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_HUAWEI, PCIE_DEVICE_ID_HISI_5896,
+			pci_quirk_hisi_fixup_bar);
+
+
 #define SWITCHTEC_QUIRK(vid) \
 	DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_VENDOR_ID_MICROSEMI, vid, \
 		PCI_CLASS_BRIDGE_OTHER, 8, quirk_switchtec_ntb_dma_alias)
