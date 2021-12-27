@@ -361,7 +361,7 @@ xfs_buf_allocate_memory(
 	unsigned short		page_count, i;
 	xfs_off_t		start, end;
 	int			error;
-	xfs_km_flags_t		kmflag_mask = 0;
+	xfs_km_flags_t		kmflag_mask = KM_NOFS;
 
 	/*
 	 * assure zeroed buffer for non-read cases.
@@ -378,9 +378,7 @@ xfs_buf_allocate_memory(
 	 */
 	size = BBTOB(bp->b_length);
 	if (size < PAGE_SIZE) {
-		int align_mask = xfs_buftarg_dma_alignment(bp->b_target);
-		bp->b_addr = kmem_alloc_io(size, align_mask,
-					   KM_NOFS | kmflag_mask);
+		bp->b_addr = kmem_alloc(size, kmflag_mask);
 		if (!bp->b_addr) {
 			/* low memory - use alloc_page loop instead */
 			goto use_alloc_page;
