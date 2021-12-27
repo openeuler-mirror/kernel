@@ -2688,19 +2688,13 @@ xlog_state_do_iclog_callbacks(
 	struct xlog		*log,
 	struct xlog_in_core	*iclog)
 {
+
+	LIST_HEAD(tmp);
+
 	spin_lock(&iclog->ic_callback_lock);
-
-	while (!list_empty(&iclog->ic_callbacks)) {
-		LIST_HEAD(tmp);
-
-		list_splice_init(&iclog->ic_callbacks, &tmp);
-
-		spin_unlock(&iclog->ic_callback_lock);
-		xlog_cil_process_committed(&tmp);
-		spin_lock(&iclog->ic_callback_lock);
-	}
-
+	list_splice_init(&iclog->ic_callbacks, &tmp);
 	spin_unlock(&iclog->ic_callback_lock);
+	xlog_cil_process_committed(&tmp);
 }
 
 STATIC void
