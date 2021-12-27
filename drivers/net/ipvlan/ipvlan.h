@@ -39,6 +39,9 @@
 
 #define IPVLAN_QBACKLOG_LIMIT	1000
 
+extern int sysctl_ipvlan_loop_qlen;
+extern int sysctl_ipvlan_loop_delay;
+
 typedef enum {
 	IPVL_IPV6 = 0,
 	IPVL_ICMPV6,
@@ -70,6 +73,10 @@ struct ipvl_dev {
 	netdev_features_t	sfeatures;
 	u32			msg_enable;
 	spinlock_t		addrs_lock;
+	int                     local_packets_cached;
+	unsigned long           local_timeout;
+	struct timer_list       local_free_timer;
+	struct sk_buff_head     local_xmit_queue;
 };
 
 struct ipvl_addr {
