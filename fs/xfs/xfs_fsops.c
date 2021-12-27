@@ -107,8 +107,6 @@ xfs_growfs_data_private(
 	if (error)
 		goto out_trans_cancel;
 
-	xfs_trans_agblocks_delta(tp, id.nfree);
-
 	/* If there are new blocks in the old last AG, extend it. */
 	if (new) {
 		error = xfs_ag_extend_space(mp, tp, &id, new);
