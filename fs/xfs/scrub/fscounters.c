@@ -157,7 +157,7 @@ xchk_fscount_btreeblks(
 
 	error = xchk_ag_init(sc, agno, &sc->sa);
 	if (error)
-		return error;
+		goto out_free;
 
 	error = xfs_btree_count_blocks(sc->sa.bno_cur, &blocks);
 	if (error)
