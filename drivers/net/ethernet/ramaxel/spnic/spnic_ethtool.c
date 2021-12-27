@@ -94,7 +94,9 @@ int spnic_nway_reset(struct net_device *netdev)
 	return 0;
 }
 
-static void spnic_get_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring)
+static void spnic_get_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring,
+				struct kernel_ethtool_ringparam *kernel_ering,
+				struct netlink_ext_ack *extack)
 {
 	struct spnic_nic_dev *nic_dev = netdev_priv(netdev);
 
@@ -141,7 +143,9 @@ static int check_ringparam_valid(struct net_device *netdev, struct ethtool_ringp
 	return 0;
 }
 
-static int spnic_set_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring)
+static int spnic_set_ringparam(struct net_device *netdev, struct ethtool_ringparam *ring,
+			       struct kernel_ethtool_ringparam *kernel_ering,
+			       struct netlink_ext_ack *extack)
 {
 	struct spnic_nic_dev *nic_dev = netdev_priv(netdev);
 	struct spnic_dyna_txrxq_params q_params = {0};

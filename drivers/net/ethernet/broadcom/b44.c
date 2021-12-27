@@ -1959,7 +1959,9 @@ static int b44_set_link_ksettings(struct net_device *dev,
 }
 
 static void b44_get_ringparam(struct net_device *dev,
-			      struct ethtool_ringparam *ering)
+			      struct ethtool_ringparam *ering,
+			      struct kernel_ethtool_ringparam *kernel_ering,
+			      struct netlink_ext_ack *extack)
 {
 	struct b44 *bp = netdev_priv(dev);
 
@@ -1970,7 +1972,9 @@ static void b44_get_ringparam(struct net_device *dev,
 }
 
 static int b44_set_ringparam(struct net_device *dev,
-			     struct ethtool_ringparam *ering)
+			     struct ethtool_ringparam *ering,
+			     struct kernel_ethtool_ringparam *kernel_ering,
+			     struct netlink_ext_ack *extack)
 {
 	struct b44 *bp = netdev_priv(dev);
 

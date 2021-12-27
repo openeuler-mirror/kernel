@@ -1050,7 +1050,9 @@ static void txgbe_get_drvinfo(struct net_device *netdev,
 }
 
 static void txgbe_get_ringparam(struct net_device *netdev,
-				struct ethtool_ringparam *ring)
+				struct ethtool_ringparam *ring,
+				struct kernel_ethtool_ringparam *kernel_ring,
+				struct netlink_ext_ack *extack)
 {
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 
@@ -1065,7 +1067,9 @@ static void txgbe_get_ringparam(struct net_device *netdev,
 }
 
 static int txgbe_set_ringparam(struct net_device *netdev,
-			       struct ethtool_ringparam *ring)
+			       struct ethtool_ringparam *ring,
+			       struct kernel_ethtool_ringparam *kernel_ring,
+			       struct netlink_ext_ack *extack)
 {
 	struct txgbe_adapter *adapter = netdev_priv(netdev);
 	struct txgbe_ring *temp_ring;

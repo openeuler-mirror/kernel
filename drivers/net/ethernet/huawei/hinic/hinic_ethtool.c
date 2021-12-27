@@ -905,7 +905,9 @@ static int hinic_nway_reset(struct net_device *netdev)
 }
 
 static void hinic_get_ringparam(struct net_device *netdev,
-				struct ethtool_ringparam *ring)
+				struct ethtool_ringparam *ring,
+				struct kernel_ethtool_ringparam *kernel_ring,
+				struct netlink_ext_ack *extack)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 
@@ -931,7 +933,9 @@ static void hinic_update_qp_depth(struct hinic_nic_dev *nic_dev,
 }
 
 static int hinic_set_ringparam(struct net_device *netdev,
-			       struct ethtool_ringparam *ring)
+			       struct ethtool_ringparam *ring,
+			       struct kernel_ethtool_ringparam *kernel_ring,
+			       struct netlink_ext_ack *extack)
 {
 	struct hinic_nic_dev *nic_dev = netdev_priv(netdev);
 	u16 new_sq_depth, new_rq_depth;
