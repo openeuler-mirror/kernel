@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2112.5.0
+%global hulkrelease 2112.6.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0128
+Release: %{hulkrelease}.0129
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,20 @@ fi
 %endif
 
 %changelog
+
+* Tue Dec 28 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.6.0.0129
+- watchdog: Fix check_preemption_disabled() error
+- btrfs: unlock newly allocated extent buffer after error
+- net/hinic: Fix call trace when the rx_buff module parameter is grater than 2
+- dt-bindings: mpam: add document for arm64 mpam
+- arm64/mpam: add device tree support for mpam initialization
+- arm64/mpam: remove __init macro to support driver probe
+- arm64/mpam: rmid: refine allocation and release process
+- arm64/mpam: resctrl: add tips when rmid modification failed
+- arm64/mpam: Fix mpam corrupt when cpu online
+- cpufreq: schedutil: Destroy mutex before kobject_put() frees the memory
+- kprobes: Fix optimize_kprobe()/unoptimize_kprobe() cancellation logic
+- kprobes: Set unoptimized flag after unoptimizing code
 
 * Wed Dec 22 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.5.0.0128
 - config: enable CONFIG_RAMAXEL_SPRAID by default
