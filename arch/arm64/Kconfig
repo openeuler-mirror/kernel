@@ -2000,6 +2000,15 @@ config ASCEND_DVPP_MMAP
 	  special memory for DvPP processor, the new flag is only valid for Ascend
 	  platform.
 
+config ASCEND_CLEAN_CDM
+	bool "move the management structure for HBM to DDR"
+	def_bool n
+	depends on COHERENT_DEVICE
+	help
+	  The cdm nodes sometimes are easiler to raise an ECC error and it may
+	  cause the kernel crash if the essential structures went wrong. So move
+	  the management structures for hbm nodes to the ddr nodes of the same
+	  partion to reduce the probability of kernel crashes.
 endif
 
 endmenu
