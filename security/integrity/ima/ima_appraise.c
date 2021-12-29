@@ -19,12 +19,9 @@
 
 static bool ima_appraise_req_evm __ro_after_init;
 
-int ima_default_appraise_setup(char *str,
-			       struct ima_namespace *ima_ns)
+int ima_default_appraise_setup(const char *str,
+			       struct ima_policy_setup_data *setup_data)
 {
-	struct ima_policy_setup_data *setup_data = (ima_ns == &init_ima_ns) ?
-		&init_policy_setup_data : ima_ns->policy_setup_for_children;
-
 #ifdef CONFIG_IMA_APPRAISE_BOOTPARAM
 	bool sb_state = arch_ima_get_secureboot();
 	int appraisal_state = setup_data->ima_appraise;
@@ -58,7 +55,7 @@ int ima_default_appraise_setup(char *str,
 
 static int __init default_appraise_setup(char *str)
 {
-	return ima_default_appraise_setup(str, &init_ima_ns);
+	return ima_default_appraise_setup(str, &init_policy_setup_data);
 }
 
 __setup("ima_appraise=", default_appraise_setup);

@@ -27,8 +27,6 @@
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
 #include <linux/spinlock.h>
-#include <linux/string.h>
-#include <linux/kernel.h>
 
 #include "ima.h"
 
@@ -76,17 +74,23 @@ out:
 	return NULL;
 }
 
-static void ima_set_ns_policy(struct ima_namespace *ima_ns)
+static void ima_set_ns_policy(struct ima_namespace *ima_ns,
+			      char *policy_setup_str)
 {
-	struct ima_policy_setup_data setup_data = {0};
+	struct ima_policy_setup_data setup_data;
 
-	if (!ima_ns->policy_setup_for_children) {
 #ifdef CONFIG_IMA_APPRAISE
-		setup_data.ima_appraise = IMA_APPRAISE_ENFORCE;
+	setup_data.ima_appraise = IMA_APPRAISE_ENFORCE;
 #endif
-		ima_init_ns_policy(ima_ns, &setup_data);
-	} else
-		ima_init_ns_policy(ima_ns, ima_ns->policy_setup_for_children);
+	/* Configuring IMA namespace will be implemented in the following
+	 * patches. When it is done, parse configuration string and store result
+	 * in setup_data. Temporarily use init_policy_setup_data.
+	 */
+	setup_data = init_policy_setup_data;
+	ima_ns->policy_data->ima_fail_unverifiable_sigs =
+		init_ima_ns.policy_data->ima_fail_unverifiable_sigs;
+
+	ima_init_ns_policy(ima_ns, &setup_data);
 }
 
 static int ima_swap_user_ns(struct ima_namespace *ima_ns,
@@ -146,9 +150,6 @@ static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
 
 	rwlock_init(&ns->iint_tree->lock);
 	ns->iint_tree->root = RB_ROOT;
-
-	ns->x509_path_for_children = NULL;
-	ns->policy_setup_for_children = NULL;
 
 	INIT_LIST_HEAD(&ns->ns_measurements);
 	INIT_LIST_HEAD(&ns->policy_data->ima_default_rules);
@@ -217,14 +218,6 @@ static void imans_remove_hash_entries(struct ima_namespace *ima_ns)
 	}
 }
 
-static void destroy_child_config(struct ima_namespace *ima_ns)
-{
-	kfree(ima_ns->x509_path_for_children);
-	ima_ns->x509_path_for_children = NULL;
-	kfree(ima_ns->policy_setup_for_children);
-	ima_ns->policy_setup_for_children = NULL;
-}
-
 static void destroy_ima_ns(struct ima_namespace *ns)
 {
 	bool is_init_ns = (ns == &init_ima_ns);
@@ -237,7 +230,6 @@ static void destroy_ima_ns(struct ima_namespace *ns)
 	kfree(ns->iint_tree);
 	ima_delete_ns_rules(ns->policy_data, is_init_ns);
 	kfree(ns->policy_data);
-	destroy_child_config(ns);
 	kfree(ns);
 }
 
@@ -327,31 +319,27 @@ static void imans_put(struct ns_common *ns)
 
 static int imans_activate(struct ima_namespace *ima_ns)
 {
-	int res = 0;
-
 	if (ima_ns == &init_ima_ns)
-		return res;
+		return 0;
 
 	if (ima_ns->frozen)
-		return res;
+		return 0;
 
 	mutex_lock(&frozen_lock);
 	if (ima_ns->frozen)
 		goto out;
 
-	ima_set_ns_policy(ima_ns);
+	ima_set_ns_policy(ima_ns, NULL);
 
 	ima_ns->frozen = true;
 
 	down_write(&ima_ns_list_lock);
 	list_add_tail(&ima_ns->list, &ima_ns_list);
 	up_write(&ima_ns_list_lock);
-
-	destroy_child_config(ima_ns);
 out:
 	mutex_unlock(&frozen_lock);
 
-	return res;
+	return 0;
 }
 
 static int imans_install(struct nsset *nsset, struct ns_common *new)
@@ -435,98 +423,4 @@ const struct proc_ns_operations imans_for_children_operations = {
 	.install = imans_install,
 	.owner = imans_owner,
 };
-
-struct ima_kernel_param {
-	const char *name;
-	int (*set)(char *val, struct ima_namespace *ima_ns);
-};
-
-/* TODO: add ima_template, ima_template_fmt, ima_hash, ... */
-static const struct ima_kernel_param ima_kernel_params[] = {
-	{"ima_appraise", ima_default_appraise_setup},
-	{"ima_policy", ima_policy_setup},
-};
-static const size_t ima_kernel_params_size = ARRAY_SIZE(ima_kernel_params);
-
-ssize_t ima_ns_write_x509_for_children(struct ima_namespace *ima_ns,
-				       char *x509_path)
-{
-	ssize_t retval = 0;
-
-	mutex_lock(&frozen_lock);
-	if (ima_ns->frozen) {
-		retval = -EACCES;
-		goto out;
-	}
-
-	kfree(ima_ns->x509_path_for_children);
-	ima_ns->x509_path_for_children = x509_path;
-out:
-	mutex_unlock(&frozen_lock);
-
-	return retval;
-}
-
-ssize_t ima_ns_write_kcmd_for_children(struct ima_namespace *ima_ns,
-				       char *kcmd)
-{
-	u32 i;
-	char *param, *val;
-	ssize_t ret = 0;
-
-	mutex_lock(&frozen_lock);
-	if (ima_ns->frozen) {
-		ret = -EACCES;
-		goto err_unlock;
-	}
-
-	if (!ima_ns->policy_setup_for_children) {
-		ima_ns->policy_setup_for_children =
-			kmalloc(sizeof(struct ima_policy_setup_data),
-				GFP_KERNEL);
-		if (!ima_ns->policy_setup_for_children) {
-			ret = -ENOMEM;
-			goto err_unlock;
-		}
-	}
-
-	memset(ima_ns->policy_setup_for_children,
-	       0, sizeof(struct ima_policy_setup_data));
-
-#ifdef CONFIG_IMA_APPRAISE
-	ima_ns->policy_setup_for_children->ima_appraise = IMA_APPRAISE_ENFORCE;
-#endif
-
-	kcmd = skip_spaces(kcmd);
-	while (*kcmd) {
-		kcmd = next_arg(kcmd, &param, &val);
-		if (!val) {
-			ret = -EINVAL;
-			goto err_free;
-		}
-
-		for (i = 0; i < ima_kernel_params_size; i++) {
-			if (strcmp(param, ima_kernel_params[i].name) == 0)
-				break;
-		}
-
-		if (i == ima_kernel_params_size) {
-			ret = -EINVAL;
-			goto err_free;
-		}
-
-		ima_kernel_params[i].set(val, ima_ns);
-	}
-	mutex_unlock(&frozen_lock);
-
-	return ret;
-
-err_free:
-	kfree(ima_ns->policy_setup_for_children);
-	ima_ns->policy_setup_for_children = NULL;
-err_unlock:
-	mutex_unlock(&frozen_lock);
-
-	return ret;
-}
 
