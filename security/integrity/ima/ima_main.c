@@ -364,12 +364,9 @@ static int process_ns_measurement(struct file *file, const struct cred *cred,
 		return 0;
 
 	if (ima_ns != current_ima_ns) {
-		if (!(ima_ns->activating_tsk && (ima_ns->activating_tsk ==
-						 current))) {
-			iint = integrity_iint_rb_find(ima_ns->iint_tree, inode);
-			if (!iint)
-				return 0;
-		}
+		iint = integrity_iint_rb_find(ima_ns->iint_tree, inode);
+		if (!iint)
+			return 0;
 	}
 
 	/* Return an IMA_MEASURE, IMA_APPRAISE, IMA_AUDIT action
@@ -414,8 +411,7 @@ static int process_ns_measurement(struct file *file, const struct cred *cred,
 		goto out;
 	if (!action)
 		goto out;
-	if ((ima_ns != current_ima_ns) &&
-	    !(ima_ns->activating_tsk && (ima_ns->activating_tsk == current)))
+	if (ima_ns != current_ima_ns)
 		goto out;
 
 	mutex_lock(&iint->mutex);
