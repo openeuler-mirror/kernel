@@ -246,8 +246,7 @@ struct ima_namespace *copy_ima_ns(unsigned long flags,
 
 void free_ima_ns(struct kref *kref);
 
-int imans_on_fork(struct nsproxy *nsproxy, struct task_struct *tsk,
-		  struct user_namespace *user_ns);
+int imans_on_fork(struct nsproxy *nsproxy, struct task_struct *tsk);
 
 static inline struct ima_namespace *get_ima_ns(struct ima_namespace *ns)
 {
@@ -270,8 +269,7 @@ static inline struct ima_namespace *copy_ima_ns(unsigned long flags,
 }
 
 static inline int imans_on_fork(struct nsproxy *nsproxy,
-				struct task_struct *tsk,
-				struct user_namespace *user_ns)
+				struct task_struct *tsk)
 {
 	return 0;
 }
