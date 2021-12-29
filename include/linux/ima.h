@@ -17,7 +17,6 @@ struct nsproxy;
 struct task_struct;
 struct list_head;
 struct llist_node;
-struct ima_policy_data;
 
 #ifdef CONFIG_IMA
 extern int ima_bprm_check(struct linux_binprm *bprm);
@@ -219,7 +218,6 @@ struct ima_namespace {
 	struct llist_node cleanup_list; /* namespaces on a death row */
 	atomic_t inactive; /* set only when ns is added to the cleanup list */
 	bool frozen;
-	struct ima_policy_data *policy_data;
 } __randomize_layout;
 
 extern struct ima_namespace init_ima_ns;

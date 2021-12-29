@@ -63,14 +63,6 @@ extern int ima_digest_db_max_size __ro_after_init;
 extern int ima_digest_db_size;
 #endif
 
-/* IMA policy setup data */
-struct ima_policy_setup_data {
-	int ima_policy;
-	int ima_appraise;
-	bool ima_use_secure_boot;
-	bool ima_use_appraise_tcb;
-};
-
 /* IMA event related data */
 struct ima_event_data {
 	struct integrity_iint_cache *iint;
@@ -299,8 +291,6 @@ int ima_match_policy(struct inode *inode, const struct cred *cred, u32 secid,
 		     struct ima_template_desc **template_desc,
 		     const char *keyring);
 void ima_init_policy(void);
-void ima_init_ns_policy(struct ima_namespace *ima_ns,
-			const struct ima_policy_setup_data *policy_setup_data);
 void ima_update_policy(void);
 void ima_update_policy_flag(void);
 ssize_t ima_parse_add_rule(char *);
@@ -372,20 +362,6 @@ static inline enum integrity_status ima_get_cache_status(struct integrity_iint_c
 }
 
 #endif /* CONFIG_IMA_APPRAISE */
-
-struct ima_policy_data {
-	struct list_head ima_default_rules;
-	struct list_head ima_policy_rules;
-	struct list_head ima_temp_rules;
-	struct list_head *ima_rules;
-	bool ima_fail_unverifiable_sigs;
-	int ima_policy_flag; /* current content of the policy */
-	int ima_appraise;
-	int temp_ima_appraise;
-};
-
-extern struct ima_policy_data init_policy_data;
-extern struct ima_policy_setup_data init_policy_setup_data;
 
 extern struct list_head ima_ns_list;
 extern struct rw_semaphore ima_ns_list_lock;
