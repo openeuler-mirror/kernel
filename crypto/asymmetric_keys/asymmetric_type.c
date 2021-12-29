@@ -249,15 +249,9 @@ static bool asymmetric_key_cmp(const struct key *key,
 {
 	const struct asymmetric_key_ids *kids = asymmetric_key_ids(key);
 	const struct asymmetric_key_id *match_id = match_data->preparsed;
-	bool match;
 
-	match = asymmetric_match_key_ids(kids, match_id,
-					 asymmetric_key_id_same);
-
-	if (match_data->domain_tag)
-		match &= key->index_key.domain_tag == match_data->domain_tag;
-
-	return match;
+	return asymmetric_match_key_ids(kids, match_id,
+					asymmetric_key_id_same);
 }
 
 /*
@@ -268,15 +262,9 @@ static bool asymmetric_key_cmp_partial(const struct key *key,
 {
 	const struct asymmetric_key_ids *kids = asymmetric_key_ids(key);
 	const struct asymmetric_key_id *match_id = match_data->preparsed;
-	bool match;
 
-	match = asymmetric_match_key_ids(kids, match_id,
-					 asymmetric_key_id_partial);
-
-	if (match_data->domain_tag)
-		match &= key->index_key.domain_tag == match_data->domain_tag;
-
-	return match;
+	return asymmetric_match_key_ids(kids, match_id,
+					asymmetric_key_id_partial);
 }
 
 /*
