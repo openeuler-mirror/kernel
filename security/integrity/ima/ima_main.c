@@ -30,6 +30,12 @@
 #include "ima.h"
 #include "ima_digest_list.h"
 
+#ifdef CONFIG_IMA_APPRAISE
+int ima_appraise = IMA_APPRAISE_ENFORCE;
+#else
+int ima_appraise;
+#endif
+
 int ima_hash_algo = HASH_ALGO_SHA1;
 
 /* Actions (measure/appraisal) for which digest lists can be used */
@@ -128,8 +134,7 @@ static void ima_rdwr_violation_check(struct file *file,
 	if (mode & FMODE_WRITE) {
 		if (atomic_read(&inode->i_readcount) && IS_IMA(inode)) {
 			if (!iint)
-				iint = integrity_iint_rb_find(ima_ns->iint_tree,
-							      inode);
+				iint = integrity_iint_find(inode);
 			/* IMA_MEASURE is set from reader side */
 			if (iint && test_bit(IMA_MUST_MEASURE,
 						&iint->atomic_flags))
@@ -209,38 +214,11 @@ static int ima_read_xattr(struct dentry *dentry,
 	return ret;
 }
 
-static void ima_check_active_ns(struct ima_namespace *current_ima_ns,
-				struct inode *inode)
-{
-	struct ima_namespace *ima_ns;
-	struct integrity_iint_cache *iint;
-
-	down_read(&ima_ns_list_lock);
-	list_for_each_entry(ima_ns, &ima_ns_list, list) {
-		if (atomic_read(&ima_ns->inactive))
-			continue;
-		if ((ima_ns == current_ima_ns) ||
-		    !ima_ns->policy_data->ima_policy_flag)
-			continue;
-
-		iint = integrity_iint_rb_find(ima_ns->iint_tree, inode);
-		if (!iint)
-			continue;
-
-		mutex_lock(&iint->mutex);
-		iint->flags &= ~IMA_DONE_MASK;
-		iint->measured_pcrs = 0;
-		mutex_unlock(&iint->mutex);
-	}
-	up_read(&ima_ns_list_lock);
-}
-
 static void ima_check_last_writer(struct integrity_iint_cache *iint,
 				  struct inode *inode, struct file *file)
 {
 	fmode_t mode = file->f_mode;
 	bool update;
-	struct ima_namespace *ima_ns = (struct ima_namespace *)file->f_ima;
 
 	if (!(mode & FMODE_WRITE))
 		return;
@@ -254,9 +232,6 @@ static void ima_check_last_writer(struct integrity_iint_cache *iint,
 		    (iint->flags & IMA_NEW_FILE)) {
 			iint->flags &= ~(IMA_DONE_MASK | IMA_NEW_FILE);
 			iint->measured_pcrs = 0;
-
-			ima_check_active_ns(ima_ns, inode);
-
 			if (update)
 				ima_update_xattr(iint, file);
 		}
@@ -306,10 +281,10 @@ void ima_file_free(struct file *file)
 	if (unlikely(!(file->f_mode & FMODE_OPENED)))
 		goto out;
 
-	if (!ima_ns->policy_data->ima_policy_flag || !S_ISREG(inode->i_mode))
+	if (!ima_policy_flag || !S_ISREG(inode->i_mode))
 		goto out;
 
-	iint = integrity_iint_rb_find(ima_ns->iint_tree, inode);
+	iint = integrity_iint_find(inode);
 	if (!iint)
 		goto out;
 
@@ -318,10 +293,10 @@ out:
 	put_ima_ns(ima_ns);
 }
 
-static int process_ns_measurement(struct file *file, const struct cred *cred,
-				  u32 secid, char *buf, loff_t size, int mask,
-				  enum ima_hooks func,
-				  struct ima_namespace *ima_ns)
+static int process_measurement(struct file *file, const struct cred *cred,
+			       u32 secid, char *buf, loff_t size, int mask,
+			       enum ima_hooks func,
+			       struct ima_namespace *ima_ns)
 {
 	struct inode *inode = file_inode(file);
 	struct integrity_iint_cache *iint = NULL;
@@ -337,9 +312,8 @@ static int process_ns_measurement(struct file *file, const struct cred *cred,
 	int xattr_len = 0;
 	bool violation_check;
 	enum hash_algo hash_algo;
-	struct ima_namespace *current_ima_ns = get_current_ns();
 
-	if (!ima_ns->policy_data->ima_policy_flag)
+	if (!ima_policy_flag || !S_ISREG(inode->i_mode))
 		return 0;
 
 	/* Return an IMA_MEASURE, IMA_APPRAISE, IMA_AUDIT action
@@ -349,8 +323,7 @@ static int process_ns_measurement(struct file *file, const struct cred *cred,
 	action = ima_get_action(inode, cred, secid, mask, func, &pcr,
 				&template_desc, NULL, ima_ns);
 	violation_check = ((func == FILE_CHECK || func == MMAP_CHECK) &&
-			   (ima_ns->policy_data->ima_policy_flag &
-			    IMA_MEASURE));
+			   (ima_policy_flag & IMA_MEASURE));
 	if (!action && !violation_check)
 		return 0;
 
@@ -363,7 +336,7 @@ static int process_ns_measurement(struct file *file, const struct cred *cred,
 	inode_lock(inode);
 
 	if (action) {
-		iint = integrity_inode_rb_get(ima_ns->iint_tree, inode);
+		iint = integrity_inode_get(inode);
 		if (!iint)
 			rc = -ENOMEM;
 	}
@@ -377,8 +350,6 @@ static int process_ns_measurement(struct file *file, const struct cred *cred,
 	if (rc)
 		goto out;
 	if (!action)
-		goto out;
-	if (ima_ns != current_ima_ns)
 		goto out;
 
 	mutex_lock(&iint->mutex);
@@ -510,39 +481,12 @@ out:
 	if (pathbuf)
 		__putname(pathbuf);
 	if (must_appraise) {
-		if (rc &&
-		    (ima_ns->policy_data->ima_appraise & IMA_APPRAISE_ENFORCE))
+		if (rc && (ima_appraise & IMA_APPRAISE_ENFORCE))
 			return -EACCES;
 		if (file->f_mode & FMODE_WRITE)
 			set_bit(IMA_UPDATE_XATTR, &iint->atomic_flags);
 	}
 	return 0;
-}
-
-static int process_measurement(struct file *file, const struct cred *cred,
-			       u32 secid, char *buf, loff_t size, int mask,
-			       enum ima_hooks func)
-{
-	int ret;
-	struct ima_namespace *ima_ns;
-	struct inode *inode = file_inode(file);
-
-	if (!S_ISREG(inode->i_mode))
-		return 0;
-
-	down_read(&ima_ns_list_lock);
-	list_for_each_entry(ima_ns, &ima_ns_list, list) {
-		if (atomic_read(&ima_ns->inactive))
-			continue;
-
-		ret = process_ns_measurement(file, cred, secid, buf, size, mask,
-					     func, ima_ns);
-		if (ret != 0)
-			break;
-	}
-	up_read(&ima_ns_list_lock);
-
-	return ret;
 }
 
 /**
@@ -563,7 +507,7 @@ int ima_file_mmap(struct file *file, unsigned long prot)
 	if (file && (prot & PROT_EXEC)) {
 		security_task_getsecid(current, &secid);
 		return process_measurement(file, current_cred(), secid, NULL,
-					   0, MAY_EXEC, MMAP_CHECK);
+					   0, MAY_EXEC, MMAP_CHECK, NULL);
 	}
 
 	return 0;
@@ -583,7 +527,6 @@ int ima_file_mmap(struct file *file, unsigned long prot)
  */
 int ima_file_mprotect(struct vm_area_struct *vma, unsigned long prot)
 {
-	struct ima_namespace *ima_ns = get_current_ns();
 	struct ima_template_desc *template;
 	struct file *file = vma->vm_file;
 	char filename[NAME_MAX];
@@ -596,15 +539,14 @@ int ima_file_mprotect(struct vm_area_struct *vma, unsigned long prot)
 	int pcr;
 
 	/* Is mprotect making an mmap'ed file executable? */
-	if (!(ima_ns->policy_data->ima_policy_flag & IMA_APPRAISE) ||
-	    !vma->vm_file || !(prot & PROT_EXEC) ||
-	    (vma->vm_flags & VM_EXEC))
+	if (!(ima_policy_flag & IMA_APPRAISE) || !vma->vm_file ||
+	    !(prot & PROT_EXEC) || (vma->vm_flags & VM_EXEC))
 		return 0;
 
 	security_task_getsecid(current, &secid);
 	inode = file_inode(vma->vm_file);
 	action = ima_get_action(inode, current_cred(), secid, MAY_EXEC,
-				MMAP_CHECK, &pcr, &template, 0, ima_ns);
+				MMAP_CHECK, &pcr, &template, 0, NULL);
 
 	/* Is the mmap'ed file in policy? */
 	if (!(action & (IMA_MEASURE | IMA_APPRAISE_SUBMASK)))
@@ -643,13 +585,13 @@ int ima_bprm_check(struct linux_binprm *bprm)
 
 	security_task_getsecid(current, &secid);
 	ret = process_measurement(bprm->file, current_cred(), secid, NULL, 0,
-				  MAY_EXEC, BPRM_CHECK);
+				  MAY_EXEC, BPRM_CHECK, NULL);
 	if (ret)
 		return ret;
 
 	security_cred_getsecid(bprm->cred, &secid);
 	return process_measurement(bprm->file, bprm->cred, secid, NULL, 0,
-				   MAY_EXEC, CREDS_CHECK);
+				   MAY_EXEC, CREDS_CHECK, NULL);
 }
 
 /**
@@ -670,7 +612,7 @@ int ima_file_check(struct file *file, int mask)
 	security_task_getsecid(current, &secid);
 	rc = process_measurement(file, current_cred(), secid, NULL, 0,
 				 mask & (MAY_READ | MAY_WRITE | MAY_EXEC |
-					 MAY_APPEND), FILE_CHECK);
+					 MAY_APPEND), FILE_CHECK, NULL);
 	if (ima_current_is_parser() && !rc)
 		ima_check_measured_appraised(file);
 	return rc;
@@ -679,7 +621,7 @@ EXPORT_SYMBOL_GPL(ima_file_check);
 
 /**
  * ima_file_hash - return the stored measurement if a file has been hashed and
- * is in the iint cache of the current IMA namespace.
+ * is in the iint cache.
  * @file: pointer to the file
  * @buf: buffer in which to store the hash
  * @buf_size: length of the buffer
@@ -697,7 +639,6 @@ EXPORT_SYMBOL_GPL(ima_file_check);
  */
 int ima_file_hash(struct file *file, char *buf, size_t buf_size)
 {
-	struct ima_namespace *ima_ns = get_current_ns();
 	struct inode *inode;
 	struct integrity_iint_cache *iint;
 	int hash_algo;
@@ -705,11 +646,11 @@ int ima_file_hash(struct file *file, char *buf, size_t buf_size)
 	if (!file)
 		return -EINVAL;
 
-	if (!ima_ns->policy_data->ima_policy_flag)
+	if (!ima_policy_flag)
 		return -EOPNOTSUPP;
 
 	inode = file_inode(file);
-	iint = integrity_iint_rb_find(ima_ns->iint_tree, inode);
+	iint = integrity_iint_find(inode);
 	if (!iint)
 		return -EOPNOTSUPP;
 
@@ -747,30 +688,21 @@ EXPORT_SYMBOL_GPL(ima_file_hash);
  */
 void ima_post_create_tmpfile(struct inode *inode)
 {
-	struct ima_namespace *ima_ns;
 	struct integrity_iint_cache *iint;
 	int must_appraise;
 
-	down_read(&ima_ns_list_lock);
-	list_for_each_entry(ima_ns, &ima_ns_list, list) {
-		if (atomic_read(&ima_ns->inactive))
-			continue;
+	must_appraise = ima_must_appraise(inode, MAY_ACCESS, FILE_CHECK, NULL);
+	if (!must_appraise)
+		return;
 
-		must_appraise = ima_must_appraise(inode, MAY_ACCESS,
-						  FILE_CHECK, ima_ns);
-		if (!must_appraise)
-			continue;
+	/* Nothing to do if we can't allocate memory */
+	iint = integrity_inode_get(inode);
+	if (!iint)
+		return;
 
-		/* Nothing to do if we can't allocate memory */
-		iint = integrity_inode_rb_get(ima_ns->iint_tree, inode);
-		if (!iint)
-			continue;
-
-		/* needed for writing the security xattrs */
-		set_bit(IMA_UPDATE_XATTR, &iint->atomic_flags);
-		iint->ima_file_status = INTEGRITY_PASS;
-	}
-	up_read(&ima_ns_list_lock);
+	/* needed for writing the security xattrs */
+	set_bit(IMA_UPDATE_XATTR, &iint->atomic_flags);
+	iint->ima_file_status = INTEGRITY_PASS;
 }
 
 /**
@@ -782,30 +714,21 @@ void ima_post_create_tmpfile(struct inode *inode)
  */
 void ima_post_path_mknod(struct dentry *dentry)
 {
-	struct ima_namespace *ima_ns;
 	struct integrity_iint_cache *iint;
 	struct inode *inode = dentry->d_inode;
 	int must_appraise;
 
-	down_read(&ima_ns_list_lock);
-	list_for_each_entry(ima_ns, &ima_ns_list, list) {
-		if (atomic_read(&ima_ns->inactive))
-			continue;
+	must_appraise = ima_must_appraise(inode, MAY_ACCESS, FILE_CHECK, NULL);
+	if (!must_appraise)
+		return;
 
-		must_appraise = ima_must_appraise(inode, MAY_ACCESS,
-						  FILE_CHECK, ima_ns);
-		if (!must_appraise)
-			continue;
+	/* Nothing to do if we can't allocate memory */
+	iint = integrity_inode_get(inode);
+	if (!iint)
+		return;
 
-		/* Nothing to do if we can't allocate memory */
-		iint = integrity_inode_rb_get(ima_ns->iint_tree, inode);
-		if (!iint)
-			continue;
-
-		/* needed for re-opening empty files */
-		iint->flags |= IMA_NEW_FILE;
-	}
-	up_read(&ima_ns_list_lock);
+	/* needed for re-opening empty files */
+	iint->flags |= IMA_NEW_FILE;
 }
 
 /**
@@ -846,7 +769,7 @@ int ima_read_file(struct file *file, enum kernel_read_file_id read_id,
 	func = read_idmap[read_id] ?: FILE_CHECK;
 	security_task_getsecid(current, &secid);
 	return process_measurement(file, current_cred(), secid, NULL,
-				   0, MAY_READ, func);
+				   0, MAY_READ, func, NULL);
 }
 
 const int read_idmap[READING_MAX_ID] = {
@@ -876,14 +799,13 @@ int ima_post_read_file(struct file *file, void *buf, loff_t size,
 {
 	enum ima_hooks func;
 	u32 secid;
-	struct ima_namespace *ima_ns = get_current_ns();
 
 	/* permit signed certs */
 	if (!file && read_id == READING_X509_CERTIFICATE)
 		return 0;
 
 	if (!file || !buf || size == 0) { /* should never happen */
-		if (ima_ns->policy_data->ima_appraise & IMA_APPRAISE_ENFORCE)
+		if (ima_appraise & IMA_APPRAISE_ENFORCE)
 			return -EACCES;
 		return 0;
 	}
@@ -891,7 +813,7 @@ int ima_post_read_file(struct file *file, void *buf, loff_t size,
 	func = read_idmap[read_id] ?: FILE_CHECK;
 	security_task_getsecid(current, &secid);
 	return process_measurement(file, current_cred(), secid, buf, size,
-				   MAY_READ, func);
+				   MAY_READ, func, NULL);
 }
 
 /**
@@ -909,16 +831,9 @@ int ima_post_read_file(struct file *file, void *buf, loff_t size,
 int ima_load_data(enum kernel_load_data_id id, bool contents)
 {
 	bool ima_enforce, sig_enforce;
-	struct ima_namespace *ima_ns = get_current_ns();
-
-	if (ima_ns != &init_ima_ns) {
-		pr_err("Prevent data loading in IMA namespaces other than the root\n");
-		return -EACCES;
-	}
 
 	ima_enforce =
-		(ima_ns->policy_data->ima_appraise & IMA_APPRAISE_ENFORCE) ==
-		IMA_APPRAISE_ENFORCE;
+		(ima_appraise & IMA_APPRAISE_ENFORCE) == IMA_APPRAISE_ENFORCE;
 
 	switch (id) {
 	case LOADING_KEXEC_IMAGE:
@@ -928,16 +843,13 @@ int ima_load_data(enum kernel_load_data_id id, bool contents)
 			return -EACCES;
 		}
 
-		if (ima_enforce &&
-		    (ima_ns->policy_data->ima_appraise & IMA_APPRAISE_KEXEC)) {
+		if (ima_enforce && (ima_appraise & IMA_APPRAISE_KEXEC)) {
 			pr_err("impossible to appraise a kernel image without a file descriptor; try using kexec_file_load syscall.\n");
 			return -EACCES;	/* INTEGRITY_UNKNOWN */
 		}
 		break;
 	case LOADING_FIRMWARE:
-		if (ima_enforce &&
-		    (ima_ns->policy_data->ima_appraise &
-		     IMA_APPRAISE_FIRMWARE) && !contents) {
+		if (ima_enforce && (ima_appraise & IMA_APPRAISE_FIRMWARE) && !contents) {
 			pr_err("Prevent firmware sysfs fallback loading.\n");
 			return -EACCES;	/* INTEGRITY_UNKNOWN */
 		}
@@ -945,10 +857,8 @@ int ima_load_data(enum kernel_load_data_id id, bool contents)
 	case LOADING_MODULE:
 		sig_enforce = is_module_sig_enforced();
 
-		if (ima_enforce &&
-		    (!sig_enforce &&
-		     (ima_ns->policy_data->ima_appraise &
-		      IMA_APPRAISE_MODULES))) {
+		if (ima_enforce && (!sig_enforce
+				    && (ima_appraise & IMA_APPRAISE_MODULES))) {
 			pr_err("impossible to appraise a module without a file descriptor. sig_enforce kernel parameter might help\n");
 			return -EACCES;	/* INTEGRITY_UNKNOWN */
 		}
@@ -975,14 +885,9 @@ int ima_post_load_data(char *buf, loff_t size,
 		       enum kernel_load_data_id load_id,
 		       char *description)
 {
-    struct ima_namespace *ima_ns = get_current_ns();
-
 	if (load_id == LOADING_FIRMWARE) {
-        if (WARN_ON(ima_ns != &init_ima_ns))
-            return -EACCES;
-
-		if ((ima_ns->policy_data->ima_appraise & IMA_APPRAISE_FIRMWARE) &&
-		    (ima_ns->policy_data->ima_appraise & IMA_APPRAISE_ENFORCE)) {
+		if ((ima_appraise & IMA_APPRAISE_FIRMWARE) &&
+		    (ima_appraise & IMA_APPRAISE_ENFORCE)) {
 			pr_err("Prevent firmware loading_store.\n");
 			return -EACCES; /* INTEGRITY_UNKNOWN */
 		}
@@ -1001,7 +906,6 @@ int ima_post_load_data(char *buf, loff_t size,
  * @func: IMA hook
  * @pcr: pcr to extend the measurement
  * @keyring: keyring name to determine the action to be performed
- * @ima_ns: pointer to the IMA namespace in consideration
  *
  * Based on policy, the buffer is measured into the ima log.
  */
@@ -1027,7 +931,7 @@ void process_buffer_measurement(struct inode *inode, const void *buf, int size,
 	int action = 0;
 	u32 secid;
 
-	if (!ima_ns->policy_data->ima_policy_flag)
+	if (!ima_policy_flag)
 		return;
 
 	/*
@@ -1040,7 +944,7 @@ void process_buffer_measurement(struct inode *inode, const void *buf, int size,
 	if (func) {
 		security_task_getsecid(current, &secid);
 		action = ima_get_action(inode, current_cred(), secid, 0, func,
-					&pcr, &template, keyring, ima_ns);
+					&pcr, &template, keyring, NULL);
 		if (!(action & IMA_MEASURE))
 			return;
 	}
@@ -1103,11 +1007,6 @@ out:
 void ima_kexec_cmdline(int kernel_fd, const void *buf, int size)
 {
 	struct fd f;
-	struct ima_namespace *ima_ns = get_current_ns();
-
-	/* Currently allowed only from the root IMA namespace */
-	if (WARN_ON(ima_ns != &init_ima_ns))
-		return;
 
 	if (!buf || !size)
 		return;
@@ -1118,29 +1017,8 @@ void ima_kexec_cmdline(int kernel_fd, const void *buf, int size)
 
 	process_buffer_measurement(file_inode(f.file), buf, size,
 				   "kexec-cmdline", KEXEC_CMDLINE, 0, NULL,
-				   ima_ns);
+				   NULL);
 	fdput(f);
-}
-
-void ima_inode_free(struct inode *inode)
-{
-	struct ima_namespace *ima_ns;
-
-	if (!IS_IMA(inode))
-		return;
-
-	down_read(&ima_ns_list_lock);
-	list_for_each_entry(ima_ns, &ima_ns_list, list) {
-		if (atomic_read(&ima_ns->inactive))
-			continue;
-		integrity_inode_rb_free(ima_ns->iint_tree, inode);
-	}
-	up_read(&ima_ns_list_lock);
-}
-
-bool ima_is_root_namespace(void)
-{
-	return get_current_ns() == &init_ima_ns;
 }
 
 static int __init init_ima(void)

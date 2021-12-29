@@ -369,7 +369,6 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 	ssize_t result;
 	struct dentry *dentry = file_dentry(file);
 	int i;
-	struct ima_namespace *ima_ns = get_current_ns();
 
 	/* No partial writes. */
 	result = -EINVAL;
@@ -405,7 +404,7 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 	if (data[0] == '/') {
 		result = ima_read_sfs_file(data, dentry);
 	} else if (dentry == ima_policy) {
-		if (ima_ns->policy_data->ima_appraise & IMA_APPRAISE_POLICY) {
+		if (ima_appraise & IMA_APPRAISE_POLICY) {
 			pr_err("signed policy file (specified "
 			       "as an absolute pathname) required\n");
 			integrity_audit_msg(AUDIT_INTEGRITY_STATUS, NULL, NULL,
@@ -520,7 +519,6 @@ static int ima_release_data_upload(struct inode *inode, struct file *file)
 	struct dentry *dentry = file_dentry(file);
 	const char *cause = valid_policy ? "completed" : "failed";
 	enum ima_fs_flags flag = ima_get_dentry_flag(dentry);
-	struct ima_namespace *ima_ns = get_current_ns();
 
 	if ((file->f_flags & O_ACCMODE) == O_RDONLY)
 		return seq_release(inode, file);
@@ -533,7 +531,7 @@ static int ima_release_data_upload(struct inode *inode, struct file *file)
 		return 0;
 	}
 
-	if (valid_policy && ima_check_policy(ima_ns) < 0) {
+	if (valid_policy && ima_check_policy(NULL) < 0) {
 		cause = "failed";
 		valid_policy = 0;
 	}
