@@ -16,7 +16,6 @@
 #include <linux/vmalloc.h>
 #include <crypto/public_key.h>
 #include <keys/system_keyring.h>
-#include <linux/ima.h>
 
 #include "integrity.h"
 
@@ -31,16 +30,6 @@ static const char * const keyring_name[INTEGRITY_KEYRING_MAX] = {
 	".ima",
 #endif
 	".platform",
-};
-
-static unsigned long keyring_alloc_flags[INTEGRITY_KEYRING_MAX] = {
-	KEY_ALLOC_NOT_IN_QUOTA,
-#ifdef CONFIG_IMA_NS
-	KEY_ALLOC_NOT_IN_QUOTA | KEY_ALLOC_DOMAIN_IMA,
-#else
-	KEY_ALLOC_NOT_IN_QUOTA,
-#endif
-	KEY_ALLOC_NOT_IN_QUOTA,
 };
 
 #ifdef CONFIG_IMA_KEYRINGS_PERMIT_SIGNED_BY_BUILTIN_OR_SECONDARY
@@ -68,22 +57,10 @@ static struct key *integrity_keyring_from_id(const unsigned int id)
 	return keyring[id];
 }
 
-static struct key_tag *domain_tag_from_id(const unsigned int id)
-{
-	if (id >= INTEGRITY_KEYRING_MAX)
-		return ERR_PTR(-EINVAL);
-
-	if (id == INTEGRITY_KEYRING_IMA)
-		return current->nsproxy->ima_ns->key_domain;
-
-	return NULL;
-}
-
 int integrity_digsig_verify(const unsigned int id, const char *sig, int siglen,
 			    const char *digest, int digestlen)
 {
 	struct key *keyring;
-	struct key_tag *domain_tag;
 
 	if (siglen < 2)
 		return -EINVAL;
@@ -92,18 +69,14 @@ int integrity_digsig_verify(const unsigned int id, const char *sig, int siglen,
 	if (IS_ERR(keyring))
 		return PTR_ERR(keyring);
 
-	domain_tag = domain_tag_from_id(id);
-	if (IS_ERR(domain_tag))
-		return PTR_ERR(domain_tag);
-
 	switch (sig[1]) {
 	case 1:
 		/* v1 API expect signature without xattr type */
-		return digsig_verify(keyring, domain_tag,
-				     sig + 1, siglen - 1, digest, digestlen);
+		return digsig_verify(keyring, sig + 1, siglen - 1, digest,
+				     digestlen);
 	case 2:
-		return asymmetric_verify(keyring, domain_tag, sig, siglen,
-					 digest, digestlen);
+		return asymmetric_verify(keyring, sig, siglen, digest,
+					 digestlen);
 	}
 
 	return -EOPNOTSUPP;
@@ -129,8 +102,7 @@ static int __init __integrity_init_keyring(const unsigned int id,
 
 	keyring[id] = keyring_alloc(keyring_name[id], KUIDT_INIT(0),
 				    KGIDT_INIT(0), cred, perm,
-				    keyring_alloc_flags[id],
-				    restriction, NULL);
+				    KEY_ALLOC_NOT_IN_QUOTA, restriction, NULL);
 	if (IS_ERR(keyring[id])) {
 		err = PTR_ERR(keyring[id]);
 		pr_info("Can't allocate %s keyring (%d)\n",
@@ -182,7 +154,7 @@ int __init integrity_add_key(const unsigned int id, const void *data,
 
 	key = key_create_or_update(make_key_ref(keyring[id], 1), "asymmetric",
 				   NULL, data, size, perm,
-				   keyring_alloc_flags[id]);
+				   KEY_ALLOC_NOT_IN_QUOTA);
 	if (IS_ERR(key)) {
 		rc = PTR_ERR(key);
 		pr_err("Problem loading X.509 certificate %d\n", rc);
