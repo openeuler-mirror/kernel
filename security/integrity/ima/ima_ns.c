@@ -56,18 +56,11 @@ static struct ima_namespace *ima_ns_alloc(void)
 	ima_ns->policy_data = kzalloc(sizeof(struct ima_policy_data),
 				      GFP_KERNEL);
 	if (!ima_ns->policy_data)
-		goto ns_free;
-
-	ima_ns->iint_tree = kzalloc(sizeof(struct integrity_iint_tree),
-				    GFP_KERNEL);
-	if (!ima_ns->iint_tree)
-		goto policy_free;
+		goto out_free;
 
 	return ima_ns;
 
-policy_free:
-	kfree(ima_ns->policy_data);
-ns_free:
+out_free:
 	kfree(ima_ns);
 out:
 	return NULL;
@@ -127,9 +120,6 @@ static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
 	ns->ucounts = ucounts;
 	ns->frozen = false;
 
-	rwlock_init(&ns->iint_tree->lock);
-	ns->iint_tree->root = RB_ROOT;
-
 	INIT_LIST_HEAD(&ns->policy_data->ima_default_rules);
 	INIT_LIST_HEAD(&ns->policy_data->ima_policy_rules);
 	INIT_LIST_HEAD(&ns->policy_data->ima_temp_rules);
@@ -137,7 +127,6 @@ static struct ima_namespace *clone_ima_ns(struct user_namespace *user_ns,
 	return ns;
 
 fail_free:
-	kfree(ns->iint_tree);
 	kfree(ns->policy_data);
 	kfree(ns);
 fail_dec:
@@ -184,8 +173,6 @@ static void destroy_ima_ns(struct ima_namespace *ns)
 	dec_ima_namespaces(ns->ucounts);
 	put_user_ns(ns->user_ns);
 	ns_free_inum(&ns->ns);
-	integrity_iint_tree_free(ns->iint_tree);
-	kfree(ns->iint_tree);
 	kfree(ns->policy_data);
 	kfree(ns);
 }
