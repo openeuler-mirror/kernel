@@ -531,7 +531,7 @@ static int ima_release_data_upload(struct inode *inode, struct file *file)
 		return 0;
 	}
 
-	if (valid_policy && ima_check_policy(NULL) < 0) {
+	if (valid_policy && ima_check_policy() < 0) {
 		cause = "failed";
 		valid_policy = 0;
 	}
