@@ -1172,7 +1172,6 @@ unsigned long tick_nohz_get_idle_calls(void)
 
 static void tick_nohz_account_idle_ticks(struct tick_sched *ts)
 {
-#ifndef CONFIG_VIRT_CPU_ACCOUNTING_NATIVE
 	unsigned long ticks;
 
 	if (vtime_accounting_enabled_this_cpu())
@@ -1188,7 +1187,6 @@ static void tick_nohz_account_idle_ticks(struct tick_sched *ts)
 	 */
 	if (ticks && ticks < LONG_MAX)
 		account_idle_ticks(ticks);
-#endif
 }
 
 void tick_nohz_idle_restart_tick(void)
