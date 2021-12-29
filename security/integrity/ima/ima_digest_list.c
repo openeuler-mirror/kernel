@@ -89,9 +89,6 @@ struct ima_digest *ima_lookup_digest(u8 *digest, enum hash_algo algo,
 	int digest_len = hash_digest_size[algo];
 	unsigned int key = ima_hash_key(digest);
 
-	if (&init_ima_ns != get_current_ns())
-		return NULL;
-
 	rcu_read_lock();
 	hlist_for_each_entry_rcu(d, &ima_digests_htable.queue[key], hnext)
 		if (d->algo == algo && d->type == type &&
@@ -176,9 +173,6 @@ int ima_parse_compact_list(loff_t size, void *buf, int op)
 	size_t digest_len;
 	int ret = 0, i;
 
-	if (&init_ima_ns != get_current_ns())
-		return -EACCES;
-
 	if (!(ima_digest_list_actions & init_policy_data.ima_policy_flag))
 		return -EACCES;
 
@@ -251,9 +245,6 @@ void ima_check_measured_appraised(struct file *file)
 {
 	struct integrity_iint_cache *iint;
 
-	if (&init_ima_ns != get_current_ns())
-		return;
-
 	if (!ima_digest_list_actions)
 		return;
 
@@ -290,9 +281,6 @@ void ima_check_measured_appraised(struct file *file)
 
 struct ima_digest *ima_digest_allow(struct ima_digest *digest, int action)
 {
-	if (&init_ima_ns != get_current_ns())
-		return NULL;
-
 	if (!(ima_digest_list_actions & action))
 		return NULL;
 
