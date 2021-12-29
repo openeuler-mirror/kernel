@@ -59,6 +59,8 @@ static const struct ima_template_field supported_fields[] = {
  */
 #define MAX_TEMPLATE_NAME_LEN sizeof("d-ng|n-ng|sig|buf|d-modisg|modsig|ns")
 
+static struct ima_template_desc *ima_template;
+
 /**
  * ima_template_has_modsig - Check whether template has modsig-related fields.
  * @ima_template: IMA template to check.
@@ -78,12 +80,12 @@ bool ima_template_has_modsig(const struct ima_template_desc *ima_template)
 	return false;
 }
 
-int ima_template_setup(char *str, struct ima_namespace *ima_ns)
+static int __init ima_template_setup(char *str)
 {
 	struct ima_template_desc *template_desc;
 	int template_len = strlen(str);
 
-	if (ima_ns->ima_template)
+	if (ima_template)
 		return 1;
 
 	ima_init_template_list();
@@ -109,21 +111,16 @@ int ima_template_setup(char *str, struct ima_namespace *ima_ns)
 		return 1;
 	}
 
-	ima_ns->ima_template = template_desc;
+	ima_template = template_desc;
 	return 1;
 }
-
-static int __init template_setup(char *str)
-{
-	return ima_template_setup(str, &init_ima_ns);
-}
-__setup("ima_template=", template_setup);
+__setup("ima_template=", ima_template_setup);
 
 static int __init ima_template_fmt_setup(char *str)
 {
 	int num_templates = ARRAY_SIZE(builtin_templates);
 
-	if (init_ima_ns.ima_template)
+	if (ima_template)
 		return 1;
 
 	if (template_desc_init_fields(str, NULL, NULL) < 0) {
@@ -133,7 +130,7 @@ static int __init ima_template_fmt_setup(char *str)
 	}
 
 	builtin_templates[num_templates - 1].fmt = str;
-	init_ima_ns.ima_template = builtin_templates + num_templates - 1;
+	ima_template = builtin_templates + num_templates - 1;
 
 	return 1;
 }
@@ -250,23 +247,14 @@ void ima_init_template_list(void)
 	spin_unlock(&template_list);
 }
 
-struct ima_template_desc *ima_template_desc_ns(struct ima_namespace *ima_ns)
-{
-	if (!ima_ns)
-		return NULL;
-
-	if (!ima_ns->ima_template) {
-		ima_init_template_list();
-		ima_ns->ima_template =
-			lookup_template_desc(CONFIG_IMA_DEFAULT_TEMPLATE);
-	}
-	return ima_ns->ima_template;
-}
-
 struct ima_template_desc *ima_template_desc_current(void)
 {
-	struct ima_namespace *ima_ns = get_current_ns();
-	return ima_template_desc_ns(ima_ns);
+	if (!ima_template) {
+		ima_init_template_list();
+		ima_template =
+		    lookup_template_desc(CONFIG_IMA_DEFAULT_TEMPLATE);
+	}
+	return ima_template;
 }
 
 int __init ima_init_template(void)
