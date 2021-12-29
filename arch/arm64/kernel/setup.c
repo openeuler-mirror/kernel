@@ -70,10 +70,6 @@ static int __init arm64_enable_cpu0_hotplug(char *str)
 __setup("arm64_cpu0_hotplug", arm64_enable_cpu0_hotplug);
 #endif
 
-#ifdef CONFIG_ARM64_PMEM_RESERVE
-extern struct resource pmem_res;
-#endif
-
 phys_addr_t __fdt_pointer __initdata;
 
 /*
@@ -288,12 +284,6 @@ static void __init request_standard_resources(void)
 			request_resource(res, &pin_memory_resource);
 #endif
 	}
-
-#ifdef CONFIG_ARM64_PMEM_RESERVE
-	if (pmem_res.end && pmem_res.start)
-		request_resource(&iomem_resource, &pmem_res);
-#endif
-
 }
 
 static int __init reserve_memblock_reserved_regions(void)
