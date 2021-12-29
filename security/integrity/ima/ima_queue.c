@@ -17,7 +17,6 @@
 
 #include <linux/rculist.h>
 #include <linux/slab.h>
-#include <linux/spinlock.h>
 #include "ima.h"
 
 #define AUDIT_CAUSE_LEN_MAX 32
@@ -31,8 +30,6 @@ static unsigned long binary_runtime_size;
 #else
 static unsigned long binary_runtime_size = ULONG_MAX;
 #endif
-
-DEFINE_SPINLOCK(ima_htable_lock);
 
 /* key: inode (before secure-hashing a file) */
 struct ima_h_table ima_htable = {
@@ -49,7 +46,7 @@ static DEFINE_MUTEX(ima_extend_list_mutex);
 
 /* lookup up the digest value in the hash table, and return the entry */
 static struct ima_queue_entry *ima_lookup_digest_entry(u8 *digest_value,
-						       int pcr, int ns_id)
+						       int pcr)
 {
 	struct ima_queue_entry *qe, *ret = NULL;
 	unsigned int key;
@@ -60,8 +57,7 @@ static struct ima_queue_entry *ima_lookup_digest_entry(u8 *digest_value,
 	hlist_for_each_entry_rcu(qe, &ima_htable.queue[key], hnext) {
 		rc = memcmp(qe->entry->digests[ima_hash_algo_idx].digest,
 			    digest_value, hash_digest_size[ima_hash_algo]);
-		if ((rc == 0) && (qe->entry->pcr == pcr) &&
-		    (qe->entry->ns_id == ns_id)) {
+		if ((rc == 0) && (qe->entry->pcr == pcr)) {
 			ret = qe;
 			break;
 		}
@@ -115,9 +111,7 @@ static int ima_add_digest_entry(struct ima_template_entry *entry,
 	atomic_long_inc(&ima_htable.len);
 	if (update_htable) {
 		key = ima_hash_key(entry->digests[ima_hash_algo_idx].digest);
-		spin_lock(&ima_htable_lock);
 		hlist_add_head_rcu(&qe->hnext, &ima_htable.queue[key]);
-		spin_unlock(&ima_htable_lock);
 	}
 
 	if (binary_runtime_size != ULONG_MAX) {
@@ -178,7 +172,7 @@ int ima_add_template_entry(struct ima_template_entry *entry, int violation,
 
 	mutex_lock(&ima_extend_list_mutex);
 	if (!violation) {
-		if (ima_lookup_digest_entry(digest, entry->pcr, entry->ns_id)) {
+		if (ima_lookup_digest_entry(digest, entry->pcr)) {
 			audit_cause = "hash_exists";
 			result = -EEXIST;
 			goto out;
