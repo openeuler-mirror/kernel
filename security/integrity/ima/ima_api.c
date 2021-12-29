@@ -104,8 +104,7 @@ out:
 int ima_store_template(struct ima_template_entry *entry,
 		       int violation, struct inode *inode,
 		       const unsigned char *filename, int pcr,
-		       struct ima_digest *digest,
-		       struct ima_namespace *ima_ns)
+		       struct ima_digest *digest)
 {
 	static const char op[] = "add_template_measure";
 	static const char audit_cause[] = "hashing_error";
@@ -135,11 +134,10 @@ int ima_store_template(struct ima_template_entry *entry,
 	}
 
 	entry->pcr = pcr;
-	result = ima_add_template_entry(entry, violation, op, inode, filename,
-					ima_ns);
+	result = ima_add_template_entry(entry, violation, op, inode, filename);
 	if (!result && duplicated_entry) {
 		result = ima_add_template_entry(duplicated_entry, violation, op,
-						inode, filename, ima_ns);
+						inode, filename);
 		if (result < 0)
 			kfree(duplicated_entry);
 	}
@@ -179,7 +177,7 @@ void ima_add_violation(struct file *file, const unsigned char *filename,
 		goto err_out;
 	}
 	result = ima_store_template(entry, violation, inode, filename,
-				    CONFIG_IMA_MEASURE_PCR_IDX, NULL, ima_ns);
+				    CONFIG_IMA_MEASURE_PCR_IDX, NULL);
 	if (result < 0)
 		ima_free_template_entry(entry);
 err_out:
@@ -366,7 +364,7 @@ void ima_store_measurement(struct integrity_iint_cache *iint,
 	}
 
 	result = ima_store_template(entry, violation, inode, filename, pcr,
-				    digest, ima_ns);
+				    digest);
 out:
 	if ((!result || result == -EEXIST) && !(file->f_flags & O_DIRECT)) {
 		iint->flags |= IMA_MEASURED;

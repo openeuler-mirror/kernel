@@ -91,8 +91,7 @@ static int get_binary_runtime_size(struct ima_template_entry *entry)
  * (Called with ima_extend_list_mutex held.)
  */
 static int ima_add_digest_entry(struct ima_template_entry *entry,
-				bool update_htable,
-				struct ima_namespace *ima_ns)
+				bool update_htable)
 {
 	struct ima_queue_entry *qe;
 	unsigned int key;
@@ -106,7 +105,6 @@ static int ima_add_digest_entry(struct ima_template_entry *entry,
 
 	INIT_LIST_HEAD(&qe->later);
 	list_add_tail_rcu(&qe->later, &ima_measurements);
-	list_add_tail_rcu(&qe->ns_later, &ima_ns->ns_measurements);
 
 	atomic_long_inc(&ima_htable.len);
 	if (update_htable) {
@@ -160,8 +158,7 @@ static int ima_pcr_extend(struct tpm_digest *digests_arg, int pcr)
  */
 int ima_add_template_entry(struct ima_template_entry *entry, int violation,
 			   const char *op, struct inode *inode,
-			   const unsigned char *filename,
-			   struct ima_namespace *ima_ns)
+			   const unsigned char *filename)
 {
 	u8 *digest = entry->digests[ima_hash_algo_idx].digest;
 	struct tpm_digest *digests_arg = entry->digests;
@@ -179,7 +176,7 @@ int ima_add_template_entry(struct ima_template_entry *entry, int violation,
 		}
 	}
 
-	result = ima_add_digest_entry(entry, 1, ima_ns);
+	result = ima_add_digest_entry(entry, 1);
 	if (result < 0) {
 		audit_cause = "ENOMEM";
 		audit_info = 0;
@@ -208,7 +205,7 @@ int ima_restore_measurement_entry(struct ima_template_entry *entry)
 	int result = 0;
 
 	mutex_lock(&ima_extend_list_mutex);
-	result = ima_add_digest_entry(entry, 0, &init_ima_ns);
+	result = ima_add_digest_entry(entry, 0);
 	mutex_unlock(&ima_extend_list_mutex);
 	return result;
 }
