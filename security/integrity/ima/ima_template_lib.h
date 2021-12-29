@@ -48,6 +48,4 @@ int ima_eventmodsig_init(struct ima_event_data *event_data,
 			 struct ima_field_data *field_data);
 int ima_eventevmsig_init(struct ima_event_data *event_data,
 			 struct ima_field_data *field_data);
-int ima_eventns_init(struct ima_event_data *event_data,
-		     struct ima_field_data *field_data);
 #endif /* __LINUX_IMA_TEMPLATE_LIB_H */
