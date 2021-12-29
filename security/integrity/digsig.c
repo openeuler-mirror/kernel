@@ -74,11 +74,8 @@ static struct key_tag *domain_tag_from_id(const unsigned int id)
 		return ERR_PTR(-EINVAL);
 
 	if (id == INTEGRITY_KEYRING_IMA)
-#ifdef CONFIG_IMA_NS
 		return current->nsproxy->ima_ns->key_domain;
-#else
-		return init_ima_ns.key_domain;
-#endif
+
 	return NULL;
 }
 
