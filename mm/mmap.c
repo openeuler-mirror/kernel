@@ -48,6 +48,7 @@
 #include <linux/oom.h>
 #include <linux/sched/mm.h>
 #include <linux/swapops.h>
+#include <linux/share_pool.h>
 
 #include <linux/uaccess.h>
 #include <asm/cacheflush.h>
@@ -2450,6 +2451,8 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	if (enable_mmap_dvpp)
 		dvpp_mmap_get_area(&info, flags);
 
+	sp_area_work_around(&info, flags);
+
 	return vm_unmapped_area(&info);
 }
 #endif
@@ -2500,6 +2503,8 @@ arch_get_unmapped_area_topdown(struct file *filp, unsigned long addr,
 	if (enable_mmap_dvpp)
 		dvpp_mmap_get_area(&info, flags);
 
+	sp_area_work_around(&info, flags);
+
 	addr = vm_unmapped_area(&info);
 
 	/*
@@ -2516,6 +2521,8 @@ arch_get_unmapped_area_topdown(struct file *filp, unsigned long addr,
 
 		if (enable_mmap_dvpp)
 			dvpp_mmap_get_area(&info, flags);
+
+		sp_area_work_around(&info, flags);
 
 		addr = vm_unmapped_area(&info);
 	}

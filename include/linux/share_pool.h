@@ -262,6 +262,16 @@ static inline bool sp_is_enabled(void)
 	return static_branch_likely(&share_pool_enabled_key);
 }
 
+static inline void sp_area_work_around(struct vm_unmapped_area_info *info,
+				       unsigned long flags)
+{
+	/* the MAP_DVPP couldn't work with MAP_SHARE_POOL. In addition, the
+	 * address ranges corresponding to the two flags must not overlap.
+	 */
+	if (sp_is_enabled() && !(flags & MAP_DVPP))
+		info->high_limit = min(info->high_limit, MMAP_SHARE_POOL_START);
+}
+
 #else /* CONFIG_ASCEND_SHARE_POOL */
 
 static inline int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
@@ -442,7 +452,7 @@ static inline bool sp_is_enabled(void)
 	return false;
 }
 
-static inline void sp_area_work_around(struct vm_unmapped_area_info *info)
+static inline void sp_area_work_around(struct vm_unmapped_area_info *info, unsigned long flags)
 {
 }
 
