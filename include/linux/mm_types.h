@@ -585,6 +585,10 @@ struct mm_struct {
 	struct kvm *kvm;
 #endif
 
+#if IS_ENABLED(CONFIG_ASCEND_SHARE_POOL)
+	struct sp_group_master *sp_group_master;
+#endif
+
 	/*
 	 * The mm_cpumask needs to be at the end of mm_struct, because it
 	 * is dynamically sized based on nr_cpu_ids.

@@ -96,6 +96,7 @@
 #include <linux/kasan.h>
 #include <linux/scs.h>
 #include <linux/io_uring.h>
+#include <linux/share_pool.h>
 
 #include <asm/pgalloc.h>
 #include <linux/uaccess.h>
@@ -1055,6 +1056,9 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 		goto fail_nocontext;
 
 	mm->user_ns = get_user_ns(user_ns);
+
+	sp_init_mm(mm);
+
 	return mm;
 
 fail_nocontext:

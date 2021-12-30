@@ -2034,6 +2034,15 @@ config ASCEND_CHARGE_MIGRATE_HUGEPAGES
 	  This option enable the feature to charge migrate hugepages to memory
 	  cgroup.
 
+config ASCEND_SHARE_POOL
+	bool "Enable support for the Share Pool Memory"
+	default n
+	depends on HAVE_ARCH_HUGE_VMALLOC
+	select ARCH_USES_HIGH_VMA_FLAGS
+	help
+	  This feature allows multiple processes to share virtual memory both
+	  in kernel and user level, which is only enabled for ascend platform.
+
 endif
 
 endmenu
