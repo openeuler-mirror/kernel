@@ -262,6 +262,7 @@ extern int sp_group_exit(struct mm_struct *mm);
 extern void sp_group_post_exit(struct mm_struct *mm);
 extern bool sp_check_addr(unsigned long addr);
 extern bool sp_check_mmap_addr(unsigned long addr, unsigned long flags);
+extern int sp_node_id(struct vm_area_struct *vma);
 
 static inline bool sp_is_enabled(void)
 {

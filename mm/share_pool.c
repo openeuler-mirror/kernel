@@ -1971,7 +1971,6 @@ static int sp_check_caller_permission(struct sp_group *spg, struct mm_struct *mm
 	return ret;
 }
 
-
 #define FREE_CONT	1
 #define FREE_END	2
 
@@ -3615,6 +3614,25 @@ bool mg_is_sharepool_addr(unsigned long addr)
 	return is_sharepool_addr(addr);
 }
 EXPORT_SYMBOL_GPL(mg_is_sharepool_addr);
+
+int sp_node_id(struct vm_area_struct *vma)
+{
+	struct sp_area *spa;
+	int node_id = numa_node_id();
+
+	if (!sp_is_enabled())
+		return node_id;
+
+	if (vma) {
+		spa = __find_sp_area(vma->vm_start);
+		if (spa) {
+			node_id = spa->node_id;
+			__sp_area_drop(spa);
+		}
+	}
+
+	return node_id;
+}
 
 static int __init mdc_default_group(char *s)
 {
