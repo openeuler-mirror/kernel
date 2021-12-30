@@ -260,6 +260,10 @@ extern int sp_group_add_task(int pid, int spg_id);
 extern void sp_area_drop(struct vm_area_struct *vma);
 extern int sp_group_exit(struct mm_struct *mm);
 extern void sp_group_post_exit(struct mm_struct *mm);
+vm_fault_t sharepool_no_page(struct mm_struct *mm,
+			     struct vm_area_struct *vma,
+			     struct address_space *mapping, pgoff_t idx,
+			     unsigned long address, pte_t *ptep, unsigned int flags);
 extern bool sp_check_addr(unsigned long addr);
 extern bool sp_check_mmap_addr(unsigned long addr, unsigned long flags);
 extern int sp_node_id(struct vm_area_struct *vma);
@@ -513,6 +517,14 @@ static inline bool sp_check_addr(unsigned long addr)
 static inline bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
 {
 	return false;
+}
+
+static inline vm_fault_t sharepool_no_page(struct mm_struct *mm,
+			struct vm_area_struct *vma,
+			struct address_space *mapping, pgoff_t idx,
+			unsigned long address, pte_t *ptep, unsigned int flags)
+{
+	return VM_FAULT_SIGBUS;
 }
 
 #endif /* !CONFIG_ASCEND_SHARE_POOL */
