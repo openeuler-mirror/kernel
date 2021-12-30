@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2112.6.0
+%global hulkrelease 2112.8.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0129
+Release: %{hulkrelease}.0130
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,11 @@ fi
 %endif
 
 %changelog
+
+* Thu Dec 30 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.8.0.0130
+- mm/page_alloc: Use cmdline to disable "place pages to tail"
+- bpf: Remove MTU check in __bpf_skb_max_len
+- sctp: account stream padding length for reconf chunk
 
 * Tue Dec 28 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.6.0.0129
 - watchdog: Fix check_preemption_disabled() error
