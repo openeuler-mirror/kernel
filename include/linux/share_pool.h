@@ -258,6 +258,8 @@ extern int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id);
 extern int sp_group_add_task(int pid, int spg_id);
 
 extern void sp_area_drop(struct vm_area_struct *vma);
+extern int sp_group_exit(struct mm_struct *mm);
+extern void sp_group_post_exit(struct mm_struct *mm);
 
 static inline bool sp_is_enabled(void)
 {

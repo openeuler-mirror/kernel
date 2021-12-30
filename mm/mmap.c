@@ -183,6 +183,7 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 	if (vma->vm_file)
 		fput(vma->vm_file);
 	mpol_put(vma_policy(vma));
+	sp_area_drop(vma);
 	vm_area_free(vma);
 	return next;
 }
@@ -1172,6 +1173,10 @@ struct vm_area_struct *vma_merge(struct mm_struct *mm,
 	 * so this tests vma->vm_flags & VM_SPECIAL, too.
 	 */
 	if (vm_flags & VM_SPECIAL)
+		return NULL;
+
+	/* don't merge this kind of vma as sp_area couldn't be merged */
+	if (sp_check_vm_share_pool(vm_flags))
 		return NULL;
 
 	next = vma_next(mm, prev);

@@ -98,6 +98,7 @@
 #include <linux/io_uring.h>
 #include <linux/share_pool.h>
 
+#include <linux/share_pool.h>
 #include <asm/pgalloc.h>
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -1092,6 +1093,9 @@ static inline void __mmput(struct mm_struct *mm)
 	ksm_exit(mm);
 	khugepaged_exit(mm); /* must run before exit_mmap */
 	exit_mmap(mm);
+
+	sp_group_post_exit(mm);
+
 	mm_put_huge_zero_page(mm);
 	set_mm_exe_file(mm, NULL);
 	if (!list_empty(&mm->mmlist)) {
@@ -1110,6 +1114,9 @@ static inline void __mmput(struct mm_struct *mm)
 void mmput(struct mm_struct *mm)
 {
 	might_sleep();
+
+	if (sp_group_exit(mm))
+		return;
 
 	if (atomic_dec_and_test(&mm->mm_users))
 		__mmput(mm);

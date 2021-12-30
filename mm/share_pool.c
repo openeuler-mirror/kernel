@@ -4139,6 +4139,134 @@ static void __init proc_sharepool_init(void)
 
 /*** End of tatistical and maintenance functions ***/
 
+#define MM_WOULD_FREE	1
+
+/*
+ * Recall we add mm->users by 1 deliberately in sp_group_add_task().
+ * If the mm_users == sp_group_master->count + 1, it means that the mm is ready
+ * to be freed because the last owner of this mm is in exiting procedure:
+ * do_exit() -> exit_mm() -> mmput() -> sp_group_exit -> THIS function.
+ */
+static bool need_free_sp_group(struct mm_struct *mm,
+			      struct sp_group_master *master)
+{
+	/* thread exits but process is still alive */
+	if ((unsigned int)atomic_read(&mm->mm_users) != master->count + MM_WOULD_FREE) {
+		if (atomic_dec_and_test(&mm->mm_users))
+			WARN(1, "Invalid user counting\n");
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * Return:
+ * 1	- let mmput() return immediately
+ * 0	- let mmput() decrease mm_users and try __mmput()
+ */
+int sp_group_exit(struct mm_struct *mm)
+{
+	struct sp_group *spg;
+	struct sp_group_master *master;
+	struct sp_group_node *spg_node, *tmp;
+	bool is_alive = true;
+
+	if (!sp_is_enabled())
+		return 0;
+
+	down_write(&sp_group_sem);
+
+	master = mm->sp_group_master;
+	if (!master) {
+		up_write(&sp_group_sem);
+		return 0;
+	}
+
+	if (!need_free_sp_group(mm, master)) {
+		up_write(&sp_group_sem);
+		return 1;
+	}
+
+	list_for_each_entry_safe(spg_node, tmp, &master->node_list, group_node) {
+		spg = spg_node->spg;
+
+		down_write(&spg->rw_lock);
+		/* a dead group should NOT be reactive again */
+		if (spg_valid(spg) && list_is_singular(&spg->procs))
+			is_alive = spg->is_alive = false;
+		spg->proc_num--;
+		list_del(&spg_node->proc_node);
+		up_write(&spg->rw_lock);
+
+		if (!is_alive)
+			blocking_notifier_call_chain(&sp_notifier_chain, 0,
+						     spg);
+	}
+
+	/* match with get_task_mm() in sp_group_add_task() */
+	if (atomic_sub_and_test(master->count, &mm->mm_users)) {
+		up_write(&sp_group_sem);
+		WARN(1, "Invalid user counting\n");
+		return 1;
+	}
+
+	up_write(&sp_group_sem);
+	return 0;
+}
+
+void sp_group_post_exit(struct mm_struct *mm)
+{
+	struct sp_proc_stat *stat;
+	long alloc_size, k2u_size;
+	/* lockless visit */
+	struct sp_group_master *master = mm->sp_group_master;
+	struct sp_group_node *spg_node, *tmp;
+	struct sp_group *spg;
+
+	if (!sp_is_enabled() || !master)
+		return;
+
+	/*
+	 * There are two basic scenarios when a process in the share pool is
+	 * exiting but its share pool memory usage is not 0.
+	 * 1. Process A called sp_alloc(), but it terminates without calling
+	 *    sp_free(). Then its share pool memory usage is a positive number.
+	 * 2. Process A never called sp_alloc(), and process B in the same spg
+	 *    called sp_alloc() to get an addr u. Then A gets u somehow and
+	 *    called sp_free(u). Now A's share pool memory usage is a negative
+	 *    number. Notice B's memory usage will be a positive number.
+	 *
+	 * We decide to print an info when seeing both of the scenarios.
+	 *
+	 * A process not in an sp group doesn't need to print because there
+	 * wont't be any memory which is not freed.
+	 */
+	stat = sp_get_proc_stat(mm);
+	if (stat) {
+		alloc_size = atomic64_read(&stat->alloc_size);
+		k2u_size = atomic64_read(&stat->k2u_size);
+
+		if (alloc_size != 0 || k2u_size != 0)
+			pr_info("process %s(%d) exits. It applied %ld aligned KB, k2u shared %ld aligned KB\n",
+				stat->comm, stat->tgid,
+				byte2kb(alloc_size), byte2kb(k2u_size));
+
+		/* match with sp_init_proc_stat, we expect stat is released after this call */
+		sp_proc_stat_drop(stat);
+	}
+
+	/* lockless traverse */
+	list_for_each_entry_safe(spg_node, tmp, &master->node_list, group_node) {
+		spg = spg_node->spg;
+		/* match with refcount inc in sp_group_add_task */
+		sp_group_drop(spg);
+		kfree(spg_node);
+	}
+
+	kfree(master);
+}
+
 DEFINE_STATIC_KEY_FALSE(share_pool_enabled_key);
 
 static int __init enable_share_pool(char *s)
