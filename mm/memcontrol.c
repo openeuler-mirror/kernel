@@ -1895,6 +1895,7 @@ static enum oom_status mem_cgroup_oom(struct mem_cgroup *memcg, gfp_t mask, int 
 		current->memcg_in_oom = memcg;
 		current->memcg_oom_gfp_mask = mask;
 		current->memcg_oom_order = order;
+		oom_type_notifier_call(OOM_TYPE_CGROUP, NULL);
 
 		return OOM_ASYNC;
 	}
@@ -1962,12 +1963,14 @@ bool mem_cgroup_oom_synchronize(bool handle)
 	if (locked)
 		mem_cgroup_oom_notify(memcg);
 
-	if (locked && !memcg->oom_kill_disable) {
+	if (locked && !memcg->oom_kill_disable && sysctl_enable_oom_killer) {
 		mem_cgroup_unmark_under_oom(memcg);
 		finish_wait(&memcg_oom_waitq, &owait.wait);
 		mem_cgroup_out_of_memory(memcg, current->memcg_oom_gfp_mask,
 					 current->memcg_oom_order);
 	} else {
+		oom_type_notifier_call(OOM_TYPE_CGROUP, NULL);
+
 		schedule();
 		mem_cgroup_unmark_under_oom(memcg);
 		finish_wait(&memcg_oom_waitq, &owait.wait);

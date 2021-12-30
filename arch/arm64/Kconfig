@@ -2010,6 +2010,18 @@ config ASCEND_CLEAN_CDM
 	  cause the kernel crash if the essential structures went wrong. So move
 	  the management structures for hbm nodes to the ddr nodes of the same
 	  partion to reduce the probability of kernel crashes.
+
+config ASCEND_OOM
+	bool "Enable support for disable oom killer"
+	default y
+	help
+	  In some cases we hopes that the oom will not kill the process when it occurs,
+	  be able to notify the black box to report the event, and be able to trigger
+	  the panic to locate the problem.
+	  vm.enable_oom_killer:
+		0: disable oom killer
+		1: enable oom killer (default,compatible with mainline)
+
 endif
 
 endmenu
