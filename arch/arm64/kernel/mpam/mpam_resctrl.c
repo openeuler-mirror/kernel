@@ -632,23 +632,24 @@ int closid_bitmap_init(void)
  * @rows:           Number of bits for remap_body[:] bitmap
  * @clos:           Number of bitmaps
  * @nr_usage:       Number rmid we have
- * @stride:         Step stride from transforming rmid to partid and pmg
+ * @step_size:      Step size from traversing the point of matrix once
+ * @step_cnt:       Indicates how many times to traverse(.e.g if cdp;step_cnt=2)
  * @remap_body:     Storing bitmaps' entry and itself
- * @remap_enabled:  Does remap_body init done
  */
 struct rmid_transform {
 	u32 rows;
 	u32 cols;
 	u32 nr_usage;
-	int stride;
+	int step_size;
+	int step_cnt;
 	unsigned long **remap_body;
-	bool remap_enabled;
 };
 static struct rmid_transform rmid_remap_matrix;
+DEFINE_STATIC_KEY_FALSE(rmid_remap_enable_key);
 
 static u32 get_nr_rmids(void)
 {
-	if (!rmid_remap_matrix.remap_enabled)
+	if (!static_branch_likely(&rmid_remap_enable_key))
 		return 0;
 
 	return rmid_remap_matrix.nr_usage;
@@ -687,9 +688,17 @@ static int set_rmid_remap_matrix(u32 rows, u32 cols)
 	 */
 	hw_alloc_times_validate(times, flag);
 	rmid_remap_matrix.cols = rounddown(cols, times);
-	rmid_remap_matrix.stride = times;
+	rmid_remap_matrix.step_cnt = times;
 	if (times > rmid_remap_matrix.cols)
 		return -EINVAL;
+	/*
+	 * if only pmg(Performance Monitor Group)
+	 * work on the monitor, step_size must be
+	 * set to maximum number of columns,
+	 * otherwise set it to 1, such as kunpeng
+	 * 920 does.
+	 */
+	rmid_remap_matrix.step_size = 1;
 
 	/*
 	 * first row of rmid remap matrix is used for indicating
@@ -733,7 +742,8 @@ static int set_rmid_remap_matrix(u32 rows, u32 cols)
 				0, rmid_remap_matrix.rows);
 	}
 
-	rmid_remap_matrix.remap_enabled = 1;
+	/* make column entry of rmid matrix visible */
+	static_branch_enable_cpuslocked(&rmid_remap_enable_key);
 
 	return 0;
 clean:
@@ -748,6 +758,9 @@ clean:
 		rmid_remap_matrix.remap_body = NULL;
 	}
 
+	/* if recreation failed, cannot use rmid remap matrix */
+	static_branch_disable_cpuslocked(&rmid_remap_enable_key);
+
 	return ret;
 }
 
@@ -761,37 +774,101 @@ static u32 probe_rmid_remap_matrix_rows(void)
 	return (u32)mpam_sysprops_num_pmg();
 }
 
-static inline unsigned long **__rmid_remap_bmp(int col)
+static inline unsigned long **__rmid_remap_bmp(u32 col)
 {
-	if (!rmid_remap_matrix.remap_enabled)
+	if (!static_branch_likely(&rmid_remap_enable_key))
 		return NULL;
 
-	if ((u32)col >= rmid_remap_matrix.cols)
+	if (col >= rmid_remap_matrix.cols)
 		return NULL;
 
 	return rmid_remap_matrix.remap_body + col;
 }
 
-#define for_each_rmid_remap_bmp(bmp)	\
-	for (bmp = __rmid_remap_bmp(0);	\
-		bmp <= __rmid_remap_bmp(rmid_remap_matrix.cols - 1); \
-		bmp++)
+/*
+ *  these macros defines how can we traverse rmid remap matrix, there are
+ *  three scenarios:
+ *
+ *  (1) step_size is default set to 1, if only PMG(NR_PMG=4) works, makes
+ *      it equals to number of columns, step_cnt means how many times are
+ *      allocated and released each time, at this time rmid remap matrix
+ *      looks like:
+ *
+ *        ^
+ *        |
+ *         ------column------>
+ *
+ *       RMID  0   1   2   3   (step_size=1)
+ *             `---'
+ *                `--> (step_cnt=2 if cdp enabled)
+ *
+ *       RMID  0   1   2   3   (step_size=1)
+ *             `--
+ *                `--> (step_cnt=1 if cdp disabled)
+ *
+ *  (2) if PARTID(NR_PARTID=4) and PMG(NR_PMG=4) works together, at this
+ *      time rmid remap matrix looks like:
+ *
+ *       ------------row------------>
+ *      |
+ *      |  RMID  0   1   2   3   (step_size=1)
+ *      |        `---'
+ *      |           `--> (step_cnt=2 if cdp enabled)
+ *      |        4   5   6   7
+ *      |        8   9   10  11
+ *      v        12  13  14  15
+ *
+ *  (3) step_size not equal to 1, cross-line traversal, but this scenario
+ *      did not happen yet.
+ */
 
-#define for_each_valid_rmid_remap_bmp(bmp)	\
-		for_each_rmid_remap_bmp(bmp)	\
-			if (bmp && *bmp)
+#define __xy_initialize(x, y, from)           		\
+	(x = from, y = 0)
+#define __xy_overflow(x, y)				\
+	(y >= rmid_remap_matrix.cols)
+#define __x_forward(x)					\
+	(x = (x + 1) % rmid_remap_matrix.cols)
+#define __y_forward(x, y)				\
+	(y += ((x) ? 0 : 1))
 
-#define STRIDE_CHK(stride)	\
-		(stride == rmid_remap_matrix.stride)
+#define __step_xy_initialize(step, x, y, from)		\
+	(x = from, step = 1, y = 0)
+#define __step_align(from)				\
+	(!(from % rmid_remap_matrix.step_size))
+#define __step_overflow(step)				\
+	(__xy_overflow(x, y) ||				\
+		(step > rmid_remap_matrix.step_cnt))
+#define __step_x_forward(x)				\
+	__x_forward(x)
+#define __step_forward(step, x)				\
+	(step += ((x % rmid_remap_matrix.step_size) ? 0 : 1))
+#define __step_y_forward(x, y)				\
+	__y_forward(x, y)
 
-#define STRIDE_INC_CHK(stride)	\
-		(++stride == rmid_remap_matrix.stride)
+#define for_each_rmid_transform_point_step_from(p_entry, step, x, y, from)	\
+	for (__step_xy_initialize(step, x, y, from),				\
+		(p_entry) = __rmid_remap_bmp((from));				\
+		__step_align(from) && !__step_overflow(step);			\
+		__step_x_forward(x),						\
+		__step_forward(step, x),					\
+		__step_y_forward(x, y),						\
+		(p_entry) = __rmid_remap_bmp(x))				\
+			if (unlikely(((p_entry) == NULL) ||			\
+				(*p_entry) == NULL))				\
+				WARN_ON_ONCE(1);				\
+			else
 
-#define STRIDE_CHK_AND_WARN(stride)	\
-do {	\
-	if (!STRIDE_CHK(stride))	\
-		WARN_ON_ONCE("Unexpected stride\n");	\
-} while (0)
+#define for_each_rmid_transform_point_from(p_entry, x, y, from)			\
+	for (__xy_initialize(x, y, from),					\
+		(p_entry) = __rmid_remap_bmp((from));				\
+		!__xy_overflow(x, y);						\
+		__x_forward(x),							\
+		__y_forward(x, y),						\
+		(p_entry) = __rmid_remap_bmp(x))				\
+			if (unlikely(((p_entry) == NULL) ||			\
+				(*p_entry) == NULL))				\
+				WARN_ON_ONCE(1);				\
+			else
 
 static void set_rmid_remap_bmp_occ(unsigned long *bmp)
 {
@@ -831,6 +908,32 @@ static int is_rmid_remap_bmp_full(unsigned long *bmp)
 			bitmap_full(bmp, rmid_remap_matrix.rows));
 }
 
+static int rmid_remap_bmp_find_first_avail_partid(int partid)
+{
+	int x, y;
+	unsigned long **bmp;
+
+	if (rmid_remap_matrix.step_size ==
+		rmid_remap_matrix.cols)
+		return 0;
+
+	bmp = __rmid_remap_bmp(partid);
+	if (bmp && !is_rmid_remap_bmp_occ(*bmp))
+		return partid;
+
+	for_each_rmid_transform_point_from(bmp, x, y, 0) {
+		/*
+		 * do not waste partid resource, start
+		 * from step_size aligned position.
+		 */
+		if (!is_rmid_remap_bmp_occ(*bmp) &&
+			(x % rmid_remap_matrix.step_size) == 0)
+			return x;
+	}
+
+	return -ENOSPC;
+}
+
 static int rmid_remap_bmp_alloc_pmg(unsigned long *bmp)
 {
 	int pos;
@@ -845,8 +948,7 @@ static int rmid_remap_bmp_alloc_pmg(unsigned long *bmp)
 
 static int rmid_remap_matrix_init(void)
 {
-	int stride = 0;
-	int ret;
+	int x, y, step, ret;
 	u32 cols, rows;
 	unsigned long **bmp;
 
@@ -863,14 +965,10 @@ static int rmid_remap_matrix_init(void)
 	 * default rmid, otherwise drop partid = 0 and
 	 * partid = 1 for LxCACHE, LxDATA reservation.
 	 */
-	for_each_valid_rmid_remap_bmp(bmp) {
+	for_each_rmid_transform_point_step_from(bmp, step, x, y, 0) {
 		set_rmid_remap_bmp_occ(*bmp);
-		rmid_remap_bmp_bdr_clear(*bmp, 0);
-		if (STRIDE_INC_CHK(stride))
-			break;
+		rmid_remap_bmp_alloc_pmg(*bmp);
 	}
-
-	STRIDE_CHK_AND_WARN(stride);
 
 	ret = rmid_mon_ptrs_init(rmid_remap_matrix.nr_usage);
 	if (ret)
@@ -916,70 +1014,59 @@ static int rmid_to_partid_pmg(int rmid, int *partid, int *pmg)
 
 static int __rmid_alloc(int partid, int pmg)
 {
-	int stride = 0;
-	int partid_sel = 0;
-	int ret;
-	int rmid[2] = {-1, -1};
-	unsigned long **cmp, **bmp;
+	int x, y, step, ret, rmid;
+	bool checkpmg = false;
+	unsigned long **bmp;
 
-	if (partid >= 0) {
-		cmp = __rmid_remap_bmp(partid);
-		if (!cmp) {
-			ret = -EINVAL;
-			goto out;
-		}
-		for_each_valid_rmid_remap_bmp(bmp) {
-			if (bmp < cmp)
-				continue;
-			set_rmid_remap_bmp_occ(*bmp);
+	if (pmg >= 0)
+		checkpmg = true;
 
-			if (pmg >= 0) {
-				if (is_rmid_remap_bmp_bdr_set(*bmp, pmg)) {
-					ret = -EEXIST;
-					goto out;
-				}
-				rmid_remap_bmp_bdr_clear(*bmp, pmg);
-			} else {
-				ret = rmid_remap_bmp_alloc_pmg(*bmp);
-				if (ret < 0)
-					goto out;
-				pmg = ret;
-			}
+	/* traverse from first non-occupied and step_size aligned entry */
+	ret = rmid_remap_bmp_find_first_avail_partid(partid);
+	if (ret < 0)
+		goto out;
+	partid = ret;
 
-			rmid[stride] = to_rmid(partid + stride, pmg);
-			if (STRIDE_INC_CHK(stride))
-				break;
-		}
-	} else {
-		for_each_valid_rmid_remap_bmp(bmp) {
-			partid_sel++;
+	for_each_rmid_transform_point_step_from(bmp, step, x, y, partid) {
+		set_rmid_remap_bmp_occ(*bmp);
 
-			if (is_rmid_remap_bmp_occ(*bmp))
-				continue;
-			set_rmid_remap_bmp_occ(*bmp);
-
-			ret = rmid_remap_bmp_alloc_pmg(*bmp);
-			if (ret < 0)
+		/* checking if the given pmg is available */
+		if (checkpmg) {
+			/*
+			 * it can only happened in step_size aligned
+			 * position, so it does not exist pmgs cleared
+			 * before.
+			 */
+			if (is_rmid_remap_bmp_bdr_set(*bmp, pmg + y)) {
+				ret = -EEXIST;
 				goto out;
-			pmg = ret;
-			rmid[stride] = to_rmid(partid_sel - 1, pmg);
-			if (STRIDE_INC_CHK(stride))
-				break;
+			}
+			rmid_remap_bmp_bdr_clear(*bmp, pmg + y);
+			continue;
 		}
+
+		/* alloc available pmg */
+		ret = rmid_remap_bmp_alloc_pmg(*bmp);
+		if (ret < 0)
+			goto out;
+		/* always return first pmg */
+		if (pmg < 0)
+			pmg = ret;
 	}
 
-	if (!STRIDE_CHK(stride)) {
+	rmid = to_rmid(partid, pmg);
+	if (!is_rmid_valid(rmid)) {
 		ret = -ENOSPC;
 		goto out;
 	}
-
-	ret = assoc_rmid_with_mon(rmid[0]);
-	if (ret)
+	ret = assoc_rmid_with_mon(rmid);
+	if (ret) {
+		rmid_free(rmid);
 		goto out;
+	}
 
-	return rmid[0];
+	return rmid;
 out:
-	rmid_free(rmid[0]);
 	return ret;
 }
 
@@ -990,31 +1077,17 @@ int rmid_alloc(int partid)
 
 void rmid_free(int rmid)
 {
-	int stride = 0;
-	int partid, pmg;
-	unsigned long **bmp, **cmp;
+	int x, y, step, partid, pmg;
+	unsigned long **bmp;
 
 	if (rmid_to_partid_pmg(rmid, &partid, &pmg))
 		return;
 
-	cmp = __rmid_remap_bmp(partid);
-	if (!cmp)
-		return;
-
-	for_each_valid_rmid_remap_bmp(bmp) {
-		if (bmp < cmp)
-			continue;
-
-		rmid_remap_bmp_bdr_set(*bmp, pmg);
-
+	for_each_rmid_transform_point_step_from(bmp, step, x, y, partid) {
+		rmid_remap_bmp_bdr_set(*bmp, pmg + y);
 		if (is_rmid_remap_bmp_full(*bmp))
 			unset_rmid_remap_bmp_occ(*bmp);
-
-		if (STRIDE_INC_CHK(stride))
-			break;
 	}
-
-	STRIDE_CHK_AND_WARN(stride);
 
 	deassoc_rmid_with_mon(rmid);
 }
