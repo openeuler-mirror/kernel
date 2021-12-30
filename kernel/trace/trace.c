@@ -693,7 +693,7 @@ int trace_pid_write(struct trace_pid_list *filtered_pids,
 		return -ENOMEM;
 	}
 
-	pid_list->pid_max = READ_ONCE(pid_max);
+	pid_list->pid_max = READ_ONCE(init_pid_ns.pid_max);
 
 	/* Only truncating will shrink pid_max */
 	if (filtered_pids && filtered_pids->pid_max > pid_list->pid_max)
@@ -4896,7 +4896,7 @@ int set_tracer_flag(struct trace_array *tr, unsigned int mask, int enabled)
 
 	if (mask == TRACE_ITER_RECORD_TGID) {
 		if (!tgid_map) {
-			tgid_map_max = pid_max;
+			tgid_map_max = init_pid_ns.pid_max;
 			map = kvcalloc(tgid_map_max + 1, sizeof(*tgid_map),
 				       GFP_KERNEL);
 
