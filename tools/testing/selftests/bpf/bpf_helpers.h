@@ -145,6 +145,14 @@ static unsigned long long (*bpf_skb_cgroup_id)(void *ctx) =
 	(void *) BPF_FUNC_skb_cgroup_id;
 static unsigned long long (*bpf_skb_ancestor_cgroup_id)(void *ctx, int level) =
 	(void *) BPF_FUNC_skb_ancestor_cgroup_id;
+static int (*bpf_probe_read_user)(void *dst, int size, void *unsafe_ptr) =
+	(void *) BPF_FUNC_probe_read_user;
+static int (*bpf_probe_read_kernel)(void *dst, int size, void *unsafe_ptr) =
+	(void *) BPF_FUNC_probe_read_kernel;
+static int (*bpf_probe_read_user_str)(void *dst, int size, void *unsafe_ptr) =
+	(void *) BPF_FUNC_probe_read_user_str;
+static int (*bpf_probe_read_kernel_str)(void *dst, int size, void *unsafe_ptr) =
+	(void *) BPF_FUNC_probe_read_kernel_str;
 
 /* llvm builtin functions that eBPF C program may use to
  * emit BPF_LD_ABS and BPF_LD_IND instructions
