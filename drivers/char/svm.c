@@ -38,9 +38,7 @@
 
 #define SVM_IOCTL_REMAP_PROC		0xfff4
 #define SVM_IOCTL_UNPIN_MEMORY		0xfff5
-#define SVM_IOCTL_GETHUGEINFO		0xfff6
 #define SVM_IOCTL_PIN_MEMORY		0xfff7
-#define SVM_IOCTL_GET_PHYMEMINFO	0xfff8
 #define SVM_IOCTL_GET_PHYS			0xfff9
 #define SVM_IOCTL_LOAD_FLAG			0xfffa
 #define SVM_IOCTL_SET_RC			0xfffc
@@ -120,23 +118,6 @@ struct svm_proc_mem {
 	u64 buf;
 };
 
-struct meminfo {
-	unsigned long hugetlbfree;
-	unsigned long hugetlbtotal;
-};
-
-struct phymeminfo {
-	unsigned long normal_total;
-	unsigned long normal_free;
-	unsigned long huge_total;
-	unsigned long huge_free;
-};
-
-struct phymeminfo_ioctl {
-	struct phymeminfo *info;
-	unsigned long nodemask;
-};
-
 static char *svm_cmd_to_string(unsigned int cmd)
 {
 	switch (cmd) {
@@ -150,10 +131,6 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "pin memory";
 	case SVM_IOCTL_UNPIN_MEMORY:
 		return "unpin memory";
-	case SVM_IOCTL_GETHUGEINFO:
-		return "get hugeinfo";
-	case SVM_IOCTL_GET_PHYMEMINFO:
-		return "get physical memory info";
 	case SVM_IOCTL_REMAP_PROC:
 		return "remap proc";
 	case SVM_IOCTL_LOAD_FLAG:
@@ -853,11 +830,7 @@ static struct task_struct *svm_get_task(struct svm_bind_process params)
 	if (params.flags & SVM_BIND_PID) {
 		struct mm_struct *mm = NULL;
 
-		rcu_read_lock();
-		task = find_task_by_vpid(params.vpid);
-		if (task)
-			get_task_struct(task);
-		rcu_read_unlock();
+		task = find_get_task_by_vpid(params.vpid);
 		if (task == NULL)
 			return ERR_PTR(-ESRCH);
 
@@ -967,7 +940,7 @@ static pte_t *svm_get_pte(struct vm_area_struct *vma,
 
 	if (is_vm_hugetlb_page(vma)) {
 		if (pud_present(*pud)) {
-			if (pud_huge(*pud)) {
+			if (pud_val(*pud) && !(pud_val(*pud) & PUD_TABLE_BIT)) {
 				pte = (pte_t *)pud;
 				*offset = addr & (PUD_SIZE - 1);
 				size = PUD_SIZE;
@@ -989,8 +962,6 @@ static pte_t *svm_get_pte(struct vm_area_struct *vma,
 			pte = (pte_t *)pmd;
 			*offset = addr & (PMD_SIZE - 1);
 			size = PMD_SIZE;
-		} else if (pmd_trans_unstable(pmd)) {
-			pr_warn("%s: thp unstable\n", __func__);
 		} else {
 			pte = pte_offset_map(pmd, addr);
 			*offset = addr & (PAGE_SIZE - 1);
@@ -1019,15 +990,15 @@ static pte_t *svm_walk_pt(unsigned long addr, unsigned long *page_size,
 		return NULL;
 
 	pgd = pgd_offset(mm, addr);
-	if (pgd_none_or_clear_bad(pgd))
+	if (pgd_none(*pgd))
 		return NULL;
 
 	p4d = p4d_offset(pgd, addr);
-	if (p4d_none_or_clear_bad(p4d))
+	if (p4d_none(*p4d))
 		return NULL;
 
 	pud = pud_offset(p4d, addr);
-	if (pud_none_or_clear_bad(pud))
+	if (pud_none(*pud))
 		return NULL;
 
 	return svm_get_pte(vma, pud, addr, page_size, offset);
@@ -1155,95 +1126,6 @@ static int svm_set_rc(unsigned long __user *arg)
 	return 0;
 }
 
-static long svm_get_hugeinfo(unsigned long __user *arg)
-{
-	struct hstate *h = &default_hstate;
-	struct meminfo info;
-
-	if (!acpi_disabled)
-		return -EPERM;
-
-	if (arg == NULL)
-		return -EINVAL;
-
-	if (!hugepages_supported())
-		return -ENOTSUPP;
-
-	info.hugetlbfree = h->free_huge_pages;
-	info.hugetlbtotal = h->nr_huge_pages;
-
-	if (copy_to_user((void __user *)arg, &info, sizeof(info)))
-		return -EFAULT;
-
-	pr_info("svm get hugetlb info: order(%u), max_huge_pages(%lu),"
-			"nr_huge_pages(%lu), free_huge_pages(%lu), resv_huge_pages(%lu)",
-			h->order,
-			h->max_huge_pages,
-			h->nr_huge_pages,
-			h->free_huge_pages,
-			h->resv_huge_pages);
-
-	return 0;
-}
-
-static void svm_get_node_memory_info_inc(unsigned long nid, struct phymeminfo *info)
-{
-	struct sysinfo i;
-	struct hstate *h = &default_hstate;
-	unsigned long huge_free = 0;
-	unsigned long huge_total = 0;
-
-	if (hugepages_supported()) {
-		huge_free = h->free_huge_pages_node[nid] * (PAGE_SIZE << huge_page_order(h));
-		huge_total = h->nr_huge_pages_node[nid] * (PAGE_SIZE << huge_page_order(h));
-	}
-
-#ifdef CONFIG_NUMA
-	si_meminfo_node(&i, nid);
-#else
-	si_meminfo(&i);
-#endif
-	info->normal_free += i.freeram * PAGE_SIZE;
-	info->normal_total += i.totalram * PAGE_SIZE - huge_total;
-	info->huge_total += huge_total;
-	info->huge_free += huge_free;
-}
-
-static void __svm_get_memory_info(unsigned long nodemask, struct phymeminfo *info)
-{
-	memset(info, 0x0, sizeof(struct phymeminfo));
-
-	nodemask = nodemask & ((1UL << MAX_NUMNODES) - 1);
-
-	while (nodemask) {
-		unsigned long nid = find_first_bit(&nodemask, BITS_PER_LONG);
-
-		if (node_isset(nid, node_online_map))
-			(void)svm_get_node_memory_info_inc(nid, info);
-
-		nodemask &= ~(1UL << nid);
-	}
-}
-
-static long svm_get_phy_memory_info(unsigned long __user *arg)
-{
-	struct phymeminfo info;
-	struct phymeminfo_ioctl para;
-
-	if (arg == NULL)
-		return -EINVAL;
-
-	if (copy_from_user(&para, (void __user *)arg, sizeof(para)))
-		return -EFAULT;
-
-	__svm_get_memory_info(para.nodemask, &info);
-
-	if (copy_to_user((void __user *)para.info, &info, sizeof(info)))
-		return -EFAULT;
-
-	return 0;
-}
-
 static long svm_remap_get_phys(struct mm_struct *mm, struct vm_area_struct *vma,
 			       unsigned long addr, unsigned long *phys,
 			       unsigned long *page_size, unsigned long *offset)
@@ -1259,15 +1141,15 @@ static long svm_remap_get_phys(struct mm_struct *mm, struct vm_area_struct *vma,
 		return err;
 
 	pgd = pgd_offset(mm, addr);
-	if (pgd_none_or_clear_bad(pgd))
+	if (pgd_none(*pgd))
 		return err;
 
 	p4d = p4d_offset(pgd, addr);
-	if (p4d_none_or_clear_bad(p4d))
+	if (p4d_none(*p4d))
 		return err;
 
 	pud = pud_offset(p4d, addr);
-	if (pud_none_or_clear_bad(pud))
+	if (pud_none(*pud))
 		return err;
 
 	pte = svm_get_pte(vma, pud, addr, page_size, offset);
@@ -1308,11 +1190,9 @@ static long svm_remap_proc(unsigned long __user *arg)
 		return -EINVAL;
 	}
 
-	rcu_read_lock();
 	if (pmem.pid) {
-		ptask = find_task_by_vpid(pmem.pid);
+		ptask = find_get_task_by_vpid(pmem.pid);
 		if (!ptask) {
-			rcu_read_unlock();
 			pr_err("No task for this pid\n");
 			return -EINVAL;
 		}
@@ -1320,8 +1200,6 @@ static long svm_remap_proc(unsigned long __user *arg)
 		ptask = current;
 	}
 
-	get_task_struct(ptask);
-	rcu_read_unlock();
 	pmm = ptask->mm;
 
 	down_read(&mm->mmap_lock);
@@ -1406,65 +1284,6 @@ static int svm_proc_load_flag(int __user *arg)
 		flag = 1;
 
 	return put_user(flag, arg);
-}
-
-static unsigned long svm_get_unmapped_area(struct file *file,
-		unsigned long addr0, unsigned long len,
-		unsigned long pgoff, unsigned long flags)
-{
-	unsigned long addr = addr0;
-	struct mm_struct *mm = current->mm;
-	struct vm_unmapped_area_info info;
-	struct svm_device *sdev = file_to_sdev(file);
-
-	if (!acpi_disabled)
-		return -EPERM;
-
-	if (flags & MAP_FIXED) {
-		if (IS_ALIGNED(addr, len))
-			return addr;
-
-		dev_err(sdev->dev, "MAP_FIXED but not aligned\n");
-		return -EINVAL; //lint !e570
-	}
-
-	if (addr) {
-		struct vm_area_struct *vma = NULL;
-
-		addr = ALIGN(addr, len);
-
-		if (dvpp_mmap_check(addr, len, flags))
-			return -ENOMEM;
-
-		vma = find_vma(mm, addr);
-		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
-		   (vma == NULL || addr + len <= vm_start_gap(vma)))
-			return addr;
-	}
-
-	info.flags = VM_UNMAPPED_AREA_TOPDOWN;
-	info.length = len;
-	info.low_limit = max(PAGE_SIZE, mmap_min_addr);
-	info.high_limit = ((mm->mmap_base <= DVPP_MMAP_BASE) ?
-				mm->mmap_base : DVPP_MMAP_BASE);
-	info.align_mask = ((len >> PAGE_SHIFT) - 1) << PAGE_SHIFT;
-	info.align_offset = pgoff << PAGE_SHIFT;
-
-	addr = vm_unmapped_area(&info);
-
-	if (offset_in_page(addr)) {
-		VM_BUG_ON(addr != -ENOMEM);
-		info.flags = 0;
-		info.low_limit = TASK_UNMAPPED_BASE;
-		info.high_limit = DVPP_MMAP_BASE;
-
-		if (enable_mmap_dvpp)
-			dvpp_mmap_get_area(&info, flags);
-
-		addr = vm_unmapped_area(&info);
-	}
-
-	return addr;
 }
 
 static int svm_mmap(struct file *file, struct vm_area_struct *vma)
@@ -1622,12 +1441,6 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 	case SVM_IOCTL_UNPIN_MEMORY:
 		err = svm_unpin_memory((unsigned long __user *)arg);
 		break;
-	case SVM_IOCTL_GETHUGEINFO:
-		err = svm_get_hugeinfo((unsigned long __user *)arg);
-		break;
-	case SVM_IOCTL_GET_PHYMEMINFO:
-		err = svm_get_phy_memory_info((unsigned long __user *)arg);
-		break;
 	case SVM_IOCTL_REMAP_PROC:
 		err = svm_remap_proc((unsigned long __user *)arg);
 		break;
@@ -1652,7 +1465,6 @@ static const struct file_operations svm_fops = {
 	.owner			= THIS_MODULE,
 	.open			= svm_open,
 	.mmap			= svm_mmap,
-	.get_unmapped_area = svm_get_unmapped_area,
 	.unlocked_ioctl		= svm_ioctl,
 };
 
@@ -1690,6 +1502,7 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 	struct core_device *cdev = NULL;
 	char *name = NULL;
 	enum dev_dma_attr attr;
+	const union acpi_object *obj;
 
 	name = devm_kasprintf(sdev->dev, GFP_KERNEL, "svm_child_dev%d", id);
 	if (name == NULL)
@@ -1714,7 +1527,7 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 		return err;
 	}
 
-	attr = acpi_get_dma_attr(children);
+	attr = device_get_dma_attr(&children->dev);
 	if (attr != DEV_DMA_NOT_SUPPORTED) {
 		err = acpi_dma_configure(&cdev->dev, attr);
 		if (err) {
@@ -1723,10 +1536,12 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 		}
 	}
 
-	err = acpi_dev_prop_read_single(children, "hisi,smmu-bypass",
-			DEV_PROP_U8, &cdev->smmu_bypass);
+	err = acpi_dev_get_property(children, "hisi,smmu-bypass",
+			DEV_PROP_U8, &obj);
 	if (err)
 		dev_info(&children->dev, "read smmu bypass failed\n");
+
+	cdev->smmu_bypass = *(u8 *)obj->integer.value;
 
 	cdev->group = iommu_group_get(&cdev->dev);
 	if (IS_ERR_OR_NULL(cdev->group)) {

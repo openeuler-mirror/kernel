@@ -479,7 +479,7 @@ config PIN_MEMORY_DEV
 	  pin memory driver
 
 config HISI_SVM
-	bool "Hisilicon svm driver"
+	tristate "Hisilicon svm driver"
 	depends on ARM64 && ARM_SMMU_V3 && MMU_NOTIFIER
 	default m
 	help
