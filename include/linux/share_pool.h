@@ -272,6 +272,14 @@ static inline void sp_area_work_around(struct vm_unmapped_area_info *info,
 		info->high_limit = min(info->high_limit, MMAP_SHARE_POOL_START);
 }
 
+static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
+{
+	if (sp_is_enabled() && (vm_flags & VM_SHARE_POOL))
+		return true;
+
+	return false;
+}
+
 #else /* CONFIG_ASCEND_SHARE_POOL */
 
 static inline int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
