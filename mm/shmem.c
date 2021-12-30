@@ -1532,7 +1532,7 @@ static struct page *shmem_swapin(swp_entry_t swap, gfp_t gfp,
 }
 
 static struct page *shmem_alloc_hugepage(gfp_t gfp,
-		struct shmem_inode_info *info, pgoff_t index)
+		struct shmem_inode_info *info, pgoff_t index, int node_id)
 {
 	struct vm_area_struct pvma;
 	struct address_space *mapping = info->vfs_inode.i_mapping;
@@ -1546,7 +1546,7 @@ static struct page *shmem_alloc_hugepage(gfp_t gfp,
 
 	shmem_pseudo_vma_init(&pvma, info, hindex);
 	page = alloc_pages_vma(gfp | __GFP_COMP | __GFP_NORETRY | __GFP_NOWARN,
-			HPAGE_PMD_ORDER, &pvma, 0, numa_node_id(), true);
+			HPAGE_PMD_ORDER, &pvma, 0, node_id, true);
 	shmem_pseudo_vma_destroy(&pvma);
 	if (page)
 		prep_transhuge_page(page);
@@ -1556,13 +1556,14 @@ static struct page *shmem_alloc_hugepage(gfp_t gfp,
 }
 
 static struct page *shmem_alloc_page(gfp_t gfp,
-			struct shmem_inode_info *info, pgoff_t index)
+			struct shmem_inode_info *info, pgoff_t index,
+			int node_id)
 {
 	struct vm_area_struct pvma;
 	struct page *page;
 
 	shmem_pseudo_vma_init(&pvma, info, index);
-	page = alloc_page_vma(gfp, &pvma, 0);
+	page = alloc_pages_vma(gfp, 0, &pvma, 0, node_id, false);
 	shmem_pseudo_vma_destroy(&pvma);
 
 	return page;
@@ -1570,7 +1571,7 @@ static struct page *shmem_alloc_page(gfp_t gfp,
 
 static struct page *shmem_alloc_and_acct_page(gfp_t gfp,
 		struct inode *inode,
-		pgoff_t index, bool huge)
+		pgoff_t index, bool huge, int node_id)
 {
 	struct shmem_inode_info *info = SHMEM_I(inode);
 	struct page *page;
@@ -1585,9 +1586,9 @@ static struct page *shmem_alloc_and_acct_page(gfp_t gfp,
 		goto failed;
 
 	if (huge)
-		page = shmem_alloc_hugepage(gfp, info, index);
+		page = shmem_alloc_hugepage(gfp, info, index, node_id);
 	else
-		page = shmem_alloc_page(gfp, info, index);
+		page = shmem_alloc_page(gfp, info, index, node_id);
 	if (page) {
 		__SetPageLocked(page);
 		__SetPageSwapBacked(page);
@@ -1636,7 +1637,7 @@ static int shmem_replace_page(struct page **pagep, gfp_t gfp,
 	 * limit chance of success by further cpuset and node constraints.
 	 */
 	gfp &= ~GFP_CONSTRAINT_MASK;
-	newpage = shmem_alloc_page(gfp, info, index);
+	newpage = shmem_alloc_page(gfp, info, index, numa_node_id());
 	if (!newpage)
 		return -ENOMEM;
 
@@ -1888,11 +1889,11 @@ repeat:
 	}
 
 alloc_huge:
-	page = shmem_alloc_and_acct_page(gfp, inode, index, true);
+	page = shmem_alloc_and_acct_page(gfp, inode, index, true, numa_node_id());
 	if (IS_ERR(page)) {
 alloc_nohuge:
 		page = shmem_alloc_and_acct_page(gfp, inode,
-						 index, false);
+						 index, false, numa_node_id());
 	}
 	if (IS_ERR(page)) {
 		int retry = 5;
@@ -2379,7 +2380,7 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	}
 
 	if (!*pagep) {
-		page = shmem_alloc_page(gfp, info, pgoff);
+		page = shmem_alloc_page(gfp, info, pgoff, numa_node_id());
 		if (!page)
 			goto out_unacct_blocks;
 
