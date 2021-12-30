@@ -87,6 +87,10 @@ static int __read_mostly enable_share_k2u_spg = 1;
 /* debug mode */
 int sysctl_sp_debug_mode;
 
+int sysctl_share_pool_map_lock_enable;
+
+int sysctl_sp_perf_k2u;
+
 static int share_pool_group_mode = SINGLE_GROUP_MODE;
 
 static int system_group_count;
@@ -631,6 +635,13 @@ static inline void check_interrupt_context(void)
 	if (unlikely(in_interrupt()))
 		panic("function can't be used in interrupt context\n");
 }
+
+static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
+			     struct sp_area *spa, unsigned long *populate,
+			     unsigned long prot);
+static void sp_munmap(struct mm_struct *mm, unsigned long addr, unsigned long size);
+static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
+					 struct mm_struct *mm, unsigned long prot);
 
 static void free_sp_group_id(int spg_id)
 {
@@ -1206,6 +1217,19 @@ static struct sp_area *__find_sp_area(unsigned long addr)
 	return n;
 }
 
+static bool vmalloc_area_clr_flag(unsigned long kva, unsigned long flags)
+{
+	struct vm_struct *area;
+
+	area = find_vm_area((void *)kva);
+	if (area) {
+		area->flags &= ~flags;
+		return true;
+	}
+
+	return false;
+}
+
 /*
  * Free the VA region starting from addr to the share pool
  */
@@ -1234,6 +1258,9 @@ static void sp_free_area(struct sp_area *spa)
 			 */
 		}
 	}
+
+	if (spa->kva && !vmalloc_area_clr_flag(spa->kva, VM_SHAREPOOL))
+		pr_debug("clear spa->kva %ld is not valid\n", spa->kva);
 
 	spa_dec_usage(spa);
 	if (spa->spg != spg_none)
@@ -1542,6 +1569,37 @@ int mg_sp_free(unsigned long addr)
 }
 EXPORT_SYMBOL_GPL(mg_sp_free);
 
+/* wrapper of __do_mmap() and the caller must hold down_write(&mm->mmap_lock). */
+static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
+			     struct sp_area *spa, unsigned long *populate,
+			     unsigned long prot)
+{
+	unsigned long addr = spa->va_start;
+	unsigned long size = spa_size(spa);
+	unsigned long flags = MAP_FIXED | MAP_SHARED | MAP_POPULATE |
+			      MAP_SHARE_POOL;
+	unsigned long vm_flags = VM_NORESERVE | VM_SHARE_POOL | VM_DONTCOPY;
+	unsigned long pgoff = addr_offset(spa) >> PAGE_SHIFT;
+
+	/* Mark the mapped region to be locked. After the MAP_LOCKED is enable,
+	 * multiple tasks will preempt resources, causing performance loss.
+	 */
+	if (sysctl_share_pool_map_lock_enable)
+		flags |= MAP_LOCKED;
+
+	atomic_inc(&spa->use_count);
+	addr = __do_mmap_mm(mm, file, addr, size, prot, flags, vm_flags, pgoff,
+			 populate, NULL);
+	if (IS_ERR_VALUE(addr)) {
+		atomic_dec(&spa->use_count);
+		pr_err("do_mmap fails %ld\n", addr);
+	} else {
+		BUG_ON(addr != spa->va_start);
+	}
+
+	return addr;
+}
+
 /**
  * sp_alloc() - Allocate shared memory for all the processes in a sp_group.
  * @size: the size of memory to allocate.
@@ -1596,6 +1654,314 @@ static int is_vmap_hugepage(unsigned long addr)
 		return 0;
 }
 
+static unsigned long __sp_remap_get_pfn(unsigned long kva)
+{
+	unsigned long pfn;
+
+	if (is_vmalloc_addr((void *)kva))
+		pfn = vmalloc_to_pfn((void *)kva);
+	else
+		pfn = virt_to_pfn(kva);
+
+	return pfn;
+}
+
+/* when called by k2u to group, always make sure rw_lock of spg is down */
+static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
+					 struct mm_struct *mm, unsigned long prot)
+{
+	struct vm_area_struct *vma;
+	unsigned long ret_addr;
+	unsigned long populate = 0;
+	int ret = 0;
+	unsigned long addr, buf, offset;
+
+	down_write(&mm->mmap_lock);
+	if (unlikely(mm->core_state)) {
+		pr_err("k2u mmap: encountered coredump, abort\n");
+		ret_addr = -EBUSY;
+		goto put_mm;
+	}
+
+	ret_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
+	if (IS_ERR_VALUE(ret_addr)) {
+		pr_debug("k2u mmap failed %lx\n", ret_addr);
+		goto put_mm;
+	}
+	BUG_ON(ret_addr != spa->va_start);
+
+	vma = find_vma(mm, ret_addr);
+	BUG_ON(vma == NULL);
+	if (prot & PROT_WRITE)
+		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
+
+	if (is_vm_hugetlb_page(vma)) {
+		ret = remap_vmalloc_hugepage_range(vma, (void *)kva, 0);
+		if (ret) {
+			do_munmap(mm, ret_addr, spa_size(spa), NULL);
+			pr_debug("remap vmalloc hugepage failed, ret %d, kva is %lx\n",
+				 ret, (unsigned long)kva);
+			ret_addr = ret;
+			goto put_mm;
+		}
+		vma->vm_flags |= VM_IO | VM_PFNMAP | VM_DONTEXPAND | VM_DONTDUMP;
+	} else {
+		buf = ret_addr;
+		addr = kva;
+		offset = 0;
+		do {
+			ret = remap_pfn_range(vma, buf, __sp_remap_get_pfn(addr), PAGE_SIZE,
+					__pgprot(vma->vm_page_prot.pgprot));
+			if (ret) {
+				do_munmap(mm, ret_addr, spa_size(spa), NULL);
+				pr_err("remap_pfn_range failed %d\n", ret);
+				ret_addr = ret;
+				goto put_mm;
+			}
+			offset += PAGE_SIZE;
+			buf += PAGE_SIZE;
+			addr += PAGE_SIZE;
+		} while (offset < spa_size(spa));
+	}
+
+put_mm:
+	up_write(&mm->mmap_lock);
+
+	return ret_addr;
+}
+
+/**
+ * sp_make_share_kva_to_task() - Share kernel memory to current task.
+ * @kva: the VA of shared kernel memory
+ * @size: the size of area to share, should be aligned properly
+ * @sp_flags: the flags for the opreation
+ *
+ * Return:
+ * * if succeed, return the shared user address to start at.
+ * * if fail, return the pointer of -errno.
+ */
+static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, unsigned long sp_flags)
+{
+	void *uva;
+	struct sp_area *spa;
+	struct spg_proc_stat *stat;
+	unsigned long prot = PROT_READ | PROT_WRITE;
+
+	down_write(&sp_group_sem);
+	stat = sp_init_process_stat(current, current->mm, spg_none);
+	up_write(&sp_group_sem);
+	if (IS_ERR(stat)) {
+		pr_err_ratelimited("k2u_task init process stat failed %lx\n",
+				PTR_ERR(stat));
+		return stat;
+	}
+
+	spa = sp_alloc_area(size, sp_flags, spg_none, SPA_TYPE_K2TASK, current->tgid);
+	if (IS_ERR(spa)) {
+		pr_err_ratelimited("alloc spa failed in k2u_task (potential no enough virtual memory when -75): %ld\n",
+				PTR_ERR(spa));
+		return spa;
+	}
+
+	spa->kva = kva;
+
+	uva = (void *)sp_remap_kva_to_vma(kva, spa, current->mm, prot);
+	__sp_area_drop(spa);
+	if (IS_ERR(uva))
+		pr_err("remap k2u to task failed %ld\n", PTR_ERR(uva));
+	else {
+		update_spg_proc_stat(size, true, stat, SPA_TYPE_K2TASK);
+		spa->mm = current->mm;
+	}
+
+	return uva;
+}
+
+/**
+ * Share kernel memory to a spg, the current process must be in that group
+ * @kva: the VA of shared kernel memory
+ * @size: the size of area to share, should be aligned properly
+ * @sp_flags: the flags for the opreation
+ * @spg: the sp group to be shared with
+ *
+ * Return: the shared user address to start at
+ */
+static void *sp_make_share_kva_to_spg(unsigned long kva, unsigned long size,
+				      unsigned long sp_flags, struct sp_group *spg)
+{
+	struct sp_area *spa;
+	struct mm_struct *mm;
+	struct sp_group_node *spg_node;
+	void *uva = ERR_PTR(-ENODEV);
+
+	down_read(&spg->rw_lock);
+	spa = sp_alloc_area(size, sp_flags, spg, SPA_TYPE_K2SPG, current->tgid);
+	if (IS_ERR(spa)) {
+		up_read(&spg->rw_lock);
+		pr_err_ratelimited("alloc spa failed in k2u_spg (potential no enough virtual memory when -75): %ld\n",
+				PTR_ERR(spa));
+		return spa;
+	}
+
+	spa->kva = kva;
+
+	list_for_each_entry(spg_node, &spg->procs, proc_node) {
+		mm = spg_node->master->mm;
+		uva = (void *)sp_remap_kva_to_vma(kva, spa, mm, spg_node->prot);
+		if (IS_ERR(uva)) {
+			pr_err("remap k2u to spg failed %ld\n", PTR_ERR(uva));
+			__sp_free(spg, spa->va_start, spa_size(spa), mm);
+			goto out;
+		}
+	}
+
+out:
+	up_read(&spg->rw_lock);
+	__sp_area_drop(spa);
+	if (!IS_ERR(uva))
+		sp_update_process_stat(current, true, spa);
+
+	return uva;
+}
+
+static bool vmalloc_area_set_flag(unsigned long kva, unsigned long flags)
+{
+	struct vm_struct *area;
+
+	area = find_vm_area((void *)kva);
+	if (area) {
+		area->flags |= flags;
+		return true;
+	}
+
+	return false;
+}
+
+struct sp_k2u_context {
+	unsigned long kva;
+	unsigned long kva_aligned;
+	unsigned long size;
+	unsigned long size_aligned;
+	unsigned long sp_flags;
+	int spg_id;
+	bool to_task;
+	struct timespec64 start;
+	struct timespec64 end;
+};
+
+static void trace_sp_k2u_begin(struct sp_k2u_context *kc)
+{
+	if (!sysctl_sp_perf_k2u)
+		return;
+
+	ktime_get_ts64(&kc->start);
+}
+
+static void trace_sp_k2u_finish(struct sp_k2u_context *kc, void *uva)
+{
+	unsigned long cost;
+
+	if (!sysctl_sp_perf_k2u)
+		return;
+
+	ktime_get_ts64(&kc->end);
+
+	cost = SEC2US(kc->end.tv_sec - kc->start.tv_sec) +
+		NS2US(kc->end.tv_nsec - kc->start.tv_nsec);
+	if (cost >= (unsigned long)sysctl_sp_perf_k2u) {
+		pr_err("Task %s(%d/%d) sp_k2u returns 0x%lx consumes %luus, size is %luKB, size_aligned is %luKB, sp_flags is %lx, to_task is %d\n",
+		       current->comm, current->tgid, current->pid,
+		       (unsigned long)uva, cost, byte2kb(kc->size), byte2kb(kc->size_aligned),
+		       kc->sp_flags, kc->to_task);
+	}
+}
+
+static int sp_k2u_prepare(unsigned long kva, unsigned long size,
+	unsigned long sp_flags, int spg_id, struct sp_k2u_context *kc)
+{
+	int is_hugepage;
+	unsigned int page_size = PAGE_SIZE;
+	unsigned long kva_aligned, size_aligned;
+
+	trace_sp_k2u_begin(kc);
+
+	if (sp_flags & ~SP_DVPP) {
+		pr_err_ratelimited("k2u sp_flags %lx error\n", sp_flags);
+		return -EINVAL;
+	}
+
+	if (!current->mm) {
+		pr_err_ratelimited("k2u: kthread is not allowed\n");
+		return -EPERM;
+	}
+
+	is_hugepage = is_vmap_hugepage(kva);
+	if (is_hugepage > 0) {
+		sp_flags |= SP_HUGEPAGE;
+		page_size = PMD_SIZE;
+	} else if (is_hugepage == 0) {
+		/* do nothing */
+	} else {
+		pr_err_ratelimited("k2u kva is not vmalloc address\n");
+		return is_hugepage;
+	}
+
+	/* aligned down kva is convenient for caller to start with any valid kva */
+	kva_aligned = ALIGN_DOWN(kva, page_size);
+	size_aligned = ALIGN(kva + size, page_size) - kva_aligned;
+
+	if (!vmalloc_area_set_flag(kva_aligned, VM_SHAREPOOL)) {
+		pr_debug("k2u_task kva %lx is not valid\n", kva_aligned);
+		return -EINVAL;
+	}
+
+	kc->kva = kva;
+	kc->kva_aligned = kva_aligned;
+	kc->size = size;
+	kc->size_aligned = size_aligned;
+	kc->sp_flags = sp_flags;
+	kc->spg_id = spg_id;
+	kc->to_task = false;
+	return 0;
+}
+
+static int sp_check_k2task(struct sp_k2u_context *kc)
+{
+	int ret = 0;
+	int spg_id = kc->spg_id;
+
+	if (share_pool_group_mode == SINGLE_GROUP_MODE) {
+		struct sp_group *spg = get_first_group(current->mm);
+
+		if (!spg) {
+			if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT)
+				ret = -EINVAL;
+			else
+				kc->to_task = true;
+		} else {
+			if (spg_id != SPG_ID_DEFAULT && spg_id != spg->id)
+				ret = -EINVAL;
+			sp_group_drop(spg);
+		}
+	} else {
+		if (spg_id == SPG_ID_DEFAULT || spg_id == SPG_ID_NONE)
+			kc->to_task = true;
+	}
+	return ret;
+}
+
+static void *sp_k2u_finish(void *uva, struct sp_k2u_context *kc)
+{
+	if (IS_ERR(uva))
+		vmalloc_area_clr_flag(kc->kva_aligned, VM_SHAREPOOL);
+	else
+		uva = uva + (kc->kva - kc->kva_aligned);
+
+	trace_sp_k2u_finish(kc, uva);
+	sp_dump_stack();
+	return uva;
+}
+
 /**
  * sp_make_share_k2u() - Share kernel memory to current process or an sp_group.
  * @kva: the VA of shared kernel memory.
@@ -1616,7 +1982,43 @@ static int is_vmap_hugepage(unsigned long addr)
 void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			unsigned long sp_flags, int pid, int spg_id)
 {
-	return NULL;
+	void *uva;
+	int ret;
+	struct sp_k2u_context kc;
+
+	check_interrupt_context();
+
+	ret = sp_k2u_prepare(kva, size, sp_flags, spg_id, &kc);
+	if (ret)
+		return ERR_PTR(ret);
+
+	ret = sp_check_k2task(&kc);
+	if (ret) {
+		uva = ERR_PTR(ret);
+		goto out;
+	}
+
+	if (kc.to_task)
+		uva = sp_make_share_kva_to_task(kc.kva_aligned, kc.size_aligned, kc.sp_flags);
+	else {
+		struct sp_group *spg;
+
+		spg = __sp_find_spg(current->pid, kc.spg_id);
+		if (spg) {
+			ret = sp_check_caller_permission(spg, current->mm);
+			if (ret < 0) {
+				sp_group_drop(spg);
+				uva = ERR_PTR(ret);
+				goto out;
+			}
+			uva = sp_make_share_kva_to_spg(kc.kva_aligned, kc.size_aligned, kc.sp_flags, spg);
+			sp_group_drop(spg);
+		} else
+			uva = ERR_PTR(-ENODEV);
+	}
+
+out:
+	return sp_k2u_finish(uva, &kc);
 }
 EXPORT_SYMBOL_GPL(sp_make_share_k2u);
 

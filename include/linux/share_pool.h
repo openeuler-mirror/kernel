@@ -288,6 +288,14 @@ static inline void sp_dump_stack(void)
 		dump_stack();
 }
 
+static inline bool is_vmalloc_sharepool(unsigned long vm_flags)
+{
+	if (sp_is_enabled() && (vm_flags & VM_SHAREPOOL))
+		return true;
+
+	return false;
+}
+
 #else /* CONFIG_ASCEND_SHARE_POOL */
 
 static inline int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)

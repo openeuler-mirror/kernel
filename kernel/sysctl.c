@@ -3287,6 +3287,25 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero_ul,
 		.extra2		= &sysctl_sp_compact_interval_max,
 	},
+	{
+		/* 0: map_unlock, 1: map_lock */
+		.procname	= "share_pool_map_lock_enable",
+		.data		= &sysctl_share_pool_map_lock_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "sharepool_perf_k2u",
+		.data		= &sysctl_sp_perf_k2u,
+		.maxlen		= sizeof(sysctl_sp_perf_k2u),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &ten_thousand,
+	},
 #endif
 	{ }
 };

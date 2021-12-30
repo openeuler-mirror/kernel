@@ -28,6 +28,11 @@ struct notifier_block;		/* in notifier.h */
 #define VM_MAP_PUT_PAGES	0x00000200	/* put pages and free array in vfree */
 #define VM_NO_HUGE_VMAP		0x00000400	/* force PAGE_SIZE pte mapping */
 #define VM_HUGE_PAGES		0x00001000	/* used for vmalloc hugepages */
+#ifdef CONFIG_ASCEND_SHARE_POOL
+#define VM_SHAREPOOL		0x00002000      /* remapped to sharepool */
+#else
+#define VM_SHAREPOOL		0
+#endif
 
 /*
  * VM_KASAN is used slighly differently depending on CONFIG_KASAN_VMALLOC.

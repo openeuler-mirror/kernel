@@ -37,6 +37,7 @@
 #include <linux/pgtable.h>
 #include <linux/uaccess.h>
 #include <linux/hugetlb.h>
+#include <linux/share_pool.h>
 #include <asm/io.h>
 #include <asm/tlbflush.h>
 #include <asm/shmparam.h>
@@ -2619,6 +2620,12 @@ static void __vunmap(const void *addr, int deallocate_pages)
 	if (unlikely(!area)) {
 		WARN(1, KERN_ERR "Trying to vfree() nonexistent vm area (%p)\n",
 				addr);
+		return;
+	}
+
+	/* unmap a sharepool vm area will cause meamleak! */
+	if (is_vmalloc_sharepool(area->flags)) {
+		WARN(1, "Memory leak due to vfree() sharepool vm area (%p) !\n", addr);
 		return;
 	}
 
