@@ -257,6 +257,8 @@ extern bool mg_is_sharepool_addr(unsigned long addr);
 extern int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id);
 extern int sp_group_add_task(int pid, int spg_id);
 
+extern void sp_area_drop(struct vm_area_struct *vma);
+
 static inline bool sp_is_enabled(void)
 {
 	return static_branch_likely(&share_pool_enabled_key);
@@ -278,6 +280,12 @@ static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 		return true;
 
 	return false;
+}
+
+static inline void sp_dump_stack(void)
+{
+	if (sysctl_sp_debug_mode)
+		dump_stack();
 }
 
 #else /* CONFIG_ASCEND_SHARE_POOL */

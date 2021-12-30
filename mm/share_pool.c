@@ -84,6 +84,9 @@ static const int mdc_default_group_id = 1;
 /* share the uva to the whole group */
 static int __read_mostly enable_share_k2u_spg = 1;
 
+/* debug mode */
+int sysctl_sp_debug_mode;
+
 static int share_pool_group_mode = SINGLE_GROUP_MODE;
 
 static unsigned int sp_device_number;
@@ -495,32 +498,136 @@ static struct file *spa_file(struct sp_area *spa)
 		return spa->spg->file;
 }
 
+/* the caller should hold sp_area_lock */
+static void spa_inc_usage(struct sp_area *spa)
+{
+	enum spa_type type = spa->type;
+	unsigned long size = spa->real_size;
+	bool is_dvpp = spa->flags & SP_DVPP;
+	bool is_huge = spa->is_hugepage;
+
+	switch (type) {
+	case SPA_TYPE_ALLOC:
+		spa_stat.alloc_num += 1;
+		spa_stat.alloc_size += size;
+		update_spg_stat_alloc(size, true, is_huge, spa->spg->stat);
+		break;
+	case SPA_TYPE_K2TASK:
+		spa_stat.k2u_task_num += 1;
+		spa_stat.k2u_task_size += size;
+		update_spg_stat_k2u(size, true, spg_none->stat);
+		break;
+	case SPA_TYPE_K2SPG:
+		spa_stat.k2u_spg_num += 1;
+		spa_stat.k2u_spg_size += size;
+		update_spg_stat_k2u(size, true, spa->spg->stat);
+		break;
+	default:
+		WARN(1, "invalid spa type");
+	}
+
+	if (is_dvpp) {
+		spa_stat.dvpp_size += size;
+		spa_stat.dvpp_va_size += ALIGN(size, PMD_SIZE);
+	}
+
+	/*
+	 * all the calculations won't overflow due to system limitation and
+	 * parameter checking in sp_alloc_area()
+	 */
+	spa_stat.total_num += 1;
+	spa_stat.total_size += size;
+
+	if (spa->spg != spg_none) {
+		atomic_inc(&sp_overall_stat.spa_total_num);
+		atomic64_add(size, &sp_overall_stat.spa_total_size);
+	}
+}
+
+/* the caller should hold sp_area_lock */
+static void spa_dec_usage(struct sp_area *spa)
+{
+	enum spa_type type = spa->type;
+	unsigned long size = spa->real_size;
+	bool is_dvpp = spa->flags & SP_DVPP;
+	bool is_huge = spa->is_hugepage;
+
+	switch (type) {
+	case SPA_TYPE_ALLOC:
+		spa_stat.alloc_num -= 1;
+		spa_stat.alloc_size -= size;
+		update_spg_stat_alloc(size, false, is_huge, spa->spg->stat);
+		break;
+	case SPA_TYPE_K2TASK:
+		spa_stat.k2u_task_num -= 1;
+		spa_stat.k2u_task_size -= size;
+		update_spg_stat_k2u(size, false, spg_none->stat);
+		break;
+	case SPA_TYPE_K2SPG:
+		spa_stat.k2u_spg_num -= 1;
+		spa_stat.k2u_spg_size -= size;
+		update_spg_stat_k2u(size, false, spa->spg->stat);
+		break;
+	default:
+		WARN(1, "invalid spa type");
+	}
+
+	if (is_dvpp) {
+		spa_stat.dvpp_size -= size;
+		spa_stat.dvpp_va_size -= ALIGN(size, PMD_SIZE);
+	}
+
+	spa_stat.total_num -= 1;
+	spa_stat.total_size -= size;
+
+	if (spa->spg != spg_none) {
+		atomic_dec(&sp_overall_stat.spa_total_num);
+		atomic64_sub(spa->real_size, &sp_overall_stat.spa_total_size);
+	}
+}
+
+static void update_spg_proc_stat(unsigned long size, bool inc,
+	struct spg_proc_stat *stat, enum spa_type type)
+{
+	if (unlikely(!stat)) {
+		sp_dump_stack();
+		WARN(1, "null process stat\n");
+		return;
+	}
+
+	switch (type) {
+	case SPA_TYPE_ALLOC:
+		update_spg_proc_stat_alloc(size, inc, stat);
+		break;
+	case SPA_TYPE_K2TASK:
+	case SPA_TYPE_K2SPG:
+		update_spg_proc_stat_k2u(size, inc, stat);
+		break;
+	default:
+		WARN(1, "invalid stat type\n");
+	}
+}
+
+static void sp_update_process_stat(struct task_struct *tsk, bool inc,
+	struct sp_area *spa)
+{
+	struct spg_proc_stat *stat;
+	unsigned long size = spa->real_size;
+	enum spa_type type = spa->type;
+
+	down_write(&sp_group_sem);
+	stat = sp_init_process_stat(tsk, tsk->mm, spa->spg);
+	up_write(&sp_group_sem);
+	if (unlikely(IS_ERR(stat)))
+		return;
+
+	update_spg_proc_stat(size, inc, stat, type);
+}
+
 static inline void check_interrupt_context(void)
 {
 	if (unlikely(in_interrupt()))
 		panic("function can't be used in interrupt context\n");
-}
-
-static struct sp_group *create_spg(int spg_id)
-{
-	return NULL;
-}
-
-static bool is_online_node_id(int node_id)
-{
-	return node_id >= 0 && node_id < MAX_NUMNODES && node_online(node_id);
-}
-
-static bool is_device_addr(unsigned long addr)
-{
-	int i;
-
-	for (i = 0; i < sp_device_number; i++) {
-		if (addr >= sp_dev_va_start[i] &&
-		    addr < sp_dev_va_start[i] + sp_dev_va_size[i])
-			return true;
-	}
-	return false;
 }
 
 /**
@@ -555,6 +662,28 @@ int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num)
 }
 EXPORT_SYMBOL_GPL(mg_sp_group_id_by_pid);
 
+static bool is_online_node_id(int node_id)
+{
+	return node_id >= 0 && node_id < MAX_NUMNODES && node_online(node_id);
+}
+
+static bool is_device_addr(unsigned long addr)
+{
+	int i;
+
+	for (i = 0; i < sp_device_number; i++) {
+		if (addr >= sp_dev_va_start[i] &&
+		    addr < sp_dev_va_start[i] + sp_dev_va_size[i])
+			return true;
+	}
+	return false;
+}
+
+static struct sp_group *create_spg(int spg_id)
+{
+	return NULL;
+}
+
 int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 {
 	return 0;
@@ -567,9 +696,7 @@ int sp_group_add_task(int pid, int spg_id)
 }
 EXPORT_SYMBOL_GPL(sp_group_add_task);
 
-static void __sp_area_drop_locked(struct sp_area *spa)
-{
-}
+static void __sp_area_drop_locked(struct sp_area *spa);
 
 /**
  * mg_sp_group_del_task() - delete a process from a sp group.
@@ -594,6 +721,302 @@ int sp_group_del_task(int pid, int spg_id)
 	return mg_sp_group_del_task(pid, spg_id);
 }
 EXPORT_SYMBOL_GPL(sp_group_del_task);
+
+/* the caller must hold sp_area_lock */
+static void __insert_sp_area(struct sp_area *spa)
+{
+	struct rb_node **p = &sp_area_root.rb_node;
+	struct rb_node *parent = NULL;
+
+	while (*p) {
+		struct sp_area *tmp;
+
+		parent = *p;
+		tmp = rb_entry(parent, struct sp_area, rb_node);
+		if (spa->va_start < tmp->va_end)
+			p = &(*p)->rb_left;
+		else if (spa->va_end > tmp->va_start)
+			p = &(*p)->rb_right;
+		else
+			BUG();
+	}
+
+	rb_link_node(&spa->rb_node, parent, p);
+	rb_insert_color(&spa->rb_node, &sp_area_root);
+}
+
+/* The sp_area cache globals are protected by sp_area_lock */
+static struct rb_node *free_sp_area_cache;
+static unsigned long cached_hole_size;
+static unsigned long cached_vstart;  /* affected by SP_DVPP and sp_config_dvpp_range() */
+
+/**
+ * sp_alloc_area() - Allocate a region of VA from the share pool.
+ * @size: the size of VA to allocate.
+ * @flags: how to allocate the memory.
+ * @spg: the share group that the memory is allocated to.
+ * @type: the type of the region.
+ * @applier: the pid of the task which allocates the region.
+ *
+ * Return: a valid pointer for success, NULL on failure.
+ */
+static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
+				     struct sp_group *spg, enum spa_type type,
+				     pid_t applier)
+{
+	struct sp_area *spa, *first, *err;
+	struct rb_node *n;
+	unsigned long vstart = MMAP_SHARE_POOL_START;
+	unsigned long vend = MMAP_SHARE_POOL_16G_START;
+	unsigned long addr;
+	unsigned long size_align = ALIGN(size, PMD_SIZE); /* va aligned to 2M */
+	int device_id, node_id;
+
+	device_id = sp_flags_device_id(flags);
+	node_id = flags & SP_SPEC_NODE_ID ? sp_flags_node_id(flags) : device_id;
+
+	if (!is_online_node_id(node_id)) {
+		pr_err_ratelimited("invalid numa node id %d\n", node_id);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if ((flags & SP_DVPP)) {
+		if (!is_sp_dev_addr_enabled(device_id)) {
+			vstart = MMAP_SHARE_POOL_16G_START +
+				device_id * MMAP_SHARE_POOL_16G_SIZE;
+			vend = vstart + MMAP_SHARE_POOL_16G_SIZE;
+		} else {
+			vstart = sp_dev_va_start[device_id];
+			vend = vstart + sp_dev_va_size[device_id];
+		}
+	}
+
+	spa = __kmalloc_node(sizeof(struct sp_area), GFP_KERNEL, node_id);
+	if (unlikely(!spa))
+		return ERR_PTR(-ENOMEM);
+
+	spin_lock(&sp_area_lock);
+
+	/*
+	 * Invalidate cache if we have more permissive parameters.
+	 * cached_hole_size notes the largest hole noticed _below_
+	 * the sp_area cached in free_sp_area_cache: if size fits
+	 * into that hole, we want to scan from vstart to reuse
+	 * the hole instead of allocating above free_sp_area_cache.
+	 * Note that sp_free_area may update free_sp_area_cache
+	 * without updating cached_hole_size.
+	 */
+	if (!free_sp_area_cache || size_align < cached_hole_size ||
+	    vstart != cached_vstart) {
+		cached_hole_size = 0;
+		free_sp_area_cache = NULL;
+	}
+
+	/* record if we encounter less permissive parameters */
+	cached_vstart = vstart;
+
+	/* find starting point for our search */
+	if (free_sp_area_cache) {
+		first = rb_entry(free_sp_area_cache, struct sp_area, rb_node);
+		addr = first->va_end;
+		if (addr + size_align < addr) {
+			err = ERR_PTR(-EOVERFLOW);
+			goto error;
+		}
+	} else {
+		addr = vstart;
+		if (addr + size_align < addr) {
+			err = ERR_PTR(-EOVERFLOW);
+			goto error;
+		}
+
+		n = sp_area_root.rb_node;
+		first = NULL;
+
+		while (n) {
+			struct sp_area *tmp;
+
+			tmp = rb_entry(n, struct sp_area, rb_node);
+			if (tmp->va_end >= addr) {
+				first = tmp;
+				if (tmp->va_start <= addr)
+					break;
+				n = n->rb_left;
+			} else
+				n = n->rb_right;
+		}
+
+		if (!first)
+			goto found;
+	}
+
+	/* from the starting point, traverse areas until a suitable hole is found */
+	while (addr + size_align > first->va_start && addr + size_align <= vend) {
+		if (addr + cached_hole_size < first->va_start)
+			cached_hole_size = first->va_start - addr;
+		addr = first->va_end;
+		if (addr + size_align < addr) {
+			err = ERR_PTR(-EOVERFLOW);
+			goto error;
+		}
+
+		n = rb_next(&first->rb_node);
+		if (n)
+			first = rb_entry(n, struct sp_area, rb_node);
+		else
+			goto found;
+	}
+
+found:
+	if (addr + size_align > vend) {
+		err = ERR_PTR(-EOVERFLOW);
+		goto error;
+	}
+
+	spa->va_start = addr;
+	spa->va_end = addr + size_align;
+	spa->real_size = size;
+	spa->region_vstart = vstart;
+	spa->flags = flags;
+	spa->is_hugepage = (flags & SP_HUGEPAGE);
+	spa->is_dead = false;
+	spa->spg = spg;
+	atomic_set(&spa->use_count, 1);
+	spa->type = type;
+	spa->mm = NULL;
+	spa->kva = 0;   /* NULL pointer */
+	spa->applier = applier;
+	spa->node_id = node_id;
+	spa->device_id = device_id;
+
+	spa_inc_usage(spa);
+	__insert_sp_area(spa);
+	free_sp_area_cache = &spa->rb_node;
+	if (spa->spg != spg_none)
+		list_add_tail(&spa->link, &spg->spa_list);
+
+	spin_unlock(&sp_area_lock);
+
+	return spa;
+
+error:
+	spin_unlock(&sp_area_lock);
+	kfree(spa);
+	return err;
+}
+
+/* the caller should hold sp_area_lock */
+static struct sp_area *__find_sp_area_locked(unsigned long addr)
+{
+	struct rb_node *n = sp_area_root.rb_node;
+
+	while (n) {
+		struct sp_area *spa;
+
+		spa = rb_entry(n, struct sp_area, rb_node);
+		if (addr < spa->va_start) {
+			n = n->rb_left;
+		} else if (addr > spa->va_start) {
+			n = n->rb_right;
+		} else {
+			return spa;
+		}
+	}
+
+	return NULL;
+}
+
+static struct sp_area *__find_sp_area(unsigned long addr)
+{
+	struct sp_area *n;
+
+	spin_lock(&sp_area_lock);
+	n = __find_sp_area_locked(addr);
+	if (n)
+		atomic_inc(&n->use_count);
+	spin_unlock(&sp_area_lock);
+	return n;
+}
+
+/*
+ * Free the VA region starting from addr to the share pool
+ */
+static void sp_free_area(struct sp_area *spa)
+{
+	lockdep_assert_held(&sp_area_lock);
+
+	if (free_sp_area_cache) {
+		struct sp_area *cache;
+
+		cache = rb_entry(free_sp_area_cache, struct sp_area, rb_node);
+		if (spa->va_start <= cache->va_start) {
+			free_sp_area_cache = rb_prev(&spa->rb_node);
+			/*
+			 * the new cache node may be changed to another region,
+			 * i.e. from DVPP region to normal region
+			 */
+			if (free_sp_area_cache) {
+				cache = rb_entry(free_sp_area_cache,
+						 struct sp_area, rb_node);
+				cached_vstart = cache->region_vstart;
+			}
+			/*
+			 * We don't try to update cached_hole_size,
+			 * but it won't go very wrong.
+			 */
+		}
+	}
+
+	spa_dec_usage(spa);
+	if (spa->spg != spg_none)
+		list_del(&spa->link);
+
+	rb_erase(&spa->rb_node, &sp_area_root);
+	RB_CLEAR_NODE(&spa->rb_node);
+	kfree(spa);
+}
+
+static void __sp_area_drop_locked(struct sp_area *spa)
+{
+	/*
+	 * Considering a situation where task A and B are in the same spg.
+	 * A is exiting and calling remove_vma(). Before A calls this func,
+	 * B calls sp_free() to free the same spa. So spa maybe NULL when A
+	 * calls this func later.
+	 */
+	if (!spa)
+		return;
+
+	if (atomic_dec_and_test(&spa->use_count))
+		sp_free_area(spa);
+}
+
+static void __sp_area_drop(struct sp_area *spa)
+{
+	spin_lock(&sp_area_lock);
+	__sp_area_drop_locked(spa);
+	spin_unlock(&sp_area_lock);
+}
+
+void sp_area_drop(struct vm_area_struct *vma)
+{
+	struct sp_area *spa;
+
+	if (!(vma->vm_flags & VM_SHARE_POOL))
+		return;
+
+	/*
+	 * Considering a situation where task A and B are in the same spg.
+	 * A is exiting and calling remove_vma() -> ... -> sp_area_drop().
+	 * Concurrently, B is calling sp_free() to free the same spa.
+	 * __find_sp_area_locked() and __sp_area_drop_locked() should be
+	 * an atomic operation.
+	 */
+	spin_lock(&sp_area_lock);
+	spa = __find_sp_area_locked(vma->vm_start);
+	__sp_area_drop_locked(spa);
+	spin_unlock(&sp_area_lock);
+}
 
 /**
  * sp_free() - Free the memory allocated by sp_alloc().

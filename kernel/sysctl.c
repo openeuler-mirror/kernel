@@ -71,6 +71,7 @@
 #include <linux/coredump.h>
 #include <linux/latencytop.h>
 #include <linux/pid.h>
+#include <linux/share_pool.h>
 
 #include "../lib/kstrtox.h"
 
@@ -3256,6 +3257,17 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0600,
 		.proc_handler	= proc_shrink_node_caches,
 		.extra1		= SYSCTL_ZERO,
+	},
+#endif
+#ifdef CONFIG_ASCEND_SHARE_POOL
+	{
+		.procname	= "sharepool_debug_mode",
+		.data		= &sysctl_sp_debug_mode,
+		.maxlen		= sizeof(sysctl_sp_debug_mode),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
 	},
 #endif
 	{ }
