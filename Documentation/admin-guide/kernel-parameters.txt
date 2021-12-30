@@ -1254,6 +1254,15 @@
 			Warning: use of this parameter will taint the kernel
 			and may cause unknown problems.
 
+	fpi_to_tail=off
+			[KNL] Place pages to front in __free_pages_core().
+			This kernel start-up parameter can be just used as
+			"fpi_to_tail=off", which means memory is online to
+			the front of freelist. Dynamic open is not supportted,
+			in other words, "fpi_to_tail=on" will be ignored by
+			kernel. This is just an ugly solution for circumvention
+			for some latent bugs revealed by "place pages to tail".
+
 	ftrace=[tracer]
 			[FTRACE] will set and start the specified tracer
 			as early as possible in order to facilitate early

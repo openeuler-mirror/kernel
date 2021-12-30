@@ -102,6 +102,17 @@ typedef int __bitwise fpi_t;
  */
 #define FPI_TO_TAIL		((__force fpi_t)BIT(1))
 
+static bool fpi_to_tail = true;
+
+static int __init early_fpi_to_tail(char *str)
+{
+	if (str && !strcmp(str, "off"))
+		fpi_to_tail = false;
+
+	return 0;
+}
+early_param("fpi_to_tail", early_fpi_to_tail);
+
 /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
 static DEFINE_MUTEX(pcp_batch_high_lock);
 #define MIN_PERCPU_PAGELIST_FRACTION	(8)
@@ -1342,12 +1353,16 @@ void __free_pages_core(struct page *page, unsigned int order)
 	}
 	__ClearPageReserved(p);
 	set_page_count(p, 0);
-
-	/*
-	 * Bypass PCP and place fresh pages right to the tail, primarily
-	 * relevant for memory onlining.
-	 */
-	__free_pages_ok(page, order, FPI_TO_TAIL);
+	if (fpi_to_tail) {
+		/*
+		 * Bypass PCP and place fresh pages right to the tail, primarily
+		 * relevant for memory onlining.
+		 */
+		__free_pages_ok(page, order, FPI_TO_TAIL);
+	} else {
+		set_page_refcounted(page);
+		__free_pages(page, order);
+	}
 }
 
 #if defined(CONFIG_HAVE_ARCH_EARLY_PFN_TO_NID) || \
