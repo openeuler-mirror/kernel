@@ -316,7 +316,10 @@ int mdev_device_create(struct kobject *kobj,
 	mdev->dev.parent  = dev;
 	mdev->dev.bus     = &mdev_bus_type;
 	mdev->dev.release = mdev_device_release;
-	dev_set_name(&mdev->dev, "%pUl", uuid);
+	ret = dev_set_name(&mdev->dev, "%pUl", uuid);
+	if (ret)
+		goto ops_create_fail;
+
 	mdev->dev.groups = parent->ops->mdev_attr_groups;
 	mdev->type_kobj = kobj;
 
