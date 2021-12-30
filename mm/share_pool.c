@@ -1018,6 +1018,63 @@ void sp_area_drop(struct vm_area_struct *vma)
 	spin_unlock(&sp_area_lock);
 }
 
+int sysctl_sp_compact_enable;
+unsigned long sysctl_sp_compact_interval = 30UL;
+unsigned long sysctl_sp_compact_interval_max = 1000UL;
+static unsigned long compact_last_jiffies;
+static unsigned long compact_daemon_status;
+#define COMPACT_START	1
+#define COMPACT_STOP	0
+
+static void sp_compact_nodes(struct work_struct *work)
+{
+	sysctl_compaction_handler(NULL, 1, NULL, NULL, NULL);
+
+	kfree(work);
+
+	compact_last_jiffies = jiffies;
+	cmpxchg(&compact_daemon_status, COMPACT_START, COMPACT_STOP);
+}
+
+static void sp_add_work_compact(void)
+{
+	struct work_struct *compact_work;
+
+	if (!sysctl_sp_compact_enable)
+		return;
+
+	/* experimental compaction time: 4GB->1.7s, 8GB->3.4s */
+	if (!time_after(jiffies,
+		compact_last_jiffies + sysctl_sp_compact_interval * HZ))
+		return;
+
+	if (cmpxchg(&compact_daemon_status, COMPACT_STOP, COMPACT_START) ==
+		    COMPACT_START)
+		return;
+
+	compact_work = kzalloc(sizeof(*compact_work), GFP_KERNEL);
+	if (!compact_work)
+		return;
+
+	INIT_WORK(compact_work, sp_compact_nodes);
+	schedule_work(compact_work);
+}
+
+static void sp_try_to_compact(void)
+{
+	unsigned long totalram;
+	unsigned long freeram;
+
+	totalram = totalram_pages();
+	freeram = global_zone_page_state(NR_FREE_PAGES);
+
+	/* free < total / 3 */
+	if ((freeram + (freeram << 1)) > totalram)
+		return;
+
+	sp_add_work_compact();
+}
+
 /**
  * sp_free() - Free the memory allocated by sp_alloc().
  * @addr: the starting VA of the memory.
