@@ -96,6 +96,7 @@
 #include <linux/posix-timers.h>
 #include <linux/time_namespace.h>
 #include <linux/resctrl.h>
+#include <linux/share_pool.h>
 #include <trace/events/oom.h>
 #include "internal.h"
 #include "fd.h"
@@ -3297,6 +3298,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_SECCOMP_CACHE_DEBUG
 	ONE("seccomp_cache", S_IRUSR, proc_pid_seccomp_cache),
 #endif
+#ifdef CONFIG_ASCEND_SHARE_POOL
+	ONE("sp_group", 0444, proc_sp_group_state),
+#endif
 };
 
 static int proc_tgid_base_readdir(struct file *file, struct dir_context *ctx)
@@ -3630,6 +3634,9 @@ static const struct pid_entry tid_base_stuff[] = {
 #endif
 #ifdef CONFIG_SECCOMP_CACHE_DEBUG
 	ONE("seccomp_cache", S_IRUSR, proc_pid_seccomp_cache),
+#endif
+#ifdef CONFIG_ASCEND_SHARE_POOL
+	ONE("sp_group", 0444, proc_sp_group_state),
 #endif
 };
 
