@@ -1358,7 +1358,61 @@ static void __sp_walk_page_free(struct sp_walk_data *data)
  */
 void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 {
-	return NULL;
+	int ret = 0;
+	struct mm_struct *mm = current->mm;
+	void *p = ERR_PTR(-ESRCH);
+	struct sp_walk_data sp_walk_data = {
+		.page_count = 0,
+	};
+	struct vm_struct *area;
+
+	check_interrupt_context();
+
+	if (mm == NULL) {
+		pr_err("u2k: kthread is not allowed\n");
+		return ERR_PTR(-EPERM);
+	}
+
+	down_write(&mm->mmap_lock);
+	if (unlikely(mm->core_state)) {
+		up_write(&mm->mmap_lock);
+		pr_err("u2k: encountered coredump, abort\n");
+		return p;
+	}
+
+	ret = __sp_walk_page_range(uva, size, mm, &sp_walk_data);
+	if (ret) {
+		pr_err_ratelimited("walk page range failed %d\n", ret);
+		up_write(&mm->mmap_lock);
+		return ERR_PTR(ret);
+	}
+
+	if (sp_walk_data.is_hugepage)
+		p = vmap_hugepage(sp_walk_data.pages, sp_walk_data.page_count,
+				  VM_MAP, PAGE_KERNEL);
+	else
+		p = vmap(sp_walk_data.pages, sp_walk_data.page_count, VM_MAP,
+			 PAGE_KERNEL);
+	up_write(&mm->mmap_lock);
+
+	if (!p) {
+		pr_err("vmap(huge) in u2k failed\n");
+		__sp_walk_page_free(&sp_walk_data);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	p = p + (uva - sp_walk_data.uva_aligned);
+
+	/*
+	 * kva p may be used later in k2u. Since p comes from uva originally,
+	 * it's reasonable to add flag VM_USERMAP so that p can be remapped
+	 * into userspace again.
+	 */
+	area = find_vm_area(p);
+	area->flags |= VM_USERMAP;
+
+	kvfree(sp_walk_data.pages);
+	return p;
 }
 EXPORT_SYMBOL_GPL(sp_make_share_u2k);
 
