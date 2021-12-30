@@ -56,7 +56,6 @@ static int tee_open(struct inode *inode, struct file *filp)
 
 	kref_init(&ctx->refcount);
 	ctx->teedev = teedev;
-	INIT_LIST_HEAD(&ctx->list_shm);
 	filp->private_data = ctx;
 	rc = teedev->desc->ops->open(ctx);
 	if (rc)
