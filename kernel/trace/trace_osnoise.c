@@ -767,7 +767,7 @@ void __weak osnoise_arch_unregister(void)
  * This function hooks the IRQ related callbacks to the respective trace
  * events.
  */
-int hook_irq_events(void)
+static int hook_irq_events(void)
 {
 	int ret;
 
@@ -799,7 +799,7 @@ out_err:
  * This function unhooks the IRQ related callbacks to the respective trace
  * events.
  */
-void unhook_irq_events(void)
+static void unhook_irq_events(void)
 {
 	osnoise_arch_unregister();
 	unregister_trace_irq_handler_exit(trace_irqexit_callback, NULL);
@@ -816,7 +816,7 @@ void unhook_irq_events(void)
  * arrival time. The delta_start is used to compute the duration at the
  * softirq exit handler. See cond_move_softirq_delta_start().
  */
-void trace_softirq_entry_callback(void *data, unsigned int vec_nr)
+static void trace_softirq_entry_callback(void *data, unsigned int vec_nr)
 {
 	struct osnoise_variables *osn_var = this_cpu_osn_var();
 
@@ -839,7 +839,7 @@ void trace_softirq_entry_callback(void *data, unsigned int vec_nr)
  * Computes the duration of the softirq noise, and trace it. Also discounts the
  * interference from other sources of noise could be currently being accounted.
  */
-void trace_softirq_exit_callback(void *data, unsigned int vec_nr)
+static void trace_softirq_exit_callback(void *data, unsigned int vec_nr)
 {
 	struct osnoise_variables *osn_var = this_cpu_osn_var();
 	int duration;
@@ -980,7 +980,7 @@ thread_exit(struct osnoise_variables *osn_var, struct task_struct *t)
  * This function is hooked to the sched:sched_switch trace event, and it is
  * used to record the beginning and to report the end of a thread noise window.
  */
-void
+static void
 trace_sched_switch_callback(void *data, bool preempt, struct task_struct *p,
 			    struct task_struct *n)
 {
@@ -999,7 +999,7 @@ trace_sched_switch_callback(void *data, bool preempt, struct task_struct *p,
  * Hook the osnoise tracer callbacks to handle the noise from other
  * threads on the necessary kernel events.
  */
-int hook_thread_events(void)
+static int hook_thread_events(void)
 {
 	int ret;
 
@@ -1016,7 +1016,7 @@ int hook_thread_events(void)
  * Unook the osnoise tracer callbacks to handle the noise from other
  * threads on the necessary kernel events.
  */
-void unhook_thread_events(void)
+static void unhook_thread_events(void)
 {
 	unregister_trace_sched_switch(trace_sched_switch_callback, NULL);
 }
@@ -1028,7 +1028,8 @@ void unhook_thread_events(void)
  * values will be used later to compute the diff betwneen the statistics
  * before and after the osnoise sampling.
  */
-void save_osn_sample_stats(struct osnoise_variables *osn_var, struct osnoise_sample *s)
+static void
+save_osn_sample_stats(struct osnoise_variables *osn_var, struct osnoise_sample *s)
 {
 	s->nmi_count = osn_var->nmi.count;
 	s->irq_count = osn_var->irq.count;
@@ -1043,7 +1044,8 @@ void save_osn_sample_stats(struct osnoise_variables *osn_var, struct osnoise_sam
  * statistics. The struct osnoise_sample *s contains the statistics saved via
  * save_osn_sample_stats() before the osnoise sampling.
  */
-void diff_osn_sample_stats(struct osnoise_variables *osn_var, struct osnoise_sample *s)
+static void
+diff_osn_sample_stats(struct osnoise_variables *osn_var, struct osnoise_sample *s)
 {
 	s->nmi_count = osn_var->nmi.count - s->nmi_count;
 	s->irq_count = osn_var->irq.count - s->irq_count;
