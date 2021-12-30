@@ -867,6 +867,22 @@ static bool is_device_addr(unsigned long addr)
 	return false;
 }
 
+static loff_t addr_offset(struct sp_area *spa)
+{
+	unsigned long addr;
+
+	if (unlikely(!spa)) {
+		WARN(1, "invalid spa when calculate addr offset\n");
+		return 0;
+	}
+	addr = spa->va_start;
+
+	if (!is_device_addr(addr))
+		return (loff_t)(addr - MMAP_SHARE_POOL_START);
+
+	return (loff_t)(addr - sp_dev_va_start[spa->device_id]);
+}
+
 static struct sp_group *create_spg(int spg_id)
 {
 	int ret;
@@ -1327,6 +1343,161 @@ static void sp_try_to_compact(void)
 	sp_add_work_compact();
 }
 
+/*
+ * The function calls of do_munmap() won't change any non-atomic member
+ * of struct sp_group. Please review the following chain:
+ * do_munmap -> remove_vma_list -> remove_vma -> sp_area_drop ->
+ * __sp_area_drop_locked -> sp_free_area
+ */
+static void sp_munmap(struct mm_struct *mm, unsigned long addr,
+			   unsigned long size)
+{
+	int err;
+
+	down_write(&mm->mmap_lock);
+	if (unlikely(mm->core_state)) {
+		up_write(&mm->mmap_lock);
+		pr_info("munmap: encoutered coredump\n");
+		return;
+	}
+
+	err = do_munmap(mm, addr, size, NULL);
+	/* we are not supposed to fail */
+	if (err)
+		pr_err("failed to unmap VA %pK when sp munmap\n", (void *)addr);
+
+	up_write(&mm->mmap_lock);
+}
+
+static void __sp_free(struct sp_group *spg, unsigned long addr,
+		      unsigned long size, struct mm_struct *stop)
+{
+	struct mm_struct *mm;
+	struct sp_group_node *spg_node = NULL;
+
+	list_for_each_entry(spg_node, &spg->procs, proc_node) {
+		mm = spg_node->master->mm;
+		if (mm == stop)
+			break;
+		sp_munmap(mm, addr, size);
+	}
+}
+
+/* Free the memory of the backing shmem or hugetlbfs */
+static void sp_fallocate(struct sp_area *spa)
+{
+	int ret;
+	unsigned long mode = FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE;
+	unsigned long offset = addr_offset(spa);
+
+	ret = vfs_fallocate(spa_file(spa), mode, offset, spa_size(spa));
+	if (ret)
+		WARN(1, "sp fallocate failed %d\n", ret);
+}
+
+static void sp_free_unmap_fallocate(struct sp_area *spa)
+{
+	if (spa->spg != spg_none) {
+		down_read(&spa->spg->rw_lock);
+		__sp_free(spa->spg, spa->va_start, spa_size(spa), NULL);
+		sp_fallocate(spa);
+		up_read(&spa->spg->rw_lock);
+	} else {
+		sp_munmap(current->mm, spa->va_start, spa_size(spa));
+		sp_fallocate(spa);
+	}
+}
+
+static int sp_check_caller_permission(struct sp_group *spg, struct mm_struct *mm)
+{
+	int ret = 0;
+
+	down_read(&spg->rw_lock);
+	if (!is_process_in_group(spg, mm))
+		ret = -EPERM;
+	up_read(&spg->rw_lock);
+	return ret;
+}
+
+
+#define FREE_CONT	1
+#define FREE_END	2
+
+struct sp_free_context {
+	unsigned long addr;
+	struct sp_area *spa;
+	int state;
+};
+
+/* when success, __sp_area_drop(spa) should be used */
+static int sp_free_get_spa(struct sp_free_context *fc)
+{
+	int ret = 0;
+	unsigned long addr = fc->addr;
+	struct sp_area *spa;
+
+	fc->state = FREE_CONT;
+
+	spa = __find_sp_area(addr);
+	if (!spa) {
+		pr_debug("sp free invalid input addr %lx\n", addr);
+		return -EINVAL;
+	}
+
+	if (spa->type != SPA_TYPE_ALLOC) {
+		ret = -EINVAL;
+		pr_debug("sp free failed, %lx is not sp alloc addr\n", addr);
+		goto drop_spa;
+	}
+	fc->spa = spa;
+
+	if (spa->spg != spg_none) {
+		/*
+		 * Access control: an sp addr can only be freed by
+		 * 1. another task in the same spg
+		 * 2. a kthread
+		 *
+		 * a passthrough addr can only be freed by the applier process
+		 */
+		if (!current->mm)
+			goto check_spa;
+
+		ret = sp_check_caller_permission(spa->spg, current->mm);
+		if (ret < 0)
+			goto drop_spa;
+
+check_spa:
+		down_write(&spa->spg->rw_lock);
+		if (!spg_valid(spa->spg)) {
+			fc->state = FREE_END;
+			up_write(&spa->spg->rw_lock);
+			goto drop_spa;
+			/* we must return success(0) in this situation */
+		}
+		/* the life cycle of spa has a direct relation with sp group */
+		if (unlikely(spa->is_dead)) {
+			up_write(&spa->spg->rw_lock);
+			pr_err_ratelimited("unexpected double sp free\n");
+			dump_stack();
+			ret = -EINVAL;
+			goto drop_spa;
+		}
+		spa->is_dead = true;
+		up_write(&spa->spg->rw_lock);
+
+	} else {
+		if (current->tgid != spa->applier) {
+			ret = -EPERM;
+			goto drop_spa;
+		}
+	}
+	return 0;
+
+drop_spa:
+	__sp_area_drop(spa);
+	return ret;
+}
+
 /**
  * sp_free() - Free the memory allocated by sp_alloc().
  * @addr: the starting VA of the memory.
@@ -1338,7 +1509,30 @@ static void sp_try_to_compact(void)
  */
 int sp_free(unsigned long addr)
 {
-	return 0;
+	int ret = 0;
+	struct sp_free_context fc = {
+		.addr = addr,
+	};
+
+	check_interrupt_context();
+
+	ret = sp_free_get_spa(&fc);
+	if (ret || fc.state == FREE_END)
+		goto out;
+
+	sp_free_unmap_fallocate(fc.spa);
+
+	/* current->mm == NULL: allow kthread */
+	if (current->mm == NULL)
+		atomic64_sub(fc.spa->real_size, &kthread_stat.alloc_size);
+	else
+		sp_update_process_stat(current, false, fc.spa);
+
+	__sp_area_drop(fc.spa);  /* match __find_sp_area in sp_free_get_spa */
+out:
+	sp_dump_stack();
+	sp_try_to_compact();
+	return ret;
 }
 EXPORT_SYMBOL_GPL(sp_free);
 
