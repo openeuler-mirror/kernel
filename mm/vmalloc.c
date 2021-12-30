@@ -43,7 +43,7 @@
 #include "pgalloc-track.h"
 
 #ifdef CONFIG_HAVE_ARCH_HUGE_VMALLOC
-static bool __ro_after_init vmap_allow_huge = true;
+static bool __ro_after_init vmap_allow_huge = IS_ENABLED(CONFIG_HUGE_VMALLOC_DEFAULT_ENABLED);
 
 static int __init set_nohugevmalloc(char *str)
 {
@@ -51,6 +51,22 @@ static int __init set_nohugevmalloc(char *str)
 	return 0;
 }
 early_param("nohugevmalloc", set_nohugevmalloc);
+
+static int __init set_hugevmalloc(char *str)
+{
+	if (!str)
+		return -EINVAL;
+
+	if (!strcmp(str, "on"))
+		vmap_allow_huge = true;
+	else if (!strcmp(str, "off"))
+		vmap_allow_huge = false;
+	else
+		return -EINVAL;
+
+	return 0;
+}
+early_param("hugevmalloc", set_hugevmalloc);
 #else /* CONFIG_HAVE_ARCH_HUGE_VMALLOC */
 static const bool vmap_allow_huge = false;
 #endif	/* CONFIG_HAVE_ARCH_HUGE_VMALLOC */

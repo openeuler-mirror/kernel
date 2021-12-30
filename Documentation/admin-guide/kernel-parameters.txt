@@ -1587,6 +1587,17 @@
 			on:  enable the feature
 			off: disable the feature
 
+	hugevmalloc	[PPC] Requires CONFIG_HAVE_ARCH_HUGE_VMALLOC
+			Format: { on | off }
+			Default set by CONFIG_HUGE_VMALLOC_DEFAULT_ENABLED.
+
+			This parameter enables/disables kernel huge vmalloc
+			mappings at boot time.
+
+			on:  Enable the feature
+			off: Disable the feature
+			     Equivalent to: nohugevmalloc
+
 	hung_task_panic=
 			[KNL] Should the hung task detector generate panics.
 			Format: 0 | 1

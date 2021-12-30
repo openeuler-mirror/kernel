@@ -284,6 +284,13 @@ config ARCH_ENABLE_HUGEPAGE_MIGRATION
 config ARCH_ENABLE_THP_MIGRATION
 	bool
 
+config HUGE_VMALLOC_DEFAULT_ENABLED
+	bool "Enable huge vmalloc mappings by default"
+	depends on HAVE_ARCH_HUGE_VMALLOC
+	help
+	  Enable huge vmalloc mappings by default, this value could be overridden
+	  by hugevmalloc=off|on.
+
 config CONTIG_ALLOC
 	def_bool (MEMORY_ISOLATION && COMPACTION) || CMA
 
