@@ -4139,6 +4139,26 @@ static void __init proc_sharepool_init(void)
 
 /*** End of tatistical and maintenance functions ***/
 
+bool sp_check_addr(unsigned long addr)
+{
+	if (sp_is_enabled() && is_sharepool_addr(addr) &&
+	    !check_aoscore_process(current)) {
+		sp_dump_stack();
+		return true;
+	} else
+		return false;
+}
+
+bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
+{
+	if (sp_is_enabled() && is_sharepool_addr(addr) &&
+	    !check_aoscore_process(current) && !(flags & MAP_SHARE_POOL)) {
+		sp_dump_stack();
+		return true;
+	} else
+		return false;
+}
+
 #define MM_WOULD_FREE	1
 
 /*
