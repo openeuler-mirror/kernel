@@ -4227,6 +4227,11 @@ static int kvm_vcpu_ioctl_nmi(struct kvm_vcpu *vcpu)
 
 static int kvm_vcpu_ioctl_smi(struct kvm_vcpu *vcpu)
 {
+	if (is_smm(vcpu)) {
+		vcpu->arch.hflags &= ~HF_SMM_MASK;
+		vcpu->arch.smi_pending = 0;
+	}
+
 	kvm_make_request(KVM_REQ_SMI, vcpu);
 
 	return 0;
