@@ -3315,6 +3315,15 @@ static struct ctl_table vm_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= &ten_thousand,
 	},
+	{
+		.procname	= "sharepool_ac_mode",
+		.data		= &sysctl_ac_mode,
+		.maxlen		= sizeof(sysctl_ac_mode),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
 #endif
 	{ }
 };
