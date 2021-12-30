@@ -89,6 +89,8 @@ int sysctl_sp_debug_mode;
 
 static int share_pool_group_mode = SINGLE_GROUP_MODE;
 
+static int system_group_count;
+
 static unsigned int sp_device_number;
 static unsigned long sp_dev_va_start[MAX_DEVID];
 static unsigned long sp_dev_va_size[MAX_DEVID];
@@ -630,6 +632,136 @@ static inline void check_interrupt_context(void)
 		panic("function can't be used in interrupt context\n");
 }
 
+static void free_sp_group_id(int spg_id)
+{
+	/* ida operation is protected by an internal spin_lock */
+	if (spg_id >= SPG_ID_AUTO_MIN && spg_id <= SPG_ID_AUTO_MAX)
+		ida_free(&sp_group_id_ida, spg_id);
+}
+
+static void free_sp_group(struct sp_group *spg)
+{
+	fput(spg->file);
+	fput(spg->file_hugetlb);
+	free_spg_stat(spg->id);
+	down_write(&sp_group_sem);
+	idr_remove(&sp_group_idr, spg->id);
+	up_write(&sp_group_sem);
+	free_sp_group_id((unsigned int)spg->id);
+	kfree(spg);
+	system_group_count--;
+	WARN(system_group_count < 0, "unexpected group count\n");
+}
+
+static void sp_group_drop(struct sp_group *spg)
+{
+	if (atomic_dec_and_test(&spg->use_count))
+		free_sp_group(spg);
+}
+
+/* use with put_task_struct(task) */
+static int get_task(int pid, struct task_struct **task)
+{
+	struct task_struct *tsk;
+
+	rcu_read_lock();
+	tsk = find_task_by_vpid(pid);
+	if (!tsk || (tsk->flags & PF_EXITING)) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+	get_task_struct(tsk);
+	rcu_read_unlock();
+
+	*task = tsk;
+	return 0;
+}
+
+static struct sp_group *get_first_group(struct mm_struct *mm)
+{
+	struct sp_group *spg = NULL;
+	struct sp_group_master *master = mm->sp_group_master;
+
+	if (master && master->count >= 1) {
+		struct sp_group_node *spg_node = NULL;
+
+		spg_node = list_first_entry(&master->node_list,
+					struct sp_group_node, group_node);
+		spg = spg_node->spg;
+
+		/* don't revive a dead group */
+		if (!spg || !atomic_inc_not_zero(&spg->use_count))
+			spg = NULL;
+	}
+
+	return spg;
+}
+
+/*
+ * the caller must:
+ * 1. hold spg->rw_lock
+ * 2. ensure no concurrency problem for mm_struct
+ */
+static struct sp_group_node *is_process_in_group(struct sp_group *spg,
+						 struct mm_struct *mm)
+{
+	struct sp_group_node *spg_node;
+
+	list_for_each_entry(spg_node, &spg->procs, proc_node)
+		if (spg_node->master->mm == mm)
+			return spg_node;
+
+	return NULL;
+}
+
+/* user must call sp_group_drop() after use */
+static struct sp_group *__sp_find_spg_locked(int pid, int spg_id)
+{
+	struct sp_group *spg = NULL;
+	struct task_struct *tsk = NULL;
+	int ret = 0;
+
+	ret = get_task(pid, &tsk);
+	if (ret)
+		return NULL;
+
+	if (spg_id == SPG_ID_DEFAULT) {
+		/*
+		 * Once we encounter a concurrency problem here.
+		 * To fix it, we believe get_task_mm() and mmput() is too
+		 * heavy because we just get the pointer of sp_group.
+		 */
+		task_lock(tsk);
+		if (tsk->mm == NULL)
+			spg = NULL;
+		else
+			spg = get_first_group(tsk->mm);
+		task_unlock(tsk);
+	} else {
+		spg = idr_find(&sp_group_idr, spg_id);
+		/* don't revive a dead group */
+		if (!spg || !atomic_inc_not_zero(&spg->use_count))
+			goto fail;
+	}
+
+	put_task_struct(tsk);
+	return spg;
+
+fail:
+	put_task_struct(tsk);
+	return NULL;
+}
+
+static struct sp_group *__sp_find_spg(int pid, int spg_id)
+{
+	struct sp_group *spg;
+
+	down_read(&sp_group_sem);
+	spg = __sp_find_spg_locked(pid, spg_id);
+	up_read(&sp_group_sem);
+	return spg;
+}
+
 /**
  * sp_group_id_by_pid() - Get the sp_group ID of a process.
  * @pid: pid of target process.
@@ -640,7 +772,22 @@ static inline void check_interrupt_context(void)
  */
 int sp_group_id_by_pid(int pid)
 {
-	return 0;
+	struct sp_group *spg;
+	int spg_id = -ENODEV;
+
+	check_interrupt_context();
+
+	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
+	if (!spg)
+		return -ENODEV;
+
+	down_read(&spg->rw_lock);
+	if (spg_valid(spg))
+		spg_id = spg->id;
+	up_read(&spg->rw_lock);
+
+	sp_group_drop(spg);
+	return spg_id;
 }
 EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
 
@@ -658,7 +805,48 @@ EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
  */
 int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num)
 {
-	return 0;
+	int ret = 0;
+	struct sp_group_node *node;
+	struct sp_group_master *master = NULL;
+	struct task_struct *tsk;
+
+	check_interrupt_context();
+
+	if (!spg_ids || num <= 0)
+		return -EINVAL;
+
+	ret = get_task(pid, &tsk);
+	if (ret)
+		return ret;
+
+	down_read(&sp_group_sem);
+	task_lock(tsk);
+	if (tsk->mm)
+		master = tsk->mm->sp_group_master;
+	task_unlock(tsk);
+
+	if (!master) {
+		ret = -ENODEV;
+		goto out_up_read;
+	}
+
+	if (!master->count) {
+		ret = -ENODEV;
+		goto out_up_read;
+	}
+	if ((unsigned int)*num < master->count) {
+		ret = -E2BIG;
+		goto out_up_read;
+	}
+	*num = master->count;
+
+	list_for_each_entry(node, &master->node_list, group_node)
+		*(spg_ids++) = node->spg->id;
+
+out_up_read:
+	up_read(&sp_group_sem);
+	put_task_struct(tsk);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(mg_sp_group_id_by_pid);
 
@@ -681,7 +869,71 @@ static bool is_device_addr(unsigned long addr)
 
 static struct sp_group *create_spg(int spg_id)
 {
-	return NULL;
+	int ret;
+	struct sp_group *spg;
+	char name[20];
+	struct user_struct *user = NULL;
+	int hsize_log = MAP_HUGE_2MB >> MAP_HUGE_SHIFT;
+
+	if (unlikely(system_group_count + 1 == MAX_GROUP_FOR_SYSTEM)) {
+		pr_err_ratelimited("reach system max group num\n");
+		return ERR_PTR(-ENOSPC);
+	}
+
+	spg = kzalloc(sizeof(*spg), GFP_KERNEL);
+	if (spg == NULL)
+		return ERR_PTR(-ENOMEM);
+
+	ret = idr_alloc(&sp_group_idr, spg, spg_id, spg_id + 1, GFP_KERNEL);
+	if (ret < 0) {
+		pr_err_ratelimited("group %d idr alloc failed %d\n",
+				   spg_id, ret);
+		goto out_kfree;
+	}
+
+	spg->id = spg_id;
+	spg->is_alive = true;
+	spg->proc_num = 0;
+	spg->owner = current->group_leader;
+	atomic_set(&spg->use_count, 1);
+	INIT_LIST_HEAD(&spg->procs);
+	INIT_LIST_HEAD(&spg->spa_list);
+	init_rwsem(&spg->rw_lock);
+
+	sprintf(name, "sp_group_%d", spg_id);
+	spg->file = shmem_kernel_file_setup(name, MAX_LFS_FILESIZE,
+					    VM_NORESERVE);
+	if (IS_ERR(spg->file)) {
+		pr_err("spg file setup failed %ld\n", PTR_ERR(spg->file));
+		ret = PTR_ERR(spg->file);
+		goto out_idr;
+	}
+
+	spg->file_hugetlb = hugetlb_file_setup(name, MAX_LFS_FILESIZE,
+					       VM_NORESERVE, &user, HUGETLB_ANONHUGE_INODE, hsize_log);
+	if (IS_ERR(spg->file_hugetlb)) {
+		pr_err("spg file_hugetlb setup failed %ld\n",
+		       PTR_ERR(spg->file_hugetlb));
+		ret = PTR_ERR(spg->file_hugetlb);
+		goto out_fput;
+	}
+
+	ret = sp_init_spg_stat(spg);
+	if (ret < 0)
+		goto out_fput_all;
+
+	system_group_count++;
+	return spg;
+
+out_fput_all:
+	fput(spg->file_hugetlb);
+out_fput:
+	fput(spg->file);
+out_idr:
+	idr_remove(&sp_group_idr, spg_id);
+out_kfree:
+	kfree(spg);
+	return ERR_PTR(ret);
 }
 
 int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
