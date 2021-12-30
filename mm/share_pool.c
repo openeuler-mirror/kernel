@@ -90,6 +90,7 @@ int sysctl_sp_debug_mode;
 int sysctl_share_pool_map_lock_enable;
 
 int sysctl_sp_perf_k2u;
+int sysctl_sp_perf_alloc;
 
 static int share_pool_group_mode = SINGLE_GROUP_MODE;
 
@@ -1600,6 +1601,373 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 	return addr;
 }
 
+#define ALLOC_NORMAL	1
+#define ALLOC_RETRY	2
+#define ALLOC_NOMEM	3
+
+struct sp_alloc_context {
+	struct sp_group *spg;
+	struct file *file;
+	unsigned long size;
+	unsigned long size_aligned;
+	unsigned long sp_flags;
+	unsigned long populate;
+	int state;
+	bool need_fallocate;
+	struct timespec64 start;
+	struct timespec64 end;
+};
+
+static void trace_sp_alloc_begin(struct sp_alloc_context *ac)
+{
+	if (!sysctl_sp_perf_alloc)
+		return;
+
+	ktime_get_ts64(&ac->start);
+}
+
+static void trace_sp_alloc_finish(struct sp_alloc_context *ac, unsigned long va)
+{
+	unsigned long cost;
+	bool is_pass_through = ac->spg == spg_none ? true : false;
+
+	if (!sysctl_sp_perf_alloc)
+		return;
+
+	ktime_get_ts64(&ac->end);
+
+	cost = SEC2US(ac->end.tv_sec - ac->start.tv_sec) +
+		NS2US(ac->end.tv_nsec - ac->start.tv_nsec);
+	if (cost >= (unsigned long)sysctl_sp_perf_alloc) {
+		pr_err("Task %s(%d/%d) sp_alloc returns 0x%lx consumes %luus, size is %luKB, size_aligned is %luKB, sp_flags is %lx, pass through is %d\n",
+		       current->comm, current->tgid, current->pid,
+		       va, cost, byte2kb(ac->size), byte2kb(ac->size_aligned), ac->sp_flags, is_pass_through);
+	}
+}
+
+static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
+	int spg_id, struct sp_alloc_context *ac)
+{
+	struct sp_group *spg;
+
+	check_interrupt_context();
+
+	trace_sp_alloc_begin(ac);
+
+	/* mdc scene hack */
+	if (enable_mdc_default_group)
+		spg_id = mdc_default_group_id;
+
+	if (unlikely(!size || (size >> PAGE_SHIFT) > totalram_pages())) {
+		pr_err_ratelimited("allocation failed, invalid size %lu\n", size);
+		return -EINVAL;
+	}
+
+	if (spg_id != SPG_ID_DEFAULT && spg_id < SPG_ID_MIN) {
+		pr_err_ratelimited("allocation failed, invalid group id %d\n", spg_id);
+		return -EINVAL;
+	}
+
+	if (sp_flags & (~SP_FLAG_MASK)) {
+		pr_err_ratelimited("allocation failed, invalid flag %lx\n", sp_flags);
+		return -EINVAL;
+	}
+
+	if (sp_flags & SP_HUGEPAGE_ONLY)
+		sp_flags |= SP_HUGEPAGE;
+
+	if (share_pool_group_mode == SINGLE_GROUP_MODE) {
+		spg = __sp_find_spg(current->pid, SPG_ID_DEFAULT);
+		if (spg) {
+			if (spg_id != SPG_ID_DEFAULT && spg->id != spg_id) {
+				sp_group_drop(spg);
+				return -ENODEV;
+			}
+
+			/* up_read will be at the end of sp_alloc */
+			down_read(&spg->rw_lock);
+			if (!spg_valid(spg)) {
+				up_read(&spg->rw_lock);
+				sp_group_drop(spg);
+				pr_err_ratelimited("allocation failed, spg is dead\n");
+				return -ENODEV;
+			}
+		} else {  /* alocation pass through scene */
+			if (enable_mdc_default_group) {
+				int ret = 0;
+
+				ret = sp_group_add_task(current->tgid, spg_id);
+				if (ret < 0) {
+					pr_err_ratelimited("add group failed in pass through\n");
+					return ret;
+				}
+
+				spg = __sp_find_spg(current->pid, SPG_ID_DEFAULT);
+
+				/* up_read will be at the end of sp_alloc */
+				down_read(&spg->rw_lock);
+				if (!spg_valid(spg)) {
+					up_read(&spg->rw_lock);
+					sp_group_drop(spg);
+					pr_err_ratelimited("pass through allocation failed, spg is dead\n");
+					return -ENODEV;
+				}
+			} else {
+				spg = spg_none;
+			}
+		}
+	} else {
+		if (spg_id != SPG_ID_DEFAULT) {
+			spg = __sp_find_spg(current->pid, spg_id);
+			if (!spg) {
+				pr_err_ratelimited("allocation failed, can't find group\n");
+				return -ENODEV;
+			}
+
+			/* up_read will be at the end of sp_alloc */
+			down_read(&spg->rw_lock);
+			if (!spg_valid(spg)) {
+				up_read(&spg->rw_lock);
+				sp_group_drop(spg);
+				pr_err_ratelimited("allocation failed, spg is dead\n");
+				return -ENODEV;
+			}
+
+			if (!is_process_in_group(spg, current->mm)) {
+				up_read(&spg->rw_lock);
+				sp_group_drop(spg);
+				pr_err_ratelimited("allocation failed, task not in group\n");
+				return -ENODEV;
+			}
+		} else {  /* alocation pass through scene */
+			spg = spg_none;
+		}
+	}
+
+	if (sp_flags & SP_HUGEPAGE) {
+		ac->file = spg->file_hugetlb;
+		ac->size_aligned = ALIGN(size, PMD_SIZE);
+	} else {
+		ac->file = spg->file;
+		ac->size_aligned = ALIGN(size, PAGE_SIZE);
+	}
+
+	ac->spg = spg;
+	ac->size = size;
+	ac->sp_flags = sp_flags;
+	ac->state = ALLOC_NORMAL;
+	ac->need_fallocate = false;
+	return 0;
+}
+
+static void sp_alloc_unmap(struct mm_struct *mm, struct sp_area *spa,
+	struct sp_group_node *spg_node)
+{
+	if (spa->spg != spg_none)
+		__sp_free(spa->spg, spa->va_start, spa->real_size, mm);
+}
+
+static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
+	struct sp_group_node *spg_node, struct sp_alloc_context *ac)
+{
+	int ret = 0;
+	unsigned long mmap_addr;
+	/* pass through default permission */
+	unsigned long prot = PROT_READ | PROT_WRITE;
+	unsigned long sp_addr = spa->va_start;
+	unsigned long populate = 0;
+	struct vm_area_struct *vma;
+
+	down_write(&mm->mmap_lock);
+	if (unlikely(mm->core_state)) {
+		up_write(&mm->mmap_lock);
+		sp_alloc_unmap(mm, spa, spg_node);
+		ac->state = ALLOC_NOMEM;
+		pr_info("allocation encountered coredump\n");
+		return -EFAULT;
+	}
+
+	if (spg_node)
+		prot = spg_node->prot;
+
+	/* when success, mmap_addr == spa->va_start */
+	mmap_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
+	if (IS_ERR_VALUE(mmap_addr)) {
+		up_write(&mm->mmap_lock);
+		sp_alloc_unmap(mm, spa, spg_node);
+		pr_err("sp mmap in allocation failed %ld\n", mmap_addr);
+		return PTR_ERR((void *)mmap_addr);
+	}
+
+	if (unlikely(populate == 0)) {
+		up_write(&mm->mmap_lock);
+		pr_err("allocation sp mmap populate failed\n");
+		ret = -EFAULT;
+		goto unmap;
+	}
+	ac->populate = populate;
+
+	vma = find_vma(mm, sp_addr);
+	if (unlikely(!vma)) {
+		up_write(&mm->mmap_lock);
+		WARN(1, "allocation failed, can't find %lx vma\n", sp_addr);
+		ret = -EINVAL;
+		goto unmap;
+	}
+	/* clean PTE_RDONLY flags or trigger SMMU event */
+	if (prot & PROT_WRITE)
+		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
+	up_write(&mm->mmap_lock);
+
+	return ret;
+
+unmap:
+	if (spa->spg != spg_none)
+		sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
+	else
+		sp_munmap(mm, spa->va_start, spa->real_size);
+	return ret;
+}
+
+static void sp_alloc_fallback(struct sp_area *spa, struct sp_alloc_context *ac)
+{
+	struct sp_spg_stat *stat = ac->spg->stat;
+
+	if (ac->file == ac->spg->file) {
+		ac->state = ALLOC_NOMEM;
+		return;
+	}
+
+	atomic_inc(&stat->hugepage_failures);
+	if (!(ac->sp_flags & SP_HUGEPAGE_ONLY)) {
+		ac->file = ac->spg->file;
+		ac->size_aligned = ALIGN(ac->size, PAGE_SIZE);
+		ac->sp_flags &= ~SP_HUGEPAGE;
+		ac->state = ALLOC_RETRY;
+		__sp_area_drop(spa);
+		return;
+	}
+	ac->state = ALLOC_NOMEM;
+}
+
+static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
+	struct sp_group_node *spg_node, struct sp_alloc_context *ac)
+{
+	int ret = 0;
+	unsigned long sp_addr = spa->va_start;
+	unsigned int noreclaim_flag = 0;
+
+	/*
+	 * The direct reclaim and compact may take a long
+	 * time. As a result, sp mutex will be hold for too
+	 * long time to casue the hung task problem. In this
+	 * case, set the PF_MEMALLOC flag to prevent the
+	 * direct reclaim and compact from being executed.
+	 * Since direct reclaim and compact are not performed
+	 * when the fragmentation is severe or the memory is
+	 * insufficient, 2MB continuous physical pages fail
+	 * to be allocated. This situation is allowed.
+	 */
+	if (spa->is_hugepage)
+		noreclaim_flag = memalloc_noreclaim_save();
+
+	/*
+	 * We are not ignoring errors, so if we fail to allocate
+	 * physical memory we just return failure, so we won't encounter
+	 * page fault later on, and more importantly sp_make_share_u2k()
+	 * depends on this feature (and MAP_LOCKED) to work correctly.
+	 */
+	ret = do_mm_populate(mm, sp_addr, ac->populate, 0);
+	if (spa->is_hugepage) {
+		memalloc_noreclaim_restore(noreclaim_flag);
+		if (ret)
+			sp_add_work_compact();
+	}
+	if (ret) {
+		if (spa->spg != spg_none)
+			sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
+		else
+			sp_munmap(mm, spa->va_start, spa->real_size);
+
+		if (unlikely(fatal_signal_pending(current)))
+			pr_warn_ratelimited("allocation failed, current thread is killed\n");
+		else
+			pr_warn_ratelimited("allocation failed due to mm populate failed(potential no enough memory when -12): %d\n",
+					    ret);
+		sp_fallocate(spa);  /* need this, otherwise memleak */
+		sp_alloc_fallback(spa, ac);
+	} else {
+		ac->need_fallocate = true;
+	}
+	return ret;
+}
+
+static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
+	struct sp_group_node *spg_node, struct sp_alloc_context *ac)
+{
+	int ret;
+
+	ret = sp_alloc_mmap(mm, spa, spg_node, ac);
+	if (ret < 0) {
+		if (ac->need_fallocate) {
+			/* e.g. second sp_mmap fail */
+			sp_fallocate(spa);
+			ac->need_fallocate = false;
+		}
+		return ret;
+	}
+
+	ret = sp_alloc_populate(mm, spa, spg_node, ac);
+	return ret;
+}
+
+static int sp_alloc_mmap_populate(struct sp_area *spa,
+				  struct sp_alloc_context *ac)
+{
+	int ret;
+	struct mm_struct *mm;
+	struct sp_group_node *spg_node;
+
+	if (spa->spg == spg_none) {
+		ret = __sp_alloc_mmap_populate(current->mm, spa, NULL, ac);
+	} else {
+		/* create mapping for each process in the group */
+		list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
+			mm = spg_node->master->mm;
+			ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
+			if (ret)
+				return ret;
+		}
+	}
+	return ret;
+}
+
+/* spa maybe an error pointer, so introduce variable spg */
+static void sp_alloc_finish(int result, struct sp_area *spa,
+	struct sp_alloc_context *ac)
+{
+	struct sp_group *spg = ac->spg;
+	bool is_pass_through = spg == spg_none ? true : false;
+
+	/* match sp_alloc_check_prepare */
+	if (!is_pass_through)
+		up_read(&spg->rw_lock);
+
+	if (!result)
+		sp_update_process_stat(current, true, spa);
+
+	/* this will free spa if mmap failed */
+	if (spa && !IS_ERR(spa))
+		__sp_area_drop(spa);
+
+	if (!is_pass_through)
+		sp_group_drop(spg);
+
+	trace_sp_alloc_finish(ac, spa->va_start);
+	sp_dump_stack();
+	sp_try_to_compact();
+}
+
 /**
  * sp_alloc() - Allocate shared memory for all the processes in a sp_group.
  * @size: the size of memory to allocate.
@@ -1614,7 +1982,34 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
  */
 void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 {
-	return NULL;
+	struct sp_area *spa = NULL;
+	int ret = 0;
+	struct sp_alloc_context ac;
+
+	ret = sp_alloc_prepare(size, sp_flags, spg_id, &ac);
+	if (ret)
+		return ERR_PTR(ret);
+
+try_again:
+	spa = sp_alloc_area(ac.size_aligned, ac.sp_flags, ac.spg,
+			    SPA_TYPE_ALLOC, current->tgid);
+	if (IS_ERR(spa)) {
+		pr_err_ratelimited("alloc spa failed in allocation(potential no enough virtual memory when -75): %ld\n",
+			PTR_ERR(spa));
+		ret = PTR_ERR(spa);
+		goto out;
+	}
+
+	ret = sp_alloc_mmap_populate(spa, &ac);
+	if (ret && ac.state == ALLOC_RETRY)
+		goto try_again;
+
+out:
+	sp_alloc_finish(ret, spa, &ac);
+	if (ret)
+		return ERR_PTR(ret);
+	else
+		return (void *)(spa->va_start);
 }
 EXPORT_SYMBOL_GPL(sp_alloc);
 
