@@ -67,7 +67,6 @@ static struct hstate * __initdata parsed_hstate;
 static unsigned long __initdata default_hstate_max_huge_pages;
 static bool __initdata parsed_valid_hugepagesz = true;
 static bool __initdata parsed_default_hugepagesz;
-
 /*
  * Protects updates to hugepage_freelists, hugepage_activelist, nr_huge_pages,
  * free_huge_pages, and surplus_huge_pages.
@@ -5907,3 +5906,141 @@ void __init hugetlb_cma_check(void)
 }
 
 #endif /* CONFIG_CMA */
+
+#ifdef CONFIG_ASCEND_FEATURES
+static int enable_charge_mighp __read_mostly;
+
+const struct hstate *hugetlb_get_hstate(void)
+{
+	return &default_hstate;
+}
+EXPORT_SYMBOL_GPL(hugetlb_get_hstate);
+
+static struct page *hugetlb_alloc_hugepage_normal(struct hstate *h,
+		gfp_t gfp_mask, int nid)
+{
+	struct page *page = NULL;
+
+	spin_lock(&hugetlb_lock);
+	if (h->free_huge_pages - h->resv_huge_pages > 0)
+		page = dequeue_huge_page_nodemask(h, gfp_mask, nid, NULL, NULL);
+	spin_unlock(&hugetlb_lock);
+
+	return page;
+}
+
+/*
+ * Allocate hugepage without reserve
+ */
+struct page *hugetlb_alloc_hugepage(int nid, int flag)
+{
+	struct hstate *h = &default_hstate;
+	gfp_t gfp_mask = htlb_alloc_mask(h);
+	struct page *page = NULL;
+
+	if (nid == NUMA_NO_NODE)
+		nid = numa_mem_id();
+
+	if (nid < 0 || nid >= MAX_NUMNODES)
+		return NULL;
+
+	if (flag & ~HUGETLB_ALLOC_MASK)
+		return NULL;
+
+	gfp_mask |= __GFP_THISNODE;
+	if (enable_charge_mighp)
+		gfp_mask |= __GFP_ACCOUNT;
+
+	if (flag & HUGETLB_ALLOC_NORMAL)
+		page = hugetlb_alloc_hugepage_normal(h, gfp_mask, nid);
+	else if (flag & HUGETLB_ALLOC_BUDDY)
+		page = alloc_migrate_huge_page(h, gfp_mask, nid, NULL);
+	else
+		page = alloc_huge_page_nodemask(h, nid, NULL, gfp_mask);
+
+	return page;
+}
+EXPORT_SYMBOL_GPL(hugetlb_alloc_hugepage);
+
+static int __hugetlb_insert_hugepage(struct mm_struct *mm, unsigned long addr,
+				     pgprot_t prot, unsigned long pfn, bool special)
+{
+	int ret = 0;
+	pte_t *ptep, entry;
+	struct hstate *h;
+	struct vm_area_struct *vma;
+	struct address_space *mapping;
+	spinlock_t *ptl;
+
+	h = size_to_hstate(PMD_SIZE);
+	if (!h)
+		return -EINVAL;
+
+	if (!IS_ALIGNED(addr, PMD_SIZE))
+		return -EINVAL;
+
+	vma = find_vma(mm, addr);
+	if (!vma || !range_in_vma(vma, addr, addr + PMD_SIZE))
+		return -EINVAL;
+
+	mapping = vma->vm_file->f_mapping;
+	i_mmap_lock_read(mapping);
+	ptep = huge_pte_alloc(mm, addr, huge_page_size(h));
+	if (!ptep) {
+		ret = -ENXIO;
+		goto out_unlock;
+	}
+
+	if (WARN_ON(ptep && !pte_none(*ptep) && !pmd_huge(*(pmd_t *)ptep))) {
+		ret = -ENXIO;
+		goto out_unlock;
+	}
+
+	entry = pfn_pte(pfn, prot);
+	entry = huge_pte_mkdirty(entry);
+	if (!(pgprot_val(prot) & PTE_RDONLY))
+		entry = huge_pte_mkwrite(entry);
+	entry = pte_mkyoung(entry);
+	entry = pte_mkhuge(entry);
+	if (special)
+		entry = pte_mkspecial(entry);
+
+	ptl = huge_pte_lockptr(h, mm, ptep);
+	spin_lock(ptl);
+	set_huge_pte_at(mm, addr, ptep, entry);
+	spin_unlock(ptl);
+
+out_unlock:
+	i_mmap_unlock_read(mapping);
+
+	return ret;
+}
+
+int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
+				pgprot_t prot, struct page *hpage)
+{
+	return __hugetlb_insert_hugepage(mm, addr, prot, page_to_pfn(hpage), false);
+}
+EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte);
+
+int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm, unsigned long addr,
+				      pgprot_t prot, unsigned long phy_addr)
+{
+	return __hugetlb_insert_hugepage(mm, addr, prot, phy_addr >> PAGE_SHIFT, true);
+}
+EXPORT_SYMBOL_GPL(hugetlb_insert_hugepage_pte_by_pa);
+
+#ifdef CONFIG_ASCEND_CHARGE_MIGRATE_HUGEPAGES
+
+static int __init ascend_enable_charge_migrate_hugepages(char *s)
+{
+	enable_charge_mighp = 1;
+
+	pr_info("Ascend enable charge migrate hugepage\n");
+
+	return 1;
+}
+__setup("enable_charge_mighp", ascend_enable_charge_migrate_hugepages);
+
+#endif
+#endif

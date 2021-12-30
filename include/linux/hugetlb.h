@@ -607,6 +607,45 @@ struct page *alloc_huge_page_vma(struct hstate *h, struct vm_area_struct *vma,
 int huge_add_to_page_cache(struct page *page, struct address_space *mapping,
 			pgoff_t idx);
 
+#ifdef CONFIG_ASCEND_FEATURES
+#define HUGETLB_ALLOC_NONE             0x00
+#define HUGETLB_ALLOC_NORMAL           0x01    /* normal hugepage */
+#define HUGETLB_ALLOC_BUDDY            0x02    /* buddy hugepage */
+#define HUGETLB_ALLOC_MASK             (HUGETLB_ALLOC_NONE | \
+					HUGETLB_ALLOC_NORMAL | \
+					HUGETLB_ALLOC_BUDDY)
+
+const struct hstate *hugetlb_get_hstate(void);
+struct page *hugetlb_alloc_hugepage(int nid, int flag);
+int hugetlb_insert_hugepage_pte(struct mm_struct *mm, unsigned long addr,
+				pgprot_t prot, struct page *hpage);
+int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
+				    unsigned long vir_addr,
+				    pgprot_t prot, unsigned long phy_addr);
+#else
+static inline const struct hstate *hugetlb_get_hstate(void)
+{
+	return NULL;
+}
+
+static inline struct page *hugetlb_alloc_hugepage(int nid, int flag)
+{
+	return  NULL;
+}
+
+static inline int hugetlb_insert_hugepage_pte(struct mm_struct *mm,
+		unsigned long addr, pgprot_t prot, struct page *hpage)
+{
+	return -EPERM;
+}
+static inline int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
+				    unsigned long vir_addr,
+				    pgprot_t prot, unsigned long phy_addr)
+{
+	return -EPERM;
+}
+#endif
+
 /* arch callback */
 int __init __alloc_bootmem_huge_page(struct hstate *h);
 int __init alloc_bootmem_huge_page(struct hstate *h);
@@ -1027,6 +1066,29 @@ static inline void hugetlb_count_sub(long l, struct mm_struct *mm)
 static inline void set_huge_swap_pte_at(struct mm_struct *mm, unsigned long addr,
 					pte_t *ptep, pte_t pte, unsigned long sz)
 {
+}
+
+static inline const struct hstate *hugetlb_get_hstate(void)
+{
+	return NULL;
+}
+
+static inline struct page *hugetlb_alloc_hugepage(int nid, int flag)
+{
+	return  NULL;
+}
+
+static inline int hugetlb_insert_hugepage_pte(struct mm_struct *mm,
+		unsigned long addr, pgprot_t prot, struct page *hpage)
+{
+	return -EPERM;
+}
+
+static inline int hugetlb_insert_hugepage_pte_by_pa(struct mm_struct *mm,
+				    unsigned long vir_addr,
+				    pgprot_t prot, unsigned long phy_addr)
+{
+	return -EPERM;
 }
 #endif	/* CONFIG_HUGETLB_PAGE */
 
