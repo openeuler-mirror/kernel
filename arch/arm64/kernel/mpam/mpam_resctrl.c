@@ -1848,12 +1848,14 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 
 	if (rmid == 0 || rdtgrp->mon.rmid == 0) {
 		ret = -EINVAL;
+		rdt_last_cmd_puts("default rmid 0 is always kept\n");
 		goto unlock;
 	}
 
 	ret = rmid_to_partid_pmg(rmid, &partid, &pmg);
 	if (ret < 0) {
 		ret = -EINVAL;
+		rdt_last_cmd_puts("invalid rmid\n");
 		goto unlock;
 	}
 
@@ -1862,6 +1864,7 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 
 	if (rdtgrp->type != RDTCTRL_GROUP ||
 			!list_empty(&rdtgrp->mon.crdtgrp_list)) {
+		ret = -EINVAL;
 		rdt_last_cmd_puts("unsupported operation\n");
 		goto unlock;
 	}
