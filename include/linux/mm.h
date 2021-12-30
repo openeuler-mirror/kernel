@@ -2611,6 +2611,10 @@ extern int do_munmap(struct mm_struct *, unsigned long, size_t,
 		     struct list_head *uf);
 extern int do_madvise(struct mm_struct *mm, unsigned long start, size_t len_in, int behavior);
 
+extern unsigned long __do_mmap_mm(struct mm_struct *mm, struct file *file,
+	unsigned long addr, unsigned long len, unsigned long prot,
+	unsigned long flags, vm_flags_t vm_flags, unsigned long pgoff,
+	unsigned long *populate, struct list_head *uf);
 #ifdef CONFIG_MMU
 extern int __mm_populate(unsigned long addr, unsigned long len,
 			 int ignore_errors);
@@ -2619,8 +2623,15 @@ static inline void mm_populate(unsigned long addr, unsigned long len)
 	/* Ignore errors */
 	(void) __mm_populate(addr, len, 1);
 }
+extern int do_mm_populate(struct mm_struct *mm, unsigned long addr, unsigned long len,
+			  int ignore_errors);
 #else
 static inline void mm_populate(unsigned long addr, unsigned long len) {}
+static inline int do_mm_populate(struct mm_struct *mm, unsigned long addr, unsigned long len,
+			  int ignore_errors)
+{
+	return -EPERM;
+}
 #endif
 
 /* These take the mm semaphore themselves */

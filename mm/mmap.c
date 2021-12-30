@@ -1399,12 +1399,17 @@ static inline bool file_mmap_ok(struct file *file, struct inode *inode,
 	return true;
 }
 
-static inline unsigned long
-__do_mmap(struct file *file, unsigned long addr, unsigned long len,
-	  unsigned long prot, unsigned long flags, vm_flags_t vm_flags,
-	  unsigned long pgoff, unsigned long *populate,	struct list_head *uf)
+static unsigned long __mmap_region(struct mm_struct *mm,
+				   struct file *file, unsigned long addr,
+				   unsigned long len, vm_flags_t vm_flags,
+				   unsigned long pgoff, struct list_head *uf);
+
+unsigned long __do_mmap_mm(struct mm_struct *mm, struct file *file,
+			unsigned long addr, unsigned long len,
+			unsigned long prot, unsigned long flags,
+			vm_flags_t vm_flags, unsigned long pgoff,
+			unsigned long *populate, struct list_head *uf)
 {
-	struct mm_struct *mm = current->mm;
 	int pkey = 0;
 
 	*populate = 0;
@@ -1587,14 +1592,22 @@ __do_mmap(struct file *file, unsigned long addr, unsigned long len,
 	if (flags & MAP_CHECKNODE)
 		set_vm_checknode(&vm_flags, flags);
 
-	addr = mmap_region(file, addr, len, vm_flags, pgoff, uf);
+	addr = __mmap_region(mm, file, addr, len, vm_flags, pgoff, uf);
 	if (!IS_ERR_VALUE(addr) &&
 	    ((vm_flags & VM_LOCKED) ||
 	     (flags & (MAP_POPULATE | MAP_NONBLOCK)) == MAP_POPULATE))
 		*populate = len;
 	return addr;
 }
+EXPORT_SYMBOL(__do_mmap_mm);
 
+static inline unsigned long
+__do_mmap(struct file *file, unsigned long addr, unsigned long len,
+	  unsigned long prot, unsigned long flags, vm_flags_t vm_flags,
+	  unsigned long pgoff, unsigned long *populate,	struct list_head *uf)
+{
+	return __do_mmap_mm(current->mm, file, addr, len, prot, flags, vm_flags, pgoff, populate, uf);
+}
 #ifdef CONFIG_USERSWAP
 /*
  * Check if pages between 'addr ~ addr+len' can be user swapped. If so, get
@@ -1955,11 +1968,11 @@ static inline int accountable_mapping(struct file *file, vm_flags_t vm_flags)
 	return (vm_flags & (VM_NORESERVE | VM_SHARED | VM_WRITE)) == VM_WRITE;
 }
 
-unsigned long mmap_region(struct file *file, unsigned long addr,
-		unsigned long len, vm_flags_t vm_flags, unsigned long pgoff,
-		struct list_head *uf)
+static unsigned long __mmap_region(struct mm_struct *mm, struct file *file,
+				   unsigned long addr, unsigned long len,
+				   vm_flags_t vm_flags, unsigned long pgoff,
+				   struct list_head *uf)
 {
-	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma, *prev, *merge;
 	int error;
 	struct rb_node **rb_link, *rb_parent;
@@ -2146,6 +2159,13 @@ unacct_error:
 	if (charged)
 		vm_unacct_memory(charged);
 	return error;
+}
+
+unsigned long mmap_region(struct file *file, unsigned long addr,
+		unsigned long len, vm_flags_t vm_flags, unsigned long pgoff,
+		struct list_head *uf)
+{
+	return __mmap_region(current->mm, file, addr, len, vm_flags, pgoff, uf);
 }
 
 static unsigned long unmapped_area(struct vm_unmapped_area_info *info)
@@ -3208,7 +3228,6 @@ SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
 	profile_munmap(addr);
 	return __vm_munmap(addr, len, true);
 }
-
 
 /*
  * Emulation of deprecated remap_file_pages() syscall.
