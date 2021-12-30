@@ -27,6 +27,7 @@ struct notifier_block;		/* in notifier.h */
 #define VM_FLUSH_RESET_PERMS	0x00000100	/* reset direct map and flush TLB on unmap, can't be freed in atomic context */
 #define VM_MAP_PUT_PAGES	0x00000200	/* put pages and free array in vfree */
 #define VM_NO_HUGE_VMAP		0x00000400	/* force PAGE_SIZE pte mapping */
+#define VM_HUGE_PAGES		0x00001000	/* used for vmalloc hugepages */
 
 /*
  * VM_KASAN is used slighly differently depending on CONFIG_KASAN_VMALLOC.
@@ -136,6 +137,8 @@ extern void *__vmalloc_node_range(unsigned long size, unsigned long align,
 void *__vmalloc_node(unsigned long size, unsigned long align, gfp_t gfp_mask,
 		int node, const void *caller);
 void *vmalloc_no_huge(unsigned long size);
+extern void *vmalloc_hugepage(unsigned long size);
+extern void *vmalloc_hugepage_user(unsigned long size);
 
 extern void vfree(const void *addr);
 extern void vfree_atomic(const void *addr);
@@ -151,6 +154,14 @@ extern int remap_vmalloc_range_partial(struct vm_area_struct *vma,
 
 extern int remap_vmalloc_range(struct vm_area_struct *vma, void *addr,
 							unsigned long pgoff);
+
+extern void *vmap_hugepage(struct page **pages, unsigned int count,
+			   unsigned long flags, pgprot_t prot);
+extern int remap_vmalloc_hugepage_range_partial(struct vm_area_struct *vma,
+						unsigned long uaddr, void *kaddr,
+						unsigned long pgoff, unsigned long size);
+extern int remap_vmalloc_hugepage_range(struct vm_area_struct *vma,
+					void *addr, unsigned long pgoff);
 
 /*
  * Architectures can set this mask to a combination of PGTBL_P?D_MODIFIED values
