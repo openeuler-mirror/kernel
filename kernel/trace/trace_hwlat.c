@@ -544,14 +544,14 @@ static int init_tracefs(void)
 	if (!top_dir)
 		return -ENOMEM;
 
-	hwlat_sample_window = tracefs_create_file("window", 0640,
+	hwlat_sample_window = tracefs_create_file("window", TRACE_MODE_WRITE,
 						  top_dir,
 						  &hwlat_data.sample_window,
 						  &window_fops);
 	if (!hwlat_sample_window)
 		goto err;
 
-	hwlat_sample_width = tracefs_create_file("width", 0644,
+	hwlat_sample_width = tracefs_create_file("width", TRACE_MODE_WRITE,
 						 top_dir,
 						 &hwlat_data.sample_width,
 						 &width_fops);
