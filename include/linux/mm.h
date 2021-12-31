@@ -2866,6 +2866,8 @@ extern int sysctl_memory_failure_recovery;
 extern void shake_page(struct page *p, int access);
 extern atomic_long_t num_poisoned_pages __read_mostly;
 extern int soft_offline_page(struct page *page, int flags);
+extern void collect_procs(struct page *page, struct list_head *tokill,
+				int force_early);
 
 
 /*

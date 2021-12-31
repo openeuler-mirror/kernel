@@ -512,7 +512,7 @@ static void collect_procs_file(struct page *page, struct list_head *to_kill,
  * First preallocate one tokill structure outside the spin locks,
  * so that we can kill at least one process reasonably reliable.
  */
-static void collect_procs(struct page *page, struct list_head *tokill,
+void collect_procs(struct page *page, struct list_head *tokill,
 				int force_early)
 {
 	struct to_kill *tk;
@@ -529,6 +529,7 @@ static void collect_procs(struct page *page, struct list_head *tokill,
 		collect_procs_file(page, tokill, &tk, force_early);
 	kfree(tk);
 }
+EXPORT_SYMBOL_GPL(collect_procs);
 
 static const char *action_name[] = {
 	[MF_IGNORED] = "Ignored",
