@@ -16,6 +16,7 @@
 #include <linux/notifier.h>
 #include <linux/spinlock.h>
 #include <linux/cpumask.h>
+#include <linux/kabi.h>
 
 /*
  * Flags to control the behaviour of a genpd.
@@ -94,6 +95,9 @@ struct genpd_power_state {
 	struct fwnode_handle *fwnode;
 	ktime_t idle_time;
 	void *data;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct genpd_lock_ops;
@@ -152,6 +156,11 @@ struct generic_pm_domain {
 			unsigned long lock_flags;
 		};
 	};
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 
 };
 
