@@ -89,6 +89,10 @@ struct iommu_domain {
 	void *iova_cookie;
 	bool dirty_log_tracking;
 	struct mutex switch_log_lock;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 enum iommu_cap {
@@ -353,6 +357,14 @@ struct iommu_ops {
 
 	unsigned long pgsize_bitmap;
 	struct module *owner;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 };
 
 /**
