@@ -7,6 +7,7 @@
 #define __LINUX_NET_XDP_H__
 
 #include <linux/skbuff.h> /* skb_shared_info */
+#include <linux/kabi.h>
 
 /**
  * DOC: XDP RX-queue information
@@ -59,6 +60,11 @@ struct xdp_rxq_info {
 	u32 queue_index;
 	u32 reg_state;
 	struct xdp_mem_info mem;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 } ____cacheline_aligned; /* perf critical, avoid false-sharing */
 
 struct xdp_txq_info {

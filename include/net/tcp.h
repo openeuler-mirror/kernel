@@ -45,6 +45,7 @@
 #include <linux/memcontrol.h>
 #include <linux/bpf-cgroup.h>
 #include <linux/siphash.h>
+#include <linux/kabi.h>
 
 extern struct inet_hashinfo tcp_hashinfo;
 
@@ -1084,6 +1085,11 @@ struct tcp_congestion_ops {
 
 	char 		name[TCP_CA_NAME_MAX];
 	struct module 	*owner;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 int tcp_register_congestion_control(struct tcp_congestion_ops *type);
