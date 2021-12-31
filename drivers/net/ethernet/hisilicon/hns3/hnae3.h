@@ -765,6 +765,7 @@ struct hnae3_handle {
 	u8 netdev_flags;
 	struct dentry *hnae3_dbgfs;
 	struct mutex dbgfs_lock;
+	char **dbgfs_buf;
 
 	/* Network interface message level enabled bits */
 	u32 msg_enable;
