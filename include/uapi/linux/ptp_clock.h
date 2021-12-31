@@ -132,6 +132,10 @@ struct ptp_perout_request {
 		/* Reserved for future use. */
 		unsigned int rsv[4];
 	};
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 #define PTP_MAX_SAMPLES 25 /* Maximum allowed offset measurement samples. */
