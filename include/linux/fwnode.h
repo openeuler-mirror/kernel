@@ -10,6 +10,7 @@
 #define _LINUX_FWNODE_H_
 
 #include <linux/types.h>
+#include <linux/kabi.h>
 
 struct fwnode_operations;
 struct device;
@@ -18,6 +19,8 @@ struct fwnode_handle {
 	struct fwnode_handle *secondary;
 	const struct fwnode_operations *ops;
 	struct device *dev;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /**
@@ -147,6 +150,10 @@ struct fwnode_operations {
 				    struct fwnode_endpoint *endpoint);
 	int (*add_links)(const struct fwnode_handle *fwnode,
 			 struct device *dev);
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 #define fwnode_has_op(fwnode, op)				\
