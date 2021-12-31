@@ -27,6 +27,7 @@
 #include <net/gro_cells.h>
 
 #include <linux/interrupt.h>
+#include <linux/kabi.h>
 
 #ifdef CONFIG_XFRM_STATISTICS
 #include <net/snmp.h>
@@ -132,6 +133,11 @@ struct xfrm_state_offload {
 	unsigned long		offload_handle;
 	unsigned int		num_exthdrs;
 	u8			flags;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 struct xfrm_mode {

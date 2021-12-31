@@ -17,6 +17,7 @@
 #include <linux/compat.h>
 #include <linux/netlink.h>
 #include <uapi/linux/ethtool.h>
+#include <linux/kabi.h>
 
 struct compat_ethtool_rx_flow_spec {
 	u32		flow_type;
@@ -544,6 +545,11 @@ struct ethtool_ops {
 				   const struct ethtool_tunable *, void *);
 	int	(*set_phy_tunable)(struct net_device *,
 				   const struct ethtool_tunable *, const void *);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 int ethtool_check_ops(const struct ethtool_ops *ops);

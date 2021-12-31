@@ -10,6 +10,7 @@
 #include <net/inet_frag.h>
 #include <linux/rcupdate.h>
 #include <linux/siphash.h>
+#include <linux/kabi.h>
 
 struct tcpm_hash_bucket;
 struct ctl_table_header;
@@ -227,5 +228,12 @@ struct netns_ipv4 {
 
 	atomic_t	rt_genid;
 	siphash_key_t	ip_id_key;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
 };
 #endif
