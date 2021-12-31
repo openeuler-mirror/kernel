@@ -13,6 +13,7 @@
 #include <linux/hrtimer.h>
 #include <linux/kref.h>
 #include <linux/workqueue.h>
+#include <linux/kabi.h>
 
 #include <linux/atomic.h>
 #include <asm/ptrace.h>
@@ -302,6 +303,7 @@ struct irq_affinity {
 	unsigned int	set_size[IRQ_AFFINITY_MAX_SETS];
 	void		(*calc_sets)(struct irq_affinity *, unsigned int nvecs);
 	void		*priv;
+	KABI_RESERVE(1)
 };
 
 /**
@@ -597,6 +599,7 @@ struct tasklet_struct
 		void (*callback)(struct tasklet_struct *t);
 	};
 	unsigned long data;
+	KABI_RESERVE(1)
 };
 
 #define DECLARE_TASKLET(name, _callback)		\
