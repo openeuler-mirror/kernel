@@ -1,0 +1,161 @@
+#!/usr/bin/perl -w
+# SPDX-License-Identifier: GPL-2.0
+#
+# kabideps - a script tools to generate symbol referenced by other modules
+#
+# We use this script to check against reference Module.kabi files.
+#
+# Author: Xie XiuQi <xiexiuqi@huawei.com>
+# Copyright (C) 2019 Huawei, Inc.
+#
+# This software may be freely redistributed under the terms of the GNU
+# General Public License (GPL).
+#
+# usage:
+#   ./scripts/kabideps -m <module list> -s <symvers> -d <basedir of modules> -e
+
+use 5.010;
+
+use strict;
+use Getopt::Long;
+use File::Basename;
+
+my $MODULES;
+my $SYMVERS;
+my $EXCLUDE;
+my $BASEDIR;
+my $VERBOSE;
+
+my $PROG = basename $0;
+
+sub usage {
+        say "usage:";
+        say "  $PROG [--modules|m] [--symvers|s] [--basedir|d] [--exclude|e] [--verbose|v] [--help|h|?]";
+        say "    -m|--module";
+        say "      module list to be check (filename)";
+        say "    -d|--basedir";
+        say "      dir of ko";
+        say "    -s|--symvers";
+        say "      Module.symvers";
+        say "    -e|--exclude";
+        say "      exclude symbols which exported by the modules themselves";
+        say "    -v|--verbose:";
+        say "      show more info";
+        say "    -h|-?|--help:";
+        say "      show this usage";
+        exit 0;
+}
+
+usage() unless (@ARGV);
+my $result = GetOptions(
+        'module|m=s'    =>      \$MODULES,
+        'basedir|d=s'   =>      \$BASEDIR,
+        'symvers|s=s'   =>      \$SYMVERS,
+        'exclude|e!'    =>      \$EXCLUDE,
+        'verbose|v!'    =>      \$VERBOSE,
+        'help|h|?'      =>      \&usage,
+) or usage();
+
+my @mods;
+
+if ($MODULES) {
+	@mods = `cat $MODULES`; chomp @mods;
+}
+else {
+	@mods = `find $BASEDIR |grep -E ".ko\$"`; chomp @mods;
+}
+
+my @allsyms = exclude_check();
+my $allmodsyms = {};
+
+sub check_sym {
+	my $sym = shift;
+	my @res;
+
+	foreach my $m (@mods) {
+		my @kmodsyms;
+		my $modname = basename $m;
+
+		if ($m =~ /^\s*$/) {
+			next;
+		}
+
+		if (!$allmodsyms->{$m}) {
+			@kmodsyms = `modprobe --dump-modversions $m |awk '{print \$2}'`; chomp @kmodsyms;
+			$allmodsyms->{$m} = \@kmodsyms;
+		}
+
+		my $syms = $allmodsyms->{$m};
+		for (@{$syms}) {
+			if ($sym eq $_) {
+				push @res, $modname;
+			}
+		}
+	}
+
+	my $num = @res;
+	printf OUT "%d: ", $num;
+	for (@res) {
+		printf OUT "%s ", $_;
+	}
+}
+
+sub exclude_check {
+	my @syms;
+	my @res;
+	my $i;
+
+	if ($EXCLUDE) {
+		@syms = `cat $SYMVERS`; chomp @syms;
+	}
+	else {
+		@res = `cat $SYMVERS |awk '{print $2}'`; chomp @syms;
+
+		return @res;
+	}
+
+	my $total = @syms;
+	my $count;
+	say "excluding symbols exported by modules themselves...";
+	for ($i = 0; $i < @syms; $i++) {
+		my @words = split(/\s+/, $syms[$i]);
+		my $found = 0;
+
+		foreach my $mod (@mods) {
+			my $m;
+
+			$words[2] = basename $words[2];
+			$m = basename $mod;
+			$m =~ s/\.ko$//g;
+
+			if ($words[2] eq $m) {
+				$found = 1;
+				last;
+			}
+		}
+		push @res, $words[1] unless($found);
+
+		printf "\r%d/%d", $count++, $total;
+	}
+	print "\n";
+
+	return @res;
+}
+
+my $output = "kabideps.txt";
+
+open(OUT, ">", "$output")
+     || die "can't open >$output : $!";
+
+my $total = @allsyms;
+my $count;
+say "checking symbols ...";
+for (@allsyms) {
+	printf OUT "%s: ", $_;
+	check_sym($_);
+	print OUT "\n";
+
+	printf "\r%d/%d", $count++, $total;
+}
+
+close OUT;
