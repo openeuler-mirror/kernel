@@ -9,6 +9,7 @@
 #include <linux/percpu-refcount.h>
 #include <linux/rbtree.h>
 #include <uapi/linux/bpf.h>
+#include <linux/kabi.h>
 
 struct sock;
 struct sockaddr;
@@ -88,6 +89,23 @@ struct cgroup_bpf {
 
 	/* cgroup_bpf is released using a work queue */
 	struct work_struct release_work;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
+	KABI_RESERVE(9)
+	KABI_RESERVE(10)
+	KABI_RESERVE(11)
+	KABI_RESERVE(12)
+	KABI_RESERVE(13)
+	KABI_RESERVE(14)
+	KABI_RESERVE(15)
+	KABI_RESERVE(16)
 };
 
 int cgroup_bpf_inherit(struct cgroup *cgrp);
