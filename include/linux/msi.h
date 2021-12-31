@@ -4,6 +4,7 @@
 
 #include <linux/kobject.h>
 #include <linux/list.h>
+#include <linux/kabi.h>
 
 struct msi_msg {
 	u32	address_lo;	/* low 32 bits of msi message address */
@@ -128,6 +129,8 @@ struct msi_desc {
 		struct fsl_mc_msi_desc fsl_mc;
 		struct ti_sci_inta_msi_desc inta;
 	};
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /* Helpers to hide struct msi_desc implementation details */
