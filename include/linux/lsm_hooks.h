@@ -28,6 +28,7 @@
 #include <linux/security.h>
 #include <linux/init.h>
 #include <linux/rculist.h>
+#include <linux/kabi.h>
 
 /**
  * union security_list_options - Linux Security Module hook function list
@@ -1566,6 +1567,7 @@ struct lsm_blob_sizes {
 	int	lbs_ipc;
 	int	lbs_msg_msg;
 	int	lbs_task;
+	KABI_RESERVE(1)
 };
 
 /*

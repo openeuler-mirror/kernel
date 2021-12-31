@@ -9,6 +9,7 @@
 #include <linux/types.h>
 #include <linux/bvec.h>
 #include <linux/ktime.h>
+#include <linux/kabi.h>
 
 struct bio_set;
 struct bio;
@@ -46,6 +47,7 @@ struct block_device {
 	int			bd_fsfreeze_count;
 	/* Mutex for freeze */
 	struct mutex		bd_fsfreeze_mutex;
+	KABI_RESERVE(1)
 } __randomize_layout;
 
 /*
