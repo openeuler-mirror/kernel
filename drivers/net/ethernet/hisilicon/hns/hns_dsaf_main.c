@@ -2719,7 +2719,7 @@ static void set_promisc_tcam_enable(struct dsaf_device *dsaf_dev, u32 port)
 	struct dsaf_drv_priv *priv = hns_dsaf_dev_priv(dsaf_dev);
 	struct dsaf_tbl_tcam_data tbl_tcam_data_uc = {0, port};
 	struct dsaf_drv_mac_single_dest_entry mask_entry;
-	struct dsaf_drv_tbl_tcam_key temp_key, mask_key;
+	struct dsaf_drv_tbl_tcam_key mask_key;
 	struct dsaf_drv_soft_mac_tbl *soft_mac_entry;
 	u16 entry_index;
 	struct dsaf_drv_tbl_tcam_key mac_key;
@@ -2772,10 +2772,12 @@ static void set_promisc_tcam_enable(struct dsaf_device *dsaf_dev, u32 port)
 
 	memset(&mask_entry, 0x0, sizeof(mask_entry));
 	memset(&mask_key, 0x0, sizeof(mask_key));
-	memset(&temp_key, 0x0, sizeof(temp_key));
+	memset(&mac_key, 0x0, sizeof(mac_key));
 	mask_entry.addr[0] = 0x01;
-	hns_dsaf_set_mac_key(dsaf_dev, &mask_key, mask_entry.in_vlan_id,
+	hns_dsaf_set_mac_key(dsaf_dev, &mac_key, mask_entry.in_vlan_id,
 			     port, mask_entry.addr);
+	hns_dsaf_set_mac_key(dsaf_dev, &mask_key, mask_entry.in_vlan_id,
+			     0xf, mask_entry.addr);
 	tbl_tcam_mcast.tbl_mcast_item_vld = 1;
 	tbl_tcam_mcast.tbl_mcast_old_en = 0;
 
@@ -2784,7 +2786,7 @@ static void set_promisc_tcam_enable(struct dsaf_device *dsaf_dev, u32 port)
 	if (mskid == -EINVAL) {
 		dev_err(dsaf_dev->dev, "%s,pnum(%d)error,key(%#x:%#x)\n",
 			dsaf_dev->ae_dev.name, port,
-			mask_key.high.val, mask_key.low.val);
+			mac_key.high.val, mac_key.low.val);
 		return;
 	}
 	dsaf_set_bit(tbl_tcam_mcast.tbl_mcast_port_msk[mskid / 32],
@@ -2796,13 +2798,12 @@ static void set_promisc_tcam_enable(struct dsaf_device *dsaf_dev, u32 port)
 		dev_err(dsaf_dev->dev,
 			"%s, pool bit map pnum(%d)error,key(%#x:%#x)\n",
 			dsaf_dev->ae_dev.name, port_num,
-			mask_key.high.val, mask_key.low.val);
+			mac_key.high.val, mac_key.low.val);
 		return;
 	}
 	dsaf_set_bit(tbl_tcam_mcast.tbl_mcast_port_msk[mskid / 32],
 		     mskid % 32, 1);
 
-	memcpy(&temp_key, &mask_key, sizeof(mask_key));
 	hns_dsaf_tcam_mc_cfg_vague(dsaf_dev, entry_index, &tbl_tcam_data_mc,
 				   (struct dsaf_tbl_tcam_data *)(&mask_key),
 				   &tbl_tcam_mcast);
@@ -2810,8 +2811,8 @@ static void set_promisc_tcam_enable(struct dsaf_device *dsaf_dev, u32 port)
 	/* update software entry */
 	soft_mac_entry += entry_index;
 	soft_mac_entry->index = entry_index;
-	soft_mac_entry->tcam_key.high.val = temp_key.high.val;
-	soft_mac_entry->tcam_key.low.val = temp_key.low.val;
+	soft_mac_entry->tcam_key.high.val = mac_key.high.val;
+	soft_mac_entry->tcam_key.low.val = mac_key.low.val;
 }
 
 static void set_promisc_tcam_disable(struct dsaf_device *dsaf_dev, u32 port)
