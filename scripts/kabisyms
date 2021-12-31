@@ -1,0 +1,141 @@
+#!/usr/bin/perl -w
+# SPDX-License-Identifier: GPL-2.0
+#
+# kabisyms - a script tools to generate kabi baseline and check symbol
+#            referance relationship.
+#
+# Author: Xie XiuQi <xiexiuqi@huawei.com>
+# Copyright (C) 2019 Huawei, Inc.
+#
+# This software may be freely redistributed under the terms of the GNU
+# General Public License (GPL).
+#
+# usage:
+#   ./scripts/kabisyms -k <symlist> -s <symvers> -o <output>
+#   ./scripts/kabisyms -k <symlist> -d <kabideps> -o <output>
+
+use 5.010;
+
+use strict;
+use Getopt::Long;
+use File::Basename;
+
+my $SYMLIST;
+my $SYMVERS;
+my $KABIDEPS;
+my $OUTPUT = "Module.kabi";
+my $VERBOSE;
+
+my $PROG = basename $0;
+
+sub usage {
+	say "usage:";
+	say "  $PROG [--symlist|k] [--symvers|s] [--kabideps|d] [--output|o] [--verbose|v] [--help|h|?]";
+	say "    -k|--symlist";
+	say "      symbol list (filename)";
+	say "    -s|--symvers";
+	say "      Module.symvers";
+	say "    -d|--kabideps";
+	say "      kabideps";
+	say "    -o|--output";
+	say "      filename of output";
+	say "    -v|--verbose:";
+	say "      show more info";
+	say "    -h|-?|--help:";
+	say "      show this usage";
+	say "  examples:";
+	say "   ./scripts/kabisyms -k <symlist> -s <symvers> -o <output>";
+	say "   ./scripts/kabisyms -k <symlist> -d <kabideps> -o <output>";
+	exit 0;
+}
+
+usage() unless (@ARGV);
+my $result = GetOptions(
+	'symlist|k=s'   =>      \$SYMLIST,
+	'symvers|s=s'   =>      \$SYMVERS,
+	'kabideps|d=s'  =>      \$KABIDEPS,
+	'output|o=s'    =>      \$OUTPUT,
+	'verbose|v!'    =>      \$VERBOSE,
+	'help|h|?'      =>      \&usage,
+) or usage();
+
+my @syms;
+my @symvers;
+my @kabideps;
+
+if ($SYMLIST) {
+	@syms = `cat $SYMLIST`; chomp @syms;
+}
+else {
+	usage();
+}
+
+if ($SYMVERS) {
+	@symvers = `cat $SYMVERS`; chomp @symvers;
+}
+elsif ($KABIDEPS) {
+	@kabideps = `cat $KABIDEPS`; chomp @kabideps;
+}
+else {
+	usage();
+}
+
+sub check_sym {
+	my $sym = shift;
+	my @res;
+	my $found;
+
+	foreach (@symvers) {
+		if (/^\s*$/) {
+			next;
+		}
+
+		if (/^0x[0-9a-fA-F]+\s+$sym\s+/) {
+			printf OUT "%s\n", $_;
+			$found = 1;
+			last;
+		}
+	}
+
+	printf "%s is not included in %s\n", $sym, $SYMVERS if (!$found);
+}
+
+sub check_deps {
+	my $sym = shift;
+	my @res;
+	my $found;
+
+	foreach (@kabideps) {
+		if (/^\s*$/) {
+			next;
+		}
+
+		if (/^\s*$sym:/) {
+			printf OUT "%s\n", $_;
+			$found = 1;
+			last;
+		}
+	}
+
+	printf "%s is not included in %s\n", $sym, $KABIDEPS if (!$found);
+}
+
+my $output = $OUTPUT;
+
+open(OUT, ">", "$output")
+     || die "can't open >$output : $!";
+
+my $total = @syms;
+my $count;
+for (@syms) {
+	if ($SYMVERS) {
+		check_sym($_);
+	}
+	elsif ($KABIDEPS) {
+		check_deps($_);
+	}
+	printf "\r%d/%d", ++$count, $total if ($VERBOSE);
+}
+printf "output to %s\n", $OUTPUT;
+
+close OUT;
