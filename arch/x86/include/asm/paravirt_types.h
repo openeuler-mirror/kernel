@@ -194,6 +194,9 @@ struct pv_irq_ops {
 
 	void (*safe_halt)(void);
 	void (*halt)(void);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 #endif
 } __no_randomize_layout;
 
@@ -280,6 +283,10 @@ struct pv_mmu_ops {
 	   an mfn.  We can tell which is which from the index. */
 	void (*set_fixmap)(unsigned /* enum fixed_addresses */ idx,
 			   phys_addr_t phys, pgprot_t flags);
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 #endif
 } __no_randomize_layout;
 
@@ -298,6 +305,8 @@ struct pv_lock_ops {
 	void (*kick)(int cpu);
 
 	struct paravirt_callee_save vcpu_is_preempted;
+
+	KABI_RESERVE(1)
 } __no_randomize_layout;
 
 /* This contains all the paravirt structures: we get a convenient
