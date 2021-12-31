@@ -11,6 +11,7 @@
 #include <linux/workqueue.h>
 #include <linux/kthread.h>
 #include <linux/preempt.h>
+#include <linux/kabi.h>
 
 struct worker_pool;
 
@@ -57,6 +58,11 @@ struct worker {
 
 	/* used by the scheduler to determine a worker's last known identity */
 	work_func_t		last_func;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /**
