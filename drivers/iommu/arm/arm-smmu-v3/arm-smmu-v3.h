@@ -761,6 +761,8 @@ struct arm_smmu_device {
 
 	unsigned int			mpam_partid_max;
 	unsigned int			mpam_pmg_max;
+
+	bool				bypass;
 };
 
 struct arm_smmu_stream {
