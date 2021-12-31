@@ -2,6 +2,7 @@
 #ifndef _LINUX_BLKDEV_H
 #define _LINUX_BLKDEV_H
 
+#include <linux/kabi.h>
 #include <linux/sched.h>
 #include <linux/sched/clock.h>
 #include <linux/major.h>
@@ -354,6 +355,8 @@ struct queue_limits {
 	unsigned char		discard_misaligned;
 	unsigned char		raid_partial_stripes_expensive;
 	enum blk_zoned_model	zoned;
+
+	KABI_RESERVE(1)
 };
 
 typedef int (*report_zones_cb)(struct blk_zone *zone, unsigned int idx,
@@ -598,6 +601,11 @@ struct request_queue {
 
 #define BLK_MAX_WRITE_HINTS	5
 	u64			write_hints[BLK_MAX_WRITE_HINTS];
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /* Keep blk_queue_flag_name[] in sync with the definitions below */
@@ -1700,6 +1708,9 @@ struct blk_integrity_profile {
 	integrity_prepare_fn		*prepare_fn;
 	integrity_complete_fn		*complete_fn;
 	const char			*name;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 extern void blk_integrity_register(struct gendisk *, struct blk_integrity *);
@@ -1893,6 +1904,11 @@ struct block_device_operations {
 	char *(*devnode)(struct gendisk *disk, umode_t *mode);
 	struct module *owner;
 	const struct pr_ops *pr_ops;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 #ifdef CONFIG_COMPAT

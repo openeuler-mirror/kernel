@@ -19,6 +19,7 @@
 #define JBD2_DEBUG
 #else
 
+#include <linux/kabi.h>
 #include <linux/types.h>
 #include <linux/buffer_head.h>
 #include <linux/journal-head.h>
@@ -1302,6 +1303,11 @@ struct journal_s
 				    struct buffer_head *bh,
 				    enum passtype pass, int off,
 				    tid_t expected_commit_id);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 #define jbd2_might_wait_for_commit(j) \

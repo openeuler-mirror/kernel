@@ -2,6 +2,7 @@
 #ifndef TARGET_CORE_BASE_H
 #define TARGET_CORE_BASE_H
 
+#include <linux/kabi.h>
 #include <linux/configfs.h>      /* struct config_group */
 #include <linux/dma-direction.h> /* enum dma_data_direction */
 #include <linux/sbitmap.h>
@@ -542,6 +543,9 @@ struct se_cmd {
 	sense_reason_t		pi_err;
 	sector_t		bad_sector;
 	int			cpuid;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct se_ua {
@@ -839,6 +843,9 @@ struct se_device {
 	/* For se_lun->lun_se_dev RCU read-side critical access */
 	u32			hba_index;
 	struct rcu_head		rcu_head;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct se_hba {

@@ -2,6 +2,7 @@
 #ifndef _SCSI_SCSI_CMND_H
 #define _SCSI_SCSI_CMND_H
 
+#include <linux/kabi.h>
 #include <linux/dma-mapping.h>
 #include <linux/blkdev.h>
 #include <linux/t10-pi.h>
@@ -142,6 +143,11 @@ struct scsi_cmnd {
 
 	unsigned char tag;	/* SCSI-II queued command tag */
 	unsigned int extra_len;	/* length of alignment and padding */
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /*

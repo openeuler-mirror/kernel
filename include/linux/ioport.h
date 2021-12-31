@@ -10,6 +10,7 @@
 #define _LINUX_IOPORT_H
 
 #ifndef __ASSEMBLY__
+#include <linux/kabi.h>
 #include <linux/compiler.h>
 #include <linux/types.h>
 #include <linux/bits.h>

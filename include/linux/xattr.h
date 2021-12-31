@@ -12,6 +12,7 @@
 #define _LINUX_XATTR_H
 
 
+#include <linux/kabi.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/spinlock.h>
@@ -37,6 +38,8 @@ struct xattr_handler {
 	int (*set)(const struct xattr_handler *, struct dentry *dentry,
 		   struct inode *inode, const char *name, const void *buffer,
 		   size_t size, int flags);
+
+	KABI_RESERVE(1)
 };
 
 const char *xattr_full_name(const struct xattr_handler *, const char *);

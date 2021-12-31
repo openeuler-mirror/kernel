@@ -6,6 +6,7 @@
 
 #ifdef __KERNEL__
 
+#include <linux/kabi.h>
 #include <linux/mmdebug.h>
 #include <linux/gfp.h>
 #include <linux/bug.h>

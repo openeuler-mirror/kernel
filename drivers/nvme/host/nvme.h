@@ -6,6 +6,7 @@
 #ifndef _NVME_H
 #define _NVME_H
 
+#include <linux/kabi.h>
 #include <linux/nvme.h>
 #include <linux/cdev.h>
 #include <linux/pci.h>
@@ -346,6 +347,11 @@ struct nvme_ctrl {
 	unsigned long discard_page_busy;
 
 	struct nvme_fault_inject fault_inject;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 enum nvme_iopolicy {

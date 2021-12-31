@@ -2,6 +2,7 @@
 #ifndef __LINUX_DCACHE_H
 #define __LINUX_DCACHE_H
 
+#include <linux/kabi.h>
 #include <linux/atomic.h>
 #include <linux/list.h>
 #include <linux/rculist.h>
@@ -121,6 +122,9 @@ struct dentry {
 	} d_u;
 	/* negative dentry under this dentry, if it's dir */
 	atomic_t d_neg_dnum;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 } __randomize_layout;
 
 /*
@@ -150,6 +154,11 @@ struct dentry_operations {
 	struct vfsmount *(*d_automount)(struct path *);
 	int (*d_manage)(const struct path *, bool);
 	struct dentry *(*d_real)(struct dentry *, const struct inode *);
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 } ____cacheline_aligned;
 
 /*

@@ -2,6 +2,7 @@
 #ifndef _LINUX_SWAP_H
 #define _LINUX_SWAP_H
 
+#include <linux/kabi.h>
 #include <linux/spinlock.h>
 #include <linux/linkage.h>
 #include <linux/mmzone.h>
