@@ -20,6 +20,7 @@
 #include <linux/can/netlink.h>
 #include <linux/can/skb.h>
 #include <linux/netdevice.h>
+#include <linux/kabi.h>
 
 /*
  * CAN mode
@@ -80,6 +81,11 @@ struct can_priv {
 	struct led_trigger *rxtx_led_trig;
 	char rxtx_led_trig_name[CAN_LED_NAME_SZ];
 #endif
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 #define CAN_SYNC_SEG 1
