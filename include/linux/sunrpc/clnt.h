@@ -27,6 +27,7 @@
 #include <linux/path.h>
 #include <net/ipv6.h>
 #include <linux/sunrpc/xprtmultipath.h>
+#include <linux/kabi.h>
 
 struct rpc_inode;
 
@@ -79,6 +80,11 @@ struct rpc_clnt {
 		struct work_struct	cl_work;
 	};
 	const struct cred	*cl_cred;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /*
@@ -92,6 +98,8 @@ struct rpc_program {
 	const struct rpc_version **	version;	/* version array */
 	struct rpc_stat *	stats;		/* statistics */
 	const char *		pipe_dir_name;	/* path to rpc_pipefs dir */
+
+	KABI_RESERVE(1)
 };
 
 struct rpc_version {
@@ -133,6 +141,8 @@ struct rpc_create_args {
 	char			*client_name;
 	struct svc_xprt		*bc_xprt;	/* NFSv4.1 backchannel */
 	const struct cred	*cred;
+
+	KABI_RESERVE(1)
 };
 
 struct rpc_add_xprt_test {
