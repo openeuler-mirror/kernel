@@ -503,6 +503,12 @@ struct pci_dev {
 	char		*driver_override; /* Driver name to force a match */
 
 	unsigned long	priv_flags;	/* Private flags for the PCI driver */
+	/*
+	 * This flag is only set on root ports. When a slot below a root port
+	 * is being removed or rescanned, this flag is set.
+	 */
+	unsigned long   slot_being_removed_rescanned;
+	struct pci_dev  *rpdev; /* root port pci_dev */
 };
 
 static inline struct pci_dev *pci_physfn(struct pci_dev *dev)
@@ -989,6 +995,7 @@ extern struct bus_type pci_bus_type;
 /* Do NOT directly access these two variables, unless you are arch-specific PCI
  * code, or PCI core code. */
 extern struct list_head pci_root_buses;	/* List of all known PCI buses */
+
 /* Some device drivers need know if PCI is initiated */
 int no_pci_devices(void);
 
