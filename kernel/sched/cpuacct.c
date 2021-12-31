@@ -380,16 +380,20 @@ struct cgroup_subsys cpuacct_cgrp_subsys = {
 static bool psi_v1_enable;
 static int __init setup_psi_v1(char *str)
 {
-	return kstrtobool(str, &psi_v1_enable) == 0;
+	int ret;
+
+	ret = kstrtobool(str, &psi_v1_enable);
+	if (!psi_v1_enable)
+		static_branch_enable(&psi_v1_disabled);
+
+	return ret == 0;
 }
 __setup("psi_v1=", setup_psi_v1);
 
 static int __init cgroup_v1_psi_init(void)
 {
-	if (!psi_v1_enable) {
-		static_branch_enable(&psi_v1_disabled);
+	if (!psi_v1_enable)
 		return 0;
-	}
 
 	cgroup_add_legacy_cftypes(&cpuacct_cgrp_subsys, cgroup_v1_psi_files);
 	return 0;
