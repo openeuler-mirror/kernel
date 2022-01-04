@@ -72,6 +72,6 @@
 #define ARM64_HAS_TWED				62
 #define ARM64_WORKAROUND_HISILICON_1980005	63
 
-#define ARM64_NCAPS				64
+#define ARM64_NCAPS				80
 
 #endif /* __ASM_CPUCAPS_H */
