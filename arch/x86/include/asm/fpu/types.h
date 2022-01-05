@@ -389,6 +389,8 @@ struct fpstate {
 	/* @regs is dynamically sized! Don't add anything after @regs! */
 } __aligned(64);
 
+#define FPU_GUEST_PERM_LOCKED		BIT_ULL(63)
+
 struct fpu_state_perm {
 	/*
 	 * @__state_perm:
@@ -477,6 +479,13 @@ struct fpu {
 	 * Permission related information
 	 */
 	KABI_EXTEND(struct fpu_state_perm perm)
+
+	/*
+	 * @guest_perm:
+	 *
+	 * Permission related information for guest pseudo FPUs
+	 */
+	struct fpu_state_perm           guest_perm;
 
 	/*
 	 * @__fpstate:
