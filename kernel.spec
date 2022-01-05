@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2112.8.0
+%global hulkrelease 2201.1.0
 
 %define with_patch 0
 
@@ -30,7 +30,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0130
+Release: %{hulkrelease}.0131
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -786,6 +786,85 @@ fi
 %endif
 
 %changelog
+
+* Tue Jan 04 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2201.1.0.0131
+- mm: export collect_procs()
+- net: hns: update hns version to 21.12.1
+- net: hns: fix bug when two ports opened promisc mode both
+- net: hns3: update hns3 version to 21.12.4
+- net: hns3: fix the concurrency between functions reading debugfs
+- f2fs: fix to do sanity check on last xattr entry in __f2fs_setxattr()
+- mwifiex: Fix skb_over_panic in mwifiex_usb_recv()
+- tee: handle lookup of shm with reference count 0
+- tee: don't assign shm id for private shms
+- tee: remove linked list of struct tee_shm
+- mm/page_alloc: Use cmdline to disable "place pages to tail"
+- mm/page_alloc: Use cmdline to disable "place pages to tail"
+- ext4: fix an use-after-free issue about data=journal writeback mode
+- ext4: Fix null-ptr-deref in '__ext4_journal_ensure_credits'
+- scsi: ufs: Correct the LUN used in eh_device_reset_handler() callback
+- netdevsim: Zero-initialize memory for new map's value in function nsim_bpf_map_alloc
+- lib/strncpy_from_user.c: Mask out bytes after NUL terminator.
+- bpf: Add probe_read_{user, kernel} and probe_read_{user, kernel}_str helpers
+- bpf: Make use of probe_user_write in probe write helper
+- uaccess: Add strict non-pagefault kernel-space read function
+- bpf: fix script for generating man page on BPF helpers
+- bpf: Backport __BPF_FUNC_MAPPER and annotation from mainline
+- bpf: Fix up register-based shifts in interpreter to silence KUBSAN
+- xen/netback: don't queue unlimited number of packages
+- xen/netback: fix rx queue stall detection
+- xen/console: harden hvc_xen against event channel storms
+- xen/netfront: harden netfront against event channel storms
+- xen/blkfront: harden blkfront against event channel storms
+- xen/netfront: don't trust the backend response data blindly
+- xen/netfront: disentangle tx_skb_freelist
+- xen/netfront: don't read data from request on the ring page
+- xen/netfront: read response from backend only once
+- xen/blkfront: don't trust the backend response data blindly
+- xen/blkfront: don't take local copy of a request from the ring page
+- xen/blkfront: read response from backend only once
+- xen: sync include/xen/interface/io/ring.h with Xen's newest version
+- xen/netback: avoid race in xenvif_rx_ring_slots_available()
+- bpf: Remove MTU check in __bpf_skb_max_len
+- sctp: account stream padding length for reconf chunk
+- bpf: Remove MTU check in __bpf_skb_max_len
+- sctp: account stream padding length for reconf chunk
+- netfilter: fix regression in looped (broad|multi)cast's MAC handling
+- perf/core: Avoid put_page() when GUP fails
+- perf/core: Disable page faults when getting phys address
+- mm: kmemleak: slob: respect SLAB_NOLEAKTRACE flag
+- ipc: WARN if trying to remove ipc object which is absent
+- tun: fix bonding active backup with arp monitoring
+- perf/x86/intel/uncore: Fix IIO event constraints for Skylake Server
+- perf/x86/intel/uncore: Fix filter_tid mask for CHA events on Skylake Server
+- sched/core: Mitigate race cpus_share_cache()/update_top_cache_domain()
+- tty: tty_buffer: Fix the softlockup issue in flush_to_ldisc
+- PCI/MSI: Deal with devices lying about their MSI mask capability
+- PCI/MSI: Destroy sysfs before freeing entries
+- ext4: fix lazy initialization next schedule time computation in more granular unit
+- x86/cpu: Fix migration safety with X86_BUG_NULL_SEL
+- mm, oom: do not trigger out_of_memory from the #PF
+- mm, oom: pagefault_out_of_memory: don't force global OOM for dying tasks
+- llc: fix out-of-bound array index in llc_sk_dev_hash()
+- zram: off by one in read_block_state()
+- mm/zsmalloc.c: close race window between zs_pool_dec_isolated() and zs_unregister_migration()
+- dmaengine: dmaengine_desc_callback_valid(): Check for `callback_result`
+- netfilter: nfnetlink_queue: fix OOB when mac header was cleared
+- NFS: Fix deadlocks in nfs_scan_commit_list()
+- apparmor: fix error check
+- serial: 8250_dw: Drop wrong use of ACPI_PTR()
+- crypto: pcrypt - Delay write to padata->info
+- tcp: don't free a FIN sk_buff in tcp_remove_empty_skb()
+- cgroup: Make rebind_subsystems() disable v2 controllers all at once
+- task_stack: Fix end_of_stack() for architectures with upwards-growing stack
+- gre/sit: Don't generate link-local addr if addr_gen_mode is IN6_ADDR_GEN_MODE_NONE
+- smackfs: Fix use-after-free in netlbl_catmap_walk()
+- signal: Remove the bogus sigkill_pending in ptrace_stop
+- bpf: Prevent increasing bpf_jit_limit above max
+- x86/sme: Use #define USE_EARLY_PGTABLE_L5 in mem_encrypt_identity.c
+- tpm: Check for integer overflow in tpm2_map_response_body()
+- scsi: core: Put LLD module refcnt after SCSI device is released
+- net: Prevent infinite while loop in skb_tx_hash()
 
 * Thu Dec 30 2021 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2112.8.0.0130
 - mm/page_alloc: Use cmdline to disable "place pages to tail"
