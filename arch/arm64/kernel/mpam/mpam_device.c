@@ -1715,6 +1715,7 @@ void mpam_component_get_config(struct mpam_component *comp,
 
 static const struct of_device_id arm_mpam_of_device_ids[] = {
 	{.compatible = "arm,mpam"},
+	{ }
 };
 
 static int of_mpam_parse_irq(struct platform_device *pdev,
