@@ -1876,4 +1876,4 @@ static int __init arm_mpam_driver_init(void)
  * We want to run after cacheinfo_sysfs_init() has caused the cacheinfo
  * structures to be populated. That runs as a device_initcall.
  */
-device_initcall(arm_mpam_driver_init);
+device_initcall_sync(arm_mpam_driver_init);
