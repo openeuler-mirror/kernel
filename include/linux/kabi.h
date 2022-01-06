@@ -425,7 +425,11 @@
  * leverage those common names making it easier to read and find in the
  * code.
  */
-# define _KABI_RESERVE(n)		unsigned long kabi_reserved##n
+#ifdef CONFIG_KABI_RESERVE
+	# define _KABI_RESERVE(n)		u64 kabi_reserved##n
+#else
+	# define _KABI_RESERVE(n)
+#endif
 # define KABI_RESERVE(n)		_KABI_RESERVE(n);
 /*
  * Simple wrappers to replace standard openEuler reserved elements.

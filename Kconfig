@@ -37,3 +37,11 @@ config KABI_SIZE_ALIGN_CHECKS
 	help
 	  This option enables more stringent kabi checks. Those must be disable
 	  in case of a debug-build because they allow to change struct sizes.
+
+config KABI_RESERVE
+	bool "Enable KABI PADDING RESERVE"
+	default y
+	help
+	  This option enables KABI padding reserve.
+	  For some embedded system, KABI padding reserve may be not necessary.
+	  Disable it on demand.
