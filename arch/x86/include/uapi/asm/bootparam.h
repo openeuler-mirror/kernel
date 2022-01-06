@@ -42,7 +42,6 @@
 #include <linux/types.h>
 #include <linux/screen_info.h>
 #include <linux/apm_bios.h>
-#include <linux/kabi.h>
 #include <linux/edd.h>
 #include <asm/ist.h>
 #include <video/edid.h>
@@ -103,7 +102,6 @@ struct setup_header {
 	__u32	init_size;
 	__u32	handover_offset;
 	__u32	kernel_info_offset;
-	KABI_RESERVE(1)
 } __attribute__((packed));
 
 struct sys_desc_table {

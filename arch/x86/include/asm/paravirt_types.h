@@ -2,6 +2,8 @@
 #ifndef _ASM_X86_PARAVIRT_TYPES_H
 #define _ASM_X86_PARAVIRT_TYPES_H
 
+#include <linux/kabi.h>
+
 /* Bitmask of what can be clobbered: usually at least eax. */
 #define CLBR_NONE 0
 #define CLBR_EAX  (1 << 0)
