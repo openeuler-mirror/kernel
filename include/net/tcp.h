@@ -2497,6 +2497,9 @@ static inline u64 tcp_transmit_time(const struct sock *sk)
 
 #if IS_ENABLED(CONFIG_TCP_COMP)
 extern struct static_key_false tcp_have_comp;
+
+extern unsigned long *sysctl_tcp_compression_ports;
+
 bool tcp_syn_comp_enabled(const struct tcp_sock *tp);
 void tcp_init_compression(struct sock *sk);
 void tcp_cleanup_compression(struct sock *sk);
