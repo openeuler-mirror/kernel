@@ -736,13 +736,13 @@ static void smc_set_option(const struct tcp_sock *tp,
 #endif
 }
 
-static void comp_set_option(const struct tcp_sock *tp,
+static void comp_set_option(const struct sock *sk,
 			    struct tcp_out_options *opts,
 			    unsigned int *remaining)
 {
 #if IS_ENABLED(CONFIG_TCP_COMP)
 	if (static_branch_unlikely(&tcp_have_comp)) {
-		if (tcp_syn_comp_enabled(tp)) {
+		if (tcp_syn_comp_enabled(sk, true)) {
 			if (*remaining >= TCPOLEN_EXP_COMP_BASE) {
 				opts->options |= OPTION_COMP;
 				*remaining -= TCPOLEN_EXP_COMP_BASE;
@@ -752,14 +752,14 @@ static void comp_set_option(const struct tcp_sock *tp,
 #endif
 }
 
-static void comp_set_option_cond(const struct tcp_sock *tp,
+static void comp_set_option_cond(const struct sock *sk,
 				 const struct inet_request_sock *ireq,
 				 struct tcp_out_options *opts,
 				 unsigned int *remaining)
 {
 #if IS_ENABLED(CONFIG_TCP_COMP)
 	if (static_branch_unlikely(&tcp_have_comp)) {
-		if (tcp_syn_comp_enabled(tp) && ireq->comp_ok) {
+		if (tcp_syn_comp_enabled(sk, false) && ireq->comp_ok) {
 			if (*remaining >= TCPOLEN_EXP_COMP_BASE) {
 				opts->options |= OPTION_COMP;
 				*remaining -= TCPOLEN_EXP_COMP_BASE;
@@ -870,7 +870,7 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	}
 
 	smc_set_option(tp, opts, &remaining);
-	comp_set_option(tp, opts, &remaining);
+	comp_set_option(sk, opts, &remaining);
 
 	if (sk_is_mptcp(sk)) {
 		unsigned int size;
@@ -951,7 +951,7 @@ static unsigned int tcp_synack_options(const struct sock *sk,
 
 	smc_set_option_cond(tcp_sk(sk), ireq, opts, &remaining);
 
-	comp_set_option_cond(tcp_sk(sk), ireq, opts, &remaining);
+	comp_set_option_cond(sk, ireq, opts, &remaining);
 
 	bpf_skops_hdr_opt_len((struct sock *)sk, skb, req, syn_skb,
 			      synack_type, opts, &remaining);
