@@ -441,6 +441,7 @@ static int __init parse_memmap_one(char *p)
 	} else if (*p == '$') {
 		start_at = memparse(p + 1, &p);
 		memblock_reserve(start_at, mem_size);
+		memblock_mark_memmap(start_at, mem_size);
 	} else
 		pr_info("Unrecognized memmap option, please check the parameter.\n");
 

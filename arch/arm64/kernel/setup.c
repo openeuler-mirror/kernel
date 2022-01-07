@@ -215,6 +215,22 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 	dump_stack_set_arch_desc("%s (DT)", name);
 }
 
+static void __init request_memmap_resources(struct resource *res)
+{
+	struct resource *memmap_res;
+
+	memmap_res = memblock_alloc(sizeof(*memmap_res), SMP_CACHE_BYTES);
+	if (!memmap_res)
+		panic("%s: Failed to allocate memmap_res\n", __func__);
+
+	memmap_res->name = "memmap reserved";
+	memmap_res->flags = IORESOURCE_MEM;
+	memmap_res->start = res->start;
+	memmap_res->end = res->end;
+
+	request_resource(res, memmap_res);
+}
+
 static void __init request_standard_resources(void)
 {
 	struct memblock_region *region;
@@ -253,6 +269,9 @@ static void __init request_standard_resources(void)
 		if (kernel_data.start >= res->start &&
 		    kernel_data.end <= res->end)
 			request_resource(res, &kernel_data);
+		if (memblock_is_memmap(region))
+			request_memmap_resources(res);
+
 #ifdef CONFIG_KEXEC_CORE
 		/*
 		 * Userspace will find "Crash kernel" or "Crash kernel (low)"
