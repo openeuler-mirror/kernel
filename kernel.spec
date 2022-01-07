@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       34
+%global devel_release       35
 %global maintenance_release .0.0
-%global pkg_release         .17
+%global pkg_release         .18
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,135 @@ fi
 %endif
 
 %changelog
+* Fri Jan 07 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-35.0.0.18
+- tcp_comp: add stub proto ops for tcp compression socket
+- tcp_comp: allow ignore local tcp connections
+- tcp_comp: only enable compression for give server ports
+- tcp_comp: add sysctl for enable/disable compression
+- tcp_comp: add init and cleanup hook for compression
+- tcp_comp: add tcp comp option to SYN and SYN-ACK
+- tcp_comp: add Kconfig for tcp payload compression
+- xfs: move the CIL workqueue to the CIL
+- xfs: CIL work is serialised, not pipelined
+- xfs: AIL needs asynchronous CIL forcing
+- xfs: reduce ilock acquisitions in xfs_file_fsync
+- xfs: refactor xfs_file_fsync
+- xfs: throttle inode inactivation queuing on memory reclaim
+- xfs: avoid buffer deadlocks when walking fs inodes
+- xfs: use background worker pool when transactions can't get free space
+- xfs: don't run speculative preallocation gc when fs is frozen
+- xfs: flush inode inactivation work when compiling usage statistics
+- xfs: inactivate inodes any time we try to free speculative preallocations
+- xfs: queue inactivation immediately when free realtime extents are tight
+- xfs: queue inactivation immediately when quota is nearing enforcement
+- xfs: queue inactivation immediately when free space is tight
+- xfs: per-cpu deferred inode inactivation queues
+- xfs: detach dquots from inode if we don't need to inactivate it
+- xfs: move xfs_inactive call to xfs_inode_mark_reclaimable
+- xfs: remove the active vs running quota differentiation
+- xfs: remove the flags argument to xfs_qm_dquot_walk
+- xfs: remove xfs_dqrele_all_inodes
+- xfs: remove support for disabling quota accounting on a mounted file system
+- xfs: don't nest transactions when scanning for eofblocks
+- xfs: force log and push AIL to clear pinned inodes when aborting mount
+- xfs: separate primary inode selection criteria in xfs_iget_cache_hit
+- xfs: refactor the inode recycling code
+- xfs: add iclog state trace events
+- xfs: rename struct xfs_eofblocks to xfs_icwalk
+- xfs: change the prefix of XFS_EOF_FLAGS_* to XFS_ICWALK_FLAG_
+- xfs: selectively keep sick inodes in memory
+- xfs: drop IDONTCACHE on inodes when we mark them sick
+- xfs: refactor per-AG inode tagging functions
+- xfs: merge xfs_reclaim_inodes_ag into xfs_inode_walk_ag
+- xfs: pass struct xfs_eofblocks to the inode scan callback
+- xfs: fix radix tree tag signs
+- xfs: make the icwalk processing functions clean up the grab state
+- xfs: clean up inode state flag tests in xfs_blockgc_igrab
+- xfs: remove indirect calls from xfs_inode_walk{,_ag}
+- xfs: remove iter_flags parameter from xfs_inode_walk_*
+- xfs: move xfs_inew_wait call into xfs_dqrele_inode
+- xfs: separate the dqrele_all inode grab logic from xfs_inode_walk_ag_grab
+- xfs: pass the goal of the incore inode walk to xfs_inode_walk()
+- xfs: rename xfs_inode_walk functions to xfs_icwalk
+- xfs: move the inode walk functions further down
+- xfs: detach inode dquots at the end of inactivation
+- xfs: move the quotaoff dqrele inode walk into xfs_icache.c
+- xfs: don't bounce the iolock between free_{eof,cow}blocks
+- xfs: expose the blockgc workqueue knobs publicly
+- xfs: rename the blockgc workqueue
+- xfs: prevent metadata files from being inactivated
+- xfs: parallelize block preallocation garbage collection
+- xfs: rename block gc start and stop functions
+- xfs: only walk the incore inode tree once per blockgc scan
+- xfs: consolidate the eofblocks and cowblocks workers
+- xfs: consolidate incore inode radix tree posteof/cowblocks tags
+- xfs: remove trivial eof/cowblocks functions
+- xfs: hide xfs_icache_free_cowblocks
+- xfs: hide xfs_icache_free_eofblocks
+- xfs: relocate the eofb/cowb workqueue functions
+- xfs: set WQ_SYSFS on all workqueues in debug mode
+- xfs: increase the default parallelism levels of pwork clients
+- xfs: flush speculative space allocations when we run out of space
+- xfs: refactor xfs_icache_free_{eof,cow}blocks call sites
+- xfs: add a tracepoint for blockgc scans
+- xfs: flush eof/cowblocks if we can't reserve quota for chown
+- xfs: flush eof/cowblocks if we can't reserve quota for inode creation
+- xfs: flush eof/cowblocks if we can't reserve quota for file blocks
+- xfs: try worst case space reservation upfront in xfs_reflink_remap_extent
+- xfs: pass flags and return gc errors from xfs_blockgc_free_quota
+- xfs: move and rename xfs_inode_free_quota_blocks to avoid conflicts
+- xfs: xfs_inode_free_quota_blocks should scan project quota
+- xfs: don't stall cowblocks scan if we can't take locks
+- xfs: trigger all block gc scans when low on quota space
+- xfs: shut down the filesystem if we screw up quota reservation
+- xfs: rename code to error in xfs_ioctl_setattr
+- xfs: remove xfs_qm_vop_chown_reserve
+- xfs: refactor inode ownership change transaction/inode/quota allocation idiom
+- xfs: refactor inode creation transaction/inode/quota allocation idiom
+- xfs: refactor reflink functions to use xfs_trans_alloc_inode
+- xfs: allow reservation of rtblocks with xfs_trans_alloc_inode
+- xfs: refactor common transaction/inode/quota allocation idiom
+- xfs: reserve data and rt quota at the same time
+- xfs: fix up build warnings when quotas are disabled
+- xfs: clean up icreate quota reservation calls
+- xfs: remove xfs_trans_unreserve_quota_nblks completely
+- xfs: create convenience wrappers for incore quota block reservations
+- xfs: clean up quota reservation callsites
+- xfs: reduce quota reservation when doing a dax unwritten extent conversion
+- scsi:spraid: use bsg module to replace with ioctrl
+- KVM: vmx/pmu: Fix dummy check if lbr_desc->event is created
+- KVM: vmx/pmu: Expose LBR_FMT in the MSR_IA32_PERF_CAPABILITIES
+- KVM: vmx/pmu: Release guest LBR event via lazy release mechanism
+- KVM: vmx/pmu: Emulate legacy freezing LBRs on virtual PMI
+- KVM: vmx/pmu: Reduce the overhead of LBR pass-through or cancellation
+- KVM: vmx/pmu: Pass-through LBR msrs when the guest LBR event is ACTIVE
+- KVM: vmx/pmu: Create a guest LBR event when vcpu sets DEBUGCTLMSR_LBR
+- KVM: vmx/pmu: Add PMU_CAP_LBR_FMT check when guest LBR is enabled
+- KVM: vmx/pmu: Add PMU_CAP_LBR_FMT check when guest LBR is enabled
+- KVM: x86/pmu: preserve IA32_PERF_CAPABILITIES across CPUID refresh
+- KVM: x86/vmx: Make vmx_set_intercept_for_msr() non-static
+- KVM: VMX: read/write MSR_IA32_DEBUGCTLMSR from GUEST_IA32_DEBUGCTL
+- openeuler_defconfig: Enable sharepool feature in defconfig
+- net/spnic:The reset command flags modification.
+- net/spnic:Attribute negotiation and optimization.
+- net/spnic:RSS initialization process optimization
+- arm64: Fix conflict for capability when cpu hotplug
+- memcg: Add static key for memcg kswapd
+- memcg: make memcg kswapd deal with dirty
+- memcg: support memcg sync reclaim work as kswapd
+- memcg: Export memcg.high from cgroupv2 to cgroupv1
+- memcg: Export memcg.{min/low} from cgroupv2 to cgroupv1
+- kabi: Add reserved page and gfp flags for future extension
+- kabi: reserve space for cgroup_bpf_attach_type and bpf_cgroup_storage_type
+- bpf: Migrate cgroup_bpf to internal cgroup_bpf_attach_type enum
+- bpf: Split cgroup_bpf_enabled per attach type
+- bpf: Try to avoid kzalloc in cgroup/{s,g}etsockopt
+- bpf: Allow bpf_{s,g}etsockopt from cgroup bind{4,6} hooks
+- KABI: Add KABI_AUX_PTR extenstions to some more base structures
+- kabi: Generalize naming of kabi helper macros
+- arm64: Request resources for reserved memory via memmap
+- arm64: Add support for memmap kernel parameters
+
 * Fri Jan 07 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-34.0.0.17
 - openeuler_defconfig: Enable CONFIG_KABI_RESERVE for x86 and arm64
 - KABI: Add CONFIG_KABI_RESERVE to control KABI padding reserve
