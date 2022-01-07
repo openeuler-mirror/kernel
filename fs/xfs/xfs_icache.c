@@ -210,6 +210,11 @@ static inline void
 xfs_blockgc_queue(
 	struct xfs_perag	*pag)
 {
+	struct xfs_mount	*mp = pag->pag_mount;
+
+	if (!xfs_is_blockgc_enabled(mp))
+		return;
+
 	rcu_read_lock();
 	if (radix_tree_tagged(&pag->pag_ici_root, XFS_ICI_BLOCKGC_TAG))
 		queue_delayed_work(pag->pag_mount->m_blockgc_wq,
@@ -1374,8 +1379,12 @@ xfs_blockgc_stop(
 	struct xfs_perag	*pag;
 	xfs_agnumber_t		agno;
 
+	if (!xfs_clear_blockgc_enabled(mp))
+		return;
+
 	for_each_perag_tag(mp, agno, pag, XFS_ICI_BLOCKGC_TAG)
 		cancel_delayed_work_sync(&pag->pag_blockgc_work);
+	trace_xfs_blockgc_stop(mp, __return_address);
 }
 
 /* Enable post-EOF and CoW block auto-reclamation. */
@@ -1386,6 +1395,10 @@ xfs_blockgc_start(
 	struct xfs_perag	*pag;
 	xfs_agnumber_t		agno;
 
+	if (xfs_set_blockgc_enabled(mp))
+		return;
+
+	trace_xfs_blockgc_start(mp, __return_address);
 	for_each_perag_tag(mp, agno, pag, XFS_ICI_BLOCKGC_TAG)
 		xfs_blockgc_queue(pag);
 }
@@ -1465,13 +1478,12 @@ xfs_blockgc_worker(
 	struct xfs_mount	*mp = pag->pag_mount;
 	int			error;
 
-	if (!sb_start_write_trylock(mp->m_super))
-		return;
+	trace_xfs_blockgc_worker(mp, __return_address);
+
 	error = xfs_icwalk_ag(pag, XFS_ICWALK_BLOCKGC, NULL);
 	if (error)
 		xfs_info(mp, "AG %u preallocation gc worker failed, err=%d",
 				pag->pag_agno, error);
-	sb_end_write(mp->m_super);
 	xfs_blockgc_queue(pag);
 }
 
