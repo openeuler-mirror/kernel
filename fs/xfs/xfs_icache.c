@@ -71,10 +71,13 @@ static int xfs_icwalk_ag(struct xfs_perag *pag,
 /* Stop scanning after icw_scan_limit inodes. */
 #define XFS_ICWALK_FLAG_SCAN_LIMIT	(1U << 28)
 
+#define XFS_ICWALK_FLAG_RECLAIM_SICK	(1U << 27)
+
 #define XFS_ICWALK_PRIVATE_FLAGS	(XFS_ICWALK_FLAG_DROP_UDQUOT | \
 					 XFS_ICWALK_FLAG_DROP_GDQUOT | \
 					 XFS_ICWALK_FLAG_DROP_PDQUOT | \
-					 XFS_ICWALK_FLAG_SCAN_LIMIT)
+					 XFS_ICWALK_FLAG_SCAN_LIMIT | \
+					 XFS_ICWALK_FLAG_RECLAIM_SICK)
 
 /*
  * Allocate and initialise an xfs_inode.
@@ -909,7 +912,8 @@ xfs_dqrele_all_inodes(
  */
 static bool
 xfs_reclaim_igrab(
-	struct xfs_inode	*ip)
+	struct xfs_inode	*ip,
+	struct xfs_eofblocks	*eofb)
 {
 	ASSERT(rcu_read_lock_held());
 
@@ -920,6 +924,14 @@ xfs_reclaim_igrab(
 		spin_unlock(&ip->i_flags_lock);
 		return false;
 	}
+
+	/* Don't reclaim a sick inode unless the caller asked for it. */
+	if (ip->i_sick &&
+	    (!eofb || !(eofb->eof_flags & XFS_ICWALK_FLAG_RECLAIM_SICK))) {
+		spin_unlock(&ip->i_flags_lock);
+		return false;
+	}
+
 	__xfs_iflags_set(ip, XFS_IRECLAIM);
 	spin_unlock(&ip->i_flags_lock);
 	return true;
@@ -1020,13 +1032,30 @@ out:
 	xfs_iflags_clear(ip, XFS_IRECLAIM);
 }
 
+/* Reclaim sick inodes if we're unmounting or the fs went down. */
+static inline bool
+xfs_want_reclaim_sick(
+	struct xfs_mount	*mp)
+{
+	return (mp->m_flags & XFS_MOUNT_UNMOUNTING) ||
+	       (mp->m_flags & XFS_MOUNT_NORECOVERY) ||
+	       XFS_FORCED_SHUTDOWN(mp);
+}
+
 void
 xfs_reclaim_inodes(
 	struct xfs_mount	*mp)
 {
+	struct xfs_eofblocks	eofb = {
+		.eof_flags	= 0,
+	};
+
+	if (xfs_want_reclaim_sick(mp))
+		eofb.eof_flags |= XFS_ICWALK_FLAG_RECLAIM_SICK;
+
 	while (radix_tree_tagged(&mp->m_perag_tree, XFS_ICI_RECLAIM_TAG)) {
 		xfs_ail_push_all_sync(mp->m_ail);
-		xfs_icwalk(mp, XFS_ICWALK_RECLAIM, NULL);
+		xfs_icwalk(mp, XFS_ICWALK_RECLAIM, &eofb);
 	}
 }
 
@@ -1046,6 +1075,9 @@ xfs_reclaim_inodes_nr(
 		.eof_flags	= XFS_ICWALK_FLAG_SCAN_LIMIT,
 		.icw_scan_limit	= nr_to_scan,
 	};
+
+	if (xfs_want_reclaim_sick(mp))
+		eofb.eof_flags |= XFS_ICWALK_FLAG_RECLAIM_SICK;
 
 	/* kick background reclaimer and push the AIL */
 	xfs_reclaim_work_queue(mp);
@@ -1605,7 +1637,8 @@ xfs_blockgc_free_quota(
 static inline bool
 xfs_icwalk_igrab(
 	enum xfs_icwalk_goal	goal,
-	struct xfs_inode	*ip)
+	struct xfs_inode	*ip,
+	struct xfs_eofblocks	*eofb)
 {
 	switch (goal) {
 	case XFS_ICWALK_DQRELE:
@@ -1613,7 +1646,7 @@ xfs_icwalk_igrab(
 	case XFS_ICWALK_BLOCKGC:
 		return xfs_blockgc_igrab(ip);
 	case XFS_ICWALK_RECLAIM:
-		return xfs_reclaim_igrab(ip);
+		return xfs_reclaim_igrab(ip, eofb);
 	default:
 		return false;
 	}
@@ -1702,7 +1735,7 @@ restart:
 		for (i = 0; i < nr_found; i++) {
 			struct xfs_inode *ip = batch[i];
 
-			if (done || !xfs_icwalk_igrab(goal, ip))
+			if (done || !xfs_icwalk_igrab(goal, ip, eofb))
 				batch[i] = NULL;
 
 			/*
