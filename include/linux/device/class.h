@@ -25,6 +25,12 @@ struct device;
 struct fwnode_handle;
 
 /**
+ * struct class_resvd - KABI extension struct
+ */
+struct class_resvd {
+};
+
+/**
  * struct class - device classes
  * @name:	Name of the class.
  * @owner:	The module owner.
@@ -82,6 +88,7 @@ struct class {
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
+	KABI_AUX_PTR(class)
 };
 
 struct class_dev_iter {

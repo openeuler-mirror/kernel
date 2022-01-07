@@ -1640,6 +1640,12 @@ enum netdev_ml_priv_type {
 };
 
 /**
+ * struct net_device_extended_resvd - KABI extension struct
+ */
+struct net_device_extended_resvd {
+};
+
+/**
  *	struct net_device - The DEVICE structure.
  *
  *	Actually, this whole structure is a big mistake.  It mixes I/O
@@ -2215,6 +2221,7 @@ struct net_device {
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
+	KABI_AUX_PTR(net_device_extended)
 };
 #define to_net_dev(d) container_of(d, struct net_device, dev)
 

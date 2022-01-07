@@ -70,6 +70,15 @@ struct ipmi_smi_msg {
 	void (*done)(struct ipmi_smi_msg *msg);
 };
 
+/**
+ * struct ipmi_smi_handlers_resvd - KABI extension struct
+ * This extension must be dynamically allocated for every instance of
+ * ipmi_smi_handlers, because ipmi_smi_handlers is embedded in another
+ * struct.
+ */
+struct ipmi_smi_handlers_resvd {
+};
+
 struct ipmi_smi_handlers {
 	struct module *owner;
 
@@ -153,6 +162,7 @@ struct ipmi_smi_handlers {
 	 * block.
 	 */
 	void (*set_maintenance_mode)(void *send_info, bool enable);
+	KABI_AUX_PTR(ipmi_smi_handlers)
 };
 
 struct ipmi_device_id {

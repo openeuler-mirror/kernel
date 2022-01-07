@@ -96,6 +96,12 @@ enum hrtimer_restart {
 #define HRTIMER_STATE_ENQUEUED	0x01
 
 /**
+ * struct hrtimer_resvd - KABI extension struct
+ */
+struct hrtimer_resvd {
+};
+
+/**
  * struct hrtimer - the basic hrtimer structure
  * @node:	timerqueue node, which also manages node.expires,
  *		the absolute expiry time in the hrtimers internal
@@ -128,6 +134,7 @@ struct hrtimer {
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+	KABI_AUX_PTR(hrtimer)
 };
 
 /**
