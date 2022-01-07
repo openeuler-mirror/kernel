@@ -6080,6 +6080,7 @@ void tcp_init_transfer(struct sock *sk, int bpf_op, struct sk_buff *skb)
 	/* Initialize congestion control unless BPF initialized it already: */
 	if (!icsk->icsk_ca_initialized)
 		tcp_init_congestion_control(sk);
+	tcp_init_compression(sk);
 	tcp_init_buffer_space(sk);
 }
 

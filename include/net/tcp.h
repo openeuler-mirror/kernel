@@ -2498,10 +2498,19 @@ static inline u64 tcp_transmit_time(const struct sock *sk)
 #if IS_ENABLED(CONFIG_TCP_COMP)
 extern struct static_key_false tcp_have_comp;
 bool tcp_syn_comp_enabled(const struct tcp_sock *tp);
+void tcp_init_compression(struct sock *sk);
+void tcp_cleanup_compression(struct sock *sk);
 #else
 static inline bool tcp_syn_comp_enabled(const struct tcp_sock *tp)
 {
 	return false;
+}
+static inline void tcp_init_compression(struct sock *sk)
+{
+}
+
+static inline void tcp_cleanup_compression(struct sock *sk)
+{
 }
 #endif
 
