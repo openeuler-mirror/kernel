@@ -820,7 +820,7 @@ xfs_alloc_file_space(
 		error = xfs_trans_reserve_quota_nblks(tp, ip, qblocks,
 						      0, quota_flag);
 		if (error)
-			goto error1;
+			goto error;
 
 		xfs_trans_ijoin(tp, ip, 0);
 
@@ -828,7 +828,7 @@ xfs_alloc_file_space(
 					allocatesize_fsb, alloc_type, 0, imapp,
 					&nimaps);
 		if (error)
-			goto error0;
+			goto error;
 
 		/*
 		 * Complete the transaction
@@ -851,10 +851,7 @@ xfs_alloc_file_space(
 
 	return error;
 
-error0:	/* unlock inode, unreserve quota blocks, cancel trans */
-	xfs_trans_unreserve_quota_nblks(tp, ip, (long)qblocks, 0, quota_flag);
-
-error1:	/* Just cancel transaction */
+error:
 	xfs_trans_cancel(tp);
 	xfs_iunlock(ip, XFS_ILOCK_EXCL);
 	return error;
