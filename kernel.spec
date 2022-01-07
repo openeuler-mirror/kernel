@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       25
+%global devel_release       34
 %global maintenance_release .0.0
-%global pkg_release         .16
+%global pkg_release         .17
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,439 @@ fi
 %endif
 
 %changelog
+* Fri Jan 07 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-34.0.0.17
+- openeuler_defconfig: Enable CONFIG_KABI_RESERVE for x86 and arm64
+- KABI: Add CONFIG_KABI_RESERVE to control KABI padding reserve
+- KABI: Fix allmodconfig build error
+- Revert "kabi: reserve space for ptp_clock.h"
+- kabi: reserve space for arm64 cpufeature related structure
+- UAPI: nfsfh.h: Replace one-element array with flexible-array member
+- kabi: Add kabi reservation for storage module
+- KABI:reserve space for sched structures
+- KABI: reserve space for IMA IPE
+- kabi: reserve space for cred and user_namespace
+- Increase size of ucounts to atomic_long_t
+- kabi: reserve space for fwnode.h
+- kabi: reserve space for iommu.h
+- kabi: reserve space for ptp_clock.h
+- kabi: reserve space for struct ptp_clock_info
+- kabi: reserve space for struct ptp_clock
+- kabi: reserve space for struct module
+- kabi: reserve space for kobject related structures
+- kabi: reserve space for io subsystem related structures
+- KABI: add KABI padding to x86/paravirt ops structures
+- KABI: add KABI padding to cpuidle structures
+- kabi: reserve space for struct dma_map_ops
+- kabi: reserve space for struct cpu_stop_work
+- kabi: reserve space for perf subsystem related structures
+- kabi: net: reserve space for net netfilter subsystem related structure
+- kabi: net: reserve space for net bpf subsystem related structure
+- kabi: net: reserve space for net rdma subsystem related structure
+- kabi: net: reserve space for net sunrpc subsystem related structure
+- kabi: net: reserve space for net can subsystem related structure
+- kabi: net: reserve space for net base subsystem related structure
+- kabi: reserve space for cgroup bpf structures
+- kabi: reserve space for cpu cgroup and cpuset cgroup related structures
+- kabi: reserve space for memcg related structures
+- kabi: reserve space for cgroup framework related structures
+- kabi: mm: reserve space for memory subsystem related
+- msi: Add kabi_reserve in msi.h
+- irqdomain: Add kabi_reserve in irqdomain
+- irq_desc: Add kabi_reserve in irq_desc
+- irq: Add kabi_reserve in irq
+- interrupt: Add kabi_reserve in interrupt.h
+- bootparam: Add kabi_reserve in bootparam
+- kabi: reserve space for hrtimer related structures
+- kabi: reserve space for time and workqueue subsystem related structure
+- kabi: reserve space for struct worker
+- kabi: reserve space for net_namespace
+- kabi: reserve space for power management related structure
+- kabi: reserve space for pci subsystem related structure
+- kabi: reserve space for posix clock related structure
+- kabi: add kABI reference checking tool
+- kabi: add a tool to generate the kabi reference relationship
+- kabi: add script tools to check kabi symbol
+- kabi: enables more stringent kabi checks
+- kabi: add KABI_SIZE_ALIGN_CHECKS for more stringent kabi checks
+- kabi: add kabi helper macros
+- pci: do not save 'PCI_BRIDGE_CTL_BUS_RESET'
+- PCI: check BIR before mapping MSI-X Table
+- PCI: Fail MSI-X mapping if MSI-X Table offset is out of range of BAR space
+- PCI/sysfs: Take reference on device to be removed
+- pciehp: fix a race between pciehp and removing operations by sysfs
+- iommu/arm-smmu-v3: Add suspend and resume support
+- cgroup: Fix task_css_check rcu warnings
+- psi: using cpuacct_cgrp_id under CONFIG_CGROUP_CPUACCT
+- psi: fix unexpected behavior of psi in cgroup v1 during init
+- perf inject: Fix ARM SPE handling
+- perf tools: Set COMPAT_NEED_REALLOCARRAY for CONFIG_AUXTRACE=1
+- perf arm-spe: Support hardware-based PID tracing
+- perf arm-spe: Save context ID in record
+- perf arm-spe: Update --switch-events docs in 'perf record'
+- perf arm-spe: Track task context switch for cpu-mode events
+- perf arm-spe: Print size using consistent format
+- perf arm-spe: Implement find_snapshot callback
+- perf arm-spe: Snapshot mode test
+- perf arm-spe: Add snapshot mode support
+- perf arm-spe: Don't wait for PERF_RECORD_EXIT event
+- perf arm-spe: Bail out if the trace is later than perf event
+- perf arm-spe: Assign kernel time to synthesized event
+- perf arm-spe: Convert event kernel time to counter value
+- perf arm-spe: Save clock parameters from TIME_CONV event
+- perf arm-spe: Remove redundant checking for "full_auxtrace"
+- perf arm-spe: Enable timestamp for per-cpu mode
+- perf arm-spe: Correct sample flags for dummy event
+- perf arm-spe: Correct sample flags for SPE event
+- perf arm-spe: Avoid potential buffer overrun
+- perf arm-spe: Set sample's data source field
+- perf arm-spe: Synthesize memory event
+- perf arm-spe: Fill address info for samples
+- perf arm-spe: Store operation type in packet
+- perf arm-spe: Store memory address in packet
+- perf arm-spe: Enable sample type PERF_SAMPLE_DATA_SRC
+- perf c2c: Add local variables for output metrics
+- perf c2c: Refactor node display
+- perf c2c: Fix argument type for percent()
+- perf c2c: Refactor display filter
+- perf c2c: Refactor hist entry validation
+- perf c2c: Rename for shared cache line stats
+- perf arm-spe: Add support for ARMv8.3-SPE
+- perf arm_spe: Decode memory tagging properties
+- perf arm-spe: Add more sub classes for operation packet
+- perf arm-spe: Refactor operation packet handling
+- perf arm-spe: Add new function arm_spe_pkt_desc_op_type()
+- perf arm-spe: Remove size condition checking for events
+- perf arm-spe: Refactor event type handling
+- perf arm-spe: Add new function arm_spe_pkt_desc_event()
+- perf arm-spe: Refactor counter packet handling
+- perf arm-spe: Add new function arm_spe_pkt_desc_counter()
+- perf arm-spe: Refactor context packet handling
+- perf arm_spe: Fixup top byte for data virtual address
+- perf arm-spe: Refactor address packet handling
+- perf arm-spe: Add new function arm_spe_pkt_desc_addr()
+- perf arm-spe: Refactor packet header parsing
+- perf arm-spe: Refactor printing string to buffer
+- perf arm-spe: Fix packet length handling
+- perf arm-spe: Refactor arm_spe_get_events()
+- perf arm-spe: Refactor payload size calculation
+- perf arm-spe: Fix a typo in comment
+- perf arm-spe: Include bitops.h for BIT() macro
+- perf mem: Support ARM SPE events
+- perf c2c: Support AUX trace
+- perf mem: Support AUX trace
+- perf auxtrace: Add itrace option '-M' for memory events
+- perf mem: Only initialize memory event for recording
+- perf c2c: Support memory event PERF_MEM_EVENTS__LOAD_STORE
+- perf mem: Support new memory event PERF_MEM_EVENTS__LOAD_STORE
+- perf mem: Introduce weak function perf_mem_events__ptr()
+- perf mem: Search event name with more flexible path
+- share_pool: Use sharepool_no_page to alloc hugepage
+- share_pool: Show sp vmflags in /proc/$pid/smaps
+- share_pool: charge pages to the memcg of current task
+- share_pool: Use node_id from spa when alloc share_pool memory
+- share_pool: Don't allow non-sp mmap in sp address range
+- share_pool: support fork() and exit() to handle the mm
+- share_pool: Implement sp_group_del_task()
+- share_pool: Implement sp_group_add_task()
+- share_pool: Implement sp_alloc()
+- share_pool: Implement sp_unshare_uva()
+- share_pool: Implement sp_make_share_k2u()
+- share_pool: Implement sp_free()
+- share_pool: Implement sp_group_id_by_pid()
+- share_pool: Implement sp_unshare_kva
+- share_pool: Implement sp_make_share_u2k()
+- share_pool: Compact memory when necessary
+- share_pool: Add sp-area management code
+- share_pool: Implement sp_walk_page_range()
+- share_pool: Add VM_SHARE_POOL flag for vm_area_struct
+- share_pool: Add proc interfaces to show sp info
+- share_pool: Reserve the va space for share_pool
+- share_pool: Add Statement for all the exported symbol
+- share_pool: Add base framework for share_pool
+- shmem: Alloc shared memory on a specified memory node
+- memory: introduce do_mm_populate
+- vmalloc: Extend for hugepages mapping
+- mm/hugetlb: allocate huge page and setup page table
+- timekeeping: Really make sure wall_to_monotonic isn't positive
+- tracing/osnoise: Fix compile warning in function start_kthread
+- configs: Enable osnoise and timerlat
+- tracing: Have osnoise_main() add a quiescent state for task rcu
+- tracing/osnoise: Make osnoise_instances static
+- tracing/osnoise: Remove PREEMPT_RT ifdefs from inside functions
+- tracing/osnoise: Remove STACKTRACE ifdefs from inside functions
+- tracing/osnoise: Allow multiple instances of the same tracer
+- tracing/osnoise: Remove TIMERLAT ifdefs from inside functions
+- tracing: Disable "other" permission bits in the tracefs files
+- tracing/osnoise: Support a list of trace_array *tr
+- tracing/osnoise: Use start/stop_per_cpu_kthreads() on osnoise_cpus_write()
+- tracing/osnoise: Split workload start from the tracer start
+- tracing/osnoise: Improve comments about barrier need for NMI callbacks
+- tracing/osnoise: Do not follow tracing_cpumask
+- tracing: Fix missing osnoise tracer on max_latency
+- tracing/osnoise: Fix missed cpus_read_unlock() in start_per_cpu_kthreads()
+- trace/osnoise: Print a stop tracing message
+- trace/osnoise: Make 'noise' variable s64 in run_osnoise()
+- tracing: Fix spelling in osnoise tracer "interferences" -> "interference"
+- Documentation: Fix a typo on trace/osnoise-tracer
+- trace/osnoise: Fix return value on osnoise_init_hotplug_support
+- trace/osnoise: Make interval u64 on osnoise_main
+- trace/osnoise: Support hotplug operations
+- trace/osnoise: Fix 'no previous prototype' warnings
+- trace/osnoise: Fix an ifdef comment
+- trace/osnoise: Add a header with PREEMPT_RT additional fields
+- trace: Add timerlat tracer
+- trace: Add osnoise tracer
+- tracing: Merge irqflags + preempt counter.
+- trace: Add __print_ns_to_secs() and __print_ns_without_secs() helpers
+- trace: Add a generic function to read/write u64 values from tracefs
+- driver core: auxiliary bus: Fix memory leak when driver_register() fail
+- driver core: auxiliary bus: Remove unneeded module bits
+- driver core: auxiliary bus: Fix calling stage for auxiliary bus init
+- driver core: auxiliary bus: Fix auxiliary bus shutdown null auxdrv ptr
+- driver core: auxiliary bus: minor coding style tweaks
+- driver core: auxiliary bus: make remove function return void
+- driver core: auxiliary bus: move slab.h from include file
+- Add auxiliary bus support
+- svm: Set CONFIG_HISI_SVM as m by default
+- svm: Change svm to modules and remove unused functions
+- arm64/ascend: Enable CONFIG_ASCEND_OOM for openeuler_defconfig
+- arm64/ascend: Add new enable_oom_killer interface for oom contrl
+- x86: Support huge vmalloc mappings
+- arm64: Support huge vmalloc mappings
+- mm: vmalloc: Let user to control huge vmalloc default behavior
+- pid_ns: Make pid_max per namespace
+- arm64/mpam: rmid: refine allocation and release process
+- arm64/mpam: resctrl: add tips when rmid modification failed
+- arm64/mpam: Fix mpam corrupt when cpu online
+- vfio/mdev: Add missing error handling to dev_set_name()
+- KVM: arm64: Restore PMU configuration on first run
+- KVM: arm64: Refuse to run VCPU if PMU is not initialized
+- KVM: arm64: Add kvm_vcpu_has_pmu() helper
+- KVM: LAPIC: Keep stored TMCCT register value 0 after KVM_SET_LAPIC
+- KVM: x86: Properly reset MMU context at vCPU RESET/INIT
+- KVM: LAPIC: Write 0 to TMICT should also cancel vmx-preemption timer
+- KVM: X86: Fix missing local pCPU when executing wbinvd on all dirty pCPUs
+- kvm: SMM: fix losing SMI problem
+- arm64: mm: support setting page attributes for debugging
+- mm: emit the "free" trace report before freeing memory in kmem_cache_free()
+- mm, page_alloc: disable pcplists during memory offline
+- mm, page_alloc: move draining pcplists to page isolation users
+- mm, page_alloc: cache pageset high and batch in struct zone
+- mm, page_alloc: simplify pageset_update()
+- mm, page_alloc: remove setup_pageset()
+- mm, page_alloc: calculate pageset high and batch once per zone
+- mm, page_alloc: clean up pageset high and batch update
+- tools arch x86: Sync the msr-index.h copy with the kernel sources
+- powercap: RAPL: Add AMD Fam19h RAPL support
+- powercap: Add AMD Fam17h RAPL support
+- powercap/intel_rapl_msr: Convert rapl_msr_priv into pointer
+- x86/msr-index: sort AMD RAPL MSRs by address
+- Revert "ima: Introduce ima namespace"
+- Revert "ima: Add a list of the installed ima namespaces"
+- Revert "ima: Bind ima namespace to the file descriptor"
+- Revert "ima: Add ima policy related data to the ima namespace"
+- Revert "ima: Add methods for parsing ima policy configuration string"
+- Revert "ima: Add ima namespace to the ima subsystem APIs"
+- Revert "ima: Extend the APIs in the integrity subsystem"
+- Revert "ima: Add integrity inode related data to the ima namespace"
+- Revert "ima: Enable per ima namespace policy settings"
+- Revert "ima: Add ima namespace id to the measurement list related structures"
+- Revert "ima: Keep track of the measurment list per ima namespace"
+- Revert "ima: Check ima namespace ID during digest entry lookup"
+- Revert "ima: Add a new ima template that includes namespace ID"
+- Revert "ima: Add per namespace view of the measurement list"
+- Revert "ima: Add a reader counter to the integrity inode data"
+- Revert "ima: Extend permissions to the ima securityfs entries"
+- Revert "ima: Add the violation counter to the namespace"
+- Revert "ima: Change the owning user namespace of the ima namespace if necessary"
+- Revert "ima: Configure the new ima namespace from securityfs"
+- Revert "ima: Parse per ima namespace policy file"
+- Revert "user namespace: Add function that checks if the UID map is defined"
+- Revert "ima: Remap IDs of subject based rules if necessary"
+- Revert "keys: Add domain tag to the keyring search criteria"
+- Revert "keys: Include key domain tag in the iterative search"
+- Revert "keys: Allow to set key domain tag separately from the key type"
+- Revert "ima: Add key domain to the ima namespace"
+- Revert "integrity: Add key domain tag to the search criteria"
+- Revert "ima: Load per ima namespace x509 certificate"
+- Revert "ima: Add dummy boot aggregate to per ima namespace measurement list"
+- Revert "ima: Set ML template per ima namespace"
+- Revert "ima: fix a potential crash owing to the compiler optimisation"
+- Revert "ima: Introduce ima-ns-sig template"
+- Revert "digest list: disable digest lists in non-root ima namespaces"
+- Revert "imans: Use initial ima namespace domain tag when IMANS is disabled."
+- Revert "imans: Check CAP_SYS_ADMIN in userns associated with IMA NS during configuration."
+- config: enable CONFIG_ASCEND_CLEAN_CDM by default
+- numa/cdm: Introduce a bootarg to specify the target nodes to move to
+- numa: Move the management structures for cdm nodes to ddr
+- tick/nohz: Call tick_nohz_task_switch() with interrupts disabled
+- tick/nohz: Kick only _queued_ task whose tick dependency is updated
+- tick/nohz: Change signal tick dependency to wake up CPUs of member tasks
+- tick/nohz: Only wake up a single target cpu when kicking a task
+- tick/nohz: Update idle_exittime on actual idle exit
+- tick/nohz: Remove superflous check for CONFIG_VIRT_CPU_ACCOUNTING_NATIVE
+- tick/nohz: Conditionally restart tick on idle exit
+- tick/sched: Release seqcount before invoking calc_load_global()
+- tick/sched: Optimize tick_do_update_jiffies64() further
+- tick/sched: Reduce seqcount held scope in tick_do_update_jiffies64()
+- tick/sched: Use tick_next_period for lockless quick check
+- arm64: Revert feature: Add memmap parameter and register pmem
+- crypto: hisilicon/zip - enable ssid for sva sgl
+- crypto: hisilicon/zip - add new algorithms for uacce device
+- PCI: fix the wrong class type for HiSilicon NP 5896
+- PCI: Fix SD5896 NP init failure
+- fs: fix a hungtask problem when freeze/unfreeze fs
+- PCI: Add support of port isolation for QLogic HBA card 26
+- xfs: fix chown leaking delalloc quota blocks when fssetxattr fails
+- xfs: punch out data fork delalloc blocks on COW writeback failure
+- xfs: use kmem_cache_free() for kmem_cache objects
+- xfs: fix I_DONTCACHE
+- xfs: only set IOMAP_F_SHARED when providing a srcmap to a write
+- xfs: fix perag structure refcounting error when scrub fails
+- xfs: make fsmap backend function key parameters const
+- xfs: fix off-by-one error when the last rt extent is in use
+- xfs: make xfs_rtalloc_query_range input parameters const
+- xfs: replace kmem_alloc_large() with kvmalloc()
+- xfs: remove kmem_alloc_io()
+- mm: Add kvrealloc()
+- xfs: introduce all-mounts list for cpu hotplug notifications
+- xfs: introduce CPU hotplug infrastructure
+- xfs: prevent spoofing of rtbitmap blocks when recovering buffers
+- xfs: Enforce attr3 buffer recovery order
+- xfs: logging the on disk inode LSN can make it go backwards
+- xfs: avoid unnecessary waits in xfs_log_force_lsn()
+- xfs: log forces imply data device cache flushes
+- xfs: factor out forced iclog flushes
+- xfs: fix ordering violation between cache flushes and tail updates
+- xfs: fold __xlog_state_release_iclog into xlog_state_release_iclog
+- xfs: external logs need to flush data device
+- xfs: flush data dev on external log write
+- xfs: fix an integer overflow error in xfs_growfs_rt
+- xfs: reset child dir '..' entry when unlinking child
+- xfs: don't wait on future iclogs when pushing the CIL
+- xfs: Fix a CIL UAF by getting get rid of the iclog callback lock
+- xfs: remove callback dequeue loop from xlog_state_do_iclog_callbacks
+- xfs: don't nest icloglock inside ic_callback_lock
+- xfs: force the log offline when log intent item recovery fails
+- xfs: fix log intent recovery ENOSPC shutdowns when inactivating inodes
+- xfs: xfs_log_force_lsn isn't passed a LSN
+- xfs: Fix CIL throttle hang when CIL space used going backwards
+- xfs: journal IO cache flush reductions
+- xfs: remove need_start_rec parameter from xlog_write()
+- xfs: CIL checkpoint flushes caches unconditionally
+- xfs: async blkdev cache flush
+- xfs: separate CIL commit record IO
+- xfs: Fix 64-bit division on 32-bit in xlog_state_switch_iclogs()
+- xfs: log stripe roundoff is a property of the log
+- xfs: only reset incore inode health state flags when reclaiming an inode
+- xfs: don't take a spinlock unconditionally in the DIO fastpath
+- xfs: bunmapi has unnecessary AG lock ordering issues
+- xfs: btree format inode forks can have zero extents
+- xfs: Fix fall-through warnings for Clang
+- xfs: don't reset log idle state on covering checkpoints
+- xfs: check free AG space when making per-AG reservations
+- xfs: unconditionally read all AGFs on mounts with perag reservation
+- xfs: fix deadlock retry tracepoint arguments
+- xfs: fix scrub and remount-ro protection when running scrub
+- xfs: fix xfs_reflink_unshare usage of filemap_write_and_wait_range
+- xfs: count free space btree blocks when scrubbing pre-lazysbcount fses
+- xfs: update superblock counters correctly for !lazysbcount
+- xfs: don't check agf_btreeblks on pre-lazysbcount filesystems
+- xfs: remove obsolete AGF counter debugging
+- xfs: drop submit side trans alloc for append ioends
+- net: hns3: Fix spelling mistake "faile" -> "failed"
+- net: hns3: fix hns3 driver header file not self-contained issue
+- net: hns3: replace one tab with space in for statement
+- net: hns3: remove rebundant line for hclge_dbg_dump_tm_pg()
+- net: hns3: add comments for hclge_dbg_fill_content()
+- net: hns3: align return value type of atomic_read() with its output
+- net: hns3: modify one argument type of function hclge_ncl_config_data_print
+- net: hns3: Align type of some variables with their print type
+- net: hns3: add print vport id for failed message of vlan
+- net: hns3: refactor function hclge_set_vlan_filter_hw
+- net: hns3: optimize function hclge_cfg_common_loopback()
+- net: hns3: refactor function hns3_get_vector_ring_chain()
+- net: hns3: refactor function hclge_set_channels()
+- net: hns3: refactor function hclge_configure()
+- net: hns3: split function hclge_update_port_base_vlan_cfg()
+- net: hns3: split function hns3_nic_net_xmit()
+- net: hns3: split function hclge_get_fd_rule_info()
+- net: hns3: split function hclge_init_vlan_config()
+- net: hns3: refactor function hns3_fill_skb_desc to simplify code
+- net: hns3: extract macro to simplify ring stats update code
+- net: hns3: make symbol 'hclge_mac_speed_map_to_fw' static
+- net: hns3: split function hns3_set_l2l3l4()
+- net: hns3: split function hns3_handle_bdinfo()
+- net: hns3: split function hns3_nic_get_stats64()
+- net: hns3: refine function hclge_tm_pri_q_qs_cfg()
+- net: hns3: add new function hclge_tm_schd_mode_tc_base_cfg()
+- net: hns3: refine function hclge_cfg_mac_speed_dup_hw()
+- net: hns3: split function hns3_get_tx_timeo_queue_info()
+- net: hns3: refactor two hns3 debugfs functions
+- net: hns3: refactor hns3_nic_reuse_page()
+- net: hns3: refactor reset_prepare_general retry statement
+- net: hns3: use macro IANA_VXLAN_GPE_UDP_PORT to replace number 4790
+- net: vxlan: add macro definition for number of IANA VXLAN-GPE port
+- net: hns3: fix incorrect components info of ethtool --reset command
+- net: hns3: fix one incorrect value of page pool info when queried by debugfs
+- net: hns3: add check NULL address for page pool
+- net: hns3: fix VF RSS failed problem after PF enable multi-TCs
+- net: hns3: add dql info when tx timeout
+- net: hns3: debugfs add drop packet statistics of multicast and broadcast for igu
+- net: hns3: format the output of the MAC address
+- net: hns3: add log for workqueue scheduled late
+- net: hns3: remove the way to set tx spare buf via module parameter
+- net: hns3: add support to set/get rx buf len via ethtool for hns3 driver
+- ethtool: extend ringparam setting/getting API with rx_buf_len
+- ethtool: add support to set/get rx buf len via ethtool
+- net: hns3: add support to set/get tx copybreak buf size via ethtool for hns3 driver
+- ethtool: add support to set/get tx copybreak buf size via ethtool
+- vhost_net: avoid tx queue stuck when sendmsg fails
+- crypto: x86/sm4 - Fix invalid section entry size
+- crypto: sm4 - Do not change section of ck and sbox
+- crypto: x86/sm4 - Fix frame pointer stack corruption
+- Add the configuration for accelerated of SM4
+- crypto: x86/sm4 - add AES-NI/AVX2/x86_64 implementation
+- crypto: x86/sm4 - export reusable AESNI/AVX functions
+- crypto: tcrypt - add the asynchronous speed test for SM4
+- crypto: x86/sm4 - add AES-NI/AVX/x86_64 implementation
+- crypto: arm64/sm4-ce - Make dependent on sm4 library instead of sm4-generic
+- crypto: sm4 - create SM4 library based on sm4 generic code
+- crypto: tcrypt - add GCM/CCM mode test for SM4 algorithm
+- crypto: testmgr - Add GCM/CCM mode test of SM4 algorithm
+- crypto: tcrypt - Fix missing return value check
+- ipvlan: limit loop_qlen ranges
+- ipvlan: limit loop_delay ranges
+- ipvlan: Introduce local xmit queue for l2e mode
+- ipvlan: check the value of module parameter ipvlan_default_mode
+- ipvlan: Introduce l2e mode
+- mpam: update monitor rmid and group configuration
+- mpam: Add support for group rmid modify
+- mpam: enable rdt_mon_capable for mbw monitor
+- iommu/arm-smmu-v3: Add support to enable/disable SMMU user_mpam_en
+- iommu/arm-smmu-v3: Add support to get SMMU mpam configuration
+- iommu/arm-smmu-v3: Add support to configure mpam in STE/CD context
+- iommu: add iommu interface to set/get device configuration
+- block/wbt: fix negative inflight counter when remove scsi device
+- md/raid1: fix a race between removing rdev and access conf->mirrors[i].rdev
+- arm64/ascend: Enable CONFIG_ASCEND_DVPP_MMAP
+- arm64/ascend: Enable DvPP mmap features for Ascend Platform
+- arm64: openeuler_defconfig: Adjust page size to 4K and VA_BITS to 48
+- openeuler_defconfig: Adjust CONFIG_NODES_SHIFT to 7
+- arm64: openeuler_defconfig: increase CONFIG_NR_CPUS value to 4096
+- audit: ensure userspace is penalized the same as the kernel when under pressure
+- audit: improve robustness of the audit queue handling
+- arm32: kaslr: Bugfix of initrd size calculation when enabled kaslr
+- drm/hisilicon: Features to support reading resolutions from EDID
+- drm/hisilicon: Support i2c driver algorithms for bit-shift adapters
+- mm: Change tmpfs size base on ddr size.
+- SUNRPC: Close a race with transport setup and module put
+- sched: Introduce handle priority reversion mechanism
+- mm: Check numa node hugepages enough when mmap hugetlb
+- block: return errors from blk_execute_rq()
+- blk: Fix lock inversion between ioc lock and bfqd lock
+- bfq: Remove merged request already in bfq_requests_merged()
+
 * Fri Dec 24 2021 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-25.0.0.16
 - selftests/x86/iopl: Adjust to the faked iopl CLI/STI usage
 - thermal: Fix NULL pointer dereferences in of_thermal_ functions
