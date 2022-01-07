@@ -742,7 +742,7 @@ static void comp_set_option(const struct sock *sk,
 {
 #if IS_ENABLED(CONFIG_TCP_COMP)
 	if (static_branch_unlikely(&tcp_have_comp)) {
-		if (tcp_syn_comp_enabled(sk, true)) {
+		if (tcp_syn_comp_enabled(sk)) {
 			if (*remaining >= TCPOLEN_EXP_COMP_BASE) {
 				opts->options |= OPTION_COMP;
 				*remaining -= TCPOLEN_EXP_COMP_BASE;
@@ -759,7 +759,7 @@ static void comp_set_option_cond(const struct sock *sk,
 {
 #if IS_ENABLED(CONFIG_TCP_COMP)
 	if (static_branch_unlikely(&tcp_have_comp)) {
-		if (tcp_syn_comp_enabled(sk, false) && ireq->comp_ok) {
+		if (tcp_synack_comp_enabled(sk, ireq)) {
 			if (*remaining >= TCPOLEN_EXP_COMP_BASE) {
 				opts->options |= OPTION_COMP;
 				*remaining -= TCPOLEN_EXP_COMP_BASE;
