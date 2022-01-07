@@ -350,9 +350,6 @@ static void spnic_sw_deinit(struct spnic_nic_dev *nic_dev)
 	spnic_del_mac(nic_dev->hwdev, nic_dev->netdev->dev_addr, 0,
 		      sphw_global_func_id(nic_dev->hwdev), SPHW_CHANNEL_NIC);
 
-	if (test_bit(SPNIC_RSS_ENABLE, &nic_dev->flags))
-		spnic_rss_template_free(nic_dev->hwdev);
-
 	spnic_clear_rss_config(nic_dev);
 }
 
@@ -423,9 +420,6 @@ alloc_qps_err:
 set_mac_err:
 err_mac:
 get_mac_err:
-
-	if (test_bit(SPNIC_RSS_ENABLE, &nic_dev->flags))
-		spnic_rss_template_free(nic_dev->hwdev);
 	spnic_clear_rss_config(nic_dev);
 
 	return err;

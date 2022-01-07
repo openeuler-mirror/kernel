@@ -224,22 +224,11 @@ void spnic_try_to_enable_rss(struct spnic_nic_dev *nic_dev)
 		return;
 
 	nic_dev->max_qps = sphw_func_max_nic_qnum(nic_dev->hwdev);
-	if (nic_dev->max_qps <= 1)
+	if (nic_dev->max_qps <= 1 || !SPNIC_SUPPORT_RSS(nic_dev->hwdev))
 		goto set_q_params;
 
 	err = alloc_rss_resource(nic_dev);
 	if (err) {
-		nic_dev->max_qps = 1;
-		goto set_q_params;
-	}
-
-	err = spnic_rss_template_alloc(nic_dev->hwdev);
-	if (err) {
-		if (err == -ENOSPC)
-			nic_err(&nic_dev->pdev->dev, "Failed to alloc template for rss, table is full\n");
-		else
-			nic_err(&nic_dev->pdev->dev, "Failed to alloc template for rss, can't enable rss for this function\n");
-		spnic_clear_rss_config(nic_dev);
 		nic_dev->max_qps = 1;
 		goto set_q_params;
 	}
@@ -258,9 +247,6 @@ void spnic_try_to_enable_rss(struct spnic_nic_dev *nic_dev)
 		nic_err(&nic_dev->pdev->dev, "Failed to set hardware rss parameters\n");
 
 		spnic_clear_rss_config(nic_dev);
-		err = spnic_rss_template_free(nic_dev->hwdev);
-		if (err)
-			return;
 		nic_dev->max_qps = 1;
 		goto set_q_params;
 	}

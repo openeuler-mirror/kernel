@@ -844,6 +844,12 @@ int spnic_init_nic_hwdev(void *hwdev, void *pcidev_hdl, void *dev_hdl, u16 rx_bu
 		goto register_sa_err;
 	}
 
+	err = spnic_init_function_table(nic_cfg);
+	if (err) {
+		nic_err(nic_cfg->dev_hdl, "Failed to init function table\n");
+		goto init_func_tbl_err;
+	}
+
 	err = spnic_get_nic_feature(hwdev, &nic_cfg->feature_cap, 1);
 	if (err) {
 		nic_err(nic_cfg->dev_hdl, "Failed to get nic features\n");
@@ -867,22 +873,14 @@ int spnic_init_nic_hwdev(void *hwdev, void *pcidev_hdl, void *dev_hdl, u16 rx_bu
 
 	nic_cfg->rx_buff_len = rx_buff_len;
 
-	err = spnic_init_function_table(nic_cfg);
-	if (err) {
-		nic_err(nic_cfg->dev_hdl, "Failed to init function table\n");
-		goto init_func_tbl_err;
-	}
-
 	return 0;
-
-init_func_tbl_err:
-	spnic_vf_func_free(nic_cfg);
 
 vf_init_err:
 	sphw_aeq_unregister_swe_cb(hwdev, SPHW_STATELESS_EVENT);
 
 register_sw_aeqe_err:
 get_feature_err:
+init_func_tbl_err:
 	sphw_unregister_service_adapter(hwdev, SERVICE_T_NIC);
 
 register_sa_err:

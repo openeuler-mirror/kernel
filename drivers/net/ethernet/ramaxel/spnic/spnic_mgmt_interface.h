@@ -350,18 +350,6 @@ struct spnic_rss_indir_table {
 	u8 indir[SPNIC_RSS_INDIR_SIZE];
 };
 
-#define NIC_RSS_CMD_TEMP_ALLOC		0x01
-#define NIC_RSS_CMD_TEMP_FREE		0x02
-
-struct spnic_rss_template_mgmt {
-	struct mgmt_msg_head msg_head;
-
-	u16 func_id;
-	u8 cmd;
-	u8 template_id;
-	u8 rsvd1[4];
-};
-
 #define SPNIC_DCB_UP_MAX		0x8
 #define SPNIC_DCB_COS_MAX		0x8
 #define SPNIC_DCB_TC_MAX		0x8

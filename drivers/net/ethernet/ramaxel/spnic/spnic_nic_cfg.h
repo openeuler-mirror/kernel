@@ -404,22 +404,6 @@ int spnic_set_vf_link_state(void *hwdev, u16 vf_id, int link);
 int spnic_get_port_info(void *hwdev, struct nic_port_info *port_info, u16 channel);
 
 /* *
- * @brief spnic_rss_template_alloc - alloc rss template table
- * @param hwdev: device pointer to hwdev
- * @retval zero: success
- * @retval non-zero: failure
- */
-int spnic_rss_template_alloc(void *hwdev);
-
-/* *
- * @brief spnic_rss_template_free - free rss template table
- * @param hwdev: device pointer to hwdev
- * @retval zero: success
- * @retval non-zero: failure
- */
-int spnic_rss_template_free(void *hwdev);
-
-/* *
  * @brief spnic_set_rss_type - set rss type
  * @param hwdev: device pointer to hwdev
  * @param rss_type: rss type

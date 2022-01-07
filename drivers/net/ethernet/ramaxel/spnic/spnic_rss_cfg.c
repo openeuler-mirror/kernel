@@ -18,63 +18,6 @@
 #include "spnic_nic.h"
 #include "sphw_common.h"
 
-int spnic_rss_template_alloc(void *hwdev)
-{
-	struct spnic_rss_template_mgmt template_mgmt;
-	struct spnic_nic_cfg *nic_cfg = NULL;
-	u16 out_size = sizeof(template_mgmt);
-	int err;
-
-	if (!hwdev)
-		return -EINVAL;
-
-	nic_cfg = sphw_get_service_adapter(hwdev, SERVICE_T_NIC);
-
-	memset(&template_mgmt, 0, sizeof(struct spnic_rss_template_mgmt));
-
-	template_mgmt.func_id = sphw_global_func_id(hwdev);
-	template_mgmt.cmd = NIC_RSS_CMD_TEMP_ALLOC;
-
-	err = l2nic_msg_to_mgmt_sync(hwdev, SPNIC_NIC_CMD_RSS_TEMP_MGR,
-				     &template_mgmt, sizeof(template_mgmt),
-				     &template_mgmt, &out_size);
-	if (err || !out_size || template_mgmt.msg_head.status) {
-		nic_err(nic_cfg->dev_hdl, "Failed to alloc rss template, err: %d, status: 0x%x, out size: 0x%x\n",
-			err, template_mgmt.msg_head.status, out_size);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
-int spnic_rss_template_free(void *hwdev)
-{
-	struct spnic_rss_template_mgmt template_mgmt;
-	struct spnic_nic_cfg *nic_cfg = NULL;
-	u16 out_size = sizeof(template_mgmt);
-	int err;
-
-	if (!hwdev)
-		return -EINVAL;
-
-	nic_cfg = sphw_get_service_adapter(hwdev, SERVICE_T_NIC);
-	memset(&template_mgmt, 0, sizeof(struct spnic_rss_template_mgmt));
-
-	template_mgmt.func_id = sphw_global_func_id(hwdev);
-	template_mgmt.cmd = NIC_RSS_CMD_TEMP_FREE;
-
-	err = l2nic_msg_to_mgmt_sync(hwdev, SPNIC_NIC_CMD_RSS_TEMP_MGR,
-				     &template_mgmt, sizeof(template_mgmt),
-				     &template_mgmt, &out_size);
-	if (err || !out_size || template_mgmt.msg_head.status) {
-		nic_err(nic_cfg->dev_hdl, "Failed to free rss template, err: %d, status: 0x%x, out size: 0x%x\n",
-			err, template_mgmt.msg_head.status, out_size);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 static int spnic_rss_cfg_hash_key(struct spnic_nic_cfg *nic_cfg, u8 opcode, u8 *key)
 {
 	struct spnic_cmd_rss_hash_key hash_key;
