@@ -5013,6 +5013,62 @@ out_kfree:
 	return ret;
 }
 
+static int seq_puts_memcg_tunable(struct seq_file *m, unsigned long value)
+{
+	if (value == PAGE_COUNTER_MAX)
+		seq_puts(m, "max\n");
+	else
+		seq_printf(m, "%llu\n", (u64)value * PAGE_SIZE);
+
+	return 0;
+}
+
+static int memory_min_show(struct seq_file *m, void *v)
+{
+	return seq_puts_memcg_tunable(m,
+		READ_ONCE(mem_cgroup_from_seq(m)->memory.min));
+}
+
+static ssize_t memory_min_write(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned long min;
+	int err;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &min);
+	if (err)
+		return err;
+
+	page_counter_set_min(&memcg->memory, min);
+
+	return nbytes;
+}
+
+static int memory_low_show(struct seq_file *m, void *v)
+{
+	return seq_puts_memcg_tunable(m,
+		READ_ONCE(mem_cgroup_from_seq(m)->memory.low));
+}
+
+static ssize_t memory_low_write(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned long low;
+	int err;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &low);
+	if (err)
+		return err;
+
+	page_counter_set_low(&memcg->memory, low);
+
+	return nbytes;
+}
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -5145,6 +5201,18 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.private = MEMFILE_PRIVATE(_TCP, RES_MAX_USAGE),
 		.write = mem_cgroup_reset,
 		.read_u64 = mem_cgroup_read_u64,
+	},
+	{
+		.name = "min",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_min_show,
+		.write = memory_min_write,
+	},
+	{
+		.name = "low",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memory_low_show,
+		.write = memory_low_write,
 	},
 	{ },	/* terminate */
 };
@@ -6341,68 +6409,12 @@ static void mem_cgroup_bind(struct cgroup_subsys_state *root_css)
 		root_mem_cgroup->use_hierarchy = false;
 }
 
-static int seq_puts_memcg_tunable(struct seq_file *m, unsigned long value)
-{
-	if (value == PAGE_COUNTER_MAX)
-		seq_puts(m, "max\n");
-	else
-		seq_printf(m, "%llu\n", (u64)value * PAGE_SIZE);
-
-	return 0;
-}
-
 static u64 memory_current_read(struct cgroup_subsys_state *css,
 			       struct cftype *cft)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 
 	return (u64)page_counter_read(&memcg->memory) * PAGE_SIZE;
-}
-
-static int memory_min_show(struct seq_file *m, void *v)
-{
-	return seq_puts_memcg_tunable(m,
-		READ_ONCE(mem_cgroup_from_seq(m)->memory.min));
-}
-
-static ssize_t memory_min_write(struct kernfs_open_file *of,
-				char *buf, size_t nbytes, loff_t off)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
-	unsigned long min;
-	int err;
-
-	buf = strstrip(buf);
-	err = page_counter_memparse(buf, "max", &min);
-	if (err)
-		return err;
-
-	page_counter_set_min(&memcg->memory, min);
-
-	return nbytes;
-}
-
-static int memory_low_show(struct seq_file *m, void *v)
-{
-	return seq_puts_memcg_tunable(m,
-		READ_ONCE(mem_cgroup_from_seq(m)->memory.low));
-}
-
-static ssize_t memory_low_write(struct kernfs_open_file *of,
-				char *buf, size_t nbytes, loff_t off)
-{
-	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
-	unsigned long low;
-	int err;
-
-	buf = strstrip(buf);
-	err = page_counter_memparse(buf, "max", &low);
-	if (err)
-		return err;
-
-	page_counter_set_low(&memcg->memory, low);
-
-	return nbytes;
 }
 
 static int memory_high_show(struct seq_file *m, void *v)
