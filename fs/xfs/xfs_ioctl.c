@@ -1498,7 +1498,7 @@ xfs_ioctl_setattr(
 
 	/* Change the ownerships and register project quota modifications */
 	if (ip->i_d.di_projid != fa->fsx_projid) {
-		if (XFS_IS_QUOTA_RUNNING(mp) && XFS_IS_PQUOTA_ON(mp)) {
+		if (XFS_IS_PQUOTA_ON(mp)) {
 			olddquot = xfs_qm_vop_chown(tp, ip,
 						&ip->i_pdquot, pdqp);
 		}
