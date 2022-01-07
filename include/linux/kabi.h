@@ -151,7 +151,7 @@
  *   approaches can (and often are) combined.
  *
  *   To use this for 'struct foo' (the "base structure"), define a new
- *   structure called 'struct foo_rh'; this new struct is called "auxiliary
+ *   structure called 'struct foo_resvd'; this new struct is called "auxiliary
  *   structure".  Then add KABI_AUX_EMBED or KABI_AUX_PTR to the end
  *   of the base structure.  The argument is the name of the base structure,
  *   without the 'struct' keyword.
@@ -174,7 +174,7 @@
  *   end.  Note the auxiliary structure cannot be shrunk in size later (i.e.,
  *   fields cannot be removed, only deprecated).  Any code accessing fields
  *   from the aux struct must guard the access using the KABI_AUX macro.
- *   The access itself is then done via a '_rh' field in the base struct.
+ *   The access itself is then done via a '_resvd' field in the base struct.
  *
  *   The auxiliary structure is not guaranteed for access by modules unless
  *   explicitly commented as such in the declaration of the aux struct
@@ -182,7 +182,7 @@
  *
  *   Example:
  *
- *   struct foo_rh {
+ *   struct foo_resvd {
  *           int newly_added;
  *   };
  *
@@ -194,20 +194,20 @@
  *   void use(struct foo *f)
  *   {
  *           if (KABI_AUX(f, foo, newly_added))
- *                   f->_rh->newly_added = 123;
+ *                   f->_resvd->newly_added = 123;
  *	     else
  *	             // the field 'newly_added' is not present in the passed
  *	             // struct, fall back to old behavior
  *	             f->big_hammer = true;
  *   }
  *
- *   static struct foo_rh my_foo_rh {
+ *   static struct foo_resvd my_foo_resvd {
  *           .newly_added = 0;
  *   }
  *
  *   static struct foo my_foo = {
  *           .big_hammer = false,
- *           ._rh = &my_foo_rh,
+ *           ._resvd = &my_foo_resvd,
  *           KABI_AUX_INIT_SIZE(foo)
  *   };
  *
@@ -218,7 +218,7 @@
  *
  *   Example:
  *
- *   struct foo_rh {
+ *   struct foo_resvd {
  *   };
  *
  *   struct foo {
@@ -385,7 +385,7 @@
 		_Static_assert(__alignof__(struct{_new;}) <= __alignof__(struct{_orig;}), \
 			       __FILE__ ":" __stringify(__LINE__) ": "  __stringify(_orig) " is not aligned the same as " __stringify(_new) KABI_ALIGN_WARNING); \
 	}
-# define __ABI_CHECK_SIZE(_item, _size)				\
+# define __KABI_CHECK_SIZE(_item, _size)				\
 	_Static_assert(sizeof(struct{_item;}) <= _size,			\
 		       __FILE__ ":" __stringify(__LINE__) ": " __stringify(_item) " is larger than the reserved size (" __stringify(_size) " bytes)" KABI_ALIGN_WARNING)
 #else
@@ -451,14 +451,14 @@
 	})
 
 #define _KABI_AUX_PTR(_struct)					\
-	size_t _struct##_size_rh;					\
-	_KABI_EXCLUDE(struct _struct##_rh *_rh)
+	size_t _struct##_size_resvd;					\
+	_KABI_EXCLUDE(struct _struct##_resvd *_resvd)
 #define KABI_AUX_PTR(_struct)					\
 	_KABI_AUX_PTR(_struct);
 
 #define _KABI_AUX_EMBED(_struct)					\
-	size_t _struct##_size_rh;					\
-	_KABI_EXCLUDE(struct _struct##_rh _rh)
+	size_t _struct##_size_resvd;					\
+	_KABI_EXCLUDE(struct _struct##_resvd _resvd)
 #define KABI_AUX_EMBED(_struct)					\
 	_KABI_AUX_EMBED(_struct);
 
@@ -468,7 +468,7 @@
 
 /*
  * KABI_AUX_SET_SIZE calculates and sets the size of the extended struct and
- * stores it in the size_rh field for structs that are dynamically allocated.
+ * stores it in the size_resvd field for structs that are dynamically allocated.
  * This macro MUST be called when expanding a base struct with
  * KABI_SIZE_AND_EXTEND, and it MUST be called from the allocation site
  * regardless of being allocated in the kernel or a module.
@@ -476,28 +476,28 @@
  * a semicolon is necessary at the end of the line where it is invoked.
  */
 #define KABI_AUX_SET_SIZE(_name, _struct) ({				\
-	(_name)->_struct##_size_rh = sizeof(struct _struct##_rh);	\
+	(_name)->_struct##_size_resvd = sizeof(struct _struct##_resvd);	\
 })
 
 /*
  * KABI_AUX_INIT_SIZE calculates and sets the size of the extended struct and
- * stores it in the size_rh field for structs that are statically allocated.
+ * stores it in the size_resvd field for structs that are statically allocated.
  * This macro MUST be called when expanding a base struct with
  * KABI_SIZE_AND_EXTEND, and it MUST be called from the declaration site
  * regardless of being allocated in the kernel or a module.
  */
 #define KABI_AUX_INIT_SIZE(_struct)					\
-	._struct##_size_rh = sizeof(struct _struct##_rh),
+	._struct##_size_resvd = sizeof(struct _struct##_resvd),
 
 /*
  * KABI_AUX verifies allocated memory exists.  This MUST be called to
- * verify that memory in the _rh struct is valid, and can be called
+ * verify that memory in the _resvd struct is valid, and can be called
  * regardless if KABI_SIZE_AND_EXTEND or KABI_SIZE_AND_EXTEND_PTR is
  * used.
  */
 #define KABI_AUX(_ptr, _struct, _field) ({				\
-	size_t __off = offsetof(struct _struct##_rh, _field);		\
-	(_ptr)->_struct##_size_rh > __off ? true : false;		\
+	size_t __off = offsetof(struct _struct##_resvd, _field);		\
+	(_ptr)->_struct##_size_resvd > __off ? true : false;		\
 })
 
 #endif /* _LINUX_KABI_H */
