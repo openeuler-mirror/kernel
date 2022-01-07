@@ -447,6 +447,15 @@ extern int	xfs_initialize_perag(xfs_mount_t *mp, xfs_agnumber_t agcount,
 				     xfs_agnumber_t *maxagi);
 extern void	xfs_unmountfs(xfs_mount_t *);
 
+/*
+ * Deltas for the block count can vary from 1 to very large, but lock contention
+ * only occurs on frequent small block count updates such as in the delayed
+ * allocation path for buffered writes (page a time updates). Hence we set
+ * a large batch count (1024) to minimise global counter updates except when
+ * we get near to ENOSPC and we have to be very accurate with our updates.
+ */
+#define XFS_FDBLOCKS_BATCH	1024
+
 extern int	xfs_mod_fdblocks(struct xfs_mount *mp, int64_t delta,
 				 bool reserved);
 extern int	xfs_mod_frextents(struct xfs_mount *mp, int64_t delta);
