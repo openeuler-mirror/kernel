@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * Linux spraid device driver
- * Copyright(c) 2021 Ramaxel Memory Technology, Ltd
- */
+/* Copyright(c) 2021 Ramaxel Memory Technology, Ltd */
+
+/* Ramaxel Raid SPXXX Series Linux Driver */
+
 #define pr_fmt(fmt) "spraid: " fmt
 
 #include <linux/sched/signal.h>
@@ -23,6 +23,9 @@
 #include <linux/debugfs.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include <linux/blkdev.h>
+#include <linux/bsg-lib.h>
+#include <asm/unaligned.h>
+#include <linux/sort.h>
 
 #include <scsi/scsi.h>
 #include <scsi/scsi_cmnd.h>
@@ -31,27 +34,24 @@
 #include <scsi/scsi_transport.h>
 #include <scsi/scsi_dbg.h>
 
+
 #include "spraid.h"
 
 static u32 admin_tmout = 60;
 module_param(admin_tmout, uint, 0644);
 MODULE_PARM_DESC(admin_tmout, "admin commands timeout (seconds)");
 
-static u32 scmd_tmout_pt = 30;
-module_param(scmd_tmout_pt, uint, 0644);
-MODULE_PARM_DESC(scmd_tmout_pt, "scsi commands timeout for passthrough(seconds)");
+static u32 scmd_tmout_rawdisk = 180;
+module_param(scmd_tmout_rawdisk, uint, 0644);
+MODULE_PARM_DESC(scmd_tmout_rawdisk, "scsi commands timeout for rawdisk(seconds)");
 
-static u32 scmd_tmout_nonpt = 180;
-module_param(scmd_tmout_nonpt, uint, 0644);
-MODULE_PARM_DESC(scmd_tmout_nonpt, "scsi commands timeout for rawdisk&raid(seconds)");
+static u32 scmd_tmout_vd = 180;
+module_param(scmd_tmout_vd, uint, 0644);
+MODULE_PARM_DESC(scmd_tmout_vd, "scsi commands timeout for vd(seconds)");
 
-static u32 wait_abl_tmout = 3;
-module_param(wait_abl_tmout, uint, 0644);
-MODULE_PARM_DESC(wait_abl_tmout, "wait abnormal io timeout(seconds)");
-
-static bool use_sgl_force;
-module_param(use_sgl_force, bool, 0644);
-MODULE_PARM_DESC(use_sgl_force, "force IO use sgl format, default false");
+static bool max_io_force;
+module_param(max_io_force, bool, 0644);
+MODULE_PARM_DESC(max_io_force, "force max_hw_sectors_kb = 1024, default false(performance first)");
 
 static int ioq_depth_set(const char *val, const struct kernel_param *kp);
 static const struct kernel_param_ops ioq_depth_ops = {
@@ -106,16 +106,20 @@ static const struct kernel_param_ops small_pool_num_ops = {
 	.get = param_get_byte,
 };
 
+/* It was found that the spindlock of a single pool conflicts
+ * a lot with multiple CPUs.So multiple pools are introduced
+ * to reduce the conflictions.
+ */
 static unsigned char small_pool_num = 4;
 module_param_cb(small_pool_num, &small_pool_num_ops, &small_pool_num, 0644);
 MODULE_PARM_DESC(small_pool_num, "set prp small pool num, default 4, MAX 16");
 
 static void spraid_free_queue(struct spraid_queue *spraidq);
 static void spraid_handle_aen_notice(struct spraid_dev *hdev, u32 result);
-static void spraid_handle_aen_vs(struct spraid_dev *hdev, u32 result);
+static void spraid_handle_aen_vs(struct spraid_dev *hdev, u32 result, u32 result1);
 
 static DEFINE_IDA(spraid_instance_ida);
-static dev_t spraid_chr_devt;
+
 static struct class *spraid_class;
 
 #define SPRAID_CAP_TIMEOUT_UNIT_MS	(HZ / 2)
@@ -131,9 +135,8 @@ static struct workqueue_struct *spraid_wq;
 #define SPRAID_DRV_VERSION	"1.0.0.0"
 
 #define ADMIN_TIMEOUT		(admin_tmout * HZ)
-#define ADMIN_ERR_TIMEOUT	32757
 
-#define SPRAID_WAIT_ABNL_CMD_TIMEOUT	(wait_abl_tmout * 2)
+#define SPRAID_WAIT_ABNL_CMD_TIMEOUT	(3 * 2)
 
 #define SPRAID_DMA_MSK_BIT_MAX	64
 
@@ -145,6 +148,13 @@ enum FW_STAT_CODE {
 	FW_STAT_NAC_DMA_ERROR,
 	FW_STAT_ABORTED,
 	FW_STAT_NEED_RETRY
+};
+
+static const char * const raid_levels[] = {"0", "1", "5", "6", "10", "50", "60", "NA"};
+
+static const char * const raid_states[] = {
+	"NA", "NORMAL", "FAULT", "DEGRADE", "NOT_FORMATTED", "FORMATTING", "SANITIZING",
+	"INITIALIZING", "INITIALIZE_FAIL", "DELETING", "DELETE_FAIL", "WRITE_PROTECT"
 };
 
 static int ioq_depth_set(const char *val, const struct kernel_param *kp)
@@ -231,12 +241,6 @@ static int spraid_pci_enable(struct spraid_dev *hdev)
 		goto disable;
 	}
 
-	ret = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_ALL_TYPES);
-	if (ret < 0) {
-		dev_err(hdev->dev, "Allocate one IRQ for setup admin channel failed\n");
-		goto disable;
-	}
-
 	hdev->cap = lo_hi_readq(hdev->bar + SPRAID_REG_CAP);
 	hdev->ioq_depth = min_t(u32, SPRAID_CAP_MQES(hdev->cap) + 1, io_queue_depth);
 	hdev->db_stride = 1 << SPRAID_CAP_STRIDE(hdev->cap);
@@ -246,12 +250,19 @@ static int spraid_pci_enable(struct spraid_dev *hdev)
 		dev_err(hdev->dev, "err, dma mask invalid[%llu], set to default\n", maskbit);
 		maskbit = SPRAID_DMA_MSK_BIT_MAX;
 	}
-	if (dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(maskbit))) {
+	if (dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(maskbit)) &&
+		dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32))) {
 		dev_err(hdev->dev, "set dma mask and coherent failed\n");
 		goto disable;
 	}
 
 	dev_info(hdev->dev, "set dma mask[%llu] success\n", maskbit);
+
+	ret = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_ALL_TYPES);
+	if (ret < 0) {
+		dev_err(hdev->dev, "Allocate one IRQ for setup admin channel failed\n");
+		goto disable;
+	}
 
 	pci_enable_pcie_error_reporting(pdev);
 	pci_save_state(pdev);
@@ -261,12 +272,6 @@ static int spraid_pci_enable(struct spraid_dev *hdev)
 disable:
 	pci_disable_device(pdev);
 	return ret;
-}
-
-static inline
-struct spraid_admin_request *spraid_admin_req(struct request *req)
-{
-	return blk_mq_rq_to_pdu(req);
 }
 
 static int spraid_npages_prp(u32 size, struct spraid_dev *hdev)
@@ -419,7 +424,7 @@ static void spraid_submit_cmd(struct spraid_queue *spraidq, const void *cmd)
 	writel(spraidq->sq_tail, spraidq->q_db);
 	spin_unlock_irqrestore(&spraidq->sq_lock, flags);
 
-	dev_log_dbg(spraidq->hdev->dev, "cid[%d], qid[%d], opcode[0x%x], flags[0x%x], hdid[%u]\n",
+	dev_log_dbg(spraidq->hdev->dev, "cid[%d] qid[%d], opcode[0x%x], flags[0x%x], hdid[%u]\n",
 		    acd->command_id, spraidq->qid, acd->opcode, acd->flags, le32_to_cpu(acd->hdid));
 }
 
@@ -605,18 +610,15 @@ static void spraid_setup_rw_cmd(struct spraid_dev *hdev,
 	if (scmd->cmd_len == 6) {
 		datalength = (u32)(scmd->cmnd[4] == 0 ?
 				IO_6_DEFAULT_TX_LEN : scmd->cmnd[4]);
-		start_lba_lo = ((u32)scmd->cmnd[1] << 16) |
-				((u32)scmd->cmnd[2] << 8) | (u32)scmd->cmnd[3];
+		start_lba_lo = (u32)get_unaligned_be24(&scmd->cmnd[1]);
 
 		start_lba_lo &= 0x1FFFFF;
 	}
 
 	/* 10-byte READ(0x28) or WRITE(0x2A) cdb */
 	else if (scmd->cmd_len == 10) {
-		datalength = (u32)scmd->cmnd[8] | ((u32)scmd->cmnd[7] << 8);
-		start_lba_lo = ((u32)scmd->cmnd[2] << 24) |
-				((u32)scmd->cmnd[3] << 16) |
-				((u32)scmd->cmnd[4] << 8) | (u32)scmd->cmnd[5];
+		datalength = (u32)get_unaligned_be16(&scmd->cmnd[7]);
+		start_lba_lo = get_unaligned_be32(&scmd->cmnd[2]);
 
 		if (scmd->cmnd[1] & FUA_MASK)
 			control |= SPRAID_RW_FUA;
@@ -624,42 +626,26 @@ static void spraid_setup_rw_cmd(struct spraid_dev *hdev,
 
 	/* 12-byte READ(0xA8) or WRITE(0xAA) cdb */
 	else if (scmd->cmd_len == 12) {
-		datalength = ((u32)scmd->cmnd[6] << 24) |
-				((u32)scmd->cmnd[7] << 16) |
-				((u32)scmd->cmnd[8] << 8) | (u32)scmd->cmnd[9];
-		start_lba_lo = ((u32)scmd->cmnd[2] << 24) |
-				((u32)scmd->cmnd[3] << 16) |
-				((u32)scmd->cmnd[4] << 8) | (u32)scmd->cmnd[5];
+		datalength = get_unaligned_be32(&scmd->cmnd[6]);
+		start_lba_lo = get_unaligned_be32(&scmd->cmnd[2]);
 
 		if (scmd->cmnd[1] & FUA_MASK)
 			control |= SPRAID_RW_FUA;
 	}
 	/* 16-byte READ(0x88) or WRITE(0x8A) cdb */
 	else if (scmd->cmd_len == 16) {
-		datalength = ((u32)scmd->cmnd[10] << 24) |
-			((u32)scmd->cmnd[11] << 16) |
-			((u32)scmd->cmnd[12] << 8) | (u32)scmd->cmnd[13];
-		start_lba_lo = ((u32)scmd->cmnd[6] << 24) |
-			((u32)scmd->cmnd[7] << 16) |
-			((u32)scmd->cmnd[8] << 8) | (u32)scmd->cmnd[9];
-		start_lba_hi = ((u32)scmd->cmnd[2] << 24) |
-			((u32)scmd->cmnd[3] << 16) |
-			((u32)scmd->cmnd[4] << 8) | (u32)scmd->cmnd[5];
+		datalength = get_unaligned_be32(&scmd->cmnd[10]);
+		start_lba_lo = get_unaligned_be32(&scmd->cmnd[6]);
+		start_lba_hi = get_unaligned_be32(&scmd->cmnd[2]);
 
 		if (scmd->cmnd[1] & FUA_MASK)
 			control |= SPRAID_RW_FUA;
 	}
 	/* 32-byte READ(0x88) or WRITE(0x8A) cdb */
 	else if (scmd->cmd_len == 32) {
-		datalength = ((u32)scmd->cmnd[28] << 24) |
-			((u32)scmd->cmnd[29] << 16) |
-			((u32)scmd->cmnd[30] << 8) | (u32)scmd->cmnd[31];
-		start_lba_lo = ((u32)scmd->cmnd[16] << 24) |
-			((u32)scmd->cmnd[17] << 16) |
-			((u32)scmd->cmnd[18] << 8) | (u32)scmd->cmnd[19];
-		start_lba_hi = ((u32)scmd->cmnd[12] << 24) |
-			((u32)scmd->cmnd[13] << 16) |
-			((u32)scmd->cmnd[14] << 8) | (u32)scmd->cmnd[15];
+		datalength = get_unaligned_be32(&scmd->cmnd[28]);
+		start_lba_lo = get_unaligned_be32(&scmd->cmnd[16]);
+		start_lba_hi = get_unaligned_be32(&scmd->cmnd[12]);
 
 		if (scmd->cmnd[10] & FUA_MASK)
 			control |= SPRAID_RW_FUA;
@@ -814,7 +800,7 @@ static void spraid_map_status(struct spraid_iod *iod, struct scsi_cmnd *scmd,
 		if (scmd->result & SAM_STAT_CHECK_CONDITION) {
 			memset(scmd->sense_buffer, 0, SCSI_SENSE_BUFFERSIZE);
 			memcpy(scmd->sense_buffer, iod->sense, SCSI_SENSE_BUFFERSIZE);
-			set_driver_byte(scmd, DRIVER_SENSE);
+			scmd->result = (scmd->result & 0x00ffffff) | (DRIVER_SENSE << 24);
 		}
 		break;
 	case FW_STAT_ABORTED:
@@ -825,6 +811,8 @@ static void spraid_map_status(struct spraid_iod *iod, struct scsi_cmnd *scmd,
 		break;
 	default:
 		set_host_byte(scmd, DID_BAD_TARGET);
+		dev_warn(iod->spraidq->hdev->dev, "[%s] cid[%d] qid[%d] bad status[0x%x]\n",
+			__func__, cqe->cmd_id, le16_to_cpu(cqe->sq_id), le16_to_cpu(cqe->status));
 		break;
 	}
 }
@@ -850,14 +838,13 @@ static int spraid_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	int ret;
 
 	if (unlikely(!scmd)) {
-		dev_err(hdev->dev, "err, scmd is null, return 0\n");
+		dev_err(hdev->dev, "err, scmd is null\n");
 		return 0;
 	}
 
 	if (unlikely(hdev->state != SPRAID_LIVE)) {
 		set_host_byte(scmd, DID_NO_CONNECT);
 		scmd->scsi_done(scmd);
-		dev_err(hdev->dev, "[%s] err, hdev state is not live\n", __func__);
 		return 0;
 	}
 
@@ -894,7 +881,7 @@ static int spraid_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	WRITE_ONCE(iod->state, SPRAID_CMD_IN_FLIGHT);
 	spraid_submit_cmd(ioq, &ioq_cmd);
 	elapsed = jiffies - scmd->jiffies_at_alloc;
-	dev_log_dbg(hdev->dev, "cid[%d], qid[%d] submit IO cost %3ld.%3ld seconds\n",
+	dev_log_dbg(hdev->dev, "cid[%d] qid[%d] submit IO cost %3ld.%3ld seconds\n",
 		    cid, hwq, elapsed / HZ, elapsed % HZ);
 	return 0;
 
@@ -945,6 +932,10 @@ static int spraid_slave_alloc(struct scsi_device *sdev)
 
 scan_host:
 	hostdata->hdid = le32_to_cpu(hdev->devices[idx].hdid);
+	hostdata->max_io_kb = le16_to_cpu(hdev->devices[idx].max_io_kb);
+	hostdata->attr = hdev->devices[idx].attr;
+	hostdata->flag = hdev->devices[idx].flag;
+	hostdata->rg_id = 0xff;
 	sdev->hostdata = hostdata;
 	up_read(&hdev->devices_rwsem);
 	return 0;
@@ -958,30 +949,17 @@ static void spraid_slave_destroy(struct scsi_device *sdev)
 
 static int spraid_slave_configure(struct scsi_device *sdev)
 {
-	u16 idx;
-	unsigned int timeout = scmd_tmout_nonpt * HZ;
+	unsigned int timeout = scmd_tmout_rawdisk * HZ;
 	struct spraid_dev *hdev = shost_priv(sdev->host);
 	struct spraid_sdev_hostdata *hostdata = sdev->hostdata;
 	u32 max_sec = sdev->host->max_sectors;
 
-	if (!hostdata) {
-		idx = hostdata->hdid - 1;
-		if (sdev->channel == hdev->devices[idx].channel &&
-		    sdev->id == le16_to_cpu(hdev->devices[idx].target) &&
-		    sdev->lun < hdev->devices[idx].lun) {
-			if (SPRAID_DEV_INFO_ATTR_PT(hdev->devices[idx].attr))
-				timeout = scmd_tmout_pt * HZ;
-			else
-				timeout = scmd_tmout_nonpt * HZ;
-			max_sec = le16_to_cpu(hdev->devices[idx].max_io_kb) << 1;
-		} else {
-			dev_err(hdev->dev, "[%s] err, sdev->channel:id:lun[%d:%d:%lld];"
-				"devices[%d], channel:target:lun[%d:%d:%d]\n",
-				__func__, sdev->channel, sdev->id, sdev->lun,
-				idx, hdev->devices[idx].channel,
-				hdev->devices[idx].target,
-				hdev->devices[idx].lun);
-		}
+	if (hostdata) {
+		if (SPRAID_DEV_INFO_ATTR_VD(hostdata->attr))
+			timeout = scmd_tmout_vd * HZ;
+		else if (SPRAID_DEV_INFO_ATTR_RAWDISK(hostdata->attr))
+			timeout = scmd_tmout_rawdisk * HZ;
+		max_sec = hostdata->max_io_kb << 1;
 	} else {
 		dev_err(hdev->dev, "[%s] err, sdev->hostdata is null\n", __func__);
 	}
@@ -991,7 +969,9 @@ static int spraid_slave_configure(struct scsi_device *sdev)
 
 	if ((max_sec == 0) || (max_sec > sdev->host->max_sectors))
 		max_sec = sdev->host->max_sectors;
-	blk_queue_max_hw_sectors(sdev->request_queue, max_sec);
+
+	if (!max_io_force)
+		blk_queue_max_hw_sectors(sdev->request_queue, max_sec);
 
 	dev_info(hdev->dev, "[%s] sdev->channel:id:lun[%d:%d:%lld], scmd_timeout[%d]s, maxsec[%d]\n",
 		 __func__, sdev->channel, sdev->id, sdev->lun, timeout / HZ, max_sec);
@@ -1176,6 +1156,75 @@ static inline bool spraid_cqe_pending(struct spraid_queue *spraidq)
 		spraidq->cq_phase;
 }
 
+static void spraid_sata_report_zone_handle(struct scsi_cmnd *scmd, struct spraid_iod *iod)
+{
+	int i = 0;
+	unsigned int bytes = 0;
+	struct scatterlist *sg = scsi_sglist(scmd);
+
+	scsi_for_each_sg(scmd, sg, iod->nsge, i) {
+		unsigned int offset = 0;
+
+		if (bytes == 0) {
+			char *hdr;
+			u32 list_length;
+			u64 max_lba, opt_lba;
+			u16 same;
+
+			hdr = sg_virt(sg);
+
+			list_length = get_unaligned_le32(&hdr[0]);
+			same = get_unaligned_le16(&hdr[4]);
+			max_lba = get_unaligned_le64(&hdr[8]);
+			opt_lba = get_unaligned_le64(&hdr[16]);
+			put_unaligned_be32(list_length, &hdr[0]);
+			hdr[4] = same & 0xf;
+			put_unaligned_be64(max_lba, &hdr[8]);
+			put_unaligned_be64(opt_lba, &hdr[16]);
+			offset += 64;
+			bytes += 64;
+		}
+		while (offset < sg_dma_len(sg)) {
+			char *rec;
+			u8 cond, type, non_seq, reset;
+			u64 size, start, wp;
+
+			rec = sg_virt(sg) + offset;
+			type = rec[0] & 0xf;
+			cond = (rec[1] >> 4) & 0xf;
+			non_seq = (rec[1] & 2);
+			reset = (rec[1] & 1);
+			size = get_unaligned_le64(&rec[8]);
+			start = get_unaligned_le64(&rec[16]);
+			wp = get_unaligned_le64(&rec[24]);
+			rec[0] = type;
+			rec[1] = (cond << 4) | non_seq | reset;
+			put_unaligned_be64(size, &rec[8]);
+			put_unaligned_be64(start, &rec[16]);
+			put_unaligned_be64(wp, &rec[24]);
+			WARN_ON(offset + 64 > sg_dma_len(sg));
+			offset += 64;
+			bytes += 64;
+		}
+	}
+}
+
+static inline void spraid_handle_ata_cmd(struct spraid_dev *hdev, struct scsi_cmnd *scmd,
+					 struct spraid_iod *iod)
+{
+	if (hdev->ctrl_info->card_type != SPRAID_CARD_HBA)
+		return;
+
+	switch (scmd->cmnd[0]) {
+	case ZBC_IN:
+		dev_info(hdev->dev, "[%s] process report zone\n", __func__);
+		spraid_sata_report_zone_handle(scmd, iod);
+		break;
+	default:
+		break;
+	}
+}
+
 static void spraid_complete_ioq_cmnd(struct spraid_queue *ioq, struct spraid_completion *cqe)
 {
 	struct spraid_dev *hdev = ioq->hdev;
@@ -1197,12 +1246,12 @@ static void spraid_complete_ioq_cmnd(struct spraid_queue *ioq, struct spraid_com
 	iod = scsi_cmd_priv(scmd);
 
 	elapsed = jiffies - scmd->jiffies_at_alloc;
-	dev_log_dbg(hdev->dev, "cid[%d], qid[%d] finish IO cost %3ld.%3ld seconds\n",
+	dev_log_dbg(hdev->dev, "cid[%d] qid[%d] finish IO cost %3ld.%3ld seconds\n",
 		    cqe->cmd_id, ioq->qid, elapsed / HZ, elapsed % HZ);
 
 	if (cmpxchg(&iod->state, SPRAID_CMD_IN_FLIGHT, SPRAID_CMD_COMPLETE) !=
 		SPRAID_CMD_IN_FLIGHT) {
-		dev_warn(hdev->dev, "cid[%d], qid[%d] enters abnormal handler, cost %3ld.%3ld seconds\n",
+		dev_warn(hdev->dev, "cid[%d] qid[%d] enters abnormal handler, cost %3ld.%3ld seconds\n",
 			 cqe->cmd_id, ioq->qid, elapsed / HZ, elapsed % HZ);
 		WRITE_ONCE(iod->state, SPRAID_CMD_TMO_COMPLETE);
 
@@ -1215,6 +1264,8 @@ static void spraid_complete_ioq_cmnd(struct spraid_queue *ioq, struct spraid_com
 		return;
 	}
 
+	spraid_handle_ata_cmd(hdev, scmd, iod);
+
 	spraid_map_status(iod, scmd, cqe);
 	if (iod->nsge) {
 		iod->nsge = 0;
@@ -1224,38 +1275,36 @@ static void spraid_complete_ioq_cmnd(struct spraid_queue *ioq, struct spraid_com
 	scmd->scsi_done(scmd);
 }
 
-static inline void spraid_end_admin_request(struct request *req, __le16 status,
-					    __le32 result0, __le32 result1)
-{
-	struct spraid_admin_request *rq = spraid_admin_req(req);
-
-	rq->status = le16_to_cpu(status) >> 1;
-	rq->result0 = le32_to_cpu(result0);
-	rq->result1 = le32_to_cpu(result1);
-	blk_mq_complete_request(req);
-}
-
 static void spraid_complete_adminq_cmnd(struct spraid_queue *adminq, struct spraid_completion *cqe)
 {
-	struct blk_mq_tags *tags = adminq->hdev->admin_tagset.tags[0];
-	struct request *req;
+	struct spraid_dev *hdev = adminq->hdev;
+	struct spraid_cmd *adm_cmd;
 
-	req = blk_mq_tag_to_rq(tags, cqe->cmd_id);
-	if (unlikely(!req)) {
+	adm_cmd = hdev->adm_cmds + cqe->cmd_id;
+	if (unlikely(adm_cmd->state == SPRAID_CMD_IDLE)) {
 		dev_warn(adminq->hdev->dev, "Invalid id %d completed on queue %d\n",
 			 cqe->cmd_id, le16_to_cpu(cqe->sq_id));
 		return;
 	}
-	spraid_end_admin_request(req, cqe->status, cqe->result, cqe->result1);
+
+	adm_cmd->status = le16_to_cpu(cqe->status) >> 1;
+	adm_cmd->result0 = le32_to_cpu(cqe->result);
+	adm_cmd->result1 = le32_to_cpu(cqe->result1);
+
+	complete(&adm_cmd->cmd_done);
 }
+
+static void spraid_send_aen(struct spraid_dev *hdev, u16 cid);
 
 static void spraid_complete_aen(struct spraid_queue *spraidq, struct spraid_completion *cqe)
 {
 	struct spraid_dev *hdev = spraidq->hdev;
 	u32 result = le32_to_cpu(cqe->result);
 
-	dev_info(hdev->dev, "rcv aen, status[%x], result[%x]\n",
-		 le16_to_cpu(cqe->status) >> 1, result);
+	dev_info(hdev->dev, "rcv aen, cid[%d], status[0x%x], result[0x%x]\n",
+		 cqe->cmd_id, le16_to_cpu(cqe->status) >> 1, result);
+
+	spraid_send_aen(hdev, cqe->cmd_id);
 
 	if ((le16_to_cpu(cqe->status) >> 1) != SPRAID_SC_SUCCESS)
 		return;
@@ -1264,22 +1313,19 @@ static void spraid_complete_aen(struct spraid_queue *spraidq, struct spraid_comp
 		spraid_handle_aen_notice(hdev, result);
 		break;
 	case SPRAID_AEN_VS:
-		spraid_handle_aen_vs(hdev, result);
+		spraid_handle_aen_vs(hdev, result, le32_to_cpu(cqe->result1));
 		break;
 	default:
 		dev_warn(hdev->dev, "Unsupported async event type: %u\n",
 			 result & 0x7);
 		break;
 	}
-	queue_work(spraid_wq, &hdev->aen_work);
 }
-
-static void spraid_put_ioq_ptcmd(struct spraid_dev *hdev, struct spraid_ioq_ptcmd *cmd);
 
 static void spraid_complete_ioq_sync_cmnd(struct spraid_queue *ioq, struct spraid_completion *cqe)
 {
 	struct spraid_dev *hdev = ioq->hdev;
-	struct spraid_ioq_ptcmd *ptcmd;
+	struct spraid_cmd *ptcmd;
 
 	ptcmd = hdev->ioq_ptcmds + (ioq->qid - 1) * SPRAID_PTCMDS_PERQ +
 		cqe->cmd_id - SPRAID_IO_BLK_MQ_DEPTH;
@@ -1289,8 +1335,6 @@ static void spraid_complete_ioq_sync_cmnd(struct spraid_queue *ioq, struct sprai
 	ptcmd->result1 = le32_to_cpu(cqe->result1);
 
 	complete(&ptcmd->cmd_done);
-
-	spraid_put_ioq_ptcmd(hdev, ptcmd);
 }
 
 static inline void spraid_handle_cqe(struct spraid_queue *spraidq, u16 idx)
@@ -1304,7 +1348,7 @@ static inline void spraid_handle_cqe(struct spraid_queue *spraidq, u16 idx)
 		return;
 	}
 
-	dev_log_dbg(hdev->dev, "cid[%d], qid[%d], result[0x%x], sq_id[%d], status[0x%x]\n",
+	dev_log_dbg(hdev->dev, "cid[%d] qid[%d], result[0x%x], sq_id[%d], status[0x%x]\n",
 		    cqe->cmd_id, spraidq->qid, le32_to_cpu(cqe->result),
 		    le16_to_cpu(cqe->sq_id), le16_to_cpu(cqe->status));
 
@@ -1452,62 +1496,119 @@ static u32 spraid_bar_size(struct spraid_dev *hdev, u32 nr_ioqs)
 	return (SPRAID_REG_DBS + ((nr_ioqs + 1) * 8 * hdev->db_stride));
 }
 
-static inline void spraid_clear_spraid_request(struct request *req)
+static int spraid_alloc_admin_cmds(struct spraid_dev *hdev)
 {
-	if (!(req->rq_flags & RQF_DONTPREP)) {
-		spraid_admin_req(req)->flags = 0;
-		req->rq_flags |= RQF_DONTPREP;
+	int i;
+
+	INIT_LIST_HEAD(&hdev->adm_cmd_list);
+	spin_lock_init(&hdev->adm_cmd_lock);
+
+	hdev->adm_cmds = kcalloc_node(SPRAID_AQ_BLK_MQ_DEPTH, sizeof(struct spraid_cmd),
+				      GFP_KERNEL, hdev->numa_node);
+
+	if (!hdev->adm_cmds) {
+		dev_err(hdev->dev, "Alloc admin cmds failed\n");
+		return -ENOMEM;
 	}
+
+	for (i = 0; i < SPRAID_AQ_BLK_MQ_DEPTH; i++) {
+		hdev->adm_cmds[i].qid = 0;
+		hdev->adm_cmds[i].cid = i;
+		list_add_tail(&(hdev->adm_cmds[i].list), &hdev->adm_cmd_list);
+	}
+
+	dev_info(hdev->dev, "Alloc admin cmds success, num[%d]\n", SPRAID_AQ_BLK_MQ_DEPTH);
+
+	return 0;
 }
 
-static struct request *spraid_alloc_admin_request(struct request_queue *q,
-						  struct spraid_admin_command *cmd,
-						  blk_mq_req_flags_t flags)
+static void spraid_free_admin_cmds(struct spraid_dev *hdev)
 {
-	u32 op = COMMAND_IS_WRITE(cmd) ? REQ_OP_DRV_OUT : REQ_OP_DRV_IN;
-	struct request *req;
-
-	req = blk_mq_alloc_request(q, op, flags);
-	if (IS_ERR(req))
-		return req;
-	req->cmd_flags |= REQ_FAILFAST_DRIVER;
-	spraid_clear_spraid_request(req);
-	spraid_admin_req(req)->cmd = cmd;
-
-	return req;
+	kfree(hdev->adm_cmds);
+	hdev->adm_cmds = NULL;
+	INIT_LIST_HEAD(&hdev->adm_cmd_list);
 }
 
-static int spraid_submit_admin_sync_cmd(struct request_queue *q,
-					struct spraid_admin_command *cmd,
-					u32 *result, void *buffer,
-	u32 bufflen, u32 timeout, int at_head, blk_mq_req_flags_t flags)
+static struct spraid_cmd *spraid_get_cmd(struct spraid_dev *hdev, enum spraid_cmd_type type)
 {
-	struct request *req;
-	int ret;
+	struct spraid_cmd *cmd = NULL;
+	unsigned long flags;
+	struct list_head *head = &hdev->adm_cmd_list;
+	spinlock_t *slock = &hdev->adm_cmd_lock;
 
-	req = spraid_alloc_admin_request(q, cmd, flags);
-	if (IS_ERR(req))
-		return PTR_ERR(req);
-
-	req->timeout = timeout ? timeout : ADMIN_TIMEOUT;
-	if (buffer && bufflen) {
-		ret = blk_rq_map_kern(q, req, buffer, bufflen, GFP_KERNEL);
-		if (ret)
-			goto out;
+	if (type == SPRAID_CMD_IOPT) {
+		head = &hdev->ioq_pt_list;
+		slock = &hdev->ioq_pt_lock;
 	}
-	blk_execute_rq(req->q, NULL, req, at_head);
 
-	if (result)
-		*result = spraid_admin_req(req)->result0;
+	spin_lock_irqsave(slock, flags);
+	if (list_empty(head)) {
+		spin_unlock_irqrestore(slock, flags);
+		dev_err(hdev->dev, "err, cmd[%d] list empty\n", type);
+		return NULL;
+	}
+	cmd = list_entry(head->next, struct spraid_cmd, list);
+	list_del_init(&cmd->list);
+	spin_unlock_irqrestore(slock, flags);
 
-	if (spraid_admin_req(req)->flags & SPRAID_REQ_CANCELLED)
-		ret = -EINTR;
-	else
-		ret = spraid_admin_req(req)->status;
+	WRITE_ONCE(cmd->state, SPRAID_CMD_IN_FLIGHT);
 
-out:
-	blk_mq_free_request(req);
-	return ret;
+	return cmd;
+}
+
+static void spraid_put_cmd(struct spraid_dev *hdev, struct spraid_cmd *cmd,
+			   enum spraid_cmd_type type)
+{
+	unsigned long flags;
+	struct list_head *head = &hdev->adm_cmd_list;
+	spinlock_t *slock = &hdev->adm_cmd_lock;
+
+	if (type == SPRAID_CMD_IOPT) {
+		head = &hdev->ioq_pt_list;
+		slock = &hdev->ioq_pt_lock;
+	}
+
+	spin_lock_irqsave(slock, flags);
+	WRITE_ONCE(cmd->state, SPRAID_CMD_IDLE);
+	list_add_tail(&cmd->list, head);
+	spin_unlock_irqrestore(slock, flags);
+}
+
+
+static int spraid_submit_admin_sync_cmd(struct spraid_dev *hdev, struct spraid_admin_command *cmd,
+					u32 *result0, u32 *result1, u32 timeout)
+{
+	struct spraid_cmd *adm_cmd = spraid_get_cmd(hdev, SPRAID_CMD_ADM);
+
+	if (!adm_cmd) {
+		dev_err(hdev->dev, "err, get admin cmd failed\n");
+		return -EFAULT;
+	}
+
+	timeout = timeout ? timeout : ADMIN_TIMEOUT;
+
+	init_completion(&adm_cmd->cmd_done);
+
+	cmd->common.command_id = adm_cmd->cid;
+	spraid_submit_cmd(&hdev->queues[0], cmd);
+
+	if (!wait_for_completion_timeout(&adm_cmd->cmd_done, timeout)) {
+		dev_err(hdev->dev, "[%s] cid[%d] qid[%d] timeout, opcode[0x%x] subopcode[0x%x]\n",
+			__func__, adm_cmd->cid, adm_cmd->qid, cmd->usr_cmd.opcode,
+			cmd->usr_cmd.info_0.subopcode);
+		WRITE_ONCE(adm_cmd->state, SPRAID_CMD_TIMEOUT);
+		spraid_put_cmd(hdev, adm_cmd, SPRAID_CMD_ADM);
+		return -ETIME;
+	}
+
+	if (result0)
+		*result0 = adm_cmd->result0;
+	if (result1)
+		*result1 = adm_cmd->result1;
+
+	spraid_put_cmd(hdev, adm_cmd, SPRAID_CMD_ADM);
+
+	return adm_cmd->status;
 }
 
 static int spraid_create_cq(struct spraid_dev *hdev, u16 qid,
@@ -1524,8 +1625,7 @@ static int spraid_create_cq(struct spraid_dev *hdev, u16 qid,
 	admin_cmd.create_cq.cq_flags = cpu_to_le16(flags);
 	admin_cmd.create_cq.irq_vector = cpu_to_le16(cq_vector);
 
-	return spraid_submit_admin_sync_cmd(hdev->admin_q, &admin_cmd, NULL,
-		NULL, 0, 0, 0, 0);
+	return spraid_submit_admin_sync_cmd(hdev, &admin_cmd, NULL, NULL, 0);
 }
 
 static int spraid_create_sq(struct spraid_dev *hdev, u16 qid,
@@ -1542,8 +1642,7 @@ static int spraid_create_sq(struct spraid_dev *hdev, u16 qid,
 	admin_cmd.create_sq.sq_flags = cpu_to_le16(flags);
 	admin_cmd.create_sq.cqid = cpu_to_le16(qid);
 
-	return spraid_submit_admin_sync_cmd(hdev->admin_q, &admin_cmd, NULL,
-		NULL, 0, 0, 0, 0);
+	return spraid_submit_admin_sync_cmd(hdev, &admin_cmd, NULL, NULL, 0);
 }
 
 static void spraid_free_queue(struct spraid_queue *spraidq)
@@ -1581,8 +1680,7 @@ static int spraid_delete_queue(struct spraid_dev *hdev, u8 op, u16 id)
 	admin_cmd.delete_queue.opcode = op;
 	admin_cmd.delete_queue.qid = cpu_to_le16(id);
 
-	ret = spraid_submit_admin_sync_cmd(hdev->admin_q, &admin_cmd, NULL,
-					   NULL, 0, 0, 0, 0);
+	ret = spraid_submit_admin_sync_cmd(hdev, &admin_cmd, NULL, NULL, 0);
 
 	if (ret)
 		dev_err(hdev->dev, "Delete %s:[%d] failed\n",
@@ -1663,19 +1761,28 @@ static int spraid_set_features(struct spraid_dev *hdev, u32 fid, u32 dword11, vo
 			       size_t buflen, u32 *result)
 {
 	struct spraid_admin_command admin_cmd;
-	u32 res;
 	int ret;
+	u8 *data_ptr = NULL;
+	dma_addr_t data_dma = 0;
+
+	if (buffer && buflen) {
+		data_ptr = dma_alloc_coherent(hdev->dev, buflen, &data_dma, GFP_KERNEL);
+		if (!data_ptr)
+			return -ENOMEM;
+
+		memcpy(data_ptr, buffer, buflen);
+	}
 
 	memset(&admin_cmd, 0, sizeof(admin_cmd));
 	admin_cmd.features.opcode = SPRAID_ADMIN_SET_FEATURES;
 	admin_cmd.features.fid = cpu_to_le32(fid);
 	admin_cmd.features.dword11 = cpu_to_le32(dword11);
+	admin_cmd.common.dptr.prp1 = cpu_to_le64(data_dma);
 
-	ret = spraid_submit_admin_sync_cmd(hdev->admin_q, &admin_cmd, &res,
-					   buffer, buflen, 0, 0, 0);
+	ret = spraid_submit_admin_sync_cmd(hdev, &admin_cmd, result, NULL, 0);
 
-	if (!ret && result)
-		*result = res;
+	if (data_ptr)
+		dma_free_coherent(hdev->dev, buflen, data_ptr, data_dma);
 
 	return ret;
 }
@@ -1764,8 +1871,7 @@ static int spraid_setup_io_queues(struct spraid_dev *hdev)
 			break;
 	}
 	dev_info(hdev->dev, "[%s] max_qid: %d, queue_count: %d, online_queue: %d, ioq_depth: %d\n",
-		 __func__, hdev->max_qid, hdev->queue_count,
-	hdev->online_queues, hdev->ioq_depth);
+		 __func__, hdev->max_qid, hdev->queue_count, hdev->online_queues, hdev->ioq_depth);
 
 	return spraid_create_io_queues(hdev);
 }
@@ -1889,10 +1995,11 @@ static int spraid_get_dev_list(struct spraid_dev *hdev, struct spraid_dev_info *
 	u32 nd = le32_to_cpu(hdev->ctrl_info->nd);
 	struct spraid_admin_command admin_cmd;
 	struct spraid_dev_list *list_buf;
+	dma_addr_t data_dma = 0;
 	u32 i, idx, hdid, ndev;
 	int ret = 0;
 
-	list_buf = kmalloc(sizeof(*list_buf), GFP_KERNEL);
+	list_buf = dma_alloc_coherent(hdev->dev, PAGE_SIZE, &data_dma, GFP_KERNEL);
 	if (!list_buf)
 		return -ENOMEM;
 
@@ -1901,9 +2008,9 @@ static int spraid_get_dev_list(struct spraid_dev *hdev, struct spraid_dev_info *
 		admin_cmd.get_info.opcode = SPRAID_ADMIN_GET_INFO;
 		admin_cmd.get_info.type = SPRAID_GET_INFO_DEV_LIST;
 		admin_cmd.get_info.cdw11 = cpu_to_le32(idx);
+		admin_cmd.common.dptr.prp1 = cpu_to_le64(data_dma);
 
-		ret = spraid_submit_admin_sync_cmd(hdev->admin_q, &admin_cmd, NULL, list_buf,
-						   sizeof(*list_buf), 0, 0, 0);
+		ret = spraid_submit_admin_sync_cmd(hdev, &admin_cmd, NULL, NULL, 0);
 
 		if (ret) {
 			dev_err(hdev->dev, "Get device list failed, nd: %u, idx: %u, ret: %d\n",
@@ -1916,12 +2023,11 @@ static int spraid_get_dev_list(struct spraid_dev *hdev, struct spraid_dev_info *
 
 		for (i = 0; i < ndev; i++) {
 			hdid = le32_to_cpu(list_buf->devices[i].hdid);
-			dev_info(hdev->dev, "list_buf->devices[%d], hdid: %u target: %d, channel: %d, lun: %d, attr[%x]\n",
-				    i, hdid,
-				    le16_to_cpu(list_buf->devices[i].target),
-				    list_buf->devices[i].channel,
-				    list_buf->devices[i].lun,
-				    list_buf->devices[i].attr);
+			dev_info(hdev->dev, "list_buf->devices[%d], hdid: %u target: %d, channel: %d, lun: %d, attr[0x%x]\n",
+				 i, hdid, le16_to_cpu(list_buf->devices[i].target),
+				 list_buf->devices[i].channel,
+				 list_buf->devices[i].lun,
+				 list_buf->devices[i].attr);
 			if (hdid > nd || hdid == 0) {
 				dev_err(hdev->dev, "err, hdid[%d] invalid\n", hdid);
 				continue;
@@ -1936,27 +2042,39 @@ static int spraid_get_dev_list(struct spraid_dev *hdev, struct spraid_dev_info *
 	}
 
 out:
-	kfree(list_buf);
+	dma_free_coherent(hdev->dev, PAGE_SIZE, list_buf, data_dma);
 	return ret;
 }
 
-static void spraid_send_aen(struct spraid_dev *hdev)
+static void spraid_send_aen(struct spraid_dev *hdev, u16 cid)
 {
 	struct spraid_queue *adminq = &hdev->queues[0];
 	struct spraid_admin_command admin_cmd;
 
 	memset(&admin_cmd, 0, sizeof(admin_cmd));
 	admin_cmd.common.opcode = SPRAID_ADMIN_ASYNC_EVENT;
-	admin_cmd.common.command_id = SPRAID_AQ_BLK_MQ_DEPTH;
+	admin_cmd.common.command_id = cid;
 
 	spraid_submit_cmd(adminq, &admin_cmd);
-	dev_info(hdev->dev, "send aen, cid[%d]\n", SPRAID_AQ_BLK_MQ_DEPTH);
+	dev_info(hdev->dev, "send aen, cid[%d]\n", cid);
+}
+
+static inline void spraid_send_all_aen(struct spraid_dev *hdev)
+{
+	u16 i;
+
+	for (i = 0; i < hdev->ctrl_info->aerl; i++)
+		spraid_send_aen(hdev, i + SPRAID_AQ_BLK_MQ_DEPTH);
 }
 
 static int spraid_add_device(struct spraid_dev *hdev, struct spraid_dev_info *device)
 {
 	struct Scsi_Host *shost = hdev->shost;
 	struct scsi_device *sdev;
+
+	dev_info(hdev->dev, "add device, hdid: %u target: %d, channel: %d, lun: %d, attr[0x%x]\n",
+			le32_to_cpu(device->hdid), le16_to_cpu(device->target),
+			device->channel, device->lun, device->attr);
 
 	sdev = scsi_device_lookup(shost, device->channel, le16_to_cpu(device->target), 0);
 	if (sdev) {
@@ -1974,9 +2092,13 @@ static int spraid_rescan_device(struct spraid_dev *hdev, struct spraid_dev_info 
 	struct Scsi_Host *shost = hdev->shost;
 	struct scsi_device *sdev;
 
+	dev_info(hdev->dev, "rescan device, hdid: %u target: %d, channel: %d, lun: %d, attr[0x%x]\n",
+			le32_to_cpu(device->hdid), le16_to_cpu(device->target),
+			device->channel, device->lun, device->attr);
+
 	sdev = scsi_device_lookup(shost, device->channel, le16_to_cpu(device->target), 0);
 	if (!sdev) {
-		dev_warn(hdev->dev, "Device is not exit, channel: %d, target_id: %d, lun: %d\n",
+		dev_warn(hdev->dev, "device is not exit rescan it, channel: %d, target_id: %d, lun: %d\n",
 			 device->channel, le16_to_cpu(device->target), 0);
 		return -ENODEV;
 	}
@@ -1991,9 +2113,13 @@ static int spraid_remove_device(struct spraid_dev *hdev, struct spraid_dev_info 
 	struct Scsi_Host *shost = hdev->shost;
 	struct scsi_device *sdev;
 
+	dev_info(hdev->dev, "remove device, hdid: %u target: %d, channel: %d, lun: %d, attr[0x%x]\n",
+			le32_to_cpu(org_device->hdid), le16_to_cpu(org_device->target),
+			org_device->channel, org_device->lun, org_device->attr);
+
 	sdev = scsi_device_lookup(shost, org_device->channel, le16_to_cpu(org_device->target), 0);
 	if (!sdev) {
-		dev_warn(hdev->dev, "Device is not exit, channel: %d, target_id: %d, lun: %d\n",
+		dev_warn(hdev->dev, "device is not exit remove it, channel: %d, target_id: %d, lun: %d\n",
 			 org_device->channel, le16_to_cpu(org_device->target), 0);
 		return -ENODEV;
 	}
@@ -2029,36 +2155,54 @@ static int spraid_dev_list_init(struct spraid_dev *hdev)
 	return 0;
 }
 
+static int luntarget_cmp_func(const void *l, const void *r)
+{
+	const struct spraid_dev_info *ln = l;
+	const struct spraid_dev_info *rn = r;
+
+	if (ln->channel == rn->channel)
+		return le16_to_cpu(ln->target) - le16_to_cpu(rn->target);
+
+	return ln->channel - rn->channel;
+}
+
 static void spraid_scan_work(struct work_struct *work)
 {
 	struct spraid_dev *hdev =
 		container_of(work, struct spraid_dev, scan_work);
 	struct spraid_dev_info *devices, *org_devices;
+	struct spraid_dev_info *sortdevice;
 	u32 nd = le32_to_cpu(hdev->ctrl_info->nd);
 	u8 flag, org_flag;
 	int i, ret;
+	int count = 0;
 
 	devices = kcalloc(nd, sizeof(struct spraid_dev_info), GFP_KERNEL);
 	if (!devices)
 		return;
+
+	sortdevice = kcalloc(nd, sizeof(struct spraid_dev_info), GFP_KERNEL);
+	if (!sortdevice)
+		goto free_list;
+
 	ret = spraid_get_dev_list(hdev, devices);
 	if (ret)
-		goto free_list;
+		goto free_all;
 	org_devices = hdev->devices;
 	for (i = 0; i < nd; i++) {
 		org_flag = org_devices[i].flag;
 		flag = devices[i].flag;
 
-		dev_log_dbg(hdev->dev, "i: %d, org_flag: 0x%x, flag: 0x%x\n",
-			    i, org_flag, flag);
+		dev_log_dbg(hdev->dev, "i: %d, org_flag: 0x%x, flag: 0x%x\n", i, org_flag, flag);
 
 		if (SPRAID_DEV_INFO_FLAG_VALID(flag)) {
 			if (!SPRAID_DEV_INFO_FLAG_VALID(org_flag)) {
 				down_write(&hdev->devices_rwsem);
 				memcpy(&org_devices[i], &devices[i],
-				       sizeof(struct spraid_dev_info));
+						sizeof(struct spraid_dev_info));
+				memcpy(&sortdevice[count++], &devices[i],
+						sizeof(struct spraid_dev_info));
 				up_write(&hdev->devices_rwsem);
-				spraid_add_device(hdev, &devices[i]);
 			} else if (SPRAID_DEV_INFO_FLAG_CHANGE(flag)) {
 				spraid_rescan_device(hdev, &devices[i]);
 			}
@@ -2071,6 +2215,16 @@ static void spraid_scan_work(struct work_struct *work)
 			}
 		}
 	}
+
+	dev_info(hdev->dev, "scan work add device count = %d\n", count);
+
+	sort(sortdevice, count, sizeof(sortdevice[0]), luntarget_cmp_func, NULL);
+
+	for (i = 0; i < count; i++)
+		spraid_add_device(hdev, &sortdevice[i]);
+
+free_all:
+	kfree(sortdevice);
 free_list:
 	kfree(devices);
 }
@@ -2081,6 +2235,15 @@ static void spraid_timesyn_work(struct work_struct *work)
 		container_of(work, struct spraid_dev, timesyn_work);
 
 	spraid_configure_timestamp(hdev);
+}
+
+static int spraid_init_ctrl_info(struct spraid_dev *hdev);
+static void spraid_fw_act_work(struct work_struct *work)
+{
+	struct spraid_dev *hdev = container_of(work, struct spraid_dev, fw_act_work);
+
+	if (spraid_init_ctrl_info(hdev))
+		dev_err(hdev->dev, "get ctrl info failed after fw act\n");
 }
 
 static void spraid_queue_scan(struct spraid_dev *hdev)
@@ -2094,6 +2257,9 @@ static void spraid_handle_aen_notice(struct spraid_dev *hdev, u32 result)
 	case SPRAID_AEN_DEV_CHANGED:
 		spraid_queue_scan(hdev);
 		break;
+	case SPRAID_AEN_FW_ACT_START:
+		dev_info(hdev->dev, "fw activation starting\n");
+		break;
 	case SPRAID_AEN_HOST_PROBING:
 		break;
 	default:
@@ -2101,23 +2267,23 @@ static void spraid_handle_aen_notice(struct spraid_dev *hdev, u32 result)
 	}
 }
 
-static void spraid_handle_aen_vs(struct spraid_dev *hdev, u32 result)
+static void spraid_handle_aen_vs(struct spraid_dev *hdev, u32 result, u32 result1)
 {
-	switch (result) {
+	switch ((result & 0xff00) >> 8) {
 	case SPRAID_AEN_TIMESYN:
 		queue_work(spraid_wq, &hdev->timesyn_work);
 		break;
+	case SPRAID_AEN_FW_ACT_FINISH:
+		dev_info(hdev->dev, "fw activation finish\n");
+		queue_work(spraid_wq, &hdev->fw_act_work);
+		break;
+	case SPRAID_AEN_EVENT_MIN ... SPRAID_AEN_EVENT_MAX:
+		dev_info(hdev->dev, "rcv card event[%d], param1[0x%x] param2[0x%x]\n",
+			 (result & 0xff00) >> 8, result, result1);
+		break;
 	default:
-		dev_warn(hdev->dev, "async event result: %x\n", result);
+		dev_warn(hdev->dev, "async event result: 0x%x\n", result);
 	}
-}
-
-static void spraid_async_event_work(struct work_struct *work)
-{
-	struct spraid_dev *hdev =
-		container_of(work, struct spraid_dev, aen_work);
-
-	spraid_send_aen(hdev);
 }
 
 static int spraid_alloc_resources(struct spraid_dev *hdev)
@@ -2149,10 +2315,16 @@ static int spraid_alloc_resources(struct spraid_dev *hdev)
 		goto destroy_dma_pools;
 	}
 
+	ret = spraid_alloc_admin_cmds(hdev);
+	if (ret)
+		goto free_queues;
+
 	dev_info(hdev->dev, "[%s] queues num: %d\n", __func__, nqueue);
 
 	return 0;
 
+free_queues:
+	kfree(hdev->queues);
 destroy_dma_pools:
 	spraid_destroy_dma_pools(hdev);
 free_ctrl_info:
@@ -2164,50 +2336,18 @@ release_instance:
 
 static void spraid_free_resources(struct spraid_dev *hdev)
 {
+	spraid_free_admin_cmds(hdev);
 	kfree(hdev->queues);
 	spraid_destroy_dma_pools(hdev);
 	kfree(hdev->ctrl_info);
 	ida_free(&spraid_instance_ida, hdev->instance);
 }
 
-static void spraid_setup_passthrough(struct request *req, struct spraid_admin_command *cmd)
+static void spraid_bsg_unmap_data(struct spraid_dev *hdev, struct bsg_job *job)
 {
-	memcpy(cmd, spraid_admin_req(req)->cmd, sizeof(*cmd));
-	cmd->common.flags &= ~SPRAID_CMD_FLAG_SGL_ALL;
-}
-
-static inline void spraid_clear_hreq(struct request *req)
-{
-	if (!(req->rq_flags & RQF_DONTPREP)) {
-		spraid_admin_req(req)->flags = 0;
-		req->rq_flags |= RQF_DONTPREP;
-	}
-}
-
-static blk_status_t spraid_setup_admin_cmd(struct request *req, struct spraid_admin_command *cmd)
-{
-	spraid_clear_hreq(req);
-
-	memset(cmd, 0, sizeof(*cmd));
-	switch (req_op(req)) {
-	case REQ_OP_DRV_IN:
-	case REQ_OP_DRV_OUT:
-		spraid_setup_passthrough(req, cmd);
-		break;
-	default:
-		WARN_ON_ONCE(1);
-		return BLK_STS_IOERR;
-	}
-
-	cmd->common.command_id = req->tag;
-	return BLK_STS_OK;
-}
-
-static void spraid_unmap_data(struct spraid_dev *hdev, struct request *req)
-{
-	struct spraid_iod *iod = blk_mq_rq_to_pdu(req);
-	enum dma_data_direction dma_dir = rq_data_dir(req) ?
-		DMA_TO_DEVICE : DMA_FROM_DEVICE;
+	struct request *rq = blk_mq_rq_from_pdu(job);
+	struct spraid_iod *iod = job->dd_data;
+	enum dma_data_direction dma_dir = rq_data_dir(rq) ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
 
 	if (iod->nsge)
 		dma_unmap_sg(hdev->dev, iod->sg, iod->nsge, dma_dir);
@@ -2215,36 +2355,36 @@ static void spraid_unmap_data(struct spraid_dev *hdev, struct request *req)
 	spraid_free_iod_res(hdev, iod);
 }
 
-static blk_status_t spraid_admin_map_data(struct spraid_dev *hdev, struct request *req,
-					  struct spraid_admin_command *cmd)
+static int spraid_bsg_map_data(struct spraid_dev *hdev, struct bsg_job *job,
+			       struct spraid_admin_command *cmd)
 {
-	struct spraid_iod *iod = blk_mq_rq_to_pdu(req);
-	struct request_queue *admin_q = req->q;
-	enum dma_data_direction dma_dir = rq_data_dir(req) ?
-		DMA_TO_DEVICE : DMA_FROM_DEVICE;
-	blk_status_t ret = BLK_STS_IOERR;
-	int nr_mapped;
-	int res;
+	struct request *rq = blk_mq_rq_from_pdu(job);
+	struct spraid_iod *iod = job->dd_data;
+	enum dma_data_direction dma_dir = rq_data_dir(rq) ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
+	int ret = 0;
 
-	sg_init_table(iod->sg, blk_rq_nr_phys_segments(req));
-	iod->nsge = blk_rq_map_sg(admin_q, req, iod->sg);
+	iod->sg = job->request_payload.sg_list;
+	iod->nsge = job->request_payload.sg_cnt;
+	iod->length = job->request_payload.payload_len;
+	iod->use_sgl = false;
+	iod->npages = -1;
+	iod->sg_drv_mgmt = false;
+
 	if (!iod->nsge)
 		goto out;
 
-	dev_info(hdev->dev, "nseg: %u, nsge: %u\n",
-		    blk_rq_nr_phys_segments(req), iod->nsge);
-
-	ret = BLK_STS_RESOURCE;
-	nr_mapped = dma_map_sg_attrs(hdev->dev, iod->sg, iod->nsge, dma_dir, DMA_ATTR_NO_WARN);
-	if (!nr_mapped)
+	ret = dma_map_sg_attrs(hdev->dev, iod->sg, iod->nsge, dma_dir, DMA_ATTR_NO_WARN);
+	if (!ret)
 		goto out;
 
-	res = spraid_setup_prps(hdev, iod);
-	if (res)
+	ret = spraid_setup_prps(hdev, iod);
+	if (ret)
 		goto unmap;
+
 	cmd->common.dptr.prp1 = cpu_to_le64(sg_dma_address(iod->sg));
 	cmd->common.dptr.prp2 = cpu_to_le64(iod->first_dma);
-	return BLK_STS_OK;
+
+	return 0;
 
 unmap:
 	dma_unmap_sg(hdev->dev, iod->sg, iod->nsge, dma_dir);
@@ -2252,137 +2392,29 @@ out:
 	return ret;
 }
 
-static blk_status_t spraid_init_admin_iod(struct request *rq, struct spraid_dev *hdev)
-{
-	struct spraid_iod *iod = blk_mq_rq_to_pdu(rq);
-	int nents = blk_rq_nr_phys_segments(rq);
-	unsigned int size = blk_rq_payload_bytes(rq);
-
-	if (nents > SPRAID_INT_PAGES || size > SPRAID_INT_BYTES(hdev)) {
-		iod->sg = mempool_alloc(hdev->iod_mempool, GFP_ATOMIC);
-		if (!iod->sg)
-			return BLK_STS_RESOURCE;
-	} else {
-		iod->sg = iod->inline_sg;
-	}
-
-	iod->nsge = 0;
-	iod->use_sgl = false;
-	iod->npages = -1;
-	iod->length = size;
-	iod->sg_drv_mgmt = true;
-
-	return BLK_STS_OK;
-}
-
-static blk_status_t spraid_queue_admin_rq(struct blk_mq_hw_ctx *hctx,
-					  const struct blk_mq_queue_data *bd)
-{
-	struct spraid_queue *adminq = hctx->driver_data;
-	struct spraid_dev *hdev = adminq->hdev;
-	struct request *req = bd->rq;
-	struct spraid_iod *iod = blk_mq_rq_to_pdu(req);
-	struct spraid_admin_command cmd;
-	blk_status_t ret;
-
-	ret = spraid_setup_admin_cmd(req, &cmd);
-	if (ret)
-		goto out;
-
-	ret = spraid_init_admin_iod(req, hdev);
-	if (ret)
-		goto out;
-
-	if (blk_rq_nr_phys_segments(req)) {
-		ret = spraid_admin_map_data(hdev, req, &cmd);
-		if (ret)
-			goto cleanup_iod;
-	}
-
-	blk_mq_start_request(req);
-	spraid_submit_cmd(adminq, &cmd);
-	return BLK_STS_OK;
-
-cleanup_iod:
-	spraid_free_iod_res(hdev, iod);
-out:
-	return ret;
-}
-
-static blk_status_t spraid_error_status(struct request *req)
-{
-	switch (spraid_admin_req(req)->status & 0x7ff) {
-	case SPRAID_SC_SUCCESS:
-		return BLK_STS_OK;
-	default:
-		return BLK_STS_IOERR;
-	}
-}
-
-static void spraid_complete_admin_rq(struct request *req)
-{
-	struct spraid_iod *iod = blk_mq_rq_to_pdu(req);
-	struct spraid_dev *hdev = iod->spraidq->hdev;
-
-	if (blk_rq_nr_phys_segments(req))
-		spraid_unmap_data(hdev, req);
-	blk_mq_end_request(req, spraid_error_status(req));
-}
-
-static int spraid_admin_init_hctx(struct blk_mq_hw_ctx *hctx, void *data, unsigned int hctx_idx)
-{
-	struct spraid_dev *hdev = data;
-	struct spraid_queue *adminq = &hdev->queues[0];
-
-	WARN_ON(hctx_idx != 0);
-	WARN_ON(hdev->admin_tagset.tags[0] != hctx->tags);
-
-	hctx->driver_data = adminq;
-	return 0;
-}
-
-static int spraid_admin_init_request(struct blk_mq_tag_set *set, struct request *req,
-				     unsigned int hctx_idx, unsigned int numa_node)
-{
-	struct spraid_dev *hdev = set->driver_data;
-	struct spraid_iod *iod = blk_mq_rq_to_pdu(req);
-	struct spraid_queue *adminq = &hdev->queues[0];
-
-	WARN_ON(!adminq);
-	iod->spraidq = adminq;
-	return 0;
-}
-
-static enum blk_eh_timer_return
-spraid_admin_timeout(struct request *req, bool reserved)
-{
-	struct spraid_iod *iod = blk_mq_rq_to_pdu(req);
-	struct spraid_queue *spraidq = iod->spraidq;
-	struct spraid_dev *hdev = spraidq->hdev;
-
-	dev_err(hdev->dev, "Admin cid[%d] qid[%d] timeout\n",
-		req->tag, spraidq->qid);
-
-	if (spraid_poll_cq(spraidq, req->tag)) {
-		dev_warn(hdev->dev, "cid[%d] qid[%d] timeout, completion polled\n",
-			 req->tag, spraidq->qid);
-		return BLK_EH_DONE;
-	}
-
-	spraid_end_admin_request(req, cpu_to_le16(-EINVAL), 0, 0);
-	return BLK_EH_DONE;
-}
-
 static int spraid_get_ctrl_info(struct spraid_dev *hdev, struct spraid_ctrl_info *ctrl_info)
 {
 	struct spraid_admin_command admin_cmd;
+	u8 *data_ptr = NULL;
+	dma_addr_t data_dma = 0;
+	int ret;
+
+	data_ptr = dma_alloc_coherent(hdev->dev, PAGE_SIZE, &data_dma, GFP_KERNEL);
+	if (!data_ptr)
+		return -ENOMEM;
 
 	memset(&admin_cmd, 0, sizeof(admin_cmd));
 	admin_cmd.get_info.opcode = SPRAID_ADMIN_GET_INFO;
 	admin_cmd.get_info.type = SPRAID_GET_INFO_CTRL;
+	admin_cmd.common.dptr.prp1 = cpu_to_le64(data_dma);
 
-	return spraid_submit_admin_sync_cmd(hdev->admin_q, &admin_cmd, NULL,
-		ctrl_info, sizeof(struct spraid_ctrl_info), 0, 0, 0);
+	ret = spraid_submit_admin_sync_cmd(hdev, &admin_cmd, NULL, NULL, 0);
+	if (!ret)
+		memcpy(ctrl_info, data_ptr, sizeof(struct spraid_ctrl_info));
+
+	dma_free_coherent(hdev->dev, PAGE_SIZE, data_ptr, data_dma);
+
+	return ret;
 }
 
 static int spraid_init_ctrl_info(struct spraid_dev *hdev)
@@ -2416,6 +2448,11 @@ static int spraid_init_ctrl_info(struct spraid_dev *hdev)
 	dev_info(hdev->dev, "[%s]sn = %s\n", __func__, hdev->ctrl_info->sn);
 	dev_info(hdev->dev, "[%s]fr = %s\n", __func__, hdev->ctrl_info->fr);
 
+	if (!hdev->ctrl_info->aerl)
+		hdev->ctrl_info->aerl = 1;
+	if (hdev->ctrl_info->aerl > SPRAID_NR_AEN_COMMANDS)
+		hdev->ctrl_info->aerl = SPRAID_NR_AEN_COMMANDS;
+
 	return 0;
 }
 
@@ -2444,98 +2481,51 @@ static void spraid_free_iod_ext_mem_pool(struct spraid_dev *hdev)
 	mempool_destroy(hdev->iod_mempool);
 }
 
-static int spraid_submit_user_cmd(struct request_queue *q, struct spraid_admin_command *cmd,
-				  void __user *ubuffer, unsigned int bufflen, u32 *result,
-				  unsigned int timeout)
+static int spraid_user_admin_cmd(struct spraid_dev *hdev, struct bsg_job *job)
 {
-	struct request *req;
-	struct bio *bio = NULL;
-	int ret;
-
-	req = spraid_alloc_admin_request(q, cmd, 0);
-	if (IS_ERR(req))
-		return PTR_ERR(req);
-
-	req->timeout = timeout ? timeout : ADMIN_TIMEOUT;
-	spraid_admin_req(req)->flags |= SPRAID_REQ_USERCMD;
-
-	if (ubuffer && bufflen) {
-		ret = blk_rq_map_user(q, req, NULL, ubuffer, bufflen, GFP_KERNEL);
-		if (ret)
-			goto out;
-		bio = req->bio;
-	}
-	blk_execute_rq(req->q, NULL, req, 0);
-	if (spraid_admin_req(req)->flags & SPRAID_REQ_CANCELLED)
-		ret = -EINTR;
-	else
-		ret = spraid_admin_req(req)->status;
-	if (result) {
-		result[0] = spraid_admin_req(req)->result0;
-		result[1] = spraid_admin_req(req)->result1;
-	}
-	if (bio)
-		blk_rq_unmap_user(bio);
-out:
-	blk_mq_free_request(req);
-	return ret;
-}
-
-static int spraid_user_admin_cmd(struct spraid_dev *hdev,
-				 struct spraid_passthru_common_cmd __user *ucmd)
-{
-	struct spraid_passthru_common_cmd cmd;
+	struct spraid_bsg_request *bsg_req = job->request;
+	struct spraid_passthru_common_cmd *cmd = &(bsg_req->admcmd);
 	struct spraid_admin_command admin_cmd;
-	u32 timeout = 0;
+	u32 timeout = msecs_to_jiffies(cmd->timeout_ms);
+	u32 result[2] = {0};
 	int status;
 
-	if (!capable(CAP_SYS_ADMIN)) {
-		dev_err(hdev->dev, "Current user hasn't administrator right, reject service\n");
-		return -EACCES;
+	if (hdev->state >= SPRAID_RESETTING) {
+		dev_err(hdev->dev, "[%s] err, host state:[%d] is not right\n",
+			__func__, hdev->state);
+		return -EBUSY;
 	}
-
-	if (copy_from_user(&cmd, ucmd, sizeof(cmd))) {
-		dev_err(hdev->dev, "Copy command from user space to kernel space failed\n");
-		return -EFAULT;
-	}
-
-	if (cmd.flags) {
-		dev_err(hdev->dev, "Invalid flags in user command\n");
-		return -EINVAL;
-	}
-
-	dev_info(hdev->dev, "user_admin_cmd opcode: 0x%x, subopcode: 0x%x\n",
-		    cmd.opcode, cmd.cdw2 & 0x7ff);
 
 	memset(&admin_cmd, 0, sizeof(admin_cmd));
-	admin_cmd.common.opcode = cmd.opcode;
-	admin_cmd.common.flags = cmd.flags;
-	admin_cmd.common.hdid = cpu_to_le32(cmd.nsid);
-	admin_cmd.common.cdw2[0] = cpu_to_le32(cmd.cdw2);
-	admin_cmd.common.cdw2[1] = cpu_to_le32(cmd.cdw3);
-	admin_cmd.common.cdw10 = cpu_to_le32(cmd.cdw10);
-	admin_cmd.common.cdw11 = cpu_to_le32(cmd.cdw11);
-	admin_cmd.common.cdw12 = cpu_to_le32(cmd.cdw12);
-	admin_cmd.common.cdw13 = cpu_to_le32(cmd.cdw13);
-	admin_cmd.common.cdw14 = cpu_to_le32(cmd.cdw14);
-	admin_cmd.common.cdw15 = cpu_to_le32(cmd.cdw15);
+	admin_cmd.common.opcode = cmd->opcode;
+	admin_cmd.common.flags = cmd->flags;
+	admin_cmd.common.hdid = cpu_to_le32(cmd->nsid);
+	admin_cmd.common.cdw2[0] = cpu_to_le32(cmd->cdw2);
+	admin_cmd.common.cdw2[1] = cpu_to_le32(cmd->cdw3);
+	admin_cmd.common.cdw10 = cpu_to_le32(cmd->cdw10);
+	admin_cmd.common.cdw11 = cpu_to_le32(cmd->cdw11);
+	admin_cmd.common.cdw12 = cpu_to_le32(cmd->cdw12);
+	admin_cmd.common.cdw13 = cpu_to_le32(cmd->cdw13);
+	admin_cmd.common.cdw14 = cpu_to_le32(cmd->cdw14);
+	admin_cmd.common.cdw15 = cpu_to_le32(cmd->cdw15);
 
-	if (cmd.timeout_ms)
-		timeout = msecs_to_jiffies(cmd.timeout_ms);
-
-	status = spraid_submit_user_cmd(hdev->admin_q, &admin_cmd,
-					(void __user *)(uintptr_t)cmd.addr, cmd.info_1.data_len,
-					&cmd.result0, timeout);
-
-	dev_info(hdev->dev, "user_admin_cmd status: 0x%x, result0: 0x%x, result1: 0x%x\n",
-		 status, cmd.result0, cmd.result1);
-
-	if (status >= 0) {
-		if (put_user(cmd.result0, &ucmd->result0))
-			return -EFAULT;
-		if (put_user(cmd.result1, &ucmd->result1))
-			return -EFAULT;
+	status = spraid_bsg_map_data(hdev, job, &admin_cmd);
+	if (status) {
+		dev_err(hdev->dev, "[%s] err, map data failed\n", __func__);
+		return status;
 	}
+
+	status = spraid_submit_admin_sync_cmd(hdev, &admin_cmd, &result[0], &result[1], timeout);
+	if (status >= 0) {
+		job->reply_len = sizeof(result);
+		memcpy(job->reply, result, sizeof(result));
+	}
+
+	if (status)
+		dev_info(hdev->dev, "[%s] opcode[0x%x] subopcode[0x%x], status[0x%x] result0[0x%x] result1[0x%x]\n",
+		__func__, cmd->opcode, cmd->info_0.subopcode, status, result[0], result[1]);
+
+	spraid_bsg_unmap_data(hdev, job);
 
 	return status;
 }
@@ -2548,8 +2538,8 @@ static int spraid_alloc_ioq_ptcmds(struct spraid_dev *hdev)
 	INIT_LIST_HEAD(&hdev->ioq_pt_list);
 	spin_lock_init(&hdev->ioq_pt_lock);
 
-	hdev->ioq_ptcmds = kcalloc_node(ptnum, sizeof(struct spraid_ioq_ptcmd),
-		GFP_KERNEL, hdev->numa_node);
+	hdev->ioq_ptcmds = kcalloc_node(ptnum, sizeof(struct spraid_cmd),
+					GFP_KERNEL, hdev->numa_node);
 
 	if (!hdev->ioq_ptcmds) {
 		dev_err(hdev->dev, "Alloc ioq_ptcmds failed\n");
@@ -2567,55 +2557,35 @@ static int spraid_alloc_ioq_ptcmds(struct spraid_dev *hdev)
 	return 0;
 }
 
-static struct spraid_ioq_ptcmd *spraid_get_ioq_ptcmd(struct spraid_dev *hdev)
+static void spraid_free_ioq_ptcmds(struct spraid_dev *hdev)
 {
-	struct spraid_ioq_ptcmd *cmd = NULL;
-	unsigned long flags;
+	kfree(hdev->ioq_ptcmds);
+	hdev->ioq_ptcmds = NULL;
 
-	spin_lock_irqsave(&hdev->ioq_pt_lock, flags);
-	if (list_empty(&hdev->ioq_pt_list)) {
-		spin_unlock_irqrestore(&hdev->ioq_pt_lock, flags);
-		dev_err(hdev->dev, "err, ioq ptcmd list empty\n");
-		return NULL;
-	}
-	cmd = list_entry((&hdev->ioq_pt_list)->next, struct spraid_ioq_ptcmd, list);
-	list_del_init(&cmd->list);
-	spin_unlock_irqrestore(&hdev->ioq_pt_lock, flags);
-
-	WRITE_ONCE(cmd->state, SPRAID_CMD_IDLE);
-
-	return cmd;
-}
-
-static void spraid_put_ioq_ptcmd(struct spraid_dev *hdev, struct spraid_ioq_ptcmd *cmd)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&hdev->ioq_pt_lock, flags);
-	list_add(&cmd->list, (&hdev->ioq_pt_list)->next);
-	spin_unlock_irqrestore(&hdev->ioq_pt_lock, flags);
+	INIT_LIST_HEAD(&hdev->ioq_pt_list);
 }
 
 static int spraid_submit_ioq_sync_cmd(struct spraid_dev *hdev, struct spraid_ioq_command *cmd,
-				      u32 *result, void **sense, u32 timeout)
+				      u32 *result, u32 *reslen, u32 timeout)
 {
-	struct spraid_queue *ioq;
 	int ret;
 	dma_addr_t sense_dma;
-	struct spraid_ioq_ptcmd *pt_cmd = spraid_get_ioq_ptcmd(hdev);
+	struct spraid_queue *ioq;
+	void *sense_addr = NULL;
+	struct spraid_cmd *pt_cmd = spraid_get_cmd(hdev, SPRAID_CMD_IOPT);
 
-	*sense = NULL;
-
-	if (!pt_cmd)
+	if (!pt_cmd) {
+		dev_err(hdev->dev, "err, get ioq cmd failed\n");
 		return -EFAULT;
+	}
 
-	dev_info(hdev->dev, "[%s] ptcmd, cid[%d], qid[%d]\n", __func__, pt_cmd->cid, pt_cmd->qid);
+	timeout = timeout ? timeout : ADMIN_TIMEOUT;
 
 	init_completion(&pt_cmd->cmd_done);
 
 	ioq = &hdev->queues[pt_cmd->qid];
 	ret = pt_cmd->cid * SCSI_SENSE_BUFFERSIZE;
-	pt_cmd->priv = ioq->sense + ret;
+	sense_addr = ioq->sense + ret;
 	sense_dma = ioq->sense_dma_addr + ret;
 
 	cmd->common.sense_addr = cpu_to_le64(sense_dma);
@@ -2625,260 +2595,87 @@ static int spraid_submit_ioq_sync_cmd(struct spraid_dev *hdev, struct spraid_ioq
 	spraid_submit_cmd(ioq, cmd);
 
 	if (!wait_for_completion_timeout(&pt_cmd->cmd_done, timeout)) {
-		dev_err(hdev->dev, "[%s] cid[%d], qid[%d] timeout\n",
-			__func__, pt_cmd->cid, pt_cmd->qid);
+		dev_err(hdev->dev, "[%s] cid[%d] qid[%d] timeout, opcode[0x%x] subopcode[0x%x]\n",
+			__func__, pt_cmd->cid, pt_cmd->qid, cmd->common.opcode,
+			(le32_to_cpu(cmd->common.cdw3[0]) & 0xffff));
 		WRITE_ONCE(pt_cmd->state, SPRAID_CMD_TIMEOUT);
-		return -EINVAL;
+		spraid_put_cmd(hdev, pt_cmd, SPRAID_CMD_IOPT);
+		return -ETIME;
 	}
 
-	if (result) {
-		result[0] = pt_cmd->result0;
-		result[1] = pt_cmd->result1;
+	if (result && reslen) {
+		if ((pt_cmd->status & 0x17f) == 0x101) {
+			memcpy(result, sense_addr, SCSI_SENSE_BUFFERSIZE);
+			*reslen = SCSI_SENSE_BUFFERSIZE;
+		}
 	}
 
-	if ((pt_cmd->status & 0x17f) == 0x101)
-		*sense = pt_cmd->priv;
+	spraid_put_cmd(hdev, pt_cmd, SPRAID_CMD_IOPT);
 
 	return pt_cmd->status;
 }
 
-static int spraid_user_ioq_cmd(struct spraid_dev *hdev,
-			       struct spraid_ioq_passthru_cmd __user *ucmd)
+static int spraid_user_ioq_cmd(struct spraid_dev *hdev, struct bsg_job *job)
 {
-	struct spraid_ioq_passthru_cmd cmd;
+	struct spraid_bsg_request *bsg_req = (struct spraid_bsg_request *)(job->request);
+	struct spraid_ioq_passthru_cmd *cmd = &(bsg_req->ioqcmd);
 	struct spraid_ioq_command ioq_cmd;
-	u32 timeout = 0;
 	int status = 0;
-	u8 *data_ptr = NULL;
-	dma_addr_t data_dma;
-	enum dma_data_direction dma_dir = DMA_NONE;
-	void *sense = NULL;
+	u32 timeout = msecs_to_jiffies(cmd->timeout_ms);
 
-	if (!capable(CAP_SYS_ADMIN)) {
-		dev_err(hdev->dev, "Current user hasn't administrator right, reject service\n");
-		return -EACCES;
-	}
-
-	if (copy_from_user(&cmd, ucmd, sizeof(cmd))) {
-		dev_err(hdev->dev, "Copy command from user space to kernel space failed\n");
-		return -EFAULT;
-	}
-
-	if (cmd.data_len > PAGE_SIZE) {
+	if (cmd->data_len > PAGE_SIZE) {
 		dev_err(hdev->dev, "[%s] data len bigger than 4k\n", __func__);
 		return -EFAULT;
 	}
 
-	dev_info(hdev->dev, "[%s] opcode: 0x%x, subopcode: 0x%x, datalen: %d\n",
-		 __func__, cmd.opcode, cmd.info_1.subopcode, cmd.data_len);
-
-	if (cmd.addr && cmd.data_len) {
-		data_ptr = dma_alloc_coherent(hdev->dev, PAGE_SIZE, &data_dma, GFP_KERNEL);
-		if (!data_ptr)
-			return -ENOMEM;
-
-		dma_dir = (cmd.opcode & 1) ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
+	if (hdev->state != SPRAID_LIVE) {
+		dev_err(hdev->dev, "[%s] err, host state:[%d] is not live\n",
+			__func__, hdev->state);
+		return -EBUSY;
 	}
 
-	if (dma_dir == DMA_TO_DEVICE) {
-		if (copy_from_user(data_ptr, (void __user *)(uintptr_t)cmd.addr, cmd.data_len)) {
-			dev_err(hdev->dev, "[%s] copy user data failed\n", __func__);
-			status = -EFAULT;
-			goto free_dma_mem;
-		}
-	}
+	dev_info(hdev->dev, "[%s] opcode[0x%x] subopcode[0x%x] init, datalen[%d]\n",
+		 __func__, cmd->opcode, cmd->info_1.subopcode, cmd->data_len);
 
 	memset(&ioq_cmd, 0, sizeof(ioq_cmd));
-	ioq_cmd.common.opcode = cmd.opcode;
-	ioq_cmd.common.flags = cmd.flags;
-	ioq_cmd.common.hdid = cpu_to_le32(cmd.nsid);
-	ioq_cmd.common.sense_len = cpu_to_le16(cmd.info_0.res_sense_len);
-	ioq_cmd.common.cdb_len = cmd.info_0.cdb_len;
-	ioq_cmd.common.rsvd2 = cmd.info_0.rsvd0;
-	ioq_cmd.common.cdw3[0] = cpu_to_le32(cmd.cdw3);
-	ioq_cmd.common.cdw3[1] = cpu_to_le32(cmd.cdw4);
-	ioq_cmd.common.cdw3[2] = cpu_to_le32(cmd.cdw5);
-	ioq_cmd.common.dptr.prp1 = cpu_to_le64(data_dma);
+	ioq_cmd.common.opcode = cmd->opcode;
+	ioq_cmd.common.flags = cmd->flags;
+	ioq_cmd.common.hdid = cpu_to_le32(cmd->nsid);
+	ioq_cmd.common.sense_len = cpu_to_le16(cmd->info_0.res_sense_len);
+	ioq_cmd.common.cdb_len = cmd->info_0.cdb_len;
+	ioq_cmd.common.rsvd2 = cmd->info_0.rsvd0;
+	ioq_cmd.common.cdw3[0] = cpu_to_le32(cmd->cdw3);
+	ioq_cmd.common.cdw3[1] = cpu_to_le32(cmd->cdw4);
+	ioq_cmd.common.cdw3[2] = cpu_to_le32(cmd->cdw5);
 
-	ioq_cmd.common.cdw10[0] = cpu_to_le32(cmd.cdw10);
-	ioq_cmd.common.cdw10[1] = cpu_to_le32(cmd.cdw11);
-	ioq_cmd.common.cdw10[2] = cpu_to_le32(cmd.cdw12);
-	ioq_cmd.common.cdw10[3] = cpu_to_le32(cmd.cdw13);
-	ioq_cmd.common.cdw10[4] = cpu_to_le32(cmd.cdw14);
-	ioq_cmd.common.cdw10[5] = cpu_to_le32(cmd.data_len);
+	ioq_cmd.common.cdw10[0] = cpu_to_le32(cmd->cdw10);
+	ioq_cmd.common.cdw10[1] = cpu_to_le32(cmd->cdw11);
+	ioq_cmd.common.cdw10[2] = cpu_to_le32(cmd->cdw12);
+	ioq_cmd.common.cdw10[3] = cpu_to_le32(cmd->cdw13);
+	ioq_cmd.common.cdw10[4] = cpu_to_le32(cmd->cdw14);
+	ioq_cmd.common.cdw10[5] = cpu_to_le32(cmd->data_len);
 
-	memcpy(ioq_cmd.common.cdb, &cmd.cdw16, cmd.info_0.cdb_len);
+	memcpy(ioq_cmd.common.cdb, &cmd->cdw16, cmd->info_0.cdb_len);
 
-	ioq_cmd.common.cdw26[0] = cpu_to_le32(cmd.cdw26[0]);
-	ioq_cmd.common.cdw26[1] = cpu_to_le32(cmd.cdw26[1]);
-	ioq_cmd.common.cdw26[2] = cpu_to_le32(cmd.cdw26[2]);
-	ioq_cmd.common.cdw26[3] = cpu_to_le32(cmd.cdw26[3]);
+	ioq_cmd.common.cdw26[0] = cpu_to_le32(cmd->cdw26[0]);
+	ioq_cmd.common.cdw26[1] = cpu_to_le32(cmd->cdw26[1]);
+	ioq_cmd.common.cdw26[2] = cpu_to_le32(cmd->cdw26[2]);
+	ioq_cmd.common.cdw26[3] = cpu_to_le32(cmd->cdw26[3]);
 
-	if (cmd.timeout_ms)
-		timeout = msecs_to_jiffies(cmd.timeout_ms);
-	timeout = timeout ? timeout : ADMIN_TIMEOUT;
-
-	status = spraid_submit_ioq_sync_cmd(hdev, &ioq_cmd, &cmd.result0, &sense, timeout);
-
-	if (status >= 0) {
-		if (put_user(cmd.result0, &ucmd->result0)) {
-			status = -EFAULT;
-			goto free_dma_mem;
-		}
-		if (put_user(cmd.result1, &ucmd->result1)) {
-			status = -EFAULT;
-			goto free_dma_mem;
-		}
-		if (dma_dir == DMA_FROM_DEVICE &&
-		    copy_to_user((void __user *)(uintptr_t)cmd.addr, data_ptr, cmd.data_len)) {
-			status = -EFAULT;
-			goto free_dma_mem;
-		}
+	status = spraid_bsg_map_data(hdev, job, (struct spraid_admin_command *)&ioq_cmd);
+	if (status) {
+		dev_err(hdev->dev, "[%s] err, map data failed\n", __func__);
+		return status;
 	}
 
-	if (sense) {
-		if (copy_to_user((void *__user *)(uintptr_t)cmd.sense_addr,
-				  sense, cmd.info_0.res_sense_len)) {
-			status = -EFAULT;
-			goto free_dma_mem;
-		}
-	}
+	status = spraid_submit_ioq_sync_cmd(hdev, &ioq_cmd, job->reply, &job->reply_len, timeout);
 
-free_dma_mem:
-	if (data_ptr)
-		dma_free_coherent(hdev->dev, PAGE_SIZE, data_ptr, data_dma);
+	dev_info(hdev->dev, "[%s] opcode[0x%x] subopcode[0x%x], status[0x%x], reply_len[%d]\n",
+		 __func__, cmd->opcode, cmd->info_1.subopcode, status, job->reply_len);
+
+	spraid_bsg_unmap_data(hdev, job);
 
 	return status;
-
-}
-
-static int spraid_reset_work_sync(struct spraid_dev *hdev);
-
-static int spraid_user_reset_cmd(struct spraid_dev *hdev)
-{
-	int ret;
-
-	dev_info(hdev->dev, "[%s] start user reset cmd\n", __func__);
-	ret = spraid_reset_work_sync(hdev);
-	dev_info(hdev->dev, "[%s] stop user reset cmd[%d]\n", __func__, ret);
-
-	return ret;
-}
-
-static int hdev_open(struct inode *inode, struct file *file)
-{
-	struct spraid_dev *hdev =
-		container_of(inode->i_cdev, struct spraid_dev, cdev);
-	file->private_data = hdev;
-	return 0;
-}
-
-static long hdev_ioctl(struct file *file, u32 cmd, unsigned long arg)
-{
-	struct spraid_dev *hdev = file->private_data;
-	void __user *argp = (void __user *)arg;
-
-	switch (cmd) {
-	case SPRAID_IOCTL_ADMIN_CMD:
-		return spraid_user_admin_cmd(hdev, argp);
-	case SPRAID_IOCTL_IOQ_CMD:
-		return spraid_user_ioq_cmd(hdev, argp);
-	case SPRAID_IOCTL_RESET_CMD:
-		return spraid_user_reset_cmd(hdev);
-	default:
-		return -ENOTTY;
-	}
-}
-
-static const struct file_operations spraid_dev_fops = {
-	.owner		= THIS_MODULE,
-	.open		= hdev_open,
-	.unlocked_ioctl = hdev_ioctl,
-	.compat_ioctl	= hdev_ioctl,
-};
-
-static int spraid_create_cdev(struct spraid_dev *hdev)
-{
-	int ret;
-
-	device_initialize(&hdev->ctrl_device);
-	hdev->ctrl_device.devt = MKDEV(MAJOR(spraid_chr_devt), hdev->instance);
-	hdev->ctrl_device.class = spraid_class;
-	hdev->ctrl_device.parent = hdev->dev;
-	dev_set_drvdata(&hdev->ctrl_device, hdev);
-	ret = dev_set_name(&hdev->ctrl_device, "spraid%d", hdev->instance);
-	if (ret)
-		return ret;
-	cdev_init(&hdev->cdev, &spraid_dev_fops);
-	hdev->cdev.owner = THIS_MODULE;
-	ret = cdev_device_add(&hdev->cdev, &hdev->ctrl_device);
-	if (ret) {
-		dev_err(hdev->dev, "Add cdev failed, ret: %d", ret);
-		put_device(&hdev->ctrl_device);
-		kfree_const(hdev->ctrl_device.kobj.name);
-		return ret;
-	}
-
-	return 0;
-}
-
-static inline void spraid_remove_cdev(struct spraid_dev *hdev)
-{
-	cdev_device_del(&hdev->cdev, &hdev->ctrl_device);
-}
-
-static const struct blk_mq_ops spraid_admin_mq_ops = {
-	.queue_rq = spraid_queue_admin_rq,
-	.complete = spraid_complete_admin_rq,
-	.init_hctx = spraid_admin_init_hctx,
-	.init_request = spraid_admin_init_request,
-	.timeout = spraid_admin_timeout,
-};
-
-static void spraid_remove_admin_tagset(struct spraid_dev *hdev)
-{
-	if (hdev->admin_q && !blk_queue_dying(hdev->admin_q)) {
-		blk_mq_unquiesce_queue(hdev->admin_q);
-		blk_cleanup_queue(hdev->admin_q);
-		blk_mq_free_tag_set(&hdev->admin_tagset);
-	}
-}
-
-static int spraid_alloc_admin_tags(struct spraid_dev *hdev)
-{
-	if (!hdev->admin_q) {
-		hdev->admin_tagset.ops = &spraid_admin_mq_ops;
-		hdev->admin_tagset.nr_hw_queues = 1;
-
-		hdev->admin_tagset.queue_depth = SPRAID_AQ_MQ_TAG_DEPTH;
-		hdev->admin_tagset.timeout = ADMIN_TIMEOUT;
-		hdev->admin_tagset.numa_node = hdev->numa_node;
-		hdev->admin_tagset.cmd_size =
-			spraid_cmd_size(hdev, true, false);
-		hdev->admin_tagset.flags = BLK_MQ_F_NO_SCHED;
-		hdev->admin_tagset.driver_data = hdev;
-
-		if (blk_mq_alloc_tag_set(&hdev->admin_tagset)) {
-			dev_err(hdev->dev, "Allocate admin tagset failed\n");
-			return -ENOMEM;
-		}
-
-		hdev->admin_q = blk_mq_init_queue(&hdev->admin_tagset);
-		if (IS_ERR(hdev->admin_q)) {
-			dev_err(hdev->dev, "Initialize admin request queue failed\n");
-			blk_mq_free_tag_set(&hdev->admin_tagset);
-			return -ENOMEM;
-		}
-		if (!blk_get_queue(hdev->admin_q)) {
-			dev_err(hdev->dev, "Get admin request queue failed\n");
-			spraid_remove_admin_tagset(hdev);
-			hdev->admin_q = NULL;
-			return -ENODEV;
-		}
-	} else {
-		blk_mq_unquiesce_queue(hdev->admin_q);
-	}
-	return 0;
 }
 
 static bool spraid_check_scmd_completed(struct scsi_cmnd *scmd)
@@ -2891,7 +2688,7 @@ static bool spraid_check_scmd_completed(struct scsi_cmnd *scmd)
 	spraid_get_tag_from_scmd(scmd, &hwq, &cid);
 	spraidq = &hdev->queues[hwq];
 	if (READ_ONCE(iod->state) == SPRAID_CMD_COMPLETE || spraid_poll_cq(spraidq, cid)) {
-		dev_warn(hdev->dev, "cid[%d], qid[%d] has been completed\n",
+		dev_warn(hdev->dev, "cid[%d] qid[%d] has been completed\n",
 			 cid, spraidq->qid);
 		return true;
 	}
@@ -2927,8 +2724,7 @@ static int spraid_send_abort_cmd(struct spraid_dev *hdev, u32 hdid, u16 qid, u16
 	admin_cmd.abort.sqid = cpu_to_le16(qid);
 	admin_cmd.abort.cid = cpu_to_le16(cid);
 
-	return spraid_submit_admin_sync_cmd(hdev->admin_q, &admin_cmd, NULL,
-		NULL, 0, 0, 0, 0);
+	return spraid_submit_admin_sync_cmd(hdev, &admin_cmd, NULL, NULL, 0);
 }
 
 /* send reset command by admin quueue temporary */
@@ -2941,8 +2737,7 @@ static int spraid_send_reset_cmd(struct spraid_dev *hdev, int type, u32 hdid)
 	admin_cmd.reset.hdid = cpu_to_le32(hdid);
 	admin_cmd.reset.type = type;
 
-	return spraid_submit_admin_sync_cmd(hdev->admin_q, &admin_cmd, NULL,
-		NULL, 0, 0, 0, 0);
+	return spraid_submit_admin_sync_cmd(hdev, &admin_cmd, NULL, NULL, 0);
 }
 
 static bool spraid_change_host_state(struct spraid_dev *hdev, enum spraid_state newstate)
@@ -3022,7 +2817,7 @@ static void spraid_back_fault_cqe(struct spraid_queue *ioq, struct spraid_comple
 		scsi_dma_unmap(scmd);
 	spraid_free_iod_res(hdev, iod);
 	scmd->scsi_done(scmd);
-	dev_warn(hdev->dev, "Back fault CQE, cid[%d], qid[%d]\n",
+	dev_warn(hdev->dev, "Back fault CQE, cid[%d] qid[%d]\n",
 		 cqe->cmd_id, ioq->qid);
 }
 
@@ -3032,6 +2827,8 @@ static void spraid_back_all_io(struct spraid_dev *hdev)
 	struct spraid_queue *ioq;
 	struct spraid_completion cqe = { 0 };
 
+	scsi_block_requests(hdev->shost);
+
 	for (i = 1; i <= hdev->shost->nr_hw_queues; i++) {
 		ioq = &hdev->queues[i];
 		for (j = 0; j < hdev->shost->can_queue; j++) {
@@ -3039,6 +2836,8 @@ static void spraid_back_all_io(struct spraid_dev *hdev)
 			spraid_back_fault_cqe(ioq, &cqe);
 		}
 	}
+
+	scsi_unblock_requests(hdev->shost);
 }
 
 static void spraid_dev_disable(struct spraid_dev *hdev, bool shutdown)
@@ -3106,17 +2905,13 @@ static void spraid_reset_work(struct work_struct *work)
 	if (ret)
 		goto pci_disable;
 
-	ret = spraid_alloc_admin_tags(hdev);
-	if (ret)
-		goto pci_disable;
-
 	ret = spraid_setup_io_queues(hdev);
 	if (ret || hdev->online_queues <= hdev->shost->nr_hw_queues)
 		goto pci_disable;
 
 	spraid_change_host_state(hdev, SPRAID_LIVE);
 
-	spraid_send_aen(hdev);
+	spraid_send_all_aen(hdev);
 
 	return;
 
@@ -3174,8 +2969,8 @@ static int spraid_abort_handler(struct scsi_cmnd *scmd)
 
 	scsi_print_command(scmd);
 
-	if (!spraid_wait_abnl_cmd_done(iod) || spraid_check_scmd_completed(scmd) ||
-	    hdev->state != SPRAID_LIVE)
+	if (hdev->state != SPRAID_LIVE || !spraid_wait_abnl_cmd_done(iod) ||
+		spraid_check_scmd_completed(scmd))
 		return SUCCESS;
 
 	hostdata = scmd->device->hostdata;
@@ -3183,7 +2978,7 @@ static int spraid_abort_handler(struct scsi_cmnd *scmd)
 
 	dev_warn(hdev->dev, "cid[%d] qid[%d] timeout, aborting\n", cid, hwq);
 	ret = spraid_send_abort_cmd(hdev, hostdata->hdid, hwq, cid);
-	if (ret != ADMIN_ERR_TIMEOUT) {
+	if (ret != -ETIME) {
 		ret = spraid_wait_abnl_cmd_done(iod);
 		if (ret) {
 			dev_warn(hdev->dev, "cid[%d] qid[%d] abort failed, not found\n", cid, hwq);
@@ -3206,8 +3001,8 @@ static int spraid_tgt_reset_handler(struct scsi_cmnd *scmd)
 
 	scsi_print_command(scmd);
 
-	if (!spraid_wait_abnl_cmd_done(iod) || spraid_check_scmd_completed(scmd) ||
-	    hdev->state != SPRAID_LIVE)
+	if (hdev->state != SPRAID_LIVE || !spraid_wait_abnl_cmd_done(iod) ||
+		spraid_check_scmd_completed(scmd))
 		return SUCCESS;
 
 	hostdata = scmd->device->hostdata;
@@ -3241,8 +3036,8 @@ static int spraid_bus_reset_handler(struct scsi_cmnd *scmd)
 
 	scsi_print_command(scmd);
 
-	if (!spraid_wait_abnl_cmd_done(iod) || spraid_check_scmd_completed(scmd) ||
-	    hdev->state != SPRAID_LIVE)
+	if (hdev->state != SPRAID_LIVE || !spraid_wait_abnl_cmd_done(iod) ||
+		spraid_check_scmd_completed(scmd))
 		return SUCCESS;
 
 	hostdata = scmd->device->hostdata;
@@ -3272,7 +3067,7 @@ static int spraid_shost_reset_handler(struct scsi_cmnd *scmd)
 	struct spraid_dev *hdev = shost_priv(scmd->device->host);
 
 	scsi_print_command(scmd);
-	if (spraid_check_scmd_completed(scmd) || hdev->state != SPRAID_LIVE)
+	if (hdev->state != SPRAID_LIVE || spraid_check_scmd_completed(scmd))
 		return SUCCESS;
 
 	spraid_get_tag_from_scmd(scmd, &hwq, &cid);
@@ -3286,6 +3081,62 @@ static int spraid_shost_reset_handler(struct scsi_cmnd *scmd)
 	dev_warn(hdev->dev, "cid[%d] qid[%d] host reset success\n", cid, hwq);
 
 	return SUCCESS;
+}
+
+static pci_ers_result_t spraid_pci_error_detected(struct pci_dev *pdev,
+						  pci_channel_state_t state)
+{
+	struct spraid_dev *hdev = pci_get_drvdata(pdev);
+
+	dev_info(hdev->dev, "enter pci error detect, state:%d\n", state);
+
+	switch (state) {
+	case pci_channel_io_normal:
+		dev_warn(hdev->dev, "channel is normal, do nothing\n");
+
+		return PCI_ERS_RESULT_CAN_RECOVER;
+	case pci_channel_io_frozen:
+		dev_warn(hdev->dev, "channel io frozen, need reset controller\n");
+
+		scsi_block_requests(hdev->shost);
+
+		spraid_change_host_state(hdev, SPRAID_RESETTING);
+
+		return PCI_ERS_RESULT_NEED_RESET;
+	case pci_channel_io_perm_failure:
+		dev_warn(hdev->dev, "channel io failure, request disconnect\n");
+
+		return PCI_ERS_RESULT_DISCONNECT;
+	}
+
+	return PCI_ERS_RESULT_NEED_RESET;
+}
+
+static pci_ers_result_t spraid_pci_slot_reset(struct pci_dev *pdev)
+{
+	struct spraid_dev *hdev = pci_get_drvdata(pdev);
+
+	dev_info(hdev->dev, "restart after slot reset\n");
+
+	pci_restore_state(pdev);
+
+	if (!queue_work(spraid_wq, &hdev->reset_work)) {
+		dev_err(hdev->dev, "[%s] err, the device is resetting state\n", __func__);
+		return PCI_ERS_RESULT_NONE;
+	}
+
+	flush_work(&hdev->reset_work);
+
+	scsi_unblock_requests(hdev->shost);
+
+	return PCI_ERS_RESULT_RECOVERED;
+}
+
+static void spraid_reset_done(struct pci_dev *pdev)
+{
+	struct spraid_dev *hdev = pci_get_drvdata(pdev);
+
+	dev_info(hdev->dev, "enter spraid reset done\n");
 }
 
 static ssize_t csts_pp_show(struct device *cdev, struct device_attribute *attr, char *buf)
@@ -3347,7 +3198,7 @@ static ssize_t fw_version_show(struct device *cdev, struct device_attribute *att
 	struct Scsi_Host *shost = class_to_shost(cdev);
 	struct spraid_dev *hdev = shost_priv(shost);
 
-	return snprintf(buf, sizeof(hdev->ctrl_info->fr), "%s\n", hdev->ctrl_info->fr);
+	return snprintf(buf, PAGE_SIZE, "%s\n", hdev->ctrl_info->fr);
 }
 
 static DEVICE_ATTR_RO(csts_pp);
@@ -3365,6 +3216,185 @@ static struct device_attribute *spraid_host_attrs[] = {
 	NULL,
 };
 
+static int spraid_get_vd_info(struct spraid_dev *hdev, struct spraid_vd_info *vd_info, u16 vid)
+{
+	struct spraid_admin_command admin_cmd;
+	u8 *data_ptr = NULL;
+	dma_addr_t data_dma = 0;
+	int ret;
+
+	data_ptr = dma_alloc_coherent(hdev->dev, PAGE_SIZE, &data_dma, GFP_KERNEL);
+	if (!data_ptr)
+		return -ENOMEM;
+
+	memset(&admin_cmd, 0, sizeof(admin_cmd));
+	admin_cmd.usr_cmd.opcode = USR_CMD_READ;
+	admin_cmd.usr_cmd.info_0.subopcode = cpu_to_le16(USR_CMD_VDINFO);
+	admin_cmd.usr_cmd.info_1.data_len = cpu_to_le16(USR_CMD_RDLEN);
+	admin_cmd.usr_cmd.info_1.param_len = cpu_to_le16(VDINFO_PARAM_LEN);
+	admin_cmd.usr_cmd.cdw10 = cpu_to_le32(vid);
+	admin_cmd.common.dptr.prp1 = cpu_to_le64(data_dma);
+
+	ret = spraid_submit_admin_sync_cmd(hdev, &admin_cmd, NULL, NULL, 0);
+	if (!ret)
+		memcpy(vd_info, data_ptr, sizeof(struct spraid_vd_info));
+
+	dma_free_coherent(hdev->dev, PAGE_SIZE, data_ptr, data_dma);
+
+	return ret;
+}
+
+static int spraid_get_bgtask(struct spraid_dev *hdev, struct spraid_bgtask *bgtask)
+{
+	struct spraid_admin_command admin_cmd;
+	u8 *data_ptr = NULL;
+	dma_addr_t data_dma = 0;
+	int ret;
+
+	data_ptr = dma_alloc_coherent(hdev->dev, PAGE_SIZE, &data_dma, GFP_KERNEL);
+	if (!data_ptr)
+		return -ENOMEM;
+
+	memset(&admin_cmd, 0, sizeof(admin_cmd));
+	admin_cmd.usr_cmd.opcode = USR_CMD_READ;
+	admin_cmd.usr_cmd.info_0.subopcode = cpu_to_le16(USR_CMD_BGTASK);
+	admin_cmd.usr_cmd.info_1.data_len = cpu_to_le16(USR_CMD_RDLEN);
+	admin_cmd.common.dptr.prp1 = cpu_to_le64(data_dma);
+
+	ret = spraid_submit_admin_sync_cmd(hdev, &admin_cmd, NULL, NULL, 0);
+	if (!ret)
+		memcpy(bgtask, data_ptr, sizeof(struct spraid_bgtask));
+
+	dma_free_coherent(hdev->dev, PAGE_SIZE, data_ptr, data_dma);
+
+	return ret;
+}
+
+static ssize_t raid_level_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct scsi_device *sdev;
+	struct spraid_dev *hdev;
+	struct spraid_vd_info *vd_info;
+	struct spraid_sdev_hostdata *hostdata;
+	int ret;
+
+	sdev = to_scsi_device(dev);
+	hdev = shost_priv(sdev->host);
+	hostdata = sdev->hostdata;
+
+	vd_info = kmalloc(sizeof(*vd_info), GFP_KERNEL);
+	if (!vd_info || !SPRAID_DEV_INFO_ATTR_VD(hostdata->attr))
+		return snprintf(buf, PAGE_SIZE, "NA\n");
+
+	ret = spraid_get_vd_info(hdev, vd_info, sdev->id);
+	if (ret)
+		vd_info->rg_level = ARRAY_SIZE(raid_levels) - 1;
+
+	ret = (vd_info->rg_level < ARRAY_SIZE(raid_levels)) ?
+	       vd_info->rg_level : (ARRAY_SIZE(raid_levels) - 1);
+
+	kfree(vd_info);
+
+	return snprintf(buf, PAGE_SIZE, "RAID-%s\n", raid_levels[ret]);
+}
+
+static ssize_t raid_state_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct scsi_device *sdev;
+	struct spraid_dev *hdev;
+	struct spraid_vd_info *vd_info;
+	struct spraid_sdev_hostdata *hostdata;
+	int ret;
+
+	sdev = to_scsi_device(dev);
+	hdev = shost_priv(sdev->host);
+	hostdata = sdev->hostdata;
+
+	vd_info = kmalloc(sizeof(*vd_info), GFP_KERNEL);
+	if (!vd_info || !SPRAID_DEV_INFO_ATTR_VD(hostdata->attr))
+		return snprintf(buf, PAGE_SIZE, "NA\n");
+
+	ret = spraid_get_vd_info(hdev, vd_info, sdev->id);
+	if (ret) {
+		vd_info->vd_status = 0;
+		vd_info->rg_id = 0xff;
+	}
+
+	ret = (vd_info->vd_status < ARRAY_SIZE(raid_states)) ? vd_info->vd_status : 0;
+
+	kfree(vd_info);
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", raid_states[ret]);
+}
+
+static ssize_t raid_resync_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct scsi_device *sdev;
+	struct spraid_dev *hdev;
+	struct spraid_vd_info *vd_info;
+	struct spraid_bgtask *bgtask;
+	struct spraid_sdev_hostdata *hostdata;
+	u8 rg_id, i, progress = 0;
+	int ret;
+
+	sdev = to_scsi_device(dev);
+	hdev = shost_priv(sdev->host);
+	hostdata = sdev->hostdata;
+
+	vd_info = kmalloc(sizeof(*vd_info), GFP_KERNEL);
+	if (!vd_info || !SPRAID_DEV_INFO_ATTR_VD(hostdata->attr))
+		return snprintf(buf, PAGE_SIZE, "NA\n");
+
+	ret = spraid_get_vd_info(hdev, vd_info, sdev->id);
+	if (ret)
+		goto out;
+
+	rg_id = vd_info->rg_id;
+
+	bgtask = (struct spraid_bgtask *)vd_info;
+	ret = spraid_get_bgtask(hdev, bgtask);
+	if (ret)
+		goto out;
+	for (i = 0; i < bgtask->task_num; i++) {
+		if ((bgtask->bgtask[i].type == BGTASK_TYPE_REBUILD) &&
+		    (le16_to_cpu(bgtask->bgtask[i].vd_id) == rg_id))
+			progress = bgtask->bgtask[i].progress;
+	}
+
+out:
+	kfree(vd_info);
+	return snprintf(buf, PAGE_SIZE, "%d\n", progress);
+}
+
+static DEVICE_ATTR_RO(raid_level);
+static DEVICE_ATTR_RO(raid_state);
+static DEVICE_ATTR_RO(raid_resync);
+
+static struct device_attribute *spraid_dev_attrs[] = {
+	&dev_attr_raid_level,
+	&dev_attr_raid_state,
+	&dev_attr_raid_resync,
+	NULL,
+};
+
+static struct pci_error_handlers spraid_err_handler = {
+	.error_detected = spraid_pci_error_detected,
+	.slot_reset = spraid_pci_slot_reset,
+	.reset_done = spraid_reset_done,
+};
+
+static int spraid_sysfs_host_reset(struct Scsi_Host *shost, int reset_type)
+{
+	int ret;
+	struct spraid_dev *hdev = shost_priv(shost);
+
+	dev_info(hdev->dev, "[%s] start sysfs host reset cmd\n", __func__);
+	ret = spraid_reset_work_sync(hdev);
+	dev_info(hdev->dev, "[%s] stop sysfs host reset cmd[%d]\n", __func__, ret);
+
+	return ret;
+}
+
 static struct scsi_host_template spraid_driver_template = {
 	.module			= THIS_MODULE,
 	.name			= "Ramaxel Logic spraid driver",
@@ -3379,9 +3409,11 @@ static struct scsi_host_template spraid_driver_template = {
 	.eh_bus_reset_handler		= spraid_bus_reset_handler,
 	.eh_host_reset_handler		= spraid_shost_reset_handler,
 	.change_queue_depth		= scsi_change_queue_depth,
-	.host_tagset			= 1,
+	.host_tagset			= 0,
 	.this_id			= -1,
 	.shost_attrs			= spraid_host_attrs,
+	.sdev_attrs			= spraid_dev_attrs,
+	.host_reset			= spraid_sysfs_host_reset,
 };
 
 static void spraid_shutdown(struct pci_dev *pdev)
@@ -3392,11 +3424,53 @@ static void spraid_shutdown(struct pci_dev *pdev)
 	spraid_disable_admin_queue(hdev, true);
 }
 
+/* bsg dispatch user command */
+static int spraid_bsg_host_dispatch(struct bsg_job *job)
+{
+	struct Scsi_Host *shost = dev_to_shost(job->dev);
+	struct spraid_dev *hdev = shost_priv(shost);
+	struct request *rq = blk_mq_rq_from_pdu(job);
+	struct spraid_bsg_request *bsg_req = job->request;
+	int ret = 0;
+
+	dev_log_dbg(hdev->dev, "[%s] msgcode[%d], msglen[%d], timeout[%d], req_nsge[%d], req_len[%d]\n",
+		 __func__, bsg_req->msgcode, job->request_len, rq->timeout,
+		 job->request_payload.sg_cnt, job->request_payload.payload_len);
+
+	job->reply_len = 0;
+
+	switch (bsg_req->msgcode) {
+	case SPRAID_BSG_ADM:
+		ret = spraid_user_admin_cmd(hdev, job);
+		break;
+	case SPRAID_BSG_IOQ:
+		ret = spraid_user_ioq_cmd(hdev, job);
+		break;
+	default:
+		dev_info(hdev->dev, "[%s] unsupport msgcode[%d]\n", __func__, bsg_req->msgcode);
+		break;
+	}
+
+	if (ret > 0)
+		ret = ret | (ret << 8);
+
+	bsg_job_done(job, ret, 0);
+	return 0;
+}
+
+static inline void spraid_remove_bsg(struct spraid_dev *hdev)
+{
+	if (hdev->bsg_queue) {
+		bsg_unregister_queue(hdev->bsg_queue);
+		blk_cleanup_queue(hdev->bsg_queue);
+	}
+}
 static int spraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct spraid_dev *hdev;
 	struct Scsi_Host *shost;
 	int node, ret;
+	char bsg_name[15];
 
 	shost = scsi_host_alloc(&spraid_driver_template, sizeof(*hdev));
 	if (!shost) {
@@ -3421,10 +3495,10 @@ static int spraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto put_dev;
 
 	init_rwsem(&hdev->devices_rwsem);
-	INIT_WORK(&hdev->aen_work, spraid_async_event_work);
 	INIT_WORK(&hdev->scan_work, spraid_scan_work);
 	INIT_WORK(&hdev->timesyn_work, spraid_timesyn_work);
 	INIT_WORK(&hdev->reset_work, spraid_reset_work);
+	INIT_WORK(&hdev->fw_act_work, spraid_fw_act_work);
 	spin_lock_init(&hdev->state_lock);
 
 	ret = spraid_alloc_resources(hdev);
@@ -3439,17 +3513,13 @@ static int spraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ret)
 		goto pci_disable;
 
-	ret = spraid_alloc_admin_tags(hdev);
+	ret = spraid_init_ctrl_info(hdev);
 	if (ret)
 		goto disable_admin_q;
 
-	ret = spraid_init_ctrl_info(hdev);
-	if (ret)
-		goto free_admin_tagset;
-
 	ret = spraid_alloc_iod_ext_mem_pool(hdev);
 	if (ret)
-		goto free_admin_tagset;
+		goto disable_admin_q;
 
 	ret = spraid_setup_io_queues(hdev);
 	if (ret)
@@ -3464,9 +3534,15 @@ static int spraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto remove_io_queues;
 	}
 
-	ret = spraid_create_cdev(hdev);
-	if (ret)
+	snprintf(bsg_name, sizeof(bsg_name), "spraid%d", shost->host_no);
+	hdev->bsg_queue = bsg_setup_queue(&shost->shost_gendev, bsg_name,
+						spraid_bsg_host_dispatch, NULL,
+						spraid_cmd_size(hdev, true, false));
+	if (IS_ERR(hdev->bsg_queue)) {
+		dev_err(hdev->dev, "err, setup bsg failed\n");
+		hdev->bsg_queue = NULL;
 		goto remove_io_queues;
+	}
 
 	if (hdev->online_queues == SPRAID_ADMIN_QUEUE_NUM) {
 		dev_warn(hdev->dev, "warn only admin queue can be used\n");
@@ -3475,11 +3551,11 @@ static int spraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	hdev->state = SPRAID_LIVE;
 
-	spraid_send_aen(hdev);
+	spraid_send_all_aen(hdev);
 
 	ret = spraid_dev_list_init(hdev);
 	if (ret)
-		goto remove_cdev;
+		goto remove_bsg;
 
 	ret = spraid_configure_timestamp(hdev);
 	if (ret)
@@ -3487,20 +3563,18 @@ static int spraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	ret = spraid_alloc_ioq_ptcmds(hdev);
 	if (ret)
-		goto remove_cdev;
+		goto remove_bsg;
 
 	scsi_scan_host(hdev->shost);
 
 	return 0;
 
-remove_cdev:
-	spraid_remove_cdev(hdev);
+remove_bsg:
+	spraid_remove_bsg(hdev);
 remove_io_queues:
 	spraid_remove_io_queues(hdev);
 free_iod_mempool:
 	spraid_free_iod_ext_mem_pool(hdev);
-free_admin_tagset:
-	spraid_remove_admin_tagset(hdev);
 disable_admin_q:
 	spraid_disable_admin_queue(hdev, false);
 pci_disable:
@@ -3524,22 +3598,17 @@ static void spraid_remove(struct pci_dev *pdev)
 	dev_info(hdev->dev, "enter spraid remove\n");
 
 	spraid_change_host_state(hdev, SPRAID_DELETING);
-
-	if (!pci_device_is_present(pdev)) {
-		scsi_block_requests(shost);
-		spraid_back_all_io(hdev);
-		scsi_unblock_requests(shost);
-	}
-
 	flush_work(&hdev->reset_work);
-	scsi_remove_host(shost);
 
-	kfree(hdev->ioq_ptcmds);
+	if (!pci_device_is_present(pdev))
+		spraid_back_all_io(hdev);
+
+	spraid_remove_bsg(hdev);
+	scsi_remove_host(shost);
+	spraid_free_ioq_ptcmds(hdev);
 	kfree(hdev->devices);
-	spraid_remove_cdev(hdev);
 	spraid_remove_io_queues(hdev);
 	spraid_free_iod_ext_mem_pool(hdev);
-	spraid_remove_admin_tagset(hdev);
 	spraid_disable_admin_queue(hdev, false);
 	spraid_pci_disable(hdev);
 	spraid_free_resources(hdev);
@@ -3551,7 +3620,7 @@ static void spraid_remove(struct pci_dev *pdev)
 }
 
 static const struct pci_device_id spraid_id_table[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_RAMAXEL_LOGIC, SPRAID_SERVER_DEVICE_HAB_DID) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_RAMAXEL_LOGIC, SPRAID_SERVER_DEVICE_HBA_DID) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_RAMAXEL_LOGIC, SPRAID_SERVER_DEVICE_RAID_DID) },
 	{ 0, }
 };
@@ -3563,6 +3632,7 @@ static struct pci_driver spraid_driver = {
 	.probe		= spraid_probe,
 	.remove		= spraid_remove,
 	.shutdown	= spraid_shutdown,
+	.err_handler	= &spraid_err_handler,
 };
 
 static int __init spraid_init(void)
@@ -3573,14 +3643,10 @@ static int __init spraid_init(void)
 	if (!spraid_wq)
 		return -ENOMEM;
 
-	ret = alloc_chrdev_region(&spraid_chr_devt, 0, SPRAID_MINORS, "spraid");
-	if (ret < 0)
-		goto destroy_wq;
-
 	spraid_class = class_create(THIS_MODULE, "spraid");
 	if (IS_ERR(spraid_class)) {
 		ret = PTR_ERR(spraid_class);
-		goto unregister_chrdev;
+		goto destroy_wq;
 	}
 
 	ret = pci_register_driver(&spraid_driver);
@@ -3591,8 +3657,6 @@ static int __init spraid_init(void)
 
 destroy_class:
 	class_destroy(spraid_class);
-unregister_chrdev:
-	unregister_chrdev_region(spraid_chr_devt, SPRAID_MINORS);
 destroy_wq:
 	destroy_workqueue(spraid_wq);
 
@@ -3603,12 +3667,11 @@ static void __exit spraid_exit(void)
 {
 	pci_unregister_driver(&spraid_driver);
 	class_destroy(spraid_class);
-	unregister_chrdev_region(spraid_chr_devt, SPRAID_MINORS);
 	destroy_workqueue(spraid_wq);
 	ida_destroy(&spraid_instance_ida);
 }
 
-MODULE_AUTHOR("Ramaxel Memory Technology");
+MODULE_AUTHOR("songyl@ramaxel.com");
 MODULE_DESCRIPTION("Ramaxel Memory Technology SPraid Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(SPRAID_DRV_VERSION);

@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+/* Copyright(c) 2021 Ramaxel Memory Technology, Ltd */
 
 #ifndef __SPRAID_H_
 #define __SPRAID_H_
@@ -24,7 +25,7 @@
 #define SENSE_SIZE(depth)	((depth) * SCSI_SENSE_BUFFERSIZE)
 
 #define SPRAID_AQ_DEPTH 128
-#define SPRAID_NR_AEN_COMMANDS 1
+#define SPRAID_NR_AEN_COMMANDS 16
 #define SPRAID_AQ_BLK_MQ_DEPTH (SPRAID_AQ_DEPTH - SPRAID_NR_AEN_COMMANDS)
 #define SPRAID_AQ_MQ_TAG_DEPTH (SPRAID_AQ_BLK_MQ_DEPTH - 1)
 
@@ -44,7 +45,7 @@
 
 #define SMALL_POOL_SIZE 256
 #define MAX_SMALL_POOL_NUM 16
-#define MAX_CMD_PER_DEV 32
+#define MAX_CMD_PER_DEV 64
 #define MAX_CDB_LEN 32
 
 #define SPRAID_UP_TO_MULTY4(x) (((x) + 4) & (~0x03))
@@ -53,7 +54,7 @@
 
 #define PCI_VENDOR_ID_RAMAXEL_LOGIC 0x1E81
 
-#define SPRAID_SERVER_DEVICE_HAB_DID		0x2100
+#define SPRAID_SERVER_DEVICE_HBA_DID		0x2100
 #define SPRAID_SERVER_DEVICE_RAID_DID		0x2200
 
 #define IO_6_DEFAULT_TX_LEN 256
@@ -142,11 +143,15 @@ enum {
 
 enum {
 	SPRAID_AEN_DEV_CHANGED = 0x00,
+	SPRAID_AEN_FW_ACT_START = 0x01,
 	SPRAID_AEN_HOST_PROBING = 0x10,
 };
 
 enum {
-	SPRAID_AEN_TIMESYN = 0x07
+	SPRAID_AEN_TIMESYN = 0x00,
+	SPRAID_AEN_FW_ACT_FINISH = 0x02,
+	SPRAID_AEN_EVENT_MIN = 0x80,
+	SPRAID_AEN_EVENT_MAX = 0xff,
 };
 
 enum {
@@ -173,6 +178,16 @@ enum spraid_state {
 	SPRAID_RESETTING,
 	SPRAID_DELETING,
 	SPRAID_DEAD,
+};
+
+enum {
+	SPRAID_CARD_HBA,
+	SPRAID_CARD_RAID,
+};
+
+enum spraid_cmd_type {
+	SPRAID_CMD_ADM,
+	SPRAID_CMD_IOPT,
 };
 
 struct spraid_completion {
@@ -217,8 +232,6 @@ struct spraid_dev {
 	struct dma_pool *prp_page_pool;
 	struct dma_pool *prp_small_pool[MAX_SMALL_POOL_NUM];
 	mempool_t *iod_mempool;
-	struct blk_mq_tag_set admin_tagset;
-	struct request_queue *admin_q;
 	void __iomem *bar;
 	u32 max_qid;
 	u32 num_vecs;
@@ -232,23 +245,27 @@ struct spraid_dev {
 	u32 ctrl_config;
 	u32 online_queues;
 	u64 cap;
-	struct device ctrl_device;
-	struct cdev cdev;
 	int instance;
 	struct spraid_ctrl_info *ctrl_info;
 	struct spraid_dev_info *devices;
 
-	struct spraid_ioq_ptcmd *ioq_ptcmds;
+	struct spraid_cmd *adm_cmds;
+	struct list_head adm_cmd_list;
+	spinlock_t adm_cmd_lock;
+
+	struct spraid_cmd *ioq_ptcmds;
 	struct list_head ioq_pt_list;
 	spinlock_t ioq_pt_lock;
 
-	struct work_struct aen_work;
 	struct work_struct scan_work;
 	struct work_struct timesyn_work;
 	struct work_struct reset_work;
+	struct work_struct fw_act_work;
 
 	enum spraid_state state;
 	spinlock_t state_lock;
+
+	struct request_queue *bsg_queue;
 };
 
 struct spraid_sgl_desc {
@@ -347,6 +364,35 @@ struct spraid_get_info {
 	__u32	rsvd12[4];
 };
 
+struct spraid_usr_cmd {
+	__u8	opcode;
+	__u8	flags;
+	__u16	command_id;
+	__le32	hdid;
+	union {
+		struct {
+			__le16 subopcode;
+			__le16 rsvd1;
+		} info_0;
+		__le32 cdw2;
+	};
+	union {
+		struct {
+			__le16 data_len;
+			__le16 param_len;
+		} info_1;
+		__le32 cdw3;
+	};
+	__u64 metadata;
+	union spraid_data_ptr	dptr;
+	__le32 cdw10;
+	__le32 cdw11;
+	__le32 cdw12;
+	__le32 cdw13;
+	__le32 cdw14;
+	__le32 cdw15;
+};
+
 enum {
 	SPRAID_CMD_FLAG_SGL_METABUF = (1 << 6),
 	SPRAID_CMD_FLAG_SGL_METASEG = (1 << 7),
@@ -393,6 +439,7 @@ struct spraid_admin_command {
 		struct spraid_get_info get_info;
 		struct spraid_abort_cmd abort;
 		struct spraid_reset_cmd reset;
+		struct spraid_usr_cmd usr_cmd;
 	};
 };
 
@@ -456,9 +503,6 @@ struct spraid_ioq_command {
 	};
 };
 
-#define SPRAID_IOCTL_RESET_CMD _IOWR('N', 0x80, struct spraid_passthru_common_cmd)
-#define SPRAID_IOCTL_ADMIN_CMD _IOWR('N', 0x41, struct spraid_passthru_common_cmd)
-
 struct spraid_passthru_common_cmd {
 	__u8	opcode;
 	__u8	flags;
@@ -493,8 +537,6 @@ struct spraid_passthru_common_cmd {
 	__u32 result0;
 	__u32 result1;
 };
-
-#define SPRAID_IOCTL_IOQ_CMD _IOWR('N', 0x42, struct spraid_ioq_passthru_cmd)
 
 struct spraid_ioq_passthru_cmd {
 	__u8  opcode;
@@ -560,7 +602,21 @@ struct spraid_ioq_passthru_cmd {
 	__u32 result1;
 };
 
-struct spraid_ioq_ptcmd {
+struct spraid_bsg_request {
+	u32  msgcode;
+	u32 control;
+	union {
+		struct spraid_passthru_common_cmd admcmd;
+		struct spraid_ioq_passthru_cmd    ioqcmd;
+	};
+};
+
+enum {
+	SPRAID_BSG_ADM,
+	SPRAID_BSG_IOQ,
+};
+
+struct spraid_cmd {
 	int qid;
 	int cid;
 	u32 result0;
@@ -570,14 +626,6 @@ struct spraid_ioq_ptcmd {
 	enum spraid_cmd_state state;
 	struct completion cmd_done;
 	struct list_head list;
-};
-
-struct spraid_admin_request {
-	struct spraid_admin_command *cmd;
-	u32 result0;
-	u32 result1;
-	u16 flags;
-	u16 status;
 };
 
 struct spraid_queue {
@@ -607,7 +655,6 @@ struct spraid_queue {
 };
 
 struct spraid_iod {
-	struct spraid_admin_request req;
 	struct spraid_queue *spraidq;
 	enum spraid_cmd_state state;
 	int npages;
@@ -623,12 +670,50 @@ struct spraid_iod {
 };
 
 #define SPRAID_DEV_INFO_ATTR_BOOT(attr) ((attr) & 0x01)
-#define SPRAID_DEV_INFO_ATTR_HDD(attr) ((attr) & 0x02)
+#define SPRAID_DEV_INFO_ATTR_VD(attr) (((attr) & 0x02) == 0x0)
 #define SPRAID_DEV_INFO_ATTR_PT(attr) (((attr) & 0x22) == 0x02)
 #define SPRAID_DEV_INFO_ATTR_RAWDISK(attr) ((attr) & 0x20)
 
 #define SPRAID_DEV_INFO_FLAG_VALID(flag) ((flag) & 0x01)
 #define SPRAID_DEV_INFO_FLAG_CHANGE(flag) ((flag) & 0x02)
+
+#define BGTASK_TYPE_REBUILD 4
+#define USR_CMD_READ 0xc2
+#define USR_CMD_RDLEN 0x1000
+#define USR_CMD_VDINFO 0x704
+#define USR_CMD_BGTASK 0x504
+#define VDINFO_PARAM_LEN 0x04
+
+struct spraid_vd_info {
+	__u8 name[32];
+	__le16 id;
+	__u8 rg_id;
+	__u8 rg_level;
+	__u8 sg_num;
+	__u8 sg_disk_num;
+	__u8 vd_status;
+	__u8 vd_type;
+	__u8 rsvd1[4056];
+};
+
+#define MAX_REALTIME_BGTASK_NUM 32
+
+struct bgtask_info {
+	__u8 type;
+	__u8 progress;
+	__u8 rate;
+	__u8 rsvd0;
+	__le16 vd_id;
+	__le16 time_left;
+	__u8 rsvd1[4];
+};
+
+struct spraid_bgtask {
+	__u8 sw;
+	__u8 task_num;
+	__u8 rsvd[6];
+	struct bgtask_info bgtask[MAX_REALTIME_BGTASK_NUM];
+};
 
 struct spraid_dev_info {
 	__le32	hdid;
@@ -649,6 +734,11 @@ struct spraid_dev_list {
 
 struct spraid_sdev_hostdata {
 	u32 hdid;
+	u16 max_io_kb;
+	u8 attr;
+	u8 flag;
+	u8 rg_id;
+	u8 rsvd[3];
 };
 
 #endif
