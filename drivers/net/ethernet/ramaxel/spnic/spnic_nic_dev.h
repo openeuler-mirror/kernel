@@ -54,6 +54,8 @@ enum spnic_flags {
 #define VID_LINE(nic_dev, vid)	((vid) / VLAN_BITMAP_BITS_SIZE(nic_dev))
 #define VID_COL(nic_dev, vid)	((vid) & (VLAN_BITMAP_BITS_SIZE(nic_dev) - 1))
 
+#define SPNIC_DRV_FEATURE	NIC_F_ALL_MASK
+
 enum spnic_event_work_flags {
 	EVENT_WORK_TX_TIMEOUT,
 };

@@ -356,8 +356,12 @@ static void spnic_sw_deinit(struct spnic_nic_dev *nic_dev)
 static int spnic_sw_init(struct spnic_nic_dev *nic_dev)
 {
 	struct net_device *netdev = nic_dev->netdev;
-
+	u64 nic_feature;
 	int err = 0;
+
+	nic_feature = spnic_get_feature_cap(nic_dev->hwdev);
+	nic_feature &= SPNIC_DRV_FEATURE;
+	spnic_update_nic_feature(nic_dev->hwdev, nic_feature);
 
 	sema_init(&nic_dev->port_state_sem, 1);
 
@@ -652,7 +656,6 @@ static int setup_nic_dev(struct net_device *netdev, struct spnic_lld_dev *lld_de
 
 static int spnic_set_default_hw_feature(struct spnic_nic_dev *nic_dev)
 {
-	u64 nic_features;
 	int err;
 
 	if (!SPNIC_FUNC_IS_VF(nic_dev->hwdev)) {
@@ -663,8 +666,7 @@ static int spnic_set_default_hw_feature(struct spnic_nic_dev *nic_dev)
 		}
 	}
 
-	nic_features = spnic_get_feature_cap(nic_dev->hwdev);
-	err = spnic_set_nic_feature(nic_dev->hwdev, &nic_features, 1);
+	err = spnic_set_nic_feature_to_hw(nic_dev->hwdev);
 	if (err) {
 		nic_err(&nic_dev->pdev->dev, "Failed to set nic features\n");
 		return err;
@@ -729,12 +731,12 @@ static int nic_probe(struct spnic_lld_dev *lld_dev, void **uld_dev, char *uld_de
 		goto init_nic_hwdev_err;
 	}
 
-	spnic_assign_netdev_ops(nic_dev);
-	netdev_feature_init(netdev);
-
 	err = spnic_sw_init(nic_dev);
 	if (err)
 		goto sw_init_err;
+
+	spnic_assign_netdev_ops(nic_dev);
+	netdev_feature_init(netdev);
 
 	err = spnic_set_default_hw_feature(nic_dev);
 	if (err)

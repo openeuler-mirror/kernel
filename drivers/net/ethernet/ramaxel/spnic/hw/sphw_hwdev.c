@@ -699,7 +699,8 @@ static void sphw_unsync_mgmt_func_state(struct sphw_hwdev *hwdev)
 
 static int init_basic_attributes(struct sphw_hwdev *hwdev)
 {
-	int err;
+	u64 drv_feature[COMM_MAX_FEATURE_QWORD] = {SPHW_DRV_FEATURE_QW0};
+	int err, i;
 
 	err = sphw_get_board_info(hwdev, &hwdev->board_info, SPHW_CHANNEL_COMM);
 	if (err)
@@ -711,7 +712,11 @@ static int init_basic_attributes(struct sphw_hwdev *hwdev)
 		return err;
 	}
 
-	sdk_info(hwdev->dev_hdl, "Comm features: 0x%llx\n", hwdev->features[0]);
+	sdk_info(hwdev->dev_hdl, "Comm hw features: 0x%llx, drv features: 0x%llx\n",
+		 hwdev->features[0], drv_feature[0]);
+
+	for (i = 0; i < COMM_MAX_FEATURE_QWORD; i++)
+		hwdev->features[i] &= drv_feature[i];
 
 	err = sphw_get_global_attr(hwdev, &hwdev->glb_attr);
 	if (err) {

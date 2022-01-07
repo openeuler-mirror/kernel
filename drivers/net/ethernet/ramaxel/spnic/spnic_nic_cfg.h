@@ -703,6 +703,7 @@ int spnic_set_autoneg(void *hwdev, bool enable);
 int spnic_get_sfp_type(void *hwdev, u8 *sfp_type, u8 *sfp_type_ext);
 int spnic_get_sfp_eeprom(void *hwdev, u8 *data, u32 len);
 
-int spnic_set_nic_feature(void *hwdev, u64 *s_feature, u16 size);
+int spnic_set_nic_feature_to_hw(void *hwdeve);
+void spnic_update_nic_feature(void *hwdev, u64 feature);
 
 #endif

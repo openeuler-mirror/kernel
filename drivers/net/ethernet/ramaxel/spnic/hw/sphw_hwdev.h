@@ -90,4 +90,6 @@ struct sphw_hwdev {
 #define COMM_FEATURE_QW0(hwdev, feature)	((hwdev)->features[0] & COMM_F_##feature)
 #define COMM_SUPPORT_API_CHAIN(hwdev)	COMM_FEATURE_QW0(hwdev, API_CHAIN)
 
+#define SPHW_DRV_FEATURE_QW0		COMM_F_API_CHAIN
+
 #endif

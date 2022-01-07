@@ -795,14 +795,38 @@ static int nic_feature_nego(void *hwdev, u8 opcode, u64 *s_feature, u16 size)
 	return 0;
 }
 
-int spnic_get_nic_feature(void *hwdev, u64 *s_feature, u16 size)
+static int spnic_get_nic_feature_from_hw(void *hwdev, u64 *s_feature, u16 size)
 {
 	return nic_feature_nego(hwdev, SPNIC_CMD_OP_GET, s_feature, size);
 }
 
-int spnic_set_nic_feature(void *hwdev, u64 *s_feature, u16 size)
+int spnic_set_nic_feature_to_hw(void *hwdev)
 {
-	return nic_feature_nego(hwdev, SPNIC_CMD_OP_SET, s_feature, size);
+	struct spnic_nic_cfg *nic_cfg = NULL;
+
+	nic_cfg = sphw_get_service_adapter(hwdev, SERVICE_T_NIC);
+
+	return nic_feature_nego(hwdev, SPNIC_CMD_OP_SET, &nic_cfg->feature_cap, 1);
+}
+
+u64 spnic_get_feature_cap(void *hwdev)
+{
+	struct spnic_nic_cfg *nic_cfg = NULL;
+
+	nic_cfg = sphw_get_service_adapter(hwdev, SERVICE_T_NIC);
+
+	return nic_cfg->feature_cap;
+}
+
+void spnic_update_nic_feature(void *hwdev, u64 feature)
+{
+	struct spnic_nic_cfg *nic_cfg = NULL;
+
+	nic_cfg = sphw_get_service_adapter(hwdev, SERVICE_T_NIC);
+
+	nic_cfg->feature_cap = feature;
+
+	nic_info(nic_cfg->dev_hdl, "Update nic feature to 0x%llx\n", nic_cfg->feature_cap);
 }
 
 static inline int init_nic_hwdev_param_valid(void *hwdev, void *pcidev_hdl, void *dev_hdl)
@@ -850,7 +874,7 @@ int spnic_init_nic_hwdev(void *hwdev, void *pcidev_hdl, void *dev_hdl, u16 rx_bu
 		goto init_func_tbl_err;
 	}
 
-	err = spnic_get_nic_feature(hwdev, &nic_cfg->feature_cap, 1);
+	err = spnic_get_nic_feature_from_hw(hwdev, &nic_cfg->feature_cap, 1);
 	if (err) {
 		nic_err(nic_cfg->dev_hdl, "Failed to get nic features\n");
 		goto get_feature_err;
@@ -1126,15 +1150,6 @@ int spnic_set_vlan_fliter(void *hwdev, u32 vlan_filter_ctrl)
 	}
 
 	return 0;
-}
-
-u64 spnic_get_feature_cap(void *hwdev)
-{
-	struct spnic_nic_cfg *nic_cfg = NULL;
-
-	nic_cfg = sphw_get_service_adapter(hwdev, SERVICE_T_NIC);
-
-	return nic_cfg->feature_cap;
 }
 
 int spnic_add_tcam_rule(void *hwdev, struct nic_tcam_cfg_rule *tcam_rule)
