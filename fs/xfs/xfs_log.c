@@ -480,6 +480,7 @@ xlog_state_release_iclog(
 	xfs_lsn_t		tail_lsn;
 	lockdep_assert_held(&log->l_icloglock);
 
+	trace_xlog_iclog_release(iclog, _RET_IP_);
 	if (iclog->ic_state == XLOG_STATE_IOERROR)
 		return -EIO;
 
@@ -507,6 +508,7 @@ xlog_state_release_iclog(
 	iclog->ic_state = XLOG_STATE_SYNCING;
 	iclog->ic_header.h_tail_lsn = cpu_to_be64(tail_lsn);
 	xlog_verify_tail_lsn(log, iclog, tail_lsn);
+	trace_xlog_iclog_syncing(iclog, _RET_IP_);
 
 	spin_unlock(&log->l_icloglock);
 	xlog_sync(log, iclog);
@@ -780,6 +782,7 @@ xlog_wait_on_iclog(
 {
 	struct xlog		*log = iclog->ic_log;
 
+	trace_xlog_iclog_wait_on(iclog, _RET_IP_);
 	if (!XLOG_FORCED_SHUTDOWN(log) &&
 	    iclog->ic_state != XLOG_STATE_ACTIVE &&
 	    iclog->ic_state != XLOG_STATE_DIRTY) {
@@ -1679,6 +1682,7 @@ xlog_write_iclog(
 	unsigned int		count)
 {
 	ASSERT(bno < log->l_logBBsize);
+	trace_xlog_iclog_write(iclog, _RET_IP_);
 
 	/*
 	 * We lock the iclogbufs here so that we can serialise against I/O
@@ -1834,6 +1838,7 @@ xlog_sync(
 	unsigned int		size;
 
 	ASSERT(atomic_read(&iclog->ic_refcnt) == 0);
+	trace_xlog_iclog_sync(iclog, _RET_IP_);
 
 	count = xlog_calc_iclog_size(log, iclog, &roundoff);
 
@@ -2471,6 +2476,7 @@ xlog_state_activate_iclog(
 	int			*iclogs_changed)
 {
 	ASSERT(list_empty_careful(&iclog->ic_callbacks));
+	trace_xlog_iclog_activate(iclog, _RET_IP_);
 
 	/*
 	 * If the number of ops in this iclog indicate it just contains the
@@ -2561,6 +2567,8 @@ xlog_state_clean_iclog(
 {
 	int			iclogs_changed = 0;
 
+	trace_xlog_iclog_clean(dirty_iclog, _RET_IP_);
+
 	dirty_iclog->ic_state = XLOG_STATE_DIRTY;
 
 	xlog_state_activate_iclogs(log, &iclogs_changed);
@@ -2620,6 +2628,7 @@ xlog_state_set_callback(
 	struct xlog_in_core	*iclog,
 	xfs_lsn_t		header_lsn)
 {
+	trace_xlog_iclog_callback(iclog, _RET_IP_);
 	iclog->ic_state = XLOG_STATE_CALLBACK;
 
 	ASSERT(XFS_LSN_CMP(atomic64_read(&log->l_last_sync_lsn),
@@ -2727,7 +2736,9 @@ xlog_state_do_callback(
 			list_splice_init(&iclog->ic_callbacks, &cb_list);
 			spin_unlock(&log->l_icloglock);
 
+			trace_xlog_iclog_callbacks_start(iclog, _RET_IP_);
 			xlog_cil_process_committed(&cb_list);
+			trace_xlog_iclog_callbacks_done(iclog, _RET_IP_);
 			cycled_icloglock = true;
 
 			spin_lock(&log->l_icloglock);
@@ -2776,6 +2787,7 @@ xlog_state_done_syncing(
 
 	spin_lock(&log->l_icloglock);
 	ASSERT(atomic_read(&iclog->ic_refcnt) == 0);
+	trace_xlog_iclog_sync_done(iclog, _RET_IP_);
 
 	/*
 	 * If we got an error, either on the first buffer, or in the case of
@@ -2848,6 +2860,8 @@ restart:
 
 	atomic_inc(&iclog->ic_refcnt);	/* prevents sync */
 	log_offset = iclog->ic_offset;
+
+	trace_xlog_iclog_get_space(iclog, _RET_IP_);
 
 	/* On the 1st write to an iclog, figure out lsn.  This works
 	 * if iclogs marked XLOG_STATE_WANT_SYNC always write out what they are
@@ -3014,6 +3028,7 @@ xlog_state_switch_iclogs(
 {
 	ASSERT(iclog->ic_state == XLOG_STATE_ACTIVE);
 	assert_spin_locked(&log->l_icloglock);
+	trace_xlog_iclog_switch(iclog, _RET_IP_);
 
 	if (!eventual_size)
 		eventual_size = iclog->ic_offset;
@@ -3124,6 +3139,8 @@ xfs_log_force(
 	if (iclog->ic_state == XLOG_STATE_IOERROR)
 		goto out_error;
 
+	trace_xlog_iclog_force(iclog, _RET_IP_);
+
 	if (iclog->ic_state == XLOG_STATE_DIRTY ||
 	    (iclog->ic_state == XLOG_STATE_ACTIVE &&
 	     atomic_read(&iclog->ic_refcnt) == 0 && iclog->ic_offset == 0)) {
@@ -3192,6 +3209,7 @@ xlog_force_lsn(
 		goto out_error;
 
 	while (be64_to_cpu(iclog->ic_header.h_lsn) != lsn) {
+		trace_xlog_iclog_force_lsn(iclog, _RET_IP_);
 		iclog = iclog->ic_next;
 		if (iclog == log->l_iclog)
 			goto out_unlock;
