@@ -404,6 +404,65 @@ out:
 }
 #endif
 
+static int need_remove_real_memblock __initdata;
+
+static int __init parse_memmap_one(char *p)
+{
+	char *oldp;
+	u64 start_at, mem_size;
+
+	if (!p)
+		return -EINVAL;
+
+	if (!strncmp(p, "exactmap", 8)) {
+		need_remove_real_memblock = 1;
+		return -EINVAL;
+	}
+
+	oldp = p;
+	mem_size = memparse(p, &p);
+	if (p == oldp)
+		return -EINVAL;
+
+	if (!mem_size)
+		return -EINVAL;
+
+	if (*p == '@') {
+		start_at = memparse(p + 1, &p);
+		/*
+		 * use the exactmap defined by nn[KMG]@ss[KMG], remove
+		 * memblock populated by DT etc.
+		 */
+		if (need_remove_real_memblock) {
+			need_remove_real_memblock = 0;
+			memblock_remove(0, ULLONG_MAX);
+		}
+		memblock_add(start_at, mem_size);
+	} else if (*p == '$') {
+		start_at = memparse(p + 1, &p);
+		memblock_reserve(start_at, mem_size);
+	} else
+		pr_info("Unrecognized memmap option, please check the parameter.\n");
+
+	return *p == '\0' ? 0 : -EINVAL;
+}
+
+static int __init parse_memmap_opt(char *str)
+{
+	while (str) {
+		char *k = strchr(str, ',');
+
+		if (k)
+			*k++ = 0;
+
+		parse_memmap_one(str);
+		str = k;
+	}
+
+	return 0;
+}
+early_param("memmap", parse_memmap_opt);
+
 void __init arm64_memblock_init(void)
 {
 	const s64 linear_region_size = BIT(vabits_actual - 1);
