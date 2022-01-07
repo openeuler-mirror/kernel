@@ -123,7 +123,8 @@ struct tcp_options_received {
 		snd_wscale : 4,	/* Window scaling received from sender	*/
 		rcv_wscale : 4;	/* Window scaling to send to receiver	*/
 	u8	saw_unknown:1,	/* Received unknown option		*/
-		unused:7;
+		comp_ok:1,	/* COMP seen on SYN packet		*/
+		unused:6;
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
@@ -135,6 +136,9 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 	rx_opt->wscale_ok = rx_opt->snd_wscale = 0;
 #if IS_ENABLED(CONFIG_SMC)
 	rx_opt->smc_ok = 0;
+#endif
+#if IS_ENABLED(CONFIG_TCP_COMP)
+	rx_opt->comp_ok = 0;
 #endif
 }
 

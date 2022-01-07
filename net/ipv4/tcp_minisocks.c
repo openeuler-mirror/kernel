@@ -544,6 +544,9 @@ struct sock *tcp_create_openreq_child(const struct sock *sk,
 	newtp->rcv_ssthresh = req->rsk_rcv_wnd;
 	newtp->rcv_wnd = req->rsk_rcv_wnd;
 	newtp->rx_opt.wscale_ok = ireq->wscale_ok;
+#if IS_ENABLED(CONFIG_TCP_COMP)
+	newtp->rx_opt.comp_ok = ireq->comp_ok;
+#endif
 	if (newtp->rx_opt.wscale_ok) {
 		newtp->rx_opt.snd_wscale = ireq->snd_wscale;
 		newtp->rx_opt.rcv_wscale = ireq->rcv_wscale;

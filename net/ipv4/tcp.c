@@ -302,6 +302,10 @@ DEFINE_STATIC_KEY_FALSE(tcp_have_smc);
 EXPORT_SYMBOL(tcp_have_smc);
 #endif
 
+#if IS_ENABLED(CONFIG_TCP_COMP)
+DEFINE_STATIC_KEY_FALSE(tcp_have_comp);
+#endif
+
 /*
  * Current number of TCP sockets.
  */
