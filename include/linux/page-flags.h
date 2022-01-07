@@ -139,6 +139,14 @@ enum pageflags {
 #ifdef CONFIG_64BIT
 	PG_arch_2,
 #endif
+
+	/* Add reserved page flags for internal extension. For the new page
+	 * flags which backported from kernel upstream, please place them
+	 * behind the reserved page flags.
+	 */
+	PG_reserve_pgflag_0,
+	PG_reserve_pgflag_1,
+
 	__NR_PAGEFLAGS,
 
 	/* Filesystems */

@@ -48,7 +48,9 @@
 	{(unsigned long)__GFP_WRITE,		"__GFP_WRITE"},		\
 	{(unsigned long)__GFP_RECLAIM,		"__GFP_RECLAIM"},	\
 	{(unsigned long)__GFP_DIRECT_RECLAIM,	"__GFP_DIRECT_RECLAIM"},\
-	{(unsigned long)__GFP_KSWAPD_RECLAIM,	"__GFP_KSWAPD_RECLAIM"}\
+	{(unsigned long)__GFP_KSWAPD_RECLAIM,	"__GFP_KSWAPD_RECLAIM"},\
+	{(unsigned long)__GFP_RESERVE_0,	"__GFP_RESERVE_0"},	\
+	{(unsigned long)__GFP_RESERVE_1,	"__GFP_RESERVE_1"}	\
 
 #define show_gfp_flags(flags)						\
 	(flags) ? __print_flags(flags, "|",				\
@@ -112,7 +114,9 @@ IF_HAVE_PG_UNCACHED(PG_uncached,	"uncached"	)		\
 IF_HAVE_PG_HWPOISON(PG_hwpoison,	"hwpoison"	)		\
 IF_HAVE_PG_IDLE(PG_young,		"young"		)		\
 IF_HAVE_PG_IDLE(PG_idle,		"idle"		)		\
-IF_HAVE_PG_ARCH_2(PG_arch_2,		"arch_2"	)
+IF_HAVE_PG_ARCH_2(PG_arch_2,		"arch_2"	),		\
+	{1UL << PG_reserve_pgflag_0,	"reserve_pgflag_0"},		\
+	{1UL << PG_reserve_pgflag_1,	"reserve_pgflag_1"}
 
 #define show_page_flags(flags)						\
 	(flags) ? __print_flags(flags, "|",				\

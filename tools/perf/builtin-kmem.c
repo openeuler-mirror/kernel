@@ -660,6 +660,8 @@ static const struct {
 	{ "__GFP_RECLAIM",		"R" },
 	{ "__GFP_DIRECT_RECLAIM",	"DR" },
 	{ "__GFP_KSWAPD_RECLAIM",	"KR" },
+	{ "__GFP_RESERVE_0",		"RE0" },
+	{ "__GFP_RESERVE_1",		"RE1" },
 };
 
 static size_t max_gfp_len;
