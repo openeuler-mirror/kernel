@@ -106,6 +106,9 @@ static struct kernel_param_ops walk_step_ops = {
 static unsigned int __read_mostly walk_step = 512; // in PAGE_SIZE
 module_param_cb(walk_step, &walk_step_ops, &walk_step, 0644);
 
+static unsigned int resched_step = 10;
+module_param(resched_step, uint, 0644);
+
 static unsigned long pagetype_size[16] = {
 	[PTE_ACCESSED]	= PAGE_SIZE,	/* 4k page */
 	[PMD_ACCESSED]	= PMD_SIZE,	/* 2M page */
@@ -836,6 +839,7 @@ static int vm_idle_walk_hva_range(struct page_idle_ctrl *pic,
 	unsigned long addr_range;
 	unsigned long va_end;
 	int ret;
+	int steps;
 
 #ifdef CONFIG_X86_64
 	ret = ept_idle_supports_cpu(pic->kvm);
@@ -863,6 +867,7 @@ static int vm_idle_walk_hva_range(struct page_idle_ctrl *pic,
 		} else {
 			pic->gpa_to_hva = start - gpa_addr;
 			gpa_end = gpa_addr + addr_range;
+			steps = 0;
 			for (; gpa_addr < gpa_end;) {
 				gpa_next = min(gpa_end, gpa_addr + walk_step * PAGE_SIZE);
 #ifdef CONFIG_ARM64
@@ -874,6 +879,11 @@ static int vm_idle_walk_hva_range(struct page_idle_ctrl *pic,
 
 				if (ret)
 					break;
+
+				if (++steps >= resched_step) {
+					cond_resched();
+					steps = 0;
+				}
 			}
 			va_end = pic->gpa_to_hva + gpa_end;
 		}
