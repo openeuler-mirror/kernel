@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       35
+%global devel_release       36
 %global maintenance_release .0.0
-%global pkg_release         .18
+%global pkg_release         .19
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,29 @@ fi
 %endif
 
 %changelog
+* Sat Jan 08 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-36.0.0.19
+- hugepage: add sysctl for hugepage alloc and mig
+- mm: export node type {pmem|dram} under /sys/bus/node
+- acpi/numa: memorize node type from SRAT table
+- etmem_scan: add pte_hole callback
+- etmem_scan: release CPU after scan walk_step size
+- etmem: fix potential UAF when walk ept page table
+- etmem: fix concurrent access to export file operations
+- etmem scan: fix memleak in vm_idle_read
+- etmem_scan: x86: support scan 4 level ept under 5 level host page table
+- etmem: x86: support scan hugetlb of vm
+- etmem: add ioctl for mm idle scan
+- RDMA/hns: Remove support for HIP06
+- RDMA/hns: Remove RST2RST error prints for hw v1
+- RDMA/hns: Support direct wqe of userspace
+- RDMA/hns: Modify the mapping attribute of doorbell to device
+- RDMA/hns: Encapsulate the qp db as a function
+- RDMA/hns: Use the core code to manage the fixed mmap entries
+- RDMA/hns: Use IDA interface to manage uar index
+- RDMA/hns: Enable the cmd mask of uverbs to create and destroy AH
+- RDMA/hns: Fix Direct WQE is not enable
+- RDMA/hns: Enable stash feature of HIP09
+
 * Fri Jan 07 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-35.0.0.18
 - tcp_comp: add stub proto ops for tcp compression socket
 - tcp_comp: allow ignore local tcp connections
