@@ -83,18 +83,24 @@ extern struct file_operations proc_swap_pages_operations;
 
 static int swap_pages_entry(void)
 {
-		proc_swap_pages_operations.owner = THIS_MODULE;
-		proc_swap_pages_operations.write = swap_pages_write;
-		proc_swap_pages_operations.open = swap_pages_open;
-		proc_swap_pages_operations.release = swap_pages_release;
+	proc_swap_pages_operations.flock(NULL, 1, NULL);
+	proc_swap_pages_operations.owner = THIS_MODULE;
+	proc_swap_pages_operations.write = swap_pages_write;
+	proc_swap_pages_operations.open = swap_pages_open;
+	proc_swap_pages_operations.release = swap_pages_release;
+	proc_swap_pages_operations.flock(NULL, 0, NULL);
 
-		return 0;
+	return 0;
 }
 
 static void swap_pages_exit(void)
 {
-	memset(&proc_swap_pages_operations, 0,
-			sizeof(proc_swap_pages_operations));
+	proc_swap_pages_operations.flock(NULL, 1, NULL);
+	proc_swap_pages_operations.owner = NULL;
+	proc_swap_pages_operations.write = NULL;
+	proc_swap_pages_operations.open = NULL;
+	proc_swap_pages_operations.release = NULL;
+	proc_swap_pages_operations.flock(NULL, 0, NULL);
 }
 
 MODULE_LICENSE("GPL");
