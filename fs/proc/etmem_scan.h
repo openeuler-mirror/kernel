@@ -2,9 +2,23 @@
 #ifndef _PAGE_IDLE_H
 #define _PAGE_IDLE_H
 
+#include <linux/types.h>
+
 #define SCAN_HUGE_PAGE		O_NONBLOCK	/* only huge page */
 #define SCAN_SKIM_IDLE		O_NOFOLLOW	/* stop on PMD_IDLE_PTES */
 #define SCAN_DIRTY_PAGE         O_NOATIME       /* report pte/pmd dirty bit */
+
+/* define to not used file flags */
+#define SCAN_AS_HUGE		0100000000      /* treat normal page as hugepage in vm */
+#define SCAN_IGN_HOST		0200000000      /* ignore host access when scan vm */
+#define VM_SCAN_HOST		0400000000      /* scan and add host page for vm hole(internal) */
+
+#define ALL_SCAN_FLAGS		(SCAN_HUGE_PAGE | SCAN_SKIM_IDLE | SCAN_DIRTY_PAGE | \
+		SCAN_AS_HUGE | SCAN_IGN_HOST | VM_SCAN_HOST)
+
+#define IDLE_SCAN_MAGIC         0x66
+#define IDLE_SCAN_ADD_FLAGS	_IOW(IDLE_SCAN_MAGIC, 0x0, unsigned int)
+#define IDLE_SCAN_REMOVE_FLAGS	_IOW(IDLE_SCAN_MAGIC, 0x1, unsigned int)
 
 enum ProcIdlePageType {
 	PTE_ACCESSED,	/* 4k page */
