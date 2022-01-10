@@ -2167,7 +2167,7 @@ static int __init mpam_setup(char *str)
 }
 __setup("mpam", mpam_setup);
 
-int __init mpam_resctrl_init(void)
+int mpam_resctrl_init(void)
 {
 	mpam_init_padding();
 

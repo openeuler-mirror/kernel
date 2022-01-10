@@ -534,7 +534,7 @@ static void mpam_disable_irqs(void)
  * Scheduled by mpam_discovery_complete() once all devices have been created.
  * Also scheduled when new devices are probed when new CPUs come online.
  */
-static void __init mpam_enable(struct work_struct *work)
+static void mpam_enable(struct work_struct *work)
 {
 	int err;
 	unsigned long flags;
@@ -761,7 +761,7 @@ static struct mpam_class * __init mpam_class_get(u8 level_idx,
  * class/component structures may be allocated.
  * Returns the new device, or an ERR_PTR().
  */
-struct mpam_device * __init
+struct mpam_device *
 __mpam_device_create(u8 level_idx, enum mpam_class_types type,
 			int component_id, const struct cpumask *fw_affinity,
 			phys_addr_t hwpage_address)
@@ -810,7 +810,7 @@ __mpam_device_create(u8 level_idx, enum mpam_class_types type,
 	return dev;
 }
 
-void __init mpam_device_set_error_irq(struct mpam_device *dev, u32 irq,
+void mpam_device_set_error_irq(struct mpam_device *dev, u32 irq,
 					u32 flags)
 {
 	unsigned long irq_save_flags;
@@ -821,7 +821,7 @@ void __init mpam_device_set_error_irq(struct mpam_device *dev, u32 irq,
 	spin_unlock_irqrestore(&dev->lock, irq_save_flags);
 }
 
-void __init mpam_device_set_overflow_irq(struct mpam_device *dev, u32 irq,
+void mpam_device_set_overflow_irq(struct mpam_device *dev, u32 irq,
 					u32 flags)
 {
 	unsigned long irq_save_flags;
@@ -864,7 +864,7 @@ static inline u16 mpam_cpu_max_pmg(void)
 /*
  * prepare for initializing devices.
  */
-int __init mpam_discovery_start(void)
+int mpam_discovery_start(void)
 {
 	if (!mpam_cpus_have_feature())
 		return -EOPNOTSUPP;
@@ -1094,7 +1094,7 @@ static int mpam_cpu_offline(unsigned int cpu)
 	return 0;
 }
 
-int __init mpam_discovery_complete(void)
+int mpam_discovery_complete(void)
 {
 	int ret = 0;
 
@@ -1111,7 +1111,7 @@ int __init mpam_discovery_complete(void)
 	return ret;
 }
 
-void __init mpam_discovery_failed(void)
+void mpam_discovery_failed(void)
 {
 	struct mpam_class *class, *tmp;
 

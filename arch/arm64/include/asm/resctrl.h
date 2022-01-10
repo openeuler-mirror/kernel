@@ -421,7 +421,7 @@ int resctrl_update_groups_config(struct rdtgroup *rdtgrp);
 
 #define RESCTRL_MAX_CLOSID 32
 
-int __init resctrl_group_init(void);
+int resctrl_group_init(void);
 
 void post_resctrl_mount(void);
 
