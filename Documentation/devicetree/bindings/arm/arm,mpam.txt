@@ -1,0 +1,54 @@
+Memory System Resource Partitioning and Monitoring (MPAM), for Armv8-A
+----------------------------------------------------------
+
+The MPAM is used to limit memory bandwidth and cache usage for ARM platform.
+The required properties for driver is:
+	compatible = "arm,mpam";  /* MPAM for Arm */
+	reg = <>; /* mpam device base register */
+
+The property type must be included, it is used to indicate type of mpam
+device for the node. There are several type of mpam device:
+	MPAM_CLASS_SMMU = 0,
+	MPAM_CLASS_CACHE,   /* Well known caches, e.g. L2 */
+	MPAM_CLASS_MEMORY,  /* Main memory */
+	MPAM_CLASS_UNKNOWN, /* Everything else, e.g. TLBs etc */
+
+The type of memory is set as:
+	type = <2>;
+The type of cache is set as:
+	type = <1>;
+
+MPAM support interrupt for error and overflow, the error-interrupt and
+overflow-interrupt are defined in "Memory System Resource Partitioning
+and Monitoring (MPAM), for Armv8-A", MPAM interrupts(section 8.8).
+	overflow-interrupt = <0>;
+	overflow-flags = <0>;
+	error-interrupt = <0>;
+	error-interrupt-flags = <0>;
+
+Example:
+
+mpam_memory0 {
+	compatible = "arm,mpam";
+	reg = <0x0 0x10000000 0x0 0x10000>;
+	type = <2>; /* memory type */
+	numa-node-id = <0>;
+	overflow-interrupt = <0>;
+	overflow-flags = <0>;
+	error-interrupt = <0>;
+	error-interrupt-flags = <0>;
+	not-ready-max = <0>;
+};
+
+mpam_cache0 {
+	compatible = "arm,mpam";
+	reg = <0x0 0x20000000 0x0 0x10000>;
+	type = <1>; /* cache type */
+	cache-id = <0>;
+	cache-level = <3>;
+	overflow-interrupt = <0>;
+	overflow-flags = <0>;
+	error-interrupt = <0>;
+	error-interrupt-flags = <0>;
+	not-ready-max = <0>;
+};
