@@ -32,6 +32,8 @@
 #include <linux/cpu.h>
 #include <linux/cacheinfo.h>
 #include <linux/arm_mpam.h>
+#include <linux/of.h>
+#include <linux/of_platform.h>
 
 #include "mpam_resource.h"
 #include "mpam_device.h"
@@ -1698,3 +1700,171 @@ void mpam_component_get_config(struct mpam_component *comp,
 {
 	mpam_component_get_config_local(comp, args, result);
 }
+
+#define ARM_MPAM_PDEV_NAME "arm-mpam"
+
+static const struct of_device_id arm_mpam_of_device_ids[] = {
+	{.compatible = "arm,mpam"},
+	{  }
+};
+
+static int of_mpam_parse_irq(struct platform_device *pdev,
+			     struct mpam_device *dev)
+{
+	struct device_node *node = pdev->dev.of_node;
+	u32 overflow_interrupt, overflow_flags;
+	u32 error_interrupt, error_interrupt_flags;
+
+	of_property_read_u32(node, "overflow-interrupt", &overflow_interrupt);
+	of_property_read_u32(node, "overflow-flags", &overflow_flags);
+	of_property_read_u32(node, "error-interrupt", &error_interrupt);
+	of_property_read_u32(node, "error-interrupt-flags",
+			     &error_interrupt_flags);
+
+	return mpam_register_device_irq(dev,
+			overflow_interrupt, overflow_flags,
+			error_interrupt, error_interrupt_flags);
+}
+
+static int of_mpam_parse_cache(struct platform_device *pdev)
+{
+	struct mpam_device *dev;
+	struct device_node *node = pdev->dev.of_node;
+	int cache_level, cache_id;
+	struct resource *res;
+
+	if (of_property_read_u32(node, "cache-level", &cache_level)) {
+		dev_err(&pdev->dev, "missing cache level property\n");
+		return -EINVAL;
+	}
+
+	if (of_property_read_u32(node, "cache-id", &cache_id)) {
+		dev_err(&pdev->dev, "missing cache id property\n");
+		return -EINVAL;
+	}
+
+	/* Base address */
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res) {
+		dev_err(&pdev->dev, "missing io resource property\n");
+		return -EINVAL;
+	}
+
+	dev = mpam_device_create_cache(cache_level, cache_id, NULL, res->start);
+	if (IS_ERR(dev)) {
+		dev_err(&pdev->dev, "Failed to create cache node\n");
+		return -EINVAL;
+	}
+
+	return of_mpam_parse_irq(pdev, dev);
+}
+
+static int of_mpam_parse_memory(struct platform_device *pdev)
+{
+	struct mpam_device *dev;
+	struct device_node *node = pdev->dev.of_node;
+	int numa_id;
+	struct resource *res;
+
+	if (of_property_read_u32(node, "numa-node-id", &numa_id)) {
+		dev_err(&pdev->dev, "missing numa node id property\n");
+		return -EINVAL;
+	}
+
+	/* Base address */
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res) {
+		dev_err(&pdev->dev, "missing io resource property\n");
+		return -EINVAL;
+	}
+
+	dev = mpam_device_create_memory(numa_id, res->start);
+	if (IS_ERR(dev)) {
+		dev_err(&pdev->dev, "Failed to create memory node\n");
+		return -EINVAL;
+	}
+
+	return of_mpam_parse_irq(pdev, dev);
+}
+
+static int of_mpam_parse(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct device_node *node = dev->of_node;
+	enum mpam_class_types type;
+
+	if (!node || !of_match_node(arm_mpam_of_device_ids, pdev->dev.of_node))
+		return -EINVAL;
+
+	if (of_property_read_u32(dev->of_node, "type", &type)) {
+		dev_err(dev, "missing type property\n");
+		return -EINVAL;
+	}
+
+	switch (type) {
+	case MPAM_CLASS_CACHE:
+		return of_mpam_parse_cache(pdev);
+	case MPAM_CLASS_MEMORY:
+		return of_mpam_parse_memory(pdev);
+	default:
+		pr_warn_once("Unknown node type %u.\n", type);
+		return -EINVAL;
+		/* fall through */
+	case MPAM_CLASS_SMMU:
+		/* not yet supported */
+		/* fall through */
+	case MPAM_CLASS_UNKNOWN:
+		break;
+	}
+
+	return 0;
+}
+
+static int arm_mpam_device_probe(struct platform_device *pdev)
+{
+	int ret;
+
+	if (!cpus_have_const_cap(ARM64_HAS_MPAM))
+		return 0;
+
+	if (!acpi_disabled || mpam_enabled != MPAM_ENABLE_OF)
+		return 0;
+
+	ret = mpam_discovery_start();
+	if (ret)
+		return ret;
+
+	ret = of_mpam_parse(pdev);
+
+	if (ret) {
+		mpam_discovery_failed();
+	} else {
+		ret = mpam_discovery_complete();
+		if (!ret)
+			pr_info("Successfully init mpam by DT.\n");
+	}
+
+	return ret;
+}
+
+static struct platform_driver arm_mpam_driver = {
+	.driver		= {
+		.name = ARM_MPAM_PDEV_NAME,
+		.of_match_table = arm_mpam_of_device_ids,
+	},
+	.probe		= arm_mpam_device_probe,
+};
+
+static int __init arm_mpam_driver_init(void)
+{
+	if (acpi_disabled)
+		return platform_driver_register(&arm_mpam_driver);
+	else
+		return acpi_mpam_parse();
+}
+
+/*
+ * We want to run after cacheinfo_sysfs_init() has caused the cacheinfo
+ * structures to be populated. That runs as a device_initcall.
+ */
+device_initcall_sync(arm_mpam_driver_init);

@@ -2162,6 +2162,8 @@ static int __init mpam_setup(char *str)
 {
 	if (!strcmp(str, "=acpi"))
 		mpam_enabled = MPAM_ENABLE_ACPI;
+	else if (!strcmp(str, "=of"))
+		mpam_enabled = MPAM_ENABLE_OF;
 
 	return 1;
 }

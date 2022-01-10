@@ -240,9 +240,3 @@ int __init acpi_mpam_parse(void)
 
 	return ret;
 }
-
-/*
- * We want to run after cacheinfo_sysfs_init() has caused the cacheinfo
- * structures to be populated. That runs as a device_initcall.
- */
-device_initcall_sync(acpi_mpam_parse);
