@@ -48,6 +48,7 @@ read_attribute(cache_bypass_misses);
 read_attribute(cache_hit_ratio);
 read_attribute(cache_readaheads);
 read_attribute(cache_miss_collisions);
+read_attribute(cache_prefetch_fake_hits);
 read_attribute(bypassed);
 
 SHOW(bch_stats)
@@ -66,6 +67,7 @@ SHOW(bch_stats)
 
 	var_print(cache_readaheads);
 	var_print(cache_miss_collisions);
+	var_print(cache_prefetch_fake_hits);
 	sysfs_hprint(bypassed,	var(sectors_bypassed) << 9);
 #undef var
 	return 0;
@@ -88,6 +90,7 @@ static struct attribute *bch_stats_files[] = {
 	&sysfs_cache_hit_ratio,
 	&sysfs_cache_readaheads,
 	&sysfs_cache_miss_collisions,
+	&sysfs_cache_prefetch_fake_hits,
 	&sysfs_bypassed,
 	NULL
 };
@@ -147,6 +150,7 @@ static void scale_stats(struct cache_stats *stats, unsigned long rescale_at)
 		scale_stat(&stats->cache_bypass_misses);
 		scale_stat(&stats->cache_readaheads);
 		scale_stat(&stats->cache_miss_collisions);
+		scale_stat(&stats->cache_prefetch_fake_hits);
 		scale_stat(&stats->sectors_bypassed);
 	}
 }
@@ -170,6 +174,7 @@ static void scale_accounting(struct timer_list *t)
 	move_stat(cache_bypass_misses);
 	move_stat(cache_readaheads);
 	move_stat(cache_miss_collisions);
+	move_stat(cache_prefetch_fake_hits);
 	move_stat(sectors_bypassed);
 
 	scale_stats(&acc->total, 0);
@@ -223,6 +228,14 @@ void bch_mark_cache_miss_collision(struct cache_set *c, struct bcache_device *d)
 
 	atomic_inc(&dc->accounting.collector.cache_miss_collisions);
 	atomic_inc(&c->accounting.collector.cache_miss_collisions);
+}
+
+void bch_mark_cache_prefetch_fake_hit(struct cache_set *c, struct bcache_device *d)
+{
+	struct cached_dev *dc = container_of(d, struct cached_dev, disk);
+
+	atomic_inc(&dc->accounting.collector.cache_prefetch_fake_hits);
+	atomic_inc(&c->accounting.collector.cache_prefetch_fake_hits);
 }
 
 void bch_mark_sectors_bypassed(struct cache_set *c, struct cached_dev *dc,
