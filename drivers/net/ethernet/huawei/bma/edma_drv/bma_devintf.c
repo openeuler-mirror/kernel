@@ -497,7 +497,7 @@ int bma_cdev_add_msg(void *handle, const char __user *msg, size_t msg_len)
 		hdr->sub_type = priv->user.sub_type;
 		hdr->user_id = priv->user.user_id;
 		hdr->datalen = msg_len;
-		BMA_LOG(DLOG_DEBUG, "msg_len is %ld\n", msg_len);
+		BMA_LOG(DLOG_DEBUG, "msg_len is %zu\n", msg_len);
 
 		if (copy_from_user(hdr->data, msg, msg_len)) {
 			BMA_LOG(DLOG_ERROR, "copy_from_user error\n");

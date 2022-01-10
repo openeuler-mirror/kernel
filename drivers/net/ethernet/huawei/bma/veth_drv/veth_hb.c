@@ -1488,8 +1488,8 @@ s32 veth_recv_pkt(struct bspveth_rxtx_q *prx_queue, int queue)
 			 skb->len, skb->protocol);
 
 		VETH_LOG(DLOG_DEBUG,
-			 "dma_p=0x%llx,dma_map=0x%llx,",
-			 pbd_v->dma_p, dma_map);
+			 "dma_p=0x%llx,dma_map=%pad,",
+			 pbd_v->dma_p, &dma_map);
 
 		VETH_LOG(DLOG_DEBUG,
 			 "skb=%p,skb->data=%p,skb->len=%d,tail=%d,shm_off=%d\n",

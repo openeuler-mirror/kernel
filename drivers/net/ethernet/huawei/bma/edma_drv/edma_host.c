@@ -789,7 +789,7 @@ static int edma_host_send_msg(struct edma_host_s *edma_host)
 	if (edma_host->msg_send_write >
 	    HOST_MAX_SEND_MBX_LEN - SIZE_OF_MBX_HDR) {
 		BMA_LOG(DLOG_ERROR,
-			"Length of send message %u is larger than %lu\n",
+			"Length of send message %u is larger than %zu\n",
 			edma_host->msg_send_write,
 			HOST_MAX_SEND_MBX_LEN - SIZE_OF_MBX_HDR);
 		edma_host->msg_send_write = 0;

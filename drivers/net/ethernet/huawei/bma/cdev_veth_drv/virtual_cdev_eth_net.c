@@ -605,7 +605,7 @@ static int edma_veth_cut_tx_packet_send(struct edma_eth_dev_s *eth_dev,
 	do_queue_rate_limit(eth_dev->ptx_queue);
 
 	while (length > 0) {
-		LOG(DLOG_DEBUG, "length: %u/%lu", length, len);
+		LOG(DLOG_DEBUG, "length: %u/%zu", length, len);
 
 		if (length > BSPPACKET_MTU_MAX) {
 			/* fragment. */
@@ -1689,7 +1689,7 @@ static ssize_t cdev_copy_packet_to_user(struct edma_eth_dev_s *dev,
 	start = dev->rx_packet[dev->rx_packet_head].packet + g_read_pos;
 
 	LOG(DLOG_DEBUG,
-	    "User needs %ld bytes, pos: %u, total len: %u, left: %ld.",
+	    "User needs %zu bytes, pos: %u, total len: %u, left: %zd.",
 	    count, g_read_pos, dev->rx_packet[dev->rx_packet_head].len, left);
 	if (left <= 0) {
 		/* No more data in this message, retry. */
@@ -1721,7 +1721,7 @@ static ssize_t cdev_copy_packet_to_user(struct edma_eth_dev_s *dev,
 	}
 
 	LOG(DLOG_DEBUG,
-	    "Copied bytes: %ld, pos: %d, buf len: %lu, free_packet: %d.",
+	    "Copied bytes: %zd, pos: %d, buf len: %zu, free_packet: %d.",
 	    length, g_read_pos, count, free_packet);
 
 	if (packet) {
@@ -1807,11 +1807,11 @@ ssize_t cdev_read(struct file *filp, char __user *data,
 	if (!data || count >= MAX_PACKET_LEN)
 		return -EFAULT;
 
-	LOG(DLOG_DEBUG, "read begin, count: %ld, pos: %u.", count, g_read_pos);
+	LOG(DLOG_DEBUG, "read begin, count: %zu, pos: %u.", count, g_read_pos);
 
 	length = cdev_copy_packet_to_user(dev, data, count);
 
-	LOG(DLOG_DEBUG, "read done, length: %ld, pos: %u.", length, g_read_pos);
+	LOG(DLOG_DEBUG, "read done, length: %zd, pos: %u.", length, g_read_pos);
 
 	return length;
 }
@@ -1837,7 +1837,7 @@ ssize_t cdev_write(struct file *filp, const char __user *data,
 		g_peer_not_ready = 0;
 	}
 
-	LOG(DLOG_DEBUG, "data length is %lu, pos: %u (%u/%u)",
+	LOG(DLOG_DEBUG, "data length is %zu, pos: %u (%u/%u)",
 	    count, g_read_pos,
 	    pdev->ptx_queue->pshmqhd_v->count,
 	    pdev->ptx_queue->pshmqhd_v->total);
