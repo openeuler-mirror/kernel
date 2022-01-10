@@ -852,7 +852,7 @@ static void cached_dev_read_done(struct closure *cl)
 	if (!s->prefetch)
 		bio_complete(s);
 
-	if (s->iop.bio &&
+	if (s->iop.bio && (!dc->read_bypass || s->prefetch) &&
 	    !test_bit(CACHE_SET_STOPPING, &s->iop.c->flags)) {
 		BUG_ON(!s->iop.replace);
 		closure_call(&s->iop.cl, bch_data_insert, NULL, cl);
@@ -897,12 +897,14 @@ static int cached_dev_cache_miss(struct btree *b, struct search *s,
 
 	s->cache_missed = 1;
 
-	if (s->cache_miss || s->iop.bypass) {
+	if (s->cache_miss || s->iop.bypass ||
+	    (dc->read_bypass && !s->prefetch)) {
 		miss = bio_next_split(bio, sectors, GFP_NOIO, &s->d->bio_split);
 		ret = miss == bio ? MAP_DONE : MAP_CONTINUE;
 		goto out_submit;
 	}
 
+	/* if called form do_readahead, no need to do this */
 	if (!(bio->bi_opf & REQ_RAHEAD) &&
 	    !(bio->bi_opf & (REQ_META|REQ_PRIO) ) &&
 	    s->iop.c->gc_stats.in_use < CUTOFF_CACHE_READA &&

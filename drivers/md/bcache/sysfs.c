@@ -108,6 +108,7 @@ rw_attribute(congested_read_threshold_us);
 rw_attribute(congested_write_threshold_us);
 
 rw_attribute(sequential_cutoff);
+rw_attribute(read_bypass);
 rw_attribute(data_csum);
 rw_attribute(cache_mode);
 rw_attribute(readahead_cache_policy);
@@ -252,6 +253,7 @@ SHOW(__bch_cached_dev)
 	var_printf(partial_stripes_expensive,	"%u");
 
 	var_hprint(sequential_cutoff);
+	var_print(read_bypass);
 	var_hprint(readahead);
 
 	sysfs_print(running,		atomic_read(&dc->running));
@@ -346,6 +348,9 @@ STORE(__cached_dev)
 	sysfs_strtoul_clamp(sequential_cutoff,
 			    dc->sequential_cutoff,
 			    0, UINT_MAX);
+	sysfs_strtoul_clamp(read_bypass,
+			    dc->read_bypass,
+			    0, 1);
 	d_strtoi_h(readahead);
 
 	if (attr == &sysfs_clear_stats)
@@ -511,6 +516,7 @@ static struct attribute *bch_cached_dev_files[] = {
 	&sysfs_stripe_size,
 	&sysfs_partial_stripes_expensive,
 	&sysfs_sequential_cutoff,
+	&sysfs_read_bypass,
 	&sysfs_clear_stats,
 	&sysfs_running,
 	&sysfs_state,
