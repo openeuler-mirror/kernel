@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       36
+%global devel_release       38
 %global maintenance_release .0.0
-%global pkg_release         .19
+%global pkg_release         .20
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,26 @@ fi
 %endif
 
 %changelog
+* Mon Jan 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-38.0.0.20
+- netfilter: fix regression in looped (broad|multi)cast's MAC handling
+- ACPI: CPPC: Fix cppc_cpufreq_init failed in CPU Hotplug situation
+- cpufreq: Fix get_cpu_device() failure in add_cpu_dev_symlink()
+- serial: amba-pl011: Fix serial port discard interrupt when interrupt signal line of serial port is connected to mbigen.
+- dt-bindings: mpam: add document for arm64 mpam
+- arm64/mpam: add device tree support for mpam initialization
+- arm64/mpam: remove __init macro to support driver probe
+- perf script: Fix printing 'phys_addr' failure issue
+- bcache: always record start time of a sample
+- bcache: do not collect data insert info created by write_moving
+- bcache: Rewrite patch to delay to invalidate cache data
+- bcache: Add a sample of userspace prefetch client
+- bcache: Delay to invalidate cache data in writearound write
+- bcache: inflight prefetch requests block overlapped normal requests
+- bcache: provide a switch to bypass all IO requests
+- bcache: add a framework to perform prefetch
+- tcp: Add some stub info for KABI consistency
+- BMA: Fix format string compile warning in arm32 builds
+
 * Sat Jan 08 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-36.0.0.19
 - hugepage: add sysctl for hugepage alloc and mig
 - mm: export node type {pmem|dram} under /sys/bus/node
