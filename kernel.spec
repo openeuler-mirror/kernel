@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2201.1.0
+%global hulkrelease 2201.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0132
+Release: %{hulkrelease}.0133
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -809,6 +809,10 @@ fi
 
 %changelog
 
+* Tue Jan 11 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2201.2.0.0133
+- arm64/mpam: fix mpam dts init arm_mpam_of_device_ids error
+- arm64/mpam: fix mpam probe error for wrong init order
+
 * Tue Jan 04 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2201.1.0.0132
 - mm: export collect_procs()
 - net: hns: update hns version to 21.12.1
@@ -820,8 +824,6 @@ fi
 - tee: handle lookup of shm with reference count 0
 - tee: don't assign shm id for private shms
 - tee: remove linked list of struct tee_shm
-- mm/page_alloc: Use cmdline to disable "place pages to tail"
-- mm/page_alloc: Use cmdline to disable "place pages to tail"
 - ext4: fix an use-after-free issue about data=journal writeback mode
 - ext4: Fix null-ptr-deref in '__ext4_journal_ensure_credits'
 - scsi: ufs: Correct the LUN used in eh_device_reset_handler() callback
@@ -847,10 +849,6 @@ fi
 - xen/blkfront: read response from backend only once
 - xen: sync include/xen/interface/io/ring.h with Xen's newest version
 - xen/netback: avoid race in xenvif_rx_ring_slots_available()
-- bpf: Remove MTU check in __bpf_skb_max_len
-- sctp: account stream padding length for reconf chunk
-- bpf: Remove MTU check in __bpf_skb_max_len
-- sctp: account stream padding length for reconf chunk
 - netfilter: fix regression in looped (broad|multi)cast's MAC handling
 - perf/core: Avoid put_page() when GUP fails
 - perf/core: Disable page faults when getting phys address
