@@ -706,9 +706,6 @@ void search_free(struct closure *cl)
 	if (s->iop.bio)
 		bio_put(s->iop.bio);
 
-	if (s->prefetch)
-		inflight_list_ops.remove(s);
-
 	bio_complete(s);
 	closure_debug_destroy(cl);
 	mempool_free(s, &s->iop.c->search);
@@ -976,11 +973,6 @@ out_submit:
 void cached_dev_read(struct cached_dev *dc, struct search *s)
 {
 	struct closure *cl = &s->cl;
-
-	if (s->prefetch)
-		inflight_list_ops.insert(s);
-	else if (inflight_list_ops.wait(s))
-		bch_mark_cache_prefetch_fake_hit(s->iop.c, s->d);
 
 	closure_call(&s->iop.cl, cache_lookup, NULL, cl);
 	continue_at(cl, cached_dev_read_done_bh, NULL);

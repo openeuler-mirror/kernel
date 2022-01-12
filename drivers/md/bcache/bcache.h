@@ -376,7 +376,6 @@ struct cached_dev {
 	unsigned char		writeback_percent;
 	unsigned int		writeback_delay;
 
-	unsigned int		inflight_block_enable;
 	unsigned int		read_bypass;
 
 	uint64_t		writeback_rate_target;

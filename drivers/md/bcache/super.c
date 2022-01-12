@@ -1439,7 +1439,6 @@ static int cached_dev_init(struct cached_dev *dc, unsigned int block_size)
 	bch_cache_accounting_init(&dc->accounting, &dc->disk.cl);
 
 	dc->sequential_cutoff		= 4 << 20;
-	dc->inflight_block_enable	= 1;
 	dc->read_bypass			= 0;
 
 	for (io = dc->io; io < dc->io + RECENT_IO; io++) {

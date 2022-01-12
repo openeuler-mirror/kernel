@@ -66,14 +66,4 @@ void acache_dev_exit(void);
 struct acache_info *fetch_circ_item(struct acache_circ *circ);
 void save_circ_item(struct acache_info *data);
 
-struct inflight_queue_ops {
-	void (*init)(void);
-	void (*exit)(void);
-
-	int (*insert)(struct search *s);
-	int (*remove)(struct search *s);
-	bool (*wait)(struct search *s);
-};
-extern const struct inflight_queue_ops inflight_list_ops;
-
 #endif
