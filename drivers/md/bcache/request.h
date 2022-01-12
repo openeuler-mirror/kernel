@@ -1,8 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _BCACHE_REQUEST_H_
 #define _BCACHE_REQUEST_H_
-#include "btree.h"
-#include "acache.h"
 
 struct data_insert_op {
 	struct closure		cl;
@@ -46,34 +44,4 @@ blk_qc_t flash_dev_submit_bio(struct bio *bio);
 
 extern struct kmem_cache *bch_search_cache;
 
-struct search {
-	/* Stack frame for bio_complete */
-	struct closure		cl;
-
-	struct bbio		bio;
-	struct bio		*orig_bio;
-	struct bio		*cache_miss;
-	struct bcache_device	*d;
-
-	unsigned int		insert_bio_sectors;
-	unsigned int		recoverable:1;
-	unsigned int		write:1;
-	unsigned int		read_dirty_data:1;
-	unsigned int		cache_missed:1;
-
-	struct hd_struct	*part;
-	unsigned long		start_time;
-	/* for prefetch, we do not need copy data to bio */
-	bool			prefetch;
-	struct list_head	list_node;
-	wait_queue_head_t	wqh;
-	struct acache_info	smp;
-
-	struct btree_op		op;
-	struct data_insert_op	iop;
-};
-
-void search_free(struct closure *cl);
-struct search *search_alloc(struct bio *bio, struct bcache_device *d, bool prefetch);
-void cached_dev_read(struct cached_dev *dc, struct search *s);
 #endif /* _BCACHE_REQUEST_H_ */

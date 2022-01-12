@@ -75,12 +75,6 @@ DECLARE_EVENT_CLASS(btree_node,
 	TP_printk("bucket %zu", __entry->bucket)
 );
 
-/* acache.c */
-DEFINE_EVENT(bcache_request, bcache_prefetch_request,
-	TP_PROTO(struct bcache_device *d, struct bio *bio),
-	TP_ARGS(d, bio)
-);
-
 /* request.c */
 
 DEFINE_EVENT(bcache_request, bcache_request_start,
@@ -122,11 +116,6 @@ DEFINE_EVENT(bcache_bio, bcache_bypass_sequential,
 );
 
 DEFINE_EVENT(bcache_bio, bcache_bypass_congested,
-	TP_PROTO(struct bio *bio),
-	TP_ARGS(bio)
-);
-
-DEFINE_EVENT(bcache_bio, bcache_prefetch_cache_miss,
 	TP_PROTO(struct bio *bio),
 	TP_ARGS(bio)
 );

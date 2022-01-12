@@ -2122,12 +2122,12 @@ static bool btree_insert_key(struct btree *b, struct bkey *k,
 	BUG_ON(bkey_cmp(k, &b->key) > 0);
 
 	status = bch_btree_insert_key(&b->keys, k, replace_key);
-	trace_bcache_btree_insert_key(b, k, replace_key != NULL,
-				      status);
 	if (status != BTREE_INSERT_STATUS_NO_INSERT) {
 		bch_check_keys(&b->keys, "%u for %s", status,
 			       replace_key ? "replace" : "insert");
 
+		trace_bcache_btree_insert_key(b, k, replace_key != NULL,
+					      status);
 		return true;
 	} else
 		return false;
