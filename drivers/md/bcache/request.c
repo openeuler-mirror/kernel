@@ -993,11 +993,8 @@ static void cached_dev_write_complete(struct closure *cl)
 	struct search *s = container_of(cl, struct search, cl);
 	struct cached_dev *dc = container_of(s->d, struct cached_dev, disk);
 
-	if (!s->iop.bypass)
-		closure_call(&s->iop.cl, bch_data_insert, NULL, cl);
-
 	up_read_non_owner(&dc->writeback_lock);
-	continue_at(cl, cached_dev_bio_complete, NULL);
+	cached_dev_bio_complete(cl);
 }
 
 static void cached_dev_write(struct cached_dev *dc, struct search *s)
@@ -1080,8 +1077,7 @@ static void cached_dev_write(struct cached_dev *dc, struct search *s)
 	}
 
 insert_data:
-	if (!s->iop.bypass)
-		closure_call(&s->iop.cl, bch_data_insert, NULL, cl);
+	closure_call(&s->iop.cl, bch_data_insert, NULL, cl);
 	continue_at(cl, cached_dev_write_complete, NULL);
 }
 
