@@ -441,10 +441,6 @@ sequential_cutoff
   most recent 128 IOs are tracked so sequential IO can be detected even when
   it isn't all done at once.
 
-read_bypass
-  If enbale, all IO will bypass the cache. This option could be useful when we
-  enable userspace prefetch and the cache device is low capacity.
-
 sequential_merge
   If non zero, bcache keeps a list of the last 128 requests submitted to compare
   against all new requests to determine which new requests are sequential
