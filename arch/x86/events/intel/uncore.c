@@ -1773,7 +1773,7 @@ static const struct intel_uncore_init_fun tgl_l_uncore_init __initconst = {
 
 static const struct intel_uncore_init_fun adl_uncore_init __initconst = {
 	.cpu_init = adl_uncore_cpu_init,
-	.mmio_init = tgl_uncore_mmio_init,
+	.mmio_init = adl_uncore_mmio_init,
 };
 
 static const struct intel_uncore_init_fun icx_uncore_init __initconst = {
