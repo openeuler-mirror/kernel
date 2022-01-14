@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       38
+%global devel_release       39
 %global maintenance_release .0.0
-%global pkg_release         .20
+%global pkg_release         .21
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,46 @@ fi
 %endif
 
 %changelog
+* Wed Jan 12 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-39.0.0.21
+- Increase-debugfs_dump_index-after-dump
+- brd: expose number of allocated pages in debugfs
+- net: hns3: create new common cmd code for PF and VF modules
+- net: hns3: refactor VF tqp stats APIs with new common tqp stats APIs
+- net: hns3: refactor PF tqp stats APIs with new common tqp stats APIs
+- net: hns3: create new set of common tqp stats APIs for PF and VF reuse
+- net: hns3: refactor VF rss init APIs with new common rss init APIs
+- net: hns3: refactor PF rss init APIs with new common rss init APIs
+- net: hns3: create new set of common rss init APIs for PF and VF reuse
+- net: hns3: refactor VF rss set APIs with new common rss set APIs
+- net: hns3: refactor PF rss set APIs with new common rss set APIs
+- net: hns3: create new set of common rss set APIs for PF and VF module
+- net: hns3: refactor VF rss get APIs with new common rss get APIs
+- net: hns3: refactor PF rss get APIs with new common rss get APIs
+- net: hns3: create new set of common rss get APIs for PF and VF rss module
+- net: hns3: refactor hclge_comm_send function in PF/VF drivers
+- net: hns3: create new rss common structure hclge_comm_rss_cfg
+- net: hns3: delete the hclge_cmd.c and hclgevf_cmd.c
+- net: hns3: refactor VF cmdq init and uninit APIs with new common APIs
+- net: hns3: refactor PF cmdq init and uninit APIs with new common APIs
+- net: hns3: create common cmdq init and uninit APIs
+- net: hns3: refactor VF cmdq resource APIs with new common APIs
+- net: hns3: refactor PF cmdq resource APIs with new common APIs
+- net: hns3: create common cmdq resource allocate/free/query APIs
+- net: hns3: refactor hclgevf_cmd_send with new hclge_comm_cmd_send API
+- net: hns3: refactor hclge_cmd_send with new hclge_comm_cmd_send API
+- net: hns3: create new set of unified hclge_comm_cmd_send APIs
+- net: hns3: use struct hclge_desc to replace hclgevf_desc in VF cmdq module
+- net: hns3: create new cmdq hardware description structure hclge_comm_hw
+- net: hns3: refactor hns3 makefile to support hns3_common module
+- Revert "bcache: add a framework to perform prefetch"
+- Revert "bcache: provide a switch to bypass all IO requests"
+- Revert "bcache: inflight prefetch requests block overlapped normal requests"
+- Revert "bcache: Delay to invalidate cache data in writearound write"
+- Revert "bcache: Add a sample of userspace prefetch client"
+- Revert "bcache: Rewrite patch to delay to invalidate cache data"
+- Revert "bcache: do not collect data insert info created by write_moving"
+- Revert "bcache: always record start time of a sample"
+
 * Mon Jan 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-38.0.0.20
 - netfilter: fix regression in looped (broad|multi)cast's MAC handling
 - ACPI: CPPC: Fix cppc_cpufreq_init failed in CPU Hotplug situation
