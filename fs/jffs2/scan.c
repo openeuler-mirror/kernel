@@ -281,6 +281,8 @@ int jffs2_scan_medium(struct jffs2_sb_info *c)
 	else
 		mtd_unpoint(c->mtd, 0, c->mtd->size);
 #endif
+	if (s->sum_list_head)
+		jffs2_sum_reset_collected(s);
 	kfree(s);
 	return ret;
 }
