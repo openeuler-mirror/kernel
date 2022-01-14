@@ -1758,6 +1758,15 @@ static int nbd_dev_add(int index)
 	struct gendisk *disk;
 	struct request_queue *q;
 	int err = -ENOMEM;
+	int first_minor = index << part_shift;
+
+	/*
+	 * Too big index can cause duplicate creation of sysfs files/links,
+	 * because MKDEV() expect that the max first minor is MINORMASK, or
+	 * index << part_shift can overflow.
+	 */
+	if (first_minor < index || first_minor > MINORMASK)
+		return -EINVAL;
 
 	nbd = kzalloc(sizeof(struct nbd_device), GFP_KERNEL);
 	if (!nbd)
@@ -1821,18 +1830,7 @@ static int nbd_dev_add(int index)
 	refcount_set(&nbd->refs, 1);
 	INIT_LIST_HEAD(&nbd->list);
 	disk->major = NBD_MAJOR;
-
-	/*
-	 * Too big index can cause duplicate creation of sysfs files/links,
-	 * because MKDEV() expect that the max first minor is MINORMASK, or
-	 * index << part_shift can overflow.
-	 */
-	disk->first_minor = index << part_shift;
-	if (disk->first_minor < index || disk->first_minor > MINORMASK) {
-		err = -EINVAL;
-		goto out_free_tags;
-	}
-
+	disk->first_minor = first_minor;
 	disk->fops = &nbd_fops;
 	disk->private_data = nbd;
 	sprintf(disk->disk_name, "nbd%d", index);
