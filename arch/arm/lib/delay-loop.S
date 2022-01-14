@@ -7,6 +7,7 @@
 #include <linux/linkage.h>
 #include <asm/assembler.h>
 #include <asm/delay.h>
+#include <asm/unwind.h>
 
 		.text
 
@@ -21,6 +22,7 @@
  */
 
 ENTRY(__loop_udelay)
+UNWIND(.fnstart)
 		ldr	r2, .LC1
 		mul	r0, r2, r0		@ r0 = delay_us * UDELAY_MULT
 ENTRY(__loop_const_udelay)			@ 0 <= r0 <= 0xfffffaf0
@@ -54,6 +56,7 @@ ENTRY(__loop_delay)
 #endif
 		bhi	__loop_delay
 		ret	lr
-ENDPROC(__loop_udelay)
-ENDPROC(__loop_const_udelay)
 ENDPROC(__loop_delay)
+ENDPROC(__loop_const_udelay)
+UNWIND(.fnend)
+ENDPROC(__loop_udelay)
