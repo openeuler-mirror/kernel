@@ -1493,14 +1493,23 @@ static int ubifs_releasepage(struct page *page, gfp_t unused_gfp_flags)
 	struct inode *inode = page->mapping->host;
 	struct ubifs_info *c = inode->i_sb->s_fs_info;
 
-	/*
-	 * An attempt to release a dirty page without budgeting for it - should
-	 * not happen.
-	 */
 	if (PageWriteback(page))
 		return 0;
+
+	/*
+	 * Page is private but not dirty, weird? There is one condition
+	 * making it happened. ubifs_writepage skipped the page because
+	 * page index beyonds isize (for example. truncated by other
+	 * process named A), then the page is invalidated by fadvise64
+	 * syscall before being truncated by process A.
+	 */
 	ubifs_assert(c, PagePrivate(page));
-	ubifs_assert(c, 0);
+	if (PageChecked(page))
+		release_new_page_budget(c);
+	else
+		release_existing_page_budget(c);
+
+	atomic_long_dec(&c->dirty_pg_cnt);
 	detach_page_private(page);
 	ClearPageChecked(page);
 	return 1;
