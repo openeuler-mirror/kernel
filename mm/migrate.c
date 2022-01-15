@@ -578,7 +578,6 @@ static void __copy_gigantic_page(struct page *dst, struct page *src,
 
 static void copy_huge_page(struct page *dst, struct page *src)
 {
-	int i;
 	int nr_pages;
 
 	if (PageHuge(src)) {
@@ -596,10 +595,7 @@ static void copy_huge_page(struct page *dst, struct page *src)
 		nr_pages = thp_nr_pages(src);
 	}
 
-	for (i = 0; i < nr_pages; i++) {
-		cond_resched();
-		copy_highpage(dst + i, src + i);
-	}
+	copy_highpages(dst, src, nr_pages);
 }
 
 /*

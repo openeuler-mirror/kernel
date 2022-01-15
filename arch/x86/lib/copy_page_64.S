@@ -87,3 +87,76 @@ SYM_FUNC_START_LOCAL(copy_page_regs)
 	addq	$2*8, %rsp
 	ret
 SYM_FUNC_END(copy_page_regs)
+
+SYM_FUNC_START(copy_page_nocache)
+	ALTERNATIVE "jmp copy_page", "", X86_FEATURE_XMM2
+	subq	$2*8,	%rsp
+	movq	%rbx,	(%rsp)
+	movq	%r12,	1*8(%rsp)
+
+	movl	$(4096/64)-5,	%ecx
+	.p2align 4
+.LoopNT64:
+	dec	%rcx
+	movq	0x8*0(%rsi), %rax
+	movq	0x8*1(%rsi), %rbx
+	movq	0x8*2(%rsi), %rdx
+	movq	0x8*3(%rsi), %r8
+	movq	0x8*4(%rsi), %r9
+	movq	0x8*5(%rsi), %r10
+	movq	0x8*6(%rsi), %r11
+	movq	0x8*7(%rsi), %r12
+
+	prefetcht0 5*64(%rsi)
+
+	movnti	%rax, 0x8*0(%rdi)
+	movnti	%rbx, 0x8*1(%rdi)
+	movnti	%rdx, 0x8*2(%rdi)
+	movnti	%r8,  0x8*3(%rdi)
+	movnti	%r9,  0x8*4(%rdi)
+	movnti	%r10, 0x8*5(%rdi)
+	movnti	%r11, 0x8*6(%rdi)
+	movnti	%r12, 0x8*7(%rdi)
+
+	leaq	64 (%rsi), %rsi
+	leaq	64 (%rdi), %rdi
+
+	jnz	.LoopNT64
+
+	movl	$5, %ecx
+	.p2align 4
+.LoopNT2:
+	decl	%ecx
+
+	movq	0x8*0(%rsi), %rax
+	movq	0x8*1(%rsi), %rbx
+	movq	0x8*2(%rsi), %rdx
+	movq	0x8*3(%rsi), %r8
+	movq	0x8*4(%rsi), %r9
+	movq	0x8*5(%rsi), %r10
+	movq	0x8*6(%rsi), %r11
+	movq	0x8*7(%rsi), %r12
+
+	movnti	%rax, 0x8*0(%rdi)
+	movnti	%rbx, 0x8*1(%rdi)
+	movnti	%rdx, 0x8*2(%rdi)
+	movnti	%r8,  0x8*3(%rdi)
+	movnti	%r9,  0x8*4(%rdi)
+	movnti	%r10, 0x8*5(%rdi)
+	movnti	%r11, 0x8*6(%rdi)
+	movnti	%r12, 0x8*7(%rdi)
+
+	leaq	64(%rdi), %rdi
+	leaq	64(%rsi), %rsi
+	jnz	.LoopNT2
+
+	movq	(%rsp), %rbx
+	movq	1*8(%rsp), %r12
+	addq	$2*8, %rsp
+	ret
+SYM_FUNC_END(copy_page_nocache)
+
+SYM_FUNC_START(copy_page_nocache_barrir)
+	ALTERNATIVE "", "sfence", X86_FEATURE_XMM2
+	ret
+SYM_FUNC_END(copy_page_nocache_barrir)
