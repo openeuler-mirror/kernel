@@ -37,6 +37,8 @@ extern char trace_cgroup_path[TRACE_CGROUP_PATH_LEN];
 struct cgroup_pidlist;
 
 struct cgroup_file_ctx {
+	struct cgroup_namespace	*ns;
+
 	struct {
 		bool			started;
 		struct css_task_iter	iter;
