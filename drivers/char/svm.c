@@ -135,14 +135,11 @@ struct meminfo {
 struct svm_mpam {
 #define SVM_GET_DEV_MPAM	(1 << 0)
 #define SVM_SET_DEV_MPAM	(1 << 1)
-#define SVM_GET_USER_MPAM_EN	(1 << 2)
-#define SVM_SET_USER_MPAM_EN	(1 << 3)
 	int flags;
 	int pasid;
 	int partid;
 	int pmg;
 	int s1mpam;
-	int user_mpam_en;
 };
 
 struct phymeminfo {
@@ -1505,14 +1502,6 @@ static int svm_get_core_mpam(struct device *dev, void *data)
 		}
 	}
 
-	if (mpam->flags & SVM_GET_USER_MPAM_EN) {
-		err = arm_smmu_get_dev_user_mpam_en(dev, &mpam->user_mpam_en);
-		if (err) {
-			dev_err(dev, "set user_mpam_en failed, %d\n", err);
-			return err;
-		}
-	}
-
 	return err;
 }
 
@@ -1550,14 +1539,6 @@ static int svm_set_core_mpam(struct device *dev, void *data)
 				mpam->pmg, mpam->s1mpam);
 		if (err) {
 			dev_err(dev, "set mpam failed, %d\n", err);
-			return err;
-		}
-	}
-
-	if (mpam->flags & SVM_SET_USER_MPAM_EN) {
-		err = arm_smmu_set_dev_user_mpam_en(dev, mpam->user_mpam_en);
-		if (err) {
-			dev_err(dev, "set user_mpam_en failed, %d\n", err);
 			return err;
 		}
 	}
@@ -1654,51 +1635,6 @@ int svm_get_mpam(int pasid, int *partid, int *pmg, int *s1mpam)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(svm_get_mpam);
-
-/**
- * svm_set_user_mpam_en() - set user_mpam_en
- * @user_mpam_en: 0 for smmu mpam, 1 for user mpam
- */
-int svm_set_user_mpam_en(int user_mpam_en)
-{
-	int err;
-	struct svm_mpam mpam, old_mpam;
-
-	old_mpam.flags = SVM_GET_USER_MPAM_EN;
-	err = __svm_get_mpam(&old_mpam);
-
-	mpam.flags = SVM_SET_USER_MPAM_EN,
-	mpam.user_mpam_en = user_mpam_en,
-	err = __svm_set_mpam(&mpam);
-	if (err)
-		goto rollback;
-
-	return 0;
-
-rollback:
-	__svm_set_mpam(&mpam);
-	return err;
-}
-EXPORT_SYMBOL_GPL(svm_set_user_mpam_en);
-
-/**
- * svm_set_user_mpam_en() - set user_mpam_en
- * @user_mpam_en: pointer to user_mpam_en
- */
-int svm_get_user_mpam_en(int *user_mpam_en)
-{
-	int err;
-	struct svm_mpam mpam;
-
-	mpam.flags = SVM_GET_USER_MPAM_EN;
-	err = __svm_get_mpam(&mpam);
-	if (err)
-		return err;
-
-	*user_mpam_en = mpam.user_mpam_en;
-	return 0;
-}
-EXPORT_SYMBOL_GPL(svm_get_user_mpam_en);
 
 static int svm_set_rc(unsigned long __user *arg)
 {
