@@ -482,8 +482,6 @@ int sphw_mbox_to_pf(void *hwdev, u8 mod, u16 cmd, void *buf_in, u16 in_size, voi
 int sphw_mbox_to_vf(void *hwdev, u16 vf_id, u8 mod, u16 cmd, void *buf_in,
 		    u16 in_size, void *buf_out, u16 *out_size, u32 timeout, u16 channel);
 
-int sphw_clp_to_mgmt(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
-		     u16 in_size, void *buf_out, u16 *out_size);
 /**
  * @brief sphw_cmdq_async - cmdq asynchronous message
  * @param hwdev: device pointer to hwdev

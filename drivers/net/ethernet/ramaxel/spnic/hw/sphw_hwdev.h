@@ -55,7 +55,6 @@ struct sphw_hwdev {
 	struct sphw_ceqs *ceqs;
 	struct sphw_mbox *func_to_func;
 	struct sphw_msg_pf_to_mgmt *pf_to_mgmt;
-	struct sphw_clp_pf_to_mgmt *clp_pf_to_mgmt;
 
 	void *cqm_hdl;
 	struct mqm_addr_trans_tbl_info mqm_att;

@@ -461,7 +461,6 @@ enum mt_api_type {
 	API_TYPE_MBOX = 1,
 	API_TYPE_API_CHAIN_BYPASS,
 	API_TYPE_API_CHAIN_TO_MPU,
-	API_TYPE_CLP,
 };
 
 struct npu_cmd_st {

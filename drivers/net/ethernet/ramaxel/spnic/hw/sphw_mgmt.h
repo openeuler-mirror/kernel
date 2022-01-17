@@ -6,44 +6,6 @@
 
 #define SPHW_MGMT_WQ_NAME			"sphw_mgmt"
 
-#define SPHW_CLP_REG_GAP			0x20
-#define SPHW_CLP_INPUT_BUF_LEN_HOST		4096UL
-#define SPHW_CLP_DATA_UNIT_HOST		4UL
-
-enum clp_data_type {
-	SPHW_CLP_REQ_HOST = 0,
-	SPHW_CLP_RSP_HOST = 1
-};
-
-enum clp_reg_type {
-	SPHW_CLP_BA_HOST = 0,
-	SPHW_CLP_SIZE_HOST = 1,
-	SPHW_CLP_LEN_HOST = 2,
-	SPHW_CLP_START_REQ_HOST = 3,
-	SPHW_CLP_READY_RSP_HOST = 4
-};
-
-#define SPHW_CLP_REQ_SIZE_OFFSET		0
-#define SPHW_CLP_RSP_SIZE_OFFSET		16
-#define SPHW_CLP_BASE_OFFSET			0
-#define SPHW_CLP_LEN_OFFSET			0
-#define SPHW_CLP_START_OFFSET			31
-#define SPHW_CLP_READY_OFFSET			31
-#define SPHW_CLP_OFFSET(member)		(SPHW_CLP_##member##_OFFSET)
-
-#define SPHW_CLP_SIZE_MASK			0x7ffUL
-#define SPHW_CLP_BASE_MASK			0x7ffffffUL
-#define SPHW_CLP_LEN_MASK			0x7ffUL
-#define SPHW_CLP_START_MASK			0x1UL
-#define SPHW_CLP_READY_MASK			0x1UL
-#define SPHW_CLP_MASK(member)			(SPHW_CLP_##member##_MASK)
-
-#define SPHW_CLP_DELAY_CNT_MAX		200UL
-#define SPHW_CLP_SRAM_SIZE_REG_MAX		0x3ff
-#define SPHW_CLP_SRAM_BASE_REG_MAX		0x7ffffff
-#define SPHW_CLP_LEN_REG_MAX			0x3ff
-#define SPHW_CLP_START_OR_READY_REG_MAX	0x1
-
 struct sphw_recv_msg {
 	void			*msg;
 
@@ -76,11 +38,6 @@ enum comm_pf_to_mgmt_event_state {
 enum sphw_mgmt_msg_cb_state {
 	SPHW_MGMT_MSG_CB_REG = 0,
 	SPHW_MGMT_MSG_CB_RUNNING,
-};
-
-struct sphw_clp_pf_to_mgmt {
-	struct semaphore	clp_msg_lock;
-	void			*clp_msg_buf;
 };
 
 struct sphw_msg_pf_to_mgmt {
@@ -145,12 +102,5 @@ int sphw_api_cmd_read_ack(void *hwdev, u8 dest, const void *cmd, u16 size,
 			  void *ack, u16 ack_size);
 
 int sphw_api_cmd_write_nack(void *hwdev, u8 dest, const void *cmd, u16 size);
-
-int sphw_pf_clp_to_mgmt(void *hwdev, u8 mod, u16 cmd, const void *buf_in,
-			u16 in_size, void *buf_out, u16 *out_size);
-
-int sphw_clp_pf_to_mgmt_init(struct sphw_hwdev *hwdev);
-
-void sphw_clp_pf_to_mgmt_free(struct sphw_hwdev *hwdev);
 
 #endif

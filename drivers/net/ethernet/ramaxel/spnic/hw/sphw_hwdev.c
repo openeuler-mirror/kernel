@@ -455,28 +455,6 @@ static int init_ceqs_msix_attr(struct sphw_hwdev *hwdev)
 	return 0;
 }
 
-static int sphw_comm_clp_to_mgmt_init(struct sphw_hwdev *hwdev)
-{
-	int err;
-
-	if (sphw_func_type(hwdev) == TYPE_VF)
-		return 0;
-
-	err = sphw_clp_pf_to_mgmt_init(hwdev);
-	if (err)
-		return err;
-
-	return 0;
-}
-
-static void sphw_comm_clp_to_mgmt_free(struct sphw_hwdev *hwdev)
-{
-	if (sphw_func_type(hwdev) == TYPE_VF)
-		return;
-
-	sphw_clp_pf_to_mgmt_free(hwdev);
-}
-
 static int sphw_comm_aeqs_init(struct sphw_hwdev *hwdev)
 {
 	struct irq_info aeq_irqs[SPHW_MAX_AEQS] = {{0} };
@@ -777,15 +755,8 @@ static int init_pf_mgmt_channel(struct sphw_hwdev *hwdev)
 {
 	int err;
 
-	err = sphw_comm_clp_to_mgmt_init(hwdev);
-	if (err) {
-		sdk_err(hwdev->dev_hdl, "Failed to init clp\n");
-		return err;
-	}
-
 	err = sphw_comm_pf_to_mgmt_init(hwdev);
 	if (err) {
-		sphw_comm_clp_to_mgmt_free(hwdev);
 		sdk_err(hwdev->dev_hdl, "Failed to init pf to mgmt\n");
 		return err;
 	}
@@ -795,7 +766,6 @@ static int init_pf_mgmt_channel(struct sphw_hwdev *hwdev)
 
 static void free_pf_mgmt_channel(struct sphw_hwdev *hwdev)
 {
-	sphw_comm_clp_to_mgmt_free(hwdev);
 	sphw_comm_pf_to_mgmt_free(hwdev);
 }
 
