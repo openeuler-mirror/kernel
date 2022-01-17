@@ -1677,31 +1677,37 @@ static const struct genl_ops nfc_genl_ops[] = {
 		.cmd = NFC_CMD_DEV_UP,
 		.doit = nfc_genl_dev_up,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_DEV_DOWN,
 		.doit = nfc_genl_dev_down,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_START_POLL,
 		.doit = nfc_genl_start_poll,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_STOP_POLL,
 		.doit = nfc_genl_stop_poll,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_DEP_LINK_UP,
 		.doit = nfc_genl_dep_link_up,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_DEP_LINK_DOWN,
 		.doit = nfc_genl_dep_link_down,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_GET_TARGET,
@@ -1718,26 +1724,31 @@ static const struct genl_ops nfc_genl_ops[] = {
 		.cmd = NFC_CMD_LLC_SET_PARAMS,
 		.doit = nfc_genl_llc_set_params,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_LLC_SDREQ,
 		.doit = nfc_genl_llc_sdreq,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_FW_DOWNLOAD,
 		.doit = nfc_genl_fw_download,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_ENABLE_SE,
 		.doit = nfc_genl_enable_se,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_DISABLE_SE,
 		.doit = nfc_genl_disable_se,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_GET_SE,
@@ -1749,21 +1760,25 @@ static const struct genl_ops nfc_genl_ops[] = {
 		.cmd = NFC_CMD_SE_IO,
 		.doit = nfc_genl_se_io,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_ACTIVATE_TARGET,
 		.doit = nfc_genl_activate_target,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_VENDOR,
 		.doit = nfc_genl_vendor_cmd,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NFC_CMD_DEACTIVATE_TARGET,
 		.doit = nfc_genl_deactivate_target,
 		.policy = nfc_genl_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 };
 
