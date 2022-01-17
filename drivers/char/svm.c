@@ -32,7 +32,6 @@
 #include <linux/sched/mm.h>
 #include <linux/msi.h>
 #include <linux/acpi.h>
-#include <linux/ascend_smmu.h>
 #include <linux/share_pool.h>
 
 #define SVM_DEVICE_NAME "svm"
@@ -77,10 +76,7 @@ struct svm_device {
 	struct device		*dev;
 	phys_addr_t l2buff;
 	unsigned long		l2size;
-	struct list_head	entry;
 };
-
-static LIST_HEAD(sdev_list);
 
 struct svm_bind_process {
 	pid_t			vpid;
@@ -130,15 +126,6 @@ struct svm_proc_mem {
 struct meminfo {
 	unsigned long hugetlbfree;
 	unsigned long hugetlbtotal;
-};
-
-struct svm_mpam {
-#define SVM_GET_DEV_MPAM	(1 << 0)
-	int flags;
-	int pasid;
-	int partid;
-	int pmg;
-	int s1mpam;
 };
 
 struct phymeminfo {
@@ -1487,76 +1474,6 @@ put_task:
 }
 EXPORT_SYMBOL_GPL(svm_get_pasid);
 
-static int svm_get_core_mpam(struct device *dev, void *data)
-{
-	int err = 0;
-	struct svm_mpam *mpam = data;
-
-	if (mpam->flags & SVM_GET_DEV_MPAM) {
-		err = arm_smmu_get_dev_mpam(dev, mpam->pasid, &mpam->partid,
-				&mpam->pmg, &mpam->s1mpam);
-		if (err) {
-			dev_err(dev, "get mpam failed, %d\n", err);
-			return err;
-		}
-	}
-
-	return err;
-}
-
-int __svm_get_mpam(struct svm_mpam *mpam)
-{
-	int err = 0;
-#ifdef CONFIG_ACPI
-	struct core_device *cdev = NULL;
-#else
-	struct svm_device *sdev = NULL;
-#endif
-#ifdef CONFIG_ACPI
-	list_for_each_entry(cdev, &child_list, entry) {
-		err = svm_get_core_mpam(&cdev->dev, mpam);
-		if (err)
-			return err;
-	}
-#else
-	list_for_each_entry(sdev, &sdev_list, entry) {
-		err = device_for_each_child(sdev->dev, mpam, svm_get_core_mpam);
-		if (err)
-			return err;
-	}
-#endif
-	return 0;
-}
-
-/**
- * svm_get_mpam() - get smmu mpam configuration of core device
- * @pasid: substream id
- * @partid: pointer to partid
- * @pmg: pointer to pmg
- * @s1mpam: pointer to s1mpam
- */
-int svm_get_mpam(int pasid, int *partid, int *pmg, int *s1mpam)
-{
-	int err = 0;
-	struct svm_mpam mpam;
-
-	if (!partid || !pmg || !s1mpam)
-		return -EINVAL;
-
-	mpam.flags = SVM_GET_DEV_MPAM,
-	mpam.pasid = pasid,
-	err = __svm_get_mpam(&mpam);
-	if (err)
-		return err;
-
-	*partid = mpam.partid;
-	*pmg = mpam.pmg;
-	*s1mpam = mpam.s1mpam;
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(svm_get_mpam);
-
 static int svm_set_rc(unsigned long __user *arg)
 {
 	unsigned long addr, size, rc;
@@ -2237,7 +2154,6 @@ static int svm_device_probe(struct platform_device *pdev)
 	if (sdev->miscdev.name == NULL)
 		return -ENOMEM;
 
-	list_add(&sdev->entry, &sdev_list);
 	dev_set_drvdata(dev, sdev);
 	err = misc_register(&sdev->miscdev);
 	if (err) {
@@ -2294,7 +2210,6 @@ static int svm_device_remove(struct platform_device *pdev)
 
 	device_for_each_child(sdev->dev, NULL, svm_remove_core);
 	misc_deregister(&sdev->miscdev);
-	list_del(&sdev->entry);
 
 	return 0;
 }
