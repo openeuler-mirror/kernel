@@ -25,6 +25,14 @@
 #define psb_csync()	asm volatile("hint #17" : : : "memory")
 #define csdb()		asm volatile("hint #20" : : : "memory")
 
+/*
+ * Data Gathering Hint:
+ * This instruction prevents merging memory accesses with Normal-NC or
+ * Device-GRE attributes before the hint instruction with any memory accesses
+ * appearing after the hint instruction.
+ */
+#define dgh()		asm volatile("hint #6" : : : "memory")
+
 #define spec_bar()	asm volatile(ALTERNATIVE("dsb nsh\nisb\n",		\
 						 SB_BARRIER_INSN"nop\n",	\
 						 ARM64_HAS_SB))
@@ -48,6 +56,8 @@
 #define dma_mb()	dmb(osh)
 #define dma_rmb()	dmb(oshld)
 #define dma_wmb()	dmb(oshst)
+
+#define io_stop_wc()	dgh()
 
 /*
  * Generate a mask for array_index__nospec() that is ~0UL when 0 <= idx < sz
