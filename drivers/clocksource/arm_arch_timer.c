@@ -359,7 +359,7 @@ EXPORT_SYMBOL_GPL(timer_unstable_counter_workaround);
 
 static atomic_t timer_unstable_counter_workaround_in_use = ATOMIC_INIT(0);
 
-static void erratum_set_next_event_tval_generic(const int access, unsigned long evt,
+static void erratum_set_next_event_generic(const int access, unsigned long evt,
 						struct clock_event_device *clk)
 {
 	unsigned long ctrl;
@@ -380,17 +380,17 @@ static void erratum_set_next_event_tval_generic(const int access, unsigned long 
 	arch_timer_reg_write(access, ARCH_TIMER_REG_CTRL, ctrl, clk);
 }
 
-static __maybe_unused int erratum_set_next_event_tval_virt(unsigned long evt,
+static __maybe_unused int erratum_set_next_event_virt(unsigned long evt,
 					    struct clock_event_device *clk)
 {
-	erratum_set_next_event_tval_generic(ARCH_TIMER_VIRT_ACCESS, evt, clk);
+	erratum_set_next_event_generic(ARCH_TIMER_VIRT_ACCESS, evt, clk);
 	return 0;
 }
 
-static __maybe_unused int erratum_set_next_event_tval_phys(unsigned long evt,
+static __maybe_unused int erratum_set_next_event_phys(unsigned long evt,
 					    struct clock_event_device *clk)
 {
-	erratum_set_next_event_tval_generic(ARCH_TIMER_PHYS_ACCESS, evt, clk);
+	erratum_set_next_event_generic(ARCH_TIMER_PHYS_ACCESS, evt, clk);
 	return 0;
 }
 
@@ -402,8 +402,8 @@ static const struct arch_timer_erratum_workaround ool_workarounds[] = {
 		.desc = "Freescale erratum a005858",
 		.read_cntpct_el0 = fsl_a008585_read_cntpct_el0,
 		.read_cntvct_el0 = fsl_a008585_read_cntvct_el0,
-		.set_next_event_phys = erratum_set_next_event_tval_phys,
-		.set_next_event_virt = erratum_set_next_event_tval_virt,
+		.set_next_event_phys = erratum_set_next_event_phys,
+		.set_next_event_virt = erratum_set_next_event_virt,
 	},
 #endif
 #ifdef CONFIG_HISILICON_ERRATUM_161010101
@@ -413,8 +413,8 @@ static const struct arch_timer_erratum_workaround ool_workarounds[] = {
 		.desc = "HiSilicon erratum 161010101",
 		.read_cntpct_el0 = hisi_161010101_read_cntpct_el0,
 		.read_cntvct_el0 = hisi_161010101_read_cntvct_el0,
-		.set_next_event_phys = erratum_set_next_event_tval_phys,
-		.set_next_event_virt = erratum_set_next_event_tval_virt,
+		.set_next_event_phys = erratum_set_next_event_phys,
+		.set_next_event_virt = erratum_set_next_event_virt,
 	},
 	{
 		.match_type = ate_match_acpi_oem_info,
@@ -422,8 +422,8 @@ static const struct arch_timer_erratum_workaround ool_workarounds[] = {
 		.desc = "HiSilicon erratum 161010101",
 		.read_cntpct_el0 = hisi_161010101_read_cntpct_el0,
 		.read_cntvct_el0 = hisi_161010101_read_cntvct_el0,
-		.set_next_event_phys = erratum_set_next_event_tval_phys,
-		.set_next_event_virt = erratum_set_next_event_tval_virt,
+		.set_next_event_phys = erratum_set_next_event_phys,
+		.set_next_event_virt = erratum_set_next_event_virt,
 	},
 #endif
 #ifdef CONFIG_ARM64_ERRATUM_858921
@@ -442,8 +442,8 @@ static const struct arch_timer_erratum_workaround ool_workarounds[] = {
 		.desc = "Allwinner erratum UNKNOWN1",
 		.read_cntpct_el0 = sun50i_a64_read_cntpct_el0,
 		.read_cntvct_el0 = sun50i_a64_read_cntvct_el0,
-		.set_next_event_phys = erratum_set_next_event_tval_phys,
-		.set_next_event_virt = erratum_set_next_event_tval_virt,
+		.set_next_event_phys = erratum_set_next_event_phys,
+		.set_next_event_virt = erratum_set_next_event_virt,
 	},
 #endif
 #ifdef CONFIG_ARM64_ERRATUM_1418040
