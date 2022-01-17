@@ -704,6 +704,8 @@ bool kvm_arm_vcpu_is_finalized(struct kvm_vcpu *vcpu);
 #define kvm_vcpu_has_pmu(vcpu) \
 	(test_bit(KVM_ARM_VCPU_PMU_V3, (vcpu)->arch.features))
 
+int kvm_trng_call(struct kvm_vcpu *vcpu);
+
 #ifdef CONFIG_ARM64_TWED
 #define use_twed() (has_twed() && twed_enable)
 extern bool twed_enable;
