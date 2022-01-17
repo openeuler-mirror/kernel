@@ -266,8 +266,6 @@ int sphw_mbox_ppf_to_host(void *hwdev, u8 mod, u16 cmd, u8 host_id,
 
 int sphw_mbox_init_host_msg_channel(struct sphw_hwdev *hwdev);
 
-int sphw_mbox_set_channel_status(struct sphw_hwdev *hwdev, u16 channel, bool enable);
-
 void sphw_mbox_enable_channel_lock(struct sphw_hwdev *hwdev, bool enable);
 
 #endif

@@ -595,43 +595,6 @@ static bool eq_irq_handler(void *data)
 	return uncompleted;
 }
 
-static struct sphw_eq *find_eq(struct sphw_hwdev *hwdev, int msix_entry_idx)
-{
-	struct sphw_aeqs *aeqs = hwdev->aeqs;
-	struct sphw_ceqs *ceqs = hwdev->ceqs;
-	int i;
-
-	for (i = 0; i < aeqs->num_aeqs; i++) {
-		struct sphw_eq *eq = &aeqs->aeq[i];
-
-		if (eq->eq_irq.msix_entry_idx == msix_entry_idx)
-			return eq;
-	}
-
-	for (i = 0; i < ceqs->num_ceqs; i++) {
-		struct sphw_eq *eq = &ceqs->ceq[i];
-
-		if (eq->eq_irq.msix_entry_idx == msix_entry_idx)
-			return eq;
-	}
-
-	return NULL;
-}
-
-/* for windows */
-bool sphw_eq_intr_handler(void *hwdev, int msix_entry_idx)
-{
-	struct sphw_eq *eq;
-
-	eq = find_eq(hwdev, msix_entry_idx);
-	if (!eq) {
-		pr_err("Can't find eq in eq interrupt handler\n");
-		return false;
-	}
-
-	return eq_irq_handler(eq);
-}
-
 /**
  * eq_irq_work - eq work for the event
  * @work: the work that is associated with the eq
@@ -1311,64 +1274,4 @@ void sphw_dump_ceq_info(struct sphw_hwdev *hwdev)
 		sdk_err(hwdev->dev_hdl, "Ceq last response soft interrupt time: %u\n",
 			jiffies_to_msecs(jiffies - eq->soft_intr_jif));
 	}
-}
-
-int sphw_get_ceq_info(void *hwdev, u16 q_id, struct sphw_ceq_info *ceq_info)
-{
-	struct sphw_hwdev *dev = hwdev;
-	struct sphw_eq *eq = NULL;
-
-	if (!hwdev || !ceq_info)
-		return -EINVAL;
-
-	if (q_id >= dev->ceqs->num_ceqs)
-		return -EINVAL;
-
-	eq = &dev->ceqs->ceq[q_id];
-	ceq_info->q_len = eq->eq_len;
-	ceq_info->num_pages = eq->num_pages;
-	ceq_info->page_size = eq->page_size;
-	ceq_info->num_elem_in_pg = eq->num_elem_in_pg;
-	ceq_info->elem_size = eq->elem_size;
-	sdk_info(dev->dev_hdl, "get_ceq_info: qid=0x%x page_size=%ul\n",
-		 q_id, eq->page_size);
-
-	return 0;
-}
-
-int sphw_get_ceq_page_phy_addr(void *hwdev, u16 q_id, u16 page_idx, u64 *page_phy_addr)
-{
-	struct sphw_hwdev *dev = hwdev;
-	struct sphw_eq *eq = NULL;
-
-	if (!hwdev || !page_phy_addr)
-		return -EINVAL;
-
-	if (q_id >= dev->ceqs->num_ceqs)
-		return -EINVAL;
-
-	eq = &dev->ceqs->ceq[q_id];
-	*page_phy_addr = eq->eq_pages[page_idx].align_paddr;
-	sdk_info(dev->dev_hdl, "ceq_page_phy_addr: 0x%llx page_idx=%u\n",
-		 eq->eq_pages[page_idx].align_paddr, page_idx);
-
-	return 0;
-}
-
-int sphw_set_ceq_irq_disable(void *hwdev, u16 q_id)
-{
-	struct sphw_hwdev *dev = hwdev;
-	struct sphw_eq *ceq = NULL;
-
-	if (!hwdev)
-		return -EINVAL;
-
-	if (q_id >= dev->ceqs->num_ceqs)
-		return -EINVAL;
-
-	ceq = &dev->ceqs->ceq[q_id];
-
-	sphw_set_msix_state(ceq->hwdev, ceq->eq_irq.msix_entry_idx, SPHW_MSIX_DISABLE);
-
-	return 0;
 }

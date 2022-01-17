@@ -338,32 +338,6 @@ void sphw_disable_doorbell(struct sphw_hwif *hwif)
 	sphw_hwif_write_reg(hwif, addr, attr4);
 }
 
-void sphw_enable_outbound(struct sphw_hwif *hwif)
-{
-	u32 addr, attr5;
-
-	addr = SPHW_CSR_FUNC_ATTR5_ADDR;
-	attr5 = sphw_hwif_read_reg(hwif, addr);
-
-	attr5 = SPHW_AF5_CLEAR(attr5, OUTBOUND_CTRL);
-	attr5 |= SPHW_AF5_SET(ENABLE_OUTBOUND, OUTBOUND_CTRL);
-
-	sphw_hwif_write_reg(hwif, addr, attr5);
-}
-
-void sphw_disable_outbound(struct sphw_hwif *hwif)
-{
-	u32 addr, attr5;
-
-	addr = SPHW_CSR_FUNC_ATTR5_ADDR;
-	attr5 = sphw_hwif_read_reg(hwif, addr);
-
-	attr5 = SPHW_AF5_CLEAR(attr5, OUTBOUND_CTRL);
-	attr5 |= SPHW_AF5_SET(DISABLE_OUTBOUND, OUTBOUND_CTRL);
-
-	sphw_hwif_write_reg(hwif, addr, attr5);
-}
-
 /**
  * set_ppf - try to set hwif as ppf and set the type of hwif in this case
  * @hwif: the hardware interface of a pci function device
@@ -441,6 +415,7 @@ static int init_db_area_idx(struct sphw_free_db_area *free_db_area, u64 db_dwqe_
 	}
 	free_db_area->db_max_areas = db_max_areas;
 	spin_lock_init(&free_db_area->idx_lock);
+
 	return 0;
 }
 

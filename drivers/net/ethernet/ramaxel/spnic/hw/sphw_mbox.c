@@ -1458,24 +1458,6 @@ int sphw_mbox_to_vf(void *hwdev, u16 vf_id, u8 mod, u16 cmd, void *buf_in, u16 i
 				 in_size, buf_out, out_size, timeout, channel);
 }
 
-int sphw_mbox_set_channel_status(struct sphw_hwdev *hwdev, u16 channel, bool enable)
-{
-	if (channel >= SPHW_CHANNEL_MAX) {
-		sdk_err(hwdev->dev_hdl, "Invalid channel id: 0x%x\n", channel);
-		return -EINVAL;
-	}
-
-	if (enable)
-		clear_bit(channel, &hwdev->func_to_func->channel_stop);
-	else
-		set_bit(channel, &hwdev->func_to_func->channel_stop);
-
-	sdk_info(hwdev->dev_hdl, "%s mbox channel 0x%x\n",
-		 enable ? "Enable" : "Disable", channel);
-
-	return 0;
-}
-
 void sphw_mbox_enable_channel_lock(struct sphw_hwdev *hwdev, bool enable)
 {
 	hwdev->func_to_func->lock_channel_en = enable;
