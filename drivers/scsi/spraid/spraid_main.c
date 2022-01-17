@@ -42,10 +42,17 @@ static u32 admin_tmout = 60;
 module_param(admin_tmout, uint, 0644);
 MODULE_PARM_DESC(admin_tmout, "admin commands timeout (seconds)");
 
-static u32 scmd_tmout_nonpt = 180;
-module_param(scmd_tmout_nonpt, uint, 0644);
-MODULE_PARM_DESC(scmd_tmout_nonpt,
-		 "scsi commands timeout for rawdisk&raid(seconds)");
+static u32 scmd_tmout_rawdisk = 180;
+module_param(scmd_tmout_rawdisk, uint, 0644);
+MODULE_PARM_DESC(scmd_tmout_rawdisk, "scsi commands timeout for rawdisk(seconds)");
+
+static u32 scmd_tmout_vd = 180;
+module_param(scmd_tmout_vd, uint, 0644);
+MODULE_PARM_DESC(scmd_tmout_vd, "scsi commands timeout for vd(seconds)");
+
+static bool max_io_force;
+module_param(max_io_force, bool, 0644);
+MODULE_PARM_DESC(max_io_force, "force max_hw_sectors_kb = 1024, default false(performance first)");
 
 static int ioq_depth_set(const char *val, const struct kernel_param *kp);
 static const struct kernel_param_ops ioq_depth_ops = {
@@ -78,7 +85,7 @@ static unsigned char log_debug_switch;
 module_param_cb(log_debug_switch, &log_debug_switch_ops,
 		&log_debug_switch, 0644);
 MODULE_PARM_DESC(log_debug_switch,
-		 "set log state, default non-zero for switch on");
+		 "set log state, default zero for switch off");
 
 static int small_pool_num_set(const char *val, const struct kernel_param *kp)
 {
@@ -132,7 +139,6 @@ static struct workqueue_struct *spraid_wq;
 #define SPRAID_DRV_VERSION	"1.0.0.0"
 
 #define ADMIN_TIMEOUT		(admin_tmout * HZ)
-#define ADMIN_ERR_TIMEOUT	32757
 
 #define SPRAID_WAIT_ABNL_CMD_TIMEOUT	(3 * 2)
 
@@ -242,13 +248,6 @@ static int spraid_pci_enable(struct spraid_dev *hdev)
 		goto disable;
 	}
 
-	ret = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_ALL_TYPES);
-	if (ret < 0) {
-		dev_err(hdev->dev,
-			"Allocate one IRQ for setup admin channel failed\n");
-		goto disable;
-	}
-
 	hdev->cap = lo_hi_readq(hdev->bar + SPRAID_REG_CAP);
 	hdev->ioq_depth = min_t(u32, SPRAID_CAP_MQES(hdev->cap) + 1,
 				io_queue_depth);
@@ -261,12 +260,20 @@ static int spraid_pci_enable(struct spraid_dev *hdev)
 			maskbit);
 		maskbit = SPRAID_DMA_MSK_BIT_MAX;
 	}
-	if (dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(maskbit))) {
+	if (dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(maskbit)) &&
+		dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32))) {
 		dev_err(hdev->dev, "set dma mask and coherent failed\n");
 		goto disable;
 	}
 
 	dev_info(hdev->dev, "set dma mask[%llu] success\n", maskbit);
+
+	ret = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_ALL_TYPES);
+
+	if (ret < 0) {
+		dev_err(hdev->dev, "Allocate one IRQ for setup admin channel failed\n");
+		goto disable;
+	}
 
 	pci_enable_pcie_error_reporting(pdev);
 	pci_save_state(pdev);
@@ -840,6 +847,9 @@ static void spraid_map_status(struct spraid_iod *iod, struct scsi_cmnd *scmd,
 		break;
 	default:
 		set_host_byte(scmd, DID_BAD_TARGET);
+		dev_warn(iod->spraidq->hdev->dev, "[%s] cid[%d] qid[%d];"
+			"bad status[0x%x]\n", __func__, cqe->cmd_id,
+			le16_to_cpu(cqe->sq_id), le16_to_cpu(cqe->status));
 		break;
 	}
 }
@@ -981,32 +991,17 @@ static void spraid_slave_destroy(struct scsi_device *sdev)
 
 static int spraid_slave_configure(struct scsi_device *sdev)
 {
-	u16 idx;
-	unsigned int timeout = scmd_tmout_nonpt * HZ;
+	unsigned int timeout = scmd_tmout_rawdisk * HZ;
 	struct spraid_dev *hdev = shost_priv(sdev->host);
 	struct spraid_sdev_hostdata *hostdata = sdev->hostdata;
 	u32 max_sec = sdev->host->max_sectors;
 
 	if (hostdata) {
-		idx = hostdata->hdid - 1;
-		if (sdev->channel == hdev->devices[idx].channel &&
-		    sdev->id == le16_to_cpu(hdev->devices[idx].target) &&
-		    sdev->lun < hdev->devices[idx].lun) {
-			if (SPRAID_DEV_INFO_ATTR_PT(hdev->devices[idx].attr))
-				timeout = 30 * HZ;
-			else
-				timeout = scmd_tmout_nonpt * HZ;
-			max_sec = le16_to_cpu(hdev->devices[idx].max_io_kb)
-				  << 1;
-		} else {
-			dev_err(hdev->dev,
-				"[%s] err, sdev->channel:id:lun[%d:%d:%lld];"
-				"devices[%d], channel:target:lun[%d:%d:%d]\n",
-				__func__, sdev->channel, sdev->id, sdev->lun,
-				idx, hdev->devices[idx].channel,
-				hdev->devices[idx].target,
-				hdev->devices[idx].lun);
-		}
+		if (SPRAID_DEV_INFO_ATTR_VD(hostdata->attr))
+			timeout = scmd_tmout_vd * HZ;
+		else if (SPRAID_DEV_INFO_ATTR_RAWDISK(hostdata->attr))
+			timeout = scmd_tmout_rawdisk * HZ;
+		max_sec = hostdata->max_io_kb << 1;
 	} else {
 		dev_err(hdev->dev, "[%s] err, sdev->hostdata is null\n",
 			__func__);
@@ -1018,11 +1013,12 @@ static int spraid_slave_configure(struct scsi_device *sdev)
 	if ((max_sec == 0) || (max_sec > sdev->host->max_sectors))
 		max_sec = sdev->host->max_sectors;
 
-	dev_info(hdev->dev,
-		"[%s] sdev->channel:id:lun[%d:%d:%lld];"
-		" scmd_timeout[%d]s, maxsec[%d]\n",
-		 __func__, sdev->channel, sdev->id,
-		 sdev->lun, timeout / HZ, max_sec);
+	if (!max_io_force)
+		blk_queue_max_hw_sectors(sdev->request_queue, max_sec);
+
+	dev_info(hdev->dev, "[%s] sdev->channel:id:lun[%d:%d:%lld];"
+		"scmd_timeout[%d]s, maxsec[%d]\n", __func__, sdev->channel,
+		sdev->id, sdev->lun, timeout / HZ, max_sec);
 
 	return 0;
 }
@@ -1677,7 +1673,7 @@ static int spraid_submit_admin_sync_cmd(struct spraid_dev *hdev,
 			cmd->usr_cmd.opcode, cmd->usr_cmd.info_0.subopcode);
 		WRITE_ONCE(adm_cmd->state, SPRAID_CMD_TIMEOUT);
 		spraid_put_cmd(hdev, adm_cmd, SPRAID_CMD_ADM);
-		return -EINVAL;
+		return -ETIME;
 	}
 
 	if (result0)
@@ -2630,9 +2626,6 @@ static int spraid_user_admin_cmd(struct spraid_dev *hdev, struct bsg_job *job)
 		return -EBUSY;
 	}
 
-	dev_info(hdev->dev, "[%s] opcode[0x%x] subopcode[0x%x] init\n",
-		 __func__, cmd->opcode, cmd->info_0.subopcode);
-
 	memset(&admin_cmd, 0, sizeof(admin_cmd));
 	admin_cmd.common.opcode = cmd->opcode;
 	admin_cmd.common.flags = cmd->flags;
@@ -2659,10 +2652,11 @@ static int spraid_user_admin_cmd(struct spraid_dev *hdev, struct bsg_job *job)
 		memcpy(job->reply, result, sizeof(result));
 	}
 
-	dev_info(hdev->dev, "[%s] opcode[0x%x] subopcode[0x%x];"
-		 " status[0x%x] result0[0x%x] result1[0x%x]\n",
-		 __func__, cmd->opcode, cmd->info_0.subopcode,
-		 status, result[0], result[1]);
+	if (status)
+		dev_info(hdev->dev, "[%s] opcode[0x%x] subopcode[0x%x];"
+			" status[0x%x] result0[0x%x] result1[0x%x]\n",
+			__func__, cmd->opcode, cmd->info_0.subopcode,
+			status, result[0], result[1]);
 
 	spraid_bsg_unmap_data(hdev, job);
 
@@ -2742,7 +2736,7 @@ static int spraid_submit_ioq_sync_cmd(struct spraid_dev *hdev,
 			(le32_to_cpu(cmd->common.cdw3[0]) & 0xffff));
 		WRITE_ONCE(pt_cmd->state, SPRAID_CMD_TIMEOUT);
 		spraid_put_cmd(hdev, pt_cmd, SPRAID_CMD_IOPT);
-		return -EINVAL;
+		return -ETIME;
 	}
 
 	if (result && reslen) {
@@ -3140,7 +3134,7 @@ static int spraid_abort_handler(struct scsi_cmnd *scmd)
 
 	dev_warn(hdev->dev, "cid[%d] qid[%d] timeout, aborting\n", cid, hwq);
 	ret = spraid_send_abort_cmd(hdev, hostdata->hdid, hwq, cid);
-	if (ret != ADMIN_ERR_TIMEOUT) {
+	if (ret != -ETIME) {
 		ret = spraid_wait_abnl_cmd_done(iod);
 		if (ret) {
 			dev_warn(hdev->dev, "cid[%d] qid[%d] abort failed;"
@@ -3623,7 +3617,7 @@ static int spraid_bsg_host_dispatch(struct bsg_job *job)
 	struct spraid_bsg_request *bsg_req = job->request;
 	int ret = 0;
 
-	dev_info(hdev->dev, "[%s] msgcode[%d], msglen[%d], timeout[%d];"
+	dev_log_dbg(hdev->dev, "[%s] msgcode[%d], msglen[%d], timeout[%d];"
 		 " req_nsge[%d], req_len[%d]\n",
 		 __func__, bsg_req->msgcode, job->request_len,
 		 rq->timeout, job->request_payload.sg_cnt,
