@@ -533,22 +533,10 @@ static int cmdq_ceq_handler_status(struct sphw_cmdq *cmdq,
 {
 	ulong timeo;
 	int err;
-	ulong start = 0;
-	ulong end = timeout;
 
-	if (cmdq->hwdev->poll) {
-		while (start < end) {
-			sphw_cmdq_ceq_handler(cmdq->hwdev, 0);
-			if (saved_cmd_info->done->done != 0)
-				return 0;
-			usleep_range(900, 1000);
-			start++;
-		}
-	} else {
-		timeo = msecs_to_jiffies(timeout);
-		if (wait_for_completion_timeout(saved_cmd_info->done, timeo))
-			return 0;
-	}
+	timeo = msecs_to_jiffies(timeout);
+	if (wait_for_completion_timeout(saved_cmd_info->done, timeo))
+		return 0;
 
 	spin_lock_bh(&cmdq->cmdq_lock);
 

@@ -1062,7 +1062,7 @@ static int send_mbox_msg(struct sphw_mbox *func_to_func, u8 mod, u16 cmd,
 	u8 *msg_seg = NULL;
 	u64 header = 0;
 
-	if (hwdev->poll || hwdev->hwif->attr.num_aeqs >= 2)
+	if (hwdev->hwif->attr.num_aeqs >= 2)
 		rsp_aeq_id = SPHW_MBOX_RSP_MSG_AEQ;
 	else
 		rsp_aeq_id = 0;

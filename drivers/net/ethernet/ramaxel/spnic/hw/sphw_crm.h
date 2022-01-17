@@ -335,8 +335,6 @@ struct sphw_init_para {
 	 * need to trasmit message ppf mbox to bmgw arm host.
 	 */
 	void *ppf_hwdev;
-	/* if use polling mode, set it true */
-	bool poll;
 };
 
 /* B200 config BAR45 4MB, DB & DWQE both 2MB */

@@ -42,7 +42,6 @@ struct sphw_hwdev {
 
 	u32 wq_page_size;
 	int chip_present_flag;
-	bool poll;	   /*use polling mode or int mode*/
 
 	struct sphw_hwif *hwif; /* include void __iomem *bar */
 	struct comm_global_attr glb_attr;

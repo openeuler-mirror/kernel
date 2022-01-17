@@ -392,12 +392,7 @@ static void set_eq_cons_idx(struct sphw_eq *eq, u32 arm_state)
 	u32 addr = EQ_CI_SIMPLE_INDIR_REG_ADDR(eq);
 
 	eq_wrap_ci = EQ_CONS_IDX(eq);
-
-	/* if use poll mode only eq0 use int_arm mode */
-	if (eq->q_id != 0 && eq->hwdev->poll)
-		val = EQ_CI_SIMPLE_INDIR_SET(SPHW_EQ_NOT_ARMED, ARMED);
-	else
-		val = EQ_CI_SIMPLE_INDIR_SET(arm_state, ARMED);
+	val = EQ_CI_SIMPLE_INDIR_SET(arm_state, ARMED);
 	if (eq->type == SPHW_AEQ) {
 		val = val |
 			EQ_CI_SIMPLE_INDIR_SET(eq_wrap_ci, CI) |

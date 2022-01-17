@@ -938,7 +938,6 @@ int sphw_init_hwdev(struct sphw_init_para *para)
 	hwdev->pcidev_hdl = para->pcidev_hdl;
 	hwdev->dev_hdl = para->dev_hdl;
 	hwdev->chip_node = para->chip_node;
-	hwdev->poll = para->poll;
 
 	hwdev->chip_fault_stats = vzalloc(SPHW_CHIP_FAULT_SIZE);
 	if (!hwdev->chip_fault_stats)
