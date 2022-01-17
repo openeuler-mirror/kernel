@@ -466,6 +466,12 @@ CONFIG_ARM64_E0PD=y
 CONFIG_ARCH_RANDOM=y
 # end of ARMv8.5 architectural features
 
+#
+# ARMv8.7 architectural features
+#
+CONFIG_ARM64_EPAN=y
+# end of ARMv8.7 architectural features
+
 CONFIG_ARM64_SVE=y
 CONFIG_ARM64_MODULE_PLTS=y
 CONFIG_ARM64_PSEUDO_NMI=y
