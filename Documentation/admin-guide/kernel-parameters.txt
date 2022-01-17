@@ -1402,6 +1402,11 @@
 			registers.  Default set by CONFIG_HPET_MMAP_DEFAULT.
 
 	hugepages=	[HW,X86-32,IA-64] HugeTLB pages to allocate at boot.
+			If using node format, the number of pages to allocate
+			per-node can be specified.
+			Format: <integer> or (node format)
+				<node>:<integer>[,<node>:<integer>]
+
 	hugepagesz=	[HW,IA-64,PPC,X86-64] The size of the HugeTLB pages.
 			On x86-64 and powerpc, this option can be specified
 			multiple times interleaved with hugepages= to reserve
