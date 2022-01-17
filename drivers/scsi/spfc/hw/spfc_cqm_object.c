@@ -155,8 +155,6 @@ struct cqm_qpc_mpt *cqm3_object_qpc_mpt_create(void *ex_handle, u32 service_type
 	struct cqm_qpc_mpt_info *qpc_mpt_info = NULL;
 	struct cqm_handle *cqm_handle = NULL;
 	s32 ret = CQM_FAIL;
-	u32 relative_index;
-	u32 fake_func_id;
 
 	CQM_PTR_CHECK_RET(ex_handle, NULL, CQM_PTR_NULL(ex_handle));
 
@@ -178,25 +176,6 @@ struct cqm_qpc_mpt *cqm3_object_qpc_mpt_create(void *ex_handle, u32 service_type
 	if (object_type != CQM_OBJECT_SERVICE_CTX) {
 		cqm_err(handle->dev_hdl, CQM_WRONG_VALUE(object_type));
 		return NULL;
-	}
-
-	/* fake vf adaption, switch to corresponding VF. */
-	if (cqm_handle->func_capability.fake_func_type ==
-	    CQM_FAKE_FUNC_PARENT) {
-		fake_func_id = index / cqm_handle->func_capability.qpc_number;
-		relative_index = index % cqm_handle->func_capability.qpc_number;
-
-		cqm_info(handle->dev_hdl, "qpc create: fake_func_id=%u, relative_index=%u\n",
-			 fake_func_id, relative_index);
-
-		if ((s32)fake_func_id >=
-		    cqm_get_child_func_number(cqm_handle)) {
-			cqm_err(handle->dev_hdl, CQM_WRONG_VALUE(fake_func_id));
-			return NULL;
-		}
-
-		index = relative_index;
-		cqm_handle = cqm_handle->fake_cqm_handle[fake_func_id];
 	}
 
 	qpc_mpt_info = kmalloc(sizeof(*qpc_mpt_info), GFP_ATOMIC | __GFP_ZERO);

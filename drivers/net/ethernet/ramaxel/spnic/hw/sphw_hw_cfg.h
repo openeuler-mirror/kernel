@@ -201,6 +201,9 @@ struct service_cap {
 	u8 timer_en;    /* 0:disable, 1:enable */
 	u8 bloomfilter_en; /* 0:disable, 1:enable*/
 
+	u8 lb_mode;
+	u8 smf_pg;
+
 	/* For test */
 	u32 test_mode;
 	u32 test_qpc_num;

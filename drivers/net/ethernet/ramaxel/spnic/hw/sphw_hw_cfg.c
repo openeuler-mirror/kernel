@@ -112,6 +112,9 @@ static void parse_pub_res_cap(struct sphw_hwdev *hwdev,
 	else
 		cap->sf_en = false;
 
+	cap->lb_mode = dev_cap->lb_mode;
+	cap->smf_pg = dev_cap->smf_pg;
+
 	cap->timer_en = (u8)timer_enable; /* timer enable */
 	cap->host_oq_id_mask_val = dev_cap->host_oq_id_mask_val;
 	cap->max_connect_num = dev_cap->max_conn_num;

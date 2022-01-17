@@ -53,17 +53,6 @@ cqm_bat_fill_cla_common_gpa(struct cqm_handle *cqm_handle,
 		gpa.acs_spu_en = 0;
 	}
 
-	/* In fake mode, fake_vf_en in the GPA address of the BAT
-	 * must be set to 1.
-	 */
-	if (cqm_handle->func_capability.fake_func_type == CQM_FAKE_FUNC_CHILD) {
-		gpa.fake_vf_en = 1;
-		func_attr = &cqm_handle->parent_cqm_handle->func_attribute;
-		gpa.pf_id = func_attr->func_global_idx;
-	} else {
-		gpa.fake_vf_en = 0;
-	}
-
 	memcpy(&cla_gpa_h, &gpa, sizeof(u32));
 	bat_entry_standerd->cla_gpa_h = cla_gpa_h;
 
@@ -379,13 +368,8 @@ s32 cqm_bat_update(struct cqm_handle *cqm_handle)
 	CQM_PTR_CHECK_RET(buf_in, CQM_FAIL, CQM_ALLOC_FAIL(buf_in));
 	buf_in->size = sizeof(struct cqm_cmdq_bat_update);
 
-	/* In non-fake mode, func_id is set to 0xffff, indicating the current func.
-	 * In fake mode, the value of func_id is specified. This is a fake func_id.
-	 */
-	if (cqm_handle->func_capability.fake_func_type == CQM_FAKE_FUNC_CHILD)
-		func_id = cqm_handle->func_attribute.func_global_idx;
-	else
-		func_id = 0xffff;
+	/* In non-fake mode, func_id is set to 0xffff */
+	func_id = 0xffff;
 
 	/* The LB scenario is supported.
 	 * The normal mode is the traditional mode and is configured on SMF0.
@@ -543,19 +527,6 @@ s32 cqm_cla_fill_buf(struct cqm_handle *cqm_handle, struct cqm_buf *cla_base_buf
 			spu_en = (u64)(func_attr->func_global_idx & 0x1) << 63;
 		} else {
 			spu_en = 0;
-		}
-
-		/* fake enable */
-		if (cqm_handle->func_capability.fake_func_type ==
-		    CQM_FAKE_FUNC_CHILD) {
-			fake_en = 1ULL << 62;
-			func_attr =
-			    &cqm_handle->parent_cqm_handle->func_attribute;
-			pf_id = func_attr->func_global_idx;
-			pf_id = (pf_id & 0x1f) << 57;
-		} else {
-			fake_en = 0;
-			pf_id = 0;
 		}
 
 		*base = (((((cla_sub_buf->buf_list[i].pa & CQM_CHIP_GPA_MASK) |
@@ -1248,14 +1219,8 @@ s32 cqm_cla_update(struct cqm_handle *cqm_handle, struct cqm_buf_list *buf_node_
 		}
 	}
 
-	/* In non-fake mode, set func_id to 0xffff.
-	 * Indicates the current func fake mode, set func_id to the
-	 * specified value, This is a fake func_id.
-	 */
-	if (cqm_handle->func_capability.fake_func_type == CQM_FAKE_FUNC_CHILD)
-		cmd.func_id = cqm_handle->func_attribute.func_global_idx;
-	else
-		cmd.func_id = 0xffff;
+	/* In non-fake mode, set func_id to 0xffff. */
+	cmd.func_id = 0xffff;
 
 	/* Mode 0 is hashed to 4 SMF engines (excluding PPF) by func ID. */
 	if (cqm_handle->func_capability.lb_mode == CQM_LB_MODE_NORMAL ||

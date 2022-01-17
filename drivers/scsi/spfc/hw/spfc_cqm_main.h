@@ -328,9 +328,6 @@ void cqm_mem_uninit(void *ex_handle);
 s32 cqm_event_init(void *ex_handle);
 void cqm_event_uninit(void *ex_handle);
 u8 cqm_aeq_callback(void *ex_handle, u8 event, u8 *data);
-s32 cqm_get_fake_func_type(struct cqm_handle *cqm_handle);
-s32 cqm_get_child_func_start(struct cqm_handle *cqm_handle);
-s32 cqm_get_child_func_number(struct cqm_handle *cqm_handle);
 
 s32 cqm3_init(void *ex_handle);
 void cqm3_uninit(void *ex_handle);

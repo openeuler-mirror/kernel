@@ -405,14 +405,8 @@ s32 cqm_cla_cache_invalid(struct cqm_handle *cqm_handle, dma_addr_t gpa, u32 cac
 	cmd.gpa_h = CQM_ADDR_HI(gpa);
 	cmd.gpa_l = CQM_ADDR_LW(gpa);
 
-	/* In non-fake mode, set func_id to 0xffff.
-	 * Indicate the current func fake mode.
-	 * The value of func_id is a fake func ID.
-	 */
-	if (cqm_handle->func_capability.fake_func_type == CQM_FAKE_FUNC_CHILD)
-		cmd.func_id = cqm_handle->func_attribute.func_global_idx;
-	else
-		cmd.func_id = 0xffff;
+	/* In non-fake mode, set func_id to 0xffff. */
+	cmd.func_id = 0xffff;
 
 	/* Mode 0 is hashed to 4 SMF engines (excluding PPF) by func ID. */
 	if (cqm_handle->func_capability.lb_mode == CQM_LB_MODE_NORMAL ||

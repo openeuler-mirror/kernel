@@ -40,7 +40,8 @@ struct cfg_cmd_dev_cap {
 
 	u8 sf_svc_attr;
 	u8 func_sf_en;
-	u16 rsvd_sf;
+	u8 lb_mode;
+	u8 smf_pg;
 
 	u32 max_conn_num;
 	u16 max_stick2cache_num;
