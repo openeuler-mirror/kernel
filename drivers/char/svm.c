@@ -134,7 +134,6 @@ struct meminfo {
 
 struct svm_mpam {
 #define SVM_GET_DEV_MPAM	(1 << 0)
-#define SVM_SET_DEV_MPAM	(1 << 1)
 	int flags;
 	int pasid;
 	int partid;
@@ -1528,84 +1527,6 @@ int __svm_get_mpam(struct svm_mpam *mpam)
 #endif
 	return 0;
 }
-
-static int svm_set_core_mpam(struct device *dev, void *data)
-{
-	int err = 0;
-	struct svm_mpam *mpam = data;
-
-	if (mpam->flags & SVM_SET_DEV_MPAM) {
-		err = arm_smmu_set_dev_mpam(dev, mpam->pasid, mpam->partid,
-				mpam->pmg, mpam->s1mpam);
-		if (err) {
-			dev_err(dev, "set mpam failed, %d\n", err);
-			return err;
-		}
-	}
-
-	return 0;
-}
-
-static int __svm_set_mpam(struct svm_mpam *mpam)
-{
-	int err = 0;
-#ifdef CONFIG_ACPI
-	struct core_device *cdev = NULL;
-#else
-	struct svm_device *sdev = NULL;
-#endif
-
-#ifdef CONFIG_ACPI
-	list_for_each_entry(cdev, &child_list, entry) {
-		err = svm_set_core_mpam(&cdev->dev, mpam);
-		if (err)
-			return err;
-	}
-#else
-	list_for_each_entry(sdev, &sdev_list, entry) {
-		err = device_for_each_child(sdev->dev, mpam, svm_set_core_mpam);
-		if (err)
-			return err;
-	}
-#endif
-
-	return 0;
-}
-
-/**
- * svm_set_mpam() - set mpam configuration of all core device in smmu
- * @pasid: substream id
- * @partid: mpam partition id
- * @pmg: mpam pmg
- * @s1mpam: 0 for ste mpam, 1 for cd mpam
- */
-int svm_set_mpam(int pasid, int partid, int pmg, int s1mpam)
-{
-	int err;
-	struct svm_mpam mpam, old_mpam;
-
-	old_mpam.flags = SVM_GET_DEV_MPAM;
-	old_mpam.pasid = pasid;
-	err = __svm_get_mpam(&old_mpam);
-	if (err)
-		return err;
-
-	mpam.flags = SVM_SET_DEV_MPAM;
-	mpam.pasid = pasid;
-	mpam.partid = partid;
-	mpam.pmg = pmg;
-	mpam.s1mpam = s1mpam;
-	err = __svm_set_mpam(&mpam);
-	if (err)
-		goto rollback;
-
-	return 0;
-
-rollback:
-	__svm_set_mpam(&old_mpam);
-	return err;
-}
-EXPORT_SYMBOL_GPL(svm_set_mpam);
 
 /**
  * svm_get_mpam() - get smmu mpam configuration of core device
