@@ -440,8 +440,25 @@ static void hns3_update_limit_promisc_mode(struct net_device *netdev,
 	hns3_request_update_promisc_mode(handle);
 }
 
+static void hns3_update_state(struct net_device *netdev,
+			      enum hns3_nic_state state, bool enable)
+{
+	struct hns3_nic_priv *priv = netdev_priv(netdev);
+
+	if (enable)
+		set_bit(state, &priv->state);
+	else
+		clear_bit(state, &priv->state);
+}
+
+static void hns3_update_push_state(struct net_device *netdev, bool enable)
+{
+	hns3_update_state(netdev, HNS3_NIC_STATE_TX_PUSH_ENABLE, enable);
+}
+
 static const struct hns3_pflag_desc hns3_priv_flags[HNAE3_PFLAG_MAX] = {
-	{ "limit_promisc",	hns3_update_limit_promisc_mode }
+	{ "limit_promisc",	hns3_update_limit_promisc_mode },
+	{ "tx_push_enable",	hns3_update_push_state }
 };
 
 static int hns3_get_sset_count(struct net_device *netdev, int stringset)

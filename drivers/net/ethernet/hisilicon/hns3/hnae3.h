@@ -817,6 +817,7 @@ struct hnae3_roce_private_info {
 
 enum hnae3_pflag {
 	HNAE3_PFLAG_LIMIT_PROMISC,
+	HNAE3_PFLAG_PUSH_ENABLE,
 	HNAE3_PFLAG_MAX
 };
 

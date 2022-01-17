@@ -5161,8 +5161,11 @@ static void hns3_state_init(struct hnae3_handle *handle)
 
 	set_bit(HNS3_NIC_STATE_INITED, &priv->state);
 
-	if (test_bit(HNAE3_DEV_SUPPORT_TX_PUSH_B, ae_dev->caps))
+	if (test_bit(HNAE3_DEV_SUPPORT_TX_PUSH_B, ae_dev->caps)) {
 		set_bit(HNS3_NIC_STATE_TX_PUSH_ENABLE, &priv->state);
+		handle->priv_flags |= BIT(HNAE3_PFLAG_PUSH_ENABLE);
+		set_bit(HNAE3_PFLAG_PUSH_ENABLE, &handle->supported_pflags);
+	}
 
 	if (ae_dev->dev_version >= HNAE3_DEVICE_VERSION_V3)
 		set_bit(HNAE3_PFLAG_LIMIT_PROMISC, &handle->supported_pflags);
