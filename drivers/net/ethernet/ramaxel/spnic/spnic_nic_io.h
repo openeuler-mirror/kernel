@@ -101,8 +101,7 @@ static inline u16 spnic_get_sq_local_pi(struct spnic_io_queue *sq)
  */
 static inline u16 spnic_get_sq_hw_ci(struct spnic_io_queue *sq)
 {
-	return WQ_MASK_IDX(&sq->wq,
-			   sphw_hw_cpu16(*(u16 *)sq->tx.cons_idx_addr));
+	return WQ_MASK_IDX(&sq->wq, *(u16 *)sq->tx.cons_idx_addr);
 }
 
 /* *
@@ -281,9 +280,6 @@ static inline void spnic_write_db(struct spnic_io_queue *queue, int cos, u8 cfla
 	db.db_info = DB_INFO_SET(SRC_TYPE, TYPE) | DB_INFO_SET(cflag, CFLAG) |
 			DB_INFO_SET(cos, COS) | DB_INFO_SET(queue->q_id, QID);
 	db.pi_hi = DB_PI_HIGH(pi);
-	/* Data should be written to HW in Big Endian Format */
-	db.db_info = sphw_hw_be32(db.db_info);
-	db.pi_hi = sphw_hw_be32(db.pi_hi);
 
 	wmb(); /* Write all before the doorbell */
 

@@ -86,9 +86,9 @@ static void txq_stats_init(struct spnic_txq *txq)
 
 static inline void spnic_set_buf_desc(struct spnic_sq_bufdesc *buf_descs, dma_addr_t addr, u32 len)
 {
-	buf_descs->hi_addr = sphw_hw_be32(upper_32_bits(addr));
-	buf_descs->lo_addr = sphw_hw_be32(lower_32_bits(addr));
-	buf_descs->len  = sphw_hw_be32(len);
+	buf_descs->hi_addr = upper_32_bits(addr);
+	buf_descs->lo_addr = lower_32_bits(addr);
+	buf_descs->len = len;
 }
 
 static int tx_map_skb(struct spnic_nic_dev *nic_dev, struct sk_buff *skb,
@@ -112,8 +112,8 @@ static int tx_map_skb(struct spnic_nic_dev *nic_dev, struct sk_buff *skb,
 
 	dma_info[0].len = skb_headlen(skb);
 
-	wqe_desc->hi_addr = sphw_hw_be32(upper_32_bits(dma_info[0].dma));
-	wqe_desc->lo_addr = sphw_hw_be32(lower_32_bits(dma_info[0].dma));
+	wqe_desc->hi_addr = upper_32_bits(dma_info[0].dma);
+	wqe_desc->lo_addr = lower_32_bits(dma_info[0].dma);
 
 	wqe_desc->ctrl_len = dma_info[0].len;
 
@@ -525,12 +525,10 @@ static netdev_tx_t spnic_send_one_skb(struct sk_buff *skb, struct net_device *ne
 
 	owner = spnic_set_wqe_combo(txq, &wqe_combo, offload, num_sge, &pi);
 	if (offload) {
-		/* ip6_frag_id is big endiant, not need to transfer */
-		wqe_combo.task->ip_identify = sphw_hw_be32(task.ip_identify);
-		wqe_combo.task->pkt_info0 = sphw_hw_be32(task.pkt_info0);
-		wqe_combo.task->pkt_info2 = sphw_hw_be32(task.pkt_info2);
-		wqe_combo.task->vlan_offload =
-			sphw_hw_be32(task.vlan_offload);
+		wqe_combo.task->ip_identify = task.ip_identify;
+		wqe_combo.task->pkt_info0 = task.pkt_info0;
+		wqe_combo.task->pkt_info2 = task.pkt_info2;
+		wqe_combo.task->vlan_offload = task.vlan_offload;
 	}
 
 	tx_info = &txq->tx_info[pi];

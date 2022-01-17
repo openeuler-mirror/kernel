@@ -93,18 +93,6 @@ static inline void sphw_set_sge(struct sphw_sge *sge, dma_addr_t addr, int len)
 	sge->len = len;
 }
 
-#define sphw_hw_be32(val) (val)
-#define sphw_hw_cpu32(val) (val)
-#define sphw_hw_cpu16(val) (val)
-
-static inline void sphw_hw_be32_len(void *data, int len)
-{
-}
-
-static inline void sphw_hw_cpu32_len(void *data, int len)
-{
-}
-
 #define sdk_err(dev, format, ...) dev_err(dev, "[COMM]" format, ##__VA_ARGS__)
 #define sdk_warn(dev, format, ...) dev_warn(dev, "[COMM]" format, ##__VA_ARGS__)
 #define sdk_notice(dev, format, ...) dev_notice(dev, "[COMM]" format, ##__VA_ARGS__)

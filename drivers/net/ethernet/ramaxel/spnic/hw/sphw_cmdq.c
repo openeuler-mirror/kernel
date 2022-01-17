@@ -343,10 +343,6 @@ static void cmdq_set_db(struct sphw_cmdq *cmdq,
 
 	cmdq_fill_db(&db, cmdq_type, prod_idx);
 
-	/* The data that is written to HW should be in Big Endian Format */
-	db.db_info = sphw_hw_be32(db.db_info);
-	db.db_head = sphw_hw_be32(db.db_head);
-
 	wmb();	/* write all before the doorbell */
 	writeq(*((u64 *)&db), CMDQ_DB_ADDR(cmdq->db_base, prod_idx));
 }
@@ -482,24 +478,21 @@ static void cmdq_update_cmd_status(struct sphw_cmdq *cmdq, u16 prod_idx,
 	cmd_info = &cmdq->cmd_infos[prod_idx];
 
 	if (cmd_info->errcode) {
-		status_info = sphw_hw_cpu32(wqe_lcmd->status.status_info);
+		status_info = wqe_lcmd->status.status_info;
 		*cmd_info->errcode = WQE_ERRCODE_GET(status_info, VAL);
 	}
 
 	if (cmd_info->direct_resp)
-		*cmd_info->direct_resp =
-			sphw_hw_cpu32(wqe_lcmd->completion.direct_resp);
+		*cmd_info->direct_resp = wqe_lcmd->completion.direct_resp;
 }
 
 static int sphw_cmdq_sync_timeout_check(struct sphw_cmdq *cmdq, struct sphw_cmdq_wqe *wqe, u16 pi)
 {
 	struct sphw_cmdq_wqe_lcmd *wqe_lcmd;
-	struct sphw_ctrl *ctrl;
 	u32 ctrl_info;
 
 	wqe_lcmd = &wqe->wqe_lcmd;
-	ctrl = &wqe_lcmd->ctrl;
-	ctrl_info = sphw_hw_cpu32((ctrl)->ctrl_info);
+	ctrl_info = wqe_lcmd->ctrl.ctrl_info;
 	if (!WQE_COMPLETED(ctrl_info)) {
 		sdk_info(cmdq->hwdev->dev_hdl, "Cmdq sync command check busy bit not set\n");
 		return -EFAULT;
@@ -640,7 +633,7 @@ static int cmdq_sync_cmd_direct_resp(struct sphw_cmdq *cmdq, u8 mod,
 	struct sphw_cmdq_cmd_info *cmd_info = NULL, saved_cmd_info;
 	struct completion done;
 	u16 curr_prod_idx, next_prod_idx;
-	int wrapped, errcode = 0, wqe_size = WQE_LCMD_SIZE;
+	int wrapped, errcode = 0;
 	int cmpt_code = CMDQ_SEND_CMPT_CODE;
 	u64 curr_msg_id;
 	int err;
@@ -681,9 +674,6 @@ static int cmdq_sync_cmd_direct_resp(struct sphw_cmdq *cmdq, u8 mod,
 
 	cmdq_set_lcmd_wqe(&wqe, SYNC_CMD_DIRECT_RESP, buf_in, NULL,
 			  wrapped, mod, cmd, curr_prod_idx);
-
-	/* The data that is written to HW should be in Big Endian Format */
-	sphw_hw_be32_len(&wqe, wqe_size);
 
 	/* CMDQ WQE is not shadow, therefore wqe will be written to wq */
 	cmdq_wqe_fill(curr_wqe, &wqe);
@@ -726,7 +716,7 @@ static int cmdq_sync_cmd_detail_resp(struct sphw_cmdq *cmdq, u8 mod, u8 cmd,
 	struct sphw_cmdq_cmd_info *cmd_info = NULL, saved_cmd_info;
 	struct completion done;
 	u16 curr_prod_idx, next_prod_idx;
-	int wrapped, errcode = 0, wqe_size = WQE_LCMD_SIZE;
+	int wrapped, errcode = 0;
 	int cmpt_code = CMDQ_SEND_CMPT_CODE;
 	u64 curr_msg_id;
 	int err;
@@ -768,8 +758,6 @@ static int cmdq_sync_cmd_detail_resp(struct sphw_cmdq *cmdq, u8 mod, u8 cmd,
 	cmdq_set_lcmd_wqe(&wqe, SYNC_CMD_SGE_RESP, buf_in, buf_out,
 			  wrapped, mod, cmd, curr_prod_idx);
 
-	sphw_hw_be32_len(&wqe, wqe_size);
-
 	cmdq_wqe_fill(curr_wqe, &wqe);
 
 	(cmd_info->cmdq_msg_id)++;
@@ -805,7 +793,6 @@ static int cmdq_async_cmd(struct sphw_cmdq *cmdq, u8 mod, u8 cmd,
 {
 	struct sphw_cmdq_cmd_info *cmd_info = NULL;
 	struct sphw_wq *wq = &cmdq->wq;
-	int wqe_size = WQE_LCMD_SIZE;
 	u16 curr_prod_idx, next_prod_idx;
 	struct sphw_cmdq_wqe *curr_wqe = NULL, wqe;
 	int wrapped, err;
@@ -832,8 +819,6 @@ static int cmdq_async_cmd(struct sphw_cmdq *cmdq, u8 mod, u8 cmd,
 	cmdq_set_lcmd_wqe(&wqe, ASYNC_CMD, buf_in, NULL, wrapped,
 			  mod, cmd, curr_prod_idx);
 
-	/* The data that is written to HW should be in Big Endian Format */
-	sphw_hw_be32_len(&wqe, wqe_size);
 	cmdq_wqe_fill(curr_wqe, &wqe);
 
 	cmd_info = &cmdq->cmd_infos[curr_prod_idx];
@@ -858,7 +843,7 @@ int cmdq_set_arm_bit(struct sphw_cmdq *cmdq, const void *buf_in,
 	struct sphw_wq *wq = &cmdq->wq;
 	struct sphw_cmdq_wqe *curr_wqe = NULL, wqe;
 	u16 curr_prod_idx, next_prod_idx;
-	int wrapped, wqe_size = WQE_SCMD_SIZE;
+	int wrapped;
 
 	/* Keep wrapped and doorbell index correct. bh - for tasklet(ceq) */
 	spin_lock_bh(&cmdq->cmdq_lock);
@@ -882,9 +867,6 @@ int cmdq_set_arm_bit(struct sphw_cmdq *cmdq, const void *buf_in,
 	cmdq_set_inline_wqe(&wqe, SYNC_CMD_DIRECT_RESP, buf_in, in_size, NULL,
 			    wrapped, SPHW_MOD_COMM, CMDQ_SET_ARM_CMD,
 			    curr_prod_idx);
-
-	/* The data that is written to HW should be in Big Endian Format */
-	sphw_cpu_to_be32(&wqe, wqe_size);
 
 	/* cmdq wqe is not shadow, therefore wqe will be written to wq */
 	cmdq_wqe_fill(curr_wqe, &wqe);
@@ -1102,7 +1084,7 @@ static void clear_wqe_complete_bit(struct sphw_cmdq *cmdq,
 				   struct sphw_cmdq_wqe *wqe, u16 ci)
 {
 	struct sphw_ctrl *ctrl = NULL;
-	u32 header_info = sphw_hw_cpu32(WQE_HEADER(wqe)->header_info);
+	u32 header_info = WQE_HEADER(wqe)->header_info;
 	enum data_format df = CMDQ_WQE_HEADER_GET(header_info, DATA_FMT);
 
 	if (df == DATA_SGE)
@@ -1157,7 +1139,7 @@ static int cmdq_arm_ceq_handler(struct sphw_cmdq *cmdq,
 				struct sphw_cmdq_wqe *wqe, u16 ci)
 {
 	struct sphw_ctrl *ctrl = &wqe->inline_wqe.wqe_scmd.ctrl;
-	u32 ctrl_info = sphw_hw_cpu32((ctrl)->ctrl_info);
+	u32 ctrl_info = ctrl->ctrl_info;
 
 	if (!WQE_COMPLETED(ctrl_info))
 		return -EBUSY;
@@ -1188,7 +1170,6 @@ void sphw_cmdq_ceq_handler(void *handle, u32 ceqe_data)
 	struct sphw_hwdev *hwdev = cmdqs->hwdev;
 	struct sphw_cmdq_wqe *wqe = NULL;
 	struct sphw_cmdq_wqe_lcmd *wqe_lcmd = NULL;
-	struct sphw_ctrl *ctrl = NULL;
 	struct sphw_cmdq_cmd_info *cmd_info = NULL;
 	u32 ctrl_info;
 	u16 ci;
@@ -1216,8 +1197,7 @@ void sphw_cmdq_ceq_handler(void *handle, u32 ceqe_data)
 		default:
 			/* only arm bit is using scmd wqe, the wqe is lcmd */
 			wqe_lcmd = &wqe->wqe_lcmd;
-			ctrl = &wqe_lcmd->ctrl;
-			ctrl_info = sphw_hw_cpu32((ctrl)->ctrl_info);
+			ctrl_info = wqe_lcmd->ctrl.ctrl_info;
 
 			if (!WQE_COMPLETED(ctrl_info))
 				return;

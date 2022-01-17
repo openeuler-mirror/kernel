@@ -352,7 +352,7 @@ enum sq_wqe_tasksect_len_type {
 
 static inline u32 spnic_get_pkt_len_for_super_cqe(struct spnic_rq_cqe *cqe, bool last)
 {
-	u32 pkt_len = sphw_hw_cpu32(cqe->pkt_info);
+	u32 pkt_len = cqe->pkt_info;
 
 	if (!last)
 		return RQ_CQE_PKT_LEN_GET(pkt_len, FIRST_LEN);
@@ -376,7 +376,6 @@ static inline void spnic_prepare_sq_ctrl(struct spnic_sq_wqe_combo *wqe_combo,
 		    SQ_CTRL_SET(wqe_combo->wqe_type, EXTENDED) |
 		    SQ_CTRL_SET(owner, OWNER);
 
-		wqe_desc->ctrl_len = sphw_hw_be32(wqe_desc->ctrl_len);
 		/* compact wqe queue_info will transfer to ucode */
 		wqe_desc->queue_info = 0;
 		return;
@@ -388,8 +387,6 @@ static inline void spnic_prepare_sq_ctrl(struct spnic_sq_wqe_combo *wqe_combo,
 			      SQ_CTRL_SET(wqe_combo->wqe_type, EXTENDED) |
 			      SQ_CTRL_SET(owner, OWNER);
 
-	wqe_desc->ctrl_len = sphw_hw_be32(wqe_desc->ctrl_len);
-
 	wqe_desc->queue_info = queue_info;
 	wqe_desc->queue_info |= SQ_CTRL_QUEUE_INFO_SET(1U, UC);
 
@@ -400,8 +397,6 @@ static inline void spnic_prepare_sq_ctrl(struct spnic_sq_wqe_combo *wqe_combo,
 		wqe_desc->queue_info = SQ_CTRL_QUEUE_INFO_CLEAR(wqe_desc->queue_info, MSS);
 		wqe_desc->queue_info |= SQ_CTRL_QUEUE_INFO_SET(TX_MSS_MIN, MSS);
 	}
-
-	wqe_desc->queue_info = sphw_hw_be32(wqe_desc->queue_info);
 }
 
 /* *

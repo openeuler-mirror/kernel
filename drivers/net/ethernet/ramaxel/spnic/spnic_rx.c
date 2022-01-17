@@ -92,7 +92,6 @@ static u32 spnic_rx_fill_wqe(struct spnic_rxq *rxq)
 {
 	struct net_device *netdev = rxq->netdev;
 	struct spnic_nic_dev *nic_dev = netdev_priv(netdev);
-	int rq_wqe_len = rxq->rq->wq.wqebb_size;
 	struct spnic_rq_wqe *rq_wqe = NULL;
 	struct spnic_rx_info *rx_info = NULL;
 	u32 i;
@@ -113,7 +112,6 @@ static u32 spnic_rx_fill_wqe(struct spnic_rxq *rxq)
 			rq_wqe->normal_wqe.cqe_lo_addr = lower_32_bits(rx_info->cqe_dma);
 		}
 
-		sphw_hw_be32_len(rq_wqe, rq_wqe_len);
 		rx_info->rq_wqe = rq_wqe;
 	}
 
@@ -179,17 +177,12 @@ static u32 stub_spnic_rx_fill_buffers(struct spnic_rxq *rxq)
 		dma_addr = rx_info->buf_dma_addr;
 
 		if (rxq->rq->wqe_type == SPNIC_EXTEND_RQ_WQE) {
-			rq_wqe->extend_wqe.buf_desc.sge.hi_addr =
-				sphw_hw_be32(upper_32_bits(dma_addr));
-			rq_wqe->extend_wqe.buf_desc.sge.lo_addr =
-				sphw_hw_be32(lower_32_bits(dma_addr));
-			rq_wqe->extend_wqe.buf_desc.sge.len =
-				sphw_hw_be32(rx_info->skb_len);
+			rq_wqe->extend_wqe.buf_desc.sge.hi_addr = upper_32_bits(dma_addr);
+			rq_wqe->extend_wqe.buf_desc.sge.lo_addr = lower_32_bits(dma_addr);
+			rq_wqe->extend_wqe.buf_desc.sge.len = rx_info->skb_len;
 		} else {
-			rq_wqe->normal_wqe.buf_hi_addr =
-				sphw_hw_be32(upper_32_bits(dma_addr));
-			rq_wqe->normal_wqe.buf_lo_addr =
-				sphw_hw_be32(lower_32_bits(dma_addr));
+			rq_wqe->normal_wqe.buf_hi_addr = upper_32_bits(dma_addr);
+			rq_wqe->normal_wqe.buf_lo_addr = lower_32_bits(dma_addr);
 		}
 		rxq->next_to_update = (rxq->next_to_update + 1) & rxq->q_mask;
 	}
@@ -236,15 +229,11 @@ static u32 spnic_rx_fill_buffers(struct spnic_rxq *rxq)
 		rq_wqe = rx_info->rq_wqe;
 
 		if (rxq->rq->wqe_type == SPNIC_EXTEND_RQ_WQE) {
-			rq_wqe->extend_wqe.buf_desc.sge.hi_addr =
-				sphw_hw_be32(upper_32_bits(dma_addr));
-			rq_wqe->extend_wqe.buf_desc.sge.lo_addr =
-				sphw_hw_be32(lower_32_bits(dma_addr));
+			rq_wqe->extend_wqe.buf_desc.sge.hi_addr = upper_32_bits(dma_addr);
+			rq_wqe->extend_wqe.buf_desc.sge.lo_addr = lower_32_bits(dma_addr);
 		} else {
-			rq_wqe->normal_wqe.buf_hi_addr =
-				sphw_hw_be32(upper_32_bits(dma_addr));
-			rq_wqe->normal_wqe.buf_lo_addr =
-				sphw_hw_be32(lower_32_bits(dma_addr));
+			rq_wqe->normal_wqe.buf_hi_addr = upper_32_bits(dma_addr);
+			rq_wqe->normal_wqe.buf_lo_addr = lower_32_bits(dma_addr);
 		}
 		rxq->next_to_update = (rxq->next_to_update + 1) & rxq->q_mask;
 	}
@@ -784,7 +773,7 @@ int recv_one_pkt(struct spnic_rxq *rxq, struct spnic_rq_cqe *rx_cqe,
 	if (skb_is_nonlinear(skb))
 		spnic_pull_tail(skb);
 
-	offload_type = sphw_hw_cpu32(rx_cqe->offload_type);
+	offload_type = rx_cqe->offload_type;
 	spnic_rx_csum(rxq, offload_type, status, skb);
 
 	spnic_rx_gro(rxq, offload_type, skb);
@@ -867,7 +856,7 @@ static inline int recv_supper_cqe(struct spnic_rxq *rxq, struct spnic_rq_cqe *rx
 #define LRO_PKT_HDR_LEN_IPV4		66
 #define LRO_PKT_HDR_LEN_IPV6		86
 #define LRO_PKT_HDR_LEN(cqe)		\
-	(SPNIC_GET_RX_IP_TYPE(sphw_hw_cpu32((cqe)->offload_type)) == \
+	(SPNIC_GET_RX_IP_TYPE((cqe)->offload_type) == \
 	 SPNIC_RX_IPV6_PKT ? LRO_PKT_HDR_LEN_IPV6 : LRO_PKT_HDR_LEN_IPV4)
 
 static void stub_rx_recv_jumbo_pkt(struct spnic_rxq *rxq, struct sk_buff *head_skb,
@@ -997,7 +986,7 @@ int spnic_rx_poll(struct spnic_rxq *rxq, int budget)
 	while (likely(pkts < budget)) {
 		sw_ci = rxq->cons_idx & rxq->q_mask;
 		rx_cqe = rxq->rx_info[sw_ci].cqe;
-		status = sphw_hw_cpu32(rx_cqe->status);
+		status = rx_cqe->status;
 
 		if (!SPNIC_GET_RX_DONE(status))
 			break;
@@ -1005,8 +994,8 @@ int spnic_rx_poll(struct spnic_rxq *rxq, int budget)
 		/* make sure we read rx_done before packet length */
 		rmb();
 
-		vlan_len = sphw_hw_cpu32(rx_cqe->vlan_len);
-		pkt_info = sphw_hw_cpu32(rx_cqe->pkt_info);
+		vlan_len = rx_cqe->vlan_len;
+		pkt_info = rx_cqe->pkt_info;
 		pkt_len = SPNIC_GET_RX_PKT_LEN(vlan_len);
 
 		if (unlikely(SPNIC_GET_SUPER_CQE_EN(pkt_info))) {
