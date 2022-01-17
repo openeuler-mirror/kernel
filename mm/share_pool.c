@@ -3283,16 +3283,11 @@ EXPORT_SYMBOL_GPL(mg_sp_make_share_u2k);
  *
  * Procedure of unshare uva must be compatible with:
  *
- * 1. DVPP channel destroy procedure:
- * do_exit() -> exit_mm() (mm no longer in spg and current->mm == NULL) ->
- * exit_task_work() -> task_work_run() -> __fput() -> ... -> vdec_close() ->
- * sp_unshare(uva, SPG_ID_DEFAULT)
- *
- * 2. Process A once was the target of k2u(to group), then it exits.
+ * 1. Process A once was the target of k2u(to group), then it exits.
  * Guard worker kthread tries to free this uva and it must succeed, otherwise
  * spa of this uva leaks.
  *
- * This also means we must trust DVPP channel destroy and guard worker code.
+ * This also means we must trust guard worker code.
  */
 static int sp_unshare_uva(unsigned long uva, unsigned long size)
 {
@@ -3339,7 +3334,11 @@ static int sp_unshare_uva(unsigned long uva, unsigned long size)
 	}
 
 	if (spa->type == SPA_TYPE_K2TASK) {
-		if (!current->mm || spa->applier != current->tgid) {
+		/*
+		 * Only allow the original k2task applier process to unshare this uva.
+		 * Kthreads or other processes are not allowed to unshare the uva.
+		 */
+		if (spa->applier != current->tgid) {
 			pr_err_ratelimited("unshare uva(to task) no permission\n");
 			ret = -EPERM;
 			goto out_drop_area;
