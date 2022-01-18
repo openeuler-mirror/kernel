@@ -6254,6 +6254,10 @@ static int mem_cgroup_can_attach(struct cgroup_taskset *tset)
 	if (!p)
 		return 0;
 
+	ret = task_has_mem_in_hpool(p);
+	if (ret)
+		return ret;
+
 	/*
 	 * We are now commited to this value whatever it is. Changes in this
 	 * tunable will only affect upcoming migrations, not the current one.

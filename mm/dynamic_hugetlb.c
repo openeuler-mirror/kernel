@@ -122,6 +122,34 @@ static int hpool_split_page(struct dhugetlb_pool *hpool, int hpages_pool_idx)
 	return 0;
 }
 
+static int add_pages_to_percpu_pool(struct dhugetlb_pool *hpool,
+				    struct percpu_pages_pool *percpu_pool,
+				    unsigned long nr_pages)
+{
+	struct huge_pages_pool *hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_4K];
+	struct page *page, *next;
+	int ret, i = 0;
+
+	while (hpages_pool->free_normal_pages < nr_pages) {
+		ret = hpool_split_page(hpool, HUGE_PAGES_POOL_2M);
+		if (ret)
+			break;
+	}
+
+	list_for_each_entry_safe(page, next, &hpages_pool->hugepage_freelists, lru) {
+		list_del(&page->lru);
+		hpages_pool->free_normal_pages--;
+		list_add_tail(&page->lru, &percpu_pool->head_page);
+		percpu_pool->free_pages++;
+		if (++i == nr_pages)
+			break;
+	}
+
+	if (percpu_pool->free_pages == 0)
+		return -ENOMEM;
+	return 0;
+}
+
 static void reclaim_pages_from_percpu_pool(struct dhugetlb_pool *hpool,
 					struct percpu_pages_pool *percpu_pool,
 					unsigned long nr_pages)
@@ -348,6 +376,113 @@ static int set_hpool_in_dhugetlb_pagelist(unsigned long idx, struct dhugetlb_poo
 	read_unlock(&dhugetlb_pagelist_rwlock);
 
 	return 0;
+}
+
+static struct dhugetlb_pool *find_hpool_by_task(struct task_struct *tsk)
+{
+	struct mem_cgroup *memcg;
+
+	if (!dhugetlb_enabled)
+		return NULL;
+
+	rcu_read_lock();
+	memcg = mem_cgroup_from_task(tsk);
+	rcu_read_unlock();
+
+	if (!memcg)
+		return NULL;
+
+	return memcg->hpool;
+}
+
+int task_has_mem_in_hpool(struct task_struct *tsk)
+{
+	struct dhugetlb_pool *hpool;
+
+	if (!dhugetlb_enabled)
+		return 0;
+
+	hpool = find_hpool_by_task(tsk);
+
+	return hpool ? -EPERM : 0;
+}
+
+static bool should_allocate_from_dhugetlb_pool(gfp_t gfp_mask)
+{
+	gfp_t gfp = gfp_mask & GFP_HIGHUSER_MOVABLE;
+
+	if (current->flags & PF_KTHREAD)
+		return false;
+
+	/*
+	 * The cgroup only charges anonymous and file pages from usespage.
+	 * some filesystem maybe has masked out the __GFP_IO | __GFP_FS
+	 * to avoid recursive memory request. eg: loop device, xfs.
+	 */
+	if ((gfp | __GFP_IO | __GFP_FS) != GFP_HIGHUSER_MOVABLE)
+		return false;
+
+	return true;
+}
+
+static struct page *__alloc_page_from_dhugetlb_pool(void)
+{
+	struct percpu_pages_pool *percpu_pool;
+	struct dhugetlb_pool *hpool;
+	struct page *page = NULL;
+	unsigned long flags;
+
+	hpool = find_hpool_by_task(current);
+
+	if (!get_hpool_unless_zero(hpool))
+		return NULL;
+
+	percpu_pool = &hpool->percpu_pool[smp_processor_id()];
+	/*
+	 * Before we lock percpu_pool, must be sure hpool is unlocked.
+	 */
+	spin_lock_irqsave(&percpu_pool->lock, flags);
+
+	if (percpu_pool->free_pages == 0) {
+		int ret;
+
+		spin_lock(&hpool->lock);
+		ret = add_pages_to_percpu_pool(hpool, percpu_pool,
+						PERCPU_POOL_PAGE_BATCH);
+		spin_unlock(&hpool->lock);
+		if (ret)
+			goto unlock;
+	}
+
+	page = list_entry(percpu_pool->head_page.next, struct page, lru);
+	list_del(&page->lru);
+	percpu_pool->free_pages--;
+	percpu_pool->used_pages++;
+	SetPagePool(page);
+
+unlock:
+	spin_unlock_irqrestore(&percpu_pool->lock, flags);
+	put_hpool(hpool);
+	return page;
+}
+
+struct page *alloc_page_from_dhugetlb_pool(gfp_t gfp, unsigned int order,
+					   unsigned int flags)
+{
+	struct page *page = NULL;
+
+	if (!dhugetlb_enabled)
+		return NULL;
+
+	if (order != 0)
+		return NULL;
+
+	if (should_allocate_from_dhugetlb_pool(gfp))
+		page = __alloc_page_from_dhugetlb_pool();
+
+	if (page)
+		prep_new_page(page, order, gfp, flags);
+	return page;
 }
 
 static int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,

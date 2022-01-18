@@ -72,6 +72,7 @@
 #include <linux/khugepaged.h>
 #include <linux/buffer_head.h>
 #include <linux/vmalloc.h>
+#include <linux/dynamic_hugetlb.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
@@ -5159,6 +5160,11 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 	 * memory until all local zones are considered.
 	 */
 	alloc_flags |= alloc_flags_nofragment(ac.preferred_zoneref->zone, gfp);
+
+	/* Before alloc from buddy system, alloc from hpool firstly */
+	page = alloc_page_from_dhugetlb_pool(alloc_gfp, order, alloc_flags);
+	if (page)
+		goto out;
 
 	/* First allocation attempt */
 	page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac);

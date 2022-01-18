@@ -88,6 +88,10 @@ void hugetlb_pool_inherit(struct mem_cgroup *memcg, struct mem_cgroup *parent);
 int hugetlb_pool_destroy(struct cgroup *cgrp);
 void __init dynamic_hugetlb_init(void);
 
+struct page *alloc_page_from_dhugetlb_pool(gfp_t gfp, unsigned int order,
+					   unsigned int flags);
+int task_has_mem_in_hpool(struct task_struct *tsk);
+
 #else
 
 #define dhugetlb_enabled	0
@@ -108,5 +112,16 @@ static inline int hugetlb_pool_destroy(struct cgroup *cgrp)
 static inline void __init dynamic_hugetlb_init(void)
 {
 }
+
+static inline struct page *alloc_page_from_dhugetlb_pool(gfp_t gfp, unsigned int order,
+							 unsigned int flags)
+{
+	return NULL;
+}
+static inline int task_has_mem_in_hpool(struct task_struct *tsk)
+{
+	return 0;
+}
+
 #endif /* CONFIG_DYNAMIC_HUGETLB */
 #endif /* __LINUX_DYNAMIC_HUGETLB_H */
