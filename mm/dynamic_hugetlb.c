@@ -10,6 +10,11 @@
 
 #include "internal.h"
 
+#if (defined CONFIG_DYNAMIC_HUGETLB) && (!defined __GENKSYMS__)
+#define CREATE_TRACE_POINTS
+#include <trace/events/dynamic_hugetlb.h>
+#endif
+
 static bool enable_dhugetlb = false;
 DEFINE_STATIC_KEY_FALSE(dhugetlb_enabled_key);
 
@@ -110,6 +115,7 @@ static int hpool_split_page(struct dhugetlb_pool *hpool, int hpages_pool_idx)
 	split_page->start_pfn = page_to_pfn(page);
 	list_add(&split_page->head_pages, &hpages_pool->hugepage_splitlists);
 	hpages_pool->split_normal_pages++;
+	trace_dynamic_hugetlb_split_merge(hpool, page, DHUGETLB_SPLIT, page_size(page));
 
 	switch (hpages_pool_idx) {
 		case HUGE_PAGES_POOL_1G:
@@ -245,6 +251,7 @@ merge:
 			src_hpages_pool->free_normal_pages--;
 		}
 		add_new_page_to_pool(hpool, page, hpages_pool_idx);
+		trace_dynamic_hugetlb_split_merge(hpool, page, DHUGETLB_MERGE, page_size(page));
 		return 0;
 next:
 		continue;
@@ -602,10 +609,14 @@ int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_in
 	if (delta > 0 && delta <= hpages_pool->free_huge_pages - hpages_pool->resv_huge_pages) {
 		hpages_pool->resv_huge_pages += delta;
 		ret = 0;
+		trace_dynamic_hugetlb_acct_memory(hpool, hpages_pool->resv_huge_pages,
+						  DHUGETLB_RESV, huge_page_size(h));
 	} else if (delta < 0) {
 		hpages_pool->resv_huge_pages -= (unsigned long)(-delta);
 		WARN_ON(hpages_pool->resv_huge_pages < 0);
 		ret = 0;
+		trace_dynamic_hugetlb_acct_memory(hpool, hpages_pool->resv_huge_pages,
+						  DHUGETLB_UNRESV, huge_page_size(h));
 	}
 	spin_unlock(&hpool->lock);
 
@@ -636,7 +647,11 @@ struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetl
 		if (need_unreserved) {
 			SetHPageRestoreReserve(page);
 			hpages_pool->resv_huge_pages--;
+			trace_dynamic_hugetlb_acct_memory(hpool, hpages_pool->resv_huge_pages,
+							  DHUGETLB_UNRESV, huge_page_size(h));
 		}
+		trace_dynamic_hugetlb_alloc_free(hpool, page, hpages_pool->free_huge_pages,
+						 DHUGETLB_ALLOC, huge_page_size(h));
 	}
 	if (page) {
 		INIT_LIST_HEAD(&page->lru);
@@ -673,8 +688,13 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 	list_add(&page->lru, &hpages_pool->hugepage_freelists);
 	hpages_pool->free_huge_pages++;
 	hpages_pool->used_huge_pages--;
-	if (restore_reserve)
+	if (restore_reserve) {
 		hpages_pool->resv_huge_pages++;
+		trace_dynamic_hugetlb_acct_memory(hpool, hpages_pool->resv_huge_pages,
+						  DHUGETLB_RESV, huge_page_size(h));
+	}
+	trace_dynamic_hugetlb_alloc_free(hpool, page, hpages_pool->free_huge_pages,
+					 DHUGETLB_FREE, huge_page_size(h));
 	spin_unlock(&hpool->lock);
 	put_hpool(hpool);
 }
