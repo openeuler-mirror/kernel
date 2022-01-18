@@ -100,6 +100,8 @@ void link_hpool(struct hugetlbfs_inode_info *p);
 void unlink_hpool(struct hugetlbfs_inode_info *p);
 bool file_has_mem_in_hpool(struct hugetlbfs_inode_info *p);
 int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_info *p);
+struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetlb_pool *hpool,
+						bool need_unreserved);
 
 #else
 
@@ -153,6 +155,12 @@ static inline bool file_has_mem_in_hpool(struct hugetlbfs_inode_info *p)
 static inline int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_info *p)
 {
 	return 0;
+}
+static inline
+struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetlb_pool *hpool,
+						bool need_unreserved)
+{
+	return NULL;
 }
 #endif
 

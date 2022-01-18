@@ -103,7 +103,7 @@ static int hpool_split_page(struct dhugetlb_pool *hpool, int hpages_pool_idx)
 	if (!split_page)
 		return -ENOMEM;
 
-	page = list_entry(hpages_pool->hugepage_freelists.next, struct page, lru);
+	page = list_entry(hpages_pool->hugepage_freelists.prev, struct page, lru);
 	list_del(&page->lru);
 	hpages_pool->free_normal_pages--;
 
@@ -610,6 +610,43 @@ int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_in
 	spin_unlock(&hpool->lock);
 
 	return ret;
+}
+
+struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetlb_pool *hpool,
+						bool need_unreserved)
+{
+	struct huge_pages_pool *hpages_pool;
+	struct page *page = NULL;
+	unsigned long flags;
+
+	if (!dhugetlb_enabled)
+		return NULL;
+
+	spin_lock_irqsave(&hpool->lock, flags);
+	if (hstate_is_gigantic(h))
+		hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_1G];
+	else
+		hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_2M];
+
+	if (hpages_pool->free_huge_pages) {
+		page = list_entry(hpages_pool->hugepage_freelists.next, struct page, lru);
+		list_del(&page->lru);
+		hpages_pool->free_huge_pages--;
+		hpages_pool->used_huge_pages++;
+		if (need_unreserved) {
+			SetHPageRestoreReserve(page);
+			hpages_pool->resv_huge_pages--;
+		}
+	}
+	if (page) {
+		INIT_LIST_HEAD(&page->lru);
+		set_compound_page_dtor(page, HUGETLB_PAGE_DTOR);
+		set_page_refcounted(page);
+		SetPagePool(page);
+	}
+	spin_unlock_irqrestore(&hpool->lock, flags);
+
+	return page;
 }
 
 static int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,

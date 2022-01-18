@@ -2534,6 +2534,19 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	if (ret)
 		goto out_uncharge_cgroup_reservation;
 
+	if (file_has_mem_in_hpool(info)) {
+		bool need_unreserved = false;
+
+		if (!avoid_reserve && vma_has_reserves(vma, gbl_chg))
+			need_unreserved = true;
+		page = alloc_huge_page_from_dhugetlb_pool(h, info->hpool, need_unreserved);
+		if (!page)
+			goto out_uncharge_cgroup;
+		spin_lock_irq(&hugetlb_lock);
+		list_add(&page->lru, &h->hugepage_activelist);
+		goto out;
+	}
+
 	spin_lock_irq(&hugetlb_lock);
 	/*
 	 * glb_chg is passed to indicate whether or not a page must be taken
@@ -2554,6 +2567,7 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 		list_add(&page->lru, &h->hugepage_activelist);
 		/* Fall through */
 	}
+out:
 	hugetlb_cgroup_commit_charge(idx, pages_per_huge_page(h), h_cg, page);
 	/* If allocation is not consuming a reservation, also store the
 	 * hugetlb_cgroup pointer on the page.
