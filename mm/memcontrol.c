@@ -5212,6 +5212,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write = write_2M_reserved_pages,
 		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
 	},
+	{
+		.name = "dhugetlb.disable_normal_pages",
+		.read_u64 = normal_pages_disabled_read,
+		.write_u64 = normal_pages_disabled_write,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
+	},
 #endif
 #ifdef CONFIG_NUMA
 	{

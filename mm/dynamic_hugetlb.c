@@ -449,6 +449,8 @@ static struct page *__alloc_page_from_dhugetlb_pool(void)
 	if (!get_hpool_unless_zero(hpool))
 		return NULL;
 
+	if (hpool->normal_pages_disabled)
+		goto out;
 	percpu_pool = &hpool->percpu_pool[smp_processor_id()];
 	/*
 	 * Before we lock percpu_pool, must be sure hpool is unlocked.
@@ -474,6 +476,7 @@ static struct page *__alloc_page_from_dhugetlb_pool(void)
 
 unlock:
 	spin_unlock_irqrestore(&percpu_pool->lock, flags);
+out:
 	put_hpool(hpool);
 	return page;
 }
@@ -808,6 +811,33 @@ ssize_t write_1G_reserved_pages(struct kernfs_open_file *of,
 	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
 
 	return update_reserved_pages(memcg, buf, HUGE_PAGES_POOL_1G) ?: nbytes;
+}
+
+int normal_pages_disabled_write(struct cgroup_subsys_state *css,
+			       struct cftype *cft, u64 val)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+	struct dhugetlb_pool *hpool = memcg->hpool;
+
+	if (!dhugetlb_enabled || !hpool)
+		return -EINVAL;
+	if (!((val == 0) || (val == 1)))
+		return -EINVAL;
+
+	hpool->normal_pages_disabled = val;
+	return 0;
+}
+
+u64 normal_pages_disabled_read(struct cgroup_subsys_state *css,
+			      struct cftype *cft)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
+	struct dhugetlb_pool *hpool = memcg->hpool;
+
+	if (!dhugetlb_enabled || !hpool)
+		return 0;
+
+	return hpool->normal_pages_disabled;
 }
 
 ssize_t write_hugepage_to_hpool(struct kernfs_open_file *of,
