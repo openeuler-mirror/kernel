@@ -119,6 +119,126 @@ static int hpool_split_page(struct dhugetlb_pool *hpool, int hpages_pool_idx)
 	return 0;
 }
 
+static void reclaim_pages_from_percpu_pool(struct dhugetlb_pool *hpool,
+					struct percpu_pages_pool *percpu_pool,
+					unsigned long nr_pages)
+{
+	struct huge_pages_pool *hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_4K];
+	struct page *page, *next;
+	int i = 0;
+
+	list_for_each_entry_safe(page, next, &percpu_pool->head_page, lru) {
+		list_del(&page->lru);
+		percpu_pool->free_pages--;
+		list_add(&page->lru, &hpages_pool->hugepage_freelists);
+		hpages_pool->free_normal_pages++;
+		if (++i == nr_pages)
+			break;
+	}
+}
+
+static void clear_percpu_pools(struct dhugetlb_pool *hpool)
+{
+	struct percpu_pages_pool *percpu_pool;
+	int i;
+
+	lockdep_assert_held(&hpool->lock);
+
+	spin_unlock(&hpool->lock);
+	for (i = 0; i < NR_PERCPU_POOL; i++)
+		spin_lock(&hpool->percpu_pool[i].lock);
+	spin_lock(&hpool->lock);
+	for (i = 0; i < NR_PERCPU_POOL; i++) {
+		percpu_pool = &hpool->percpu_pool[i];
+		reclaim_pages_from_percpu_pool(hpool, percpu_pool, percpu_pool->free_pages);
+	}
+	for (i = 0; i < NR_PERCPU_POOL; i++)
+		spin_unlock(&hpool->percpu_pool[i].lock);
+}
+
+static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx)
+{
+	struct huge_pages_pool *hpages_pool, *src_hpages_pool;
+	struct split_hugepage *split_page, *split_next;
+	unsigned long nr_pages, block_size;
+	struct page *page;
+	int i;
+
+	lockdep_assert_held(&hpool->lock);
+
+	if (hpages_pool_idx < 0 || hpages_pool_idx >= HUGE_PAGES_POOL_MAX - 1)
+		return -EINVAL;
+
+	switch (hpages_pool_idx) {
+		case HUGE_PAGES_POOL_1G:
+			nr_pages = 1 << (PUD_SHIFT - PMD_SHIFT);
+			block_size = 1 << (PMD_SHIFT - PAGE_SHIFT);
+			break;
+		case HUGE_PAGES_POOL_2M:
+			nr_pages = 1 << (PMD_SHIFT - PAGE_SHIFT);
+			block_size = 1;
+			break;
+	}
+
+	hpages_pool = &hpool->hpages_pool[hpages_pool_idx];
+	src_hpages_pool = &hpool->hpages_pool[hpages_pool_idx + 1];
+	if (!hpages_pool->split_normal_pages)
+		return -ENOMEM;
+
+	list_for_each_entry_safe(split_page, split_next, &hpages_pool->hugepage_splitlists, head_pages) {
+		clear_percpu_pools(hpool);
+		page = pfn_to_page(split_page->start_pfn);
+		for (i = 0; i < nr_pages; i+= block_size) {
+			if (PagePool(&page[i]))
+				goto next;
+		}
+		list_del(&split_page->head_pages);
+		hpages_pool->split_normal_pages--;
+		kfree(split_page);
+		for (i = 0; i < nr_pages; i+= block_size) {
+			list_del(&page[i].lru);
+			src_hpages_pool->free_normal_pages--;
+		}
+		add_new_page_to_pool(hpool, page, hpages_pool_idx);
+		return 0;
+next:
+		continue;
+	}
+	return -ENOMEM;
+}
+
+static int hugetlb_pool_merge_all_pages(struct dhugetlb_pool *hpool)
+{
+	int ret = 0;
+
+	spin_lock(&hpool->lock);
+	while (hpool->hpages_pool[HUGE_PAGES_POOL_2M].split_normal_pages) {
+		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_2M);
+		if (ret) {
+			pr_err("dynamic_hugetlb: some 4K pages are still in use, delete memcg: %s failed!\n",
+				hpool->attach_memcg->css.cgroup->kn->name);
+			goto out;
+		}
+	}
+	while (hpool->hpages_pool[HUGE_PAGES_POOL_1G].split_normal_pages) {
+		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_1G);
+		if (ret) {
+			pr_err("dynamic_hugetlb: some 2M pages are still in use, delete memcg: %s failed!\n",
+				hpool->attach_memcg->css.cgroup->kn->name);
+			goto out;
+		}
+	}
+	if (hpool->hpages_pool[HUGE_PAGES_POOL_1G].used_huge_pages) {
+		ret = -ENOMEM;
+		pr_err("dynamic_hugetlb: some 1G pages are still in use, delete memcg: %s failed!\n",
+			hpool->attach_memcg->css.cgroup->kn->name);
+		goto out;
+	}
+out:
+	spin_unlock(&hpool->lock);
+	return ret;
+}
+
 static bool get_hpool_unless_zero(struct dhugetlb_pool *hpool)
 {
 	if (!dhugetlb_enabled || !hpool)
@@ -315,6 +435,9 @@ int hugetlb_pool_destroy(struct cgroup *cgrp)
 	if (!hpool || hpool->attach_memcg != memcg)
 		return 0;
 
+	ret = hugetlb_pool_merge_all_pages(hpool);
+	if (ret)
+		return -ENOMEM;
 	ret = free_hugepage_to_hugetlb(hpool);
 	memcg->hpool = NULL;
 
@@ -390,6 +513,10 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 		delta = nr_pages - hpages_pool->nr_huge_pages;
 		while (delta > hpages_pool->free_normal_pages) {
 			if (hpool_split_page(hpool, hpages_pool_idx - 1))
+				break;
+		}
+		while (delta > hpages_pool->free_normal_pages) {
+			if (hpool_merge_page(hpool, hpages_pool_idx))
 				break;
 		}
 		delta = min(nr_pages - hpages_pool->nr_huge_pages, hpages_pool->free_normal_pages);
