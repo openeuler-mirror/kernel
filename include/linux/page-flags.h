@@ -139,6 +139,7 @@ enum pageflags {
 #ifdef CONFIG_64BIT
 	PG_arch_2,
 #endif
+	PG_pool,		/* Used to track page allocated from dynamic hugetlb pool */
 
 	/* Add reserved page flags for internal extension. For the new page
 	 * flags which backported from kernel upstream, please place them
@@ -460,6 +461,11 @@ PAGEFLAG(Idle, idle, PF_ANY)
  * any possible races on the setting or clearing of the bit.
  */
 __PAGEFLAG(Reported, reported, PF_NO_COMPOUND)
+
+/*
+ * PagePool() is used to track page allocated from hpool.
+ */
+PAGEFLAG(Pool, pool, PF_NO_TAIL)
 
 /*
  * On an anonymous page mapped into a user virtual memory area,
