@@ -1583,6 +1583,19 @@ void free_huge_page(struct page *page)
 	restore_reserve = HPageRestoreReserve(page);
 	ClearHPageRestoreReserve(page);
 
+	if (dhugetlb_enabled && PagePool(page)) {
+		spin_lock(&hugetlb_lock);
+		ClearHPageMigratable(page);
+		list_del(&page->lru);
+		hugetlb_cgroup_uncharge_page(hstate_index(h),
+					     pages_per_huge_page(h), page);
+		hugetlb_cgroup_uncharge_page_rsvd(hstate_index(h),
+						  pages_per_huge_page(h), page);
+		spin_unlock(&hugetlb_lock);
+		free_huge_page_to_dhugetlb_pool(page, restore_reserve);
+		return;
+	}
+
 	/*
 	 * If HPageRestoreReserve was set on page, page allocation consumed a
 	 * reservation.  If the page was associated with a subpool, there

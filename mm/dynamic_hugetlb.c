@@ -649,6 +649,36 @@ struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetl
 	return page;
 }
 
+void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
+{
+	struct hstate *h = page_hstate(page);
+	struct huge_pages_pool *hpages_pool;
+	struct dhugetlb_pool *hpool;
+
+	hpool = find_hpool_by_dhugetlb_pagelist(page);
+
+	if (!get_hpool_unless_zero(hpool)) {
+		pr_err("dhugetlb: free error: get hpool failed\n");
+		return;
+	}
+
+	spin_lock(&hpool->lock);
+	ClearPagePool(page);
+	set_compound_page_dtor(page, NULL_COMPOUND_DTOR);
+	if (hstate_is_gigantic(h))
+		hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_1G];
+	else
+		hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_2M];
+
+	list_add(&page->lru, &hpages_pool->hugepage_freelists);
+	hpages_pool->free_huge_pages++;
+	hpages_pool->used_huge_pages--;
+	if (restore_reserve)
+		hpages_pool->resv_huge_pages++;
+	spin_unlock(&hpool->lock);
+	put_hpool(hpool);
+}
+
 static int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
 				       unsigned long nid, unsigned long nr_pages)
 {

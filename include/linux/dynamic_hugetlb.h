@@ -102,6 +102,7 @@ bool file_has_mem_in_hpool(struct hugetlbfs_inode_info *p);
 int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_info *p);
 struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetlb_pool *hpool,
 						bool need_unreserved);
+void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve);
 
 #else
 
@@ -161,6 +162,10 @@ struct page *alloc_huge_page_from_dhugetlb_pool(struct hstate *h, struct dhugetl
 						bool need_unreserved)
 {
 	return NULL;
+}
+static inline
+void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
+{
 }
 #endif
 
