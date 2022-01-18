@@ -556,6 +556,62 @@ void free_page_list_to_dhugetlb_pool(struct list_head *list)
 	}
 }
 
+void link_hpool(struct hugetlbfs_inode_info *p)
+{
+	if (!dhugetlb_enabled || !p)
+		return;
+
+	p->hpool = find_hpool_by_task(current);
+	if (!get_hpool_unless_zero(p->hpool))
+		p->hpool = NULL;
+}
+
+void unlink_hpool(struct hugetlbfs_inode_info *p)
+{
+	if (!dhugetlb_enabled || !p)
+		return;
+
+	put_hpool(p->hpool);
+	p->hpool = NULL;
+}
+
+bool file_has_mem_in_hpool(struct hugetlbfs_inode_info *p)
+{
+	if (!dhugetlb_enabled || !p || !p->hpool)
+		return false;
+	return true;
+}
+
+int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_info *p)
+{
+	struct dhugetlb_pool *hpool = p ? p->hpool : NULL;
+	struct huge_pages_pool *hpages_pool;
+	int ret = -ENOMEM;
+
+	if (!dhugetlb_enabled || !hpool)
+		return 0;
+
+	if (delta == 0)
+		return 0;
+
+	spin_lock(&hpool->lock);
+	if (hstate_is_gigantic(h))
+		hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_1G];
+	else
+		hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_2M];
+	if (delta > 0 && delta <= hpages_pool->free_huge_pages - hpages_pool->resv_huge_pages) {
+		hpages_pool->resv_huge_pages += delta;
+		ret = 0;
+	} else if (delta < 0) {
+		hpages_pool->resv_huge_pages -= (unsigned long)(-delta);
+		WARN_ON(hpages_pool->resv_huge_pages < 0);
+		ret = 0;
+	}
+	spin_unlock(&hpool->lock);
+
+	return ret;
+}
+
 static int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
 				       unsigned long nid, unsigned long nr_pages)
 {

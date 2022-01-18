@@ -96,6 +96,11 @@ bool free_page_to_dhugetlb_pool(struct page *page);
 void free_page_list_to_dhugetlb_pool(struct list_head *list);
 int task_has_mem_in_hpool(struct task_struct *tsk);
 
+void link_hpool(struct hugetlbfs_inode_info *p);
+void unlink_hpool(struct hugetlbfs_inode_info *p);
+bool file_has_mem_in_hpool(struct hugetlbfs_inode_info *p);
+int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_info *p);
+
 #else
 
 #define dhugetlb_enabled	0
@@ -133,6 +138,23 @@ static inline int task_has_mem_in_hpool(struct task_struct *tsk)
 {
 	return 0;
 }
+
+#ifdef CONFIG_HUGETLBFS
+static inline void link_hpool(struct hugetlbfs_inode_info *p)
+{
+}
+static inline void unlink_hpool(struct hugetlbfs_inode_info *p)
+{
+}
+static inline bool file_has_mem_in_hpool(struct hugetlbfs_inode_info *p)
+{
+	return false;
+}
+static inline int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_info *p)
+{
+	return 0;
+}
+#endif
 
 #endif /* CONFIG_DYNAMIC_HUGETLB */
 #endif /* __LINUX_DYNAMIC_HUGETLB_H */

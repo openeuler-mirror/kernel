@@ -157,6 +157,10 @@ static long hugepage_subpool_get_pages(struct hugepage_subpool *spool,
 	if (!spool)
 		return ret;
 
+	/* Skip subpool when hugetlb file belongs to a hugetlb_pool */
+	if (file_has_mem_in_hpool(info))
+		return ret;
+
 	spin_lock_irq(&spool->lock);
 
 	if (spool->max_hpages != -1) {		/* maximum size accounting */
@@ -202,6 +206,10 @@ static long hugepage_subpool_put_pages(struct hugepage_subpool *spool,
 
 	if (!spool)
 		return delta;
+
+	/* Skip subpool when hugetlb file belongs to a hugetlb_pool */
+	if (file_has_mem_in_hpool(info))
+		return ret;
 
 	spin_lock_irqsave(&spool->lock, flags);
 
@@ -3898,6 +3906,9 @@ unsigned long hugetlb_total_pages(void)
 static int hugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_info *info)
 {
 	int ret = -ENOMEM;
+
+	if (file_has_mem_in_hpool(info))
+		return dhugetlb_acct_memory(h, delta, info);
 
 	spin_lock_irq(&hugetlb_lock);
 	/*

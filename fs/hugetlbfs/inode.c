@@ -36,6 +36,7 @@
 #include <linux/magic.h>
 #include <linux/migrate.h>
 #include <linux/uio.h>
+#include <linux/dynamic_hugetlb.h>
 
 #include <linux/uaccess.h>
 #include <linux/sched/mm.h>
@@ -1191,6 +1192,8 @@ static struct inode *hugetlbfs_alloc_inode(struct super_block *sb)
 	 * private inode.  This simplifies hugetlbfs_destroy_inode.
 	 */
 	mpol_shared_policy_init(&p->policy, NULL);
+	/* Initialize hpool here in case of a quick call to destroy */
+	link_hpool(p);
 
 	return &p->vfs_inode;
 }
@@ -1204,6 +1207,7 @@ static void hugetlbfs_destroy_inode(struct inode *inode)
 {
 	hugetlbfs_inc_free_inodes(HUGETLBFS_SB(inode->i_sb));
 	mpol_free_shared_policy(&HUGETLBFS_I(inode)->policy);
+	unlink_hpool(HUGETLBFS_I(inode));
 }
 
 static const struct address_space_operations hugetlbfs_aops = {
