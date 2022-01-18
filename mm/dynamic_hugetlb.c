@@ -3,6 +3,9 @@
  * dynamic hugetlb core file
  */
 
+#include <linux/rmap.h>
+#include <linux/migrate.h>
+#include <linux/memory_hotplug.h>
 #include <linux/dynamic_hugetlb.h>
 
 #include "internal.h"
@@ -156,13 +159,18 @@ static void clear_percpu_pools(struct dhugetlb_pool *hpool)
 		spin_unlock(&hpool->percpu_pool[i].lock);
 }
 
-static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx)
+/* We only try 5 times to reclaim pages */
+#define	HPOOL_RECLAIM_RETRIES	5
+
+static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bool force_merge)
 {
 	struct huge_pages_pool *hpages_pool, *src_hpages_pool;
 	struct split_hugepage *split_page, *split_next;
 	unsigned long nr_pages, block_size;
-	struct page *page;
-	int i;
+	struct page *page, *next;
+	bool need_migrate = false;
+	int i, try;
+	LIST_HEAD(wait_page_list);
 
 	lockdep_assert_held(&hpool->lock);
 
@@ -177,6 +185,7 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx)
 		case HUGE_PAGES_POOL_2M:
 			nr_pages = 1 << (PMD_SHIFT - PAGE_SHIFT);
 			block_size = 1;
+			need_migrate |= force_merge;
 			break;
 	}
 
@@ -186,12 +195,20 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx)
 		return -ENOMEM;
 
 	list_for_each_entry_safe(split_page, split_next, &hpages_pool->hugepage_splitlists, head_pages) {
+		try = 0;
+
+merge:
 		clear_percpu_pools(hpool);
 		page = pfn_to_page(split_page->start_pfn);
 		for (i = 0; i < nr_pages; i+= block_size) {
-			if (PagePool(&page[i]))
-				goto next;
+			if (PagePool(&page[i])) {
+				if (!need_migrate)
+					goto next;
+				else
+					goto migrate;
+			}
 		}
+
 		list_del(&split_page->head_pages);
 		hpages_pool->split_normal_pages--;
 		kfree(split_page);
@@ -203,6 +220,36 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx)
 		return 0;
 next:
 		continue;
+migrate:
+		if (try++ >= HPOOL_RECLAIM_RETRIES)
+			goto next;
+
+		/* Isolate free page first. */
+		INIT_LIST_HEAD(&wait_page_list);
+		for (i = 0; i < nr_pages; i+= block_size) {
+			if (!PagePool(&page[i])) {
+				list_move(&page[i].lru, &wait_page_list);
+				src_hpages_pool->free_normal_pages--;
+			}
+		}
+
+		/* Unlock and try migration. */
+		spin_unlock(&hpool->lock);
+		for (i = 0; i < nr_pages; i+= block_size) {
+			if (PagePool(&page[i]))
+				/*
+				 * TODO: fatal migration failures should bail
+				 * out
+				 */
+				do_migrate_range(page_to_pfn(&page[i]), page_to_pfn(&page[i]) + block_size);
+		}
+		spin_lock(&hpool->lock);
+
+		list_for_each_entry_safe(page, next, &wait_page_list, lru) {
+			list_move_tail(&page->lru, &src_hpages_pool->hugepage_freelists);
+			src_hpages_pool->free_normal_pages++;
+		}
+		goto merge;
 	}
 	return -ENOMEM;
 }
@@ -213,7 +260,7 @@ static int hugetlb_pool_merge_all_pages(struct dhugetlb_pool *hpool)
 
 	spin_lock(&hpool->lock);
 	while (hpool->hpages_pool[HUGE_PAGES_POOL_2M].split_normal_pages) {
-		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_2M);
+		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_2M, true);
 		if (ret) {
 			pr_err("dynamic_hugetlb: some 4K pages are still in use, delete memcg: %s failed!\n",
 				hpool->attach_memcg->css.cgroup->kn->name);
@@ -221,7 +268,7 @@ static int hugetlb_pool_merge_all_pages(struct dhugetlb_pool *hpool)
 		}
 	}
 	while (hpool->hpages_pool[HUGE_PAGES_POOL_1G].split_normal_pages) {
-		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_1G);
+		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_1G, true);
 		if (ret) {
 			pr_err("dynamic_hugetlb: some 2M pages are still in use, delete memcg: %s failed!\n",
 				hpool->attach_memcg->css.cgroup->kn->name);
@@ -515,8 +562,16 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 			if (hpool_split_page(hpool, hpages_pool_idx - 1))
 				break;
 		}
+		/*
+		 * First try to merge pages without migration, If this can not meet
+		 * the requirements, then try to merge pages with migration.
+		 */
 		while (delta > hpages_pool->free_normal_pages) {
-			if (hpool_merge_page(hpool, hpages_pool_idx))
+			if (hpool_merge_page(hpool, hpages_pool_idx, false))
+				break;
+		}
+		while (delta > hpages_pool->free_normal_pages) {
+			if (hpool_merge_page(hpool, hpages_pool_idx, true))
 				break;
 		}
 		delta = min(nr_pages - hpages_pool->nr_huge_pages, hpages_pool->free_normal_pages);
