@@ -3230,6 +3230,10 @@ void free_unref_page(struct page *page)
 	unsigned long flags;
 	unsigned long pfn = page_to_pfn(page);
 
+	/* Free dynamic hugetlb page */
+	if (free_page_to_dhugetlb_pool(page))
+		return;
+
 	if (!free_unref_page_prepare(page, pfn))
 		return;
 
@@ -3246,6 +3250,9 @@ void free_unref_page_list(struct list_head *list)
 	struct page *page, *next;
 	unsigned long flags, pfn;
 	int batch_count = 0;
+
+	/* Free dynamic hugetlb page list */
+	free_page_list_to_dhugetlb_pool(list);
 
 	/* Prepare pages for freeing */
 	list_for_each_entry_safe(page, next, list, lru) {

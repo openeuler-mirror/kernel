@@ -90,6 +90,8 @@ void __init dynamic_hugetlb_init(void);
 
 struct page *alloc_page_from_dhugetlb_pool(gfp_t gfp, unsigned int order,
 					   unsigned int flags);
+bool free_page_to_dhugetlb_pool(struct page *page);
+void free_page_list_to_dhugetlb_pool(struct list_head *list);
 int task_has_mem_in_hpool(struct task_struct *tsk);
 
 #else
@@ -117,6 +119,13 @@ static inline struct page *alloc_page_from_dhugetlb_pool(gfp_t gfp, unsigned int
 							 unsigned int flags)
 {
 	return NULL;
+}
+static inline bool free_page_to_dhugetlb_pool(struct page *page)
+{
+	return false;
+}
+static inline void free_page_list_to_dhugetlb_pool(struct list_head *list)
+{
 }
 static inline int task_has_mem_in_hpool(struct task_struct *tsk)
 {

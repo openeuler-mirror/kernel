@@ -378,6 +378,18 @@ static int set_hpool_in_dhugetlb_pagelist(unsigned long idx, struct dhugetlb_poo
 	return 0;
 }
 
+static struct dhugetlb_pool *find_hpool_by_dhugetlb_pagelist(struct page *page)
+{
+	unsigned long idx = hugepage_index(page_to_pfn(page));
+	struct dhugetlb_pool *hpool = NULL;
+
+	read_lock(&dhugetlb_pagelist_rwlock);
+	if (idx < dhugetlb_pagelist_t->count)
+		hpool = dhugetlb_pagelist_t->hpool[idx];
+	read_unlock(&dhugetlb_pagelist_rwlock);
+	return hpool;
+}
+
 static struct dhugetlb_pool *find_hpool_by_task(struct task_struct *tsk)
 {
 	struct mem_cgroup *memcg;
@@ -483,6 +495,62 @@ struct page *alloc_page_from_dhugetlb_pool(gfp_t gfp, unsigned int order,
 	if (page)
 		prep_new_page(page, order, gfp, flags);
 	return page;
+}
+
+static void __free_page_to_dhugetlb_pool(struct page *page)
+{
+	struct percpu_pages_pool *percpu_pool;
+	struct dhugetlb_pool *hpool;
+	unsigned long flags;
+
+	hpool = find_hpool_by_dhugetlb_pagelist(page);
+
+	if (!get_hpool_unless_zero(hpool)) {
+		pr_err("dhugetlb: free error: get hpool failed\n");
+		return;
+	}
+
+	percpu_pool = &hpool->percpu_pool[smp_processor_id()];
+	spin_lock_irqsave(&percpu_pool->lock, flags);
+
+	ClearPagePool(page);
+	list_add(&page->lru, &percpu_pool->head_page);
+	percpu_pool->free_pages++;
+	percpu_pool->used_pages--;
+	if (percpu_pool->free_pages > PERCPU_POOL_PAGE_MAX) {
+		spin_lock(&hpool->lock);
+		reclaim_pages_from_percpu_pool(hpool, percpu_pool, PERCPU_POOL_PAGE_BATCH);
+		spin_unlock(&hpool->lock);
+	}
+
+	spin_unlock_irqrestore(&percpu_pool->lock, flags);
+	put_hpool(hpool);
+}
+
+bool free_page_to_dhugetlb_pool(struct page *page)
+{
+	if (!dhugetlb_enabled || !PagePool(page))
+		return false;
+
+	if (free_pages_prepare(page, 0, true))
+		__free_page_to_dhugetlb_pool(page);
+	return true;
+}
+
+void free_page_list_to_dhugetlb_pool(struct list_head *list)
+{
+	struct page *page, *next;
+
+	if (!dhugetlb_enabled)
+		return;
+
+	list_for_each_entry_safe(page, next, list, lru) {
+		if (PagePool(page)) {
+			list_del(&page->lru);
+			if (free_pages_prepare(page, 0, true))
+				__free_page_to_dhugetlb_pool(page);
+		}
+	}
 }
 
 static int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
