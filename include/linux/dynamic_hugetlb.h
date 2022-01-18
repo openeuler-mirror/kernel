@@ -9,6 +9,7 @@
 
 #ifdef CONFIG_DYNAMIC_HUGETLB
 
+extern bool enable_dhugetlb;
 extern struct static_key_false dhugetlb_enabled_key;
 #define dhugetlb_enabled (static_branch_unlikely(&dhugetlb_enabled_key))
 
@@ -106,6 +107,7 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve);
 
 #else
 
+#define enable_dhugetlb		0
 #define dhugetlb_enabled	0
 
 struct dhugetlb_pool {};

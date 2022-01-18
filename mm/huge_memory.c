@@ -33,6 +33,7 @@
 #include <linux/oom.h>
 #include <linux/numa.h>
 #include <linux/page_owner.h>
+#include <linux/dynamic_hugetlb.h>
 
 #include <asm/tlb.h>
 #include <asm/pgalloc.h>
@@ -389,6 +390,18 @@ static int __init hugepage_init(void)
 		 * DAX PMD support.
 		 */
 		transparent_hugepage_flags = 1 << TRANSPARENT_HUGEPAGE_NEVER_DAX;
+		return -EINVAL;
+	}
+
+	/*
+	 * When we alloc some pages(order = 0), system may help us to alloc a page(order > 0)
+	 * due to transparent hugepage. This result dynamic hugetlb to be skipped.
+	 * Actually, using dynamic hugetlb means we have already optimized the program, so we
+	 * should not use transparent hugepage in addition. (May result negative optimization)
+	 */
+	if (enable_dhugetlb) {
+		transparent_hugepage_flags = 0;
+		pr_info("transparent hugepage is disabled due to confilct with dynamic hugetlb\n");
 		return -EINVAL;
 	}
 

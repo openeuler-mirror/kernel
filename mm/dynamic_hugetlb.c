@@ -15,7 +15,7 @@
 #include <trace/events/dynamic_hugetlb.h>
 #endif
 
-static bool enable_dhugetlb = false;
+bool enable_dhugetlb = false;
 DEFINE_STATIC_KEY_FALSE(dhugetlb_enabled_key);
 
 #define hugepage_index(pfn)	((pfn) >> (PUD_SHIFT - PAGE_SHIFT))
