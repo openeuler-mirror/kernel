@@ -2,7 +2,9 @@
 #ifndef __LINUX_DYNAMIC_HUGETLB_H
 #define __LINUX_DYNAMIC_HUGETLB_H
 
+#include <linux/page_counter.h>
 #include <linux/hugetlb.h>
+#include <linux/hugetlb_cgroup.h>
 #include <linux/memcontrol.h>
 
 #ifdef CONFIG_DYNAMIC_HUGETLB

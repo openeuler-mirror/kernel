@@ -5,10 +5,119 @@
 
 #include <linux/dynamic_hugetlb.h>
 
+#include "internal.h"
+
 static bool enable_dhugetlb = false;
 DEFINE_STATIC_KEY_FALSE(dhugetlb_enabled_key);
 
 #define hugepage_index(pfn)	((pfn) >> (PUD_SHIFT - PAGE_SHIFT))
+static void add_new_page_to_pool(struct dhugetlb_pool *hpool, struct page *page, int hpages_pool_idx)
+{
+	struct huge_pages_pool *hpages_pool = &hpool->hpages_pool[hpages_pool_idx];
+
+	lockdep_assert_held(&hpool->lock);
+	VM_BUG_ON_PAGE(page_mapcount(page), page);
+	INIT_LIST_HEAD(&page->lru);
+
+	switch (hpages_pool_idx) {
+		case HUGE_PAGES_POOL_1G:
+			prep_compound_gigantic_page(page, PUD_SHIFT - PAGE_SHIFT);
+			set_compound_page_dtor(page, HUGETLB_PAGE_DTOR);
+			set_hugetlb_cgroup(page, NULL);
+			break;
+		case HUGE_PAGES_POOL_2M:
+			prep_compound_page(page, PMD_SHIFT - PAGE_SHIFT);
+			set_compound_page_dtor(page, HUGETLB_PAGE_DTOR);
+			set_hugetlb_cgroup(page, NULL);
+			break;
+	}
+	list_add_tail(&page->lru, &hpages_pool->hugepage_freelists);
+	hpages_pool->free_normal_pages++;
+}
+
+static void __hpool_split_gigantic_page(struct dhugetlb_pool *hpool, struct page *page)
+{
+	int nr_pages = 1 << (PUD_SHIFT - PAGE_SHIFT);
+	int nr_blocks = 1 << (PMD_SHIFT - PAGE_SHIFT);
+	int i;
+
+	lockdep_assert_held(&hpool->lock);
+	atomic_set(compound_mapcount_ptr(page), 0);
+	atomic_set(compound_pincount_ptr(page), 0);
+
+	for (i = 1; i < nr_pages; i++)
+		clear_compound_head(&page[i]);
+	set_compound_order(page, 0);
+	page[1].compound_nr = 0;
+	__ClearPageHead(page);
+
+	for (i = 0; i < nr_pages; i+= nr_blocks)
+		add_new_page_to_pool(hpool, &page[i], HUGE_PAGES_POOL_2M);
+}
+
+static void __hpool_split_huge_page(struct dhugetlb_pool *hpool, struct page *page)
+{
+	int nr_pages = 1 << (PMD_SHIFT - PAGE_SHIFT);
+	int i;
+
+	lockdep_assert_held(&hpool->lock);
+	set_compound_page_dtor(page, NULL_COMPOUND_DTOR);
+	set_compound_order(page, 0);
+
+	__ClearPageHead(page);
+	for (i = 0; i < nr_pages; i++) {
+		page[i].flags &= ~(1 << PG_locked | 1 << PG_error |
+				1 << PG_referenced | 1 << PG_dirty |
+				1 << PG_active | 1 << PG_private |
+				1 << PG_writeback);
+		if (i != 0) {
+			page[i].mapping = NULL;
+			clear_compound_head(&page[i]);
+		}
+		add_new_page_to_pool(hpool, &page[i], HUGE_PAGES_POOL_4K);
+	}
+}
+
+static int hpool_split_page(struct dhugetlb_pool *hpool, int hpages_pool_idx)
+{
+	struct huge_pages_pool *hpages_pool;
+	struct split_hugepage *split_page;
+	struct page *page;
+
+	lockdep_assert_held(&hpool->lock);
+
+	if (hpages_pool_idx < 0 || hpages_pool_idx >= HUGE_PAGES_POOL_MAX - 1)
+		return -EINVAL;
+
+	hpages_pool = &hpool->hpages_pool[hpages_pool_idx];
+
+	/* If hpages_pool has no pages to split, try higher hpages_pool */
+	if (!hpages_pool->free_normal_pages &&
+	    hpool_split_page(hpool, hpages_pool_idx - 1))
+		return -ENOMEM;
+
+	split_page = kzalloc(sizeof(struct split_hugepage), GFP_ATOMIC);
+	if (!split_page)
+		return -ENOMEM;
+
+	page = list_entry(hpages_pool->hugepage_freelists.next, struct page, lru);
+	list_del(&page->lru);
+	hpages_pool->free_normal_pages--;
+
+	split_page->start_pfn = page_to_pfn(page);
+	list_add(&split_page->head_pages, &hpages_pool->hugepage_splitlists);
+	hpages_pool->split_normal_pages++;
+
+	switch (hpages_pool_idx) {
+		case HUGE_PAGES_POOL_1G:
+			__hpool_split_gigantic_page(hpool, page);
+			break;
+		case HUGE_PAGES_POOL_2M:
+			__hpool_split_huge_page(hpool, page);
+			break;
+	}
+	return 0;
+}
 
 static bool get_hpool_unless_zero(struct dhugetlb_pool *hpool)
 {
@@ -278,6 +387,11 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 	spin_lock(&hpool->lock);
 	hpages_pool = &hpool->hpages_pool[hpages_pool_idx];
 	if (nr_pages > hpages_pool->nr_huge_pages) {
+		delta = nr_pages - hpages_pool->nr_huge_pages;
+		while (delta > hpages_pool->free_normal_pages) {
+			if (hpool_split_page(hpool, hpages_pool_idx - 1))
+				break;
+		}
 		delta = min(nr_pages - hpages_pool->nr_huge_pages, hpages_pool->free_normal_pages);
 		hpages_pool->nr_huge_pages += delta;
 		hpages_pool->free_huge_pages += delta;
