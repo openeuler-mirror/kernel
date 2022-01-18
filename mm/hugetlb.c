@@ -43,6 +43,7 @@
 #include <linux/node.h>
 #include <linux/userfaultfd_k.h>
 #include <linux/page_owner.h>
+#include <linux/dynamic_hugetlb.h>
 #include "internal.h"
 #include "hugetlb_vmemmap.h"
 
@@ -3459,6 +3460,8 @@ static int __init hugetlb_init(void)
 	hugetlb_sysfs_init();
 	hugetlb_register_all_nodes();
 	hugetlb_cgroup_file_init();
+
+	dynamic_hugetlb_init();
 
 #ifdef CONFIG_SMP
 	num_fault_mutexes = roundup_pow_of_two(8 * num_possible_cpus());

@@ -22,6 +22,7 @@
 #include <linux/writeback.h>
 #include <linux/page-flags.h>
 #include <linux/kabi.h>
+#include <linux/dynamic_hugetlb.h>
 
 struct mem_cgroup;
 struct obj_cgroup;
@@ -370,6 +371,9 @@ struct mem_cgroup {
 	struct deferred_split deferred_split_queue;
 #endif
 
+#ifdef CONFIG_DYNAMIC_HUGETLB
+	struct dhugetlb_pool *hpool;
+#endif
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
@@ -1238,7 +1242,6 @@ void split_page_memcg(struct page *head, unsigned int nr);
 unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 						gfp_t gfp_mask,
 						unsigned long *total_scanned);
-
 /*
  * Test whether @memcg has children, dead or alive.  Note that this
  * function doesn't care whether @memcg has use_hierarchy enabled and

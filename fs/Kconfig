@@ -251,6 +251,16 @@ config HUGETLB_PAGE_FREE_VMEMMAP_DEFAULT_ON
 	  to enable freeing vmemmap pages of HugeTLB by default. It can then
 	  be disabled on the command line via hugetlb_free_vmemmap=off.
 
+config DYNAMIC_HUGETLB
+	bool "Dynamic HugeTLB"
+	depends on X86_64
+	depends on HUGETLBFS
+	depends on MEMCG && CGROUP_HUGETLB
+	help
+	  Dynamic hugepage are used in memcg and can be splited into small
+	  pages automatically. The tasks in the memcg prefer to alloc dynamic
+	  hugepage.
+
 config MEMFD_CREATE
 	def_bool TMPFS || HUGETLBFS
 

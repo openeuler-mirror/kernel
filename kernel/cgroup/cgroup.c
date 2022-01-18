@@ -57,6 +57,7 @@
 #include <linux/fs_parser.h>
 #include <linux/sched/cputime.h>
 #include <linux/psi.h>
+#include <linux/dynamic_hugetlb.h>
 #include <net/sock.h>
 
 #define CREATE_TRACE_POINTS
@@ -4009,6 +4010,9 @@ restart:
 			continue;
 		if ((cft->flags & CFTYPE_DEBUG) && !cgroup_debug)
 			continue;
+		/* if dynamic hugetlb is not enabled, hide the interfaces */
+		if (dhugetlb_hide_files(cft))
+			continue;
 		if (is_add) {
 			ret = cgroup_add_file(css, cgrp, cft);
 			if (ret) {
@@ -5607,6 +5611,13 @@ static int cgroup_destroy_locked(struct cgroup *cgrp)
 	 * drained; otherwise, "rmdir parent/child parent" may fail.
 	 */
 	if (css_has_online_children(&cgrp->self))
+		return -EBUSY;
+
+	/*
+	 * If dynamic hugetlb is enabled, make sure dhugtlb_pool is free
+	 * before removing the corresponding memory cgroup.
+	 */
+	if (hugetlb_pool_destroy(cgrp))
 		return -EBUSY;
 
 	/*

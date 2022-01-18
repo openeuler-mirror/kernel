@@ -5195,6 +5195,14 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write_s64 = memcg_qos_write,
 	},
 #endif
+#ifdef CONFIG_DYNAMIC_HUGETLB
+	{
+		.name = "dhugetlb.nr_pages",
+		.write = write_hugepage_to_hpool,
+		.seq_show = hugetlb_pool_info_show,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
+	},
+#endif
 #ifdef CONFIG_NUMA
 	{
 		.name = "numa_stat",
@@ -5522,6 +5530,8 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 		root_mem_cgroup = memcg;
 		return &memcg->css;
 	}
+
+	hugetlb_pool_inherit(memcg, parent);
 
 	error = memcg_online_kmem(memcg);
 	if (error)
