@@ -255,6 +255,62 @@ bool dhugetlb_hide_files(struct cftype *cft)
 	return false;
 }
 
+static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hpages_pool_idx)
+{
+	struct dhugetlb_pool *hpool = memcg->hpool;
+	struct huge_pages_pool *hpages_pool;
+	unsigned long nr_pages;
+	unsigned long delta;
+	char *endp;
+
+	if (!dhugetlb_enabled)
+		return -EINVAL;
+
+	buf = strstrip(buf);
+	nr_pages = memparse(buf, &endp);
+	if (*endp != '\0')
+		return -EINVAL;
+
+	if (!get_hpool_unless_zero(hpool))
+		return -EINVAL;
+
+	spin_lock(&hpool->reserved_lock);
+	spin_lock(&hpool->lock);
+	hpages_pool = &hpool->hpages_pool[hpages_pool_idx];
+	if (nr_pages > hpages_pool->nr_huge_pages) {
+		delta = min(nr_pages - hpages_pool->nr_huge_pages, hpages_pool->free_normal_pages);
+		hpages_pool->nr_huge_pages += delta;
+		hpages_pool->free_huge_pages += delta;
+		hpages_pool->free_normal_pages -= delta;
+	} else {
+		delta = min(hpages_pool->nr_huge_pages - nr_pages,
+			    hpages_pool->free_huge_pages - hpages_pool->resv_huge_pages);
+		hpages_pool->nr_huge_pages -= delta;
+		hpages_pool->free_huge_pages -= delta;
+		hpages_pool->free_normal_pages += delta;
+	}
+	spin_unlock(&hpool->lock);
+	spin_unlock(&hpool->reserved_lock);
+	put_hpool(hpool);
+	return 0;
+}
+
+ssize_t write_2M_reserved_pages(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+
+	return update_reserved_pages(memcg, buf, HUGE_PAGES_POOL_2M) ?: nbytes;
+}
+
+ssize_t write_1G_reserved_pages(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+
+	return update_reserved_pages(memcg, buf, HUGE_PAGES_POOL_1G) ?: nbytes;
+}
+
 ssize_t write_hugepage_to_hpool(struct kernfs_open_file *of,
 				char *buf, size_t nbytes, loff_t off)
 {

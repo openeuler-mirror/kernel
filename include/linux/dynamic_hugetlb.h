@@ -75,6 +75,10 @@ struct dhugetlb_pool {
 };
 
 bool dhugetlb_hide_files(struct cftype *cft);
+ssize_t write_2M_reserved_pages(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off);
+ssize_t write_1G_reserved_pages(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off);
 ssize_t write_hugepage_to_hpool(struct kernfs_open_file *of,
 				char *buf, size_t nbytes, loff_t off);
 int hugetlb_pool_info_show(struct seq_file *m, void *v);

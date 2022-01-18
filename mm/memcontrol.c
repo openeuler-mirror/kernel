@@ -5202,6 +5202,16 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.seq_show = hugetlb_pool_info_show,
 		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
 	},
+	{
+		.name = "dhugetlb.1G.reserved_pages",
+		.write = write_1G_reserved_pages,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
+	},
+	{
+		.name = "dhugetlb.2M.reserved_pages",
+		.write = write_2M_reserved_pages,
+		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
+	},
 #endif
 #ifdef CONFIG_NUMA
 	{
