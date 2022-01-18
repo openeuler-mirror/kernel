@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2201.2.0
+%global hulkrelease 2201.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0133
+Release: %{hulkrelease}.0134
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,32 @@ fi
 %endif
 
 %changelog
+
+* Tue Jan 18 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2201.3.0.0134
+- ip_gre: validate csum_start only on pull
+- hugetlbfs: fix issue of preallocation of gigantic pages can't work
+- hugetlbfs: extend the definition of hugepages parameter to support node allocation
+- mm: remove sharepool sp_unshare_uva current->mm NULL check
+- share pool: use rwsem to protect sp group exit
+- Add new module parameters:time out
+- virtio-blk: validate num_queues during probe
+- virtio-blk: Use blk_validate_block_size() to validate block size
+- block: Add a helper to validate the block size
+- Revert "virtio-blk: Add validation for block size in config space"
+- scsi: virtio_scsi: Rescan the entire target on transport reset when LUN is 0
+- Revert "svm: Add support to get svm mpam configuration"
+- Revert "svm: Add support to set svm mpam configuration"
+- Revert "svm: Add svm_set_user_mpam_en to enable/disable mpam for smmu"
+- cgroup: Use open-time cgroup namespace for process migration perm checks
+- cgroup: Allocate cgroup_file_ctx for kernfs_open_file->priv
+- cgroup: Use open-time credentials for process migraton perm checks
+- NFC: add necessary privilege flags in netlink layer
+- NFC: add NCI_UNREG flag to eliminate the race
+- NFC: reorder the logic in nfc_{un,}register_device
+- NFC: reorganize the functions in nci_request
+- ext4: Fix BUG_ON in ext4_bread when write quota data
+- PM: hibernate: use correct mode for swsusp_close()
+- Revert "watchdog: Fix check_preemption_disabled() error"
 
 * Tue Jan 11 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2201.2.0.0133
 - arm64/mpam: fix mpam dts init arm_mpam_of_device_ids error
