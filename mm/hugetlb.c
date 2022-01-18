@@ -1633,7 +1633,7 @@ static void prep_new_huge_page(struct hstate *h, struct page *page, int nid)
 	spin_unlock_irq(&hugetlb_lock);
 }
 
-static bool prep_compound_gigantic_page(struct page *page, unsigned int order)
+bool prep_compound_gigantic_page(struct page *page, unsigned int order)
 {
 	int i, j;
 	int nr_pages = 1 << order;

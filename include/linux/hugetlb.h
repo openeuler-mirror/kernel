@@ -471,6 +471,9 @@ static inline struct hstate *hstate_inode(struct inode *i)
 {
 	return HUGETLBFS_SB(i->i_sb)->hstate;
 }
+
+bool prep_compound_gigantic_page(struct page *page, unsigned int order);
+
 #else /* !CONFIG_HUGETLBFS */
 
 #define is_file_hugepages(file)			false

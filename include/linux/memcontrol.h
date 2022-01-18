@@ -1239,6 +1239,22 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
 						gfp_t gfp_mask,
 						unsigned long *total_scanned);
 
+/*
+ * Test whether @memcg has children, dead or alive.  Note that this
+ * function doesn't care whether @memcg has use_hierarchy enabled and
+ * returns %true if there are child csses according to the cgroup
+ * hierarchy.  Testing use_hierarchy is the caller's responsibility.
+ */
+static inline bool memcg_has_children(struct mem_cgroup *memcg)
+{
+	bool ret;
+
+	rcu_read_lock();
+	ret = css_next_child(NULL, &memcg->css);
+	rcu_read_unlock();
+	return ret;
+}
+
 #else /* CONFIG_MEMCG */
 
 #define MEM_CGROUP_ID_SHIFT	0

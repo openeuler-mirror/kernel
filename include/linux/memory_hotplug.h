@@ -284,6 +284,7 @@ static inline void pgdat_resize_init(struct pglist_data *pgdat) {}
 
 #ifdef CONFIG_MEMORY_HOTREMOVE
 
+extern int do_migrate_range(unsigned long start_pfn, unsigned long end_pfn);
 extern void try_offline_node(int nid);
 extern int offline_pages(unsigned long start_pfn, unsigned long nr_pages);
 extern int remove_memory(int nid, u64 start, u64 size);
@@ -291,6 +292,11 @@ extern void __remove_memory(int nid, u64 start, u64 size);
 extern int offline_and_remove_memory(int nid, u64 start, u64 size);
 
 #else
+static inline int do_migrate_range(unsigned long start_pfn, unsigned long end_pfn)
+{
+	return -ENOSYS;
+}
+
 static inline void try_offline_node(int nid) {}
 
 static inline int offline_pages(unsigned long start_pfn, unsigned long nr_pages)
