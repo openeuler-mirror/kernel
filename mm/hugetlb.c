@@ -86,7 +86,7 @@ int sysctl_hugetlb_mig_noalloc;
 int sysctl_hugetlb_pmem_allocall;
 
 /* Forward declaration */
-static int hugetlb_acct_memory(struct hstate *h, long delta);
+static int hugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_info *info);
 
 static inline void unlock_or_release_subpool(struct hugepage_subpool *spool,
 						unsigned long irq_flags)
@@ -101,7 +101,7 @@ static inline void unlock_or_release_subpool(struct hugepage_subpool *spool,
 	if (free) {
 		if (spool->min_hpages != -1)
 			hugetlb_acct_memory(spool->hstate,
-						-spool->min_hpages);
+						-spool->min_hpages, NULL);
 		kfree(spool);
 	}
 }
@@ -121,7 +121,7 @@ struct hugepage_subpool *hugepage_new_subpool(struct hstate *h, long max_hpages,
 	spool->hstate = h;
 	spool->min_hpages = min_hpages;
 
-	if (min_hpages != -1 && hugetlb_acct_memory(h, min_hpages)) {
+	if (min_hpages != -1 && hugetlb_acct_memory(h, min_hpages, NULL)) {
 		kfree(spool);
 		return NULL;
 	}
@@ -149,7 +149,7 @@ void hugepage_put_subpool(struct hugepage_subpool *spool)
  * a subpool minimum size must be maintained.
  */
 static long hugepage_subpool_get_pages(struct hugepage_subpool *spool,
-				      long delta)
+				      long delta, struct hugetlbfs_inode_info *info)
 {
 	long ret = delta;
 
@@ -194,7 +194,7 @@ unlock_ret:
  * in the case where a subpool minimum size must be maintained.
  */
 static long hugepage_subpool_put_pages(struct hugepage_subpool *spool,
-				       long delta)
+				       long delta, struct hugetlbfs_inode_info *info)
 {
 	long ret = delta;
 	unsigned long flags;
@@ -742,11 +742,11 @@ void hugetlb_fix_reserve_counts(struct inode *inode)
 	long rsv_adjust;
 	bool reserved = false;
 
-	rsv_adjust = hugepage_subpool_get_pages(spool, 1);
+	rsv_adjust = hugepage_subpool_get_pages(spool, 1, HUGETLBFS_I(inode));
 	if (rsv_adjust > 0) {
 		struct hstate *h = hstate_inode(inode);
 
-		if (!hugetlb_acct_memory(h, 1))
+		if (!hugetlb_acct_memory(h, 1, HUGETLBFS_I(inode)))
 			reserved = true;
 	} else if (!rsv_adjust) {
 		reserved = true;
@@ -1589,7 +1589,7 @@ void free_huge_page(struct page *page)
 		 * after page is free.  Therefore, force restore_reserve
 		 * operation.
 		 */
-		if (hugepage_subpool_put_pages(spool, 1) == 0)
+		if (hugepage_subpool_put_pages(spool, 1, NULL) == 0)
 			restore_reserve = true;
 	}
 
@@ -2465,6 +2465,7 @@ static void restore_reserve_on_error(struct hstate *h,
 struct page *alloc_huge_page(struct vm_area_struct *vma,
 				    unsigned long addr, int avoid_reserve)
 {
+	struct hugetlbfs_inode_info *info = HUGETLBFS_I(file_inode(vma->vm_file));
 	struct hugepage_subpool *spool = subpool_vma(vma);
 	struct hstate *h = hstate_vma(vma);
 	struct page *page;
@@ -2492,7 +2493,7 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	 * checked against any subpool limit.
 	 */
 	if (map_chg || avoid_reserve) {
-		gbl_chg = hugepage_subpool_get_pages(spool, 1);
+		gbl_chg = hugepage_subpool_get_pages(spool, 1, info);
 		if (gbl_chg < 0) {
 			vma_end_reservation(h, vma, addr);
 			return ERR_PTR(-ENOSPC);
@@ -2570,8 +2571,8 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 		 */
 		long rsv_adjust;
 
-		rsv_adjust = hugepage_subpool_put_pages(spool, 1);
-		hugetlb_acct_memory(h, -rsv_adjust);
+		rsv_adjust = hugepage_subpool_put_pages(spool, 1, info);
+		hugetlb_acct_memory(h, -rsv_adjust, info);
 		if (deferred_reserve)
 			hugetlb_cgroup_uncharge_page_rsvd(hstate_index(h),
 					pages_per_huge_page(h), page);
@@ -2586,7 +2587,7 @@ out_uncharge_cgroup_reservation:
 						    h_cg);
 out_subpool_put:
 	if (map_chg || avoid_reserve)
-		hugepage_subpool_put_pages(spool, 1);
+		hugepage_subpool_put_pages(spool, 1, info);
 	vma_end_reservation(h, vma, addr);
 	return ERR_PTR(-ENOSPC);
 }
@@ -3891,7 +3892,7 @@ unsigned long hugetlb_total_pages(void)
 	return nr_total_pages;
 }
 
-static int hugetlb_acct_memory(struct hstate *h, long delta)
+static int hugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_info *info)
 {
 	int ret = -ENOMEM;
 
@@ -3958,6 +3959,7 @@ static void hugetlb_vm_op_open(struct vm_area_struct *vma)
 
 static void hugetlb_vm_op_close(struct vm_area_struct *vma)
 {
+	struct hugetlbfs_inode_info *info = HUGETLBFS_I(file_inode(vma->vm_file));
 	struct hstate *h = hstate_vma(vma);
 	struct resv_map *resv = vma_resv_map(vma);
 	struct hugepage_subpool *spool = subpool_vma(vma);
@@ -3977,8 +3979,8 @@ static void hugetlb_vm_op_close(struct vm_area_struct *vma)
 		 * Decrement reserve counts.  The global reserve count may be
 		 * adjusted if the subpool has a minimum size.
 		 */
-		gbl_reserve = hugepage_subpool_put_pages(spool, reserve);
-		hugetlb_acct_memory(h, -gbl_reserve);
+		gbl_reserve = hugepage_subpool_put_pages(spool, reserve, info);
+		hugetlb_acct_memory(h, -gbl_reserve, info);
 	}
 
 	kref_put(&resv->refs, resv_map_release);
@@ -5424,6 +5426,7 @@ int hugetlb_reserve_pages(struct inode *inode,
 	struct resv_map *resv_map;
 	struct hugetlb_cgroup *h_cg = NULL;
 	long gbl_reserve, regions_needed = 0;
+	struct hugetlbfs_inode_info *info = HUGETLBFS_I(inode);
 
 	/* This should never happen */
 	if (from > to) {
@@ -5492,7 +5495,7 @@ int hugetlb_reserve_pages(struct inode *inode,
 	 * the subpool has a minimum size, there may be some global
 	 * reservations already in place (gbl_reserve).
 	 */
-	gbl_reserve = hugepage_subpool_get_pages(spool, chg);
+	gbl_reserve = hugepage_subpool_get_pages(spool, chg, info);
 	if (gbl_reserve < 0) {
 		ret = -ENOSPC;
 		goto out_uncharge_cgroup;
@@ -5502,7 +5505,7 @@ int hugetlb_reserve_pages(struct inode *inode,
 	 * Check enough hugepages are available for the reservation.
 	 * Hand the pages back to the subpool if there are not
 	 */
-	ret = hugetlb_acct_memory(h, gbl_reserve);
+	ret = hugetlb_acct_memory(h, gbl_reserve, info);
 	if (ret < 0) {
 		goto out_put_pages;
 	}
@@ -5522,7 +5525,7 @@ int hugetlb_reserve_pages(struct inode *inode,
 		add = region_add(resv_map, from, to, regions_needed, h, h_cg);
 
 		if (unlikely(add < 0)) {
-			hugetlb_acct_memory(h, -gbl_reserve);
+			hugetlb_acct_memory(h, -gbl_reserve, info);
 			ret = add;
 			goto out_put_pages;
 		} else if (unlikely(chg > add)) {
@@ -5544,8 +5547,8 @@ int hugetlb_reserve_pages(struct inode *inode,
 				(chg - add) * pages_per_huge_page(h), h_cg);
 
 			rsv_adjust = hugepage_subpool_put_pages(spool,
-								chg - add);
-			hugetlb_acct_memory(h, -rsv_adjust);
+								chg - add, info);
+			hugetlb_acct_memory(h, -rsv_adjust, info);
 		} else if (h_cg) {
 			/*
 			 * The file_regions will hold their own reference to
@@ -5559,7 +5562,7 @@ int hugetlb_reserve_pages(struct inode *inode,
 	return 0;
 out_put_pages:
 	/* put back original number of pages, chg */
-	(void)hugepage_subpool_put_pages(spool, chg);
+	(void)hugepage_subpool_put_pages(spool, chg, info);
 out_uncharge_cgroup:
 	hugetlb_cgroup_uncharge_cgroup_rsvd(hstate_index(h),
 					    chg * pages_per_huge_page(h), h_cg);
@@ -5583,6 +5586,7 @@ long hugetlb_unreserve_pages(struct inode *inode, long start, long end,
 	long chg = 0;
 	struct hugepage_subpool *spool = subpool_inode(inode);
 	long gbl_reserve;
+	struct hugetlbfs_inode_info *info = HUGETLBFS_I(inode);
 
 	/*
 	 * Since this routine can be called in the evict inode path for all
@@ -5607,8 +5611,8 @@ long hugetlb_unreserve_pages(struct inode *inode, long start, long end,
 	 * If the subpool has a minimum size, the number of global
 	 * reservations to be released may be adjusted.
 	 */
-	gbl_reserve = hugepage_subpool_put_pages(spool, (chg - freed));
-	hugetlb_acct_memory(h, -gbl_reserve);
+	gbl_reserve = hugepage_subpool_put_pages(spool, (chg - freed), info);
+	hugetlb_acct_memory(h, -gbl_reserve, info);
 
 	return 0;
 }
