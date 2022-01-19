@@ -283,6 +283,8 @@ extern struct static_key kvm_no_apic_vcpu;
 
 extern bool report_ignored_msrs;
 
+extern bool eager_page_split;
+
 static inline u64 nsec_to_cycles(struct kvm_vcpu *vcpu, u64 nsec)
 {
 	return pvclock_scale_delta(nsec, vcpu->arch.virtual_tsc_mult,
