@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       40
+%global devel_release       41
 %global maintenance_release .0.0
-%global pkg_release         .22
+%global pkg_release         .23
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,92 @@ fi
 %endif
 
 %changelog
+* Tue Jan 18 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-41.0.0.23
+- SCSI: spfc: Update lb mode acquired solution
+- cpufreq: intel_pstate: Add Icelake servers support in no-HWP mode
+- asm-generic: Add missing brackets for io_stop_wc macro
+- net: hns3: add ethtool priv-flag for TX push
+- net: hns3: add support for TX push mode
+- asm-generic: introduce io_stop_wc() and add implementation for ARM64
+- net/spnic:Remove the code about little endian and big endian conversion
+- net/spnic:Remove the code of polling mode
+- net/spnic:Remove unused clp hardware channels
+- net/spnic:Remove unused functions about ceq
+- RDMA/hns: Replace get_udp_sport with rdma_get_udp_sport
+- RDMA/core: Calculate UDP source port based on flow label or lqpn/rqpn
+- RDMA/hns: Modify the hop num of HIP09 EQ to 1
+- RDMA/hns: Remove magic number
+- RDMA/hns: Remove macros that are no longer used
+- RDMA/hns: Correctly initialize the members of Array[][]
+- RDMA/hns: Correct the type of variables participating in the shift operation
+- RDMA/hns: Replace tab with space in the right-side comments
+- RDMA/hns: Correct the print format to be consistent with the variable type
+- RDMA/hns: Correct the hex print format
+- RDMA/hns: Validate the pkey index
+- RDMA/hns: Modify the value of MAX_LP_MSG_LEN to meet hardware compatibility
+- RDMA/hns: Fix initial arm_st of CQ
+- RDMA: Constify netdev->dev_addr accesses
+- RDMA/hns: Use dma_alloc_coherent() instead of kmalloc/dma_map_single()
+- RDMA/hns: Add the check of the CQE size of the user space
+- RDMA/hns: Fix the size setting error when copying CQE in clean_cq()
+- RDMA/hns: Work around broken constant propagation in gcc 8
+- RDMA/hns: Delete unnecessary blank lines.
+- RDMA/hns: Adjust the order in which irq are requested and enabled
+- RDMA/hns: Remove dqpn filling when modify qp from Init to Init
+- RDMA/hns: Fix query destination qpn
+- RDMA/hns: Bugfix for incorrect association between dip_idx and dgid
+- RDMA/hns: Bugfix for the missing assignment for dip_idx
+- RDMA/hns: Bugfix for data type of dip_idx
+- RDMA/hns: Fix incorrect lsn field
+- RDMA/hns: Delete unused hns bitmap interface
+- RDMA/hns: Use IDA interface to manage srq index
+- RDMA/hns: Ownerbit mode add control field
+- RDMA/hns: Remove unsupport cmdq mode
+- RDMA/hns: Don't overwrite supplied QP attributes
+- RDMA/hns: Fix the double unlock problem of poll_sem
+- hugetlbfs: fix issue of preallocation of gigantic pages can't work
+- hugetlbfs: extend the definition of hugepages parameter to support node allocation
+- cpupower: Add cpuid cap flag for MSR_AMD_HWCR support
+- cpupower: Remove family arg to decode_pstates()
+- cpupower: Condense pstate enabled bit checks in decode_pstates()
+- cpupower: Update family checks when decoding HW pstates
+- cpupower: Remove unused pscur variable.
+- cpupower: Add CPUPOWER_CAP_AMD_HW_PSTATE cpuid caps flag
+- cpupower: Correct macro name for CPB caps flag
+- cpupower: Update msr_pstate union struct naming
+- openeuler_defconfig: Enable CONFIG_ARM64_EPAN for ARM64
+- arm64: Support execute-only permissions with Enhanced PAN
+- arm64: head.S: cleanup SCTLR_ELx initialization
+- arm64: smccc: Save lr before calling __arm_smccc_sve_check()
+- arm64: smccc: Support SMCCC v1.3 SVE register saving hint
+- KVM: arm64: Implement the TRNG hypervisor call
+- arm64: Add support for SMCCC TRNG entropy source
+- firmware: smccc: Introduce SMCCC TRNG framework
+- firmware: smccc: Add SMCCC TRNG function call IDs
+- arm64: abort counter_read_on_cpu() when irqs_disabled()
+- arm64: implement CPPC FFH support using AMUs
+- arm64: split counter validation function
+- arm64: wrap and generalise counter read functions
+- arm64: Add HWCAP for self-synchronising virtual counter
+- arm64: Add handling of CNTVCTSS traps
+- arm64: Add CNT{P,V}CTSS_EL0 alternatives to cnt{p,v}ct_el0
+- arm64: Add a capability for FEAT_ECV
+- clocksource/drivers/arch_arm_timer: Move workaround synchronisation around
+- clocksource/drivers/arm_arch_timer: Fix masking for high freq counters
+- clocksource/drivers/arm_arch_timer: Drop unnecessary ISB on CVAL programming
+- clocksource/drivers/arm_arch_timer: Remove any trace of the TVAL programming interface
+- clocksource/drivers/arm_arch_timer: Work around broken CVAL implementations
+- clocksource/drivers/arm_arch_timer: Advertise 56bit timer to the core code
+- clocksource/drivers/arm_arch_timer: Move MMIO timer programming over to CVAL
+- clocksource/drivers/arm_arch_timer: Fix MMIO base address vs callback ordering issue
+- clocksource/drivers/arm_arch_timer: Move drop _tval from erratum function names
+- clocksource/drivers/arm_arch_timer: Move system register timer programming over to CVAL
+- clocksource/drivers/arm_arch_timer: Extend write side of timer register accessors to u64
+- clocksource/drivers/arm_arch_timer: Drop CNT*_TVAL read accessors
+- clocksource/arm_arch_timer: Add build-time guards for unhandled register accesses
+- can: raw: return -ERANGE when filterset does not fit into user space buffer
+- x86: hugepage: use nt copy hugepage to AEP in x86
+
 * Fri Jan 14 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-40.0.0.22
 - xen/netback: don't queue unlimited number of packages
 - xen/netback: fix rx queue stall detection
