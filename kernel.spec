@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       41
+%global devel_release       42
 %global maintenance_release .0.0
-%global pkg_release         .23
+%global pkg_release         .24
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,32 @@ fi
 %endif
 
 %changelog
+* Wed Jan 19 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-42.0.0.24
+- Disable-SATA-disk-phy-for-severe-I_T-nexus reset failure
+- Export-sas_phy_enable
+- bonding: allow nesting of bonding device
+- bonding: avoid adding slave device with IFF_MASTER flag
+- bonding: 3ad: Fix the conflict between bond_update_slave_arr and the state machine
+- openeuler_defconfig: enable CONFIG_DYNAMIC_HUGETLB for x86
+- mm/dynamic_hugetlb: add Document for dynamic hugetlb feature
+- mm/dynamic_hugetlb: disable dynamic hugetlb if hugetlb_vmemmap is enabled
+- mm/huge_memory: disable THP when dynamic hugetlb is enabled
+- mm/dynamic_hugetlb: add some tracepoints
+- mm/dynamic_hugetlb: free huge pages to dhugetlb_pool
+- mm/dynamic_hugetlb: alloc huge pages from dhugetlb_pool
+- mm/dynamic_hugetlb: collects resv allocated for dhugetlb_pool
+- mm/dynamic_hugetlb: add interface to disable normal pages allocation
+- mm/dynamic_hugetlb: free pages to dhugetlb_pool
+- mm/dynamic_hugetlb: alloc page from dhugetlb_pool
+- mm/dynamic_hugetlb: add migration function
+- mm/dynamic_hugetlb: add merge page function
+- mm/dynamic_hugetlb: add split page function
+- mm/dynamic_hugetlb: add interface to configure the count of hugepages
+- mm/dynamic_hugetlb: add PG_pool flag to mark pages from dhugetlb_pool
+- mm/dynamic_hugetlb: establish the dynamic hugetlb feature framework
+- mm/hugetlb: add parameter hugetlbfs_inode_info to several functions
+- mm: declare several functions
+
 * Tue Jan 18 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-41.0.0.23
 - SCSI: spfc: Update lb mode acquired solution
 - cpufreq: intel_pstate: Add Icelake servers support in no-HWP mode
