@@ -223,7 +223,10 @@ static inline int real_y(struct fbcon_display *p, int ypos)
 	int rows = p->vrows;
 
 	ypos += p->yscroll;
-	return ypos < rows ? ypos : ypos - rows;
+	if (rows == 0)
+		return ypos;
+	else
+		return ypos < rows ? ypos : ypos % rows;
 }
 
 
