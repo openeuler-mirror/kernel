@@ -8576,7 +8576,7 @@ static void update_blocked_averages(int cpu)
 	update_rq_clock(rq);
 
 #ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
-	if (!static_branch_likely(&sched_blocked_averages)) {
+	if (!static_branch_unlikely(&sched_blocked_averages)) {
 		rq_unlock_irqrestore(rq, &rf);
 		return;
 	}
