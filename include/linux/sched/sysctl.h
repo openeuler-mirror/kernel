@@ -103,7 +103,7 @@ int sched_energy_aware_handler(struct ctl_table *table, int write,
 		void *buffer, size_t *lenp, loff_t *ppos);
 #endif
 
-#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
+#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
 extern int sysctl_blocked_averages(struct ctl_table *table, int write,
 		  void __user *buffer, size_t *lenp, loff_t *ppos);
 extern int sysctl_tick_update_load(struct ctl_table *table, int write,

@@ -557,7 +557,7 @@ extern int sysctl_panic_on_rcu_stall;
 extern int sysctl_panic_on_stackoverflow;
 
 extern bool crash_kexec_post_notifiers;
-#ifdef CONFIG_IAS_SMART_IDLE
+#ifdef CONFIG_IAS_SMART_HALT_POLL
 extern unsigned long poll_threshold_ns;
 #endif
 

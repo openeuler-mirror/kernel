@@ -44,7 +44,7 @@
 unsigned int sysctl_sched_latency			= 6000000ULL;
 static unsigned int normalized_sysctl_sched_latency	= 6000000ULL;
 
-#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
+#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
 #define LANTENCY_MIN 10
 #define LANTENCY_MAX 30
 unsigned int sysctl_load_tracking_latency = LANTENCY_MIN;
@@ -3848,7 +3848,7 @@ static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 {
 	u64 now = cfs_rq_clock_pelt(cfs_rq);
 	int decayed;
-#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
+#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
 	u64 delta;
 #endif
 
@@ -3856,7 +3856,7 @@ static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 	 * Track task load average for carrying it to new CPU after migrated, and
 	 * track group sched_entity load average for task_h_load calc in migration
 	 */
-#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
+#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
 	delta = now - se->avg.last_update_time;
 	delta >>= sysctl_load_tracking_latency;
 
@@ -4681,7 +4681,7 @@ static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 	cfs_rq->curr = NULL;
 }
 
-#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
+#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
 DEFINE_STATIC_KEY_TRUE(sched_tick_update_load);
 static void set_tick_update_load(bool enabled)
 {
@@ -4724,7 +4724,7 @@ entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
 	/*
 	 * Ensure that runnable average is periodically updated.
 	 */
-#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
+#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
 	if (static_branch_likely(&sched_tick_update_load)) {
 		update_load_avg(cfs_rq, curr, UPDATE_TG);
 		update_cfs_group(curr);
@@ -8339,7 +8339,7 @@ static void attach_tasks(struct lb_env *env)
 	rq_unlock(env->dst_rq, &rf);
 }
 
-#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
+#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
 DEFINE_STATIC_KEY_TRUE(sched_blocked_averages);
 
 static void set_blocked_averages(bool enabled)
@@ -8575,7 +8575,7 @@ static void update_blocked_averages(int cpu)
 	rq_lock_irqsave(rq, &rf);
 	update_rq_clock(rq);
 
-#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
+#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
 	if (!static_branch_likely(&sched_blocked_averages)) {
 		rq_unlock_irqrestore(rq, &rf);
 		return;

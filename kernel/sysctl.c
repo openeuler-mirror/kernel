@@ -1659,46 +1659,6 @@ int proc_do_static_key(struct ctl_table *table, int write,
 	mutex_unlock(&static_key_mutex);
 	return ret;
 }
-static struct ctl_table ias_table[] = {
-#ifdef CONFIG_IAS_SMART_IDLE
-	{
-		.procname	= "smart_idle_threshold",
-		.data		= &poll_threshold_ns,
-		.maxlen		= sizeof(unsigned long),
-		.mode		= 0644,
-		.proc_handler	= proc_doulongvec_minmax,
-	},
-#endif
-
-#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
-	{
-		.procname	= "sched_blocked_averages",
-		.data		= NULL,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= sysctl_blocked_averages,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-	{
-		.procname	= "sched_tick_update_load",
-		.data		= NULL,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= sysctl_tick_update_load,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-	{
-		.procname	= "sched_load_tracking_latency",
-		.data		= NULL,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= sysctl_update_load_latency,
-	},
-#endif
-	{ }
-};
 
 static struct ctl_table kern_table[] = {
 	{
@@ -1813,6 +1773,33 @@ static struct ctl_table kern_table[] = {
 	},
 #endif /* CONFIG_NUMA_BALANCING */
 #endif /* CONFIG_SCHED_DEBUG */
+#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
+	{
+		.procname	= "sched_blocked_averages",
+		.data		= NULL,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_blocked_averages,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "sched_tick_update_load",
+		.data		= NULL,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_tick_update_load,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "sched_load_tracking_latency",
+		.data		= NULL,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_update_load_latency,
+	},
+#endif
 	{
 		.procname	= "sched_rt_period_us",
 		.data		= &sysctl_sched_rt_period,
@@ -1871,7 +1858,15 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= sysctl_sched_uclamp_handler,
 	},
 #endif
-
+#ifdef CONFIG_IAS_SMART_HALT_POLL
+	{
+		.procname	= "halt_poll_threshold",
+		.data		= &poll_threshold_ns,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0644,
+		.proc_handler	= proc_doulongvec_minmax,
+	},
+#endif
 #ifdef CONFIG_SCHED_AUTOGROUP
 	{
 		.procname	= "sched_autogroup_enabled",
@@ -2713,11 +2708,6 @@ static struct ctl_table kern_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 #endif
-	{
-		.procname	= "ias",
-		.mode		= 0555,
-		.child		= ias_table,
-	},
 #ifdef CONFIG_QOS_SCHED
 	{
 		.procname	= "qos_overload_detect_period_ms",

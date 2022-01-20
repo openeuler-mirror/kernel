@@ -774,6 +774,22 @@ config GENERIC_SCHED_CLOCK
 
 menu "Scheduler features"
 
+config SCHED_OPTIMIZE_LOAD_TRACKING
+	bool "Optimize scheduler load tracking"
+	default n
+	help
+	  Optimize scheduler load tracking, when load balance is not important
+	  in system, we close some load tracking in tick and enqueue or dequeue
+	  task, in this way, we can save some unnecessary cpu overhead.
+
+config IAS_SMART_HALT_POLL
+	bool "Enable smart halt poll"
+	default n
+	help
+	  Before entering the real idle, polling for a while. if the current
+	  task is set TIF_NEED_RESCHED during the polling process, it will
+	  immediately break from the polling loop.
+
 config UCLAMP_TASK
 	bool "Enable utilization clamping for RT/FAIR tasks"
 	depends on CPU_FREQ_GOV_SCHEDUTIL
@@ -822,26 +838,6 @@ config UCLAMP_BUCKETS_COUNT
 	  precision.
 
 	  If in doubt, use the default value.
-
-menu "Intelligent aware scheduler"
-
-config IAS_SMART_IDLE
-	bool "Enable smart idle"
-	default n
-	help
-	  Before entering the real idle, polling for a while. if the current
-	  task is set TIF_NEED_RESCHED during the polling process, it will
-	  immediately break from the polling loop.
-
-config IAS_SMART_LOAD_TRACKING
-	bool "Enable smart load tracking"
-	default n
-	help
-	  Optimize scheduler load tracking, when load balance is not important
-	  in system, we close some load tracking in tick and enqueue or dequeue
-	  task, in this way, we can save some unnecessary cpu overhead.
-
-endmenu
 
 endmenu
 
