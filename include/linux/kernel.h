@@ -557,8 +557,6 @@ extern int sysctl_panic_on_rcu_stall;
 extern int sysctl_panic_on_stackoverflow;
 
 extern bool crash_kexec_post_notifiers;
-extern unsigned long poll_threshold_ns;
-
 
 /*
  * panic_cpu is used for synchronizing panic() and crash_kexec() execution. It

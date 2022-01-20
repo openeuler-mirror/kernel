@@ -13,12 +13,6 @@
 /* Linker adds these: start and end of __cpuidle functions */
 extern char __cpuidle_text_start[], __cpuidle_text_end[];
 
-/*
- * Poll_threshold_ns indicates the maximum polling time before
- * entering real idle.
- */
-unsigned long poll_threshold_ns;
-
 /**
  * sched_idle_set_state - Record idle state for the current CPU.
  * @idle_state: State to record.
@@ -58,31 +52,12 @@ static int __init cpu_idle_nopoll_setup(char *__unused)
 __setup("hlt", cpu_idle_nopoll_setup);
 #endif
 
-static void smart_idle_poll(void)
-{
-	unsigned long poll_duration = poll_threshold_ns;
-	ktime_t cur, stop;
-
-	if (!poll_duration)
-		return;
-
-	stop = ktime_add_ns(ktime_get(), poll_duration);
-
-	do {
-		cpu_relax();
-		if (tif_need_resched())
-			break;
-		cur = ktime_get();
-	} while (ktime_before(cur, stop));
-}
-
 static noinline int __cpuidle cpu_idle_poll(void)
 {
 	trace_cpu_idle(0, smp_processor_id());
 	stop_critical_timings();
 	rcu_idle_enter();
 	local_irq_enable();
-	smart_idle_poll();
 
 	while (!tif_need_resched() &&
 	       (cpu_idle_force_poll || tick_check_broadcast_expired()))
@@ -286,7 +261,6 @@ exit_idle:
 static void do_idle(void)
 {
 	int cpu = smp_processor_id();
-	unsigned long idle_poll_flag = poll_threshold_ns;
 	/*
 	 * If the arch has a polling bit, we maintain an invariant:
 	 *
@@ -319,11 +293,9 @@ static void do_idle(void)
 		 * broadcast device expired for us, we don't want to go deep
 		 * idle as we know that the IPI is going to arrive right away.
 		 */
-		if (cpu_idle_force_poll || tick_check_broadcast_expired() ||
-			  idle_poll_flag) {
+		if (cpu_idle_force_poll || tick_check_broadcast_expired()) {
 			tick_nohz_idle_restart_tick();
 			cpu_idle_poll();
-			idle_poll_flag = 0;
 		} else {
 			cpuidle_idle_call();
 		}
