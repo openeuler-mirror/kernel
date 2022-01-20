@@ -61,38 +61,22 @@ __setup("hlt", cpu_idle_nopoll_setup);
 #endif
 
 #ifdef CONFIG_IAS_SMART_IDLE
-/* looping 2000 times is probably microsecond level for 2GHZ CPU*/
-#define MICRO_LEVEL_COUNT 2000
-static inline void delay_relax(unsigned long delay_max)
-{
-	unsigned long delay_count = 0;
-
-	delay_max = (delay_max < MICRO_LEVEL_COUNT) ? delay_max : MICRO_LEVEL_COUNT;
-	while (unlikely(!tif_need_resched()) && delay_count < delay_max) {
-		barrier();
-		__asm__ __volatile__("nop;");
-		delay_count++;
-	}
-}
-
-static inline void smart_idle_poll(void)
+static void smart_idle_poll(void)
 {
 	unsigned long poll_duration = poll_threshold_ns;
 	ktime_t cur, stop;
 
-	if (likely(!poll_duration))
+	if (!poll_duration)
 		return;
 
 	stop = ktime_add_ns(ktime_get(), poll_duration);
-	while (true) {
-		delay_relax(poll_duration);
-		if (likely(tif_need_resched()))
+
+	do {
+		cpu_relax();
+		if (tif_need_resched())
 			break;
 		cur = ktime_get();
-		if (likely(!ktime_before(cur, stop)))
-			break;
-		poll_duration = ktime_sub_ns(stop, cur);
-	}
+	} while (ktime_before(cur, stop));
 }
 #endif
 
