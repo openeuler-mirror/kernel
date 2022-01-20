@@ -8250,39 +8250,6 @@ static void attach_tasks(struct lb_env *env)
 	rq_unlock(env->dst_rq, &rf);
 }
 
-#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
-DEFINE_STATIC_KEY_TRUE(sched_blocked_averages);
-
-static void set_blocked_averages(bool enabled)
-{
-	if (enabled)
-		static_branch_enable(&sched_blocked_averages);
-	else
-		static_branch_disable(&sched_blocked_averages);
-}
-
-int sysctl_blocked_averages(struct ctl_table *table, int write,
-			    void __user *buffer, size_t *lenp, loff_t *ppos)
-{
-	struct ctl_table t;
-	int err;
-	int state = static_branch_likely(&sched_blocked_averages);
-
-	if (write && !capable(CAP_SYS_ADMIN))
-		return -EPERM;
-
-	t = *table;
-	t.data = &state;
-	err = proc_dointvec_minmax(&t, write, buffer, lenp, ppos);
-	if (err < 0)
-		return err;
-	if (write)
-		set_blocked_averages(state);
-
-	return err;
-}
-#endif
-
 #ifdef CONFIG_NO_HZ_COMMON
 static inline bool cfs_rq_has_blocked(struct cfs_rq *cfs_rq)
 {
@@ -8485,13 +8452,6 @@ static void update_blocked_averages(int cpu)
 
 	rq_lock_irqsave(rq, &rf);
 	update_rq_clock(rq);
-
-#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
-	if (!static_branch_unlikely(&sched_blocked_averages)) {
-		rq_unlock_irqrestore(rq, &rf);
-		return;
-	}
-#endif
 
 	decayed |= __update_blocked_others(rq, &done);
 	decayed |= __update_blocked_fair(rq, &done);
