@@ -44,35 +44,6 @@
 unsigned int sysctl_sched_latency			= 6000000ULL;
 static unsigned int normalized_sysctl_sched_latency	= 6000000ULL;
 
-#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
-#define LANTENCY_MIN 10
-#define LANTENCY_MAX 30
-unsigned int sysctl_load_tracking_latency = LANTENCY_MIN;
-
-int sysctl_update_load_latency(struct ctl_table *table, int write,
-			       void __user *buffer, size_t *lenp, loff_t *ppos)
-{
-	int ret;
-	int min = LANTENCY_MIN;
-	int max = LANTENCY_MAX;
-	int latency = sysctl_load_tracking_latency;
-	struct ctl_table t;
-
-	t = *table;
-	t.data = &latency;
-	t.extra1 = &min;
-	t.extra2 = &max;
-
-	ret = proc_dointvec_minmax(&t, write, buffer, lenp, ppos);
-	if (ret || !write)
-		return ret;
-
-	sysctl_load_tracking_latency = latency;
-
-	return 0;
-}
-#endif
-
 /*
  * The initial- and re-scaling of tunables is configurable
  *
@@ -3845,34 +3816,16 @@ static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 {
 	u64 now = cfs_rq_clock_pelt(cfs_rq);
 	int decayed;
-#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
-	u64 delta;
-#endif
 
 	/*
 	 * Track task load average for carrying it to new CPU after migrated, and
 	 * track group sched_entity load average for task_h_load calc in migration
 	 */
-#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
-	delta = now - se->avg.last_update_time;
-	delta >>= sysctl_load_tracking_latency;
-
-	if (!delta)
-		return;
-
 	if (se->avg.last_update_time && !(flags & SKIP_AGE_LOAD))
 		__update_load_avg_se(now, cfs_rq, se);
 
 	decayed  = update_cfs_rq_load_avg(now, cfs_rq);
 	decayed |= propagate_entity_load_avg(se);
-#else
-	if (se->avg.last_update_time && !(flags & SKIP_AGE_LOAD))
-		__update_load_avg_se(now, cfs_rq, se);
-
-	decayed  = update_cfs_rq_load_avg(now, cfs_rq);
-	decayed |= propagate_entity_load_avg(se);
-#endif
-
 
 	if (!se->avg.last_update_time && (flags & DO_ATTACH)) {
 
@@ -4678,38 +4631,6 @@ static void put_prev_entity(struct cfs_rq *cfs_rq, struct sched_entity *prev)
 	cfs_rq->curr = NULL;
 }
 
-#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
-DEFINE_STATIC_KEY_TRUE(sched_tick_update_load);
-static void set_tick_update_load(bool enabled)
-{
-	if (enabled)
-		static_branch_enable(&sched_tick_update_load);
-	else
-		static_branch_disable(&sched_tick_update_load);
-}
-
-int sysctl_tick_update_load(struct ctl_table *table, int write,
-			    void __user *buffer, size_t *lenp, loff_t *ppos)
-{
-	struct ctl_table t;
-	int err;
-	int state = static_branch_likely(&sched_tick_update_load);
-
-	if (write && !capable(CAP_SYS_ADMIN))
-		return -EPERM;
-
-	t = *table;
-	t.data = &state;
-	err = proc_dointvec_minmax(&t, write, buffer, lenp, ppos);
-	if (err < 0)
-		return err;
-	if (write)
-		set_tick_update_load(state);
-
-	return err;
-}
-#endif
-
 static void
 entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
 {
@@ -4721,15 +4642,8 @@ entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
 	/*
 	 * Ensure that runnable average is periodically updated.
 	 */
-#ifdef CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING
-	if (static_branch_likely(&sched_tick_update_load)) {
-		update_load_avg(cfs_rq, curr, UPDATE_TG);
-		update_cfs_group(curr);
-	}
-#else
 	update_load_avg(cfs_rq, curr, UPDATE_TG);
 	update_cfs_group(curr);
-#endif
 
 #ifdef CONFIG_SCHED_HRTICK
 	/*
