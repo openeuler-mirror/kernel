@@ -45,35 +45,34 @@ unsigned int sysctl_sched_latency			= 6000000ULL;
 static unsigned int normalized_sysctl_sched_latency	= 6000000ULL;
 
 #ifdef CONFIG_IAS_SMART_LOAD_TRACKING
-DEFINE_STATIC_KEY_FALSE(sched_load_tracking_aware_enable);
-static void set_load_tracking_aware(bool enabled)
-{
-	if (enabled)
-		static_branch_enable(&sched_load_tracking_aware_enable);
-	else
-		static_branch_disable(&sched_load_tracking_aware_enable);
-}
+#define LANTENCY_MIN 10
+#define LANTENCY_MAX 30
+unsigned int sysctl_load_tracking_latency = LANTENCY_MIN;
 
-int sysctl_update_load_tracking_aware(struct ctl_table *table, int write,
-			   void __user *buffer, size_t *lenp, loff_t *ppos)
+int sysctl_update_load_latency(struct ctl_table *table, int write,
+			       void __user *buffer, size_t *lenp, loff_t *ppos)
 {
+	int ret;
+	int min = LANTENCY_MIN;
+	int max = LANTENCY_MAX;
+	int latency = sysctl_load_tracking_latency;
 	struct ctl_table t;
-	int err;
-	int state = static_branch_likely(&sched_load_tracking_aware_enable);
 
 	if (write && !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
 	t = *table;
-	t.data = &state;
-	err = proc_dointvec_minmax(&t, write, buffer, lenp, ppos);
-	if (err < 0)
-		return err;
+	t.data = &latency;
+	t.extra1 = &min;
+	t.extra2 = &max;
 
-	if (write)
-		set_load_tracking_aware(state);
+	ret = proc_dointvec_minmax(&t, write, buffer, lenp, ppos);
+	if (ret || !write)
+		return ret;
 
-	return err;
+	sysctl_load_tracking_latency = latency;
+
+	return 0;
 }
 #endif
 
@@ -3844,42 +3843,39 @@ static void detach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 #define SKIP_AGE_LOAD	0x2
 #define DO_ATTACH	0x4
 
-#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
-/*
- * Check load tracking senario. In single-core system without cpu frequency update,
- * precise load tracking will be unnecessary. So here we just shutdown load tracking,
- * for decreasing cpu usage.
- */
-static inline int check_load_switch(void)
-{
-	if (static_branch_unlikely(&sched_load_tracking_aware_enable))
-		if (num_online_cpus() == 1)
-		/* no need to update load average in single core senario */
-			return 1;
-
-	return 0;
-}
-#endif
-
 /* Update task and its cfs_rq load average */
 static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
 	u64 now = cfs_rq_clock_pelt(cfs_rq);
 	int decayed;
-
 #ifdef CONFIG_IAS_SMART_LOAD_TRACKING
-	if (check_load_switch())
-		return;
+	u64 delta;
 #endif
+
 	/*
 	 * Track task load average for carrying it to new CPU after migrated, and
 	 * track group sched_entity load average for task_h_load calc in migration
 	 */
+#ifdef CONFIG_IAS_SMART_LOAD_TRACKING
+	delta = now - se->avg.last_update_time;
+	delta >>= sysctl_load_tracking_latency;
+
+	if (!delta)
+		return;
+
 	if (se->avg.last_update_time && !(flags & SKIP_AGE_LOAD))
 		__update_load_avg_se(now, cfs_rq, se);
 
 	decayed  = update_cfs_rq_load_avg(now, cfs_rq);
 	decayed |= propagate_entity_load_avg(se);
+#else
+	if (se->avg.last_update_time && !(flags & SKIP_AGE_LOAD))
+		__update_load_avg_se(now, cfs_rq, se);
+
+	decayed  = update_cfs_rq_load_avg(now, cfs_rq);
+	decayed |= propagate_entity_load_avg(se);
+#endif
+
 
 	if (!se->avg.last_update_time && (flags & DO_ATTACH)) {
 

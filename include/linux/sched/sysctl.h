@@ -108,12 +108,12 @@ extern int sysctl_blocked_averages(struct ctl_table *table, int write,
 		  void __user *buffer, size_t *lenp, loff_t *ppos);
 extern int sysctl_tick_update_load(struct ctl_table *table, int write,
 		  void __user *buffer, size_t *lenp, loff_t *ppos);
-extern int sysctl_update_load_tracking_aware(struct ctl_table *table,
-		  int write, void __user *buffer, size_t *lenp, loff_t *ppos);
+extern int sysctl_update_load_latency(struct ctl_table *table, int write,
+		  void __user *buffer, size_t *lenp, loff_t *ppos);
 
+extern unsigned int sysctl_load_tracking_latency;
 extern struct static_key_true sched_tick_update_load;
 extern struct static_key_true sched_blocked_averages;
-extern struct static_key_false sched_load_tracking_aware_enable;
 #endif
 
 #endif /* _LINUX_SCHED_SYSCTL_H */
