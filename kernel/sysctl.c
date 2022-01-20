@@ -1858,7 +1858,6 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= sysctl_sched_uclamp_handler,
 	},
 #endif
-#ifdef CONFIG_IAS_SMART_HALT_POLL
 	{
 		.procname	= "halt_poll_threshold",
 		.data		= &poll_threshold_ns,
@@ -1866,7 +1865,6 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_doulongvec_minmax,
 	},
-#endif
 #ifdef CONFIG_SCHED_AUTOGROUP
 	{
 		.procname	= "sched_autogroup_enabled",
