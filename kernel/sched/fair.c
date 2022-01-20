@@ -58,9 +58,6 @@ int sysctl_update_load_latency(struct ctl_table *table, int write,
 	int latency = sysctl_load_tracking_latency;
 	struct ctl_table t;
 
-	if (write && !capable(CAP_SYS_ADMIN))
-		return -EPERM;
-
 	t = *table;
 	t.data = &latency;
 	t.extra1 = &min;
