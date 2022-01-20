@@ -43,6 +43,19 @@ static struct blkcg_policy blkcg_policy_throtl;
 /* A workqueue to queue throttle related work */
 static struct workqueue_struct *kthrotld_workqueue;
 
+/* True if global limit is enabled in cgroup v1 */
+static bool global_limit;
+
+static int __init setup_global_limit(char *str)
+{
+	if (!strcmp(str, "1") || !strcmp(str, "Y") || !strcmp(str, "y"))
+		global_limit = true;
+
+	return 1;
+}
+
+__setup("blkcg_global_limit=", setup_global_limit);
+
 /*
  * To implement hierarchical throttling, throtl_grps form a tree and bios
  * are dispatched upwards level by level until they reach the top and get
@@ -558,7 +571,8 @@ static void throtl_pd_init(struct blkg_policy_data *pd)
 	 * regardless of the position of the group in the hierarchy.
 	 */
 	sq->parent_sq = &td->service_queue;
-	if (cgroup_subsys_on_dfl(io_cgrp_subsys) && blkg->parent)
+	if ((cgroup_subsys_on_dfl(io_cgrp_subsys) || global_limit) &&
+	    blkg->parent)
 		sq->parent_sq = &blkg_to_tg(blkg->parent)->service_queue;
 	tg->td = td;
 }
