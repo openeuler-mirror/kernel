@@ -2080,14 +2080,6 @@ endmenu		# General setup
 
 source "arch/Kconfig"
 
-config SCHED_OPTIMIZE_LOAD_TRACKING
-	bool "Optimize scheduler load tracking"
-	default n
-	help
-	  Optimize scheduler load tracking, when load balance is not important
-	  in system, we close some load tracking in tick and enqueue or dequeue
-	  task, in this way, we can save some unnecessary cpu overhead.
-
 config RT_MUTEXES
 	bool
 
