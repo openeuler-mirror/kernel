@@ -1664,10 +1664,9 @@ static struct ctl_table ias_table[] = {
 	{
 		.procname	= "smart_idle_threshold",
 		.data		= &poll_threshold_ns,
-		.maxlen		= sizeof(int),
+		.maxlen		= sizeof(unsigned long),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
+		.proc_handler	= proc_doulongvec_minmax,
 	},
 #endif
 
@@ -1872,6 +1871,7 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= sysctl_sched_uclamp_handler,
 	},
 #endif
+
 #ifdef CONFIG_SCHED_AUTOGROUP
 	{
 		.procname	= "sched_autogroup_enabled",

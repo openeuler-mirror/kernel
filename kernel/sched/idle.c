@@ -18,7 +18,7 @@ extern char __cpuidle_text_start[], __cpuidle_text_end[];
  * Poll_threshold_ns indicates the maximum polling time before
  * entering real idle.
  */
-int poll_threshold_ns;
+unsigned long poll_threshold_ns;
 #endif
 
 /**
@@ -63,9 +63,9 @@ __setup("hlt", cpu_idle_nopoll_setup);
 #ifdef CONFIG_IAS_SMART_IDLE
 /* looping 2000 times is probably microsecond level for 2GHZ CPU*/
 #define MICRO_LEVEL_COUNT 2000
-static inline void delay_relax(int delay_max)
+static inline void delay_relax(unsigned long delay_max)
 {
-	int delay_count = 0;
+	unsigned long delay_count = 0;
 
 	delay_max = (delay_max < MICRO_LEVEL_COUNT) ? delay_max : MICRO_LEVEL_COUNT;
 	while (unlikely(!tif_need_resched()) && delay_count < delay_max) {
@@ -77,7 +77,7 @@ static inline void delay_relax(int delay_max)
 
 static inline void smart_idle_poll(void)
 {
-	int poll_duration = poll_threshold_ns;
+	unsigned long poll_duration = poll_threshold_ns;
 	ktime_t cur, stop;
 
 	if (likely(!poll_duration))
@@ -309,7 +309,7 @@ static void do_idle(void)
 {
 	int cpu = smp_processor_id();
 #ifdef CONFIG_IAS_SMART_IDLE
-	int idle_poll_flag = poll_threshold_ns;
+	unsigned long idle_poll_flag = poll_threshold_ns;
 #endif
 	/*
 	 * If the arch has a polling bit, we maintain an invariant:

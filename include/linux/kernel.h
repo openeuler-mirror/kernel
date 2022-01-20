@@ -558,7 +558,7 @@ extern int sysctl_panic_on_stackoverflow;
 
 extern bool crash_kexec_post_notifiers;
 #ifdef CONFIG_IAS_SMART_IDLE
-extern int poll_threshold_ns;
+extern unsigned long poll_threshold_ns;
 #endif
 
 
