@@ -52,6 +52,8 @@
 #include <asm/xen/hypervisor.h>
 #include <asm/mmu_context.h>
 
+#include "../mm/pmem_reserve.h"
+
 static int num_standard_resources;
 static struct resource *standard_resources;
 
@@ -297,6 +299,8 @@ static void __init request_standard_resources(void)
 
 		request_pin_mem_res(res);
 	}
+
+	request_pmem_res_resource();
 }
 
 static int __init reserve_memblock_reserved_regions(void)

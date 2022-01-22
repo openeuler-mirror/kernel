@@ -1325,6 +1325,24 @@ config RODATA_FULL_DEFAULT_ENABLED
 	  This requires the linear region to be mapped down to pages,
 	  which may adversely affect performance in some cases.
 
+config ARM64_PMEM_RESERVE
+	bool
+
+config ARM64_PMEM_LEGACY
+	tristate "Support Persistent Memory (legacy) register via protected memory"
+	depends on BLK_DEV
+	select ARM64_PMEM_RESERVE
+	select PMEM_LEGACY
+	select PMEM_LEGACY_DEVICE
+	select LIBNVDIMM
+	help
+	  Protected memory ranges for persistent memory are described by the
+	  'memmap=nn[KMG]!ss[KMG]' kernel parameter".
+	  The kernel will offer those memory regions to the 'pmem' driver so
+	  they can be used for persistent storage.
+
+	  Say Y if unsure.
+
 config ARM64_SW_TTBR0_PAN
 	bool "Emulate Privileged Access Never using TTBR0_EL1 switching"
 	help

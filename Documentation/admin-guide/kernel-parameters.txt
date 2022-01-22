@@ -2831,10 +2831,13 @@
 			will be eaten.
 
 	memmap=nn[KMG]!ss[KMG]
-			[KNL,X86] Mark specific memory as protected.
+			[KNL,X86,ARM64] Mark specific memory as protected.
 			Region of memory to be used, from ss to ss+nn.
-			The memory region may be marked as e820 type 12 (0xc)
+			[X86] The memory region may be marked as e820 type 12 (0xc)
 			and is NVDIMM or ADR memory.
+			[ARM64] The maximum memory regions supported is 8.
+			Example:
+				memmap=100K!0x1a0000000
 
 	memmap=<size>%<offset>-<oldtype>+<newtype>
 			[KNL,ACPI] Convert memory within the specified region

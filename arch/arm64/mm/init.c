@@ -45,6 +45,8 @@
 #include <asm/tlb.h>
 #include <asm/alternative.h>
 
+#include "pmem_reserve.h"
+
 /*
  * We need to be able to catch inadvertent references to memstart_addr
  * that occur (potentially in generic code) before arm64_memblock_init()
@@ -394,6 +396,9 @@ static int __init parse_memmap_one(char *p)
 		start_at = memparse(p + 1, &p);
 		memblock_reserve(start_at, mem_size);
 		memblock_mark_memmap(start_at, mem_size);
+	} else if (*p == '!') {
+		start_at = memparse(p + 1, &p);
+		setup_reserve_pmem(start_at, mem_size);
 	} else
 		pr_info("Unrecognized memmap option, please check the parameter.\n");
 
@@ -589,6 +594,8 @@ void __init bootmem_init(void)
 #ifdef CONFIG_QUICK_KEXEC
 	reserve_quick_kexec();
 #endif
+
+	reserve_pmem();
 
 	reserve_pin_memory_res();
 
