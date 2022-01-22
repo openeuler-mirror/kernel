@@ -697,8 +697,6 @@ static int tcp_comp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 		if (!ctx->rx.decompressed) {
 			err = tcp_comp_decompress(sk, skb);
 			if (err < 0) {
-				if (err != -ENOSPC)
-					tcp_comp_err_abort(sk, EBADMSG);
 				goto recv_end;
 			}
 			ctx->rx.decompressed = true;
@@ -731,6 +729,9 @@ recv_end:
 bool comp_stream_read(struct sock *sk)
 {
 	struct tcp_comp_context *ctx = comp_get_ctx(sk);
+
+	if (!ctx)
+		return false;
 
 	if (ctx->rx.pkt)
 		return true;
