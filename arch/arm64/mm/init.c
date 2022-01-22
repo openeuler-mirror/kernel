@@ -30,9 +30,7 @@
 #include <linux/crash_dump.h>
 #include <linux/hugetlb.h>
 #include <linux/acpi_iort.h>
-#ifdef CONFIG_PIN_MEMORY
 #include <linux/pin_mem.h>
-#endif
 
 #include <asm/boot.h>
 #include <asm/fixmap.h>
@@ -55,52 +53,6 @@
  */
 s64 memstart_addr __ro_after_init = -1;
 EXPORT_SYMBOL(memstart_addr);
-
-#ifdef CONFIG_PIN_MEMORY
-struct resource pin_memory_resource = {
-	.name = "Pin memory",
-	.start = 0,
-	.end = 0,
-	.flags = IORESOURCE_MEM,
-	.desc = IORES_DESC_RESERVED
-};
-
-static void __init reserve_pin_memory_res(void)
-{
-	unsigned long long mem_start, mem_len;
-	int ret;
-
-	ret = parse_pin_memory(boot_command_line, memblock_phys_mem_size(),
-		&mem_len, &mem_start);
-	if (ret || !mem_len)
-		return;
-
-	mem_len = PAGE_ALIGN(mem_len);
-
-	if (!memblock_is_region_memory(mem_start, mem_len)) {
-		pr_warn("cannot reserve for pin memory: region is not memory!\n");
-		return;
-	}
-
-	if (memblock_is_region_reserved(mem_start, mem_len)) {
-		pr_warn("cannot reserve for pin memory: region overlaps reserved memory!\n");
-		return;
-	}
-
-	if (!IS_ALIGNED(mem_start, SZ_2M)) {
-		pr_warn("cannot reserve for pin memory: base address is not 2MB aligned\n");
-		return;
-	}
-
-	memblock_reserve(mem_start, mem_len);
-	pin_memory_resource.start = mem_start;
-	pin_memory_resource.end = mem_start + mem_len - 1;
-}
-#else
-static void __init reserve_pin_memory_res(void)
-{
-}
-#endif /* CONFIG_PIN_MEMORY */
 
 /*
  * If the corresponding config options are enabled, we create both ZONE_DMA
@@ -729,11 +681,8 @@ void __init mem_init(void)
 	/* this will put all unused low memory onto the freelists */
 	memblock_free_all();
 
-#ifdef CONFIG_PIN_MEMORY
 	/* pre alloc the pages for pin memory */
-	init_reserve_page_map((unsigned long)pin_memory_resource.start,
-		(unsigned long)(pin_memory_resource.end - pin_memory_resource.start));
-#endif
+	init_reserve_page_map();
 
 	mem_init_print_info(NULL);
 

@@ -83,17 +83,35 @@ extern int pagemap_get(struct mm_struct *mm, void *mem_walk,
 			unsigned long *pte_entry, unsigned int *count);
 
 extern int init_pagemap_read(void);
-/* reserve space for pin memory*/
-#ifdef CONFIG_ARM64
-extern struct resource pin_memory_resource;
-#endif
-extern void init_reserve_page_map(unsigned long map_addr, unsigned long map_size);
 
-#ifdef CONFIG_PID_RESERVE
-extern bool is_need_reserve_pids(void);
-extern void free_reserved_pid(struct idr *idr, int pid);
-extern void reserve_pids(struct idr *idr, int pid_max);
-#endif
+extern void __init reserve_pin_memory_res(void);
+
+extern void request_pin_mem_res(struct resource *res);
+
+extern void init_reserve_page_map(void);
+
+#else
+
+static inline void __init reserve_pin_memory_res(void) {}
+
+static inline void request_pin_mem_res(struct resource *res) {}
+
+static inline void init_reserve_page_map(void) {}
 
 #endif /* CONFIG_PIN_MEMORY */
+
+#ifdef CONFIG_PID_RESERVE
+
+extern void free_reserved_pid(struct idr *idr, int pid);
+
+extern void reserve_pids(struct idr *idr, int pid_max);
+
+#else
+
+static inline void free_reserved_pid(struct idr *idr, int pid) {}
+
+static inline void reserve_pids(struct idr *idr, int pid_max) {}
+
+#endif /* CONFIG_PID_RESERVE */
+
 #endif /* _LINUX_PIN_MEMORY_H */

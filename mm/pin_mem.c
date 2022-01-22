@@ -17,6 +17,7 @@
 #include <linux/ctype.h>
 #include <linux/highmem.h>
 #include <crypto/sha2.h>
+#include <linux/memblock.h>
 
 #define MAX_PIN_PID_NUM  128
 #define DEFAULT_REDIRECT_SPACE_SIZE  0x100000
@@ -1023,22 +1024,6 @@ free:
 }
 EXPORT_SYMBOL_GPL(do_mem_remap);
 
-#if defined(CONFIG_ARM64)
-void init_reserve_page_map(unsigned long map_addr, unsigned long map_size)
-{
-	void *addr;
-
-	if (!map_addr || !map_size)
-		return;
-	addr = phys_to_virt(map_addr);
-	init_page_map_info((struct pin_mem_dump_info *)addr, map_size);
-}
-#else
-void init_reserve_page_map(unsigned long map_addr, unsigned long map_size)
-{
-}
-#endif
-
 static void free_all_reserved_pages(void)
 {
 	unsigned int i, j, index, order;
@@ -1088,14 +1073,92 @@ void clear_pin_memory_record(void)
 }
 EXPORT_SYMBOL_GPL(clear_pin_memory_record);
 
+static struct resource pin_memory_resource = {
+	.name = "Pin memory",
+	.start = 0,
+	.end = 0,
+	.flags = IORESOURCE_MEM,
+	.desc = IORES_DESC_RESERVED
+};
+
+static unsigned long long pin_mem_start;
+static unsigned long long pin_mem_len;
+
+static int __init parse_pin_memory(char *cmdline)
+{
+	char *cur = cmdline;
+
+	pin_mem_len = memparse(cmdline, &cur);
+	if (cmdline == cur) {
+		pr_warn("crashkernel: memory value expected\n");
+		return -EINVAL;
+	}
+
+	if (*cur == '@')
+		pin_mem_start = memparse(cur+1, &cur);
+	else if (*cur != ' ' && *cur != '\0') {
+		pr_warn("pinmem: unrecognized char: %c\n", *cur);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+early_param("pinmemory", parse_pin_memory);
+
+void __init reserve_pin_memory_res(void)
+{
+	unsigned long long mem_start = pin_mem_start;
+	unsigned long long mem_len = pin_mem_len;
+
+	if (!pin_mem_len)
+		return;
+
+	mem_len = PAGE_ALIGN(mem_len);
+
+	if (!memblock_is_region_memory(mem_start, mem_len)) {
+		pr_warn("cannot reserve for pin memory: region is not memory!\n");
+		return;
+	}
+
+	if (memblock_is_region_reserved(mem_start, mem_len)) {
+		pr_warn("cannot reserve for pin memory: region overlaps reserved memory!\n");
+		return;
+	}
+
+	memblock_reserve(mem_start, mem_len);
+	pr_debug("pin memory resource reserved: 0x%016llx - 0x%016llx (%lld MB)\n",
+		mem_start, mem_start + mem_len, mem_len >> 20);
+
+	pin_memory_resource.start = mem_start;
+	pin_memory_resource.end = mem_start + mem_len - 1;
+}
+
+void request_pin_mem_res(struct resource *res)
+{
+	if (pin_memory_resource.end &&
+		pin_memory_resource.start >= res->start &&
+		pin_memory_resource.end <= res->end)
+		request_resource(res, &pin_memory_resource);
+}
+
+void init_reserve_page_map(void)
+{
+	void *addr;
+	unsigned long map_addr, map_size;
+
+	map_addr = (unsigned long)pin_memory_resource.start;
+	map_size = (unsigned long)(pin_memory_resource.end - pin_memory_resource.start + 1);
+	if (!map_addr || !map_size)
+		return;
+
+	addr = phys_to_virt(map_addr);
+	init_page_map_info((struct pin_mem_dump_info *)addr, map_size);
+}
+
+#endif /* CONFIG_PIN_MEMORY */
+
 #ifdef CONFIG_PID_RESERVE
 struct idr *reserve_idr;
-
-/* test if there exist pin memory tasks */
-bool is_need_reserve_pids(void)
-{
-	return (pin_pid_num > 0);
-}
 
 void free_reserved_pid(struct idr *idr, int pid)
 {
@@ -1121,8 +1184,9 @@ void reserve_pids(struct idr *idr, int pid_max)
 	unsigned int index;
 	struct page_map_info *pmi;
 
-	if (!max_pin_pid_num)
+	if (!pin_pid_num || !max_pin_pid_num)
 		return;
+
 	reserve_idr = idr;
 	for (index = 0; index < pin_pid_num; index++) {
 		pmi = &(user_space_reserve_start[index]);
@@ -1137,6 +1201,6 @@ void reserve_pids(struct idr *idr, int pid_max)
 		}
 	}
 }
+
 #endif /* CONFIG_PID_RESERVE */
 
-#endif /* CONFIG_PIN_MEMORY */

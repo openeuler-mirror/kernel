@@ -30,9 +30,7 @@
 #include <linux/psci.h>
 #include <linux/sched/task.h>
 #include <linux/mm.h>
-#ifdef CONFIG_PIN_MEMORY
 #include <linux/pin_mem.h>
-#endif
 
 #include <asm/acpi.h>
 #include <asm/fixmap.h>
@@ -297,11 +295,7 @@ static void __init request_standard_resources(void)
 			request_resource(res, &quick_kexec_res);
 #endif
 
-#ifdef CONFIG_PIN_MEMORY
-		if (pin_memory_resource.end && pin_memory_resource.start >= res->start &&
-			pin_memory_resource.end <= res->end)
-			request_resource(res, &pin_memory_resource);
-#endif
+		request_pin_mem_res(res);
 	}
 }
 
