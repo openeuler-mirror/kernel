@@ -140,6 +140,9 @@ enum pageflags {
 	PG_arch_2,
 #endif
 	PG_pool,		/* Used to track page allocated from dynamic hugetlb pool */
+#ifdef CONFIG_PIN_MEMORY
+	PG_hotreplace,
+#endif
 
 	/* Add reserved page flags for internal extension. For the new page
 	 * flags which backported from kernel upstream, please place them
@@ -429,6 +432,12 @@ PAGEFLAG(Mlocked, mlocked, PF_NO_TAIL)
 #else
 PAGEFLAG_FALSE(Mlocked) __CLEARPAGEFLAG_NOOP(Mlocked)
 	TESTSCFLAG_FALSE(Mlocked)
+#endif
+
+#ifdef CONFIG_PIN_MEMORY
+PAGEFLAG(Hotreplace, hotreplace, PF_ANY)
+#else
+PAGEFLAG_FALSE(Hotreplace)
 #endif
 
 #ifdef CONFIG_ARCH_USES_PG_UNCACHED
