@@ -754,7 +754,8 @@ config TCP_MD5SIG
 
 config TCP_COMP
 	bool "TCP: Transport Layer Compression support"
-	depends on ZSTD_COMPRESS=y
+	depends on CRYPTO_ZSTD=y
+	select STREAM_PARSER
 	help
           Enable kernel payload compression support for TCP protocol. This allows
           payload compression handling of the TCP protocol to be done in-kernel.
