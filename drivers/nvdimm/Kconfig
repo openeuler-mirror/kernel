@@ -19,6 +19,12 @@ menuconfig LIBNVDIMM
 
 if LIBNVDIMM
 
+config PMEM_LEGACY
+	tristate
+
+config PMEM_LEGACY_DEVICE
+	bool
+
 config BLK_DEV_PMEM
 	tristate "PMEM: Persistent memory block device support"
 	default LIBNVDIMM
