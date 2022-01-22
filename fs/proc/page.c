@@ -220,6 +220,7 @@ u64 stable_page_flags(struct page *page)
 #ifdef CONFIG_64BIT
 	u |= kpf_copy_bit(k, KPF_ARCH_2,	PG_arch_2);
 #endif
+	u |= kpf_copy_bit(k, KPF_POOL,		PG_pool);
 
 	return u;
 };
