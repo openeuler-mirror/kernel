@@ -499,22 +499,25 @@ void __init hardlockup_detector_perf_restart(void)
 	}
 }
 
-/**
- * hardlockup_detector_perf_init - Probe whether NMI event is available at all
- */
-int __init hardlockup_detector_perf_init(void)
+int __init __hardlockup_detector_perf_init(void *not_used)
 {
-	int ret;
+	int ret = hardlockup_detector_event_create();
 
-	preempt_disable();
-	ret = hardlockup_detector_event_create();
 	if (ret) {
 		pr_info("Perf NMI watchdog permanently disabled\n");
 	} else {
 		perf_event_release_kernel(this_cpu_read(watchdog_ev));
 		this_cpu_write(watchdog_ev, NULL);
 	}
-	preempt_enable();
 	return ret;
+}
+
+/**
+ * hardlockup_detector_perf_init - Probe whether NMI event is available at all
+ */
+int __init hardlockup_detector_perf_init(void)
+{
+	return smp_call_on_cpu(get_boot_cpu_id(),
+				__hardlockup_detector_perf_init, NULL, false);
 }
 #endif /* CONFIG_HARDLOCKUP_DETECTOR_PERF */
