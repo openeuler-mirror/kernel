@@ -732,6 +732,8 @@ static int kauditd_send_queue(struct sock *sk, u32 portid,
 		if (!sk) {
 			if (err_hook)
 				(*err_hook)(skb);
+			if (queue == &audit_hold_queue)
+				goto out;
 			continue;
 		}
 
@@ -748,6 +750,8 @@ retry:
 					(*err_hook)(skb);
 				if (rc == -EAGAIN)
 					rc = 0;
+				if (queue == &audit_hold_queue)
+					goto out;
 				/* continue to drain the queue */
 				continue;
 			} else
@@ -759,6 +763,7 @@ retry:
 		}
 	}
 
+out:
 	return (rc >= 0 ? 0 : rc);
 }
 
