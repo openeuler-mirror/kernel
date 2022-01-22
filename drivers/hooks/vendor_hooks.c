@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* vendor_hook.c
  *
- * Android Vendor Hook Support
+ * Vendor Hook Support
  *
  * Copyright (C) 2020 Google, Inc.
  */
