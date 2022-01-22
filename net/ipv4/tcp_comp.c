@@ -763,7 +763,7 @@ static int comp_read_size(struct strparser *strp, struct sk_buff *skb)
 	if (rxm->offset > skb->len)
 		return 0;
 
-	return skb->len;
+	return skb->len - rxm->offset;
 }
 
 void comp_setup_strp(struct sock *sk, struct tcp_comp_context *ctx)
@@ -870,6 +870,7 @@ static void tcp_comp_context_free(struct rcu_head *head)
 
 	tcp_comp_context_tx_free(ctx);
 	tcp_comp_context_rx_free(ctx);
+	strp_done(&ctx->rx.strp);
 	kfree(ctx);
 }
 
@@ -885,6 +886,7 @@ void tcp_cleanup_compression(struct sock *sk)
 		kfree_skb(ctx->rx.pkt);
 		ctx->rx.pkt = NULL;
 	}
+	strp_stop(&ctx->rx.strp);
 
 	rcu_assign_pointer(icsk->icsk_ulp_data, NULL);
 	call_rcu(&ctx->rcu, tcp_comp_context_free);
