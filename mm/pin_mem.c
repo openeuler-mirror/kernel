@@ -531,6 +531,7 @@ int collect_pmd_huge_pages(struct task_struct *task,
 		if (IS_PTE_PRESENT(pte_entry[0])) {
 			temp_page = pfn_to_page(pte_entry[0] & PM_PFRAME_MASK);
 			if (PageHead(temp_page)) {
+				SetPageHotreplace(temp_page);
 				atomic_inc(&((temp_page)->_refcount));
 				start += HPAGE_PMD_SIZE;
 				pme->phy_addr_array[index] = page_to_phys(temp_page);
@@ -611,6 +612,7 @@ int collect_normal_pages(struct task_struct *task,
 				continue;
 			}
 			tmp_page = pfn_to_page(pte_entry[i] & PM_PFRAME_MASK);
+			SetPageHotreplace(tmp_page);
 			atomic_inc(&(tmp_page->_refcount));
 			phy_addr_array[i] = ((pte_entry[i] & PM_PFRAME_MASK) << PAGE_SHIFT);
 		}
@@ -839,14 +841,16 @@ vm_fault_t remap_normal_pages(struct mm_struct *mm, struct vm_area_struct *vma,
 		ret = do_anon_page_remap(vma, address, pmd, page);
 		if (ret)
 			goto free;
+		ClearPageHotreplace(page);
 	}
 	return 0;
 
 free:
+	ClearPageHotreplace(page);
 	for (i = j; i < pme->nr_pages; i++) {
 		phy_addr = pme->phy_addr_array[i];
 		if (phy_addr) {
-			__free_page(phys_to_page(phy_addr));
+			put_page(phys_to_page(phy_addr));
 			pme->phy_addr_array[i] = 0;
 		}
 	}
@@ -927,16 +931,18 @@ vm_fault_t remap_huge_pmd_pages(struct mm_struct *mm, struct vm_area_struct *vma
 		ret = do_anon_huge_page_remap(vma, address, pmd, page);
 		if (ret)
 			goto free;
+		ClearPageHotreplace(page);
 	}
 	return 0;
 
 free:
+	ClearPageHotreplace(page);
 	for (i = j; i < pme->nr_pages; i++) {
 		phy_addr = pme->phy_addr_array[i];
 		if (phy_addr) {
 			page = phys_to_page(phy_addr);
 			if (!(page->flags & PAGE_FLAGS_CHECK_RESERVED)) {
-				__free_pages(page, HPAGE_PMD_ORDER);
+				put_page(page);
 				pme->phy_addr_array[i] = 0;
 			}
 		}
@@ -950,7 +956,6 @@ static void free_unmap_pages(struct page_map_info *pmi,
 {
 	unsigned int i, j;
 	unsigned long phy_addr;
-	unsigned int order;
 	struct page *page;
 
 	pme = (struct page_map_entry *)(next_pme(pme));
@@ -959,9 +964,8 @@ static void free_unmap_pages(struct page_map_info *pmi,
 			phy_addr = pme->phy_addr_array[i];
 			if (phy_addr) {
 				page = phys_to_page(phy_addr);
-				order = pme->is_huge_page ? HPAGE_PMD_ORDER : 0;
 				if (!(page->flags & PAGE_FLAGS_CHECK_RESERVED)) {
-					__free_pages(page, order);
+					put_page(page);
 					pme->phy_addr_array[i] = 0;
 				}
 			}
@@ -1026,7 +1030,7 @@ EXPORT_SYMBOL_GPL(do_mem_remap);
 
 static void free_all_reserved_pages(void)
 {
-	unsigned int i, j, index, order;
+	unsigned int i, j, index;
 	struct page_map_info *pmi;
 	struct page_map_entry *pme;
 	struct page *page;
@@ -1042,12 +1046,12 @@ static void free_all_reserved_pages(void)
 		pme = pmi->pme;
 		for (i = 0; i < pmi->entry_num; i++) {
 			for (j = 0; j < pme->nr_pages; j++) {
-				order = pme->is_huge_page ? HPAGE_PMD_ORDER : 0;
 				phy_addr = pme->phy_addr_array[j];
 				if (phy_addr) {
 					page = phys_to_page(phy_addr);
+					ClearPageHotreplace(page);
 					if (!(page->flags & PAGE_FLAGS_CHECK_RESERVED)) {
-						__free_pages(page, order);
+						put_page(page);
 						pme->phy_addr_array[j] = 0;
 					}
 				}

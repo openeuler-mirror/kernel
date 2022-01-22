@@ -1313,8 +1313,10 @@ static void page_remove_anon_compound_rmap(struct page *page)
 		 * page of the compound page is unmapped, but at least one
 		 * small page is still mapped.
 		 */
-		if (nr && nr < thp_nr_pages(page))
-			deferred_split_huge_page(page);
+		if (nr && nr < thp_nr_pages(page)) {
+			if (!PageHotreplace(page))
+				deferred_split_huge_page(page);
+		}
 	} else {
 		nr = thp_nr_pages(page);
 	}
@@ -1361,8 +1363,10 @@ void page_remove_rmap(struct page *page, bool compound)
 	if (unlikely(PageMlocked(page)))
 		clear_page_mlock(page);
 
-	if (PageTransCompound(page))
-		deferred_split_huge_page(compound_head(page));
+	if (PageTransCompound(page)) {
+		if (!PageHotreplace(compound_head(page)))
+			deferred_split_huge_page(compound_head(page));
+	}
 
 	/*
 	 * It would be tidy to reset the PageAnon mapping here,
