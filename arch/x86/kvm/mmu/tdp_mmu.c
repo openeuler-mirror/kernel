@@ -126,7 +126,7 @@ static struct kvm_mmu_page *tdp_mmu_next_root(struct kvm *kvm,
 
 	while (next_root) {
 		if ((!only_valid || !next_root->role.invalid) &&
-		    kvm_tdp_mmu_get_root(kvm, next_root))
+		    kvm_tdp_mmu_get_root(next_root))
 			break;
 
 		next_root = list_next_or_null_rcu(&kvm->arch.tdp_mmu_roots,
@@ -220,7 +220,7 @@ hpa_t kvm_tdp_mmu_get_vcpu_root_hpa(struct kvm_vcpu *vcpu)
 	 */
 	for_each_tdp_mmu_root(kvm, root, kvm_mmu_role_as_id(role)) {
 		if (root->role.word == role.word &&
-		    kvm_tdp_mmu_get_root(kvm, root))
+		    kvm_tdp_mmu_get_root(root))
 			goto out;
 	}
 
@@ -913,7 +913,7 @@ void kvm_tdp_mmu_invalidate_all_roots(struct kvm *kvm)
 	lockdep_assert_held_write(&kvm->mmu_lock);
 	list_for_each_entry(root, &kvm->arch.tdp_mmu_roots, link) {
 		if (!root ->role.invalid &&
-		    !WARN_ON_ONCE(!kvm_tdp_mmu_get_root(kvm, root))) {
+		    !WARN_ON_ONCE(!kvm_tdp_mmu_get_root(root))) {
 			root->tdp_mmu_scheduled_root_to_zap = true;
 			root->role.invalid = true;
 		}
