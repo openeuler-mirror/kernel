@@ -1874,10 +1874,9 @@ repeat:
 		loff_t i_size;
 		pgoff_t off;
 
-		off = round_up(index, HPAGE_PMD_NR);
+		off = round_up(index + 1, HPAGE_PMD_NR);
 		i_size = round_up(i_size_read(inode), PAGE_SIZE);
-		if (i_size >= HPAGE_PMD_SIZE &&
-		    i_size >> PAGE_SHIFT >= off)
+		if (i_size >> PAGE_SHIFT >= off)
 			goto alloc_huge;
 
 		fallthrough;
@@ -4029,10 +4028,9 @@ bool shmem_huge_enabled(struct vm_area_struct *vma)
 		case SHMEM_HUGE_ALWAYS:
 			return true;
 		case SHMEM_HUGE_WITHIN_SIZE:
-			off = round_up(vma->vm_pgoff, HPAGE_PMD_NR);
+			off = round_up(vma->vm_pgoff + 1, HPAGE_PMD_NR);
 			i_size = round_up(i_size_read(inode), PAGE_SIZE);
-			if (i_size >= HPAGE_PMD_SIZE &&
-					i_size >> PAGE_SHIFT >= off)
+			if (i_size >> PAGE_SHIFT >= off)
 				return true;
 			fallthrough;
 		case SHMEM_HUGE_ADVISE:
