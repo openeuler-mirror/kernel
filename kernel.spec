@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2201.3.0
+%global hulkrelease 2201.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0133
+Release: %{hulkrelease}.0134
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,12 @@ fi
 %endif
 
 %changelog
+
+* Tue Jan 25 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2201.4.0.0134
+- net: bridge: clear bridge's private skb space on xmit
+- audit: bugfix for infinite loop when flush the hold queue
+- blk-throttle: enable hierarchical throttle in cgroup v1
+- xfs: map unwritten blocks in XFS_IOC_{ALLOC,FREE}SP just like fallocate
 
 * Tue Jan 18 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2201.3.0.0133
 - ip_gre: validate csum_start only on pull
