@@ -1029,17 +1029,24 @@ extern struct file_operations proc_page_scan_operations;
 
 static int page_scan_entry(void)
 {
+	proc_page_scan_operations.flock(NULL, 1, NULL);
 	proc_page_scan_operations.owner = THIS_MODULE;
 	proc_page_scan_operations.read = page_scan_read;
 	proc_page_scan_operations.open = page_scan_open;
 	proc_page_scan_operations.release = page_scan_release;
+	proc_page_scan_operations.flock(NULL, 0, NULL);
+
 	return 0;
 }
 
 static void page_scan_exit(void)
 {
-	memset(&proc_page_scan_operations, 0,
-			sizeof(proc_page_scan_operations));
+	proc_page_scan_operations.flock(NULL, 1, NULL);
+	proc_page_scan_operations.owner = NULL;
+	proc_page_scan_operations.read = NULL;
+	proc_page_scan_operations.open = NULL;
+	proc_page_scan_operations.release = NULL;
+	proc_page_scan_operations.flock(NULL, 0, NULL);
 }
 
 MODULE_LICENSE("GPL");
