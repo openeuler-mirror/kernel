@@ -595,16 +595,16 @@ static bool is_xfd_supported(void)
 	return !!(eax & CPUID_XFD_BIT);
 }
 
-void vm_xsave_req_perm(void)
+void vm_xsave_req_perm(int bit)
 {
-	unsigned long bitmask;
+	u64 bitmask;
 	long rc;
 
 	if (!is_xfd_supported())
-		return;
+		exit(KSFT_SKIP);
 
-	rc = syscall(SYS_arch_prctl, ARCH_REQ_XCOMP_GUEST_PERM,
-		     XSTATE_XTILE_DATA_BIT);
+	rc = syscall(SYS_arch_prctl, ARCH_REQ_XCOMP_GUEST_PERM, bit);
+
 	/*
 	 * The older kernel version(<5.15) can't support
 	 * ARCH_REQ_XCOMP_GUEST_PERM and directly return.
@@ -614,7 +614,7 @@ void vm_xsave_req_perm(void)
 
 	rc = syscall(SYS_arch_prctl, ARCH_GET_XCOMP_GUEST_PERM, &bitmask);
 	TEST_ASSERT(rc == 0, "prctl(ARCH_GET_XCOMP_GUEST_PERM) error: %ld", rc);
-	TEST_ASSERT(bitmask & XFEATURE_XTILE_MASK,
+	TEST_ASSERT(bitmask & (1ULL << bit),
 		    "prctl(ARCH_REQ_XCOMP_GUEST_PERM) failure bitmask=0x%lx",
 		    bitmask);
 }
@@ -626,11 +626,6 @@ void vm_vcpu_add_default(struct kvm_vm *vm, uint32_t vcpuid, void *guest_code)
 	vm_vaddr_t stack_vaddr;
 	stack_vaddr = vm_vaddr_alloc(vm, DEFAULT_STACK_PGS * getpagesize(),
 				     DEFAULT_GUEST_STACK_VADDR_MIN, 0, 0);
-
-	/*
-	 * Permission needs to be requested before KVM_SET_CPUID2.
-	 */
-	vm_xsave_req_perm();
 
 	/* Create VCPU */
 	vm_vcpu_add(vm, vcpuid);

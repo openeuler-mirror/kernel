@@ -256,7 +256,6 @@ struct kvm_vm *vm_create_default(uint32_t vcpuid, uint64_t extra_mem_pages,
  *   guest_code - The vCPU's entry point
  */
 void vm_vcpu_add_default(struct kvm_vm *vm, uint32_t vcpuid, void *guest_code);
-void vm_xsave_req_perm(void);
 
 bool vm_is_unrestricted_guest(struct kvm_vm *vm);
 
