@@ -97,7 +97,11 @@ static struct shash_alg alg = {
 
 static int __init crct10dif_arm64_mod_init(void)
 {
-	return crypto_register_shash(&alg);
+	if (cpu_have_named_feature(PMULL)) {
+		return crypto_register_shash(&alg);
+	} else {
+		return -ENODEV;
+	}
 }
 
 static void __exit crct10dif_arm64_mod_fini(void)
