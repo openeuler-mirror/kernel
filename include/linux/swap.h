@@ -476,6 +476,7 @@ extern struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t flag,
 				struct vm_fault *vmf);
 extern struct page *swapin_readahead(swp_entry_t entry, gfp_t flag,
 				struct vm_fault *vmf);
+extern bool kernel_swap_enabled(void);
 
 /* linux/mm/swapfile.c */
 extern atomic_long_t nr_swap_pages;

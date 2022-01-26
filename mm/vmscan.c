@@ -3248,6 +3248,16 @@ out:
 	return false;
 }
 
+/*
+ * Check if original kernel swap is enabled
+ * turn off kernel swap,but leave page cache reclaim on
+ */
+static inline void kernel_swap_check(struct scan_control *sc)
+{
+	if (sc != NULL && !kernel_swap_enabled())
+		sc->may_swap = 0;
+}
+
 unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 				gfp_t gfp_mask, nodemask_t *nodemask)
 {
@@ -3264,6 +3274,7 @@ unsigned long try_to_free_pages(struct zonelist *zonelist, int order,
 		.may_swap = 1,
 	};
 
+	kernel_swap_check(&sc);
 	/*
 	 * scan_control uses s8 fields for order, priority, and reclaim_idx.
 	 * Confirm they are large enough for max values.
@@ -3547,6 +3558,8 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int classzone_idx)
 	__fs_reclaim_acquire();
 
 	count_vm_event(PAGEOUTRUN);
+
+	kernel_swap_check(&sc);
 
 #ifdef CONFIG_SHRINK_PAGECACHE
 	if (vm_cache_limit_mbytes && page_cache_over_limit())
@@ -3963,6 +3976,8 @@ static unsigned long __shrink_page_cache(gfp_t mask)
 
 	struct zonelist *zonelist = node_zonelist(numa_node_id(), mask);
 
+	kernel_swap_check(&sc);
+
 	return do_try_to_free_pages(zonelist, &sc);
 }
 
@@ -4282,6 +4297,9 @@ static int __node_reclaim(struct pglist_data *pgdat, gfp_t gfp_mask, unsigned in
 
 	cond_resched();
 	fs_reclaim_acquire(sc.gfp_mask);
+
+	kernel_swap_check(&sc);
+
 	/*
 	 * We need to be able to allocate from the reserves for RECLAIM_UNMAP
 	 * and we also need to be able to write out pages for RECLAIM_WRITE
