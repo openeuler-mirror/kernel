@@ -6,6 +6,15 @@
 #define SCAN_SKIM_IDLE		O_NOFOLLOW	/* stop on PMD_IDLE_PTES */
 #define SCAN_DIRTY_PAGE         O_NOATIME       /* report pte/pmd dirty bit */
 
+/* define to not used file flags */
+#define VMA_SCAN_FLAG           0x1000        /* scan the specifics vma with flag */
+
+#define ALL_SCAN_FLAGS          (SCAN_HUGE_PAGE | SCAN_SKIM_IDLE | SCAN_DIRTY_PAGE | VMA_SCAN_FLAG)
+
+#define IDLE_SCAN_MAGIC         0x66
+#define VMA_SCAN_ADD_FLAGS      _IOW(IDLE_SCAN_MAGIC, 0x2, unsigned int)
+#define VMA_SCAN_REMOVE_FLAGS   _IOW(IDLE_SCAN_MAGIC, 0x3, unsigned int)
+
 enum ProcIdlePageType {
 	PTE_ACCESSED,	/* 4k page */
 	PMD_ACCESSED,	/* 2M page */

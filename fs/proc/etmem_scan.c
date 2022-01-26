@@ -923,6 +923,11 @@ static int mm_idle_test_walk(unsigned long start, unsigned long end,
 				 struct mm_walk *walk)
 {
 	struct vm_area_struct *vma = walk->vma;
+	struct page_idle_ctrl *pic = walk->private;
+
+	/* If the specified page swapout is set, the untagged vma is skipped. */
+	if ((pic->flags & VMA_SCAN_FLAG) && !(vma->vm_flags & VM_SWAPFLAG))
+		return 1;
 
 	if (vma->vm_file) {
 		if ((vma->vm_flags & (VM_WRITE|VM_MAYSHARE)) == VM_WRITE)
@@ -1025,6 +1030,31 @@ out_free:
 	return ret;
 }
 
+static long page_scan_ioctl(struct file *filp, unsigned int cmd,
+	unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	unsigned int flags;
+
+	if (get_user(flags, (unsigned int __user *)argp))
+		return -EFAULT;
+
+	flags &= ALL_SCAN_FLAGS;
+
+	switch (cmd) {
+	case VMA_SCAN_ADD_FLAGS:
+		filp->f_flags |= flags;
+		break;
+	case VMA_SCAN_REMOVE_FLAGS:
+		filp->f_flags &= ~flags;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 extern struct file_operations proc_page_scan_operations;
 
 static int page_scan_entry(void)
@@ -1034,6 +1064,7 @@ static int page_scan_entry(void)
 	proc_page_scan_operations.read = page_scan_read;
 	proc_page_scan_operations.open = page_scan_open;
 	proc_page_scan_operations.release = page_scan_release;
+	proc_page_scan_operations.unlocked_ioctl = page_scan_ioctl;
 	proc_page_scan_operations.flock(NULL, 0, NULL);
 
 	return 0;
@@ -1046,6 +1077,7 @@ static void page_scan_exit(void)
 	proc_page_scan_operations.read = NULL;
 	proc_page_scan_operations.open = NULL;
 	proc_page_scan_operations.release = NULL;
+	proc_page_scan_operations.unlocked_ioctl = NULL;
 	proc_page_scan_operations.flock(NULL, 0, NULL);
 }
 

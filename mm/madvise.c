@@ -129,6 +129,12 @@ static long madvise_behavior(struct vm_area_struct *vma,
 			goto out;
 		}
 		break;
+	case MADV_SWAPFLAG:
+		new_flags |= VM_SWAPFLAG;
+		break;
+	case MADV_SWAPFLAG_REMOVE:
+		new_flags &= ~VM_SWAPFLAG;
+		break;
 	}
 
 	if (new_flags == vma->vm_flags) {
@@ -740,8 +746,9 @@ madvise_behavior_valid(int behavior)
 	case MADV_SOFT_OFFLINE:
 	case MADV_HWPOISON:
 #endif
+	case MADV_SWAPFLAG:
+	case MADV_SWAPFLAG_REMOVE:
 		return true;
-
 	default:
 		return false;
 	}

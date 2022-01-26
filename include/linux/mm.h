@@ -251,6 +251,8 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_USWAP      0x2000000000000000
 #endif
 
+#define VM_SWAPFLAG 0x400000000000000 /* memory swap out flag in vma */
+
 #ifdef CONFIG_ARCH_USES_HIGH_VMA_FLAGS
 #define VM_HIGH_ARCH_BIT_0	32	/* bit only usable on 64-bit architectures */
 #define VM_HIGH_ARCH_BIT_1	33	/* bit only usable on 64-bit architectures */
