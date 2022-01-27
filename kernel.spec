@@ -109,6 +109,9 @@ BuildRequires: flex xz-devel libzstd-devel
 BuildRequires: java-devel
 %endif
 
+BuildRequires: dwarves
+BuildRequires: clang
+BuildRequires: llvm
 
 %description
 The Linux Kernel, the operating system core itself.
