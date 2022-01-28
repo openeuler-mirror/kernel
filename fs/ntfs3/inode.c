@@ -1280,7 +1280,7 @@ struct inode *ntfs_create_inode(struct user_namespace *mnt_userns,
 		goto out3;
 	}
 	inode = &ni->vfs_inode;
-	inode_init_owner(mnt_userns, inode, dir, mode);
+	inode_init_owner(inode, dir, mode);
 	mode = inode->i_mode;
 
 	inode->i_atime = inode->i_mtime = inode->i_ctime = ni->i_crtime =
