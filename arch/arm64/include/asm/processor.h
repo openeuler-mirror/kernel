@@ -32,6 +32,7 @@
 #include <linux/stddef.h>
 #include <linux/string.h>
 #include <linux/thread_info.h>
+#include <linux/kabi.h>
 
 #include <vdso/processor.h>
 
@@ -162,6 +163,14 @@ struct thread_struct {
 	u64			sctlr_tcf0;
 	u64			gcr_user_incl;
 #endif
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 };
 
 static inline void arch_thread_struct_whitelist(unsigned long *offset,
