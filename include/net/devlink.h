@@ -19,6 +19,7 @@
 #include <net/flow_offload.h>
 #include <uapi/linux/devlink.h>
 #include <linux/xarray.h>
+#include <linux/kabi.h>
 
 #define DEVLINK_RELOAD_STATS_ARRAY_SIZE \
 	(__DEVLINK_RELOAD_LIMIT_MAX * __DEVLINK_RELOAD_ACTION_MAX)
@@ -52,6 +53,9 @@ struct devlink {
 	struct mutex lock; /* Serializes access to devlink instance specific objects such as
 			    * port, sb, dpipe, resource, params, region, traps and more.
 			    */
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+
 	u8 reload_failed:1,
 	   reload_enabled:1,
 	   registered:1;

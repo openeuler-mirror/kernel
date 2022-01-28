@@ -116,6 +116,7 @@ struct Qdisc {
 	struct rcu_head		rcu;
 
 	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 
 	/* private data */
 	long privdata[] ____cacheline_aligned;

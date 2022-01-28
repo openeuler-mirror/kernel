@@ -50,6 +50,7 @@
 #include <crypto/aead.h>
 #include <uapi/linux/tls.h>
 
+#include <linux/kabi.h>
 
 /* Maximum data size carried in a TLS record */
 #define TLS_MAX_PAYLOAD_SIZE		((size_t)1 << 14)
@@ -167,6 +168,10 @@ struct tls_record_info {
 	u32 end_seq;
 	int len;
 	int num_frags;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+
 	skb_frag_t frags[MAX_SKB_FRAGS];
 };
 
@@ -284,6 +289,11 @@ struct tls_context {
 	struct list_head list;
 	refcount_t refcount;
 	struct rcu_head rcu;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 enum tls_offload_ctx_dir {
