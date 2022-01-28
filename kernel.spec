@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       42
+%global devel_release       52
 %global maintenance_release .0.0
-%global pkg_release         .24
+%global pkg_release         .25
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -858,6 +858,407 @@ fi
 %endif
 
 %changelog
+* Sat Jan 29 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-52.0.0.25
+- kabi: reserve space for arm64 SME in thread_struct
+- KABI: KABI reservation for IMA namespace
+- kabi: Reserve space for struct acpi_device_power
+- kabi:fuse: reserve space for future expansion
+- kabi: net: reserve space for some net subsystems related structure
+- KABI: reserve space for struct input_dev
+- KABI: reserve space for several i2c structures
+- KABI: add reserve space for sched structures
+- sched: move CPU field back into thread_info if THREAD_INFO_IN_TASK=y
+- powerpc: add CPU field to struct thread_info
+- s390: add CPU field to struct thread_info
+- x86: add CPU field to struct thread_info
+- arm64: add CPU field to struct thread_info
+- powerpc: smp: remove hack to obtain offset of task_struct::cpu
+- riscv: rely on core code to keep thread_info::cpu updated
+- Input: zinitix - make sure the IRQ is allocated before it gets enabled
+- ARM: dts: gpio-ranges property is now required
+- ipv6: raw: check passed optlen before reading
+- drm/amd/display: Added power down for DCN10
+- mISDN: change function names to avoid conflicts
+- atlantic: Fix buff_ring OOB in aq_ring_rx_clean
+- net: udp: fix alignment problem in udp4_seq_show()
+- ip6_vti: initialize __ip6_tnl_parm struct in vti6_siocdevprivate
+- scsi: libiscsi: Fix UAF in iscsi_conn_get_param()/iscsi_conn_teardown()
+- usb: mtu3: fix interval value for intr and isoc
+- ipv6: Do cleanup if attribute validation fails in multipath route
+- ipv6: Continue processing multipath route even if gateway attribute is invalid
+- power: bq25890: Enable continuous conversion for ADC at charging
+- rndis_host: support Hytera digital radios
+- power: reset: ltc2952: Fix use of floating point literals
+- power: supply: core: Break capacity loop
+- net: ena: Fix error handling when calculating max IO queues number
+- net: ena: Fix undefined state when tx request id is out of bounds
+- sch_qfq: prevent shift-out-of-bounds in qfq_init_qdisc
+- batman-adv: mcast: don't send link-local multicast to mcast routers
+- lwtunnel: Validate RTA_ENCAP_TYPE attribute length
+- ipv6: Check attribute length for RTA_GATEWAY when deleting multipath route
+- ipv6: Check attribute length for RTA_GATEWAY in multipath route
+- ipv4: Check attribute length for RTA_FLOW in multipath route
+- ipv4: Check attribute length for RTA_GATEWAY in multipath route
+- ftrace/samples: Add missing prototypes direct functions
+- i40e: Fix incorrect netdev's real number of RX/TX queues
+- i40e: Fix for displaying message regarding NVM version
+- i40e: fix use-after-free in i40e_sync_filters_subtask()
+- sfc: The RX page_ring is optional
+- mac80211: initialize variable have_higher_than_11mbit
+- RDMA/uverbs: Check for null return of kmalloc_array
+- netrom: fix copying in user data in nr_setsockopt
+- RDMA/core: Don't infoleak GRH fields
+- iavf: Fix limit of total number of queues to active queues of VF
+- i40e: Fix to not show opcode msg on unsuccessful VF MAC change
+- ieee802154: atusb: fix uninit value in atusb_set_extended_addr
+- tracing: Tag trace_percpu_buffer as a percpu pointer
+- tracing: Fix check for trace_percpu_buffer validity in get_trace_buf()
+- selftests: x86: fix [-Wstringop-overread] warn in test_process_vm_readv()
+- f2fs: quota: fix potential deadlock
+- bpf: Add kconfig knob for disabling unpriv bpf by default
+- perf script: Fix CPU filtering of a script's switch events
+- net: fix use-after-free in tw_timer_handler
+- Input: spaceball - fix parsing of movement data packets
+- Input: appletouch - initialize work before device registration
+- scsi: vmw_pvscsi: Set residual data length conditionally
+- binder: fix async_free_space accounting for empty parcels
+- usb: mtu3: set interval of FS intr and isoc endpoint
+- usb: mtu3: fix list_head check warning
+- usb: mtu3: add memory barrier before set GPD's HWO
+- usb: gadget: f_fs: Clear ffs_eventfd in ffs_data_clear.
+- xhci: Fresco FL1100 controller should not have BROKEN_MSI quirk set.
+- drm/amdgpu: add support for IP discovery gc_info table v2
+- drm/amdgpu: When the VCN(1.0) block is suspended, powergating is explicitly enabled
+- uapi: fix linux/nfc.h userspace compilation errors
+- nfc: uapi: use kernel size_t to fix user-space builds
+- i2c: validate user data in compat ioctl
+- fsl/fman: Fix missing put_device() call in fman_port_probe
+- net/ncsi: check for error return from call to nla_put_u32
+- selftests/net: udpgso_bench_tx: fix dst ip argument
+- net/mlx5e: Fix wrong features assignment in case of error
+- ionic: Initialize the 'lif->dbid_inuse' bitmap
+- igc: Fix TX timestamp support for non-MSI-X platforms
+- net/smc: fix kernel panic caused by race of smc_sock
+- net/smc: don't send CDC/LLC message if link not ready
+- net/smc: improved fix wait on already cleared link
+- NFC: st21nfca: Fix memory leak in device probe and remove
+- net: lantiq_xrx200: fix statistics of received bytes
+- net: ag71xx: Fix a potential double free in error handling paths
+- net: usb: pegasus: Do not drop long Ethernet frames
+- net/smc: fix using of uninitialized completions
+- sctp: use call_rcu to free endpoint
+- selftests: Calculate udpgso segment count without header adjustment
+- udp: using datalen to cap ipv6 udp max gso segments
+- net/mlx5e: Fix ICOSQ recovery flow for XSK
+- net/mlx5e: Wrap the tx reporter dump callback to extract the sq
+- net/mlx5: DR, Fix NULL vs IS_ERR checking in dr_domain_init_resources
+- scsi: lpfc: Terminate string in lpfc_debugfs_nvmeio_trc_write()
+- selinux: initialize proto variable in selinux_ip_postroute_compat()
+- recordmcount.pl: fix typo in s390 mcount regex
+- memblock: fix memblock_phys_alloc() section mismatch error
+- platform/x86: apple-gmux: use resource_size() with res
+- parisc: Clear stale IIR value on instruction access rights trap
+- tomoyo: use hwight16() in tomoyo_domain_quota_is_ok()
+- tomoyo: Check exceeded quota early in tomoyo_domain_quota_is_ok().
+- Input: i8042 - enable deferred probe quirk for ASUS UM325UA
+- Input: i8042 - add deferred probe support
+- fs/ntfs3: Add ntfs3 module in openeuler_defconfig
+- fs/ntfs3: Add NTFS3 in fs/Kconfig and fs/Makefile
+- fs/ntfs3: Fix the issue from backport 5.15 to 5.10
+- fs/ntfs3: Add MAINTAINERS
+- fs/ntfs3: Check for NULL pointers in ni_try_remove_attr_list
+- fs/ntfs3: Refactor ntfs_read_mft
+- fs/ntfs3: Refactor ni_parse_reparse
+- fs/ntfs3: Refactor ntfs_create_inode
+- fs/ntfs3: Refactor ntfs_readlink_hlp
+- fs/ntfs3: Rework ntfs_utf16_to_nls
+- fs/ntfs3: Fix memory leak if fill_super failed
+- fs/ntfs3: Keep prealloc for all types of files
+- fs/ntfs3: Remove unnecessary functions
+- fs/ntfs3: Forbid FALLOC_FL_PUNCH_HOLE for normal files
+- fs/ntfs3: Refactoring of ntfs_set_ea
+- fs/ntfs3: Remove locked argument in ntfs_set_ea
+- fs/ntfs3: Use available posix_acl_release instead of ntfs_posix_acl_release
+- fs/ntfs3: Check for NULL if ATTR_EA_INFO is incorrect
+- fs/ntfs3: Refactoring of ntfs_init_from_boot
+- fs/ntfs3: Reject mount if boot's cluster size < media sector size
+- fs/ntfs3: Refactoring lock in ntfs_init_acl
+- fs/ntfs3: Change posix_acl_equiv_mode to posix_acl_update_mode
+- fs/ntfs3: Pass flags to ntfs_set_ea in ntfs_set_acl_ex
+- fs/ntfs3: Refactor ntfs_get_acl_ex for better readability
+- fs/ntfs3: Move ni_lock_dir and ni_unlock into ntfs_create_inode
+- fs/ntfs3: Fix logical error in ntfs_create_inode
+- fs/ntfs3: Remove deprecated mount options nls
+- fs/ntfs3: Remove a useless shadowing variable
+- fs/ntfs3: Remove a useless test in 'indx_find()'
+- fs/ntfs3: Add sync flag to ntfs_sb_write_run and al_update
+- fs/ntfs3: Change max hardlinks limit to 4000
+- fs/ntfs3: Fix insertion of attr in ni_ins_attr_ext
+- fs/ntfs3: Fix a memory leak on object opts
+- Doc/fs/ntfs3: Fix rst format and make it cleaner
+- fs/ntfs3: Initiliaze sb blocksize only in one place + refactor
+- fs/ntfs3: Initialize pointer before use place in fill_super
+- fs/ntfs3: Remove tmp pointer upcase in fill_super
+- fs/ntfs3: Remove tmp pointer bd_inode in fill_super
+- fs/ntfs3: Remove tmp var is_ro in ntfs_fill_super
+- fs/ntfs3: Use sb instead of sbi->sb in fill_super
+- fs/ntfs3: Remove unnecessary variable loading in fill_super
+- fs/ntfs3: Return straight without goto in fill_super
+- fs/ntfs3: Remove impossible fault condition in fill_super
+- fs/ntfs3: Change EINVAL to ENOMEM when d_make_root fails
+- fs/ntfs3: Fix wrong error message $Logfile -> $UpCase
+- fs/ntfs3: Use min/max macros instated of ternary operators
+- fs/ntfs3: Use clamp/max macros instead of comparisons
+- fs/ntfs3: Remove always false condition check
+- fs/ntfs3: Fix ntfs_look_for_free_space() does only report -ENOSPC
+- fs/ntfs3: Remove tabs before spaces from comment
+- fs/ntfs3: Remove braces from single statment block
+- fs/ntfs3: Place Comparisons constant right side of the test
+- fs/ntfs3: Remove '+' before constant in ni_insert_resident()
+- fs/ntfs3: Always use binary search with entry search
+- fs/ntfs3: Make binary search to search smaller chunks in beginning
+- fs/ntfs3: Limit binary search table size
+- fs/ntfs3: Remove unneeded header files from c files
+- fs/ntfs3: Change right headers to lznt.c
+- fs/ntfs3: Change right headers to upcase.c
+- fs/ntfs3: Change right headers to bitfunc.c
+- fs/ntfs3: Add missing header and guards to lib/ headers
+- fs/ntfs3: Add missing headers and forward declarations to ntfs_fs.h
+- fs/ntfs3: Add missing header files to ntfs.h
+- fs/ntfs3. Add forward declarations for structs to debug.h
+- fs/ntfs3: Remove redundant initialization of variable err
+- fs/ntfs3: Show uid/gid always in show_options()
+- fs/ntfs3: Rename mount option no_acs_rules > (no)acsrules
+- fs/ntfs3: Add iocharset= mount option as alias for nls=
+- fs/ntfs3: Make mount option nohidden more universal
+- fs/ntfs3: Init spi more in init_fs_context than fill_super
+- fs/ntfs3: Use new api for mounting
+- fs/ntfs3: Convert mount options to pointer in sbi
+- fs/ntfs3: Remove unnecesarry remount flag handling
+- fs/ntfs3: Remove unnecesarry mount option noatime
+- fs/ntfs3: Change how module init/info messages are displayed
+- fs/ntfs3: Remove GPL boilerplates from decompress lib files
+- fs/ntfs3: Remove unnecessary condition checking from ntfs_file_read_iter
+- fs/ntfs3: Fix integer overflow in ni_fiemap with fiemap_prep()
+- fs/ntfs3: Restyle comments to better align with kernel-doc
+- fs/ntfs3: Rework file operations
+- fs/ntfs3: Remove fat ioctl's from ntfs3 driver for now
+- fs/ntfs3: Restyle comments to better align with kernel-doc
+- fs/ntfs3: Fix error handling in indx_insert_into_root()
+- fs/ntfs3: Potential NULL dereference in hdr_find_split()
+- fs/ntfs3: Fix error code in indx_add_allocate()
+- fs/ntfs3: fix an error code in ntfs_get_acl_ex()
+- fs/ntfs3: add checks for allocation failure
+- fs/ntfs3: Use kcalloc/kmalloc_array over kzalloc/kmalloc
+- fs/ntfs3: Do not use driver own alloc wrappers
+- fs/ntfs3: Use kernel ALIGN macros over driver specific
+- fs/ntfs3: Restyle comment block in ni_parse_reparse()
+- fs/ntfs3: Remove unused including <linux/version.h>
+- fs/ntfs3: Fix fall-through warnings for Clang
+- fs/ntfs3: Fix one none utf8 char in source file
+- fs/ntfs3: Remove unused variable cnt in ntfs_security_init()
+- fs/ntfs3: Fix integer overflow in multiplication
+- fs/ntfs3: Add ifndef + define to all header files
+- fs/ntfs3: Use linux/log2 is_power_of_2 function
+- fs/ntfs3: Fix various spelling mistakes
+- fs/ntfs3: Add Kconfig, Makefile and doc
+- fs/ntfs3: Add NTFS journal
+- fs/ntfs3: Add compression
+- fs/ntfs3: Add attrib operations
+- fs/ntfs3: Add file operations and implementation
+- fs/ntfs3: Add bitmap
+- fs/ntfs3: Add initialization of super block
+- fs/ntfs3: Add headers and misc files
+- openeuler_defconfig: Enable CONFIG_DEBUG_INFO_BTF
+- Revert "openeuler_defconfig: Enable CONFIG_DEBUG_INFO_BTF"
+- change x86 configs
+- change arm64 configs
+- mm/damon: hide kernel pointer from tracepoint event
+- mm/damon/vaddr: hide kernel pointer from damon_va_three_regions() failure log
+- mm/damon/vaddr: use pr_debug() for damon_va_three_regions() failure logging
+- mm/damon/dbgfs: remove an unnecessary variable
+- mm/damon: move the implementation of damon_insert_region to damon.h
+- mm/damon: add access checking for hugetlb pages
+- Docs/admin-guide/mm/damon/usage: update for schemes statistics
+- mm/damon/dbgfs: support all DAMOS stats
+- Docs/admin-guide/mm/damon/reclaim: document statistics parameters
+- mm/damon/reclaim: provide reclamation statistics
+- mm/damon/schemes: account how many times quota limit has exceeded
+- mm/damon/schemes: account scheme actions that successfully applied
+- mm/damon: remove a mistakenly added comment for a future feature
+- Docs/admin-guide/mm/damon/usage: update for kdamond_pid and (mk|rm)_contexts
+- Docs/admin-guide/mm/damon/usage: mention tracepoint at the beginning
+- Docs/admin-guide/mm/damon/usage: remove redundant information
+- Docs/admin-guide/mm/damon/usage: update for scheme quotas and watermarks
+- mm/damon: convert macro functions to static inline functions
+- mm/damon: modify damon_rand() macro to static inline function
+- mm/damon: move damon_rand() definition into damon.h
+- mm/damon/schemes: add the validity judgment of thresholds
+- mm/damon/vaddr: remove swap_ranges() and replace it with swap()
+- mm/damon: remove some unneeded function definitions in damon.h
+- mm/damon/core: use abs() instead of diff_of()
+- mm/damon: add 'age' of region tracepoint support
+- mm/damon: unified access_check function naming rules
+- mm/damon/dbgfs: fix 'struct pid' leaks in 'dbgfs_target_ids_write()'
+- mm/damon/dbgfs: protect targets destructions with kdamond_lock
+- selftests/damon: split test cases
+- selftests/damon: test debugfs file reads/writes with huge count
+- selftests/damon: test wrong DAMOS condition ranges input
+- selftests/damon: test DAMON enabling with empty target_ids case
+- selftests/damon: skip test if DAMON is running
+- mm/damon/vaddr-test: remove unnecessary variables
+- mm/damon/vaddr-test: split a test function having >1024 bytes frame size
+- mm/damon/vaddr: remove an unnecessary warning message
+- mm/damon/core: remove unnecessary error messages
+- mm/damon/dbgfs: remove an unnecessary error message
+- mm/damon/core: use better timer mechanisms selection threshold
+- mm/damon/core: fix fake load reports due to uninterruptible sleeps
+- timers: implement usleep_idle_range()
+- mm/damon/dbgfs: fix missed use of damon_dbgfs_lock
+- mm/damon/dbgfs: use '__GFP_NOWARN' for user-specified size buffer allocation
+- NFC: add necessary privilege flags in netlink layer
+- net: add and use skb_unclone_keeptruesize() helper
+- openeuler_defconfig: Enable CONFIG_DEBUG_INFO_BTF
+- tools/bpftool: Fix cross-build
+- tools/bpftool: Force clean of out-of-tree build
+- x86/kdump: add log before booting crash kernel
+- selftests/x86: Test signal frame XSTATE header corruption handling
+- x86/fpu: Add address range checks to copy_user_to_xstate()
+- block, bfq: move bfqq to root_group if parent group is offlined
+- ext4: report error to userspace by netlink
+- crypto: Add PMULL judgment during initialization to prevent oops
+- phonet/pep: refuse to enable an unbound pipe
+- hamradio: improve the incomplete fix to avoid NPD
+- hamradio: defer ax25 kfree after unregister_netdev
+- ax25: NPD bug when detaching AX25 device
+- hwmon: (lm90) Do not report 'busy' status bit as alarm
+- hwmom: (lm90) Fix citical alarm status for MAX6680/MAX6681
+- pinctrl: mediatek: fix global-out-of-bounds issue
+- ASoC: rt5682: fix the wrong jack type detected
+- ASoC: tas2770: Fix setting of high sample rates
+- Input: goodix - add id->model mapping for the "9111" model
+- Input: elants_i2c - do not check Remark ID on eKTH3900/eKTH5312
+- mm: mempolicy: fix THP allocations escaping mempolicy restrictions
+- KVM: VMX: Fix stale docs for kvm-intel.emulate_invalid_guest_state
+- usb: gadget: u_ether: fix race in setting MAC address in setup phase
+- ceph: fix up non-directory creation in SGID directories
+- tee: optee: Fix incorrect page free bug
+- mac80211: fix locking in ieee80211_start_ap error path
+- ARM: 9169/1: entry: fix Thumb2 bug in iWMMXt exception handling
+- mmc: mmci: stm32: clear DLYB_CR after sending tuning command
+- mmc: core: Disable card detect during shutdown
+- mmc: meson-mx-sdhc: Set MANUAL_STOP for multi-block SDIO commands
+- mmc: sdhci-tegra: Fix switch to HS400ES mode
+- gpio: dln2: Fix interrupts when replugging the device
+- pinctrl: stm32: consider the GPIO offset to expose all the GPIO lines
+- KVM: VMX: Wake vCPU when delivering posted IRQ even if vCPU == this vCPU
+- platform/x86: intel_pmc_core: fix memleak on registration failure
+- x86/pkey: Fix undefined behaviour with PKRU_WD_BIT
+- parisc: Fix mask used to select futex spinlock
+- parisc: Correct completer in lws start
+- ipmi: fix initialization when workqueue allocation fails
+- ipmi: ssif: initialize ssif_info->client early
+- ipmi: bail out if init_srcu_struct fails
+- Input: atmel_mxt_ts - fix double free in mxt_read_info_block
+- ASoC: meson: aiu: Move AIU_I2S_MISC hold setting to aiu-fifo-i2s
+- ALSA: hda/realtek: Fix quirk for Clevo NJ51CU
+- ALSA: hda/realtek: Add new alc285-hp-amp-init model
+- ALSA: hda/realtek: Amp init fixup for HP ZBook 15 G6
+- ALSA: drivers: opl3: Fix incorrect use of vp->state
+- ALSA: jack: Check the return value of kstrdup()
+- hwmon: (lm90) Drop critical attribute support for MAX6654
+- hwmon: (lm90) Add basic support for TI TMP461
+- hwmon: (lm90) Introduce flag indicating extended temperature support
+- hwmon: (lm90) Fix usage of CONFIG2 register in detect function
+- pinctrl: bcm2835: Change init order for gpio hogs
+- Input: elantech - fix stack out of bound access in elantech_change_report_id()
+- sfc: falcon: Check null pointer of rx_queue->page_ring
+- sfc: Check null pointer of rx_queue->page_ring
+- net: ks8851: Check for error irq
+- drivers: net: smc911x: Check for error irq
+- fjes: Check for error irq
+- bonding: fix ad_actor_system option setting to default
+- ipmi: Fix UAF when uninstall ipmi_si and ipmi_msghandler module
+- igb: fix deadlock caused by taking RTNL in RPM resume path
+- net: skip virtio_net_hdr_set_proto if protocol already set
+- net: accept UFOv6 packages in virtio_net_hdr_to_skb
+- qlcnic: potential dereference null pointer of rx_queue->page_ring
+- net: marvell: prestera: fix incorrect return of port_find
+- ARM: dts: imx6qdl-wandboard: Fix Ethernet support
+- RDMA/hns: Replace kfree() with kvfree()
+- IB/qib: Fix memory leak in qib_user_sdma_queue_pkts()
+- ASoC: meson: aiu: fifo: Add missing dma_coerce_mask_and_coherent()
+- spi: change clk_disable_unprepare to clk_unprepare
+- arm64: dts: allwinner: orangepi-zero-plus: fix PHY mode
+- HID: potential dereference of null pointer
+- HID: holtek: fix mouse probing
+- net: usb: lan78xx: add Allied Telesis AT29M2-AF
+- arm64: vdso32: require CROSS_COMPILE_COMPAT for gcc+bfd
+- arm64: vdso32: drop -no-integrated-as flag
+- mm/shmem.c: fix judgment error in shmem_is_huge()
+- drm: fix free illegal pointer when create drm_property_blob failed
+- BMA: Fix pointer cast compile warning in arm32 builds
+- arm64: openeuler_defconfig: Enable ARM64_PMEM_LEGACY
+- arm64: register persistent memory via protected memory
+- x86: pmem: move persistent memory(legacy) code into nvdimm
+- openeuler_defconfig: enable CONFIG_VENDOR_HOOKS for x86 and arm64
+- vendor_hooks: make android vendor hooks feature generic.
+- ANDROID: fixup restricted hooks after tracepont refactoring
+- tracepoints: Do not punish non static call users
+- tracepoints: Remove unnecessary "data_args" macro parameter
+- ANDROID: simplify vendor hooks for non-GKI builds
+- ANDROID: vendor_hooks: fix __section macro
+- ANDROID: use static_call() for restricted hooks
+- ANDROID: fix redefinition error for restricted vendor hooks
+- ANDROID: add support for vendor hooks
+- mm: add PG_pool in /proc/kpageflags
+- ext4: Fix BUG_ON in ext4_bread when write quota data
+- ext4: fix null-ptr-deref in '__ext4_journal_ensure_credits'
+- bpf, mm: Fix lockdep warning triggered by stack_map_get_build_id_offset()
+- mmap_lock: change trace and locking order
+- mm: mmap_lock: fix disabling preemption directly
+- mm/mmap_lock: remove dead code for !CONFIG_TRACING configurations
+- mm: mmap_lock: use local locks instead of disabling preemption
+- mm: mmap_lock: add tracepoints around lock acquisition
+- ext4: fix an use-after-free issue about data=journal writeback mode
+- mm/pin_mem: improve pin mem pages rmap and free method
+- mm/pin_mem: add PG_hotreplace to mark pages need hotreplaced
+- mm/pin_mem: refactor pin memory mem reserve and pid reserve code
+- audit: bugfix for infinite loop when flush the hold queue
+- iommu/arm-smmu-v3: Remove arm_smmu_cmdq_issue_sync() to keep consistent with upstream
+- ipvlan: disable l2e local xmit
+- watchdog: Fix sleeping function called from atomic context
+- tcp_comp: Del compressed_data and remaining_data from tcp_comp_context_rx
+- tcp_comp: Add dpkt to save decompressed skb
+- tcp_comp: Fix ZSTD_decompressStream failed
+- tcp_comp: Fix comp_read_size return value
+- tcp_comp: Avoiding the null pointer problem of ctx in comp_stream_read
+- tcp_comp: open configs for tcp compression
+- tcp_comp: implement recvmsg for tcp compression
+- tcp_comp: implement sendmsg for tcp compression
+- Revert "sched: Introcude config option SCHED_OPTIMIZE_LOAD_TRACKING"
+- Revert "sched: Add switch for update_blocked_averages"
+- Revert "sched: Add frequency control for load update in scheduler_tick"
+- Revert "sched: Access control for sysctl_update_load_latency"
+- Revert "sched: Fix branch prediction error in static_key"
+- Revert "arm: Optimize ttwu IPI"
+- Revert "sched/idle: introduce smart halt polling"
+- Revert "sched/idle: Add IAS_SMART_HALT_POLL config for smart halt polling feature"
+- Revert "sched: Add menuconfig option for CONFIG_SCHED_OPTIMIZE_LOAD_TRACKING"
+- Revert "sysctl: Refactor IAS framework"
+- Revert "sched/idle: Optimize the loop time algorithm to reduce multicore disturb"
+- Revert "sched/idle: Reported an error when an illegal negative value is passed"
+- Revert "sched: Aware multi-core system for optimize loadtracking"
+- blk-throttle: enable hierarchical throttle in cgroup v1
+- md: Fix undefined behaviour in is_mddev_idle
+- cgroup: fix compile error when CONFIG_MEMCG = n
+- xfs: map unwritten blocks in XFS_IOC_{ALLOC,FREE}SP just like fallocate
+- fbcon: fix ypos over boundary issue
+- mm/zswap: move to use crypto_acomp API for hardware acceleration
+- net: fix a data race when get vlan device
+- ipvlan: Add handling of NETDEV_UP events
+- perf vendor events amd: Add Zen3 events
+
 * Wed Jan 19 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-42.0.0.24
 - Disable-SATA-disk-phy-for-severe-I_T-nexus reset failure
 - Export-sas_phy_enable
