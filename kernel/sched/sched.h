@@ -386,6 +386,11 @@ struct cfs_bandwidth {
 	u64			throttled_time;
 
 	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
 #endif
 };
 
@@ -623,6 +628,8 @@ struct cfs_rq {
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 static inline int rt_bandwidth_enabled(void)
@@ -1091,6 +1098,12 @@ struct rq {
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED

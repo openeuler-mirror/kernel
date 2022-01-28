@@ -668,6 +668,12 @@ struct wake_q_node {
 	struct wake_q_node *next;
 };
 
+/**
+* struct task_struct_resvd - KABI extension struct
+*/
+struct task_struct_resvd {
+};
+
 struct task_struct {
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 	/*
@@ -1394,6 +1400,15 @@ struct task_struct {
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
+	KABI_RESERVE(9)
+	KABI_RESERVE(10)
+	KABI_RESERVE(11)
+	KABI_RESERVE(12)
+	KABI_RESERVE(13)
+	KABI_RESERVE(14)
+	KABI_RESERVE(15)
+	KABI_RESERVE(16)
+	KABI_AUX_PTR(task_struct)
 
 	/* CPU-specific state of this task: */
 	struct thread_struct		thread;
