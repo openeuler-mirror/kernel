@@ -36,6 +36,7 @@
  */
 struct thread_info {
 	unsigned long		flags;		/* low level flags */
+	unsigned int		cpu;		/* current CPU */
 };
 
 /*
