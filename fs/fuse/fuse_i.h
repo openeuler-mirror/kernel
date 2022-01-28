@@ -31,6 +31,7 @@
 #include <linux/pid_namespace.h>
 #include <linux/refcount.h>
 #include <linux/user_namespace.h>
+#include <linux/kabi.h>
 
 /** Default max number of pages that can be used in a single read request */
 #define FUSE_DEFAULT_MAX_PAGES_PER_REQ 32
@@ -162,6 +163,8 @@ struct fuse_inode {
 	 */
 	struct fuse_inode_dax *dax;
 #endif
+
+	KABI_RESERVE(1)
 };
 
 /** FUSE inode state bits */
@@ -485,6 +488,8 @@ struct fuse_dev {
 
 	/** list entry on fc->devices */
 	struct list_head entry;
+
+	KABI_RESERVE(1)
 };
 
 struct fuse_fs_context {
@@ -790,6 +795,11 @@ struct fuse_conn {
 
 	/** List of filesystems using this connection */
 	struct list_head mounts;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /*
