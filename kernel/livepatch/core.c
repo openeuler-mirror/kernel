@@ -811,8 +811,10 @@ static void __klp_free_objects(struct klp_patch *patch, bool nops_only)
 
 	klp_for_each_object_safe(patch, obj, tmp_obj) {
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-		if (klp_is_module(obj))
+		if (klp_is_module(obj) && obj->mod) {
 			module_put(obj->mod);
+			obj->mod = NULL;
+		}
 #endif
 		__klp_free_funcs(obj, nops_only);
 
@@ -1118,8 +1120,10 @@ static int klp_init_object(struct klp_patch *patch, struct klp_object *obj)
 
 out:
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-	if (klp_is_module(obj))
+	if (klp_is_module(obj)) {
 		module_put(obj->mod);
+		obj->mod = NULL;
+	}
 #endif
 	return ret;
 }
@@ -1137,6 +1141,9 @@ static void klp_init_object_early(struct klp_patch *patch,
 	INIT_LIST_HEAD(&obj->func_list);
 	kobject_init(&obj->kobj, &klp_ktype_object);
 	list_add_tail(&obj->node, &patch->obj_list);
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	obj->mod = NULL;
+#endif
 }
 
 static int klp_init_patch_early(struct klp_patch *patch)
@@ -1187,8 +1194,10 @@ static void klp_free_objects_mod_limited(struct klp_patch *patch,
 	klp_for_each_object_safe(patch, obj, tmp_obj) {
 		if (limit == obj)
 			break;
-		if (klp_is_module(obj))
+		if (klp_is_module(obj) && obj->mod) {
 			module_put(obj->mod);
+			obj->mod = NULL;
+		}
 	}
 }
 #endif
