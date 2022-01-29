@@ -1185,23 +1185,6 @@ static int klp_init_patch_early(struct klp_patch *patch)
 	return 0;
 }
 
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-static void klp_free_objects_mod_limited(struct klp_patch *patch,
-					struct klp_object *limit)
-{
-	struct klp_object *obj, *tmp_obj;
-
-	klp_for_each_object_safe(patch, obj, tmp_obj) {
-		if (limit == obj)
-			break;
-		if (klp_is_module(obj) && obj->mod) {
-			module_put(obj->mod);
-			obj->mod = NULL;
-		}
-	}
-}
-#endif
-
 static int klp_init_patch(struct klp_patch *patch)
 {
 	struct klp_object *obj;
@@ -1220,7 +1203,7 @@ static int klp_init_patch(struct klp_patch *patch)
 	klp_for_each_object(patch, obj) {
 		ret = klp_init_object(patch, obj);
 		if (ret)
-			goto out;
+			return ret;
 	}
 
 	flush_module_icache(patch->mod);
@@ -1230,7 +1213,7 @@ static int klp_init_patch(struct klp_patch *patch)
 	ret = jump_label_register(patch->mod);
 	if (ret) {
 		module_enable_ro(patch->mod, true);
-		goto out;
+		return ret;
 	}
 	module_enable_ro(patch->mod, true);
 
@@ -1242,11 +1225,6 @@ static int klp_init_patch(struct klp_patch *patch)
 	list_add_tail(&patch->list, &klp_patches);
 
 	return 0;
-out:
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-	klp_free_objects_mod_limited(patch, obj);
-#endif
-	return ret;
 }
 
 #ifdef CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY
