@@ -12,6 +12,7 @@
 #include <linux/compiler.h>
 #include <asm/fpstate.h>
 #include <asm/page.h>
+#include <linux/kabi.h>
 
 #ifdef CONFIG_KASAN
 /*
@@ -73,6 +74,8 @@ struct thread_info {
 #ifdef CONFIG_ARM_THUMBEE
 	unsigned long		thumbee_state;	/* ThumbEE Handler Base register */
 #endif
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 #define INIT_THREAD_INFO(tsk)						\

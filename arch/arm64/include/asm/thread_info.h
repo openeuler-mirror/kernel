@@ -17,6 +17,7 @@ struct task_struct;
 #include <asm/memory.h>
 #include <asm/stack_pointer.h>
 #include <asm/types.h>
+#include <linux/kabi.h>
 
 typedef unsigned long mm_segment_t;
 
@@ -46,6 +47,9 @@ struct thread_info {
 	void			*scs_sp;
 #endif
 	u32			cpu;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 #define thread_saved_pc(tsk)	\
