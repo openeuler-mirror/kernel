@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       52
+%global devel_release       53
 %global maintenance_release .0.0
-%global pkg_release         .26
+%global pkg_release         .27
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -110,7 +110,7 @@ BuildRequires: java-devel
 %endif
 
 BuildRequires: dwarves
-BuildRequires: clang
+BuildRequires: clang >= 10.0.0
 BuildRequires: llvm
 
 %description
@@ -862,6 +862,20 @@ fi
 %endif
 
 %changelog
+* Sat Jan 29 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-53.0.0.27
+- livepatch/core: Fix where module get and put in different macro
+- livepatch/core: Remove redundant klp_free_objects_mod_limited
+- livepatch/core: Fix reference count issues
+- arm64/mpam: realign step entry when traversing rmid_transform
+- dt-bindings: mpam: refactor device tree node structure
+- arm64/mpam: refactor device tree structure to support multiple devices
+- arm64/mpam: fix __mpam_device_create() section mismatch error
+- block, bfq: don't move oom_bfqq
+- fget: clarify and improve __fget_files() implementation
+- KABI: add reserve space for thread_info struct
+- kabi: Reserve syscall entries for kabi compatibility
+- perf tools: Update powerpc's syscall.tbl copy from the kernel sources
+
 * Sat Mar 19 2022 Liu Yuntao <windspectator@gmail.com> - 5.10.0-52.0.0.26
 - Compress modules to xz format in kernel.spec, which reduces disk consumption.
 
