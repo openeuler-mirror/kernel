@@ -28,27 +28,30 @@ and Monitoring (MPAM), for Armv8-A", MPAM interrupts(section 8.8).
 
 Example:
 
-mpam_memory0 {
+mpam {
 	compatible = "arm,mpam";
-	reg = <0x0 0x10000000 0x0 0x10000>;
-	type = <2>; /* memory type */
-	numa-node-id = <0>;
-	overflow-interrupt = <0>;
-	overflow-flags = <0>;
-	error-interrupt = <0>;
-	error-interrupt-flags = <0>;
-	not-ready-max = <0>;
-};
 
-mpam_cache0 {
-	compatible = "arm,mpam";
-	reg = <0x0 0x20000000 0x0 0x10000>;
-	type = <1>; /* cache type */
-	cache-id = <0>;
-	cache-level = <3>;
-	overflow-interrupt = <0>;
-	overflow-flags = <0>;
-	error-interrupt = <0>;
-	error-interrupt-flags = <0>;
-	not-ready-max = <0>;
+	mpam_memory0 {
+		reg = <0x0 0x10000000 0x0 0x10000>;
+		type = <2>; /* memory type */
+		numa-node-id = <0>;
+		overflow-interrupt = <0>;
+		overflow-flags = <0>;
+		error-interrupt = <0>;
+		error-interrupt-flags = <0>;
+		not-ready-max = <0>;
+	};
+
+	mpam_cache0 {
+		reg = <0x0 0x20000000 0x0 0x10000>;
+		type = <1>; /* cache type */
+		cache-id = <0>;
+		cache-level = <3>;
+		overflow-interrupt = <0>;
+		overflow-flags = <0>;
+		error-interrupt = <0>;
+		error-interrupt-flags = <0>;
+		not-ready-max = <0>;
+	};
+
 };
