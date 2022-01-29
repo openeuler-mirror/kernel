@@ -621,7 +621,7 @@ static void mpam_failed(struct work_struct *work)
 	mutex_unlock(&mpam_cpuhp_lock);
 }
 
-static struct mpam_device * __init
+static struct mpam_device *
 mpam_device_alloc(struct mpam_component *comp)
 {
 	struct mpam_device *dev;
@@ -656,7 +656,7 @@ static void mpam_devices_destroy(struct mpam_component *comp)
 	}
 }
 
-static struct mpam_component * __init mpam_component_alloc(int id)
+static struct mpam_component *mpam_component_alloc(int id)
 {
 	struct mpam_component *comp;
 
@@ -694,7 +694,7 @@ struct mpam_component *mpam_component_get(struct mpam_class *class, int id,
 	return comp;
 }
 
-static struct mpam_class * __init mpam_class_alloc(u8 level_idx,
+static struct mpam_class *mpam_class_alloc(u8 level_idx,
 			enum mpam_class_types type)
 {
 	struct mpam_class *class;
@@ -733,7 +733,7 @@ static void mpam_class_destroy(struct mpam_class *class)
 	}
 }
 
-static struct mpam_class * __init mpam_class_get(u8 level_idx,
+static struct mpam_class *mpam_class_get(u8 level_idx,
 						enum mpam_class_types type,
 						bool alloc)
 {
