@@ -122,10 +122,7 @@ static int klp_find_object_module(struct klp_object *obj)
 	 * until mod->exit() finishes. This is especially important for
 	 * patches that modify semantic of the functions.
 	 */
-#ifdef CONFIG_LIVEPATCH_FTRACE
-	if (mod && mod->klp_alive)
-		obj->mod = mod;
-#else
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 	if (!mod) {
 		pr_err("module '%s' not loaded\n", obj->name);
 		mutex_unlock(&module_mutex);
@@ -138,6 +135,9 @@ static int klp_find_object_module(struct klp_object *obj)
 	}
 
 	obj->mod = mod;
+#else
+	if (mod && mod->klp_alive)
+		obj->mod = mod;
 #endif
 
 	mutex_unlock(&module_mutex);
