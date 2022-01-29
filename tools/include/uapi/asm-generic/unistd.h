@@ -860,8 +860,41 @@ __SYSCALL(__NR_faccessat2, sys_faccessat2)
 #define __NR_process_madvise 440
 __SYSCALL(__NR_process_madvise, sys_process_madvise)
 
+#define __NR_kabi_reserved441 441
+__SYSCALL(__NR_kabi_reserved441, sys_ni_syscall)
+#define __NR_kabi_reserved442 442
+__SYSCALL(__NR_kabi_reserved442, sys_ni_syscall)
+#define __NR_kabi_reserved443 443
+__SYSCALL(__NR_kabi_reserved443, sys_ni_syscall)
+#define __NR_kabi_reserved444 444
+__SYSCALL(__NR_kabi_reserved444, sys_ni_syscall)
+#define __NR_kabi_reserved445 445
+__SYSCALL(__NR_kabi_reserved445, sys_ni_syscall)
+#define __NR_kabi_reserved446 446
+__SYSCALL(__NR_kabi_reserved446, sys_ni_syscall)
+#define __NR_kabi_reserved447 447
+__SYSCALL(__NR_kabi_reserved447, sys_ni_syscall)
+#define __NR_kabi_reserved448 448
+__SYSCALL(__NR_kabi_reserved448, sys_ni_syscall)
+#define __NR_kabi_reserved449 449
+__SYSCALL(__NR_kabi_reserved449, sys_ni_syscall)
+#define __NR_kabi_reserved450 450
+__SYSCALL(__NR_kabi_reserved450, sys_ni_syscall)
+#define __NR_kabi_reserved451 451
+__SYSCALL(__NR_kabi_reserved451, sys_ni_syscall)
+#define __NR_kabi_reserved452 452
+__SYSCALL(__NR_kabi_reserved452, sys_ni_syscall)
+#define __NR_kabi_reserved453 453
+__SYSCALL(__NR_kabi_reserved453, sys_ni_syscall)
+#define __NR_kabi_reserved454 454
+__SYSCALL(__NR_kabi_reserved454, sys_ni_syscall)
+#define __NR_kabi_reserved455 455
+__SYSCALL(__NR_kabi_reserved455, sys_ni_syscall)
+#define __NR_kabi_reserved456 456
+__SYSCALL(__NR_kabi_reserved456, sys_ni_syscall)
+
 #undef __NR_syscalls
-#define __NR_syscalls 441
+#define __NR_syscalls 457
 
 /*
  * 32 bit systems traditionally used different
