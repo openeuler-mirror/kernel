@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2201.4.0
+%global hulkrelease 2202.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0135
+Release: %{hulkrelease}.0136
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,144 @@ fi
 %endif
 
 %changelog
+
+* Tue Feb 08 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2202.1.0.0136
+- config: enable CONFIG_MEMCG_MEMFS_INFO by default
+- mm/memcg_memfs_info: show files that having pages charged in mem_cgroup
+- ext4: fix e2fsprogs checksum failure for mounted filesystem
+- drm/vmwgfx: Fix stale file descriptors on failed usercopy
+- perf vendor events amd: Fix broken L2 Cache Hits from L2 HWPF metric
+- perf vendor events amd: Add recommended events
+- perf vendor events amd: Add L2 Prefetch events for zen1
+- perf/amd/uncore: Fix sysfs type mismatch
+- perf/x86/amd: Don't touch the AMD64_EVENTSEL_HOSTONLY bit inside the guest
+- tools/power turbostat: Support AMD Family 19h
+- perf/x86/amd/ibs: Support 27-bit extended Op/cycle counter
+- perf vendor events amd: Enable Family 19h users by matching Zen2 events
+- perf vendor events amd: Update Zen1 events to V2
+- perf vendor events amd: Add Zen2 events
+- perf vendor events amd: Restrict model detection for zen1 based processors
+- perf vendor events amd: Remove redundant '['
+- perf vendor events intel: Add Tremontx event file v1.02
+- perf vendor events intel: Add Icelake V1.00 event file
+- perf vendor events amd: Add L3 cache events for Family 17h
+- perf vendor events intel: Add uncore_upi JSON support
+- perf vendor events amd: perf PMU events for AMD Family 17h
+- perf/amd/uncore: Allow F19h user coreid, threadmask, and sliceid specification
+- perf/amd/uncore: Allow F17h user threadmask and slicemask specification
+- perf/amd/uncore: Prepare to scale for more attributes that vary per family
+- perf/x86/amd/ibs: Don't include randomized bits in get_ibs_op_count()
+- perf/amd/uncore: Set all slices and threads to restore perf stat -a behaviour
+- perf/x86/amd/ibs: Fix raw sample data accumulation
+- arch/x86/amd/ibs: Fix re-arming IBS Fetch
+- perf/amd/uncore: Add support for Family 19h L3 PMU
+- perf/amd/uncore: Make L3 thread mask code more readable
+- perf/amd/uncore: Prepare L3 thread mask code for Family 19h
+- EDAC/amd64: Handle three rank interleaving mode
+- EDAC/amd64: Add family ops for Family 19h Models 00h-0Fh
+- EDAC/amd64: Save max number of controllers to family type
+- EDAC/amd64: Gather hardware information early
+- EDAC/amd64: Make struct amd64_family_type global
+- EDAC/amd64: Set grain per DIMM
+- EDAC/amd64: Support asymmetric dual-rank DIMMs
+- EDAC/amd64: Cache secondary Chip Select registers
+- EDAC/amd64: Add PCI device IDs for family 17h, model 70h
+- EDAC/amd64: Find Chip Select memory size using Address Mask
+- EDAC/amd64: Adjust printed chip select sizes when interleaved
+- EDAC/amd64: Recognize x16 symbol size
+- EDAC/amd64: Set maximum channel layer size depending on family
+- EDAC/amd64: Support more than two Unified Memory Controllers
+- EDAC/amd64: Add Family 17h Model 30h PCI IDs
+- EDAC/amd64: Initialize DIMM info for systems with more than two channels
+- EDAC/amd64: Support more than two controllers for chip selects handling
+- EDAC/amd64: Use a macro for iterating over Unified Memory Controllers
+- x86/mce: Fix use of uninitialized MCE message string
+- x86/MCE/AMD, EDAC/mce_amd: Add new Load Store unit McaType
+- x86/MCE/AMD, EDAC/mce_amd: Add new error descriptions for some SMCA bank types
+- x86/MCE/AMD, EDAC/mce_amd: Add new McaTypes for CS, PSP, and SMU units
+- x86/MCE/AMD, EDAC/mce_amd: Add new MP5, NBIO, and PCIE SMCA bank types
+- EDAC/mce_amd: Always load on SMCA systems
+- x86/cpu/amd: Call init_amd_zn() om Family 19h processors too
+- x86/amd_nb: Add Family 19h PCI IDs
+- x86/amd_nb: Add PCI device IDs for family 17h, model 70h
+- x86/amd_nb: Add PCI device IDs for family 17h, model 30h
+- hwmon/k10temp, x86/amd_nb: Consolidate shared device IDs
+- EDAC/amd64: Drop some family checks for newer systems
+- x86/microcode/AMD: Increase microcode PATCH_MAX_SIZE
+- KVM: mmu: Fix SPTE encoding of MMIO generation upper half
+- build_bug.h: add wrapper for _Static_assert
+- KVM: x86: fix overlap between SPTE_MMIO_MASK and generation
+- KVM: x86: assign two bits to track SPTE kinds
+- KVM: Move the memslot update in-progress flag to bit 63
+- KVM: Remove the hack to trigger memslot generation wraparound
+- KVM: x86: clflushopt should be treated as a no-op by emulation
+- KVM: SVM: Clear the CR4 register on reset
+- KVM: SVM: Replace hard-coded value with #define
+- KVM: x86/mmu: Set mmio_value to '0' if reserved #PF can't be generated
+- KVM: x86/mmu: Apply max PA check for MMIO sptes to 32-bit KVM
+- KVM: x86: only do L1TF workaround on affected processors
+- kvm: x86: Fix L1TF mitigation for shadow MMU
+- KVM: x86/mmu: Consolidate "is MMIO SPTE" code
+- KVM: SVM: Override default MMIO mask if memory encryption is enabled
+- KVM: x86/mmu: Add explicit access mask for MMIO SPTEs
+- kvm: x86: Fix reserved bits related calculation errors caused by MKTME
+- KVM: x86: Rename access permissions cache member in struct kvm_vcpu_arch
+- kvm: x86: Move kvm_set_mmio_spte_mask() from x86.c to mmu.c
+- kvm/svm: PKU not currently supported
+- kvm: x86: Expose RDPID in KVM_GET_SUPPORTED_CPUID
+- KVM: x86: Refactor the MMIO SPTE generation handling
+- KVM: Explicitly define the "memslot update in-progress" bit
+- KVM: x86: Use a u64 when passing the MMIO gen around
+- KVM: x86: expose MOVDIR64B CPU feature into VM.
+- KVM: x86: expose MOVDIRI CPU feature into VM.
+- KVM: x86: Add requisite includes to hyperv.h
+- KVM: x86: Add requisite includes to kvm_cache_regs.h
+- KVM: nVMX: Allocate and configure VM{READ,WRITE} bitmaps iff enable_shadow_vmcs
+- x86/cpufeatures: Enumerate MOVDIR64B instruction
+- x86/cpufeatures: Enumerate MOVDIRI instruction
+- x86/pkeys: Don't check if PKRU is zero before writing it
+- x86/fpu: Only write PKRU if it is different from current
+- x86/pkeys: Provide *pkru() helpers
+- sysctl: returns -EINVAL when a negative value is passed to proc_doulongvec_minmax
+- arm64: move jump_label_init() before parse_early_param()
+- tcp: fix memleak when tcp internal pacing is used
+- scsi: scsi_debug: Sanity check block descriptor length in resp_mode_select()
+- ovl: fix warning in ovl_create_real()
+- fuse: annotate lock in fuse_reverse_inval_entry()
+- PCI/MSI: Clear PCI_MSIX_FLAGS_MASKALL on error
+- sit: do not call ipip6_dev_free() from sit_init_net()
+- net/packet: rx_owner_map depends on pg_vec
+- x86/sme: Explicitly map new EFI memmap table as encrypted
+- dm btree remove: fix use after free in rebalance_children()
+- net: netlink: af_netlink: Prevent empty skb by adding a check on len.
+- irqchip/irq-gic-v3-its.c: Force synchronisation when issuing INVALL
+- net, neigh: clear whole pneigh_entry at alloc time
+- aio: fix use-after-free due to missing POLLFREE handling
+- aio: keep poll requests on waitqueue until completed
+- signalfd: use wake_up_pollfree()
+- wait: add wake_up_pollfree()
+- tracefs: Have new files inherit the ownership of their parent
+- mm: bdi: initialize bdi_min_ratio when bdi is unregistered
+- udp: using datalen to cap max gso segments
+- bpf: Fix the off-by-two error in range markings
+- ipmi: msghandler: Make symbol 'remove_work_wq' static
+- serial: core: fix transmit-buffer reset and memleak
+- serial: pl011: Add ACPI SBSA UART match id
+- net: annotate data-races on txq->xmit_lock_owner
+- ipmi: Move remove_work to dedicated workqueue
+- vrf: Reset IPCB/IP6CB when processing outbound pkts in vrf dev xmit
+- scsi: iscsi: Unblock session then wake up error handler
+- shm: extend forced shm destroy to support objects from several IPC nses
+- fuse: release pipe buf after last use
+- tracing: Check pid filtering when creating events
+- ipv6: fix typos in __ip6_finish_output()
+- proc/vmcore: fix clearing user buffer by properly using clear_user()
+- tracing: Fix pid filtering when triggers are attached
+- fuse: fix page stealing
+- ipmi_si: Phytium S2500 workaround for MMIO-based IPMI
+- etmem: Add a scan flag to support specified page swap-out
+- etmem: add swapcache reclaim to etmem
+- etmem: add original kernel swap enabled options
 
 * Tue Jan 25 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2201.4.0.0135
 - net: bridge: clear bridge's private skb space on xmit
