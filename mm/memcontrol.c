@@ -66,6 +66,7 @@
 #include <linux/lockdep.h>
 #include <linux/file.h>
 #include <linux/tracehook.h>
+#include <linux/memcg_memfs_info.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -1484,6 +1485,8 @@ void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg)
 
 		pr_cont("\n");
 	}
+
+	mem_cgroup_print_memfs_info(memcg, NULL);
 }
 
 /*
@@ -4705,6 +4708,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.write_s64 = memcg_qos_write,
 	},
 #endif
+#ifdef CONFIG_MEMCG_MEMFS_INFO
+	{
+		.name = "memfs_files_info",
+		.seq_show = mem_cgroup_memfs_files_show,
+	},
+#endif
 #ifdef CONFIG_NUMA
 	{
 		.name = "numa_stat",
@@ -6915,6 +6924,8 @@ static int __init mem_cgroup_init(void)
 		spin_lock_init(&rtpn->lock);
 		soft_limit_tree.rb_tree_per_node[node] = rtpn;
 	}
+
+	mem_cgroup_memfs_info_init();
 
 	return 0;
 }

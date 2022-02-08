@@ -108,3 +108,4 @@ obj-$(CONFIG_MEMFD_CREATE) += memfd.o
 obj-$(CONFIG_ASCEND_AUTO_TUNING_HUGEPAGE) += hugepage_tuning.o
 obj-$(CONFIG_PIN_MEMORY) += pin_mem.o
 obj-$(CONFIG_ASCEND_SHARE_POOL) += share_pool.o
+obj-$(CONFIG_MEMCG_MEMFS_INFO) += memcg_memfs_info.o
