@@ -1042,6 +1042,7 @@ struct page *__page_cache_alloc(gfp_t gfp)
 	int n;
 	struct page *page;
 
+	gfp |= ___GFP_RELIABILITY;
 	if (cpuset_do_page_mem_spread()) {
 		unsigned int cpuset_mems_cookie;
 		do {
