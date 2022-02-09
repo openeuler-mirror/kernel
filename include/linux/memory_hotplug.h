@@ -105,6 +105,8 @@ extern void __online_page_free(struct page *page);
 extern int try_online_node(int nid);
 
 extern bool memhp_auto_online;
+/* Default online_type (MMOP_*) when new memory blocks are added. */
+extern int memhp_default_online_type;
 /* If movable_node boot option specified */
 extern bool movable_node_enabled;
 static inline bool movable_node_is_enabled(void)
