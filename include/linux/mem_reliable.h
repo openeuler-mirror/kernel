@@ -18,6 +18,7 @@ extern bool reliable_enabled;
 extern void add_reliable_mem_size(long sz);
 extern void mem_reliable_init(bool has_unmirrored_mem,
 			      unsigned long *zone_movable_pfn);
+extern void reliable_report_meminfo(struct seq_file *m);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -58,6 +59,7 @@ static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
 {
 	return false;
 }
+static inline void reliable_report_meminfo(struct seq_file *m) {}
 
 #endif
 

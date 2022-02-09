@@ -6,6 +6,8 @@
 #include <linux/mm.h>
 #include <linux/memory.h>
 #include <linux/memory_hotplug.h>
+#include <linux/seq_file.h>
+#include <linux/mmzone.h>
 
 DEFINE_STATIC_KEY_FALSE(mem_reliable);
 
@@ -75,4 +77,31 @@ void mem_reliable_init(bool has_unmirrored_mem, unsigned long *zone_movable_pfn)
 
 	pr_info("init succeed, mirrored memory size(%lu)",
 		atomic_long_read(&total_reliable_mem));
+}
+
+static unsigned long total_reliable_mem_sz(void)
+{
+	return atomic_long_read(&total_reliable_mem);
+}
+
+static unsigned long used_reliable_mem_sz(void)
+{
+	unsigned long nr_page = 0;
+	struct zone *z;
+
+	for_each_populated_zone(z)
+		if (zone_idx(z) < ZONE_MOVABLE)
+			nr_page += zone_page_state(z, NR_FREE_PAGES);
+
+	return total_reliable_mem_sz() - nr_page * PAGE_SIZE;
+}
+
+void reliable_report_meminfo(struct seq_file *m)
+{
+	if (mem_reliable_is_enabled()) {
+		seq_printf(m, "ReliableTotal:    %8lu kB\n",
+			   total_reliable_mem_sz() >> 10);
+		seq_printf(m, "ReliableUsed:     %8lu kB\n",
+			   used_reliable_mem_sz() >> 10);
+	}
 }
