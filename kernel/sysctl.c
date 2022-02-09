@@ -1468,6 +1468,24 @@ static struct ctl_table vm_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
+	{
+		.procname	= "cache_limit_mbytes",
+		.data		= &vm_cache_limit_mbytes,
+		.maxlen		= sizeof(vm_cache_limit_mbytes),
+		.mode		= 0644,
+		.proc_handler	= cache_limit_mbytes_sysctl_handler,
+		.extra1		= &vm_cache_limit_mbytes_min,
+		.extra2		= &vm_cache_limit_mbytes_max,
+	},
+	{
+		.procname	= "cache_limit_ratio",
+		.data		= &vm_cache_limit_ratio,
+		.maxlen		= sizeof(vm_cache_limit_ratio),
+		.mode		= 0644,
+		.proc_handler	= cache_limit_ratio_sysctl_handler,
+		.extra1		= &vm_cache_limit_ratio_min,
+		.extra2		= &vm_cache_limit_ratio_max,
+	},
 #endif
 #ifdef CONFIG_HUGETLB_PAGE
 	{
