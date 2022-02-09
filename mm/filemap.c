@@ -991,8 +991,6 @@ int add_to_page_cache(struct page *page,
 {
 	int error;
 
-	if (vm_cache_limit_mbytes && page_cache_over_limit())
-		shrink_page_cache(gfp_mask);
 	__SetPageLocked(page);
 	error = add_to_page_cache_locked(page, mapping, offset, gfp_mask);
 	if (unlikely(error))
