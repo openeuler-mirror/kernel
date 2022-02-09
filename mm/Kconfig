@@ -849,4 +849,11 @@ config MEMORY_RELIABLE
 	  To enable this function, mirrored memory is needed and
 	  "kernelcore=reliable" need to be added in kernel parameters.
 
+config CLEAR_FREELIST_PAGE
+	bool "Support for clear free list pages"
+	depends on MMU && SYSCTL
+	default n
+	help
+	  Say y here to enable the clear free list pages feature.
+
 endmenu

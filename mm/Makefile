@@ -6,6 +6,7 @@
 KASAN_SANITIZE_slab_common.o := n
 KASAN_SANITIZE_slab.o := n
 KASAN_SANITIZE_slub.o := n
+KASAN_SANITIZE_clear_freelist_page.o := n
 
 # These files are disabled because they produce non-interesting and/or
 # flaky coverage that is not a function of syscall inputs. E.g. slab is out of
@@ -110,3 +111,4 @@ obj-$(CONFIG_PIN_MEMORY) += pin_mem.o
 obj-$(CONFIG_ASCEND_SHARE_POOL) += share_pool.o
 obj-$(CONFIG_MEMCG_MEMFS_INFO) += memcg_memfs_info.o
 obj-$(CONFIG_MEMORY_RELIABLE) += mem_reliable.o
+obj-$(CONFIG_CLEAR_FREELIST_PAGE) += clear_freelist_page.o
