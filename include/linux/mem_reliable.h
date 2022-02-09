@@ -14,11 +14,14 @@
 extern struct static_key_false mem_reliable;
 
 extern bool reliable_enabled;
+extern atomic_long_t reliable_user_used_nr_page;
 
 extern void add_reliable_mem_size(long sz);
 extern void mem_reliable_init(bool has_unmirrored_mem,
 			      unsigned long *zone_movable_pfn);
 extern void reliable_report_meminfo(struct seq_file *m);
+extern bool page_reliable(struct page *page);
+extern void reliable_report_usage(struct seq_file *m, struct mm_struct *mm);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -47,6 +50,15 @@ static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
 
 	return false;
 }
+
+static inline void reliable_page_counter(struct page *page,
+		struct mm_struct *mm, int val)
+{
+	if (page_reliable(page)) {
+		atomic_long_add(val, &mm->reliable_nr_page);
+		atomic_long_add(val, &reliable_user_used_nr_page);
+	}
+}
 #else
 #define reliable_enabled 0
 
@@ -60,6 +72,11 @@ static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
 	return false;
 }
 static inline void reliable_report_meminfo(struct seq_file *m) {}
+static inline bool page_reliable(struct page *page) { return false; }
+static inline void reliable_page_counter(struct page *page,
+		struct mm_struct *mm, int val) {}
+static inline void reliable_report_usage(struct seq_file *m,
+					 struct mm_struct *mm) {}
 
 #endif
 

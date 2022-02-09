@@ -648,6 +648,7 @@ static void __collapse_huge_page_copy(pte_t *pte, struct page *page,
 		if (pte_none(pteval) || is_zero_pfn(pte_pfn(pteval))) {
 			clear_user_highpage(page, address);
 			add_mm_counter(vma->vm_mm, MM_ANONPAGES, 1);
+			reliable_page_counter(page, vma->vm_mm, 1);
 			if (is_zero_pfn(pte_pfn(pteval))) {
 				/*
 				 * ptl mostly unnecessary.

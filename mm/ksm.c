@@ -1184,6 +1184,7 @@ static int replace_page(struct vm_area_struct *vma, struct page *page,
 		 * when tearing down the mm.
 		 */
 		dec_mm_counter(mm, MM_ANONPAGES);
+		reliable_page_counter(page, mm, -1);
 	}
 
 	flush_cache_page(vma, addr, pte_pfn(*ptep));

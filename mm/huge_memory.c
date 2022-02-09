@@ -673,6 +673,7 @@ static vm_fault_t __do_huge_pmd_anonymous_page(struct vm_fault *vmf,
 		pgtable_trans_huge_deposit(vma->vm_mm, vmf->pmd, pgtable);
 		set_pmd_at(vma->vm_mm, haddr, vmf->pmd, entry);
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, HPAGE_PMD_NR);
+		reliable_page_counter(page, vma->vm_mm, HPAGE_PMD_NR);
 		mm_inc_nr_ptes(vma->vm_mm);
 		spin_unlock(vmf->ptl);
 		count_vm_event(THP_FAULT_ALLOC);
@@ -1080,6 +1081,7 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	get_page(src_page);
 	page_dup_rmap(src_page, true);
 	add_mm_counter(dst_mm, MM_ANONPAGES, HPAGE_PMD_NR);
+	reliable_page_counter(src_page, dst_mm, HPAGE_PMD_NR);
 	mm_inc_nr_ptes(dst_mm);
 	pgtable_trans_huge_deposit(dst_mm, dst_pmd, pgtable);
 
@@ -1468,6 +1470,8 @@ alloc:
 		update_mmu_cache_pmd(vma, vmf->address, vmf->pmd);
 		if (!page) {
 			add_mm_counter(vma->vm_mm, MM_ANONPAGES, HPAGE_PMD_NR);
+			reliable_page_counter(new_page, vma->vm_mm,
+					      HPAGE_PMD_NR);
 		} else {
 			VM_BUG_ON_PAGE(!PageHead(page), page);
 			page_remove_rmap(page, true);
@@ -1850,10 +1854,12 @@ int zap_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 		if (PageAnon(page)) {
 			zap_deposited_table(tlb->mm, pmd);
 			add_mm_counter(tlb->mm, MM_ANONPAGES, -HPAGE_PMD_NR);
+			reliable_page_counter(page, tlb->mm, -HPAGE_PMD_NR);
 		} else {
 			if (arch_needs_pgtable_deposit())
 				zap_deposited_table(tlb->mm, pmd);
 			add_mm_counter(tlb->mm, mm_counter_file(page), -HPAGE_PMD_NR);
+			reliable_page_counter(page, tlb->mm, -HPAGE_PMD_NR);
 		}
 
 		spin_unlock(ptl);
@@ -2209,6 +2215,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 			put_page(page);
 		}
 		add_mm_counter(mm, mm_counter_file(page), -HPAGE_PMD_NR);
+		reliable_page_counter(page, mm, -HPAGE_PMD_NR);
 		return;
 	}
 
@@ -3170,6 +3177,7 @@ vm_fault_t do_anon_huge_page_remap(struct vm_area_struct *vma, unsigned long add
 		pgtable_trans_huge_deposit(vma->vm_mm, pmd, pgtable);
 		set_pmd_at(vma->vm_mm, address, pmd, entry);
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, HPAGE_PMD_NR);
+		reliable_page_counter(page, vma->vm_mm, HPAGE_PMD_NR);
 		mm_inc_nr_ptes(vma->vm_mm);
 		spin_unlock(ptl);
 		count_vm_event(THP_FAULT_ALLOC);

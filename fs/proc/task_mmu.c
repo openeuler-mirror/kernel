@@ -77,6 +77,7 @@ void task_mem(struct seq_file *m, struct mm_struct *mm)
 	SEQ_PUT_DEC(" kB\nVmSwap:\t", swap);
 	seq_puts(m, " kB\n");
 	hugetlb_report_usage(m, mm);
+	reliable_report_usage(m, mm);
 }
 #undef SEQ_PUT_DEC
 

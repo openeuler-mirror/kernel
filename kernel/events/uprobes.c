@@ -191,7 +191,9 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
 
 	if (!PageAnon(old_page)) {
 		dec_mm_counter(mm, mm_counter_file(old_page));
+		reliable_page_counter(old_page, mm, -1);
 		inc_mm_counter(mm, MM_ANONPAGES);
+		reliable_page_counter(new_page, mm, 1);
 	}
 
 	flush_cache_page(vma, addr, pte_pfn(*pvmw.pte));

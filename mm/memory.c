@@ -740,6 +740,7 @@ copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 
 			rss[mm_counter(page)]++;
 
+			reliable_page_counter(page, dst_mm, 1);
 			if (is_write_migration_entry(entry) &&
 					is_cow_mapping(vm_flags)) {
 				/*
@@ -766,6 +767,7 @@ copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 			 */
 			get_page(page);
 			rss[mm_counter(page)]++;
+			reliable_page_counter(page, dst_mm, 1);
 			page_dup_rmap(page, false);
 
 			/*
@@ -807,6 +809,7 @@ copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		get_page(page);
 		page_dup_rmap(page, false);
 		rss[mm_counter(page)]++;
+		reliable_page_counter(page, dst_mm, 1);
 	} else if (pte_devmap(pte)) {
 		page = pte_page(pte);
 
@@ -819,6 +822,7 @@ copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 			get_page(page);
 			page_dup_rmap(page, false);
 			rss[mm_counter(page)]++;
+			reliable_page_counter(page, dst_mm, 1);
 		}
 	}
 
@@ -1102,6 +1106,7 @@ again:
 					mark_page_accessed(page);
 			}
 			rss[mm_counter(page)]--;
+			reliable_page_counter(page, mm, -1);
 			page_remove_rmap(page, false);
 			if (unlikely(page_mapcount(page) < 0))
 				print_bad_pte(vma, addr, ptent, page);
@@ -1130,6 +1135,7 @@ again:
 
 			pte_clear_not_present_full(mm, addr, pte, tlb->fullmm);
 			rss[mm_counter(page)]--;
+			reliable_page_counter(page, mm, -1);
 			page_remove_rmap(page, false);
 			put_page(page);
 			continue;
@@ -1147,6 +1153,7 @@ again:
 
 			page = migration_entry_to_page(entry);
 			rss[mm_counter(page)]--;
+			reliable_page_counter(page, mm, -1);
 		}
 		if (unlikely(!free_swap_and_cache(entry)))
 			print_bad_pte(vma, addr, ptent, NULL);
@@ -1490,6 +1497,7 @@ static int insert_page(struct vm_area_struct *vma, unsigned long addr,
 	/* Ok, finally just insert the thing.. */
 	get_page(page);
 	inc_mm_counter_fast(mm, mm_counter_file(page));
+	reliable_page_counter(page, mm, 1);
 	page_add_file_rmap(page, false);
 	set_pte_at(mm, addr, pte, mk_pte(page, prot));
 
@@ -2489,10 +2497,13 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 			if (!PageAnon(old_page)) {
 				dec_mm_counter_fast(mm,
 						mm_counter_file(old_page));
+				reliable_page_counter(old_page, mm, -1);
 				inc_mm_counter_fast(mm, MM_ANONPAGES);
+				reliable_page_counter(new_page, mm, 1);
 			}
 		} else {
 			inc_mm_counter_fast(mm, MM_ANONPAGES);
+			reliable_page_counter(new_page, mm, 1);
 		}
 		flush_cache_page(vma, vmf->address, pte_pfn(vmf->orig_pte));
 		entry = mk_pte(new_page, vma->vm_page_prot);
@@ -3051,6 +3062,7 @@ skip_uswap:
 	 */
 
 	inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
+	reliable_page_counter(page, vma->vm_mm, 1);
 	dec_mm_counter_fast(vma->vm_mm, MM_SWAPENTS);
 	pte = mk_pte(page, vma->vm_page_prot);
 	if ((vmf->flags & FAULT_FLAG_WRITE) && reuse_swap_page(page, NULL)) {
@@ -3216,6 +3228,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	}
 
 	inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
+	reliable_page_counter(page, vma->vm_mm, 1);
 	page_add_new_anon_rmap(page, vma, vmf->address, false);
 	mem_cgroup_commit_charge(page, memcg, false, false);
 	lru_cache_add_active_or_unevictable(page, vma);
@@ -3416,6 +3429,7 @@ static vm_fault_t do_set_pmd(struct vm_fault *vmf, struct page *page)
 		entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
 
 	add_mm_counter(vma->vm_mm, mm_counter_file(page), HPAGE_PMD_NR);
+	reliable_page_counter(page, vma->vm_mm, HPAGE_PMD_NR);
 	page_add_file_rmap(page, true);
 	/*
 	 * deposit and withdraw with pmd lock held
@@ -3489,6 +3503,7 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct mem_cgroup *memcg,
 	if (write)
 		entry = maybe_mkwrite(pte_mkdirty(entry), vma);
 	/* copy-on-write page */
+	reliable_page_counter(page, vma->vm_mm, 1);
 	if (write && !(vma->vm_flags & VM_SHARED)) {
 		inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
 		page_add_new_anon_rmap(page, vma, vmf->address, false);
@@ -4910,6 +4925,7 @@ vm_fault_t do_anon_page_remap(struct vm_area_struct *vma, unsigned long address,
 	if (ret)
 		goto release;
 	inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
+	reliable_page_counter(page, vma->vm_mm, 1);
 	page_add_new_anon_rmap(page, vma, address, false);
 	mem_cgroup_commit_charge(page, memcg, false, false);
 	lru_cache_add_active_or_unevictable(page, vma);

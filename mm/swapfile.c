@@ -1869,6 +1869,7 @@ static int unuse_pte(struct vm_area_struct *vma, pmd_t *pmd,
 
 	dec_mm_counter(vma->vm_mm, MM_SWAPENTS);
 	inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+	reliable_page_counter(page, vma->vm_mm, 1);
 	get_page(page);
 	set_pte_at(vma->vm_mm, addr, pte,
 		   pte_mkold(mk_pte(page, vma->vm_page_prot)));
