@@ -1593,6 +1593,14 @@ static struct page *shmem_alloc_page(gfp_t gfp,
 	return page;
 }
 
+static inline void shmem_prepare_alloc(gfp_t *gfp_mask)
+{
+	if (!shmem_reliable_is_enabled())
+		return;
+
+	*gfp_mask |= ___GFP_RELIABILITY;
+}
+
 static struct page *shmem_alloc_and_acct_page(gfp_t gfp,
 		struct inode *inode,
 		pgoff_t index, bool huge, int node_id)
@@ -1608,6 +1616,8 @@ static struct page *shmem_alloc_and_acct_page(gfp_t gfp,
 
 	if (!shmem_inode_acct_block(inode, nr))
 		goto failed;
+
+	shmem_prepare_alloc(&gfp);
 
 	if (huge)
 		page = shmem_alloc_hugepage(gfp, info, index, node_id);
@@ -3941,6 +3951,8 @@ int __init shmem_init(void)
 	else
 		shmem_huge = 0; /* just in case it was patched */
 #endif
+
+	shmem_reliable_init();
 	return 0;
 
 out1:

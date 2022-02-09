@@ -18,6 +18,7 @@ atomic_long_t reliable_user_used_nr_page;
 /* reliable user limit for user tasks with reliable flag */
 unsigned long task_reliable_limit = ULONG_MAX;
 bool reliable_allow_fallback __read_mostly = true;
+bool shmem_reliable __read_mostly = true;
 
 void add_reliable_mem_size(long sz)
 {
@@ -86,6 +87,17 @@ void mem_reliable_init(bool has_unmirrored_mem, unsigned long *zone_movable_pfn)
 
 	pr_info("init succeed, mirrored memory size(%lu)",
 		atomic_long_read(&total_reliable_mem));
+}
+
+void shmem_reliable_init(void)
+{
+	if (!shmem_reliable_is_enabled())
+		return;
+
+	if (!mem_reliable_is_enabled()) {
+		shmem_reliable = false;
+		pr_info("shmem reliable disabled.\n");
+	}
 }
 
 static unsigned long total_reliable_mem_sz(void)
@@ -222,6 +234,10 @@ static int __init setup_reliable_debug(char *str)
 		case 'F':
 			reliable_allow_fallback = false;
 			pr_info("fallback disabled.");
+			break;
+		case 'S':
+			shmem_reliable = false;
+			pr_info("shmem reliable disabled.");
 			break;
 		default:
 			pr_err("reliable_debug option '%c' unknown. skipped\n",

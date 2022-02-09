@@ -17,10 +17,12 @@ extern bool reliable_enabled;
 extern atomic_long_t reliable_user_used_nr_page;
 extern unsigned long task_reliable_limit __read_mostly;
 extern bool reliable_allow_fallback;
+extern bool shmem_reliable;
 
 extern void add_reliable_mem_size(long sz);
 extern void mem_reliable_init(bool has_unmirrored_mem,
 			      unsigned long *zone_movable_pfn);
+extern void shmem_reliable_init(void);
 extern void reliable_report_meminfo(struct seq_file *m);
 extern bool page_reliable(struct page *page);
 extern void reliable_report_usage(struct seq_file *m, struct mm_struct *mm);
@@ -75,6 +77,12 @@ static inline bool reliable_allow_fb_enabled(void)
 {
 	return reliable_allow_fallback;
 }
+
+static inline bool shmem_reliable_is_enabled(void)
+{
+	return shmem_reliable;
+}
+
 #else
 #define reliable_enabled 0
 #define reliable_allow_fb_enabled() false
@@ -83,6 +91,7 @@ static inline bool mem_reliable_is_enabled(void) { return false; }
 static inline void add_reliable_mem_size(long sz) {}
 static inline void mem_reliable_init(bool has_unmirrored_mem,
 				     unsigned long *zone_movable_pfn) {}
+static inline void shmem_reliable_init(void) {}
 static inline bool zone_reliable(struct zone *zone) { return false; }
 static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
 {
@@ -104,6 +113,7 @@ static inline void mem_reliable_out_of_memory(gfp_t gfp_mask,
 					      unsigned int order,
 					      int preferred_nid,
 					      nodemask_t *nodemask) {}
+static inline bool shmem_reliable_is_enabled(void) { return false; }
 
 #endif
 
