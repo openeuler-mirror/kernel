@@ -170,7 +170,7 @@ struct sp_walk_data {
 	pmd_t *pmd;
 };
 
-#define MAP_SHARE_POOL			0x100000
+#define MAP_SHARE_POOL			0x200000
 
 #define MMAP_TOP_4G_SIZE		0x100000000UL
 
