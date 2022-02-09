@@ -165,6 +165,17 @@ void reliable_report_meminfo(struct seq_file *m)
 				&reliable_shmem_used_nr_page) << (PAGE_SHIFT - 10);
 			seq_printf(m, "ReliableShmem:    %8lu kB\n", shmem);
 		}
+
+		if (pagecache_reliable_is_enabled()) {
+			unsigned long num = 0;
+
+			num += global_node_page_state(NR_LRU_BASE +
+						      LRU_ACTIVE_FILE);
+			num += global_node_page_state(NR_LRU_BASE +
+						      LRU_INACTIVE_FILE);
+			seq_printf(m, "FileCache:        %8lu kB\n",
+					num << (PAGE_SHIFT - 10));
+		}
 	}
 }
 
