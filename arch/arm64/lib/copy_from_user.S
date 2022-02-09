@@ -72,6 +72,12 @@ ENTRY(__arch_copy_from_user)
 	uaccess_disable_not_uao x3, x4
 	mov	x0, #0				// Nothing to copy
 	ret
+
+	.global copy_from_user_sea_fallback
+copy_from_user_sea_fallback:
+	uaccess_disable_not_uao x3, x4
+	mov	x0, #-1
+	ret
 ENDPROC(__arch_copy_from_user)
 
 	.section .fixup,"ax"

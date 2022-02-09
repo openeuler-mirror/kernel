@@ -660,9 +660,18 @@ static int do_bad(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 int kernel_access_sea_recovery;
 
 #define UCE_KER_REC_NUM   ARRAY_SIZE(reco_info)
+/*
+ * One entry corresponds to one scene, and the scene switch is controlled by the
+ * corresponding bit of kernel_access_sea_recovery
+ * (the first entry corresponds to bit0, the second entry corresponds to bit1...),
+ * and the switch is visible to the user, so the order of eatch entry here cannot
+ * be easily change. Now the maximum entry is limited by the type of variable
+ * kernel_access_sea_recovery.
+ */
 static struct uce_kernel_recovery_info reco_info[] = {
 	{copy_page_cow_sea_fallback, "copy_page_cow", (unsigned long)copy_page_cow, 0},
 	{copy_generic_read_sea_fallback, "__arch_copy_to_user_generic_read", (unsigned long)__arch_copy_to_user_generic_read, 0},
+	{copy_from_user_sea_fallback, "__arch_copy_from_user", (unsigned long)__arch_copy_from_user, 0},
 };
 
 static int __init kernel_access_sea_recovery_init(void)
@@ -769,6 +778,9 @@ static int is_in_kernel_recovery(unsigned int esr, struct pt_regs *regs)
 	}
 
 	for (i = 0; i < UCE_KER_REC_NUM; i++) {
+		if (!((kernel_access_sea_recovery >> i) & 0x1))
+			continue;
+
 		info = &reco_info[i];
 		if (info->fn && regs->pc >= info->addr &&
 		    regs->pc < (info->addr + info->size)) {
@@ -777,7 +789,8 @@ static int is_in_kernel_recovery(unsigned int esr, struct pt_regs *regs)
 		}
 	}
 
-	pr_emerg("UCE: symbol is not match.\n");
+	pr_emerg("UCE: symbol is not match or switch if off, kernel recovery %d.\n",
+		 kernel_access_sea_recovery);
 	return -EINVAL;
 }
 #endif
@@ -847,7 +860,7 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 				"Uncorrected hardware memory use with kernel recovery in kernel-access\n",
 				current);
 		} else {
-			die("Uncorrected hardware memory error (kernel recovery on but not match idx) in kernel-access\n",
+			die("Uncorrected hardware memory error (not match idx or sence switch is off) in kernel-access\n",
 			    regs, esr);
 		}
 
