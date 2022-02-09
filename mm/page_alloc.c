@@ -8611,6 +8611,8 @@ bool take_page_off_buddy(struct page *page)
 			zone->free_area[buddy_order].nr_free--;
 			break_down_buddy_pages(zone, page_head, page, 0,
 						buddy_order, migratetype);
+			if (!is_migrate_isolate(migratetype))
+				__mod_zone_freepage_state(zone, -1, migratetype);
 			ret = true;
 			break;
 		}
