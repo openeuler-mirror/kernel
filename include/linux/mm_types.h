@@ -529,7 +529,12 @@ struct mm_struct {
 	KABI_RESERVE(2)
 #endif
 
+#if IS_ENABLED(CONFIG_MEMORY_RELIABLE) && !defined(__GENKSYMS__)
+	atomic_long_t reliable_nr_page; /* total used reliable pages */
+#else
 	KABI_RESERVE(3)
+#endif
+
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
