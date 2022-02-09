@@ -4053,7 +4053,7 @@ static void shrink_page_cache_work(struct work_struct *w)
 	nr_pages = shrink_page_cache(GFP_KERNEL);
 	if ((nr_pages < SWAP_CLUSTER_MAX) && vm_cache_reclaim_enable)
 		queue_delayed_work_on(smp_processor_id(), system_wq, work,
-			round_jiffies_relative(120 * HZ));
+		round_jiffies_relative((vm_cache_reclaim_s + 120) * HZ));
 }
 
 static void shrink_page_cache_init(void)
