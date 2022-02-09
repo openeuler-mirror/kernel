@@ -4571,6 +4571,9 @@ static inline void prepare_before_alloc(gfp_t *gfp_mask)
 
 	if (gfp_ori & ___GFP_RELIABILITY)
 		*gfp_mask |= ___GFP_RELIABILITY;
+
+	if (current->flags & PF_RELIABLE || is_global_init(current))
+		*gfp_mask |= ___GFP_RELIABILITY;
 }
 
 /*
