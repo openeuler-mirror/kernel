@@ -54,7 +54,7 @@ config EFI_RUNTIME_MAP
 
 config EFI_FAKE_MEMMAP
 	bool "Enable EFI fake memory map"
-	depends on EFI && X86
+	depends on EFI && (X86 || ARM64)
 	default n
 	help
 	  Saying Y here will enable "efi_fake_mem" boot option.
