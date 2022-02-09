@@ -45,6 +45,12 @@ struct vm_area_struct;
 #define ___GFP_NOLOCKDEP	0
 #endif
 /* If the above are modified, __GFP_BITS_SHIFT may need updating */
+#ifdef CONFIG_MEMORY_RELIABLE
+/* add flag at the end of gfp_mask to aovid kapi change */
+#define ___GFP_RELIABILITY	0x40000000u
+#else
+#define ___GFP_RELIABILITY	0
+#endif
 
 /*
  * Physical address zone modifiers (see linux/mmzone.h - low four bits)
@@ -446,6 +452,12 @@ static inline enum zone_type gfp_zone(gfp_t flags)
 	z = (GFP_ZONE_TABLE >> (bit * GFP_ZONES_SHIFT)) &
 					 ((1 << GFP_ZONES_SHIFT) - 1);
 	VM_BUG_ON((GFP_ZONE_BAD >> bit) & 1);
+
+#ifdef CONFIG_MEMORY_RELIABLE
+	if (z == ZONE_MOVABLE && flags & ___GFP_RELIABILITY)
+		return ZONE_NORMAL;
+#endif
+
 	return z;
 }
 

@@ -3454,6 +3454,10 @@ get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
 		struct page *page;
 		unsigned long mark;
 
+		/* skip non-movable zone for normal user tasks */
+		if (skip_none_movable_zone(gfp_mask, z))
+			continue;
+
 		/*
 		 * CDM nodes get skipped if the requested gfp flag
 		 * does not have __GFP_THISNODE set or the nodemask
@@ -4557,6 +4561,18 @@ static inline void finalise_ac(gfp_t gfp_mask, struct alloc_context *ac)
 					ac->high_zoneidx, ac->nodemask);
 }
 
+static inline void prepare_before_alloc(gfp_t *gfp_mask)
+{
+	gfp_t gfp_ori = *gfp_mask;
+	*gfp_mask &= gfp_allowed_mask;
+
+	if (!mem_reliable_is_enabled())
+		return;
+
+	if (gfp_ori & ___GFP_RELIABILITY)
+		*gfp_mask |= ___GFP_RELIABILITY;
+}
+
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
@@ -4578,7 +4594,8 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 		return NULL;
 	}
 
-	gfp_mask &= gfp_allowed_mask;
+	prepare_before_alloc(&gfp_mask);
+
 	alloc_mask = gfp_mask;
 	if (!prepare_alloc_pages(gfp_mask, order, preferred_nid, nodemask, &ac, &alloc_mask, &alloc_flags))
 		return NULL;
@@ -6912,10 +6929,13 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 	 */
 	if (mirrored_kernelcore) {
 		bool mem_below_4gb_not_mirrored = false;
+		bool has_unmirrored_mem = false;
 
 		for_each_memblock(memory, r) {
-			if (memblock_is_mirror(r))
+			if (memblock_is_mirror(r)) {
+				add_reliable_mem_size(r->size);
 				continue;
+			}
 
 			nid = r->nid;
 
@@ -6926,6 +6946,7 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 				continue;
 			}
 
+			has_unmirrored_mem = true;
 			zone_movable_pfn[nid] = zone_movable_pfn[nid] ?
 				min(usable_startpfn, zone_movable_pfn[nid]) :
 				usable_startpfn;
@@ -6933,6 +6954,8 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 
 		if (mem_below_4gb_not_mirrored)
 			pr_warn("This configuration results in unmirrored kernel memory.");
+
+		mem_reliable_init(has_unmirrored_mem, zone_movable_pfn);
 
 		goto out2;
 	}
@@ -7226,9 +7249,28 @@ static int __init cmdline_parse_kernelcore(char *p)
 {
 	/* parse kernelcore=mirror */
 	if (parse_option_str(p, "mirror")) {
+		if (reliable_enabled) {
+			pr_info("kernelcore=reliable and kernelcore=mirror are alternative.");
+			return -EINVAL;
+		}
+
 		mirrored_kernelcore = true;
 		return 0;
 	}
+
+#ifdef CONFIG_MEMORY_RELIABLE
+	/* parse kernelcore=reliable */
+	if (parse_option_str(p, "reliable")) {
+		if (!reliable_enabled && mirrored_kernelcore) {
+			pr_info("kernelcore=mirror and kernelcore=reliable are alternative.");
+			return -EINVAL;
+		}
+
+		reliable_enabled = true;
+		mirrored_kernelcore = true;
+		return 0;
+	}
+#endif
 
 	return cmdline_parse_core(p, &required_kernelcore,
 				  &required_kernelcore_percent);

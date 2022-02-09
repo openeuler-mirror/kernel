@@ -1,0 +1,64 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+#ifndef __MM_MEM_RELIABLE__
+#define __MM_MEM_RELIABLE__
+
+#include <linux/stddef.h>
+#include <linux/gfp.h>
+#include <linux/mmzone.h>
+#include <linux/mm_types.h>
+#include <linux/sched.h>
+
+
+#ifdef CONFIG_MEMORY_RELIABLE
+
+extern struct static_key_false mem_reliable;
+
+extern bool reliable_enabled;
+
+extern void add_reliable_mem_size(long sz);
+extern void mem_reliable_init(bool has_unmirrored_mem,
+			      unsigned long *zone_movable_pfn);
+
+static inline bool mem_reliable_is_enabled(void)
+{
+	return static_branch_likely(&mem_reliable);
+}
+
+static inline bool zone_reliable(struct zone *zone)
+{
+	return mem_reliable_is_enabled() && zone_idx(zone) < ZONE_MOVABLE;
+}
+
+static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
+{
+	if (!mem_reliable_is_enabled())
+		return false;
+
+	if (!current->mm || (current->flags & PF_KTHREAD))
+		return false;
+
+	/* user tasks can only alloc memory from non-mirrored region */
+	if (!(gfp & ___GFP_RELIABILITY) && (gfp & __GFP_HIGHMEM) &&
+	    (gfp & __GFP_MOVABLE)) {
+		if (zonelist_zone_idx(z) < ZONE_MOVABLE)
+			return true;
+	}
+
+	return false;
+}
+#else
+#define reliable_enabled 0
+
+static inline bool mem_reliable_is_enabled(void) { return false; }
+static inline void add_reliable_mem_size(long sz) {}
+static inline void mem_reliable_init(bool has_unmirrored_mem,
+				     unsigned long *zone_movable_pfn) {}
+static inline bool zone_reliable(struct zone *zone) { return false; }
+static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
+{
+	return false;
+}
+
+#endif
+
+#endif
