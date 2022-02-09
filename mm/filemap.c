@@ -1055,9 +1055,13 @@ struct page *__page_cache_alloc(gfp_t gfp)
 			page = __alloc_pages_node(n, gfp, 0);
 		} while (!page && read_mems_allowed_retry(cpuset_mems_cookie));
 
+		page_cache_fallback_inc(gfp, page);
 		return page;
 	}
-	return alloc_pages(gfp, 0);
+	page = alloc_pages(gfp, 0);
+	page_cache_fallback_inc(gfp, page);
+
+	return page;
 }
 EXPORT_SYMBOL(__page_cache_alloc);
 #endif

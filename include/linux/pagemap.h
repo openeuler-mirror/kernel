@@ -249,10 +249,15 @@ extern struct page *__page_cache_alloc(gfp_t gfp);
 #else
 static inline struct page *__page_cache_alloc(gfp_t gfp)
 {
+	struct page *page;
+
 	if (pagecache_reliable_is_enabled())
 		gfp |= ___GFP_RELIABILITY;
 
-	return alloc_pages(gfp, 0);
+	page = alloc_pages(gfp, 0);
+	page_cache_fallback_inc(gfp, page);
+
+	return page;
 }
 #endif
 

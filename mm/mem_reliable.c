@@ -22,6 +22,8 @@ bool shmem_reliable __read_mostly = true;
 struct percpu_counter reliable_shmem_used_nr_page __read_mostly;
 
 bool pagecache_use_reliable_mem __read_mostly = true;
+atomic_long_t page_cache_fallback = ATOMIC_LONG_INIT(0);
+
 void add_reliable_mem_size(long sz)
 {
 	atomic_long_add(sz, &total_reliable_mem);
@@ -30,6 +32,34 @@ void add_reliable_mem_size(long sz)
 bool page_reliable(struct page *page)
 {
 	return mem_reliable_is_enabled() && page_zonenum(page) < ZONE_MOVABLE;
+}
+
+static bool is_fallback_page(gfp_t gfp, struct page *page)
+{
+	bool ret = false;
+
+	if (!page)
+		return ret;
+
+	if ((gfp & ___GFP_RELIABILITY) && !page_reliable(page))
+		ret = true;
+
+	return ret;
+}
+
+void page_cache_fallback_inc(gfp_t gfp, struct page *page)
+{
+	long num;
+
+	if (!pagecache_reliable_is_enabled())
+		return;
+
+	if (!is_fallback_page(gfp, page))
+		return;
+
+	num = atomic_long_inc_return(&page_cache_fallback);
+	if (num < 0)
+		atomic_long_set(&page_cache_fallback, 0);
 }
 
 static int reliable_mem_notifier(struct notifier_block *nb,

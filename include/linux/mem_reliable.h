@@ -21,6 +21,8 @@ extern bool reliable_allow_fallback;
 extern bool shmem_reliable;
 extern struct percpu_counter reliable_shmem_used_nr_page;
 extern bool pagecache_use_reliable_mem;
+extern atomic_long_t page_cache_fallback;
+extern void page_cache_fallback_inc(gfp_t gfp, struct page *page);
 
 extern void add_reliable_mem_size(long sz);
 extern void mem_reliable_init(bool has_unmirrored_mem,
@@ -132,6 +134,7 @@ static inline bool shmem_reliable_is_enabled(void) { return false; }
 static inline void shmem_reliable_page_counter(struct page *page, int nr_page)
 {
 }
+static inline void page_cache_fallback_inc(gfp_t gfp, struct page *page) {}
 
 static inline bool pagecache_reliable_is_enabled(void) { return false; }
 #endif
