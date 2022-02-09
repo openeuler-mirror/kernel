@@ -97,9 +97,14 @@ static int share_pool_group_mode = SINGLE_GROUP_MODE;
 
 static int system_group_count;
 
-static bool enable_sp_dev_addr;
+static unsigned int sp_device_number;
 static unsigned long sp_dev_va_start[MAX_DEVID];
 static unsigned long sp_dev_va_size[MAX_DEVID];
+
+static bool is_sp_dev_addr_enabled(int device_id)
+{
+	return sp_dev_va_size[device_id];
+}
 
 /* idr of all sp_groups */
 static DEFINE_IDR(sp_group_idr);
@@ -942,7 +947,7 @@ static bool is_device_addr(unsigned long addr)
 {
 	int i;
 
-	for (i = 0; i < MAX_DEVID; i++) {
+	for (i = 0; i < sp_device_number; i++) {
 		if (addr >= sp_dev_va_start[i] &&
 		    addr < sp_dev_va_start[i] + sp_dev_va_size[i])
 			return true;
@@ -960,7 +965,7 @@ static loff_t addr_offset(struct sp_area *spa)
 	}
 	addr = spa->va_start;
 
-	if (!enable_sp_dev_addr || !is_device_addr(addr))
+	if (!is_device_addr(addr))
 		return (loff_t)(addr - MMAP_SHARE_POOL_START);
 
 	return (loff_t)(addr - sp_dev_va_start[spa->node_id]);
@@ -1621,13 +1626,13 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 	int node_id = (flags >> DEVICE_ID_SHIFT) & DEVICE_ID_MASK;
 
 	if (!is_online_node_id(node_id) ||
-	    node_id < 0 || node_id >= MAX_DEVID) {
+	    node_id < 0 || node_id >= sp_device_number) {
 		pr_err_ratelimited("invalid numa node id %d\n", node_id);
 		return ERR_PTR(-EINVAL);
 	}
 
 	if ((flags & SP_DVPP)) {
-		if (!enable_sp_dev_addr) {
+		if (!is_sp_dev_addr_enabled(node_id)) {
 			vstart = MMAP_SHARE_POOL_16G_START +
 				node_id * MMAP_SHARE_POOL_16G_SIZE;
 			vend = vstart + MMAP_SHARE_POOL_16G_SIZE;
@@ -3635,13 +3640,15 @@ EXPORT_SYMBOL_GPL(sp_unregister_notifier);
  */
 bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 {
-	if (!is_online_node_id(device_id) || device_id < 0 || device_id >= MAX_DEVID ||
-	    pid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE || enable_sp_dev_addr)
+	if (pid < 0 ||
+	    size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
+	    device_id < 0 || device_id >= sp_device_number ||
+	    !is_online_node_id(device_id) ||
+	    is_sp_dev_addr_enabled(device_id))
 		return false;
 
 	sp_dev_va_start[device_id] = start;
 	sp_dev_va_size[device_id] = size;
-	enable_sp_dev_addr = true;
 	return true;
 }
 EXPORT_SYMBOL_GPL(sp_config_dvpp_range);
@@ -3656,7 +3663,7 @@ static bool is_sp_normal_addr(unsigned long addr)
 {
 	return addr >= MMAP_SHARE_POOL_START &&
 		addr < MMAP_SHARE_POOL_16G_START +
-			MAX_DEVID * MMAP_SHARE_POOL_16G_SIZE;
+			sp_device_number * MMAP_SHARE_POOL_16G_SIZE;
 }
 
 /**
@@ -3667,9 +3674,6 @@ static bool is_sp_normal_addr(unsigned long addr)
  */
 bool is_sharepool_addr(unsigned long addr)
 {
-	if (!enable_sp_dev_addr)
-		return is_sp_normal_addr(addr);
-
 	return is_sp_normal_addr(addr) || is_device_addr(addr);
 }
 EXPORT_SYMBOL_GPL(is_sharepool_addr);
@@ -4504,6 +4508,18 @@ static int __init enable_share_pool(char *s)
 }
 __setup("enable_ascend_share_pool", enable_share_pool);
 
+static void __init sp_device_number_detect(void)
+{
+	/* NOTE: TO BE COMPLETED */
+	sp_device_number = 4;
+
+	if (sp_device_number > MAX_DEVID) {
+		pr_warn("sp_device_number %d exceed, truncate it to %d\n",
+				sp_device_number, MAX_DEVID);
+		sp_device_number = MAX_DEVID;
+	}
+}
+
 static int __init share_pool_init(void)
 {
 	/* lockless, as init kthread has no sp operation else */
@@ -4511,6 +4527,8 @@ static int __init share_pool_init(void)
 	/* without free spg_none, not a serious problem */
 	if (IS_ERR(spg_none) || !spg_none)
 		goto fail;
+
+	sp_device_number_detect();
 
 	return 0;
 fail:

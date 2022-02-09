@@ -24,7 +24,7 @@
 #define SPG_ID_AUTO_MAX 199999
 #define SPG_ID_AUTO     200000  /* generate group id automatically */
 
-#define MAX_DEVID 2	/* the max num of Da-vinci devices */
+#define MAX_DEVID 8	/* the max num of Da-vinci devices */
 
 extern int sysctl_share_pool_hugepage_enable;
 
