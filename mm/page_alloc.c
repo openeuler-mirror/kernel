@@ -8600,7 +8600,8 @@ int cache_limit_ratio_sysctl_handler(struct ctl_table *table, int write,
 				vm_cache_limit_ratio);
 		else
 			pr_warn("page cache limit off\n");
-		while (vm_cache_limit_mbytes && page_cache_over_limit())
+		while (vm_cache_limit_mbytes && page_cache_over_limit() &&
+				vm_cache_reclaim_enable)
 			shrink_page_cache(GFP_KERNEL);
 	}
 
@@ -8628,7 +8629,8 @@ int cache_limit_mbytes_sysctl_handler(struct ctl_table *table, int write,
 		else
 			pr_warn("page cache limit off\n");
 
-		while (vm_cache_limit_mbytes && page_cache_over_limit())
+		while (vm_cache_limit_mbytes && page_cache_over_limit() &&
+				vm_cache_reclaim_enable)
 			shrink_page_cache(GFP_KERNEL);
 	}
 

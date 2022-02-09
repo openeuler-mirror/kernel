@@ -3562,7 +3562,8 @@ static int balance_pgdat(pg_data_t *pgdat, int order, int classzone_idx)
 	kernel_swap_check(&sc);
 
 #ifdef CONFIG_SHRINK_PAGECACHE
-	if (vm_cache_limit_mbytes && page_cache_over_limit())
+	if (vm_cache_limit_mbytes && page_cache_over_limit() &&
+	    vm_cache_reclaim_enable)
 		shrink_page_cache(GFP_KERNEL);
 #endif
 
