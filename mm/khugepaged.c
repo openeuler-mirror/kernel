@@ -1235,6 +1235,12 @@ static int khugepaged_scan_pmd(struct mm_struct *mm,
 out_unmap:
 	pte_unmap_unlock(pte, ptl);
 	if (ret) {
+		if (reliable &&
+		    !reliable_mem_limit_check(1 << HPAGE_PMD_ORDER)) {
+			ret = SCAN_ALLOC_HUGE_PAGE_FAIL;
+			goto out;
+		}
+
 		node = khugepaged_find_target_node();
 		/* collapse_huge_page will return with the mmap_sem released */
 		collapse_huge_page(mm, address, hpage, node,
@@ -1692,6 +1698,12 @@ static void khugepaged_scan_shmem(struct mm_struct *mm,
 		if (present < HPAGE_PMD_NR - khugepaged_max_ptes_none) {
 			result = SCAN_EXCEED_NONE_PTE;
 		} else {
+			if (reliable &&
+			    !reliable_mem_limit_check(1 << HPAGE_PMD_ORDER)) {
+				result = SCAN_ALLOC_HUGE_PAGE_FAIL;
+				goto out;
+			}
+
 			node = khugepaged_find_target_node();
 			collapse_shmem(mm, mapping, start, hpage, node,
 				       reliable);
@@ -1699,6 +1711,8 @@ static void khugepaged_scan_shmem(struct mm_struct *mm,
 	}
 
 	/* TODO: tracepoints */
+out:
+	return;
 }
 #else
 static void khugepaged_scan_shmem(struct mm_struct *mm,

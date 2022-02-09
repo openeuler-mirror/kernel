@@ -15,6 +15,7 @@ extern struct static_key_false mem_reliable;
 
 extern bool reliable_enabled;
 extern atomic_long_t reliable_user_used_nr_page;
+extern unsigned long task_reliable_limit __read_mostly;
 
 extern void add_reliable_mem_size(long sz);
 extern void mem_reliable_init(bool has_unmirrored_mem,
@@ -22,6 +23,9 @@ extern void mem_reliable_init(bool has_unmirrored_mem,
 extern void reliable_report_meminfo(struct seq_file *m);
 extern bool page_reliable(struct page *page);
 extern void reliable_report_usage(struct seq_file *m, struct mm_struct *mm);
+extern void reliable_show_mem_info(void);
+extern void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
+				       int preferred_nid, nodemask_t *nodemask);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -59,6 +63,12 @@ static inline void reliable_page_counter(struct page *page,
 		atomic_long_add(val, &reliable_user_used_nr_page);
 	}
 }
+
+static inline bool reliable_mem_limit_check(unsigned long nr_page)
+{
+	return atomic_long_read(&reliable_user_used_nr_page) + nr_page <=
+	       task_reliable_limit / PAGE_SIZE;
+}
 #else
 #define reliable_enabled 0
 
@@ -77,6 +87,16 @@ static inline void reliable_page_counter(struct page *page,
 		struct mm_struct *mm, int val) {}
 static inline void reliable_report_usage(struct seq_file *m,
 					 struct mm_struct *mm) {}
+
+static inline bool reliable_mem_limit_check(unsigned long nr_page)
+{
+	return false;
+}
+static inline void reliable_show_mem_info(void) {}
+static inline void mem_reliable_out_of_memory(gfp_t gfp_mask,
+					      unsigned int order,
+					      int preferred_nid,
+					      nodemask_t *nodemask) {}
 
 #endif
 

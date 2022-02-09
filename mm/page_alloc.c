@@ -4561,19 +4561,51 @@ static inline void finalise_ac(gfp_t gfp_mask, struct alloc_context *ac)
 					ac->high_zoneidx, ac->nodemask);
 }
 
-static inline void prepare_before_alloc(gfp_t *gfp_mask)
+/*
+ * return false means this allocation is limit by reliable user limit and
+ * this will lead to pagefault_out_of_memory()
+ */
+static inline bool prepare_before_alloc(gfp_t *gfp_mask, unsigned int order)
 {
 	gfp_t gfp_ori = *gfp_mask;
 	*gfp_mask &= gfp_allowed_mask;
 
 	if (!mem_reliable_is_enabled())
-		return;
+		return true;
 
-	if (gfp_ori & ___GFP_RELIABILITY)
+	if (gfp_ori & ___GFP_RELIABILITY) {
 		*gfp_mask |= ___GFP_RELIABILITY;
+		return true;
+	}
 
-	if (current->flags & PF_RELIABLE || is_global_init(current))
-		*gfp_mask |= ___GFP_RELIABILITY;
+	/*
+	 * Init tasks will alloc memory from non-mirrored region if their
+	 * allocation trigger task_reliable_limit
+	 */
+	if (is_global_init(current)) {
+		if (reliable_mem_limit_check(1 << order))
+			*gfp_mask |= ___GFP_RELIABILITY;
+		return true;
+	}
+
+	/*
+	 * This only check task_reliable_limit without ___GFP_RELIABILITY
+	 * or this process is global init.
+	 * For kernel internal mechanism(hugepaged collapse and others)
+	 * If they alloc memory for user and obey task_reliable_limit, they
+	 * need to check this limit before allocing pages.
+	 */
+	if ((current->flags & PF_RELIABLE) && (gfp_ori & __GFP_HIGHMEM) &&
+	    (gfp_ori & __GFP_MOVABLE)) {
+		if (reliable_mem_limit_check(1 << order)) {
+			*gfp_mask |= ___GFP_RELIABILITY;
+			return true;
+		}
+
+		return false;
+	}
+
+	return true;
 }
 
 /*
@@ -4583,7 +4615,7 @@ struct page *
 __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 							nodemask_t *nodemask)
 {
-	struct page *page;
+	struct page *page = NULL;
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_mask; /* The gfp_t that was actually used for allocation */
 	struct alloc_context ac = { };
@@ -4597,7 +4629,11 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 		return NULL;
 	}
 
-	prepare_before_alloc(&gfp_mask);
+	if (!prepare_before_alloc(&gfp_mask, order)) {
+		mem_reliable_out_of_memory(gfp_mask, order, preferred_nid,
+					   nodemask);
+		goto out;
+	}
 
 	alloc_mask = gfp_mask;
 	if (!prepare_alloc_pages(gfp_mask, order, preferred_nid, nodemask, &ac, &alloc_mask, &alloc_flags))

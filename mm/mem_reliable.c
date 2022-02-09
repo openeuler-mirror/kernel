@@ -8,12 +8,15 @@
 #include <linux/memory_hotplug.h>
 #include <linux/seq_file.h>
 #include <linux/mmzone.h>
+#include <linux/oom.h>
 
 DEFINE_STATIC_KEY_FALSE(mem_reliable);
 
 bool reliable_enabled;
 static atomic_long_t total_reliable_mem;
 atomic_long_t reliable_user_used_nr_page;
+/* reliable user limit for user tasks with reliable flag */
+unsigned long task_reliable_limit = ULONG_MAX;
 
 void add_reliable_mem_size(long sz)
 {
@@ -117,4 +120,87 @@ void reliable_report_usage(struct seq_file *m, struct mm_struct *mm)
 		seq_printf(m, "Reliable:\t%8lu kB\n",
 			   atomic_long_read(&mm->reliable_nr_page));
 	}
+}
+
+#ifdef CONFIG_SYSCTL
+int reliable_limit_handler(struct ctl_table *table, int write,
+	void __user *buffer, size_t *length, loff_t *ppos)
+{
+	unsigned long old = task_reliable_limit;
+	int ret;
+
+	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
+	if (ret == 0 && write) {
+		if (task_reliable_limit > total_reliable_mem_sz()) {
+			task_reliable_limit = old;
+			return -EINVAL;
+		}
+	}
+
+	return ret;
+}
+
+static struct ctl_table reliable_ctl_table[] = {
+	{
+		.procname = "task_reliable_limit",
+		.data = &task_reliable_limit,
+		.maxlen = sizeof(task_reliable_limit),
+		.mode = 0644,
+		.proc_handler = reliable_limit_handler,
+	},
+	{}
+};
+
+static struct ctl_table reliable_dir_table[] = {
+	{
+		.procname = "vm",
+		.maxlen = 0,
+		.mode = 0555,
+		.child = reliable_ctl_table,
+	},
+	{}
+};
+
+static int __init reliable_sysctl_init(void)
+{
+	if (!mem_reliable_is_enabled())
+		return 0;
+
+	if (!register_sysctl_table(reliable_dir_table)) {
+		pr_err("register sysctl failed.");
+		return -1;
+	}
+
+	return 0;
+}
+late_initcall(reliable_sysctl_init);
+#endif
+
+void reliable_show_mem_info(void)
+{
+	if (mem_reliable_is_enabled()) {
+		pr_info("ReliableTotal: %lu kB", total_reliable_mem_sz() >> 10);
+		pr_info("ReliableUsed: %lu kB", used_reliable_mem_sz() >> 10);
+		pr_info("task_reliable_limit: %lu kB",
+			task_reliable_limit >> 10);
+		pr_info("reliable_user_used: %ld kB",
+			atomic_long_read(&reliable_user_used_nr_page) * 4);
+	}
+}
+
+void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
+				int preferred_nid, nodemask_t *nodemask)
+{
+	struct oom_control oc = {
+		.zonelist = node_zonelist(preferred_nid, gfp_mask),
+		.nodemask = nodemask,
+		.memcg = NULL,
+		.gfp_mask = gfp_mask,
+		.order = order,
+	};
+
+	if (!mutex_trylock(&oom_lock))
+		return;
+	out_of_memory(&oc);
+	mutex_unlock(&oom_lock);
 }
