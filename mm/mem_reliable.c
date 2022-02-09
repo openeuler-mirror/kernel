@@ -21,6 +21,7 @@ bool reliable_allow_fallback __read_mostly = true;
 bool shmem_reliable __read_mostly = true;
 struct percpu_counter reliable_shmem_used_nr_page __read_mostly;
 
+bool pagecache_use_reliable_mem __read_mostly = true;
 void add_reliable_mem_size(long sz)
 {
 	atomic_long_add(sz, &total_reliable_mem);
@@ -248,6 +249,10 @@ static int __init setup_reliable_debug(char *str)
 		case 'S':
 			shmem_reliable = false;
 			pr_info("shmem reliable disabled.");
+			break;
+		case 'P':
+			pagecache_use_reliable_mem = false;
+			pr_info("disable page cache use reliable memory\n");
 			break;
 		default:
 			pr_err("reliable_debug option '%c' unknown. skipped\n",
