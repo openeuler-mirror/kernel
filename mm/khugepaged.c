@@ -950,7 +950,8 @@ static bool __collapse_huge_page_swapin(struct mm_struct *mm,
 static void collapse_huge_page(struct mm_struct *mm,
 				   unsigned long address,
 				   struct page **hpage,
-				   int node, int referenced, int unmapped)
+				   int node, int referenced, int unmapped,
+				   bool reliable)
 {
 	pmd_t *pmd, _pmd;
 	pte_t *pte;
@@ -968,6 +969,9 @@ static void collapse_huge_page(struct mm_struct *mm,
 
 	/* Only allocate from the target node */
 	gfp = alloc_hugepage_khugepaged_gfpmask() | __GFP_THISNODE;
+
+	if (reliable)
+		gfp |= ___GFP_RELIABILITY;
 
 	/*
 	 * Before allocating the hugepage, release the mmap_sem read lock.
@@ -1127,6 +1131,7 @@ static int khugepaged_scan_pmd(struct mm_struct *mm,
 	spinlock_t *ptl;
 	int node = NUMA_NO_NODE, unmapped = 0;
 	bool writable = false;
+	bool reliable = false;
 
 	VM_BUG_ON(address & ~HPAGE_PMD_MASK);
 
@@ -1215,6 +1220,9 @@ static int khugepaged_scan_pmd(struct mm_struct *mm,
 		    page_is_young(page) || PageReferenced(page) ||
 		    mmu_notifier_test_young(vma->vm_mm, address))
 			referenced++;
+
+		if (page_reliable(page))
+			reliable = true;
 	}
 	if (!writable) {
 		result = SCAN_PAGE_RO;
@@ -1230,7 +1238,7 @@ out_unmap:
 		node = khugepaged_find_target_node();
 		/* collapse_huge_page will return with the mmap_sem released */
 		collapse_huge_page(mm, address, hpage, node,
-				referenced, unmapped);
+				referenced, unmapped, reliable);
 	}
 out:
 	trace_mm_khugepaged_scan_pmd(mm, page, writable, referenced,
@@ -1324,7 +1332,7 @@ static void retract_page_tables(struct address_space *mapping, pgoff_t pgoff)
  */
 static void collapse_shmem(struct mm_struct *mm,
 		struct address_space *mapping, pgoff_t start,
-		struct page **hpage, int node)
+		struct page **hpage, int node, bool reliable)
 {
 	gfp_t gfp;
 	struct page *page, *new_page, *tmp;
@@ -1339,6 +1347,9 @@ static void collapse_shmem(struct mm_struct *mm,
 
 	/* Only allocate from the target node */
 	gfp = alloc_hugepage_khugepaged_gfpmask() | __GFP_THISNODE;
+
+	if (reliable)
+		gfp |= ___GFP_RELIABILITY;
 
 	new_page = khugepaged_alloc_page(hpage, gfp, node);
 	if (!new_page) {
@@ -1613,6 +1624,7 @@ static void khugepaged_scan_shmem(struct mm_struct *mm,
 	int present, swap;
 	int node = NUMA_NO_NODE;
 	int result = SCAN_SUCCEED;
+	bool reliable = false;
 
 	present = 0;
 	swap = 0;
@@ -1670,6 +1682,9 @@ static void khugepaged_scan_shmem(struct mm_struct *mm,
 			slot = radix_tree_iter_resume(slot, &iter);
 			cond_resched_rcu();
 		}
+
+		if (page_reliable(page))
+			reliable = true;
 	}
 	rcu_read_unlock();
 
@@ -1678,7 +1693,8 @@ static void khugepaged_scan_shmem(struct mm_struct *mm,
 			result = SCAN_EXCEED_NONE_PTE;
 		} else {
 			node = khugepaged_find_target_node();
-			collapse_shmem(mm, mapping, start, hpage, node);
+			collapse_shmem(mm, mapping, start, hpage, node,
+				       reliable);
 		}
 	}
 
