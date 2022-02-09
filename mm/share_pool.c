@@ -522,6 +522,7 @@ struct sp_area {
 	unsigned long kva;		/* shared kva */
 	pid_t applier;			/* the original applier process */
 	int node_id;			/* memory node */
+	int device_id;
 };
 static DEFINE_SPINLOCK(sp_area_lock);
 static struct rb_root sp_area_root = RB_ROOT;
@@ -934,13 +935,7 @@ EXPORT_SYMBOL_GPL(mg_sp_group_id_by_pid);
 
 static bool is_online_node_id(int node_id)
 {
-	pg_data_t *pgdat;
-
-	for_each_online_pgdat(pgdat) {
-		if (node_id == pgdat->node_id)
-			return true;
-	}
-	return false;
+	return node_id >= 0 && node_id < MAX_NUMNODES && node_online(node_id);
 }
 
 static bool is_device_addr(unsigned long addr)
@@ -968,7 +963,7 @@ static loff_t addr_offset(struct sp_area *spa)
 	if (!is_device_addr(addr))
 		return (loff_t)(addr - MMAP_SHARE_POOL_START);
 
-	return (loff_t)(addr - sp_dev_va_start[spa->node_id]);
+	return (loff_t)(addr - sp_dev_va_start[spa->device_id]);
 }
 
 static struct sp_group *create_spg(int spg_id)
@@ -1623,22 +1618,24 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 	unsigned long vend = MMAP_SHARE_POOL_16G_START;
 	unsigned long addr;
 	unsigned long size_align = PMD_ALIGN(size); /* va aligned to 2M */
-	int node_id = (flags >> DEVICE_ID_SHIFT) & DEVICE_ID_MASK;
+	int device_id, node_id;
 
-	if (!is_online_node_id(node_id) ||
-	    node_id < 0 || node_id >= sp_device_number) {
+	device_id = sp_flags_device_id(flags);
+	node_id = flags & SP_SPEC_NODE_ID ? sp_flags_node_id(flags) : device_id;
+
+	if (!is_online_node_id(node_id)) {
 		pr_err_ratelimited("invalid numa node id %d\n", node_id);
 		return ERR_PTR(-EINVAL);
 	}
 
 	if ((flags & SP_DVPP)) {
-		if (!is_sp_dev_addr_enabled(node_id)) {
+		if (!is_sp_dev_addr_enabled(device_id)) {
 			vstart = MMAP_SHARE_POOL_16G_START +
-				node_id * MMAP_SHARE_POOL_16G_SIZE;
+				device_id * MMAP_SHARE_POOL_16G_SIZE;
 			vend = vstart + MMAP_SHARE_POOL_16G_SIZE;
 		} else {
-			vstart = sp_dev_va_start[node_id];
-			vend = vstart + sp_dev_va_size[node_id];
+			vstart = sp_dev_va_start[device_id];
+			vend = vstart + sp_dev_va_size[device_id];
 		}
 	}
 
@@ -1737,6 +1734,7 @@ found:
 	spa->kva = 0;   /* NULL pointer */
 	spa->applier = applier;
 	spa->node_id = node_id;
+	spa->device_id = device_id;
 
 	spa_inc_usage(spa);
 	__insert_sp_area(spa);

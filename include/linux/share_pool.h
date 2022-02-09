@@ -7,14 +7,27 @@
 #include <linux/vmalloc.h>
 #include <linux/printk.h>
 #include <linux/hashtable.h>
+#include <linux/numa.h>
 
 #define SP_HUGEPAGE		(1 << 0)
 #define SP_HUGEPAGE_ONLY	(1 << 1)
 #define SP_DVPP			(1 << 2)
-#define DEVICE_ID_MASK		0x3ff
-#define DEVICE_ID_SHIFT		32
+#define SP_SPEC_NODE_ID		(1 << 3)
+
+#define DEVICE_ID_BITS		4UL
+#define DEVICE_ID_MASK		((1UL << DEVICE_ID_BITS) - 1UL)
+#define DEVICE_ID_SHIFT		32UL
+#define NODE_ID_BITS		NODES_SHIFT
+#define NODE_ID_MASK		((1UL << NODE_ID_BITS) - 1UL)
+#define NODE_ID_SHIFT		(DEVICE_ID_SHIFT + DEVICE_ID_BITS)
+
 #define SP_FLAG_MASK		(SP_HUGEPAGE | SP_HUGEPAGE_ONLY | SP_DVPP | \
-				(_AC(DEVICE_ID_MASK, UL) << DEVICE_ID_SHIFT))
+				 SP_SPEC_NODE_ID | \
+				(DEVICE_ID_MASK << DEVICE_ID_SHIFT) | \
+				(NODE_ID_MASK << NODE_ID_SHIFT))
+
+#define sp_flags_device_id(flags) (((flags) >> DEVICE_ID_SHIFT) & DEVICE_ID_MASK)
+#define sp_flags_node_id(flags) (((flags) >> NODE_ID_SHIFT) & NODE_ID_MASK)
 
 #define SPG_ID_NONE	(-1)	/* not associated with sp_group, only for specified thread */
 #define SPG_ID_DEFAULT	0	/* use the spg id of current thread */
