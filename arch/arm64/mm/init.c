@@ -724,8 +724,10 @@ void __init arm64_memblock_init(void)
 	else
 		arm64_dma_phys_limit = PHYS_MASK + 1;
 
-	if (efi_enabled(EFI_MEMMAP))
+	if (efi_enabled(EFI_MEMMAP)) {
 		efi_fake_memmap();
+		efi_find_mirror();
+	}
 
 	reserve_pin_memory_res();
 
