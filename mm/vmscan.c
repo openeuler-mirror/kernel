@@ -56,6 +56,7 @@
 
 #include <linux/swapops.h>
 #include <linux/balloon_compaction.h>
+#include <linux/mem_reliable.h>
 
 #include "internal.h"
 
@@ -3968,7 +3969,7 @@ static unsigned long __shrink_page_cache(gfp_t mask)
 		.nr_to_reclaim = SWAP_CLUSTER_MAX *
 				 (unsigned long)vm_cache_reclaim_weight,
 		.may_unmap = 1,
-		.may_swap = 1,
+		.may_swap = mem_reliable_is_enabled() ? 0 : 1,
 		.order = 0,
 		.priority = DEF_PRIORITY,
 		.target_mem_cgroup = NULL,
