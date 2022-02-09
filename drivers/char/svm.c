@@ -146,6 +146,12 @@ struct spalloc {
 	unsigned long flag;
 };
 
+struct addr_trans_args {
+	unsigned long vptr;
+	unsigned long *pptr;
+	unsigned int device_id;
+};
+
 static struct bus_type svm_bus_type = {
 	.name		= "svm_bus",
 };
@@ -225,9 +231,9 @@ struct svm_va2pa_trunk {
 	int slot_used;
 	unsigned long *bitmap;
 	struct mutex mutex;
+	phys_addr_t base;
+	unsigned long size;
 };
-
-struct svm_va2pa_trunk va2pa_trunk;
 
 #define SVM_VA2PA_TRUNK_SIZE_MAX	0x3200000
 #define SVM_VA2PA_MEMORY_ALIGN		64
@@ -235,6 +241,9 @@ struct svm_va2pa_trunk va2pa_trunk;
 #define SVM_VA2PA_TYPE_DMA		0x1
 #define SVM_MEM_REG			"va2pa trunk"
 #define SVM_VA2PA_CLEAN_BATCH_NUM	0x80
+#define SVM_VA2PA_TRUNK_COUNT_MAX	0x8
+
+static struct svm_va2pa_trunk va2pa_trunk[SVM_VA2PA_TRUNK_COUNT_MAX];
 
 struct device_node *svm_find_mem_reg_node(struct device *dev, const char *compat)
 {
@@ -256,9 +265,9 @@ struct device_node *svm_find_mem_reg_node(struct device *dev, const char *compat
 	return NULL;
 }
 
-static int svm_parse_trunk_memory(struct device *dev, phys_addr_t *base, unsigned long *size)
+static int svm_parse_trunk_memory(struct device *dev)
 {
-	int err;
+	int err, count;
 	struct resource r;
 	struct device_node *trunk = NULL;
 
@@ -268,24 +277,30 @@ static int svm_parse_trunk_memory(struct device *dev, phys_addr_t *base, unsigne
 		return -EINVAL;
 	}
 
-	err = of_address_to_resource(trunk, 0, &r);
-	of_node_put(trunk);
-	if (err) {
-		dev_err(dev, "Couldn't address to resource for reserved memory\n");
-		return -ENOMEM;
+	for (count = 0; count < SVM_VA2PA_TRUNK_COUNT_MAX; count++) {
+		err = of_address_to_resource(trunk, count, &r);
+		if (err)
+			break;
+
+		va2pa_trunk[count].base = r.start;
+		va2pa_trunk[count].size = resource_size(&r);
 	}
 
-	*base = r.start;
-	*size = resource_size(&r);
+	if (!count) {
+		dev_err(dev, "Couldn't address to resource for reserved memory\n");
+		return -ENODEV;
+	}
 
 	return 0;
 }
 
-static int svm_setup_trunk(struct device *dev, phys_addr_t base, unsigned long size)
+static int __svm_setup_trunk(struct device *dev, struct svm_va2pa_trunk *trunk)
 {
 	int slot_total;
 	unsigned long *bitmap = NULL;
 	struct svm_va2pa_slot *slot = NULL;
+	phys_addr_t base = trunk->base;
+	unsigned long size = trunk->size;
 
 	if (!IS_ALIGNED(base, SVM_VA2PA_MEMORY_ALIGN)) {
 		dev_err(dev, "Didn't aligned to %u\n", SVM_VA2PA_MEMORY_ALIGN);
@@ -314,76 +329,100 @@ static int svm_setup_trunk(struct device *dev, phys_addr_t base, unsigned long s
 		return -ENXIO;
 	}
 
-	va2pa_trunk.slots = slot;
-	va2pa_trunk.slot_used = 0;
-	va2pa_trunk.slot_total = slot_total;
-	va2pa_trunk.bitmap = bitmap;
-	mutex_init(&va2pa_trunk.mutex);
+	trunk->slots = slot;
+	trunk->slot_used = 0;
+	trunk->slot_total = slot_total;
+	trunk->bitmap = bitmap;
+	mutex_init(&trunk->mutex);
 
 	return 0;
 }
 
-static void svm_remove_trunk(struct device *dev)
+static int svm_setup_trunk(struct device *dev)
 {
-	iounmap(va2pa_trunk.slots);
-	kvfree(va2pa_trunk.bitmap);
+	int err = 0;
+	int count;
 
-	va2pa_trunk.slots = NULL;
-	va2pa_trunk.bitmap = NULL;
+	for (count = 0; count < SVM_VA2PA_TRUNK_COUNT_MAX; count++) {
+		if (!va2pa_trunk[count].base)
+			break;
+
+		err = __svm_setup_trunk(dev, &va2pa_trunk[count]);
+		if (err)
+			break;
+	}
+
+	return err;
 }
 
-static void svm_set_slot_valid(unsigned long index, unsigned long phys, unsigned long len)
+static void svm_remove_trunk(struct device *dev)
 {
-	struct svm_va2pa_slot *slot = &va2pa_trunk.slots[index];
+	int count;
+
+	for (count = 0; count < SVM_VA2PA_TRUNK_COUNT_MAX; count++) {
+		if (!va2pa_trunk[count].base)
+			break;
+
+		iounmap(va2pa_trunk[count].slots);
+		kvfree(va2pa_trunk[count].bitmap);
+		va2pa_trunk[count].slots = NULL;
+		va2pa_trunk[count].bitmap = NULL;
+	}
+}
+
+static void svm_set_slot_valid(struct svm_va2pa_trunk *trunk, unsigned long index,
+		unsigned long phys, unsigned long len)
+{
+	struct svm_va2pa_slot *slot = &trunk->slots[index];
 
 	slot->phys = phys;
 	slot->len = len;
 	slot->image_word = SVM_IMAGE_WORD_VALID;
 	slot->pid = current->tgid;
 	slot->data_type = SVM_VA2PA_TYPE_DMA;
-	__bitmap_set(va2pa_trunk.bitmap, index, 1);
-	va2pa_trunk.slot_used++;
+	__bitmap_set(trunk->bitmap, index, 1);
+	trunk->slot_used++;
 }
 
-static void svm_set_slot_init(unsigned long index)
+static void svm_set_slot_init(struct svm_va2pa_trunk *trunk, unsigned long index)
 {
-	struct svm_va2pa_slot *slot = &va2pa_trunk.slots[index];
+	struct svm_va2pa_slot *slot = &trunk->slots[index];
 
 	slot->image_word = SVM_IMAGE_WORD_INIT;
-	__bitmap_clear(va2pa_trunk.bitmap, index, 1);
-	va2pa_trunk.slot_used--;
+	__bitmap_clear(trunk->bitmap, index, 1);
+	trunk->slot_used--;
 }
 
-static void svm_clean_done_slots(void)
+static void svm_clean_done_slots(struct svm_va2pa_trunk *trunk)
 {
-	int used = va2pa_trunk.slot_used;
+	int used = trunk->slot_used;
 	int count = 0;
 	long temp = -1;
 	phys_addr_t addr;
-	unsigned long *bitmap = va2pa_trunk.bitmap;
+	unsigned long *bitmap = trunk->bitmap;
 
 	for (; count < used && count < SVM_VA2PA_CLEAN_BATCH_NUM;) {
-		temp = find_next_bit(bitmap, va2pa_trunk.slot_total, temp + 1);
-		if (temp == va2pa_trunk.slot_total)
+		temp = find_next_bit(bitmap, trunk->slot_total, temp + 1);
+		if (temp == trunk->slot_total)
 			break;
 
 		count++;
-		if (va2pa_trunk.slots[temp].image_word != SVM_IMAGE_WORD_DONE)
+		if (trunk->slots[temp].image_word != SVM_IMAGE_WORD_DONE)
 			continue;
 
-		addr = (phys_addr_t)va2pa_trunk.slots[temp].phys;
+		addr = (phys_addr_t)trunk->slots[temp].phys;
 		put_page(pfn_to_page(PHYS_PFN(addr)));
-		svm_set_slot_init(temp);
+		svm_set_slot_init(trunk, temp);
 	}
 }
 
-static int svm_find_slot_init(unsigned long *index)
+static int svm_find_slot_init(struct svm_va2pa_trunk *trunk, unsigned long *index)
 {
 	int temp;
-	unsigned long *bitmap = va2pa_trunk.bitmap;
+	unsigned long *bitmap = trunk->bitmap;
 
-	temp = find_first_zero_bit(bitmap, va2pa_trunk.slot_total);
-	if (temp == va2pa_trunk.slot_total)
+	temp = find_first_zero_bit(bitmap, trunk->slot_total);
+	if (temp == trunk->slot_total)
 		return -ENOSPC;
 
 	*index = temp;
@@ -393,14 +432,14 @@ static int svm_find_slot_init(unsigned long *index)
 static int svm_va2pa_trunk_init(struct device *dev)
 {
 	int err;
-	phys_addr_t base;
-	unsigned long size;
 
-	err = svm_parse_trunk_memory(dev, &base, &size);
+	memset(va2pa_trunk, 0, sizeof(va2pa_trunk));
+
+	err = svm_parse_trunk_memory(dev);
 	if (err)
 		return err;
 
-	err = svm_setup_trunk(dev, base, size);
+	err = svm_setup_trunk(dev);
 	if (err)
 		return err;
 
@@ -1361,17 +1400,21 @@ static int svm_get_phys(unsigned long __user *arg)
 	pte_t pte;
 	unsigned long index = 0;
 	struct page *page;
+	struct addr_trans_args args;
 	unsigned long addr, phys, offset;
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma = NULL;
 	unsigned long len;
+	unsigned int trunk_id;
+	struct svm_va2pa_trunk *trunk;
 
 	if (!acpi_disabled)
 		return -EPERM;
 
-	if (get_user(addr, arg))
+	if (copy_from_user(&args, (void __user *)arg, sizeof(args)))
 		return -EFAULT;
 
+	addr = args.vptr;
 	down_read(&mm->mmap_sem);
 	ptep = svm_walk_pt(addr, NULL, &offset);
 	if (!ptep) {
@@ -1398,30 +1441,34 @@ static int svm_get_phys(unsigned long __user *arg)
 
 	up_read(&mm->mmap_sem);
 
-	mutex_lock(&va2pa_trunk.mutex);
-	svm_clean_done_slots();
-	if (va2pa_trunk.slot_used == va2pa_trunk.slot_total) {
+	trunk_id = args.device_id;
+	if (trunk_id >= SVM_VA2PA_TRUNK_COUNT_MAX)
+		return -EINVAL;
+	trunk = &va2pa_trunk[trunk_id];
+	mutex_lock(&trunk->mutex);
+	svm_clean_done_slots(trunk);
+	if (trunk->slot_used == trunk->slot_total) {
 		err = -ENOSPC;
 		goto err_mutex_unlock;
 	}
 
-	err = svm_find_slot_init(&index);
+	err = svm_find_slot_init(trunk, &index);
 	if (err)
 		goto err_mutex_unlock;
 
-	svm_set_slot_valid(index, phys, len);
+	svm_set_slot_valid(trunk, index, phys, len);
 
-	err = put_user(index * SVM_VA2PA_SLOT_SIZE, (unsigned long __user *)arg);
+	err = put_user(index * SVM_VA2PA_SLOT_SIZE, (unsigned long __user *)args.pptr);
 	if (err)
 		goto err_slot_init;
 
-	mutex_unlock(&va2pa_trunk.mutex);
+	mutex_unlock(&trunk->mutex);
 	return 0;
 
 err_slot_init:
-	svm_set_slot_init(index);
+	svm_set_slot_init(trunk, index);
 err_mutex_unlock:
-	mutex_unlock(&va2pa_trunk.mutex);
+	mutex_unlock(&trunk->mutex);
 	put_page(page);
 	return err;
 }
