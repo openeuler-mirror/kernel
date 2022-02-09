@@ -669,9 +669,10 @@ int kernel_access_sea_recovery;
  * kernel_access_sea_recovery.
  */
 static struct uce_kernel_recovery_info reco_info[] = {
-	{copy_page_cow_sea_fallback, "copy_page_cow", (unsigned long)copy_page_cow, 0},
-	{copy_generic_read_sea_fallback, "__arch_copy_to_user_generic_read", (unsigned long)__arch_copy_to_user_generic_read, 0},
-	{copy_from_user_sea_fallback, "__arch_copy_from_user", (unsigned long)__arch_copy_from_user, 0},
+	{copy_page_cow_sea_fallback, "copy_page_cow", (unsigned long)copy_page_cow, 0, 0},
+	{copy_generic_read_sea_fallback, "__arch_copy_to_user_generic_read", (unsigned long)__arch_copy_to_user_generic_read, 0, 0},
+	{copy_from_user_sea_fallback, "__arch_copy_from_user", (unsigned long)__arch_copy_from_user, 0, 0},
+	{get_user_sea_fallback, "get_user_sea_fallback", (unsigned long)get_user_sea_fallback, 0, KR_SET_TASK_STATE},
 };
 
 static int __init kernel_access_sea_recovery_init(void)
@@ -723,6 +724,11 @@ int is_pagecache_reading_kernel_recovery_enable(void)
 	return kernel_access_sea_recovery & 0x2;
 }
 
+inline int is_get_user_kernel_recovery_enable(void)
+{
+	return kernel_access_sea_recovery & 0x8;
+}
+EXPORT_SYMBOL(is_get_user_kernel_recovery_enable);
 /*
  * what is kernel recovery?
  * If the process's private data is accessed in the kernel mode to trigger
@@ -855,6 +861,8 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 
 			current->thread.fault_address = regs->pc;
 			current->thread.fault_code = esr;
+			if (reco_info[idx].flags & KR_SET_TASK_STATE)
+				current->flags |= PF_UCE_KERNEL_RECOVERY;
 			regs->pc = (unsigned long)reco_info[idx].fn;
 			arm64_force_sig_info(&info,
 				"Uncorrected hardware memory use with kernel recovery in kernel-access\n",

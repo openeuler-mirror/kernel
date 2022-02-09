@@ -331,7 +331,74 @@ do {									\
 	__gu_err;							\
 })
 
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+extern void get_user_func(long *p, const long __user *addr, int size, int *err);
+extern int is_get_user_kernel_recovery_enable(void);
+
+#define __get_user_uce_err(x, ptr, size, err)				\
+do {									\
+	unsigned long __gu_val;						\
+	__chk_user_ptr(ptr);						\
+	uaccess_enable_not_uao();					\
+	switch ((size)) {						\
+	case 1:								\
+		__get_user_asm("ldrb", "ldtrb", "%w", __gu_val, (ptr),  \
+			       (err), ARM64_HAS_UAO);			\
+		break;							\
+	case 2:								\
+		__get_user_asm("ldrh", "ldtrh", "%w", __gu_val, (ptr),  \
+			       (err), ARM64_HAS_UAO);			\
+		break;							\
+	case 4:								\
+		__get_user_asm("ldr", "ldtr", "%w", __gu_val, (ptr),	\
+			       (err), ARM64_HAS_UAO);			\
+		break;							\
+	case 8:								\
+		__get_user_asm("ldr", "ldtr", "%x",  __gu_val, (ptr),	\
+			       (err), ARM64_HAS_UAO);			\
+		break;							\
+	default:							\
+		__gu_val = 0; (err) = -EFAULT;				\
+		break;							\
+	}								\
+	uaccess_disable_not_uao();					\
+	(x) = (__force __typeof__(*(ptr)))__gu_val;			\
+} while (0)
+
+#define __get_user_uce_check(x, ptr, size, err)				\
+({									\
+	__typeof__(*(ptr)) __user *__p = (ptr);				\
+	might_fault();							\
+	if (access_ok(__p, sizeof(*__p))) {				\
+		__p = uaccess_mask_ptr(__p);				\
+		__get_user_uce_err((x), __p, (size), (err));		\
+	} else {							\
+		(x) = 0; (err) = -EFAULT;				\
+	}								\
+})
+
+/*
+ * uce kernel recovery use kallsyms_lookup_size_offset to confirm the
+ * location of triggering uce which based on function, so here needs to
+ * be implemented based on function.
+ */
+#define get_user(x, ptr)						\
+({									\
+	int __gu_err = 0;						\
+									\
+	if (!is_get_user_kernel_recovery_enable()) {                    \
+		__get_user_check((x), (ptr), __gu_err);			\
+	} else {							\
+		long __t;						\
+		const long *__s = (const long *)(ptr);			\
+		get_user_func(&__t, __s, sizeof(*(ptr)), &__gu_err);	\
+		(x) = (__typeof__(x))__t;				\
+	}								\
+	__gu_err;							\
+})
+#else
 #define get_user	__get_user
+#endif
 
 #define __put_user_asm(instr, alt_instr, reg, x, addr, err, feature)	\
 	asm volatile(							\

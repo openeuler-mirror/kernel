@@ -595,6 +595,7 @@ extern struct page *alloc_new_node_page(struct page *page, unsigned long node);
 #ifdef CONFIG_UCE_KERNEL_RECOVERY
 extern int is_cow_kernel_recovery_enable(void);
 extern int is_pagecache_reading_kernel_recovery_enable(void);
+extern int is_get_user_kernel_recovery_enable(void);
 #endif
 
 #endif	/* __MM_INTERNAL_H */

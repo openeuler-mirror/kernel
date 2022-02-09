@@ -42,16 +42,21 @@ static inline u32 disr_to_esr(u64 disr)
 }
 
 #ifdef CONFIG_UCE_KERNEL_RECOVERY
+/* Need set task state when trigger uce */
+#define KR_SET_TASK_STATE	0x00000001
+
 struct uce_kernel_recovery_info {
 	int (*fn)(void);
 	const char *name;
 	unsigned long addr;
 	unsigned long size;
+	unsigned int flags;
 };
 
 extern int copy_page_cow_sea_fallback(void);
 extern int copy_generic_read_sea_fallback(void);
 extern int copy_from_user_sea_fallback(void);
+extern int get_user_sea_fallback(void);
 #endif
 
 #endif	/* __ASM_EXCEPTION_H */
