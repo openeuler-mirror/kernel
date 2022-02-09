@@ -101,6 +101,9 @@ struct scan_control {
 	/* One of the zones is ready for compaction */
 	unsigned int compaction_ready:1;
 
+	/* can't shrink slab pages */
+	unsigned int no_shrink_slab:1;
+
 	/* Allocation order */
 	s8 order;
 
@@ -2783,8 +2786,9 @@ static bool shrink_node(pg_data_t *pgdat, struct scan_control *sc)
 			shrink_node_memcg(pgdat, memcg, sc, &lru_pages);
 			node_lru_pages += lru_pages;
 
-			shrink_slab(sc->gfp_mask, pgdat->node_id,
-				    memcg, sc->priority);
+			if (!sc->no_shrink_slab)
+				shrink_slab(sc->gfp_mask, pgdat->node_id,
+						memcg, sc->priority);
 
 			/* Record the group's reclaim efficiency */
 			vmpressure(sc->gfp_mask, memcg, false,
@@ -3970,6 +3974,7 @@ static unsigned long __shrink_page_cache(gfp_t mask)
 				 (unsigned long)vm_cache_reclaim_weight,
 		.may_unmap = 1,
 		.may_swap = mem_reliable_is_enabled() ? 0 : 1,
+		.no_shrink_slab = mem_reliable_is_enabled() ? 0 : 1,
 		.order = 0,
 		.priority = DEF_PRIORITY,
 		.target_mem_cgroup = NULL,
