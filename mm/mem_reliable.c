@@ -17,6 +17,7 @@ static atomic_long_t total_reliable_mem;
 atomic_long_t reliable_user_used_nr_page;
 /* reliable user limit for user tasks with reliable flag */
 unsigned long task_reliable_limit = ULONG_MAX;
+bool reliable_allow_fallback __read_mostly = true;
 
 void add_reliable_mem_size(long sz)
 {
@@ -204,3 +205,31 @@ void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
 	out_of_memory(&oc);
 	mutex_unlock(&oom_lock);
 }
+
+static int __init setup_reliable_debug(char *str)
+{
+	if (*str++ != '=' || !*str)
+		/*
+		 * No options specified.
+		 */
+		goto out;
+
+	/*
+	 * Determine which debug features should be switched on
+	 */
+	for (; *str && *str != ','; str++) {
+		switch (*str) {
+		case 'F':
+			reliable_allow_fallback = false;
+			pr_info("fallback disabled.");
+			break;
+		default:
+			pr_err("reliable_debug option '%c' unknown. skipped\n",
+			       *str);
+		}
+	}
+
+out:
+	return 1;
+}
+__setup("reliable_debug", setup_reliable_debug);

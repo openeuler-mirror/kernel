@@ -16,6 +16,7 @@ extern struct static_key_false mem_reliable;
 extern bool reliable_enabled;
 extern atomic_long_t reliable_user_used_nr_page;
 extern unsigned long task_reliable_limit __read_mostly;
+extern bool reliable_allow_fallback;
 
 extern void add_reliable_mem_size(long sz);
 extern void mem_reliable_init(bool has_unmirrored_mem,
@@ -69,8 +70,14 @@ static inline bool reliable_mem_limit_check(unsigned long nr_page)
 	return atomic_long_read(&reliable_user_used_nr_page) + nr_page <=
 	       task_reliable_limit / PAGE_SIZE;
 }
+
+static inline bool reliable_allow_fb_enabled(void)
+{
+	return reliable_allow_fallback;
+}
 #else
 #define reliable_enabled 0
+#define reliable_allow_fb_enabled() false
 
 static inline bool mem_reliable_is_enabled(void) { return false; }
 static inline void add_reliable_mem_size(long sz) {}

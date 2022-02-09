@@ -1235,10 +1235,15 @@ static int khugepaged_scan_pmd(struct mm_struct *mm,
 out_unmap:
 	pte_unmap_unlock(pte, ptl);
 	if (ret) {
-		if (reliable &&
-		    !reliable_mem_limit_check(1 << HPAGE_PMD_ORDER)) {
-			ret = SCAN_ALLOC_HUGE_PAGE_FAIL;
-			goto out;
+		if (reliable) {
+			if (!reliable_mem_limit_check(1 << HPAGE_PMD_ORDER)) {
+				if (reliable_allow_fb_enabled()) {
+					reliable = false;
+				} else {
+					ret = SCAN_ALLOC_HUGE_PAGE_FAIL;
+					goto out;
+				}
+			}
 		}
 
 		node = khugepaged_find_target_node();
@@ -1695,15 +1700,20 @@ static void khugepaged_scan_shmem(struct mm_struct *mm,
 	rcu_read_unlock();
 
 	if (result == SCAN_SUCCEED) {
+		if (reliable) {
+			if (!reliable_mem_limit_check(1 << HPAGE_PMD_ORDER)) {
+				if (reliable_allow_fb_enabled()) {
+					reliable = false;
+				} else {
+					result = SCAN_ALLOC_HUGE_PAGE_FAIL;
+					goto out;
+				}
+			}
+		}
+
 		if (present < HPAGE_PMD_NR - khugepaged_max_ptes_none) {
 			result = SCAN_EXCEED_NONE_PTE;
 		} else {
-			if (reliable &&
-			    !reliable_mem_limit_check(1 << HPAGE_PMD_ORDER)) {
-				result = SCAN_ALLOC_HUGE_PAGE_FAIL;
-				goto out;
-			}
-
 			node = khugepaged_find_target_node();
 			collapse_shmem(mm, mapping, start, hpage, node,
 				       reliable);

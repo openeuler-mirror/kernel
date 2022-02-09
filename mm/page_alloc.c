@@ -3656,6 +3656,60 @@ __alloc_pages_cpuset_fallback(gfp_t gfp_mask, unsigned int order,
 	return page;
 }
 
+#ifdef CONFIG_MEMORY_RELIABLE
+static inline struct zone *reliable_fb_find_zone(gfp_t gfp_mask,
+						       struct alloc_context *ac)
+{
+	if (!reliable_allow_fb_enabled())
+		return NULL;
+
+	/* dst nodemask may don't have zone we want, fallback here */
+	if ((gfp_mask & __GFP_THISNODE) && (ac->high_zoneidx == ZONE_NORMAL) &&
+	    (gfp_mask & ___GFP_RELIABILITY)) {
+		struct zoneref *ref = first_zones_zonelist(
+			ac->zonelist, ZONE_MOVABLE, ac->nodemask);
+		return ref->zone;
+	}
+
+	return NULL;
+}
+
+static inline struct page *
+reliable_fb_before_oom(gfp_t gfp_mask, int order,
+			  const struct alloc_context *ac)
+{
+	if (!reliable_allow_fb_enabled())
+		return NULL;
+
+	/* key user process alloc mem from movable zone to avoid oom */
+	if ((ac->high_zoneidx == ZONE_NORMAL) &&
+	    (gfp_mask & ___GFP_RELIABILITY)) {
+		struct alloc_context tmp_ac = *ac;
+
+		tmp_ac.high_zoneidx = ZONE_MOVABLE;
+		tmp_ac.preferred_zoneref = first_zones_zonelist(
+			ac->zonelist, ZONE_MOVABLE, ac->nodemask);
+		return get_page_from_freelist(
+			(gfp_mask | __GFP_HARDWALL) & ~__GFP_DIRECT_RECLAIM,
+			order, ALLOC_WMARK_HIGH | ALLOC_CPUSET, &tmp_ac);
+	}
+
+	return NULL;
+}
+#else
+static inline struct zone *reliable_fb_find_zone(gfp_t gfp_mask,
+						       struct alloc_context *ac)
+{
+	return NULL;
+}
+
+static inline struct page *reliable_fb_before_oom(gfp_t gfp_mask, int order,
+						 const struct alloc_context *ac)
+{
+	return NULL;
+}
+#endif
+
 static inline struct page *
 __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	const struct alloc_context *ac, unsigned long *did_some_progress)
@@ -3691,6 +3745,10 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	page = get_page_from_freelist((gfp_mask | __GFP_HARDWALL) &
 				      ~__GFP_DIRECT_RECLAIM, order,
 				      ALLOC_WMARK_HIGH|ALLOC_CPUSET, ac);
+	if (page)
+		goto out;
+
+	page = reliable_fb_before_oom(gfp_mask, order, ac);
 	if (page)
 		goto out;
 
@@ -4301,8 +4359,13 @@ retry_cpuset:
 	 */
 	ac->preferred_zoneref = first_zones_zonelist(ac->zonelist,
 					ac->high_zoneidx, ac->nodemask);
-	if (!ac->preferred_zoneref->zone)
-		goto nopage;
+	if (!ac->preferred_zoneref->zone) {
+		ac->preferred_zoneref->zone =
+			reliable_fb_find_zone(gfp_mask, ac);
+
+		if (!ac->preferred_zoneref->zone)
+			goto nopage;
+	}
 
 	if (gfp_mask & __GFP_KSWAPD_RECLAIM)
 		wake_all_kswapds(order, gfp_mask, ac);
@@ -4601,6 +4664,9 @@ static inline bool prepare_before_alloc(gfp_t *gfp_mask, unsigned int order)
 			*gfp_mask |= ___GFP_RELIABILITY;
 			return true;
 		}
+
+		if (reliable_allow_fb_enabled())
+			return true;
 
 		return false;
 	}
