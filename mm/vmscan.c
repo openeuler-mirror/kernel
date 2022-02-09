@@ -4056,6 +4056,10 @@ static void shrink_page_cache_work(struct work_struct *w)
 	if (vm_cache_reclaim_s == 0 || !vm_cache_reclaim_enable)
 		return;
 
+	if (mem_reliable_is_enabled() &&
+			(!vm_cache_limit_mbytes || !page_cache_over_limit()))
+		return;
+
 	/* It should wait more time if we hardly reclaim the page cache */
 	nr_pages = shrink_page_cache(GFP_KERNEL);
 	if ((nr_pages < SWAP_CLUSTER_MAX) && vm_cache_reclaim_enable)
