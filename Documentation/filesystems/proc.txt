@@ -884,6 +884,7 @@ ShmemHugePages:      0 kB
 ShmemPmdMapped:      0 kB
 ReliableTotal:     7340032 kB
 ReliableUsed:       418824 kB
+ReliableShmem:          96 kB
 
 
     MemTotal: Total usable ram (i.e. physical ram minus a few reserved
@@ -976,6 +977,7 @@ VmallocChunk: largest contiguous block of vmalloc area which is free
               allocations. This stat excludes the cost of metadata.
 ReliableTotal: Total reliable memory size
 ReliableUsed:  The used amount of reliable memory
+ReliableShmem: Reliable memory used by shmem
 
 ..............................................................................
 

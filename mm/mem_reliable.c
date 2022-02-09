@@ -19,6 +19,7 @@ atomic_long_t reliable_user_used_nr_page;
 unsigned long task_reliable_limit = ULONG_MAX;
 bool reliable_allow_fallback __read_mostly = true;
 bool shmem_reliable __read_mostly = true;
+struct percpu_counter reliable_shmem_used_nr_page __read_mostly;
 
 void add_reliable_mem_size(long sz)
 {
@@ -97,7 +98,10 @@ void shmem_reliable_init(void)
 	if (!mem_reliable_is_enabled()) {
 		shmem_reliable = false;
 		pr_info("shmem reliable disabled.\n");
+		return;
 	}
+
+	percpu_counter_init(&reliable_shmem_used_nr_page, 0, GFP_KERNEL);
 }
 
 static unsigned long total_reliable_mem_sz(void)
@@ -124,6 +128,12 @@ void reliable_report_meminfo(struct seq_file *m)
 			   total_reliable_mem_sz() >> 10);
 		seq_printf(m, "ReliableUsed:     %8lu kB\n",
 			   used_reliable_mem_sz() >> 10);
+
+		if (shmem_reliable_is_enabled()) {
+			unsigned long shmem = (unsigned long)percpu_counter_sum(
+				&reliable_shmem_used_nr_page) << (PAGE_SHIFT - 10);
+			seq_printf(m, "ReliableShmem:    %8lu kB\n", shmem);
+		}
 	}
 }
 

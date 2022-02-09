@@ -957,6 +957,8 @@ static void shmem_undo_range(struct inode *inode, loff_t lstart, loff_t lend,
 					truncate_inode_page(mapping, page);
 				}
 			}
+			shmem_reliable_page_counter(
+				page, -(1 << compound_order(page)));
 			unlock_page(page);
 		}
 		pagevec_remove_exceptionals(&pvec);
@@ -1067,6 +1069,8 @@ static void shmem_undo_range(struct inode *inode, loff_t lstart, loff_t lend,
 					break;
 				}
 			}
+			shmem_reliable_page_counter(
+				page, -(1 << compound_order(page)));
 			unlock_page(page);
 		}
 		pagevec_remove_exceptionals(&pvec);
@@ -1962,6 +1966,7 @@ alloc_nohuge:
 		inode->i_blocks += BLOCKS_PER_PAGE << compound_order(page);
 		shmem_recalc_inode(inode);
 		spin_unlock_irq(&info->lock);
+		shmem_reliable_page_counter(page, 1 << compound_order(page));
 		alloced = true;
 
 		if (PageTransHuge(page) &&

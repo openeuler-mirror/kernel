@@ -7,6 +7,7 @@
 #include <linux/mmzone.h>
 #include <linux/mm_types.h>
 #include <linux/sched.h>
+#include <linux/percpu_counter.h>
 
 
 #ifdef CONFIG_MEMORY_RELIABLE
@@ -18,6 +19,7 @@ extern atomic_long_t reliable_user_used_nr_page;
 extern unsigned long task_reliable_limit __read_mostly;
 extern bool reliable_allow_fallback;
 extern bool shmem_reliable;
+extern struct percpu_counter reliable_shmem_used_nr_page;
 
 extern void add_reliable_mem_size(long sz);
 extern void mem_reliable_init(bool has_unmirrored_mem,
@@ -83,6 +85,12 @@ static inline bool shmem_reliable_is_enabled(void)
 	return shmem_reliable;
 }
 
+static inline void shmem_reliable_page_counter(struct page *page, int nr_page)
+{
+	if (shmem_reliable_is_enabled() && page_reliable(page))
+		percpu_counter_add(&reliable_shmem_used_nr_page, nr_page);
+}
+
 #else
 #define reliable_enabled 0
 #define reliable_allow_fb_enabled() false
@@ -114,6 +122,9 @@ static inline void mem_reliable_out_of_memory(gfp_t gfp_mask,
 					      int preferred_nid,
 					      nodemask_t *nodemask) {}
 static inline bool shmem_reliable_is_enabled(void) { return false; }
+static inline void shmem_reliable_page_counter(struct page *page, int nr_page)
+{
+}
 
 #endif
 
