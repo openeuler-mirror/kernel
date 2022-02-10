@@ -421,7 +421,6 @@ struct kvm_mmu {
 	union kvm_mmu_role mmu_role;
 	u8 root_level;
 	u8 shadow_root_level;
-	u8 ept_ad;
 	bool direct_map;
 	struct kvm_mmu_root_info prev_roots[KVM_MMU_NUM_PREV_ROOTS];
 
