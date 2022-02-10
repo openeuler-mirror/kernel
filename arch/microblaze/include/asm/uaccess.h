@@ -61,21 +61,9 @@ static inline int ___range_ok(unsigned long addr, unsigned long size)
 
 static inline int access_ok(const void __user *addr, unsigned long size)
 {
-	if (!size)
-		goto ok;
+	unsigned long limit = get_fs().seg;
 
-	if ((get_fs().seg < ((unsigned long)addr)) ||
-			(get_fs().seg < ((unsigned long)addr + size - 1))) {
-		pr_devel("ACCESS fail at 0x%08x (size 0x%x), seg 0x%08x\n",
-			(__force u32)addr, (u32)size,
-			(u32)get_fs().seg);
-		return 0;
-	}
-ok:
-	pr_devel("ACCESS OK at 0x%08x (size 0x%x), seg 0x%08x\n",
-			(__force u32)addr, (u32)size,
-			(u32)get_fs().seg);
-	return 1;
+	return (size <= limit) && ((unsigned long)addr <= (limit - size));
 }
 #endif
 
