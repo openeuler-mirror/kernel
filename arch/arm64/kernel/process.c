@@ -628,13 +628,6 @@ unsigned long arch_align_stack(unsigned long sp)
  */
 void arch_setup_new_exec(void)
 {
-	/*
-	 * set the address limit for the new executable.
-	 * Here we reset the addr_limit only for the scenario
-	 * where is_compat_task() is set in AARCH64 kernel.
-	 */
-	set_fs(USER_DS);
-
 	current->mm->context.flags = is_compat_task() ? MMCF_AARCH32 : 0;
 
 	ptrauth_thread_init_user(current);

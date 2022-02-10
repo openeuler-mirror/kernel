@@ -221,8 +221,7 @@ alternative_else_nop_endif
 	/* Save the task's original addr_limit and set USER_DS */
 	ldr	x20, [tsk, #TSK_TI_ADDR_LIMIT]
 	str	x20, [sp, #S_ORIG_ADDR_LIMIT]
-	/* expand USER_DS here using its value while is_compat_task() is false */
-	mov	x20, #((UL(1) << VA_BITS) - 1)
+	mov	x20, #USER_DS
 	str	x20, [tsk, #TSK_TI_ADDR_LIMIT]
 	/* No need to reset PSTATE.UAO, hardware's already set it to 0 for us */
 	.endif /* \el == 0 */
