@@ -575,7 +575,7 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 	ept_root = __va(mmu->root.hpa);
 
 	/* Walk start at p4d when vm has 4 level table pages */
-	if (mmu->shadow_root_level != 4)
+	if (mmu->root_role.level != 4)
 		err = ept_pgd_range(pic, (pgd_t *)ept_root, addr, end, walk);
 	else
 		err = ept_p4d_range(pic, (p4d_t *)ept_root, addr, end, walk);
@@ -614,9 +614,9 @@ static int ept_idle_supports_cpu(struct kvm *kvm)
 		if (kvm_mmu_ad_disabled(mmu)) {
 			printk(KERN_NOTICE "CPU does not support EPT A/D bits tracking\n");
 			ret = -EINVAL;
-		} else if (mmu->shadow_root_level < 4 ||
-				(mmu->shadow_root_level == 5 && !pgtable_l5_enabled())) {
-			printk(KERN_NOTICE "Unsupported EPT level %d\n", mmu->shadow_root_level);
+		} else if (mmu->root_role.level < 4 ||
+				(mmu->root_role.level == 5 && !pgtable_l5_enabled())) {
+			printk(KERN_NOTICE "Unsupported EPT level %d\n", mmu->root_role.level);
 			ret = -EINVAL;
 		} else
 			ret = 0;

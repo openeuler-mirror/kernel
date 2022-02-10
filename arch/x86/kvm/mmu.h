@@ -138,7 +138,7 @@ static inline void kvm_mmu_load_pgd(struct kvm_vcpu *vcpu)
 		return;
 
 	kvm_x86_ops.load_mmu_pgd(vcpu, root_hpa | kvm_get_active_pcid(vcpu),
-				 vcpu->arch.mmu->shadow_root_level);
+				 vcpu->arch.mmu->root_role.level);
 }
 
 struct kvm_page_fault {
