@@ -243,23 +243,18 @@ asmlinkage noinstr unsigned long
 __sdei_handler(struct pt_regs *regs, struct sdei_registered_event *arg)
 {
 	unsigned long ret;
-	mm_segment_t orig_addr_limit;
 
 	/*
 	 * We didn't take an exception to get here, so the HW hasn't
-	 * set/cleared bits in PSTATE that we may rely on. Initialize PAN, then
-	 * use force_uaccess_begin() to reset addr_limit.
+	 * set/cleared bits in PSTATE that we may rely on. Initialize PAN.
 	 */
 	__sdei_pstate_entry();
-	orig_addr_limit = force_uaccess_begin();
 
 	arm64_enter_nmi(regs);
 
 	ret = _sdei_handler(regs, arg);
 
 	arm64_exit_nmi(regs);
-
-	force_uaccess_end(orig_addr_limit);
 
 	return ret;
 }
