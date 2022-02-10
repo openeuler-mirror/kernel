@@ -9,12 +9,8 @@
 #define __ASM_PROCESSOR_H
 
 #define KERNEL_DS		UL(-1)
-#ifdef CONFIG_COMPAT
 #define USER_DS			(is_compat_task() ? \
 				(UL(0x100000000) - 1) : (TASK_SIZE - 1))
-#else
-#define USER_DS			(TASK_SIZE - 1)
-#endif
 
 /*
  * On arm64 systems, unaligned accesses by the CPU are cheap, and so there is
