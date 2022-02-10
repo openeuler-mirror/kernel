@@ -1163,17 +1163,12 @@ static int memory_failure_hugetlb(unsigned long pfn, int flags)
 	num_poisoned_pages_inc();
 
 	if (!(flags & MF_COUNT_INCREASED) && !get_hwpoison_page(p)) {
-		/*
-		 * Check "filter hit" and "race with other subpage."
-		 */
 		lock_page(head);
-		if (PageHWPoison(head)) {
-			if ((hwpoison_filter(p) && TestClearPageHWPoison(p))
-			    || (p != head && TestSetPageHWPoison(head))) {
+		if (hwpoison_filter(p)) {
+			if (TestClearPageHWPoison(head))
 				num_poisoned_pages_dec();
-				unlock_page(head);
-				return 0;
-			}
+			unlock_page(head);
+			return 0;
 		}
 		unlock_page(head);
 		dissolve_free_huge_page(p);
