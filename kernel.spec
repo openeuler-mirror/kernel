@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       53
+%global devel_release       54
 %global maintenance_release .0.0
-%global pkg_release         .27
+%global pkg_release         .28
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -862,6 +862,37 @@ fi
 %endif
 
 %changelog
+* Thu Feb 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-54.0.0.28
+- rcu: Make TASKS_TRACE_RCU select IRQ_WORK
+- x86/kdump: make crash kernel boot faster
+- mm, hwpoison: fix condition in free hugetlb page path
+- x509: Detect sm2 keys by their parameters OID
+- mm/page_alloc.c: fix 'zone_id' may be used uninitialized in this function warning
+- sysctl: returns -EINVAL when a negative value is passed to proc_doulongvec_minmax
+- arm64: fix address limit problem with TASK_SIZE_MAX
+- arm64: mark __system_matches_cap as __maybe_unused
+- arm64: Avoid premature usercopy failure
+- arm64: uaccess: remove vestigal UAO support
+- arm64: uaccess: remove redundant PAN toggling
+- arm64: uaccess: remove addr_limit_user_check()
+- arm64: uaccess: remove set_fs()
+- arm64: uaccess cleanup macro naming
+- arm64: uaccess: split user/kernel routines
+- arm64: uaccess: refactor __{get,put}_user
+- arm64: uaccess: simplify __copy_user_flushcache()
+- arm64: uaccess: rename privileged uaccess routines
+- arm64: sdei: explicitly simulate PAN/UAO entry
+- arm64: sdei: move uaccess logic to arch/arm64/
+- Revert "arm64: fix current_thread_info()->addr_limit setup"
+- Revert "arm64: fix USER_DS definition problem in non-compat mode"
+- Revert "arm64: Avoid premature usercopy failure"
+- arm64: alternatives: Move length validation in alternative_{insn, endif}
+- arm64: alternatives: Split up alternative.h
+- arm64: uaccess: move uao_* alternatives to asm-uaccess.h
+- Revert "arm64: alternatives: Move length validation in alternative_{insn, endif}"
+- arm64: add C wrappers for SET_PSTATE_*()
+- arm64: ensure ERET from kthread is illegal
+
 * Sat Jan 29 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-53.0.0.27
 - livepatch/core: Fix where module get and put in different macro
 - livepatch/core: Remove redundant klp_free_objects_mod_limited
