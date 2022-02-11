@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       54
+%global devel_release       55
 %global maintenance_release .0.0
-%global pkg_release         .28
+%global pkg_release         .29
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -862,6 +862,14 @@ fi
 %endif
 
 %changelog
+* Fri Feb 11 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-55.0.0.29
+- kabi: cleanup config entries of kabi
+- kabi: fix build error when CONFIG_KABI_RESERVE=n
+- kabi:crypto: reserve space for RSASSA-PSS style certificates
+- mm/page_alloc: use accumulated load when building node fallback list
+- mm/page_alloc: print node fallback order
+- arm64: openeuler_defconfig: Enable Kunpeng related configs
+
 * Thu Feb 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-54.0.0.28
 - rcu: Make TASKS_TRACE_RCU select IRQ_WORK
 - x86/kdump: make crash kernel boot faster
