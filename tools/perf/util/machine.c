@@ -88,7 +88,10 @@ int machine__init(struct machine *machine, const char *root_dir, pid_t pid)
 	int err = -ENOMEM;
 
 	memset(machine, 0, sizeof(*machine));
-	maps__init(&machine->kmaps, machine);
+	machine->kmaps = maps__new(machine);
+	if (machine->kmaps == NULL)
+		return -ENOMEM;
+
 	RB_CLEAR_NODE(&machine->rb_node);
 	dsos__init(&machine->dsos);
 
@@ -107,7 +110,7 @@ int machine__init(struct machine *machine, const char *root_dir, pid_t pid)
 
 	machine->root_dir = strdup(root_dir);
 	if (machine->root_dir == NULL)
-		return -ENOMEM;
+		goto out;
 
 	if (machine__set_mmap_name(machine))
 		goto out;
@@ -130,6 +133,7 @@ int machine__init(struct machine *machine, const char *root_dir, pid_t pid)
 
 out:
 	if (err) {
+		zfree(&machine->kmaps);
 		zfree(&machine->root_dir);
 		zfree(&machine->mmap_name);
 	}
@@ -219,7 +223,7 @@ void machine__exit(struct machine *machine)
 		return;
 
 	machine__destroy_kernel_maps(machine);
-	maps__exit(&machine->kmaps);
+	maps__delete(machine->kmaps);
 	dsos__exit(&machine->dsos);
 	machine__exit_vdso(machine);
 	zfree(&machine->root_dir);
@@ -742,7 +746,7 @@ static int machine__process_ksymbol_register(struct machine *machine,
 					     struct perf_sample *sample __maybe_unused)
 {
 	struct symbol *sym;
-	struct map *map = maps__find(&machine->kmaps, event->ksymbol.addr);
+	struct map *map = maps__find(machine__kernel_maps(machine), event->ksymbol.addr);
 
 	if (!map) {
 		struct dso *dso = dso__new(event->ksymbol.name);
@@ -765,7 +769,7 @@ static int machine__process_ksymbol_register(struct machine *machine,
 
 		map->start = event->ksymbol.addr;
 		map->end = map->start + event->ksymbol.len;
-		maps__insert(&machine->kmaps, map);
+		maps__insert(machine__kernel_maps(machine), map);
 		dso__set_loaded(dso);
 
 		if (is_bpf_image(event->ksymbol.name)) {
@@ -790,12 +794,12 @@ static int machine__process_ksymbol_unregister(struct machine *machine,
 	struct symbol *sym;
 	struct map *map;
 
-	map = maps__find(&machine->kmaps, event->ksymbol.addr);
+	map = maps__find(machine__kernel_maps(machine), event->ksymbol.addr);
 	if (!map)
 		return 0;
 
 	if (map != machine->vmlinux_map)
-		maps__remove(&machine->kmaps, map);
+		maps__remove(machine__kernel_maps(machine), map);
 	else {
 		sym = dso__find_symbol(map->dso, map->map_ip(map, map->start));
 		if (sym)
@@ -821,7 +825,7 @@ int machine__process_ksymbol(struct machine *machine __maybe_unused,
 int machine__process_text_poke(struct machine *machine, union perf_event *event,
 			       struct perf_sample *sample __maybe_unused)
 {
-	struct map *map = maps__find(&machine->kmaps, event->text_poke.addr);
+	struct map *map = maps__find(machine__kernel_maps(machine), event->text_poke.addr);
 	u8 cpumode = event->header.misc & PERF_RECORD_MISC_CPUMODE_MASK;
 
 	if (dump_trace)
@@ -877,7 +881,7 @@ static struct map *machine__addnew_module_map(struct machine *machine, u64 start
 	if (map == NULL)
 		goto out;
 
-	maps__insert(&machine->kmaps, map);
+	maps__insert(machine__kernel_maps(machine), map);
 
 	/* Put the map here because maps__insert alread got it */
 	map__put(map);
@@ -1063,7 +1067,7 @@ int machine__create_extra_kernel_map(struct machine *machine,
 
 	strlcpy(kmap->name, xm->name, KMAP_NAME_LEN);
 
-	maps__insert(&machine->kmaps, map);
+	maps__insert(machine__kernel_maps(machine), map);
 
 	pr_debug2("Added extra kernel map %s %" PRIx64 "-%" PRIx64 "\n",
 		  kmap->name, map->start, map->end);
@@ -1108,7 +1112,7 @@ static u64 find_entry_trampoline(struct dso *dso)
 int machine__map_x86_64_entry_trampolines(struct machine *machine,
 					  struct dso *kernel)
 {
-	struct maps *kmaps = &machine->kmaps;
+	struct maps *kmaps = machine__kernel_maps(machine);
 	int nr_cpus_avail, cpu;
 	bool found = false;
 	struct map *map;
@@ -1178,7 +1182,7 @@ __machine__create_kernel_maps(struct machine *machine, struct dso *kernel)
 		return -1;
 
 	machine->vmlinux_map->map_ip = machine->vmlinux_map->unmap_ip = identity__map_ip;
-	maps__insert(&machine->kmaps, machine->vmlinux_map);
+	maps__insert(machine__kernel_maps(machine), machine->vmlinux_map);
 	return 0;
 }
 
@@ -1191,7 +1195,7 @@ void machine__destroy_kernel_maps(struct machine *machine)
 		return;
 
 	kmap = map__kmap(map);
-	maps__remove(&machine->kmaps, map);
+	maps__remove(machine__kernel_maps(machine), map);
 	if (kmap && kmap->ref_reloc_sym) {
 		zfree((char **)&kmap->ref_reloc_sym->name);
 		zfree(&kmap->ref_reloc_sym);
@@ -1286,7 +1290,7 @@ int machine__load_kallsyms(struct machine *machine, const char *filename)
 		 * kernel, with modules between them, fixup the end of all
 		 * sections.
 		 */
-		maps__fixup_end(&machine->kmaps);
+		maps__fixup_end(machine__kernel_maps(machine));
 	}
 
 	return ret;
@@ -1434,7 +1438,7 @@ static int machine__set_modules_path(struct machine *machine)
 		 machine->root_dir, version);
 	free(version);
 
-	return maps__set_modules_path_dir(&machine->kmaps, modules_path, 0);
+	return maps__set_modules_path_dir(machine__kernel_maps(machine), modules_path, 0);
 }
 int __weak arch__fix_module_text_start(u64 *start __maybe_unused,
 				u64 *size __maybe_unused,
@@ -1507,11 +1511,11 @@ static void machine__update_kernel_mmap(struct machine *machine,
 	struct map *map = machine__kernel_map(machine);
 
 	map__get(map);
-	maps__remove(&machine->kmaps, map);
+	maps__remove(machine__kernel_maps(machine), map);
 
 	machine__set_kernel_mmap(machine, start, end);
 
-	maps__insert(&machine->kmaps, map);
+	maps__insert(machine__kernel_maps(machine), map);
 	map__put(map);
 }
 
