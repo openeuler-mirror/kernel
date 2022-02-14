@@ -1028,7 +1028,7 @@ static gpa_t FNAME(gva_to_gpa)(struct kvm_vcpu *vcpu, struct kvm_mmu *mmu,
  */
 static int FNAME(sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp)
 {
-	union kvm_mmu_page_role mmu_role = vcpu->arch.mmu->mmu_role.base;
+	union kvm_mmu_page_role root_role = vcpu->arch.mmu->root_role;
 	int i;
 	bool host_writable;
 	gpa_t first_pte_gpa;
@@ -1056,7 +1056,7 @@ static int FNAME(sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp)
 	 * reserved bits checks will be wrong, etc...
 	 */
 	if (WARN_ON_ONCE(sp->role.direct ||
-			 (sp->role.word ^ mmu_role.word) & ~sync_role_ign.word))
+			 (sp->role.word ^ root_role.word) & ~sync_role_ign.word))
 		return -1;
 
 	first_pte_gpa = FNAME(get_level1_sp_gpa)(sp);

@@ -43,7 +43,7 @@
 #endif
 
 # define kvm_arch_mmu_pointer(vcpu) (vcpu->arch.mmu)
-# define kvm_mmu_ad_disabled(mmu) (mmu->mmu_role.base.ad_disabled)
+# define kvm_mmu_ad_disabled(mmu) (mmu->root_role.ad_disabled)
 #endif /*CONFIG_X86_64*/
 
 #ifdef CONFIG_ARM64
