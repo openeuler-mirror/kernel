@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2202.1.0
+%global hulkrelease 2202.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0135
+Release: %{hulkrelease}.0136
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,79 @@ fi
 %endif
 
 %changelog
+
+* Tue Feb 15 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2202.3.0.0136
+- fs/filesystems.c: downgrade user-reachable WARN_ONCE() to pr_warn_once()
+- drm/i915: Flush TLBs before releasing backing store
+- moxart: fix potential use-after-free on remove path
+- memstick: rtsx_usb_ms: fix UAF
+- ext4: fix file system corrupted when rmdir non empty directory with IO error
+- bpf, doc: Remove references to warning message when using bpf_trace_printk()
+- bpf: Remove inline from bpf_do_trace_printk
+- bpf: Use dedicated bpf_trace_printk event instead of trace_printk()
+- net: cipso: fix warnings in netlbl_cipsov4_add_std
+- xsk: Use struct_size() helper
+- mm/page_alloc: fix counting of free pages after take off from buddy
+- mm,hwpoison: drop unneeded pcplist draining
+- mm,hwpoison: take free pages off the buddy freelists
+- mm,hwpoison: drain pcplists before bailing out for non-buddy zero-refcount page
+- mm,hwpoison: Try to narrow window race for free pages
+- mm,hwpoison: introduce MF_MSG_UNSPLIT_THP
+- mm,hwpoison: return 0 if the page is already poisoned in soft-offline
+- mm,hwpoison: refactor soft_offline_huge_page and __soft_offline_page
+- mm,hwpoison: rework soft offline for in-use pages
+- mm,hwpoison: rework soft offline for free pages
+- mm,hwpoison: unify THP handling for hard and soft offline
+- mm,hwpoison: kill put_hwpoison_page
+- mm,hwpoison: refactor madvise_inject_error
+- mm,hwpoison-inject: don't pin for hwpoison_filter
+- mm, hwpoison: remove recalculating hpage
+- mm,hwpoison: cleanup unused PageHuge() check
+- scsi: Revert "target: iscsi: Wait for all commands to finish before freeing a session"
+- uce: get_user scenario support kernel recovery
+- uce: copy_from_user scenario support kernel recovery
+- mm: Modify sharepool sp_mmap() page_offset
+- support multiple node for getting phys interface
+- share_pool: Accept device_id in k2u flags
+- share_pool: Clear the usage of node_id and device_id
+- share_pool: Make multi-device support extendable
+- share_pool: Fix flags conflict
+- config: enable MEMORY_RELIABLE by default
+- mm: add sysctl to clear free list pages
+- workqueue: Provide queue_work_node to queue work near a given NUMA node
+- mm:vmscan: add the missing check of page_cache_over_limit
+- sysctl: add proc interface to set page cache limit
+- mm/vmscan: dont do shrink_slab in reclaim page cache
+- mm/vmscan: dont reclaim anon page when shrink page cache
+- filemap: dont shrink_page_cache in add_to_page_cache
+- mm/vmscan: fix unexpected shrinking page cache with vm_cache_reclaim_enable disable
+- mm/vmscan: fix frequent call of shrink_page_cache_work
+- proc/meminfo: add "FileCache" item in /proc/meminfo
+- mm: add page cache fallback statistic
+- mm: add cmdline for the reliable memory usage of page cache
+- mm: make page cache use reliable memory by default
+- shmem: Show reliable shmem info
+- shmem: Introduce shmem reliable
+- mm: Introduce fallback mechanism for memory reliable
+- mm: Add reliable memory use limit for user tasks
+- mm: thp: Add memory reliable support for hugepaged collapse
+- proc: Count reliable memory usage of reliable tasks
+- mm: Add reliable_nr_page for accounting reliable memory
+- mm: Introduce reliable flag for user task
+- meminfo: Show reliable memory info
+- mm: Introduce memory reliable
+- efi: Find mirrored memory ranges for arm64
+- efi: Make efi_find_mirror() public
+- arm64: efi: Add fake memory support
+- efi: Make efi_print_memmap() public
+- mm/memory_hotplug: allow to specify a default online_type
+- mm/memory_hotplug: convert memhp_auto_online to store an online_type
+- hv_balloon: don't check for memhp_auto_online manually
+- drivers/base/memory: store mapping between MMOP_* and string in an array
+- drivers/base/memory: map MMOP_OFFLINE to 0
+- drivers/base/memory: rename MMOP_ONLINE_KEEP to MMOP_ONLINE
+- drivers/base/memory.c: Use DEVICE_ATTR_RO and friends
+- mm/memory_hotplug: drop "online" parameter from add_memory_resource()
 
 * Tue Feb 08 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2202.1.0.0135
 - config: enable CONFIG_MEMCG_MEMFS_INFO by default
