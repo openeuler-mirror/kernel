@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       55
+%global devel_release       56
 %global maintenance_release .0.0
-%global pkg_release         .28
+%global pkg_release         .29
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -861,6 +861,17 @@ fi
 %endif
 
 %changelog
+* Thu Feb 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-56.0.0.29
+- configs: enable CONFIG_INTEGRITY_PLATFORM_KEYRING and CONFIG_LOAD_UEFI_KEYS
+- tipc: improve size validations for received domain records
+- cgroup-v1: Require capabilities to set release_agent
+- NFSv4: nfs_atomic_open() can race when looking up a non-regular file
+- NFSv4: Handle case where the lookup of a directory fails
+- cgroup/cpuset: Fix a race between cpuset_attach() and cpu hotplug
+- block: update io_ticks when io hang
+- livepatch: Fix missing unlock on error in klp_enable_patch()
+- livepatch: Fix kobject refcount bug on klp_init_patch_early failure path
+
 * Fri Feb 11 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-55.0.0.28
 - kabi: cleanup config entries of kabi
 - kabi: fix build error when CONFIG_KABI_RESERVE=n
