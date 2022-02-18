@@ -114,13 +114,6 @@ config KVM_AMD_SEV
 	help
 	Provides support for launching Encrypted VMs on AMD processors.
 
-config KVM_MMU_AUDIT
-	bool "Audit KVM MMU"
-	depends on KVM && TRACEPOINTS
-	help
-	 This option adds a R/W kVM module parameter 'mmu_audit', which allows
-	 auditing of KVM MMU events at runtime.
-
 config KVM_EXTERNAL_WRITE_TRACKING
 	bool
 
