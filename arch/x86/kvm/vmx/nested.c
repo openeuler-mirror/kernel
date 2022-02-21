@@ -313,7 +313,7 @@ static void free_nested(struct kvm_vcpu *vcpu)
 	kvm_vcpu_unmap(vcpu, &vmx->nested.pi_desc_map, true);
 	vmx->nested.pi_desc = NULL;
 
-	kvm_mmu_free_roots(vcpu, &vcpu->arch.guest_mmu, KVM_MMU_ROOTS_ALL);
+	kvm_mmu_free_roots(vcpu->kvm, &vcpu->arch.guest_mmu, KVM_MMU_ROOTS_ALL);
 
 	nested_release_evmcs(vcpu);
 
@@ -4990,7 +4990,7 @@ static inline void nested_release_vmcs12(struct kvm_vcpu *vcpu)
 				  vmx->nested.current_vmptr >> PAGE_SHIFT,
 				  vmx->nested.cached_vmcs12, 0, VMCS12_SIZE);
 
-	kvm_mmu_free_roots(vcpu, &vcpu->arch.guest_mmu, KVM_MMU_ROOTS_ALL);
+	kvm_mmu_free_roots(vcpu->kvm, &vcpu->arch.guest_mmu, KVM_MMU_ROOTS_ALL);
 
 	vmx->nested.current_vmptr = -1ull;
 }
@@ -5444,7 +5444,7 @@ static int handle_invept(struct kvm_vcpu *vcpu)
 	}
 
 	if (roots_to_free)
-		kvm_mmu_free_roots(vcpu, mmu, roots_to_free);
+		kvm_mmu_free_roots(vcpu->kvm, mmu, roots_to_free);
 
 	return nested_vmx_succeed(vcpu);
 }
@@ -5532,7 +5532,7 @@ static int handle_invvpid(struct kvm_vcpu *vcpu)
 	 * TODO: sync only the affected SPTEs for INVDIVIDUAL_ADDR.
 	 */
 	if (!enable_ept)
-		kvm_mmu_free_guest_mode_roots(vcpu, &vcpu->arch.root_mmu);
+		kvm_mmu_free_guest_mode_roots(vcpu->kvm, &vcpu->arch.root_mmu);
 
 	return nested_vmx_succeed(vcpu);
 }

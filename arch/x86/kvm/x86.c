@@ -1184,7 +1184,7 @@ static void kvm_invalidate_pcid(struct kvm_vcpu *vcpu, unsigned long pcid)
 		if (kvm_get_pcid(vcpu, mmu->prev_roots[i].pgd) == pcid)
 			roots_to_free |= KVM_MMU_ROOT_PREVIOUS(i);
 
-	kvm_mmu_free_roots(vcpu, mmu, roots_to_free);
+	kvm_mmu_free_roots(vcpu->kvm, mmu, roots_to_free);
 }
 
 int kvm_set_cr3(struct kvm_vcpu *vcpu, unsigned long cr3)
