@@ -84,6 +84,8 @@ static void intf_mem_outb(const struct si_sm_io *io, unsigned int offset,
 static unsigned char intf_mem_inw(const struct si_sm_io *io,
 				  unsigned int offset)
 {
+	ipmi_phytium_workaround();
+
 	return (readw((io->addr)+(offset * io->regspacing)) >> io->regshift)
 		& 0xff;
 }
