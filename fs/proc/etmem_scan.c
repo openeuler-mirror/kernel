@@ -561,7 +561,7 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 	}
 
 	mmu = kvm_arch_mmu_pointer(vcpu);
-	if (!VALID_PAGE(mmu->root_hpa)) {
+	if (!VALID_PAGE(mmu->root.hpa)) {
 		pic->gpa_to_hva = 0;
 		set_restart_gpa(TASK_SIZE, "NO-HPA");
 #ifdef KVM_HAVE_MMU_RWLOCK
@@ -572,7 +572,7 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 		return -EINVAL;
 	}
 
-	ept_root = __va(mmu->root_hpa);
+	ept_root = __va(mmu->root.hpa);
 
 	/* Walk start at p4d when vm has 4 level table pages */
 	if (mmu->shadow_root_level != 4)
