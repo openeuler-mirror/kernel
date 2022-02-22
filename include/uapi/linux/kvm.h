@@ -1415,6 +1415,11 @@ struct kvm_s390_ucas_mapping {
 #define KVM_SET_PMU_EVENT_FILTER  _IOW(KVMIO,  0xb2, struct kvm_pmu_event_filter)
 #define KVM_PPC_SVM_OFF		  _IO(KVMIO,  0xb3)
 
+/* ioctl for SW vcpu init */
+#define KVM_SW64_VCPU_INIT	  _IO(KVMIO,  0xba)
+#define KVM_SW64_GET_VCB          _IO(KVMIO,  0xbc)
+#define KVM_SW64_SET_VCB          _IO(KVMIO,  0xbd)
+
 /* ioctl for vm fd */
 #define KVM_CREATE_DEVICE	  _IOWR(KVMIO,  0xe0, struct kvm_create_device)
 
