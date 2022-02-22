@@ -553,6 +553,15 @@ config I2C_DESIGNWARE_PLATFORM
 	  This driver can also be built as a module.  If so, the module
 	  will be called i2c-designware-platform.
 
+config I2C_SUNWAY_SW6
+	tristate "SUNWAY SW6 I2C Controller "
+	depends on SW64_CHIP3
+	default y if PLATFORM_XUELANG
+	help
+	  If you say yes to this option, support will be included for the
+	  Synopsys DesignWare I2C adapter in MCU of CHIP3. Only master mode
+	  is supported.
+
 config I2C_DESIGNWARE_BAYTRAIL
 	bool "Intel Baytrail I2C semaphore support"
 	depends on ACPI
