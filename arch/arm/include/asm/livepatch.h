@@ -36,4 +36,21 @@ void arch_klp_unpatch_func(struct klp_func *func);
 int klp_check_calltrace(struct klp_patch *patch, int enable);
 #endif
 
+
+#if defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY)
+
+#ifdef CONFIG_ARM_MODULE_PLTS
+#define LJMP_INSN_SIZE	3
+#endif
+
+struct arch_klp_data {
+#ifdef CONFIG_ARM_MODULE_PLTS
+	u32 old_insns[LJMP_INSN_SIZE];
+#else
+	u32 old_insn;
+#endif
+};
+
+#endif
+
 #endif /* _ASM_ARM_LIVEPATCH_H */

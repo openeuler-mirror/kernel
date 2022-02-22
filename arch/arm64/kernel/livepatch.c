@@ -34,8 +34,6 @@
 #include <linux/sched/debug.h>
 #include <linux/kallsyms.h>
 
-#define LJMP_INSN_SIZE 4
-
 #ifdef CONFIG_ARM64_MODULE_PLTS
 #define MAX_SIZE_TO_CHECK (LJMP_INSN_SIZE * sizeof(u32))
 #define CHECK_JUMP_RANGE LJMP_INSN_SIZE
@@ -57,11 +55,7 @@ struct klp_func_node {
 	struct list_head node;
 	struct list_head func_stack;
 	void *old_func;
-#ifdef CONFIG_ARM64_MODULE_PLTS
-	u32 old_insns[LJMP_INSN_SIZE];
-#else
-	u32 old_insn;
-#endif
+	struct arch_klp_data arch_data;
 };
 
 static LIST_HEAD(klp_func_list);
@@ -383,13 +377,13 @@ int arch_klp_patch_func(struct klp_func *func)
 #ifdef CONFIG_ARM64_MODULE_PLTS
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
 			ret = aarch64_insn_read(((u32 *)func->old_func) + i,
-					&func_node->old_insns[i]);
+					&func_node->arch_data.old_insns[i]);
 			if (ret)
 				break;
 		}
 #else
 		ret = aarch64_insn_read((void *)func->old_func,
-					&func_node->old_insn);
+					&func_node->arch_data.old_insn);
 #endif
 		if (ret) {
 			return -EPERM;
@@ -455,9 +449,9 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	if (list_is_singular(&func_node->func_stack)) {
 #ifdef CONFIG_ARM64_MODULE_PLTS
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
-			insns[i] = func_node->old_insns[i];
+			insns[i] = func_node->arch_data.old_insns[i];
 #else
-		insn = func_node->old_insn;
+		insn = func_node->arch_data.old_insn;
 #endif
 		list_del_rcu(&func->stack_node);
 		list_del_rcu(&func_node->node);

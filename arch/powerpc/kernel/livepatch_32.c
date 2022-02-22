@@ -31,7 +31,6 @@
 
 #if defined (CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY) || \
     defined (CONFIG_LIVEPATCH_WO_FTRACE)
-#define LJMP_INSN_SIZE 4
 #define MAX_SIZE_TO_CHECK (LJMP_INSN_SIZE * sizeof(u32))
 #define CHECK_JUMP_RANGE LJMP_INSN_SIZE
 
@@ -39,7 +38,7 @@ struct klp_func_node {
 	struct list_head node;
 	struct list_head func_stack;
 	void *old_func;
-	u32 old_insns[LJMP_INSN_SIZE];
+	struct arch_klp_data arch_data;
 };
 
 static LIST_HEAD(klp_func_list);
@@ -419,7 +418,7 @@ int arch_klp_patch_func(struct klp_func *func)
 		INIT_LIST_HEAD(&func_node->func_stack);
 		func_node->old_func = func->old_func;
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			ret = copy_from_kernel_nofault(&func_node->old_insns[i],
+			ret = copy_from_kernel_nofault(&func_node->arch_data.old_insns[i],
 				((u32 *)func->old_func) + i, LJMP_INSN_SIZE);
 			if (ret) {
 				return -EPERM;
@@ -482,7 +481,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
-			insns[i] = func_node->old_insns[i];
+			insns[i] = func_node->arch_data.old_insns[i];
 
 		list_del_rcu(&func->stack_node);
 		list_del_rcu(&func_node->node);

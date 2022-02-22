@@ -37,7 +37,7 @@ struct klp_func;
 int arch_klp_patch_func(struct klp_func *func);
 void arch_klp_unpatch_func(struct klp_func *func);
 
-#ifdef CONFIG_PPC64
+#if defined(CONFIG_PPC64)
 /*
  * use the livepatch stub to jump to the trampoline.
  * It is similar to stub, but does not need to save
@@ -81,6 +81,23 @@ int livepatch_create_branch(unsigned long pc,
 			    unsigned long trampoline,
 			    unsigned long addr,
 			    struct module *me);
+
+struct arch_klp_data {
+	u32 old_insns[LJMP_INSN_SIZE];
+#ifdef PPC64_ELF_ABI_v1
+	struct ppc64_klp_btramp_entry trampoline;
+#else
+	unsigned long trampoline;
+#endif /* PPC64_ELF_ABI_v1 */
+};
+
+#elif defined(CONFIG_PPC32)
+
+#define LJMP_INSN_SIZE	4
+struct arch_klp_data {
+	u32 old_insns[LJMP_INSN_SIZE];
+};
+
 #endif	/* CONFIG_PPC64 */
 
 #endif /* CONFIG_LIVEPATCH_FTRACE */

@@ -30,4 +30,15 @@ void arch_klp_unpatch_func(struct klp_func *func);
 int klp_check_calltrace(struct klp_patch *patch, int enable);
 #endif
 
+
+#if defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY) || \
+    defined(CONFIG_LIVEPATCH_WO_FTRACE)
+
+#define JMP_E9_INSN_SIZE 5
+struct arch_klp_data {
+	unsigned char old_code[JMP_E9_INSN_SIZE];
+};
+
+#endif
+
 #endif /* _ASM_X86_LIVEPATCH_H */

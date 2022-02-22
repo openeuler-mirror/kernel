@@ -43,12 +43,7 @@ struct klp_func_node {
 	struct list_head node;
 	struct list_head func_stack;
 	void *old_func;
-	u32 old_insns[LJMP_INSN_SIZE];
-#ifdef PPC64_ELF_ABI_v1
-	struct ppc64_klp_btramp_entry trampoline;
-#else
-	unsigned long trampoline;
-#endif
+	struct arch_klp_data arch_data;
 };
 
 static LIST_HEAD(klp_func_list);
@@ -265,10 +260,10 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 #endif
 
 				if (func_node == NULL ||
-				    func_node->trampoline.magic != BRANCH_TRAMPOLINE_MAGIC)
+				    func_node->arch_data.trampoline.magic != BRANCH_TRAMPOLINE_MAGIC)
 					continue;
 
-				func_addr = (unsigned long)&func_node->trampoline;
+				func_addr = (unsigned long)&func_node->arch_data.trampoline;
 				func_size = sizeof(struct ppc64_klp_btramp_entry);
 				ret = add_func_to_list(check_funcs, &pcheck, func_addr,
 						func_size, "trampoline", 0);
@@ -468,7 +463,7 @@ int arch_klp_patch_func(struct klp_func *func)
 		INIT_LIST_HEAD(&func_node->func_stack);
 		func_node->old_func = func->old_func;
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			ret = copy_from_kernel_nofault(&func_node->old_insns[i],
+			ret = copy_from_kernel_nofault(&func_node->arch_data.old_insns[i],
 				((u32 *)func->old_func) + i, 4);
 			if (ret) {
 				return -EPERM;
@@ -482,7 +477,7 @@ int arch_klp_patch_func(struct klp_func *func)
 	pc = (unsigned long)func->old_func;
 	new_addr = (unsigned long)func->new_func;
 
-	ret = livepatch_create_branch(pc, (unsigned long)&func_node->trampoline,
+	ret = livepatch_create_branch(pc, (unsigned long)&func_node->arch_data.trampoline,
 				      new_addr, func->old_mod);
 	if (ret)
 		goto ERR_OUT;
@@ -518,7 +513,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
-			insns[i] = func_node->old_insns[i];
+			insns[i] = func_node->arch_data.old_insns[i];
 
 		list_del_rcu(&func->stack_node);
 		list_del_rcu(&func_node->node);
@@ -534,7 +529,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 					struct klp_func, stack_node);
 		new_addr = (unsigned long)next_func->new_func;
 
-		livepatch_create_branch(pc, (unsigned long)&func_node->trampoline,
+		livepatch_create_branch(pc, (unsigned long)&func_node->arch_data.trampoline,
 			new_addr, func->old_mod);
 
 		pr_debug("[%s %d] old = 0x%lx/0x%lx/%pS, new = 0x%lx/0x%lx/%pS\n",

@@ -48,4 +48,19 @@ int klp_check_calltrace(struct klp_patch *patch, int enable);
 #error Live patching support is disabled; check CONFIG_LIVEPATCH
 #endif
 
+
+#if defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY)
+
+#define LJMP_INSN_SIZE 4
+
+struct arch_klp_data {
+#ifdef CONFIG_ARM64_MODULE_PLTS
+	u32 old_insns[LJMP_INSN_SIZE];
+#else
+	u32 old_insn;
+#endif
+};
+
+#endif
+
 #endif /* _ASM_ARM64_LIVEPATCH_H */
