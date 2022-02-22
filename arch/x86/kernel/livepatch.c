@@ -367,14 +367,6 @@ static void *klp_jmp_code(unsigned long ip, unsigned long addr)
 	return text_gen_insn(JMP32_INSN_OPCODE, (void *)ip, (void *)addr);
 }
 
-static void *klp_old_code(unsigned char *code)
-{
-	static unsigned char old_code[JMP_E9_INSN_SIZE];
-
-	strncpy(old_code, code, JMP_E9_INSN_SIZE);
-	return old_code;
-}
-
 void arch_klp_code_modify_prepare(void)
 	__acquires(&text_mutex)
 {
@@ -422,7 +414,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	ip = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
 		list_del_rcu(&func->stack_node);
-		new = klp_old_code(func_node->arch_data.old_code);
+		new = func_node->arch_data.old_code;
 	} else {
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
