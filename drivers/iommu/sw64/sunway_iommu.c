@@ -1044,7 +1044,7 @@ static void *sunway_alloc_coherent(struct device *dev,
 	gfp &= ~GFP_DMA;
 
 try_again:
-	page = alloc_pages_node(hose->node, gfp | __GFP_ZERO, get_order(size));
+	page = alloc_pages_node(dev_to_node(dev), gfp | __GFP_ZERO, get_order(size));
 	cpu_addr = page_address(page);
 	if (!cpu_addr) {
 		pr_info
