@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# SW64 IOMMU SUPPORT
+config SUNWAY_IOMMU
+        bool "Sunway IOMMU Support"
+        select IOMMU_API
+        select IOMMU_IOVA
+        depends on SW64 && PCI
+        help
+          Support for IOMMU on SW64 platform.
