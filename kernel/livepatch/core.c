@@ -1248,6 +1248,30 @@ int __weak klp_check_calltrace(struct klp_patch *patch, int enable)
 	return 0;
 }
 
+static LIST_HEAD(klp_func_list);
+
+struct klp_func_node *klp_find_func_node(const void *old_func)
+{
+	struct klp_func_node *func_node;
+
+	list_for_each_entry(func_node, &klp_func_list, node) {
+		if (func_node->old_func == old_func)
+			return func_node;
+	}
+
+	return NULL;
+}
+
+void klp_add_func_node(struct klp_func_node *func_node)
+{
+	list_add_rcu(&func_node->node, &klp_func_list);
+}
+
+void klp_del_func_node(struct klp_func_node *func_node)
+{
+	list_del_rcu(&func_node->node);
+}
+
 /*
  * This function is called from stop_machine() context.
  */

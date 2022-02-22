@@ -223,6 +223,17 @@ int klp_enable_patch(struct klp_patch *);
 #elif defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY)
 int klp_register_patch(struct klp_patch *patch);
 int klp_unregister_patch(struct klp_patch *patch);
+
+struct klp_func_node {
+	struct list_head node;
+	struct list_head func_stack;
+	void *old_func;
+	struct arch_klp_data arch_data;
+};
+
+struct klp_func_node *klp_find_func_node(const void *old_func);
+void klp_add_func_node(struct klp_func_node *func_node);
+void klp_del_func_node(struct klp_func_node *func_node);
 #endif
 
 int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,

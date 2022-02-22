@@ -46,27 +46,6 @@
 #define CHECK_JUMP_RANGE 1
 #endif
 
-struct klp_func_node {
-	struct list_head node;
-	struct list_head func_stack;
-	void *old_func;
-	struct arch_klp_data arch_data;
-};
-
-static LIST_HEAD(klp_func_list);
-
-static struct klp_func_node *klp_find_func_node(void *old_func)
-{
-	struct klp_func_node *func_node;
-
-	list_for_each_entry(func_node, &klp_func_list, node) {
-		if (func_node->old_func == old_func)
-			return func_node;
-	}
-
-	return NULL;
-}
-
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 /*
  * The instruction set on arm is A32.
@@ -406,7 +385,7 @@ int arch_klp_patch_func(struct klp_func *func)
 		if (ret) {
 			return -EPERM;
 		}
-		list_add_rcu(&func_node->node, &klp_func_list);
+		klp_add_func_node(func_node);
 	}
 
 	list_add_rcu(&func->stack_node, &func_node->func_stack);
@@ -464,7 +443,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 		__patch_text((void *)pc, insn);
 #endif
 		list_del_rcu(&func->stack_node);
-		list_del_rcu(&func_node->node);
+		klp_del_func_node(func_node);
 	} else {
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
