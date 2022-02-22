@@ -38,6 +38,12 @@
 #define R_AARCH64_ABS64	257
 #endif
 
+#ifndef EM_SW64
+#define EM_SW64			0x9916
+#define R_SW_64_NONE            0
+#define R_SW_64_REFQUAD         2       /* Direct 64 bit */
+#endif
+
 #define R_ARM_PC24		1
 #define R_ARM_THM_CALL		10
 #define R_ARM_CALL		28
@@ -314,6 +320,15 @@ static int make_nop_arm64(void *map, size_t const offset)
 	return 0;
 }
 
+static unsigned char ideal_nop4_sw_64[4] = {0x5f, 0x07, 0xff, 0x43};
+static int make_nop_sw_64(void *map, size_t const offset)
+{
+	/* Convert to nop */
+	ulseek(offset, SEEK_SET);
+	uwrite(ideal_nop, 4);
+	return 0;
+}
+
 static int write_file(const char *fname)
 {
 	char tmp_file[strlen(fname) + 4];
@@ -556,6 +571,12 @@ static int do_file(char const *const fname)
 		ideal_nop = ideal_nop4_arm64;
 		is_fake_mcount64 = arm64_is_fake_mcount;
 		break;
+	case EM_SW64:
+		reltype = R_SW_64_REFQUAD;
+		make_nop = make_nop_sw_64;
+		rel_type_nop = R_SW_64_NONE;
+		ideal_nop = ideal_nop4_sw_64;
+		break;
 	case EM_IA_64:	reltype = R_IA64_IMM64; break;
 	case EM_MIPS:	/* reltype: e_class    */ break;
 	case EM_PPC:	reltype = R_PPC_ADDR32; break;
@@ -610,6 +631,9 @@ static int do_file(char const *const fname)
 			Elf64_r_info = MIPS64_r_info;
 			is_fake_mcount64 = MIPS64_is_fake_mcount;
 		}
+		if (w2(ghdr->e_machine) == EM_SW64)
+			is_fake_mcount64 = MIPS64_is_fake_mcount;
+
 		if (do64(ghdr, fname, reltype) < 0)
 			goto out;
 		break;
