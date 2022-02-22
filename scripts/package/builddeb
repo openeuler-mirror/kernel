@@ -126,6 +126,9 @@ um)
 parisc|mips|powerpc)
 	installed_image_path="boot/vmlinux-$version"
 	;;
+sw_64)
+	installed_image_path="boot/vmlinux.bin-$version"
+	;;
 *)
 	installed_image_path="boot/vmlinuz-$version"
 esac
