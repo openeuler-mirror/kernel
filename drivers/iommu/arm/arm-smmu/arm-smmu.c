@@ -43,6 +43,9 @@
 
 #include "arm-smmu.h"
 
+#ifdef CONFIG_ARCH_PHYTIUM
+#include <asm/phytium_machine_types.h>
+#endif
 /*
  * Apparently, some Qualcomm arm64 platforms which appear to expose their SMMU
  * global register space are still, in fact, using a hypervisor to mediate it
@@ -54,6 +57,7 @@
 
 #define MSI_IOVA_BASE			0x8000000
 #define MSI_IOVA_LENGTH			0x100000
+#define SMR_MASK_SHIFT                  16
 
 static int force_stage;
 module_param(force_stage, int, S_IRUGO);
@@ -1372,6 +1376,20 @@ static struct iommu_device *arm_smmu_probe_device(struct device *dev)
 		return ERR_PTR(-ENODEV);
 	}
 
+#ifdef CONFIG_ARCH_PHYTIUM
+	/* ft2000+ */
+	if (typeof_ft2000plus()) {
+		int num = fwspec->num_ids;
+
+		for (i = 0; i < num; i++) {
+#define FWID_READ(id) (((u16)(id) >> 3) | (((id) >> SMR_MASK_SHIFT | 0x7000) << SMR_MASK_SHIFT))
+			u32 fwid = FWID_READ(fwspec->ids[i]);
+
+			iommu_fwspec_add_ids(dev, &fwid, 1);
+		}
+	}
+#endif
+
 	ret = -EINVAL;
 	for (i = 0; i < fwspec->num_ids; i++) {
 		u16 sid = FIELD_GET(ARM_SMMU_SMR_ID, fwspec->ids[i]);
@@ -1460,6 +1478,12 @@ static struct iommu_group *arm_smmu_device_group(struct device *dev)
 		if (group && smmu->s2crs[idx].group &&
 		    group != smmu->s2crs[idx].group)
 			return ERR_PTR(-EINVAL);
+#ifdef CONFIG_ARCH_PHYTIUM
+		if (typeof_s2500())
+			break;
+		if (typeof_ft2000plus() && !smmu->s2crs[idx].group)
+			continue;
+#endif
 
 		group = smmu->s2crs[idx].group;
 	}
@@ -1585,14 +1609,10 @@ static void arm_smmu_get_resv_regions(struct device *dev,
 	iommu_dma_get_resv_regions(dev, head);
 }
 
-#ifdef CONFIG_ARM64
-#include <asm/cputype.h>
+#ifdef CONFIG_ARCH_PHYTIUM
 static bool cpu_using_identity_iommu_domain(struct device *dev)
 {
-	u32 midr = read_cpuid_id();
-
-	if (((midr & MIDR_CPU_MODEL_MASK) == MIDR_PHYTIUM_FT2000PLUS)
-		|| ((midr & MIDR_CPU_MODEL_MASK) == MIDR_PHYTIUM_FT2500))
+	if (typeof_ft2000plus() || typeof_s2500())
 		return true;
 
 	return false;
