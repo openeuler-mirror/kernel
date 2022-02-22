@@ -277,7 +277,7 @@ static unsigned char *klp_old_code(unsigned char *code)
 {
 	static union klp_code_union old_code;
 
-	strncpy(old_code.code, code, JMP_E9_INSN_SIZE);
+	memcpy(old_code.code, code, JMP_E9_INSN_SIZE);
 	return old_code.code;
 }
 
