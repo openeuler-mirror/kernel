@@ -579,32 +579,21 @@ int arch_klp_init_func(struct klp_object *obj, struct klp_func *func)
 	return 0;
 }
 
-void arch_klp_mem_prepare(struct klp_patch *patch)
+/*
+ * Trampoline would be stored in the allocated memory and it need
+ * executable permission, so ppc64 use 'module_alloc' but not 'kmalloc'.
+ */
+void *arch_klp_mem_alloc(size_t size)
 {
-	struct klp_object *obj;
-	struct klp_func *func;
+	void *mem = module_alloc(size);
 
-	klp_for_each_object(patch, obj) {
-		klp_for_each_func(obj, func) {
-			func->func_node = module_alloc(sizeof(struct klp_func_node));
-		}
-	}
+	if (mem)
+		memset(mem, 0, size);  /* initially clear the memory */
+	return mem;
 }
 
-void arch_klp_mem_recycle(struct klp_patch *patch)
+void arch_klp_mem_free(void *mem)
 {
-	struct klp_object *obj;
-	struct klp_func *func;
-	struct klp_func_node *func_node;
-
-	klp_for_each_object(patch, obj) {
-		klp_for_each_func(obj, func) {
-			func_node = func->func_node;
-			if (func_node && list_is_singular(&func_node->func_stack)) {
-				module_memfree(func_node);
-				func->func_node = NULL;
-			}
-		}
-	}
+	module_memfree(mem);
 }
 #endif

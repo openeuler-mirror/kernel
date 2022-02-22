@@ -498,33 +498,3 @@ int arch_klp_func_can_patch(struct klp_func *func)
 	return 0;
 }
 #endif
-
-void arch_klp_mem_prepare(struct klp_patch *patch)
-{
-	struct klp_object *obj;
-	struct klp_func *func;
-
-	klp_for_each_object(patch, obj) {
-		klp_for_each_func(obj, func) {
-			func->func_node = kzalloc(sizeof(struct klp_func_node),
-					GFP_ATOMIC);
-		}
-	}
-}
-
-void arch_klp_mem_recycle(struct klp_patch *patch)
-{
-	struct klp_object *obj;
-	struct klp_func *func;
-	struct klp_func_node *func_node;
-
-	klp_for_each_object(patch, obj) {
-		klp_for_each_func(obj, func) {
-			func_node = func->func_node;
-			if (func_node && list_is_singular(&func_node->func_stack)) {
-				kfree(func_node);
-				func->func_node = NULL;
-			}
-		}
-	}
-}

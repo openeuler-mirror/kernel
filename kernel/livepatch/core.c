@@ -1327,12 +1327,43 @@ void __weak arch_klp_code_modify_post_process(void)
 {
 }
 
-void __weak arch_klp_mem_prepare(struct klp_patch *patch)
+void __weak *arch_klp_mem_alloc(size_t size)
 {
+	return kzalloc(size, GFP_ATOMIC);
 }
 
-void __weak arch_klp_mem_recycle(struct klp_patch *patch)
+void __weak arch_klp_mem_free(void *mem)
 {
+	kfree(mem);
+}
+
+static void klp_mem_prepare(struct klp_patch *patch)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			func->func_node = arch_klp_mem_alloc(sizeof(struct klp_func_node));
+		}
+	}
+}
+
+static void klp_mem_recycle(struct klp_patch *patch)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+	struct klp_func_node *func_node;
+
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			func_node = func->func_node;
+			if (func_node && list_is_singular(&func_node->func_stack)) {
+				arch_klp_mem_free(func_node);
+				func->func_node = NULL;
+			}
+		}
+	}
 }
 
 static int __klp_disable_patch(struct klp_patch *patch)
@@ -1361,7 +1392,7 @@ static int __klp_disable_patch(struct klp_patch *patch)
 	if (ret)
 		return ret;
 
-	arch_klp_mem_recycle(patch);
+	klp_mem_recycle(patch);
 	return 0;
 }
 #endif /* if defined(CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY) */
@@ -1594,11 +1625,11 @@ static int __klp_enable_patch(struct klp_patch *patch)
 #endif
 
 	arch_klp_code_modify_prepare();
-	arch_klp_mem_prepare(patch);
+	klp_mem_prepare(patch);
 	ret = stop_machine(klp_try_enable_patch, &patch_data, cpu_online_mask);
 	arch_klp_code_modify_post_process();
 	if (ret) {
-		arch_klp_mem_recycle(patch);
+		klp_mem_recycle(patch);
 		return ret;
 	}
 
