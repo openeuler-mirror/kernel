@@ -239,7 +239,11 @@ int radeon_vce_resume(struct radeon_device *rdev)
 		return r;
 	}
 
+#ifdef __sw_64__
+	_memset_c_io(cpu_addr, 0, radeon_bo_size(rdev->vce.vcpu_bo));
+#else
 	memset(cpu_addr, 0, radeon_bo_size(rdev->vce.vcpu_bo));
+#endif
 	if (rdev->family < CHIP_BONAIRE)
 		r = vce_v1_0_load_fw(rdev, cpu_addr);
 	else {
