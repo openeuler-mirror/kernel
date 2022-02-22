@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2202.2.0
+%global hulkrelease 2202.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0137
+Release: %{hulkrelease}.0138
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,24 @@ fi
 %endif
 
 %changelog
+
+* Tue Feb 22 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2202.4.0.0138
+- tipc: improve size validations for received domain records
+- yam: fix a memory leak in yam_siocdevprivate()
+- ipmi_si: Phytium S2500 missing timeout counter reset in intf_mem_inw
+- mm,hwpoison: Fix use-after-free in memory_failure()
+- dm-mpath: fix UAF in multipath_message()
+- usb: gadget: clear related members when goto fail
+- usb: gadget: don't release an existing dev->buf
+- dm: make sure dm_table is binded before queue request
+- cgroup-v1: Require capabilities to set release_agent
+- NFSv4: nfs_atomic_open() can race when looking up a non-regular file
+- NFSv4: Handle case where the lookup of a directory fails
+- configfs: fix a race in configfs_{,un}register_subsystem()
+- fs/filesystems.c: downgrade user-reachable WARN_ONCE() to pr_warn_once()
+- drm/i915: Flush TLBs before releasing backing store
+- moxart: fix potential use-after-free on remove path
+- memstick: rtsx_usb_ms: fix UAF
 
 * Tue Feb 15 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2202.3.0.0137
 - fs/filesystems.c: downgrade user-reachable WARN_ONCE() to pr_warn_once()
