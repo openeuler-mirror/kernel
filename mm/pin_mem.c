@@ -1092,9 +1092,12 @@ static int __init parse_pin_memory(char *cmdline)
 {
 	char *cur = cmdline;
 
+	if (!cmdline)
+		return 0;
+
 	pin_mem_len = memparse(cmdline, &cur);
 	if (cmdline == cur) {
-		pr_warn("crashkernel: memory value expected\n");
+		pr_warn("pinmem: memory value expected\n");
 		return -EINVAL;
 	}
 
