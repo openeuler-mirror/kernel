@@ -398,6 +398,10 @@ static void drm_fb_helper_dirty_blit_real(struct drm_fb_helper *fb_helper,
 	size_t len = (clip->x2 - clip->x1) * cpp;
 	unsigned int y;
 
+#ifdef CONFIG_SW64
+	fb_helper->dev->mode_config.fbdev_use_iomem = true;
+#endif
+
 	for (y = clip->y1; y < clip->y2; y++) {
 		if (!fb_helper->dev->mode_config.fbdev_use_iomem)
 			memcpy(dst, src, len);
