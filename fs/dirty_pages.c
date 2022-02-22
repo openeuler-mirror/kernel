@@ -24,7 +24,6 @@ static struct proc_dir_entry *dirty_dir;
 
 static struct mutex buff_used;	/* buffer is in used */
 static struct mutex buff_lock;	/* lock when buffer is changed */
-DEFINE_SPINLOCK(inode_sb_list_lock);
 
 /* proc root directory */
 #define DIRTY_ROOT "dirty"
@@ -119,7 +118,7 @@ static void dump_dirtypages_sb(struct super_block *sb, struct seq_file *m)
 	if (!tmpname)
 		return;
 
-	spin_lock(&inode_sb_list_lock);
+	spin_lock(&sb->s_inode_list_lock);
 	list_for_each_entry(inode, &sb->s_inodes, i_sb_list) {
 		spin_lock(&inode->i_lock);
 
@@ -135,7 +134,7 @@ static void dump_dirtypages_sb(struct super_block *sb, struct seq_file *m)
 		}
 		__iget(inode);
 		spin_unlock(&inode->i_lock);
-		spin_unlock(&inode_sb_list_lock);
+		spin_unlock(&sb->s_inode_list_lock);
 
 		cond_resched();
 
@@ -169,9 +168,9 @@ static void dump_dirtypages_sb(struct super_block *sb, struct seq_file *m)
 skip:
 		iput(toput_inode);
 		toput_inode = inode;
-		spin_lock(&inode_sb_list_lock);
+		spin_lock(&sb->s_inode_list_lock);
 	}
-	spin_unlock(&inode_sb_list_lock);
+	spin_unlock(&sb->s_inode_list_lock);
 done:
 	iput(toput_inode);
 	kfree(tmpname);
