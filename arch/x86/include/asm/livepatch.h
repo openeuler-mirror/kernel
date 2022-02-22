@@ -39,6 +39,8 @@ struct arch_klp_data {
 	unsigned char old_code[JMP_E9_INSN_SIZE];
 };
 
+long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
+
 #endif
 
 #endif /* _ASM_X86_LIVEPATCH_H */

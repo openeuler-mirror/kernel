@@ -378,6 +378,20 @@ static inline bool offset_in_range(unsigned long pc, unsigned long addr,
 	return (offset >= -range && offset < range);
 }
 
+long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
+{
+	long ret;
+	int i;
+
+	for (i = 0; i < LJMP_INSN_SIZE; i++) {
+		ret = copy_from_kernel_nofault(&arch_data->old_insns[i],
+			((u32 *)old_func) + i, PPC32_INSN_SIZE);
+		if (ret)
+			break;
+	}
+	return ret;
+}
+
 int arch_klp_patch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
@@ -396,13 +410,9 @@ int arch_klp_patch_func(struct klp_func *func)
 		memory_flag = 1;
 		INIT_LIST_HEAD(&func_node->func_stack);
 		func_node->old_func = func->old_func;
-		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			ret = copy_from_kernel_nofault(&func_node->arch_data.old_insns[i],
-				((u32 *)func->old_func) + i, LJMP_INSN_SIZE);
-			if (ret) {
-				return -EPERM;
-			}
-		}
+		ret = arch_klp_save_old_code(&func_node->arch_data, func->old_func);
+		if (ret)
+			return -EPERM;
 
 		klp_add_func_node(func_node);
 	}

@@ -331,6 +331,24 @@ out:
 }
 #endif
 
+long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
+{
+	long ret;
+#ifdef CONFIG_ARM64_MODULE_PLTS
+	int i;
+
+	for (i = 0; i < LJMP_INSN_SIZE; i++) {
+		ret = aarch64_insn_read(((u32 *)old_func) + i,
+					&arch_data->old_insns[i]);
+		if (ret)
+			break;
+	}
+#else
+	ret = aarch64_insn_read(old_func, &arch_data->old_insn);
+#endif
+	return ret;
+}
+
 int arch_klp_patch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
@@ -353,17 +371,7 @@ int arch_klp_patch_func(struct klp_func *func)
 		INIT_LIST_HEAD(&func_node->func_stack);
 		func_node->old_func = func->old_func;
 
-#ifdef CONFIG_ARM64_MODULE_PLTS
-		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			ret = aarch64_insn_read(((u32 *)func->old_func) + i,
-					&func_node->arch_data.old_insns[i]);
-			if (ret)
-				break;
-		}
-#else
-		ret = aarch64_insn_read((void *)func->old_func,
-					&func_node->arch_data.old_insn);
-#endif
+		ret = arch_klp_save_old_code(&func_node->arch_data, func->old_func);
 		if (ret) {
 			return -EPERM;
 		}

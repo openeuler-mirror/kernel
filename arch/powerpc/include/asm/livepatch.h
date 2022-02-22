@@ -93,12 +93,15 @@ struct arch_klp_data {
 
 #elif defined(CONFIG_PPC32)
 
+#define PPC32_INSN_SIZE	4
 #define LJMP_INSN_SIZE	4
 struct arch_klp_data {
 	u32 old_insns[LJMP_INSN_SIZE];
 };
 
 #endif	/* CONFIG_PPC64 */
+
+long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
 
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 

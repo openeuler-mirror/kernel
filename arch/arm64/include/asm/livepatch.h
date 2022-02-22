@@ -61,6 +61,8 @@ struct arch_klp_data {
 #endif
 };
 
+long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
+
 #endif
 
 #endif /* _ASM_ARM64_LIVEPATCH_H */

@@ -388,6 +388,12 @@ void arch_klp_code_modify_post_process(void)
 	mutex_unlock(&text_mutex);
 }
 
+long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
+{
+	return copy_from_kernel_nofault(arch_data->old_code,
+					old_func, JMP_E9_INSN_SIZE);
+}
+
 int arch_klp_patch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
@@ -404,8 +410,7 @@ int arch_klp_patch_func(struct klp_func *func)
 
 		INIT_LIST_HEAD(&func_node->func_stack);
 		func_node->old_func = func->old_func;
-		ret = copy_from_kernel_nofault(func_node->arch_data.old_code,
-					(void *)ip, JMP_E9_INSN_SIZE);
+		ret = arch_klp_save_old_code(&func_node->arch_data, (void *)ip);
 		if (ret) {
 			return -EPERM;
 		}
