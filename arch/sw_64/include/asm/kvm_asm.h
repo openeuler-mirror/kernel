@@ -1,0 +1,14 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _ASM_SW64_KVM_ASM_H
+#define _ASM_SW64_KVM_ASM_H
+
+#define SW64_KVM_EXIT_HOST_INTR		0
+#define SW64_KVM_EXIT_IO		1
+#define SW64_KVM_EXIT_HALT		10
+#define SW64_KVM_EXIT_SHUTDOWN		12
+#define SW64_KVM_EXIT_TIMER		13
+#define SW64_KVM_EXIT_IPI		14
+#define SW64_KVM_EXIT_RESTART		17
+#define SW64_KVM_EXIT_FATAL_ERROR	22
+
+#endif /* _ASM_SW64_KVM_ASM_H */
