@@ -171,6 +171,9 @@ static struct arch architectures[] = {
 		.init = arm64__annotate_init,
 	},
 	{
+		.name = "sw_64",
+	},
+	{
 		.name = "csky",
 		.init = csky__annotate_init,
 	},

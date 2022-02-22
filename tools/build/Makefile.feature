@@ -53,6 +53,7 @@ FEATURE_TESTS_BASIC :=                  \
         libslang-include-subdir         \
         libcrypto                       \
         libunwind                       \
+        libunwind-sw_64                 \
         pthread-attr-setaffinity-np     \
         pthread-barrier     		\
         reallocarray                    \
