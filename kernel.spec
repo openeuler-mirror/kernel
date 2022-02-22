@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       56
+%global devel_release       57
 %global maintenance_release .0.0
-%global pkg_release         .30
+%global pkg_release         .31
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -862,6 +862,98 @@ fi
 %endif
 
 %changelog
+* Tue Feb 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-57.0.0.31
+- yam: fix a memory leak in yam_siocdevprivate()
+- Phytium/S2500: kdump: Avoid vmcore saving failure across multi-socket
+- irqchip/irq-gic-phytium-2500: Add support for kdump
+- ipmi_si: Phytium S2500 workaround for MMIO-based IPMI
+- iommu: support phytium ft2000plus and S2500 iommu function
+- sw64: vfio: select VFIO_IOMMU_TYPE1 as default
+- sw64: tty: add serial driver for sw64
+- sw64: spi: add driver for SPI controller
+- sw64: add hypervisor based RTC on SW64 systems
+- sw64: kgdb: add support for sw64
+- sw64: LPC: add driver for LPC controller
+- sw64: iommu: fix a bug in calling 'alloc_pages_node'
+- sw64: iommu: add iommu driver for sw64
+- sw64: gpu/drm: fix kernel crash caused by drm driver
+- sw64: radeon: correct low-level mmio memset direct calls
+- sw64: gpu/drm: solve driver load cause kernel crash
+- amdgpu: enable KFD on SW64 systems
+- sw64: megaraid: fix kernel panic caused by accessing an illegal address
+- sw64: i2c: add i2c driver based designware for sw64
+- sw64: efi: add SMBIOS/DMI and EFI runtime driver codes
+- sw64: gpio: add sunway builtin gpio driver
+- sw64: acpi: add initial acpi infrastructure support
+- sw64: add perf userspace tool support for sw64
+- tools uapi: fix sw64 support
+- sw64: kvm: add definitions for kvm
+- sw64: moduleparam: fix sw64 compile failure
+- sw64: kdump/kexec: add KEXEC_ARCH_SW_64 definition
+- sw64: add AUDIT_ARCH_SW64 definition
+- sw64: ftrace: add sw64 support to recordmcount
+- sw64: add sw_64 support to buildtar, mkdebian and builddeb
+- sw64: add basic support for sw64
+- mm/pin_mem: add invalid check for pinmemory boot parameter
+- livepatch/x86: Fix incorrect use of 'strncpy'
+- livepatch: Fix issues in klp_mem_{prepare,recycle}
+- livepatch: Introduce 'arch_klp_save_old_code'
+- livepatch: Reduce duplicated arch_klp_mem_{prepare,recycle}
+- livepatch: Move 'klp_func_list' related codes out of 'arch'
+- livepatch: Introduce 'struct arch_klp_data'
+- livepatch/arm64: Uniform 'old_func' field in struct klp_func_node
+- tpm_tis_spi: set default probe function if device id not match
+- deconfig: intel ice-lake missing config enable
+- selftests/sgx: Fix Q1 and Q2 calculation in sigstruct.c
+- selftests/sgx: remove checks for file execute permissions
+- selftests/sgx: Refine the test enclave to have storage
+- selftests/sgx: Add EXPECT_EEXIT() macro
+- selftests/sgx: Dump enclave memory map
+- selftests/sgx: Migrate to kselftest harness
+- selftests/sgx: Rename 'eenter' and 'sgx_call_vdso'
+- x86/sgx: Expose SGX architectural definitions to the kernel
+- selftests/sgx: Use getauxval() to simplify test code
+- selftests/sgx: Improve error detection and messages
+- selftests/sgx: Use a statically generated 3072-bit RSA key
+- x86/sgx: Remove unnecessary kmap() from sgx_ioc_enclave_init()
+- x86/sgx: Add a basic NUMA allocation scheme to sgx_alloc_epc_page()
+- x86/sgx: Replace section->init_laundry_list with sgx_dirty_page_list
+- x86/sgx: Maintain encl->refcount for each encl->mm_list entry
+- x86/sgx: Drop racy follow_pfn() check
+- x86/sgx: Fix the return type of sgx_init()
+- x86/sgx: Return -EINVAL on a zero length buffer in sgx_ioc_enclave_add_pages()
+- x86/sgx: Fix sgx_ioc_enclave_provision() kernel-doc
+- x86/sgx: Return -ERESTARTSYS in sgx_ioc_enclave_add_pages()
+- x86/sgx: Clarify 'laundry_list' locking
+- x86/sgx: Update MAINTAINERS
+- Documentation/x86: Document SGX kernel architecture
+- x86/sgx: Add ptrace() support for the SGX driver
+- x86/sgx: Add a page reclaimer
+- selftests/x86: Add a selftest for SGX
+- x86/vdso: Implement a vDSO for Intel SGX enclave call
+- x86/traps: Attempt to fixup exceptions in vDSO before signaling
+- x86/fault: Add a helper function to sanitize error code
+- x86/vdso: Add support for exception fixup in vDSO functions
+- x86/sgx: Add SGX_IOC_ENCLAVE_PROVISION
+- x86/sgx: Add SGX_IOC_ENCLAVE_INIT
+- x86/sgx: Add SGX_IOC_ENCLAVE_ADD_PAGES
+- x86/sgx: Add SGX_IOC_ENCLAVE_CREATE
+- x86/sgx: Add an SGX misc driver interface
+- mm: Add 'mprotect' hook to struct vm_operations_struct
+- x86/sgx: Add SGX page allocator functions
+- x86/cpu/intel: Add a nosgx kernel parameter
+- x86/cpu/intel: Detect SGX support
+- x86/sgx: Initialize metadata for Enclave Page Cache (EPC) sections
+- x86/{cpufeatures,msr}: Add Intel SGX Launch Control hardware bits
+- x86/cpufeatures: Add Intel SGX hardware bits
+- x86/sgx: Add wrappers for ENCLS functions
+- x86/sgx: Add SGX architectural data structures
+- configfs: fix a race in configfs_{,un}register_subsystem()
+- fs/dirty_pages: fix wrong lock for inode list in super_block
+- ACPI: irq: Prevent unregistering of GIC SGIs
+- PM: ACPI: Refresh wakeup device power configuration every time
+- ACPICA: Interpreter: fix memory leak by using existing buffer
+
 * Thu Feb 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-56.0.0.30
 - configs: enable CONFIG_INTEGRITY_PLATFORM_KEYRING and CONFIG_LOAD_UEFI_KEYS
 - tipc: improve size validations for received domain records
