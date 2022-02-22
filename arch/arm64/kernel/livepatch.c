@@ -56,7 +56,7 @@ static inline bool offset_in_range(unsigned long pc, unsigned long addr,
 struct klp_func_node {
 	struct list_head node;
 	struct list_head func_stack;
-	unsigned long old_addr;
+	void *old_func;
 #ifdef CONFIG_ARM64_MODULE_PLTS
 	u32 old_insns[LJMP_INSN_SIZE];
 #else
@@ -66,12 +66,12 @@ struct klp_func_node {
 
 static LIST_HEAD(klp_func_list);
 
-static struct klp_func_node *klp_find_func_node(unsigned long old_addr)
+static struct klp_func_node *klp_find_func_node(void *old_func)
 {
 	struct klp_func_node *func_node;
 
 	list_for_each_entry(func_node, &klp_func_list, node) {
-		if (func_node->old_addr == old_addr)
+		if (func_node->old_func == old_func)
 			return func_node;
 	}
 
@@ -180,7 +180,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 				 * When enable, checking the currently
 				 * active functions.
 				 */
-				func_node = klp_find_func_node((unsigned long)func->old_func);
+				func_node = klp_find_func_node(func->old_func);
 				if (!func_node ||
 				    list_empty(&func_node->func_stack)) {
 					func_addr = (unsigned long)func->old_func;
@@ -221,7 +221,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 				 * patched function and the function itself
 				 * which to be unpatched.
 				 */
-				func_node = klp_find_func_node((unsigned long)func->old_func);
+				func_node = klp_find_func_node(func->old_func);
 				if (!func_node) {
 					return -EINVAL;
 				}
@@ -370,7 +370,7 @@ int arch_klp_patch_func(struct klp_func *func)
 #endif
 	int ret = 0;
 
-	func_node = klp_find_func_node((unsigned long)func->old_func);
+	func_node = klp_find_func_node(func->old_func);
 	if (!func_node) {
 		func_node = func->func_node;
 		if (!func_node)
@@ -378,7 +378,7 @@ int arch_klp_patch_func(struct klp_func *func)
 		memory_flag = 1;
 
 		INIT_LIST_HEAD(&func_node->func_stack);
-		func_node->old_addr = (unsigned long)func->old_func;
+		func_node->old_func = func->old_func;
 
 #ifdef CONFIG_ARM64_MODULE_PLTS
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
@@ -447,11 +447,11 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	int i;
 	u32 insns[LJMP_INSN_SIZE];
 #endif
-	func_node = klp_find_func_node((unsigned long)func->old_func);
+	func_node = klp_find_func_node(func->old_func);
 	if (WARN_ON(!func_node))
 		return;
 
-	pc = func_node->old_addr;
+	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
 #ifdef CONFIG_ARM64_MODULE_PLTS
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
