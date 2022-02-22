@@ -399,26 +399,10 @@ int arch_klp_patch_func(struct klp_func *func)
 	struct klp_func_node *func_node;
 	unsigned long ip, new_addr;
 	void *new;
-	long ret;
 
-	func_node = klp_find_func_node(func->old_func);
+	func_node = func->func_node;
 	ip = (unsigned long)func->old_func;
-	if (!func_node) {
-		func_node = func->func_node;
-		if (!func_node)
-			return -ENOMEM;
-
-		INIT_LIST_HEAD(&func_node->func_stack);
-		func_node->old_func = func->old_func;
-		ret = arch_klp_save_old_code(&func_node->arch_data, (void *)ip);
-		if (ret) {
-			return -EPERM;
-		}
-		klp_add_func_node(func_node);
-	}
-
 	list_add_rcu(&func->stack_node, &func_node->func_stack);
-
 	new_addr = (unsigned long)func->new_func;
 	/* replace the text with the new text */
 	new = klp_jmp_code(ip, new_addr);
@@ -434,11 +418,10 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	unsigned long ip, new_addr;
 	void *new;
 
-	func_node = klp_find_func_node(func->old_func);
+	func_node = func->func_node;
 	ip = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
 		list_del_rcu(&func->stack_node);
-		klp_del_func_node(func_node);
 		new = klp_old_code(func_node->arch_data.old_code);
 	} else {
 		list_del_rcu(&func->stack_node);

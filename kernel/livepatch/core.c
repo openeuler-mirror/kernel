@@ -1133,6 +1133,7 @@ static void klp_init_func_early(struct klp_object *obj,
 {
 	kobject_init(&func->kobj, &klp_ktype_func);
 	list_add_tail(&func->node, &obj->func_list);
+	func->func_node = NULL;
 }
 
 static void klp_init_object_early(struct klp_patch *patch,
@@ -1337,31 +1338,79 @@ void __weak arch_klp_mem_free(void *mem)
 	kfree(mem);
 }
 
-static void klp_mem_prepare(struct klp_patch *patch)
+long __weak arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
+{
+	return -ENOSYS;
+}
+
+static struct klp_func_node *func_node_alloc(struct klp_func *func)
+{
+	long ret;
+	struct klp_func_node *func_node = NULL;
+
+	func_node = klp_find_func_node(func->old_func);
+	if (func_node) /* The old_func has ever been patched */
+		return func_node;
+	func_node = arch_klp_mem_alloc(sizeof(struct klp_func_node));
+	if (func_node) {
+		INIT_LIST_HEAD(&func_node->func_stack);
+		func_node->old_func = func->old_func;
+		/*
+		 * Module which contains 'old_func' would not be removed because
+		 * it's reference count has been held during registration.
+		 * But it's not in stop_machine context here, 'old_func' should
+		 * not be modified as saving old code.
+		 */
+		ret = arch_klp_save_old_code(&func_node->arch_data, func->old_func);
+		if (ret) {
+			arch_klp_mem_free(func_node);
+			pr_err("save old code failed, ret=%ld\n", ret);
+			return NULL;
+		}
+		klp_add_func_node(func_node);
+	}
+	return func_node;
+}
+
+static void func_node_free(struct klp_func *func)
+{
+	struct klp_func_node *func_node;
+
+	func_node = func->func_node;
+	if (func_node) {
+		func->func_node = NULL;
+		if (list_empty(&func_node->func_stack)) {
+			klp_del_func_node(func_node);
+			arch_klp_mem_free(func_node);
+		}
+	}
+}
+
+static int klp_mem_prepare(struct klp_patch *patch)
 {
 	struct klp_object *obj;
 	struct klp_func *func;
 
 	klp_for_each_object(patch, obj) {
 		klp_for_each_func(obj, func) {
-			func->func_node = arch_klp_mem_alloc(sizeof(struct klp_func_node));
+			func->func_node = func_node_alloc(func);
+			if (func->func_node == NULL) {
+				pr_err("alloc func_node failed\n");
+				return -ENOMEM;
+			}
 		}
 	}
+	return 0;
 }
 
 static void klp_mem_recycle(struct klp_patch *patch)
 {
 	struct klp_object *obj;
 	struct klp_func *func;
-	struct klp_func_node *func_node;
 
 	klp_for_each_object(patch, obj) {
 		klp_for_each_func(obj, func) {
-			func_node = func->func_node;
-			if (func_node && list_is_singular(&func_node->func_stack)) {
-				arch_klp_mem_free(func_node);
-				func->func_node = NULL;
-			}
+			func_node_free(func);
 		}
 	}
 }
@@ -1625,8 +1674,9 @@ static int __klp_enable_patch(struct klp_patch *patch)
 #endif
 
 	arch_klp_code_modify_prepare();
-	klp_mem_prepare(patch);
-	ret = stop_machine(klp_try_enable_patch, &patch_data, cpu_online_mask);
+	ret = klp_mem_prepare(patch);
+	if (ret == 0)
+		ret = stop_machine(klp_try_enable_patch, &patch_data, cpu_online_mask);
 	arch_klp_code_modify_post_process();
 	if (ret) {
 		klp_mem_recycle(patch);

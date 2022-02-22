@@ -375,32 +375,15 @@ int arch_klp_patch_func(struct klp_func *func)
 	struct klp_func_node *func_node;
 	unsigned long pc, new_addr;
 	u32 insn;
-	long ret;
 #ifdef CONFIG_ARM_MODULE_PLTS
 	int i;
 	u32 insns[LJMP_INSN_SIZE];
 #endif
 
-	func_node = klp_find_func_node(func->old_func);
-	if (!func_node) {
-		func_node = func->func_node;
-		if (!func_node)
-			return -ENOMEM;
-
-		INIT_LIST_HEAD(&func_node->func_stack);
-		func_node->old_func = func->old_func;
-		ret = arch_klp_save_old_code(&func_node->arch_data, func->old_func);
-		if (ret) {
-			return -EPERM;
-		}
-		klp_add_func_node(func_node);
-	}
-
+	func_node = func->func_node;
 	list_add_rcu(&func->stack_node, &func_node->func_stack);
-
 	pc = (unsigned long)func->old_func;
 	new_addr = (unsigned long)func->new_func;
-
 #ifdef CONFIG_ARM_MODULE_PLTS
 	if (!offset_in_range(pc, new_addr, SZ_32M)) {
 		/*
@@ -438,7 +421,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	u32 insns[LJMP_INSN_SIZE];
 #endif
 
-	func_node = klp_find_func_node(func->old_func);
+	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
 #ifdef CONFIG_ARM_MODULE_PLTS
@@ -451,7 +434,6 @@ void arch_klp_unpatch_func(struct klp_func *func)
 		__patch_text((void *)pc, insn);
 #endif
 		list_del_rcu(&func->stack_node);
-		klp_del_func_node(func_node);
 	} else {
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,

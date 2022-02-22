@@ -397,28 +397,11 @@ int arch_klp_patch_func(struct klp_func *func)
 	struct klp_func_node *func_node;
 	unsigned long pc, new_addr;
 	long ret;
-	int memory_flag = 0;
 	int i;
 	u32 insns[LJMP_INSN_SIZE];
 
-	func_node = klp_find_func_node(func->old_func);
-	if (!func_node) {
-		func_node = func->func_node;
-		if (!func_node)
-			return -ENOMEM;
-
-		memory_flag = 1;
-		INIT_LIST_HEAD(&func_node->func_stack);
-		func_node->old_func = func->old_func;
-		ret = arch_klp_save_old_code(&func_node->arch_data, func->old_func);
-		if (ret)
-			return -EPERM;
-
-		klp_add_func_node(func_node);
-	}
-
+	func_node = func->func_node;
 	list_add_rcu(&func->stack_node, &func_node->func_stack);
-
 	pc = (unsigned long)func->old_func;
 	new_addr = (unsigned long)func->new_func;
 	if (offset_in_range(pc, new_addr, SZ_32M)) {
@@ -451,9 +434,6 @@ int arch_klp_patch_func(struct klp_func *func)
 
 ERR_OUT:
 	list_del_rcu(&func->stack_node);
-	if (memory_flag) {
-		klp_del_func_node(func_node);
-	}
 
 	return -EPERM;
 }
@@ -466,14 +446,13 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	u32 insns[LJMP_INSN_SIZE];
 	int i;
 
-	func_node = klp_find_func_node(func->old_func);
+	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
 			insns[i] = func_node->arch_data.old_insns[i];
 
 		list_del_rcu(&func->stack_node);
-		klp_del_func_node(func_node);
 
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
 			patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),

@@ -257,6 +257,8 @@ static void klp_unpatch_func(struct klp_func *func)
 		return;
 	if (WARN_ON(!func->old_func))
 		return;
+	if (WARN_ON(!func->func_node))
+		return;
 
 	arch_klp_unpatch_func(func);
 
@@ -269,8 +271,9 @@ static inline int klp_patch_func(struct klp_func *func)
 
 	if (WARN_ON(!func->old_func))
 		return -EINVAL;
-
 	if (WARN_ON(func->patched))
+		return -EINVAL;
+	if (WARN_ON(!func->func_node))
 		return -EINVAL;
 
 	ret = arch_klp_patch_func(func);
