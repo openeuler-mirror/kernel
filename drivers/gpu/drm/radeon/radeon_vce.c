@@ -242,8 +242,12 @@ int radeon_vce_resume(struct radeon_device *rdev)
 	memset(cpu_addr, 0, radeon_bo_size(rdev->vce.vcpu_bo));
 	if (rdev->family < CHIP_BONAIRE)
 		r = vce_v1_0_load_fw(rdev, cpu_addr);
-	else
-		memcpy(cpu_addr, rdev->vce_fw->data, rdev->vce_fw->size);
+	else {
+		if (IS_ENABLED(CONFIG_SW64))
+			memcpy_toio(cpu_addr, rdev->vce_fw->data, rdev->vce_fw->size);
+		else
+			memcpy(cpu_addr, rdev->vce_fw->data, rdev->vce_fw->size);
+	}
 
 	radeon_bo_kunmap(rdev->vce.vcpu_bo);
 

@@ -3721,8 +3721,12 @@ static int gfx_v9_0_kiq_init_queue(struct amdgpu_ring *ring)
 
 	if (amdgpu_in_reset(adev)) { /* for GPU_RESET case */
 		/* reset MQD to a clean status */
-		if (adev->gfx.mec.mqd_backup[mqd_idx])
-			memcpy(mqd, adev->gfx.mec.mqd_backup[mqd_idx], sizeof(struct v9_mqd_allocation));
+		if (adev->gfx.mec.mqd_backup[mqd_idx]) {
+			if (IS_ENABLED(CONFIG_SW64))
+				memcpy_toio(mqd, adev->gfx.mec.mqd_backup[mqd_idx], sizeof(struct v9_mqd_allocation));
+			else
+				memcpy(mqd, adev->gfx.mec.mqd_backup[mqd_idx], sizeof(struct v9_mqd_allocation));
+		}
 
 		/* reset ring buffer */
 		ring->wptr = 0;
@@ -3744,8 +3748,12 @@ static int gfx_v9_0_kiq_init_queue(struct amdgpu_ring *ring)
 		soc15_grbm_select(adev, 0, 0, 0, 0);
 		mutex_unlock(&adev->srbm_mutex);
 
-		if (adev->gfx.mec.mqd_backup[mqd_idx])
-			memcpy(adev->gfx.mec.mqd_backup[mqd_idx], mqd, sizeof(struct v9_mqd_allocation));
+		if (adev->gfx.mec.mqd_backup[mqd_idx]) {
+			if (IS_ENABLED(CONFIG_SW64))
+				memcpy_fromio(adev->gfx.mec.mqd_backup[mqd_idx], mqd, sizeof(struct v9_mqd_allocation));
+			else
+				memcpy(adev->gfx.mec.mqd_backup[mqd_idx], mqd, sizeof(struct v9_mqd_allocation));
+		}
 	}
 
 	return 0;
