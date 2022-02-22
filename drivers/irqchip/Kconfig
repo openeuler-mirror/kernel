@@ -1,6 +1,14 @@
 # SPDX-License-Identifier: GPL-2.0-only
 menu "IRQ chip support"
 
+config SW64_INTC
+	bool "SW64 Platform-Level Interrupt Controller"
+	depends on ACPI && SW64
+	help
+           This enables support for the INTC chip found in SW systems.
+           The INTC controls devices interrupts and connects them to each
+           core's local interrupt controller.
+
 config IRQCHIP
 	def_bool y
 	depends on OF_IRQ
