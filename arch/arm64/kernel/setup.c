@@ -387,6 +387,8 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 
 	arm64_memblock_init();
 
+	efi_fake_memmap();
+
 	paging_init();
 
 	acpi_table_upgrade();
