@@ -523,14 +523,26 @@ static int pf_init_vf_infos(struct spnic_nic_cfg *nic_cfg)
 	int err;
 	u16 i;
 
+	err = sphw_register_mgmt_msg_cb(nic_cfg->hwdev, SPHW_MOD_L2NIC, nic_cfg,
+					spnic_pf_event_handler);
+	if (err)
+		return err;
+
+	err = sphw_register_mgmt_msg_cb(nic_cfg->hwdev, SPHW_MOD_HILINK, nic_cfg,
+					spnic_pf_mag_event_handler);
+	if (err)
+		goto register_mag_mgmt_cb_err;
+
 	nic_cfg->max_vfs = sphw_func_max_vf(nic_cfg->hwdev);
 	size = sizeof(*nic_cfg->vf_infos) * nic_cfg->max_vfs;
 	if (!size)
 		return 0;
 
 	nic_cfg->vf_infos = kzalloc(size, GFP_KERNEL);
-	if (!nic_cfg->vf_infos)
-		return -ENOMEM;
+	if (!nic_cfg->vf_infos) {
+		err = -ENOMEM;
+		goto alloc_vf_infos_err;
+	}
 
 	for (i = 0; i < nic_cfg->max_vfs; i++) {
 		err = spnic_init_vf_infos(nic_cfg, i);
@@ -538,35 +550,30 @@ static int pf_init_vf_infos(struct spnic_nic_cfg *nic_cfg)
 			goto init_vf_infos_err;
 	}
 
-	err = sphw_register_mgmt_msg_cb(nic_cfg->hwdev, SPHW_MOD_L2NIC, nic_cfg,
-					spnic_pf_event_handler);
-	if (err)
-		goto register_mgmt_cb_err;
-
 	err = sphw_register_pf_mbox_cb(nic_cfg->hwdev, SPHW_MOD_L2NIC, nic_cfg,
 				       spnic_pf_mbox_handler);
 	if (err)
-		goto register_pf_mbox_cb_err;
-
-	err = sphw_register_mgmt_msg_cb(nic_cfg->hwdev, SPHW_MOD_HILINK, nic_cfg,
-					spnic_pf_mag_event_handler);
-	if (err)
-		goto register_mgmt_cb_err;
+		goto register_nic_mbox_cb_err;
 
 	err = sphw_register_pf_mbox_cb(nic_cfg->hwdev, SPHW_MOD_HILINK, nic_cfg,
 				       spnic_pf_mag_mbox_handler);
 	if (err)
-		goto register_pf_mag_mbox_cb_err;
+		goto register_mag_mbox_cb_err;
 
 	return 0;
 
-register_pf_mag_mbox_cb_err:
+register_mag_mbox_cb_err:
 	sphw_unregister_pf_mbox_cb(nic_cfg->hwdev, SPHW_MOD_L2NIC);
-register_pf_mbox_cb_err:
-	sphw_unregister_mgmt_msg_cb(nic_cfg->hwdev, SPHW_MOD_L2NIC);
-register_mgmt_cb_err:
+
+register_nic_mbox_cb_err:
 init_vf_infos_err:
 	kfree(nic_cfg->vf_infos);
+
+alloc_vf_infos_err:
+	sphw_unregister_mgmt_msg_cb(nic_cfg->hwdev, SPHW_MOD_HILINK);
+
+register_mag_mgmt_cb_err:
+	sphw_unregister_mgmt_msg_cb(nic_cfg->hwdev, SPHW_MOD_L2NIC);
 
 	return err;
 }
@@ -596,13 +603,17 @@ void spnic_vf_func_free(struct spnic_nic_cfg *nic_cfg)
 				err, unregister.msg_head.status, out_size);
 
 		sphw_unregister_vf_mbox_cb(nic_cfg->hwdev, SPHW_MOD_L2NIC);
+		sphw_unregister_vf_mbox_cb(nic_cfg->hwdev, SPHW_MOD_HILINK);
 	} else {
 		if (nic_cfg->vf_infos) {
-			sphw_unregister_mgmt_msg_cb(nic_cfg->hwdev, SPHW_MOD_L2NIC);
 			sphw_unregister_pf_mbox_cb(nic_cfg->hwdev, SPHW_MOD_L2NIC);
+			sphw_unregister_pf_mbox_cb(nic_cfg->hwdev, SPHW_MOD_HILINK);
 			spnic_clear_vfs_info(nic_cfg->hwdev);
 			kfree(nic_cfg->vf_infos);
 		}
+
+		sphw_unregister_mgmt_msg_cb(nic_cfg->hwdev, SPHW_MOD_L2NIC);
+		sphw_unregister_mgmt_msg_cb(nic_cfg->hwdev, SPHW_MOD_HILINK);
 	}
 }
 
