@@ -860,6 +860,7 @@ static int mbox_prepare_dma_entry(struct sphw_mbox *func_to_func, struct mbox_dm
 				  struct mbox_dma_msg *dma_msg, void *msg, u16 msg_len)
 {
 	u64 dma_addr, offset;
+	void *dma_vaddr;
 
 	if (IS_MSG_QUEUE_FULL(mq)) {
 		sdk_err(func_to_func->hwdev->dev_hdl, "Mbox sync message queue is busy, pi: %u, ci: %u\n",
@@ -869,12 +870,13 @@ static int mbox_prepare_dma_entry(struct sphw_mbox *func_to_func, struct mbox_dm
 
 	/* copy data to DMA buffer */
 	offset = mq->prod_idx * MBOX_MAX_BUF_SZ;
-	memcpy((u8 *)mq->dma_buff_vaddr + offset, msg, msg_len);
+	dma_vaddr = (u8 *)mq->dma_buff_vaddr + offset;
+	memcpy(dma_vaddr, msg, msg_len);
 	dma_addr = mq->dma_buff_paddr + offset;
 	dma_msg->dma_addr_high = upper_32_bits(dma_addr);
 	dma_msg->dma_addr_low = lower_32_bits(dma_addr);
 	dma_msg->msg_len = msg_len;
-	dma_msg->xor = mbox_dma_msg_xor(msg, msg_len);
+	dma_msg->xor = mbox_dma_msg_xor(dma_vaddr, ALIGN(msg_len, sizeof(u32)));
 
 	mq->prod_idx++;
 	mq->prod_idx = MQ_ID_MASK(mq, mq->prod_idx);
