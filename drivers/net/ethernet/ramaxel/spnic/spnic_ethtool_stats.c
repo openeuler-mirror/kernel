@@ -745,9 +745,9 @@ spnic_add_ethtool_link_mode(struct cmd_link_settings *link_settings, u32 hw_link
 	for (link_mode = 0; link_mode < LINK_MODE_MAX_NUMBERS; link_mode++) {
 		if (hw_link_mode & BIT(link_mode)) {
 			if (name == GET_SUPPORTED_MODE)
-				ETHTOOL_ADD_SUPPORTED_SPEED_LINK_MODE(link_settings, hw_link_mode);
+				ETHTOOL_ADD_SUPPORTED_SPEED_LINK_MODE(link_settings, link_mode);
 			else
-				ETHTOOL_ADD_ADVERTISED_SPEED_LINK_MODE(link_settings, hw_link_mode);
+				ETHTOOL_ADD_ADVERTISED_SPEED_LINK_MODE(link_settings, link_mode);
 		}
 	}
 }
