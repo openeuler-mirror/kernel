@@ -5140,6 +5140,15 @@ failed:
 }
 EXPORT_SYMBOL_GPL(__alloc_pages_bulk);
 
+static inline void prepare_before_alloc(gfp_t *gfp_mask)
+{
+	if (!mem_reliable_is_enabled())
+		return;
+
+	if ((current->flags & PF_RELIABLE) || is_global_init(current))
+		*gfp_mask |= GFP_RELIABLE;
+}
+
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
@@ -5161,6 +5170,9 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 	}
 
 	gfp &= gfp_allowed_mask;
+
+	prepare_before_alloc(&gfp);
+
 	alloc_gfp = gfp;
 	if (!prepare_alloc_pages(gfp, order, preferred_nid, nodemask, &ac,
 			&alloc_gfp, &alloc_flags))
