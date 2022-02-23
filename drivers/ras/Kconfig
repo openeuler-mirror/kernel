@@ -29,6 +29,17 @@ menuconfig RAS
 	  so have ideal availability, but may be unreliable, with frequent
 	  data corruption.
 
+config RAS_ARM_EVENT_INFO
+	bool "RAS feature: report all the arm processor info in arm event"
+	default y
+	depends on ARM64
+	help
+	  This option allows to report several ARM processor error information,
+	  context information, vendor specific error information, error severity
+	  and cpu logical index about the event to userspace via perf i/f. So
+	  that the user can do cpu core isolation according to error severity
+	  and other info.
+
 if RAS
 
 source "arch/x86/ras/Kconfig"
