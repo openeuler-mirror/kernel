@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       58
+%global devel_release       59
 %global maintenance_release .0.0
-%global pkg_release         .32
+%global pkg_release         .33
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -862,6 +862,26 @@ fi
 %endif
 
 %changelog
+* Wed Feb 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-59.0.0.33
+- bonding: force carrier update when releasing slave
+- ext4: fix underflow in ext4_max_bitmap_size()
+- dm: make sure dm_table is binded before queue request
+- tty/amba-pl011: Call acpi_put_table() to fix memory leak
+- config: enable MEMORY_RELIABLE by default
+- mm: add support for page cache use reliable memory
+- shmem: Introduce shmem reliable
+- mm: Reserve field in mm_struct for memory reliable
+- mm: Introduce reliable flag for user task
+- meminfo: Show reliable memory info
+- mm: Introduce memory reliable
+- efi: Disable mirror feature if kernelcore is not specified
+- mm: Demote warning message in vmemmap_verify() to debug level
+- mm: Ratelimited mirrored memory related warning messages
+- efi: Find mirrored memory ranges for arm64
+- efi: Make efi_find_mirror() public
+- arm64: efi: Add fake memory support
+- efi: Make efi_print_memmap() public
+
 * Wed Feb 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-58.0.0.32
 - arm64: openeuler_defconfig: Enable config for ultrasoc driver
 - drivers/coresight: Add Ultrasoc System Memory Buffer driver
