@@ -585,6 +585,10 @@ struct mm_struct {
 #ifdef CONFIG_IOMMU_SUPPORT
 		u32 pasid;
 #endif
+
+#ifdef CONFIG_MEMORY_RELIABLE
+		atomic_long_t reserve_0;
+#endif
 	} __randomize_layout;
 
 	KABI_RESERVE(1)
