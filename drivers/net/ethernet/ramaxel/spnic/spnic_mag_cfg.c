@@ -178,7 +178,7 @@ int spnic_set_loopback_mode(void *hwdev, u8 mode, u8 enable)
 		return -EINVAL;
 	}
 
-	return spnic_cfg_loopback_mode(nic_cfg, MGMT_MSG_CMD_OP_GET, &mode, &enable);
+	return spnic_cfg_loopback_mode(nic_cfg, MGMT_MSG_CMD_OP_SET, &mode, &enable);
 }
 
 int spnic_set_led_status(void *hwdev, enum mag_led_type type, enum mag_led_mode mode)
