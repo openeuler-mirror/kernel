@@ -7122,7 +7122,7 @@ CONFIG_NTB=m
 # CONFIG_NTB_MSI is not set
 # CONFIG_NTB_AMD is not set
 # CONFIG_NTB_IDT is not set
-# CONFIG_NTB_INTEL is not set
+CONFIG_NTB_INTEL=m
 # CONFIG_NTB_SWITCHTEC is not set
 # CONFIG_NTB_PINGPONG is not set
 # CONFIG_NTB_TOOL is not set
