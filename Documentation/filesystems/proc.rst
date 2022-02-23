@@ -963,6 +963,8 @@ varies by architecture and compile options.  The following is from a
     AnonHugePages:   49152 kB
     ShmemHugePages:      0 kB
     ShmemPmdMapped:      0 kB
+    ReliableTotal: 7340032 kB
+    ReliableUsed:   418824 kB
 
 MemTotal
               Total usable RAM (i.e. physical RAM minus a few reserved
@@ -1092,6 +1094,10 @@ VmallocChunk
 Percpu
               Memory allocated to the percpu allocator used to back percpu
               allocations. This stat excludes the cost of metadata.
+ReliableTotal
+              Total reliable memory size
+ReliableUsed
+              The used amount of reliable memory
 
 vmallocinfo
 ~~~~~~~~~~~
