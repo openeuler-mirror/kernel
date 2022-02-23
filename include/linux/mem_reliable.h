@@ -13,10 +13,12 @@
 extern struct static_key_false mem_reliable;
 
 extern bool reliable_enabled;
+extern bool shmem_reliable;
 
 extern void add_reliable_mem_size(long sz);
 extern void mem_reliable_init(bool has_unmirrored_mem,
 			      unsigned long *zone_movable_pfn);
+extern void shmem_reliable_init(void);
 extern void reliable_report_meminfo(struct seq_file *m);
 
 static inline bool mem_reliable_is_enabled(void)
@@ -46,6 +48,11 @@ static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
 
 	return false;
 }
+
+static inline bool shmem_reliable_is_enabled(void)
+{
+	return shmem_reliable;
+}
 #else
 #define reliable_enabled 0
 
@@ -53,12 +60,14 @@ static inline bool mem_reliable_is_enabled(void) { return false; }
 static inline void add_reliable_mem_size(long sz) {}
 static inline void mem_reliable_init(bool has_unmirrored_mem,
 				     unsigned long *zone_movable_pfn) {}
+static inline void shmem_reliable_init(void) {}
 static inline bool zone_reliable(struct zone *zone) { return false; }
 static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
 {
 	return false;
 }
 static inline void reliable_report_meminfo(struct seq_file *m) {}
+static inline bool shmem_reliable_is_enabled(void) { return false; }
 #endif
 
 #endif

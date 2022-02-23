@@ -13,6 +13,7 @@ DEFINE_STATIC_KEY_FALSE(mem_reliable);
 bool reliable_enabled;
 
 static atomic_long_t total_reliable_mem;
+bool shmem_reliable __read_mostly = true;
 
 void add_reliable_mem_size(long sz)
 {
@@ -90,6 +91,17 @@ void mem_reliable_init(bool has_unmirrored_mem, unsigned long *zone_movable_pfn)
 
 	pr_info("init succeed, mirrored memory size(%lu)\n",
 		total_reliable_mem_sz());
+}
+
+void shmem_reliable_init(void)
+{
+	if (!shmem_reliable_is_enabled())
+		return;
+
+	if (!mem_reliable_is_enabled()) {
+		shmem_reliable = false;
+		pr_info("shmem reliable disabled.\n");
+	}
 }
 
 void reliable_report_meminfo(struct seq_file *m)
