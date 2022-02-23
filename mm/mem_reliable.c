@@ -15,6 +15,12 @@ bool reliable_enabled;
 static atomic_long_t total_reliable_mem;
 bool shmem_reliable __read_mostly = true;
 
+void page_cache_prepare_alloc(gfp_t *gfp)
+{
+	if (mem_reliable_is_enabled())
+		*gfp |= GFP_RELIABLE;
+}
+
 void add_reliable_mem_size(long sz)
 {
 	atomic_long_add(sz, &total_reliable_mem);

@@ -20,6 +20,7 @@ extern void mem_reliable_init(bool has_unmirrored_mem,
 			      unsigned long *zone_movable_pfn);
 extern void shmem_reliable_init(void);
 extern void reliable_report_meminfo(struct seq_file *m);
+extern void page_cache_prepare_alloc(gfp_t *gfp);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -68,6 +69,7 @@ static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
 }
 static inline void reliable_report_meminfo(struct seq_file *m) {}
 static inline bool shmem_reliable_is_enabled(void) { return false; }
+static inline void page_cache_prepare_alloc(gfp_t *gfp) {}
 #endif
 
 #endif
