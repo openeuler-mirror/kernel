@@ -222,6 +222,10 @@ static int ehci_pci_setup(struct usb_hcd *hcd)
 			ehci->has_synopsys_hc_bug = 1;
 		}
 		break;
+	case PCI_VENDOR_ID_ZHAOXIN:
+		if (pdev->device == 0x3104 && (pdev->revision & 0xf0) == 0x90)
+			ehci->zx_wakeup_clear = 1;
+		break;
 	}
 
 	/* optional debug port, normally in the first BAR */
