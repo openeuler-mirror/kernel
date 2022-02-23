@@ -823,8 +823,14 @@ static int ahci_set_lpm(struct ata_link *link, enum ata_lpm_policy policy,
 static void ahci_power_down(struct ata_port *ap)
 {
 	struct ahci_host_priv *hpriv = ap->host->private_data;
+	struct pci_dev *pdev;
 	void __iomem *port_mmio = ahci_port_base(ap);
 	u32 cmd, scontrol;
+
+	/* port suspended enable Plugin intr for Zhaoxin platform */
+	pdev = (ap->dev && dev_is_pci(ap->dev)) ? to_pci_dev(ap->dev) : NULL;
+	if ((pdev && pdev->vendor == PCI_VENDOR_ID_ZHAOXIN) && !ap->link.device->sdev)
+		writel(PORT_IRQ_CONNECT, port_mmio + PORT_IRQ_MASK);
 
 	if (!(hpriv->cap & HOST_CAP_SSS))
 		return;
@@ -1701,6 +1707,7 @@ static void ahci_error_intr(struct ata_port *ap, u32 irq_stat)
 	struct ata_link *link = NULL;
 	struct ata_queued_cmd *active_qc;
 	struct ata_eh_info *active_ehi;
+	struct pci_dev *pdev;
 	bool fbs_need_dec = false;
 	u32 serror;
 
@@ -1791,6 +1798,14 @@ static void ahci_error_intr(struct ata_port *ap, u32 irq_stat)
 		ata_ehi_push_desc(host_ehi, "%s",
 			irq_stat & PORT_IRQ_CONNECT ?
 			"connection status changed" : "PHY RDY changed");
+
+		/* When plugin intr happen, now resume suspended port for Zhaoxin platform */
+		pdev = (ap->dev && dev_is_pci(ap->dev)) ? to_pci_dev(ap->dev) : NULL;
+		if ((pdev && pdev->vendor == PCI_VENDOR_ID_ZHAOXIN) &&
+			(ap->pflags & ATA_PFLAG_SUSPENDED)) {
+			pm_request_resume(&ap->tdev);
+			return;
+		}
 	}
 
 	/* okay, let's hand over to EH */

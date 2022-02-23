@@ -869,6 +869,19 @@ static int ahci_pci_device_runtime_resume(struct device *dev)
 	if (rc)
 		return rc;
 	ahci_pci_init_controller(host);
+
+	/* Port resume for Zhaoxin platform */
+	if (pdev->vendor == PCI_VENDOR_ID_ZHAOXIN) {
+		if (pdev->revision == 0x01)
+			ata_msleep(NULL, 10);
+
+		for (rc = 0; rc < host->n_ports; rc++) {
+			struct ata_port *ap = host->ports[rc];
+
+			pm_request_resume(&ap->tdev);
+		}
+	}
+
 	return 0;
 }
 
