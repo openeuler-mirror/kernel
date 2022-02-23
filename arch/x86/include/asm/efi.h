@@ -138,7 +138,6 @@ struct efi_scratch {
 
 extern struct efi_scratch efi_scratch;
 extern int __init efi_memblock_x86_reserve_range(void);
-extern void __init efi_print_memmap(void);
 extern void __init efi_map_region(efi_memory_desc_t *md);
 extern void __init efi_map_region_fixed(efi_memory_desc_t *md);
 extern void efi_sync_low_kernel_mappings(void);
