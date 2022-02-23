@@ -30,7 +30,7 @@
 #define SPHW_CMDQ_MAX_DATA_SIZE			\
 			(SPHW_CMDQ_BUF_SIZE - SPHW_CMDQ_BUF_HW_RSVD)
 
-#define CMDQ_CMD_TIMEOUT				300000 /* millisecond */
+#define CMDQ_CMD_TIMEOUT				5000 /* millisecond */
 
 #define UPPER_8_BITS(data)				(((data) >> 8) & 0xFF)
 #define LOWER_8_BITS(data)				((data) & 0xFF)

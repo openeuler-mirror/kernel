@@ -50,7 +50,7 @@
 
 #define MSG_NO_RESP			0xFFFF
 
-#define MGMT_MSG_TIMEOUT		300000	/* millisecond */
+#define MGMT_MSG_TIMEOUT		20000	/* millisecond */
 
 #define SYNC_MSG_ID(pf_to_mgmt)	((pf_to_mgmt)->sync_msg_id)
 
