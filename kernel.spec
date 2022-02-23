@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       57
+%global devel_release       58
 %global maintenance_release .0.0
-%global pkg_release         .31
+%global pkg_release         .32
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -862,6 +862,33 @@ fi
 %endif
 
 %changelog
+* Wed Feb 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-58.0.0.32
+- arm64: openeuler_defconfig: Enable config for ultrasoc driver
+- drivers/coresight: Add Ultrasoc System Memory Buffer driver
+- coresight: etm4x: Modify core-commit to avoid HiSilicon ETM overflow
+- RAS: Report ARM processor information to userspace
+- configs: enable CONFIG_NTB_INTEL
+- udf: Restore i_lenAlloc when inode expansion fails
+- udf: Fix NULL ptr deref when converting from inline format
+- rcu: Do not report strict GPs for outgoing CPUs
+- rcu-tasks: Make ksoftirqd provide RCU Tasks quiescent states
+- entry: Explicitly flush pending rcuog wakeup before last rescheduling point
+- rcu/nocb: Trigger self-IPI on late deferred wake up before user resume
+- irq_work: Cleanup
+- powerpc/process, kasan: Silence KASAN warnings in __get_wchan()
+- net/spnic: Reduce the timeout of the channel between driver and firmware
+- net/spnic: Fix an error when netdev failed to link up
+- net/spnic: Fix xor checksum error when sending a non 4B-aligned message to firmware
+- net/spnic: Fix ethtool loopback command failure
+- net/spnic: Fix array bounds error in ethtool get_link_ksettings
+- x86/tsc: Make cur->adjusted values in package#1 to be the same
+- ata: Add support for PxSCT.LPM set based on actual LPM capability
+- ata: Add support for disabling PhyRdy Change Interrupt based on actual LPM capability
+- ahci: Fix some bugs like plugin support and sata link stability when user enable ahci RTD3
+- EHCI: Clear wakeup signal locked in S0 state when device plug in
+- XHCI: Fix some device identify fail when enable xHCI runtime suspend
+- rtc: Fix set RTC time delay 500ms on some Zhaoxin SOCs
+
 * Tue Feb 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-57.0.0.31
 - yam: fix a memory leak in yam_siocdevprivate()
 - Phytium/S2500: kdump: Avoid vmcore saving failure across multi-socket
