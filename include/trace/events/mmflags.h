@@ -49,7 +49,7 @@
 	{(unsigned long)__GFP_RECLAIM,		"__GFP_RECLAIM"},	\
 	{(unsigned long)__GFP_DIRECT_RECLAIM,	"__GFP_DIRECT_RECLAIM"},\
 	{(unsigned long)__GFP_KSWAPD_RECLAIM,	"__GFP_KSWAPD_RECLAIM"},\
-	{(unsigned long)__GFP_RESERVE_0,	"__GFP_RESERVE_0"},	\
+	{(unsigned long)__GFP_RELIABLE,		"__GFP_RELIABLE"},	\
 	{(unsigned long)__GFP_RESERVE_1,	"__GFP_RESERVE_1"}	\
 
 #define show_gfp_flags(flags)						\

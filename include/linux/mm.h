@@ -34,6 +34,9 @@
 #include <linux/pgtable.h>
 #include <linux/kabi.h>
 
+/* added to mm.h to avoid every caller adding new header file */
+#include <linux/mem_reliable.h>
+
 struct mempolicy;
 struct anon_vma;
 struct anon_vma_chain;

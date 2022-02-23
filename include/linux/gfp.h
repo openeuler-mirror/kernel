@@ -39,7 +39,7 @@ struct vm_area_struct;
 #define ___GFP_HARDWALL		0x100000u
 #define ___GFP_THISNODE		0x200000u
 #define ___GFP_ACCOUNT		0x400000u
-#define ___GFP_RESERVE_0	0x800000u
+#define ___GFP_RELIABLE		0x800000u
 #define ___GFP_RESERVE_1	0x1000000u
 #ifdef CONFIG_LOCKDEP
 #define ___GFP_NOLOCKDEP	0x2000000u
@@ -225,8 +225,10 @@ struct vm_area_struct;
 /* Disable lockdep for GFP context tracking */
 #define __GFP_NOLOCKDEP ((__force gfp_t)___GFP_NOLOCKDEP)
 
-/* Reserve 2 flags for future usage */
-#define __GFP_RESERVE_0 ((__force gfp_t)___GFP_RESERVE_0)
+/* Alloc memory from mirrored region */
+#define __GFP_RELIABLE ((__force gfp_t)___GFP_RELIABLE)
+
+/* Reserve 1 flags for future usage */
 #define __GFP_RESERVE_1 ((__force gfp_t)___GFP_RESERVE_1)
 
 /* Room for N __GFP_FOO bits */
@@ -315,6 +317,7 @@ struct vm_area_struct;
 #define GFP_TRANSHUGE_LIGHT	((GFP_HIGHUSER_MOVABLE | __GFP_COMP | \
 			 __GFP_NOMEMALLOC | __GFP_NOWARN) & ~__GFP_RECLAIM)
 #define GFP_TRANSHUGE	(GFP_TRANSHUGE_LIGHT | __GFP_DIRECT_RECLAIM)
+#define GFP_RELIABLE __GFP_RELIABLE
 
 /* Convert GFP flags to their corresponding migrate type */
 #define GFP_MOVABLE_MASK (__GFP_RECLAIMABLE|__GFP_MOVABLE)
@@ -461,6 +464,12 @@ static inline enum zone_type gfp_zone(gfp_t flags)
 	z = (GFP_ZONE_TABLE >> (bit * GFP_ZONES_SHIFT)) &
 					 ((1 << GFP_ZONES_SHIFT) - 1);
 	VM_BUG_ON((GFP_ZONE_BAD >> bit) & 1);
+
+#ifdef CONFIG_MEMORY_RELIABLE
+	if (z == ZONE_MOVABLE && (flags & GFP_RELIABLE))
+		return ZONE_NORMAL;
+#endif
+
 	return z;
 }
 
