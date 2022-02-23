@@ -173,4 +173,16 @@ config CORESIGHT_CTI_INTEGRATION_REGS
 	  CTI trigger connections between this and other devices.These
 	  registers are not used in normal operation and can leave devices in
 	  an inconsistent state.
+
+config ULTRASOC_SMB
+	tristate "Ultrasoc system memory buffer drivers"
+	depends on ARM64 && CORESIGHT_LINKS_AND_SINKS
+	help
+	  This driver provides support for the Ultrasoc system memory buffer (SMB).
+	  SMB is responsible for receiving the trace data from Coresight ETM devices
+	  and storing them to a system buffer.
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called ultrasoc-smb.
+
 endif
