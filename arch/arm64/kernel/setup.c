@@ -388,6 +388,7 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	arm64_memblock_init();
 
 	efi_fake_memmap();
+	efi_find_mirror();
 
 	paging_init();
 
