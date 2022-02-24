@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       54
+%global devel_release       59
 %global maintenance_release .0.0
-%global pkg_release         .27
+%global pkg_release         .32
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -861,6 +861,164 @@ fi
 %endif
 
 %changelog
+* Wed Feb 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-59.0.0.32
+- bonding: force carrier update when releasing slave
+- ext4: fix underflow in ext4_max_bitmap_size()
+- dm: make sure dm_table is binded before queue request
+- tty/amba-pl011: Call acpi_put_table() to fix memory leak
+- config: enable MEMORY_RELIABLE by default
+- mm: add support for page cache use reliable memory
+- shmem: Introduce shmem reliable
+- mm: Reserve field in mm_struct for memory reliable
+- mm: Introduce reliable flag for user task
+- meminfo: Show reliable memory info
+- mm: Introduce memory reliable
+- efi: Disable mirror feature if kernelcore is not specified
+- mm: Demote warning message in vmemmap_verify() to debug level
+- mm: Ratelimited mirrored memory related warning messages
+- efi: Find mirrored memory ranges for arm64
+- efi: Make efi_find_mirror() public
+- arm64: efi: Add fake memory support
+- efi: Make efi_print_memmap() public
+
+* Wed Feb 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-58.0.0.31
+- arm64: openeuler_defconfig: Enable config for ultrasoc driver
+- drivers/coresight: Add Ultrasoc System Memory Buffer driver
+- coresight: etm4x: Modify core-commit to avoid HiSilicon ETM overflow
+- RAS: Report ARM processor information to userspace
+- configs: enable CONFIG_NTB_INTEL
+- udf: Restore i_lenAlloc when inode expansion fails
+- udf: Fix NULL ptr deref when converting from inline format
+- rcu: Do not report strict GPs for outgoing CPUs
+- rcu-tasks: Make ksoftirqd provide RCU Tasks quiescent states
+- entry: Explicitly flush pending rcuog wakeup before last rescheduling point
+- rcu/nocb: Trigger self-IPI on late deferred wake up before user resume
+- irq_work: Cleanup
+- powerpc/process, kasan: Silence KASAN warnings in __get_wchan()
+- net/spnic: Reduce the timeout of the channel between driver and firmware
+- net/spnic: Fix an error when netdev failed to link up
+- net/spnic: Fix xor checksum error when sending a non 4B-aligned message to firmware
+- net/spnic: Fix ethtool loopback command failure
+- net/spnic: Fix array bounds error in ethtool get_link_ksettings
+- x86/tsc: Make cur->adjusted values in package#1 to be the same
+- ata: Add support for PxSCT.LPM set based on actual LPM capability
+- ata: Add support for disabling PhyRdy Change Interrupt based on actual LPM capability
+- ahci: Fix some bugs like plugin support and sata link stability when user enable ahci RTD3
+- EHCI: Clear wakeup signal locked in S0 state when device plug in
+- XHCI: Fix some device identify fail when enable xHCI runtime suspend
+- rtc: Fix set RTC time delay 500ms on some Zhaoxin SOCs
+
+* Tue Feb 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-57.0.0.30
+- yam: fix a memory leak in yam_siocdevprivate()
+- Phytium/S2500: kdump: Avoid vmcore saving failure across multi-socket
+- irqchip/irq-gic-phytium-2500: Add support for kdump
+- ipmi_si: Phytium S2500 workaround for MMIO-based IPMI
+- iommu: support phytium ft2000plus and S2500 iommu function
+- sw64: vfio: select VFIO_IOMMU_TYPE1 as default
+- sw64: tty: add serial driver for sw64
+- sw64: spi: add driver for SPI controller
+- sw64: add hypervisor based RTC on SW64 systems
+- sw64: kgdb: add support for sw64
+- sw64: LPC: add driver for LPC controller
+- sw64: iommu: fix a bug in calling 'alloc_pages_node'
+- sw64: iommu: add iommu driver for sw64
+- sw64: gpu/drm: fix kernel crash caused by drm driver
+- sw64: radeon: correct low-level mmio memset direct calls
+- sw64: gpu/drm: solve driver load cause kernel crash
+- amdgpu: enable KFD on SW64 systems
+- sw64: megaraid: fix kernel panic caused by accessing an illegal address
+- sw64: i2c: add i2c driver based designware for sw64
+- sw64: efi: add SMBIOS/DMI and EFI runtime driver codes
+- sw64: gpio: add sunway builtin gpio driver
+- sw64: acpi: add initial acpi infrastructure support
+- sw64: add perf userspace tool support for sw64
+- tools uapi: fix sw64 support
+- sw64: kvm: add definitions for kvm
+- sw64: moduleparam: fix sw64 compile failure
+- sw64: kdump/kexec: add KEXEC_ARCH_SW_64 definition
+- sw64: add AUDIT_ARCH_SW64 definition
+- sw64: ftrace: add sw64 support to recordmcount
+- sw64: add sw_64 support to buildtar, mkdebian and builddeb
+- sw64: add basic support for sw64
+- mm/pin_mem: add invalid check for pinmemory boot parameter
+- livepatch/x86: Fix incorrect use of 'strncpy'
+- livepatch: Fix issues in klp_mem_{prepare,recycle}
+- livepatch: Introduce 'arch_klp_save_old_code'
+- livepatch: Reduce duplicated arch_klp_mem_{prepare,recycle}
+- livepatch: Move 'klp_func_list' related codes out of 'arch'
+- livepatch: Introduce 'struct arch_klp_data'
+- livepatch/arm64: Uniform 'old_func' field in struct klp_func_node
+- tpm_tis_spi: set default probe function if device id not match
+- deconfig: intel ice-lake missing config enable
+- selftests/sgx: Fix Q1 and Q2 calculation in sigstruct.c
+- selftests/sgx: remove checks for file execute permissions
+- selftests/sgx: Refine the test enclave to have storage
+- selftests/sgx: Add EXPECT_EEXIT() macro
+- selftests/sgx: Dump enclave memory map
+- selftests/sgx: Migrate to kselftest harness
+- selftests/sgx: Rename 'eenter' and 'sgx_call_vdso'
+- x86/sgx: Expose SGX architectural definitions to the kernel
+- selftests/sgx: Use getauxval() to simplify test code
+- selftests/sgx: Improve error detection and messages
+- selftests/sgx: Use a statically generated 3072-bit RSA key
+- x86/sgx: Remove unnecessary kmap() from sgx_ioc_enclave_init()
+- x86/sgx: Add a basic NUMA allocation scheme to sgx_alloc_epc_page()
+- x86/sgx: Replace section->init_laundry_list with sgx_dirty_page_list
+- x86/sgx: Maintain encl->refcount for each encl->mm_list entry
+- x86/sgx: Drop racy follow_pfn() check
+- x86/sgx: Fix the return type of sgx_init()
+- x86/sgx: Return -EINVAL on a zero length buffer in sgx_ioc_enclave_add_pages()
+- x86/sgx: Fix sgx_ioc_enclave_provision() kernel-doc
+- x86/sgx: Return -ERESTARTSYS in sgx_ioc_enclave_add_pages()
+- x86/sgx: Clarify 'laundry_list' locking
+- x86/sgx: Update MAINTAINERS
+- Documentation/x86: Document SGX kernel architecture
+- x86/sgx: Add ptrace() support for the SGX driver
+- x86/sgx: Add a page reclaimer
+- selftests/x86: Add a selftest for SGX
+- x86/vdso: Implement a vDSO for Intel SGX enclave call
+- x86/traps: Attempt to fixup exceptions in vDSO before signaling
+- x86/fault: Add a helper function to sanitize error code
+- x86/vdso: Add support for exception fixup in vDSO functions
+- x86/sgx: Add SGX_IOC_ENCLAVE_PROVISION
+- x86/sgx: Add SGX_IOC_ENCLAVE_INIT
+- x86/sgx: Add SGX_IOC_ENCLAVE_ADD_PAGES
+- x86/sgx: Add SGX_IOC_ENCLAVE_CREATE
+- x86/sgx: Add an SGX misc driver interface
+- mm: Add 'mprotect' hook to struct vm_operations_struct
+- x86/sgx: Add SGX page allocator functions
+- x86/cpu/intel: Add a nosgx kernel parameter
+- x86/cpu/intel: Detect SGX support
+- x86/sgx: Initialize metadata for Enclave Page Cache (EPC) sections
+- x86/{cpufeatures,msr}: Add Intel SGX Launch Control hardware bits
+- x86/cpufeatures: Add Intel SGX hardware bits
+- x86/sgx: Add wrappers for ENCLS functions
+- x86/sgx: Add SGX architectural data structures
+- configfs: fix a race in configfs_{,un}register_subsystem()
+- fs/dirty_pages: fix wrong lock for inode list in super_block
+- ACPI: irq: Prevent unregistering of GIC SGIs
+- PM: ACPI: Refresh wakeup device power configuration every time
+- ACPICA: Interpreter: fix memory leak by using existing buffer
+
+* Thu Feb 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-56.0.0.29
+- configs: enable CONFIG_INTEGRITY_PLATFORM_KEYRING and CONFIG_LOAD_UEFI_KEYS
+- tipc: improve size validations for received domain records
+- cgroup-v1: Require capabilities to set release_agent
+- NFSv4: nfs_atomic_open() can race when looking up a non-regular file
+- NFSv4: Handle case where the lookup of a directory fails
+- cgroup/cpuset: Fix a race between cpuset_attach() and cpu hotplug
+- block: update io_ticks when io hang
+- livepatch: Fix missing unlock on error in klp_enable_patch()
+- livepatch: Fix kobject refcount bug on klp_init_patch_early failure path
+
+* Fri Feb 11 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-55.0.0.28
+- kabi: cleanup config entries of kabi
+- kabi: fix build error when CONFIG_KABI_RESERVE=n
+- kabi:crypto: reserve space for RSASSA-PSS style certificates
+- mm/page_alloc: use accumulated load when building node fallback list
+- mm/page_alloc: print node fallback order
+- arm64: openeuler_defconfig: Enable Kunpeng related configs
+
 * Thu Feb 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-54.0.0.27
 - rcu: Make TASKS_TRACE_RCU select IRQ_WORK
 - x86/kdump: make crash kernel boot faster
