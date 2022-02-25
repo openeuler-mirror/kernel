@@ -392,11 +392,6 @@ static void kvm_flush_shadow_all(struct kvm *kvm)
 	kvm_arch_guest_memory_reclaimed(kvm);
 }
 
-void kvm_reload_remote_mmus(struct kvm *kvm)
-{
-	kvm_make_all_cpus_request(kvm, KVM_REQ_MMU_RELOAD);
-}
-
 #ifdef KVM_ARCH_NR_OBJS_PER_MEMORY_CACHE
 static inline void *mmu_memory_cache_alloc_obj(struct kvm_mmu_memory_cache *mc,
 					       gfp_t gfp_flags)
