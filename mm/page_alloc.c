@@ -4652,8 +4652,15 @@ static inline bool prepare_before_alloc(gfp_t *gfp_mask, unsigned int order)
 		return true;
 
 	if (gfp_ori & ___GFP_RELIABILITY) {
-		*gfp_mask |= ___GFP_RELIABILITY;
-		return true;
+		if (mem_reliable_watermark_ok(1 << order)) {
+			*gfp_mask |= ___GFP_RELIABILITY;
+			return true;
+		}
+
+		if (reliable_allow_fb_enabled())
+			return true;
+
+		return false;
 	}
 
 	/*
@@ -4661,7 +4668,8 @@ static inline bool prepare_before_alloc(gfp_t *gfp_mask, unsigned int order)
 	 * allocation trigger task_reliable_limit
 	 */
 	if (is_global_init(current)) {
-		if (reliable_mem_limit_check(1 << order))
+		if (reliable_mem_limit_check(1 << order) &&
+		    mem_reliable_watermark_ok(1 << order))
 			*gfp_mask |= ___GFP_RELIABILITY;
 		return true;
 	}
@@ -4675,7 +4683,8 @@ static inline bool prepare_before_alloc(gfp_t *gfp_mask, unsigned int order)
 	 */
 	if ((current->flags & PF_RELIABLE) && (gfp_ori & __GFP_HIGHMEM) &&
 	    (gfp_ori & __GFP_MOVABLE)) {
-		if (reliable_mem_limit_check(1 << order)) {
+		if (reliable_mem_limit_check(1 << order) &&
+		    mem_reliable_watermark_ok(1 << order)) {
 			*gfp_mask |= ___GFP_RELIABILITY;
 			return true;
 		}
