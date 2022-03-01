@@ -514,7 +514,8 @@ void reliable_show_mem_info(void)
 		pr_info("task_reliable_limit: %lu kB",
 			task_reliable_limit >> 10);
 		pr_info("reliable_user_used: %ld kB",
-			atomic_long_read(&reliable_user_used_nr_page) * 4);
+			atomic_long_read(&reliable_user_used_nr_page) <<
+			(PAGE_SHIFT - 10));
 	}
 }
 
