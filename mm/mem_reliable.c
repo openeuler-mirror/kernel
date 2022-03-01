@@ -10,6 +10,14 @@
 #include <linux/mmzone.h>
 #include <linux/oom.h>
 
+enum mem_reliable_types {
+	MEM_RELIABLE_ALL,
+	MEM_RELIABLE_FALLBACK,
+	MEM_RELIABLE_SHM,
+	MEM_RELIABLE_PAGECACHE,
+	MEM_RELIABLE_MAX
+};
+
 DEFINE_STATIC_KEY_FALSE(mem_reliable);
 
 bool reliable_enabled;
@@ -205,6 +213,93 @@ int reliable_limit_handler(struct ctl_table *table, int write,
 	return ret;
 }
 
+static void mem_reliable_feature_set(int idx, bool enable);
+
+#define CTRL_BITS_SHIFT MEM_RELIABLE_MAX
+#define CTRL_BITS_MASK ((1 << CTRL_BITS_SHIFT) - 1)
+
+static unsigned long mem_reliable_ctrl_bits = CTRL_BITS_MASK;
+
+static void mem_reliable_ctrl_bit_set(int idx, bool enable)
+{
+	if (enable)
+		set_bit(idx, &mem_reliable_ctrl_bits);
+	else
+		clear_bit(idx, &mem_reliable_ctrl_bits);
+}
+
+static bool mem_reliable_ctrl_bit_is_enabled(int idx)
+{
+	return !!test_bit(idx, &mem_reliable_ctrl_bits);
+}
+
+static void mem_reliable_parse_ctrl_bits(unsigned long ctrl_bits)
+{
+	bool status;
+	int i;
+
+	if (!mem_reliable_is_enabled()) {
+		static_branch_enable(&mem_reliable);
+		mem_reliable_ctrl_bit_set(MEM_RELIABLE_ALL, 1);
+		pr_info("memory reliable feature enabled.\n");
+	}
+
+	for (i = MEM_RELIABLE_FALLBACK; i < MEM_RELIABLE_MAX; i++) {
+		status = !!test_bit(i, &ctrl_bits);
+
+		if (mem_reliable_ctrl_bit_is_enabled(i) ^ status) {
+			mem_reliable_ctrl_bit_set(i, status);
+			mem_reliable_feature_set(i, status);
+		}
+	}
+}
+
+static void mem_reliable_disable_all(void)
+{
+	if (!mem_reliable_is_enabled())
+		return;
+
+	mem_reliable_ctrl_bits = 0;
+
+	reliable_allow_fallback = false;
+	shmem_reliable = false;
+	pagecache_use_reliable_mem = false;
+	static_branch_disable(&mem_reliable);
+
+	pr_info("memory reliable feature disabled.\n");
+}
+
+int reliable_debug_handler(struct ctl_table *table, int write,
+	void __user *buffer, size_t *length, loff_t *ppos)
+{
+	unsigned long old_ctrl_bits, new_ctrl_bits;
+	static DEFINE_MUTEX(reliable_debug_mutex);
+	int ret;
+
+	mutex_lock(&reliable_debug_mutex);
+	old_ctrl_bits = mem_reliable_ctrl_bits;
+	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
+	if (ret == 0 && write) {
+		if (mem_reliable_ctrl_bits > (1 << CTRL_BITS_SHIFT) - 1) {
+			mem_reliable_ctrl_bits = old_ctrl_bits;
+			mutex_unlock(&reliable_debug_mutex);
+
+			return -EINVAL;
+		}
+
+		new_ctrl_bits = mem_reliable_ctrl_bits;
+		mem_reliable_ctrl_bits = old_ctrl_bits;
+		if (!!test_bit(MEM_RELIABLE_ALL, &new_ctrl_bits))
+			mem_reliable_parse_ctrl_bits(new_ctrl_bits);
+		else
+			mem_reliable_disable_all();
+	}
+
+	mutex_unlock(&reliable_debug_mutex);
+
+	return ret;
+}
+
 static struct ctl_table reliable_ctl_table[] = {
 	{
 		.procname = "task_reliable_limit",
@@ -212,6 +307,13 @@ static struct ctl_table reliable_ctl_table[] = {
 		.maxlen = sizeof(task_reliable_limit),
 		.mode = 0644,
 		.proc_handler = reliable_limit_handler,
+	},
+	{
+		.procname = "reliable_debug",
+		.data = &mem_reliable_ctrl_bits,
+		.maxlen = sizeof(mem_reliable_ctrl_bits),
+		.mode = 0600,
+		.proc_handler = reliable_debug_handler,
 	},
 	{}
 };
@@ -240,6 +342,31 @@ static int __init reliable_sysctl_init(void)
 }
 late_initcall(reliable_sysctl_init);
 #endif
+
+static void mem_reliable_feature_set(int idx, bool enable)
+{
+	char *str = NULL;
+
+	switch (idx) {
+	case MEM_RELIABLE_FALLBACK:
+		reliable_allow_fallback = enable;
+		str = "fallback";
+		break;
+	case MEM_RELIABLE_SHM:
+		shmem_reliable = enable;
+		str = "shmem";
+		break;
+	case MEM_RELIABLE_PAGECACHE:
+		pagecache_use_reliable_mem = enable;
+		str = "pagecache";
+		break;
+	default:
+		pr_err("unknown index: %d", idx);
+		return;
+	}
+
+	pr_info("%s is %s\n", str, enable ? "enabled" : "disabled");
+}
 
 void reliable_show_mem_info(void)
 {
@@ -284,16 +411,13 @@ static int __init setup_reliable_debug(char *str)
 	for (; *str && *str != ','; str++) {
 		switch (*str) {
 		case 'F':
-			reliable_allow_fallback = false;
-			pr_info("fallback disabled.");
+			mem_reliable_feature_set(MEM_RELIABLE_FALLBACK, false);
 			break;
 		case 'S':
-			shmem_reliable = false;
-			pr_info("shmem reliable disabled.");
+			mem_reliable_feature_set(MEM_RELIABLE_SHM, false);
 			break;
 		case 'P':
-			pagecache_use_reliable_mem = false;
-			pr_info("disable page cache use reliable memory\n");
+			mem_reliable_feature_set(MEM_RELIABLE_PAGECACHE, false);
 			break;
 		default:
 			pr_err("reliable_debug option '%c' unknown. skipped\n",

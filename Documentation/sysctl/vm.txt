@@ -66,6 +66,7 @@ Currently, these files are in /proc/sys/vm:
 - vfs_cache_pressure
 - watermark_scale_factor
 - zone_reclaim_mode
+- reliable_debug
 
 ==============================================================
 
@@ -922,5 +923,24 @@ of other processes running on other nodes will not be affected.
 Allowing regular swap effectively restricts allocations to the local
 node unless explicitly overridden by memory policies or cpuset
 configurations.
+
+==============================================================
+
+reliable_debug:
+
+reliable_debug is used to control memory reliable features.
+
+Four bits are used to represent the following features
+- bit 0: memory reliable feature
+- bit 1: reliable fallback feature
+- bit 2: tmpfs use reliable memory feature
+- bit 3: pagecache use reliable memory feature
+
+Bit 1~3 are valid if and only if the bit 0 is 1. If the first bit is 0, all
+other features will be closed no matter other bits's status.
+
+For example, you can enable reliable fallback feature by
+
+	$ echo 3 > /proc/sys/vm/reliable_debug
 
 ============ End of Document =================================
