@@ -834,6 +834,7 @@ config PID_RESERVE
 
 config MEMORY_RELIABLE
 	bool "Support for memory reliable"
+	depends on HAVE_MEMBLOCK_NODE_MAP
 	depends on ARM64
 	default n
 	help
