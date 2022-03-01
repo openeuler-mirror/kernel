@@ -53,12 +53,15 @@ void add_reliable_mem_size(long sz)
 
 bool page_reliable(struct page *page)
 {
-	return mem_reliable_is_enabled() && page_zonenum(page) < ZONE_MOVABLE;
+	if (!mem_reliable_is_enabled() || !page)
+		return false;
+
+	return page_zonenum(page) < ZONE_MOVABLE;
 }
 
 static bool reliable_and_lru_check(enum lru_list lru, struct page *page)
 {
-	if (!page || !page_reliable(page))
+	if (!page_reliable(page))
 		return false;
 
 	if (lru != LRU_ACTIVE_FILE && lru != LRU_INACTIVE_FILE)

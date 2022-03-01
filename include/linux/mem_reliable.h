@@ -107,7 +107,7 @@ static inline void shmem_reliable_page_counter(struct page *page, int nr_page)
 
 static inline void mem_reliable_buddy_counter(struct page *page, int nr_page)
 {
-	if (page && page_reliable(page))
+	if (page_reliable(page))
 		this_cpu_add(nr_reliable_buddy_pages, nr_page);
 }
 
