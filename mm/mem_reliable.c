@@ -28,6 +28,7 @@ unsigned long task_reliable_limit = ULONG_MAX;
 bool reliable_allow_fallback __read_mostly = true;
 bool shmem_reliable __read_mostly = true;
 struct percpu_counter reliable_shmem_used_nr_page __read_mostly;
+DEFINE_PER_CPU(long, nr_reliable_buddy_pages);
 
 bool pagecache_use_reliable_mem __read_mostly = true;
 atomic_long_t page_cache_fallback = ATOMIC_LONG_INIT(0);
@@ -168,11 +169,20 @@ static unsigned long used_reliable_mem_sz(void)
 
 void reliable_report_meminfo(struct seq_file *m)
 {
+	long buddy_pages_sum = 0;
+	int cpu;
+
 	if (mem_reliable_is_enabled()) {
+		for_each_possible_cpu(cpu)
+			buddy_pages_sum +=
+				per_cpu(nr_reliable_buddy_pages, cpu);
+
 		seq_printf(m, "ReliableTotal:    %8lu kB\n",
 			   total_reliable_mem_sz() >> 10);
 		seq_printf(m, "ReliableUsed:     %8lu kB\n",
 			   used_reliable_mem_sz() >> 10);
+		seq_printf(m, "ReliableBuddyMem: %8lu kB\n",
+			   buddy_pages_sum << (PAGE_SHIFT - 10));
 
 		if (shmem_reliable_is_enabled()) {
 			unsigned long shmem = (unsigned long)percpu_counter_sum(
