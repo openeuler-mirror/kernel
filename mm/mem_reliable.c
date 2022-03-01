@@ -37,6 +37,10 @@ long shmem_reliable_nr_page = LONG_MAX;
 bool pagecache_use_reliable_mem __read_mostly = true;
 atomic_long_t page_cache_fallback = ATOMIC_LONG_INIT(0);
 DEFINE_PER_CPU(long, pagecache_reliable_pages);
+
+static unsigned long zero;
+static unsigned long reliable_pagecache_max_bytes = ULONG_MAX;
+
 bool mem_reliable_status(void)
 {
 	return mem_reliable_is_enabled();
@@ -394,6 +398,23 @@ int reliable_shmem_bytes_limit_handler(struct ctl_table *table, int write,
 }
 #endif
 
+int reliable_pagecache_max_bytes_write(struct ctl_table *table, int write,
+	void __user *buffer, size_t *length, loff_t *ppos)
+{
+	unsigned long old_value = reliable_pagecache_max_bytes;
+	int ret;
+
+	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
+	if (!ret && write) {
+		if (reliable_pagecache_max_bytes > total_reliable_mem_sz()) {
+			reliable_pagecache_max_bytes = old_value;
+			return -EINVAL;
+		}
+	}
+
+	return ret;
+}
+
 static struct ctl_table reliable_ctl_table[] = {
 	{
 		.procname = "task_reliable_limit",
@@ -425,6 +446,14 @@ static struct ctl_table reliable_ctl_table[] = {
 		.proc_handler = reliable_shmem_bytes_limit_handler,
 	},
 #endif
+	{
+		.procname = "reliable_pagecache_max_bytes",
+		.data = &reliable_pagecache_max_bytes,
+		.maxlen = sizeof(reliable_pagecache_max_bytes),
+		.mode = 0644,
+		.proc_handler = reliable_pagecache_max_bytes_write,
+		.extra1 = &zero,
+	},
 	{}
 };
 
@@ -437,6 +466,30 @@ static struct ctl_table reliable_dir_table[] = {
 	},
 	{}
 };
+
+void page_cache_prepare_alloc(gfp_t *gfp)
+{
+	long nr_reliable = 0;
+	int cpu;
+
+	if (!mem_reliable_is_enabled())
+		return;
+
+	for_each_possible_cpu(cpu)
+		nr_reliable += this_cpu_read(pagecache_reliable_pages);
+
+	if (nr_reliable < 0)
+		goto no_reliable;
+
+	if (nr_reliable > reliable_pagecache_max_bytes >> PAGE_SHIFT)
+		goto no_reliable;
+
+	*gfp |= ___GFP_RELIABILITY;
+	return;
+
+no_reliable:
+	*gfp &= ~___GFP_RELIABILITY;
+}
 
 static int __init reliable_sysctl_init(void)
 {

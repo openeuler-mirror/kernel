@@ -41,6 +41,7 @@ extern bool mem_reliable_status(void);
 
 extern void page_cache_reliable_lru_add(enum lru_list lru, struct page *page,
 					int val);
+extern void page_cache_prepare_alloc(gfp_t *gfp);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -175,6 +176,7 @@ static inline bool mem_reliable_shmem_limit_check(void) { return true; }
 static inline void page_cache_reliable_lru_add(enum lru_list lru,
 					       struct page *page,
 					       int val) {}
+static inline void page_cache_prepare_alloc(gfp_t *gfp) {}
 #endif
 
 #endif
