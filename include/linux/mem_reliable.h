@@ -15,7 +15,7 @@
 extern struct static_key_false mem_reliable;
 
 extern bool reliable_enabled;
-extern atomic_long_t reliable_user_used_nr_page;
+extern atomic_long_t reliable_task_used_nr_page;
 extern unsigned long task_reliable_limit __read_mostly;
 extern bool reliable_allow_fallback;
 extern bool shmem_reliable;
@@ -74,13 +74,13 @@ static inline void reliable_page_counter(struct page *page,
 {
 	if (page_reliable(page)) {
 		atomic_long_add(val, &mm->reliable_nr_page);
-		atomic_long_add(val, &reliable_user_used_nr_page);
+		atomic_long_add(val, &reliable_task_used_nr_page);
 	}
 }
 
 static inline bool reliable_mem_limit_check(unsigned long nr_page)
 {
-	return atomic_long_read(&reliable_user_used_nr_page) + nr_page <=
+	return atomic_long_read(&reliable_task_used_nr_page) + nr_page <=
 	       task_reliable_limit / PAGE_SIZE;
 }
 

@@ -884,6 +884,7 @@ ShmemHugePages:      0 kB
 ShmemPmdMapped:      0 kB
 ReliableTotal:     7340032 kB
 ReliableUsed:       418824 kB
+ReliableTaskUsed:   418824 kB
 ReliableBuddyMem:   418824 kB
 ReliableShmem:          96 kB
 
@@ -978,6 +979,8 @@ VmallocChunk: largest contiguous block of vmalloc area which is free
               allocations. This stat excludes the cost of metadata.
 ReliableTotal: Total reliable memory size
 ReliableUsed:  The used amount of reliable memory
+ReliableTaskUsed: Reliable memory used by special user tasks and global
+                  init process
 ReliableBuddyMem: Total mirrored memory size in buddy system
 ReliableShmem: Reliable memory used by shmem
 

@@ -24,7 +24,7 @@ DEFINE_STATIC_KEY_FALSE(mem_reliable);
 
 bool reliable_enabled;
 static atomic_long_t total_reliable_mem;
-atomic_long_t reliable_user_used_nr_page;
+atomic_long_t reliable_task_used_nr_page;
 /* reliable user limit for user tasks with reliable flag */
 unsigned long task_reliable_limit = ULONG_MAX;
 bool reliable_allow_fallback __read_mostly = true;
@@ -192,6 +192,8 @@ void reliable_report_meminfo(struct seq_file *m)
 			total_reliable_mem_sz() >> PAGE_SHIFT);
 	show_val_kb(m, "ReliableUsed:     ",
 			used_reliable_mem_sz() >> PAGE_SHIFT);
+	show_val_kb(m, "ReliableTaskUsed: ",
+			atomic_long_read(&reliable_task_used_nr_page));
 	show_val_kb(m, "ReliableBuddyMem: ", nr_buddy_pages);
 
 	if (shmem_reliable_is_enabled()) {
@@ -514,7 +516,7 @@ void reliable_show_mem_info(void)
 		pr_info("task_reliable_limit: %lu kB",
 			task_reliable_limit >> 10);
 		pr_info("reliable_user_used: %ld kB",
-			atomic_long_read(&reliable_user_used_nr_page) <<
+			atomic_long_read(&reliable_task_used_nr_page) <<
 			(PAGE_SHIFT - 10));
 	}
 }
