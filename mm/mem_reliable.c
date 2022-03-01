@@ -165,47 +165,47 @@ static unsigned long used_reliable_mem_sz(void)
 	return total_reliable_mem_sz() - nr_page * PAGE_SIZE;
 }
 
+static void show_val_kb(struct seq_file *m, const char *s, unsigned long num)
+{
+	seq_put_decimal_ull_width(m, s, num << (PAGE_SHIFT - 10), 8);
+	seq_write(m, " kB\n", 4);
+}
+
 void reliable_report_meminfo(struct seq_file *m)
 {
-	long buddy_pages_sum = 0;
+	bool pagecache_enabled = pagecache_reliable_is_enabled();
+	unsigned long nr_pagecache_pages = 0;
+	long nr_buddy_pages = 0;
 	int cpu;
 
-	if (mem_reliable_is_enabled()) {
-		for_each_possible_cpu(cpu)
-			buddy_pages_sum +=
-				per_cpu(nr_reliable_buddy_pages, cpu);
+	if (!mem_reliable_is_enabled())
+		return;
 
-		seq_printf(m, "ReliableTotal:    %8lu kB\n",
-			   total_reliable_mem_sz() >> 10);
-		seq_printf(m, "ReliableUsed:     %8lu kB\n",
-			   used_reliable_mem_sz() >> 10);
-		seq_printf(m, "ReliableBuddyMem: %8lu kB\n",
-			   buddy_pages_sum << (PAGE_SHIFT - 10));
+	for_each_possible_cpu(cpu) {
+		nr_buddy_pages += per_cpu(nr_reliable_buddy_pages, cpu);
+		if (pagecache_enabled)
+			nr_pagecache_pages +=
+				per_cpu(pagecache_reliable_pages, cpu);
+	}
 
-		if (shmem_reliable_is_enabled()) {
-			unsigned long shmem = (unsigned long)percpu_counter_sum(
-				&reliable_shmem_used_nr_page) << (PAGE_SHIFT - 10);
-			seq_printf(m, "ReliableShmem:    %8lu kB\n", shmem);
-		}
+	show_val_kb(m, "ReliableTotal:    ",
+			total_reliable_mem_sz() >> PAGE_SHIFT);
+	show_val_kb(m, "ReliableUsed:     ",
+			used_reliable_mem_sz() >> PAGE_SHIFT);
+	show_val_kb(m, "ReliableBuddyMem: ", nr_buddy_pages);
 
-		if (pagecache_reliable_is_enabled()) {
-			unsigned long num = 0;
-			int cpu;
+	if (shmem_reliable_is_enabled()) {
+		show_val_kb(m, "ReliableShmem:    ",
+			    percpu_counter_sum(&reliable_shmem_used_nr_page));
+	}
 
-			num += global_node_page_state(NR_LRU_BASE +
-						      LRU_ACTIVE_FILE);
-			num += global_node_page_state(NR_LRU_BASE +
-						      LRU_INACTIVE_FILE);
-			seq_printf(m, "FileCache:        %8lu kB\n",
-					num << (PAGE_SHIFT - 10));
+	if (pagecache_enabled) {
+		unsigned long num = 0;
 
-			num = 0;
-			for_each_possible_cpu(cpu)
-				num += per_cpu(pagecache_reliable_pages, cpu);
-
-			seq_printf(m, "ReliableFileCache:%8lu kB\n",
-					num << (PAGE_SHIFT - 10));
-		}
+		num += global_node_page_state(NR_LRU_BASE + LRU_ACTIVE_FILE);
+		num += global_node_page_state(NR_LRU_BASE + LRU_INACTIVE_FILE);
+		show_val_kb(m, "FileCache:        ", num);
+		show_val_kb(m, "ReliableFileCache:", nr_pagecache_pages);
 	}
 }
 
