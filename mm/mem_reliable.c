@@ -35,7 +35,6 @@ unsigned long nr_reliable_reserve_pages = MEM_RELIABLE_RESERVE_MIN / PAGE_SIZE;
 long shmem_reliable_nr_page = LONG_MAX;
 
 bool pagecache_use_reliable_mem __read_mostly = true;
-atomic_long_t page_cache_fallback = ATOMIC_LONG_INIT(0);
 DEFINE_PER_CPU(long, pagecache_reliable_pages);
 
 static unsigned long zero;
@@ -57,19 +56,6 @@ bool page_reliable(struct page *page)
 	return mem_reliable_is_enabled() && page_zonenum(page) < ZONE_MOVABLE;
 }
 
-static bool is_fallback_page(gfp_t gfp, struct page *page)
-{
-	bool ret = false;
-
-	if (!page)
-		return ret;
-
-	if ((gfp & ___GFP_RELIABILITY) && !page_reliable(page))
-		ret = true;
-
-	return ret;
-}
-
 static bool reliable_and_lru_check(enum lru_list lru, struct page *page)
 {
 	if (!page || !page_reliable(page))
@@ -87,21 +73,6 @@ void page_cache_reliable_lru_add(enum lru_list lru, struct page *page, int val)
 		return;
 
 	this_cpu_add(pagecache_reliable_pages, val);
-}
-
-void page_cache_fallback_inc(gfp_t gfp, struct page *page)
-{
-	long num;
-
-	if (!pagecache_reliable_is_enabled())
-		return;
-
-	if (!is_fallback_page(gfp, page))
-		return;
-
-	num = atomic_long_inc_return(&page_cache_fallback);
-	if (num < 0)
-		atomic_long_set(&page_cache_fallback, 0);
 }
 
 static int reliable_mem_notifier(struct notifier_block *nb,
