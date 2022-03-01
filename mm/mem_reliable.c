@@ -475,6 +475,9 @@ void page_cache_prepare_alloc(gfp_t *gfp)
 	if (!mem_reliable_is_enabled())
 		return;
 
+	if (!pagecache_reliable_is_enabled())
+		goto no_reliable;
+
 	for_each_possible_cpu(cpu)
 		nr_reliable += this_cpu_read(pagecache_reliable_pages);
 
