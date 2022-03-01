@@ -36,7 +36,7 @@ long shmem_reliable_nr_page = LONG_MAX;
 
 bool pagecache_use_reliable_mem __read_mostly = true;
 atomic_long_t page_cache_fallback = ATOMIC_LONG_INIT(0);
-
+DEFINE_PER_CPU(long, pagecache_reliable_pages);
 bool mem_reliable_status(void)
 {
 	return mem_reliable_is_enabled();
@@ -64,6 +64,25 @@ static bool is_fallback_page(gfp_t gfp, struct page *page)
 		ret = true;
 
 	return ret;
+}
+
+static bool reliable_and_lru_check(enum lru_list lru, struct page *page)
+{
+	if (!page || !page_reliable(page))
+		return false;
+
+	if (lru != LRU_ACTIVE_FILE && lru != LRU_INACTIVE_FILE)
+		return false;
+
+	return true;
+}
+
+void page_cache_reliable_lru_add(enum lru_list lru, struct page *page, int val)
+{
+	if (!reliable_and_lru_check(lru, page))
+		return;
+
+	this_cpu_add(pagecache_reliable_pages, val);
 }
 
 void page_cache_fallback_inc(gfp_t gfp, struct page *page)
@@ -196,12 +215,20 @@ void reliable_report_meminfo(struct seq_file *m)
 
 		if (pagecache_reliable_is_enabled()) {
 			unsigned long num = 0;
+			int cpu;
 
 			num += global_node_page_state(NR_LRU_BASE +
 						      LRU_ACTIVE_FILE);
 			num += global_node_page_state(NR_LRU_BASE +
 						      LRU_INACTIVE_FILE);
 			seq_printf(m, "FileCache:        %8lu kB\n",
+					num << (PAGE_SHIFT - 10));
+
+			num = 0;
+			for_each_possible_cpu(cpu)
+				num += per_cpu(pagecache_reliable_pages, cpu);
+
+			seq_printf(m, "ReliableFileCache:%8lu kB\n",
 					num << (PAGE_SHIFT - 10));
 		}
 	}

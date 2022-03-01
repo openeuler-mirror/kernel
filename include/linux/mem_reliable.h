@@ -39,6 +39,9 @@ extern void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
 				       int preferred_nid, nodemask_t *nodemask);
 extern bool mem_reliable_status(void);
 
+extern void page_cache_reliable_lru_add(enum lru_list lru, struct page *page,
+					int val);
+
 static inline bool mem_reliable_is_enabled(void)
 {
 	return static_branch_likely(&mem_reliable);
@@ -169,6 +172,9 @@ static inline bool mem_reliable_status(void) { return false; }
 static inline void mem_reliable_buddy_counter(struct page *page, int nr_page) {}
 static inline bool mem_reliable_watermark_ok(int nr_page) { return true; }
 static inline bool mem_reliable_shmem_limit_check(void) { return true; }
+static inline void page_cache_reliable_lru_add(enum lru_list lru,
+					       struct page *page,
+					       int val) {}
 #endif
 
 #endif

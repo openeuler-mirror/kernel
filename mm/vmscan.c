@@ -4596,6 +4596,7 @@ static int add_page_for_reclaim_swapcache(struct page *page,
 	case 0:
 		list_move(&head->lru, pagelist);
 		update_lru_size(lruvec, lru, page_zonenum(head), -hpage_nr_pages(head));
+		page_cache_reliable_lru_add(lru, head, -hpage_nr_pages(head));
 		break;
 	case -EBUSY:
 		list_move(&head->lru, src);
