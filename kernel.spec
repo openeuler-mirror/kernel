@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2202.3.0
+%global hulkrelease 2203.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0137
+Release: %{hulkrelease}.0138
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,28 @@ fi
 %endif
 
 %changelog
+
+* Tue Mar 01 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2203.1.0.0138
+- usb: gadget: rndis: check size of RNDIS_MSG_SET command
+- USB: gadget: validate interface OS descriptor requests
+- mm/hwpoison: clear MF_COUNT_INCREASED before retrying get_any_page()
+- udf: Restore i_lenAlloc when inode expansion fails
+- udf: Fix NULL ptr deref when converting from inline format
+- ext4: fix underflow in ext4_max_bitmap_size()
+- bpf: Verifer, adjust_scalar_min_max_vals to always call update_reg_bounds()
+- livepatch/x86: Fix incorrect use of 'strncpy'
+- tipc: improve size validations for received domain records
+- yam: fix a memory leak in yam_siocdevprivate()
+- ipmi_si: Phytium S2500 missing timeout counter reset in intf_mem_inw
+- mm,hwpoison: Fix use-after-free in memory_failure()
+- dm-mpath: fix UAF in multipath_message()
+- usb: gadget: clear related members when goto fail
+- usb: gadget: don't release an existing dev->buf
+- dm: make sure dm_table is binded before queue request
+- cgroup-v1: Require capabilities to set release_agent
+- NFSv4: nfs_atomic_open() can race when looking up a non-regular file
+- NFSv4: Handle case where the lookup of a directory fails
+- configfs: fix a race in configfs_{,un}register_subsystem()
 
 * Tue Feb 22 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2202.4.0.0137
 - tipc: improve size validations for received domain records
