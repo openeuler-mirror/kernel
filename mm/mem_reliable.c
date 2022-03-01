@@ -32,6 +32,12 @@ struct percpu_counter reliable_shmem_used_nr_page __read_mostly;
 bool pagecache_use_reliable_mem __read_mostly = true;
 atomic_long_t page_cache_fallback = ATOMIC_LONG_INIT(0);
 
+bool mem_reliable_status(void)
+{
+	return mem_reliable_is_enabled();
+}
+EXPORT_SYMBOL_GPL(mem_reliable_status);
+
 void add_reliable_mem_size(long sz)
 {
 	atomic_long_add(sz, &total_reliable_mem);

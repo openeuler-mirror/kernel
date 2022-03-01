@@ -34,6 +34,7 @@ extern void reliable_report_usage(struct seq_file *m, struct mm_struct *mm);
 extern void reliable_show_mem_info(void);
 extern void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
 				       int preferred_nid, nodemask_t *nodemask);
+extern bool mem_reliable_status(void);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -137,6 +138,7 @@ static inline void shmem_reliable_page_counter(struct page *page, int nr_page)
 static inline void page_cache_fallback_inc(gfp_t gfp, struct page *page) {}
 
 static inline bool pagecache_reliable_is_enabled(void) { return false; }
+static inline bool mem_reliable_status(void) { return false; }
 #endif
 
 #endif
