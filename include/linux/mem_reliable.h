@@ -24,6 +24,7 @@ extern bool pagecache_use_reliable_mem;
 extern atomic_long_t page_cache_fallback;
 DECLARE_PER_CPU(long, nr_reliable_buddy_pages);
 extern unsigned long nr_reliable_reserve_pages __read_mostly;
+extern long shmem_reliable_nr_page __read_mostly;
 extern void page_cache_fallback_inc(gfp_t gfp, struct page *page);
 
 extern void add_reliable_mem_size(long sz);
@@ -120,6 +121,12 @@ static inline bool mem_reliable_watermark_ok(int nr_page)
 	return sum > nr_reliable_reserve_pages;
 }
 
+static inline bool mem_reliable_shmem_limit_check(void)
+{
+	return percpu_counter_read_positive(&reliable_shmem_used_nr_page) <
+	       shmem_reliable_nr_page;
+}
+
 #else
 #define reliable_enabled 0
 #define reliable_allow_fb_enabled() false
@@ -161,6 +168,7 @@ static inline bool pagecache_reliable_is_enabled(void) { return false; }
 static inline bool mem_reliable_status(void) { return false; }
 static inline void mem_reliable_buddy_counter(struct page *page, int nr_page) {}
 static inline bool mem_reliable_watermark_ok(int nr_page) { return true; }
+static inline bool mem_reliable_shmem_limit_check(void) { return true; }
 #endif
 
 #endif

@@ -32,6 +32,7 @@ bool shmem_reliable __read_mostly = true;
 struct percpu_counter reliable_shmem_used_nr_page __read_mostly;
 DEFINE_PER_CPU(long, nr_reliable_buddy_pages);
 unsigned long nr_reliable_reserve_pages = MEM_RELIABLE_RESERVE_MIN / PAGE_SIZE;
+long shmem_reliable_nr_page = LONG_MAX;
 
 bool pagecache_use_reliable_mem __read_mostly = true;
 atomic_long_t page_cache_fallback = ATOMIC_LONG_INIT(0);
@@ -342,6 +343,30 @@ int reliable_reserve_size_handler(struct ctl_table *table, int write,
 	return ret;
 }
 
+#ifdef CONFIG_SHMEM
+static unsigned long sysctl_shmem_reliable_bytes_limit = ULONG_MAX;
+
+int reliable_shmem_bytes_limit_handler(struct ctl_table *table, int write,
+	void __user *buffer, size_t *length, loff_t *ppos)
+{
+	unsigned long *data_ptr = (unsigned long *)(table->data);
+	unsigned long old = *data_ptr;
+	int ret;
+
+	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
+	if (ret == 0 && write) {
+		if (*data_ptr > total_reliable_mem_sz()) {
+			*data_ptr = old;
+			return -EINVAL;
+		}
+
+		shmem_reliable_nr_page = *data_ptr >> PAGE_SHIFT;
+	}
+
+	return ret;
+}
+#endif
+
 static struct ctl_table reliable_ctl_table[] = {
 	{
 		.procname = "task_reliable_limit",
@@ -364,6 +389,15 @@ static struct ctl_table reliable_ctl_table[] = {
 		.mode = 0644,
 		.proc_handler = reliable_reserve_size_handler,
 	},
+#ifdef CONFIG_SHMEM
+	{
+		.procname = "shmem_reliable_bytes_limit",
+		.data = &sysctl_shmem_reliable_bytes_limit,
+		.maxlen = sizeof(sysctl_shmem_reliable_bytes_limit),
+		.mode = 0644,
+		.proc_handler = reliable_shmem_bytes_limit_handler,
+	},
+#endif
 	{}
 };
 
