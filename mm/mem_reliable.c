@@ -211,10 +211,11 @@ void reliable_report_meminfo(struct seq_file *m)
 
 void reliable_report_usage(struct seq_file *m, struct mm_struct *mm)
 {
-	if (mem_reliable_is_enabled()) {
-		seq_printf(m, "Reliable:\t%8lu kB\n",
-			   atomic_long_read(&mm->reliable_nr_page));
-	}
+	if (!mem_reliable_is_enabled())
+		return;
+
+	seq_printf(m, "Reliable:\t%8lu kB\n",
+		atomic_long_read(&mm->reliable_nr_page) << (PAGE_SHIFT - 10));
 }
 
 #ifdef CONFIG_SYSCTL
