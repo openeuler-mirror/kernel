@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       59
+%global devel_release       60
 %global maintenance_release .0.0
-%global pkg_release         .32
+%global pkg_release         .33
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -861,6 +861,14 @@ fi
 %endif
 
 %changelog
+* Wed Mar 02 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.0.0.33
+- f2fs: fix to do sanity check in is_alive()
+- f2fs: fix to avoid panic in is_alive() if metadata is inconsistent
+- f2fs: fix to do sanity check on inode type during garbage collection
+- iommu/io-pgtable-arm: Fix attach device failed when smmuv3 supports HTTU
+- configs: enable CONFIG_INTEL_IDXD
+- ext4: convert DIV_ROUND_UP to DIV_ROUND_UP_ULL
+
 * Wed Feb 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-59.0.0.32
 - bonding: force carrier update when releasing slave
 - ext4: fix underflow in ext4_max_bitmap_size()
