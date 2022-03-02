@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 53.0.0
+%global hulkrelease 60.1.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.5
+Release: %{hulkrelease}.6
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -166,6 +166,9 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Thu Mar 3  2022 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-60.1.0.6
+- update kernel version to openEuler 5.10.0-60.1.0
+
 * Thu Mar 3  2022 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-53.0.0.5
 - update warning info when uninstall or update raspberrypi-kernel
 
