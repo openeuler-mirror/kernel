@@ -17,6 +17,8 @@
 #include <linux/atomic.h>
 #include <linux/static_key.h>
 
+extern unsigned long kfence_sample_interval;
+
 #ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
 extern unsigned long kfence_num_objects;
 #define KFENCE_NR_OBJECTS kfence_num_objects
