@@ -10,4 +10,14 @@ config VENDOR_HOOKS
           Allow vendor modules to attach to tracepoint "hooks" defined via
           DECLARE_HOOK or DECLARE_RESTRICTED_HOOK.
 
+config VENDOR_BOND_HOOKS
+        bool "Ethernet Bonding driver Vendor Hooks"
+        depends on VENDOR_HOOKS && BONDING
+        default n
+        help
+	  Enable ethernet bonding driver vendor hooks
+
+          Allow vendor modules to attach bonding driver hooks defined via
+          DECLARE_HOOK or DECLARE_RESTRICTED_HOOK.
+
 endmenu
