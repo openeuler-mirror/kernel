@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .0.0
-%global pkg_release         .33
+%global maintenance_release .1.0
+%global pkg_release         .34
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -861,6 +861,14 @@ fi
 %endif
 
 %changelog
+* Wed Mar 02 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.1.0.34
+- ubifs: rename_whiteout: correct old_dir size computing
+- configs: update the defconfigs to support 9P
+- Revert "dm space maps: don't reset space map allocation cursor when committing"
+- drivers: hooks: add bonding driver vendor hooks
+- etmem: etmem scan module Replace WARN_ONCE() with debug_printk for "nothing read"
+- netfilter: nf_tables_offload: incorrect flow offload action array size
+
 * Wed Mar 02 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.0.0.33
 - f2fs: fix to do sanity check in is_alive()
 - f2fs: fix to avoid panic in is_alive() if metadata is inconsistent
