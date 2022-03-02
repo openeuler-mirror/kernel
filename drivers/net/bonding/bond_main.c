@@ -83,6 +83,7 @@
 #include <net/bonding.h>
 #include <net/bond_3ad.h>
 #include <net/bond_alb.h>
+#include <trace/hooks/bonding.h>
 
 #include "bonding_priv.h"
 
@@ -2414,6 +2415,10 @@ static int bond_miimon_inspect(struct bonding *bond)
 		bond_propose_link_state(slave, BOND_LINK_NOCHANGE);
 
 		link_state = bond_check_dev_link(bond, slave->dev, 0);
+
+#ifdef CONFIG_VENDOR_BOND_HOOKS
+		trace_vendor_bond_check_dev_link(bond, slave, &link_state);
+#endif
 
 		switch (slave->link) {
 		case BOND_LINK_UP:
