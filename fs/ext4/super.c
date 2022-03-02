@@ -3274,15 +3274,15 @@ static loff_t ext4_max_bitmap_size(int bits, int has_huge_files)
 	upper_limit -= ppb;
 	/* double indirect blocks */
 	if (upper_limit < ppb * ppb) {
-		meta_blocks += 1 + DIV_ROUND_UP(upper_limit, ppb);
+		meta_blocks += 1 + DIV_ROUND_UP_ULL(upper_limit, ppb);
 		res -= meta_blocks;
 		goto check_lfs;
 	}
 	meta_blocks += 1 + ppb;
 	upper_limit -= ppb * ppb;
 	/* tripple indirect blocks for the rest */
-	meta_blocks += 1 + DIV_ROUND_UP(upper_limit, ppb) +
-		DIV_ROUND_UP(upper_limit, ppb*ppb);
+	meta_blocks += 1 + DIV_ROUND_UP_ULL(upper_limit, ppb) +
+		DIV_ROUND_UP_ULL(upper_limit, ppb*ppb);
 	res -= meta_blocks;
 check_lfs:
 	res <<= bits;
