@@ -93,12 +93,72 @@ module_param_named(skip_covered_thresh, kfence_skip_covered_thresh, ulong, 0644)
 char *__kfence_pool __ro_after_init;
 EXPORT_SYMBOL(__kfence_pool); /* Export for test modules. */
 
+#ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
+/*
+ * The number of kfence objects will affect performance and bug detection
+ * accuracy. The initial value of this global parameter is determined by
+ * compiling settings.
+ */
+unsigned long kfence_num_objects = CONFIG_KFENCE_NUM_OBJECTS;
+EXPORT_SYMBOL(kfence_num_objects); /* Export for test modules. */
+
+#define MIN_KFENCE_OBJECTS 1
+#define MAX_KFENCE_OBJECTS 65535
+
+static int param_set_num_objects(const char *val, const struct kernel_param *kp)
+{
+	unsigned long num;
+
+	if (system_state != SYSTEM_BOOTING)
+		return -EINVAL; /* Cannot adjust KFENCE objects number on-the-fly. */
+
+	if (kstrtoul(val, 0, &num) < 0)
+		return -EINVAL;
+
+	if (num < MIN_KFENCE_OBJECTS || num > MAX_KFENCE_OBJECTS) {
+		pr_warn("kfence_num_objects = %lu is not in valid range [%d, %d]\n",
+			num, MIN_KFENCE_OBJECTS, MAX_KFENCE_OBJECTS);
+		return -EINVAL;
+	}
+
+	*((unsigned long *)kp->arg) = num;
+	return 0;
+}
+
+static int param_get_num_objects(char *buffer, const struct kernel_param *kp)
+{
+	if (!READ_ONCE(kfence_enabled))
+		return sprintf(buffer, "0\n");
+
+	return param_get_ulong(buffer, kp);
+}
+
+static const struct kernel_param_ops num_objects_param_ops = {
+	.set = param_set_num_objects,
+	.get = param_get_num_objects,
+};
+module_param_cb(num_objects, &num_objects_param_ops, &kfence_num_objects, 0600);
+#endif
+
 /*
  * Per-object metadata, with one-to-one mapping of object metadata to
  * backing pages (in __kfence_pool).
  */
+#ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
+struct kfence_metadata *kfence_metadata;
+static phys_addr_t metadata_size;
+
+static inline bool kfence_metadata_valid(void)
+{
+	return  !!kfence_metadata;
+}
+
+#else
 static_assert(CONFIG_KFENCE_NUM_OBJECTS > 0);
 struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];
+
+static inline bool kfence_metadata_valid(void) { return true; }
+#endif
 
 /* Freelist with available objects. */
 static struct list_head kfence_freelist = LIST_HEAD_INIT(kfence_freelist);
@@ -124,11 +184,16 @@ atomic_t kfence_allocation_gate = ATOMIC_INIT(1);
  *	P(alloc_traces) = (1 - e^(-HNUM * (alloc_traces / SIZE)) ^ HNUM
  */
 #define ALLOC_COVERED_HNUM	2
-#define ALLOC_COVERED_ORDER	(const_ilog2(CONFIG_KFENCE_NUM_OBJECTS) + 2)
+#define ALLOC_COVERED_ORDER	(const_ilog2(KFENCE_NR_OBJECTS) + 2)
 #define ALLOC_COVERED_SIZE	(1 << ALLOC_COVERED_ORDER)
 #define ALLOC_COVERED_HNEXT(h)	hash_32(h, ALLOC_COVERED_ORDER)
 #define ALLOC_COVERED_MASK	(ALLOC_COVERED_SIZE - 1)
+#ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
+static atomic_t *alloc_covered;
+static phys_addr_t covered_size;
+#else
 static atomic_t alloc_covered[ALLOC_COVERED_SIZE];
+#endif
 
 /* Stack depth used to determine uniqueness of an allocation. */
 #define UNIQUE_ALLOC_STACK_DEPTH ((size_t)8)
@@ -168,7 +233,7 @@ static_assert(ARRAY_SIZE(counter_names) == KFENCE_COUNTER_COUNT);
 
 static inline bool should_skip_covered(void)
 {
-	unsigned long thresh = (CONFIG_KFENCE_NUM_OBJECTS * kfence_skip_covered_thresh) / 100;
+	unsigned long thresh = (KFENCE_NR_OBJECTS * kfence_skip_covered_thresh) / 100;
 
 	return atomic_long_read(&counters[KFENCE_COUNTER_ALLOCATED]) > thresh;
 }
@@ -236,7 +301,7 @@ static inline struct kfence_metadata *addr_to_metadata(unsigned long addr)
 	 * error.
 	 */
 	index = (addr - (unsigned long)__kfence_pool) / (PAGE_SIZE * 2) - 1;
-	if (index < 0 || index >= CONFIG_KFENCE_NUM_OBJECTS)
+	if (index < 0 || index >= KFENCE_NR_OBJECTS)
 		return NULL;
 
 	return &kfence_metadata[index];
@@ -251,7 +316,7 @@ static inline unsigned long metadata_to_pageaddr(const struct kfence_metadata *m
 
 	/* Only call with a pointer into kfence_metadata. */
 	if (KFENCE_WARN_ON(meta < kfence_metadata ||
-			   meta >= kfence_metadata + CONFIG_KFENCE_NUM_OBJECTS))
+			   meta >= kfence_metadata + KFENCE_NR_OBJECTS))
 		return 0;
 
 	/*
@@ -576,7 +641,7 @@ static bool __init kfence_init_pool(void)
 		addr += PAGE_SIZE;
 	}
 
-	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
+	for (i = 0; i < KFENCE_NR_OBJECTS; i++) {
 		struct kfence_metadata *meta = &kfence_metadata[i];
 
 		/* Initialize metadata. */
@@ -637,7 +702,7 @@ DEFINE_SHOW_ATTRIBUTE(stats);
  */
 static void *start_object(struct seq_file *seq, loff_t *pos)
 {
-	if (*pos < CONFIG_KFENCE_NUM_OBJECTS)
+	if (*pos < KFENCE_NR_OBJECTS)
 		return (void *)((long)*pos + 1);
 	return NULL;
 }
@@ -649,7 +714,7 @@ static void stop_object(struct seq_file *seq, void *v)
 static void *next_object(struct seq_file *seq, void *v, loff_t *pos)
 {
 	++*pos;
-	if (*pos < CONFIG_KFENCE_NUM_OBJECTS)
+	if (*pos < KFENCE_NR_OBJECTS)
 		return (void *)((long)*pos + 1);
 	return NULL;
 }
@@ -691,7 +756,11 @@ static int __init kfence_debugfs_init(void)
 	struct dentry *kfence_dir = debugfs_create_dir("kfence", NULL);
 
 	debugfs_create_file("stats", 0444, kfence_dir, NULL, &stats_fops);
-	debugfs_create_file("objects", 0400, kfence_dir, NULL, &objects_fops);
+
+	/* Variable kfence_metadata may fail to allocate. */
+	if (kfence_metadata_valid())
+		debugfs_create_file("objects", 0400, kfence_dir, NULL, &objects_fops);
+
 	return 0;
 }
 
@@ -751,6 +820,40 @@ static void toggle_allocation_gate(struct work_struct *work)
 }
 static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
 
+#ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
+static int __init kfence_dynamic_init(void)
+{
+	metadata_size = sizeof(struct kfence_metadata) * KFENCE_NR_OBJECTS;
+	kfence_metadata = memblock_alloc(metadata_size, PAGE_SIZE);
+	if (!kfence_metadata) {
+		pr_err("failed to allocate metadata\n");
+		return -ENOMEM;
+	}
+
+	covered_size = sizeof(atomic_t) * KFENCE_NR_OBJECTS;
+	alloc_covered = memblock_alloc(covered_size, PAGE_SIZE);
+	if (!alloc_covered) {
+		memblock_free((phys_addr_t)kfence_metadata, metadata_size);
+		kfence_metadata = NULL;
+		pr_err("failed to allocate covered\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void  __init kfence_dynamic_destroy(void)
+{
+	memblock_free((phys_addr_t)alloc_covered, covered_size);
+	alloc_covered = NULL;
+	memblock_free((phys_addr_t)kfence_metadata, metadata_size);
+	kfence_metadata = NULL;
+}
+#else
+static int __init kfence_dynamic_init(void) { return 0; }
+static void __init kfence_dynamic_destroy(void) { }
+#endif
+
 /* === Public interface ===================================================== */
 
 void __init kfence_alloc_pool(void)
@@ -758,10 +861,14 @@ void __init kfence_alloc_pool(void)
 	if (!kfence_sample_interval)
 		return;
 
-	__kfence_pool = memblock_alloc(KFENCE_POOL_SIZE, PAGE_SIZE);
+	if (kfence_dynamic_init())
+		return;
 
-	if (!__kfence_pool)
+	__kfence_pool = memblock_alloc(KFENCE_POOL_SIZE, PAGE_SIZE);
+	if (!__kfence_pool) {
 		pr_err("failed to allocate pool\n");
+		kfence_dynamic_destroy();
+	}
 }
 
 void __init kfence_init(void)
@@ -780,8 +887,8 @@ void __init kfence_init(void)
 		static_branch_enable(&kfence_allocation_key);
 	WRITE_ONCE(kfence_enabled, true);
 	queue_delayed_work(system_unbound_wq, &kfence_timer, 0);
-	pr_info("initialized - using %lu bytes for %d objects at 0x%p-0x%p\n", KFENCE_POOL_SIZE,
-		CONFIG_KFENCE_NUM_OBJECTS, (void *)__kfence_pool,
+	pr_info("initialized - using %lu bytes for %lu objects at 0x%p-0x%p\n", KFENCE_POOL_SIZE,
+		(unsigned long)KFENCE_NR_OBJECTS, (void *)__kfence_pool,
 		(void *)(__kfence_pool + KFENCE_POOL_SIZE));
 }
 
@@ -791,7 +898,10 @@ void kfence_shutdown_cache(struct kmem_cache *s)
 	struct kfence_metadata *meta;
 	int i;
 
-	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
+	if (!kfence_metadata_valid())
+		return;
+
+	for (i = 0; i < KFENCE_NR_OBJECTS; i++) {
 		bool in_use;
 
 		meta = &kfence_metadata[i];
@@ -830,7 +940,7 @@ void kfence_shutdown_cache(struct kmem_cache *s)
 		}
 	}
 
-	for (i = 0; i < CONFIG_KFENCE_NUM_OBJECTS; i++) {
+	for (i = 0; i < KFENCE_NR_OBJECTS; i++) {
 		meta = &kfence_metadata[i];
 
 		/* See above. */

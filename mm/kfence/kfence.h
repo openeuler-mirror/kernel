@@ -91,7 +91,11 @@ struct kfence_metadata {
 	u32 alloc_stack_hash;
 };
 
-extern struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];
+#ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
+extern struct kfence_metadata *kfence_metadata;
+#else
+extern struct kfence_metadata kfence_metadata[KFENCE_NR_OBJECTS];
+#endif
 
 /* KFENCE error types for report generation. */
 enum kfence_error_type {
