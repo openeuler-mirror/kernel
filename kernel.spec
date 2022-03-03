@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .1.0
-%global pkg_release         .34
+%global maintenance_release .2.0
+%global pkg_release         .35
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -42,6 +42,7 @@ Source0: kernel.tar.gz
 Source10: sign-modules
 Source11: x509.genkey
 Source12: extra_certificates
+Source13: pubring.gpg
 
 %if 0%{?with_kabichk}
 Source18: check-kabi
@@ -255,6 +256,8 @@ tar -xjf %{SOURCE9998}
 
 mv kernel linux-%{KernelVer}
 cd linux-%{KernelVer}
+
+cp %{SOURCE13} certs
 
 %if 0%{?with_patch}
 cp %{SOURCE9000} .
@@ -861,6 +864,10 @@ fi
 %endif
 
 %changelog
+* Thu Mar 03 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.2.0.35
+- sched: enable CONFIG_QOS_SCHED on arm64
+- sched/qos: Remove dependency CONFIG_x86
+
 * Wed Mar 02 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.1.0.34
 - ubifs: rename_whiteout: correct old_dir size computing
 - configs: update the defconfigs to support 9P
