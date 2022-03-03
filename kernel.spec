@@ -42,6 +42,7 @@ Source0: kernel.tar.gz
 Source10: sign-modules
 Source11: x509.genkey
 Source12: extra_certificates
+Source13: pubring.gpg
 
 %if 0%{?with_kabichk}
 Source18: check-kabi
@@ -255,6 +256,8 @@ tar -xjf %{SOURCE9998}
 
 mv kernel linux-%{KernelVer}
 cd linux-%{KernelVer}
+
+cp %{SOURCE13} certs
 
 %if 0%{?with_patch}
 cp %{SOURCE9000} .
