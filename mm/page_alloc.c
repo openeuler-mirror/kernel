@@ -4651,7 +4651,13 @@ static inline bool prepare_before_alloc(gfp_t *gfp_mask, unsigned int order)
 	if (!mem_reliable_is_enabled())
 		return true;
 
+	if (*gfp_mask & __GFP_NOFAIL)
+		return true;
+
 	if (gfp_ori & ___GFP_RELIABILITY) {
+		if (!(gfp_ori & __GFP_HIGHMEM) || !(gfp_ori & __GFP_MOVABLE))
+			return true;
+
 		if (mem_reliable_watermark_ok(1 << order)) {
 			*gfp_mask |= ___GFP_RELIABILITY;
 			return true;
