@@ -275,10 +275,8 @@ static void mem_reliable_parse_ctrl_bits(unsigned long ctrl_bits)
 	for (i = MEM_RELIABLE_FALLBACK; i < MEM_RELIABLE_MAX; i++) {
 		status = !!test_bit(i, &ctrl_bits);
 
-		if (mem_reliable_ctrl_bit_is_enabled(i) ^ status) {
-			mem_reliable_ctrl_bit_set(i, status);
+		if (mem_reliable_ctrl_bit_is_enabled(i) ^ status)
 			mem_reliable_feature_set(i, status);
-		}
 	}
 }
 
@@ -484,6 +482,8 @@ static int __init reliable_sysctl_init(void)
 	return 0;
 }
 late_initcall(reliable_sysctl_init);
+#else
+static void mem_reliable_ctrl_bit_set(int idx, bool enable) {}
 #endif
 
 static void mem_reliable_feature_set(int idx, bool enable)
@@ -508,6 +508,7 @@ static void mem_reliable_feature_set(int idx, bool enable)
 		return;
 	}
 
+	mem_reliable_ctrl_bit_set(idx, enable);
 	pr_info("%s is %s\n", str, enable ? "enabled" : "disabled");
 }
 
