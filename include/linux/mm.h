@@ -2272,6 +2272,8 @@ extern void sparse_memory_present_with_active_regions(int nid);
 
 extern bool mirrored_kernelcore;
 
+#else
+#define mirrored_kernelcore 0
 #endif /* CONFIG_HAVE_MEMBLOCK_NODE_MAP */
 
 #if !defined(CONFIG_HAVE_MEMBLOCK_NODE_MAP) && \
