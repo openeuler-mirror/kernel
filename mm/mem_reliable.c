@@ -64,10 +64,23 @@ static bool reliable_and_lru_check(enum lru_list lru, struct page *page)
 	if (!page_reliable(page))
 		return false;
 
-	if (lru != LRU_ACTIVE_FILE && lru != LRU_INACTIVE_FILE)
+	if (!is_file_lru(lru))
 		return false;
 
 	return true;
+}
+
+void page_cache_reliable_lru_add_batch(int zid, enum lru_list lru,
+				       int val)
+{
+	if (!mem_reliable_is_enabled())
+		return;
+
+	if (zid < 0 || zid >= MAX_NR_ZONES)
+		return;
+
+	if (zid < ZONE_MOVABLE && is_file_lru(lru))
+		this_cpu_add(pagecache_reliable_pages, val);
 }
 
 void page_cache_reliable_lru_add(enum lru_list lru, struct page *page, int val)
@@ -177,7 +190,7 @@ static void show_val_kb(struct seq_file *m, const char *s, unsigned long num)
 void reliable_report_meminfo(struct seq_file *m)
 {
 	bool pagecache_enabled = pagecache_reliable_is_enabled();
-	unsigned long nr_pagecache_pages = 0;
+	long nr_pagecache_pages = 0;
 	long nr_buddy_pages = 0;
 	int cpu;
 
