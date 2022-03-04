@@ -4042,8 +4042,8 @@ unsigned long shrink_page_cache(gfp_t mask)
 {
 	unsigned long nr_pages;
 
-	/* We reclaim the highmem zone too, it is useful for 32bit arch */
-	nr_pages = __shrink_page_cache(mask | __GFP_HIGHMEM);
+	/* reclaim from movable zone */
+	nr_pages = __shrink_page_cache(mask | __GFP_HIGHMEM | __GFP_MOVABLE);
 
 	return nr_pages;
 }
