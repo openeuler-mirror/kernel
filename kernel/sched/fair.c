@@ -131,6 +131,10 @@ unsigned int sysctl_offline_wait_interval = 100;  /* in ms */
 static int unthrottle_qos_cfs_rqs(int cpu);
 #endif
 
+#ifdef CONFIG_SCHED_PRIO_LB
+unsigned int sysctl_sched_prio_load_balance_enabled;
+#endif
+
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 static DEFINE_PER_CPU(int, qos_smt_status);
 #endif
@@ -3018,6 +3022,20 @@ static inline void update_scan_period(struct task_struct *p, int new_cpu)
 
 #endif /* CONFIG_NUMA_BALANCING */
 
+#ifdef CONFIG_SCHED_PRIO_LB
+static void
+adjust_rq_cfs_tasks(void (*list_op)(struct list_head *, struct list_head *),
+	struct rq *rq,
+	struct sched_entity *se)
+{
+	if (sysctl_sched_prio_load_balance_enabled &&
+	    task_has_idle_policy(task_of(se)))
+		(*list_op)(&se->group_node, &rq->cfs_offline_tasks);
+	else
+		(*list_op)(&se->group_node, &rq->cfs_tasks);
+}
+#endif
+
 static void
 account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
@@ -3027,7 +3045,11 @@ account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 		struct rq *rq = rq_of(cfs_rq);
 
 		account_numa_enqueue(rq, task_of(se));
+#ifdef CONFIG_SCHED_PRIO_LB
+		adjust_rq_cfs_tasks(list_add, rq, se);
+#else
 		list_add(&se->group_node, &rq->cfs_tasks);
+#endif
 	}
 #endif
 	cfs_rq->nr_running++;
@@ -7736,7 +7758,11 @@ done: __maybe_unused;
 	 * the list, so our cfs_tasks list becomes MRU
 	 * one.
 	 */
+#ifdef CONFIG_SCHED_PRIO_LB
+	adjust_rq_cfs_tasks(list_move, rq, &p->se);
+#else
 	list_move(&p->se.group_node, &rq->cfs_tasks);
+#endif
 #endif
 
 	if (hrtick_enabled(rq))
@@ -8106,6 +8132,14 @@ static int task_hot(struct task_struct *p, struct lb_env *env)
 			 &p->se == cfs_rq_of(&p->se)->last))
 		return 1;
 
+#ifdef CONFIG_SCHED_PRIO_LB
+	/* Preempt sched idle cpu do not consider migration cost */
+	if (sysctl_sched_prio_load_balance_enabled &&
+	    cpus_share_cache(env->src_cpu, env->dst_cpu) &&
+	    sched_idle_cpu(env->dst_cpu))
+		return 0;
+#endif
+
 	if (sysctl_sched_migration_cost == -1)
 		return 1;
 	if (sysctl_sched_migration_cost == 0)
@@ -8311,11 +8345,18 @@ static void detach_task(struct task_struct *p, struct rq *src_rq, int dst_cpu)
 static struct task_struct *detach_one_task(struct lb_env *env)
 {
 	struct task_struct *p;
+	struct list_head *tasks = &env->src_rq->cfs_tasks;
+#ifdef CONFIG_SCHED_PRIO_LB
+	int loop = 0;
+#endif
 
 	lockdep_assert_held(&env->src_rq->lock);
 
+#ifdef CONFIG_SCHED_PRIO_LB
+again:
+#endif
 	list_for_each_entry_reverse(p,
-			&env->src_rq->cfs_tasks, se.group_node) {
+			tasks, se.group_node) {
 		if (!can_migrate_task(p, env))
 			continue;
 
@@ -8330,6 +8371,15 @@ static struct task_struct *detach_one_task(struct lb_env *env)
 		schedstat_inc(env->sd->lb_gained[env->idle]);
 		return p;
 	}
+#ifdef CONFIG_SCHED_PRIO_LB
+	if (sysctl_sched_prio_load_balance_enabled) {
+		loop++;
+		if (loop == 1) {
+			tasks = &env->src_rq->cfs_offline_tasks;
+			goto again;
+		}
+	}
+#endif
 	return NULL;
 }
 
@@ -8347,12 +8397,18 @@ static int detach_tasks(struct lb_env *env)
 	unsigned long util, load;
 	struct task_struct *p;
 	int detached = 0;
+#ifdef CONFIG_SCHED_PRIO_LB
+	int loop = 0;
+#endif
 
 	lockdep_assert_held(&env->src_rq->lock);
 
 	if (env->imbalance <= 0)
 		return 0;
 
+#ifdef CONFIG_SCHED_PRIO_LB
+again:
+#endif
 	while (!list_empty(tasks)) {
 		/*
 		 * We don't want to steal all, otherwise we may be treated likewise,
@@ -8454,6 +8510,15 @@ next:
 		list_move(&p->se.group_node, tasks);
 	}
 
+#ifdef CONFIG_SCHED_PRIO_LB
+	if (sysctl_sched_prio_load_balance_enabled && env->imbalance > 0) {
+		loop++;
+		if (loop == 1) {
+			tasks = &env->src_rq->cfs_offline_tasks;
+			goto again;
+		}
+	}
+#endif
 	/*
 	 * Right now, this is one of only two places we collect this stat
 	 * so we can safely collect detach_one_task() stats here rather
@@ -11780,7 +11845,11 @@ static void set_next_task_fair(struct rq *rq, struct task_struct *p, bool first)
 		 * Move the next running task to the front of the list, so our
 		 * cfs_tasks list becomes MRU one.
 		 */
+#ifdef CONFIG_SCHED_PRIO_LB
+		adjust_rq_cfs_tasks(list_move, rq, se);
+#else
 		list_move(&se->group_node, &rq->cfs_tasks);
+#endif
 	}
 #endif
 

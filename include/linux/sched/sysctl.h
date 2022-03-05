@@ -79,6 +79,10 @@ extern unsigned int sysctl_overload_detect_period;
 extern unsigned int sysctl_offline_wait_interval;
 #endif
 
+#ifdef CONFIG_SCHED_PRIO_LB
+extern unsigned int sysctl_sched_prio_load_balance_enabled;
+#endif
+
 #ifdef CONFIG_SCHED_AUTOGROUP
 extern unsigned int sysctl_sched_autogroup_enabled;
 #endif
