@@ -1240,7 +1240,8 @@ out_unmap:
 				if (reliable_allow_fb_enabled()) {
 					reliable = false;
 				} else {
-					ret = SCAN_ALLOC_HUGE_PAGE_FAIL;
+					result = SCAN_ALLOC_HUGE_PAGE_FAIL;
+					ret = 0;
 					goto out;
 				}
 			}
