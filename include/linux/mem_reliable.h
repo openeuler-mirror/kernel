@@ -22,6 +22,8 @@ extern bool shmem_reliable;
 extern struct percpu_counter reliable_shmem_used_nr_page;
 extern bool pagecache_use_reliable_mem;
 DECLARE_PER_CPU(long, nr_reliable_buddy_pages);
+DECLARE_PER_CPU(long, pagecache_reliable_pages);
+DECLARE_PER_CPU(long, anon_reliable_pages);
 extern unsigned long nr_reliable_reserve_pages __read_mostly;
 extern long shmem_reliable_nr_page __read_mostly;
 
@@ -37,10 +39,10 @@ extern void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
 				       int preferred_nid, nodemask_t *nodemask);
 extern bool mem_reliable_status(void);
 
-extern void page_cache_reliable_lru_add(enum lru_list lru, struct page *page,
+extern void reliable_lru_add(enum lru_list lru, struct page *page,
 					int val);
 extern void page_cache_prepare_alloc(gfp_t *gfp);
-extern void page_cache_reliable_lru_add_batch(int zid, enum lru_list lru,
+extern void reliable_lru_add_batch(int zid, enum lru_list lru,
 					      int val);
 
 static inline bool mem_reliable_is_enabled(void)
@@ -82,8 +84,15 @@ static inline void reliable_page_counter(struct page *page,
 
 static inline bool reliable_mem_limit_check(unsigned long nr_page)
 {
-	return atomic_long_read(&reliable_task_used_nr_page) + nr_page <=
-	       task_reliable_limit / PAGE_SIZE;
+	int cpu;
+	long num = 0;
+
+	for_each_possible_cpu(cpu) {
+		num += per_cpu(pagecache_reliable_pages, cpu);
+		num += per_cpu(anon_reliable_pages, cpu);
+	}
+
+	return num + nr_page <= task_reliable_limit / PAGE_SIZE;
 }
 
 static inline bool reliable_allow_fb_enabled(void)
@@ -172,11 +181,11 @@ static inline bool mem_reliable_status(void) { return false; }
 static inline void mem_reliable_buddy_counter(struct page *page, int nr_page) {}
 static inline bool mem_reliable_watermark_ok(int nr_page) { return true; }
 static inline bool mem_reliable_shmem_limit_check(void) { return true; }
-static inline void page_cache_reliable_lru_add(enum lru_list lru,
+static inline void reliable_lru_add(enum lru_list lru,
 					       struct page *page,
 					       int val) {}
 static inline void page_cache_prepare_alloc(gfp_t *gfp) {}
-static inline void page_cache_reliable_lru_add_batch(int zid, enum lru_list lru,
+static inline void reliable_lru_add_batch(int zid, enum lru_list lru,
 						     int val) {}
 #endif
 

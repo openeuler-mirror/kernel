@@ -1683,8 +1683,7 @@ static __always_inline void update_lru_sizes(struct lruvec *lruvec,
 #ifdef CONFIG_MEMCG
 		mem_cgroup_update_lru_size(lruvec, lru, zid, -nr_zone_taken[zid]);
 #endif
-		page_cache_reliable_lru_add_batch(zid, lru,
-						  -nr_zone_taken[zid]);
+		reliable_lru_add_batch(zid, lru, -nr_zone_taken[zid]);
 	}
 
 }
@@ -2099,9 +2098,8 @@ static unsigned move_active_pages_to_lru(struct lruvec *lruvec,
 
 		nr_pages = hpage_nr_pages(page);
 		update_lru_size(lruvec, lru, page_zonenum(page), nr_pages);
+		reliable_lru_add(lru, page, nr_pages);
 		list_move(&page->lru, &lruvec->lists[lru]);
-
-		page_cache_reliable_lru_add(lru, page, nr_pages);
 
 		if (put_page_testzero(page)) {
 			__ClearPageLRU(page);
@@ -4600,7 +4598,7 @@ static int add_page_for_reclaim_swapcache(struct page *page,
 	case 0:
 		list_move(&head->lru, pagelist);
 		update_lru_size(lruvec, lru, page_zonenum(head), -hpage_nr_pages(head));
-		page_cache_reliable_lru_add(lru, head, -hpage_nr_pages(head));
+		reliable_lru_add(lru, head, -hpage_nr_pages(head));
 		break;
 	case -EBUSY:
 		list_move(&head->lru, src);
