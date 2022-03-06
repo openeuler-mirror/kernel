@@ -15,7 +15,6 @@
 extern struct static_key_false mem_reliable;
 
 extern bool reliable_enabled;
-extern atomic_long_t reliable_task_used_nr_page;
 extern unsigned long task_reliable_limit __read_mostly;
 extern bool reliable_allow_fallback;
 extern bool shmem_reliable;
@@ -76,10 +75,8 @@ static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
 static inline void reliable_page_counter(struct page *page,
 		struct mm_struct *mm, int val)
 {
-	if (page_reliable(page)) {
+	if (page_reliable(page))
 		atomic_long_add(val, &mm->reliable_nr_page);
-		atomic_long_add(val, &reliable_task_used_nr_page);
-	}
 }
 
 static inline bool reliable_mem_limit_check(unsigned long nr_page)

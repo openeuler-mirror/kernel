@@ -24,7 +24,6 @@ DEFINE_STATIC_KEY_FALSE(mem_reliable);
 
 bool reliable_enabled;
 static atomic_long_t total_reliable_mem;
-atomic_long_t reliable_task_used_nr_page;
 /* reliable user limit for user tasks with reliable flag */
 unsigned long task_reliable_limit = ULONG_MAX;
 bool reliable_allow_fallback __read_mostly = true;
