@@ -26,6 +26,7 @@ algorithms.  If you are looking for advice on simply allocating memory, see the
    ksm
    memory-model
    mmu_notifier
+   multigen_lru
    numa
    overcommit-accounting
    page_migration
