@@ -953,19 +953,6 @@ static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 	int ret;
 #endif
 
-	if (!func->old_name)
-		return -EINVAL;
-
-	/*
-	 * NOPs get the address later. The patched module must be loaded,
-	 * see klp_init_object_loaded().
-	 */
-	if (!func->new_func && !func->nop)
-		return -EINVAL;
-
-	if (strlen(func->old_name) >= KSYM_NAME_LEN)
-		return -EINVAL;
-
 	INIT_LIST_HEAD(&func->stack_node);
 	func->patched = false;
 
@@ -1082,6 +1069,24 @@ static int klp_init_object(struct klp_patch *patch, struct klp_object *obj)
 
 	if (klp_is_module(obj) && strlen(obj->name) >= MODULE_NAME_LEN)
 		return -EINVAL;
+	klp_for_each_func(obj, func) {
+		if (!func->old_name) {
+			pr_err("old name is invalid\n");
+			return -EINVAL;
+		}
+		/*
+		 * NOPs get the address later. The patched module must be loaded,
+		 * see klp_init_object_loaded().
+		 */
+		if (!func->new_func && !func->nop) {
+			pr_err("new_func is invalid\n");
+			return -EINVAL;
+		}
+		if (strlen(func->old_name) >= KSYM_NAME_LEN) {
+			pr_err("function old name is too long\n");
+			return -EINVAL;
+		}
+	}
 
 	obj->patched = false;
 	obj->mod = NULL;
