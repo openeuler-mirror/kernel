@@ -266,6 +266,7 @@ struct blk_mq_tag_set {
 	unsigned int		flags;
 	void			*driver_data;
 	atomic_t		active_queues_shared_sbitmap;
+	atomic_t		pending_queues_shared_sbitmap;
 
 	struct sbitmap_queue	__bitmap_tags;
 	struct sbitmap_queue	__breserved_tags;
@@ -441,6 +442,9 @@ enum {
 
 	/* hw queue is inactive after all its CPUs become offline */
 	BLK_MQ_S_INACTIVE	= 3,
+
+	/* hw queue is waiting for driver tag */
+	BLK_MQ_S_DTAG_WAIT	= 4,
 
 	BLK_MQ_MAX_DEPTH	= 10240,
 
