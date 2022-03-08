@@ -3533,7 +3533,7 @@ static int arm_smmu_switch_dirty_log(struct iommu_domain *domain, bool enable,
 
 	if (!(smmu->features & ARM_SMMU_FEAT_HD))
 		return -ENODEV;
-	if (smmu_domain->stage != ARM_SMMU_DOMAIN_S1)
+	if (smmu_domain->stage == ARM_SMMU_DOMAIN_BYPASS)
 		return -EINVAL;
 
 	if (enable) {
@@ -3574,7 +3574,7 @@ static int arm_smmu_sync_dirty_log(struct iommu_domain *domain,
 
 	if (!(smmu->features & ARM_SMMU_FEAT_HD))
 		return -ENODEV;
-	if (smmu_domain->stage != ARM_SMMU_DOMAIN_S1)
+	if (smmu_domain->stage == ARM_SMMU_DOMAIN_BYPASS)
 		return -EINVAL;
 
 	if (!ops || !ops->sync_dirty_log) {
@@ -3603,7 +3603,7 @@ static int arm_smmu_clear_dirty_log(struct iommu_domain *domain,
 
 	if (!(smmu->features & ARM_SMMU_FEAT_HD))
 		return -ENODEV;
-	if (smmu_domain->stage != ARM_SMMU_DOMAIN_S1)
+	if (smmu_domain->stage == ARM_SMMU_DOMAIN_BYPASS)
 		return -EINVAL;
 
 	if (!ops || !ops->clear_dirty_log) {
