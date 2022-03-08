@@ -2420,7 +2420,7 @@ static void vfio_iommu_update_hwdbm(struct vfio_iommu *iommu,
 	bool num_non_hwdbm_zeroed = false;
 	bool log_enabled, should_enable;
 
-	if (old_hwdbm && !new_hwdbm && attach) {
+	if ((old_hwdbm || singular) && !new_hwdbm && attach) {
 		iommu->num_non_hwdbm_domains++;
 	} else if (!old_hwdbm && new_hwdbm && !attach) {
 		iommu->num_non_hwdbm_domains--;
