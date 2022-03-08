@@ -2198,20 +2198,23 @@ bool blk_throtl_bio(struct request_queue *q, struct blkcg_gq *blkg,
 	struct throtl_service_queue *sq;
 	bool rw = bio_data_dir(bio);
 	bool throttled = false;
+	bool locked = true;
 	struct throtl_data *td = tg->td;
 
 	WARN_ON_ONCE(!rcu_read_lock_held());
 
 	/* see throtl_charge_bio() */
-	if (bio_flagged(bio, BIO_THROTTLED) || !tg->has_rules[rw])
+	if (bio_flagged(bio, BIO_THROTTLED) || !tg->has_rules[rw]) {
+		locked = false;
 		goto out;
+	}
 
 	spin_lock_irq(q->queue_lock);
 
 	throtl_update_latency_buckets(td);
 
 	if (unlikely(blk_queue_bypass(q)))
-		goto out_unlock;
+		goto out;
 
 	blk_throtl_assoc_bio(tg, bio);
 	blk_throtl_update_idletime(tg);
@@ -2263,7 +2266,7 @@ again:
 		sq = sq->parent_sq;
 		tg = sq_to_tg(sq);
 		if (!tg)
-			goto out_unlock;
+			goto out;
 	}
 
 	/* out-of-limit, queue to @tg */
@@ -2291,8 +2294,6 @@ again:
 		throtl_schedule_next_dispatch(tg->service_queue.parent_sq, true);
 	}
 
-out_unlock:
-	spin_unlock_irq(q->queue_lock);
 out:
 	bio_set_flag(bio, BIO_THROTTLED);
 
@@ -2300,6 +2301,8 @@ out:
 	if (throttled || !td->track_bio_latency)
 		bio->bi_issue.value |= BIO_ISSUE_THROTL_SKIP_LATENCY;
 #endif
+	if (locked)
+		spin_unlock_irq(q->queue_lock);
 	return throttled;
 }
 
