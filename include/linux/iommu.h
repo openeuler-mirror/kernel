@@ -87,7 +87,6 @@ struct iommu_domain {
 	void *handler_token;
 	struct iommu_domain_geometry geometry;
 	void *iova_cookie;
-	bool dirty_log_tracking;
 	struct mutex switch_log_lock;
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
