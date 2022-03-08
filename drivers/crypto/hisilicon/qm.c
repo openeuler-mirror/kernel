@@ -3053,6 +3053,12 @@ static void hisi_qm_pci_uninit(struct hisi_qm *qm)
 	pci_disable_device(pdev);
 }
 
+static void hisi_qm_set_state(struct hisi_qm *qm, u8 state)
+{
+	if (qm->ver > QM_HW_V2 && qm->fun_type == QM_HW_VF)
+		writel(state, qm->io_base + QM_VF_STATE);
+}
+
 static void hisi_qm_unint_work(struct hisi_qm *qm)
 {
 	destroy_workqueue(qm->wq);
@@ -3100,9 +3106,10 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 		up_write(&qm->qps_lock);
 		return;
 	}
-	up_write(&qm->qps_lock);
 
 	hisi_qm_memory_uninit(qm);
+	hisi_qm_set_state(qm, QM_NOT_READY);
+	up_write(&qm->qps_lock);
 
 	qm_remove_uacce(qm);
 	qm_irqs_unregister(qm);
@@ -3287,6 +3294,7 @@ int hisi_qm_start(struct hisi_qm *qm)
 	if (!ret)
 		atomic_set(&qm->status.flags, QM_START);
 
+	hisi_qm_set_state(qm, QM_READY);
 err_unlock:
 	up_write(&qm->qps_lock);
 	return ret;
