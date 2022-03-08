@@ -316,10 +316,15 @@ static inline bool hctx_may_queue(struct blk_mq_hw_ctx *hctx,
 		struct request_queue *q = hctx->queue;
 		struct blk_mq_tag_set *set = q->tag_set;
 
+		if (mq_unfair_dtag &&
+		    !atomic_read(&set->pending_queues_shared_sbitmap))
+			return true;
 		if (!test_bit(QUEUE_FLAG_HCTX_ACTIVE, &q->queue_flags))
 			return true;
 		users = atomic_read(&set->active_queues_shared_sbitmap);
 	} else {
+		if (mq_unfair_dtag && !atomic_read(&hctx->tags->pending_queues))
+			return true;
 		if (!test_bit(BLK_MQ_S_TAG_ACTIVE, &hctx->state))
 			return true;
 		users = atomic_read(&hctx->tags->active_queues);

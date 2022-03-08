@@ -73,6 +73,40 @@ void __blk_mq_tag_idle(struct blk_mq_hw_ctx *hctx)
 	blk_mq_tag_wakeup_all(tags, false);
 }
 
+void __blk_mq_dtag_busy(struct blk_mq_hw_ctx *hctx)
+{
+	if (blk_mq_is_sbitmap_shared(hctx->flags)) {
+		struct request_queue *q = hctx->queue;
+		struct blk_mq_tag_set *set = q->tag_set;
+
+		if (!test_bit(QUEUE_FLAG_HCTX_WAIT, &q->queue_flags) &&
+		    !test_and_set_bit(QUEUE_FLAG_HCTX_WAIT, &q->queue_flags))
+			atomic_inc(&set->pending_queues_shared_sbitmap);
+	} else {
+		if (!test_bit(BLK_MQ_S_DTAG_WAIT, &hctx->state) &&
+		    !test_and_set_bit(BLK_MQ_S_DTAG_WAIT, &hctx->state))
+			atomic_inc(&hctx->tags->pending_queues);
+	}
+}
+
+void __blk_mq_dtag_idle(struct blk_mq_hw_ctx *hctx)
+{
+	struct blk_mq_tags *tags = hctx->tags;
+	struct request_queue *q = hctx->queue;
+	struct blk_mq_tag_set *set = q->tag_set;
+
+	if (blk_mq_is_sbitmap_shared(hctx->flags)) {
+		if (!test_and_clear_bit(QUEUE_FLAG_HCTX_WAIT,
+					&q->queue_flags))
+			return;
+		atomic_dec(&set->pending_queues_shared_sbitmap);
+	} else {
+		if (!test_and_clear_bit(BLK_MQ_S_DTAG_WAIT, &hctx->state))
+			return;
+		atomic_dec(&tags->pending_queues);
+	}
+}
+
 static int __blk_mq_get_tag(struct blk_mq_alloc_data *data,
 			    struct sbitmap_queue *bt)
 {
@@ -111,8 +145,11 @@ unsigned int blk_mq_get_tag(struct blk_mq_alloc_data *data)
 	if (tag != BLK_MQ_NO_TAG)
 		goto found_tag;
 
-	if (data->flags & BLK_MQ_REQ_NOWAIT)
+	if (data->flags & BLK_MQ_REQ_NOWAIT) {
+		if (!data->q->elevator)
+			blk_mq_dtag_busy(data->hctx);
 		return BLK_MQ_NO_TAG;
+	}
 
 	ws = bt_wait_ptr(bt, data->hctx);
 	do {
@@ -139,6 +176,8 @@ unsigned int blk_mq_get_tag(struct blk_mq_alloc_data *data)
 		if (tag != BLK_MQ_NO_TAG)
 			break;
 
+		if (!data->q->elevator)
+			blk_mq_dtag_busy(data->hctx);
 		bt_prev = bt;
 		io_schedule();
 

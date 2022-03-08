@@ -41,6 +41,9 @@
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
 
+bool mq_unfair_dtag = true;
+module_param_named(unfair_dtag, mq_unfair_dtag, bool, 0444);
+
 static DEFINE_PER_CPU(struct list_head, blk_cpu_done);
 
 static void blk_mq_poll_stats_start(struct request_queue *q);
@@ -535,8 +538,13 @@ void blk_mq_free_request(struct request *rq)
 	}
 
 	ctx->rq_completed[rq_is_sync(rq)]++;
-	if (rq->rq_flags & RQF_MQ_INFLIGHT)
+	if (rq->rq_flags & RQF_MQ_INFLIGHT) {
 		__blk_mq_dec_active_requests(hctx);
+		if (mq_unfair_dtag && !__blk_mq_active_requests(hctx)) {
+			blk_mq_tag_idle(hctx);
+			blk_mq_dtag_idle(hctx);
+		}
+	}
 
 	if (unlikely(laptop_mode && !blk_rq_is_passthrough(rq)))
 		laptop_io_completion(q->backing_dev_info);
@@ -1003,8 +1011,10 @@ static void blk_mq_timeout_work(struct work_struct *work)
 		 */
 		queue_for_each_hw_ctx(q, hctx, i) {
 			/* the hctx may be unmapped, so check it here */
-			if (blk_mq_hw_queue_mapped(hctx))
+			if (blk_mq_hw_queue_mapped(hctx)) {
 				blk_mq_tag_idle(hctx);
+				blk_mq_dtag_idle(hctx);
+			}
 		}
 	}
 	blk_queue_exit(q);
@@ -1109,8 +1119,10 @@ static bool __blk_mq_get_driver_tag(struct request *rq)
 	}
 
 	tag = __sbitmap_queue_get(bt);
-	if (tag == BLK_MQ_NO_TAG)
+	if (tag == BLK_MQ_NO_TAG) {
+		blk_mq_dtag_busy(rq->mq_hctx);
 		return false;
+	}
 
 	rq->tag = tag + tag_offset;
 	return true;
@@ -2711,8 +2723,10 @@ static void blk_mq_exit_hctx(struct request_queue *q,
 {
 	struct request *flush_rq = hctx->fq->flush_rq;
 
-	if (blk_mq_hw_queue_mapped(hctx))
+	if (blk_mq_hw_queue_mapped(hctx)) {
 		blk_mq_tag_idle(hctx);
+		blk_mq_dtag_idle(hctx);
+	}
 
 	blk_mq_clear_flush_rq_mapping(set->tags[hctx_idx],
 			set->queue_depth, flush_rq);
@@ -3033,6 +3047,7 @@ static void queue_set_hctx_shared(struct request_queue *q, bool shared)
 			hctx->flags |= BLK_MQ_F_TAG_QUEUE_SHARED;
 		} else {
 			blk_mq_tag_idle(hctx);
+			blk_mq_dtag_idle(hctx);
 			hctx->flags &= ~BLK_MQ_F_TAG_QUEUE_SHARED;
 		}
 	}
@@ -3589,6 +3604,7 @@ int blk_mq_alloc_tag_set(struct blk_mq_tag_set *set)
 
 	if (blk_mq_is_sbitmap_shared(set->flags)) {
 		atomic_set(&set->active_queues_shared_sbitmap, 0);
+		atomic_set(&set->pending_queues_shared_sbitmap, 0);
 
 		if (blk_mq_init_shared_sbitmap(set, set->flags)) {
 			ret = -ENOMEM;
