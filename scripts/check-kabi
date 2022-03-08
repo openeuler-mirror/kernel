@@ -42,7 +42,7 @@ def load_symvers(symvers,filename):
 			break
 		if in_line == "\n":
 			continue
-		checksum,symbol,directory,type = string.split(in_line)
+		checksum,symbol,directory,type,namespace = string.split(in_line, sep='\t')
 
 		symvers[symbol] = in_line[0:-1]
 
@@ -57,7 +57,7 @@ def load_kabi(kabi,filename):
 			break
 		if in_line == "\n":
 			continue
-		checksum,symbol,directory,type = string.split(in_line)
+		checksum,symbol,directory,type,namespace = string.split(in_line, sep='\t')
 
 		kabi[symbol] = in_line[0:-1]
 
@@ -70,9 +70,9 @@ def check_kabi(symvers,kabi):
 	moved_symbols=[]
 
 	for symbol in kabi:
-		abi_hash,abi_sym,abi_dir,abi_type = string.split(kabi[symbol])
+		abi_hash,abi_sym,abi_dir,abi_type,namespace = string.split(kabi[symbol], sep='\t')
 		if symvers.has_key(symbol):
-			sym_hash,sym_sym,sym_dir,sym_type = string.split(symvers[symbol])
+			sym_hash,sym_sym,sym_dir,sym_type,namespace = string.split(symvers[symbol], sep='\t')
 			if abi_hash != sym_hash:
 				fail=1
 				changed_symbols.append(symbol)
