@@ -4651,9 +4651,6 @@ static bool bfq_has_work(struct blk_mq_hw_ctx *hctx)
 {
 	struct bfq_data *bfqd = hctx->queue->elevator->elevator_data;
 
-	if (!atomic_read(&hctx->elevator_queued))
-		return false;
-
 	/*
 	 * Avoiding lock: a race on bfqd->busy_queues should cause at
 	 * most a call to dispatch for nothing
@@ -5570,7 +5567,6 @@ static void bfq_insert_requests(struct blk_mq_hw_ctx *hctx,
 		rq = list_first_entry(list, struct request, queuelist);
 		list_del_init(&rq->queuelist);
 		bfq_insert_request(hctx, rq, at_head);
-		atomic_inc(&hctx->elevator_queued);
 	}
 }
 
@@ -5935,7 +5931,6 @@ static void bfq_finish_requeue_request(struct request *rq)
 			bfq_update_inject_limit(bfqd, bfqq);
 
 		bfq_completed_request(bfqq, bfqd);
-		atomic_dec(&rq->mq_hctx->elevator_queued);
 	}
 	bfq_finish_requeue_request_body(bfqq);
 	spin_unlock_irqrestore(&bfqd->lock, flags);
