@@ -172,6 +172,12 @@ struct blk_mq_hw_ctx {
 	 */
 	struct list_head	hctx_list;
 
+	/**
+	 * @dtag_wait_time: record when hardware queue is pending, specifically
+	 * when BLK_MQ_S_DTAG_WAIT is set in state.
+	 */
+	unsigned long		dtag_wait_time;
+
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)

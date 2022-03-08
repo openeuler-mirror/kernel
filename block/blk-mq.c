@@ -542,7 +542,7 @@ void blk_mq_free_request(struct request *rq)
 		__blk_mq_dec_active_requests(hctx);
 		if (mq_unfair_dtag && !__blk_mq_active_requests(hctx)) {
 			blk_mq_tag_idle(hctx);
-			blk_mq_dtag_idle(hctx);
+			blk_mq_dtag_idle(hctx, true);
 		}
 	}
 
@@ -1013,7 +1013,7 @@ static void blk_mq_timeout_work(struct work_struct *work)
 			/* the hctx may be unmapped, so check it here */
 			if (blk_mq_hw_queue_mapped(hctx)) {
 				blk_mq_tag_idle(hctx);
-				blk_mq_dtag_idle(hctx);
+				blk_mq_dtag_idle(hctx, true);
 			}
 		}
 	}
@@ -1124,6 +1124,7 @@ static bool __blk_mq_get_driver_tag(struct request *rq)
 		return false;
 	}
 
+	blk_mq_dtag_idle(rq->mq_hctx, false);
 	rq->tag = tag + tag_offset;
 	return true;
 }
@@ -2725,7 +2726,7 @@ static void blk_mq_exit_hctx(struct request_queue *q,
 
 	if (blk_mq_hw_queue_mapped(hctx)) {
 		blk_mq_tag_idle(hctx);
-		blk_mq_dtag_idle(hctx);
+		blk_mq_dtag_idle(hctx, true);
 	}
 
 	blk_mq_clear_flush_rq_mapping(set->tags[hctx_idx],
@@ -2825,6 +2826,7 @@ blk_mq_alloc_hctx(struct request_queue *q, struct blk_mq_tag_set *set,
 	INIT_LIST_HEAD(&hctx->dispatch);
 	hctx->queue = q;
 	hctx->flags = set->flags & ~BLK_MQ_F_TAG_QUEUE_SHARED;
+	hctx->dtag_wait_time = jiffies;
 
 	INIT_LIST_HEAD(&hctx->hctx_list);
 
@@ -3047,7 +3049,7 @@ static void queue_set_hctx_shared(struct request_queue *q, bool shared)
 			hctx->flags |= BLK_MQ_F_TAG_QUEUE_SHARED;
 		} else {
 			blk_mq_tag_idle(hctx);
-			blk_mq_dtag_idle(hctx);
+			blk_mq_dtag_idle(hctx, true);
 			hctx->flags &= ~BLK_MQ_F_TAG_QUEUE_SHARED;
 		}
 	}
@@ -3375,6 +3377,7 @@ struct request_queue *blk_mq_init_allocated_queue(struct blk_mq_tag_set *set,
 	spin_lock_init(&q->requeue_lock);
 
 	q->nr_requests = set->queue_depth;
+	q->dtag_wait_time = jiffies;
 
 	/*
 	 * Default to classic polling
