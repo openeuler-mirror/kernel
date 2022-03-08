@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2203.1.0
+%global hulkrelease 2203.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0138
+Release: %{hulkrelease}.0139
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,36 @@ fi
 %endif
 
 %changelog
+
+* Tue Mar 08 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2203.2.0.0139
+- mm: Fix return val in khugepaged_scan_pmd()
+- mm: do some clean up of accounting ReliableTaskUsed
+- mm: fix statistic of ReliableTaskUsed
+- mm: fix missing reclaim of low-reliable page cache
+- mm: fix statistic of ReliableFileCache in /proc/meminfo
+- mm: Add more gfp flag check in prepare_before_alloc()
+- efi: Stub mirrored_kernelcore if CONFIG_HAVE_MEMBLOCK_NODE_MAP is not enabled
+- mm: Memory reliable features can only be disabled via proc interface
+- mm: Fix reliable_debug in proc not consistent with boot parameter problem
+- f2fs: fix to do sanity check on inode type during garbage collection
+- mm: Check page status in page_reliable()
+- mm: Show ReliableTaskUsed in /proc/meminfo
+- mm: Refactor code in reliable_report_meminfo()
+- mm: Show correct reliable_user_used if PAGE_SIZE is not 4K
+- proc: Fix reliable display err in /proc/pid/status
+- Revert "mm: add page cache fallback statistic"
+- mm: fix page cache use reliable memory when reliable_debug=P
+- mm: add support for limiting the usage of reliable memory in pagecache
+- mm: add "ReliableFileCache" item in /proc/meminfo
+- mm: Introduce shmem mirrored memory limit for memory reliable
+- mm: Introduce watermark check for memory reliable
+- mm: Count mirrored pages in buddy system
+- mm: Export mem_reliable_status() for checking memory reliable status
+- mm: Make MEMORY_RELIABLE depends on HAVE_MEMBLOCK_NODE_MAP
+- efi: Disable mirror feature if kernelcore is not spcified
+- mm: Introduce proc interface to control memory reliable features
+- mm: Demote warning message in vmemmap_verify() to debug level
+- mm: Ratelimited mirrored memory related warning messages
 
 * Tue Mar 01 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2203.1.0.0138
 - usb: gadget: rndis: check size of RNDIS_MSG_SET command
