@@ -3017,13 +3017,6 @@ int iommu_switch_dirty_log(struct iommu_domain *domain, bool enable,
 	}
 
 	mutex_lock(&domain->switch_log_lock);
-	if (enable && domain->dirty_log_tracking) {
-		ret = -EBUSY;
-		goto out;
-	} else if (!enable && !domain->dirty_log_tracking) {
-		ret = -EINVAL;
-		goto out;
-	}
 
 	pr_debug("switch_dirty_log %s for: iova 0x%lx size 0x%zx\n",
 		 enable ? "enable" : "disable", iova, size);
@@ -3046,11 +3039,9 @@ int iommu_switch_dirty_log(struct iommu_domain *domain, bool enable,
 	if (flush)
 		iommu_flush_iotlb_all(domain);
 
-	if (!ret) {
-		domain->dirty_log_tracking = enable;
+	if (!ret)
 		trace_switch_dirty_log(orig_iova, orig_size, enable);
-	}
-out:
+
 	mutex_unlock(&domain->switch_log_lock);
 	return ret;
 }
@@ -3077,10 +3068,6 @@ int iommu_sync_dirty_log(struct iommu_domain *domain, unsigned long iova,
 	}
 
 	mutex_lock(&domain->switch_log_lock);
-	if (!domain->dirty_log_tracking) {
-		ret = -EINVAL;
-		goto out;
-	}
 
 	pr_debug("sync_dirty_log for: iova 0x%lx size 0x%zx\n", iova, size);
 
@@ -3101,7 +3088,7 @@ int iommu_sync_dirty_log(struct iommu_domain *domain, unsigned long iova,
 
 	if (!ret)
 		trace_sync_dirty_log(orig_iova, orig_size);
-out:
+
 	mutex_unlock(&domain->switch_log_lock);
 	return ret;
 }
@@ -3163,10 +3150,6 @@ int iommu_clear_dirty_log(struct iommu_domain *domain,
 	}
 
 	mutex_lock(&domain->switch_log_lock);
-	if (!domain->dirty_log_tracking) {
-		ret = -EINVAL;
-		goto out;
-	}
 
 	start = (iova - base_iova) >> bitmap_pgshift;
 	end = start + (size >> bitmap_pgshift);
@@ -3182,7 +3165,7 @@ int iommu_clear_dirty_log(struct iommu_domain *domain,
 
 	if (flush)
 		iommu_flush_iotlb_all(domain);
-out:
+
 	mutex_unlock(&domain->switch_log_lock);
 	return ret;
 }
