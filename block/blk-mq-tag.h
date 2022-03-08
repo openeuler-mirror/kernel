@@ -82,7 +82,7 @@ enum {
 extern bool __blk_mq_tag_busy(struct blk_mq_hw_ctx *hctx);
 extern void __blk_mq_tag_idle(struct blk_mq_hw_ctx *hctx);
 extern void __blk_mq_dtag_busy(struct blk_mq_hw_ctx *hctx);
-extern void __blk_mq_dtag_idle(struct blk_mq_hw_ctx *hctx);
+extern void __blk_mq_dtag_idle(struct blk_mq_hw_ctx *hctx, bool force);
 
 
 static inline bool blk_mq_tag_busy(struct blk_mq_hw_ctx *hctx)
@@ -109,12 +109,12 @@ static inline void blk_mq_dtag_busy(struct blk_mq_hw_ctx *hctx)
 	__blk_mq_dtag_busy(hctx);
 }
 
-static inline void blk_mq_dtag_idle(struct blk_mq_hw_ctx *hctx)
+static inline void blk_mq_dtag_idle(struct blk_mq_hw_ctx *hctx, bool force)
 {
 	if (!(mq_unfair_dtag && (hctx->flags & BLK_MQ_F_TAG_QUEUE_SHARED)))
 		return;
 
-	__blk_mq_dtag_idle(hctx);
+	__blk_mq_dtag_idle(hctx, force);
 }
 
 static inline bool blk_mq_tag_is_reserved(struct blk_mq_tags *tags,

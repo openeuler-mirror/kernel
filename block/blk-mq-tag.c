@@ -15,6 +15,8 @@
 #include "blk-mq.h"
 #include "blk-mq-tag.h"
 
+#define BLK_MQ_DTAG_WAIT_EXPIRE (5 * HZ)
+
 /*
  * If a previously inactive queue goes active, bump the active user count.
  * We need to do this before try to allocate driver tag, then even if fail
@@ -80,29 +82,53 @@ void __blk_mq_dtag_busy(struct blk_mq_hw_ctx *hctx)
 		struct blk_mq_tag_set *set = q->tag_set;
 
 		if (!test_bit(QUEUE_FLAG_HCTX_WAIT, &q->queue_flags) &&
-		    !test_and_set_bit(QUEUE_FLAG_HCTX_WAIT, &q->queue_flags))
+		    !test_and_set_bit(QUEUE_FLAG_HCTX_WAIT, &q->queue_flags)) {
+			WRITE_ONCE(q->dtag_wait_time, jiffies);
 			atomic_inc(&set->pending_queues_shared_sbitmap);
+		}
 	} else {
 		if (!test_bit(BLK_MQ_S_DTAG_WAIT, &hctx->state) &&
-		    !test_and_set_bit(BLK_MQ_S_DTAG_WAIT, &hctx->state))
+		    !test_and_set_bit(BLK_MQ_S_DTAG_WAIT, &hctx->state)) {
+			WRITE_ONCE(hctx->dtag_wait_time, jiffies);
 			atomic_inc(&hctx->tags->pending_queues);
+		}
 	}
 }
 
-void __blk_mq_dtag_idle(struct blk_mq_hw_ctx *hctx)
+void __blk_mq_dtag_idle(struct blk_mq_hw_ctx *hctx, bool force)
 {
 	struct blk_mq_tags *tags = hctx->tags;
 	struct request_queue *q = hctx->queue;
 	struct blk_mq_tag_set *set = q->tag_set;
 
 	if (blk_mq_is_sbitmap_shared(hctx->flags)) {
+		if (!test_bit(QUEUE_FLAG_HCTX_WAIT, &q->queue_flags))
+			return;
+
+		if (!force && time_before(jiffies,
+					  READ_ONCE(q->dtag_wait_time) +
+					  BLK_MQ_DTAG_WAIT_EXPIRE))
+			return;
+
 		if (!test_and_clear_bit(QUEUE_FLAG_HCTX_WAIT,
 					&q->queue_flags))
 			return;
+
+		WRITE_ONCE(q->dtag_wait_time, jiffies);
 		atomic_dec(&set->pending_queues_shared_sbitmap);
 	} else {
+		if (!test_bit(BLK_MQ_S_DTAG_WAIT, &hctx->state))
+			return;
+
+		if (!force && time_before(jiffies,
+					  READ_ONCE(hctx->dtag_wait_time) +
+					  BLK_MQ_DTAG_WAIT_EXPIRE))
+			return;
+
 		if (!test_and_clear_bit(BLK_MQ_S_DTAG_WAIT, &hctx->state))
 			return;
+
+		WRITE_ONCE(hctx->dtag_wait_time, jiffies);
 		atomic_dec(&tags->pending_queues);
 	}
 }
@@ -206,6 +232,8 @@ unsigned int blk_mq_get_tag(struct blk_mq_alloc_data *data)
 	sbitmap_finish_wait(bt, ws, &wait);
 
 found_tag:
+	if (!data->q->elevator)
+		blk_mq_dtag_idle(data->hctx, false);
 	/*
 	 * Give up this allocation if the hctx is inactive.  The caller will
 	 * retry on an active hctx.
