@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .2.0
-%global pkg_release         .35
+%global maintenance_release .3.0
+%global pkg_release         .36
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -864,6 +864,9 @@ fi
 %endif
 
 %changelog
+* Tue Mar 08 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.3.0.36
+- lib/iov_iter: initialize "flags" in new pipe_buffer
+
 * Thu Mar 03 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.2.0.35
 - sched: enable CONFIG_QOS_SCHED on arm64
 - sched/qos: Remove dependency CONFIG_x86
