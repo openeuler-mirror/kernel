@@ -60,6 +60,17 @@ SYM_FUNC_START(__arch_copy_from_user)
 #include "copy_template.S"
 	mov	x0, #0				// Nothing to copy
 	ret
+
+/*
+ * In feature CONFIG_ARM64_UCE_KERNEL_RECOVERY, if RAS error is triggered
+ * in copy_from_user(), RAS error is processed in do_sea() and
+ * copy_from_user_sea_fallback will be assigned to regs->pc, finally return
+ * here to continue processing.
+ */
+	.global copy_from_user_sea_fallback
+copy_from_user_sea_fallback:
+	sub	x0, end, dst			// bytes not copied
+	ret
 SYM_FUNC_END(__arch_copy_from_user)
 EXPORT_SYMBOL(__arch_copy_from_user)
 
