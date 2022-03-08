@@ -204,6 +204,26 @@ static ssize_t queue_write_hint_store(void *data, const char __user *buf,
 	return count;
 }
 
+static int queue_tag_set_show(void *data, struct seq_file *m)
+{
+	struct request_queue *q = data;
+	struct blk_mq_tag_set *set = q->tag_set;
+
+	seq_printf(m, "nr_hw_queues=%u\n", set->nr_hw_queues);
+	seq_printf(m, "queue_depth=%u\n", set->queue_depth);
+	seq_printf(m, "reserved_tags=%u\n", set->reserved_tags);
+	seq_printf(m, "cmd_size=%u\n", set->cmd_size);
+	seq_printf(m, "numa_node=%d\n", set->numa_node);
+	seq_printf(m, "timeout=%u\n", set->timeout);
+	seq_printf(m, "flags=%u\n", set->flags);
+	seq_printf(m, "active_queues_shared_sbitmap=%d\n",
+		   atomic_read(&set->active_queues_shared_sbitmap));
+	seq_printf(m, "pending_queues_shared_sbitmap=%d\n",
+		   atomic_read(&set->pending_queues_shared_sbitmap));
+
+	return 0;
+}
+
 static const struct blk_mq_debugfs_attr blk_mq_debugfs_queue_attrs[] = {
 	{ "poll_stat", 0400, queue_poll_stat_show },
 	{ "requeue_list", 0400, .seq_ops = &queue_requeue_list_seq_ops },
@@ -211,6 +231,7 @@ static const struct blk_mq_debugfs_attr blk_mq_debugfs_queue_attrs[] = {
 	{ "state", 0600, queue_state_show, queue_state_write },
 	{ "write_hints", 0600, queue_write_hint_show, queue_write_hint_store },
 	{ "zone_wlock", 0400, queue_zone_wlock_show, NULL },
+	{ "tag_set", 0400, queue_tag_set_show, NULL },
 	{ },
 };
 
