@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 53.0.0
+%global hulkrelease 60.2.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.4
+Release: %{hulkrelease}.7
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -88,7 +88,7 @@ install -m 644 arch/%{Arch}/boot/dts/overlays/README $RPM_BUILD_ROOT/boot/dtb-%{
 %postun
 version_old=0
 if [ "$1" == "0" ]; then
-    version_old=old
+    echo "warning: something may go wrong when starting this device next time after uninstalling raspberrypi-kernel."
 else
     version_tmp=0
     name_len=`echo -n %{name}-|wc -c`
@@ -109,7 +109,7 @@ else
     fi
 fi
 if [ "$version_old" != "0" ]; then
-    if [ -f /boot/vmlinuz-$version_old ] && [ -d /boot/dtb-$version_old ] && ( [ "$version_old" == "old" ] || [ -d /lib/modules/$version_old ] ); then
+    if [ -f /boot/vmlinuz-$version_old ] && [ -d /boot/dtb-$version_old ] && [ -d /lib/modules/$version_old ]; then
         ls /boot/dtb-$version_old/overlays/*.dtbo > /dev/null 2>&1
         if [ "$?" == "0" ]; then
             ls /boot/dtb-$version_old/*.dtb > /dev/null 2>&1
@@ -129,25 +129,17 @@ if [ "$version_old" != "0" ]; then
                 fi
                 install -m 644 /boot/dtb-$version_old/overlays/README /boot/overlays/
             else
-                echo "warning: files in /boot/dtb-$version_old/*.dtb missing when resetting kernel as $version_old, something may go wrong when starting this device next time."
+                echo "warning: files in /boot/dtb-$version_old/*.dtb missing when resetting raspberrypi-kernel as $version_old, something may go wrong when starting this device next time."
             fi
         else
-            echo "warning: files in /boot/dtb-$version_old/overlays missing when resetting kernel as $version_old, something may go wrong when starting this device next time."
+            echo "warning: files in /boot/dtb-$version_old/overlays missing when resetting raspberrypi-kernel as $version_old, something may go wrong when starting this device next time."
         fi
     else
-        echo "warning: files missing when resetting kernel as $version_old, something may go wrong when starting this device next time."
+        echo "warning: files missing when resetting raspberrypi-kernel as $version_old, something may go wrong when starting this device next time."
     fi
 fi
 
 %posttrans
-if [ "$1" == "1" ]; then
-    if [ ! -f /boot/vmlinuz-old ] && [ -f /boot/kernel8.img ]; then
-        mkdir /boot/dtb-old
-        mv /boot/*.dtb /boot/dtb-old
-        mv /boot/overlays /boot/dtb-old/
-        mv /boot/kernel8.img /boot/vmlinuz-old
-    fi
-fi
 rm -rf /boot/*.dtb /boot/overlays /boot/kernel8.img
 mkdir -p /boot/overlays
 install -m 755 /boot/vmlinuz-%{KernelVer} /boot/kernel8.img
@@ -174,6 +166,15 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Fri Mar 4  2022 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-60.2.0.7
+- update kernel version to openEuler 5.10.0-60.2.0
+
+* Thu Mar 3  2022 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-60.1.0.6
+- update kernel version to openEuler 5.10.0-60.1.0
+
+* Thu Mar 3  2022 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-53.0.0.5
+- update warning info when uninstall or update raspberrypi-kernel
+
 * Wed Feb 9  2022 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-53.0.0.4
 - update kernel version to openEuler 5.10.0-53.0.0
 
