@@ -275,6 +275,7 @@ struct xfs_cil {
 	bool			xc_push_commit_stable;
 	struct list_head	xc_committing;
 	wait_queue_head_t	xc_commit_wait;
+	wait_queue_head_t	xc_start_wait;
 	xfs_csn_t		xc_current_sequence;
 	wait_queue_head_t	xc_push_wait;	/* background push throttle */
 } ____cacheline_aligned_in_smp;
