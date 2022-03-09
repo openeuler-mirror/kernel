@@ -3406,6 +3406,7 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 		dma_free_coherent(dev, qm->qdma.size,
 				  qm->qdma.va, qm->qdma.dma);
 	}
+	up_write(&qm->qps_lock);
 
 	hisi_qm_set_state(qm, VF_NOT_READY);
 
@@ -3415,8 +3416,6 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 		uacce_remove(qm->uacce);
 		qm->uacce = NULL;
 	}
-
-	up_write(&qm->qps_lock);
 }
 EXPORT_SYMBOL_GPL(hisi_qm_uninit);
 
