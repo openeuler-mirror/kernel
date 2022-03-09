@@ -2858,6 +2858,7 @@ static int qm_drain_qp(struct hisi_qp *qp)
 {
 	size_t size = sizeof(struct qm_sqc) + sizeof(struct qm_cqc);
 	struct hisi_qm *qm = qp->qm;
+	struct hisi_qm *pf_qm = pci_get_drvdata(pci_physfn(qm->pdev));
 	struct device *dev = &qm->pdev->dev;
 	struct qm_sqc *sqc;
 	struct qm_cqc *cqc;
@@ -2866,7 +2867,7 @@ static int qm_drain_qp(struct hisi_qp *qp)
 	void *addr;
 
 	/* No need to judge if master OOO is blocked. */
-	if (qm_check_dev_error(qm))
+	if (qm_check_dev_error(pf_qm))
 		return 0;
 
 	/* Kunpeng930 supports drain qp by device */
