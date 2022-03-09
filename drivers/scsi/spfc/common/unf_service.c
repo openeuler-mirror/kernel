@@ -130,7 +130,7 @@ void unf_fill_package(struct unf_frame_pkg *pkg, struct unf_xchg *xchg,
 		pkg->private_data[PKG_PRIVATE_RPORT_RX_SIZE] = rport->max_frame_size;
 	}
 
-	pkg->private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] = xchg->hotpooltag | UNF_HOTTAG_FLAG;
+	pkg->private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] = xchg->hotpooltag;
 	pkg->private_data[PKG_PRIVATE_XCHG_ALLOC_TIME] =
 	    xchg->private_data[PKG_PRIVATE_XCHG_ALLOC_TIME];
 	pkg->private_data[PKG_PRIVATE_LOWLEVEL_XCHG_ADD] =
@@ -250,7 +250,7 @@ u32 unf_send_abts(struct unf_lport *lport, struct unf_xchg *xchg)
 	pkg.unf_cmnd_pload_bl.buffer_ptr = (u8 *)xchg->fcp_sfs_union.sfs_entry.fc_sfs_entry_ptr;
 
 	pkg.unf_cmnd_pload_bl.buf_dma_addr = xchg->fcp_sfs_union.sfs_entry.sfs_buff_phy_addr;
-	pkg.private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] = xchg->hotpooltag | UNF_HOTTAG_FLAG;
+	pkg.private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] = xchg->hotpooltag;
 
 	UNF_SET_XCHG_ALLOC_TIME(&pkg, xchg);
 	UNF_SET_ABORT_INFO_IOTYPE(&pkg, xchg);
@@ -407,19 +407,10 @@ static u32 unf_els_cmnd_default_handler(struct unf_lport *lport, struct unf_xchg
 	rjt_info.reason_code = UNF_LS_RJT_NOT_SUPPORTED;
 
 	unf_rport = unf_get_rport_by_nport_id(lport, sid);
-	if (unf_rport) {
-		if (unf_rport->rport_index !=
-		    xchg->private_data[PKG_PRIVATE_XCHG_RPORT_INDEX]) {
-			FC_DRV_PRINT(UNF_LOG_LOGIN_ATT, UNF_WARN,
-				     "[warn]Port(0x%x_0x%x) NPort handle(0x%x) from low level is not equal to RPort index(0x%x)",
-				     lport->port_id, lport->nport_id,
-				     xchg->private_data[PKG_PRIVATE_XCHG_RPORT_INDEX],
-				     unf_rport->rport_index);
-		}
+	if (unf_rport)
 		ret = unf_send_els_rjt_by_rport(lport, xchg, unf_rport, &rjt_info);
-	} else {
+	else
 		ret = unf_send_els_rjt_by_did(lport, xchg, sid, &rjt_info);
-	}
 
 	return ret;
 }
@@ -1389,7 +1380,7 @@ static void unf_fill_free_xid_pkg(struct unf_xchg *xchg, struct unf_frame_pkg *p
 	pkg->frame_head.csctl_sid = xchg->sid;
 	pkg->frame_head.rctl_did = xchg->did;
 	pkg->frame_head.oxid_rxid = (u32)(((u32)xchg->oxid << UNF_SHIFT_16) | xchg->rxid);
-	pkg->private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] = xchg->hotpooltag | UNF_HOTTAG_FLAG;
+	pkg->private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] = xchg->hotpooltag;
 	UNF_SET_XCHG_ALLOC_TIME(pkg, xchg);
 
 	if (xchg->xchg_type == UNF_XCHG_TYPE_SFS) {

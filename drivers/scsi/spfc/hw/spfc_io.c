@@ -1138,7 +1138,7 @@ u32 spfc_scq_recv_iresp(struct spfc_hba_info *hba, union spfc_scqe *wqe)
 	pkg.private_data[PKG_PRIVATE_XCHG_ALLOC_TIME] = iresp->magic_num;
 	pkg.frame_head.oxid_rxid = (((iresp->wd0.ox_id) << UNF_SHIFT_16) | (iresp->wd0.rx_id));
 
-	hot_tag = (u16)iresp->wd2.hotpooltag & UNF_ORIGIN_HOTTAG_MASK;
+	hot_tag = (u16)iresp->wd2.hotpooltag;
 	/* 2. HotTag validity check */
 	if (likely(hot_tag >= hba->exi_base && (hot_tag < hba->exi_base + hba->exi_count))) {
 		pkg.status = UNF_IO_SUCCESS;

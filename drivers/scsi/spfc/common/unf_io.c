@@ -890,8 +890,7 @@ static int unf_send_fcpcmnd(struct unf_lport *lport, struct unf_rport *rport,
 	    unf_xchg->private_data[PKG_PRIVATE_XCHG_ALLOC_TIME];
 	pkg.private_data[PKG_PRIVATE_XCHG_VP_INDEX] = unf_lport->vp_index;
 	pkg.private_data[PKG_PRIVATE_XCHG_RPORT_INDEX] = unf_rport->rport_index;
-	pkg.private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] =
-	    unf_xchg->hotpooltag | UNF_HOTTAG_FLAG;
+	pkg.private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] = unf_xchg->hotpooltag;
 
 	unf_select_sq(unf_xchg, &pkg);
 	pkg.fcp_cmnd = &unf_xchg->fcp_cmnd;

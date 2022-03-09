@@ -352,7 +352,7 @@ struct unf_rport *unf_find_valid_rport(struct unf_lport *lport, u64 wwpn, u32 si
 			spin_unlock_irqrestore(rport_state_lock, flags);
 
 			FC_DRV_PRINT(UNF_LOG_LOGIN_ATT, UNF_INFO,
-				     "[err]Port(0x%x) RPort(0x%p) find by WWPN(0x%llx) is invalid",
+				     "[info]Port(0x%x) RPort(0x%p) find by WWPN(0x%llx) is invalid",
 				     lport->port_id, rport_by_wwpn, wwpn);
 
 			rport_by_wwpn = NULL;
