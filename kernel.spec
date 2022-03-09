@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .4.0
-%global pkg_release         .37
+%global maintenance_release .7.0
+%global pkg_release         .38
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -29,10 +29,19 @@
 # failed if there is new config options
 %define listnewconfig_fail 0
 
-#defualt is enabled. You can disable it with --without option
+%ifarch aarch64
+%define with_64kb  %{?_with_64kb: 1} %{?!_with_64kb: 0}
+%if %{with_64kb}
+%global package64kb -64kb
+%endif
+%else
+%define with_64kb  0
+%endif
+
+#default is enabled. You can disable it with --without option
 %define with_perf    %{?_without_perf: 0} %{?!_without_perf: 1}
 
-Name:	 kernel
+Name:	 kernel%{?package64kb}
 Version: %{upstream_version}.%{upstream_sublevel}
 Release: %{devel_release}%{?maintenance_release}%{?pkg_release}%{?extra_release}
 Summary: Linux Kernel
@@ -53,9 +62,6 @@ Source200: mkgrub-menu-aarch64.sh
 
 Source2000: cpupower.service
 Source2001: cpupower.config
-
-Source3000: kernel-5.10.0-aarch64.config
-Source3001: kernel-5.10.0-x86_64.config
 
 %if 0%{?with_patch}
 Source9000: apply-patches
@@ -155,10 +161,10 @@ and the supporting documentation.
 
 %package tools-devel
 Summary: Assortment of tools for the Linux kernel
-Requires: kernel-tools = %{version}-%{release}
-Requires: kernel-tools-libs = %{version}-%{release}
-Provides: kernel-tools-libs-devel = %{version}-%{release}
-Obsoletes: kernel-tools-libs-devel
+Requires: %{name}-tools = %{version}-%{release}
+Requires: %{name}-tools-libs = %{version}-%{release}
+Provides: %{name}-tools-libs-devel = %{version}-%{release}
+Obsoletes: %{name}-tools-libs-devel
 %description tools-devel
 This package contains the development files for the tools/ directory from
 the kernel source.
@@ -313,6 +319,14 @@ perl -p -i -e "s/^EXTRAVERSION.*/EXTRAVERSION = -%{release}.%{_target_cpu}/" Mak
 
 ## make linux
 make mrproper %{_smp_mflags}
+
+%if %{with_64kb}
+sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_4K_PAGES.*/CONFIG_ARM64_64K_PAGES=y/'
+sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_PA_BITS=.*/CONFIG_ARM64_PA_BITS=52/'
+sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_PA_BITS_.*/CONFIG_ARM64_PA_BITS_52=y/'
+sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_VA_BITS=.*/CONFIG_ARM64_VA_BITS=52/'
+sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_VA_BITS_.*/CONFIG_ARM64_VA_BITS_52=y/'
+%endif
 
 make ARCH=%{Arch} openeuler_defconfig
 
@@ -736,14 +750,14 @@ then
      done)
 fi
 
-%post -n kernel-tools
+%post -n %{name}-tools
 /sbin/ldconfig
 %systemd_post cpupower.service
 
-%preun -n kernel-tools
+%preun -n %{name}-tools
 %systemd_preun cpupower.service
 
-%postun -n kernel-tools
+%postun -n %{name}-tools
 /sbin/ldconfig
 %systemd_postun cpupower.service
 
@@ -802,7 +816,7 @@ fi
 %{python3_sitearch}/*
 %endif
 
-%files -n kernel-tools -f cpupower.lang
+%files -n %{name}-tools -f cpupower.lang
 %{_bindir}/cpupower
 %ifarch %{ix86} x86_64
 %{_bindir}/centrino-decode
@@ -832,7 +846,7 @@ fi
 %{_libdir}/libcpupower.so.0.0.1
 %license linux-%{KernelVer}/COPYING
 
-%files -n kernel-tools-devel
+%files -n %{name}-tools-devel
 %{_libdir}/libcpupower.so
 %{_includedir}/cpufreq.h
 %{_includedir}/cpuidle.h
@@ -864,6 +878,49 @@ fi
 %endif
 
 %changelog
+* Wed Mar 09 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.7.0.38
+- src-openEuler: add with_64kb to control 64KB page size
+- scsi: spfc: Remove redundant mask and spinlock
+- xfs: order CIL checkpoint start records
+- xfs: attach iclog callbacks in xlog_cil_set_ctx_write_state()
+- xfs: factor out log write ordering from xlog_cil_push_work()
+- xfs: pass a CIL context to xlog_write()
+- xfs: fix the forward progress assertion in xfs_iwalk_run_callbacks
+- xfs: move xlog_commit_record to xfs_log_cil.c
+- xfs: log head and tail aren't reliable during shutdown
+- xfs: don't run shutdown callbacks on active iclogs
+- xfs: separate out log shutdown callback processing
+- xfs: rework xlog_state_do_callback()
+- xfs: make forced shutdown processing atomic
+- xfs: convert log flags to an operational state field
+- xfs: move recovery needed state updates to xfs_log_mount_finish
+- xfs: XLOG_STATE_IOERROR must die
+- xfs: convert XLOG_FORCED_SHUTDOWN() to xlog_is_shutdown()
+- Revert "nfs: ensure correct writeback errors are returned on close()"
+- fuse: support SB_NOSEC flag to improve write performance
+- fuse: add a flag FUSE_OPEN_KILL_SUIDGID for open() request
+- fuse: don't send ATTR_MODE to kill suid/sgid for handle_killpriv_v2
+- fuse: setattr should set FATTR_KILL_SUIDGID
+- fuse: set FUSE_WRITE_KILL_SUIDGID in cached write path
+- fuse: rename FUSE_WRITE_KILL_PRIV to FUSE_WRITE_KILL_SUIDGID
+- fuse: introduce the notion of FUSE_HANDLE_KILLPRIV_V2
+- xfs: remove dead stale buf unpin handling code
+- xfs: hold buffer across unpin and potential shutdown processing
+- xfs: fix an ABBA deadlock in xfs_rename
+- Revert "efi/libstub: arm64: Relax 2M alignment again for relocatable kernels"
+- crypto: hisilicon/qm - fix memset during queues clearing
+- crypto: hisilicon/qm - modify device status check parameter
+- crypto: hisilicon/qm - remove redundant cache writeback
+- crypto: hisilicon/qm - disable queue when 'CQ' error
+- crypto: hisilicon/qm - reset function if event queue overflows
+- crypto: hisilicon/qm - use request_threaded_irq instead
+- crypto: hisilicon/qm - modify the handling method after abnormal interruption
+- crypto: hisilicon/qm - code movement
+- crypto: hisilicon/qm - remove unnecessary device memory reset
+- crypto: hisilicon/qm - fix deadlock for remove driver
+- crypto: hisilicon/sec - add some comments for soft fallback
+- crypto: hisilicon/sec - fix the aead software fallback for engine
+
 * Tue Mar 08 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.4.0.37
 - blk-throttle: Set BIO_THROTTLED when bio has been throttled
 - bpf, selftests: Add ringbuf memory type confusion test
