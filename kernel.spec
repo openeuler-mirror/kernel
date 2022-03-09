@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .3.0
-%global pkg_release         .36
+%global maintenance_release .4.0
+%global pkg_release         .37
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -864,6 +864,56 @@ fi
 %endif
 
 %changelog
+* Tue Mar 08 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.4.0.37
+- blk-throttle: Set BIO_THROTTLED when bio has been throttled
+- bpf, selftests: Add ringbuf memory type confusion test
+- bpf/selftests: Test bpf_d_path on rdonly_mem.
+- bpf, selftests: Add various ringbuf tests with invalid offset
+- selftests/bpf: Add verifier test for PTR_TO_MEM spill
+- bpf: Fix ringbuf memory type confusion when passing to helpers
+- bpf: Fix out of bounds access for ringbuf helpers
+- bpf: Generally fix helper register offset check
+- bpf: Mark PTR_TO_FUNC register initially with zero offset
+- bpf: Generalize check_ctx_reg for reuse with other types
+- bpf/selftests: Test PTR_TO_RDONLY_MEM
+- bpf: Add MEM_RDONLY for helper args that are pointers to rdonly mem.
+- bpf: Make per_cpu_ptr return rdonly PTR_TO_MEM.
+- bpf: Convert PTR_TO_MEM_OR_NULL to composable types.
+- bpf: Introduce MEM_RDONLY flag
+- bpf: Replace PTR_TO_XXX_OR_NULL with PTR_TO_XXX | PTR_MAYBE_NULL
+- bpf: Replace RET_XXX_OR_NULL with RET_XXX | PTR_MAYBE_NULL
+- bpf: Replace ARG_XXX_OR_NULL with ARG_XXX | PTR_MAYBE_NULL
+- bpf: Introduce composable reg, ret and arg types.
+- bpf: Fix out of bounds access from invalid *_or_null type verification
+- blk-mq: decrease pending_queues when it expires
+- blk-mq: add debugfs to print information for blk_mq_tag_set
+- blk-mq: allow hardware queue to get more tag while sharing a tag set
+- bfq: fix use-after-free in bfq_dispatch_request
+- livepatch/core: Validate function old_name before 'klp_init_object_loaded'
+- arm64: config: enable CONFIG_ARM64_UCE_KERNEL_RECOVERY
+- arm64: ras: copy_from_user scenario support uce kernel recovery
+- efi: Fix efi_find_mirror redefine in x86
+- sched: Fix sleeping in atomic context at cpu_qos_write()
+- vfio/iommu_type1: Fix the logic of updating num_non_hwdbm_domains
+- iommu: Stop tracking the dirty log status of iommu_domain
+- iommu/smmuv3: Remove the S1 mapping restriction of dirty log
+- timekeeping: Avoiding false sharing in field access of tk_core
+- config: close CONFIG_ARM64_ILP32
+- arm64: replace is_compat_task() with is_ilp32_compat_task() in TASK_SIZE_MAX
+- arch_topology: Fix missing clear cluster_cpumask in remove_cpu_topology()
+- kabi: fix split error of kABI reference checking tool
+- ipv6: blackhole_netdev needs snmp6 counters
+- net: avoid quadratic behavior in netdev_wait_allrefs_any()
+- net: allow out-of-order netdev unregistration
+- net: transition netdev reg state earlier in run_todo
+- ipv6: give an IPv6 dev to blackhole_netdev
+- configs: disable CONFIG_RODATA_FULL_DEFAULT_ENABLED
+- dm rq: don't queue request to blk-mq during DM suspend
+- rcu/nocb: Fix missed nocb_timer requeue
+- dm: fix mempool NULL pointer race when completing IO
+- blk-mq: Improve performance of non-mq IO schedulers with multiple HW queues
+- Revert "blk-mq, elevator: Count requests per hctx to improve performance"
+
 * Tue Mar 08 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.3.0.36
 - lib/iov_iter: initialize "flags" in new pipe_buffer
 
