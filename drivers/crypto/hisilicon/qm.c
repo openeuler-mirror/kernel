@@ -3564,10 +3564,6 @@ static int __hisi_qm_start(struct hisi_qm *qm)
 	WARN_ON(!qm->qdma.va);
 
 	if (qm->fun_type == QM_HW_PF) {
-		ret = qm_dev_mem_reset(qm);
-		if (ret)
-			return ret;
-
 		ret = hisi_qm_set_vft(qm, 0, qm->qp_base, qm->qp_num);
 		if (ret)
 			return ret;
@@ -5065,6 +5061,12 @@ static int qm_controller_reset_done(struct hisi_qm *qm)
 	if (qm->err_ini->open_axi_master_ooo)
 		qm->err_ini->open_axi_master_ooo(qm);
 
+	ret = qm_dev_mem_reset(qm);
+	if (ret) {
+		pci_err(pdev, "failed to reset device memory\n");
+		return ret;
+	}
+
 	ret = qm_restart(qm);
 	if (ret) {
 		pci_err(pdev, "Failed to start QM!\n");
@@ -5836,6 +5838,14 @@ int hisi_qm_init(struct hisi_qm *qm)
 			goto err_irq_register;
 	}
 
+	if (qm->fun_type == QM_HW_PF) {
+		ret = qm_dev_mem_reset(qm);
+		if (ret) {
+			dev_err(dev, "failed to reset device memory\n");
+			goto err_irq_register;
+		}
+	}
+
 	if (qm->mode == UACCE_MODE_SVA) {
 		ret = qm_alloc_uacce(qm);
 		if (ret < 0)
@@ -5993,8 +6003,11 @@ static int qm_rebuild_for_resume(struct hisi_qm *qm)
 
 	qm_cmd_init(qm);
 	hisi_qm_dev_err_init(qm);
+	ret = qm_dev_mem_reset(qm);
+	if (ret)
+		pci_err(pdev, "failed to reset device memory\n");
 
-	return 0;
+	return ret;
 }
 
 /**
