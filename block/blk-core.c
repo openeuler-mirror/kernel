@@ -2669,8 +2669,10 @@ static blk_status_t blk_cloned_rq_check_limits(struct request_queue *q,
  * blk_insert_cloned_request - Helper for stacking drivers to submit a request
  * @q:  the queue to submit the request
  * @rq: the request being queued
+ * @precise: true if io account with start and done will be balanced
  */
-blk_status_t blk_insert_cloned_request(struct request_queue *q, struct request *rq)
+blk_status_t __blk_insert_cloned_request(struct request_queue *q,
+					struct request *rq, bool precise)
 {
 	unsigned long flags;
 	int where = ELEVATOR_INSERT_BACK;
@@ -2693,7 +2695,16 @@ blk_status_t blk_insert_cloned_request(struct request_queue *q, struct request *
 		 * bypass a potential scheduler on the bottom device for
 		 * insert.
 		 */
-		return blk_mq_request_issue_directly(rq);
+		ret = blk_mq_request_issue_directly(rq);
+		if (ret && precise) {
+			u64 now = 0;
+
+			if (blk_mq_need_time_stamp(rq))
+				now = ktime_get_ns();
+
+			blk_account_io_done(rq, now);
+		}
+		return ret;
 	}
 
 	spin_lock_irqsave(q->queue_lock, flags);
@@ -2717,6 +2728,13 @@ blk_status_t blk_insert_cloned_request(struct request_queue *q, struct request *
 	spin_unlock_irqrestore(q->queue_lock, flags);
 
 	return BLK_STS_OK;
+}
+EXPORT_SYMBOL_GPL(__blk_insert_cloned_request);
+
+blk_status_t blk_insert_cloned_request(struct request_queue *q,
+					struct request *rq)
+{
+	return __blk_insert_cloned_request(q, rq, false);
 }
 EXPORT_SYMBOL_GPL(blk_insert_cloned_request);
 
