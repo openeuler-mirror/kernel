@@ -406,6 +406,15 @@ static inline struct io_context *create_io_context(gfp_t gfp_mask, int node)
 }
 
 /*
+ * Only need start/end time stamping if we have stats enabled, or using
+ * an IO scheduler.
+ */
+static inline bool blk_mq_need_time_stamp(struct request *rq)
+{
+	return (rq->rq_flags & RQF_IO_STAT) || rq->q->elevator;
+}
+
+/*
  * Internal throttling interface
  */
 #ifdef CONFIG_BLK_DEV_THROTTLING
