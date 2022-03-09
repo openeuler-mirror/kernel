@@ -56,7 +56,7 @@ static struct unf_cfg_item spfc_port_cfg_parm[] = {
 	{"port_topology", 0, 0xf, 0x20},
 	{"port_alpa", 0, 0xdead, 0xffff}, /* alpa address of port */
 	/* queue depth of originator registered to SCSI midlayer */
-	{"max_queue_depth", 0, 128, 128},
+	{"max_queue_depth", 0, 512, 512},
 	{"sest_num", 0, 2048, 2048},
 	{"max_login", 0, 2048, 2048},
 	/* nodename from 32 bit to 64 bit */

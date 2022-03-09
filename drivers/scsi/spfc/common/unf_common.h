@@ -12,8 +12,6 @@
 #define SPFC_DRV_DESC "Ramaxel Memory Technology Fibre Channel Driver"
 
 #define UNF_MAX_SECTORS 0xffff
-#define UNF_ORIGIN_HOTTAG_MASK 0x7fff
-#define UNF_HOTTAG_FLAG (1 << 15)
 #define UNF_PKG_FREE_OXID 0x0
 #define UNF_PKG_FREE_RXID 0x1
 

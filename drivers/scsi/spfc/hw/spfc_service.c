@@ -742,7 +742,7 @@ u32 spfc_scq_recv_abts_rsp(struct spfc_hba_info *hba, union spfc_scqe *scqe)
 
 	ox_id = (u32)(abts_rsp->wd0.ox_id);
 
-	hot_tag = abts_rsp->wd1.hotpooltag & UNF_ORIGIN_HOTTAG_MASK;
+	hot_tag = abts_rsp->wd1.hotpooltag;
 	if (unlikely(hot_tag < (u32)hba->exi_base ||
 		     hot_tag >= (u32)(hba->exi_base + hba->exi_count))) {
 		FC_DRV_PRINT(UNF_LOG_LOGIN_ATT, UNF_ERR,
@@ -1210,7 +1210,7 @@ u32 spfc_scq_recv_ls_gs_rsp(struct spfc_hba_info *hba, union spfc_scqe *scqe)
 	spfc_swap_16_in_32((u32 *)ls_gs_rsp_scqe->user_id, SPFC_LS_GS_USERID_LEN);
 
 	ox_id = ls_gs_rsp_scqe->wd1.ox_id;
-	hot_tag = ((u16)(ls_gs_rsp_scqe->wd5.hotpooltag) & UNF_ORIGIN_HOTTAG_MASK) - hba->exi_base;
+	hot_tag = ((u16)ls_gs_rsp_scqe->wd5.hotpooltag) - hba->exi_base;
 	pkg.frame_head.oxid_rxid = (u32)(ls_gs_rsp_scqe->wd1.rx_id) | ox_id << UNF_SHIFT_16;
 	pkg.private_data[PKG_PRIVATE_XCHG_ALLOC_TIME] = ls_gs_rsp_scqe->magic_num;
 	pkg.private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] = hot_tag;
@@ -1317,8 +1317,7 @@ u32 spfc_scq_recv_els_rsp_sts(struct spfc_hba_info *hba, union spfc_scqe *scqe)
 	pkg.private_data[PKG_PRIVATE_XCHG_ALLOC_TIME] =
 	    els_rsp_sts_scqe->magic_num;
 	pkg.frame_head.oxid_rxid = rx_id | (u32)(els_rsp_sts_scqe->wd0.ox_id) << UNF_SHIFT_16;
-	hot_tag = (u32)((els_rsp_sts_scqe->wd1.hotpooltag & UNF_ORIGIN_HOTTAG_MASK) -
-		  hba->exi_base);
+	hot_tag = (u32)(els_rsp_sts_scqe->wd1.hotpooltag - hba->exi_base);
 
 	if (unlikely(SPFC_SCQE_HAS_ERRCODE(scqe)))
 		pkg.status = UNF_IO_FAILED;
@@ -1759,7 +1758,7 @@ u32 spfc_scq_recv_marker_sts(struct spfc_hba_info *hba, union spfc_scqe *scqe)
 	tmf_marker_sts_scqe = &scqe->itmf_marker_sts;
 	ox_id = (u32)tmf_marker_sts_scqe->wd1.ox_id;
 	rx_id = (u32)tmf_marker_sts_scqe->wd1.rx_id;
-	hot_tag = (tmf_marker_sts_scqe->wd4.hotpooltag & UNF_ORIGIN_HOTTAG_MASK) - hba->exi_base;
+	hot_tag = tmf_marker_sts_scqe->wd4.hotpooltag - hba->exi_base;
 	pkg.frame_head.oxid_rxid = rx_id | (u32)(ox_id) << UNF_SHIFT_16;
 	pkg.private_data[PKG_PRIVATE_XCHG_ALLOC_TIME] = tmf_marker_sts_scqe->magic_num;
 	pkg.frame_head.csctl_sid = tmf_marker_sts_scqe->wd3.sid;
@@ -1800,7 +1799,7 @@ u32 spfc_scq_recv_abts_marker_sts(struct spfc_hba_info *hba, union spfc_scqe *sc
 
 	ox_id = (u32)abts_marker_sts_scqe->wd1.ox_id;
 	rx_id = (u32)abts_marker_sts_scqe->wd1.rx_id;
-	hot_tag = (abts_marker_sts_scqe->wd4.hotpooltag & UNF_ORIGIN_HOTTAG_MASK) - hba->exi_base;
+	hot_tag = abts_marker_sts_scqe->wd4.hotpooltag - hba->exi_base;
 	pkg.frame_head.oxid_rxid = rx_id | (u32)(ox_id) << UNF_SHIFT_16;
 	pkg.frame_head.csctl_sid = abts_marker_sts_scqe->wd3.sid;
 	pkg.frame_head.rctl_did = abts_marker_sts_scqe->wd2.did;
@@ -1972,8 +1971,7 @@ u32 spfc_scq_free_xid_sts(struct spfc_hba_info *hba, union spfc_scqe *scqe)
 	rx_id = (u32)free_xid_sts_scqe->wd0.rx_id;
 
 	if (free_xid_sts_scqe->wd1.hotpooltag != INVALID_VALUE16) {
-		hot_tag = (free_xid_sts_scqe->wd1.hotpooltag &
-			   UNF_ORIGIN_HOTTAG_MASK) - hba->exi_base;
+		hot_tag = free_xid_sts_scqe->wd1.hotpooltag - hba->exi_base;
 	}
 
 	FC_DRV_PRINT(UNF_LOG_EQUIP_ATT, UNF_INFO,
@@ -1998,7 +1996,7 @@ u32 spfc_scq_exchg_timeout_sts(struct spfc_hba_info *hba, union spfc_scqe *scqe)
 	rx_id = (u32)time_out_scqe->wd0.rx_id;
 
 	if (time_out_scqe->wd1.hotpooltag != INVALID_VALUE16)
-		hot_tag = (time_out_scqe->wd1.hotpooltag & UNF_ORIGIN_HOTTAG_MASK) - hba->exi_base;
+		hot_tag = time_out_scqe->wd1.hotpooltag - hba->exi_base;
 
 	FC_DRV_PRINT(UNF_LOG_EQUIP_ATT, UNF_INFO,
 		     "Port(0x%x) recv timer time out sts hotpooltag(0x%x) magicnum(0x%x) ox_id(0x%x) rxid(0x%x) sts(%d)",
@@ -2054,7 +2052,7 @@ u32 spfc_scq_rcv_sq_nop_sts(struct spfc_hba_info *hba, union spfc_scqe *scqe)
 		FC_DRV_PRINT(UNF_LOG_LOGIN_ATT, UNF_INFO,
 			     "[info]Port(0x%x) rport_index(0x%x) find suspend sqe.",
 			     hba->port_cfg.port_id, rport_index);
-		if (sqn < sqn_max) {
+		if ((sqn < sqn_max) && (sqn >= sqn_base)) {
 			ret = spfc_send_nop_cmd(hba, parent_sq_info, magic_num, sqn + 1);
 		} else if (sqn == sqn_max) {
 			if (!cancel_delayed_work(&suspend_sqe->timeout_work)) {
@@ -2065,6 +2063,10 @@ u32 spfc_scq_rcv_sq_nop_sts(struct spfc_hba_info *hba, union spfc_scqe *scqe)
 			parent_sq_info->need_offloaded = suspend_sqe->old_offload_sts;
 			ret = spfc_pop_suspend_sqe(hba, prt_qinfo, suspend_sqe);
 			kfree(suspend_sqe);
+		} else {
+			FC_DRV_PRINT(UNF_LOG_LOGIN_ATT, UNF_WARN,
+			     "[warn]Port(0x%x) rport(0x%x) rcv error sqn(0x%x)",
+			     hba->port_cfg.port_id, rport_index, sqn);
 		}
 	} else {
 		FC_DRV_PRINT(UNF_LOG_LOGIN_ATT, UNF_WARN,

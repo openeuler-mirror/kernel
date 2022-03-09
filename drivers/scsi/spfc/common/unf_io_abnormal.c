@@ -763,7 +763,7 @@ int unf_send_scsi_mgmt_cmnd(struct unf_xchg *xchg, struct unf_lport *lport,
 	pkg.xchg_contex = unf_xchg;
 	pkg.private_data[PKG_PRIVATE_XCHG_RPORT_INDEX] = rport->rport_index;
 	pkg.fcp_cmnd = &unf_xchg->fcp_cmnd;
-	pkg.private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] = unf_xchg->hotpooltag | UNF_HOTTAG_FLAG;
+	pkg.private_data[PKG_PRIVATE_XCHG_HOT_POOL_INDEX] = unf_xchg->hotpooltag;
 	pkg.frame_head.csctl_sid = lport->nport_id;
 	pkg.frame_head.rctl_did = rport->nport_id;
 

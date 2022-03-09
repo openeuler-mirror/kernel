@@ -2138,11 +2138,9 @@ static void spfc_free_parent_sq(struct spfc_hba_info *hba,
 	u32 uidelaycnt = 0;
 	struct list_head *list = NULL;
 	struct spfc_suspend_sqe_info *suspend_sqe = NULL;
-	ulong flag = 0;
 
 	sq_info = &parq_info->parent_sq_info;
 
-	spin_lock_irqsave(&parq_info->parent_queue_state_lock, flag);
 	while (!list_empty(&sq_info->suspend_sqe_list)) {
 		list = UNF_OS_LIST_NEXT(&sq_info->suspend_sqe_list);
 		list_del(list);
@@ -2156,7 +2154,6 @@ static void spfc_free_parent_sq(struct spfc_hba_info *hba,
 			kfree(suspend_sqe);
 		}
 	}
-	spin_unlock_irqrestore(&parq_info->parent_queue_state_lock, flag);
 
 	/* Free data cos */
 	spfc_update_cos_rport_cnt(hba, parq_info->queue_data_cos);
@@ -4475,9 +4472,7 @@ void spfc_free_parent_queue_info(void *handle, struct spfc_parent_queue_info *pa
 	 * with the sq in the queue of the parent
 	 */
 
-	spin_unlock_irqrestore(prtq_state_lock, flag);
 	spfc_free_parent_sq(hba, parent_queue_info);
-	spin_lock_irqsave(prtq_state_lock, flag);
 
 	/* The initialization of all queue id is invalid */
 	parent_queue_info->parent_cmd_scq_info.cqm_queue_id = INVALID_VALUE32;
