@@ -18,6 +18,7 @@
 #include <linux/ctype.h>
 #include <linux/genhd.h>
 #include <linux/blktrace_api.h>
+#include <linux/blkdev.h>
 
 #include "partitions/check.h"
 
@@ -121,6 +122,13 @@ ssize_t part_stat_show(struct device *dev,
 	struct hd_struct *p = dev_to_part(dev);
 	struct request_queue *q = part_to_disk(p)->queue;
 	unsigned int inflight[2];
+	int cpu;
+
+	if (precise_iostat) {
+		cpu = part_stat_lock();
+		part_round_stats(q, cpu, p);
+		part_stat_unlock();
+	}
 
 	part_in_flight(q, p, inflight);
 	return sprintf(buf,
