@@ -28,6 +28,7 @@
 #include <linux/scatterlist.h>
 #include <linux/blkzoned.h>
 
+extern bool precise_iostat;
 struct module;
 struct scsi_ioctl_command;
 

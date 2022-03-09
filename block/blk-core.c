@@ -56,6 +56,20 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(block_unplug);
 
 DEFINE_IDA(blk_queue_ida);
 
+bool precise_iostat;
+static int __init precise_iostat_setup(char *str)
+{
+	bool precise;
+
+	if (!strtobool(str, &precise)) {
+		precise_iostat = precise;
+		pr_info("precise iostat %d\n", precise_iostat);
+	}
+
+	return 1;
+}
+__setup("precise_iostat=", precise_iostat_setup);
+
 /*
  * For the allocated request tables
  */
@@ -1700,8 +1714,13 @@ static void part_round_stats_single(struct request_queue *q, int cpu,
 				    struct hd_struct *part, unsigned long now,
 				    unsigned int inflight)
 {
-	if (inflight)
+	if (inflight) {
+		if (precise_iostat) {
+			__part_stat_add(cpu, part, time_in_queue,
+					inflight * (now - part->stamp));
+		}
 		__part_stat_add(cpu, part, io_ticks, (now - part->stamp));
+	}
 	part->stamp = now;
 }
 
@@ -2771,10 +2790,15 @@ void blk_account_io_done(struct request *req, u64 now)
 		cpu = part_stat_lock();
 		part = req->part;
 
-		update_io_ticks(cpu, part, jiffies);
+		if (!precise_iostat) {
+			update_io_ticks(cpu, part, jiffies);
+			part_stat_add(cpu, part, time_in_queue,
+				nsecs_to_jiffies64(now - req->start_time_ns));
+		} else {
+			part_round_stats(req->q, cpu, part);
+		}
 		part_stat_inc(cpu, part, ios[sgrp]);
 		part_stat_add(cpu, part, nsecs[sgrp], now - req->start_time_ns);
-		part_stat_add(cpu, part, time_in_queue, nsecs_to_jiffies64(now - req->start_time_ns));
 		part_dec_in_flight(req->q, part, rq_data_dir(req));
 
 		hd_struct_put(part);

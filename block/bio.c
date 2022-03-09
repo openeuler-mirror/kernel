@@ -1706,9 +1706,13 @@ void generic_end_io_acct(struct request_queue *q, int req_op,
 	const int sgrp = op_stat_group(req_op);
 	int cpu = part_stat_lock();
 
-	update_io_ticks(cpu, part, now);
+	if (precise_iostat) {
+		part_round_stats(q, cpu, part);
+	} else {
+		update_io_ticks(cpu, part, now);
+		part_stat_add(cpu, part, time_in_queue, duration);
+	}
 	part_stat_add(cpu, part, nsecs[sgrp], jiffies_to_nsecs(duration));
-	part_stat_add(cpu, part, time_in_queue, duration);
 	part_dec_in_flight(q, part, op_is_write(req_op));
 
 	part_stat_unlock();
