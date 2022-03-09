@@ -291,7 +291,7 @@ xlog_grant_head_check(
 	int			free_bytes;
 	int			error = 0;
 
-	ASSERT(!(log->l_flags & XLOG_ACTIVE_RECOVERY));
+	ASSERT(!xlog_in_recovery(log));
 
 	/*
 	 * If there are other waiters on the queue then give them a chance at
@@ -528,6 +528,7 @@ xfs_log_mount(
 	xfs_daddr_t	blk_offset,
 	int		num_bblks)
 {
+	struct xlog	*log;
 	bool		fatal = xfs_sb_version_hascrc(&mp->m_sb);
 	int		error = 0;
 	int		min_logfsbs;
@@ -542,11 +543,12 @@ xfs_log_mount(
 		ASSERT(mp->m_flags & XFS_MOUNT_RDONLY);
 	}
 
-	mp->m_log = xlog_alloc_log(mp, log_target, blk_offset, num_bblks);
-	if (IS_ERR(mp->m_log)) {
-		error = PTR_ERR(mp->m_log);
+	log = xlog_alloc_log(mp, log_target, blk_offset, num_bblks);
+	if (IS_ERR(log)) {
+		error = PTR_ERR(log);
 		goto out;
 	}
+	mp->m_log = log;
 
 	/*
 	 * Validate the given log space and drop a critical message via syslog
@@ -611,7 +613,7 @@ xfs_log_mount(
 		xfs_warn(mp, "AIL initialisation failed: error %d", error);
 		goto out_free_log;
 	}
-	mp->m_log->l_ailp = mp->m_ail;
+	log->l_ailp = mp->m_ail;
 
 	/*
 	 * skip log recovery on a norecovery mount.  pretend it all
@@ -623,39 +625,39 @@ xfs_log_mount(
 		if (readonly)
 			mp->m_flags &= ~XFS_MOUNT_RDONLY;
 
-		error = xlog_recover(mp->m_log);
+		error = xlog_recover(log);
 
 		if (readonly)
 			mp->m_flags |= XFS_MOUNT_RDONLY;
 		if (error) {
 			xfs_warn(mp, "log mount/recovery failed: error %d",
 				error);
-			xlog_recover_cancel(mp->m_log);
+			xlog_recover_cancel(log);
 			goto out_destroy_ail;
 		}
 	}
 
-	error = xfs_sysfs_init(&mp->m_log->l_kobj, &xfs_log_ktype, &mp->m_kobj,
+	error = xfs_sysfs_init(&log->l_kobj, &xfs_log_ktype, &mp->m_kobj,
 			       "log");
 	if (error)
 		goto out_destroy_ail;
 
 	/* Normal transactions can now occur */
-	mp->m_log->l_flags &= ~XLOG_ACTIVE_RECOVERY;
+	clear_bit(XLOG_ACTIVE_RECOVERY, &log->l_opstate);
 
 	/*
 	 * Now the log has been fully initialised and we know were our
 	 * space grant counters are, we can initialise the permanent ticket
 	 * needed for delayed logging to work.
 	 */
-	xlog_cil_init_post_recovery(mp->m_log);
+	xlog_cil_init_post_recovery(log);
 
 	return 0;
 
 out_destroy_ail:
 	xfs_trans_ail_destroy(mp);
 out_free_log:
-	xlog_dealloc_log(mp->m_log);
+	xlog_dealloc_log(log);
 out:
 	return error;
 }
@@ -707,7 +709,7 @@ xfs_log_mount_finish(
 	 * mount failure occurs.
 	 */
 	mp->m_super->s_flags |= SB_ACTIVE;
-	if (log->l_flags & XLOG_RECOVERY_NEEDED)
+	if (xlog_recovery_needed(log))
 		error = xlog_recover_finish(log);
 	if (!error)
 		xfs_log_work_queue(mp);
@@ -723,7 +725,7 @@ xfs_log_mount_finish(
 	 * Don't push in the error case because the AIL may have pending intents
 	 * that aren't removed until recovery is cancelled.
 	 */
-	if (log->l_flags & XLOG_RECOVERY_NEEDED) {
+	if (xlog_recovery_needed(log)) {
 		if (!error) {
 			xfs_log_force(mp, XFS_LOG_SYNC);
 			xfs_ail_push_all_sync(mp->m_ail);
@@ -735,7 +737,7 @@ xfs_log_mount_finish(
 	}
 	xfs_wait_buftarg(mp->m_ddev_targp);
 
-	log->l_flags &= ~XLOG_RECOVERY_NEEDED;
+	clear_bit(XLOG_RECOVERY_NEEDED, &log->l_opstate);
 	if (readonly)
 		mp->m_flags |= XFS_MOUNT_RDONLY;
 
@@ -1007,7 +1009,7 @@ xfs_log_space_wake(
 		return;
 
 	if (!list_empty_careful(&log->l_write_head.waiters)) {
-		ASSERT(!(log->l_flags & XLOG_ACTIVE_RECOVERY));
+		ASSERT(!xlog_in_recovery(log));
 
 		spin_lock(&log->l_write_head.lock);
 		free_bytes = xlog_space_left(log, &log->l_write_head.grant);
@@ -1016,7 +1018,7 @@ xfs_log_space_wake(
 	}
 
 	if (!list_empty_careful(&log->l_reserve_head.waiters)) {
-		ASSERT(!(log->l_flags & XLOG_ACTIVE_RECOVERY));
+		ASSERT(!xlog_in_recovery(log));
 
 		spin_lock(&log->l_reserve_head.lock);
 		free_bytes = xlog_space_left(log, &log->l_reserve_head.grant);
@@ -1319,7 +1321,7 @@ xlog_alloc_log(
 	log->l_logBBstart  = blk_offset;
 	log->l_logBBsize   = num_bblks;
 	log->l_covered_state = XLOG_STATE_COVER_IDLE;
-	log->l_flags	   |= XLOG_ACTIVE_RECOVERY;
+	set_bit(XLOG_ACTIVE_RECOVERY, &log->l_opstate);
 	INIT_DELAYED_WORK(&log->l_work, xfs_log_worker);
 
 	log->l_prev_block  = -1;
@@ -3508,17 +3510,15 @@ xlog_verify_grant_tail(
 	xlog_crack_atomic_lsn(&log->l_tail_lsn, &tail_cycle, &tail_blocks);
 	if (tail_cycle != cycle) {
 		if (cycle - 1 != tail_cycle &&
-		    !(log->l_flags & XLOG_TAIL_WARN)) {
+		    !test_and_set_bit(XLOG_TAIL_WARN, &log->l_opstate)) {
 			xfs_alert_tag(log->l_mp, XFS_PTAG_LOGRES,
 				"%s: cycle - 1 != tail_cycle", __func__);
-			log->l_flags |= XLOG_TAIL_WARN;
 		}
 
 		if (space > BBTOB(tail_blocks) &&
-		    !(log->l_flags & XLOG_TAIL_WARN)) {
+		    !test_and_set_bit(XLOG_TAIL_WARN, &log->l_opstate)) {
 			xfs_alert_tag(log->l_mp, XFS_PTAG_LOGRES,
 				"%s: space > BBTOB(tail_blocks)", __func__);
-			log->l_flags |= XLOG_TAIL_WARN;
 		}
 	}
 }
@@ -3685,8 +3685,7 @@ xfs_log_force_umount(
 	 * If this happens during log recovery, don't worry about
 	 * locking; the log isn't open for business yet.
 	 */
-	if (!log ||
-	    log->l_flags & XLOG_ACTIVE_RECOVERY) {
+	if (!log || xlog_in_recovery(log)) {
 		mp->m_flags |= XFS_MOUNT_FS_SHUTDOWN;
 		if (mp->m_sb_bp)
 			mp->m_sb_bp->b_flags |= XBF_DONE;
@@ -3723,10 +3722,8 @@ xfs_log_force_umount(
 	 * Mark the log and the iclogs with IO error flags to prevent any
 	 * further log IO from being issued or completed.
 	 */
-	if (!(log->l_flags & XLOG_IO_ERROR)) {
-		log->l_flags |= XLOG_IO_ERROR;
+	if (!test_and_set_bit(XLOG_IO_ERROR, &log->l_opstate))
 		retval = 1;
-	}
 	spin_unlock(&log->l_icloglock);
 
 	/*
@@ -3812,13 +3809,4 @@ xfs_log_check_lsn(
 	}
 
 	return valid;
-}
-
-bool
-xfs_log_in_recovery(
-	struct xfs_mount	*mp)
-{
-	struct xlog		*log = mp->m_log;
-
-	return log->l_flags & XLOG_ACTIVE_RECOVERY;
 }
