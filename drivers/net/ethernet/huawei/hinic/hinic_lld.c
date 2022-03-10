@@ -119,6 +119,7 @@ struct hinic_pcidev {
 	bool nic_des_enable;
 
 	struct timer_list syncfw_time_timer;
+	int card_id;
 };
 
 #define HINIC_EVENT_PROCESS_TIMEOUT	10000
@@ -2099,6 +2100,9 @@ static void free_chip_node(struct hinic_pcidev *pci_adapter)
 	u32 id;
 	int err;
 
+	if (!(card_bit_map & BIT(pci_adapter->card_id)))
+		return;
+
 	if (list_empty(&chip_node->func_list)) {
 		list_del(&chip_node->node);
 		sdk_info(&pci_adapter->pcidev->dev,
@@ -2700,6 +2704,9 @@ static int hinic_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 			"Failed to add new chip node to global list\n");
 		goto alloc_chip_node_fail;
 	}
+
+	sscanf(pci_adapter->chip_node->chip_name, HINIC_CHIP_NAME "%d",
+	       &pci_adapter->card_id);
 
 	err = nictool_k_init();
 	if (err) {
