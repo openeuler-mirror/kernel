@@ -395,8 +395,7 @@ static void hns3_self_test(struct net_device *ndev,
 
 #if IS_ENABLED(CONFIG_VLAN_8021Q)
 	if (dis_vlan_filter)
-		h->ae_algo->ops->enable_vlan_filter(h,
-					ndev->flags & IFF_PROMISC);
+		h->ae_algo->ops->enable_vlan_filter(h, true);
 #endif
 
 	if (if_running)
