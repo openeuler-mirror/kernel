@@ -917,6 +917,13 @@ static void __io_queue_sqe(struct io_kiocb *req,
 			   const struct io_uring_sqe *sqe,
 			   struct io_comp_state *cs);
 
+static ssize_t io_import_iovec(int rw, struct io_kiocb *req,
+			       struct iovec **iovec, struct iov_iter *iter,
+			       bool needs_lock);
+static int io_setup_async_rw(struct io_kiocb *req, ssize_t io_size,
+			     struct iovec *iovec, struct iovec *fast_iov,
+			     struct iov_iter *iter);
+
 static struct kmem_cache *req_cachep;
 
 static const struct file_operations io_uring_fops;
@@ -2363,10 +2370,90 @@ static void io_complete_rw_common(struct kiocb *kiocb, long res,
 	__io_req_complete(req, res, cflags, cs);
 }
 
+#ifdef CONFIG_BLOCK
+static bool io_resubmit_prep(struct io_kiocb *req, int error)
+{
+	struct iovec inline_vecs[UIO_FASTIOV], *iovec = inline_vecs;
+	ssize_t ret = -ECANCELED;
+	struct iov_iter iter;
+	int rw;
+
+	if (error) {
+		ret = error;
+		goto end_req;
+	}
+
+	switch (req->opcode) {
+	case IORING_OP_READV:
+	case IORING_OP_READ_FIXED:
+	case IORING_OP_READ:
+		rw = READ;
+		break;
+	case IORING_OP_WRITEV:
+	case IORING_OP_WRITE_FIXED:
+	case IORING_OP_WRITE:
+		rw = WRITE;
+		break;
+	default:
+		printk_once(KERN_WARNING "io_uring: bad opcode in resubmit %d\n",
+				req->opcode);
+		goto end_req;
+	}
+
+	ret = io_import_iovec(rw, req, &iovec, &iter, false);
+	if (ret < 0)
+		goto end_req;
+	ret = io_setup_async_rw(req, ret, iovec, inline_vecs, &iter);
+	if (!ret)
+		return true;
+	kfree(iovec);
+end_req:
+	io_cqring_add_event(req, ret, 0);
+	req_set_fail_links(req);
+	io_put_req(req);
+	return false;
+}
+
+static void io_rw_resubmit(struct callback_head *cb)
+{
+	struct io_kiocb *req = container_of(cb, struct io_kiocb, task_work);
+	struct io_ring_ctx *ctx = req->ctx;
+	int err;
+
+	__set_current_state(TASK_RUNNING);
+
+	err = io_sq_thread_acquire_mm_files(ctx, req);
+
+	if (io_resubmit_prep(req, err)) {
+		refcount_inc(&req->refs);
+		io_queue_async_work(req);
+	}
+}
+#endif
+
+static bool io_rw_reissue(struct io_kiocb *req, long res)
+{
+#ifdef CONFIG_BLOCK
+	struct task_struct *tsk;
+	int ret;
+
+	if ((res != -EAGAIN && res != -EOPNOTSUPP) || io_wq_current_is_worker())
+		return false;
+
+	tsk = req->task;
+	init_task_work(&req->task_work, io_rw_resubmit);
+	ret = task_work_add(tsk, &req->task_work, true);
+	if (!ret)
+		return true;
+#endif
+	return false;
+}
+
 static void __io_complete_rw(struct io_kiocb *req, long res, long res2,
 			     struct io_comp_state *cs)
 {
-	io_complete_rw_common(&req->rw.kiocb, res, cs);
+	if (!io_rw_reissue(req, res))
+		io_complete_rw_common(&req->rw.kiocb, res, cs);
 }
 
 static void io_complete_rw(struct kiocb *kiocb, long res, long res2)
@@ -2535,6 +2622,9 @@ static int io_prep_rw(struct io_kiocb *req, const struct io_uring_sqe *sqe,
 	/* don't allow async punt if RWF_NOWAIT was requested */
 	if (kiocb->ki_flags & IOCB_NOWAIT)
 		req->flags |= REQ_F_NOWAIT;
+
+	if (kiocb->ki_flags & IOCB_DIRECT)
+		io_get_req_task(req);
 
 	if (force_nonblock)
 		kiocb->ki_flags |= IOCB_NOWAIT;
@@ -3037,6 +3127,7 @@ static int io_read(struct io_kiocb *req, bool force_nonblock,
 
 	ret = rw_verify_area(READ, req->file, &kiocb->ki_pos, iov_count);
 	if (!ret) {
+		unsigned long nr_segs = iter.nr_segs;
 		ssize_t ret2;
 
 		if (req->file->f_op->read_iter)
@@ -3054,6 +3145,8 @@ static int io_read(struct io_kiocb *req, bool force_nonblock,
 				goto copy_iov;
 			kiocb_done(kiocb, ret2, cs);
 		} else {
+			iter.count = iov_count;
+			iter.nr_segs = nr_segs;
 copy_iov:
 			ret = io_setup_async_rw(req, io_size, iovec,
 						inline_vecs, &iter);
@@ -3120,6 +3213,7 @@ static int io_write(struct io_kiocb *req, bool force_nonblock,
 
 	ret = rw_verify_area(WRITE, req->file, &kiocb->ki_pos, iov_count);
 	if (!ret) {
+		unsigned long nr_segs = iter.nr_segs;
 		ssize_t ret2;
 
 		/*
@@ -3157,6 +3251,8 @@ static int io_write(struct io_kiocb *req, bool force_nonblock,
 				goto copy_iov;
 			kiocb_done(kiocb, ret2, cs);
 		} else {
+			iter.count = iov_count;
+			iter.nr_segs = nr_segs;
 copy_iov:
 			ret = io_setup_async_rw(req, io_size, iovec,
 						inline_vecs, &iter);
