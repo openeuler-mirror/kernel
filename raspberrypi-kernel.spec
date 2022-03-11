@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 15.0.0
+%global hulkrelease 52.0.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel
 Version: 5.10.0
-Release: %{hulkrelease}.3
+Release: %{hulkrelease}.4
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -174,6 +174,10 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Fri Mar 11 2022 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-52.0.0.4
+- update kernel version to openEuler 5.10.0-52.0.0
+- update Raspberry Pi patch, last commit (b0272c695e99a8dcc3a01298db56361333f1fdcf): net: phy: lan87xx: Decrease phy polling rate
+
 * Mon Oct 25 2021 Yafen Fang <yafen@iscas.ac.cn> - 5.10.0-15.0.0.3
 - update kernel version to openEuler 5.10.0-15.0.0
 
