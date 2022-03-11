@@ -67,7 +67,7 @@ static bool rx_alloc_mapped_page(struct hinic_rxq *rxq,
 		return true;
 
 	/* alloc new page for storage */
-	page = alloc_pages_node(NUMA_NO_NODE, GFP_ATOMIC, nic_dev->page_order);
+	page = dev_alloc_pages(nic_dev->page_order);
 	if (unlikely(!page)) {
 		RXQ_STATS_INC(rxq, alloc_rx_buf_err);
 		return false;
