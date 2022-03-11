@@ -2408,9 +2408,7 @@ static bool io_resubmit_prep(struct io_kiocb *req, int error)
 		return true;
 	kfree(iovec);
 end_req:
-	io_cqring_add_event(req, ret, 0);
 	req_set_fail_links(req);
-	io_put_req(req);
 	return false;
 }
 
