@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .7.0
-%global pkg_release         .38
+%global maintenance_release .8.0
+%global pkg_release         .39
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -878,6 +878,9 @@ fi
 %endif
 
 %changelog
+* Thu Mar 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.8.0.39
+- net/hinic: Fix double free issue
+
 * Wed Mar 09 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.7.0.38
 - src-openEuler: add with_64kb to control 64KB page size
 - scsi: spfc: Remove redundant mask and spinlock
