@@ -733,6 +733,7 @@ static int shmem_add_to_page_cache(struct page *page,
 			__inc_node_page_state(page, NR_SHMEM_THPS);
 		__mod_node_page_state(page_pgdat(page), NR_FILE_PAGES, nr);
 		__mod_node_page_state(page_pgdat(page), NR_SHMEM, nr);
+		shmem_reliable_page_counter(page, nr);
 		xa_unlock_irq(&mapping->i_pages);
 	} else {
 		page->mapping = NULL;
@@ -758,6 +759,7 @@ static void shmem_delete_from_page_cache(struct page *page, void *radswap)
 	mapping->nrpages--;
 	__dec_node_page_state(page, NR_FILE_PAGES);
 	__dec_node_page_state(page, NR_SHMEM);
+	shmem_reliable_page_counter(page, -1);
 	xa_unlock_irq(&mapping->i_pages);
 	put_page(page);
 	BUG_ON(error);
@@ -962,8 +964,6 @@ static void shmem_undo_range(struct inode *inode, loff_t lstart, loff_t lend,
 					truncate_inode_page(mapping, page);
 				}
 			}
-			shmem_reliable_page_counter(
-				page, -(1 << compound_order(page)));
 			unlock_page(page);
 		}
 		pagevec_remove_exceptionals(&pvec);
@@ -1074,8 +1074,6 @@ static void shmem_undo_range(struct inode *inode, loff_t lstart, loff_t lend,
 					break;
 				}
 			}
-			shmem_reliable_page_counter(
-				page, -(1 << compound_order(page)));
 			unlock_page(page);
 		}
 		pagevec_remove_exceptionals(&pvec);
@@ -1981,7 +1979,6 @@ alloc_nohuge:
 		inode->i_blocks += BLOCKS_PER_PAGE << compound_order(page);
 		shmem_recalc_inode(inode);
 		spin_unlock_irq(&info->lock);
-		shmem_reliable_page_counter(page, 1 << compound_order(page));
 		alloced = true;
 
 		if (PageTransHuge(page) &&
