@@ -4674,6 +4674,11 @@ static inline bool prepare_before_alloc(gfp_t *gfp_mask, unsigned int order)
 	 * allocation trigger task_reliable_limit
 	 */
 	if (is_global_init(current)) {
+		if (!mem_reliable_counter_initialized()) {
+			*gfp_mask |= ___GFP_RELIABILITY;
+			return true;
+		}
+
 		if (reliable_mem_limit_check(1 << order) &&
 		    mem_reliable_watermark_ok(1 << order))
 			*gfp_mask |= ___GFP_RELIABILITY;
