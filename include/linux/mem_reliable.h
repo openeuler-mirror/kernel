@@ -21,8 +21,9 @@ extern bool shmem_reliable;
 extern struct percpu_counter reliable_shmem_used_nr_page;
 extern bool pagecache_use_reliable_mem;
 DECLARE_PER_CPU(long, nr_reliable_buddy_pages);
-DECLARE_PER_CPU(long, pagecache_reliable_pages);
-DECLARE_PER_CPU(long, anon_reliable_pages);
+
+extern struct percpu_counter pagecache_reliable_pages;
+extern struct percpu_counter anon_reliable_pages;
 extern unsigned long nr_reliable_reserve_pages __read_mostly;
 extern long shmem_reliable_nr_page __read_mostly;
 
@@ -43,6 +44,7 @@ extern void reliable_lru_add(enum lru_list lru, struct page *page,
 extern void page_cache_prepare_alloc(gfp_t *gfp);
 extern void reliable_lru_add_batch(int zid, enum lru_list lru,
 					      int val);
+extern bool mem_reliable_counter_initialized(void);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -81,13 +83,10 @@ static inline void reliable_page_counter(struct page *page,
 
 static inline bool reliable_mem_limit_check(unsigned long nr_page)
 {
-	int cpu;
-	long num = 0;
+	s64 num;
 
-	for_each_possible_cpu(cpu) {
-		num += per_cpu(pagecache_reliable_pages, cpu);
-		num += per_cpu(anon_reliable_pages, cpu);
-	}
+	num = percpu_counter_read_positive(&pagecache_reliable_pages);
+	num += percpu_counter_read_positive(&anon_reliable_pages);
 
 	return num + nr_page <= task_reliable_limit / PAGE_SIZE;
 }
@@ -184,6 +183,8 @@ static inline void reliable_lru_add(enum lru_list lru,
 static inline void page_cache_prepare_alloc(gfp_t *gfp) {}
 static inline void reliable_lru_add_batch(int zid, enum lru_list lru,
 						     int val) {}
+
+static inline bool mem_reliable_counter_initialized(void) { return false; }
 #endif
 
 #endif
