@@ -3672,21 +3672,21 @@ __alloc_pages_cpuset_fallback(gfp_t gfp_mask, unsigned int order,
 }
 
 #ifdef CONFIG_MEMORY_RELIABLE
-static inline struct zone *reliable_fb_find_zone(gfp_t gfp_mask,
-						       struct alloc_context *ac)
+static inline void reliable_fb_find_zone(gfp_t gfp_mask,
+					 struct alloc_context *ac)
 {
 	if (!reliable_allow_fb_enabled())
-		return NULL;
+		return;
 
-	/* dst nodemask may don't have zone we want, fallback here */
+	/* dst node don't have zone we want, fallback here */
 	if ((gfp_mask & __GFP_THISNODE) && (ac->high_zoneidx == ZONE_NORMAL) &&
 	    (gfp_mask & ___GFP_RELIABILITY)) {
-		struct zoneref *ref = first_zones_zonelist(
-			ac->zonelist, ZONE_MOVABLE, ac->nodemask);
-		return ref->zone;
+		ac->high_zoneidx = gfp_zone(gfp_mask & ~___GFP_RELIABILITY);
+		ac->preferred_zoneref = first_zones_zonelist(
+			ac->zonelist, ac->high_zoneidx, ac->nodemask);
 	}
 
-	return NULL;
+	return;
 }
 
 static inline struct page *
@@ -3712,10 +3712,10 @@ reliable_fb_before_oom(gfp_t gfp_mask, int order,
 	return NULL;
 }
 #else
-static inline struct zone *reliable_fb_find_zone(gfp_t gfp_mask,
-						       struct alloc_context *ac)
+static inline void reliable_fb_find_zone(gfp_t gfp_mask,
+					 struct alloc_context *ac)
 {
-	return NULL;
+	return;
 }
 
 static inline struct page *reliable_fb_before_oom(gfp_t gfp_mask, int order,
@@ -4375,8 +4375,7 @@ retry_cpuset:
 	ac->preferred_zoneref = first_zones_zonelist(ac->zonelist,
 					ac->high_zoneidx, ac->nodemask);
 	if (!ac->preferred_zoneref->zone) {
-		ac->preferred_zoneref->zone =
-			reliable_fb_find_zone(gfp_mask, ac);
+		reliable_fb_find_zone(gfp_mask, ac);
 
 		if (!ac->preferred_zoneref->zone)
 			goto nopage;
