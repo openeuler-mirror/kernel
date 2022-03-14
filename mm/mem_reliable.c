@@ -9,6 +9,7 @@
 #include <linux/seq_file.h>
 #include <linux/mmzone.h>
 #include <linux/oom.h>
+#include <linux/crash_dump.h>
 
 #define MEM_RELIABLE_RESERVE_MIN (256UL << 20)
 
@@ -127,6 +128,11 @@ void mem_reliable_init(bool has_unmirrored_mem, unsigned long *zone_movable_pfn)
 {
 	if (!reliable_enabled)
 		return;
+
+	if (is_kdump_kernel()) {
+		pr_err("init failed, the kdump is in progress\n");
+		return;
+	}
 
 	if (atomic_long_read(&total_reliable_mem) == 0) {
 		memset(zone_movable_pfn, 0,
