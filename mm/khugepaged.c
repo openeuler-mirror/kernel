@@ -1559,6 +1559,7 @@ tree_unlocked:
 			ClearPageActive(page);
 			ClearPageUnevictable(page);
 			unlock_page(page);
+			shmem_reliable_page_counter(page, -1);
 			put_page(page);
 			index++;
 		}
@@ -1573,6 +1574,7 @@ tree_unlocked:
 		mem_cgroup_commit_charge(new_page, memcg, false, true);
 		count_memcg_events(memcg, THP_COLLAPSE_ALLOC, 1);
 		lru_cache_add_anon(new_page);
+		shmem_reliable_page_counter(new_page, 1 << HPAGE_PMD_ORDER);
 
 		/*
 		 * Remove pte page tables, so we can re-fault the page as huge.

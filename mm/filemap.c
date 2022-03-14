@@ -291,6 +291,7 @@ static void unaccount_page_cache_page(struct address_space *mapping,
 	__mod_node_page_state(page_pgdat(page), NR_FILE_PAGES, -nr);
 	if (PageSwapBacked(page)) {
 		__mod_node_page_state(page_pgdat(page), NR_SHMEM, -nr);
+		shmem_reliable_page_counter(page, -nr);
 		if (PageTransHuge(page))
 			__dec_node_page_state(page, NR_SHMEM_THPS);
 	} else {
@@ -895,8 +896,10 @@ int replace_page_cache_page(struct page *old, struct page *new, gfp_t gfp_mask)
 		 */
 		if (!PageHuge(new))
 			__inc_node_page_state(new, NR_FILE_PAGES);
-		if (PageSwapBacked(new))
+		if (PageSwapBacked(new)) {
 			__inc_node_page_state(new, NR_SHMEM);
+			shmem_reliable_page_counter(new, 1);
+		}
 		xa_unlock_irqrestore(&mapping->i_pages, flags);
 		mem_cgroup_migrate(old, new);
 		radix_tree_preload_end();
