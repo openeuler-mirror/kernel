@@ -154,9 +154,18 @@ static struct ctl_table sys_ctl_table[] = {
 	{ }
 };
 
+static bool clear_freelist_enabled;
+static int __init setup_clear_freelist(char *str)
+{
+	clear_freelist_enabled = true;
+	return 1;
+}
+__setup("clear_freelist", setup_clear_freelist);
+
 static int __init clear_freelist_init(void)
 {
-	register_sysctl_table(sys_ctl_table);
+	if (clear_freelist_enabled)
+		register_sysctl_table(sys_ctl_table);
 
 	return 0;
 }
