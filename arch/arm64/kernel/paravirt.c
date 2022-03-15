@@ -38,7 +38,7 @@ struct paravirt_patch_template pv_ops = {
 #endif
 	.lock.vcpu_is_preempted		= __native_vcpu_is_preempted,
 };
-EXPORT_SYMBOL_GPL(pv_ops);
+EXPORT_SYMBOL(pv_ops);
 
 struct pv_time_stolen_time_region {
 	struct pvclock_vcpu_stolen_time *kaddr;
