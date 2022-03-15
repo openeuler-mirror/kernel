@@ -64,14 +64,14 @@ static int vdpa_dev_remove(struct device *d)
 
 static int vdpa_dev_match(struct device *dev, struct device_driver *drv)
 {
-	   struct vdpa_device *vdev = dev_to_vdpa(dev);
+	struct vdpa_device *vdev = dev_to_vdpa(dev);
 
-	   /* Check override first, and if set, only use the named driver */
-	   if (vdev->driver_override)
-			   return strcmp(vdev->driver_override, drv->name) == 0;
+	/* Check override first, and if set, only use the named driver */
+	if (vdev->driver_override)
+		return strcmp(vdev->driver_override, drv->name) == 0;
 
-	   /* Currently devices must be supported by all vDPA bus drivers */
-	   return 1;
+	/* Currently devices must be supported by all vDPA bus drivers */
+	return 1;
 }
 
 static ssize_t driver_override_store(struct device *dev,
@@ -112,30 +112,30 @@ static ssize_t driver_override_store(struct device *dev,
 static ssize_t driver_override_show(struct device *dev,
 								   struct device_attribute *attr, char *buf)
 {
-	   struct vdpa_device *vdev = dev_to_vdpa(dev);
-	   ssize_t len;
+	struct vdpa_device *vdev = dev_to_vdpa(dev);
+	ssize_t len;
 
-	   device_lock(dev);
-	   len = snprintf(buf, PAGE_SIZE, "%s\n", vdev->driver_override);
-	   device_unlock(dev);
+	device_lock(dev);
+	len = snprintf(buf, PAGE_SIZE, "%s\n", vdev->driver_override);
+	device_unlock(dev);
 
-	   return len;
+	return len;
 }
 static DEVICE_ATTR_RW(driver_override);
 
 static struct attribute *vdpa_dev_attrs[] = {
-	   &dev_attr_driver_override.attr,
-	   NULL,
+	&dev_attr_driver_override.attr,
+	NULL,
 };
 
 static const struct attribute_group vdpa_dev_group = {
-	   .attrs  = vdpa_dev_attrs,
+	.attrs  = vdpa_dev_attrs,
 };
 __ATTRIBUTE_GROUPS(vdpa_dev);
 
 
 static struct bus_type vdpa_bus = {
-	.name  = "vdpa",
+	.name = "vdpa",
 	.dev_groups = vdpa_dev_groups,
 	.match = vdpa_dev_match,
 	.probe = vdpa_dev_probe,
@@ -235,7 +235,7 @@ static int vdpa_name_match(struct device *dev, const void *data)
 	return (strcmp(dev_name(&vdev->dev), data) == 0);
 }
 
-static int __vdpa_register_device(struct vdpa_device *vdev, int nvqs)
+static int __vdpa_register_device(struct vdpa_device *vdev, u32 nvqs)
 {
 	struct device *dev;
 
@@ -260,7 +260,7 @@ static int __vdpa_register_device(struct vdpa_device *vdev, int nvqs)
  *
  * Return: Returns an error when fail to add device to vDPA bus
  */
-int _vdpa_register_device(struct vdpa_device *vdev, int nvqs)
+int _vdpa_register_device(struct vdpa_device *vdev, u32 nvqs)
 {
 	if (!vdev->mdev)
 		return -EINVAL;
@@ -277,7 +277,7 @@ EXPORT_SYMBOL_GPL(_vdpa_register_device);
  *
  * Return: Returns an error when fail to add to vDPA bus
  */
-int vdpa_register_device(struct vdpa_device *vdev, int nvqs)
+int vdpa_register_device(struct vdpa_device *vdev, u32 nvqs)
 {
 	int err;
 
