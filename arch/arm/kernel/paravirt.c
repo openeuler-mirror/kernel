@@ -15,4 +15,4 @@ struct static_key paravirt_steal_enabled;
 struct static_key paravirt_steal_rq_enabled;
 
 struct paravirt_patch_template pv_ops;
-EXPORT_SYMBOL_GPL(pv_ops);
+EXPORT_SYMBOL(pv_ops);
