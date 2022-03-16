@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2203.2.0
+%global hulkrelease 2203.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0140
+Release: %{hulkrelease}.0141
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,87 @@ fi
 %endif
 
 %changelog
+
+* Tue Mar 15 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2203.3.0.0141
+- crypto: pcrypt - Fix user-after-free on module unload
+- lib/iov_iter: initialize "flags" in new pipe_buffer
+- mm: Count reliable shmem used based on NR_SHMEM
+- mm: fix zoneref mapping problem in memory reliable
+- mm: disable memory reliable when kdump is in progress
+- mm: introduce "clear_freelist" kernel parameter
+- mm: fix unable to use reliable memory in page cache
+- nfc: st21nfca: Fix potential buffer overflows in EVT_TRANSACTION
+- select: Fix indefinitely sleeping task in poll_schedule_timeout()
+- mtd: nand: bbt: Fix corner case in bad block table handling
+- netns: add schedule point in ops_exit_list()
+- af_unix: annote lockless accesses to unix_tot_inflight & gc_in_progress
+- crypto: stm32/crc32 - Fix kernel BUG triggered in probe()
+- ext4: don't use the orphan list when migrating an inode
+- ext4: set csum seed in tmp inode while migrating to extents
+- ext4: make sure quota gets properly shutdown on error
+- ext4: make sure to reset inode lockdep class when quota enabling fails
+- cputime, cpuacct: Include guest time in user time in cpuacct.stat
+- serial: Fix incorrect rs485 polarity on uart open
+- scsi: sr: Don't use GFP_DMA
+- dm space map common: add bounds check to sm_ll_lookup_bitmap()
+- dm btree: add a defensive bounds check to insert_at()
+- ACPICA: Executer: Fix the REFCLASS_REFOF case in acpi_ex_opcode_1A_0T_1R()
+- ACPICA: Utilities: Avoid deleting the same object twice in a row
+- jffs2: GC deadlock reading a page that is used in jffs2_write_begin()
+- bpf: Do not WARN in bpf_warn_invalid_xdp_action()
+- net: bonding: debug: avoid printing debug logs when bond is not notifying peers
+- net-sysfs: update the queue counts in the unregistration path
+- dmaengine: pxa/mmp: stop referencing config->slave_id
+- scsi: ufs: Fix race conditions related to driver data
+- iommu/io-pgtable-arm: Fix table descriptor paddr formatting
+- ext4: avoid trim error on fs with small groups
+- net: mcs7830: handle usb read errors properly
+- tpm: add request_locality before write TPM_INT_ENABLE
+- netfilter: ipt_CLUSTERIP: fix refcount leak in clusterip_tg_check()
+- xfrm: state and policy should fail if XFRMA_IF_ID 0
+- xfrm: interface with if_id 0 should return error
+- crypto: stm32/cryp - fix double pm exit
+- xfrm: fix a small bug in xfrm_sa_len()
+- sched/rt: Try to restart rt period timer when rt runtime exceeded
+- serial: amba-pl011: do not request memory region twice
+- tty: serial: uartlite: allow 64 bit address
+- netfilter: bridge: add support for pppoe filtering
+- crypto: qce - fix uaf on qce_ahash_register_one
+- shmem: fix a race between shmem_unused_huge_shrink and shmem_evict_inode
+- can: bcm: switch timer to HRTIMER_MODE_SOFT and remove hrtimer_tasklet
+- ip6_vti: initialize __ip6_tnl_parm struct in vti6_siocdevprivate
+- scsi: libiscsi: Fix UAF in iscsi_conn_get_param()/iscsi_conn_teardown()
+- ipv6: Do cleanup if attribute validation fails in multipath route
+- ipv6: Continue processing multipath route even if gateway attribute is invalid
+- ipv6: Check attribute length for RTA_GATEWAY when deleting multipath route
+- ipv6: Check attribute length for RTA_GATEWAY in multipath route
+- tracing: Tag trace_percpu_buffer as a percpu pointer
+- tracing: Fix check for trace_percpu_buffer validity in get_trace_buf()
+- net: fix use-after-free in tw_timer_handler
+- udp: using datalen to cap ipv6 udp max gso segments
+- selinux: initialize proto variable in selinux_ip_postroute_compat()
+- x86/pkey: Fix undefined behaviour with PKRU_WD_BIT
+- ipmi: fix initialization when workqueue allocation fails
+- ipmi: bail out if init_srcu_struct fails
+- bonding: fix ad_actor_system option setting to default
+- ipmi: Fix UAF when uninstall ipmi_si and ipmi_msghandler module
+- net: skip virtio_net_hdr_set_proto if protocol already set
+- net: hns3: update hns3 version to 22.2.1
+- net: hns3: fix RMW issue for VLAN filter switch
+- net: hns3: fix pf vlan filter out of work after self test
+- arm64: acpi: fix UBSAN warning
+- sched: Fix sleeping in atomic context at cpu_qos_write()
+- io_uring: don't re-setup vecs/iter in io_resumit_prep() is already there
+- io_uring: don't double complete failed reissue request
+- io_uring: remove redundant initialization of variable ret
+- block: don't ignore REQ_NOWAIT for direct IO
+- io_uring: re-issue block requests that failed because of resources
+- dm multipath: fix missing blk_account_io_done() in error path
+- block: account inflight from blk_account_io_start() if 'precise_iostat' is set
+- block: add a switch for precise iostat accounting
+- blk-throttle: Set BIO_THROTTLED when bio has been throttled
+- bfq: fix use-after-free in bfq_dispatch_request
+- hugetlbfs: fix a truncation issue in hugepages parameter
 
 * Tue Mar 08 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2203.2.0.0140
 - mm: Fix return val in khugepaged_scan_pmd()
