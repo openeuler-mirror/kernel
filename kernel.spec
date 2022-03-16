@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .9.0
-%global pkg_release         .40
+%global maintenance_release .10.0
+%global pkg_release         .41
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -878,6 +878,9 @@ fi
 %endif
 
 %changelog
+* Tue Mar 15 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.10.0.41
+- arm/arm64: paravirt: Remove GPL from pv_ops export
+
 * Fri Mar 11 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.9.0.40
 - ima: bugfix for digest lists importing
 - net/hinic: Fix call trace when the rx_buff module parameter is grater than 2
