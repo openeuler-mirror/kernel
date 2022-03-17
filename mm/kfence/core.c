@@ -146,6 +146,8 @@ module_param_cb(num_objects, &num_objects_param_ops, &kfence_num_objects, 0600);
  * backing pages (in __kfence_pool).
  */
 #ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
+#define ILOG2(x) (ilog2((x)))
+
 struct kfence_metadata *kfence_metadata;
 static phys_addr_t metadata_size;
 
@@ -155,6 +157,8 @@ static inline bool kfence_metadata_valid(void)
 }
 
 #else
+#define ILOG2(x) (const_ilog2((x)))
+
 static_assert(CONFIG_KFENCE_NUM_OBJECTS > 0);
 struct kfence_metadata kfence_metadata[CONFIG_KFENCE_NUM_OBJECTS];
 
@@ -185,7 +189,7 @@ atomic_t kfence_allocation_gate = ATOMIC_INIT(1);
  *	P(alloc_traces) = (1 - e^(-HNUM * (alloc_traces / SIZE)) ^ HNUM
  */
 #define ALLOC_COVERED_HNUM	2
-#define ALLOC_COVERED_ORDER	(const_ilog2(KFENCE_NR_OBJECTS) + 2)
+#define ALLOC_COVERED_ORDER	(ILOG2(KFENCE_NR_OBJECTS) + 2)
 #define ALLOC_COVERED_SIZE	(1 << ALLOC_COVERED_ORDER)
 #define ALLOC_COVERED_HNEXT(h)	hash_32(h, ALLOC_COVERED_ORDER)
 #define ALLOC_COVERED_MASK	(ALLOC_COVERED_SIZE - 1)
@@ -831,7 +835,7 @@ static int __init kfence_dynamic_init(void)
 		return -ENOMEM;
 	}
 
-	covered_size = sizeof(atomic_t) * KFENCE_NR_OBJECTS;
+	covered_size = sizeof(atomic_t) * ALLOC_COVERED_SIZE;
 	alloc_covered = memblock_alloc(covered_size, PAGE_SIZE);
 	if (!alloc_covered) {
 		memblock_free((phys_addr_t)kfence_metadata, metadata_size);
