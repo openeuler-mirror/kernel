@@ -65,6 +65,7 @@ static __always_inline bool is_kfence_address(const void *addr)
 	return unlikely((unsigned long)((char *)addr - __kfence_pool) < KFENCE_POOL_SIZE && __kfence_pool);
 }
 
+void __init kfence_early_alloc_pool(void);
 /**
  * kfence_alloc_pool() - allocate the KFENCE pool via memblock
  */
@@ -214,6 +215,7 @@ bool __must_check kfence_handle_page_fault(unsigned long addr, bool is_write, st
 #else /* CONFIG_KFENCE */
 
 static inline bool is_kfence_address(const void *addr) { return false; }
+static inline void kfence_early_alloc_pool(void) { }
 static inline void kfence_alloc_pool(void) { }
 static inline void kfence_init(void) { }
 static inline void kfence_shutdown_cache(struct kmem_cache *s) { }

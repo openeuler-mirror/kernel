@@ -860,16 +860,34 @@ static void __init kfence_dynamic_destroy(void) { }
 #endif
 
 /* === Public interface ===================================================== */
+void __init kfence_early_alloc_pool(void)
+{
+	if (!kfence_sample_interval)
+		return;
+
+	__kfence_pool = memblock_alloc_raw(KFENCE_POOL_SIZE, PAGE_SIZE);
+
+	if (!__kfence_pool) {
+		kfence_sample_interval = 0;
+		pr_err("failed to early allocate pool, disable KFENCE\n");
+	}
+}
 
 void __init kfence_alloc_pool(void)
 {
 	if (!kfence_sample_interval)
 		return;
 
-	if (kfence_dynamic_init())
+	if (kfence_dynamic_init()) {
+		if (__kfence_pool) {
+			memblock_free(__pa(__kfence_pool), KFENCE_POOL_SIZE);
+			__kfence_pool = NULL;
+		}
 		return;
+	}
 
-	__kfence_pool = memblock_alloc(KFENCE_POOL_SIZE, PAGE_SIZE);
+	if (!__kfence_pool)
+		__kfence_pool = memblock_alloc(KFENCE_POOL_SIZE, PAGE_SIZE);
 	if (!__kfence_pool) {
 		pr_err("failed to allocate pool\n");
 		kfence_dynamic_destroy();
