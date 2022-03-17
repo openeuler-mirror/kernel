@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .10.0
-%global pkg_release         .41
+%global maintenance_release .11.0
+%global pkg_release         .42
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -878,6 +878,11 @@ fi
 %endif
 
 %changelog
+* Thu Mar 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.11.0.42
+- scsi: ses: Fix crash caused by kfree an invalid pointer
+- ovl: fix incorrect extent info in metacopy case
+- perf sched: Cast PTHREAD_STACK_MIN to int as it may turn into sysconf(__SC_THREAD_STACK_MIN_VALUE)
+
 * Tue Mar 15 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.10.0.41
 - arm/arm64: paravirt: Remove GPL from pv_ops export
 
