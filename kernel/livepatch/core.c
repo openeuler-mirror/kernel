@@ -1010,12 +1010,6 @@ static int klp_init_func(struct klp_object *obj, struct klp_func *func)
 	int ret;
 #endif
 
-	if (!func->old_name || !func->new_func)
-		return -EINVAL;
-
-	if (strlen(func->old_name) >= KSYM_NAME_LEN)
-		return -EINVAL;
-
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
 	ret = arch_klp_func_can_patch(func);
 	if (ret)
@@ -1105,6 +1099,16 @@ static int klp_init_object(struct klp_patch *patch, struct klp_object *obj)
 
 	if (klp_is_module(obj) && strlen(obj->name) >= MODULE_NAME_LEN)
 		return -EINVAL;
+	klp_for_each_func(obj, func) {
+		if (!func->old_name || !func->new_func) {
+			pr_err("old_name or new_func is invalid\n");
+			return -EINVAL;
+		}
+		if (strlen(func->old_name) >= KSYM_NAME_LEN) {
+			pr_err("old_name is too long\n");
+			return -EINVAL;
+		}
+	}
 
 	obj->patched = false;
 	obj->mod = NULL;
