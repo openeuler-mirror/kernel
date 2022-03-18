@@ -1,5 +1,5 @@
 diff --git a/arch/arm64/configs/openeuler_defconfig b/arch/arm64/configs/openeuler_defconfig
-index 401ab0f99..aa6d62bc9 100644
+index 401ab0f99..925ecec23 100644
 --- a/arch/arm64/configs/openeuler_defconfig
 +++ b/arch/arm64/configs/openeuler_defconfig
 @@ -73,6 +73,7 @@ CONFIG_HIGH_RES_TIMERS=y
@@ -28,15 +28,6 @@ index 401ab0f99..aa6d62bc9 100644
  CONFIG_PID_RESERVE=y
  CONFIG_MEMORY_RELIABLE=y
  
-@@ -6997,7 +6998,7 @@ CONFIG_DEBUG_INFO=y
- # CONFIG_DEBUG_INFO_COMPRESSED is not set
- # CONFIG_DEBUG_INFO_SPLIT is not set
- CONFIG_DEBUG_INFO_DWARF4=y
--CONFIG_DEBUG_INFO_BTF=y
-+# CONFIG_DEBUG_INFO_BTF is not set
- # CONFIG_GDB_SCRIPTS is not set
- CONFIG_ENABLE_MUST_CHECK=y
- CONFIG_FRAME_WARN=2048
 diff --git a/arch/arm64/kernel/fpsimd.c b/arch/arm64/kernel/fpsimd.c
 index 84520f116..aa631771e 100644
 --- a/arch/arm64/kernel/fpsimd.c
@@ -60,7 +51,7 @@ index 84520f116..aa631771e 100644
  
  static bool have_cpu_fpsimd_context(void)
 diff --git a/arch/x86/configs/openeuler_defconfig b/arch/x86/configs/openeuler_defconfig
-index 64afe7021..fd74ff1f5 100644
+index 64afe7021..be178738d 100644
 --- a/arch/x86/configs/openeuler_defconfig
 +++ b/arch/x86/configs/openeuler_defconfig
 @@ -88,9 +88,10 @@ CONFIG_NO_HZ=y
@@ -93,15 +84,6 @@ index 64afe7021..fd74ff1f5 100644
  CONFIG_KVM=m
  CONFIG_KVM_INTEL=m
  CONFIG_KVM_AMD=m
-@@ -8088,7 +8089,7 @@ CONFIG_DEBUG_INFO=y
- # CONFIG_DEBUG_INFO_COMPRESSED is not set
- # CONFIG_DEBUG_INFO_SPLIT is not set
- CONFIG_DEBUG_INFO_DWARF4=y
--CONFIG_DEBUG_INFO_BTF=y
-+# CONFIG_DEBUG_INFO_BTF is not set
- # CONFIG_GDB_SCRIPTS is not set
- CONFIG_ENABLE_MUST_CHECK=y
- CONFIG_FRAME_WARN=2048
 diff --git a/arch/x86/include/asm/preempt.h b/arch/x86/include/asm/preempt.h
 index a3b73de27..dda9ec24f 100644
 --- a/arch/x86/include/asm/preempt.h

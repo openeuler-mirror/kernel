@@ -1,3 +1,4 @@
 <multibuild>
+  <flavor>raspberrypi-kernel</flavor>
   <flavor>kernel-rt</flavor>
 </multibuild>
