@@ -2459,12 +2459,16 @@ blk_mq_alloc_hctx(struct request_queue *q, struct blk_mq_tag_set *set,
 	if (!hctx->fq)
 		goto free_bitmap;
 
-	if (hctx->flags & BLK_MQ_F_BLOCKING)
-		init_srcu_struct(hctx->srcu);
+	if (hctx->flags & BLK_MQ_F_BLOCKING) {
+		if (init_srcu_struct(hctx->srcu) != 0)
+			goto free_flush_queue;
+	}
 	blk_mq_hctx_kobj_init(hctx);
 
 	return hctx;
 
+ free_flush_queue:
+	blk_free_flush_queue(hctx->fq);
  free_bitmap:
 	sbitmap_free(&hctx->ctx_map);
  free_ctxs:
