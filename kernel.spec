@@ -12,7 +12,7 @@
 %global upstream_sublevel   0
 %global devel_release       60
 %global maintenance_release .12.0
-%global pkg_release         .43
+%global pkg_release         .44
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -518,6 +518,7 @@ popd
         chmod 0755 %{modsign_cmd} \
         %{modsign_cmd} $RPM_BUILD_ROOT/lib/modules/%{KernelVer} || exit 1 \
     fi \
+    find $RPM_BUILD_ROOT/lib/modules/ -type f -name '*.ko' | xargs -n1 -P`nproc --all` xz; \
 %{nil}
 
 # deal with header
@@ -878,6 +879,9 @@ fi
 %endif
 
 %changelog
+* Fri Mar 18 2022 Liu Yuntao <windspectator@gmail.com> - 5.10.0-60.12.0.44
+- Compress modules to xz format in kernel.spec, which reduces disk consumption.
+
 * Thu Mar 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.12.0.43
 - irqchip/gic-phytium-2500: Fix issue that interrupts are concentrated in one cpu
 
