@@ -938,17 +938,20 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 			if (hpool_split_page(hpool, hpages_pool_idx - 1))
 				break;
 		}
-		/*
-		 * First try to merge pages without migration, If this can not meet
-		 * the requirements, then try to merge pages with migration.
-		 */
-		while (delta > hpages_pool->free_normal_pages) {
-			if (hpool_merge_page(hpool, hpages_pool_idx, false))
-				break;
-		}
-		while (delta > hpages_pool->free_normal_pages) {
-			if (hpool_merge_page(hpool, hpages_pool_idx, true))
-				break;
+		/* Currently, only merging 2M hugepages is supported */
+		if (hpages_pool_idx == HUGE_PAGES_POOL_2M) {
+			/*
+			 * First try to merge pages without migration, If this can not meet
+			 * the requirements, then try to merge pages with migration.
+			 */
+			while (delta > hpages_pool->free_normal_pages) {
+				if (hpool_merge_page(hpool, hpages_pool_idx, false))
+					break;
+			}
+			while (delta > hpages_pool->free_normal_pages) {
+				if (hpool_merge_page(hpool, hpages_pool_idx, true))
+					break;
+			}
 		}
 		delta = min(nr_pages - hpages_pool->nr_huge_pages, hpages_pool->free_normal_pages);
 		hpages_pool->nr_huge_pages += delta;
