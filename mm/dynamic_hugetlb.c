@@ -739,6 +739,7 @@ static int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
 		if (ret)
 			continue;
 
+		ClearHPageFreed(page);
 		list_move_tail(&page->lru, &hpages_pool->hugepage_freelists);
 		h->free_huge_pages--;
 		h->free_huge_pages_node[nid]--;
@@ -780,6 +781,7 @@ static int free_hugepage_to_hugetlb(struct dhugetlb_pool *hpool)
 		set_compound_page_dtor(page, HUGETLB_PAGE_DTOR);
 
 		nid = page_to_nid(page);
+		SetHPageFreed(page);
 		list_move(&page->lru, &h->hugepage_freelists[nid]);
 		hpool->total_huge_pages--;
 		hpages_pool->free_normal_pages--;
