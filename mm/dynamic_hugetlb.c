@@ -305,7 +305,8 @@ static int hugetlb_pool_merge_all_pages(struct dhugetlb_pool *hpool)
 {
 	int ret = 0;
 
-	spin_lock(&hpool->lock);
+	lockdep_assert_held(&hpool->lock);
+
 	while (hpool->hpages_pool[HUGE_PAGES_POOL_2M].split_normal_pages) {
 		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_2M, true);
 		if (ret) {
@@ -329,7 +330,6 @@ static int hugetlb_pool_merge_all_pages(struct dhugetlb_pool *hpool)
 		goto out;
 	}
 out:
-	spin_unlock(&hpool->lock);
 	return ret;
 }
 
@@ -767,7 +767,8 @@ static int free_hugepage_to_hugetlb(struct dhugetlb_pool *hpool)
 	if (!h)
 		return ret;
 
-	spin_lock(&hpool->lock);
+	lockdep_assert_held(&hpool->lock);
+
 	spin_lock(&hugetlb_lock);
 	list_for_each_entry_safe(page, next, &hpages_pool->hugepage_freelists, lru) {
 		nr_pages = 1 << huge_page_order(h);
@@ -791,7 +792,6 @@ static int free_hugepage_to_hugetlb(struct dhugetlb_pool *hpool)
 			break;
 	}
 	spin_unlock(&hugetlb_lock);
-	spin_unlock(&hpool->lock);
 	return ret;
 }
 
@@ -855,12 +855,15 @@ int hugetlb_pool_destroy(struct cgroup *cgrp)
 	 */
 	mem_cgroup_force_empty(hpool->attach_memcg);
 
+	spin_lock(&hpool->lock);
 	ret = hugetlb_pool_merge_all_pages(hpool);
-	if (ret)
+	if (ret) {
+		spin_unlock(&hpool->lock);
 		return -ENOMEM;
+	}
 	ret = free_hugepage_to_hugetlb(hpool);
 	memcg->hpool = NULL;
-
+	spin_unlock(&hpool->lock);
 	put_hpool(hpool);
 	return ret;
 }
