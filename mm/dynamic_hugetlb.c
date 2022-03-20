@@ -54,20 +54,21 @@ static void __hpool_split_gigantic_page(struct dhugetlb_pool *hpool, struct page
 {
 	int nr_pages = 1 << (PUD_SHIFT - PAGE_SHIFT);
 	int nr_blocks = 1 << (PMD_SHIFT - PAGE_SHIFT);
-	int i;
+	int i, pfn = page_to_pfn(page);
 
 	lockdep_assert_held(&hpool->lock);
 	atomic_set(compound_mapcount_ptr(page), 0);
 	atomic_set(compound_pincount_ptr(page), 0);
 
 	for (i = 1; i < nr_pages; i++)
-		clear_compound_head(&page[i]);
+		clear_compound_head(pfn_to_page(pfn + i));
 	set_compound_order(page, 0);
 	page[1].compound_nr = 0;
 	__ClearPageHead(page);
 
 	for (i = 0; i < nr_pages; i+= nr_blocks)
-		add_new_page_to_pool(hpool, &page[i], HUGE_PAGES_POOL_2M);
+		add_new_page_to_pool(hpool, pfn_to_page(pfn + i),
+				     HUGE_PAGES_POOL_2M);
 }
 
 static void __hpool_split_huge_page(struct dhugetlb_pool *hpool, struct page *page)
@@ -208,7 +209,7 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 	struct huge_pages_pool *hpages_pool, *src_hpages_pool;
 	struct split_hugepage *split_page, *split_next;
 	unsigned long nr_pages, block_size;
-	struct page *page, *next;
+	struct page *page, *next, *p;
 	bool need_migrate = false;
 	int i, try;
 	LIST_HEAD(wait_page_list);
@@ -242,7 +243,8 @@ merge:
 		clear_percpu_pools(hpool);
 		page = pfn_to_page(split_page->start_pfn);
 		for (i = 0; i < nr_pages; i+= block_size) {
-			if (PagePool(&page[i])) {
+			p = pfn_to_page(split_page->start_pfn + i);
+			if (PagePool(p)) {
 				if (!need_migrate)
 					goto next;
 				else
@@ -252,11 +254,12 @@ merge:
 
 		list_del(&split_page->head_pages);
 		hpages_pool->split_normal_pages--;
-		kfree(split_page);
 		for (i = 0; i < nr_pages; i+= block_size) {
-			list_del(&page[i].lru);
+			p = pfn_to_page(split_page->start_pfn + i);
+			list_del(&p->lru);
 			src_hpages_pool->free_normal_pages--;
 		}
+		kfree(split_page);
 		add_new_page_to_pool(hpool, page, hpages_pool_idx);
 		trace_dynamic_hugetlb_split_merge(hpool, page, DHUGETLB_MERGE, page_size(page));
 		return 0;
@@ -269,8 +272,9 @@ migrate:
 		/* Isolate free page first. */
 		INIT_LIST_HEAD(&wait_page_list);
 		for (i = 0; i < nr_pages; i+= block_size) {
-			if (!PagePool(&page[i])) {
-				list_move(&page[i].lru, &wait_page_list);
+			p = pfn_to_page(split_page->start_pfn + i);
+			if (!PagePool(p)) {
+				list_move(&p->lru, &wait_page_list);
 				src_hpages_pool->free_normal_pages--;
 			}
 		}
@@ -278,12 +282,13 @@ migrate:
 		/* Unlock and try migration. */
 		spin_unlock(&hpool->lock);
 		for (i = 0; i < nr_pages; i+= block_size) {
-			if (PagePool(&page[i]))
+			p = pfn_to_page(split_page->start_pfn + i);
+			if (PagePool(p))
 				/*
 				 * TODO: fatal migration failures should bail
 				 * out
 				 */
-				do_migrate_range(page_to_pfn(&page[i]), page_to_pfn(&page[i]) + block_size);
+				do_migrate_range(page_to_pfn(p), page_to_pfn(p) + block_size);
 		}
 		spin_lock(&hpool->lock);
 
@@ -756,6 +761,9 @@ static int free_hugepage_to_hugetlb(struct dhugetlb_pool *hpool)
 	unsigned int nr_pages;
 	int nid, ret = 0;
 
+	if (!h)
+		return ret;
+
 	spin_lock(&hpool->lock);
 	spin_lock(&hugetlb_lock);
 	list_for_each_entry_safe(page, next, &hpages_pool->hugepage_freelists, lru) {
@@ -1028,7 +1036,7 @@ int hugetlb_pool_info_show(struct seq_file *m, void *v)
 		return 0;
 
 	if (!hpool) {
-		seq_printf(m, "Curent hierarchial have not memory pool.\n");
+		seq_printf(m, "Current hierarchial have not memory pool.\n");
 		return 0;
 	}
 
