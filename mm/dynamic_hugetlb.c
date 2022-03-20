@@ -30,15 +30,22 @@ static void add_new_page_to_pool(struct dhugetlb_pool *hpool, struct page *page,
 	switch (hpages_pool_idx) {
 		case HUGE_PAGES_POOL_1G:
 			prep_compound_gigantic_page(page, PUD_SHIFT - PAGE_SHIFT);
+			set_page_count(page, 0);
 			set_compound_page_dtor(page, HUGETLB_PAGE_DTOR);
+			hugetlb_set_page_subpool(page, NULL);
 			set_hugetlb_cgroup(page, NULL);
+			set_hugetlb_cgroup_rsvd(page, NULL);
 			break;
 		case HUGE_PAGES_POOL_2M:
-			prep_compound_page(page, PMD_SHIFT - PAGE_SHIFT);
+			prep_new_page(page, PMD_SHIFT - PAGE_SHIFT, __GFP_COMP, 0);
+			set_page_count(page, 0);
 			set_compound_page_dtor(page, HUGETLB_PAGE_DTOR);
+			hugetlb_set_page_subpool(page, NULL);
 			set_hugetlb_cgroup(page, NULL);
+			set_hugetlb_cgroup_rsvd(page, NULL);
 			break;
 	}
+	page->mapping = NULL;
 	list_add_tail(&page->lru, &hpages_pool->hugepage_freelists);
 	hpages_pool->free_normal_pages++;
 }
@@ -74,10 +81,8 @@ static void __hpool_split_huge_page(struct dhugetlb_pool *hpool, struct page *pa
 
 	__ClearPageHead(page);
 	for (i = 0; i < nr_pages; i++) {
-		if (i != 0) {
-			page[i].mapping = NULL;
+		if (i != 0)
 			clear_compound_head(&page[i]);
-		}
 		/*
 		 * If a hugepage is mapped in private mode, the PG_uptodate bit
 		 * will not be cleared when the hugepage freed. Clear the
