@@ -2204,7 +2204,7 @@ static void check_new_page_bad(struct page *page)
 /*
  * This page is about to be returned from the page allocator
  */
-static inline int check_new_page(struct page *page)
+inline int check_new_page(struct page *page)
 {
 	if (likely(page_expected_state(page,
 				PAGE_FLAGS_CHECK_AT_PREP|__PG_HWPOISON)))
