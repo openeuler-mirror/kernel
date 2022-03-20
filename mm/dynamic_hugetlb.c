@@ -476,20 +476,23 @@ static struct page *__alloc_page_from_dhugetlb_pool(void)
 	 */
 	spin_lock_irqsave(&percpu_pool->lock, flags);
 
-	if (percpu_pool->free_pages == 0) {
-		int ret;
+	do {
+		page = NULL;
+		if (percpu_pool->free_pages == 0) {
+			int ret;
 
-		spin_lock(&hpool->lock);
-		ret = add_pages_to_percpu_pool(hpool, percpu_pool,
-						PERCPU_POOL_PAGE_BATCH);
-		spin_unlock(&hpool->lock);
-		if (ret)
-			goto unlock;
-	}
+			spin_lock(&hpool->lock);
+			ret = add_pages_to_percpu_pool(hpool, percpu_pool,
+							PERCPU_POOL_PAGE_BATCH);
+			spin_unlock(&hpool->lock);
+			if (ret)
+				goto unlock;
+		}
 
-	page = list_entry(percpu_pool->head_page.next, struct page, lru);
-	list_del(&page->lru);
-	percpu_pool->free_pages--;
+		page = list_entry(percpu_pool->head_page.next, struct page, lru);
+		list_del(&page->lru);
+		percpu_pool->free_pages--;
+	} while (page && check_new_page(page));
 	percpu_pool->used_pages++;
 	SetPagePool(page);
 
