@@ -849,6 +849,12 @@ int hugetlb_pool_destroy(struct cgroup *cgrp)
 	if (!hpool || hpool->attach_memcg != memcg)
 		return 0;
 
+	/*
+	 * Even if no process exists in the memory cgroup, some pages may still
+	 * be occupied. Release these pages before merging them.
+	 */
+	mem_cgroup_force_empty(hpool->attach_memcg);
+
 	ret = hugetlb_pool_merge_all_pages(hpool);
 	if (ret)
 		return -ENOMEM;
