@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .12.0
-%global pkg_release         .44
+%global maintenance_release .13.0
+%global pkg_release         .45
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,17 @@ fi
 %endif
 
 %changelog
+* Sun Mar 20 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.13.0.45
+- mm/dynamic_hugetlb: initialize subpages before merging
+- mm/dynamic_hugetlb: set/clear HPageFreed
+- mm/dynamic_hugetlb: only support to merge 2M dynamicly
+- mm/dynamic_hugetlb: hold the lock until pages back to hugetlb
+- mm/dynamic_hugetlb: use mem_cgroup_force_empty to reclaim pages
+- mm/dynamic_hugetlb: check page using check_new_page
+- mm/dynamic_hugetlb: use pfn to traverse subpages
+- mm/dynamic_hugetlb: improve the initialization of huge pages
+- mm/dynamic_hugetlb: check free_pages_prepares when split pages
+
 * Fri Mar 18 2022 Liu Yuntao <windspectator@gmail.com> - 5.10.0-60.12.0.44
 - Compress modules to xz format in kernel.spec, which reduces disk consumption.
 
