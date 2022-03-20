@@ -210,7 +210,7 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 	struct split_hugepage *split_page, *split_next;
 	unsigned long nr_pages, block_size;
 	struct page *page, *next, *p;
-	bool need_migrate = false;
+	bool need_migrate = false, need_initial = false;
 	int i, try;
 	LIST_HEAD(wait_page_list);
 
@@ -221,8 +221,9 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 
 	switch (hpages_pool_idx) {
 		case HUGE_PAGES_POOL_1G:
-			nr_pages = 1 << (PUD_SHIFT - PMD_SHIFT);
+			nr_pages = 1 << (PUD_SHIFT - PAGE_SHIFT);
 			block_size = 1 << (PMD_SHIFT - PAGE_SHIFT);
+			need_initial = true;
 			break;
 		case HUGE_PAGES_POOL_2M:
 			nr_pages = 1 << (PMD_SHIFT - PAGE_SHIFT);
@@ -258,6 +259,25 @@ merge:
 			p = pfn_to_page(split_page->start_pfn + i);
 			list_del(&p->lru);
 			src_hpages_pool->free_normal_pages--;
+			/*
+			 * The input of prep_compound_gigantic_page should be a
+			 * group of pages whose ref count is 1 rather than
+			 * compound_page.
+			 * Initialize the pages before merge them to 1G.
+			 */
+			if (need_initial) {
+				int j;
+
+				set_compound_page_dtor(p, NULL_COMPOUND_DTOR);
+				atomic_set(compound_mapcount_ptr(p), 0);
+				set_compound_order(p, 0);
+				__ClearPageHead(p);
+				set_page_count(p, 1);
+				for (j = 1; j < block_size; j++) {
+					clear_compound_head(&p[j]);
+					set_page_count(&p[j], 1);
+				}
+			}
 		}
 		kfree(split_page);
 		add_new_page_to_pool(hpool, page, hpages_pool_idx);
