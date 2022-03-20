@@ -41,7 +41,7 @@ def load_symvers(symvers,filename):
 			break
 		if in_line == "\n":
 			continue
-		checksum,symbol,directory,type = in_line.split()
+        checksum,symbol,directory,type = string.split(in_line)
 
 		symvers[symbol] = in_line[0:-1]
 
