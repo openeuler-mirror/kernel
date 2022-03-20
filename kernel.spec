@@ -1,5 +1,5 @@
 %define with_signmodules  1
-%define with_kabichk 0
+%define with_kabichk 1
 
 %define modsign_cmd %{SOURCE10}
 
@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .12.0
-%global pkg_release         .44
+%global maintenance_release .13.0
+%global pkg_release         .45
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -56,6 +56,7 @@ Source13: pubring.gpg
 %if 0%{?with_kabichk}
 Source18: check-kabi
 Source20: Module.kabi_aarch64
+Source21: Module.kabi_x86_64
 %endif
 
 Source200: mkgrub-menu-aarch64.sh
@@ -338,7 +339,7 @@ make ARCH=%{Arch} modules %{?_smp_mflags}
 %if 0%{?with_kabichk}
     chmod 0755 %{SOURCE18}
     if [ -e $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} ]; then
-        ##%{SOURCE18} -k $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
+        %{SOURCE18} -k $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
 	echo "**** NOTE: now don't check Kabi. ****"
     else
         echo "**** NOTE: Cannot find reference Module.kabi file. ****"
@@ -448,7 +449,9 @@ popd
 install -m 644 .config $RPM_BUILD_ROOT/boot/config-%{KernelVer}
 install -m 644 System.map $RPM_BUILD_ROOT/boot/System.map-%{KernelVer}
 
-gzip -c9 < Module.symvers > $RPM_BUILD_ROOT/boot/symvers-%{KernelVer}.gz
+%if 0%{?with_kabichk}
+    gzip -c9 < Module.symvers > $RPM_BUILD_ROOT/boot/symvers-%{KernelVer}.gz
+%endif
 
 mkdir -p $RPM_BUILD_ROOT%{_sbindir}
 install -m 755 %{SOURCE200} $RPM_BUILD_ROOT%{_sbindir}/mkgrub-menu-%{devel_release}.sh
@@ -769,7 +772,9 @@ fi
 %ifarch aarch64
 /boot/dtb-*
 %endif
+%if 0%{?with_kabichk}
 /boot/symvers-*
+%endif
 /boot/System.map-*
 /boot/vmlinuz-*
 %ghost /boot/initramfs-%{KernelVer}.img
@@ -879,6 +884,17 @@ fi
 %endif
 
 %changelog
+* Sun Mar 20 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.13.0.45
+- mm/dynamic_hugetlb: initialize subpages before merging
+- mm/dynamic_hugetlb: set/clear HPageFreed
+- mm/dynamic_hugetlb: only support to merge 2M dynamicly
+- mm/dynamic_hugetlb: hold the lock until pages back to hugetlb
+- mm/dynamic_hugetlb: use mem_cgroup_force_empty to reclaim pages
+- mm/dynamic_hugetlb: check page using check_new_page
+- mm/dynamic_hugetlb: use pfn to traverse subpages
+- mm/dynamic_hugetlb: improve the initialization of huge pages
+- mm/dynamic_hugetlb: check free_pages_prepares when split pages
+
 * Fri Mar 18 2022 Liu Yuntao <windspectator@gmail.com> - 5.10.0-60.12.0.44
 - Compress modules to xz format in kernel.spec, which reduces disk consumption.
 

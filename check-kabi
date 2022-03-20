@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 #
 # check-kabi - Red Hat kABI reference checking tool
 #
@@ -41,7 +41,7 @@ def load_symvers(symvers,filename):
 			break
 		if in_line == "\n":
 			continue
-		checksum,symbol,directory,type = in_line.split()
+		checksum,symbol,directory,type,namespace = in_line.split('\t')
 
 		symvers[symbol] = in_line[0:-1]
 
@@ -73,7 +73,7 @@ def check_kabi(symvers,kabi):
 	for symbol in kabi:
 		abi_hash,abi_sym,abi_dir,abi_type = kabi[symbol].split()
 		if symbol in symvers:
-			sym_hash,sym_sym,sym_dir,sym_type = symvers[symbole].split()
+			sym_hash,sym_sym,sym_dir,sym_type = symvers[symbol].split()
 			if abi_hash != sym_hash:
 				fail=1
 				changed_symbols.append(symbol)
