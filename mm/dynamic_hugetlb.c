@@ -74,14 +74,16 @@ static void __hpool_split_huge_page(struct dhugetlb_pool *hpool, struct page *pa
 
 	__ClearPageHead(page);
 	for (i = 0; i < nr_pages; i++) {
-		page[i].flags &= ~(1 << PG_locked | 1 << PG_error |
-				1 << PG_referenced | 1 << PG_dirty |
-				1 << PG_active | 1 << PG_private |
-				1 << PG_writeback);
 		if (i != 0) {
 			page[i].mapping = NULL;
 			clear_compound_head(&page[i]);
 		}
+		/*
+		 * If a hugepage is mapped in private mode, the PG_uptodate bit
+		 * will not be cleared when the hugepage freed. Clear the
+		 * hugepage using free_pages_prepare() here.
+		 */
+		free_pages_prepare(&page[i], 0, false);
 		add_new_page_to_pool(hpool, &page[i], HUGE_PAGES_POOL_4K);
 	}
 }
