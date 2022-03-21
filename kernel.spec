@@ -12,7 +12,7 @@
 %global upstream_sublevel   0
 %global devel_release       52
 %global maintenance_release .0.0
-%global pkg_release         .25
+%global pkg_release         .26
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -501,6 +501,7 @@ popd
         chmod 0755 %{modsign_cmd} \
         %{modsign_cmd} $RPM_BUILD_ROOT/lib/modules/%{KernelVer} || exit 1 \
     fi \
+    find $RPM_BUILD_ROOT/lib/modules/ -type f -name '*.ko' | xargs -n1 -P`nproc --all` xz; \
 %{nil}
 
 # deal with header
@@ -861,6 +862,9 @@ fi
 %endif
 
 %changelog
+* Sat Mar 19 2022 Liu Yuntao <windspectator@gmail.com> - 5.10.0-52.0.0.26
+- Compress modules to xz format in kernel.spec, which reduces disk consumption.
+
 * Sat Jan 29 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-52.0.0.25
 - kabi: reserve space for arm64 SME in thread_struct
 - KABI: KABI reservation for IMA namespace
