@@ -2422,7 +2422,10 @@ void blk_throtl_drain(struct request_queue *q)
 	struct blkcg_gq *blkg;
 	struct cgroup_subsys_state *pos_css;
 	struct bio *bio;
+	struct bio_list bio_list_on_stack;
 	int rw;
+
+	bio_list_init(&bio_list_on_stack);
 
 	queue_lockdep_assert_held(q);
 	rcu_read_lock();
@@ -2440,12 +2443,16 @@ void blk_throtl_drain(struct request_queue *q)
 	tg_drain_bios(&td->service_queue);
 
 	rcu_read_unlock();
-	spin_unlock_irq(q->queue_lock);
 
 	/* all bios now should be in td->service_queue, issue them */
 	for (rw = READ; rw <= WRITE; rw++)
 		while ((bio = throtl_pop_queued(&td->service_queue.queued[rw],
 						NULL)))
+			bio_list_add(&bio_list_on_stack, bio);
+	spin_unlock_irq(q->queue_lock);
+
+	if (!bio_list_empty(&bio_list_on_stack))
+		while ((bio = bio_list_pop(&bio_list_on_stack)))
 			generic_make_request(bio);
 
 	spin_lock_irq(q->queue_lock);
