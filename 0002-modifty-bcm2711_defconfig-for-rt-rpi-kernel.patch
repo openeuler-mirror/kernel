@@ -1,0 +1,34 @@
+From 733f9861db7abd00c9ed81ce7c90326b914683a3 Mon Sep 17 00:00:00 2001
+From: zhangyuanhang <zhangyuanhang@kylinos.cn>
+Date: Thu, 3 Mar 2022 15:59:52 +0800
+Subject: [PATCH 2/2] modifty bcm2711_defconfig for rt rpi kernel
+
+Signed-off-by: zhangyuanhang <zhangyuanhang@kylinos.cn>
+---
+ arch/arm64/configs/bcm2711_defconfig | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/configs/bcm2711_defconfig b/arch/arm64/configs/bcm2711_defconfig
+index 75333e69e..11a7eeb8d 100644
+--- a/arch/arm64/configs/bcm2711_defconfig
++++ b/arch/arm64/configs/bcm2711_defconfig
+@@ -6,6 +6,7 @@ CONFIG_GENERIC_IRQ_DEBUGFS=y
+ CONFIG_NO_HZ=y
+ CONFIG_HIGH_RES_TIMERS=y
+ CONFIG_PREEMPT=y
++CONFIG_PREEMPT_RT=y
+ CONFIG_BSD_PROCESS_ACCT=y
+ CONFIG_BSD_PROCESS_ACCT_V3=y
+ CONFIG_TASK_XACCT=y
+@@ -55,7 +56,7 @@ CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y
+ CONFIG_CPUFREQ_DT=y
+ CONFIG_ARM_RASPBERRYPI_CPUFREQ=y
+ CONFIG_RASPBERRYPI_FIRMWARE=y
+-CONFIG_VIRTUALIZATION=y
++# CONFIG_VIRTUALIZATION is not set
+ CONFIG_KVM=y
+ CONFIG_CRYPTO_AES_ARM64_BS=m
+ CONFIG_JUMP_LABEL=y
+-- 
+2.27.0
+
