@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .13.0
-%global pkg_release         .45
+%global maintenance_release .14.0
+%global pkg_release         .46
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -340,7 +340,6 @@ make ARCH=%{Arch} modules %{?_smp_mflags}
     chmod 0755 %{SOURCE18}
     if [ -e $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} ]; then
         %{SOURCE18} -k $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
-	echo "**** NOTE: now don't check Kabi. ****"
     else
         echo "**** NOTE: Cannot find reference Module.kabi file. ****"
     fi
@@ -884,6 +883,12 @@ fi
 %endif
 
 %changelog
+* Mon Mar 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.14.0.46
+- vfs: fs_context: fix up param length parsing in legacy_parse_param
+- NFS: LOOKUP_DIRECTORY is also ok with symlinks
+- blk-mq: fix potential uaf for 'queue_hw_ctx'
+- blk-mq: add exception handling when srcu->sda alloc failed
+
 * Sun Mar 20 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.13.0.45
 - mm/dynamic_hugetlb: initialize subpages before merging
 - mm/dynamic_hugetlb: set/clear HPageFreed

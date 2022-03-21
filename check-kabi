@@ -56,7 +56,7 @@ def load_kabi(kabi,filename):
 			break
 		if in_line == "\n":
 			continue
-		checksum,symbol,directory,type = in_line.split()
+		checksum,symbol,directory,type,namespace = in_line.split('\t')
 
 		kabi[symbol] = in_line[0:-1]
 
@@ -71,9 +71,9 @@ def check_kabi(symvers,kabi):
 	losted_symbols=[]
 
 	for symbol in kabi:
-		abi_hash,abi_sym,abi_dir,abi_type = kabi[symbol].split()
+		abi_hash,abi_sym,abi_dir,abi_type,abi_namespace = kabi[symbol].split('\t')
 		if symbol in symvers:
-			sym_hash,sym_sym,sym_dir,sym_type = symvers[symbol].split()
+			sym_hash,sym_sym,sym_dir,sym_type,sym_namespace = symvers[symbol].split('\t')
 			if abi_hash != sym_hash:
 				fail=1
 				changed_symbols.append(symbol)
