@@ -174,8 +174,10 @@ struct fuse_in {
 	/** True if the data for the last argument is in req->pages */
 	unsigned argpages:1;
 
+#ifndef __GENKSYMS__
 	/** True if direct write */
 	unsigned user_pages:1;
+#endif
 
 	/** Number of arguments */
 	unsigned numargs;
