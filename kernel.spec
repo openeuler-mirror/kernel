@@ -340,7 +340,6 @@ make ARCH=%{Arch} modules %{?_smp_mflags}
     chmod 0755 %{SOURCE18}
     if [ -e $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} ]; then
         %{SOURCE18} -k $RPM_SOURCE_DIR/Module.kabi_%{_target_cpu} -s Module.symvers || exit 1
-	echo "**** NOTE: now don't check Kabi. ****"
     else
         echo "**** NOTE: Cannot find reference Module.kabi file. ****"
     fi
