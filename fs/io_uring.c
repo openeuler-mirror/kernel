@@ -5613,6 +5613,7 @@ static void __io_clean_op(struct io_kiocb *req)
 			wake_up(&ctx->inflight_wait);
 		spin_unlock_irqrestore(&ctx->inflight_lock, flags);
 		req->flags &= ~REQ_F_INFLIGHT;
+		put_files_struct(req->work.files);
 	}
 }
 
@@ -5990,7 +5991,7 @@ static int io_grab_files(struct io_kiocb *req)
 	if (fcheck(ctx->ring_fd) == ctx->ring_file) {
 		list_add(&req->inflight_entry, &ctx->inflight_list);
 		req->flags |= REQ_F_INFLIGHT;
-		req->work.files = current->files;
+		req->work.files = get_files_struct(current);
 		ret = 0;
 	}
 	spin_unlock_irq(&ctx->inflight_lock);
