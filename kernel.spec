@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2203.3.0
+%global hulkrelease 2203.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0141
+Release: %{hulkrelease}.0142
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,18 @@ fi
 %endif
 
 %changelog
+
+* Tue Mar 22 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2203.4.0.0142
+- kabi: fix kabi broken in struct fuse_in
+- fuse: fix pipe buffer lifetime for direct_io
+- blk-throtl: fix race in io dispatching
+- ext4: Fix symlink file size not match to file content
+- livepatch/core: Check klp_func before 'klp_init_object_loaded'
+- irqchip/gic-phytium-2500: Fix issue that interrupts are concentrated in one cpu
+- blk-mq: add exception handling when srcu->sda alloc failed
+- audit: improve audit queue handling when "audit=1" on cmdline
+- Revert "audit: bugfix for infinite loop when flush the hold queue"
+- veth: Do not record rx queue hint in veth_xmit
 
 * Tue Mar 15 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2203.3.0.0141
 - crypto: pcrypt - Fix user-after-free on module unload
