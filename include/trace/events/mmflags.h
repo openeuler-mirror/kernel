@@ -87,6 +87,12 @@
 #define IF_HAVE_PG_ARCH_2(flag,string)
 #endif
 
+#if defined(CONFIG_X86_64) || defined(CONFIG_ARM64)
+#define IF_HAVE_PG_POOL(flag,string) ,{1UL << flag, string}
+#else
+#define IF_HAVE_PG_POOL(flag,string)
+#endif
+
 #ifdef CONFIG_PIN_MEMORY
 #define IF_HAVE_PG_HOTREPLACE(flag, string) ,{1UL << flag, string}
 #else
@@ -114,14 +120,14 @@
 	{1UL << PG_mappedtodisk,	"mappedtodisk"	},		\
 	{1UL << PG_reclaim,		"reclaim"	},		\
 	{1UL << PG_swapbacked,		"swapbacked"	},		\
-	{1UL << PG_unevictable,		"unevictable"	},		\
-	{1UL << PG_pool,		"pool"		}		\
+	{1UL << PG_unevictable,		"unevictable"	}		\
 IF_HAVE_PG_MLOCK(PG_mlocked,		"mlocked"	)		\
 IF_HAVE_PG_UNCACHED(PG_uncached,	"uncached"	)		\
 IF_HAVE_PG_HWPOISON(PG_hwpoison,	"hwpoison"	)		\
 IF_HAVE_PG_IDLE(PG_young,		"young"		)		\
 IF_HAVE_PG_IDLE(PG_idle,		"idle"		)		\
 IF_HAVE_PG_ARCH_2(PG_arch_2,		"arch_2"	)		\
+IF_HAVE_PG_POOL(PG_pool,		"pool"		)		\
 IF_HAVE_PG_HOTREPLACE(PG_hotreplace,	"hotreplace"	),		\
 	{1UL << PG_reserve_pgflag_0,	"reserve_pgflag_0"},		\
 	{1UL << PG_reserve_pgflag_1,	"reserve_pgflag_1"}
