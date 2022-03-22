@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .10.0
-%global pkg_release         .41
+%global maintenance_release .15.0
+%global pkg_release         .47
 %global rt_release          .rt62
 
 %define with_debuginfo 1
@@ -885,6 +885,38 @@ fi
 %endif
 
 %changelog
+* Mon Mar 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.15.0.47
+- kabi: fix kabi broken in struct fuse_args
+- fuse: fix pipe buffer lifetime for direct_io
+
+* Mon Mar 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.14.0.46
+- vfs: fs_context: fix up param length parsing in legacy_parse_param
+- NFS: LOOKUP_DIRECTORY is also ok with symlinks
+- blk-mq: fix potential uaf for 'queue_hw_ctx'
+- blk-mq: add exception handling when srcu->sda alloc failed
+
+* Sun Mar 20 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.13.0.45
+- mm/dynamic_hugetlb: initialize subpages before merging
+- mm/dynamic_hugetlb: set/clear HPageFreed
+- mm/dynamic_hugetlb: only support to merge 2M dynamicly
+- mm/dynamic_hugetlb: hold the lock until pages back to hugetlb
+- mm/dynamic_hugetlb: use mem_cgroup_force_empty to reclaim pages
+- mm/dynamic_hugetlb: check page using check_new_page
+- mm/dynamic_hugetlb: use pfn to traverse subpages
+- mm/dynamic_hugetlb: improve the initialization of huge pages
+- mm/dynamic_hugetlb: check free_pages_prepares when split pages
+
+* Fri Mar 18 2022 Liu Yuntao <windspectator@gmail.com> - 5.10.0-60.12.0.44
+- Compress modules to xz format in kernel.spec, which reduces disk consumption.
+
+* Thu Mar 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.12.0.43
+- irqchip/gic-phytium-2500: Fix issue that interrupts are concentrated in one cpu
+
+* Thu Mar 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.11.0.42
+- scsi: ses: Fix crash caused by kfree an invalid pointer
+- ovl: fix incorrect extent info in metacopy case
+- perf sched: Cast PTHREAD_STACK_MIN to int as it may turn into sysconf(__SC_THREAD_STACK_MIN_VALUE)
+
 * Tue Mar 15 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.10.0.41
 - arm/arm64: paravirt: Remove GPL from pv_ops export
 

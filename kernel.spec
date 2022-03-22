@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .14.0
-%global pkg_release         .46
+%global maintenance_release .15.0
+%global pkg_release         .47
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -883,6 +883,10 @@ fi
 %endif
 
 %changelog
+* Mon Mar 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.15.0.47
+- kabi: fix kabi broken in struct fuse_args
+- fuse: fix pipe buffer lifetime for direct_io
+
 * Mon Mar 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.14.0.46
 - vfs: fs_context: fix up param length parsing in legacy_parse_param
 - NFS: LOOKUP_DIRECTORY is also ok with symlinks
