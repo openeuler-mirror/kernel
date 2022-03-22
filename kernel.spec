@@ -520,7 +520,6 @@ popd
         chmod 0755 %{modsign_cmd} \
         %{modsign_cmd} $RPM_BUILD_ROOT/lib/modules/%{KernelVer} || exit 1 \
     fi \
-    find $RPM_BUILD_ROOT/lib/modules/ -type f -name '*.ko' | xargs -n1 -P`nproc --all` xz; \
 %{nil}
 
 # deal with header
@@ -884,6 +883,7 @@ fi
 
 %changelog
 * Tue Mar 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.16.0.48
+- Revert "Compress modules to xz format in kernel.spec, which reduces disk consumption"
 - esp: Fix possible buffer overflow in ESP transformation
 - sock: remove one redundant SKB_FRAG_PAGE_ORDER macro
 - kabi: only reserve flags on X86_64 and ARM64
