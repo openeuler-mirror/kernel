@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .16.0
-%global pkg_release         .48
+%global maintenance_release .17.0
+%global pkg_release         .49
 %global rt_release          .rt62
 
 %define with_debuginfo 1
@@ -885,6 +885,10 @@ fi
 %endif
 
 %changelog
+* Wed Mar 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.17.0.49
+- block-map: add __GFP_ZERO flag for alloc_page in function bio_copy_kern
+- net: snmp: inline snmp_get_cpu_field()
+
 * Tue Mar 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.16.0.48
 - esp: Fix possible buffer overflow in ESP transformation
 - sock: remove one redundant SKB_FRAG_PAGE_ORDER macro
