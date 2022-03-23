@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .15.0
-%global pkg_release         .47
+%global maintenance_release .16.0
+%global pkg_release         .48
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -520,7 +520,6 @@ popd
         chmod 0755 %{modsign_cmd} \
         %{modsign_cmd} $RPM_BUILD_ROOT/lib/modules/%{KernelVer} || exit 1 \
     fi \
-    find $RPM_BUILD_ROOT/lib/modules/ -type f -name '*.ko' | xargs -n1 -P`nproc --all` xz; \
 %{nil}
 
 # deal with header
@@ -883,6 +882,13 @@ fi
 %endif
 
 %changelog
+* Tue Mar 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.16.0.48
+- Revert "Compress modules to xz format in kernel.spec, which reduces disk consumption"
+- esp: Fix possible buffer overflow in ESP transformation
+- sock: remove one redundant SKB_FRAG_PAGE_ORDER macro
+- kabi: only reserve flags on X86_64 and ARM64
+- mm/dynamic_hugetlb: only compile PG_pool on X86_64 and ARM64
+
 * Mon Mar 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.15.0.47
 - kabi: fix kabi broken in struct fuse_args
 - fuse: fix pipe buffer lifetime for direct_io

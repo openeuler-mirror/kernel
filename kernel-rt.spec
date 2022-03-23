@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .15.0
-%global pkg_release         .47
+%global maintenance_release .16.0
+%global pkg_release         .48
 %global rt_release          .rt62
 
 %define with_debuginfo 1
@@ -885,6 +885,12 @@ fi
 %endif
 
 %changelog
+* Tue Mar 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.16.0.48
+- esp: Fix possible buffer overflow in ESP transformation
+- sock: remove one redundant SKB_FRAG_PAGE_ORDER macro
+- kabi: only reserve flags on X86_64 and ARM64
+- mm/dynamic_hugetlb: only compile PG_pool on X86_64 and ARM64
+
 * Mon Mar 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.15.0.47
 - kabi: fix kabi broken in struct fuse_args
 - fuse: fix pipe buffer lifetime for direct_io
