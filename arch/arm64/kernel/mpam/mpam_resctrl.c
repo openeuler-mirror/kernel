@@ -839,7 +839,8 @@ static inline unsigned long **__rmid_remap_bmp(u32 col)
 #define __step_xy_initialize(step, x, y, from)		\
 	(x = from, step = 1, y = 0)
 #define __step_align(from)				\
-	(!(from % rmid_remap_matrix.step_size))
+	(!(from % (rmid_remap_matrix.step_size *	\
+		rmid_remap_matrix.step_cnt)))
 #define __step_overflow(step)				\
 	(__xy_overflow(x, y) ||				\
 		(step > rmid_remap_matrix.step_cnt))
@@ -913,7 +914,7 @@ static int is_rmid_remap_bmp_full(unsigned long *bmp)
 			bitmap_full(bmp, rmid_remap_matrix.rows));
 }
 
-static int rmid_remap_bmp_find_first_avail_partid(int partid)
+static int rmid_remap_bmp_find_step_entry(int partid)
 {
 	int x, y;
 	unsigned long **bmp;
@@ -922,17 +923,18 @@ static int rmid_remap_bmp_find_first_avail_partid(int partid)
 		rmid_remap_matrix.cols)
 		return 0;
 
+	/* step entry should be non-occupied and aligned */
 	bmp = __rmid_remap_bmp(partid);
-	if (bmp && !is_rmid_remap_bmp_occ(*bmp))
-		return partid;
+	if (bmp)
+		return (is_rmid_remap_bmp_occ(*bmp) ||
+			!__step_align(partid)) ? -ENOSPC : partid;
 
 	for_each_rmid_transform_point_from(bmp, x, y, 0) {
 		/*
 		 * do not waste partid resource, start
-		 * from step_size aligned position.
+		 * from step aligned position.
 		 */
-		if (!is_rmid_remap_bmp_occ(*bmp) &&
-			(x % rmid_remap_matrix.step_size) == 0)
+		if (__step_align(x) && !is_rmid_remap_bmp_occ(*bmp))
 			return x;
 	}
 
@@ -1026,8 +1028,8 @@ static int __rmid_alloc(int partid, int pmg)
 	if (pmg >= 0)
 		checkpmg = true;
 
-	/* traverse from first non-occupied and step_size aligned entry */
-	ret = rmid_remap_bmp_find_first_avail_partid(partid);
+	/* traverse from first non-occupied and step-aligned entry */
+	ret = rmid_remap_bmp_find_step_entry(partid);
 	if (ret < 0)
 		goto out;
 	partid = ret;
