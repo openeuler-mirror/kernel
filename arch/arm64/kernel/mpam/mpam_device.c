@@ -34,6 +34,7 @@
 #include <linux/arm_mpam.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
+#include <linux/of_address.h>
 
 #include "mpam_resource.h"
 #include "mpam_device.h"
@@ -1718,10 +1719,9 @@ static const struct of_device_id arm_mpam_of_device_ids[] = {
 	{ }
 };
 
-static int of_mpam_parse_irq(struct platform_device *pdev,
+static int of_mpam_parse_irq(struct device_node *node,
 			     struct mpam_device *dev)
 {
-	struct device_node *node = pdev->dev.of_node;
 	u32 overflow_interrupt, overflow_flags;
 	u32 error_interrupt, error_interrupt_flags;
 
@@ -1736,12 +1736,12 @@ static int of_mpam_parse_irq(struct platform_device *pdev,
 			error_interrupt, error_interrupt_flags);
 }
 
-static int of_mpam_parse_cache(struct platform_device *pdev)
+static int of_mpam_parse_cache(struct platform_device *pdev,
+		struct device_node *node)
 {
 	struct mpam_device *dev;
-	struct device_node *node = pdev->dev.of_node;
 	int cache_level, cache_id;
-	struct resource *res;
+	u64 reg_value[2];
 
 	if (of_property_read_u32(node, "cache-level", &cache_level)) {
 		dev_err(&pdev->dev, "missing cache level property\n");
@@ -1754,27 +1754,27 @@ static int of_mpam_parse_cache(struct platform_device *pdev)
 	}
 
 	/* Base address */
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
+	if (of_property_read_u64_array(node, "reg", reg_value, 2)) {
 		dev_err(&pdev->dev, "missing io resource property\n");
 		return -EINVAL;
 	}
 
-	dev = mpam_device_create_cache(cache_level, cache_id, NULL, res->start);
+	dev = mpam_device_create_cache(cache_level, cache_id, NULL,
+				       reg_value[0]);
 	if (IS_ERR(dev)) {
 		dev_err(&pdev->dev, "Failed to create cache node\n");
 		return -EINVAL;
 	}
 
-	return of_mpam_parse_irq(pdev, dev);
+	return of_mpam_parse_irq(node, dev);
 }
 
-static int of_mpam_parse_memory(struct platform_device *pdev)
+static int of_mpam_parse_memory(struct platform_device *pdev,
+		struct device_node *node)
 {
 	struct mpam_device *dev;
-	struct device_node *node = pdev->dev.of_node;
 	int numa_id;
-	struct resource *res;
+	u64 reg_value[2];
 
 	if (of_property_read_u32(node, "numa-node-id", &numa_id)) {
 		dev_err(&pdev->dev, "missing numa node id property\n");
@@ -1782,40 +1782,35 @@ static int of_mpam_parse_memory(struct platform_device *pdev)
 	}
 
 	/* Base address */
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
+	if (of_property_read_u64_array(node, "reg", reg_value, 2)) {
 		dev_err(&pdev->dev, "missing io resource property\n");
 		return -EINVAL;
 	}
 
-	dev = mpam_device_create_memory(numa_id, res->start);
+	dev = mpam_device_create_memory(numa_id, reg_value[0]);
 	if (IS_ERR(dev)) {
 		dev_err(&pdev->dev, "Failed to create memory node\n");
 		return -EINVAL;
 	}
 
-	return of_mpam_parse_irq(pdev, dev);
+	return of_mpam_parse_irq(node, dev);
 }
 
-static int of_mpam_parse(struct platform_device *pdev)
+static int of_mpam_add_child(struct platform_device *pdev,
+		struct device_node *node)
 {
-	struct device *dev = &pdev->dev;
-	struct device_node *node = dev->of_node;
 	enum mpam_class_types type;
 
-	if (!node || !of_match_node(arm_mpam_of_device_ids, pdev->dev.of_node))
-		return -EINVAL;
-
-	if (of_property_read_u32(dev->of_node, "type", &type)) {
-		dev_err(dev, "missing type property\n");
+	if (of_property_read_u32(node, "type", &type)) {
+		dev_err(&pdev->dev, "missing type property\n");
 		return -EINVAL;
 	}
 
 	switch (type) {
 	case MPAM_CLASS_CACHE:
-		return of_mpam_parse_cache(pdev);
+		return of_mpam_parse_cache(pdev, node);
 	case MPAM_CLASS_MEMORY:
-		return of_mpam_parse_memory(pdev);
+		return of_mpam_parse_memory(pdev, node);
 	default:
 		pr_warn_once("Unknown node type %u.\n", type);
 		return -EINVAL;
@@ -1833,6 +1828,9 @@ static int of_mpam_parse(struct platform_device *pdev)
 static int arm_mpam_device_probe(struct platform_device *pdev)
 {
 	int ret;
+	struct device *dev = &pdev->dev;
+	struct device_node *node = dev->of_node;
+	struct device_node *child = NULL;
 
 	if (!cpus_have_const_cap(ARM64_HAS_MPAM))
 		return 0;
@@ -1840,11 +1838,18 @@ static int arm_mpam_device_probe(struct platform_device *pdev)
 	if (!acpi_disabled || mpam_enabled != MPAM_ENABLE_OF)
 		return 0;
 
+	if (!node || !of_match_node(arm_mpam_of_device_ids, pdev->dev.of_node))
+		return -EINVAL;
+
 	ret = mpam_discovery_start();
 	if (ret)
 		return ret;
 
-	ret = of_mpam_parse(pdev);
+	for_each_available_child_of_node(node, child) {
+		ret = of_mpam_add_child(pdev, child);
+		if (ret)
+			break;
+	}
 
 	if (ret) {
 		mpam_discovery_failed();
