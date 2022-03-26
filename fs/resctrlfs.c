@@ -989,7 +989,7 @@ static void resctrl_group_default_init(struct resctrl_group *r)
 	r->type = RDTCTRL_GROUP;
 }
 
-static int __init resctrl_group_setup_root(void)
+static int resctrl_group_setup_root(void)
 {
 	int ret;
 

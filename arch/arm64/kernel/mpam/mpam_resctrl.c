@@ -1135,7 +1135,7 @@ void closid_free(int closid)
  * Choose a width for the resource name and resource data based on the
  * resource that has widest name and cbm.
  */
-static __init void mpam_init_padding(void)
+static void mpam_init_padding(void)
 {
 	int cl;
 	struct mpam_resctrl_res *res;
