@@ -251,10 +251,10 @@ int arch_klp_patch_func(struct klp_func *func)
 		if (aarch64_insn_patch_text_nosync((void *)pc, insn))
 			goto ERR_OUT;
 	} else {
-		insns[0] = cpu_to_le32(0x92800010 | (((~new_addr) & 0xffff)) << 5);
-		insns[1] = cpu_to_le32(0xf2a00010 | (((new_addr >> 16) & 0xffff)) << 5);
-		insns[2] = cpu_to_le32(0xf2c00010 | (((new_addr >> 32) & 0xffff)) << 5);
-		insns[3] = cpu_to_le32(0xd61f0200);
+		insns[0] = 0x92800010 | (((~new_addr) & 0xffff)) << 5;
+		insns[1] = 0xf2a00010 | (((new_addr >> 16) & 0xffff)) << 5;
+		insns[2] = 0xf2c00010 | (((new_addr >> 32) & 0xffff)) << 5;
+		insns[3] = 0xd61f0200;
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
 			if (aarch64_insn_patch_text_nosync(((u32 *)pc) + i, insns[i]))
 				goto ERR_OUT;
@@ -328,10 +328,10 @@ void arch_klp_unpatch_func(struct klp_func *func)
 
 			aarch64_insn_patch_text_nosync((void *)pc, insn);
 		} else {
-			insns[0] = cpu_to_le32(0x92800010 | (((~new_addr) & 0xffff)) << 5);
-			insns[1] = cpu_to_le32(0xf2a00010 | (((new_addr >> 16) & 0xffff)) << 5);
-			insns[2] = cpu_to_le32(0xf2c00010 | (((new_addr >> 32) & 0xffff)) << 5);
-			insns[3] = cpu_to_le32(0xd61f0200);
+			insns[0] = 0x92800010 | (((~new_addr) & 0xffff)) << 5;
+			insns[1] = 0xf2a00010 | (((new_addr >> 16) & 0xffff)) << 5;
+			insns[2] = 0xf2c00010 | (((new_addr >> 32) & 0xffff)) << 5;
+			insns[3] = 0xd61f0200;
 			for (i = 0; i < LJMP_INSN_SIZE; i++)
 				aarch64_insn_patch_text_nosync(((u32 *)pc) + i,
 						insns[i]);
