@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       60
-%global maintenance_release .17.0
-%global pkg_release         .49
+%global maintenance_release .18.0
+%global pkg_release         .50
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -882,6 +882,10 @@ fi
 %endif
 
 %changelog
+* Sun Mar 27 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.18.0.50
+- net/spnic: Remove spnic driver.
+- SCSI: spfc: remove SPFC driver
+
 * Wed Mar 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-60.17.0.49
 - block-map: add __GFP_ZERO flag for alloc_page in function bio_copy_kern
 - net: snmp: inline snmp_get_cpu_field()
