@@ -124,6 +124,9 @@ static inline bool mem_reliable_watermark_ok(int nr_page)
 	long sum = 0;
 	int cpu;
 
+	if (!reliable_allow_fb_enabled())
+		return true;
+
 	for_each_possible_cpu(cpu)
 		sum += per_cpu(nr_reliable_buddy_pages, cpu);
 
