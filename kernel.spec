@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       59
+%global devel_release       78
 %global maintenance_release .0.0
-%global pkg_release         .33
+%global pkg_release         .34
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,153 @@ fi
 %endif
 
 %changelog
+* Wed Mar 30 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-78.0.0.34
+- net/spnic: Remove spnic driver.
+- SCSI: spfc: remove SPFC driver
+- net: snmp: inline snmp_get_cpu_field()
+- block-map: add __GFP_ZERO flag for alloc_page in function bio_copy_kern
+- esp: Fix possible buffer overflow in ESP transformation
+- sock: remove one redundant SKB_FRAG_PAGE_ORDER macro
+- kabi: only reserve flags on X86_64 and ARM64
+- mm/dynamic_hugetlb: only compile PG_pool on X86_64 and ARM64
+- kabi: fix kabi broken in struct fuse_args
+- fuse: fix pipe buffer lifetime for direct_io
+- vfs: fs_context: fix up param length parsing in legacy_parse_param
+- NFS: LOOKUP_DIRECTORY is also ok with symlinks
+- blk-mq: fix potential uaf for 'queue_hw_ctx'
+- blk-mq: add exception handling when srcu->sda alloc failed
+- mm/dynamic_hugetlb: initialize subpages before merging
+- mm/dynamic_hugetlb: set/clear HPageFreed
+- mm/dynamic_hugetlb: only support to merge 2M dynamicly
+- mm/dynamic_hugetlb: hold the lock until pages back to hugetlb
+- mm/dynamic_hugetlb: use mem_cgroup_force_empty to reclaim pages
+- mm/dynamic_hugetlb: check page using check_new_page
+- mm/dynamic_hugetlb: use pfn to traverse subpages
+- mm/dynamic_hugetlb: improve the initialization of huge pages
+- mm/dynamic_hugetlb: check free_pages_prepares when split pages
+- irqchip/gic-phytium-2500: Fix issue that interrupts are concentrated in one cpu
+- scsi: ses: Fix crash caused by kfree an invalid pointer
+- arm64: kexec: Fix missing error code 'ret' warning in load_other_segments()
+- ovl: fix incorrect extent info in metacopy case
+- perf sched: Cast PTHREAD_STACK_MIN to int as it may turn into sysconf(__SC_THREAD_STACK_MIN_VALUE)
+- arm64: remove page granularity limitation from KFENCE
+- Revert "arm64: remove page granularity limitation from KFENCE"
+- kfence: Fix wrong size of alloc_covered when enable dynamic
+- audit: improve audit queue handling when "audit=1" on cmdline
+- Revert "audit: bugfix for infinite loop when flush the hold queue"
+- arm/arm64: paravirt: Remove GPL from pv_ops export
+- ima: bugfix for digest lists importing
+- net/hinic: Fix call trace when the rx_buff module parameter is grater than 2
+- net/hinic: Fix null pointer dereference in hinic_physical_port_id
+- net/hinic: Fix double free issue
+- eulerfs: remove redundant calculations
+- scsi: spfc: Remove redundant mask and spinlock
+- xfs: order CIL checkpoint start records
+- xfs: attach iclog callbacks in xlog_cil_set_ctx_write_state()
+- xfs: factor out log write ordering from xlog_cil_push_work()
+- xfs: pass a CIL context to xlog_write()
+- xfs: fix the forward progress assertion in xfs_iwalk_run_callbacks
+- xfs: move xlog_commit_record to xfs_log_cil.c
+- xfs: log head and tail aren't reliable during shutdown
+- xfs: don't run shutdown callbacks on active iclogs
+- xfs: separate out log shutdown callback processing
+- xfs: rework xlog_state_do_callback()
+- xfs: make forced shutdown processing atomic
+- xfs: convert log flags to an operational state field
+- xfs: move recovery needed state updates to xfs_log_mount_finish
+- xfs: XLOG_STATE_IOERROR must die
+- xfs: convert XLOG_FORCED_SHUTDOWN() to xlog_is_shutdown()
+- Revert "nfs: ensure correct writeback errors are returned on close()"
+- fuse: support SB_NOSEC flag to improve write performance
+- fuse: add a flag FUSE_OPEN_KILL_SUIDGID for open() request
+- fuse: don't send ATTR_MODE to kill suid/sgid for handle_killpriv_v2
+- fuse: setattr should set FATTR_KILL_SUIDGID
+- fuse: set FUSE_WRITE_KILL_SUIDGID in cached write path
+- fuse: rename FUSE_WRITE_KILL_PRIV to FUSE_WRITE_KILL_SUIDGID
+- fuse: introduce the notion of FUSE_HANDLE_KILLPRIV_V2
+- xfs: remove dead stale buf unpin handling code
+- xfs: hold buffer across unpin and potential shutdown processing
+- xfs: fix an ABBA deadlock in xfs_rename
+- Revert "efi/libstub: arm64: Relax 2M alignment again for relocatable kernels"
+- crypto: hisilicon/qm - fix memset during queues clearing
+- crypto: hisilicon/qm - modify device status check parameter
+- crypto: hisilicon/qm - remove redundant cache writeback
+- crypto: hisilicon/qm - disable queue when 'CQ' error
+- crypto: hisilicon/qm - reset function if event queue overflows
+- crypto: hisilicon/qm - use request_threaded_irq instead
+- crypto: hisilicon/qm - modify the handling method after abnormal interruption
+- crypto: hisilicon/qm - code movement
+- crypto: hisilicon/qm - remove unnecessary device memory reset
+- crypto: hisilicon/qm - fix deadlock for remove driver
+- crypto: hisilicon/sec - add some comments for soft fallback
+- crypto: hisilicon/sec - fix the aead software fallback for engine
+- blk-throttle: Set BIO_THROTTLED when bio has been throttled
+- bpf, selftests: Add ringbuf memory type confusion test
+- bpf/selftests: Test bpf_d_path on rdonly_mem.
+- bpf, selftests: Add various ringbuf tests with invalid offset
+- selftests/bpf: Add verifier test for PTR_TO_MEM spill
+- bpf: Fix ringbuf memory type confusion when passing to helpers
+- bpf: Fix out of bounds access for ringbuf helpers
+- bpf: Generally fix helper register offset check
+- bpf: Mark PTR_TO_FUNC register initially with zero offset
+- bpf: Generalize check_ctx_reg for reuse with other types
+- bpf/selftests: Test PTR_TO_RDONLY_MEM
+- bpf: Add MEM_RDONLY for helper args that are pointers to rdonly mem.
+- bpf: Make per_cpu_ptr return rdonly PTR_TO_MEM.
+- bpf: Convert PTR_TO_MEM_OR_NULL to composable types.
+- bpf: Introduce MEM_RDONLY flag
+- bpf: Replace PTR_TO_XXX_OR_NULL with PTR_TO_XXX | PTR_MAYBE_NULL
+- bpf: Replace RET_XXX_OR_NULL with RET_XXX | PTR_MAYBE_NULL
+- bpf: Replace ARG_XXX_OR_NULL with ARG_XXX | PTR_MAYBE_NULL
+- bpf: Introduce composable reg, ret and arg types.
+- bpf: Fix out of bounds access from invalid *_or_null type verification
+- blk-mq: decrease pending_queues when it expires
+- blk-mq: add debugfs to print information for blk_mq_tag_set
+- blk-mq: allow hardware queue to get more tag while sharing a tag set
+- bfq: fix use-after-free in bfq_dispatch_request
+- livepatch/core: Validate function old_name before 'klp_init_object_loaded'
+- arm64: config: enable CONFIG_ARM64_UCE_KERNEL_RECOVERY
+- arm64: ras: copy_from_user scenario support uce kernel recovery
+- efi: Fix efi_find_mirror redefine in x86
+- sched: Fix sleeping in atomic context at cpu_qos_write()
+- vfio/iommu_type1: Fix the logic of updating num_non_hwdbm_domains
+- iommu: Stop tracking the dirty log status of iommu_domain
+- iommu/smmuv3: Remove the S1 mapping restriction of dirty log
+- timekeeping: Avoiding false sharing in field access of tk_core
+- config: close CONFIG_ARM64_ILP32
+- arm64: replace is_compat_task() with is_ilp32_compat_task() in TASK_SIZE_MAX
+- arch_topology: Fix missing clear cluster_cpumask in remove_cpu_topology()
+- kabi: fix split error of kABI reference checking tool
+- ipv6: blackhole_netdev needs snmp6 counters
+- net: avoid quadratic behavior in netdev_wait_allrefs_any()
+- net: allow out-of-order netdev unregistration
+- net: transition netdev reg state earlier in run_todo
+- ipv6: give an IPv6 dev to blackhole_netdev
+- configs: disable CONFIG_RODATA_FULL_DEFAULT_ENABLED
+- dm rq: don't queue request to blk-mq during DM suspend
+- rcu/nocb: Fix missed nocb_timer requeue
+- dm: fix mempool NULL pointer race when completing IO
+- blk-mq: Improve performance of non-mq IO schedulers with multiple HW queues
+- Revert "blk-mq, elevator: Count requests per hctx to improve performance"
+- lib/iov_iter: initialize "flags" in new pipe_buffer
+- sched: enable CONFIG_QOS_SCHED on arm64
+- sched/qos: Remove dependency CONFIG_x86
+- ubifs: rename_whiteout: correct old_dir size computing
+- configs: update the defconfigs to support 9P
+- Revert "dm space maps: don't reset space map allocation cursor when committing"
+- drivers: hooks: add bonding driver vendor hooks
+- etmem: etmem scan module Replace WARN_ONCE() with debug_printk for "nothing read"
+- skmsg: Teach sk_psock_verdict_apply() to return errors
+- netfilter: nf_tables_offload: incorrect flow offload action array size
+- kfence: make test case compatible with run time set sample interval
+- kfence: Add a module parameter to adjust kfence objects
+- f2fs: fix to do sanity check in is_alive()
+- f2fs: fix to avoid panic in is_alive() if metadata is inconsistent
+- f2fs: fix to do sanity check on inode type during garbage collection
+- iommu/io-pgtable-arm: Fix attach device failed when smmuv3 supports HTTU
+- configs: enable CONFIG_INTEL_IDXD
+- ext4: convert DIV_ROUND_UP to DIV_ROUND_UP_ULL
+
 * Wed Feb 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-59.0.0.33
 - bonding: force carrier update when releasing slave
 - ext4: fix underflow in ext4_max_bitmap_size()
