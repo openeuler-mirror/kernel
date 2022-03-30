@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2203.4.0
+%global hulkrelease 2203.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0142
+Release: %{hulkrelease}.0143
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,24 @@ fi
 %endif
 
 %changelog
+
+* Tue Mar 29 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2203.5.0.0143
+- livepatch/arm64: Fix incorrect endian conversion when long jump
+- arm64/mpam: realign step entry when traversing rmid_transform
+- dt-bindings: mpam: refactor device tree node structure
+- arm64/mpam: refactor device tree structure to support multiple devices
+- arm64/mpam: fix __mpam_device_create() section mismatch error
+- block-map: add __GFP_ZERO flag for alloc_page in function bio_copy_kern
+- hugetlb: Add huge page alloced limit
+- swiotlb: rework "fix info leak with DMA_FROM_DEVICE"
+- swiotlb: fix info leak with DMA_FROM_DEVICE
+- esp: Fix possible buffer overflow in ESP transformation
+- sock: remove one redundant SKB_FRAG_PAGE_ORDER macro
+- io_uring: fix UAF in get_files_struct()
+- xfs: fix an undefined behaviour in _da3_path_shift
+- xfs: Fix possible null-pointer dereferences in xchk_da_btree_block_check_sibling()
+- xfs: fix use after free in buf log item unlock assert
+- ACPI/IORT: Do not blindly trust DMA masks from firmware
 
 * Tue Mar 22 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2203.4.0.0142
 - kabi: fix kabi broken in struct fuse_in
