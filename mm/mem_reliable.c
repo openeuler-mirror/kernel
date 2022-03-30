@@ -11,7 +11,7 @@
 #include <linux/oom.h>
 #include <linux/crash_dump.h>
 
-#define MEM_RELIABLE_RESERVE_MIN (256UL << 20)
+#define MEM_RELIABLE_RESERVE_MIN 0
 
 enum mem_reliable_types {
 	MEM_RELIABLE_ALL,
