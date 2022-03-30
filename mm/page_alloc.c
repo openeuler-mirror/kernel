@@ -3671,60 +3671,6 @@ __alloc_pages_cpuset_fallback(gfp_t gfp_mask, unsigned int order,
 	return page;
 }
 
-#ifdef CONFIG_MEMORY_RELIABLE
-static inline void reliable_fb_find_zone(gfp_t gfp_mask,
-					 struct alloc_context *ac)
-{
-	if (!reliable_allow_fb_enabled())
-		return;
-
-	/* dst node don't have zone we want, fallback here */
-	if ((gfp_mask & __GFP_THISNODE) && (ac->high_zoneidx == ZONE_NORMAL) &&
-	    (gfp_mask & ___GFP_RELIABILITY)) {
-		ac->high_zoneidx = gfp_zone(gfp_mask & ~___GFP_RELIABILITY);
-		ac->preferred_zoneref = first_zones_zonelist(
-			ac->zonelist, ac->high_zoneidx, ac->nodemask);
-	}
-
-	return;
-}
-
-static inline struct page *
-reliable_fb_before_oom(gfp_t gfp_mask, int order,
-			  const struct alloc_context *ac)
-{
-	if (!reliable_allow_fb_enabled())
-		return NULL;
-
-	/* key user process alloc mem from movable zone to avoid oom */
-	if ((ac->high_zoneidx == ZONE_NORMAL) &&
-	    (gfp_mask & ___GFP_RELIABILITY)) {
-		struct alloc_context tmp_ac = *ac;
-
-		tmp_ac.high_zoneidx = ZONE_MOVABLE;
-		tmp_ac.preferred_zoneref = first_zones_zonelist(
-			ac->zonelist, ZONE_MOVABLE, ac->nodemask);
-		return get_page_from_freelist(
-			(gfp_mask | __GFP_HARDWALL) & ~__GFP_DIRECT_RECLAIM,
-			order, ALLOC_WMARK_HIGH | ALLOC_CPUSET, &tmp_ac);
-	}
-
-	return NULL;
-}
-#else
-static inline void reliable_fb_find_zone(gfp_t gfp_mask,
-					 struct alloc_context *ac)
-{
-	return;
-}
-
-static inline struct page *reliable_fb_before_oom(gfp_t gfp_mask, int order,
-						 const struct alloc_context *ac)
-{
-	return NULL;
-}
-#endif
-
 static inline struct page *
 __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	const struct alloc_context *ac, unsigned long *did_some_progress)
@@ -3760,10 +3706,6 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	page = get_page_from_freelist((gfp_mask | __GFP_HARDWALL) &
 				      ~__GFP_DIRECT_RECLAIM, order,
 				      ALLOC_WMARK_HIGH|ALLOC_CPUSET, ac);
-	if (page)
-		goto out;
-
-	page = reliable_fb_before_oom(gfp_mask, order, ac);
 	if (page)
 		goto out;
 
@@ -4374,12 +4316,8 @@ retry_cpuset:
 	 */
 	ac->preferred_zoneref = first_zones_zonelist(ac->zonelist,
 					ac->high_zoneidx, ac->nodemask);
-	if (!ac->preferred_zoneref->zone) {
-		reliable_fb_find_zone(gfp_mask, ac);
-
-		if (!ac->preferred_zoneref->zone)
-			goto nopage;
-	}
+	if (!ac->preferred_zoneref->zone)
+		goto nopage;
 
 	if (gfp_mask & __GFP_KSWAPD_RECLAIM)
 		wake_all_kswapds(order, gfp_mask, ac);
@@ -4638,74 +4576,94 @@ static inline void finalise_ac(gfp_t gfp_mask, struct alloc_context *ac)
 					ac->high_zoneidx, ac->nodemask);
 }
 
-/*
- * return false means this allocation is limit by reliable user limit and
- * this will lead to pagefault_out_of_memory()
- */
-static inline bool prepare_before_alloc(gfp_t *gfp_mask, unsigned int order)
+static inline void prepare_before_alloc(gfp_t *gfp_mask)
 {
 	gfp_t gfp_ori = *gfp_mask;
+	bool zone_movable;
+
 	*gfp_mask &= gfp_allowed_mask;
 
 	if (!mem_reliable_is_enabled())
-		return true;
+		return;
 
-	if (*gfp_mask & __GFP_NOFAIL)
-		return true;
+	/*
+	 * memory reliable only handle memory allocation from movable zone
+	 * (force alloc from non-movable zone or force alloc from movable
+	 * zone) to get total isolation.
+	 */
+	zone_movable = gfp_zone(*gfp_mask) == ZONE_MOVABLE;
+	if (!zone_movable)
+		return;
 
 	if (gfp_ori & ___GFP_RELIABILITY) {
-		if (!(gfp_ori & __GFP_HIGHMEM) || !(gfp_ori & __GFP_MOVABLE))
-			return true;
-
-		if (mem_reliable_watermark_ok(1 << order)) {
-			*gfp_mask |= ___GFP_RELIABILITY;
-			return true;
-		}
-
-		if (reliable_allow_fb_enabled())
-			return true;
-
-		return false;
+		*gfp_mask |= ___GFP_RELIABILITY;
+		return;
 	}
 
-	/*
-	 * Init tasks will alloc memory from non-mirrored region if their
-	 * allocation trigger task_reliable_limit
-	 */
-	if (is_global_init(current)) {
-		if (!mem_reliable_counter_initialized()) {
-			*gfp_mask |= ___GFP_RELIABILITY;
-			return true;
-		}
+	if (is_global_init(current) || (current->flags & PF_RELIABLE))
+		*gfp_mask |= ___GFP_RELIABILITY;
+}
 
-		if (reliable_mem_limit_check(1 << order) &&
-		    mem_reliable_watermark_ok(1 << order))
-			*gfp_mask |= ___GFP_RELIABILITY;
+/*
+ * return true means memory allocation need retry and flag ___GFP_RELIABILITY
+ * must be cleared.
+ */
+static inline bool check_after_alloc(gfp_t *gfp_mask, unsigned int order,
+				     int preferred_nid, nodemask_t *nodemask,
+				     struct page **_page)
+{
+	if (!mem_reliable_is_enabled())
+		return false;
+
+	if (!(*gfp_mask & ___GFP_RELIABILITY))
+		return false;
+
+	if (!*_page)
+		goto out_retry;
+
+	if (*gfp_mask & __GFP_NOFAIL)
+		goto out;
+
+	/* check water mark, reserver mirrored mem for kernel */
+	if (!mem_reliable_watermark_ok(1 << order))
+		goto out_free_page;
+
+	/* percpu counter is not initialized, ignore limit check */
+	if (!mem_reliable_counter_initialized())
+		goto out;
+
+	/* spcial user task, systemd is limited by task_reliable_limit */
+	if (((current->flags & PF_RELIABLE) || is_global_init(current)) &&
+	    !reliable_mem_limit_check(1 << order))
+		goto out_free_page;
+
+	goto out;
+
+out_free_page:
+	__free_pages(*_page, order);
+	*_page = NULL;
+
+out_retry:
+	if (reliable_allow_fb_enabled() || is_global_init(current)) {
+		*gfp_mask &= ~___GFP_RELIABILITY;
 		return true;
 	}
 
-	/*
-	 * This only check task_reliable_limit without ___GFP_RELIABILITY
-	 * or this process is global init.
-	 * For kernel internal mechanism(hugepaged collapse and others)
-	 * If they alloc memory for user and obey task_reliable_limit, they
-	 * need to check this limit before allocing pages.
-	 */
-	if ((current->flags & PF_RELIABLE) && (gfp_ori & __GFP_HIGHMEM) &&
-	    (gfp_ori & __GFP_MOVABLE)) {
-		if (reliable_mem_limit_check(1 << order) &&
-		    mem_reliable_watermark_ok(1 << order)) {
-			*gfp_mask |= ___GFP_RELIABILITY;
-			return true;
-		}
+	if (*gfp_mask & (__GFP_NORETRY | __GFP_RETRY_MAYFAIL | __GFP_THISNODE))
+		goto out;
 
-		if (reliable_allow_fb_enabled())
-			return true;
+	/* Coredumps can quickly deplete all memory reserves */
+	if (current->flags & PF_DUMPCORE)
+		goto out;
+	/* The OOM killer will not help higher order allocs */
+	if (order > PAGE_ALLOC_COSTLY_ORDER)
+		goto out;
 
-		return false;
-	}
-
-	return true;
+	/* oom here */
+	mem_reliable_out_of_memory(*gfp_mask, order, preferred_nid,
+				nodemask);
+out:
+	return false;
 }
 
 /*
@@ -4729,12 +4687,9 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 		return NULL;
 	}
 
-	if (!prepare_before_alloc(&gfp_mask, order)) {
-		mem_reliable_out_of_memory(gfp_mask, order, preferred_nid,
-					   nodemask);
-		goto out;
-	}
+	prepare_before_alloc(&gfp_mask);
 
+retry:
 	alloc_mask = gfp_mask;
 	if (!prepare_alloc_pages(gfp_mask, order, preferred_nid, nodemask, &ac, &alloc_mask, &alloc_flags))
 		return NULL;
@@ -4770,6 +4725,9 @@ out:
 		__free_pages(page, order);
 		page = NULL;
 	}
+
+	if (check_after_alloc(&gfp_mask, order, preferred_nid, nodemask, &page))
+		goto retry;
 
 	trace_mm_page_alloc(page, order, alloc_mask, ac.migratetype);
 
