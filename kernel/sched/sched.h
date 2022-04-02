@@ -592,6 +592,11 @@ struct cfs_rq {
 #endif
 
 	KABI_RESERVE(2)
+#ifndef __GENKSYMS__
+#ifdef CONFIG_QOS_SCHED
+	struct list_head	qos_throttled_list;
+#endif
+#endif
 };
 
 static inline int rt_bandwidth_enabled(void)
