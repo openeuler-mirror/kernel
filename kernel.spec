@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       52
+%global devel_release       78
 %global maintenance_release .0.0
-%global pkg_release         .26
+%global pkg_release         .34
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -29,10 +29,19 @@
 # failed if there is new config options
 %define listnewconfig_fail 0
 
-#defualt is enabled. You can disable it with --without option
+%ifarch aarch64
+%define with_64kb  %{?_with_64kb: 1} %{?!_with_64kb: 0}
+%if %{with_64kb}
+%global package64kb -64kb
+%endif
+%else
+%define with_64kb  0
+%endif
+
+#default is enabled. You can disable it with --without option
 %define with_perf    %{?_without_perf: 0} %{?!_without_perf: 1}
 
-Name:	 kernel
+Name:	 kernel%{?package64kb}
 Version: %{upstream_version}.%{upstream_sublevel}
 Release: %{devel_release}%{?maintenance_release}%{?pkg_release}%{?extra_release}
 Summary: Linux Kernel
@@ -42,6 +51,7 @@ Source0: kernel.tar.gz
 Source10: sign-modules
 Source11: x509.genkey
 Source12: extra_certificates
+Source13: pubring.gpg
 
 %if 0%{?with_kabichk}
 Source18: check-kabi
@@ -52,9 +62,6 @@ Source200: mkgrub-menu-aarch64.sh
 
 Source2000: cpupower.service
 Source2001: cpupower.config
-
-Source3000: kernel-5.10.0-aarch64.config
-Source3001: kernel-5.10.0-x86_64.config
 
 %if 0%{?with_patch}
 Source9000: apply-patches
@@ -110,7 +117,7 @@ BuildRequires: java-devel
 %endif
 
 BuildRequires: dwarves
-BuildRequires: clang
+BuildRequires: clang >= 10.0.0
 BuildRequires: llvm
 
 %description
@@ -154,10 +161,10 @@ and the supporting documentation.
 
 %package tools-devel
 Summary: Assortment of tools for the Linux kernel
-Requires: kernel-tools = %{version}-%{release}
-Requires: kernel-tools-libs = %{version}-%{release}
-Provides: kernel-tools-libs-devel = %{version}-%{release}
-Obsoletes: kernel-tools-libs-devel
+Requires: %{name}-tools = %{version}-%{release}
+Requires: %{name}-tools-libs = %{version}-%{release}
+Provides: %{name}-tools-libs-devel = %{version}-%{release}
+Obsoletes: %{name}-tools-libs-devel
 %description tools-devel
 This package contains the development files for the tools/ directory from
 the kernel source.
@@ -256,6 +263,8 @@ tar -xjf %{SOURCE9998}
 mv kernel linux-%{KernelVer}
 cd linux-%{KernelVer}
 
+cp %{SOURCE13} certs
+
 %if 0%{?with_patch}
 cp %{SOURCE9000} .
 cp %{SOURCE9001} .
@@ -310,6 +319,14 @@ perl -p -i -e "s/^EXTRAVERSION.*/EXTRAVERSION = -%{release}.%{_target_cpu}/" Mak
 
 ## make linux
 make mrproper %{_smp_mflags}
+
+%if %{with_64kb}
+sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_4K_PAGES.*/CONFIG_ARM64_64K_PAGES=y/'
+sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_PA_BITS=.*/CONFIG_ARM64_PA_BITS=52/'
+sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_PA_BITS_.*/CONFIG_ARM64_PA_BITS_52=y/'
+sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_VA_BITS=.*/CONFIG_ARM64_VA_BITS=52/'
+sed -i arch/arm64/configs/openeuler_defconfig -e 's/^CONFIG_ARM64_VA_BITS_.*/CONFIG_ARM64_VA_BITS_52=y/'
+%endif
 
 make ARCH=%{Arch} openeuler_defconfig
 
@@ -734,14 +751,14 @@ then
      done)
 fi
 
-%post -n kernel-tools
+%post -n %{name}-tools
 /sbin/ldconfig
 %systemd_post cpupower.service
 
-%preun -n kernel-tools
+%preun -n %{name}-tools
 %systemd_preun cpupower.service
 
-%postun -n kernel-tools
+%postun -n %{name}-tools
 /sbin/ldconfig
 %systemd_postun cpupower.service
 
@@ -800,7 +817,7 @@ fi
 %{python3_sitearch}/*
 %endif
 
-%files -n kernel-tools -f cpupower.lang
+%files -n %{name}-tools -f cpupower.lang
 %{_bindir}/cpupower
 %ifarch %{ix86} x86_64
 %{_bindir}/centrino-decode
@@ -830,7 +847,7 @@ fi
 %{_libdir}/libcpupower.so.0.0.1
 %license linux-%{KernelVer}/COPYING
 
-%files -n kernel-tools-devel
+%files -n %{name}-tools-devel
 %{_libdir}/libcpupower.so
 %{_includedir}/cpufreq.h
 %{_includedir}/cpuidle.h
@@ -862,6 +879,356 @@ fi
 %endif
 
 %changelog
+* Wed Mar 30 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-78.0.0.34
+- net/spnic: Remove spnic driver.
+- SCSI: spfc: remove SPFC driver
+- net: snmp: inline snmp_get_cpu_field()
+- block-map: add __GFP_ZERO flag for alloc_page in function bio_copy_kern
+- esp: Fix possible buffer overflow in ESP transformation
+- sock: remove one redundant SKB_FRAG_PAGE_ORDER macro
+- kabi: only reserve flags on X86_64 and ARM64
+- mm/dynamic_hugetlb: only compile PG_pool on X86_64 and ARM64
+- kabi: fix kabi broken in struct fuse_args
+- fuse: fix pipe buffer lifetime for direct_io
+- vfs: fs_context: fix up param length parsing in legacy_parse_param
+- NFS: LOOKUP_DIRECTORY is also ok with symlinks
+- blk-mq: fix potential uaf for 'queue_hw_ctx'
+- blk-mq: add exception handling when srcu->sda alloc failed
+- mm/dynamic_hugetlb: initialize subpages before merging
+- mm/dynamic_hugetlb: set/clear HPageFreed
+- mm/dynamic_hugetlb: only support to merge 2M dynamicly
+- mm/dynamic_hugetlb: hold the lock until pages back to hugetlb
+- mm/dynamic_hugetlb: use mem_cgroup_force_empty to reclaim pages
+- mm/dynamic_hugetlb: check page using check_new_page
+- mm/dynamic_hugetlb: use pfn to traverse subpages
+- mm/dynamic_hugetlb: improve the initialization of huge pages
+- mm/dynamic_hugetlb: check free_pages_prepares when split pages
+- irqchip/gic-phytium-2500: Fix issue that interrupts are concentrated in one cpu
+- scsi: ses: Fix crash caused by kfree an invalid pointer
+- arm64: kexec: Fix missing error code 'ret' warning in load_other_segments()
+- ovl: fix incorrect extent info in metacopy case
+- perf sched: Cast PTHREAD_STACK_MIN to int as it may turn into sysconf(__SC_THREAD_STACK_MIN_VALUE)
+- arm64: remove page granularity limitation from KFENCE
+- Revert "arm64: remove page granularity limitation from KFENCE"
+- kfence: Fix wrong size of alloc_covered when enable dynamic
+- audit: improve audit queue handling when "audit=1" on cmdline
+- Revert "audit: bugfix for infinite loop when flush the hold queue"
+- arm/arm64: paravirt: Remove GPL from pv_ops export
+- ima: bugfix for digest lists importing
+- net/hinic: Fix call trace when the rx_buff module parameter is grater than 2
+- net/hinic: Fix null pointer dereference in hinic_physical_port_id
+- net/hinic: Fix double free issue
+- eulerfs: remove redundant calculations
+- scsi: spfc: Remove redundant mask and spinlock
+- xfs: order CIL checkpoint start records
+- xfs: attach iclog callbacks in xlog_cil_set_ctx_write_state()
+- xfs: factor out log write ordering from xlog_cil_push_work()
+- xfs: pass a CIL context to xlog_write()
+- xfs: fix the forward progress assertion in xfs_iwalk_run_callbacks
+- xfs: move xlog_commit_record to xfs_log_cil.c
+- xfs: log head and tail aren't reliable during shutdown
+- xfs: don't run shutdown callbacks on active iclogs
+- xfs: separate out log shutdown callback processing
+- xfs: rework xlog_state_do_callback()
+- xfs: make forced shutdown processing atomic
+- xfs: convert log flags to an operational state field
+- xfs: move recovery needed state updates to xfs_log_mount_finish
+- xfs: XLOG_STATE_IOERROR must die
+- xfs: convert XLOG_FORCED_SHUTDOWN() to xlog_is_shutdown()
+- Revert "nfs: ensure correct writeback errors are returned on close()"
+- fuse: support SB_NOSEC flag to improve write performance
+- fuse: add a flag FUSE_OPEN_KILL_SUIDGID for open() request
+- fuse: don't send ATTR_MODE to kill suid/sgid for handle_killpriv_v2
+- fuse: setattr should set FATTR_KILL_SUIDGID
+- fuse: set FUSE_WRITE_KILL_SUIDGID in cached write path
+- fuse: rename FUSE_WRITE_KILL_PRIV to FUSE_WRITE_KILL_SUIDGID
+- fuse: introduce the notion of FUSE_HANDLE_KILLPRIV_V2
+- xfs: remove dead stale buf unpin handling code
+- xfs: hold buffer across unpin and potential shutdown processing
+- xfs: fix an ABBA deadlock in xfs_rename
+- Revert "efi/libstub: arm64: Relax 2M alignment again for relocatable kernels"
+- crypto: hisilicon/qm - fix memset during queues clearing
+- crypto: hisilicon/qm - modify device status check parameter
+- crypto: hisilicon/qm - remove redundant cache writeback
+- crypto: hisilicon/qm - disable queue when 'CQ' error
+- crypto: hisilicon/qm - reset function if event queue overflows
+- crypto: hisilicon/qm - use request_threaded_irq instead
+- crypto: hisilicon/qm - modify the handling method after abnormal interruption
+- crypto: hisilicon/qm - code movement
+- crypto: hisilicon/qm - remove unnecessary device memory reset
+- crypto: hisilicon/qm - fix deadlock for remove driver
+- crypto: hisilicon/sec - add some comments for soft fallback
+- crypto: hisilicon/sec - fix the aead software fallback for engine
+- blk-throttle: Set BIO_THROTTLED when bio has been throttled
+- bpf, selftests: Add ringbuf memory type confusion test
+- bpf/selftests: Test bpf_d_path on rdonly_mem.
+- bpf, selftests: Add various ringbuf tests with invalid offset
+- selftests/bpf: Add verifier test for PTR_TO_MEM spill
+- bpf: Fix ringbuf memory type confusion when passing to helpers
+- bpf: Fix out of bounds access for ringbuf helpers
+- bpf: Generally fix helper register offset check
+- bpf: Mark PTR_TO_FUNC register initially with zero offset
+- bpf: Generalize check_ctx_reg for reuse with other types
+- bpf/selftests: Test PTR_TO_RDONLY_MEM
+- bpf: Add MEM_RDONLY for helper args that are pointers to rdonly mem.
+- bpf: Make per_cpu_ptr return rdonly PTR_TO_MEM.
+- bpf: Convert PTR_TO_MEM_OR_NULL to composable types.
+- bpf: Introduce MEM_RDONLY flag
+- bpf: Replace PTR_TO_XXX_OR_NULL with PTR_TO_XXX | PTR_MAYBE_NULL
+- bpf: Replace RET_XXX_OR_NULL with RET_XXX | PTR_MAYBE_NULL
+- bpf: Replace ARG_XXX_OR_NULL with ARG_XXX | PTR_MAYBE_NULL
+- bpf: Introduce composable reg, ret and arg types.
+- bpf: Fix out of bounds access from invalid *_or_null type verification
+- blk-mq: decrease pending_queues when it expires
+- blk-mq: add debugfs to print information for blk_mq_tag_set
+- blk-mq: allow hardware queue to get more tag while sharing a tag set
+- bfq: fix use-after-free in bfq_dispatch_request
+- livepatch/core: Validate function old_name before 'klp_init_object_loaded'
+- arm64: config: enable CONFIG_ARM64_UCE_KERNEL_RECOVERY
+- arm64: ras: copy_from_user scenario support uce kernel recovery
+- efi: Fix efi_find_mirror redefine in x86
+- sched: Fix sleeping in atomic context at cpu_qos_write()
+- vfio/iommu_type1: Fix the logic of updating num_non_hwdbm_domains
+- iommu: Stop tracking the dirty log status of iommu_domain
+- iommu/smmuv3: Remove the S1 mapping restriction of dirty log
+- timekeeping: Avoiding false sharing in field access of tk_core
+- config: close CONFIG_ARM64_ILP32
+- arm64: replace is_compat_task() with is_ilp32_compat_task() in TASK_SIZE_MAX
+- arch_topology: Fix missing clear cluster_cpumask in remove_cpu_topology()
+- kabi: fix split error of kABI reference checking tool
+- ipv6: blackhole_netdev needs snmp6 counters
+- net: avoid quadratic behavior in netdev_wait_allrefs_any()
+- net: allow out-of-order netdev unregistration
+- net: transition netdev reg state earlier in run_todo
+- ipv6: give an IPv6 dev to blackhole_netdev
+- configs: disable CONFIG_RODATA_FULL_DEFAULT_ENABLED
+- dm rq: don't queue request to blk-mq during DM suspend
+- rcu/nocb: Fix missed nocb_timer requeue
+- dm: fix mempool NULL pointer race when completing IO
+- blk-mq: Improve performance of non-mq IO schedulers with multiple HW queues
+- Revert "blk-mq, elevator: Count requests per hctx to improve performance"
+- lib/iov_iter: initialize "flags" in new pipe_buffer
+- sched: enable CONFIG_QOS_SCHED on arm64
+- sched/qos: Remove dependency CONFIG_x86
+- ubifs: rename_whiteout: correct old_dir size computing
+- configs: update the defconfigs to support 9P
+- Revert "dm space maps: don't reset space map allocation cursor when committing"
+- drivers: hooks: add bonding driver vendor hooks
+- etmem: etmem scan module Replace WARN_ONCE() with debug_printk for "nothing read"
+- skmsg: Teach sk_psock_verdict_apply() to return errors
+- netfilter: nf_tables_offload: incorrect flow offload action array size
+- kfence: make test case compatible with run time set sample interval
+- kfence: Add a module parameter to adjust kfence objects
+- f2fs: fix to do sanity check in is_alive()
+- f2fs: fix to avoid panic in is_alive() if metadata is inconsistent
+- f2fs: fix to do sanity check on inode type during garbage collection
+- iommu/io-pgtable-arm: Fix attach device failed when smmuv3 supports HTTU
+- configs: enable CONFIG_INTEL_IDXD
+- ext4: convert DIV_ROUND_UP to DIV_ROUND_UP_ULL
+
+* Wed Feb 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-59.0.0.33
+- bonding: force carrier update when releasing slave
+- ext4: fix underflow in ext4_max_bitmap_size()
+- dm: make sure dm_table is binded before queue request
+- tty/amba-pl011: Call acpi_put_table() to fix memory leak
+- config: enable MEMORY_RELIABLE by default
+- mm: add support for page cache use reliable memory
+- shmem: Introduce shmem reliable
+- mm: Reserve field in mm_struct for memory reliable
+- mm: Introduce reliable flag for user task
+- meminfo: Show reliable memory info
+- mm: Introduce memory reliable
+- efi: Disable mirror feature if kernelcore is not specified
+- mm: Demote warning message in vmemmap_verify() to debug level
+- mm: Ratelimited mirrored memory related warning messages
+- efi: Find mirrored memory ranges for arm64
+- efi: Make efi_find_mirror() public
+- arm64: efi: Add fake memory support
+- efi: Make efi_print_memmap() public
+
+* Wed Feb 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-58.0.0.32
+- arm64: openeuler_defconfig: Enable config for ultrasoc driver
+- drivers/coresight: Add Ultrasoc System Memory Buffer driver
+- coresight: etm4x: Modify core-commit to avoid HiSilicon ETM overflow
+- RAS: Report ARM processor information to userspace
+- configs: enable CONFIG_NTB_INTEL
+- udf: Restore i_lenAlloc when inode expansion fails
+- udf: Fix NULL ptr deref when converting from inline format
+- rcu: Do not report strict GPs for outgoing CPUs
+- rcu-tasks: Make ksoftirqd provide RCU Tasks quiescent states
+- entry: Explicitly flush pending rcuog wakeup before last rescheduling point
+- rcu/nocb: Trigger self-IPI on late deferred wake up before user resume
+- irq_work: Cleanup
+- powerpc/process, kasan: Silence KASAN warnings in __get_wchan()
+- net/spnic: Reduce the timeout of the channel between driver and firmware
+- net/spnic: Fix an error when netdev failed to link up
+- net/spnic: Fix xor checksum error when sending a non 4B-aligned message to firmware
+- net/spnic: Fix ethtool loopback command failure
+- net/spnic: Fix array bounds error in ethtool get_link_ksettings
+- x86/tsc: Make cur->adjusted values in package#1 to be the same
+- ata: Add support for PxSCT.LPM set based on actual LPM capability
+- ata: Add support for disabling PhyRdy Change Interrupt based on actual LPM capability
+- ahci: Fix some bugs like plugin support and sata link stability when user enable ahci RTD3
+- EHCI: Clear wakeup signal locked in S0 state when device plug in
+- XHCI: Fix some device identify fail when enable xHCI runtime suspend
+- rtc: Fix set RTC time delay 500ms on some Zhaoxin SOCs
+
+* Tue Feb 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-57.0.0.31
+- yam: fix a memory leak in yam_siocdevprivate()
+- Phytium/S2500: kdump: Avoid vmcore saving failure across multi-socket
+- irqchip/irq-gic-phytium-2500: Add support for kdump
+- ipmi_si: Phytium S2500 workaround for MMIO-based IPMI
+- iommu: support phytium ft2000plus and S2500 iommu function
+- sw64: vfio: select VFIO_IOMMU_TYPE1 as default
+- sw64: tty: add serial driver for sw64
+- sw64: spi: add driver for SPI controller
+- sw64: add hypervisor based RTC on SW64 systems
+- sw64: kgdb: add support for sw64
+- sw64: LPC: add driver for LPC controller
+- sw64: iommu: fix a bug in calling 'alloc_pages_node'
+- sw64: iommu: add iommu driver for sw64
+- sw64: gpu/drm: fix kernel crash caused by drm driver
+- sw64: radeon: correct low-level mmio memset direct calls
+- sw64: gpu/drm: solve driver load cause kernel crash
+- amdgpu: enable KFD on SW64 systems
+- sw64: megaraid: fix kernel panic caused by accessing an illegal address
+- sw64: i2c: add i2c driver based designware for sw64
+- sw64: efi: add SMBIOS/DMI and EFI runtime driver codes
+- sw64: gpio: add sunway builtin gpio driver
+- sw64: acpi: add initial acpi infrastructure support
+- sw64: add perf userspace tool support for sw64
+- tools uapi: fix sw64 support
+- sw64: kvm: add definitions for kvm
+- sw64: moduleparam: fix sw64 compile failure
+- sw64: kdump/kexec: add KEXEC_ARCH_SW_64 definition
+- sw64: add AUDIT_ARCH_SW64 definition
+- sw64: ftrace: add sw64 support to recordmcount
+- sw64: add sw_64 support to buildtar, mkdebian and builddeb
+- sw64: add basic support for sw64
+- mm/pin_mem: add invalid check for pinmemory boot parameter
+- livepatch/x86: Fix incorrect use of 'strncpy'
+- livepatch: Fix issues in klp_mem_{prepare,recycle}
+- livepatch: Introduce 'arch_klp_save_old_code'
+- livepatch: Reduce duplicated arch_klp_mem_{prepare,recycle}
+- livepatch: Move 'klp_func_list' related codes out of 'arch'
+- livepatch: Introduce 'struct arch_klp_data'
+- livepatch/arm64: Uniform 'old_func' field in struct klp_func_node
+- tpm_tis_spi: set default probe function if device id not match
+- deconfig: intel ice-lake missing config enable
+- selftests/sgx: Fix Q1 and Q2 calculation in sigstruct.c
+- selftests/sgx: remove checks for file execute permissions
+- selftests/sgx: Refine the test enclave to have storage
+- selftests/sgx: Add EXPECT_EEXIT() macro
+- selftests/sgx: Dump enclave memory map
+- selftests/sgx: Migrate to kselftest harness
+- selftests/sgx: Rename 'eenter' and 'sgx_call_vdso'
+- x86/sgx: Expose SGX architectural definitions to the kernel
+- selftests/sgx: Use getauxval() to simplify test code
+- selftests/sgx: Improve error detection and messages
+- selftests/sgx: Use a statically generated 3072-bit RSA key
+- x86/sgx: Remove unnecessary kmap() from sgx_ioc_enclave_init()
+- x86/sgx: Add a basic NUMA allocation scheme to sgx_alloc_epc_page()
+- x86/sgx: Replace section->init_laundry_list with sgx_dirty_page_list
+- x86/sgx: Maintain encl->refcount for each encl->mm_list entry
+- x86/sgx: Drop racy follow_pfn() check
+- x86/sgx: Fix the return type of sgx_init()
+- x86/sgx: Return -EINVAL on a zero length buffer in sgx_ioc_enclave_add_pages()
+- x86/sgx: Fix sgx_ioc_enclave_provision() kernel-doc
+- x86/sgx: Return -ERESTARTSYS in sgx_ioc_enclave_add_pages()
+- x86/sgx: Clarify 'laundry_list' locking
+- x86/sgx: Update MAINTAINERS
+- Documentation/x86: Document SGX kernel architecture
+- x86/sgx: Add ptrace() support for the SGX driver
+- x86/sgx: Add a page reclaimer
+- selftests/x86: Add a selftest for SGX
+- x86/vdso: Implement a vDSO for Intel SGX enclave call
+- x86/traps: Attempt to fixup exceptions in vDSO before signaling
+- x86/fault: Add a helper function to sanitize error code
+- x86/vdso: Add support for exception fixup in vDSO functions
+- x86/sgx: Add SGX_IOC_ENCLAVE_PROVISION
+- x86/sgx: Add SGX_IOC_ENCLAVE_INIT
+- x86/sgx: Add SGX_IOC_ENCLAVE_ADD_PAGES
+- x86/sgx: Add SGX_IOC_ENCLAVE_CREATE
+- x86/sgx: Add an SGX misc driver interface
+- mm: Add 'mprotect' hook to struct vm_operations_struct
+- x86/sgx: Add SGX page allocator functions
+- x86/cpu/intel: Add a nosgx kernel parameter
+- x86/cpu/intel: Detect SGX support
+- x86/sgx: Initialize metadata for Enclave Page Cache (EPC) sections
+- x86/{cpufeatures,msr}: Add Intel SGX Launch Control hardware bits
+- x86/cpufeatures: Add Intel SGX hardware bits
+- x86/sgx: Add wrappers for ENCLS functions
+- x86/sgx: Add SGX architectural data structures
+- configfs: fix a race in configfs_{,un}register_subsystem()
+- fs/dirty_pages: fix wrong lock for inode list in super_block
+- ACPI: irq: Prevent unregistering of GIC SGIs
+- PM: ACPI: Refresh wakeup device power configuration every time
+- ACPICA: Interpreter: fix memory leak by using existing buffer
+
+* Thu Feb 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-56.0.0.30
+- configs: enable CONFIG_INTEGRITY_PLATFORM_KEYRING and CONFIG_LOAD_UEFI_KEYS
+- tipc: improve size validations for received domain records
+- cgroup-v1: Require capabilities to set release_agent
+- NFSv4: nfs_atomic_open() can race when looking up a non-regular file
+- NFSv4: Handle case where the lookup of a directory fails
+- cgroup/cpuset: Fix a race between cpuset_attach() and cpu hotplug
+- block: update io_ticks when io hang
+- livepatch: Fix missing unlock on error in klp_enable_patch()
+- livepatch: Fix kobject refcount bug on klp_init_patch_early failure path
+
+* Fri Feb 11 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-55.0.0.29
+- kabi: cleanup config entries of kabi
+- kabi: fix build error when CONFIG_KABI_RESERVE=n
+- kabi:crypto: reserve space for RSASSA-PSS style certificates
+- mm/page_alloc: use accumulated load when building node fallback list
+- mm/page_alloc: print node fallback order
+- arm64: openeuler_defconfig: Enable Kunpeng related configs
+
+* Thu Feb 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-54.0.0.28
+- rcu: Make TASKS_TRACE_RCU select IRQ_WORK
+- x86/kdump: make crash kernel boot faster
+- mm, hwpoison: fix condition in free hugetlb page path
+- x509: Detect sm2 keys by their parameters OID
+- mm/page_alloc.c: fix 'zone_id' may be used uninitialized in this function warning
+- sysctl: returns -EINVAL when a negative value is passed to proc_doulongvec_minmax
+- arm64: fix address limit problem with TASK_SIZE_MAX
+- arm64: mark __system_matches_cap as __maybe_unused
+- arm64: Avoid premature usercopy failure
+- arm64: uaccess: remove vestigal UAO support
+- arm64: uaccess: remove redundant PAN toggling
+- arm64: uaccess: remove addr_limit_user_check()
+- arm64: uaccess: remove set_fs()
+- arm64: uaccess cleanup macro naming
+- arm64: uaccess: split user/kernel routines
+- arm64: uaccess: refactor __{get,put}_user
+- arm64: uaccess: simplify __copy_user_flushcache()
+- arm64: uaccess: rename privileged uaccess routines
+- arm64: sdei: explicitly simulate PAN/UAO entry
+- arm64: sdei: move uaccess logic to arch/arm64/
+- Revert "arm64: fix current_thread_info()->addr_limit setup"
+- Revert "arm64: fix USER_DS definition problem in non-compat mode"
+- Revert "arm64: Avoid premature usercopy failure"
+- arm64: alternatives: Move length validation in alternative_{insn, endif}
+- arm64: alternatives: Split up alternative.h
+- arm64: uaccess: move uao_* alternatives to asm-uaccess.h
+- Revert "arm64: alternatives: Move length validation in alternative_{insn, endif}"
+- arm64: add C wrappers for SET_PSTATE_*()
+- arm64: ensure ERET from kthread is illegal
+
+* Sat Jan 29 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-53.0.0.27
+- livepatch/core: Fix where module get and put in different macro
+- livepatch/core: Remove redundant klp_free_objects_mod_limited
+- livepatch/core: Fix reference count issues
+- arm64/mpam: realign step entry when traversing rmid_transform
+- dt-bindings: mpam: refactor device tree node structure
+- arm64/mpam: refactor device tree structure to support multiple devices
+- arm64/mpam: fix __mpam_device_create() section mismatch error
+- block, bfq: don't move oom_bfqq
+- fget: clarify and improve __fget_files() implementation
+- KABI: add reserve space for thread_info struct
+- kabi: Reserve syscall entries for kabi compatibility
+- perf tools: Update powerpc's syscall.tbl copy from the kernel sources
+
 * Sat Mar 19 2022 Liu Yuntao <windspectator@gmail.com> - 5.10.0-52.0.0.26
 - Compress modules to xz format in kernel.spec, which reduces disk consumption.
 
