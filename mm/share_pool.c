@@ -2508,13 +2508,14 @@ static void sp_alloc_finish(int result, struct sp_area *spa,
 		sp_update_process_stat(current, true, spa);
 
 	/* this will free spa if mmap failed */
-	if (spa && !IS_ERR(spa))
+	if (spa && !IS_ERR(spa)) {
 		__sp_area_drop(spa);
+		trace_sp_alloc_finish(ac, spa->va_start);
+	}
 
 	if (!is_pass_through)
 		sp_group_drop(spg);
 
-	trace_sp_alloc_finish(ac, spa->va_start);
 	sp_dump_stack();
 	sp_try_to_compact();
 }
