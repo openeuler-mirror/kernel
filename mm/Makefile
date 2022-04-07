@@ -129,3 +129,4 @@ obj-$(CONFIG_PIN_MEMORY) += pin_mem.o
 obj-$(CONFIG_SHRINK_PAGECACHE) += page_cache_limit.o
 obj-$(CONFIG_ASCEND_SHARE_POOL) += share_pool.o
 obj-$(CONFIG_MEMORY_RELIABLE) += mem_reliable.o
+obj-$(CONFIG_MEMCG_MEMFS_INFO) += memcg_memfs_info.o
