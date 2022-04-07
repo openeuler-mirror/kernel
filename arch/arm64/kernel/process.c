@@ -57,6 +57,7 @@
 #include <asm/pointer_auth.h>
 #include <asm/stacktrace.h>
 #include <asm/mpam_sched.h>
+#include <asm/cpu_park.h>
 
 #if defined(CONFIG_STACKPROTECTOR) && !defined(CONFIG_STACKPROTECTOR_PER_TASK)
 #include <linux/stackprotector.h>
@@ -151,10 +152,8 @@ void arch_cpu_idle_dead(void)
  */
 void machine_shutdown(void)
 {
-#ifdef CONFIG_ARM64_CPU_PARK
 	if (kexec_smp_send_park() == 0)
 		return;
-#endif
 	smp_shutdown_nonboot_cpus(reboot_cpu);
 }
 

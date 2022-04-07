@@ -32,11 +32,6 @@
 
 #define CRASH_ADDR_HIGH_MAX	MEMBLOCK_ALLOC_ACCESSIBLE
 
-#ifdef CONFIG_ARM64_CPU_PARK
-/* CPU park state flag: "park" */
-#define PARK_MAGIC 0x7061726b
-#endif
-
 #ifndef __ASSEMBLY__
 
 /**
