@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2203.5.0
+%global hulkrelease 2204.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0143
+Release: %{hulkrelease}.0144
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,24 @@ fi
 %endif
 
 %changelog
+
+* Thu Apr 07 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2204.1.0.0144
+- serial: 8250: Fix max baud limit in generic 8250 port
+- sched/fair: Add qos_throttle_list node in struct cfs_rq
+- Reinstate some of "swiotlb: rework "fix info leak with DMA_FROM_DEVICE""
+- Revert "swiotlb: rework "fix info leak with DMA_FROM_DEVICE""
+- USB: gadget: validate endpoint index for xilinx udc
+- sr9700: sanity check for packet length
+- ima: Fix return value of ima_write_policy()
+- ima: Don't modify file descriptor mode on the fly
+- ima: Set file->f_mode instead of file->f_flags in ima_calc_file_hash()
+- ima: Remove __init annotation from ima_pcrread()
+- ima: Call ima_calc_boot_aggregate() in ima_eventdigest_init()
+- evm: Check size of security.evm before using it
+- ima: Don't ignore errors from crypto_shash_update()
+- mm: Fallback to non-mirrored region below low watermark
+- mm: Disable watermark check if reliable fallback is disabled
+- mm: Do limit checking after memory allocation for memory reliable
 
 * Tue Mar 29 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2203.5.0.0143
 - livepatch/arm64: Fix incorrect endian conversion when long jump
