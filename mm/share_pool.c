@@ -666,8 +666,25 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 			     struct sp_area *spa, unsigned long *populate,
 			     unsigned long prot);
 static void sp_munmap(struct mm_struct *mm, unsigned long addr, unsigned long size);
+
+#define K2U_NORMAL	0
+#define K2U_COREDUMP	1
+
+struct sp_k2u_context {
+	unsigned long kva;
+	unsigned long kva_aligned;
+	unsigned long size;
+	unsigned long size_aligned;
+	unsigned long sp_flags;
+	int state;
+	int spg_id;
+	bool to_task;
+	struct timespec64 start;
+	struct timespec64 end;
+};
+
 static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
-					 struct mm_struct *mm, unsigned long prot);
+				struct mm_struct *mm, unsigned long prot, struct sp_k2u_context *kc);
 
 static void free_sp_group_id(int spg_id)
 {
@@ -1313,7 +1330,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		spin_unlock(&sp_area_lock);
 
 		if (spa->type == SPA_TYPE_K2SPG && spa->kva) {
-			addr = sp_remap_kva_to_vma(spa->kva, spa, mm, prot);
+			addr = sp_remap_kva_to_vma(spa->kva, spa, mm, prot, NULL);
 			if (IS_ERR_VALUE(addr))
 				pr_warn("add group remap k2u failed %ld\n", addr);
 
@@ -2586,7 +2603,7 @@ static unsigned long __sp_remap_get_pfn(unsigned long kva)
 
 /* when called by k2u to group, always make sure rw_lock of spg is down */
 static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
-					 struct mm_struct *mm, unsigned long prot)
+					 struct mm_struct *mm, unsigned long prot, struct sp_k2u_context *kc)
 {
 	struct vm_area_struct *vma;
 	unsigned long ret_addr;
@@ -2598,6 +2615,8 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	if (unlikely(mm->core_state)) {
 		pr_err("k2u mmap: encountered coredump, abort\n");
 		ret_addr = -EBUSY;
+		if (kc)
+			kc->state = K2U_COREDUMP;
 		goto put_mm;
 	}
 
@@ -2683,7 +2702,7 @@ static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, un
 
 	spa->kva = kva;
 
-	uva = (void *)sp_remap_kva_to_vma(kva, spa, current->mm, prot);
+	uva = (void *)sp_remap_kva_to_vma(kva, spa, current->mm, prot, NULL);
 	__sp_area_drop(spa);
 	if (IS_ERR(uva))
 		pr_err("remap k2u to task failed %ld\n", PTR_ERR(uva));
@@ -2711,6 +2730,8 @@ static void *sp_make_share_kva_to_spg(unsigned long kva, unsigned long size,
 	struct mm_struct *mm;
 	struct sp_group_node *spg_node;
 	void *uva = ERR_PTR(-ENODEV);
+	struct sp_k2u_context kc;
+	unsigned long ret_addr = -ENODEV;
 
 	down_read(&spg->rw_lock);
 	spa = sp_alloc_area(size, sp_flags, spg, SPA_TYPE_K2SPG, current->tgid);
@@ -2725,12 +2746,17 @@ static void *sp_make_share_kva_to_spg(unsigned long kva, unsigned long size,
 
 	list_for_each_entry(spg_node, &spg->procs, proc_node) {
 		mm = spg_node->master->mm;
-		uva = (void *)sp_remap_kva_to_vma(kva, spa, mm, spg_node->prot);
-		if (IS_ERR(uva)) {
+		kc.state = K2U_NORMAL;
+		ret_addr = sp_remap_kva_to_vma(kva, spa, mm, spg_node->prot, &kc);
+		if (IS_ERR_VALUE(ret_addr)) {
+			if (kc.state == K2U_COREDUMP)
+				continue;
+			uva = (void *)ret_addr;
 			pr_err("remap k2u to spg failed %ld\n", PTR_ERR(uva));
 			__sp_free(spg, spa->va_start, spa_size(spa), mm);
 			goto out;
 		}
+		uva = (void *)ret_addr;
 	}
 
 out:
@@ -2754,18 +2780,6 @@ static bool vmalloc_area_set_flag(unsigned long kva, unsigned long flags)
 
 	return false;
 }
-
-struct sp_k2u_context {
-	unsigned long kva;
-	unsigned long kva_aligned;
-	unsigned long size;
-	unsigned long size_aligned;
-	unsigned long sp_flags;
-	int spg_id;
-	bool to_task;
-	struct timespec64 start;
-	struct timespec64 end;
-};
 
 static void trace_sp_k2u_begin(struct sp_k2u_context *kc)
 {
