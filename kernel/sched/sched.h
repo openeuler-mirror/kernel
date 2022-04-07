@@ -626,8 +626,12 @@ struct cfs_rq {
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
+#if !defined(__GENKSYMS__) && defined(CONFIG_QOS_SCHED)
+	struct list_head	qos_throttled_list;
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };

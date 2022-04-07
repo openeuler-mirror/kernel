@@ -5385,6 +5385,9 @@ static void init_cfs_rq_runtime(struct cfs_rq *cfs_rq)
 {
 	cfs_rq->runtime_enabled = 0;
 	INIT_LIST_HEAD(&cfs_rq->throttled_list);
+#ifdef CONFIG_QOS_SCHED
+	INIT_LIST_HEAD(&cfs_rq->qos_throttled_list);
+#endif
 }
 
 void start_cfs_bandwidth(struct cfs_bandwidth *cfs_b)
@@ -7204,7 +7207,8 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	cfs_rq->throttled = 1;
 	cfs_rq->throttled_clock = rq_clock(rq);
 
-	list_add(&cfs_rq->throttled_list, &per_cpu(qos_throttled_cfs_rq, cpu_of(rq)));
+	list_add(&cfs_rq->qos_throttled_list,
+		 &per_cpu(qos_throttled_cfs_rq, cpu_of(rq)));
 }
 
 static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
@@ -7223,7 +7227,7 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	update_rq_clock(rq);
 
 	cfs_b->throttled_time += rq_clock(rq) - cfs_rq->throttled_clock;
-	list_del_init(&cfs_rq->throttled_list);
+	list_del_init(&cfs_rq->qos_throttled_list);
 
 	/* update hierarchical throttle state */
 	walk_tg_tree_from(cfs_rq->tg, tg_nop, tg_unthrottle_up, (void *)rq);
@@ -7266,7 +7270,7 @@ static int __unthrottle_qos_cfs_rqs(int cpu)
 	int res = 0;
 
 	list_for_each_entry_safe(cfs_rq, tmp_rq, &per_cpu(qos_throttled_cfs_rq, cpu),
-				throttled_list) {
+				 qos_throttled_list) {
 		if (cfs_rq_throttled(cfs_rq)) {
 			unthrottle_qos_cfs_rq(cfs_rq);
 			res++;
