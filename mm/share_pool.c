@@ -2144,6 +2144,7 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 #define ALLOC_NORMAL	1
 #define ALLOC_RETRY	2
 #define ALLOC_NOMEM	3
+#define ALLOC_COREDUMP	4
 
 struct sp_alloc_context {
 	struct sp_group *spg;
@@ -2321,8 +2322,7 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 	down_write(&mm->mmap_lock);
 	if (unlikely(mm->core_state)) {
 		up_write(&mm->mmap_lock);
-		sp_alloc_unmap(mm, spa, spg_node);
-		ac->state = ALLOC_NOMEM;
+		ac->state = ALLOC_COREDUMP;
 		pr_info("allocation encountered coredump\n");
 		return -EFAULT;
 	}
@@ -2464,7 +2464,8 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 static int sp_alloc_mmap_populate(struct sp_area *spa,
 				  struct sp_alloc_context *ac)
 {
-	int ret;
+	int ret = -EINVAL;
+	int mmap_ret = 0;
 	struct mm_struct *mm;
 	struct sp_group_node *spg_node;
 
@@ -2474,9 +2475,19 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 		/* create mapping for each process in the group */
 		list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
 			mm = spg_node->master->mm;
-			ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
-			if (ret)
-				return ret;
+			mmap_ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
+			if (mmap_ret) {
+				if (ac->state != ALLOC_COREDUMP)
+					return mmap_ret;
+				if (ac->spg == spg_none) {
+					sp_alloc_unmap(mm, spa, spg_node);
+					pr_err("dvpp allocation failed due to coredump");
+					return mmap_ret;
+				}
+				ac->state = ALLOC_NORMAL;
+				continue;
+			}
+			ret = mmap_ret;
 		}
 	}
 	return ret;
