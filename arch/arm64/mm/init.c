@@ -45,7 +45,7 @@
 #include <asm/tlb.h>
 #include <asm/alternative.h>
 
-#include "pmem_reserve.h"
+#include "internal.h"
 
 /*
  * We need to be able to catch inadvertent references to memstart_addr
@@ -130,45 +130,6 @@ static void __init reserve_elfcorehdr(void)
 {
 }
 #endif /* CONFIG_CRASH_DUMP */
-
-#ifdef CONFIG_QUICK_KEXEC
-static int __init parse_quick_kexec(char *p)
-{
-	if (!p)
-		return 0;
-
-	quick_kexec_res.end = PAGE_ALIGN(memparse(p, NULL));
-
-	return 0;
-}
-early_param("quickkexec", parse_quick_kexec);
-
-static void __init reserve_quick_kexec(void)
-{
-	unsigned long long mem_start, mem_len;
-
-	mem_len = quick_kexec_res.end;
-	if (mem_len == 0)
-		return;
-
-	/* Current arm64 boot protocol requires 2MB alignment */
-	mem_start = memblock_find_in_range(0, arm64_dma_phys_limit,
-			mem_len, SZ_2M);
-	if (mem_start == 0) {
-		pr_warn("cannot allocate quick kexec mem (size:0x%llx)\n",
-			mem_len);
-		quick_kexec_res.end = 0;
-		return;
-	}
-
-	memblock_reserve(mem_start, mem_len);
-	pr_info("quick kexec mem reserved: 0x%016llx - 0x%016llx (%lld MB)\n",
-		mem_start, mem_start + mem_len,	mem_len >> 20);
-
-	quick_kexec_res.start = mem_start;
-	quick_kexec_res.end = mem_start + mem_len - 1;
-}
-#endif
 
 /*
  * Return the maximum physical address for a zone accessible by the given bits
@@ -591,9 +552,7 @@ void __init bootmem_init(void)
 	 */
 	reserve_crashkernel();
 
-#ifdef CONFIG_QUICK_KEXEC
 	reserve_quick_kexec();
-#endif
 
 	reserve_pmem();
 

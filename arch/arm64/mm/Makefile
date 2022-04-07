@@ -17,3 +17,4 @@ obj-$(CONFIG_KASAN)		+= kasan_init.o
 KASAN_SANITIZE_kasan_init.o	:= n
 
 obj-$(CONFIG_ARM64_PMEM_RESERVE)	+= pmem_reserve.o
+obj-$(CONFIG_QUICK_KEXEC)	+= quick_kexec.o
