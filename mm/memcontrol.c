@@ -62,6 +62,7 @@
 #include <linux/tracehook.h>
 #include <linux/psi.h>
 #include <linux/seq_buf.h>
+#include <linux/memcg_memfs_info.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -1625,6 +1626,8 @@ void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg)
 		return;
 	pr_info("%s", buf);
 	kfree(buf);
+
+	mem_cgroup_print_memfs_info(memcg, NULL);
 }
 
 /*
@@ -5219,6 +5222,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
 	},
 #endif
+#ifdef CONFIG_MEMCG_MEMFS_INFO
+	{
+		.name = "memfs_files_info",
+		.seq_show = mem_cgroup_memfs_files_show,
+	},
+#endif
 #ifdef CONFIG_NUMA
 	{
 		.name = "numa_stat",
@@ -7357,6 +7366,8 @@ static int __init mem_cgroup_init(void)
 		spin_lock_init(&rtpn->lock);
 		soft_limit_tree.rb_tree_per_node[node] = rtpn;
 	}
+
+	mem_cgroup_memfs_info_init();
 
 	return 0;
 }
