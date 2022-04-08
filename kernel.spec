@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       78
+%global devel_release       79
 %global maintenance_release .0.0
-%global pkg_release         .34
+%global pkg_release         .35
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,36 @@ fi
 %endif
 
 %changelog
+* Fri Apr 08 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-79.0.0.35
+- sched/fair: Add qos_throttle_list node in struct cfs_rq
+- ARM: 9142/1: kasan: work around LPAE build warning
+- mm: kfence: fix missing objcg housekeeping for SLAB
+- cgroup: Export cgroup.kill from cgroupv2 to cgroupv1
+- cgroup: introduce cgroup.kill
+- memcg: Fix inconsistent oom event behavior for OOM_MEMCG_KILL
+- memcg: Export memory.events and memory.events.local from cgroupv2 to cgroupv1
+- net: hns3: fix phy can not link up when autoneg off and reset
+- net: hns3: add NULL pointer check for hns3_set/get_ringparam()
+- net: hns3: add netdev reset check for hns3_set_tunable()
+- net: hns3: clean residual vf config after disable sriov
+- net: hns3: add max order judgement for tx spare buffer
+- net: hns3: fix ethtool tx copybreak buf size indicating not aligned issue
+- net: hns3: refine the process when PF set VF VLAN
+- net: hns3: add vlan list lock to protect vlan list
+- net: hns3: fix port base vlan add fail when concurrent with reset
+- net: hns3: fix bug when PF set the duplicate MAC address for VFs
+- net: hns3: handle empty unknown interrupt for VF
+- net: hns3: fix race condition in debugfs
+- arm64: cpu_park: Move into stand-alone file
+- arm64: quick_kexec: Move to stand-alone file
+- jffs2: fix NULL pointer dereference in jffs2_scan_medium
+- rseq, ptrace: Add PTRACE_GET_RSEQ_CONFIGURATION request
+- config: enable CONFIG_MEMCG_MEMFS_INFO by default
+- mm/memcg_memfs_info: show files that having pages charged in mem_cgroup
+- share_pool: don't trace the invalid spa address
+- mm: share_pool: adjust sp_alloc behavior when coredump
+- mm: share_pool: adjust sp_make_share_k2u behavior when coredump
+
 * Wed Mar 30 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-78.0.0.34
 - net/spnic: Remove spnic driver.
 - SCSI: spfc: remove SPFC driver
