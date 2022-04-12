@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2204.1.0
+%global hulkrelease 2204.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0143
+Release: %{hulkrelease}.0144
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,73 @@ fi
 %endif
 
 %changelog
+
+* Tue Apr 12 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2204.2.0.0144
+- Revert "module, async: async_synchronize_full() on module init iff async is used"
+- tty: n_gsm: fix encoding of control signal octet bit DV
+- fget: clarify and improve __fget_files() implementation
+- memblock: use kfree() to release kmalloced memblock regions
+- tty: n_gsm: fix proper link termination after failed open
+- gso: do not skip outer ip header in case of ipip and net_failover
+- net: __pskb_pull_tail() & pskb_carve_frag_list() drop_monitor friends
+- cgroup/cpuset: Fix a race between cpuset_attach() and cpu hotplug
+- tracing: Fix tp_printk option related with tp_printk_stop_on_boot
+- dmaengine: sh: rcar-dmac: Check for error num after setting mask
+- net: sched: limit TC_ACT_REPEAT loops
+- mtd: rawnand: qcom: Fix clock sequencing in qcom_nandc_probe()
+- NFS: Do not report writeback errors in nfs_getattr()
+- NFS: LOOKUP_DIRECTORY is also ok with symlinks
+- bonding: fix data-races around agg_select_timer
+- drop_monitor: fix data-race in dropmon_net_event / trace_napi_poll_hit
+- ping: fix the dif and sdif check in ping_lookup
+- taskstats: Cleanup the use of task->exit_code
+- xfrm: Don't accidentally set RTO_ONLINK in decode_session4()
+- nvme: fix a possible use-after-free in controller reset during load
+- quota: make dquot_quota_sync return errors from ->sync_fs
+- vfs: make freeze_super abort when sync_filesystem returns error
+- serial: parisc: GSC: fix build when IOSAPIC is not set
+- perf: Fix list corruption in perf_cgroup_switch()
+- seccomp: Invalidate seccomp mode to catch death failures
+- n_tty: wake up poll(POLLRDNORM) on receiving data
+- veth: fix races around rq->rx_notify_masked
+- net: fix a memleak when uncloning an skb dst and its metadata
+- net: do not keep the dst cache when uncloning an skb dst and its metadata
+- ipmr,ip6mr: acquire RTNL before calling ip[6]mr_free_table() on failure path
+- bonding: pair enable_port with slave_arr_updates
+- bpf: Add kconfig knob for disabling unpriv bpf by default
+- scsi: target: iscsi: Make sure the np under each tpg is unique
+- NFSv4 expose nfs_parse_server_name function
+- NFSv4 remove zero number of fs_locations entries error check
+- NFSv4.1: Fix uninitialised variable in devicenotify
+- nfs: nfs4clinet: check the return value of kstrdup()
+- NFSv4 only print the label when its queried
+- NFS: Fix initialisation of nfs_client cl_flags field
+- ima: Allow template selection with ima_template[_fmt]= after ima_hash=
+- ima: Remove ima_policy file before directory
+- integrity: check the return value of audit_log_start()
+- ext4: fix error handling in ext4_restore_inline_data()
+- iommu/amd: Fix loop timeout issue in iommu_ga_log_enable()
+- iommu/vt-d: Fix potential memory leak in intel_setup_irq_remapping()
+- block: bio-integrity: Advance seed correctly for larger interval sizes
+- af_packet: fix data-race in packet_setsockopt / packet_setsockopt
+- rtnetlink: make sure to refresh master_dev/m_ops in __rtnl_newlink()
+- ipv4: tcp: send zero IPID in SYNACK messages
+- ipv4: raw: lock the socket in raw_bind()
+- phylib: fix potential use-after-free
+- NFS: Ensure the server has an up to date ctime before renaming
+- NFS: Ensure the server has an up to date ctime before hardlinking
+- ipv6: annotate accesses to fn->fn_sernum
+- ipv4: avoid using shared IP generator for connected sockets
+- ping: fix the sk_bound_dev_if match in ping_lookup
+- ipv6_tunnel: Rate limit warning messages
+- tty: n_gsm: fix SW flow control encoding/handling
+- serial: stm32: fix software flow control transfer
+- serial: 8250: of: Fix mapped region size when using reg-offset property
+- netfilter: nft_payload: do not update layer 4 checksum when mangling fragments
+- PM: wakeup: simplify the output logic of pm_show_wakelocks()
+- tty: fix crash in release_tty if tty->port is not set
+- tty: don't crash in tty_init_dev when missing tty_port
+- printk: Convert a use of sprintf to snprintf in console_unlock
 
 * Thu Apr 07 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2204.1.0.0143
 - serial: 8250: Fix max baud limit in generic 8250 port
