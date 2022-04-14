@@ -163,8 +163,6 @@ static char *svm_cmd_to_string(unsigned int cmd)
 	return NULL;
 }
 
-extern void sysrq_sched_debug_tidy(void);
-
 /*
  * image word of slot
  * SVM_IMAGE_WORD_INIT: initial value, indicating that the slot is not used.
@@ -422,17 +420,6 @@ static int svm_va2pa_trunk_init(struct device *dev)
 
 	return 0;
 }
-
-void sysrq_sched_debug_show_export(void)
-{
-#ifdef CONFIG_SCHED_DEBUG
-	sysrq_sched_debug_tidy();
-#else
-	pr_err("Not open CONFIG_SCHED_DEBUG\n");
-#endif
-	panic("pcie heart miss\n");
-}
-EXPORT_SYMBOL(sysrq_sched_debug_show_export);
 
 static struct svm_process *find_svm_process(unsigned long asid)
 {
