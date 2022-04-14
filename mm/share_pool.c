@@ -91,6 +91,7 @@ static int __read_mostly enable_share_k2u_spg = 1;
 int sysctl_ac_mode = AC_NONE;
 /* debug mode */
 int sysctl_sp_debug_mode;
+EXPORT_SYMBOL(sysctl_sp_debug_mode);
 
 int sysctl_share_pool_map_lock_enable;
 

@@ -310,6 +310,7 @@ out_unlock:
 
 	return asid;
 }
+EXPORT_SYMBOL_GPL(mm_context_get);
 
 void mm_context_put(struct mm_struct *mm)
 {
@@ -325,6 +326,7 @@ void mm_context_put(struct mm_struct *mm)
 
 	raw_spin_unlock_irqrestore(&cpu_asid_lock, flags);
 }
+EXPORT_SYMBOL_GPL(mm_context_put);
 
 /* Errata workaround post TTBRx_EL1 update. */
 asmlinkage void post_ttbr_update_workaround(void)
