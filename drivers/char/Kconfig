@@ -553,9 +553,9 @@ config ADI
 	  driver include crash and makedumpfile.
 
 config HISI_SVM
-	bool "Hisilicon svm driver"
+	tristate "Hisilicon svm driver"
 	depends on ARM64 && ARM_SMMU_V3 && MMU_NOTIFIER && HUGETLBFS
-	default y
+	default m
 	help
 	  This driver provides character-level access to Hisilicon
 	  SVM chipset. Typically, you can bind a task to the

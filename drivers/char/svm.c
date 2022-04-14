@@ -500,7 +500,7 @@ static int svm_remove_core(struct device *dev, void *data)
 {
 	struct core_device *cdev = to_core_device(dev);
 
-	if (!cdev->smmu_bypass) {
+	if (!cdev->smmu_bypass && cdev->group && cdev->domain) {
 		iommu_sva_device_shutdown(dev);
 		iommu_detach_group(cdev->domain, cdev->group);
 		iommu_group_put(cdev->group);
@@ -928,11 +928,7 @@ static struct task_struct *svm_get_task(struct svm_bind_process params)
 	if (params.flags & SVM_BIND_PID) {
 		struct mm_struct *mm = NULL;
 
-		rcu_read_lock();
-		task = find_task_by_vpid(params.vpid);
-		if (task)
-			get_task_struct(task);
-		rcu_read_unlock();
+		task = find_get_task_by_vpid(params.vpid);
 		if (task == NULL)
 			return ERR_PTR(-ESRCH);
 
@@ -1039,6 +1035,7 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 	struct core_device *cdev = NULL;
 	char *name = NULL;
 	enum dev_dma_attr attr;
+	const union acpi_object *obj;
 
 	name = devm_kasprintf(sdev->dev, GFP_KERNEL, "svm_child_dev%d", id);
 	if (name == NULL)
@@ -1063,7 +1060,7 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 		return err;
 	}
 
-	attr = acpi_get_dma_attr(children);
+	attr = device_get_dma_attr(&cdev->dev);
 	if (attr != DEV_DMA_NOT_SUPPORTED) {
 		err = acpi_dma_configure(&cdev->dev, attr);
 		if (err) {
@@ -1072,11 +1069,13 @@ static int svm_acpi_add_core(struct svm_device *sdev,
 		}
 	}
 
-	err = acpi_dev_prop_read_single(children, "hisi,smmu-bypass",
-			DEV_PROP_U8, &cdev->smmu_bypass);
+	err = acpi_dev_get_property(children, "hisi,smmu-bypass",
+			DEV_PROP_U8, &obj);
 	if (err) {
 		dev_info(&children->dev, "read smmu bypass failed\n");
 	}
+
+	cdev->smmu_bypass = (u8)obj->integer.value;
 
 	cdev->group = iommu_group_get(&cdev->dev);
 	if (IS_ERR_OR_NULL(cdev->group)) {
@@ -1296,7 +1295,7 @@ static pte_t *svm_get_pte(struct vm_area_struct *vma,
 
 	if (is_vm_hugetlb_page(vma)) {
 		if (pud_present(*pud)) {
-			if (pud_huge(*pud)) {
+			if (pud_val(*pud) && !(pud_val(*pud) & PUD_TABLE_BIT)) {
 				pte = (pte_t *)pud;
 				*offset = addr & (PUD_SIZE - 1);
 				size = PUD_SIZE;
@@ -1347,11 +1346,11 @@ static pte_t *svm_walk_pt(unsigned long addr, unsigned long *page_size,
 		return NULL;
 
 	pgd = pgd_offset(mm, addr);
-	if (pgd_none_or_clear_bad(pgd))
+	if (pgd_none(*pgd))
 		return NULL;
 
 	pud = pud_offset(pgd, addr);
-	if (pud_none_or_clear_bad(pud))
+	if (pud_none(*pud))
 		return NULL;
 
 	return svm_get_pte(vma, pud, addr, page_size, offset);
@@ -1540,11 +1539,11 @@ static long svm_remap_get_phys(struct mm_struct *mm, struct vm_area_struct *vma,
 		return err;
 
 	pgd = pgd_offset(mm, addr);
-	if (pgd_none_or_clear_bad(pgd))
+	if (pgd_none(*pgd))
 		return err;
 
 	pud = pud_offset(pgd, addr);
-	if (pud_none_or_clear_bad(pud))
+	if (pud_none(*pud))
 		return err;
 
 	pte = svm_get_pte(vma, pud, addr, page_size, offset);
@@ -1585,20 +1584,19 @@ static long svm_remap_proc(unsigned long __user *arg)
 		return -EINVAL;
 	}
 
-	rcu_read_lock();
 	if (pmem.pid) {
-		ptask = find_task_by_vpid(pmem.pid);
+		ptask = find_get_task_by_vpid(pmem.pid);
 		if (!ptask) {
-			rcu_read_unlock();
 			pr_err("No task for this pid\n");
 			return -EINVAL;
 		}
 	} else {
+		rcu_read_lock();
 		ptask = current;
+		get_task_struct(ptask);
+		rcu_read_unlock();
 	}
 
-	get_task_struct(ptask);
-	rcu_read_unlock();
 	pmm = ptask->mm;
 
 	down_read(&mm->mmap_sem);
