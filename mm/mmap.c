@@ -2382,6 +2382,10 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 
 	sp_area_work_around(&info, flags);
 
+	/* Align vmstart to len */
+	if (filp && (flags & MAP_ALIGN))
+		info.align_mask = ((len >> PAGE_SHIFT) - 1) << PAGE_SHIFT;
+
 	return vm_unmapped_area(&info);
 }
 #endif
@@ -2436,6 +2440,10 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 		dvpp_mmap_get_area(&info, flags);
 
 	sp_area_work_around(&info, flags);
+
+	/* Align vmstart to len */
+	if (filp && (flags & MAP_ALIGN))
+		info.align_mask = ((len >> PAGE_SHIFT) - 1) << PAGE_SHIFT;
 
 	addr = vm_unmapped_area(&info);
 

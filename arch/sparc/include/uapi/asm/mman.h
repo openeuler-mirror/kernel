@@ -28,6 +28,7 @@
 #define MAP_HUGETLB	0x40000		/* create a huge page mapping */
 #define MAP_PA32BIT	0x400000	/* physical address is within 4G */
 #define MAP_CHECKNODE	0x800000	/* hugetlb numa node check */
+#define MAP_ALIGN	0x2000000	/* create an aligned mapping */
 
 
 #endif /* _UAPI__SPARC_MMAN_H__ */

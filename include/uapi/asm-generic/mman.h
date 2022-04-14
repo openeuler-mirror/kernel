@@ -21,6 +21,8 @@
 #define MAP_REPLACE	0x1000000
 #endif
 
+#define MAP_ALIGN	0x2000000	/* create an aligned mapping */
+
 /* Bits [26:31] are reserved, see mman-common.h for MAP_HUGETLB usage */
 
 #define MCL_CURRENT	1		/* lock all current mappings */

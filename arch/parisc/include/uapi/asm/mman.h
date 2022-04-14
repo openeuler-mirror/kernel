@@ -29,6 +29,7 @@
 #define MAP_FIXED_NOREPLACE 0x100000	/* MAP_FIXED which doesn't unmap underlying mapping */
 #define MAP_PA32BIT	0x400000	/* physical address is within 4G */
 #define MAP_CHECKNODE	0x800000	/* hugetlb numa node check */
+#define MAP_ALIGN	0x2000000	/* create an aligned mapping */
 
 #define MS_SYNC		1		/* synchronous memory sync */
 #define MS_ASYNC	2		/* sync memory asynchronously */

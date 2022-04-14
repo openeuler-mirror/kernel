@@ -67,6 +67,8 @@
 # define MAP_UNINITIALIZED 0x0		/* Don't support this flag */
 #endif
 
+#define MAP_ALIGN	0x2000000	/* create an aligned mapping */
+
 /*
  * Flags for msync
  */
