@@ -1685,65 +1685,6 @@ static int svm_proc_load_flag(int __user *arg)
 	return put_user(flag, arg);
 }
 
-static unsigned long svm_get_unmapped_area(struct file *file,
-		unsigned long addr0, unsigned long len,
-		unsigned long pgoff, unsigned long flags)
-{
-	unsigned long addr = addr0;
-	struct mm_struct *mm = current->mm;
-	struct vm_unmapped_area_info info;
-	struct svm_device *sdev = file_to_sdev(file);
-
-	if (!acpi_disabled)
-		return -EPERM;
-
-	if (flags & MAP_FIXED) {
-		if (IS_ALIGNED(addr, len))
-			return addr;
-
-		dev_err(sdev->dev, "MAP_FIXED but not aligned\n");
-		return -EINVAL; //lint !e570
-	}
-
-	if (addr) {
-		struct vm_area_struct *vma = NULL;
-
-		addr = ALIGN(addr, len);
-
-		if (dvpp_mmap_check(addr, len, flags))
-			return -ENOMEM;
-
-		vma = find_vma(mm, addr);
-		if (TASK_SIZE - len >= addr && addr >= mmap_min_addr &&
-		   (vma == NULL || addr + len <= vm_start_gap(vma)))
-			return addr;
-	}
-
-	info.flags = VM_UNMAPPED_AREA_TOPDOWN;
-	info.length = len;
-	info.low_limit = max(PAGE_SIZE, mmap_min_addr);
-	info.high_limit = ((mm->mmap_base <= DVPP_MMAP_BASE) ?
-			   mm->mmap_base : DVPP_MMAP_BASE);
-	info.align_mask = ((len >> PAGE_SHIFT) - 1) << PAGE_SHIFT;
-	info.align_offset = pgoff << PAGE_SHIFT;
-
-	addr = vm_unmapped_area(&info);
-
-	if (offset_in_page(addr)) {
-		VM_BUG_ON(addr != -ENOMEM);
-		info.flags = 0;
-		info.low_limit = TASK_UNMAPPED_BASE;
-		info.high_limit = DVPP_MMAP_BASE;
-
-		if (enable_mmap_dvpp)
-			dvpp_mmap_get_area(&info, flags);
-
-		addr = vm_unmapped_area(&info);
-	}
-
-	return addr;
-}
-
 static int svm_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	int err;
@@ -1997,7 +1938,6 @@ static const struct file_operations svm_fops = {
 	.owner			= THIS_MODULE,
 	.open			= svm_open,
 	.mmap			= svm_mmap,
-	.get_unmapped_area = svm_get_unmapped_area,
 	.unlocked_ioctl		= svm_ioctl,
 };
 
