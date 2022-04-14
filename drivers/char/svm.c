@@ -43,8 +43,6 @@
 #define SVM_IOCTL_LOAD_FLAG		0xfffa
 #define SVM_IOCTL_PIN_MEMORY		0xfff7
 #define SVM_IOCTL_UNPIN_MEMORY		0xfff5
-#define SVM_IOCTL_GETHUGEINFO		0xfff6
-#define SVM_IOCTL_GET_PHYMEMINFO	0xfff8
 #define SVM_IOCTL_REMAP_PROC		0xfff4
 
 #define SVM_REMAP_MEM_LEN_MAX		(16 * 1024 * 1024)
@@ -123,23 +121,6 @@ struct svm_proc_mem {
 	u64 buf;
 };
 
-struct meminfo {
-	unsigned long hugetlbfree;
-	unsigned long hugetlbtotal;
-};
-
-struct phymeminfo {
-	unsigned long normal_total;
-	unsigned long normal_free;
-	unsigned long huge_total;
-	unsigned long huge_free;
-};
-
-struct phymeminfo_ioctl {
-	struct phymeminfo *info;
-	unsigned long nodemask;
-};
-
 struct spalloc {
 	unsigned long addr;
 	unsigned long size;
@@ -169,10 +150,6 @@ static char *svm_cmd_to_string(unsigned int cmd)
 		return "pin memory";
 	case SVM_IOCTL_UNPIN_MEMORY:
 		return "unpin memory";
-	case SVM_IOCTL_GETHUGEINFO:
-		return "get hugeinfo";
-	case SVM_IOCTL_GET_PHYMEMINFO:
-		return "get physical memory info";
 	case SVM_IOCTL_REMAP_PROC:
 		return "remap proc";
 	case SVM_IOCTL_LOAD_FLAG:
@@ -1562,95 +1539,6 @@ static int svm_set_rc(unsigned long __user *arg)
 	return 0;
 }
 
-static long svm_get_hugeinfo(unsigned long __user *arg)
-{
-	struct hstate *h = &default_hstate;
-	struct meminfo info;
-
-	if (!acpi_disabled)
-		return -EPERM;
-
-	if (arg == NULL)
-		return -EINVAL;
-
-	if (!hugepages_supported())
-		return -ENOTSUPP;
-
-	info.hugetlbfree = h->free_huge_pages;
-	info.hugetlbtotal = h->nr_huge_pages;
-
-	if (copy_to_user((void __user *)arg, &info, sizeof(info)))
-		return -EFAULT;
-
-	pr_info("svm get hugetlb info: order(%u), max_huge_pages(%lu),"
-			"nr_huge_pages(%lu), free_huge_pages(%lu), resv_huge_pages(%lu)",
-			h->order,
-			h->max_huge_pages,
-			h->nr_huge_pages,
-			h->free_huge_pages,
-			h->resv_huge_pages);
-
-	return 0;
-}
-
-static void svm_get_node_memory_info_inc(unsigned long nid, struct phymeminfo *info)
-{
-	struct sysinfo i;
-	struct hstate *h = &default_hstate;
-	unsigned long huge_free = 0;
-	unsigned long huge_total = 0;
-
-	if (hugepages_supported()) {
-		huge_free = h->free_huge_pages_node[nid] * (PAGE_SIZE << huge_page_order(h));
-		huge_total = h->nr_huge_pages_node[nid] * (PAGE_SIZE << huge_page_order(h));
-	}
-
-#ifdef CONFIG_NUMA
-	si_meminfo_node(&i, nid);
-#else
-	si_meminfo(&i);
-#endif
-	info->normal_free += i.freeram * PAGE_SIZE;
-	info->normal_total += i.totalram * PAGE_SIZE - huge_total;
-	info->huge_total += huge_total;
-	info->huge_free += huge_free;
-}
-
-static void __svm_get_memory_info(unsigned long nodemask, struct phymeminfo *info)
-{
-	memset(info, 0x0, sizeof(struct phymeminfo));
-
-	nodemask = nodemask & ((1UL << MAX_NUMNODES) - 1);
-
-	while (nodemask) {
-		unsigned long nid = find_first_bit(&nodemask, BITS_PER_LONG);
-		if (node_isset(nid, node_online_map)) {
-			(void)svm_get_node_memory_info_inc(nid, info);
-		}
-
-		nodemask &= ~(1UL << nid);
-	}
-}
-
-static long svm_get_phy_memory_info(unsigned long __user *arg)
-{
-	struct phymeminfo info;
-	struct phymeminfo_ioctl para;
-
-	if (arg == NULL)
-		return -EINVAL;
-
-	if (copy_from_user(&para, (void __user *)arg, sizeof(para)))
-		return -EFAULT;
-
-	__svm_get_memory_info(para.nodemask, &info);
-
-	if (copy_to_user((void __user *)para.info, &info, sizeof(info)))
-		return -EFAULT;
-
-	return 0;
-}
-
 static long svm_remap_get_phys(struct mm_struct *mm, struct vm_area_struct *vma,
 			       unsigned long addr, unsigned long *phys,
 			       unsigned long *page_size, unsigned long *offset)
@@ -2091,12 +1979,6 @@ static long svm_ioctl(struct file *file, unsigned int cmd,
 		break;
 	case SVM_IOCTL_UNPIN_MEMORY:
 		err = svm_unpin_memory((unsigned long __user *)arg);
-		break;
-	case SVM_IOCTL_GETHUGEINFO:
-		err = svm_get_hugeinfo((unsigned long __user *)arg);
-		break;
-	case SVM_IOCTL_GET_PHYMEMINFO:
-		err = svm_get_phy_memory_info((unsigned long __user *)arg);
 		break;
 	case SVM_IOCTL_REMAP_PROC:
 		err = svm_remap_proc((unsigned long __user *)arg);
