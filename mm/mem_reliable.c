@@ -11,8 +11,6 @@
 #include <linux/oom.h>
 #include <linux/crash_dump.h>
 
-#define MEM_RELIABLE_RESERVE_MIN 0
-
 enum mem_reliable_types {
 	MEM_RELIABLE_ALL,
 	MEM_RELIABLE_FALLBACK,
@@ -31,7 +29,6 @@ bool reliable_allow_fallback __read_mostly = true;
 bool shmem_reliable __read_mostly = true;
 struct percpu_counter reliable_shmem_used_nr_page __read_mostly;
 DEFINE_PER_CPU(long, nr_reliable_buddy_pages);
-unsigned long nr_reliable_reserve_pages = MEM_RELIABLE_RESERVE_MIN / PAGE_SIZE;
 long shmem_reliable_nr_page = LONG_MAX;
 
 bool pagecache_use_reliable_mem __read_mostly = true;
@@ -338,29 +335,6 @@ int reliable_debug_handler(struct ctl_table *table, int write,
 	return ret;
 }
 
-static unsigned long sysctl_reliable_reserve_size = MEM_RELIABLE_RESERVE_MIN;
-
-int reliable_reserve_size_handler(struct ctl_table *table, int write,
-	void __user *buffer, size_t *length, loff_t *ppos)
-{
-	unsigned long *data_ptr = (unsigned long *)(table->data);
-	unsigned long old = *data_ptr;
-	int ret;
-
-	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
-	if (ret == 0 && write) {
-		if (*data_ptr > total_reliable_mem_sz() ||
-		    *data_ptr < MEM_RELIABLE_RESERVE_MIN) {
-			*data_ptr = old;
-			return -EINVAL;
-		}
-
-		nr_reliable_reserve_pages = *data_ptr / PAGE_SIZE;
-	}
-
-	return ret;
-}
-
 #ifdef CONFIG_SHMEM
 static unsigned long sysctl_shmem_reliable_bytes_limit = ULONG_MAX;
 
@@ -416,13 +390,6 @@ static struct ctl_table reliable_ctl_table[] = {
 		.maxlen = sizeof(mem_reliable_ctrl_bits),
 		.mode = 0600,
 		.proc_handler = reliable_debug_handler,
-	},
-	{
-		.procname = "reliable_reserve_size",
-		.data = &sysctl_reliable_reserve_size,
-		.maxlen = sizeof(sysctl_reliable_reserve_size),
-		.mode = 0644,
-		.proc_handler = reliable_reserve_size_handler,
 	},
 #ifdef CONFIG_SHMEM
 	{

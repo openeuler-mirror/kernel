@@ -4649,10 +4649,6 @@ static inline bool check_after_alloc(gfp_t *gfp_mask, unsigned int order,
 	if (*gfp_mask & __GFP_NOFAIL)
 		goto out;
 
-	/* check water mark, reserver mirrored mem for kernel */
-	if (!mem_reliable_watermark_ok(1 << order))
-		goto out_free_page;
-
 	/* percpu counter is not initialized, ignore limit check */
 	if (!mem_reliable_counter_initialized())
 		goto out;
