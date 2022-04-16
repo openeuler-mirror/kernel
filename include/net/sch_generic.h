@@ -93,7 +93,13 @@ struct Qdisc {
 	struct gnet_stats_queue	__percpu *cpu_qstats;
 	int			padded;
 	refcount_t		refcnt;
-
+#ifndef __GENKSYMS__
+	/* To adapt to KABI, put rcu before gso_skb for 64-bit kernel.
+	 * RCU will use 16 Bytes, and the space is enough. It's unuse
+	 * for 32-bit kernel.
+	 */
+	struct rcu_head         rcu;
+#endif
 	/*
 	 * For performance sake on SMP, we put highly modified fields at the end
 	 */
@@ -108,7 +114,6 @@ struct Qdisc {
 
 	spinlock_t		busylock ____cacheline_aligned_in_smp;
 	spinlock_t		seqlock;
-	struct rcu_head		rcu;
 };
 
 static inline void qdisc_refcount_inc(struct Qdisc *qdisc)
