@@ -2357,8 +2357,9 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	return 0;
 }
 
-void sched_post_fork(struct task_struct *p)
+void sched_cgroup_fork(struct task_struct *p)
 {
+
 	unsigned long flags;
 
 	/*
@@ -2369,6 +2370,9 @@ void sched_post_fork(struct task_struct *p)
 	 * Silence PROVE_RCU.
 	 */
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
+#ifdef CONFIG_CGROUP_SCHED
+	p->sched_task_group = task_group(current);
+ #endif
 	rseq_migrate(p);
 	/*
 	 * We're setting the CPU for the first time, we don't migrate,
