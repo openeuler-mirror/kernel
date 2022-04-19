@@ -838,7 +838,7 @@ static int __init kfence_dynamic_init(void)
 	covered_size = sizeof(atomic_t) * ALLOC_COVERED_SIZE;
 	alloc_covered = memblock_alloc(covered_size, PAGE_SIZE);
 	if (!alloc_covered) {
-		memblock_free((phys_addr_t)kfence_metadata, metadata_size);
+		memblock_free(__pa(kfence_metadata), metadata_size);
 		kfence_metadata = NULL;
 		pr_err("failed to allocate covered\n");
 		return -ENOMEM;
@@ -849,9 +849,9 @@ static int __init kfence_dynamic_init(void)
 
 static void  __init kfence_dynamic_destroy(void)
 {
-	memblock_free((phys_addr_t)alloc_covered, covered_size);
+	memblock_free(__pa(alloc_covered), covered_size);
 	alloc_covered = NULL;
-	memblock_free((phys_addr_t)kfence_metadata, metadata_size);
+	memblock_free(__pa(kfence_metadata), metadata_size);
 	kfence_metadata = NULL;
 }
 #else
