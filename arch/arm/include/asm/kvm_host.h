@@ -27,6 +27,7 @@
 #include <asm/kvm_asm.h>
 #include <asm/kvm_mmio.h>
 #include <asm/fpstate.h>
+#include <asm/spectre.h>
 #include <kvm/arm_arch_timer.h>
 #include <asm/hisi_cpu_model.h>
 
@@ -403,6 +404,12 @@ static inline int kvm_arm_config_vm(struct kvm *kvm, unsigned long type)
 	if (type)
 		return -EINVAL;
 	return 0;
+}
+
+static inline int kvm_arm_get_spectre_bhb_state(void)
+{
+	/* 32bit guests don't need firmware for this */
+	return SPECTRE_VULNERABLE; /* aka SMCCC_RET_NOT_SUPPORTED */
 }
 
 #endif /* __ARM_KVM_HOST_H__ */
