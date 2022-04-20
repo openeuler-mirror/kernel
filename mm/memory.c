@@ -4726,11 +4726,9 @@ static int clear_gigantic_page_chunk(unsigned long start, unsigned long end,
 	unsigned long i;
 
 	might_sleep();
-	for (i = start; i < end; ++i) {
+	for (i = start; i < end; i++, p = mem_map_next(p, base_page, i)) {
 		cond_resched();
 		clear_user_highpage(p, addr + i * PAGE_SIZE);
-
-		p = mem_map_next(p, base_page, i);
 	}
 
 	return KTASK_RETURN_SUCCESS;
