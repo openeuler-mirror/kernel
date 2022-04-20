@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2204.2.0
+%global hulkrelease 2204.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0145
+Release: %{hulkrelease}.0146
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,52 @@ fi
 %endif
 
 %changelog
+
+* Tue Apr 19 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2204.3.0.0146
+- ext4: fix fs corruption when tring to remove a non-empty directory with IO error
+- Revert "ext4: fix file system corrupted when rmdir non empty directory with IO error"
+- sched: Fix yet more sched_fork() races
+- sched/fair: Fix wrong cpu selecting from isolated domain
+- netfilter: nf_tables: initialize registers in nft_do_chain()
+- nbd: fix possible overflow on 'first_minor' in nbd_dev_add()
+- net: sched: adapt Qdisc kabi
+- net_sched: fix a crash in tc_new_tfilter()
+- net: sched: use Qdisc rcu API instead of relying on rtnl lock
+- net: sched: add helper function to take reference to Qdisc
+- net: sched: extend Qdisc with rcu
+- net: core: netlink: add helper refcount dec and lock function
+- xen/netfront: react properly to failing gnttab_end_foreign_access_ref()
+- xen/gnttab: fix gnttab_end_foreign_access() without page specified
+- xen/pvcalls: use alloc/free_pages_exact()
+- xen/9p: use alloc/free_pages_exact()
+- xen: remove gnttab_query_foreign_access()
+- xen/gntalloc: don't use gnttab_query_foreign_access()
+- xen/scsifront: don't use gnttab_query_foreign_access() for mapped status
+- xen/netfront: don't use gnttab_query_foreign_access() for mapped status
+- xen/blkfront: don't use gnttab_query_foreign_access() for mapped status
+- xen/grant-table: add gnttab_try_end_foreign_access()
+- xen/xenbus: don't let xenbus_grant_ring() remove grants in error case
+- xen/xenbus: Fix granting of vmalloc'd memory
+- binder: fix test regression due to sender_euid change
+- binder: use cred instead of task for selinux checks
+- binder: use euid from cred instead of using task
+- svm: Change svm to modules
+- svm: Delete unused svm_get_unmapped_area ops
+- ascend: mm: Add MAP_ALIGN flag to map aligned va
+- svm: Delete unused function sysrq_sched_debug_show_export
+- svm: Delete get meminfo interface in svm ioctl
+- svm: Export symbols for svm module
+- can: ems_usb: ems_usb_start_xmit(): fix double dev_kfree_skb() in error path
+- mm: Add space after ReliableFileCache
+- mm: Drop reliable_reserve_size
+- mm: page_counter: mitigate consequences of a page_counter underflow
+- drivers: hamradio: 6pack: fix UAF bug caused by mod_timer()
+- hamradio: remove needs_free_netdev to avoid UAF
+- hamradio: defer 6pack kfree after unregister_netdev
+- ovl: fix uninitialized pointer read in ovl_lookup_real_one()
+- ovl: fix IOCB_DIRECT if underlying fs doesn't support direct IO
+- ovl: fix lseek overflow on 32bit
+- ovl: sync dirty data when remounting to ro mode
 
 * Tue Apr 12 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2204.2.0.0145
 - Revert "module, async: async_synchronize_full() on module init iff async is used"
