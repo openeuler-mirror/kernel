@@ -684,6 +684,9 @@ static void mmu_free_pte_list_desc(struct pte_list_desc *pte_list_desc)
 
 static gfn_t kvm_mmu_page_get_gfn(struct kvm_mmu_page *sp, int index)
 {
+	if (sp->role.passthrough)
+		return sp->gfn;
+
 	if (!sp->role.direct)
 		return sp->gfns[index];
 
@@ -692,6 +695,11 @@ static gfn_t kvm_mmu_page_get_gfn(struct kvm_mmu_page *sp, int index)
 
 static void kvm_mmu_page_set_gfn(struct kvm_mmu_page *sp, int index, gfn_t gfn)
 {
+	if (sp->role.passthrough) {
+		WARN_ON_ONCE(gfn != sp->gfn);
+		return;
+	}
+
 	if (!sp->role.direct) {
 		sp->gfns[index] = gfn;
 		return;
@@ -1788,6 +1796,9 @@ static bool sp_has_gptes(struct kvm_mmu_page *sp)
 	if (sp->role.direct)
 		return false;
 
+	if (sp->role.passthrough)
+		return false;
+
 	return true;
 }
 
@@ -2000,6 +2011,8 @@ static struct kvm_mmu_page *kvm_mmu_get_page(struct kvm_vcpu *vcpu,
 		quadrant &= (1 << level) - 1;
 		role.quadrant = quadrant;
 	}
+	if (level <= vcpu->arch.mmu->cpu_role.base.level)
+		role.passthrough = 0;
 
 	sp_list = &vcpu->kvm->arch.mmu_page_hash[kvm_page_table_hashfn(gfn)];
 	for_each_valid_sp(vcpu->kvm, sp, sp_list) {
@@ -4878,6 +4891,9 @@ void kvm_init_shadow_npt_mmu(struct kvm_vcpu *vcpu, unsigned long cr0,
 
 	root_role = cpu_role.base;
 	root_role.level = kvm_mmu_get_tdp_level(vcpu);
+	if (root_role.level == PT64_ROOT_5LEVEL &&
+	    cpu_role.base.level == PT64_ROOT_4LEVEL)
+		root_role.passthrough = 1;
 
 	shadow_mmu_init_context(vcpu, context, cpu_role, root_role);
 	kvm_mmu_new_pgd(vcpu, nested_cr3);
