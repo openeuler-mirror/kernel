@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       80
+%global devel_release       81
 %global maintenance_release .0.0
-%global pkg_release         .36
+%global pkg_release         .37
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,94 @@ fi
 %endif
 
 %changelog
+* Tue Apr 19 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-81.0.0.37
+- SUNRPC: Ensure we flush any closed sockets before xs_xprt_free()
+- scsi: hisi_sas: Use autosuspend for the host controller
+- scsi: libsas: Keep host active while processing events
+- scsi: hisi_sas: Keep controller active between ISR of phyup and the event being processed
+- scsi: libsas: Defer works of new phys during suspend
+- scsi: libsas: Refactor sas_queue_deferred_work()
+- scsi: libsas: Add flag SAS_HA_RESUMING
+- scsi: libsas: Resume host while sending SMP I/Os
+- scsi: hisi_sas: Add more logs for runtime suspend/resume
+- scsi: libsas: Insert PORTE_BROADCAST_RCVD event for resuming host
+- scsi: mvsas: Add spin_lock/unlock() to protect asd_sas_port->phy_list
+- scsi: hisi_sas: Fix some issues related to asd_sas_port->phy_list
+- scsi: libsas: Add spin_lock/unlock() to protect asd_sas_port->phy_list
+- scsi: block: pm: Always set request queue runtime active in blk_post_runtime_resume()
+- scsi: Revert "scsi: hisi_sas: Filter out new PHY up events during suspend"
+- scsi: libsas: Don't always drain event workqueue for HA resume
+- scsi: hisi_sas: Wait for phyup in hisi_sas_control_phy()
+- scsi: hisi_sas: Initialise devices in .slave_alloc callback
+- can: ems_usb: ems_usb_start_xmit(): fix double dev_kfree_skb() in error path
+- drivers: hamradio: 6pack: fix UAF bug caused by mod_timer()
+- hamradio: remove needs_free_netdev to avoid UAF
+- hamradio: defer 6pack kfree after unregister_netdev
+- mm: page_counter: mitigate consequences of a page_counter underflow
+- nbd: fix possible overflow on 'first_minor' in nbd_dev_add()
+- io_uring: don't keep looping for more events if we can't flush overflow
+- kfence: Fix wrong memblock_free when enable dynamic
+- hugetlbfs: fix a truncation issue in hugepages parameter
+- spi: hisi-kunpeng: Fix the debugfs directory name incorrect
+- spi: hisi-kunpeng: Add debugfs support
+- xen/netfront: react properly to failing gnttab_end_foreign_access_ref()
+- xen/gnttab: fix gnttab_end_foreign_access() without page specified
+- xen/pvcalls: use alloc/free_pages_exact()
+- xen/9p: use alloc/free_pages_exact()
+- xen: remove gnttab_query_foreign_access()
+- xen/gntalloc: don't use gnttab_query_foreign_access()
+- xen/scsifront: don't use gnttab_query_foreign_access() for mapped status
+- xen/netfront: don't use gnttab_query_foreign_access() for mapped status
+- xen/blkfront: don't use gnttab_query_foreign_access() for mapped status
+- xen/grant-table: add gnttab_try_end_foreign_access()
+- xen/xenbus: don't let xenbus_grant_ring() remove grants in error case
+- net: sched: fix use-after-free in tc_new_tfilter()
+- mtd: fixup CFI on ixp4xx
+- powerpc/pseries: Get entry and uaccess flush required bits from H_GET_CPU_CHARACTERISTICS
+- ALSA: hda/realtek: Re-order quirk entries for Lenovo
+- ALSA: hda/realtek: Add quirk for Legion Y9000X 2020
+- ALSA: hda: ALC287: Add Lenovo IdeaPad Slim 9i 14ITL5 speaker quirk
+- ALSA: hda/realtek - Fix silent output on Gigabyte X570 Aorus Master after reboot from Windows
+- ALSA: hda/realtek: Add speaker fixup for some Yoga 15ITL5 devices
+- KVM: x86: remove PMU FIXED_CTR3 from msrs_to_save_all
+- firmware: qemu_fw_cfg: fix kobject leak in probe error path
+- firmware: qemu_fw_cfg: fix NULL-pointer deref on duplicate entries
+- firmware: qemu_fw_cfg: fix sysfs information leak
+- rtlwifi: rtl8192cu: Fix WARNING when calling local_irq_restore() with interrupts enabled
+- media: uvcvideo: fix division by zero at stream start
+- video: vga16fb: Only probe for EGA and VGA 16 color graphic cards
+- 9p: only copy valid iattrs in 9P2000.L setattr implementation
+- KVM: s390: Clarify SIGP orders versus STOP/RESTART
+- KVM: x86: Register Processor Trace interrupt hook iff PT enabled in guest
+- perf: Protect perf_guest_cbs with RCU
+- remoteproc: qcom: pil_info: Don't memcpy_toio more than is provided
+- orangefs: Fix the size of a memory allocation in orangefs_bufmap_alloc()
+- devtmpfs regression fix: reconfigure on each mount
+- kbuild: Add $(KBUILD_HOSTLDFLAGS) to 'has_libelf' test
+- staging: greybus: fix stack size warning with UBSAN
+- drm/i915: Avoid bitwise vs logical OR warning in snb_wm_latency_quirk()
+- staging: wlan-ng: Avoid bitwise vs logical OR warning in hfa384x_usb_throttlefn()
+- media: Revert "media: uvcvideo: Set unique vdev name based in type"
+- random: fix crash on multiple early calls to add_bootloader_randomness()
+- random: fix data race on crng init time
+- random: fix data race on crng_node_pool
+- can: gs_usb: gs_can_start_xmit(): zero-initialize hf->{flags,reserved}
+- can: isotp: convert struct tpcon::{idx,len} to unsigned int
+- can: gs_usb: fix use of uninitialized variable, detach device on reception of invalid USB data
+- mfd: intel-lpss: Fix too early PM enablement in the ACPI ->probe()
+- veth: Do not record rx queue hint in veth_xmit
+- mmc: sdhci-pci: Add PCI ID for Intel ADL
+- ath11k: Fix buffer overflow when scanning with extraie
+- USB: Fix "slab-out-of-bounds Write" bug in usb_hcd_poll_rh_status
+- USB: core: Fix bug in resuming hub's handling of wakeup requests
+- ARM: dts: exynos: Fix BCM4330 Bluetooth reset polarity in I9100
+- Bluetooth: bfusb: fix division by zero in send path
+- Bluetooth: btusb: Add support for Foxconn QCA 0xe0d0
+- Bluetooth: btusb: Add support for Foxconn MT7922A
+- Bluetooth: btusb: Add two more Bluetooth parts for WCN6855
+- Bluetooth: btusb: fix memory leak in btusb_mtk_submit_wmt_recv_urb()
+- workqueue: Fix unbind_workers() VS wq_worker_running() race
+
 * Wed Apr 13 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-80.0.0.36
 - USB: gadget: validate endpoint index for xilinx udc
 - sr9700: sanity check for packet length
