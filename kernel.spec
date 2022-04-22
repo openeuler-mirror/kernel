@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       81
+%global devel_release       82
 %global maintenance_release .0.0
-%global pkg_release         .37
+%global pkg_release         .38
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,36 @@ fi
 %endif
 
 %changelog
+* Fri Apr 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-82.0.0.38
+- scsi: hisi_sas: Limit users changing debugfs BIST count value
+- netfilter: nf_tables: initialize registers in nft_do_chain()
+- sched: Fix yet more sched_fork() races
+- USB: gadget: validate interface OS descriptor requests
+- usb: gadget: don't release an existing dev->buf
+- usb: gadget: clear related members when goto fail
+- usb: gadget: rndis: check size of RNDIS_MSG_SET command
+- locking/csd_lock: Add boot parameter for controlling CSD lock debugging
+- mm/mempolicy: fix a race between offset_il_node and mpol_rebind_task
+- PCI: fix kabi change in struct pci_dev
+- PCI/RCEC: Fix RCiEP device to RCEC association
+- PCI/AER: Add RCEC AER error injection support
+- PCI/PME: Add pcie_walk_rcec() to RCEC PME handling
+- PCI/AER: Add pcie_walk_rcec() to RCEC AER handling
+- PCI/ERR: Recover from RCiEP AER errors
+- PCI/ERR: Add pcie_link_rcec() to associate RCiEPs
+- PCI/ERR: Recover from RCEC AER errors
+- PCI/ERR: Clear AER status only when we control AER
+- PCI/ERR: Add pci_walk_bridge() to pcie_do_recovery()
+- PCI/ERR: Avoid negated conditional for clarity
+- PCI/ERR: Use "bridge" for clarity in pcie_do_recovery()
+- PCI/ERR: Simplify by computing pci_pcie_type() once
+- PCI/ERR: Simplify by using pci_upstream_bridge()
+- PCI/ERR: Rename reset_link() to reset_subordinates()
+- PCI/ERR: Cache RCEC EA Capability offset in pci_init_capabilities()
+- PCI/ERR: Bind RCEC devices to the Root Port driver
+- PCI/AER: Write AER Capability only when we control it
+- af_key: add __GFP_ZERO flag for compose_sadb_supported in function pfkey_register
+
 * Tue Apr 19 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-81.0.0.37
 - SUNRPC: Ensure we flush any closed sockets before xs_xprt_free()
 - scsi: hisi_sas: Use autosuspend for the host controller
