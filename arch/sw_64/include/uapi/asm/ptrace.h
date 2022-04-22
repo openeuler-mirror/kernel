@@ -9,12 +9,7 @@
  *
  * NOTE! I want to minimize the overhead of system calls, so this
  * struct has as little information as possible.  I does not have
- *
- *  - floating point regs: the kernel doesn't change those
- *  - r9-15: saved by the C compiler
- *
- * This makes "fork()" and "exec()" a bit more complex, but should
- * give us low system call latency.
+ * floating point regs, because the kernel doesn't change those
  */
 
 struct pt_regs {
@@ -27,6 +22,14 @@ struct pt_regs {
 	unsigned long r6;
 	unsigned long r7;
 	unsigned long r8;
+	unsigned long r9;
+	unsigned long r10;
+	unsigned long r11;
+	unsigned long r12;
+	unsigned long r13;
+	unsigned long r14;
+	unsigned long r15;
+	/* r16 ~ r18 saved by hmcode */
 	unsigned long r19;
 	unsigned long r20;
 	unsigned long r21;

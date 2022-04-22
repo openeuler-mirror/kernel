@@ -21,52 +21,84 @@
  * the hmcode-provided values are available to the signal handler.
  */
 
-#define SAVE_ALL				\
-	ldi	$sp, -PT_REGS_PS($sp);		\
-	stl	$0, PT_REGS_R0($sp);		\
-	stl	$1, PT_REGS_R1($sp);		\
-	stl	$2, PT_REGS_R2($sp);		\
-	stl	$3, PT_REGS_R3($sp);		\
-	stl	$4, PT_REGS_R4($sp);		\
-	stl	$28, PT_REGS_R28($sp);		\
-	stl	$5, PT_REGS_R5($sp);		\
-	stl	$6, PT_REGS_R6($sp);		\
-	stl	$7, PT_REGS_R7($sp);		\
-	stl	$8, PT_REGS_R8($sp);		\
-	stl	$19, PT_REGS_R19($sp);		\
-	stl	$20, PT_REGS_R20($sp);		\
-	stl	$21, PT_REGS_R21($sp);		\
-	stl	$22, PT_REGS_R22($sp);		\
-	stl	$23, PT_REGS_R23($sp);		\
-	stl	$24, PT_REGS_R24($sp);		\
-	stl	$25, PT_REGS_R25($sp);		\
-	stl	$26, PT_REGS_R26($sp);		\
-	stl	$27, PT_REGS_R27($sp);		\
-	stl	$16, PT_REGS_TRAP_A0($sp);	\
-	stl	$17, PT_REGS_TRAP_A1($sp);	\
+	.macro SAVE_COMMON_REGS
+	ldi	$sp, -PT_REGS_PS($sp)
+	stl	$0, PT_REGS_R0($sp)
+	stl	$1, PT_REGS_R1($sp)
+	stl	$2, PT_REGS_R2($sp)
+	stl	$3, PT_REGS_R3($sp)
+	stl	$4, PT_REGS_R4($sp)
+	stl	$28, PT_REGS_R28($sp)
+	stl	$5, PT_REGS_R5($sp)
+	stl	$6, PT_REGS_R6($sp)
+	stl	$7, PT_REGS_R7($sp)
+	stl	$8, PT_REGS_R8($sp)
+	stl	$19, PT_REGS_R19($sp)
+	stl	$20, PT_REGS_R20($sp)
+	stl	$21, PT_REGS_R21($sp)
+	stl	$22, PT_REGS_R22($sp)
+	stl	$23, PT_REGS_R23($sp)
+	stl	$24, PT_REGS_R24($sp)
+	stl	$25, PT_REGS_R25($sp)
+	stl	$26, PT_REGS_R26($sp)
+	stl	$27, PT_REGS_R27($sp)
+	stl	$16, PT_REGS_TRAP_A0($sp)
+	stl	$17, PT_REGS_TRAP_A1($sp)
 	stl	$18, PT_REGS_TRAP_A2($sp)
+	.endm
 
-#define RESTORE_ALL				\
-	ldl	$0, PT_REGS_R0($sp);		\
-	ldl	$1, PT_REGS_R1($sp);		\
-	ldl	$2, PT_REGS_R2($sp);		\
-	ldl	$3, PT_REGS_R3($sp);		\
-	ldl	$4, PT_REGS_R4($sp);		\
-	ldl	$5, PT_REGS_R5($sp);		\
-	ldl	$6, PT_REGS_R6($sp);		\
-	ldl	$7, PT_REGS_R7($sp);		\
-	ldl	$8, PT_REGS_R8($sp);		\
-	ldl	$19, PT_REGS_R19($sp);		\
-	ldl	$20, PT_REGS_R20($sp);		\
-	ldl	$21, PT_REGS_R21($sp);		\
-	ldl	$22, PT_REGS_R22($sp);		\
-	ldl	$23, PT_REGS_R23($sp);		\
-	ldl	$24, PT_REGS_R24($sp);		\
-	ldl	$25, PT_REGS_R25($sp);		\
-	ldl	$26, PT_REGS_R26($sp);		\
-	ldl	$27, PT_REGS_R27($sp);		\
-	ldl	$28, PT_REGS_R28($sp);		\
+	.macro RESTORE_COMMON_REGS
+	ldl	$0, PT_REGS_R0($sp)
+	ldl	$1, PT_REGS_R1($sp)
+	ldl	$2, PT_REGS_R2($sp)
+	ldl	$3, PT_REGS_R3($sp)
+	ldl	$4, PT_REGS_R4($sp)
+	ldl	$5, PT_REGS_R5($sp)
+	ldl	$6, PT_REGS_R6($sp)
+	ldl	$7, PT_REGS_R7($sp)
+	ldl	$8, PT_REGS_R8($sp)
+	ldl	$19, PT_REGS_R19($sp)
+	ldl	$20, PT_REGS_R20($sp)
+	ldl	$21, PT_REGS_R21($sp)
+	ldl	$22, PT_REGS_R22($sp)
+	ldl	$23, PT_REGS_R23($sp)
+	ldl	$24, PT_REGS_R24($sp)
+	ldl	$25, PT_REGS_R25($sp)
+	ldl	$26, PT_REGS_R26($sp)
+	ldl	$27, PT_REGS_R27($sp)
+	ldl	$28, PT_REGS_R28($sp)
 	ldi	$sp, PT_REGS_PS($sp)
+	.endm
+
+	.macro SAVE_CALLEE_REGS
+	stl	$9, PT_REGS_R9($sp)
+	stl	$10, PT_REGS_R10($sp)
+	stl	$11, PT_REGS_R11($sp)
+	stl	$12, PT_REGS_R12($sp)
+	stl	$13, PT_REGS_R13($sp)
+	stl	$14, PT_REGS_R14($sp)
+	stl	$15, PT_REGS_R15($sp)
+	.endm
+
+	.macro RESTORE_CALLEE_REGS
+	ldl	$9, PT_REGS_R9($sp)
+	ldl	$10, PT_REGS_R10($sp)
+	ldl	$11, PT_REGS_R11($sp)
+	ldl	$12, PT_REGS_R12($sp)
+	ldl	$13, PT_REGS_R13($sp)
+	ldl	$14, PT_REGS_R14($sp)
+	ldl	$15, PT_REGS_R15($sp)
+	.endm
+
+	.macro SAVE_ALL
+	SAVE_COMMON_REGS
+	SAVE_CALLEE_REGS
+	.endm
+
+	.macro RESTORE_ALL
+	RESTORE_CALLEE_REGS
+	RESTORE_COMMON_REGS
+	.endm
 
 /*
  * Non-syscall kernel entry points.
@@ -591,19 +623,42 @@ $setfpec_over:
 	.end undo_switch_stack
 
 /*
- * The meat of the context switch code.
+ * Integer register context switch
+ * The callee-saved registers must be saved and restored.
+ *
+ *   a0: physical address of next task's pcb, used by hmcode
+ *   a1: previous task_struct (must be preserved across the switch)
+ *   a2: next task_struct
+ *
+ * The value of a1  must be preserved by this function, as that's how
+ * arguments are passed to schedule_tail.
  */
-
 	.align 4
 	.globl __switch_to
 	.ent __switch_to
 __switch_to:
 	.prologue 0
-	bsr	$1, do_switch_stack
+	/* Save context into prev->thread */
+	stl	$26, TASK_THREAD_RA($17)
+	stl	$9, TASK_THREAD_S0($17)
+	stl	$10, TASK_THREAD_S1($17)
+	stl	$11, TASK_THREAD_S2($17)
+	stl	$12, TASK_THREAD_S3($17)
+	stl	$13, TASK_THREAD_S4($17)
+	stl	$14, TASK_THREAD_S5($17)
+	stl	$15, TASK_THREAD_S6($17)
+	/* Restore context from next->thread */
+	ldl	$26, TASK_THREAD_RA($18)
+	ldl	$9, TASK_THREAD_S0($18)
+	ldl	$10, TASK_THREAD_S1($18)
+	ldl	$11, TASK_THREAD_S2($18)
+	ldl	$12, TASK_THREAD_S3($18)
+	ldl	$13, TASK_THREAD_S4($18)
+	ldl	$14, TASK_THREAD_S5($18)
+	ldl	$15, TASK_THREAD_S6($18)
 	sys_call HMC_swpctx
 	ldi	$8, 0x3fff
 	bic	$sp, $8, $8
-	bsr	$1, undo_switch_stack
 	mov	$17, $0
 	ret
 	.end __switch_to
@@ -636,30 +691,6 @@ ret_from_kernel_thread:
 	mov	$31, $19		/* to disable syscall restarts */
 	br	$31, ret_to_user
 	.end ret_from_kernel_thread
-
-/*
- * Special system calls.  Most of these are special in that they either
- * have to play switch_stack games or in some way use the pt_regs struct.
- */
-
-.macro	fork_like name
-	.align 4
-	.globl sw64_\name
-	.ent sw64_\name
-sw64_\name:
-	.prologue 0
-	bsr	$1, do_switch_stack
-	call	$26, sys_\name
-	ldl	$26, SWITCH_STACK_RA($sp)
-	ldi	$sp, SWITCH_STACK_SIZE($sp)
-	ret
-	.end	sw64_\name
-	.endm
-
-fork_like fork
-fork_like vfork
-fork_like clone
-fork_like clone3
 
 	.align 4
 	.globl sys_sigreturn

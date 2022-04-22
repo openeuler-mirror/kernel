@@ -78,6 +78,9 @@ struct context_fpregs {
 struct thread_struct {
 	struct context_fpregs ctx_fp;
 	unsigned long fpcr;
+	/* Callee-saved registers */
+	unsigned long ra;
+	unsigned long s[7];	/* s0 ~ s6 */
 };
 #define INIT_THREAD  { }
 

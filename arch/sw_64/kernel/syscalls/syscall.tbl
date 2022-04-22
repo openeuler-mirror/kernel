@@ -73,7 +73,7 @@
 63	common	getpgrp				sys_getpgrp
 #64 is unused
 #65 is unused
-66	common	vfork				sw64_vfork
+66	common	vfork				sys_vfork
 67	common	stat				sys_newstat
 68	common	lstat				sys_newlstat
 #69 is unused
@@ -289,7 +289,7 @@
 279	common	fsmount				sys_fsmount
 280	common	fspick				sys_fspick
 281	common	pidfd_open			sys_pidfd_open
-282	common	clone3				sw64_clone3
+282	common	clone3				sys_clone3
 283	common	close_range			sys_close_range
 284	common	openat2				sys_openat2
 285	common	pidfd_getfd			sys_pidfd_getfd
@@ -319,7 +319,7 @@
 309	common	get_kernel_syms			sys_ni_syscall
 310	common	syslog				sys_syslog
 311	common	reboot				sys_reboot
-312	common	clone				sw64_clone
+312	common	clone				sys_clone
 313	common	uselib				sys_uselib
 314	common	mlock				sys_mlock
 315	common	munlock				sys_munlock

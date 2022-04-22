@@ -72,6 +72,13 @@ void foo(void)
 	DEFINE(PT_REGS_R6, offsetof(struct pt_regs, r6));
 	DEFINE(PT_REGS_R7, offsetof(struct pt_regs, r7));
 	DEFINE(PT_REGS_R8, offsetof(struct pt_regs, r8));
+	DEFINE(PT_REGS_R9, offsetof(struct pt_regs, r9));
+	DEFINE(PT_REGS_R10, offsetof(struct pt_regs, r10));
+	DEFINE(PT_REGS_R11, offsetof(struct pt_regs, r11));
+	DEFINE(PT_REGS_R12, offsetof(struct pt_regs, r12));
+	DEFINE(PT_REGS_R13, offsetof(struct pt_regs, r13));
+	DEFINE(PT_REGS_R14, offsetof(struct pt_regs, r14));
+	DEFINE(PT_REGS_R15, offsetof(struct pt_regs, r15));
 	DEFINE(PT_REGS_R19, offsetof(struct pt_regs, r19));
 	DEFINE(PT_REGS_R20, offsetof(struct pt_regs, r20));
 	DEFINE(PT_REGS_R21, offsetof(struct pt_regs, r21));
@@ -257,5 +264,14 @@ void foo(void)
 	DEFINE(CTX_FP_F28, offsetof(struct context_fpregs, f28));
 	DEFINE(CTX_FP_F29, offsetof(struct context_fpregs, f29));
 	DEFINE(CTX_FP_F30, offsetof(struct context_fpregs, f30));
+	BLANK();
+	OFFSET(TASK_THREAD_RA, task_struct, thread.ra);
+	OFFSET(TASK_THREAD_S0, task_struct, thread.s[0]);
+	OFFSET(TASK_THREAD_S1, task_struct, thread.s[1]);
+	OFFSET(TASK_THREAD_S2, task_struct, thread.s[2]);
+	OFFSET(TASK_THREAD_S3, task_struct, thread.s[3]);
+	OFFSET(TASK_THREAD_S4, task_struct, thread.s[4]);
+	OFFSET(TASK_THREAD_S5, task_struct, thread.s[5]);
+	OFFSET(TASK_THREAD_S6, task_struct, thread.s[6]);
 	BLANK();
 }

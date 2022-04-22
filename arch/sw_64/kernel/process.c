@@ -11,6 +11,7 @@
 #include <linux/random.h>
 
 #include <asm/fpu.h>
+#include <asm/switch_to.h>
 
 #include "proto.h"
 
@@ -158,19 +159,18 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 	struct thread_info *childti = task_thread_info(p);
 	struct pt_regs *childregs = task_pt_regs(p);
 	struct pt_regs *regs = current_pt_regs();
-	struct switch_stack *childstack, *stack;
 
-	childstack = ((struct switch_stack *) childregs) - 1;
-	childti->pcb.ksp = (unsigned long) childstack;
+	childti->pcb.ksp = (unsigned long) childregs;
 	childti->pcb.flags = 7;	/* set FEN, clear everything else */
+	__fpstate_save(current);
+	p->thread = current->thread;
 
 	if (unlikely(p->flags & PF_KTHREAD)) {
 		/* kernel thread */
-		memset(childstack, 0,
-			sizeof(struct switch_stack) + sizeof(struct pt_regs));
-		childstack->r26 = (unsigned long) ret_from_kernel_thread;
-		childstack->r9 = usp;	/* function */
-		childstack->r10 = kthread_arg;
+		memset(childregs, 0, sizeof(struct pt_regs));
+		p->thread.ra = (unsigned long) ret_from_kernel_thread;
+		p->thread.s[0] = usp;	/* function */
+		p->thread.s[1] = kthread_arg;
 		childti->pcb.usp = 0;
 		return 0;
 	}
@@ -189,10 +189,7 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 	*childregs = *regs;
 	childregs->r0 = 0;
 	childregs->r19 = 0;
-	stack = ((struct switch_stack *) regs) - 1;
-	*childstack = *stack;
-	p->thread = current->thread;
-	childstack->r26 = (unsigned long) ret_from_fork;
+	p->thread.ra = (unsigned long) ret_from_fork;
 	return 0;
 }
 
