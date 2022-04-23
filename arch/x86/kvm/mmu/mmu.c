@@ -2965,14 +2965,12 @@ static int kvm_handle_bad_page(struct kvm_vcpu *vcpu, gfn_t gfn, kvm_pfn_t pfn)
 	return -EFAULT;
 }
 
-static bool handle_abnormal_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault,
-				unsigned int access, int *ret_val)
+static int handle_abnormal_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault,
+			       unsigned int access)
 {
 	/* The pfn is invalid, report the error! */
-	if (unlikely(is_error_pfn(fault->pfn))) {
-		*ret_val = kvm_handle_bad_page(vcpu, fault->gfn, fault->pfn);
-		return true;
-	}
+	if (unlikely(is_error_pfn(fault->pfn)))
+		return kvm_handle_bad_page(vcpu, fault->gfn, fault->pfn);
 
 	if (unlikely(!fault->slot)) {
 		gva_t gva = fault->is_tdp ? 0 : fault->addr;
@@ -2990,13 +2988,11 @@ static bool handle_abnormal_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fa
 		 * the hardware's).
 		 */
 		if (unlikely(!shadow_mmio_value) ||
-		    unlikely(fault->gfn > kvm_mmu_max_gfn())) {
-			*ret_val = RET_PF_EMULATE;
-			return true;
-		}
+		    unlikely(fault->gfn > kvm_mmu_max_gfn()))
+			return RET_PF_EMULATE;
 	}
 
-	return false;
+	return RET_PF_CONTINUE;
 }
 
 static bool page_fault_can_be_fast(struct kvm_page_fault *fault)
@@ -3898,7 +3894,7 @@ static bool kvm_arch_setup_async_pf(struct kvm_vcpu *vcpu, gpa_t cr2_or_gpa,
 				  kvm_vcpu_gfn_to_hva(vcpu, gfn), &arch);
 }
 
-static bool kvm_faultin_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault, int *r)
+static int kvm_faultin_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 {
 	struct kvm_memory_slot *slot = fault->slot;
 	bool async;
@@ -3909,7 +3905,7 @@ static bool kvm_faultin_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault,
 	 * be zapped before KVM inserts a new MMIO SPTE for the gfn.
 	 */
 	if (slot && (slot->flags & KVM_MEMSLOT_INVALID))
-		goto out_retry;
+		return RET_PF_RETRY;
 
 	if (!kvm_is_visible_memslot(slot)) {
 		/* Don't expose private memslots to L2. */
@@ -3917,7 +3913,7 @@ static bool kvm_faultin_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault,
 			fault->slot = NULL;
 			fault->pfn = KVM_PFN_NOSLOT;
 			fault->map_writable = false;
-			return false;
+			return RET_PF_CONTINUE;
 		}
 	}
 
@@ -3926,26 +3922,23 @@ static bool kvm_faultin_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault,
 					  fault->write, &fault->map_writable,
 					  &fault->hva);
 	if (!async)
-		return false; /* *pfn has correct page already */
+		return RET_PF_CONTINUE; /* *pfn has correct page already */
 
 	if (!fault->prefetch && kvm_can_do_async_pf(vcpu)) {
 		trace_kvm_try_async_get_page(fault->addr, fault->gfn);
 		if (kvm_find_async_pf_gfn(vcpu, fault->gfn)) {
 			trace_kvm_async_pf_doublefault(fault->addr, fault->gfn);
 			kvm_make_request(KVM_REQ_APF_HALT, vcpu);
-			goto out_retry;
-		} else if (kvm_arch_setup_async_pf(vcpu, fault->addr, fault->gfn))
-			goto out_retry;
+			return RET_PF_RETRY;
+		} else if (kvm_arch_setup_async_pf(vcpu, fault->addr, fault->gfn)) {
+			return RET_PF_RETRY;
+		}
 	}
 
 	fault->pfn = __gfn_to_pfn_memslot(slot, fault->gfn, false, NULL,
 					  fault->write, &fault->map_writable,
 					  &fault->hva);
-	return false;
-
-out_retry:
-	*r = RET_PF_RETRY;
-	return true;
+	return RET_PF_CONTINUE;
 }
 
 /*
@@ -4000,10 +3993,12 @@ static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 	mmu_seq = vcpu->kvm->mmu_notifier_seq;
 	smp_rmb();
 
-	if (kvm_faultin_pfn(vcpu, fault, &r))
+	r = kvm_faultin_pfn(vcpu, fault);
+	if (r != RET_PF_CONTINUE)
 		return r;
 
-	if (handle_abnormal_pfn(vcpu, fault, ACC_ALL, &r))
+	r = handle_abnormal_pfn(vcpu, fault, ACC_ALL);
+	if (r != RET_PF_CONTINUE)
 		return r;
 
 	r = RET_PF_RETRY;
