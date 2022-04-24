@@ -13,8 +13,6 @@
 
 #include <asm/mmu_context.h>
 
-extern void die_if_kernel(char *, struct pt_regs *, long);
-
 struct mem_desc_t mem_desc;
 #ifndef CONFIG_NUMA
 struct numa_node_desc_t numa_nodes_desc[1];

@@ -12,8 +12,8 @@ extern int ptrace_set_bpt(struct task_struct *child);
 extern int ptrace_cancel_bpt(struct task_struct *child);
 
 /* traps.c */
-extern void dik_show_regs(struct pt_regs *regs, unsigned long *r9_15);
-extern void die_if_kernel(char *str, struct pt_regs *regs, long err, unsigned long *r9_15);
+extern void dik_show_regs(struct pt_regs *regs);
+extern void die_if_kernel(char *str, struct pt_regs *regs, long err);
 
 /* timer.c */
 extern void setup_timer(void);

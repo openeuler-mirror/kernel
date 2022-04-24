@@ -22,8 +22,7 @@
 
 #include "proto.h"
 
-void
-dik_show_regs(struct pt_regs *regs, unsigned long *r9_15)
+void dik_show_regs(struct pt_regs *regs)
 {
 	printk("pc = [<%016lx>]  ra = [<%016lx>]  ps = %04lx    %s\n",
 	       regs->pc, regs->r26, regs->ps, print_tainted());
@@ -36,13 +35,12 @@ dik_show_regs(struct pt_regs *regs, unsigned long *r9_15)
 	printk("t5 = %016lx  t6 = %016lx  t7 = %016lx\n",
 	       regs->r6, regs->r7, regs->r8);
 
-	if (r9_15) {
-		printk("s0 = %016lx  s1 = %016lx  s2 = %016lx\n",
-		       r9_15[9], r9_15[10], r9_15[11]);
-		printk("s3 = %016lx  s4 = %016lx  s5 = %016lx\n",
-		       r9_15[12], r9_15[13], r9_15[14]);
-		printk("s6 = %016lx\n", r9_15[15]);
-	}
+	printk("s0 = %016lx  s1 = %016lx  s2 = %016lx\n",
+	       regs->r9, regs->r10, regs->r11);
+	printk("s3 = %016lx  s4 = %016lx  s5 = %016lx\n",
+	       regs->r12, regs->r13, regs->r14);
+	printk("s6 = %016lx\n",
+	       regs->r15);
 
 	printk("a0 = %016lx  a1 = %016lx  a2 = %016lx\n",
 	       regs->r16, regs->r17, regs->r18);
@@ -117,8 +115,7 @@ void show_stack(struct task_struct *task, unsigned long *sp, const char *loglvl)
 	dik_show_trace(sp, loglvl);
 }
 
-void
-die_if_kernel(char *str, struct pt_regs *regs, long err, unsigned long *r9_15)
+void die_if_kernel(char *str, struct pt_regs *regs, long err)
 {
 	if (regs->ps & 8)
 		return;
@@ -126,7 +123,7 @@ die_if_kernel(char *str, struct pt_regs *regs, long err, unsigned long *r9_15)
 	printk("CPU %d ", hard_smp_processor_id());
 #endif
 	printk("%s(%d): %s %ld\n", current->comm, task_pid_nr(current), str, err);
-	dik_show_regs(regs, r9_15);
+	dik_show_regs(regs);
 	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
 	dik_show_trace((unsigned long *)(regs+1), KERN_DEFAULT);
 	dik_show_code((unsigned int *)regs->pc);
@@ -178,7 +175,7 @@ do_entArith(unsigned long summary, unsigned long write_mask,
 		if (si_code == 0)
 			return;
 	}
-	die_if_kernel("Arithmetic fault", regs, 0, NULL);
+	die_if_kernel("Arithmetic fault", regs, 0);
 
 	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc, 0);
 }
@@ -205,7 +202,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 			return;
 		}
 		die_if_kernel((type == 1 ? "Kernel Bug" : "Instruction fault"),
-				regs, type, NULL);
+				regs, type);
 	}
 
 	switch (type) {
@@ -297,7 +294,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 				return;
 		}
 		if ((regs->ps & ~IPL_MAX) == 0)
-			die_if_kernel("Instruction fault", regs, type, NULL);
+			die_if_kernel("Instruction fault", regs, type);
 		break;
 
 	case 3: /* FEN fault */

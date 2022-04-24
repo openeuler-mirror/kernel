@@ -31,8 +31,8 @@ static inline int notify_page_fault(struct pt_regs *regs, unsigned long mmcsr)
 }
 #endif
 
-extern void die_if_kernel(char *, struct pt_regs *, long, unsigned long *);
-extern void dik_show_regs(struct pt_regs *regs, unsigned long *r9_15);
+extern void die_if_kernel(char *, struct pt_regs *, long);
+extern void dik_show_regs(struct pt_regs *regs);
 
 void show_all_vma(void)
 {
@@ -305,7 +305,7 @@ good_area:
 	 */
 	pr_alert("Unable to handle kernel paging request at virtual address %016lx\n",
 	       address);
-	die_if_kernel("Oops", regs, cause, (unsigned long *)regs - 16);
+	die_if_kernel("Oops", regs, cause);
 	do_exit(SIGKILL);
 
 	/*
@@ -336,7 +336,7 @@ good_area:
 	if (unlikely(segv_debug_enabled)) {
 		pr_info("fault: want to send_segv: pid %d, cause = %#lx, mmcsr = %#lx, address = %#lx, pc %#lx\n",
 				current->pid, cause, mmcsr, address, regs->pc);
-		dik_show_regs(regs, (unsigned long *)regs-16);
+		dik_show_regs(regs);
 		show_all_vma();
 	}
 
