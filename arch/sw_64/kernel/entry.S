@@ -133,31 +133,11 @@ entArith:
 	.ent entMM
 entMM:
 	SAVE_ALL
-/* save $9 - $15 so the inline exception code can manipulate them.  */
-	subl	$sp, SWITCH_STACK_RA, $sp
-	stl	$9, SWITCH_STACK_R9($sp)
-	stl	$10, SWITCH_STACK_R10($sp)
-	stl	$11, SWITCH_STACK_R11($sp)
-	stl	$12, SWITCH_STACK_R12($sp)
-	stl	$13, SWITCH_STACK_R13($sp)
-	stl	$14, SWITCH_STACK_R14($sp)
-	stl	$15, SWITCH_STACK_R15($sp)
-	addl	$sp, SWITCH_STACK_RA, $19
-/* handle the fault */
 	ldi	$8, 0x3fff
+	ldi	$26, ret_from_sys_call
 	bic	$sp, $8, $8
-	call	$26, do_page_fault
-/* reload the registers after the exception code played.  */
-	ldl	$9, SWITCH_STACK_R9($sp)
-	ldl	$10, SWITCH_STACK_R10($sp)
-	ldl	$11, SWITCH_STACK_R11($sp)
-	ldl	$12, SWITCH_STACK_R12($sp)
-	ldl	$13, SWITCH_STACK_R13($sp)
-	ldl	$14, SWITCH_STACK_R14($sp)
-	ldl	$15, SWITCH_STACK_R15($sp)
-	addl	$sp, SWITCH_STACK_RA, $sp
-/* finish up the syscall as normal.  */
-	br	ret_from_sys_call
+	mov	$sp, $19
+	call	$31, do_page_fault
 	.end entMM
 
 	.align 4
@@ -400,9 +380,7 @@ $work_resched:
 
 $work_notifysig:
 	mov	$sp, $16
-	bsr	$1, do_switch_stack
 	call	$26, do_work_pending
-	bsr	$1, undo_switch_stack
 	br	restore_all
 	.end work_pending
 
@@ -416,14 +394,9 @@ $work_notifysig:
 	.ent strace
 strace:
 	/* set up signal stack, call syscall_trace */
-	bsr	$1, do_switch_stack
 	mov	$0, $9
 	mov	$19, $10
 	call	$26, syscall_trace_enter
-	mov	$9, $18
-	mov	$10, $19
-	bsr	$1, undo_switch_stack
-
 	blt	$0, $syscall_trace_failed
 
 	/* get the system call number and the arguments back.. */
@@ -452,10 +425,7 @@ ret_from_straced:
 	stl	$31, PT_REGS_R19($sp)	/* a3=0 => no error */
 $strace_success:
 	stl	$0, PT_REGS_R0($sp)	/* save return value */
-
-	bsr	$1, do_switch_stack
 	call	$26, syscall_trace_leave
-	bsr	$1, undo_switch_stack
 	br	$31, ret_from_sys_call
 
 	.align 3
@@ -470,25 +440,19 @@ $strace_error:
 	stl	$0, PT_REGS_R0($sp)
 	stl	$1, PT_REGS_R19($sp)	/* a3 for return */
 
-	bsr	$1, do_switch_stack
 	mov	$18, $9		/* save old syscall number */
 	mov	$19, $10	/* save old a3 */
 	call	$26, syscall_trace_leave
 	mov	$9, $18
 	mov	$10, $19
-	bsr	$1, undo_switch_stack
 
 	mov	$31, $26	/* tell "ret_from_sys_call" we can restart */
 	br	ret_from_sys_call
 
 $syscall_trace_failed:
-	bsr	$1, do_switch_stack
-	mov	$18, $9
-	mov	$19, $10
 	call	$26, syscall_trace_leave
 	mov	$9, $18
 	mov	$10, $19
-	bsr	$1, undo_switch_stack
 	mov	$31, $26	/* tell "ret_from_sys_call" we can restart */
 	br	ret_from_sys_call
 	.end strace
