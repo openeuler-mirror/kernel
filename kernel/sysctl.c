@@ -2699,7 +2699,7 @@ static struct ctl_table kern_table[] = {
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= &one_thousand,
+		.extra1		= &one_hundred,
 		.extra2		= &hundred_thousand,
 	},
 	{
