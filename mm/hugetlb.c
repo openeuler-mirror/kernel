@@ -1784,6 +1784,33 @@ pgoff_t hugetlb_basepage_index(struct page *page)
 	return (index << compound_order(page_head)) + compound_idx;
 }
 
+#define HUGE_PAGE_BOOTMEM_ALLOC		0
+#define HUGE_PAGE_FRESH_ALLOC		1
+
+static u64 normal_page_reserve_sz;
+
+static int __init early_normal_page_reserve(char *p)
+{
+	unsigned long long size;
+
+	if (!p)
+		return 1;
+
+	size = memparse(p, &p);
+	if (*p) {
+		pr_warn("HugeTLB: Invalid normal page reserved size\n");
+		return 1;
+	}
+
+	normal_page_reserve_sz = size & PAGE_MASK;
+
+	pr_info("HugeTLB: Normal page reserved %lldMB\n",
+		normal_page_reserve_sz >> 20);
+
+	return 0;
+}
+early_param("hugepage_prohibit_sz", early_normal_page_reserve);
+
 static struct page *alloc_buddy_huge_page(struct hstate *h,
 		gfp_t gfp_mask, int nid, nodemask_t *nmask,
 		nodemask_t *node_alloc_noretry)
@@ -1831,6 +1858,45 @@ static struct page *alloc_buddy_huge_page(struct hstate *h,
 	return page;
 }
 
+static bool __ref huge_page_limit_check(int type, size_t hsize, int nid)
+{
+	u64 mem_usable = 0;
+	char *str = NULL;
+	char buf[32];
+
+	if (!normal_page_reserve_sz)
+		return true;
+
+	if (system_state > SYSTEM_SCHEDULING)
+		return true;
+
+	if (normal_page_reserve_sz >= memblock_phys_mem_size()) {
+		mem_usable = memblock_phys_mem_size();
+		str = "physical memory";
+		goto out;
+	}
+
+	if (type == HUGE_PAGE_BOOTMEM_ALLOC) {
+		mem_usable = memblock_phys_mem_size() - memblock_reserved_size();
+		str = "memblock usable";
+	} else if (type == HUGE_PAGE_FRESH_ALLOC) {
+		mem_usable = nr_free_pages() << PAGE_SHIFT;
+		str = "free page";
+	}
+
+	if (mem_usable < normal_page_reserve_sz + hsize)
+		goto out;
+
+	return true;
+out:
+	string_get_size(hsize, 1, STRING_UNITS_2, buf, 32);
+	pr_info("HugeTLB: allocating(%s) + Normal pages reserved(%lldMB) node%d exceed %s size(%lldMB)\n",
+		buf, normal_page_reserve_sz >> 20,
+		nid, str, mem_usable >> 20);
+
+	return false;
+}
+
 /*
  * Common helper to allocate a fresh hugetlb page. All specific allocators
  * should use this function to get new hugetlb pages
@@ -1843,6 +1909,9 @@ static struct page *alloc_fresh_huge_page(struct hstate *h,
 	bool retry = false;
 
 retry:
+	if (!huge_page_limit_check(HUGE_PAGE_FRESH_ALLOC, huge_page_size(h), nid))
+		return NULL;
+
 	if (hstate_is_gigantic(h))
 		page = alloc_gigantic_page(h, gfp_mask, nid, nmask);
 	else
@@ -2637,6 +2706,10 @@ int __alloc_bootmem_huge_page(struct hstate *h, int nid)
 
 	if (nid != NUMA_NO_NODE && nid >= nr_online_nodes)
 		return 0;
+
+	if (!huge_page_limit_check(HUGE_PAGE_BOOTMEM_ALLOC, huge_page_size(h), nid))
+		return 0;
+
 	/* do node specific alloc */
 	if (nid != NUMA_NO_NODE) {
 		m = memblock_alloc_try_nid_raw(huge_page_size(h), huge_page_size(h),

@@ -1564,6 +1564,13 @@
 			hugepages using the cma allocator. If enabled, the
 			boot-time allocation of gigantic hugepages is skipped.
 
+	hugepage_prohibit_sz=
+			[HW] HugeTLB pages should not alloc when the rest of
+			the normal pages less than hugepage_prohibit_sz. This
+			setting is to make sure a system can start even when
+			part of physical memory is broken, admin users can
+			adjust this according to typical environment.
+
 	hugepages=	[HW] Number of HugeTLB pages to allocate at boot.
 			If this follows hugepagesz (below), it specifies
 			the number of pages of hugepagesz to be allocated.
