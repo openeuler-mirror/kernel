@@ -2136,28 +2136,6 @@ static void perf_remove_from_context(struct perf_event *event, unsigned long fla
 	event_function_call(event, __perf_remove_from_context, (void *)flags);
 
 	/*
-	 * This is as passable as any hw.target handling out there;
-	 * hw.target implies task context, therefore, no migration.
-	 * Which together with DETACH_GROUP means that this is the
-	 * final remove_from_context of a task event.
-	 */
-	if (event->hw.target && (flags & DETACH_GROUP)) {
-		/*
-		 * Now, the problem with, say uprobes, is that they
-		 * use hw.target for context in their ->destroy()
-		 * callbacks. Supposedly, they may need to poke at
-		 * its contents, so better call it while we still
-		 * have the task.
-		 */
-		if (event->destroy) {
-			event->destroy(event);
-			event->destroy = NULL;
-		}
-		put_task_struct(event->hw.target);
-		event->hw.target = NULL;
-	}
-
-	/*
 	 * The above event_function_call() can NO-OP when it hits
 	 * TASK_TOMBSTONE. In that case we must already have been detached
 	 * from the context (by perf_event_exit_event()) but the grouping
