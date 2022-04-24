@@ -199,9 +199,6 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 void
 dump_elf_thread(elf_greg_t *dest, struct pt_regs *pt, struct thread_info *ti)
 {
-	/* switch stack follows right below pt_regs: */
-	struct switch_stack *sw = ((struct switch_stack *) pt) - 1;
-
 	dest[0] = pt->r0;
 	dest[1] = pt->r1;
 	dest[2] = pt->r2;
@@ -211,13 +208,13 @@ dump_elf_thread(elf_greg_t *dest, struct pt_regs *pt, struct thread_info *ti)
 	dest[6] = pt->r6;
 	dest[7] = pt->r7;
 	dest[8] = pt->r8;
-	dest[9] = sw->r9;
-	dest[10] = sw->r10;
-	dest[11] = sw->r11;
-	dest[12] = sw->r12;
-	dest[13] = sw->r13;
-	dest[14] = sw->r14;
-	dest[15] = sw->r15;
+	dest[9] = pt->r9;
+	dest[10] = pt->r10;
+	dest[11] = pt->r11;
+	dest[12] = pt->r12;
+	dest[13] = pt->r13;
+	dest[14] = pt->r14;
+	dest[15] = pt->r15;
 	dest[16] = pt->r16;
 	dest[17] = pt->r17;
 	dest[18] = pt->r18;
