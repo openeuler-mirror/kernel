@@ -663,12 +663,10 @@ sys_sigreturn:
 	.prologue 0
 	ldi	$9, ret_from_straced
 	cmpult	$26, $9, $9
-	ldi	$sp, -SWITCH_STACK_SIZE($sp)
 	call	$26, do_sigreturn
 	bne	$9, 1f
 	call	$26, syscall_trace_leave
-1:	br	$1, undo_switch_stack
-	br	ret_from_sys_call
+1:	br	ret_from_sys_call
 	.end sys_sigreturn
 
 	.align 4
@@ -678,12 +676,10 @@ sys_rt_sigreturn:
 	.prologue 0
 	ldi	$9, ret_from_straced
 	cmpult	$26, $9, $9
-	ldi	$sp, -SWITCH_STACK_SIZE($sp)
 	call	$26, do_rt_sigreturn
 	bne	$9, 1f
 	call	$26, syscall_trace_leave
-1:	br	$1, undo_switch_stack
-	br	ret_from_sys_call
+1:	br	ret_from_sys_call
 	.end sys_rt_sigreturn
 
 	.align 4
