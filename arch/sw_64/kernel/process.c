@@ -257,13 +257,6 @@ dump_elf_task_fp(elf_fpreg_t *dest, struct task_struct *task)
 EXPORT_SYMBOL(dump_elf_task_fp);
 
 /*
- * Return saved PC of a blocked thread.  This assumes the frame
- * pointer is the 6th saved long on the kernel stack and that the
- * saved return address is the first long in the frame.  This all
- * holds provided the thread blocked through a call to schedule() ($15
- * is the frame pointer in schedule() and $15 is saved at offset 48 by
- * entry.S:do_switch_stack).
- *
  * Under heavy swap load I've seen this lose in an ugly way.  So do
  * some extra sanity checking on the ranges we expect these pointers
  * to be in so that we can fail gracefully.  This is just for ps after
@@ -273,14 +266,14 @@ EXPORT_SYMBOL(dump_elf_task_fp);
 unsigned long
 thread_saved_pc(struct task_struct *t)
 {
-	unsigned long base = (unsigned long)task_stack_page(t);
-	unsigned long fp, sp = task_thread_info(t)->pcb.ksp;
+	unsigned long top, fp, sp;
 
-	if (sp > base && sp+6*8 < base + 16*1024) {
-		fp = ((unsigned long *)sp)[6];
-		if (fp > sp && fp < base + 16*1024)
-			return *(unsigned long *)fp;
-	}
+	top = (unsigned long)task_stack_page(t) + 2 * PAGE_SIZE;
+	sp = task_thread_info(t)->pcb.ksp;
+	fp = t->thread.s[6];
+
+	if (fp > sp && fp < top)
+		return *(unsigned long *)fp;
 
 	return 0;
 }
@@ -289,7 +282,7 @@ unsigned long
 get_wchan(struct task_struct *p)
 {
 	unsigned long schedule_frame;
-	unsigned long pc, base, sp;
+	unsigned long pc, top, sp;
 
 	if (!p || p == current || p->state == TASK_RUNNING)
 		return 0;
@@ -305,10 +298,10 @@ get_wchan(struct task_struct *p)
 
 	pc = thread_saved_pc(p);
 	if (in_sched_functions(pc)) {
-		base = (unsigned long)task_stack_page(p);
+		top = (unsigned long)task_stack_page(p) + 2 * PAGE_SIZE;
 		sp = task_thread_info(p)->pcb.ksp;
-		schedule_frame = ((unsigned long *)sp)[6];
-		if (schedule_frame > sp && schedule_frame < base + 16*1024)
+		schedule_frame = p->thread.s[6];
+		if (schedule_frame > sp && schedule_frame < top)
 			return ((unsigned long *)schedule_frame)[12];
 	}
 	return pc;
