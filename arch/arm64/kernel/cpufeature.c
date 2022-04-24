@@ -1792,6 +1792,9 @@ static bool has_mor_nontemporal(const struct arm64_cpu_capabilities *entry)
 static bool can_clearpage_use_stnp(const struct arm64_cpu_capabilities *entry,
 				   int scope)
 {
+	if (read_sysreg(dczid_el0) & BIT(DCZID_DZP_SHIFT))
+		return true;
+
 	return use_clearpage_stnp && has_mor_nontemporal(entry);
 }
 
