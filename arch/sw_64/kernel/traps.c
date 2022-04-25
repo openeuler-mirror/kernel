@@ -300,9 +300,8 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 	case 3: /* FEN fault */
 		/*
 		 * Irritating users can call HMC_clrfen to disable the
-		 * FPU for the process. The kernel will then trap in
-		 * do_switch_stack and undo_switch_stack when we try
-		 * to save and restore the FP registers.
+		 * FPU for the process. The kernel will then trap to
+		 * save and restore the FP registers.
 
 		 * Given that GCC by default generates code that uses the
 		 * FP registers, HMC_clrfen is not useful except for DoS

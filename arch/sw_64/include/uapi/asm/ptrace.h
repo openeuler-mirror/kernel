@@ -54,21 +54,6 @@ struct pt_regs {
 	unsigned long r18;
 };
 
-/*
- * This is the extended stack used by signal handlers and the context
- * switcher: it's pushed after the normal "struct pt_regs".
- */
-struct switch_stack {
-	unsigned long r9;
-	unsigned long r10;
-	unsigned long r11;
-	unsigned long r12;
-	unsigned long r13;
-	unsigned long r14;
-	unsigned long r15;
-	unsigned long r26;
-};
-
 #define PTRACE_GETREGS		12	/* get general purpose registers */
 #define PTRACE_SETREGS		13	/* set general purpose registers */
 #define PTRACE_GETFPREGS	14	/* get floating-point registers */

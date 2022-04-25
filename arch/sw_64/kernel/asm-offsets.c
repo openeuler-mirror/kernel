@@ -100,17 +100,6 @@ void foo(void)
 	DEFINE(PT_REGS_R18, offsetof(struct pt_regs, r18));
 	BLANK();
 
-	DEFINE(SWITCH_STACK_SIZE, sizeof(struct switch_stack));
-	DEFINE(SWITCH_STACK_R9, offsetof(struct switch_stack, r9));
-	DEFINE(SWITCH_STACK_R10, offsetof(struct switch_stack, r10));
-	DEFINE(SWITCH_STACK_R11, offsetof(struct switch_stack, r11));
-	DEFINE(SWITCH_STACK_R12, offsetof(struct switch_stack, r12));
-	DEFINE(SWITCH_STACK_R13, offsetof(struct switch_stack, r13));
-	DEFINE(SWITCH_STACK_R14, offsetof(struct switch_stack, r14));
-	DEFINE(SWITCH_STACK_R15, offsetof(struct switch_stack, r15));
-	DEFINE(SWITCH_STACK_RA, offsetof(struct switch_stack, r26));
-	BLANK();
-
 	DEFINE(KVM_REGS_SIZE, sizeof(struct kvm_regs));
 	DEFINE(KVM_REGS_R0, offsetof(struct kvm_regs, r0));
 	DEFINE(KVM_REGS_R1, offsetof(struct kvm_regs, r1));
