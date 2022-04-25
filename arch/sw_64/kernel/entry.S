@@ -152,108 +152,31 @@ entIF:
 	call	$31, do_entIF
 	.end entIF
 
+/*
+ * Handle unalignment exception.
+ * We don't handle the "gp" register correctly, but if we fault on a
+ * gp-register unaligned load/store, something is _very_ wrong in the
+ * kernel anyway.
+ */
 	.align 4
 	.globl entUna
 	.ent entUna
 entUna:
-	ldi	$sp, -ALLREGS_PS($sp)
-	stl	$0, ALLREGS_R0($sp)
-	ldl	$0, ALLREGS_PS($sp)	/* get PS */
-	stl	$1, ALLREGS_R1($sp)
-	stl	$2, ALLREGS_R2($sp)
-	stl	$3, ALLREGS_R3($sp)
-	and	$0, 8, $0	/* user mode? */
-	stl	$4, ALLREGS_R4($sp)
-	bne	$0, entUnaUser	/* yup -> do user-level unaligned fault */
-	stl	$5, ALLREGS_R5($sp)
-	stl	$6, ALLREGS_R6($sp)
-	stl	$7, ALLREGS_R7($sp)
-	stl	$8, ALLREGS_R8($sp)
-	stl	$9, ALLREGS_R9($sp)
-	stl	$10, ALLREGS_R10($sp)
-	stl	$11, ALLREGS_R11($sp)
-	stl	$12, ALLREGS_R12($sp)
-	stl	$13, ALLREGS_R13($sp)
-	stl	$14, ALLREGS_R14($sp)
-	stl	$15, ALLREGS_R15($sp)
-	/* 16-18 HMCODE-saved */
-	stl	$19, ALLREGS_R19($sp)
-	stl	$20, ALLREGS_R20($sp)
-	stl	$21, ALLREGS_R21($sp)
-	stl	$22, ALLREGS_R22($sp)
-	stl	$23, ALLREGS_R23($sp)
-	stl	$24, ALLREGS_R24($sp)
-	stl	$25, ALLREGS_R25($sp)
-	stl	$26, ALLREGS_R26($sp)
-	stl	$27, ALLREGS_R27($sp)
-	stl	$28, ALLREGS_R28($sp)
-	mov	$sp, $19
-	stl	$gp, ALLREGS_R29($sp)
+	SAVE_ALL
 	ldi	$8, 0x3fff
-	stl	$31, ALLREGS_R31($sp)
 	bic	$sp, $8, $8
+	mov	$sp, $19
+	ldl	$0, PT_REGS_PS($sp)
+	and	$0, 8, $0		/* user mode ? */
+	beq	$0, 1f
+	ldi	$26, ret_from_sys_call
+	call	$31, do_entUnaUser	/* return to ret_from_syscall */
+1:	ldl	$9, PT_REGS_GP($sp)
 	call	$26, do_entUna
-	ldl	$0, ALLREGS_R0($sp)
-	ldl	$1, ALLREGS_R1($sp)
-	ldl	$2, ALLREGS_R2($sp)
-	ldl	$3, ALLREGS_R3($sp)
-	ldl	$4, ALLREGS_R4($sp)
-	ldl	$5, ALLREGS_R5($sp)
-	ldl	$6, ALLREGS_R6($sp)
-	ldl	$7, ALLREGS_R7($sp)
-	ldl	$8, ALLREGS_R8($sp)
-	ldl	$9, ALLREGS_R9($sp)
-	ldl	$10, ALLREGS_R10($sp)
-	ldl	$11, ALLREGS_R11($sp)
-	ldl	$12, ALLREGS_R12($sp)
-	ldl	$13, ALLREGS_R13($sp)
-	ldl	$14, ALLREGS_R14($sp)
-	ldl	$15, ALLREGS_R15($sp)
-	/* 16-18 HMCODE-saved */
-	ldl	$19, ALLREGS_R19($sp)
-	ldl	$20, ALLREGS_R20($sp)
-	ldl	$21, ALLREGS_R21($sp)
-	ldl	$22, ALLREGS_R22($sp)
-	ldl	$23, ALLREGS_R23($sp)
-	ldl	$24, ALLREGS_R24($sp)
-	ldl	$25, ALLREGS_R25($sp)
-	ldl	$26, ALLREGS_R26($sp)
-	ldl	$27, ALLREGS_R27($sp)
-	ldl	$28, ALLREGS_R28($sp)
-	ldl	$gp, ALLREGS_R29($sp)
-	ldi	$sp, ALLREGS_PS($sp)
+	stl	$9, PT_REGS_GP($sp)
+	RESTORE_ALL
 	sys_call HMC_rti
 	.end entUna
-
-	.align 4
-	.ent entUnaUser
-entUnaUser:
-	ldl	$0, ALLREGS_R0($sp)	/* restore original $0 */
-	ldi	$sp, ALLREGS_PS($sp)	/* pop entUna's stack frame */
-	SAVE_ALL		/* setup normal kernel stack */
-	ldi	$sp, -SWITCH_STACK_RA($sp)
-	stl	$9, SWITCH_STACK_R9($sp)
-	stl	$10, SWITCH_STACK_R10($sp)
-	stl	$11, SWITCH_STACK_R11($sp)
-	stl	$12, SWITCH_STACK_R12($sp)
-	stl	$13, SWITCH_STACK_R13($sp)
-	stl	$14, SWITCH_STACK_R14($sp)
-	stl	$15, SWITCH_STACK_R15($sp)
-	ldi	$8, 0x3fff
-	addl	$sp, SWITCH_STACK_RA, $19
-	bic	$sp, $8, $8
-	call	$26, do_entUnaUser
-	ldl	$9, SWITCH_STACK_R9($sp)
-	ldl	$10, SWITCH_STACK_R10($sp)
-	ldl	$11, SWITCH_STACK_R11($sp)
-	ldl	$12, SWITCH_STACK_R12($sp)
-	ldl	$13, SWITCH_STACK_R13($sp)
-	ldl	$14, SWITCH_STACK_R14($sp)
-	ldl	$15, SWITCH_STACK_R15($sp)
-	ldi	$sp, SWITCH_STACK_RA($sp)
-	br	ret_from_sys_call
-	.end entUnaUser
-
 
 /*
  * The system call entry point is special.  Most importantly, it looks

@@ -321,41 +321,35 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 	force_sig_fault(SIGILL, ILL_ILLOPC, (void __user *)regs->pc, 0);
 }
 
-/*
- * entUna has a different register layout to be reasonably simple. It
- * needs access to all the integer registers (the kernel doesn't use
- * fp-regs), and it needs to have them in order for simpler access.
- *
- * Due to the non-standard register layout (and because we don't want
- * to handle floating-point regs), user-mode unaligned accesses are
- * handled separately by do_entUnaUser below.
- *
- * Oh, btw, we don't handle the "gp" register correctly, but if we fault
- * on a gp-register unaligned load/store, something is _very_ wrong
- * in the kernel anyway..
- */
-struct allregs {
-	unsigned long regs[32];
-	unsigned long ps, pc, gp, a0, a1, a2;
-};
-
 struct unaligned_stat {
 	unsigned long count, va, pc;
 } unaligned[2];
 
 
 /* Macro for exception fixup code to access integer registers. */
-#define una_reg(r) (_regs[(r) >= 16 && (r) <= 18 ? (r) + 19 : (r)])
+#define R(x)	((size_t) &((struct pt_regs *)0)->x)
+
+static int regoffsets[32] = {
+	R(r0), R(r1), R(r2), R(r3), R(r4), R(r5), R(r6), R(r7), R(r8),
+	R(r9), R(r10), R(r11), R(r12), R(r13), R(r14), R(r15),
+	R(r16), R(r17), R(r18),
+	R(r19), R(r20), R(r21), R(r22), R(r23), R(r24), R(r25), R(r26),
+	R(r27), R(r28), R(gp),
+	0, 0
+};
+
+#undef R
+
+#define una_reg(r) (*(unsigned long *)((char *)regs + regoffsets[r]))
 
 
 asmlinkage void
 do_entUna(void *va, unsigned long opcode, unsigned long reg,
-	  struct allregs *regs)
+	  struct pt_regs *regs)
 {
 	long error;
 	unsigned long tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7, tmp8;
 	unsigned long pc = regs->pc - 4;
-	unsigned long *_regs = regs->regs;
 	const struct exception_table_entry *fixup;
 
 	unaligned[0].count++;
@@ -566,29 +560,7 @@ got_exception:
 	printk("%s(%d): unhandled unaligned exception\n",
 	       current->comm, task_pid_nr(current));
 
-	printk("pc = [<%016lx>]  ra = [<%016lx>]  ps = %04lx\n",
-	       pc, una_reg(26), regs->ps);
-	printk("r0 = %016lx  r1 = %016lx  r2 = %016lx\n",
-	       una_reg(0), una_reg(1), una_reg(2));
-	printk("r3 = %016lx  r4 = %016lx  r5 = %016lx\n",
-	       una_reg(3), una_reg(4), una_reg(5));
-	printk("r6 = %016lx  r7 = %016lx  r8 = %016lx\n",
-	       una_reg(6), una_reg(7), una_reg(8));
-	printk("r9 = %016lx  r10= %016lx  r11= %016lx\n",
-	       una_reg(9), una_reg(10), una_reg(11));
-	printk("r12= %016lx  r13= %016lx  r14= %016lx\n",
-	       una_reg(12), una_reg(13), una_reg(14));
-	printk("r15= %016lx\n", una_reg(15));
-	printk("r16= %016lx  r17= %016lx  r18= %016lx\n",
-	       una_reg(16), una_reg(17), una_reg(18));
-	printk("r19= %016lx  r20= %016lx  r21= %016lx\n",
-	       una_reg(19), una_reg(20), una_reg(21));
-	printk("r22= %016lx  r23= %016lx  r24= %016lx\n",
-	       una_reg(22), una_reg(23), una_reg(24));
-	printk("r25= %016lx  r27= %016lx  r28= %016lx\n",
-	       una_reg(25), una_reg(27), una_reg(28));
-	printk("gp = %016lx  sp = %p\n", regs->gp, regs+1);
-
+	dik_show_regs(regs);
 	dik_show_code((unsigned int *)pc);
 	dik_show_trace((unsigned long *)(regs+1), KERN_DEFAULT);
 
@@ -668,20 +640,6 @@ s_reg_to_mem(unsigned long s_reg)
 			 1L << 0x2c | 1L << 0x2d | /* stw stl */	\
 			 1L << 0x0d | 1L << 0x0e)  /* sth stb */
 
-#define R(x)	((size_t) &((struct pt_regs *)0)->x)
-
-static int unauser_reg_offsets[32] = {
-	R(r0), R(r1), R(r2), R(r3), R(r4), R(r5), R(r6), R(r7), R(r8),
-	/* r9 ... r15 are stored in front of regs. */
-	-56, -48, -40, -32, -24, -16, -8,
-	R(r16), R(r17), R(r18),
-	R(r19), R(r20), R(r21), R(r22), R(r23), R(r24), R(r25), R(r26),
-	R(r27), R(r28), R(gp),
-	0, 0
-};
-
-#undef R
-
 asmlinkage void
 do_entUnaUser(void __user *va, unsigned long opcode,
 	      unsigned long reg, struct pt_regs *regs)
@@ -734,7 +692,7 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		/* it's an integer load/store */
 		if (reg < 30) {
 			reg_addr = (unsigned long *)
-				((char *)regs + unauser_reg_offsets[reg]);
+				((char *)regs + regoffsets[reg]);
 		} else if (reg == 30) {
 			/* usp in HMCODE regs */
 			fake_reg = rdusp();
