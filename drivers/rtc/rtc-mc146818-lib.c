@@ -7,6 +7,23 @@
 #include <linux/acpi.h>
 #endif
 
+#ifdef CONFIG_X86
+static inline bool follow_mc146818_divider_reset(void)
+{
+	if ((boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR ||
+		boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN) &&
+		(boot_cpu_data.x86 <= 7 && boot_cpu_data.x86_model <= 59)) {
+		return false;
+	}
+	return true;
+}
+#else
+static inline bool follow_mc146818_divider_reset(void)
+{
+	return true;
+}
+#endif
+
 /*
  * Returns true if a clock update is in progress
  */
@@ -170,8 +187,10 @@ int mc146818_set_time(struct rtc_time *time)
 
 	save_control = CMOS_READ(RTC_CONTROL);
 	CMOS_WRITE((save_control|RTC_SET), RTC_CONTROL);
-	save_freq_select = CMOS_READ(RTC_FREQ_SELECT);
-	CMOS_WRITE((save_freq_select|RTC_DIV_RESET2), RTC_FREQ_SELECT);
+	if (follow_mc146818_divider_reset()) {
+		save_freq_select = CMOS_READ(RTC_FREQ_SELECT);
+		CMOS_WRITE((save_freq_select|RTC_DIV_RESET2), RTC_FREQ_SELECT);
+	}
 
 #ifdef CONFIG_MACH_DECSTATION
 	CMOS_WRITE(real_yrs, RTC_DEC_YEAR);
@@ -189,7 +208,8 @@ int mc146818_set_time(struct rtc_time *time)
 #endif
 
 	CMOS_WRITE(save_control, RTC_CONTROL);
-	CMOS_WRITE(save_freq_select, RTC_FREQ_SELECT);
+	if (follow_mc146818_divider_reset())
+		CMOS_WRITE(save_freq_select, RTC_FREQ_SELECT);
 
 	spin_unlock_irqrestore(&rtc_lock, flags);
 
