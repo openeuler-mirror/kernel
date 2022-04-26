@@ -513,7 +513,11 @@ static int pci_restore_standard_config(struct pci_dev *pci_dev)
 	}
 
 	pci_restore_state(pci_dev);
-	pci_pme_restore(pci_dev);
+	if (!(pci_dev->vendor == PCI_VENDOR_ID_ZHAOXIN &&
+		pci_dev->device == 0x3104 &&
+		(pci_dev->revision & 0xf0) == 0x90 &&
+		pci_dev->class == PCI_CLASS_SERIAL_USB_EHCI))
+		pci_pme_restore(pci_dev);
 	return 0;
 }
 
