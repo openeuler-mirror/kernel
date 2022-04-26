@@ -3975,6 +3975,9 @@ int sata_link_scr_lpm(struct ata_link *link, enum ata_lpm_policy policy,
 		      bool spm_wakeup)
 {
 	struct ata_eh_context *ehc = &link->eh_context;
+	struct ata_port *ap = ata_is_host_link(link) ? link->ap : NULL;
+	struct device *dev = ap ? ap->host->dev : NULL;
+	struct pci_dev *pdev = (!dev || !dev_is_pci(dev)) ? NULL : to_pci_dev(dev);
 	bool woken_up = false;
 	u32 scontrol;
 	int rc;
@@ -4001,10 +4004,20 @@ int sata_link_scr_lpm(struct ata_link *link, enum ata_lpm_policy policy,
 	case ATA_LPM_MED_POWER_WITH_DIPM:
 	case ATA_LPM_MIN_POWER_WITH_PARTIAL:
 	case ATA_LPM_MIN_POWER:
-		if (ata_link_nr_enabled(link) > 0)
+		if (ata_link_nr_enabled(link) > 0) {
 			/* no restrictions on LPM transitions */
 			scontrol &= ~(0x7 << 8);
-		else {
+			/*
+			 * If Host does not support partial, then disallows it,
+			 * the same for slumber.
+			 */
+			if (pdev && pdev->vendor == PCI_VENDOR_ID_ZHAOXIN) {
+				if (!(link->ap->host->flags & ATA_HOST_PART))
+					scontrol |= (0x1 << 8);
+				if (!(link->ap->host->flags & ATA_HOST_SSC))
+					scontrol |= (0x2 << 8);
+			}
+		} else {
 			/* empty port, power off */
 			scontrol &= ~0xf;
 			scontrol |= (0x1 << 2);
