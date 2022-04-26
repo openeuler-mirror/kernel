@@ -1855,6 +1855,17 @@ static int ahci_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	else
 		dev_info(&pdev->dev, "SSS flag set, parallel bus scan disabled\n");
 
+	if (pdev->vendor == PCI_VENDOR_ID_ZHAOXIN) {
+		if (hpriv->cap & HOST_CAP_PART)
+			host->flags |= ATA_HOST_PART;
+
+		if (hpriv->cap & HOST_CAP_SSC)
+			host->flags |= ATA_HOST_SSC;
+
+		if (hpriv->cap2 & HOST_CAP2_SDS)
+			host->flags |= ATA_HOST_DEVSLP;
+	}
+
 	if (pi.flags & ATA_FLAG_EM)
 		ahci_reset_em(host);
 
