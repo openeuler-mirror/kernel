@@ -1149,6 +1149,11 @@ static int smc_connect(struct socket *sock, struct sockaddr *addr,
 		break;
 	}
 
+	if (!smc->clcsock ||
+	    (smc->clcsock && !smc->clcsock->sk)) {
+		rc = -EBADF;
+		goto out;
+	}
 	smc_copy_sock_settings_to_clc(smc);
 	tcp_sk(smc->clcsock->sk)->syn_smc = 1;
 	if (smc->connect_nonblock) {
@@ -1211,10 +1216,12 @@ static int smc_clcsock_accept(struct smc_sock *lsmc, struct smc_sock **new_smc)
 		lsk->sk_err = -rc;
 	if (rc < 0 || lsk->sk_state == SMC_CLOSED) {
 		new_sk->sk_prot->unhash(new_sk);
+		mutex_lock(&lsmc->clcsock_release_lock);
 		if (new_clcsock)
 			sock_release(new_clcsock);
 		new_sk->sk_state = SMC_CLOSED;
 		sock_set_flag(new_sk, SOCK_DEAD);
+		mutex_unlock(&lsmc->clcsock_release_lock);
 		sock_put(new_sk); /* final */
 		*new_smc = NULL;
 		goto out;
