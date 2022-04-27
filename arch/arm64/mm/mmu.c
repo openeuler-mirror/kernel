@@ -506,6 +506,10 @@ static void __init map_mem(pgd_t *pgdp)
 #ifdef CONFIG_KEXEC_CORE
 	if (crash_mem_map)
 		eflags = NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS;
+
+	if (crashk_res.end)
+		memblock_mark_nomap(crashk_res.start,
+				    resource_size(&crashk_res));
 #endif
 
 	/* map all the memory banks */
@@ -552,6 +556,17 @@ static void __init map_mem(pgd_t *pgdp)
 	__map_memblock(pgdp, kernel_start, kernel_end,
 		       PAGE_KERNEL, NO_CONT_MAPPINGS);
 	memblock_clear_nomap(kernel_start, kernel_end - kernel_start);
+
+#ifdef CONFIG_KEXEC_CORE
+	if (crashk_res.end) {
+		__map_memblock(pgdp, crashk_res.start,
+			       crashk_res.end + 1,
+			       PAGE_KERNEL,
+			       NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS);
+		memblock_clear_nomap(crashk_res.start,
+				     resource_size(&crashk_res));
+	}
+#endif
 }
 
 void mark_rodata_ro(void)
