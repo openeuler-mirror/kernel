@@ -367,11 +367,6 @@ static u32 vmx_segment_access_rights(struct kvm_segment *var);
 static __always_inline void vmx_disable_intercept_for_msr(struct kvm_vcpu *vcpu,
 							  u32 msr, int type);
 
-void kvm_arch_vcpu_stat_reset(struct kvm_vcpu_stat *vcpu_stat)
-{
-	vcpu_stat->st_max = 0;
-}
-
 void vmx_vmexit(void);
 
 #define vmx_insn_failed(fmt...)		\
