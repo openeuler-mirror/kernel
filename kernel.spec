@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2204.3.0
+%global hulkrelease 2204.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0145
+Release: %{hulkrelease}.0146
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,47 @@ fi
 %endif
 
 %changelog
+
+* Tue Apr 26 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2204.4.0.0146
+- Revert "perf: Paper over the hw.target problems"
+- ax25: Fix NULL pointer dereferences in ax25 timers
+- ax25: fix NPD bug in ax25_disconnect
+- ax25: Fix NULL pointer dereference in ax25_kill_by_device
+- ax25: improve the incomplete fix to avoid UAF and NPD bugs
+- ax25: NPD bug when detaching AX25 device
+- objtool: Fix stack offset tracking for indirect CFAs
+- x86/entry/64: Fix unwind hints in kernel exit path
+- af_key: add __GFP_ZERO flag for compose_sadb_supported in function pfkey_register
+- arm64: Use the clearbhb instruction in mitigations
+- arm64: add ID_AA64ISAR2_EL1 sys register
+- KVM: arm64: Allow SMCCC_ARCH_WORKAROUND_3 to be discovered and migrated
+- arm64: Mitigate spectre style branch history side channels
+- KVM: arm64: Add templates for BHB mitigation sequences
+- arm64: proton-pack: Report Spectre-BHB vulnerabilities as part of Spectre-v2
+- arm64: Add percpu vectors for EL1
+- arm64: entry: Add macro for reading symbol addresses from the trampoline
+- arm64: entry: Add vectors that have the bhb mitigation sequences
+- arm64: entry: Add non-kpti __bp_harden_el1_vectors for mitigations
+- arm64: entry: Allow the trampoline text to occupy multiple pages
+- arm64: entry: Make the kpti trampoline's kpti sequence optional
+- arm64: entry: Move trampoline macros out of ifdef'd section
+- arm64: entry: Don't assume tramp_vectors is the start of the vectors
+- arm64: entry: Allow tramp_alias to access symbols after the 4K boundary
+- arm64: entry: Move the trampoline data page before the text page
+- arm64: entry: Free up another register on kpti's tramp_exit path
+- arm64: entry: Make the trampoline cleanup optional
+- arm64: entry.S: Add ventry overflow sanity checks
+- x86/speculation: Warn about eIBRS + LFENCE + Unprivileged eBPF + SMT
+- x86/speculation: Warn about Spectre v2 LFENCE mitigation
+- x86/speculation: Update link to AMD speculation whitepaper
+- x86/speculation: Use generic retpoline by default on AMD
+- x86/speculation: Include unprivileged eBPF status in Spectre v2 mitigation reporting
+- Documentation/hw-vuln: Update spectre doc
+- x86/speculation: Add eIBRS + Retpoline options
+- x86/speculation: Rename RETPOLINE_AMD to RETPOLINE_LFENCE
+- x86,bugs: Unconditionally allow spectre_v2=retpoline,amd
+- x86/speculation: Merge one test in spectre_v2_user_select_mitigation()
+- mm/memory.c: fix clear_gigantic_page_chunk
 
 * Tue Apr 19 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2204.3.0.0145
 - ext4: fix fs corruption when tring to remove a non-empty directory with IO error
