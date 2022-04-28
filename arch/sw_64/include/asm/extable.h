@@ -52,4 +52,8 @@ struct exception_table_entry {
 		(b)->fixup.unit = (tmp).fixup.unit;		\
 	} while (0)
 
+/* Macro for exception fixup code to access integer registers. */
+extern short regoffsets[];
+#define map_regs(r) (*(unsigned long *)((char *)regs + regoffsets[r]))
+
 #endif

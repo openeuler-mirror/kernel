@@ -28,6 +28,9 @@
 #define force_successful_syscall_return() (current_pt_regs()->r0 = 0)
 
 #define MAX_REG_OFFSET (offsetof(struct pt_regs, r18))
+
+extern short regoffsets[];
+
 /**
  * regs_get_register() - get register value from its offset
  * @regs:       pt_regs from which register value is gotten

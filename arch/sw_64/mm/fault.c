@@ -107,10 +107,6 @@ __load_new_mm_context(struct mm_struct *next_mm)
  * modify them.
  */
 
-/* Macro for exception fixup code to access integer registers.  */
-#define dpf_reg(r)							\
-	(((unsigned long *)regs)[(r) <= 8 ? (r) : (r) <= 15 ? (r)-16 :	\
-				 (r) <= 18 ? (r)+10 : (r)-10])
 unsigned long show_va_to_pa(struct mm_struct *mm, unsigned long addr)
 {
 	pgd_t *pgd = NULL;
@@ -294,7 +290,7 @@ good_area:
 	if (fixup != 0) {
 		unsigned long newpc;
 
-		newpc = fixup_exception(dpf_reg, fixup, regs->pc);
+		newpc = fixup_exception(map_regs, fixup, regs->pc);
 		regs->pc = newpc;
 		return;
 	}

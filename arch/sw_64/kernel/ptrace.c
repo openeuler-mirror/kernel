@@ -9,6 +9,7 @@
 #include <linux/audit.h>
 
 #include <asm/reg.h>
+#include <asm/asm-offsets.h>
 
 #include "proto.h"
 
@@ -52,22 +53,20 @@ enum {
 	REG_GP = 29
 };
 
-#define PT_REG(reg) \
-	(PAGE_SIZE * 2 - sizeof(struct pt_regs) + offsetof(struct pt_regs, reg))
-
 #define FP_REG(fp_regno, vector_regno) \
 	(fp_regno * 32 + vector_regno * 8)
 
-static int regoff[] = {
-	PT_REG(r0), PT_REG(r1), PT_REG(r2), PT_REG(r3),
-	PT_REG(r4), PT_REG(r5), PT_REG(r6), PT_REG(r7),
-	PT_REG(r8), PT_REG(r9), PT_REG(r10), PT_REG(r11),
-	PT_REG(r12), PT_REG(r13), PT_REG(r14), PT_REG(r15),
-	PT_REG(r16), PT_REG(r17), PT_REG(r18), PT_REG(r19),
-	PT_REG(r20), PT_REG(r21), PT_REG(r22), PT_REG(r23),
-	PT_REG(r24), PT_REG(r25), PT_REG(r26), PT_REG(r27),
-	PT_REG(r28), PT_REG(gp), -1, -1
+#define R(x)	((size_t) &((struct pt_regs *)0)->x)
+
+short regoffsets[32] = {
+	R(r0), R(r1), R(r2), R(r3), R(r4), R(r5), R(r6), R(r7), R(r8),
+	R(r9), R(r10), R(r11), R(r12), R(r13), R(r14), R(r15),
+	R(r16), R(r17), R(r18),
+	R(r19), R(r20), R(r21), R(r22), R(r23), R(r24), R(r25), R(r26),
+	R(r27), R(r28), R(gp), 0, 0
 };
+
+#undef R
 
 #define PCB_OFF(var)	offsetof(struct pcb_struct, var)
 
@@ -104,7 +103,7 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 		addr = (void *)task_thread_info(task) + pcboff[regno];
 		break;
 	case REG_BASE ... REG_END:
-		addr = (void *)task_thread_info(task) + regoff[regno];
+		addr = (void *)task_pt_regs(task) + regoffsets[regno];
 		break;
 	case FPREG_BASE ... FPREG_END:
 		fp_regno = regno - FPREG_BASE;
@@ -128,7 +127,7 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 		addr = (void *)&task->thread.fpcr;
 		break;
 	case PC:
-		addr = (void *)task_thread_info(task) + PT_REG(pc);
+		addr = (void *)task_pt_regs(task) + PT_REGS_PC;
 		break;
 	default:
 		addr = &zero;

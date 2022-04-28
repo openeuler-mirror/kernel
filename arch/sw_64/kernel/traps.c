@@ -325,23 +325,6 @@ struct unaligned_stat {
 } unaligned[2];
 
 
-/* Macro for exception fixup code to access integer registers. */
-#define R(x)	((size_t) &((struct pt_regs *)0)->x)
-
-static int regoffsets[32] = {
-	R(r0), R(r1), R(r2), R(r3), R(r4), R(r5), R(r6), R(r7), R(r8),
-	R(r9), R(r10), R(r11), R(r12), R(r13), R(r14), R(r15),
-	R(r16), R(r17), R(r18),
-	R(r19), R(r20), R(r21), R(r22), R(r23), R(r24), R(r25), R(r26),
-	R(r27), R(r28), R(gp),
-	0, 0
-};
-
-#undef R
-
-#define una_reg(r) (*(unsigned long *)((char *)regs + regoffsets[r]))
-
-
 asmlinkage void
 do_entUna(void *va, unsigned long opcode, unsigned long reg,
 	  struct pt_regs *regs)
@@ -380,7 +363,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		una_reg(reg) = tmp1 | tmp2;
+		map_regs(reg) = tmp1 | tmp2;
 		return;
 
 	case 0x22:
@@ -401,7 +384,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		una_reg(reg) = (int)(tmp1 | tmp2);
+		map_regs(reg) = (int)(tmp1 | tmp2);
 		return;
 
 	case 0x23: /* ldl */
@@ -422,7 +405,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		una_reg(reg) = tmp1 | tmp2;
+		map_regs(reg) = tmp1 | tmp2;
 		return;
 
 	case 0x29: /* sth */
@@ -440,7 +423,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2),
 		"=&r"(tmp3), "=&r"(tmp4)
-		: "r"(va), "r"(una_reg(reg)), "0"(0));
+		: "r"(va), "r"(map_regs(reg)), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -472,7 +455,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2),
 		  "=&r"(tmp3), "=&r"(tmp4)
-		: "r"(va), "r"(una_reg(reg)), "0"(0));
+		: "r"(va), "r"(map_regs(reg)), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -524,7 +507,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2), "=&r"(tmp3),
 		"=&r"(tmp4), "=&r"(tmp5), "=&r"(tmp6), "=&r"(tmp7), "=&r"(tmp8)
-		: "r"(va), "r"(una_reg(reg)), "0"(0));
+		: "r"(va), "r"(map_regs(reg)), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -543,7 +526,7 @@ got_exception:
 	if (fixup != 0) {
 		unsigned long newpc;
 
-		newpc = fixup_exception(una_reg, fixup, pc);
+		newpc = fixup_exception(map_regs, fixup, pc);
 		printk("Forwarding unaligned exception at %lx (%lx)\n",
 		       pc, newpc);
 
