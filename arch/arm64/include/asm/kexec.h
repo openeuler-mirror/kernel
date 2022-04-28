@@ -99,6 +99,7 @@ static inline void crash_post_resume(void) {}
 
 #ifdef CONFIG_KEXEC_CORE
 extern void __init reserve_crashkernel(void);
+extern void __init reserve_crashkernel_high(void);
 #endif
 void machine_kexec_mask_interrupts(void);
 
