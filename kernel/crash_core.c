@@ -321,6 +321,7 @@ int __init parse_crashkernel_low(char *cmdline,
  */
 
 #ifdef CONFIG_ARCH_WANT_RESERVE_CRASH_KERNEL
+bool crash_low_mem_page_map __initdata;
 static bool crash_high_mem_reserved __initdata;
 static struct resource crashk_res_high;
 
@@ -393,6 +394,8 @@ void __init reserve_crashkernel_high(void)
 		ret = parse_crashkernel_high(cmdline, 0, &crash_size, &crash_base);
 		if (ret || !crash_size)
 			return;
+	} else if (!crash_base) {
+		crash_low_mem_page_map = true;
 	}
 
 	crash_size = PAGE_ALIGN(crash_size);

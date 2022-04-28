@@ -97,6 +97,8 @@ static inline void crash_prepare_suspend(void) {}
 static inline void crash_post_resume(void) {}
 #endif
 
+extern bool crash_low_mem_page_map;
+
 #ifdef CONFIG_KEXEC_CORE
 extern void __init reserve_crashkernel(void);
 extern void __init reserve_crashkernel_high(void);
