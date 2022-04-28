@@ -490,10 +490,10 @@ static void __init map_mem(pgd_t *pgdp)
 	phys_addr_t kernel_start = __pa_symbol(_text);
 	phys_addr_t kernel_end = __pa_symbol(__init_begin);
 	phys_addr_t start, end;
-	int flags = 0;
+	int flags = 0, eflags = 0;
 	u64 i;
 
-	if (rodata_full || crash_mem_map || debug_pagealloc_enabled())
+	if (rodata_full || debug_pagealloc_enabled())
 		flags = NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS;
 
 #ifdef CONFIG_KFENCE
@@ -514,17 +514,40 @@ static void __init map_mem(pgd_t *pgdp)
 	 */
 	memblock_mark_nomap(kernel_start, kernel_end - kernel_start);
 
+#ifdef CONFIG_KEXEC_CORE
+	if (crash_mem_map)
+		eflags = NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS;
+#endif
+
 	/* map all the memory banks */
 	for_each_mem_range(i, &start, &end) {
 		if (start >= end)
 			break;
+
+#ifdef CONFIG_KEXEC_CORE
+		if (eflags && (end >= SZ_4G)) {
+			/*
+			 * The memory block cross the 4G boundary.
+			 * Forcibly use page-level mappings for memory under 4G.
+			 */
+			if (start < SZ_4G) {
+				__map_memblock(pgdp, start, SZ_4G - 1,
+					       pgprot_tagged(PAGE_KERNEL), flags | eflags);
+				start  = SZ_4G;
+			}
+
+			/* Page-level mappings is not mandatory for memory above 4G */
+			eflags = 0;
+		}
+#endif
+
 		/*
 		 * The linear map must allow allocation tags reading/writing
 		 * if MTE is present. Otherwise, it has the same attributes as
 		 * PAGE_KERNEL.
 		 */
 		__map_memblock(pgdp, start, end, pgprot_tagged(PAGE_KERNEL),
-			       flags);
+			       flags | eflags);
 	}
 
 	/*
