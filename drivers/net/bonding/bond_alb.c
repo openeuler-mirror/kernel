@@ -1281,6 +1281,27 @@ unwind:
 	return res;
 }
 
+/* determine if the packet is NA or NS */
+static bool alb_determine_nd(struct sk_buff *skb, struct bonding *bond)
+{
+	struct ipv6hdr *ip6hdr;
+	struct icmp6hdr *hdr;
+
+	if (!pskb_network_may_pull(skb, sizeof(*ip6hdr)))
+		return true;
+
+	ip6hdr = ipv6_hdr(skb);
+	if (ip6hdr->nexthdr != IPPROTO_ICMPV6)
+		return false;
+
+	if (!pskb_network_may_pull(skb, sizeof(*ip6hdr) + sizeof(*hdr)))
+		return true;
+
+	hdr = icmp6_hdr(skb);
+	return hdr->icmp6_type == NDISC_NEIGHBOUR_ADVERTISEMENT ||
+		hdr->icmp6_type == NDISC_NEIGHBOUR_SOLICITATION;
+}
+
 /************************ exported alb funcions ************************/
 
 int bond_alb_initialize(struct bonding *bond, int rlb_enabled)
@@ -1363,10 +1384,13 @@ netdev_tx_t bond_tlb_xmit(struct sk_buff *skb, struct net_device *bond_dev)
 	/* Do not TX balance any multicast or broadcast */
 	if (!is_multicast_ether_addr(eth_data->h_dest)) {
 		switch (skb->protocol) {
+		case htons(ETH_P_IPV6):
+			if (alb_determine_nd(skb, bond))
+				break;
+			/* fallthrough */
 		case htons(ETH_P_IP):
 		case htons(ETH_P_IPX):
 		    /* In case of IPX, it will falback to L2 hash */
-		case htons(ETH_P_IPV6):
 			hash_index = bond_xmit_hash(bond, skb);
 			if (bond->params.tlb_dynamic_lb) {
 				tx_slave = tlb_choose_channel(bond,
@@ -1440,10 +1464,12 @@ netdev_tx_t bond_alb_xmit(struct sk_buff *skb, struct net_device *bond_dev)
 			break;
 		}
 
-		if (!pskb_network_may_pull(skb, sizeof(*ip6hdr))) {
+		if (alb_determine_nd(skb, bond)) {
 			do_tx_balance = false;
 			break;
 		}
+
+		/* The IPv6 header is pulled by alb_determine_nd */
 		/* Additionally, DAD probes should not be tx-balanced as that
 		 * will lead to false positives for duplicate addresses and
 		 * prevent address configuration from working.
