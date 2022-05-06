@@ -896,12 +896,4 @@ source "drivers/idle/Kconfig"
 
 endmenu
 
-# DUMMY_CONSOLE may be defined in drivers/video/console/Kconfig
-# but we also need it if VGA_HOSE is set
-config DUMMY_CONSOLE
-	bool
-	depends on VGA_HOSE
-	default y
-
-
 source "arch/sw_64/kvm/Kconfig"
