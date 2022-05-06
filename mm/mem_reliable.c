@@ -231,7 +231,7 @@ void reliable_report_meminfo(struct seq_file *m)
 		num += global_node_page_state(NR_LRU_BASE + LRU_INACTIVE_FILE);
 		show_val_kb(m, "FileCache:        ", num);
 		seq_printf(m, "ReliableFileCache: %8llu kB\n",
-			   nr_pagecache_pages);
+			   nr_pagecache_pages << (PAGE_SHIFT - 10));
 	}
 }
 
