@@ -57,6 +57,7 @@ static void cpu_bringup(void)
 {
 	int cpu;
 
+	cr4_init();
 	cpu_init();
 	touch_softlockup_watchdog();
 	preempt_disable();
