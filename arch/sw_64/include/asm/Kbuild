@@ -3,10 +3,15 @@
 generic-y += clkdev.h
 generic-y += export.h
 generic-y += kvm_types.h
+generic-y += local64.h
 generic-y += mcs_spinlock.h
+generic-y += param.h
 generic-y += qrwlock.h
 generic-y += qspinlock.h
 generic-y += rwsem.h
-generic-y += scatterlist.h
+generic-y += seccomp.h
+generic-y += segment.h
+generic-y += types.h
 generic-y += user.h
+
 generated-y += syscall_table.h
