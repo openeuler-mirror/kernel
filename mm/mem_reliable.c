@@ -196,7 +196,6 @@ static void show_val_kb(struct seq_file *m, const char *s, unsigned long num)
 
 void reliable_report_meminfo(struct seq_file *m)
 {
-	bool pagecache_enabled = pagecache_reliable_is_enabled();
 	s64 nr_pagecache_pages = 0;
 	s64 nr_anon_pages = 0;
 	long nr_buddy_pages = 0;
@@ -209,8 +208,7 @@ void reliable_report_meminfo(struct seq_file *m)
 		nr_buddy_pages += per_cpu(nr_reliable_buddy_pages, cpu);
 
 	nr_anon_pages = percpu_counter_sum_positive(&anon_reliable_pages);
-	if (pagecache_enabled)
-		nr_pagecache_pages = percpu_counter_sum_positive(&pagecache_reliable_pages);
+	nr_pagecache_pages = percpu_counter_sum_positive(&pagecache_reliable_pages);
 
 	show_val_kb(m, "ReliableTotal:    ",
 			total_reliable_mem_sz() >> PAGE_SHIFT);
@@ -224,7 +222,7 @@ void reliable_report_meminfo(struct seq_file *m)
 			    percpu_counter_sum(&reliable_shmem_used_nr_page));
 	}
 
-	if (pagecache_enabled) {
+	if (pagecache_reliable_is_enabled()) {
 		unsigned long num = 0;
 
 		num += global_node_page_state(NR_LRU_BASE + LRU_ACTIVE_FILE);
