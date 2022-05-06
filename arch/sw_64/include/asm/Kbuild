@@ -1,23 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0
-header-y += compiler.h
-header-y += console.h
-header-y += fpu.h
-header-y += gentrap.h
-header-y += hmcall.h
-header-y += reg.h
-header-y += regdef.h
-header-y += sysinfo.h
-header-y += page.h
-header-y += elf.h
 
-generated-y += syscall_table.h
+generic-y += clkdev.h
 generic-y += export.h
 generic-y += kvm_types.h
-generic-y += rwsem.h
-
+generic-y += mcs_spinlock.h
 generic-y += qrwlock.h
 generic-y += qspinlock.h
-generic-y += mcs_spinlock.h
-generic-y += clkdev.h
+generic-y += rwsem.h
 generic-y += scatterlist.h
 generic-y += user.h
+generated-y += syscall_table.h
