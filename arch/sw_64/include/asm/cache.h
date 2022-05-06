@@ -5,9 +5,7 @@
 #ifndef _ASM_SW64_CACHE_H
 #define _ASM_SW64_CACHE_H
 
-#define L1_CACHE_BYTES		128
 #define L1_CACHE_SHIFT		7
-
-#define SMP_CACHE_BYTES		L1_CACHE_BYTES
+#define L1_CACHE_BYTES		(1 << L1_CACHE_SHIFT)
 
 #endif
