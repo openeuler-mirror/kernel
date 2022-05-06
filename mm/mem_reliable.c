@@ -490,18 +490,40 @@ static void mem_reliable_feature_disable(int idx)
 
 void reliable_show_mem_info(void)
 {
-	s64 num = 0;
+	s64 nr_pagecache_pages = 0;
+	s64 nr_anon_pages = 0;
 
 	if (!mem_reliable_is_enabled())
 		return;
 
-	num += percpu_counter_sum_positive(&anon_reliable_pages);
-	num += percpu_counter_sum_positive(&pagecache_reliable_pages);
+	nr_anon_pages = percpu_counter_sum_positive(&anon_reliable_pages);
+	nr_pagecache_pages = percpu_counter_sum_positive(&pagecache_reliable_pages);
 
-	pr_info("ReliableTotal: %lu kB", total_reliable_mem_sz() >> 10);
-	pr_info("ReliableUsed: %lu kB", used_reliable_mem_sz() >> 10);
-	pr_info("task_reliable_limit: %lu kB", task_reliable_limit >> 10);
-	pr_info("reliable_user_used: %lld kB", num << (PAGE_SHIFT - 10));
+	pr_info("ReliableTotal: %lu kB\n", total_reliable_mem_sz() >> 10);
+	pr_info("ReliableUsed: %lu kB\n", used_reliable_mem_sz() >> 10);
+	pr_info("ReliableTaskLimit: %lu kB\n", task_reliable_limit >> 10);
+	pr_info("ReliableTaskUsed: %lld kB\n",
+		(nr_anon_pages + nr_pagecache_pages) << (PAGE_SHIFT - 10));
+
+	if (shmem_reliable_is_enabled()) {
+		pr_info("ReliableShmemPagesLimit: %ld\n",
+			shmem_reliable_nr_page);
+		pr_info("ReliableShmem: %llu kB\n",
+			percpu_counter_sum(&reliable_shmem_used_nr_page)
+				<< (PAGE_SHIFT - 10));
+	}
+
+	if (pagecache_reliable_is_enabled()) {
+		unsigned long num = 0;
+
+		num += global_node_page_state(NR_LRU_BASE + LRU_ACTIVE_FILE);
+		num += global_node_page_state(NR_LRU_BASE + LRU_INACTIVE_FILE);
+		pr_info("ReliableFileCacheLimit: %lu kB\n",
+			reliable_pagecache_max_bytes >> 10);
+		pr_info("FileCache: %lu kB\n", num << (PAGE_SHIFT - 10));
+		pr_info("ReliableFileCache: %llu kB\n",
+			nr_pagecache_pages << (PAGE_SHIFT - 10));
+	}
 }
 
 void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
