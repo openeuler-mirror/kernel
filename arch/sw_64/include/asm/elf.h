@@ -3,7 +3,6 @@
 #define _ASM_SW64_ELF_H
 #ifdef __KERNEL__
 #include <asm/auxvec.h>
-#include <asm/special_insns.h>
 #endif
 /* Special values for the st_other field in the symbol table.  */
 
@@ -141,11 +140,10 @@ extern int dump_elf_task_fp(elf_fpreg_t *dest, struct task_struct *task);
 
 /*
  * This yields a mask that user programs can use to figure out what
- * instruction set this CPU supports.  This is trivial on SW-64,
- * but not so on other machines.
+ * instruction set this CPU supports.
  */
 
-#define ELF_HWCAP  (~amask(-1))
+#define ELF_HWCAP	0
 
 /*
  * This yields a string that ld.so will use to load implementation
