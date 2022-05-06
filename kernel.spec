@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2204.4.0
+%global hulkrelease 2205.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0147
+Release: %{hulkrelease}.0148
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,26 @@ fi
 %endif
 
 %changelog
+
+* Fri May 06 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2205.1.0.0148
+- hamradio: improve the incomplete fix to avoid NPD
+- hamradio: defer ax25 kfree after unregister_netdev
+- can: mcba_usb: mcba_usb_start_xmit(): fix double dev_kfree_skb in error path
+- llc: only change llc->dev when bind() succeeds
+- netdevice: add the case if dev is NULL
+- llc: fix netdevice reference leaks in llc_ui_bind()
+- ARM: fix Thumb2 regression with Spectre BHB
+- ARM: Spectre-BHB: provide empty stub for non-config
+- ARM: fix build warning in proc-v7-bugs.c
+- ARM: Do not use NOCROSSREFS directive with ld.lld
+- ARM: fix co-processor register typo
+- ARM: fix build error when BPF_SYSCALL is disabled
+- ARM: include unprivileged BPF status in Spectre V2 reporting
+- ARM: Spectre-BHB workaround
+- ARM: use LOADADDR() to get load address of sections
+- ARM: early traps initialisation
+- ARM: report Spectre v2 status through sysfs
+- can: usb_8dev: usb_8dev_start_xmit(): fix double dev_kfree_skb() in error path
 
 * Tue Apr 26 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2204.4.0.0147
 - Revert "perf: Paper over the hw.target problems"
