@@ -5,14 +5,6 @@
 #include <asm/hmcall.h>
 
 #define IPL_MIN		0
-#define IPL_SW0		1
-#define IPL_SW1		2
-#define IPL_DEV0	3
-#define IPL_DEV1	4
-#define IPL_TIMER	5
-#define IPL_PERF	6
-#define IPL_POWERFAIL	6
-#define IPL_MCHECK	7
 #define IPL_MAX		7
 
 #define getipl()		(rdps() & 7)
