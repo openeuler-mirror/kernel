@@ -27,4 +27,5 @@ ccp-crypto-objs := ccp-crypto-main.o \
 		   ccp-crypto-sha.o
 
 ccp-crypto-$(CONFIG_HYGON_GM) += ccp-crypto-sm2-hygon.o \
-		   ccp-crypto-sm3-hygon.o
+		   ccp-crypto-sm3-hygon.o \
+		   ccp-crypto-sm4-hygon.o
