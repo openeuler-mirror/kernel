@@ -4118,7 +4118,6 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
 
 	/* to prevent ABBA deadlock, first hold sp_group_sem */
-	down_read(&sp_group_sem);
 	mutex_lock(&spg_stat->lock);
 	hash_for_each(spg_stat->hash, i, spg_proc_stat, gnode) {
 		proc_stat = spg_proc_stat->proc_stat;
@@ -4147,7 +4146,6 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 		seq_putc(seq, '\n');
 	}
 	mutex_unlock(&spg_stat->lock);
-	up_read(&sp_group_sem);
 	return 0;
 }
 
@@ -4165,10 +4163,16 @@ static int proc_stat_show(struct seq_file *seq, void *offset)
 		   byte2kb(atomic64_read(&kthread_stat.alloc_size)),
 		   byte2kb(atomic64_read(&kthread_stat.k2u_size)));
 
-	/* pay attention to potential ABBA deadlock */
+	/*
+	 * This ugly code is just for fixing the ABBA deadlock against
+	 * sp_group_add_task.
+	 */
+	down_read(&sp_group_sem);
 	down_read(&sp_spg_stat_sem);
 	idr_for_each(&sp_spg_stat_idr, idr_proc_stat_cb, seq);
 	up_read(&sp_spg_stat_sem);
+	up_read(&sp_group_sem);
+
 	return 0;
 }
 
