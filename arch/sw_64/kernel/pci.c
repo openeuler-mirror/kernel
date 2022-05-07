@@ -358,12 +358,8 @@ asmlinkage long sys_pciconfig_iobase(long which, unsigned long bus, unsigned lon
 	return -EOPNOTSUPP;
 }
 
-/* Destroy an __iomem token.  Not copied from lib/iomap.c.  */
-
 void pci_iounmap(struct pci_dev *dev, void __iomem *addr)
 {
-	if (__is_mmio(addr))
-		iounmap(addr);
 }
 EXPORT_SYMBOL(pci_iounmap);
 

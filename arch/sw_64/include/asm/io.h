@@ -218,14 +218,6 @@ static inline int __is_ioaddr(unsigned long addr)
 
 #define __is_ioaddr(a)  __is_ioaddr((unsigned long)(a))
 
-static inline int __is_mmio(const volatile void __iomem *xaddr)
-{
-	unsigned long addr = (unsigned long)xaddr;
-
-	return (addr & 0x100000000UL) == 0;
-}
-
-
 
 #define ioread16be(p) be16_to_cpu(ioread16(p))
 #define ioread32be(p) be32_to_cpu(ioread32(p))
