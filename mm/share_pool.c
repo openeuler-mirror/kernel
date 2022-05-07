@@ -4077,9 +4077,9 @@ void spg_overview_show(struct seq_file *seq)
 			atomic_read(&sp_overall_stat.spa_total_num));
 	}
 
-	down_read(&sp_group_sem);
+	down_read(&sp_spg_stat_sem);
 	idr_for_each(&sp_spg_stat_idr, idr_spg_stat_cb, seq);
-	up_read(&sp_group_sem);
+	up_read(&sp_spg_stat_sem);
 
 	if (seq != NULL)
 		seq_puts(seq, "\n");
