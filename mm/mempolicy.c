@@ -1259,11 +1259,10 @@ static struct page *new_page(struct page *page, unsigned long start)
 }
 #endif
 
-static long do_mbind(unsigned long start, unsigned long len,
-		     unsigned short mode, unsigned short mode_flags,
-		     nodemask_t *nmask, unsigned long flags)
+long __do_mbind(unsigned long start, unsigned long len,
+		       unsigned short mode, unsigned short mode_flags,
+		       nodemask_t *nmask, unsigned long flags, struct mm_struct *mm)
 {
-	struct mm_struct *mm = current->mm;
 	struct mempolicy *new;
 	unsigned long end;
 	int err;
@@ -1362,6 +1361,13 @@ up_out:
 mpol_out:
 	mpol_put(new);
 	return err;
+}
+
+static long do_mbind(unsigned long start, unsigned long len,
+		     unsigned short mode, unsigned short mode_flags,
+		     nodemask_t *nmask, unsigned long flags)
+{
+	return __do_mbind(start, len, mode, mode_flags, nmask, flags, current->mm);
 }
 
 /*

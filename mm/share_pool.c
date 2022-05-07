@@ -15,7 +15,6 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-
 #define pr_fmt(fmt) "share pool: " fmt
 
 #include <linux/share_pool.h>
@@ -2174,6 +2173,7 @@ struct sp_alloc_context {
 	bool need_fallocate;
 	struct timespec64 start;
 	struct timespec64 end;
+	bool have_mbind;
 };
 
 static void trace_sp_alloc_begin(struct sp_alloc_context *ac)
@@ -2316,6 +2316,7 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	ac->sp_flags = sp_flags;
 	ac->state = ALLOC_NORMAL;
 	ac->need_fallocate = false;
+	ac->have_mbind = false;
 	return 0;
 }
 
@@ -2409,7 +2410,7 @@ static void sp_alloc_fallback(struct sp_area *spa, struct sp_alloc_context *ac)
 }
 
 static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
-	struct sp_group_node *spg_node, struct sp_alloc_context *ac)
+			     struct sp_alloc_context *ac)
 {
 	int ret = 0;
 	unsigned long sp_addr = spa->va_start;
@@ -2441,23 +2442,17 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 		if (ret)
 			sp_add_work_compact();
 	}
-	if (ret) {
-		if (spa->spg != spg_none)
-			sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
-		else
-			sp_munmap(mm, spa->va_start, spa->real_size);
-
-		if (unlikely(fatal_signal_pending(current)))
-			pr_warn_ratelimited("allocation failed, current thread is killed\n");
-		else
-			pr_warn_ratelimited("allocation failed due to mm populate failed"
-					    "(potential no enough memory when -12): %d\n", ret);
-		sp_fallocate(spa);  /* need this, otherwise memleak */
-		sp_alloc_fallback(spa, ac);
-	} else {
-		ac->need_fallocate = true;
-	}
 	return ret;
+}
+
+static long sp_mbind(struct mm_struct *mm, unsigned long start, unsigned long len, unsigned long node)
+{
+	nodemask_t nmask;
+
+	nodes_clear(nmask);
+	node_set(node, nmask);
+	return __do_mbind(start, len, MPOL_BIND, MPOL_F_STATIC_NODES,
+			&nmask, MPOL_MF_STRICT, mm);
 }
 
 static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
@@ -2475,7 +2470,34 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 		return ret;
 	}
 
-	ret = sp_alloc_populate(mm, spa, spg_node, ac);
+	if (!ac->have_mbind) {
+		ret = sp_mbind(mm, spa->va_start, spa->real_size, spa->node_id);
+		if (ret < 0) {
+			pr_err("cannot bind the memory range to specified node:%d, err:%d\n",
+				spa->node_id, ret);
+			goto err;
+		}
+		ac->have_mbind = true;
+	}
+
+	ret = sp_alloc_populate(mm, spa, ac);
+	if (ret) {
+err:
+		if (spa->spg != spg_none)
+			sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
+		else
+			sp_munmap(mm, spa->va_start, spa->real_size);
+
+		if (unlikely(fatal_signal_pending(current)))
+			pr_warn_ratelimited("allocation failed, current thread is killed\n");
+		else
+			pr_warn_ratelimited("allocation failed due to mm populate failed(potential no enough memory when -12): %d\n",
+					    ret);
+		sp_fallocate(spa);  /* need this, otherwise memleak */
+		sp_alloc_fallback(spa, ac);
+	} else
+		ac->need_fallocate = true;
+
 	return ret;
 }
 
@@ -2497,11 +2519,6 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 			if (mmap_ret) {
 				if (ac->state != ALLOC_COREDUMP)
 					return mmap_ret;
-				if (ac->spg == spg_none) {
-					sp_alloc_unmap(mm, spa, spg_node);
-					pr_err("dvpp allocation failed due to coredump");
-					return mmap_ret;
-				}
 				ac->state = ALLOC_NORMAL;
 				continue;
 			}
