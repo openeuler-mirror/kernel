@@ -4625,6 +4625,9 @@ static inline void prepare_before_alloc(gfp_t *gfp_mask)
 		return;
 	}
 
+	if (!in_task())
+		return;
+
 	if (is_global_init(current) || (current->flags & PF_RELIABLE))
 		*gfp_mask |= ___GFP_RELIABILITY;
 }
