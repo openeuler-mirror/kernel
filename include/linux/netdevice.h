@@ -2595,7 +2595,7 @@ struct packet_type {
 	void			*af_packet_priv;
 	struct list_head	list;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, struct net *af_packet_net)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
