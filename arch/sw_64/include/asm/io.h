@@ -64,8 +64,6 @@ static inline void * __deprecated bus_to_virt(unsigned long address)
 }
 #define isa_bus_to_virt bus_to_virt
 
-#include <asm/sw64io.h>
-
 /*
  * Generic IO read/write.  These perform native-endian accesses.
  */
@@ -176,14 +174,6 @@ extern u32		inl(unsigned long port);
 extern void		outb(u8 b, unsigned long port);
 extern void		outw(u16 b, unsigned long port);
 extern void		outl(u32 b, unsigned long port);
-
-/*
- * Mapping from port numbers to __iomem space is pretty easy.
- */
-static inline void __iomem *ioportmap(unsigned long addr)
-{
-	return sw64_platform->ioportmap(addr);
-}
 
 static inline void __iomem *__ioremap(phys_addr_t addr, size_t size,
 				      pgprot_t prot)

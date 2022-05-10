@@ -5,6 +5,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <asm/pgtable.h>
+#include <asm/sw64io.h>
 
 /* ptrace.c */
 extern int ptrace_set_bpt(struct task_struct *child);

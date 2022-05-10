@@ -19,6 +19,8 @@
 #include <linux/errno.h>
 #include <linux/fb.h>
 
+#include <asm/sw64io.h>
+
 #define CPLD_BUSNR	 2
 
 #ifndef _I2C_DEBUG_FLAG_

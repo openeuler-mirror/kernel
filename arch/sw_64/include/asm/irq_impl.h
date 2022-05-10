@@ -11,6 +11,8 @@
 #include <linux/irq.h>
 #include <linux/profile.h>
 
+#include <asm/sw64io.h>
+
 #define SW64_PCIE0_INT_BASE 17
 #define SW64_PCIE0_MSI_BASE 21
 

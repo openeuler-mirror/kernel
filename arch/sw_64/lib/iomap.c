@@ -6,6 +6,7 @@
 #include <linux/module.h>
 
 #include <asm/io.h>
+#include <asm/platform.h>
 
 /*
  * Here comes the sw64 implementation of the IOMAP interfaces.
@@ -459,7 +460,7 @@ EXPORT_SYMBOL(_memset_c_io);
 
 void __iomem *ioport_map(unsigned long port, unsigned int size)
 {
-	return ioportmap(port);
+	return sw64_platform->ioportmap(port);
 }
 EXPORT_SYMBOL(ioport_map);
 
