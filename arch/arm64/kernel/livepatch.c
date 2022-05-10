@@ -342,12 +342,16 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 static int do_patch(unsigned long pc, unsigned long new_addr)
 {
 	u32 insns[LJMP_INSN_SIZE];
+	int ret;
 
 	if (offset_in_range(pc, new_addr, SZ_128M)) {
 		insns[0] = aarch64_insn_gen_branch_imm(pc, new_addr,
 						       AARCH64_INSN_BRANCH_NOLINK);
-		if (aarch64_insn_patch_text_nosync((void *)pc, insns[0]))
+		ret = aarch64_insn_patch_text_nosync((void *)pc, insns[0]);
+		if (ret) {
+			pr_err("patch instruction small range failed, ret=%d\n", ret);
 			return -EPERM;
+		}
 	} else {
 #ifdef CONFIG_ARM64_MODULE_PLTS
 		int i;
@@ -357,8 +361,12 @@ static int do_patch(unsigned long pc, unsigned long new_addr)
 		insns[2] = cpu_to_le32(0xf2c00010 | (((new_addr >> 32) & 0xffff)) << 5);
 		insns[3] = cpu_to_le32(0xd61f0200);
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			if (aarch64_insn_patch_text_nosync(((u32 *)pc) + i, insns[i]))
+			ret = aarch64_insn_patch_text_nosync(((u32 *)pc) + i, insns[i]);
+			if (ret) {
+				pr_err("patch instruction(%d) large range failed, ret=%d\n",
+				       i, ret);
 				return -EPERM;
+			}
 		}
 #else
 		/*
@@ -391,14 +399,19 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	struct klp_func *next_func;
 	unsigned long pc;
 	int i;
+	int ret;
 
 	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
 	list_del_rcu(&func->stack_node);
 	if (list_empty(&func_node->func_stack)) {
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			aarch64_insn_patch_text_nosync(((u32 *)pc) + i,
-					func_node->arch_data.old_insns[i]);
+			ret = aarch64_insn_patch_text_nosync(((u32 *)pc) + i,
+							     func_node->arch_data.old_insns[i]);
+			if (ret) {
+				pr_err("restore instruction(%d) failed, ret=%d\n", i, ret);
+				return;
+			}
 		}
 	} else {
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
