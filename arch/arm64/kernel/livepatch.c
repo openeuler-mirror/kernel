@@ -276,8 +276,10 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 	};
 
 	ret = klp_check_activeness_func(patch, enable, &check_funcs);
-	if (ret)
+	if (ret) {
+		pr_err("collect active functions failed, ret=%d\n", ret);
 		goto out;
+	}
 	args.check_funcs = check_funcs;
 
 	for_each_process_thread(g, t) {
