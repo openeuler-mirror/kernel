@@ -403,29 +403,19 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	unsigned long pc;
 #ifdef CONFIG_ARM64_MODULE_PLTS
 	int i;
-	u32 insns[LJMP_INSN_SIZE];
-#else
-	u32 insn;
 #endif
 
 	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
-#ifdef CONFIG_ARM64_MODULE_PLTS
-		for (i = 0; i < LJMP_INSN_SIZE; i++)
-			insns[i] = func_node->arch_data.old_insns[i];
-#else
-		insn = func_node->arch_data.old_insn;
-#endif
 		list_del_rcu(&func->stack_node);
-
 #ifdef CONFIG_ARM64_MODULE_PLTS
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
 			aarch64_insn_patch_text_nosync(((u32 *)pc) + i,
-					insns[i]);
+					func_node->arch_data.old_insns[i]);
 		}
 #else
-		aarch64_insn_patch_text_nosync((void *)pc, insn);
+		aarch64_insn_patch_text_nosync((void *)pc, func_node->arch_data.old_insn);
 #endif
 	} else {
 		list_del_rcu(&func->stack_node);

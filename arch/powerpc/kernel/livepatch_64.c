@@ -477,20 +477,15 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
 	unsigned long pc;
-	u32 insns[LJMP_INSN_SIZE];
 	int i;
 
 	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
-		for (i = 0; i < LJMP_INSN_SIZE; i++)
-			insns[i] = func_node->arch_data.old_insns[i];
-
 		list_del_rcu(&func->stack_node);
-
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
 			patch_instruction((struct ppc_inst *)((u32 *)pc + i),
-					  ppc_inst(insns[i]));
+					  ppc_inst(func_node->arch_data.old_insns[i]));
 
 		pr_debug("[%s %d] restore insns at 0x%lx\n", __func__, __LINE__, pc);
 		flush_icache_range(pc, pc + LJMP_INSN_SIZE * PPC64_INSN_SIZE);
