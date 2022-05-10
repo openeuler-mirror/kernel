@@ -1052,6 +1052,58 @@ percent_lcl_hitm_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
 	return per_left - per_right;
 }
 
+static double percent_ld_hit(struct c2c_hist_entry *c2c_he)
+{
+	struct c2c_hists *hists;
+	int tot, st;
+
+	hists = container_of(c2c_he->he.hists, struct c2c_hists, hists);
+
+	st  = TOT_LD_HIT(&c2c_he->stats);
+	tot = TOT_LD_HIT(&hists->stats);
+
+	return percent(st, tot);
+}
+
+static int
+percent_ld_hit_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+		     struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	char buf[10];
+	double per;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	per = percent_ld_hit(c2c_he);
+	return scnprintf(hpp->buf, hpp->size, "%*s", width, PERC_STR(buf, per));
+}
+
+static int
+percent_ld_hit_color(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+		     struct hist_entry *he)
+{
+	return percent_color(fmt, hpp, he, percent_ld_hit);
+}
+
+static int64_t
+percent_ld_hit_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
+		   struct hist_entry *left, struct hist_entry *right)
+{
+	struct c2c_hist_entry *c2c_left;
+	struct c2c_hist_entry *c2c_right;
+	double per_left;
+	double per_right;
+
+	c2c_left  = container_of(left, struct c2c_hist_entry, he);
+	c2c_right = container_of(right, struct c2c_hist_entry, he);
+
+	per_left  = percent_ld_hit(c2c_left);
+	per_right = percent_ld_hit(c2c_right);
+
+	return per_left - per_right;
+}
+
 static int
 percent_stores_l1hit_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
 			   struct hist_entry *he)
@@ -1424,6 +1476,14 @@ static struct c2c_dimension dim_cl_rmt_hitm = {
 	.width		= 7,
 };
 
+static struct c2c_dimension dim_cl_tot_ld_hit = {
+	.header		= HEADER_SPAN("--- Load ---", "Hit", 1),
+	.name		= "cl_tot_ld_hit",
+	.cmp		= tot_ld_hit_cmp,
+	.entry		= tot_ld_hit_entry,
+	.width		= 7,
+};
+
 static struct c2c_dimension dim_cl_lcl_hitm = {
 	.header		= HEADER_SPAN_LOW("Lcl"),
 	.name		= "cl_lcl_hitm",
@@ -1577,6 +1637,15 @@ static struct c2c_dimension dim_percent_tot_ld_hit = {
 	.width		= 8,
 };
 
+static struct c2c_dimension dim_percent_ld_hit = {
+	.header		= HEADER_SPAN("--  Load Refs --", "Hit", 1),
+	.name		= "percent_ld_hit",
+	.cmp		= percent_ld_hit_cmp,
+	.entry		= percent_ld_hit_entry,
+	.color		= percent_ld_hit_color,
+	.width		= 7,
+};
+
 static struct c2c_dimension dim_percent_stores_l1hit = {
 	.header		= HEADER_SPAN("-- Store Refs --", "L1 Hit", 1),
 	.name		= "percent_stores_l1hit",
@@ -1722,6 +1791,7 @@ static struct c2c_dimension *dimensions[] = {
 	&dim_rmt_hitm,
 	&dim_cl_lcl_hitm,
 	&dim_cl_rmt_hitm,
+	&dim_cl_tot_ld_hit,
 	&dim_tot_stores,
 	&dim_stores_l1hit,
 	&dim_stores_l1miss,
@@ -1738,6 +1808,7 @@ static struct c2c_dimension *dimensions[] = {
 	&dim_percent_hitm,
 	&dim_percent_rmt_hitm,
 	&dim_percent_lcl_hitm,
+	&dim_percent_ld_hit,
 	&dim_percent_tot_ld_hit,
 	&dim_percent_stores_l1hit,
 	&dim_percent_stores_l1miss,
