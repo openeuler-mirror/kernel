@@ -457,43 +457,6 @@ void _memset_c_io(volatile void __iomem *to, unsigned long c, long count)
 }
 EXPORT_SYMBOL(_memset_c_io);
 
-/*
- * A version of memcpy used by the vga console routines to move data around
- * arbitrarily between screen and main memory.
- */
-
-void
-scr_memcpyw(u16 *d, const u16 *s, unsigned int count)
-{
-	const u16 __iomem *ios = (const u16 __iomem *) s;
-	u16 __iomem *iod = (u16 __iomem *) d;
-	int s_isio = __is_ioaddr(s);
-	int d_isio = __is_ioaddr(d);
-	u16 tmp;
-
-	if (s_isio) {
-		if (d_isio) {
-			/*
-			 * FIXME: Should handle unaligned ops and
-			 * operation widening.
-			 */
-
-			count /= 2;
-			while (count--) {
-				tmp = __raw_readw(ios++);
-				__raw_writew(tmp, iod++);
-			}
-		} else
-			memcpy_fromio(d, ios, count);
-	} else {
-		if (d_isio)
-			memcpy_toio(iod, s, count);
-		else
-			memcpy(d, s, count);
-	}
-}
-EXPORT_SYMBOL(scr_memcpyw);
-
 void __iomem *ioport_map(unsigned long port, unsigned int size)
 {
 	return ioportmap(port);

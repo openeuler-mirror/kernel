@@ -211,14 +211,6 @@ static inline void __iounmap(volatile void __iomem *addr)
 
 #define iounmap				__iounmap
 
-static inline int __is_ioaddr(unsigned long addr)
-{
-	return addr >= (PAGE_OFFSET | IO_BASE);
-}
-
-#define __is_ioaddr(a)  __is_ioaddr((unsigned long)(a))
-
-
 #define ioread16be(p) be16_to_cpu(ioread16(p))
 #define ioread32be(p) be32_to_cpu(ioread32(p))
 #define iowrite16be(v, p) iowrite16(cpu_to_be16(v), (p))
