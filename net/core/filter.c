@@ -7742,6 +7742,7 @@ static bool __sock_filter_check_attach_type(int off,
 	case bpf_ctx_range(struct bpf_sock, src_ip4):
 		switch (attach_type) {
 		case BPF_CGROUP_INET4_POST_BIND:
+		case BPF_CGROUP_INET_SOCK_RELEASE:
 			goto read_only;
 		default:
 			return false;
@@ -7757,6 +7758,7 @@ static bool __sock_filter_check_attach_type(int off,
 		switch (attach_type) {
 		case BPF_CGROUP_INET4_POST_BIND:
 		case BPF_CGROUP_INET6_POST_BIND:
+		case BPF_CGROUP_INET_SOCK_RELEASE:
 			goto read_only;
 		default:
 			return false;
