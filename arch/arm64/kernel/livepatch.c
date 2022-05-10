@@ -349,60 +349,63 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 	return ret;
 }
 
-int arch_klp_patch_func(struct klp_func *func)
+static int do_patch(unsigned long pc, unsigned long new_addr)
 {
-	struct klp_func_node *func_node;
-	unsigned long pc, new_addr;
 	u32 insn;
-#ifdef CONFIG_ARM64_MODULE_PLTS
-	int i;
-	u32 insns[LJMP_INSN_SIZE];
-#endif
 
-	func_node = func->func_node;
-	list_add_rcu(&func->stack_node, &func_node->func_stack);
-	pc = (unsigned long)func->old_func;
-	new_addr = (unsigned long)func->new_func;
-#ifdef CONFIG_ARM64_MODULE_PLTS
 	if (offset_in_range(pc, new_addr, SZ_128M)) {
 		insn = aarch64_insn_gen_branch_imm(pc, new_addr,
-				AARCH64_INSN_BRANCH_NOLINK);
+						   AARCH64_INSN_BRANCH_NOLINK);
 		if (aarch64_insn_patch_text_nosync((void *)pc, insn))
-			goto ERR_OUT;
+			return -EPERM;
 	} else {
+#ifdef CONFIG_ARM64_MODULE_PLTS
+		int i;
+		u32 insns[LJMP_INSN_SIZE];
+
 		insns[0] = cpu_to_le32(0x92800010 | (((~new_addr) & 0xffff)) << 5);
 		insns[1] = cpu_to_le32(0xf2a00010 | (((new_addr >> 16) & 0xffff)) << 5);
 		insns[2] = cpu_to_le32(0xf2c00010 | (((new_addr >> 32) & 0xffff)) << 5);
 		insns[3] = cpu_to_le32(0xd61f0200);
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
 			if (aarch64_insn_patch_text_nosync(((u32 *)pc) + i, insns[i]))
-				goto ERR_OUT;
+				return -EPERM;
 		}
-	}
 #else
-	insn = aarch64_insn_gen_branch_imm(pc, new_addr,
-			AARCH64_INSN_BRANCH_NOLINK);
-
-	if (aarch64_insn_patch_text_nosync((void *)pc, insn))
-		goto ERR_OUT;
+		/*
+		 * When offset from 'new_addr' to 'pc' is out of SZ_128M range but
+		 * CONFIG_ARM64_MODULE_PLTS not enabled, we should stop patching.
+		 */
+		pr_err("new address out of range\n");
+		return -EFAULT;
 #endif
+	}
 	return 0;
+}
 
-ERR_OUT:
-	list_del_rcu(&func->stack_node);
+int arch_klp_patch_func(struct klp_func *func)
+{
+	struct klp_func_node *func_node;
+	int ret;
 
-	return -EPERM;
+	func_node = func->func_node;
+	list_add_rcu(&func->stack_node, &func_node->func_stack);
+	ret = do_patch((unsigned long)func->old_func, (unsigned long)func->new_func);
+	if (ret)
+		list_del_rcu(&func->stack_node);
+	return ret;
 }
 
 void arch_klp_unpatch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
-	unsigned long pc, new_addr;
-	u32 insn;
+	unsigned long pc;
 #ifdef CONFIG_ARM64_MODULE_PLTS
 	int i;
 	u32 insns[LJMP_INSN_SIZE];
+#else
+	u32 insn;
 #endif
 
 	func_node = func->func_node;
@@ -430,29 +433,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 					struct klp_func, stack_node);
 		if (WARN_ON(!next_func))
 			return;
-
-		new_addr = (unsigned long)next_func->new_func;
-#ifdef CONFIG_ARM64_MODULE_PLTS
-		if (offset_in_range(pc, new_addr, SZ_128M)) {
-			insn = aarch64_insn_gen_branch_imm(pc, new_addr,
-					AARCH64_INSN_BRANCH_NOLINK);
-
-			aarch64_insn_patch_text_nosync((void *)pc, insn);
-		} else {
-			insns[0] = cpu_to_le32(0x92800010 | (((~new_addr) & 0xffff)) << 5);
-			insns[1] = cpu_to_le32(0xf2a00010 | (((new_addr >> 16) & 0xffff)) << 5);
-			insns[2] = cpu_to_le32(0xf2c00010 | (((new_addr >> 32) & 0xffff)) << 5);
-			insns[3] = cpu_to_le32(0xd61f0200);
-			for (i = 0; i < LJMP_INSN_SIZE; i++)
-				aarch64_insn_patch_text_nosync(((u32 *)pc) + i,
-						insns[i]);
-		}
-#else
-		insn = aarch64_insn_gen_branch_imm(pc, new_addr,
-				AARCH64_INSN_BRANCH_NOLINK);
-
-		aarch64_insn_patch_text_nosync((void *)pc, insn);
-#endif
+		do_patch(pc, (unsigned long)next_func->new_func);
 	}
 }
 

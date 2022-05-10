@@ -370,22 +370,15 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 	return ret;
 }
 
-int arch_klp_patch_func(struct klp_func *func)
+static int do_patch(unsigned long pc, unsigned long new_addr)
 {
-	struct klp_func_node *func_node;
-	unsigned long pc, new_addr;
 	u32 insn;
-#ifdef CONFIG_ARM_MODULE_PLTS
-	int i;
-	u32 insns[LJMP_INSN_SIZE];
-#endif
 
-	func_node = func->func_node;
-	list_add_rcu(&func->stack_node, &func_node->func_stack);
-	pc = (unsigned long)func->old_func;
-	new_addr = (unsigned long)func->new_func;
-#ifdef CONFIG_ARM_MODULE_PLTS
 	if (!offset_in_range(pc, new_addr, SZ_32M)) {
+#ifdef CONFIG_ARM_MODULE_PLTS
+		int i;
+		u32 insns[LJMP_INSN_SIZE];
+
 		/*
 		 * [0] LDR PC, [PC+8]
 		 * [4] nop
@@ -397,28 +390,44 @@ int arch_klp_patch_func(struct klp_func *func)
 
 		for (i = 0; i < LJMP_INSN_SIZE; i++)
 			__patch_text(((u32 *)pc) + i, insns[i]);
-
+#else
+		/*
+		 * When offset from 'new_addr' to 'pc' is out of SZ_32M range but
+		 * CONFIG_ARM_MODULE_PLTS not enabled, we should stop patching.
+		 */
+		pr_err("new address out of range\n");
+		return -EFAULT;
+#endif
 	} else {
 		insn = arm_gen_branch(pc, new_addr);
 		__patch_text((void *)pc, insn);
 	}
-#else
-	insn = arm_gen_branch(pc, new_addr);
-	__patch_text((void *)pc, insn);
-#endif
-
 	return 0;
+}
+
+int arch_klp_patch_func(struct klp_func *func)
+{
+	struct klp_func_node *func_node;
+	int ret;
+
+	func_node = func->func_node;
+	list_add_rcu(&func->stack_node, &func_node->func_stack);
+	ret = do_patch((unsigned long)func->old_func, (unsigned long)func->new_func);
+	if (ret)
+		list_del_rcu(&func->stack_node);
+	return ret;
 }
 
 void arch_klp_unpatch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
-	unsigned long pc, new_addr;
-	u32 insn;
+	unsigned long pc;
 #ifdef CONFIG_ARM_MODULE_PLTS
 	int i;
 	u32 insns[LJMP_INSN_SIZE];
+#else
+	u32 insn;
 #endif
 
 	func_node = func->func_node;
@@ -439,29 +448,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 					struct klp_func, stack_node);
 
-		new_addr = (unsigned long)next_func->new_func;
-#ifdef CONFIG_ARM_MODULE_PLTS
-		if (!offset_in_range(pc, new_addr, SZ_32M)) {
-			/*
-			 * [0] LDR PC, [PC+8]
-			 * [4] nop
-			 * [8] new_addr_to_jump
-			 */
-			insns[0] = __opcode_to_mem_arm(0xe59ff000);
-			insns[1] = __opcode_to_mem_arm(0xe320f000);
-			insns[2] = new_addr;
-
-			for (i = 0; i < LJMP_INSN_SIZE; i++)
-				__patch_text(((u32 *)pc) + i, insns[i]);
-
-		} else {
-			insn = arm_gen_branch(pc, new_addr);
-			__patch_text((void *)pc, insn);
-		}
-#else
-		insn = arm_gen_branch(pc, new_addr);
-		__patch_text((void *)pc, insn);
-#endif
+		do_patch(pc, (unsigned long)next_func->new_func);
 	}
 }
 
