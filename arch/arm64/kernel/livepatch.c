@@ -394,14 +394,13 @@ void arch_klp_unpatch_func(struct klp_func *func)
 
 	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
-	if (list_is_singular(&func_node->func_stack)) {
-		list_del_rcu(&func->stack_node);
+	list_del_rcu(&func->stack_node);
+	if (list_empty(&func_node->func_stack)) {
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
 			aarch64_insn_patch_text_nosync(((u32 *)pc) + i,
 					func_node->arch_data.old_insns[i]);
 		}
 	} else {
-		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 					struct klp_func, stack_node);
 		if (WARN_ON(!next_func))
