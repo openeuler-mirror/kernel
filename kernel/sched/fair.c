@@ -7485,12 +7485,16 @@ static bool _qos_smt_check_need_resched(int this_cpu, struct rq *rq)
 		*    and current cpu only has SCHED_IDLE tasks enqueued.
 		*/
 		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_ONLINE &&
-		    task_group(current)->qos_level < QOS_LEVEL_ONLINE)
+		    task_group(current)->qos_level < QOS_LEVEL_ONLINE) {
+			trace_sched_qos_smt_expel(cpu_curr(cpu), per_cpu(qos_smt_status, cpu));
 			return true;
+		}
 
 		if (per_cpu(qos_smt_status, cpu) == QOS_LEVEL_OFFLINE &&
-		    rq->curr == rq->idle && sched_idle_cpu(this_cpu))
+		    rq->curr == rq->idle && sched_idle_cpu(this_cpu)) {
+			trace_sched_qos_smt_expel(cpu_curr(cpu), per_cpu(qos_smt_status, cpu));
 			return true;
+		}
 	}
 
 	return false;
@@ -7528,6 +7532,7 @@ again:
 	if (qos_smt_expelled(this_cpu)) {
 		__this_cpu_write(qos_smt_status, QOS_LEVEL_OFFLINE);
 		schedstat_inc(rq->curr->se.statistics.nr_qos_smt_expelled);
+		trace_sched_qos_smt_expelled(rq->curr, per_cpu(qos_smt_status, this_cpu));
 		return NULL;
 	}
 #endif

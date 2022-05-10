@@ -183,6 +183,61 @@ TRACE_EVENT(sched_switch,
 		__entry->next_comm, __entry->next_pid, __entry->next_prio)
 );
 
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+/*
+ * Tracepoint for a offline task being resched:
+ */
+TRACE_EVENT(sched_qos_smt_expel,
+
+	TP_PROTO(struct task_struct *sibling_p, int qos_smt_status),
+
+	TP_ARGS(sibling_p, qos_smt_status),
+
+	TP_STRUCT__entry(
+		__array(	char,	sibling_comm,	TASK_COMM_LEN	)
+		__field(	pid_t,	sibling_pid			)
+		__field(	int,	sibling_qos_status		)
+		__field(	int,	sibling_cpu			)
+	),
+
+	TP_fast_assign(
+		memcpy(__entry->sibling_comm, sibling_p->comm, TASK_COMM_LEN);
+		__entry->sibling_pid		= sibling_p->pid;
+		__entry->sibling_qos_status	= qos_smt_status;
+		__entry->sibling_cpu		= task_cpu(sibling_p);
+	),
+
+	TP_printk("sibling_comm=%s sibling_pid=%d sibling_qos_status=%d sibling_cpu=%d",
+		  __entry->sibling_comm, __entry->sibling_pid, __entry->sibling_qos_status,
+		  __entry->sibling_cpu)
+);
+
+/*
+ * Tracepoint for a offline task being expelled:
+ */
+TRACE_EVENT(sched_qos_smt_expelled,
+
+	TP_PROTO(struct task_struct *p, int qos_smt_status),
+
+	TP_ARGS(p, qos_smt_status),
+
+	TP_STRUCT__entry(
+		__array(	char,	comm,	TASK_COMM_LEN	)
+		__field(	pid_t,	pid			)
+		__field(	int,	qos_status		)
+	),
+
+	TP_fast_assign(
+		memcpy(__entry->comm, p->comm, TASK_COMM_LEN);
+		__entry->pid		= p->pid;
+		__entry->qos_status	= qos_smt_status;
+	),
+
+	TP_printk("comm=%s pid=%d qos_status=%d",
+		  __entry->comm, __entry->pid, __entry->qos_status)
+);
+#endif
+
 /*
  * Tracepoint for a task being migrated:
  */
