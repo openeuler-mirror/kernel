@@ -1830,9 +1830,16 @@ extern char *__get_task_comm(char *to, size_t len, struct task_struct *tsk);
 	__get_task_comm(buf, sizeof(buf), tsk);		\
 })
 
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+void qos_smt_check_need_resched(void);
+#endif
+
 #ifdef CONFIG_SMP
 static __always_inline void scheduler_ipi(void)
 {
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+	qos_smt_check_need_resched();
+#endif
 	/*
 	 * Fold TIF_NEED_RESCHED into the preempt_count; anybody setting
 	 * TIF_NEED_RESCHED remotely (for the first time) will also send
