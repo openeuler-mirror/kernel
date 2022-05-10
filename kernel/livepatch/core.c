@@ -1026,6 +1026,7 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 		ret = klp_apply_object_relocs(patch, obj);
 		if (ret) {
 			module_enable_ro(patch->mod, true);
+			pr_err("apply object relocations failed, ret=%d\n", ret);
 			return ret;
 		}
 	}
@@ -1045,6 +1046,19 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 			       func->old_name);
 			return -ENOENT;
 		}
+
+#ifdef PPC64_ELF_ABI_v1
+		/*
+		 * PPC64 big endian binary format is 'elfv1' defaultly, actual
+		 * symbol name of old function need a prefix '.' (related
+		 * feature 'function descriptor'), otherwise size found by
+		 * 'kallsyms_lookup_size_offset' may be abnormal.
+		 */
+		if (func->old_name[0] !=  '.') {
+			pr_warn("old_name '%s' may miss the prefix '.', old_size=%lu\n",
+				func->old_name, func->old_size);
+		}
+#endif
 
 		if (func->nop)
 			func->new_func = func->old_func;
@@ -1067,8 +1081,10 @@ static int klp_init_object(struct klp_patch *patch, struct klp_object *obj)
 	int ret;
 	const char *name;
 
-	if (klp_is_module(obj) && strlen(obj->name) >= MODULE_NAME_LEN)
+	if (klp_is_module(obj) && strnlen(obj->name, MODULE_NAME_LEN) >= MODULE_NAME_LEN) {
+		pr_err("obj name is too long\n");
 		return -EINVAL;
+	}
 	klp_for_each_func(obj, func) {
 		if (!func->old_name) {
 			pr_err("old name is invalid\n");
@@ -1202,6 +1218,7 @@ static int klp_init_patch(struct klp_patch *patch)
 	ret = jump_label_register(patch->mod);
 	if (ret) {
 		module_enable_ro(patch->mod, true);
+		pr_err("register jump label failed, ret=%d\n", ret);
 		return ret;
 	}
 	module_enable_ro(patch->mod, true);
@@ -1711,12 +1728,24 @@ int klp_register_patch(struct klp_patch *patch)
 	int ret;
 	struct klp_object *obj;
 
-	if (!patch || !patch->mod || !patch->objs)
+	if (!patch) {
+		pr_err("patch invalid\n");
 		return -EINVAL;
+	}
+	if (!patch->mod) {
+		pr_err("patch->mod invalid\n");
+		return -EINVAL;
+	}
+	if (!patch->objs) {
+		pr_err("patch->objs invalid\n");
+		return -EINVAL;
+	}
 
 	klp_for_each_object_static(patch, obj) {
-		if (!obj->funcs)
+		if (!obj->funcs) {
+			pr_err("obj->funcs invalid\n");
 			return -EINVAL;
+		}
 	}
 
 	if (!is_livepatch_module(patch->mod)) {
@@ -1725,8 +1754,10 @@ int klp_register_patch(struct klp_patch *patch)
 		return -EINVAL;
 	}
 
-	if (!klp_initialized())
+	if (!klp_initialized()) {
+		pr_err("kernel live patch not available\n");
 		return -ENODEV;
+	}
 
 	mutex_lock(&klp_mutex);
 
