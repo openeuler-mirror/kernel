@@ -41,14 +41,12 @@ int klp_check_calltrace(struct klp_patch *patch, int enable);
 
 #ifdef CONFIG_ARM_MODULE_PLTS
 #define LJMP_INSN_SIZE	3
-#endif
+#else
+#define LJMP_INSN_SIZE	1
+#endif /* CONFIG_ARM_MODULE_PLTS */
 
 struct arch_klp_data {
-#ifdef CONFIG_ARM_MODULE_PLTS
 	u32 old_insns[LJMP_INSN_SIZE];
-#else
-	u32 old_insn;
-#endif
 };
 
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);

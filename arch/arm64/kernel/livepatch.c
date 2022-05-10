@@ -34,7 +34,6 @@
 #include <linux/sched/debug.h>
 #include <linux/kallsyms.h>
 
-#ifdef CONFIG_ARM64_MODULE_PLTS
 #define MAX_SIZE_TO_CHECK (LJMP_INSN_SIZE * sizeof(u32))
 #define CHECK_JUMP_RANGE LJMP_INSN_SIZE
 
@@ -45,11 +44,6 @@ static inline bool offset_in_range(unsigned long pc, unsigned long addr,
 
 	return (offset >= -range && offset < range);
 }
-
-#else
-#define MAX_SIZE_TO_CHECK sizeof(u32)
-#define CHECK_JUMP_RANGE 1
-#endif
 
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 /*
@@ -334,7 +328,6 @@ out:
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 {
 	long ret;
-#ifdef CONFIG_ARM64_MODULE_PLTS
 	int i;
 
 	for (i = 0; i < LJMP_INSN_SIZE; i++) {
@@ -343,25 +336,21 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 		if (ret)
 			break;
 	}
-#else
-	ret = aarch64_insn_read(old_func, &arch_data->old_insn);
-#endif
 	return ret;
 }
 
 static int do_patch(unsigned long pc, unsigned long new_addr)
 {
-	u32 insn;
+	u32 insns[LJMP_INSN_SIZE];
 
 	if (offset_in_range(pc, new_addr, SZ_128M)) {
-		insn = aarch64_insn_gen_branch_imm(pc, new_addr,
-						   AARCH64_INSN_BRANCH_NOLINK);
-		if (aarch64_insn_patch_text_nosync((void *)pc, insn))
+		insns[0] = aarch64_insn_gen_branch_imm(pc, new_addr,
+						       AARCH64_INSN_BRANCH_NOLINK);
+		if (aarch64_insn_patch_text_nosync((void *)pc, insns[0]))
 			return -EPERM;
 	} else {
 #ifdef CONFIG_ARM64_MODULE_PLTS
 		int i;
-		u32 insns[LJMP_INSN_SIZE];
 
 		insns[0] = cpu_to_le32(0x92800010 | (((~new_addr) & 0xffff)) << 5);
 		insns[1] = cpu_to_le32(0xf2a00010 | (((new_addr >> 16) & 0xffff)) << 5);
@@ -401,22 +390,16 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
 	unsigned long pc;
-#ifdef CONFIG_ARM64_MODULE_PLTS
 	int i;
-#endif
 
 	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
 		list_del_rcu(&func->stack_node);
-#ifdef CONFIG_ARM64_MODULE_PLTS
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
 			aarch64_insn_patch_text_nosync(((u32 *)pc) + i,
 					func_node->arch_data.old_insns[i]);
 		}
-#else
-		aarch64_insn_patch_text_nosync((void *)pc, func_node->arch_data.old_insn);
-#endif
 	} else {
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,

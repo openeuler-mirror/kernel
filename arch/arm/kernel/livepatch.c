@@ -37,14 +37,8 @@
 #define ARM_INSN_SIZE	4
 #endif
 
-#ifdef CONFIG_ARM_MODULE_PLTS
 #define MAX_SIZE_TO_CHECK (LJMP_INSN_SIZE * ARM_INSN_SIZE)
 #define CHECK_JUMP_RANGE LJMP_INSN_SIZE
-
-#else
-#define MAX_SIZE_TO_CHECK ARM_INSN_SIZE
-#define CHECK_JUMP_RANGE 1
-#endif
 
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 /*
@@ -356,7 +350,6 @@ long arm_insn_read(void *addr, u32 *insnp)
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 {
 	long ret;
-#ifdef CONFIG_ARM_MODULE_PLTS
 	int i;
 
 	for (i = 0; i < LJMP_INSN_SIZE; i++) {
@@ -364,20 +357,16 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 		if (ret)
 			break;
 	}
-#else
-	ret = arm_insn_read(old_func, &arch_data->old_insn);
-#endif
 	return ret;
 }
 
 static int do_patch(unsigned long pc, unsigned long new_addr)
 {
-	u32 insn;
+	u32 insns[LJMP_INSN_SIZE];
 
 	if (!offset_in_range(pc, new_addr, SZ_32M)) {
 #ifdef CONFIG_ARM_MODULE_PLTS
 		int i;
-		u32 insns[LJMP_INSN_SIZE];
 
 		/*
 		 * [0] LDR PC, [PC+8]
@@ -399,8 +388,8 @@ static int do_patch(unsigned long pc, unsigned long new_addr)
 		return -EFAULT;
 #endif
 	} else {
-		insn = arm_gen_branch(pc, new_addr);
-		__patch_text((void *)pc, insn);
+		insns[0] = arm_gen_branch(pc, new_addr);
+		__patch_text((void *)pc, insns[0]);
 	}
 	return 0;
 }
@@ -427,15 +416,11 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
 	if (list_is_singular(&func_node->func_stack)) {
-#ifdef CONFIG_ARM_MODULE_PLTS
 		int i;
 
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
 			__patch_text(((u32 *)pc) + i, func_node->arch_data.old_insns[i]);
 		}
-#else
-		__patch_text((void *)pc, func_node->arch_data.old_insn);
-#endif
 		list_del_rcu(&func->stack_node);
 	} else {
 		list_del_rcu(&func->stack_node);
