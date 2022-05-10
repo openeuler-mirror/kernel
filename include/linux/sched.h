@@ -461,8 +461,13 @@ struct sched_statistics {
 	u64				nr_wakeups_passive;
 	u64				nr_wakeups_idle;
 
+#if defined(CONFIG_QOS_SCHED_SMT_EXPELLER) && !defined(__GENKSYMS__)
+	u64				nr_qos_smt_send_ipi;
+	u64				nr_qos_smt_expelled;
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 #endif
@@ -2172,5 +2177,4 @@ static inline int sched_qos_cpu_overload(void)
 	return 0;
 }
 #endif
-
 #endif

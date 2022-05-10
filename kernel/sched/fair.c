@@ -7455,6 +7455,7 @@ static void qos_smt_send_ipi(int this_cpu)
 		    rq->cfs.h_nr_running == 0)
 			continue;
 
+		schedstat_inc(current->se.statistics.nr_qos_smt_send_ipi);
 		smp_send_reschedule(cpu);
 	}
 }
@@ -7526,6 +7527,7 @@ again:
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	if (qos_smt_expelled(this_cpu)) {
 		__this_cpu_write(qos_smt_status, QOS_LEVEL_OFFLINE);
+		schedstat_inc(rq->curr->se.statistics.nr_qos_smt_expelled);
 		return NULL;
 	}
 #endif
