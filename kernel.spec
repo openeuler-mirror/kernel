@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       87
+%global devel_release       88
 %global maintenance_release .0.0
-%global pkg_release         .40
+%global pkg_release         .41
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,128 @@ fi
 %endif
 
 %changelog
+* Tue May 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-88.0.0.41
+- tcp: add missing tcp_skb_can_collapse() test in tcp_shift_skb_data()
+- af_packet: fix data-race in packet_setsockopt / packet_setsockopt
+- cpuset: Fix the bug that subpart_cpus updated wrongly in update_cpumask()
+- rtnetlink: make sure to refresh master_dev/m_ops in __rtnl_newlink()
+- fanotify: Fix stale file descriptor in copy_event_to_user()
+- net: amd-xgbe: Fix skb data length underflow
+- net: amd-xgbe: ensure to reset the tx_timer_active flag
+- ipheth: fix EOVERFLOW in ipheth_rcvbulk_callback
+- net/mlx5: E-Switch, Fix uninitialized variable modact
+- net/mlx5: Use del_timer_sync in fw reset flow of halting poll
+- net/mlx5e: Fix handling of wrong devices during bond netevent
+- drm/vc4: hdmi: Make sure the device is powered with CEC
+- x86/cpu: Add Xeon Icelake-D to list of CPUs that support PPIN
+- x86/mce: Add Xeon Sapphire Rapids to list of CPUs that support PPIN
+- psi: Fix uaf issue when psi trigger is destroyed while being polled
+- KVM: x86: Forcibly leave nested virt when SMM state is toggled
+- Revert "drivers: bus: simple-pm-bus: Add support for probing simple bus only devices"
+- net: ipa: prevent concurrent replenish
+- net: ipa: use a bitmap for endpoint replenish_enabled
+- net: ipa: fix atomic update in ipa_endpoint_replenish()
+- PCI: pciehp: Fix infinite loop in IRQ handler upon power fault
+- mtd: rawnand: mpc5121: Remove unused variable in ads5121_select_chip()
+- block: Fix wrong offset in bio_truncate()
+- fsnotify: invalidate dcache before IN_DELETE event
+- usr/include/Makefile: add linux/nfc.h to the compile-test coverage
+- dt-bindings: can: tcan4x5x: fix mram-cfg RX FIFO config
+- net: bridge: vlan: fix memory leak in __allowed_ingress
+- ipv4: remove sparse error in ip_neigh_gw4()
+- ipv4: tcp: send zero IPID in SYNACK messages
+- ipv4: raw: lock the socket in raw_bind()
+- net: bridge: vlan: fix single net device option dumping
+- Revert "ipv6: Honor all IPv6 PIO Valid Lifetime values"
+- net: cpsw: Properly initialise struct page_pool_params
+- drm/msm/dpu: invalid parameter check in dpu_setup_dspp_pcc
+- drm/msm/hdmi: Fix missing put_device() call in msm_hdmi_get_phy
+- video: hyperv_fb: Fix validation of screen resolution
+- ibmvnic: don't spin in tasklet
+- ibmvnic: init ->running_cap_crqs early
+- ipv4: fix ip option filtering for locally generated fragments
+- net: ipv4: Fix the warning for dereference
+- net: ipv4: Move ip_options_fragment() out of loop
+- powerpc/perf: Fix power_pmu_disable to call clear_pmi_irq_pending only if PMI is pending
+- hwmon: (lm90) Mark alert as broken for MAX6654
+- efi/libstub: arm64: Fix image check alignment at entry
+- rxrpc: Adjust retransmission backoff
+- octeontx2-pf: Forward error codes to VF
+- phylib: fix potential use-after-free
+- net: phy: broadcom: hook up soft_reset for BCM54616S
+- sched/pelt: Relax the sync of util_sum with util_avg
+- kernel: delete repeated words in comments
+- netfilter: conntrack: don't increment invalid counter on NF_REPEAT
+- powerpc64/bpf: Limit 'ldbrx' to processors compliant with ISA v2.06
+- NFS: Ensure the server has an up to date ctime before renaming
+- NFS: Ensure the server has an up to date ctime before hardlinking
+- ipv6: annotate accesses to fn->fn_sernum
+- drm/msm/dsi: invalid parameter check in msm_dsi_phy_enable
+- drm/msm/dsi: Fix missing put_device() call in dsi_get_phy
+- drm/msm: Fix wrong size calculation
+- net-procfs: show net devices bound packet types
+- hwmon: (lm90) Reduce maximum conversion rate for G781
+- ipv4: avoid using shared IP generator for connected sockets
+- ping: fix the sk_bound_dev_if match in ping_lookup
+- hwmon: (lm90) Mark alert as broken for MAX6680
+- hwmon: (lm90) Mark alert as broken for MAX6646/6647/6649
+- ipv6_tunnel: Rate limit warning messages
+- scsi: bnx2fc: Flush destroy_work queue before calling bnx2fc_interface_put()
+- rpmsg: char: Fix race between the release of rpmsg_eptdev and cdev
+- rpmsg: char: Fix race between the release of rpmsg_ctrldev and cdev
+- usb: roles: fix include/linux/usb/role.h compile issue
+- i40e: fix unsigned stat widths
+- i40e: Fix for failed to init adminq while VF reset
+- i40e: Fix queues reservation for XDP
+- i40e: Fix issue when maximum queues is exceeded
+- i40e: Increase delay to 1 s after global EMP reset
+- powerpc/32: Fix boot failure with GCC latent entropy plugin
+- powerpc/32s: Fix kasan_init_region() for KASAN
+- powerpc/32s: Allocate one 256k IBAT instead of two consecutives 128k IBATs
+- x86/MCE/AMD: Allow thresholding interface updates after init
+- sched/membarrier: Fix membarrier-rseq fence command missing from query bitmask
+- ocfs2: fix a deadlock when commit trans
+- jbd2: export jbd2_journal_[grab|put]_journal_head
+- ucsi_ccg: Check DEV_INT bit only when starting CCG4
+- usb: typec: tcpm: Do not disconnect while receiving VBUS off
+- USB: core: Fix hang in usb_kill_urb by adding memory barriers
+- usb: gadget: f_sourcesink: Fix isoc transfer for USB_SPEED_SUPER_PLUS
+- usb: common: ulpi: Fix crash in ulpi_match()
+- usb: xhci-plat: fix crash when suspend if remote wake enable
+- usb-storage: Add unusual-devs entry for VL817 USB-SATA bridge
+- tty: Add support for Brainboxes UC cards.
+- tty: n_gsm: fix SW flow control encoding/handling
+- serial: stm32: fix software flow control transfer
+- serial: 8250: of: Fix mapped region size when using reg-offset property
+- netfilter: nft_payload: do not update layer 4 checksum when mangling fragments
+- arm64: errata: Fix exec handling in erratum 1418040 workaround
+- KVM: x86: Update vCPU's runtime CPUID on write to MSR_IA32_XSS
+- drm/etnaviv: relax submit size limits
+- perf/x86/intel/uncore: Fix CAS_COUNT_WRITE issue for ICX
+- Revert "KVM: SVM: avoid infinite loop on NPF from bad address"
+- fsnotify: fix fsnotify hooks in pseudo filesystems
+- ceph: set pool_ns in new inode layout for async creates
+- ceph: properly put ceph_string reference after async create attempt
+- tracing: Don't inc err_log entry count if entry allocation fails
+- tracing/histogram: Fix a potential memory leak for kstrdup()
+- PM: wakeup: simplify the output logic of pm_show_wakelocks()
+- efi: runtime: avoid EFIv2 runtime services on Apple x86 machines
+- scsi: zfcp: Fix failed recovery on gone remote port with non-NPIV FCP devices
+- bpf: Guard against accessing NULL pt_regs in bpf_get_task_stack()
+- s390/hypfs: include z/VM guests with access control group set
+- s390/module: fix loading modules with a lot of relocations
+- net: stmmac: skip only stmmac_ptp_register when resume from suspend
+- net: sfp: ignore disabled SFP node
+- media: venus: core: Drop second v4l2 device unregister
+- Bluetooth: refactor malicious adv data check
+- drm/vmwgfx: Fix stale file descriptors on failed usercopy
+- select: Fix indefinitely sleeping task in poll_schedule_timeout()
+- KVM: x86/mmu: Fix write-protection of PTs mapped by the TDP MMU
+- rcu: Tighten rcu_advance_cbs_nowake() checks
+- bnx2x: Invalidate fastpath HSI version for VFs
+- bnx2x: Utilize firmware 7.13.21.0
+- drm/i915: Flush TLBs before releasing backing store
+
 * Fri Apr 29 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-87.0.0.40
 - llc: only change llc->dev when bind() succeeds
 - netdevice: add the case if dev is NULL
