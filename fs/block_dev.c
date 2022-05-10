@@ -1651,6 +1651,18 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, void *holder,
 				"block device exclusively");
 		bd_finish_claiming(bdev, claiming, holder);
 		spin_unlock(&bdev_lock);
+	} else if (!for_part && (mode & FMODE_WRITE)) {
+		spin_lock(&bdev_lock);
+		/*
+		 * Open an exclusive opened device for write may
+		 * probability corrupt the device, such as a
+		 * mounted file system, give a hint here.
+		 */
+		if (bdev->bd_holders ||
+		   (whole && (whole->bd_holder != NULL) && (whole->bd_holder != bd_may_claim)))
+			blkdev_dump_conflict_opener(bdev, "VFS: Open an exclusive opened "
+				"block device for write");
+		spin_unlock(&bdev_lock);
 	}
 
 	/*
