@@ -541,7 +541,7 @@ static void collect_procs_file(struct page *page, struct list_head *to_kill,
 /*
  * Collect the processes who have the corrupted page mapped to kill.
  */
-static void collect_procs(struct page *page, struct list_head *tokill,
+void collect_procs(struct page *page, struct list_head *tokill,
 				int force_early)
 {
 	if (!page->mapping)
@@ -552,6 +552,7 @@ static void collect_procs(struct page *page, struct list_head *tokill,
 	else
 		collect_procs_file(page, tokill, force_early);
 }
+EXPORT_SYMBOL_GPL(collect_procs);
 
 static const char *action_name[] = {
 	[MF_IGNORED] = "Ignored",
