@@ -1172,7 +1172,6 @@ static void bd_clear_claiming(struct block_device *whole, void *holder)
 static void bd_finish_claiming(struct block_device *bdev,
 		struct block_device *whole, void *holder)
 {
-	spin_lock(&bdev_lock);
 	BUG_ON(!bd_may_claim(bdev, whole, holder));
 	/*
 	 * Note that for a whole device bd_holders will be incremented twice,
@@ -1183,7 +1182,6 @@ static void bd_finish_claiming(struct block_device *bdev,
 	bdev->bd_holders++;
 	bdev->bd_holder = holder;
 	bd_clear_claiming(whole, holder);
-	spin_unlock(&bdev_lock);
 }
 
 /**
@@ -1481,6 +1479,39 @@ out:
  */
 EXPORT_SYMBOL_GPL(bdev_disk_changed);
 
+static void blkdev_dump_conflict_opener(struct block_device *bdev, char *msg)
+{
+	char name[BDEVNAME_SIZE];
+	struct task_struct *p = NULL;
+	char comm_buf[TASK_COMM_LEN];
+	pid_t p_pid;
+
+	rcu_read_lock();
+	p = rcu_dereference(current->real_parent);
+	task_lock(p);
+	strncpy(comm_buf, p->comm, TASK_COMM_LEN);
+	p_pid = p->pid;
+	task_unlock(p);
+	rcu_read_unlock();
+
+	pr_info_ratelimited("%s %s. current [%d %s]. parent [%d %s]\n",
+			    msg, bdevname(bdev, name),
+			    current->pid, current->comm, p_pid, comm_buf);
+}
+
+static bool is_conflict_excl_open(struct block_device *bdev, struct block_device *whole, fmode_t mode)
+{
+	if (bdev->bd_holders)
+		return false;
+
+	if (bdev->bd_write_openers > ((mode & FMODE_WRITE) ? 1 : 0))
+		return true;
+
+	if (bdev == whole)
+		return !!bdev->bd_part_write_openers;
+
+	return !!whole->bd_write_openers;
+}
 /*
  * bd_mutex locking:
  *
@@ -1599,8 +1630,28 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, void *holder,
 	bdev->bd_openers++;
 	if (for_part)
 		bdev->bd_part_count++;
-	if (claiming)
+
+	if (!for_part && (mode & FMODE_WRITE)) {
+		spin_lock(&bdev_lock);
+		bdev->bd_write_openers++;
+		if (bdev->bd_contains != bdev)
+			bdev->bd_contains->bd_part_write_openers++;
+		spin_unlock(&bdev_lock);
+	}
+
+	if (claiming) {
+		spin_lock(&bdev_lock);
+		/*
+		 * Open an write opened block device exclusively, the
+		 * writing process may probability corrupt the device,
+		 * such as a mounted file system, give a hint here.
+		 */
+		if (is_conflict_excl_open(bdev, claiming, mode))
+			blkdev_dump_conflict_opener(bdev, "VFS: Open an write opened "
+				"block device exclusively");
 		bd_finish_claiming(bdev, claiming, holder);
+		spin_unlock(&bdev_lock);
+	}
 
 	/*
 	 * Block event polling for write claims if requested.  Any write holder
@@ -1817,6 +1868,14 @@ static void __blkdev_put(struct block_device *bdev, fmode_t mode, int for_part)
 	mutex_lock_nested(&bdev->bd_mutex, for_part);
 	if (for_part)
 		bdev->bd_part_count--;
+
+	if (!for_part && (mode & FMODE_WRITE)) {
+		spin_lock(&bdev_lock);
+		bdev->bd_write_openers--;
+		if (bdev->bd_contains != bdev)
+			bdev->bd_contains->bd_part_write_openers--;
+		spin_unlock(&bdev_lock);
+	}
 
 	if (!--bdev->bd_openers) {
 		WARN_ON_ONCE(bdev->bd_holders);
