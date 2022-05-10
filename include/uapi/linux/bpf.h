@@ -3749,6 +3749,12 @@ union bpf_attr {
  *     Return
  *             A 64-bit integer containing the current GID and UID, and
  *             created as such: *current_gid* **<< 32 \|** *current_uid*.
+ *
+ * int bpf_sk_original_addr(void *bpf_socket, int optname, char *optval, int optlen)
+ *     Description
+ *             Get Ipv4 origdst or replysrc. Works with IPv4.
+ *     Return
+ *             0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3908,6 +3914,7 @@ union bpf_attr {
 	FN(this_cpu_ptr),		\
 	FN(redirect_peer),		\
 	FN(get_sockops_uid_gid),	\
+	FN(sk_original_addr),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
