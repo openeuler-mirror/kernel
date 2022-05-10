@@ -2277,8 +2277,6 @@ rcu_report_qs_rdp(struct rcu_data *rdp)
 	unsigned long flags;
 	unsigned long mask;
 	bool needwake = false;
-	const bool offloaded = IS_ENABLED(CONFIG_RCU_NOCB_CPU) &&
-			       rcu_segcblist_is_offloaded(&rdp->cblist);
 	struct rcu_node *rnp;
 
 	WARN_ON_ONCE(rdp->cpu != smp_processor_id());
@@ -2302,9 +2300,13 @@ rcu_report_qs_rdp(struct rcu_data *rdp)
 	if ((rnp->qsmask & mask) == 0) {
 		raw_spin_unlock_irqrestore_rcu_node(rnp, flags);
 	} else {
+		const bool offloaded = IS_ENABLED(CONFIG_RCU_NOCB_CPU) &&
+				       rcu_segcblist_is_offloaded(&rdp->cblist);
 		/*
 		 * This GP can't end until cpu checks in, so all of our
 		 * callbacks can be processed during the next GP.
+		 *
+		 * NOCB kthreads have their own way to deal with that.
 		 */
 		if (!offloaded)
 			needwake = rcu_accelerate_cbs(rnp, rdp);
