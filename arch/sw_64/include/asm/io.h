@@ -64,13 +64,6 @@ static inline void * __deprecated bus_to_virt(unsigned long address)
 }
 #define isa_bus_to_virt bus_to_virt
 
-/*
- * There are different chipsets to interface the sw64 CPUs to the world.
- */
-
-#define IO_CONCAT(a, b)		_IO_CONCAT(a, b)
-#define _IO_CONCAT(a, b)	a ## _ ## b
-
 #include <asm/sw64io.h>
 
 /*
