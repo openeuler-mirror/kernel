@@ -2985,9 +2985,11 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 		RCU_INIT_POINTER(sk->sk_wq, &sock->wq);
 		sock->sk	=	sk;
 		sk->sk_uid	=	SOCK_INODE(sock)->i_uid;
+		sk->sk_gid	=	SOCK_INODE(sock)->i_gid;
 	} else {
 		RCU_INIT_POINTER(sk->sk_wq, NULL);
 		sk->sk_uid	=	make_kuid(sock_net(sk)->user_ns, 0);
+		sk->sk_gid	=	make_kgid(sock_net(sk)->user_ns, 0);
 	}
 
 	rwlock_init(&sk->sk_callback_lock);
