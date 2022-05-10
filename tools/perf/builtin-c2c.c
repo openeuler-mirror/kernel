@@ -615,6 +615,47 @@ tot_hitm_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
 	return tot_hitm_left - tot_hitm_right;
 }
 
+#define TOT_LD_HIT(stats)		\
+	((stats)->ld_fbhit +		\
+	 (stats)->ld_l1hit +		\
+	 (stats)->ld_l2hit +		\
+	 (stats)->ld_llchit +		\
+	 (stats)->lcl_hitm +		\
+	 (stats)->rmt_hitm +		\
+	 (stats)->rmt_hit)
+
+static int tot_ld_hit_entry(struct perf_hpp_fmt *fmt,
+			    struct perf_hpp *hpp,
+			    struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	unsigned int tot_hit;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	tot_hit = TOT_LD_HIT(&c2c_he->stats);
+
+	return scnprintf(hpp->buf, hpp->size, "%*u", width, tot_hit);
+}
+
+static int64_t tot_ld_hit_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
+			      struct hist_entry *left,
+			      struct hist_entry *right)
+{
+	struct c2c_hist_entry *c2c_left;
+	struct c2c_hist_entry *c2c_right;
+	uint64_t tot_hit_left;
+	uint64_t tot_hit_right;
+
+	c2c_left  = container_of(left, struct c2c_hist_entry, he);
+	c2c_right = container_of(right, struct c2c_hist_entry, he);
+
+	tot_hit_left  = TOT_LD_HIT(&c2c_left->stats);
+	tot_hit_right = TOT_LD_HIT(&c2c_right->stats);
+
+	return tot_hit_left - tot_hit_right;
+}
+
 #define STAT_FN_ENTRY(__f)					\
 static int							\
 __f ## _entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,	\
@@ -856,6 +897,58 @@ percent_hitm_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
 
 	per_left  = percent_hitm(c2c_left);
 	per_right = percent_hitm(c2c_right);
+
+	return per_left - per_right;
+}
+
+static double percent_tot_ld_hit(struct c2c_hist_entry *c2c_he)
+{
+	struct c2c_hists *hists;
+	int tot = 0, st = 0;
+
+	hists = container_of(c2c_he->he.hists, struct c2c_hists, hists);
+
+	st  = TOT_LD_HIT(&c2c_he->stats);
+	tot = TOT_LD_HIT(&hists->stats);
+
+	return tot ? (double) st * 100 / tot : 0;
+}
+
+static int
+percent_tot_ld_hit_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+			 struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	char buf[10];
+	double per;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	per = percent_tot_ld_hit(c2c_he);
+	return scnprintf(hpp->buf, hpp->size, "%*s", width, PERC_STR(buf, per));
+}
+
+static int
+percent_tot_ld_hit_color(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+			 struct hist_entry *he)
+{
+	return percent_color(fmt, hpp, he, percent_tot_ld_hit);
+}
+
+static int64_t
+percent_tot_ld_hit_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
+		   struct hist_entry *left, struct hist_entry *right)
+{
+	struct c2c_hist_entry *c2c_left;
+	struct c2c_hist_entry *c2c_right;
+	double per_left;
+	double per_right;
+
+	c2c_left  = container_of(left, struct c2c_hist_entry, he);
+	c2c_right = container_of(right, struct c2c_hist_entry, he);
+
+	per_left  = percent_tot_ld_hit(c2c_left);
+	per_right = percent_tot_ld_hit(c2c_right);
 
 	return per_left - per_right;
 }
@@ -1419,6 +1512,14 @@ static struct c2c_dimension dim_ld_rmthit = {
 	.width		= 8,
 };
 
+static struct c2c_dimension dim_tot_ld_hit = {
+	.header		= HEADER_BOTH("Load Hit", "Total"),
+	.name		= "tot_ld_hit",
+	.cmp		= tot_ld_hit_cmp,
+	.entry		= tot_ld_hit_entry,
+	.width		= 8,
+};
+
 static struct c2c_dimension dim_tot_recs = {
 	.header		= HEADER_BOTH("Total", "records"),
 	.name		= "tot_recs",
@@ -1465,6 +1566,15 @@ static struct c2c_dimension dim_percent_lcl_hitm = {
 	.entry		= percent_lcl_hitm_entry,
 	.color		= percent_lcl_hitm_color,
 	.width		= 7,
+};
+
+static struct c2c_dimension dim_percent_tot_ld_hit = {
+	.header         = HEADER_BOTH("Load Hit", "Pct"),
+	.name		= "percent_tot_ld_hit",
+	.cmp		= percent_tot_ld_hit_cmp,
+	.entry		= percent_tot_ld_hit_entry,
+	.color		= percent_tot_ld_hit_color,
+	.width		= 8,
 };
 
 static struct c2c_dimension dim_percent_stores_l1hit = {
@@ -1622,11 +1732,13 @@ static struct c2c_dimension *dimensions[] = {
 	&dim_ld_l2hit,
 	&dim_ld_llchit,
 	&dim_ld_rmthit,
+	&dim_tot_ld_hit,
 	&dim_tot_recs,
 	&dim_tot_loads,
 	&dim_percent_hitm,
 	&dim_percent_rmt_hitm,
 	&dim_percent_lcl_hitm,
+	&dim_percent_tot_ld_hit,
 	&dim_percent_stores_l1hit,
 	&dim_percent_stores_l1miss,
 	&dim_dram_lcl,
