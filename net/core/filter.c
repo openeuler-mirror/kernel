@@ -5006,6 +5006,29 @@ static const struct bpf_func_proto bpf_sock_addr_setsockopt_proto = {
 	.arg5_type	= ARG_CONST_SIZE,
 };
 
+BPF_CALL_1(bpf_get_sockops_uid_gid, struct bpf_sock_ops_kern *, bpf_sock)
+{
+	struct sock *sk = bpf_sock->sk;
+	kuid_t uid;
+	kgid_t gid;
+
+	if (!sk || !sk_fullsock(sk))
+		return -EINVAL;
+
+	uid = sock_net_uid(sock_net(sk), sk);
+	gid = sock_net_gid(sock_net(sk), sk);
+
+	return ((u64)from_kgid_munged(sock_net(sk)->user_ns, gid)) << 32 |
+		from_kuid_munged(sock_net(sk)->user_ns, uid);
+}
+
+static const struct bpf_func_proto bpf_get_sockops_uid_gid_proto = {
+	.func		= bpf_get_sockops_uid_gid,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+};
+
 BPF_CALL_5(bpf_sock_addr_getsockopt, struct bpf_sock_addr_kern *, ctx,
 	   int, level, int, optname, char *, optval, int, optlen)
 {
@@ -7276,6 +7299,8 @@ sock_ops_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_sk_storage_get_proto;
 	case BPF_FUNC_sk_storage_delete:
 		return &bpf_sk_storage_delete_proto;
+	case BPF_FUNC_get_sockops_uid_gid:
+		return &bpf_get_sockops_uid_gid_proto;
 #ifdef CONFIG_INET
 	case BPF_FUNC_load_hdr_opt:
 		return &bpf_sock_ops_load_hdr_opt_proto;

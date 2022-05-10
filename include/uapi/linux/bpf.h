@@ -3742,6 +3742,13 @@ union bpf_attr {
  * 	Return
  * 		The helper returns **TC_ACT_REDIRECT** on success or
  * 		**TC_ACT_SHOT** on error.
+ *
+ * u64 bpf_get_sockops_uid_gid(void *sockops)
+ *     Description
+ *             Get sock's uid and gid
+ *     Return
+ *             A 64-bit integer containing the current GID and UID, and
+ *             created as such: *current_gid* **<< 32 \|** *current_uid*.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3900,6 +3907,7 @@ union bpf_attr {
 	FN(per_cpu_ptr),		\
 	FN(this_cpu_ptr),		\
 	FN(redirect_peer),		\
+	FN(get_sockops_uid_gid),	\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
