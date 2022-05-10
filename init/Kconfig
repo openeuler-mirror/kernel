@@ -966,6 +966,15 @@ config QOS_SCHED
 
     default n
 
+config QOS_SCHED_SMT_EXPELLER
+	bool "Qos smt expeller"
+	depends on SCHED_SMT
+	depends on QOS_SCHED
+	default n
+	help
+	  This feature enable online tasks to expel offline tasks
+	  on the smt sibling cpus, and exclusively occupy CPU resources.
+
 config FAIR_GROUP_SCHED
 	bool "Group scheduling for SCHED_OTHER"
 	depends on CGROUP_SCHED
