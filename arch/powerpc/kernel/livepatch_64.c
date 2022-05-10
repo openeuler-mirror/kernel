@@ -439,43 +439,44 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 	return ret;
 }
 
-int arch_klp_patch_func(struct klp_func *func)
+static int do_patch(unsigned long pc, unsigned long new_addr,
+		    struct arch_klp_data *arch_data, struct module *old_mod)
 {
-	struct klp_func_node *func_node;
-	unsigned long pc, new_addr;
-	long ret;
+	int ret;
 
-	func_node = func->func_node;
-	list_add_rcu(&func->stack_node, &func_node->func_stack);
-
-	pc = (unsigned long)func->old_func;
-	new_addr = (unsigned long)func->new_func;
-	ret = livepatch_create_branch(pc, (unsigned long)&func_node->arch_data.trampoline,
-				      new_addr, func->old_mod);
+	ret = livepatch_create_branch(pc, (unsigned long)&arch_data->trampoline,
+				      new_addr, old_mod);
 	if (ret)
-		goto ERR_OUT;
-	flush_icache_range((unsigned long)pc,
-			(unsigned long)pc + LJMP_INSN_SIZE * PPC64_INSN_SIZE);
-
+		return -EPERM;
+	flush_icache_range(pc, pc + LJMP_INSN_SIZE * PPC64_INSN_SIZE);
 	pr_debug("[%s %d] old = 0x%lx/0x%lx/%pS, new = 0x%lx/0x%lx/%pS\n",
 		 __func__, __LINE__,
 		 pc, ppc_function_entry((void *)pc), (void *)pc,
 		 new_addr, ppc_function_entry((void *)new_addr),
 		 (void *)ppc_function_entry((void *)new_addr));
-
 	return 0;
+}
 
-ERR_OUT:
-	list_del_rcu(&func->stack_node);
+int arch_klp_patch_func(struct klp_func *func)
+{
+	struct klp_func_node *func_node;
+	int ret;
 
-	return -EPERM;
+	func_node = func->func_node;
+	list_add_rcu(&func->stack_node, &func_node->func_stack);
+	ret = do_patch((unsigned long)func->old_func,
+		       (unsigned long)func->new_func,
+		       &func_node->arch_data, func->old_mod);
+	if (ret)
+		list_del_rcu(&func->stack_node);
+	return ret;
 }
 
 void arch_klp_unpatch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
-	unsigned long pc, new_addr;
+	unsigned long pc;
 	u32 insns[LJMP_INSN_SIZE];
 	int i;
 
@@ -492,25 +493,14 @@ void arch_klp_unpatch_func(struct klp_func *func)
 					  ppc_inst(insns[i]));
 
 		pr_debug("[%s %d] restore insns at 0x%lx\n", __func__, __LINE__, pc);
+		flush_icache_range(pc, pc + LJMP_INSN_SIZE * PPC64_INSN_SIZE);
 	} else {
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 					struct klp_func, stack_node);
-		new_addr = (unsigned long)next_func->new_func;
-
-		livepatch_create_branch(pc, (unsigned long)&func_node->arch_data.trampoline,
-			new_addr, func->old_mod);
-
-		pr_debug("[%s %d] old = 0x%lx/0x%lx/%pS, new = 0x%lx/0x%lx/%pS\n",
-			__func__, __LINE__,
-			pc, ppc_function_entry((void *)pc), (void *)pc,
-			new_addr, ppc_function_entry((void *)new_addr),
-			(void *)ppc_function_entry((void *)new_addr));
-
+		do_patch(pc, (unsigned long)next_func->new_func,
+			 &func_node->arch_data, func->old_mod);
 	}
-
-	flush_icache_range((unsigned long)pc,
-			(unsigned long)pc + LJMP_INSN_SIZE * PPC64_INSN_SIZE);
 }
 
 /* return 0 if the func can be patched */

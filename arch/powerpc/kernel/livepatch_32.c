@@ -392,24 +392,19 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 	return ret;
 }
 
-int arch_klp_patch_func(struct klp_func *func)
+static int do_patch(unsigned long pc, unsigned long new_addr)
 {
-	struct klp_func_node *func_node;
-	unsigned long pc, new_addr;
-	long ret;
+	int ret;
 	int i;
 	u32 insns[LJMP_INSN_SIZE];
 
-	func_node = func->func_node;
-	list_add_rcu(&func->stack_node, &func_node->func_stack);
-	pc = (unsigned long)func->old_func;
-	new_addr = (unsigned long)func->new_func;
 	if (offset_in_range(pc, new_addr, SZ_32M)) {
 		struct ppc_inst instr;
 
 		create_branch(&instr, (struct ppc_inst *)pc, new_addr, 0);
-		if (patch_instruction((struct ppc_inst *)pc, instr))
-			goto ERR_OUT;
+		ret = patch_instruction((struct ppc_inst *)pc, instr);
+		if (ret)
+			return -EPERM;
 	} else {
 		/*
 		 * lis r12,sym@ha
@@ -426,23 +421,30 @@ int arch_klp_patch_func(struct klp_func *func)
 			ret = patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
 						ppc_inst(insns[i]));
 			if (ret)
-				goto ERR_OUT;
+				return -EPERM;
 		}
 	}
-
 	return 0;
+}
 
-ERR_OUT:
-	list_del_rcu(&func->stack_node);
+int arch_klp_patch_func(struct klp_func *func)
+{
+	struct klp_func_node *func_node;
+	int ret;
 
-	return -EPERM;
+	func_node = func->func_node;
+	list_add_rcu(&func->stack_node, &func_node->func_stack);
+	ret = do_patch((unsigned long)func->old_func, (unsigned long)func->new_func);
+	if (ret)
+		list_del_rcu(&func->stack_node);
+	return ret;
 }
 
 void arch_klp_unpatch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
-	unsigned long pc, new_addr;
+	unsigned long pc;
 	u32 insns[LJMP_INSN_SIZE];
 	int i;
 
@@ -461,29 +463,7 @@ void arch_klp_unpatch_func(struct klp_func *func)
 		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 					struct klp_func, stack_node);
-
-		new_addr = (unsigned long)next_func->new_func;
-		if (offset_in_range(pc, new_addr, SZ_32M)) {
-			struct ppc_inst instr;
-
-			create_branch(&instr, (struct ppc_inst *)pc, new_addr, 0);
-			patch_instruction((struct ppc_inst *)pc, instr);
-		} else {
-			/*
-			 * lis r12,sym@ha
-			 * addi r12,r12,sym@l
-			 * mtctr r12
-			 * bctr
-			 */
-			insns[0] = 0x3d800000 + ((new_addr + 0x8000) >> 16);
-			insns[1] = 0x398c0000 + (new_addr & 0xffff);
-			insns[2] = 0x7d8903a6;
-			insns[3] = 0x4e800420;
-
-			for (i = 0; i < LJMP_INSN_SIZE; i++)
-				patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
-						  ppc_inst(insns[i]));
-		}
+		do_patch(pc, (unsigned long)next_func->new_func);
 	}
 }
 
