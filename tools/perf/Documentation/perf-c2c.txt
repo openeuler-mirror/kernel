@@ -109,7 +109,8 @@ REPORT OPTIONS
 
 -d::
 --display::
-	Switch to HITM type (rmt, lcl) to display and sort on. Total HITMs as default.
+	Switch to HITM type (rmt, lcl) or all load cache hit (all) to display
+	and sort on. Total HITMs as default.
 
 --stitch-lbr::
 	Show callgraph with stitched LBRs, which may have more complete
@@ -174,11 +175,17 @@ For each cacheline in the 1) list we display following data:
   Cacheline
   - cacheline address (hex number)
 
-  Rmt/Lcl Hitm
+  Rmt/Lcl Hitm (For display with HITM types)
   - cacheline percentage of all Remote/Local HITM accesses
 
-  LLC Load Hitm - Total, LclHitm, RmtHitm
+  LLC Load Hitm - Total, LclHitm, RmtHitm (For display with HITM types)
   - count of Total/Local/Remote load HITMs
+
+  LD Hit Pct (For display 'all')
+  - cacheline percentage of all load hit accesses
+
+  LD Hit Total (For display 'all')
+  - sum of all load hit accesses
 
   Total records
   - sum of all cachelines accesses
@@ -207,8 +214,11 @@ For each cacheline in the 1) list we display following data:
 
 For each offset in the 2) list we display following data:
 
-  HITM - Rmt, Lcl
+  HITM - Rmt, Lcl (For display with HITM types)
   - % of Remote/Local HITM accesses for given offset within cacheline
+
+  Load Refs - Hit, Miss (For display 'all')
+  - % of load accesses that hit/missed cache for given offset within cacheline
 
   Store Refs - L1 Hit, L1 Miss
   - % of store accesses that hit/missed L1 for given offset within cacheline
@@ -249,7 +259,8 @@ The 'Node' field displays nodes that accesses given cacheline
 offset. Its output comes in 3 flavors:
   - node IDs separated by ','
   - node IDs with stats for each ID, in following format:
-      Node{cpus %hitms %stores}
+      Node{cpus %hitms %stores} (For display with HITM types)
+      Node{cpus %loads %stores} (For display with "all")
   - node IDs with list of affected CPUs in following format:
       Node{cpu list}
 
