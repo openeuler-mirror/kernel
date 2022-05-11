@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2205.1.0
+%global hulkrelease 2205.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0148
+Release: %{hulkrelease}.0149
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,41 @@ fi
 %endif
 
 %changelog
+
+* Tue May 10 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2205.3.0.0149
+- ixgbevf: add disable link state
+- ixgbe: add improvement for MDD response functionality
+- ixgbe: add the ability for the PF to disable VF link state
+- io_uring: fix false WARN_ONCE
+- mm/sharepool: Fix sharepool node id invalid when using sp_alloc
+- sharepool: fix hisi oom deadlock
+- share_pool: Fix ABBA deadlock
+- net: ipv6: fix skb_over_panic in __ip6_append_data
+- net: handle ARPHRD_PIMREG in dev_is_mac_header_xmit()
+- net/packet: fix slab-out-of-bounds access in packet_recvmsg()
+- mm: fix dereference a null pointer in migrate[_huge]_page_move_mapping()
+- cpuset: Fix unsafe lock order between cpuset lock and cpuslock
+- tcp: make tcp_read_sock() more robust
+- xfrm: Fix xfrm migrate issues when address family changes
+- Revert "xfrm: state and policy should fail if XFRMA_IF_ID 0"
+- ext4: add check to prevent attempting to resize an fs with sparse_super2
+- net-sysfs: add check for netdevice being present to speed_show
+- memfd: fix F_SEAL_WRITE after shmem huge page allocated
+- PCI: pciehp: Fix infinite loop in IRQ handler upon power fault
+- netfilter: nf_queue: fix possible use-after-free
+- netfilter: nf_queue: don't assume sk is full socket
+- xfrm: enforce validity of offload input flags
+- xfrm: fix the if_id check in changelink
+- netfilter: fix use-after-free in __nf_register_net_hook()
+- xfrm: fix MTU regression
+- cifs: fix double free race when mount fails in cifs_get_root()
+- mtd: rawnand: brcmnand: Fixed incorrect sub-page ECC status
+- x86/asm: Move native_write_cr0/4() out of line
+- x86/asm: Pin sensitive CR0 bits
+- x86/asm: Pin sensitive CR4 bits
+- mm: Add more debug info if oom occurs
+- mm: Fix reliable task used problem shown in meminfo
+- mm: Show correct reliable pagecache size
 
 * Fri May 06 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2205.1.0.0148
 - hamradio: improve the incomplete fix to avoid NPD
