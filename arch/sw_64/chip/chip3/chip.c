@@ -54,7 +54,7 @@ static struct clocksource clocksource_longtime = {
 static u64 read_vtime(struct clocksource *cs)
 {
 	u64 result;
-	unsigned long vtime_addr = PAGE_OFFSET | IO_BASE | LONG_TIME;
+	unsigned long vtime_addr = IO_BASE | LONG_TIME;
 
 	result = rdio64(vtime_addr);
 	return result;
