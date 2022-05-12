@@ -2,6 +2,7 @@
 #ifndef _ASM_SW64_SW64IO_H
 #define _ASM_SW64_SW64IO_H
 
+#include <asm/io.h>
 #include <asm/page.h>
 
 extern void setup_chip_clocksource(void);
@@ -22,13 +23,9 @@ read_rc_conf(unsigned long node, unsigned long rc,
 		unsigned int offset)
 {
 	void __iomem *addr;
-	unsigned int value;
 
 	addr = __va(MK_RC_CFG(node, rc) | offset);
-	value = *(volatile unsigned int *)addr;
-	mb();
-
-	return value;
+	return readl(addr);
 }
 
 static inline void
@@ -38,8 +35,7 @@ write_rc_conf(unsigned long node, unsigned long rc,
 	void __iomem *addr;
 
 	addr = __va(MK_RC_CFG(node, rc) | offset);
-	*(unsigned int *)addr = data;
-	mb();
+	writel(data, addr);
 }
 
 static inline  unsigned long
@@ -47,13 +43,9 @@ read_piu_ior0(unsigned long node, unsigned long rc,
 		unsigned int reg)
 {
 	void __iomem *addr;
-	unsigned long value;
 
 	addr = __va(MK_PIU_IOR0(node, rc) + reg);
-	value = *(volatile unsigned long __iomem *)addr;
-	mb();
-
-	return value;
+	return readq(addr);
 }
 
 static inline void
@@ -63,8 +55,7 @@ write_piu_ior0(unsigned long node, unsigned long rc,
 	void __iomem *addr;
 
 	addr = __va(MK_PIU_IOR0(node, rc) + reg);
-	*(unsigned long __iomem *)addr = data;
-	mb();
+	writeq(data, addr);
 }
 
 static inline  unsigned long
@@ -72,13 +63,9 @@ read_piu_ior1(unsigned long node, unsigned long rc,
 		unsigned int reg)
 {
 	void __iomem *addr;
-	unsigned long value;
 
 	addr = __va(MK_PIU_IOR1(node, rc) + reg);
-	value = *(volatile unsigned long __iomem *)addr;
-	mb();
-
-	return value;
+	return readq(addr);
 }
 
 static inline void
@@ -88,21 +75,16 @@ write_piu_ior1(unsigned long node, unsigned long rc,
 	void __iomem *addr;
 
 	addr = __va(MK_PIU_IOR1(node, rc) + reg);
-	*(volatile unsigned long __iomem *)addr = data;
-	mb();
+	writeq(data, addr);
 }
 
 static inline unsigned long
 sw64_io_read(unsigned long node, unsigned long reg)
 {
 	void __iomem *addr;
-	unsigned long value;
 
 	addr = __va(SW64_IO_BASE(node) | reg);
-	value = *(volatile unsigned long __iomem *)addr;
-	mb();
-
-	return value;
+	return readq(addr);
 }
 
 static inline void
@@ -111,7 +93,6 @@ sw64_io_write(unsigned long node, unsigned long reg, unsigned long data)
 	void __iomem *addr;
 
 	addr = __va(SW64_IO_BASE(node) | reg);
-	*(volatile unsigned long __iomem *)addr = data;
-	mb();
+	writeq(data, addr);
 }
 #endif
