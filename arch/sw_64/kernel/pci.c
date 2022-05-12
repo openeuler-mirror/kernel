@@ -398,7 +398,7 @@ int sw6_pcie_read_rc_cfg(struct pci_bus *bus, unsigned int devfn,
 {
 	u32 data;
 	struct pci_controller *hose = bus->sysdata;
-	void __iomem *cfg_iobase = (void *)hose->rc_config_space_base;
+	void __iomem *cfg_iobase = hose->rc_config_space_base;
 
 	if (IS_ENABLED(CONFIG_PCI_DEBUG))
 		pr_debug("rc read addr:%px bus %d, devfn %#x, where %#x size=%d\t",
@@ -549,9 +549,8 @@ static void __iomem *sw6_pcie_map_bus(struct pci_bus *bus,
 		return NULL;
 
 	relbus = (bus->number << 24) | (devfn << 16) | where;
-	relbus |= PCI_EP_CFG;
 
-	cfg_iobase = (void *)(hose->ep_config_space_base | relbus);
+	cfg_iobase = hose->ep_config_space_base + relbus;
 
 	if (IS_ENABLED(CONFIG_PCI_DEBUG))
 		pr_debug("addr:%px bus %d, devfn %d, where %d\n",

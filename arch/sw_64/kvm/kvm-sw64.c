@@ -311,7 +311,7 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	kvm->arch.host_phys_addr = (u64)addr;
 	kvm->arch.size = round_up(mem->memory_size, 8<<20);
 
-	memset((void *)(PAGE_OFFSET + addr), 0, 0x2000000);
+	memset(__va(addr), 0, 0x2000000);
 
 	return 0;
 }
@@ -344,7 +344,7 @@ int kvm_arch_vcpu_reset(struct kvm_vcpu *vcpu)
 	memset(&vcpu->arch.irqs_pending, 0, sizeof(vcpu->arch.irqs_pending));
 
 	if (vcpu->vcpu_id == 0)
-		memset((void *)(PAGE_OFFSET + addr), 0, 0x2000000);
+		memset(__va(addr), 0, 0x2000000);
 
 	return 0;
 }
@@ -432,18 +432,17 @@ void _debug_printk_vcpu(struct kvm_vcpu *vcpu)
 {
 	unsigned long pc = vcpu->arch.regs.pc;
 	unsigned long offset = vcpu->kvm->arch.host_phys_addr;
-	unsigned long pc_phys = PAGE_OFFSET | ((pc & 0x7fffffffUL) + offset);
+	unsigned int *pc_phys = __va((pc & 0x7fffffffUL) + offset);
 	unsigned int insn;
 	int opc, ra, disp16;
 
-	insn = *(unsigned int *)pc_phys;
-
+	insn = *pc_phys;
 	opc = (insn >> 26) & 0x3f;
 	ra = (insn >> 21) & 0x1f;
 	disp16 = insn & 0xffff;
 
 	if (opc == 0x06 && disp16 == 0x1000) /* RD_F */
-		pr_info("vcpu exit: pc = %#lx (%#lx), insn[%x] : rd_f r%d [%#lx]\n",
+		pr_info("vcpu exit: pc = %#lx (%px), insn[%x] : rd_f r%d [%#lx]\n",
 				pc, pc_phys, insn, ra, vcpu_get_reg(vcpu, ra));
 }
 

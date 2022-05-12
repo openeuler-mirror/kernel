@@ -480,8 +480,8 @@ static void chip3_hose_init(struct pci_controller *hose)
 
 	hose->dense_mem_base = pci_io_base;
 	hose->dense_io_base = pci_io_base | PCI_LEGACY_IO;
-	hose->ep_config_space_base = PAGE_OFFSET | pci_io_base | PCI_EP_CFG;
-	hose->rc_config_space_base = PAGE_OFFSET | pci_io_base | PCI_RC_CFG;
+	hose->ep_config_space_base = __va(pci_io_base | PCI_EP_CFG);
+	hose->rc_config_space_base = __va(pci_io_base | PCI_RC_CFG);
 
 	hose->mem_space->start = pci_io_base + PCI_32BIT_MEMIO;
 	hose->mem_space->end = hose->mem_space->start + PCI_32BIT_MEMIO_SIZE - 1;

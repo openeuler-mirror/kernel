@@ -4,6 +4,7 @@
 #include <linux/spinlock.h>
 
 #include <asm/chip3_io.h>
+#include <asm/io.h>
 
 #ifdef CONFIG_SW64_RRK
 
@@ -18,7 +19,7 @@ unsigned long sw64_printk_offset;
  * For output the kernel message on the console
  * with full-system emulator.
  */
-#define QEMU_PRINTF_BUFF_BASE	(IO_BASE | MCU_BASE | 0x40000UL | PAGE_OFFSET)
+#define QEMU_PRINTF_BUFF_BASE	(IO_BASE | MCU_BASE | 0x40000UL)
 
 int sw64_printk(const char *fmt, va_list args)
 {
@@ -38,9 +39,10 @@ int sw64_printk(const char *fmt, va_list args)
 	} else {
 		printed_len += vscnprintf(sw64_printk_buf, 1024, fmt, args);
 		if (is_in_emul()) {
-			unsigned long write_addr = QEMU_PRINTF_BUFF_BASE;
-			*(unsigned long *)write_addr = (unsigned long)((((unsigned long)sw64_printk_buf) & 0xffffffffUL)
-					| ((unsigned long)printed_len << 32));
+			void __iomem *addr = __va(QEMU_PRINTF_BUFF_BASE);
+			u64 data = ((u64)sw64_printk_buf & 0xffffffffUL)
+					| ((u64)printed_len << 32);
+			*(u64 *)addr = data;
 		}
 	}
 	sw64_printk_offset += printed_len;

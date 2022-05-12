@@ -54,7 +54,7 @@ static inline void __iomem *xuelang_ioportmap(unsigned long addr)
 		addr = addr | io_offset;
 	}
 
-	return (void __iomem *)(addr | PAGE_OFFSET);
+	return __va(addr);
 }
 
 struct sw64_platform_ops xuelang_ops = {
