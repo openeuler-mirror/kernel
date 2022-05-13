@@ -26,6 +26,7 @@
 #include <linux/platform_device.h>
 #include <linux/property.h>
 #include <linux/regmap.h>
+#include <scsi/scsi_common.h>
 #include <scsi/sas_ata.h>
 #include <scsi/libsas.h>
 
@@ -570,12 +571,6 @@ struct hisi_sas_slot_buf_table {
 struct hisi_sas_slot_dif_buf_table {
 	struct hisi_sas_slot_buf_table slot_buf;
 	struct hisi_sas_sge_dif_page sge_dif_page;
-};
-
-struct hisi_sas_sense_data {
-	int sense_key;
-	int add_sense_code;
-	int add_sense_code_qua;
 };
 
 extern bool hisi_sas_debugfs_enable;
