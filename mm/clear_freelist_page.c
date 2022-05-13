@@ -13,8 +13,10 @@
 #include <linux/sched.h>
 #include <linux/atomic.h>
 #include <linux/nmi.h>
+#include <linux/sched/clock.h>
 #include <linux/module.h>
 
+#define CFP_DEFAULT_TIMEOUT 2000
 #define for_each_populated_zone_pgdat(pgdat, zone) \
 	for (zone = pgdat->node_zones;      \
 		zone;                  \
@@ -32,6 +34,7 @@ static DECLARE_WAIT_QUEUE_HEAD(clear_freelist_wait);
 static DEFINE_MUTEX(clear_freelist_lock);
 static atomic_t clear_freelist_workers;
 static atomic_t clear_pages_num;
+static ulong cfp_timeout_ms = CFP_DEFAULT_TIMEOUT;
 static int one = 1;
 
 /*
@@ -51,15 +54,25 @@ static struct zone *next_pgdat_zone(struct zone *zone)
 static void clear_pgdat_freelist_pages(struct work_struct *work)
 {
 	struct pgdat_entry *entry = container_of(work, struct pgdat_entry, work);
+	u64 cfp_timeout_ns = cfp_timeout_ms * NSEC_PER_MSEC;
 	struct pglist_data *pgdat = entry->pgdat;
 	unsigned long flags, order, t;
 	struct page *page;
 	struct zone *zone;
+	u64 start, now;
+
+	start = sched_clock();
 
 	for_each_populated_zone_pgdat(pgdat, zone) {
 		spin_lock_irqsave(&zone->lock, flags);
 		for_each_migratetype_order(order, t) {
 			list_for_each_entry(page, &zone->free_area[order].free_list[t], lru) {
+				now = sched_clock();
+				if (unlikely(now - start > cfp_timeout_ns)) {
+					spin_unlock_irqrestore(&zone->lock, flags);
+					goto out;
+				}
+
 #ifdef CONFIG_KMAP_LOCAL
 				int i;
 
@@ -77,6 +90,8 @@ static void clear_pgdat_freelist_pages(struct work_struct *work)
 
 		cond_resched();
 	}
+
+out:
 	kfree(entry);
 
 	if (atomic_dec_and_test(&clear_freelist_workers))
@@ -170,3 +185,4 @@ static int __init clear_freelist_init(void)
 	return 0;
 }
 module_init(clear_freelist_init);
+module_param(cfp_timeout_ms, ulong, 0644);
