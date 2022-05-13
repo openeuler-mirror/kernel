@@ -1890,7 +1890,6 @@ static void handle_chl_int2_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 	hisi_sas_phy_write32(hisi_hba, phy_no, CHL_INT2, irq_value);
 }
 
-#define WAIT_PHYUP_TIMEOUT_V3_HW 20
 static void wait_phyup_timedout_v3_hw(struct timer_list *t)
 {
 	struct hisi_sas_phy *phy = from_timer(phy, t, timer);
@@ -1917,7 +1916,7 @@ static void handle_chl_int0_v3_hw(struct hisi_hba *hisi_hba, int phy_no)
 		if (!timer_pending(&phy->timer)) {
 			phy->timer.function = wait_phyup_timedout_v3_hw;
 			phy->timer.expires = jiffies +
-					WAIT_PHYUP_TIMEOUT_V3_HW * HZ;
+					HISI_SAS_WAIT_PHYUP_TIMEOUT;
 			add_timer(&phy->timer);
 		}
 	}

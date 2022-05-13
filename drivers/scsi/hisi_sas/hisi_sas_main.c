@@ -1783,6 +1783,7 @@ static int hisi_sas_debug_I_T_nexus_reset(struct domain_device *device)
 	int rc, reset_type = (sas_dev->dev_status == HISI_SAS_DEV_INIT ||
 			      !dev_is_sata(device)) ? true : false;
 	struct hisi_hba *hisi_hba = dev_to_hisi_hba(device);
+	struct device *dev = hisi_hba->dev;
 	struct sas_ha_struct *sas_ha = &hisi_hba->sha;
 	DECLARE_COMPLETION_ONSTACK(phyreset);
 
@@ -1809,7 +1810,8 @@ static int hisi_sas_debug_I_T_nexus_reset(struct domain_device *device)
 		struct hisi_sas_phy *phy =
 			container_of(sas_phy, struct hisi_sas_phy, sas_phy);
 		/* Wait for I_T reset complete, time out after 2s */
-		int ret = wait_for_completion_timeout(&phyreset, 2 * HZ);
+		int ret = wait_for_completion_timeout(&phyreset,
+				HISI_SAS_WAIT_PHYUP_TIMEOUT);
 		unsigned long flags;
 
 		spin_lock_irqsave(&phy->lock, flags);
@@ -1818,8 +1820,10 @@ static int hisi_sas_debug_I_T_nexus_reset(struct domain_device *device)
 		spin_unlock_irqrestore(&phy->lock, flags);
 
 		/* report PHY down if timed out */
-		if (!ret)
+		if (!ret) {
+			dev_warn(dev, "phy%d reset timeout\n", sas_phy->id);
 			hisi_sas_phy_down(hisi_hba, sas_phy->id, 0);
+		}
 	} else if (sas_dev->dev_status != HISI_SAS_DEV_INIT)
 		/* Sleep 2s, wait for I_T reset at expander env except fail */
 		if (!rc)

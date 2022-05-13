@@ -2874,7 +2874,6 @@ static const struct hisi_sas_hw_error port_ecc_axi_error[] = {
 	},
 };
 
-#define WAIT_PHYUP_TIMEOUT_V2_HW 20
 static void wait_phyup_timedout_v2_hw(struct timer_list *t)
 {
 	struct hisi_sas_phy *phy = from_timer(phy, t, timer);
@@ -2894,7 +2893,7 @@ static void phy_oob_ready_v2_hw(struct hisi_hba *hisi_hba, int phy_no)
 	if (!timer_pending(&phy->timer)) {
 		dev_dbg(dev, "phy%d OOB ready\n", phy_no);
 		phy->timer.function = wait_phyup_timedout_v2_hw;
-		phy->timer.expires = jiffies + WAIT_PHYUP_TIMEOUT_V2_HW * HZ;
+		phy->timer.expires = jiffies + HISI_SAS_WAIT_PHYUP_TIMEOUT;
 		add_timer(&phy->timer);
 	}
 }
