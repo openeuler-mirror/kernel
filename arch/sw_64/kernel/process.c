@@ -144,6 +144,13 @@ release_thread(struct task_struct *dead_task)
 {
 }
 
+int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
+{
+	fpstate_save(src);
+	*dst = *src;
+	return 0;
+}
+
 /*
  * Copy architecture-specific thread state
  */
@@ -162,8 +169,6 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 
 	childti->pcb.ksp = (unsigned long) childregs;
 	childti->pcb.flags = 7;	/* set FEN, clear everything else */
-	__fpstate_save(current);
-	p->thread = current->thread;
 
 	if (unlikely(p->flags & PF_KTHREAD)) {
 		/* kernel thread */
