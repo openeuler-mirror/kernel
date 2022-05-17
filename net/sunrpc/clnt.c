@@ -79,6 +79,7 @@ static void	call_connect_status(struct rpc_task *task);
 static __be32	*rpc_encode_header(struct rpc_task *task);
 static __be32	*rpc_verify_header(struct rpc_task *task);
 static int	rpc_ping(struct rpc_clnt *clnt);
+static int	rpc_ping_noreply(struct rpc_clnt *clnt);
 
 static void rpc_register_client(struct rpc_clnt *clnt)
 {
@@ -477,6 +478,12 @@ static struct rpc_clnt *rpc_create_xprt(struct rpc_create_args *args,
 
 	if (!(args->flags & RPC_CLNT_CREATE_NOPING)) {
 		int err = rpc_ping(clnt);
+		if (err != 0) {
+			rpc_shutdown_client(clnt);
+			return ERR_PTR(err);
+		}
+	} else if (args->flags & RPC_CLNT_CREATE_CONNECTED) {
+		int err = rpc_ping_noreply(clnt);
 		if (err != 0) {
 			rpc_shutdown_client(clnt);
 			return ERR_PTR(err);
@@ -2545,6 +2552,10 @@ static const struct rpc_procinfo rpcproc_null = {
 	.p_decode = rpcproc_decode_null,
 };
 
+static const struct rpc_procinfo rpcproc_null_noreply = {
+	.p_encode = rpcproc_encode_null,
+};
+
 static int rpc_ping(struct rpc_clnt *clnt)
 {
 	struct rpc_message msg = {
@@ -2555,6 +2566,32 @@ static int rpc_ping(struct rpc_clnt *clnt)
 	err = rpc_call_sync(clnt, &msg, RPC_TASK_SOFT | RPC_TASK_SOFTCONN);
 	put_rpccred(msg.rpc_cred);
 	return err;
+}
+
+static int rpc_ping_noreply(struct rpc_clnt *clnt)
+{
+	struct rpc_message msg = {
+		.rpc_proc = &rpcproc_null_noreply,
+	};
+	struct rpc_task_setup task_setup_data = {
+		.rpc_client = clnt,
+		.rpc_message = &msg,
+		.callback_ops = &rpc_default_ops,
+		.flags = RPC_TASK_SOFT | RPC_TASK_SOFTCONN,
+	};
+	struct rpc_task	*task;
+	int status;
+
+	msg.rpc_cred = authnull_ops.lookup_cred(NULL, NULL, 0);
+	task = rpc_run_task(&task_setup_data);
+	if (IS_ERR(task)) {
+		put_rpccred(msg.rpc_cred);
+		return PTR_ERR(task);
+	}
+	status = task->tk_status;
+	rpc_put_task(task);
+	put_rpccred(msg.rpc_cred);
+	return status;
 }
 
 static
