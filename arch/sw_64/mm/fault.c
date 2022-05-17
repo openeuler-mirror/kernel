@@ -80,7 +80,7 @@ __load_new_mm_context(struct mm_struct *next_mm)
 
 	pcb = &current_thread_info()->pcb;
 	pcb->asn = mmc & HARDWARE_ASN_MASK;
-	pcb->ptbr = ((unsigned long) next_mm->pgd - PAGE_OFFSET) >> PAGE_SHIFT;
+	pcb->ptbr = virt_to_pfn(next_mm->pgd);
 
 	__reload_thread(pcb);
 }
@@ -122,7 +122,7 @@ unsigned long show_va_to_pa(struct mm_struct *mm, unsigned long addr)
 		pr_debug("addr = %#lx, pgd = %#lx\n", addr, pgd_val(*pgd));
 		goto out;
 	}
-	p4d = pgd_offset(pgd, addr);
+	p4d = p4d_offset(pgd, addr);
 	if (p4d_none(*p4d)) {
 		ret = 0;
 		pr_debug("addr = %#lx, pgd = %#lx, p4d = %#lx\n",
@@ -146,7 +146,7 @@ unsigned long show_va_to_pa(struct mm_struct *mm, unsigned long addr)
 	}
 	pte = pte_offset_map(pmd, addr);
 	if (pte_present(*pte)) {
-		ret = ((unsigned long)__va(((pte_val(*pte) >> 32)) << PAGE_SHIFT));
+		ret = (unsigned long)pfn_to_virt(pte_val(*pte) >> _PFN_SHIFT);
 		pr_debug("addr = %#lx, pgd = %#lx, pud = %#lx, pmd = %#lx, pte = %#lx, ret = %#lx\n",
 				addr, *(unsigned long *)pgd, *(unsigned long *)pud,
 				*(unsigned long *)pmd, *(unsigned long *)pte, ret);

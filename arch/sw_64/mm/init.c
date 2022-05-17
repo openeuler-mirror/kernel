@@ -87,7 +87,7 @@ switch_to_system_map(void)
 	 * the last slot of the L1 page table.
 	 */
 	memset(swapper_pg_dir, 0, PAGE_SIZE);
-	newptbr = __pa(swapper_pg_dir) >> PAGE_SHIFT;
+	newptbr = virt_to_pfn(swapper_pg_dir);
 
 	/* Also set up the real kernel PCB while we're at it.  */
 	init_thread_info.pcb.ptbr = newptbr;
