@@ -596,14 +596,7 @@ extern pgd_t swapper_pg_dir[1024];
 #define __pte_to_swp_entry(pte)	((swp_entry_t) { pte_val(pte) })
 #define __swp_entry_to_pte(x)	((pte_t) { (x).val })
 
-#if defined(CONFIG_FLATMEM)
 #define kern_addr_valid(addr)	(1)
-#elif defined(CONFIG_DISCONTIGMEM)
-/* XXX: FIXME -- wli */
-#define kern_addr_valid(kaddr)	(0)
-#elif defined(CONFIG_SPARSEMEM)
-#define kern_addr_valid(addr)	(1)
-#endif
 
 #define pte_ERROR(e) \
 	pr_err("%s: %d: bad pte %016lx.\n", __FILE__, __LINE__, pte_val(e))

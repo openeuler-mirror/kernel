@@ -244,18 +244,6 @@ void vmemmap_free(unsigned long start, unsigned long end,
 }
 #endif
 
-#ifdef CONFIG_DISCONTIGMEM
-int pfn_valid(unsigned long pfn)
-{
-	phys_addr_t addr = pfn << PAGE_SHIFT;
-
-	if ((addr >> PAGE_SHIFT) != pfn)
-		return 0;
-	return memblock_is_map_memory(addr);
-}
-EXPORT_SYMBOL(pfn_valid);
-#endif
-
 #ifdef CONFIG_HAVE_MEMBLOCK
 #ifndef MIN_MEMBLOCK_ADDR
 #define MIN_MEMBLOCK_ADDR       __pa(PAGE_OFFSET)

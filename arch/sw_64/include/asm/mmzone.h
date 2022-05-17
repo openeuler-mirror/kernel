@@ -14,11 +14,4 @@ extern pg_data_t *node_data[];
 #define NODE_DATA(nid)		(node_data[(nid)])
 #endif
 
-#ifdef CONFIG_DISCONTIGMEM
-extern int pa_to_nid(unsigned long pa);
-extern int pfn_valid(unsigned long pfn);
-
-#define pfn_to_nid(pfn)		pa_to_nid(((u64)(pfn) << PAGE_SHIFT))
-#endif /* CONFIG_DISCONTIGMEM */
-
 #endif /* _ASM_SW64_MMZONE_H */
