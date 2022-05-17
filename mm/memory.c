@@ -4721,14 +4721,15 @@ static int clear_gigantic_page_chunk(unsigned long start, unsigned long end,
 				     struct cgp_args *args)
 {
 	struct page *base_page = args->base_page;
-	struct page *p = base_page;
+	struct page *p = mem_map_offset(base_page, start);
 	unsigned long addr = args->addr;
 	unsigned long i;
 
 	might_sleep();
 	for (i = start; i < end; i++, p = mem_map_next(p, base_page, i)) {
 		cond_resched();
-		clear_user_highpage(p, addr + i * PAGE_SIZE);
+		if (p)
+			clear_user_highpage(p, addr + i * PAGE_SIZE);
 	}
 
 	return KTASK_RETURN_SUCCESS;
