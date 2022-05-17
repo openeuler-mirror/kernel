@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2205.3.0
+%global hulkrelease 2205.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0149
+Release: %{hulkrelease}.0150
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,24 @@ fi
 %endif
 
 %changelog
+
+* Tue May 17 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2205.4.0.0150
+- scsi: hisi_sas: Change hisi_sas_control_phy() phyup timeout
+- scsi: hisi_sas: Fix SAS disk sense info print incorrectly sometimes
+- scsi: hisi_sas: Don't fail IT nexus reset for Open Reject timeout
+- mm/share_pool: Support read-only memory allocation
+- mm: clear_freelist_page: Provide timeout mechanism for worker runtime
+- io_uring: fix race between timeout flush and removal
+- ax25: fix UAF bug in ax25_send_control()
+- ax25: Fix refcount leaks caused by ax25_cb_del()
+- ax25: fix UAF bugs of net_device caused by rebinding operation
+- ax25: fix reference count leaks of ax25_dev
+- ax25: add refcount in ax25_dev to avoid UAF bugs
+- ext4: fix bug_on in start_this_handle during umount filesystem
+- ext4: unregister sysfs path before destroying jbd2 journal
+- ext4: fix use-after-free in ext4_search_dir
+- mm: Update reliable flag in memory allocaion for reliable task only in task context
+- mm: refactor the reclaim thread of page cache from per-cpu to per-node
 
 * Tue May 10 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2205.3.0.0149
 - ixgbevf: add disable link state
