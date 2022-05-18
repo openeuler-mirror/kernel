@@ -32,12 +32,20 @@
 
 		};
 
-		intc: interrupt-controller{
+		intc: interrupt-controller {
 			compatible = "sw64,sw6_irq_controller";
 			interrupt-controller;
 			#interrupt-cells = <1>;
 		};
 
+		lpc_intc: interrupt-controller@0x8037 {
+			compatible = "sw64,lpc_intc";
+			reg = <0x8037 0x40000000 0x0 0x8000>;
+			interrupt-controller;
+			#interrupt-cells = <1>;
+			interrupt-parent = <&intc>;
+			interrupts = <2>;
+		};
 
 		uart: serial0@8033 {
 			#address-cells = <2>;
@@ -176,10 +184,8 @@
 		lpc: lpc@0x8037 {
 			#address-cells = <2>;
 			#size-cells = <2>;
-			compatible = "sw,sw6b_lpc";
+			compatible = "sunway,chip3_lpc";
 			reg = <0x8037 0x40000000 0x0 0x8000>;
-			interrupt-parent=<&intc>;
-			interrupts = <2>;
 			status = "okay";
 
 		};
@@ -202,6 +208,8 @@
 			device_type = "ipmi";
 			compatible = "ipmi-bt";
 			reg = <0x8037 0x100000e4 0x0 0x10>;
+			interrupt-parent=<&lpc_intc>;
+			interrupts = <10>;
 			reg-size = <1>;
 			reg-spacing = <1>;
 			reg-shift = <0>;
