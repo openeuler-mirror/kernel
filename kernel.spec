@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       88
+%global devel_release       90
 %global maintenance_release .0.0
-%global pkg_release         .41
+%global pkg_release         .42
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,128 @@ fi
 %endif
 
 %changelog
+* Tue May 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-90.0.0.42
+- crypto: api - Move cryptomgr soft dependency into algapi
+- moxart: fix potential use-after-free on remove path
+- selftests: nft_concat_range: add test for reload with no element add/del
+- cgroup/cpuset: Fix "suspicious RCU usage" lockdep warning
+- net: dsa: mt7530: make NET_DSA_MT7530 select MEDIATEK_GE_PHY
+- ext4: fix incorrect type issue during replay_del_range
+- ext4: fix error handling in ext4_fc_record_modified_inode()
+- ext4: fix error handling in ext4_restore_inline_data()
+- ext4: modify the logic of ext4_mb_new_blocks_simple
+- ext4: prevent used blocks from being allocated during fast commit replay
+- EDAC/xgene: Fix deferred probing
+- EDAC/altera: Fix deferred probing
+- x86/perf: Default set FREEZE_ON_SMI for all
+- perf/x86/intel/pt: Fix crash with stop filters in single-range mode
+- perf stat: Fix display of grouped aliased events
+- fbcon: Add option to enable legacy hardware acceleration
+- Revert "fbcon: Disable accelerated scrolling"
+- rtc: cmos: Evaluate century appropriate
+- tools/resolve_btfids: Do not print any commands when building silently
+- selftests: futex: Use variable MAKE instead of make
+- selftests/exec: Remove pipe from TEST_GEN_FILES
+- bpf: Use VM_MAP instead of VM_ALLOC for ringbuf
+- gve: fix the wrong AdminQ buffer queue index check
+- nfsd: nfsd4_setclientid_confirm mistakenly expires confirmed client.
+- scsi: bnx2fc: Make bnx2fc_recv_frame() mp safe
+- pinctrl: bcm2835: Fix a few error paths
+- pinctrl: intel: fix unexpected interrupt
+- pinctrl: intel: Fix a glitch when updating IRQ flags on a preconfigured line
+- ASoC: max9759: fix underflow in speaker_gain_control_put()
+- ASoC: cpcap: Check for NULL pointer after calling of_get_child_by_name
+- ASoC: xilinx: xlnx_formatter_pcm: Make buffer bytes multiple of period bytes
+- ASoC: fsl: Add missing error handling in pcm030_fabric_probe
+- drm/i915/overlay: Prevent divide by zero bugs in scaling
+- net: stmmac: ensure PTP time register reads are consistent
+- net: stmmac: dump gmac4 DMA registers correctly
+- net: macsec: Verify that send_sci is on when setting Tx sci explicitly
+- net: macsec: Fix offload support for NETDEV_UNREGISTER event
+- net: ieee802154: Return meaningful error codes from the netlink helpers
+- net: ieee802154: ca8210: Stop leaking skb's
+- net: ieee802154: mcr20a: Fix lifs/sifs periods
+- net: ieee802154: hwsim: Ensure proper channel selection at probe time
+- spi: uniphier: fix reference count leak in uniphier_spi_probe()
+- spi: meson-spicc: add IRQ check in meson_spicc_probe
+- spi: mediatek: Avoid NULL pointer crash in interrupt
+- spi: bcm-qspi: check for valid cs before applying chip select
+- iommu/amd: Fix loop timeout issue in iommu_ga_log_enable()
+- iommu/vt-d: Fix potential memory leak in intel_setup_irq_remapping()
+- RDMA/mlx4: Don't continue event handler after memory allocation failure
+- RDMA/siw: Fix broken RDMA Read Fence/Resume logic.
+- IB/rdmavt: Validate remote_addr during loopback atomic tests
+- RDMA/ucma: Protect mc during concurrent multicast leaves
+- RDMA/cma: Use correct address when leaving multicast group
+- Revert "ASoC: mediatek: Check for error clk pointer"
+- IB/hfi1: Fix AIP early init panic
+- dma-buf: heaps: Fix potential spectre v1 gadget
+- block: bio-integrity: Advance seed correctly for larger interval sizes
+- mm/kmemleak: avoid scanning potential huge holes
+- mm/pgtable: define pte_index so that preprocessor could recognize it
+- mm/debug_vm_pgtable: remove pte entry from the page table
+- nvme-fabrics: fix state check in nvmf_ctlr_matches_baseopts()
+- drm/amd/display: Force link_rate as LINK_RATE_RBR2 for 2018 15" Apple Retina panels
+- drm/nouveau: fix off by one in BIOS boundary checking
+- btrfs: fix deadlock between quota disable and qgroup rescan worker
+- ALSA: hda/realtek: Fix silent output on Gigabyte X570 Aorus Xtreme after reboot from Windows
+- ALSA: hda/realtek: Fix silent output on Gigabyte X570S Aorus Master (newer chipset)
+- ALSA: hda/realtek: Add missing fixup-model entry for Gigabyte X570 ALC1220 quirks
+- ALSA: hda/realtek: Add quirk for ASUS GU603
+- ALSA: hda: realtek: Fix race at concurrent COEF updates
+- ALSA: hda: Fix UAF of leds class devs at unbinding
+- ALSA: usb-audio: Correct quirk for VF0770
+- ASoC: ops: Reject out of bounds values in snd_soc_put_xr_sx()
+- ASoC: ops: Reject out of bounds values in snd_soc_put_volsw_sx()
+- ASoC: ops: Reject out of bounds values in snd_soc_put_volsw()
+- selinux: fix double free of cond_list on error paths
+- Revert "drm/vc4: hdmi: Make sure the device is powered with CEC" again
+- Revert "drm/vc4: hdmi: Make sure the device is powered with CEC"
+- psi: fix failure of create cgroup psi trigger
+- mbigen: fix mbigen driver defer probe
+- md/raid1: fix missing bitmap update w/o WriteMostly devices
+- md/raid1: only allocate write behind bio for WriteMostly device
+- raid1: ensure write behind bio has less than BIO_MAX_VECS sectors
+- block: fix kabi change since add bd_write_openers and bd_part_write_openers
+- kabi: deduplication friendly structs
+- block: add info when opening an exclusive opened block device for write
+- block: add info when opening a write opend block device exclusively
+- arm64: entry: Save some nops when CONFIG_ARM64_PSEUDO_NMI is not set
+- bpf: Access bpf_sock's src_ip4 and sorc_port in BPF_CGROUP_INET_SOCK_RELEASE hook
+- bpf: Add new bpf helper to get SO_ORIGINAL_DST/REPLY_SRC
+- bpf: Add bpf_get_sockops_uid_gid helper function
+- net: core: Add a GID field to struct sock.
+- crypto: crct10dif-neon - fix use via crypto_shash_digest()
+- net: fix information leakage in /proc/net/ptype
+- config: enable CONFIG_QOS_SCHED_SMT_EXPELLER by
+- sched: Add tracepoint for qos smt expeller
+- sched: Add statistics for qos smt expeller
+- sched: Implement the function of qos smt expeller
+- sched: Introduce qos smt expeller for co-location
+- ext4: fix symlink file size not match to file content
+- ext4: fix bug_on in start_this_handle during umount filesystem
+- ext4: fix use-after-free in ext4_search_dir
+- KVM: s390: Return error on SIDA memop on normal guest
+- fs-writeback: writeback_sb_inodes：Recalculate 'wrote' according skipped pages
+- ubi: fastmap: Fix high cpu usage of ubi_bgt by making sure wl_pool not empty
+- perf c2c: Update documentation for display option 'all'
+- perf c2c: Sort on all cache hit for load operations
+- perf c2c: Refactor node header
+- perf c2c: Add dimensions for load miss
+- perf c2c: Add dimensions for load hit
+- perf c2c: Add dimensions for total load hit
+- rcu/nocb: Make rcu_core() callbacks acceleration preempt-safe
+- livepatch/arm64: Fix incorrect endian conversion when long jump
+- livepatch: Print logs when register failed
+- livepatch: Print logs when check calltrace failed
+- livepatch: Print logs when patch text failed
+- livepatch: Optimize list_del operation in 'arch_klp_unpatch_func'
+- livepatch: Use 'old_insns' to replace 'old_insn'
+- livepatch: Remove redundant copy for old codes
+- livepatch: Reduce duplicate codes and fix issue on patch text
+- mm: export collect_procs()
+- rcu: Prevent expedited GP from enabling tick on offline CPU
+
 * Tue May 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-88.0.0.41
 - tcp: add missing tcp_skb_can_collapse() test in tcp_shift_skb_data()
 - af_packet: fix data-race in packet_setsockopt / packet_setsockopt
