@@ -637,12 +637,12 @@ out:
 	securityfs_remove(digest_list_data_del);
 	securityfs_remove(digest_list_data);
 	securityfs_remove(digests_count);
+	securityfs_remove(ima_policy);
 	securityfs_remove(violations);
 	securityfs_remove(runtime_measurements_count);
 	securityfs_remove(ascii_runtime_measurements);
 	securityfs_remove(binary_runtime_measurements);
 	securityfs_remove(ima_symlink);
 	securityfs_remove(ima_dir);
-	securityfs_remove(ima_policy);
 	return -1;
 }
