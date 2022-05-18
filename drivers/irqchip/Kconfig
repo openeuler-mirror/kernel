@@ -9,6 +9,13 @@ config SW64_INTC
            The INTC controls devices interrupts and connects them to each
            core's local interrupt controller.
 
+config SW64_CHIP3_LPC
+	bool "SW64 Chip3 Buildin LPC Interrupt Controller"
+	depends on SW64_CHIP3
+	help
+           This enables support for the LPC interrupt controller bultin in
+	   on chip3 series.
+
 config IRQCHIP
 	def_bool y
 	depends on OF_IRQ
