@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       90
+%global devel_release       91
 %global maintenance_release .0.0
-%global pkg_release         .42
+%global pkg_release         .43
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,124 @@ fi
 %endif
 
 %changelog
+* Thu May 19 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-91.0.0.43
+- io_uring: fix race between timeout flush and removal
+- net/x25: Fix null-ptr-deref caused by x25_disconnect
+- iommu: Fix potential use-after-free during probe
+- perf: Fix list corruption in perf_cgroup_switch()
+- arm64: dts: imx8mq: fix lcdif port node
+- scsi: lpfc: Reduce log messages seen after firmware download
+- scsi: lpfc: Remove NVMe support if kernel has NVME_FC disabled
+- can: isotp: fix error path in isotp_sendmsg() to unlock wait queue
+- Makefile.extrawarn: Move -Wunaligned-access to W=1
+- hwmon: (dell-smm) Speed up setting of fan speed
+- phy: ti: Fix missing sentinel for clk_div_table
+- speakup-dectlk: Restore pitch setting
+- USB: serial: cp210x: add CPI Bulk Coin Recycler id
+- USB: serial: cp210x: add NCR Retail IO box id
+- USB: serial: ch341: add support for GW Instek USB2.0-Serial devices
+- USB: serial: option: add ZTE MF286D modem
+- USB: serial: ftdi_sio: add support for Brainboxes US-159/235/320
+- usb: raw-gadget: fix handling of dual-direction-capable endpoints
+- usb: gadget: f_uac2: Define specific wTerminalType
+- usb: gadget: udc: renesas_usb3: Fix host to USB_ROLE_NONE transition
+- usb: dwc3: gadget: Prevent core from processing stale TRBs
+- usb: ulpi: Call of_node_put correctly
+- usb: ulpi: Move of_node_put to ulpi_dev_release
+- net: usb: ax88179_178a: Fix out-of-bounds accesses in RX fixup
+- Revert "usb: dwc2: drd: fix soft connect when gadget is unconfigured"
+- usb: dwc2: drd: fix soft connect when gadget is unconfigured
+- eeprom: ee1004: limit i2c reads to I2C_SMBUS_BLOCK_MAX
+- n_tty: wake up poll(POLLRDNORM) on receiving data
+- vt_ioctl: add array_index_nospec to VT_ACTIVATE
+- vt_ioctl: fix array_index_nospec in vt_setactivate
+- net: dsa: mv88e6xxx: fix use-after-free in mv88e6xxx_mdios_unregister
+- net: mscc: ocelot: fix mutex lock error during ethtool stats read
+- ice: fix IPIP and SIT TSO offload
+- ice: fix an error code in ice_cfg_phy_fec()
+- dpaa2-eth: unregister the netdev before disconnecting from the PHY
+- net: amd-xgbe: disable interrupts during pci removal
+- tipc: rate limit warning for received illegal binding update
+- net: mdio: aspeed: Add missing MODULE_DEVICE_TABLE
+- veth: fix races around rq->rx_notify_masked
+- net: fix a memleak when uncloning an skb dst and its metadata
+- net: do not keep the dst cache when uncloning an skb dst and its metadata
+- nfp: flower: fix ida_idx not being released
+- ipmr,ip6mr: acquire RTNL before calling ip[6]mr_free_table() on failure path
+- net: dsa: lantiq_gswip: don't use devres for mdiobus
+- net: dsa: felix: don't use devres for mdiobus
+- net: dsa: bcm_sf2: don't use devres for mdiobus
+- net: dsa: ar9331: register the mdiobus under devres
+- net: dsa: mv88e6xxx: don't use devres for mdiobus
+- bonding: pair enable_port with slave_arr_updates
+- gpio: sifive: use the correct register to read output values
+- ACPI: PM: s2idle: Cancel wakeup before dispatching EC GPE
+- drm/panel: simple: Assign data from panel_dpi_probe() correctly
+- ixgbevf: Require large buffers for build_skb on 82599VF
+- arm64: dts: meson-g12b-odroid-n2: fix typo 'dio2133'
+- netfilter: ctnetlink: disable helper autoassign
+- misc: fastrpc: avoid double fput() on failed usercopy
+- drm/vc4: hdmi: Allow DBLCLK modes even if horz timing is odd.
+- gpio: aggregator: Fix calling into sleeping GPIO controllers
+- usb: f_fs: Fix use-after-free for epfile
+- ARM: dts: imx7ulp: Fix 'assigned-clocks-parents' typo
+- phy: xilinx: zynqmp: Fix bus width setting for SGMII
+- ARM: dts: imx6qdl-udoo: Properly describe the SD card detect
+- staging: fbtft: Fix error path in fbtft_driver_module_init()
+- ARM: dts: meson8b: Fix the UART device-tree schema validation
+- ARM: dts: meson8: Fix the UART device-tree schema validation
+- ARM: dts: meson: Fix the UART compatible strings
+- ARM: dts: Fix timer regression for beagleboard revision c
+- drm/rockchip: vop: Correct RK3399 VOP register fields
+- PM: s2idle: ACPI: Fix wakeup interrupts handling
+- ACPI/IORT: Check node revision for PMCG resources
+- nvme-tcp: fix bogus request completion when failing to send AER
+- ARM: socfpga: fix missing RESET_CONTROLLER
+- ARM: dts: Fix boot regression on Skomer
+- ARM: dts: imx23-evk: Remove MX23_PAD_SSP1_DETECT from hog group
+- riscv: fix build with binutils 2.38
+- KVM: VMX: Set vmcs.PENDING_DBG.BS on #DB in STI/MOVSS blocking shadow
+- KVM: SVM: Don't kill SEV guest if SMAP erratum triggers in usermode
+- KVM: nVMX: Also filter MSR_IA32_VMX_TRUE_PINBASED_CTLS when eVMCS
+- KVM: nVMX: eVMCS: Filter out VM_EXIT_SAVE_VMX_PREEMPTION_TIMER
+- KVM: eventfd: Fix false positive RCU usage warning
+- net: stmmac: dwmac-sun8i: use return val of readl_poll_timeout()
+- nvme-pci: add the IGNORE_DEV_SUBNQN quirk for Intel P4500/P4600 SSDs
+- perf: Always wake the parent event
+- usb: dwc2: gadget: don't try to disable ep0 in dwc2_hsotg_suspend
+- PM: hibernate: Remove register_nosave_region_late()
+- scsi: myrs: Fix crash in error case
+- scsi: ufs: Treat link loss as fatal error
+- scsi: pm8001: Fix bogus FW crash for maxcpus=1
+- scsi: qedf: Fix refcount issue when LOGO is received during TMF
+- scsi: qedf: Add stag_work to all the vports
+- scsi: ufs: ufshcd-pltfrm: Check the return value of devm_kstrdup()
+- scsi: target: iscsi: Make sure the np under each tpg is unique
+- powerpc/fixmap: Fix VM debug warning on unmap
+- net: sched: Clarify error message when qdisc kind is unknown
+- drm: panel-orientation-quirks: Add quirk for the 1Netbook OneXPlayer
+- x86/perf: Avoid warning for Arch LBR without XSAVE
+- NFSv4 handle port presence in fs_location server string
+- NFSv4 expose nfs_parse_server_name function
+- NFSv4 remove zero number of fs_locations entries error check
+- NFSv4.1: Fix uninitialised variable in devicenotify
+- nfs: nfs4clinet: check the return value of kstrdup()
+- NFSv4 only print the label when its queried
+- NFS: change nfs_access_get_cached to only report the mask
+- tracing: Propagate is_signed to expression
+- drm/amdgpu: Set a suitable dev_info.gart_page_size
+- NFSD: Fix offset type in I/O trace points
+- NFSD: Clamp WRITE offsets
+- NFS: Fix initialisation of nfs_client cl_flags field
+- net: phy: marvell: Fix MDI-x polarity setting in 88e1118-compatible PHYs
+- net: phy: marvell: Fix RGMII Tx/Rx delays setting in 88e1121-compatible PHYs
+- can: isotp: fix potential CAN frame reception race in isotp_rcv()
+- mmc: sdhci-of-esdhc: Check for error num after setting mask
+- ima: Do not print policy rule with inactive LSM labels
+- ima: Allow template selection with ima_template[_fmt]= after ima_hash=
+- ima: Remove ima_policy file before directory
+- integrity: check the return value of audit_log_start()
+
 * Tue May 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-90.0.0.42
 - crypto: api - Move cryptomgr soft dependency into algapi
 - moxart: fix potential use-after-free on remove path
