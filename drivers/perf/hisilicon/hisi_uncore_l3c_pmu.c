@@ -608,7 +608,7 @@ static int __init hisi_l3c_pmu_module_init(void)
 	int ret;
 
 	ret = cpuhp_setup_state_multi(CPUHP_AP_PERF_ARM_HISI_L3_ONLINE,
-				      "AP_PERF_ARM_HISI_L3_ONLINE",
+				      "AP_PERF_ARM_HISI_L3T_ONLINE",
 				      hisi_uncore_pmu_online_cpu,
 				      hisi_uncore_pmu_offline_cpu);
 	if (ret) {
