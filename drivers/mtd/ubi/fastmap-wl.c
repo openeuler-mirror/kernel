@@ -100,22 +100,28 @@ out:
 /*
  * has_enough_free_count - whether ubi has enough free pebs to fill fm pools
  * @ubi: UBI device description object
+ * @is_wl_pool: whether UBI is filling wear leveling pool
  *
  * This helper function checks whether there are enough free pebs (deducted
  * by fastmap pebs) to fill fm_pool and fm_wl_pool, above rule works after
  * there is at least one of free pebs is filled into fm_wl_pool.
+ * For wear leveling pool, UBI should also reserve free pebs for bad pebs
+ * handling, because there maybe no enough free pebs for user volumes after
+ * producing new bad pebs.
  */
-static bool has_enough_free_count(struct ubi_device *ubi)
+static bool has_enough_free_count(struct ubi_device *ubi, bool is_wl_pool)
 {
 	int fm_used = 0;	// fastmap non anchor pebs.
+	int beb_rsvd_pebs;
 
 	if (!ubi->free.rb_node)
 		return false;
 
+	beb_rsvd_pebs = is_wl_pool ? ubi->beb_rsvd_pebs : 0;
 	if (ubi->fm_wl_pool.size > 0 && !(ubi->ro_mode || ubi->fm_disabled))
 		fm_used = ubi->fm_size / ubi->leb_size - 1;
 
-	return ubi->free_count - ubi->beb_rsvd_pebs > fm_used;
+	return ubi->free_count - beb_rsvd_pebs > fm_used;
 }
 
 /**
@@ -151,7 +157,7 @@ void ubi_refill_pools(struct ubi_device *ubi)
 	for (;;) {
 		enough = 0;
 		if (pool->size < pool->max_size) {
-			if (!has_enough_free_count(ubi))
+			if (!has_enough_free_count(ubi, false))
 				break;
 
 			e = wl_get_wle(ubi);
@@ -164,7 +170,7 @@ void ubi_refill_pools(struct ubi_device *ubi)
 			enough++;
 
 		if (wl_pool->size < wl_pool->max_size) {
-			if (!has_enough_free_count(ubi))
+			if (!has_enough_free_count(ubi, true))
 				break;
 
 			e = find_wl_entry(ubi, &ubi->free, WL_FREE_MAX_DIFF);
