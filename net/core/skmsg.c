@@ -504,7 +504,7 @@ static int sk_psock_handle_skb(struct sk_psock *psock, struct sk_buff *skb,
 	if (!ingress) {
 		if (!sock_writeable(psock->sk))
 			return -EAGAIN;
-		return skb_send_sock_locked(psock->sk, skb, off, len);
+		return skb_send_sock(psock->sk, skb, off, len);
 	}
 	return sk_psock_skb_ingress(psock, skb);
 }
@@ -518,8 +518,7 @@ static void sk_psock_backlog(struct work_struct *work)
 	u32 len, off;
 	int ret;
 
-	/* Lock sock to avoid losing sk_socket during loop. */
-	lock_sock(psock->sk);
+	mutex_lock(&psock->work_mutex);
 	if (state->skb) {
 		skb = state->skb;
 		len = state->len;
@@ -535,7 +534,7 @@ start:
 		ingress = tcp_skb_bpf_ingress(skb);
 		do {
 			ret = -EIO;
-			if (likely(psock->sk->sk_socket))
+			if (!sock_flag(psock->sk, SOCK_DEAD))
 				ret = sk_psock_handle_skb(psock, skb, off,
 							  len, ingress);
 			if (ret <= 0) {
@@ -559,7 +558,7 @@ start:
 			kfree_skb(skb);
 	}
 end:
-	release_sock(psock->sk);
+	mutex_unlock(&psock->work_mutex);
 }
 
 struct sk_psock *sk_psock_init(struct sock *sk, int node)
@@ -597,6 +596,7 @@ struct sk_psock *sk_psock_init(struct sock *sk, int node)
 	spin_lock_init(&psock->link_lock);
 
 	INIT_WORK(&psock->work, sk_psock_backlog);
+	mutex_init(&psock->work_mutex);
 	INIT_LIST_HEAD(&psock->ingress_msg);
 	spin_lock_init(&psock->ingress_lock);
 	skb_queue_head_init(&psock->ingress_skb);
@@ -637,12 +637,10 @@ void __sk_psock_purge_ingress_msg(struct sk_psock *psock)
 	}
 }
 
-static void sk_psock_zap_ingress(struct sk_psock *psock)
+static void __sk_psock_zap_ingress(struct sk_psock *psock)
 {
 	skb_queue_purge(&psock->ingress_skb);
-	spin_lock_bh(&psock->ingress_lock);
 	__sk_psock_purge_ingress_msg(psock);
-	spin_unlock_bh(&psock->ingress_lock);
 }
 
 static void sk_psock_link_destroy(struct sk_psock *psock)
@@ -653,6 +651,18 @@ static void sk_psock_link_destroy(struct sk_psock *psock)
 		list_del(&link->list);
 		sk_psock_free_link(link);
 	}
+}
+
+void sk_psock_stop(struct sk_psock *psock, bool wait)
+{
+	spin_lock_bh(&psock->ingress_lock);
+	sk_psock_clear_state(psock, SK_PSOCK_TX_ENABLED);
+	sk_psock_cork_free(psock);
+	__sk_psock_zap_ingress(psock);
+	spin_unlock_bh(&psock->ingress_lock);
+
+	if (wait)
+		cancel_work_sync(&psock->work);
 }
 
 static void sk_psock_destroy_deferred(struct work_struct *gc)
@@ -666,12 +676,12 @@ static void sk_psock_destroy_deferred(struct work_struct *gc)
 		strp_done(&psock->parser.strp);
 
 	cancel_work_sync(&psock->work);
+	mutex_destroy(&psock->work_mutex);
 
 	psock_progs_drop(&psock->progs);
 
 	sk_psock_link_destroy(psock);
 	sk_psock_cork_free(psock);
-	sk_psock_zap_ingress(psock);
 
 	if (psock->sk_redir)
 		sock_put(psock->sk_redir);
@@ -689,8 +699,7 @@ static void sk_psock_destroy(struct rcu_head *rcu)
 
 void sk_psock_drop(struct sock *sk, struct sk_psock *psock)
 {
-	sk_psock_cork_free(psock);
-	sk_psock_zap_ingress(psock);
+	sk_psock_stop(psock, false);
 
 	write_lock_bh(&sk->sk_callback_lock);
 	sk_psock_restore_proto(sk, psock);
@@ -700,7 +709,6 @@ void sk_psock_drop(struct sock *sk, struct sk_psock *psock)
 	else if (psock->progs.skb_verdict)
 		sk_psock_stop_verdict(sk, psock);
 	write_unlock_bh(&sk->sk_callback_lock);
-	sk_psock_clear_state(psock, SK_PSOCK_TX_ENABLED);
 
 	call_rcu(&psock->rcu, sk_psock_destroy);
 }
@@ -786,14 +794,20 @@ static int sk_psock_skb_redirect(struct sk_buff *skb)
 	 * error that caused the pipe to break. We can't send a packet on
 	 * a socket that is in this state so we drop the skb.
 	 */
-	if (!psock_other || sock_flag(sk_other, SOCK_DEAD) ||
-	    !sk_psock_test_state(psock_other, SK_PSOCK_TX_ENABLED)) {
+	if (!psock_other || sock_flag(sk_other, SOCK_DEAD)) {
+		kfree_skb(skb);
+		return -EIO;
+	}
+	spin_lock_bh(&psock_other->ingress_lock);
+	if (!sk_psock_test_state(psock_other, SK_PSOCK_TX_ENABLED)) {
+		spin_unlock_bh(&psock_other->ingress_lock);
 		kfree_skb(skb);
 		return -EIO;
 	}
 
 	skb_queue_tail(&psock_other->ingress_skb, skb);
 	schedule_work(&psock_other->work);
+	spin_unlock_bh(&psock_other->ingress_lock);
 	return 0;
 }
 
@@ -859,8 +873,12 @@ static int sk_psock_verdict_apply(struct sk_psock *psock, struct sk_buff *skb,
 			err = sk_psock_skb_ingress_self(psock, skb);
 		}
 		if (err < 0) {
-			skb_queue_tail(&psock->ingress_skb, skb);
-			schedule_work(&psock->work);
+			spin_lock_bh(&psock->ingress_lock);
+			if (sk_psock_test_state(psock, SK_PSOCK_TX_ENABLED)) {
+				skb_queue_tail(&psock->ingress_skb, skb);
+				schedule_work(&psock->work);
+			}
+			spin_unlock_bh(&psock->ingress_lock);
 		}
 		break;
 	case __SK_REDIRECT:
