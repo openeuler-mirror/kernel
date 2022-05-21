@@ -70,6 +70,10 @@ phys_addr_t arm64_dma_phys_limit __ro_after_init;
 static void __init reserve_crashkernel(void)
 {
 }
+
+static void __init reserve_crashkernel_high(void)
+{
+}
 #endif
 
 /*
