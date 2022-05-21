@@ -43,8 +43,10 @@ int __tcp_bpf_recvmsg(struct sock *sk, struct sk_psock *psock,
 			if (likely(!peek)) {
 				sge->offset += copy;
 				sge->length -= copy;
-				if (!msg_rx->skb)
+				if (!msg_rx->skb) {
+					atomic_sub(copy, &sk->sk_rmem_alloc);
 					sk_mem_uncharge(sk, copy);
+				}
 				msg_rx->sg.size -= copy;
 
 				if (!sge->length) {
@@ -98,6 +100,11 @@ static int bpf_tcp_ingress(struct sock *sk, struct sk_psock *psock,
 		return -ENOMEM;
 
 	lock_sock(sk);
+	if (atomic_read(&sk->sk_rmem_alloc) >= sk->sk_rcvbuf) {
+		kfree(tmp);
+		release_sock(sk);
+		return -EAGAIN;
+	}
 	tmp->sg.start = msg->sg.start;
 	i = msg->sg.start;
 	do {
@@ -127,6 +134,7 @@ static int bpf_tcp_ingress(struct sock *sk, struct sk_psock *psock,
 	if (!ret) {
 		msg->sg.start = i;
 		sk_psock_queue_msg(psock, tmp);
+		atomic_add(tmp->sg.size, &sk->sk_rmem_alloc);
 		sk_psock_data_ready(sk, psock);
 	} else {
 		sk_msg_free(sk, tmp);
