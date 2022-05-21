@@ -2813,6 +2813,8 @@
 
 	memmap=exactmap	[KNL,X86,ARM64] Enable setting of an exact
 			E820 and ARM64 memory map, as specified by the user.
+			For ARM64, this setting is limited to dt boot mode as
+			exact mapping must be done after initializing memblock.
 			Such memmap=exactmap lines can be constructed based on
 			BIOS output or other requirements. See the memmap=nn@ss
 			option description.
