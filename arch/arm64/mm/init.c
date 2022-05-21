@@ -269,6 +269,36 @@ static void __init fdt_enforce_memory_region(void)
 		memblock_add(usable_rgns[1].base, usable_rgns[1].size);
 }
 
+#define MAX_RES_REGIONS 32
+
+static struct memblock_region mbk_memmap_regions[MAX_RES_REGIONS] __initdata_memblock;
+static int mbk_memmap_cnt __initdata;
+
+static void __init setup_mbk_memmap_regions(phys_addr_t base, phys_addr_t size)
+{
+	if (mbk_memmap_cnt >= MAX_RES_REGIONS) {
+		pr_err("Too many memmap specified, exceed %d\n", MAX_RES_REGIONS);
+		return;
+	}
+
+	mbk_memmap_regions[mbk_memmap_cnt].base = base;
+	mbk_memmap_regions[mbk_memmap_cnt].size = size;
+	mbk_memmap_cnt++;
+}
+
+static void __init reserve_memmap_regions(void)
+{
+	phys_addr_t base, size;
+	int i;
+
+	for (i = 0; i < mbk_memmap_cnt; i++) {
+		base = mbk_memmap_regions[i].base;
+		size = mbk_memmap_regions[i].size;
+		memblock_reserve(base, size);
+		memblock_mark_memmap(base, size);
+	}
+}
+
 static int need_remove_real_memblock __initdata;
 
 static int __init parse_memmap_one(char *p)
@@ -305,8 +335,7 @@ static int __init parse_memmap_one(char *p)
 		memblock_add(start_at, mem_size);
 	} else if (*p == '$') {
 		start_at = memparse(p + 1, &p);
-		memblock_reserve(start_at, mem_size);
-		memblock_mark_memmap(start_at, mem_size);
+		setup_mbk_memmap_regions(start_at, mem_size);
 	} else if (*p == '!') {
 		start_at = memparse(p + 1, &p);
 		setup_reserve_pmem(start_at, mem_size);
@@ -503,6 +532,8 @@ void __init bootmem_init(void)
 	reserve_crashkernel();
 
 	reserve_quick_kexec();
+
+	reserve_memmap_regions();
 
 	reserve_pmem();
 
