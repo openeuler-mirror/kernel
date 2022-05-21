@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       91
+%global devel_release       92
 %global maintenance_release .0.0
-%global pkg_release         .43
+%global pkg_release         .44
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,51 @@ fi
 %endif
 
 %changelog
+* Sat May 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-92.0.0.44
+- ext4: fix bug_on in ext4_writepages
+- ext4: fix warning in ext4_handle_inode_extension
+- ext4: fix use-after-free in ext4_rename_dir_prepare
+- ext4: fix warning when submitting superblock in ext4_commit_super()
+- ipv6: annotate some data-races around sk->sk_prot
+- net/sched: cls_u32: fix netns refcount changes in u32_change()
+- arm64: kaslr: support randomized module area with KASAN_VMALLOC
+- arm64: Kconfig: support CONFIG_KASAN_VMALLOC
+- arm64: kasan: abstract _text and _end to KERNEL_START/END
+- arm64: kasan: don't populate vmalloc area for CONFIG_KASAN_VMALLOC
+- ext4: fix bug_on in __es_tree_search
+- exec: Remove redundant check in do_open_execat/uselib
+- floppy: use a statically allocated error counter
+- ext4: fix race condition between ext4_write and ext4_convert_inline_data
+- arm64: Fix some build errors related to KEXEC
+- sched/qos: Add qos_tg_{throttle,unthrottle}_{up,down}
+- sched: Throttle offline task at tracehook_notify_resume()
+- ubi: ubi_create_volume: Fix use-after-free when volume creation failed
+- ubi: fastmap: Don't reserve beb_rsvd_pebs while filling fm pool
+- net: ipv6: fix use after free of struct seg6_pernet_data
+- net: ipv6: check return value of rhashtable_init
+- KVM: arm64: vgic: Drop WARN from vgic_get_irq
+- Documentation: arm64: Add limitation for exactmap
+- arm64: Fix reserved memory via memmap
+- ARM: 9191/1: arm/stacktrace, kasan: Silence KASAN warnings in unwind_frame()
+- bpf, sockmap: Add sk_rmem_alloc check for sockmap
+- bpf, sockmap: Fix double uncharge the mem of sk_msg
+- bpf, sockmap: Fix more uncharged while msg has more_data
+- bpf, sockmap: Fix memleak in tcp_bpf_sendmsg while sk msg is full
+- bpf, sockmap: Fix memleak in sk_psock_queue_msg
+- bpf, sockmap: Zap ingress queues after stopping strparser
+- bpf, sockmap: On cleanup we additionally need to remove cached skb
+- bpf, sockmap: Fix memleak on ingress msg enqueue
+- skmsg: Fix a memory leak in sk_psock_verdict_apply()
+- sock_map: Fix a potential use-after-free in sock_map_close()
+- skmsg: Avoid lock_sock() in sk_psock_backlog()
+- net: Introduce skb_send_sock() for sock_map
+- skmsg: Introduce a spinlock to protect ingress_msg
+- skmsg: Lock ingress_skb when purging
+- perf: hisi: Add support for HiSilicon SoC LPDDRC PMU
+- perf: hisi: Add support for HiSilicon SoC L3T PMU
+- perf: hisi: Fix read sccl_id and ccl_id error in some platform
+- perf: hisi: Make irq shared
+
 * Thu May 19 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-91.0.0.43
 - io_uring: fix race between timeout flush and removal
 - net/x25: Fix null-ptr-deref caused by x25_disconnect
