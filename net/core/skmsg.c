@@ -598,6 +598,7 @@ struct sk_psock *sk_psock_init(struct sock *sk, int node)
 
 	INIT_WORK(&psock->work, sk_psock_backlog);
 	INIT_LIST_HEAD(&psock->ingress_msg);
+	spin_lock_init(&psock->ingress_lock);
 	skb_queue_head_init(&psock->ingress_skb);
 
 	sk_psock_set_state(psock, SK_PSOCK_TX_ENABLED);
@@ -639,7 +640,9 @@ void __sk_psock_purge_ingress_msg(struct sk_psock *psock)
 static void sk_psock_zap_ingress(struct sk_psock *psock)
 {
 	skb_queue_purge(&psock->ingress_skb);
+	spin_lock_bh(&psock->ingress_lock);
 	__sk_psock_purge_ingress_msg(psock);
+	spin_unlock_bh(&psock->ingress_lock);
 }
 
 static void sk_psock_link_destroy(struct sk_psock *psock)
