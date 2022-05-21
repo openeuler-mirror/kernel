@@ -638,7 +638,7 @@ void __sk_psock_purge_ingress_msg(struct sk_psock *psock)
 
 static void sk_psock_zap_ingress(struct sk_psock *psock)
 {
-	__skb_queue_purge(&psock->ingress_skb);
+	skb_queue_purge(&psock->ingress_skb);
 	__sk_psock_purge_ingress_msg(psock);
 }
 
