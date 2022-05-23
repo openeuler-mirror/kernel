@@ -3390,6 +3390,7 @@ out:
 static void its_cpu_init_collection_others(void __iomem *rbase,
 					   phys_addr_t phys_base, int cpu)
 {
+	u32 count;
 	struct its_node *its;
 
 	if (!init_all_gicr)
@@ -3417,6 +3418,32 @@ static void its_cpu_init_collection_others(void __iomem *rbase,
 			target = gic_read_typer(rbase + GICR_TYPER);
 			target = GICR_TYPER_CPU_NUMBER(target) << 16;
 		}
+
+		dsb(sy);
+
+		/* In FPGA, We need to check if the gicr has been cut,
+		 * and if it is, it can't be initialized
+		 */
+		count = 2000;
+		while (1) {
+			if (readl_relaxed(rbase + GICR_SYNCR) == 0)
+				break;
+
+			count--;
+			if (!count) {
+				pr_err("this gicr does not exist, or it's abnormal:%pK\n",
+					&phys_base);
+				break;
+			}
+			cpu_relax();
+			udelay(1);
+		}
+
+		if (count == 0)
+			break;
+
+		pr_info("its init other collection table, ITS:%pK, GICR:%pK, coreId:%u\n",
+			&its->phys_base, &phys_base, cpu);
 
 		/* Perform collection mapping */
 		its->collections[cpu].target_address = target;
