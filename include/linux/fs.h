@@ -954,7 +954,6 @@ struct file {
 	atomic_long_t		f_count;
 	unsigned int 		f_flags;
 	fmode_t			f_mode;
-	fmode_t			f_ctl_mode;
 	struct mutex		f_pos_lock;
 	loff_t			f_pos;
 	struct fown_struct	f_owner;
@@ -976,8 +975,14 @@ struct file {
 	struct address_space	*f_mapping;
 	errseq_t		f_wb_err;
 	errseq_t		f_sb_err; /* for syncfs */
-
+#ifndef __GENKSYMS__
+	union {
+		fmode_t			f_ctl_mode;
+		u64			kabi_reserved1;
+	};
+#else
 	KABI_RESERVE(1)
+#endif
 } __randomize_layout
   __attribute__((aligned(4)));	/* lest something weird decides that 2 is OK */
 
