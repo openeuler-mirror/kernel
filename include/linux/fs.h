@@ -3562,4 +3562,21 @@ static inline int inode_drain_writes(struct inode *inode)
 	return filemap_write_and_wait(inode->i_mapping);
 }
 
+struct fs_file_read_ctx {
+	const unsigned char *name;
+	unsigned int f_ctl_mode;
+	unsigned int rsvd;
+	/* clear from f_ctl_mode */
+	unsigned int clr_f_ctl_mode;
+	/* set into f_ctl_mode */
+	unsigned int set_f_ctl_mode;
+	unsigned long key;
+	/* file size */
+	long long i_size;
+	/* previous page index */
+	long long prev_index;
+	/* current page index */
+	long long index;
+};
+
 #endif /* _LINUX_FS_H */
