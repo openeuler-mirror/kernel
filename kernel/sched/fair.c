@@ -26,6 +26,7 @@
 #endif
 #ifdef CONFIG_QOS_SCHED
 #include <linux/delay.h>
+#include <linux/tracehook.h>
 #endif
 #include <trace/events/sched.h>
 
@@ -7029,20 +7030,18 @@ static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
 void sched_qos_offline_wait(void)
 {
 	long qos_level;
+	unsigned long wait_interval;
 
 	while (unlikely(this_cpu_read(qos_cpu_overload))) {
 		rcu_read_lock();
 		qos_level = task_group(current)->qos_level;
 		rcu_read_unlock();
-		if (qos_level != -1 || signal_pending(current))
+		if (qos_level != -1 || fatal_signal_pending(current))
 			break;
-		msleep_interruptible(sysctl_offline_wait_interval);
-	}
-}
 
-int sched_qos_cpu_overload(void)
-{
-	return __this_cpu_read(qos_cpu_overload);
+		wait_interval = msecs_to_jiffies(sysctl_offline_wait_interval);
+		schedule_timeout_killable(wait_interval);
+	}
 }
 
 static enum hrtimer_restart qos_overload_timer_handler(struct hrtimer *timer)
@@ -7075,6 +7074,23 @@ void init_qos_hrtimer(int cpu)
 	hrtimer_init(hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
 	hrtimer->function = qos_overload_timer_handler;
 }
+
+/*
+ * To avoid Priority inversion issues, when this cpu is qos_cpu_overload,
+ * we should schedule offline tasks to run so that they can leave kernel
+ * critical sections, and throttle them before returning to user mode.
+ */
+static void qos_schedule_throttle(struct task_struct *p)
+{
+	if (unlikely(current->flags & PF_KTHREAD))
+		return;
+
+	if (unlikely(this_cpu_read(qos_cpu_overload))) {
+		if (task_group(p)->qos_level < 0)
+			set_notify_resume(p);
+	}
+}
+
 #endif
 
 static struct task_struct *
@@ -7201,6 +7217,10 @@ done: __maybe_unused;
 
 	if (hrtick_enabled(rq))
 		hrtick_start_fair(rq, p);
+
+#ifdef CONFIG_QOS_SCHED
+	qos_schedule_throttle(p);
+#endif
 
 	return p;
 
