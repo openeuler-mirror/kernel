@@ -791,7 +791,6 @@ config QOS_SCHED
     bool "Qos task scheduling"
     depends on CGROUP_SCHED
     depends on CFS_BANDWIDTH
-    depends on X86
 
     default n
 
