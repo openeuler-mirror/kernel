@@ -1613,6 +1613,9 @@
 			off: Disable the feature
 			     Equivalent to: nohugevmalloc
 
+	hugetlb_hwpoison_full
+			[HW] Enable memory error handling of 1GB hugepage.
+
 	hung_task_panic=
 			[KNL] Should the hung task detector generate panics.
 			Format: 0 | 1
