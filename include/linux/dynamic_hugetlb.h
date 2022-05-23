@@ -112,10 +112,12 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve);
 
 struct dhugetlb_pool {};
 
+#ifdef CONFIG_CGROUPS
 static inline bool dhugetlb_hide_files(struct cftype *cft)
 {
 	return false;
 }
+#endif
 static inline void hugetlb_pool_inherit(struct mem_cgroup *memcg, struct mem_cgroup *parent)
 {
 }
