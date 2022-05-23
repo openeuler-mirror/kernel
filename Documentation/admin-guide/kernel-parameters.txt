@@ -1425,6 +1425,9 @@
 			x86-64 are 2M (when the CPU supports "pse") and 1G
 			(when the CPU supports the "pdpe1gb" cpuinfo flag).
 
+	hugetlb_hwpoison_full
+			[HW] Enable memory error handling of 1GB hugepage.
+
 	hung_task_panic=
 			[KNL] Should the hung task detector generate panics.
 			Format: <integer>

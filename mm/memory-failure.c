@@ -1155,6 +1155,15 @@ static int try_to_split_thp_page(struct page *page, const char *msg)
 	return 0;
 }
 
+static bool hugetlb_hwpoison_full;
+
+static int __init enable_hugetlb_hwpoison_full(char *str)
+{
+	hugetlb_hwpoison_full = true;
+	return 0;
+}
+early_param("hugetlb_hwpoison_full", enable_hugetlb_hwpoison_full);
+
 static int memory_failure_hugetlb(unsigned long pfn, int flags)
 {
 	struct page *p = pfn_to_page(pfn);
@@ -1213,7 +1222,8 @@ static int memory_failure_hugetlb(unsigned long pfn, int flags)
 	 *  - other mm code walking over page table is aware of pud-aligned
 	 *    hwpoison entries.
 	 */
-	if (huge_page_size(page_hstate(head)) > PMD_SIZE) {
+	if (!hugetlb_hwpoison_full &&
+	    huge_page_size(page_hstate(head)) > PMD_SIZE) {
 		action_result(pfn, MF_MSG_NON_PMD_HUGE, MF_IGNORED);
 		res = -EBUSY;
 		goto out;
