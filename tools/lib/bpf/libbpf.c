@@ -8320,6 +8320,7 @@ static const struct bpf_sec_def section_defs[] = {
 		.attach_fn = attach_tp),
 	SEC_DEF("raw_tracepoint/", RAW_TRACEPOINT,
 		.attach_fn = attach_raw_tp),
+	BPF_PROG_SEC("raw_tracepoint.w/", BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE),
 	SEC_DEF("raw_tp/", RAW_TRACEPOINT,
 		.attach_fn = attach_raw_tp),
 	SEC_DEF("tp_btf/", TRACING,
