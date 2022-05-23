@@ -1648,17 +1648,22 @@ static int ext4_insert_delayed_block(struct inode *inode, ext4_lblk_t lblk)
 			goto errout;
 		reserved = true;
 	} else {   /* bigalloc */
+		mutex_lock(&EXT4_I(inode)->i_clu_lock);
 		if (!ext4_es_scan_clu(inode, &ext4_es_is_delonly, lblk)) {
 			if (!ext4_es_scan_clu(inode,
 					      &ext4_es_is_mapped, lblk)) {
 				ret = ext4_clu_mapped(inode,
 						      EXT4_B2C(sbi, lblk));
-				if (ret < 0)
+				if (ret < 0) {
+					mutex_unlock(&EXT4_I(inode)->i_clu_lock);
 					goto errout;
+				}
 				if (ret == 0) {
 					ret = ext4_da_reserve_space(inode);
-					if (ret != 0)   /* ENOSPC */
+					if (ret != 0) {   /* ENOSPC */
+						mutex_unlock(&EXT4_I(inode)->i_clu_lock);
 						goto errout;
+					}
 					reserved = true;
 				} else {
 					allocated = true;
@@ -1670,6 +1675,8 @@ static int ext4_insert_delayed_block(struct inode *inode, ext4_lblk_t lblk)
 	}
 
 	ret = ext4_es_insert_delayed_block(inode, lblk, allocated);
+	if (sbi->s_cluster_ratio != 1)
+		mutex_unlock(&EXT4_I(inode)->i_clu_lock);
 	if (ret && reserved)
 		ext4_da_release_space(inode, 1);
 

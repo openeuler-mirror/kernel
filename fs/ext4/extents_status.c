@@ -1433,6 +1433,7 @@ out:
 int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
 			  ext4_lblk_t len)
 {
+	struct ext4_sb_info *sbi = EXT4_SB(inode->i_sb);
 	ext4_lblk_t end;
 	int err = 0;
 	int reserved = 0;
@@ -1455,9 +1456,13 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
 	 * so that we are sure __es_shrink() is done with the inode before it
 	 * is reclaimed.
 	 */
+	if (sbi->s_cluster_ratio != 1)
+		mutex_lock(&EXT4_I(inode)->i_clu_lock);
 	write_lock(&EXT4_I(inode)->i_es_lock);
 	err = __es_remove_extent(inode, lblk, end, &reserved);
 	write_unlock(&EXT4_I(inode)->i_es_lock);
+	if (sbi->s_cluster_ratio != 1)
+		mutex_unlock(&EXT4_I(inode)->i_clu_lock);
 	ext4_es_print_tree(inode);
 	ext4_da_release_space(inode, reserved);
 	return err;

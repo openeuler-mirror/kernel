@@ -1164,6 +1164,9 @@ struct ext4_inode_info {
 	__u32 i_csum_seed;
 
 	kprojid_t i_projid;
+
+	/* Protect concurrent add cluster delayed block and remove block */
+	struct mutex i_clu_lock;
 };
 
 /*
