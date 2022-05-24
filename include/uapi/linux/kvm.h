@@ -252,6 +252,7 @@ struct kvm_hyperv_exit {
 #define KVM_EXIT_X86_WRMSR        30
 #define KVM_EXIT_RISCV_SBI        31
 #define KVM_EXIT_X86_BUS_LOCK     33
+#define KVM_EXIT_NOTIFY           37
 
 /* For KVM_EXIT_INTERNAL_ERROR */
 /* Emulate instruction failed. */
@@ -435,6 +436,11 @@ struct kvm_run {
 			unsigned long args[6];
 			unsigned long ret[2];
 		} riscv_sbi;
+		/* KVM_EXIT_NOTIFY */
+		struct {
+#define KVM_NOTIFY_CONTEXT_INVALID	(1 << 0)
+			__u32 flags;
+		} notify;
 		/* Fix the size of the union. */
 		char padding[256];
 	};
@@ -1065,6 +1071,7 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_X86_BUS_LOCK_EXIT 193
 #define KVM_CAP_SGX_ATTRIBUTE 196
 #define KVM_CAP_X86_TRIPLE_FAULT_EVENT 218
+#define KVM_CAP_X86_NOTIFY_VMEXIT 219
 
 #define KVM_CAP_ARM_CPU_FEATURE 555
 
@@ -1742,5 +1749,8 @@ struct kvm_hyperv_eventfd {
 
 #define KVM_BUS_LOCK_DETECTION_OFF             (1 << 0)
 #define KVM_BUS_LOCK_DETECTION_EXIT            (1 << 1)
+/* Available with KVM_CAP_X86_NOTIFY_VMEXIT */
+#define KVM_X86_NOTIFY_VMEXIT_ENABLED		(1ULL << 0)
+#define KVM_X86_NOTIFY_VMEXIT_USER			(1ULL << 1)
 
 #endif /* __LINUX_KVM_H */
