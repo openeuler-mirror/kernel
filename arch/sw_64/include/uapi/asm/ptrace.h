@@ -2,10 +2,20 @@
 #ifndef _UAPI_ASM_SW64_PTRACE_H
 #define _UAPI_ASM_SW64_PTRACE_H
 
-#define PTRACE_GETREGS		12	/* get general purpose registers */
-#define PTRACE_SETREGS		13	/* set general purpose registers */
-#define PTRACE_GETFPREGS	14	/* get floating-point registers */
-#define PTRACE_SETFPREGS	15	/* set floating-point registers */
+/*
+ * User structures for general purpose, floating point and debug registers.
+ */
+struct user_pt_regs {
+	__u64 regs[31];
+	__u64 pc;
+	__u64 pstate;
+};
+
+struct user_fpsimd_state {
+	__u64 vregs[124];
+	__u64 fpcr;
+};
+
 /* PTRACE_ATTACH is 16 */
 /* PTRACE_DETACH is 17 */
 

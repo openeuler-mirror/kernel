@@ -7,6 +7,8 @@
 
 #include <linux/tracehook.h>
 #include <linux/audit.h>
+#include <linux/regset.h>
+#include <linux/elf.h>
 
 #include <asm/reg.h>
 #include <asm/asm-offsets.h>
@@ -270,114 +272,123 @@ void ptrace_disable(struct task_struct *child)
 	user_disable_single_step(child);
 }
 
-int ptrace_getregs(struct task_struct *child, __s64 __user *data)
+static int gpr_get(struct task_struct *target,
+			const struct user_regset *regset,
+			struct membuf to)
 {
-	int ret, retval = 0;
-	int i;
-	unsigned long regval;
+	struct pt_regs *regs;
+	struct user_pt_regs uregs;
+	int i, ret;
 
-	if (!access_ok(data, sizeof(long) * 33))
-		return -EIO;
+	regs = task_pt_regs(target);
+	for (i = 0; i < 30; i++)
+		uregs.regs[i] = *(__u64 *)((void *)regs + regoffsets[i]);
 
-	/* r0-r15 */
-	for (i = 0; i < 16; i++) {
-		regval = get_reg(child, i);
-		retval |= __put_user((long)regval, data + i);
-	}
-	/* r19-r28 */
-	for (i = 19; i < 29; i++) {
-		regval = get_reg(child, i);
-		retval |= __put_user((long)regval, data + i - 3);
-	}
-	/*SP, PS ,PC,GP*/
-	retval |= __put_user((long)(get_reg(child, REG_SP)), data + EF_SP);
-	retval |= __put_user((long)(get_reg(child, REG_PS)), data + EF_PS);
-	retval |= __put_user((long)(get_reg(child, REG_PC)), data + EF_PC);
-	retval |= __put_user((long)(get_reg(child, REG_GP)), data + EF_GP);
-	/* r16-r18 */
-	retval |= __put_user((long)(get_reg(child, 16)), data + EF_A0);
-	retval |= __put_user((long)(get_reg(child, 17)), data + EF_A1);
-	retval |= __put_user((long)(get_reg(child, 18)), data + EF_A2);
+	uregs.regs[30] = task_thread_info(target)->pcb.usp;
+	uregs.pc = regs->pc;
+	uregs.pstate = regs->ps;
 
-	ret = retval ? -EIO : 0;
+	ret = membuf_write(&to, &uregs, sizeof(uregs));
+
 	return ret;
 }
 
-int ptrace_setregs(struct task_struct *child, __s64 __user *data)
+static int gpr_set(struct task_struct *target,
+			const struct user_regset *regset,
+			unsigned int pos, unsigned int count,
+			const void *kbuf, const void __user *ubuf)
 {
-	int ret, retval = 0;
-	int i;
-	unsigned long regval;
+	struct pt_regs *regs;
+	struct user_pt_regs uregs;
+	int i, ret;
 
-	if (!access_ok(data, sizeof(long) * 33))
-		return -EIO;
+	ret = user_regset_copyin(&pos, &count, &kbuf, &ubuf,
+				&uregs, 0, sizeof(uregs));
+	if (ret)
+		return ret;
 
-	/* r0-r15 */
-	for (i = 0; i < 16; i++) {
-		retval |= __get_user(regval, data + i);
-		ret = put_reg(child, i, regval);
-	}
-	/* r19-r28 */
-	for (i = 19; i < 29; i++) {
-		retval |= __get_user(regval, data + i - 3);
-		ret = put_reg(child, i, regval);
-	}
-	/*SP, PS ,PC,GP*/
-	retval |= __get_user(regval, data + EF_SP);
-	ret = put_reg(child, REG_SP, regval);
-	retval |= __get_user(regval, data + EF_PS);
-	ret = put_reg(child, REG_PS, regval);
-	retval |= __get_user(regval, data + EF_PC);
-	ret = put_reg(child, REG_PC, regval);
-	retval |= __get_user(regval, data + EF_GP);
-	ret = put_reg(child, REG_GP, regval);
-	/* r16-r18 */
-	retval |= __get_user(regval, data + EF_A0);
-	ret = put_reg(child, 16, regval);
-	retval |= __get_user(regval, data + EF_A1);
-	ret = put_reg(child, 17, regval);
-	retval |= __get_user(regval, data + EF_A2);
-	ret = put_reg(child, 18, regval);
+	regs = task_pt_regs(target);
+	for (i = 0; i < 30; i++)
+		*(__u64 *)((void *)regs + regoffsets[i]) = uregs.regs[i];
 
-	ret = retval ? -EIO : 0;
+	task_thread_info(target)->pcb.usp = uregs.regs[30];
+	regs->pc = uregs.pc;
+	regs->ps = uregs.pstate;
+
 	return 0;
 }
 
-int ptrace_getfpregs(struct task_struct *child, __s64 __user *data)
+static int fpr_get(struct task_struct *target,
+			const struct user_regset *regset,
+			struct membuf to)
 {
-	int ret, retval = 0;
-	int i;
-	unsigned long regval;
+	int ret;
+	struct user_fpsimd_state uregs;
 
-	if (!access_ok(data, sizeof(long) * 32))
-		return -EIO;
+	memcpy(uregs.vregs, &target->thread.ctx_fp,
+			sizeof(struct context_fpregs));
 
-	/* fp0-fp31 */
-	for (i = 0; i < 32; i++) {
-		regval = get_reg(child, REG_F0 + i);
-		retval |= __put_user((long)regval, data + i);
-	}
+	uregs.fpcr = target->thread.fpcr;
 
-	ret = retval ? -EIO : 0;
-	return 0;
-}
-
-int ptrace_setfpregs(struct task_struct *child, __s64 __user *data)
-{
-	int ret, retval = 0;
-	int i;
-	unsigned long regval;
-
-	if (!access_ok(data, sizeof(long) * 32))
-		return -EIO;
-
-	/* fp0-fp31 */
-	for (i = 0; i < 32; i++) {
-		retval |= __get_user(regval, data + i);
-		ret = put_reg(child, REG_F0 + i, regval);
-	}
+	ret = membuf_write(&to, &uregs, sizeof(uregs));
 
 	return ret;
+}
+
+static int fpr_set(struct task_struct *target,
+			const struct user_regset *regset,
+			unsigned int pos, unsigned int count,
+			const void *kbuf, const void __user *ubuf)
+{
+	int ret;
+	struct user_fpsimd_state uregs;
+
+	ret = user_regset_copyin(&pos, &count, &kbuf, &ubuf,
+				&uregs, 0, sizeof(uregs));
+
+	if (ret)
+		return ret;
+
+	memcpy(&target->thread.ctx_fp, uregs.vregs,
+			sizeof(struct context_fpregs));
+
+	target->thread.fpcr = uregs.fpcr;
+
+	return ret;
+}
+
+enum sw64_regset {
+	REGSET_GPR,
+	REGSET_FPR,
+};
+
+static const struct user_regset sw64_regsets[] = {
+	[REGSET_GPR] = {
+		.core_note_type = NT_PRSTATUS,
+		.n = ELF_NGREG,
+		.size = sizeof(elf_greg_t),
+		.align = sizeof(elf_greg_t),
+		.regset_get = gpr_get,
+		.set = gpr_set
+	},
+	[REGSET_FPR] = {
+		.core_note_type = NT_PRFPREG,
+		.n = sizeof(struct user_fpsimd_state) / sizeof(u64),
+		.size = sizeof(u64),
+		.align = sizeof(u64),
+		.regset_get = fpr_get,
+		.set = fpr_set
+	},
+};
+
+static const struct user_regset_view user_sw64_view = {
+	.name = "sw64", .e_machine = EM_SW64,
+	.regsets = sw64_regsets, .n = ARRAY_SIZE(sw64_regsets)
+};
+
+const struct user_regset_view *task_user_regset_view(struct task_struct *task)
+{
+	return &user_sw64_view;
 }
 
 long arch_ptrace(struct task_struct *child, long request,
@@ -386,7 +397,6 @@ long arch_ptrace(struct task_struct *child, long request,
 	unsigned long tmp;
 	size_t copied;
 	long ret;
-	void __user *datavp = (void __user *) data;
 
 	switch (request) {
 	/* When I and D space are separate, these will need to be fixed.  */
@@ -415,18 +425,6 @@ long arch_ptrace(struct task_struct *child, long request,
 
 	case PTRACE_POKEUSR: /* write the specified register */
 		ret = put_reg(child, addr, data);
-		break;
-	case PTRACE_GETREGS:
-		ret = ptrace_getregs(child, datavp);
-		break;
-	case PTRACE_SETREGS:
-		ret = ptrace_setregs(child, datavp);
-		break;
-	case PTRACE_GETFPREGS:
-		ret = ptrace_getfpregs(child, datavp);
-		break;
-	case PTRACE_SETFPREGS:
-		ret = ptrace_setfpregs(child, datavp);
 		break;
 	default:
 		ret = ptrace_request(child, request, addr, data);
