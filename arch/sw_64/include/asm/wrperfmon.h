@@ -38,6 +38,10 @@
 #define PC1_MIN				0x0
 #define PC1_MAX				0x37
 
+#define SW64_PERFCTRL_KM		2
+#define SW64_PERFCTRL_UM		3
+#define SW64_PERFCTRL_AM		4
+
 /* pc0 events */
 #define PC0_INSTRUCTIONS		0x0
 #define PC0_BRANCH_INSTRUCTIONS		0x3

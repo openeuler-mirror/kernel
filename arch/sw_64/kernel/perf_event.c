@@ -457,8 +457,8 @@ static void sw64_pmu_start(struct perf_event *event, int flags)
 
 	hwc->state = 0;
 
-	/* counting in all modes, for both counters */
-	wrperfmon(PERFMON_CMD_PM, 4);
+	/* counting in selected modes, for both counters */
+	wrperfmon(PERFMON_CMD_PM, hwc->config_base);
 	if (hwc->idx == PERFMON_PC0) {
 		wrperfmon(PERFMON_CMD_EVENT_PC0, hwc->event_base);
 		wrperfmon(PERFMON_CMD_ENABLE, PERFMON_ENABLE_ARGS_PC0);
@@ -519,9 +519,12 @@ static int __hw_perf_event_init(struct perf_event *event)
 	const struct sw64_perf_event *event_type;
 
 
-	/* SW64 do not have per-counter usr/os/guest/host bits */
-	if (event->attr.exclude_user || event->attr.exclude_kernel ||
-			event->attr.exclude_hv || event->attr.exclude_idle ||
+	/*
+	 * SW64 does not have per-counter usr/os/guest/host bits,
+	 * we can distinguish exclude_user and exclude_kernel by
+	 * sample mode.
+	 */
+	if (event->attr.exclude_hv || event->attr.exclude_idle ||
 			event->attr.exclude_host || event->attr.exclude_guest)
 		return -EINVAL;
 
@@ -552,6 +555,13 @@ static int __hw_perf_event_init(struct perf_event *event)
 		hwc->idx = attr->config >> 8;	/* counter selector */
 		hwc->event_base = attr->config & 0xff;	/* event selector */
 	}
+
+	hwc->config_base = SW64_PERFCTRL_AM;
+
+	if (attr->exclude_user)
+		hwc->config_base = SW64_PERFCTRL_KM;
+	if (attr->exclude_kernel)
+		hwc->config_base = SW64_PERFCTRL_UM;
 
 	hwc->config = attr->config;
 
