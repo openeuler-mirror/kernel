@@ -804,6 +804,18 @@ size_t _copy_to_iter_mcsafe(const void *addr, size_t bytes, struct iov_iter *i)
 EXPORT_SYMBOL_GPL(_copy_to_iter_mcsafe);
 #endif /* CONFIG_ARCH_HAS_UACCESS_MCSAFE */
 
+static void *iter_memcpy_mc(void *to, const void *from, __kernel_size_t size)
+{
+#ifdef CONFIG_UCE_KERNEL_RECOVERY
+	if (current->flags & PF_UCE_KERNEL_COREDUMP)
+		return memcpy_mc(to, from, size);
+	else
+		return memcpy(to, from, size);
+#else
+	return memcpy(to, from, size);
+#endif
+}
+
 size_t _copy_from_iter(void *addr, size_t bytes, struct iov_iter *i)
 {
 	char *to = addr;
@@ -817,7 +829,8 @@ size_t _copy_from_iter(void *addr, size_t bytes, struct iov_iter *i)
 		copyin((to += v.iov_len) - v.iov_len, v.iov_base, v.iov_len),
 		memcpy_from_page((to += v.bv_len) - v.bv_len, v.bv_page,
 				 v.bv_offset, v.bv_len),
-		memcpy((to += v.iov_len) - v.iov_len, v.iov_base, v.iov_len)
+		iter_memcpy_mc((to += v.iov_len) - v.iov_len, v.iov_base,
+				v.iov_len)
 	)
 
 	return bytes;
@@ -1064,7 +1077,8 @@ size_t iov_iter_copy_from_user_atomic(struct page *page,
 		copyin((p += v.iov_len) - v.iov_len, v.iov_base, v.iov_len),
 		memcpy_from_page((p += v.bv_len) - v.bv_len, v.bv_page,
 				 v.bv_offset, v.bv_len),
-		memcpy((p += v.iov_len) - v.iov_len, v.iov_base, v.iov_len)
+		iter_memcpy_mc((p += v.iov_len) - v.iov_len, v.iov_base,
+				v.iov_len)
 	)
 	kunmap_atomic(kaddr);
 	return bytes;

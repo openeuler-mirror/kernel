@@ -45,6 +45,8 @@ extern void *memchr(const void *, int, __kernel_size_t);
 #define __HAVE_ARCH_MEMCPY
 extern void *memcpy(void *, const void *, __kernel_size_t);
 extern void *__memcpy(void *, const void *, __kernel_size_t);
+extern void *memcpy_mc(void *, const void *, __kernel_size_t);
+extern void *__memcpy_mc(void *, const void *, __kernel_size_t);
 
 #define __HAVE_ARCH_MEMMOVE
 extern void *memmove(void *, const void *, __kernel_size_t);
@@ -65,7 +67,7 @@ void memcpy_flushcache(void *dst, const void *src, size_t cnt);
  * For files that are not instrumented (e.g. mm/slub.c) we
  * should use not instrumented version of mem* functions.
  */
-
+#define memcpy_mc(dst, src, len) __memcpy_mc(dst, src, len)
 #define memcpy(dst, src, len) __memcpy(dst, src, len)
 #define memmove(dst, src, len) __memmove(dst, src, len)
 #define memset(s, c, n) __memset(s, c, n)

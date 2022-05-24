@@ -673,6 +673,7 @@ static struct uce_kernel_recovery_info reco_info[] = {
 	{copy_generic_read_sea_fallback, "__arch_copy_to_user_generic_read", (unsigned long)__arch_copy_to_user_generic_read, 0, 0},
 	{copy_from_user_sea_fallback, "__arch_copy_from_user", (unsigned long)__arch_copy_from_user, 0, 0},
 	{get_user_sea_fallback, "get_user_sea_fallback", (unsigned long)get_user_sea_fallback, 0, KR_SET_TASK_STATE},
+	{memcpy_mc_sea_fallback, "memcpy_mc_sea_fallback", (unsigned long)memcpy_mc, 0, 0},
 };
 
 static int __init kernel_access_sea_recovery_init(void)

@@ -57,6 +57,7 @@ extern int copy_page_cow_sea_fallback(void);
 extern int copy_generic_read_sea_fallback(void);
 extern int copy_from_user_sea_fallback(void);
 extern int get_user_sea_fallback(void);
+extern int memcpy_mc_sea_fallback(void);
 #endif
 
 #endif	/* __ASM_EXCEPTION_H */

@@ -130,7 +130,7 @@ static int __maybe_unused two = 2;
 static int __maybe_unused three = 3;
 static int __maybe_unused four = 4;
 static int __maybe_unused five = 5;
-static int __maybe_unused uce_kernel_recovery_max = 15;
+static int __maybe_unused uce_kernel_recovery_max = 31;
 static unsigned long zero_ul;
 static unsigned long one_ul = 1;
 static unsigned long long_max = LONG_MAX;

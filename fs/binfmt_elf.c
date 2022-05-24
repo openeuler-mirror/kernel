@@ -2414,7 +2414,9 @@ static int elf_core_dump(struct coredump_params *cprm)
 			page = get_dump_page(addr);
 			if (page) {
 				void *kaddr = kmap(page);
+				current->flags |= PF_UCE_KERNEL_COREDUMP;
 				stop = !dump_emit(cprm, kaddr, PAGE_SIZE);
+				current->flags &= ~PF_UCE_KERNEL_COREDUMP;
 				kunmap(page);
 				put_page(page);
 			} else
