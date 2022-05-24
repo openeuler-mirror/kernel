@@ -55,6 +55,9 @@
 #define KVM_BUS_LOCK_DETECTION_VALID_MODE	(KVM_BUS_LOCK_DETECTION_OFF | \
 						 KVM_BUS_LOCK_DETECTION_EXIT)
 
+#define KVM_X86_NOTIFY_VMEXIT_VALID_BITS	(KVM_X86_NOTIFY_VMEXIT_ENABLED | \
+						 KVM_X86_NOTIFY_VMEXIT_USER)
+
 /* x86-specific vcpu->requests bit members */
 #define KVM_REQ_MIGRATE_TIMER		KVM_ARCH_REQ(0)
 #define KVM_REQ_REPORT_TPR_ACCESS	KVM_ARCH_REQ(1)
@@ -1000,6 +1003,9 @@ struct kvm_arch {
 
 	bool bus_lock_detection_enabled;
 
+	u32 notify_window;
+	u32 notify_vmexit_flags;
+
 	/* Guest can access the SGX PROVISIONKEY. */
 	bool sgx_provisioning_allowed;
 
@@ -1092,6 +1098,7 @@ struct kvm_vcpu_stat {
 	u64 preemption_reported;
 	u64 preemption_other;
 	u64 preemption_timer_exits;
+	u64 notify_window_exits;
 };
 
 struct x86_instruction_info;
@@ -1442,6 +1449,8 @@ extern u64  kvm_max_tsc_scaling_ratio;
 extern u64  kvm_default_tsc_scaling_ratio;
 /* bus lock detection supported? */
 extern bool kvm_has_bus_lock_exit;
+/* notify vmexit supported? */
+extern bool kvm_has_notify_vmexit;
 
 extern u64 kvm_mce_cap_supported;
 
