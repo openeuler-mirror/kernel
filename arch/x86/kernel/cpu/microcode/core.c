@@ -773,10 +773,7 @@ int __init microcode_init(void)
 
 	get_online_cpus();
 	mutex_lock(&microcode_mutex);
-
 	error = subsys_interface_register(&mc_cpu_interface);
-	if (!error)
-		perf_check_microcode();
 	mutex_unlock(&microcode_mutex);
 	put_online_cpus();
 
