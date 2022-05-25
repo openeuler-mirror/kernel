@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       92
+%global devel_release       93
 %global maintenance_release .0.0
-%global pkg_release         .44
+%global pkg_release         .45
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,147 @@ fi
 %endif
 
 %changelog
+* Mon May 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-93.0.0.45
+- mm: hwpoison: enable memory error handling on 1GB hugepage optionaly
+- ext4: Fix warning in ext4_da_release_space
+- perf: hisi: Fix unexpected modifications in hisi_uncore_l3c_pmu.c
+- huge tmpfs: remove shrinklist addition from shmem_setattr()
+- huge tmpfs: fix split_huge_page() after FALLOC_FL_KEEP_SIZE
+- huge tmpfs: fix fallocate(vanilla) advance over huge pages
+- nfc: nfcmrvl: main: reorder destructive operations in nfcmrvl_nci_unregister_dev to avoid bugs
+- irq-gic-v3-its: It can't be initialized when the GICR had been cut
+- irq-gic-v3: Add support to init ts core GICR
+- crypto: tcrypt - add asynchronous speed test for SM3
+- crypto: x86/sm3 - add AVX assembly implementation
+- crypto: sm3 - make dependent on sm3 library
+- crypto: sm2 - make dependent on sm3 library
+- crypto: arm64/sm3-ce - make dependent on sm3 library
+- crypto: sm3 - create SM3 stand-alone library
+- dynamic_hugetlb: fix undefined struct cftype
+- file: fix kabi change since add f_ctl_mode
+- selftests/bpf: add demo for file read pattern detection
+- libbpf: Support detecting writable tracepoint program
+- ext4: add trace for the read and release of regular file
+- xfs: add trace for read and release of regular file
+- fs: add helper fs_file_read_do_trace()
+- vfs: add bare tracepoints for vfs read and release
+- bpf: Support writable context for bare tracepoint
+- trace: bpf: Allow bpf to attach to bare tracepoints
+- readahead: introduce FMODE_CTL_WILLNEED to read first 2MB of file
+- lockdep: Correct lock_classes index mapping
+- i2c: brcmstb: fix support for DSL and CM variants
+- copy_process(): Move fd_install() out of sighand->siglock critical section
+- i2c: qcom-cci: don't put a device tree node before i2c_add_adapter()
+- i2c: qcom-cci: don't delete an unregistered adapter
+- dmaengine: sh: rcar-dmac: Check for error num after dma_set_max_seg_size
+- dmaengine: stm32-dmamux: Fix PM disable depth imbalance in stm32_dmamux_probe
+- dmaengine: sh: rcar-dmac: Check for error num after setting mask
+- net: sched: limit TC_ACT_REPEAT loops
+- EDAC: Fix calculation of returned address and next offset in edac_align_ptr()
+- scsi: lpfc: Fix pt2pt NVMe PRLI reject LOGO loop
+- kconfig: fix failing to generate auto.conf
+- net: macb: Align the dma and coherent dma masks
+- net: usb: qmi_wwan: Add support for Dell DW5829e
+- tracing: Fix tp_printk option related with tp_printk_stop_on_boot
+- drm/rockchip: dw_hdmi: Do not leave clock enabled in error case
+- xprtrdma: fix pointer derefs in error cases of rpcrdma_ep_create
+- soc: aspeed: lpc-ctrl: Block error printing on probe defer cases
+- ata: libata-core: Disable TRIM on M88V29
+- kconfig: let 'shell' return enough output for deep path names
+- selftests: fixup build warnings in pidfd / clone3 tests
+- pidfd: fix test failure due to stack overflow on some arches
+- arm64: dts: meson-g12: drop BL32 region from SEI510/SEI610
+- arm64: dts: meson-g12: add ATF BL32 reserved-memory region
+- arm64: dts: meson-gx: add ATF BL32 reserved-memory region
+- netfilter: conntrack: don't refresh sctp entries in closed state
+- irqchip/sifive-plic: Add missing thead,c900-plic match string
+- phy: usb: Leave some clocks running during suspend
+- ARM: OMAP2+: adjust the location of put_device() call in omapdss_init_of
+- ARM: OMAP2+: hwmod: Add of_node_put() before break
+- NFS: Don't set NFS_INO_INVALID_XATTR if there is no xattr cache
+- KVM: x86/pmu: Use AMD64_RAW_EVENT_MASK for PERF_TYPE_RAW
+- KVM: x86/pmu: Don't truncate the PerfEvtSeln MSR when creating a perf event
+- KVM: x86/pmu: Refactoring find_arch_event() to pmc_perf_hw_id()
+- Drivers: hv: vmbus: Fix memory leak in vmbus_add_channel_kobj
+- mtd: rawnand: brcmnand: Fixed incorrect sub-page ECC status
+- mtd: rawnand: qcom: Fix clock sequencing in qcom_nandc_probe()
+- tty: n_tty: do not look ahead for EOL character past the end of the buffer
+- NFS: Do not report writeback errors in nfs_getattr()
+- block/wbt: fix negative inflight counter when remove scsi device
+- ASoC: tas2770: Insert post reset delay
+- KVM: SVM: Never reject emulation due to SMAP errata for !SEV guests
+- mtd: rawnand: gpmi: don't leak PM reference in error path
+- powerpc/lib/sstep: fix 'ptesync' build error
+- ASoC: ops: Fix stereo change notifications in snd_soc_put_volsw_range()
+- ASoC: ops: Fix stereo change notifications in snd_soc_put_volsw()
+- ALSA: hda: Fix missing codec probe on Shenker Dock 15
+- ALSA: hda: Fix regression on forced probe mask option
+- ALSA: hda/realtek: Fix deadlock by COEF mutex
+- ALSA: hda/realtek: Add quirk for Legion Y9000X 2019
+- selftests/exec: Add non-regular to TEST_GEN_PROGS
+- perf bpf: Defer freeing string after possible strlen() on it
+- dpaa2-eth: Initialize mutex used in one step timestamping path
+- libsubcmd: Fix use-after-free for realloc(..., 0)
+- bonding: fix data-races around agg_select_timer
+- net_sched: add __rcu annotation to netdev->qdisc
+- drop_monitor: fix data-race in dropmon_net_event / trace_napi_poll_hit
+- ping: fix the dif and sdif check in ping_lookup
+- net: ieee802154: ca8210: Fix lifs/sifs periods
+- net: dsa: lantiq_gswip: fix use after free in gswip_remove()
+- net: dsa: lan9303: fix reset on probe
+- netfilter: nft_synproxy: unregister hooks on init error path
+- selftests: netfilter: fix exit value for nft_concat_range
+- iwlwifi: pcie: gen2: fix locking when "HW not ready"
+- iwlwifi: pcie: fix locking when "HW not ready"
+- drm/i915/gvt: Make DRM_I915_GVT depend on X86
+- vsock: remove vsock from connected table when connect is interrupted by a signal
+- drm/i915/opregion: check port number bounds for SWSCI display power state
+- drm/radeon: Fix backlight control on iMac 12,1
+- iwlwifi: fix use-after-free
+- kbuild: lto: Merge module sections if and only if CONFIG_LTO_CLANG is enabled
+- kbuild: lto: merge module sections
+- random: wake up /dev/random writers after zap
+- gcc-plugins/stackleak: Use noinstr in favor of notrace
+- Revert "module, async: async_synchronize_full() on module init iff async is used"
+- x86/Xen: streamline (and fix) PV CPU enumeration
+- drm/amdgpu: fix logic inversion in check
+- nvme-rdma: fix possible use-after-free in transport error_recovery work
+- nvme-tcp: fix possible use-after-free in transport error_recovery work
+- nvme: fix a possible use-after-free in controller reset during load
+- scsi: pm8001: Fix use-after-free for aborted SSP/STP sas_task
+- scsi: pm8001: Fix use-after-free for aborted TMF sas_task
+- quota: make dquot_quota_sync return errors from ->sync_fs
+- vfs: make freeze_super abort when sync_filesystem returns error
+- selftests: skip mincore.check_file_mmap when fs lacks needed support
+- selftests: openat2: Skip testcases that fail with EOPNOTSUPP
+- selftests: openat2: Add missing dependency in Makefile
+- selftests: openat2: Print also errno in failure messages
+- selftests/zram: Adapt the situation that /dev/zram0 is being used
+- selftests/zram01.sh: Fix compression ratio calculation
+- selftests/zram: Skip max_comp_streams interface on newer kernel
+- net: ieee802154: at86rf230: Stop leaking skb's
+- kselftest: signal all child processes
+- selftests: rtc: Increase test timeout so that all tests run
+- platform/x86: ISST: Fix possible circular locking dependency detected
+- platform/x86: touchscreen_dmi: Add info for the RWC NANOTE P8 AY07J 2-in-1
+- btrfs: send: in case of IO error log it
+- parisc: Add ioread64_lo_hi() and iowrite64_lo_hi()
+- PCI: hv: Fix NUMA node assignment when kernel boots with custom NUMA topology
+- mm: don't try to NUMA-migrate COW pages that have other uses
+- mmc: block: fix read single on recovery logic
+- parisc: Fix sglist access in ccio-dma.c
+- parisc: Fix data TLB miss in sba_unmap_sg
+- parisc: Drop __init from map_pages declaration
+- serial: parisc: GSC: fix build when IOSAPIC is not set
+- Revert "svm: Add warning message for AVIC IPI invalid target"
+- HID:Add support for UGTABLET WP5540
+- scsi: lpfc: Fix mailbox command failure during driver initialization
+- can: isotp: add SF_BROADCAST support for functional addressing
+- can: isotp: prevent race between isotp_bind() and isotp_setsockopt()
+- fs/proc: task_mmu.c: don't read mapcount for migration entry
+- mm: memcg: synchronize objcg lists with a dedicated spinlock
+- drm/nouveau/pmu/gm200-: use alternate falcon reset sequence
+
 * Sat May 21 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-92.0.0.44
 - ext4: fix bug_on in ext4_writepages
 - ext4: fix warning in ext4_handle_inode_extension
