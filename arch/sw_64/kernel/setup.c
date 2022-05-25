@@ -907,7 +907,7 @@ show_cpuinfo(struct seq_file *f, void *slot)
 				"physical id\t: %d\n"
 				"bogomips\t: %lu.%02lu\n",
 				cpu_freq, cpu_data[i].tcache.size >> 10,
-				cpu_to_rcid(i),
+				cpu_topology[i].package_id,
 				loops_per_jiffy / (500000/HZ),
 				(loops_per_jiffy / (5000/HZ)) % 100);
 
