@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2205.4.0
+%global hulkrelease 2205.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0150
+Release: %{hulkrelease}.0151
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,27 @@ fi
 %endif
 
 %changelog
+
+* Tue May 24 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2205.5.0.0151
+- sched/qos: Add qos_tg_{throttle,unthrottle}_{up,down}
+- sched: Throttle offline task at tracehook_notify_resume()
+- sched: enable CONFIG_QOS_SCHED on arm64
+- sched/qos: Remove dependency CONFIG_x86
+- net/sched: cls_u32: fix netns refcount changes in u32_change()
+- mm: hwpoison: enable memory error handling on 1GB hugepage optionaly
+- mm: fix gup_pud_range
+- nfc: nfcmrvl: main: reorder destructive operations in nfcmrvl_nci_unregister_dev to avoid bugs
+- ext4: fix warning when submitting superblock in ext4_commit_super()
+- ext4: fix bug_on in __es_tree_search
+- secure_seq: use the 64 bits of the siphash for port offset calculation
+- floppy: use a statically allocated error counter
+- mmc: block: fix read single on recovery logic
+- SUNRPC: Ensure that the gssproxy client can start in a connected state
+- Revert "SUNRPC: attempt AF_LOCAL connect on setup"
+- ax25: Fix UAF bugs in ax25 timers
+- ptrace: Check PTRACE_O_SUSPEND_SECCOMP permission on PTRACE_SEIZE
+- drm/vgem: Close use-after-free race in vgem_gem_create
+- mm/memory.c: update the first page in clear_gigantic_page_chunk
 
 * Tue May 17 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2205.4.0.0150
 - scsi: hisi_sas: Change hisi_sas_control_phy() phyup timeout
