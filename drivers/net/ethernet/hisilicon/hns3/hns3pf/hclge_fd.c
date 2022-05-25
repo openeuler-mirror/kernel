@@ -871,6 +871,45 @@ static int hclge_fd_check_ip4_tuple(struct ethtool_usrip4_spec *spec,
 	return 0;
 }
 
+static int hclge_fd_check_vxlan4_tuple(struct ethtool_rx_flow_spec *fs,
+				       u32 *unused_tuple)
+{
+	struct ethtool_vxlan4_spec *spec = &fs->h_u.vxlan_ip4_spec;
+	struct ethtool_vxlan4_spec *mask = &fs->m_u.vxlan_ip4_spec;
+
+	/* Vni is only 24 bits and must be greater than 0, and it can not be
+	 * masked.
+	 */
+	if (!spec->vni || be32_to_cpu(spec->vni) >= VXLAN_N_VID ||
+	    mask->vni != HCLGE_FD_VXLAN_VNI_UNMASK || !unused_tuple)
+		return -EINVAL;
+
+	*unused_tuple |= BIT(INNER_SRC_PORT) | BIT(INNER_DST_PORT);
+
+	if (is_zero_ether_addr(spec->src))
+		*unused_tuple |= BIT(INNER_SRC_MAC);
+
+	if (is_zero_ether_addr(spec->dst))
+		*unused_tuple |= BIT(INNER_DST_MAC);
+
+	if (!spec->eth_type)
+		*unused_tuple |= BIT(INNER_ETH_TYPE);
+
+	if (!spec->ip4src)
+		*unused_tuple |= BIT(INNER_SRC_IP);
+
+	if (!spec->ip4dst)
+		*unused_tuple |= BIT(INNER_DST_IP);
+
+	if (!spec->tos)
+		*unused_tuple |= BIT(INNER_IP_TOS);
+
+	if (!spec->l4_proto)
+		*unused_tuple |= BIT(INNER_IP_PROTO);
+
+	return 0;
+}
+
 static int hclge_fd_check_tcpip6_tuple(struct ethtool_tcpip6_spec *spec,
 				       u32 *unused_tuple)
 {
@@ -922,6 +961,45 @@ static int hclge_fd_check_ip6_tuple(struct ethtool_usrip6_spec *spec,
 
 	if (spec->l4_4_bytes)
 		return -EOPNOTSUPP;
+
+	return 0;
+}
+
+static int hclge_fd_check_vxlan6_tuple(struct ethtool_rx_flow_spec *fs,
+				       u32 *unused_tuple)
+{
+	struct ethtool_vxlan6_spec *spec = &fs->h_u.vxlan_ip6_spec;
+	struct ethtool_vxlan6_spec *mask = &fs->m_u.vxlan_ip6_spec;
+
+	/* Vni is only 24 bits and must be greater than 0, and it can not be
+	 * masked.
+	 */
+	if (!spec->vni || be32_to_cpu(spec->vni) >= VXLAN_N_VID ||
+	    mask->vni != HCLGE_FD_VXLAN_VNI_UNMASK || !unused_tuple)
+		return -EINVAL;
+
+	*unused_tuple |= BIT(INNER_SRC_PORT) | BIT(INNER_DST_PORT);
+
+	if (is_zero_ether_addr(spec->src))
+		*unused_tuple |= BIT(INNER_SRC_MAC);
+
+	if (is_zero_ether_addr(spec->dst))
+		*unused_tuple |= BIT(INNER_DST_MAC);
+
+	if (!spec->eth_type)
+		*unused_tuple |= BIT(INNER_ETH_TYPE);
+
+	if (ipv6_addr_any((struct in6_addr *)spec->ip6src))
+		*unused_tuple |= BIT(INNER_SRC_IP);
+
+	if (ipv6_addr_any((struct in6_addr *)spec->ip6dst))
+		*unused_tuple |= BIT(INNER_DST_IP);
+
+	if (!spec->tclass)
+		*unused_tuple |= BIT(INNER_IP_TOS);
+
+	if (!spec->l4_proto)
+		*unused_tuple |= BIT(INNER_IP_PROTO);
 
 	return 0;
 }
@@ -1108,6 +1186,9 @@ static int hclge_fd_check_spec(struct hclge_dev *hdev,
 		ret = hclge_fd_check_ip4_tuple(&fs->h_u.usr_ip4_spec,
 					       unused_tuple);
 		break;
+	case VXLAN_V4_FLOW:
+		ret = hclge_fd_check_vxlan4_tuple(fs, unused_tuple);
+		break;
 	case SCTP_V6_FLOW:
 	case TCP_V6_FLOW:
 	case UDP_V6_FLOW:
@@ -1117,6 +1198,9 @@ static int hclge_fd_check_spec(struct hclge_dev *hdev,
 	case IPV6_USER_FLOW:
 		ret = hclge_fd_check_ip6_tuple(&fs->h_u.usr_ip6_spec,
 					       unused_tuple);
+		break;
+	case VXLAN_V6_FLOW:
+		ret = hclge_fd_check_vxlan6_tuple(fs, unused_tuple);
 		break;
 	case ETHER_FLOW:
 		if (hdev->fd_cfg.fd_mode !=
@@ -1198,6 +1282,37 @@ static void hclge_fd_get_ip4_tuple(struct ethtool_rx_flow_spec *fs,
 	rule->tuples_mask.ether_proto = 0xFFFF;
 }
 
+static void hclge_fd_get_vxlan4_tuple(struct ethtool_rx_flow_spec *fs,
+				      struct hclge_fd_rule *rule)
+{
+	struct ethtool_vxlan4_spec *h = &fs->h_u.vxlan_ip4_spec;
+	struct ethtool_vxlan4_spec *m = &fs->m_u.vxlan_ip4_spec;
+
+	rule->tuples.outer_tun_vni = be32_to_cpu(h->vni);
+	rule->tuples_mask.outer_tun_vni = be32_to_cpu(m->vni);
+
+	ether_addr_copy(rule->tuples.src_mac, h->src);
+	ether_addr_copy(rule->tuples_mask.src_mac, m->src);
+
+	ether_addr_copy(rule->tuples.dst_mac, h->dst);
+	ether_addr_copy(rule->tuples_mask.dst_mac, m->dst);
+
+	rule->tuples.ether_proto = be16_to_cpu(h->eth_type);
+	rule->tuples_mask.ether_proto = be16_to_cpu(m->eth_type);
+
+	rule->tuples.ip_tos = h->tos;
+	rule->tuples_mask.ip_tos = m->tos;
+
+	rule->tuples.ip_proto = h->l4_proto;
+	rule->tuples_mask.ip_proto = m->l4_proto;
+
+	rule->tuples.src_ip[IPV4_INDEX] = be32_to_cpu(h->ip4src);
+	rule->tuples_mask.src_ip[IPV4_INDEX] = be32_to_cpu(m->ip4src);
+
+	rule->tuples.dst_ip[IPV4_INDEX] = be32_to_cpu(h->ip4dst);
+	rule->tuples_mask.dst_ip[IPV4_INDEX] = be32_to_cpu(m->ip4dst);
+}
+
 static void hclge_fd_get_tcpip6_tuple(struct ethtool_rx_flow_spec *fs,
 				      struct hclge_fd_rule *rule, u8 ip_proto)
 {
@@ -1225,6 +1340,37 @@ static void hclge_fd_get_tcpip6_tuple(struct ethtool_rx_flow_spec *fs,
 
 	rule->tuples.ip_proto = ip_proto;
 	rule->tuples_mask.ip_proto = 0xFF;
+}
+
+static void hclge_fd_get_vxlan6_tuple(struct ethtool_rx_flow_spec *fs,
+				      struct hclge_fd_rule *rule)
+{
+	struct ethtool_vxlan6_spec *h = &fs->h_u.vxlan_ip6_spec;
+	struct ethtool_vxlan6_spec *m = &fs->m_u.vxlan_ip6_spec;
+
+	rule->tuples.outer_tun_vni = be32_to_cpu(h->vni);
+	rule->tuples_mask.outer_tun_vni = be32_to_cpu(m->vni);
+
+	ether_addr_copy(rule->tuples.src_mac, h->src);
+	ether_addr_copy(rule->tuples_mask.src_mac, m->src);
+
+	ether_addr_copy(rule->tuples.dst_mac, h->dst);
+	ether_addr_copy(rule->tuples_mask.dst_mac, m->dst);
+
+	rule->tuples.ether_proto = be16_to_cpu(h->eth_type);
+	rule->tuples_mask.ether_proto = be16_to_cpu(m->eth_type);
+
+	rule->tuples.ip_tos = h->tclass;
+	rule->tuples_mask.ip_tos = m->tclass;
+
+	rule->tuples.ip_proto = h->l4_proto;
+	rule->tuples_mask.ip_proto = m->l4_proto;
+
+	ipv6_addr_be32_to_cpu(rule->tuples.src_ip, h->ip6src);
+	ipv6_addr_be32_to_cpu(rule->tuples_mask.src_ip, m->ip6src);
+
+	ipv6_addr_be32_to_cpu(rule->tuples.dst_ip, h->ip6dst);
+	ipv6_addr_be32_to_cpu(rule->tuples_mask.dst_ip, m->ip6dst);
 }
 
 static void hclge_fd_get_ip6_tuple(struct ethtool_rx_flow_spec *fs,
@@ -1305,6 +1451,9 @@ static int hclge_fd_get_tuple(struct ethtool_rx_flow_spec *fs,
 	case IP_USER_FLOW:
 		hclge_fd_get_ip4_tuple(fs, rule);
 		break;
+	case VXLAN_V4_FLOW:
+		hclge_fd_get_vxlan4_tuple(fs, rule);
+		break;
 	case SCTP_V6_FLOW:
 		hclge_fd_get_tcpip6_tuple(fs, rule, IPPROTO_SCTP);
 		break;
@@ -1316,6 +1465,9 @@ static int hclge_fd_get_tuple(struct ethtool_rx_flow_spec *fs,
 		break;
 	case IPV6_USER_FLOW:
 		hclge_fd_get_ip6_tuple(fs, rule);
+		break;
+	case VXLAN_V6_FLOW:
+		hclge_fd_get_vxlan6_tuple(fs, rule);
 		break;
 	case ETHER_FLOW:
 		hclge_fd_get_ether_tuple(fs, rule);
@@ -1662,6 +1814,48 @@ static void hclge_fd_get_ip4_info(struct hclge_fd_rule *rule,
 	spec->ip_ver = ETH_RX_NFC_IP4;
 }
 
+static void hclge_fd_get_vxlan4_info(struct hclge_fd_rule *rule,
+				     struct ethtool_vxlan4_spec *spec,
+				     struct ethtool_vxlan4_spec *spec_mask)
+{
+	spec->vni = cpu_to_be32(rule->tuples.outer_tun_vni);
+	spec_mask->vni = rule->unused_tuple & BIT(OUTER_TUN_VNI) ? 0 :
+			 cpu_to_be32(rule->tuples_mask.outer_tun_vni);
+
+	ether_addr_copy(spec->src, rule->tuples.src_mac);
+	ether_addr_copy(spec->dst, rule->tuples.dst_mac);
+
+	if (rule->unused_tuple & BIT(INNER_SRC_MAC))
+		eth_zero_addr(spec_mask->src);
+	else
+		ether_addr_copy(spec_mask->src, rule->tuples_mask.src_mac);
+
+	if (rule->unused_tuple & BIT(INNER_DST_MAC))
+		eth_zero_addr(spec_mask->dst);
+	else
+		ether_addr_copy(spec_mask->dst, rule->tuples_mask.dst_mac);
+
+	spec->eth_type = cpu_to_be16(rule->tuples.ether_proto);
+	spec_mask->eth_type = rule->unused_tuple & BIT(INNER_ETH_TYPE) ? 0 :
+			     cpu_to_be16(rule->tuples_mask.ether_proto);
+
+	spec->tos = rule->tuples.ip_tos;
+	spec_mask->tos = rule->unused_tuple & BIT(INNER_IP_TOS) ? 0 :
+			 rule->tuples_mask.ip_tos;
+
+	spec->l4_proto = rule->tuples.ip_proto;
+	spec_mask->l4_proto = rule->unused_tuple & BIT(INNER_IP_PROTO) ? 0 :
+			     rule->tuples_mask.ip_proto;
+
+	spec->ip4src = cpu_to_be32(rule->tuples.src_ip[IPV4_INDEX]);
+	spec_mask->ip4src = rule->unused_tuple & BIT(INNER_SRC_IP) ? 0 :
+			    cpu_to_be32(rule->tuples_mask.src_ip[IPV4_INDEX]);
+
+	spec->ip4dst = cpu_to_be32(rule->tuples.dst_ip[IPV4_INDEX]);
+	spec_mask->ip4dst = rule->unused_tuple & BIT(INNER_DST_IP) ? 0 :
+			    cpu_to_be32(rule->tuples_mask.dst_ip[IPV4_INDEX]);
+}
+
 static void hclge_fd_get_tcpip6_info(struct hclge_fd_rule *rule,
 				     struct ethtool_tcpip6_spec *spec,
 				     struct ethtool_tcpip6_spec *spec_mask)
@@ -1718,6 +1912,54 @@ static void hclge_fd_get_ip6_info(struct hclge_fd_rule *rule,
 	spec->l4_proto = rule->tuples.ip_proto;
 	spec_mask->l4_proto = rule->unused_tuple & BIT(INNER_IP_PROTO) ?
 			0 : rule->tuples_mask.ip_proto;
+}
+
+static void hclge_fd_get_vxlan6_info(struct hclge_fd_rule *rule,
+				     struct ethtool_vxlan6_spec *spec,
+				     struct ethtool_vxlan6_spec *spec_mask)
+{
+	spec->vni = cpu_to_be32(rule->tuples.outer_tun_vni);
+	spec_mask->vni = rule->unused_tuple & BIT(OUTER_TUN_VNI) ? 0 :
+			 cpu_to_be32(rule->tuples_mask.outer_tun_vni);
+
+	ether_addr_copy(spec->src, rule->tuples.src_mac);
+	ether_addr_copy(spec->dst, rule->tuples.dst_mac);
+
+	if (rule->unused_tuple & BIT(INNER_SRC_MAC))
+		eth_zero_addr(spec_mask->src);
+	else
+		ether_addr_copy(spec_mask->src, rule->tuples_mask.src_mac);
+
+	if (rule->unused_tuple & BIT(INNER_DST_MAC))
+		eth_zero_addr(spec_mask->dst);
+	else
+		ether_addr_copy(spec_mask->dst, rule->tuples_mask.dst_mac);
+
+	spec->eth_type = cpu_to_be16(rule->tuples.ether_proto);
+	spec_mask->eth_type = rule->unused_tuple & BIT(INNER_ETH_TYPE) ? 0 :
+			     cpu_to_be16(rule->tuples_mask.ether_proto);
+
+	spec->tclass = rule->tuples.ip_tos;
+	spec_mask->tclass = rule->unused_tuple & BIT(INNER_IP_TOS) ? 0 :
+			    rule->tuples_mask.ip_tos;
+
+	spec->l4_proto = rule->tuples.ip_proto;
+	spec_mask->l4_proto = rule->unused_tuple & BIT(INNER_IP_PROTO) ? 0 :
+			     rule->tuples_mask.ip_proto;
+
+	ipv6_addr_cpu_to_be32(spec->ip6src,
+			  rule->tuples.src_ip);
+	ipv6_addr_cpu_to_be32(spec->ip6dst,
+			  rule->tuples.dst_ip);
+	if (rule->unused_tuple & BIT(INNER_SRC_IP))
+		memset(spec_mask->ip6src, 0, sizeof(spec_mask->ip6src));
+	else
+		ipv6_addr_cpu_to_be32(spec_mask->ip6src, rule->tuples_mask.src_ip);
+
+	if (rule->unused_tuple & BIT(INNER_DST_IP))
+		memset(spec_mask->ip6dst, 0, sizeof(spec_mask->ip6dst));
+	else
+		ipv6_addr_cpu_to_be32(spec_mask->ip6dst, rule->tuples_mask.dst_ip);
 }
 
 static void hclge_fd_get_ether_info(struct hclge_fd_rule *rule,
@@ -1846,6 +2088,10 @@ int hclge_get_fd_rule_info(struct hnae3_handle *handle,
 		hclge_fd_get_ip4_info(rule, &fs->h_u.usr_ip4_spec,
 				      &fs->m_u.usr_ip4_spec);
 		break;
+	case VXLAN_V4_FLOW:
+		hclge_fd_get_vxlan4_info(rule, &fs->h_u.vxlan_ip4_spec,
+					 &fs->m_u.vxlan_ip4_spec);
+		break;
 	case SCTP_V6_FLOW:
 	case TCP_V6_FLOW:
 	case UDP_V6_FLOW:
@@ -1855,6 +2101,10 @@ int hclge_get_fd_rule_info(struct hnae3_handle *handle,
 	case IPV6_USER_FLOW:
 		hclge_fd_get_ip6_info(rule, &fs->h_u.usr_ip6_spec,
 				      &fs->m_u.usr_ip6_spec);
+		break;
+	case VXLAN_V6_FLOW:
+		hclge_fd_get_vxlan6_info(rule, &fs->h_u.vxlan_ip6_spec,
+					 &fs->m_u.vxlan_ip6_spec);
 		break;
 	/* The flow type of fd rule has been checked before adding in to rule
 	 * list. As other flow types have been handled, it must be ETHER_FLOW
