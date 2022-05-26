@@ -15,18 +15,16 @@ ENTRY(__sw64_vcpu_run)
 
 	/* save host fpregs */
 	ldl	$1, TI_TASK($8)
-	ldi	$1, TASK_THREAD($1)
 	rfpcr	$f0
-	fstd	$f0, THREAD_FPCR($1)
-	ldi	$1, THREAD_CTX_FP($1)
-	vstd	$f2, CTX_FP_F2($1)
-	vstd	$f3, CTX_FP_F3($1)
-	vstd	$f4, CTX_FP_F4($1)
-	vstd	$f5, CTX_FP_F5($1)
-	vstd	$f6, CTX_FP_F6($1)
-	vstd	$f7, CTX_FP_F7($1)
-	vstd	$f8, CTX_FP_F8($1)
-	vstd	$f9, CTX_FP_F9($1)
+	fstd	$f0, TASK_THREAD_FPCR($1)
+	vstd	$f2, TASK_THREAD_F2($1)
+	vstd	$f3, TASK_THREAD_F3($1)
+	vstd	$f4, TASK_THREAD_F4($1)
+	vstd	$f5, TASK_THREAD_F5($1)
+	vstd	$f6, TASK_THREAD_F6($1)
+	vstd	$f7, TASK_THREAD_F7($1)
+	vstd	$f8, TASK_THREAD_F8($1)
+	vstd	$f9, TASK_THREAD_F9($1)
 
 	ldi	sp, -VCPU_RET_SIZE(sp)
 	/* r16 = guest kvm_vcpu_arch.vcb struct pointer */
@@ -213,8 +211,7 @@ $g_setfpec_over:
 	bic	sp, $8, $8
 	/* restore host fpregs */
 	ldl	$1, TI_TASK($8)
-	ldi	$1, TASK_THREAD($1)
-	fldd	$f0, THREAD_FPCR($1)
+	fldd	$f0, TASK_THREAD_FPCR($1)
 	wfpcr	$f0
 	fimovd	$f0, $2
 	and	$2, 0x3, $2
@@ -234,15 +231,14 @@ $setfpec_1:
 $setfpec_2:
 	setfpec2
 $setfpec_over:
-	ldi	$1, THREAD_CTX_FP($1)
-	vldd	$f2, CTX_FP_F2($1)
-	vldd	$f3, CTX_FP_F3($1)
-	vldd	$f4, CTX_FP_F4($1)
-	vldd	$f5, CTX_FP_F5($1)
-	vldd	$f6, CTX_FP_F6($1)
-	vldd	$f7, CTX_FP_F7($1)
-	vldd	$f8, CTX_FP_F8($1)
-	vldd	$f9, CTX_FP_F9($1)
+	vldd	$f2, TASK_THREAD_F2($1)
+	vldd	$f3, TASK_THREAD_F3($1)
+	vldd	$f4, TASK_THREAD_F4($1)
+	vldd	$f5, TASK_THREAD_F5($1)
+	vldd	$f6, TASK_THREAD_F6($1)
+	vldd	$f7, TASK_THREAD_F7($1)
+	vldd	$f8, TASK_THREAD_F8($1)
+	vldd	$f9, TASK_THREAD_F9($1)
 
 	/* if $0 > 0, handle hcall */
 	bgt	$0, $ret_to

@@ -100,9 +100,10 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 	err |= __get_user(usp, sc->sc_regs+30);
 	wrusp(usp);
 	/* simd-fp */
-	err |= __copy_from_user(&current->thread.ctx_fp,
-			&sc->sc_fpregs, sizeof(struct context_fpregs));
-	err |= __get_user(current->thread.fpcr, &sc->sc_fpcr);
+	err |= __copy_from_user(&current->thread.fpstate, &sc->sc_fpregs,
+				offsetof(struct user_fpsimd_state, fpcr));
+	err |= __get_user(current->thread.fpstate.fpcr, &sc->sc_fpcr);
+
 	if (likely(!err))
 		__fpstate_restore(current);
 
@@ -230,9 +231,9 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 	err |= __put_user(0, sc->sc_regs+31);
 	/* simd-fp */
 	__fpstate_save(current);
-	err |= __copy_to_user(&sc->sc_fpregs,
-			&current->thread.ctx_fp, sizeof(struct context_fpregs));
-	err |= __put_user(current->thread.fpcr, &sc->sc_fpcr);
+	err |= __copy_to_user(&sc->sc_fpregs, &current->thread.fpstate,
+				offsetof(struct user_fpsimd_state, fpcr));
+	err |= __put_user(current->thread.fpstate.fpcr, &sc->sc_fpcr);
 
 	err |= __put_user(regs->trap_a0, &sc->sc_traparg_a0);
 	err |= __put_user(regs->trap_a1, &sc->sc_traparg_a1);

@@ -11,9 +11,15 @@ struct user_pt_regs {
 	__u64 pstate;
 };
 
+/* 256 bits aligned for simd */
+struct fpreg {
+	__u64 v[4] __attribute__((aligned(32)));
+};
+
 struct user_fpsimd_state {
-	__u64 vregs[124];
+	struct fpreg fp[31];
 	__u64 fpcr;
+	__u64 __reserved[3];
 };
 
 /* PTRACE_ATTACH is 16 */

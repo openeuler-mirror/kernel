@@ -9,6 +9,7 @@
 #include <linux/audit.h>
 #include <linux/regset.h>
 #include <linux/elf.h>
+#include <linux/sched/task_stack.h>
 
 #include <asm/reg.h>
 #include <asm/asm-offsets.h>
@@ -55,9 +56,6 @@ enum {
 	REG_GP = 29
 };
 
-#define FP_REG(fp_regno, vector_regno) \
-	(fp_regno * 32 + vector_regno * 8)
-
 #define R(x)	((size_t) &((struct pt_regs *)0)->x)
 
 short regoffsets[32] = {
@@ -91,8 +89,8 @@ static unsigned long zero;
 static unsigned long *
 get_reg_addr(struct task_struct *task, unsigned long regno)
 {
-	unsigned long *addr;
-	int fp_regno, vector_regno;
+	void *addr;
+	int fno, vno;
 
 	switch (regno) {
 	case USP:
@@ -108,9 +106,8 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 		addr = (void *)task_pt_regs(task) + regoffsets[regno];
 		break;
 	case FPREG_BASE ... FPREG_END:
-		fp_regno = regno - FPREG_BASE;
-		vector_regno = 0;
-		addr = (void *)((unsigned long)&task->thread.ctx_fp + FP_REG(fp_regno, vector_regno));
+		fno = regno - FPREG_BASE;
+		addr = &task->thread.fpstate.fp[fno].v[0];
 		break;
 	case VECREG_BASE ... VECREG_END:
 		/*
@@ -121,12 +118,12 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 			addr = &zero;
 			break;
 		}
-		fp_regno = (regno - VECREG_BASE) & 0x1f;
-		vector_regno = 1 + ((regno - VECREG_BASE) >> 5);
-		addr = (void *)((unsigned long)&task->thread.ctx_fp + FP_REG(fp_regno, vector_regno));
+		fno = (regno - VECREG_BASE) & 0x1f;
+		vno = 1 + ((regno - VECREG_BASE) >> 5);
+		addr = &task->thread.fpstate.fp[fno].v[vno];
 		break;
 	case FPCR:
-		addr = (void *)&task->thread.fpcr;
+		addr = &task->thread.fpstate.fpcr;
 		break;
 	case PC:
 		addr = (void *)task_pt_regs(task) + PT_REGS_PC;
@@ -322,17 +319,9 @@ static int fpr_get(struct task_struct *target,
 			const struct user_regset *regset,
 			struct membuf to)
 {
-	int ret;
-	struct user_fpsimd_state uregs;
 
-	memcpy(uregs.vregs, &target->thread.ctx_fp,
-			sizeof(struct context_fpregs));
-
-	uregs.fpcr = target->thread.fpcr;
-
-	ret = membuf_write(&to, &uregs, sizeof(uregs));
-
-	return ret;
+	return membuf_write(&to, &target->thread.fpstate,
+			sizeof(struct user_fpsimd_state));
 }
 
 static int fpr_set(struct task_struct *target,
@@ -340,21 +329,9 @@ static int fpr_set(struct task_struct *target,
 			unsigned int pos, unsigned int count,
 			const void *kbuf, const void __user *ubuf)
 {
-	int ret;
-	struct user_fpsimd_state uregs;
-
-	ret = user_regset_copyin(&pos, &count, &kbuf, &ubuf,
-				&uregs, 0, sizeof(uregs));
-
-	if (ret)
-		return ret;
-
-	memcpy(&target->thread.ctx_fp, uregs.vregs,
-			sizeof(struct context_fpregs));
-
-	target->thread.fpcr = uregs.fpcr;
-
-	return ret;
+	return user_regset_copyin(&pos, &count, &kbuf, &ubuf,
+				&target->thread.fpstate, 0,
+				sizeof(struct user_fpsimd_state));
 }
 
 enum sw64_regset {

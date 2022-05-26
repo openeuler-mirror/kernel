@@ -9,6 +9,11 @@
 #include <asm/types.h>
 #include <asm/sysinfo.h>
 
+typedef struct {
+	unsigned long seg;
+} mm_segment_t;
+
+
 struct pcb_struct {
 	unsigned long ksp;
 	unsigned long usp;

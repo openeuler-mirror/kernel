@@ -3,10 +3,8 @@
 #define _ASM_SW64_PTRACE_H
 
 #include <uapi/asm/ptrace.h>
-#include <linux/sched/task_stack.h>
 #include <asm/hmcall.h>
 #include <asm/thread_info.h>
-#include <asm/processor.h>
 #include <asm/page.h>
 
 /*
@@ -65,8 +63,6 @@ struct pt_regs {
 #define kernel_stack_pointer(regs) (((regs->ps) >> 4) & (TASK_SIZE - 1))
 #define instruction_pointer_set(regs, val) ((regs)->pc = val)
 
-#define task_pt_regs(task) \
-	((struct pt_regs *) (task_stack_page(task) + 2 * PAGE_SIZE) - 1)
 
 #define current_pt_regs() \
 	((struct pt_regs *) ((char *)current_thread_info() + 2 * PAGE_SIZE) - 1)

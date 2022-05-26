@@ -256,7 +256,7 @@ EXPORT_SYMBOL(dump_elf_task);
 int
 dump_elf_task_fp(elf_fpreg_t *dest, struct task_struct *task)
 {
-	memcpy(dest, &task->thread.ctx_fp, 32 * 8);
+	memcpy(dest, &task->thread.fpstate, 32 * 8);
 	return 1;
 }
 EXPORT_SYMBOL(dump_elf_task_fp);
