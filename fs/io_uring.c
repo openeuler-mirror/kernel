@@ -6726,6 +6726,9 @@ fail_req:
 		err = io_submit_sqe(req, sqe, &link, &state.comp);
 		if (err)
 			goto fail_req;
+		/* to avoid doing too much in one submit round */
+		if (submitted > IORING_MAX_ENTRIES / 2)
+			cond_resched();
 	}
 
 	if (unlikely(submitted != nr)) {
