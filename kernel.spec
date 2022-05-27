@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       93
+%global devel_release       94
 %global maintenance_release .0.0
-%global pkg_release         .45
+%global pkg_release         .46
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,88 @@ fi
 %endif
 
 %changelog
+* Thu May 26 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-94.0.0.46
+- sched/fair: Update rq clock before unthrottle a qos cfs_rq
+- io_uring: fix soft lockup in io_submit_sqes()
+- arm64: Fix wrong logic in gic_arch_restore_irqs()
+- pkcs7: parser support SM2 and SM3 algorithms combination
+- secure_seq: use the 64 bits of the siphash for port offset calculation
+- vfio/iommu: Fix uncorrect type parameters which used in bitmap operations
+- ipv6: per-netns exclusive flowlabel checks
+- memblock: use kfree() to release kmalloced memblock regions
+- gpio: tegra186: Fix chip_data type confusion
+- tty: n_gsm: fix deadlock in gsmtty_open()
+- tty: n_gsm: fix wrong tty control line for flow control
+- tty: n_gsm: fix NULL pointer access due to DLCI release
+- tty: n_gsm: fix proper link termination after failed open
+- tty: n_gsm: fix encoding of control signal octet bit DV
+- riscv: fix oops caused by irqsoff latency tracer
+- thermal: int340x: fix memory leak in int3400_notify()
+- RDMA/cma: Do not change route.addr.src_addr outside state checks
+- driver core: Free DMA range map when device is released
+- xhci: Prevent futile URB re-submissions due to incorrect return value.
+- xhci: re-initialize the HC during resume if HCE was set
+- usb: dwc3: gadget: Let the interrupt handler disable bottom halves.
+- usb: dwc3: pci: Fix Bay Trail phy GPIO mappings
+- usb: dwc2: drd: fix soft connect when gadget is unconfigured
+- USB: serial: option: add Telit LE910R1 compositions
+- USB: serial: option: add support for DW5829e
+- tracefs: Set the group ownership in apply_options() not parse_options()
+- usb: gadget: rndis: add spinlock for rndis response list
+- Revert "USB: serial: ch341: add new Product ID for CH341A"
+- ata: pata_hpt37x: disable primary channel on HPT371
+- sc16is7xx: Fix for incorrect data being transmitted
+- iio: Fix error handling for PM
+- iio: imu: st_lsm6dsx: wait for settling time in st_lsm6dsx_read_oneshot
+- iio: adc: ad7124: fix mask used for setting AIN_BUFP & AIN_BUFM bits
+- iio: adc: men_z188_adc: Fix a resource leak in an error handling path
+- tracing: Have traceon and traceoff trigger honor the instance
+- RDMA/ib_srp: Fix a deadlock
+- RDMA/rtrs-clt: Move free_permit from free_clt to rtrs_clt_close
+- RDMA/rtrs-clt: Kill wait_for_inflight_permits
+- regmap-irq: Update interrupt clear register for proper reset
+- spi: spi-zynq-qspi: Fix a NULL pointer dereference in zynq_qspi_exec_mem_op()
+- net/mlx5e: kTLS, Use CHECKSUM_UNNECESSARY for device-offloaded packets
+- net/mlx5: Fix wrong limitation of metadata match on ecpf
+- net/mlx5: Fix possible deadlock on rule deletion
+- udp_tunnel: Fix end of loop test in udp_tunnel_nic_unregister()
+- surface: surface3_power: Fix battery readings on batteries without a serial number
+- net/smc: Use a mutex for locking "struct smc_pnettable"
+- netfilter: nf_tables: fix memory leak during stateful obj update
+- nfp: flower: Fix a potential leak in nfp_tunnel_add_shared_mac()
+- net: Force inlining of checksum functions in net/checksum.h
+- net: ll_temac: check the return value of devm_kmalloc()
+- net/sched: act_ct: Fix flow table lookup after ct clear or switching zones
+- net/mlx5e: Fix wrong return value on ioctl EEPROM query failure
+- drm/edid: Always set RGB444
+- openvswitch: Fix setting ipv6 fields causing hw csum failure
+- gso: do not skip outer ip header in case of ipip and net_failover
+- tipc: Fix end of loop tests for list_for_each_entry()
+- net: __pskb_pull_tail() & pskb_carve_frag_list() drop_monitor friends
+- io_uring: add a schedule point in io_add_buffers()
+- bpf: Add schedule points in batch ops
+- selftests: bpf: Check bpf_msg_push_data return value
+- bpf: Do not try bpf_msg_push_data with len 0
+- hwmon: Handle failure to register sensor with thermal zone correctly
+- bnxt_en: Fix active FEC reporting to ethtool
+- bnx2x: fix driver load from initrd
+- perf data: Fix double free in perf_session__delete()
+- ping: remove pr_err from ping_lookup
+- optee: use driver internal tee_context for some rpc
+- tee: export teedev_open() and teedev_close_context()
+- x86/fpu: Correct pkru/xstate inconsistency
+- CDC-NCM: avoid overflow in sanity checking
+- USB: zaurus: support another broken Zaurus
+- drm/i915: Correctly populate use_sagv_wm for all pipes
+- drm/amdgpu: disable MMHUB PG for Picasso
+- KVM: x86/mmu: make apf token non-zero to fix bug
+- parisc/unaligned: Fix ldw() and stw() unalignment handlers
+- parisc/unaligned: Fix fldd and fstd unaligned handlers on 32-bit kernel
+- vhost/vsock: don't check owner in vhost_vsock_stop() while releasing
+- clk: jz4725b: fix mmc0 clock gating
+- btrfs: tree-checker: check item_size for dev_item
+- btrfs: tree-checker: check item_size for inode_item
+
 * Mon May 23 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-93.0.0.45
 - mm: hwpoison: enable memory error handling on 1GB hugepage optionaly
 - ext4: Fix warning in ext4_da_release_space
