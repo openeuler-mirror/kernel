@@ -2,6 +2,9 @@
 #ifndef _UAPI_ASM_SW64_PTRACE_H
 #define _UAPI_ASM_SW64_PTRACE_H
 
+#include <linux/types.h>
+
+#ifndef __ASSEMBLY__
 /*
  * User structures for general purpose, floating point and debug registers.
  */
@@ -21,6 +24,7 @@ struct user_fpsimd_state {
 	__u64 fpcr;
 	__u64 __reserved[3];
 };
+#endif
 
 /* PTRACE_ATTACH is 16 */
 /* PTRACE_DETACH is 17 */
