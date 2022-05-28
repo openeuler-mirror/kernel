@@ -33,12 +33,24 @@ void arm64_send_nmi(cpumask_t *mask)
 	__ipi_send_mask(ipi_nmi_desc, mask);
 }
 
+static void ipi_cpu_backtrace(void *info)
+{
+	printk_safe_enter();
+	nmi_cpu_backtrace(get_irq_regs());
+	printk_safe_exit();
+}
+
+static void arm64_send_ipi(cpumask_t *mask)
+{
+	smp_call_function_many(mask, ipi_cpu_backtrace, NULL, false);
+}
+
 bool arch_trigger_cpumask_backtrace(const cpumask_t *mask, bool exclude_self)
 {
 	if (!ipi_nmi_desc)
-		return false;
-
-	nmi_trigger_cpumask_backtrace(mask, exclude_self, arm64_send_nmi);
+		nmi_trigger_cpumask_backtrace(mask, exclude_self, arm64_send_ipi);
+	else
+		nmi_trigger_cpumask_backtrace(mask, exclude_self, arm64_send_nmi);
 
 	return true;
 }
