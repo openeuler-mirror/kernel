@@ -5460,6 +5460,10 @@ static void __maybe_unused unthrottle_offline_cfs_rqs(struct rq *rq)
 
 	lockdep_assert_held(&rq->lock);
 
+#ifdef CONFIG_QOS_SCHED
+	unthrottle_qos_cfs_rqs(cpu_of(rq));
+#endif
+
 	rcu_read_lock();
 	list_for_each_entry_rcu(tg, &task_groups, list) {
 		struct cfs_rq *cfs_rq = tg->cfs_rq[cpu_of(rq)];
@@ -5482,10 +5486,6 @@ static void __maybe_unused unthrottle_offline_cfs_rqs(struct rq *rq)
 			unthrottle_cfs_rq(cfs_rq);
 	}
 	rcu_read_unlock();
-
-#ifdef CONFIG_QOS_SCHED
-	unthrottle_qos_cfs_rqs(cpu_of(rq));
-#endif
 }
 
 #else /* CONFIG_CFS_BANDWIDTH */
@@ -7181,6 +7181,27 @@ preempt:
 #ifdef CONFIG_QOS_SCHED
 
 static void start_qos_hrtimer(int cpu);
+
+static int qos_tg_unthrottle_up(struct task_group *tg, void *data)
+{
+	struct rq *rq = data;
+	struct cfs_rq *cfs_rq = tg->cfs_rq[cpu_of(rq)];
+
+	cfs_rq->throttle_count--;
+
+	return 0;
+}
+
+static int qos_tg_throttle_down(struct task_group *tg, void *data)
+{
+	struct rq *rq = data;
+	struct cfs_rq *cfs_rq = tg->cfs_rq[cpu_of(rq)];
+
+	cfs_rq->throttle_count++;
+
+	return 0;
+}
+
 static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
@@ -7192,7 +7213,7 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 	/* freeze hierarchy runnable averages while throttled */
 	rcu_read_lock();
-	walk_tg_tree_from(cfs_rq->tg, tg_throttle_down, tg_nop, (void *)rq);
+	walk_tg_tree_from(cfs_rq->tg, qos_tg_throttle_down, tg_nop, (void *)rq);
 	rcu_read_unlock();
 
 	task_delta = cfs_rq->h_nr_running;
@@ -7223,7 +7244,6 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 		start_qos_hrtimer(cpu_of(rq));
 
 	cfs_rq->throttled = 1;
-	cfs_rq->throttled_clock = rq_clock(rq);
 
 	list_add(&cfs_rq->qos_throttled_list,
 		 &per_cpu(qos_throttled_cfs_rq, cpu_of(rq)));
@@ -7232,7 +7252,6 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
-	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
 	struct sched_entity *se;
 	int enqueue = 1;
 	unsigned int prev_nr = cfs_rq->h_nr_running;
@@ -7243,12 +7262,12 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	cfs_rq->throttled = 0;
 
 	update_rq_clock(rq);
-
-	cfs_b->throttled_time += rq_clock(rq) - cfs_rq->throttled_clock;
 	list_del_init(&cfs_rq->qos_throttled_list);
 
 	/* update hierarchical throttle state */
-	walk_tg_tree_from(cfs_rq->tg, tg_nop, tg_unthrottle_up, (void *)rq);
+	rcu_read_lock();
+	walk_tg_tree_from(cfs_rq->tg, tg_nop, qos_tg_unthrottle_up, (void *)rq);
+	rcu_read_unlock();
 
 	if (!cfs_rq->load.weight)
 		return;
