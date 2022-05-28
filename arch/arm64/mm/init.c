@@ -499,11 +499,45 @@ static void __init fdt_enforce_memory_region(void)
 		memblock_cap_memory_ranges(usablemem.regions, usablemem.cnt);
 }
 
+static void __init reserve_memmap_mem(void)
+{
+	u64 base, size;
+	int i;
+
+	for (i = 0; i < res_mem_count; i++) {
+		base = res_mem[i].base;
+		size = res_mem[i].size;
+
+		if (!memblock_is_region_memory(base, size)) {
+			pr_warn("memmap reserve: 0x%08llx - 0x%08llx is not a memory region - ignore\n",
+				base, base + size);
+			res_mem[i].size = 0;
+			continue;
+		}
+
+		if (memblock_is_region_reserved(base, size)) {
+			pr_warn("memmap reserve: 0x%08llx - 0x%08llx overlaps in-use memory region - ignore\n",
+				base, base + size);
+			res_mem[i].size = 0;
+			continue;
+		}
+
+		if (memblock_reserve(base, size)) {
+			pr_warn("memmap reserve: 0x%08llx - 0x%08llx failed\n",
+				base, base + size);
+			res_mem[i].size = 0;
+			continue;
+		}
+
+		pr_info("memmap reserved: 0x%08llx - 0x%08llx (%lld MB)",
+			base, base + size, size >> 20);
+	}
+}
+
 static int __init parse_memmap_one(char *p)
 {
 	char *oldp;
 	phys_addr_t start_at, mem_size;
-	int ret;
 
 	if (!p)
 		return -EINVAL;
@@ -520,18 +554,13 @@ static int __init parse_memmap_one(char *p)
 
 	if (*p == '$') {
 		start_at = memparse(p+1, &p);
-		if (!IS_ALIGNED(start_at, SZ_2M)) {
-			pr_warn("cannot reserve memory: bad address is not 2MB aligned\n");
+		if (res_mem_count >= MAX_RES_REGIONS) {
+			pr_err("Too many memmap specified, exceed %d\n", MAX_RES_REGIONS);
 			return -EINVAL;
 		}
-
-		ret = memblock_reserve(start_at, mem_size);
-		if (!ret) {
-			res_mem[res_mem_count].base = start_at;
-			res_mem[res_mem_count].size = mem_size;
-			res_mem_count++;
-		} else
-			pr_warn("memmap memblock_reserve failed.\n");
+		res_mem[res_mem_count].base = start_at;
+		res_mem[res_mem_count].size = mem_size;
+		res_mem_count++;
 	} else
 		pr_info("Unrecognized memmap option, please check the parameter.\n");
 
@@ -729,6 +758,7 @@ void __init arm64_memblock_init(void)
 		efi_find_mirror();
 	}
 
+	reserve_memmap_mem();
 	reserve_pin_memory_res();
 
 	/*

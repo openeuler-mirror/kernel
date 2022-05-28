@@ -240,6 +240,9 @@ static void __init request_standard_resources(void)
 				      sizeof(struct resource));
 
 	for (res_count = 0; res_count < res_mem_count; res_count++) {
+		if (!res_mem[res_count].size)
+			continue;
+
 		res_resources[res_count].name = "memmap reserved";
 		res_resources[res_count].flags = IORESOURCE_MEM;
 		res_resources[res_count].start = res_mem[res_count].base;
