@@ -18,6 +18,7 @@
 #include <linux/screen_info.h>
 #include <linux/init.h>
 #include <linux/kexec.h>
+#include <linux/kfence.h>
 #include <linux/root_dev.h>
 #include <linux/cpu.h>
 #include <linux/interrupt.h>
@@ -373,6 +374,8 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	     pr_warn(FW_BUG "Kernel image misaligned at boot, please fix your bootloader!");
 
 	arm64_memblock_init();
+
+	kfence_early_alloc_pool();
 
 	efi_fake_memmap();
 	efi_find_mirror();

@@ -13,6 +13,7 @@
 #include <linux/init.h>
 #include <linux/ioport.h>
 #include <linux/kexec.h>
+#include <linux/kfence.h>
 #include <linux/libfdt.h>
 #include <linux/mman.h>
 #include <linux/nodemask.h>
@@ -477,9 +478,18 @@ static void __init map_mem(pgd_t *pgdp)
 	int flags = 0, eflags = 0;
 	u64 i;
 
-	if (rodata_full || debug_pagealloc_enabled() ||
-	    IS_ENABLED(CONFIG_KFENCE))
+	if (rodata_full || debug_pagealloc_enabled())
 		flags = NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS;
+
+#ifdef CONFIG_KFENCE
+	/*
+	 * KFENCE requires linear map to be mapped at page granularity, so
+	 * temporarily skip mapping for __kfence_pool in the following
+	 * for-loop
+	 */
+	if (__kfence_pool)
+		memblock_mark_nomap(__pa(__kfence_pool), KFENCE_POOL_SIZE);
+#endif
 
 	/*
 	 * Take care not to create a writable alias for the
@@ -551,6 +561,18 @@ static void __init map_mem(pgd_t *pgdp)
 			       NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS);
 		memblock_clear_nomap(crashk_res.start,
 				     resource_size(&crashk_res));
+	}
+#endif
+#ifdef CONFIG_KFENCE
+	/*
+	 * Map the __kfence_pool at page granularity now.
+	 */
+	if (__kfence_pool) {
+		__map_memblock(pgdp, __pa(__kfence_pool),
+			       __pa(__kfence_pool + KFENCE_POOL_SIZE),
+			       pgprot_tagged(PAGE_KERNEL),
+			       NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS);
+		memblock_clear_nomap(__pa(__kfence_pool), KFENCE_POOL_SIZE);
 	}
 #endif
 }
@@ -1483,12 +1505,7 @@ int arch_add_memory(int nid, u64 start, u64 size,
 	}
 
 
-	/*
-	 * KFENCE requires linear map to be mapped at page granularity, so that
-	 * it is possible to protect/unprotect single pages in the KFENCE pool.
-	 */
-	if (rodata_full || debug_pagealloc_enabled() ||
-	    IS_ENABLED(CONFIG_KFENCE))
+	if (rodata_full || debug_pagealloc_enabled())
 		flags = NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS;
 
 	__create_pgd_mapping(swapper_pg_dir, start, __phys_to_virt(start),

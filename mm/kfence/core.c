@@ -752,14 +752,26 @@ static void toggle_allocation_gate(struct work_struct *work)
 static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
 
 /* === Public interface ===================================================== */
+void __init kfence_early_alloc_pool(void)
+{
+	if (!kfence_sample_interval)
+		return;
+
+	__kfence_pool = memblock_alloc_raw(KFENCE_POOL_SIZE, PAGE_SIZE);
+
+	if (!__kfence_pool) {
+		kfence_sample_interval = 0;
+		pr_err("failed to early allocate pool, disable KFENCE\n");
+	}
+}
 
 void __init kfence_alloc_pool(void)
 {
 	if (!kfence_sample_interval)
 		return;
 
-	__kfence_pool = memblock_alloc(KFENCE_POOL_SIZE, PAGE_SIZE);
-
+	if (!__kfence_pool)
+		__kfence_pool = memblock_alloc(KFENCE_POOL_SIZE, PAGE_SIZE);
 	if (!__kfence_pool)
 		pr_err("failed to allocate pool\n");
 }
