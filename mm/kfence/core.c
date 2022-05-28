@@ -85,6 +85,19 @@ static const struct kernel_param_ops sample_interval_param_ops = {
 };
 module_param_cb(sample_interval, &sample_interval_param_ops, &kfence_sample_interval, 0600);
 
+#ifdef CONFIG_ARM64
+static int __init parse_sample_interval(char *str)
+{
+	unsigned long num;
+
+	if (kstrtoul(str, 0, &num) < 0)
+		return 0;
+	kfence_sample_interval = num;
+	return 0;
+}
+early_param("kfence.sample_interval", parse_sample_interval);
+#endif
+
 /* Pool usage% threshold when currently covered allocations are skipped. */
 static unsigned long kfence_skip_covered_thresh __read_mostly = 75;
 module_param_named(skip_covered_thresh, kfence_skip_covered_thresh, ulong, 0644);
