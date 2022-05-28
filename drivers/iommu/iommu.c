@@ -3142,9 +3142,8 @@ int iommu_clear_dirty_log(struct iommu_domain *domain,
 			  unsigned long bitmap_pgshift)
 {
 	unsigned long riova, rsize;
-	unsigned int min_pagesz;
+	unsigned int min_pagesz, rs, re, start, end;
 	bool flush = false;
-	int rs, re, start, end;
 	int ret = 0;
 
 	min_pagesz = 1 << __ffs(domain->pgsize_bitmap);
@@ -3160,8 +3159,8 @@ int iommu_clear_dirty_log(struct iommu_domain *domain,
 	end = start + (size >> bitmap_pgshift);
 	bitmap_for_each_set_region(bitmap, rs, re, start, end) {
 		flush = true;
-		riova = base_iova + (rs << bitmap_pgshift);
-		rsize = (re - rs) << bitmap_pgshift;
+		riova = base_iova + ((unsigned long)rs << bitmap_pgshift);
+		rsize = (unsigned long)(re - rs) << bitmap_pgshift;
 		ret = __iommu_clear_dirty_log(domain, riova, rsize, bitmap,
 					      base_iova, bitmap_pgshift);
 		if (ret)
