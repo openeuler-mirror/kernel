@@ -462,6 +462,14 @@ static unsigned int cppc_cpufreq_get_transition_delay_us(unsigned int cpu)
 
 	return delay_us;
 }
+#else
+static unsigned int cppc_cpufreq_get_transition_delay_us(unsigned int cpu)
+{
+	return cppc_get_transition_latency(cpu) / NSEC_PER_USEC;
+}
+#endif
+
+#if defined(CONFIG_ARM64) && defined(CONFIG_ENERGY_MODEL)
 
 static DEFINE_PER_CPU(unsigned int, efficiency_class);
 
@@ -645,19 +653,10 @@ static void populate_efficiency_class(void)
 }
 
 #else
-
-static unsigned int cppc_cpufreq_get_transition_delay_us(unsigned int cpu)
-{
-	return cppc_get_transition_latency(cpu) / NSEC_PER_USEC;
-}
 static void populate_efficiency_class(void)
 {
 }
-static void cppc_cpufreq_register_em(struct cpufreq_policy *policy)
-{
-}
 #endif
-
 
 static struct cppc_cpudata *cppc_cpufreq_get_cpu_data(unsigned int cpu)
 {
