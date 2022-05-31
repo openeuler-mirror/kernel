@@ -600,15 +600,7 @@ sw64_init_host(unsigned long node, unsigned long index)
 	}
 }
 
-static void set_devint_wken(int node)
-{
-	unsigned long val;
-
-	/* enable INTD wakeup */
-	val = 0x80;
-	sw64_io_write(node, DEVINT_WKEN, val);
-	sw64_io_write(node, DEVINTWK_INTEN, val);
-}
+void __weak set_devint_wken(int node) {}
 
 void __init sw64_init_arch(void)
 {
@@ -651,6 +643,8 @@ void __init sw64_init_arch(void)
 	}
 }
 
+void __weak set_pcieport_service_irq(int node, int index) {}
+
 static void __init sw64_init_intx(struct pci_controller *hose)
 {
 	unsigned long int_conf, node, val_node;
@@ -679,8 +673,7 @@ static void __init sw64_init_intx(struct pci_controller *hose)
 	if (sw64_chip_init->pci_init.set_intx)
 		sw64_chip_init->pci_init.set_intx(node, index, int_conf);
 
-	write_piu_ior0(node, index, PMEINTCONFIG, PME_ENABLE_INTD_CORE0);
-	write_piu_ior0(node, index, AERERRINTCONFIG, AER_ENABLE_INTD_CORE0);
+	set_pcieport_service_irq(node, index);
 }
 
 void __init sw64_init_irq(void)

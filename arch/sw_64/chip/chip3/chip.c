@@ -90,6 +90,22 @@ void setup_chip_clocksource(void)
 #endif
 }
 
+void set_devint_wken(int node)
+{
+	unsigned long val;
+
+	/* enable INTD wakeup */
+	val = 0x80;
+	sw64_io_write(node, DEVINT_WKEN, val);
+	sw64_io_write(node, DEVINTWK_INTEN, val);
+}
+
+void set_pcieport_service_irq(int node, int index)
+{
+	write_piu_ior0(node, index, PMEINTCONFIG, PME_ENABLE_INTD_CORE0);
+	write_piu_ior0(node, index, AERERRINTCONFIG, AER_ENABLE_INTD_CORE0);
+}
+
 static int chip3_get_cpu_nums(void)
 {
 	unsigned long trkmode;
