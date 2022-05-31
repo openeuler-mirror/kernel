@@ -757,9 +757,13 @@ static struct psi_group *iterate_groups(struct task_struct *task, void **iter)
 			cgroup = task->cgroups->dfl_cgrp;
 		else {
 #ifdef CONFIG_CGROUP_CPUACCT
-			rcu_read_lock();
-			cgroup = task_cgroup(task, cpuacct_cgrp_id);
-			rcu_read_unlock();
+			if (!cgroup_subsys_on_dfl(cpuacct_cgrp_subsys)) {
+				rcu_read_lock();
+				cgroup = task_cgroup(task, cpuacct_cgrp_id);
+				rcu_read_unlock();
+			} else {
+				cgroup = task->cgroups->dfl_cgrp;
+			}
 #else
 			cgroup = NULL;
 #endif
