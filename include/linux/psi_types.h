@@ -10,6 +10,11 @@
 #ifdef CONFIG_PSI
 
 /* Tracked task states */
+#ifdef __GENKSYMS__
+/*
+ * This definition is used to keep kabi unchanged,
+ * and **should not changed**
+ */
 enum psi_task_count {
 	NR_IOWAIT,
 	NR_MEMSTALL,
@@ -23,6 +28,24 @@ enum psi_task_count {
 	NR_ONCPU,
 	NR_PSI_TASK_COUNTS = 4,
 };
+#else
+/*
+ * All modification to psi_task_count should apply to here.
+ */
+enum psi_task_count {
+	NR_IOWAIT,
+	NR_MEMSTALL,
+	NR_RUNNING,
+	/*
+	 * This can't have values other than 0 or 1 and could be
+	 * implemented as a bit flag. But for now we still have room
+	 * in the first cacheline of psi_group_cpu, and this way we
+	 * don't have to special case any state tracking for it.
+	 */
+	NR_ONCPU,
+	NR_PSI_TASK_COUNTS = 4,
+};
+#endif
 
 /* Task state bitmasks */
 #define TSK_IOWAIT	(1 << NR_IOWAIT)
@@ -44,6 +67,11 @@ enum psi_res {
  * SOME: Stalled tasks & working tasks
  * FULL: Stalled tasks & no working tasks
  */
+#ifdef __GENKSYMS__
+/*
+ * This definition is used to keep kabi unchanged,
+ * and **should not changed**
+ */
 enum psi_states {
 	PSI_IO_SOME,
 	PSI_IO_FULL,
@@ -54,6 +82,22 @@ enum psi_states {
 	PSI_NONIDLE,
 	NR_PSI_STATES = 6,
 };
+#else
+/*
+ * All modification to psi_states should apply to here.
+ */
+enum psi_states {
+	PSI_IO_SOME,
+	PSI_IO_FULL,
+	PSI_MEM_SOME,
+	PSI_MEM_FULL,
+	PSI_CPU_SOME,
+	/* Only per-CPU, to weigh the CPU in the global average: */
+	PSI_NONIDLE,
+	NR_PSI_STATES = 6,
+};
+#endif
+
 
 enum psi_aggregators {
 	PSI_AVGS = 0,
