@@ -164,6 +164,7 @@ static inline int arch_atomic_sub_if_positive(int i, atomic_t *v)
 		"	sc.w	%1, %2					\n"
 		"	beq	$zero, %1, 1b				\n"
 		"2:							\n"
+		__WEAK_LLSC_MB
 		: "=&r" (result), "=&r" (temp),
 		  "+" GCC_OFF_SMALL_ASM() (v->counter)
 		: "I" (-i));
@@ -176,6 +177,7 @@ static inline int arch_atomic_sub_if_positive(int i, atomic_t *v)
 		"	sc.w	%1, %2					\n"
 		"	beq	$zero, %1, 1b				\n"
 		"2:							\n"
+		__WEAK_LLSC_MB
 		: "=&r" (result), "=&r" (temp),
 		  "+" GCC_OFF_SMALL_ASM() (v->counter)
 		: "r" (i));
@@ -325,6 +327,7 @@ static inline long arch_atomic64_sub_if_positive(long i, atomic64_t *v)
 		"	sc.d	%1, %2					\n"
 		"	beq	%1, $zero, 1b				\n"
 		"2:							\n"
+		__WEAK_LLSC_MB
 		: "=&r" (result), "=&r" (temp),
 		  "+" GCC_OFF_SMALL_ASM() (v->counter)
 		: "I" (-i));
@@ -337,6 +340,7 @@ static inline long arch_atomic64_sub_if_positive(long i, atomic64_t *v)
 		"	sc.d	%1, %2					\n"
 		"	beq	%1, $zero, 1b				\n"
 		"2:							\n"
+		__WEAK_LLSC_MB
 		: "=&r" (result), "=&r" (temp),
 		  "+" GCC_OFF_SMALL_ASM() (v->counter)
 		: "r" (i));
