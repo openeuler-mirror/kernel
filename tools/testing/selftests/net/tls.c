@@ -25,6 +25,41 @@
 #define TLS_PAYLOAD_MAX_LEN 16384
 #define SOL_TLS 282
 
+struct tls_crypto_info_keys {
+	union {
+		struct tls12_crypto_info_aes_gcm_128 aes128;
+		struct tls12_crypto_info_sm4_gcm sm4gcm;
+		struct tls12_crypto_info_sm4_ccm sm4ccm;
+	};
+	size_t len;
+};
+
+static void tls_crypto_info_init(uint16_t tls_version, uint16_t cipher_type,
+				 struct tls_crypto_info_keys *tls12)
+{
+	memset(tls12, 0, sizeof(*tls12));
+
+	switch (cipher_type) {
+	case TLS_CIPHER_AES_GCM_128:
+		tls12->len = sizeof(struct tls12_crypto_info_aes_gcm_128);
+		tls12->aes128.info.version = tls_version;
+		tls12->aes128.info.cipher_type = cipher_type;
+		break;
+	case TLS_CIPHER_SM4_GCM:
+		tls12->len = sizeof(struct tls12_crypto_info_sm4_gcm);
+		tls12->sm4gcm.info.version = tls_version;
+		tls12->sm4gcm.info.cipher_type = cipher_type;
+		break;
+	case TLS_CIPHER_SM4_CCM:
+		tls12->len = sizeof(struct tls12_crypto_info_sm4_ccm);
+		tls12->sm4ccm.info.version = tls_version;
+		tls12->sm4ccm.info.cipher_type = cipher_type;
+		break;
+	default:
+		break;
+	}
+}
+
 static void memrnd(void *s, size_t n)
 {
 	int *dword = s;
@@ -115,22 +150,37 @@ FIXTURE(tls)
 
 FIXTURE_VARIANT(tls)
 {
-	unsigned int tls_version;
+	uint16_t tls_version;
+	uint16_t cipher_type;
 };
 
-FIXTURE_VARIANT_ADD(tls, 12)
+FIXTURE_VARIANT_ADD(tls, 12_aes_gcm)
 {
 	.tls_version = TLS_1_2_VERSION,
+	.cipher_type = TLS_CIPHER_AES_GCM_128,
 };
 
-FIXTURE_VARIANT_ADD(tls, 13)
+FIXTURE_VARIANT_ADD(tls, 13_aes_gcm)
 {
 	.tls_version = TLS_1_3_VERSION,
+	.cipher_type = TLS_CIPHER_AES_GCM_128,
+};
+
+FIXTURE_VARIANT_ADD(tls, 13_sm4_gcm)
+{
+	.tls_version = TLS_1_3_VERSION,
+	.cipher_type = TLS_CIPHER_SM4_GCM,
+};
+
+FIXTURE_VARIANT_ADD(tls, 13_sm4_ccm)
+{
+	.tls_version = TLS_1_3_VERSION,
+	.cipher_type = TLS_CIPHER_SM4_CCM,
 };
 
 FIXTURE_SETUP(tls)
 {
-	struct tls12_crypto_info_aes_gcm_128 tls12;
+	struct tls_crypto_info_keys tls12;
 	struct sockaddr_in addr;
 	socklen_t len;
 	int sfd, ret;
@@ -138,9 +188,8 @@ FIXTURE_SETUP(tls)
 	self->notls = false;
 	len = sizeof(addr);
 
-	memset(&tls12, 0, sizeof(tls12));
-	tls12.info.version = variant->tls_version;
-	tls12.info.cipher_type = TLS_CIPHER_AES_GCM_128;
+	tls_crypto_info_init(variant->tls_version, variant->cipher_type,
+			     &tls12);
 
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -168,7 +217,7 @@ FIXTURE_SETUP(tls)
 
 	if (!self->notls) {
 		ret = setsockopt(self->fd, SOL_TLS, TLS_TX, &tls12,
-				 sizeof(tls12));
+				 tls12.len);
 		ASSERT_EQ(ret, 0);
 	}
 
@@ -181,7 +230,7 @@ FIXTURE_SETUP(tls)
 		ASSERT_EQ(ret, 0);
 
 		ret = setsockopt(self->cfd, SOL_TLS, TLS_RX, &tls12,
-				 sizeof(tls12));
+				 tls12.len);
 		ASSERT_EQ(ret, 0);
 	}
 
@@ -824,18 +873,17 @@ TEST_F(tls, bidir)
 	int ret;
 
 	if (!self->notls) {
-		struct tls12_crypto_info_aes_gcm_128 tls12;
+		struct tls_crypto_info_keys tls12;
 
-		memset(&tls12, 0, sizeof(tls12));
-		tls12.info.version = variant->tls_version;
-		tls12.info.cipher_type = TLS_CIPHER_AES_GCM_128;
+		tls_crypto_info_init(variant->tls_version, variant->cipher_type,
+				     &tls12);
 
 		ret = setsockopt(self->fd, SOL_TLS, TLS_RX, &tls12,
-				 sizeof(tls12));
+				 tls12.len);
 		ASSERT_EQ(ret, 0);
 
 		ret = setsockopt(self->cfd, SOL_TLS, TLS_TX, &tls12,
-				 sizeof(tls12));
+				 tls12.len);
 		ASSERT_EQ(ret, 0);
 	}
 
