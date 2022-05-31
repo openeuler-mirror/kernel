@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2205.5.0
+%global hulkrelease 2205.6.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0151
+Release: %{hulkrelease}.0152
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,16 @@ fi
 %endif
 
 %changelog
+
+* Tue May 31 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2205.6.0.0152
+- net: hns3: update hns3 version to 22.5.1
+- net: hns3: fix vf link setting failed when no vf driver loaded
+- arm64: Add memmap reserve range check to avoid conflict
+- ext4: fix bug_on in ext4_writepages
+- ext4: fix warning in ext4_handle_inode_extension
+- ext4: fix use-after-free in ext4_rename_dir_prepare
+- uce: coredump scenario support kernel recovery
+- NULL pointer dereference on rmmod iptable_mangle.
 
 * Tue May 24 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2205.5.0.0151
 - sched/qos: Add qos_tg_{throttle,unthrottle}_{up,down}
