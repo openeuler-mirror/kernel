@@ -298,7 +298,27 @@ static void __init reserve_memmap_regions(void)
 	for (i = 0; i < mbk_memmap_cnt; i++) {
 		base = mbk_memmap_regions[i].base;
 		size = mbk_memmap_regions[i].size;
-		memblock_reserve(base, size);
+
+		if (!memblock_is_region_memory(base, size)) {
+			pr_warn("memmap reserve: 0x%08llx - 0x%08llx is not a memory region - ignore\n",
+				base, base + size);
+			continue;
+		}
+
+		if (memblock_is_region_reserved(base, size)) {
+			pr_warn("memmap reserve: 0x%08llx - 0x%08llx overlaps in-use memory region - ignore\n",
+				base, base + size);
+			continue;
+		}
+
+		if (memblock_reserve(base, size)) {
+			pr_warn("memmap reserve: 0x%08llx - 0x%08llx failed\n",
+				base, base + size);
+			continue;
+		}
+
+		pr_info("memmap reserved: 0x%08llx - 0x%08llx (%lld MB)",
+			base, base + size, size >> 20);
 		memblock_mark_memmap(base, size);
 	}
 }

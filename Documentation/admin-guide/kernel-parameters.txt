@@ -2838,7 +2838,8 @@
 			[KNL,ACPI] Mark specific memory as reserved.
 			Region of memory to be reserved is from ss to ss+nn.
 			For ARM64, reserved memory must be in the range of
-			existed memory.
+			existed memory and do not overlap in-use memory region,
+			otherwise request will be ignored.
 			Example: Exclude memory from 0x18690000-0x1869ffff
 			         memmap=64K$0x18690000
 			         or
