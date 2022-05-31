@@ -150,6 +150,7 @@
 #define ETH_P_MAP	0x00F9		/* Qualcomm multiplexing and
 					 * aggregation protocol
 					 */
+#define ETH_P_UB	0x0100		/* Network control packet of Unified Bus */
 
 /*
  *	This is an Ethernet frame header.

@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# UBL configuration
+#
+
+config UBL
+	default n
+	tristate "UB link support"
+	help
+	  This enables UB link support. Say 'Y' or 'm' if your
+	  device works in UB.
