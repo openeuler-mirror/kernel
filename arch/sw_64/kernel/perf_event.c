@@ -6,6 +6,7 @@
  */
 
 #include <linux/perf_event.h>
+#include <asm/stacktrace.h>
 
 /* For tracking PMCs and the hw events they monitor on each CPU. */
 struct cpu_hw_events {
@@ -247,10 +248,9 @@ static const struct sw64_perf_event *core3_map_cache_event(u64 config)
  */
 static bool core3_raw_event_valid(u64 config)
 {
-	if ((config >= (PC0_RAW_BASE + PC0_MIN) && config <= (PC0_RAW_BASE + PC0_MAX)) ||
-		(config >= (PC1_RAW_BASE + PC1_MIN) && config <= (PC1_RAW_BASE + PC1_MAX))) {
+	if ((config >= PC0_RAW_BASE && config <= (PC0_RAW_BASE + PC0_MAX)) ||
+		(config >= PC1_RAW_BASE && config <= (PC1_RAW_BASE + PC1_MAX)))
 		return true;
-	}
 
 	pr_info("sw64 pmu: invalid raw event config %#llx\n", config);
 	return false;
@@ -697,6 +697,36 @@ bool valid_dy_addr(unsigned long addr)
 	return ret;
 }
 
+#ifdef CONFIG_FRAME_POINTER
+void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
+		struct pt_regs *regs)
+{
+
+	struct stack_frame frame;
+	unsigned long __user *fp;
+	int err;
+
+	perf_callchain_store(entry, regs->pc);
+
+	fp = (unsigned long __user *)regs->r15;
+
+	while (entry->nr < entry->max_stack && (unsigned long)fp < current->mm->start_stack) {
+		if (!access_ok(fp, sizeof(frame)))
+			break;
+
+		pagefault_disable();
+		err =  __copy_from_user_inatomic(&frame, fp, sizeof(frame));
+		pagefault_enable();
+
+		if (err)
+			break;
+
+		if (valid_utext_addr(frame.return_address) || valid_dy_addr(frame.return_address))
+			perf_callchain_store(entry, frame.return_address);
+		fp = (void __user *)frame.next_frame;
+	}
+}
+#else /* !CONFIG_FRAME_POINTER */
 void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 		struct pt_regs *regs)
 {
@@ -709,30 +739,44 @@ void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 	while (entry->nr < entry->max_stack && usp < current->mm->start_stack) {
 		if (!access_ok(usp, 8))
 			break;
+
 		pagefault_disable();
 		err = __get_user(user_addr, (unsigned long *)usp);
 		pagefault_enable();
+
 		if (err)
 			break;
+
 		if (valid_utext_addr(user_addr) || valid_dy_addr(user_addr))
 			perf_callchain_store(entry, user_addr);
 		usp = usp + 8;
 	}
 }
+#endif/* CONFIG_FRAME_POINTER */
+
+/*
+ * Gets called by walk_stackframe() for every stackframe. This will be called
+ * whist unwinding the stackframe and is like a subroutine return so we use
+ * the PC.
+ */
+static int callchain_trace(struct stackframe *frame, void *data)
+{
+	struct perf_callchain_entry_ctx *entry = data;
+
+	perf_callchain_store(entry, frame->pc);
+
+	return 0;
+}
 
 void perf_callchain_kernel(struct perf_callchain_entry_ctx *entry,
 			   struct pt_regs *regs)
 {
-	unsigned long *sp = (unsigned long *)current_thread_info()->pcb.ksp;
-	unsigned long addr;
+	struct stackframe frame;
 
-	perf_callchain_store(entry, regs->pc);
+	frame.fp = regs->r15;
+	frame.pc = regs->pc;
 
-	while (!kstack_end(sp) && entry->nr < entry->max_stack) {
-		addr = *sp++;
-		if (__kernel_text_address(addr))
-			perf_callchain_store(entry, addr);
-	}
+	walk_stackframe(current, &frame, callchain_trace, entry);
 }
 
 /*
