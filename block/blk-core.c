@@ -517,13 +517,15 @@ static void blk_timeout_work(struct work_struct *work)
 struct request_queue *blk_alloc_queue(int node_id)
 {
 	struct request_queue *q;
+	struct request_queue_wrapper *q_wrapper;
 	int ret;
 
-	q = kmem_cache_alloc_node(blk_requestq_cachep,
+	q_wrapper = kmem_cache_alloc_node(blk_requestq_cachep,
 				GFP_KERNEL | __GFP_ZERO, node_id);
-	if (!q)
+	if (!q_wrapper)
 		return NULL;
 
+	q = &q_wrapper->q;
 	q->last_merge = NULL;
 
 	q->id = ida_simple_get(&blk_queue_ida, 0, 0, GFP_KERNEL);
@@ -594,7 +596,7 @@ fail_split:
 fail_id:
 	ida_simple_remove(&blk_queue_ida, q->id);
 fail_q:
-	kmem_cache_free(blk_requestq_cachep, q);
+	kmem_cache_free(blk_requestq_cachep, q_wrapper);
 	return NULL;
 }
 EXPORT_SYMBOL(blk_alloc_queue);
@@ -1796,7 +1798,7 @@ int __init blk_dev_init(void)
 		panic("Failed to create kblockd\n");
 
 	blk_requestq_cachep = kmem_cache_create("request_queue",
-			sizeof(struct request_queue), 0, SLAB_PANIC, NULL);
+			sizeof(struct request_queue_wrapper), 0, SLAB_PANIC, NULL);
 
 	blk_debugfs_root = debugfs_create_dir("block", NULL);
 

@@ -548,13 +548,14 @@ static int blk_mq_init_sched_shared_sbitmap(struct request_queue *queue)
 	int alloc_policy = BLK_MQ_FLAG_TO_ALLOC_POLICY(set->flags);
 	struct blk_mq_hw_ctx *hctx;
 	int ret, i;
+	struct request_queue_wrapper *q_wrapper = queue_to_wrapper(queue);
 
 	/*
 	 * Set initial depth at max so that we don't need to reallocate for
 	 * updating nr_requests.
 	 */
-	ret = blk_mq_init_bitmaps(&queue->sched_bitmap_tags,
-				  &queue->sched_breserved_tags,
+	ret = blk_mq_init_bitmaps(&q_wrapper->sched_bitmap_tags,
+				  &q_wrapper->sched_breserved_tags,
 				  MAX_SCHED_RQ, set->reserved_tags,
 				  set->numa_node, alloc_policy);
 	if (ret)
@@ -562,12 +563,12 @@ static int blk_mq_init_sched_shared_sbitmap(struct request_queue *queue)
 
 	queue_for_each_hw_ctx(queue, hctx, i) {
 		hctx->sched_tags->bitmap_tags =
-					&queue->sched_bitmap_tags;
+					&q_wrapper->sched_bitmap_tags;
 		hctx->sched_tags->breserved_tags =
-					&queue->sched_breserved_tags;
+					&q_wrapper->sched_breserved_tags;
 	}
 
-	sbitmap_queue_resize(&queue->sched_bitmap_tags,
+	sbitmap_queue_resize(&q_wrapper->sched_bitmap_tags,
 			     queue->nr_requests - set->reserved_tags);
 
 	return 0;
@@ -575,8 +576,10 @@ static int blk_mq_init_sched_shared_sbitmap(struct request_queue *queue)
 
 static void blk_mq_exit_sched_shared_sbitmap(struct request_queue *queue)
 {
-	sbitmap_queue_free(&queue->sched_bitmap_tags);
-	sbitmap_queue_free(&queue->sched_breserved_tags);
+	struct request_queue_wrapper *q_wrapper = queue_to_wrapper(queue);
+
+	sbitmap_queue_free(&q_wrapper->sched_bitmap_tags);
+	sbitmap_queue_free(&q_wrapper->sched_breserved_tags);
 }
 
 int blk_mq_init_sched(struct request_queue *q, struct elevator_type *e)

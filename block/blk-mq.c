@@ -3671,6 +3671,7 @@ int blk_mq_update_nr_requests(struct request_queue *q, unsigned int nr)
 	struct blk_mq_tag_set *set = q->tag_set;
 	struct blk_mq_hw_ctx *hctx;
 	int i, ret;
+	struct request_queue_wrapper *q_wrapper = queue_to_wrapper(q);
 
 	if (!set)
 		return -EINVAL;
@@ -3699,9 +3700,9 @@ int blk_mq_update_nr_requests(struct request_queue *q, unsigned int nr)
 							nr, true);
 			if (blk_mq_is_sbitmap_shared(set->flags)) {
 				hctx->sched_tags->bitmap_tags =
-					&q->sched_bitmap_tags;
+					&q_wrapper->sched_bitmap_tags;
 				hctx->sched_tags->breserved_tags =
-					&q->sched_breserved_tags;
+					&q_wrapper->sched_breserved_tags;
 			}
 		}
 		if (ret)
@@ -3712,7 +3713,7 @@ int blk_mq_update_nr_requests(struct request_queue *q, unsigned int nr)
 	if (!ret) {
 		q->nr_requests = nr;
 		if (q->elevator && blk_mq_is_sbitmap_shared(set->flags))
-			sbitmap_queue_resize(&q->sched_bitmap_tags,
+			sbitmap_queue_resize(&q_wrapper->sched_bitmap_tags,
 					     nr - set->reserved_tags);
 	}
 
