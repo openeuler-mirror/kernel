@@ -705,6 +705,33 @@ DECLARE_TRACE(sched_update_nr_running_tp,
 	TP_PROTO(struct rq *rq, int change),
 	TP_ARGS(rq, change));
 
+DECLARE_EVENT_CLASS(psi_memstall_template,
+
+	TP_PROTO(unsigned long function),
+
+	TP_ARGS(function),
+
+	TP_STRUCT__entry(
+		__field(unsigned long, function)
+	),
+
+	TP_fast_assign(
+		__entry->function = function;
+	),
+
+	TP_printk("%ps", (void *)__entry->function)
+);
+
+DEFINE_EVENT(psi_memstall_template, psi_memstall_enter,
+	TP_PROTO(unsigned long function),
+	TP_ARGS(function)
+);
+
+DEFINE_EVENT(psi_memstall_template, psi_memstall_leave,
+	TP_PROTO(unsigned long function),
+	TP_ARGS(function)
+);
+
 #endif /* _TRACE_SCHED_H */
 
 /* This part must be outside protection */
