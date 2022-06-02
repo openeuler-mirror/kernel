@@ -6879,7 +6879,7 @@ static int __init cgroup_memory(char *s)
 		else if (!strcmp(token, "kmem"))
 			cgroup_memory_nokmem = false;
 	}
-	return 0;
+	return 1;
 }
 __setup("cgroup.memory=", cgroup_memory);
 
