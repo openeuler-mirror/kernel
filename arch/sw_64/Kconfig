@@ -104,6 +104,7 @@ config SW64
 	select PCI_MSI_ARCH_FALLBACKS
 	select DMA_OPS if PCI
 	select HAVE_REGS_AND_STACK_ACCESS_API
+	select ARCH_HAS_PTE_SPECIAL
 
 config LOCKDEP_SUPPORT
 	def_bool y
