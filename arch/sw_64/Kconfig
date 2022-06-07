@@ -39,6 +39,7 @@ config SW64
 	select GENERIC_STRNLEN_USER
 	select HAVE_ARCH_KGDB
 	select ARCH_HAS_PHYS_TO_DMA
+	select SWIOTLB
 	select HAVE_MEMBLOCK
 	select HAVE_MEMBLOCK_NODE_MAP
 	select NO_BOOTMEM
@@ -248,22 +249,6 @@ endmenu
 config LOCK_MEMB
 	bool "Insert mem barrier before lock instruction"
 	default y
-
-choice
-	prompt "DMA Mapping Type"
-	depends on SW64 && PCI
-
-config DIRECT_DMA
-	bool "Direct DMA Mapping"
-	depends on SW64 && PCI
-
-config SWIOTLB
-	bool "Software IO TLB"
-	depends on SW64 && PCI
-	help
-	  Software IO TLB
-
-endchoice
 
 # clear all implied options (don't want default values for those):
 # Most of these machines have ISA slots; not exactly sure which don't,
