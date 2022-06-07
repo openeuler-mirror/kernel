@@ -37,7 +37,6 @@ unsigned long sw64_kvm_last_vpn[NR_CPUS];
 #define cpu_last_vpn(cpuid) sw64_kvm_last_vpn[cpuid]
 
 #ifdef CONFIG_SUBARCH_C3B
-#define MAX_VPN			255
 #define WIDTH_HARDWARE_VPN	8
 #endif
 
@@ -80,7 +79,7 @@ static unsigned long __get_new_vpn_context(struct kvm_vcpu *vcpu, long cpu)
 	unsigned long vpn = cpu_last_vpn(cpu);
 	unsigned long next = vpn + 1;
 
-	if ((vpn & HARDWARE_VPN_MASK) >= MAX_VPN) {
+	if ((vpn & HARDWARE_VPN_MASK) >= HARDWARE_VPN_MASK) {
 		tbia();
 		next = (vpn & ~HARDWARE_VPN_MASK) + VPN_FIRST_VERSION + 1; /* bypass 0 */
 	}
