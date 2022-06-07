@@ -27,6 +27,8 @@
 
 #include <asm/export.h>
 
+#define NC_STORE_THRESHOLD	2048
+
 	.set noat
 	.set noreorder
 	.text
@@ -57,6 +59,7 @@ __constant_c_memset:
 	bne	$5, $tail_loop
 
 /* loop until SRC is 8 bytes aligned */
+	.align 5
 $head_loop:
 	and	$16, 0x7, $1
 	beq	$1, $mod8_aligned
@@ -69,6 +72,7 @@ $head_loop:
 $mod8_aligned:
 
 /* set 8 bytes each time */
+	.align 5
 $mod8_loop:
 	and	$16, 0x1f, $1
 	beq	$1, $mod32_aligned
@@ -87,12 +91,27 @@ $mod32_aligned:
 	ifmovd	$17, $f10
 	vcpyf	$f10, $f10
 
+	ldi	$1, NC_STORE_THRESHOLD($31)
+	cmple	$18, $1, $1
+	bne	$1, $mod32_loop
+
 /* set 64 bytes each time */
-$mod32_loop:
+	.align 5
+$mod32_loop_nc:
 	subl	$18, 64, $18
 	blt	$18, $mod32_tail
 	vstd_nc	$f10, 0($16)
 	vstd_nc	$f10, 32($16)
+	addl	$16, 64, $16
+	br	$31, $mod32_loop_nc
+	memb			# required for _nc store instructions
+
+	.align 5
+$mod32_loop:
+	subl	$18, 64, $18
+	blt	$18, $mod32_tail
+	vstd	$f10, 0($16)
+	vstd	$f10, 32($16)
 	addl	$16, 64, $16
 	br	$31, $mod32_loop
 
@@ -100,10 +119,11 @@ $mod32_tail:
 	vldd	$f10, 0($4)
 	addl	$sp, 64, $sp
 	addl	$18, 64, $18
+	.align 5
 $mod32_tail_loop:
 	subl	$18, 8, $18
 	blt	$18, $tail
-	stl_nc	$17, 0($16)
+	stl	$17, 0($16)
 	addl	$16, 8, $16
 	br	$31, $mod32_tail_loop
 
@@ -111,6 +131,7 @@ $tail:
 	addl	$18, 8, $18
 
 /* set one byte each time */
+	.align 5
 $tail_loop:
 	beq	$18, $out
 	stb	$17, 0($16)
@@ -120,7 +141,6 @@ $tail_loop:
 
 /* done, return */
 $out:
-	memb			# required for _nc store instructions
 	ret
 
 	.end ___memset
