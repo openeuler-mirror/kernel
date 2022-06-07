@@ -32,24 +32,6 @@ static inline int rcid_to_package(int rcid)
 
 #ifdef CONFIG_NUMA
 
-#ifndef CONFIG_USE_PERCPU_NUMA_NODE_ID
-extern int cpuid_to_nid(int cpuid);
-static inline int cpu_to_node(int cpu)
-{
-	int node;
-
-	node = cpuid_to_nid(cpu);
-
-#ifdef DEBUG_NUMA
-	BUG_ON(node < 0);
-#endif
-
-	return node;
-}
-
-static inline void set_cpu_numa_node(int cpu, int node) { }
-#endif /* CONFIG_USE_PERCPU_NUMA_NODE_ID */
-
 #ifndef CONFIG_DEBUG_PER_CPU_MAPS
 extern cpumask_var_t node_to_cpumask_map[MAX_NUMNODES];
 /* Returns a pointer to the cpumask of CPUs on Node 'node'. */
