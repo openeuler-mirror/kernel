@@ -275,6 +275,11 @@ int radeon_uvd_suspend(struct radeon_device *rdev)
 		}
 	}
 
+#if IS_ENABLED(CONFIG_SW64)
+	/* Finish executing delayed work */
+	flush_delayed_work(&rdev->uvd.idle_work);
+#endif
+
 	return 0;
 }
 
