@@ -40,7 +40,7 @@ int sw64_printk(const char *fmt, va_list args)
 		printed_len += vscnprintf(sw64_printk_buf, 1024, fmt, args);
 	} else {
 		printed_len += vscnprintf(sw64_printk_buf, 1024, fmt, args);
-		if (is_guest_or_emul()) {
+		if (is_in_emul()) {
 			unsigned long write_addr = QEMU_PRINTF_BUFF_BASE;
 			*(unsigned long *)write_addr = (unsigned long)((((unsigned long)sw64_printk_buf) & 0xffffffffUL)
 					| ((unsigned long)printed_len << 32));
