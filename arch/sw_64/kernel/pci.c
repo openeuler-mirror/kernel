@@ -175,21 +175,6 @@ struct pci_dev *sw64_gendev_to_pci(struct device *dev)
 	return NULL;
 }
 
-/*
- *  If we set up a device for bus mastering, we need to check the latency
- *  timer as certain firmware forgets to set it properly.
- */
-void pcibios_set_master(struct pci_dev *dev)
-{
-	u8 lat;
-
-	pci_read_config_byte(dev, PCI_LATENCY_TIMER, &lat);
-	if (lat >= 16)
-		return;
-	pr_info("PCI: Setting latency timer of device %s to 64\n", pci_name(dev));
-	pci_write_config_byte(dev, PCI_LATENCY_TIMER, 64);
-}
-
 void __init pcibios_claim_one_bus(struct pci_bus *b)
 {
 	struct pci_dev *dev;
@@ -265,7 +250,7 @@ void __init common_init_pci(void)
 		bridge->sysdata = hose;
 		bridge->busnr = hose->busn_space->start;
 		bridge->ops = &sw64_pci_ops;
-		bridge->swizzle_irq = sw64_swizzle;
+		bridge->swizzle_irq = pci_common_swizzle;
 		bridge->map_irq = sw64_map_irq;
 
 		ret = pci_scan_root_bus_bridge(bridge);
@@ -591,11 +576,6 @@ struct pci_ops sw64_pci_ops = {
 int sw64_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	return sw64_chip_init->pci_init.map_irq(dev, slot, pin);
-}
-
-unsigned char sw64_swizzle(struct pci_dev *dev, u8 *pinp)
-{
-	return PCI_SLOT(dev->devfn);
 }
 
 static void __init
