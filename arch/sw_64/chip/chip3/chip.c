@@ -412,14 +412,17 @@ static int chip3_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	struct pci_controller *hose = dev->sysdata;
 
-	return hose->int_irq;
+	if (pci_pcie_type(dev) == PCI_EXP_TYPE_ROOT_PORT)
+		return hose->service_irq;
+	else
+		return hose->int_irq;
 }
 
 extern struct pci_controller *hose_head, **hose_tail;
 static void sw6_handle_intx(unsigned int offset)
 {
 	struct pci_controller *hose;
-	unsigned long value;
+	unsigned long value, pme_value, aer_value;
 
 	hose = hose_head;
 	for (hose = hose_head; hose; hose = hose->next) {
@@ -431,6 +434,18 @@ static void sw6_handle_intx(unsigned int offset)
 			value = value | (1UL << 62);
 			write_piu_ior0(hose->node, hose->index, INTACONFIG + (offset << 7), value);
 		}
+
+		pme_value = read_piu_ior0(hose->node, hose->index, PMEINTCONFIG);
+		aer_value = read_piu_ior0(hose->node, hose->index, AERERRINTCONFIG);
+		if ((pme_value >> 63) || (aer_value >> 63)) {
+			handle_irq(hose->service_irq);
+
+			if (pme_value >> 63)
+				write_piu_ior0(hose->node, hose->index, PMEINTCONFIG, pme_value);
+			if (aer_value >> 63)
+				write_piu_ior0(hose->node, hose->index, AERERRINTCONFIG, aer_value);
+		}
+
 		if (hose->iommu_enable) {
 			value = read_piu_ior0(hose->node, hose->index, IOMMUEXCPT_STATUS);
 			if (value >> 63)
@@ -451,76 +466,6 @@ static void chip3_device_interrupt(unsigned long irq_info)
 	for (i = 0; i < 4; i++) {
 		if ((irq_info >> i) & 0x1)
 			sw6_handle_intx(i);
-	}
-}
-
-static void set_devint_wken(int node, int val)
-{
-	sw64_io_write(node, DEVINT_WKEN, val);
-	sw64_io_write(node, DEVINTWK_INTEN, 0x0);
-}
-
-static void clear_rc_status(int node, int rc)
-{
-	unsigned int val, status;
-
-	val = 0x10000;
-	do {
-		write_rc_conf(node, rc, RC_STATUS, val);
-		mb();
-		status = read_rc_conf(node, rc, RC_STATUS);
-	} while (status >> 16);
-}
-
-static void chip3_suspend(int wake)
-{
-	unsigned long val;
-	unsigned int val_32;
-	unsigned long rc_start;
-	int node, rc, index, cpus;
-
-	cpus = chip3_get_cpu_nums();
-	for (node = 0; node < cpus; node++) {
-		rc = -1;
-		rc_start = sw64_io_read(node, IO_START);
-		index = ffs(rc_start);
-		while (index) {
-			rc += index;
-			if (wake) {
-				val_32 = read_rc_conf(node, rc, RC_CONTROL);
-				val_32 &= ~0x8;
-				write_rc_conf(node, rc, RC_CONTROL, val_32);
-
-				set_devint_wken(node, 0x0);
-				val = 0x8000000000000000UL;
-				write_piu_ior0(node, rc, PMEINTCONFIG, val);
-				write_piu_ior0(node, rc, PMEMSICONFIG, val);
-
-				clear_rc_status(node, rc);
-			} else {
-				val_32 = read_rc_conf(node, rc, RC_CONTROL);
-				val_32 |= 0x8;
-				write_rc_conf(node, rc, RC_CONTROL, val_32);
-
-				clear_rc_status(node, rc);
-				set_devint_wken(node, 0x1f0);
-#ifdef CONFIG_PCI_MSI    //USE MSI
-				val_32 = read_rc_conf(node, rc, RC_COMMAND);
-				val_32 |= 0x400;
-				write_rc_conf(node, rc, RC_COMMAND, val_32);
-				val_32 = read_rc_conf(node, rc, RC_MSI_CONTROL);
-				val_32 |= 0x10000;
-				write_rc_conf(node, rc, RC_MSI_CONTROL, val_32);
-				val = 0x4000000000000000UL;
-				write_piu_ior0(node, rc, PMEMSICONFIG, val);
-#else //USE INT
-				val = 0x4000000000000400UL;
-				write_piu_ior0(node, rc, PMEINTCONFIG, val);
-#endif
-			}
-			rc_start = rc_start >> index;
-			index = ffs(rc_start);
-		}
 	}
 }
 
@@ -605,7 +550,6 @@ static struct sw64_chip_init_ops chip3_chip_init_ops = {
 
 static struct sw64_chip_ops chip3_chip_ops = {
 	.get_cpu_num = chip3_get_cpu_nums,
-	.suspend = chip3_suspend,
 	.fixup = chip3_ops_fixup,
 };
 
@@ -784,14 +728,16 @@ static void chip3_pci_fixup_root_complex(struct pci_dev *dev)
 		}
 
 		dev->class &= 0xff;
-		dev->class |= PCI_CLASS_BRIDGE_HOST << 8;
+		dev->class |= PCI_CLASS_BRIDGE_PCI << 8;
 		for (i = 0; i < PCI_NUM_RESOURCES; i++) {
 			dev->resource[i].start = 0;
 			dev->resource[i].end   = 0;
-			dev->resource[i].flags = 0;
+			dev->resource[i].flags = IORESOURCE_PCI_FIXED;
 		}
 	}
 	atomic_inc(&dev->enable_cnt);
+
+	dev->no_msi = 1;
 }
 
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_JN, PCI_DEVICE_ID_CHIP3, chip3_pci_fixup_root_complex);

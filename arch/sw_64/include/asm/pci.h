@@ -41,6 +41,7 @@ struct pci_controller {
 	unsigned long node;
 	DECLARE_BITMAP(piu_msiconfig, 256);
 	int int_irq;
+	int service_irq;
 	/* For compatibility with current (as of July 2003) pciutils
 	 * and XFree86. Eventually will be removed.
 	 */

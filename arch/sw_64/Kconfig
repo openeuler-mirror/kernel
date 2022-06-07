@@ -95,6 +95,7 @@ config SW64
 	select DMA_OPS if PCI
 	select HAVE_REGS_AND_STACK_ACCESS_API
 	select ARCH_HAS_PTE_SPECIAL
+	select HARDIRQS_SW_RESEND
 
 config LOCKDEP_SUPPORT
 	def_bool y

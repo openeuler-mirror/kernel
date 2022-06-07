@@ -33,20 +33,14 @@ void sw64_suspend_enter(void)
 	 */
 
 	disable_local_timer();
-#ifdef CONFIG_PCI
-	if (sw64_chip->suspend)
-		sw64_chip->suspend(0);
-#endif
+
 #ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_BOOTCORE
 	sw64_suspend_deep_sleep(&suspend_state);
 #else
 	mtinten();
 	asm("halt");
 #endif
-#ifdef CONFIG_PCI
-	if (sw64_chip->suspend)
-		sw64_chip->suspend(1);
-#endif
+
 	disable_local_timer();
 }
 
