@@ -20,11 +20,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/irq.h>
 #include <linux/kdebug.h>
 #include <linux/kgdb.h>
-#include <linux/uaccess.h>
-#include <asm/cacheflush.h>
 
 struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
 	{ "r0", 8, offsetof(struct pt_regs, r0)},

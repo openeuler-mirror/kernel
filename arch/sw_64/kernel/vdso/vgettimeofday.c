@@ -13,10 +13,9 @@
  */
 
 #include <linux/time.h>
-#include <asm/timex.h>
+
 #include <asm/unistd.h>
 #include <asm/vdso.h>
-#include <asm/io.h>
 
 static __always_inline int syscall_fallback(clockid_t clkid, struct timespec64 *ts)
 {

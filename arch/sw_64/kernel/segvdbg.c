@@ -9,9 +9,7 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/debugfs.h>
-#include <linux/seq_file.h>
-#include <linux/uaccess.h>
+
 #include <asm/debug.h>
 
 extern bool segv_debug_enabled;

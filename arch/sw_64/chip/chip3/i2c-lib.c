@@ -14,14 +14,10 @@
  * of the interrupt mode.
  */
 
-#include <linux/module.h>
-#include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/fb.h>
-#include <linux/init.h>
-#include <linux/device.h>
 
 #define CPLD_BUSNR	 2
 

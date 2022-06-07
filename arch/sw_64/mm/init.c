@@ -5,36 +5,13 @@
 
 /* 2.3.x zone allocator, 1999 Andrea Arcangeli <andrea@suse.de> */
 
-#include <linux/pagemap.h>
-#include <linux/signal.h>
-#include <linux/sched.h>
-#include <linux/kernel.h>
-#include <linux/errno.h>
-#include <linux/string.h>
-#include <linux/types.h>
-#include <linux/ptrace.h>
-#include <linux/mman.h>
 #include <linux/mm.h>
 #include <linux/swap.h>
-#include <linux/init.h>
-#include <linux/vmalloc.h>
-#include <linux/gfp.h>
-#include <linux/uaccess.h>
 #include <linux/memblock.h>
-#include <linux/dma-mapping.h>
 #include <linux/swiotlb.h>
 #include <linux/acpi.h>
 
-#include <asm/pgtable.h>
-#include <asm/pgalloc.h>
-#include <asm/dma.h>
 #include <asm/mmu_context.h>
-#include <asm/console.h>
-#include <asm/tlb.h>
-#include <asm/setup.h>
-#include <asm/sections.h>
-#include <asm/memory.h>
-#include <asm/hw_init.h>
 
 extern void die_if_kernel(char *, struct pt_regs *, long);
 

@@ -1,17 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/suspend.h>
-#include <linux/interrupt.h>
-#include <linux/pm.h>
-#include <linux/irq.h>
-#include <linux/types.h>
-#include <linux/pci.h>
-#include <asm/ptrace.h>
+
 #include <asm/suspend.h>
-#include <asm/smp.h>
-#include <asm/io.h>
-#include <asm/hmcall.h>
-#include <asm/delay.h>
-#include <asm/sw64io.h>
 #include <asm/sw64_init.h>
 
 struct processor_state suspend_state;

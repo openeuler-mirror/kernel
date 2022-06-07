@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/pci.h>
 #include <linux/delay.h>
-#include <asm/pci.h>
+
 #include <asm/sw64io.h>
-#include <asm/hw_init.h>
 
 static int handshake(void __iomem *ptr, u32 mask, u32 done,
 		int wait_usec, int delay_usec)

@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/moduleloader.h>
-#include <linux/elf.h>
-#include <linux/vmalloc.h>
-#include <linux/fs.h>
-#include <linux/string.h>
-#include <linux/kernel.h>
 #include <linux/slab.h>
 
 #define DEBUGP(fmt...)

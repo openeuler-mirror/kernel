@@ -14,20 +14,11 @@
  *
  */
 
-#include <linux/kernel.h>
-#include <linux/clocksource.h>
 #include <linux/elf.h>
-#include <linux/err.h>
-#include <linux/errno.h>
-#include <linux/gfp.h>
 #include <linux/mm.h>
-#include <linux/sched.h>
-#include <linux/signal.h>
 #include <linux/slab.h>
 #include <linux/timekeeper_internal.h>
-#include <linux/vmalloc.h>
 
-#include <asm/cacheflush.h>
 #include <asm/vdso.h>
 
 extern char vdso_start, vdso_end;

@@ -6,18 +6,6 @@
  */
 
 #include <linux/perf_event.h>
-#include <linux/kprobes.h>
-#include <linux/kernel.h>
-#include <linux/kdebug.h>
-#include <linux/mutex.h>
-#include <linux/init.h>
-#include <linux/uaccess.h>
-
-#include <linux/atomic.h>
-#include <asm/irq.h>
-#include <asm/irq_regs.h>
-#include <asm/hmcall.h>
-#include <asm/hw_irq.h>
 
 /* For tracking PMCs and the hw events they monitor on each CPU. */
 struct cpu_hw_events {

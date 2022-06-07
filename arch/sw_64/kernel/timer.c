@@ -4,20 +4,9 @@
  *  Description:  percpu local timer, based on arch/x86/kernel/apic/apic.c
  */
 
-#include <linux/init.h>
-#include <linux/mm.h>
-#include <linux/delay.h>
-#include <linux/memblock.h>
 #include <linux/interrupt.h>
-#include <linux/kernel_stat.h>
-#include <linux/ioport.h>
-#include <linux/cpu.h>
 #include <linux/clockchips.h>
-#include <linux/acpi_pmtmr.h>
-#include <linux/module.h>
-#include <linux/dmi.h>
-#include <linux/dmar.h>
-#include <asm/hcall.h>
+
 #include <asm/hw_init.h>
 #include <asm/hardirq.h>
 

@@ -3,27 +3,11 @@
  *  DISCONTIGMEM NUMA sw64 support.
  */
 
-#include <linux/types.h>
-#include <linux/kernel.h>
-#include <linux/mm.h>
 #include <linux/memblock.h>
-#include <linux/swap.h>
-#include <linux/initrd.h>
-#include <linux/pfn.h>
-#include <linux/module.h>
 #include <linux/cpuset.h>
-#include <linux/init.h>
-#ifdef CONFIG_PCI
-#include <linux/pci.h>
-#endif
 #include <linux/acpi.h>
 #include <linux/of.h>
 
-#include <asm/pgalloc.h>
-#include <asm/sections.h>
-#include <asm/sw64_init.h>
-#include <asm/hw_init.h>
-#include <asm/memory.h>
 #include <asm/core.h>
 
 int cpu_to_node_map[NR_CPUS];

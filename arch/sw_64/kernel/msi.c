@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
 #include <linux/irq.h>
-#include <linux/kernel.h>
 #include <linux/msi.h>
-#include <linux/pci.h>
-#include <linux/cpumask.h>
-#include <asm/sw64io.h>
-#include <asm/msi.h>
-#include <asm/pci.h>
-
 
 int msi_compose_msg(unsigned int irq, struct msi_msg *msg)
 {

@@ -15,9 +15,7 @@
  *
  */
 
-#include <linux/init.h>
 #include <linux/linkage.h>
-#include <linux/const.h>
 #include <asm/page.h>
 
 	__PAGE_ALIGNED_DATA

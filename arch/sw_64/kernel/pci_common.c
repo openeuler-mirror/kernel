@@ -3,22 +3,11 @@
  *	linux/arch/sw_64/kernel/pci_iommu.c
  */
 
-#include <linux/kernel.h>
-#include <linux/mm.h>
 #include <linux/pci.h>
-#include <linux/gfp.h>
-#include <linux/memblock.h>
 #include <linux/export.h>
-#include <linux/scatterlist.h>
-#include <linux/log2.h>
 #include <linux/dma-mapping.h>
-#include <linux/iommu-helper.h>
-#include <linux/slab.h>
 #include <linux/dma-direct.h>
 #include <linux/swiotlb.h>
-#include <linux/cache.h>
-#include <linux/module.h>
-#include <asm/dma.h>
 
 static dma_addr_t sw64_direct_map_page(struct device *dev, struct page *page,
 		unsigned long offset, size_t size,

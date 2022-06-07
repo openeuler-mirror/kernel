@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/console.h>
 #include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/string.h>
-#include <linux/errno.h>
+
 #include <asm/io.h>
 
 static unsigned long early_serial_base;  /* ttyS0 */
