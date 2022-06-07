@@ -33,15 +33,23 @@
 	.endm
 
 	.macro SIGCONTEXT_REGS_F base, from = 32
-	.cfi_offset \from, \base + (4 + 1 + \from) * 32
+	.cfi_offset \from, \base + (4 + 32 + 1) * 8 + (\from - 32) * 32
 	.if	62 - \from
 	SIGCONTEXT_REGS_F \base, "(\from + 1)"
+	.endif
+	.endm
+
+	.macro SIGCONTEXT_REGS_V base, from = 67
+	.cfi_offset \from, \base + (4 + 32 + 1) * 8 + ((\from - 67) & 0x1f) * 32 + (((\from - 67) >> 5) + 1) * 8
+	.if	161 - \from
+	SIGCONTEXT_REGS_V \base, "(\from + 1)"
 	.endif
 	.endm
 
 	.macro SIGCONTEXT_REGS base
 	SIGCONTEXT_REGS_I \base
 	SIGCONTEXT_REGS_F \base
+	SIGCONTEXT_REGS_V \base
 	.cfi_offset 63, \base + (4 + 32 + 1) * 8 + 32 * 32
 	.cfi_offset 64, \base + 2 * 8
 	.endm
