@@ -297,6 +297,9 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 		ret = vm_mmap(vm_file, mem->userspace_addr, mem->memory_size,
 				PROT_READ | PROT_WRITE,
 				MAP_SHARED | MAP_FIXED, 0);
+		if ((long)ret < 0)
+			return ret;
+
 		vma = find_vma(current->mm, mem->userspace_addr);
 		if (!vma)
 			return -ENOMEM;
@@ -311,13 +314,13 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 		remap_pfn_range(vma, mem->userspace_addr,
 				addr >> PAGE_SHIFT,
 				mem->memory_size, vma->vm_page_prot);
-
-		if ((long)ret < 0)
-			return ret;
 	} else {
 		info = vm_file->private_data;
 		addr = info->start;
 	}
+
+	vma->vm_flags &= ~(VM_IO | VM_PFNMAP);
+	vma->vm_flags |= VM_ARCH_1;
 
 	pr_info("guest phys addr = %#lx, size = %#lx\n",
 			addr, vma->vm_end - vma->vm_start);
