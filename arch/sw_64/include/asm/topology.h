@@ -50,7 +50,16 @@ static inline int cpu_to_node(int cpu)
 static inline void set_cpu_numa_node(int cpu, int node) { }
 #endif /* CONFIG_USE_PERCPU_NUMA_NODE_ID */
 
+#ifndef CONFIG_DEBUG_PER_CPU_MAPS
+extern cpumask_var_t node_to_cpumask_map[MAX_NUMNODES];
+/* Returns a pointer to the cpumask of CPUs on Node 'node'. */
+#define cpumask_of_node(node)	((node) == NUMA_NO_NODE ?	\
+				cpu_all_mask :			\
+				node_to_cpumask_map[node])
+#else
 extern const struct cpumask *cpumask_of_node(int node);
+#endif /* CONFIG_DEBUG_PER_CPU_MAPS */
+
 extern void numa_add_cpu(unsigned int cpu);
 extern void numa_remove_cpu(unsigned int cpu);
 extern void numa_store_cpu_info(unsigned int cpu);
