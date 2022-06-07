@@ -417,24 +417,32 @@ void numa_store_cpu_info(unsigned int cpu)
 	set_cpu_numa_node(cpu, cpu_to_node_map[cpu]);
 }
 
+#ifdef CONFIG_DEBUG_PER_CPU_MAPS
 /*
  * Returns a pointer to the bitmask of CPUs on Node 'node'.
  */
 const struct cpumask *cpumask_of_node(int node)
 {
 
-	if (node == NUMA_NO_NODE)
+	if (node == NUMA_NO_NODE) {
+		pr_warn("%s: NUMA_NO_NODE\n", __func__);
 		return cpu_all_mask;
+	}
 
-	if (WARN_ON(node < 0 || node >= nr_node_ids))
+	if (WARN_ON(node < 0 || node >= nr_node_ids)) {
+		pr_warn("%s: invalid node %d\n", __func__, node);
 		return cpu_none_mask;
+	}
 
-	if (WARN_ON(node_to_cpumask_map[node] == NULL))
+	if (WARN_ON(node_to_cpumask_map[node] == NULL)) {
+		pr_warn("%s: uninitialized node %d\n", __func__, node);
 		return cpu_online_mask;
+	}
 
 	return node_to_cpumask_map[node];
 }
 EXPORT_SYMBOL(cpumask_of_node);
+#endif
 
 static void numa_update_cpu(unsigned int cpu, bool remove)
 {
