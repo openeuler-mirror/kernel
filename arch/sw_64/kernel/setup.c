@@ -81,8 +81,8 @@ DEFINE_PER_CPU(unsigned long, hard_node_id) = { 0 };
 struct cma *sw64_kvm_cma;
 EXPORT_SYMBOL(sw64_kvm_cma);
 
-static phys_addr_t size_cmdline;
-static phys_addr_t base_cmdline;
+static phys_addr_t kvm_mem_size;
+static phys_addr_t kvm_mem_base;
 
 struct gen_pool *sw64_kvm_pool;
 EXPORT_SYMBOL(sw64_kvm_pool);
@@ -748,17 +748,17 @@ static int __init early_kvm_reserved_mem(char *p)
 		return -EINVAL;
 	}
 
-	size_cmdline = memparse(p, &p);
+	kvm_mem_size = memparse(p, &p);
 	if (*p != '@')
 		return -EINVAL;
-	base_cmdline = memparse(p + 1, &p);
+	kvm_mem_base = memparse(p + 1, &p);
 	return 0;
 }
 early_param("kvm_mem", early_kvm_reserved_mem);
 
 void __init sw64_kvm_reserve(void)
 {
-	kvm_cma_declare_contiguous(base_cmdline, size_cmdline, 0,
+	kvm_cma_declare_contiguous(kvm_mem_base, kvm_mem_size, 0,
 			PAGE_SIZE, 0, "sw64_kvm_cma", &sw64_kvm_cma);
 }
 #endif
@@ -1030,14 +1030,14 @@ static int __init sw64_kvm_pool_init(void)
 	if (!sw64_kvm_cma)
 		goto out;
 
-	kvm_pool_virt = (unsigned long)base_cmdline;
+	kvm_pool_virt = (unsigned long)kvm_mem_base;
 
 	sw64_kvm_pool = gen_pool_create(PAGE_SHIFT, -1);
 	if (!sw64_kvm_pool)
 		goto out;
 
-	status = gen_pool_add_virt(sw64_kvm_pool, kvm_pool_virt, base_cmdline,
-			size_cmdline, -1);
+	status = gen_pool_add_virt(sw64_kvm_pool, kvm_pool_virt, kvm_mem_base,
+			kvm_mem_size, -1);
 	if (status < 0) {
 		pr_err("failed to add memory chunks to sw64 kvm pool\n");
 		gen_pool_destroy(sw64_kvm_pool);
@@ -1046,8 +1046,8 @@ static int __init sw64_kvm_pool_init(void)
 	}
 	gen_pool_set_algo(sw64_kvm_pool, gen_pool_best_fit, NULL);
 
-	base_page = pfn_to_page(base_cmdline >> PAGE_SHIFT);
-	end_page  = pfn_to_page((base_cmdline + size_cmdline) >> PAGE_SHIFT);
+	base_page = pfn_to_page(kvm_mem_base >> PAGE_SHIFT);
+	end_page  = pfn_to_page((kvm_mem_base + kvm_mem_size) >> PAGE_SHIFT);
 
 	p = base_page;
 	while (page_ref_count(p) == 0 &&
