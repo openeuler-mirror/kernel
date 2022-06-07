@@ -195,14 +195,6 @@ static inline int arch_dup_mmap(struct mm_struct *oldmm,
 
 static inline void arch_exit_mmap(struct mm_struct *mm)
 {
-	struct vm_area_struct *vma;
-
-	vma = mm->mmap;
-	while (vma) {
-		if (vma->vm_flags & VM_ARCH_1)
-			vma->vm_flags |= VM_IO | VM_PFNMAP;
-		vma = vma->vm_next;
-	}
 }
 
 static inline void arch_unmap(struct mm_struct *mm, unsigned long start,

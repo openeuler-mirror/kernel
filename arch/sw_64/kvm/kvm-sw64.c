@@ -311,16 +311,13 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 		vma->vm_ops = &vmem_vm_ops;
 		vma->vm_ops->open(vma);
 
-		remap_pfn_range(vma, mem->userspace_addr,
-				addr >> PAGE_SHIFT,
-				mem->memory_size, vma->vm_page_prot);
+		ret = vmem_vm_insert_page(vma);
+		if ((int)ret < 0)
+			return ret;
 	} else {
 		info = vm_file->private_data;
 		addr = info->start;
 	}
-
-	vma->vm_flags &= ~(VM_IO | VM_PFNMAP);
-	vma->vm_flags |= VM_ARCH_1;
 
 	pr_info("guest phys addr = %#lx, size = %#lx\n",
 			addr, vma->vm_end - vma->vm_start);
