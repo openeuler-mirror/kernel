@@ -10,6 +10,7 @@
 #include <linux/signal.h>
 #include <linux/errno.h>
 #include <linux/tracehook.h>
+#include <linux/syscalls.h>
 
 #include <asm/ucontext.h>
 #include <asm/vdso.h>
@@ -22,6 +23,21 @@
 #define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
 
 asmlinkage void ret_from_sys_call(void);
+
+SYSCALL_DEFINE2(odd_sigprocmask, int, how, unsigned long, newmask)
+{
+	sigset_t oldmask;
+	sigset_t mask;
+	unsigned long res;
+
+	siginitset(&mask, newmask & _BLOCKABLE);
+	res = sigprocmask(how, &mask, &oldmask);
+	if (!res) {
+		force_successful_syscall_return();
+		res = oldmask.sig[0];
+	}
+	return res;
+}
 
 /*
  * Do a signal return; undo the signal stack.

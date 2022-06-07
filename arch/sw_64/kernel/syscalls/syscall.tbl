@@ -55,7 +55,7 @@
 45	common	open				sys_open
 #46 is unused
 47	common	getxgid				sys_getxgid
-48	common	sigprocmask			sys_sigprocmask
+48	common	odd_sigprocmask			sys_odd_sigprocmask
 #49 is unused
 #50 is unused
 51	common	acct				sys_acct
@@ -306,7 +306,7 @@
 #296 is unused
 #297 is unused
 298	common	getpriority			sys_getpriority
-#299 is unused
+299	common	sigprocmask			sys_sigprocmask
 300	common	bdflush				sys_bdflush
 #301 is unused
 302	common	mount				sys_mount
