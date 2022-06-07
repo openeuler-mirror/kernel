@@ -133,6 +133,19 @@ static unsigned long chip3_get_node_mem(int nodeid)
 	return node_mem;
 }
 
+static void chip3_setup_vt_core_start(struct cpumask *cpumask)
+{
+	int i;
+	unsigned long coreonline;
+
+	coreonline = sw64_io_read(0, CORE_ONLINE);
+
+	for (i = 0; i < 64 ; i++) {
+		if (coreonline & (1UL << i))
+			cpumask_set_cpu(i, cpumask);
+	}
+}
+
 static void chip3_setup_core_start(struct cpumask *cpumask)
 {
 	int i, j, cpus;
@@ -574,6 +587,7 @@ static void chip3_hose_init(struct pci_controller *hose)
 static void chip3_init_ops_fixup(void)
 {
 	if (is_guest_or_emul()) {
+		sw64_chip_init->early_init.setup_core_start = chip3_setup_vt_core_start;
 		sw64_chip_init->early_init.get_node_mem = chip3_get_vt_node_mem;
 		sw64_chip_init->pci_init.check_pci_linkup = chip3_check_pci_vt_linkup;
 	}
