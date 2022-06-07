@@ -69,6 +69,9 @@
 #define DLI_PHY_CTL		(0x10UL << 24)
 #define PCI_VT_LEGACY_IO	(IO_BASE | PCI_BASE | PCI_LEGACY_IO)
 
+#define PME_ENABLE_INTD_CORE0	(0x1UL << 62 | 0x1UL << 10)
+#define AER_ENABLE_INTD_CORE0	(0x1UL << 62 | 0x1UL << 10)
+
 /*-----------------------addr-----------------------*/
 /* CAB0 REG */
 enum {

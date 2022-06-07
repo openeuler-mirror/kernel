@@ -605,6 +605,16 @@ sw64_init_host(unsigned long node, unsigned long index)
 	}
 }
 
+static void set_devint_wken(int node)
+{
+	unsigned long val;
+
+	/* enable INTD wakeup */
+	val = 0x80;
+	sw64_io_write(node, DEVINT_WKEN, val);
+	sw64_io_write(node, DEVINTWK_INTEN, val);
+}
+
 void __init sw64_init_arch(void)
 {
 	if (IS_ENABLED(CONFIG_PCI)) {
@@ -617,6 +627,7 @@ void __init sw64_init_arch(void)
 		cpu_num = sw64_chip->get_cpu_num();
 
 		for (node = 0; node < cpu_num; node++) {
+			set_devint_wken(node);
 			rc_enable = sw64_chip_init->pci_init.get_rc_enable(node);
 			if (rc_enable == 0) {
 				printk("PCIe is disabled on node %ld\n", node);
@@ -658,11 +669,13 @@ static void __init sw64_init_intx(struct pci_controller *hose)
 		val_node = next_node_in(node, node_online_map);
 	else
 		val_node = node;
-	irq = irq_alloc_descs_from(NR_IRQS_LEGACY, 1, val_node);
+	irq = irq_alloc_descs_from(NR_IRQS_LEGACY, 2, val_node);
 	WARN_ON(irq < 0);
 	irq_set_chip_and_handler(irq, &dummy_irq_chip, handle_level_irq);
 	irq_set_status_flags(irq, IRQ_LEVEL);
 	hose->int_irq = irq;
+	irq_set_chip_and_handler(irq + 1, &dummy_irq_chip, handle_level_irq);
+	hose->service_irq = irq + 1;
 	rcid = cpu_to_rcid(0);
 
 	printk_once(KERN_INFO "INTx are directed to node %d core %d.\n",
@@ -670,6 +683,9 @@ static void __init sw64_init_intx(struct pci_controller *hose)
 	int_conf = 1UL << 62 | rcid; /* rebase all intx on the first logical cpu */
 	if (sw64_chip_init->pci_init.set_intx)
 		sw64_chip_init->pci_init.set_intx(node, index, int_conf);
+
+	write_piu_ior0(node, index, PMEINTCONFIG, PME_ENABLE_INTD_CORE0);
+	write_piu_ior0(node, index, AERERRINTCONFIG, AER_ENABLE_INTD_CORE0);
 }
 
 void __init sw64_init_irq(void)
