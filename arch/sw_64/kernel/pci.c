@@ -64,6 +64,14 @@ DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82378, quirk_i
 #define MB			(1024*KB)
 #define GB			(1024*MB)
 
+resource_size_t pcibios_default_alignment(void)
+{
+	if (is_in_guest())
+		return PAGE_SIZE;
+	else
+		return 0;
+}
+
 resource_size_t pcibios_align_resource(void *data, const struct resource *res,
 		resource_size_t size, resource_size_t align)
 {
