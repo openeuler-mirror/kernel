@@ -76,23 +76,23 @@ static inline unsigned long do_csum(const unsigned char *buff, int len)
 	} else {
 		dst = (unsigned long *)((unsigned long)dst & (~7UL));
 		word = *dst;
-		inshl(word, doff, partial_dest);
+		inshl(word, 8 - doff, partial_dest);
 		dst++;
 
 		while (len >= 0) {
 			word = *dst;
-			insll(word, doff, second_dest);
+			insll(word, 8 - doff, second_dest);
 			patch = partial_dest | second_dest;
 			checksum += patch;
 			checksum += (checksum < patch);
-			inshl(word, doff, partial_dest);
+			inshl(word, 8 - doff, partial_dest);
 			dst++;
 			len -= 8;
 		}
 
 		len += 8;
 		word = *dst;
-		insll(word, doff, second_dest);
+		insll(word, 8 - doff, second_dest);
 		patch = partial_dest | second_dest;
 		maskll(patch, len, patch);
 		checksum += patch;
