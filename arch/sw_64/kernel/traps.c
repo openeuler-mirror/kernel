@@ -456,10 +456,9 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		__asm__ __volatile__(
 		"	zap	%6, 2, %1\n"
 		"	srl	%6, 8, %2\n"
-		"	stb	%1, 0x0(%5)\n"
-		"	stb	%2, 0x1(%5)\n"
+		"1:	stb	%1, 0x0(%5)\n"
+		"2:	stb	%2, 0x1(%5)\n"
 		"3:\n"
-
 		".section __ex_table, \"a\"\n"
 		"	.long	1b - .\n"
 		"	ldi	%2, 3b-1b(%0)\n"
@@ -990,20 +989,16 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		sw64_read_simd_fp_m_s(reg, fp);
 		if ((unsigned long)va<<61 == 0) {
 			__asm__ __volatile__(
-			"1:	bis	%4, %4, %1\n"
-			"2:	bis	%5, %5, %2\n"
-			"3:	stl	%1, 0(%3)\n"
-			"4:	stl	%2, 8(%3)\n"
-			"5:\n"
+			"	bis	%4, %4, %1\n"
+			"	bis	%5, %5, %2\n"
+			"1:	stl	%1, 0(%3)\n"
+			"2:	stl	%2, 8(%3)\n"
+			"3:\n"
 			".section __ex_table, \"a\"\n\t"
 			"	.long	1b - .\n"
-			"	ldi	%1, 5b-1b(%0)\n"
+			"	ldi	$31, 3b-1b(%0)\n"
 			"	.long	2b - .\n"
-			"	ldi	%2, 5b-2b(%0)\n"
-			"	.long	3b - .\n"
-			"	ldi	$31, 5b-3b(%0)\n"
-			"	.long	4b - .\n"
-			"	ldi	$31, 5b-4b(%0)\n"
+			"	ldi	$31, 3b-2b(%0)\n"
 			".previous"
 			: "=r"(error), "=&r"(tmp1), "=&r"(tmp2)
 			: "r"(va), "r"(fp[0]), "r"(fp[1]), "0"(0));
@@ -1123,20 +1118,16 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		sw64_read_simd_fp_m_d(reg, fp);
 		if ((unsigned long)va<<61 == 0) {
 			__asm__ __volatile__(
-			"1:	bis	%4, %4, %1\n"
-			"2:	bis	%5, %5, %2\n"
-			"3:	stl	%1, 0(%3)\n"
-			"4:	stl	%2, 8(%3)\n"
-			"5:\n"
+			"	bis	%4, %4, %1\n"
+			"	bis	%5, %5, %2\n"
+			"1:	stl	%1, 0(%3)\n"
+			"2:	stl	%2, 8(%3)\n"
+			"3:\n"
 			".section __ex_table, \"a\"\n\t"
 			"	.long	1b - .\n"
-			"	ldi	%1, 5b-1b(%0)\n"
+			"	ldi	$31, 3b-1b(%0)\n"
 			"	.long	2b - .\n"
-			"	ldi	%2, 5b-2b(%0)\n"
-			"	.long	3b - .\n"
-			"	ldi	$31, 5b-3b(%0)\n"
-			"	.long	4b - .\n"
-			"	ldi	$31, 5b-4b(%0)\n"
+			"	ldi	$31, 3b-2b(%0)\n"
 			".previous"
 			: "=r"(error), "=&r"(tmp1), "=&r"(tmp2)
 			: "r"(va), "r"(fp[0]), "r"(fp[1]), "0"(0));
@@ -1148,20 +1139,16 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 
 
 			__asm__ __volatile__(
-			"1:	bis	%4, %4, %1\n"
-			"2:	bis	%5, %5, %2\n"
-			"3:	stl	%1, 0(%3)\n"
-			"4:	stl	%2, 8(%3)\n"
-			"5:\n"
+			"	bis	%4, %4, %1\n"
+			"	bis	%5, %5, %2\n"
+			"1:	stl	%1, 0(%3)\n"
+			"2:	stl	%2, 8(%3)\n"
+			"3:\n"
 			".section __ex_table, \"a\"\n\t"
 			"	.long	1b - .\n"
-			"	ldi	%1, 5b-1b(%0)\n"
+			"	ldi	$31, 3b-1b(%0)\n"
 			"	.long	2b - .\n"
-			"	ldi	%2, 5b-2b(%0)\n"
-			"	.long	3b - .\n"
-			"	ldi	$31, 5b-3b(%0)\n"
-			"	.long	4b - .\n"
-			"	ldi	$31, 5b-4b(%0)\n"
+			"	ldi	$31, 3b-2b(%0)\n"
 			".previous"
 			: "=r"(error), "=&r"(tmp1), "=&r"(tmp2)
 			: "r"(vb), "r"(fp[2]), "r"(fp[3]), "0"(0));
@@ -1489,10 +1476,9 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		__asm__ __volatile__(
 		"	zap	%6, 2, %1\n"
 		"	srl	%6, 8, %2\n"
-		"	stb	%1, 0x0(%5)\n"
-		"	stb	%2, 0x1(%5)\n"
+		"1:	stb	%1, 0x0(%5)\n"
+		"2:	stb	%2, 0x1(%5)\n"
 		"3:\n"
-
 		".section __ex_table, \"a\"\n"
 		"	.long	1b - .\n"
 		"	ldi	%2, 3b-1b(%0)\n"
