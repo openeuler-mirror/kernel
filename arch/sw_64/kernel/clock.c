@@ -29,6 +29,8 @@
 #define CORE_PLL0_CFG_SHIFT     4
 #define CORE_PLL2_CFG_SHIFT     18
 
+char   curruent_policy[CPUFREQ_NAME_LEN];
+
 /* Minimum CLK support */
 enum {
 	DC_0, DC_1, DC_2, DC_3, DC_4, DC_5, DC_6, DC_7, DC_8,
@@ -115,6 +117,12 @@ unsigned long sw64_clk_get_rate(struct clk *clk)
 	return (unsigned long)clk->rate;
 }
 EXPORT_SYMBOL(sw64_clk_get_rate);
+
+void sw64_store_policy(struct cpufreq_policy *policy)
+{
+	memcpy(curruent_policy, policy->governor->name, CPUFREQ_NAME_LEN);
+}
+EXPORT_SYMBOL_GPL(sw64_store_policy);
 
 int sw64_set_rate(int index, unsigned long rate)
 {
