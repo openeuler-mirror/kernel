@@ -46,7 +46,8 @@ struct kvm_arch_memory_slot {
 };
 
 struct kvm_arch {
-	struct swvm_mem mem;
+	unsigned long host_phys_addr;
+	unsigned long size;
 };
 
 
