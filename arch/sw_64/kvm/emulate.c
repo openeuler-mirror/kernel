@@ -32,6 +32,7 @@ void sw64_decode(struct kvm_vcpu *vcpu, unsigned int insn, struct kvm_run *run)
 		vcpu->arch.mmio_decode.rt = ra;
 		break;
 	case 0x23: /* LDL */
+	case 0x24: /* LDL_U */
 		run->mmio.is_write = 0;
 		run->mmio.len = 8;
 		vcpu->arch.mmio_decode.rt = ra;
@@ -52,6 +53,7 @@ void sw64_decode(struct kvm_vcpu *vcpu, unsigned int insn, struct kvm_run *run)
 		run->mmio.len = 4;
 		break;
 	case 0x2b: /* STL */
+	case 0x2c: /* STL_U */
 		run->mmio.is_write = 1;
 		*(unsigned long *)run->mmio.data = vcpu_get_reg(vcpu, ra);
 		run->mmio.len = 8;
