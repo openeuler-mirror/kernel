@@ -356,7 +356,7 @@ static void * __init move_initrd(unsigned long mem_limit)
 
 static int __init memmap_range_valid(phys_addr_t base, phys_addr_t size)
 {
-	if (phys_to_virt(base + size - 1) < phys_to_virt(PFN_PHYS(max_low_pfn)))
+	if ((base + size) <= memblock_end_of_DRAM())
 		return true;
 	else
 		return false;
@@ -379,7 +379,7 @@ void __init process_memmap(void)
 		case memmap_reserved:
 			if (!memmap_range_valid(base, size)) {
 				pr_err("reserved memmap region [mem %#018llx-%#018llx] extends beyond end of memory (%#018llx)\n",
-						base, base + size - 1, PFN_PHYS(max_low_pfn));
+						base, base + size - 1, memblock_end_of_DRAM());
 			} else {
 				pr_info("reserved memmap region [mem %#018llx-%#018llx]\n",
 						base, base + size - 1);
@@ -395,7 +395,7 @@ void __init process_memmap(void)
 		case memmap_pci:
 			if (!memmap_range_valid(base, size)) {
 				pr_info("pci memmap region [mem %#018llx-%#018llx] extends beyond end of memory (%#018llx)\n",
-						base, base + size - 1, PFN_PHYS(max_low_pfn));
+						base, base + size - 1, memblock_end_of_DRAM());
 			} else {
 				pr_info("pci memmap region [mem %#018llx-%#018llx]\n",
 						base, base + size - 1);
@@ -407,10 +407,10 @@ void __init process_memmap(void)
 			break;
 		case memmap_initrd:
 			if (!memmap_range_valid(base, size)) {
-				base = (unsigned long) move_initrd(PFN_PHYS(max_low_pfn));
+				base = (unsigned long) move_initrd(memblock_end_of_DRAM());
 				if (!base) {
 					pr_err("initrd memmap region [mem %#018llx-%#018llx] extends beyond end of memory (%#018llx)\n",
-							base, base + size - 1, PFN_PHYS(max_low_pfn));
+							base, base + size - 1, memblock_end_of_DRAM());
 				} else {
 					memmap_map[i].addr = base;
 					pr_info("initrd memmap region [mem %#018llx-%#018llx]\n",
