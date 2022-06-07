@@ -367,6 +367,7 @@ void __init process_memmap(void)
 	static int i;	// Make it static so we won't start over again every time.
 	int ret;
 	phys_addr_t base, size;
+	unsigned long dma_end __maybe_unused = virt_to_phys((void *)MAX_DMA_ADDRESS);
 
 	if (!memblock_initialized)
 		return;
@@ -385,6 +386,9 @@ void __init process_memmap(void)
 				ret = memblock_remove(base, size);
 				if (ret)
 					pr_err("reserve memmap region [mem %#018llx-%#018llx] failed\n",
+							base, base + size - 1);
+				else if (IS_ENABLED(CONFIG_ZONE_DMA32) && (base < dma_end))
+					pr_warn("memmap region [mem %#018llx-%#018llx] overlapped with DMA32 region\n",
 							base, base + size - 1);
 			}
 			break;
