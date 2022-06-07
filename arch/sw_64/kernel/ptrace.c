@@ -608,8 +608,8 @@ struct pt_regs_offset {
 	int offset;
 };
 
-#define REG_OFFSET_NAME(reg, r) {				\
-	.name = #reg,						\
+#define REG_OFFSET_NAME(r) {					\
+	.name = #r,						\
 	.offset = offsetof(struct pt_regs, r)			\
 }
 
@@ -619,37 +619,38 @@ struct pt_regs_offset {
 }
 
 static const struct pt_regs_offset regoffset_table[] = {
-	REG_OFFSET_NAME(r0, r0),
-	REG_OFFSET_NAME(r1, r1),
-	REG_OFFSET_NAME(r2, r2),
-	REG_OFFSET_NAME(r3, r3),
-	REG_OFFSET_NAME(r4, r4),
-	REG_OFFSET_NAME(r5, r5),
-	REG_OFFSET_NAME(r6, r6),
-	REG_OFFSET_NAME(r7, r7),
-	REG_OFFSET_NAME(r8, r8),
-	REG_OFFSET_NAME(r19, r19),
-	REG_OFFSET_NAME(r20, r20),
-	REG_OFFSET_NAME(r21, r21),
-	REG_OFFSET_NAME(r22, r22),
-	REG_OFFSET_NAME(r23, r23),
-	REG_OFFSET_NAME(r24, r24),
-	REG_OFFSET_NAME(r25, r25),
-	REG_OFFSET_NAME(r26, r26),
-	REG_OFFSET_NAME(r27, r27),
-	REG_OFFSET_NAME(r28, r28),
-	REG_OFFSET_NAME(hae, hae),
-	REG_OFFSET_NAME(trap_a0, trap_a0),
-	REG_OFFSET_NAME(trap_a1, trap_a1),
-	REG_OFFSET_NAME(trap_a2, trap_a2),
-	REG_OFFSET_NAME(ps, ps),
-	REG_OFFSET_NAME(pc, pc),
-	REG_OFFSET_NAME(gp, gp),
-	REG_OFFSET_NAME(r16, r16),
-	REG_OFFSET_NAME(r17, r17),
-	REG_OFFSET_NAME(r18, r18),
+	REG_OFFSET_NAME(r0),
+	REG_OFFSET_NAME(r1),
+	REG_OFFSET_NAME(r2),
+	REG_OFFSET_NAME(r3),
+	REG_OFFSET_NAME(r4),
+	REG_OFFSET_NAME(r5),
+	REG_OFFSET_NAME(r6),
+	REG_OFFSET_NAME(r7),
+	REG_OFFSET_NAME(r8),
+	REG_OFFSET_NAME(r19),
+	REG_OFFSET_NAME(r20),
+	REG_OFFSET_NAME(r21),
+	REG_OFFSET_NAME(r22),
+	REG_OFFSET_NAME(r23),
+	REG_OFFSET_NAME(r24),
+	REG_OFFSET_NAME(r25),
+	REG_OFFSET_NAME(r26),
+	REG_OFFSET_NAME(r27),
+	REG_OFFSET_NAME(r28),
+	REG_OFFSET_NAME(hae),
+	REG_OFFSET_NAME(trap_a0),
+	REG_OFFSET_NAME(trap_a1),
+	REG_OFFSET_NAME(trap_a2),
+	REG_OFFSET_NAME(ps),
+	REG_OFFSET_NAME(pc),
+	REG_OFFSET_NAME(gp),
+	REG_OFFSET_NAME(r16),
+	REG_OFFSET_NAME(r17),
+	REG_OFFSET_NAME(r18),
 	REG_OFFSET_END,
 };
+
 /**
  * regs_query_register_offset() - query register offset from its name
  * @name:       the name of a register
