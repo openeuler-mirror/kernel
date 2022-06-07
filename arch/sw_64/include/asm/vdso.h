@@ -41,8 +41,8 @@
 struct vdso_data {
 	u64 xtime_sec;
 	u64 xtime_nsec;
-	u32 wall_to_mono_sec;
-	u32 wall_to_mono_nsec;
+	u64 wall_to_mono_sec;
+	u64 wall_to_mono_nsec;
 	u32 cs_shift;
 	u32 cs_mult;
 	u64 cs_cycle_last;
