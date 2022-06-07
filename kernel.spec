@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2205.6.0
+%global hulkrelease 2206.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0152
+Release: %{hulkrelease}.0153
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,89 @@ fi
 %endif
 
 %changelog
+
+* Mon Jun 06 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2206.1.0.0153
+- ping: fix address binding wrt vrf
+- tcp: resalt the secret every 10 seconds
+- netlink: do not reset transport header in netlink_recvmsg()
+- ipv4: drop dst in multicast routing path
+- net: Fix features skip in for_each_netdev_feature()
+- VFS: Fix memory leak caused by concurrently mounting fs with subtype
+- mm: userfaultfd: fix missing cache flush in mcopy_atomic_pte() and __mcopy_atomic()
+- mm: hugetlb: fix missing cache flush in copy_huge_page_from_user()
+- dm: interlock pending dm_io and dm_wait_for_bios_completion
+- dm: fix mempool NULL pointer race when completing IO
+- tcp: make sure treq->af_specific is initialized
+- net: igmp: respect RCU rules in ip_mc_source() and ip_mc_msfilter()
+- x86: __memcpy_flushcache: fix wrong alignment if size > 2^32
+- tcp: fix potential xmit stalls caused by TCP_NOTSENT_LOWAT
+- ip_gre: Make o_seqno start from 0 in native mode
+- tcp: md5: incorrect tcp_header_len for incoming connections
+- mtd: rawnand: Fix return value check of wait_for_completion_timeout
+- mtd: rawnand: fix ecc parameters for mt7622
+- hex2bin: fix access beyond string end
+- serial: 8250: Correct the clock for EndRun PTP/1588 PCIe device
+- serial: 8250: Also set sticky MCR bits in console restoration
+- ext4: force overhead calculation if the s_overhead_cluster makes no sense
+- ext4: fix overhead calculation to account for the reserved gdt blocks
+- ext4: limit length to bitmap_maxbytes - blocksize in punch_hole
+- arm_pmu: Validate single/group leader events
+- netlink: reset network and mac headers in netlink_dump()
+- net/packet: fix packet_sock xmit return value checking
+- mm: page_alloc: fix building error on -Werror=array-compare
+- etherdevice: Adjust ether_addr* prototypes to silence -Wstringop-overead
+- smp: Fix offline cpu check in flush_smp_call_function_queue()
+- ipv6: fix panic when forwarding a pkt with no in6 dev
+- mm: kmemleak: take a full lowmem check in kmemleak_*_phys()
+- mm, page_alloc: fix build_zonerefs_node()
+- cifs: potential buffer overflow in handling symlinks
+- veth: Ensure eth header is in skb's linear part
+- mm/sparsemem: fix 'mem_section' will never be NULL gcc 12 warning
+- mm: don't skip swap entry even if zap_details specified
+- irqchip/gic-v3: Fix GICR_CTLR.RWP polling
+- mm/mempolicy: fix mpol_new leak in shared_policy_replace
+- mmmremap.c: avoid pointless invalidate_range_start/end on mremap(old_size=0)
+- mm: fix race between MADV_FREE reclaim and blkdev direct IO read
+- NFS: swap-out must always use STABLE writes.
+- NFS: swap IO handling is slightly different for O_DIRECT IO
+- SUNRPC/call_alloc: async tasks mustn't block waiting for memory
+- NFSv4: Protect the state recovery thread against direct reclaim
+- macvtap: advertise link netns via netlink
+- dm ioctl: prevent potential spectre v1 gadget
+- ipv4: Invalidate neighbour for broadcast address upon address addition
+- mm/memcontrol: return 1 from cgroup.memory __setup() handler
+- ACPI: CPPC: Avoid out of bounds access when parsing _CPC data
+- ext4: don't BUG if someone dirty pages without asking ext4 first
+- PM: core: keep irq flags in device_pm_check_callbacks()
+- ACPI/APEI: Limit printable size of BERT table data
+- ACPICA: Avoid walking the ACPI Namespace if it is not there
+- netfilter: nf_conntrack_tcp: preserve liberal flag in tcp options
+- NFS: remove unneeded check in decode_devicenotify_args()
+- serial: 8250: Fix race condition in RTS-after-send handling
+- serial: 8250_mid: Balance reference count for PCI DMA device
+- tcp: ensure PMTU updates are processed during fastopen
+- af_netlink: Fix shift out of bounds in group mask calculation
+- mtd: rawnand: atmel: fix refcount issue in atmel_nand_controller_init
+- mtd: onenand: Check for error irq
+- printk: fix return value of printk.devkmsg __setup handler
+- perf/core: Fix address filter parser for multiple filters
+- ACPI: APEI: fix return value of __setup handlers
+- crypto: authenc - Fix sleep in atomic context in decrypt_tail
+- PCI: pciehp: Clear cmd_busy bit in polling mode
+- ACPI: properties: Consistently return -ENOENT if there are no more references
+- mm,hwpoison: unmap poisoned page before invalidation
+- scsi: libsas: Fix sas_ata_qc_issue() handling of NCQ NON DATA commands
+- mempolicy: mbind_range() set_policy() after vma_merge()
+- mm: invalidate hwpoison page cache page in fault path
+- mm/pages_alloc.c: don't create ZONE_MOVABLE beyond the end of a node
+- NFSD: prevent integer overflow on 32 bit systems
+- SUNRPC: avoid race between mod_timer() and del_timer_sync()
+- xfrm: fix tunnel model fragmentation behavior
+- sched/fair: Fix enqueue_task_fair() warning some more
+- sched/fair: Fix enqueue_task_fair warning
+- floppy: disable FDRAWCMD by default
+- perf: Fix sys_perf_event_open() race against self
+- KVM: x86/mmu: fix NULL pointer dereference on guest INVPCID
 
 * Tue May 31 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2205.6.0.0152
 - net: hns3: update hns3 version to 22.5.1
