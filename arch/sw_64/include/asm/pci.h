@@ -15,7 +15,6 @@
 struct pci_dev;
 struct pci_bus;
 struct resource;
-struct pci_iommu_arena;
 struct sunway_iommu;
 struct page;
 
@@ -45,10 +44,6 @@ struct pci_controller {
 	/* For compatibility with current (as of July 2003) pciutils
 	   and XFree86. Eventually will be removed. */
 	unsigned int need_domain_info;
-
-	struct pci_iommu_arena *sg_pci;
-	struct pci_iommu_arena *sg_isa;
-
 	bool iommu_enable;
 	struct sunway_iommu *pci_iommu;
 	int first_busno;
@@ -66,21 +61,16 @@ struct pci_controller {
 #define PCIBIOS_MIN_IO		0
 #define PCIBIOS_MIN_MEM		0
 
-extern void pcibios_set_master(struct pci_dev *dev);
+/* generic pci stuff */
+#include <asm-generic/pci.h>
+
 extern void __init sw64_init_pci(void);
 extern void __init sw64_device_interrupt(unsigned long vector);
 extern void __init sw64_init_irq(void);
 extern void __init sw64_init_arch(void);
-extern unsigned char sw64_swizzle(struct pci_dev *dev, u8 *pinp);
 extern struct pci_ops sw64_pci_ops;
 extern int sw64_map_irq(const struct pci_dev *dev, u8 slot, u8 pin);
 extern struct pci_controller *hose_head;
-
-/* TODO: integrate with include/asm-generic/pci.h ? */
-static inline int pci_get_legacy_ide_irq(struct pci_dev *dev, int channel)
-{
-	return channel ? 15 : 14;
-}
 
 #ifdef CONFIG_SUNWAY_IOMMU
 extern struct syscore_ops iommu_cpu_syscore_ops;
