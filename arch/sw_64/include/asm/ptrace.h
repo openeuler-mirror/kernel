@@ -3,7 +3,11 @@
 #define _ASM_SW64_PTRACE_H
 
 #include <uapi/asm/ptrace.h>
-
+#include <linux/sched/task_stack.h>
+#include <asm/hmcall.h>
+#include <asm/thread_info.h>
+#include <asm/processor.h>
+#include <asm/page.h>
 
 #define arch_has_single_step()		(1)
 #define user_mode(regs) (((regs)->ps & 8) != 0)
