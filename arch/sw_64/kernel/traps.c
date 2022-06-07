@@ -180,7 +180,7 @@ do_entArith(unsigned long summary, unsigned long write_mask,
 	}
 	die_if_kernel("Arithmetic fault", regs, 0, NULL);
 
-	send_sig_fault(SIGFPE, si_code, (void __user *) regs->pc, 0, current);
+	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc, 0);
 }
 
 asmlinkage void
@@ -213,13 +213,11 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 		if (ptrace_cancel_bpt(current))
 			regs->pc -= 4;	/* make pc point to former bpt */
 
-		send_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *)regs->pc, 0,
-				current);
+		force_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *)regs->pc, 0);
 		return;
 
 	case 1: /* bugcheck */
-		send_sig_fault(SIGTRAP, TRAP_UNK, (void __user *)regs->pc, 0,
-				current);
+		force_sig_fault(SIGTRAP, TRAP_UNK, (void __user *)regs->pc, 0);
 		return;
 
 	case 2: /* gentrap */
@@ -280,8 +278,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 			break;
 		}
 
-		send_sig_fault(signo, code, (void __user *)regs->pc, 0,
-				current);
+		force_sig_fault(signo, code, (void __user *)regs->pc, regs->r16);
 		return;
 
 	case 4: /* opDEC */
@@ -324,8 +321,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 		break;
 	}
 
-	send_sig_fault(SIGILL, ILL_ILLOPC, (void __user *)regs->pc, 0,
-			current);
+	force_sig_fault(SIGILL, ILL_ILLOPC, (void __user *)regs->pc, 0);
 }
 
 /*
@@ -1601,12 +1597,12 @@ give_sigsegv:
 			si_code = SEGV_MAPERR;
 		up_read(&mm->mmap_lock);
 	}
-	send_sig_fault(SIGBUS, si_code, va, 0, current);
+	force_sig_fault(SIGSEGV, si_code, va, 0);
 	return;
 
 give_sigbus:
 	regs->pc -= 4;
-	send_sig_fault(SIGBUS, BUS_ADRALN, va, 0, current);
+	force_sig_fault(SIGBUS, BUS_ADRALN, va, 0);
 }
 
 void
