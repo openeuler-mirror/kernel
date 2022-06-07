@@ -133,6 +133,9 @@ static struct resource bss_resource = {
 struct cpuinfo_sw64 cpu_data[NR_CPUS];
 EXPORT_SYMBOL(cpu_data);
 
+DEFINE_STATIC_KEY_TRUE(run_mode_host_key);
+DEFINE_STATIC_KEY_FALSE(run_mode_guest_key);
+DEFINE_STATIC_KEY_FALSE(run_mode_emul_key);
 struct cpu_desc_t cpu_desc;
 struct socket_desc_t socket_desc[MAX_NUMSOCKETS];
 int memmap_nr;
@@ -639,10 +642,18 @@ static void __init setup_cpu_info(void)
 	cpu_desc.arch_rev = CPUID_ARCH_REV(val);
 	cpu_desc.pa_bits = CPUID_PA_BITS(val);
 	cpu_desc.va_bits = CPUID_VA_BITS(val);
-	cpu_desc.run_mode = HOST_MODE;
 
-	if (*(unsigned long *)MMSIZE)
-		cpu_desc.run_mode = GUEST_MODE;
+	if (*(unsigned long *)MMSIZE) {
+		pr_info("run mode: guest\n");
+		static_branch_disable(&run_mode_host_key);
+		static_branch_enable(&run_mode_guest_key);
+		static_branch_disable(&run_mode_emul_key);
+	} else {
+		pr_info("run mode: host\n");
+		static_branch_enable(&run_mode_host_key);
+		static_branch_disable(&run_mode_guest_key);
+		static_branch_disable(&run_mode_emul_key);
+	}
 
 	for (i = 0; i < VENDOR_ID_MAX; i++) {
 		val = cpuid(GET_VENDOR_ID, i);
@@ -747,6 +758,7 @@ void __init sw64_kvm_reserve(void)
 void __init
 setup_arch(char **cmdline_p)
 {
+	jump_label_init();
 	setup_cpu_info();
 	sw64_chip->fixup();
 	sw64_chip_init->fixup();
@@ -754,7 +766,6 @@ setup_arch(char **cmdline_p)
 	show_socket_mem_layout();
 	sw64_chip_init->early_init.setup_core_start(&core_start);
 
-	jump_label_init();
 	setup_sched_clock();
 #ifdef CONFIG_GENERIC_SCHED_CLOCK
 	sw64_sched_clock_init();
