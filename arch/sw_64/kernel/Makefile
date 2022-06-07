@@ -15,7 +15,7 @@ endif
 
 obj-y    := entry.o traps.o process.o sys_sw64.o irq.o \
 	    irq_sw64.o signal.o setup.o ptrace.o time.o \
-	    systbls.o dup_print.o tc.o \
+	    systbls.o dup_print.o tc.o platform.o \
 	    insn.o early_init.o topology.o cacheinfo.o \
 	    vdso.o vdso/
 
@@ -44,6 +44,7 @@ endif
 
 # Core logic support
 obj-$(CONFIG_SW64)	+= core.o timer.o
+obj-$(CONFIG_SW64_CPUFREQ) += clock.o
 
 obj-$(CONFIG_CRASH_DUMP)    += crash_dump.o
 obj-$(CONFIG_KEXEC)		+= machine_kexec.o relocate_kernel.o

@@ -168,5 +168,6 @@ DECLARE_STATIC_KEY_FALSE(run_mode_emul_key);
 #define CACHE_INDEX_BITS_MASK	(0x3fUL << CACHE_INDEX_BITS_SHIFT)
 #define CACHE_INDEX_BITS(val)	\
 	(((val) & CACHE_INDEX_BITS_MASK) >> CACHE_INDEX_BITS_SHIFT)
+#define current_cpu_data cpu_data[smp_processor_id()]
 
 #endif /* HW_INIT_H */

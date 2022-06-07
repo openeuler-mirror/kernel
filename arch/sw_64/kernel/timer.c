@@ -87,6 +87,14 @@ static int timer_set_oneshot(struct clock_event_device *evt)
 	return 0;
 }
 
+void sw64_update_clockevents(unsigned long cpu, u32 freq)
+{
+	struct clock_event_device *swevt = &per_cpu(timer_events, cpu);
+
+	if (cpu == smp_processor_id())
+		clockevents_update_freq(swevt, freq);
+}
+
 /*
  * Setup the local timer for this CPU. Copy the initilized values
  * of the boot CPU and register the clock event in the framework.
