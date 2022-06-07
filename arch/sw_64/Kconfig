@@ -270,6 +270,13 @@ config SW64_CPUFREQ
         help
           Turns on the interface for SW64_CPU Frequency.
 
+config SW64_CPUAUTOPLUG
+	bool "sw64 CPU Autoplug interface"
+	depends on SW64_CPUFREQ
+	default y
+	help
+          Turns on the interface for SW64_CPU CPUAUTOPLUG.
+
 config CPU_FREQ_GOV_ATTR_SET
 	bool
 

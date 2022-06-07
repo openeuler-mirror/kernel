@@ -72,6 +72,8 @@ static int sw64_cpufreq_target(struct cpufreq_policy *policy,
 
 	freq = (get_cpu_freq() / 1000) * index / 48;
 
+	sw64_store_policy(policy);
+
 	/* setting the cpu frequency */
 	sw64_set_rate(-1, freq * 1000);
 
