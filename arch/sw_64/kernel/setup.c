@@ -383,7 +383,7 @@ void __init process_memmap(void)
 			} else {
 				pr_info("reserved memmap region [mem %#018llx-%#018llx]\n",
 						base, base + size - 1);
-				ret = memblock_remove(base, size);
+				ret = memblock_mark_nomap(base, size);
 				if (ret)
 					pr_err("reserve memmap region [mem %#018llx-%#018llx] failed\n",
 							base, base + size - 1);
@@ -399,7 +399,7 @@ void __init process_memmap(void)
 			} else {
 				pr_info("pci memmap region [mem %#018llx-%#018llx]\n",
 						base, base + size - 1);
-				ret = memblock_remove(base, size);
+				ret = memblock_mark_nomap(base, size);
 				if (ret)
 					pr_err("reserve memmap region [mem %#018llx-%#018llx] failed\n",
 							base, base + size - 1);
@@ -496,7 +496,6 @@ insert_ram_resource(u64 start, u64 end, bool reserved)
 
 static int __init request_standard_resources(void)
 {
-	int i;
 	struct memblock_region *mblk;
 
 	extern char _text[], _etext[];
@@ -504,17 +503,12 @@ static int __init request_standard_resources(void)
 	extern char __bss_start[], __bss_stop[];
 
 	for_each_mem_region(mblk) {
-		insert_ram_resource(mblk->base, mblk->base + mblk->size - 1, 0);
-	}
-
-	for (i = 0; i < memmap_nr; i++) {
-		switch (memmap_map[i].type) {
-		case memmap_crashkernel:
-			break;
-		default:
-			insert_ram_resource(memmap_map[i].addr,
-					memmap_map[i].addr + memmap_map[i].size - 1, 1);
-		}
+		if (!memblock_is_nomap(mblk))
+			insert_ram_resource(mblk->base,
+					mblk->base + mblk->size - 1, 0);
+		else
+			insert_ram_resource(mblk->base,
+					mblk->base + mblk->size - 1, 1);
 	}
 
 	code_resource.start = __pa_symbol(_text);
