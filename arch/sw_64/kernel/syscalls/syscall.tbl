@@ -290,11 +290,11 @@
 280	common	fspick				sys_fspick
 281	common	pidfd_open			sys_pidfd_open
 282	common	clone3				sys_clone3
-283	common  close_range			sys_close_range
-284	common  openat2				sys_openat2
-285	common  pidfd_getfd			sys_pidfd_getfd
-286	common  faccessat2			sys_faccessat2
-287	common  process_madvise			sys_process_madvise
+283	common	close_range			sys_close_range
+284	common	openat2				sys_openat2
+285	common	pidfd_getfd			sys_pidfd_getfd
+286	common	faccessat2			sys_faccessat2
+287	common	process_madvise			sys_process_madvise
 #288 is unused
 #289 is unused
 #290 is unused
