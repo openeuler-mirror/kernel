@@ -103,6 +103,7 @@ config SW64
 	select SET_FS
 	select PCI_MSI_ARCH_FALLBACKS
 	select DMA_OPS if PCI
+	select HAVE_REGS_AND_STACK_ACCESS_API
 
 config LOCKDEP_SUPPORT
 	def_bool y
