@@ -116,7 +116,7 @@ static int chip3_get_cpu_nums(void)
 
 static unsigned long chip3_get_vt_node_mem(int nodeid)
 {
-	return *(unsigned long *)MMSIZE;
+	return *(unsigned long *)MMSIZE & MMSIZE_MASK;
 }
 
 static unsigned long chip3_get_node_mem(int nodeid)

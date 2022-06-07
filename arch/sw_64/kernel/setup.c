@@ -74,6 +74,7 @@
 #define DBGDCONT(args...)
 #endif
 
+
 DEFINE_PER_CPU(unsigned long, hard_node_id) = { 0 };
 
 #if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
@@ -644,10 +645,17 @@ static void __init setup_cpu_info(void)
 	cpu_desc.va_bits = CPUID_VA_BITS(val);
 
 	if (*(unsigned long *)MMSIZE) {
-		pr_info("run mode: guest\n");
 		static_branch_disable(&run_mode_host_key);
-		static_branch_enable(&run_mode_guest_key);
-		static_branch_disable(&run_mode_emul_key);
+		if (*(unsigned long *)MMSIZE & EMUL_FLAG) {
+			pr_info("run mode: emul\n");
+			static_branch_disable(&run_mode_guest_key);
+			static_branch_enable(&run_mode_emul_key);
+
+		} else {
+			pr_info("run mode: guest\n");
+			static_branch_enable(&run_mode_guest_key);
+			static_branch_disable(&run_mode_emul_key);
+		}
 	} else {
 		pr_info("run mode: host\n");
 		static_branch_enable(&run_mode_host_key);
