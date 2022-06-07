@@ -22,26 +22,8 @@ void sw64_irq_noop(struct irq_data *d)
 {
 }
 
-void destroy_irq(unsigned int irq)
-{
-#if 0
-	int pos;
-
-	irq_init_desc(irq);
-
-	if (irq < RC1_FIRST_MSI_VECTOR) {
-		pos = irq - RC0_FIRST_MSI_VECTOR;
-		clear_bit(pos, msi0_irq_in_use);
-	} else {
-		pos = irq - RC1_FIRST_MSI_VECTOR;
-		clear_bit(pos, msi1_irq_in_use);
-	}
-#endif
-}
-
 void arch_teardown_msi_irq(unsigned int irq)
 {
-	destroy_irq(irq);
 }
 
 static int __init msi_init(void)
