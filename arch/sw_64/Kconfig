@@ -279,8 +279,7 @@ config PCI
 	  VESA. If you have PCI, say Y, otherwise N.
 
 config PCI_DOMAINS
-	bool
-	default y
+	def_bool PCI
 
 config PCI_SYSCALL
 	def_bool PCI
