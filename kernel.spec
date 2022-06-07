@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       96
+%global devel_release       97
 %global maintenance_release .0.0
-%global pkg_release         .48
+%global pkg_release         .49
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,181 @@ fi
 %endif
 
 %changelog
+* Tue Jun 07 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-97.0.0.49
+- ptrace: Check PTRACE_O_SUSPEND_SECCOMP permission on PTRACE_SEIZE
+- proc: Fix a dentry lock race between release_task and lookup
+- x86/sgx: Fix race between reclaimer and page fault handler
+- x86/sgx: Mark PCMD page as dirty when modifying contents
+- x86/sgx: Free backing memory after faulting the enclave page
+- memcg: introduce per-memcg reclaim interface for cgroup v1
+- selftests: cgroup: add a selftest for memory.reclaim
+- selftests: cgroup: fix alloc_anon_noexit() instantly freeing memory
+- selftests: cgroup: return -errno from cg_read()/cg_write() on failure
+- memcg: introduce per-memcg reclaim interface
+- KVM: SEV: add cache flush to solve SEV cache incoherency issues
+- mm/sharepool: Fix sharepool node id invalid when using sp_alloc
+- share_pool: Fix ABBA deadlock
+- sharepool: fix hisi oom deadlock
+- floppy: disable FDRAWCMD by default
+- xhci: Fix a logic issue when display Zhaoxin XHCI root hub speed
+- sw64: optimize simd version of memcpy and memset
+- sw64: fix sendfile system call
+- sw64: fix the number of aux entries in ARCH_DLINFO
+- sw64: pcie: enable PME and AER support
+- sw64: unify 32-bit MEMIO address of host and guest
+- hwmon: add support for sw64 temperature sensor
+- sw64: pci: align the address of mmio resource to PAGE_SIZE
+- sw64: signal: save/restore fpregs with copy user
+- sw64: push and pop kernel stack with ldi instruction
+- ipmi: add ipmi driver support
+- sw64: add pvt device to chip3.dts
+- hwmon: add voltage sensor support for sw64
+- sw64: remap PA with |= in early_ioremap
+- sw64: vdso: fix CFI directives for fpregs in vrt_sigreturn
+- sw64: vdso: fix backtrace of vrt_sigreturn
+- sw64: kvm: simplify the code
+- sw64: force signal and fault for traps and debugging
+- sw64: fix compile error for DISCONTIGMEM=y
+- sw64: add old sigprocmask back for compatibility
+- sw64: add dynamic turning on/off cores support
+- sw64: add dynamic frequency scaling support
+- sw64: fix ip checksum calculation
+- sw64: remove unnecessary parameter in REG_OFFSET_NAME
+- sw64: kvm: fix bad page state setting outside of kvm memory pool
+- sw64: fix setup_rt_frame for non SA_SIGINFO
+- sw64: do some cleanups for rt_sigframe
+- sw64: kvm: handle ldl_u and stl_u when exit mmio
+- sw64: fix some compile errors
+- sw64: add missing global __constant_c_memset
+- sw64: remove unnecessary include headers
+- sw64: increase position index in c_next for cpuinfo
+- sw64: Kconfig: remove dependence on ARCH_SUPPORTS_ACPI
+- sw64: Kconfig: remove dependence on !PREEMPT
+- sw64: clean up out-of-date selected options
+- sw64: add kbuild defconfig rule
+- sw64: ptrace: clean up debug codes
+- sw64: add ARCH_HAS_PTE_SPECIAL support
+- sw64: kvm: remap pages of guest by vm_insert_page()
+- sw64: clean up a.out and ECOFF binary related headers
+- sw64: switch to old-style semctl/shmctl syscalls
+- sw64: define NR_SYSCALLS as generated __NR_syscalls
+- sw64: add SO_RCVTIMEO/ SO_SNDTIMEO socket options
+- sw64: dts: rename spi flash partition to fix warning
+- sw64: fix ex_table entries from misalignment handlers
+- sw64: radeon: add a force flush to delay work when radeon uvd suspend
+- sw64: add set time support for hypervisor based rtc
+- sw64: add regs and stack access APIs to support kprobe events
+- sw64: unify access to LONGTIME for guest and emulator
+- sw64: enable more than 32 CPUs for guest
+- sw64: fix SPDX license identifier in uapi headers
+- sw64: add required include headers to ptrace.h
+- sw64: fix the VDSO symbol generation for nm
+- sw64: add clone3 syscall support
+- sw64: add missing pkey syscall numbers
+- sw64: reformat syscall.tbl
+- sw64: fix printk method for guest os
+- sw64: remove unused a.out.h
+- sw64: switch GUP to the generic get_user_pages_fast() implementation
+- sw64: kvm: fix bug when open file with the O_DIRECT flag
+- sw64: fix compile error for CONFIG_PCI=n
+- sw64: rename kvm_mem variables
+- sw64: fix coding style problems
+- sw64: kvm: remove MAX_VPN
+- sw64: clean up useless #if 0 and #if 1
+- sw64: fix coding style problems
+- sw64: remove MAX_ASN
+- sw64: add support for emulator running mode
+- sw64: optimize ip checksum calculation
+- sw64: use jump label for running modes
+- sw64: mm: mark pci and memmap region as nomap
+- sw64: fix the value of QEMU_PRINTF_BUFF_BASE
+- sw64: clean up some useless codes
+- sw64: numa: switch to arch node_distance
+- sw64: fix all compile warnings
+- sw64: remove CONFIG_USE_PERCPU_NUMA_NODE_ID=n code
+- sw64: simplify cpumask_of_node
+- sw64: modify tc_sched_clock debugfs file
+- sw64: remove redundant Kconfig source
+- sw64: switch to generic pcibios_set_master and pci_common_swizzle
+- sw64: print correct initrd address
+- sw64: mm: use memblock to find the end of memory
+- sw64: mm: warn overlapped memmap and DMA region
+- sw64: pci: remove some useless code
+- sw64: mm: reorder memblock_init process
+- sw64: vdso: fix time calculation
+- sw64: vdso: change vdso version
+- sw64: vdso: add automatic syscall fallback
+- sw64: iommu: fix 32-bit devices dma ops
+- sw64: re-implement sw64_dma_direct_ops according upstream
+- config: add initial openeuler_defconfig for sw64
+- watch_queue: Fix filter limit check
+- ext4: add check to prevent attempting to resize an fs with sparse_super2
+- x86/traps: Mark do_int3() NOKPROBE_SYMBOL
+- x86/boot: Add setup_indirect support in early_memremap_is_setup_data()
+- x86/boot: Fix memremap of setup_indirect structures
+- watch_queue: Make comment about setting ->defunct more accurate
+- watch_queue: Fix lack of barrier/sync/lock between post and read
+- watch_queue: Free the alloc bitmap when the watch_queue is torn down
+- watch_queue: Fix the alloc bitmap size to reflect notes allocated
+- watch_queue: Fix to always request a pow-of-2 pipe ring size
+- watch_queue: Fix to release page in ->release()
+- watch_queue, pipe: Free watchqueue state after clearing pipe ring
+- virtio: acknowledge all features before access
+- virtio: unexport virtio_finalize_features
+- arm64: dts: marvell: armada-37xx: Remap IO space to bus address 0x0
+- riscv: Fix auipc+jalr relocation range checks
+- mmc: meson: Fix usage of meson_mmc_post_req()
+- net: macb: Fix lost RX packet wakeup race in NAPI receive
+- staging: gdm724x: fix use after free in gdm_lte_rx()
+- staging: rtl8723bs: Fix access-point mode deadlock
+- selftests/memfd: clean up mapping in mfd_fail_write
+- selftest/vm: fix map_fixed_noreplace test failure
+- tracing: Ensure trace buffer is at least 4096 bytes large
+- ipv6: prevent a possible race condition with lifetimes
+- Revert "xen-netback: Check for hotplug-status existence before watching"
+- Revert "xen-netback: remove 'hotplug-status' once it has served its purpose"
+- gpio: Return EPROBE_DEFER if gc->to_irq is NULL
+- hwmon: (pmbus) Clear pmbus fault/warning bits after read
+- net-sysfs: add check for netdevice being present to speed_show
+- spi: rockchip: terminate dma transmission when slave abort
+- spi: rockchip: Fix error in getting num-cs property
+- selftests/bpf: Add test for bpf_timer overwriting crash
+- net: bcmgenet: Don't claim WOL when its not available
+- sctp: fix kernel-infoleak for SCTP sockets
+- net: phy: DP83822: clear MISR2 register to disable interrupts
+- gianfar: ethtool: Fix refcount leak in gfar_get_ts_info
+- gpio: ts4900: Do not set DAT and OE together
+- selftests: pmtu.sh: Kill tcpdump processes launched by subshell.
+- NFC: port100: fix use-after-free in port100_send_complete
+- net/mlx5e: Lag, Only handle events from highest priority multipath entry
+- net/mlx5: Fix a race on command flush flow
+- net/mlx5: Fix size field in bufferx_reg struct
+- net: ethernet: lpc_eth: Handle error for clk_enable
+- net: ethernet: ti: cpts: Handle error for clk_enable
+- tipc: fix incorrect order of state message data sanity check
+- ethernet: Fix error handling in xemaclite_of_probe
+- ice: Fix curr_link_speed advertised speed
+- ice: Rename a couple of variables
+- ice: Remove unnecessary checker loop
+- ice: Align macro names to the specification
+- ice: stop disabling VFs due to PF error responses
+- i40e: stop disabling VFs due to PF error responses
+- ARM: dts: aspeed: Fix AST2600 quad spi group
+- net: dsa: mt7530: fix incorrect test in mt753x_phylink_validate()
+- drm/sun4i: mixer: Fix P010 and P210 format numbers
+- qed: return status of qed_iov_get_link
+- esp: Fix BEET mode inter address family tunneling on GSO
+- net: qlogic: check the return value of dma_alloc_coherent() in qed_vf_hw_prepare()
+- isdn: hfcpci: check the return value of dma_set_mask() in setup_hw()
+- virtio-blk: Don't use MAX_DISCARD_SEGMENTS if max_discard_seg is zero
+- mISDN: Fix memory leak in dsp_pipeline_build()
+- mISDN: Remove obsolete PIPELINE_DEBUG debugging information
+- tipc: fix kernel panic when enabling bearer
+- arm64: dts: armada-3720-turris-mox: Add missing ethernet0 alias
+- HID: vivaldi: fix sysfs attributes leak
+- clk: qcom: gdsc: Add support to update GDSC transition delay
+- ARM: boot: dts: bcm2711: Fix HVS register range
+
 * Tue May 31 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-96.0.0.48
 - net, xdp: Update pkt_type if generic XDP changes unicast MAC
 - KVM: x86/mmu: fix NULL pointer dereference on guest INVPCID
