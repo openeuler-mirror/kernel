@@ -1053,6 +1053,8 @@ static int __init sw64_kvm_pool_init(void)
 	while (page_ref_count(p) == 0 &&
 			(unsigned long)p <= (unsigned long)end_page) {
 		set_page_count(p, 1);
+		page_mapcount_reset(p);
+		SetPageReserved(p);
 		p++;
 	}
 
