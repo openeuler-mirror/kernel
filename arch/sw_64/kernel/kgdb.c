@@ -139,12 +139,12 @@ void kgdb_arch_set_pc(struct pt_regs *regs, unsigned long pc)
 	pr_info("AFTER SET PC IS %lx\n", instruction_pointer(regs));
 }
 
-static void kgdb_call_nmi_hook(void *ignored)
+void kgdb_call_nmi_hook(void *ignored)
 {
 	kgdb_nmicallback(raw_smp_processor_id(), NULL);
 }
 
-void kgdb_roundup_cpus(unsigned long flags)
+void kgdb_roundup_cpus(void)
 {
 	local_irq_enable();
 	smp_call_function(kgdb_call_nmi_hook, NULL, 0);
@@ -228,6 +228,6 @@ void kgdb_arch_exit(void)
  * sw64 instructions are always in LE.
  * Break instruction is encoded in LE format
  */
-struct kgdb_arch arch_kgdb_ops = {
+const struct kgdb_arch arch_kgdb_ops = {
 	.gdb_bpt_instr = {0x80, 00, 00, 00}
 };

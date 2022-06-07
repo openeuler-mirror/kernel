@@ -147,7 +147,8 @@ static void __init kexec_control_page_init(void)
 {
 	phys_addr_t addr;
 
-	addr = memblock_alloc_base(KEXEC_CONTROL_PAGE_SIZE, PAGE_SIZE, KTEXT_MAX);
+	addr = memblock_phys_alloc_range(KEXEC_CONTROL_PAGE_SIZE, PAGE_SIZE,
+					0, KTEXT_MAX);
 	kexec_control_page = (void *)(__START_KERNEL_map + addr);
 }
 
