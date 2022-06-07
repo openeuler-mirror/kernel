@@ -1026,8 +1026,7 @@ static int __init sw64_kvm_pool_init(void)
 	end_page  = pfn_to_page((kvm_mem_base + kvm_mem_size - 1) >> PAGE_SHIFT);
 
 	p = base_page;
-	while (page_ref_count(p) == 0 &&
-			(unsigned long)p <= (unsigned long)end_page) {
+	while (p <= end_page && page_ref_count(p) == 0) {
 		set_page_count(p, 1);
 		page_mapcount_reset(p);
 		SetPageReserved(p);
