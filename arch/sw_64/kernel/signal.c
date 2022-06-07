@@ -240,7 +240,8 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	if (!access_ok(frame, sizeof(*frame)))
 		return -EFAULT;
 
-	err |= copy_siginfo_to_user(&frame->info, &ksig->info);
+	if (ksig->ka.sa.sa_flags & SA_SIGINFO)
+		err |= copy_siginfo_to_user(&frame->info, &ksig->info);
 
 	/* Create the ucontext.  */
 	err |= __put_user(0, &frame->uc.uc_flags);
@@ -262,8 +263,15 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	regs->r26 = r26;
 	regs->r27 = regs->pc = (unsigned long) ksig->ka.sa.sa_handler;
 	regs->r16 = ksig->sig;                    /* a0: signal number */
-	regs->r17 = (unsigned long) &frame->info; /* a1: siginfo pointer */
-	regs->r18 = (unsigned long) &frame->uc;   /* a2: ucontext pointer */
+	if (ksig->ka.sa.sa_flags & SA_SIGINFO) {
+		/* a1: siginfo pointer, a2: ucontext pointer */
+		regs->r17 = (unsigned long) &frame->info;
+		regs->r18 = (unsigned long) &frame->uc;
+	} else {
+		/* a1: exception code, a2: sigcontext pointer */
+		regs->r17 = 0;
+		regs->r18 = (unsigned long) &frame->uc.uc_mcontext;
+	}
 	wrusp((unsigned long) frame);
 
 #if DEBUG_SIG
