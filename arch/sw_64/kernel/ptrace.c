@@ -22,6 +22,7 @@
 #include <asm/pgtable.h>
 #include <asm/fpu.h>
 #include <asm/core.h>
+#include <asm/reg.h>
 #include "proto.h"
 
 #define CREATE_TRACE_POINTS
