@@ -105,6 +105,14 @@
 			};
 		};
 
+		pvt: pvt@0x8030 {
+			#address-cells = <2>;
+			#size-cells = <2>;
+			compatible = "sw64,pvt-vol";
+			reg = <0x8030 0x0 0x0 0x7c00>;
+			status = "okay";
+			};
+
 		spi: spi@0x8032 {
 			#address-cells = <2>;
 			#size-cells = <2>;
