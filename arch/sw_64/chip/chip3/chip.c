@@ -538,10 +538,7 @@ static void chip3_hose_init(struct pci_controller *hose)
 	hose->ep_config_space_base = PAGE_OFFSET | pci_io_base | PCI_EP_CFG;
 	hose->rc_config_space_base = PAGE_OFFSET | pci_io_base | PCI_RC_CFG;
 
-	if (is_in_host())
-		hose->mem_space->start = pci_io_base + PCI_32BIT_MEMIO;
-	else
-		hose->mem_space->start = pci_io_base + PCI_32BIT_VT_MEMIO;
+	hose->mem_space->start = pci_io_base + PCI_32BIT_MEMIO;
 	hose->mem_space->end = hose->mem_space->start + PCI_32BIT_MEMIO_SIZE - 1;
 	hose->mem_space->name = "pci memory space";
 	hose->mem_space->flags = IORESOURCE_MEM;

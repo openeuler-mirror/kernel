@@ -233,13 +233,11 @@ void __init common_init_pci(void)
 		hose->busn_space->start = last_bus;
 		init_busnr = (0xff << 16) + ((last_bus + 1) << 8) + (last_bus);
 		write_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS, init_busnr);
-		if (is_in_host()) {
-			offset = hose->mem_space->start - PCI_32BIT_MEMIO;
+		offset = hose->mem_space->start - PCI_32BIT_MEMIO;
+		if (is_in_host())
 			hose->first_busno = last_bus + 1;
-		} else {
-			offset = hose->mem_space->start - PCI_32BIT_VT_MEMIO;
+		else
 			hose->first_busno = last_bus;
-		}
 		pci_add_resource_offset(&bridge->windows, hose->mem_space, offset);
 		pci_add_resource_offset(&bridge->windows, hose->io_space, hose->io_space->start);
 		pci_add_resource_offset(&bridge->windows, hose->pre_mem_space, 0);
