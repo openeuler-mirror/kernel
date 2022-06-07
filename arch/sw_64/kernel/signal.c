@@ -65,8 +65,7 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 {
 	unsigned long usp;
 	struct switch_stack *sw = (struct switch_stack *)regs - 1;
-	unsigned long *ctx_fp = (unsigned long *)&current->thread.ctx_fp;
-	long i, err = __get_user(regs->pc, &sc->sc_pc);
+	long err = __get_user(regs->pc, &sc->sc_pc);
 
 	current->restart_block.fn = do_no_restart_syscall;
 
@@ -105,8 +104,8 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 	err |= __get_user(usp, sc->sc_regs+30);
 	wrusp(usp);
 	/* simd-fp */
-	for (i = 0; i < 31 * 4; i++)
-		err |= __get_user(ctx_fp[i], sc->sc_fpregs + i);
+	err |= __copy_from_user(&current->thread.ctx_fp,
+			&sc->sc_fpregs, sizeof(struct context_fpregs));
 	err |= __get_user(current->thread.fpcr, &sc->sc_fpcr);
 
 	return err;
@@ -193,8 +192,7 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 		 unsigned long mask, unsigned long sp)
 {
 	struct switch_stack *sw = (struct switch_stack *)regs - 1;
-	unsigned long *ctx_fp = (unsigned long *)&current->thread.ctx_fp;
-	long i, err = 0;
+	long err = 0;
 
 	err |= __put_user(on_sig_stack((unsigned long)sc), &sc->sc_onstack);
 	err |= __put_user(mask, &sc->sc_mask);
@@ -234,8 +232,8 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 	err |= __put_user(sp, sc->sc_regs+30);
 	err |= __put_user(0, sc->sc_regs+31);
 	/* simd-fp */
-	for (i = 0; i < 31 * 4; i++)
-		err |= __put_user(ctx_fp[i], sc->sc_fpregs + i);
+	err |= __copy_to_user(&sc->sc_fpregs,
+			&current->thread.ctx_fp, sizeof(struct context_fpregs));
 	err |= __put_user(current->thread.fpcr, &sc->sc_fpcr);
 
 	err |= __put_user(regs->trap_a0, &sc->sc_traparg_a0);
