@@ -22,7 +22,7 @@
  */
 
 #define SAVE_ALL				\
-	subl	$sp, PT_REGS_PS, $sp;		\
+	ldi	$sp, -PT_REGS_PS($sp);		\
 	stl	$0, PT_REGS_R0($sp);		\
 	stl	$1, PT_REGS_R1($sp);		\
 	stl	$2, PT_REGS_R2($sp);		\
@@ -66,7 +66,7 @@
 	ldl	$26, PT_REGS_R26($sp);		\
 	ldl	$27, PT_REGS_R27($sp);		\
 	ldl	$28, PT_REGS_R28($sp);		\
-	addl	$sp, PT_REGS_PS, $sp
+	ldi	$sp, PT_REGS_PS($sp)
 
 /*
  * Non-syscall kernel entry points.
