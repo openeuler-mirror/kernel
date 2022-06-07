@@ -237,8 +237,8 @@ static int __init sched_clock_debug_init(void)
 	if (!sw64_debugfs_dir)
 		return -ENODEV;
 
-	sched_clock_status = debugfs_create_file_unsafe("use_tc_as_sched_clock",
-			0666, sw64_debugfs_dir, NULL,
+	sched_clock_status = debugfs_create_file("tc_sched_clock",
+			0644, sw64_debugfs_dir, NULL,
 			&sched_clock_status_fops);
 
 	if (!sched_clock_status)
