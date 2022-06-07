@@ -1017,7 +1017,7 @@ static int __init sw64_kvm_pool_init(void)
 	gen_pool_set_algo(sw64_kvm_pool, gen_pool_best_fit, NULL);
 
 	base_page = pfn_to_page(kvm_mem_base >> PAGE_SHIFT);
-	end_page  = pfn_to_page((kvm_mem_base + kvm_mem_size) >> PAGE_SHIFT);
+	end_page  = pfn_to_page((kvm_mem_base + kvm_mem_size - 1) >> PAGE_SHIFT);
 
 	p = base_page;
 	while (page_ref_count(p) == 0 &&
