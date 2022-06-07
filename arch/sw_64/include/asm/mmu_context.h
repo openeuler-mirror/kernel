@@ -48,7 +48,6 @@ __reload_thread(struct pcb_struct *pcb)
  */
 
 #ifdef CONFIG_SUBARCH_C3B
-#define MAX_ASN			1023
 #define WIDTH_HARDWARE_ASN	10
 #endif
 
@@ -89,7 +88,7 @@ __get_new_mm_context(struct mm_struct *mm, long cpu)
 	unsigned long asn = cpu_last_asn(cpu);
 	unsigned long next = asn + 1;
 
-	if ((asn & HARDWARE_ASN_MASK) >= MAX_ASN) {
+	if ((asn & HARDWARE_ASN_MASK) >= HARDWARE_ASN_MASK) {
 		tbiap();
 		next = (asn & ~HARDWARE_ASN_MASK) + ASN_FIRST_VERSION;
 	}
