@@ -295,9 +295,9 @@
 285	common	pidfd_getfd			sys_pidfd_getfd
 286	common	faccessat2			sys_faccessat2
 287	common	process_madvise			sys_process_madvise
-#288 is unused
-#289 is unused
-#290 is unused
+288	common	pkey_mprotect			sys_pkey_mprotect
+289	common	pkey_alloc			sys_pkey_alloc
+290	common	pkey_free			sys_pkey_free
 #291 is unused
 #292 is unused
 #293 is unused
