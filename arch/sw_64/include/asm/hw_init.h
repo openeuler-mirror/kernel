@@ -97,6 +97,9 @@ static inline bool icache_is_vivt_no_ictag(void)
 	return (cpu_desc.arch_var == 0x3 && cpu_desc.arch_rev == 0x1);
 }
 
+#define EMUL_FLAG	(0x1UL << 63)
+#define MMSIZE_MASK	(EMUL_FLAG - 1)
+
 DECLARE_STATIC_KEY_TRUE(run_mode_host_key);
 DECLARE_STATIC_KEY_FALSE(run_mode_guest_key);
 DECLARE_STATIC_KEY_FALSE(run_mode_emul_key);
