@@ -6,6 +6,7 @@
 #include <linux/delay.h>
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
+#include <asm/chip3_io.h>
 
 #ifdef CONFIG_SW64_RRK
 
@@ -20,7 +21,7 @@ unsigned long sw64_printk_offset;
  * For output the kernel message on the console
  * with full-system emulator.
  */
-#define QEMU_PRINTF_BUFF_BASE	(0x805000040000ULL | PAGE_OFFSET)
+#define QEMU_PRINTF_BUFF_BASE	(IO_BASE | MCU_BASE | 0x40000UL | PAGE_OFFSET)
 
 int sw64_printk(const char *fmt, va_list args)
 {
