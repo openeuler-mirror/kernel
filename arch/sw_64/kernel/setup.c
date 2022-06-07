@@ -407,10 +407,12 @@ void __init process_memmap(void)
 			break;
 		case memmap_initrd:
 			if (!memmap_range_valid(base, size)) {
+				phys_addr_t old_base = base;
+
 				base = (unsigned long) move_initrd(memblock_end_of_DRAM());
 				if (!base) {
 					pr_err("initrd memmap region [mem %#018llx-%#018llx] extends beyond end of memory (%#018llx)\n",
-							base, base + size - 1, memblock_end_of_DRAM());
+							old_base, old_base + size - 1, memblock_end_of_DRAM());
 				} else {
 					memmap_map[i].addr = base;
 					pr_info("initrd memmap region [mem %#018llx-%#018llx]\n",
