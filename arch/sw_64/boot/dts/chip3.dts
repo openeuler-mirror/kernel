@@ -103,6 +103,11 @@
 				compatible = "nxp,pcf8523";
 				reg = <0x68>;
 			};
+
+			lm75: at30tse752a@48 {
+				compatible = "microchip,tcn75";
+				reg = <0x48>;
+			};
 		};
 
 		pvt: pvt@0x8030 {
