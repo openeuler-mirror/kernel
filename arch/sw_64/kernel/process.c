@@ -3,42 +3,16 @@
  * This file handles the architecture-dependent parts of process handling.
  */
 
-#include <linux/errno.h>
-#include <linux/module.h>
-#include <linux/sched.h>
 #include <linux/sched/debug.h>
-#include <linux/sched/task.h>
-#include <linux/sched/task_stack.h>
-#include <linux/kernel.h>
-#include <linux/mm.h>
-#include <linux/smp.h>
-#include <linux/stddef.h>
-#include <linux/unistd.h>
 #include <linux/ptrace.h>
-#include <linux/user.h>
-#include <linux/time.h>
-#include <linux/major.h>
-#include <linux/stat.h>
-#include <linux/vt.h>
-#include <linux/mman.h>
 #include <linux/elfcore.h>
 #include <linux/reboot.h>
-#include <linux/tty.h>
-#include <linux/console.h>
 #include <linux/slab.h>
-#include <linux/rcupdate.h>
-#include <linux/tick.h>
 #include <linux/random.h>
-#include <linux/uaccess.h>
 
-#include <asm/reg.h>
-#include <asm/io.h>
-#include <asm/pgtable.h>
 #include <asm/fpu.h>
-#include <asm/hcall.h>
 
 #include "proto.h"
-#include "pci_impl.h"
 
 /*
  * Power off function, if any

@@ -3,28 +3,11 @@
  *  Copyright (C) 1995  Linus Torvalds
  */
 
-#include <linux/sched.h>
-#include <linux/kernel.h>
-#include <linux/mm.h>
-#include <asm/io.h>
-
-#include <asm/mmu_context.h>
-#include <asm/tlbflush.h>
-#include <asm/core.h>
-
-#include <linux/signal.h>
-#include <linux/errno.h>
-#include <linux/string.h>
-#include <linux/types.h>
-#include <linux/ptrace.h>
-#include <linux/mman.h>
-#include <linux/fs.h>
-#include <linux/smp.h>
-#include <linux/interrupt.h>
 #include <linux/extable.h>
 #include <linux/perf_event.h>
 #include <linux/kprobes.h>
-#include <linux/uaccess.h>
+
+#include <asm/mmu_context.h>
 
 __read_mostly bool segv_debug_enabled;
 

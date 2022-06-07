@@ -1,34 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/errno.h>
 #include <linux/module.h>
-#include <linux/sched.h>
-#include <linux/kernel.h>
-#include <linux/param.h>
-#include <linux/string.h>
-#include <linux/mm.h>
 #include <linux/delay.h>
-#include <linux/ioport.h>
-#include <linux/irq.h>
-#include <linux/interrupt.h>
-#include <linux/init.h>
-#include <linux/bcd.h>
-#include <linux/profile.h>
-#include <linux/irq_work.h>
-#include <linux/uaccess.h>
-
-#include <asm/io.h>
-#include <asm/sw64io.h>
-#include <asm/sw64_init.h>
-#include <asm/hw_init.h>
-#include <asm/irq_impl.h>
-#include <asm/debug.h>
-
 #include <linux/time.h>
-#include <linux/timex.h>
-#include <linux/clocksource.h>
 #include <linux/clk-provider.h>
-#include <linux/sched/clock.h>
-#include <linux/sched_clock.h>
+
+#include <asm/debug.h>
 
 #include "proto.h"
 

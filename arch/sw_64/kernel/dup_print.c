@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
-#include <linux/kernel.h>
 #include <linux/mm.h>
-#include <linux/init.h>
 #include <linux/smp.h>
-#include <linux/delay.h>
 #include <linux/spinlock.h>
-#include <linux/uaccess.h>
+
 #include <asm/chip3_io.h>
 
 #ifdef CONFIG_SW64_RRK

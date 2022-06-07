@@ -5,9 +5,6 @@
 
 
 #include <linux/topology.h>
-#include <linux/spinlock.h>
-#include <linux/kernel.h>
-#include <linux/smp.h>
 #include <asm/tc.h>
 
 /*

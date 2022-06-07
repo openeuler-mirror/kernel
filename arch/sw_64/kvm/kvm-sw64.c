@@ -5,31 +5,18 @@
  * linhn <linhn@example.com>
  */
 
-#include <linux/cpu.h>
 #include <linux/errno.h>
-#include <linux/err.h>
 #include <linux/kvm_host.h>
 #include <linux/module.h>
-#include <linux/vmalloc.h>
-#include <linux/fs.h>
 #include <linux/mman.h>
 #include <linux/sched/signal.h>
-#include <linux/freezer.h>
-#include <linux/smp.h>
 #include <linux/kvm.h>
 #include <linux/uaccess.h>
-#include <linux/genalloc.h>
-#include <asm/kvm_emulate.h>
-#include <asm/kvm_asm.h>
-#include <asm/sw64io.h>
 
 #include <asm/kvm_timer.h>
-#include <asm/kvm_host.h>
 #include <asm/kvm_emulate.h>
 
-#include <asm/page.h>
 #include "../kernel/pci_impl.h"
-
 #include "vmem.c"
 
 bool set_msi_flag;

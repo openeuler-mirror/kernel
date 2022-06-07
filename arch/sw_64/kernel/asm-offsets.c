@@ -5,17 +5,16 @@
  * and format the required data.
  */
 
-#include <linux/types.h>
 #include <linux/stddef.h>
 #include <linux/sched.h>
-#include <linux/ptrace.h>
 #include <linux/kbuild.h>
 #include <linux/suspend.h>
-#include <asm/io.h>
+
 #include <asm/suspend.h>
+#include <asm/kvm.h>
+
 #include "traps.c"
 
-#include <asm/kvm.h>
 void foo(void)
 {
 	DEFINE(TI_TASK, offsetof(struct thread_info, task));

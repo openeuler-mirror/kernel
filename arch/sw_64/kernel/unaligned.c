@@ -12,9 +12,6 @@
  * for more details.
  */
 
-#include <linux/kernel.h>
-#include <linux/debugfs.h>
-#include <linux/seq_file.h>
 #include <asm/unaligned.h>
 #include <asm/debug.h>
 

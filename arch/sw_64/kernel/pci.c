@@ -1,22 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
-#include <linux/string.h>
 #include <linux/pci.h>
 #include <linux/acpi.h>
 #include <linux/init.h>
-#include <linux/ioport.h>
-#include <linux/kernel.h>
 #include <linux/memblock.h>
-#include <linux/module.h>
-#include <linux/cache.h>
-#include <linux/slab.h>
-#include <linux/msi.h>
-#include <linux/irq.h>
-#include <asm/msi.h>
-#include <linux/delay.h>
 #include <linux/syscore_ops.h>
-#include <linux/platform_device.h>
+
 #include <asm/sw64_init.h>
-#include <asm/pci.h>
 
 #include "pci_impl.h"
 

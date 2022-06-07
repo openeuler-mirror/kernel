@@ -1,18 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
-#include <linux/init.h>
-#include <linux/kernel.h>
-#include <linux/platform_device.h>
-#include <linux/string.h>
-#include <linux/types.h>
-#include <linux/string.h>
-#include <linux/i2c.h>
-#include <linux/interrupt.h>
-#include <linux/module.h>
-#include <linux/of.h>
 #include <linux/irqdomain.h>
 #include <linux/irqchip.h>
-#include <asm/irq.h>
-#include <asm/sw64io.h>
+
 #include <asm/irq_impl.h>
 
 static void fake_irq_mask(struct irq_data *data)

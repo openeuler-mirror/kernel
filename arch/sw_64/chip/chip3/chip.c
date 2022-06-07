@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/pci.h>
-#include <linux/seq_file.h>
 #include <linux/clocksource.h>
-#include <linux/msi.h>
-#include <linux/delay.h>
+
 #include <asm/sw64_init.h>
 #include <asm/sw64io.h>
 #include <asm/pci.h>
-#include <asm/core.h>
 #include <asm/irq_impl.h>
 #include <asm/wrperfmon.h>
-#include <asm/hw_init.h>
 #include "../../../../drivers/pci/pci.h"
 
 static u64 read_longtime(struct clocksource *cs)

@@ -8,16 +8,12 @@
  * fire3        2008-12-27      Add SIMD floating emulation code for SW64
  */
 
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/kernel.h>
-#include <linux/sched.h>
-#include <asm/ptrace.h>
-
-
 #include <linux/uaccess.h>
 
+#include <asm/ptrace.h>
+
 #include "sfp-util.h"
+
 #include <math-emu/soft-fp.h>
 #include <math-emu/single.h>
 #include <math-emu/double.h>

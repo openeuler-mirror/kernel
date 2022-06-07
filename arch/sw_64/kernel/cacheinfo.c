@@ -14,9 +14,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include <linux/arch_topology.h>
 #include <linux/cacheinfo.h>
-#include <asm/hw_init.h>
+
 #include <asm/topology.h>
 
 /* Populates leaf and increments to next leaf */

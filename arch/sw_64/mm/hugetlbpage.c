@@ -3,18 +3,13 @@
  * SW64 Huge TLB Page Support for Kernel.
  */
 
-#include <linux/init.h>
-#include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/sched/mm.h>
 #include <linux/hugetlb.h>
-#include <linux/pagemap.h>
 #include <linux/err.h>
-#include <linux/sysctl.h>
+
 #include <asm/mman.h>
 #include <asm/tlb.h>
-#include <asm/tlbflush.h>
-#include <asm/pgalloc.h>
 
 /*
  * pmd_huge() returns 1 if @pmd is hugetlb related entry, that is normal

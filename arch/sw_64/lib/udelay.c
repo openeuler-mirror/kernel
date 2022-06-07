@@ -6,11 +6,6 @@
  */
 
 #include <linux/module.h>
-#include <linux/sched.h> /* for udelay's use of smp_processor_id */
-#include <asm/param.h>
-#include <asm/smp.h>
-#include <asm/hw_init.h>
-#include <linux/delay.h>
 
 /*
  * Use only for very small delays (< 1 msec).

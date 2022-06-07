@@ -9,29 +9,16 @@
  * This file initializes the trap entry points
  */
 
-#include <linux/jiffies.h>
-#include <linux/mm.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/debug.h>
-#include <linux/tty.h>
-#include <linux/delay.h>
 #include <linux/extable.h>
-#include <linux/kallsyms.h>
-#include <linux/ratelimit.h>
-#include <linux/uaccess.h>
 #include <linux/perf_event.h>
 #include <linux/kdebug.h>
 #include <linux/kexec.h>
 
 #include <asm/gentrap.h>
-#include <asm/unaligned.h>
-#include <asm/sysinfo.h>
 #include <asm/mmu_context.h>
-#include <asm/special_insns.h>
 #include <asm/fpu.h>
 #include <asm/kprobes.h>
 #include <asm/uprobes.h>
-#include <asm/core.h>
 
 #include "proto.h"
 

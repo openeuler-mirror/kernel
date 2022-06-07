@@ -5,18 +5,13 @@
  * This source code is licensed under the GNU General Public License,
  * Version 2.  See the file COPYING for more details.
  */
-#include <linux/compiler.h>
 #include <linux/kexec.h>
 #include <linux/mm.h>
-#include <linux/device.h>
 #include <linux/delay.h>
 #include <linux/irq.h>
 #include <linux/reboot.h>
+
 #include <asm/cacheflush.h>
-#include <asm/page.h>
-#include <asm/io.h>
-#include <linux/cpu.h>
-#include <linux/smp.h>
 
 extern void *kexec_control_page;
 extern const unsigned char relocate_new_kernel[];

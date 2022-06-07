@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/highmem.h>
 #include <linux/kdebug.h>
-#include <linux/types.h>
-#include <linux/notifier.h>
-#include <linux/sched.h>
 #include <linux/uprobes.h>
 #include <linux/ptrace.h>
-
-#include <asm/ptrace.h>
 
 #define UPROBE_TRAP_NR	ULONG_MAX
 

@@ -14,21 +14,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include <linux/bitops.h>
-#include <linux/bug.h>
-#include <linux/compiler.h>
-#include <linux/kernel.h>
-#include <linux/mm.h>
-#include <linux/smp.h>
 #include <linux/spinlock.h>
-#include <linux/stop_machine.h>
-#include <linux/types.h>
-#include <linux/uaccess.h>
 #include <linux/kprobes.h>
-
-#include <asm/cacheflush.h>
-#include <asm/insn.h>
-
 
 //static DEFINE_RAW_SPINLOCK(patch_lock);
 

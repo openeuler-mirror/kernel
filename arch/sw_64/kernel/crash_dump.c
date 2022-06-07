@@ -14,8 +14,6 @@
  * published by the Free Software Foundation.
  */
 
-#include <linux/errno.h>
-#include <linux/crash_dump.h>
 #include <linux/uaccess.h>
 #include <linux/io.h>
 

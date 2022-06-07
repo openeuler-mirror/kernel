@@ -9,31 +9,13 @@
  * Bootup setup stuff.
  */
 
-#include <linux/sched.h>
-#include <linux/kernel.h>
-#include <linux/mm.h>
-#include <linux/stddef.h>
-#include <linux/unistd.h>
-#include <linux/ptrace.h>
-#include <linux/slab.h>
-#include <linux/user.h>
 #include <linux/screen_info.h>
 #include <linux/delay.h>
 #include <linux/kexec.h>
 #include <linux/console.h>
-#include <linux/cpu.h>
-#include <linux/errno.h>
-#include <linux/init.h>
-#include <linux/string.h>
-#include <linux/ioport.h>
-#include <linux/platform_device.h>
 #include <linux/memblock.h>
-#include <linux/pci.h>
-#include <linux/seq_file.h>
 #include <linux/root_dev.h>
 #include <linux/initrd.h>
-#include <linux/eisa.h>
-#include <linux/pfn.h>
 #ifdef CONFIG_MAGIC_SYSRQ
 #include <linux/sysrq.h>
 #include <linux/reboot.h>
@@ -41,26 +23,12 @@
 #ifdef CONFIG_DEBUG_FS
 #include <linux/debugfs.h>
 #endif
-#include <linux/notifier.h>
-#include <linux/log2.h>
-#include <linux/export.h>
 #include <linux/of_fdt.h>
 #include <linux/of_platform.h>
-#include <linux/uaccess.h>
-#include <linux/cma.h>
 #include <linux/genalloc.h>
 #include <linux/acpi.h>
-#include <asm/setup.h>
-#include <asm/smp.h>
+
 #include <asm/sw64_init.h>
-#include <asm/pgtable.h>
-#include <asm/dma.h>
-#include <asm/mmu_context.h>
-#include <asm/console.h>
-#include <asm/core.h>
-#include <asm/hw_init.h>
-#include <asm/mmzone.h>
-#include <asm/memory.h>
 #include <asm/efi.h>
 #include <asm/kvm_cma.h>
 

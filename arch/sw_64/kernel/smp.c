@@ -4,41 +4,18 @@
  */
 
 #include <linux/errno.h>
-#include <linux/kernel.h>
-#include <linux/kernel_stat.h>
-#include <linux/module.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/hotplug.h>
-#include <linux/mm.h>
-#include <linux/err.h>
-#include <linux/threads.h>
 #include <linux/smp.h>
-#include <linux/interrupt.h>
-#include <linux/init.h>
 #include <linux/delay.h>
-#include <linux/spinlock.h>
 #include <linux/irq.h>
-#include <linux/cache.h>
-#include <linux/profile.h>
-#include <linux/bitops.h>
 #include <linux/cpu.h>
 
-#include <asm/ptrace.h>
-#include <linux/atomic.h>
-
-#include <asm/core.h>
-#include <asm/io.h>
-#include <asm/irq.h>
-#include <asm/pgtable.h>
-#include <asm/pgalloc.h>
 #include <asm/mmu_context.h>
 #include <asm/tlbflush.h>
-#include <asm/suspend.h>
-#include <asm/hcall.h>
-#include <asm/sw64io.h>
 #include <asm/sw64_init.h>
 #include <asm/topology.h>
-#include <asm/tc.h>
+
 #include "proto.h"
 
 struct smp_rcb_struct *smp_rcb;
