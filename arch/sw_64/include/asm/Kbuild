@@ -20,3 +20,4 @@ generic-y += qspinlock.h
 generic-y += mcs_spinlock.h
 generic-y += clkdev.h
 generic-y += scatterlist.h
+generic-y += user.h
