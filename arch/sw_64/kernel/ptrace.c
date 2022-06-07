@@ -28,26 +28,6 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/syscalls.h>
 
-#define DEBUG	DBG_MEM
-#undef DEBUG
-
-#define DEBUG  0
-
-#ifdef DEBUG
-enum {
-	DBG_MEM = (1 << 0),
-	DBG_BPT = (1 << 1),
-	DBG_MEM_ALL = (1 << 2)
-};
-#define DBG(fac, args)		\
-{				\
-	if ((fac) & DEBUG)	\
-		printk args;	\
-}
-#else
-#define DBG(fac, args)
-#endif
-
 #define BREAKINST	0x00000080 /* sys_call bpt */
 
 /*
@@ -244,15 +224,12 @@ ptrace_set_bpt(struct task_struct *child)
 		if (displ) /* guard against unoptimized code */
 			task_thread_info(child)->bpt_addr[nsaved++]
 				= pc + 4 + displ;
-		DBG(DBG_BPT, ("execing branch\n"));
 		/*call ret jmp*/
 	} else if (op_code >= 0x1 && op_code <= 0x3) {
 		reg_b = (insn >> 16) & 0x1f;
 		task_thread_info(child)->bpt_addr[nsaved++] = get_reg(child, reg_b);
-		DBG(DBG_BPT, ("execing jump\n"));
 	} else {
 		task_thread_info(child)->bpt_addr[nsaved++] = pc + 4;
-		DBG(DBG_BPT, ("execing normal insn\n"));
 	}
 
 	/* install breakpoints: */
@@ -262,8 +239,6 @@ ptrace_set_bpt(struct task_struct *child)
 		if (res < 0)
 			return res;
 		task_thread_info(child)->bpt_insn[i] = insn;
-		DBG(DBG_BPT, ("    -> next_pc=%lx\n",
-					task_thread_info(child)->bpt_addr[i]));
 		res = write_int(child, task_thread_info(child)->bpt_addr[i],
 				BREAKINST);
 		if (res < 0)
@@ -452,7 +427,6 @@ long arch_ptrace(struct task_struct *child, long request,
 	case PTRACE_PEEKUSR:
 		force_successful_syscall_return();
 		ret = get_reg(child, addr);
-		DBG(DBG_MEM, ("peek $%lu->%#lx\n", addr, ret));
 		break;
 
 	/* When I and D space are separate, this will have to be fixed.  */
@@ -462,7 +436,6 @@ long arch_ptrace(struct task_struct *child, long request,
 		break;
 
 	case PTRACE_POKEUSR: /* write the specified register */
-		DBG(DBG_MEM, ("poke $%lu<-%#lx\n", addr, data));
 		ret = put_reg(child, addr, data);
 		break;
 	case PTRACE_GETREGS:
