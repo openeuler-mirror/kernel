@@ -1,9 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- *	linux/arch/sw_64/kernel/pci.c
- *	Modified by Suweiqiang 2013-9-30
- */
-
 #include <linux/string.h>
 #include <linux/pci.h>
 #include <linux/init.h>
@@ -25,13 +20,6 @@
 #include "pci_impl.h"
 
 unsigned long rc_linkup;
-
-/* Indicate whether we respect the PCI setup left by console. */
-/*
- * Make this long-lived  so that we know when shutting down
- * whether we probed only or not.
- */
-int pci_probe_only;
 
 /*
  * raw_pci_read/write - Platform-specific PCI config space access.
@@ -106,7 +94,7 @@ resource_size_t pcibios_align_resource(void *data, const struct resource *res,
 	} else if (res->flags & IORESOURCE_MEM) {
 		/* Make sure we start at our min on all hoses */
 		if (start - hose->mem_space->start < PCIBIOS_MIN_MEM)
-			start = PCIBIOS_MIN_MEM + hose->mem_space->start;		//0xc0000000- 0xffffffff
+			start = PCIBIOS_MIN_MEM + hose->mem_space->start;
 		/*
 		 * The following holds at least for the Low Cost
 		 * Sw_64 implementation of the PCI interface:
@@ -153,7 +141,6 @@ pcibios_init(void)
 	sw64_init_pci();
 	return 0;
 }
-
 subsys_initcall(pcibios_init);
 
 char *pcibios_setup(char *str)
@@ -164,20 +151,13 @@ char *pcibios_setup(char *str)
 void pcibios_fixup_bus(struct pci_bus *bus)
 {
 	/* Propagate hose info into the subordinate devices.  */
-
 	struct pci_controller *hose = bus->sysdata;
 	struct pci_dev *dev = bus->self;
 
-	if (!dev || bus->number == hose->first_busno)	{
-		/* Root bus. */
-		unsigned long end;
-
+	if (!dev || bus->number == hose->first_busno) {
 		bus->resource[0] = hose->io_space;
 		bus->resource[1] = hose->mem_space;
 		bus->resource[2] = hose->pre_mem_space;
-	} else if (pci_probe_only &&
-			(dev->class >> 8) == PCI_CLASS_BRIDGE_PCI) {
-		pci_read_bridge_bases(bus);
 	}
 }
 
@@ -223,7 +203,7 @@ void __init pcibios_claim_one_bus(struct pci_bus *b)
 
 			if (r->parent || !r->start || !r->flags)
 				continue;
-			if (pci_probe_only || (r->flags & IORESOURCE_PCI_FIXED)) {
+			if (r->flags & IORESOURCE_PCI_FIXED) {
 				if (pci_claim_resource(dev, i) == 0)
 					continue;
 
