@@ -179,6 +179,30 @@
 
 		};
 
+		ipmi-kcs@0x8037 {
+			#address-cells = <2>;
+			#size-cells = <2>;
+			device_type = "ipmi";
+			compatible = "ipmi-kcs";
+			reg = <0x8037 0x10000ca2 0x0 0x10>;
+			reg-size = <1>;
+			reg-spacing = <1>;
+			reg-shift = <0>;
+			status = "disabled";
+		};
+
+		ipmi-bt@0x8037 {
+			#address-cells = <2>;
+			#size-cells = <2>;
+			device_type = "ipmi";
+			compatible = "ipmi-bt";
+			reg = <0x8037 0x100000e4 0x0 0x10>;
+			reg-size = <1>;
+			reg-spacing = <1>;
+			reg-shift = <0>;
+			status = "disabled";
+		};
+
 		gpio: gpio@8036 {
 			#address-cells = <2>;
 			#size-cells = <2>;
