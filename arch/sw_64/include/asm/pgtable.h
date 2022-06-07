@@ -26,10 +26,18 @@ struct vm_area_struct;
  * hook is made available.
  */
 #define set_pte(pteptr, pteval) ((*(pteptr)) = (pteval))
-#define set_pte_at(mm, addr, ptep, pteval) set_pte(ptep, pteval)
+static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
+			      pte_t *ptep, pte_t pteval)
+{
+	set_pte(ptep, pteval);
+}
 
 #define set_pmd(pmdptr, pmdval) ((*(pmdptr)) = (pmdval))
-#define set_pmd_at(mm, addr, pmdp, pmdval) set_pmd(pmdp, pmdval)
+static inline void set_pmd_at(struct mm_struct *mm, unsigned long addr,
+			      pmd_t *pmdp, pmd_t pmdval)
+{
+	set_pmd(pmdp, pmdval);
+}
 
 /* PGDIR_SHIFT determines what a forth-level page table entry can map */
 #define PGDIR_SHIFT	(PAGE_SHIFT + 3 * (PAGE_SHIFT - 3))

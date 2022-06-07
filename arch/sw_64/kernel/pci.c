@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/string.h>
 #include <linux/pci.h>
+#include <linux/acpi.h>
 #include <linux/init.h>
 #include <linux/ioport.h>
 #include <linux/kernel.h>
@@ -46,12 +47,12 @@ int raw_pci_write(unsigned int domain, unsigned int bus, unsigned int devfn,
 	return -EINVAL;
 }
 
+#ifdef CONFIG_ACPI
 struct pci_bus *pci_acpi_scan_root(struct acpi_pci_root *root)
 {
-	struct pci_bus *bus;
-
-	return bus;
+	return NULL;
 }
+#endif
 
 /*
  * The PCI controller list.

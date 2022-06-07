@@ -86,7 +86,7 @@ static inline int pci_get_legacy_ide_irq(struct pci_dev *dev, int channel)
 extern struct syscore_ops iommu_cpu_syscore_ops;
 #endif
 
-#define pci_domain_nr(bus) 0
+static inline int pci_domain_nr(struct pci_bus *bus) { return 0; }
 
 static inline int pci_proc_domain(struct pci_bus *bus)
 {

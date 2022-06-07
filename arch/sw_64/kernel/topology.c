@@ -138,16 +138,10 @@ void remove_cpu_topology(int cpu)
 }
 
 #ifdef CONFIG_ACPI
-static bool __init acpi_cpu_is_threaded(int cpu)
-{
-	return 0;
-}
-
 static int __init parse_acpi_topology(void)
 {
 	return 0;
 }
-
 #else
 static inline int __init parse_acpi_topology(void)
 {
