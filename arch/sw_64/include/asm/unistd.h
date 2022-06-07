@@ -4,7 +4,7 @@
 
 #include <uapi/asm/unistd.h>
 
-#define NR_SYSCALLS			519
+#define NR_SYSCALLS			__NR_syscalls
 #define NR_syscalls			NR_SYSCALLS
 
 #define __ARCH_WANT_NEW_STAT
