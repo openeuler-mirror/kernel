@@ -35,6 +35,7 @@
 	.globl __memset
 	.globl ___memset
 	.globl __memsetw
+	.globl __constant_c_memset
 	.ent ___memset
 ___memset:
 	.frame $30, 0, $26, 0
