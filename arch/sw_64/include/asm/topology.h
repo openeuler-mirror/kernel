@@ -45,6 +45,8 @@ extern const struct cpumask *cpumask_of_node(int node);
 extern void numa_add_cpu(unsigned int cpu);
 extern void numa_remove_cpu(unsigned int cpu);
 extern void numa_store_cpu_info(unsigned int cpu);
+extern int __node_distance(int from, int to);
+#define node_distance(a, b) __node_distance(a, b)
 #define parent_node(node) (node)
 #define cpumask_of_pcibus(bus)	(cpu_online_mask)
 #else /* !CONFIG_NUMA */
