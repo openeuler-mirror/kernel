@@ -20,8 +20,8 @@
 #endif
 #include "pci_impl.h"
 
-#ifdef CONFIG_NUMA
 #ifdef CONFIG_DISCONTIGMEM
+#ifdef CONFIG_NUMA
 int pa_to_nid(unsigned long pa)
 {
 	int i = 0;
@@ -43,30 +43,11 @@ int pa_to_nid(unsigned long pa)
 	return 0;
 }
 EXPORT_SYMBOL(pa_to_nid);
-#endif /* CONFIG_DISCONTIGMEM */
-
-#ifndef CONFIG_USE_PERCPU_NUMA_NODE_ID
-extern int cpu_to_node_map[NR_CPUS];
-int cpuid_to_nid(int cpuid)
-{
-	return cpu_to_node_map[cpuid];
-}
-EXPORT_SYMBOL(cpuid_to_nid);
-#endif /* CONFIG_USE_PERCPU_NUMA_NODE_ID */
 #else /* !CONFIG_NUMA */
-#ifdef CONFIG_DISCONTIGMEM
 int pa_to_nid(unsigned long pa)
 {
 	return 0;
 }
 EXPORT_SYMBOL(pa_to_nid);
-#endif /* CONFIG_DISCONTIGMEM */
-
-#ifndef CONFIG_USE_PERCPU_NUMA_NODE_ID
-int cpuid_to_nid(int cpuid)
-{
-	return 0;
-}
-EXPORT_SYMBOL(cpuid_to_nid);
-#endif /* CONFIG_USE_PERCPU_NUMA_NODE_ID */
 #endif /* CONFIG_NUMA */
+#endif /* CONFIG_DISCONTIGMEM */
