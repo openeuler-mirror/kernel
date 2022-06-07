@@ -131,7 +131,7 @@
 					#size-cells = <1>;
 
 					partition@0 {
-						label = "test";
+						label = "spares0";
 						reg = <0 0x400000>;
 					};
 				};
@@ -153,7 +153,7 @@
 					#size-cells = <1>;
 
 					partition@0 {
-						label = "test";
+						label = "spares1";
 						reg = <0 0x400000>;
 					};
 				};
