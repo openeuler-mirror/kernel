@@ -211,13 +211,13 @@
 201	common	msgget				sys_msgget
 202	common	msgrcv				sys_msgrcv
 203	common	msgsnd				sys_msgsnd
-204	common	semctl				sys_semctl
+204	common	semctl				sys_old_semctl
 205	common	semget				sys_semget
 206	common	semop				sys_semop
 #207 is unused
 208	common	lchown				sys_lchown
 209	common	shmat				sys_shmat
-210	common	shmctl				sys_shmctl
+210	common	shmctl				sys_old_shmctl
 211	common	shmdt				sys_shmdt
 212	common	shmget				sys_shmget
 #213 is unused
