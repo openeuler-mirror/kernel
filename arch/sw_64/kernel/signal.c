@@ -34,7 +34,6 @@ asmlinkage void ret_from_sys_call(void);
 struct rt_sigframe {
 	struct siginfo info;
 	struct ucontext uc;
-	unsigned int retcode[3];
 };
 
 /*
@@ -44,10 +43,6 @@ struct rt_sigframe {
  */
 extern char compile_time_assert
 	[offsetof(struct rt_sigframe, uc.uc_mcontext) == 176 ? 1 : -1];
-
-#define INSN_MOV_R30_R16	0x47fe0410
-#define INSN_LDI_R0		0x201f0000
-#define INSN_CALLSYS		0x00000083
 
 static long
 restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
@@ -262,9 +257,6 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	 * already in userspace.
 	 */
 	r26 = VDSO_SYMBOL(current->mm->context.vdso, rt_sigreturn);
-
-	if (err)
-		return -EFAULT;
 
 	/* "Return" to the handler */
 	regs->r26 = r26;
