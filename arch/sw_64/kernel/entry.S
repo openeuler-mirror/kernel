@@ -659,6 +659,7 @@ sw64_\name:
 fork_like fork
 fork_like vfork
 fork_like clone
+fork_like clone3
 
 	.align 4
 	.globl sys_sigreturn
