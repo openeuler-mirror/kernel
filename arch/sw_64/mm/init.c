@@ -193,15 +193,27 @@ void __init sw64_memblock_init(void)
 
 	memblock_remove(1ULL << MAX_PHYSMEM_BITS, PHYS_ADDR_MAX);
 
-	/* Make sure kernel text is in memory range. */
-	memblock_add(__pa_symbol(_text), (unsigned long)(_end - _text));
-	memblock_reserve(__pa_symbol(_text), _end - _text);
-
 	max_pfn = max_low_pfn = PFN_DOWN(memblock_end_of_DRAM());
 
 	memblock_allow_resize();
 	memblock_initialized = true;
 	process_memmap();
+
+	/* Make sure kernel text is in memory range. */
+	memblock_add(__pa_symbol(_text), _end - _text);
+	memblock_reserve(__pa_symbol(_text), _end - _text);
+
+	/* Make sure initrd is in memory range. */
+	if (sunway_boot_params->initrd_start) {
+		phys_addr_t base = __pa(sunway_boot_params->initrd_start);
+		phys_addr_t size = sunway_boot_params->initrd_size;
+
+		memblock_add(base, size);
+		memblock_reserve(base, size);
+	}
+
+	/* end of DRAM range may have been changed */
+	max_pfn = max_low_pfn = PFN_DOWN(memblock_end_of_DRAM());
 }
 
 #ifndef CONFIG_NUMA
