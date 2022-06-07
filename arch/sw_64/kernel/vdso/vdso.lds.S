@@ -79,7 +79,7 @@ PHDRS
  */
 VERSION
 {
-	LINUX_2.6.39 {
+	LINUX_2.6 {
 	global:
 		__vdso_rt_sigreturn;
 		__vdso_gettimeofday;
