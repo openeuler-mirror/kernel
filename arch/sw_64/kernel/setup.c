@@ -560,22 +560,20 @@ static void __init setup_machine_fdt(void)
 #ifdef CONFIG_USE_OF
 	void *dt_virt;
 	const char *name;
-	unsigned long phys_addr;
 
 	/* Give a chance to select kernel builtin DTB firstly */
 	if (IS_ENABLED(CONFIG_SW64_BUILTIN_DTB))
 		dt_virt = (void *)__dtb_start;
 	else {
 		dt_virt = (void *)sunway_boot_params->dtb_start;
-		if (dt_virt < (void *)__bss_stop) {
+		if (virt_to_phys(dt_virt) < virt_to_phys(__bss_stop)) {
 			pr_emerg("BUG: DTB has been corrupted by kernel image!\n");
 			while (true)
 				cpu_relax();
 		}
 	}
 
-	phys_addr = __phys_addr((unsigned long)dt_virt);
-	if (!phys_addr_valid(phys_addr) ||
+	if (!phys_addr_valid(virt_to_phys(dt_virt)) ||
 			!early_init_dt_scan(dt_virt)) {
 		pr_crit("\n"
 			"Error: invalid device tree blob at virtual address %px\n"
