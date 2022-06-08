@@ -234,6 +234,7 @@ config PLATFORM_XUELANG
 	depends on SW64_CHIP3
 	select SPARSE_IRQ
 	select SYS_HAS_EARLY_PRINTK
+	select SW64_INTC_V2
 	help
 	  Sunway chip3 board chipset
 
@@ -736,15 +737,10 @@ endmenu
 
 menu "Boot options"
 
-config SW64_IRQ_CHIP
-	bool
-
 config USE_OF
 	bool "Flattened Device Tree support"
-	select GENERIC_IRQ_CHIP
-	select IRQ_DOMAIN
-	select SW64_IRQ_CHIP
 	select OF
+	select IRQ_DOMAIN
 	help
 	  Include support for flattened device tree machine descriptions.
 
