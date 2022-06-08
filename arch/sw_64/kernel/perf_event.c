@@ -244,7 +244,7 @@ static const struct sw64_perf_event *core3_map_cache_event(u64 config)
 
 /*
  * r0xx for counter0, r1yy for counter1.
- * According to the datasheet, 00 <= xx <= 0F, 00 <= yy <= 37
+ * According to the datasheet, 00 <= xx <= 0F, 00 <= yy <= 3D
  */
 static bool core3_raw_event_valid(u64 config)
 {
