@@ -297,31 +297,33 @@ static int sw64_perf_event_set_period(struct perf_event *event,
 {
 	long left = local64_read(&hwc->period_left);
 	long period = hwc->sample_period;
-	int ret = 0;
+	int overflow = 0;
+	unsigned long value;
 
 	if (unlikely(left <= -period)) {
 		left = period;
 		local64_set(&hwc->period_left, left);
 		hwc->last_period = period;
-		ret = 1;
+		overflow = 1;
 	}
 
 	if (unlikely(left <= 0)) {
 		left += period;
 		local64_set(&hwc->period_left, left);
 		hwc->last_period = period;
-		ret = 1;
+		overflow = 1;
 	}
 
 	if (left > (long)sw64_pmu->pmc_max_period)
 		left = sw64_pmu->pmc_max_period;
 
-	local64_set(&hwc->prev_count, (unsigned long)(-left));
-	sw64_write_pmc(idx,  (unsigned long)(sw64_pmu->pmc_max_period - left));
+	value = sw64_pmu->pmc_max_period - left;
+	local64_set(&hwc->prev_count, value);
+	sw64_write_pmc(idx, value);
 
 	perf_event_update_userpage(event);
 
-	return ret;
+	return overflow;
 }
 
 /*
