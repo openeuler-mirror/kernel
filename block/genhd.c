@@ -1572,7 +1572,6 @@ static void disk_release(struct device *dev)
 	might_sleep();
 
 	blk_free_devt(dev->devt);
-	blk_mq_cancel_work_sync(disk->queue);
 	disk_release_events(disk);
 	kfree(disk->random);
 	disk_replace_part_tbl(disk, NULL);
