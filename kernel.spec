@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       97
+%global devel_release       98
 %global maintenance_release .0.0
-%global pkg_release         .49
+%global pkg_release         .50
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,76 @@ fi
 %endif
 
 %changelog
+* Tue Jun 14 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-98.0.0.50
+- jbd2: fix outstanding credits assert in jbd2_journal_commit_transaction()
+- NFSv4: fix open failure with O_ACCMODE flag
+- Revert "NFSv4: Handle the special Linux file open access mode"
+- jbd2: fix a potential race while discarding reserved buffers after an abort
+- ubi: ubi_wl_put_peb: Fix infinite loop when wear-leveling work failed
+- x86: Pin task-stack in __get_wchan()
+- x86: Fix __get_wchan() for !STACKTRACE
+- x86: Fix get_wchan() to support the ORC unwinder
+- netfilter: nf_tables: disallow non-stateful expression in sets earlier
+- io_uring: fix using under-expanded iters
+- io_uring: don't re-import iovecs from callbacks
+- nfc: replace improper check device_is_registered() in netlink related functions
+- block: fix NULL pointer dereference in disk_release()
+- block, bfq: make bfq_has_work() more accurate
+- blk-mq: fix panic during blk_mq_run_work_fn()
+- blk-mq: cancel blk-mq dispatch work in both blk_cleanup_queue and disk_release()
+- net: hns3: fix incorrect type of argument in declaration of function hclge_comm_get_rss_indir_tbl
+- net: hns3: add query vf ring and vector map relation
+- net: hns3: add byte order conversion for VF to PF mailbox message
+- net: hns3: add byte order conversion for PF to VF mailbox message
+- net: hns3: remove the affinity settings of vector0
+- net: hns3: fix access null pointer issue when set tx-buf-size as 0
+- net: hns3: add return value for mailbox handling in PF
+- net: hns3: add validity check for message data length
+- net: hns3: modify the return code of hclge_get_ring_chain_from_mbx
+- net: hns3: fix error log of tx/rx tqps stats
+- net: hns3: align the debugfs output to the left
+- net: hns3: clear inited state and stop client after failed to register netdev
+- net: hns3: Fix spelling mistake "actvie" -> "active"
+- net: hns3: remove unnecessary line wrap for hns3_set_tunable
+- net: hns3: replace magic value by HCLGE_RING_REG_OFFSET
+- net: hns3: fix the wrong words in comments
+- net: hns3: update the comment of function hclgevf_get_mbx_resp
+- net: hns3: add log for setting tx spare buf size
+- net: hns3: add failure logs in hclge_set_vport_mtu
+- net: hns3: refine the definition for struct hclge_pf_to_vf_msg
+- net: hns3: refactor hns3_set_ringparam()
+- net: hns3: add ethtool parameter check for CQE/EQE mode
+- net: hns3: fix software vlan talbe of vlan 0 inconsistent with hardware
+- net: hns3: fix the concurrency between functions reading debugfs
+- skbuff: fix coalescing for page_pool fragment recycling
+- netfilter: nf_tables: sanitize nft_set_desc_concat_parse()
+- crypto: arm64/sm4 - Fix wrong dependency of NEON/CE implementation
+- crypto: arm64/sm4 - add ARMv8 Crypto Extensions implementation
+- crypto: arm64/sm4 - add ARMv8 NEON implementation
+- crypto: arm64/sm4-ce - rename to sm4-ce-cipher
+- crypto: sm4 - export sm4 constant arrays
+- crypto: sm3,sm4 - move into crypto directory
+- io_uring: always use original task when preparing req identity
+- kselftest/vm: fix tests build with old libc
+- sfc: extend the locking on mcdi->seqno
+- tcp: make tcp_read_sock() more robust
+- nl80211: Update bss channel on channel switch for P2P_CLIENT
+- drm/vrr: Set VRR capable prop only if it is attached to connector
+- iwlwifi: don't advertise TWT support
+- atm: firestream: check the return value of ioremap() in fs_init()
+- can: rcar_canfd: rcar_canfd_channel_probe(): register the CAN device when fully ready
+- ARM: 9178/1: fix unmet dependency on BITREVERSE for HAVE_ARCH_BITREVERSE
+- MIPS: smp: fill in sibling and core maps earlier
+- mac80211: refuse aggregations sessions before authorized
+- ARM: dts: rockchip: fix a typo on rk3288 crypto-controller
+- ARM: dts: rockchip: reorder rk322x hmdi clocks
+- arm64: dts: agilex: use the compatible "intel,socfpga-agilex-hsotg"
+- arm64: dts: rockchip: reorder rk3399 hdmi clocks
+- arm64: dts: rockchip: fix rk3399-puma eMMC HS400 signal integrity
+- xfrm: Fix xfrm migrate issues when address family changes
+- xfrm: Check if_id in xfrm_migrate
+- Revert "xfrm: state and policy should fail if XFRMA_IF_ID 0"
+
 * Tue Jun 07 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-97.0.0.49
 - ptrace: Check PTRACE_O_SUSPEND_SECCOMP permission on PTRACE_SEIZE
 - proc: Fix a dentry lock race between release_task and lookup
