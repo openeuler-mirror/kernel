@@ -17,6 +17,7 @@
 #ifndef _EXT4_H
 #define _EXT4_H
 
+#include <linux/refcount.h>
 #include <linux/types.h>
 #include <linux/blkdev.h>
 #include <linux/magic.h>
@@ -231,7 +232,7 @@ typedef struct ext4_io_end {
 	struct bio		*bio;		/* Linked list of completed
 						 * bios covering the extent */
 	unsigned int		flag;		/* unwritten or not */
-	atomic_t		count;		/* reference counter */
+	refcount_t		count;		/* reference counter */
 	loff_t			offset;		/* offset in the file */
 	ssize_t			size;		/* size of the extent */
 } ext4_io_end_t;

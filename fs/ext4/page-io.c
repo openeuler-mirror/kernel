@@ -256,14 +256,14 @@ ext4_io_end_t *ext4_init_io_end(struct inode *inode, gfp_t flags)
 	if (io) {
 		io->inode = inode;
 		INIT_LIST_HEAD(&io->list);
-		atomic_set(&io->count, 1);
+		refcount_set(&io->count, 1);
 	}
 	return io;
 }
 
 void ext4_put_io_end_defer(ext4_io_end_t *io_end)
 {
-	if (atomic_dec_and_test(&io_end->count)) {
+	if (refcount_dec_and_test(&io_end->count)) {
 		if (!(io_end->flag & EXT4_IO_END_UNWRITTEN) || !io_end->size) {
 			ext4_release_io_end(io_end);
 			return;
@@ -276,7 +276,7 @@ int ext4_put_io_end(ext4_io_end_t *io_end)
 {
 	int err = 0;
 
-	if (atomic_dec_and_test(&io_end->count)) {
+	if (refcount_dec_and_test(&io_end->count)) {
 		if (io_end->flag & EXT4_IO_END_UNWRITTEN) {
 			err = ext4_convert_unwritten_extents(io_end->handle,
 						io_end->inode, io_end->offset,
@@ -291,7 +291,7 @@ int ext4_put_io_end(ext4_io_end_t *io_end)
 
 ext4_io_end_t *ext4_get_io_end(ext4_io_end_t *io_end)
 {
-	atomic_inc(&io_end->count);
+	refcount_inc(&io_end->count);
 	return io_end;
 }
 
