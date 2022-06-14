@@ -925,6 +925,9 @@ unsigned long get_wchan(struct task_struct *p)
 	if (p == current || p->state == TASK_RUNNING)
 		return 0;
 
+	if (!try_get_task_stack(p))
+		return 0;
+
 	for (unwind_start(&state, p, NULL, NULL); !unwind_done(&state);
 	     unwind_next_frame(&state)) {
 	        addr = unwind_get_return_address(&state);
@@ -934,6 +937,8 @@ unsigned long get_wchan(struct task_struct *p)
 	                continue;
 	        break;
 	}
+ 
+	put_task_stack(p);
 
 	return addr;
 }
