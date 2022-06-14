@@ -11804,7 +11804,7 @@ fi
 - mptcp: fix security context on server socket
 - net/sched: sch_taprio: reset child qdiscs before freeing them
 
-* Tue Jan 29 2021 Yuan Zhichang <erik.yuan@arm.com> - 5.10.0-1.0.0.10
+* Fri Jan 29 2021 Yuan Zhichang <erik.yuan@arm.com> - 5.10.0-1.0.0.10
 - Add the option of "with_perf"
 - Output jvmti plug-in as part of perf building
 
