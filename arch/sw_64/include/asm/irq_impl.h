@@ -32,6 +32,7 @@ enum sw64_irq_type {
 	INT_RTC		= 9,
 	INT_FAULT	= 10,
 	INT_VT_SERIAL	= 12,
+	INT_VT_HOTPLUG	= 13,
 	INT_DEV		= 17,
 	INT_NMI		= 18,
 	INT_LEGACY	= 31,

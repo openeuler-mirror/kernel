@@ -29,7 +29,7 @@
 #include <asm/kvm_mmio.h>
 
 #define KVM_MAX_VCPUS 64
-#define KVM_USER_MEM_SLOTS 512
+#define KVM_USER_MEM_SLOTS 64
 
 #define KVM_HALT_POLL_NS_DEFAULT 0
 #define KVM_IRQCHIP_NUM_PINS     256
@@ -42,12 +42,16 @@
 #define KVM_PAGES_PER_HPAGE(x)  (KVM_HPAGE_SIZE(x) / PAGE_SIZE)
 
 struct kvm_arch_memory_slot {
-
+	unsigned long host_phys_addr;
+	bool valid;
 };
 
 struct kvm_arch {
 	unsigned long host_phys_addr;
 	unsigned long size;
+
+	/* segment table */
+	unsigned long *seg_pgd;
 };
 
 
@@ -100,6 +104,9 @@ struct kvm_vcpu_stat {
 	u64 halt_poll_invalid;
 };
 
+#ifdef CONFIG_KVM_MEMHOTPLUG
+void vcpu_mem_hotplug(struct kvm_vcpu *vcpu, unsigned long start_addr);
+#endif
 int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
 		int exception_index, struct hcall_args *hargs);
 void vcpu_send_ipi(struct kvm_vcpu *vcpu, int target_vcpuid);

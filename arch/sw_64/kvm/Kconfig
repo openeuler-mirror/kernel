@@ -42,6 +42,13 @@ config KVM_SW64_HOST
 	  Provides host support for SW64 processors.
 	  To compile this as a module, choose M here.
 
+config KVM_MEMHOTPLUG
+	bool "Memory hotplug support for guest"
+	depends on KVM
+	help
+	  Provides memory hotplug support for SW64 guest.
+
+
 source "drivers/vhost/Kconfig"
 
 endif # VIRTUALIZATION

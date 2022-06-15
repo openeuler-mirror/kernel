@@ -701,6 +701,11 @@ void handle_chip_irq(unsigned long type, unsigned long vector,
 		handle_irq(type);
 		set_irq_regs(old_regs);
 		return;
+	case INT_VT_HOTPLUG:
+		old_regs = set_irq_regs(regs);
+		handle_irq(type);
+		set_irq_regs(old_regs);
+		return;
 	case INT_PC0:
 		perf_irq(PERFMON_PC0, regs);
 		return;
