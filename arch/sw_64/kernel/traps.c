@@ -12,13 +12,20 @@
 #include <linux/extable.h>
 #include <linux/perf_event.h>
 #include <linux/kdebug.h>
+#include <linux/sched.h>
 #include <linux/kexec.h>
+#include <linux/kallsyms.h>
+#include <linux/sched/task_stack.h>
+#include <linux/sched/debug.h>
 
 #include <asm/gentrap.h>
 #include <asm/mmu_context.h>
 #include <asm/fpu.h>
 #include <asm/kprobes.h>
 #include <asm/uprobes.h>
+#include <asm/stacktrace.h>
+#include <asm/processor.h>
+#include <asm/ptrace.h>
 
 #include "proto.h"
 
@@ -68,53 +75,6 @@ dik_show_code(unsigned int *pc)
 	printk("\n");
 }
 
-static void
-dik_show_trace(unsigned long *sp, const char *loglvl)
-{
-	long i = 0;
-	unsigned long tmp;
-
-	printk("%sTrace:\n", loglvl);
-	while (0x1ff8 & (unsigned long)sp) {
-		tmp = *sp;
-		sp++;
-		if (!__kernel_text_address(tmp))
-			continue;
-		printk("%s[<%lx>] %pSR\n", loglvl, tmp, (void *)tmp);
-		if (i > 40) {
-			printk("%s ...", loglvl);
-			break;
-		}
-	}
-	printk("\n");
-}
-
-static int kstack_depth_to_print = 24;
-
-void show_stack(struct task_struct *task, unsigned long *sp, const char *loglvl)
-{
-	unsigned long *stack;
-	int i;
-
-	/*
-	 * debugging aid: "show_stack(NULL, NULL, KERN_EMERG);" prints the
-	 * back trace for this cpu.
-	 */
-	if (sp == NULL)
-		sp = (unsigned long *)&sp;
-
-	stack = sp;
-	for (i = 0; i < kstack_depth_to_print; i++) {
-		if (((long) stack & (THREAD_SIZE-1)) == 0)
-			break;
-		if (i && ((i % 4) == 0))
-			printk("%s       ", loglvl);
-		printk("%016lx ", *stack++);
-	}
-	printk("\n");
-	dik_show_trace(sp, loglvl);
-}
-
 void die_if_kernel(char *str, struct pt_regs *regs, long err)
 {
 	if (regs->ps & 8)
@@ -125,7 +85,7 @@ void die_if_kernel(char *str, struct pt_regs *regs, long err)
 	printk("%s(%d): %s %ld\n", current->comm, task_pid_nr(current), str, err);
 	dik_show_regs(regs);
 	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
-	dik_show_trace((unsigned long *)(regs+1), KERN_DEFAULT);
+	show_stack(current, NULL, KERN_EMERG);
 	dik_show_code((unsigned int *)regs->pc);
 
 	if (test_and_set_thread_flag(TIF_DIE_IF_KERNEL)) {
@@ -535,7 +495,7 @@ got_exception:
 
 	dik_show_regs(regs);
 	dik_show_code((unsigned int *)pc);
-	dik_show_trace((unsigned long *)(regs+1), KERN_DEFAULT);
+	show_stack(current, NULL, KERN_EMERG);
 
 	if (test_and_set_thread_flag(TIF_DIE_IF_KERNEL)) {
 		printk("die_if_kernel recursion detected.\n");

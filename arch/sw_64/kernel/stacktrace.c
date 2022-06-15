@@ -10,6 +10,8 @@
 #include <linux/sched/debug.h>
 #include <linux/ftrace.h>
 #include <linux/perf_event.h>
+#include <linux/kallsyms.h>
+
 #include <asm/stacktrace.h>
 
 /*
@@ -59,39 +61,83 @@ int unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 }
 EXPORT_SYMBOL_GPL(unwind_frame);
 
-void walk_stackframe(struct task_struct *tsk, struct stackframe *frame,
-		     int (*fn)(struct stackframe *, void *), void *data)
+void walk_stackframe(struct task_struct *tsk, struct pt_regs *regs,
+		     int (*fn)(unsigned long, void *), void *data)
 {
+	unsigned long pc, fp;
+
+	struct stackframe frame;
+
+	if (regs) {
+		pc = regs->pc;
+		fp = regs->r15;
+	} else if (tsk == current || tsk == NULL) {
+		fp = (unsigned long)__builtin_frame_address(0);
+		pc = (unsigned long)walk_stackframe;
+	} else {
+		fp = tsk->thread.s[6];
+		pc = tsk->thread.ra;
+	}
+
+	if (!__kernel_text_address(pc) || fn(pc, data))
+		return;
+
+	frame.pc = pc;
+	frame.fp = fp;
 	while (1) {
 		int ret;
-
-		if (fn(frame, data))
-			break;
-		ret = unwind_frame(tsk, frame);
+		ret = unwind_frame(tsk, &frame);
 		if (ret < 0)
+			break;
+
+		if (fn(frame.pc, data))
 			break;
 	}
 }
 EXPORT_SYMBOL_GPL(walk_stackframe);
 
 #else /* !CONFIG_FRAME_POINTER */
-void walk_stackframe(struct task_struct *tsk, struct stackframe *frame,
-		     int (*fn)(struct stackframe *, void *), void *data)
+void walk_stackframe(struct task_struct *tsk, struct pt_regs *regs,
+		     int (*fn)(unsigned long, void *), void *data)
 {
-	unsigned long *sp = (unsigned long *)current_thread_info()->pcb.ksp;
-	unsigned long addr;
-	struct perf_callchain_entry_ctx *entry = data;
+	unsigned long *ksp;
+	unsigned long sp, pc;
 
-	perf_callchain_store(entry, frame->pc);
-	while (!kstack_end(sp) && entry->nr < entry->max_stack) {
-		addr = *sp++;
-		if (__kernel_text_address(addr))
-			perf_callchain_store(entry, addr);
+	if (regs) {
+		sp = (unsigned long)(regs+1);
+		pc = regs->pc;
+	} else if (tsk == current || tsk == NULL) {
+		register unsigned long current_sp __asm__ ("$30");
+		sp = current_sp;
+		pc = (unsigned long)walk_stackframe;
+	} else {
+		sp = tsk->thread.sp;
+		pc = tsk->thread.ra;
+	}
+
+	ksp = (unsigned long *)sp;
+
+	while (!kstack_end(ksp)) {
+		if (__kernel_text_address(pc) && fn(pc, data))
+			break;
+		pc = (*ksp++) - 0x4;
 	}
 }
 EXPORT_SYMBOL_GPL(walk_stackframe);
 
 #endif/* CONFIG_FRAME_POINTER */
+
+static int print_address_trace(unsigned long pc, void *data)
+{
+	print_ip_sym((const char *)data, pc);
+	return 0;
+}
+
+void show_stack(struct task_struct *task, unsigned long *sp, const char *loglvl)
+{
+	pr_info("Trace:\n");
+	walk_stackframe(task, NULL, print_address_trace, (void *)loglvl);
+}
 
 /*
  * Save stack-backtrace addresses into a stack_trace buffer.

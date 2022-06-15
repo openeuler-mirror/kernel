@@ -213,6 +213,7 @@ void foo(void)
 	OFFSET(TASK_THREAD_FPCR, task_struct, thread.fpstate.fpcr);
 	BLANK();
 	OFFSET(TASK_THREAD_RA, task_struct, thread.ra);
+	OFFSET(TASK_THREAD_SP, task_struct, thread.sp);
 	OFFSET(TASK_THREAD_S0, task_struct, thread.s[0]);
 	OFFSET(TASK_THREAD_S1, task_struct, thread.s[1]);
 	OFFSET(TASK_THREAD_S2, task_struct, thread.s[2]);

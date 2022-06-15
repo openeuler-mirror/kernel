@@ -761,24 +761,18 @@ void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
  * whist unwinding the stackframe and is like a subroutine return so we use
  * the PC.
  */
-static int callchain_trace(struct stackframe *frame, void *data)
+static int callchain_trace(unsigned long pc, void *data)
 {
 	struct perf_callchain_entry_ctx *entry = data;
 
-	perf_callchain_store(entry, frame->pc);
-
+	perf_callchain_store(entry, pc);
 	return 0;
 }
 
 void perf_callchain_kernel(struct perf_callchain_entry_ctx *entry,
 			   struct pt_regs *regs)
 {
-	struct stackframe frame;
-
-	frame.fp = regs->r15;
-	frame.pc = regs->pc;
-
-	walk_stackframe(current, &frame, callchain_trace, entry);
+	walk_stackframe(NULL, regs, callchain_trace, entry);
 }
 
 /*

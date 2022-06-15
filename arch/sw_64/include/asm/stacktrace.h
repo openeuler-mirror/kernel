@@ -32,8 +32,8 @@ struct stack_frame {
 };
 
 extern int unwind_frame(struct task_struct *tsk, struct stackframe *frame);
-extern void walk_stackframe(struct task_struct *tsk, struct stackframe *frame,
-			    int (*fn)(struct stackframe *, void *), void *data);
+extern void walk_stackframe(struct task_struct *tsk, struct pt_regs *regs,
+			    int (*fn)(unsigned long, void *), void *data);
 
 static inline bool on_task_stack(struct task_struct *tsk, unsigned long sp,
 				struct stack_info *info)

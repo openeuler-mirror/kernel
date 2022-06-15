@@ -398,6 +398,7 @@ __switch_to:
 	.prologue 0
 	/* Save context into prev->thread */
 	stl	$26, TASK_THREAD_RA($17)
+	stl	$30, TASK_THREAD_SP($17)
 	stl	$9, TASK_THREAD_S0($17)
 	stl	$10, TASK_THREAD_S1($17)
 	stl	$11, TASK_THREAD_S2($17)
@@ -415,6 +416,11 @@ __switch_to:
 	ldl	$14, TASK_THREAD_S5($18)
 	ldl	$15, TASK_THREAD_S6($18)
 	sys_call HMC_swpctx
+	/*
+	 * SP has been saved and restored by HMC_swpctx,
+	 * and restore it again here for future expansion.
+	 */
+	ldl     $30, TASK_THREAD_SP($18)
 	ldi	$8, 0x3fff
 	bic	$sp, $8, $8
 	mov	$17, $0

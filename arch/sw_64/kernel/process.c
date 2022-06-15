@@ -169,6 +169,7 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 
 	childti->pcb.ksp = (unsigned long) childregs;
 	childti->pcb.flags = 7;	/* set FEN, clear everything else */
+	p->thread.sp = (unsigned long) childregs;
 
 	if (unlikely(p->flags & PF_KTHREAD)) {
 		/* kernel thread */

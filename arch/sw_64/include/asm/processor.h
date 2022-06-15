@@ -45,6 +45,7 @@ struct thread_struct {
 	struct user_fpsimd_state fpstate;
 	/* Callee-saved registers */
 	unsigned long ra;
+	unsigned long sp;
 	unsigned long s[7];	/* s0 ~ s6 */
 };
 #define INIT_THREAD  { }
