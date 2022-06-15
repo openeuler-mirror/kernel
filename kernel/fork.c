@@ -2171,7 +2171,6 @@ static __latent_entropy struct task_struct *copy_process(
 
 	proc_fork_connector(p);
 	cgroup_post_fork(p);
-	sched_post_fork(p);
 	cgroup_threadgroup_change_end(current);
 	perf_event_fork(p);
 
