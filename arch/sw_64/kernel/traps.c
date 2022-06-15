@@ -31,6 +31,14 @@
 
 #include "proto.h"
 
+enum SW64_IF_TYPES {
+	IF_BREAKPOINT = 0,
+	IF_RESERVED,
+	IF_GENTRAP,
+	IF_FEN,
+	IF_OPDEC,
+};
+
 void show_regs(struct pt_regs *regs)
 {
 	show_regs_print_info(KERN_DEFAULT);
@@ -155,6 +163,10 @@ do_entArith(unsigned long summary, unsigned long write_mask,
 	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc, 0);
 }
 
+/*
+ * BPT/GENTRAP/OPDEC make regs->pc = exc_pc + 4. debugger should
+ * do something necessary to handle it correctly.
+ */
 asmlinkage void
 do_entIF(unsigned long inst_type, struct pt_regs *regs)
 {
@@ -164,35 +176,23 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 	type = inst_type & 0xffffffff;
 	inst = inst_type >> 32;
 
-	if (!user_mode(regs) && type != 4) {
-		if (type == 1) {
-			const unsigned int *data
-				= (const unsigned int *) regs->pc;
-			printk("Kernel bug at %s:%d\n",
-				(const char *)(data[1] | (long)data[2] << 32),
-				data[0]);
-		} else if (type == 0) {
+	if (!user_mode(regs) && type != IF_OPDEC) {
+		if (type == IF_BREAKPOINT) {
 			/* support kgdb */
 			notify_die(0, "kgdb trap", regs, 0, 0, SIGTRAP);
 			return;
 		}
-		die((type == 1 ? "Kernel Bug" : "Instruction fault"),
+		die((type == IF_RESERVED ? "Kernel Bug" : "Instruction fault"),
 				regs, type);
 	}
 
 	switch (type) {
-	case 0: /* breakpoint */
-		if (ptrace_cancel_bpt(current))
-			regs->pc -= 4;	/* make pc point to former bpt */
-
+	case IF_BREAKPOINT: /* gdb do pc-4 for sigtrap */
 		force_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *)regs->pc, 0);
 		return;
 
-	case 1: /* bugcheck */
-		force_sig_fault(SIGTRAP, TRAP_UNK, (void __user *)regs->pc, 0);
-		return;
-
-	case 2: /* gentrap */
+	case IF_GENTRAP:
+		regs->pc -= 4;
 		switch ((long)regs->r16) {
 		case GEN_INTOVF:
 			signo = SIGFPE;
@@ -245,6 +245,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 		case GEN_SUBRNG6:
 		case GEN_SUBRNG7:
 		default:
+			regs->pc += 4;
 			signo = SIGTRAP;
 			code = TRAP_UNK;
 			break;
@@ -253,7 +254,11 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 		force_sig_fault(signo, code, (void __user *)regs->pc, regs->r16);
 		return;
 
-	case 4: /* opDEC */
+	case IF_FEN:
+		fpu_enable();
+		return;
+
+	case IF_OPDEC:
 		switch (inst) {
 		case BREAK_KPROBE:
 			if (notify_die(DIE_BREAK, "kprobe", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
@@ -268,26 +273,15 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 			if (notify_die(DIE_UPROBE_XOL, "uprobe_xol", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
 				return;
 		}
-		if (!user_mode(regs))
+
+		if (user_mode(regs))
+			regs->pc -= 4;
+		else
 			die("Instruction fault", regs, type);
 		break;
 
-	case 3: /* FEN fault */
-		/*
-		 * Irritating users can call HMC_clrfen to disable the
-		 * FPU for the process. The kernel will then trap to
-		 * save and restore the FP registers.
-
-		 * Given that GCC by default generates code that uses the
-		 * FP registers, HMC_clrfen is not useful except for DoS
-		 * attacks. So turn the bleeding FPU back on and be done
-		 * with it.
-		 */
-		fpu_enable();
-		return;
-
-	case 5: /* illoc */
 	default: /* unexpected instruction-fault type */
+		regs->pc -= 4;
 		break;
 	}
 
