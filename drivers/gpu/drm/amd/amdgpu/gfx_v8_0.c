@@ -1355,7 +1355,7 @@ static int gfx_v8_0_mec_init(struct amdgpu_device *adev)
 		}
 
 #if IS_ENABLED(CONFIG_SW64)
-		_memset_c_io(hpd, 0, mec_hpd_size);
+		memset_io(hpd, 0, mec_hpd_size);
 #else
 		memset(hpd, 0, mec_hpd_size);
 #endif
@@ -4654,7 +4654,7 @@ static int gfx_v8_0_kiq_init_queue(struct amdgpu_ring *ring)
 		mutex_unlock(&adev->srbm_mutex);
 	} else {
 #if IS_ENABLED(CONFIG_SW64)
-		_memset_c_io((void *)mqd, 0, sizeof(struct vi_mqd_allocation));
+		memset_io((void *)mqd, 0, sizeof(struct vi_mqd_allocation));
 #else
 		memset((void *)mqd, 0, sizeof(struct vi_mqd_allocation));
 #endif

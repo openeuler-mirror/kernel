@@ -240,7 +240,7 @@ int radeon_vce_resume(struct radeon_device *rdev)
 	}
 
 #ifdef __sw_64__
-	_memset_c_io(cpu_addr, 0, radeon_bo_size(rdev->vce.vcpu_bo));
+	memset_io(cpu_addr, 0, radeon_bo_size(rdev->vce.vcpu_bo));
 #else
 	memset(cpu_addr, 0, radeon_bo_size(rdev->vce.vcpu_bo));
 #endif
