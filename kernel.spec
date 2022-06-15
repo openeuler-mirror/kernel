@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2206.1.0
+%global hulkrelease 2206.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0153
+Release: %{hulkrelease}.0154
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,24 @@ fi
 %endif
 
 %changelog
+
+* Mon Jun 13 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2206.2.0.0154
+- x86: Pin task-stack in __get_wchan()
+- x86: Fix __get_wchan() for !STACKTRACE
+- x86/unwind/orc: Fix premature unwind stoppage due to IRET frames
+- x86/unwind: Prevent false warnings for non-current tasks
+- ALSA: pcm: Fix potential AB/BA lock with buffer_mutex and mmap_lock
+- ALSA: pcm: Fix races among concurrent prealloc proc writes
+- ALSA: pcm: Fix races among concurrent prepare and hw_params/hw_free calls
+- ALSA: pcm: Fix races among concurrent read/write and buffer changes
+- ALSA: pcm: Fix races among concurrent hw_params and hw_free calls
+- NFC: netlink: fix sleep in atomic bug when firmware download timeout
+- nfc: replace improper check device_is_registered() in netlink related functions
+- ext4: fix super block checksum incorrect after mount
+- block: remove the bd_openers checks in blk_drop_partitions
+- block: fix busy device checking in blk_drop_partitions again
+- block: fix busy device checking in blk_drop_partitions
+- ext4: add reserved GDT blocks check
 
 * Mon Jun 06 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2206.1.0.0153
 - ping: fix address binding wrt vrf
