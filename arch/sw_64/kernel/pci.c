@@ -691,3 +691,16 @@ sw64_init_pci(void)
 {
 	common_init_pci();
 }
+
+static int setup_bus_dma_cb(struct pci_dev *pdev, void *data)
+{
+	pdev->dev.bus_dma_limit = DMA_BIT_MASK(32);
+	return 0;
+}
+
+static void fix_bus_dma_limit(struct pci_dev *dev)
+{
+	pci_walk_bus(dev->subordinate, setup_bus_dma_cb, NULL);
+	pr_info("Set zx200 bus_dma_limit to 32-bit\n");
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ZHAOXIN, 0x071f, fix_bus_dma_limit);
