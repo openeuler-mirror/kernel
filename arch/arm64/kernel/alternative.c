@@ -41,8 +41,13 @@ struct alt_region {
 	struct alt_instr *end;
 };
 
+bool set_cap_spectre_bhb;
+
 bool alternative_is_applied(u16 cpufeature)
 {
+	if (cpufeature == ARM64_SPECTRE_BHB)
+		return set_cap_spectre_bhb;
+
 	if (WARN_ON(cpufeature >= ARM64_NCAPS))
 		return false;
 

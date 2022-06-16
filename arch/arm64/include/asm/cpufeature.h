@@ -368,6 +368,8 @@ extern struct static_key_false arm64_const_caps_ready;
 #define ARM64_NPATCHABLE (ARM64_NCAPS + 1)
 extern DECLARE_BITMAP(boot_capabilities, ARM64_NPATCHABLE);
 
+extern bool set_cap_spectre_bhb;
+
 bool this_cpu_has_cap(unsigned int cap);
 
 static inline bool cpu_have_feature(unsigned int num)
@@ -378,15 +380,23 @@ static inline bool cpu_have_feature(unsigned int num)
 /* System capability check for constant caps */
 static __always_inline bool __cpus_have_const_cap(int num)
 {
+	if (num == ARM64_SPECTRE_BHB)
+		return set_cap_spectre_bhb;
+
 	if (num >= ARM64_NCAPS)
 		return false;
+
 	return static_branch_unlikely(&cpu_hwcap_keys[num]);
 }
 
 static inline bool cpus_have_cap(unsigned int num)
 {
+	if (num == ARM64_SPECTRE_BHB)
+		return set_cap_spectre_bhb;
+
 	if (num >= ARM64_NCAPS)
 		return false;
+
 	return test_bit(num, cpu_hwcaps);
 }
 
@@ -400,6 +410,11 @@ static __always_inline bool cpus_have_const_cap(int num)
 
 static inline void cpus_set_cap(unsigned int num)
 {
+	if (num == ARM64_SPECTRE_BHB) {
+		set_cap_spectre_bhb = true;
+		return;
+	}
+
 	if (num >= ARM64_NCAPS) {
 		pr_warn("Attempt to set an illegal CPU capability (%d >= %d)\n",
 			num, ARM64_NCAPS);
