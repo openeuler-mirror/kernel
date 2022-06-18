@@ -20,6 +20,7 @@
 #include "xfs_trace.h"
 #include "xfs_bmap.h"
 #include "xfs_trans.h"
+#include "xfs_error.h"
 
 /*
  * Directory file type support functions
@@ -119,6 +120,11 @@ xfs_dir2_sf_getdents(
 		ino = dp->d_ops->sf_get_ino(sfp, sfep);
 		filetype = dp->d_ops->sf_get_ftype(sfep);
 		ctx->pos = off & 0x7fffffff;
+		if (!xfs_dir2_namecheck(sfep->name, sfep->namelen)) {
+			XFS_ERROR_REPORT(__func__, XFS_ERRLEVEL_LOW,
+					 dp->i_mount);
+			return -EFSCORRUPTED;
+		}
 		if (!dir_emit(ctx, (char *)sfep->name, sfep->namelen, ino,
 			    xfs_dir3_get_dtype(mp, filetype)))
 			return 0;
@@ -212,12 +218,16 @@ xfs_dir2_block_getdents(
 		/*
 		 * If it didn't fit, set the final offset to here & return.
 		 */
+		if (!xfs_dir2_namecheck(dep->name, dep->namelen)) {
+			XFS_ERROR_REPORT(__func__, XFS_ERRLEVEL_LOW,
+					 dp->i_mount);
+			error = -EFSCORRUPTED;
+			goto out_rele;
+		}
 		if (!dir_emit(ctx, (char *)dep->name, dep->namelen,
 			    be64_to_cpu(dep->inumber),
-			    xfs_dir3_get_dtype(dp->i_mount, filetype))) {
-			xfs_trans_brelse(args->trans, bp);
-			return 0;
-		}
+			    xfs_dir3_get_dtype(dp->i_mount, filetype)))
+			goto out_rele;
 	}
 
 	/*
@@ -226,8 +236,9 @@ xfs_dir2_block_getdents(
 	 */
 	ctx->pos = xfs_dir2_db_off_to_dataptr(geo, geo->datablk + 1, 0) &
 								0x7fffffff;
+out_rele:
 	xfs_trans_brelse(args->trans, bp);
-	return 0;
+	return error;
 }
 
 /*
@@ -460,6 +471,12 @@ xfs_dir2_leaf_getdents(
 		filetype = dp->d_ops->data_get_ftype(dep);
 
 		ctx->pos = xfs_dir2_byte_to_dataptr(curoff) & 0x7fffffff;
+		if (!xfs_dir2_namecheck(dep->name, dep->namelen)) {
+			XFS_ERROR_REPORT(__func__, XFS_ERRLEVEL_LOW,
+					 dp->i_mount);
+			error = -EFSCORRUPTED;
+			break;
+		}
 		if (!dir_emit(ctx, (char *)dep->name, dep->namelen,
 			    be64_to_cpu(dep->inumber),
 			    xfs_dir3_get_dtype(dp->i_mount, filetype)))
