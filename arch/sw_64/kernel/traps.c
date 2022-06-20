@@ -320,11 +320,6 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 	force_sig_fault(SIGILL, ILL_ILLOPC, (void __user *)regs->pc, 0);
 }
 
-struct unaligned_stat {
-	unsigned long count, va, pc;
-} unaligned[2];
-
-
 asmlinkage void
 do_entUna(void *va, unsigned long opcode, unsigned long reg,
 	  struct pt_regs *regs)
@@ -333,10 +328,6 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 	unsigned long tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7, tmp8;
 	unsigned long pc = regs->pc - 4;
 	const struct exception_table_entry *fixup;
-
-	unaligned[0].count++;
-	unaligned[0].va = (unsigned long) va;
-	unaligned[0].pc = pc;
 
 	/*
 	 * We don't want to use the generic get/put unaligned macros as
@@ -665,10 +656,6 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 	 */
 	if ((unsigned long)va >= TASK_SIZE)
 		goto give_sigsegv;
-
-	++unaligned[1].count;
-	unaligned[1].va = (unsigned long)va;
-	unaligned[1].pc = regs->pc - 4;
 
 	if ((1L << opcode) & OP_INT_MASK) {
 		/* it's an integer load/store */
