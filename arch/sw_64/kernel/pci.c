@@ -221,7 +221,7 @@ void __init common_init_pci(void)
 	struct pci_bus *bus;
 	unsigned int init_busnr;
 	int need_domain_info = 0;
-	int ret, iov_bus;
+	int ret;
 	unsigned long offset;
 
 	/* Scan all of the recorded PCI controllers. */
@@ -257,20 +257,20 @@ void __init common_init_pci(void)
 
 		bus = hose->bus = bridge->bus;
 		hose->need_domain_info = need_domain_info;
-		while (pci_find_bus(pci_domain_nr(bus), last_bus))
-			last_bus++;
 
 		if (is_in_host())
-			iov_bus = chip_pcie_configure(hose);
-		last_bus += iov_bus;
+			last_bus = chip_pcie_configure(hose);
+		else
+			while (pci_find_bus(pci_domain_nr(bus), last_bus))
+				last_bus++;
 
-		hose->last_busno = hose->busn_space->end = last_bus - 1;
+		hose->last_busno = hose->busn_space->end = last_bus;
 		init_busnr = read_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS);
 		init_busnr &= ~(0xff << 16);
-		init_busnr |= (last_bus - 1) << 16;
+		init_busnr |= last_bus << 16;
 		write_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS, init_busnr);
-		pci_bus_update_busn_res_end(bus, last_bus - 1);
-
+		pci_bus_update_busn_res_end(bus, last_bus);
+		last_bus++;
 	}
 
 	pcibios_claim_console_setup();

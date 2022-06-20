@@ -178,18 +178,20 @@ int chip_pcie_configure(struct pci_controller *hose)
 	struct pci_bus *bus, *top;
 	struct list_head *next;
 	unsigned int max_read_size, smallest_max_payload;
-	int max_payloadsize, iov_bus = 0;
+	int max_payloadsize;
 	unsigned long rc_index, node;
 	unsigned long piuconfig0, value;
 	unsigned int pcie_caps_offset;
 	unsigned int rc_conf_value;
 	u16 devctl, new_values;
 	bool rc_ari_disabled = false, found = false;
+	unsigned char bus_max_num;
 
 	node = hose->node;
 	rc_index = hose->index;
 	smallest_max_payload = read_rc_conf(node, rc_index, RC_EXP_DEVCAP);
 	smallest_max_payload &= PCI_EXP_DEVCAP_PAYLOAD;
+	bus_max_num = hose->busn_space->start;
 
 	top = hose->bus;
 	bus = top;
@@ -200,6 +202,7 @@ int chip_pcie_configure(struct pci_controller *hose)
 			/* end of this bus, go up or finish */
 			if (bus == top)
 				break;
+
 			next = bus->self->bus_list.next;
 			bus = bus->self->bus;
 			continue;
@@ -224,10 +227,8 @@ int chip_pcie_configure(struct pci_controller *hose)
 			}
 		}
 
-#ifdef CONFIG_PCI_IOV
-		if (dev->is_physfn)
-			iov_bus += dev->sriov->max_VF_buses - dev->bus->number;
-#endif
+		if (bus->busn_res.end > bus_max_num)
+			bus_max_num = bus->busn_res.end;
 
 		/* Query device PCIe capability register  */
 		pcie_caps_offset = dev->pcie_cap;
@@ -306,7 +307,7 @@ int chip_pcie_configure(struct pci_controller *hose)
 		pci_write_config_word(dev, pcie_caps_offset + PCI_EXP_DEVCTL, devctl);
 	}
 
-	return iov_bus;
+	return bus_max_num;
 }
 
 static int chip3_check_pci_vt_linkup(unsigned long node, unsigned long index)
