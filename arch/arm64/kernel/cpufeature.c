@@ -1732,8 +1732,10 @@ __enable_cpu_capabilities(const struct arm64_cpu_capabilities *caps,
 	for (; caps->matches; caps++) {
 		unsigned int num = caps->capability;
 
-		if (num == ARM64_SPECTRE_BHB)
+		if (num == ARM64_SPECTRE_BHB) {
 			set_cap_spectre_bhb = true;
+			continue;
+		}
 
 		if (!(caps->type & scope_mask) || !cpus_have_cap(num))
 			continue;
