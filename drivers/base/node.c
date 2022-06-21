@@ -453,7 +453,7 @@ static ssize_t node_read_meminfo(struct device *dev,
 #else
 		       nid, K(node_page_state(pgdat, NR_SLAB_UNRECLAIMABLE)));
 #endif
-	len += hugetlb_report_node_meminfo(nid, buf + len);
+	len += hugetlb_report_node_meminfo(buf, len, nid);
 	return len;
 }
 
