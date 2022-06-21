@@ -226,57 +226,6 @@ int dump_fpu(struct pt_regs *regs, elf_fpregset_t *fpu)
 }
 EXPORT_SYMBOL(dump_fpu);
 
-/*
- * Under heavy swap load I've seen this lose in an ugly way.  So do
- * some extra sanity checking on the ranges we expect these pointers
- * to be in so that we can fail gracefully.  This is just for ps after
- * all.  -- r~
- */
-
-unsigned long
-thread_saved_pc(struct task_struct *t)
-{
-	unsigned long top, fp, sp;
-
-	top = (unsigned long)task_stack_page(t) + 2 * PAGE_SIZE;
-	sp = task_thread_info(t)->pcb.ksp;
-	fp = t->thread.s[6];
-
-	if (fp > sp && fp < top)
-		return *(unsigned long *)fp;
-
-	return 0;
-}
-
-unsigned long
-get_wchan(struct task_struct *p)
-{
-	unsigned long schedule_frame;
-	unsigned long pc, top, sp;
-
-	if (!p || p == current || p->state == TASK_RUNNING)
-		return 0;
-	/*
-	 * This one depends on the frame size of schedule().  Do a
-	 * "disass schedule" in gdb to find the frame size.  Also, the
-	 * code assumes that sleep_on() follows immediately after
-	 * interruptible_sleep_on() and that add_timer() follows
-	 * immediately after interruptible_sleep().  Ugly, isn't it?
-	 * Maybe adding a wchan field to task_struct would be better,
-	 * after all...
-	 */
-
-	pc = thread_saved_pc(p);
-	if (in_sched_functions(pc)) {
-		top = (unsigned long)task_stack_page(p) + 2 * PAGE_SIZE;
-		sp = task_thread_info(p)->pcb.ksp;
-		schedule_frame = p->thread.s[6];
-		if (schedule_frame > sp && schedule_frame < top)
-			return ((unsigned long *)schedule_frame)[12];
-	}
-	return pc;
-}
-
 unsigned long arch_randomize_brk(struct mm_struct *mm)
 {
 	return randomize_page(mm->brk, 0x02000000);

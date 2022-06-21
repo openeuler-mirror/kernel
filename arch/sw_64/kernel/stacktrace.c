@@ -172,3 +172,25 @@ void save_stack_trace_tsk(struct task_struct *tsk, struct stack_trace *trace)
 		trace->entries[trace->nr_entries++] = ULONG_MAX;
 }
 EXPORT_SYMBOL_GPL(save_stack_trace_tsk);
+
+static int save_pc(unsigned long pc, void *data)
+{
+	unsigned long *p = data;
+	*p = 0;
+
+	if (!in_sched_functions(pc))
+		*p = pc;
+
+	return *p;
+}
+
+unsigned long get_wchan(struct task_struct *tsk)
+{
+	unsigned long pc;
+
+	if (!tsk || tsk == current || tsk->state == TASK_RUNNING)
+		return 0;
+	walk_stackframe(tsk, NULL, save_pc, &pc);
+
+	return pc;
+}
