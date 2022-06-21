@@ -1648,6 +1648,7 @@ void dev_close_many(struct list_head *head, bool unlink)
 		call_netdevice_notifiers(NETDEV_DOWN, dev);
 		if (unlink)
 			list_del_init(&dev->close_list);
+		cond_resched();
 	}
 }
 EXPORT_SYMBOL(dev_close_many);
@@ -9591,6 +9592,7 @@ static void rollback_registered_many(struct list_head *head)
 		/* Remove XPS queueing entries */
 		netif_reset_xps_queues_gt(dev, 0);
 #endif
+		cond_resched();
 	}
 
 	synchronize_net();
