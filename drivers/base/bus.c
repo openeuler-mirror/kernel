@@ -228,7 +228,7 @@ static DRIVER_ATTR_IGNORE_LOCKDEP(bind, S_IWUSR, NULL, bind_store);
 
 static ssize_t show_drivers_autoprobe(struct bus_type *bus, char *buf)
 {
-	return sprintf(buf, "%d\n", bus->p->drivers_autoprobe);
+	return sysfs_emit(buf, "%d\n", bus->p->drivers_autoprobe);
 }
 
 static ssize_t store_drivers_autoprobe(struct bus_type *bus,

@@ -17,9 +17,9 @@
 
 static DEFINE_IDA(soc_ida);
 
-static ssize_t soc_info_get(struct device *dev,
-			    struct device_attribute *attr,
-			    char *buf);
+/* Prototype to allow declarations of DEVICE_ATTR(<foo>) before soc_info_show */
+static ssize_t soc_info_show(struct device *dev, struct device_attribute *attr,
+			     char *buf);
 
 struct soc_device {
 	struct device dev;
@@ -31,10 +31,10 @@ static struct bus_type soc_bus_type = {
 	.name  = "soc",
 };
 
-static DEVICE_ATTR(machine,  S_IRUGO, soc_info_get,  NULL);
-static DEVICE_ATTR(family,   S_IRUGO, soc_info_get,  NULL);
-static DEVICE_ATTR(soc_id,   S_IRUGO, soc_info_get,  NULL);
-static DEVICE_ATTR(revision, S_IRUGO, soc_info_get,  NULL);
+static DEVICE_ATTR(machine,  0444, soc_info_show,  NULL);
+static DEVICE_ATTR(family,   0444, soc_info_show,  NULL);
+static DEVICE_ATTR(soc_id,   0444, soc_info_show,  NULL);
+static DEVICE_ATTR(revision, 0444, soc_info_show,  NULL);
 
 struct device *soc_device_to_device(struct soc_device *soc_dev)
 {
@@ -65,7 +65,7 @@ static umode_t soc_attribute_mode(struct kobject *kobj,
 	return 0;
 }
 
-static ssize_t soc_info_get(struct device *dev,
+static ssize_t soc_info_show(struct device *dev,
 			    struct device_attribute *attr,
 			    char *buf)
 {
