@@ -385,7 +385,11 @@ struct cfs_bandwidth {
 	int			nr_throttled;
 	u64			throttled_time;
 
+#if !defined(__GENKSYMS__)
+	u64			burst;
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
