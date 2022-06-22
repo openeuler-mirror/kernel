@@ -396,6 +396,13 @@ struct cached_dev {
 	unsigned int		error_limit;
 	unsigned int		offline_seconds;
 
+	/*
+	 * Retry to update writeback_rate if contention happens for
+	 * down_read(dc->writeback_lock) in update_writeback_rate()
+	 */
+#define BCH_WBRATE_UPDATE_MAX_SKIPS	15
+	unsigned int		rate_update_retry;
+
 	char			backing_dev_name[BDEVNAME_SIZE];
 };
 
