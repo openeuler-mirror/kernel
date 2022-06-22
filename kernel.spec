@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2206.2.0
+%global hulkrelease 2206.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0154
+Release: %{hulkrelease}.0155
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,37 @@ fi
 %endif
 
 %changelog
+
+* Mon Jun 20 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2206.3.0.0155
+- arm64: fix out-of-range error when adapting for ARM64_SPECTRE_BHB
+- xfs: replace -EIO with -EFSCORRUPTED for corrupt metadata
+- xfs: namecheck directory entry names before listing them
+- xfs: namecheck attribute names before listing them
+- xfs: check attribute leaf block structure
+- xfs: check attribute name validity
+- xfs: check directory name validity
+- xfs: scrub should flag dir/attr offsets that aren't mappable with xfs_dablk_t
+- xfs: abort xattr scrub if fatal signals are pending
+- tcp: increase source port perturb table to 2^16
+- tcp: change source port randomizarion at connect() time
+- arm64: fix extra cpucaps setup problem
+- Revert "sched: Fix sched_fork() access an invalid sched_task_group"
+- Revert "sched: Fix yet more sched_fork() races"
+- powerpc/32: Fix overread/overwrite of thread_struct via ptrace
+- sctp: use call_rcu to free endpoint
+- ext4: convert from atomic_t to refcount_t on ext4_io_end->count
+- ext4: correct the judgment of BUG in ext4_mb_normalize_request
+- ext4: fix bug_on ext4_mb_use_inode_pa
+- HID: holtek: fix mouse probing
+- HID: check for valid USB device for many HID drivers
+- HID: wacom: fix problems when device is not a valid USB device
+- HID: add USB_HID dependancy on some USB HID drivers
+- HID: add USB_HID dependancy to hid-chicony
+- HID: add USB_HID dependancy to hid-prodikeys
+- HID: add hid_is_usb() function to make it simpler for USB detection
+- netfilter: nf_tables: disallow non-stateful expression in sets earlier
+- NFSv4: fix open failure with O_ACCMODE flag
+- Revert "NFSv4: Handle the special Linux file open access mode"
 
 * Mon Jun 13 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2206.2.0.0154
 - x86: Pin task-stack in __get_wchan()
