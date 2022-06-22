@@ -718,7 +718,7 @@ int dep_init(struct super_block *sb)
 	for_each_possible_cpu(cpu)
 		init_llist_head(per_cpu_ptr(sbi->persistee_list, cpu));
 
-	sbi->persisters = kmalloc(sizeof(struct task_struct *) *
+	sbi->persisters = kzalloc(sizeof(struct task_struct *) *
 					  persisters_per_socket * num_sockets,
 				  GFP_KERNEL);
 	if (!sbi->persisters) {
