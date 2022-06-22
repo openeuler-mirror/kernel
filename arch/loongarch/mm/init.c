@@ -22,7 +22,7 @@
 #include <linux/pfn.h>
 #include <linux/hardirq.h>
 #include <linux/gfp.h>
-#include <linux/initrd.h>
+#include <linux/hugetlb.h>
 #include <linux/mmzone.h>
 
 #include <asm/asm-offsets.h>
@@ -153,6 +153,77 @@ void arch_remove_memory(u64 start, u64 size, struct vmem_altmap *altmap)
 	if (altmap)
 		page += vmem_altmap_offset(altmap);
 	__remove_pages(start_pfn, nr_pages, altmap);
+}
+#endif
+#endif
+
+#ifdef CONFIG_SPARSEMEM_VMEMMAP
+static int __meminit vmemmap_populate_hugepages(unsigned long start, unsigned long end,
+						int node, struct vmem_altmap *altmap)
+{
+	unsigned long addr = start;
+	unsigned long next;
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
+
+	for (addr = start; addr < end; addr = next) {
+		next = pmd_addr_end(addr, end);
+
+		pgd = vmemmap_pgd_populate(addr, node);
+		if (!pgd)
+			return -ENOMEM;
+		p4d = vmemmap_p4d_populate(pgd, addr, node);
+		if (!p4d)
+			return -ENOMEM;
+		pud = vmemmap_pud_populate(p4d, addr, node);
+		if (!pud)
+			return -ENOMEM;
+
+		pmd = pmd_offset(pud, addr);
+		if (pmd_none(*pmd)) {
+			void *p = NULL;
+
+			p = vmemmap_alloc_block_buf(PMD_SIZE, node, NULL);
+			if (p) {
+				pmd_t entry;
+
+				entry = pfn_pmd(virt_to_pfn(p), PAGE_KERNEL);
+				pmd_val(entry) |= _PAGE_HUGE | _PAGE_HGLOBAL;
+				set_pmd_at(&init_mm, addr, pmd, entry);
+
+				continue;
+			}
+		} else if (pmd_val(*pmd) & _PAGE_HUGE) {
+			vmemmap_verify((pte_t *)pmd, node, addr, next);
+			continue;
+		}
+		if (vmemmap_populate_basepages(addr, next, node, NULL))
+			return -ENOMEM;
+	}
+
+	return 0;
+}
+
+#if CONFIG_PGTABLE_LEVELS == 2
+int __meminit vmemmap_populate(unsigned long start, unsigned long end,
+			int node, struct vmem_altmap *altmap)
+{
+	return vmemmap_populate_basepages(start, end, node, NULL);
+}
+#else
+int __meminit vmemmap_populate(unsigned long start, unsigned long end,
+			int node, struct vmem_altmap *altmap)
+{
+	return vmemmap_populate_hugepages(start, end, node, NULL);
+}
+#endif
+
+#ifdef CONFIG_MEMORY_HOTPLUG
+void vmemmap_free(unsigned long start, unsigned long end,
+			struct vmem_altmap *altmap)
+{
 }
 #endif
 #endif
