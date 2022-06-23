@@ -128,9 +128,9 @@ static __wsum __csum_and_copy(const void __user *src, void *dst, int len)
 			(const unsigned long __user *) src,
 			(unsigned long *) dst, len-8);
 	} else {
-		checksum = csum_partial_cfu_dest_aligned(
+		checksum = csum_partial_cfu_dest_unaligned(
 			(const unsigned long __user *) src,
-			(unsigned long *) dst, len-8);
+			(unsigned long *) dst, doff, len-8);
 	}
 	return (__force __wsum)from64to16(checksum);
 }
