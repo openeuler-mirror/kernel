@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       98
+%global devel_release       99
 %global maintenance_release .0.0
-%global pkg_release         .50
+%global pkg_release         .51
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,95 @@ fi
 %endif
 
 %changelog
+* Wed Jun 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-99.0.0.51
+- sched/fair: Add document for burstable CFS bandwidth
+- sched/fair: Add cfs bandwidth burst statistics
+- sched/fair: Introduce the burstable CFS controller
+- mm: memcontrol: add the flag_stat file
+- eulerfs: fix potential sbi->persisters free error
+- fs/ntfs3: Fix invalid free in log_replay
+- Revert "nfs: nfs_file_write() should check for writeback errors"
+- xfs: Skip repetitive warnings about mount options
+- xfs: rename variable mp to parsing_mp
+- ext4: convert from atomic_t to refcount_t on ext4_io_end->count
+- powerpc/32: Fix overread/overwrite of thread_struct via ptrace
+- RDMA/hns: Refactor the alloc_cqc()
+- RDMA/hns: Refactor the alloc_srqc()
+- RDMA/hns: Clean up the return value check of hns_roce_alloc_cmd_mailbox()
+- RDMA/hns: Remove similar code that configures the hardware contexts
+- RDMA/hns: Refactor mailbox functions
+- RDMA/hns: Fix the wrong type of parameter "op" of the mailbox
+- RDMA/hns: Remove redundant parameter "mailbox" in the mailbox
+- RDMA/hns: Remove fixed parameter "timeout" in the mailbox
+- RDMA/hns: Remove the unused parameter "op_modifier" in mailbox
+- tcp: increase source port perturb table to 2^16
+- tcp: change source port randomizarion at connect() time
+- ext4: correct the judgment of BUG in ext4_mb_normalize_request
+- ext4: fix bug_on ext4_mb_use_inode_pa
+- net/ns: put workqueue of cleanup_net sleep for a while when notify.
+- bcache: avoid unnecessary soft lockup in kworker update_writeback_rate()
+- md: bcache: check the return value of kzalloc() in detached_dev_do_request()
+- bcache: memset on stack variables in bch_btree_check() and bch_sectors_dirty_init()
+- bcache: avoid journal no-space deadlock by reserving 1 journal bucket
+- bcache: remove incremental dirty sector counting for bch_sectors_dirty_init()
+- bcache: improve multithreaded bch_sectors_dirty_init()
+- bcache: improve multithreaded bch_btree_check()
+- bcache: fixup multiple threads crash
+- bcache: fixup bcache_dev_sectors_dirty_add() multithreaded CPU false sharing
+- bcache: use default_groups in kobj_type
+- bcache: fix NULL pointer reference in cached_dev_detach_finish
+- bcache: replace snprintf in show functions with sysfs_emit
+- bcache: move uapi header bcache.h to bcache code directory
+- bcache: move calc_cached_dev_sectors to proper place on backing device detach
+- bcache: fix error info in register_bcache()
+- md: bcache: Fix spelling of 'acquire'
+- bcache: avoid oversized read request in cache missing code path
+- bcache: remove bcache device self-defined readahead
+- lib: crc64: fix kernel-doc warning
+- bcache: fix a regression of code compiling failure in debug.c
+- bcache: Use 64-bit arithmetic instead of 32-bit
+- md: bcache: Trivial typo fixes in the file journal.c
+- md: bcache: avoid -Wempty-body warnings
+- bcache: use NULL instead of using plain integer as pointer
+- bcache: remove PTR_CACHE
+- bcache: reduce redundant code in bch_cached_dev_run()
+- bcache: Avoid comma separated statements
+- bcache: Fix register_device_aync typo
+- bcache: consider the fragmentation when update the writeback rate
+- bcache: don't pass BIOSET_NEED_BVECS for the 'bio_set' embedded in 'cache_set'
+- bcache: set pdev_set_uuid before scond loop iteration
+- md/bcache: convert comma to semicolon
+- bcache:remove a superfluous check in register_bcache
+- bcache: fix race between setting bdev state to none and new write request direct to backing
+- Revert "selftests/bpf: Add test for bpf_timer overwriting crash"
+- smsc95xx: Ignore -ENODEV errors when device is unplugged
+- net: usb: Correct reset handling of smsc95xx
+- net: usb: Correct PHY handling of smsc95xx
+- perf symbols: Fix symbol size calculation condition
+- Input: aiptek - properly check endpoint type
+- scsi: mpt3sas: Page fault in reply q processing
+- usb: usbtmc: Fix bug in pipe direction for control transfers
+- usb: gadget: Fix use-after-free bug by not setting udc->dev.driver
+- usb: gadget: rndis: prevent integer overflow in rndis_set_response()
+- net: mscc: ocelot: fix backwards compatibility with single-chain tc-flower offload
+- net: bcmgenet: skip invalid partial checksums
+- bnx2x: fix built-in kernel driver load failure
+- net: phy: mscc: Add MODULE_FIRMWARE macros
+- net: dsa: Add missing of_node_put() in dsa_port_parse_of
+- net: handle ARPHRD_PIMREG in dev_is_mac_header_xmit()
+- drm/panel: simple: Fix Innolux G070Y2-L01 BPP settings
+- drm/imx: parallel-display: Remove bus flags check in imx_pd_bridge_atomic_check()
+- hv_netvsc: Add check for kvmalloc_array
+- atm: eni: Add check for dma_map_single
+- net/packet: fix slab-out-of-bounds access in packet_recvmsg()
+- net: phy: marvell: Fix invalid comparison in the resume and suspend functions
+- esp6: fix check on ipv6_skip_exthdr's return value
+- vsock: each transport cycles only on its own sockets
+- efi: fix return value of __setup handlers
+- mm: swap: get rid of livelock in swapin readahead
+- ocfs2: fix crash when initialize filecheck kobj fails
+- crypto: qcom-rng - ensure buffer for generate is completely filled
+
 * Tue Jun 14 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-98.0.0.50
 - jbd2: fix outstanding credits assert in jbd2_journal_commit_transaction()
 - NFSv4: fix open failure with O_ACCMODE flag
