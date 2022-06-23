@@ -77,7 +77,7 @@ dik_show_code(unsigned int *pc)
 
 void die_if_kernel(char *str, struct pt_regs *regs, long err)
 {
-	if (regs->ps & 8)
+	if (user_mode(regs))
 		return;
 #ifdef CONFIG_SMP
 	printk("CPU %d ", hard_smp_processor_id());
@@ -149,7 +149,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 	type = inst_type & 0xffffffff;
 	inst = inst_type >> 32;
 
-	if ((regs->ps & ~IPL_MAX) == 0 && type != 4) {
+	if (!user_mode(regs) && type != 4) {
 		if (type == 1) {
 			const unsigned int *data
 				= (const unsigned int *) regs->pc;
@@ -253,7 +253,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 			if (notify_die(DIE_UPROBE_XOL, "uprobe_xol", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
 				return;
 		}
-		if ((regs->ps & ~IPL_MAX) == 0)
+		if (!user_mode(regs))
 			die_if_kernel("Instruction fault", regs, type);
 		break;
 
