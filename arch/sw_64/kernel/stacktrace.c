@@ -139,39 +139,57 @@ void show_stack(struct task_struct *task, unsigned long *sp, const char *loglvl)
 	walk_stackframe(task, NULL, print_address_trace, (void *)loglvl);
 }
 
+#ifdef CONFIG_STACKTRACE
 /*
  * Save stack-backtrace addresses into a stack_trace buffer.
  */
-void save_stack_trace(struct stack_trace *trace)
+struct stack_trace_data {
+	struct stack_trace *trace;
+	unsigned int nosched;
+};
+
+int save_trace(unsigned long pc, void *d)
 {
-	save_stack_trace_tsk(current, trace);
-}
-EXPORT_SYMBOL_GPL(save_stack_trace);
+	struct stack_trace_data *data = d;
+	struct stack_trace *trace = data->trace;
 
-
-void save_stack_trace_tsk(struct task_struct *tsk, struct stack_trace *trace)
-{
-	unsigned long *sp = (unsigned long *)task_thread_info(tsk)->pcb.ksp;
-	unsigned long addr;
-
-	WARN_ON(trace->nr_entries || !trace->max_entries);
-
-	while (!kstack_end(sp)) {
-		addr = *sp++;
-		if (__kernel_text_address(addr) &&
-				!in_sched_functions(addr)) {
-			if (trace->skip > 0)
-				trace->skip--;
-			else
-				trace->entries[trace->nr_entries++] = addr;
-			if (trace->nr_entries >= trace->max_entries)
-				break;
-		}
+	if (data->nosched && in_sched_functions(pc))
+		return 0;
+	if (trace->skip > 0) {
+		trace->skip--;
+		return 0;
 	}
+
+	trace->entries[trace->nr_entries++] = pc;
+	return (trace->nr_entries >= trace->max_entries);
+}
+
+static void __save_stack_trace(struct task_struct *tsk,
+		struct stack_trace *trace, unsigned int nosched)
+{
+	struct stack_trace_data data;
+
+	data.trace = trace;
+	data.nosched = nosched;
+
+	walk_stackframe(tsk, NULL, save_trace, &data);
+
 	if (trace->nr_entries < trace->max_entries)
 		trace->entries[trace->nr_entries++] = ULONG_MAX;
 }
+
+void save_stack_trace_tsk(struct task_struct *tsk, struct stack_trace *trace)
+{
+	__save_stack_trace(tsk, trace, 1);
+}
 EXPORT_SYMBOL_GPL(save_stack_trace_tsk);
+
+void save_stack_trace(struct stack_trace *trace)
+{
+	__save_stack_trace(current, trace, 0);
+}
+EXPORT_SYMBOL_GPL(save_stack_trace);
+#endif
 
 static int save_pc(unsigned long pc, void *data)
 {
