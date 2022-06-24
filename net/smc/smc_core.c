@@ -994,6 +994,8 @@ static void __smc_lgr_terminate(struct smc_link_group *lgr, bool soft)
 	/* cancel free_work sync, will terminate when lgr->freeing is set */
 	cancel_delayed_work(&lgr->free_work);
 	lgr->terminating = 1;
+	/* memory barrier */
+	smp_wmb();
 
 	/* kill remaining link group connections */
 	read_lock_bh(&lgr->conns_lock);
@@ -1003,6 +1005,8 @@ static void __smc_lgr_terminate(struct smc_link_group *lgr, bool soft)
 		conn = rb_entry(node, struct smc_connection, alert_node);
 		smc = container_of(conn, struct smc_sock, conn);
 		sock_hold(&smc->sk); /* sock_put below */
+		/* try wakeup all */
+		wake_up_all(&conn->cdc_pend_tx_wq);
 		lock_sock(&smc->sk);
 		smc_conn_kill(conn, soft);
 		release_sock(&smc->sk);
