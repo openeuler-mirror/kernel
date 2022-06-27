@@ -12,7 +12,7 @@
 #include <linux/sched/signal.h>
 #include <linux/kvm.h>
 #include <linux/uaccess.h>
-
+#include <linux/sched.h>
 #include <asm/kvm_timer.h>
 #include <asm/kvm_emulate.h>
 
@@ -21,6 +21,7 @@
 
 bool set_msi_flag;
 unsigned long sw64_kvm_last_vpn[NR_CPUS];
+__read_mostly bool bind_vcpu_enabled;
 #define cpu_last_vpn(cpuid) sw64_kvm_last_vpn[cpuid]
 
 #ifdef CONFIG_SUBARCH_C3B
@@ -537,6 +538,16 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 #ifndef CONFIG_KVM_MEMHOTPLUG
 		vcpu->arch.vcb.vpcr
 			= get_vpcr(vcpu->kvm->arch.host_phys_addr, vcpu->kvm->arch.size, 0);
+
+		if (unlikely(bind_vcpu_enabled)) {
+			int nid;
+			unsigned long end;
+
+			end = vcpu->kvm->arch.host_phys_addr + vcpu->kvm->arch.size;
+			nid = pfn_to_nid(PHYS_PFN(vcpu->kvm->arch.host_phys_addr));
+			if (pfn_to_nid(PHYS_PFN(end)) == nid)
+				set_cpus_allowed_ptr(vcpu->arch.tsk, node_to_cpumask_map[nid]);
+		}
 #else
 		unsigned long seg_base = virt_to_phys(vcpu->kvm->arch.seg_pgd);
 
