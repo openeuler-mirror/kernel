@@ -156,7 +156,6 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 	struct pt_regs *childregs = task_pt_regs(p);
 	struct pt_regs *regs = current_pt_regs();
 
-	childti->pcb.ksp = (unsigned long) childregs;
 	childti->pcb.flags = 7;	/* set FEN, clear everything else */
 	p->thread.sp = (unsigned long) childregs;
 

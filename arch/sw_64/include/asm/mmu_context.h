@@ -14,37 +14,14 @@
 
 /*
  * Force a context reload. This is needed when we change the page
- * table pointer or when we update the ASN of the current process.
+ * table pointer or when we update the ASID of the current process.
+ *
+ * CSR:UPN holds ASID and CSR:PTBR holds page table pointer.
  */
-
-static inline unsigned long
-__reload_thread(struct pcb_struct *pcb)
-{
-	register unsigned long a0 __asm__("$16");
-	register unsigned long v0 __asm__("$0");
-
-	a0 = virt_to_phys(pcb);
-	__asm__ __volatile__(
-		"sys_call %2 #__reload_thread"
-		: "=r"(v0), "=r"(a0)
-		: "i"(HMC_swpctx), "r"(a0)
-		: "$1", "$22", "$23", "$24", "$25");
-
-	return v0;
-}
-
 #define load_asn_ptbr   load_mm
 
 /*
- * The maximum ASN's the processor supports.
- *
- * If a processor implements address space numbers (ASNs), and the old
- * PTE has the Address Space Match (ASM) bit clear (ASNs in use) and
- * the Valid bit set, then entries can also effectively be made coherent
- * by assigning a new, unused ASN to the currently running process and
- * not reusing the previous ASN before calling the appropriate HMcode
- * routine to invalidate the translation buffer (TB).
- *
+ * The maximum ASN's the processor supports. ASN is called ASID too.
  */
 
 #ifdef CONFIG_SUBARCH_C3B

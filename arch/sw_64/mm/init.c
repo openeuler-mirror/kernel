@@ -77,21 +77,12 @@ pgd_alloc(struct mm_struct *mm)
 	return ret;
 }
 
-static inline unsigned long
-load_PCB(struct pcb_struct *pcb)
-{
-	register unsigned long sp __asm__("$30");
-	pcb->ksp = sp;
-	return __reload_thread(pcb);
-}
-
 /* Set up initial PCB, VPTB, and other such nicities.  */
 
 static inline void
 switch_to_system_map(void)
 {
 	unsigned long newptbr;
-	unsigned long original_pcb_ptr;
 
 	/*
 	 * Initialize the kernel's page tables.  Linux puts the vptb in
@@ -103,7 +94,7 @@ switch_to_system_map(void)
 	/* Also set up the real kernel PCB while we're at it.  */
 	init_thread_info.pcb.ptbr = newptbr;
 	init_thread_info.pcb.flags = 1;	/* set FEN, clear everything else */
-	original_pcb_ptr = load_PCB(&init_thread_info.pcb);
+	wrptbr(PFN_PHYS(newptbr));
 	tbiv();
 }
 

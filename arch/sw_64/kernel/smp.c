@@ -34,7 +34,7 @@ EXPORT_SYMBOL(__cpu_to_rcid);
 int __rcid_to_cpu[NR_CPUS];		/* Map physical to logical */
 EXPORT_SYMBOL(__rcid_to_cpu);
 
-unsigned long tidle_pcb[NR_CPUS];
+void *tidle_ksp[NR_CPUS];
 
 /* State of each CPU */
 DEFINE_PER_CPU(int, cpu_state) = { 0 };
@@ -110,6 +110,8 @@ void smp_callin(void)
 	/* All kernel threads share the same mm context.  */
 	mmgrab(&init_mm);
 	current->active_mm = &init_mm;
+	/* update csr:ptbr */
+	wrptbr(PFN_PHYS(current_thread_info()->pcb.ptbr));
 
 	/* inform the notifiers about the new cpu */
 	notify_cpu_starting(cpuid);
@@ -153,23 +155,11 @@ static inline void set_secondary_ready(int cpuid)
  */
 static int secondary_cpu_start(int cpuid, struct task_struct *idle)
 {
-	struct pcb_struct *ipcb;
 	unsigned long timeout;
-
-	ipcb = &task_thread_info(idle)->pcb;
-
 	/*
-	 * Initialize the idle's PCB to something just good enough for
-	 * us to get started.  Immediately after starting, we'll swpctx
-	 * to the target idle task's pcb.  Reuse the stack in the mean
-	 * time.  Precalculate the target PCBB.
+	 * Precalculate the target ksp.
 	 */
-	ipcb->ksp = (unsigned long)ipcb + sizeof(union thread_union) - 16;
-	ipcb->usp = 0;
-	ipcb->pcc = 0;
-	ipcb->asn = 0;
-	tidle_pcb[cpuid] = ipcb->unique = virt_to_phys(ipcb);
-	ipcb->dv_match = ipcb->dv_mask = 0;
+	tidle_ksp[cpuid] = idle->stack + sizeof(union thread_union) - 16;
 
 	DBGS("Starting secondary cpu %d: state 0x%lx\n", cpuid, idle->state);
 
