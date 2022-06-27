@@ -697,7 +697,8 @@ void __mod_memcg_state(struct mem_cgroup *memcg, int idx, int val)
 		return;
 
 	x = val + __this_cpu_read(memcg->stat_cpu->count[idx]);
-	if (unlikely(abs(x) > MEMCG_CHARGE_BATCH)) {
+	if (unlikely(abs(x) > MEMCG_CHARGE_BATCH ||
+	    memcg->css.flags & CSS_DYING)) {
 		struct mem_cgroup *mi;
 		struct mem_cgroup_extension *memcg_ext;
 
@@ -3244,8 +3245,10 @@ static void memcg_flush_percpu_vmstats(struct mem_cgroup *memcg)
 		stat[i] = 0;
 
 	for_each_online_cpu(cpu)
-		for (i = 0; i < MEMCG_NR_STAT; i++)
+		for (i = 0; i < MEMCG_NR_STAT; i++) {
 			stat[i] += per_cpu(memcg->stat_cpu->count[i], cpu);
+			per_cpu(memcg->stat_cpu->count[i], cpu) = 0;
+		}
 
 	for (mi = memcg; mi; mi = parent_mem_cgroup(mi))
 		for (i = 0; i < MEMCG_NR_STAT; i++)
@@ -3259,9 +3262,11 @@ static void memcg_flush_percpu_vmstats(struct mem_cgroup *memcg)
 			stat[i] = 0;
 
 		for_each_online_cpu(cpu)
-			for (i = 0; i < NR_VM_NODE_STAT_ITEMS; i++)
+			for (i = 0; i < NR_VM_NODE_STAT_ITEMS; i++) {
 				stat[i] += per_cpu(
 					pn->lruvec_stat_cpu->count[i], cpu);
+				per_cpu(pn->lruvec_stat_cpu->count[i], cpu) = 0;
+			}
 
 		for (pi = pn; pi; pi = parent_nodeinfo(pi, node))
 			for (i = 0; i < NR_VM_NODE_STAT_ITEMS; i++)
@@ -3279,9 +3284,11 @@ static void memcg_flush_percpu_vmevents(struct mem_cgroup *memcg)
 		events[i] = 0;
 
 	for_each_online_cpu(cpu)
-		for (i = 0; i < NR_VM_EVENT_ITEMS; i++)
+		for (i = 0; i < NR_VM_EVENT_ITEMS; i++) {
 			events[i] += per_cpu(memcg->stat_cpu->events[i],
 					     cpu);
+			per_cpu(memcg->stat_cpu->events[i], cpu) = 0;
+		}
 
 	for (mi = memcg; mi; mi = parent_mem_cgroup(mi))
 		for (i = 0; i < NR_VM_EVENT_ITEMS; i++)
@@ -5105,6 +5112,9 @@ static void mem_cgroup_css_offline(struct cgroup_subsys_state *css)
 
 	memcg_offline_kmem(memcg);
 	wb_memcg_offline(memcg);
+
+	memcg_flush_percpu_vmstats(memcg);
+	memcg_flush_percpu_vmevents(memcg);
 
 	mem_cgroup_id_put(memcg);
 }
