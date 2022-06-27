@@ -76,17 +76,14 @@ __smp_callin:
 
 	sys_call HMC_whami	# Get hard cid
 
-	sll	$0, 2, $0
 	ldi	$1, __rcid_to_cpu
-	addl	$1, $0, $1
+	s4addl	$0, $1, $1
 	ldw	$0, 0($1)	# Get logical cpu number
 
-	sll	$0, 3, $0
-	ldi	$1, tidle_pcb
-	addl	$1, $0, $1
-	ldl	$16, 0($1)	# Get PCBB of idle thread
+	ldi	$2, tidle_ksp
+	s8addl	$0, $2, $2
+	ldl	$30, 0($2)	# Get ksp of idle thread
 
-	sys_call HMC_swpctx
 	ldi	$8, 0x3fff	# Find "current".
 	bic	$30, $8, $8
 

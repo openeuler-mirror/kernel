@@ -284,7 +284,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 		 * with it.
 		 */
 		current_thread_info()->pcb.flags |= 1;
-		__reload_thread(&current_thread_info()->pcb);
+		fpu_enable();
 		return;
 
 	case 5: /* illoc */

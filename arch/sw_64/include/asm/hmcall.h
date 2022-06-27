@@ -62,6 +62,11 @@
 extern void halt(void) __attribute__((noreturn));
 #define __halt() __asm__ __volatile__ ("sys_call %0 #halt" : : "i" (HMC_halt))
 
+#define fpu_enable()						\
+{								\
+	__asm__ __volatile__("sys_call %0" : : "i" (HMC_wrfen));\
+}
+
 #define imb() \
 	__asm__ __volatile__ ("sys_call %0 #imb" : : "i" (HMC_imb) : "memory")
 

@@ -76,7 +76,7 @@ void __load_new_mm_context(struct mm_struct *next_mm)
 	pcb->asn = mmc & HARDWARE_ASN_MASK;
 	pcb->ptbr = virt_to_pfn(next_mm->pgd);
 
-	__reload_thread(pcb);
+	load_asn_ptbr(pcb->asn, pcb->ptbr);
 }
 
 /*
