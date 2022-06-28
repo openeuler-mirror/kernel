@@ -1112,6 +1112,8 @@ static inline void efi_check_for_embedded_firmwares(void) { }
 
 efi_status_t efi_random_get_seed(void);
 
+#define arch_efi_call_virt(p, f, args...)	((p)->f(args))
+
 void efi_retrieve_tpm2_eventlog(void);
 
 /*
