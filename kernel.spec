@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2206.3.0
+%global hulkrelease 2206.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0155
+Release: %{hulkrelease}.0156
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,17 @@ fi
 %endif
 
 %changelog
+
+* Mon Jun 27 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2206.4.0.0156
+- mm/memcontrol: fix wrong vmstats for dying memcg
+- ext4: recover csum seed of tmp_inode after migrating to extents
+- xfs: show the proper user quota options
+- drivers core: node: Use a more typical macro definition style for ACCESS_ATTR
+- drivers core: Use sysfs_emit for shared_cpu_map_show and shared_cpu_list_show
+- mm: and drivers core: Convert hugetlb_report_node_meminfo to sysfs_emit
+- drivers core: Miscellaneous changes for sysfs_emit
+- drivers core: Remove strcat uses around sysfs_emit and neaten
+- drivers core: Use sysfs_emit and sysfs_emit_at for show(device *...) functions
 
 * Mon Jun 20 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2206.3.0.0155
 - arm64: fix out-of-range error when adapting for ARM64_SPECTRE_BHB
