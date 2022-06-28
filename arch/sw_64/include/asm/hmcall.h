@@ -45,19 +45,18 @@
 
 
 /* 0x80  - 0xBF : User Level HMC routine */
-#define HMC_bpt			0x80
-#define HMC_callsys		0x83
-#define HMC_imb			0x86
+#include <uapi/asm/hmcall.h>
+
+/* Following will be deprecated from user level invocation */
 #define HMC_rwreg		0x87
-#define HMC_rdunique		0x9E
-#define HMC_wrunique		0x9F
 #define HMC_sz_uflush		0xA8
-#define HMC_gentrap		0xAA
-#define HMC_wrperfmon		0xB0
 #define HMC_longtime		0xB1
 
 #ifdef __KERNEL__
 #ifndef __ASSEMBLY__
+
+#include <linux/init.h>
+extern void __init fixup_hmcall(void);
 
 extern void halt(void) __attribute__((noreturn));
 #define __halt() __asm__ __volatile__ ("sys_call %0 #halt" : : "i" (HMC_halt))
@@ -183,6 +182,7 @@ __CALL_HMC_W1(wrtimer, unsigned long);
 __CALL_HMC_RW3(tbivpn, unsigned long, unsigned long, unsigned long, unsigned long);
 __CALL_HMC_RW2(cpuid, unsigned long, unsigned long, unsigned long);
 
+__CALL_HMC_W1(wrtp, unsigned long);
 /*
  * TB routines..
  */

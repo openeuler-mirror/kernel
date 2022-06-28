@@ -73,8 +73,7 @@ switch_mm(struct mm_struct *prev_mm, struct mm_struct *next_mm,
 	  struct task_struct *next)
 {
 	/* Check if our ASN is of an older version, and thus invalid. */
-	unsigned long asn;
-	unsigned long mmc;
+	unsigned long asn, mmc, ptbr;
 	long cpu = smp_processor_id();
 
 #ifdef CONFIG_SMP
@@ -94,17 +93,13 @@ switch_mm(struct mm_struct *prev_mm, struct mm_struct *next_mm,
 #endif
 
 	/*
-	 * Always update the PCB ASN.  Another thread may have allocated
-	 * a new mm->context (via flush_tlb_mm) without the ASN serial
+	 * Update CSR:UPN and CSR:PTBR. Another thread may have allocated
+	 * a new mm->context[asid] (via flush_tlb_mm) without the ASN serial
 	 * number wrapping.  We have no way to detect when this is needed.
 	 */
-	task_thread_info(next)->pcb.asn = mmc & HARDWARE_ASN_MASK;
-	/*
-	 * Always update the PCB PTBR. If next is kernel thread, it must
-	 * update PTBR. If next is user process, it's ok to update PTBR.
-	 */
-	task_thread_info(next)->pcb.ptbr = virt_to_pfn(next_mm->pgd);
-	load_asn_ptbr(task_thread_info(next)->pcb.asn, task_thread_info(next)->pcb.ptbr);
+	asn = mmc & HARDWARE_ASN_MASK;
+	ptbr = virt_to_pfn(next_mm->pgd);
+	load_asn_ptbr(asn, ptbr);
 }
 
 extern void __load_new_mm_context(struct mm_struct *);
@@ -141,8 +136,6 @@ static inline int init_new_context(struct task_struct *tsk,
 
 	for_each_possible_cpu(i)
 		mm->context.asid[i] = 0;
-	if (tsk != current)
-		task_thread_info(tsk)->pcb.ptbr = virt_to_pfn(mm->pgd);
 	return 0;
 }
 
@@ -154,7 +147,6 @@ static inline void destroy_context(struct mm_struct *mm)
 static inline void enter_lazy_tlb(struct mm_struct *mm,
 				  struct task_struct *tsk)
 {
-	task_thread_info(tsk)->pcb.ptbr = virt_to_pfn(mm->pgd);
 }
 
 static inline int arch_dup_mmap(struct mm_struct *oldmm,
