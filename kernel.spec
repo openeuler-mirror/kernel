@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       99
+%global devel_release       100
 %global maintenance_release .0.0
-%global pkg_release         .51
+%global pkg_release         .52
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,44 @@ fi
 %endif
 
 %changelog
+* Tue Jun 28 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-100.0.0.52
+- KVM: x86/mmu: do compare-and-exchange of gPTE via the user address
+- bpf: Fix KASAN use-after-free Read in compute_effective_progs
+- fs, mm: fix race in unlinking swapfile
+- ext4: recover csum seed of tmp_inode after migrating to extents
+- lockdown: also lock down previous kgdb use
+- nds32: fix access_ok() checks in get/put_user
+- wcn36xx: Differentiate wcn3660 from wcn3620
+- tpm: use try_get_ops() in tpm-space.c
+- mac80211: fix potential double free on mesh join
+- rcu: Don't deboost before reporting expedited quiescent state
+- Revert "ath: add support for special 0x0 regulatory domain"
+- crypto: qat - disable registration of algorithms
+- ACPI: video: Force backlight native for Clevo NL5xRU and NL5xNU
+- ACPI: battery: Add device HID and quirk for Microsoft Surface Go 3
+- ACPI / x86: Work around broken XSDT on Advantech DAC-BJ01 board
+- drivers: net: xgene: Fix regression in CRC stripping
+- ALSA: pci: fix reading of swapped values from pcmreg in AC97 codec
+- ALSA: cmipci: Restore aux vol on suspend/resume
+- ALSA: usb-audio: Add mute TLV for playback volumes on RODE NT-USB
+- ALSA: pcm: Add stream lock during PCM reset ioctl operations
+- ALSA: pcm: Fix races among concurrent prealloc proc writes
+- ALSA: pcm: Fix races among concurrent prepare and hw_params/hw_free calls
+- ALSA: pcm: Fix races among concurrent read/write and buffer changes
+- ALSA: pcm: Fix races among concurrent hw_params and hw_free calls
+- ALSA: hda/realtek: Add quirk for ASUS GA402
+- ALSA: hda/realtek - Fix headset mic problem for a HP machine with alc671
+- ALSA: hda/realtek: Add quirk for Clevo NP50PNJ
+- ALSA: hda/realtek: Add quirk for Clevo NP70PNJ
+- ALSA: usb-audio: add mapping for new Corsair Virtuoso SE
+- ALSA: oss: Fix PCM OSS buffer allocation overflow
+- ASoC: sti: Fix deadlock via snd_pcm_stop_xrun() call
+- staging: fbtft: fb_st7789v: reset display before initialization
+- tpm: Fix error handling in async work
+- cgroup-v1: Correct privileges check in release_agent writes
+- exfat: avoid incorrectly releasing for root inode
+- net: ipv6: fix skb_over_panic in __ip6_append_data
+
 * Wed Jun 22 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-99.0.0.51
 - sched/fair: Add document for burstable CFS bandwidth
 - sched/fair: Add cfs bandwidth burst statistics
