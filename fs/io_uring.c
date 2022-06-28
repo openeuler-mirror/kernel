@@ -3903,7 +3903,7 @@ static int io_close(struct io_kiocb *req, bool force_nonblock,
 	}
 
 	/* No ->flush() or already async, safely close from here */
-	ret = filp_close(close->put_file, req->work.files);
+	ret = filp_close(close->put_file, req->work.files ? : current->files);
 	if (ret < 0)
 		req_set_fail_links(req);
 	fput(close->put_file);
