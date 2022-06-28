@@ -111,7 +111,7 @@ void smp_callin(void)
 	mmgrab(&init_mm);
 	current->active_mm = &init_mm;
 	/* update csr:ptbr */
-	wrptbr(PFN_PHYS(current_thread_info()->pcb.ptbr));
+	wrptbr(virt_to_phys(init_mm.pgd));
 
 	/* inform the notifiers about the new cpu */
 	notify_cpu_starting(cpuid);

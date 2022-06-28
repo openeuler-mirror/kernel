@@ -72,7 +72,7 @@ short regoffsets[32] = {
 
 static int pcboff[] = {
 	[USP] = PCB_OFF(usp),
-	[UNIQUE] = PCB_OFF(unique),
+	[TP] = PCB_OFF(tp),
 	[DA_MATCH] = PCB_OFF(da_match),
 	[DA_MASK] = PCB_OFF(da_mask),
 	[DV_MATCH] = PCB_OFF(dv_match),

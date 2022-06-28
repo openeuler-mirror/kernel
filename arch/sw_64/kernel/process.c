@@ -125,7 +125,7 @@ flush_thread(void)
 	wrfpcr(FPCR_DYN_NORMAL | ieee_swcr_to_fpcr(0));
 
 	/* Clean slate for TLS.  */
-	current_thread_info()->pcb.unique = 0;
+	current_thread_info()->pcb.tp = 0;
 }
 
 void
@@ -135,7 +135,11 @@ release_thread(struct task_struct *dead_task)
 
 int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 {
-	fpstate_save(src);
+	/*
+	 * aux_save() has to read the current TLS pointer from CSR:TID as it
+	 * may be out-of-sync with the saved value.
+	 */
+	aux_save(src);
 	*dst = *src;
 	return 0;
 }
@@ -168,6 +172,7 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 		childti->pcb.usp = 0;
 		return 0;
 	}
+
 	/*
 	 * Note: if CLONE_SETTLS is not set, then we must inherit the
 	 * value from the parent, which will have been set by the block
@@ -176,10 +181,11 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 	 * application calling fork.
 	 */
 	if (clone_flags & CLONE_SETTLS)
-		childti->pcb.unique = tls;
+		childti->pcb.tp = regs->r20;
 	else
 		regs->r20 = 0;
-	childti->pcb.usp = usp ?: rdusp();
+	if (usp)
+		childti->pcb.usp = usp;
 	*childregs = *regs;
 	childregs->r0 = 0;
 	childregs->r19 = 0;
@@ -202,7 +208,7 @@ void sw64_elf_core_copy_regs(elf_greg_t *dest, struct pt_regs *regs)
 		dest[i] = *(__u64 *)((void *)regs + regoffsets[i]);
 	dest[30] = ti == current_thread_info() ? rdusp() : ti->pcb.usp;
 	dest[31] = regs->pc;
-	dest[32] = ti->pcb.unique;
+	dest[32] = ti->pcb.tp;
 }
 EXPORT_SYMBOL(sw64_elf_core_copy_regs);
 

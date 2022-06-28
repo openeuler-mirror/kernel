@@ -82,19 +82,8 @@ pgd_alloc(struct mm_struct *mm)
 static inline void
 switch_to_system_map(void)
 {
-	unsigned long newptbr;
-
-	/*
-	 * Initialize the kernel's page tables.  Linux puts the vptb in
-	 * the last slot of the L1 page table.
-	 */
 	memset(swapper_pg_dir, 0, PAGE_SIZE);
-	newptbr = virt_to_pfn(swapper_pg_dir);
-
-	/* Also set up the real kernel PCB while we're at it.  */
-	init_thread_info.pcb.ptbr = newptbr;
-	init_thread_info.pcb.flags = 1;	/* set FEN, clear everything else */
-	wrptbr(PFN_PHYS(newptbr));
+	wrptbr(virt_to_phys(swapper_pg_dir));
 	tbiv();
 }
 

@@ -66,17 +66,15 @@ void show_all_vma(void)
  */
 void __load_new_mm_context(struct mm_struct *next_mm)
 {
-	unsigned long mmc;
-	struct pcb_struct *pcb;
+	unsigned long mmc, asn, ptbr;
 
 	mmc = __get_new_mm_context(next_mm, smp_processor_id());
 	next_mm->context.asid[smp_processor_id()] = mmc;
 
-	pcb = &current_thread_info()->pcb;
-	pcb->asn = mmc & HARDWARE_ASN_MASK;
-	pcb->ptbr = virt_to_pfn(next_mm->pgd);
+	asn = mmc & HARDWARE_ASN_MASK;
+	ptbr = virt_to_pfn(next_mm->pgd);
 
-	load_asn_ptbr(pcb->asn, pcb->ptbr);
+	load_asn_ptbr(asn, ptbr);
 }
 
 /*

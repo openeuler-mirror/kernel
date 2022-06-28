@@ -36,7 +36,8 @@ struct user_fpsimd_state {
 #define FPREG_END		62
 #define FPCR			63
 #define PC			64
-#define UNIQUE			65
+#define TP			65
+#define UNIQUE			TP
 #define VECREG_BASE		67
 #define VECREG_END		161
 #define F31_V1			98

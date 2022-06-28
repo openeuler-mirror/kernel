@@ -20,7 +20,7 @@ struct pcb_struct {
 	unsigned long ptbr;
 	unsigned int pcc;
 	unsigned int asn;
-	unsigned long unique;
+	unsigned long tp;
 	unsigned long flags;
 	unsigned long da_match, da_mask;
 	unsigned long dv_match, dv_mask;
@@ -46,6 +46,14 @@ struct thread_info {
 	unsigned long		dyn_ftrace_addr;
 #endif
 };
+
+static __always_inline u64 rtid(void)
+{
+	u64 val;
+
+	asm volatile("rtid %0" : "=r" (val) : :);
+	return val;
+}
 
 /*
  * Macros/functions for gaining access to the thread information structure.

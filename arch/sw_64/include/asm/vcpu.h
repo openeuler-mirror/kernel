@@ -32,7 +32,7 @@ struct vcpucb {
 	unsigned long vcpu_irq_disabled;
 	unsigned long vcpu_irq;
 	unsigned long ptbr;
-	unsigned long int_stat0;
+	unsigned long tid;
 	unsigned long int_stat1;
 	unsigned long int_stat2;
 	unsigned long int_stat3;
