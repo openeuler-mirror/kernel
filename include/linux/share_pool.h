@@ -40,6 +40,9 @@
 #define SPG_ID_LOCAL_MIN	200001
 #define SPG_ID_LOCAL_MAX	299999
 
+#define SPG_FLAG_NON_DVPP	(1 << 0)
+#define SPG_FLAG_MASK		(SPG_FLAG_NON_DVPP)
+
 #define MAX_DEVID 8	/* the max num of Da-vinci devices */
 
 extern int sysctl_share_pool_hugepage_enable;
@@ -150,6 +153,7 @@ struct sp_mapping {
  */
 struct sp_group {
 	int		 id;
+	unsigned long	 flag;
 	struct file	 *file;
 	struct file	 *file_hugetlb;
 	/* number of process in this group */

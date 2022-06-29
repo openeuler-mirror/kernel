@@ -221,31 +221,20 @@ static bool is_mapping_empty(struct sp_mapping *spm)
 }
 
 /*
- * When you set the address space of a group, the normal address space
- * is globally unified. When processing the DVPP address space, consider
- * the following situations:
- * 1. If a process is added to a non-new group, the DVPP address space
- *    must have been created. If the local group of the process also
- *    contains the DVPP address space and they are different, this
- *    scenario is not allowed to avoid address conflict.
- * 2. If the DVPP address space does not exist in the local group of the
- *    process, attach the local group of the process to the DVPP address
- *    space of the group.
- * 3. Add a new group. If the process has applied for the dvpp address
- *    space (sp_alloc or k2u), attach the new group to the dvpp address
- *    space of the current process.
- * 4. If the process has not applied for the DVPP address space, attach
- *    the new group and the local group of the current process to the
- *     newly created DVPP address space.
- *
+ * 1. The mappings of local group is set on creating.
+ * 2. This is used to setup the mapping for groups created during add_task.
+ * 3. The normal mapping exists for all groups.
+ * 4. The dvpp mappings for the new group and local group can merge _iff_ at
+ *    least one of the mapping is empty.
  * the caller must hold sp_group_sem
+ * NOTE: undo the mergeing when the later process failed.
  */
 static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 {
 	struct sp_group_master *master = mm->sp_group_master;
 	struct sp_group *local = master->local;
 
-	if (!list_empty(&spg->procs)) {
+	if (!list_empty(&spg->procs) && !(spg->flag & SPG_FLAG_NON_DVPP)) {
 		if (is_mapping_empty(local->dvpp))
 			sp_mapping_merge(spg->dvpp, local->dvpp);
 		else if (is_mapping_empty(spg->dvpp))
@@ -256,15 +245,17 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 			return -EINVAL;
 		}
 	} else {
-		/* the mapping of local group is always set */
-		sp_mapping_attach(spg, local->dvpp);
-		sp_mapping_attach(spg, sp_mapping_normal);
+		if (!(spg->flag & SPG_FLAG_NON_DVPP))
+			/* the mapping of local group is always set */
+			sp_mapping_attach(spg, local->dvpp);
+		if (!spg->normal)
+			sp_mapping_attach(spg, sp_mapping_normal);
 	}
 
 	return 0;
 }
 
-static struct sp_group *create_spg(int spg_id);
+static struct sp_group *create_spg(int spg_id, unsigned long flag);
 static void free_new_spg_id(bool new, int spg_id);
 static void free_sp_group_locked(struct sp_group *spg);
 static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg);
@@ -283,7 +274,7 @@ static int init_local_group(struct mm_struct *mm)
 		return spg_id;
 	}
 
-	spg = create_spg(spg_id);
+	spg = create_spg(spg_id, 0);
 	if (IS_ERR(spg)) {
 		ret = PTR_ERR(spg);
 		goto free_spg_id;
@@ -1125,7 +1116,7 @@ static bool is_device_addr(unsigned long addr)
 	return false;
 }
 
-static struct sp_group *create_spg(int spg_id)
+static struct sp_group *create_spg(int spg_id, unsigned long flag)
 {
 	int ret;
 	struct sp_group *spg;
@@ -1137,6 +1128,11 @@ static struct sp_group *create_spg(int spg_id)
 		     !is_local_group(spg_id))) {
 		pr_err_ratelimited("reach system max group num\n");
 		return ERR_PTR(-ENOSPC);
+	}
+
+	if (flag & ~SPG_FLAG_MASK) {
+		pr_err_ratelimited("invalid flag:%#lx\n", flag);
+		return ERR_PTR(-EINVAL);
 	}
 
 	spg = kzalloc(sizeof(*spg), GFP_KERNEL);
@@ -1152,6 +1148,7 @@ static struct sp_group *create_spg(int spg_id)
 	}
 
 	spg->id = spg_id;
+	spg->flag = flag;
 	spg->is_alive = true;
 	spg->proc_num = 0;
 	spg->owner = current->group_leader;
@@ -1199,14 +1196,14 @@ out_kfree:
 }
 
 /* the caller must hold sp_group_sem */
-static struct sp_group *find_or_alloc_sp_group(int spg_id)
+static struct sp_group *find_or_alloc_sp_group(int spg_id, unsigned long flag)
 {
 	struct sp_group *spg;
 
 	spg = __sp_find_spg_locked(current->pid, spg_id);
 
 	if (!spg) {
-		spg = create_spg(spg_id);
+		spg = create_spg(spg_id, flag);
 	} else {
 		down_read(&spg->rw_lock);
 		if (!spg_valid(spg)) {
@@ -1362,10 +1359,11 @@ static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg)
 }
 
 /**
- * sp_group_add_task() - Add a process to an share group (sp_group).
+ * mg_sp_group_add_task() - Add a process to an share group (sp_group).
  * @pid: the pid of the task to be added.
  * @prot: the prot of task for this spg.
  * @spg_id: the ID of the sp_group.
+ * @flag: to give some special message.
  *
  * A process can't be added to more than one sp_group in single group mode
  * and can in multiple group mode.
@@ -1378,6 +1376,7 @@ static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg)
  */
 int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 {
+	unsigned long flag = 0;
 	struct task_struct *tsk;
 	struct mm_struct *mm;
 	struct sp_group *spg;
@@ -1471,7 +1470,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		goto out_put_task;
 	}
 
-	spg = find_or_alloc_sp_group(spg_id);
+	spg = find_or_alloc_sp_group(spg_id, flag);
 	if (IS_ERR(spg)) {
 		up_write(&sp_group_sem);
 		ret = PTR_ERR(spg);
@@ -1844,6 +1843,11 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 		mapping = spg->dvpp;
 	else
 		mapping = spg->normal;
+
+	if (!mapping) {
+		pr_err_ratelimited("non DVPP spg, id %d\n", spg->id);
+		return ERR_PTR(-EINVAL);
+	}
 
 	vstart = mapping->start[device_id];
 	vend = mapping->end[device_id];
