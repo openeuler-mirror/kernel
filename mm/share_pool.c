@@ -65,9 +65,6 @@
 #define byte2mb(size)		((size) >> 20)
 #define page2kb(page_num)	((page_num) << (PAGE_SHIFT - 10))
 
-#define SINGLE_GROUP_MODE	1
-#define MULTI_GROUP_MODE	2
-
 #define MAX_GROUP_FOR_SYSTEM	50000
 #define MAX_GROUP_FOR_TASK	3000
 #define MAX_PROC_PER_GROUP	1024
@@ -97,8 +94,6 @@ int sysctl_share_pool_map_lock_enable;
 int sysctl_sp_perf_alloc;
 
 int sysctl_sp_perf_k2u;
-
-static int share_pool_group_mode = SINGLE_GROUP_MODE;
 
 static int system_group_count;
 
@@ -1087,12 +1082,6 @@ static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
 {
 	struct sp_group_master *master = mm->sp_group_master;
 	bool exist = false;
-
-	if (share_pool_group_mode == SINGLE_GROUP_MODE && master &&
-	    master->count == 1) {
-		pr_err_ratelimited("at most one sp group for a task is allowed in single mode\n");
-		return -EEXIST;
-	}
 
 	master = sp_init_group_master_locked(mm, &exist);
 	if (IS_ERR(master))
@@ -2235,72 +2224,30 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 	if (sp_flags & SP_HUGEPAGE_ONLY)
 		sp_flags |= SP_HUGEPAGE;
 
-	if (share_pool_group_mode == SINGLE_GROUP_MODE) {
-		spg = __sp_find_spg(current->pid, SPG_ID_DEFAULT);
-		if (spg) {
-			if (spg_id != SPG_ID_DEFAULT && spg->id != spg_id) {
-				sp_group_drop(spg);
-				return -ENODEV;
-			}
-
-			/* up_read will be at the end of sp_alloc */
-			down_read(&spg->rw_lock);
-			if (!spg_valid(spg)) {
-				up_read(&spg->rw_lock);
-				sp_group_drop(spg);
-				pr_err_ratelimited("allocation failed, spg is dead\n");
-				return -ENODEV;
-			}
-		} else {  /* alocation pass through scene */
-			if (enable_mdc_default_group) {
-				int ret = 0;
-
-				ret = sp_group_add_task(current->tgid, spg_id);
-				if (ret < 0) {
-					pr_err_ratelimited("add group failed in pass through\n");
-					return ret;
-				}
-
-				spg = __sp_find_spg(current->pid, SPG_ID_DEFAULT);
-
-				/* up_read will be at the end of sp_alloc */
-				down_read(&spg->rw_lock);
-				if (!spg_valid(spg)) {
-					up_read(&spg->rw_lock);
-					sp_group_drop(spg);
-					pr_err_ratelimited("pass through allocation failed, spg is dead\n");
-					return -ENODEV;
-				}
-			} else {
-				spg = spg_none;
-			}
+	if (spg_id != SPG_ID_DEFAULT) {
+		spg = __sp_find_spg(current->pid, spg_id);
+		if (!spg) {
+			pr_err_ratelimited("allocation failed, can't find group\n");
+			return -ENODEV;
 		}
-	} else {
-		if (spg_id != SPG_ID_DEFAULT) {
-			spg = __sp_find_spg(current->pid, spg_id);
-			if (!spg) {
-				pr_err_ratelimited("allocation failed, can't find group\n");
-				return -ENODEV;
-			}
 
-			/* up_read will be at the end of sp_alloc */
-			down_read(&spg->rw_lock);
-			if (!spg_valid(spg)) {
-				up_read(&spg->rw_lock);
-				sp_group_drop(spg);
-				pr_err_ratelimited("allocation failed, spg is dead\n");
-				return -ENODEV;
-			}
-
-			if (!is_process_in_group(spg, current->mm)) {
-				up_read(&spg->rw_lock);
-				sp_group_drop(spg);
-				pr_err_ratelimited("allocation failed, task not in group\n");
-				return -ENODEV;
-			}
-		} else {  /* alocation pass through scene */
-			spg = spg_none;
+		/* up_read will be at the end of sp_alloc */
+		down_read(&spg->rw_lock);
+		if (!spg_valid(spg)) {
+			up_read(&spg->rw_lock);
+			sp_group_drop(spg);
+			pr_err_ratelimited("allocation failed, spg is dead\n");
+			return -ENODEV;
 		}
+
+		if (!is_process_in_group(spg, current->mm)) {
+			up_read(&spg->rw_lock);
+			sp_group_drop(spg);
+			pr_err_ratelimited("allocation failed, task not in group\n");
+			return -ENODEV;
+		}
+	} else {  /* alocation pass through scene */
+		spg = spg_none;
 	}
 
 	if (sp_flags & SP_HUGEPAGE) {
@@ -2914,33 +2861,12 @@ static int sp_k2u_prepare(unsigned long kva, unsigned long size,
 	kc->size_aligned = size_aligned;
 	kc->sp_flags = sp_flags;
 	kc->spg_id = spg_id;
-	kc->to_task = false;
+	if (spg_id == SPG_ID_DEFAULT || spg_id == SPG_ID_NONE)
+		kc->to_task = true;
+	else
+		kc->to_task = false;
+
 	return 0;
-}
-
-static int sp_check_k2task(struct sp_k2u_context *kc)
-{
-	int ret = 0;
-	int spg_id = kc->spg_id;
-
-	if (share_pool_group_mode == SINGLE_GROUP_MODE) {
-		struct sp_group *spg = get_first_group(current->mm);
-
-		if (!spg) {
-			if (spg_id != SPG_ID_NONE && spg_id != SPG_ID_DEFAULT)
-				ret = -EINVAL;
-			else
-				kc->to_task = true;
-		} else {
-			if (spg_id != SPG_ID_DEFAULT && spg_id != spg->id)
-				ret = -EINVAL;
-			sp_group_drop(spg);
-		}
-	} else {
-		if (spg_id == SPG_ID_DEFAULT || spg_id == SPG_ID_NONE)
-			kc->to_task = true;
-	}
-	return ret;
 }
 
 static void *sp_k2u_finish(void *uva, struct sp_k2u_context *kc)
@@ -2984,12 +2910,6 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	ret = sp_k2u_prepare(kva, size, sp_flags, spg_id, &kc);
 	if (ret)
 		return ERR_PTR(ret);
-
-	ret = sp_check_k2task(&kc);
-	if (ret) {
-		uva = ERR_PTR(ret);
-		goto out;
-	}
 
 	if (kc.to_task)
 		uva = sp_make_share_kva_to_task(kc.kva_aligned, kc.size_aligned, kc.sp_flags);
@@ -3737,13 +3657,6 @@ static int __init enable_share_k2u_to_group(char *s)
 	return 1;
 }
 __setup("enable_sp_share_k2u_spg", enable_share_k2u_to_group);
-
-static int __init enable_sp_multi_group_mode(char *s)
-{
-	share_pool_group_mode = MULTI_GROUP_MODE;
-	return 1;
-}
-__setup("enable_sp_multi_group_mode", enable_sp_multi_group_mode);
 
 /*** Statistical and maintenance functions ***/
 
