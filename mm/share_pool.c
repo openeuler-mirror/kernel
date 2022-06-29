@@ -719,7 +719,6 @@ struct sp_area {
 	int device_id;
 };
 static DEFINE_SPINLOCK(sp_area_lock);
-static struct rb_root sp_area_root = RB_ROOT;
 
 static unsigned long spa_size(struct sp_area *spa)
 {
@@ -4116,14 +4115,14 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	return 0;
 }
 
-static void rb_spa_stat_show(struct seq_file *seq)
+static void spa_stat_of_mapping_show(struct seq_file *seq,
+				     struct sp_mapping *spm)
 {
 	struct rb_node *node;
 	struct sp_area *spa, *prev = NULL;
 
 	spin_lock(&sp_area_lock);
-
-	for (node = rb_first(&sp_area_root); node; node = rb_next(node)) {
+	for (node = rb_first(&spm->area_root); node; node = rb_next(node)) {
 		__sp_area_drop_locked(prev);
 
 		spa = rb_entry(node, struct sp_area, rb_node);
@@ -4131,16 +4130,12 @@ static void rb_spa_stat_show(struct seq_file *seq)
 		atomic_inc(&spa->use_count);
 		spin_unlock(&sp_area_lock);
 
-		if (is_local_group(spa->spg->id))  /* k2u to task */
-			seq_printf(seq, "%-10s ", "None");
-		else {
-			down_read(&spa->spg->rw_lock);
-			if (spg_valid(spa->spg))  /* k2u to group */
-				seq_printf(seq, "%-10d ", spa->spg->id);
-			else  /* spg is dead */
-				seq_printf(seq, "%-10s ", "Dead");
-			up_read(&spa->spg->rw_lock);
-		}
+		down_read(&spa->spg->rw_lock);
+		if (spg_valid(spa->spg))  /* k2u to group */
+			seq_printf(seq, "%-10d ", spa->spg->id);
+		else  /* spg is dead */
+			seq_printf(seq, "%-10s ", "Dead");
+		up_read(&spa->spg->rw_lock);
 
 		seq_printf(seq, "%2s%-14lx %2s%-14lx %-10ld ",
 			   "0x", spa->va_start,
@@ -4175,6 +4170,30 @@ static void rb_spa_stat_show(struct seq_file *seq)
 	__sp_area_drop_locked(prev);
 	spin_unlock(&sp_area_lock);
 }
+
+static void spa_normal_stat_show(struct seq_file *seq)
+{
+	spa_stat_of_mapping_show(seq, sp_mapping_normal);
+}
+
+static int idr_spg_dvpp_stat_show_cb(int id, void *p, void *data)
+{
+	struct sp_group *spg = p;
+	struct seq_file *seq = data;
+
+	if (!is_local_group(spg->id) || atomic_read(&spg->dvpp->user) == 1)
+		spa_stat_of_mapping_show(seq, spg->dvpp);
+
+	return 0;
+}
+
+static void spa_dvpp_stat_show(struct seq_file *seq)
+{
+	down_read(&sp_group_sem);
+	idr_for_each(&sp_group_idr, idr_spg_dvpp_stat_show_cb, seq);
+	up_read(&sp_group_sem);
+}
+
 
 void spa_overview_show(struct seq_file *seq)
 {
@@ -4229,12 +4248,11 @@ static int idr_spg_stat_cb(int id, void *p, void *data)
 	struct sp_spg_stat *s = p;
 	struct seq_file *seq = data;
 
-	if (seq != NULL) {
-		if (id == 0)
-			seq_puts(seq, "Non Group ");
-		else
-			seq_printf(seq, "Group %6d ", id);
+	if (is_local_group(id) && atomic64_read(&s->size) == 0)
+		return 0;
 
+	if (seq != NULL) {
+		seq_printf(seq, "Group %6d ", id);
 		seq_printf(seq, "size: %ld KB, spa num: %d, total alloc: %ld KB, "
 			   "normal alloc: %ld KB, huge alloc: %ld KB\n",
 			   byte2kb(atomic64_read(&s->size)),
@@ -4243,11 +4261,7 @@ static int idr_spg_stat_cb(int id, void *p, void *data)
 			   byte2kb(atomic64_read(&s->alloc_nsize)),
 			   byte2kb(atomic64_read(&s->alloc_hsize)));
 	} else {
-		if (id == 0)
-			pr_info("Non Group ");
-		else
-			pr_info("Group %6d ", id);
-
+		pr_info("Group %6d ", id);
 		pr_info("size: %ld KB, spa num: %d, total alloc: %ld KB, "
 			"normal alloc: %ld KB, huge alloc: %ld KB\n",
 			byte2kb(atomic64_read(&s->size)),
@@ -4292,7 +4306,8 @@ static int spa_stat_show(struct seq_file *seq, void *offset)
 	/* print the file header */
 	seq_printf(seq, "%-10s %-16s %-16s %-10s %-7s %-5s %-8s %-8s\n",
 		   "Group ID", "va_start", "va_end", "Size(KB)", "Type", "Huge", "PID", "Ref");
-	rb_spa_stat_show(seq);
+	spa_normal_stat_show(seq);
+	spa_dvpp_stat_show(seq);
 	return 0;
 }
 
@@ -4329,10 +4344,7 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 		prot = get_process_prot_locked(id, mm);
 
 		seq_printf(seq, "%-8d ", tgid);
-		if (id == 0)
-			seq_printf(seq, "%-8c ", '-');
-		else
-			seq_printf(seq, "%-8d ", id);
+		seq_printf(seq, "%-8d ", id);
 		seq_printf(seq, "%-9ld %-9ld %-9ld %-10ld %-10ld %-8ld %-7ld %-7ld %-10ld ",
 			   get_spg_proc_alloc(spg_proc_stat),
 			   get_spg_proc_k2u(spg_proc_stat),
