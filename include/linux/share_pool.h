@@ -397,6 +397,8 @@ static inline void sp_free_pages(struct page *page, struct vm_struct *area)
 extern bool sp_check_addr(unsigned long addr);
 extern bool sp_check_mmap_addr(unsigned long addr, unsigned long flags);
 
+extern int sp_id_of_current(void);
+extern int mg_sp_id_of_current(void);
 #else
 
 static inline int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
@@ -658,6 +660,16 @@ static inline bool sp_check_addr(unsigned long addr)
 static inline bool sp_check_mmap_addr(unsigned long addr, unsigned long flags)
 {
 	return false;
+}
+
+static inline int sp_id_of_current(void)
+{
+	return -EPERM;
+}
+
+static inline int mg_sp_id_of_current(void)
+{
+	return -EPERM;
 }
 
 #endif
