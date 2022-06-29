@@ -118,6 +118,12 @@ struct sp_mapping {
 	struct rb_node *free_area_cache;
 	unsigned long cached_hole_size;
 	unsigned long cached_vstart;
+
+	/*
+	 * list head for all groups attached to this mapping,
+	 * dvpp mapping only
+	 */
+	struct list_head group_head;
 };
 
 /* Processes in the same sp_group can share memory.
@@ -161,8 +167,10 @@ struct sp_group {
 	atomic_t	 use_count;
 	/* protect the group internal elements, except spa_list */
 	struct rw_semaphore	rw_lock;
-	struct sp_mapping *dvpp;
-	struct sp_mapping *normal;
+	/* list node for dvpp mapping */
+	struct list_head	mnode;
+	struct sp_mapping	*dvpp;
+	struct sp_mapping	*normal;
 };
 
 /* a per-process(per mm) struct which manages a sp_group_node list */

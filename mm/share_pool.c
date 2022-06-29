@@ -168,6 +168,7 @@ static struct sp_mapping *sp_mapping_create(unsigned long flag)
 	sp_mapping_range_init(spm);
 	atomic_set(&spm->user, 0);
 	spm->area_root = RB_ROOT;
+	INIT_LIST_HEAD(&spm->group_head);
 
 	return spm;
 }
@@ -180,16 +181,43 @@ static void sp_mapping_destroy(struct sp_mapping *spm)
 static void sp_mapping_attach(struct sp_group *spg, struct sp_mapping *spm)
 {
 	atomic_inc(&spm->user);
-	if (spm->flag & SP_MAPPING_DVPP)
+	if (spm->flag & SP_MAPPING_DVPP) {
 		spg->dvpp = spm;
-	else if (spm->flag & SP_MAPPING_NORMAL)
+		list_add_tail(&spg->mnode, &spm->group_head);
+	} else if (spm->flag & SP_MAPPING_NORMAL)
 		spg->normal = spm;
 }
 
 static void sp_mapping_detach(struct sp_group *spg, struct sp_mapping *spm)
 {
-	if (spm && atomic_dec_and_test(&spm->user))
+	if (!spm)
+		return;
+	if (spm->flag & SP_MAPPING_DVPP)
+		list_del(&spg->mnode);
+	if (atomic_dec_and_test(&spm->user))
 		sp_mapping_destroy(spm);
+}
+
+/* merge old mapping to new, and the old mapping would be destroyed */
+static void sp_mapping_merge(struct sp_mapping *new, struct sp_mapping *old)
+{
+	struct sp_group *spg, *tmp;
+
+	if (new == old)
+		return;
+
+	list_for_each_entry_safe(spg, tmp, &old->group_head, mnode) {
+		list_move_tail(&spg->mnode, &new->group_head);
+		spg->dvpp = new;
+	}
+
+	atomic_add(atomic_read(&old->user), &new->user);
+	sp_mapping_destroy(old);
+}
+
+static bool is_mapping_empty(struct sp_mapping *spm)
+{
+	return RB_EMPTY_ROOT(&spm->area_root);
 }
 
 /*
@@ -216,32 +244,19 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 {
 	struct sp_group_master *master = mm->sp_group_master;
 	struct sp_group *local = master->local;
-	struct sp_mapping *spm;
 
 	if (!list_empty(&spg->procs)) {
-		/* 1 */
-		if (local->dvpp && local->dvpp != spg->dvpp) {
+		if (is_mapping_empty(local->dvpp))
+			sp_mapping_merge(spg->dvpp, local->dvpp);
+		else if (is_mapping_empty(spg->dvpp))
+			sp_mapping_merge(local->dvpp, spg->dvpp);
+		else {
 			pr_info_ratelimited("Duplicate address space, id=%d\n",
 					spg->id);
-			return 0;
-		}
-
-		/* 2 */
-		if (!local->dvpp) {
-			sp_mapping_attach(local, spg->dvpp);
-			sp_mapping_attach(local, spg->normal);
+			return -EINVAL;
 		}
 	} else {
-		/* 4 */
-		if (!local->dvpp) {
-			spm = sp_mapping_create(SP_MAPPING_DVPP);
-			if (IS_ERR(spm))
-				return PTR_ERR(spm);
-			sp_mapping_attach(local, spm);
-			sp_mapping_attach(local, sp_mapping_normal);
-		}
-
-		/* 3 */
+		/* the mapping of local group is always set */
 		sp_mapping_attach(spg, local->dvpp);
 		sp_mapping_attach(spg, sp_mapping_normal);
 	}
@@ -1143,6 +1158,7 @@ static struct sp_group *create_spg(int spg_id)
 	atomic_set(&spg->use_count, 1);
 	INIT_LIST_HEAD(&spg->procs);
 	INIT_LIST_HEAD(&spg->spa_list);
+	INIT_LIST_HEAD(&spg->mnode);
 	init_rwsem(&spg->rw_lock);
 
 	sprintf(name, "sp_group_%d", spg_id);
