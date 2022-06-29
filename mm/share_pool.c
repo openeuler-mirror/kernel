@@ -374,7 +374,8 @@ static inline bool is_local_group(int spg_id)
 	return spg_id >= SPG_ID_LOCAL_MIN && spg_id <= SPG_ID_LOCAL_MAX;
 }
 
-static struct sp_group *sp_get_local_group(struct mm_struct *mm)
+static struct sp_group *sp_get_local_group(struct task_struct *tsk,
+					   struct mm_struct *mm)
 {
 	int ret;
 	struct sp_group_master *master;
@@ -389,7 +390,7 @@ static struct sp_group *sp_get_local_group(struct mm_struct *mm)
 	up_read(&sp_group_sem);
 
 	down_write(&sp_group_sem);
-	ret = sp_init_group_master_locked(current, mm);
+	ret = sp_init_group_master_locked(tsk, mm);
 	if (ret) {
 		up_write(&sp_group_sem);
 		return ERR_PTR(ret);
@@ -2531,7 +2532,7 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 		}
 		ac->type = SPA_TYPE_ALLOC;
 	} else {  /* allocation pass through scene */
-		spg = sp_get_local_group(current->mm);
+		spg = sp_get_local_group(current, current->mm);
 		if (IS_ERR(spg))
 			return PTR_ERR(spg);
 		down_read(&spg->rw_lock);
@@ -3885,7 +3886,7 @@ bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 	if (!mm)
 		goto put_task;
 
-	spg = sp_get_local_group(mm);
+	spg = sp_get_local_group(tsk, mm);
 	if (IS_ERR(spg))
 		goto put_mm;
 
