@@ -249,34 +249,23 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 	return 0;
 }
 
-static void free_sp_group_locked(struct sp_group *spg);
-static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg);
 static struct sp_group *create_spg(int spg_id);
 static void free_new_spg_id(bool new, int spg_id);
-/* The caller must hold sp_group_sem */
-static struct sp_group_master *sp_init_group_master_locked(
-	struct mm_struct *mm, bool *exist)
+static void free_sp_group_locked(struct sp_group *spg);
+static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg);
+static int init_local_group(struct mm_struct *mm)
 {
 	int spg_id, ret;
 	struct sp_group *spg;
+	struct sp_mapping *spm;
 	struct sp_group_master *master = mm->sp_group_master;
-
-	if (master) {
-		*exist = true;
-		return master;
-	}
-
-	master = kmalloc(sizeof(struct sp_group_master), GFP_KERNEL);
-	if (master == NULL)
-		return ERR_PTR(-ENOMEM);
 
 	spg_id = ida_alloc_range(&sp_group_id_ida, SPG_ID_LOCAL_MIN,
 				 SPG_ID_LOCAL_MAX, GFP_ATOMIC);
 	if (spg_id < 0) {
 		pr_err_ratelimited("generate local group id failed %d\n",
 				spg_id);
-		ret = spg_id;
-		goto free_master;
+		return spg_id;
 	}
 
 	spg = create_spg(spg_id);
@@ -285,60 +274,73 @@ static struct sp_group_master *sp_init_group_master_locked(
 		goto free_spg_id;
 	}
 
-	INIT_LIST_HEAD(&master->node_list);
-	master->count = 0;
-	master->stat = NULL;
-	master->mm = mm;
 	master->local = spg;
-	mm->sp_group_master = master;
+	spm = sp_mapping_create(SP_MAPPING_DVPP);
+	if (IS_ERR(spm)) {
+		ret = PTR_ERR(spm);
+		goto free_spg;
+	}
+	sp_mapping_attach(master->local, spm);
+	sp_mapping_attach(master->local, sp_mapping_normal);
 
 	ret = local_group_add_task(mm, spg);
 	if (ret < 0)
+		/* The spm would be released while destroying the spg*/
 		goto free_spg;
 
-	*exist = false;
-	return master;
+	return 0;
 
 free_spg:
 	free_sp_group_locked(spg);
+	master->local = NULL;
 free_spg_id:
 	free_new_spg_id(true, spg_id);
+
+	return ret;
+}
+
+static int sp_init_proc_stat(struct mm_struct *mm, struct task_struct *tsk);
+/* The caller must hold sp_group_sem */
+static int
+sp_init_group_master_locked(struct task_struct *tsk, struct mm_struct *mm)
+{
+	int ret;
+	struct sp_group_master *master;
+
+	if (mm->sp_group_master)
+		return 0;
+
+	master = kmalloc(sizeof(struct sp_group_master), GFP_KERNEL);
+	if (!master)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&master->node_list);
+	master->count = 0;
+	master->mm = mm;
+	mm->sp_group_master = master;
+
+	ret = sp_init_proc_stat(mm, tsk);
+	if (ret)
+		goto free_master;
+
+	ret = init_local_group(mm);
+	if (ret)
+		goto put_stat;
+
+	return 0;
+
+put_stat:
+	sp_proc_stat_drop(master->stat);
 free_master:
+	mm->sp_group_master = NULL;
 	kfree(master);
-	return ERR_PTR(ret);
+
+	return ret;
 }
 
 static inline bool is_local_group(int spg_id)
 {
 	return spg_id >= SPG_ID_LOCAL_MIN && spg_id <= SPG_ID_LOCAL_MAX;
-}
-
-/*
- * If the process is added to a group first, the address space of the local
- * group of the process must have been set. If the process is not added to
- * a group, directly create or attach the process to the corresponding DVPP
- * and normal address space.
- */
-static int sp_mapping_group_setup_local(struct mm_struct *mm)
-{
-	struct sp_group_master *master;
-	struct sp_mapping *spm;
-	bool exist = false;
-
-	master = sp_init_group_master_locked(mm, &exist);
-	if (IS_ERR(master))
-		return PTR_ERR(master);
-
-	if (master->local->dvpp)
-		return 0;
-
-	spm = sp_mapping_create(SP_MAPPING_DVPP);
-	if (IS_ERR(spm))
-		return PTR_ERR(spm);
-	sp_mapping_attach(master->local, spm);
-	sp_mapping_attach(master->local, sp_mapping_normal);
-
-	return 0;
 }
 
 static struct sp_group *sp_get_local_group(struct mm_struct *mm)
@@ -356,7 +358,7 @@ static struct sp_group *sp_get_local_group(struct mm_struct *mm)
 	up_read(&sp_group_sem);
 
 	down_write(&sp_group_sem);
-	ret = sp_mapping_group_setup_local(mm);
+	ret = sp_init_group_master_locked(current, mm);
 	if (ret) {
 		up_write(&sp_group_sem);
 		return ERR_PTR(ret);
@@ -423,37 +425,29 @@ static struct sp_proc_stat *create_proc_stat(struct mm_struct *mm,
 	return stat;
 }
 
-static struct sp_proc_stat *sp_init_proc_stat(struct sp_group_master *master,
-	struct mm_struct *mm, struct task_struct *tsk)
+static int sp_init_proc_stat(struct mm_struct *mm, struct task_struct *tsk)
 {
 	struct sp_proc_stat *stat;
 	int alloc_id, tgid = tsk->tgid;
-
-	down_write(&sp_proc_stat_sem);
-	stat = master->stat;
-	if (stat) {
-		up_write(&sp_proc_stat_sem);
-		return stat;
-	}
+	struct sp_group_master *master = mm->sp_group_master;
 
 	stat = create_proc_stat(mm, tsk);
-	if (IS_ERR(stat)) {
-		up_write(&sp_proc_stat_sem);
-		return stat;
-	}
+	if (IS_ERR(stat))
+		return PTR_ERR(stat);
 
+	down_write(&sp_proc_stat_sem);
 	alloc_id = idr_alloc(&sp_proc_stat_idr, stat, tgid, tgid + 1, GFP_KERNEL);
 	if (alloc_id < 0) {
 		up_write(&sp_proc_stat_sem);
 		pr_err_ratelimited("proc stat idr alloc failed %d\n", alloc_id);
 		kfree(stat);
-		return ERR_PTR(alloc_id);
+		return alloc_id;
 	}
 
 	master->stat = stat;
 	up_write(&sp_proc_stat_sem);
 
-	return stat;
+	return 0;
 }
 
 static void update_spg_stat_alloc(unsigned long size, bool inc,
@@ -567,18 +561,14 @@ static struct spg_proc_stat *create_spg_proc_stat(int tgid, int spg_id)
 	return stat;
 }
 
-static struct spg_proc_stat *sp_init_spg_proc_stat(
-	struct sp_proc_stat *proc_stat, int tgid, struct sp_group *spg)
+static struct spg_proc_stat *
+sp_init_spg_proc_stat(struct sp_proc_stat *proc_stat, struct sp_group *spg)
 {
 	struct spg_proc_stat *stat;
 	int spg_id = spg->id;  /* visit spg id locklessly */
 	struct sp_spg_stat *spg_stat = spg->stat;
 
-	stat = find_spg_proc_stat(proc_stat, tgid, spg_id);
-	if (stat)
-		return stat;
-
-	stat = create_spg_proc_stat(tgid, spg_id);
+	stat = create_spg_proc_stat(proc_stat->tgid, spg_id);
 	if (IS_ERR(stat))
 		return stat;
 
@@ -593,31 +583,6 @@ static struct spg_proc_stat *sp_init_spg_proc_stat(
 	hash_add(spg_stat->hash, &stat->gnode, stat->tgid);
 	mutex_unlock(&spg_stat->lock);
 	return stat;
-}
-
-/*
- * The caller must
- * 1. ensure no concurrency problem for task_struct and mm_struct.
- * 2. hold sp_group_sem for sp_group_master (pay attention to ABBA deadlock)
- */
-static struct spg_proc_stat *sp_init_process_stat(struct task_struct *tsk,
-	struct mm_struct *mm, struct sp_group *spg)
-{
-	struct sp_group_master *master;
-	bool exist;
-	struct sp_proc_stat *proc_stat;
-	struct spg_proc_stat *spg_proc_stat;
-
-	master = sp_init_group_master_locked(mm, &exist);
-	if (IS_ERR(master))
-		return (struct spg_proc_stat *)master;
-
-	proc_stat = sp_init_proc_stat(master, mm, tsk);
-	if (IS_ERR(proc_stat))
-		return (struct spg_proc_stat *)proc_stat;
-
-	spg_proc_stat = sp_init_spg_proc_stat(proc_stat, tsk->tgid, spg);
-	return spg_proc_stat;
 }
 
 static struct sp_spg_stat *create_spg_stat(int spg_id)
@@ -866,9 +831,10 @@ static void sp_update_process_stat(struct task_struct *tsk, bool inc,
 	enum spa_type type = spa->type;
 
 	down_write(&sp_group_sem);
-	stat = sp_init_process_stat(tsk, tsk->mm, spa->spg);
+	stat = find_spg_proc_stat(tsk->mm->sp_group_master->stat, tsk->tgid,
+				spa->spg->id);
 	up_write(&sp_group_sem);
-	if (unlikely(IS_ERR(stat)))
+	if (!stat)
 		return;
 
 	update_spg_proc_stat(size, inc, stat, type);
@@ -1274,26 +1240,28 @@ static void sp_munmap_task_areas(struct mm_struct *mm, struct sp_group *spg, str
 }
 
 /* the caller must hold sp_group_sem */
-static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
+static int mm_add_group_init(struct task_struct *tsk, struct mm_struct *mm,
+			     struct sp_group *spg)
 {
-	struct sp_group_master *master = mm->sp_group_master;
-	bool exist = false;
+	int ret;
+	struct sp_group_master *master;
 
-	master = sp_init_group_master_locked(mm, &exist);
-	if (IS_ERR(master))
-		return PTR_ERR(master);
+	if (!mm->sp_group_master) {
+		ret = sp_init_group_master_locked(tsk, mm);
+		if (ret)
+			return ret;
+	} else {
+		if (is_process_in_group(spg, mm)) {
+			pr_err_ratelimited("task already in target group, id=%d\n",
+					spg->id);
+			return -EEXIST;
+		}
 
-	if (!exist)
-		return 0;
-
-	if (is_process_in_group(spg, mm)) {
-		pr_err_ratelimited("task already in target group, id=%d\n", spg->id);
-		return -EEXIST;
-	}
-
-	if (master->count == MAX_GROUP_FOR_TASK) {
-		pr_err("task reaches max group num\n");
-		return -ENOSPC;
+		master = mm->sp_group_master;
+		if (master->count == MAX_GROUP_FOR_TASK) {
+			pr_err("task reaches max group num\n");
+			return -ENOSPC;
+		}
 	}
 
 	return 0;
@@ -1334,29 +1302,13 @@ static int insert_spg_node(struct sp_group *spg, struct sp_group_node *node)
 
 	spg->proc_num++;
 	list_add_tail(&node->proc_node, &spg->procs);
-	return 0;
-}
 
-static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg)
-{
-	struct sp_group_node *node;
-	struct spg_proc_stat *stat;
-
-	node = create_spg_node(mm, PROT_READ | PROT_WRITE, spg);
-	if (IS_ERR(node))
-		return PTR_ERR(node);
-
-	stat = sp_init_process_stat(sp_get_task(mm), mm, spg);
-	if (IS_ERR(stat)) {
-		free_sp_group_locked(spg);
-		pr_err_ratelimited("init process stat failed %lx\n",
-				PTR_ERR(stat));
-		return PTR_ERR(stat);
-	}
-
-	insert_spg_node(spg, node);
-	mmget(mm);
-
+	/*
+	 * The only way where sp_init_spg_proc_stat got failed is that there is
+	 * no memory for sp_spg_stat. We will avoid this failure when we put
+	 * sp_spg_stat into sp_group_node later.
+	 */
+	sp_init_spg_proc_stat(node->master->stat, spg);
 	return 0;
 }
 
@@ -1377,6 +1329,20 @@ static void free_spg_node(struct mm_struct *mm, struct sp_group *spg,
 	master->count--;
 
 	kfree(spg_node);
+}
+
+static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg)
+{
+	struct sp_group_node *node;
+
+	node = create_spg_node(mm, PROT_READ | PROT_WRITE, spg);
+	if (IS_ERR(node))
+		return PTR_ERR(node);
+
+	insert_spg_node(spg, node);
+	mmget(mm);
+
+	return 0;
 }
 
 /**
@@ -1403,7 +1369,6 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 	int ret = 0;
 	bool id_newly_generated = false;
 	struct sp_area *spa, *prev = NULL;
-	struct spg_proc_stat *stat;
 
 	check_interrupt_context();
 
@@ -1506,29 +1471,26 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 		}
 	}
 
-	ret = mm_add_group_init(mm, spg);
-	if (ret)
+	down_write(&spg->rw_lock);
+	ret = mm_add_group_init(tsk, mm, spg);
+	if (ret) {
+		up_write(&spg->rw_lock);
 		goto out_drop_group;
+	}
 
 	ret = sp_mapping_group_setup(mm, spg);
-	if (ret)
+	if (ret) {
+		up_write(&spg->rw_lock);
 		goto out_drop_group;
+	}
 
 	node = create_spg_node(mm, prot, spg);
 	if (unlikely(IS_ERR(node))) {
+		up_write(&spg->rw_lock);
 		ret = PTR_ERR(node);
 		goto out_drop_spg_node;
 	}
 
-	/* per process statistics initialization */
-	stat = sp_init_process_stat(tsk, mm, spg);
-	if (IS_ERR(stat)) {
-		ret = PTR_ERR(stat);
-		pr_err_ratelimited("init process stat failed %lx\n", PTR_ERR(stat));
-		goto out_drop_spg_node;
-	}
-
-	down_write(&spg->rw_lock);
 	ret = insert_spg_node(spg, node);
 	if (unlikely(ret)) {
 		up_write(&spg->rw_lock);
@@ -1781,7 +1743,7 @@ int sp_id_of_current(void)
 
 	down_read(&sp_group_sem);
 	master = current->mm->sp_group_master;
-	if (master && master->local) {
+	if (master) {
 		spg_id = master->local->id;
 		up_read(&sp_group_sem);
 		return spg_id;
@@ -1789,7 +1751,7 @@ int sp_id_of_current(void)
 	up_read(&sp_group_sem);
 
 	down_write(&sp_group_sem);
-	ret = sp_mapping_group_setup_local(current->mm);
+	ret = sp_init_group_master_locked(current, current->mm);
 	if (ret) {
 		up_write(&sp_group_sem);
 		return ret;
@@ -2951,7 +2913,7 @@ static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, un
 	struct sp_group *spg;
 
 	down_write(&sp_group_sem);
-	ret = sp_mapping_group_setup_local(current->mm);
+	ret = sp_init_group_master_locked(current, current->mm);
 	if (ret) {
 		up_write(&sp_group_sem);
 		pr_err_ratelimited("k2u_task init local mapping failed %d\n",
@@ -2960,13 +2922,8 @@ static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, un
 	}
 
 	spg = current->mm->sp_group_master->local;
-	stat = sp_init_process_stat(current, current->mm, spg);
-	if (IS_ERR(stat)) {
-		up_write(&sp_group_sem);
-		pr_err_ratelimited("k2u_task init process stat failed %lx\n",
-				PTR_ERR(stat));
-		return stat;
-	}
+	stat = find_spg_proc_stat(current->mm->sp_group_master->stat,
+				  current->tgid, spg->id);
 	up_write(&sp_group_sem);
 
 	spa = sp_alloc_area(size, sp_flags, spg, SPA_TYPE_K2TASK,
