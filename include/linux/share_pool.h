@@ -103,6 +103,17 @@ struct sp_proc_stat {
 	atomic64_t k2u_size;
 };
 
+/*
+ * address space management
+ */
+struct sp_mapping {
+	unsigned long flag;
+	atomic_t user;
+	unsigned long start[MAX_DEVID];
+	unsigned long end[MAX_DEVID];
+	struct rb_root area_root;
+};
+
 /* Processes in the same sp_group can share memory.
  * Memory layout for share pool:
  *
@@ -144,6 +155,8 @@ struct sp_group {
 	atomic_t	 use_count;
 	/* protect the group internal elements, except spa_list */
 	struct rw_semaphore	rw_lock;
+	struct sp_mapping *dvpp;
+	struct sp_mapping *normal;
 };
 
 /* a per-process(per mm) struct which manages a sp_group_node list */
@@ -157,6 +170,11 @@ struct sp_group_master {
 	struct list_head node_list;
 	struct mm_struct *mm;
 	struct sp_proc_stat *stat;
+	/*
+	 * Used to apply for the shared pool memory of the current process.
+	 * For example, sp_alloc non-share memory or k2task.
+	 */
+	struct sp_group *local;
 };
 
 /*

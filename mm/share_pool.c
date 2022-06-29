@@ -130,6 +130,48 @@ static DECLARE_RWSEM(sp_spg_stat_sem);
 /* for kthread buff_module_guard_work */
 static struct sp_proc_stat kthread_stat;
 
+#define SP_MAPPING_DVPP		0x1
+#define SP_MAPPING_NORMAL	0x2
+static struct sp_mapping *sp_mapping_normal;
+
+static void sp_mapping_range_init(struct sp_mapping *spm)
+{
+	int i;
+
+	for (i = 0; i < MAX_DEVID; i++) {
+		if (spm->flag & SP_MAPPING_NORMAL) {
+			spm->start[i] = MMAP_SHARE_POOL_START;
+			spm->end[i] = MMAP_SHARE_POOL_16G_START;
+			continue;
+		}
+
+		if (!is_sp_dev_addr_enabled(i)) {
+			spm->start[i] = MMAP_SHARE_POOL_16G_START +
+				i * MMAP_SHARE_POOL_16G_START;
+			spm->end[i] = spm->start[i] + MMAP_SHARE_POOL_16G_START;
+		} else {
+			spm->start[i] = sp_dev_va_start[i];
+			spm->end[i] = spm->start[i] + sp_dev_va_size[i];
+		}
+	}
+}
+
+static struct sp_mapping *sp_mapping_create(unsigned long flag)
+{
+	struct sp_mapping *spm;
+
+	spm = kzalloc(sizeof(struct sp_mapping), GFP_KERNEL);
+	if (!spm)
+		return ERR_PTR(-ENOMEM);
+
+	spm->flag = flag;
+	sp_mapping_range_init(spm);
+	atomic_set(&spm->user, 0);
+	spm->area_root = RB_ROOT;
+
+	return spm;
+}
+
 /* The caller must hold sp_group_sem */
 static struct sp_group_master *sp_init_group_master_locked(
 	struct mm_struct *mm, bool *exist)
@@ -4459,6 +4501,9 @@ static void __init sp_device_number_detect(void)
 
 static int __init share_pool_init(void)
 {
+	if (!enable_ascend_share_pool)
+		return 0;
+
 	/* lockless, as init kthread has no sp operation else */
 	spg_none = create_spg(GROUP_NONE);
 	/* without free spg_none, not a serious problem */
@@ -4466,6 +4511,11 @@ static int __init share_pool_init(void)
 		goto fail;
 
 	sp_device_number_detect();
+
+	sp_mapping_normal = sp_mapping_create(SP_MAPPING_NORMAL);
+	if (IS_ERR(sp_mapping_normal))
+		goto fail;
+	atomic_inc(&sp_mapping_normal->user);
 
 	return 0;
 fail:
