@@ -1809,7 +1809,7 @@ static unsigned long svm_sp_alloc_mem(unsigned long __user *arg)
 
 	spallocinfo.addr = (uintptr_t)addr;
 	if (copy_to_user((void __user *)arg, &spallocinfo, sizeof(struct spalloc))) {
-		sp_free(spallocinfo.addr);
+		sp_free(spallocinfo.addr, SPG_DEFAULT_ID);
 		return EFAULT;
 	}
 
@@ -1838,7 +1838,7 @@ static int svm_sp_free_mem(unsigned long __user *arg)
 		return -EINVAL;
 	}
 
-	ret = sp_free(spallocinfo.addr);
+	ret = sp_free(spallocinfo.addr, SPG_DEFAULT_ID);
 	if (ret != 0) {
 		pr_err("svm: sp free failed with %d.\n", ret);
 		return -EFAULT;
