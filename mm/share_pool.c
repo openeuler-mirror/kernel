@@ -249,13 +249,15 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 	return 0;
 }
 
+static void free_sp_group_locked(struct sp_group *spg);
+static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg);
 static struct sp_group *create_spg(int spg_id);
 static void free_new_spg_id(bool new, int spg_id);
 /* The caller must hold sp_group_sem */
 static struct sp_group_master *sp_init_group_master_locked(
 	struct mm_struct *mm, bool *exist)
 {
-	int spg_id;
+	int spg_id, ret;
 	struct sp_group *spg;
 	struct sp_group_master *master = mm->sp_group_master;
 
@@ -271,17 +273,16 @@ static struct sp_group_master *sp_init_group_master_locked(
 	spg_id = ida_alloc_range(&sp_group_id_ida, SPG_ID_LOCAL_MIN,
 				 SPG_ID_LOCAL_MAX, GFP_ATOMIC);
 	if (spg_id < 0) {
-		kfree(master);
 		pr_err_ratelimited("generate local group id failed %d\n",
 				spg_id);
-		return ERR_PTR(spg_id);
+		ret = spg_id;
+		goto free_master;
 	}
 
 	spg = create_spg(spg_id);
 	if (IS_ERR(spg)) {
-		free_new_spg_id(true, spg_id);
-		kfree(master);
-		return (struct sp_group_master *)spg;
+		ret = PTR_ERR(spg);
+		goto free_spg_id;
 	}
 
 	INIT_LIST_HEAD(&master->node_list);
@@ -291,8 +292,20 @@ static struct sp_group_master *sp_init_group_master_locked(
 	master->local = spg;
 	mm->sp_group_master = master;
 
+	ret = local_group_add_task(mm, spg);
+	if (ret < 0)
+		goto free_spg;
+
 	*exist = false;
 	return master;
+
+free_spg:
+	free_sp_group_locked(spg);
+free_spg_id:
+	free_new_spg_id(true, spg_id);
+free_master:
+	kfree(master);
+	return ERR_PTR(ret);
 }
 
 static inline bool is_local_group(int spg_id)
@@ -690,6 +703,8 @@ static struct sp_overall_stat sp_overall_stat;
 
 enum spa_type {
 	SPA_TYPE_ALLOC = 1,
+	/* NOTE: reorganize after the statisical structure is reconstructed. */
+	SPA_TYPE_ALLOC_PRIVATE = SPA_TYPE_ALLOC,
 	SPA_TYPE_K2TASK,
 	SPA_TYPE_K2SPG,
 };
@@ -1057,7 +1072,7 @@ EXPORT_SYMBOL_GPL(sp_group_id_by_pid);
  */
 int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num)
 {
-	int ret = 0;
+	int ret = 0, real_count;
 	struct sp_group_node *node;
 	struct sp_group_master *master = NULL;
 	struct task_struct *tsk;
@@ -1082,18 +1097,28 @@ int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num)
 		goto out_up_read;
 	}
 
-	if (!master->count) {
+	/*
+	 * There is a local group for each process which is used for
+	 * passthrough allocation. The local group is a internal
+	 * implementation for convenience and is not attempt to bother
+	 * the user.
+	 */
+	real_count = master->count - 1;
+	if (real_count <= 0) {
 		ret = -ENODEV;
 		goto out_up_read;
 	}
-	if ((unsigned int)*num < master->count) {
+	if ((unsigned int)*num < real_count) {
 		ret = -E2BIG;
 		goto out_up_read;
 	}
-	*num = master->count;
+	*num = real_count;
 
-	list_for_each_entry(node, &master->node_list, group_node)
+	list_for_each_entry(node, &master->node_list, group_node) {
+		if (is_local_group(node->spg->id))
+			continue;
 		*(spg_ids++) = node->spg->id;
+	}
 
 out_up_read:
 	up_read(&sp_group_sem);
@@ -1266,7 +1291,7 @@ static int mm_add_group_init(struct mm_struct *mm, struct sp_group *spg)
 		return -EEXIST;
 	}
 
-	if (master->count + 1 == MAX_GROUP_FOR_TASK) {
+	if (master->count == MAX_GROUP_FOR_TASK) {
 		pr_err("task reaches max group num\n");
 		return -ENOSPC;
 	}
@@ -1309,6 +1334,29 @@ static int insert_spg_node(struct sp_group *spg, struct sp_group_node *node)
 
 	spg->proc_num++;
 	list_add_tail(&node->proc_node, &spg->procs);
+	return 0;
+}
+
+static int local_group_add_task(struct mm_struct *mm, struct sp_group *spg)
+{
+	struct sp_group_node *node;
+	struct spg_proc_stat *stat;
+
+	node = create_spg_node(mm, PROT_READ | PROT_WRITE, spg);
+	if (IS_ERR(node))
+		return PTR_ERR(node);
+
+	stat = sp_init_process_stat(sp_get_task(mm), mm, spg);
+	if (IS_ERR(stat)) {
+		free_sp_group_locked(spg);
+		pr_err_ratelimited("init process stat failed %lx\n",
+				PTR_ERR(stat));
+		return PTR_ERR(stat);
+	}
+
+	insert_spg_node(spg, node);
+	mmget(mm);
+
 	return 0;
 }
 
@@ -2185,15 +2233,10 @@ static void sp_fallocate(struct sp_area *spa)
 
 static void sp_free_unmap_fallocate(struct sp_area *spa)
 {
-	if (!is_local_group(spa->spg->id)) {
-		down_read(&spa->spg->rw_lock);
-		__sp_free(spa->spg, spa->va_start, spa_size(spa), NULL);
-		sp_fallocate(spa);
-		up_read(&spa->spg->rw_lock);
-	} else {
-		sp_munmap(current->mm, spa->va_start, spa_size(spa));
-		sp_fallocate(spa);
-	}
+	down_read(&spa->spg->rw_lock);
+	__sp_free(spa->spg, spa->va_start, spa_size(spa), NULL);
+	sp_fallocate(spa);
+	up_read(&spa->spg->rw_lock);
 }
 
 static int sp_check_caller_permission(struct sp_group *spg, struct mm_struct *mm)
@@ -2201,9 +2244,10 @@ static int sp_check_caller_permission(struct sp_group *spg, struct mm_struct *mm
 	int ret = 0;
 
 	down_read(&spg->rw_lock);
-	if (!is_local_group(spg->id) && !is_process_in_group(spg, mm))
+	if (!is_process_in_group(spg, mm))
 		ret = -EPERM;
 	up_read(&spg->rw_lock);
+
 	return ret;
 }
 
@@ -2389,6 +2433,7 @@ struct sp_alloc_context {
 	struct timespec64 start;
 	struct timespec64 end;
 	bool have_mbind;
+	enum spa_type type;
 };
 
 static void trace_sp_alloc_begin(struct sp_alloc_context *ac)
@@ -2477,10 +2522,13 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 			pr_err_ratelimited("allocation failed, task not in group\n");
 			return -ENODEV;
 		}
+		ac->type = SPA_TYPE_ALLOC;
 	} else {  /* allocation pass through scene */
 		spg = sp_get_local_group(current->mm);
 		if (IS_ERR(spg))
 			return PTR_ERR(spg);
+		down_read(&spg->rw_lock);
+		ac->type = SPA_TYPE_ALLOC_PRIVATE;
 	}
 
 	if (sp_flags & SP_HUGEPAGE) {
@@ -2503,8 +2551,7 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 static void sp_alloc_unmap(struct mm_struct *mm, struct sp_area *spa,
 	struct sp_group_node *spg_node)
 {
-	if (!is_local_group(spa->spg->id))
-		__sp_free(spa->spg, spa->va_start, spa->real_size, mm);
+	__sp_free(spa->spg, spa->va_start, spa->real_size, mm);
 }
 
 static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
@@ -2559,10 +2606,8 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 	return ret;
 
 unmap:
-	if (!is_local_group(spa->spg->id))
-		sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
-	else
-		sp_munmap(mm, spa->va_start, spa->real_size);
+	sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa,
+			spg_node);
 	return ret;
 }
 
@@ -2661,10 +2706,8 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 	ret = sp_alloc_populate(mm, spa, ac);
 	if (ret) {
 err:
-		if (!is_local_group(spa->spg->id))
-			sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
-		else
-			sp_munmap(mm, spa->va_start, spa->real_size);
+		sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm,
+				spa, spg_node);
 
 		if (unlikely(fatal_signal_pending(current)))
 			pr_warn_ratelimited("allocation failed, current thread is killed\n");
@@ -2687,34 +2730,30 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 	struct mm_struct *mm;
 	struct sp_group_node *spg_node;
 
-	if (is_local_group(spa->spg->id)) {
-		ret = __sp_alloc_mmap_populate(current->mm, spa, NULL, ac);
-	} else {
-		/* create mapping for each process in the group */
-		list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
-			mm = spg_node->master->mm;
-			mmap_ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
-			if (mmap_ret) {
-				if (ac->state != ALLOC_COREDUMP)
-					return mmap_ret;
-				ac->state = ALLOC_NORMAL;
-				continue;
-			}
-			ret = mmap_ret;
+	/* create mapping for each process in the group */
+	list_for_each_entry(spg_node, &spa->spg->procs, proc_node) {
+		mm = spg_node->master->mm;
+		mmap_ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
+		if (mmap_ret) {
+			if (ac->state != ALLOC_COREDUMP)
+				return mmap_ret;
+			ac->state = ALLOC_NORMAL;
+			continue;
 		}
+		ret = mmap_ret;
 	}
+
 	return ret;
 }
 
 /* spa maybe an error pointer, so introduce variable spg */
 static void sp_alloc_finish(int result, struct sp_area *spa,
-	struct sp_alloc_context *ac)
+		struct sp_alloc_context *ac)
 {
 	struct sp_group *spg = ac->spg;
 
 	/* match sp_alloc_prepare */
-	if (!is_local_group(spg->id))
-		up_read(&spg->rw_lock);
+	up_read(&spg->rw_lock);
 
 	if (!result)
 		sp_update_process_stat(current, true, spa);
@@ -2754,7 +2793,7 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 
 try_again:
 	spa = sp_alloc_area(ac.size_aligned, ac.sp_flags, ac.spg,
-			    SPA_TYPE_ALLOC, current->tgid);
+			    ac.type, current->tgid);
 	if (IS_ERR(spa)) {
 		pr_err_ratelimited("alloc spa failed in allocation"
 			"(potential no enough virtual memory when -75): %ld\n", PTR_ERR(spa));
@@ -4666,8 +4705,6 @@ void sp_group_post_exit(struct mm_struct *mm)
 	}
 	up_write(&sp_group_sem);
 
-	if (master->local)
-		sp_group_drop(master->local);
 	kfree(master);
 }
 
