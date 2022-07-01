@@ -3023,7 +3023,7 @@ static void *sp_make_share_kva_to_spg(unsigned long kva, unsigned long size,
 	}
 
 	spa->kva = kva;
-
+	kc.sp_flags = sp_flags;
 	list_for_each_entry(spg_node, &spg->procs, proc_node) {
 		mm = spg_node->master->mm;
 		kc.state = K2U_NORMAL;
