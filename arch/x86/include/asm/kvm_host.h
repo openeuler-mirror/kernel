@@ -118,7 +118,7 @@
 #define INVALID_PAGE (~(hpa_t)0)
 #define VALID_PAGE(x) ((x) != INVALID_PAGE)
 
-#define UNMAPPED_GVA (~(gpa_t)0)
+#define INVALID_GPA (~(gpa_t)0)
 
 /* KVM Hugepage definitions for x86 */
 #define KVM_MAX_HUGEPAGE_LEVEL	PG_LEVEL_1G
