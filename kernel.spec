@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2206.4.0
+%global hulkrelease 2207.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0156
+Release: %{hulkrelease}.0157
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,31 @@ fi
 %endif
 
 %changelog
+
+* Tue Jul 05 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2207.1.0.0157
+- ext4: correct the misjudgment in ext4_iget_extra_inode
+- ext4: correct max_inline_xattr_value_size computing
+- ext4: fix use-after-free in ext4_xattr_set_entry
+- ext4: add EXT4_INODE_HAS_XATTR_SPACE macro in xattr.h
+- tracepoint: Add tracepoint_probe_register_may_exist() for BPF tracing
+- swiotlb: skip swiotlb_bounce when orig_addr is zero
+- KVM: x86: Forbid VMM to set SYNIC/STIMER MSRs when SynIC wasn't activated
+- mm/sharepool: Fix using uninitialized sp_flag
+- mm/sharepool: Add a task_struct parameter for sp_get_local_group()
+- mm/sharepool: Don't check the DVPP address space range before merging
+- mm/sharepool: Configure the DVPP range for process
+- mm/sharepool: Introduce SPG_NON_DVPP flag for sp_group_add_task
+- mm/sharepool: Update sp_mapping structure
+- mm/sharepool: Clear the initialization of sp-associated structure for a process
+- mm/sharepool: Unify the memory allocation process
+- mm/sharepool: Use vm_private_data to store the spa
+- mm/sharepool: Share pool statistics adaption
+- mm/sharepool: Release the sp addr based on the id
+- mm/sharepool: Add an interface to obtain an id
+- mm/sharepool: Address space management for sp_group
+- mm/sharepool: Create global normal and dvpp mapping
+- mm/sharepool: Delete single-group mode
+- io_uring: io_close: Set owner as current->files if req->work.files uninitialized
 
 * Mon Jun 27 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2206.4.0.0156
 - mm/memcontrol: fix wrong vmstats for dying memcg
