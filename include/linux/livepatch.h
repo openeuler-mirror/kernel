@@ -257,6 +257,7 @@ int klp_compare_address(unsigned long pc, unsigned long func_addr,
 }
 
 void arch_klp_init(void);
+int klp_module_delete_safety_check(struct module *mod);
 
 #endif
 

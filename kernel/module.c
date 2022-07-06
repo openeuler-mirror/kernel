@@ -57,6 +57,9 @@
 #include <linux/bsearch.h>
 #include <linux/dynamic_debug.h>
 #include <linux/audit.h>
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+#include <linux/livepatch.h>
+#endif
 #include <uapi/linux/module.h>
 #include "module-internal.h"
 
@@ -1026,6 +1029,12 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 			goto out;
 		}
 	}
+
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	ret = klp_module_delete_safety_check(mod);
+	if (ret != 0)
+		goto out;
+#endif
 
 	/* Stop the machine so refcounts can't move and disable module. */
 	ret = try_stop_module(mod, flags, &forced);
