@@ -126,6 +126,7 @@ int klp_brk_handler(struct pt_regs *regs);
 int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
+int arch_klp_module_check_calltrace(void *data);
 
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 

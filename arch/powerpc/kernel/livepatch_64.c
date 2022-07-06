@@ -76,6 +76,7 @@ struct stackframe {
 struct walk_stackframe_args {
 	int enable;
 	struct klp_func_list *check_funcs;
+	struct module *mod;
 	int ret;
 };
 
@@ -421,6 +422,28 @@ out:
 	free_list(&check_funcs);
 	return ret;
 }
+
+static int check_module_calltrace(struct stackframe *frame, void *data)
+{
+	struct walk_stackframe_args *args = data;
+
+	if (within_module_core(frame->pc, args->mod)) {
+		pr_err("module %s is in use!\n", args->mod->name);
+		return (args->ret = -EBUSY);
+	}
+	return 0;
+}
+
+int arch_klp_module_check_calltrace(void *data)
+{
+	struct walk_stackframe_args args = {
+		.mod = (struct module *)data,
+		.ret = 0
+	};
+
+	return do_check_calltrace(&args, check_module_calltrace);
+}
+
 #endif
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
