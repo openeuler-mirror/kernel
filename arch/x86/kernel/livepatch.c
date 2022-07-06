@@ -246,8 +246,10 @@ static void klp_print_stack_trace(void *trace_ptr, int trace_len)
 #endif
 #define MAX_STACK_ENTRIES  100
 
-static bool check_func_list(struct klp_func_list *funcs, int *ret, unsigned long pc)
+static bool check_func_list(void *data, int *ret, unsigned long pc)
 {
+	struct klp_func_list *funcs = (struct klp_func_list *)data;
+
 	while (funcs != NULL) {
 		*ret = klp_compare_address(pc, funcs->func_addr, funcs->func_name,
 				klp_size_to_check(funcs->func_size, funcs->force));
@@ -260,7 +262,7 @@ static bool check_func_list(struct klp_func_list *funcs, int *ret, unsigned long
 }
 
 static int klp_check_stack(void *trace_ptr, int trace_len,
-		struct klp_func_list *check_funcs)
+			   bool (*fn)(void *, int *, unsigned long), void *data)
 {
 #ifdef CONFIG_ARCH_STACKWALK
 	unsigned long *trace = trace_ptr;
@@ -277,7 +279,7 @@ static int klp_check_stack(void *trace_ptr, int trace_len,
 	for (i = 0; i < trace->nr_entries; i++) {
 		address = trace->entries[i];
 #endif
-		if (!check_func_list(check_funcs, &ret, address)) {
+		if (!fn(data, &ret, address)) {
 #ifdef CONFIG_ARCH_STACKWALK
 			klp_print_stack_trace(trace_ptr, trace_len);
 #else
@@ -301,11 +303,10 @@ static void free_list(struct klp_func_list **funcs)
 	}
 }
 
-int klp_check_calltrace(struct klp_patch *patch, int enable)
+static int do_check_calltrace(bool (*fn)(void *, int *, unsigned long), void *data)
 {
 	struct task_struct *g, *t;
 	int ret = 0;
-	struct klp_func_list *check_funcs = NULL;
 	static unsigned long trace_entries[MAX_STACK_ENTRIES];
 #ifdef CONFIG_ARCH_STACKWALK
 	int trace_len;
@@ -313,11 +314,6 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 	struct stack_trace trace;
 #endif
 
-	ret = klp_check_activeness_func(patch, enable, &check_funcs);
-	if (ret) {
-		pr_err("collect active functions failed, ret=%d\n", ret);
-		goto out;
-	}
 	for_each_process_thread(g, t) {
 		if (!strncmp(t->comm, "migration/", 10))
 			continue;
@@ -327,10 +323,10 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 		if (ret < 0) {
 			pr_err("%s:%d has an unreliable stack, ret=%d\n",
 			       t->comm, t->pid, ret);
-			goto out;
+			return ret;
 		}
 		trace_len = ret;
-		ret = klp_check_stack(trace_entries, trace_len, check_funcs);
+		ret = klp_check_stack(trace_entries, trace_len, fn, data);
 #else
 		trace.skip = 0;
 		trace.nr_entries = 0;
@@ -341,16 +337,35 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 		if (ret) {
 			pr_err("%s: %s:%d has an unreliable stack, ret=%d\n",
 			       __func__, t->comm, t->pid, ret);
-			goto out;
+			return ret;
 		}
-		ret = klp_check_stack(&trace, 0, check_funcs);
+		ret = klp_check_stack(&trace, 0, fn, data);
 #endif
 		if (ret) {
 			pr_err("%s:%d check stack failed, ret=%d\n",
 			       t->comm, t->pid, ret);
-			goto out;
+			return ret;
 		}
 	}
+
+	return 0;
+}
+
+int klp_check_calltrace(struct klp_patch *patch, int enable)
+{
+	int ret = 0;
+	struct klp_func_list *check_funcs = NULL;
+
+	ret = klp_check_activeness_func(patch, enable, &check_funcs);
+	if (ret) {
+		pr_err("collect active functions failed, ret=%d\n", ret);
+		goto out;
+	}
+
+	if (!check_funcs)
+		goto out;
+
+	ret = do_check_calltrace(check_func_list, (void *)check_funcs);
 
 out:
 	free_list(&check_funcs);
