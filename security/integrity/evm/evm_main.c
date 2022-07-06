@@ -70,7 +70,7 @@ static int __init evm_set_param(char *str)
 	else
 		pr_err("invalid \"%s\" mode", str);
 
-	return 0;
+	return 1;
 }
 __setup("evm=", evm_set_param);
 
