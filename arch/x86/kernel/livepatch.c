@@ -386,8 +386,15 @@ void arch_klp_code_modify_post_process(void)
 
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 {
-	return copy_from_kernel_nofault(arch_data->old_code,
-					old_func, JMP_E9_INSN_SIZE);
+	long ret;
+
+	/* Prevent text modification */
+	mutex_lock(&text_mutex);
+	ret = copy_from_kernel_nofault(arch_data->old_code,
+			old_func, JMP_E9_INSN_SIZE);
+	mutex_unlock(&text_mutex);
+
+	return ret;
 }
 
 int arch_klp_patch_func(struct klp_func *func)
