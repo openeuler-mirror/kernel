@@ -49,6 +49,7 @@
 
 static bool kfence_enabled __read_mostly;
 static bool disabled_by_warn __read_mostly;
+static bool re_enabling __read_mostly;
 
 unsigned long kfence_sample_interval __read_mostly = CONFIG_KFENCE_SAMPLE_INTERVAL;
 EXPORT_SYMBOL_GPL(kfence_sample_interval); /* Export for test modules. */
@@ -61,16 +62,24 @@ EXPORT_SYMBOL_GPL(kfence_sample_interval); /* Export for test modules. */
 static int kfence_enable_late(void);
 static int param_set_sample_interval(const char *val, const struct kernel_param *kp)
 {
-	unsigned long num;
-	int ret = kstrtoul(val, 0, &num);
+	long num;
+	int ret = kstrtol(val, 0, &num);
 
 	if (ret < 0)
 		return ret;
 
+	if (num < -1)
+		return -ERANGE;
+	/*
+	 * For architecture that don't require early allocation, always support
+	 * re-enabling. So only need to set num to 0 if num < 0.
+	 */
+	num = max_t(long, 0, num);
+
 	if (!num) /* Using 0 to indicate KFENCE is disabled. */
 		WRITE_ONCE(kfence_enabled, false);
 
-	*((unsigned long *)kp->arg) = num;
+	*((unsigned long *)kp->arg) = (unsigned long)num;
 
 	if (num && !READ_ONCE(kfence_enabled) && system_state != SYSTEM_BOOTING)
 		return disabled_by_warn ? -EINVAL : kfence_enable_late();
@@ -94,11 +103,22 @@ module_param_cb(sample_interval, &sample_interval_param_ops, &kfence_sample_inte
 #ifdef CONFIG_ARM64
 static int __init parse_sample_interval(char *str)
 {
-	unsigned long num;
+	long num;
 
-	if (kstrtoul(str, 0, &num) < 0)
+	if (kstrtol(str, 0, &num) < 0)
 		return 0;
-	kfence_sample_interval = num;
+
+	if (num < -1)
+		return 0;
+
+	/* Using -1 to indicate re-enabling is supported */
+	if (num == -1) {
+		re_enabling = true;
+		pr_err("re-enabling is supported\n");
+	}
+	num = max_t(long, 0, num);
+
+	kfence_sample_interval = (unsigned long)num;
 	return 0;
 }
 early_param("kfence.sample_interval", parse_sample_interval);
@@ -948,7 +968,7 @@ static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
 /* === Public interface ===================================================== */
 void __init kfence_early_alloc_pool(void)
 {
-	if (!kfence_sample_interval)
+	if (!kfence_sample_interval && !re_enabling)
 		return;
 
 	__kfence_pool = memblock_alloc_raw(KFENCE_POOL_SIZE, PAGE_SIZE);
@@ -961,7 +981,7 @@ void __init kfence_early_alloc_pool(void)
 
 void __init kfence_alloc_pool(void)
 {
-	if (!kfence_sample_interval)
+	if (!kfence_sample_interval && !__kfence_pool)
 		return;
 
 	if (kfence_dynamic_init()) {
@@ -996,7 +1016,7 @@ void __init kfence_init(void)
 	stack_hash_seed = (u32)random_get_entropy();
 
 	/* Setting kfence_sample_interval to 0 on boot disables KFENCE. */
-	if (!kfence_sample_interval)
+	if (!kfence_sample_interval && !__kfence_pool)
 		return;
 
 	if (!kfence_init_pool_early()) {
@@ -1005,6 +1025,9 @@ void __init kfence_init(void)
 	}
 
 	kfence_init_enable();
+
+	if (!kfence_sample_interval)
+		WRITE_ONCE(kfence_enabled, false);
 }
 
 static int kfence_init_late(void)
@@ -1014,6 +1037,14 @@ static int kfence_init_late(void)
 #ifdef CONFIG_CONTIG_ALLOC
 	struct page *pages;
 #endif
+
+	/*
+	 * For kfence re_enabling on ARM64, kfence_pool should be allocated
+	 * at startup instead of here. So just return -EINVAL here which means
+	 * re_enabling is not supported.
+	 */
+	if (IS_ENABLED(CONFIG_ARM64))
+		return -EINVAL;
 
 	if (kfence_dynamic_init())
 		return -ENOMEM;
