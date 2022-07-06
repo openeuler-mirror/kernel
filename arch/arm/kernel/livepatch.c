@@ -264,29 +264,18 @@ static void free_list(struct klp_func_list **funcs)
 	}
 }
 
-int klp_check_calltrace(struct klp_patch *patch, int enable)
+static int do_check_calltrace(struct walk_stackframe_args *args,
+			      int (*fn)(struct stackframe *, void *))
 {
 	struct task_struct *g, *t;
 	struct stackframe frame;
-	int ret = 0;
-	struct klp_func_list *check_funcs = NULL;
-	struct walk_stackframe_args args = {
-		.ret = 0
-	};
-
-	ret = klp_check_activeness_func(patch, enable, &check_funcs);
-	if (ret) {
-		pr_err("collect active functions failed, ret=%d\n", ret);
-		goto out;
-	}
-	args.check_funcs = check_funcs;
 
 	for_each_process_thread(g, t) {
 		if (t == current) {
 			frame.fp = (unsigned long)__builtin_frame_address(0);
 			frame.sp = current_stack_pointer;
 			frame.lr = (unsigned long)__builtin_return_address(0);
-			frame.pc = (unsigned long)klp_check_calltrace;
+			frame.pc = (unsigned long)do_check_calltrace;
 		} else if (strncmp(t->comm, "migration/", 10) == 0) {
 			/*
 			 * current on other CPU
@@ -304,16 +293,35 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 			frame.lr = 0;           /* recovered from the stack */
 			frame.pc = thread_saved_pc(t);
 		}
-		if (check_funcs != NULL) {
-			walk_stackframe(&frame, klp_check_jump_func, &args);
-			if (args.ret) {
-				ret = args.ret;
-				pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
-				show_stack(t, NULL, KERN_INFO);
-				goto out;
-			}
+		walk_stackframe(&frame, fn, args);
+		if (args->ret) {
+			pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
+			show_stack(t, NULL, KERN_INFO);
+			return args->ret;
 		}
 	}
+	return 0;
+}
+
+int klp_check_calltrace(struct klp_patch *patch, int enable)
+{
+	int ret = 0;
+	struct klp_func_list *check_funcs = NULL;
+	struct walk_stackframe_args args = {
+		.enable = enable,
+		.ret = 0
+	};
+
+	ret = klp_check_activeness_func(patch, enable, &check_funcs);
+	if (ret) {
+		pr_err("collect active functions failed, ret=%d\n", ret);
+		goto out;
+	}
+	if (!check_funcs)
+		goto out;
+
+	args.check_funcs = check_funcs;
+	ret = do_check_calltrace(&args, klp_check_jump_func);
 
 out:
 	free_list(&check_funcs);
