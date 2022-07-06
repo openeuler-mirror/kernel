@@ -633,6 +633,53 @@ static void rcu_guarded_free(struct rcu_head *h)
 	kfence_guarded_free((void *)meta->addr, meta, false);
 }
 
+#ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
+static int __ref kfence_dynamic_init(void)
+{
+	metadata_size = sizeof(struct kfence_metadata) * KFENCE_NR_OBJECTS;
+	if (system_state < SYSTEM_RUNNING)
+		kfence_metadata = memblock_alloc(metadata_size, PAGE_SIZE);
+	else
+		kfence_metadata = kzalloc(metadata_size, GFP_KERNEL);
+	if (!kfence_metadata)
+		return -ENOMEM;
+
+	covered_size = sizeof(atomic_t) * ALLOC_COVERED_SIZE;
+	if (system_state < SYSTEM_RUNNING)
+		alloc_covered = memblock_alloc(covered_size, PAGE_SIZE);
+	else
+		alloc_covered = kzalloc(covered_size, GFP_KERNEL);
+	if (!alloc_covered) {
+		if (system_state < SYSTEM_RUNNING)
+			memblock_free(__pa(kfence_metadata), metadata_size);
+		else
+			kfree(kfence_metadata);
+		kfence_metadata = NULL;
+
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static void __ref kfence_dynamic_destroy(void)
+{
+	if (system_state < SYSTEM_RUNNING) {
+		memblock_free(__pa(alloc_covered), covered_size);
+		memblock_free(__pa(kfence_metadata), metadata_size);
+	} else {
+		kfree(alloc_covered);
+		kfree(kfence_metadata);
+	}
+	alloc_covered = NULL;
+	kfence_metadata = NULL;
+}
+
+#else
+static int __init kfence_dynamic_init(void) { return 0; }
+static void __init kfence_dynamic_destroy(void) { }
+#endif
+
 /*
  * Initialization of the KFENCE pool after its allocation.
  * Returns 0 on success; otherwise returns the address up to
@@ -730,6 +777,7 @@ static bool __init kfence_init_pool_early(void)
 	 */
 	memblock_free_late(__pa(addr), KFENCE_POOL_SIZE - (addr - (unsigned long)__kfence_pool));
 	__kfence_pool = NULL;
+	kfence_dynamic_destroy();
 	return false;
 }
 
@@ -750,6 +798,7 @@ static bool kfence_init_pool_late(void)
 	free_pages_exact((void *)addr, free_size);
 #endif
 	__kfence_pool = NULL;
+	kfence_dynamic_destroy();
 	return false;
 }
 
@@ -793,8 +842,13 @@ static void *next_object(struct seq_file *seq, void *v, loff_t *pos)
 
 static int show_object(struct seq_file *seq, void *v)
 {
-	struct kfence_metadata *meta = &kfence_metadata[(long)v - 1];
+	struct kfence_metadata *meta;
 	unsigned long flags;
+
+	if (!kfence_metadata_valid())
+		return 0;
+
+	meta = &kfence_metadata[(long)v - 1];
 
 	raw_spin_lock_irqsave(&meta->lock, flags);
 	kfence_print_object(seq, meta);
@@ -830,8 +884,7 @@ static int __init kfence_debugfs_init(void)
 	debugfs_create_file("stats", 0444, kfence_dir, NULL, &stats_fops);
 
 	/* Variable kfence_metadata may fail to allocate. */
-	if (kfence_metadata_valid())
-		debugfs_create_file("objects", 0400, kfence_dir, NULL, &objects_fops);
+	debugfs_create_file("objects", 0400, kfence_dir, NULL, &objects_fops);
 
 	return 0;
 }
@@ -891,40 +944,6 @@ static void toggle_allocation_gate(struct work_struct *work)
 			   msecs_to_jiffies(kfence_sample_interval));
 }
 static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
-
-#ifdef CONFIG_KFENCE_DYNAMIC_OBJECTS
-static int __init kfence_dynamic_init(void)
-{
-	metadata_size = sizeof(struct kfence_metadata) * KFENCE_NR_OBJECTS;
-	kfence_metadata = memblock_alloc(metadata_size, PAGE_SIZE);
-	if (!kfence_metadata) {
-		pr_err("failed to allocate metadata\n");
-		return -ENOMEM;
-	}
-
-	covered_size = sizeof(atomic_t) * ALLOC_COVERED_SIZE;
-	alloc_covered = memblock_alloc(covered_size, PAGE_SIZE);
-	if (!alloc_covered) {
-		memblock_free(__pa(kfence_metadata), metadata_size);
-		kfence_metadata = NULL;
-		pr_err("failed to allocate covered\n");
-		return -ENOMEM;
-	}
-
-	return 0;
-}
-
-static void  __init kfence_dynamic_destroy(void)
-{
-	memblock_free(__pa(alloc_covered), covered_size);
-	alloc_covered = NULL;
-	memblock_free(__pa(kfence_metadata), metadata_size);
-	kfence_metadata = NULL;
-}
-#else
-static int __init kfence_dynamic_init(void) { return 0; }
-static void __init kfence_dynamic_destroy(void) { }
-#endif
 
 /* === Public interface ===================================================== */
 void __init kfence_early_alloc_pool(void)
@@ -991,12 +1010,21 @@ void __init kfence_init(void)
 static int kfence_init_late(void)
 {
 	const unsigned long nr_pages = KFENCE_POOL_SIZE / PAGE_SIZE;
+
 #ifdef CONFIG_CONTIG_ALLOC
 	struct page *pages;
+#endif
 
-	pages = alloc_contig_pages(nr_pages, GFP_KERNEL, first_online_node, NULL);
-	if (!pages)
+	if (kfence_dynamic_init())
 		return -ENOMEM;
+
+#ifdef CONFIG_CONTIG_ALLOC
+	pages = alloc_contig_pages(nr_pages, GFP_KERNEL, first_online_node, NULL);
+	if (!pages) {
+		kfence_dynamic_destroy();
+		return -ENOMEM;
+	}
+
 	__kfence_pool = page_to_virt(pages);
 #else
 	if (nr_pages > MAX_ORDER_NR_PAGES) {
@@ -1004,8 +1032,10 @@ static int kfence_init_late(void)
 		return -EINVAL;
 	}
 	__kfence_pool = alloc_pages_exact(KFENCE_POOL_SIZE, GFP_KERNEL);
-	if (!__kfence_pool)
+	if (!__kfence_pool) {
+		kfence_dynamic_destroy();
 		return -ENOMEM;
+	}
 #endif
 
 	if (!kfence_init_pool_late()) {
