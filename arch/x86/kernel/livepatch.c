@@ -32,6 +32,10 @@
 #include <asm/sections.h>
 
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+#include <linux/kprobes.h>
+#endif
+
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 /*
  * The instruction set on x86 is CISC.
  * The instructions of call in same segment are 11101000(direct),
@@ -352,6 +356,74 @@ out:
 	free_list(&check_funcs);
 	return ret;
 }
+
+int arch_klp_check_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	int ret;
+	unsigned char opcode;
+
+	ret = copy_from_kernel_nofault(&opcode, old_func, INT3_INSN_SIZE);
+	if (ret)
+		return ret;
+
+	/* Another subsystem puts a breakpoint, reject patching at this time */
+	if (opcode == INT3_INSN_OPCODE)
+		return -EBUSY;
+
+	return 0;
+}
+
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	unsigned char int3 = INT3_INSN_OPCODE;
+	int ret;
+
+	ret = copy_from_kernel_nofault(&arch_data->saved_opcode, old_func,
+				       INT3_INSN_SIZE);
+	if (ret)
+		return ret;
+
+	text_poke(old_func, &int3, INT3_INSN_SIZE);
+	/* arch_klp_code_modify_post_process() will do text_poke_sync() */
+
+	return 0;
+}
+
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	unsigned char opcode;
+	int ret;
+
+	ret = copy_from_kernel_nofault(&opcode, old_func, INT3_INSN_SIZE);
+	if (ret) {
+		pr_warn("%s: failed to read opcode, ret=%d\n", __func__, ret);
+		return;
+	}
+
+	/* instruction have been recovered at arch_klp_unpatch_func() */
+	if (opcode != INT3_INSN_OPCODE)
+		return;
+
+	text_poke(old_func, &arch_data->saved_opcode, INT3_INSN_SIZE);
+	/* arch_klp_code_modify_post_process() will do text_poke_sync() */
+}
+
+int klp_int3_handler(struct pt_regs *regs)
+{
+	unsigned long addr = regs->ip - INT3_INSN_SIZE;
+	void *brk_func;
+
+	if (user_mode(regs))
+		return 0;
+
+	brk_func = klp_get_brk_func((void *)addr);
+	if (!brk_func)
+		return 0;
+
+	int3_emulate_jmp(regs, (unsigned long)brk_func);
+	return 1;
+}
+NOKPROBE_SYMBOL(klp_int3_handler);
 #endif
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
@@ -390,15 +462,22 @@ int arch_klp_patch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
 	unsigned long ip, new_addr;
-	void *new;
+	unsigned char *new;
 
 	func_node = func->func_node;
 	ip = (unsigned long)func->old_func;
 	list_add_rcu(&func->stack_node, &func_node->func_stack);
 	new_addr = (unsigned long)func->new_func;
 	/* replace the text with the new text */
-	new = klp_jmp_code(ip, new_addr);
+	new = (unsigned char *)klp_jmp_code(ip, new_addr);
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	/* update jmp offset */
+	text_poke((void *)(ip + 1), new + 1, JMP_E9_INSN_SIZE - 1);
+	/* update jmp opcode */
+	text_poke((void *)ip, new, 1);
+#else
 	text_poke((void *)ip, new, JMP_E9_INSN_SIZE);
+#endif
 
 	return 0;
 }
