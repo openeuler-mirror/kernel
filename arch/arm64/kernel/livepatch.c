@@ -30,6 +30,7 @@
 #include <asm/insn.h>
 #include <asm-generic/sections.h>
 #include <asm/ptrace.h>
+#include <asm/debug-monitors.h>
 #include <linux/ftrace.h>
 #include <linux/sched/debug.h>
 #include <linux/kallsyms.h>
@@ -314,6 +315,46 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 out:
 	free_list(&check_funcs);
 	return ret;
+}
+
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	u32 insn = BRK64_OPCODE_KLP;
+	u32 *addr = (u32 *)old_func;
+
+	arch_data->saved_opcode = le32_to_cpu(*addr);
+	aarch64_insn_patch_text(&old_func, &insn, 1);
+	return 0;
+}
+
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	aarch64_insn_patch_text(&old_func, &arch_data->saved_opcode, 1);
+}
+
+static int klp_breakpoint_handler(struct pt_regs *regs, unsigned int esr)
+{
+	void *brk_func = NULL;
+	unsigned long addr = instruction_pointer(regs);
+
+	brk_func = klp_get_brk_func((void *)addr);
+	if (!brk_func) {
+		pr_warn("Unrecoverable livepatch detected.\n");
+		BUG();
+	}
+
+	instruction_pointer_set(regs, (unsigned long)brk_func);
+	return 0;
+}
+
+static struct break_hook klp_break_hook = {
+	.imm = KLP_BRK_IMM,
+	.fn = klp_breakpoint_handler,
+};
+
+void arch_klp_init(void)
+{
+	register_kernel_break_hook(&klp_break_hook);
 }
 #endif
 

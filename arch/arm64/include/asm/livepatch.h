@@ -58,8 +58,16 @@ int klp_check_calltrace(struct klp_patch *patch, int enable);
 
 struct arch_klp_data {
 	u32 old_insns[LJMP_INSN_SIZE];
+
+	/*
+	 * Saved opcode at the entry of the old func (which maybe replaced
+	 * with breakpoint).
+	 */
+	u32 saved_opcode;
 };
 
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
 
 #endif
