@@ -2864,7 +2864,10 @@ void blk_account_io_start(struct request *rq, bool new_io)
 		part_stat_inc(cpu, part, merges[rw]);
 	} else {
 		part = disk_map_sector_rcu(rq->rq_disk, blk_rq_pos(rq));
-		part_round_stats(rq->q, cpu, part);
+		if (!precise_iostat)
+			update_io_ticks(cpu, part, jiffies, false);
+		else
+			part_round_stats(rq->q, cpu, part);
 		part_inc_in_flight(rq->q, part, rw);
 		rq->part = part;
 	}

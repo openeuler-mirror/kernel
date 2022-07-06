@@ -1689,7 +1689,10 @@ void generic_start_io_acct(struct request_queue *q, int op,
 	const int sgrp = op_stat_group(op);
 	int cpu = part_stat_lock();
 
-	part_round_stats(q, cpu, part);
+	if (precise_iostat)
+		part_round_stats(q, cpu, part);
+	else
+		update_io_ticks(cpu, part, jiffies, false);
 	part_stat_inc(cpu, part, ios[sgrp]);
 	part_stat_add(cpu, part, sectors[sgrp], sectors);
 	part_inc_in_flight(q, part, op_is_write(op));
