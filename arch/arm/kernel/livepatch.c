@@ -86,16 +86,6 @@ static inline unsigned long klp_size_to_check(unsigned long func_size,
 	return size;
 }
 
-static inline int klp_compare_address(unsigned long pc, unsigned long func_addr,
-		const char *func_name, unsigned long check_size)
-{
-	if (pc >= func_addr && pc < func_addr + check_size) {
-		pr_err("func %s is in use!\n", func_name);
-		return -EBUSY;
-	}
-	return 0;
-}
-
 static bool check_jump_insn(unsigned long func_addr)
 {
 	unsigned long i;
