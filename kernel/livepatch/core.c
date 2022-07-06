@@ -1403,6 +1403,10 @@ long __weak arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_fu
 	return -ENOSYS;
 }
 
+void __weak arch_klp_init(void)
+{
+}
+
 int __weak arch_klp_check_breakpoint(struct arch_klp_data *arch_data, void *old_func)
 {
 	return 0;
@@ -2293,6 +2297,9 @@ static int __init klp_init(void)
 	if (!klp_root_kobj)
 		goto error_remove;
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	arch_klp_init();
+#endif
 	return 0;
 
 error_remove:

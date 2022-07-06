@@ -256,6 +256,8 @@ int klp_compare_address(unsigned long pc, unsigned long func_addr,
 	return 0;
 }
 
+void arch_klp_init(void);
+
 #endif
 
 int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
