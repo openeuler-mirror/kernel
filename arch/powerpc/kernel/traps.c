@@ -67,6 +67,9 @@
 #include <asm/kprobes.h>
 #include <asm/stacktrace.h>
 #include <asm/nmi.h>
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+#include <asm/livepatch.h>
+#endif
 
 #if defined(CONFIG_DEBUGGER) || defined(CONFIG_KEXEC_CORE)
 int (*__debugger)(struct pt_regs *regs) __read_mostly;
@@ -1490,6 +1493,11 @@ void program_check_exception(struct pt_regs *regs)
 
 		if (kprobe_handler(regs))
 			goto bail;
+
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+		if (klp_brk_handler(regs))
+			goto bail;
+#endif
 
 		/* trap exception */
 		if (notify_die(DIE_BPT, "breakpoint", regs, 5, 5, SIGTRAP)
