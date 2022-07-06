@@ -835,16 +835,15 @@ static int livepatch_create_bstub(struct ppc64_klp_bstub_entry *entry,
 		return 0;
 	}
 
-	if (entry->magic != BRANCH_STUB_MAGIC) {
-		stub_start = ppc_function_entry((void *)livepatch_branch_stub);
-		stub_end = ppc_function_entry((void *)livepatch_branch_stub_end);
-		stub_size = stub_end - stub_start;
-		memcpy(entry->jump, (u32 *)stub_start, stub_size);
 
-		entry->jump[0] |= PPC_HA(reladdr);
-		entry->jump[1] |= PPC_LO(reladdr);
-		entry->magic = BRANCH_STUB_MAGIC;
-	}
+	stub_start = ppc_function_entry((void *)livepatch_branch_stub);
+	stub_end = ppc_function_entry((void *)livepatch_branch_stub_end);
+	stub_size = stub_end - stub_start;
+	memcpy(entry->jump, (u32 *)stub_start, stub_size);
+
+	entry->jump[0] |= PPC_HA(reladdr);
+	entry->jump[1] |= PPC_LO(reladdr);
+	entry->magic = BRANCH_STUB_MAGIC;
 	entry->trampoline = addr;
 
 	pr_debug("Create livepatch branch stub 0x%px with reladdr 0x%lx r2 0x%lx to trampoline 0x%lx\n",
@@ -854,9 +853,8 @@ static int livepatch_create_bstub(struct ppc64_klp_bstub_entry *entry,
 }
 
 #ifdef PPC64_ELF_ABI_v1
-static void livepatch_create_btramp(struct ppc64_klp_btramp_entry *entry,
-			      unsigned long addr,
-			      struct module *me)
+void livepatch_create_btramp(struct ppc64_klp_btramp_entry *entry,
+			     unsigned long addr)
 {
 	unsigned long reladdr, tramp_start, tramp_end, tramp_size;
 
@@ -894,7 +892,7 @@ int livepatch_create_branch(unsigned long pc,
 {
 #ifdef PPC64_ELF_ABI_v1
 	/* Create trampoline to addr(new func) */
-	livepatch_create_btramp((struct ppc64_klp_btramp_entry *)trampoline, addr, me);
+	livepatch_create_btramp((struct ppc64_klp_btramp_entry *)trampoline, addr);
 #else
 	trampoline = addr;
 #endif

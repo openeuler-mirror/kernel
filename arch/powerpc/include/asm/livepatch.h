@@ -75,6 +75,10 @@ extern void livepatch_branch_stub_end(void);
 #ifdef PPC64_ELF_ABI_v1
 extern void livepatch_branch_trampoline(void);
 extern void livepatch_branch_trampoline_end(void);
+void livepatch_create_btramp(struct ppc64_klp_btramp_entry *entry, unsigned long addr);
+#else
+static inline void livepatch_create_btramp(struct ppc64_klp_btramp_entry *entry,
+					   unsigned long addr) {}
 #endif /* PPC64_ELF_ABI_v1 */
 
 int livepatch_create_branch(unsigned long pc,
