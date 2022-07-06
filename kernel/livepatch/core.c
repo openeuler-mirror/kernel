@@ -1273,11 +1273,16 @@ int __weak klp_check_calltrace(struct klp_patch *patch, int enable)
 
 static LIST_HEAD(klp_func_list);
 
+/*
+ * The caller must ensure that the klp_mutex lock is held or is in the rcu read
+ * critical area.
+ */
 struct klp_func_node *klp_find_func_node(const void *old_func)
 {
 	struct klp_func_node *func_node;
 
-	list_for_each_entry(func_node, &klp_func_list, node) {
+	list_for_each_entry_rcu(func_node, &klp_func_list, node,
+				lockdep_is_held(&klp_mutex)) {
 		if (func_node->old_func == old_func)
 			return func_node;
 	}
@@ -1403,6 +1408,7 @@ static void func_node_free(struct klp_func *func)
 		func->func_node = NULL;
 		if (list_empty(&func_node->func_stack)) {
 			klp_del_func_node(func_node);
+			synchronize_rcu();
 			arch_klp_mem_free(func_node);
 		}
 	}
