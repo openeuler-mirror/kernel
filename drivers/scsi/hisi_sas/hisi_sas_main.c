@@ -2852,12 +2852,12 @@ EXPORT_SYMBOL_GPL(hisi_sas_remove);
 #if IS_ENABLED(CONFIG_SCSI_HISI_SAS_DEBUGFS_DEFAULT_ENABLE)
 #define DEBUGFS_ENABLE_DEFAULT  "enabled"
 bool hisi_sas_debugfs_enable = true;
-u32 hisi_sas_debugfs_dump_count = 50;
 #else
 #define DEBUGFS_ENABLE_DEFAULT "disabled"
 bool hisi_sas_debugfs_enable;
-u32 hisi_sas_debugfs_dump_count = 1;
 #endif
+
+u32 hisi_sas_debugfs_dump_count = 1;
 
 EXPORT_SYMBOL_GPL(hisi_sas_debugfs_enable);
 module_param_named(debugfs_enable, hisi_sas_debugfs_enable, bool, 0444);
