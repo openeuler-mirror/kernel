@@ -1668,14 +1668,14 @@ defer:
 }
 EXPORT_SYMBOL_GPL(bio_check_pages_dirty);
 
-void update_io_ticks(int cpu, struct hd_struct *part, unsigned long now)
+void update_io_ticks(int cpu, struct hd_struct *part, unsigned long now, bool end)
 {
 	unsigned long stamp;
 again:
 	stamp = READ_ONCE(part->stamp);
 	if (unlikely(stamp != now)) {
 		if (likely(cmpxchg(&part->stamp, stamp, now) == stamp))
-			__part_stat_add(cpu, part, io_ticks, now - stamp);
+			__part_stat_add(cpu, part, io_ticks, end ? now - stamp : 1);
 	}
 	if (part->partno) {
 		part = &part_to_disk(part)->part0;
@@ -1709,7 +1709,7 @@ void generic_end_io_acct(struct request_queue *q, int req_op,
 	if (precise_iostat) {
 		part_round_stats(q, cpu, part);
 	} else {
-		update_io_ticks(cpu, part, now);
+		update_io_ticks(cpu, part, now, true);
 		part_stat_add(cpu, part, time_in_queue, duration);
 	}
 	part_stat_add(cpu, part, nsecs[sgrp], jiffies_to_nsecs(duration));

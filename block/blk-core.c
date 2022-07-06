@@ -2809,7 +2809,7 @@ void blk_account_io_done(struct request *req, u64 now)
 		part = req->part;
 
 		if (!precise_iostat) {
-			update_io_ticks(cpu, part, jiffies);
+			update_io_ticks(cpu, part, jiffies, true);
 			part_stat_add(cpu, part, time_in_queue,
 				nsecs_to_jiffies64(now - req->start_time_ns));
 		} else {
