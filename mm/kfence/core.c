@@ -792,6 +792,7 @@ static unsigned long kfence_init_pool(void)
 static bool __init kfence_init_pool_early(void)
 {
 	unsigned long addr;
+	char *p;
 
 	if (!__kfence_pool)
 		return false;
@@ -808,6 +809,16 @@ static bool __init kfence_init_pool_early(void)
 	 * fails for the first page, and therefore expect addr==__kfence_pool in
 	 * most failure cases.
 	 */
+	for (p = (char *)addr; p < __kfence_pool + KFENCE_POOL_SIZE; p += PAGE_SIZE) {
+		struct page *page = virt_to_page(p);
+
+		if (!page)
+			continue;
+#ifdef CONFIG_MEMCG
+		page->memcg_data = 0;
+#endif
+		__ClearPageSlab(page);
+	}
 	memblock_free_late(__pa(addr), KFENCE_POOL_SIZE - (addr - (unsigned long)__kfence_pool));
 	__kfence_pool = NULL;
 	kfence_dynamic_destroy();
