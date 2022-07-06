@@ -1408,23 +1408,6 @@ static void func_node_free(struct klp_func *func)
 	}
 }
 
-static int klp_mem_prepare(struct klp_patch *patch)
-{
-	struct klp_object *obj;
-	struct klp_func *func;
-
-	klp_for_each_object(patch, obj) {
-		klp_for_each_func(obj, func) {
-			func->func_node = func_node_alloc(func);
-			if (func->func_node == NULL) {
-				pr_err("alloc func_node failed\n");
-				return -ENOMEM;
-			}
-		}
-	}
-	return 0;
-}
-
 static void klp_mem_recycle(struct klp_patch *patch)
 {
 	struct klp_object *obj;
@@ -1435,6 +1418,24 @@ static void klp_mem_recycle(struct klp_patch *patch)
 			func_node_free(func);
 		}
 	}
+}
+
+static int klp_mem_prepare(struct klp_patch *patch)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			func->func_node = func_node_alloc(func);
+			if (func->func_node == NULL) {
+				klp_mem_recycle(patch);
+				pr_err("alloc func_node failed\n");
+				return -ENOMEM;
+			}
+		}
+	}
+	return 0;
 }
 
 static int __klp_disable_patch(struct klp_patch *patch)
@@ -1697,8 +1698,11 @@ static int __klp_enable_patch(struct klp_patch *patch)
 
 	arch_klp_code_modify_prepare();
 	ret = klp_mem_prepare(patch);
-	if (ret == 0)
-		ret = stop_machine(klp_try_enable_patch, &patch_data, cpu_online_mask);
+	if (ret) {
+		arch_klp_code_modify_post_process();
+		return ret;
+	}
+	ret = stop_machine(klp_try_enable_patch, &patch_data, cpu_online_mask);
 	arch_klp_code_modify_post_process();
 	if (ret) {
 		klp_mem_recycle(patch);
