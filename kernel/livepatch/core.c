@@ -31,6 +31,7 @@
 #include "state.h"
 #include "transition.h"
 #elif defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY)
+#include <linux/delay.h>
 #include <linux/stop_machine.h>
 #endif
 
@@ -57,6 +58,7 @@ static struct kobject *klp_root_kobj;
 struct patch_data {
 	struct klp_patch        *patch;
 	atomic_t                cpu_count;
+	bool			rollback;
 };
 #endif
 
@@ -1301,6 +1303,37 @@ void klp_del_func_node(struct klp_func_node *func_node)
 }
 
 /*
+ * Called from the breakpoint exception handler function.
+ */
+void *klp_get_brk_func(void *addr)
+{
+	struct klp_func_node *func_node;
+	void *brk_func = NULL;
+
+	if (!addr)
+		return NULL;
+
+	rcu_read_lock();
+
+	func_node = klp_find_func_node(addr);
+	if (!func_node)
+		goto unlock;
+
+	/*
+	 * Corresponds to smp_wmb() in {add, remove}_breakpoint(). If the
+	 * current breakpoint exception belongs to us, we have observed the
+	 * breakpoint instruction, so brk_func must be observed.
+	 */
+	smp_rmb();
+
+	brk_func = func_node->brk_func;
+
+unlock:
+	rcu_read_unlock();
+	return brk_func;
+}
+
+/*
  * This function is called from stop_machine() context.
  */
 static int disable_patch(struct klp_patch *patch)
@@ -1368,6 +1401,25 @@ void __weak arch_klp_mem_free(void *mem)
 long __weak arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 {
 	return -ENOSYS;
+}
+
+int __weak arch_klp_check_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	return 0;
+}
+
+int __weak arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	return -ENOTSUPP;
+}
+
+void __weak arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+}
+
+void __weak arch_klp_set_brk_func(struct klp_func_node *func_node, void *new_func)
+{
+	func_node->brk_func = new_func;
 }
 
 static struct klp_func_node *func_node_alloc(struct klp_func *func)
@@ -1442,6 +1494,110 @@ static int klp_mem_prepare(struct klp_patch *patch)
 		}
 	}
 	return 0;
+}
+
+static void remove_breakpoint(struct klp_func *func, bool restore)
+{
+
+	struct klp_func_node *func_node = klp_find_func_node(func->old_func);
+	struct arch_klp_data *arch_data = &func_node->arch_data;
+
+	if (!func_node->brk_func)
+		return;
+
+	if (restore)
+		arch_klp_remove_breakpoint(arch_data, func->old_func);
+
+	/* Wait for all breakpoint exception handler functions to exit. */
+	synchronize_rcu();
+
+	/* 'brk_func' cannot be set to NULL before the breakpoint is removed. */
+	smp_wmb();
+
+	arch_klp_set_brk_func(func_node, NULL);
+}
+
+static void __klp_breakpoint_post_process(struct klp_patch *patch, bool restore)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			remove_breakpoint(func, restore);
+		}
+	}
+}
+
+static int add_breakpoint(struct klp_func *func)
+{
+	struct klp_func_node *func_node = klp_find_func_node(func->old_func);
+	struct arch_klp_data *arch_data = &func_node->arch_data;
+	int ret;
+
+	if (WARN_ON_ONCE(func_node->brk_func))
+		return -EINVAL;
+
+	ret = arch_klp_check_breakpoint(arch_data, func->old_func);
+	if (ret)
+		return ret;
+
+	arch_klp_set_brk_func(func_node, func->new_func);
+
+	/*
+	 * When entering an exception, we must see 'brk_func' or the kernel
+	 * will not be able to handle the breakpoint exception we are about
+	 * to insert.
+	 */
+	smp_wmb();
+
+	ret = arch_klp_add_breakpoint(arch_data, func->old_func);
+	if (ret)
+		arch_klp_set_brk_func(func_node, NULL);
+
+	return ret;
+}
+
+static int klp_add_breakpoint(struct klp_patch *patch)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+	int ret;
+
+	/*
+	 * Ensure that the module is not uninstalled before the breakpoint is
+	 * removed. After the breakpoint is removed, it can be ensured that the
+	 * new function will not be jumped through the handler function of the
+	 * breakpoint.
+	 */
+	if (!try_module_get(patch->mod))
+		return -ENODEV;
+
+	arch_klp_code_modify_prepare();
+
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			ret = add_breakpoint(func);
+			if (ret) {
+				__klp_breakpoint_post_process(patch, true);
+				arch_klp_code_modify_post_process();
+				module_put(patch->mod);
+				return ret;
+			}
+		}
+	}
+
+	arch_klp_code_modify_post_process();
+
+	return 0;
+}
+
+static void klp_breakpoint_post_process(struct klp_patch *patch, bool restore)
+{
+	arch_klp_code_modify_prepare();
+	__klp_breakpoint_post_process(patch, restore);
+	arch_klp_code_modify_post_process();
+	module_put(patch->mod);
 }
 
 static int __klp_disable_patch(struct klp_patch *patch)
@@ -1614,7 +1770,7 @@ EXPORT_SYMBOL_GPL(klp_enable_patch);
 /*
  * This function is called from stop_machine() context.
  */
-static int enable_patch(struct klp_patch *patch)
+static int enable_patch(struct klp_patch *patch, bool rollback)
 {
 	struct klp_object *obj;
 	int ret;
@@ -1622,19 +1778,21 @@ static int enable_patch(struct klp_patch *patch)
 	pr_notice_once("tainting kernel with TAINT_LIVEPATCH\n");
 	add_taint(TAINT_LIVEPATCH, LOCKDEP_STILL_OK);
 
-	if (!try_module_get(patch->mod))
-		return -ENODEV;
+	if (!patch->enabled) {
+		if (!try_module_get(patch->mod))
+			return -ENODEV;
 
-	patch->enabled = true;
+		patch->enabled = true;
 
-	pr_notice("enabling patch '%s'\n", patch->mod->name);
+		pr_notice("enabling patch '%s'\n", patch->mod->name);
+	}
 
 	klp_for_each_object(patch, obj) {
 		if (!klp_is_object_loaded(obj))
 			continue;
 
-		ret = klp_patch_object(obj);
-		if (ret) {
+		ret = klp_patch_object(obj, rollback);
+		if (ret && klp_need_rollback(ret, rollback)) {
 			pr_warn("failed to patch object '%s'\n",
 				klp_is_module(obj) ? obj->name : "vmlinux");
 			goto disable;
@@ -1666,7 +1824,7 @@ int klp_try_enable_patch(void *data)
 			atomic_inc(&pd->cpu_count);
 			return ret;
 		}
-		ret = enable_patch(patch);
+		ret = enable_patch(patch, pd->rollback);
 		if (ret) {
 			atomic_inc(&pd->cpu_count);
 			return ret;
@@ -1682,12 +1840,89 @@ int klp_try_enable_patch(void *data)
 	return ret;
 }
 
+/*
+ * When the stop_machine is used to enable the patch, if the patch fails to be
+ * enabled because the stack check fails, a certain number of retries are
+ * allowed. The maximum number of retries is KLP_RETRY_COUNT.
+ *
+ * Sleeps for KLP_RETRY_INTERVAL milliseconds before each retry to give tasks
+ * that fail the stack check a chance to run out of the instruction replacement
+ * area.
+ */
+#define KLP_RETRY_COUNT 5
+#define KLP_RETRY_INTERVAL 100
+
+static bool klp_use_breakpoint(struct klp_patch *patch)
+{
+	struct klp_object *obj;
+	struct klp_func *func;
+
+	klp_for_each_object(patch, obj) {
+		klp_for_each_func(obj, func) {
+			if (func->force != KLP_STACK_OPTIMIZE)
+				return false;
+		}
+	}
+
+	return true;
+}
+
+static int klp_breakpoint_optimize(struct klp_patch *patch)
+{
+	int ret;
+	int i;
+	int cnt = 0;
+
+	ret = klp_add_breakpoint(patch);
+	if (ret) {
+		pr_err("failed to add breakpoints, ret=%d\n", ret);
+		return ret;
+	}
+
+	for (i = 0; i < KLP_RETRY_COUNT; i++) {
+		struct patch_data patch_data = {
+			.patch = patch,
+			.cpu_count = ATOMIC_INIT(0),
+			.rollback = false,
+		};
+
+		if (i == KLP_RETRY_COUNT - 1)
+			patch_data.rollback = true;
+
+		cnt++;
+
+		arch_klp_code_modify_prepare();
+		ret = stop_machine(klp_try_enable_patch, &patch_data,
+				   cpu_online_mask);
+		arch_klp_code_modify_post_process();
+		if (!ret || ret != -EAGAIN)
+			break;
+
+		pr_notice("try again in %d ms.\n", KLP_RETRY_INTERVAL);
+
+		msleep(KLP_RETRY_INTERVAL);
+	}
+	pr_notice("patching %s, tried %d times, ret=%d.\n",
+		  ret ? "failed" : "success", cnt, ret);
+
+	/*
+	 * If the patch is enabled successfully, the breakpoint instruction
+	 * has been replaced with the jump instruction.  However, if the patch
+	 * fails to be enabled, we need to delete the previously inserted
+	 * breakpoint to restore the instruction at the old function entry.
+	 */
+	klp_breakpoint_post_process(patch, !!ret);
+
+	return ret;
+}
+
 static int __klp_enable_patch(struct klp_patch *patch)
 {
 	int ret;
 	struct patch_data patch_data = {
 		.patch = patch,
 		.cpu_count = ATOMIC_INIT(0),
+		.rollback = true,
 	};
 
 	if (WARN_ON(patch->enabled))
@@ -1705,14 +1940,26 @@ static int __klp_enable_patch(struct klp_patch *patch)
 	ret = klp_mem_prepare(patch);
 	if (ret)
 		return ret;
+
 	arch_klp_code_modify_prepare();
-	ret = stop_machine(klp_try_enable_patch, &patch_data, cpu_online_mask);
+	ret = stop_machine(klp_try_enable_patch, &patch_data,
+			   cpu_online_mask);
 	arch_klp_code_modify_post_process();
-	if (ret) {
-		klp_mem_recycle(patch);
-		return ret;
+	if (!ret)
+		goto move_patch_to_tail;
+	if (ret != -EAGAIN)
+		goto err_out;
+
+	if (!klp_use_breakpoint(patch)) {
+		pr_debug("breakpoint exception optimization is not used.\n");
+		goto err_out;
 	}
 
+	ret = klp_breakpoint_optimize(patch);
+	if (ret)
+		goto err_out;
+
+move_patch_to_tail:
 #ifndef CONFIG_LIVEPATCH_STACK
 	/* move the enabled patch to the list tail */
 	list_del(&patch->list);
@@ -1720,6 +1967,10 @@ static int __klp_enable_patch(struct klp_patch *patch)
 #endif
 
 	return 0;
+
+err_out:
+	klp_mem_recycle(patch);
+	return ret;
 }
 
 /**

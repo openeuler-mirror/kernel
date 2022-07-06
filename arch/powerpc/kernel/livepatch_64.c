@@ -143,7 +143,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 
 			/* Check func address in stack */
 			if (enable) {
-				if (func->force == KLP_ENFORCEMENT)
+				if (func->patched || func->force == KLP_ENFORCEMENT)
 					continue;
 				/*
 				 * When enable, checking the currently

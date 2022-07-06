@@ -269,9 +269,9 @@ static inline int klp_patch_func(struct klp_func *func)
 {
 	int ret = 0;
 
+	if (func->patched)
+		return 0;
 	if (WARN_ON(!func->old_func))
-		return -EINVAL;
-	if (WARN_ON(func->patched))
 		return -EINVAL;
 	if (WARN_ON(!func->func_node))
 		return -EINVAL;
@@ -306,6 +306,27 @@ void klp_unpatch_object(struct klp_object *obj)
 	__klp_unpatch_object(obj, false);
 }
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+int klp_patch_object(struct klp_object *obj, bool rollback)
+{
+	struct klp_func *func;
+	int ret;
+
+	if (obj->patched)
+		return 0;
+
+	klp_for_each_func(obj, func) {
+		ret = klp_patch_func(func);
+		if (ret && klp_need_rollback(ret, rollback)) {
+			klp_unpatch_object(obj);
+			return ret;
+		}
+	}
+	obj->patched = true;
+
+	return 0;
+}
+#else
 int klp_patch_object(struct klp_object *obj)
 {
 	struct klp_func *func;
@@ -325,6 +346,7 @@ int klp_patch_object(struct klp_object *obj)
 
 	return 0;
 }
+#endif
 
 static void __klp_unpatch_objects(struct klp_patch *patch, bool nops_only)
 {

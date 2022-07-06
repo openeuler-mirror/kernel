@@ -57,4 +57,18 @@ static inline void klp_post_unpatch_callback(struct klp_object *obj)
 	obj->callbacks.post_unpatch_enabled = false;
 }
 #endif /* CONFIG_LIVEPATCH_PER_TASK_CONSISTENCY */
+
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+/*
+ * In the enable_patch() process, we do not need to roll back the patch
+ * immediately if the patch fails to enabled. In this way, the function that has
+ * been successfully patched does not need to be enabled repeatedly during
+ * retry. However, if it is the last retry (rollback == true) or not because of
+ * stack check failure (patch_err != -EAGAIN), rollback is required immediately.
+ */
+static inline bool klp_need_rollback(int patch_err, bool rollback)
+{
+	return patch_err != -EAGAIN || rollback;
+}
+#endif /* CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY */
 #endif /* _LIVEPATCH_CORE_H */

@@ -29,7 +29,11 @@ struct klp_ops {
 
 struct klp_ops *klp_find_ops(void *old_func);
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+int klp_patch_object(struct klp_object *obj, bool rollback);
+#else
 int klp_patch_object(struct klp_object *obj);
+#endif
 void klp_unpatch_object(struct klp_object *obj);
 void klp_unpatch_objects(struct klp_patch *patch);
 void klp_unpatch_objects_dynamic(struct klp_patch *patch);
