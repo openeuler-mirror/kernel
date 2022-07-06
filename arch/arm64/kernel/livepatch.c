@@ -68,6 +68,7 @@ struct klp_func_list {
 struct walk_stackframe_args {
 	int enable;
 	struct klp_func_list *check_funcs;
+	struct module *mod;
 	int ret;
 };
 
@@ -321,6 +322,28 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 out:
 	free_list(&check_funcs);
 	return ret;
+}
+
+static bool check_module_calltrace(void *data, unsigned long pc)
+{
+	struct walk_stackframe_args *args = data;
+
+	if (within_module_core(pc, args->mod)) {
+		pr_err("module %s is in use!\n", args->mod->name);
+		args->ret = -EBUSY;
+		return false;
+	}
+	return true;
+}
+
+int arch_klp_module_check_calltrace(void *data)
+{
+	struct walk_stackframe_args args = {
+		.mod = (struct module *)data,
+		.ret = 0
+	};
+
+	return do_check_calltrace(&args, check_module_calltrace);
 }
 
 int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func)
