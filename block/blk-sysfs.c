@@ -938,6 +938,12 @@ int blk_register_queue(struct gendisk *disk)
 			return ret;
 		}
 	}
+
+	/*
+	 * Set the flag at last, so that block devcie can't be opened
+	 * before it's registration is done.
+	 */
+	disk->flags |= GENHD_FL_UP;
 	ret = 0;
 unlock:
 	mutex_unlock(&q->sysfs_lock);
