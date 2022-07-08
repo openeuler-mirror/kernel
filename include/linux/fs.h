@@ -459,8 +459,6 @@ struct address_space {
 	 */
 struct request_queue;
 
-#define BDEV_NEED_PART_SCAN            0
-
 struct block_device {
 	dev_t			bd_dev;  /* not a kdev_t - it's a search key */
 	int			bd_openers;
@@ -481,7 +479,6 @@ struct block_device {
 	struct hd_struct *	bd_part;
 	/* number of times partitions within this device have been opened. */
 	unsigned		bd_part_count;
-	unsigned long		bd_flags;
 	struct gendisk *	bd_disk;
 	struct request_queue *  bd_queue;
 	struct backing_dev_info *bd_bdi;
