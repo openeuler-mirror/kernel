@@ -180,6 +180,8 @@ struct blk_integrity {
 
 #endif	/* CONFIG_BLK_DEV_INTEGRITY */
 
+#define GD_NEED_PART_SCAN		0
+
 struct gendisk {
 	/* major, first_minor and minors are input parameters only,
 	 * don't use directly.  Use disk_devt() and disk_max_parts().
@@ -208,8 +210,6 @@ struct gendisk {
 	void *private_data;
 
 	int flags;
-	unsigned long state;
-#define GD_NEED_PART_SCAN		0
 	struct rw_semaphore lookup_sem;
 	struct kobject *slave_dir;
 
@@ -226,11 +226,12 @@ struct gendisk {
 #ifndef __GENKSYMS__
 	unsigned long *user_ro_bitmap;
 	atomic64_t sync_io_sectors;         /* RAID */
+	unsigned long state;
 #else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
-#endif
 	KABI_RESERVE(3)
+#endif
 	KABI_RESERVE(4)
 };
 
