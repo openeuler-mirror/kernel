@@ -546,7 +546,7 @@ rescan:
 	if (disk->fops->revalidate_disk)
 		disk->fops->revalidate_disk(disk);
 	check_disk_size_change(disk, bdev, true);
-	bdev->bd_invalidated = 0;
+	clear_bit(BDEV_NEED_PART_SCAN, &bdev->bd_flags);
 	if (!get_capacity(disk) || !(state = check_partition(disk, bdev)))
 		return 0;
 	if (IS_ERR(state)) {
@@ -662,7 +662,7 @@ int invalidate_partitions(struct gendisk *disk, struct block_device *bdev)
 {
 	int res;
 
-	if (!bdev->bd_invalidated)
+	if (!test_bit(BDEV_NEED_PART_SCAN, &bdev->bd_flags))
 		return 0;
 
 	res = drop_partitions(disk, bdev);
@@ -671,7 +671,7 @@ int invalidate_partitions(struct gendisk *disk, struct block_device *bdev)
 
 	set_capacity(disk, 0);
 	check_disk_size_change(disk, bdev, false);
-	bdev->bd_invalidated = 0;
+	clear_bit(BDEV_NEED_PART_SCAN, &bdev->bd_flags);
 	/* tell userspace that the media / partition table may have changed */
 	kobject_uevent(&disk_to_dev(disk)->kobj, KOBJ_CHANGE);
 
