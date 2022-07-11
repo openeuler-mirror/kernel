@@ -562,16 +562,6 @@ static void __init map_mem(pgd_t *pgdp)
 		       PAGE_KERNEL, NO_CONT_MAPPINGS);
 	memblock_clear_nomap(kernel_start, kernel_end - kernel_start);
 
-#ifdef CONFIG_KEXEC_CORE
-	if (crashk_res.end) {
-		__map_memblock(pgdp, crashk_res.start,
-			       crashk_res.end + 1,
-			       PAGE_KERNEL,
-			       NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS);
-		memblock_clear_nomap(crashk_res.start,
-				     resource_size(&crashk_res));
-	}
-#endif
 #ifdef CONFIG_KFENCE
 	/*
 	 * Map the __kfence_pool at page granularity now.
@@ -582,6 +572,22 @@ static void __init map_mem(pgd_t *pgdp)
 			       pgprot_tagged(PAGE_KERNEL),
 			       NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS);
 		memblock_clear_nomap(__pa(__kfence_pool), KFENCE_POOL_SIZE);
+	}
+#endif
+
+	/*
+	 * Use page-level mappings here so that we can shrink the region
+	 * in page granularity and put back unused memory to buddy system
+	 * through /sys/kernel/kexec_crash_size interface.
+	 */
+#ifdef CONFIG_KEXEC_CORE
+	if (crashk_res.end) {
+		__map_memblock(pgdp, crashk_res.start,
+			       crashk_res.end + 1,
+			       PAGE_KERNEL,
+			       NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS);
+		memblock_clear_nomap(crashk_res.start,
+				     resource_size(&crashk_res));
 	}
 #endif
 }
