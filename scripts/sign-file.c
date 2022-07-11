@@ -206,6 +206,28 @@ static X509 *read_x509(const char *x509_name)
 	return x509;
 }
 
+#if defined(EVP_PKEY_SM2)
+static int pkey_is_sm2(EVP_PKEY *pkey)
+{
+	EC_KEY *eckey = NULL;
+
+	const EC_GROUP *group = NULL;
+
+	if (pkey == NULL || EVP_PKEY_id(pkey) != EVP_PKEY_EC)
+		return 0;
+
+	eckey = EVP_PKEY_get0_EC_KEY(pkey);
+	if (eckey == NULL)
+		return 0;
+
+	group = EC_KEY_get0_group(eckey);
+	if (group == NULL)
+		return 0;
+
+	return EC_GROUP_get_curve_name(group) == NID_sm2;
+}
+#endif
+
 int main(int argc, char **argv)
 {
 	struct module_signature sig_info = { .id_type = PKEY_ID_PKCS7 };
@@ -220,6 +242,10 @@ int main(int argc, char **argv)
 	unsigned int use_signed_attrs;
 	const EVP_MD *digest_algo;
 	EVP_PKEY *private_key;
+#if defined(EVP_PKEY_SM2)
+	EVP_PKEY *public_key;
+#endif
+
 #ifndef USE_PKCS7
 	CMS_ContentInfo *cms = NULL;
 	unsigned int use_keyid = 0;
@@ -302,6 +328,16 @@ int main(int argc, char **argv)
 		display_openssl_errors(__LINE__);
 		digest_algo = EVP_get_digestbyname(hash_algo);
 		ERR(!digest_algo, "EVP_get_digestbyname");
+
+#if defined(EVP_PKEY_SM2)
+	if (pkey_is_sm2(private_key))
+		EVP_PKEY_set_alias_type(private_key, EVP_PKEY_SM2);
+
+	public_key = X509_get0_pubkey(x509);
+	ERR(!public_key, "X509_get0_pubkey");
+	if (pkey_is_sm2(public_key))
+		EVP_PKEY_set_alias_type(public_key, EVP_PKEY_SM2);
+#endif
 
 #ifndef USE_PKCS7
 		/* Load the signature message from the digest buffer. */
