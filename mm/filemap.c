@@ -2549,10 +2549,11 @@ ssize_t generic_file_buffered_read(struct kiocb *iocb,
 				flush_dcache_page(pages[i]);
 
 			copied = copy_page_to_iter(pages[i], offset, bytes, iter);
-
-			written += copied;
-			iocb->ki_pos += copied;
-			ra->prev_pos = iocb->ki_pos;
+			if (copied) {
+				ra->prev_pos = iocb->ki_pos;
+				written += copied;
+				iocb->ki_pos += copied;
+			}
 
 			if (copied < bytes) {
 				error = -EFAULT;
