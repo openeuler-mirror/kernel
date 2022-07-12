@@ -304,6 +304,15 @@ struct blk_mq_queue_data {
 	KABI_RESERVE(1)
 };
 
+struct request_wrapper {
+	struct request rq;
+
+	/* Time that I/O was counted in part_get_stat_info(). */
+	u64 stat_time_ns;
+};
+
+#define request_to_wrapper(_rq) container_of(_rq, struct request_wrapper, rq)
+
 typedef bool (busy_iter_fn)(struct blk_mq_hw_ctx *, struct request *, void *,
 		bool);
 typedef bool (busy_tag_iter_fn)(struct request *, void *, bool);
@@ -595,7 +604,7 @@ static inline bool blk_should_fake_timeout(struct request_queue *q)
  */
 static inline struct request *blk_mq_rq_from_pdu(void *pdu)
 {
-	return pdu - sizeof(struct request);
+	return pdu - sizeof(struct request_wrapper);
 }
 
 /**
@@ -609,7 +618,7 @@ static inline struct request *blk_mq_rq_from_pdu(void *pdu)
  */
 static inline void *blk_mq_rq_to_pdu(struct request *rq)
 {
-	return rq + 1;
+	return request_to_wrapper(rq) + 1;
 }
 
 static inline struct blk_mq_hw_ctx *queue_hctx(struct request_queue *q, int id)
