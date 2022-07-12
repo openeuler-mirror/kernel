@@ -31,7 +31,7 @@ static inline int notify_page_fault(struct pt_regs *regs, unsigned long mmcsr)
 }
 #endif
 
-extern void die_if_kernel(char *, struct pt_regs *, long);
+extern void die(char *, struct pt_regs *, long);
 extern void dik_show_regs(struct pt_regs *regs);
 
 void show_all_vma(void)
@@ -301,7 +301,7 @@ good_area:
 	 */
 	pr_alert("Unable to handle kernel paging request at virtual address %016lx\n",
 	       address);
-	die_if_kernel("Oops", regs, cause);
+	die("Oops", regs, cause);
 	do_exit(SIGKILL);
 
 	/*

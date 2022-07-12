@@ -17,6 +17,8 @@
 #include <linux/kallsyms.h>
 #include <linux/sched/task_stack.h>
 #include <linux/sched/debug.h>
+#include <linux/spinlock.h>
+#include <linux/module.h>
 
 #include <asm/gentrap.h>
 #include <asm/mmu_context.h>
@@ -75,33 +77,47 @@ dik_show_code(unsigned int *pc)
 	printk("\n");
 }
 
-void die_if_kernel(char *str, struct pt_regs *regs, long err)
+static DEFINE_SPINLOCK(die_lock);
+
+void die(char *str, struct pt_regs *regs, long err)
 {
-	if (user_mode(regs))
-		return;
+	static int die_counter;
+	unsigned long flags;
+	int ret;
+
+	oops_enter();
+
+	spin_lock_irqsave(&die_lock, flags);
+	console_verbose();
+	bust_spinlocks(1);
+
+	pr_emerg("%s [#%d]\n", str, ++die_counter);
+
 #ifdef CONFIG_SMP
 	printk("CPU %d ", hard_smp_processor_id());
 #endif
 	printk("%s(%d): %s %ld\n", current->comm, task_pid_nr(current), str, err);
-	dik_show_regs(regs);
-	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
-	show_stack(current, NULL, KERN_EMERG);
-	dik_show_code((unsigned int *)regs->pc);
 
-	if (test_and_set_thread_flag(TIF_DIE_IF_KERNEL)) {
-		printk("die_if_kernel recursion detected.\n");
-		local_irq_enable();
-		while (1)
-			asm("nop");
-	}
+	ret = notify_die(DIE_OOPS, str, regs, err, 0, SIGSEGV);
+
+	print_modules();
+	dik_show_regs(regs);
+	show_stack(current, NULL, KERN_EMERG);
+
+	bust_spinlocks(0);
+	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
+	spin_unlock_irqrestore(&die_lock, flags);
+	oops_exit();
 
 	if (kexec_should_crash(current))
 		crash_kexec(regs);
-
+	if (in_interrupt())
+		panic("Fatal exception in interrupt");
 	if (panic_on_oops)
 		panic("Fatal exception");
 
-	do_exit(SIGSEGV);
+	if (ret != NOTIFY_STOP)
+		do_exit(SIGSEGV);
 }
 
 #ifndef CONFIG_MATHEMU
@@ -135,7 +151,9 @@ do_entArith(unsigned long summary, unsigned long write_mask,
 		if (si_code == 0)
 			return;
 	}
-	die_if_kernel("Arithmetic fault", regs, 0);
+
+	if (!user_mode(regs))
+		die("Arithmetic fault", regs, 0);
 
 	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc, 0);
 }
@@ -161,7 +179,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 			notify_die(0, "kgdb trap", regs, 0, 0, SIGTRAP);
 			return;
 		}
-		die_if_kernel((type == 1 ? "Kernel Bug" : "Instruction fault"),
+		die((type == 1 ? "Kernel Bug" : "Instruction fault"),
 				regs, type);
 	}
 
@@ -254,7 +272,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 				return;
 		}
 		if (!user_mode(regs))
-			die_if_kernel("Instruction fault", regs, type);
+			die("Instruction fault", regs, type);
 		break;
 
 	case 3: /* FEN fault */
