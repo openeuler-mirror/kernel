@@ -67,12 +67,6 @@ struct klp_func_list {
 	int force;
 };
 
-struct stackframe {
-	unsigned long sp;
-	unsigned long pc;
-	unsigned long nip;
-};
-
 struct walk_stackframe_args {
 	int enable;
 	struct klp_func_list *check_funcs;
@@ -246,53 +240,6 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 	return 0;
 }
 
-static int unwind_frame(struct task_struct *tsk, struct stackframe *frame)
-{
-
-	unsigned long *stack;
-#ifdef CONFIG_FUNCTION_GRAPH_TRACER
-	int ftrace_idx = 0;
-#endif
-
-	if (!validate_sp(frame->sp, tsk, STACK_FRAME_OVERHEAD))
-		return -1;
-
-	if (frame->nip != 0)
-		frame->nip = 0;
-
-	stack = (unsigned long *)frame->sp;
-
-	/*
-	 * When switching to the exception stack,
-	 * we save the NIP in pt_regs
-	 *
-	 * See if this is an exception frame.
-	 * We look for the "regshere" marker in the current frame.
-	 */
-	if (validate_sp(frame->sp, tsk, STACK_INT_FRAME_SIZE)
-	    && stack[STACK_FRAME_MARKER] == STACK_FRAME_REGS_MARKER) {
-		struct pt_regs *regs = (struct pt_regs *)
-			(frame->sp + STACK_FRAME_OVERHEAD);
-		frame->nip = regs->nip;
-		pr_debug("--- interrupt: task = %d/%s, trap %lx at NIP=x%lx/%pS, LR=0x%lx/%pS\n",
-			tsk->pid, tsk->comm, regs->trap,
-			regs->nip, (void *)regs->nip,
-			regs->link, (void *)regs->link);
-	}
-
-	frame->sp = stack[0];
-	frame->pc = stack[STACK_FRAME_LR_SAVE];
-#ifdef CONFIG_FUNCTION_GRAPH_TRACER
-	/*
-	 * IMHO these tests do not belong in
-	 * arch-dependent code, they are generic.
-	 */
-	frame->pc = ftrace_graph_ret_addr(tsk, &ftrace_idx, frame->pc, stack);
-#endif
-
-	return 0;
-}
-
 static void notrace klp_walk_stackframe(struct stackframe *frame,
 		int (*fn)(struct stackframe *, void *),
 		struct task_struct *tsk, void *data)
@@ -302,7 +249,7 @@ static void notrace klp_walk_stackframe(struct stackframe *frame,
 
 		if (fn(frame, data))
 			break;
-		ret = unwind_frame(tsk, frame);
+		ret = klp_unwind_frame(tsk, frame);
 		if (ret < 0)
 			break;
 	}

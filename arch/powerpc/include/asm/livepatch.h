@@ -118,6 +118,12 @@ struct arch_klp_data {
 
 #endif	/* CONFIG_PPC64 */
 
+struct stackframe {
+	unsigned long sp;
+	unsigned long pc;
+	unsigned long nip;
+};
+
 #ifdef PPC64_ELF_ABI_v1
 struct klp_func_node;
 void arch_klp_set_brk_func(struct klp_func_node *func_node, void *new_func);
@@ -127,6 +133,7 @@ int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
 int arch_klp_module_check_calltrace(void *data);
+int klp_unwind_frame(struct task_struct *tsk, struct stackframe *frame);
 
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 

@@ -21,6 +21,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
+#include <linux/ftrace.h>
 #include <linux/livepatch.h>
 #include <asm/probes.h>
 #include <asm/livepatch.h>
@@ -64,4 +65,50 @@ int klp_brk_handler(struct pt_regs *regs)
 #endif
 
 	return 1;
+}
+
+int klp_unwind_frame(struct task_struct *tsk, struct stackframe *frame)
+{
+	unsigned long *stack;
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+	int ftrace_idx = 0;
+#endif
+
+	if (!validate_sp(frame->sp, tsk, STACK_FRAME_OVERHEAD))
+		return -1;
+
+	if (frame->nip != 0)
+		frame->nip = 0;
+
+	stack = (unsigned long *)frame->sp;
+
+	/*
+	 * When switching to the exception stack,
+	 * we save the NIP in pt_regs
+	 *
+	 * See if this is an exception frame.
+	 * We look for the "regshere" marker in the current frame.
+	 */
+	if (validate_sp(frame->sp, tsk, STACK_INT_FRAME_SIZE)
+	    && stack[STACK_FRAME_MARKER] == STACK_FRAME_REGS_MARKER) {
+		struct pt_regs *regs = (struct pt_regs *)
+			(frame->sp + STACK_FRAME_OVERHEAD);
+		frame->nip = regs->nip;
+		pr_debug("--- interrupt: task = %d/%s, trap %lx at NIP=x%lx/%pS, LR=0x%lx/%pS\n",
+			tsk->pid, tsk->comm, regs->trap,
+			regs->nip, (void *)regs->nip,
+			regs->link, (void *)regs->link);
+	}
+
+	frame->sp = stack[0];
+	frame->pc = stack[STACK_FRAME_LR_SAVE];
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+	/*
+	 * IMHO these tests do not belong in
+	 * arch-dependent code, they are generic.
+	 */
+	frame->pc = ftrace_graph_ret_addr(tsk, &ftrace_idx, frame->pc, stack);
+#endif
+
+	return 0;
 }
