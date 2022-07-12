@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2207.1.0
+%global hulkrelease 2207.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0157
+Release: %{hulkrelease}.0158
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,69 @@ fi
 %endif
 
 %changelog
+
+* Mon Jul 11 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2207.2.0.0158
+- x86: Fix return value of __setup handlers
+- x86/delay: Fix the wrong asm constraint in delay_loop()
+- ACPI: sysfs: Fix BERT error region memory mapping
+- tcp: fix tcp_mtup_probe_success vs wrong snd_cwnd
+- nbd: fix io hung while disconnecting device
+- nbd: fix race between nbd_alloc_config() and module removal
+- nbd: call genl_unregister_family() first in nbd_cleanup()
+- ip_gre: test csum_start instead of transport header
+- net: xfrm: unexport __init-annotated xfrm4_protocol_init()
+- SUNRPC: Fix the calculation of xdr->end in xdr_get_next_encode_buffer()
+- af_unix: Fix a data-race in unix_dgram_peer_wake_me().
+- NFSv4: Don't hold the layoutget locks across multiple RPC calls
+- tcp: tcp_rtx_synack() can be called from process context
+- serial: 8250_fintek: Check SER_RS485_RTS_* only with RS485
+- md: fix an incorrect NULL check in md_reload_sb
+- md: fix an incorrect NULL check in does_sb_need_changing
+- ext4: avoid cycles in directory h-tree
+- ext4: verify dir block before splitting it
+- proc: fix dentry/inode overinstantiating under /proc/${pid}/net
+- drivers/base/node.c: fix compaction sysfs file leak
+- fsnotify: fix wrong lockdep annotations
+- PCI: Avoid pci_dev_lock() AB/BA deadlock with sriov_numvfs_store()
+- fat: add ratelimit to fat*_ent_bread()
+- nvme-pci: fix a NULL pointer dereference in nvme_alloc_admin_tags
+- bpf: Enlarge offset check value to INT_MAX in bpf_skb_{load,store}_bytes
+- dm stats: add cond_resched when looping over entries
+- zsmalloc: fix races between asynchronous zspage free and page migration
+- netfilter: conntrack: re-fetch conntrack after insertion
+- assoc_array: Fix BUG_ON during garbage collect
+- net: af_key: check encryption module availability consistency
+- x86/pci/xen: Disable PCI/MSI[-X] masking for XEN_HVM guests
+- net: bridge: Clear offload_fwd_mark when passing frame up bridge interface.
+- ARM: 9197/1: spectre-bhb: fix loop8 sequence for Thumb2
+- ARM: 9196/1: spectre-bhb: enable for Cortex-A15
+- block:Fix kabi broken
+- block: Fix warning in bd_link_disk_holder()
+- block: move the NEED_PART_SCAN flag to struct gendisk
+- block: rename bd_invalidated
+- scsi: hisi_sas: Modify v3 HW I/O processing when SATA_DISK_ERR bit is set and NCQ Error occurs
+- scsi: hisi_sas: enable use_clustering
+- scsi: hisi_sas: Change DMA setup lock timeout to 2.5s
+- x86/speculation/mmio: Print SMT warning
+- KVM: x86/speculation: Disable Fill buffer clear within guests
+- x86/speculation/mmio: Reuse SRBDS mitigation for SBDS
+- x86/speculation/srbds: Update SRBDS mitigation selection
+- x86/speculation/mmio: Add sysfs reporting for Processor MMIO Stale Data
+- x86/speculation/mmio: Enable CPU Fill buffer clearing on idle
+- x86/bugs: Group MDS, TAA & Processor MMIO Stale Data mitigations
+- x86/speculation/mmio: Add mitigation for Processor MMIO Stale Data
+- x86/speculation: Add a common function for MD_CLEAR mitigation update
+- x86/speculation/mmio: Enumerate Processor MMIO Stale Data bug
+- Documentation: Add documentation for Processor MMIO Stale Data
+- x86/cpu: Add another Alder Lake CPU to the Intel family
+- x86/cpu: Add Lakefield, Alder Lake and Rocket Lake models to the to Intel CPU family
+- x86/cpu: Add Jasper Lake to Intel family
+- cpu/speculation: Add prototype for cpu_show_srbds()
+- x86/cpu: Add Elkhart Lake to Intel family
+- block: open accurate iostat account by default
+- block: use "precise_iostat" to switch accurate iostat account
+- block/diskstats: more accurate approximation of io_ticks for slow disks
+- fs-writeback: writeback_sb_inodes：Recalculate 'wrote' according skipped pages
 
 * Tue Jul 05 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2207.1.0.0157
 - ext4: correct the misjudgment in ext4_iget_extra_inode
