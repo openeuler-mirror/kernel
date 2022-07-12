@@ -1292,13 +1292,24 @@ void blk_account_io_done(struct request *req, u64 now)
 	    !(req->rq_flags & RQF_FLUSH_SEQ)) {
 		const int sgrp = op_stat_group(req_op(req));
 		struct hd_struct *part;
+		u64 stat_time;
 
 		part_stat_lock();
 		part = req->part;
-
 		update_io_ticks(part, jiffies, true);
 		part_stat_inc(part, ios[sgrp]);
-		part_stat_add(part, nsecs[sgrp], now - req->start_time_ns);
+		stat_time = READ_ONCE(req->stat_time_ns);
+		/*
+		 * This might fail if 'req->stat_time_ns' is updated
+		 * in blk_mq_check_inflight_with_stat().
+		 */
+		if (likely(cmpxchg64(&req->stat_time_ns, stat_time, now)
+			   == stat_time)) {
+			u64 duation = stat_time ? now - stat_time :
+				now - req->start_time_ns;
+
+			part_stat_add(req->part, nsecs[sgrp], duation);
+		}
 		part_stat_unlock();
 
 		hd_struct_put(part);
