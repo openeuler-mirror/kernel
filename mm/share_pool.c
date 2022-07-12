@@ -4365,6 +4365,9 @@ void spg_overview_show(struct seq_file *seq)
 
 static int spa_stat_show(struct seq_file *seq, void *offset)
 {
+	if (!sp_is_enabled())
+		return 0;
+
 	spg_overview_show(seq);
 	spa_overview_show(seq);
 	/* print the file header */
@@ -4425,6 +4428,9 @@ static int idr_proc_stat_cb(int id, void *p, void *data)
 
 static int proc_stat_show(struct seq_file *seq, void *offset)
 {
+	if (!sp_is_enabled())
+		return 0;
+
 	spg_overview_show(seq);
 	spa_overview_show(seq);
 	/* print the file header */
@@ -4474,6 +4480,9 @@ static int idr_proc_overview_cb(int id, void *p, void *data)
 
 static int proc_overview_show(struct seq_file *seq, void *offset)
 {
+	if (!sp_is_enabled())
+		return 0;
+
 	seq_printf(seq, "%-8s %-16s %-9s %-9s %-9s %-10s %-10s %-8s\n",
 		   "PID", "COMM", "SP_ALLOC", "SP_K2U", "SP_RES", "Non-SP_RES",
 		   "Non-SP_Shm", "VIRT");
