@@ -250,6 +250,9 @@ static int unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 {
 
 	unsigned long *stack;
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
+	int ftrace_idx = 0;
+#endif
 
 	if (!validate_sp(frame->sp, tsk, STACK_FRAME_OVERHEAD))
 		return -1;
@@ -279,12 +282,12 @@ static int unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 
 	frame->sp = stack[0];
 	frame->pc = stack[STACK_FRAME_LR_SAVE];
-#ifdef CONFIG_FUNCTION_GRAPH_TRACE
+#ifdef CONFIG_FUNCTION_GRAPH_TRACER
 	/*
 	 * IMHO these tests do not belong in
 	 * arch-dependent code, they are generic.
 	 */
-	frame->pc = ftrace_graph_ret_addr(tsk, &ftrace_idx, frame->ip, stack);
+	frame->pc = ftrace_graph_ret_addr(tsk, &ftrace_idx, frame->pc, stack);
 #endif
 
 	return 0;
