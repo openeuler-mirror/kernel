@@ -63,8 +63,6 @@ struct hd_struct {
 	seqcount_t nr_sects_seq;
 #endif
 	unsigned long stamp;
-	spinlock_t bd_stat_lock;
-	u64 stat_time;
 	struct disk_stats __percpu *dkstats;
 	struct percpu_ref ref;
 
@@ -78,7 +76,7 @@ struct hd_struct {
 #endif
 	struct rcu_work rcu_work;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, u64 stat_time)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
