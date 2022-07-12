@@ -44,7 +44,7 @@ config KVM_SW64_HOST
 
 config KVM_MEMHOTPLUG
 	bool "Memory hotplug support for guest"
-	depends on KVM
+	depends on KVM && MEMORY_HOTPLUG
 	help
 	  Provides memory hotplug support for SW64 guest.
 
