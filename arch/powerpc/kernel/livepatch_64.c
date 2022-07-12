@@ -326,9 +326,14 @@ static int klp_check_jump_func(struct stackframe *frame, void *data)
 	struct walk_stackframe_args *args = data;
 	struct klp_func_list *check_funcs = args->check_funcs;
 
-	if (!check_func_list(check_funcs, &args->ret, frame->pc)) {
+	/* check the PC first */
+	if (!check_func_list(check_funcs, &args->ret, frame->pc))
 		return args->ret;
-	}
+
+	/* check NIP when the exception stack switching */
+	if (frame->nip && !check_func_list(check_funcs, &args->ret, frame->nip))
+		return args->ret;
+
 	return 0;
 }
 
@@ -430,11 +435,19 @@ static int check_module_calltrace(struct stackframe *frame, void *data)
 {
 	struct walk_stackframe_args *args = data;
 
-	if (within_module_core(frame->pc, args->mod)) {
-		pr_err("module %s is in use!\n", args->mod->name);
-		return (args->ret = -EBUSY);
-	}
+	/* check the PC first */
+	if (within_module_core(frame->pc, args->mod))
+		goto err_out;
+
+	/* check NIP when the exception stack switching */
+	if (frame->nip && within_module_core(frame->nip, args->mod))
+		goto err_out;
+
 	return 0;
+
+err_out:
+	pr_err("module %s is in use!\n", args->mod->name);
+	return (args->ret = -EBUSY);
 }
 
 int arch_klp_module_check_calltrace(void *data)
