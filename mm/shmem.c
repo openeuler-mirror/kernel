@@ -3605,6 +3605,10 @@ static int shmem_remount_fs(struct super_block *sb, int *flags, char *data)
 
 	spin_lock(&sbinfo->stat_lock);
 	inodes = sbinfo->max_inodes - sbinfo->free_inodes;
+	if (config.max_blocks > S64_MAX) {
+		pr_err("Number of blocks too large");
+		goto out;
+	}
 	if (percpu_counter_compare(&sbinfo->used_blocks, config.max_blocks) > 0)
 		goto out;
 	if (config.max_inodes < inodes)
