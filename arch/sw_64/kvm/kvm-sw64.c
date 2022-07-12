@@ -21,7 +21,9 @@
 
 bool set_msi_flag;
 unsigned long sw64_kvm_last_vpn[NR_CPUS];
+#if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
 __read_mostly bool bind_vcpu_enabled;
+#endif
 #define cpu_last_vpn(cpuid) sw64_kvm_last_vpn[cpuid]
 
 #ifdef CONFIG_SUBARCH_C3B
@@ -539,6 +541,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		vcpu->arch.vcb.vpcr
 			= get_vpcr(vcpu->kvm->arch.host_phys_addr, vcpu->kvm->arch.size, 0);
 
+#if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
 		if (unlikely(bind_vcpu_enabled)) {
 			int nid;
 			unsigned long end;
@@ -548,11 +551,12 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 			if (pfn_to_nid(PHYS_PFN(end)) == nid)
 				set_cpus_allowed_ptr(vcpu->arch.tsk, node_to_cpumask_map[nid]);
 		}
-#else
+#endif
+#else /* !CONFIG_KVM_MEMHOTPLUG */
 		unsigned long seg_base = virt_to_phys(vcpu->kvm->arch.seg_pgd);
 
 		vcpu->arch.vcb.vpcr = get_vpcr_memhp(seg_base, 0);
-#endif
+#endif /* CONFIG_KVM_MEMHOTPLUG */
 		vcpu->arch.vcb.upcr = 0x7;
 	}
 

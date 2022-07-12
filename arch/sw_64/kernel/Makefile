@@ -31,8 +31,12 @@ obj-$(CONFIG_HIBERNATION) += hibernate_asm.o hibernate.o
 obj-$(CONFIG_AUDIT)     += audit.o
 obj-$(CONFIG_PCI) += pci_common.o
 obj-$(CONFIG_RELOCATABLE)   += relocate.o
-obj-$(CONFIG_DEBUG_FS)	+= segvdbg.o bindvcpu.o
+obj-$(CONFIG_DEBUG_FS)	+= segvdbg.o
 obj-$(CONFIG_JUMP_LABEL) += jump_label.o
+
+ifeq ($(CONFIG_DEBUG_FS)$(CONFIG_NUMA),yy)
+obj-y += bindvcpu.o
+endif
 
 ifndef CONFIG_PCI
 obj-y += pci-noop.o
