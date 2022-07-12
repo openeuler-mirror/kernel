@@ -102,6 +102,7 @@ struct mq_inflight {
 	unsigned int inflight[2];
 };
 
+#ifdef CONFIG_64BIT
 static bool blk_mq_check_inflight_with_stat(struct blk_mq_hw_ctx *hctx,
 					    struct request *rq, void *priv,
 					    bool reserved)
@@ -154,7 +155,7 @@ unsigned int blk_mq_in_flight_with_stat(struct request_queue *q,
 
 	return mi.inflight[0] + mi.inflight[1];
 }
-
+#endif
 
 static bool blk_mq_check_inflight(struct blk_mq_hw_ctx *hctx,
 				  struct request *rq, void *priv,

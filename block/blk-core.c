@@ -1292,13 +1292,16 @@ void blk_account_io_done(struct request *req, u64 now)
 	    !(req->rq_flags & RQF_FLUSH_SEQ)) {
 		const int sgrp = op_stat_group(req_op(req));
 		struct hd_struct *part;
+#ifdef CONFIG_64BIT
 		u64 stat_time;
 		struct request_wrapper *rq_wrapper = request_to_wrapper(req);
+#endif
 
 		part_stat_lock();
 		part = req->part;
 		update_io_ticks(part, jiffies, true);
 		part_stat_inc(part, ios[sgrp]);
+#ifdef CONFIG_64BIT
 		stat_time = READ_ONCE(rq_wrapper->stat_time_ns);
 		/*
 		 * This might fail if 'stat_time_ns' is updated
@@ -1312,6 +1315,9 @@ void blk_account_io_done(struct request *req, u64 now)
 
 			part_stat_add(req->part, nsecs[sgrp], duation);
 		}
+#else
+		part_stat_add(part, nsecs[sgrp], now - req->start_time_ns);
+#endif
 		part_stat_unlock();
 
 		hd_struct_put(part);
