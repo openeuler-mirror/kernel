@@ -117,14 +117,22 @@ static bool blk_mq_check_inflight_with_stat(struct blk_mq_hw_ctx *hctx,
 		if (!rq->part)
 			return true;
 
+		/*
+		 * If the request is started after 'part->stat_time' is set,
+		 * don't update 'nsces' here.
+		 */
+		if (rq->part->stat_time <= rq->start_time_ns)
+			return true;
+
 		rq_wrapper = request_to_wrapper(rq);
 		stat_time = READ_ONCE(rq_wrapper->stat_time_ns);
 		/*
 		 * This might fail if 'stat_time_ns' is updated in
 		 * blk_account_io_done().
 		 */
-		if (likely(cmpxchg64(&rq_wrapper->stat_time_ns, stat_time,
-				   rq->part->stat_time) == stat_time)) {
+		if (likely(rq->part->stat_time > stat_time &&
+			   cmpxchg64(&rq_wrapper->stat_time_ns, stat_time,
+				     rq->part->stat_time) == stat_time)) {
 			int sgrp = op_stat_group(req_op(rq));
 			u64 duation = stat_time ?
 				rq->part->stat_time - stat_time :
