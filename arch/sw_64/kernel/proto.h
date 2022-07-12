@@ -13,7 +13,7 @@ extern int ptrace_cancel_bpt(struct task_struct *child);
 
 /* traps.c */
 extern void dik_show_regs(struct pt_regs *regs);
-extern void die_if_kernel(char *str, struct pt_regs *regs, long err);
+extern void die(char *str, struct pt_regs *regs, long err);
 
 /* timer.c */
 extern void setup_timer(void);
