@@ -1421,7 +1421,57 @@ static int tg_print_conf_uint(struct seq_file *sf, void *v)
 	return 0;
 }
 
-static void tg_conf_updated(struct throtl_grp *tg, bool global)
+static u64 throtl_update_bytes_disp(u64 dispatched, u64 new_limit,
+				    u64 old_limit)
+{
+	if (new_limit == old_limit)
+		return dispatched;
+
+	if (!dispatched)
+		return 0;
+
+	/*
+	 * In the case that multiply will overflow, just return 0. It will only
+	 * let bios to be dispatched earlier.
+	 */
+	if (div64_u64(U64_MAX, dispatched) < new_limit)
+		return 0;
+
+	dispatched *= new_limit;
+	return div64_u64(dispatched, old_limit);
+}
+
+static u32 throtl_update_io_disp(u32 dispatched, u32 new_limit, u32 old_limit)
+{
+	if (new_limit == old_limit)
+		return dispatched;
+
+	if (!dispatched)
+		return 0;
+	/*
+	 * In the case that multiply will overflow, just return 0. It will only
+	 * let bios to be dispatched earlier.
+	 */
+	if (UINT_MAX / dispatched < new_limit)
+		return 0;
+
+	dispatched *= new_limit;
+	return dispatched / old_limit;
+}
+
+static void throtl_update_slice(struct throtl_grp *tg, u64 *old_limits)
+{
+	tg->bytes_disp[READ] = throtl_update_bytes_disp(tg->bytes_disp[READ],
+			tg_bps_limit(tg, READ), old_limits[0]);
+	tg->bytes_disp[WRITE] = throtl_update_bytes_disp(tg->bytes_disp[WRITE],
+			tg_bps_limit(tg, WRITE), old_limits[1]);
+	tg->io_disp[READ] = throtl_update_io_disp(tg->io_disp[READ],
+			tg_iops_limit(tg, READ), (u32)old_limits[2]);
+	tg->io_disp[WRITE] = throtl_update_io_disp(tg->io_disp[WRITE],
+			tg_iops_limit(tg, WRITE), (u32)old_limits[3]);
+}
+
+static void tg_conf_updated(struct throtl_grp *tg, u64 *old_limits, bool global)
 {
 	struct throtl_service_queue *sq = &tg->service_queue;
 	struct cgroup_subsys_state *pos_css;
@@ -1460,16 +1510,7 @@ static void tg_conf_updated(struct throtl_grp *tg, bool global)
 				parent_tg->latency_target);
 	}
 
-	/*
-	 * We're already holding queue_lock and know @tg is valid.  Let's
-	 * apply the new config directly.
-	 *
-	 * Restart the slices for both READ and WRITES. It might happen
-	 * that a group's limit are dropped suddenly and we don't want to
-	 * account recently dispatched IO with new low rate.
-	 */
-	throtl_start_new_slice(tg, READ);
-	throtl_start_new_slice(tg, WRITE);
+	throtl_update_slice(tg, old_limits);
 
 	if (tg->flags & THROTL_TG_PENDING) {
 		tg_update_disptime(tg);
@@ -1502,6 +1543,14 @@ static inline int throtl_restart_syscall_when_busy(int errno)
 	return ret;
 }
 
+static void tg_get_limits(struct throtl_grp *tg, u64 *limits)
+{
+	limits[0] = tg_bps_limit(tg, READ);
+	limits[1] = tg_bps_limit(tg, WRITE);
+	limits[2] = tg_iops_limit(tg, READ);
+	limits[3] = tg_iops_limit(tg, WRITE);
+}
+
 static ssize_t tg_set_conf(struct kernfs_open_file *of,
 			   char *buf, size_t nbytes, loff_t off, bool is_u64)
 {
@@ -1510,6 +1559,7 @@ static ssize_t tg_set_conf(struct kernfs_open_file *of,
 	struct throtl_grp *tg;
 	int ret;
 	u64 v;
+	u64 old_limits[4];
 
 	ret = blkg_conf_prep(blkcg, &blkcg_policy_throtl, buf, &ctx);
 	if (ret)
@@ -1526,13 +1576,14 @@ static ssize_t tg_set_conf(struct kernfs_open_file *of,
 		v = U64_MAX;
 
 	tg = blkg_to_tg(ctx.blkg);
+	tg_get_limits(tg, old_limits);
 
 	if (is_u64)
 		*(u64 *)((void *)tg + of_cft(of)->private) = v;
 	else
 		*(unsigned int *)((void *)tg + of_cft(of)->private) = v;
 
-	tg_conf_updated(tg, false);
+	tg_conf_updated(tg, old_limits, false);
 	ret = 0;
 out_finish:
 	blkg_conf_finish(&ctx);
@@ -1703,6 +1754,7 @@ static ssize_t tg_set_limit(struct kernfs_open_file *of,
 	struct blkg_conf_ctx ctx;
 	struct throtl_grp *tg;
 	u64 v[4];
+	u64 old_limits[4];
 	unsigned long idle_time;
 	unsigned long latency_time;
 	int ret;
@@ -1721,6 +1773,7 @@ static ssize_t tg_set_limit(struct kernfs_open_file *of,
 	v[1] = tg->bps_conf[WRITE][index];
 	v[2] = tg->iops_conf[READ][index];
 	v[3] = tg->iops_conf[WRITE][index];
+	tg_get_limits(tg, old_limits);
 
 	idle_time = tg->idletime_threshold_conf;
 	latency_time = tg->latency_target_conf;
@@ -1807,7 +1860,7 @@ static ssize_t tg_set_limit(struct kernfs_open_file *of,
 			tg->td->limit_index = LIMIT_LOW;
 	} else
 		tg->td->limit_index = LIMIT_MAX;
-	tg_conf_updated(tg, index == LIMIT_LOW &&
+	tg_conf_updated(tg, old_limits, index == LIMIT_LOW &&
 		tg->td->limit_valid[LIMIT_LOW]);
 	ret = 0;
 out_finish:
