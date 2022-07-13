@@ -1304,7 +1304,8 @@ void blk_account_io_done(struct request *req, u64 now)
 		 * This might fail if 'stat_time_ns' is updated
 		 * in blk_mq_check_inflight_with_stat().
 		 */
-		if (likely(cmpxchg64(&rq_wrapper->stat_time_ns, stat_time, now)
+		if (likely(now > stat_time &&
+			   cmpxchg64(&rq_wrapper->stat_time_ns, stat_time, now)
 			   == stat_time)) {
 			u64 duation = stat_time ? now - stat_time :
 				now - req->start_time_ns;
