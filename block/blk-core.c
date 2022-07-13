@@ -1293,17 +1293,18 @@ void blk_account_io_done(struct request *req, u64 now)
 		const int sgrp = op_stat_group(req_op(req));
 		struct hd_struct *part;
 		u64 stat_time;
+		struct request_wrapper *rq_wrapper = request_to_wrapper(req);
 
 		part_stat_lock();
 		part = req->part;
 		update_io_ticks(part, jiffies, true);
 		part_stat_inc(part, ios[sgrp]);
-		stat_time = READ_ONCE(req->stat_time_ns);
+		stat_time = READ_ONCE(rq_wrapper->stat_time_ns);
 		/*
-		 * This might fail if 'req->stat_time_ns' is updated
+		 * This might fail if 'stat_time_ns' is updated
 		 * in blk_mq_check_inflight_with_stat().
 		 */
-		if (likely(cmpxchg64(&req->stat_time_ns, stat_time, now)
+		if (likely(cmpxchg64(&rq_wrapper->stat_time_ns, stat_time, now)
 			   == stat_time)) {
 			u64 duation = stat_time ? now - stat_time :
 				now - req->start_time_ns;
