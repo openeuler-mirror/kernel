@@ -207,7 +207,8 @@ struct request {
 	u64 start_time_ns;
 	/* Time that I/O was submitted to the device. */
 	u64 io_start_time_ns;
-
+	/* Time that I/O was counted in part_get_stat_info(). */
+	u64 stat_time_ns;
 #ifdef CONFIG_BLK_WBT
 	unsigned short wbt_flags;
 #endif

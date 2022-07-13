@@ -63,6 +63,8 @@ struct hd_struct {
 	seqcount_t nr_sects_seq;
 #endif
 	unsigned long stamp;
+	spinlock_t bd_stat_lock;
+	u64 stat_time;
 	struct disk_stats __percpu *dkstats;
 	struct percpu_ref ref;
 

@@ -102,6 +102,50 @@ struct mq_inflight {
 	unsigned int inflight[2];
 };
 
+static bool blk_mq_check_inflight_with_stat(struct blk_mq_hw_ctx *hctx,
+					    struct request *rq, void *priv,
+					    bool reserved)
+{
+	struct mq_inflight *mi = priv;
+
+	if ((!mi->part->partno || rq->part == mi->part) &&
+	    blk_mq_rq_state(rq) == MQ_RQ_IN_FLIGHT) {
+		u64 stat_time;
+
+		mi->inflight[rq_data_dir(rq)]++;
+		if (!rq->part)
+			return true;
+
+		stat_time = READ_ONCE(rq->stat_time_ns);
+		/*
+		 * This might fail if 'req->stat_time_ns' is updated in
+		 * blk_account_io_done().
+		 */
+		if (likely(cmpxchg64(&rq->stat_time_ns, stat_time,
+				   rq->part->stat_time) == stat_time)) {
+			int sgrp = op_stat_group(req_op(rq));
+			u64 duation = stat_time ?
+				rq->part->stat_time - stat_time :
+				rq->part->stat_time - rq->start_time_ns;
+
+			part_stat_add(rq->part, nsecs[sgrp], duation);
+		}
+	}
+
+	return true;
+}
+
+unsigned int blk_mq_in_flight_with_stat(struct request_queue *q,
+					struct hd_struct *part)
+{
+	struct mq_inflight mi = { .part = part };
+
+	blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight_with_stat, &mi);
+
+	return mi.inflight[0] + mi.inflight[1];
+}
+
+
 static bool blk_mq_check_inflight(struct blk_mq_hw_ctx *hctx,
 				  struct request *rq, void *priv,
 				  bool reserved)
@@ -328,6 +372,7 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 		rq->start_time_ns = ktime_get_ns();
 	else
 		rq->start_time_ns = 0;
+	rq->stat_time_ns = 0;
 	rq->io_start_time_ns = 0;
 	rq->stats_sectors = 0;
 	rq->nr_phys_segments = 0;
