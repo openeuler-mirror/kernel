@@ -1997,9 +1997,15 @@ int dm_pool_register_metadata_threshold(struct dm_pool_metadata *pmd,
 	int r;
 
 	down_write(&pmd->root_lock);
-	r = dm_sm_register_threshold_callback(pmd->metadata_sm, threshold, fn, context);
-	up_write(&pmd->root_lock);
+	if (pmd->fail_io) {
+		r = -EINVAL;
+		goto out;
+	}
 
+	r = dm_sm_register_threshold_callback(pmd->metadata_sm, threshold, fn, context);
+
+out:
+	up_write(&pmd->root_lock);
 	return r;
 }
 
