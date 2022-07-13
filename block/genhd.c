@@ -1312,10 +1312,10 @@ static void part_get_stat_info(struct hd_struct *hd, struct disk_stats *stat,
 
 	if (queue_is_mq(q)) {
 		part_stat_lock();
-		spin_lock(&hd->bd_stat_lock);
+		mutex_lock(&part_to_dev(hd)->mutex);
 		part_set_stat_time(hd);
 		*inflight = blk_mq_in_flight_with_stat(q, hd);
-		spin_unlock(&hd->bd_stat_lock);
+		mutex_unlock(&part_to_dev(hd)->mutex);
 		part_stat_unlock();
 	} else {
 		*inflight = part_in_flight(hd);
