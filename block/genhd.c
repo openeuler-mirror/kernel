@@ -1293,6 +1293,7 @@ ssize_t part_size_show(struct device *dev,
 		(unsigned long long)part_nr_sects_read(p));
 }
 
+#ifdef CONFIG_64BIT
 static void part_set_stat_time(struct hd_struct *hd)
 {
 	u64 now = ktime_get_ns();
@@ -1304,12 +1305,13 @@ again:
 		goto again;
 	}
 }
+#endif
 
 static void part_get_stat_info(struct hd_struct *hd, struct disk_stats *stat,
 			       unsigned int *inflight)
 {
+#ifdef CONFIG_64BIT
 	struct request_queue *q = part_to_disk(hd)->queue;
-
 	if (queue_is_mq(q)) {
 		mutex_lock(&part_to_dev(hd)->mutex);
 		part_stat_lock();
@@ -1320,7 +1322,9 @@ static void part_get_stat_info(struct hd_struct *hd, struct disk_stats *stat,
 	} else {
 		*inflight = part_in_flight(hd);
 	}
-
+#else
+	*inflight = part_in_flight(hd);
+#endif
 	if (*inflight) {
 		part_stat_lock();
 		update_io_ticks(hd, jiffies, true);
