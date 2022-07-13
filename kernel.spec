@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       102
+%global devel_release       104
 %global maintenance_release .0.0
-%global pkg_release         .53
+%global pkg_release         .54
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,72 @@ fi
 %endif
 
 %changelog
+* Wed Jul 13 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-104.0.0.54
+- xen/blkfront: force data bouncing when backend is untrusted
+- xen/netfront: force data bouncing when backend is untrusted
+- xen/netfront: fix leaking data in shared pages
+- xen/blkfront: fix leaking data in shared pages
+- netfilter: nf_tables: stricter validation of element data
+- xen-netfront: restore __skb_queue_tail() positioning in xennet_get_responses()
+- tmpfs: fix the issue that the mount and remount results are inconsistent.
+- tmpfs: fix undefined-behaviour in shmem_reconfigure()
+- mm/filemap: fix UAF in find_lock_entries
+- shmem: allow reporting fanotify events with file handles on tmpfs
+- fs: introduce a wrapper uuid_to_fsid()
+- Revert "iommu: handle page response timeout"
+- livepatch/ppc32: Fix the stack check for exception frames
+- livepatch/ppc64: Fix the stack check for exception frames
+- livepatch/ppc64: Fix several compilation errors in unwind_frame()
+- mm/filemap: fix that first page is not mark accessed in filemap_read()
+- block: don't use cmpxchg64() on 32-bit platform
+- block: fix that iostat can show huge wait time
+- block: fix sleeping function called from invalid context in part_get_stat_info()
+- block: fix kabi broken in struct hd_struct
+- blk-mq: fix kabi broken in struct request
+- block: update nsecs[] in part_stat_show() and diskstats_show()
+- blk-throttle: fix io hung due to configuration updates
+- vt: drop old FONT ioctls
+- genirq: Take the proposed affinity at face value if force==true
+- irqchip/gic-v3: Always trust the managed affinity provided by the core code
+- genirq: Always limit the affinity to online CPUs
+- genirq/msi: Shutdown managed interrupts with unsatifiable affinities
+- livepatch: Add klp_module_delete_safety_check
+- livepatch/x86: Add arch_klp_module_check_calltrace
+- livepatch/x86: Add do_check_calltrace
+- livepatch/powerpc64: Add arch_klp_module_check_calltrace
+- livepatch/powerpc64: Add do_check_calltrace
+- livepatch/powerpc32: Add arch_klp_module_check_calltrace
+- livepatch/powerpc32: Add do_check_calltrace
+- livepatch/arm: Add arch_klp_module_check_calltrace
+- livepatch/arm: Add do_check_calltrace
+- livepatch/arm64: Add arch_klp_module_check_calltrace
+- livepatch/arm64: Add do_check_calltrace
+- livepatch/powerpc: Support breakpoint exception optimization
+- livepatch/powerpc: Change livepatch_create_btamp to a public function
+- livepatch/arm: Support breakpoint exception optimization
+- livepatch/arm64: Support breakpoint exception optimization
+- livepatch: Add arch_klp_init
+- livepatch/x86: Support breakpoint exception optimization
+- livepatch: Use breakpoint exception to optimize enabling livepatch
+- livepatch: Traverse klp_func_list by using the rcu interface
+- livepatch: Delete the duplicate code of klp_compare_address()
+- livepatch: Narrow the scope of the 'text_mutex' lock
+- livepatch: Cleanup klp_mem_prepare()
+- sign-file: Support SM signature
+- mm/kfence: reset PG_slab and memcg_data before freeing __kfence_pool
+- mm: kfence: fix objcgs vector allocation
+- mm/kfence: print disabling or re-enabling message
+- kfence: enable check kfence canary on panic via boot param
+- kfence: test: try to avoid test_gfpzero trigger rcu_stall
+- kunit: fix UAF when run kfence test case test_gfpzero
+- arm64: kfence: scale sample_interval to control re-enabling
+- kfence: make re-enabling KFENCE compatible with dynamic objects
+- kfence: alloc kfence_pool after system startup
+- kfence: allow re-enabling KFENCE after system startup
+- mm,hwpoison: drop unneeded pcplist draining
+- mm,hwpoison: take free pages off the buddy freelists
+- mm,hwpoison: drain pcplists before bailing out for non-buddy zero-refcount page
+
 * Wed Jul 06 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-102.0.0.53
 - smp: fix early_param csdlock_debug boot panic
 - RDMA/hns: Use hr_reg_read() instead of remaining roce_get_xxx()
