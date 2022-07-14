@@ -14,7 +14,6 @@ config SW64
 	select GENERIC_IRQ_SHOW
 	select ARCH_WANT_IPC_PARSE_VERSION
 	select ARCH_HAVE_NMI_SAFE_CMPXCHG
-	select ARCH_MIGHT_HAVE_PC_SERIO
 	select ARCH_NO_PREEMPT
 	select ARCH_USE_CMPXCHG_LOCKREF
 	select GENERIC_SMP_IDLE_THREAD
@@ -240,6 +239,11 @@ config PLATFORM_XUELANG
 	  Sunway chip3 board chipset
 
 endchoice
+
+config MIGHT_HAVE_PC_SERIO
+	bool "Use PC serio device i8042"
+	select ARCH_MIGHT_HAVE_PC_SERIO
+	default n
 
 endmenu
 
