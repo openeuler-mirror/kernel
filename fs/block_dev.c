@@ -922,7 +922,7 @@ struct block_device *bdget(dev_t dev)
 		bdev->bd_inode = inode;
 		bdev->bd_block_size = i_blocksize(inode);
 		bdev->bd_part_count = 0;
-		bdev->bd_flags = 0;
+		bdev->bd_invalidated = 0;
 		inode->i_mode = S_IFBLK;
 		inode->i_rdev = dev;
 		inode->i_bdev = bdev;
@@ -1404,7 +1404,7 @@ static void flush_disk(struct block_device *bdev, bool kill_dirty)
 		       "resized disk %s\n",
 		       bdev->bd_disk ? bdev->bd_disk->disk_name : "");
 	}
-	set_bit(BDEV_NEED_PART_SCAN, &bdev->bd_flags);
+	bdev->bd_invalidated = 1;
 }
 
 /**
@@ -1457,7 +1457,7 @@ int revalidate_disk(struct gendisk *disk)
 
 	mutex_lock(&bdev->bd_mutex);
 	check_disk_size_change(disk, bdev, ret == 0);
-	clear_bit(BDEV_NEED_PART_SCAN, &bdev->bd_flags);
+	bdev->bd_invalidated = 0;
 	mutex_unlock(&bdev->bd_mutex);
 	bdput(bdev);
 	return ret;
@@ -1520,7 +1520,7 @@ static void bdev_disk_changed(struct block_device *bdev, bool invalidate)
 		up_read(&disk->lookup_sem);
 	} else {
 		check_disk_size_change(bdev->bd_disk, bdev, !invalidate);
-		clear_bit(BDEV_NEED_PART_SCAN, &bdev->bd_flags);
+		bdev->bd_invalidated = 0;
 	}
 }
 
@@ -1605,7 +1605,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 			 * The latter is necessary to prevent ghost
 			 * partitions on a removed medium.
 			 */
-			if (test_bit(BDEV_NEED_PART_SCAN, &bdev->bd_flags) &&
+			if (bdev->bd_invalidated &&
 			    (!ret || ret == -ENOMEDIUM))
 				bdev_disk_changed(bdev, ret == -ENOMEDIUM);
 
@@ -1642,7 +1642,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 			if (bdev->bd_disk->fops->open)
 				ret = bdev->bd_disk->fops->open(bdev, mode);
 			/* the same as first opener case, read comment there */
-			if (test_bit(BDEV_NEED_PART_SCAN, &bdev->bd_flags) &&
+			if (bdev->bd_invalidated &&
 			    (!ret || ret == -ENOMEDIUM))
 				bdev_disk_changed(bdev, ret == -ENOMEDIUM);
 			if (ret)
