@@ -275,7 +275,7 @@ static DEFINE_PER_CPU(struct rcu_dynticks, rcu_dynticks) = {
  * Record entry into an extended quiescent state.  This is only to be
  * called when not already in an extended quiescent state.
  */
-static void rcu_dynticks_eqs_enter(void)
+static notrace void rcu_dynticks_eqs_enter(void)
 {
 	struct rcu_dynticks *rdtp = this_cpu_ptr(&rcu_dynticks);
 	int seq;
@@ -298,7 +298,7 @@ static void rcu_dynticks_eqs_enter(void)
  * Record exit from an extended quiescent state.  This is only to be
  * called from an extended quiescent state.
  */
-static void rcu_dynticks_eqs_exit(void)
+static notrace void rcu_dynticks_eqs_exit(void)
 {
 	struct rcu_dynticks *rdtp = this_cpu_ptr(&rcu_dynticks);
 	int seq;
@@ -343,7 +343,7 @@ static void rcu_dynticks_eqs_online(void)
  *
  * No ordering, as we are sampling CPU-local information.
  */
-bool rcu_dynticks_curr_cpu_in_eqs(void)
+static __always_inline bool rcu_dynticks_curr_cpu_in_eqs(void)
 {
 	struct rcu_dynticks *rdtp = this_cpu_ptr(&rcu_dynticks);
 
@@ -706,7 +706,7 @@ static struct rcu_node *rcu_get_root(struct rcu_state *rsp)
  * the possibility of usermode upcalls having messed up our count
  * of interrupt nesting level during the prior busy period.
  */
-static void rcu_eqs_enter(bool user)
+static notrace void rcu_eqs_enter(bool user)
 {
 	struct rcu_state *rsp;
 	struct rcu_data *rdp;
@@ -763,7 +763,7 @@ void rcu_idle_enter(void)
  * If you add or remove a call to rcu_user_enter(), be sure to test with
  * CONFIG_RCU_EQS_DEBUG=y.
  */
-void rcu_user_enter(void)
+notrace void rcu_user_enter(void)
 {
 	lockdep_assert_irqs_disabled();
 	rcu_eqs_enter(true);
@@ -781,7 +781,7 @@ void rcu_user_enter(void)
  * If you add or remove a call to rcu_nmi_exit(), be sure to test
  * with CONFIG_RCU_EQS_DEBUG=y.
  */
-void rcu_nmi_exit(void)
+notrace void rcu_nmi_exit(void)
 {
 	struct rcu_dynticks *rdtp = this_cpu_ptr(&rcu_dynticks);
 
@@ -829,7 +829,7 @@ void rcu_nmi_exit(void)
  * If you add or remove a call to rcu_irq_exit(), be sure to test with
  * CONFIG_RCU_EQS_DEBUG=y.
  */
-void rcu_irq_exit(void)
+notrace void rcu_irq_exit(void)
 {
 	struct rcu_dynticks *rdtp = this_cpu_ptr(&rcu_dynticks);
 
@@ -864,7 +864,7 @@ void rcu_irq_exit_irqson(void)
  * allow for the possibility of usermode upcalls messing up our count of
  * interrupt nesting level during the busy period that is just now starting.
  */
-static void rcu_eqs_exit(bool user)
+static notrace void rcu_eqs_exit(bool user)
 {
 	struct rcu_dynticks *rdtp;
 	long oldval;
@@ -914,7 +914,7 @@ void rcu_idle_exit(void)
  * If you add or remove a call to rcu_user_exit(), be sure to test with
  * CONFIG_RCU_EQS_DEBUG=y.
  */
-void rcu_user_exit(void)
+void notrace rcu_user_exit(void)
 {
 	rcu_eqs_exit(1);
 }
@@ -932,7 +932,7 @@ void rcu_user_exit(void)
  * If you add or remove a call to rcu_nmi_enter(), be sure to test
  * with CONFIG_RCU_EQS_DEBUG=y.
  */
-void rcu_nmi_enter(void)
+notrace void rcu_nmi_enter(void)
 {
 	struct rcu_dynticks *rdtp = this_cpu_ptr(&rcu_dynticks);
 	long incby = 2;
@@ -982,7 +982,7 @@ void rcu_nmi_enter(void)
  * If you add or remove a call to rcu_irq_enter(), be sure to test with
  * CONFIG_RCU_EQS_DEBUG=y.
  */
-void rcu_irq_enter(void)
+notrace void rcu_irq_enter(void)
 {
 	struct rcu_dynticks *rdtp = this_cpu_ptr(&rcu_dynticks);
 
