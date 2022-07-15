@@ -45,7 +45,6 @@ struct cpu_desc_t {
 	char vendor_id[16];
 	char model_id[64];
 	unsigned long frequency;
-	__u8 run_mode;
 } __randomize_layout;
 
 #define MAX_NUMSOCKETS		8
