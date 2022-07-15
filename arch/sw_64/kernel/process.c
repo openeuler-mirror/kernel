@@ -52,7 +52,7 @@ void arch_cpu_idle(void)
 static void common_shutdown_1(void *generic_ptr)
 {
 	struct halt_info *how = (struct halt_info *)generic_ptr;
-	int cpuid = smp_processor_id();
+	int cpuid __maybe_unused = smp_processor_id();
 
 	/* No point in taking interrupts anymore. */
 	local_irq_disable();
