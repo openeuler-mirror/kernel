@@ -4,6 +4,9 @@
 #include <linux/delay.h>
 #include <linux/time.h>
 #include <linux/clk-provider.h>
+#ifndef CONFIG_SMP
+#include <linux/clocksource.h>
+#endif
 
 #include <asm/debug.h>
 
