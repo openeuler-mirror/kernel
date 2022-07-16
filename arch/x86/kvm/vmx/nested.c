@@ -11,6 +11,7 @@
 #include "mmu.h"
 #include "nested.h"
 #include "pmu.h"
+#include "sgx.h"
 #include "trace.h"
 #include "x86.h"
 
@@ -2326,6 +2327,9 @@ static void prepare_vmcs02_early(struct vcpu_vmx *vmx, struct vmcs12 *vmcs12)
 		if (!nested_cpu_has2(vmcs12, SECONDARY_EXEC_UNRESTRICTED_GUEST))
 		    exec_control &= ~SECONDARY_EXEC_UNRESTRICTED_GUEST;
 
+		if (exec_control & SECONDARY_EXEC_ENCLS_EXITING)
+			vmx_write_encls_bitmap(&vmx->vcpu, vmcs12);
+
 		secondary_exec_controls_set(vmx, exec_control);
 	}
 
@@ -4142,6 +4146,8 @@ static void prepare_vmcs12(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12,
 {
 	/* update exit information fields: */
 	vmcs12->vm_exit_reason = vm_exit_reason;
+	if (to_vmx(vcpu)->exit_reason.enclave_mode)
+		vmcs12->vm_exit_reason |= VMX_EXIT_REASONS_SGX_ENCLAVE_MODE;
 	vmcs12->exit_qualification = exit_qualification;
 	vmcs12->vm_exit_intr_info = exit_intr_info;
 
@@ -5736,6 +5742,21 @@ static bool nested_vmx_exit_handled_cr(struct kvm_vcpu *vcpu,
 	return false;
 }
 
+static bool nested_vmx_exit_handled_encls(struct kvm_vcpu *vcpu,
+					  struct vmcs12 *vmcs12)
+{
+	u32 encls_leaf;
+
+	if (!guest_cpuid_has(vcpu, X86_FEATURE_SGX) ||
+	    !nested_cpu_has2(vmcs12, SECONDARY_EXEC_ENCLS_EXITING))
+		return false;
+
+	encls_leaf = kvm_rax_read(vcpu);
+	if (encls_leaf > 62)
+		encls_leaf = 63;
+	return vmcs12->encls_exiting_bitmap & BIT_ULL(encls_leaf);
+}
+
 static bool nested_vmx_exit_handled_vmcs_access(struct kvm_vcpu *vcpu,
 	struct vmcs12 *vmcs12, gpa_t bitmap)
 {
@@ -5832,9 +5853,6 @@ static bool nested_vmx_l0_wants_exit(struct kvm_vcpu *vcpu,
 		return true;
 	case EXIT_REASON_VMFUNC:
 		/* VM functions are emulated through L2->L0 vmexits. */
-		return true;
-	case EXIT_REASON_ENCLS:
-		/* SGX is never exposed to L1 */
 		return true;
 	default:
 		break;
@@ -5959,6 +5977,8 @@ static bool nested_vmx_l1_wants_exit(struct kvm_vcpu *vcpu,
 	case EXIT_REASON_TPAUSE:
 		return nested_cpu_has2(vmcs12,
 			SECONDARY_EXEC_ENABLE_USR_WAIT_PAUSE);
+	case EXIT_REASON_ENCLS:
+		return nested_vmx_exit_handled_encls(vcpu, vmcs12);
 	default:
 		return true;
 	}
@@ -6533,6 +6553,9 @@ void nested_vmx_setup_ctls_msrs(struct nested_vmx_msrs *msrs, u32 ept_caps)
 	if (flexpriority_enabled)
 		msrs->secondary_ctls_high |=
 			SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES;
+
+	if (enable_sgx)
+		msrs->secondary_ctls_high |= SECONDARY_EXEC_ENCLS_EXITING;
 
 	/* miscellaneous data */
 	rdmsr(MSR_IA32_VMX_MISC,
