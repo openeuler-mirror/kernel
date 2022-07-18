@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2207.2.0
+%global hulkrelease 2207.3.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0158
+Release: %{hulkrelease}.0159
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,27 @@ fi
 %endif
 
 %changelog
+
+* Mon Jul 18 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2207.3.0.0159
+- block: fix that part scan is disabled in device_add_disk()
+- Revert "block: rename bd_invalidated"
+- Revert "block: move the NEED_PART_SCAN flag to struct gendisk"
+- Revert "block:Fix kabi broken"
+- rcu/tree: Mark functions as notrace
+- netfilter: nf_tables: stricter validation of element data
+- net: rose: fix UAF bugs caused by timer handler
+- xen/arm: Fix race in RB-tree based P2M accounting
+- vt: drop old FONT ioctls
+- dm thin: Fix crash in dm_sm_register_threshold_callback()
+- xen/blkfront: force data bouncing when backend is untrusted
+- xen/netfront: force data bouncing when backend is untrusted
+- xen-netfront: fix potential deadlock in xennet_remove()
+- xen/netfront: fix leaking data in shared pages
+- xen/blkfront: fix leaking data in shared pages
+- xen/blkfront: fix memory allocation flags in blkfront_setup_indirect()
+- tmpfs: fix the issue that the mount and remount results are inconsistent.
+- tmpfs: fix undefined-behaviour in shmem_reconfigure()
+- mm/sharepool: Check sp_is_enabled() before show spa_stat
 
 * Mon Jul 11 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2207.2.0.0158
 - x86: Fix return value of __setup handlers
