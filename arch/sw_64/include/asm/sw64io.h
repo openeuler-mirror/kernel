@@ -2,6 +2,7 @@
 #ifndef _ASM_SW64_SW64IO_H
 #define _ASM_SW64_SW64IO_H
 
+#include <asm/io.h>
 #include <asm/page.h>
 
 extern void setup_chip_clocksource(void);
@@ -11,105 +12,87 @@ extern void setup_chip_clocksource(void);
 #endif
 
 #define MK_RC_CFG(nid, idx) \
-	(PAGE_OFFSET | SW64_PCI_IO_BASE((nid), (idx)) | PCI_RC_CFG)
+	(SW64_PCI_IO_BASE((nid), (idx)) | PCI_RC_CFG)
 #define MK_PIU_IOR0(nid, idx) \
-	(PAGE_OFFSET | SW64_PCI_IO_BASE((nid), (idx)) | PCI_IOR0_BASE)
+	(SW64_PCI_IO_BASE((nid), (idx)) | PCI_IOR0_BASE)
 #define MK_PIU_IOR1(nid, idx) \
-	(PAGE_OFFSET | SW64_PCI_IO_BASE((nid), (idx)) | PCI_IOR1_BASE)
+	(SW64_PCI_IO_BASE((nid), (idx)) | PCI_IOR1_BASE)
 
 static inline  unsigned int
-read_rc_conf(unsigned long node, unsigned long rc_index,
-		unsigned int conf_offset)
+read_rc_conf(unsigned long node, unsigned long rc,
+		unsigned int offset)
 {
-	unsigned long addr;
-	unsigned int value;
+	void __iomem *addr;
 
-	addr = MK_RC_CFG(node, rc_index) | conf_offset;
-	value = *(volatile unsigned int *)addr;
-	mb();
-
-	return value;
+	addr = __va(MK_RC_CFG(node, rc) | offset);
+	return readl(addr);
 }
 
 static inline void
-write_rc_conf(unsigned long node, unsigned long rc_index,
-		unsigned int conf_offset, unsigned int data)
+write_rc_conf(unsigned long node, unsigned long rc,
+		unsigned int offset, unsigned int data)
 {
-	unsigned long addr;
+	void __iomem *addr;
 
-	addr = MK_RC_CFG(node, rc_index) | conf_offset;
-	*(unsigned int *)addr = data;
-	mb();
+	addr = __va(MK_RC_CFG(node, rc) | offset);
+	writel(data, addr);
 }
 
 static inline  unsigned long
-read_piu_ior0(unsigned long node, unsigned long rc_index,
+read_piu_ior0(unsigned long node, unsigned long rc,
 		unsigned int reg)
 {
-	unsigned long addr;
-	unsigned long value;
+	void __iomem *addr;
 
-	addr = MK_PIU_IOR0(node, rc_index) + reg;
-	value = *(volatile unsigned long __iomem *)addr;
-	mb();
-
-	return value;
+	addr = __va(MK_PIU_IOR0(node, rc) + reg);
+	return readq(addr);
 }
 
 static inline void
-write_piu_ior0(unsigned long node, unsigned long rc_index,
+write_piu_ior0(unsigned long node, unsigned long rc,
 		unsigned int reg, unsigned long data)
 {
-	unsigned long addr;
+	void __iomem *addr;
 
-	addr = MK_PIU_IOR0(node, rc_index) + reg;
-	*(unsigned long __iomem *)addr = data;
-	mb();
+	addr = __va(MK_PIU_IOR0(node, rc) + reg);
+	writeq(data, addr);
 }
 
 static inline  unsigned long
-read_piu_ior1(unsigned long node, unsigned long rc_index,
+read_piu_ior1(unsigned long node, unsigned long rc,
 		unsigned int reg)
 {
-	unsigned long addr, value;
+	void __iomem *addr;
 
-	addr = MK_PIU_IOR1(node, rc_index) + reg;
-	value = *(volatile unsigned long __iomem *)addr;
-	mb();
-
-	return value;
+	addr = __va(MK_PIU_IOR1(node, rc) + reg);
+	return readq(addr);
 }
 
 static inline void
-write_piu_ior1(unsigned long node, unsigned long rc_index,
+write_piu_ior1(unsigned long node, unsigned long rc,
 		unsigned int reg, unsigned long data)
 {
-	unsigned long addr;
+	void __iomem *addr;
 
-	addr = MK_PIU_IOR1(node, rc_index) + reg;
-	*(volatile unsigned long __iomem *)addr = data;
-	mb();
+	addr = __va(MK_PIU_IOR1(node, rc) + reg);
+	writeq(data, addr);
 }
 
 static inline unsigned long
 sw64_io_read(unsigned long node, unsigned long reg)
 {
-	unsigned long addr, value;
+	void __iomem *addr;
 
-	addr = PAGE_OFFSET | SW64_IO_BASE(node) | reg;
-	value = *(volatile unsigned long __iomem *)addr;
-	mb();
-
-	return value;
+	addr = __va(SW64_IO_BASE(node) | reg);
+	return readq(addr);
 }
 
 static inline void
 sw64_io_write(unsigned long node, unsigned long reg, unsigned long data)
 {
-	unsigned long addr;
+	void __iomem *addr;
 
-	addr = PAGE_OFFSET | SW64_IO_BASE(node) | reg;
-	*(volatile unsigned long __iomem *)addr = data;
-	mb();
+	addr = __va(SW64_IO_BASE(node) | reg);
+	writeq(data, addr);
 }
 #endif

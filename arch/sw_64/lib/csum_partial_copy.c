@@ -61,7 +61,11 @@ csum_partial_cfu_dest_aligned(const unsigned long __user *src,
 	unsigned long checksum = ~0U;
 	int err = 0;
 
-	err = __copy_from_user(dst, src, len+8);
+	if (likely(!uaccess_kernel()))
+		err = __copy_from_user(dst, src, len + 8);
+	else
+		memcpy(dst, src, len + 8);
+
 	while (len > 0) {
 		word = *dst;
 		checksum += word;
@@ -89,7 +93,10 @@ csum_partial_cfu_dest_unaligned(const unsigned long __user *src,
 	unsigned long checksum = ~0U;
 	int err = 0;
 
-	err = __copy_from_user(dst, src, len+8);
+	if (likely(!uaccess_kernel()))
+		err = __copy_from_user(dst, src, len + 8);
+	else
+		memcpy(dst, src, len + 8);
 
 	dst = (unsigned long *)((unsigned long)dst & (~7UL));
 	word = *dst;
@@ -128,9 +135,9 @@ static __wsum __csum_and_copy(const void __user *src, void *dst, int len)
 			(const unsigned long __user *) src,
 			(unsigned long *) dst, len-8);
 	} else {
-		checksum = csum_partial_cfu_dest_aligned(
+		checksum = csum_partial_cfu_dest_unaligned(
 			(const unsigned long __user *) src,
-			(unsigned long *) dst, len-8);
+			(unsigned long *) dst, doff, len-8);
 	}
 	return (__force __wsum)from64to16(checksum);
 }

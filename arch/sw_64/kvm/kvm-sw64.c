@@ -12,7 +12,7 @@
 #include <linux/sched/signal.h>
 #include <linux/kvm.h>
 #include <linux/uaccess.h>
-
+#include <linux/sched.h>
 #include <asm/kvm_timer.h>
 #include <asm/kvm_emulate.h>
 
@@ -21,6 +21,7 @@
 
 bool set_msi_flag;
 unsigned long sw64_kvm_last_vpn[NR_CPUS];
+__read_mostly bool bind_vcpu_enabled;
 #define cpu_last_vpn(cpuid) sw64_kvm_last_vpn[cpuid]
 
 #ifdef CONFIG_SUBARCH_C3B
@@ -56,10 +57,18 @@ int kvm_set_msi(struct kvm_kernel_irq_routing_entry *e, struct kvm *kvm, int irq
 
 extern int __sw64_vcpu_run(struct vcpucb *vcb, struct kvm_regs *regs, struct hcall_args *args);
 
-static unsigned long get_vpcr(unsigned long machine_mem_offset, unsigned long memory_size, unsigned long vpn)
+#ifdef CONFIG_KVM_MEMHOTPLUG
+static u64 get_vpcr_memhp(u64 seg_base, u64 vpn)
 {
-	return (machine_mem_offset >> 23) | ((memory_size >> 23) << 16) | ((vpn & HARDWARE_VPN_MASK) << 44);
+	return seg_base | ((vpn & HARDWARE_VPN_MASK) << 44);
 }
+#else
+static u64 get_vpcr(u64 hpa_base, u64 mem_size, u64 vpn)
+{
+	return (hpa_base >> 23) | ((mem_size >> 23) << 16)
+				| ((vpn & HARDWARE_VPN_MASK) << 44);
+}
+#endif
 
 static unsigned long __get_new_vpn_context(struct kvm_vcpu *vcpu, long cpu)
 {
@@ -212,12 +221,38 @@ void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
 
 int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
+#ifdef CONFIG_KVM_MEMHOTPLUG
+	unsigned long *seg_pgd;
+
+	if (kvm->arch.seg_pgd != NULL) {
+		kvm_err("kvm_arch already initialized?\n");
+		return -EINVAL;
+	}
+
+	seg_pgd = alloc_pages_exact(PAGE_SIZE, GFP_KERNEL | __GFP_ZERO);
+	if (!seg_pgd)
+		return -ENOMEM;
+
+	kvm->arch.seg_pgd = seg_pgd;
+#endif
+
 	return 0;
 }
 
 void kvm_arch_destroy_vm(struct kvm *kvm)
 {
 	int i;
+#ifdef CONFIG_KVM_MEMHOTPLUG
+	void *seg_pgd = NULL;
+
+	if (kvm->arch.seg_pgd) {
+		seg_pgd = READ_ONCE(kvm->arch.seg_pgd);
+		kvm->arch.seg_pgd = NULL;
+	}
+
+	if (seg_pgd)
+		free_pages_exact(seg_pgd, PAGE_SIZE);
+#endif
 
 	for (i = 0; i < KVM_MAX_VCPUS; ++i) {
 		if (kvm->vcpus[i]) {
@@ -227,7 +262,6 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
 	}
 
 	atomic_set(&kvm->online_vcpus, 0);
-
 }
 
 long kvm_arch_dev_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
@@ -241,6 +275,22 @@ int kvm_arch_create_memslot(struct kvm *kvm, struct kvm_memory_slot *slot,
 	return 0;
 }
 
+#ifdef CONFIG_KVM_MEMHOTPLUG
+static void setup_segment_table(struct kvm *kvm,
+	struct kvm_memory_slot *memslot, unsigned long addr, size_t size)
+{
+	unsigned long *seg_pgd = kvm->arch.seg_pgd;
+	unsigned int num_of_entry = size >> 30;
+	unsigned long base_hpa = addr >> 30;
+	int i;
+
+	for (i = 0; i < num_of_entry; i++) {
+		*seg_pgd = base_hpa + i;
+		seg_pgd++;
+	}
+}
+#endif
+
 int kvm_arch_prepare_memory_region(struct kvm *kvm,
 		struct kvm_memory_slot *memslot,
 		const struct kvm_userspace_memory_region *mem,
@@ -253,8 +303,15 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	unsigned long ret;
 	size_t size;
 
-	if (change == KVM_MR_FLAGS_ONLY)
+	if (change == KVM_MR_FLAGS_ONLY || change == KVM_MR_DELETE)
 		return 0;
+
+#ifndef CONFIG_KVM_MEMHOTPLUG
+	if (mem->guest_phys_addr) {
+		pr_info("%s, No KVM MEMHOTPLUG support!\n", __func__);
+		return 0;
+	}
+#endif
 
 	if (test_bit(IO_MARK_BIT, &(mem->guest_phys_addr)))
 		return 0;
@@ -276,7 +333,7 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	if (!vm_file) {
 		info = kzalloc(sizeof(struct vmem_info), GFP_KERNEL);
 
-		size = round_up(mem->memory_size, 8<<20);
+		size = round_up(mem->memory_size, 8 << 20);
 		addr = gen_pool_alloc(sw64_kvm_pool, size);
 		if (!addr)
 			return -ENOMEM;
@@ -290,6 +347,18 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 		vma = find_vma(current->mm, mem->userspace_addr);
 		if (!vma)
 			return -ENOMEM;
+
+#ifdef CONFIG_KVM_MEMHOTPLUG
+		if (memslot->base_gfn == 0x0UL) {
+			setup_segment_table(kvm, memslot, addr, size);
+			kvm->arch.host_phys_addr = (u64)addr;
+			memslot->arch.host_phys_addr = addr;
+		} else {
+			/* used for memory hotplug */
+			memslot->arch.host_phys_addr = addr;
+			memslot->arch.valid = false;
+		}
+#endif
 
 		info->start = addr;
 		info->size = size;
@@ -308,10 +377,13 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 
 	pr_info("guest phys addr = %#lx, size = %#lx\n",
 			addr, vma->vm_end - vma->vm_start);
-	kvm->arch.host_phys_addr = (u64)addr;
-	kvm->arch.size = round_up(mem->memory_size, 8<<20);
 
-	memset((void *)(PAGE_OFFSET + addr), 0, 0x2000000);
+#ifndef CONFIG_KVM_MEMHOTPLUG
+	kvm->arch.host_phys_addr = (u64)addr;
+	kvm->arch.size = round_up(mem->memory_size, 8 << 20);
+#endif
+
+	memset(__va(addr), 0, 0x2000000);
 
 	return 0;
 }
@@ -344,7 +416,7 @@ int kvm_arch_vcpu_reset(struct kvm_vcpu *vcpu)
 	memset(&vcpu->arch.irqs_pending, 0, sizeof(vcpu->arch.irqs_pending));
 
 	if (vcpu->vcpu_id == 0)
-		memset((void *)(PAGE_OFFSET + addr), 0, 0x2000000);
+		memset(__va(addr), 0, 0x2000000);
 
 	return 0;
 }
@@ -432,18 +504,17 @@ void _debug_printk_vcpu(struct kvm_vcpu *vcpu)
 {
 	unsigned long pc = vcpu->arch.regs.pc;
 	unsigned long offset = vcpu->kvm->arch.host_phys_addr;
-	unsigned long pc_phys = PAGE_OFFSET | ((pc & 0x7fffffffUL) + offset);
+	unsigned int *pc_phys = __va((pc & 0x7fffffffUL) + offset);
 	unsigned int insn;
 	int opc, ra, disp16;
 
-	insn = *(unsigned int *)pc_phys;
-
+	insn = *pc_phys;
 	opc = (insn >> 26) & 0x3f;
 	ra = (insn >> 21) & 0x1f;
 	disp16 = insn & 0xffff;
 
 	if (opc == 0x06 && disp16 == 0x1000) /* RD_F */
-		pr_info("vcpu exit: pc = %#lx (%#lx), insn[%x] : rd_f r%d [%#lx]\n",
+		pr_info("vcpu exit: pc = %#lx (%px), insn[%x] : rd_f r%d [%#lx]\n",
 				pc, pc_phys, insn, ra, vcpu_get_reg(vcpu, ra));
 }
 
@@ -464,8 +535,24 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	/* Set guest vcb */
 	/* vpn will update later when vcpu is running */
 	if (vcpu->arch.vcb.vpcr == 0) {
+#ifndef CONFIG_KVM_MEMHOTPLUG
 		vcpu->arch.vcb.vpcr
 			= get_vpcr(vcpu->kvm->arch.host_phys_addr, vcpu->kvm->arch.size, 0);
+
+		if (unlikely(bind_vcpu_enabled)) {
+			int nid;
+			unsigned long end;
+
+			end = vcpu->kvm->arch.host_phys_addr + vcpu->kvm->arch.size;
+			nid = pfn_to_nid(PHYS_PFN(vcpu->kvm->arch.host_phys_addr));
+			if (pfn_to_nid(PHYS_PFN(end)) == nid)
+				set_cpus_allowed_ptr(vcpu->arch.tsk, node_to_cpumask_map[nid]);
+		}
+#else
+		unsigned long seg_base = virt_to_phys(vcpu->kvm->arch.seg_pgd);
+
+		vcpu->arch.vcb.vpcr = get_vpcr_memhp(seg_base, 0);
+#endif
 		vcpu->arch.vcb.upcr = 0x7;
 	}
 
@@ -640,6 +727,30 @@ int kvm_dev_ioctl_check_extension(long ext)
 
 	return r;
 }
+
+#ifdef CONFIG_KVM_MEMHOTPLUG
+void vcpu_mem_hotplug(struct kvm_vcpu *vcpu, unsigned long start_addr)
+{
+	struct kvm *kvm = vcpu->kvm;
+	struct kvm_memory_slot *slot;
+	unsigned long start_pfn = start_addr >> PAGE_SHIFT;
+
+	kvm_for_each_memslot(slot, kvm_memslots(kvm)) {
+		if (start_pfn == slot->base_gfn) {
+			unsigned long *seg_pgd;
+			unsigned long num_of_entry = slot->npages >> 17;
+			unsigned long base_hpa = slot->arch.host_phys_addr;
+			int i;
+
+			seg_pgd = kvm->arch.seg_pgd + (start_pfn >> 17);
+			for (i = 0; i < num_of_entry; i++) {
+				*seg_pgd = (base_hpa >> 30) + i;
+				seg_pgd++;
+			}
+		}
+	}
+}
+#endif
 
 void vcpu_send_ipi(struct kvm_vcpu *vcpu, int target_vcpuid)
 {

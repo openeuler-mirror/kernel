@@ -648,10 +648,21 @@ irqreturn_t iommu_interrupt(int irq, void *dev)
 	type = (iommu_status >> 59) & 0x7;
 	devid = (iommu_status >> 37) & 0xffff;
 	dva = iommu_status & 0xffffffff;
-	sdev = search_dev_data(devid);
-	sdomain = sdev->domain;
 	pr_info("%s, iommu_status = %#lx, devid %#lx, dva %#lx, ",
 			__func__, iommu_status, devid, dva);
+
+	sdev = search_dev_data(devid);
+	if (sdev == NULL) {
+		pr_info("no such dev!!!\n");
+
+		iommu_status &= ~(1UL << 62);
+		write_piu_ior0(hose->node, hose->index,
+				IOMMUEXCPT_STATUS, iommu_status);
+
+		return IRQ_HANDLED;
+	}
+
+	sdomain = sdev->domain;
 	switch (type) {
 	case DTE_LEVEL1:
 		pr_info("invalid level1 dte, addr:%#lx, val:%#lx\n",
@@ -674,7 +685,6 @@ irqreturn_t iommu_interrupt(int irq, void *dev)
 			fetch_pte(sdomain, dva, PTE_LEVEL2_VAL));
 
 		iommu_status &= ~(1UL << 62);
-		iommu_status = iommu_status | (1UL << 63);
 		write_piu_ior0(hose->node, hose->index,
 				IOMMUEXCPT_STATUS, iommu_status);
 		break;
@@ -1509,6 +1519,9 @@ sunway_iommu_iova_to_phys(struct iommu_domain *dom, dma_addr_t iova)
 	struct sunway_iommu_domain *sdomain = to_sunway_domain(dom);
 	unsigned long paddr, grn;
 
+	if (iova > SW64_BAR_ADDRESS)
+		return iova;
+
 	paddr = fetch_pte(sdomain, iova, PTE_LEVEL2_VAL);
 
 	if ((paddr & SW64_IOMMU_ENTRY_VALID) == 0)
@@ -1544,7 +1557,7 @@ sunway_iommu_map(struct iommu_domain *dom, unsigned long iova,
 	 * to avoid VFIO trying to map pci config space.
 	 */
 	if (iova > SW64_BAR_ADDRESS)
-		return -EINVAL;
+		return 0;
 
 	mutex_lock(&sdomain->api_lock);
 	ret = sunway_iommu_map_page(sdomain, iova, paddr, page_size);

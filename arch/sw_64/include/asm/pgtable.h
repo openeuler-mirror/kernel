@@ -119,9 +119,8 @@ static inline void set_pmd_at(struct mm_struct *mm, unsigned long addr,
 #define __ACCESS_BITS	(_PAGE_ACCESSED | _PAGE_KRE | _PAGE_URE)
 
 
-#define _PFN_MASK	0xFFFFFFFFF0000000UL
-#define _PFN_BITS	36
-#define _PTE_FLAGS_BITS	(64 - _PFN_BITS)
+#define _PFN_SHIFT	28
+#define _PFN_MASK	((-1UL) << _PFN_SHIFT)
 
 #define _PAGE_TABLE	(_PAGE_VALID | __DIRTY_BITS | __ACCESS_BITS)
 #define _PAGE_CHG_MASK	(_PFN_MASK | __DIRTY_BITS | __ACCESS_BITS | _PAGE_SPECIAL)
@@ -181,53 +180,19 @@ static inline void set_pmd_at(struct mm_struct *mm, unsigned long addr,
 extern struct page *empty_zero_page;
 #define ZERO_PAGE(vaddr)		(empty_zero_page)
 
-/* number of bits that fit into a memory pointer */
-#define BITS_PER_PTR			(8 * sizeof(unsigned long))
-
-/* to align the pointer to a pointer address */
-#define PTR_MASK			(~(sizeof(void *) - 1))
-
-/* sizeof(void*)==1<<SIZEOF_PTR_LOG2 */
-#define SIZEOF_PTR_LOG2			3
-
-/* to find an entry in a page-table */
-#define PAGE_PTR(address) \
-	((unsigned long)(address) >> (PAGE_SHIFT - SIZEOF_PTR_LOG2) & PTR_MASK & ~PAGE_MASK)
-
-#define PHYS_TWIDDLE(pfn)		(pfn)
-
-/*
- * Conversion functions:  convert a page and protection to a page entry,
- * and a page entry and page directory to the page they refer to.
- */
-#define page_to_pa(page)		(page_to_pfn(page) << PAGE_SHIFT)
-
-#define pmd_pfn(pmd)			(pmd_val(pmd) >> _PTE_FLAGS_BITS)
-#define pte_pfn(pte)			(pte_val(pte) >> _PTE_FLAGS_BITS)
-#ifndef CONFIG_DISCONTIGMEM
-#define pte_page(pte)			pfn_to_page(pte_pfn(pte))
-#define mk_pte(page, pgprot)						\
-({									\
-	pte_t pte;							\
-									\
-	pte_val(pte) = (page_to_pfn(page) << _PTE_FLAGS_BITS) | pgprot_val(pgprot);	\
-	pte;								\
-})
-#endif
-
-static inline pte_t pfn_pte(unsigned long physpfn, pgprot_t pgprot)
+static inline pte_t pfn_pte(unsigned long pfn, pgprot_t prot)
 {
 	pte_t pte;
 
-	pte_val(pte) = (PHYS_TWIDDLE(physpfn) << _PTE_FLAGS_BITS) | pgprot_val(pgprot);
+	pte_val(pte) = (pfn << _PFN_SHIFT) | pgprot_val(prot);
 	return pte;
 }
 
-static inline pmd_t pfn_pmd(unsigned long physpfn, pgprot_t pgprot)
+static inline pmd_t pfn_pmd(unsigned long pfn, pgprot_t prot)
 {
 	pmd_t pmd;
 
-	pmd_val(pmd) = (PHYS_TWIDDLE(physpfn) << _PTE_FLAGS_BITS) | pgprot_val(pgprot);
+	pmd_val(pmd) = (pfn << _PFN_SHIFT) | pgprot_val(prot);
 	return pmd;
 }
 
@@ -245,37 +210,48 @@ static inline pmd_t pmd_modify(pmd_t pmd, pgprot_t newprot)
 
 static inline void pmd_set(pmd_t *pmdp, pte_t *ptep)
 {
-	pmd_val(*pmdp) = _PAGE_TABLE | (__pa(ptep) << (_PTE_FLAGS_BITS - PAGE_SHIFT));
+	pmd_val(*pmdp) = _PAGE_TABLE | (virt_to_pfn(ptep) << _PFN_SHIFT);
 }
 
 static inline void pud_set(pud_t *pudp, pmd_t *pmdp)
 {
-	pud_val(*pudp) = _PAGE_TABLE | (__pa(pmdp) << (_PTE_FLAGS_BITS - PAGE_SHIFT));
+	pud_val(*pudp) = _PAGE_TABLE | (virt_to_pfn(pmdp) << _PFN_SHIFT);
 }
 
 static inline void p4d_set(p4d_t *p4dp, pud_t *pudp)
 {
-	p4d_val(*p4dp) = _PAGE_TABLE | (__pa(pudp) << (_PTE_FLAGS_BITS - PAGE_SHIFT));
+	p4d_val(*p4dp) = _PAGE_TABLE | (virt_to_pfn(pudp) << _PFN_SHIFT);
 }
 
-static inline unsigned long
-pmd_page_vaddr(pmd_t pmd)
+static inline unsigned long pmd_page_vaddr(pmd_t pmd)
 {
-	return ((pmd_val(pmd) & _PFN_MASK) >> (_PTE_FLAGS_BITS-PAGE_SHIFT)) + PAGE_OFFSET;
+	return (unsigned long)pfn_to_virt(pmd_val(pmd) >> _PFN_SHIFT);
 }
 
-#define pmd_page(pmd)		(pfn_to_page(pmd_val(pmd) >> _PTE_FLAGS_BITS))
-#define pud_page(pud)		(pfn_to_page(pud_val(pud) >> _PTE_FLAGS_BITS))
-#define p4d_page(p4d)		(pfn_to_page(p4d_val(p4d) >> _PTE_FLAGS_BITS))
+/*
+ * Conversion functions:  convert a page and protection to a page entry,
+ * and a page entry and page directory to the page they refer to.
+ */
+#define page_to_pa(page)	(page_to_pfn(page) << PAGE_SHIFT)
+
+#define pmd_pfn(pmd)		(pmd_val(pmd) >> _PFN_SHIFT)
+#define pte_pfn(pte)		(pte_val(pte) >> _PFN_SHIFT)
+
+#define pte_page(pte)		pfn_to_page(pte_pfn(pte))
+#define mk_pte(page, prot)	pfn_pte(page_to_pfn(page), prot)
+
+#define pmd_page(pmd)		(pfn_to_page(pmd_val(pmd) >> _PFN_SHIFT))
+#define pud_page(pud)		(pfn_to_page(pud_val(pud) >> _PFN_SHIFT))
+#define p4d_page(p4d)		(pfn_to_page(p4d_val(p4d) >> _PFN_SHIFT))
 
 static inline pud_t *p4d_pgtable(p4d_t p4d)
 {
-	return (pud_t *)(PAGE_OFFSET + ((p4d_val(p4d) & _PFN_MASK) >> (_PTE_FLAGS_BITS-PAGE_SHIFT)));
+	return (pud_t *)pfn_to_virt(p4d_val(p4d) >> _PFN_SHIFT);
 }
 
 static inline pmd_t *pud_pgtable(pud_t pud)
 {
-	return (pmd_t *)(PAGE_OFFSET + ((pud_val(pud) & _PFN_MASK) >> (_PTE_FLAGS_BITS-PAGE_SHIFT)));
+	return (pmd_t *)pfn_to_virt(pud_val(pud) >> _PFN_SHIFT);
 }
 
 static inline int pte_none(pte_t pte)
@@ -566,7 +542,7 @@ static inline void pmdp_set_wrprotect(struct mm_struct *mm,
 	set_bit(_PAGE_BIT_FOW, (unsigned long *)pmdp);
 }
 
-#define mk_pmd(page, pgprot)   pfn_pmd(page_to_pfn(page), (pgprot))
+#define mk_pmd(page, prot)	pfn_pmd(page_to_pfn(page), (prot))
 
 #define  __HAVE_ARCH_PMDP_SET_ACCESS_FLAGS
 extern int pmdp_set_access_flags(struct vm_area_struct *vma,
@@ -585,15 +561,6 @@ extern int pmdp_clear_flush_young(struct vm_area_struct *vma,
 #define __HAVE_ARCH_PMDP_SPLITTING_FLUSH
 extern void pmdp_splitting_flush(struct vm_area_struct *vma,
 				 unsigned long addr, pmd_t *pmdp);
-
-#define PAGE_DIR_OFFSET(tsk, address) pgd_offset((tsk), (address))
-
-/* to find an entry in a kernel page-table-directory */
-#define pgd_offset_k(address) pgd_offset(&init_mm, (address))
-
-/* to find an entry in a page-table-directory. */
-#define pgd_index(address)	(((address) >> PGDIR_SHIFT) & (PTRS_PER_PGD - 1))
-#define pgd_offset(mm, address)	((mm)->pgd+pgd_index(address))
 
 extern pgd_t swapper_pg_dir[1024];
 
@@ -629,14 +596,7 @@ extern pgd_t swapper_pg_dir[1024];
 #define __pte_to_swp_entry(pte)	((swp_entry_t) { pte_val(pte) })
 #define __swp_entry_to_pte(x)	((pte_t) { (x).val })
 
-#if defined(CONFIG_FLATMEM)
 #define kern_addr_valid(addr)	(1)
-#elif defined(CONFIG_DISCONTIGMEM)
-/* XXX: FIXME -- wli */
-#define kern_addr_valid(kaddr)	(0)
-#elif defined(CONFIG_SPARSEMEM)
-#define kern_addr_valid(addr)	(1)
-#endif
 
 #define pte_ERROR(e) \
 	pr_err("%s: %d: bad pte %016lx.\n", __FILE__, __LINE__, pte_val(e))

@@ -34,6 +34,11 @@ int handle_exit(struct kvm_vcpu *vcpu, struct kvm_run *run,
 	case SW64_KVM_EXIT_IPI:
 		vcpu_send_ipi(vcpu, hargs->arg0);
 		return 1;
+#ifdef CONFIG_KVM_MEMHOTPLUG
+	case SW64_KVM_EXIT_MEMHOTPLUG:
+		vcpu_mem_hotplug(vcpu, hargs->arg0);
+		return 1;
+#endif
 	case SW64_KVM_EXIT_FATAL_ERROR:
 		printk("Guest fatal error: Reason=[%lx], EXC_PC=[%lx], DVA=[%lx]", hargs->arg0, hargs->arg1, hargs->arg2);
 		vcpu->run->exit_reason = KVM_EXIT_UNKNOWN;

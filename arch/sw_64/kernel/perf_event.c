@@ -6,6 +6,7 @@
  */
 
 #include <linux/perf_event.h>
+#include <asm/stacktrace.h>
 
 /* For tracking PMCs and the hw events they monitor on each CPU. */
 struct cpu_hw_events {
@@ -243,14 +244,13 @@ static const struct sw64_perf_event *core3_map_cache_event(u64 config)
 
 /*
  * r0xx for counter0, r1yy for counter1.
- * According to the datasheet, 00 <= xx <= 0F, 00 <= yy <= 37
+ * According to the datasheet, 00 <= xx <= 0F, 00 <= yy <= 3D
  */
 static bool core3_raw_event_valid(u64 config)
 {
-	if ((config >= (PC0_RAW_BASE + PC0_MIN) && config <= (PC0_RAW_BASE + PC0_MAX)) ||
-		(config >= (PC1_RAW_BASE + PC1_MIN) && config <= (PC1_RAW_BASE + PC1_MAX))) {
+	if ((config >= PC0_RAW_BASE && config <= (PC0_RAW_BASE + PC0_MAX)) ||
+		(config >= PC1_RAW_BASE && config <= (PC1_RAW_BASE + PC1_MAX)))
 		return true;
-	}
 
 	pr_info("sw64 pmu: invalid raw event config %#llx\n", config);
 	return false;
@@ -297,31 +297,33 @@ static int sw64_perf_event_set_period(struct perf_event *event,
 {
 	long left = local64_read(&hwc->period_left);
 	long period = hwc->sample_period;
-	int ret = 0;
+	int overflow = 0;
+	unsigned long value;
 
 	if (unlikely(left <= -period)) {
 		left = period;
 		local64_set(&hwc->period_left, left);
 		hwc->last_period = period;
-		ret = 1;
+		overflow = 1;
 	}
 
 	if (unlikely(left <= 0)) {
 		left += period;
 		local64_set(&hwc->period_left, left);
 		hwc->last_period = period;
-		ret = 1;
+		overflow = 1;
 	}
 
 	if (left > (long)sw64_pmu->pmc_max_period)
 		left = sw64_pmu->pmc_max_period;
 
-	local64_set(&hwc->prev_count, (unsigned long)(-left));
-	sw64_write_pmc(idx,  (unsigned long)(sw64_pmu->pmc_max_period - left));
+	value = sw64_pmu->pmc_max_period - left;
+	local64_set(&hwc->prev_count, value);
+	sw64_write_pmc(idx, value);
 
 	perf_event_update_userpage(event);
 
-	return ret;
+	return overflow;
 }
 
 /*
@@ -457,8 +459,8 @@ static void sw64_pmu_start(struct perf_event *event, int flags)
 
 	hwc->state = 0;
 
-	/* counting in all modes, for both counters */
-	wrperfmon(PERFMON_CMD_PM, 4);
+	/* counting in selected modes, for both counters */
+	wrperfmon(PERFMON_CMD_PM, hwc->config_base);
 	if (hwc->idx == PERFMON_PC0) {
 		wrperfmon(PERFMON_CMD_EVENT_PC0, hwc->event_base);
 		wrperfmon(PERFMON_CMD_ENABLE, PERFMON_ENABLE_ARGS_PC0);
@@ -519,9 +521,12 @@ static int __hw_perf_event_init(struct perf_event *event)
 	const struct sw64_perf_event *event_type;
 
 
-	/* SW64 do not have per-counter usr/os/guest/host bits */
-	if (event->attr.exclude_user || event->attr.exclude_kernel ||
-			event->attr.exclude_hv || event->attr.exclude_idle ||
+	/*
+	 * SW64 does not have per-counter usr/os/guest/host bits,
+	 * we can distinguish exclude_user and exclude_kernel by
+	 * sample mode.
+	 */
+	if (event->attr.exclude_hv || event->attr.exclude_idle ||
 			event->attr.exclude_host || event->attr.exclude_guest)
 		return -EINVAL;
 
@@ -552,6 +557,13 @@ static int __hw_perf_event_init(struct perf_event *event)
 		hwc->idx = attr->config >> 8;	/* counter selector */
 		hwc->event_base = attr->config & 0xff;	/* event selector */
 	}
+
+	hwc->config_base = SW64_PERFCTRL_AM;
+
+	if (attr->exclude_user)
+		hwc->config_base = SW64_PERFCTRL_KM;
+	if (attr->exclude_kernel)
+		hwc->config_base = SW64_PERFCTRL_UM;
 
 	hwc->config = attr->config;
 
@@ -687,6 +699,36 @@ bool valid_dy_addr(unsigned long addr)
 	return ret;
 }
 
+#ifdef CONFIG_FRAME_POINTER
+void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
+		struct pt_regs *regs)
+{
+
+	struct stack_frame frame;
+	unsigned long __user *fp;
+	int err;
+
+	perf_callchain_store(entry, regs->pc);
+
+	fp = (unsigned long __user *)regs->r15;
+
+	while (entry->nr < entry->max_stack && (unsigned long)fp < current->mm->start_stack) {
+		if (!access_ok(fp, sizeof(frame)))
+			break;
+
+		pagefault_disable();
+		err =  __copy_from_user_inatomic(&frame, fp, sizeof(frame));
+		pagefault_enable();
+
+		if (err)
+			break;
+
+		if (valid_utext_addr(frame.return_address) || valid_dy_addr(frame.return_address))
+			perf_callchain_store(entry, frame.return_address);
+		fp = (void __user *)frame.next_frame;
+	}
+}
+#else /* !CONFIG_FRAME_POINTER */
 void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 		struct pt_regs *regs)
 {
@@ -699,30 +741,38 @@ void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 	while (entry->nr < entry->max_stack && usp < current->mm->start_stack) {
 		if (!access_ok(usp, 8))
 			break;
+
 		pagefault_disable();
 		err = __get_user(user_addr, (unsigned long *)usp);
 		pagefault_enable();
+
 		if (err)
 			break;
+
 		if (valid_utext_addr(user_addr) || valid_dy_addr(user_addr))
 			perf_callchain_store(entry, user_addr);
 		usp = usp + 8;
 	}
 }
+#endif/* CONFIG_FRAME_POINTER */
+
+/*
+ * Gets called by walk_stackframe() for every stackframe. This will be called
+ * whist unwinding the stackframe and is like a subroutine return so we use
+ * the PC.
+ */
+static int callchain_trace(unsigned long pc, void *data)
+{
+	struct perf_callchain_entry_ctx *entry = data;
+
+	perf_callchain_store(entry, pc);
+	return 0;
+}
 
 void perf_callchain_kernel(struct perf_callchain_entry_ctx *entry,
 			   struct pt_regs *regs)
 {
-	unsigned long *sp = (unsigned long *)current_thread_info()->pcb.ksp;
-	unsigned long addr;
-
-	perf_callchain_store(entry, regs->pc);
-
-	while (!kstack_end(sp) && entry->nr < entry->max_stack) {
-		addr = *sp++;
-		if (__kernel_text_address(addr))
-			perf_callchain_store(entry, addr);
-	}
+	walk_stackframe(NULL, regs, callchain_trace, entry);
 }
 
 /*

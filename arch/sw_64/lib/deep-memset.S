@@ -99,12 +99,11 @@ $mod32_aligned:
 	.align 5
 $mod32_loop_nc:
 	subl	$18, 64, $18
-	blt	$18, $mod32_tail
+	blt	$18, $mod32_tail_memb
 	vstd_nc	$f10, 0($16)
 	vstd_nc	$f10, 32($16)
 	addl	$16, 64, $16
 	br	$31, $mod32_loop_nc
-	memb			# required for _nc store instructions
 
 	.align 5
 $mod32_loop:
@@ -115,6 +114,8 @@ $mod32_loop:
 	addl	$16, 64, $16
 	br	$31, $mod32_loop
 
+$mod32_tail_memb:
+	memb			# required for _nc store instructions
 $mod32_tail:
 	vldd	$f10, 0($4)
 	addl	$sp, 64, $sp

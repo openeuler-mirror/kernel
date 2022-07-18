@@ -34,5 +34,17 @@
 			clock-frequency = <24000000>;
 			status = "okay";
 		};
+		misc: misc0@8036 {
+			#address-cells = <2>;
+			#size-cells = <2>;
+			compatible = "sw6,sunway-ged";
+			reg = <0x8036 0x0 0x0 0x20>;
+			interrupt-parent=<&intc>;
+			interrupts = <13>;
+			reg-shift = <0>;
+			reg-io-width = <8>;
+			clock-frequency = <24000000>;
+			status = "okay";
+		};
 	};
 };

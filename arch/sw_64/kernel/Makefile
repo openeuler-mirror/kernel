@@ -13,9 +13,9 @@ CFLAGS_REMOVE_insn.o = -pg
 CFLAGS_REMOVE_printk.o = -pg
 endif
 
-obj-y    := entry.o traps.o process.o sys_sw64.o irq.o \
+obj-y    := entry.o fpu.o traps.o process.o sys_sw64.o irq.o \
 	    irq_sw64.o signal.o setup.o ptrace.o time.o \
-	    systbls.o dup_print.o tc.o \
+	    systbls.o dup_print.o tc.o timer.o \
 	    insn.o early_init.o topology.o cacheinfo.o \
 	    vdso.o vdso/
 
@@ -31,7 +31,7 @@ obj-$(CONFIG_HIBERNATION) += hibernate_asm.o hibernate.o
 obj-$(CONFIG_AUDIT)     += audit.o
 obj-$(CONFIG_PCI) += pci_common.o
 obj-$(CONFIG_RELOCATABLE)   += relocate.o
-obj-$(CONFIG_DEBUG_FS)	+= unaligned.o segvdbg.o
+obj-$(CONFIG_DEBUG_FS)	+= segvdbg.o bindvcpu.o
 obj-$(CONFIG_JUMP_LABEL) += jump_label.o
 
 ifndef CONFIG_PCI
@@ -43,7 +43,6 @@ obj-y += kvm_cma.o
 endif
 
 # Core logic support
-obj-$(CONFIG_SW64)	+= core.o timer.o
 obj-$(CONFIG_SW64_CPUFREQ) += platform.o clock.o
 obj-$(CONFIG_SW64_CPUAUTOPLUG) += cpuautoplug.o
 

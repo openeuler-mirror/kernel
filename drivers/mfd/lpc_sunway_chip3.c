@@ -75,53 +75,16 @@ enum {
 	LPC_DMA_SWRST = 0x70,
 };
 
-enum {
-	LPC_IRQ0 = 0,		/* 8254 Timer */
-	LPC_IRQ1,		/* Keyboard */
-	LPC_IRQ2,		/* Reserved */
-	LPC_IRQ3,		/* UART */
-	LPC_IRQ4,		/* UART */
-	LPC_IRQ5,		/* LPC Parallel Port2 */
-	LPC_IRQ6,		/* FDC-Floppy Disk Controller */
-	LPC_IRQ7,		/* LPT-Parallel Port1 */
-	LPC_NR_IRQS,
-	LPC_IRQ8,		/* RTC */
-	LPC_IRQ9,		/* Undefined */
-	LPC_IRQ10,		/* Undefined */
-	LPC_IRQ11,		/* Undefined */
-	LPC_IRQ12,		/* Mouse */
-	LPC_IRQ13,		/* Undefined */
-	LPC_IRQ14,		/* Undefined */
-	LPC_IRQ15,		/* Undefined */
-};
-
 struct lpc_chip3_adapter {
 	void __iomem *hst_regs;
 	struct device *dev;
 	int irq;
-	struct irq_chip_generic *gc;
 	unsigned int features;
 };
 
 static struct resource superio_chip3_resources[] = {
 	{
 		.flags = IORESOURCE_IO,
-	}, {
-		.start = LPC_IRQ1,
-		.flags = IORESOURCE_IRQ,
-		.name = "i8042_kbd_irq",
-	}, {
-		.start = LPC_IRQ12,
-		.flags = IORESOURCE_IRQ,
-		.name = "i8042_aux_irq",
-	}, {
-		.start = LPC_IRQ5,
-		.flags = IORESOURCE_IRQ,
-		.name = "uart0_irq",
-	}, {
-		.start = LPC_IRQ4,
-		.flags = IORESOURCE_IRQ,
-		.name = "uart1_irq",
 	}
 };
 
@@ -218,75 +181,9 @@ static void lpc_fw_flash_init(struct platform_device *pdev,
 
 }
 
-static u32 lpc_do_irq(struct lpc_chip3_adapter *lpc_adapter)
-{
-	u32 irq_status = readl_relaxed(lpc_adapter->hst_regs + LPC_IRQ);
-	u32 ret = irq_status;
-
-	DBG_LPC("%s irq_status=%#x\n", __func__, irq_status);
-	while (irq_status) {
-		int hwirq = fls(irq_status) - 1;
-
-		generic_handle_irq(hwirq);
-		irq_status &= ~BIT(hwirq);
-	}
-
-	lpc_writel(lpc_adapter->hst_regs, LPC_IRQ, ret);
-	return 1;
-}
-
-static void lpc_irq_handler_mfd(struct irq_desc *desc)
-{
-	unsigned int irq = irq_desc_get_irq(desc);
-	struct lpc_chip3_adapter *lpc_adapter = irq_get_handler_data(irq);
-	u32 worked = 0;
-
-	DBG_LPC("enter %s line:%d\n", __func__, __LINE__);
-
-	worked = lpc_do_irq(lpc_adapter);
-	if (worked == IRQ_HANDLED)
-		dev_dbg(lpc_adapter->dev, "LPC irq handled.\n");
-
-	DBG_LPC("leave %s line:%d\n", __func__, __LINE__);
-}
-
-static void lpc_unmask_interrupt_all(struct lpc_chip3_adapter *lpc_adapter)
-{
-	lpc_writel(lpc_adapter->hst_regs, LPC_IRQ_MASK, 0);
-}
-
-static void lpc_irq_mask_ack(struct irq_data *d)
-{
-	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
-	struct irq_chip_type *ct = irq_data_get_chip_type(d);
-	u32 mask = d->mask;
-
-	irq_gc_lock(gc);
-	*ct->mask_cache |= mask;
-	irq_reg_writel(gc, *ct->mask_cache, ct->regs.mask);
-	irq_reg_writel(gc, mask, ct->regs.ack);
-	irq_gc_unlock(gc);
-}
-
-static void lpc_enable_irqs(struct lpc_chip3_adapter *lpc_adapter)
-{
-	int interrupt = 0;
-
-	lpc_unmask_interrupt_all(lpc_adapter);
-
-	interrupt = lpc_readl(lpc_adapter->hst_regs, LPC_IRQ);
-
-	lpc_writel(lpc_adapter->hst_regs, LPC_CTL, 0x1600);
-	interrupt = lpc_readl(lpc_adapter->hst_regs, LPC_IRQ);
-}
-
 static int lpc_chip3_probe(struct platform_device *pdev)
 {
 	int ret;
-	int num_ct = 1;
-	int irq_base;
-	struct irq_chip_generic *gc;
-	struct irq_chip_type *ct;
 	struct lpc_chip3_adapter *lpc_adapter;
 	struct resource *mem;
 
@@ -312,32 +209,6 @@ static int lpc_chip3_probe(struct platform_device *pdev)
 	lpc_adapter->dev = &pdev->dev;
 	lpc_adapter->features = 0;
 
-	lpc_adapter->irq = platform_get_irq(pdev, 0);
-	if (lpc_adapter->irq < 0) {
-		dev_err(&pdev->dev, "no irq resource?\n");
-		return lpc_adapter->irq;	/* -ENXIO */
-	}
-
-	irq_base = LPC_IRQ0;
-	gc = irq_alloc_generic_chip("LPC_CHIP3", num_ct, irq_base,
-				    lpc_adapter->hst_regs, handle_level_irq);
-
-	ct = gc->chip_types;
-	ct->regs.mask = LPC_IRQ_MASK;
-	ct->regs.ack = LPC_IRQ;
-	ct->chip.irq_mask = irq_gc_mask_set_bit;
-	ct->chip.irq_unmask = irq_gc_mask_clr_bit;
-	ct->chip.irq_ack = irq_gc_ack_set_bit;
-	ct->chip.irq_mask_ack = lpc_irq_mask_ack;
-	irq_setup_generic_chip(gc, IRQ_MSK(LPC_NR_IRQS), 0, 0,
-			       IRQ_NOPROBE | IRQ_LEVEL);
-
-	lpc_adapter->gc = gc;
-
-	irq_set_handler_data(lpc_adapter->irq, lpc_adapter);
-	irq_set_chained_handler(lpc_adapter->irq,
-				(irq_flow_handler_t) lpc_irq_handler_mfd);
-
 	lpc_enable(lpc_adapter);
 
 	lpc_mem_flash_init(pdev, lpc_adapter);
@@ -350,7 +221,6 @@ static int lpc_chip3_probe(struct platform_device *pdev)
 		goto out_dev;
 
 	dev_info(lpc_adapter->dev, "probe succeed !\n");
-	lpc_enable_irqs(lpc_adapter);
 
 	return ret;
 

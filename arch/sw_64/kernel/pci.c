@@ -221,7 +221,7 @@ void __init common_init_pci(void)
 	struct pci_bus *bus;
 	unsigned int init_busnr;
 	int need_domain_info = 0;
-	int ret, iov_bus;
+	int ret;
 	unsigned long offset;
 
 	/* Scan all of the recorded PCI controllers. */
@@ -257,20 +257,20 @@ void __init common_init_pci(void)
 
 		bus = hose->bus = bridge->bus;
 		hose->need_domain_info = need_domain_info;
-		while (pci_find_bus(pci_domain_nr(bus), last_bus))
-			last_bus++;
 
 		if (is_in_host())
-			iov_bus = chip_pcie_configure(hose);
-		last_bus += iov_bus;
+			last_bus = chip_pcie_configure(hose);
+		else
+			while (pci_find_bus(pci_domain_nr(bus), last_bus))
+				last_bus++;
 
-		hose->last_busno = hose->busn_space->end = last_bus - 1;
+		hose->last_busno = hose->busn_space->end = last_bus;
 		init_busnr = read_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS);
 		init_busnr &= ~(0xff << 16);
-		init_busnr |= (last_bus - 1) << 16;
+		init_busnr |= last_bus << 16;
 		write_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS, init_busnr);
-		pci_bus_update_busn_res_end(bus, last_bus - 1);
-
+		pci_bus_update_busn_res_end(bus, last_bus);
+		last_bus++;
 	}
 
 	pcibios_claim_console_setup();
@@ -358,12 +358,8 @@ asmlinkage long sys_pciconfig_iobase(long which, unsigned long bus, unsigned lon
 	return -EOPNOTSUPP;
 }
 
-/* Destroy an __iomem token.  Not copied from lib/iomap.c.  */
-
 void pci_iounmap(struct pci_dev *dev, void __iomem *addr)
 {
-	if (__is_mmio(addr))
-		iounmap(addr);
 }
 EXPORT_SYMBOL(pci_iounmap);
 
@@ -402,7 +398,7 @@ int sw6_pcie_read_rc_cfg(struct pci_bus *bus, unsigned int devfn,
 {
 	u32 data;
 	struct pci_controller *hose = bus->sysdata;
-	void __iomem *cfg_iobase = (void *)hose->rc_config_space_base;
+	void __iomem *cfg_iobase = hose->rc_config_space_base;
 
 	if (IS_ENABLED(CONFIG_PCI_DEBUG))
 		pr_debug("rc read addr:%px bus %d, devfn %#x, where %#x size=%d\t",
@@ -553,9 +549,8 @@ static void __iomem *sw6_pcie_map_bus(struct pci_bus *bus,
 		return NULL;
 
 	relbus = (bus->number << 24) | (devfn << 16) | where;
-	relbus |= PCI_EP_CFG;
 
-	cfg_iobase = (void *)(hose->ep_config_space_base | relbus);
+	cfg_iobase = hose->ep_config_space_base + relbus;
 
 	if (IS_ENABLED(CONFIG_PCI_DEBUG))
 		pr_debug("addr:%px bus %d, devfn %d, where %d\n",
@@ -605,15 +600,7 @@ sw64_init_host(unsigned long node, unsigned long index)
 	}
 }
 
-static void set_devint_wken(int node)
-{
-	unsigned long val;
-
-	/* enable INTD wakeup */
-	val = 0x80;
-	sw64_io_write(node, DEVINT_WKEN, val);
-	sw64_io_write(node, DEVINTWK_INTEN, val);
-}
+void __weak set_devint_wken(int node) {}
 
 void __init sw64_init_arch(void)
 {
@@ -656,6 +643,8 @@ void __init sw64_init_arch(void)
 	}
 }
 
+void __weak set_pcieport_service_irq(int node, int index) {}
+
 static void __init sw64_init_intx(struct pci_controller *hose)
 {
 	unsigned long int_conf, node, val_node;
@@ -684,8 +673,7 @@ static void __init sw64_init_intx(struct pci_controller *hose)
 	if (sw64_chip_init->pci_init.set_intx)
 		sw64_chip_init->pci_init.set_intx(node, index, int_conf);
 
-	write_piu_ior0(node, index, PMEINTCONFIG, PME_ENABLE_INTD_CORE0);
-	write_piu_ior0(node, index, AERERRINTCONFIG, AER_ENABLE_INTD_CORE0);
+	set_pcieport_service_irq(node, index);
 }
 
 void __init sw64_init_irq(void)
@@ -703,3 +691,16 @@ sw64_init_pci(void)
 {
 	common_init_pci();
 }
+
+static int setup_bus_dma_cb(struct pci_dev *pdev, void *data)
+{
+	pdev->dev.bus_dma_limit = DMA_BIT_MASK(32);
+	return 0;
+}
+
+static void fix_bus_dma_limit(struct pci_dev *dev)
+{
+	pci_walk_bus(dev->subordinate, setup_bus_dma_cb, NULL);
+	pr_info("Set zx200 bus_dma_limit to 32-bit\n");
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ZHAOXIN, 0x071f, fix_bus_dma_limit);

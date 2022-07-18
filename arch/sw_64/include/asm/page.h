@@ -46,9 +46,12 @@ extern unsigned long __phys_addr(unsigned long);
 #endif
 
 #define __pa(x)			__phys_addr((unsigned long)(x))
-#define __va(x)			((void *)((unsigned long) (x) + PAGE_OFFSET))
+#define __va(x)			((void *)((unsigned long) (x) | PAGE_OFFSET))
 #define virt_to_page(kaddr)	pfn_to_page(__pa(kaddr) >> PAGE_SHIFT)
 #define virt_addr_valid(kaddr)	pfn_valid(__pa(kaddr) >> PAGE_SHIFT)
+
+#define virt_to_pfn(vaddr)	(PHYS_PFN(__pa(vaddr)))
+#define pfn_to_virt(pfn)	(__va(PFN_PHYS(pfn)))
 
 #ifdef CONFIG_FLATMEM
 #define pfn_valid(pfn)		((pfn) < max_mapnr)

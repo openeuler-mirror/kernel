@@ -560,16 +560,20 @@ static void __init setup_machine_fdt(void)
 #ifdef CONFIG_USE_OF
 	void *dt_virt;
 	const char *name;
-	unsigned long phys_addr;
 
 	/* Give a chance to select kernel builtin DTB firstly */
 	if (IS_ENABLED(CONFIG_SW64_BUILTIN_DTB))
 		dt_virt = (void *)__dtb_start;
-	else
+	else {
 		dt_virt = (void *)sunway_boot_params->dtb_start;
+		if (virt_to_phys(dt_virt) < virt_to_phys(__bss_stop)) {
+			pr_emerg("BUG: DTB has been corrupted by kernel image!\n");
+			while (true)
+				cpu_relax();
+		}
+	}
 
-	phys_addr = __phys_addr((unsigned long)dt_virt);
-	if (!phys_addr_valid(phys_addr) ||
+	if (!phys_addr_valid(virt_to_phys(dt_virt)) ||
 			!early_init_dt_scan(dt_virt)) {
 		pr_crit("\n"
 			"Error: invalid device tree blob at virtual address %px\n"
@@ -901,7 +905,7 @@ show_cpuinfo(struct seq_file *f, void *slot)
 				"physical id\t: %d\n"
 				"bogomips\t: %lu.%02lu\n",
 				cpu_freq, cpu_data[i].tcache.size >> 10,
-				cpu_to_rcid(i),
+				cpu_topology[i].package_id,
 				loops_per_jiffy / (500000/HZ),
 				(loops_per_jiffy / (5000/HZ)) % 100);
 
@@ -972,7 +976,7 @@ static int __init debugfs_sw64(void)
 {
 	struct dentry *d;
 
-	d = debugfs_create_dir("sw_64", NULL);
+	d = debugfs_create_dir("sw64", NULL);
 	if (!d)
 		return -ENOMEM;
 	sw64_debugfs_dir = d;
@@ -1020,8 +1024,7 @@ static int __init sw64_kvm_pool_init(void)
 	end_page  = pfn_to_page((kvm_mem_base + kvm_mem_size - 1) >> PAGE_SHIFT);
 
 	p = base_page;
-	while (page_ref_count(p) == 0 &&
-			(unsigned long)p <= (unsigned long)end_page) {
+	while (p <= end_page && page_ref_count(p) == 0) {
 		set_page_count(p, 1);
 		page_mapcount_reset(p);
 		SetPageReserved(p);

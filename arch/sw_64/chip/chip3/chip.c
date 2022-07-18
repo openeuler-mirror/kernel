@@ -54,7 +54,7 @@ static struct clocksource clocksource_longtime = {
 static u64 read_vtime(struct clocksource *cs)
 {
 	u64 result;
-	unsigned long vtime_addr = PAGE_OFFSET | IO_BASE | LONG_TIME;
+	unsigned long vtime_addr = IO_BASE | LONG_TIME;
 
 	result = rdio64(vtime_addr);
 	return result;
@@ -88,6 +88,25 @@ void setup_chip_clocksource(void)
 	else
 		clocksource_register_khz(&clocksource_vtime, 25000);
 #endif
+}
+
+void set_devint_wken(int node)
+{
+	unsigned long val;
+
+	/* enable INTD wakeup */
+	val = 0x80;
+	sw64_io_write(node, DEVINT_WKEN, val);
+	sw64_io_write(node, DEVINTWK_INTEN, val);
+}
+
+void set_pcieport_service_irq(int node, int index)
+{
+	if (IS_ENABLED(CONFIG_PCIE_PME))
+		write_piu_ior0(node, index, PMEINTCONFIG, PME_ENABLE_INTD_CORE0);
+
+	if (IS_ENABLED(CONFIG_PCIEAER))
+		write_piu_ior0(node, index, AERERRINTCONFIG, AER_ENABLE_INTD_CORE0);
 }
 
 static int chip3_get_cpu_nums(void)
@@ -159,18 +178,20 @@ int chip_pcie_configure(struct pci_controller *hose)
 	struct pci_bus *bus, *top;
 	struct list_head *next;
 	unsigned int max_read_size, smallest_max_payload;
-	int max_payloadsize, iov_bus = 0;
+	int max_payloadsize;
 	unsigned long rc_index, node;
 	unsigned long piuconfig0, value;
 	unsigned int pcie_caps_offset;
 	unsigned int rc_conf_value;
 	u16 devctl, new_values;
 	bool rc_ari_disabled = false, found = false;
+	unsigned char bus_max_num;
 
 	node = hose->node;
 	rc_index = hose->index;
 	smallest_max_payload = read_rc_conf(node, rc_index, RC_EXP_DEVCAP);
 	smallest_max_payload &= PCI_EXP_DEVCAP_PAYLOAD;
+	bus_max_num = hose->busn_space->start;
 
 	top = hose->bus;
 	bus = top;
@@ -181,6 +202,7 @@ int chip_pcie_configure(struct pci_controller *hose)
 			/* end of this bus, go up or finish */
 			if (bus == top)
 				break;
+
 			next = bus->self->bus_list.next;
 			bus = bus->self->bus;
 			continue;
@@ -205,10 +227,8 @@ int chip_pcie_configure(struct pci_controller *hose)
 			}
 		}
 
-#ifdef CONFIG_PCI_IOV
-		if (dev->is_physfn)
-			iov_bus += dev->sriov->max_VF_buses - dev->bus->number;
-#endif
+		if (bus->busn_res.end > bus_max_num)
+			bus_max_num = bus->busn_res.end;
 
 		/* Query device PCIe capability register  */
 		pcie_caps_offset = dev->pcie_cap;
@@ -287,7 +307,7 @@ int chip_pcie_configure(struct pci_controller *hose)
 		pci_write_config_word(dev, pcie_caps_offset + PCI_EXP_DEVCTL, devctl);
 	}
 
-	return iov_bus;
+	return bus_max_num;
 }
 
 static int chip3_check_pci_vt_linkup(unsigned long node, unsigned long index)
@@ -422,7 +442,7 @@ extern struct pci_controller *hose_head, **hose_tail;
 static void sw6_handle_intx(unsigned int offset)
 {
 	struct pci_controller *hose;
-	unsigned long value, pme_value, aer_value;
+	unsigned long value;
 
 	hose = hose_head;
 	for (hose = hose_head; hose; hose = hose->next) {
@@ -435,15 +455,20 @@ static void sw6_handle_intx(unsigned int offset)
 			write_piu_ior0(hose->node, hose->index, INTACONFIG + (offset << 7), value);
 		}
 
-		pme_value = read_piu_ior0(hose->node, hose->index, PMEINTCONFIG);
-		aer_value = read_piu_ior0(hose->node, hose->index, AERERRINTCONFIG);
-		if ((pme_value >> 63) || (aer_value >> 63)) {
-			handle_irq(hose->service_irq);
+		if (IS_ENABLED(CONFIG_PCIE_PME)) {
+			value = read_piu_ior0(hose->node, hose->index, PMEINTCONFIG);
+			if (value >> 63) {
+				handle_irq(hose->service_irq);
+				write_piu_ior0(hose->node, hose->index, PMEINTCONFIG, value);
+			}
+		}
 
-			if (pme_value >> 63)
-				write_piu_ior0(hose->node, hose->index, PMEINTCONFIG, pme_value);
-			if (aer_value >> 63)
-				write_piu_ior0(hose->node, hose->index, AERERRINTCONFIG, aer_value);
+		if (IS_ENABLED(CONFIG_PCIEAER)) {
+			value = read_piu_ior0(hose->node, hose->index, AERERRINTCONFIG);
+			if (value >> 63) {
+				handle_irq(hose->service_irq);
+				write_piu_ior0(hose->node, hose->index, AERERRINTCONFIG, value);
+			}
 		}
 
 		if (hose->iommu_enable) {
@@ -480,8 +505,8 @@ static void chip3_hose_init(struct pci_controller *hose)
 
 	hose->dense_mem_base = pci_io_base;
 	hose->dense_io_base = pci_io_base | PCI_LEGACY_IO;
-	hose->ep_config_space_base = PAGE_OFFSET | pci_io_base | PCI_EP_CFG;
-	hose->rc_config_space_base = PAGE_OFFSET | pci_io_base | PCI_RC_CFG;
+	hose->ep_config_space_base = __va(pci_io_base | PCI_EP_CFG);
+	hose->rc_config_space_base = __va(pci_io_base | PCI_RC_CFG);
 
 	hose->mem_space->start = pci_io_base + PCI_32BIT_MEMIO;
 	hose->mem_space->end = hose->mem_space->start + PCI_32BIT_MEMIO_SIZE - 1;
@@ -673,6 +698,11 @@ void handle_chip_irq(unsigned long type, unsigned long vector,
 		set_irq_regs(old_regs);
 		return;
 	case INT_VT_SERIAL:
+		old_regs = set_irq_regs(regs);
+		handle_irq(type);
+		set_irq_regs(old_regs);
+		return;
+	case INT_VT_HOTPLUG:
 		old_regs = set_irq_regs(regs);
 		handle_irq(type);
 		set_irq_regs(old_regs);

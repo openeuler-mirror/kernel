@@ -11,6 +11,7 @@
 #include <linux/random.h>
 
 #include <asm/fpu.h>
+#include <asm/switch_to.h>
 
 #include "proto.h"
 
@@ -109,7 +110,7 @@ void
 show_regs(struct pt_regs *regs)
 {
 	show_regs_print_info(KERN_DEFAULT);
-	dik_show_regs(regs, NULL);
+	dik_show_regs(regs);
 }
 
 /*
@@ -143,6 +144,13 @@ release_thread(struct task_struct *dead_task)
 {
 }
 
+int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
+{
+	fpstate_save(src);
+	*dst = *src;
+	return 0;
+}
+
 /*
  * Copy architecture-specific thread state
  */
@@ -158,19 +166,17 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 	struct thread_info *childti = task_thread_info(p);
 	struct pt_regs *childregs = task_pt_regs(p);
 	struct pt_regs *regs = current_pt_regs();
-	struct switch_stack *childstack, *stack;
 
-	childstack = ((struct switch_stack *) childregs) - 1;
-	childti->pcb.ksp = (unsigned long) childstack;
+	childti->pcb.ksp = (unsigned long) childregs;
 	childti->pcb.flags = 7;	/* set FEN, clear everything else */
+	p->thread.sp = (unsigned long) childregs;
 
 	if (unlikely(p->flags & PF_KTHREAD)) {
 		/* kernel thread */
-		memset(childstack, 0,
-			sizeof(struct switch_stack) + sizeof(struct pt_regs));
-		childstack->r26 = (unsigned long) ret_from_kernel_thread;
-		childstack->r9 = usp;	/* function */
-		childstack->r10 = kthread_arg;
+		memset(childregs, 0, sizeof(struct pt_regs));
+		p->thread.ra = (unsigned long) ret_from_kernel_thread;
+		p->thread.s[0] = usp;	/* function */
+		p->thread.s[1] = kthread_arg;
 		childti->pcb.usp = 0;
 		return 0;
 	}
@@ -189,136 +195,36 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 	*childregs = *regs;
 	childregs->r0 = 0;
 	childregs->r19 = 0;
-	stack = ((struct switch_stack *) regs) - 1;
-	*childstack = *stack;
-	p->thread = current->thread;
-	childstack->r26 = (unsigned long) ret_from_fork;
+	p->thread.ra = (unsigned long) ret_from_fork;
 	return 0;
 }
 
 /*
  * Fill in the user structure for a ELF core dump.
+ * @regs: should be signal_pt_regs() or task_pt_reg(task)
  */
-void
-dump_elf_thread(elf_greg_t *dest, struct pt_regs *pt, struct thread_info *ti)
+void sw64_elf_core_copy_regs(elf_greg_t *dest, struct pt_regs *regs)
 {
-	/* switch stack follows right below pt_regs: */
-	struct switch_stack *sw = ((struct switch_stack *) pt) - 1;
+	int i;
+	struct thread_info *ti;
 
-	dest[0] = pt->r0;
-	dest[1] = pt->r1;
-	dest[2] = pt->r2;
-	dest[3] = pt->r3;
-	dest[4] = pt->r4;
-	dest[5] = pt->r5;
-	dest[6] = pt->r6;
-	dest[7] = pt->r7;
-	dest[8] = pt->r8;
-	dest[9] = sw->r9;
-	dest[10] = sw->r10;
-	dest[11] = sw->r11;
-	dest[12] = sw->r12;
-	dest[13] = sw->r13;
-	dest[14] = sw->r14;
-	dest[15] = sw->r15;
-	dest[16] = pt->r16;
-	dest[17] = pt->r17;
-	dest[18] = pt->r18;
-	dest[19] = pt->r19;
-	dest[20] = pt->r20;
-	dest[21] = pt->r21;
-	dest[22] = pt->r22;
-	dest[23] = pt->r23;
-	dest[24] = pt->r24;
-	dest[25] = pt->r25;
-	dest[26] = pt->r26;
-	dest[27] = pt->r27;
-	dest[28] = pt->r28;
-	dest[29] = pt->gp;
+	ti = (void *)((__u64)regs & ~(THREAD_SIZE - 1));
+
+	for (i = 0; i < 30; i++)
+		dest[i] = *(__u64 *)((void *)regs + regoffsets[i]);
 	dest[30] = ti == current_thread_info() ? rdusp() : ti->pcb.usp;
-	dest[31] = pt->pc;
-
-	/* Once upon a time this was the PS value.  Which is stupid
-	 * since that is always 8 for usermode.  Usurped for the more
-	 * useful value of the thread's UNIQUE field.
-	 */
+	dest[31] = regs->pc;
 	dest[32] = ti->pcb.unique;
 }
-EXPORT_SYMBOL(dump_elf_thread);
+EXPORT_SYMBOL(sw64_elf_core_copy_regs);
 
-int
-dump_elf_task(elf_greg_t *dest, struct task_struct *task)
+/* Fill in the fpu structure for a core dump.  */
+int dump_fpu(struct pt_regs *regs, elf_fpregset_t *fpu)
 {
-	dump_elf_thread(dest, task_pt_regs(task), task_thread_info(task));
+	memcpy(fpu, &current->thread.fpstate, sizeof(*fpu));
 	return 1;
 }
-EXPORT_SYMBOL(dump_elf_task);
-
-int
-dump_elf_task_fp(elf_fpreg_t *dest, struct task_struct *task)
-{
-	memcpy(dest, &task->thread.ctx_fp, 32 * 8);
-	return 1;
-}
-EXPORT_SYMBOL(dump_elf_task_fp);
-
-/*
- * Return saved PC of a blocked thread.  This assumes the frame
- * pointer is the 6th saved long on the kernel stack and that the
- * saved return address is the first long in the frame.  This all
- * holds provided the thread blocked through a call to schedule() ($15
- * is the frame pointer in schedule() and $15 is saved at offset 48 by
- * entry.S:do_switch_stack).
- *
- * Under heavy swap load I've seen this lose in an ugly way.  So do
- * some extra sanity checking on the ranges we expect these pointers
- * to be in so that we can fail gracefully.  This is just for ps after
- * all.  -- r~
- */
-
-unsigned long
-thread_saved_pc(struct task_struct *t)
-{
-	unsigned long base = (unsigned long)task_stack_page(t);
-	unsigned long fp, sp = task_thread_info(t)->pcb.ksp;
-
-	if (sp > base && sp+6*8 < base + 16*1024) {
-		fp = ((unsigned long *)sp)[6];
-		if (fp > sp && fp < base + 16*1024)
-			return *(unsigned long *)fp;
-	}
-
-	return 0;
-}
-
-unsigned long
-get_wchan(struct task_struct *p)
-{
-	unsigned long schedule_frame;
-	unsigned long pc, base, sp;
-
-	if (!p || p == current || p->state == TASK_RUNNING)
-		return 0;
-	/*
-	 * This one depends on the frame size of schedule().  Do a
-	 * "disass schedule" in gdb to find the frame size.  Also, the
-	 * code assumes that sleep_on() follows immediately after
-	 * interruptible_sleep_on() and that add_timer() follows
-	 * immediately after interruptible_sleep().  Ugly, isn't it?
-	 * Maybe adding a wchan field to task_struct would be better,
-	 * after all...
-	 */
-
-	pc = thread_saved_pc(p);
-	if (in_sched_functions(pc)) {
-		base = (unsigned long)task_stack_page(p);
-		sp = task_thread_info(p)->pcb.ksp;
-		schedule_frame = ((unsigned long *)sp)[6];
-		if (schedule_frame > sp && schedule_frame < base + 16*1024)
-			return ((unsigned long *)schedule_frame)[12];
-	}
-	return pc;
-}
+EXPORT_SYMBOL(dump_fpu);
 
 unsigned long arch_randomize_brk(struct mm_struct *mm)
 {

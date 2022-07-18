@@ -33,10 +33,12 @@
 
 #define PC0_RAW_BASE			0x0
 #define PC1_RAW_BASE			0x100
-#define PC0_MIN				0x0
 #define PC0_MAX				0xF
-#define PC1_MIN				0x0
-#define PC1_MAX				0x37
+#define PC1_MAX				0x3D
+
+#define SW64_PERFCTRL_KM		2
+#define SW64_PERFCTRL_UM		3
+#define SW64_PERFCTRL_AM		4
 
 /* pc0 events */
 #define PC0_INSTRUCTIONS		0x0

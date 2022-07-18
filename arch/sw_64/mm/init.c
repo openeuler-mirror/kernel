@@ -10,10 +10,9 @@
 #include <linux/memblock.h>
 #include <linux/swiotlb.h>
 #include <linux/acpi.h>
+#include <linux/memory.h>
 
 #include <asm/mmu_context.h>
-
-extern void die_if_kernel(char *, struct pt_regs *, long);
 
 struct mem_desc_t mem_desc;
 #ifndef CONFIG_NUMA
@@ -34,6 +33,14 @@ static pud_t vmalloc_pud[1024]	__attribute__((__aligned__(PAGE_SIZE)));
 
 static phys_addr_t mem_start;
 static phys_addr_t mem_size_limit;
+
+unsigned long memory_block_size_bytes(void)
+{
+	if (is_in_guest())
+		return MIN_MEMORY_BLOCK_SIZE_VM_MEMHP;
+	else
+		return MIN_MEMORY_BLOCK_SIZE;
+}
 
 static int __init setup_mem_size(char *p)
 {
@@ -89,7 +96,7 @@ switch_to_system_map(void)
 	 * the last slot of the L1 page table.
 	 */
 	memset(swapper_pg_dir, 0, PAGE_SIZE);
-	newptbr = __pa(swapper_pg_dir) >> PAGE_SHIFT;
+	newptbr = virt_to_pfn(swapper_pg_dir);
 
 	/* Also set up the real kernel PCB while we're at it.  */
 	init_thread_info.pcb.ptbr = newptbr;
@@ -244,18 +251,6 @@ void vmemmap_free(unsigned long start, unsigned long end,
 		struct vmem_altmap *altmap)
 {
 }
-#endif
-
-#ifdef CONFIG_DISCONTIGMEM
-int pfn_valid(unsigned long pfn)
-{
-	phys_addr_t addr = pfn << PAGE_SHIFT;
-
-	if ((addr >> PAGE_SHIFT) != pfn)
-		return 0;
-	return memblock_is_map_memory(addr);
-}
-EXPORT_SYMBOL(pfn_valid);
 #endif
 
 #ifdef CONFIG_HAVE_MEMBLOCK

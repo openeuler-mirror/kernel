@@ -19,6 +19,8 @@
 #include <linux/errno.h>
 #include <linux/fb.h>
 
+#include <asm/sw64io.h>
+
 #define CPLD_BUSNR	 2
 
 #ifndef _I2C_DEBUG_FLAG_
@@ -94,7 +96,7 @@ enum i2c_bus_operation {
 	I2C_BUS_WRITE,
 };
 
-static uint64_t m_i2c_base_address;
+static void __iomem *m_i2c_base_address;
 
 /*
  * This function get I2Cx controller base address
@@ -102,33 +104,28 @@ static uint64_t m_i2c_base_address;
  * @param i2c_controller_index  Bus Number of I2C controller.
  * @return I2C BAR.
  */
-uint64_t get_i2c_bar_addr(uint8_t i2c_controller_index)
+void __iomem *get_i2c_bar_addr(uint8_t i2c_controller_index)
 {
-	uint64_t base_addr = 0;
-
-	if (i2c_controller_index == 0)
-		base_addr = PAGE_OFFSET | IO_BASE | IIC0_BASE;
-	else if (i2c_controller_index == 1)
-		base_addr = PAGE_OFFSET | IO_BASE | IIC1_BASE;
-	else if (i2c_controller_index == 2)
-		base_addr = PAGE_OFFSET | IO_BASE | IIC2_BASE;
-
-	return base_addr;
+	switch (i2c_controller_index) {
+	case 0:
+		return __va(IO_BASE | IIC0_BASE);
+	case 1:
+		return __va(IO_BASE | IIC1_BASE);
+	case 2:
+		return __va(IO_BASE | IIC2_BASE);
+	default:
+		return NULL;
+	}
 }
 
-void write_cpu_i2c_controller(uint64_t offset, uint32_t data)
+static inline void write_cpu_i2c_controller(uint64_t offset, uint32_t data)
 {
-	mb();
-	*(volatile uint32_t *)(m_i2c_base_address + offset) = data;
+	writel(data, m_i2c_base_address + offset);
 }
 
-uint32_t read_cpu_i2c_controller(uint64_t offset)
+static inline uint32_t read_cpu_i2c_controller(uint64_t offset)
 {
-	uint32_t data;
-
-	data = *(volatile uint32_t *)(m_i2c_base_address + offset);
-	mb();
-	return data;
+	return readl(m_i2c_base_address + offset);
 }
 
 static int poll_for_status_set0(uint16_t status_bit)
@@ -239,7 +236,7 @@ static int i2c_read(uint8_t reg_offset, uint8_t *buffer, uint32_t length)
 			write_cpu_i2c_controller(DW_IC_DATA_CMD, DW_IC_CMD);
 
 		if (poll_for_status_set0(DW_IC_STATUS_RFNE) == 0)
-			buffer[i] = *(uint8_t *) (m_i2c_base_address + DW_IC_DATA_CMD);
+			buffer[i] = readb(m_i2c_base_address + DW_IC_DATA_CMD);
 		else
 			pr_err("Read timeout line %d.\n", __LINE__);
 	}

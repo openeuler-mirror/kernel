@@ -31,8 +31,8 @@ static inline int notify_page_fault(struct pt_regs *regs, unsigned long mmcsr)
 }
 #endif
 
-extern void die_if_kernel(char *, struct pt_regs *, long, unsigned long *);
-extern void dik_show_regs(struct pt_regs *regs, unsigned long *r9_15);
+extern void die_if_kernel(char *, struct pt_regs *, long);
+extern void dik_show_regs(struct pt_regs *regs);
 
 void show_all_vma(void)
 {
@@ -80,7 +80,7 @@ __load_new_mm_context(struct mm_struct *next_mm)
 
 	pcb = &current_thread_info()->pcb;
 	pcb->asn = mmc & HARDWARE_ASN_MASK;
-	pcb->ptbr = ((unsigned long) next_mm->pgd - PAGE_OFFSET) >> PAGE_SHIFT;
+	pcb->ptbr = virt_to_pfn(next_mm->pgd);
 
 	__reload_thread(pcb);
 }
@@ -107,10 +107,6 @@ __load_new_mm_context(struct mm_struct *next_mm)
  * modify them.
  */
 
-/* Macro for exception fixup code to access integer registers.  */
-#define dpf_reg(r)							\
-	(((unsigned long *)regs)[(r) <= 8 ? (r) : (r) <= 15 ? (r)-16 :	\
-				 (r) <= 18 ? (r)+10 : (r)-10])
 unsigned long show_va_to_pa(struct mm_struct *mm, unsigned long addr)
 {
 	pgd_t *pgd = NULL;
@@ -126,7 +122,7 @@ unsigned long show_va_to_pa(struct mm_struct *mm, unsigned long addr)
 		pr_debug("addr = %#lx, pgd = %#lx\n", addr, pgd_val(*pgd));
 		goto out;
 	}
-	p4d = pgd_offset(pgd, addr);
+	p4d = p4d_offset(pgd, addr);
 	if (p4d_none(*p4d)) {
 		ret = 0;
 		pr_debug("addr = %#lx, pgd = %#lx, p4d = %#lx\n",
@@ -150,7 +146,7 @@ unsigned long show_va_to_pa(struct mm_struct *mm, unsigned long addr)
 	}
 	pte = pte_offset_map(pmd, addr);
 	if (pte_present(*pte)) {
-		ret = ((unsigned long)__va(((pte_val(*pte) >> 32)) << PAGE_SHIFT));
+		ret = (unsigned long)pfn_to_virt(pte_val(*pte) >> _PFN_SHIFT);
 		pr_debug("addr = %#lx, pgd = %#lx, pud = %#lx, pmd = %#lx, pte = %#lx, ret = %#lx\n",
 				addr, *(unsigned long *)pgd, *(unsigned long *)pud,
 				*(unsigned long *)pmd, *(unsigned long *)pte, ret);
@@ -294,7 +290,7 @@ good_area:
 	if (fixup != 0) {
 		unsigned long newpc;
 
-		newpc = fixup_exception(dpf_reg, fixup, regs->pc);
+		newpc = fixup_exception(map_regs, fixup, regs->pc);
 		regs->pc = newpc;
 		return;
 	}
@@ -305,7 +301,7 @@ good_area:
 	 */
 	pr_alert("Unable to handle kernel paging request at virtual address %016lx\n",
 	       address);
-	die_if_kernel("Oops", regs, cause, (unsigned long *)regs - 16);
+	die_if_kernel("Oops", regs, cause);
 	do_exit(SIGKILL);
 
 	/*
@@ -336,7 +332,7 @@ good_area:
 	if (unlikely(segv_debug_enabled)) {
 		pr_info("fault: want to send_segv: pid %d, cause = %#lx, mmcsr = %#lx, address = %#lx, pc %#lx\n",
 				current->pid, cause, mmcsr, address, regs->pc);
-		dik_show_regs(regs, (unsigned long *)regs-16);
+		dik_show_regs(regs);
 		show_all_vma();
 	}
 

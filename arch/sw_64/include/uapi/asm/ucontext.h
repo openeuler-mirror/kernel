@@ -1,6 +1,6 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _ASM_SW64_UCONTEXT_H
-#define _ASM_SW64_UCONTEXT_H
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
+#ifndef _UAPI_ASM_SW64_UCONTEXT_H
+#define _UAPI_ASM_SW64_UCONTEXT_H
 
 struct ucontext {
 	unsigned long		uc_flags;
@@ -11,4 +11,4 @@ struct ucontext {
 	sigset_t		uc_sigmask;	/* mask last for extensibility */
 };
 
-#endif /* _ASM_SW64_UCONTEXT_H */
+#endif /* _UAPI_ASM_SW64_UCONTEXT_H */
