@@ -246,16 +246,23 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 	struct sp_group *local = master->local;
 
 	if (!list_empty(&spg->procs) && !(spg->flag & SPG_FLAG_NON_DVPP)) {
-		if (!can_mappings_merge(local->dvpp, spg->dvpp)) {
-			pr_info_ratelimited("address space conflict, id=%d\n", spg->id);
-			return -EINVAL;
-		}
+		/*
+		 * Don't return an error when the mappings' address range conflict.
+		 * As long as the mapping is unused, we can drop the empty mapping.
+		 * This may change the address range for the task or group implicitly,
+		 * give a warn for it.
+		 */
+		bool is_conflict = !can_mappings_merge(local->dvpp, spg->dvpp);
 
-		if (is_mapping_empty(local->dvpp))
+		if (is_mapping_empty(local->dvpp)) {
 			sp_mapping_merge(spg->dvpp, local->dvpp);
-		else if (is_mapping_empty(spg->dvpp))
+			if (is_conflict)
+				pr_warn_ratelimited("task address space conflict, spg_id=%d\n", spg->id);
+		} else if (is_mapping_empty(spg->dvpp)) {
 			sp_mapping_merge(local->dvpp, spg->dvpp);
-		else {
+			if (is_conflict)
+				pr_warn_ratelimited("group address space conflict, spg_id=%d\n", spg->id);
+		} else {
 			pr_info_ratelimited("Duplicate address space, id=%d\n", spg->id);
 			return -EINVAL;
 		}
