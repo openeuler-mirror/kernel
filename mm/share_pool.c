@@ -698,18 +698,23 @@ static void free_new_spg_id(bool new, int spg_id)
 		free_sp_group_id(spg_id);
 }
 
-static void free_sp_group(struct sp_group *spg)
+static void free_sp_group_locked(struct sp_group *spg)
 {
 	fput(spg->file);
 	fput(spg->file_hugetlb);
 	free_spg_stat(spg->id);
-	down_write(&sp_group_sem);
 	idr_remove(&sp_group_idr, spg->id);
-	up_write(&sp_group_sem);
 	free_sp_group_id((unsigned int)spg->id);
 	kfree(spg);
 	system_group_count--;
 	WARN(system_group_count < 0, "unexpected group count\n");
+}
+
+static void free_sp_group(struct sp_group *spg)
+{
+	down_write(&sp_group_sem);
+	free_sp_group_locked(spg);
+	up_write(&sp_group_sem);
 }
 
 static void sp_group_drop(struct sp_group *spg)
@@ -4473,14 +4478,15 @@ void sp_group_post_exit(struct mm_struct *mm)
 		sp_proc_stat_drop(stat);
 	}
 
-	/* lockless traverse */
+	down_write(&sp_group_sem);
 	list_for_each_entry_safe(spg_node, tmp, &master->node_list, group_node) {
 		spg = spg_node->spg;
 		/* match with refcount inc in sp_group_add_task */
-		sp_group_drop(spg);
+		if (atomic_dec_and_test(&spg->use_count))
+			free_sp_group_locked(spg);
 		kfree(spg_node);
 	}
-
+	up_write(&sp_group_sem);
 	kfree(master);
 }
 
