@@ -3604,6 +3604,17 @@ static void hisi_qm_set_state(struct hisi_qm *qm, enum vf_state state)
 		writel(state, qm->io_base + QM_VF_STATE);
 }
 
+static void qm_last_regs_uninit(struct hisi_qm *qm)
+{
+	struct qm_debug *debug = &qm->debug;
+
+	if (qm->fun_type == QM_HW_VF || !debug->qm_last_words)
+		return;
+
+	kfree(debug->qm_last_words);
+	debug->qm_last_words = NULL;
+}
+
 static void hisi_qm_pre_init(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
@@ -3684,6 +3695,8 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
 	struct device *dev = &pdev->dev;
+
+	qm_last_regs_uninit(qm);
 
 	qm_cmd_uninit(qm);
 	kfree(qm->factor);
@@ -5364,6 +5377,24 @@ static int qm_controller_reset_done(struct hisi_qm *qm)
 	return 0;
 }
 
+static void qm_show_last_dfx_regs(struct hisi_qm *qm)
+{
+	struct qm_debug *debug = &qm->debug;
+	struct pci_dev *pdev = qm->pdev;
+	u32 val;
+	int i;
+
+	if (qm->fun_type == QM_HW_VF || !debug->qm_last_words)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(qm_dfx_regs); i++) {
+		val = readl_relaxed(qm->io_base + qm_dfx_regs[i].offset);
+		if (debug->qm_last_words[i] != val)
+			pci_info(pdev, "%s \t= 0x%08x => 0x%08x\n",
+			qm_dfx_regs[i].name, debug->qm_last_words[i], val);
+	}
+}
+
 static int qm_controller_reset(struct hisi_qm *qm)
 {
 	struct pci_dev *pdev = qm->pdev;
@@ -5378,6 +5409,10 @@ static int qm_controller_reset(struct hisi_qm *qm)
 		clear_bit(QM_RST_SCHED, &qm->misc_ctl);
 		return ret;
 	}
+
+	qm_show_last_dfx_regs(qm);
+	if (qm->err_ini->show_last_dfx_regs)
+		qm->err_ini->show_last_dfx_regs(qm);
 
 	ret = qm_soft_reset(qm);
 	if (ret) {
@@ -6091,6 +6126,26 @@ err_alloc_qdma:
 	return ret;
 }
 
+static void qm_last_regs_init(struct hisi_qm *qm)
+{
+	int dfx_regs_num = ARRAY_SIZE(qm_dfx_regs);
+	struct qm_debug *debug = &qm->debug;
+	int i;
+
+	if (qm->fun_type == QM_HW_VF)
+		return;
+
+	debug->qm_last_words = kcalloc(dfx_regs_num, sizeof(unsigned int),
+								GFP_KERNEL);
+	if (!debug->qm_last_words)
+		return;
+
+	for (i = 0; i < dfx_regs_num; i++) {
+		debug->qm_last_words[i] = readl_relaxed(qm->io_base +
+			qm_dfx_regs[i].offset);
+	}
+}
+
 /**
  * hisi_qm_init() - Initialize configures about qm.
  * @qm: The qm needing init.
@@ -6142,6 +6197,8 @@ int hisi_qm_init(struct hisi_qm *qm)
 	hisi_qm_init_work(qm);
 	qm_cmd_init(qm);
 	atomic_set(&qm->status.flags, QM_INIT);
+
+	qm_last_regs_init(qm);
 
 	return 0;
 
