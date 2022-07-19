@@ -507,10 +507,6 @@ static inline struct sp_proc_stat *sp_get_proc_stat_ref(struct mm_struct *mm)
 	return NULL;
 }
 
-static inline void sp_proc_stat_drop(struct sp_proc_stat *stat)
-{
-}
-
 static inline void spa_overview_show(struct seq_file *seq)
 {
 }
