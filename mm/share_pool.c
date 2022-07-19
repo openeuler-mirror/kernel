@@ -855,7 +855,7 @@ static inline bool check_aoscore_process(struct task_struct *tsk)
 
 static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 			     struct sp_area *spa, unsigned long *populate,
-			     unsigned long prot);
+			     unsigned long prot, struct vm_area_struct **pvma);
 static void sp_munmap(struct mm_struct *mm, unsigned long addr, unsigned long size);
 
 #define K2U_NORMAL	0
@@ -1504,7 +1504,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 			break;
 		}
 
-		addr = sp_mmap(mm, file, spa, &populate, prot);
+		addr = sp_mmap(mm, file, spa, &populate, prot, NULL);
 		if (IS_ERR_VALUE(addr)) {
 			sp_munmap_task_areas(mm, spg, &spa->link);
 			up_write(&mm->mmap_lock);
@@ -2034,8 +2034,6 @@ static void __sp_area_drop(struct sp_area *spa)
 
 void sp_area_drop(struct vm_area_struct *vma)
 {
-	struct sp_area *spa;
-
 	if (!(vma->vm_flags & VM_SHARE_POOL))
 		return;
 
@@ -2047,8 +2045,7 @@ void sp_area_drop(struct vm_area_struct *vma)
 	 * an atomic operation.
 	 */
 	spin_lock(&sp_area_lock);
-	spa = __find_sp_area_locked(vma->vm_mm->sp_group_master->local, vma->vm_start);
-	__sp_area_drop_locked(spa);
+	__sp_area_drop_locked(vma->vm_private_data);
 	spin_unlock(&sp_area_lock);
 }
 
@@ -2315,7 +2312,7 @@ EXPORT_SYMBOL_GPL(mg_sp_free);
 /* wrapper of __do_mmap() and the caller must hold down_write(&mm->mmap_lock). */
 static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 			     struct sp_area *spa, unsigned long *populate,
-			     unsigned long prot)
+			     unsigned long prot, struct vm_area_struct **pvma)
 {
 	unsigned long addr = spa->va_start;
 	unsigned long size = spa_size(spa);
@@ -2323,6 +2320,7 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 			      MAP_SHARE_POOL;
 	unsigned long vm_flags = VM_NORESERVE | VM_SHARE_POOL | VM_DONTCOPY;
 	unsigned long pgoff = addr_offset(spa) >> PAGE_SHIFT;
+	struct vm_area_struct *vma;
 
 	/* Mark the mapped region to be locked. After the MAP_LOCKED is enable,
 	 * multiple tasks will preempt resources, causing performance loss.
@@ -2338,7 +2336,12 @@ static unsigned long sp_mmap(struct mm_struct *mm, struct file *file,
 		pr_err("do_mmap fails %ld\n", addr);
 	} else {
 		BUG_ON(addr != spa->va_start);
+		vma = find_vma(mm, addr);
+		vma->vm_private_data = spa;
+		if (pvma)
+			*pvma = vma;
 	}
+
 
 	return addr;
 }
@@ -2484,7 +2487,6 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 	unsigned long mmap_addr;
 	/* pass through default permission */
 	unsigned long prot = PROT_READ | PROT_WRITE;
-	unsigned long sp_addr = spa->va_start;
 	unsigned long populate = 0;
 	struct vm_area_struct *vma;
 
@@ -2503,7 +2505,7 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 		prot = PROT_READ;
 
 	/* when success, mmap_addr == spa->va_start */
-	mmap_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
+	mmap_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot, &vma);
 	if (IS_ERR_VALUE(mmap_addr)) {
 		up_write(&mm->mmap_lock);
 		sp_alloc_unmap(mm, spa, spg_node);
@@ -2518,14 +2520,6 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 		goto unmap;
 	}
 	ac->populate = populate;
-
-	vma = find_vma(mm, sp_addr);
-	if (unlikely(!vma)) {
-		up_write(&mm->mmap_lock);
-		WARN(1, "allocation failed, can't find %lx vma\n", sp_addr);
-		ret = -EINVAL;
-		goto unmap;
-	}
 
 	if (ac->sp_flags & SP_PROT_RO)
 		vma->vm_flags &= ~VM_MAYWRITE;
@@ -2825,15 +2819,12 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	if (kc && kc->sp_flags & SP_PROT_RO)
 		prot = PROT_READ;
 
-	ret_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
+	ret_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot, &vma);
 	if (IS_ERR_VALUE(ret_addr)) {
 		pr_debug("k2u mmap failed %lx\n", ret_addr);
 		goto put_mm;
 	}
-	BUG_ON(ret_addr != spa->va_start);
 
-	vma = find_vma(mm, ret_addr);
-	BUG_ON(vma == NULL);
 	if (prot & PROT_WRITE)
 		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
 
@@ -3876,12 +3867,9 @@ int sp_node_id(struct vm_area_struct *vma)
 	if (!sp_is_enabled())
 		return node_id;
 
-	if (vma && vma->vm_flags & VM_SHARE_POOL) {
-		spa = __find_sp_area(vma->vm_mm->sp_group_master->local, vma->vm_start);
-		if (spa) {
-			node_id = spa->node_id;
-			__sp_area_drop(spa);
-		}
+	if (vma && vma->vm_flags & VM_SHARE_POOL && vma->vm_private_data) {
+		spa = vma->vm_private_data;
+		node_id = spa->node_id;
 	}
 
 	return node_id;
@@ -4456,13 +4444,12 @@ vm_fault_t sharepool_no_page(struct mm_struct *mm,
 	int node_id;
 	struct sp_area *spa;
 
-	spa = __find_sp_area(mm->sp_group_master->local, vma->vm_start);
+	spa = vma->vm_private_data;
 	if (!spa) {
 		pr_err("share pool: vma is invalid, not from sp mmap\n");
 		return ret;
 	}
 	node_id = spa->node_id;
-	__sp_area_drop(spa);
 
 retry:
 	page = find_lock_page(mapping, idx);
