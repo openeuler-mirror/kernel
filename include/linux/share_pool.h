@@ -284,6 +284,9 @@ extern bool mg_is_sharepool_addr(unsigned long addr);
 extern int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id);
 extern int sp_group_add_task(int pid, int spg_id);
 
+extern int sp_id_of_current(void);
+extern int mg_sp_id_of_current(void);
+
 extern void sp_area_drop(struct vm_area_struct *vma);
 extern int sp_group_exit(struct mm_struct *mm);
 extern void sp_group_post_exit(struct mm_struct *mm);
@@ -431,6 +434,15 @@ static inline int mg_sp_unshare(unsigned long va, unsigned long size)
 	return -EPERM;
 }
 
+static inline int sp_id_of_current(void)
+{
+	return -EPERM;
+}
+
+static inline int mg_sp_id_of_current(void)
+{
+	return -EPERM;
+}
 
 static inline void sp_init_mm(struct mm_struct *mm)
 {

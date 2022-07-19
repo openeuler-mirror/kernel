@@ -1734,6 +1734,43 @@ int sp_group_del_task(int pid, int spg_id)
 }
 EXPORT_SYMBOL_GPL(sp_group_del_task);
 
+int sp_id_of_current(void)
+{
+	int ret, spg_id;
+	struct sp_group_master *master;
+
+	if (current->flags & PF_KTHREAD || !current->mm)
+		return -EINVAL;
+
+	down_read(&sp_group_sem);
+	master = current->mm->sp_group_master;
+	if (master && master->local) {
+		spg_id = master->local->id;
+		up_read(&sp_group_sem);
+		return spg_id;
+	}
+	up_read(&sp_group_sem);
+
+	down_write(&sp_group_sem);
+	ret = sp_mapping_group_setup_local(current->mm);
+	if (ret) {
+		up_write(&sp_group_sem);
+		return ret;
+	}
+	master = current->mm->sp_group_master;
+	spg_id = master->local->id;
+	up_write(&sp_group_sem);
+
+	return spg_id;
+}
+EXPORT_SYMBOL_GPL(sp_id_of_current);
+
+int mg_sp_id_of_current(void)
+{
+	return sp_id_of_current();
+}
+EXPORT_SYMBOL_GPL(mg_sp_id_of_current);
+
 /* the caller must hold sp_area_lock */
 static void __insert_sp_area(struct sp_area *spa)
 {
