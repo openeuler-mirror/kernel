@@ -1283,7 +1283,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 	node = create_spg_node(mm, prot, spg);
 	if (unlikely(IS_ERR(node))) {
 		ret = PTR_ERR(node);
-		goto out_drop_spg_node;
+		goto out_drop_group;
 	}
 
 	/* per process statistics initialization */
