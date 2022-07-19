@@ -315,6 +315,11 @@ static int pgp_key_parse(struct key_preparsed_payload *prep)
 	if (ret < 0)
 		goto error;
 
+	if (!ctx.fingerprint) {
+		ret = -EINVAL;
+		goto error;
+	}
+
 	if (ctx.user_id && ctx.user_id_len > 0) {
 		/* Propose a description for the key
 		 * (user ID without the comment)
