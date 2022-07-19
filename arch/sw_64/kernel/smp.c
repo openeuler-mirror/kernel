@@ -59,29 +59,6 @@ EXPORT_SYMBOL(smp_num_cpus);
 #define send_sleep_interrupt(cpu)	send_ipi((cpu), II_SLEEP)
 #define send_wakeup_interrupt(cpu)	send_ipi((cpu), II_WAKE)
 
-/*
- * Called by both boot and secondaries to move global data into
- *  per-processor storage.
- */
-static inline void __init
-smp_store_cpu_info(int cpuid)
-{
-	cpu_data[cpuid].loops_per_jiffy = loops_per_jiffy;
-	cpu_data[cpuid].last_asn = ASN_FIRST_VERSION;
-	cpu_data[cpuid].need_new_asn = 0;
-	cpu_data[cpuid].asn_lock = 0;
-}
-
-/*
- * Ideally sets up per-cpu profiling hooks.  Doesn't do much now...
- */
-static inline void __init
-smp_setup_percpu_timer(int cpuid)
-{
-	setup_timer();
-	cpu_data[cpuid].prof_counter = 1;
-	cpu_data[cpuid].prof_multiplier = 1;
-}
 
 static void __init wait_boot_cpu_to_stop(int cpuid)
 {
@@ -128,7 +105,7 @@ void smp_callin(void)
 	wrent(entInt, 0);
 
 	/* Get our local ticker going. */
-	smp_setup_percpu_timer(cpuid);
+	setup_timer();
 
 	/* All kernel threads share the same mm context.  */
 	mmgrab(&init_mm);
@@ -298,7 +275,7 @@ void __init setup_smp(void)
 			__cpu_to_rcid[num] = i;
 			__rcid_to_cpu[i] = num;
 			set_cpu_possible(num, true);
-			smp_store_cpu_info(num);
+			store_cpu_data(num);
 			if (!cpumask_test_cpu(i, &cpu_offline))
 				set_cpu_present(num, true);
 			num++;

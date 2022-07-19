@@ -60,12 +60,7 @@ __reload_thread(struct pcb_struct *pcb)
  */
 
 #include <asm/hw_init.h>
-#ifdef CONFIG_SMP
 #define cpu_last_asn(cpuid)	(cpu_data[cpuid].last_asn)
-#else
-extern unsigned long last_asn;
-#define cpu_last_asn(cpuid)	last_asn
-#endif /* CONFIG_SMP */
 
 #define ASN_FIRST_VERSION	(1UL << WIDTH_HARDWARE_ASN)
 #define HARDWARE_ASN_MASK	((1UL << WIDTH_HARDWARE_ASN) - 1)

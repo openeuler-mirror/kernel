@@ -23,11 +23,6 @@ struct cpuinfo_sw64 {
 	int need_new_asn;
 	int asn_lock;
 	unsigned long ipi_count;
-	unsigned long prof_multiplier;
-	unsigned long prof_counter;
-	unsigned char mcheck_expected;
-	unsigned char mcheck_taken;
-	unsigned char mcheck_extra;
 	struct cache_desc icache; /* Primary I-cache */
 	struct cache_desc dcache; /* Primary D or combined I/D cache */
 	struct cache_desc scache; /* Secondary cache */
@@ -73,6 +68,8 @@ struct memmap_entry {
 };
 
 extern struct cpuinfo_sw64 cpu_data[NR_CPUS];
+extern void store_cpu_data(int cpu);
+
 extern struct cpu_desc_t cpu_desc;
 extern struct socket_desc_t socket_desc[MAX_NUMSOCKETS];
 extern int memmap_nr;
