@@ -147,8 +147,8 @@ static void sp_mapping_range_init(struct sp_mapping *spm)
 
 		if (!is_sp_dev_addr_enabled(i)) {
 			spm->start[i] = MMAP_SHARE_POOL_16G_START +
-				i * MMAP_SHARE_POOL_16G_START;
-			spm->end[i] = spm->start[i] + MMAP_SHARE_POOL_16G_START;
+				i * MMAP_SHARE_POOL_16G_SIZE;
+			spm->end[i] = spm->start[i] + MMAP_SHARE_POOL_16G_SIZE;
 		} else {
 			spm->start[i] = sp_dev_va_start[i];
 			spm->end[i] = spm->start[i] + sp_dev_va_size[i];
@@ -172,10 +172,91 @@ static struct sp_mapping *sp_mapping_create(unsigned long flag)
 	return spm;
 }
 
+static void sp_mapping_destroy(struct sp_mapping *spm)
+{
+	kfree(spm);
+}
+
+static void sp_mapping_attach(struct sp_group *spg, struct sp_mapping *spm)
+{
+	atomic_inc(&spm->user);
+	if (spm->flag & SP_MAPPING_DVPP)
+		spg->dvpp = spm;
+	else if (spm->flag & SP_MAPPING_NORMAL)
+		spg->normal = spm;
+}
+
+static void sp_mapping_detach(struct sp_group *spg, struct sp_mapping *spm)
+{
+	if (spm && atomic_dec_and_test(&spm->user))
+		sp_mapping_destroy(spm);
+}
+
+/*
+ * When you set the address space of a group, the normal address space
+ * is globally unified. When processing the DVPP address space, consider
+ * the following situations:
+ * 1. If a process is added to a non-new group, the DVPP address space
+ *    must have been created. If the local group of the process also
+ *    contains the DVPP address space and they are different, this
+ *    scenario is not allowed to avoid address conflict.
+ * 2. If the DVPP address space does not exist in the local group of the
+ *    process, attach the local group of the process to the DVPP address
+ *    space of the group.
+ * 3. Add a new group. If the process has applied for the dvpp address
+ *    space (sp_alloc or k2u), attach the new group to the dvpp address
+ *    space of the current process.
+ * 4. If the process has not applied for the DVPP address space, attach
+ *    the new group and the local group of the current process to the
+ *     newly created DVPP address space.
+ *
+ * the caller must hold sp_group_sem
+ */
+static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
+{
+	struct sp_group_master *master = mm->sp_group_master;
+	struct sp_group *local = master->local;
+	struct sp_mapping *spm;
+
+	if (!list_empty(&spg->procs)) {
+		/* 1 */
+		if (local->dvpp && local->dvpp != spg->dvpp) {
+			pr_info_ratelimited("Duplicate address space, id=%d\n",
+					spg->id);
+			return 0;
+		}
+
+		/* 2 */
+		if (!local->dvpp) {
+			sp_mapping_attach(local, spg->dvpp);
+			sp_mapping_attach(local, spg->normal);
+		}
+	} else {
+		/* 4 */
+		if (!local->dvpp) {
+			spm = sp_mapping_create(SP_MAPPING_DVPP);
+			if (IS_ERR(spm))
+				return PTR_ERR(spm);
+			sp_mapping_attach(local, spm);
+			sp_mapping_attach(local, sp_mapping_normal);
+		}
+
+		/* 3 */
+		sp_mapping_attach(spg, local->dvpp);
+		sp_mapping_attach(spg, sp_mapping_normal);
+	}
+
+	return 0;
+}
+
+static struct sp_group *create_spg(int spg_id);
+static void free_new_spg_id(bool new, int spg_id);
 /* The caller must hold sp_group_sem */
 static struct sp_group_master *sp_init_group_master_locked(
 	struct mm_struct *mm, bool *exist)
 {
+	int spg_id;
+	struct sp_group *spg;
 	struct sp_group_master *master = mm->sp_group_master;
 
 	if (master) {
@@ -187,14 +268,90 @@ static struct sp_group_master *sp_init_group_master_locked(
 	if (master == NULL)
 		return ERR_PTR(-ENOMEM);
 
+	spg_id = ida_alloc_range(&sp_group_id_ida, SPG_ID_LOCAL_MIN,
+				 SPG_ID_LOCAL_MAX, GFP_ATOMIC);
+	if (spg_id < 0) {
+		kfree(master);
+		pr_err_ratelimited("generate local group id failed %d\n", spg_id);
+		return ERR_PTR(spg_id);
+	}
+
+	spg = create_spg(spg_id);
+	if (IS_ERR(spg)) {
+		free_new_spg_id(true, spg_id);
+		kfree(master);
+		return (struct sp_group_master *)spg;
+	}
+
 	INIT_LIST_HEAD(&master->node_list);
 	master->count = 0;
 	master->stat = NULL;
 	master->mm = mm;
+	master->local = spg;
 	mm->sp_group_master = master;
 
 	*exist = false;
 	return master;
+}
+
+static inline bool is_local_group(int spg_id)
+{
+	return spg_id >= SPG_ID_LOCAL_MIN && spg_id <= SPG_ID_LOCAL_MAX;
+}
+
+/*
+ * If the process is added to a group first, the address space of the local
+ * group of the process must have been set. If the process is not added to
+ * a group, directly create or attach the process to the corresponding DVPP
+ * and normal address space.
+ */
+static int sp_mapping_group_setup_local(struct mm_struct *mm)
+{
+	struct sp_group_master *master;
+	struct sp_mapping *spm;
+	bool exist = false;
+
+	master = sp_init_group_master_locked(mm, &exist);
+	if (IS_ERR(master))
+		return PTR_ERR(master);
+
+	if (master->local->dvpp)
+		return 0;
+
+	spm = sp_mapping_create(SP_MAPPING_DVPP);
+	if (IS_ERR(spm))
+		return PTR_ERR(spm);
+	sp_mapping_attach(master->local, spm);
+	sp_mapping_attach(master->local, sp_mapping_normal);
+
+	return 0;
+}
+
+static struct sp_group *sp_get_local_group(struct mm_struct *mm)
+{
+	int ret;
+	struct sp_group_master *master;
+
+	down_read(&sp_group_sem);
+	master = mm->sp_group_master;
+	if (master && master->local) {
+		atomic_inc(&master->local->use_count);
+		up_read(&sp_group_sem);
+		return master->local;
+	}
+	up_read(&sp_group_sem);
+
+	down_write(&sp_group_sem);
+	ret = sp_mapping_group_setup_local(mm);
+	if (ret) {
+		up_write(&sp_group_sem);
+		return ERR_PTR(ret);
+	}
+	master = mm->sp_group_master;
+	atomic_inc(&master->local->use_count);
+	up_write(&sp_group_sem);
+
+	return master->local;
 }
 
 static struct sp_proc_stat *sp_get_proc_stat(struct mm_struct *mm)
@@ -580,7 +737,7 @@ static void spa_inc_usage(struct sp_area *spa)
 	case SPA_TYPE_K2TASK:
 		spa_stat.k2u_task_num += 1;
 		spa_stat.k2u_task_size += size;
-		update_spg_stat_k2u(size, true, spg_none->stat);
+		update_spg_stat_k2u(size, true, spa->spg->stat);
 		break;
 	case SPA_TYPE_K2SPG:
 		spa_stat.k2u_spg_num += 1;
@@ -603,7 +760,7 @@ static void spa_inc_usage(struct sp_area *spa)
 	spa_stat.total_num += 1;
 	spa_stat.total_size += size;
 
-	if (spa->spg != spg_none) {
+	if (!is_local_group(spa->spg->id)) {
 		atomic_inc(&sp_overall_stat.spa_total_num);
 		atomic64_add(size, &sp_overall_stat.spa_total_size);
 	}
@@ -626,7 +783,7 @@ static void spa_dec_usage(struct sp_area *spa)
 	case SPA_TYPE_K2TASK:
 		spa_stat.k2u_task_num -= 1;
 		spa_stat.k2u_task_size -= size;
-		update_spg_stat_k2u(size, false, spg_none->stat);
+		update_spg_stat_k2u(size, false, spa->spg->stat);
 		break;
 	case SPA_TYPE_K2SPG:
 		spa_stat.k2u_spg_num -= 1;
@@ -645,7 +802,7 @@ static void spa_dec_usage(struct sp_area *spa)
 	spa_stat.total_num -= 1;
 	spa_stat.total_size -= size;
 
-	if (spa->spg != spg_none) {
+	if (!is_local_group(spa->spg->id)) {
 		atomic_dec(&sp_overall_stat.spa_total_num);
 		atomic64_sub(spa->real_size, &sp_overall_stat.spa_total_size);
 	}
@@ -730,7 +887,8 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 static void free_sp_group_id(int spg_id)
 {
 	/* ida operation is protected by an internal spin_lock */
-	if (spg_id >= SPG_ID_AUTO_MIN && spg_id <= SPG_ID_AUTO_MAX)
+	if ((spg_id >= SPG_ID_AUTO_MIN && spg_id <= SPG_ID_AUTO_MAX) ||
+	    (spg_id >= SPG_ID_LOCAL_MIN && spg_id <= SPG_ID_LOCAL_MAX))
 		ida_free(&sp_group_id_ida, spg_id);
 }
 
@@ -747,8 +905,11 @@ static void free_sp_group_locked(struct sp_group *spg)
 	free_spg_stat(spg->id);
 	idr_remove(&sp_group_idr, spg->id);
 	free_sp_group_id((unsigned int)spg->id);
+	sp_mapping_detach(spg, spg->dvpp);
+	sp_mapping_detach(spg, spg->normal);
+	if (!is_local_group(spg->id))
+		system_group_count--;
 	kfree(spg);
-	system_group_count--;
 	WARN(system_group_count < 0, "unexpected group count\n");
 }
 
@@ -981,7 +1142,8 @@ static struct sp_group *create_spg(int spg_id)
 	struct user_struct *user = NULL;
 	int hsize_log = MAP_HUGE_2MB >> MAP_HUGE_SHIFT;
 
-	if (unlikely(system_group_count + 1 == MAX_GROUP_FOR_SYSTEM)) {
+	if (unlikely(system_group_count + 1 == MAX_GROUP_FOR_SYSTEM &&
+		     !is_local_group(spg_id))) {
 		pr_err_ratelimited("reach system max group num\n");
 		return ERR_PTR(-ENOSPC);
 	}
@@ -1028,7 +1190,8 @@ static struct sp_group *create_spg(int spg_id)
 	if (ret < 0)
 		goto out_fput_all;
 
-	system_group_count++;
+	if (!is_local_group(spg_id))
+		system_group_count++;
 	return spg;
 
 out_fput_all:
@@ -1308,6 +1471,10 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 	}
 
 	ret = mm_add_group_init(mm, spg);
+	if (ret)
+		goto out_drop_group;
+
+	ret = sp_mapping_group_setup(mm, spg);
 	if (ret)
 		goto out_drop_group;
 
@@ -1592,7 +1759,6 @@ static void __insert_sp_area(struct sp_area *spa)
 
 /* The sp_area cache globals are protected by sp_area_lock */
 static struct rb_node *free_sp_area_cache;
-static unsigned long cached_hole_size;
 static unsigned long cached_vstart;  /* affected by SP_DVPP and sp_config_dvpp_range() */
 
 /**
@@ -1611,11 +1777,12 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 {
 	struct sp_area *spa, *first, *err;
 	struct rb_node *n;
-	unsigned long vstart = MMAP_SHARE_POOL_START;
-	unsigned long vend = MMAP_SHARE_POOL_16G_START;
+	unsigned long vstart;
+	unsigned long vend;
 	unsigned long addr;
 	unsigned long size_align = ALIGN(size, PMD_SIZE); /* va aligned to 2M */
 	int device_id, node_id;
+	struct sp_mapping *mapping;
 
 	device_id = sp_flags_device_id(flags);
 	node_id = flags & SP_SPEC_NODE_ID ? sp_flags_node_id(flags) : device_id;
@@ -1625,17 +1792,13 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 		return ERR_PTR(-EINVAL);
 	}
 
-	if ((flags & SP_DVPP)) {
-		if (!is_sp_dev_addr_enabled(device_id)) {
-			vstart = MMAP_SHARE_POOL_16G_START +
-				device_id * MMAP_SHARE_POOL_16G_SIZE;
-			vend = vstart + MMAP_SHARE_POOL_16G_SIZE;
-		} else {
-			vstart = sp_dev_va_start[device_id];
-			vend = vstart + sp_dev_va_size[device_id];
-		}
-	}
+	if (flags & SP_DVPP)
+		mapping = spg->dvpp;
+	else
+		mapping = spg->normal;
 
+	vstart = mapping->start[device_id];
+	vend = mapping->end[device_id];
 	spa = __kmalloc_node(sizeof(struct sp_area), GFP_KERNEL, node_id);
 	if (unlikely(!spa))
 		return ERR_PTR(-ENOMEM);
@@ -1651,18 +1814,18 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 	 * Note that sp_free_area may update free_sp_area_cache
 	 * without updating cached_hole_size.
 	 */
-	if (!free_sp_area_cache || size_align < cached_hole_size ||
-	    vstart != cached_vstart) {
-		cached_hole_size = 0;
-		free_sp_area_cache = NULL;
+	if (!mapping->free_area_cache || size_align < mapping->cached_hole_size ||
+	    vstart != mapping->cached_vstart) {
+		mapping->cached_hole_size = 0;
+		mapping->free_area_cache = NULL;
 	}
 
 	/* record if we encounter less permissive parameters */
-	cached_vstart = vstart;
+	mapping->cached_vstart = vstart;
 
 	/* find starting point for our search */
-	if (free_sp_area_cache) {
-		first = rb_entry(free_sp_area_cache, struct sp_area, rb_node);
+	if (mapping->free_area_cache) {
+		first = rb_entry(mapping->free_area_cache, struct sp_area, rb_node);
 		addr = first->va_end;
 		if (addr + size_align < addr) {
 			err = ERR_PTR(-EOVERFLOW);
@@ -1675,7 +1838,7 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 			goto error;
 		}
 
-		n = sp_area_root.rb_node;
+		n = mapping->area_root.rb_node;
 		first = NULL;
 
 		while (n) {
@@ -1697,8 +1860,8 @@ static struct sp_area *sp_alloc_area(unsigned long size, unsigned long flags,
 
 	/* from the starting point, traverse areas until a suitable hole is found */
 	while (addr + size_align > first->va_start && addr + size_align <= vend) {
-		if (addr + cached_hole_size < first->va_start)
-			cached_hole_size = first->va_start - addr;
+		if (addr + mapping->cached_hole_size < first->va_start)
+			mapping->cached_hole_size = first->va_start - addr;
 		addr = first->va_end;
 		if (addr + size_align < addr) {
 			err = ERR_PTR(-EOVERFLOW);
@@ -1736,9 +1899,8 @@ found:
 
 	spa_inc_usage(spa);
 	__insert_sp_area(spa);
-	free_sp_area_cache = &spa->rb_node;
-	if (spa->spg != spg_none)
-		list_add_tail(&spa->link, &spg->spa_list);
+	mapping->free_area_cache = &spa->rb_node;
+	list_add_tail(&spa->link, &spg->spa_list);
 
 	spin_unlock(&sp_area_lock);
 
@@ -1829,8 +1991,7 @@ static void sp_free_area(struct sp_area *spa)
 		pr_debug("clear spa->kva %ld is not valid\n", spa->kva);
 
 	spa_dec_usage(spa);
-	if (spa->spg != spg_none)
-		list_del(&spa->link);
+	list_del(&spa->link);
 
 	rb_erase(&spa->rb_node, &sp_area_root);
 	RB_CLEAR_NODE(&spa->rb_node);
@@ -1990,7 +2151,7 @@ static void sp_fallocate(struct sp_area *spa)
 
 static void sp_free_unmap_fallocate(struct sp_area *spa)
 {
-	if (spa->spg != spg_none) {
+	if (!is_local_group(spa->spg->id)) {
 		down_read(&spa->spg->rw_lock);
 		__sp_free(spa->spg, spa->va_start, spa_size(spa), NULL);
 		sp_fallocate(spa);
@@ -2195,7 +2356,6 @@ static void trace_sp_alloc_begin(struct sp_alloc_context *ac)
 static void trace_sp_alloc_finish(struct sp_alloc_context *ac, unsigned long va)
 {
 	unsigned long cost;
-	bool is_pass_through = ac->spg == spg_none ? true : false;
 
 	if (!sysctl_sp_perf_alloc)
 		return;
@@ -2207,7 +2367,8 @@ static void trace_sp_alloc_finish(struct sp_alloc_context *ac, unsigned long va)
 	if (cost >= (unsigned long)sysctl_sp_perf_alloc) {
 		pr_err("Task %s(%d/%d) sp_alloc returns 0x%lx consumes %luus, size is %luKB, size_aligned is %luKB, sp_flags is %lx, pass through is %d\n",
 		       current->comm, current->tgid, current->pid,
-		       va, cost, byte2kb(ac->size), byte2kb(ac->size_aligned), ac->sp_flags, is_pass_through);
+		       va, cost, byte2kb(ac->size), byte2kb(ac->size_aligned), ac->sp_flags,
+		       is_local_group(ac->spg->id));
 	}
 }
 
@@ -2265,7 +2426,9 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 			return -ENODEV;
 		}
 	} else {  /* alocation pass through scene */
-		spg = spg_none;
+		spg = sp_get_local_group(current->mm);
+		if (IS_ERR(spg))
+			return PTR_ERR(spg);
 	}
 
 	if (sp_flags & SP_HUGEPAGE) {
@@ -2288,7 +2451,7 @@ static int sp_alloc_prepare(unsigned long size, unsigned long sp_flags,
 static void sp_alloc_unmap(struct mm_struct *mm, struct sp_area *spa,
 	struct sp_group_node *spg_node)
 {
-	if (spa->spg != spg_none)
+	if (!is_local_group(spa->spg->id))
 		__sp_free(spa->spg, spa->va_start, spa->real_size, mm);
 }
 
@@ -2353,7 +2516,7 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 	return ret;
 
 unmap:
-	if (spa->spg != spg_none)
+	if (!is_local_group(spa->spg->id))
 		sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
 	else
 		sp_munmap(mm, spa->va_start, spa->real_size);
@@ -2456,7 +2619,7 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 	ret = sp_alloc_populate(mm, spa, ac);
 	if (ret) {
 err:
-		if (spa->spg != spg_none)
+		if (!is_local_group(spa->spg->id))
 			sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
 		else
 			sp_munmap(mm, spa->va_start, spa->real_size);
@@ -2482,7 +2645,7 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 	struct mm_struct *mm;
 	struct sp_group_node *spg_node;
 
-	if (spa->spg == spg_none) {
+	if (is_local_group(spa->spg->id)) {
 		ret = __sp_alloc_mmap_populate(current->mm, spa, NULL, ac);
 	} else {
 		/* create mapping for each process in the group */
@@ -2506,10 +2669,9 @@ static void sp_alloc_finish(int result, struct sp_area *spa,
 	struct sp_alloc_context *ac)
 {
 	struct sp_group *spg = ac->spg;
-	bool is_pass_through = spg == spg_none ? true : false;
 
-	/* match sp_alloc_check_prepare */
-	if (!is_pass_through)
+	/* match sp_alloc_prepare */
+	if (!is_local_group(spg->id))
 		up_read(&spg->rw_lock);
 
 	if (!result)
@@ -2521,9 +2683,7 @@ static void sp_alloc_finish(int result, struct sp_area *spa,
 		trace_sp_alloc_finish(ac, spa->va_start);
 	}
 
-	if (!is_pass_through)
-		sp_group_drop(spg);
-
+	sp_group_drop(spg);
 	sp_dump_stack();
 	sp_try_to_compact();
 }
@@ -2705,22 +2865,33 @@ put_mm:
  */
 static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, unsigned long sp_flags)
 {
+	int ret;
 	void *uva;
 	struct sp_area *spa;
 	struct spg_proc_stat *stat;
 	unsigned long prot = PROT_READ | PROT_WRITE;
 	struct sp_k2u_context kc;
+	struct sp_group *spg;
 
 	down_write(&sp_group_sem);
-	stat = sp_init_process_stat(current, current->mm, spg_none);
-	up_write(&sp_group_sem);
+	ret = sp_mapping_group_setup_local(current->mm);
+	if (ret) {
+		up_write(&sp_group_sem);
+		pr_err_ratelimited("k2u_task init local mapping failed %d\n", ret);
+		return ERR_PTR(ret);
+	}
+
+	spg = current->mm->sp_group_master->local;
+	stat = sp_init_process_stat(current, current->mm, spg);
 	if (IS_ERR(stat)) {
+		up_write(&sp_group_sem);
 		pr_err_ratelimited("k2u_task init process stat failed %lx\n",
 				PTR_ERR(stat));
 		return stat;
 	}
+	up_write(&sp_group_sem);
 
-	spa = sp_alloc_area(size, sp_flags, spg_none, SPA_TYPE_K2TASK, current->tgid);
+	spa = sp_alloc_area(size, sp_flags, spg, SPA_TYPE_K2TASK, current->tgid);
 	if (IS_ERR(spa)) {
 		pr_err_ratelimited("alloc spa failed in k2u_task (potential no enough virtual memory when -75): %ld\n",
 				PTR_ERR(spa));
@@ -3916,7 +4087,7 @@ static void rb_spa_stat_show(struct seq_file *seq)
 		atomic_inc(&spa->use_count);
 		spin_unlock(&sp_area_lock);
 
-		if (spa->spg == spg_none)  /* k2u to task */
+		if (is_local_group(spa->spg->id))  /* k2u to task */
 			seq_printf(seq, "%-10s ", "None");
 		else {
 			down_read(&spa->spg->rw_lock);
@@ -4446,6 +4617,9 @@ void sp_group_post_exit(struct mm_struct *mm)
 		kfree(spg_node);
 	}
 	up_write(&sp_group_sem);
+
+	if (master->local)
+		sp_group_drop(master->local);
 	kfree(master);
 }
 
@@ -4477,17 +4651,9 @@ static int __init share_pool_init(void)
 	if (!sp_is_enabled())
 		return 0;
 
-	/* lockless, as init kthread has no sp operation else */
-	spg_none = create_spg(GROUP_NONE);
-	/* without free spg_none, not a serious problem */
-	if (IS_ERR(spg_none) || !spg_none)
-		goto fail;
-
 	sp_mapping_normal = sp_mapping_create(SP_MAPPING_NORMAL);
-	if (IS_ERR(sp_mapping_normal)) {
-		sp_group_drop(spg_none);
+	if (IS_ERR(sp_mapping_normal))
 		goto fail;
-	}
 	atomic_inc(&sp_mapping_normal->user);
 
 	sp_device_number_detect();

@@ -40,6 +40,8 @@
 #define SPG_ID_AUTO_MIN 100000
 #define SPG_ID_AUTO_MAX 199999
 #define SPG_ID_AUTO     200000  /* generate group id automatically */
+#define SPG_ID_LOCAL_MIN	200001
+#define SPG_ID_LOCAL_MAX	299999
 
 #define MAX_DEVID 8	/* the max num of Da-vinci devices */
 
@@ -111,6 +113,10 @@ struct sp_mapping {
 	unsigned long start[MAX_DEVID];
 	unsigned long end[MAX_DEVID];
 	struct rb_root area_root;
+
+	struct rb_node *free_area_cache;
+	unsigned long cached_hole_size;
+	unsigned long cached_vstart;
 };
 
 /* Processes in the same sp_group can share memory.
