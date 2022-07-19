@@ -201,6 +201,7 @@ enum iscsi_connection_state {
 
 struct iscsi_cls_conn {
 	struct list_head conn_list;	/* item in connlist */
+	struct list_head conn_list_err; /* add back for fix kabi broken */
 	void *dd_data;			/* LLD private data */
 	struct iscsi_transport *transport;
 	uint32_t cid;			/* connection id */
@@ -211,14 +212,23 @@ struct iscsi_cls_conn {
 	struct mutex ep_mutex;
 	struct iscsi_endpoint *ep;
 
+	struct device dev;		/* sysfs transport/container device */
+	enum iscsi_connection_state state;
+};
+/*
+ *  The wrapper of iscsi_cls_conn to fix kabi while adding members.
+ */
+struct iscsi_cls_conn_wrapper {
+	struct iscsi_cls_conn conn;
+
 	/* Used when accessing flags and queueing work. */
 	spinlock_t lock;
 	unsigned long flags;
 	struct work_struct cleanup_work;
-
-	struct device dev;		/* sysfs transport/container device */
-	enum iscsi_connection_state state;
 };
+
+#define conn_to_wrapper(ic_conn) \
+	container_of(ic_conn, struct iscsi_cls_conn_wrapper, conn)
 
 #define iscsi_dev_to_conn(_dev) \
 	container_of(_dev, struct iscsi_cls_conn, dev)
