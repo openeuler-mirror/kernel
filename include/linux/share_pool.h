@@ -10,6 +10,7 @@
 #include <linux/hashtable.h>
 #include <linux/numa.h>
 #include <linux/jump_label.h>
+#include <linux/kabi.h>
 
 #define SP_HUGEPAGE		(1 << 0)
 #define SP_HUGEPAGE_ONLY	(1 << 1)
@@ -172,7 +173,7 @@ struct sp_group_master {
 	 * Used to apply for the shared pool memory of the current process.
 	 * For example, sp_alloc non-share memory or k2task.
 	 */
-	struct sp_group *local;
+	KABI_EXTEND(struct sp_group *local)
 };
 
 /*
