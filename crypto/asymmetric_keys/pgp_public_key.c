@@ -283,7 +283,8 @@ static struct asymmetric_key_ids *pgp_key_generate_id(
 		goto error;
 
 	kids->id[0] = kid;
-	kids->id[1] = kmemdup(kid, sizeof(kid) + fingerprint_len, GFP_KERNEL);
+	kids->id[1] = kmemdup(kid, struct_size(kid, data, fingerprint_len),
+			      GFP_KERNEL);
 	if (!kids->id[1])
 		goto error;
 
