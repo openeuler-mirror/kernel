@@ -58,6 +58,11 @@
 
 #define spg_valid(spg)		((spg)->is_alive == true)
 
+/* Use spa va address as mmap offset. This can work because spa_file
+ * is setup with 64-bit address space. So va shall be well covered.
+ */
+#define addr_offset(spa)	((spa)->va_start)
+
 #define byte2kb(size)		((size) >> 10)
 #define byte2mb(size)		((size) >> 20)
 #define page2kb(page_num)	((page_num) << (PAGE_SHIFT - 10))
@@ -929,22 +934,6 @@ static bool is_device_addr(unsigned long addr)
 			return true;
 	}
 	return false;
-}
-
-static loff_t addr_offset(struct sp_area *spa)
-{
-	unsigned long addr;
-
-	if (unlikely(!spa)) {
-		WARN(1, "invalid spa when calculate addr offset\n");
-		return 0;
-	}
-	addr = spa->va_start;
-
-	if (!is_device_addr(addr))
-		return (loff_t)(addr - MMAP_SHARE_POOL_START);
-
-	return (loff_t)(addr - sp_dev_va_start[spa->device_id]);
 }
 
 static struct sp_group *create_spg(int spg_id)
