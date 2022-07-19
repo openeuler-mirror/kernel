@@ -2852,10 +2852,11 @@ static int sp_k2u_prepare(unsigned long kva, unsigned long size,
 
 	trace_sp_k2u_begin(kc);
 
-	if (sp_flags & ~SP_DVPP) {
+	if (sp_flags & ~SP_FLAG_MASK) {
 		pr_err_ratelimited("k2u sp_flags %lx error\n", sp_flags);
 		return -EINVAL;
 	}
+	sp_flags &= ~SP_HUGEPAGE;
 
 	if (!current->mm) {
 		pr_err_ratelimited("k2u: kthread is not allowed\n");
