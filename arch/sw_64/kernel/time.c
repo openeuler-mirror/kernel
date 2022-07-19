@@ -96,10 +96,6 @@ void setup_clocksource(void)
 }
 #endif /* !CONFIG_SMP */
 
-void __init common_init_rtc(void)
-{
-	setup_timer();
-}
 
 void __init
 time_init(void)
@@ -114,7 +110,7 @@ time_init(void)
 	setup_clocksource();
 	of_clk_init(NULL);
 	/* Startup the timer source. */
-	common_init_rtc();
+	setup_timer();
 }
 
 void calibrate_delay(void)

@@ -64,13 +64,7 @@ void show_all_vma(void)
 /*
  * Force a new ASN for a task.
  */
-
-#ifndef CONFIG_SMP
-unsigned long last_asn = ASN_FIRST_VERSION;
-#endif
-
-void
-__load_new_mm_context(struct mm_struct *next_mm)
+void __load_new_mm_context(struct mm_struct *next_mm)
 {
 	unsigned long mmc;
 	struct pcb_struct *pcb;
@@ -84,7 +78,6 @@ __load_new_mm_context(struct mm_struct *next_mm)
 
 	__reload_thread(pcb);
 }
-
 
 /*
  * This routine handles page faults.  It determines the address,
