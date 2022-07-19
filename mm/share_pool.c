@@ -1015,6 +1015,9 @@ int sp_group_id_by_pid(int pid)
 	struct sp_group *spg;
 	int spg_id = -ENODEV;
 
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
 	check_interrupt_context();
 
 	spg = __sp_find_spg(pid, SPG_ID_DEFAULT);
@@ -1049,6 +1052,9 @@ int mg_sp_group_id_by_pid(int pid, int *spg_ids, int *num)
 	struct sp_group_node *node;
 	struct sp_group_master *master = NULL;
 	struct task_struct *tsk;
+
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
 
 	check_interrupt_context();
 
@@ -1382,6 +1388,9 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 	bool id_newly_generated = false;
 	struct sp_area *spa, *prev = NULL;
 
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
 	check_interrupt_context();
 
 	/* only allow READ, READ | WRITE */
@@ -1658,6 +1667,9 @@ int mg_sp_group_del_task(int pid, int spg_id)
 	struct mm_struct *mm = NULL;
 	bool is_alive = true;
 
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
 	if (spg_id < SPG_ID_MIN || spg_id > SPG_ID_AUTO) {
 		pr_err_ratelimited("del from group failed, invalid group id %d\n", spg_id);
 		return -EINVAL;
@@ -1748,6 +1760,9 @@ int sp_id_of_current(void)
 {
 	int ret, spg_id;
 	struct sp_group_master *master;
+
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
 
 	if (current->flags & PF_KTHREAD || !current->mm)
 		return -EINVAL;
@@ -2324,6 +2339,9 @@ int sp_free(unsigned long addr, int id)
 		.spg_id = id,
 	};
 
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
 	check_interrupt_context();
 
 	if (current->flags & PF_KTHREAD)
@@ -2761,6 +2779,9 @@ void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id)
 	int ret = 0;
 	struct sp_alloc_context ac;
 
+	if (!sp_is_enabled())
+		return ERR_PTR(-EOPNOTSUPP);
+
 	ret = sp_alloc_prepare(size, sp_flags, spg_id, &ac);
 	if (ret)
 		return ERR_PTR(ret);
@@ -3142,6 +3163,9 @@ void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 	int ret;
 	struct sp_k2u_context kc;
 
+	if (!sp_is_enabled())
+		return ERR_PTR(-EOPNOTSUPP);
+
 	check_interrupt_context();
 
 	ret = sp_k2u_prepare(kva, size, sp_flags, spg_id, &kc);
@@ -3428,6 +3452,9 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	void *p = ERR_PTR(-ESRCH);
 	struct sp_walk_data sp_walk_data;
 	struct vm_struct *area;
+
+	if (!sp_is_enabled())
+		return ERR_PTR(-EOPNOTSUPP);
 
 	check_interrupt_context();
 
@@ -3717,6 +3744,9 @@ int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id)
 {
 	int ret = 0;
 
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
+
 	check_interrupt_context();
 
 	if (current->flags & PF_KTHREAD)
@@ -3761,6 +3791,9 @@ int sp_walk_page_range(unsigned long uva, unsigned long size,
 {
 	struct mm_struct *mm;
 	int ret = 0;
+
+	if (!sp_is_enabled())
+		return -EOPNOTSUPP;
 
 	check_interrupt_context();
 
@@ -3807,6 +3840,9 @@ EXPORT_SYMBOL_GPL(mg_sp_walk_page_range);
  */
 void sp_walk_page_free(struct sp_walk_data *sp_walk_data)
 {
+	if (!sp_is_enabled())
+		return;
+
 	check_interrupt_context();
 
 	if (!sp_walk_data)
@@ -3855,6 +3891,9 @@ bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 	struct sp_group *spg;
 	struct sp_mapping *spm;
 	unsigned long default_start;
+
+	if (!sp_is_enabled())
+		return false;
 
 	/* NOTE: check the start address */
 	if (pid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
@@ -3916,7 +3955,8 @@ static bool is_sp_normal_addr(unsigned long addr)
  */
 bool is_sharepool_addr(unsigned long addr)
 {
-	return is_sp_normal_addr(addr) || is_device_addr(addr);
+	return sp_is_enabled() &&
+		(is_sp_normal_addr(addr) || is_device_addr(addr));
 }
 EXPORT_SYMBOL_GPL(is_sharepool_addr);
 
@@ -4112,6 +4152,9 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	int i;
 	unsigned long anon, file, shmem, total_rss, prot;
 	long sp_res, sp_res_nsize, non_sp_res, non_sp_shm;
+
+	if (!sp_is_enabled())
+		return 0;
 
 	if (!mm)
 		return 0;
