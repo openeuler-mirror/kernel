@@ -656,8 +656,8 @@ static void handle_dev_int(struct pt_regs *regs)
 	sw64_io_write(node, DEV_INT_CONFIG, config_val);
 }
 
-void handle_chip_irq(unsigned long type, unsigned long vector,
-		     unsigned long irq_arg, struct pt_regs *regs)
+asmlinkage void do_entInt(unsigned long type, unsigned long vector,
+			  unsigned long irq_arg, struct pt_regs *regs)
 {
 	struct pt_regs *old_regs;
 
@@ -738,6 +738,7 @@ void handle_chip_irq(unsigned long type, unsigned long vector,
 	}
 	pr_crit("PC = %016lx PS = %04lx\n", regs->pc, regs->ps);
 }
+EXPORT_SYMBOL(do_entInt);
 
 /*
  * Early fix up the chip3 Root Complex settings
