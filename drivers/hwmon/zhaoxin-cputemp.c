@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * via-cputemp.c - Driver for VIA CPU core temperature monitoring
- * Copyright (C) 2009 VIA Technologies, Inc.
- *
- * based on existing coretemp.c, which is
- *
- * Copyright (C) 2007 Rudolf Marek <r.marek@assembler.cz>
+ * zhaoxin-cputemp.c - Driver for Zhaoxin CPU core temperature monitoring
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -26,15 +21,13 @@
 #include <asm/processor.h>
 #include <asm/cpu_device_id.h>
 
-#define DRVNAME	"via_cputemp"
+#define DRVNAME    "zhaoxin_cputemp"
 
 enum { SHOW_TEMP, SHOW_LABEL, SHOW_NAME };
 
-/*
- * Functions declaration
- */
+/* Functions declaration */
 
-struct via_cputemp_data {
+struct zhaoxin_cputemp_data {
 	struct device *hwmon_dev;
 	const char *name;
 	u8 vrm;
@@ -43,28 +36,25 @@ struct via_cputemp_data {
 	u32 msr_vid;
 };
 
-/*
- * Sysfs stuff
- */
+/* Sysfs stuff */
 
 static ssize_t name_show(struct device *dev, struct device_attribute *devattr,
-			 char *buf)
+	char *buf)
 {
 	int ret;
 	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
-	struct via_cputemp_data *data = dev_get_drvdata(dev);
+	struct zhaoxin_cputemp_data *data = dev_get_drvdata(dev);
 
 	if (attr->index == SHOW_NAME)
 		ret = sprintf(buf, "%s\n", data->name);
-	else	/* show label */
+	else    /* show label */
 		ret = sprintf(buf, "Core %d\n", data->id);
 	return ret;
 }
 
-static ssize_t temp_show(struct device *dev, struct device_attribute *devattr,
-			 char *buf)
+static ssize_t temp_show(struct device *dev, struct device_attribute *devattr, char *buf)
 {
-	struct via_cputemp_data *data = dev_get_drvdata(dev);
+	struct zhaoxin_cputemp_data *data = dev_get_drvdata(dev);
 	u32 eax, edx;
 	int err;
 
@@ -75,10 +65,9 @@ static ssize_t temp_show(struct device *dev, struct device_attribute *devattr,
 	return sprintf(buf, "%lu\n", ((unsigned long)eax & 0xffffff) * 1000);
 }
 
-static ssize_t cpu0_vid_show(struct device *dev,
-			     struct device_attribute *devattr, char *buf)
+static ssize_t cpu0_vid_show(struct device *dev, struct device_attribute *devattr, char *buf)
 {
-	struct via_cputemp_data *data = dev_get_drvdata(dev);
+	struct zhaoxin_cputemp_data *data = dev_get_drvdata(dev);
 	u32 eax, edx;
 	int err;
 
@@ -93,66 +82,44 @@ static SENSOR_DEVICE_ATTR_RO(temp1_input, temp, SHOW_TEMP);
 static SENSOR_DEVICE_ATTR_RO(temp1_label, name, SHOW_LABEL);
 static SENSOR_DEVICE_ATTR_RO(name, name, SHOW_NAME);
 
-static struct attribute *via_cputemp_attributes[] = {
+static struct attribute *zhaoxin_cputemp_attributes[] = {
 	&sensor_dev_attr_name.dev_attr.attr,
 	&sensor_dev_attr_temp1_label.dev_attr.attr,
 	&sensor_dev_attr_temp1_input.dev_attr.attr,
 	NULL
 };
 
-static const struct attribute_group via_cputemp_group = {
-	.attrs = via_cputemp_attributes,
+static const struct attribute_group zhaoxin_cputemp_group = {
+	.attrs = zhaoxin_cputemp_attributes,
 };
 
 /* Optional attributes */
 static DEVICE_ATTR_RO(cpu0_vid);
 
-static int via_cputemp_probe(struct platform_device *pdev)
+static int zhaoxin_cputemp_probe(struct platform_device *pdev)
 {
-	struct via_cputemp_data *data;
-	struct cpuinfo_x86 *c = &cpu_data(pdev->id);
+	struct zhaoxin_cputemp_data *data;
 	int err;
 	u32 eax, edx;
 
-	data = devm_kzalloc(&pdev->dev, sizeof(struct via_cputemp_data),
-			    GFP_KERNEL);
+	data = devm_kzalloc(&pdev->dev, sizeof(struct zhaoxin_cputemp_data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 
 	data->id = pdev->id;
-	data->name = "via_cputemp";
-
-	if (c->x86 == 7) {
-		data->msr_temp = 0x1423;
-	} else {
-		switch (c->x86_model) {
-		case 0xA:
-			/* C7 A */
-		case 0xD:
-			/* C7 D */
-			data->msr_temp = 0x1169;
-			data->msr_vid = 0x198;
-			break;
-		case 0xF:
-			/* Nano */
-			data->msr_temp = 0x1423;
-			break;
-		default:
-			return -ENODEV;
-		}
-	}
+	data->name = "zhaoxin_cputemp";
+	data->msr_temp = 0x1423;
 
 	/* test if we can access the TEMPERATURE MSR */
 	err = rdmsr_safe_on_cpu(data->id, data->msr_temp, &eax, &edx);
 	if (err) {
-		dev_err(&pdev->dev,
-			"Unable to access TEMPERATURE MSR, giving up\n");
+		dev_err(&pdev->dev, "Unable to access TEMPERATURE MSR, giving up\n");
 		return err;
 	}
 
 	platform_set_drvdata(pdev, data);
 
-	err = sysfs_create_group(&pdev->dev.kobj, &via_cputemp_group);
+	err = sysfs_create_group(&pdev->dev.kobj, &zhaoxin_cputemp_group);
 	if (err)
 		return err;
 
@@ -168,8 +135,7 @@ static int via_cputemp_probe(struct platform_device *pdev)
 	data->hwmon_dev = hwmon_device_register(&pdev->dev);
 	if (IS_ERR(data->hwmon_dev)) {
 		err = PTR_ERR(data->hwmon_dev);
-		dev_err(&pdev->dev, "Class registration failed (%d)\n",
-			err);
+		dev_err(&pdev->dev, "Class registration failed (%d)\n", err);
 		goto exit_remove;
 	}
 
@@ -178,27 +144,27 @@ static int via_cputemp_probe(struct platform_device *pdev)
 exit_remove:
 	if (data->vrm)
 		device_remove_file(&pdev->dev, &dev_attr_cpu0_vid);
-	sysfs_remove_group(&pdev->dev.kobj, &via_cputemp_group);
+	sysfs_remove_group(&pdev->dev.kobj, &zhaoxin_cputemp_group);
 	return err;
 }
 
-static int via_cputemp_remove(struct platform_device *pdev)
+static int zhaoxin_cputemp_remove(struct platform_device *pdev)
 {
-	struct via_cputemp_data *data = platform_get_drvdata(pdev);
+	struct zhaoxin_cputemp_data *data = platform_get_drvdata(pdev);
 
 	hwmon_device_unregister(data->hwmon_dev);
 	if (data->vrm)
 		device_remove_file(&pdev->dev, &dev_attr_cpu0_vid);
-	sysfs_remove_group(&pdev->dev.kobj, &via_cputemp_group);
+	sysfs_remove_group(&pdev->dev.kobj, &zhaoxin_cputemp_group);
 	return 0;
 }
 
-static struct platform_driver via_cputemp_driver = {
+static struct platform_driver zhaoxin_cputemp_driver = {
 	.driver = {
 		.name = DRVNAME,
 	},
-	.probe = via_cputemp_probe,
-	.remove = via_cputemp_remove,
+	.probe = zhaoxin_cputemp_probe,
+	.remove = zhaoxin_cputemp_remove,
 };
 
 struct pdev_entry {
@@ -210,7 +176,7 @@ struct pdev_entry {
 static LIST_HEAD(pdev_list);
 static DEFINE_MUTEX(pdev_list_mutex);
 
-static int via_cputemp_online(unsigned int cpu)
+static int zhaoxin_cputemp_online(unsigned int cpu)
 {
 	int err;
 	struct platform_device *pdev;
@@ -251,7 +217,7 @@ exit:
 	return err;
 }
 
-static int via_cputemp_down_prep(unsigned int cpu)
+static int zhaoxin_cputemp_down_prep(unsigned int cpu)
 {
 	struct pdev_entry *p;
 
@@ -270,31 +236,30 @@ static int via_cputemp_down_prep(unsigned int cpu)
 }
 
 static const struct x86_cpu_id __initconst cputemp_ids[] = {
-	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 6, X86_CENTAUR_FAM6_C7_A,	NULL),
-	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 6, X86_CENTAUR_FAM6_C7_D,	NULL),
-	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 6, X86_CENTAUR_FAM6_NANO,	NULL),
+	X86_MATCH_VENDOR_FAM_MODEL(CENTAUR, 7, X86_MODEL_ANY, NULL),
+	X86_MATCH_VENDOR_FAM_MODEL(ZHAOXIN, 7, X86_MODEL_ANY, NULL),
 	{}
 };
 MODULE_DEVICE_TABLE(x86cpu, cputemp_ids);
 
-static enum cpuhp_state via_temp_online;
+static enum cpuhp_state zhaoxin_temp_online;
 
-static int __init via_cputemp_init(void)
+static int __init zhaoxin_cputemp_init(void)
 {
 	int err;
 
 	if (!x86_match_cpu(cputemp_ids))
 		return -ENODEV;
 
-	err = platform_driver_register(&via_cputemp_driver);
+	err = platform_driver_register(&zhaoxin_cputemp_driver);
 	if (err)
 		goto exit;
 
-	err = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "hwmon/via:online",
-				via_cputemp_online, via_cputemp_down_prep);
+	err = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "hwmon/zhaoxin:online",
+	zhaoxin_cputemp_online, zhaoxin_cputemp_down_prep);
 	if (err < 0)
 		goto exit_driver_unreg;
-	via_temp_online = err;
+	zhaoxin_temp_online = err;
 
 #ifndef CONFIG_HOTPLUG_CPU
 	if (list_empty(&pdev_list)) {
@@ -306,23 +271,22 @@ static int __init via_cputemp_init(void)
 
 #ifndef CONFIG_HOTPLUG_CPU
 exit_hp_unreg:
-	cpuhp_remove_state_nocalls(via_temp_online);
+	cpuhp_remove_state_nocalls(zhaoxin_temp_online);
 #endif
 exit_driver_unreg:
-	platform_driver_unregister(&via_cputemp_driver);
+	platform_driver_unregister(&zhaoxin_cputemp_driver);
 exit:
 	return err;
 }
 
-static void __exit via_cputemp_exit(void)
+static void __exit zhaoxin_cputemp_exit(void)
 {
-	cpuhp_remove_state(via_temp_online);
-	platform_driver_unregister(&via_cputemp_driver);
+	cpuhp_remove_state(zhaoxin_temp_online);
+	platform_driver_unregister(&zhaoxin_cputemp_driver);
 }
 
-MODULE_AUTHOR("Harald Welte <HaraldWelte@viatech.com>");
-MODULE_DESCRIPTION("VIA CPU temperature monitor");
+MODULE_DESCRIPTION("Zhaoxin CPU temperature monitor");
 MODULE_LICENSE("GPL");
 
-module_init(via_cputemp_init)
-module_exit(via_cputemp_exit)
+module_init(zhaoxin_cputemp_init)
+module_exit(zhaoxin_cputemp_exit)
