@@ -17,9 +17,9 @@
 #include <linux/pm.h>
 #include <linux/thermal.h>
 #include <linux/debugfs.h>
-#include <asm/cpu_device_id.h>
-#include <asm/mce.h>
 
+#include <asm/cpu_device_id.h>
+#include "thermal_interrupt.h"
 /*
 * Rate control delay: Idea is to introduce denounce effect
 * This should be long enough to avoid reduce events, when
