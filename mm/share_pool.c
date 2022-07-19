@@ -220,6 +220,17 @@ static bool is_mapping_empty(struct sp_mapping *spm)
 	return RB_EMPTY_ROOT(&spm->area_root);
 }
 
+static bool can_mappings_merge(struct sp_mapping *m1, struct sp_mapping *m2)
+{
+	int i;
+
+	for (i = 0; i < sp_device_number; i++)
+		if (m1->start[i] != m2->start[i] || m1->end[i] != m2->end[i])
+			return false;
+
+	return true;
+}
+
 /*
  * 1. The mappings of local group is set on creating.
  * 2. This is used to setup the mapping for groups created during add_task.
@@ -235,6 +246,11 @@ static int sp_mapping_group_setup(struct mm_struct *mm, struct sp_group *spg)
 	struct sp_group *local = master->local;
 
 	if (!list_empty(&spg->procs) && !(spg->flag & SPG_FLAG_NON_DVPP)) {
+		if (!can_mappings_merge(local->dvpp, spg->dvpp)) {
+			pr_info_ratelimited("address space conflict, id=%d\n", spg->id);
+			return -EINVAL;
+		}
+
 		if (is_mapping_empty(local->dvpp))
 			sp_mapping_merge(spg->dvpp, local->dvpp);
 		else if (is_mapping_empty(spg->dvpp))
@@ -3825,16 +3841,50 @@ EXPORT_SYMBOL_GPL(sp_unregister_notifier);
  */
 bool sp_config_dvpp_range(size_t start, size_t size, int device_id, int pid)
 {
-	if (pid < 0 ||
-	    size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
-	    device_id < 0 || device_id >= sp_device_number ||
-	    !is_online_node_id(device_id) ||
-	    is_sp_dev_addr_enabled(device_id))
+	int ret;
+	bool err = false;
+	struct task_struct *tsk;
+	struct mm_struct *mm;
+	struct sp_group *spg;
+	struct sp_mapping *spm;
+	unsigned long default_start;
+
+	/* NOTE: check the start address */
+	if (pid < 0 || size <= 0 || size > MMAP_SHARE_POOL_16G_SIZE ||
+	    device_id < 0 || device_id >= sp_device_number || !is_online_node_id(device_id))
 		return false;
 
-	sp_dev_va_start[device_id] = start;
-	sp_dev_va_size[device_id] = size;
-	return true;
+	ret = get_task(pid, &tsk);
+	if (ret)
+		return false;
+
+	mm = get_task_mm(tsk->group_leader);
+	if (!mm)
+		goto put_task;
+
+	spg = sp_get_local_group(mm);
+	if (IS_ERR(spg))
+		goto put_mm;
+
+	spm = spg->dvpp;
+	default_start = MMAP_SHARE_POOL_16G_START + device_id * MMAP_SHARE_POOL_16G_SIZE;
+	/* The dvpp range of each group can be configured only once */
+	if (spm->start[device_id] != default_start)
+		goto put_spg;
+
+	spm->start[device_id] = start;
+	spm->end[device_id] = start + size;
+
+	err = true;
+
+put_spg:
+	sp_group_drop(spg);
+put_mm:
+	mmput(mm);
+put_task:
+	put_task_struct(tsk);
+
+	return err;
 }
 EXPORT_SYMBOL_GPL(sp_config_dvpp_range);
 
