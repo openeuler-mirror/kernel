@@ -152,8 +152,10 @@ static int pgp_generate_fingerprint(struct pgp_key_data_parse_context *ctx,
 	digest_size = crypto_shash_digestsize(tfm);
 
 	raw_fingerprint = kmalloc(digest_size, GFP_KERNEL);
-	if (!raw_fingerprint)
+	if (!raw_fingerprint) {
+		ret = -ENOMEM;
 		goto cleanup_hash;
+	}
 
 	ret = crypto_shash_final(digest, raw_fingerprint);
 	if (ret < 0)
@@ -161,8 +163,10 @@ static int pgp_generate_fingerprint(struct pgp_key_data_parse_context *ctx,
 
 	ctx->fingerprint_len = digest_size * 2;
 	fingerprint = kmalloc(digest_size * 2 + 1, GFP_KERNEL);
-	if (!fingerprint)
+	if (!fingerprint) {
+		ret = -ENOMEM;
 		goto cleanup_raw_fingerprint;
+	}
 
 	offset = digest_size - 8;
 	pr_debug("offset %u/%u\n", offset, digest_size);
