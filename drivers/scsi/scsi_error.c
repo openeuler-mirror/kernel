@@ -2359,7 +2359,7 @@ scsi_ioctl_reset(struct scsi_device *dev, int __user *arg)
 		return -EIO;
 
 	error = -EIO;
-	rq = kzalloc(sizeof(struct request) + sizeof(struct scsi_cmnd) +
+	rq = kzalloc(sizeof(struct request_wrapper) + sizeof(struct scsi_cmnd) +
 			shost->hostt->cmd_size, GFP_KERNEL);
 	if (!rq)
 		goto out_put_autopm_host;
