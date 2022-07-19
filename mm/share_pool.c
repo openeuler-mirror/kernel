@@ -2994,9 +2994,40 @@ EXPORT_SYMBOL_GPL(mg_sp_make_share_k2u);
 static int sp_pmd_entry(pmd_t *pmd, unsigned long addr,
 			unsigned long next, struct mm_walk *walk)
 {
+	struct page *page;
 	struct sp_walk_data *sp_walk_data = walk->private;
 
+	/*
+	 * There exist a scene in DVPP where the pagetable is huge page but its
+	 * vma doesn't record it, something like THP.
+	 * So we cannot make out whether it is a hugepage map until we access the
+	 * pmd here. If mixed size of pages appear, just return an error.
+	 */
+	if (pmd_huge(*pmd)) {
+		if (!sp_walk_data->is_page_type_set) {
+			sp_walk_data->is_page_type_set = true;
+			sp_walk_data->is_hugepage = true;
+		} else if (!sp_walk_data->is_hugepage)
+			return -EFAULT;
+
+		/* To skip pte level walk */
+		walk->action = ACTION_CONTINUE;
+
+		page = pmd_page(*pmd);
+		get_page(page);
+		sp_walk_data->pages[sp_walk_data->page_count++] = page;
+
+		return 0;
+	}
+
+	if (!sp_walk_data->is_page_type_set) {
+		sp_walk_data->is_page_type_set = true;
+		sp_walk_data->is_hugepage = false;
+	} else if (sp_walk_data->is_hugepage)
+		return -EFAULT;
+
 	sp_walk_data->pmd = pmd;
+
 	return 0;
 }
 
@@ -3140,6 +3171,8 @@ static int __sp_walk_page_range(unsigned long uva, unsigned long size,
 		sp_walk.pmd_entry = sp_pmd_entry;
 	}
 
+	sp_walk_data->is_page_type_set = false;
+	sp_walk_data->page_count = 0;
 	sp_walk_data->page_size = page_size;
 	uva_aligned = ALIGN_DOWN(uva, page_size);
 	sp_walk_data->uva_aligned = uva_aligned;
@@ -3164,8 +3197,12 @@ static int __sp_walk_page_range(unsigned long uva, unsigned long size,
 
 	ret = walk_page_range(mm, uva_aligned, uva_aligned + size_aligned,
 			      &sp_walk, sp_walk_data);
-	if (ret)
+	if (ret) {
+		while (sp_walk_data->page_count--)
+			put_page(pages[sp_walk_data->page_count]);
 		kvfree(pages);
+		sp_walk_data->pages = NULL;
+	}
 
 	return ret;
 }
@@ -3201,9 +3238,7 @@ void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid)
 	int ret = 0;
 	struct mm_struct *mm = current->mm;
 	void *p = ERR_PTR(-ESRCH);
-	struct sp_walk_data sp_walk_data = {
-		.page_count = 0,
-	};
+	struct sp_walk_data sp_walk_data;
 	struct vm_struct *area;
 
 	check_interrupt_context();
@@ -3544,7 +3579,6 @@ int sp_walk_page_range(unsigned long uva, unsigned long size,
 		return -ESRCH;
 	}
 
-	sp_walk_data->page_count = 0;
 	down_write(&mm->mmap_lock);
 	if (likely(!mm->core_state))
 		ret = __sp_walk_page_range(uva, size, mm, sp_walk_data);

@@ -178,6 +178,7 @@ struct sp_walk_data {
 	unsigned long uva_aligned;
 	unsigned long page_size;
 	bool is_hugepage;
+	bool is_page_type_set;
 	pmd_t *pmd;
 };
 
