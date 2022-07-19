@@ -2325,6 +2325,9 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 	if (spg_node)
 		prot = spg_node->prot;
 
+	if (ac->sp_flags & SP_PROT_RO)
+		prot = PROT_READ;
+
 	/* when success, mmap_addr == spa->va_start */
 	mmap_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
 	if (IS_ERR_VALUE(mmap_addr)) {
@@ -2349,6 +2352,10 @@ static int sp_alloc_mmap(struct mm_struct *mm, struct sp_area *spa,
 		ret = -EINVAL;
 		goto unmap;
 	}
+
+	if (ac->sp_flags & SP_PROT_RO)
+		vma->vm_flags &= ~VM_MAYWRITE;
+
 	/* clean PTE_RDONLY flags or trigger SMMU event */
 	if (prot & PROT_WRITE)
 		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
@@ -2644,6 +2651,9 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 		goto put_mm;
 	}
 
+	if (kc && kc->sp_flags & SP_PROT_RO)
+		prot = PROT_READ;
+
 	ret_addr = sp_mmap(mm, spa_file(spa), spa, &populate, prot);
 	if (IS_ERR_VALUE(ret_addr)) {
 		pr_debug("k2u mmap failed %lx\n", ret_addr);
@@ -2655,6 +2665,9 @@ static unsigned long sp_remap_kva_to_vma(unsigned long kva, struct sp_area *spa,
 	BUG_ON(vma == NULL);
 	if (prot & PROT_WRITE)
 		vma->vm_page_prot = __pgprot(((~PTE_RDONLY) & vma->vm_page_prot.pgprot) | PTE_DIRTY);
+
+	if (kc && kc->sp_flags & SP_PROT_RO)
+		vma->vm_flags &= ~VM_MAYWRITE;
 
 	if (is_vm_hugetlb_page(vma)) {
 		ret = remap_vmalloc_hugepage_range(vma, (void *)kva, 0);
@@ -2707,6 +2720,7 @@ static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, un
 	struct sp_area *spa;
 	struct spg_proc_stat *stat;
 	unsigned long prot = PROT_READ | PROT_WRITE;
+	struct sp_k2u_context kc;
 
 	down_write(&sp_group_sem);
 	stat = sp_init_process_stat(current, current->mm, spg_none);
@@ -2725,8 +2739,8 @@ static void *sp_make_share_kva_to_task(unsigned long kva, unsigned long size, un
 	}
 
 	spa->kva = kva;
-
-	uva = (void *)sp_remap_kva_to_vma(kva, spa, current->mm, prot, NULL);
+	kc.sp_flags = sp_flags;
+	uva = (void *)sp_remap_kva_to_vma(kva, spa, current->mm, prot, &kc);
 	__sp_area_drop(spa);
 	if (IS_ERR(uva))
 		pr_err("remap k2u to task failed %ld\n", PTR_ERR(uva));

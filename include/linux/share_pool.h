@@ -15,6 +15,7 @@
 #define SP_HUGEPAGE_ONLY	(1 << 1)
 #define SP_DVPP			(1 << 2)
 #define SP_SPEC_NODE_ID		(1 << 3)
+#define SP_PROT_RO		(1 << 16)
 
 #define DEVICE_ID_BITS		4UL
 #define DEVICE_ID_MASK		((1UL << DEVICE_ID_BITS) - 1UL)
@@ -24,7 +25,7 @@
 #define NODE_ID_SHIFT		(DEVICE_ID_SHIFT + DEVICE_ID_BITS)
 
 #define SP_FLAG_MASK		(SP_HUGEPAGE | SP_HUGEPAGE_ONLY | SP_DVPP | \
-				 SP_SPEC_NODE_ID | \
+				 SP_SPEC_NODE_ID | SP_PROT_RO | \
 				(DEVICE_ID_MASK << DEVICE_ID_SHIFT) | \
 				(NODE_ID_MASK << NODE_ID_SHIFT))
 
