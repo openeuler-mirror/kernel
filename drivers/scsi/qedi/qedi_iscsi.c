@@ -1430,16 +1430,20 @@ static void qedi_cleanup_task(struct iscsi_task *task)
 	cmd->scsi_cmd = NULL;
 }
 
+static struct iscsi_transport_expand qedi_iscsi_expand = {
+	.unbind_conn            = iscsi_conn_unbind,
+};
+
 struct iscsi_transport qedi_iscsi_transport = {
 	.owner = THIS_MODULE,
 	.name = QEDI_MODULE_NAME,
 	.caps = CAP_RECOVERY_L0 | CAP_HDRDGST | CAP_MULTI_R2T | CAP_DATADGST |
-		CAP_DATA_PATH_OFFLOAD | CAP_TEXT_NEGO,
+		CAP_DATA_PATH_OFFLOAD | CAP_TEXT_NEGO | CAP_OPS_EXPAND,
 	.create_session = qedi_session_create,
 	.destroy_session = qedi_session_destroy,
 	.create_conn = qedi_conn_create,
 	.bind_conn = qedi_conn_bind,
-	.unbind_conn = iscsi_conn_unbind,
+	.ops_expand = &qedi_iscsi_expand,
 	.start_conn = qedi_conn_start,
 	.stop_conn = iscsi_conn_stop,
 	.destroy_conn = qedi_conn_destroy,

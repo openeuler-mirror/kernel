@@ -2253,7 +2253,11 @@ static void iscsi_ep_disconnect(struct iscsi_cls_conn *conn, bool is_active)
 	ep = conn->ep;
 	conn->ep = NULL;
 
-	session->transport->unbind_conn(conn, is_active);
+	if (session->transport->caps & CAP_OPS_EXPAND &&
+	    session->transport->ops_expand &&
+	    session->transport->ops_expand->unbind_conn)
+		session->transport->ops_expand->unbind_conn(conn, is_active);
+
 	session->transport->ep_disconnect(ep);
 	ISCSI_DBG_TRANS_CONN(conn, "disconnect ep done.\n");
 }
@@ -3119,10 +3123,19 @@ iscsi_tgt_dscvr(struct iscsi_transport *transport,
 	struct Scsi_Host *shost;
 	struct sockaddr *dst_addr;
 	int err;
+	int (*tgt_dscvr)(struct Scsi_Host *shost, enum iscsi_tgt_dscvr type,
+			  uint32_t enable, struct sockaddr *dst_addr);
 
-	if (!transport->tgt_dscvr)
-		return -EINVAL;
-
+	if (transport->caps & CAP_OPS_EXPAND) {
+		if (!transport->ops_expand || !transport->ops_expand->tgt_dscvr)
+			return -EINVAL;
+		tgt_dscvr = transport->ops_expand->tgt_dscvr;
+	} else {
+		if (!transport->ops_expand)
+			return -EINVAL;
+		tgt_dscvr = (int (*)(struct Scsi_Host *, enum iscsi_tgt_dscvr, uint32_t,
+			     struct sockaddr *))(transport->ops_expand);
+	}
 	shost = scsi_host_lookup(ev->u.tgt_dscvr.host_no);
 	if (!shost) {
 		printk(KERN_ERR "target discovery could not find host no %u\n",
@@ -3132,8 +3145,8 @@ iscsi_tgt_dscvr(struct iscsi_transport *transport,
 
 
 	dst_addr = (struct sockaddr *)((char*)ev + sizeof(*ev));
-	err = transport->tgt_dscvr(shost, ev->u.tgt_dscvr.type,
-				   ev->u.tgt_dscvr.enable, dst_addr);
+	err = tgt_dscvr(shost, ev->u.tgt_dscvr.type,
+			ev->u.tgt_dscvr.enable, dst_addr);
 	scsi_host_put(shost);
 	return err;
 }
@@ -4786,8 +4799,10 @@ iscsi_register_transport(struct iscsi_transport *tt)
 	int err;
 
 	BUG_ON(!tt);
-	WARN_ON(tt->ep_disconnect && !tt->unbind_conn);
-
+	if (tt->caps & CAP_OPS_EXPAND) {
+		BUG_ON(!tt->ops_expand);
+		WARN_ON(tt->ep_disconnect && !tt->ops_expand->unbind_conn);
+	}
 	priv = iscsi_if_transport_lookup(tt);
 	if (priv)
 		return NULL;

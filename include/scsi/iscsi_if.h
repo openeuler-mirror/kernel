@@ -761,6 +761,7 @@ enum iscsi_ping_status_code {
 					 and verification */
 #define CAP_LOGIN_OFFLOAD	0x4000  /* offload session login */
 
+#define CAP_OPS_EXPAND		0x8000  /* oiscsi_transport->ops_expand flag */
 /*
  * These flags describes reason of stop_conn() call
  */

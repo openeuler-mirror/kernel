@@ -29,6 +29,15 @@ struct bsg_job;
 struct iscsi_bus_flash_session;
 struct iscsi_bus_flash_conn;
 
+/*
+ *  The expansion of iscsi_transport to fix kabi while adding members.
+ */
+struct iscsi_transport_expand {
+	int (*tgt_dscvr)(struct Scsi_Host *shost, enum iscsi_tgt_dscvr type,
+				uint32_t enable, struct sockaddr *dst_addr);
+	void (*unbind_conn)(struct iscsi_cls_conn *conn, bool is_active);
+};
+
 /**
  * struct iscsi_transport - iSCSI Transport template
  *
@@ -82,7 +91,6 @@ struct iscsi_transport {
 	void (*destroy_session) (struct iscsi_cls_session *session);
 	struct iscsi_cls_conn *(*create_conn) (struct iscsi_cls_session *sess,
 				uint32_t cid);
-	void (*unbind_conn) (struct iscsi_cls_conn *conn, bool is_active);
 	int (*bind_conn) (struct iscsi_cls_session *session,
 			  struct iscsi_cls_conn *cls_conn,
 			  uint64_t transport_eph, int is_leading);
@@ -124,8 +132,15 @@ struct iscsi_transport {
 					      int non_blocking);
 	int (*ep_poll) (struct iscsi_endpoint *ep, int timeout_ms);
 	void (*ep_disconnect) (struct iscsi_endpoint *ep);
+#ifdef __GENKSYMS__
 	int (*tgt_dscvr) (struct Scsi_Host *shost, enum iscsi_tgt_dscvr type,
 			  uint32_t enable, struct sockaddr *dst_addr);
+#else
+	/*
+	 * onece ops_expand is used, caps must be set to CAP_OPS_EXPAND
+	 */
+	struct iscsi_transport_expand *ops_expand;
+#endif
 	int (*set_path) (struct Scsi_Host *shost, struct iscsi_path *params);
 	int (*set_iface_param) (struct Scsi_Host *shost, void *data,
 				uint32_t len);
