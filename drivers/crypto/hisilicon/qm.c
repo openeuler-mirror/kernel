@@ -5492,11 +5492,14 @@ static void qm_pf_reset_vf_prepare(struct hisi_qm *qm,
 		atomic_set(&qm->status.flags, QM_STOP);
 		cmd = QM_VF_PREPARE_FAIL;
 		goto err_prepare;
+	} else {
+		goto out;
 	}
 
 err_prepare:
 	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_TX_OFFSET);
 	hisi_qm_set_hw_reset(qm, QM_RESET_STOP_RX_OFFSET);
+out:
 	pci_save_state(pdev);
 	ret = qm->ops->ping_pf(qm, cmd);
 	if (ret)
