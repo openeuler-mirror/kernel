@@ -3527,9 +3527,8 @@ void hisi_qm_uninit(struct hisi_qm *qm)
 		dma_free_coherent(dev, qm->qdma.size,
 				  qm->qdma.va, qm->qdma.dma);
 	}
-	up_write(&qm->qps_lock);
-
 	hisi_qm_set_state(qm, VF_NOT_READY);
+	up_write(&qm->qps_lock);
 
 	qm_irq_unregister(qm);
 	hisi_qm_pci_uninit(qm);
@@ -3547,7 +3546,6 @@ EXPORT_SYMBOL_GPL(hisi_qm_uninit);
  * @number: The number of queues in vft.
  *
  * We can allocate multiple queues to a qm by configuring virtual function
- * table. We get related configures by this function. Normally, we call this
  * function in VF driver to get the queue information.
  *
  * qm hw v1 does not support this interface.
