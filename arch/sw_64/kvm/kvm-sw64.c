@@ -22,7 +22,7 @@
 bool set_msi_flag;
 unsigned long sw64_kvm_last_vpn[NR_CPUS];
 #if defined(CONFIG_DEBUG_FS) && defined(CONFIG_NUMA)
-__read_mostly bool bind_vcpu_enabled;
+extern bool bind_vcpu_enabled;
 #endif
 #define cpu_last_vpn(cpuid) sw64_kvm_last_vpn[cpuid]
 
