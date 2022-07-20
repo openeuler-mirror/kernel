@@ -1476,8 +1476,16 @@ static void __blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async,
 		put_cpu();
 	}
 
+	/*
+	 * No need to queue work if there is no io, and this can avoid race
+	 * with blk_cleanup_queue().
+	 */
+	if (!percpu_ref_tryget(&hctx->queue->q_usage_counter))
+		return;
+
 	kblockd_mod_delayed_work_on(blk_mq_hctx_next_cpu(hctx), &hctx->run_work,
 				    msecs_to_jiffies(msecs));
+	percpu_ref_put(&hctx->queue->q_usage_counter);
 }
 
 void blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, unsigned long msecs)
