@@ -4670,12 +4670,12 @@ int do_swapcache_reclaim(unsigned long *swapcache_watermark,
 	int err = -EINVAL;
 	unsigned long swapcache_to_reclaim = 0;
 	unsigned long nr_reclaimed = 0;
-	unsigned long nr[MAX_NUMNODES] = {0};
-	unsigned long nr_to_reclaim[MAX_NUMNODES] = {0};
 	unsigned long swapcache_total_reclaimable = 0;
 	unsigned long reclaim_page_count = 0;
 
-	struct list_head swapcache_list[MAX_NUMNODES];
+	unsigned long *nr = NULL;
+	unsigned long *nr_to_reclaim = NULL;
+	struct list_head *swapcache_list = NULL;
 
 	int nid = 0;
 	struct lruvec *lruvec = NULL;
@@ -4701,6 +4701,25 @@ int do_swapcache_reclaim(unsigned long *swapcache_watermark,
 	swapcache_to_reclaim = get_swapcache_reclaim_num(swapcache_watermark);
 	if (swapcache_to_reclaim <= 0)
 		return err;
+
+	nr = kcalloc(MAX_NUMNODES, sizeof(unsigned long), GFP_KERNEL);
+	if (nr == NULL)
+		return -ENOMEM;
+
+	nr_to_reclaim = kcalloc(MAX_NUMNODES, sizeof(unsigned long),
+				GFP_KERNEL);
+	if (nr_to_reclaim == NULL) {
+		kfree(nr);
+		return -ENOMEM;
+	}
+
+	swapcache_list = kcalloc(MAX_NUMNODES, sizeof(struct list_head),
+				 GFP_KERNEL);
+	if (swapcache_list == NULL) {
+		kfree(nr);
+		kfree(nr_to_reclaim);
+		return -ENOMEM;
+	}
 
 	/*
 	 * scan the LRU linked list of each memory node to obtain the
@@ -4828,6 +4847,10 @@ exit:
 			&swapcache_list[nid_num], 0, true);
 		nid_num++;
 	}
+
+	kfree(nr);
+	kfree(nr_to_reclaim);
+	kfree(swapcache_list);
 
 	return 0;
 }
