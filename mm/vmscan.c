@@ -4555,7 +4555,6 @@ EXPORT_SYMBOL_GPL(get_page_from_vaddr);
 static int add_page_for_reclaim_swapcache(struct page *page,
 	struct list_head *pagelist, struct lruvec *lruvec, enum lru_list lru)
 {
-	struct list_head *src = &lruvec->lists[lru];
 	struct page *head;
 
 	/* If the page is mapped by more than one process, do not swap it */
@@ -4574,7 +4573,6 @@ static int add_page_for_reclaim_swapcache(struct page *page,
 		reliable_lru_add(lru, head, -hpage_nr_pages(head));
 		break;
 	case -EBUSY:
-		list_move(&head->lru, src);
 		return -1;
 	default:
 		break;
@@ -4744,7 +4742,7 @@ do_scan:
 			 * check if pos page is been released or not in LRU list, if true,
 			 * cancel the subsequent page scanning of the current node.
 			 */
-			if (!pos) {
+			if (!pos || &pos->lru == src) {
 				spin_unlock_irq(&pgdat->lru_lock);
 				continue;
 			}
