@@ -3502,6 +3502,19 @@ static bool blk_mq_poll(struct request_queue *q, blk_qc_t cookie)
 	return __blk_mq_poll(hctx, rq);
 }
 
+void blk_mq_cancel_work_sync(struct request_queue *q)
+{
+	if (q->mq_ops) {
+		struct blk_mq_hw_ctx *hctx;
+		int i;
+
+		cancel_delayed_work_sync(&q->requeue_work);
+
+		queue_for_each_hw_ctx(q, hctx, i)
+			cancel_delayed_work_sync(&hctx->run_work);
+	}
+}
+
 static int __init blk_mq_init(void)
 {
 	cpuhp_setup_state_multi(CPUHP_BLK_MQ_DEAD, "block/mq:dead", NULL,

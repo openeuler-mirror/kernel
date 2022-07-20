@@ -843,8 +843,10 @@ void blk_cleanup_queue(struct request_queue *q)
 
 	blk_exit_queue(q);
 
-	if (q->mq_ops)
+	if (q->mq_ops) {
+		blk_mq_cancel_work_sync(q);
 		blk_mq_exit_queue(q);
+	}
 	percpu_ref_exit(&q->q_usage_counter);
 
 	spin_lock_irq(lock);
