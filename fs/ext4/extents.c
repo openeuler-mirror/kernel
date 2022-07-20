@@ -5267,13 +5267,18 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 			return error;
 	}
 
+	inode_lock_shared(inode);
 	/* fallback to generic here if not in extents fmt */
-	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)))
-		return generic_block_fiemap(inode, fieinfo, start, len,
+	if (!(ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))) {
+		error = __generic_block_fiemap(inode, fieinfo, start, len,
 			ext4_get_block);
+		goto out_unlock;
+	}
 
-	if (fiemap_check_flags(fieinfo, EXT4_FIEMAP_FLAGS))
-		return -EBADR;
+	if (fiemap_check_flags(fieinfo, EXT4_FIEMAP_FLAGS)) {
+		error = -EBADR;
+		goto out_unlock;
+	}
 
 	if (fieinfo->fi_flags & FIEMAP_FLAG_XATTR) {
 		error = ext4_xattr_fiemap(inode, fieinfo);
@@ -5294,6 +5299,8 @@ int ext4_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 		error = ext4_fill_fiemap_extents(inode, start_blk,
 						 len_blks, fieinfo);
 	}
+out_unlock:
+	inode_unlock_shared(inode);
 	return error;
 }
 
