@@ -12,7 +12,6 @@
 #include <linux/types.h>
 #include <asm/barrier.h>
 #include <asm/cmpxchg.h>
-#include <asm/compiler.h>
 
 #if __SIZEOF_LONG__ == 4
 #define __LL		"ll.w	"
@@ -165,8 +164,7 @@ static inline int arch_atomic_sub_if_positive(int i, atomic_t *v)
 		"	beqz	%1, 1b					\n"
 		"2:							\n"
 		__WEAK_LLSC_MB
-		: "=&r" (result), "=&r" (temp),
-		  "+" GCC_OFF_SMALL_ASM() (v->counter)
+		: "=&r" (result), "=&r" (temp), "+ZC" (v->counter)
 		: "I" (-i));
 	} else {
 		__asm__ __volatile__(
@@ -178,8 +176,7 @@ static inline int arch_atomic_sub_if_positive(int i, atomic_t *v)
 		"	beqz	%1, 1b					\n"
 		"2:							\n"
 		__WEAK_LLSC_MB
-		: "=&r" (result), "=&r" (temp),
-		  "+" GCC_OFF_SMALL_ASM() (v->counter)
+		: "=&r" (result), "=&r" (temp), "+ZC" (v->counter)
 		: "r" (i));
 	}
 
@@ -328,8 +325,7 @@ static inline long arch_atomic64_sub_if_positive(long i, atomic64_t *v)
 		"	beqz	%1, 1b					\n"
 		"2:							\n"
 		__WEAK_LLSC_MB
-		: "=&r" (result), "=&r" (temp),
-		  "+" GCC_OFF_SMALL_ASM() (v->counter)
+		: "=&r" (result), "=&r" (temp), "+ZC" (v->counter)
 		: "I" (-i));
 	} else {
 		__asm__ __volatile__(
@@ -341,8 +337,7 @@ static inline long arch_atomic64_sub_if_positive(long i, atomic64_t *v)
 		"	beqz	%1, 1b					\n"
 		"2:							\n"
 		__WEAK_LLSC_MB
-		: "=&r" (result), "=&r" (temp),
-		  "+" GCC_OFF_SMALL_ASM() (v->counter)
+		: "=&r" (result), "=&r" (temp), "+ZC" (v->counter)
 		: "r" (i));
 	}
 
