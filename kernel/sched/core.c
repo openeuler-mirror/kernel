@@ -7203,12 +7203,20 @@ int sched_prefer_cpus_fork(struct task_struct *p, struct task_struct *orig)
 	else
 		cpumask_clear(p->prefer_cpus);
 
+	p->se.dyn_affi_stats = kzalloc(sizeof(struct dyn_affinity_stats),
+				       GFP_KERNEL);
+	if (!p->se.dyn_affi_stats) {
+		kfree(p->prefer_cpus);
+		p->prefer_cpus = NULL;
+		return -ENOMEM;
+	}
 	return 0;
 }
 
 void sched_prefer_cpus_free(struct task_struct *p)
 {
 	kfree(p->prefer_cpus);
+	kfree(p->se.dyn_affi_stats);
 }
 
 static void do_set_prefer_cpus(struct task_struct *p,

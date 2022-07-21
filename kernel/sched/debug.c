@@ -925,6 +925,9 @@ static void sched_show_numa(struct task_struct *p, struct seq_file *m)
 void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 						  struct seq_file *m)
 {
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	struct dyn_affinity_stats	*dyn_affi = p->se.dyn_affi_stats;
+#endif
 	unsigned long nr_switches;
 
 	SEQ_printf(m, "%s (%d, #threads: %d)\n", p->comm, task_pid_nr_ns(p, ns),
@@ -983,6 +986,10 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 		P_SCHEDSTAT(se.statistics.nr_wakeups_affine_attempts);
 		P_SCHEDSTAT(se.statistics.nr_wakeups_passive);
 		P_SCHEDSTAT(se.statistics.nr_wakeups_idle);
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+		__P(dyn_affi->nr_wakeups_preferred_cpus);
+		__P(dyn_affi->nr_wakeups_force_preferred_cpus);
+#endif
 
 		avg_atom = p->se.sum_exec_runtime;
 		if (nr_switches)

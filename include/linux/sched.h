@@ -444,6 +444,15 @@ struct sched_statistics {
 #endif
 };
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+struct dyn_affinity_stats {
+#ifdef CONFIG_SCHEDSTATS
+	u64				nr_wakeups_preferred_cpus;
+	u64				nr_wakeups_force_preferred_cpus;
+#endif
+};
+#endif
+
 struct sched_entity {
 	/* For load-balancing: */
 	struct load_weight		load;
@@ -480,7 +489,15 @@ struct sched_entity {
 	struct sched_avg		avg;
 #endif
 
+#if !defined(__GENKSYMS__)
+#if defined(CONFIG_QOS_SCHED_DYNAMIC_AFFINITY)
+	struct dyn_affinity_stats	*dyn_affi_stats;
+#else
 	KABI_RESERVE(1)
+#endif
+#else
+	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
