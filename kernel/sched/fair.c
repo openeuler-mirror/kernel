@@ -1775,6 +1775,9 @@ assign:
 		 * can be used from IRQ context.
 		 */
 		local_irq_disable();
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+		env->p->select_cpus = &env->p->cpus_allowed;
+#endif
 		env->dst_cpu = select_idle_sibling(env->p, env->src_cpu,
 						   env->dst_cpu);
 		local_irq_enable();
@@ -5955,8 +5958,13 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p,
 		int i;
 
 		/* Skip over this group if it has no CPUs allowed */
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+		if (!cpumask_intersects(sched_group_span(group),
+					p->select_cpus))
+#else
 		if (!cpumask_intersects(sched_group_span(group),
 					&p->cpus_allowed))
+#endif
 			continue;
 
 		local_group = cpumask_test_cpu(this_cpu,
@@ -6088,7 +6096,11 @@ find_idlest_group_cpu(struct sched_group *group, struct task_struct *p, int this
 		return cpumask_first(sched_group_span(group));
 
 	/* Traverse only the allowed CPUs */
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	for_each_cpu_and(i, sched_group_span(group), p->select_cpus) {
+#else
 	for_each_cpu_and(i, sched_group_span(group), &p->cpus_allowed) {
+#endif
 		if (sched_idle_cpu(i))
 			return i;
 
@@ -6131,7 +6143,11 @@ static inline int find_idlest_cpu(struct sched_domain *sd, struct task_struct *p
 {
 	int new_cpu = cpu;
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (!cpumask_intersects(sched_domain_span(sd), p->select_cpus))
+#else
 	if (!cpumask_intersects(sched_domain_span(sd), &p->cpus_allowed))
+#endif
 		return prev_cpu;
 
 	/*
@@ -6248,7 +6264,11 @@ static int select_idle_core(struct task_struct *p, struct sched_domain *sd, int 
 	if (!test_idle_cores(target, false))
 		return -1;
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_and(cpus, sched_domain_span(sd), p->select_cpus);
+#else
 	cpumask_and(cpus, sched_domain_span(sd), &p->cpus_allowed);
+#endif
 
 	for_each_cpu_wrap(core, cpus, target) {
 		bool idle = true;
@@ -6282,8 +6302,13 @@ static int select_idle_smt(struct task_struct *p, struct sched_domain *sd, int t
 		return -1;
 
 	for_each_cpu(cpu, cpu_smt_mask(target)) {
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+		if (!cpumask_test_cpu(cpu, p->select_cpus) ||
+		    !cpumask_test_cpu(cpu, sched_domain_span(sd)))
+#else
 		if (!cpumask_test_cpu(cpu, &p->cpus_allowed) ||
 		    !cpumask_test_cpu(cpu, sched_domain_span(sd)))
+#endif
 			continue;
 		if (available_idle_cpu(cpu) || sched_idle_cpu(cpu))
 			return cpu;
@@ -6344,7 +6369,11 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 
 	time = local_clock();
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_and(cpus, sched_domain_span(sd), p->select_cpus);
+#else
 	cpumask_and(cpus, sched_domain_span(sd), &p->cpus_allowed);
+#endif
 
 	for_each_cpu_wrap(cpu, cpus, target) {
 		if (!--nr)
@@ -6383,7 +6412,12 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	struct sched_domain *sd;
 	int i, recent_used_cpu;
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if ((available_idle_cpu(target) || sched_idle_cpu(target)) &&
+	    cpumask_test_cpu(target, p->select_cpus)) {
+#else
 	if (available_idle_cpu(target) || sched_idle_cpu(target)) {
+#endif
 		SET_STAT(found_idle_cpu_easy);
 		return target;
 	}
@@ -6391,8 +6425,14 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	/*
 	 * If the previous CPU is cache affine and idle, don't be stupid:
 	 */
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (prev != target && cpus_share_cache(prev, target) &&
+	    cpumask_test_cpu(prev, p->select_cpus) &&
+	    (available_idle_cpu(prev) || sched_idle_cpu(prev))) {
+#else
 	if (prev != target && cpus_share_cache(prev, target) &&
 	    (available_idle_cpu(prev) || sched_idle_cpu(prev))) {
+#endif
 		SET_STAT(found_idle_cpu_easy);
 		return prev;
 	}
@@ -6403,7 +6443,11 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	    recent_used_cpu != target &&
 	    cpus_share_cache(recent_used_cpu, target) &&
 	    (available_idle_cpu(recent_used_cpu) || sched_idle_cpu(recent_used_cpu)) &&
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	    cpumask_test_cpu(p->recent_used_cpu, p->select_cpus)) {
+#else
 	    cpumask_test_cpu(p->recent_used_cpu, &p->cpus_allowed)) {
+#endif
 		/*
 		 * Replace recent_used_cpu with prev as it is a potential
 		 * candidate for the next wake:
@@ -6605,7 +6649,85 @@ static int wake_cap(struct task_struct *p, int cpu, int prev_cpu)
 	sync_entity_load_avg(&p->se);
 
 	return min_cap * 1024 < task_util(p) * capacity_margin;
+
 }
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+/*
+ * Low utilization threshold for CPU
+ *
+ * (default: 85%), units: percentage of CPU utilization)
+ */
+int sysctl_sched_util_low_pct = 85;
+
+static inline bool prefer_cpus_valid(struct task_struct *p)
+{
+	return p->prefer_cpus &&
+	       !cpumask_empty(p->prefer_cpus) &&
+	       !cpumask_equal(p->prefer_cpus, &p->cpus_allowed) &&
+	       cpumask_subset(p->prefer_cpus, &p->cpus_allowed);
+}
+
+/*
+ * set_task_select_cpus: select the cpu range for task
+ * @p: the task whose available cpu range will to set
+ * @idlest_cpu: the cpu which is the idlest in prefer cpus
+ *
+ * If sum of 'util_avg' among 'preferred_cpus' lower than the percentage
+ * 'sysctl_sched_util_low_pct' of 'preferred_cpus' capacity, select
+ * 'preferred_cpus' range for task, otherwise select 'preferred_cpus' for task.
+ *
+ * The available cpu range set to p->select_cpus. Idlest cpu in preferred cpus
+ * set to @idlest_cpu, which is set to wakeup cpu when fast path wakeup cpu
+ * without p->select_cpus.
+ */
+static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
+				 int sd_flag)
+{
+	unsigned long util_avg_sum = 0;
+	unsigned long tg_capacity = 0;
+	long min_util = INT_MIN;
+	struct task_group *tg;
+	long spare;
+	int cpu;
+
+	p->select_cpus = &p->cpus_allowed;
+	if (!prefer_cpus_valid(p))
+		return;
+
+	rcu_read_lock();
+	tg = task_group(p);
+	for_each_cpu(cpu, p->prefer_cpus) {
+		if (unlikely(!tg->se[cpu]))
+			continue;
+
+		if (idlest_cpu && available_idle_cpu(cpu)) {
+			*idlest_cpu = cpu;
+		} else if (idlest_cpu) {
+			spare = (long)(capacity_of(cpu) - tg->se[cpu]->avg.util_avg);
+			if (spare > min_util) {
+				min_util = spare;
+				*idlest_cpu = cpu;
+			}
+		}
+
+		if (available_idle_cpu(cpu)) {
+			rcu_read_unlock();
+			p->select_cpus = p->prefer_cpus;
+			return;
+		}
+
+		util_avg_sum += tg->se[cpu]->avg.util_avg;
+		tg_capacity += capacity_of(cpu);
+	}
+	rcu_read_unlock();
+
+	if (tg_capacity > cpumask_weight(p->prefer_cpus) &&
+	    util_avg_sum * 100 <= tg_capacity * sysctl_sched_util_low_pct) {
+		p->select_cpus = p->prefer_cpus;
+	}
+}
+#endif
 
 /*
  * select_task_rq_fair: Select target runqueue for the waking task in domains
@@ -6628,13 +6750,24 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int new_cpu = prev_cpu;
 	int want_affine = 0;
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	int idlest_cpu = 0;
+#endif
 
 	time = schedstat_start_time();
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	set_task_select_cpus(p, &idlest_cpu, sd_flag);
+#endif
 
 	if (sd_flag & SD_BALANCE_WAKE) {
 		record_wakee(p);
 		want_affine = !wake_wide(p) && !wake_cap(p, cpu, prev_cpu)
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+			      && cpumask_test_cpu(cpu, p->select_cpus);
+#else
 			      && cpumask_test_cpu(cpu, &p->cpus_allowed);
+#endif
 	}
 
 	rcu_read_lock();
@@ -6648,7 +6781,13 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 		 */
 		if (want_affine && (tmp->flags & SD_WAKE_AFFINE) &&
 		    cpumask_test_cpu(prev_cpu, sched_domain_span(tmp))) {
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+			new_cpu = cpu;
+			if (cpu != prev_cpu &&
+			    cpumask_test_cpu(prev_cpu, p->select_cpus))
+#else
 			if (cpu != prev_cpu)
+#endif
 				new_cpu = wake_affine(tmp, p, cpu, prev_cpu, sync);
 
 			sd = NULL; /* Prefer wake_affine over balance flags */
@@ -6673,6 +6812,11 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 			current->recent_used_cpu = cpu;
 	}
 	rcu_read_unlock();
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (!cpumask_test_cpu(new_cpu, p->select_cpus))
+		new_cpu = idlest_cpu;
+#endif
 	schedstat_end_time(cpu_rq(cpu), time);
 
 	return new_cpu;

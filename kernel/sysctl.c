@@ -1326,6 +1326,17 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &one_thousand,
 	},
 #endif
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	{
+		.procname       = "sched_util_low_pct",
+		.data           = &sysctl_sched_util_low_pct,
+		.maxlen         = sizeof(sysctl_sched_util_low_pct),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = &zero,
+		.extra2		= &one_hundred,
+	},
+#endif
 	{ }
 };
 

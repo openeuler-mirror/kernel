@@ -1251,13 +1251,15 @@ struct task_struct {
 #if !defined(__GENKSYMS__)
 #if defined(CONFIG_QOS_SCHED_DYNAMIC_AFFINITY)
 	cpumask_t			*prefer_cpus;
+	const cpumask_t			*select_cpus;
 #else
 	KABI_RESERVE(6)
-#endif
-#else
-	KABI_RESERVE(6)
-#endif
 	KABI_RESERVE(7)
+#endif
+#else
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+#endif
 	KABI_RESERVE(8)
 
 	/* CPU-specific state of this task: */
