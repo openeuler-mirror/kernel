@@ -1239,8 +1239,8 @@ static void smc_accept_enqueue(struct sock *parent, struct sock *sk)
 	sock_hold(sk); /* sock_put in smc_accept_unlink () */
 	spin_lock(&par->accept_q_lock);
 	list_add_tail(&smc_sk(sk)->accept_q, &par->accept_q);
-	spin_unlock(&par->accept_q_lock);
 	sk_acceptq_added(parent);
+	spin_unlock(&par->accept_q_lock);
 }
 
 /* remove a socket from the accept queue of its parental listening socket */
@@ -1250,8 +1250,8 @@ static void smc_accept_unlink(struct sock *sk)
 
 	spin_lock(&par->accept_q_lock);
 	list_del_init(&smc_sk(sk)->accept_q);
-	spin_unlock(&par->accept_q_lock);
 	sk_acceptq_removed(&smc_sk(sk)->listen_smc->sk);
+	spin_unlock(&par->accept_q_lock);
 	sock_put(sk); /* sock_hold in smc_accept_enqueue */
 }
 
