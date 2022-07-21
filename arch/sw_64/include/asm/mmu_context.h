@@ -48,7 +48,6 @@ __reload_thread(struct pcb_struct *pcb)
  */
 
 #ifdef CONFIG_SUBARCH_C3B
-#define MAX_ASN			1023
 #define WIDTH_HARDWARE_ASN	10
 #endif
 
@@ -89,7 +88,7 @@ __get_new_mm_context(struct mm_struct *mm, long cpu)
 	unsigned long asn = cpu_last_asn(cpu);
 	unsigned long next = asn + 1;
 
-	if ((asn & HARDWARE_ASN_MASK) >= MAX_ASN) {
+	if ((asn & HARDWARE_ASN_MASK) >= HARDWARE_ASN_MASK) {
 		tbiap();
 		next = (asn & ~HARDWARE_ASN_MASK) + ASN_FIRST_VERSION;
 	}
@@ -132,7 +131,7 @@ switch_mm(struct mm_struct *prev_mm, struct mm_struct *next_mm,
 	 * Always update the PCB PTBR. If next is kernel thread, it must
 	 * update PTBR. If next is user process, it's ok to update PTBR.
 	 */
-	task_thread_info(next)->pcb.ptbr = (__pa(next_mm->pgd)) >> PAGE_SHIFT;
+	task_thread_info(next)->pcb.ptbr = virt_to_pfn(next_mm->pgd);
 	load_asn_ptbr(task_thread_info(next)->pcb.asn, task_thread_info(next)->pcb.ptbr);
 }
 
@@ -171,8 +170,7 @@ static inline int init_new_context(struct task_struct *tsk,
 	for_each_possible_cpu(i)
 		mm->context.asid[i] = 0;
 	if (tsk != current)
-		task_thread_info(tsk)->pcb.ptbr
-			= (__pa(mm->pgd)) >> PAGE_SHIFT;
+		task_thread_info(tsk)->pcb.ptbr = virt_to_pfn(mm->pgd);
 	return 0;
 }
 
@@ -184,8 +182,7 @@ static inline void destroy_context(struct mm_struct *mm)
 static inline void enter_lazy_tlb(struct mm_struct *mm,
 				  struct task_struct *tsk)
 {
-	task_thread_info(tsk)->pcb.ptbr
-		= (__pa(mm->pgd)) >> PAGE_SHIFT;
+	task_thread_info(tsk)->pcb.ptbr = virt_to_pfn(mm->pgd);
 }
 
 static inline int arch_dup_mmap(struct mm_struct *oldmm,

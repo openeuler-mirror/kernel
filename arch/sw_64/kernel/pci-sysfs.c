@@ -10,9 +10,6 @@
  * drivers/pci/pci-sysfs.c
  */
 
-#include <linux/sched.h>
-#include <linux/stat.h>
-#include <linux/slab.h>
 #include <linux/pci.h>
 
 static int hose_mmap_page_range(struct pci_controller *hose,

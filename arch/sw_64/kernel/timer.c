@@ -4,20 +4,9 @@
  *  Description:  percpu local timer, based on arch/x86/kernel/apic/apic.c
  */
 
-#include <linux/init.h>
-#include <linux/mm.h>
-#include <linux/delay.h>
-#include <linux/memblock.h>
 #include <linux/interrupt.h>
-#include <linux/kernel_stat.h>
-#include <linux/ioport.h>
-#include <linux/cpu.h>
 #include <linux/clockchips.h>
-#include <linux/acpi_pmtmr.h>
-#include <linux/module.h>
-#include <linux/dmi.h>
-#include <linux/dmar.h>
-#include <asm/hcall.h>
+
 #include <asm/hw_init.h>
 #include <asm/hardirq.h>
 
@@ -96,6 +85,14 @@ static int timer_set_oneshot(struct clock_event_device *evt)
 	 * so, nothing to do here ...
 	 */
 	return 0;
+}
+
+void sw64_update_clockevents(unsigned long cpu, u32 freq)
+{
+	struct clock_event_device *swevt = &per_cpu(timer_events, cpu);
+
+	if (cpu == smp_processor_id())
+		clockevents_update_freq(swevt, freq);
 }
 
 /*

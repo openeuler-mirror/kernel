@@ -1490,8 +1490,8 @@ union bpf_attr {
  * 	Return
  * 		The return value depends on the result of the test, and can be:
  *
- *		* 0, if current task belongs to the cgroup2.
- *		* 1, if current task does not belong to the cgroup2.
+ *		* 1, if current task belongs to the cgroup2.
+ *		* 0, if current task does not belong to the cgroup2.
  * 		* A negative error code, if an error occurred.
  *
  * long bpf_skb_change_tail(struct sk_buff *skb, u32 len, u64 flags)
@@ -3742,6 +3742,19 @@ union bpf_attr {
  * 	Return
  * 		The helper returns **TC_ACT_REDIRECT** on success or
  * 		**TC_ACT_SHOT** on error.
+ *
+ * u64 bpf_get_sockops_uid_gid(void *sockops)
+ *     Description
+ *             Get sock's uid and gid
+ *     Return
+ *             A 64-bit integer containing the current GID and UID, and
+ *             created as such: *current_gid* **<< 32 \|** *current_uid*.
+ *
+ * int bpf_sk_original_addr(void *bpf_socket, int optname, char *optval, int optlen)
+ *     Description
+ *             Get Ipv4 origdst or replysrc. Works with IPv4.
+ *     Return
+ *             0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3900,6 +3913,8 @@ union bpf_attr {
 	FN(per_cpu_ptr),		\
 	FN(this_cpu_ptr),		\
 	FN(redirect_peer),		\
+	FN(get_sockops_uid_gid),	\
+	FN(sk_original_addr),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

@@ -74,6 +74,11 @@ int ext4_resize_begin(struct super_block *sb)
 		return -EPERM;
 	}
 
+	if (ext4_has_feature_sparse_super2(sb)) {
+		ext4_msg(sb, KERN_ERR, "Online resizing not supported with sparse_super2");
+		return -EOPNOTSUPP;
+	}
+
 	if (test_and_set_bit_lock(EXT4_FLAGS_RESIZING,
 				  &EXT4_SB(sb)->s_ext4_flags))
 		ret = -EBUSY;
@@ -2006,6 +2011,9 @@ retry:
 			ext4_warning(sb, "Error opening resize inode");
 			return PTR_ERR(resize_inode);
 		}
+	} else if (es->s_reserved_gdt_blocks) {
+		ext4_error(sb, "resize_inode disabled but reserved GDT blocks non-zero");
+		return -EFSCORRUPTED;
 	}
 
 	if ((!resize_inode && !meta_bg) || n_blocks_count == o_blocks_count) {

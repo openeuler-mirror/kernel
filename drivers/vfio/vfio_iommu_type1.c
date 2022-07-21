@@ -1096,7 +1096,7 @@ static int vfio_iova_dirty_log_clear(u64 __user *bitmap,
 	unsigned long bitmap_size;
 	unsigned long *bitmap_buffer = NULL;
 	bool clear_valid;
-	int rs, re, start, end, dma_offset;
+	unsigned int rs, re, start, end, dma_offset;
 	int ret = 0;
 
 	bitmap_size = DIRTY_BITMAP_BYTES(size >> pgshift);
@@ -1128,7 +1128,7 @@ static int vfio_iova_dirty_log_clear(u64 __user *bitmap,
 		end = (end_iova - iova) >> pgshift;
 		bitmap_for_each_set_region(bitmap_buffer, rs, re, start, end) {
 			clear_valid = true;
-			riova = iova + (rs << pgshift);
+			riova = iova + ((unsigned long)rs << pgshift);
 			dma_offset = (riova - dma->iova) >> pgshift;
 			bitmap_clear(dma->bitmap, dma_offset, re - rs);
 		}
@@ -2420,7 +2420,7 @@ static void vfio_iommu_update_hwdbm(struct vfio_iommu *iommu,
 	bool num_non_hwdbm_zeroed = false;
 	bool log_enabled, should_enable;
 
-	if (old_hwdbm && !new_hwdbm && attach) {
+	if ((old_hwdbm || singular) && !new_hwdbm && attach) {
 		iommu->num_non_hwdbm_domains++;
 	} else if (!old_hwdbm && new_hwdbm && !attach) {
 		iommu->num_non_hwdbm_domains--;

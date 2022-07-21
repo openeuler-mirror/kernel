@@ -62,14 +62,10 @@ struct klp_func_list {
 	int force;
 };
 
-struct stackframe {
-	unsigned long sp;
-	unsigned long pc;
-};
-
 struct walk_stackframe_args {
 	int enable;
 	struct klp_func_list *check_funcs;
+	struct module *mod;
 	int ret;
 };
 
@@ -81,16 +77,6 @@ static inline unsigned long klp_size_to_check(unsigned long func_size,
 	if (force == KLP_STACK_OPTIMIZE && size > MAX_SIZE_TO_CHECK)
 		size = MAX_SIZE_TO_CHECK;
 	return size;
-}
-
-static inline int klp_compare_address(unsigned long pc, unsigned long func_addr,
-		const char *func_name, unsigned long check_size)
-{
-	if (pc >= func_addr && pc < func_addr + check_size) {
-		pr_err("func %s is in use!\n", func_name);
-		return -EBUSY;
-	}
-	return 0;
 }
 
 static bool check_jump_insn(unsigned long func_addr)
@@ -144,7 +130,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 	for (obj = patch->objs; obj->funcs; obj++) {
 		for (func = obj->funcs; func->old_name; func++) {
 			if (enable) {
-				if (func->force == KLP_ENFORCEMENT)
+				if (func->patched || func->force == KLP_ENFORCEMENT)
 					continue;
 				/*
 				 * When enable, checking the currently
@@ -235,20 +221,6 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 	return 0;
 }
 
-static int unwind_frame(struct task_struct *tsk, struct stackframe *frame)
-{
-
-	unsigned long *stack;
-
-	if (!validate_sp(frame->sp, tsk, STACK_FRAME_OVERHEAD))
-		return -1;
-
-	stack = (unsigned long *)frame->sp;
-	frame->sp = stack[0];
-	frame->pc = stack[STACK_FRAME_LR_SAVE];
-	return 0;
-}
-
 void notrace klp_walk_stackframe(struct stackframe *frame,
 		int (*fn)(struct stackframe *, void *),
 		struct task_struct *tsk, void *data)
@@ -258,7 +230,7 @@ void notrace klp_walk_stackframe(struct stackframe *frame,
 
 		if (fn(frame, data))
 			break;
-		ret = unwind_frame(tsk, frame);
+		ret = klp_unwind_frame(tsk, frame);
 		if (ret < 0)
 			break;
 	}
@@ -282,9 +254,14 @@ static int klp_check_jump_func(struct stackframe *frame, void *data)
 	struct walk_stackframe_args *args = data;
 	struct klp_func_list *check_funcs = args->check_funcs;
 
-	if (!check_func_list(check_funcs, &args->ret, frame->pc)) {
+	/* check the PC first */
+	if (!check_func_list(check_funcs, &args->ret, frame->pc))
 		return args->ret;
-	}
+
+	/* check NIP when the exception stack switching */
+	if (frame->nip && !check_func_list(check_funcs, &args->ret, frame->nip))
+		return args->ret;
+
 	return 0;
 }
 
@@ -299,21 +276,12 @@ static void free_list(struct klp_func_list **funcs)
 	}
 }
 
-int klp_check_calltrace(struct klp_patch *patch, int enable)
+static int do_check_calltrace(struct walk_stackframe_args *args,
+			      int (*fn)(struct stackframe *, void *))
 {
 	struct task_struct *g, *t;
 	struct stackframe frame;
 	unsigned long *stack;
-	int ret = 0;
-	struct klp_func_list *check_funcs = NULL;
-	struct walk_stackframe_args args = {
-		.ret = 0
-	};
-
-	ret = klp_check_activeness_func(patch, enable, &check_funcs);
-	if (ret)
-		goto out;
-	args.check_funcs = check_funcs;
 
 	for_each_process_thread(g, t) {
 		if (t == current) {
@@ -352,21 +320,70 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 
 		frame.sp = (unsigned long)stack;
 		frame.pc = stack[STACK_FRAME_LR_SAVE];
-		if (check_funcs != NULL) {
-			klp_walk_stackframe(&frame, klp_check_jump_func, t, &args);
-			if (args.ret) {
-				ret = args.ret;
-				pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
-				show_stack(t, NULL, KERN_INFO);
-				goto out;
-			}
+		frame.nip = 0;
+		klp_walk_stackframe(&frame, fn, t, args);
+		if (args->ret) {
+			pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
+			show_stack(t, NULL, KERN_INFO);
+			return args->ret;
 		}
 	}
+	return 0;
+}
+
+int klp_check_calltrace(struct klp_patch *patch, int enable)
+{
+	int ret = 0;
+	struct klp_func_list *check_funcs = NULL;
+	struct walk_stackframe_args args = {
+		.ret = 0
+	};
+
+	ret = klp_check_activeness_func(patch, enable, &check_funcs);
+	if (ret) {
+		pr_err("collect active functions failed, ret=%d\n", ret);
+		goto out;
+	}
+	if (!check_funcs)
+		goto out;
+
+	args.check_funcs = check_funcs;
+	ret = do_check_calltrace(&args, klp_check_jump_func);
 
 out:
 	free_list(&check_funcs);
 	return ret;
 }
+
+static int check_module_calltrace(struct stackframe *frame, void *data)
+{
+	struct walk_stackframe_args *args = data;
+
+	/* check the PC first */
+	if (within_module_core(frame->pc, args->mod))
+		goto err_out;
+
+	/* check NIP when the exception stack switching */
+	if (frame->nip && within_module_core(frame->nip, args->mod))
+		goto err_out;
+
+	return 0;
+
+err_out:
+	pr_err("module %s is in use!\n", args->mod->name);
+	return (args->ret = -EBUSY);
+}
+
+int arch_klp_module_check_calltrace(void *data)
+{
+	struct walk_stackframe_args args = {
+		.mod = (struct module *)data,
+		.ret = 0
+	};
+
+	return do_check_calltrace(&args, check_module_calltrace);
+}
+
 #endif
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
@@ -392,24 +409,21 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 	return ret;
 }
 
-int arch_klp_patch_func(struct klp_func *func)
+static int do_patch(unsigned long pc, unsigned long new_addr)
 {
-	struct klp_func_node *func_node;
-	unsigned long pc, new_addr;
-	long ret;
+	int ret;
 	int i;
 	u32 insns[LJMP_INSN_SIZE];
 
-	func_node = func->func_node;
-	list_add_rcu(&func->stack_node, &func_node->func_stack);
-	pc = (unsigned long)func->old_func;
-	new_addr = (unsigned long)func->new_func;
 	if (offset_in_range(pc, new_addr, SZ_32M)) {
 		struct ppc_inst instr;
 
 		create_branch(&instr, (struct ppc_inst *)pc, new_addr, 0);
-		if (patch_instruction((struct ppc_inst *)pc, instr))
-			goto ERR_OUT;
+		ret = patch_instruction((struct ppc_inst *)pc, instr);
+		if (ret) {
+			pr_err("patch instruction small range failed, ret=%d\n", ret);
+			return -EPERM;
+		}
 	} else {
 		/*
 		 * lis r12,sym@ha
@@ -425,65 +439,53 @@ int arch_klp_patch_func(struct klp_func *func)
 		for (i = 0; i < LJMP_INSN_SIZE; i++) {
 			ret = patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
 						ppc_inst(insns[i]));
-			if (ret)
-				goto ERR_OUT;
+			if (ret) {
+				pr_err("patch instruction(%d) large range failed, ret=%d\n",
+				       i, ret);
+				return -EPERM;
+			}
 		}
 	}
-
 	return 0;
+}
 
-ERR_OUT:
-	list_del_rcu(&func->stack_node);
+int arch_klp_patch_func(struct klp_func *func)
+{
+	struct klp_func_node *func_node;
+	int ret;
 
-	return -EPERM;
+	func_node = func->func_node;
+	list_add_rcu(&func->stack_node, &func_node->func_stack);
+	ret = do_patch((unsigned long)func->old_func, (unsigned long)func->new_func);
+	if (ret)
+		list_del_rcu(&func->stack_node);
+	return ret;
 }
 
 void arch_klp_unpatch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
-	unsigned long pc, new_addr;
-	u32 insns[LJMP_INSN_SIZE];
+	unsigned long pc;
 	int i;
+	int ret;
 
 	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
-	if (list_is_singular(&func_node->func_stack)) {
-		for (i = 0; i < LJMP_INSN_SIZE; i++)
-			insns[i] = func_node->arch_data.old_insns[i];
-
-		list_del_rcu(&func->stack_node);
-
-		for (i = 0; i < LJMP_INSN_SIZE; i++)
-			patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
-					  ppc_inst(insns[i]));
+	list_del_rcu(&func->stack_node);
+	if (list_empty(&func_node->func_stack)) {
+		for (i = 0; i < LJMP_INSN_SIZE; i++) {
+			ret = patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
+						ppc_inst(func_node->arch_data.old_insns[i]));
+			if (ret) {
+				pr_err("restore instruction(%d) failed, ret=%d\n", i, ret);
+				return;
+			}
+		}
 	} else {
-		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 					struct klp_func, stack_node);
-
-		new_addr = (unsigned long)next_func->new_func;
-		if (offset_in_range(pc, new_addr, SZ_32M)) {
-			struct ppc_inst instr;
-
-			create_branch(&instr, (struct ppc_inst *)pc, new_addr, 0);
-			patch_instruction((struct ppc_inst *)pc, instr);
-		} else {
-			/*
-			 * lis r12,sym@ha
-			 * addi r12,r12,sym@l
-			 * mtctr r12
-			 * bctr
-			 */
-			insns[0] = 0x3d800000 + ((new_addr + 0x8000) >> 16);
-			insns[1] = 0x398c0000 + (new_addr & 0xffff);
-			insns[2] = 0x7d8903a6;
-			insns[3] = 0x4e800420;
-
-			for (i = 0; i < LJMP_INSN_SIZE; i++)
-				patch_instruction((struct ppc_inst *)(((u32 *)pc) + i),
-						  ppc_inst(insns[i]));
-		}
+		do_patch(pc, (unsigned long)next_func->new_func);
 	}
 }
 

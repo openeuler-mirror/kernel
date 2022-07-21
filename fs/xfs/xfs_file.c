@@ -29,6 +29,7 @@
 #include <linux/backing-dev.h>
 #include <linux/mman.h>
 #include <linux/fadvise.h>
+#include <trace/events/fs.h>
 
 static const struct vm_operations_struct xfs_file_vm_ops;
 
@@ -289,6 +290,7 @@ xfs_file_buffered_aio_read(
 	ssize_t			ret;
 
 	trace_xfs_file_buffered_read(ip, iov_iter_count(to), iocb->ki_pos);
+	fs_file_read_do_trace(iocb);
 
 	if (iocb->ki_flags & IOCB_NOWAIT) {
 		if (!xfs_ilock_nowait(ip, XFS_IOLOCK_SHARED))
@@ -1197,6 +1199,7 @@ xfs_file_release(
 	struct inode	*inode,
 	struct file	*filp)
 {
+	trace_fs_file_release(inode, filp);
 	return xfs_release(XFS_I(inode));
 }
 

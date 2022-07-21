@@ -229,11 +229,36 @@ struct klp_func_node {
 	struct list_head func_stack;
 	void *old_func;
 	struct arch_klp_data arch_data;
+	/*
+	 * Used in breakpoint exception handling functions.
+	 * If 'brk_func' is NULL, no breakpoint is inserted into the entry of
+	 * the old function.
+	 * If it is not NULL, the value is the new function that will jump to
+	 * when the breakpoint exception is triggered.
+	 */
+	void *brk_func;
 };
 
 struct klp_func_node *klp_find_func_node(const void *old_func);
 void klp_add_func_node(struct klp_func_node *func_node);
 void klp_del_func_node(struct klp_func_node *func_node);
+void *klp_get_brk_func(void *addr);
+
+static inline
+int klp_compare_address(unsigned long pc, unsigned long func_addr,
+			const char *func_name, unsigned long check_size)
+{
+	if (pc >= func_addr && pc < func_addr + check_size) {
+		pr_warn("func %s is in use!\n", func_name);
+		/* Return -EAGAIN for next retry */
+		return -EAGAIN;
+	}
+	return 0;
+}
+
+void arch_klp_init(void);
+int klp_module_delete_safety_check(struct module *mod);
+
 #endif
 
 int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,

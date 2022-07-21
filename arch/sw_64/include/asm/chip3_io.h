@@ -19,7 +19,6 @@
 #define PCI_LEGACY_IO		(0x1UL << 32)
 #define PCI_LEGACY_IO_SIZE	(0x100000000UL)
 #define PCI_MEM_UNPRE		0x0UL
-#define PCI_32BIT_VT_MEMIO	(0xc0000000UL)
 #define PCI_32BIT_MEMIO		(0xe0000000UL)
 #define PCI_32BIT_MEMIO_SIZE	(0x20000000UL)
 #define PCI_64BIT_MEMIO		(0x1UL << 39)
@@ -69,6 +68,9 @@
 #define DLIC_BASE		(0x22UL << 32)
 #define DLI_PHY_CTL		(0x10UL << 24)
 #define PCI_VT_LEGACY_IO	(IO_BASE | PCI_BASE | PCI_LEGACY_IO)
+
+#define PME_ENABLE_INTD_CORE0	(0x1UL << 62 | 0x1UL << 10)
+#define AER_ENABLE_INTD_CORE0	(0x1UL << 62 | 0x1UL << 10)
 
 /*-----------------------addr-----------------------*/
 /* CAB0 REG */

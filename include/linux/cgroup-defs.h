@@ -72,6 +72,9 @@ enum {
 
 	/* Cgroup is frozen. */
 	CGRP_FROZEN,
+
+	/* Control group has to be killed. */
+	CGRP_KILL,
 };
 
 /* cgroup_root->flags */
@@ -484,7 +487,12 @@ struct cgroup {
 	/* used to schedule release agent */
 	struct work_struct release_agent_work;
 
-	/* used to track pressure stalls */
+	/* used to track pressure stalls. */
+
+	/*
+	 * It is accessed only the cgroup core code and so changes made to
+	 * the cgroup structure should not affect third-party kernel modules.
+	 */
 	struct psi_group psi;
 
 	/* used to store eBPF programs */

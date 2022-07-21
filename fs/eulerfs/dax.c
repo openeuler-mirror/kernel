@@ -1172,8 +1172,8 @@ static ssize_t do_mapping_read(struct address_space *mapping,
 			goto out;
 		}
 
-		copied += (nr - left);
-		offset += (nr - left);
+		copied += nr;
+		offset += nr;
 		index += offset >> PAGE_SHIFT;
 		offset &= ~PAGE_MASK;
 	} while (copied < len);

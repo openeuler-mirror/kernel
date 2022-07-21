@@ -37,9 +37,23 @@ int klp_check_calltrace(struct klp_patch *patch, int enable);
 #define JMP_E9_INSN_SIZE 5
 struct arch_klp_data {
 	unsigned char old_code[JMP_E9_INSN_SIZE];
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	/*
+	 * Saved opcode at the entry of the old func (which maybe replaced
+	 * with breakpoint).
+	 */
+	unsigned char saved_opcode;
+#endif
 };
 
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+int arch_klp_check_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+int klp_int3_handler(struct pt_regs *regs);
+int arch_klp_module_check_calltrace(void *data);
+#endif
 
 #endif
 

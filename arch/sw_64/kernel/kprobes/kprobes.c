@@ -5,13 +5,9 @@
  */
 
 #include <linux/kprobes.h>
-#include <linux/preempt.h>
-#include <linux/uaccess.h>
 #include <linux/kdebug.h>
 #include <linux/slab.h>
 
-#include <asm/ptrace.h>
-#include <asm/insn.h>
 #include "common.h"
 
 static u32 breakpoint_insn = BREAK_KPROBE;

@@ -12,24 +12,9 @@
  */
 
 #include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/errno.h>
-#include <linux/kernel_stat.h>
-#include <linux/signal.h>
-#include <linux/sched.h>
-#include <linux/ptrace.h>
 #include <linux/interrupt.h>
-#include <linux/random.h>
 #include <linux/irq.h>
-#include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <linux/profile.h>
-#include <linux/bitops.h>
-#include <linux/uaccess.h>
-
-#include <asm/hw_init.h>
-#include <asm/hardirq.h>
-#include <asm/io.h>
 
 volatile unsigned long irq_err_count;
 DEFINE_PER_CPU(unsigned long, irq_pmi_count);

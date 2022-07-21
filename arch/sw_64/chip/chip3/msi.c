@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/pci.h>
-#include <linux/irq.h>
-#include <linux/kernel.h>
-#include <linux/cpumask.h>
 #include <linux/module.h>
 #include <linux/msi.h>
 #include <linux/irqdomain.h>
+
 #include <asm/irq_impl.h>
-#include <asm/msi.h>
-#include <asm/pci.h>
-#include <asm/sw64io.h>
 
 static struct irq_domain *msi_default_domain;
 static DEFINE_RAW_SPINLOCK(vector_lock);

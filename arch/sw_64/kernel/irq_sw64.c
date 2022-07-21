@@ -3,18 +3,11 @@
  * SW64 specific irq code.
  */
 
-#include <linux/sched.h>
 #include <linux/irq.h>
-#include <linux/kernel_stat.h>
-#include <linux/module.h>
 #include <linux/irqchip.h>
-#include <linux/irqdesc.h>
-#include <linux/irqdomain.h>
+
 #include <asm/dma.h>
 #include <asm/irq_impl.h>
-#include <asm/core.h>
-#include <asm/perf_event.h>
-#include <asm/hmcall.h>
 
 asmlinkage void
 do_entInt(unsigned long type, unsigned long vector,

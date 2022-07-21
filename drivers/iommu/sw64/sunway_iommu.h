@@ -30,7 +30,7 @@ struct sunway_iommu_dev {
 	struct llist_node dev_data_list;	/* Global device list */
 	u16 devid;
 	int alias;
-	bool passthrough;
+	unsigned int passthrough;
 	struct sunway_iommu *iommu;
 	struct pci_dev *pdev;
 

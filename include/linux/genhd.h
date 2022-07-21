@@ -76,7 +76,7 @@ struct hd_struct {
 #endif
 	struct rcu_work rcu_work;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, u64 stat_time)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

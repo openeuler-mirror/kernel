@@ -7,31 +7,7 @@
 #include <linux/module.h>
 #include <linux/string.h>
 #include <asm/byteorder.h>
-
-static inline unsigned short from64to16(unsigned long x)
-{
-	/* Using extract instructions is a bit more efficient
-	 * than the original shift/bitmask version.
-	 */
-
-	union {
-		unsigned long	ul;
-		unsigned int	ui[2];
-		unsigned short	us[4];
-	} in_v, tmp_v, out_v;
-
-	in_v.ul = x;
-	tmp_v.ul = (unsigned long) in_v.ui[0] + (unsigned long) in_v.ui[1];
-
-	/* Since the bits of tmp_v.sh[3] are going to always be zero,
-	 *we don't have to bother to add that in.
-	 */
-	out_v.ul = (unsigned long) tmp_v.us[0] + (unsigned long) tmp_v.us[1]
-		+ (unsigned long) tmp_v.us[2];
-
-	/* Similarly, out_v.us[2] is always zero for the final add. */
-	return out_v.us[0] + out_v.us[1];
-}
+#include <asm/checksum.h>
 
 /*
  * computes the checksum of the TCP/UDP pseudo-header
@@ -69,73 +45,61 @@ EXPORT_SYMBOL(csum_tcpudp_nofold);
 
 /*
  * Do a 64-bit checksum on an arbitrary memory area..
- *
- * This isn't a great routine, but it's not _horrible_ either. The
- * inner loop could be unrolled a bit further, and there are better
- * ways to do the carry, but this is reasonable.
  */
 static inline unsigned long do_csum(const unsigned char *buff, int len)
 {
-	int odd, count;
-	unsigned long result = 0;
+	const unsigned long *dst = (unsigned long *)buff;
+	unsigned long doff = 7 & (unsigned long) dst;
+	unsigned long checksum = 0;
+	unsigned long word, patch;
+	unsigned long partial_dest, second_dest;
 
-	if (len <= 0)
-		goto out;
-	odd = 1 & (unsigned long) buff;
-	if (odd) {
-		result = *buff << 8;
-		len--;
-		buff++;
+	len -= 8;
+
+	if (!doff) {
+		while (len > 0) {
+			word = *dst;
+			checksum += word;
+			checksum += (checksum < word);
+			dst++;
+			len -= 8;
+		}
+
+		len += 8;
+		word = *dst;
+
+		if (len != 8)
+			maskll(word, len, word);
+
+		checksum += word;
+		checksum += (checksum < word);
+	} else {
+		dst = (unsigned long *)((unsigned long)dst & (~7UL));
+		word = *dst;
+		inshl(word, 8 - doff, partial_dest);
+		dst++;
+
+		while (len >= 0) {
+			word = *dst;
+			insll(word, 8 - doff, second_dest);
+			patch = partial_dest | second_dest;
+			checksum += patch;
+			checksum += (checksum < patch);
+			inshl(word, 8 - doff, partial_dest);
+			dst++;
+			len -= 8;
+		}
+
+		len += 8;
+		word = *dst;
+		insll(word, 8 - doff, second_dest);
+		patch = partial_dest | second_dest;
+		maskll(patch, len, patch);
+		checksum += patch;
+		checksum += (checksum < patch);
 	}
-	count = len >> 1;		/* nr of 16-bit words.. */
-	if (count) {
-		if (2 & (unsigned long) buff) {
-			result += *(unsigned short *) buff;
-			count--;
-			len -= 2;
-			buff += 2;
-		}
-		count >>= 1;		/* nr of 32-bit words.. */
-		if (count) {
-			if (4 & (unsigned long) buff) {
-				result += *(unsigned int *) buff;
-				count--;
-				len -= 4;
-				buff += 4;
-			}
-			count >>= 1;	/* nr of 64-bit words.. */
-			if (count) {
-				unsigned long carry = 0;
 
-				do {
-					unsigned long w = *(unsigned long *) buff;
-
-					count--;
-					buff += 8;
-					result += carry;
-					result += w;
-					carry = (w > result);
-				} while (count);
-				result += carry;
-				result = (result & 0xffffffff) + (result >> 32);
-			}
-			if (len & 4) {
-				result += *(unsigned int *) buff;
-				buff += 4;
-			}
-		}
-		if (len & 2) {
-			result += *(unsigned short *) buff;
-			buff += 2;
-		}
-	}
-	if (len & 1)
-		result += *buff;
-	result = from64to16(result);
-	if (odd)
-		result = ((result >> 8) & 0xff) | ((result & 0xff) << 8);
-out:
-	return result;
+	return from64to16(checksum);
 }
 
 /*

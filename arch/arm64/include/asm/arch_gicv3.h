@@ -191,9 +191,8 @@ static inline void gic_arch_disable_irqs(void)
 
 static inline void gic_arch_restore_irqs(unsigned long flags)
 {
-	if (gic_supports_nmi())
-		asm volatile ("msr	daif, %0" : : "r" (flags >> 32)
-					: "memory");
+	if (gic_supports_nmi() && !(flags & GIC_PRIO_PSR_I_SET))
+		gic_arch_enable_irqs();
 }
 #endif /* __ASSEMBLY__ */
 #endif /* __ASM_ARCH_GICV3_H */

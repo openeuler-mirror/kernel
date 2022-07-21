@@ -385,10 +385,17 @@ struct cfs_bandwidth {
 	int			nr_throttled;
 	u64			throttled_time;
 
+#if !defined(__GENKSYMS__)
+	u64			burst;
+	u64			runtime_snap;
+	int			nr_burst;
+	u64			burst_time;
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
+#endif
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
 #endif
@@ -626,8 +633,12 @@ struct cfs_rq {
 #endif /* CONFIG_CFS_BANDWIDTH */
 #endif /* CONFIG_FAIR_GROUP_SCHED */
 
+#if !defined(__GENKSYMS__) && defined(CONFIG_QOS_SCHED)
+	struct list_head	qos_throttled_list;
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };
@@ -1132,6 +1143,11 @@ static inline int cpu_of(struct rq *rq)
 }
 
 #ifdef CONFIG_QOS_SCHED
+enum task_qos_level {
+	QOS_LEVEL_OFFLINE = -1,
+	QOS_LEVEL_ONLINE = 0,
+	QOS_LEVEL_MAX
+};
 void init_qos_hrtimer(int cpu);
 #endif
 

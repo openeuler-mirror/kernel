@@ -41,6 +41,7 @@
 #include <linux/build_bug.h>
 #include <linux/stddef.h>
 #include <linux/mount.h>
+#include <linux/tracepoint-defs.h>
 
 #include <asm/byteorder.h>
 #include <uapi/linux/fs.h>
@@ -182,6 +183,12 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
 
 /* File supports async buffered reads */
 #define FMODE_BUF_RASYNC	((__force fmode_t)0x40000000)
+
+/* File mode control flag, expect random access pattern */
+#define FMODE_CTL_RANDOM	((__force fmode_t)0x1)
+
+/* File mode control flag, will try to read head of the file into pagecache */
+#define FMODE_CTL_WILLNEED	((__force fmode_t)0x2)
 
 /*
  * Attribute flags.  These should be or-ed together to figure out what
@@ -968,8 +975,14 @@ struct file {
 	struct address_space	*f_mapping;
 	errseq_t		f_wb_err;
 	errseq_t		f_sb_err; /* for syncfs */
-
+#ifndef __GENKSYMS__
+	union {
+		fmode_t			f_ctl_mode;
+		u64			kabi_reserved1;
+	};
+#else
 	KABI_RESERVE(1)
+#endif
 } __randomize_layout
   __attribute__((aligned(4)));	/* lest something weird decides that 2 is OK */
 
@@ -2831,6 +2844,10 @@ static inline int bmap(struct inode *inode,  sector_t *block)
 extern int notify_change(struct dentry *, struct iattr *, struct inode **);
 extern int inode_permission(struct inode *, int);
 extern int generic_permission(struct inode *, int);
+static inline int path_permission(const struct path *path, int mask)
+{
+	return inode_permission(d_inode(path->dentry), mask);
+}
 extern int __check_sticky(struct inode *dir, struct inode *inode);
 
 static inline bool execute_ok(struct inode *inode)
@@ -3555,4 +3572,33 @@ static inline int inode_drain_writes(struct inode *inode)
 	return filemap_write_and_wait(inode->i_mapping);
 }
 
+struct fs_file_read_ctx {
+	const unsigned char *name;
+	unsigned int f_ctl_mode;
+	unsigned int rsvd;
+	/* clear from f_ctl_mode */
+	unsigned int clr_f_ctl_mode;
+	/* set into f_ctl_mode */
+	unsigned int set_f_ctl_mode;
+	unsigned long key;
+	/* file size */
+	long long i_size;
+	/* previous page index */
+	long long prev_index;
+	/* current page index */
+	long long index;
+};
+
+#ifdef CONFIG_TRACEPOINTS
+DECLARE_TRACEPOINT(fs_file_read);
+extern void fs_file_read_update_args_by_trace(struct kiocb *iocb);
+#else
+static inline void fs_file_read_update_args_by_trace(struct kiocb *iocb) {}
+#endif
+
+static inline void fs_file_read_do_trace(struct kiocb *iocb)
+{
+	if (tracepoint_enabled(fs_file_read))
+		fs_file_read_update_args_by_trace(iocb);
+}
 #endif /* _LINUX_FS_H */

@@ -9,20 +9,11 @@
  * Copyright (C) 2019 He Sheng
  * Authors: He Sheng (hesheng05@gmail.com)
  */
-#include <asm/hmcall.h>
-#include <asm/setup.h>
-#include <asm/sections.h>
-#include <linux/mm_types.h>
 #include <linux/elf.h>
-#include <linux/kernel.h>
-#include <linux/libfdt.h>
-#include <linux/of_fdt.h>
-#include <linux/sched.h>
-#include <linux/start_kernel.h>
-#include <linux/string.h>
-#include <linux/printk.h>
 #include <linux/notifier.h>
 #include <linux/mm.h>
+
+#include <asm/sections.h>
 
 #define INITRD_ADDR  0x3000000UL
 #define KTEXT_MAX    0xffffffffa0000000UL

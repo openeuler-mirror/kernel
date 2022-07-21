@@ -15,7 +15,7 @@
 static inline void
 pmd_populate(struct mm_struct *mm, pmd_t *pmd, pgtable_t pte)
 {
-	pmd_set(pmd, (pte_t *)(page_to_pa(pte) + PAGE_OFFSET));
+	pmd_set(pmd, (pte_t *)__va(page_to_pa(pte)));
 }
 #define pmd_pgtable(pmd) pmd_page(pmd)
 

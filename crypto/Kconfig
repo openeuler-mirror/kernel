@@ -1039,8 +1039,12 @@ config CRYPTO_SHA3
 	  http://keccak.noekeon.org/
 
 config CRYPTO_SM3
+	tristate
+
+config CRYPTO_SM3_GENERIC
 	tristate "SM3 digest algorithm"
 	select CRYPTO_HASH
+	select CRYPTO_SM3
 	help
 	  SM3 secure hash function as defined by OSCCA GM/T 0004-2012 SM3).
 	  It is part of the Chinese Commercial Cryptography suite.
@@ -1048,6 +1052,19 @@ config CRYPTO_SM3
 	  References:
 	  http://www.oscca.gov.cn/UpFile/20101222141857786.pdf
 	  https://datatracker.ietf.org/doc/html/draft-shen-sm3-hash
+
+config CRYPTO_SM3_AVX_X86_64
+	tristate "SM3 digest algorithm (x86_64/AVX)"
+	depends on X86 && 64BIT
+	select CRYPTO_HASH
+	select CRYPTO_SM3
+	help
+	  SM3 secure hash function as defined by OSCCA GM/T 0004-2012 SM3).
+	  It is part of the Chinese Commercial Cryptography suite. This is
+	  SM3 optimized implementation using Advanced Vector Extensions (AVX)
+	  when available.
+
+	  If unsure, say N.
 
 config CRYPTO_STREEBOG
 	tristate "Streebog Hash Function"
@@ -1617,9 +1634,12 @@ config CRYPTO_SERPENT_AVX2_X86_64
 	  <https://www.cl.cam.ac.uk/~rja14/serpent.html>
 
 config CRYPTO_SM4
+	tristate
+
+config CRYPTO_SM4_GENERIC
 	tristate "SM4 cipher algorithm"
 	select CRYPTO_ALGAPI
-	select CRYPTO_LIB_SM4
+	select CRYPTO_SM4
 	help
 	  SM4 cipher algorithms (OSCCA GB/T 32907-2016).
 
@@ -1648,7 +1668,7 @@ config CRYPTO_SM4_AESNI_AVX_X86_64
 	select CRYPTO_SKCIPHER
 	select CRYPTO_SIMD
 	select CRYPTO_ALGAPI
-	select CRYPTO_LIB_SM4
+	select CRYPTO_SM4
 	help
 	  SM4 cipher algorithms (OSCCA GB/T 32907-2016) (x86_64/AES-NI/AVX).
 
@@ -1669,7 +1689,7 @@ config CRYPTO_SM4_AESNI_AVX2_X86_64
 	select CRYPTO_SKCIPHER
 	select CRYPTO_SIMD
 	select CRYPTO_ALGAPI
-	select CRYPTO_LIB_SM4
+	select CRYPTO_SM4
 	select CRYPTO_SM4_AESNI_AVX_X86_64
 	help
 	  SM4 cipher algorithms (OSCCA GB/T 32907-2016) (x86_64/AES-NI/AVX2).

@@ -56,6 +56,8 @@
 #define BRK64_OPCODE_KPROBES_SS	(AARCH64_BREAK_MON | (KPROBES_BRK_SS_IMM << 5))
 /* uprobes BRK opcodes with ESR encoding  */
 #define BRK64_OPCODE_UPROBES	(AARCH64_BREAK_MON | (UPROBES_BRK_IMM << 5))
+/* klp BRK opcodes with ESR encoding  */
+#define BRK64_OPCODE_KLP	(AARCH64_BREAK_MON | (KLP_BRK_IMM << 5))
 
 /* AArch32 */
 #define DBG_ESR_EVT_BKPT	0x4

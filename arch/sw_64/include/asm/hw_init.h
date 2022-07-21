@@ -2,6 +2,7 @@
 #ifndef _ASM_SW64_HW_INIT_H
 #define _ASM_SW64_HW_INIT_H
 #include <linux/numa.h>
+#include <linux/jump_label.h>
 
 #define MMSIZE		__va(0x2040)
 
@@ -96,26 +97,17 @@ static inline bool icache_is_vivt_no_ictag(void)
 	return (cpu_desc.arch_var == 0x3 && cpu_desc.arch_rev == 0x1);
 }
 
-enum RUNMODE {
-	HOST_MODE = 0,
-	GUEST_MODE = 1,
-	EMUL_MODE = 2,
-};
+#define EMUL_FLAG	(0x1UL << 63)
+#define MMSIZE_MASK	(EMUL_FLAG - 1)
 
-static inline bool is_in_host(void)
-{
-	return !cpu_desc.run_mode;
-}
+DECLARE_STATIC_KEY_TRUE(run_mode_host_key);
+DECLARE_STATIC_KEY_FALSE(run_mode_guest_key);
+DECLARE_STATIC_KEY_FALSE(run_mode_emul_key);
 
-static inline bool is_in_guest(void)
-{
-	return cpu_desc.run_mode == GUEST_MODE;
-}
-
-static inline bool is_guest_or_emul(void)
-{
-	return !!cpu_desc.run_mode;
-}
+#define is_in_host()		static_branch_likely(&run_mode_host_key)
+#define is_in_guest()		static_branch_unlikely(&run_mode_guest_key)
+#define is_in_emul()		static_branch_unlikely(&run_mode_emul_key)
+#define is_guest_or_emul()	!static_branch_likely(&run_mode_host_key)
 
 #define CPU_SW3231		0x31
 #define CPU_SW831		0x32
@@ -176,5 +168,6 @@ static inline bool is_guest_or_emul(void)
 #define CACHE_INDEX_BITS_MASK	(0x3fUL << CACHE_INDEX_BITS_SHIFT)
 #define CACHE_INDEX_BITS(val)	\
 	(((val) & CACHE_INDEX_BITS_MASK) >> CACHE_INDEX_BITS_SHIFT)
+#define current_cpu_data cpu_data[smp_processor_id()]
 
 #endif /* HW_INIT_H */

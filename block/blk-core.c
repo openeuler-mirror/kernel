@@ -398,8 +398,10 @@ void blk_cleanup_queue(struct request_queue *q)
 	del_timer_sync(&q->backing_dev_info->laptop_mode_wb_timer);
 	blk_sync_queue(q);
 
-	if (queue_is_mq(q))
+	if (queue_is_mq(q)) {
+		blk_mq_cancel_work_sync(q);
 		blk_mq_exit_queue(q);
+	}
 
 	/*
 	 * In theory, request pool of sched_tags belongs to request queue.
@@ -517,13 +519,15 @@ static void blk_timeout_work(struct work_struct *work)
 struct request_queue *blk_alloc_queue(int node_id)
 {
 	struct request_queue *q;
+	struct request_queue_wrapper *q_wrapper;
 	int ret;
 
-	q = kmem_cache_alloc_node(blk_requestq_cachep,
+	q_wrapper = kmem_cache_alloc_node(blk_requestq_cachep,
 				GFP_KERNEL | __GFP_ZERO, node_id);
-	if (!q)
+	if (!q_wrapper)
 		return NULL;
 
+	q = &q_wrapper->q;
 	q->last_merge = NULL;
 
 	q->id = ida_simple_get(&blk_queue_ida, 0, 0, GFP_KERNEL);
@@ -594,7 +598,7 @@ fail_split:
 fail_id:
 	ida_simple_remove(&blk_queue_ida, q->id);
 fail_q:
-	kmem_cache_free(blk_requestq_cachep, q);
+	kmem_cache_free(blk_requestq_cachep, q_wrapper);
 	return NULL;
 }
 EXPORT_SYMBOL(blk_alloc_queue);
@@ -1288,13 +1292,32 @@ void blk_account_io_done(struct request *req, u64 now)
 	    !(req->rq_flags & RQF_FLUSH_SEQ)) {
 		const int sgrp = op_stat_group(req_op(req));
 		struct hd_struct *part;
+#ifdef CONFIG_64BIT
+		u64 stat_time;
+		struct request_wrapper *rq_wrapper = request_to_wrapper(req);
+#endif
 
 		part_stat_lock();
 		part = req->part;
-
 		update_io_ticks(part, jiffies, true);
 		part_stat_inc(part, ios[sgrp]);
+#ifdef CONFIG_64BIT
+		stat_time = READ_ONCE(rq_wrapper->stat_time_ns);
+		/*
+		 * This might fail if 'stat_time_ns' is updated
+		 * in blk_mq_check_inflight_with_stat().
+		 */
+		if (likely(now > stat_time &&
+			   cmpxchg64(&rq_wrapper->stat_time_ns, stat_time, now)
+			   == stat_time)) {
+			u64 duation = stat_time ? now - stat_time :
+				now - req->start_time_ns;
+
+			part_stat_add(req->part, nsecs[sgrp], duation);
+		}
+#else
 		part_stat_add(part, nsecs[sgrp], now - req->start_time_ns);
+#endif
 		part_stat_unlock();
 
 		hd_struct_put(part);
@@ -1796,7 +1819,7 @@ int __init blk_dev_init(void)
 		panic("Failed to create kblockd\n");
 
 	blk_requestq_cachep = kmem_cache_create("request_queue",
-			sizeof(struct request_queue), 0, SLAB_PANIC, NULL);
+			sizeof(struct request_queue_wrapper), 0, SLAB_PANIC, NULL);
 
 	blk_debugfs_root = debugfs_create_dir("block", NULL);
 

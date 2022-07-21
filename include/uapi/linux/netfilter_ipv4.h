@@ -50,6 +50,8 @@ enum nf_ip_hook_priorities {
 /* 2.2 firewalling (+ masq) went from 64 through 76 */
 /* 2.4 firewalling went 64 through 67. */
 #define SO_ORIGINAL_DST 80
+#define BPF_SO_ORIGINAL_DST 800
+#define BPF_SO_REPLY_SRC 801
 
 
 #endif /* _UAPI__LINUX_IP_NETFILTER_H */

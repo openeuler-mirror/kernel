@@ -62,6 +62,10 @@
 #include <asm/insn-eval.h>
 #include <asm/vdso.h>
 
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+#include <asm/livepatch.h>
+#endif
+
 #ifdef CONFIG_X86_64
 #include <asm/x86_init.h>
 #include <asm/proto.h>
@@ -654,10 +658,17 @@ static bool do_int3(struct pt_regs *regs)
 	if (kprobe_int3_handler(regs))
 		return true;
 #endif
+
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	if (klp_int3_handler(regs))
+		return true;
+#endif
+
 	res = notify_die(DIE_INT3, "int3", regs, 0, X86_TRAP_BP, SIGTRAP);
 
 	return res == NOTIFY_STOP;
 }
+NOKPROBE_SYMBOL(do_int3);
 
 static void do_int3_user(struct pt_regs *regs)
 {

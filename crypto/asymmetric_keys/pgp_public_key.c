@@ -152,8 +152,10 @@ static int pgp_generate_fingerprint(struct pgp_key_data_parse_context *ctx,
 	digest_size = crypto_shash_digestsize(tfm);
 
 	raw_fingerprint = kmalloc(digest_size, GFP_KERNEL);
-	if (!raw_fingerprint)
+	if (!raw_fingerprint) {
+		ret = -ENOMEM;
 		goto cleanup_hash;
+	}
 
 	ret = crypto_shash_final(digest, raw_fingerprint);
 	if (ret < 0)
@@ -161,8 +163,10 @@ static int pgp_generate_fingerprint(struct pgp_key_data_parse_context *ctx,
 
 	ctx->fingerprint_len = digest_size * 2;
 	fingerprint = kmalloc(digest_size * 2 + 1, GFP_KERNEL);
-	if (!fingerprint)
+	if (!fingerprint) {
+		ret = -ENOMEM;
 		goto cleanup_raw_fingerprint;
+	}
 
 	offset = digest_size - 8;
 	pr_debug("offset %u/%u\n", offset, digest_size);
@@ -279,7 +283,8 @@ static struct asymmetric_key_ids *pgp_key_generate_id(
 		goto error;
 
 	kids->id[0] = kid;
-	kids->id[1] = kmemdup(kid, sizeof(kid) + fingerprint_len, GFP_KERNEL);
+	kids->id[1] = kmemdup(kid, struct_size(kid, data, fingerprint_len),
+			      GFP_KERNEL);
 	if (!kids->id[1])
 		goto error;
 
@@ -310,6 +315,11 @@ static int pgp_key_parse(struct key_preparsed_payload *prep)
 	ret = pgp_parse_packets(prep->data, prep->datalen, &ctx.pgp);
 	if (ret < 0)
 		goto error;
+
+	if (!ctx.fingerprint) {
+		ret = -EINVAL;
+		goto error;
+	}
 
 	if (ctx.user_id && ctx.user_id_len > 0) {
 		/* Propose a description for the key

@@ -10,12 +10,8 @@
 
 #include <linux/memblock.h>
 #include <linux/err.h>
-#include <linux/mm.h>
 #include <linux/sizes.h>
 #include <linux/slab.h>
-#include <linux/log2.h>
-#include <linux/highmem.h>
-#include <linux/io.h>
 #include <linux/cma.h>
 #include <linux/page-isolation.h>
 

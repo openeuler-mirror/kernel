@@ -100,13 +100,18 @@ static struct scsi_host_template cxgb3i_host_template = {
 	.track_queue_depth = 1,
 };
 
+static struct iscsi_transport_expand cxgb3i_iscsi_expand = {
+	.unbind_conn            = iscsi_conn_unbind,
+};
+
 static struct iscsi_transport cxgb3i_iscsi_transport = {
 	.owner		= THIS_MODULE,
 	.name		= DRV_MODULE_NAME,
 	/* owner and name should be set already */
 	.caps		= CAP_RECOVERY_L0 | CAP_MULTI_R2T | CAP_HDRDGST
 				| CAP_DATADGST | CAP_DIGEST_OFFLOAD |
-				CAP_PADDING_OFFLOAD | CAP_TEXT_NEGO,
+				CAP_PADDING_OFFLOAD | CAP_TEXT_NEGO |
+				CAP_OPS_EXPAND,
 	.attr_is_visible	= cxgbi_attr_is_visible,
 	.get_host_param	= cxgbi_get_host_param,
 	.set_host_param	= cxgbi_set_host_param,
@@ -117,6 +122,7 @@ static struct iscsi_transport cxgb3i_iscsi_transport = {
 	/* connection management */
 	.create_conn	= cxgbi_create_conn,
 	.bind_conn	= cxgbi_bind_conn,
+	.ops_expand     = &cxgb3i_iscsi_expand,
 	.destroy_conn	= iscsi_tcp_conn_teardown,
 	.start_conn	= iscsi_conn_start,
 	.stop_conn	= iscsi_conn_stop,

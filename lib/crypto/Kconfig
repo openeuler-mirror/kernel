@@ -128,6 +128,3 @@ config CRYPTO_LIB_CHACHA20POLY1305
 
 config CRYPTO_LIB_SHA256
 	tristate
-
-config CRYPTO_LIB_SM4
-	tristate

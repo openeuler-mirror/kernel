@@ -4,9 +4,33 @@
 
 #include <linux/in6.h>
 
+#define extll(x, y, z) \
+	({__asm__ __volatile__("extll %1, %2, %0" : "=r" (z) \
+			       : "r" (x), "r" (y)); })
+
+#define exthl(x, y, z) \
+	({__asm__ __volatile__("exthl %1, %2, %0" : "=r" (z) \
+			       : "r" (x), "r" (y)); })
+
+#define maskll(x, y, z) \
+	({__asm__ __volatile__("maskll %1, %2, %0" : "=r" (z) \
+			       : "r" (x), "r" (y)); })
+
+#define maskhl(x, y, z) \
+	({__asm__ __volatile__("maskhl %1, %2, %0" : "=r" (z) \
+			       : "r" (x), "r" (y)); })
+
+#define insll(x, y, z) \
+	({__asm__ __volatile__("insll %1, %2, %0" : "=r" (z) \
+			       : "r" (x), "r" (y)); })
+
+#define inshl(x, y, z) \
+	({__asm__ __volatile__("inshl %1, %2, %0" : "=r" (z) \
+			       : "r" (x), "r" (y)); })
+
 /*
- *	This is a version of ip_compute_csum() optimized for IP headers,
- *	which always checksum on 4 octet boundaries.
+ * This is a version of ip_compute_csum() optimized for IP headers,
+ * which always checksum on 4 octet boundaries.
  */
 extern __sum16 ip_fast_csum(const void *iph, unsigned int ihl);
 
@@ -55,7 +79,7 @@ __wsum csum_partial_copy_nocheck(const void *src, void *dst, int len);
 extern __sum16 ip_compute_csum(const void *buff, int len);
 
 /*
- *	Fold a partial checksum without adding pseudo headers
+ * Fold a partial checksum without adding pseudo headers
  */
 
 static inline __sum16 csum_fold(__wsum csum)
@@ -71,4 +95,32 @@ static inline __sum16 csum_fold(__wsum csum)
 extern __sum16 csum_ipv6_magic(const struct in6_addr *saddr,
 			       const struct in6_addr *daddr, __u32 len,
 			       __u8 proto, __wsum sum);
+
+static inline unsigned short from64to16(unsigned long x)
+{
+	/*
+	 * Using extract instructions is a bit more efficient
+	 * than the original shift/bitmask version.
+	 */
+
+	union {
+		unsigned long	ul;
+		unsigned int	ui[2];
+		unsigned short	us[4];
+	} in_v, tmp_v, out_v;
+
+	in_v.ul = x;
+	tmp_v.ul = (unsigned long)in_v.ui[0] + (unsigned long)in_v.ui[1];
+
+	/*
+	 * Since the bits of tmp_v.sh[3] are going to always be zero,
+	 * we don't have to bother to add that in.
+	 */
+	out_v.ul = (unsigned long)tmp_v.us[0] + (unsigned long)tmp_v.us[1]
+			+ (unsigned long)tmp_v.us[2];
+
+	/* Similarly, out_v.us[2] is always zero for the final add.  */
+	return out_v.us[0] + out_v.us[1];
+}
+
 #endif

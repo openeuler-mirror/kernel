@@ -14,7 +14,7 @@ early_ioremap(unsigned long phys_addr, unsigned long size)
 		y = (unsigned long) phys_to_virt(__pa(phys_addr));
 	} else {
 		y = phys_addr;
-		y += PAGE_OFFSET;
+		y |= PAGE_OFFSET;
 	}
 
 	return  (void __iomem *) y;

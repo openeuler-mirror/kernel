@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/pci.h>
 #include <linux/delay.h>
-#include <asm/pci.h>
+
 #include <asm/sw64io.h>
-#include <asm/hw_init.h>
 
 static int handshake(void __iomem *ptr, u32 mask, u32 done,
 		int wait_usec, int delay_usec)
@@ -232,9 +231,7 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, PCI_ANY_ID, enable_sw_dca);
 void __init reserve_mem_for_pci(void)
 {
 	int ret;
-	unsigned long base;
-
-	base = is_in_host() ? PCI_32BIT_MEMIO : PCI_32BIT_VT_MEMIO;
+	unsigned long base = PCI_32BIT_MEMIO;
 
 	ret = add_memmap_region(base, PCI_32BIT_MEMIO_SIZE, memmap_pci);
 	if (ret) {

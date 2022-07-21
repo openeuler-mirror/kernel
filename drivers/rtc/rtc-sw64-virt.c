@@ -14,18 +14,40 @@
 #include <linux/platform_device.h>
 
 #define RTC_IO_ADDR (0x804910000000ULL)
+unsigned long vtime_old, vtime_new;
 
 static int sw64_virt_read_time(struct device *dev, struct rtc_time *tm)
 {
 	unsigned long *ioaddr;
+	unsigned long vtime_now;
+	long vtime_offset;
 
 	ioaddr = ioremap(RTC_IO_ADDR, sizeof(long));
-	rtc_time64_to_tm(*ioaddr, tm);
+	if (!vtime_new) {
+		rtc_time64_to_tm(*ioaddr, tm);
+	} else {
+		vtime_now = *ioaddr;
+		vtime_offset = vtime_new - vtime_old;
+		vtime_now += vtime_offset;
+		rtc_time64_to_tm(vtime_now, tm);
+	}
+	return 0;
+}
+
+static int sw64_virt_set_time(struct device *dev, struct rtc_time *tm)
+{
+	unsigned long *ioaddr;
+
+	ioaddr = ioremap(RTC_IO_ADDR, sizeof(long));
+	vtime_old = *ioaddr;
+
+	vtime_new = rtc_tm_to_time64(tm);
 	return 0;
 }
 
 static const struct rtc_class_ops rtc_sw64_virt_ops = {
 	.read_time	= sw64_virt_read_time,
+	.set_time	= sw64_virt_set_time,
 };
 
 static int __init rtc_sw64_virt_probe(struct platform_device *pdev)

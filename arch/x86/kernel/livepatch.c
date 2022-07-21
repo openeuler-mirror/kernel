@@ -32,6 +32,10 @@
 #include <asm/sections.h>
 
 #ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+#include <linux/kprobes.h>
+#endif
+
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
 /*
  * The instruction set on x86 is CISC.
  * The instructions of call in same segment are 11101000(direct),
@@ -64,17 +68,6 @@ static inline unsigned long klp_size_to_check(unsigned long func_size,
 	if (force == KLP_STACK_OPTIMIZE && size > JMP_E9_INSN_SIZE)
 		size = JMP_E9_INSN_SIZE;
 	return size;
-}
-
-static inline int klp_compare_address(unsigned long stack_addr,
-		unsigned long func_addr, const char *func_name,
-		unsigned long check_size)
-{
-	if (stack_addr >= func_addr && stack_addr < func_addr + check_size) {
-		pr_err("func %s is in use!\n", func_name);
-		return -EBUSY;
-	}
-	return 0;
 }
 
 static bool check_jump_insn(unsigned long func_addr)
@@ -137,7 +130,7 @@ static int klp_check_activeness_func(struct klp_patch *patch, int enable,
 
 			/* Check func address in stack */
 			if (enable) {
-				if (func->force == KLP_ENFORCEMENT)
+				if (func->patched || func->force == KLP_ENFORCEMENT)
 					continue;
 				/*
 				 * When enable, checking the currently
@@ -253,8 +246,10 @@ static void klp_print_stack_trace(void *trace_ptr, int trace_len)
 #endif
 #define MAX_STACK_ENTRIES  100
 
-static bool check_func_list(struct klp_func_list *funcs, int *ret, unsigned long pc)
+static bool check_func_list(void *data, int *ret, unsigned long pc)
 {
+	struct klp_func_list *funcs = (struct klp_func_list *)data;
+
 	while (funcs != NULL) {
 		*ret = klp_compare_address(pc, funcs->func_addr, funcs->func_name,
 				klp_size_to_check(funcs->func_size, funcs->force));
@@ -267,7 +262,7 @@ static bool check_func_list(struct klp_func_list *funcs, int *ret, unsigned long
 }
 
 static int klp_check_stack(void *trace_ptr, int trace_len,
-		struct klp_func_list *check_funcs)
+			   bool (*fn)(void *, int *, unsigned long), void *data)
 {
 #ifdef CONFIG_ARCH_STACKWALK
 	unsigned long *trace = trace_ptr;
@@ -284,7 +279,7 @@ static int klp_check_stack(void *trace_ptr, int trace_len,
 	for (i = 0; i < trace->nr_entries; i++) {
 		address = trace->entries[i];
 #endif
-		if (!check_func_list(check_funcs, &ret, address)) {
+		if (!fn(data, &ret, address)) {
 #ifdef CONFIG_ARCH_STACKWALK
 			klp_print_stack_trace(trace_ptr, trace_len);
 #else
@@ -308,11 +303,10 @@ static void free_list(struct klp_func_list **funcs)
 	}
 }
 
-int klp_check_calltrace(struct klp_patch *patch, int enable)
+static int do_check_calltrace(bool (*fn)(void *, int *, unsigned long), void *data)
 {
 	struct task_struct *g, *t;
 	int ret = 0;
-	struct klp_func_list *check_funcs = NULL;
 	static unsigned long trace_entries[MAX_STACK_ENTRIES];
 #ifdef CONFIG_ARCH_STACKWALK
 	int trace_len;
@@ -320,45 +314,148 @@ int klp_check_calltrace(struct klp_patch *patch, int enable)
 	struct stack_trace trace;
 #endif
 
-	ret = klp_check_activeness_func(patch, enable, &check_funcs);
-	if (ret)
-		goto out;
 	for_each_process_thread(g, t) {
 		if (!strncmp(t->comm, "migration/", 10))
 			continue;
 
 #ifdef CONFIG_ARCH_STACKWALK
 		ret = stack_trace_save_tsk_reliable(t, trace_entries, MAX_STACK_ENTRIES);
-		if (ret < 0)
-			goto out;
+		if (ret < 0) {
+			pr_err("%s:%d has an unreliable stack, ret=%d\n",
+			       t->comm, t->pid, ret);
+			return ret;
+		}
 		trace_len = ret;
-		ret = 0;
+		ret = klp_check_stack(trace_entries, trace_len, fn, data);
 #else
 		trace.skip = 0;
 		trace.nr_entries = 0;
 		trace.max_entries = MAX_STACK_ENTRIES;
 		trace.entries = trace_entries;
 		ret = save_stack_trace_tsk_reliable(t, &trace);
-#endif
 		WARN_ON_ONCE(ret == -ENOSYS);
 		if (ret) {
-			pr_info("%s: %s:%d has an unreliable stack\n",
-				 __func__, t->comm, t->pid);
-			goto out;
+			pr_err("%s: %s:%d has an unreliable stack, ret=%d\n",
+			       __func__, t->comm, t->pid, ret);
+			return ret;
 		}
-#ifdef CONFIG_ARCH_STACKWALK
-		ret = klp_check_stack(trace_entries, trace_len, check_funcs);
-#else
-		ret = klp_check_stack(&trace, 0, check_funcs);
+		ret = klp_check_stack(&trace, 0, fn, data);
 #endif
-		if (ret)
-			goto out;
+		if (ret) {
+			pr_err("%s:%d check stack failed, ret=%d\n",
+			       t->comm, t->pid, ret);
+			return ret;
+		}
 	}
+
+	return 0;
+}
+
+int klp_check_calltrace(struct klp_patch *patch, int enable)
+{
+	int ret = 0;
+	struct klp_func_list *check_funcs = NULL;
+
+	ret = klp_check_activeness_func(patch, enable, &check_funcs);
+	if (ret) {
+		pr_err("collect active functions failed, ret=%d\n", ret);
+		goto out;
+	}
+
+	if (!check_funcs)
+		goto out;
+
+	ret = do_check_calltrace(check_func_list, (void *)check_funcs);
 
 out:
 	free_list(&check_funcs);
 	return ret;
 }
+
+static bool check_module_calltrace(void *data, int *ret, unsigned long pc)
+{
+	struct module *mod = (struct module *)data;
+
+	if (within_module_core(pc, mod)) {
+		pr_err("module %s is in use!\n", mod->name);
+		*ret = -EBUSY;
+		return false;
+	}
+	return true;
+}
+
+int arch_klp_module_check_calltrace(void *data)
+{
+	return do_check_calltrace(check_module_calltrace, data);
+}
+
+int arch_klp_check_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	int ret;
+	unsigned char opcode;
+
+	ret = copy_from_kernel_nofault(&opcode, old_func, INT3_INSN_SIZE);
+	if (ret)
+		return ret;
+
+	/* Another subsystem puts a breakpoint, reject patching at this time */
+	if (opcode == INT3_INSN_OPCODE)
+		return -EBUSY;
+
+	return 0;
+}
+
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	unsigned char int3 = INT3_INSN_OPCODE;
+	int ret;
+
+	ret = copy_from_kernel_nofault(&arch_data->saved_opcode, old_func,
+				       INT3_INSN_SIZE);
+	if (ret)
+		return ret;
+
+	text_poke(old_func, &int3, INT3_INSN_SIZE);
+	/* arch_klp_code_modify_post_process() will do text_poke_sync() */
+
+	return 0;
+}
+
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func)
+{
+	unsigned char opcode;
+	int ret;
+
+	ret = copy_from_kernel_nofault(&opcode, old_func, INT3_INSN_SIZE);
+	if (ret) {
+		pr_warn("%s: failed to read opcode, ret=%d\n", __func__, ret);
+		return;
+	}
+
+	/* instruction have been recovered at arch_klp_unpatch_func() */
+	if (opcode != INT3_INSN_OPCODE)
+		return;
+
+	text_poke(old_func, &arch_data->saved_opcode, INT3_INSN_SIZE);
+	/* arch_klp_code_modify_post_process() will do text_poke_sync() */
+}
+
+int klp_int3_handler(struct pt_regs *regs)
+{
+	unsigned long addr = regs->ip - INT3_INSN_SIZE;
+	void *brk_func;
+
+	if (user_mode(regs))
+		return 0;
+
+	brk_func = klp_get_brk_func((void *)addr);
+	if (!brk_func)
+		return 0;
+
+	int3_emulate_jmp(regs, (unsigned long)brk_func);
+	return 1;
+}
+NOKPROBE_SYMBOL(klp_int3_handler);
 #endif
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
@@ -382,23 +479,37 @@ void arch_klp_code_modify_post_process(void)
 
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 {
-	return copy_from_kernel_nofault(arch_data->old_code,
-					old_func, JMP_E9_INSN_SIZE);
+	long ret;
+
+	/* Prevent text modification */
+	mutex_lock(&text_mutex);
+	ret = copy_from_kernel_nofault(arch_data->old_code,
+			old_func, JMP_E9_INSN_SIZE);
+	mutex_unlock(&text_mutex);
+
+	return ret;
 }
 
 int arch_klp_patch_func(struct klp_func *func)
 {
 	struct klp_func_node *func_node;
 	unsigned long ip, new_addr;
-	void *new;
+	unsigned char *new;
 
 	func_node = func->func_node;
 	ip = (unsigned long)func->old_func;
 	list_add_rcu(&func->stack_node, &func_node->func_stack);
 	new_addr = (unsigned long)func->new_func;
 	/* replace the text with the new text */
-	new = klp_jmp_code(ip, new_addr);
+	new = (unsigned char *)klp_jmp_code(ip, new_addr);
+#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
+	/* update jmp offset */
+	text_poke((void *)(ip + 1), new + 1, JMP_E9_INSN_SIZE - 1);
+	/* update jmp opcode */
+	text_poke((void *)ip, new, 1);
+#else
 	text_poke((void *)ip, new, JMP_E9_INSN_SIZE);
+#endif
 
 	return 0;
 }
@@ -412,11 +523,10 @@ void arch_klp_unpatch_func(struct klp_func *func)
 
 	func_node = func->func_node;
 	ip = (unsigned long)func_node->old_func;
-	if (list_is_singular(&func_node->func_stack)) {
-		list_del_rcu(&func->stack_node);
+	list_del_rcu(&func->stack_node);
+	if (list_empty(&func_node->func_stack)) {
 		new = func_node->arch_data.old_code;
 	} else {
-		list_del_rcu(&func->stack_node);
 		next_func = list_first_or_null_rcu(&func_node->func_stack,
 						struct klp_func, stack_node);
 

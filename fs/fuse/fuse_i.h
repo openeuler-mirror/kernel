@@ -270,6 +270,9 @@ struct fuse_args {
 	bool page_zeroing:1;
 	bool page_replace:1;
 	bool may_block:1;
+#ifndef __GENKSYMS__
+	bool user_pages:1;
+#endif
 	struct fuse_in_arg in_args[3];
 	struct fuse_arg out_args[2];
 	void (*end)(struct fuse_mount *fm, struct fuse_args *args, int error);
@@ -641,6 +644,14 @@ struct fuse_conn {
 
 	/* show legacy mount options */
 	unsigned int legacy_opts_show:1;
+
+	/*
+	 * fs kills suid/sgid/cap on write/chown/trunc. suid is killed on
+	 * write/trunc only if caller did not have CAP_FSETID.  sgid is killed
+	 * on write/truncate only if caller did not have CAP_FSETID as well as
+	 * file has group execute permission.
+	 */
+	unsigned handle_killpriv_v2:1;
 
 	/*
 	 * The following bitfields are only for optimization purposes

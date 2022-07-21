@@ -2,25 +2,8 @@
 
 #include <linux/init.h>
 #include <linux/acpi.h>
-#include <linux/acpi_pmtmr.h>
-#include <linux/efi.h>
-#include <linux/stddef.h>
-#include <linux/cpumask.h>
-#include <linux/module.h>
-#include <linux/dmi.h>
-#include <linux/irq.h>
 #include <linux/irqdomain.h>
-#include <linux/slab.h>
-#include <linux/ioport.h>
-#include <linux/pci.h>
-#include <linux/memblock.h>
-#include <acpi/actbl.h>
-#include <acpi/actbl2.h>
 
-#include <asm/pgtable.h>
-#include <asm/io.h>
-#include <asm/smp.h>
-#include <asm/numa.h>
 #include <asm/early_ioremap.h>
 
 int acpi_disabled = 1;

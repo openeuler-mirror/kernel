@@ -4,6 +4,7 @@
 #define _ASM_SW64_NUMA_H
 
 #include <linux/nodemask.h>
+#include <asm/memory.h>
 
 #ifdef CONFIG_NUMA
 extern nodemask_t numa_nodes_parsed __initdata;

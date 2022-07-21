@@ -75,6 +75,11 @@ extern void livepatch_branch_stub_end(void);
 #ifdef PPC64_ELF_ABI_v1
 extern void livepatch_branch_trampoline(void);
 extern void livepatch_branch_trampoline_end(void);
+extern void livepatch_brk_trampoline(void);
+void livepatch_create_btramp(struct ppc64_klp_btramp_entry *entry, unsigned long addr);
+#else
+static inline void livepatch_create_btramp(struct ppc64_klp_btramp_entry *entry,
+					   unsigned long addr) {}
 #endif /* PPC64_ELF_ABI_v1 */
 
 int livepatch_create_branch(unsigned long pc,
@@ -89,6 +94,12 @@ struct arch_klp_data {
 #else
 	unsigned long trampoline;
 #endif /* PPC64_ELF_ABI_v1 */
+
+	/*
+	 * Saved opcode at the entry of the old func (which maybe replaced
+	 * with breakpoint).
+	 */
+	u32 saved_opcode;
 };
 
 #elif defined(CONFIG_PPC32)
@@ -97,11 +108,32 @@ struct arch_klp_data {
 #define LJMP_INSN_SIZE	4
 struct arch_klp_data {
 	u32 old_insns[LJMP_INSN_SIZE];
+
+	/*
+	 * Saved opcode at the entry of the old func (which maybe replaced
+	 * with breakpoint).
+	 */
+	u32 saved_opcode;
 };
 
 #endif	/* CONFIG_PPC64 */
 
+struct stackframe {
+	unsigned long sp;
+	unsigned long pc;
+	unsigned long nip;
+};
+
+#ifdef PPC64_ELF_ABI_v1
+struct klp_func_node;
+void arch_klp_set_brk_func(struct klp_func_node *func_node, void *new_func);
+#endif
+int klp_brk_handler(struct pt_regs *regs);
+int arch_klp_add_breakpoint(struct arch_klp_data *arch_data, void *old_func);
+void arch_klp_remove_breakpoint(struct arch_klp_data *arch_data, void *old_func);
 long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func);
+int arch_klp_module_check_calltrace(void *data);
+int klp_unwind_frame(struct task_struct *tsk, struct stackframe *frame);
 
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 

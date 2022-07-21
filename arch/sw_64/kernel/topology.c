@@ -1,20 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <linux/acpi.h>
-#include <linux/arch_topology.h>
-#include <linux/cacheinfo.h>
-#include <linux/cpu.h>
-#include <linux/cpumask.h>
-#include <linux/init.h>
-#include <linux/percpu.h>
-#include <linux/node.h>
-#include <linux/nodemask.h>
 #include <linux/of.h>
-#include <linux/sched.h>
-#include <linux/sched/topology.h>
-#include <linux/slab.h>
-#include <linux/smp.h>
-#include <linux/string.h>
 
 #include <asm/topology.h>
 
@@ -138,16 +125,10 @@ void remove_cpu_topology(int cpu)
 }
 
 #ifdef CONFIG_ACPI
-static bool __init acpi_cpu_is_threaded(int cpu)
-{
-	return 0;
-}
-
 static int __init parse_acpi_topology(void)
 {
 	return 0;
 }
-
 #else
 static inline int __init parse_acpi_topology(void)
 {

@@ -83,6 +83,11 @@ struct netns_ipv6 {
 	unsigned long		 ip6_rt_last_gc;
 #ifdef CONFIG_IPV6_MULTIPLE_TABLES
 	unsigned int		fib6_rules_require_fldissect;
+#endif
+#ifndef __GENKSYMS__
+	unsigned char		flowlabel_has_excl;
+#endif
+#ifdef CONFIG_IPV6_MULTIPLE_TABLES
 	bool			fib6_has_custom_rules;
 #ifdef CONFIG_IPV6_SUBTREES
 	unsigned int		fib6_routes_require_src;

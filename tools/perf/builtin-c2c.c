@@ -113,13 +113,15 @@ enum {
 	DISPLAY_LCL,
 	DISPLAY_RMT,
 	DISPLAY_TOT,
+	DISPLAY_ALL,
 	DISPLAY_MAX,
 };
 
 static const char *display_str[DISPLAY_MAX] = {
-	[DISPLAY_LCL] = "Local",
-	[DISPLAY_RMT] = "Remote",
-	[DISPLAY_TOT] = "Total",
+	[DISPLAY_LCL] = "Local HITMs",
+	[DISPLAY_RMT] = "Remote HITMs",
+	[DISPLAY_TOT] = "Total HITMs",
+	[DISPLAY_ALL] = "All Load Access",
 };
 
 static const struct option c2c_options[] = {
@@ -615,6 +617,83 @@ tot_hitm_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
 	return tot_hitm_left - tot_hitm_right;
 }
 
+#define TOT_LD_HIT(stats)		\
+	((stats)->ld_fbhit +		\
+	 (stats)->ld_l1hit +		\
+	 (stats)->ld_l2hit +		\
+	 (stats)->ld_llchit +		\
+	 (stats)->lcl_hitm +		\
+	 (stats)->rmt_hitm +		\
+	 (stats)->rmt_hit)
+
+#define TOT_LD_MISS(stats)		\
+	((stats)->lcl_dram +		\
+	 (stats)->rmt_dram)
+
+static int tot_ld_hit_entry(struct perf_hpp_fmt *fmt,
+			    struct perf_hpp *hpp,
+			    struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	unsigned int tot_hit;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	tot_hit = TOT_LD_HIT(&c2c_he->stats);
+
+	return scnprintf(hpp->buf, hpp->size, "%*u", width, tot_hit);
+}
+
+static int64_t tot_ld_hit_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
+			      struct hist_entry *left,
+			      struct hist_entry *right)
+{
+	struct c2c_hist_entry *c2c_left;
+	struct c2c_hist_entry *c2c_right;
+	uint64_t tot_hit_left;
+	uint64_t tot_hit_right;
+
+	c2c_left  = container_of(left, struct c2c_hist_entry, he);
+	c2c_right = container_of(right, struct c2c_hist_entry, he);
+
+	tot_hit_left  = TOT_LD_HIT(&c2c_left->stats);
+	tot_hit_right = TOT_LD_HIT(&c2c_right->stats);
+
+	return tot_hit_left - tot_hit_right;
+}
+
+static int tot_ld_miss_entry(struct perf_hpp_fmt *fmt,
+			     struct perf_hpp *hpp,
+			     struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	unsigned int tot_miss;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	tot_miss = TOT_LD_MISS(&c2c_he->stats);
+
+	return scnprintf(hpp->buf, hpp->size, "%*u", width, tot_miss);
+}
+
+static int64_t tot_ld_miss_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
+			       struct hist_entry *left,
+			       struct hist_entry *right)
+{
+	struct c2c_hist_entry *c2c_left;
+	struct c2c_hist_entry *c2c_right;
+	uint64_t tot_miss_left;
+	uint64_t tot_miss_right;
+
+	c2c_left  = container_of(left, struct c2c_hist_entry, he);
+	c2c_right = container_of(right, struct c2c_hist_entry, he);
+
+	tot_miss_left  = TOT_LD_MISS(&c2c_left->stats);
+	tot_miss_right = TOT_LD_MISS(&c2c_right->stats);
+
+	return tot_miss_left - tot_miss_right;
+}
+
 #define STAT_FN_ENTRY(__f)					\
 static int							\
 __f ## _entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,	\
@@ -806,6 +885,11 @@ static double percent_hitm(struct c2c_hist_entry *c2c_he)
 	case DISPLAY_TOT:
 		st  = stats->tot_hitm;
 		tot = total->tot_hitm;
+		break;
+	case DISPLAY_ALL:
+		ui__warning("Calculate hitm percent for display 'all';\n"
+			    "should never happen!\n");
+		break;
 	default:
 		break;
 	}
@@ -856,6 +940,58 @@ percent_hitm_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
 
 	per_left  = percent_hitm(c2c_left);
 	per_right = percent_hitm(c2c_right);
+
+	return per_left - per_right;
+}
+
+static double percent_tot_ld_hit(struct c2c_hist_entry *c2c_he)
+{
+	struct c2c_hists *hists;
+	int tot = 0, st = 0;
+
+	hists = container_of(c2c_he->he.hists, struct c2c_hists, hists);
+
+	st  = TOT_LD_HIT(&c2c_he->stats);
+	tot = TOT_LD_HIT(&hists->stats);
+
+	return tot ? (double) st * 100 / tot : 0;
+}
+
+static int
+percent_tot_ld_hit_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+			 struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	char buf[10];
+	double per;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	per = percent_tot_ld_hit(c2c_he);
+	return scnprintf(hpp->buf, hpp->size, "%*s", width, PERC_STR(buf, per));
+}
+
+static int
+percent_tot_ld_hit_color(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+			 struct hist_entry *he)
+{
+	return percent_color(fmt, hpp, he, percent_tot_ld_hit);
+}
+
+static int64_t
+percent_tot_ld_hit_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
+		   struct hist_entry *left, struct hist_entry *right)
+{
+	struct c2c_hist_entry *c2c_left;
+	struct c2c_hist_entry *c2c_right;
+	double per_left;
+	double per_right;
+
+	c2c_left  = container_of(left, struct c2c_hist_entry, he);
+	c2c_right = container_of(right, struct c2c_hist_entry, he);
+
+	per_left  = percent_tot_ld_hit(c2c_left);
+	per_right = percent_tot_ld_hit(c2c_right);
 
 	return per_left - per_right;
 }
@@ -955,6 +1091,110 @@ percent_lcl_hitm_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
 
 	per_left  = PERCENT(left, lcl_hitm);
 	per_right = PERCENT(right, lcl_hitm);
+
+	return per_left - per_right;
+}
+
+static double percent_ld_hit(struct c2c_hist_entry *c2c_he)
+{
+	struct c2c_hists *hists;
+	int tot, st;
+
+	hists = container_of(c2c_he->he.hists, struct c2c_hists, hists);
+
+	st  = TOT_LD_HIT(&c2c_he->stats);
+	tot = TOT_LD_HIT(&hists->stats);
+
+	return percent(st, tot);
+}
+
+static int
+percent_ld_hit_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+		     struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	char buf[10];
+	double per;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	per = percent_ld_hit(c2c_he);
+	return scnprintf(hpp->buf, hpp->size, "%*s", width, PERC_STR(buf, per));
+}
+
+static int
+percent_ld_hit_color(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+		     struct hist_entry *he)
+{
+	return percent_color(fmt, hpp, he, percent_ld_hit);
+}
+
+static int64_t
+percent_ld_hit_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
+		   struct hist_entry *left, struct hist_entry *right)
+{
+	struct c2c_hist_entry *c2c_left;
+	struct c2c_hist_entry *c2c_right;
+	double per_left;
+	double per_right;
+
+	c2c_left  = container_of(left, struct c2c_hist_entry, he);
+	c2c_right = container_of(right, struct c2c_hist_entry, he);
+
+	per_left  = percent_ld_hit(c2c_left);
+	per_right = percent_ld_hit(c2c_right);
+
+	return per_left - per_right;
+}
+
+static double percent_ld_miss(struct c2c_hist_entry *c2c_he)
+{
+	struct c2c_hists *hists;
+	int tot, st;
+
+	hists = container_of(c2c_he->he.hists, struct c2c_hists, hists);
+
+	st  = TOT_LD_MISS(&c2c_he->stats);
+	tot = TOT_LD_MISS(&hists->stats);
+
+	return percent(st, tot);
+}
+
+static int
+percent_ld_miss_entry(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+		      struct hist_entry *he)
+{
+	struct c2c_hist_entry *c2c_he;
+	int width = c2c_width(fmt, hpp, he->hists);
+	char buf[10];
+	double per;
+
+	c2c_he = container_of(he, struct c2c_hist_entry, he);
+	per = percent_ld_miss(c2c_he);
+	return scnprintf(hpp->buf, hpp->size, "%*s", width, PERC_STR(buf, per));
+}
+
+static int
+percent_ld_miss_color(struct perf_hpp_fmt *fmt, struct perf_hpp *hpp,
+		      struct hist_entry *he)
+{
+	return percent_color(fmt, hpp, he, percent_ld_miss);
+}
+
+static int64_t
+percent_ld_miss_cmp(struct perf_hpp_fmt *fmt __maybe_unused,
+		    struct hist_entry *left, struct hist_entry *right)
+{
+	struct c2c_hist_entry *c2c_left;
+	struct c2c_hist_entry *c2c_right;
+	double per_left;
+	double per_right;
+
+	c2c_left  = container_of(left, struct c2c_hist_entry, he);
+	c2c_right = container_of(right, struct c2c_hist_entry, he);
+
+	per_left  = percent_ld_miss(c2c_left);
+	per_right = percent_ld_miss(c2c_right);
 
 	return per_left - per_right;
 }
@@ -1116,6 +1356,10 @@ node_entry(struct perf_hpp_fmt *fmt __maybe_unused, struct perf_hpp *hpp,
 			case DISPLAY_TOT:
 				ret = display_metrics(hpp, stats->tot_hitm,
 						      c2c_he->stats.tot_hitm);
+				break;
+			case DISPLAY_ALL:
+				ret = display_metrics(hpp, TOT_LD_HIT(stats),
+						      TOT_LD_HIT(&c2c_he->stats));
 				break;
 			default:
 				break;
@@ -1331,6 +1575,22 @@ static struct c2c_dimension dim_cl_rmt_hitm = {
 	.width		= 7,
 };
 
+static struct c2c_dimension dim_cl_tot_ld_hit = {
+	.header		= HEADER_SPAN("--- Load ---", "Hit", 1),
+	.name		= "cl_tot_ld_hit",
+	.cmp		= tot_ld_hit_cmp,
+	.entry		= tot_ld_hit_entry,
+	.width		= 7,
+};
+
+static struct c2c_dimension dim_cl_tot_ld_miss = {
+	.header		= HEADER_SPAN_LOW("Miss"),
+	.name		= "cl_tot_ld_miss",
+	.cmp		= tot_ld_miss_cmp,
+	.entry		= tot_ld_miss_entry,
+	.width		= 7,
+};
+
 static struct c2c_dimension dim_cl_lcl_hitm = {
 	.header		= HEADER_SPAN_LOW("Lcl"),
 	.name		= "cl_lcl_hitm",
@@ -1419,6 +1679,14 @@ static struct c2c_dimension dim_ld_rmthit = {
 	.width		= 8,
 };
 
+static struct c2c_dimension dim_tot_ld_hit = {
+	.header		= HEADER_BOTH("Load Hit", "Total"),
+	.name		= "tot_ld_hit",
+	.cmp		= tot_ld_hit_cmp,
+	.entry		= tot_ld_hit_entry,
+	.width		= 8,
+};
+
 static struct c2c_dimension dim_tot_recs = {
 	.header		= HEADER_BOTH("Total", "records"),
 	.name		= "tot_recs",
@@ -1439,6 +1707,7 @@ static struct c2c_header percent_hitm_header[] = {
 	[DISPLAY_LCL] = HEADER_BOTH("Lcl", "Hitm"),
 	[DISPLAY_RMT] = HEADER_BOTH("Rmt", "Hitm"),
 	[DISPLAY_TOT] = HEADER_BOTH("Tot", "Hitm"),
+	[DISPLAY_ALL] = HEADER_BOTH("LLC", "Hit"),
 };
 
 static struct c2c_dimension dim_percent_hitm = {
@@ -1464,6 +1733,33 @@ static struct c2c_dimension dim_percent_lcl_hitm = {
 	.cmp		= percent_lcl_hitm_cmp,
 	.entry		= percent_lcl_hitm_entry,
 	.color		= percent_lcl_hitm_color,
+	.width		= 7,
+};
+
+static struct c2c_dimension dim_percent_tot_ld_hit = {
+	.header         = HEADER_BOTH("Load Hit", "Pct"),
+	.name		= "percent_tot_ld_hit",
+	.cmp		= percent_tot_ld_hit_cmp,
+	.entry		= percent_tot_ld_hit_entry,
+	.color		= percent_tot_ld_hit_color,
+	.width		= 8,
+};
+
+static struct c2c_dimension dim_percent_ld_hit = {
+	.header		= HEADER_SPAN("--  Load Refs --", "Hit", 1),
+	.name		= "percent_ld_hit",
+	.cmp		= percent_ld_hit_cmp,
+	.entry		= percent_ld_hit_entry,
+	.color		= percent_ld_hit_color,
+	.width		= 7,
+};
+
+static struct c2c_dimension dim_percent_ld_miss = {
+	.header		= HEADER_SPAN_LOW("Miss"),
+	.name		= "percent_ld_miss",
+	.cmp		= percent_ld_miss_cmp,
+	.entry		= percent_ld_miss_entry,
+	.color		= percent_ld_miss_color,
 	.width		= 7,
 };
 
@@ -1524,12 +1820,6 @@ static struct c2c_dimension dim_dso = {
 	.header		= HEADER_BOTH("Shared", "Object"),
 	.name		= "dso",
 	.se		= &sort_dso,
-};
-
-static struct c2c_header header_node[3] = {
-	HEADER_LOW("Node"),
-	HEADER_LOW("Node{cpus %hitms %stores}"),
-	HEADER_LOW("Node{cpu list}"),
 };
 
 static struct c2c_dimension dim_node = {
@@ -1612,6 +1902,8 @@ static struct c2c_dimension *dimensions[] = {
 	&dim_rmt_hitm,
 	&dim_cl_lcl_hitm,
 	&dim_cl_rmt_hitm,
+	&dim_cl_tot_ld_hit,
+	&dim_cl_tot_ld_miss,
 	&dim_tot_stores,
 	&dim_stores_l1hit,
 	&dim_stores_l1miss,
@@ -1622,11 +1914,15 @@ static struct c2c_dimension *dimensions[] = {
 	&dim_ld_l2hit,
 	&dim_ld_llchit,
 	&dim_ld_rmthit,
+	&dim_tot_ld_hit,
 	&dim_tot_recs,
 	&dim_tot_loads,
 	&dim_percent_hitm,
 	&dim_percent_rmt_hitm,
 	&dim_percent_lcl_hitm,
+	&dim_percent_ld_hit,
+	&dim_percent_ld_miss,
+	&dim_percent_tot_ld_hit,
 	&dim_percent_stores_l1hit,
 	&dim_percent_stores_l1miss,
 	&dim_dram_lcl,
@@ -1888,6 +2184,10 @@ static bool he__display(struct hist_entry *he, struct c2c_stats *stats)
 		he->filtered = filter_display(c2c_he->stats.tot_hitm,
 					      stats->tot_hitm);
 		break;
+	case DISPLAY_ALL:
+		he->filtered = filter_display(TOT_LD_HIT(&c2c_he->stats),
+					      TOT_LD_HIT(stats));
+		break;
 	default:
 		break;
 	}
@@ -1915,6 +2215,9 @@ static inline bool is_valid_hist_entry(struct hist_entry *he)
 		break;
 	case DISPLAY_TOT:
 		has_record = !!c2c_he->stats.tot_hitm;
+		break;
+	case DISPLAY_ALL:
+		has_record = !!TOT_LD_HIT(&c2c_he->stats);
 		break;
 	default:
 		break;
@@ -2004,9 +2307,33 @@ static int resort_cl_cb(struct hist_entry *he, void *arg __maybe_unused)
 	return 0;
 }
 
+static struct c2c_header header_node_0 = HEADER_LOW("Node");
+static struct c2c_header header_node_1_hitms_stores =
+		HEADER_LOW("Node{cpus %hitms %stores}");
+static struct c2c_header header_node_1_loads_stores =
+		HEADER_LOW("Node{cpus %loads %stores}");
+static struct c2c_header header_node_2 = HEADER_LOW("Node{cpu list}");
+
 static void setup_nodes_header(void)
 {
-	dim_node.header = header_node[c2c.node_info];
+	switch (c2c.node_info) {
+	case 0:
+		dim_node.header = header_node_0;
+		break;
+	case 1:
+		if (c2c.display == DISPLAY_ALL)
+			dim_node.header = header_node_1_loads_stores;
+		else
+			dim_node.header = header_node_1_hitms_stores;
+		break;
+	case 2:
+		dim_node.header = header_node_2;
+		break;
+	default:
+		break;
+	}
+
+	return;
 }
 
 static int setup_nodes(struct perf_session *session)
@@ -2076,11 +2403,13 @@ static int resort_shared_cl_cb(struct hist_entry *he, void *arg __maybe_unused)
 	struct c2c_hist_entry *c2c_he;
 	c2c_he = container_of(he, struct c2c_hist_entry, he);
 
-	if (HAS_HITMS(c2c_he)) {
+	if (c2c.display == DISPLAY_ALL && TOT_LD_HIT(&c2c_he->stats)) {
+		c2c.shared_clines++;
+		c2c_add_stats(&c2c.shared_clines_stats, &c2c_he->stats);
+	} else if (HAS_HITMS(c2c_he)) {
 		c2c.shared_clines++;
 		c2c_add_stats(&c2c.shared_clines_stats, &c2c_he->stats);
 	}
-
 	return 0;
 }
 
@@ -2201,12 +2530,21 @@ static void print_pareto(FILE *out)
 	int ret;
 	const char *cl_output;
 
-	cl_output = "cl_num,"
-		    "cl_rmt_hitm,"
-		    "cl_lcl_hitm,"
-		    "cl_stores_l1hit,"
-		    "cl_stores_l1miss,"
-		    "dcacheline";
+	if (c2c.display == DISPLAY_TOT || c2c.display == DISPLAY_LCL ||
+	    c2c.display == DISPLAY_RMT)
+		cl_output = "cl_num,"
+			    "cl_rmt_hitm,"
+			    "cl_lcl_hitm,"
+			    "cl_stores_l1hit,"
+			    "cl_stores_l1miss,"
+			    "dcacheline";
+	else /* c2c.display == DISPLAY_ALL */
+		cl_output = "cl_num,"
+			    "cl_tot_ld_hit,"
+			    "cl_tot_ld_miss,"
+			    "cl_stores_l1hit,"
+			    "cl_stores_l1miss,"
+			    "dcacheline";
 
 	perf_hpp_list__init(&hpp_list);
 	ret = hpp_list__parse(&hpp_list, cl_output, NULL);
@@ -2242,7 +2580,7 @@ static void print_c2c_info(FILE *out, struct perf_session *session)
 		fprintf(out, "%-36s: %s\n", first ? "  Events" : "", evsel__name(evsel));
 		first = false;
 	}
-	fprintf(out, "  Cachelines sort on                : %s HITMs\n",
+	fprintf(out, "  Cachelines sort on                : %s\n",
 		display_str[c2c.display]);
 	fprintf(out, "  Cacheline data grouping           : %s\n", c2c.cl_sort);
 }
@@ -2399,7 +2737,7 @@ static int perf_c2c_browser__title(struct hist_browser *browser,
 {
 	scnprintf(bf, size,
 		  "Shared Data Cache Line Table     "
-		  "(%lu entries, sorted on %s HITMs)",
+		  "(%lu entries, sorted on %s)",
 		  browser->nr_non_filtered_entries,
 		  display_str[c2c.display]);
 	return 0;
@@ -2605,6 +2943,8 @@ static int setup_display(const char *str)
 		c2c.display = DISPLAY_RMT;
 	else if (!strcmp(display, "lcl"))
 		c2c.display = DISPLAY_LCL;
+	else if (!strcmp(display, "all"))
+		c2c.display = DISPLAY_ALL;
 	else {
 		pr_err("failed: unknown display type: %s\n", str);
 		return -1;
@@ -2651,10 +2991,12 @@ static int build_cl_output(char *cl_sort, bool no_source)
 	}
 
 	if (asprintf(&c2c.cl_output,
-		"%s%s%s%s%s%s%s%s%s%s",
+		"%s%s%s%s%s%s%s%s%s%s%s",
 		c2c.use_stdio ? "cl_num_empty," : "",
-		"percent_rmt_hitm,"
-		"percent_lcl_hitm,"
+		c2c.display == DISPLAY_ALL ? "percent_ld_hit,"
+					     "percent_ld_miss," :
+					     "percent_rmt_hitm,"
+					     "percent_lcl_hitm,",
 		"percent_stores_l1hit,"
 		"percent_stores_l1miss,"
 		"offset,offset_node,dcacheline_count,",
@@ -2683,6 +3025,7 @@ err:
 static int setup_coalesce(const char *coalesce, bool no_source)
 {
 	const char *c = coalesce ?: coalesce_default;
+	const char *sort_str = NULL;
 
 	if (asprintf(&c2c.cl_sort, "offset,%s", c) < 0)
 		return -ENOMEM;
@@ -2690,12 +3033,16 @@ static int setup_coalesce(const char *coalesce, bool no_source)
 	if (build_cl_output(c2c.cl_sort, no_source))
 		return -1;
 
-	if (asprintf(&c2c.cl_resort, "offset,%s",
-		     c2c.display == DISPLAY_TOT ?
-		     "tot_hitm" :
-		     c2c.display == DISPLAY_RMT ?
-		     "rmt_hitm,lcl_hitm" :
-		     "lcl_hitm,rmt_hitm") < 0)
+	if (c2c.display == DISPLAY_TOT)
+		sort_str = "tot_hitm";
+	else if (c2c.display == DISPLAY_RMT)
+		sort_str = "rmt_hitm,lcl_hitm";
+	else if (c2c.display == DISPLAY_LCL)
+		sort_str = "lcl_hitm,rmt_hitm";
+	else if (c2c.display == DISPLAY_ALL)
+		sort_str = "tot_ld_hit";
+
+	if (asprintf(&c2c.cl_resort, "offset,%s", sort_str) < 0)
 		return -ENOMEM;
 
 	pr_debug("coalesce sort   fields: %s\n", c2c.cl_sort);
@@ -2830,20 +3177,37 @@ static int perf_c2c__report(int argc, const char **argv)
 		goto out_mem2node;
 	}
 
-	output_str = "cl_idx,"
-		     "dcacheline,"
-		     "dcacheline_node,"
-		     "dcacheline_count,"
-		     "percent_hitm,"
-		     "tot_hitm,lcl_hitm,rmt_hitm,"
-		     "tot_recs,"
-		     "tot_loads,"
-		     "tot_stores,"
-		     "stores_l1hit,stores_l1miss,"
-		     "ld_fbhit,ld_l1hit,ld_l2hit,"
-		     "ld_lclhit,lcl_hitm,"
-		     "ld_rmthit,rmt_hitm,"
-		     "dram_lcl,dram_rmt";
+	if (c2c.display == DISPLAY_TOT || c2c.display == DISPLAY_LCL ||
+	    c2c.display == DISPLAY_RMT)
+		output_str = "cl_idx,"
+			     "dcacheline,"
+			     "dcacheline_node,"
+			     "dcacheline_count,"
+			     "percent_hitm,"
+			     "tot_hitm,lcl_hitm,rmt_hitm,"
+			     "tot_recs,"
+			     "tot_loads,"
+			     "tot_stores,"
+			     "stores_l1hit,stores_l1miss,"
+			     "ld_fbhit,ld_l1hit,ld_l2hit,"
+			     "ld_lclhit,lcl_hitm,"
+			     "ld_rmthit,rmt_hitm,"
+			     "dram_lcl,dram_rmt";
+	else /* c2c.display == DISPLAY_ALL */
+		output_str = "cl_idx,"
+			     "dcacheline,"
+			     "dcacheline_node,"
+			     "dcacheline_count,"
+			     "percent_tot_ld_hit,"
+			     "tot_ld_hit,"
+			     "tot_recs,"
+			     "tot_loads,"
+			     "tot_stores,"
+			     "stores_l1hit,stores_l1miss,"
+			     "ld_fbhit,ld_l1hit,ld_l2hit,"
+			     "ld_lclhit,lcl_hitm,"
+			     "ld_rmthit,rmt_hitm,"
+			     "dram_lcl,dram_rmt";
 
 	if (c2c.display == DISPLAY_TOT)
 		sort_str = "tot_hitm";
@@ -2851,6 +3215,8 @@ static int perf_c2c__report(int argc, const char **argv)
 		sort_str = "rmt_hitm";
 	else if (c2c.display == DISPLAY_LCL)
 		sort_str = "lcl_hitm";
+	else if (c2c.display == DISPLAY_ALL)
+		sort_str = "tot_ld_hit";
 
 	c2c_hists__reinit(&c2c.hists, output_str, sort_str);
 

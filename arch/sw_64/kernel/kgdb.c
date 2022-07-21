@@ -20,11 +20,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/irq.h>
 #include <linux/kdebug.h>
 #include <linux/kgdb.h>
-#include <linux/uaccess.h>
-#include <asm/cacheflush.h>
 
 struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
 	{ "r0", 8, offsetof(struct pt_regs, r0)},
@@ -37,13 +34,13 @@ struct dbg_reg_def_t dbg_reg_def[DBG_MAX_REG_NUM] = {
 	{ "r7", 8, offsetof(struct pt_regs, r7)},
 	{ "r8", 8, offsetof(struct pt_regs, r8)},
 
-	{ "r9",  8, -1 },
-	{ "r10", 8, -1 },
-	{ "r11", 8, -1 },
-	{ "r12", 8, -1 },
-	{ "r13", 8, -1 },
-	{ "r14", 8, -1 },
-	{ "r15", 8, -1 },
+	{ "r9",  8, offsetof(struct pt_regs, r9)},
+	{ "r10", 8, offsetof(struct pt_regs, r10)},
+	{ "r11", 8, offsetof(struct pt_regs, r11)},
+	{ "r12", 8, offsetof(struct pt_regs, r12)},
+	{ "r13", 8, offsetof(struct pt_regs, r13)},
+	{ "r14", 8, offsetof(struct pt_regs, r14)},
+	{ "r15", 8, offsetof(struct pt_regs, r15)},
 
 	{ "r16", 8, offsetof(struct pt_regs, r16)},
 	{ "r17", 8, offsetof(struct pt_regs, r17)},
@@ -142,12 +139,12 @@ void kgdb_arch_set_pc(struct pt_regs *regs, unsigned long pc)
 	pr_info("AFTER SET PC IS %lx\n", instruction_pointer(regs));
 }
 
-static void kgdb_call_nmi_hook(void *ignored)
+void kgdb_call_nmi_hook(void *ignored)
 {
 	kgdb_nmicallback(raw_smp_processor_id(), NULL);
 }
 
-void kgdb_roundup_cpus(unsigned long flags)
+void kgdb_roundup_cpus(void)
 {
 	local_irq_enable();
 	smp_call_function(kgdb_call_nmi_hook, NULL, 0);
@@ -231,6 +228,6 @@ void kgdb_arch_exit(void)
  * sw64 instructions are always in LE.
  * Break instruction is encoded in LE format
  */
-struct kgdb_arch arch_kgdb_ops = {
+const struct kgdb_arch arch_kgdb_ops = {
 	.gdb_bpt_instr = {0x80, 00, 00, 00}
 };

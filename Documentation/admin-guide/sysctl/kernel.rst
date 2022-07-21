@@ -787,6 +787,7 @@ bit 1  print system memory info
 bit 2  print timer info
 bit 3  print locks info if ``CONFIG_LOCKDEP`` is on
 bit 4  print ftrace buffer
+bit 5  print all printk messages in buffer
 =====  ============================================
 
 So for example to print tasks and memory info on panic, user can::
@@ -1526,3 +1527,20 @@ is 10 seconds.
 
 The softlockup threshold is (``2 * watchdog_thresh``). Setting this
 tunable to zero will disable lockup detection altogether.
+
+uce_kernel_recovery(ARM64 only)
+===============================
+
+This value can be used to control whether panic the kernel when UCE RAS
+errors occur in a specific scenario. Each bit controls a scene, 1 means
+avoid kernel panic when encountering UCE RAS error in this scenario, and
+0 means kernel panic.
+
+Current usage of each bit:
+
+============  ==============
+bit0          reserved
+bit1          reserved
+bit2          copy_from_user
+bit3 ~ bit31  reserved
+============  ==============

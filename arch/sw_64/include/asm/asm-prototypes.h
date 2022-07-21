@@ -4,7 +4,6 @@
 
 #include <linux/spinlock.h>
 #include <asm/checksum.h>
-#include <asm/console.h>
 #include <asm/page.h>
 #include <asm/string.h>
 #include <linux/uaccess.h>

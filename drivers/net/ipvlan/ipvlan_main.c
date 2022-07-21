@@ -14,7 +14,7 @@ int sysctl_ipvlan_loop_qlen = 131072;
 int sysctl_ipvlan_loop_delay = 10;
 static int ipvlan_default_mode = IPVLAN_MODE_L3;
 module_param(ipvlan_default_mode, int, 0400);
-MODULE_PARM_DESC(ipvlan_default_mode, "set ipvlan default mode: 0 for l2, 1 for l3, 2 for l3s, 3 for l2e, others invalid now");
+MODULE_PARM_DESC(ipvlan_default_mode, "set ipvlan default mode: 0 for l2, 1 for l3, 2 for l2e, 3 for l3s, others invalid now");
 
 static struct ctl_table_header *ipvlan_table_hrd;
 static struct ctl_table ipvlan_table[] = {

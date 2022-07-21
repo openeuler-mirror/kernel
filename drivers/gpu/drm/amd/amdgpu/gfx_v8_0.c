@@ -1354,7 +1354,11 @@ static int gfx_v8_0_mec_init(struct amdgpu_device *adev)
 			return r;
 		}
 
+#if IS_ENABLED(CONFIG_SW64)
+		memset_io(hpd, 0, mec_hpd_size);
+#else
 		memset(hpd, 0, mec_hpd_size);
+#endif
 
 		amdgpu_bo_kunmap(adev->gfx.mec.hpd_eop_obj);
 		amdgpu_bo_unreserve(adev->gfx.mec.hpd_eop_obj);
@@ -4649,7 +4653,11 @@ static int gfx_v8_0_kiq_init_queue(struct amdgpu_ring *ring)
 		vi_srbm_select(adev, 0, 0, 0, 0);
 		mutex_unlock(&adev->srbm_mutex);
 	} else {
+#if IS_ENABLED(CONFIG_SW64)
+		memset_io((void *)mqd, 0, sizeof(struct vi_mqd_allocation));
+#else
 		memset((void *)mqd, 0, sizeof(struct vi_mqd_allocation));
+#endif
 		((struct vi_mqd_allocation *)mqd)->dynamic_cu_mask = 0xFFFFFFFF;
 		((struct vi_mqd_allocation *)mqd)->dynamic_rb_mask = 0xFFFFFFFF;
 		mutex_lock(&adev->srbm_mutex);
@@ -4660,7 +4668,11 @@ static int gfx_v8_0_kiq_init_queue(struct amdgpu_ring *ring)
 		mutex_unlock(&adev->srbm_mutex);
 
 		if (adev->gfx.mec.mqd_backup[mqd_idx])
+#if IS_ENABLED(CONFIG_SW64)
+			memcpy_fromio(adev->gfx.mec.mqd_backup[mqd_idx], mqd, sizeof(struct vi_mqd_allocation));
+#else
 			memcpy(adev->gfx.mec.mqd_backup[mqd_idx], mqd, sizeof(struct vi_mqd_allocation));
+#endif
 	}
 
 	return 0;

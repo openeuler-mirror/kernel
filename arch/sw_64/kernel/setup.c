@@ -9,31 +9,13 @@
  * Bootup setup stuff.
  */
 
-#include <linux/sched.h>
-#include <linux/kernel.h>
-#include <linux/mm.h>
-#include <linux/stddef.h>
-#include <linux/unistd.h>
-#include <linux/ptrace.h>
-#include <linux/slab.h>
-#include <linux/user.h>
 #include <linux/screen_info.h>
 #include <linux/delay.h>
 #include <linux/kexec.h>
 #include <linux/console.h>
-#include <linux/cpu.h>
-#include <linux/errno.h>
-#include <linux/init.h>
-#include <linux/string.h>
-#include <linux/ioport.h>
-#include <linux/platform_device.h>
 #include <linux/memblock.h>
-#include <linux/pci.h>
-#include <linux/seq_file.h>
 #include <linux/root_dev.h>
 #include <linux/initrd.h>
-#include <linux/eisa.h>
-#include <linux/pfn.h>
 #ifdef CONFIG_MAGIC_SYSRQ
 #include <linux/sysrq.h>
 #include <linux/reboot.h>
@@ -41,26 +23,12 @@
 #ifdef CONFIG_DEBUG_FS
 #include <linux/debugfs.h>
 #endif
-#include <linux/notifier.h>
-#include <linux/log2.h>
-#include <linux/export.h>
 #include <linux/of_fdt.h>
 #include <linux/of_platform.h>
-#include <linux/uaccess.h>
-#include <linux/cma.h>
 #include <linux/genalloc.h>
 #include <linux/acpi.h>
-#include <asm/setup.h>
-#include <asm/smp.h>
+
 #include <asm/sw64_init.h>
-#include <asm/pgtable.h>
-#include <asm/dma.h>
-#include <asm/mmu_context.h>
-#include <asm/console.h>
-#include <asm/core.h>
-#include <asm/hw_init.h>
-#include <asm/mmzone.h>
-#include <asm/memory.h>
 #include <asm/efi.h>
 #include <asm/kvm_cma.h>
 
@@ -74,14 +42,15 @@
 #define DBGDCONT(args...)
 #endif
 
+
 DEFINE_PER_CPU(unsigned long, hard_node_id) = { 0 };
 
 #if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
 struct cma *sw64_kvm_cma;
 EXPORT_SYMBOL(sw64_kvm_cma);
 
-static phys_addr_t size_cmdline;
-static phys_addr_t base_cmdline;
+static phys_addr_t kvm_mem_size;
+static phys_addr_t kvm_mem_base;
 
 struct gen_pool *sw64_kvm_pool;
 EXPORT_SYMBOL(sw64_kvm_pool);
@@ -133,6 +102,9 @@ static struct resource bss_resource = {
 struct cpuinfo_sw64 cpu_data[NR_CPUS];
 EXPORT_SYMBOL(cpu_data);
 
+DEFINE_STATIC_KEY_TRUE(run_mode_host_key);
+DEFINE_STATIC_KEY_FALSE(run_mode_guest_key);
+DEFINE_STATIC_KEY_FALSE(run_mode_emul_key);
 struct cpu_desc_t cpu_desc;
 struct socket_desc_t socket_desc[MAX_NUMSOCKETS];
 int memmap_nr;
@@ -175,7 +147,8 @@ static void __init kexec_control_page_init(void)
 {
 	phys_addr_t addr;
 
-	addr = memblock_alloc_base(KEXEC_CONTROL_PAGE_SIZE, PAGE_SIZE, KTEXT_MAX);
+	addr = memblock_phys_alloc_range(KEXEC_CONTROL_PAGE_SIZE, PAGE_SIZE,
+					0, KTEXT_MAX);
 	kexec_control_page = (void *)(__START_KERNEL_map + addr);
 }
 
@@ -356,7 +329,7 @@ static void * __init move_initrd(unsigned long mem_limit)
 
 static int __init memmap_range_valid(phys_addr_t base, phys_addr_t size)
 {
-	if (phys_to_virt(base + size - 1) < phys_to_virt(PFN_PHYS(max_low_pfn)))
+	if ((base + size) <= memblock_end_of_DRAM())
 		return true;
 	else
 		return false;
@@ -367,6 +340,7 @@ void __init process_memmap(void)
 	static int i;	// Make it static so we won't start over again every time.
 	int ret;
 	phys_addr_t base, size;
+	unsigned long dma_end __maybe_unused = virt_to_phys((void *)MAX_DMA_ADDRESS);
 
 	if (!memblock_initialized)
 		return;
@@ -378,24 +352,27 @@ void __init process_memmap(void)
 		case memmap_reserved:
 			if (!memmap_range_valid(base, size)) {
 				pr_err("reserved memmap region [mem %#018llx-%#018llx] extends beyond end of memory (%#018llx)\n",
-						base, base + size - 1, PFN_PHYS(max_low_pfn));
+						base, base + size - 1, memblock_end_of_DRAM());
 			} else {
 				pr_info("reserved memmap region [mem %#018llx-%#018llx]\n",
 						base, base + size - 1);
-				ret = memblock_remove(base, size);
+				ret = memblock_mark_nomap(base, size);
 				if (ret)
 					pr_err("reserve memmap region [mem %#018llx-%#018llx] failed\n",
+							base, base + size - 1);
+				else if (IS_ENABLED(CONFIG_ZONE_DMA32) && (base < dma_end))
+					pr_warn("memmap region [mem %#018llx-%#018llx] overlapped with DMA32 region\n",
 							base, base + size - 1);
 			}
 			break;
 		case memmap_pci:
 			if (!memmap_range_valid(base, size)) {
 				pr_info("pci memmap region [mem %#018llx-%#018llx] extends beyond end of memory (%#018llx)\n",
-						base, base + size - 1, PFN_PHYS(max_low_pfn));
+						base, base + size - 1, memblock_end_of_DRAM());
 			} else {
 				pr_info("pci memmap region [mem %#018llx-%#018llx]\n",
 						base, base + size - 1);
-				ret = memblock_remove(base, size);
+				ret = memblock_mark_nomap(base, size);
 				if (ret)
 					pr_err("reserve memmap region [mem %#018llx-%#018llx] failed\n",
 							base, base + size - 1);
@@ -403,10 +380,12 @@ void __init process_memmap(void)
 			break;
 		case memmap_initrd:
 			if (!memmap_range_valid(base, size)) {
-				base = (unsigned long) move_initrd(PFN_PHYS(max_low_pfn));
+				phys_addr_t old_base = base;
+
+				base = (unsigned long) move_initrd(memblock_end_of_DRAM());
 				if (!base) {
 					pr_err("initrd memmap region [mem %#018llx-%#018llx] extends beyond end of memory (%#018llx)\n",
-							base, base + size - 1, PFN_PHYS(max_low_pfn));
+							old_base, old_base + size - 1, memblock_end_of_DRAM());
 				} else {
 					memmap_map[i].addr = base;
 					pr_info("initrd memmap region [mem %#018llx-%#018llx]\n",
@@ -490,7 +469,6 @@ insert_ram_resource(u64 start, u64 end, bool reserved)
 
 static int __init request_standard_resources(void)
 {
-	int i;
 	struct memblock_region *mblk;
 
 	extern char _text[], _etext[];
@@ -498,17 +476,12 @@ static int __init request_standard_resources(void)
 	extern char __bss_start[], __bss_stop[];
 
 	for_each_mem_region(mblk) {
-		insert_ram_resource(mblk->base, mblk->base + mblk->size - 1, 0);
-	}
-
-	for (i = 0; i < memmap_nr; i++) {
-		switch (memmap_map[i].type) {
-		case memmap_crashkernel:
-			break;
-		default:
-			insert_ram_resource(memmap_map[i].addr,
-					memmap_map[i].addr + memmap_map[i].size - 1, 1);
-		}
+		if (!memblock_is_nomap(mblk))
+			insert_ram_resource(mblk->base,
+					mblk->base + mblk->size - 1, 0);
+		else
+			insert_ram_resource(mblk->base,
+					mblk->base + mblk->size - 1, 1);
 	}
 
 	code_resource.start = __pa_symbol(_text);
@@ -587,16 +560,20 @@ static void __init setup_machine_fdt(void)
 #ifdef CONFIG_USE_OF
 	void *dt_virt;
 	const char *name;
-	unsigned long phys_addr;
 
 	/* Give a chance to select kernel builtin DTB firstly */
 	if (IS_ENABLED(CONFIG_SW64_BUILTIN_DTB))
 		dt_virt = (void *)__dtb_start;
-	else
+	else {
 		dt_virt = (void *)sunway_boot_params->dtb_start;
+		if (virt_to_phys(dt_virt) < virt_to_phys(__bss_stop)) {
+			pr_emerg("BUG: DTB has been corrupted by kernel image!\n");
+			while (true)
+				cpu_relax();
+		}
+	}
 
-	phys_addr = __phys_addr((unsigned long)dt_virt);
-	if (!phys_addr_valid(phys_addr) ||
+	if (!phys_addr_valid(virt_to_phys(dt_virt)) ||
 			!early_init_dt_scan(dt_virt)) {
 		pr_crit("\n"
 			"Error: invalid device tree blob at virtual address %px\n"
@@ -639,10 +616,25 @@ static void __init setup_cpu_info(void)
 	cpu_desc.arch_rev = CPUID_ARCH_REV(val);
 	cpu_desc.pa_bits = CPUID_PA_BITS(val);
 	cpu_desc.va_bits = CPUID_VA_BITS(val);
-	cpu_desc.run_mode = HOST_MODE;
 
-	if (*(unsigned long *)MMSIZE)
-		cpu_desc.run_mode = GUEST_MODE;
+	if (*(unsigned long *)MMSIZE) {
+		static_branch_disable(&run_mode_host_key);
+		if (*(unsigned long *)MMSIZE & EMUL_FLAG) {
+			pr_info("run mode: emul\n");
+			static_branch_disable(&run_mode_guest_key);
+			static_branch_enable(&run_mode_emul_key);
+
+		} else {
+			pr_info("run mode: guest\n");
+			static_branch_enable(&run_mode_guest_key);
+			static_branch_disable(&run_mode_emul_key);
+		}
+	} else {
+		pr_info("run mode: host\n");
+		static_branch_enable(&run_mode_host_key);
+		static_branch_disable(&run_mode_guest_key);
+		static_branch_disable(&run_mode_emul_key);
+	}
 
 	for (i = 0; i < VENDOR_ID_MAX; i++) {
 		val = cpuid(GET_VENDOR_ID, i);
@@ -729,17 +721,17 @@ static int __init early_kvm_reserved_mem(char *p)
 		return -EINVAL;
 	}
 
-	size_cmdline = memparse(p, &p);
+	kvm_mem_size = memparse(p, &p);
 	if (*p != '@')
 		return -EINVAL;
-	base_cmdline = memparse(p + 1, &p);
+	kvm_mem_base = memparse(p + 1, &p);
 	return 0;
 }
 early_param("kvm_mem", early_kvm_reserved_mem);
 
 void __init sw64_kvm_reserve(void)
 {
-	kvm_cma_declare_contiguous(base_cmdline, size_cmdline, 0,
+	kvm_cma_declare_contiguous(kvm_mem_base, kvm_mem_size, 0,
 			PAGE_SIZE, 0, "sw64_kvm_cma", &sw64_kvm_cma);
 }
 #endif
@@ -747,6 +739,7 @@ void __init sw64_kvm_reserve(void)
 void __init
 setup_arch(char **cmdline_p)
 {
+	jump_label_init();
 	setup_cpu_info();
 	sw64_chip->fixup();
 	sw64_chip_init->fixup();
@@ -754,7 +747,6 @@ setup_arch(char **cmdline_p)
 	show_socket_mem_layout();
 	sw64_chip_init->early_init.setup_core_start(&core_start);
 
-	jump_label_init();
 	setup_sched_clock();
 #ifdef CONFIG_GENERIC_SCHED_CLOCK
 	sw64_sched_clock_init();
@@ -913,7 +905,7 @@ show_cpuinfo(struct seq_file *f, void *slot)
 				"physical id\t: %d\n"
 				"bogomips\t: %lu.%02lu\n",
 				cpu_freq, cpu_data[i].tcache.size >> 10,
-				cpu_to_rcid(i),
+				cpu_topology[i].package_id,
 				loops_per_jiffy / (500000/HZ),
 				(loops_per_jiffy / (5000/HZ)) % 100);
 
@@ -938,6 +930,7 @@ c_start(struct seq_file *f, loff_t *pos)
 static void *
 c_next(struct seq_file *f, void *v, loff_t *pos)
 {
+	(*pos)++;
 	return NULL;
 }
 
@@ -983,7 +976,7 @@ static int __init debugfs_sw64(void)
 {
 	struct dentry *d;
 
-	d = debugfs_create_dir("sw_64", NULL);
+	d = debugfs_create_dir("sw64", NULL);
 	if (!d)
 		return -ENOMEM;
 	sw64_debugfs_dir = d;
@@ -1011,14 +1004,14 @@ static int __init sw64_kvm_pool_init(void)
 	if (!sw64_kvm_cma)
 		goto out;
 
-	kvm_pool_virt = (unsigned long)base_cmdline;
+	kvm_pool_virt = (unsigned long)kvm_mem_base;
 
 	sw64_kvm_pool = gen_pool_create(PAGE_SHIFT, -1);
 	if (!sw64_kvm_pool)
 		goto out;
 
-	status = gen_pool_add_virt(sw64_kvm_pool, kvm_pool_virt, base_cmdline,
-			size_cmdline, -1);
+	status = gen_pool_add_virt(sw64_kvm_pool, kvm_pool_virt, kvm_mem_base,
+			kvm_mem_size, -1);
 	if (status < 0) {
 		pr_err("failed to add memory chunks to sw64 kvm pool\n");
 		gen_pool_destroy(sw64_kvm_pool);
@@ -1027,13 +1020,13 @@ static int __init sw64_kvm_pool_init(void)
 	}
 	gen_pool_set_algo(sw64_kvm_pool, gen_pool_best_fit, NULL);
 
-	base_page = pfn_to_page(base_cmdline >> PAGE_SHIFT);
-	end_page  = pfn_to_page((base_cmdline + size_cmdline) >> PAGE_SHIFT);
+	base_page = pfn_to_page(kvm_mem_base >> PAGE_SHIFT);
+	end_page  = pfn_to_page((kvm_mem_base + kvm_mem_size - 1) >> PAGE_SHIFT);
 
 	p = base_page;
-	while (page_ref_count(p) == 0 &&
-			(unsigned long)p <= (unsigned long)end_page) {
+	while (p <= end_page && page_ref_count(p) == 0) {
 		set_page_count(p, 1);
+		page_mapcount_reset(p);
 		SetPageReserved(p);
 		p++;
 	}

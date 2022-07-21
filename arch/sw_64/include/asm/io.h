@@ -65,15 +65,6 @@ static inline void * __deprecated bus_to_virt(unsigned long address)
 #define isa_bus_to_virt bus_to_virt
 
 /*
- * There are different chipsets to interface the sw64 CPUs to the world.
- */
-
-#define IO_CONCAT(a, b)		_IO_CONCAT(a, b)
-#define _IO_CONCAT(a, b)	a ## _ ## b
-
-#include <asm/sw64io.h>
-
-/*
  * Generic IO read/write.  These perform native-endian accesses.
  */
 
@@ -184,14 +175,6 @@ extern void		outb(u8 b, unsigned long port);
 extern void		outw(u16 b, unsigned long port);
 extern void		outl(u32 b, unsigned long port);
 
-/*
- * Mapping from port numbers to __iomem space is pretty easy.
- */
-static inline void __iomem *ioportmap(unsigned long addr)
-{
-	return sw64_platform->ioportmap(addr);
-}
-
 static inline void __iomem *__ioremap(phys_addr_t addr, size_t size,
 				      pgprot_t prot)
 {
@@ -210,22 +193,6 @@ static inline void __iounmap(volatile void __iomem *addr)
 }
 
 #define iounmap				__iounmap
-
-static inline int __is_ioaddr(unsigned long addr)
-{
-	return addr >= (PAGE_OFFSET | IO_BASE);
-}
-
-#define __is_ioaddr(a)  __is_ioaddr((unsigned long)(a))
-
-static inline int __is_mmio(const volatile void __iomem *xaddr)
-{
-	unsigned long addr = (unsigned long)xaddr;
-
-	return (addr & 0x100000000UL) == 0;
-}
-
-
 
 #define ioread16be(p) be16_to_cpu(ioread16(p))
 #define ioread32be(p) be32_to_cpu(ioread32(p))

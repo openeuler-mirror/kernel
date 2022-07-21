@@ -13,10 +13,26 @@
  */
 
 #include <linux/time.h>
-#include <asm/timex.h>
+
 #include <asm/unistd.h>
 #include <asm/vdso.h>
-#include <asm/io.h>
+
+static __always_inline int syscall_fallback(clockid_t clkid, struct timespec64 *ts)
+{
+	register int r0 asm("$0");
+	register unsigned long r19 asm("$19");
+	asm volatile(
+	"	mov		%0, $16\n"
+	"	mov		%1, $17\n"
+	"	ldi		$0, %2\n"
+	"	sys_call	0x83\n"
+	:: "r"(clkid), "r"(ts), "i"(__NR_clock_gettime)
+	: "$0", "$16", "$17", "$19");
+	if (unlikely(r19))
+		return -r0;
+	else
+		return r0;
+}
 
 static __always_inline int do_realtime_coarse(struct timespec64 *ts,
 		const struct vdso_data *data)
@@ -38,8 +54,8 @@ static __always_inline int do_monotonic_coarse(struct timespec64 *ts,
 		const struct vdso_data *data)
 {
 	u32 start_seq;
-	u32 to_mono_sec;
-	u32 to_mono_nsec;
+	u64 to_mono_sec;
+	u64 to_mono_nsec;
 
 	do {
 		start_seq = vdso_data_read_begin(data);
@@ -107,8 +123,8 @@ static __always_inline int do_monotonic(struct timespec64 *ts,
 {
 	u32 start_seq;
 	u64 ns;
-	u32 to_mono_sec;
-	u32 to_mono_nsec;
+	u64 to_mono_sec;
+	u64 to_mono_nsec;
 
 	do {
 		start_seq = vdso_data_read_begin(data);
@@ -170,10 +186,9 @@ int __vdso_clock_gettime(clockid_t clkid, struct timespec64 *ts)
 		ret = do_monotonic(ts, data);
 		break;
 	default:
-		ret = -ENOSYS;
-		break;
+		/* fall back to a syscall */
+		ret = syscall_fallback(clkid, ts);
 	}
 
-	/* If we return -ENOSYS libc should fall back to a syscall. */
 	return ret;
 }

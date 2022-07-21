@@ -12,12 +12,8 @@
  * General Public License for more details.
  */
 
-#include <linux/kernel.h>
 #include <linux/kprobes.h>
-#include <linux/module.h>
-#include <linux/kallsyms.h>
-#include <asm/insn.h>
-#include <asm/sections.h>
+
 #include "common.h"
 
 static bool __kprobes sw64_insn_is_steppable(u32 insn)

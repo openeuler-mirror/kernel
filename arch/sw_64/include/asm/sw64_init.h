@@ -5,6 +5,7 @@
 #include <linux/cpu.h>
 #include <linux/pci.h>
 
+#include <asm/sw64io.h>
 
 struct sw64_early_init_ops {
 	void (*setup_core_start)(struct cpumask *cpumask);

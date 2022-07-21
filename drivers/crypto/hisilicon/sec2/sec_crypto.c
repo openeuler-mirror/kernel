@@ -127,11 +127,11 @@ static int sec_alloc_req_id(struct sec_req *req, struct sec_qp_ctx *qp_ctx)
 {
 	int req_id;
 
-	mutex_lock(&qp_ctx->req_lock);
+	spin_lock_bh(&qp_ctx->req_lock);
 
 	req_id = idr_alloc_cyclic(&qp_ctx->req_idr, NULL,
 				  0, QM_Q_DEPTH, GFP_ATOMIC);
-	mutex_unlock(&qp_ctx->req_lock);
+	spin_unlock_bh(&qp_ctx->req_lock);
 	if (unlikely(req_id < 0)) {
 		dev_err(req->ctx->dev, "alloc req id fail!\n");
 		return req_id;
@@ -156,9 +156,9 @@ static void sec_free_req_id(struct sec_req *req)
 	qp_ctx->req_list[req_id] = NULL;
 	req->qp_ctx = NULL;
 
-	mutex_lock(&qp_ctx->req_lock);
+	spin_lock_bh(&qp_ctx->req_lock);
 	idr_remove(&qp_ctx->req_idr, req_id);
-	mutex_unlock(&qp_ctx->req_lock);
+	spin_unlock_bh(&qp_ctx->req_lock);
 }
 
 static u8 pre_parse_finished_bd(struct bd_status *status, void *resp)
@@ -240,7 +240,7 @@ static void sec_req_cb(struct hisi_qp *qp, void *resp)
 
 	if (unlikely(type != type_supported)) {
 		atomic64_inc(&dfx->err_bd_cnt);
-		pr_err("err bd type [%d]\n", type);
+		pr_err("err bd type [%u]\n", type);
 		return;
 	}
 
@@ -273,7 +273,7 @@ static int sec_bd_send(struct sec_ctx *ctx, struct sec_req *req)
 	    !(req->flag & CRYPTO_TFM_REQ_MAY_BACKLOG))
 		return -EBUSY;
 
-	mutex_lock(&qp_ctx->req_lock);
+	spin_lock_bh(&qp_ctx->req_lock);
 	ret = hisi_qp_send(qp_ctx->qp, &req->sec_sqe);
 
 	if (ctx->fake_req_limit <=
@@ -281,10 +281,10 @@ static int sec_bd_send(struct sec_ctx *ctx, struct sec_req *req)
 		list_add_tail(&req->backlog_head, &qp_ctx->backlog);
 		atomic64_inc(&ctx->sec->debug.dfx.send_cnt);
 		atomic64_inc(&ctx->sec->debug.dfx.send_busy_cnt);
-		mutex_unlock(&qp_ctx->req_lock);
+		spin_unlock_bh(&qp_ctx->req_lock);
 		return -EBUSY;
 	}
-	mutex_unlock(&qp_ctx->req_lock);
+	spin_unlock_bh(&qp_ctx->req_lock);
 
 	if (unlikely(ret == -EBUSY))
 		return -ENOBUFS;
@@ -487,7 +487,7 @@ static int sec_create_qp_ctx(struct hisi_qm *qm, struct sec_ctx *ctx,
 
 	qp->req_cb = sec_req_cb;
 
-	mutex_init(&qp_ctx->req_lock);
+	spin_lock_init(&qp_ctx->req_lock);
 	idr_init(&qp_ctx->req_idr);
 	INIT_LIST_HEAD(&qp_ctx->backlog);
 
@@ -644,13 +644,15 @@ static int sec_skcipher_fbtfm_init(struct crypto_skcipher *tfm)
 	struct sec_cipher_ctx *c_ctx = &ctx->c_ctx;
 
 	c_ctx->fallback = false;
+
+	/* Currently, only XTS mode need fallback tfm when using 192bit key */
 	if (likely(strncmp(alg, "xts", SEC_XTS_NAME_SZ)))
 		return 0;
 
 	c_ctx->fbtfm = crypto_alloc_sync_skcipher(alg, 0,
 						  CRYPTO_ALG_NEED_FALLBACK);
 	if (IS_ERR(c_ctx->fbtfm)) {
-		pr_err("failed to alloc fallback tfm!\n");
+		pr_err("failed to alloc xts mode fallback tfm!\n");
 		return PTR_ERR(c_ctx->fbtfm);
 	}
 
@@ -811,7 +813,7 @@ static int sec_skcipher_setkey(struct crypto_skcipher *tfm, const u8 *key,
 	}
 
 	memcpy(c_ctx->c_key, key, keylen);
-	if (c_ctx->fallback) {
+	if (c_ctx->fallback && c_ctx->fbtfm) {
 		ret = crypto_sync_skcipher_setkey(c_ctx->fbtfm, key, keylen);
 		if (ret) {
 			dev_err(dev, "failed to set fallback skcipher key!\n");
@@ -1380,7 +1382,7 @@ static struct sec_req *sec_back_req_clear(struct sec_ctx *ctx,
 {
 	struct sec_req *backlog_req = NULL;
 
-	mutex_lock(&qp_ctx->req_lock);
+	spin_lock_bh(&qp_ctx->req_lock);
 	if (ctx->fake_req_limit >=
 	    atomic_read(&qp_ctx->qp->qp_status.used) &&
 	    !list_empty(&qp_ctx->backlog)) {
@@ -1388,7 +1390,7 @@ static struct sec_req *sec_back_req_clear(struct sec_ctx *ctx,
 				typeof(*backlog_req), backlog_head);
 		list_del(&backlog_req->backlog_head);
 	}
-	mutex_unlock(&qp_ctx->req_lock);
+	spin_unlock_bh(&qp_ctx->req_lock);
 
 	return backlog_req;
 }
@@ -2039,13 +2041,12 @@ static int sec_skcipher_soft_crypto(struct sec_ctx *ctx,
 				    struct skcipher_request *sreq, bool encrypt)
 {
 	struct sec_cipher_ctx *c_ctx = &ctx->c_ctx;
+	SYNC_SKCIPHER_REQUEST_ON_STACK(subreq, c_ctx->fbtfm);
 	struct device *dev = ctx->dev;
 	int ret;
 
-	SYNC_SKCIPHER_REQUEST_ON_STACK(subreq, c_ctx->fbtfm);
-
 	if (!c_ctx->fbtfm) {
-		dev_err(dev, "failed to check fallback tfm\n");
+		dev_err_ratelimited(dev, "the soft tfm isn't supported in the current system.\n");
 		return -EINVAL;
 	}
 
@@ -2112,7 +2113,6 @@ static int sec_skcipher_decrypt(struct skcipher_request *sk_req)
 		.cra_driver_name = "hisi_sec_"sec_cra_name,\
 		.cra_priority = SEC_PRIORITY,\
 		.cra_flags = CRYPTO_ALG_ASYNC |\
-		 CRYPTO_ALG_ALLOCATES_MEMORY |\
 		 CRYPTO_ALG_NEED_FALLBACK,\
 		.cra_blocksize = blk_size,\
 		.cra_ctxsize = sizeof(struct sec_ctx),\
@@ -2267,7 +2267,6 @@ static int sec_aead_param_check(struct sec_ctx *ctx, struct sec_req *sreq)
 	if (ctx->sec->qm.ver == QM_HW_V2) {
 		if (unlikely(!req->cryptlen || (!sreq->c_req.encrypt &&
 		    req->cryptlen <= authsize))) {
-			dev_err(dev, "Kunpeng920 not support 0 length!\n");
 			ctx->a_ctx.fallback = true;
 			return -EINVAL;
 		}
@@ -2295,15 +2294,20 @@ static int sec_aead_soft_crypto(struct sec_ctx *ctx,
 				struct aead_request *aead_req,
 				bool encrypt)
 {
-	struct aead_request *subreq = aead_request_ctx(aead_req);
 	struct sec_auth_ctx *a_ctx = &ctx->a_ctx;
 	struct device *dev = ctx->dev;
+	struct aead_request *subreq;
+	int ret;
 
 	/* Kunpeng920 aead mode not support input 0 size */
 	if (!a_ctx->fallback_aead_tfm) {
 		dev_err(dev, "aead fallback tfm is NULL!\n");
 		return -EINVAL;
 	}
+
+	subreq = aead_request_alloc(a_ctx->fallback_aead_tfm, GFP_KERNEL);
+	if (!subreq)
+		return -ENOMEM;
 
 	aead_request_set_tfm(subreq, a_ctx->fallback_aead_tfm);
 	aead_request_set_callback(subreq, aead_req->base.flags,
@@ -2312,8 +2316,13 @@ static int sec_aead_soft_crypto(struct sec_ctx *ctx,
 			       aead_req->cryptlen, aead_req->iv);
 	aead_request_set_ad(subreq, aead_req->assoclen);
 
-	return encrypt ? crypto_aead_encrypt(subreq) :
-		   crypto_aead_decrypt(subreq);
+	if (encrypt)
+		ret = crypto_aead_encrypt(subreq);
+	else
+		ret = crypto_aead_decrypt(subreq);
+	aead_request_free(subreq);
+
+	return ret;
 }
 
 static int sec_aead_crypto(struct aead_request *a_req, bool encrypt)
@@ -2356,7 +2365,6 @@ static int sec_aead_decrypt(struct aead_request *a_req)
 		.cra_driver_name = "hisi_sec_"sec_cra_name,\
 		.cra_priority = SEC_PRIORITY,\
 		.cra_flags = CRYPTO_ALG_ASYNC |\
-		 CRYPTO_ALG_ALLOCATES_MEMORY |\
 		 CRYPTO_ALG_NEED_FALLBACK,\
 		.cra_blocksize = blk_size,\
 		.cra_ctxsize = sizeof(struct sec_ctx),\

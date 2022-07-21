@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/pci.h>
-#include <linux/seq_file.h>
 #include <linux/clocksource.h>
-#include <linux/msi.h>
-#include <linux/delay.h>
+
 #include <asm/sw64_init.h>
 #include <asm/sw64io.h>
 #include <asm/pci.h>
-#include <asm/core.h>
 #include <asm/irq_impl.h>
 #include <asm/wrperfmon.h>
-#include <asm/hw_init.h>
 #include "../../../../drivers/pci/pci.h"
 
 static u64 read_longtime(struct clocksource *cs)
@@ -58,14 +54,9 @@ static struct clocksource clocksource_longtime = {
 static u64 read_vtime(struct clocksource *cs)
 {
 	u64 result;
-	unsigned long node;
-	unsigned long vtime_addr = PAGE_OFFSET | IO_BASE | LONG_TIME;
+	unsigned long vtime_addr = IO_BASE | LONG_TIME;
 
-	if (is_in_guest())
-		result = rdio64(vtime_addr);
-	else
-		result = sw64_io_read(node, LONG_TIME);
-
+	result = rdio64(vtime_addr);
 	return result;
 }
 
@@ -99,6 +90,25 @@ void setup_chip_clocksource(void)
 #endif
 }
 
+void set_devint_wken(int node)
+{
+	unsigned long val;
+
+	/* enable INTD wakeup */
+	val = 0x80;
+	sw64_io_write(node, DEVINT_WKEN, val);
+	sw64_io_write(node, DEVINTWK_INTEN, val);
+}
+
+void set_pcieport_service_irq(int node, int index)
+{
+	if (IS_ENABLED(CONFIG_PCIE_PME))
+		write_piu_ior0(node, index, PMEINTCONFIG, PME_ENABLE_INTD_CORE0);
+
+	if (IS_ENABLED(CONFIG_PCIEAER))
+		write_piu_ior0(node, index, AERERRINTCONFIG, AER_ENABLE_INTD_CORE0);
+}
+
 static int chip3_get_cpu_nums(void)
 {
 	unsigned long trkmode;
@@ -116,7 +126,7 @@ static int chip3_get_cpu_nums(void)
 
 static unsigned long chip3_get_vt_node_mem(int nodeid)
 {
-	return *(unsigned long *)MMSIZE;
+	return *(unsigned long *)MMSIZE & MMSIZE_MASK;
 }
 
 static unsigned long chip3_get_node_mem(int nodeid)
@@ -131,6 +141,19 @@ static unsigned long chip3_get_node_mem(int nodeid)
 	node_mem = mc_cap * mc_num;
 
 	return node_mem;
+}
+
+static void chip3_setup_vt_core_start(struct cpumask *cpumask)
+{
+	int i;
+	unsigned long coreonline;
+
+	coreonline = sw64_io_read(0, CORE_ONLINE);
+
+	for (i = 0; i < 64 ; i++) {
+		if (coreonline & (1UL << i))
+			cpumask_set_cpu(i, cpumask);
+	}
 }
 
 static void chip3_setup_core_start(struct cpumask *cpumask)
@@ -155,18 +178,20 @@ int chip_pcie_configure(struct pci_controller *hose)
 	struct pci_bus *bus, *top;
 	struct list_head *next;
 	unsigned int max_read_size, smallest_max_payload;
-	int max_payloadsize, iov_bus = 0;
+	int max_payloadsize;
 	unsigned long rc_index, node;
 	unsigned long piuconfig0, value;
 	unsigned int pcie_caps_offset;
 	unsigned int rc_conf_value;
 	u16 devctl, new_values;
 	bool rc_ari_disabled = false, found = false;
+	unsigned char bus_max_num;
 
 	node = hose->node;
 	rc_index = hose->index;
 	smallest_max_payload = read_rc_conf(node, rc_index, RC_EXP_DEVCAP);
 	smallest_max_payload &= PCI_EXP_DEVCAP_PAYLOAD;
+	bus_max_num = hose->busn_space->start;
 
 	top = hose->bus;
 	bus = top;
@@ -177,6 +202,7 @@ int chip_pcie_configure(struct pci_controller *hose)
 			/* end of this bus, go up or finish */
 			if (bus == top)
 				break;
+
 			next = bus->self->bus_list.next;
 			bus = bus->self->bus;
 			continue;
@@ -201,10 +227,8 @@ int chip_pcie_configure(struct pci_controller *hose)
 			}
 		}
 
-#ifdef CONFIG_PCI_IOV
-		if (dev->is_physfn)
-			iov_bus += dev->sriov->max_VF_buses - dev->bus->number;
-#endif
+		if (bus->busn_res.end > bus_max_num)
+			bus_max_num = bus->busn_res.end;
 
 		/* Query device PCIe capability register  */
 		pcie_caps_offset = dev->pcie_cap;
@@ -283,7 +307,7 @@ int chip_pcie_configure(struct pci_controller *hose)
 		pci_write_config_word(dev, pcie_caps_offset + PCI_EXP_DEVCTL, devctl);
 	}
 
-	return iov_bus;
+	return bus_max_num;
 }
 
 static int chip3_check_pci_vt_linkup(unsigned long node, unsigned long index)
@@ -408,7 +432,10 @@ static int chip3_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	struct pci_controller *hose = dev->sysdata;
 
-	return hose->int_irq;
+	if (pci_pcie_type(dev) == PCI_EXP_TYPE_ROOT_PORT)
+		return hose->service_irq;
+	else
+		return hose->int_irq;
 }
 
 extern struct pci_controller *hose_head, **hose_tail;
@@ -427,6 +454,23 @@ static void sw6_handle_intx(unsigned int offset)
 			value = value | (1UL << 62);
 			write_piu_ior0(hose->node, hose->index, INTACONFIG + (offset << 7), value);
 		}
+
+		if (IS_ENABLED(CONFIG_PCIE_PME)) {
+			value = read_piu_ior0(hose->node, hose->index, PMEINTCONFIG);
+			if (value >> 63) {
+				handle_irq(hose->service_irq);
+				write_piu_ior0(hose->node, hose->index, PMEINTCONFIG, value);
+			}
+		}
+
+		if (IS_ENABLED(CONFIG_PCIEAER)) {
+			value = read_piu_ior0(hose->node, hose->index, AERERRINTCONFIG);
+			if (value >> 63) {
+				handle_irq(hose->service_irq);
+				write_piu_ior0(hose->node, hose->index, AERERRINTCONFIG, value);
+			}
+		}
+
 		if (hose->iommu_enable) {
 			value = read_piu_ior0(hose->node, hose->index, IOMMUEXCPT_STATUS);
 			if (value >> 63)
@@ -450,76 +494,6 @@ static void chip3_device_interrupt(unsigned long irq_info)
 	}
 }
 
-static void set_devint_wken(int node, int val)
-{
-	sw64_io_write(node, DEVINT_WKEN, val);
-	sw64_io_write(node, DEVINTWK_INTEN, 0x0);
-}
-
-static void clear_rc_status(int node, int rc)
-{
-	unsigned int val, status;
-
-	val = 0x10000;
-	do {
-		write_rc_conf(node, rc, RC_STATUS, val);
-		mb();
-		status = read_rc_conf(node, rc, RC_STATUS);
-	} while (status >> 16);
-}
-
-static void chip3_suspend(int wake)
-{
-	unsigned long val;
-	unsigned int val_32;
-	unsigned long rc_start;
-	int node, rc, index, cpus;
-
-	cpus = chip3_get_cpu_nums();
-	for (node = 0; node < cpus; node++) {
-		rc = -1;
-		rc_start = sw64_io_read(node, IO_START);
-		index = ffs(rc_start);
-		while (index) {
-			rc += index;
-			if (wake) {
-				val_32 = read_rc_conf(node, rc, RC_CONTROL);
-				val_32 &= ~0x8;
-				write_rc_conf(node, rc, RC_CONTROL, val_32);
-
-				set_devint_wken(node, 0x0);
-				val = 0x8000000000000000UL;
-				write_piu_ior0(node, rc, PMEINTCONFIG, val);
-				write_piu_ior0(node, rc, PMEMSICONFIG, val);
-
-				clear_rc_status(node, rc);
-			} else {
-				val_32 = read_rc_conf(node, rc, RC_CONTROL);
-				val_32 |= 0x8;
-				write_rc_conf(node, rc, RC_CONTROL, val_32);
-
-				clear_rc_status(node, rc);
-				set_devint_wken(node, 0x1f0);
-#ifdef CONFIG_PCI_MSI    //USE MSI
-				val_32 = read_rc_conf(node, rc, RC_COMMAND);
-				val_32 |= 0x400;
-				write_rc_conf(node, rc, RC_COMMAND, val_32);
-				val_32 = read_rc_conf(node, rc, RC_MSI_CONTROL);
-				val_32 |= 0x10000;
-				write_rc_conf(node, rc, RC_MSI_CONTROL, val_32);
-				val = 0x4000000000000000UL;
-				write_piu_ior0(node, rc, PMEMSICONFIG, val);
-#else //USE INT
-				val = 0x4000000000000400UL;
-				write_piu_ior0(node, rc, PMEINTCONFIG, val);
-#endif
-			}
-			rc_start = rc_start >> index;
-			index = ffs(rc_start);
-		}
-	}
-}
-
 static void chip3_hose_init(struct pci_controller *hose)
 {
 	unsigned long pci_io_base;
@@ -531,13 +505,10 @@ static void chip3_hose_init(struct pci_controller *hose)
 
 	hose->dense_mem_base = pci_io_base;
 	hose->dense_io_base = pci_io_base | PCI_LEGACY_IO;
-	hose->ep_config_space_base = PAGE_OFFSET | pci_io_base | PCI_EP_CFG;
-	hose->rc_config_space_base = PAGE_OFFSET | pci_io_base | PCI_RC_CFG;
+	hose->ep_config_space_base = __va(pci_io_base | PCI_EP_CFG);
+	hose->rc_config_space_base = __va(pci_io_base | PCI_RC_CFG);
 
-	if (is_in_host())
-		hose->mem_space->start = pci_io_base + PCI_32BIT_MEMIO;
-	else
-		hose->mem_space->start = pci_io_base + PCI_32BIT_VT_MEMIO;
+	hose->mem_space->start = pci_io_base + PCI_32BIT_MEMIO;
 	hose->mem_space->end = hose->mem_space->start + PCI_32BIT_MEMIO_SIZE - 1;
 	hose->mem_space->name = "pci memory space";
 	hose->mem_space->flags = IORESOURCE_MEM;
@@ -574,6 +545,7 @@ static void chip3_hose_init(struct pci_controller *hose)
 static void chip3_init_ops_fixup(void)
 {
 	if (is_guest_or_emul()) {
+		sw64_chip_init->early_init.setup_core_start = chip3_setup_vt_core_start;
 		sw64_chip_init->early_init.get_node_mem = chip3_get_vt_node_mem;
 		sw64_chip_init->pci_init.check_pci_linkup = chip3_check_pci_vt_linkup;
 	}
@@ -603,7 +575,6 @@ static struct sw64_chip_init_ops chip3_chip_init_ops = {
 
 static struct sw64_chip_ops chip3_chip_ops = {
 	.get_cpu_num = chip3_get_cpu_nums,
-	.suspend = chip3_suspend,
 	.fixup = chip3_ops_fixup,
 };
 
@@ -731,6 +702,11 @@ void handle_chip_irq(unsigned long type, unsigned long vector,
 		handle_irq(type);
 		set_irq_regs(old_regs);
 		return;
+	case INT_VT_HOTPLUG:
+		old_regs = set_irq_regs(regs);
+		handle_irq(type);
+		set_irq_regs(old_regs);
+		return;
 	case INT_PC0:
 		perf_irq(PERFMON_PC0, regs);
 		return;
@@ -782,14 +758,16 @@ static void chip3_pci_fixup_root_complex(struct pci_dev *dev)
 		}
 
 		dev->class &= 0xff;
-		dev->class |= PCI_CLASS_BRIDGE_HOST << 8;
+		dev->class |= PCI_CLASS_BRIDGE_PCI << 8;
 		for (i = 0; i < PCI_NUM_RESOURCES; i++) {
 			dev->resource[i].start = 0;
 			dev->resource[i].end   = 0;
-			dev->resource[i].flags = 0;
+			dev->resource[i].flags = IORESOURCE_PCI_FIXED;
 		}
 	}
 	atomic_inc(&dev->enable_cnt);
+
+	dev->no_msi = 1;
 }
 
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_JN, PCI_DEVICE_ID_CHIP3, chip3_pci_fixup_root_complex);

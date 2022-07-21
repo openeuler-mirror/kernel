@@ -470,7 +470,7 @@ struct blk_flush_queue *blk_alloc_flush_queue(int node, int cmd_size,
 					      gfp_t flags)
 {
 	struct blk_flush_queue *fq;
-	int rq_sz = sizeof(struct request);
+	int rq_sz = sizeof(struct request_wrapper);
 
 	fq = kzalloc_node(sizeof(*fq), flags, node);
 	if (!fq)

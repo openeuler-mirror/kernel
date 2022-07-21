@@ -5801,15 +5801,21 @@ static struct pci_error_handlers beiscsi_eeh_handlers = {
 	.resume = beiscsi_eeh_resume,
 };
 
+struct iscsi_transport_expand beiscsi_iscsi_expand = {
+	.unbind_conn = iscsi_conn_unbind,
+};
+
 struct iscsi_transport beiscsi_iscsi_transport = {
 	.owner = THIS_MODULE,
 	.name = DRV_NAME,
 	.caps = CAP_RECOVERY_L0 | CAP_HDRDGST | CAP_TEXT_NEGO |
-		CAP_MULTI_R2T | CAP_DATADGST | CAP_DATA_PATH_OFFLOAD,
+		CAP_MULTI_R2T | CAP_DATADGST | CAP_DATA_PATH_OFFLOAD |
+		CAP_OPS_EXPAND,
 	.create_session = beiscsi_session_create,
 	.destroy_session = beiscsi_session_destroy,
 	.create_conn = beiscsi_conn_create,
 	.bind_conn = beiscsi_conn_bind,
+	.ops_expand = &beiscsi_iscsi_expand,
 	.destroy_conn = iscsi_conn_teardown,
 	.attr_is_visible = beiscsi_attr_is_visible,
 	.set_iface_param = beiscsi_iface_set_param,

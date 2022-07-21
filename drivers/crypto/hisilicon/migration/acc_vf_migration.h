@@ -8,7 +8,7 @@
 #include <linux/pci.h>
 #include <linux/vfio.h>
 
-#include "../qm.h"
+#include <linux/hisi_acc_qm.h>
 
 #define VFIO_PCI_OFFSET_SHIFT   40
 #define VFIO_PCI_OFFSET_TO_INDEX(off)   ((off) >> VFIO_PCI_OFFSET_SHIFT)

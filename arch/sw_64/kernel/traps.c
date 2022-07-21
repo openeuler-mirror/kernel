@@ -9,34 +9,27 @@
  * This file initializes the trap entry points
  */
 
-#include <linux/jiffies.h>
-#include <linux/mm.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/debug.h>
-#include <linux/tty.h>
-#include <linux/delay.h>
 #include <linux/extable.h>
-#include <linux/kallsyms.h>
-#include <linux/ratelimit.h>
-#include <linux/uaccess.h>
 #include <linux/perf_event.h>
 #include <linux/kdebug.h>
+#include <linux/sched.h>
 #include <linux/kexec.h>
+#include <linux/kallsyms.h>
+#include <linux/sched/task_stack.h>
+#include <linux/sched/debug.h>
 
 #include <asm/gentrap.h>
-#include <asm/unaligned.h>
-#include <asm/sysinfo.h>
 #include <asm/mmu_context.h>
-#include <asm/special_insns.h>
 #include <asm/fpu.h>
 #include <asm/kprobes.h>
 #include <asm/uprobes.h>
-#include <asm/core.h>
+#include <asm/stacktrace.h>
+#include <asm/processor.h>
+#include <asm/ptrace.h>
 
 #include "proto.h"
 
-void
-dik_show_regs(struct pt_regs *regs, unsigned long *r9_15)
+void dik_show_regs(struct pt_regs *regs)
 {
 	printk("pc = [<%016lx>]  ra = [<%016lx>]  ps = %04lx    %s\n",
 	       regs->pc, regs->r26, regs->ps, print_tainted());
@@ -49,13 +42,12 @@ dik_show_regs(struct pt_regs *regs, unsigned long *r9_15)
 	printk("t5 = %016lx  t6 = %016lx  t7 = %016lx\n",
 	       regs->r6, regs->r7, regs->r8);
 
-	if (r9_15) {
-		printk("s0 = %016lx  s1 = %016lx  s2 = %016lx\n",
-		       r9_15[9], r9_15[10], r9_15[11]);
-		printk("s3 = %016lx  s4 = %016lx  s5 = %016lx\n",
-		       r9_15[12], r9_15[13], r9_15[14]);
-		printk("s6 = %016lx\n", r9_15[15]);
-	}
+	printk("s0 = %016lx  s1 = %016lx  s2 = %016lx\n",
+	       regs->r9, regs->r10, regs->r11);
+	printk("s3 = %016lx  s4 = %016lx  s5 = %016lx\n",
+	       regs->r12, regs->r13, regs->r14);
+	printk("s6 = %016lx\n",
+	       regs->r15);
 
 	printk("a0 = %016lx  a1 = %016lx  a2 = %016lx\n",
 	       regs->r16, regs->r17, regs->r18);
@@ -83,55 +75,7 @@ dik_show_code(unsigned int *pc)
 	printk("\n");
 }
 
-static void
-dik_show_trace(unsigned long *sp, const char *loglvl)
-{
-	long i = 0;
-	unsigned long tmp;
-
-	printk("%sTrace:\n", loglvl);
-	while (0x1ff8 & (unsigned long)sp) {
-		tmp = *sp;
-		sp++;
-		if (!__kernel_text_address(tmp))
-			continue;
-		printk("%s[<%lx>] %pSR\n", loglvl, tmp, (void *)tmp);
-		if (i > 40) {
-			printk("%s ...", loglvl);
-			break;
-		}
-	}
-	printk("\n");
-}
-
-static int kstack_depth_to_print = 24;
-
-void show_stack(struct task_struct *task, unsigned long *sp, const char *loglvl)
-{
-	unsigned long *stack;
-	int i;
-
-	/*
-	 * debugging aid: "show_stack(NULL, NULL, KERN_EMERG);" prints the
-	 * back trace for this cpu.
-	 */
-	if (sp == NULL)
-		sp = (unsigned long *)&sp;
-
-	stack = sp;
-	for (i = 0; i < kstack_depth_to_print; i++) {
-		if (((long) stack & (THREAD_SIZE-1)) == 0)
-			break;
-		if (i && ((i % 4) == 0))
-			printk("%s       ", loglvl);
-		printk("%016lx ", *stack++);
-	}
-	printk("\n");
-	dik_show_trace(sp, loglvl);
-}
-
-void
-die_if_kernel(char *str, struct pt_regs *regs, long err, unsigned long *r9_15)
+void die_if_kernel(char *str, struct pt_regs *regs, long err)
 {
 	if (regs->ps & 8)
 		return;
@@ -139,9 +83,9 @@ die_if_kernel(char *str, struct pt_regs *regs, long err, unsigned long *r9_15)
 	printk("CPU %d ", hard_smp_processor_id());
 #endif
 	printk("%s(%d): %s %ld\n", current->comm, task_pid_nr(current), str, err);
-	dik_show_regs(regs, r9_15);
+	dik_show_regs(regs);
 	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
-	dik_show_trace((unsigned long *)(regs+1), KERN_DEFAULT);
+	show_stack(current, NULL, KERN_EMERG);
 	dik_show_code((unsigned int *)regs->pc);
 
 	if (test_and_set_thread_flag(TIF_DIE_IF_KERNEL)) {
@@ -191,9 +135,9 @@ do_entArith(unsigned long summary, unsigned long write_mask,
 		if (si_code == 0)
 			return;
 	}
-	die_if_kernel("Arithmetic fault", regs, 0, NULL);
+	die_if_kernel("Arithmetic fault", regs, 0);
 
-	send_sig_fault(SIGFPE, si_code, (void __user *) regs->pc, 0, current);
+	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc, 0);
 }
 
 asmlinkage void
@@ -218,7 +162,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 			return;
 		}
 		die_if_kernel((type == 1 ? "Kernel Bug" : "Instruction fault"),
-				regs, type, NULL);
+				regs, type);
 	}
 
 	switch (type) {
@@ -226,13 +170,11 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 		if (ptrace_cancel_bpt(current))
 			regs->pc -= 4;	/* make pc point to former bpt */
 
-		send_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *)regs->pc, 0,
-				current);
+		force_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *)regs->pc, 0);
 		return;
 
 	case 1: /* bugcheck */
-		send_sig_fault(SIGTRAP, TRAP_UNK, (void __user *)regs->pc, 0,
-				current);
+		force_sig_fault(SIGTRAP, TRAP_UNK, (void __user *)regs->pc, 0);
 		return;
 
 	case 2: /* gentrap */
@@ -293,8 +235,7 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 			break;
 		}
 
-		send_sig_fault(signo, code, (void __user *)regs->pc, 0,
-				current);
+		force_sig_fault(signo, code, (void __user *)regs->pc, regs->r16);
 		return;
 
 	case 4: /* opDEC */
@@ -313,15 +254,14 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 				return;
 		}
 		if ((regs->ps & ~IPL_MAX) == 0)
-			die_if_kernel("Instruction fault", regs, type, NULL);
+			die_if_kernel("Instruction fault", regs, type);
 		break;
 
 	case 3: /* FEN fault */
 		/*
 		 * Irritating users can call HMC_clrfen to disable the
-		 * FPU for the process. The kernel will then trap in
-		 * do_switch_stack and undo_switch_stack when we try
-		 * to save and restore the FP registers.
+		 * FPU for the process. The kernel will then trap to
+		 * save and restore the FP registers.
 
 		 * Given that GCC by default generates code that uses the
 		 * FP registers, HMC_clrfen is not useful except for DoS
@@ -337,50 +277,17 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 		break;
 	}
 
-	send_sig_fault(SIGILL, ILL_ILLOPC, (void __user *)regs->pc, 0,
-			current);
+	force_sig_fault(SIGILL, ILL_ILLOPC, (void __user *)regs->pc, 0);
 }
-
-/*
- * entUna has a different register layout to be reasonably simple. It
- * needs access to all the integer registers (the kernel doesn't use
- * fp-regs), and it needs to have them in order for simpler access.
- *
- * Due to the non-standard register layout (and because we don't want
- * to handle floating-point regs), user-mode unaligned accesses are
- * handled separately by do_entUnaUser below.
- *
- * Oh, btw, we don't handle the "gp" register correctly, but if we fault
- * on a gp-register unaligned load/store, something is _very_ wrong
- * in the kernel anyway..
- */
-struct allregs {
-	unsigned long regs[32];
-	unsigned long ps, pc, gp, a0, a1, a2;
-};
-
-struct unaligned_stat {
-	unsigned long count, va, pc;
-} unaligned[2];
-
-
-/* Macro for exception fixup code to access integer registers. */
-#define una_reg(r) (_regs[(r) >= 16 && (r) <= 18 ? (r) + 19 : (r)])
-
 
 asmlinkage void
 do_entUna(void *va, unsigned long opcode, unsigned long reg,
-	  struct allregs *regs)
+	  struct pt_regs *regs)
 {
 	long error;
 	unsigned long tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7, tmp8;
 	unsigned long pc = regs->pc - 4;
-	unsigned long *_regs = regs->regs;
 	const struct exception_table_entry *fixup;
-
-	unaligned[0].count++;
-	unaligned[0].va = (unsigned long) va;
-	unaligned[0].pc = pc;
 
 	/*
 	 * We don't want to use the generic get/put unaligned macros as
@@ -407,7 +314,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		una_reg(reg) = tmp1 | tmp2;
+		map_regs(reg) = tmp1 | tmp2;
 		return;
 
 	case 0x22:
@@ -428,7 +335,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		una_reg(reg) = (int)(tmp1 | tmp2);
+		map_regs(reg) = (int)(tmp1 | tmp2);
 		return;
 
 	case 0x23: /* ldl */
@@ -449,17 +356,16 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		una_reg(reg) = tmp1 | tmp2;
+		map_regs(reg) = tmp1 | tmp2;
 		return;
 
 	case 0x29: /* sth */
 		__asm__ __volatile__(
 		"	zap	%6, 2, %1\n"
 		"	srl	%6, 8, %2\n"
-		"	stb	%1, 0x0(%5)\n"
-		"	stb	%2, 0x1(%5)\n"
+		"1:	stb	%1, 0x0(%5)\n"
+		"2:	stb	%2, 0x1(%5)\n"
 		"3:\n"
-
 		".section __ex_table, \"a\"\n"
 		"	.long	1b - .\n"
 		"	ldi	%2, 3b-1b(%0)\n"
@@ -468,7 +374,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2),
 		"=&r"(tmp3), "=&r"(tmp4)
-		: "r"(va), "r"(una_reg(reg)), "0"(0));
+		: "r"(va), "r"(map_regs(reg)), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -500,7 +406,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2),
 		  "=&r"(tmp3), "=&r"(tmp4)
-		: "r"(va), "r"(una_reg(reg)), "0"(0));
+		: "r"(va), "r"(map_regs(reg)), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -552,7 +458,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2), "=&r"(tmp3),
 		"=&r"(tmp4), "=&r"(tmp5), "=&r"(tmp6), "=&r"(tmp7), "=&r"(tmp8)
-		: "r"(va), "r"(una_reg(reg)), "0"(0));
+		: "r"(va), "r"(map_regs(reg)), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -571,7 +477,7 @@ got_exception:
 	if (fixup != 0) {
 		unsigned long newpc;
 
-		newpc = fixup_exception(una_reg, fixup, pc);
+		newpc = fixup_exception(map_regs, fixup, pc);
 		printk("Forwarding unaligned exception at %lx (%lx)\n",
 		       pc, newpc);
 
@@ -587,31 +493,9 @@ got_exception:
 	printk("%s(%d): unhandled unaligned exception\n",
 	       current->comm, task_pid_nr(current));
 
-	printk("pc = [<%016lx>]  ra = [<%016lx>]  ps = %04lx\n",
-	       pc, una_reg(26), regs->ps);
-	printk("r0 = %016lx  r1 = %016lx  r2 = %016lx\n",
-	       una_reg(0), una_reg(1), una_reg(2));
-	printk("r3 = %016lx  r4 = %016lx  r5 = %016lx\n",
-	       una_reg(3), una_reg(4), una_reg(5));
-	printk("r6 = %016lx  r7 = %016lx  r8 = %016lx\n",
-	       una_reg(6), una_reg(7), una_reg(8));
-	printk("r9 = %016lx  r10= %016lx  r11= %016lx\n",
-	       una_reg(9), una_reg(10), una_reg(11));
-	printk("r12= %016lx  r13= %016lx  r14= %016lx\n",
-	       una_reg(12), una_reg(13), una_reg(14));
-	printk("r15= %016lx\n", una_reg(15));
-	printk("r16= %016lx  r17= %016lx  r18= %016lx\n",
-	       una_reg(16), una_reg(17), una_reg(18));
-	printk("r19= %016lx  r20= %016lx  r21= %016lx\n",
-	       una_reg(19), una_reg(20), una_reg(21));
-	printk("r22= %016lx  r23= %016lx  r24= %016lx\n",
-	       una_reg(22), una_reg(23), una_reg(24));
-	printk("r25= %016lx  r27= %016lx  r28= %016lx\n",
-	       una_reg(25), una_reg(27), una_reg(28));
-	printk("gp = %016lx  sp = %p\n", regs->gp, regs+1);
-
+	dik_show_regs(regs);
 	dik_show_code((unsigned int *)pc);
-	dik_show_trace((unsigned long *)(regs+1), KERN_DEFAULT);
+	show_stack(current, NULL, KERN_EMERG);
 
 	if (test_and_set_thread_flag(TIF_DIE_IF_KERNEL)) {
 		printk("die_if_kernel recursion detected.\n");
@@ -689,20 +573,6 @@ s_reg_to_mem(unsigned long s_reg)
 			 1L << 0x2c | 1L << 0x2d | /* stw stl */	\
 			 1L << 0x0d | 1L << 0x0e)  /* sth stb */
 
-#define R(x)	((size_t) &((struct pt_regs *)0)->x)
-
-static int unauser_reg_offsets[32] = {
-	R(r0), R(r1), R(r2), R(r3), R(r4), R(r5), R(r6), R(r7), R(r8),
-	/* r9 ... r15 are stored in front of regs. */
-	-56, -48, -40, -32, -24, -16, -8,
-	R(r16), R(r17), R(r18),
-	R(r19), R(r20), R(r21), R(r22), R(r23), R(r24), R(r25), R(r26),
-	R(r27), R(r28), R(gp),
-	0, 0
-};
-
-#undef R
-
 asmlinkage void
 do_entUnaUser(void __user *va, unsigned long opcode,
 	      unsigned long reg, struct pt_regs *regs)
@@ -747,15 +617,11 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 	if ((unsigned long)va >= TASK_SIZE)
 		goto give_sigsegv;
 
-	++unaligned[1].count;
-	unaligned[1].va = (unsigned long)va;
-	unaligned[1].pc = regs->pc - 4;
-
 	if ((1L << opcode) & OP_INT_MASK) {
 		/* it's an integer load/store */
 		if (reg < 30) {
 			reg_addr = (unsigned long *)
-				((char *)regs + unauser_reg_offsets[reg]);
+				((char *)regs + regoffsets[reg]);
 		} else if (reg == 30) {
 			/* usp in HMCODE regs */
 			fake_reg = rdusp();
@@ -990,20 +856,16 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		sw64_read_simd_fp_m_s(reg, fp);
 		if ((unsigned long)va<<61 == 0) {
 			__asm__ __volatile__(
-			"1:	bis	%4, %4, %1\n"
-			"2:	bis	%5, %5, %2\n"
-			"3:	stl	%1, 0(%3)\n"
-			"4:	stl	%2, 8(%3)\n"
-			"5:\n"
+			"	bis	%4, %4, %1\n"
+			"	bis	%5, %5, %2\n"
+			"1:	stl	%1, 0(%3)\n"
+			"2:	stl	%2, 8(%3)\n"
+			"3:\n"
 			".section __ex_table, \"a\"\n\t"
 			"	.long	1b - .\n"
-			"	ldi	%1, 5b-1b(%0)\n"
+			"	ldi	$31, 3b-1b(%0)\n"
 			"	.long	2b - .\n"
-			"	ldi	%2, 5b-2b(%0)\n"
-			"	.long	3b - .\n"
-			"	ldi	$31, 5b-3b(%0)\n"
-			"	.long	4b - .\n"
-			"	ldi	$31, 5b-4b(%0)\n"
+			"	ldi	$31, 3b-2b(%0)\n"
 			".previous"
 			: "=r"(error), "=&r"(tmp1), "=&r"(tmp2)
 			: "r"(va), "r"(fp[0]), "r"(fp[1]), "0"(0));
@@ -1123,20 +985,16 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		sw64_read_simd_fp_m_d(reg, fp);
 		if ((unsigned long)va<<61 == 0) {
 			__asm__ __volatile__(
-			"1:	bis	%4, %4, %1\n"
-			"2:	bis	%5, %5, %2\n"
-			"3:	stl	%1, 0(%3)\n"
-			"4:	stl	%2, 8(%3)\n"
-			"5:\n"
+			"	bis	%4, %4, %1\n"
+			"	bis	%5, %5, %2\n"
+			"1:	stl	%1, 0(%3)\n"
+			"2:	stl	%2, 8(%3)\n"
+			"3:\n"
 			".section __ex_table, \"a\"\n\t"
 			"	.long	1b - .\n"
-			"	ldi	%1, 5b-1b(%0)\n"
+			"	ldi	$31, 3b-1b(%0)\n"
 			"	.long	2b - .\n"
-			"	ldi	%2, 5b-2b(%0)\n"
-			"	.long	3b - .\n"
-			"	ldi	$31, 5b-3b(%0)\n"
-			"	.long	4b - .\n"
-			"	ldi	$31, 5b-4b(%0)\n"
+			"	ldi	$31, 3b-2b(%0)\n"
 			".previous"
 			: "=r"(error), "=&r"(tmp1), "=&r"(tmp2)
 			: "r"(va), "r"(fp[0]), "r"(fp[1]), "0"(0));
@@ -1148,20 +1006,16 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 
 
 			__asm__ __volatile__(
-			"1:	bis	%4, %4, %1\n"
-			"2:	bis	%5, %5, %2\n"
-			"3:	stl	%1, 0(%3)\n"
-			"4:	stl	%2, 8(%3)\n"
-			"5:\n"
+			"	bis	%4, %4, %1\n"
+			"	bis	%5, %5, %2\n"
+			"1:	stl	%1, 0(%3)\n"
+			"2:	stl	%2, 8(%3)\n"
+			"3:\n"
 			".section __ex_table, \"a\"\n\t"
 			"	.long	1b - .\n"
-			"	ldi	%1, 5b-1b(%0)\n"
+			"	ldi	$31, 3b-1b(%0)\n"
 			"	.long	2b - .\n"
-			"	ldi	%2, 5b-2b(%0)\n"
-			"	.long	3b - .\n"
-			"	ldi	$31, 5b-3b(%0)\n"
-			"	.long	4b - .\n"
-			"	ldi	$31, 5b-4b(%0)\n"
+			"	ldi	$31, 3b-2b(%0)\n"
 			".previous"
 			: "=r"(error), "=&r"(tmp1), "=&r"(tmp2)
 			: "r"(vb), "r"(fp[2]), "r"(fp[3]), "0"(0));
@@ -1489,10 +1343,9 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		__asm__ __volatile__(
 		"	zap	%6, 2, %1\n"
 		"	srl	%6, 8, %2\n"
-		"	stb	%1, 0x0(%5)\n"
-		"	stb	%2, 0x1(%5)\n"
+		"1:	stb	%1, 0x0(%5)\n"
+		"2:	stb	%2, 0x1(%5)\n"
 		"3:\n"
-
 		".section __ex_table, \"a\"\n"
 		"	.long	1b - .\n"
 		"	ldi	%2, 3b-1b(%0)\n"
@@ -1628,12 +1481,12 @@ give_sigsegv:
 			si_code = SEGV_MAPERR;
 		up_read(&mm->mmap_lock);
 	}
-	send_sig_fault(SIGBUS, si_code, va, 0, current);
+	force_sig_fault(SIGSEGV, si_code, va, 0);
 	return;
 
 give_sigbus:
 	regs->pc -= 4;
-	send_sig_fault(SIGBUS, BUS_ADRALN, va, 0, current);
+	force_sig_fault(SIGBUS, BUS_ADRALN, va, 0);
 }
 
 void

@@ -49,7 +49,7 @@
 #define TASK_SIZE_64		(UL(1) << vabits_actual)
 
 #ifdef CONFIG_COMPAT
-#define TASK_SIZE_MAX		(is_compat_task() ? \
+#define TASK_SIZE_MAX		(is_ilp32_compat_task() ? \
 				UL(0x100000000) : (UL(1) << VA_BITS))
 #if defined(CONFIG_ARM64_64K_PAGES) && defined(CONFIG_KUSER_HELPERS)
 /*

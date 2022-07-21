@@ -29,6 +29,15 @@ struct bsg_job;
 struct iscsi_bus_flash_session;
 struct iscsi_bus_flash_conn;
 
+/*
+ *  The expansion of iscsi_transport to fix kabi while adding members.
+ */
+struct iscsi_transport_expand {
+	int (*tgt_dscvr)(struct Scsi_Host *shost, enum iscsi_tgt_dscvr type,
+				uint32_t enable, struct sockaddr *dst_addr);
+	void (*unbind_conn)(struct iscsi_cls_conn *conn, bool is_active);
+};
+
 /**
  * struct iscsi_transport - iSCSI Transport template
  *
@@ -123,8 +132,15 @@ struct iscsi_transport {
 					      int non_blocking);
 	int (*ep_poll) (struct iscsi_endpoint *ep, int timeout_ms);
 	void (*ep_disconnect) (struct iscsi_endpoint *ep);
+#ifdef __GENKSYMS__
 	int (*tgt_dscvr) (struct Scsi_Host *shost, enum iscsi_tgt_dscvr type,
 			  uint32_t enable, struct sockaddr *dst_addr);
+#else
+	/*
+	 * onece ops_expand is used, caps must be set to CAP_OPS_EXPAND
+	 */
+	struct iscsi_transport_expand *ops_expand;
+#endif
 	int (*set_path) (struct Scsi_Host *shost, struct iscsi_path *params);
 	int (*set_iface_param) (struct Scsi_Host *shost, void *data,
 				uint32_t len);
@@ -196,18 +212,38 @@ enum iscsi_connection_state {
 	ISCSI_CONN_BOUND,
 };
 
+#define ISCSI_CLS_CONN_BIT_CLEANUP	1
+
 struct iscsi_cls_conn {
 	struct list_head conn_list;	/* item in connlist */
-	struct list_head conn_list_err;	/* item in connlist_err */
+	struct list_head conn_list_err; /* add back for fix kabi broken */
 	void *dd_data;			/* LLD private data */
 	struct iscsi_transport *transport;
 	uint32_t cid;			/* connection id */
+	/*
+	 * This protects the conn startup and binding/unbinding of the ep to
+	 * the conn. Unbinding includes ep_disconnect and stop_conn.
+	 */
 	struct mutex ep_mutex;
 	struct iscsi_endpoint *ep;
 
 	struct device dev;		/* sysfs transport/container device */
 	enum iscsi_connection_state state;
 };
+/*
+ *  The wrapper of iscsi_cls_conn to fix kabi while adding members.
+ */
+struct iscsi_cls_conn_wrapper {
+	struct iscsi_cls_conn conn;
+
+	/* Used when accessing flags and queueing work. */
+	spinlock_t lock;
+	unsigned long flags;
+	struct work_struct cleanup_work;
+};
+
+#define conn_to_wrapper(ic_conn) \
+	container_of(ic_conn, struct iscsi_cls_conn_wrapper, conn)
 
 #define iscsi_dev_to_conn(_dev) \
 	container_of(_dev, struct iscsi_cls_conn, dev)
@@ -443,6 +479,7 @@ extern int iscsi_scan_finished(struct Scsi_Host *shost, unsigned long time);
 extern struct iscsi_endpoint *iscsi_create_endpoint(int dd_size);
 extern void iscsi_destroy_endpoint(struct iscsi_endpoint *ep);
 extern struct iscsi_endpoint *iscsi_lookup_endpoint(u64 handle);
+extern void iscsi_put_endpoint(struct iscsi_endpoint *ep);
 extern int iscsi_block_scsi_eh(struct scsi_cmnd *cmd);
 extern struct iscsi_iface *iscsi_create_iface(struct Scsi_Host *shost,
 					      struct iscsi_transport *t,

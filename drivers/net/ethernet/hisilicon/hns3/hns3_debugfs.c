@@ -562,12 +562,12 @@ static void hns3_dbg_tx_spare_info(struct hns3_enet_ring *ring, char *buf,
 
 	for (i = 0; i < ring_num; i++) {
 		j = 0;
-		sprintf(result[j++], "%8u", i);
-		sprintf(result[j++], "%9u", ring->tx_copybreak);
-		sprintf(result[j++], "%3u", tx_spare->len);
-		sprintf(result[j++], "%3u", tx_spare->next_to_use);
-		sprintf(result[j++], "%3u", tx_spare->next_to_clean);
-		sprintf(result[j++], "%3u", tx_spare->last_to_clean);
+		sprintf(result[j++], "%u", i);
+		sprintf(result[j++], "%u", ring->tx_copybreak);
+		sprintf(result[j++], "%u", tx_spare->len);
+		sprintf(result[j++], "%u", tx_spare->next_to_use);
+		sprintf(result[j++], "%u", tx_spare->next_to_clean);
+		sprintf(result[j++], "%u", tx_spare->last_to_clean);
 		sprintf(result[j++], "%pad", &tx_spare->dma);
 		hns3_dbg_fill_content(content, sizeof(content),
 				      tx_spare_info_items,
@@ -598,35 +598,35 @@ static void hns3_dump_rx_queue_info(struct hns3_enet_ring *ring,
 	u32 base_add_l, base_add_h;
 	u32 j = 0;
 
-	sprintf(result[j++], "%8u", index);
+	sprintf(result[j++], "%u", index);
 
-	sprintf(result[j++], "%6u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_RX_RING_BD_NUM_REG));
 
-	sprintf(result[j++], "%6u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_RX_RING_BD_LEN_REG));
 
-	sprintf(result[j++], "%4u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_RX_RING_TAIL_REG));
 
-	sprintf(result[j++], "%4u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_RX_RING_HEAD_REG));
 
-	sprintf(result[j++], "%6u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_RX_RING_FBDNUM_REG));
 
-	sprintf(result[j++], "%6u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_RX_RING_PKTNUM_RECORD_REG));
-	sprintf(result[j++], "%9u", ring->rx_copybreak);
+	sprintf(result[j++], "%u", ring->rx_copybreak);
 
-	sprintf(result[j++], "%7s", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%s", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_EN_REG) ? "on" : "off");
 
 	if (hnae3_ae_dev_tqp_txrx_indep_supported(ae_dev))
-		sprintf(result[j++], "%10s", readl_relaxed(ring->tqp->io_base +
+		sprintf(result[j++], "%s", readl_relaxed(ring->tqp->io_base +
 			HNS3_RING_RX_EN_REG) ? "on" : "off");
 	else
-		sprintf(result[j++], "%10s", "NA");
+		sprintf(result[j++], "%s", "NA");
 
 	base_add_h = readl_relaxed(ring->tqp->io_base +
 					HNS3_RING_RX_RING_BASEADDR_H_REG);
@@ -700,36 +700,36 @@ static void hns3_dump_tx_queue_info(struct hns3_enet_ring *ring,
 	u32 base_add_l, base_add_h;
 	u32 j = 0;
 
-	sprintf(result[j++], "%8u", index);
-	sprintf(result[j++], "%6u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", index);
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_TX_RING_BD_NUM_REG));
 
-	sprintf(result[j++], "%2u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_TX_RING_TC_REG));
 
-	sprintf(result[j++], "%4u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_TX_RING_TAIL_REG));
 
-	sprintf(result[j++], "%4u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_TX_RING_HEAD_REG));
 
-	sprintf(result[j++], "%6u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_TX_RING_FBDNUM_REG));
 
-	sprintf(result[j++], "%6u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_TX_RING_OFFSET_REG));
 
-	sprintf(result[j++], "%6u", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%u", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_TX_RING_PKTNUM_RECORD_REG));
 
-	sprintf(result[j++], "%7s", readl_relaxed(ring->tqp->io_base +
+	sprintf(result[j++], "%s", readl_relaxed(ring->tqp->io_base +
 		HNS3_RING_EN_REG) ? "on" : "off");
 
 	if (hnae3_ae_dev_tqp_txrx_indep_supported(ae_dev))
-		sprintf(result[j++], "%10s", readl_relaxed(ring->tqp->io_base +
+		sprintf(result[j++], "%s", readl_relaxed(ring->tqp->io_base +
 			HNS3_RING_TX_EN_REG) ? "on" : "off");
 	else
-		sprintf(result[j++], "%10s", "NA");
+		sprintf(result[j++], "%s", "NA");
 
 	base_add_h = readl_relaxed(ring->tqp->io_base +
 					HNS3_RING_TX_RING_BASEADDR_H_REG);
@@ -848,15 +848,15 @@ static void hns3_dump_rx_bd_info(struct hns3_nic_priv *priv,
 {
 	unsigned int j = 0;
 
-	sprintf(result[j++], "%5d", idx);
+	sprintf(result[j++], "%d", idx);
 	sprintf(result[j++], "%#x", le32_to_cpu(desc->rx.l234_info));
-	sprintf(result[j++], "%7u", le16_to_cpu(desc->rx.pkt_len));
-	sprintf(result[j++], "%4u", le16_to_cpu(desc->rx.size));
+	sprintf(result[j++], "%u", le16_to_cpu(desc->rx.pkt_len));
+	sprintf(result[j++], "%u", le16_to_cpu(desc->rx.size));
 	sprintf(result[j++], "%#x", le32_to_cpu(desc->rx.rss_hash));
-	sprintf(result[j++], "%5u", le16_to_cpu(desc->rx.fd_id));
-	sprintf(result[j++], "%8u", le16_to_cpu(desc->rx.vlan_tag));
-	sprintf(result[j++], "%15u", le16_to_cpu(desc->rx.o_dm_vlan_id_fb));
-	sprintf(result[j++], "%11u", le16_to_cpu(desc->rx.ot_vlan_tag));
+	sprintf(result[j++], "%u", le16_to_cpu(desc->rx.fd_id));
+	sprintf(result[j++], "%u", le16_to_cpu(desc->rx.vlan_tag));
+	sprintf(result[j++], "%u", le16_to_cpu(desc->rx.o_dm_vlan_id_fb));
+	sprintf(result[j++], "%u", le16_to_cpu(desc->rx.ot_vlan_tag));
 	sprintf(result[j++], "%#x", le32_to_cpu(desc->rx.bd_base_info));
 	if (test_bit(HNS3_NIC_STATE_RXD_ADV_LAYOUT_ENABLE, &priv->state)) {
 		u32 ol_info = le32_to_cpu(desc->rx.ol_info);
@@ -930,19 +930,19 @@ static void hns3_dump_tx_bd_info(struct hns3_nic_priv *priv,
 {
 	unsigned int j = 0;
 
-	sprintf(result[j++], "%6d", idx);
+	sprintf(result[j++], "%d", idx);
 	sprintf(result[j++], "%#llx", le64_to_cpu(desc->addr));
-	sprintf(result[j++], "%5u", le16_to_cpu(desc->tx.vlan_tag));
-	sprintf(result[j++], "%5u", le16_to_cpu(desc->tx.send_size));
+	sprintf(result[j++], "%u", le16_to_cpu(desc->tx.vlan_tag));
+	sprintf(result[j++], "%u", le16_to_cpu(desc->tx.send_size));
 	sprintf(result[j++], "%#x",
 		le32_to_cpu(desc->tx.type_cs_vlan_tso_len));
-	sprintf(result[j++], "%5u", le16_to_cpu(desc->tx.outer_vlan_tag));
-	sprintf(result[j++], "%5u", le16_to_cpu(desc->tx.tv));
-	sprintf(result[j++], "%10u",
+	sprintf(result[j++], "%u", le16_to_cpu(desc->tx.outer_vlan_tag));
+	sprintf(result[j++], "%u", le16_to_cpu(desc->tx.tv));
+	sprintf(result[j++], "%u",
 		le32_to_cpu(desc->tx.ol_type_vlan_len_msec));
 	sprintf(result[j++], "%#x", le32_to_cpu(desc->tx.paylen_ol4cs));
 	sprintf(result[j++], "%#x", le16_to_cpu(desc->tx.bdtp_fe_sc_vld_ra_ri));
-	sprintf(result[j++], "%5u", le16_to_cpu(desc->tx.mss_hw_csum));
+	sprintf(result[j++], "%u", le16_to_cpu(desc->tx.mss_hw_csum));
 }
 
 static int hns3_dbg_tx_bd_info(struct hns3_dbg_data *d, char *buf, int len)
@@ -1226,7 +1226,8 @@ static ssize_t hns3_dbg_read(struct file *filp, char __user *buffer,
 	if (ret)
 		return ret;
 
-	save_buf = &hns3_dbg_cmd[index].buf;
+	mutex_lock(&handle->dbgfs_lock);
+	save_buf = &handle->dbgfs_buf[index];
 
 	if (!test_bit(HNS3_NIC_STATE_INITED, &priv->state) ||
 	    test_bit(HNS3_NIC_STATE_RESETTING, &priv->state)) {
@@ -1238,15 +1239,15 @@ static ssize_t hns3_dbg_read(struct file *filp, char __user *buffer,
 		read_buf = *save_buf;
 	} else {
 		read_buf = kvzalloc(hns3_dbg_cmd[index].buf_len, GFP_KERNEL);
-		if (!read_buf)
-			return -ENOMEM;
+		if (!read_buf) {
+			ret = -ENOMEM;
+			goto out;
+		}
 
 		/* save the buffer addr until the last read operation */
 		*save_buf = read_buf;
-	}
 
-	/* get data ready for the first time to read */
-	if (!*ppos) {
+		/* get data ready for the first time to read */
 		ret = hns3_dbg_read_cmd(dbg_data, hns3_dbg_cmd[index].cmd,
 					read_buf, hns3_dbg_cmd[index].buf_len);
 		if (ret)
@@ -1255,8 +1256,10 @@ static ssize_t hns3_dbg_read(struct file *filp, char __user *buffer,
 
 	size = simple_read_from_buffer(buffer, count, ppos, read_buf,
 				       strlen(read_buf));
-	if (size > 0)
+	if (size > 0) {
+		mutex_unlock(&handle->dbgfs_lock);
 		return size;
+	}
 
 out:
 	/* free the buffer for the last read operation */
@@ -1265,6 +1268,7 @@ out:
 		*save_buf = NULL;
 	}
 
+	mutex_unlock(&handle->dbgfs_lock);
 	return ret;
 }
 
@@ -1328,6 +1332,13 @@ int hns3_dbg_init(struct hnae3_handle *handle)
 	int ret;
 	u32 i;
 
+	handle->dbgfs_buf = devm_kcalloc(&handle->pdev->dev,
+					 ARRAY_SIZE(hns3_dbg_cmd),
+					 sizeof(*handle->dbgfs_buf),
+					 GFP_KERNEL);
+	if (!handle->dbgfs_buf)
+		return -ENOMEM;
+
 	hns3_dbg_dentry[HNS3_DBG_DENTRY_COMMON].dentry =
 				debugfs_create_dir(name, hns3_dbgfs_root);
 	handle->hnae3_dbgfs = hns3_dbg_dentry[HNS3_DBG_DENTRY_COMMON].dentry;
@@ -1336,6 +1347,8 @@ int hns3_dbg_init(struct hnae3_handle *handle)
 		hns3_dbg_dentry[i].dentry =
 			debugfs_create_dir(hns3_dbg_dentry[i].name,
 					   handle->hnae3_dbgfs);
+
+	mutex_init(&handle->dbgfs_lock);
 
 	for (i = 0; i < ARRAY_SIZE(hns3_dbg_cmd); i++) {
 		if ((hns3_dbg_cmd[i].cmd == HNAE3_DBG_CMD_TM_NODES &&
@@ -1363,6 +1376,7 @@ int hns3_dbg_init(struct hnae3_handle *handle)
 	return 0;
 
 out:
+	mutex_destroy(&handle->dbgfs_lock);
 	debugfs_remove_recursive(handle->hnae3_dbgfs);
 	handle->hnae3_dbgfs = NULL;
 	return ret;
@@ -1373,11 +1387,12 @@ void hns3_dbg_uninit(struct hnae3_handle *handle)
 	u32 i;
 
 	for (i = 0; i < ARRAY_SIZE(hns3_dbg_cmd); i++)
-		if (hns3_dbg_cmd[i].buf) {
-			kvfree(hns3_dbg_cmd[i].buf);
-			hns3_dbg_cmd[i].buf = NULL;
+		if (handle->dbgfs_buf[i]) {
+			kvfree(handle->dbgfs_buf[i]);
+			handle->dbgfs_buf[i] = NULL;
 		}
 
+	mutex_destroy(&handle->dbgfs_lock);
 	debugfs_remove_recursive(handle->hnae3_dbgfs);
 	handle->hnae3_dbgfs = NULL;
 }

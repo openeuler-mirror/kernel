@@ -206,11 +206,11 @@ static inline void __iomem *gic_dist_base(struct irq_data *d)
 	}
 }
 
-static void gic_do_wait_for_rwp(void __iomem *base)
+static void gic_do_wait_for_rwp(void __iomem *base, u32 bit)
 {
 	u32 count = 1000000;	/* 1s! */
 
-	while (readl_relaxed(base + GICD_CTLR) & GICD_CTLR_RWP) {
+	while (readl_relaxed(base + GICD_CTLR) & bit) {
 		count--;
 		if (!count) {
 			pr_err_ratelimited("RWP timeout, gone fishing\n");
@@ -224,13 +224,13 @@ static void gic_do_wait_for_rwp(void __iomem *base)
 /* Wait for completion of a distributor change */
 static void gic_dist_wait_for_rwp(void)
 {
-	gic_do_wait_for_rwp(gic_data.dist_base);
+	gic_do_wait_for_rwp(gic_data.dist_base, GICD_CTLR_RWP);
 }
 
 /* Wait for completion of a redistributor change */
 static void gic_redist_wait_for_rwp(void)
 {
-	gic_do_wait_for_rwp(gic_data_rdist_rd_base());
+	gic_do_wait_for_rwp(gic_data_rdist_rd_base(), GICR_CTLR_RWP);
 }
 
 #ifdef CONFIG_ARM64
@@ -244,16 +244,10 @@ static u64 __maybe_unused gic_read_iar(void)
 }
 #endif
 
-static void gic_enable_redist(bool enable)
+static void __gic_enable_redist(void __iomem *rbase, bool enable)
 {
-	void __iomem *rbase;
 	u32 count = 1000000;	/* 1s! */
 	u32 val;
-
-	if (gic_data.flags & FLAGS_WORKAROUND_GICR_WAKER_MSM8996)
-		return;
-
-	rbase = gic_data_rdist_rd_base();
 
 	val = readl_relaxed(rbase + GICR_WAKER);
 	if (enable)
@@ -279,6 +273,14 @@ static void gic_enable_redist(bool enable)
 	if (!count)
 		pr_err_ratelimited("redistributor failed to %s...\n",
 				   enable ? "wakeup" : "sleep");
+}
+
+static void gic_enable_redist(bool enable)
+{
+	if (gic_data.flags & FLAGS_WORKAROUND_GICR_WAKER_MSM8996)
+		return;
+
+	__gic_enable_redist(gic_data_rdist_rd_base(), enable);
 }
 
 /*
@@ -923,6 +925,22 @@ static int __gic_update_rdist_properties(struct redist_region *region,
 {
 	u64 typer = gic_read_typer(ptr + GICR_TYPER);
 
+	/* Boot-time cleanip */
+	if ((typer & GICR_TYPER_VLPIS) && (typer & GICR_TYPER_RVPEID)) {
+		u64 val;
+
+		/* Deactivate any present vPE */
+		val = gicr_read_vpendbaser(ptr + SZ_128K + GICR_VPENDBASER);
+		if (val & GICR_VPENDBASER_Valid)
+			gicr_write_vpendbaser(GICR_VPENDBASER_PendingLast,
+					      ptr + SZ_128K + GICR_VPENDBASER);
+
+		/* Mark the VPE table as invalid */
+		val = gicr_read_vpropbaser(ptr + SZ_128K + GICR_VPROPBASER);
+		val &= ~GICR_VPROPBASER_4_1_VALID;
+		gicr_write_vpropbaser(val, ptr + SZ_128K + GICR_VPROPBASER);
+	}
+
 	gic_data.rdists.has_vlpis &= !!(typer & GICR_TYPER_VLPIS);
 
 	/* RVPEID implies some form of DirectLPI, no matter what the doc says... :-/ */
@@ -1125,6 +1143,89 @@ static void gic_cpu_init(void)
 	/* initialise system registers */
 	gic_cpu_sys_reg_init();
 }
+
+#ifdef CONFIG_ASCEND_INIT_ALL_GICR
+static int __gic_compute_nr_gicr(struct redist_region *region, void __iomem *ptr)
+{
+	static int gicr_nr = 0;
+
+	its_set_gicr_nr(++gicr_nr);
+
+	return 1;
+}
+
+static void gic_compute_nr_gicr(void)
+{
+	gic_iterate_rdists(__gic_compute_nr_gicr);
+}
+
+static int gic_rdist_cpu(void __iomem *ptr, unsigned int cpu)
+{
+	unsigned long mpidr = cpu_logical_map(cpu);
+	u64 typer;
+	u32 aff;
+
+	/*
+	 * Convert affinity to a 32bit value that can be matched to
+	 * GICR_TYPER bits [63:32].
+	 */
+	aff = (MPIDR_AFFINITY_LEVEL(mpidr, 3) << 24 |
+	       MPIDR_AFFINITY_LEVEL(mpidr, 2) << 16 |
+	       MPIDR_AFFINITY_LEVEL(mpidr, 1) << 8 |
+	       MPIDR_AFFINITY_LEVEL(mpidr, 0));
+
+	typer = gic_read_typer(ptr + GICR_TYPER);
+	if ((typer >> 32) == aff)
+		return 0;
+
+	return 1;
+}
+
+static int gic_rdist_cpus(void __iomem *ptr)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr_cpu_ids; i++) {
+		if (gic_rdist_cpu(ptr, i) == 0)
+			return 0;
+	}
+
+	return 1;
+}
+
+static int gic_cpu_init_other(struct redist_region *region, void __iomem *ptr)
+{
+	u64 offset;
+	phys_addr_t phys_base;
+	static int cpu = 0;
+
+	if (cpu == 0)
+		cpu = nr_cpu_ids;
+
+	if (gic_rdist_cpus(ptr) == 1) {
+		offset = ptr - region->redist_base;
+		phys_base = region->phys_base + offset;
+		__gic_enable_redist(ptr, true);
+		if (gic_dist_supports_lpis())
+			its_cpu_init_others(ptr, phys_base, cpu);
+		cpu++;
+	}
+
+	return 1;
+}
+
+static void gic_cpu_init_others(void)
+{
+	if (!its_init_all_gicr())
+		return;
+
+	gic_iterate_rdists(gic_cpu_init_other);
+}
+#else
+static inline void gic_compute_nr_gicr(void) {}
+
+static inline void gic_cpu_init_others(void) {}
+#endif
 
 #ifdef CONFIG_SMP
 
@@ -1459,6 +1560,12 @@ static int gic_irq_domain_translate(struct irq_domain *d,
 		if(fwspec->param_count != 2)
 			return -EINVAL;
 
+		if (fwspec->param[0] < 16) {
+			pr_err(FW_BUG "Illegal GSI%d translation request\n",
+			       fwspec->param[0]);
+			return -EINVAL;
+		}
+
 		*hwirq = fwspec->param[0];
 		*type = fwspec->param[1];
 
@@ -1747,6 +1854,7 @@ static int __init gic_init_bases(void __iomem *dist_base,
 	gic_data.rdists.has_vlpis = true;
 	gic_data.rdists.has_direct_lpi = true;
 	gic_data.rdists.has_vpend_valid_dirty = true;
+	gic_compute_nr_gicr();
 
 	if (WARN_ON(!gic_data.domain) || WARN_ON(!gic_data.rdists.rdist)) {
 		err = -ENOMEM;
@@ -1782,6 +1890,8 @@ static int __init gic_init_bases(void __iomem *dist_base,
 		if (IS_ENABLED(CONFIG_ARM_GIC_V2M))
 			gicv2m_init(handle, gic_data.domain);
 	}
+
+	gic_cpu_init_others();
 
 	return 0;
 

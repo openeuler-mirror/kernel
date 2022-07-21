@@ -18,6 +18,7 @@
 #include <linux/screen_info.h>
 #include <linux/init.h>
 #include <linux/kexec.h>
+#include <linux/kfence.h>
 #include <linux/root_dev.h>
 #include <linux/cpu.h>
 #include <linux/interrupt.h>
@@ -52,7 +53,7 @@
 #include <asm/xen/hypervisor.h>
 #include <asm/mmu_context.h>
 
-#include "../mm/pmem_reserve.h"
+#include "../mm/internal.h"
 
 static int num_standard_resources;
 static struct resource *standard_resources;
@@ -273,16 +274,9 @@ static void __init request_standard_resources(void)
 			request_memmap_resources(res);
 
 #ifdef CONFIG_KEXEC_CORE
-		/*
-		 * Userspace will find "Crash kernel" or "Crash kernel (low)"
-		 * region in /proc/iomem.
-		 * In order to distinct from the high region and make no effect
-		 * to the use of existing kexec-tools, rename the low region as
-		 * "Crash kernel (low)".
-		 */
+		/* Userspace will find "Crash kernel" region in /proc/iomem. */
 		if (crashk_low_res.end && crashk_low_res.start >= res->start &&
 				crashk_low_res.end <= res->end) {
-			crashk_low_res.name = "Crash kernel (low)";
 			request_resource(res, &crashk_low_res);
 		}
 		if (crashk_res.end && crashk_res.start >= res->start &&
@@ -290,13 +284,7 @@ static void __init request_standard_resources(void)
 			request_resource(res, &crashk_res);
 #endif
 
-#ifdef CONFIG_QUICK_KEXEC
-		if (quick_kexec_res.end &&
-		    quick_kexec_res.start >= res->start &&
-		    quick_kexec_res.end <= res->end)
-			request_resource(res, &quick_kexec_res);
-#endif
-
+		request_quick_kexec_res(res);
 		request_pin_mem_res(res);
 	}
 
@@ -386,6 +374,8 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	     pr_warn(FW_BUG "Kernel image misaligned at boot, please fix your bootloader!");
 
 	arm64_memblock_init();
+
+	kfence_early_alloc_pool();
 
 	efi_fake_memmap();
 	efi_find_mirror();

@@ -87,7 +87,6 @@ struct iommu_domain {
 	void *handler_token;
 	struct iommu_domain_geometry geometry;
 	void *iova_cookie;
-	bool dirty_log_tracking;
 	struct mutex switch_log_lock;
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
@@ -394,7 +393,7 @@ struct iommu_device {
 struct iommu_fault_event {
 	struct iommu_fault fault;
 	struct list_head list;
-	u64 expire;
+	_KABI_DEPRECATE(u64, expire);
 };
 
 /**
@@ -409,7 +408,7 @@ struct iommu_fault_param {
 	iommu_dev_fault_handler_t handler;
 	void *data;
 	struct list_head faults;
-	struct timer_list timer;
+	_KABI_DEPRECATE(struct timer_list, timer);
 	struct mutex lock;
 };
 

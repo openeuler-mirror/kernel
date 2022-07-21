@@ -1,14 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/pci.h>
 #include <linux/irq.h>
-#include <linux/kernel.h>
-#include <linux/cpumask.h>
 #include <linux/module.h>
 #include <linux/msi.h>
-#include <asm/irq_impl.h>
-#include <asm/msi.h>
-#include <asm/pci.h>
-#include <asm/sw64io.h>
 
 #define QEMU_MSIX_MSG_ADDR     (0x8000fee00000UL)
 

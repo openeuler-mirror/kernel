@@ -11,7 +11,7 @@
 
 #include <linux/linkage.h>
 #include <asm/assembler.h>
-#include <asm/kexec.h>
+#include <asm/cpu_park.h>
 #include <asm/sysreg.h>
 #include <asm/virt.h>
 

@@ -40,6 +40,9 @@
 
 #define SW64_IOMMU_PGSIZES (((1ULL) << PAGE_SHIFT) | ((1ULL) << PAGE_8M_SHIFT))
 
+#define IDENTMAP_ALL    ((1U) << 0)
+#define DMA_MASK64      ((1U) << 1)
+
 /* IOMMU Exceptional Status */
 enum exceptype {
 	DTE_LEVEL1 = 0x0,
@@ -383,7 +386,7 @@ set_dte_entry(struct sunway_iommu_dev *sdev, struct sunway_iommu_domain *sdomain
 	dte_l2_val = (__pa(sdomain->pt_root) & PAGE_MASK) | SW64_IOMMU_ENTRY_VALID;
 	if (sdomain->type == IOMMU_DOMAIN_IDENTITY) {
 		dte_l2_val |= 0x1;
-		sdev->passthrough = true;
+		sdev->passthrough = IDENTMAP_ALL;
 	}
 	*dte_l2 = dte_l2_val;
 
@@ -645,10 +648,21 @@ irqreturn_t iommu_interrupt(int irq, void *dev)
 	type = (iommu_status >> 59) & 0x7;
 	devid = (iommu_status >> 37) & 0xffff;
 	dva = iommu_status & 0xffffffff;
-	sdev = search_dev_data(devid);
-	sdomain = sdev->domain;
 	pr_info("%s, iommu_status = %#lx, devid %#lx, dva %#lx, ",
 			__func__, iommu_status, devid, dva);
+
+	sdev = search_dev_data(devid);
+	if (sdev == NULL) {
+		pr_info("no such dev!!!\n");
+
+		iommu_status &= ~(1UL << 62);
+		write_piu_ior0(hose->node, hose->index,
+				IOMMUEXCPT_STATUS, iommu_status);
+
+		return IRQ_HANDLED;
+	}
+
+	sdomain = sdev->domain;
 	switch (type) {
 	case DTE_LEVEL1:
 		pr_info("invalid level1 dte, addr:%#lx, val:%#lx\n",
@@ -671,7 +685,6 @@ irqreturn_t iommu_interrupt(int irq, void *dev)
 			fetch_pte(sdomain, dva, PTE_LEVEL2_VAL));
 
 		iommu_status &= ~(1UL << 62);
-		iommu_status = iommu_status | (1UL << 63);
 		write_piu_ior0(hose->node, hose->index,
 				IOMMUEXCPT_STATUS, iommu_status);
 		break;
@@ -1058,17 +1071,23 @@ try_again:
 	if (!(hose->iommu_enable))
 		return cpu_addr;
 
-	sdomain = get_sunway_domain(dev);
 	sdev = dev_iommu_priv_get(dev);
-	if (sdev->passthrough)
-		if (pdev->dma_mask > DMA_BIT_MASK(32))
+	if (sdev->passthrough & DMA_MASK64)
+		return cpu_addr;
+	else if (sdev->passthrough) {
+		if (min_not_zero(*dev->dma_mask, dev->coherent_dma_mask)
+				> DMA_BIT_MASK(32)) {
+			sdev->passthrough |= DMA_MASK64;
 			return cpu_addr;
+		}
 
-	dma_dom = to_dma_domain(sdomain);
-	if (sdomain->type == IOMMU_DOMAIN_IDENTITY) {
-		sdomain->type = IOMMU_DOMAIN_DMA;
-		set_dte_entry(sdev, sdomain);
+		__free_pages(page, get_order(size));
+		set_dma_ops(dev, get_arch_dma_ops(dev->bus));
+		return dev->dma_ops->alloc(dev, size, dma_addr, gfp, attrs);
 	}
+
+	sdomain = get_sunway_domain(dev);
+	dma_dom = to_dma_domain(sdomain);
 
 	*dma_addr = pci_iommu_map_single(pdev, dma_dom, cpu_addr, size);
 	if (*dma_addr == 0) {
@@ -1164,16 +1183,22 @@ sunway_map_page(struct device *dev, struct page *page,
 		return paddr;
 
 	sdev = dev_iommu_priv_get(dev);
-	if (sdev->passthrough)
-		if (pdev->dma_mask > DMA_BIT_MASK(32))
+	if (sdev->passthrough & DMA_MASK64)
+		return paddr;
+	else if (sdev->passthrough) {
+		if (min_not_zero(*dev->dma_mask, dev->coherent_dma_mask)
+				> DMA_BIT_MASK(32)) {
+			sdev->passthrough |= DMA_MASK64;
 			return paddr;
+		}
+
+		set_dma_ops(dev, get_arch_dma_ops(dev->bus));
+		return dev->dma_ops->map_page(dev, page, offset,
+				size, dir, attrs);
+	}
 
 	sdomain = get_sunway_domain(dev);
 	dma_dom = to_dma_domain(sdomain);
-	if (sdomain->type == IOMMU_DOMAIN_IDENTITY) {
-		sdomain->type = IOMMU_DOMAIN_DMA;
-		set_dte_entry(sdev, sdomain);
-	}
 
 	return pci_iommu_map_single(pdev, dma_dom,
 		(char *)page_address(page) + offset, size);
@@ -1243,13 +1268,18 @@ sunway_map_sg(struct device *dev, struct scatterlist *sgl,
 			goto check;
 
 		sdev = dev_iommu_priv_get(dev);
-		if (sdev->passthrough)
-			if (pdev->dma_mask > DMA_BIT_MASK(32))
+		if (sdev->passthrough & DMA_MASK64)
+			goto check;
+		else if (sdev->passthrough) {
+			if (min_not_zero(*dev->dma_mask, dev->coherent_dma_mask)
+					> DMA_BIT_MASK(32)) {
+				sdev->passthrough |= DMA_MASK64;
 				goto check;
+			}
 
-		if (sdomain->type == IOMMU_DOMAIN_IDENTITY) {
-			sdomain->type = IOMMU_DOMAIN_DMA;
-			set_dte_entry(sdev, sdomain);
+			set_dma_ops(dev, get_arch_dma_ops(dev->bus));
+			return dev->dma_ops->map_sg(dev, sgl, nents,
+					dir, attrs);
 		}
 
 		sg_dma_address(sg) =
@@ -1489,6 +1519,9 @@ sunway_iommu_iova_to_phys(struct iommu_domain *dom, dma_addr_t iova)
 	struct sunway_iommu_domain *sdomain = to_sunway_domain(dom);
 	unsigned long paddr, grn;
 
+	if (iova > SW64_BAR_ADDRESS)
+		return iova;
+
 	paddr = fetch_pte(sdomain, iova, PTE_LEVEL2_VAL);
 
 	if ((paddr & SW64_IOMMU_ENTRY_VALID) == 0)
@@ -1524,7 +1557,7 @@ sunway_iommu_map(struct iommu_domain *dom, unsigned long iova,
 	 * to avoid VFIO trying to map pci config space.
 	 */
 	if (iova > SW64_BAR_ADDRESS)
-		return -EINVAL;
+		return 0;
 
 	mutex_lock(&sdomain->api_lock);
 	ret = sunway_iommu_map_page(sdomain, iova, paddr, page_size);

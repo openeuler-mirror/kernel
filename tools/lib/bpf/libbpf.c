@@ -8320,6 +8320,7 @@ static const struct bpf_sec_def section_defs[] = {
 		.attach_fn = attach_tp),
 	SEC_DEF("raw_tracepoint/", RAW_TRACEPOINT,
 		.attach_fn = attach_raw_tp),
+	BPF_PROG_SEC("raw_tracepoint.w/", BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE),
 	SEC_DEF("raw_tp/", RAW_TRACEPOINT,
 		.attach_fn = attach_raw_tp),
 	SEC_DEF("tp_btf/", TRACING,
@@ -10923,6 +10924,9 @@ void bpf_object__detach_skeleton(struct bpf_object_skeleton *s)
 
 void bpf_object__destroy_skeleton(struct bpf_object_skeleton *s)
 {
+	if (!s)
+		return;
+
 	if (s->progs)
 		bpf_object__detach_skeleton(s);
 	if (s->obj)

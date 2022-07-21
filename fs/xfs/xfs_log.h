@@ -126,7 +126,6 @@ int	  xfs_log_reserve(struct xfs_mount *mp,
 			  bool		   permanent);
 int	  xfs_log_regrant(struct xfs_mount *mp, struct xlog_ticket *tic);
 void      xfs_log_unmount(struct xfs_mount *mp);
-int	  xfs_log_force_umount(struct xfs_mount *mp, int logerror);
 
 struct xlog_ticket *xfs_log_ticket_get(struct xlog_ticket *ticket);
 void	  xfs_log_ticket_put(struct xlog_ticket *ticket);
@@ -137,8 +136,8 @@ bool	xfs_log_item_in_current_chkpt(struct xfs_log_item *lip);
 void	xfs_log_work_queue(struct xfs_mount *mp);
 void	xfs_log_quiesce(struct xfs_mount *mp);
 bool	xfs_log_check_lsn(struct xfs_mount *, xfs_lsn_t);
-bool	xfs_log_in_recovery(struct xfs_mount *);
 
 xfs_lsn_t xlog_grant_push_threshold(struct xlog *log, int need_bytes);
+bool	  xlog_force_shutdown(struct xlog *log, int shutdown_flags);
 
 #endif	/* __XFS_LOG_H__ */

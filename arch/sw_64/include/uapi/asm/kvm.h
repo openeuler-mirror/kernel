@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPI_ASM_SW64_KVM_H
 #define _UAPI_ASM_SW64_KVM_H
 
@@ -112,18 +112,6 @@ struct kvm_sync_regs {
 
 /* dummy definition */
 struct kvm_sregs {
-};
-
-
-struct swvm_mem_bank {
-	unsigned long guest_phys_addr;
-	unsigned long host_phys_addr;
-	unsigned long host_addr;
-	unsigned long size;
-};
-
-struct swvm_mem {
-	struct swvm_mem_bank membank[SWVM_NUM_NUMA_MEMBANKS];
 };
 
 #endif  /* _UAPI_ASM_SW64_KVM_H */

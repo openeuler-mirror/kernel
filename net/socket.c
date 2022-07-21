@@ -543,10 +543,12 @@ static int sockfs_setattr(struct dentry *dentry, struct iattr *iattr)
 	if (!err && (iattr->ia_valid & ATTR_UID)) {
 		struct socket *sock = SOCKET_I(d_inode(dentry));
 
-		if (sock->sk)
+		if (sock->sk) {
 			sock->sk->sk_uid = iattr->ia_uid;
-		else
+			sock->sk->sk_gid = iattr->ia_gid;
+		} else {
 			err = -ENOENT;
+		}
 	}
 
 	return err;

@@ -138,6 +138,7 @@ config ARM64
 	select HAVE_ARCH_JUMP_LABEL
 	select HAVE_ARCH_JUMP_LABEL_RELATIVE
 	select HAVE_ARCH_KASAN if !(ARM64_16K_PAGES && ARM64_VA_BITS_48)
+	select HAVE_ARCH_KASAN_VMALLOC if HAVE_ARCH_KASAN
 	select HAVE_ARCH_KASAN_SW_TAGS if HAVE_ARCH_KASAN
 	select HAVE_ARCH_KFENCE
 	select HAVE_ARCH_KGDB
@@ -1155,6 +1156,15 @@ config ARCH_WANT_HUGE_PMD_SHARE
 config ARCH_HAS_CACHE_LINE_SIZE
 	def_bool y
 
+config ARCH_LLC_128_LINE_SIZE
+	bool "Force 128 bytes alignment for fitting LLC cacheline"
+	depends on ARM64
+	default y
+	help
+	  As specific machine's LLC cacheline size may be up to
+	  128 bytes, gaining performance improvement from fitting
+	  128 Bytes LLC cache aligned.
+
 config ARCH_HAS_FILTER_PGPROT
 	def_bool y
 
@@ -1309,6 +1319,15 @@ config UNMAP_KERNEL_AT_EL0
 	  via a trampoline page in the vector table.
 
 	  If unsure, say Y.
+
+config MITIGATE_SPECTRE_BRANCH_HISTORY
+	bool "Mitigate Spectre style attacks against branch history" if EXPERT
+	default y
+	help
+	  Speculation attacks against some high-performance processors can
+	  make use of branch history to influence future speculation.
+	  When taking an exception from user-space, a sequence of branches
+	  or a firmware call overwrites the branch history.
 
 config RODATA_FULL_DEFAULT_ENABLED
 	bool "Apply r/o permissions of VM areas also to their linear aliases"
@@ -1624,6 +1643,15 @@ config ARM64_CNP
 	  Selecting this option allows the CNP feature to be detected
 	  at runtime, and does not affect PEs that do not implement
 	  this feature.
+
+config ARM64_UCE_KERNEL_RECOVERY
+	bool "arm64 uce kernel recovery for special scenario"
+	depends on ACPI_APEI_SEA
+	help
+	  With ARM v8.2 RAS Extension, SEA are usually triggered when memory
+	  error are consumed. In some cases, if the error address is in a
+	  user page there is a chance to recover. we can isolate this page
+	  and killing process instead of die.
 
 endmenu
 

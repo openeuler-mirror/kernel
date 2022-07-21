@@ -307,6 +307,7 @@ struct pcie_link_state;
 struct pci_vpd;
 struct pci_sriov;
 struct pci_p2pdma;
+struct rcec_ea;
 
 /* The pci_dev structure describes PCI devices */
 struct pci_dev {
@@ -511,8 +512,18 @@ struct pci_dev {
 	unsigned long   slot_being_removed_rescanned;
 	struct pci_dev  *rpdev; /* root port pci_dev */
 
+#ifndef __GENKSYMS__
+#ifdef CONFIG_PCIEPORTBUS
+	struct rcec_ea	*rcec_ea;	/* RCEC cached endpoint association */
+	struct pci_dev  *rcec;          /* Associated RCEC device */
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
+#else
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)

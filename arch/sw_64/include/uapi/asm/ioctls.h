@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef _UAPI_ASM_SW64_IOCTLS_H
 #define _UAPI_ASM_SW64_IOCTLS_H
 
@@ -52,20 +52,20 @@
 #define TIOCMBIS	0x5416
 #define TIOCMBIC	0x5417
 #define TIOCMSET	0x5418
-# define TIOCM_LE	0x001
-# define TIOCM_DTR	0x002
-# define TIOCM_RTS	0x004
-# define TIOCM_ST	0x008
-# define TIOCM_SR	0x010
-# define TIOCM_CTS	0x020
-# define TIOCM_CAR	0x040
-# define TIOCM_RNG	0x080
-# define TIOCM_DSR	0x100
-# define TIOCM_CD	TIOCM_CAR
-# define TIOCM_RI	TIOCM_RNG
-# define TIOCM_OUT1	0x2000
-# define TIOCM_OUT2	0x4000
-# define TIOCM_LOOP	0x8000
+#define TIOCM_LE	0x001
+#define TIOCM_DTR	0x002
+#define TIOCM_RTS	0x004
+#define TIOCM_ST	0x008
+#define TIOCM_SR	0x010
+#define TIOCM_CTS	0x020
+#define TIOCM_CAR	0x040
+#define TIOCM_RNG	0x080
+#define TIOCM_DSR	0x100
+#define TIOCM_CD	TIOCM_CAR
+#define TIOCM_RI	TIOCM_RNG
+#define TIOCM_OUT1	0x2000
+#define TIOCM_OUT2	0x4000
+#define TIOCM_LOOP	0x8000
 
 #define TIOCGSOFTCAR	0x5419
 #define TIOCSSOFTCAR	0x541A
@@ -74,14 +74,14 @@
 #define TIOCGSERIAL	0x541E
 #define TIOCSSERIAL	0x541F
 #define TIOCPKT		0x5420
-# define TIOCPKT_DATA		 0
-# define TIOCPKT_FLUSHREAD	 1
-# define TIOCPKT_FLUSHWRITE	 2
-# define TIOCPKT_STOP		 4
-# define TIOCPKT_START		 8
-# define TIOCPKT_NOSTOP		16
-# define TIOCPKT_DOSTOP		32
-# define TIOCPKT_IOCTL		64
+#define TIOCPKT_DATA		 0
+#define TIOCPKT_FLUSHREAD	 1
+#define TIOCPKT_FLUSHWRITE	 2
+#define TIOCPKT_STOP		 4
+#define TIOCPKT_START		 8
+#define TIOCPKT_NOSTOP		16
+#define TIOCPKT_DOSTOP		32
+#define TIOCPKT_IOCTL		64
 
 
 #define TIOCNOTTY	0x5422
@@ -113,7 +113,7 @@
 #define TIOCSERGSTRUCT	0x5458				/* For debugging only */
 #define TIOCSERGETLSR	0x5459				/* Get line status register */
 /* ioctl (fd, TIOCSERGETLSR, &result) where result may be as below */
-# define TIOCSER_TEMT	0x01				/* Transmitter physically empty */
+#define TIOCSER_TEMT	0x01				/* Transmitter physically empty */
 #define TIOCSERGETMULTI	0x545A				/* Get multiport config  */
 #define TIOCSERSETMULTI	0x545B				/* Set multiport config */
 

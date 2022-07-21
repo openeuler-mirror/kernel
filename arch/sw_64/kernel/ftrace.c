@@ -10,13 +10,8 @@
  */
 
 #include <linux/ftrace.h>
-#include <linux/module.h>
-#include <linux/swab.h>
-#include <linux/uaccess.h>
 
-#include <asm/cacheflush.h>
 #include <asm/ftrace.h>
-#include <asm/insn.h>
 
 #ifdef CONFIG_FUNCTION_TRACER
 EXPORT_SYMBOL(_mcount);

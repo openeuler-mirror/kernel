@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <linux/debugfs.h>
-#include <linux/list.h>
-#include <linux/kernel.h>
-#include <linux/slab.h>
-#include <linux/mm_types.h>
 #include <linux/delay.h>
 #include <linux/uaccess.h>
-#include <linux/mm.h>
+
 #include <asm/sw64io.h>
-#include <asm/hw_init.h>
 #include <asm/debug.h>
 
 #define	CLK_PRT		0x1UL

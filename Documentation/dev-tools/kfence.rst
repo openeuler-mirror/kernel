@@ -61,6 +61,17 @@ The total memory dedicated to the KFENCE memory pool can be computed as::
 Using the default config, and assuming a page size of 4 KiB, results in
 dedicating 2 MiB to the KFENCE memory pool.
 
+KFENCE allow re-enabling after system startup, but ifndef CONFIG_CONTIG_ALLOC
+and KFENCE_NUM_OBJECTS exceeds MAX_ORDER, alloc KFENCE pool after system startup
+is not supported.
+
+For arm64, re-enabling KFENCE is kind of conflict with map the ages in KFENCE
+pool itself at page granularity. For the flexibility, scale sample_interval to
+control whether arm64 supported to enable kfence after system startup.
+Once this is set to -1 in boot parameter, kfence_pool will be allocated from
+early memory no matter kfence is enabled or not. Otherwise, re-enabling is not
+supported on arm64.
+
 Note: On architectures that support huge pages, KFENCE will ensure that the
 pool is using pages of size ``PAGE_SIZE``. This will result in additional page
 tables being allocated.

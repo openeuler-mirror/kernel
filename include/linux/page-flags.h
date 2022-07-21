@@ -139,7 +139,9 @@ enum pageflags {
 #ifdef CONFIG_64BIT
 	PG_arch_2,
 #endif
+#if defined(CONFIG_X86_64) || defined(CONFIG_ARM64)
 	PG_pool,		/* Used to track page allocated from dynamic hugetlb pool */
+#endif
 #ifdef CONFIG_PIN_MEMORY
 	PG_hotreplace,
 #endif
@@ -148,8 +150,10 @@ enum pageflags {
 	 * flags which backported from kernel upstream, please place them
 	 * behind the reserved page flags.
 	 */
+#if defined(CONFIG_X86_64) || defined(CONFIG_ARM64)
 	PG_reserve_pgflag_0,
 	PG_reserve_pgflag_1,
+#endif
 
 	__NR_PAGEFLAGS,
 
@@ -474,7 +478,11 @@ __PAGEFLAG(Reported, reported, PF_NO_COMPOUND)
 /*
  * PagePool() is used to track page allocated from hpool.
  */
+#if defined(CONFIG_X86_64) || defined(CONFIG_ARM64)
 PAGEFLAG(Pool, pool, PF_NO_TAIL)
+#else
+PAGEFLAG_FALSE(Pool)
+#endif
 
 /*
  * On an anonymous page mapped into a user virtual memory area,

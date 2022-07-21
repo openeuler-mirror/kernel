@@ -28,6 +28,35 @@ static bool addr_in_pool(struct gen_pool *pool,
 	return found;
 }
 
+static int vmem_vm_insert_page(struct vm_area_struct *vma)
+{
+	unsigned long addr, uaddr;
+	struct page *vmem_page;
+	struct vmem_info *info;
+	size_t size;
+	int ret;
+
+	info = vma->vm_private_data;
+	addr = info->start;
+	size = info->size;
+	uaddr = vma->vm_start;
+
+	vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP | VM_MIXEDMAP;
+	vmem_page = pfn_to_page(addr >> PAGE_SHIFT);
+	do {
+		ret = vm_insert_page(vma, uaddr, vmem_page);
+		if (ret < 0) {
+			pr_info("vm_insert_page failed: %d\n", ret);
+			return ret;
+		}
+		vmem_page++;
+		uaddr += PAGE_SIZE;
+		size -= PAGE_SIZE;
+	} while (size > 0);
+
+	return 0;
+}
+
 static void vmem_vm_open(struct vm_area_struct *vma)
 {
 	struct vmem_info *info = vma->vm_private_data;
@@ -83,6 +112,7 @@ static int vmem_mmap(struct file *flip, struct vm_area_struct *vma)
 	unsigned long addr;
 	static struct vmem_info *info;
 	size_t size = vma->vm_end - vma->vm_start;
+	int ret;
 
 	if (!(vma->vm_flags & VM_SHARED)) {
 		pr_err("%s: mapping must be shared\n", __func__);
@@ -114,10 +144,9 @@ static int vmem_mmap(struct file *flip, struct vm_area_struct *vma)
 	/*to do if size bigger than vm_mem_size*/
 	pr_info("sw64_vmem: vm_start=%#lx, size= %#lx\n", vma->vm_start, size);
 
-	/*remap_pfn_range - remap kernel memory to userspace*/
-	if (remap_pfn_range(vma, vma->vm_start, addr >> PAGE_SHIFT, size,
-			    vma->vm_page_prot))
-		return  -EAGAIN;
+	vmem_vm_insert_page(vma);
+	if (ret < 0)
+		return ret;
 
 	return 0;
 }

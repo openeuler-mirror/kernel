@@ -198,9 +198,14 @@ static struct dev_iommu *dev_iommu_get(struct device *dev)
 
 static void dev_iommu_free(struct device *dev)
 {
-	iommu_fwspec_free(dev);
-	kfree(dev->iommu);
+	struct dev_iommu *param = dev->iommu;
+
 	dev->iommu = NULL;
+	if (param->fwspec) {
+		fwnode_handle_put(param->fwspec->iommu_fwnode);
+		kfree(param->fwspec);
+	}
+	kfree(param);
 }
 
 static int __iommu_probe_device(struct device *dev, struct list_head *group_list)
@@ -1079,39 +1084,6 @@ int iommu_group_unregister_notifier(struct iommu_group *group,
 }
 EXPORT_SYMBOL_GPL(iommu_group_unregister_notifier);
 
-static void iommu_dev_fault_timer_fn(struct timer_list *t)
-{
-	struct iommu_fault_param *fparam = from_timer(fparam, t, timer);
-	struct iommu_fault_event *evt;
-	struct iommu_fault_page_request *prm;
-
-	u64 now;
-
-	now = get_jiffies_64();
-
-	/* The goal is to ensure driver or guest page fault handler(via vfio)
-	 * send page response on time. Otherwise, limited queue resources
-	 * may be occupied by some irresponsive guests or drivers.
-	 * When per device pending fault list is not empty, we periodically checks
-	 * if any anticipated page response time has expired.
-	 *
-	 * TODO:
-	 * We could do the following if response time expires:
-	 * 1. send page response code FAILURE to all pending PRQ
-	 * 2. inform device driver or vfio
-	 * 3. drain in-flight page requests and responses for this device
-	 * 4. clear pending fault list such that driver can unregister fault
-	 *    handler(otherwise blocked when pending faults are present).
-	 */
-	list_for_each_entry(evt, &fparam->faults, list) {
-		prm = &evt->fault.prm;
-		if (time_after64(now, evt->expire))
-			pr_err("Page response time expired!, pasid %d gid %d exp %llu now %llu\n",
-				prm->pasid, prm->grpid, evt->expire, now);
-	}
-	mod_timer(t, now + prq_timeout);
-}
-
 /**
  * iommu_register_device_fault_handler() - Register a device fault handler
  * @dev: the device
@@ -1159,9 +1131,6 @@ int iommu_register_device_fault_handler(struct device *dev,
 	mutex_init(&param->fault_param->lock);
 	INIT_LIST_HEAD(&param->fault_param->faults);
 
-	if (prq_timeout)
-		timer_setup(&param->fault_param->timer, iommu_dev_fault_timer_fn,
-			TIMER_DEFERRABLE);
 done_unlock:
 	mutex_unlock(&param->lock);
 
@@ -1301,9 +1270,7 @@ int iommu_report_device_fault(struct device *dev, struct iommu_fault_event *evt)
 	struct dev_iommu *param = dev->iommu;
 	struct iommu_fault_event *evt_pending = NULL;
 	struct iommu_fault_param *fparam;
-	struct timer_list *tmr;
 	int ret = 0;
-	u64 exp;
 
 	if (!param || !evt || WARN_ON_ONCE(!iommu_fault_valid(&evt->fault)))
 		return -EINVAL;
@@ -1324,17 +1291,7 @@ int iommu_report_device_fault(struct device *dev, struct iommu_fault_event *evt)
 			ret = -ENOMEM;
 			goto done_unlock;
 		}
-		/* Keep track of response expiration time */
-		exp = get_jiffies_64() + prq_timeout;
-		evt_pending->expire = exp;
 		mutex_lock(&fparam->lock);
-		if (list_empty(&fparam->faults)) {
-			/* First pending event, start timer */
-			tmr = &fparam->timer;
-			WARN_ON(timer_pending(tmr));
-			mod_timer(tmr, exp);
-		}
-
 		list_add_tail(&evt_pending->list, &fparam->faults);
 		mutex_unlock(&fparam->lock);
 	}
@@ -1410,13 +1367,6 @@ int iommu_page_response(struct device *dev,
 		list_del(&evt->list);
 		kfree(evt);
 		break;
-	}
-
-	/* stop response timer if no more pending request */
-	if (list_empty(&param->fault_param->faults) &&
-		timer_pending(&param->fault_param->timer)) {
-		pr_debug("no pending PRQ, stop timer\n");
-		del_timer(&param->fault_param->timer);
 	}
 
 done_unlock:
@@ -3017,13 +2967,6 @@ int iommu_switch_dirty_log(struct iommu_domain *domain, bool enable,
 	}
 
 	mutex_lock(&domain->switch_log_lock);
-	if (enable && domain->dirty_log_tracking) {
-		ret = -EBUSY;
-		goto out;
-	} else if (!enable && !domain->dirty_log_tracking) {
-		ret = -EINVAL;
-		goto out;
-	}
 
 	pr_debug("switch_dirty_log %s for: iova 0x%lx size 0x%zx\n",
 		 enable ? "enable" : "disable", iova, size);
@@ -3046,11 +2989,9 @@ int iommu_switch_dirty_log(struct iommu_domain *domain, bool enable,
 	if (flush)
 		iommu_flush_iotlb_all(domain);
 
-	if (!ret) {
-		domain->dirty_log_tracking = enable;
+	if (!ret)
 		trace_switch_dirty_log(orig_iova, orig_size, enable);
-	}
-out:
+
 	mutex_unlock(&domain->switch_log_lock);
 	return ret;
 }
@@ -3077,10 +3018,6 @@ int iommu_sync_dirty_log(struct iommu_domain *domain, unsigned long iova,
 	}
 
 	mutex_lock(&domain->switch_log_lock);
-	if (!domain->dirty_log_tracking) {
-		ret = -EINVAL;
-		goto out;
-	}
 
 	pr_debug("sync_dirty_log for: iova 0x%lx size 0x%zx\n", iova, size);
 
@@ -3101,7 +3038,7 @@ int iommu_sync_dirty_log(struct iommu_domain *domain, unsigned long iova,
 
 	if (!ret)
 		trace_sync_dirty_log(orig_iova, orig_size);
-out:
+
 	mutex_unlock(&domain->switch_log_lock);
 	return ret;
 }
@@ -3150,9 +3087,8 @@ int iommu_clear_dirty_log(struct iommu_domain *domain,
 			  unsigned long bitmap_pgshift)
 {
 	unsigned long riova, rsize;
-	unsigned int min_pagesz;
+	unsigned int min_pagesz, rs, re, start, end;
 	bool flush = false;
-	int rs, re, start, end;
 	int ret = 0;
 
 	min_pagesz = 1 << __ffs(domain->pgsize_bitmap);
@@ -3163,17 +3099,13 @@ int iommu_clear_dirty_log(struct iommu_domain *domain,
 	}
 
 	mutex_lock(&domain->switch_log_lock);
-	if (!domain->dirty_log_tracking) {
-		ret = -EINVAL;
-		goto out;
-	}
 
 	start = (iova - base_iova) >> bitmap_pgshift;
 	end = start + (size >> bitmap_pgshift);
 	bitmap_for_each_set_region(bitmap, rs, re, start, end) {
 		flush = true;
-		riova = base_iova + (rs << bitmap_pgshift);
-		rsize = (re - rs) << bitmap_pgshift;
+		riova = base_iova + ((unsigned long)rs << bitmap_pgshift);
+		rsize = (unsigned long)(re - rs) << bitmap_pgshift;
 		ret = __iommu_clear_dirty_log(domain, riova, rsize, bitmap,
 					      base_iova, bitmap_pgshift);
 		if (ret)
@@ -3182,7 +3114,7 @@ int iommu_clear_dirty_log(struct iommu_domain *domain,
 
 	if (flush)
 		iommu_flush_iotlb_all(domain);
-out:
+
 	mutex_unlock(&domain->switch_log_lock);
 	return ret;
 }

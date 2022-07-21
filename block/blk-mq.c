@@ -41,6 +41,9 @@
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
 
+bool mq_unfair_dtag = true;
+module_param_named(unfair_dtag, mq_unfair_dtag, bool, 0444);
+
 static DEFINE_PER_CPU(struct list_head, blk_cpu_done);
 
 static void blk_mq_poll_stats_start(struct request_queue *q);
@@ -98,6 +101,61 @@ struct mq_inflight {
 	struct hd_struct *part;
 	unsigned int inflight[2];
 };
+
+#ifdef CONFIG_64BIT
+static bool blk_mq_check_inflight_with_stat(struct blk_mq_hw_ctx *hctx,
+					    struct request *rq, void *priv,
+					    bool reserved)
+{
+	struct mq_inflight *mi = priv;
+
+	if ((!mi->part->partno || rq->part == mi->part) &&
+	    blk_mq_rq_state(rq) == MQ_RQ_IN_FLIGHT) {
+		u64 stat_time;
+		struct request_wrapper *rq_wrapper;
+
+		mi->inflight[rq_data_dir(rq)]++;
+		if (!rq->part)
+			return true;
+
+		/*
+		 * If the request is started after 'part->stat_time' is set,
+		 * don't update 'nsces' here.
+		 */
+		if (rq->part->stat_time <= rq->start_time_ns)
+			return true;
+
+		rq_wrapper = request_to_wrapper(rq);
+		stat_time = READ_ONCE(rq_wrapper->stat_time_ns);
+		/*
+		 * This might fail if 'stat_time_ns' is updated in
+		 * blk_account_io_done().
+		 */
+		if (likely(rq->part->stat_time > stat_time &&
+			   cmpxchg64(&rq_wrapper->stat_time_ns, stat_time,
+				     rq->part->stat_time) == stat_time)) {
+			int sgrp = op_stat_group(req_op(rq));
+			u64 duation = stat_time ?
+				rq->part->stat_time - stat_time :
+				rq->part->stat_time - rq->start_time_ns;
+
+			part_stat_add(rq->part, nsecs[sgrp], duation);
+		}
+	}
+
+	return true;
+}
+
+unsigned int blk_mq_in_flight_with_stat(struct request_queue *q,
+					struct hd_struct *part)
+{
+	struct mq_inflight mi = { .part = part };
+
+	blk_mq_queue_tag_busy_iter(q, blk_mq_check_inflight_with_stat, &mi);
+
+	return mi.inflight[0] + mi.inflight[1];
+}
+#endif
 
 static bool blk_mq_check_inflight(struct blk_mq_hw_ctx *hctx,
 				  struct request *rq, void *priv,
@@ -321,6 +379,7 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 #ifdef CONFIG_BLK_RQ_ALLOC_TIME
 	rq->alloc_time_ns = alloc_time_ns;
 #endif
+	request_to_wrapper(rq)->stat_time_ns = 0;
 	if (blk_mq_need_time_stamp(rq))
 		rq->start_time_ns = ktime_get_ns();
 	else
@@ -535,8 +594,13 @@ void blk_mq_free_request(struct request *rq)
 	}
 
 	ctx->rq_completed[rq_is_sync(rq)]++;
-	if (rq->rq_flags & RQF_MQ_INFLIGHT)
+	if (rq->rq_flags & RQF_MQ_INFLIGHT) {
 		__blk_mq_dec_active_requests(hctx);
+		if (mq_unfair_dtag && !__blk_mq_active_requests(hctx)) {
+			blk_mq_tag_idle(hctx);
+			blk_mq_dtag_idle(hctx, true);
+		}
+	}
 
 	if (unlikely(laptop_mode && !blk_rq_is_passthrough(rq)))
 		laptop_io_completion(q->backing_dev_info);
@@ -1003,8 +1067,10 @@ static void blk_mq_timeout_work(struct work_struct *work)
 		 */
 		queue_for_each_hw_ctx(q, hctx, i) {
 			/* the hctx may be unmapped, so check it here */
-			if (blk_mq_hw_queue_mapped(hctx))
+			if (blk_mq_hw_queue_mapped(hctx)) {
 				blk_mq_tag_idle(hctx);
+				blk_mq_dtag_idle(hctx, true);
+			}
 		}
 	}
 	blk_queue_exit(q);
@@ -1109,9 +1175,12 @@ static bool __blk_mq_get_driver_tag(struct request *rq)
 	}
 
 	tag = __sbitmap_queue_get(bt);
-	if (tag == BLK_MQ_NO_TAG)
+	if (tag == BLK_MQ_NO_TAG) {
+		blk_mq_dtag_busy(rq->mq_hctx);
 		return false;
+	}
 
+	blk_mq_dtag_idle(rq->mq_hctx, false);
 	rq->tag = tag + tag_offset;
 	return true;
 }
@@ -1614,8 +1683,16 @@ static void __blk_mq_delay_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async,
 		put_cpu();
 	}
 
+	/*
+	 * No need to queue work if there is no io, and this can avoid race
+	 * with blk_cleanup_queue().
+	 */
+	if (!percpu_ref_tryget(&hctx->queue->q_usage_counter))
+		return;
+
 	kblockd_mod_delayed_work_on(blk_mq_hctx_next_cpu(hctx), &hctx->run_work,
 				    msecs_to_jiffies(msecs));
+	percpu_ref_put(&hctx->queue->q_usage_counter);
 }
 
 /**
@@ -1663,6 +1740,42 @@ void blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async)
 }
 EXPORT_SYMBOL(blk_mq_run_hw_queue);
 
+/*
+ * Is the request queue handled by an IO scheduler that does not respect
+ * hardware queues when dispatching?
+ */
+static bool blk_mq_has_sqsched(struct request_queue *q)
+{
+	struct elevator_queue *e = q->elevator;
+
+	if (e && e->type->ops.dispatch_request &&
+	    !(e->type->elevator_features & ELEVATOR_F_MQ_AWARE))
+		return true;
+	return false;
+}
+
+/*
+ * Return prefered queue to dispatch from (if any) for non-mq aware IO
+ * scheduler.
+ */
+static struct blk_mq_hw_ctx *blk_mq_get_sq_hctx(struct request_queue *q)
+{
+	struct blk_mq_hw_ctx *hctx;
+
+	/*
+	 * If the IO scheduler does not respect hardware queues when
+	 * dispatching, we just don't bother with multiple HW queues and
+	 * dispatch from hctx for the current CPU since running multiple queues
+	 * just causes lock contention inside the scheduler and pointless cache
+	 * bouncing.
+	 */
+	hctx = blk_mq_map_queue_type(q, HCTX_TYPE_DEFAULT,
+				     raw_smp_processor_id());
+	if (!blk_mq_hctx_stopped(hctx))
+		return hctx;
+	return NULL;
+}
+
 /**
  * blk_mq_run_hw_queues - Run all hardware queues in a request queue.
  * @q: Pointer to the request queue to run.
@@ -1670,14 +1783,23 @@ EXPORT_SYMBOL(blk_mq_run_hw_queue);
  */
 void blk_mq_run_hw_queues(struct request_queue *q, bool async)
 {
-	struct blk_mq_hw_ctx *hctx;
+	struct blk_mq_hw_ctx *hctx, *sq_hctx;
 	int i;
 
+	sq_hctx = NULL;
+	if (blk_mq_has_sqsched(q))
+		sq_hctx = blk_mq_get_sq_hctx(q);
 	queue_for_each_hw_ctx(q, hctx, i) {
 		if (blk_mq_hctx_stopped(hctx))
 			continue;
-
-		blk_mq_run_hw_queue(hctx, async);
+		/*
+		 * Dispatch from this hctx either if there's no hctx preferred
+		 * by IO scheduler or if it has requests that bypass the
+		 * scheduler.
+		 */
+		if (!sq_hctx || sq_hctx == hctx ||
+		    !list_empty_careful(&hctx->dispatch))
+			blk_mq_run_hw_queue(hctx, async);
 	}
 }
 EXPORT_SYMBOL(blk_mq_run_hw_queues);
@@ -1689,14 +1811,23 @@ EXPORT_SYMBOL(blk_mq_run_hw_queues);
  */
 void blk_mq_delay_run_hw_queues(struct request_queue *q, unsigned long msecs)
 {
-	struct blk_mq_hw_ctx *hctx;
+	struct blk_mq_hw_ctx *hctx, *sq_hctx;
 	int i;
 
+	sq_hctx = NULL;
+	if (blk_mq_has_sqsched(q))
+		sq_hctx = blk_mq_get_sq_hctx(q);
 	queue_for_each_hw_ctx(q, hctx, i) {
 		if (blk_mq_hctx_stopped(hctx))
 			continue;
-
-		blk_mq_delay_run_hw_queue(hctx, msecs);
+		/*
+		 * Dispatch from this hctx either if there's no hctx preferred
+		 * by IO scheduler or if it has requests that bypass the
+		 * scheduler.
+		 */
+		if (!sq_hctx || sq_hctx == hctx ||
+		    !list_empty_careful(&hctx->dispatch))
+			blk_mq_delay_run_hw_queue(hctx, msecs);
 	}
 }
 EXPORT_SYMBOL(blk_mq_delay_run_hw_queues);
@@ -2435,7 +2566,7 @@ int blk_mq_alloc_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
 	 * rq_size is the size of the request plus driver payload, rounded
 	 * to the cacheline size
 	 */
-	rq_size = round_up(sizeof(struct request) + set->cmd_size,
+	rq_size = round_up(sizeof(struct request_wrapper) + set->cmd_size,
 				cache_line_size());
 	left = rq_size * depth;
 
@@ -2657,11 +2788,14 @@ static void blk_mq_exit_hctx(struct request_queue *q,
 {
 	struct request *flush_rq = hctx->fq->flush_rq;
 
-	if (blk_mq_hw_queue_mapped(hctx))
+	if (blk_mq_hw_queue_mapped(hctx)) {
 		blk_mq_tag_idle(hctx);
+		blk_mq_dtag_idle(hctx, true);
+	}
 
-	blk_mq_clear_flush_rq_mapping(set->tags[hctx_idx],
-			set->queue_depth, flush_rq);
+	if (blk_queue_init_done(q))
+		blk_mq_clear_flush_rq_mapping(set->tags[hctx_idx],
+				set->queue_depth, flush_rq);
 	if (set->ops->exit_request)
 		set->ops->exit_request(set, flush_rq, hctx_idx);
 
@@ -2748,7 +2882,6 @@ blk_mq_alloc_hctx(struct request_queue *q, struct blk_mq_tag_set *set,
 		goto free_hctx;
 
 	atomic_set(&hctx->nr_active, 0);
-	atomic_set(&hctx->elevator_queued, 0);
 	if (node == NUMA_NO_NODE)
 		node = set->numa_node;
 	hctx->numa_node = node;
@@ -2758,6 +2891,7 @@ blk_mq_alloc_hctx(struct request_queue *q, struct blk_mq_tag_set *set,
 	INIT_LIST_HEAD(&hctx->dispatch);
 	hctx->queue = q;
 	hctx->flags = set->flags & ~BLK_MQ_F_TAG_QUEUE_SHARED;
+	hctx->dtag_wait_time = jiffies;
 
 	INIT_LIST_HEAD(&hctx->hctx_list);
 
@@ -2783,12 +2917,16 @@ blk_mq_alloc_hctx(struct request_queue *q, struct blk_mq_tag_set *set,
 	if (!hctx->fq)
 		goto free_bitmap;
 
-	if (hctx->flags & BLK_MQ_F_BLOCKING)
-		init_srcu_struct(hctx->srcu);
+	if (hctx->flags & BLK_MQ_F_BLOCKING) {
+		if (init_srcu_struct(hctx->srcu) != 0)
+			goto free_flush_queue;
+	}
 	blk_mq_hctx_kobj_init(hctx);
 
 	return hctx;
 
+ free_flush_queue:
+	blk_free_flush_queue(hctx->fq);
  free_bitmap:
 	sbitmap_free(&hctx->ctx_map);
  free_ctxs:
@@ -2980,6 +3118,7 @@ static void queue_set_hctx_shared(struct request_queue *q, bool shared)
 			hctx->flags |= BLK_MQ_F_TAG_QUEUE_SHARED;
 		} else {
 			blk_mq_tag_idle(hctx);
+			blk_mq_dtag_idle(hctx, true);
 			hctx->flags &= ~BLK_MQ_F_TAG_QUEUE_SHARED;
 		}
 	}
@@ -3206,7 +3345,15 @@ static void blk_mq_realloc_hw_ctxs(struct blk_mq_tag_set *set,
 		if (hctxs)
 			memcpy(new_hctxs, hctxs, q->nr_hw_queues *
 			       sizeof(*hctxs));
-		q->queue_hw_ctx = new_hctxs;
+
+		rcu_assign_pointer(q->queue_hw_ctx, new_hctxs);
+		/*
+		 * Make sure reading the old queue_hw_ctx from other
+		 * context concurrently won't trigger uaf. and when
+		 * it is in start up time, no need to sync rcu.
+		 */
+		if (hctxs)
+			synchronize_rcu();
 		kfree(hctxs);
 		hctxs = new_hctxs;
 	}
@@ -3307,6 +3454,7 @@ struct request_queue *blk_mq_init_allocated_queue(struct blk_mq_tag_set *set,
 	spin_lock_init(&q->requeue_lock);
 
 	q->nr_requests = set->queue_depth;
+	q->dtag_wait_time = jiffies;
 
 	/*
 	 * Default to classic polling
@@ -3536,8 +3684,9 @@ int blk_mq_alloc_tag_set(struct blk_mq_tag_set *set)
 
 	if (blk_mq_is_sbitmap_shared(set->flags)) {
 		atomic_set(&set->active_queues_shared_sbitmap, 0);
+		atomic_set(&set->pending_queues_shared_sbitmap, 0);
 
-		if (blk_mq_init_shared_sbitmap(set, set->flags)) {
+		if (blk_mq_init_shared_sbitmap(set)) {
 			ret = -ENOMEM;
 			goto out_free_mq_rq_maps;
 		}
@@ -3587,6 +3736,7 @@ int blk_mq_update_nr_requests(struct request_queue *q, unsigned int nr)
 	struct blk_mq_tag_set *set = q->tag_set;
 	struct blk_mq_hw_ctx *hctx;
 	int i, ret;
+	struct request_queue_wrapper *q_wrapper = queue_to_wrapper(q);
 
 	if (!set)
 		return -EINVAL;
@@ -3613,15 +3763,24 @@ int blk_mq_update_nr_requests(struct request_queue *q, unsigned int nr)
 		} else {
 			ret = blk_mq_tag_update_depth(hctx, &hctx->sched_tags,
 							nr, true);
+			if (blk_mq_is_sbitmap_shared(set->flags)) {
+				hctx->sched_tags->bitmap_tags =
+					&q_wrapper->sched_bitmap_tags;
+				hctx->sched_tags->breserved_tags =
+					&q_wrapper->sched_breserved_tags;
+			}
 		}
 		if (ret)
 			break;
 		if (q->elevator && q->elevator->type->ops.depth_updated)
 			q->elevator->type->ops.depth_updated(hctx);
 	}
-
-	if (!ret)
+	if (!ret) {
 		q->nr_requests = nr;
+		if (q->elevator && blk_mq_is_sbitmap_shared(set->flags))
+			sbitmap_queue_resize(&q_wrapper->sched_bitmap_tags,
+					     nr - set->reserved_tags);
+	}
 
 	blk_mq_unquiesce_queue(q);
 	blk_mq_unfreeze_queue(q);

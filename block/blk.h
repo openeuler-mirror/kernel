@@ -28,6 +28,19 @@ struct blk_flush_queue {
 	spinlock_t		mq_flush_lock;
 };
 
+/*
+ * The wrapper of request_queue to fix kabi while adding members.
+ */
+struct request_queue_wrapper {
+	struct request_queue q;
+
+	struct sbitmap_queue	sched_bitmap_tags;
+	struct sbitmap_queue	sched_breserved_tags;
+};
+
+#define queue_to_wrapper(queue) \
+	container_of(queue, struct request_queue_wrapper, q)
+
 extern struct kmem_cache *blk_requestq_cachep;
 extern struct kobj_type blk_queue_ktype;
 extern struct ida blk_queue_ida;

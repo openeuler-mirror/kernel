@@ -389,19 +389,21 @@ static ssize_t ima_write_data(struct file *file, const char __user *buf,
 		goto out_free;
 
 	data[datalen] = '\0';
-	for (i = 0; data[i] != '\n' && data[i] != '\0'; i++) {
-		if (iscntrl(data[i])) {
-			pr_err_once("invalid path (control characters are not allowed)\n");
-			result = -EINVAL;
-			goto out_free;
-		}
-	}
 
 	result = mutex_lock_interruptible(&ima_write_mutex);
 	if (result < 0)
 		goto out_free;
 
 	if (data[0] == '/') {
+		for (i = 0; data[i] != '\n' && data[i] != '\0'; i++) {
+			if (iscntrl(data[i])) {
+				pr_err_once("invalid path (control characters are not allowed)\n");
+				result = -EINVAL;
+				mutex_unlock(&ima_write_mutex);
+				goto out_free;
+			}
+		}
+
 		result = ima_read_file(data, dentry);
 	} else if (dentry == ima_policy) {
 		if (ima_appraise & IMA_APPRAISE_POLICY) {
@@ -635,12 +637,12 @@ out:
 	securityfs_remove(digest_list_data_del);
 	securityfs_remove(digest_list_data);
 	securityfs_remove(digests_count);
+	securityfs_remove(ima_policy);
 	securityfs_remove(violations);
 	securityfs_remove(runtime_measurements_count);
 	securityfs_remove(ascii_runtime_measurements);
 	securityfs_remove(binary_runtime_measurements);
 	securityfs_remove(ima_symlink);
 	securityfs_remove(ima_dir);
-	securityfs_remove(ima_policy);
 	return -1;
 }

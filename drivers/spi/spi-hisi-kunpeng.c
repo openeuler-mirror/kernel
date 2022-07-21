@@ -9,6 +9,7 @@
 
 #include <linux/acpi.h>
 #include <linux/bitfield.h>
+#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/interrupt.h>
@@ -133,7 +134,51 @@ struct hisi_spi {
 	void			*rx;
 	unsigned int		rx_len;
 	u8			n_bytes; /* current is a 1/2/4 bytes op */
+
+	struct dentry *debugfs;
+	struct debugfs_regset32 regset;
 };
+
+#define HISI_SPI_DBGFS_REG(_name, _off)	\
+{					\
+	.name = _name,			\
+	.offset = _off,			\
+}
+
+static const struct debugfs_reg32 hisi_spi_regs[] = {
+	HISI_SPI_DBGFS_REG("CSCR", HISI_SPI_CSCR),
+	HISI_SPI_DBGFS_REG("CR", HISI_SPI_CR),
+	HISI_SPI_DBGFS_REG("ENR", HISI_SPI_ENR),
+	HISI_SPI_DBGFS_REG("FIFOC", HISI_SPI_FIFOC),
+	HISI_SPI_DBGFS_REG("IMR", HISI_SPI_IMR),
+	HISI_SPI_DBGFS_REG("DIN", HISI_SPI_DIN),
+	HISI_SPI_DBGFS_REG("DOUT", HISI_SPI_DOUT),
+	HISI_SPI_DBGFS_REG("SR", HISI_SPI_SR),
+	HISI_SPI_DBGFS_REG("RISR", HISI_SPI_RISR),
+	HISI_SPI_DBGFS_REG("ISR", HISI_SPI_ISR),
+	HISI_SPI_DBGFS_REG("ICR", HISI_SPI_ICR),
+	HISI_SPI_DBGFS_REG("VERSION", HISI_SPI_VERSION),
+};
+
+static int hisi_spi_debugfs_init(struct hisi_spi *hs)
+{
+	char name[32];
+
+	struct spi_controller *master;
+
+	master = container_of(hs->dev, struct spi_controller, dev);
+	snprintf(name, 32, "hisi_spi%d", master->bus_num);
+	hs->debugfs = debugfs_create_dir(name, NULL);
+	if (!hs->debugfs)
+		return -ENOMEM;
+
+	hs->regset.regs = hisi_spi_regs;
+	hs->regset.nregs = ARRAY_SIZE(hisi_spi_regs);
+	hs->regset.base = hs->regs;
+	debugfs_create_regset32("registers", 0400, hs->debugfs, &hs->regset);
+
+	return 0;
+}
 
 static u32 hisi_spi_busy(struct hisi_spi *hs)
 {
@@ -468,6 +513,9 @@ static int hisi_spi_probe(struct platform_device *pdev)
 		return ret;
 	}
 
+	if (hisi_spi_debugfs_init(hs))
+		dev_info(dev, "failed to create debugfs dir\n");
+
 	dev_info(dev, "hw version:0x%x max-freq:%u kHz\n",
 		readl(hs->regs + HISI_SPI_VERSION),
 		master->max_speed_hz / 1000);
@@ -478,7 +526,9 @@ static int hisi_spi_probe(struct platform_device *pdev)
 static int hisi_spi_remove(struct platform_device *pdev)
 {
 	struct spi_controller *master = platform_get_drvdata(pdev);
+	struct hisi_spi *hs = spi_controller_get_devdata(master);
 
+	debugfs_remove_recursive(hs->debugfs);
 	spi_unregister_controller(master);
 
 	return 0;

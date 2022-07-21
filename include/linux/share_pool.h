@@ -10,11 +10,13 @@
 #include <linux/hashtable.h>
 #include <linux/numa.h>
 #include <linux/jump_label.h>
+#include <linux/kabi.h>
 
 #define SP_HUGEPAGE		(1 << 0)
 #define SP_HUGEPAGE_ONLY	(1 << 1)
 #define SP_DVPP			(1 << 2)
 #define SP_SPEC_NODE_ID		(1 << 3)
+#define SP_PROT_RO		(1 << 16)
 
 #define DEVICE_ID_BITS		4UL
 #define DEVICE_ID_MASK		((1UL << DEVICE_ID_BITS) - 1UL)
@@ -24,7 +26,7 @@
 #define NODE_ID_SHIFT		(DEVICE_ID_SHIFT + DEVICE_ID_BITS)
 
 #define SP_FLAG_MASK		(SP_HUGEPAGE | SP_HUGEPAGE_ONLY | SP_DVPP | \
-				 SP_SPEC_NODE_ID | \
+				 SP_SPEC_NODE_ID | SP_PROT_RO | \
 				(DEVICE_ID_MASK << DEVICE_ID_SHIFT) | \
 				(NODE_ID_MASK << NODE_ID_SHIFT))
 
@@ -38,6 +40,11 @@
 #define SPG_ID_AUTO_MIN 100000
 #define SPG_ID_AUTO_MAX 199999
 #define SPG_ID_AUTO     200000  /* generate group id automatically */
+#define SPG_ID_LOCAL_MIN	200001
+#define SPG_ID_LOCAL_MAX	299999
+
+#define SPG_FLAG_NON_DVPP	(1 << 0)
+#define SPG_FLAG_MASK		(SPG_FLAG_NON_DVPP)
 
 #define MAX_DEVID 8	/* the max num of Da-vinci devices */
 
@@ -100,6 +107,24 @@ struct sp_proc_stat {
 	atomic64_t k2u_size;
 };
 
+/*
+ * address space management
+ */
+struct sp_mapping {
+	unsigned long flag;
+	atomic_t user;
+	unsigned long start[MAX_DEVID];
+	unsigned long end[MAX_DEVID];
+	struct rb_root area_root;
+
+	struct rb_node *free_area_cache;
+	unsigned long cached_hole_size;
+	unsigned long cached_vstart;
+
+	/* list head for all groups attached to this mapping, dvpp mapping only */
+	struct list_head group_head;
+};
+
 /* Processes in the same sp_group can share memory.
  * Memory layout for share pool:
  *
@@ -124,6 +149,7 @@ struct sp_proc_stat {
  */
 struct sp_group {
 	int		 id;
+	unsigned long	 flag;
 	struct file	 *file;
 	struct file	 *file_hugetlb;
 	/* number of process in this group */
@@ -141,6 +167,10 @@ struct sp_group {
 	atomic_t	 use_count;
 	/* protect the group internal elements, except spa_list */
 	struct rw_semaphore	rw_lock;
+	/* list node for dvpp mapping */
+	struct list_head	mnode;
+	struct sp_mapping	*dvpp;
+	struct sp_mapping	*normal;
 };
 
 /* a per-process(per mm) struct which manages a sp_group_node list */
@@ -154,6 +184,11 @@ struct sp_group_master {
 	struct list_head node_list;
 	struct mm_struct *mm;
 	struct sp_proc_stat *stat;
+	/*
+	 * Used to apply for the shared pool memory of the current process.
+	 * For example, sp_alloc non-share memory or k2task.
+	 */
+	KABI_EXTEND(struct sp_group *local)
 };
 
 /*
@@ -178,6 +213,7 @@ struct sp_walk_data {
 	unsigned long uva_aligned;
 	unsigned long page_size;
 	bool is_hugepage;
+	bool is_page_type_set;
 	pmd_t *pmd;
 };
 
@@ -223,8 +259,8 @@ extern int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 extern void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id);
 extern void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id);
 
-extern int sp_free(unsigned long addr);
-extern int mg_sp_free(unsigned long addr);
+extern int sp_free(unsigned long addr, int id);
+extern int mg_sp_free(unsigned long addr, int id);
 
 extern void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			unsigned long sp_flags, int pid, int spg_id);
@@ -235,7 +271,7 @@ extern void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid);
 extern void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int pid);
 
 extern int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id);
-extern int mg_sp_unshare(unsigned long va, unsigned long size);
+extern int mg_sp_unshare(unsigned long va, unsigned long size, int id);
 
 extern int sp_walk_page_range(unsigned long uva, unsigned long size,
 	struct task_struct *tsk, struct sp_walk_data *sp_walk_data);
@@ -254,8 +290,8 @@ extern bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, in
 extern bool is_sharepool_addr(unsigned long addr);
 extern bool mg_is_sharepool_addr(unsigned long addr);
 
-extern int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id);
-extern int sp_group_add_task(int pid, int spg_id);
+extern int sp_id_of_current(void);
+extern int mg_sp_id_of_current(void);
 
 extern void sp_area_drop(struct vm_area_struct *vma);
 extern int sp_group_exit(struct mm_struct *mm);
@@ -362,12 +398,12 @@ static inline void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int 
 	return NULL;
 }
 
-static inline int sp_free(unsigned long addr)
+static inline int sp_free(unsigned long addr, int id)
 {
 	return -EPERM;
 }
 
-static inline int mg_sp_free(unsigned long addr)
+static inline int mg_sp_free(unsigned long addr, int id)
 {
 	return -EPERM;
 }
@@ -399,11 +435,20 @@ static inline int sp_unshare(unsigned long va, unsigned long size, int pid, int 
 	return -EPERM;
 }
 
-static inline int mg_sp_unshare(unsigned long va, unsigned long size)
+static inline int mg_sp_unshare(unsigned long va, unsigned long size, int id)
 {
 	return -EPERM;
 }
 
+static inline int sp_id_of_current(void)
+{
+	return -EPERM;
+}
+
+static inline int mg_sp_id_of_current(void)
+{
+	return -EPERM;
+}
 
 static inline void sp_init_mm(struct mm_struct *mm)
 {
@@ -466,10 +511,6 @@ static inline bool mg_is_sharepool_addr(unsigned long addr)
 static inline struct sp_proc_stat *sp_get_proc_stat_ref(struct mm_struct *mm)
 {
 	return NULL;
-}
-
-static inline void sp_proc_stat_drop(struct sp_proc_stat *stat)
-{
 }
 
 static inline void spa_overview_show(struct seq_file *seq)

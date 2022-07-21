@@ -7,26 +7,14 @@
  *  1997-11-02  Modified for POSIX.1b signals by Richard Henderson
  */
 
-#include <linux/sched.h>
-#include <linux/kernel.h>
 #include <linux/signal.h>
 #include <linux/errno.h>
-#include <linux/wait.h>
-#include <linux/ptrace.h>
-#include <linux/unistd.h>
-#include <linux/mm.h>
-#include <linux/smp.h>
-#include <linux/stddef.h>
-#include <linux/tty.h>
-#include <linux/binfmts.h>
-#include <linux/bitops.h>
-#include <linux/syscalls.h>
 #include <linux/tracehook.h>
-#include <linux/uaccess.h>
+#include <linux/syscalls.h>
 
-#include <asm/sigcontext.h>
 #include <asm/ucontext.h>
 #include <asm/vdso.h>
+#include <asm/switch_to.h>
 
 #include "proto.h"
 
@@ -35,7 +23,20 @@
 
 #define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
 
-asmlinkage void ret_from_sys_call(void);
+SYSCALL_DEFINE2(odd_sigprocmask, int, how, unsigned long, newmask)
+{
+	sigset_t oldmask;
+	sigset_t mask;
+	unsigned long res;
+
+	siginitset(&mask, newmask & _BLOCKABLE);
+	res = sigprocmask(how, &mask, &oldmask);
+	if (!res) {
+		force_successful_syscall_return();
+		res = oldmask.sig[0];
+	}
+	return res;
+}
 
 /*
  * Do a signal return; undo the signal stack.
@@ -48,7 +49,6 @@ asmlinkage void ret_from_sys_call(void);
 struct rt_sigframe {
 	struct siginfo info;
 	struct ucontext uc;
-	unsigned int retcode[3];
 };
 
 /*
@@ -59,21 +59,13 @@ struct rt_sigframe {
 extern char compile_time_assert
 	[offsetof(struct rt_sigframe, uc.uc_mcontext) == 176 ? 1 : -1];
 
-#define INSN_MOV_R30_R16	0x47fe0410
-#define INSN_LDI_R0		0x201f0000
-#define INSN_CALLSYS		0x00000083
-
 static long
 restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 {
 	unsigned long usp;
-	struct switch_stack *sw = (struct switch_stack *)regs - 1;
-	unsigned long *ctx_fp = (unsigned long *)&current->thread.ctx_fp;
-	long i, err = __get_user(regs->pc, &sc->sc_pc);
+	long err = __get_user(regs->pc, &sc->sc_pc);
 
 	current->restart_block.fn = do_no_restart_syscall;
-
-	sw->r26 = (unsigned long) ret_from_sys_call;
 
 	err |= __get_user(regs->r0, sc->sc_regs+0);
 	err |= __get_user(regs->r1, sc->sc_regs+1);
@@ -84,13 +76,13 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 	err |= __get_user(regs->r6, sc->sc_regs+6);
 	err |= __get_user(regs->r7, sc->sc_regs+7);
 	err |= __get_user(regs->r8, sc->sc_regs+8);
-	err |= __get_user(sw->r9, sc->sc_regs+9);
-	err |= __get_user(sw->r10, sc->sc_regs+10);
-	err |= __get_user(sw->r11, sc->sc_regs+11);
-	err |= __get_user(sw->r12, sc->sc_regs+12);
-	err |= __get_user(sw->r13, sc->sc_regs+13);
-	err |= __get_user(sw->r14, sc->sc_regs+14);
-	err |= __get_user(sw->r15, sc->sc_regs+15);
+	err |= __get_user(regs->r9, sc->sc_regs+9);
+	err |= __get_user(regs->r10, sc->sc_regs+10);
+	err |= __get_user(regs->r11, sc->sc_regs+11);
+	err |= __get_user(regs->r12, sc->sc_regs+12);
+	err |= __get_user(regs->r13, sc->sc_regs+13);
+	err |= __get_user(regs->r14, sc->sc_regs+14);
+	err |= __get_user(regs->r15, sc->sc_regs+15);
 	err |= __get_user(regs->r16, sc->sc_regs+16);
 	err |= __get_user(regs->r17, sc->sc_regs+17);
 	err |= __get_user(regs->r18, sc->sc_regs+18);
@@ -108,9 +100,12 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 	err |= __get_user(usp, sc->sc_regs+30);
 	wrusp(usp);
 	/* simd-fp */
-	for (i = 0; i < 31 * 4; i++)
-		err |= __get_user(ctx_fp[i], sc->sc_fpregs + i);
-	err |= __get_user(current->thread.fpcr, &sc->sc_fpcr);
+	err |= __copy_from_user(&current->thread.fpstate, &sc->sc_fpregs,
+				offsetof(struct user_fpsimd_state, fpcr));
+	err |= __get_user(current->thread.fpstate.fpcr, &sc->sc_fpcr);
+
+	if (likely(!err))
+		__fpstate_restore(current);
 
 	return err;
 }
@@ -140,8 +135,8 @@ do_sigreturn(struct sigcontext __user *sc)
 
 	/* Send SIGTRAP if we're single-stepping: */
 	if (ptrace_cancel_bpt(current)) {
-		send_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *) regs->pc, 0,
-			       current);
+		force_sig_fault(SIGTRAP, TRAP_BRKPT,
+				(void __user *)regs->pc, 0);
 	}
 	return;
 
@@ -171,8 +166,8 @@ do_rt_sigreturn(struct rt_sigframe __user *frame)
 
 	/* Send SIGTRAP if we're single-stepping: */
 	if (ptrace_cancel_bpt(current)) {
-		send_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *) regs->pc, 0,
-			       current);
+		force_sig_fault(SIGTRAP, TRAP_BRKPT,
+				(void __user *)regs->pc, 0);
 	}
 	return;
 
@@ -195,9 +190,7 @@ static long
 setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 		 unsigned long mask, unsigned long sp)
 {
-	struct switch_stack *sw = (struct switch_stack *)regs - 1;
-	unsigned long *ctx_fp = (unsigned long *)&current->thread.ctx_fp;
-	long i, err = 0;
+	long err = 0;
 
 	err |= __put_user(on_sig_stack((unsigned long)sc), &sc->sc_onstack);
 	err |= __put_user(mask, &sc->sc_mask);
@@ -213,13 +206,13 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 	err |= __put_user(regs->r6, sc->sc_regs+6);
 	err |= __put_user(regs->r7, sc->sc_regs+7);
 	err |= __put_user(regs->r8, sc->sc_regs+8);
-	err |= __put_user(sw->r9, sc->sc_regs+9);
-	err |= __put_user(sw->r10, sc->sc_regs+10);
-	err |= __put_user(sw->r11, sc->sc_regs+11);
-	err |= __put_user(sw->r12, sc->sc_regs+12);
-	err |= __put_user(sw->r13, sc->sc_regs+13);
-	err |= __put_user(sw->r14, sc->sc_regs+14);
-	err |= __put_user(sw->r15, sc->sc_regs+15);
+	err |= __put_user(regs->r9, sc->sc_regs+9);
+	err |= __put_user(regs->r10, sc->sc_regs+10);
+	err |= __put_user(regs->r11, sc->sc_regs+11);
+	err |= __put_user(regs->r12, sc->sc_regs+12);
+	err |= __put_user(regs->r13, sc->sc_regs+13);
+	err |= __put_user(regs->r14, sc->sc_regs+14);
+	err |= __put_user(regs->r15, sc->sc_regs+15);
 	err |= __put_user(regs->r16, sc->sc_regs+16);
 	err |= __put_user(regs->r17, sc->sc_regs+17);
 	err |= __put_user(regs->r18, sc->sc_regs+18);
@@ -237,9 +230,10 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 	err |= __put_user(sp, sc->sc_regs+30);
 	err |= __put_user(0, sc->sc_regs+31);
 	/* simd-fp */
-	for (i = 0; i < 31 * 4; i++)
-		err |= __put_user(ctx_fp[i], sc->sc_fpregs + i);
-	err |= __put_user(current->thread.fpcr, &sc->sc_fpcr);
+	__fpstate_save(current);
+	err |= __copy_to_user(&sc->sc_fpregs, &current->thread.fpstate,
+				offsetof(struct user_fpsimd_state, fpcr));
+	err |= __put_user(current->thread.fpstate.fpcr, &sc->sc_fpcr);
 
 	err |= __put_user(regs->trap_a0, &sc->sc_traparg_a0);
 	err |= __put_user(regs->trap_a1, &sc->sc_traparg_a1);
@@ -259,7 +253,8 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	if (!access_ok(frame, sizeof(*frame)))
 		return -EFAULT;
 
-	err |= copy_siginfo_to_user(&frame->info, &ksig->info);
+	if (ksig->ka.sa.sa_flags & SA_SIGINFO)
+		err |= copy_siginfo_to_user(&frame->info, &ksig->info);
 
 	/* Create the ucontext.  */
 	err |= __put_user(0, &frame->uc.uc_flags);
@@ -277,15 +272,19 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	 */
 	r26 = VDSO_SYMBOL(current->mm->context.vdso, rt_sigreturn);
 
-	if (err)
-		return -EFAULT;
-
 	/* "Return" to the handler */
 	regs->r26 = r26;
 	regs->r27 = regs->pc = (unsigned long) ksig->ka.sa.sa_handler;
 	regs->r16 = ksig->sig;                    /* a0: signal number */
-	regs->r17 = (unsigned long) &frame->info; /* a1: siginfo pointer */
-	regs->r18 = (unsigned long) &frame->uc;   /* a2: ucontext pointer */
+	if (ksig->ka.sa.sa_flags & SA_SIGINFO) {
+		/* a1: siginfo pointer, a2: ucontext pointer */
+		regs->r17 = (unsigned long) &frame->info;
+		regs->r18 = (unsigned long) &frame->uc;
+	} else {
+		/* a1: exception code, a2: sigcontext pointer */
+		regs->r17 = 0;
+		regs->r18 = (unsigned long) &frame->uc.uc_mcontext;
+	}
 	wrusp((unsigned long) frame);
 
 #if DEBUG_SIG

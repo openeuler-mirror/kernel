@@ -11,6 +11,7 @@ CFLAGS_prom_init.o      += -fPIC
 CFLAGS_btext.o		+= -fPIC
 endif
 
+CFLAGS_early_32.o += $(DISABLE_LATENT_ENTROPY_PLUGIN)
 CFLAGS_cputable.o += $(DISABLE_LATENT_ENTROPY_PLUGIN)
 CFLAGS_prom_init.o += $(DISABLE_LATENT_ENTROPY_PLUGIN)
 CFLAGS_btext.o += $(DISABLE_LATENT_ENTROPY_PLUGIN)
@@ -94,7 +95,7 @@ obj-$(CONFIG_44x)		+= cpu_setup_44x.o
 obj-$(CONFIG_PPC_FSL_BOOK3E)	+= cpu_setup_fsl_booke.o
 obj-$(CONFIG_PPC_DOORBELL)	+= dbell.o
 obj-$(CONFIG_JUMP_LABEL)	+= jump_label.o
-obj-$(CONFIG_LIVEPATCH_WO_FTRACE) += livepatch_$(BITS).o
+obj-$(CONFIG_LIVEPATCH_WO_FTRACE) += livepatch.o livepatch_$(BITS).o
 
 extra-$(CONFIG_PPC64)		:= head_64.o
 extra-$(CONFIG_PPC_BOOK3S_32)	:= head_book3s_32.o

@@ -1293,25 +1293,56 @@ ssize_t part_size_show(struct device *dev,
 		(unsigned long long)part_nr_sects_read(p));
 }
 
+#ifdef CONFIG_64BIT
+static void part_set_stat_time(struct hd_struct *hd)
+{
+	u64 now = ktime_get_ns();
+
+again:
+	hd->stat_time = now;
+	if (hd->partno) {
+		hd = &part_to_disk(hd)->part0;
+		goto again;
+	}
+}
+#endif
+
+static void part_get_stat_info(struct hd_struct *hd, struct disk_stats *stat,
+			       unsigned int *inflight)
+{
+#ifdef CONFIG_64BIT
+	struct request_queue *q = part_to_disk(hd)->queue;
+	if (queue_is_mq(q)) {
+		mutex_lock(&part_to_dev(hd)->mutex);
+		part_stat_lock();
+		part_set_stat_time(hd);
+		*inflight = blk_mq_in_flight_with_stat(q, hd);
+		part_stat_unlock();
+		mutex_unlock(&part_to_dev(hd)->mutex);
+	} else {
+		*inflight = part_in_flight(hd);
+	}
+#else
+	*inflight = part_in_flight(hd);
+#endif
+	if (*inflight) {
+		part_stat_lock();
+		update_io_ticks(hd, jiffies, true);
+		part_stat_unlock();
+	}
+
+	part_stat_read_all(hd, stat);
+}
+
 ssize_t part_stat_show(struct device *dev,
 		       struct device_attribute *attr, char *buf)
 {
 	struct hd_struct *p = dev_to_part(dev);
-	struct request_queue *q = part_to_disk(p)->queue;
 	struct disk_stats stat;
 	unsigned int inflight;
 
-	if (queue_is_mq(q))
-		inflight = blk_mq_in_flight(q, p);
-	else
-		inflight = part_in_flight(p);
+	part_get_stat_info(p, &stat, &inflight);
 
-	if (inflight) {
-		part_stat_lock();
-		update_io_ticks(p, jiffies, true);
-		part_stat_unlock();
-	}
-	part_stat_read_all(p, &stat);
 	return sprintf(buf,
 		"%8lu %8lu %8llu %8u "
 		"%8lu %8lu %8llu %8u "
@@ -1628,17 +1659,7 @@ static int diskstats_show(struct seq_file *seqf, void *v)
 
 	disk_part_iter_init(&piter, gp, DISK_PITER_INCL_EMPTY_PART0);
 	while ((hd = disk_part_iter_next(&piter))) {
-		if (queue_is_mq(gp->queue))
-			inflight = blk_mq_in_flight(gp->queue, hd);
-		else
-			inflight = part_in_flight(hd);
-
-		if (inflight) {
-			part_stat_lock();
-			update_io_ticks(hd, jiffies, true);
-			part_stat_unlock();
-		}
-		part_stat_read_all(hd, &stat);
+		part_get_stat_info(hd, &stat, &inflight);
 		seq_printf(seqf, "%4d %7d %s "
 			   "%lu %lu %lu %u "
 			   "%lu %lu %lu %u "

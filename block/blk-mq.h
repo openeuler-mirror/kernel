@@ -187,6 +187,10 @@ static inline bool blk_mq_hw_queue_mapped(struct blk_mq_hw_ctx *hctx)
 unsigned int blk_mq_in_flight(struct request_queue *q, struct hd_struct *part);
 void blk_mq_in_flight_rw(struct request_queue *q, struct hd_struct *part,
 			 unsigned int inflight[2]);
+#ifdef CONFIG_64BIT
+unsigned int blk_mq_in_flight_with_stat(struct request_queue *q,
+					struct hd_struct *part);
+#endif
 
 static inline void blk_mq_put_dispatch_budget(struct request_queue *q)
 {
@@ -316,10 +320,15 @@ static inline bool hctx_may_queue(struct blk_mq_hw_ctx *hctx,
 		struct request_queue *q = hctx->queue;
 		struct blk_mq_tag_set *set = q->tag_set;
 
+		if (mq_unfair_dtag &&
+		    !atomic_read(&set->pending_queues_shared_sbitmap))
+			return true;
 		if (!test_bit(QUEUE_FLAG_HCTX_ACTIVE, &q->queue_flags))
 			return true;
 		users = atomic_read(&set->active_queues_shared_sbitmap);
 	} else {
+		if (mq_unfair_dtag && !atomic_read(&hctx->tags->pending_queues))
+			return true;
 		if (!test_bit(BLK_MQ_S_TAG_ACTIVE, &hctx->state))
 			return true;
 		users = atomic_read(&hctx->tags->active_queues);

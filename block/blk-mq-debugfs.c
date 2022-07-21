@@ -204,6 +204,39 @@ static ssize_t queue_write_hint_store(void *data, const char __user *buf,
 	return count;
 }
 
+static int queue_tag_set_show(void *data, struct seq_file *m)
+{
+	struct request_queue *q = data;
+	struct blk_mq_tag_set *set = q->tag_set;
+
+	seq_printf(m, "nr_hw_queues=%u\n", set->nr_hw_queues);
+	seq_printf(m, "queue_depth=%u\n", set->queue_depth);
+	seq_printf(m, "reserved_tags=%u\n", set->reserved_tags);
+	seq_printf(m, "cmd_size=%u\n", set->cmd_size);
+	seq_printf(m, "numa_node=%d\n", set->numa_node);
+	seq_printf(m, "timeout=%u\n", set->timeout);
+	seq_printf(m, "flags=%u\n", set->flags);
+	seq_printf(m, "active_queues_shared_sbitmap=%d\n",
+		   atomic_read(&set->active_queues_shared_sbitmap));
+	seq_printf(m, "pending_queues_shared_sbitmap=%d\n",
+		   atomic_read(&set->pending_queues_shared_sbitmap));
+
+	return 0;
+}
+
+static int queue_dtag_wait_time_show(void *data, struct seq_file *m)
+{
+	struct request_queue *q = data;
+	unsigned int time = 0;
+
+	if (test_bit(QUEUE_FLAG_HCTX_WAIT, &q->queue_flags))
+		time = jiffies_to_msecs(jiffies - READ_ONCE(q->dtag_wait_time));
+
+	seq_printf(m, "%u\n", time);
+
+	return 0;
+}
+
 static const struct blk_mq_debugfs_attr blk_mq_debugfs_queue_attrs[] = {
 	{ "poll_stat", 0400, queue_poll_stat_show },
 	{ "requeue_list", 0400, .seq_ops = &queue_requeue_list_seq_ops },
@@ -211,6 +244,8 @@ static const struct blk_mq_debugfs_attr blk_mq_debugfs_queue_attrs[] = {
 	{ "state", 0600, queue_state_show, queue_state_write },
 	{ "write_hints", 0600, queue_write_hint_show, queue_write_hint_store },
 	{ "zone_wlock", 0400, queue_zone_wlock_show, NULL },
+	{ "tag_set", 0400, queue_tag_set_show, NULL },
+	{ "dtag_wait_time_ms", 0400, queue_dtag_wait_time_show, NULL },
 	{ },
 };
 
@@ -453,6 +488,8 @@ static void blk_mq_debugfs_tags_show(struct seq_file *m,
 	seq_printf(m, "nr_reserved_tags=%u\n", tags->nr_reserved_tags);
 	seq_printf(m, "active_queues=%d\n",
 		   atomic_read(&tags->active_queues));
+	seq_printf(m, "pending_queues=%d\n",
+		   atomic_read(&tags->pending_queues));
 
 	seq_puts(m, "\nbitmap_tags:\n");
 	sbitmap_queue_show(tags->bitmap_tags, m);
@@ -628,6 +665,20 @@ static int hctx_dispatch_busy_show(void *data, struct seq_file *m)
 	return 0;
 }
 
+static int hctx_dtag_wait_time_show(void *data, struct seq_file *m)
+{
+	struct blk_mq_hw_ctx *hctx = data;
+	unsigned int time = 0;
+
+	if (test_bit(BLK_MQ_S_DTAG_WAIT, &hctx->state))
+		time = jiffies_to_msecs(jiffies -
+					READ_ONCE(hctx->dtag_wait_time));
+
+	seq_printf(m, "%u\n", time);
+
+	return 0;
+}
+
 #define CTX_RQ_SEQ_OPS(name, type)					\
 static void *ctx_##name##_rq_list_start(struct seq_file *m, loff_t *pos) \
 	__acquires(&ctx->lock)						\
@@ -798,6 +849,7 @@ static const struct blk_mq_debugfs_attr blk_mq_debugfs_hctx_attrs[] = {
 	{"active", 0400, hctx_active_show},
 	{"dispatch_busy", 0400, hctx_dispatch_busy_show},
 	{"type", 0400, hctx_type_show},
+	{"dtag_wait_time_ms", 0400, hctx_dtag_wait_time_show},
 	{},
 };
 

@@ -1,37 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- *	linux/arch/sw_64/kernel/pci.c
- *	Modified by Suweiqiang 2013-9-30
- */
-
-#include <linux/string.h>
 #include <linux/pci.h>
+#include <linux/acpi.h>
 #include <linux/init.h>
-#include <linux/ioport.h>
-#include <linux/kernel.h>
 #include <linux/memblock.h>
-#include <linux/module.h>
-#include <linux/cache.h>
-#include <linux/slab.h>
-#include <linux/msi.h>
-#include <linux/irq.h>
-#include <asm/msi.h>
-#include <linux/delay.h>
 #include <linux/syscore_ops.h>
-#include <linux/platform_device.h>
+
 #include <asm/sw64_init.h>
-#include <asm/pci.h>
 
 #include "pci_impl.h"
 
 unsigned long rc_linkup;
-
-/* Indicate whether we respect the PCI setup left by console. */
-/*
- * Make this long-lived  so that we know when shutting down
- * whether we probed only or not.
- */
-int pci_probe_only;
 
 /*
  * raw_pci_read/write - Platform-specific PCI config space access.
@@ -58,12 +36,12 @@ int raw_pci_write(unsigned int domain, unsigned int bus, unsigned int devfn,
 	return -EINVAL;
 }
 
+#ifdef CONFIG_ACPI
 struct pci_bus *pci_acpi_scan_root(struct acpi_pci_root *root)
 {
-	struct pci_bus *bus;
-
-	return bus;
+	return NULL;
 }
+#endif
 
 /*
  * The PCI controller list.
@@ -86,6 +64,14 @@ DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82378, quirk_i
 #define MB			(1024*KB)
 #define GB			(1024*MB)
 
+resource_size_t pcibios_default_alignment(void)
+{
+	if (is_in_guest())
+		return PAGE_SIZE;
+	else
+		return 0;
+}
+
 resource_size_t pcibios_align_resource(void *data, const struct resource *res,
 		resource_size_t size, resource_size_t align)
 {
@@ -106,7 +92,7 @@ resource_size_t pcibios_align_resource(void *data, const struct resource *res,
 	} else if (res->flags & IORESOURCE_MEM) {
 		/* Make sure we start at our min on all hoses */
 		if (start - hose->mem_space->start < PCIBIOS_MIN_MEM)
-			start = PCIBIOS_MIN_MEM + hose->mem_space->start;		//0xc0000000- 0xffffffff
+			start = PCIBIOS_MIN_MEM + hose->mem_space->start;
 		/*
 		 * The following holds at least for the Low Cost
 		 * Sw_64 implementation of the PCI interface:
@@ -153,7 +139,6 @@ pcibios_init(void)
 	sw64_init_pci();
 	return 0;
 }
-
 subsys_initcall(pcibios_init);
 
 char *pcibios_setup(char *str)
@@ -164,20 +149,13 @@ char *pcibios_setup(char *str)
 void pcibios_fixup_bus(struct pci_bus *bus)
 {
 	/* Propagate hose info into the subordinate devices.  */
-
 	struct pci_controller *hose = bus->sysdata;
 	struct pci_dev *dev = bus->self;
 
-	if (!dev || bus->number == hose->first_busno)	{
-		/* Root bus. */
-		unsigned long end;
-
+	if (!dev || bus->number == hose->first_busno) {
 		bus->resource[0] = hose->io_space;
 		bus->resource[1] = hose->mem_space;
 		bus->resource[2] = hose->pre_mem_space;
-	} else if (pci_probe_only &&
-			(dev->class >> 8) == PCI_CLASS_BRIDGE_PCI) {
-		pci_read_bridge_bases(bus);
 	}
 }
 
@@ -195,21 +173,6 @@ struct pci_dev *sw64_gendev_to_pci(struct device *dev)
 	return NULL;
 }
 
-/*
- *  If we set up a device for bus mastering, we need to check the latency
- *  timer as certain firmware forgets to set it properly.
- */
-void pcibios_set_master(struct pci_dev *dev)
-{
-	u8 lat;
-
-	pci_read_config_byte(dev, PCI_LATENCY_TIMER, &lat);
-	if (lat >= 16)
-		return;
-	pr_info("PCI: Setting latency timer of device %s to 64\n", pci_name(dev));
-	pci_write_config_byte(dev, PCI_LATENCY_TIMER, 64);
-}
-
 void __init pcibios_claim_one_bus(struct pci_bus *b)
 {
 	struct pci_dev *dev;
@@ -223,7 +186,7 @@ void __init pcibios_claim_one_bus(struct pci_bus *b)
 
 			if (r->parent || !r->start || !r->flags)
 				continue;
-			if (pci_probe_only || (r->flags & IORESOURCE_PCI_FIXED)) {
+			if (r->flags & IORESOURCE_PCI_FIXED) {
 				if (pci_claim_resource(dev, i) == 0)
 					continue;
 
@@ -258,7 +221,7 @@ void __init common_init_pci(void)
 	struct pci_bus *bus;
 	unsigned int init_busnr;
 	int need_domain_info = 0;
-	int ret, iov_bus;
+	int ret;
 	unsigned long offset;
 
 	/* Scan all of the recorded PCI controllers. */
@@ -270,13 +233,11 @@ void __init common_init_pci(void)
 		hose->busn_space->start = last_bus;
 		init_busnr = (0xff << 16) + ((last_bus + 1) << 8) + (last_bus);
 		write_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS, init_busnr);
-		if (is_in_host()) {
-			offset = hose->mem_space->start - PCI_32BIT_MEMIO;
+		offset = hose->mem_space->start - PCI_32BIT_MEMIO;
+		if (is_in_host())
 			hose->first_busno = last_bus + 1;
-		} else {
-			offset = hose->mem_space->start - PCI_32BIT_VT_MEMIO;
+		else
 			hose->first_busno = last_bus;
-		}
 		pci_add_resource_offset(&bridge->windows, hose->mem_space, offset);
 		pci_add_resource_offset(&bridge->windows, hose->io_space, hose->io_space->start);
 		pci_add_resource_offset(&bridge->windows, hose->pre_mem_space, 0);
@@ -285,7 +246,7 @@ void __init common_init_pci(void)
 		bridge->sysdata = hose;
 		bridge->busnr = hose->busn_space->start;
 		bridge->ops = &sw64_pci_ops;
-		bridge->swizzle_irq = sw64_swizzle;
+		bridge->swizzle_irq = pci_common_swizzle;
 		bridge->map_irq = sw64_map_irq;
 
 		ret = pci_scan_root_bus_bridge(bridge);
@@ -296,20 +257,20 @@ void __init common_init_pci(void)
 
 		bus = hose->bus = bridge->bus;
 		hose->need_domain_info = need_domain_info;
-		while (pci_find_bus(pci_domain_nr(bus), last_bus))
-			last_bus++;
 
 		if (is_in_host())
-			iov_bus = chip_pcie_configure(hose);
-		last_bus += iov_bus;
+			last_bus = chip_pcie_configure(hose);
+		else
+			while (pci_find_bus(pci_domain_nr(bus), last_bus))
+				last_bus++;
 
-		hose->last_busno = hose->busn_space->end = last_bus - 1;
+		hose->last_busno = hose->busn_space->end = last_bus;
 		init_busnr = read_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS);
 		init_busnr &= ~(0xff << 16);
-		init_busnr |= (last_bus - 1) << 16;
+		init_busnr |= last_bus << 16;
 		write_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS, init_busnr);
-		pci_bus_update_busn_res_end(bus, last_bus - 1);
-
+		pci_bus_update_busn_res_end(bus, last_bus);
+		last_bus++;
 	}
 
 	pcibios_claim_console_setup();
@@ -397,12 +358,8 @@ asmlinkage long sys_pciconfig_iobase(long which, unsigned long bus, unsigned lon
 	return -EOPNOTSUPP;
 }
 
-/* Destroy an __iomem token.  Not copied from lib/iomap.c.  */
-
 void pci_iounmap(struct pci_dev *dev, void __iomem *addr)
 {
-	if (__is_mmio(addr))
-		iounmap(addr);
 }
 EXPORT_SYMBOL(pci_iounmap);
 
@@ -441,7 +398,7 @@ int sw6_pcie_read_rc_cfg(struct pci_bus *bus, unsigned int devfn,
 {
 	u32 data;
 	struct pci_controller *hose = bus->sysdata;
-	void __iomem *cfg_iobase = (void *)hose->rc_config_space_base;
+	void __iomem *cfg_iobase = hose->rc_config_space_base;
 
 	if (IS_ENABLED(CONFIG_PCI_DEBUG))
 		pr_debug("rc read addr:%px bus %d, devfn %#x, where %#x size=%d\t",
@@ -592,9 +549,8 @@ static void __iomem *sw6_pcie_map_bus(struct pci_bus *bus,
 		return NULL;
 
 	relbus = (bus->number << 24) | (devfn << 16) | where;
-	relbus |= PCI_EP_CFG;
 
-	cfg_iobase = (void *)(hose->ep_config_space_base | relbus);
+	cfg_iobase = hose->ep_config_space_base + relbus;
 
 	if (IS_ENABLED(CONFIG_PCI_DEBUG))
 		pr_debug("addr:%px bus %d, devfn %d, where %d\n",
@@ -611,11 +567,6 @@ struct pci_ops sw64_pci_ops = {
 int sw64_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	return sw64_chip_init->pci_init.map_irq(dev, slot, pin);
-}
-
-unsigned char sw64_swizzle(struct pci_dev *dev, u8 *pinp)
-{
-	return PCI_SLOT(dev->devfn);
 }
 
 static void __init
@@ -649,6 +600,8 @@ sw64_init_host(unsigned long node, unsigned long index)
 	}
 }
 
+void __weak set_devint_wken(int node) {}
+
 void __init sw64_init_arch(void)
 {
 	if (IS_ENABLED(CONFIG_PCI)) {
@@ -661,6 +614,7 @@ void __init sw64_init_arch(void)
 		cpu_num = sw64_chip->get_cpu_num();
 
 		for (node = 0; node < cpu_num; node++) {
+			set_devint_wken(node);
 			rc_enable = sw64_chip_init->pci_init.get_rc_enable(node);
 			if (rc_enable == 0) {
 				printk("PCIe is disabled on node %ld\n", node);
@@ -689,6 +643,8 @@ void __init sw64_init_arch(void)
 	}
 }
 
+void __weak set_pcieport_service_irq(int node, int index) {}
+
 static void __init sw64_init_intx(struct pci_controller *hose)
 {
 	unsigned long int_conf, node, val_node;
@@ -702,11 +658,13 @@ static void __init sw64_init_intx(struct pci_controller *hose)
 		val_node = next_node_in(node, node_online_map);
 	else
 		val_node = node;
-	irq = irq_alloc_descs_from(NR_IRQS_LEGACY, 1, val_node);
+	irq = irq_alloc_descs_from(NR_IRQS_LEGACY, 2, val_node);
 	WARN_ON(irq < 0);
 	irq_set_chip_and_handler(irq, &dummy_irq_chip, handle_level_irq);
 	irq_set_status_flags(irq, IRQ_LEVEL);
 	hose->int_irq = irq;
+	irq_set_chip_and_handler(irq + 1, &dummy_irq_chip, handle_level_irq);
+	hose->service_irq = irq + 1;
 	rcid = cpu_to_rcid(0);
 
 	printk_once(KERN_INFO "INTx are directed to node %d core %d.\n",
@@ -714,6 +672,8 @@ static void __init sw64_init_intx(struct pci_controller *hose)
 	int_conf = 1UL << 62 | rcid; /* rebase all intx on the first logical cpu */
 	if (sw64_chip_init->pci_init.set_intx)
 		sw64_chip_init->pci_init.set_intx(node, index, int_conf);
+
+	set_pcieport_service_irq(node, index);
 }
 
 void __init sw64_init_irq(void)
@@ -731,3 +691,16 @@ sw64_init_pci(void)
 {
 	common_init_pci();
 }
+
+static int setup_bus_dma_cb(struct pci_dev *pdev, void *data)
+{
+	pdev->dev.bus_dma_limit = DMA_BIT_MASK(32);
+	return 0;
+}
+
+static void fix_bus_dma_limit(struct pci_dev *dev)
+{
+	pci_walk_bus(dev->subordinate, setup_bus_dma_cb, NULL);
+	pr_info("Set zx200 bus_dma_limit to 32-bit\n");
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ZHAOXIN, 0x071f, fix_bus_dma_limit);

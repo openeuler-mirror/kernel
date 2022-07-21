@@ -168,7 +168,7 @@ int hisi_uncore_pmu_init_irq(struct hisi_pmu *hisi_pmu,
 		return irq;
 
 	ret = devm_request_irq(&pdev->dev, irq, hisi_uncore_pmu_isr,
-			       IRQF_NOBALANCING | IRQF_NO_THREAD,
+			       IRQF_NOBALANCING | IRQF_NO_THREAD | IRQF_SHARED,
 			       dev_name(&pdev->dev), hisi_pmu);
 	if (ret < 0) {
 		dev_err(&pdev->dev,
@@ -434,12 +434,19 @@ static void hisi_read_sccl_and_ccl_id(int *scclp, int *cclp)
 	bool mt = mpidr & MPIDR_MT_BITMASK;
 	int sccl, ccl;
 
-	if (mt && read_cpuid_part_number() == HISI_CPU_PART_TSV110) {
-		sccl = aff2 >> 3;
-		ccl = aff2 & 0x7;
-	} else if (mt) {
-		sccl = aff3;
-		ccl = aff2;
+	if (mt) {
+		switch (read_cpuid_part_number()) {
+		case HISI_CPU_PART_TSV110:
+		case HISI_CPU_PART_TSV200:
+		case ARM_CPU_PART_CORTEX_A55:
+			sccl = aff2 >> 3;
+			ccl = aff2 & 0x7;
+			break;
+		default:
+			sccl = aff3;
+			ccl = aff2;
+			break;
+		}
 	} else {
 		sccl = aff2;
 		ccl = aff1;

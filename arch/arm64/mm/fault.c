@@ -653,6 +653,10 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 		siaddr = NULL;
 	else
 		siaddr  = (void __user *)addr;
+
+	if (arm64_process_kernel_sea(addr, esr, regs, inf->sig, inf->code, siaddr))
+		return 0;
+
 	arm64_notify_die(inf->name, regs, inf->sig, inf->code, siaddr, esr);
 
 	return 0;

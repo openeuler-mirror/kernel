@@ -141,10 +141,6 @@ struct blk_mq_hw_ctx {
 	 * shared across request queues.
 	 */
 	atomic_t		nr_active;
-	/**
-	 * @elevator_queued: Number of queued requests on hctx.
-	 */
-	atomic_t                elevator_queued;
 
 	/** @cpuhp_online: List to store request if CPU is going to die */
 	struct hlist_node	cpuhp_online;
@@ -175,6 +171,12 @@ struct blk_mq_hw_ctx {
 	 * q->unused_hctx_list.
 	 */
 	struct list_head	hctx_list;
+
+	/**
+	 * @dtag_wait_time: record when hardware queue is pending, specifically
+	 * when BLK_MQ_S_DTAG_WAIT is set in state.
+	 */
+	unsigned long		dtag_wait_time;
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
@@ -270,6 +272,7 @@ struct blk_mq_tag_set {
 	unsigned int		flags;
 	void			*driver_data;
 	atomic_t		active_queues_shared_sbitmap;
+	atomic_t		pending_queues_shared_sbitmap;
 
 	struct sbitmap_queue	__bitmap_tags;
 	struct sbitmap_queue	__breserved_tags;
@@ -300,6 +303,15 @@ struct blk_mq_queue_data {
 
 	KABI_RESERVE(1)
 };
+
+struct request_wrapper {
+	struct request rq;
+
+	/* Time that I/O was counted in part_get_stat_info(). */
+	u64 stat_time_ns;
+};
+
+#define request_to_wrapper(_rq) container_of(_rq, struct request_wrapper, rq)
 
 typedef bool (busy_iter_fn)(struct blk_mq_hw_ctx *, struct request *, void *,
 		bool);
@@ -446,6 +458,9 @@ enum {
 	/* hw queue is inactive after all its CPUs become offline */
 	BLK_MQ_S_INACTIVE	= 3,
 
+	/* hw queue is waiting for driver tag */
+	BLK_MQ_S_DTAG_WAIT	= 4,
+
 	BLK_MQ_MAX_DEPTH	= 10240,
 
 	BLK_MQ_CPU_WORK_BATCH	= 8,
@@ -589,7 +604,7 @@ static inline bool blk_should_fake_timeout(struct request_queue *q)
  */
 static inline struct request *blk_mq_rq_from_pdu(void *pdu)
 {
-	return pdu - sizeof(struct request);
+	return pdu - sizeof(struct request_wrapper);
 }
 
 /**
@@ -603,12 +618,23 @@ static inline struct request *blk_mq_rq_from_pdu(void *pdu)
  */
 static inline void *blk_mq_rq_to_pdu(struct request *rq)
 {
-	return rq + 1;
+	return request_to_wrapper(rq) + 1;
+}
+
+static inline struct blk_mq_hw_ctx *queue_hctx(struct request_queue *q, int id)
+{
+	struct blk_mq_hw_ctx *hctx;
+
+	rcu_read_lock();
+	hctx = *(rcu_dereference(q->queue_hw_ctx) + id);
+	rcu_read_unlock();
+
+	return hctx;
 }
 
 #define queue_for_each_hw_ctx(q, hctx, i)				\
 	for ((i) = 0; (i) < (q)->nr_hw_queues &&			\
-	     ({ hctx = (q)->queue_hw_ctx[i]; 1; }); (i)++)
+	     ({ hctx = queue_hctx((q), i); 1; }); (i)++)
 
 #define hctx_for_each_ctx(hctx, ctx, i)					\
 	for ((i) = 0; (i) < (hctx)->nr_ctx &&				\

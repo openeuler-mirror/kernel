@@ -5,38 +5,14 @@
 
 /* 2.3.x zone allocator, 1999 Andrea Arcangeli <andrea@suse.de> */
 
-#include <linux/pagemap.h>
-#include <linux/signal.h>
-#include <linux/sched.h>
-#include <linux/kernel.h>
-#include <linux/errno.h>
-#include <linux/string.h>
-#include <linux/types.h>
-#include <linux/ptrace.h>
-#include <linux/mman.h>
 #include <linux/mm.h>
 #include <linux/swap.h>
-#include <linux/init.h>
-#include <linux/vmalloc.h>
-#include <linux/gfp.h>
-#include <linux/uaccess.h>
 #include <linux/memblock.h>
-#include <linux/dma-mapping.h>
 #include <linux/swiotlb.h>
 #include <linux/acpi.h>
+#include <linux/memory.h>
 
-#include <asm/pgtable.h>
-#include <asm/pgalloc.h>
-#include <asm/dma.h>
 #include <asm/mmu_context.h>
-#include <asm/console.h>
-#include <asm/tlb.h>
-#include <asm/setup.h>
-#include <asm/sections.h>
-#include <asm/memory.h>
-#include <asm/hw_init.h>
-
-extern void die_if_kernel(char *, struct pt_regs *, long);
 
 struct mem_desc_t mem_desc;
 #ifndef CONFIG_NUMA
@@ -57,6 +33,14 @@ static pud_t vmalloc_pud[1024]	__attribute__((__aligned__(PAGE_SIZE)));
 
 static phys_addr_t mem_start;
 static phys_addr_t mem_size_limit;
+
+unsigned long memory_block_size_bytes(void)
+{
+	if (is_in_guest())
+		return MIN_MEMORY_BLOCK_SIZE_VM_MEMHP;
+	else
+		return MIN_MEMORY_BLOCK_SIZE;
+}
 
 static int __init setup_mem_size(char *p)
 {
@@ -112,7 +96,7 @@ switch_to_system_map(void)
 	 * the last slot of the L1 page table.
 	 */
 	memset(swapper_pg_dir, 0, PAGE_SIZE);
-	newptbr = __pa(swapper_pg_dir) >> PAGE_SHIFT;
+	newptbr = virt_to_pfn(swapper_pg_dir);
 
 	/* Also set up the real kernel PCB while we're at it.  */
 	init_thread_info.pcb.ptbr = newptbr;
@@ -193,15 +177,27 @@ void __init sw64_memblock_init(void)
 
 	memblock_remove(1ULL << MAX_PHYSMEM_BITS, PHYS_ADDR_MAX);
 
-	/* Make sure kernel text is in memory range. */
-	memblock_add(__pa_symbol(_text), (unsigned long)(_end - _text));
-	memblock_reserve(__pa_symbol(_text), _end - _text);
-
 	max_pfn = max_low_pfn = PFN_DOWN(memblock_end_of_DRAM());
 
 	memblock_allow_resize();
 	memblock_initialized = true;
 	process_memmap();
+
+	/* Make sure kernel text is in memory range. */
+	memblock_add(__pa_symbol(_text), _end - _text);
+	memblock_reserve(__pa_symbol(_text), _end - _text);
+
+	/* Make sure initrd is in memory range. */
+	if (sunway_boot_params->initrd_start) {
+		phys_addr_t base = __pa(sunway_boot_params->initrd_start);
+		phys_addr_t size = sunway_boot_params->initrd_size;
+
+		memblock_add(base, size);
+		memblock_reserve(base, size);
+	}
+
+	/* end of DRAM range may have been changed */
+	max_pfn = max_low_pfn = PFN_DOWN(memblock_end_of_DRAM());
 }
 
 #ifndef CONFIG_NUMA
@@ -255,18 +251,6 @@ void vmemmap_free(unsigned long start, unsigned long end,
 		struct vmem_altmap *altmap)
 {
 }
-#endif
-
-#ifdef CONFIG_DISCONTIGMEM
-int pfn_valid(unsigned long pfn)
-{
-	phys_addr_t addr = pfn << PAGE_SHIFT;
-
-	if ((addr >> PAGE_SHIFT) != pfn)
-		return 0;
-	return memblock_is_map_memory(addr);
-}
-EXPORT_SYMBOL(pfn_valid);
 #endif
 
 #ifdef CONFIG_HAVE_MEMBLOCK
@@ -323,14 +307,13 @@ void __init early_init_dt_add_memory_arch(u64 base, u64 size)
 #endif
 
 #ifdef CONFIG_MEMORY_HOTPLUG
-int arch_add_memory(int nid, u64 start, u64 size, struct vmem_altmap *altmap,
-		bool want_memblock)
+int arch_add_memory(int nid, u64 start, u64 size, struct mhp_params *params)
 {
 	unsigned long start_pfn = start >> PAGE_SHIFT;
 	unsigned long nr_pages = size >> PAGE_SHIFT;
 	int ret;
 
-	ret = __add_pages(nid, start_pfn, nr_pages, altmap, want_memblock);
+	ret = __add_pages(nid, start_pfn, nr_pages, params);
 	if (ret)
 		printk("%s: Problem encountered in __add_pages() as ret=%d\n",
 		       __func__,  ret);

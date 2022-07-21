@@ -3,7 +3,6 @@
 #define _ASM_SW64_ELF_H
 #ifdef __KERNEL__
 #include <asm/auxvec.h>
-#include <asm/special_insns.h>
 #endif
 /* Special values for the st_other field in the symbol table.  */
 
@@ -56,23 +55,18 @@
 #define EF_SW64_32BIT		1	/* All addresses are below 2GB */
 
 /*
- * ELF register definitions..
- */
-
-/*
- * The legacy version of <sys/procfs.h> makes gregset_t 46 entries long.
- * I have no idea why that is so.  For now, we just leave it at 33
- * (32 general regs + processor status word).
+ * ELF register definitions.
+ *
+ * For now, we just leave it at 33 (32 general regs + processor status word).
  */
 #define ELF_NGREG	33
-#define ELF_NFPREG	32
-
 
 typedef unsigned long elf_greg_t;
 typedef elf_greg_t elf_gregset_t[ELF_NGREG];
 
-typedef double elf_fpreg_t;
-typedef elf_fpreg_t elf_fpregset_t[ELF_NFPREG];
+/* Same with user_fpsimd_state */
+#include <uapi/asm/ptrace.h>
+typedef struct user_fpsimd_state elf_fpregset_t;
 
 /*
  * This is used to ensure we don't load something for the wrong architecture.
@@ -122,30 +116,16 @@ extern int arch_setup_additional_pages(struct linux_binprm *bprm,
 
 #ifdef __KERNEL__
 struct pt_regs;
-struct thread_info;
 struct task_struct;
-extern void dump_elf_thread(elf_greg_t *dest, struct pt_regs *pt,
-			    struct thread_info *ti);
-#define ELF_CORE_COPY_REGS(DEST, REGS) \
-	dump_elf_thread(DEST, REGS, current_thread_info());
-
-/* Similar, but for a thread other than current.  */
-
-extern int dump_elf_task(elf_greg_t *dest, struct task_struct *task);
-#define ELF_CORE_COPY_TASK_REGS(TASK, DEST) dump_elf_task(*(DEST), TASK)
-
-/* Similar, but for the FP registers.  */
-
-extern int dump_elf_task_fp(elf_fpreg_t *dest, struct task_struct *task);
-#define ELF_CORE_COPY_FPREGS(TASK, DEST) dump_elf_task_fp(*(DEST), TASK)
+extern void sw64_elf_core_copy_regs(elf_greg_t *dest, struct pt_regs *pt);
+#define ELF_CORE_COPY_REGS(DEST, REGS) sw64_elf_core_copy_regs(DEST, REGS);
 
 /*
  * This yields a mask that user programs can use to figure out what
- * instruction set this CPU supports.  This is trivial on SW-64,
- * but not so on other machines.
+ * instruction set this CPU supports.
  */
 
-#define ELF_HWCAP  (~amask(-1))
+#define ELF_HWCAP	0
 
 /*
  * This yields a string that ld.so will use to load implementation

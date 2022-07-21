@@ -1068,5 +1068,41 @@ _GLOBAL(livepatch_branch_trampoline)
 	blr
 _GLOBAL(livepatch_branch_trampoline_end)
 	nop
+
+/*
+ * This function is the trampoline of livepatch brk handler.
+ *
+ * brk -> traps
+ *  - klp_brk_handler
+ *   - set R11 to new_func address
+ *   - set NIP to livepatch_brk_trampoline address
+ * see arch/powerpc/kernel/livepatch.c
+ */
+_GLOBAL(livepatch_brk_trampoline)
+	mflr	r0
+	std	r0, 16(r1)
+	std	r2, 24(r1)
+	stdu    r1, -STACK_FRAME_OVERHEAD(r1)
+
+	/* Call NEW_FUNC */
+	ld	r12, 0(r11)	/* load new func address to R12 */
+#ifdef PPC64_ELF_ABI_v1
+	ld	r2,  8(r11)	/* set up new R2 */
+#endif
+	mtctr   r12		/* load R12(new func address) to CTR */
+	bctrl			/* call new func */
+
+	/*
+	 * Now we are returning from the patched function to the original
+	 * caller A. We are free to use r11, r12 and we can use r2 until we
+	 * restore it.
+	 */
+	addi	r1, r1, STACK_FRAME_OVERHEAD
+	ld	r2, 24(r1)
+	ld	r0, 16(r1)
+	mtlr	r0
+
+	/* Return to original caller of live patched function */
+	blr
 #endif
 #endif /* CONFIG_LIVEPATCH_WO_FTRACE */

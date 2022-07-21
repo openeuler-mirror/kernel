@@ -201,6 +201,9 @@ extern bool vma_migratable(struct vm_area_struct *vma);
 extern int mpol_misplaced(struct page *, struct vm_area_struct *, unsigned long);
 extern void mpol_put_task_policy(struct task_struct *);
 
+extern long __do_mbind(unsigned long start, unsigned long len,
+		       unsigned short mode, unsigned short mode_flags,
+		       nodemask_t *nmask, unsigned long flags, struct mm_struct *mm);
 #else
 
 struct mempolicy {};
@@ -299,6 +302,13 @@ static inline int mpol_misplaced(struct page *page, struct vm_area_struct *vma,
 				 unsigned long address)
 {
 	return -1; /* no node preference */
+}
+
+static inline long __do_mbind(unsigned long start, unsigned long len,
+			unsigned short mode, unsigned short mode_flags,
+			nodemask_t *nmask, unsigned long flags, struct mm_struct *mm)
+{
+	return 0;
 }
 
 static inline void mpol_put_task_policy(struct task_struct *task)

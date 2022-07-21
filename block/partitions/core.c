@@ -415,6 +415,7 @@ static struct hd_struct *add_partition(struct gendisk *disk, int partno,
 	p->nr_sects = len;
 	p->partno = partno;
 	p->read_only = get_disk_ro(disk) | test_bit(partno, disk->user_ro_bitmap);
+	p->stat_time = 0;
 
 	if (info) {
 		struct partition_meta_info *pinfo;

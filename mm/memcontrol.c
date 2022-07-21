@@ -62,6 +62,7 @@
 #include <linux/tracehook.h>
 #include <linux/psi.h>
 #include <linux/seq_buf.h>
+#include <linux/memcg_memfs_info.h>
 #include "internal.h"
 #include <net/sock.h>
 #include <net/ip.h>
@@ -257,7 +258,7 @@ struct cgroup_subsys_state *vmpressure_to_css(struct vmpressure *vmpr)
 }
 
 #ifdef CONFIG_MEMCG_KMEM
-extern spinlock_t css_set_lock;
+static DEFINE_SPINLOCK(objcg_lock);
 
 static void obj_cgroup_uncharge_pages(struct obj_cgroup *objcg,
 				      unsigned int nr_pages);
@@ -294,13 +295,13 @@ static void obj_cgroup_release(struct percpu_ref *ref)
 	WARN_ON_ONCE(nr_bytes & (PAGE_SIZE - 1));
 	nr_pages = nr_bytes >> PAGE_SHIFT;
 
-	spin_lock_irqsave(&css_set_lock, flags);
+	spin_lock_irqsave(&objcg_lock, flags);
 	memcg = obj_cgroup_memcg(objcg);
 	if (nr_pages)
 		obj_cgroup_uncharge_pages(objcg, nr_pages);
 	list_del(&objcg->list);
 	mem_cgroup_put(memcg);
-	spin_unlock_irqrestore(&css_set_lock, flags);
+	spin_unlock_irqrestore(&objcg_lock, flags);
 
 	percpu_ref_exit(ref);
 	kfree_rcu(objcg, rcu);
@@ -332,7 +333,7 @@ static void memcg_reparent_objcgs(struct mem_cgroup *memcg,
 
 	objcg = rcu_replace_pointer(memcg->objcg, NULL, true);
 
-	spin_lock_irq(&css_set_lock);
+	spin_lock_irq(&objcg_lock);
 
 	/* Move active objcg to the parent's list */
 	xchg(&objcg->memcg, parent);
@@ -347,7 +348,7 @@ static void memcg_reparent_objcgs(struct mem_cgroup *memcg,
 	}
 	list_splice(&memcg->objcg_list, &parent->objcg_list);
 
-	spin_unlock_irq(&css_set_lock);
+	spin_unlock_irq(&objcg_lock);
 
 	percpu_ref_kill(&objcg->refcnt);
 }
@@ -1625,6 +1626,8 @@ void mem_cgroup_print_oom_meminfo(struct mem_cgroup *memcg)
 		return;
 	pr_info("%s", buf);
 	kfree(buf);
+
+	mem_cgroup_print_memfs_info(memcg, NULL);
 }
 
 /*
@@ -3407,7 +3410,7 @@ unsigned long mem_cgroup_soft_limit_reclaim(pg_data_t *pgdat, int order,
  *
  * Caller is responsible for holding css reference for memcg.
  */
-static int mem_cgroup_force_empty(struct mem_cgroup *memcg)
+int mem_cgroup_force_empty(struct mem_cgroup *memcg)
 {
 	int nr_retries = MAX_RECLAIM_RETRIES;
 
@@ -4553,6 +4556,53 @@ static void mem_cgroup_oom_unregister_event(struct mem_cgroup *memcg,
 	spin_unlock(&memcg_oom_lock);
 }
 
+static const char *const memcg_flag_name[] = {
+	"NO_REF",
+	"ONLINE",
+	"RELEASED",
+	"VISIBLE",
+	"DYING"
+};
+
+static void memcg_flag_stat_get(int mem_flags, int *stat)
+{
+	int i;
+	int flags = mem_flags;
+
+	for (i = 0; i < ARRAY_SIZE(memcg_flag_name); i++) {
+		if (flags & 1)
+			stat[i] += 1;
+		flags >>= 1;
+	}
+}
+
+static int memcg_flag_stat_show(struct seq_file *sf, void *v)
+{
+	int self_flag[ARRAY_SIZE(memcg_flag_name)];
+	int child_flag[ARRAY_SIZE(memcg_flag_name)];
+	int iter;
+	struct cgroup_subsys_state *child;
+	struct cgroup_subsys_state *css = seq_css(sf);
+
+	memset(self_flag, 0, sizeof(self_flag));
+	memset(child_flag, 0, sizeof(child_flag));
+
+	memcg_flag_stat_get(css->flags, self_flag);
+
+	rcu_read_lock();
+	css_for_each_child(child, css)
+		memcg_flag_stat_get(child->flags, child_flag);
+	rcu_read_unlock();
+
+	for (iter = 0; iter < ARRAY_SIZE(memcg_flag_name); iter++)
+		seq_printf(sf, "%s %d\n", memcg_flag_name[iter], self_flag[iter]);
+
+	for (iter = 0; iter < ARRAY_SIZE(memcg_flag_name); iter++)
+		seq_printf(sf, "CHILD_%s %d\n", memcg_flag_name[iter], child_flag[iter]);
+
+	return 0;
+}
+
 static int mem_cgroup_oom_control_read(struct seq_file *sf, void *v)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_seq(sf);
@@ -4561,6 +4611,9 @@ static int mem_cgroup_oom_control_read(struct seq_file *sf, void *v)
 	seq_printf(sf, "under_oom %d\n", (bool)memcg->under_oom);
 	seq_printf(sf, "oom_kill %lu\n",
 		   atomic_long_read(&memcg->memory_events[MEMCG_OOM_KILL]));
+	seq_printf(sf, "oom_kill_local %lu\n",
+		   atomic_long_read(&memcg->memory_events_local[MEMCG_OOM_KILL]));
+
 	return 0;
 }
 
@@ -5121,6 +5174,74 @@ static ssize_t memory_high_write(struct kernfs_open_file *of,
 	return nbytes;
 }
 
+static void __memcg_events_show(struct seq_file *m, atomic_long_t *events)
+{
+	seq_printf(m, "low %lu\n", atomic_long_read(&events[MEMCG_LOW]));
+	seq_printf(m, "high %lu\n", atomic_long_read(&events[MEMCG_HIGH]));
+	seq_printf(m, "limit_in_bytes %lu\n",
+		   atomic_long_read(&events[MEMCG_MAX]));
+	seq_printf(m, "oom %lu\n", atomic_long_read(&events[MEMCG_OOM]));
+}
+
+static int memcg_events_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+
+	__memcg_events_show(m, memcg->memory_events);
+	return 0;
+}
+
+static int memcg_events_local_show(struct seq_file *m, void *v)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_seq(m);
+
+	__memcg_events_show(m, memcg->memory_events_local);
+	return 0;
+}
+
+static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
+			      size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned int nr_retries = MAX_RECLAIM_RETRIES;
+	unsigned long nr_to_reclaim, nr_reclaimed = 0;
+	int err;
+
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "", &nr_to_reclaim);
+	if (err)
+		return err;
+
+	if (!cgroup_subsys_on_dfl(memory_cgrp_subsys) &&
+			mem_cgroup_is_root(memcg))
+		return -EINVAL;
+
+	while (nr_reclaimed < nr_to_reclaim) {
+		unsigned long reclaimed;
+
+		if (signal_pending(current))
+			return -EINTR;
+
+		/* This is the final attempt, drain percpu lru caches in the
+		 * hope of introducing more evictable pages for
+		 * try_to_free_mem_cgroup_pages().
+		 */
+		if (!nr_retries)
+			lru_add_drain_all();
+
+		reclaimed = try_to_free_mem_cgroup_pages(memcg,
+						nr_to_reclaim - nr_reclaimed,
+						GFP_KERNEL, true);
+
+		if (!reclaimed && !nr_retries--)
+			return -EAGAIN;
+
+		nr_reclaimed += reclaimed;
+	}
+
+	return nbytes;
+}
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -5186,6 +5307,10 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.private = MEMFILE_PRIVATE(_OOM_TYPE, OOM_CONTROL),
 	},
 	{
+		.name = "flag_stat",
+		.seq_show = memcg_flag_stat_show,
+	},
+	{
 		.name = "pressure_level",
 	},
 #ifdef CONFIG_MEMCG_QOS
@@ -5217,6 +5342,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.read_u64 = normal_pages_disabled_read,
 		.write_u64 = normal_pages_disabled_write,
 		.flags = CFTYPE_NO_PREFIX | CFTYPE_WORLD_WRITABLE | CFTYPE_NOT_ON_ROOT,
+	},
+#endif
+#ifdef CONFIG_MEMCG_MEMFS_INFO
+	{
+		.name = "memfs_files_info",
+		.seq_show = mem_cgroup_memfs_files_show,
 	},
 #endif
 #ifdef CONFIG_NUMA
@@ -5295,6 +5426,22 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.seq_show = memory_high_show,
 		.write = memory_high_write,
+	},
+	{
+		.name = "events",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.file_offset = offsetof(struct mem_cgroup, events_file),
+		.seq_show = memcg_events_show,
+	},
+	{
+		.name = "events.local",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.file_offset = offsetof(struct mem_cgroup, events_local_file),
+		.seq_show = memcg_events_local_show,
+	},
+	{
+		.name = "reclaim",
+		.write = memory_reclaim,
 	},
 	{ },	/* terminate */
 };
@@ -6720,6 +6867,11 @@ static struct cftype memory_files[] = {
 		.seq_show = memory_oom_group_show,
 		.write = memory_oom_group_write,
 	},
+	{
+		.name = "reclaim",
+		.flags = CFTYPE_NS_DELEGATABLE,
+		.write = memory_reclaim,
+	},
 	{ }	/* terminate */
 };
 
@@ -7308,7 +7460,7 @@ static int __init cgroup_memory(char *s)
 		else if (!strcmp(token, "kmem"))
 			cgroup_memory_nokmem = false;
 	}
-	return 0;
+	return 1;
 }
 __setup("cgroup.memory=", cgroup_memory);
 
@@ -7357,6 +7509,8 @@ static int __init mem_cgroup_init(void)
 		spin_lock_init(&rtpn->lock);
 		soft_limit_tree.rb_tree_per_node[node] = rtpn;
 	}
+
+	mem_cgroup_memfs_info_init();
 
 	return 0;
 }

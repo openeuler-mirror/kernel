@@ -4,7 +4,7 @@
 
 #include <uapi/asm/unistd.h>
 
-#define NR_SYSCALLS			519
+#define NR_SYSCALLS			__NR_syscalls
 #define NR_syscalls			NR_SYSCALLS
 
 #define __ARCH_WANT_NEW_STAT
@@ -22,5 +22,6 @@
 #define __ARCH_WANT_SYS_CLONE
 #define __ARCH_WANT_SYS_SOCKETCALL
 #define __ARCH_WANT_SYS_SIGPROCMASK
+#define __ARCH_WANT_SYS_CLONE3
 
 #endif /* _ASM_SW64_UNISTD_H */

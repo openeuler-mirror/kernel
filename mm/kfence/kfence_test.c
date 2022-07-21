@@ -621,10 +621,11 @@ static void test_gfpzero(struct kunit *test)
 			break;
 		test_free(buf2);
 
-		if (i == KFENCE_NR_OBJECTS) {
+		if (kthread_should_stop() || (i == KFENCE_NR_OBJECTS)) {
 			kunit_warn(test, "giving up ... cannot get same object back\n");
 			return;
 		}
+		cond_resched();
 	}
 
 	for (i = 0; i < size; i++)

@@ -55,7 +55,7 @@
 45	common	open				sys_open
 #46 is unused
 47	common	getxgid				sys_getxgid
-48	common	sigprocmask			sys_sigprocmask
+48	common	odd_sigprocmask			sys_odd_sigprocmask
 #49 is unused
 #50 is unused
 51	common	acct				sys_acct
@@ -73,7 +73,7 @@
 63	common	getpgrp				sys_getpgrp
 #64 is unused
 #65 is unused
-66	common	vfork				sw64_vfork
+66	common	vfork				sys_vfork
 67	common	stat				sys_newstat
 68	common	lstat				sys_newlstat
 #69 is unused
@@ -211,13 +211,13 @@
 201	common	msgget				sys_msgget
 202	common	msgrcv				sys_msgrcv
 203	common	msgsnd				sys_msgsnd
-204	common	semctl				sys_semctl
+204	common	semctl				sys_old_semctl
 205	common	semget				sys_semget
 206	common	semop				sys_semop
 #207 is unused
 208	common	lchown				sys_lchown
 209	common	shmat				sys_shmat
-210	common	shmctl				sys_shmctl
+210	common	shmctl				sys_old_shmctl
 211	common	shmdt				sys_shmdt
 212	common	shmget				sys_shmget
 #213 is unused
@@ -290,14 +290,14 @@
 280	common	fspick				sys_fspick
 281	common	pidfd_open			sys_pidfd_open
 282	common	clone3				sys_clone3
-283	common  close_range			sys_close_range
-284	common  openat2				sys_openat2
-285	common  pidfd_getfd			sys_pidfd_getfd
-286	common  faccessat2			sys_faccessat2
-287	common  process_madvise			sys_process_madvise
-#288 is unused
-#289 is unused
-#290 is unused
+283	common	close_range			sys_close_range
+284	common	openat2				sys_openat2
+285	common	pidfd_getfd			sys_pidfd_getfd
+286	common	faccessat2			sys_faccessat2
+287	common	process_madvise			sys_process_madvise
+288	common	pkey_mprotect			sys_pkey_mprotect
+289	common	pkey_alloc			sys_pkey_alloc
+290	common	pkey_free			sys_pkey_free
 #291 is unused
 #292 is unused
 #293 is unused
@@ -306,7 +306,7 @@
 #296 is unused
 #297 is unused
 298	common	getpriority			sys_getpriority
-#299 is unused
+299	common	sigprocmask			sys_sigprocmask
 300	common	bdflush				sys_bdflush
 #301 is unused
 302	common	mount				sys_mount
@@ -319,7 +319,7 @@
 309	common	get_kernel_syms			sys_ni_syscall
 310	common	syslog				sys_syslog
 311	common	reboot				sys_reboot
-312	common	clone				sw64_clone
+312	common	clone				sys_clone
 313	common	uselib				sys_uselib
 314	common	mlock				sys_mlock
 315	common	munlock				sys_munlock
@@ -377,7 +377,7 @@
 367	common	getcwd				sys_getcwd
 368	common	capget				sys_capget
 369	common	capset				sys_capset
-370	common	sendfile			sys_sendfile
+370	common	sendfile			sys_sendfile64
 371	common	setresgid			sys_setresgid
 372	common	getresgid			sys_getresgid
 373	common	dipc				sys_ni_syscall
