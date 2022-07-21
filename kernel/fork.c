@@ -459,6 +459,9 @@ void free_task(struct task_struct *tsk)
 	arch_release_task_struct(tsk);
 	if (tsk->flags & PF_KTHREAD)
 		free_kthread_struct(tsk);
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	sched_prefer_cpus_free(tsk);
+#endif
 	free_task_struct(tsk);
 }
 EXPORT_SYMBOL(free_task);
@@ -886,6 +889,10 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 	 * the usage counts on the error path calling free_task.
 	 */
 	tsk->seccomp.filter = NULL;
+#endif
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	tsk->prefer_cpus = NULL;
 #endif
 
 	setup_thread_stack(tsk, orig);
@@ -1861,6 +1868,12 @@ static __latent_entropy struct task_struct *copy_process(
 	retval = copy_creds(p, clone_flags);
 	if (retval < 0)
 		goto bad_fork_free;
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	retval = sched_prefer_cpus_fork(p, current);
+	if (retval)
+		goto bad_fork_free;
+#endif
 
 	/*
 	 * If multiple threads are within copy_process(), then this check

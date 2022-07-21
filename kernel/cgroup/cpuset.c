@@ -104,6 +104,9 @@ struct cpuset {
 	/* user-configured CPUs and Memory Nodes allow to tasks */
 	cpumask_var_t cpus_allowed;
 	nodemask_t mems_allowed;
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_var_t prefer_cpus;
+#endif
 
 	/* effective CPUs and Memory Nodes allow to tasks */
 	cpumask_var_t effective_cpus;
@@ -436,11 +439,22 @@ static struct cpuset *alloc_trial_cpuset(struct cpuset *cs)
 		goto free_cs;
 	if (!alloc_cpumask_var(&trial->effective_cpus, GFP_KERNEL))
 		goto free_cpus;
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (!alloc_cpumask_var(&trial->prefer_cpus, GFP_KERNEL))
+		goto free_prefer_cpus;
+#endif
 
 	cpumask_copy(trial->cpus_allowed, cs->cpus_allowed);
 	cpumask_copy(trial->effective_cpus, cs->effective_cpus);
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_copy(trial->prefer_cpus, cs->prefer_cpus);
+#endif
 	return trial;
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+free_prefer_cpus:
+	free_cpumask_var(trial->effective_cpus);
+#endif
 free_cpus:
 	free_cpumask_var(trial->cpus_allowed);
 free_cs:
@@ -456,6 +470,9 @@ static void free_trial_cpuset(struct cpuset *trial)
 {
 	free_cpumask_var(trial->effective_cpus);
 	free_cpumask_var(trial->cpus_allowed);
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	free_cpumask_var(trial->prefer_cpus);
+#endif
 	kfree(trial);
 }
 
@@ -487,6 +504,11 @@ static int validate_change(struct cpuset *cur, struct cpuset *trial)
 
 	rcu_read_lock();
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	ret = -EINVAL;
+	if (!cpumask_subset(cur->prefer_cpus, trial->cpus_allowed))
+		goto out;
+#endif
 	/* Each of our child cpusets must be a subset of us */
 	ret = -EBUSY;
 	cpuset_for_each_child(c, css, cur)
@@ -550,6 +572,66 @@ out:
 	rcu_read_unlock();
 	return ret;
 }
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+static cpumask_var_t prefer_cpus_attach;
+
+static void update_tasks_prefer_cpumask(struct cpuset *cs)
+{
+	struct css_task_iter it;
+	struct task_struct *task;
+
+	css_task_iter_start(&cs->css, 0, &it);
+	while ((task = css_task_iter_next(&it)))
+		set_prefer_cpus_ptr(task, cs->prefer_cpus);
+	css_task_iter_end(&it);
+}
+
+/*
+ * update_prefer_cpumask - update the prefer_cpus mask of a cpuset and
+ *			   all tasks in it
+ * @cs: the cpuset to consider
+ * @trialcs: trial cpuset
+ * @buf: buffer of cpu numbers written to this cpuset
+ */
+static int update_prefer_cpumask(struct cpuset *cs, struct cpuset *trialcs,
+				 const char *buf)
+{
+	int retval;
+
+	if (cs == &top_cpuset)
+		return -EACCES;
+
+	/*
+	 * An empty prefer_cpus is ok which mean that the cpuset tasks disable
+	 * dynamic affinity feature.
+	 * Since cpulist_parse() fails on an empty mask, we special case
+	 * that parsing.
+	 */
+	if (!*buf) {
+		cpumask_clear(trialcs->prefer_cpus);
+	} else {
+		retval = cpulist_parse(buf, trialcs->prefer_cpus);
+		if (retval < 0)
+			return retval;
+	}
+
+	/* Nothing to do if the cpus didn't change */
+	if (cpumask_equal(cs->prefer_cpus, trialcs->prefer_cpus))
+		return 0;
+
+	if (!cpumask_subset(trialcs->prefer_cpus, cs->cpus_allowed))
+		return -EINVAL;
+
+	update_tasks_prefer_cpumask(trialcs);
+
+	spin_lock_irq(&callback_lock);
+	cpumask_copy(cs->prefer_cpus, trialcs->prefer_cpus);
+	spin_unlock_irq(&callback_lock);
+
+	return 0;
+}
+#endif
 
 #ifdef CONFIG_SMP
 /*
@@ -1543,6 +1625,10 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 	else
 		guarantee_online_cpus(cs, cpus_attach);
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_copy(prefer_cpus_attach, cs->prefer_cpus);
+#endif
+
 	guarantee_online_mems(cs, &cpuset_attach_nodemask_to);
 
 	cgroup_taskset_for_each(task, css, tset) {
@@ -1551,6 +1637,9 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 		 * fail.  TODO: have a better way to handle failure here
 		 */
 		WARN_ON_ONCE(set_cpus_allowed_ptr(task, cpus_attach));
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+		set_prefer_cpus_ptr(task, prefer_cpus_attach);
+#endif
 
 		cpuset_change_task_nodemask(task, &cpuset_attach_nodemask_to);
 		cpuset_update_task_spread_flag(cs, task);
@@ -1610,6 +1699,9 @@ typedef enum {
 	FILE_MEMORY_PRESSURE,
 	FILE_SPREAD_PAGE,
 	FILE_SPREAD_SLAB,
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	FILE_DYNAMIC_CPULIST,
+#endif
 } cpuset_filetype_t;
 
 static int cpuset_write_u64(struct cgroup_subsys_state *css, struct cftype *cft,
@@ -1735,6 +1827,11 @@ static ssize_t cpuset_write_resmask(struct kernfs_open_file *of,
 	case FILE_MEMLIST:
 		retval = update_nodemask(cs, trialcs, buf);
 		break;
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	case FILE_DYNAMIC_CPULIST:
+		retval = update_prefer_cpumask(cs, trialcs, buf);
+		break;
+#endif
 	default:
 		retval = -EINVAL;
 		break;
@@ -1778,6 +1875,11 @@ static int cpuset_common_seq_show(struct seq_file *sf, void *v)
 	case FILE_EFFECTIVE_MEMLIST:
 		seq_printf(sf, "%*pbl\n", nodemask_pr_args(&cs->effective_mems));
 		break;
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	case FILE_DYNAMIC_CPULIST:
+		seq_printf(sf, "%*pbl\n", cpumask_pr_args(cs->prefer_cpus));
+		break;
+#endif
 	default:
 		ret = -EINVAL;
 	}
@@ -1935,7 +2037,15 @@ static struct cftype files[] = {
 		.write_u64 = cpuset_write_u64,
 		.private = FILE_MEMORY_PRESSURE_ENABLED,
 	},
-
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	{
+		.name = "preferred_cpus",
+		.seq_show = cpuset_common_seq_show,
+		.write = cpuset_write_resmask,
+		.max_write_len = (100U + 6 * NR_CPUS),
+		.private = FILE_DYNAMIC_CPULIST,
+	},
+#endif
 	{ }	/* terminate */
 };
 
@@ -1959,17 +2069,28 @@ cpuset_css_alloc(struct cgroup_subsys_state *parent_css)
 		goto free_cs;
 	if (!alloc_cpumask_var(&cs->effective_cpus, GFP_KERNEL))
 		goto free_cpus;
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (!alloc_cpumask_var(&cs->prefer_cpus, GFP_KERNEL))
+		goto free_effective_cpus;
+#endif
 
 	set_bit(CS_SCHED_LOAD_BALANCE, &cs->flags);
 	cpumask_clear(cs->cpus_allowed);
 	nodes_clear(cs->mems_allowed);
 	cpumask_clear(cs->effective_cpus);
 	nodes_clear(cs->effective_mems);
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_clear(cs->prefer_cpus);
+#endif
 	fmeter_init(&cs->fmeter);
 	cs->relax_domain_level = -1;
 
 	return &cs->css;
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+free_effective_cpus:
+	free_cpumask_var(cs->effective_cpus);
+#endif
 free_cpus:
 	free_cpumask_var(cs->cpus_allowed);
 free_cs:
@@ -2034,6 +2155,9 @@ static int cpuset_css_online(struct cgroup_subsys_state *css)
 	cs->effective_mems = parent->mems_allowed;
 	cpumask_copy(cs->cpus_allowed, parent->cpus_allowed);
 	cpumask_copy(cs->effective_cpus, parent->cpus_allowed);
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_copy(cs->prefer_cpus, parent->prefer_cpus);
+#endif
 	spin_unlock_irq(&callback_lock);
 out_unlock:
 	mutex_unlock(&cpuset_mutex);
@@ -2065,6 +2189,9 @@ static void cpuset_css_free(struct cgroup_subsys_state *css)
 {
 	struct cpuset *cs = css_cs(css);
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	free_cpumask_var(cs->prefer_cpus);
+#endif
 	free_cpumask_var(cs->effective_cpus);
 	free_cpumask_var(cs->cpus_allowed);
 	kfree(cs);
@@ -2099,6 +2226,9 @@ static void cpuset_fork(struct task_struct *task)
 		return;
 
 	set_cpus_allowed_ptr(task, &current->cpus_allowed);
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	set_prefer_cpus_ptr(task, current->prefer_cpus);
+#endif
 	task->mems_allowed = current->mems_allowed;
 }
 
@@ -2129,11 +2259,17 @@ int __init cpuset_init(void)
 
 	BUG_ON(!alloc_cpumask_var(&top_cpuset.cpus_allowed, GFP_KERNEL));
 	BUG_ON(!alloc_cpumask_var(&top_cpuset.effective_cpus, GFP_KERNEL));
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	BUG_ON(!alloc_cpumask_var(&top_cpuset.prefer_cpus, GFP_KERNEL));
+#endif
 
 	cpumask_setall(top_cpuset.cpus_allowed);
 	nodes_setall(top_cpuset.mems_allowed);
 	cpumask_setall(top_cpuset.effective_cpus);
 	nodes_setall(top_cpuset.effective_mems);
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_clear(top_cpuset.prefer_cpus);
+#endif
 
 	fmeter_init(&top_cpuset.fmeter);
 	set_bit(CS_SCHED_LOAD_BALANCE, &top_cpuset.flags);
@@ -2144,6 +2280,9 @@ int __init cpuset_init(void)
 		return err;
 
 	BUG_ON(!alloc_cpumask_var(&cpus_attach, GFP_KERNEL));
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	BUG_ON(!alloc_cpumask_var(&prefer_cpus_attach, GFP_KERNEL));
+#endif
 
 	return 0;
 }
@@ -2180,6 +2319,9 @@ hotplug_update_tasks_legacy(struct cpuset *cs,
 			    struct cpumask *new_cpus, nodemask_t *new_mems,
 			    bool cpus_updated, bool mems_updated)
 {
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	cpumask_t prefer_cpus;
+#endif
 	bool is_empty;
 
 	spin_lock_irq(&callback_lock);
@@ -2198,6 +2340,13 @@ hotplug_update_tasks_legacy(struct cpuset *cs,
 	if (mems_updated && !nodes_empty(cs->mems_allowed))
 		update_tasks_nodemask(cs);
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	if (!cpumask_subset(cs->prefer_cpus, cs->cpus_allowed)) {
+		cpumask_and(&prefer_cpus, cs->prefer_cpus, cs->cpus_allowed);
+		cpumask_copy(cs->prefer_cpus, &prefer_cpus);
+		update_tasks_prefer_cpumask(cs);
+	}
+#endif
 	is_empty = cpumask_empty(cs->cpus_allowed) ||
 		   nodes_empty(cs->mems_allowed);
 

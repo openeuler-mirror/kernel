@@ -1247,7 +1247,16 @@ struct task_struct {
 #else
 	KABI_RESERVE(5)
 #endif
+
+#if !defined(__GENKSYMS__)
+#if defined(CONFIG_QOS_SCHED_DYNAMIC_AFFINITY)
+	cpumask_t			*prefer_cpus;
+#else
 	KABI_RESERVE(6)
+#endif
+#else
+	KABI_RESERVE(6)
+#endif
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
 
@@ -1962,6 +1971,14 @@ static inline int sched_qos_cpu_overload(void)
 {
 	return 0;
 }
+#endif
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+int dynamic_affinity_enabled(void);
+int set_prefer_cpus_ptr(struct task_struct *p,
+			const struct cpumask *new_mask);
+int sched_prefer_cpus_fork(struct task_struct *p, struct task_struct *orig);
+void sched_prefer_cpus_free(struct task_struct *p);
 #endif
 
 #endif

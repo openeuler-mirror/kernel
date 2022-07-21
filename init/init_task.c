@@ -180,6 +180,9 @@ struct task_struct init_task
 #ifdef CONFIG_SECURITY
 	.security	= NULL,
 #endif
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	.prefer_cpus	= NULL,
+#endif
 #ifdef CONFIG_PID_RESERVE
 	.fork_pid_union = {
 		.fork_pid = 0,
