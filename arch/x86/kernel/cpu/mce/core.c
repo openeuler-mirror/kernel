@@ -1271,6 +1271,7 @@ static void kill_me_maybe(struct callback_head *cb)
 {
 	struct task_struct *p = container_of(cb, struct task_struct, mce_kill_me);
 	int flags = MF_ACTION_REQUIRED;
+	int ret;
 
 	p->mce_count = 0;
 	pr_err("Uncorrected hardware memory error in user-access at %llx", p->mce_addr);
@@ -1278,22 +1279,36 @@ static void kill_me_maybe(struct callback_head *cb)
 	if (!p->mce_ripv)
 		flags |= MF_MUST_KILL;
 
-	if (!memory_failure(p->mce_addr >> PAGE_SHIFT, flags) &&
-	    !(p->mce_kflags & MCE_IN_KERNEL_COPYIN)) {
+	ret = memory_failure(p->mce_addr >> PAGE_SHIFT, flags);
+	if (!ret) {
 		set_mce_nospec(p->mce_addr >> PAGE_SHIFT, p->mce_whole_page);
 		sync_core();
 		return;
 	}
 
-	if (p->mce_vaddr != (void __user *)-1l) {
-		force_sig_mceerr(BUS_MCEERR_AR, p->mce_vaddr, PAGE_SHIFT);
-	} else {
-		pr_err("Memory error not recovered");
-		kill_me_now(cb);
-	}
+	/*
+	 * -EHWPOISON from memory_failure() means that it already sent SIGBUS
+	 * to the current process with the proper error info, so no need to
+	 * send SIGBUS here again.
+	 */
+	if (ret == -EHWPOISON)
+		return;
+
+	pr_err("Memory error not recovered");
+	kill_me_now(cb);
 }
 
-static void queue_task_work(struct mce *m, char *msg, int kill_current_task)
+static void kill_me_never(struct callback_head *cb)
+{
+	struct task_struct *p = container_of(cb, struct task_struct, mce_kill_me);
+
+	p->mce_count = 0;
+	pr_err("Kernel accessed poison in user space at %llx\n", p->mce_addr);
+	if (!memory_failure(p->mce_addr >> PAGE_SHIFT, 0))
+		set_mce_nospec(p->mce_addr >> PAGE_SHIFT, p->mce_whole_page);
+}
+
+static void queue_task_work(struct mce *m, char *msg, void (*func)(struct callback_head *))
 {
 	int count = ++current->mce_count;
 
@@ -1303,11 +1318,7 @@ static void queue_task_work(struct mce *m, char *msg, int kill_current_task)
 		current->mce_kflags = m->kflags;
 		current->mce_ripv = !!(m->mcgstatus & MCG_STATUS_RIPV);
 		current->mce_whole_page = whole_page(m);
-
-		if (kill_current_task)
-			current->mce_kill_me.func = kill_me_now;
-		else
-			current->mce_kill_me.func = kill_me_maybe;
+		current->mce_kill_me.func = func;
 	}
 
 	/* Ten is likely overkill. Don't expect more than two faults before task_work() */
@@ -1477,8 +1488,10 @@ noinstr void do_machine_check(struct pt_regs *regs)
 		/* If this triggers there is no way to recover. Die hard. */
 		BUG_ON(!on_thread_stack() || !user_mode(regs));
 
-		queue_task_work(&m, msg, kill_it);
-
+		if (kill_it)
+			queue_task_work(&m, msg, kill_me_now);
+		else
+			queue_task_work(&m, msg, kill_me_maybe);
 	} else {
 		/*
 		 * Handle an MCE which has happened in kernel space but from
@@ -1495,7 +1508,7 @@ noinstr void do_machine_check(struct pt_regs *regs)
 		}
 
 		if (m.kflags & MCE_IN_KERNEL_COPYIN)
-			queue_task_work(&m, msg, kill_it);
+			queue_task_work(&m, msg, kill_me_never);
 	}
 
 	instrumentation_end();
