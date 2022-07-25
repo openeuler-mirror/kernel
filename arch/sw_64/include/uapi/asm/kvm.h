@@ -5,7 +5,7 @@
 /*
  * KVM SW specific structures and definitions.
  */
-#define SWVM_IRQS 64
+#define SWVM_IRQS 256
 enum SW64_KVM_IRQ {
 	SW64_KVM_IRQ_IPI = 27,
 	SW64_KVM_IRQ_TIMER = 9,
