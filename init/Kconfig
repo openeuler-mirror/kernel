@@ -975,6 +975,15 @@ config QOS_SCHED_SMT_EXPELLER
 	  This feature enable online tasks to expel offline tasks
 	  on the smt sibling cpus, and exclusively occupy CPU resources.
 
+config SCHED_PRIO_LB
+	bool "Priority load balance for CFS"
+	depends on SMP
+	default n
+	help
+	  This feature enable priority load balance
+	  for CFS, which prefer migrating online tasks
+	  and migrating offline tasks secondly.
+
 config FAIR_GROUP_SCHED
 	bool "Group scheduling for SCHED_OTHER"
 	depends on CGROUP_SCHED
