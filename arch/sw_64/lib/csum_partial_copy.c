@@ -61,10 +61,7 @@ csum_partial_cfu_dest_aligned(const unsigned long __user *src,
 	unsigned long checksum = ~0U;
 	int err = 0;
 
-	if (likely(!uaccess_kernel()))
-		err = __copy_from_user(dst, src, len + 8);
-	else
-		memcpy(dst, src, len + 8);
+	err = __copy_from_user(dst, src, len+8);
 
 	while (len > 0) {
 		word = *dst;
@@ -93,10 +90,7 @@ csum_partial_cfu_dest_unaligned(const unsigned long __user *src,
 	unsigned long checksum = ~0U;
 	int err = 0;
 
-	if (likely(!uaccess_kernel()))
-		err = __copy_from_user(dst, src, len + 8);
-	else
-		memcpy(dst, src, len + 8);
+	err = __copy_from_user(dst, src, len+8);
 
 	dst = (unsigned long *)((unsigned long)dst & (~7UL));
 	word = *dst;
