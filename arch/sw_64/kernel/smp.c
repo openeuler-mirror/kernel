@@ -496,19 +496,6 @@ void native_send_call_func_single_ipi(int cpu)
 	send_ipi_message(cpumask_of(cpu), IPI_CALL_FUNC);
 }
 
-static void
-ipi_imb(void *ignored)
-{
-	imb();
-}
-
-void smp_imb(void)
-{
-	/* Must wait other processors to flush their icache before continue. */
-	on_each_cpu(ipi_imb, NULL, 1);
-}
-EXPORT_SYMBOL(smp_imb);
-
 static void ipi_flush_tlb_all(void *ignored)
 {
 	tbiv();
@@ -627,50 +614,6 @@ void flush_tlb_range(struct vm_area_struct *vma, unsigned long start, unsigned l
 	flush_tlb_mm(vma->vm_mm);
 }
 EXPORT_SYMBOL(flush_tlb_range);
-
-static void ipi_flush_icache_page(void *x)
-{
-	struct mm_struct *mm = (struct mm_struct *) x;
-
-	if (mm == current->mm)
-		__load_new_mm_context(mm);
-	else
-		flush_tlb_other(mm);
-}
-
-void flush_icache_user_page(struct vm_area_struct *vma, struct page *page,
-			unsigned long addr, int len)
-{
-	struct mm_struct *mm = vma->vm_mm;
-
-	if ((vma->vm_flags & VM_EXEC) == 0)
-		return;
-	if (!icache_is_vivt_no_ictag())
-		return;
-
-	preempt_disable();
-
-	if (mm == current->mm) {
-		__load_new_mm_context(mm);
-		if (atomic_read(&mm->mm_users) == 1) {
-			int cpu, this_cpu = smp_processor_id();
-
-			for (cpu = 0; cpu < NR_CPUS; cpu++) {
-				if (!cpu_online(cpu) || cpu == this_cpu)
-					continue;
-				if (mm->context.asid[cpu])
-					mm->context.asid[cpu] = 0;
-			}
-			preempt_enable();
-			return;
-		}
-	} else
-		flush_tlb_other(mm);
-
-	smp_call_function(ipi_flush_icache_page, mm, 1);
-
-	preempt_enable();
-}
 
 int native_cpu_disable(void)
 {

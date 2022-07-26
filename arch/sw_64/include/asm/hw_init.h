@@ -85,14 +85,6 @@ static inline unsigned long get_cpu_freq(void)
 	return cpu_desc.frequency;
 }
 
-static inline bool icache_is_vivt_no_ictag(void)
-{
-	/*
-	 * Icache of C3B is vivt with ICtag. C4 will be vipt.
-	 */
-	return (cpu_desc.arch_var == 0x3 && cpu_desc.arch_rev == 0x1);
-}
-
 #define EMUL_FLAG	(0x1UL << 63)
 #define MMSIZE_MASK	(EMUL_FLAG - 1)
 
