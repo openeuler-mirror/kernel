@@ -487,7 +487,7 @@ int do_match(unsigned long address, unsigned long mmcsr, long cause, struct pt_r
 	case MMCSR__DA_MATCH:
 	case MMCSR__DV_MATCH:
 	case MMCSR__DAV_MATCH:
-		dik_show_regs(regs);
+		show_regs(regs);
 
 		if (!(current->ptrace & PT_PTRACED)) {
 			printk(" pid %d %s not be ptraced, return\n", current->pid, current->comm);

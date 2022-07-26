@@ -31,8 +31,10 @@
 
 #include "proto.h"
 
-void dik_show_regs(struct pt_regs *regs)
+void show_regs(struct pt_regs *regs)
 {
+	show_regs_print_info(KERN_DEFAULT);
+
 	printk("pc = [<%016lx>]  ra = [<%016lx>]  ps = %04lx    %s\n",
 	       regs->pc, regs->r26, regs->ps, print_tainted());
 	printk("pc is at %pSR\n", (void *)regs->pc);
@@ -62,8 +64,7 @@ void dik_show_regs(struct pt_regs *regs)
 	printk("gp = %016lx  sp = %p\n", regs->gp, regs+1);
 }
 
-static void
-dik_show_code(unsigned int *pc)
+static void show_code(unsigned int *pc)
 {
 	long i;
 	unsigned int insn;
@@ -93,15 +94,11 @@ void die(char *str, struct pt_regs *regs, long err)
 
 	pr_emerg("%s [#%d]\n", str, ++die_counter);
 
-#ifdef CONFIG_SMP
-	printk("CPU %d ", hard_smp_processor_id());
-#endif
-	printk("%s(%d): %s %ld\n", current->comm, task_pid_nr(current), str, err);
-
 	ret = notify_die(DIE_OOPS, str, regs, err, 0, SIGSEGV);
 
 	print_modules();
-	dik_show_regs(regs);
+	show_regs(regs);
+	show_code((unsigned int *)regs->pc);
 	show_stack(current, NULL, KERN_EMERG);
 
 	bust_spinlocks(0);
@@ -508,21 +505,7 @@ got_exception:
 	 * Since the registers are in a weird format, dump them ourselves.
 	 */
 
-	printk("%s(%d): unhandled unaligned exception\n",
-	       current->comm, task_pid_nr(current));
-
-	dik_show_regs(regs);
-	dik_show_code((unsigned int *)pc);
-	show_stack(current, NULL, KERN_EMERG);
-
-	if (test_and_set_thread_flag(TIF_DIE_IF_KERNEL)) {
-		printk("die_if_kernel recursion detected.\n");
-		local_irq_enable();
-		while (1)
-			asm("nop");
-	}
-	do_exit(SIGSEGV);
-
+	die("Unhandled unaligned exception", regs, error);
 }
 
 /*

@@ -102,17 +102,6 @@ void machine_power_off(void)
 }
 
 
-/* Used by sysrq-p, among others.  I don't believe r9-r15 are ever
- * saved in the context it's used.
- */
-
-void
-show_regs(struct pt_regs *regs)
-{
-	show_regs_print_info(KERN_DEFAULT);
-	dik_show_regs(regs);
-}
-
 /*
  * Re-start a thread when doing execve()
  */

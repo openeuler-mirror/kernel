@@ -32,7 +32,7 @@ static inline int notify_page_fault(struct pt_regs *regs, unsigned long mmcsr)
 #endif
 
 extern void die(char *, struct pt_regs *, long);
-extern void dik_show_regs(struct pt_regs *regs);
+extern void show_regs(struct pt_regs *regs);
 
 void show_all_vma(void)
 {
@@ -325,7 +325,7 @@ good_area:
 	if (unlikely(segv_debug_enabled)) {
 		pr_info("fault: want to send_segv: pid %d, cause = %#lx, mmcsr = %#lx, address = %#lx, pc %#lx\n",
 				current->pid, cause, mmcsr, address, regs->pc);
-		dik_show_regs(regs);
+		show_regs(regs);
 		show_all_vma();
 	}
 
