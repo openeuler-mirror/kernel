@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2207.3.0
+%global hulkrelease 2207.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0159
+Release: %{hulkrelease}.0160
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,32 @@ fi
 %endif
 
 %changelog
+
+* Mon Jul 25 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2207.4.0.0160
+- inotify: show inotify mask flags in proc fdinfo
+- io_uring: always grab file table for deferred statx
+- bpf: Don't redirect packets with invalid pkt_len
+- config: enable CONFIG_QOS_SCHED_DYNAMIC_AFFINITY by default
+- sched: Add statistics for scheduler dynamic affinity
+- sched: Adjust cpu range in load balance dynamicly
+- sched: Adjust wakeup cpu range according CPU util dynamicly
+- cpuset: Introduce new interface for scheduler dynamic affinity
+- sched: Introduce dynamic affinity for cfs scheduler
+- crypto: hisilicon/sec - don't sleep when in softirq
+- video: fbdev: sm712fb: Fix crash in smtcfb_write()
+- video: fbdev: sm712fb: Fix crash in smtcfb_read()
+- scsi: ses: fix slab-out-of-bounds in ses_enclosure_data_process
+- block: don't delete queue kobject before its children
+- etmem:fix kernel stack overflow in do_swapcache_reclaim
+- etmem:fix kasan slab-out-of-bounds in do_swapcache_reclaim
+- nbd: don't clear 'NBD_CMD_INFLIGHT' flag if request is not completed
+- blk-throttle: fix io hung due to configuration updates
+- block: fix NULL pointer dereference in disk_release()
+- block, bfq: make bfq_has_work() more accurate
+- blk-mq: fix panic during blk_mq_run_work_fn()
+- blk-mq: cancel blk-mq dispatch work in both blk_cleanup_queue and disk_release()
+- blk-mq: move cancel of hctx->run_work to the front of blk_exit_queue
+- ext4: fix race condition between ext4_ioctl_setflags and ext4_fiemap
 
 * Mon Jul 18 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2207.3.0.0159
 - block: fix that part scan is disabled in device_add_disk()
