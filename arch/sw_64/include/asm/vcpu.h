@@ -41,6 +41,16 @@ struct vcpucb {
 	unsigned long exit_reason;
 	unsigned long ipaddr;
 	unsigned long vcpu_irq_vector;
+	unsigned long pri_base;
+	unsigned long stack_pc_dfault;
+	unsigned long guest_p20;
+	unsigned long guest_dfault_double;
+	unsigned long guest_irqs_pending;
+	unsigned long guest_hm_r30;
+	unsigned long migration_mark;
+	unsigned long guest_longtime;
+	unsigned long guest_longtime_offset;
+	unsigned long reserved[3];
 };
 
 #endif /* __ASSEMBLY__ */

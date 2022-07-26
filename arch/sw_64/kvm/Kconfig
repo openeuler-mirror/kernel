@@ -29,6 +29,7 @@ config KVM
 	select KVM_VFIO
 	select TUN
 	select GENERIC_ALLOCATOR
+	select KVM_GENERIC_DIRTYLOG_READ_PROTECT
 	help
 	  Support for hosting Guest kernels.
 	  We don't support KVM with 3-level page tables yet.
