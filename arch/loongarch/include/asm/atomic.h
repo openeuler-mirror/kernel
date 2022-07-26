@@ -159,7 +159,7 @@ static inline int arch_atomic_sub_if_positive(int i, atomic_t *v)
 		__asm__ __volatile__(
 		"1:	ll.w	%1, %2		# atomic_sub_if_positive\n"
 		"	addi.w	%0, %1, %3				\n"
-		"	or	%1, %0, $zero				\n"
+		"	move	%1, %0					\n"
 		"	blt	%0, $zero, 2f				\n"
 		"	sc.w	%1, %2					\n"
 		"	beq	$zero, %1, 1b				\n"
@@ -172,7 +172,7 @@ static inline int arch_atomic_sub_if_positive(int i, atomic_t *v)
 		__asm__ __volatile__(
 		"1:	ll.w	%1, %2		# atomic_sub_if_positive\n"
 		"	sub.w	%0, %1, %3				\n"
-		"	or	%1, %0, $zero				\n"
+		"	move	%1, %0					\n"
 		"	blt	%0, $zero, 2f				\n"
 		"	sc.w	%1, %2					\n"
 		"	beq	$zero, %1, 1b				\n"
@@ -322,7 +322,7 @@ static inline long arch_atomic64_sub_if_positive(long i, atomic64_t *v)
 		__asm__ __volatile__(
 		"1:	ll.d	%1, %2	# atomic64_sub_if_positive	\n"
 		"	addi.d	%0, %1, %3				\n"
-		"	or	%1, %0, $zero				\n"
+		"	move	%1, %0					\n"
 		"	blt	%0, $zero, 2f				\n"
 		"	sc.d	%1, %2					\n"
 		"	beq	%1, $zero, 1b				\n"
@@ -335,7 +335,7 @@ static inline long arch_atomic64_sub_if_positive(long i, atomic64_t *v)
 		__asm__ __volatile__(
 		"1:	ll.d	%1, %2	# atomic64_sub_if_positive	\n"
 		"	sub.d	%0, %1, %3				\n"
-		"	or	%1, %0, $zero				\n"
+		"	move	%1, %0					\n"
 		"	blt	%0, $zero, 2f				\n"
 		"	sc.d	%1, %2					\n"
 		"	beq	%1, $zero, 1b				\n"
