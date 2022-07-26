@@ -27,11 +27,9 @@ static inline void flush_tlb_current_page(struct mm_struct *mm,
 					  struct vm_area_struct *vma,
 					  unsigned long addr)
 {
-	if (vma->vm_flags & VM_EXEC) {
+	if (vma->vm_flags & VM_EXEC)
 		tbis(addr);
-		if (icache_is_vivt_no_ictag())
-			imb();
-	} else
+	else
 		tbisd(addr);
 }
 
