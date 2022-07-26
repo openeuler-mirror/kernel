@@ -28,11 +28,11 @@ static inline void flush_tlb_current_page(struct mm_struct *mm,
 					  unsigned long addr)
 {
 	if (vma->vm_flags & VM_EXEC) {
-		tbi(3, addr);
+		tbis(addr);
 		if (icache_is_vivt_no_ictag())
 			imb();
 	} else
-		tbi(2, addr);
+		tbisd(addr);
 }
 
 
@@ -65,7 +65,7 @@ static inline void flush_tlb_other(struct mm_struct *mm)
  */
 static inline void flush_tlb_all(void)
 {
-	tbia();
+	tbiv();
 }
 
 /* Flush a specified user mapping.  */

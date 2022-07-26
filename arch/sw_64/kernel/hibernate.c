@@ -27,8 +27,7 @@ void restore_processor_state(void)
 	wrpcbb(vcb->pcbb);
 	wrptbr(vcb->ptbr);
 	sflush();
-	tbia();
-	imb();
+	tbiv();
 }
 
 int swsusp_arch_resume(void)
