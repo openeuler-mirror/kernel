@@ -193,11 +193,27 @@ __CALL_HMC_RW2(cpuid, unsigned long, unsigned long, unsigned long);
 })
 
 #define tbi(x, y)	__tbi(x, __r17 = (y), "1" (__r17))
-#define tbisi(x)	__tbi(1, __r17 = (x), "1" (__r17))
-#define tbisd(x)	__tbi(2, __r17 = (x), "1" (__r17))
-#define tbis(x)		__tbi(3, __r17 = (x), "1" (__r17))
-#define tbiap()		__tbi(-1, /* no second argument */)
+
+/* Invalidate all TLB, only used by hypervisor */
 #define tbia()		__tbi(-2, /* no second argument */)
+
+/* Invalidate TLB for all processes with currnet VPN */
+#define tbivp()		__tbi(-1, /* no second argument */)
+
+/* Invalidate all TLB with current VPN */
+#define tbiv()		__tbi(0, /* no second argument */)
+
+/* Invalidate ITLB of addr with current UPN and VPN */
+#define tbisi(addr)	__tbi(1, __r17 = (addr), "1" (__r17))
+
+/* Invalidate DTLB of addr with current UPN and VPN */
+#define tbisd(addr)	__tbi(2, __r17 = (addr), "1" (__r17))
+
+/* Invalidate TLB of addr with current UPN and VPN */
+#define tbis(addr)	__tbi(3, __r17 = (addr), "1" (__r17))
+
+/* Invalidate all user TLB with current UPN and VPN */
+#define tbiu()		__tbi(4, /* no second argument */)
 
 #endif /* !__ASSEMBLY__ */
 #endif /* __KERNEL__ */

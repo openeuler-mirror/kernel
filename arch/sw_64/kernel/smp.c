@@ -511,7 +511,7 @@ EXPORT_SYMBOL(smp_imb);
 
 static void ipi_flush_tlb_all(void *ignored)
 {
-	tbia();
+	tbiv();
 }
 
 void flush_tlb_all(void)

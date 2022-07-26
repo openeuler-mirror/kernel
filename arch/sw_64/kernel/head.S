@@ -71,7 +71,7 @@ __smp_callin:
 	br	$27, 2f		# we copy this from above "br $27 1f"
 2:	ldgp	$29, 0($27)	# First order of business, load the GP.
 
-	subl	$31, 2, $16
+	bis	$31, $31, $16	# invalidate all TLB with current VPN
 	sys_call HMC_tbi
 
 	sys_call HMC_whami	# Get hard cid

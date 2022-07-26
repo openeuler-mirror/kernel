@@ -104,7 +104,7 @@ switch_to_system_map(void)
 	init_thread_info.pcb.ptbr = newptbr;
 	init_thread_info.pcb.flags = 1;	/* set FEN, clear everything else */
 	original_pcb_ptr = load_PCB(&init_thread_info.pcb);
-	tbia();
+	tbiv();
 }
 
 void __init callback_init(void)

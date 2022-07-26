@@ -72,7 +72,7 @@ __reload_thread(struct pcb_struct *pcb)
  * need to do "p->mm->context = 0".
  *
  * If we need more ASN's than the processor has, we invalidate the old
- * user TLB's (tbiap()) and start a new ASN version. That will automatically
+ * user TLB's (tbivp()) and start a new ASN version. That will automatically
  * force a new asn for any other processes the next time they want to
  * run.
  */
@@ -84,7 +84,7 @@ __get_new_mm_context(struct mm_struct *mm, long cpu)
 	unsigned long next = asn + 1;
 
 	if ((asn & HARDWARE_ASN_MASK) >= HARDWARE_ASN_MASK) {
-		tbiap();
+		tbivp();
 		next = (asn & ~HARDWARE_ASN_MASK) + ASN_FIRST_VERSION;
 	}
 	cpu_last_asn(cpu) = next;
