@@ -336,4 +336,7 @@ LIBBPF_0.2.0 {
 		perf_buffer__epoll_fd;
 		perf_buffer__consume_buffer;
 		xsk_socket__create_shared;
+		bpf_program__attach_sched;
+		bpf_program__is_sched;
+		bpf_program__set_sched;
 } LIBBPF_0.1.0;
