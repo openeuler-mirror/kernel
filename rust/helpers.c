@@ -504,13 +504,13 @@ EXPORT_SYMBOL_GPL(rust_helper_read_seqcount_retry);
 
 void rust_helper_write_seqcount_begin(seqcount_t *s)
 {
-	do_write_seqcount_begin(s);
+	//do_write_seqcount_begin(s);
 }
 EXPORT_SYMBOL_GPL(rust_helper_write_seqcount_begin);
 
 void rust_helper_write_seqcount_end(seqcount_t *s)
 {
-	do_write_seqcount_end(s);
+	//do_write_seqcount_end(s);
 }
 EXPORT_SYMBOL_GPL(rust_helper_write_seqcount_end);
 

@@ -205,7 +205,7 @@ impl<T: Filter> Registration<T> {
         this.hook.priority = pri_base.saturating_add(priority);
         this.hook.priv_ = data_pointer as _;
         this.hook.hook = Some(Self::hook_callback);
-        crate::static_assert!(bindings::nf_hook_ops_type_NF_HOOK_OP_UNDEFINED == 0);
+     //   crate::static_assert!(bindings::nf_hook_ops_type_NF_HOOK_OP_UNDEFINED == 0);
 
         if let Some(ref device) = dev {
             this.hook.dev = device.0.get();
@@ -276,13 +276,13 @@ pub mod netdev {
     use crate::bindings;
 
     /// Hooks allowed in the [`super::Family::NetDev`] family.
-    #[repr(u32)]
+    //#[repr(u32)]
     pub enum Hook {
-        /// All inbound packets through the given device.
-        Ingress = bindings::nf_dev_hooks_NF_NETDEV_INGRESS,
+      //  /// All inbound packets through the given device.
+    //    Ingress = bindings::nf_dev_hooks_NF_NETDEV_INGRESS,
 
-        /// All outbound packets through the given device.
-        Egress = bindings::nf_dev_hooks_NF_NETDEV_EGRESS,
+       // /// All outbound packets through the given device.
+     //   Egress = bindings::nf_dev_hooks_NF_NETDEV_EGRESS,
     }
 }
 

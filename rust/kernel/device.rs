@@ -148,7 +148,7 @@ pub unsafe trait RawDevice {
         // `fmt::Arguments`, which is what we're passing as the last argument.
         #[cfg(CONFIG_PRINTK)]
         unsafe {
-            bindings::_dev_printk(
+            bindings::dev_printk(
                 klevel as *const _ as *const c_types::c_char,
                 self.raw_device(),
                 c_str!("%pA").as_char_ptr(),

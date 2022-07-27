@@ -375,7 +375,7 @@ impl Domain {
     /// `ChainedGuard` instance.
     pub fn generic_handle_chained(&self, hwirq: u32, _guard: &ChainedGuard<'_>) {
         // SAFETY: `ptr` is valid by the type invariants.
-        unsafe { bindings::generic_handle_domain_irq(self.ptr, hwirq) };
+        //unsafe { bindings::generic_handle_domain_irq(self.ptr, hwirq) };
     }
 }
 

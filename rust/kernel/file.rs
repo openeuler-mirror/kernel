@@ -539,6 +539,10 @@ impl<A: OpenAdapter<T::OpenData>, T: Operations> OperationsVtable<A, T> {
         } else {
             None
         },
+        kabi_reserved1: 0,
+        kabi_reserved2: 0,
+        kabi_reserved3: 0,
+        kabi_reserved4: 0,
     };
 
     /// Builds an instance of [`struct file_operations`].

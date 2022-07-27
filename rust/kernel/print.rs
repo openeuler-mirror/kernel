@@ -104,7 +104,7 @@ pub unsafe fn call_printk(
     // `_printk` does not seem to fail in any path.
     #[cfg(CONFIG_PRINTK)]
     unsafe {
-        bindings::_printk(
+        bindings::printk(
             format_string.as_ptr() as _,
             module_name.as_ptr(),
             &args as *const _ as *const c_void,
@@ -125,7 +125,7 @@ pub fn call_printk_cont(args: fmt::Arguments<'_>) {
     // SAFETY: The format string is fixed.
     #[cfg(CONFIG_PRINTK)]
     unsafe {
-        bindings::_printk(
+        bindings::printk(
             format_strings::CONT.as_ptr() as _,
             &args as *const _ as *const c_void,
         );

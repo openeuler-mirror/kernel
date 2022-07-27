@@ -16,6 +16,8 @@ use core::ptr::{self, NonNull};
 #[doc(inline)]
 pub use core::alloc::*;
 
+use core::marker::Destruct;
+
 #[cfg(test)]
 mod tests;
 
@@ -331,7 +333,7 @@ unsafe fn exchange_malloc(size: usize, align: usize) -> *mut u8 {
 // well.
 // For example if `Box` is changed to  `struct Box<T: ?Sized, A: Allocator>(Unique<T>, A)`,
 // this function has to be changed to `fn box_free<T: ?Sized, A: Allocator>(Unique<T>, A)` as well.
-pub(crate) const unsafe fn box_free<T: ?Sized, A: ~const Allocator + ~const Drop>(
+pub(crate) const unsafe fn box_free<T: ?Sized, A: ~const Allocator + ~const Destruct>(
     ptr: Unique<T>,
     alloc: A,
 ) {
@@ -387,7 +389,7 @@ pub const fn handle_alloc_error(layout: Layout) -> ! {
 #[cfg(all(not(no_global_oom_handling), test))]
 pub use std::alloc::handle_alloc_error;
 
-#[cfg(all(not(no_global_oom_handling), not(any(target_os = "hermit", test))))]
+#[cfg(all(not(no_global_oom_handling), not(test)))]
 #[doc(hidden)]
 #[allow(unused_attributes)]
 #[unstable(feature = "alloc_internals", issue = "none")]
@@ -399,7 +401,7 @@ pub mod __alloc_error_handler {
     // if there is no `#[alloc_error_handler]`
     #[rustc_std_internal_symbol]
     pub unsafe extern "C-unwind" fn __rdl_oom(size: usize, _align: usize) -> ! {
-        panic!("memory allocation of {} bytes failed", size)
+        panic!("memory allocation of {size} bytes failed")
     }
 
     // if there is an `#[alloc_error_handler]`
