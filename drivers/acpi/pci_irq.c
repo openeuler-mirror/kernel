@@ -405,8 +405,14 @@ int acpi_pci_irq_enable(struct pci_dev *dev)
 	 * controller and must therefore be considered active high
 	 * as default.
 	 */
+#ifdef CONFIG_LOONGARCH
+	int polarity = acpi_irq_model == ACPI_IRQ_MODEL_GIC ||
+			acpi_irq_model == ACPI_IRQ_MODEL_LPIC ?
+			ACPI_ACTIVE_HIGH : ACPI_ACTIVE_LOW;
+#else
 	int polarity = acpi_irq_model == ACPI_IRQ_MODEL_GIC ?
 				      ACPI_ACTIVE_HIGH : ACPI_ACTIVE_LOW;
+#endif
 	char *link = NULL;
 	char link_desc[16];
 	int rc;

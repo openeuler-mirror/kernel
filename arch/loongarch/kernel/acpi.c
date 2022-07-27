@@ -165,6 +165,7 @@ static void __init acpi_process_madt(void)
 	acpi_table_parse_madt(ACPI_MADT_TYPE_EIO_PIC,
 			acpi_parse_eio_master, MAX_IO_PICS);
 
+	acpi_irq_model = ACPI_IRQ_MODEL_LPIC;
 	loongson_sysconf.nr_cpus = num_processors;
 }
 
