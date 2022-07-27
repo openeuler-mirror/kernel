@@ -33,9 +33,8 @@ void foo(void)
 	OFFSET(PSTATE_FPREGS, processor_state, fpregs);
 	OFFSET(PSTATE_FPCR, processor_state, fpcr);
 #ifdef CONFIG_HIBERNATION
-	OFFSET(PSTATE_PCB, processor_state, pcb);
+	OFFSET(PSTATE_SP, processor_state, sp);
 #endif
-	OFFSET(PCB_KSP, pcb_struct, ksp);
 	OFFSET(PBE_ADDR, pbe, address);
 	OFFSET(PBE_ORIG_ADDR, pbe, orig_address);
 	OFFSET(PBE_NEXT, pbe, next);

@@ -283,7 +283,6 @@ do_entIF(unsigned long inst_type, struct pt_regs *regs)
 		 * attacks. So turn the bleeding FPU back on and be done
 		 * with it.
 		 */
-		current_thread_info()->pcb.flags |= 1;
 		fpu_enable();
 		return;
 

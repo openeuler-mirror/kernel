@@ -15,13 +15,8 @@ typedef struct {
 
 
 struct pcb_struct {
-	unsigned long ksp;
 	unsigned long usp;
-	unsigned long ptbr;
-	unsigned int pcc;
-	unsigned int asn;
 	unsigned long tp;
-	unsigned long flags;
 	unsigned long da_match, da_mask;
 	unsigned long dv_match, dv_mask;
 	unsigned long dc_ctl;

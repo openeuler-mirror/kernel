@@ -39,7 +39,7 @@ struct processor_state {
 	struct callee_saved_fpregs fpregs;
 	unsigned long fpcr;
 #ifdef CONFIG_HIBERNATION
-	struct pcb_struct pcb;
+	unsigned long sp;
 	struct vcpucb vcb;
 #endif
 };
