@@ -6707,7 +6707,8 @@ load_program(struct bpf_program *prog, struct bpf_insn *insns, int insns_cnt,
 	    prog->type == BPF_PROG_TYPE_LSM) {
 		load_attr.attach_btf_id = prog->attach_btf_id;
 	} else if (prog->type == BPF_PROG_TYPE_TRACING ||
-		   prog->type == BPF_PROG_TYPE_EXT) {
+		   prog->type == BPF_PROG_TYPE_EXT ||
+		   prog->type == BPF_PROG_TYPE_SCHED) {
 		load_attr.attach_prog_fd = prog->attach_prog_fd;
 		load_attr.attach_btf_id = prog->attach_btf_id;
 	} else {
