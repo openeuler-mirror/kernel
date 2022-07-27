@@ -30,8 +30,7 @@ ENTRY(swsusp_arch_suspend)
 	rfpcr	$f0
 	fstd	$f0, PSTATE_FPCR($16)
 
-	ldi	$1, PSTATE_PCB($16)
-	stl	sp, PCB_KSP($1)
+	stl	sp, PSTATE_SP($16)
 	call	swsusp_save
 	ldi	$16, hibernate_state
 	ldi	$1, PSTATE_REGS($16)
@@ -112,8 +111,7 @@ $hibernate_setfpec_over:
 	vldd	$f8, CALLEE_F8($1)
 	vldd	$f9, CALLEE_F9($1)
 
-	ldi	$1, PSTATE_PCB($16)
-	ldl	sp, PCB_KSP($1)
+	ldl	sp, PSTATE_SP($16)
 
 	ldi	$8, 0x3fff
 	bic	sp, $8, $8
