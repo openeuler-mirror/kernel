@@ -159,7 +159,7 @@ bool hclge_reset_end_it(struct hnae3_handle *handle, bool done)
 			nic_call_event(netdev, HNAE3_RESET_DONE_CUSTOM);
 	}
 
-	if (hdev->reset_fail_cnt >= HCLGE_RESET_MAX_FAIL_CNT) {
+	if (hdev->rst_stats.reset_fail_cnt >= HCLGE_RESET_MAX_FAIL_CNT) {
 		dev_err(&hdev->pdev->dev, "IT Report Reset fail!\n");
 		if (nic_event_call) {
 			if (hdev->reset_type == HNAE3_FUNC_RESET)
