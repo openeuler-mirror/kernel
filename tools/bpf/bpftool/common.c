@@ -66,6 +66,7 @@ const char * const attach_type_name[__MAX_BPF_ATTACH_TYPE] = {
 	[BPF_MODIFY_RETURN]		= "mod_ret",
 	[BPF_LSM_MAC]			= "lsm_mac",
 	[BPF_SK_LOOKUP]			= "sk_lookup",
+	[BPF_SCHED]			= "sched",
 };
 
 void p_err(const char *fmt, ...)

@@ -28,6 +28,7 @@
 #include <linux/delay.h>
 #include <linux/tracehook.h>
 #endif
+#include <linux/bpf_sched.h>
 
 /*
  * Targeted preemption latency for CPU-bound tasks:
@@ -282,32 +283,10 @@ const struct sched_class fair_sched_class;
  */
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
-static inline struct task_struct *task_of(struct sched_entity *se)
-{
-	SCHED_WARN_ON(!entity_is_task(se));
-	return container_of(se, struct task_struct, se);
-}
 
 /* Walk up scheduling entities hierarchy */
 #define for_each_sched_entity(se) \
 		for (; se; se = se->parent)
-
-static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
-{
-	return p->se.cfs_rq;
-}
-
-/* runqueue on which this entity is (to be) queued */
-static inline struct cfs_rq *cfs_rq_of(struct sched_entity *se)
-{
-	return se->cfs_rq;
-}
-
-/* runqueue "owned" by this group */
-static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
-{
-	return grp->my_q;
-}
 
 static inline void cfs_rq_tg_path(struct cfs_rq *cfs_rq, char *path, int len)
 {
@@ -469,32 +448,8 @@ find_matching_se(struct sched_entity **se, struct sched_entity **pse)
 
 #else	/* !CONFIG_FAIR_GROUP_SCHED */
 
-static inline struct task_struct *task_of(struct sched_entity *se)
-{
-	return container_of(se, struct task_struct, se);
-}
-
 #define for_each_sched_entity(se) \
 		for (; se; se = NULL)
-
-static inline struct cfs_rq *task_cfs_rq(struct task_struct *p)
-{
-	return &task_rq(p)->cfs;
-}
-
-static inline struct cfs_rq *cfs_rq_of(struct sched_entity *se)
-{
-	struct task_struct *p = task_of(se);
-	struct rq *rq = task_rq(p);
-
-	return &rq->cfs;
-}
-
-/* runqueue "owned" by this group */
-static inline struct cfs_rq *group_cfs_rq(struct sched_entity *grp)
-{
-	return NULL;
-}
 
 static inline void cfs_rq_tg_path(struct cfs_rq *cfs_rq, char *path, int len)
 {
@@ -4520,6 +4475,18 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 
 	ideal_runtime = sched_slice(cfs_rq, curr);
 	delta_exec = curr->sum_exec_runtime - curr->prev_sum_exec_runtime;
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_check_preempt_tick(curr, delta_exec);
+
+		if (ret < 0)
+			return;
+		else if (ret > 0)
+			resched_curr(rq_of(cfs_rq));
+	}
+#endif
+
 	if (delta_exec > ideal_runtime) {
 		resched_curr(rq_of(cfs_rq));
 		/*
@@ -7089,6 +7056,15 @@ wakeup_preempt_entity(struct sched_entity *curr, struct sched_entity *se)
 {
 	s64 gran, vdiff = curr->vruntime - se->vruntime;
 
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_wakeup_preempt_entity(curr, se);
+
+		if (ret)
+			return ret;
+	}
+#endif
+
 	if (vdiff <= 0)
 		return -1;
 
@@ -7174,6 +7150,17 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	if (unlikely(task_has_idle_policy(curr)) &&
 	    likely(!task_has_idle_policy(p)))
 		goto preempt;
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_check_preempt_wakeup(current, p);
+
+		if (ret < 0)
+			return;
+		else if (ret > 0)
+			goto preempt;
+	}
+#endif
 
 	/*
 	 * Batch and idle tasks do not preempt non-idle tasks (their preemption

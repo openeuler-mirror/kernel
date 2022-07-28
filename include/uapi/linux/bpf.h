@@ -199,6 +199,7 @@ enum bpf_prog_type {
 	BPF_PROG_TYPE_EXT,
 	BPF_PROG_TYPE_LSM,
 	BPF_PROG_TYPE_SK_LOOKUP,
+	BPF_PROG_TYPE_SCHED,
 };
 
 enum bpf_attach_type {
@@ -240,6 +241,7 @@ enum bpf_attach_type {
 	BPF_XDP_CPUMAP,
 	BPF_SK_LOOKUP,
 	BPF_XDP,
+	BPF_SCHED,
 	__MAX_BPF_ATTACH_TYPE
 };
 
@@ -3755,6 +3757,26 @@ union bpf_attr {
  *             Get Ipv4 origdst or replysrc. Works with IPv4.
  *     Return
  *             0 on success, or a negative error in case of failure.
+ *
+ * u64 bpf_sched_entity_to_tgidpid(struct sched_entity *se)
+ *	Description
+ *		Return task's encoded tgid and pid if the sched entity is a task.
+ *	Return
+ *		Tgid and pid encoded as tgid << 32 \| pid, if *se* is a task. (u64)-1 otherwise.
+ *
+ * u64 bpf_sched_entity_to_cgrpid(struct sched_entity *se)
+ *	Description
+ *		Return cgroup id if the given sched entity is a cgroup.
+ *	Return
+ *		Cgroup id, if *se* is a cgroup. (u64)-1 otherwise.
+ *
+ * long bpf_sched_entity_belongs_to_cgrp(struct sched_entity *se, u64 cgrpid)
+ *	Description
+ *		Checks whether the sched entity belongs to a cgroup or
+ *		it's sub-tree. It doesn't require a cgroup CPU controller
+ *		to be enabled.
+ *	Return
+ *		1 if the sched entity belongs to a cgroup, 0 otherwise.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3915,6 +3937,9 @@ union bpf_attr {
 	FN(redirect_peer),		\
 	FN(get_sockops_uid_gid),	\
 	FN(sk_original_addr),		\
+	FN(sched_entity_to_tgidpid),	\
+	FN(sched_entity_to_cgrpid),		\
+	FN(sched_entity_belongs_to_cgrp),	\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
