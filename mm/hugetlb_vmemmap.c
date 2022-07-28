@@ -176,6 +176,7 @@
  */
 #define pr_fmt(fmt)	"HugeTLB: " fmt
 
+#include <linux/dynamic_hugetlb.h>
 #include "hugetlb_vmemmap.h"
 
 /*
@@ -304,6 +305,12 @@ void __init hugetlb_vmemmap_init(struct hstate *h)
 	BUILD_BUG_ON(__NR_USED_SUBPAGE >=
 		     RESERVE_VMEMMAP_SIZE / sizeof(struct page));
 
+	if (enable_dhugetlb) {
+		pr_warn_once("cannot optimize vmemmap pages due to conflict with dynamic hugetlb\n");
+		static_branch_disable(&hugetlb_optimize_vmemmap_key);
+		return;
+	}
+
 	if (!is_power_of_2(sizeof(struct page))) {
 		pr_warn_once("cannot optimize vmemmap pages because \"struct page\" crosses page boundaries\n");
 		static_branch_disable(&hugetlb_optimize_vmemmap_key);
@@ -366,8 +373,10 @@ static __init int hugetlb_vmemmap_sysctls_init(void)
 	/*
 	 * If "memory_hotplug.memmap_on_memory" is enabled or "struct page"
 	 * crosses page boundaries, the vmemmap pages cannot be optimized.
+	 * If "dynamic hugetlb" is enabled, the vmemmap pages cannot be
+	 * optimized.
 	 */
-	if (is_power_of_2(sizeof(struct page)))
+	if (is_power_of_2(sizeof(struct page)) && !enable_dhugetlb)
 		register_sysctl_init("vm", hugetlb_vmemmap_sysctls);
 
 	return 0;

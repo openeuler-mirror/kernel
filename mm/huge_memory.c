@@ -401,7 +401,7 @@ static int __init hugepage_init(void)
 	 */
 	if (enable_dhugetlb) {
 		transparent_hugepage_flags = 0;
-		pr_info("transparent hugepage is disabled due to confilct with dynamic hugetlb\n");
+		pr_info("transparent hugepage is disabled due to conflict with dynamic hugetlb\n");
 		return -EINVAL;
 	}
 

@@ -1150,6 +1150,6 @@ static int __init dynamic_hugetlb_setup(char *s)
 {
 	if (!strcmp(s, "on"))
 		enable_dhugetlb = true;
-	return 1;
+	return 0;
 }
-__setup("dynamic_hugetlb=", dynamic_hugetlb_setup);
+early_param("dynamic_hugetlb", dynamic_hugetlb_setup);
