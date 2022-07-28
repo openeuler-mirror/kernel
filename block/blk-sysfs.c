@@ -910,6 +910,12 @@ int blk_register_queue(struct gendisk *disk)
 		kobject_uevent(&q->elevator->kobj, KOBJ_ADD);
 	mutex_unlock(&q->sysfs_lock);
 
+
+	/*
+	 * Set the flag at last, so that block devcie can't be opened
+	 * before it's registration is done.
+	 */
+	disk->flags |= GENHD_FL_UP;
 	ret = 0;
 unlock:
 	mutex_unlock(&q->sysfs_dir_lock);
