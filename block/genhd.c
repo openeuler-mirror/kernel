@@ -687,25 +687,10 @@ static int exact_lock(dev_t devt, void *data)
 	return 0;
 }
 
-static void disk_scan_partitions(struct gendisk *disk)
-{
-	struct block_device *bdev;
-
-	if (!get_capacity(disk) || !disk_part_scan_enabled(disk))
-		return;
-
-	set_bit(GD_NEED_PART_SCAN, &disk->state);
-	bdev = blkdev_get_by_dev(disk_devt(disk), FMODE_READ, NULL);
-	if (!IS_ERR(bdev))
-		blkdev_put(bdev, FMODE_READ);
-}
-
 static void register_disk(struct device *parent, struct gendisk *disk,
 			  const struct attribute_group **groups)
 {
 	struct device *ddev = disk_to_dev(disk);
-	struct disk_part_iter piter;
-	struct hd_struct *part;
 	int err;
 
 	ddev->parent = parent;
@@ -742,18 +727,6 @@ static void register_disk(struct device *parent, struct gendisk *disk,
 
 	if (disk->flags & GENHD_FL_HIDDEN)
 		return;
-
-	disk_scan_partitions(disk);
-
-	/* announce disk after possible partitions are created */
-	dev_set_uevent_suppress(ddev, 0);
-	kobject_uevent(&ddev->kobj, KOBJ_ADD);
-
-	/* announce possible partitions */
-	disk_part_iter_init(&piter, disk, 0);
-	while ((part = disk_part_iter_next(&piter)))
-		kobject_uevent(&part_to_dev(part)->kobj, KOBJ_ADD);
-	disk_part_iter_exit(&piter);
 
 	if (disk->queue->backing_dev_info->dev) {
 		err = sysfs_create_link(&ddev->kobj,
