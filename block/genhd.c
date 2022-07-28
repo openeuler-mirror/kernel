@@ -799,8 +799,6 @@ static void __device_add_disk(struct device *parent, struct gendisk *disk,
 	WARN_ON(!disk->minors &&
 		!(disk->flags & (GENHD_FL_EXT_DEVT | GENHD_FL_HIDDEN)));
 
-	disk->flags |= GENHD_FL_UP;
-
 	retval = blk_alloc_devt(&disk->part0, &devt);
 	if (retval) {
 		WARN_ON(1);
