@@ -1593,7 +1593,7 @@
 			Format: size[KMG]
 
 	hugetlb_free_vmemmap=
-			[KNL] Reguires CONFIG_HUGETLB_PAGE_FREE_VMEMMAP
+			[KNL] Reguires CONFIG_HUGETLB_PAGE_OPTIMIZE_VMEMMAP
 			enabled.
 			Allows heavy hugetlb users to free up some more
 			memory (7 * PAGE_SIZE for each 2MB hugetlb page).
@@ -1601,6 +1601,9 @@
 
 			on:  enable the feature
 			off: disable the feature
+
+			Built with CONFIG_HUGETLB_PAGE_OPTIMIZE_VMEMMAP_DEFAULT_ON=y,
+			the default is on.
 
 	hugevmalloc	[KNL,PPC,ARM64,X86] Requires CONFIG_HAVE_ARCH_HUGE_VMALLOC
 			Format: { on | off }
