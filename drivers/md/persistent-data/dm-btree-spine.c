@@ -30,6 +30,8 @@ static void node_prepare_for_write(struct dm_block_validator *v,
 	h->csum = cpu_to_le32(dm_bm_checksum(&h->flags,
 					     block_size - sizeof(__le32),
 					     BTREE_CSUM_XOR));
+	if (node_check(v, b, 4096))
+		DMWARN_LIMIT("%s node_check failed", __func__);
 }
 
 static int node_check(struct dm_block_validator *v,
