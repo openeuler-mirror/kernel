@@ -86,6 +86,7 @@ void arch_release_task_struct(struct task_struct *tsk);
 #define TIF_TAGGED_ADDR		26	/* Allow tagged user addresses */
 #define TIF_32BIT_AARCH64	27	/* 32 bit process on AArch64(ILP32) */
 #define TIF_PATCH_PENDING	28	/* pending live patching update */
+#define TIF_SME_VL_INHERIT	30	/* Inherit SME vl_onexec across exec */
 
 #define _TIF_SIGPENDING		(1 << TIF_SIGPENDING)
 #define _TIF_NEED_RESCHED	(1 << TIF_NEED_RESCHED)
