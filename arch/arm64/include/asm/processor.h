@@ -167,7 +167,7 @@ struct thread_struct {
 	KABI_USE(1, unsigned int vl[ARM64_VEC_MAX])
 	KABI_USE(2, unsigned int vl_onexec[ARM64_VEC_MAX])
 	KABI_USE(3, u64 tpidr2_el0)
-	KABI_RESERVE(4)
+	KABI_USE(4, u64 svcr)
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
