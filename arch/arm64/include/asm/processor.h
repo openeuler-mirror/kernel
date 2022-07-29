@@ -163,8 +163,8 @@ struct thread_struct {
 	u64			sctlr_tcf0;
 	u64			gcr_user_incl;
 #endif
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
+	KABI_USE(1, unsigned int vl[ARM64_VEC_MAX])
+	KABI_USE(2, unsigned int vl_onexec[ARM64_VEC_MAX])
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
@@ -173,15 +173,45 @@ struct thread_struct {
 	KABI_RESERVE(8)
 };
 
-static inline unsigned int thread_get_sve_vl(struct thread_struct *thread)
+static inline unsigned int thread_get_vl(struct thread_struct *thread,
+					 enum vec_type type)
 {
-	return thread->sve_vl;
+	return thread->vl[type];
 }
 
-unsigned int task_get_sve_vl(const struct task_struct *task);
-void task_set_sve_vl(struct task_struct *task, unsigned long vl);
-unsigned int task_get_sve_vl_onexec(const struct task_struct *task);
-void task_set_sve_vl_onexec(struct task_struct *task, unsigned long vl);
+static inline unsigned int thread_get_sve_vl(struct thread_struct *thread)
+{
+	return thread_get_vl(thread, ARM64_VEC_SVE);
+}
+
+unsigned int task_get_vl(const struct task_struct *task, enum vec_type type);
+void task_set_vl(struct task_struct *task, enum vec_type type,
+		 unsigned long vl);
+void task_set_vl_onexec(struct task_struct *task, enum vec_type type,
+			unsigned long vl);
+unsigned int task_get_vl_onexec(const struct task_struct *task,
+				enum vec_type type);
+
+static inline unsigned int task_get_sve_vl(const struct task_struct *task)
+{
+	return task_get_vl(task, ARM64_VEC_SVE);
+}
+
+static inline void task_set_sve_vl(struct task_struct *task, unsigned long vl)
+{
+	task_set_vl(task, ARM64_VEC_SVE, vl);
+}
+
+static inline unsigned int task_get_sve_vl_onexec(const struct task_struct *task)
+{
+	return task_get_vl_onexec(task, ARM64_VEC_SVE);
+}
+
+static inline void task_set_sve_vl_onexec(struct task_struct *task,
+					  unsigned long vl)
+{
+	task_set_vl_onexec(task, ARM64_VEC_SVE, vl);
+}
 
 static inline void arch_thread_struct_whitelist(unsigned long *offset,
 						unsigned long *size)
