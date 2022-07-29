@@ -623,15 +623,26 @@ set_hcr:
 	mrs	x1, id_aa64dfr0_el1
 	ubfx	x1, x1, #ID_AA64DFR0_PMSVER_SHIFT, #4
 	cmp	x1, #3
-	b.lt	.Lset_fgt_\@
+	b.lt	.Lset_debug_fgt_\@
 	/* Disable PMSNEVFR_EL1 read and write traps */
 	orr	x0, x0, #(1 << 62)
 
-.Lset_fgt_\@:
+.Lset_debug_fgt_\@:
 	msr_s	SYS_HDFGRTR_EL2, x0
 	msr_s	SYS_HDFGWTR_EL2, x0
-	msr_s	SYS_HFGRTR_EL2, xzr
-	msr_s	SYS_HFGWTR_EL2, xzr
+
+	mov	x0, xzr
+	mrs	x1, id_aa64pfr1_el1
+	ubfx	x1, x1, #ID_AA64PFR1_SME_SHIFT, #4
+	cbz	x1, .Lset_fgt_\@
+
+	/* Disable nVHE traps of TPIDR2 and SMPRI */
+	orr	x0, x0, #HFGxTR_EL2_nSMPRI_EL1_MASK
+	orr	x0, x0, #HFGxTR_EL2_nTPIDR2_EL0_MASK
+
+.Lset_fgt_\@:
+	msr_s	SYS_HFGRTR_EL2, x0
+	msr_s	SYS_HFGWTR_EL2, x0
 	msr_s	SYS_HFGITR_EL2, xzr
 
 	mrs	x1, id_aa64pfr0_el1		// AMU traps UNDEF without AMU
@@ -640,6 +651,50 @@ set_hcr:
 
 	msr_s	SYS_HAFGRTR_EL2, xzr
 .Lskip_fgt_\@:
+.endm
+
+/* SME register access and priority mapping */
+.macro __init_el2_nvhe_sme
+       mrs     x1, id_aa64pfr1_el1
+       ubfx    x1, x1, #ID_AA64PFR1_SME_SHIFT, #4
+       cbz     x1, .Lskip_sme_\@
+
+       bic     x0, x0, #CPTR_EL2_TSM           // Also disable SME traps
+       msr     cptr_el2, x0                    // Disable copro. traps to EL2
+       isb
+
+       mrs     x1, sctlr_el2
+       orr     x1, x1, #SCTLR_ELx_ENTP2        // Disable TPIDR2 traps
+       msr     sctlr_el2, x1
+       isb
+
+       mov     x1, #0                          // SMCR controls
+
+       mrs_s   x2, SYS_ID_AA64SMFR0_EL1
+       ubfx    x2, x2, #ID_AA64SMFR0_FA64_SHIFT, #1 // Full FP in SM?
+       cbz     x2, .Lskip_sme_fa64_\@
+
+       orr     x1, x1, SMCR_ELx_FA64_MASK
+.Lskip_sme_fa64_\@:
+
+       orr     x1, x1, #SMCR_ELx_LEN_MASK      // Enable full SME vector
+       msr_s   SYS_SMCR_EL2, x1                // length for EL1.
+
+       mrs_s   x1, SYS_SMIDR_EL1               // Priority mapping supported?
+       ubfx    x1, x1, #SYS_SMIDR_EL1_SMPS_SHIFT, #1
+       cbz     x1, .Lskip_sme_\@
+
+       msr_s   SYS_SMPRIMAP_EL2, xzr           // Make all priorities equal
+
+       mrs     x1, id_aa64mmfr1_el1            // HCRX_EL2 present?
+       ubfx    x1, x1, #ID_AA64MMFR1_HCX_SHIFT, #4
+       cbz     x1, .Lskip_sme_\@
+
+       mrs_s   x1, SYS_HCRX_EL2
+       orr     x1, x1, #HCRX_EL2_SMPME_MASK    // Enable priority mapping
+       msr_s   SYS_HCRX_EL2, x1
+
+.Lskip_sme_\@:
 .endm
 
 SYM_INNER_LABEL(install_el2_stub, SYM_L_LOCAL)
@@ -668,6 +723,7 @@ SYM_INNER_LABEL(install_el2_stub, SYM_L_LOCAL)
 	mov	x1, #ZCR_ELx_LEN_MASK		// SVE: Enable full vector
 	msr_s	SYS_ZCR_EL2, x1			// length for EL1.
 
+	__init_el2_nvhe_sme
 	__init_el2_fgt
 
 	/* Hypervisor stub */
