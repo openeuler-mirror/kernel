@@ -613,6 +613,26 @@ set_hcr:
 	isb
 	ret
 
+/* Disable any fine grained traps */
+.macro __init_el2_fgt
+	mrs	x1, id_aa64mmfr0_el1
+	ubfx	x1, x1, #ID_AA64MMFR0_FGT_SHIFT, #4
+	cbz	x1, .Lskip_fgt_\@
+
+	msr_s	SYS_HDFGRTR_EL2, xzr
+	msr_s	SYS_HDFGWTR_EL2, xzr
+	msr_s	SYS_HFGRTR_EL2, xzr
+	msr_s	SYS_HFGWTR_EL2, xzr
+	msr_s	SYS_HFGITR_EL2, xzr
+
+	mrs	x1, id_aa64pfr0_el1		// AMU traps UNDEF without AMU
+	ubfx	x1, x1, #ID_AA64PFR0_AMU_SHIFT, #4
+	cbz	x1, .Lskip_fgt_\@
+
+	msr_s	SYS_HAFGRTR_EL2, xzr
+.Lskip_fgt_\@:
+.endm
+
 SYM_INNER_LABEL(install_el2_stub, SYM_L_LOCAL)
 	/*
 	 * When VHE is not in use, early init of EL2 and EL1 needs to be
@@ -638,6 +658,8 @@ SYM_INNER_LABEL(install_el2_stub, SYM_L_LOCAL)
 	isb
 	mov	x1, #ZCR_ELx_LEN_MASK		// SVE: Enable full vector
 	msr_s	SYS_ZCR_EL2, x1			// length for EL1.
+
+	__init_el2_fgt
 
 	/* Hypervisor stub */
 7:	adr_l	x0, __hyp_stub_vectors

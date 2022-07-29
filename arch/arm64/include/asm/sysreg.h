@@ -496,11 +496,17 @@
 
 #define SYS_PMCCFILTR_EL0		sys_reg(3, 3, 14, 15, 7)
 
+#define SYS_HFGRTR_EL2			sys_reg(3, 4, 1, 1, 4)
+#define SYS_HFGWTR_EL2			sys_reg(3, 4, 1, 1, 5)
+#define SYS_HFGITR_EL2			sys_reg(3, 4, 1, 1, 6)
 #define SYS_ZCR_EL2			sys_reg(3, 4, 1, 2, 0)
 #define SYS_HCRX_EL2			sys_reg(3, 4, 1, 2, 2)
 #define SYS_SMPRIMAP_EL2		sys_reg(3, 4, 1, 2, 5)
 #define SYS_SMCR_EL2			sys_reg(3, 4, 1, 2, 6)
 #define SYS_DACR32_EL2			sys_reg(3, 4, 3, 0, 0)
+#define SYS_HDFGRTR_EL2			sys_reg(3, 4, 3, 1, 4)
+#define SYS_HDFGWTR_EL2			sys_reg(3, 4, 3, 1, 5)
+#define SYS_HAFGRTR_EL2			sys_reg(3, 4, 3, 1, 6)
 #define SYS_SPSR_EL2			sys_reg(3, 4, 4, 0, 0)
 #define SYS_ELR_EL2			sys_reg(3, 4, 4, 0, 1)
 #define SYS_IFSR32_EL2			sys_reg(3, 4, 5, 0, 1)
