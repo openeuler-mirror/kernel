@@ -20,6 +20,7 @@ ARM64 Architecture
     perf
     pointer-authentication
     silicon-errata
+    sme
     sve
     tagged-address-abi
     tagged-pointers
