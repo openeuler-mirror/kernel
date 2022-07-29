@@ -614,7 +614,8 @@ void __init sw64_init_arch(void)
 		cpu_num = sw64_chip->get_cpu_num();
 
 		for (node = 0; node < cpu_num; node++) {
-			set_devint_wken(node);
+			if (is_in_host())
+				set_devint_wken(node);
 			rc_enable = sw64_chip_init->pci_init.get_rc_enable(node);
 			if (rc_enable == 0) {
 				printk("PCIe is disabled on node %ld\n", node);
