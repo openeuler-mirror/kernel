@@ -8,7 +8,6 @@
 #ifndef _LINUX_CRED_H
 #define _LINUX_CRED_H
 
-#include <linux/kabi.h>
 #include <linux/capability.h>
 #include <linux/init.h>
 #include <linux/key.h>

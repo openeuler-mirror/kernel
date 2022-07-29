@@ -14,7 +14,6 @@
 #ifndef _DEVICE_CLASS_H_
 #define _DEVICE_CLASS_H_
 
-#include <linux/kabi.h>
 #include <linux/kobject.h>
 #include <linux/klist.h>
 #include <linux/pm.h>
