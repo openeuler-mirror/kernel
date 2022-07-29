@@ -168,6 +168,16 @@ struct thread_struct {
 	KABI_RESERVE(8)
 };
 
+static inline unsigned int thread_get_sve_vl(struct thread_struct *thread)
+{
+	return thread->sve_vl;
+}
+
+unsigned int task_get_sve_vl(const struct task_struct *task);
+void task_set_sve_vl(struct task_struct *task, unsigned long vl);
+unsigned int task_get_sve_vl_onexec(const struct task_struct *task);
+void task_set_sve_vl_onexec(struct task_struct *task, unsigned long vl);
+
 static inline void arch_thread_struct_whitelist(unsigned long *offset,
 						unsigned long *size)
 {
