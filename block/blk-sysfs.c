@@ -977,10 +977,16 @@ int blk_register_queue(struct gendisk *disk)
 	 * before it's registration is done.
 	 */
 	disk->flags |= GENHD_FL_UP;
-	disk_init_partition(disk);
 	ret = 0;
 unlock:
 	mutex_unlock(&q->sysfs_lock);
+	/*
+	 * Init partitions after releasing 'sysfs_lock', otherwise lockdep
+	 * will be confused because it will treat 'bd_mutex' from different
+	 * devices as the same lock.
+	 */
+	if (!ret)
+		disk_init_partition(disk);
 
 	/*
 	 * SCSI probing may synchronously create and destroy a lot of
