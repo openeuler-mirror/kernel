@@ -224,6 +224,13 @@ static inline u32 read_cpucfg(u32 reg)
 #define  CPUCFG48_VFPU_CG		BIT(2)
 #define  CPUCFG48_RAM_CG		BIT(3)
 
+#define  CACHE_WAYS_M			GENMASK(15, 0)
+#define  CACHE_SETS_M			GENMASK(23, 16)
+#define  CACHE_LSIZE_M			GENMASK(30, 24)
+#define  CACHE_WAYS	 		0
+#define  CACHE_SETS			16
+#define  CACHE_LSIZE			24
+
 #ifndef __ASSEMBLY__
 
 /* CSR */

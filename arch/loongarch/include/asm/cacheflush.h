@@ -9,8 +9,11 @@
 #include <asm/cpu-features.h>
 #include <asm/cacheops.h>
 
-extern void local_flush_icache_range(unsigned long start, unsigned long end);
+void local_flush_icache_range(unsigned long start, unsigned long end);
+void flush_cache_line_hit(unsigned long addr);
+asmlinkage void cpu_flush_caches(void);
 
+#define invalid_cache_line_hit(addr)	flush_cache_line_hit(addr)
 #define flush_icache_range	local_flush_icache_range
 #define flush_icache_user_range	local_flush_icache_range
 
@@ -35,46 +38,26 @@ extern void local_flush_icache_range(unsigned long start, unsigned long end);
 	:								\
 	: "i" (op), "ZC" (*(unsigned char *)(addr)))
 
-static inline void flush_icache_line_indexed(unsigned long addr)
+static inline bool cache_present(struct cache_desc *cdesc)
 {
-	cache_op(Index_Invalidate_I, addr);
+	return cdesc->flags & CACHE_PRESENT;
 }
 
-static inline void flush_dcache_line_indexed(unsigned long addr)
+static inline bool cache_private(struct cache_desc *cdesc)
 {
-	cache_op(Index_Writeback_Inv_D, addr);
+	return cdesc->flags & CACHE_PRIVATE;
 }
 
-static inline void flush_vcache_line_indexed(unsigned long addr)
+static inline bool cache_inclusive(struct cache_desc *cdesc)
 {
-	cache_op(Index_Writeback_Inv_V, addr);
+	return cdesc->flags & CACHE_INCLUSIVE;
 }
 
-static inline void flush_scache_line_indexed(unsigned long addr)
+static inline unsigned int cpu_last_level_cache_line_size(void)
 {
-	cache_op(Index_Writeback_Inv_S, addr);
-}
+	unsigned int cache_present = current_cpu_data.cache_leaves_present;
 
-static inline void flush_icache_line(unsigned long addr)
-{
-	cache_op(Hit_Invalidate_I, addr);
+	return current_cpu_data.cache_leaves[cache_present - 1].linesz;
 }
-
-static inline void flush_dcache_line(unsigned long addr)
-{
-	cache_op(Hit_Writeback_Inv_D, addr);
-}
-
-static inline void flush_vcache_line(unsigned long addr)
-{
-	cache_op(Hit_Writeback_Inv_V, addr);
-}
-
-static inline void flush_scache_line(unsigned long addr)
-{
-	cache_op(Hit_Writeback_Inv_S, addr);
-}
-
 #include <asm-generic/cacheflush.h>
-
 #endif /* _ASM_CACHEFLUSH_H */
