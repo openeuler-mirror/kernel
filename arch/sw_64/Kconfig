@@ -91,6 +91,8 @@ config SW64
 	select ACPI_REDUCED_HARDWARE_ONLY
 	select GENERIC_TIME_VSYSCALL
 	select SET_FS
+	select HAVE_PCI
+	select GENERIC_PCI_IOMAP if PCI
 	select PCI_MSI_ARCH_FALLBACKS
 	select DMA_OPS if PCI
 	select HAVE_REGS_AND_STACK_ACCESS_API
@@ -514,17 +516,6 @@ config ISA_DMA_API
 	bool
 	default y
 
-config PCI
-	bool "PCI Support"
-	depends on SW64
-	select GENERIC_PCI_IOMAP
-	default y
-	help
-	  Find out whether you have a PCI motherboard. PCI is the name of a
-	  bus system, i.e. the way the CPU talks to the other stuff inside
-	  your box. Other bus systems are ISA, EISA, MicroChannel (MCA) or
-	  VESA. If you have PCI, say Y, otherwise N.
-
 config PCI_DOMAINS
 	def_bool PCI
 
@@ -729,7 +720,6 @@ config HZ
 	int "HZ of the short timer"
 	default 500
 
-source "drivers/pci/Kconfig"
 source "drivers/eisa/Kconfig"
 
 source "drivers/pcmcia/Kconfig"
