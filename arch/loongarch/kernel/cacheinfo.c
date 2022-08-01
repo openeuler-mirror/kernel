@@ -5,69 +5,28 @@
  * Copyright (C) 2020-2022 Loongson Technology Corporation Limited
  */
 #include <linux/cacheinfo.h>
+#include <linux/of.h>
 #include <asm/bootinfo.h>
 #include <asm/cpu-info.h>
 
-/* Populates leaf and increments to next leaf */
-#define populate_cache(cache, leaf, c_level, c_type)		\
-do {								\
-	leaf->type = c_type;					\
-	leaf->level = c_level;					\
-	leaf->coherency_line_size = c->cache.linesz;		\
-	leaf->number_of_sets = c->cache.sets;			\
-	leaf->ways_of_associativity = c->cache.ways;		\
-	leaf->size = c->cache.linesz * c->cache.sets *		\
-		c->cache.ways;					\
-	if (leaf->level > 2)					\
-		leaf->size *= nodes_per_package;		\
-	leaf++;							\
-} while (0)
-
 int init_cache_level(unsigned int cpu)
 {
-	struct cpuinfo_loongarch *c = &current_cpu_data;
 	struct cpu_cacheinfo *this_cpu_ci = get_cpu_cacheinfo(cpu);
-	int levels = 0, leaves = 0;
-
-	/*
-	 * If Dcache is not set, we assume the cache structures
-	 * are not properly initialized.
-	 */
-	if (c->dcache.waysize)
-		levels += 1;
-	else
-		return -ENOENT;
-
-
-	leaves += (c->icache.waysize) ? 2 : 1;
-
-	if (c->vcache.waysize) {
-		levels++;
-		leaves++;
-	}
-
-	if (c->scache.waysize) {
-		levels++;
-		leaves++;
-	}
-
-	if (c->tcache.waysize) {
-		levels++;
-		leaves++;
-	}
-
-	this_cpu_ci->num_levels = levels;
-	this_cpu_ci->num_leaves = leaves;
+	unsigned int cache_present = current_cpu_data.cache_leaves_present;
+	this_cpu_ci->num_levels =
+		current_cpu_data.cache_leaves[cache_present - 1].level;
+	this_cpu_ci->num_leaves = cache_present;
 	return 0;
 }
 
 static inline bool cache_leaves_are_shared(struct cacheinfo *this_leaf,
-					   struct cacheinfo *sib_leaf)
+					struct cacheinfo *sib_leaf)
 {
-	return !((this_leaf->level == 1) || (this_leaf->level == 2));
+	return (!(*(unsigned char *)(this_leaf->priv) & CACHE_PRIVATE) &&
+		!(*(unsigned char *)(sib_leaf->priv) & CACHE_PRIVATE));
 }
 
-static void cache_cpumap_setup(unsigned int cpu)
+static void __cache_cpumap_setup(unsigned int cpu)
 {
 	struct cpu_cacheinfo *this_cpu_ci = get_cpu_cacheinfo(cpu);
 	struct cacheinfo *this_leaf, *sib_leaf;
@@ -85,8 +44,11 @@ static void cache_cpumap_setup(unsigned int cpu)
 		for_each_online_cpu(i) {
 			struct cpu_cacheinfo *sib_cpu_ci = get_cpu_cacheinfo(i);
 
-			if (i == cpu || !sib_cpu_ci->info_list)
-				continue;/* skip if itself or no cacheinfo */
+			/* skip if itself or no cacheinfo or not in one
+			 * physical node. */
+			if (i == cpu || !sib_cpu_ci->info_list ||
+				(cpu_to_node(i) != cpu_to_node(cpu)))
+				continue;
 			sib_leaf = sib_cpu_ci->info_list + index;
 			if (cache_leaves_are_shared(this_leaf, sib_leaf)) {
 				cpumask_set_cpu(cpu, &sib_leaf->shared_cpu_map);
@@ -98,33 +60,30 @@ static void cache_cpumap_setup(unsigned int cpu)
 
 int populate_cache_leaves(unsigned int cpu)
 {
-	int level = 1, nodes_per_package = 1;
-	struct cpuinfo_loongarch *c = &current_cpu_data;
+	struct cache_desc *cdesc_tmp, *cdesc = current_cpu_data.cache_leaves;
+	unsigned int cache_present = current_cpu_data.cache_leaves_present;
 	struct cpu_cacheinfo *this_cpu_ci = get_cpu_cacheinfo(cpu);
 	struct cacheinfo *this_leaf = this_cpu_ci->info_list;
+	int i;
 
-	if (loongson_sysconf.nr_nodes > 1)
-		nodes_per_package = loongson_sysconf.cores_per_package
-					/ loongson_sysconf.cores_per_node;
+	for (i = 0; i < cache_present; i++) {
+		cdesc_tmp = cdesc + i;
 
-	if (c->icache.waysize) {
-		populate_cache(dcache, this_leaf, level, CACHE_TYPE_DATA);
-		populate_cache(icache, this_leaf, level++, CACHE_TYPE_INST);
-	} else {
-		populate_cache(dcache, this_leaf, level++, CACHE_TYPE_UNIFIED);
+		this_leaf->type = cdesc_tmp->type;
+		this_leaf->level = cdesc_tmp->level;
+		this_leaf->coherency_line_size = cdesc_tmp->linesz;
+		this_leaf->number_of_sets = cdesc_tmp->sets;
+		this_leaf->ways_of_associativity = cdesc_tmp->ways;
+		this_leaf->size =
+			cdesc_tmp->linesz * cdesc_tmp->sets * cdesc_tmp->ways;
+		this_leaf->priv = &cdesc_tmp->flags;
+		this_leaf++;
 	}
 
-	if (c->vcache.waysize)
-		populate_cache(vcache, this_leaf, level++, CACHE_TYPE_UNIFIED);
-
-	if (c->scache.waysize)
-		populate_cache(scache, this_leaf, level++, CACHE_TYPE_UNIFIED);
-
-	if (c->tcache.waysize)
-		populate_cache(tcache, this_leaf, level++, CACHE_TYPE_UNIFIED);
-
-	cache_cpumap_setup(cpu);
-	this_cpu_ci->cpu_map_populated = true;
+	if (!of_have_populated_dt()) {
+		__cache_cpumap_setup(cpu);
+		this_cpu_ci->cpu_map_populated = true;
+	}
 
 	return 0;
 }
