@@ -238,6 +238,7 @@ enum hns_roce_opcode_type {
 	HNS_ROCE_OPC_CFG_GMV_TBL			= 0x850f,
 	HNS_ROCE_OPC_CFG_GMV_BT				= 0x8510,
 	HNS_ROCE_OPC_EXT_CFG				= 0x8512,
+	HNS_ROCE_QUERY_RAM_ECC				= 0x8513,
 	HNS_SWITCH_PARAMETER_CFG			= 0x1033,
 };
 
@@ -1095,6 +1096,11 @@ enum {
 #define CFG_GMV_BT_BA_H CMQ_REQ_FIELD_LOC(51, 32)
 #define CFG_GMV_BT_IDX CMQ_REQ_FIELD_LOC(95, 64)
 
+/* Fields of HNS_ROCE_QUERY_RAM_ECC */
+#define QUERY_RAM_ECC_1BIT_ERR CMQ_REQ_FIELD_LOC(31, 0)
+#define QUERY_RAM_ECC_RES_TYPE CMQ_REQ_FIELD_LOC(63, 32)
+#define QUERY_RAM_ECC_TAG CMQ_REQ_FIELD_LOC(95, 64)
+
 struct hns_roce_cfg_sgid_tb {
 	__le32	table_idx_rsv;
 	__le32	vf_sgid_l;
@@ -1322,6 +1328,13 @@ struct hns_roce_dip {
 	u32 dip_idx;
 	struct list_head node; /* all dips are on a list */
 };
+
+struct fmea_ram_ecc {
+	u32	is_ecc_err;
+	u32	res_type;
+	u32	index;
+};
+
 
 #define HNS_ROCE_AEQ_DEFAULT_BURST_NUM	0x0
 #define HNS_ROCE_AEQ_DEFAULT_INTERVAL	0x0
