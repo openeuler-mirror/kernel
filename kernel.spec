@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2207.4.0
+%global hulkrelease 2208.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0160
+Release: %{hulkrelease}.0161
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,26 @@ fi
 %endif
 
 %changelog
+
+* Tue Aug 02 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2208.1.0.0161
+- fbcon: Prevent that screen size is smaller than font size
+- fbcon: Disallow setting font bigger than screen size
+- fbmem: Check virtual screen sizes in fb_set_var()
+- xfrm: xfrm_policy: fix a possible double xfrm_pols_put() in xfrm_bundle_lookup()
+- scsi: core: Fix race between handling STS_RESOURCE and completion
+- block: prevent lockdep false positive warning about 'bd_mutex'
+- dm verity: allow only one error handling mode
+- dm verity: Fix compilation warning
+- dm verity: add root hash pkcs#7 signature verification
+- jbd2: Fix assertion 'jh->b_frozen_data == NULL' failure when journal aborted
+- dm btree spine: show warning if node_check failed in node_prep_for_write()
+- dm btree spine: remove paranoid node_check call in node_prep_for_write()
+- ext4: Fix race when reusing xattr blocks
+- ext4: Unindent codeblock in ext4_xattr_block_set()
+- ext4: Remove EA inode entry from mbcache on inode eviction
+- mbcache: Add functions to delete entry if unused
+- mbcache: Don't reclaim used entries
+- perf/core: Fix data race between perf_event_set_output() and perf_mmap_close()
 
 * Mon Jul 25 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2207.4.0.0160
 - inotify: show inotify mask flags in proc fdinfo
