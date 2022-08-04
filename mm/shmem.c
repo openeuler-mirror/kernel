@@ -2464,8 +2464,6 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	if (ret)
 		goto out_release_uncharge;
 
-	mem_cgroup_commit_charge(page, memcg, false, false);
-
 	_dst_pte = mk_pte(page, dst_vma->vm_page_prot);
 	if (dst_vma->vm_flags & VM_WRITE)
 		_dst_pte = pte_mkwrite(pte_mkdirty(_dst_pte));
@@ -2490,6 +2488,8 @@ static int shmem_mfill_atomic_pte(struct mm_struct *dst_mm,
 	ret = -EEXIST;
 	if (!pte_none(*dst_pte))
 		goto out_release_uncharge_unlock;
+
+	mem_cgroup_commit_charge(page, memcg, false, false);
 
 	lru_cache_add_anon(page);
 
