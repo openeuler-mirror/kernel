@@ -816,6 +816,7 @@ static const struct io_op_def io_op_defs[] = {
 		.async_ctx		= 1,
 		.needs_mm		= 1,
 		.needs_file		= 1,
+		.needs_fs		= 1,
 		.unbound_nonreg_file	= 1,
 		.pollout		= 1,
 	},
@@ -864,12 +865,14 @@ static const struct io_op_def io_op_defs[] = {
 	[IORING_OP_SEND] = {
 		.needs_mm		= 1,
 		.needs_file		= 1,
+		.needs_fs		= 1,
 		.unbound_nonreg_file	= 1,
 		.pollout		= 1,
 	},
 	[IORING_OP_RECV] = {
 		.needs_mm		= 1,
 		.needs_file		= 1,
+		.needs_fs		= 1,
 		.unbound_nonreg_file	= 1,
 		.pollin			= 1,
 		.buffer_select		= 1,
