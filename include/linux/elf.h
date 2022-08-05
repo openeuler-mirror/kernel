@@ -99,4 +99,8 @@ static inline int arch_elf_adjust_prot(int prot,
 }
 #endif
 
+#ifdef CONFIG_EXEC_HUGETLB
+extern int exec_hugetlb;
+#endif
+
 #endif /* _LINUX_ELF_H */

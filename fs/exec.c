@@ -74,6 +74,10 @@
 
 #include <trace/events/sched.h>
 
+#ifdef CONFIG_EXEC_HUGETLB
+int exec_hugetlb;
+#endif
+
 static int bprm_creds_from_file(struct linux_binprm *bprm);
 
 int suid_dumpable = 0;

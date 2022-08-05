@@ -3543,6 +3543,17 @@ static struct ctl_table fs_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ONE,
 	},
+#ifdef CONFIG_EXEC_HUGETLB
+	{
+		.procname	= "exec-use-hugetlb",
+		.data		= &exec_hugetlb,
+		.maxlen		= sizeof(exec_hugetlb),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+#endif
 	{ }
 };
 

@@ -474,7 +474,7 @@ static unsigned long elf_map(struct file *filep, unsigned long addr,
 		return addr;
 
 #ifdef CONFIG_EXEC_HUGETLB
-	if (eppnt->p_flags & PF_HUGETLB)
+	if (exec_hugetlb && (eppnt->p_flags & PF_HUGETLB))
 		return elf_hugetlb_map(filep, addr, eppnt, prot, type,
 				total_size);
 #endif
@@ -1308,7 +1308,7 @@ out_free_interp:
 		 * bss is allocated in elf_hugetlb_bss,
 		 * so skip vm_brk_flags in set_brk
 		 */
-		if (elf_ppnt->p_flags & PF_HUGETLB)
+		if (exec_hugetlb && (elf_ppnt->p_flags & PF_HUGETLB))
 			elf_bss = elf_brk = ELF_HPAGEALIGN(elf_brk);
 #endif
 	}
