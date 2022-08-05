@@ -282,6 +282,18 @@ config ENHANCED_HUGETLB_MMAP
 	  Hugetlb is useful for optimizing TLB miss rate, and this feature is
 	  aimed to extend its usage.
 
+config EXEC_HUGETLB
+	bool "use hugetlb in exec"
+	default n
+	depends on ENHANCED_HUGETLB_MMAP
+	help
+	  Some applications suffer from high TLB miss, and users don't like
+	  transparent hugepaged. (A background thread will affect overall
+	  performance and madvise after exec is too late)
+	  This feature provides another way to use huge page for apps by
+	  using hugetlb map in exec.
+	  Only support ELF format now.
+
 config MEMFD_CREATE
 	def_bool TMPFS || HUGETLBFS
 
