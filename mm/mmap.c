@@ -188,6 +188,10 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 		vma->vm_ops->close(vma);
 	if (vma->vm_file)
 		fput(vma->vm_file);
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+	if (vma->vm_actual_file)
+		fput(vma->vm_actual_file);
+#endif
 	mpol_put(vma_policy(vma));
 	sp_area_drop(vma);
 	vm_area_free(vma);
@@ -1849,6 +1853,17 @@ unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
 			return -EBADF;
 		if (is_file_hugepages(file)) {
 			len = ALIGN(len, huge_page_size(hstate_file(file)));
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+		/*
+		 * glibc can use this flag to load libraries,
+		 * a similar feature of exec_hugetlb.
+		 */
+		} else if (unlikely(flags & MAP_FILE_HUGETLB)) {
+			if (!(flags & MAP_PRIVATE)) {
+				retval = -EINVAL;
+				goto out_fput;
+			}
+#endif
 		} else if (unlikely(flags & MAP_HUGETLB)) {
 			retval = -EINVAL;
 			goto out_fput;
@@ -3046,6 +3061,11 @@ int __split_vma(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	if (new->vm_file)
 		get_file(new->vm_file);
+
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+	if (new->vm_actual_file)
+		get_file(new->vm_actual_file);
+#endif
 
 	if (new->vm_ops && new->vm_ops->open)
 		new->vm_ops->open(new);

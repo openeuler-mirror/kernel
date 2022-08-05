@@ -376,7 +376,11 @@ struct vm_area_struct {
 #endif
 	struct vm_userfaultfd_ctx vm_userfaultfd_ctx;
 
+#if defined(CONFIG_ENHANCED_HUGETLB_MMAP) && !defined(__GENKSYMS__)
+	KABI_USE(1, struct file *vm_actual_file);
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

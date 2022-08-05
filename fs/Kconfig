@@ -270,6 +270,18 @@ config DYNAMIC_HUGETLB
 	  pages automatically. The tasks in the memcg prefer to alloc dynamic
 	  hugepage.
 
+config ENHANCED_HUGETLB_MMAP
+	bool "enhanced hugetlb mmap"
+	default n
+	depends on HUGETLBFS
+	help
+	  Add private file mmap for hugetlb.
+	  This feature adds vm_actual_file in vma to record the original file and
+	  copies file contents to hugetlb pages during page fault.
+	  Procfs and perf record will show file name of vm_actual_file.
+	  Hugetlb is useful for optimizing TLB miss rate, and this feature is
+	  aimed to extend its usage.
+
 config MEMFD_CREATE
 	def_bool TMPFS || HUGETLBFS
 

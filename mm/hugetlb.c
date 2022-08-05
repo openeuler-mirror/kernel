@@ -4536,6 +4536,20 @@ static void unmap_ref_private(struct mm_struct *mm, struct vm_area_struct *vma,
 	i_mmap_unlock_write(mapping);
 }
 
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+static int read_actual_file(struct page *page, struct vm_area_struct *vma,
+		loff_t *off, size_t size)
+{
+	void *kaddr;
+	unsigned long read_size = 0;
+
+	kaddr = kmap(page);
+	read_size = kernel_read(vma->vm_actual_file, kaddr, size, off);
+	kunmap(page);
+	return IS_ERR_VALUE(read_size) ? read_size : 0;
+}
+#endif
+
 /*
  * Hugetlb_cow() should be called with page lock of the original hugepage held.
  * Called with hugetlb_instantiation_mutex held and pte_page locked so we
@@ -4837,6 +4851,17 @@ retry:
 			goto out;
 		}
 		clear_huge_page(page, address, pages_per_huge_page(h));
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+		if (vma->vm_actual_file) {
+			loff_t off = haddr - vma->vm_start
+					+ (vma->vm_pgoff << PAGE_SHIFT);
+			size_t page_size = huge_page_size(h);
+
+			ret = read_actual_file(page, vma, &off, page_size);
+			if (ret)
+				goto out;
+		}
+#endif
 		__SetPageUptodate(page);
 		new_page = true;
 
