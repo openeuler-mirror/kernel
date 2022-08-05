@@ -655,6 +655,9 @@ static inline bool fib6_ignore_linkdown(const struct fib6_info *f6i)
 	if (dev) {
 		const struct inet6_dev *idev = __in6_dev_get(dev);
 
+		if (unlikely(!idev))
+			return true;
+
 		rc = !!idev->cnf.ignore_routes_with_linkdown;
 	}
 
