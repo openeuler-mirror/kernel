@@ -38,6 +38,36 @@ SYSCALL_DEFINE2(odd_sigprocmask, int, how, unsigned long, newmask)
 	return res;
 }
 
+SYSCALL_DEFINE3(odd_sigaction, int, sig,
+		const struct odd_sigaction __user *, act,
+		struct odd_sigaction __user *, oact)
+{
+	struct k_sigaction new_ka, old_ka;
+	old_sigset_t mask;
+	int ret;
+
+	if (act) {
+		if (!access_ok(act, sizeof(*act)) ||
+		    __get_user(new_ka.sa.sa_handler, &act->sa_handler) ||
+		    __get_user(new_ka.sa.sa_flags, &act->sa_flags) ||
+		    __get_user(mask, &act->sa_mask))
+			return -EFAULT;
+		siginitset(&new_ka.sa.sa_mask, mask);
+	}
+
+	ret = do_sigaction(sig, act ? &new_ka : NULL, oact ? &old_ka : NULL);
+
+	if (!ret && oact) {
+		if (!access_ok(oact, sizeof(*oact)) ||
+		    __put_user(old_ka.sa.sa_handler, &oact->sa_handler) ||
+		    __put_user(old_ka.sa.sa_flags, &oact->sa_flags) ||
+		    __put_user(old_ka.sa.sa_mask.sig[0], &oact->sa_mask))
+			return -EFAULT;
+	}
+
+	return ret;
+}
+
 /*
  * Do a signal return; undo the signal stack.
  */

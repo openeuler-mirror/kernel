@@ -14,9 +14,11 @@ typedef struct {
 	unsigned long sig[_NSIG_WORDS];
 } sigset_t;
 
-#ifdef CONFIG_OLD_SIGACTION
-#define __ARCH_HAS_SA_RESTORER
-#endif
+struct odd_sigaction {
+	__sighandler_t	sa_handler;
+	old_sigset_t	sa_mask;
+	int		sa_flags;
+};
 
 #include <asm/sigcontext.h>
 #endif
