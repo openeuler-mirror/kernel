@@ -283,6 +283,14 @@ static void noinstr el0_sve_acc(struct pt_regs *regs, unsigned long esr)
 	do_sve_acc(esr, regs);
 }
 
+static void noinstr el0_sme_acc(struct pt_regs *regs, unsigned long esr)
+{
+	enter_from_user_mode();
+	local_daif_restore(DAIF_PROCCTX);
+	do_sme_acc(esr, regs);
+	exit_to_user_mode();
+}
+
 static void noinstr el0_fpsimd_exc(struct pt_regs *regs, unsigned long esr)
 {
 	enter_from_user_mode();
@@ -379,6 +387,9 @@ asmlinkage void noinstr el0_sync_handler(struct pt_regs *regs)
 		break;
 	case ESR_ELx_EC_SVE:
 		el0_sve_acc(regs, esr);
+		break;
+	case ESR_ELx_EC_SME:
+		el0_sme_acc(regs, esr);
 		break;
 	case ESR_ELx_EC_FP_EXC64:
 		el0_fpsimd_exc(regs, esr);
