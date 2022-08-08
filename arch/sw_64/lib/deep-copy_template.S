@@ -83,9 +83,9 @@ $quad_loop_head:
 	addl	$17, 8, $17
 	FIXUP_LDST( stl $2, 0($16) )
 	addl	$16, 8, $16
-	and	$16, 31, $1
 	blt	$18, $simd_end
-	beq	$16, $dest_aligned_32
+	and	$16, 31, $1
+	beq	$1, $dest_aligned_32
 	br	$31, $quad_loop_head
 
 $dest_aligned_32:
@@ -191,7 +191,8 @@ $quad_u_loop_head:
 	FIXUP_LDST( stl $2, 0($16) )
 	addl	$16, 8, $16
 	blt	$18, $simd_end
-	beq	$16, $dest_aligned_32
+	and	$16, 31, $1
+	beq	$1, $dest_aligned_32
 	br	$31, $quad_u_loop_head
 
 $prep_simd_u_loop:
