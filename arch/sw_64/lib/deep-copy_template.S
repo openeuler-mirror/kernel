@@ -5,6 +5,10 @@
  *
  * $4:	8-byte misalignment of src when dest is 8-byte aligned
  * $5:	32-byte misalignment of src when dest is 32-byte aligned
+ * $7:	SIMD status
+ *	0: not in simd loop
+ *	1: in simd loop
+ *	2: in simd_u loop
  * $16:	latest dest, clobbered
  * $17:	latest src, clobbered
  * $18:	bytes left to copy
@@ -18,14 +22,16 @@
 	addl	$sp, 0x1f, $23; \
 	bic	$23, 0x1f, $23; \
 	vstd	$f1, 0($23); \
-	vstd	$f2, 0x20($23)
+	vstd	$f2, 0x20($23); \
+	ldi	$7, 1
 
 #define RESTORE_SIMD_REGS \
 	addl	$sp, 0x1f, $23; \
 	bic	$23, 0x1f, $23; \
 	vldd	$f1, 0($23); \
 	vldd	$f2, 0x20($23); \
-	ldi	$sp, 0x60($sp)
+	ldi	$sp, 0x60($sp); \
+	bis	$31, $31, $7
 
 #define SAVE_SIMD_U_REGS \
 	ldi	$sp, -0xc0($sp); \
@@ -35,7 +41,8 @@
 	vstd	$f2, 0x20($23); \
 	vstd	$f4, 0x40($23); \
 	vstd	$f5, 0x60($23); \
-	vstd	$f3, 0x80($23)
+	vstd	$f3, 0x80($23); \
+	ldi	$7, 2
 
 #define RESTORE_SIMD_U_REGS \
 	addl	$sp, 0x1f, $23; \
@@ -45,7 +52,8 @@
 	vldd	$f4, 0x40($23); \
 	vldd	$f5, 0x60($23); \
 	vldd	$f3, 0x80($23); \
-	ldi	$sp, 0xc0($sp)
+	ldi	$sp, 0xc0($sp); \
+	bis	$31, $31, $7
 
 	ble	$18, $out
 	and	$16, 7, $1
