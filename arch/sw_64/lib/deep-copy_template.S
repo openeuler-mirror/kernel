@@ -59,7 +59,6 @@
 	and	$16, 7, $1
 	beq	$1, $dest_aligned_8
 
-	.align 3
 $byte_loop_head:
 	FIXUP_LDST( ldbu $2, 0($17) )
 	FIXUP_LDST( stb $2, 0($16) )
@@ -80,7 +79,6 @@ $dest_aligned_8:
 	bne	$1, $simd_end
 	bne	$4, $quad_u_loop_head
 
-	.align 3
 $quad_loop_head:
 	FIXUP_LDST( ldl $2, 0($17) )
 	FIXUP_LDST( stl $2, 0($16) )
@@ -105,7 +103,6 @@ $prep_simd_loop:
 
 	.align 4
 $simd_loop_nc:
-	fillcs	128 * 5($17)
 	FIXUP_LDST( vldd $f1, 0($17) )
 	FIXUP_LDST( vldd $f2, 32($17) )
 	FIXUP_LDST( vstd_nc $f1, 0($16) )
@@ -120,7 +117,6 @@ $simd_loop_nc:
 
 	.align 4
 $simd_loop:
-	fillcs	128 * 5($17)
 	FIXUP_LDST( vldd $f1, 0($17) )
 	FIXUP_LDST( vldd $f2, 32($17) )
 	FIXUP_LDST( vstd $f1, 0($16) )
@@ -186,7 +182,6 @@ $byte_loop_tail:
 	br	$31, $out
 
 /* misaligned src and dst */
-	.align 4
 $quad_u_loop_head:
 	FIXUP_LDST( ldl_u $2, 0($17) )
 	FIXUP_LDST( ldl_u $3, 7($17) )
@@ -219,7 +214,6 @@ $prep_simd_u_loop:
 	.align 4
 $simd_u_loop_nc:
 	FIXUP_LDST( vldd $f5, 32($3) )
-	fillcs	128 * 5($3)
 	srlow	$f4, $f1, $f4
 	sllow	$f5, $f2, $f3
 	vlogfc	$f3, $f4, $f31, $f3
@@ -240,7 +234,6 @@ $simd_u_loop_nc:
 	.align 4
 $simd_u_loop:
 	FIXUP_LDST( vldd $f5, 32($3) )
-	fillcs	128 * 5($3)
 	srlow	$f4, $f1, $f4
 	sllow	$f5, $f2, $f3
 	vlogfc	$f4, $f3, $f31, $f3
