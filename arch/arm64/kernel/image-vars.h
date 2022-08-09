@@ -27,9 +27,6 @@ __efistub_primary_entry_offset	= primary_entry - _text;
  */
 __efistub_memcmp		= __pi_memcmp;
 __efistub_memchr		= __pi_memchr;
-__efistub_memcpy		= __pi_memcpy;
-__efistub_memmove		= __pi_memmove;
-__efistub_memset		= __pi_memset;
 __efistub_strlen		= __pi_strlen;
 __efistub_strnlen		= __pi_strnlen;
 __efistub_strcmp		= __pi_strcmp;
@@ -37,12 +34,6 @@ __efistub_strncmp		= __pi_strncmp;
 __efistub_strrchr		= __pi_strrchr;
 __efistub_strchr		= __pi_strchr;
 __efistub___clean_dcache_area_poc = __pi___clean_dcache_area_poc;
-
-#ifdef CONFIG_KASAN
-__efistub___memcpy		= __pi_memcpy;
-__efistub___memmove		= __pi_memmove;
-__efistub___memset		= __pi_memset;
-#endif
 
 __efistub__text			= _text;
 __efistub__end			= _end;
