@@ -751,7 +751,7 @@ static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
 		seccomp_log(this_syscall, SIGSYS, action, true);
 		/* Dump core only if this is the last remaining thread. */
 		if (action == SECCOMP_RET_KILL_PROCESS ||
-		    get_nr_threads(current) == 1) {
+		    (atomic_read(&current->signal->live) == 1)) {
 			siginfo_t info;
 
 			/* Show the original registers in the dump. */
