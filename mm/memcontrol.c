@@ -5286,6 +5286,38 @@ static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 	return nbytes;
 }
 
+static int memcg_high_async_ratio_show(struct seq_file *m, void *v)
+{
+	return seq_puts_memcg_tunable(m,
+	       READ_ONCE(mem_cgroup_from_seq(m)->high_async_ratio));
+}
+
+static ssize_t memcg_high_async_ratio_write(struct kernfs_open_file *of,
+					    char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	int ret, high_async_ratio;
+
+	buf = strstrip(buf);
+	if (!buf)
+		return -EINVAL;
+
+	ret = kstrtoint(buf, 0, &high_async_ratio);
+	if (ret)
+		return ret;
+
+	if (high_async_ratio >= HIGH_ASYNC_RATIO_BASE ||
+	    high_async_ratio < HIGH_ASYNC_RATIO_DEFAULT)
+		return -EINVAL;
+
+	WRITE_ONCE(memcg->high_async_ratio, high_async_ratio);
+
+	if (is_high_async_reclaim(memcg))
+		schedule_work(&memcg->high_work);
+
+	return nbytes;
+}
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -5486,6 +5518,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "reclaim",
 		.write = memory_reclaim,
+	},
+	{
+		.name = "high_async_ratio",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memcg_high_async_ratio_show,
+		.write = memcg_high_async_ratio_write,
 	},
 	{ },	/* terminate */
 };
