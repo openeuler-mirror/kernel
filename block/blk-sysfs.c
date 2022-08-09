@@ -881,42 +881,6 @@ struct kobj_type blk_queue_ktype = {
 	.release	= blk_release_queue,
 };
 
-static void disk_init_partition(struct gendisk *disk)
-{
-	struct device *ddev = disk_to_dev(disk);
-	struct block_device *bdev;
-	struct disk_part_iter piter;
-	struct hd_struct *part;
-
-	/* No minors to use for partitions */
-	if (!disk_part_scan_enabled(disk))
-		goto exit;
-
-	/* No such device (e.g., media were just removed) */
-	if (!get_capacity(disk))
-		goto exit;
-
-	bdev = bdget_disk(disk, 0);
-	if (!bdev)
-		goto exit;
-
-	bdev->bd_invalidated = 1;
-	if (blkdev_get(bdev, FMODE_READ, NULL))
-		goto exit;
-	blkdev_put(bdev, FMODE_READ);
-
-exit:
-	/* announce disk after possible partitions are created */
-	dev_set_uevent_suppress(ddev, 0);
-	kobject_uevent(&ddev->kobj, KOBJ_ADD);
-
-	/* announce possible partitions */
-	disk_part_iter_init(&piter, disk, 0);
-	while ((part = disk_part_iter_next(&piter)))
-		kobject_uevent(&part_to_dev(part)->kobj, KOBJ_ADD);
-	disk_part_iter_exit(&piter);
-}
-
 /**
  * blk_register_queue - register a block layer queue with sysfs
  * @disk: Disk of which the request queue should be registered with sysfs.
@@ -972,21 +936,9 @@ int blk_register_queue(struct gendisk *disk)
 		}
 	}
 
-	/*
-	 * Set the flag at last, so that block devcie can't be opened
-	 * before it's registration is done.
-	 */
-	disk->flags |= GENHD_FL_UP;
 	ret = 0;
 unlock:
 	mutex_unlock(&q->sysfs_lock);
-	/*
-	 * Init partitions after releasing 'sysfs_lock', otherwise lockdep
-	 * will be confused because it will treat 'bd_mutex' from different
-	 * devices as the same lock.
-	 */
-	if (!ret)
-		disk_init_partition(disk);
 
 	/*
 	 * SCSI probing may synchronously create and destroy a lot of
