@@ -109,14 +109,21 @@ struct clk *sw64_clk_get(struct device *dev, const char *id)
 }
 EXPORT_SYMBOL(sw64_clk_get);
 
-unsigned long sw64_clk_get_rate(struct clk *clk)
+unsigned int __sw64_cpufreq_get(struct cpufreq_policy *policy)
 {
-	if (!clk)
-		return 0;
+	int i;
+	u64 val;
 
-	return (unsigned long)clk->rate;
+	val = sw64_io_read(0, CLK_CTL);
+	val = val >> CORE_PLL2_CFG_SHIFT;
+
+	for (i = 0; i < sizeof(cpu_freq)/sizeof(int); i++) {
+		if (cpu_freq[val] == cpu_freq[i])
+			return cpu_freq[i];
+	}
+	return 0;
 }
-EXPORT_SYMBOL(sw64_clk_get_rate);
+EXPORT_SYMBOL(__sw64_cpufreq_get);
 
 void sw64_store_policy(struct cpufreq_policy *policy)
 {

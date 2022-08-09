@@ -59,7 +59,7 @@ static unsigned int sw64_cpufreq_get(unsigned int cpu)
 		return 0;
 	}
 
-	return sw64_clk_get_rate(policy->clk);
+	return __sw64_cpufreq_get(policy) * 1000;
 }
 
 /*
