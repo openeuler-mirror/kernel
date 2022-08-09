@@ -2839,7 +2839,6 @@ static inline bool should_continue_reclaim(struct pglist_data *pgdat,
 
 static bool is_memcg_kswapd_stopped(struct scan_control *sc)
 {
-#ifdef CONFIG_MEMCG
 	struct mem_cgroup *memcg = sc->target_mem_cgroup;
 	bool is_stop = false;
 	unsigned long stop_flag = 0;
@@ -2855,9 +2854,6 @@ static bool is_memcg_kswapd_stopped(struct scan_control *sc)
 	is_stop = page_counter_read(&memcg->memory) < stop_flag;
 
 	return (current_is_kswapd() && is_stop);
-#else
-	return false;
-#endif
 }
 
 static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)
