@@ -496,6 +496,31 @@ int account_locked_vm(struct mm_struct *mm, unsigned long pages, bool inc)
 }
 EXPORT_SYMBOL_GPL(account_locked_vm);
 
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+static struct file *prepare_hugetlb_mmap(unsigned long flags, unsigned long size)
+{
+	int page_size_log = (flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK;
+	struct user_struct *user = NULL;
+
+	return hugetlb_file_setup(HUGETLB_ANON_FILE, size, VM_NORESERVE, &user,
+			HUGETLB_ANONHUGE_INODE, page_size_log);
+}
+
+static unsigned long finish_hugetlb_mmap(unsigned long addr, struct file *actual_file,
+				struct file *huge_file)
+{
+	struct vm_area_struct *vma;
+
+	fput(huge_file);
+	vma = find_vma(current->mm, addr);
+	if (!vma)
+		return -EINVAL;
+	vma->vm_actual_file = get_file(actual_file);
+
+	return addr;
+}
+#endif
+
 unsigned long vm_mmap_pgoff(struct file *file, unsigned long addr,
 	unsigned long len, unsigned long prot,
 	unsigned long flag, unsigned long pgoff)
@@ -504,13 +529,28 @@ unsigned long vm_mmap_pgoff(struct file *file, unsigned long addr,
 	struct mm_struct *mm = current->mm;
 	unsigned long populate;
 	LIST_HEAD(uf);
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+	struct file *actual_file = NULL;
+#endif
 
 	ret = security_mmap_file(file, prot, flag);
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+	if (flag & MAP_FILE_HUGETLB) {
+		actual_file = file;
+		file = prepare_hugetlb_mmap(flag, len + (pgoff << PAGE_SHIFT));
+		if (IS_ERR(file))
+			return PTR_ERR(file);
+	}
+#endif
 	if (!ret) {
 		if (mmap_write_lock_killable(mm))
 			return -EINTR;
 		ret = do_mmap(file, addr, len, prot, flag, pgoff, &populate,
 			      &uf);
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+		if (!IS_ERR_VALUE(addr) && (flag & MAP_FILE_HUGETLB))
+			ret = finish_hugetlb_mmap(ret, actual_file, file);
+#endif
 		mmap_write_unlock(mm);
 		userfaultfd_unmap_complete(mm, &uf);
 		if (populate)

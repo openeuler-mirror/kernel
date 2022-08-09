@@ -357,6 +357,107 @@ create_elf_tables(struct linux_binprm *bprm, const struct elfhdr *exec,
 	return 0;
 }
 
+#ifdef CONFIG_EXEC_HUGETLB
+
+#define ELF_HPAGESIZE		0x200000
+#define ELF_HPAGESTART(_v)	((_v) & ~(unsigned long)(ELF_HPAGESIZE - 1))
+#define ELF_HPAGEOFFSET(_v)	((_v) & (ELF_HPAGESIZE - 1))
+#define ELF_HPAGEALIGN(_v)	(((_v) + ELF_HPAGESIZE - 1) & ~(ELF_HPAGESIZE - 1))
+
+static int elf_hugetlb_bss(unsigned long bss, unsigned long brk, int prot,
+		int type)
+{
+	unsigned long zero_byte = ELF_HPAGEOFFSET(bss);
+	struct user_struct *user = NULL;
+	struct file *huge_file;
+	int page_size_log = (MAP_HUGE_2MB >> MAP_HUGE_SHIFT)
+				& MAP_HUGE_MASK;
+
+	if (zero_byte) {
+		zero_byte = ELF_HPAGESIZE - zero_byte;
+		if (clear_user((void __user *) bss, zero_byte))
+			return -EFAULT;
+	}
+	bss = ELF_HPAGEALIGN(bss);
+	brk = ELF_HPAGEALIGN(brk);
+	if (brk > bss) {
+		unsigned long size = brk - bss;
+
+		huge_file = hugetlb_file_setup(HUGETLB_ANON_FILE, size,
+				VM_NORESERVE, &user, HUGETLB_ANONHUGE_INODE,
+				page_size_log);
+		if (IS_ERR(huge_file))
+			return -ENOMEM;
+		bss = vm_mmap(huge_file, bss, size, prot, type, 0);
+		if (BAD_ADDR(bss))
+			return -ENOMEM;
+	}
+
+	return 0;
+}
+
+static unsigned long elf_hugetlb_map(struct file *filep, unsigned long addr,
+		const struct elf_phdr *eppnt, int prot, int type,
+		unsigned long total_size)
+{
+	unsigned long map_addr;
+	unsigned long elf_offset = ELF_PAGEOFFSET(eppnt->p_vaddr);
+	unsigned long size = eppnt->p_filesz + elf_offset;
+	unsigned long off = eppnt->p_offset - elf_offset;
+	int huge_flag = MAP_FILE_HUGETLB | MAP_HUGE_2MB;
+
+	if (eppnt->p_align != ELF_HPAGESIZE)
+		return -EINVAL;
+
+	if (total_size) {
+		total_size = ELF_HPAGEALIGN(total_size);
+		addr = vm_mmap(filep, addr, total_size,
+				PROT_NONE, type | huge_flag, 0);
+		if (BAD_ADDR(addr))
+			return -ENOMEM;
+		vm_munmap(addr, total_size);
+	}
+
+	addr = ELF_PAGESTART(addr);
+	map_addr = addr;
+	type |= MAP_FIXED_NOREPLACE;
+
+	/*
+	 * Addr of relro segment is not aligned.
+	 * Glibc will change the protection of this segment,
+	 * so we use normal mmap to avoid mprotect alignment error.
+	 */
+	if (addr != ELF_HPAGESTART(addr)) {
+		unsigned long size_4k = ELF_HPAGEALIGN(addr) - addr;
+
+		addr = vm_mmap(filep, addr, size_4k, prot, type, off);
+		if (BAD_ADDR(addr))
+			return -ENOMEM;
+		size = ELF_PAGEALIGN(size) - size_4k;
+		size = ELF_HPAGEALIGN(size);
+		addr += size_4k;
+		off += size_4k;
+	} else {
+		size = ELF_HPAGEALIGN(size);
+	}
+
+	addr = vm_mmap(filep, addr, size, prot, type | huge_flag, off);
+	if (BAD_ADDR(addr))
+		return -ENOMEM;
+
+	if (eppnt->p_memsz > eppnt->p_filesz) {
+		addr = map_addr + elf_offset;
+		addr = elf_hugetlb_bss(addr + eppnt->p_filesz,
+				addr + eppnt->p_memsz, prot, type);
+		if (BAD_ADDR(addr))
+			return -ENOMEM;
+	}
+
+	return map_addr;
+}
+
+#endif
+
 static unsigned long elf_map(struct file *filep, unsigned long addr,
 		const struct elf_phdr *eppnt, int prot, int type,
 		unsigned long total_size)
@@ -371,6 +472,12 @@ static unsigned long elf_map(struct file *filep, unsigned long addr,
 	 * segment with zero filesize is perfectly valid */
 	if (!size)
 		return addr;
+
+#ifdef CONFIG_EXEC_HUGETLB
+	if (exec_hugetlb && (eppnt->p_flags & PF_HUGETLB))
+		return elf_hugetlb_map(filep, addr, eppnt, prot, type,
+				total_size);
+#endif
 
 	/*
 	* total_size is the size of the ELF (interpreter) image.
@@ -1196,6 +1303,14 @@ out_free_interp:
 			bss_prot = elf_prot;
 			elf_brk = k;
 		}
+#ifdef CONFIG_EXEC_HUGETLB
+		/*
+		 * bss is allocated in elf_hugetlb_bss,
+		 * so skip vm_brk_flags in set_brk
+		 */
+		if (exec_hugetlb && (elf_ppnt->p_flags & PF_HUGETLB))
+			elf_bss = elf_brk = ELF_HPAGEALIGN(elf_brk);
+#endif
 	}
 
 	e_entry = elf_ex->e_entry + load_bias;

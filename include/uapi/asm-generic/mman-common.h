@@ -31,6 +31,7 @@
 #define MAP_FIXED_NOREPLACE	0x100000	/* MAP_FIXED which doesn't unmap underlying mapping */
 
 #define MAP_REPLACE		0x1000000
+#define MAP_FILE_HUGETLB	0x2000000	/* hugetlb private file map support */
 
 #define MAP_UNINITIALIZED 0x4000000	/* For anonymous mmap, memory could be
 					 * uninitialized */

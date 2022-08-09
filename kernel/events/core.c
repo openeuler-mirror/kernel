@@ -8120,6 +8120,13 @@ static void perf_event_mmap_event(struct perf_mmap_event *mmap_event)
 		flags |= MAP_LOCKED;
 	if (is_vm_hugetlb_page(vma))
 		flags |= MAP_HUGETLB;
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+	if (vma->vm_actual_file) {
+		/* perf will ignore hugetlb vma, so remove this flag */
+		flags &= ~MAP_HUGETLB;
+		file = vma->vm_actual_file;
+	}
+#endif
 
 	if (file) {
 		struct inode *inode;
