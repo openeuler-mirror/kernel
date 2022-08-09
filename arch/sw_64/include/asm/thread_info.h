@@ -34,9 +34,6 @@ struct thread_info {
 	int			preempt_count;	/* 0 => preemptible, <0 => BUG */
 	unsigned int		status;		/* thread-synchronous flags */
 
-	int bpt_nsaved;
-	unsigned long bpt_addr[2];		/* breakpoint handling  */
-	unsigned int bpt_insn[2];
 #ifdef CONFIG_DYNAMIC_FTRACE
 	unsigned long		dyn_ftrace_addr;
 #endif
