@@ -97,10 +97,6 @@ bool cgroup_memory_noswap __read_mostly;
 static DECLARE_WAIT_QUEUE_HEAD(memcg_cgwb_frn_waitq);
 #endif
 
-static bool cgroup_memory_kswapd = false;
-DEFINE_STATIC_KEY_FALSE(memcg_kswapd_key);
-EXPORT_SYMBOL(memcg_kswapd_key);
-
 /* Whether legacy memory+swap accounting is active */
 static bool do_memsw_account(void)
 {
@@ -2371,15 +2367,10 @@ static void high_work_func(struct work_struct *work)
 {
 	struct mem_cgroup *memcg;
 
-	if (mem_cgroup_kswapd_enabled) {
-		current->flags |= PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD;
-		memcg = container_of(work, struct mem_cgroup, high_work);
-		reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
-		current->flags &= ~(PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD);
-	} else {
-		memcg = container_of(work, struct mem_cgroup, high_work);
-		reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
-	}
+	current->flags |= PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD;
+	memcg = container_of(work, struct mem_cgroup, high_work);
+	reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
+	current->flags &= ~(PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD);
 }
 
 /*
@@ -2549,17 +2540,11 @@ retry_reclaim:
 	 * memory.high is currently batched, whereas memory.max and the page
 	 * allocator run every time an allocation is made.
 	 */
-	if (mem_cgroup_kswapd_enabled) {
-		current->flags |= PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD;
-		nr_reclaimed = reclaim_high(memcg,
-					    in_retry ? SWAP_CLUSTER_MAX : nr_pages,
-					    GFP_KERNEL);
-		current->flags &= ~(PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD);
-	} else {
-		nr_reclaimed = reclaim_high(memcg,
-					    in_retry ? SWAP_CLUSTER_MAX : nr_pages,
-					    GFP_KERNEL);
-	}
+	current->flags |= PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD;
+	nr_reclaimed = reclaim_high(memcg,
+				    in_retry ? SWAP_CLUSTER_MAX : nr_pages,
+				    GFP_KERNEL);
+	current->flags &= ~(PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD);
 
 	/*
 	 * memory.high is breached and reclaim is unable to keep up. Throttle
@@ -5647,9 +5632,6 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	struct mem_cgroup *memcg, *old_memcg;
 	long error = -ENOMEM;
 
-	if (cgroup_memory_kswapd)
-		static_branch_enable(&memcg_kswapd_key);
-
 	old_memcg = set_active_memcg(parent);
 	memcg = mem_cgroup_alloc();
 	set_active_memcg(old_memcg);
@@ -7463,13 +7445,6 @@ static int __init cgroup_memory(char *s)
 	return 1;
 }
 __setup("cgroup.memory=", cgroup_memory);
-
-static int __init memcg_kswapd(char *s)
-{
-	cgroup_memory_kswapd = true;
-	return 0;
-}
-__setup("memcg_kswapd", memcg_kswapd);
 
 /*
  * subsys_initcall() for memory controller.

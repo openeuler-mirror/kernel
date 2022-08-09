@@ -2843,9 +2843,8 @@ static bool is_memcg_kswapd_stopped(struct scan_control *sc)
 	bool is_stop = false;
 	unsigned long stop_flag = 0;
 
-	if (!cgroup_reclaim(sc) || !mem_cgroup_kswapd_enabled)
+	if (!cgroup_reclaim(sc))
 		return false;
-
 	if (memcg->memory.max == PAGE_COUNTER_MAX)
 		stop_flag = memcg->memory.high / 6;
 	else
