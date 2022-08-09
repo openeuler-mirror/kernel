@@ -163,11 +163,6 @@ do_sigreturn(struct sigcontext __user *sc)
 	if (restore_sigcontext(sc, regs))
 		goto give_sigsegv;
 
-	/* Send SIGTRAP if we're single-stepping: */
-	if (ptrace_cancel_bpt(current)) {
-		force_sig_fault(SIGTRAP, TRAP_BRKPT,
-				(void __user *)regs->pc, 0);
-	}
 	return;
 
 give_sigsegv:
@@ -194,11 +189,6 @@ do_rt_sigreturn(struct rt_sigframe __user *frame)
 	if (restore_altstack(&frame->uc.uc_stack))
 		goto give_sigsegv;
 
-	/* Send SIGTRAP if we're single-stepping: */
-	if (ptrace_cancel_bpt(current)) {
-		force_sig_fault(SIGTRAP, TRAP_BRKPT,
-				(void __user *)regs->pc, 0);
-	}
 	return;
 
 give_sigsegv:
@@ -381,19 +371,15 @@ syscall_restart(unsigned long r0, unsigned long r19,
 static void
 do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
 {
-	unsigned long single_stepping = ptrace_cancel_bpt(current);
 	struct ksignal ksig;
 
 	/* This lets the debugger run, ... */
 	if (get_signal(&ksig)) {
-		/* ... so re-check the single stepping. */
-		single_stepping |= ptrace_cancel_bpt(current);
 		/* Whee!  Actually deliver the signal.  */
 		if (r0)
 			syscall_restart(r0, r19, regs, &ksig.ka);
 		handle_signal(&ksig, regs);
 	} else {
-		single_stepping |= ptrace_cancel_bpt(current);
 		if (r0) {
 			switch (regs->r0) {
 			case ERESTARTNOHAND:
@@ -413,8 +399,6 @@ do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
 		}
 		restore_saved_sigmask();
 	}
-	if (single_stepping)
-		ptrace_set_bpt(current);        /* re-set breakpoint */
 }
 
 void
