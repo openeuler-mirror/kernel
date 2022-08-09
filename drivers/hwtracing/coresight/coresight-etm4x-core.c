@@ -116,8 +116,10 @@ struct etm4_enable_arg {
 #define HISI_HIP08_CORE_COMMIT_LVL_1	0b01
 #define HISI_HIP08_CORE_COMMIT_REG	sys_reg(3, 1, 15, 2, 5)
 
+#define HISI_HIP08_AUXCTRL_CHICKEN_BIT		BIT(13)
+
 struct etm4_arch_features {
-	void (*arch_callback)(bool enable);
+	void (*arch_callback)(void *info);
 };
 
 static bool etm4_hisi_match_pid(unsigned int id)
@@ -125,8 +127,9 @@ static bool etm4_hisi_match_pid(unsigned int id)
 	return (id & ETM4_AMBA_MASK) == HISI_HIP08_AMBA_ID;
 }
 
-static void etm4_hisi_config_core_commit(bool enable)
+static void etm4_hisi_config_core_commit(void *info)
 {
+	bool enable = *(bool *)info;
 	u8 commit = enable ? HISI_HIP08_CORE_COMMIT_LVL_1 :
 		    HISI_HIP08_CORE_COMMIT_FULL;
 	u64 val;
@@ -143,9 +146,20 @@ static void etm4_hisi_config_core_commit(bool enable)
 	write_sysreg_s(val, HISI_HIP08_CORE_COMMIT_REG);
 }
 
+static void etm4_hisi_config_auxctrlr(void *info)
+{
+	struct etmv4_drvdata *drvdata = info;
+
+	/* Switch the ETM to idle state */
+	writel_relaxed(HISI_HIP08_AUXCTRL_CHICKEN_BIT, drvdata->base + TRCAUXCTLR);
+}
+
 static struct etm4_arch_features etm4_features[] = {
 	[ETM4_IMPDEF_HISI_CORE_COMMIT] = {
 		.arch_callback = etm4_hisi_config_core_commit,
+	},
+	[ETM4_IMPDEF_HISI_SET_AUXCTRLR] = {
+		.arch_callback = etm4_hisi_config_auxctrlr,
 	},
 	{},
 };
@@ -153,38 +167,46 @@ static struct etm4_arch_features etm4_features[] = {
 static void etm4_enable_arch_specific(struct etmv4_drvdata *drvdata)
 {
 	struct etm4_arch_features *ftr;
+	bool enable = true;
 	int bit;
 
 	for_each_set_bit(bit, drvdata->arch_features, ETM4_IMPDEF_FEATURE_MAX) {
 		ftr = &etm4_features[bit];
 
-		if (ftr->arch_callback)
-			ftr->arch_callback(true);
+		if (bit == ETM4_IMPDEF_HISI_CORE_COMMIT && ftr->arch_callback)
+			ftr->arch_callback(&enable);
+
+		if (bit == ETM4_IMPDEF_HISI_SET_AUXCTRLR && ftr->arch_callback)
+			ftr->arch_callback(drvdata);
 	}
 }
 
 static void etm4_disable_arch_specific(struct etmv4_drvdata *drvdata)
 {
 	struct etm4_arch_features *ftr;
+	bool enable = false;
 	int bit;
 
 	for_each_set_bit(bit, drvdata->arch_features, ETM4_IMPDEF_FEATURE_MAX) {
 		ftr = &etm4_features[bit];
 
-		if (ftr->arch_callback)
-			ftr->arch_callback(false);
+		if (bit == ETM4_IMPDEF_HISI_CORE_COMMIT && ftr->arch_callback)
+			ftr->arch_callback(&enable);
 	}
 }
 
 static void etm4_check_arch_features(struct etmv4_drvdata *drvdata,
 				      unsigned int id)
 {
-	if (etm4_hisi_match_pid(id))
+	if (etm4_hisi_match_pid(id)) {
 		set_bit(ETM4_IMPDEF_HISI_CORE_COMMIT, drvdata->arch_features);
+		set_bit(ETM4_IMPDEF_HISI_SET_AUXCTRLR, drvdata->arch_features);
+	}
 }
 #else
 static void etm4_enable_arch_specific(struct etmv4_drvdata *drvdata)
 {
+	writel_relaxed(0x0, drvdata->base + TRCAUXCTLR);
 }
 
 static void etm4_disable_arch_specific(struct etmv4_drvdata *drvdata)
@@ -223,7 +245,6 @@ static int etm4_enable_hw(struct etmv4_drvdata *drvdata)
 		writel_relaxed(config->pe_sel, drvdata->base + TRCPROCSELR);
 	writel_relaxed(config->cfg, drvdata->base + TRCCONFIGR);
 	/* nothing specific implemented */
-	writel_relaxed(0x0, drvdata->base + TRCAUXCTLR);
 	writel_relaxed(config->eventctrl0, drvdata->base + TRCEVENTCTL0R);
 	writel_relaxed(config->eventctrl1, drvdata->base + TRCEVENTCTL1R);
 	if (drvdata->stallctl)
