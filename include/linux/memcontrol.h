@@ -375,7 +375,12 @@ struct mem_cgroup {
 #ifdef CONFIG_DYNAMIC_HUGETLB
 	struct dhugetlb_pool *hpool;
 #endif
+#ifndef __GENKSYMS__
+	int high_async_ratio;
+	bool high_async_reclaim;
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
