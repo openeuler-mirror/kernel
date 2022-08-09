@@ -1382,7 +1382,7 @@ static struct iommu_domain *sunway_iommu_domain_alloc(unsigned type)
 
 		sdomain->pt_root = (void *)get_zeroed_page(GFP_KERNEL);
 
-		sdomain->domain.geometry.aperture_start = SW64_DMA_START;
+		sdomain->domain.geometry.aperture_start = 0ULL;
 		sdomain->domain.geometry.aperture_end	= (~0ULL);
 		sdomain->domain.geometry.force_aperture	= true;
 		sdomain->type = IOMMU_DOMAIN_UNMANAGED;
