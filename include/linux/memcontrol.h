@@ -1895,9 +1895,6 @@ static inline void mem_cgroup_flush_foreign(struct bdi_writeback *wb)
 
 #endif	/* CONFIG_CGROUP_WRITEBACK */
 
-extern struct static_key_false memcg_kswapd_key;
-#define mem_cgroup_kswapd_enabled static_branch_unlikely(&memcg_kswapd_key)
-
 struct sock;
 bool mem_cgroup_charge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages);
 void mem_cgroup_uncharge_skmem(struct mem_cgroup *memcg, unsigned int nr_pages);
