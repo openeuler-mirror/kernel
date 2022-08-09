@@ -1957,6 +1957,11 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 	struct request *same_queue_rq = NULL;
 	blk_qc_t cookie;
 
+	if (!test_bit(QUEUE_FLAG_REGISTERED, &q->queue_flags)) {
+		bio_io_error(bio);
+		return BLK_QC_T_NONE;
+	}
+
 	blk_queue_bounce(q, &bio);
 
 	blk_queue_split(q, &bio);
