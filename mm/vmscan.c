@@ -61,8 +61,6 @@
 
 #include "internal.h"
 
-#define MEMCG_KSWAPD_SCATOR 10
-
 #define CREATE_TRACE_POINTS
 #include <trace/events/vmscan.h>
 
@@ -2836,24 +2834,6 @@ static inline bool should_continue_reclaim(struct pglist_data *pgdat,
 	return inactive_lru_pages > pages_for_compaction;
 }
 
-static bool is_memcg_kswapd_stopped(struct scan_control *sc)
-{
-	struct mem_cgroup *memcg = sc->target_mem_cgroup;
-	bool is_stop = false;
-	unsigned long stop_flag = 0;
-
-	if (!cgroup_reclaim(sc))
-		return false;
-	if (memcg->memory.max == PAGE_COUNTER_MAX)
-		stop_flag = memcg->memory.high / 6;
-	else
-		stop_flag = memcg->memory.high - memcg->memory.max *
-			    MEMCG_KSWAPD_SCATOR / 1000;
-	is_stop = page_counter_read(&memcg->memory) < stop_flag;
-
-	return (current_is_kswapd() && is_stop);
-}
-
 static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)
 {
 	struct mem_cgroup *target_memcg = sc->target_mem_cgroup;
@@ -2909,14 +2889,6 @@ static void shrink_node_memcgs(pg_data_t *pgdat, struct scan_control *sc)
 			   sc->nr_scanned - scanned,
 			   sc->nr_reclaimed - reclaimed);
 
-		/*
-		 * Memcg background reclaim would break iter once memcg kswapd
-		 * flag is satisfied.
-		 */
-		if (is_memcg_kswapd_stopped(sc)) {
-			mem_cgroup_iter_break(target_memcg, memcg);
-			break;
-		}
 	} while ((memcg = mem_cgroup_iter(target_memcg, memcg, NULL)));
 }
 
@@ -3285,9 +3257,6 @@ retry:
 		__count_zid_vm_events(ALLOCSTALL, sc->reclaim_idx, 1);
 
 	do {
-		if (is_memcg_kswapd_stopped(sc))
-			break;
-
 		vmpressure_prio(sc->gfp_mask, sc->target_mem_cgroup,
 				sc->priority);
 		sc->nr_scanned = 0;
@@ -3350,13 +3319,8 @@ retry:
 		goto retry;
 	}
 
-	/*
-	 * Untapped cgroup reserves?  Don't OOM, retry.
-	 * memcg usage is lower than memory.high / 2, memcg kswapd will lead to
-	 * stop memcg reclaim, but should not break low protection.
-	 */
-	if (sc->memcg_low_skipped &&
-	    !(current_is_kswapd() && cgroup_reclaim(sc))) {
+	/* Untapped cgroup reserves?  Don't OOM, retry. */
+	if (sc->memcg_low_skipped) {
 		sc->priority = initial_priority;
 		sc->force_deactivate = 0;
 		sc->memcg_low_reclaim = 1;

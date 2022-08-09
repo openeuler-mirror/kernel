@@ -2367,10 +2367,8 @@ static void high_work_func(struct work_struct *work)
 {
 	struct mem_cgroup *memcg;
 
-	current->flags |= PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD;
 	memcg = container_of(work, struct mem_cgroup, high_work);
 	reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
-	current->flags &= ~(PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD);
 }
 
 /*
@@ -2540,11 +2538,9 @@ retry_reclaim:
 	 * memory.high is currently batched, whereas memory.max and the page
 	 * allocator run every time an allocation is made.
 	 */
-	current->flags |= PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD;
 	nr_reclaimed = reclaim_high(memcg,
 				    in_retry ? SWAP_CLUSTER_MAX : nr_pages,
 				    GFP_KERNEL);
-	current->flags &= ~(PF_SWAPWRITE | PF_MEMALLOC | PF_KSWAPD);
 
 	/*
 	 * memory.high is breached and reclaim is unable to keep up. Throttle
