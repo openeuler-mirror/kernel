@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2208.1.0
+%global hulkrelease 2208.2.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0161
+Release: %{hulkrelease}.0162
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,51 @@ fi
 %endif
 
 %changelog
+
+* Tue Aug 09 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2208.2.0.0162
+- netfilter: nf_queue: do not allow packet truncation below transport header offset
+- openvswitch: fix OOB access in reserve_sfa_size()
+- dm thin: use refcount_t for thin_c reference counting
+- exec: Force single empty string when argv is empty
+- usb: gadget: rndis: prevent integer overflow in rndis_set_response()
+- serial: pl011: UPSTAT_AUTORTS requires .throttle/unthrottle
+- serial: 8250: fix return error code in serial8250_request_std_resource()
+- ipv4: Fix data-races around sysctl_ip_dynaddr.
+- icmp: Fix a data-race around sysctl_icmp_ratemask.
+- icmp: Fix a data-race around sysctl_icmp_ratelimit.
+- icmp: Fix data-races around sysctl.
+- net: Fix data-races around sysctl_mem.
+- inetpeer: Fix data-races around sysctl.
+- usbnet: fix memory leak in error case
+- esp: limit skb_page_frag_refill use to a single page
+- net: tun: avoid disabling NAPI twice
+- net: bonding: fix use-after-free after 802.3ad slave unbind
+- net: bonding: fix possible NULL deref in rlb code
+- usbnet: fix memory allocation in helpers
+- net: tun: stop NAPI when detaching queues
+- net: tun: unlink NAPI from device on destruction
+- virtio-net: fix race between ndo_open() and virtio_device_ready()
+- SUNRPC: Fix READ_PLUS crasher
+- virtio_net: fix xdp_rxq_info bug after suspend/resume
+- erspan: do not assume transport header is always set
+- net/sched: sch_netem: Fix arithmetic in netem_dump() for 32-bit platforms
+- bonding: ARP monitor spams NETDEV_NOTIFY_PEERS notifiers
+- ext4: make variable "count" signed
+- serial: 8250: Store to lsr_save_flags after lsr read
+- irqchip/gic-v3: Fix refcount leak in gic_populate_ppi_partitions
+- irqchip/gic/realview: Fix refcount leak in realview_gic_of_init
+- ata: libata-core: fix NULL pointer deref in ata_host_alloc_pinfo()
+- ipv6/addrconf: fix a null-ptr-deref bug for ip6_ptr
+- io_uring: add missing item types for various requests
+- net/sched: cls_u32: fix possible leak in u32_init_knode()
+- fq_codel: reject silly quantum parameters
+- net: sched: sch_teql: fix null-pointer dereference
+- rcu: Set a maximum limit for back-to-back callback invocation
+- mm: Fix page counter mismatch in shmem_mfill_atomic_pte
+- scsi: mpt3sas: Fix unlock imbalance
+- io-wq: Switch io_wqe_worker's fs before releasing request
+- ath9k: fix use-after-free in ath9k_hif_usb_rx_cb
+- Revert "iommu/vt-d: Fix potential memory leak in intel_setup_irq_remapping()"
 
 * Tue Aug 02 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2208.1.0.0161
 - fbcon: Prevent that screen size is smaller than font size
