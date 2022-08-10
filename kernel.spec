@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       108
+%global devel_release       109
 %global maintenance_release .0.0
-%global pkg_release         .57
+%global pkg_release         .58
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,42 @@ fi
 %endif
 
 %changelog
+* Wed Aug 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-109.0.0.58
+- memcg: export high_async_ratio to userland
+- memcg: enable memcg async reclaim
+- Revert "memcg: support memcg sync reclaim work as kswapd"
+- Revert "memcg: make memcg kswapd deal with dirty"
+- Revert "memcg: Add static key for memcg kswapd"
+- Revert "cgroup: fix compile error when CONFIG_MEMCG = n"
+- keys: Allow automatic module signature with SM3
+- netfilter: nf_queue: do not allow packet truncation below transport header offset
+- io_uring: use separate list entry for iopoll requests
+- io_uring: add missing item types for various requests
+- io-wq: Switch io_wqe_worker's fs before releasing request
+- coresight: etm4x: Workaround CPU hung bug on HiSilicon ETM
+- drivers/perf: hisi: Add Support for CPA PMU
+- drivers/perf: hisi: Associate PMUs in SICL with CPUs online
+- drivers/perf: hisi: Add driver for HiSilicon PCIe PMU
+- mm: userfaultfd: fix missing cache flush in mcopy_atomic_pte() and __mcopy_atomic()
+- mm: hugetlb: fix missing cache flush in copy_huge_page_from_user()
+- mm: fix missing cache flush for all tail pages of compound page
+- Bluetooth: Fix the creation of hdev->name
+- arm: remove CONFIG_ARCH_HAS_HOLES_MEMORYMODEL
+- nfp: bpf: silence bitwise vs. logical OR warning
+- drm/amd/display/dc/gpio/gpio_service: Pass around correct dce_{version, environment} types
+- block: drbd: drbd_nl: Make conversion to 'enum drbd_ret_code' explicit
+- regulator: consumer: Add missing stubs to regulator/consumer.h
+- MIPS: Use address-of operator on section symbols
+- !53 Help to merge the bus lock detection and ratelimit feature for OpenEuler
+- !45 backport adding Intel NTB LTR vendor support for gen4 NTB
+- x86/bus_lock: Set rate limit for bus lock
+- Documentation/admin-guide: Add bus lock ratelimit
+- Documentation/x86: Add buslock.rst
+- Documentation/admin-guide: Change doc for split_lock_detect parameter
+- x86/traps: Handle #DB for bus lock
+- x86/cpufeatures: Enumerate #DB for bus lock detection
+- ntb: intel: add Intel NTB LTR vendor support for gen4 NTB
+
 * Thu Aug 04 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-108.0.0.57
 - ipv6/addrconf: fix a null-ptr-deref bug for ip6_ptr
 - xfrm: xfrm_policy: fix a possible double xfrm_pols_put() in xfrm_bundle_lookup()
