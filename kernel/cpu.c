@@ -34,6 +34,7 @@
 #include <linux/scs.h>
 #include <linux/percpu-rwsem.h>
 #include <linux/cpuset.h>
+#include <linux/pbk.h>
 
 #include <trace/events/power.h>
 #define CREATE_TRACE_POINTS
@@ -156,6 +157,11 @@ static int cpuhp_invoke_callback(unsigned int cpu, enum cpuhp_state state,
 	int (*cbm)(unsigned int cpu, struct hlist_node *node);
 	int (*cb)(unsigned int cpu);
 	int ret, cnt;
+
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (is_pbk_cpu(cpu) && !is_pbk_cpu_state(state))
+		return 0;
+#endif
 
 	if (st->fail == state) {
 		st->fail = CPUHP_INVALID;
@@ -1116,7 +1122,7 @@ static int cpu_down_maps_locked(unsigned int cpu, enum cpuhp_state target)
 	return _cpu_down(cpu, 0, target);
 }
 
-static int cpu_down(unsigned int cpu, enum cpuhp_state target)
+int cpu_down(unsigned int cpu, enum cpuhp_state target)
 {
 	int err;
 
@@ -1306,7 +1312,11 @@ out:
 	return ret;
 }
 
-static int cpu_up(unsigned int cpu, enum cpuhp_state target)
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+int do_cpu_up(unsigned int cpu, enum cpuhp_state target)
+#else
+int cpu_up(unsigned int cpu, enum cpuhp_state target)
+#endif
 {
 	int err = 0;
 
@@ -1339,6 +1349,16 @@ out:
 	cpu_maps_update_done();
 	return err;
 }
+
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+int cpu_up(unsigned int cpu, enum cpuhp_state target)
+{
+	if (is_pbk_cpu(cpu))
+		return 0;
+	
+	return do_cpu_up(cpu, target);
+}
+#endif
 
 /**
  * cpu_device_up - Bring up a cpu device
@@ -1393,6 +1413,10 @@ void bringup_nonboot_cpus(unsigned int setup_max_cpus)
 	unsigned int cpu;
 
 	for_each_present_cpu(cpu) {
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+		if (cpumask_test_cpu(cpu, pbk_cpuset))
+			continue;
+#endif
 		if (num_online_cpus() >= setup_max_cpus)
 			break;
 		if (!cpu_online(cpu))

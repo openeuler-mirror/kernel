@@ -24,6 +24,7 @@
 #include <linux/sched.h>
 #include <linux/smp.h>
 #include <linux/delay.h>
+#include <linux/pbk.h>
 
 /*
  * In case the boot CPU is hotpluggable, we record its initial state and
@@ -152,6 +153,11 @@ static int c_show(struct seq_file *m, void *v)
 	for_each_online_cpu(i) {
 		struct cpuinfo_arm64 *cpuinfo = &per_cpu(cpu_data, i);
 		u32 midr = cpuinfo->reg_midr;
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+		if((is_pbk_process(current) && !is_current_pbk_cpu(i)) ||
+		   (is_pbk_view(current) && !is_pbk_cpu(i)))
+			continue;
+#endif
 
 		/*
 		 * glibc reads /proc/cpuinfo to determine the number of

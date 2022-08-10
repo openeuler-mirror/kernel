@@ -19,6 +19,7 @@
 #include <linux/slab.h>
 #include <linux/smp.h>
 #include <linux/sysfs.h>
+#include <linux/pbk.h>
 
 /* pointer to per cpu cacheinfo */
 static DEFINE_PER_CPU(struct cpu_cacheinfo, ci_cpu_cacheinfo);
@@ -415,7 +416,16 @@ static ssize_t shared_cpu_map_show(struct device *dev,
 {
 	struct cacheinfo *this_leaf = dev_get_drvdata(dev);
 	const struct cpumask *mask = &this_leaf->shared_cpu_map;
-
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (is_pbk_process(current) || is_pbk_view(current)) {
+		struct cpumask pbk_mask;
+		if (is_pbk_process(current))
+			cpumask_and(&pbk_mask, current_pbk_cpu(), mask);
+		else
+			cpumask_and(&pbk_mask, pbk_cpuset, mask);
+		return sysfs_emit(buf, "%*pb\n", nr_cpu_ids, &pbk_mask);
+	}
+#endif
 	return sysfs_emit(buf, "%*pb\n", nr_cpu_ids, mask);
 }
 
@@ -424,7 +434,16 @@ static ssize_t shared_cpu_list_show(struct device *dev,
 {
 	struct cacheinfo *this_leaf = dev_get_drvdata(dev);
 	const struct cpumask *mask = &this_leaf->shared_cpu_map;
-
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (is_pbk_process(current) || is_pbk_view(current)) {
+		struct cpumask pbk_mask;
+		if (is_pbk_process(current))
+			cpumask_and(&pbk_mask, current_pbk_cpu(), mask);
+		else
+			cpumask_and(&pbk_mask, pbk_cpuset, mask);
+		return sysfs_emit(buf, "%*pbl\n", nr_cpu_ids, &pbk_mask);
+	}
+#endif
 	return sysfs_emit(buf, "%*pbl\n", nr_cpu_ids, mask);
 }
 

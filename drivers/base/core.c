@@ -28,6 +28,7 @@
 #include <linux/sched/signal.h>
 #include <linux/sched/mm.h>
 #include <linux/sysfs.h>
+#include <linux/pbk.h>
 
 #include "base.h"
 #include "power/power.h"
@@ -2028,6 +2029,16 @@ static ssize_t online_show(struct device *dev, struct device_attribute *attr,
 
 	device_lock(dev);
 	val = !dev->offline;
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if ((is_pbk_process(current) || is_pbk_view(current)) &&
+		(dev->bus == &cpu_subsys)) {
+		if ((is_pbk_process(current) && is_current_pbk_cpu(dev->id)) ||
+			(is_pbk_view(current) && is_pbk_cpu(dev->id)))
+			val = true;
+		else
+			val = false;
+	}
+#endif
 	device_unlock(dev);
 	return sysfs_emit(buf, "%u\n", val);
 }

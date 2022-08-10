@@ -99,6 +99,7 @@
 #include <linux/share_pool.h>
 
 #include <linux/share_pool.h>
+#include <linux/pbk.h>
 #include <asm/pgalloc.h>
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
@@ -744,6 +745,10 @@ void __put_task_struct(struct task_struct *tsk)
 	exit_creds(tsk);
 	delayacct_tsk_free(tsk);
 	put_signal_struct(tsk->signal);
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (is_pbk_process(tsk))
+		put_pbk_domain(tsk->pbkd);
+#endif
 
 	if (!profile_handoff_task(tsk))
 		free_task(tsk);
@@ -1980,6 +1985,13 @@ static __latent_entropy struct task_struct *copy_process(
 	p = dup_task_struct(current, node);
 	if (!p)
 		goto fork_out;
+
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (is_pbk_process(current))
+		pbk_attach_domain(p, current->pbkd);
+	else
+		p->pbkd = NULL;
+#endif
 
 	/*
 	 * This _must_ happen before we call free_task(), i.e. before we jump

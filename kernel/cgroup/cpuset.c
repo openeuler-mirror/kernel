@@ -66,6 +66,7 @@
 #include <linux/cgroup.h>
 #include <linux/wait.h>
 #include <linux/kabi.h>
+#include <linux/pbk.h>
 
 DEFINE_STATIC_KEY_FALSE(cpusets_pre_enable_key);
 DEFINE_STATIC_KEY_FALSE(cpusets_enabled_key);
@@ -2458,6 +2459,18 @@ static int cpuset_common_seq_show(struct seq_file *sf, void *v)
 	int ret = 0;
 
 	spin_lock_irq(&callback_lock);
+
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if ((is_pbk_process(current) || is_pbk_view(current)) &&
+	    (type == FILE_CPULIST || type == FILE_EFFECTIVE_CPULIST)) {
+		if (is_pbk_process(current))
+			seq_printf(sf, "%*pbl\n", cpumask_pr_args(current_pbk_cpu()));
+		else
+			seq_printf(sf, "%*pbl\n", cpumask_pr_args(pbk_cpuset));
+		spin_unlock_irq(&callback_lock);
+		return ret;
+	}
+#endif
 
 	switch (type) {
 	case FILE_CPULIST:

@@ -1712,7 +1712,11 @@ static inline bool is_cpu_allowed(struct task_struct *p, int cpu)
 	if (!cpumask_test_cpu(cpu, p->cpus_ptr))
 		return false;
 
-	if (is_per_cpu_kthread(p))
+	if (is_per_cpu_kthread(p)
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+		|| is_pbk_process(p)
+#endif
+	)
 		return cpu_online(cpu);
 
 	return cpu_active(cpu);
@@ -1893,6 +1897,10 @@ static int __set_cpus_allowed_ptr(struct task_struct *p,
 		 */
 		cpu_valid_mask = cpu_online_mask;
 	}
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (is_pbk_process(p))
+		cpu_valid_mask = cpu_online_mask;
+#endif
 
 	/*
 	 * Must re-check here, to close a race against __kthread_bind(),
@@ -2309,6 +2317,12 @@ static int select_fallback_rq(int cpu, struct task_struct *p)
 	for (;;) {
 		/* Any allowed, online CPU? */
 		for_each_cpu(dest_cpu, p->cpus_ptr) {
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+			if (!is_pbk_process(p) &&
+			    !is_pbk_allowed_kthread(p) &&
+				is_pbk_cpu(dest_cpu))
+				continue;
+#endif
 			if (!is_cpu_allowed(p, dest_cpu))
 				continue;
 
@@ -2364,6 +2378,10 @@ int select_task_rq(struct task_struct *p, int cpu, int sd_flags, int wake_flags)
 	else
 		cpu = cpumask_any(p->cpus_ptr);
 
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (is_pbk_process(p))
+		cpu = pbk_reselect_cpu(p, cpu);
+#endif
 	/*
 	 * In order not to call set_task_cpu() on a blocking task we need
 	 * to rely on ttwu() to place the task on a valid ->cpus_ptr
@@ -2376,6 +2394,10 @@ int select_task_rq(struct task_struct *p, int cpu, int sd_flags, int wake_flags)
 	 */
 	if (unlikely(!is_cpu_allowed(p, cpu)))
 		cpu = select_fallback_rq(task_cpu(p), p);
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	else if(!is_pbk_process(p) && is_pbk_cpu(cpu))
+		cpu = select_fallback_rq(task_cpu(p), p);
+#endif
 
 	return cpu;
 }
@@ -6176,9 +6198,18 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
 	if (retval)
 		goto out_free_new_mask;
 
-
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if(is_pbk_process(p)) {
+		cpumask_copy(cpus_allowed, pbk_domain_cpu(p->pbkd));
+		cpumask_and(new_mask, in_mask, cpus_allowed);
+	} else {
+		cpuset_cpus_allowed(p, cpus_allowed);
+		cpumask_and(new_mask, in_mask, cpus_allowed);
+	}
+#else
 	cpuset_cpus_allowed(p, cpus_allowed);
 	cpumask_and(new_mask, in_mask, cpus_allowed);
+#endif
 
 	/*
 	 * Since bandwidth control happens on root_domain basis,
@@ -6200,7 +6231,11 @@ long sched_setaffinity(pid_t pid, const struct cpumask *in_mask)
 again:
 	retval = __set_cpus_allowed_ptr(p, new_mask, true);
 
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (!retval && !is_pbk_process(p)) {
+#else
 	if (!retval) {
+#endif
 		cpuset_cpus_allowed(p, cpus_allowed);
 		if (!cpumask_subset(new_mask, cpus_allowed)) {
 			/*
@@ -6274,6 +6309,11 @@ long sched_getaffinity(pid_t pid, struct cpumask *mask)
 		goto out_unlock;
 
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if(is_pbk_process(p))
+		cpumask_and(mask, &p->cpus_mask, cpu_online_mask);
+	else
+#endif
 	cpumask_and(mask, &p->cpus_mask, cpu_active_mask);
 	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 
