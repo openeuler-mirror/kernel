@@ -17,16 +17,12 @@
 #define HMC_wrksp		0x0E
 #define HMC_mtinten		0x0F
 #define HMC_load_mm		0x11
-#define HMC_rdpcbb		0x12
-#define HMC_wrpcbb		0x13
 #define HMC_tbisasn		0x14
 #define HMC_tbivpn		0x19
 #define HMC_ret			0x1A
 #define HMC_wrvpcr		0x29
 #define HMC_wrfen		0x2B
-#define HMC_kvcpucb		0x2C
 #define HMC_sflush		0x2F
-#define HMC_swpctx		0x30
 #define HMC_entervm		0x31
 #define HMC_hcall		0x32
 #define HMC_tbi			0x33
@@ -160,8 +156,6 @@ __CALL_HMC_R0(rdksp, unsigned long);
 __CALL_HMC_W1(wrksp, unsigned long);
 
 __CALL_HMC_W2(load_mm, unsigned long, unsigned long);
-__CALL_HMC_R0(rdpcbb, unsigned long);
-__CALL_HMC_W1(wrpcbb, unsigned long);
 
 __CALL_HMC_R0(rdptbr, unsigned long);
 __CALL_HMC_W1(wrptbr, unsigned long);
@@ -170,7 +164,6 @@ __CALL_HMC_RW1(swpipl, unsigned long, unsigned long);
 __CALL_HMC_R0(whami, unsigned long);
 __CALL_HMC_RW1(rdio64, unsigned long, unsigned long);
 __CALL_HMC_RW1(rdio32, unsigned int, unsigned long);
-__CALL_HMC_R0(kvcpucb, unsigned long);
 __CALL_HMC_R0(sleepen, unsigned long);
 __CALL_HMC_R0(mtinten, unsigned long);
 __CALL_HMC_W2(wrent, void*, unsigned long);
