@@ -426,7 +426,7 @@ __switch_to:
 	.ent ret_from_fork
 ret_from_fork:
 	ldi	$26, ret_from_sys_call
-	jmp	$31, schedule_tail
+	call	$31, schedule_tail
 	.end ret_from_fork
 
 /*
