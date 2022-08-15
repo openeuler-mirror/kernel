@@ -10878,7 +10878,7 @@ void free_fair_sched_group(struct task_group *tg)
 
 	for_each_possible_cpu(i) {
 #ifdef CONFIG_QOS_SCHED
-		if (tg->cfs_rq)
+		if (tg->cfs_rq && tg->cfs_rq[i])
 			unthrottle_qos_sched_group(tg->cfs_rq[i]);
 #endif
 		if (tg->cfs_rq)
