@@ -255,10 +255,6 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 				offsetof(struct user_fpsimd_state, fpcr));
 	err |= __put_user(current->thread.fpstate.fpcr, &sc->sc_fpcr);
 
-	err |= __put_user(regs->trap_a0, &sc->sc_traparg_a0);
-	err |= __put_user(regs->trap_a1, &sc->sc_traparg_a1);
-	err |= __put_user(regs->trap_a2, &sc->sc_traparg_a2);
-
 	return err;
 }
 
