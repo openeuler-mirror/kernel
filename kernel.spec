@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2208.2.0
+%global hulkrelease 2208.4.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0162
+Release: %{hulkrelease}.0163
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,25 @@ fi
 %endif
 
 %changelog
+
+* Mon Aug 15 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2208.4.0.0163
+- Revert "x86/unwind/orc: Change REG_SP_INDIRECT"
+- Phytium/S2500: kdump: Avoid vmcore saving failure across multi-socket
+- PCI: Add config control for phytium ACS quirks
+- scsi: libiscsi: Teardown iscsi_cls_conn gracefully
+- scsi: libiscsi: Add iscsi_cls_conn to sysfs after initialization
+- scsi: iscsi: Add helper functions to manage iscsi_cls_conn
+- media: v4l2-mem2mem: Apply DST_QUEUE_OFF_BASE on MMAP buffers across ioctls
+- sched: Fix null-ptr-deref in free_fair_sched_group
+- RDMA/ib_srp: Fix a deadlock
+- mm/slub: add missing TID updates on slab deactivation
+- block: fix regression for dm
+- blk-mq: handle bio after queue is initialized
+- x86: Clear .brk area at early boot
+- signal/seccomp: Dump core when there is only one live thread
+- x86/unwind/orc: Recheck address range after stack info was updated
+- x86/unwind/orc: Silence warnings caused by missing ORC data
+- x86/unwind/orc: Change REG_SP_INDIRECT
 
 * Tue Aug 09 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2208.2.0.0162
 - netfilter: nf_queue: do not allow packet truncation below transport header offset
