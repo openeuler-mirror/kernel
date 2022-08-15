@@ -44,6 +44,7 @@
 #include <linux/irq_work.h>
 #include <linux/kexec.h>
 #include <linux/perf/arm_pmu.h>
+#include <linux/crash_dump.h>
 
 #include <asm/alternative.h>
 #include <asm/atomic.h>
@@ -692,6 +693,34 @@ static bool bootcpu_valid __initdata;
 static unsigned int cpu_count = 1;
 
 #ifdef CONFIG_ACPI
+
+#ifdef CONFIG_ARCH_PHYTIUM
+/*
+ * On phytium S2500 multi-socket server, for example 2-socket(2P), there are
+ * socekt0 and socket1 on the server:
+ * If storage device(like SAS controller and disks to save vmcore into) is
+ * installed on socket1 and second kernel brings up 2 CPUs both on socket0 with
+ * nr_cpus=2, then vmcore will fail to be saved into the disk as interrupts like
+ * SPI and LPI(except SGI) can't communicate across cpu sockets in this server
+ * platform.
+ * To avoid this issue, Bypass other non-cpu0 to ensure that each cpu0 on each
+ * socket can boot up and handle interrupt when booting the second kernel.
+ */
+static bool __init is_phytium_kdump_cpu_need_bypass(u64 hwid)
+{
+	if ((read_cpuid_id() & MIDR_CPU_MODEL_MASK) != MIDR_FT_2500)
+		return false;
+
+	/*
+	 * Bypass other non-cpu0 to ensure second kernel can bring up each cpu0
+	 * on each socket
+	 */
+	if (is_kdump_kernel() && (hwid & 0xffff) != (cpu_logical_map(0) & 0xffff))
+		return true;
+	return false;
+}
+#endif
+
 static struct acpi_madt_generic_interrupt cpu_madt_gicc[NR_CPUS];
 
 struct acpi_madt_generic_interrupt *acpi_cpu_get_madt_gicc(int cpu)
@@ -737,6 +766,11 @@ acpi_map_gic_cpu_interface(struct acpi_madt_generic_interrupt *processor)
 
 	if (cpu_count >= NR_CPUS)
 		return;
+
+#ifdef CONFIG_ARCH_PHYTIUM
+	if (is_phytium_kdump_cpu_need_bypass(hwid))
+		return;
+#endif
 
 	/* map the logical cpu id to cpu MPIDR */
 	cpu_logical_map(cpu_count) = hwid;
