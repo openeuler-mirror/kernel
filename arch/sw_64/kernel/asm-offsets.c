@@ -88,9 +88,6 @@ void foo(void)
 	DEFINE(PT_REGS_R26, offsetof(struct pt_regs, r26));
 	DEFINE(PT_REGS_R27, offsetof(struct pt_regs, r27));
 	DEFINE(PT_REGS_R28, offsetof(struct pt_regs, r28));
-	DEFINE(PT_REGS_TRAP_A0, offsetof(struct pt_regs, trap_a0));
-	DEFINE(PT_REGS_TRAP_A1, offsetof(struct pt_regs, trap_a1));
-	DEFINE(PT_REGS_TRAP_A2, offsetof(struct pt_regs, trap_a2));
 	DEFINE(PT_REGS_PS, offsetof(struct pt_regs, ps));
 	DEFINE(PT_REGS_PC, offsetof(struct pt_regs, pc));
 	DEFINE(PT_REGS_GP, offsetof(struct pt_regs, gp));

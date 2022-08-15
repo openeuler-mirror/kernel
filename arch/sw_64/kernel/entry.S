@@ -14,11 +14,10 @@
 /*
  * This defines the normal kernel pt-regs layout.
  *
- * regs 9-15 preserved by C code
+ * regs 9-15 preserved by C code, saving to pt_regs will make
+ * them easier to be accessed in an unified way.
  * regs 16-18 saved by HMcode
  * regs 29-30 saved and set up by HMcode
- * JRP - Save regs 16-18 in a special area of the stack, so that
- * the hmcode-provided values are available to the signal handler.
  */
 
 	.macro SAVE_COMMON_REGS
@@ -42,9 +41,6 @@
 	stl	$25, PT_REGS_R25($sp)
 	stl	$26, PT_REGS_R26($sp)
 	stl	$27, PT_REGS_R27($sp)
-	stl	$16, PT_REGS_TRAP_A0($sp)
-	stl	$17, PT_REGS_TRAP_A1($sp)
-	stl	$18, PT_REGS_TRAP_A2($sp)
 	.endm
 
 	.macro RESTORE_COMMON_REGS
