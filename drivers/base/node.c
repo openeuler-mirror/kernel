@@ -20,6 +20,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/swap.h>
 #include <linux/slab.h>
+#include <linux/pbk.h>
 
 static struct bus_type node_subsys = {
 	.name = "node",
@@ -40,6 +41,12 @@ static ssize_t node_read_cpumap(struct device *dev, bool list, char *buf)
 		return 0;
 
 	cpumask_and(mask, cpumask_of_node(node_dev->dev.id), cpu_online_mask);
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (is_pbk_process(current))
+		cpumask_and(mask, mask, current_pbk_cpu());
+	else if (is_pbk_view(current))
+		cpumask_and(mask, mask, pbk_cpuset);
+#endif
 	n = cpumap_print_to_pagebuf(list, buf, mask);
 	free_cpumask_var(mask);
 

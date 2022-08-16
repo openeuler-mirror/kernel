@@ -66,6 +66,7 @@
 #include <linux/task_work.h>
 #include <linux/tsacct_kern.h>
 #include <linux/kabi.h>
+#include <linux/pbk.h>
 
 #include <asm/tlb.h>
 #include <asm-generic/vmlinux.lds.h>
@@ -2775,6 +2776,27 @@ static inline bool is_per_cpu_kthread(struct task_struct *p)
 		return false;
 
 	return true;
+}
+#endif
+
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+static inline int pbk_reselect_cpu(struct task_struct *p, int prev_cpu)
+{
+	int cpu;
+	struct rq *rq;
+
+	rq = cpu_rq(prev_cpu);
+	if (!rq->nr_running) 
+		return prev_cpu;
+	
+	for_each_cpu(cpu, pbk_domain_cpu(p->pbkd)) {
+		rq = cpu_rq(cpu);
+		if (!rq->nr_running)
+			break;
+	}
+
+	pr_debug("pbk reselect cpu %d\n", cpu);
+	return cpu;
 }
 #endif
 

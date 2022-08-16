@@ -873,6 +873,12 @@ struct task_struct {
 	pid_t				pid;
 	pid_t				tgid;
 
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	struct list_head	pbk_process;
+	struct pbk_domain	*pbkd;
+	int					pbk_view;
+#endif
+
 #ifdef CONFIG_STACKPROTECTOR
 	/* Canary value for the -fstack-protector GCC feature: */
 	unsigned long			stack_canary;

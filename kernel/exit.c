@@ -64,6 +64,7 @@
 #include <linux/rcuwait.h>
 #include <linux/compat.h>
 #include <linux/io_uring.h>
+#include <linux/pbk.h>
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
@@ -857,6 +858,10 @@ void __noreturn do_exit(long code)
 		__this_cpu_add(dirty_throttle_leaks, tsk->nr_dirtied);
 	exit_rcu();
 	exit_tasks_rcu_finish();
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (is_pbk_process(tsk))
+		pbk_del_process(tsk, tsk->pbkd);
+#endif
 
 	lockdep_free_task(tsk);
 	do_task_dead();

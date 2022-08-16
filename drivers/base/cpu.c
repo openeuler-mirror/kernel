@@ -20,6 +20,7 @@
 #include <linux/tick.h>
 #include <linux/pm_qos.h>
 #include <linux/sched/isolation.h>
+#include <linux/pbk.h>
 
 #include "base.h"
 
@@ -208,7 +209,12 @@ static ssize_t show_cpus_attr(struct device *dev,
 			      char *buf)
 {
 	struct cpu_attr *ca = container_of(attr, struct cpu_attr, attr);
-
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	if (is_pbk_process(current))
+		return cpumap_print_to_pagebuf(true, buf, current_pbk_cpu());
+	if (is_pbk_view(current))
+		return cpumap_print_to_pagebuf(true, buf, pbk_cpuset);
+#endif
 	return cpumap_print_to_pagebuf(true, buf, ca->map);
 }
 

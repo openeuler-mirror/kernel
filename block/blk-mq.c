@@ -1581,6 +1581,9 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 	 *   triggered, and we depend on blk-mq timeout handler to
 	 *   handle dispatched requests to this hctx
 	 */
+#ifdef CONFIG_PURPOSE_BUILT_KERNEL
+	/* Ignore this check for pbk cpus. */
+#else
 	if (!cpumask_test_cpu(raw_smp_processor_id(), hctx->cpumask) &&
 		cpu_online(hctx->next_cpu)) {
 		printk(KERN_WARNING "run queue from wrong CPU %d, hctx %s\n",
@@ -1588,6 +1591,7 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 			cpumask_empty(hctx->cpumask) ? "inactive": "active");
 		dump_stack();
 	}
+#endif
 
 	/*
 	 * We can't run the queue inline with ints disabled. Ensure that

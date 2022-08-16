@@ -1,0 +1,9 @@
+# Purpose-Built Kernel(PBK)
+
+menuconfig PURPOSE_BUILT_KERNEL
+    bool "Purpose-Built Kernel"
+    default n
+    depends on SMP && NUMA && HOTPLUG_CPU
+    help
+      Purpose-Built Kernel 
+
