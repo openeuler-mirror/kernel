@@ -31,27 +31,18 @@ static unsigned long get_node_total_pages(int nid)
 	return managed_pages;
 }
 
-static void setup_node_pagecache_limit(int nid)
-{
-	unsigned long node_total_pages;
-
-	node_total_pages = get_node_total_pages(nid);
-	node_pagecache_limit_pages[nid] = node_total_pages * pagecache_limit_ratio / 100;
-}
-
-#define ALL_NODE (-1)
-static void setup_pagecache_limit(int nid)
+static void setup_pagecache_limit(void)
 {
 	int i;
+	unsigned long node_total_pages;
 
 	pagecache_limit_pages = pagecache_limit_ratio * totalram_pages() / 100;
 
-	if (nid != ALL_NODE)
-		setup_node_pagecache_limit(nid);
-
-	else
-		for (i = 0; i < MAX_NUMNODES; i++)
-			setup_node_pagecache_limit(i);
+	for (i = 0; i < MAX_NUMNODES; i++) {
+		node_total_pages = get_node_total_pages(i);
+		node_pagecache_limit_pages[i] = node_total_pages *
+						pagecache_limit_ratio / 100;
+	}
 }
 
 int proc_page_cache_limit(struct ctl_table *table, int write,
@@ -62,7 +53,7 @@ int proc_page_cache_limit(struct ctl_table *table, int write,
 	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 
 	if (write && !ret)
-		setup_pagecache_limit(ALL_NODE);
+		setup_pagecache_limit();
 
 	return ret;
 }
@@ -81,8 +72,6 @@ void kpagecache_limitd_stop(int nid)
 		kvfree(pagecache_limitd_wait_queue[nid]);
 		pagecache_limitd_wait_queue[nid] = NULL;
 	}
-
-	setup_pagecache_limit(nid);
 }
 
 static void wakeup_kpagecache_limitd(int nid)
@@ -218,7 +207,7 @@ static int pagecache_limitd(void *arg)
 	return 0;
 }
 
-static int __kpagecache_limitd_run(int nid)
+int kpagecache_limitd_run(int nid)
 {
 	int ret = 0;
 	wait_queue_head_t *queue_head = NULL;
@@ -245,22 +234,6 @@ static int __kpagecache_limitd_run(int nid)
 		wait_for_completion(&setup_done);
 
 	return ret;
-}
-
-int kpagecache_limitd_run(int nid)
-{
-	int ret;
-
-	if (nid < 0 || nid >= MAX_NUMNODES)
-		return -EINVAL;
-
-	ret = __kpagecache_limitd_run(nid);
-	if (ret)
-		return ret;
-
-	setup_pagecache_limit(nid);
-
-	return 0;
 }
 
 static int __init kpagecache_limitd_init(void)
