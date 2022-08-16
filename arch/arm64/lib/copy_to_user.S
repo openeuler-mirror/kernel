@@ -77,6 +77,7 @@ ENDPROC(__arch_copy_to_user)
 ENTRY(__arch_copy_to_user_generic_read)
 	uaccess_enable_not_uao x3, x4, x5
 	add	end, x0, x2
+	mov	srcin, x1
 #include "copy_template_generic_read.S"
 	uaccess_disable_not_uao x3, x4
 
