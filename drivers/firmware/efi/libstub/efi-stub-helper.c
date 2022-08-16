@@ -232,6 +232,8 @@ efi_status_t efi_parse_options(char const *cmdline)
 		} else if (!strcmp(param, "video") &&
 			   val && strstarts(val, "efifb:")) {
 			efi_parse_option_graphics(val + strlen("efifb:"));
+		} else if (!strcmp(param, "memmap") && val) {
+			efi_parse_option_memmap(val);
 		}
 	}
 	efi_bs_call(free_pool, buf);
