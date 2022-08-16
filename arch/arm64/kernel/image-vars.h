@@ -35,6 +35,7 @@ __efistub_strnlen		= __pi_strnlen;
 __efistub_strcmp		= __pi_strcmp;
 __efistub_strncmp		= __pi_strncmp;
 __efistub_strrchr		= __pi_strrchr;
+__efistub_strchr		= __pi_strchr;
 __efistub___clean_dcache_area_poc = __pi___clean_dcache_area_poc;
 
 #ifdef CONFIG_KASAN
