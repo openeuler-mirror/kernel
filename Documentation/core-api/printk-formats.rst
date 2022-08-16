@@ -589,6 +589,16 @@ For printing netdev_features_t.
 
 Passed by reference.
 
+Rust
+----
+
+::
+
+	%pA
+
+Only intended to be used from Rust code to format ``core::fmt::Arguments``.
+Do *not* use it from C.
+
 Thanks
 ======
 

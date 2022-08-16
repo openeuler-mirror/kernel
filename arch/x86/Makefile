@@ -57,6 +57,8 @@ export BITS
 #
 KBUILD_CFLAGS += -mno-sse -mno-mmx -mno-sse2 -mno-3dnow
 KBUILD_CFLAGS += $(call cc-option,-mno-avx,)
+KBUILD_RUSTFLAGS += -Ctarget-feature=-mmx,-sse,-sse2,-sse3,-ssse3,-sse4.1,-sse4.2
+KBUILD_RUSTFLAGS += -Ctarget-feature=-3dnow,-3dnowa,-avx,-avx2,+soft-float
 
 # Intel CET isn't enabled in the kernel
 KBUILD_CFLAGS += $(call cc-option,-fcf-protection=none)
@@ -129,8 +131,17 @@ else
         cflags-$(CONFIG_GENERIC_CPU) += $(call cc-option,-mtune=generic)
         KBUILD_CFLAGS += $(cflags-y)
 
+        rustflags-$(CONFIG_MK8)		+= -Ctarget-cpu=k8
+        rustflags-$(CONFIG_MPSC)	+= -Ctarget-cpu=nocona
+        rustflags-$(CONFIG_MCORE2)	+= -Ctarget-cpu=core2
+        rustflags-$(CONFIG_MATOM)	+= -Ctarget-cpu=atom
+        rustflags-$(CONFIG_GENERIC_CPU)	+= -Ztune-cpu=generic
+        KBUILD_RUSTFLAGS += $(rustflags-y)
+
         KBUILD_CFLAGS += -mno-red-zone
         KBUILD_CFLAGS += -mcmodel=kernel
+        KBUILD_RUSTFLAGS += -Cno-redzone=y
+        KBUILD_RUSTFLAGS += -Ccode-model=kernel
 endif
 
 ifdef CONFIG_X86_X32
@@ -182,6 +193,7 @@ KBUILD_CFLAGS += -Wno-sign-compare
 #
 KBUILD_CFLAGS += -fno-asynchronous-unwind-tables
 
+RETPOLINE_RUSTFLAGS	:= -Ctarget-feature=+retpoline-external-thunk
 # Avoid indirect branches in kernel to deal with Spectre
 ifdef CONFIG_RETPOLINE
   KBUILD_CFLAGS += $(RETPOLINE_CFLAGS)
@@ -194,6 +206,7 @@ ifdef CONFIG_RETPOLINE
   ifndef CONFIG_CC_IS_CLANG
     KBUILD_CFLAGS += $(call cc-option,-fno-jump-tables)
   endif
+  KBUILD_RUSTFLAGS += $(RETPOLINE_RUSTFLAGS)
 endif
 
 KBUILD_LDFLAGS := -m elf_$(UTS_MACHINE)

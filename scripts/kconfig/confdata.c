@@ -1043,13 +1043,162 @@ static int conf_touch_deps(void)
 	return 0;
 }
 
+/* The returned pointer must be freed on the caller side */
+static char *escape_string_value(const char *in)
+{
+        const char *p;
+        char *out;
+        size_t len;
+
+        len = strlen(in) + strlen("\"\"") + 1;
+
+        p = in;
+        while (1) {
+                p += strcspn(p, "\"\\");
+
+                if (p[0] == '\0')
+                        break;
+
+                len++;
+                p++;
+        }
+
+        out = xmalloc(len);
+        out[0] = '\0';
+
+        strcat(out, "\"");
+
+        p = in;
+        while (1) {
+                len = strcspn(p, "\"\\");
+                strncat(out, p, len);
+                p += len;
+
+                if (p[0] == '\0')
+                        break;
+
+                strcat(out, "\\");
+                strncat(out, p++, 1);
+        }
+
+        strcat(out, "\"");
+
+        return out;
+}
+
+static void print_symbol_for_rustccfg(FILE *fp, struct symbol *sym)
+{
+        const char *val;
+        const char *val_prefix = "";
+        char *val_prefixed = NULL;
+        size_t val_prefixed_len;
+        char *escaped = NULL;
+
+        if (sym->type == S_UNKNOWN)
+                return;
+
+        val = sym_get_string_value(sym);
+
+        switch (sym->type) {
+        case S_BOOLEAN:
+        case S_TRISTATE:
+                /*
+                 * We do not care about disabled ones, i.e. no need for
+                 * what otherwise are "comments" in other printers.
+                 */
+                if (*val == 'n')
+                        return;
+
+                /*
+                 * To have similar functionality to the C macro `IS_ENABLED()`
+                 * we provide an empty `--cfg CONFIG_X` here in both `y`
+                 * and `m` cases.
+                 *
+                 * Then, the common `fprintf()` below will also give us
+                 * a `--cfg CONFIG_X="y"` or `--cfg CONFIG_X="m"`, which can
+                 * be used as the equivalent of `IS_BUILTIN()`/`IS_MODULE()`.
+                 */
+                fprintf(fp, "--cfg=%s%s\n", CONFIG_, sym->name);
+                break;
+        case S_HEX:
+                if (val[0] != '0' || (val[1] != 'x' && val[1] != 'X'))
+                        val_prefix = "0x";
+                break;
+        default:
+                break;
+        }
+
+        if (strlen(val_prefix) > 0) {
+                val_prefixed_len = strlen(val) + strlen(val_prefix) + 1;
+                val_prefixed = xmalloc(val_prefixed_len);
+                snprintf(val_prefixed, val_prefixed_len, "%s%s", val_prefix, val);
+                val = val_prefixed;
+        }
+
+        /* All values get escaped: the `--cfg` option only takes strings */
+        escaped = escape_string_value(val);
+        val = escaped;
+
+        fprintf(fp, "--cfg=%s%s=%s\n", CONFIG_, sym->name, val);
+
+        free(escaped);
+        free(val_prefixed);
+}
+
+static int __conf_write_autoconf(const char *filename,
+				 void (*print_symbol)(FILE *, struct symbol *),
+				 const struct comment_style *comment_style)
+{
+	char tmp[PATH_MAX];
+	FILE *file;
+	struct symbol *sym;
+	int ret, i;
+
+	if (make_parent_dir(filename))
+		return -1;
+
+	ret = snprintf(tmp, sizeof(tmp), "%s.tmp", filename);
+	if (ret >= sizeof(tmp)) /* check truncation */
+		return -1;
+
+	file = fopen(tmp, "w");
+	if (!file) {
+		perror("fopen");
+		return -1;
+	}
+
+	for_all_symbols(i, sym)
+		if ((sym->flags & SYMBOL_WRITE) && sym->name)
+			print_symbol(file, sym);
+
+	/* check possible errors in conf_write_heading() and print_symbol() */
+	if (ferror(file))
+		return -1;
+
+	fclose(file);
+
+	if (rename(tmp, filename)) {
+		perror("rename");
+		return -1;
+	}
+
+	return 0;
+}
+
+static const char *conf_get_rustccfg_name(void)
+{
+	char *name = getenv("KCONFIG_RUSTCCFG");
+
+	return name ? name : "include/generated/rustc_cfg";
+}
+
 int conf_write_autoconf(int overwrite)
 {
 	struct symbol *sym;
 	const char *name;
 	const char *autoconf_name = conf_get_autoconfig_name();
 	FILE *out, *out_h;
-	int i;
+	int ret, i;
 
 	if (!overwrite && is_present(autoconf_name))
 		return 0;
@@ -1101,7 +1250,10 @@ int conf_write_autoconf(int overwrite)
 	if (rename(".tmpconfig", autoconf_name))
 		return 1;
 
-	return 0;
+	ret = __conf_write_autoconf(conf_get_rustccfg_name(),
+			print_symbol_for_rustccfg,
+			NULL);
+	return ret;
 }
 
 static int sym_change_count;
