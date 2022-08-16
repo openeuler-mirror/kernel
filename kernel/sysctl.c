@@ -3229,14 +3229,6 @@ static struct ctl_table vm_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= (void *)&one_hundred,
 	},
-	{
-		.procname	= "node_drop_caches",
-		.data		= &node_to_shrink,
-		.maxlen		= sizeof(node_to_shrink),
-		.mode		= 0600,
-		.proc_handler	= proc_shrink_node_caches,
-		.extra1		= SYSCTL_ZERO,
-	},
 #endif
 #ifdef CONFIG_ASCEND_SHARE_POOL
 	{
