@@ -20,3 +20,15 @@ int fixup_exception(struct pt_regs *regs)
 	regs->pc = (unsigned long)&fixup->fixup + fixup->fixup;
 	return 1;
 }
+
+int fixup_exception_mc(struct pt_regs *regs)
+{
+	const struct exception_table_entry *fixup;
+
+	fixup = search_mc_exception_tables(instruction_pointer(regs));
+	if (!fixup)
+		return 0;
+
+	regs->pc = (unsigned long)&fixup->fixup + fixup->fixup;
+	return 1;
+}
