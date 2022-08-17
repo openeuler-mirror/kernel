@@ -19,19 +19,6 @@
 #define __exception_irq_entry	__kprobes
 #endif
 
-#ifdef CONFIG_ARM64_UCE_KERNEL_RECOVERY
-bool arm64_process_kernel_sea(unsigned long addr, unsigned int esr,
-			      struct pt_regs *regs, int sig,
-			      int code, void __user *siaddr);
-#else
-static inline bool arm64_process_kernel_sea(unsigned long addr, unsigned int esr,
-					    struct pt_regs *regs, int sig,
-					    int code, void __user *siaddr)
-{
-	return false;
-}
-#endif
-
 static inline u32 disr_to_esr(u64 disr)
 {
 	unsigned int esr = ESR_ELx_EC_SERROR << ESR_ELx_EC_SHIFT;

@@ -1646,15 +1646,6 @@ config ARM64_CNP
 	  at runtime, and does not affect PEs that do not implement
 	  this feature.
 
-config ARM64_UCE_KERNEL_RECOVERY
-	bool "arm64 uce kernel recovery for special scenario"
-	depends on ACPI_APEI_SEA
-	help
-	  With ARM v8.2 RAS Extension, SEA are usually triggered when memory
-	  error are consumed. In some cases, if the error address is in a
-	  user page there is a chance to recover. we can isolate this page
-	  and killing process instead of die.
-
 endmenu
 
 menu "ARMv8.3 architectural features"
