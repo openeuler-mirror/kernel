@@ -194,6 +194,8 @@ efi_status_t __efiapi efi_pe_entry(efi_handle_t handle,
 
 	si = setup_graphics();
 
+	mem_avoid_memmap();
+
 	status = handle_kernel_image(&image_addr, &image_size,
 				     &reserve_addr,
 				     &reserve_size,
@@ -311,6 +313,7 @@ fail_free_image:
 	efi_free(image_size, image_addr);
 	efi_free(reserve_size, reserve_addr);
 fail_free_screeninfo:
+	free_avoid_memmap();
 	free_screen_info(si);
 fail_free_cmdline:
 	efi_bs_call(free_pool, cmdline_ptr);
