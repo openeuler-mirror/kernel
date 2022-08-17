@@ -77,6 +77,7 @@ Currently, these files are in /proc/sys/vm:
 - cache_reclaim_s
 - cache_reclaim_weight
 - cache_reclaim_enable
+- cache_limit_mbytes
 
 
 admin_reserve_kbytes
@@ -1058,3 +1059,10 @@ cache_reclaim_enable
 ====================
 
 This is used to switch on/off periodical memory reclaim feature.
+
+
+cache_limit_mbytes
+==================
+
+This is used to set the upper limit of page cache in megabytes.
+Page cache will be reclaimed periodically if page cache is over limit.

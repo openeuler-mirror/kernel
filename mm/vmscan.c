@@ -4595,7 +4595,8 @@ struct page *get_page_from_vaddr(struct mm_struct *mm, unsigned long vaddr)
 EXPORT_SYMBOL_GPL(get_page_from_vaddr);
 
 #ifdef CONFIG_PAGE_CACHE_LIMIT
-unsigned long page_cache_shrink_memory(unsigned long nr_to_reclaim)
+unsigned long page_cache_shrink_memory(unsigned long nr_to_reclaim,
+					bool may_swap)
 {
 	unsigned long nr_reclaimed;
 	unsigned int noreclaim_flag;
@@ -4606,7 +4607,7 @@ unsigned long page_cache_shrink_memory(unsigned long nr_to_reclaim)
 		.may_writepage = !laptop_mode,
 		.nr_to_reclaim = nr_to_reclaim / 2,
 		.may_unmap = 1,
-		.may_swap = 1,
+		.may_swap = may_swap,
 		.priority = DEF_PRIORITY,
 	};
 
