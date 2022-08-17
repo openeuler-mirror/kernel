@@ -805,6 +805,16 @@ efi_status_t efi_parse_options(char const *cmdline);
 
 void efi_parse_option_graphics(char *option);
 
+#ifdef CONFIG_ARM64
+void efi_parse_option_memmap(const char *str);
+void mem_avoid_memmap(void);
+void free_avoid_memmap(void);
+#else
+static inline void efi_parse_option_memmap(const char *str) { }
+static inline void mem_avoid_memmap(void) { }
+static inline void free_avoid_memmap(void) { }
+#endif
+
 efi_status_t efi_setup_gop(struct screen_info *si, efi_guid_t *proto,
 			   unsigned long size);
 

@@ -15,6 +15,95 @@
 
 #include "efistub.h"
 
+#define MAX_MEMMAP_REGIONS 32
+
+struct mem_vector {
+	unsigned long long start;
+	unsigned long long size;
+};
+
+static struct mem_vector mem_avoid[MAX_MEMMAP_REGIONS];
+
+static int
+efi_parse_memmap(char *p, unsigned long long *start, unsigned long long *size)
+{
+	char *oldp;
+	u64 mem_size;
+
+	if (!p)
+		return -EINVAL;
+
+	oldp = p;
+	mem_size = memparse(p, &p);
+	if (p == oldp)
+		return -EINVAL;
+	if (!mem_size)
+		return -EINVAL;
+	if (*p != '$')
+		return -EINVAL;
+
+	*start = memparse(p + 1, &p);
+	*size = mem_size;
+
+	return 0;
+}
+
+void efi_parse_option_memmap(const char *str)
+{
+	int rc;
+	static int idx;
+	char *k, *p = (char *)str;
+
+	while (p && (idx < MAX_MEMMAP_REGIONS)) {
+		k = strchr(p, ',');
+		if (k)
+			*k++ = 0;
+
+		rc = efi_parse_memmap(p, &mem_avoid[idx].start, &mem_avoid[idx].size);
+		if (rc < 0)
+			efi_err("Failed to parse memmap cmdlines, index: %d, str: %s\n", idx, p);
+
+		p = k;
+		idx++;
+	}
+}
+
+void mem_avoid_memmap(void)
+{
+	int i;
+	efi_status_t status;
+	unsigned long nr_pages;
+	unsigned long long start, end;
+
+	for (i = 0; i < MAX_MEMMAP_REGIONS; i++) {
+		if (!mem_avoid[i].size)
+			continue;
+		start = round_down(mem_avoid[i].start, EFI_ALLOC_ALIGN);
+		end = round_up(mem_avoid[i].start + mem_avoid[i].size, EFI_ALLOC_ALIGN);
+		nr_pages = (end - start) / EFI_PAGE_SIZE;
+
+		mem_avoid[i].start = start;
+		mem_avoid[i].size = end - start;
+		status = efi_bs_call(allocate_pages, EFI_ALLOCATE_ADDRESS,
+				     EFI_LOADER_DATA, nr_pages, &mem_avoid[i].start);
+		if (status != EFI_SUCCESS) {
+			efi_err("Failed to reserve memmap, index: %d, status: %lu\n", i, status);
+			mem_avoid[i].size = 0;
+		}
+	}
+}
+
+void free_avoid_memmap(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_MEMMAP_REGIONS; i++) {
+		if (!mem_avoid[i].size)
+			continue;
+		efi_free(mem_avoid[i].size, mem_avoid[i].start);
+	}
+}
+
 efi_status_t check_platform_features(void)
 {
 	u64 tg;
