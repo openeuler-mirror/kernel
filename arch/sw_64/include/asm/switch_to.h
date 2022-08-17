@@ -48,7 +48,6 @@ do {									\
 	struct task_struct *__next = (next);				\
 	__switch_to_aux(__prev, __next);				\
 	(last) = __switch_to(__prev, __next);				\
-	check_mmu_context();						\
 } while (0)
 
 

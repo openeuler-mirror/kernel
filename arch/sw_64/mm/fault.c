@@ -62,22 +62,6 @@ void show_all_vma(void)
 }
 
 /*
- * Force a new ASN for a task.
- */
-void __load_new_mm_context(struct mm_struct *next_mm)
-{
-	unsigned long mmc, asn, ptbr;
-
-	mmc = __get_new_mm_context(next_mm, smp_processor_id());
-	next_mm->context.asid[smp_processor_id()] = mmc;
-
-	asn = mmc & HARDWARE_ASN_MASK;
-	ptbr = virt_to_pfn(next_mm->pgd);
-
-	load_asn_ptbr(asn, ptbr);
-}
-
-/*
  * This routine handles page faults.  It determines the address,
  * and the problem, and then passes it off to handle_mm_fault().
  *

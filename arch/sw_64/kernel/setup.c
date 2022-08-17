@@ -145,8 +145,6 @@ void store_cpu_data(int cpu)
 {
 	cpu_data[cpu].loops_per_jiffy = loops_per_jiffy;
 	cpu_data[cpu].last_asn = ASN_FIRST_VERSION;
-	cpu_data[cpu].need_new_asn = 0;
-	cpu_data[cpu].asn_lock = 0;
 }
 
 #ifdef CONFIG_KEXEC

@@ -499,8 +499,6 @@ void flush_tlb_all(void)
 	on_each_cpu(ipi_flush_tlb_all, NULL, 1);
 }
 
-#define asn_locked() (cpu_data[smp_processor_id()].asn_lock)
-
 static void ipi_flush_tlb_mm(void *x)
 {
 	struct mm_struct *mm = (struct mm_struct *) x;
