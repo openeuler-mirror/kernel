@@ -15,7 +15,6 @@
 #include <linux/bitops.h>
 #include <linux/hardirq.h> /* for in_interrupt() */
 #include <linux/hugetlb_inline.h>
-#include <linux/page_cache_limit.h>
 
 struct pagevec;
 
@@ -778,7 +777,6 @@ static inline int add_to_page_cache(struct page *page,
 {
 	int error;
 
-	wakeup_all_kpagecache_limitd();
 	__SetPageLocked(page);
 	error = add_to_page_cache_locked(page, mapping, offset, gfp_mask);
 	if (unlikely(error))
