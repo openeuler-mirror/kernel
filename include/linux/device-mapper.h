@@ -162,6 +162,8 @@ dev_t dm_get_dev_t(const char *path);
 int dm_get_device(struct dm_target *ti, const char *path, fmode_t mode,
 		  struct dm_dev **result);
 void dm_put_device(struct dm_target *ti, struct dm_dev *d);
+int __dm_get_device(struct dm_target *ti, const char *path, fmode_t mode,
+		    struct dm_dev **result, bool create_dd);
 
 /*
  * Information about a target type

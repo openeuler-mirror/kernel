@@ -361,12 +361,8 @@ dev_t dm_get_dev_t(const char *path)
 }
 EXPORT_SYMBOL_GPL(dm_get_dev_t);
 
-/*
- * Add a device to the list, or just increment the usage count if
- * it's already present.
- */
-int dm_get_device(struct dm_target *ti, const char *path, fmode_t mode,
-		  struct dm_dev **result)
+int __dm_get_device(struct dm_target *ti, const char *path, fmode_t mode,
+		    struct dm_dev **result, bool create_dd)
 {
 	int r;
 	dev_t dev;
@@ -390,19 +386,22 @@ int dm_get_device(struct dm_target *ti, const char *path, fmode_t mode,
 
 	dd = find_device(&t->devices, dev);
 	if (!dd) {
-		dd = kmalloc(sizeof(*dd), GFP_KERNEL);
-		if (!dd)
-			return -ENOMEM;
+		if (create_dd) {
+			dd = kmalloc(sizeof(*dd), GFP_KERNEL);
+			if (!dd)
+				return -ENOMEM;
 
-		if ((r = dm_get_table_device(t->md, dev, mode, &dd->dm_dev))) {
-			kfree(dd);
-			return r;
-		}
+			r = dm_get_table_device(t->md, dev, mode, &dd->dm_dev);
+			if (r) {
+				kfree(dd);
+				return r;
+			}
 
-		refcount_set(&dd->count, 1);
-		list_add(&dd->list, &t->devices);
-		goto out;
-
+			refcount_set(&dd->count, 1);
+			list_add(&dd->list, &t->devices);
+			goto out;
+		} else
+			return -ENODEV;
 	} else if (dd->dm_dev->mode != (mode | dd->dm_dev->mode)) {
 		r = upgrade_mode(dd, mode, t->md);
 		if (r)
@@ -412,6 +411,17 @@ int dm_get_device(struct dm_target *ti, const char *path, fmode_t mode,
 out:
 	*result = dd->dm_dev;
 	return 0;
+}
+EXPORT_SYMBOL(__dm_get_device);
+
+/*
+ * Add a device to the list, or just increment the usage count if
+ * it's already present.
+ */
+int dm_get_device(struct dm_target *ti, const char *path, fmode_t mode,
+		  struct dm_dev **result)
+{
+	return __dm_get_device(ti, path, mode, result, true);
 }
 EXPORT_SYMBOL(dm_get_device);
 
