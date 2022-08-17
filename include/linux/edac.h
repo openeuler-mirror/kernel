@@ -179,7 +179,9 @@ static inline char *mc_event_error_type(const unsigned int err_type)
  * @MEM_RDDR4:		Registered DDR4 RAM
  *			This is a variant of the DDR4 memories.
  * @MEM_LRDDR4:		Load-Reduced DDR4 memory.
+ * @MEM_DDR5:		Unbuffered DDR5 RAM
  * @MEM_NVDIMM:		Non-volatile RAM
+ * @MEM_HBM2:		High bandwidth Memory Gen 2.
  */
 enum mem_type {
 	MEM_EMPTY = 0,
@@ -203,7 +205,9 @@ enum mem_type {
 	MEM_DDR4,
 	MEM_RDDR4,
 	MEM_LRDDR4,
+	MEM_DDR5,
 	MEM_NVDIMM,
+	MEM_HBM2,
 };
 
 #define MEM_FLAG_EMPTY		BIT(MEM_EMPTY)
@@ -226,7 +230,9 @@ enum mem_type {
 #define MEM_FLAG_DDR4           BIT(MEM_DDR4)
 #define MEM_FLAG_RDDR4          BIT(MEM_RDDR4)
 #define MEM_FLAG_LRDDR4         BIT(MEM_LRDDR4)
+#define MEM_FLAG_DDR5           BIT(MEM_DDR5)
 #define MEM_FLAG_NVDIMM         BIT(MEM_NVDIMM)
+#define MEM_FLAG_HBM2		BIT(MEM_HBM2)
 
 /**
  * enum edac-type - Error Detection and Correction capabilities and mode
