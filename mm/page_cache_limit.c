@@ -8,12 +8,14 @@
 #include <linux/swap.h>
 #include <linux/sysctl.h>
 #include <linux/workqueue.h>
+#include "internal.h"
 
 static int vm_cache_reclaim_s __read_mostly;
 static int vm_cache_reclaim_s_max = 43200;
 static int vm_cache_reclaim_weight __read_mostly = 1;
 static int vm_cache_reclaim_weight_max = 100;
 static int vm_cache_reclaim_enable = 1;
+static unsigned long vm_cache_limit_mbytes __read_mostly;
 
 static void shrink_shepherd(struct work_struct *w);
 static DECLARE_DEFERRABLE_WORK(shepherd, shrink_shepherd);
@@ -29,6 +31,31 @@ static unsigned long node_reclaim_num(void)
 	int nid = numa_node_id();
 
 	return SWAP_CLUSTER_MAX * nr_cpus_node(nid) * vm_cache_reclaim_weight;
+}
+
+static bool page_cache_over_limit(void)
+{
+	unsigned long lru_file;
+	unsigned long limit;
+
+	limit = vm_cache_limit_mbytes * ((1024 * 1024UL) / PAGE_SIZE);
+	lru_file = global_node_page_state(NR_ACTIVE_FILE) +
+			global_node_page_state(NR_INACTIVE_FILE);
+	if (lru_file > limit)
+		return true;
+
+	return false;
+}
+
+static bool should_reclaim_page_cache(void)
+{
+	if (!should_periodical_reclaim())
+		return false;
+
+	if (!vm_cache_limit_mbytes)
+		return false;
+
+	return true;
 }
 
 static int cache_reclaim_enable_handler(struct ctl_table *table, int write,
@@ -64,6 +91,37 @@ static int cache_reclaim_sysctl_handler(struct ctl_table *table, int write,
 	return ret;
 }
 
+static int cache_limit_mbytes_sysctl_handler(struct ctl_table *table, int write,
+		void __user *buffer, size_t *length, loff_t *ppos)
+{
+	int ret;
+	unsigned long vm_cache_limit_mbytes_max;
+	unsigned long origin_mbytes = vm_cache_limit_mbytes;
+	int nr_retries = MAX_RECLAIM_RETRIES;
+
+	vm_cache_limit_mbytes_max = totalram_pages() >> (20 - PAGE_SHIFT);
+	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
+	if (ret || !write)
+		return ret;
+
+	if (vm_cache_limit_mbytes > vm_cache_limit_mbytes_max) {
+		vm_cache_limit_mbytes = origin_mbytes;
+		return -EINVAL;
+	}
+
+	if (write) {
+		while (should_reclaim_page_cache() && page_cache_over_limit() &&
+				nr_retries--) {
+			if (signal_pending(current))
+				return -EINTR;
+
+			page_cache_shrink_memory(node_reclaim_num(), false);
+		}
+	}
+
+	return 0;
+}
+
 static struct ctl_table ctl_table[] = {
 	{
 		.procname       = "cache_reclaim_s",
@@ -91,6 +149,13 @@ static struct ctl_table ctl_table[] = {
 		.proc_handler	= cache_reclaim_enable_handler,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "cache_limit_mbytes",
+		.data		= &vm_cache_limit_mbytes,
+		.maxlen		= sizeof(vm_cache_limit_mbytes),
+		.mode		= 0644,
+		.proc_handler	= cache_limit_mbytes_sysctl_handler,
 	},
 	{}
 };
@@ -123,7 +188,11 @@ static void shrink_shepherd(struct work_struct *w)
 
 static void shrink_page_work(struct work_struct *w)
 {
-	page_cache_shrink_memory(node_reclaim_num());
+	if (should_reclaim_page_cache()) {
+		if (page_cache_over_limit())
+			page_cache_shrink_memory(node_reclaim_num(), false);
+	} else if (should_periodical_reclaim())
+		page_cache_shrink_memory(node_reclaim_num(), true);
 }
 
 static void shrink_shepherd_timer(void)
