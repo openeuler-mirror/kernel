@@ -1364,6 +1364,47 @@ static bool io_identity_cow(struct io_kiocb *req)
 	return true;
 }
 
+static void io_drop_identity(struct io_kiocb *req)
+{
+	struct io_identity *id = req->work.identity;
+
+	if (req->work.flags & IO_WQ_WORK_MM) {
+		mmdrop(id->mm);
+		req->work.flags &= ~IO_WQ_WORK_MM;
+	}
+#ifdef CONFIG_BLK_CGROUP
+	if (req->work.flags & IO_WQ_WORK_BLKCG) {
+		css_put(id->blkcg_css);
+		req->work.flags &= ~IO_WQ_WORK_BLKCG;
+	}
+#endif
+	if (req->work.flags & IO_WQ_WORK_CREDS) {
+		put_cred(id->creds);
+		req->work.flags &= ~IO_WQ_WORK_CREDS;
+	}
+	if (req->work.flags & IO_WQ_WORK_FILES) {
+		put_files_struct(req->work.identity->files);
+		put_nsproxy(req->work.identity->nsproxy);
+		req->work.flags &= ~IO_WQ_WORK_FILES;
+	}
+	if (req->work.flags & IO_WQ_WORK_CANCEL)
+		req->work.flags &= ~IO_WQ_WORK_CANCEL;
+	if (req->work.flags & IO_WQ_WORK_FS) {
+		struct fs_struct *fs = id->fs;
+
+		spin_lock(&id->fs->lock);
+		if (--fs->users)
+			fs = NULL;
+		spin_unlock(&id->fs->lock);
+
+		if (fs)
+			free_fs_struct(fs);
+		req->work.flags &= ~IO_WQ_WORK_FS;
+	}
+	if (req->work.flags & IO_WQ_WORK_FSIZE)
+		req->work.flags &= ~IO_WQ_WORK_FSIZE;
+}
+
 static bool io_grab_identity(struct io_kiocb *req)
 {
 	const struct io_op_def *def = &io_op_defs[req->opcode];
@@ -1469,6 +1510,7 @@ static void io_prep_async_work(struct io_kiocb *req)
 	if (io_grab_identity(req))
 		return;
 
+	io_drop_identity(req);
 	if (!io_identity_cow(req))
 		return;
 
