@@ -59,6 +59,7 @@
 #include <linux/swapops.h>
 #include <linux/balloon_compaction.h>
 
+#include <linux/page_cache_limit.h>
 #include "internal.h"
 
 #define CREATE_TRACE_POINTS
@@ -4592,3 +4593,39 @@ struct page *get_page_from_vaddr(struct mm_struct *mm, unsigned long vaddr)
 	return page;
 }
 EXPORT_SYMBOL_GPL(get_page_from_vaddr);
+
+#ifdef CONFIG_PAGE_CACHE_LIMIT
+unsigned long page_cache_shrink_memory(unsigned long nr_to_reclaim)
+{
+	unsigned long nr_reclaimed;
+	unsigned int noreclaim_flag;
+	int nid = numa_node_id();
+	struct scan_control sc = {
+		.gfp_mask = GFP_HIGHUSER_MOVABLE,
+		.reclaim_idx = ZONE_MOVABLE,
+		.may_writepage = !laptop_mode,
+		.nr_to_reclaim = nr_to_reclaim / 2,
+		.may_unmap = 1,
+		.may_swap = 1,
+		.priority = DEF_PRIORITY,
+	};
+
+	struct zonelist *zonelist = node_zonelist(nid, sc.gfp_mask);
+	struct scan_control orig_sc = sc;
+
+	fs_reclaim_acquire(sc.gfp_mask);
+	noreclaim_flag = memalloc_noreclaim_save();
+	set_task_reclaim_state(current, &sc.reclaim_state);
+
+	nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
+	sc = orig_sc;
+	sc.reclaim_idx--;
+	nr_reclaimed += do_try_to_free_pages(zonelist, &sc);
+
+	set_task_reclaim_state(current, NULL);
+	memalloc_noreclaim_restore(noreclaim_flag);
+	fs_reclaim_release(sc.gfp_mask);
+
+	return nr_reclaimed;
+}
+#endif

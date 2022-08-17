@@ -536,6 +536,19 @@ config USERSWAP
 	  Support for User Swap. This is based on userfaultfd. We can implement
 	  our own swapout and swapin functions in usersapce.
 
+config PAGE_CACHE_LIMIT
+       bool "Support page cache limit"
+       depends on MMU && SYSCTL
+       default n
+       help
+	 Keeping a number of page cache can improve the performance of system,
+	 but if there is a lot fo page cache in system, that will result in
+	 short of memory, subsequent memory reclamation operations may lead
+	 to performance degradation, so add periodical memory relciam to
+	 avoid too many page cache.
+
+	 if unsure, say N to disable the PAGE_CACHE_LIMIT.
+
 config CMA
 	bool "Contiguous Memory Allocator"
 	depends on MMU

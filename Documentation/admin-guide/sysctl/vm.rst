@@ -74,6 +74,9 @@ Currently, these files are in /proc/sys/vm:
 - watermark_boost_factor
 - watermark_scale_factor
 - zone_reclaim_mode
+- cache_reclaim_s
+- cache_reclaim_weight
+- cache_reclaim_enable
 
 
 admin_reserve_kbytes
@@ -1026,3 +1029,32 @@ of other processes running on other nodes will not be affected.
 Allowing regular swap effectively restricts allocations to the local
 node unless explicitly overridden by memory policies or cpuset
 configurations.
+
+cache_reclaim_s
+===============
+
+Cache_reclaim_s is used to set reclaim interval in periodical memory
+reclaim. when periodical memory reclaim is enabled, it will relcaim
+memory in every cache_reclaim_s second.
+
+
+cache_reclaim_weight
+====================
+
+This is reclaim factor in every periodical reclaim. when periodical
+memory reclaim is enabled, the reclaim amount in every reclaim can
+calculate from:
+    reclaim_amount = cache_reclaim_weigh * SWAP_CLUSTER_MAX * nr_cpus_node(nid)
+
+SWAP_CLUSTER_MAX is defined in include/linux/swap.h.
+nr_cpus_node is used to obtain the number of CPUs on node nid.
+
+Memory reclaim use workqueue mechanism, it will block the execution of
+subsequent work, if memory reclaim tasks a lot of time, time sensitive
+work may be affected.
+
+
+cache_reclaim_enable
+====================
+
+This is used to switch on/off periodical memory reclaim feature.
