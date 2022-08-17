@@ -38,7 +38,6 @@
 #include <linux/rmap.h>
 
 #include <asm/tlbflush.h>
-#include <linux/page_cache_limit.h>
 
 #include "internal.h"
 #include "shuffle.h"
@@ -736,7 +735,6 @@ int __ref online_pages(unsigned long pfn, unsigned long nr_pages,
 
 	kswapd_run(nid);
 	kcompactd_run(nid);
-	kpagecache_limitd_run(nid);
 
 	writeback_set_ratelimit();
 
@@ -1487,7 +1485,6 @@ int __ref offline_pages(unsigned long start_pfn, unsigned long nr_pages)
 	if (arg.status_change_nid >= 0) {
 		kswapd_stop(node);
 		kcompactd_stop(node);
-		kpagecache_limitd_stop(node);
 	}
 
 	writeback_set_ratelimit();
