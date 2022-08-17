@@ -4652,7 +4652,7 @@ const struct exception_table_entry *search_module_mc_extables(unsigned long addr
 	if (!mod)
 		goto out;
 
-	if (!mod->num_exentries)
+	if (!mod->num_mc_exentries)
 		goto out;
 
 	e = search_extable(mod->mc_extable,
