@@ -478,6 +478,27 @@ if leaking kernel pointer values to unprivileged users is a concern.
 When ``kptr_restrict`` is set to 2, kernel pointers printed using
 %pK will be replaced with 0s regardless of privileges.
 
+machine_check_safe (arm64 only)
+================================
+
+Controls the kernel's behaviour when an hardware memory error is
+encountered in the following scenarios:
+
+=  ===================
+1  cow
+2  copy_mc_to_kernel
+3  copy_from_user
+4  copy_to_user
+5  get_user
+6  put_user
+=  ===================
+
+Correspondence between sysctl value and behavior:
+
+= =======================
+0 Kernel panic
+1 Kill related processes
+= =======================
 
 modprobe
 ========

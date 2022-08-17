@@ -40,6 +40,8 @@
 #include <asm/tlbflush.h>
 #include <asm/traps.h>
 
+int sysctl_machine_check_safe = 1;
+
 struct fault_info {
 	int	(*fn)(unsigned long addr, unsigned int esr,
 		      struct pt_regs *regs);
@@ -638,6 +640,9 @@ static bool arm64_do_kernel_sea(void __user *addr, unsigned int esr,
 				struct pt_regs *regs, int sig, int code)
 {
 	if (!IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC))
+		return false;
+
+	if (!sysctl_machine_check_safe)
 		return false;
 
 	if (user_mode(regs))
