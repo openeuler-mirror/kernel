@@ -2631,6 +2631,7 @@ static int sp_alloc_populate(struct mm_struct *mm, struct sp_area *spa,
 		if (ret)
 			sp_add_work_compact();
 	}
+
 	return ret;
 }
 
@@ -2651,14 +2652,8 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 	int ret;
 
 	ret = sp_alloc_mmap(mm, spa, spg_node, ac);
-	if (ret < 0) {
-		if (ac->need_fallocate) {
-			/* e.g. second sp_mmap fail */
-			sp_fallocate(spa);
-			ac->need_fallocate = false;
-		}
+	if (ret < 0)
 		return ret;
-	}
 
 	if (!ac->have_mbind) {
 		ret = sp_mbind(mm, spa->va_start, spa->real_size, spa->node_id);
@@ -2673,18 +2668,13 @@ static int __sp_alloc_mmap_populate(struct mm_struct *mm, struct sp_area *spa,
 	ret = sp_alloc_populate(mm, spa, ac);
 	if (ret) {
 err:
-		sp_alloc_unmap(list_next_entry(spg_node, proc_node)->master->mm, spa, spg_node);
-
 		if (unlikely(fatal_signal_pending(current)))
 			pr_warn_ratelimited("allocation failed, current thread is killed\n");
 		else
 			pr_warn_ratelimited("allocation failed due to mm populate failed(potential no enough memory when -12): %d\n",
-					    ret);
-		sp_fallocate(spa);  /* need this, otherwise memleak */
-		sp_alloc_fallback(spa, ac);
+					ret);
 	} else
 		ac->need_fallocate = true;
-
 	return ret;
 }
 
@@ -2693,7 +2683,7 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 {
 	int ret = -EINVAL;
 	int mmap_ret = 0;
-	struct mm_struct *mm;
+	struct mm_struct *mm, *end_mm = NULL;
 	struct sp_group_node *spg_node;
 
 	/* create mapping for each process in the group */
@@ -2702,7 +2692,7 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 		mmap_ret = __sp_alloc_mmap_populate(mm, spa, spg_node, ac);
 		if (mmap_ret) {
 			if (ac->state != ALLOC_COREDUMP)
-				return mmap_ret;
+				goto unmap;
 			ac->state = ALLOC_NORMAL;
 			continue;
 		}
@@ -2710,6 +2700,25 @@ static int sp_alloc_mmap_populate(struct sp_area *spa,
 	}
 
 	return ret;
+
+unmap:
+	/* use the next mm in proc list as end mark */
+	if (!list_is_last(&spg_node->proc_node, &spa->spg->procs))
+		end_mm = list_next_entry(spg_node, proc_node)->master->mm;
+	sp_alloc_unmap(end_mm, spa, spg_node);
+
+	/* only fallocate spa if physical memory had been allocated */
+	if (ac->need_fallocate) {
+		sp_fallocate(spa);
+		ac->need_fallocate = false;
+	}
+
+	/* if hugepage allocation fails, this will transfer to normal page
+	 * and try again. (only if SP_HUGEPAGE_ONLY is not flagged
+	 */
+	sp_alloc_fallback(spa, ac);
+
+	return mmap_ret;
 }
 
 /* spa maybe an error pointer, so introduce variable spg */
