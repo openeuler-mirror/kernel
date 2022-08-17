@@ -899,7 +899,9 @@ int dump_user_range(struct coredump_params *cprm, unsigned long start,
 		if (page) {
 			void *kaddr = kmap(page);
 
+			current->flags |= PF_COREDUMP_MCS;
 			stop = !dump_emit(cprm, kaddr, PAGE_SIZE);
+			current->flags &= ~PF_COREDUMP_MCS;
 			kunmap(page);
 			put_page(page);
 		} else {
