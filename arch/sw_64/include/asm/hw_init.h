@@ -20,8 +20,6 @@ struct cache_desc {
 struct cpuinfo_sw64 {
 	unsigned long loops_per_jiffy;
 	unsigned long last_asn;
-	int need_new_asn;
-	int asn_lock;
 	unsigned long ipi_count;
 	struct cache_desc icache; /* Primary I-cache */
 	struct cache_desc dcache; /* Primary D or combined I/D cache */

@@ -13,10 +13,9 @@
 #include <asm/io.h>
 
 /*
- * Force a context reload. This is needed when we change the page
- * table pointer or when we update the ASID of the current process.
+ * Load a mm context. This is needed when we change the page
+ * table pointer(CSR:PTBR) or when we update the ASID.
  *
- * CSR:UPN holds ASID and CSR:PTBR holds page table pointer.
  */
 #define load_asn_ptbr   load_mm
 
@@ -69,17 +68,13 @@ __get_new_mm_context(struct mm_struct *mm, long cpu)
 }
 
 static inline void
-switch_mm(struct mm_struct *prev_mm, struct mm_struct *next_mm,
-	  struct task_struct *next)
+switch_mm_irqs_off(struct mm_struct *prev_mm, struct mm_struct *next_mm,
+		   struct task_struct *next)
 {
 	/* Check if our ASN is of an older version, and thus invalid. */
 	unsigned long asn, mmc, ptbr;
 	long cpu = smp_processor_id();
 
-#ifdef CONFIG_SMP
-	cpu_data[cpu].asn_lock = 1;
-	barrier();
-#endif
 	asn = cpu_last_asn(cpu);
 	mmc = next_mm->context.asid[cpu];
 	if ((mmc ^ asn) & ~HARDWARE_ASN_MASK) {
@@ -87,10 +82,6 @@ switch_mm(struct mm_struct *prev_mm, struct mm_struct *next_mm,
 		mmc = __get_new_mm_context(next_mm, cpu);
 		next_mm->context.asid[cpu] = mmc;
 	}
-#ifdef CONFIG_SMP
-	else
-		cpu_data[cpu].need_new_asn = 1;
-#endif
 
 	/*
 	 * Update CSR:UPN and CSR:PTBR. Another thread may have allocated
@@ -102,31 +93,20 @@ switch_mm(struct mm_struct *prev_mm, struct mm_struct *next_mm,
 	load_asn_ptbr(asn, ptbr);
 }
 
-extern void __load_new_mm_context(struct mm_struct *);
+#define switch_mm_irqs_off switch_mm_irqs_off
 
-#ifdef CONFIG_SMP
-#define check_mmu_context()					\
-do {								\
-	int cpu = smp_processor_id();				\
-	cpu_data[cpu].asn_lock = 0;				\
-	barrier();						\
-	if (cpu_data[cpu].need_new_asn) {			\
-		struct mm_struct *mm = current->active_mm;	\
-		cpu_data[cpu].need_new_asn = 0;			\
-		if (!mm->context.asid[cpu])			\
-			__load_new_mm_context(mm);		\
-	}							\
-} while (0)
-#else
-#define check_mmu_context()  do { } while (0)
-#endif
-
-static inline void activate_mm(struct mm_struct *prev_mm,
-			       struct mm_struct *next_mm)
+static inline void
+switch_mm(struct mm_struct *prev_mm, struct mm_struct *next_mm,
+	  struct task_struct *tsk)
 {
-	__load_new_mm_context(next_mm);
+	unsigned long flags;
+
+	local_irq_save(flags);
+	switch_mm_irqs_off(prev_mm, next_mm, tsk);
+	local_irq_restore(flags);
 }
 
+#define activate_mm(prev, next) switch_mm(prev, next, current)
 #define deactivate_mm(tsk, mm)	do { } while (0)
 
 static inline int init_new_context(struct task_struct *tsk,
