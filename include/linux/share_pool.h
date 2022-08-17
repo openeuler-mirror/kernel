@@ -65,6 +65,7 @@ extern int sysctl_sp_perf_alloc;
 
 extern int sysctl_sp_perf_k2u;
 
+#ifdef __GENKSYMS__
 /* we estimate an sp-group ususally contains at most 64 sp-group */
 #define SP_SPG_HASH_BITS 6
 
@@ -206,6 +207,7 @@ struct sp_group_node {
 	struct sp_group *spg;
 	unsigned long prot;
 };
+#endif
 
 struct sp_walk_data {
 	struct page **pages;
@@ -506,11 +508,6 @@ static inline bool is_sharepool_addr(unsigned long addr)
 static inline bool mg_is_sharepool_addr(unsigned long addr)
 {
 	return false;
-}
-
-static inline struct sp_proc_stat *sp_get_proc_stat_ref(struct mm_struct *mm)
-{
-	return NULL;
 }
 
 static inline void spa_overview_show(struct seq_file *seq)
