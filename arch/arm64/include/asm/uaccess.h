@@ -75,6 +75,16 @@ static inline unsigned long __range_ok(const void __user *addr, unsigned long si
 	"	.long		(" #from " - .), (" #to " - .)\n"	\
 	"	.popsection\n"
 
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+#define _ASM_MC_EXTABLE(from, to)					\
+	"	.pushsection	__mc_ex_table, \"a\"\n"			\
+	"	.align		3\n"					\
+	"	.long		(" #from " - .), (" #to " - .)\n"	\
+	"	.popsection\n"
+#else
+#define _ASM_MC_EXTABLE(from, to)
+#endif
+
 /*
  * User access enabling/disabling.
  */

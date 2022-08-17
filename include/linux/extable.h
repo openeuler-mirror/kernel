@@ -19,12 +19,18 @@ void trim_init_extable(struct module *m);
 
 /* Given an address, look for it in the exception tables */
 const struct exception_table_entry *search_exception_tables(unsigned long add);
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+const struct exception_table_entry *search_mc_exception_tables(unsigned long add);
+#endif
 const struct exception_table_entry *
 search_kernel_exception_table(unsigned long addr);
 
 #ifdef CONFIG_MODULES
 /* For extable.c to search modules' exception tables. */
 const struct exception_table_entry *search_module_extables(unsigned long addr);
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+const struct exception_table_entry *search_module_mc_extables(unsigned long addr);
+#endif
 #else
 static inline const struct exception_table_entry *
 search_module_extables(unsigned long addr)

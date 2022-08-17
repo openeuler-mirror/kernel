@@ -223,6 +223,12 @@ static int do_sort(Elf_Ehdr *ehdr,
 	unsigned int orc_num_entries = 0;
 #endif
 
+	Elf_Shdr *mc_extab_sec = NULL;
+	Elf_Rel *mc_relocs = NULL;
+	int mc_relocs_size = 0;
+	char *mc_extab_image = NULL;
+	int mc_extab_index = 0;
+
 	shstrndx = r2(&ehdr->e_shstrndx);
 	if (shstrndx == SHN_XINDEX)
 		shstrndx = r(&shdr[0].sh_link);
@@ -238,6 +244,12 @@ static int do_sort(Elf_Ehdr *ehdr,
 			extab_sec = s;
 			extab_index = i;
 		}
+
+		if (!strcmp(secstrings + idx, "__mc_ex_table")) {
+			mc_extab_sec = s;
+			mc_extab_index = i;
+		}
+
 		if (!strcmp(secstrings + idx, ".symtab"))
 			symtab_sec = s;
 		if (!strcmp(secstrings + idx, ".strtab"))
@@ -249,6 +261,14 @@ static int do_sort(Elf_Ehdr *ehdr,
 			relocs = (void *)ehdr + _r(&s->sh_offset);
 			relocs_size = _r(&s->sh_size);
 		}
+
+		if ((r(&s->sh_type) == SHT_REL ||
+		     r(&s->sh_type) == SHT_RELA) &&
+		    r(&s->sh_info) == mc_extab_index) {
+			mc_relocs = (void *)ehdr + _r(&s->sh_offset);
+			mc_relocs_size = _r(&s->sh_size);
+		}
+
 		if (r(&s->sh_type) == SHT_SYMTAB_SHNDX)
 			symtab_shndx = (Elf32_Word *)((const char *)ehdr +
 						      _r(&s->sh_offset));
@@ -310,12 +330,18 @@ static int do_sort(Elf_Ehdr *ehdr,
 	}
 
 	extab_image = (void *)ehdr + _r(&extab_sec->sh_offset);
+
+	if (mc_extab_sec)
+		mc_extab_image = (void *)ehdr + _r(&mc_extab_sec->sh_offset);
+
 	strtab = (const char *)ehdr + _r(&strtab_sec->sh_offset);
 	symtab = (const Elf_Sym *)((const char *)ehdr +
 						  _r(&symtab_sec->sh_offset));
 
 	if (custom_sort) {
 		custom_sort(extab_image, _r(&extab_sec->sh_size));
+		if (mc_extab_image)
+			custom_sort(mc_extab_image, _r(&mc_extab_sec->sh_size));
 	} else {
 		int num_entries = _r(&extab_sec->sh_size) / extable_ent_size;
 		qsort(extab_image, num_entries,
@@ -325,6 +351,9 @@ static int do_sort(Elf_Ehdr *ehdr,
 	/* If there were relocations, we no longer need them. */
 	if (relocs)
 		memset(relocs, 0, relocs_size);
+
+	if (mc_relocs)
+		memset(mc_relocs, 0, mc_relocs_size);
 
 	/* find the flag main_extable_sort_needed */
 	for (sym = (void *)ehdr + _r(&symtab_sec->sh_offset);

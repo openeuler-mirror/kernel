@@ -28,6 +28,11 @@ DEFINE_MUTEX(text_mutex);
 extern struct exception_table_entry __start___ex_table[];
 extern struct exception_table_entry __stop___ex_table[];
 
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+extern struct exception_table_entry __start___mc_ex_table[];
+extern struct exception_table_entry __stop___mc_ex_table[];
+#endif
+
 /* Cleared by build time tools if the table is already sorted. */
 u32 __initdata __visible main_extable_sort_needed = 1;
 
@@ -39,6 +44,14 @@ void __init sort_main_extable(void)
 		pr_notice("Sorting __ex_table...\n");
 		sort_extable(__start___ex_table, __stop___ex_table);
 	}
+
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+	if (main_extable_sort_needed &&
+	    &__stop___mc_ex_table > &__start___mc_ex_table) {
+		pr_notice("Sorting __mc_ex_table...\n");
+		sort_extable(__start___mc_ex_table, __stop___mc_ex_table);
+	}
+#endif
 }
 
 /* Given an address, look for it in the kernel exception table */
@@ -61,6 +74,22 @@ const struct exception_table_entry *search_exception_tables(unsigned long addr)
 		e = search_bpf_extables(addr);
 	return e;
 }
+
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+/* Given an address, look for it in the machine check exception table */
+const
+struct exception_table_entry *search_mc_exception_tables(unsigned long addr)
+{
+	const struct exception_table_entry *e;
+
+	e = search_extable(__start___mc_ex_table,
+			   __stop___mc_ex_table - __start___mc_ex_table, addr);
+	if (!e)
+		e = search_module_mc_extables(addr);
+
+	return e;
+}
+#endif
 
 int init_kernel_text(unsigned long addr)
 {

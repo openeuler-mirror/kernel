@@ -1170,6 +1170,9 @@ config ARCH_LLC_128_LINE_SIZE
 config ARCH_HAS_FILTER_PGPROT
 	def_bool y
 
+config ARCH_HAS_MC_EXTABLE
+	bool
+
 config ARCH_ENABLE_SPLIT_PMD_PTLOCK
 	def_bool y if PGTABLE_LEVELS > 2
 
