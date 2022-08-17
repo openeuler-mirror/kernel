@@ -308,13 +308,8 @@ static int nfnl_acct_get(struct net *net, struct sock *nfnl,
 			kfree_skb(skb2);
 			break;
 		}
-		ret = netlink_unicast(nfnl, skb2, NETLINK_CB(skb).portid,
-					MSG_DONTWAIT);
-		if (ret > 0)
-			ret = 0;
-
-		/* this avoids a loop in nfnetlink. */
-		return ret == -EAGAIN ? -ENOBUFS : ret;
+		ret = nfnetlink_unicast(skb2, net, NETLINK_CB(skb).portid);
+		break;
 	}
 	return ret;
 }
