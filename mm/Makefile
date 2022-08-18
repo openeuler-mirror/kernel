@@ -7,6 +7,7 @@ KASAN_SANITIZE_slab_common.o := n
 KASAN_SANITIZE_slab.o := n
 KASAN_SANITIZE_slub.o := n
 KCSAN_SANITIZE_kmemleak.o := n
+KASAN_SANITIZE_clear_freelist_page.o := n
 
 # These produce frequent data race reports: most of them are due to races on
 # the same word but accesses to different bits of that word. Re-enable KCSAN
@@ -129,4 +130,5 @@ obj-$(CONFIG_PIN_MEMORY) += pin_mem.o
 obj-$(CONFIG_ASCEND_SHARE_POOL) += share_pool.o
 obj-$(CONFIG_MEMORY_RELIABLE) += mem_reliable.o
 obj-$(CONFIG_MEMCG_MEMFS_INFO) += memcg_memfs_info.o
+obj-$(CONFIG_CLEAR_FREELIST_PAGE) += clear_freelist_page.o
 obj-$(CONFIG_PAGE_CACHE_LIMIT) += page_cache_limit.o

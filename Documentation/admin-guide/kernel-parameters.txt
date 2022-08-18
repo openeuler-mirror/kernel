@@ -539,6 +539,10 @@
 
 	cio_ignore=	[S390]
 			See Documentation/s390/common_io.rst for details.
+
+	clear_freelist
+			Enable clear_freelist feature.
+
 	clk_ignore_unused
 			[CLK]
 			Prevents the clock framework from automatically gating
