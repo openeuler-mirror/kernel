@@ -4778,11 +4778,12 @@
 			See Documentation/admin-guide/cgroup-v1/cpusets.rst.
 
 	reliable_debug=	[ARM64]
-			Format: [F][,P]
+			Format: [F][,S][,P]
 			Only works with CONFIG_MEMORY_RELIABLE and
 			"kernelcore=reliable" is configured.
 			F: User memory allocation(special user task, tmpfs) will
 			not allocate memory from non-mirrored region if failed.
+			S: The shmem does not use the reliable memory.
 			P: Page cache does not use the reliable memory.
 
 	reserve=	[KNL,BUGS] Force kernel to ignore I/O ports or memory

@@ -342,6 +342,10 @@ static int __init setup_reliable_debug(char *str)
 			reliable_allow_fallback = false;
 			pr_info("disable memory reliable fallback\n");
 			break;
+		case 'S':
+			shmem_reliable = false;
+			pr_info("disable shmem use reliable memory\n");
+			break;
 		case 'P':
 			pagecache_use_reliable_mem = false;
 			pr_info("disable page cache use reliable memory\n");
