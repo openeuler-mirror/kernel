@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .3.0
-%global pkg_release         .57
+%global maintenance_release .5.0
+%global pkg_release         .58
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,305 @@ fi
 %endif
 
 %changelog
+* Wed Aug 10 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.5.0.58
+- x86: Clear .brk area at early boot
+- memcg: export high_async_ratio to userland
+- memcg: enable memcg async reclaim
+- Revert "memcg: support memcg sync reclaim work as kswapd"
+- Revert "memcg: make memcg kswapd deal with dirty"
+- Revert "memcg: Add static key for memcg kswapd"
+- Revert "cgroup: fix compile error when CONFIG_MEMCG = n"
+- keys: Allow automatic module signature with SM3
+- netfilter: nf_queue: do not allow packet truncation below transport header offset
+- io_uring: use separate list entry for iopoll requests
+- io_uring: add missing item types for various requests
+- io-wq: Switch io_wqe_worker's fs before releasing request
+- coresight: etm4x: Workaround CPU hung bug on HiSilicon ETM
+- drivers/perf: hisi: Add Support for CPA PMU
+- drivers/perf: hisi: Associate PMUs in SICL with CPUs online
+- drivers/perf: hisi: Add driver for HiSilicon PCIe PMU
+- mm: userfaultfd: fix missing cache flush in mcopy_atomic_pte() and __mcopy_atomic()
+- mm: hugetlb: fix missing cache flush in copy_huge_page_from_user()
+- mm: fix missing cache flush for all tail pages of compound page
+- Bluetooth: Fix the creation of hdev->name
+- arm: remove CONFIG_ARCH_HAS_HOLES_MEMORYMODEL
+- nfp: bpf: silence bitwise vs. logical OR warning
+- drm/amd/display/dc/gpio/gpio_service: Pass around correct dce_{version, environment} types
+- block: drbd: drbd_nl: Make conversion to 'enum drbd_ret_code' explicit
+- regulator: consumer: Add missing stubs to regulator/consumer.h
+- MIPS: Use address-of operator on section symbols
+- !58 Intel Advanced Matrix Extensions (AMX) support on SPR
+- !59 add exec hugetlb support
+- !62 Intel SPR: Adding core PMU support for openEuler-22.09
+- !50 arm64: support SME(Scalable Matrix Extension)
+- perf/x86/intel: Update the FRONTEND MSR mask on Sapphire Rapids
+- perf/x86/intel: Fix instructions:ppp support in Sapphire Rapids
+- perf/x86/intel: Add more events requires FRONTEND MSR on Sapphire Rapids
+- perf/x86/intel: Support CPUID 10.ECX to disable fixed counters
+- perf/x86/intel: Add perf core PMU support for Sapphire Rapids
+- perf/x86/intel: Filter unsupported Topdown metrics event
+- perf/x86/intel: Factor out intel_update_topdown_event()
+- perf/core: Add PERF_SAMPLE_WEIGHT_STRUCT
+- fs: add sysctl knob for exec_hugetlb
+- enable elf huge map by default
+- elf: support hugetlb map
+- hugetlb: support private file map
+- x86/fpu: Prevent FPU state corruption
+- selftests/x86/amx: Update the ARCH_REQ_XCOMP_PERM test
+- x86/fpu/xstate: Fix the ARCH_REQ_XCOMP_PERM implementation
+- x86/cpufeatures: Put the AMX macros in the word 18 block
+- x86/ptrace: Fix xfpregs_set()'s incorrect xmm clearing
+- signal: Skip the altstack update when not needed
+- x86/fpu/signal: Initialize sw_bytes in save_xstate_epilog()
+- x86/fpu: Optimize out sigframe xfeatures when in init state
+- Documentation/x86: Add documentation for using dynamic XSTATE features
+- selftests/x86/amx: Add context switch test
+- selftests/x86/amx: Add test cases for AMX state management
+- x86/fpu/amx: Enable the AMX feature in 64-bit mode
+- x86/fpu: Add XFD handling for dynamic states
+- x86/fpu: Calculate the default sizes independently
+- x86/fpu/amx: Define AMX state components and have it used for boot-time checks
+- x86/fpu/xstate: Prepare XSAVE feature table for gaps in state component numbers
+- x86/fpu/xstate: Add fpstate_realloc()/free()
+- x86/fpu/xstate: Add XFD #NM handler
+- x86/fpu: Update XFD state where required
+- x86/fpu: Add sanity checks for XFD
+- x86/fpu: Add XFD state to fpstate
+- x86/msr-index: Add MSRs for XFD
+- x86/cpufeatures: Add eXtended Feature Disabling (XFD) feature bit
+- x86/fpu: Reset permission and fpstate on exec()
+- x86/fpu: Prepare fpu_clone() for dynamically enabled features
+- x86/fpu/signal: Prepare for variable sigframe length
+- x86/signal: Use fpu::__state_user_size for sigalt stack validation
+- x86/fpu: Add basic helpers for dynamically enabled features
+- x86/arch_prctl: Add controls for dynamic XSTATE components
+- x86/fpu: Add fpu_state_config::legacy_features
+- x86/fpu: Add members to struct fpu to cache permission information
+- x86/fpu/xstate: Provide xstate_calculate_size()
+- x86/signal: Implement sigaltstack size validation
+- signal: Add an optional check for altstack size
+- x86/fpu: Remove old KVM FPU interface
+- x86/kvm: Convert FPU handling to a single swap buffer
+- x86/fpu: Provide infrastructure for KVM FPU cleanup
+- x86/fpu: Prepare for sanitizing KVM FPU code
+- x86/fpu/xstate: Move remaining xfeature helpers to core
+- x86/fpu: Rework restore_regs_from_fpstate()
+- x86/fpu: Mop up xfeatures_mask_uabi()
+- x86/fpu: Move xstate feature masks to fpu_*_cfg
+- x86/fpu: Move xstate size to fpu_*_cfg
+- x86/fpu/xstate: Cleanup size calculations
+- x86/fpu: Cleanup fpu__init_system_xstate_size_legacy()
+- x86/fpu: Provide struct fpu_config
+- x86/fpu/signal: Use fpstate for size and features
+- x86/fpu/xstate: Use fpstate for copy_uabi_to_xstate()
+- x86/fpu: Use fpstate in __copy_xstate_to_uabi_buf()
+- x86/fpu: Use fpstate in fpu_copy_kvm_uabi_to_fpstate()
+- x86/fpu/xstate: Use fpstate for xsave_to_user_sigframe()
+- x86/fpu/xstate: Use fpstate for os_xsave()
+- x86/fpu: Use fpstate::size
+- x86/fpu: Add size and mask information to fpstate
+- x86/process: Move arch_thread_struct_whitelist() out of line
+- x86/fpu: Do not leak fpstate pointer on fork
+- x86/fpu: Remove fpu::state
+- x86/math-emu: Convert to fpstate
+- x86/fpu/core: Convert to fpstate
+- x86/fpu/signal: Convert to fpstate
+- x86/fpu/regset: Convert to fpstate
+- x86/fpu: Convert tracing to fpstate
+- x86/KVM: Convert to fpstate
+- x86/fpu: Replace KVMs xstate component clearing
+- x86/fpu: Convert restore_fpregs_from_fpstate() to struct fpstate
+- x86/fpu: Convert fpstate_init() to struct fpstate
+- x86/fpu: Provide struct fpstate
+- x86/fpu: Replace KVMs home brewed FPU copy to user
+- x86/fpu: Provide a proper function for ex_handler_fprestore()
+- x86/fpu: Replace the includes of fpu/internal.h
+- x86/fpu: Mop up the internal.h leftovers
+- x86/sev: Include fpu/xcr.h
+- x86/fpu: Remove internal.h dependency from fpu/signal.h
+- x86/fpu: Move fpstate functions to api.h
+- x86/fpu: Move mxcsr related code to core
+- x86/fpu: Move fpregs_restore_userregs() to core
+- x86/fpu: Make WARN_ON_FPU() private
+- x86/fpu: Move legacy ASM wrappers to core
+- x86/fpu: Move os_xsave() and os_xrstor() to core
+- x86/fpu: Make os_xrstor_booting() private
+- x86/fpu: Clean up CPU feature tests
+- x86/fpu: Move context switch and exit to user inlines into sched.h
+- x86/fpu: Mark fpu__init_prepare_fx_sw_frame() as __init
+- x86/fpu: Rework copy_xstate_to_uabi_buf()
+- x86/fpu: Replace KVMs home brewed FPU copy from user
+- x86/fpu: Move KVMs FPU swapping to FPU core
+- x86/fpu/xstate: Mark all init only functions __init
+- x86/fpu/xstate: Provide and use for_each_xfeature()
+- x86/fpu: Cleanup xstate xcomp_bv initialization
+- x86/fpu: Do not inherit FPU context for kernel and IO worker threads
+- x86/process: Clone FPU in copy_thread()
+- x86/fpu: Remove pointless memset in fpu_clone()
+- x86/fpu: Cleanup the on_boot_cpu clutter
+- x86/fpu: Restrict xsaves()/xrstors() to independent states
+- x86/pkru: Remove useless include
+- x86/fpu: Update stale comments
+- x86/fpu: Remove pointless argument from switch_fpu_finish()
+- x86/fpu/signal: Fix missed conversion to correct boolean retval in save_xstate_epilog()
+- x86/fpu/signal: Change return code of restore_fpregs_from_user() to boolean
+- x86/fpu/signal: Change return code of check_xstate_in_sigframe() to boolean
+- x86/fpu/signal: Change return type of __fpu_restore_sig() to boolean
+- x86/fpu/signal: Change return type of fpu__restore_sig() to boolean
+- x86/signal: Change return type of restore_sigcontext() to boolean
+- x86/fpu/signal: Change return type of copy_fpregs_to_sigframe() helpers to boolean
+- x86/fpu/signal: Change return type of copy_fpstate_to_sigframe() to boolean
+- x86/fpu/signal: Move xstate clearing out of copy_fpregs_to_sigframe()
+- x86/fpu/signal: Move header zeroing out of xsave_to_user_sigframe()
+- x86/fpu/signal: Clarify exception handling in restore_fpregs_from_user()
+- x86/extable: Remove EX_TYPE_FAULT from MCE safe fixups
+- x86/fpu: Use EX_TYPE_FAULT_MCE_SAFE for exception fixups
+- x86/copy_mc: Use EX_TYPE_DEFAULT_MCE_SAFE for exception fixups
+- x86/extable: Provide EX_TYPE_DEFAULT_MCE_SAFE and EX_TYPE_FAULT_MCE_SAFE
+- x86/extable: Rework the exception table mechanics
+- x86/mce: Get rid of stray semicolons
+- x86/mce: Deduplicate exception handling
+- x86/extable: Get rid of redundant macros
+- x86/extable: Tidy up redundant handler functions
+- x86/fpu: Mask out the invalid MXCSR bits properly
+- x86/fpu: Restore the masking out of reserved MXCSR bits
+- x86/fpu/xstate: Clear xstate header in copy_xstate_to_uabi_buf() again
+- x86/fpu/signal: Let xrstor handle the features to init
+- x86/fpu/signal: Handle #PF in the direct restore path
+- x86/fpu/signal: Split out the direct restore code
+- x86/fpu/signal: Sanitize copy_user_to_fpregs_zeroing()
+- x86/fpu/signal: Sanitize the xstate check on sigframe
+- x86/fpu/signal: Remove the legacy alignment check
+- x86/fpu/signal: Move initial checks into fpu__restore_sig()
+- x86/fpu: Mark init_fpstate __ro_after_init
+- x86/pkru: Remove xstate fiddling from write_pkru()
+- x86/fpu: Don't store PKRU in xstate in fpu_reset_fpstate()
+- x86/fpu: Remove PKRU handling from switch_fpu_finish()
+- x86/fpu: Mask PKRU from kernel XRSTOR[S] operations
+- x86/fpu: Hook up PKRU into ptrace()
+- x86/fpu: Add PKRU storage outside of task XSAVE buffer
+- x86/fpu: Dont restore PKRU in fpregs_restore_userspace()
+- x86/fpu: Rename xfeatures_mask_user() to xfeatures_mask_uabi()
+- x86/fpu: Move FXSAVE_LEAK quirk into __copy_kernel_to_fpregs()
+- x86/fpu: Rename __fpregs_load_activate() to fpregs_restore_userregs()
+- x86/fpu: Clean up the fpu__clear() variants
+- x86/fpu: Rename fpu__clear_all() to fpu_flush_thread()
+- x86/fpu: Use pkru_write_default() in copy_init_fpstate_to_fpregs()
+- x86/cpu: Write the default PKRU value when enabling PKE
+- x86/pkru: Provide pkru_write_default()
+- x86/pkru: Provide pkru_get_init_value()
+- x86/cpu: Sanitize X86_FEATURE_OSPKE
+- x86/fpu: Rename and sanitize fpu__save/copy()
+- x86/pkeys: Move read_pkru() and write_pkru()
+- x86/fpu/xstate: Sanitize handling of independent features
+- x86/fpu: Rename "dynamic" XSTATEs to "independent"
+- x86/fpu: Rename initstate copy functions
+- x86/fpu: Rename copy_kernel_to_fpregs() to restore_fpregs_from_fpstate()
+- x86/fpu: Get rid of the FNSAVE optimization
+- x86/fpu: Rename copy_fpregs_to_fpstate() to save_fpregs_to_fpstate()
+- x86/fpu: Deduplicate copy_uabi_from_user/kernel_to_xstate()
+- x86/fpu: Rename xstate copy functions which are related to UABI
+- x86/fpu: Rename fregs-related copy functions
+- x86/math-emu: Rename frstor()
+- x86/fpu: Rename fxregs-related copy functions
+- x86/fpu: Rename copy_user_to_xregs() and copy_xregs_to_user()
+- x86/fpu: Rename copy_xregs_to_kernel() and copy_kernel_to_xregs()
+- x86/fpu: Get rid of copy_supervisor_to_kernel()
+- x86/fpu: Cleanup arch_set_user_pkey_access()
+- x86/kvm: Avoid looking up PKRU in XSAVE buffer
+- x86/fpu: Get rid of using_compacted_format()
+- x86/fpu: Move fpu__write_begin() to regset
+- x86/fpu/regset: Move fpu__read_begin() into regset
+- x86/fpu: Remove fpstate_sanitize_xstate()
+- x86/fpu: Use copy_xstate_to_uabi_buf() in fpregs_get()
+- x86/fpu: Use copy_xstate_to_uabi_buf() in xfpregs_get()
+- x86/fpu: Make copy_xstate_to_kernel() usable for [x]fpregs_get()
+- x86/fpu: Clean up fpregs_set()
+- x86/fpu: Fail ptrace() requests that try to set invalid MXCSR values
+- x86/fpu: Rewrite xfpregs_set()
+- x86/fpu: Simplify PTRACE_GETREGS code
+- x86/fpu: Reject invalid MXCSR values in copy_kernel_to_xstate()
+- x86/fpu: Sanitize xstateregs_set()
+- x86/fpu: Move inlines where they belong
+- x86/fpu: Remove unused get_xsave_field_ptr()
+- x86/fpu: Get rid of fpu__get_supported_xfeatures_mask()
+- x86/fpu: Make xfeatures_mask_all __ro_after_init
+- x86/fpu: Mark various FPU state variables __ro_after_init
+- x86/pkeys: Revert a5eff7259790 ("x86/pkeys: Add PKRU value to init_fpstate")
+- Revert "x86/fpu: Correct pkru/xstate inconsistency"
+- selftest/x86/signal: Include test cases for validating sigaltstack
+- selftest/sigaltstack: Use the AT_MINSIGSTKSZ aux vector if available
+- x86/elf: Support a new ELF aux vector AT_MINSIGSTKSZ
+- x86/signal: Introduce helpers to get the maximum signal frame size
+- uapi/auxvec: Define the aux vector AT_MINSIGSTKSZ
+- arm64/sme: Fix EFI save/restore
+- arm64/sme: Fix SVE/SME typo in ABI documentation
+- arm64/sme: Fix tests for 0b1111 value ID registers
+- arm64/sme: Remove _EL0 from name of SVCR - FIXME sysreg.h
+- arm64/sme: Standardise bitfield names for SVCR
+- arm64/sme: Drop SYS_ from SMIDR_EL1 defines
+- arm64/fp: Rename SVE and SME LEN field name to _WIDTH
+- arm64/fp: Make SVE and SME length register definition match architecture
+- KVM: arm64: Always start with clearing SME flag on load
+- KVM: arm64: Handle SME host state when running guests
+- KVM: arm64: Trap SME usage in guest
+- KVM: arm64: Hide SME system registers from guests
+- arm64/sme: More sensibly define the size for the ZA register set
+- arm64/sme: Fix NULL check after kzalloc
+- arm64/sme: Add ID_AA64SMFR0_EL1 to __read_sysreg_by_encoding()
+- arm64/sme: Provide Kconfig for SME
+- arm64/sme: Save and restore streaming mode over EFI runtime calls
+- arm64/sme: Disable streaming mode and ZA when flushing CPU state
+- arm64/sme: Add ptrace support for ZA
+- arm64/sme: Implement ptrace support for streaming mode SVE registers
+- arm64/sme: Implement ZA signal handling
+- arm64/sme: Implement streaming SVE signal handling
+- arm64/sme: Disable ZA and streaming mode when handling signals
+- arm64/sme: Implement traps and syscall handling for SME
+- arm64/sme: Implement ZA context switching
+- arm64/sme: Implement streaming SVE context switching
+- arm64/sme: Implement SVCR context switching
+- arm64/sme: Implement support for TPIDR2
+- arm64/sme: Implement vector length configuration prctl()s
+- arm64/sme: Implement sysctl to set the default vector length
+- arm64/sme: Identify supported SME vector lengths at boot
+- arm64/sme: Basic enumeration support
+- arm64/sme: Early CPU setup for SME
+- arm64: Do not trap PMSNEVFR_EL1
+- arm64: Disable fine grained traps on boot
+- arm64/sme: Manually encode SME instructions
+- arm64/sme: System register and exception syndrome definitions
+- arm64/sme: Provide ABI documentation for SME
+- arm64: cpufeature: Always specify and use a field width for capabilities
+- arm64/sve: Minor clarification of ABI documentation
+- arm64/sve: Generalise vector length configuration prctl() for SME
+- arm64/sve: Make sysctl interface for SVE reusable by SME
+- arm64/sve: Track vector lengths for tasks in an array
+- arm64/sve: Explicitly load vector length when restoring SVE state
+- arm64/sve: Put system wide vector length information into structs
+- arm64/sve: Use accessor functions for vector lengths in thread_struct
+- arm64/sve: Rename find_supported_vector_length()
+- KVM: arm64: Save/restore SVE state for nVHE
+- KVM: arm64: Save guest's ZCR_EL1 before saving the FPSIMD state
+- arm64/sve: Make access to FFR optional
+- arm64/fp: Reindent fpsimd_save()
+- KVM: arm64: Rework SVE host-save/guest-restore
+- KVM: arm64: Map SVE context at EL2 when available
+- arm64: sve: Provide sve_cond_update_zcr_vq fallback when !ARM64_SVE
+- arm64: sve: Provide a conditional update accessor for ZCR_ELx
+- KVM: arm64: Introduce vcpu_sve_vq() helper
+- KVM: arm64: Use {read,write}_sysreg_el1 to access ZCR_EL1
+- KVM: arm64: Provide KVM's own save/restore SVE primitives
+- KVM: arm64: Let vcpu_sve_pffr() handle HYP VAs
+- arm64/sve: Better handle failure to allocate SVE register storage
+- arm64/sve: Remove sve_load_from_fpsimd_state()
+- arm64/sve: Use the sve_flush macros in sve_load_from_fpsimd_state()
+- arm64/sve: Skip flushing Z registers with 128 bit vectors
+- arm64/sve: Split _sve_flush macro into separate Z and predicate flushes
+- arm64/sve: Rework SVE access trap to convert state in registers
+- arm64/sve: Add compile time checks for SVE hooks in generic functions
+- arm64/sve: Remove redundant system_supports_sve() tests
+
 * Thu Aug 04 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.3.0.57
 - ipv6/addrconf: fix a null-ptr-deref bug for ip6_ptr
 - xfrm: xfrm_policy: fix a possible double xfrm_pols_put() in xfrm_bundle_lookup()
