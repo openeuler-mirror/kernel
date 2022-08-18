@@ -16,6 +16,7 @@ EXPORT_SYMBOL_GPL(mem_reliable);
 
 bool reliable_enabled;
 bool shmem_reliable __read_mostly = true;
+bool reliable_allow_fallback __read_mostly = true;
 bool pagecache_use_reliable_mem __read_mostly = true;
 struct percpu_counter pagecache_reliable_pages;
 struct percpu_counter anon_reliable_pages;
@@ -292,6 +293,10 @@ static int __init setup_reliable_debug(char *str)
 	 */
 	for (; *str && *str != ','; str++) {
 		switch (*str) {
+		case 'F':
+			reliable_allow_fallback = false;
+			pr_info("disable memory reliable fallback\n");
+			break;
 		case 'P':
 			pagecache_use_reliable_mem = false;
 			pr_info("disable page cache use reliable memory\n");

@@ -4664,6 +4664,28 @@ check_retry_cpuset(int cpuset_mems_cookie, struct alloc_context *ac)
 	return false;
 }
 
+#ifdef CONFIG_MEMORY_RELIABLE
+static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
+						  struct alloc_context *ac)
+{
+	if (!reliable_allow_fb_enabled())
+		return;
+
+	if (gfp_mask & __GFP_NOFAIL)
+		return;
+
+	if ((ac->highest_zoneidx == ZONE_NORMAL) && (gfp_mask & GFP_RELIABLE)) {
+		ac->highest_zoneidx = gfp_zone(gfp_mask & ~GFP_RELIABLE);
+		ac->preferred_zoneref = first_zones_zonelist(
+			ac->zonelist, ac->highest_zoneidx, ac->nodemask);
+		return;
+	}
+}
+#else
+static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
+						  struct alloc_context *ac) {}
+#endif
+
 static inline struct page *
 __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 						struct alloc_context *ac)
@@ -4714,6 +4736,8 @@ retry_cpuset:
 
 	if (alloc_flags & ALLOC_KSWAPD)
 		wake_all_kswapds(order, gfp_mask, ac);
+
+	mem_reliable_fallback_slowpath(gfp_mask, ac);
 
 	/*
 	 * The adjusted alloc_flags might result in immediate success, so try
@@ -5228,7 +5252,7 @@ out_free_page:
 	*_page = NULL;
 
 out_retry:
-	if (is_global_init(current)) {
+	if (reliable_allow_fb_enabled() || is_global_init(current)) {
 		*gfp &= ~GFP_RELIABLE;
 		return true;
 	}
