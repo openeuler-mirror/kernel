@@ -5182,6 +5182,9 @@ static inline void prepare_before_alloc(gfp_t *gfp_mask)
 	if (!zone_movable)
 		goto clear_flag;
 
+	if (!in_task())
+		return;
+
 	if ((current->flags & PF_RELIABLE) || is_global_init(current))
 		*gfp_mask |= GFP_RELIABLE;
 
