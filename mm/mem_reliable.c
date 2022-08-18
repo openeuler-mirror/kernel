@@ -107,3 +107,27 @@ void reliable_report_meminfo(struct seq_file *m)
 	show_val_kb(m, "ReliableUsed:     ", used_reliable_pages());
 	show_val_kb(m, "ReliableBuddyMem: ", free_reliable_pages());
 }
+
+static int __init setup_reliable_debug(char *str)
+{
+	if (*str++ != '=' || !*str)
+		/*
+		 * No options specified.
+		 */
+		goto out;
+
+	/*
+	 * Determine which debug features should be switched on
+	 */
+	for (; *str && *str != ','; str++) {
+		switch (*str) {
+		default:
+			pr_err("reliable_debug option '%c' unknown. skipped\n",
+			       *str);
+		}
+	}
+
+out:
+	return 1;
+}
+__setup("reliable_debug", setup_reliable_debug);
