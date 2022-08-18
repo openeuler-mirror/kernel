@@ -10,7 +10,7 @@
 
 #ifdef CONFIG_MEMORY_RELIABLE
 
-extern struct static_key_false mem_reliable;
+DECLARE_STATIC_KEY_FALSE(mem_reliable);
 
 extern bool reliable_enabled;
 extern bool shmem_reliable;
