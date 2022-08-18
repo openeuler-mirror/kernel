@@ -38,6 +38,7 @@ extern void reliable_lru_add_batch(int zid, enum lru_list lru,
 extern bool mem_reliable_counter_initialized(void);
 extern void mem_reliable_out_of_memory(gfp_t gfp_mask, unsigned int order,
 				       int preferred_nid, nodemask_t *nodemask);
+extern void reliable_show_mem_info(void);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -162,6 +163,7 @@ static inline void mem_reliable_out_of_memory(gfp_t gfp_mask,
 					      int preferred_nid,
 					      nodemask_t *nodemask) {}
 static inline bool reliable_allow_fb_enabled(void) { return false; }
+static inline void reliable_show_mem_info(void) {}
 #endif
 
 #endif
