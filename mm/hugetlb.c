@@ -2697,6 +2697,19 @@ out_subpool_put:
 	return ERR_PTR(-ENOSPC);
 }
 
+void *__init __alloc_bootmem_huge_page_inner(phys_addr_t size,
+					     phys_addr_t align,
+					     phys_addr_t min_addr,
+					     phys_addr_t max_addr, int nid)
+{
+	if (!mem_reliable_is_enabled())
+		return memblock_alloc_try_nid_raw(size, align, max_addr,
+						  max_addr, nid);
+
+	return memblock_alloc_try_nid_raw_flags(size, align, max_addr, max_addr,
+						nid, MEMBLOCK_NOMIRROR);
+}
+
 int alloc_bootmem_huge_page(struct hstate *h, int nid)
 	__attribute__ ((weak, alias("__alloc_bootmem_huge_page")));
 int __alloc_bootmem_huge_page(struct hstate *h, int nid)
@@ -2712,7 +2725,7 @@ int __alloc_bootmem_huge_page(struct hstate *h, int nid)
 
 	/* do node specific alloc */
 	if (nid != NUMA_NO_NODE) {
-		m = memblock_alloc_try_nid_raw(huge_page_size(h), huge_page_size(h),
+		m = __alloc_bootmem_huge_page_inner(huge_page_size(h), huge_page_size(h),
 				0, MEMBLOCK_ALLOC_ACCESSIBLE, nid);
 		if (!m)
 			return 0;
@@ -2720,7 +2733,7 @@ int __alloc_bootmem_huge_page(struct hstate *h, int nid)
 	}
 	/* allocate from next node when distributing huge pages */
 	for_each_node_mask_to_alloc(h, nr_nodes, node, &node_states[N_MEMORY]) {
-		m = memblock_alloc_try_nid_raw(
+		m = __alloc_bootmem_huge_page_inner(
 				huge_page_size(h), huge_page_size(h),
 				0, MEMBLOCK_ALLOC_ACCESSIBLE, node);
 		/*
