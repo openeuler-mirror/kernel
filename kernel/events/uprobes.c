@@ -183,6 +183,7 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
 
 	if (new_page) {
 		get_page(new_page);
+		reliable_page_counter(new_page, mm, 1);
 		page_add_new_anon_rmap(new_page, vma, addr, false);
 		lru_cache_add_inactive_or_unevictable(new_page, vma);
 	} else
@@ -194,6 +195,7 @@ static int __replace_page(struct vm_area_struct *vma, unsigned long addr,
 		inc_mm_counter(mm, MM_ANONPAGES);
 	}
 
+	reliable_page_counter(old_page, mm, -1);
 	flush_cache_page(vma, addr, pte_pfn(*pvmw.pte));
 	ptep_clear_flush_notify(vma, addr, pvmw.pte);
 	if (new_page)

@@ -33,6 +33,7 @@ static unsigned long reliable_pagecache_max_bytes = ULONG_MAX;
 /* reliable user limit for user tasks with reliable flag */
 unsigned long task_reliable_limit = ULONG_MAX;
 long shmem_reliable_nr_page = ULONG_MAX >> PAGE_SHIFT;
+atomic_long_t reliable_user_used_nr_page;
 
 bool mem_reliable_counter_initialized(void)
 {
@@ -178,6 +179,7 @@ void reliable_report_meminfo(struct seq_file *m)
 
 	show_val_kb(m, "ReliableTotal:    ", total_reliable_pages());
 	show_val_kb(m, "ReliableUsed:     ", used_reliable_pages());
+	show_val_kb(m, "ReliableTaskUsed: ", task_reliable_used_pages());
 	show_val_kb(m, "ReliableBuddyMem: ", free_reliable_pages());
 
 	if (shmem_reliable_is_enabled()) {
@@ -514,3 +516,14 @@ out:
 	return 1;
 }
 __setup("reliable_debug", setup_reliable_debug);
+
+#define SEQ_PUT_DEC(str, val) \
+	seq_put_decimal_ull_width(m, str, (val) << (PAGE_SHIFT-10), 8)
+void reliable_report_usage(struct seq_file *m, struct mm_struct *mm)
+{
+	if (!mem_reliable_is_enabled())
+		return;
+
+	SEQ_PUT_DEC("Reliable:\t", atomic_long_read(&mm->reliable_nr_page));
+	seq_puts(m, "kB\n");
+}

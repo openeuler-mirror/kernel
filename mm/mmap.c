@@ -1751,6 +1751,7 @@ do_user_swap(struct mm_struct *mm, unsigned long addr_start, unsigned long len,
 		set_pte(pte, swp_entry_to_pte(swp_entry(SWP_USERSWAP_ENTRY,
 							page_to_pfn(page))));
 		dec_mm_counter(mm, MM_ANONPAGES);
+		reliable_page_counter(page, mm, -1);
 		page_remove_rmap(page, false);
 		put_page(page);
 

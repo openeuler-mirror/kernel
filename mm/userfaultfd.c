@@ -150,6 +150,7 @@ static int mcopy_atomic_pte(struct mm_struct *dst_mm,
 #endif
 
 	inc_mm_counter(dst_mm, MM_ANONPAGES);
+	reliable_page_counter(page, dst_mm, 1);
 	page_add_new_anon_rmap(page, dst_vma, dst_addr, false);
 	lru_cache_add_inactive_or_unevictable(page, dst_vma);
 
