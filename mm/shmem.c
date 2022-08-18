@@ -1561,12 +1561,20 @@ static struct page *shmem_alloc_page(gfp_t gfp,
 	return page;
 }
 
-static inline void shmem_prepare_alloc(gfp_t *gfp_mask)
+static inline bool shmem_prepare_alloc(gfp_t *gfp_mask)
 {
 	if (!shmem_reliable_is_enabled())
-		return;
+		return true;
 
-	*gfp_mask |= GFP_RELIABLE;
+	if (mem_reliable_shmem_limit_check()) {
+		*gfp_mask |= GFP_RELIABLE;
+		return true;
+	}
+
+	if (reliable_allow_fb_enabled())
+		return true;
+
+	return false;
 }
 
 static struct page *shmem_alloc_and_acct_page(gfp_t gfp,
@@ -1585,7 +1593,8 @@ static struct page *shmem_alloc_and_acct_page(gfp_t gfp,
 	if (!shmem_inode_acct_block(inode, nr))
 		goto failed;
 
-	shmem_prepare_alloc(&gfp);
+	if (!shmem_prepare_alloc(&gfp))
+		goto no_mem;
 
 	if (huge)
 		page = shmem_alloc_hugepage(gfp, info, index, node_id);
@@ -1597,6 +1606,7 @@ static struct page *shmem_alloc_and_acct_page(gfp_t gfp,
 		return page;
 	}
 
+no_mem:
 	err = -ENOMEM;
 	shmem_inode_unacct_blocks(inode, nr);
 failed:

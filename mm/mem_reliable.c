@@ -24,6 +24,7 @@ struct percpu_counter anon_reliable_pages;
 static unsigned long reliable_pagecache_max_bytes = ULONG_MAX;
 /* reliable user limit for user tasks with reliable flag */
 unsigned long task_reliable_limit = ULONG_MAX;
+long shmem_reliable_nr_page = ULONG_MAX >> PAGE_SHIFT;
 
 bool mem_reliable_counter_initialized(void)
 {
@@ -229,6 +230,30 @@ int reliable_pagecache_max_bytes_write(struct ctl_table *table, int write,
 	return ret;
 }
 
+#ifdef CONFIG_SHMEM
+static unsigned long sysctl_shmem_reliable_bytes_limit = ULONG_MAX;
+
+int reliable_shmem_bytes_limit_handler(struct ctl_table *table, int write,
+		void __user *buffer, size_t *length, loff_t *ppos)
+{
+	unsigned long *data_ptr = (unsigned long *)(table->data);
+	unsigned long old = *data_ptr;
+	int ret;
+
+	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
+	if (!ret && write) {
+		if (*data_ptr > PAGES_TO_B(total_reliable_pages())) {
+			*data_ptr = old;
+			return -EINVAL;
+		}
+
+		shmem_reliable_nr_page = *data_ptr >> PAGE_SHIFT;
+	}
+
+	return ret;
+}
+#endif
+
 static struct ctl_table reliable_ctl_table[] = {
 	{
 		.procname = "reliable_pagecache_max_bytes",
@@ -244,6 +269,15 @@ static struct ctl_table reliable_ctl_table[] = {
 		.mode = 0644,
 		.proc_handler = reliable_limit_handler,
 	},
+#ifdef CONFIG_SHMEM
+	{
+		.procname = "shmem_reliable_bytes_limit",
+		.data = &sysctl_shmem_reliable_bytes_limit,
+		.maxlen = sizeof(sysctl_shmem_reliable_bytes_limit),
+		.mode = 0644,
+		.proc_handler = reliable_shmem_bytes_limit_handler,
+	},
+#endif
 	{}
 };
 
