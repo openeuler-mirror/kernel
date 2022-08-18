@@ -1910,6 +1910,8 @@ xa_unlocked:
 			ClearPageActive(page);
 			ClearPageUnevictable(page);
 			unlock_page(page);
+			if (is_shmem)
+				shmem_reliable_page_counter(page, -1);
 			put_page(page);
 			index++;
 		}
@@ -1920,8 +1922,10 @@ xa_unlocked:
 
 		SetPageUptodate(new_page);
 		page_ref_add(new_page, HPAGE_PMD_NR - 1);
-		if (is_shmem)
+		if (is_shmem) {
 			set_page_dirty(new_page);
+			shmem_reliable_page_counter(new_page, 1 << HPAGE_PMD_ORDER);
+		}
 		lru_cache_add(new_page);
 
 		/*

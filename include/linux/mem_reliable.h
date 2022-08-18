@@ -16,6 +16,7 @@ DECLARE_STATIC_KEY_FALSE(mem_reliable);
 
 extern bool reliable_enabled;
 extern bool shmem_reliable;
+extern struct percpu_counter reliable_shmem_used_nr_page;
 extern bool reliable_allow_fallback;
 extern bool pagecache_use_reliable_mem;
 extern struct percpu_counter pagecache_reliable_pages;
@@ -81,6 +82,12 @@ static inline bool page_reliable(struct page *page)
 	return page_zonenum(page) < ZONE_MOVABLE;
 }
 
+static inline void shmem_reliable_page_counter(struct page *page, int nr_page)
+{
+	if (shmem_reliable_is_enabled() && page_reliable(page))
+		percpu_counter_add(&reliable_shmem_used_nr_page, nr_page);
+}
+
 static inline u64 task_reliable_used_pages(void)
 {
 	s64 nr_pages;
@@ -126,6 +133,8 @@ static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
 }
 static inline void reliable_report_meminfo(struct seq_file *m) {}
 static inline bool shmem_reliable_is_enabled(void) { return false; }
+static inline void shmem_reliable_page_counter(struct page *page,
+					       int nr_page) {}
 static inline void page_cache_prepare_alloc(gfp_t *gfp) {}
 static inline bool mem_reliable_status(void) { return false; }
 static inline bool page_reliable(struct page *page) { return false; }
