@@ -5144,11 +5144,26 @@ EXPORT_SYMBOL_GPL(__alloc_pages_bulk);
 
 static inline void prepare_before_alloc(gfp_t *gfp_mask)
 {
+	bool zone_movable;
+
 	if (!mem_reliable_is_enabled())
-		return;
+		goto clear_flag;
+
+	/*
+	 * memory reliable only handle memory allocation from movable zone
+	 * (force alloc from non-movable zone or force alloc from movable
+	 * zone) to get total isolation.
+	 */
+	zone_movable = gfp_zone(*gfp_mask & ~GFP_RELIABLE) == ZONE_MOVABLE;
+	if (!zone_movable)
+		goto clear_flag;
 
 	if ((current->flags & PF_RELIABLE) || is_global_init(current))
 		*gfp_mask |= GFP_RELIABLE;
+
+	return;
+clear_flag:
+	*gfp_mask &= ~GFP_RELIABLE;
 }
 
 /*
