@@ -20,6 +20,8 @@ bool pagecache_use_reliable_mem __read_mostly = true;
 struct percpu_counter pagecache_reliable_pages;
 struct percpu_counter anon_reliable_pages;
 static unsigned long reliable_pagecache_max_bytes = ULONG_MAX;
+/* reliable user limit for user tasks with reliable flag */
+unsigned long task_reliable_limit = ULONG_MAX;
 
 bool mem_reliable_counter_initialized(void)
 {
@@ -178,6 +180,25 @@ void reliable_report_meminfo(struct seq_file *m)
 	}
 }
 
+int reliable_limit_handler(struct ctl_table *table, int write,
+	void __user *buffer, size_t *length, loff_t *ppos)
+{
+	unsigned long old = task_reliable_limit;
+	int ret;
+
+	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
+	if (ret == 0 && write) {
+		if (task_reliable_limit > PAGES_TO_B(total_reliable_pages()) ||
+		    task_reliable_limit <
+			    (task_reliable_used_pages() << PAGE_SHIFT)) {
+			task_reliable_limit = old;
+			return -EINVAL;
+		}
+	}
+
+	return ret;
+}
+
 int reliable_pagecache_max_bytes_write(struct ctl_table *table, int write,
 	void __user *buffer, size_t *length, loff_t *ppos)
 {
@@ -203,6 +224,13 @@ static struct ctl_table reliable_ctl_table[] = {
 		.maxlen = sizeof(reliable_pagecache_max_bytes),
 		.mode = 0644,
 		.proc_handler = reliable_pagecache_max_bytes_write,
+	},
+	{
+		.procname = "task_reliable_limit",
+		.data = &task_reliable_limit,
+		.maxlen = sizeof(task_reliable_limit),
+		.mode = 0644,
+		.proc_handler = reliable_limit_handler,
 	},
 	{}
 };
@@ -233,6 +261,23 @@ static int __init reliable_sysctl_init(void)
 	return 0;
 }
 arch_initcall(reliable_sysctl_init);
+
+void mem_reliable_out_of_memory(gfp_t gfp, unsigned int order,
+				int preferred_nid, nodemask_t *nodemask)
+{
+	struct oom_control oc = {
+		.zonelist = node_zonelist(preferred_nid, gfp),
+		.nodemask = nodemask,
+		.memcg = NULL,
+		.gfp_mask = gfp,
+		.order = order,
+	};
+
+	if (!mutex_trylock(&oom_lock))
+		return;
+	out_of_memory(&oc);
+	mutex_unlock(&oom_lock);
+}
 
 static int __init setup_reliable_debug(char *str)
 {
