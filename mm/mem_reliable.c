@@ -19,6 +19,7 @@ bool shmem_reliable __read_mostly = true;
 bool pagecache_use_reliable_mem __read_mostly = true;
 struct percpu_counter pagecache_reliable_pages;
 struct percpu_counter anon_reliable_pages;
+static unsigned long reliable_pagecache_max_bytes = ULONG_MAX;
 
 bool mem_reliable_counter_initialized(void)
 {
@@ -65,10 +66,16 @@ void reliable_lru_add(enum lru_list lru, struct page *page, int val)
 
 void page_cache_prepare_alloc(gfp_t *gfp)
 {
+	s64 nr_reliable = 0;
+
 	if (!mem_reliable_is_enabled())
 		return;
 
 	if (!pagecache_reliable_is_enabled())
+		goto no_reliable;
+
+	nr_reliable = percpu_counter_read_positive(&pagecache_reliable_pages);
+	if (nr_reliable > reliable_pagecache_max_bytes >> PAGE_SHIFT)
 		goto no_reliable;
 
 	*gfp |= GFP_RELIABLE;
@@ -171,10 +178,54 @@ void reliable_report_meminfo(struct seq_file *m)
 	}
 }
 
+int reliable_pagecache_max_bytes_write(struct ctl_table *table, int write,
+	void __user *buffer, size_t *length, loff_t *ppos)
+{
+	unsigned long old_value = reliable_pagecache_max_bytes;
+	int ret;
+
+	ret = proc_doulongvec_minmax(table, write, buffer, length, ppos);
+	if (!ret && write) {
+		if (reliable_pagecache_max_bytes >
+		    PAGES_TO_B(total_reliable_pages())) {
+			reliable_pagecache_max_bytes = old_value;
+			return -EINVAL;
+		}
+	}
+
+	return ret;
+}
+
+static struct ctl_table reliable_ctl_table[] = {
+	{
+		.procname = "reliable_pagecache_max_bytes",
+		.data = &reliable_pagecache_max_bytes,
+		.maxlen = sizeof(reliable_pagecache_max_bytes),
+		.mode = 0644,
+		.proc_handler = reliable_pagecache_max_bytes_write,
+	},
+	{}
+};
+
+static struct ctl_table reliable_dir_table[] = {
+	{
+		.procname = "vm",
+		.maxlen = 0,
+		.mode = 0555,
+		.child = reliable_ctl_table,
+	},
+	{}
+};
+
 static int __init reliable_sysctl_init(void)
 {
 	if (!mem_reliable_is_enabled())
 		return 0;
+
+	if (!register_sysctl_table(reliable_dir_table)) {
+		pr_err("register sysctl failed.");
+		return -ENOMEM;
+	}
 
 	percpu_counter_init(&pagecache_reliable_pages, 0, GFP_KERNEL);
 	percpu_counter_init(&anon_reliable_pages, 0, GFP_KERNEL);
