@@ -16,6 +16,7 @@ EXPORT_SYMBOL_GPL(mem_reliable);
 
 bool reliable_enabled;
 bool shmem_reliable __read_mostly = true;
+bool pagecache_use_reliable_mem __read_mostly = true;
 
 bool mem_reliable_status(void)
 {
@@ -25,8 +26,17 @@ EXPORT_SYMBOL_GPL(mem_reliable_status);
 
 void page_cache_prepare_alloc(gfp_t *gfp)
 {
-	if (mem_reliable_is_enabled())
-		*gfp |= GFP_RELIABLE;
+	if (!mem_reliable_is_enabled())
+		return;
+
+	if (!pagecache_reliable_is_enabled())
+		goto no_reliable;
+
+	*gfp |= GFP_RELIABLE;
+	return;
+
+no_reliable:
+	*gfp &= ~GFP_RELIABLE;
 }
 
 static unsigned long total_reliable_pages(void)
@@ -121,6 +131,10 @@ static int __init setup_reliable_debug(char *str)
 	 */
 	for (; *str && *str != ','; str++) {
 		switch (*str) {
+		case 'P':
+			pagecache_use_reliable_mem = false;
+			pr_info("disable page cache use reliable memory\n");
+			break;
 		default:
 			pr_err("reliable_debug option '%c' unknown. skipped\n",
 			       *str);

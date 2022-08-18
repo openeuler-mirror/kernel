@@ -14,6 +14,7 @@ DECLARE_STATIC_KEY_FALSE(mem_reliable);
 
 extern bool reliable_enabled;
 extern bool shmem_reliable;
+extern bool pagecache_use_reliable_mem;
 
 extern void mem_reliable_init(bool has_unmirrored_mem,
 			      unsigned long *zone_movable_pfn,
@@ -26,6 +27,11 @@ extern bool mem_reliable_status(void);
 static inline bool mem_reliable_is_enabled(void)
 {
 	return static_branch_likely(&mem_reliable);
+}
+
+static inline bool pagecache_reliable_is_enabled(void)
+{
+	return pagecache_use_reliable_mem;
 }
 
 static inline bool skip_none_movable_zone(gfp_t gfp, struct zoneref *z)
@@ -52,8 +58,10 @@ static inline bool shmem_reliable_is_enabled(void)
 }
 #else
 #define reliable_enabled 0
+#define pagecache_use_reliable_mem 0
 
 static inline bool mem_reliable_is_enabled(void) { return false; }
+static inline bool pagecache_reliable_is_enabled(void) { return false; }
 static inline void mem_reliable_init(bool has_unmirrored_mem,
 				     unsigned long *zone_movable_pfn,
 				     unsigned long mirrored_sz) {}
