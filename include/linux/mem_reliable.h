@@ -15,6 +15,8 @@ DECLARE_STATIC_KEY_FALSE(mem_reliable);
 extern bool reliable_enabled;
 extern bool shmem_reliable;
 extern bool pagecache_use_reliable_mem;
+extern struct percpu_counter pagecache_reliable_pages;
+extern struct percpu_counter anon_reliable_pages;
 
 extern void mem_reliable_init(bool has_unmirrored_mem,
 			      unsigned long *zone_movable_pfn,
@@ -23,6 +25,11 @@ extern void shmem_reliable_init(void);
 extern void reliable_report_meminfo(struct seq_file *m);
 extern void page_cache_prepare_alloc(gfp_t *gfp);
 extern bool mem_reliable_status(void);
+extern void reliable_lru_add(enum lru_list lru, struct page *page,
+					int val);
+extern void reliable_lru_add_batch(int zid, enum lru_list lru,
+					      int val);
+extern bool mem_reliable_counter_initialized(void);
 
 static inline bool mem_reliable_is_enabled(void)
 {
@@ -56,6 +63,17 @@ static inline bool shmem_reliable_is_enabled(void)
 {
 	return shmem_reliable;
 }
+
+static inline bool page_reliable(struct page *page)
+{
+	if (!mem_reliable_is_enabled())
+		return false;
+
+	if (!page)
+		return false;
+
+	return page_zonenum(page) < ZONE_MOVABLE;
+}
 #else
 #define reliable_enabled 0
 #define pagecache_use_reliable_mem 0
@@ -74,6 +92,12 @@ static inline void reliable_report_meminfo(struct seq_file *m) {}
 static inline bool shmem_reliable_is_enabled(void) { return false; }
 static inline void page_cache_prepare_alloc(gfp_t *gfp) {}
 static inline bool mem_reliable_status(void) { return false; }
+static inline bool page_reliable(struct page *page) { return false; }
+static inline void reliable_lru_add(enum lru_list lru, struct page *page,
+				    int val) {}
+static inline void reliable_lru_add_batch(int zid, enum lru_list lru,
+					  int val) {}
+static inline bool mem_reliable_counter_initialized(void) { return false; }
 #endif
 
 #endif
