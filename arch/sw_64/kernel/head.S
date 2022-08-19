@@ -24,7 +24,7 @@ __start:
 	/* We need to get current_task_info loaded up...  */
 	ldi	$8, init_thread_union
 	/* ... and find our stack ... */
-	ldi	$30, 0x4000 - PT_REGS_SIZE($8)
+	ldi	$30, ASM_THREAD_SIZE($8)
 	/* ... and then we can clear bss data.  */
 	ldi	$2, __bss_start
 	ldi	$3, __bss_stop
@@ -51,7 +51,7 @@ __start:
 	ldl	$29, 0($30)
 	addl	$29, $0, $29
 	/* Repoint the sp into the new kernel image */
-	ldi	$30, 0x4000 - PT_REGS_SIZE($8)
+	ldi	$30, ASM_THREAD_SIZE($8)
 #endif
 	/* ... and then we can start the kernel.  */
 	call	$26, sw64_start_kernel
@@ -84,8 +84,7 @@ __smp_callin:
 	s8addl	$0, $2, $2
 	ldl	$30, 0($2)	# Get ksp of idle thread
 
-	ldi	$8, 0x3fff	# Find "current".
-	bic	$30, $8, $8
+	ldi	$8, -ASM_THREAD_SIZE($30) # Find "current"
 
 	call	$26, smp_callin
 	sys_call HMC_halt

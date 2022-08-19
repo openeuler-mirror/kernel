@@ -159,7 +159,7 @@ static int secondary_cpu_start(int cpuid, struct task_struct *idle)
 	/*
 	 * Precalculate the target ksp.
 	 */
-	tidle_ksp[cpuid] = idle->stack + sizeof(union thread_union) - 16;
+	tidle_ksp[cpuid] = idle->stack + THREAD_SIZE;
 
 	DBGS("Starting secondary cpu %d: state 0x%lx\n", cpuid, idle->state);
 
