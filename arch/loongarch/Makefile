@@ -7,7 +7,11 @@ boot	:= arch/loongarch/boot
 
 KBUILD_DEFCONFIG := loongson3_defconfig
 
-KBUILD_IMAGE	= $(boot)/vmlinux
+ifndef CONFIG_EFI_STUB
+KBUILD_IMAGE	:= $(boot)/vmlinux.elf
+else
+KBUILD_IMAGE	:= $(boot)/vmlinux.efi
+endif
 
 #
 # Select the object file format to substitute into the linker script.
@@ -76,6 +80,7 @@ head-y := arch/loongarch/kernel/head.o
 
 core-y += arch/loongarch/
 libs-y += arch/loongarch/lib/
+libs-$(CONFIG_EFI_STUB) += $(objtree)/drivers/firmware/efi/libstub/lib.a
 
 ifeq ($(KBUILD_EXTMOD),)
 prepare: vdso_prepare
@@ -87,10 +92,10 @@ PHONY += vdso_install
 vdso_install:
 	$(Q)$(MAKE) $(build)=arch/loongarch/vdso $@
 
-all:	$(KBUILD_IMAGE)
+all:	$(notdir $(KBUILD_IMAGE))
 
-$(KBUILD_IMAGE): vmlinux
-	$(Q)$(MAKE) $(build)=$(boot) $(bootvars-y) $@
+vmlinux.elf vmlinux.efi: vmlinux
+	$(Q)$(MAKE) $(build)=$(boot) $(bootvars-y) $(boot)/$@
 
 install:
 	$(Q)install -D -m 755 $(KBUILD_IMAGE) $(INSTALL_PATH)/vmlinux-$(KERNELRELEASE)
