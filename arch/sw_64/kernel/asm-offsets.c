@@ -218,4 +218,5 @@ void foo(void)
 	OFFSET(TASK_THREAD_S5, task_struct, thread.s[5]);
 	OFFSET(TASK_THREAD_S6, task_struct, thread.s[6]);
 	BLANK();
+	DEFINE(ASM_THREAD_SIZE, THREAD_SIZE);
 }
