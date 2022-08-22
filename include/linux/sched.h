@@ -2240,5 +2240,25 @@ enum cpumask_op_type {
 	CPUMASK_NEXT_AND,
 	CPUMASK_CPULIST_PARSE
 };
+
+struct sched_migrate_ctx {
+	struct task_struct *task;
+	struct cpumask *cpus_allowed;
+	struct cpumask *select_idle_mask;
+	int prev_cpu;
+	int curr_cpu;
+	int is_sync;
+	int want_affine;
+	int wake_flags;
+	int sd_flag;
+	int new_cpu;
+};
+
+struct sched_affine_ctx {
+	struct task_struct *task;
+	int prev_cpu;
+	int curr_cpu;
+	int is_sync;
+};
 #endif
 #endif
