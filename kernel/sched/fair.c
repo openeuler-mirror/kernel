@@ -4482,8 +4482,11 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 
 		if (ret < 0)
 			return;
-		else if (ret > 0)
+		else if (ret > 0) {
 			resched_curr(rq_of(cfs_rq));
+			clear_buddies(cfs_rq, curr);
+			return;
+		}
 	}
 #endif
 
