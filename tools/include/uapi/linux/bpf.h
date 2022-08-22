@@ -3846,6 +3846,18 @@ union bpf_attr {
  *		Get *cpu* capacity and store in *ctx*.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * long bpf_init_cpu_topology(struct bpf_map *map, u64 flags)
+ *	Description
+ *		Initializing the cpu topology which used for bpf prog.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_get_cpumask_info(struct bpf_cpumask_info *cpus, int len)
+ *	Description
+ *		Get system cpus returned in *cpus*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4020,6 +4032,8 @@ union bpf_attr {
 	FN(sched_cpu_nr_running_of),	\
 	FN(sched_cpu_idle_stat_of),	\
 	FN(sched_cpu_capacity_of),	\
+	FN(init_cpu_topology),	\
+	FN(get_cpumask_info),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
