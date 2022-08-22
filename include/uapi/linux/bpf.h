@@ -3900,6 +3900,12 @@ union bpf_attr {
  *			0 on success, or a negative error in case of failure.
  *	Return
  *		View above.
+ *
+ * int bpf_cpus_share_cache(int src_cpu, int dst_cpu)
+ *	Description
+ *		check src_cpu whether share cache with dst_cpu.
+ *	Return
+ *		yes 1, no 0.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4077,6 +4083,7 @@ union bpf_attr {
 	FN(init_cpu_topology),	\
 	FN(get_cpumask_info),		\
 	FN(cpumask_op),			\
+	FN(cpus_share_cache),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
