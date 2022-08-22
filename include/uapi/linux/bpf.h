@@ -3777,6 +3777,14 @@ union bpf_attr {
  *		to be enabled.
  *	Return
  *		1 if the sched entity belongs to a cgroup, 0 otherwise.
+ *
+ * long bpf_sched_tg_tag_of(struct task_group *tg)
+ *	Description
+ *		Return task group tag of *tg* if CONFIG_CGROUP_SCHED enabled.
+ *		The bpf prog obtains the tags to detect different workloads.
+ *	Return
+ *		Task group tag, if CONFIG_CGROUP_SCHED enabled, 0 as default tag, or
+ *		a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3940,6 +3948,7 @@ union bpf_attr {
 	FN(sched_entity_to_tgidpid),	\
 	FN(sched_entity_to_cgrpid),		\
 	FN(sched_entity_belongs_to_cgrp),	\
+	FN(sched_tg_tag_of),	\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

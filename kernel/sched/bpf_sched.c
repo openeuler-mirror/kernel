@@ -112,6 +112,29 @@ static const struct bpf_func_proto bpf_sched_entity_belongs_to_cgrp_proto = {
 	.arg2_type	= ARG_ANYTHING,
 };
 
+BPF_CALL_1(bpf_sched_tg_tag_of, struct task_group *, tg)
+{
+	int ret = 0;
+
+#ifdef CONFIG_CGROUP_SCHED
+	if (tg == NULL)
+		return -EINVAL;
+	ret = tg->tag;
+#endif
+
+	return ret;
+}
+
+BTF_ID_LIST_SINGLE(btf_sched_tg_ids, struct, task_group)
+
+const struct bpf_func_proto bpf_sched_tg_tag_of_proto = {
+	.func		= bpf_sched_tg_tag_of,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= PTR_MAYBE_NULL | ARG_PTR_TO_BTF_ID,
+	.arg1_btf_id	= &btf_sched_tg_ids[0],
+};
+
 static const struct bpf_func_proto *
 bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
