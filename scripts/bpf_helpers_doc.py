@@ -437,6 +437,10 @@ class PrinterHelpers(Printer):
             'struct btf_ptr',
             'struct sched_entity',
             'struct task_group',
+            'struct bpf_sched_cpu_load',
+            'struct bpf_sched_cpu_nr_running',
+            'struct bpf_sched_cpu_idle_stat',
+            'struct bpf_sched_cpu_capacity',
     ]
     known_types = {
             '...',
@@ -482,6 +486,10 @@ class PrinterHelpers(Printer):
             'struct btf_ptr',
             'struct sched_entity',
             'struct task_group',
+            'struct bpf_sched_cpu_load',
+            'struct bpf_sched_cpu_nr_running',
+            'struct bpf_sched_cpu_idle_stat',
+            'struct bpf_sched_cpu_capacity',
     }
     mapped_types = {
             'u8': '__u8',

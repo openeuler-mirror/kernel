@@ -3822,6 +3822,30 @@ union bpf_attr {
  *		Set tag to *tsk*.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_cpu_load_of(int cpu, struct bpf_sched_cpu_load *ctx, int len)
+ *	Description
+ *		Get multiple types of *cpu* load and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_cpu_nr_running_of(int cpu, struct bpf_sched_cpu_nr_running *ctx, int len)
+ *	Description
+ *		Get multiple types of *cpu* nr running and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_cpu_idle_stat_of(int cpu, struct bpf_sched_cpu_idle_stat *ctx, int len)
+ *	Description
+ *		Get *cpu* idle state and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_cpu_capacity_of(int cpu, struct bpf_sched_cpu_capacity *ctx, int len)
+ *	Description
+ *		Get *cpu* capacity and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3992,6 +4016,10 @@ union bpf_attr {
 	FN(sched_entity_to_tg),		\
 	FN(sched_set_tg_tag),		\
 	FN(sched_set_task_tag),		\
+	FN(sched_cpu_load_of),		\
+	FN(sched_cpu_nr_running_of),	\
+	FN(sched_cpu_idle_stat_of),	\
+	FN(sched_cpu_capacity_of),	\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

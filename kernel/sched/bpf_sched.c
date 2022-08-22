@@ -251,6 +251,153 @@ const struct bpf_func_proto bpf_sched_set_task_tag_proto = {
 	.arg1_btf_id	= &btf_sched_task_ids[0],
 	.arg2_type	= ARG_ANYTHING,
 };
+
+BPF_CALL_3(bpf_sched_cpu_load_of, int, cpu,
+	   struct bpf_sched_cpu_load *, ctx,
+	   int, len)
+{
+	struct rq *rq;
+
+	if (len != sizeof(*ctx))
+		return -EINVAL;
+
+	if ((unsigned int)cpu >= nr_cpu_ids)
+		return -EINVAL;
+
+	memset(ctx, 0, sizeof(struct bpf_sched_cpu_load));
+#ifdef CONFIG_SMP
+	rq = cpu_rq(cpu);
+	SCHED_WARN_ON(!rcu_read_lock_held());
+	ctx->cfs_load_avg = rq->cfs.avg.load_avg;
+	ctx->cfs_runnable_avg = rq->cfs.avg.runnable_avg;
+	ctx->cfs_util_avg = rq->cfs.avg.util_avg;
+	ctx->rt_load_avg = rq->avg_rt.load_avg;
+	ctx->rt_runnable_avg = rq->avg_rt.runnable_avg;
+	ctx->rt_util_avg = rq->avg_rt.util_avg;
+#ifdef CONFIG_HAVE_SCHED_AVG_IRQ
+	ctx->irq_load_avg = rq->avg_irq.load_avg;
+	ctx->irq_runnable_avg = rq->avg_irq.runnable_avg;
+	ctx->irq_util_avg = rq->avg_irq.util_avg;
+#endif
+#endif
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_sched_cpu_load_of_proto = {
+	.func		= bpf_sched_cpu_load_of,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+	.arg2_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg3_type	= ARG_CONST_SIZE,
+};
+
+BPF_CALL_3(bpf_sched_cpu_nr_running_of, int, cpu,
+	   struct bpf_sched_cpu_nr_running *, ctx,
+	   int, len)
+{
+	struct rq *rq;
+
+	if (len != sizeof(*ctx))
+		return -EINVAL;
+
+	if ((unsigned int)cpu >= nr_cpu_ids)
+		return -EINVAL;
+
+	SCHED_WARN_ON(!rcu_read_lock_held());
+
+	rq = cpu_rq(cpu);
+	ctx->nr_running = rq->nr_running;
+	ctx->cfs_nr_running = rq->cfs.nr_running;
+	ctx->cfs_h_nr_running = rq->cfs.h_nr_running;
+	ctx->cfs_idle_h_nr_running = rq->cfs.idle_h_nr_running;
+	ctx->rt_nr_running = rq->rt.rt_nr_running;
+	ctx->rr_nr_running = rq->rt.rr_nr_running;
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_sched_cpu_nr_running_of_proto = {
+	.func		= bpf_sched_cpu_nr_running_of,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+	.arg2_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg3_type	= ARG_CONST_SIZE,
+};
+
+BPF_CALL_3(bpf_sched_cpu_idle_stat_of, int, cpu,
+	   struct bpf_sched_cpu_idle_stat *, ctx,
+	   int, len)
+{
+	struct cpuidle_state *idle;
+	struct rq *rq;
+
+	if (len != sizeof(*ctx))
+		return -EINVAL;
+
+	if ((unsigned int)cpu >= nr_cpu_ids)
+		return -EINVAL;
+
+	memset(ctx, 0, sizeof(struct bpf_sched_cpu_idle_stat));
+	SCHED_WARN_ON(!rcu_read_lock_held());
+	ctx->available_idle = available_idle_cpu(cpu);
+	rq = cpu_rq(cpu);
+	idle = idle_get_state(rq);
+	if (idle)
+		ctx->exit_latency = idle->exit_latency;
+
+#ifdef CONFIG_SMP
+	ctx->idle_stamp = rq->idle_stamp;
+	ctx->avg_idle = rq->avg_idle;
+#endif
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_sched_cpu_idle_stat_of_proto = {
+	.func		= bpf_sched_cpu_idle_stat_of,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+	.arg2_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg3_type	= ARG_CONST_SIZE,
+};
+
+BPF_CALL_3(bpf_sched_cpu_capacity_of, int, cpu,
+	   struct bpf_sched_cpu_capacity *, ctx,
+	   int, len)
+{
+	struct rq *rq;
+
+	if (len != sizeof(*ctx))
+		return -EINVAL;
+
+	if ((unsigned int)cpu >= nr_cpu_ids)
+		return -EINVAL;
+
+	memset(ctx, 0, sizeof(struct bpf_sched_cpu_capacity));
+#ifdef CONFIG_SMP
+	SCHED_WARN_ON(!rcu_read_lock_held());
+	rq = cpu_rq(cpu);
+	ctx->capacity = rq->cpu_capacity;
+	ctx->capacity_orig = rq->cpu_capacity_orig;
+#endif
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_sched_cpu_capacity_of_proto = {
+	.func		= bpf_sched_cpu_capacity_of,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+	.arg2_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg3_type	= ARG_CONST_SIZE,
+};
+
+
 static const struct bpf_func_proto *
 bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
@@ -269,6 +416,14 @@ bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_sched_entity_to_task_proto;
 	case BPF_FUNC_sched_entity_to_tg:
 		return &bpf_sched_entity_to_tg_proto;
+	case BPF_FUNC_sched_cpu_load_of:
+		return &bpf_sched_cpu_load_of_proto;
+	case BPF_FUNC_sched_cpu_nr_running_of:
+		return &bpf_sched_cpu_nr_running_of_proto;
+	case BPF_FUNC_sched_cpu_idle_stat_of:
+		return &bpf_sched_cpu_idle_stat_of_proto;
+	case BPF_FUNC_sched_cpu_capacity_of:
+		return &bpf_sched_cpu_capacity_of_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}
