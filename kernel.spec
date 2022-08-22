@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2208.4.0
+%global hulkrelease 2208.5.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0163
+Release: %{hulkrelease}.0164
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,14 @@ fi
 %endif
 
 %changelog
+
+* Mon Aug 22 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2208.5.0.0164
+- x86/speculation: Add LFENCE to RSB fill sequence
+- x86/speculation: Add RSB VM Exit protections
+- Revert "blk-mq: fix null pointer dereference in blk_mq_queue_tag_busy_ite"
+- blk-mq: fix null pointer dereference in blk_mq_queue_tag_busy_ite
+- arm64: Avoid premature usercopy failure for __arch_copy_to_user_generic_read
+- net_sched: cls_route: remove from list when handle is 0
 
 * Mon Aug 15 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2208.4.0.0163
 - Revert "x86/unwind/orc: Change REG_SP_INDIRECT"
