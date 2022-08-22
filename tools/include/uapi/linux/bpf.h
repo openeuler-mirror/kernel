@@ -3858,6 +3858,48 @@ union bpf_attr {
  *		Get system cpus returned in *cpus*.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_cpumask_op(struct cpumask_op_args *op, int len)
+ *	Description
+ *		A series of cpumask-related operations. Perform different
+ *		operations base on *op*->type. User also need fill other
+ *		*op* field base on *op*->type. *op*->type is one of them
+ *
+ *		**CPUMASK_EMPTY**
+ *			*(op->arg1) == 0 returned.
+ *		**CPUMASK_AND**
+ *			*(op->arg1) = *(op->arg2) & *(op->arg3)
+ *		**CPUMASK_ANDNOT**
+ *			*(op->arg1) = *(op->arg2) & ~*(op->arg3)
+ *		**CPUMASK_SUBSET**
+ *			*(op->arg1) & ~*(op->arg2) == 0 returned
+ *		**CPUMASK_EQUAL**
+ *			*(op->arg1) == *(op->arg2) returned
+ *		**CPUMASK_TEST_CPU**
+ *			test for a cpu *(int)(op->arg1) in *(op->arg2)
+ *			returns 1 if *op*->arg1 is set in *op*->arg2, else returns 0
+ *		**CPUMASK_COPY**
+ *			*(op->arg1) = *(op->arg2), return 0 always
+ *		**CPUMASK_WEIGHT**
+ *			count of bits in *(op->arg1)
+ *		**CPUMASK_NEXT**
+ *			get the next cpu in *(struct cpumask *)(op->arg2)
+ *			*(int *)(op->arg1): the cpu prior to the place to search
+ *		**CPUMASK_NEXT_WRAP**
+ *			helper to implement for_each_cpu_wrap
+ *			@op->arg1: the cpu prior to the place to search
+ *			@op->arg2: the cpumask pointer
+ *			@op->arg3: the start point of the iteration
+ *			@op->arg4: assume @op->arg1 crossing @op->arg3 terminates the iteration
+ *			returns >= nr_cpu_ids on completion
+ *		**CPUMASK_NEXT_AND**
+ *			get the next cpu in *(op->arg1) & *(op->arg2)
+ *		**CPUMASK_CPULIST_PARSE**
+ *			extract a cpumask from a user string of ranges.
+ *			(char *)op->arg1 -> (struct cpumask *)(op->arg2)
+ *			0 on success, or a negative error in case of failure.
+ *	Return
+ *		View above.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4034,6 +4076,7 @@ union bpf_attr {
 	FN(sched_cpu_capacity_of),	\
 	FN(init_cpu_topology),	\
 	FN(get_cpumask_info),		\
+	FN(cpumask_op),			\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
