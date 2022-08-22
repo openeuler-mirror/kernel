@@ -207,6 +207,50 @@ static const struct bpf_func_proto bpf_sched_entity_to_tg_proto = {
 	.arg1_btf_id	= &btf_sched_entity_ids[0],
 };
 
+BPF_CALL_2(bpf_sched_set_tg_tag, struct task_group *, tg, s64, tag)
+{
+#if CONFIG_CGROUP_SCHED
+	if (tg == NULL || tg == &root_task_group)
+		return -EINVAL;
+
+	if (tg->tag == tag)
+		return 0;
+
+	rcu_read_lock();
+	walk_tg_tree_from(tg, tg_change_tag, tg_nop, (void *)(&tag));
+	rcu_read_unlock();
+
+	return 0;
+#endif
+	return -EPERM;
+}
+
+const struct bpf_func_proto bpf_sched_set_tg_tag_proto = {
+	.func		= bpf_sched_set_tg_tag,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= PTR_MAYBE_NULL | ARG_PTR_TO_BTF_ID,
+	.arg1_btf_id	= &btf_sched_tg_ids[0],
+	.arg2_type	= ARG_ANYTHING,
+};
+
+BPF_CALL_2(bpf_sched_set_task_tag, struct task_struct *, tsk, s64, tag)
+{
+	if (tsk == NULL)
+		return -EINVAL;
+
+	sched_settag(tsk, tag);
+	return 0;
+}
+
+const struct bpf_func_proto bpf_sched_set_task_tag_proto = {
+	.func		= bpf_sched_set_task_tag,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= PTR_MAYBE_NULL | ARG_PTR_TO_BTF_ID,
+	.arg1_btf_id	= &btf_sched_task_ids[0],
+	.arg2_type	= ARG_ANYTHING,
+};
 static const struct bpf_func_proto *
 bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
