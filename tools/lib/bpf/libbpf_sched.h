@@ -463,4 +463,11 @@ static __always_inline  int libbpf_sched_se_tag_of(struct sched_entity *se)
 
 	return se_tag;
 }
+
+static __always_inline void libbpf_sched_set_task_cpus_ptr(
+	struct sched_migrate_ctx *h_ctx,
+	struct cpumask *cpus)
+{
+	bpf_sched_set_task_cpus_ptr(h_ctx, cpus, sizeof(*cpus));
+}
 #endif

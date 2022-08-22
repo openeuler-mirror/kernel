@@ -503,6 +503,27 @@ static const struct bpf_func_proto bpf_cpus_share_cache_proto = {
 	.arg2_type	= ARG_ANYTHING,
 };
 
+BPF_CALL_3(bpf_sched_set_task_cpus_ptr, struct sched_migrate_ctx *, h_ctx,
+	   struct cpumask *, cpus, int, len)
+{
+	if (len != sizeof(*cpus))
+		return -EINVAL;
+
+	h_ctx->task->cpus_ptr = cpus;
+	return 0;
+}
+
+BTF_ID_LIST_SINGLE(bpf_sched_migrate_ctx_ids, struct, sched_migrate_ctx)
+
+static const struct bpf_func_proto bpf_sched_set_task_cpus_ptr_proto = {
+	.func		= bpf_sched_set_task_cpus_ptr,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_BTF_ID,
+	.arg1_btf_id	= &bpf_sched_migrate_ctx_ids[0],
+	.arg2_type	= ARG_ANYTHING,
+};
+
 static const struct bpf_func_proto *
 bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
@@ -537,6 +558,8 @@ bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_cpumask_op_proto;
 	case BPF_FUNC_cpus_share_cache:
 		return &bpf_cpus_share_cache_proto;
+	case BPF_FUNC_sched_set_task_cpus_ptr:
+		return &bpf_sched_set_task_cpus_ptr_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}

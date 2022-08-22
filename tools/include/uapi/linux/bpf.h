@@ -3906,6 +3906,12 @@ union bpf_attr {
  *		check src_cpu whether share cache with dst_cpu.
  *	Return
  *		true yes, false no.
+ *
+ * int bpf_sched_set_task_cpus_ptr(struct sched_migrate_ctx *h_ctx, struct cpumask *cpus, int len)
+ *	Description
+ *		set cpus_ptr in task.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4084,6 +4090,7 @@ union bpf_attr {
 	FN(get_cpumask_info),		\
 	FN(cpumask_op),			\
 	FN(cpus_share_cache),		\
+	FN(sched_set_task_cpus_ptr),	\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
