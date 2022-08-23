@@ -50,6 +50,8 @@ static int pbk_cpu_up(unsigned int cpu)
     ret = do_cpu_up(cpu, PBK_CPU_ONLINE_STATE);
     if (ret)
         pr_err("Failed to online CPU %u\n", cpu);
+    else
+        sched_domains_numa_masks_set(cpu);
 
     return ret;
 }
@@ -61,6 +63,8 @@ static int pbk_cpu_down(unsigned int cpu)
     ret = cpu_down(cpu, PBK_CPU_OFFLINE_STATE);
     if (ret)
         pr_err("Failed to offline CPU %u\n", cpu);
+    else
+        sched_domains_numa_masks_clear(cpu);
 
     return ret;
 }
