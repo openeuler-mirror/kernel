@@ -3777,6 +3777,141 @@ union bpf_attr {
  *		to be enabled.
  *	Return
  *		1 if the sched entity belongs to a cgroup, 0 otherwise.
+ *
+ * long bpf_sched_tg_tag_of(struct task_group *tg)
+ *	Description
+ *		Return task group tag of *tg* if CONFIG_CGROUP_SCHED enabled.
+ *		The bpf prog obtains the tags to detect different workloads.
+ *	Return
+ *		Task group tag, if CONFIG_CGROUP_SCHED enabled, 0 as default tag, or
+ *		a negative error in case of failure.
+ *
+ * long bpf_sched_task_tag_of(struct task_struct *tsk)
+ *	Description
+ *		Return task tag of *tsk*.The bpf prog obtains the tags to detect
+ *		different workloads.
+ *	Return
+ *		Task tag, if used, 0 as default tag, or a negative error in case of failure.
+ *
+ * long bpf_sched_entity_is_task(struct sched_entity *se)
+ *	Description
+ *		Checks whether the sched entity is a task.
+ *	Return
+ *		1 if true, 0 otherwise.
+ *
+ * struct task_struct *bpf_sched_entity_to_task(struct sched_entity *se)
+ *	Description
+ *		Return task struct of *se* if se is a task.
+ *	Return
+ *		Task struct if se is a task, NULL otherwise.
+ *
+ * struct task_group *bpf_sched_entity_to_tg(struct sched_entity *se)
+ *	Description
+ *		Return task group of *se* if se is a task group.
+ *	Return
+ *		Task struct if se is a task group, NULL otherwise.
+ *
+ * int bpf_sched_set_tg_tag(struct task_group *tg, s64 tag)
+ *	Description
+ *		Set tag to *tg* and its descendants.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_set_task_tag(struct task_struct *tsk, s64 tag)
+ *	Description
+ *		Set tag to *tsk*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_cpu_load_of(int cpu, struct bpf_sched_cpu_load *ctx, int len)
+ *	Description
+ *		Get multiple types of *cpu* load and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_cpu_nr_running_of(int cpu, struct bpf_sched_cpu_nr_running *ctx, int len)
+ *	Description
+ *		Get multiple types of *cpu* nr running and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_cpu_idle_stat_of(int cpu, struct bpf_sched_cpu_idle_stat *ctx, int len)
+ *	Description
+ *		Get *cpu* idle state and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_cpu_capacity_of(int cpu, struct bpf_sched_cpu_capacity *ctx, int len)
+ *	Description
+ *		Get *cpu* capacity and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * long bpf_init_cpu_topology(struct bpf_map *map, u64 flags)
+ *	Description
+ *		Initializing the cpu topology which used for bpf prog.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_get_cpumask_info(struct bpf_cpumask_info *cpus, int len)
+ *	Description
+ *		Get system cpus returned in *cpus*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_cpumask_op(struct cpumask_op_args *op, int len)
+ *	Description
+ *		A series of cpumask-related operations. Perform different
+ *		operations base on *op*->type. User also need fill other
+ *		*op* field base on *op*->type. *op*->type is one of them
+ *
+ *		**CPUMASK_EMPTY**
+ *			*(op->arg1) == 0 returned.
+ *		**CPUMASK_AND**
+ *			*(op->arg1) = *(op->arg2) & *(op->arg3)
+ *		**CPUMASK_ANDNOT**
+ *			*(op->arg1) = *(op->arg2) & ~*(op->arg3)
+ *		**CPUMASK_SUBSET**
+ *			*(op->arg1) & ~*(op->arg2) == 0 returned
+ *		**CPUMASK_EQUAL**
+ *			*(op->arg1) == *(op->arg2) returned
+ *		**CPUMASK_TEST_CPU**
+ *			test for a cpu *(int)(op->arg1) in *(op->arg2)
+ *			returns 1 if *op*->arg1 is set in *op*->arg2, else returns 0
+ *		**CPUMASK_COPY**
+ *			*(op->arg1) = *(op->arg2), return 0 always
+ *		**CPUMASK_WEIGHT**
+ *			count of bits in *(op->arg1)
+ *		**CPUMASK_NEXT**
+ *			get the next cpu in *(struct cpumask *)(op->arg2)
+ *			*(int *)(op->arg1): the cpu prior to the place to search
+ *		**CPUMASK_NEXT_WRAP**
+ *			helper to implement for_each_cpu_wrap
+ *			@op->arg1: the cpu prior to the place to search
+ *			@op->arg2: the cpumask pointer
+ *			@op->arg3: the start point of the iteration
+ *			@op->arg4: assume @op->arg1 crossing @op->arg3 terminates the iteration
+ *			returns >= nr_cpu_ids on completion
+ *		**CPUMASK_NEXT_AND**
+ *			get the next cpu in *(op->arg1) & *(op->arg2)
+ *		**CPUMASK_CPULIST_PARSE**
+ *			extract a cpumask from a user string of ranges.
+ *			(char *)op->arg1 -> (struct cpumask *)(op->arg2)
+ *			0 on success, or a negative error in case of failure.
+ *	Return
+ *		View above.
+ *
+ * int bpf_cpus_share_cache(int src_cpu, int dst_cpu)
+ *	Description
+ *		check src_cpu whether share cache with dst_cpu.
+ *	Return
+ *		yes 1, no 0.
+ *
+ * int bpf_sched_set_task_cpus_ptr(struct sched_migrate_ctx *h_ctx, struct cpumask *cpus, int len)
+ *	Description
+ *		set cpus_ptr in task.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -3940,6 +4075,22 @@ union bpf_attr {
 	FN(sched_entity_to_tgidpid),	\
 	FN(sched_entity_to_cgrpid),		\
 	FN(sched_entity_belongs_to_cgrp),	\
+	FN(sched_tg_tag_of),	\
+	FN(sched_task_tag_of),	\
+	FN(sched_entity_is_task),	\
+	FN(sched_entity_to_task),	\
+	FN(sched_entity_to_tg),		\
+	FN(sched_set_tg_tag),		\
+	FN(sched_set_task_tag),		\
+	FN(sched_cpu_load_of),		\
+	FN(sched_cpu_nr_running_of),	\
+	FN(sched_cpu_idle_stat_of),		\
+	FN(sched_cpu_capacity_of),		\
+	FN(init_cpu_topology),	\
+	FN(get_cpumask_info),		\
+	FN(cpumask_op),			\
+	FN(cpus_share_cache),		\
+	FN(sched_set_task_cpus_ptr),	\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

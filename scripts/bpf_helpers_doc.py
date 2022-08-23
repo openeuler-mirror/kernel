@@ -436,6 +436,16 @@ class PrinterHelpers(Printer):
             'struct path',
             'struct btf_ptr',
             'struct sched_entity',
+            'struct task_group',
+            'struct bpf_sched_cpu_load',
+            'struct bpf_sched_cpu_nr_running',
+            'struct bpf_sched_cpu_idle_stat',
+            'struct bpf_sched_cpu_capacity',
+            'struct bpf_cpu_topology',
+            'struct bpf_cpumask_info',
+            'struct cpumask',
+            'struct cpumask_op_args',
+            'struct sched_migrate_ctx',
     ]
     known_types = {
             '...',
@@ -480,6 +490,16 @@ class PrinterHelpers(Printer):
             'struct path',
             'struct btf_ptr',
             'struct sched_entity',
+            'struct task_group',
+            'struct bpf_sched_cpu_load',
+            'struct bpf_sched_cpu_nr_running',
+            'struct bpf_sched_cpu_idle_stat',
+            'struct bpf_sched_cpu_capacity',
+            'struct bpf_cpu_topology',
+            'struct bpf_cpumask_info',
+            'struct cpumask',
+            'struct cpumask_op_args',
+            'struct sched_migrate_ctx',
     }
     mapped_types = {
             'u8': '__u8',

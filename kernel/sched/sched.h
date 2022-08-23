@@ -455,7 +455,12 @@ struct task_group {
 	struct uclamp_se	uclamp[UCLAMP_CNT];
 #endif
 
+#ifdef CONFIG_BPF_SCHED
+	/* Used to pad the tag of a group */
+	long tag;
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -493,6 +498,9 @@ static inline int walk_tg_tree(tg_visitor down, tg_visitor up, void *data)
 }
 
 extern int tg_nop(struct task_group *tg, void *data);
+#ifdef CONFIG_BPF_SCHED
+extern int tg_change_tag(struct task_group *tg, void *data);
+#endif
 
 extern void free_fair_sched_group(struct task_group *tg);
 extern int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent);

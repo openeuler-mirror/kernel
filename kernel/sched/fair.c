@@ -513,6 +513,15 @@ static inline u64 min_vruntime(u64 min_vruntime, u64 vruntime)
 static inline int entity_before(struct sched_entity *a,
 				struct sched_entity *b)
 {
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		int ret = bpf_sched_cfs_tag_pick_next_entity(a, b);
+
+		if (ret == 1)
+			return 1;
+	}
+#endif
+
 	return (s64)(a->vruntime - b->vruntime) < 0;
 }
 
@@ -4482,8 +4491,11 @@ check_preempt_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr)
 
 		if (ret < 0)
 			return;
-		else if (ret > 0)
+		else if (ret > 0) {
 			resched_curr(rq_of(cfs_rq));
+			clear_buddies(cfs_rq, curr);
+			return;
+		}
 	}
 #endif
 
@@ -6020,6 +6032,22 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p,
 {
 	int target = nr_cpumask_bits;
 
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		struct sched_affine_ctx ctx;
+		int ret;
+
+		ctx.task = p;
+		ctx.prev_cpu = prev_cpu;
+		ctx.curr_cpu = this_cpu;
+		ctx.is_sync = sync;
+
+		ret = bpf_sched_cfs_wake_affine(&ctx);
+		if (ret >= 0 && ret < nr_cpumask_bits)
+			return ret;
+	}
+#endif
+
 	if (sched_feat(WA_IDLE))
 		target = wake_affine_idle(this_cpu, prev_cpu, sync);
 
@@ -6884,6 +6912,10 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int new_cpu = prev_cpu;
 	int want_affine = 0;
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
+#ifdef CONFIG_BPF_SCHED
+	struct sched_migrate_ctx ctx;
+	int ret;
+#endif
 
 	time = schedstat_start_time();
 
@@ -6901,6 +6933,26 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	}
 
 	rcu_read_lock();
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		ctx.task = p;
+		ctx.prev_cpu = prev_cpu;
+		ctx.curr_cpu = cpu;
+		ctx.is_sync = sync;
+		ctx.wake_flags = wake_flags;
+		ctx.want_affine = want_affine;
+		ctx.sd_flag = sd_flag;
+		ctx.cpus_allowed = (void *)p->cpus_ptr;
+		ctx.select_idle_mask = this_cpu_cpumask_var_ptr(select_idle_mask);
+
+		ret = bpf_sched_cfs_select_rq(&ctx);
+		if (ret >= 0) {
+			rcu_read_unlock();
+			return ret;
+		}
+	}
+#endif
+
 	for_each_domain(cpu, tmp) {
 		/*
 		 * If both 'cpu' and 'prev_cpu' are part of this domain,
@@ -6932,6 +6984,16 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 		if (want_affine)
 			current->recent_used_cpu = cpu;
 	}
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		ctx.new_cpu = new_cpu;
+		ret = bpf_sched_cfs_select_rq_exit(&ctx);
+		if (ret >= 0)
+			new_cpu = ret;
+	}
+#endif
+
 	rcu_read_unlock();
 	schedstat_end_time(cpu_rq(cpu), time);
 
