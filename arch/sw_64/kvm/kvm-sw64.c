@@ -308,18 +308,18 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 	if (change == KVM_MR_FLAGS_ONLY || change == KVM_MR_DELETE)
 		return 0;
 
+	if (test_bit(IO_MARK_BIT, &(mem->guest_phys_addr)))
+		return 0;
+
+	if (test_bit(IO_MARK_BIT + 1, &(mem->guest_phys_addr)))
+		return 0;
+
 #ifndef CONFIG_KVM_MEMHOTPLUG
 	if (mem->guest_phys_addr) {
 		pr_info("%s, No KVM MEMHOTPLUG support!\n", __func__);
 		return 0;
 	}
 #endif
-
-	if (test_bit(IO_MARK_BIT, &(mem->guest_phys_addr)))
-		return 0;
-
-	if (test_bit(IO_MARK_BIT + 1, &(mem->guest_phys_addr)))
-		return 0;
 
 	if (!sw64_kvm_pool)
 		return -ENOMEM;
