@@ -36,7 +36,7 @@ static const char * const btf_kind_str[NR_BTF_KINDS] = {
 	[BTF_KIND_FUNC_PROTO]	= "FUNC_PROTO",
 	[BTF_KIND_VAR]		= "VAR",
 	[BTF_KIND_DATASEC]	= "DATASEC",
-	[BTF_KIND_TAG]		= "TAG",
+	[BTF_KIND_DECL_TAG]	= "DECL_TAG",
 };
 
 struct btf_attach_table {
@@ -328,8 +328,8 @@ static int dump_btf_type(const struct btf *btf, __u32 id,
 			jsonw_end_array(w);
 		break;
 	}
-	case BTF_KIND_TAG: {
-		const struct btf_tag *tag = (const void *)(t + 1);
+	case BTF_KIND_DECL_TAG: {
+		const struct btf_decl_tag *tag = (const void *)(t + 1);
 
 		if (json_output) {
 			jsonw_uint_field(w, "type_id", t->type);
