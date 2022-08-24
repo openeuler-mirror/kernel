@@ -1584,10 +1584,10 @@ static int btf_dump_get_bitfield_value(struct btf_dump *d,
 	 */
 	nr_copy_bits = bit_sz + bits_offset;
 	nr_copy_bytes = t->size;
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 	for (i = nr_copy_bytes - 1; i >= 0; i--)
 		num = num * 256 + bytes[i];
-#elif __BYTE_ORDER == __BIG_ENDIAN
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 	for (i = 0; i < nr_copy_bytes; i++)
 		num = num * 256 + bytes[i];
 #else
@@ -1697,10 +1697,10 @@ static int btf_dump_int_data(struct btf_dump *d,
 		/* avoid use of __int128 as some 32-bit platforms do not
 		 * support it.
 		 */
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 		lsi = ints[0];
 		msi = ints[1];
-#elif __BYTE_ORDER == __BIG_ENDIAN
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 		lsi = ints[1];
 		msi = ints[0];
 #else
