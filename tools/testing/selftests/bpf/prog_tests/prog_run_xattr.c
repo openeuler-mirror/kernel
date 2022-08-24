@@ -24,7 +24,7 @@ void test_prog_run_xattr(void)
 	memset(buf, 0, sizeof(buf));
 
 	err = bpf_prog_test_run_xattr(&tattr);
-	CHECK_ATTR(err != -1 || errno != ENOSPC || tattr.retval, "run",
+	CHECK_ATTR(err >= 0 || errno != ENOSPC || tattr.retval, "run",
 	      "err %d errno %d retval %d\n", err, errno, tattr.retval);
 
 	CHECK_ATTR(tattr.data_size_out != sizeof(pkt_v4), "data_size_out",

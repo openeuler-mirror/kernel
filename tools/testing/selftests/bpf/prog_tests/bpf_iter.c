@@ -45,7 +45,7 @@ static void do_dummy_read(struct bpf_program *prog)
 	int iter_fd, len;
 
 	link = bpf_program__attach_iter(prog, NULL);
-	if (CHECK(IS_ERR(link), "attach_iter", "attach_iter failed\n"))
+	if (!ASSERT_OK_PTR(link, "attach_iter"))
 		return;
 
 	iter_fd = bpf_iter_create(bpf_link__fd(link));
@@ -182,7 +182,7 @@ static int do_btf_read(struct bpf_iter_task_btf *skel)
 	int ret = 0;
 
 	link = bpf_program__attach_iter(prog, NULL);
-	if (CHECK(IS_ERR(link), "attach_iter", "attach_iter failed\n"))
+	if (!ASSERT_OK_PTR(link, "attach_iter"))
 		return ret;
 
 	iter_fd = bpf_iter_create(bpf_link__fd(link));
@@ -384,7 +384,7 @@ static void test_file_iter(void)
 		return;
 
 	link = bpf_program__attach_iter(skel1->progs.dump_task, NULL);
-	if (CHECK(IS_ERR(link), "attach_iter", "attach_iter failed\n"))
+	if (!ASSERT_OK_PTR(link, "attach_iter"))
 		goto out;
 
 	/* unlink this path if it exists. */
@@ -490,7 +490,7 @@ static void test_overflow(bool test_e2big_overflow, bool ret1)
 	skel->bss->map2_id = map_info.id;
 
 	link = bpf_program__attach_iter(skel->progs.dump_bpf_map, NULL);
-	if (CHECK(IS_ERR(link), "attach_iter", "attach_iter failed\n"))
+	if (!ASSERT_OK_PTR(link, "attach_iter"))
 		goto free_map2;
 
 	iter_fd = bpf_iter_create(bpf_link__fd(link));
@@ -595,14 +595,12 @@ static void test_bpf_hash_map(void)
 	opts.link_info = &linfo;
 	opts.link_info_len = sizeof(linfo);
 	link = bpf_program__attach_iter(skel->progs.dump_bpf_hash_map, &opts);
-	if (CHECK(!IS_ERR(link), "attach_iter",
-		  "attach_iter for hashmap2 unexpected succeeded\n"))
+	if (!ASSERT_ERR_PTR(link, "attach_iter"))
 		goto out;
 
 	linfo.map.map_fd = bpf_map__fd(skel->maps.hashmap3);
 	link = bpf_program__attach_iter(skel->progs.dump_bpf_hash_map, &opts);
-	if (CHECK(!IS_ERR(link), "attach_iter",
-		  "attach_iter for hashmap3 unexpected succeeded\n"))
+	if (!ASSERT_ERR_PTR(link, "attach_iter"))
 		goto out;
 
 	/* hashmap1 should be good, update map values here */
@@ -624,7 +622,7 @@ static void test_bpf_hash_map(void)
 
 	linfo.map.map_fd = map_fd;
 	link = bpf_program__attach_iter(skel->progs.dump_bpf_hash_map, &opts);
-	if (CHECK(IS_ERR(link), "attach_iter", "attach_iter failed\n"))
+	if (!ASSERT_OK_PTR(link, "attach_iter"))
 		goto out;
 
 	iter_fd = bpf_iter_create(bpf_link__fd(link));
@@ -715,7 +713,7 @@ static void test_bpf_percpu_hash_map(void)
 	opts.link_info = &linfo;
 	opts.link_info_len = sizeof(linfo);
 	link = bpf_program__attach_iter(skel->progs.dump_bpf_percpu_hash_map, &opts);
-	if (CHECK(IS_ERR(link), "attach_iter", "attach_iter failed\n"))
+	if (!ASSERT_OK_PTR(link, "attach_iter"))
 		goto out;
 
 	iter_fd = bpf_iter_create(bpf_link__fd(link));
@@ -786,7 +784,7 @@ static void test_bpf_array_map(void)
 	opts.link_info = &linfo;
 	opts.link_info_len = sizeof(linfo);
 	link = bpf_program__attach_iter(skel->progs.dump_bpf_array_map, &opts);
-	if (CHECK(IS_ERR(link), "attach_iter", "attach_iter failed\n"))
+	if (!ASSERT_OK_PTR(link, "attach_iter"))
 		goto out;
 
 	iter_fd = bpf_iter_create(bpf_link__fd(link));
@@ -882,7 +880,7 @@ static void test_bpf_percpu_array_map(void)
 	opts.link_info = &linfo;
 	opts.link_info_len = sizeof(linfo);
 	link = bpf_program__attach_iter(skel->progs.dump_bpf_percpu_array_map, &opts);
-	if (CHECK(IS_ERR(link), "attach_iter", "attach_iter failed\n"))
+	if (!ASSERT_OK_PTR(link, "attach_iter"))
 		goto out;
 
 	iter_fd = bpf_iter_create(bpf_link__fd(link));
@@ -950,7 +948,7 @@ static void test_bpf_sk_storage_map(void)
 	opts.link_info = &linfo;
 	opts.link_info_len = sizeof(linfo);
 	link = bpf_program__attach_iter(skel->progs.dump_bpf_sk_storage_map, &opts);
-	if (CHECK(IS_ERR(link), "attach_iter", "attach_iter failed\n"))
+	if (!ASSERT_OK_PTR(link, "attach_iter"))
 		goto out;
 
 	iter_fd = bpf_iter_create(bpf_link__fd(link));
@@ -1003,7 +1001,7 @@ static void test_rdonly_buf_out_of_bound(void)
 	opts.link_info = &linfo;
 	opts.link_info_len = sizeof(linfo);
 	link = bpf_program__attach_iter(skel->progs.dump_bpf_hash_map, &opts);
-	if (CHECK(!IS_ERR(link), "attach_iter", "unexpected success\n"))
+	if (!ASSERT_ERR_PTR(link, "attach_iter"))
 		bpf_link__destroy(link);
 
 	bpf_iter_test_kern5__destroy(skel);
