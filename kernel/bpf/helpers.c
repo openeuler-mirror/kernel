@@ -705,6 +705,8 @@ bpf_base_func_proto(enum bpf_func_id func_id)
 		return &bpf_sched_tg_tag_of_proto;
 	case BPF_FUNC_sched_task_tag_of:
 		return &bpf_sched_task_tag_of_proto;
+	case BPF_FUNC_for_each_map_elem:
+		return &bpf_for_each_map_elem_proto;
 	default:
 		break;
 	}

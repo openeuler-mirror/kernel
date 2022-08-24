@@ -13,8 +13,8 @@
  */
 #define NFP_BPF_SCALAR_VALUE		1
 #define NFP_BPF_MAP_VALUE		4
-#define NFP_BPF_STACK			5
-#define NFP_BPF_PACKET_DATA		7
+#define NFP_BPF_STACK			6
+#define NFP_BPF_PACKET_DATA		8
 
 enum bpf_cap_tlv_type {
 	NFP_BPF_CAP_TYPE_FUNC		= 1,
