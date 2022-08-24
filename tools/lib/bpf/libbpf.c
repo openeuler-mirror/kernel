@@ -8515,7 +8515,7 @@ int bpf_program__nth_fd(const struct bpf_program *prog, int n)
 	return fd;
 }
 
-enum bpf_prog_type bpf_program__get_type(struct bpf_program *prog)
+enum bpf_prog_type bpf_program__get_type(const struct bpf_program *prog)
 {
 	return prog->type;
 }
@@ -8561,7 +8561,7 @@ BPF_PROG_TYPE_FNS(sk_lookup, BPF_PROG_TYPE_SK_LOOKUP);
 BPF_PROG_TYPE_FNS(sched, BPF_PROG_TYPE_SCHED);
 
 enum bpf_attach_type
-bpf_program__get_expected_attach_type(struct bpf_program *prog)
+bpf_program__get_expected_attach_type(const struct bpf_program *prog)
 {
 	return prog->expected_attach_type;
 }
