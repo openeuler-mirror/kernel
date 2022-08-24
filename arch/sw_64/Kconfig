@@ -142,6 +142,10 @@ config ARCH_HAS_ILOG2_U64
 config GENERIC_GPIO
 	bool
 
+config GENERIC_CALIBRATE_DELAY
+	bool
+	default y
+
 config ZONE_DMA32
 	bool
 	default y

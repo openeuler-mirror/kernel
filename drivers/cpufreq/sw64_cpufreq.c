@@ -40,10 +40,8 @@ static int sw64_cpu_freq_notifier(struct notifier_block *nb,
 	unsigned long cpu;
 
 	for_each_online_cpu(cpu) {
-		if (val == CPUFREQ_POSTCHANGE) {
+		if (val == CPUFREQ_POSTCHANGE)
 			sw64_update_clockevents(cpu, freqs->new * 1000);
-			current_cpu_data.loops_per_jiffy = loops_per_jiffy;
-		}
 	}
 
 	return 0;
