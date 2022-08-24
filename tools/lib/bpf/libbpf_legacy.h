@@ -51,6 +51,7 @@ enum libbpf_strict_mode {
 
 LIBBPF_API int libbpf_set_strict_mode(enum libbpf_strict_mode mode);
 
+#define DECLARE_LIBBPF_OPTS LIBBPF_OPTS
 
 #ifdef __cplusplus
 } /* extern "C" */
