@@ -7292,8 +7292,7 @@ static int check_path(const char *path)
 	return err;
 }
 
-int bpf_program__pin_instance(struct bpf_program *prog, const char *path,
-			      int instance)
+static int bpf_program_pin_instance(struct bpf_program *prog, const char *path, int instance)
 {
 	char *cp, errmsg[STRERR_BUFSIZE];
 	int err;
@@ -7328,8 +7327,7 @@ int bpf_program__pin_instance(struct bpf_program *prog, const char *path,
 	return 0;
 }
 
-int bpf_program__unpin_instance(struct bpf_program *prog, const char *path,
-				int instance)
+static int bpf_program_unpin_instance(struct bpf_program *prog, const char *path, int instance)
 {
 	int err;
 
@@ -7357,6 +7355,12 @@ int bpf_program__unpin_instance(struct bpf_program *prog, const char *path,
 	return 0;
 }
 
+__attribute__((alias("bpf_program_pin_instance")))
+int bpf_object__pin_instance(struct bpf_program *prog, const char *path, int instance);
+
+__attribute__((alias("bpf_program_unpin_instance")))
+int bpf_program__unpin_instance(struct bpf_program *prog, const char *path, int instance);
+
 int bpf_program__pin(struct bpf_program *prog, const char *path)
 {
 	int i, err;
@@ -7381,7 +7385,7 @@ int bpf_program__pin(struct bpf_program *prog, const char *path)
 
 	if (prog->instances.nr == 1) {
 		/* don't create subdirs when pinning single instance */
-		return bpf_program__pin_instance(prog, path, 0);
+		return bpf_program_pin_instance(prog, path, 0);
 	}
 
 	for (i = 0; i < prog->instances.nr; i++) {
@@ -7397,7 +7401,7 @@ int bpf_program__pin(struct bpf_program *prog, const char *path)
 			goto err_unpin;
 		}
 
-		err = bpf_program__pin_instance(prog, buf, i);
+		err = bpf_program_pin_instance(prog, buf, i);
 		if (err)
 			goto err_unpin;
 	}
@@ -7415,7 +7419,7 @@ err_unpin:
 		else if (len >= PATH_MAX)
 			continue;
 
-		bpf_program__unpin_instance(prog, buf, i);
+		bpf_program_unpin_instance(prog, buf, i);
 	}
 
 	rmdir(path);
@@ -7443,7 +7447,7 @@ int bpf_program__unpin(struct bpf_program *prog, const char *path)
 
 	if (prog->instances.nr == 1) {
 		/* don't create subdirs when pinning single instance */
-		return bpf_program__unpin_instance(prog, path, 0);
+		return bpf_program_unpin_instance(prog, path, 0);
 	}
 
 	for (i = 0; i < prog->instances.nr; i++) {
@@ -7456,7 +7460,7 @@ int bpf_program__unpin(struct bpf_program *prog, const char *path)
 		else if (len >= PATH_MAX)
 			return libbpf_err(-ENAMETOOLONG);
 
-		err = bpf_program__unpin_instance(prog, buf, i);
+		err = bpf_program_unpin_instance(prog, buf, i);
 		if (err)
 			return err;
 	}
