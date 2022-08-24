@@ -131,15 +131,17 @@ void sw64_store_policy(struct cpufreq_policy *policy)
 }
 EXPORT_SYMBOL_GPL(sw64_store_policy);
 
-int sw64_set_rate(int index, unsigned long rate)
+void sw64_set_rate(unsigned long rate)
 {
 	unsigned int i, val;
+	int index = -1;
 
 	rate /= 1000000;
 
 	for (i = 0; i < sizeof(cpu_freq)/sizeof(int); i++) {
 		if (rate == cpu_freq[i]) {
 			index = i;
+			update_cpu_freq(cpu_freq[i]);
 			break;
 		}
 	}
@@ -185,7 +187,5 @@ int sw64_set_rate(int index, unsigned long rate)
 	/* LV1 select PLL0/PLL1 */
 	sw64_io_write(0, CLU_LV1_SEL, CLK_LV1_SEL_MUXB | CLK_LV1_SEL_PRT);
 	sw64_io_write(1, CLU_LV1_SEL, CLK_LV1_SEL_MUXB | CLK_LV1_SEL_PRT);
-
-	return index;
 }
 EXPORT_SYMBOL_GPL(sw64_set_rate);

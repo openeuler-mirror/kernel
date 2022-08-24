@@ -68,12 +68,12 @@ static int sw64_cpufreq_target(struct cpufreq_policy *policy,
 {
 	unsigned long freq;
 
-	freq = (get_cpu_freq() / 1000) * index / 48;
+	freq = 50000 * index;
 
 	sw64_store_policy(policy);
 
 	/* setting the cpu frequency */
-	sw64_set_rate(-1, freq * 1000);
+	sw64_set_rate(freq * 1000);
 
 	return 0;
 }
@@ -98,7 +98,7 @@ static int sw64_cpufreq_cpu_init(struct cpufreq_policy *policy)
 		if (sw64_clockmod_table[i].frequency == 0)
 			sw64_clockmod_table[i].frequency = (rate * i) / 48;
 
-	sw64_set_rate(-1, rate * 1000);
+	sw64_set_rate(rate * 1000);
 
 	policy->clk = cpuclk;
 
