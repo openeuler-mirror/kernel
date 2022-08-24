@@ -44,7 +44,7 @@ struct clk {
 
 int clk_init(void);
 
-int sw64_set_rate(int index, unsigned long rate);
+void sw64_set_rate(unsigned long rate);
 
 struct clk *sw64_clk_get(struct device *dev, const char *id);
 
