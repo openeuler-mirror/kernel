@@ -51,7 +51,6 @@ $(BPFOBJ): $(wildcard $(LIBBPF_SRC)/*.[ch] $(LIBBPF_SRC)/Makefile) | $(OUTPUT)/l
 CFLAGS := -g \
           -I$(srctree)/tools/include \
           -I$(srctree)/tools/include/uapi \
-          -I$(LIBBPF_OUT) \
           -I$(LIBBPF_SRC) \
           -I$(SUBCMD_SRC)
 
