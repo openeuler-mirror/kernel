@@ -47,6 +47,7 @@ endif
 
 TEST_GEN_FILES = test_lwt_ip_encap.o \
 	test_tc_edt.o
+TEST_FILES = $(wildcard progs/btf_dump_test_case_*.c)
 
 # Order correspond to 'make run_tests' order
 TEST_PROGS := test_kmod.sh \
