@@ -188,10 +188,8 @@ void BPF_PROG(bictcp_init, struct sock *sk)
 		tcp_sk(sk)->snd_ssthresh = initial_ssthresh;
 }
 
-/* No prefix in SEC will also work.
- * The remaining tcp-cubic functions have an easier way.
- */
-SEC("no-sec-prefix-bictcp_cwnd_event")
+/* "struct_ops" prefix is a requirement */
+SEC("struct_ops/bictcp_cwnd_event")
 void BPF_PROG(bictcp_cwnd_event, struct sock *sk, enum tcp_ca_event event)
 {
 	if (event == CA_EVENT_TX_START) {
