@@ -340,3 +340,12 @@ LIBBPF_0.2.0 {
 		bpf_program__is_sched;
 		bpf_program__set_sched;
 } LIBBPF_0.1.0;
+
+LIBBPF_0.3.0 {
+	global:
+		btf__parse_elf_split;
+		btf__parse_raw_split;
+		btf__parse_split;
+		btf__new_empty_split;
+		btf__new_split;
+} LIBBPF_0.2.0;
