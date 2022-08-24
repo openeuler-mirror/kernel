@@ -205,6 +205,7 @@ enum bpf_enum_value_kind {
 #define bpf_core_read(dst, sz, src)					    \
 	bpf_probe_read_kernel(dst, sz, (const void *)__builtin_preserve_access_index(src))
 
+/* NOTE: see comments for BPF_CORE_READ_USER() about the proper types use. */
 #define bpf_core_read_user(dst, sz, src)				    \
 	bpf_probe_read_user(dst, sz, (const void *)__builtin_preserve_access_index(src))
 /*
@@ -215,6 +216,7 @@ enum bpf_enum_value_kind {
 #define bpf_core_read_str(dst, sz, src)					    \
 	bpf_probe_read_kernel_str(dst, sz, (const void *)__builtin_preserve_access_index(src))
 
+/* NOTE: see comments for BPF_CORE_READ_USER() about the proper types use. */
 #define bpf_core_read_user_str(dst, sz, src)				    \
 	bpf_probe_read_user_str(dst, sz, (const void *)__builtin_preserve_access_index(src))
 
@@ -310,7 +312,11 @@ enum bpf_enum_value_kind {
 		     dst, (src), a, ##__VA_ARGS__)			    \
 })
 
-/* Variant of BPF_CORE_READ_INTO() for reading from user-space memory */
+/*
+ * Variant of BPF_CORE_READ_INTO() for reading from user-space memory.
+ *
+ * NOTE: see comments for BPF_CORE_READ_USER() about the proper types use.
+ */
 #define BPF_CORE_READ_USER_INTO(dst, src, a, ...) ({			    \
 	___core_read(bpf_core_read_user, bpf_core_read_user,		    \
 		     dst, (src), a, ##__VA_ARGS__)			    \
@@ -322,7 +328,11 @@ enum bpf_enum_value_kind {
 		     dst, (src), a, ##__VA_ARGS__)			    \
 })
 
-/* Non-CO-RE variant of BPF_CORE_READ_USER_INTO() */
+/* Non-CO-RE variant of BPF_CORE_READ_USER_INTO().
+ *
+ * As no CO-RE relocations are emitted, source types can be arbitrary and are
+ * not restricted to kernel types only.
+ */
 #define BPF_PROBE_READ_USER_INTO(dst, src, a, ...) ({			    \
 	___core_read(bpf_probe_read_user, bpf_probe_read_user,		    \
 		     dst, (src), a, ##__VA_ARGS__)			    \
@@ -338,7 +348,11 @@ enum bpf_enum_value_kind {
 		     dst, (src), a, ##__VA_ARGS__)			    \
 })
 
-/* Variant of BPF_CORE_READ_STR_INTO() for reading from user-space memory */
+/*
+ * Variant of BPF_CORE_READ_STR_INTO() for reading from user-space memory.
+ *
+ * NOTE: see comments for BPF_CORE_READ_USER() about the proper types use.
+ */
 #define BPF_CORE_READ_USER_STR_INTO(dst, src, a, ...) ({		    \
 	___core_read(bpf_core_read_user_str, bpf_core_read_user,	    \
 		     dst, (src), a, ##__VA_ARGS__)			    \
@@ -350,7 +364,12 @@ enum bpf_enum_value_kind {
 		     dst, (src), a, ##__VA_ARGS__)			    \
 })
 
-/* Non-CO-RE variant of BPF_CORE_READ_USER_STR_INTO() */
+/*
+ * Non-CO-RE variant of BPF_CORE_READ_USER_STR_INTO().
+ *
+ * As no CO-RE relocations are emitted, source types can be arbitrary and are
+ * not restricted to kernel types only.
+ */
 #define BPF_PROBE_READ_USER_STR_INTO(dst, src, a, ...) ({		    \
 	___core_read(bpf_probe_read_user_str, bpf_probe_read_user,	    \
 		     dst, (src), a, ##__VA_ARGS__)			    \
@@ -386,7 +405,16 @@ enum bpf_enum_value_kind {
 	__r;								    \
 })
 
-/* Variant of BPF_CORE_READ() for reading from user-space memory */
+/*
+ * Variant of BPF_CORE_READ() for reading from user-space memory.
+ *
+ * NOTE: all the source types involved are still *kernel types* and need to
+ * exist in kernel (or kernel module) BTF, otherwise CO-RE relocation will
+ * fail. Custom user types are not relocatable with CO-RE.
+ * The typical situation in which BPF_CORE_READ_USER() might be used is to
+ * read kernel UAPI types from the user-space memory passed in as a syscall
+ * input argument.
+ */
 #define BPF_CORE_READ_USER(src, a, ...) ({				    \
 	___type((src), a, ##__VA_ARGS__) __r;				    \
 	BPF_CORE_READ_USER_INTO(&__r, (src), a, ##__VA_ARGS__);		    \
@@ -400,7 +428,12 @@ enum bpf_enum_value_kind {
 	__r;								    \
 })
 
-/* Non-CO-RE variant of BPF_CORE_READ_USER() */
+/*
+ * Non-CO-RE variant of BPF_CORE_READ_USER().
+ *
+ * As no CO-RE relocations are emitted, source types can be arbitrary and are
+ * not restricted to kernel types only.
+ */
 #define BPF_PROBE_READ_USER(src, a, ...) ({				    \
 	___type((src), a, ##__VA_ARGS__) __r;				    \
 	BPF_PROBE_READ_USER_INTO(&__r, (src), a, ##__VA_ARGS__);	    \
