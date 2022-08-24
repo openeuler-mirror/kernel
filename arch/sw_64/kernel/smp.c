@@ -374,18 +374,8 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
 
 void __init native_smp_cpus_done(unsigned int max_cpus)
 {
-	int cpu;
-	unsigned long bogosum = 0;
-
-	for (cpu = 0; cpu < NR_CPUS; cpu++)
-		if (cpu_online(cpu))
-			bogosum += cpu_data[cpu].loops_per_jiffy;
-
 	smp_booted = 1;
-	pr_info("SMP: Total of %d processors activated (%lu.%02lu BogoMIPS).\n",
-		num_online_cpus(),
-		(bogosum + 2500) / (500000/HZ),
-		((bogosum + 2500) / (5000/HZ)) % 100);
+	pr_info("SMP: Total of %d processors activated.\n", num_online_cpus());
 }
 
 int setup_profiling_timer(unsigned int multiplier)

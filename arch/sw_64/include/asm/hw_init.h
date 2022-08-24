@@ -18,7 +18,6 @@ struct cache_desc {
 };
 
 struct cpuinfo_sw64 {
-	unsigned long loops_per_jiffy;
 	unsigned long last_asn;
 	unsigned long ipi_count;
 	struct cache_desc icache; /* Primary I-cache */

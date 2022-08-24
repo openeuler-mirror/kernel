@@ -143,7 +143,6 @@ EXPORT_SYMBOL(screen_info);
  */
 void store_cpu_data(int cpu)
 {
-	cpu_data[cpu].loops_per_jiffy = loops_per_jiffy;
 	cpu_data[cpu].last_asn = ASN_FIRST_VERSION;
 }
 
