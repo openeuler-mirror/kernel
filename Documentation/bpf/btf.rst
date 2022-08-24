@@ -453,6 +453,32 @@ map definition.
   * ``offset``: the in-section offset of the variable
   * ``size``: the size of the variable in bytes
 
+2.2.17 BTF_KIND_DECL_TAG
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+``struct btf_type`` encoding requirement:
+ * ``name_off``: offset to a non-empty string
+ * ``info.kind_flag``: 0
+ * ``info.kind``: BTF_KIND_DECL_TAG
+ * ``info.vlen``: 0
+ * ``type``: ``struct``, ``union``, ``func``, ``var`` or ``typedef``
+
+``btf_type`` is followed by ``struct btf_decl_tag``.::
+
+    struct btf_decl_tag {
+        __u32   component_idx;
+    };
+
+The ``name_off`` encodes btf_decl_tag attribute string.
+The ``type`` should be ``struct``, ``union``, ``func``, ``var`` or ``typedef``.
+For ``var`` or ``typedef`` type, ``btf_decl_tag.component_idx`` must be ``-1``.
+For the other three types, if the btf_decl_tag attribute is
+applied to the ``struct``, ``union`` or ``func`` itself,
+``btf_decl_tag.component_idx`` must be ``-1``. Otherwise,
+the attribute is applied to a ``struct``/``union`` member or
+a ``func`` argument, and ``btf_decl_tag.component_idx`` should be a
+valid index (starting from 0) pointing to a member or an argument.
+
 3. BTF Kernel API
 *****************
 
