@@ -45,8 +45,7 @@ ifneq ($(BPF_GCC),)
 TEST_GEN_PROGS += test_progs-bpf_gcc
 endif
 
-TEST_GEN_FILES =
-TEST_FILES = test_lwt_ip_encap.o \
+TEST_GEN_FILES = test_lwt_ip_encap.o \
 	test_tc_edt.o
 
 # Order correspond to 'make run_tests' order
