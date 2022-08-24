@@ -5483,6 +5483,7 @@ static int bpf_core_apply_relo(struct bpf_program *prog,
 			       const struct btf *local_btf,
 			       struct hashmap *cand_cache)
 {
+	struct bpf_core_spec specs_scratch[3] = {};
 	const void *type_key = u32_as_hash_key(relo->type_id);
 	struct bpf_core_cand_list *cands = NULL;
 	const char *prog_name = prog->name;
@@ -5537,7 +5538,8 @@ static int bpf_core_apply_relo(struct bpf_program *prog,
 		}
 	}
 
-	return bpf_core_apply_relo_insn(prog_name, insn, insn_idx, relo, relo_idx, local_btf, cands);
+	return bpf_core_apply_relo_insn(prog_name, insn, insn_idx, relo,
+					relo_idx, local_btf, cands, specs_scratch);
 }
 
 static int
