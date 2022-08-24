@@ -32,6 +32,7 @@ test_current_pid_tgid_new_ns
 xdping
 test_cpp
 *.skel.h
+*.lskel.h
 /no_alu32
 /bpf_gcc
 /tools
