@@ -308,7 +308,7 @@ LINKED_SKELS := test_static_linked.skel.h
 
 LSKELS := kfunc_call_test.c fentry_test.c fexit_test.c \
 	test_ringbuf.c atomics.c trace_printk.c \
-	map_ptr_kern.c
+	map_ptr_kern.c core_kern.c
 # Generate both light skeleton and libbpf skeleton for these
 LSKELS_EXTRA := test_ksyms_module.c test_ksyms_weak.c
 SKEL_BLACKLIST += $$(LSKELS)
