@@ -402,17 +402,6 @@
 #define CMPLT_HDR_ERX_MSK		(0x1 << CMPLT_HDR_ERX_OFF)
 #define CMPLT_HDR_ABORT_STAT_OFF	13
 #define CMPLT_HDR_ABORT_STAT_MSK	(0x7 << CMPLT_HDR_ABORT_STAT_OFF)
-/* bit[9:2] Error Phase */
-#define ERR_PHASE_DQ_ENTRY_PARSING		BIT(2)
-#define ERR_PHASE_FRAME_LINK_STAGE		BIT(3)
-#define ERR_PHASE_CMD_TM_FRAME_SEND_STAGE	BIT(4)
-#define ERR_PHASE_DATA_FRAME_SEND_STAGE		BIT(5)
-#define ERR_PHASE_DATA_FRAME_REV_STAGE		BIT(6)
-#define ERR_PHASE_XFERDY_FRAME_REV_STAGE	BIT(7)
-#define ERR_PHASE_RESPONSE_FRAME_REV_STAGE	BIT(8)
-#define ERR_PHASE_DPH_SCHEDULING		BIT(9)
-#define ERR_PHASE_FRAME_REV_STAGE	(ERR_PHASE_DATA_FRAME_REV_STAGE | \
-	ERR_PHASE_XFERDY_FRAME_REV_STAGE | ERR_PHASE_RESPONSE_FRAME_REV_STAGE)
 /* abort_stat */
 #define STAT_IO_NOT_VALID		0x1
 #define STAT_IO_NO_DEVICE		0x2
@@ -424,19 +413,8 @@
 #define CMPLT_HDR_DEV_ID_OFF		16
 #define CMPLT_HDR_DEV_ID_MSK		(0xffff << CMPLT_HDR_DEV_ID_OFF)
 /* dw3 */
-#define COMLT_HDR_SATA_DISK_ERR_OFF	16
-#define CMPLT_HDR_SATA_DISK_ERR_MSK	(0x1 << COMLT_HDR_SATA_DISK_ERR_OFF)
 #define CMPLT_HDR_IO_IN_TARGET_OFF	17
 #define CMPLT_HDR_IO_IN_TARGET_MSK	(0x1 << CMPLT_HDR_IO_IN_TARGET_OFF)
-/* bit[31:24] ERR_FIS_TYPE */
-#define CQ_PIO_DATA_FIS_TYPE			BIT(24)
-#define CQ_PIO_SETUP_FIS_TYPE			BIT(25)
-#define CQ_D2H_FIS_TYPE				BIT(26)
-#define CQ_WT_PIO_SETUP_FIS_TYPE		BIT(27)
-#define CQ_WT_DMA_SETUP_FIS_TYPE		BIT(28)
-#define CQ_RD_DMA_SETUP_FIS_TYPE		BIT(29)
-#define CQ_DMA_ACTIVE_FIS_TYPE			BIT(30)
-#define CQ_SDB_FIS_TYPE				BIT(31)
 
 /* ITCT header */
 /* qw0 */
@@ -2255,26 +2233,6 @@ static void hisi_sas_set_sense_data(struct sas_task *task,
 	}
 }
 
-static bool is_err_fis(u32 dw0)
-{
-	/* 0x3 means abnormal completion */
-	return ((dw0 & CMPLT_HDR_CMPLT_MSK) == 0x3) &&
-		(dw0 & ERR_PHASE_FRAME_REV_STAGE);
-}
-
-static bool is_ncq_err(struct hisi_sas_complete_v3_hdr *complete_hdr)
-{
-	u32 dw0, dw3;
-
-	dw0 = le32_to_cpu(complete_hdr->dw0);
-	dw3 = le32_to_cpu(complete_hdr->dw3);
-
-	if (!is_err_fis(dw0) || !(dw3 & CMPLT_HDR_SATA_DISK_ERR_MSK))
-		return false;
-
-	return dw3 & CQ_SDB_FIS_TYPE;
-}
-
 static void
 slot_err_v3_hw(struct hisi_hba *hisi_hba, struct sas_task *task,
 	       struct hisi_sas_slot *slot)
@@ -2378,23 +2336,15 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 	if (unlikely(!task || !task->lldd_task || !task->dev))
 		return -EINVAL;
 
-	spin_lock_irqsave(&task->task_state_lock, flags);
-	if (task->task_state_flags & SAS_TASK_STATE_ABORTED ||
-	    task->task_state_flags & SAS_TASK_STATE_DONE) {
-		spin_unlock_irqrestore(&task->task_state_lock, flags);
-		dev_info(dev, "slot complete: iptt=%d task(%pK) already finished.\n",
-			slot->idx, task);
-		return SAS_ABORTED_TASK;
-	}
-	task->task_state_flags &=
-		~(SAS_TASK_STATE_PENDING | SAS_TASK_AT_INITIATOR);
-	task->task_state_flags |= SAS_TASK_STATE_DONE;
-	spin_unlock_irqrestore(&task->task_state_lock, flags);
-
 	ts = &task->task_status;
 	device = task->dev;
 	ha = device->port->ha;
 	sas_dev = device->lldd_dev;
+
+	spin_lock_irqsave(&task->task_state_lock, flags);
+	task->task_state_flags &=
+		~(SAS_TASK_STATE_PENDING | SAS_TASK_AT_INITIATOR);
+	spin_unlock_irqrestore(&task->task_state_lock, flags);
 
 	memset(ts, 0, sizeof(*ts));
 	ts->resp = SAS_TASK_COMPLETE;
@@ -2486,9 +2436,6 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 					iu->resp_data[0]);
 		}
 		if (unlikely(slot->abort)) {
-			spin_lock_irqsave(&task->task_state_lock, flags);
-			task->task_state_flags &= ~SAS_TASK_STATE_DONE;
-			spin_unlock_irqrestore(&task->task_state_lock, flags);
 			sas_task_abort(task);
 			return ts->stat;
 		}
@@ -2552,7 +2499,15 @@ slot_complete_v3_hw(struct hisi_hba *hisi_hba, struct hisi_sas_slot *slot)
 
 out:
 	sts = ts->stat;
-	hisi_sas_slot_task_free(hisi_hba, task, slot, true);
+	spin_lock_irqsave(&task->task_state_lock, flags);
+	if (task->task_state_flags & SAS_TASK_STATE_ABORTED) {
+		spin_unlock_irqrestore(&task->task_state_lock, flags);
+		dev_info(dev, "slot complete: task(%pK) aborted\n", task);
+		return SAS_ABORTED_TASK;
+	}
+	task->task_state_flags |= SAS_TASK_STATE_DONE;
+	spin_unlock_irqrestore(&task->task_state_lock, flags);
+	hisi_sas_slot_task_free(hisi_hba, task, slot);
 
 	if (!is_internal && (task->task_proto != SAS_PROTOCOL_SMP)) {
 		spin_lock_irqsave(&device->done_lock, flags);
@@ -2588,32 +2543,12 @@ static void cq_tasklet_v3_hw(unsigned long val)
 	while (rd_point != wr_point) {
 		struct hisi_sas_complete_v3_hdr *complete_hdr;
 		struct device *dev = hisi_hba->dev;
-		u32 dw0, dw1, dw3;
 		int iptt;
 
 		complete_hdr = &complete_queue[rd_point];
-		dw0 = le32_to_cpu(complete_hdr->dw0);
-		dw1 = le32_to_cpu(complete_hdr->dw1);
-		dw3 = le32_to_cpu(complete_hdr->dw3);
-		iptt = dw1 & CMPLT_HDR_IPTT_MSK;
 
-		/*
-		 * check for NCQ error and current iptt is invalid, all NCQ
-		 * commands should be aborted
-		 */
-		if (unlikely(is_ncq_err(complete_hdr))) {
-			int device_id = (dw1 & CMPLT_HDR_DEV_ID_MSK) >>
-					CMPLT_HDR_DEV_ID_OFF;
-			struct hisi_sas_device *sas_dev =
-				&hisi_hba->devices[device_id];
-			struct hisi_sas_itct *itct =
-				&hisi_hba->itct[device_id];
-
-			dev_err(dev, "erroneous completion ncq err dev id=%d sas_addr=0x%llx CQ hdr: 0x%x 0x%x 0x%x 0x%x\n",
-				device_id, itct->sas_addr, dw0, dw1,
-				complete_hdr->act, dw3);
-			hisi_sas_complete_disk_io(sas_dev);
-		} else if (likely(iptt < HISI_SAS_COMMAND_ENTRIES_V3_HW)) {
+		iptt = (complete_hdr->dw1) & CMPLT_HDR_IPTT_MSK;
+		if (likely(iptt < HISI_SAS_COMMAND_ENTRIES_V3_HW)) {
 			slot = &hisi_hba->slot_info[iptt];
 			slot->cmplt_queue_slot = rd_point;
 			slot->cmplt_queue = queue;

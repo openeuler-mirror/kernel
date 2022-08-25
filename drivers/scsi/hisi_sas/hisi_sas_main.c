@@ -229,7 +229,7 @@ static void hisi_sas_slot_index_init(struct hisi_hba *hisi_hba)
 }
 
 void hisi_sas_slot_task_free(struct hisi_hba *hisi_hba, struct sas_task *task,
-			     struct hisi_sas_slot *slot, bool need_lock)
+			     struct hisi_sas_slot *slot)
 {
 	unsigned long flags;
 	int device_id = slot->device_id;
@@ -260,13 +260,9 @@ void hisi_sas_slot_task_free(struct hisi_hba *hisi_hba, struct sas_task *task,
 		}
 	}
 
-	if (need_lock) {
-		spin_lock_irqsave(&sas_dev->lock, flags);
-		list_del_init(&slot->entry);
-		spin_unlock_irqrestore(&sas_dev->lock, flags);
-	} else {
-		list_del_init(&slot->entry);
-	}
+	spin_lock_irqsave(&sas_dev->lock, flags);
+	list_del_init(&slot->entry);
+	spin_unlock_irqrestore(&sas_dev->lock, flags);
 
 	memset(slot, 0, offsetof(struct hisi_sas_slot, buf));
 
@@ -1015,7 +1011,7 @@ static void hisi_sas_do_release_task(struct hisi_hba *hisi_hba, struct sas_task 
 				task->task_done(task);
 	}
 
-	hisi_sas_slot_task_free(hisi_hba, task, slot, true);
+	hisi_sas_slot_task_free(hisi_hba, task, slot);
 }
 
 static void hisi_sas_release_task(struct hisi_hba *hisi_hba,
@@ -3750,73 +3746,6 @@ int hisi_sas_remove(struct platform_device *pdev)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(hisi_sas_remove);
-
-void hisi_sas_complete_disk_io(struct hisi_sas_device *sas_dev)
-{
-	struct hisi_hba *hisi_hba;
-	struct device *dev;
-	struct domain_device *device;
-	struct hisi_sas_slot *slot, *slot2;
-	struct sas_task *task;
-	struct task_status_struct *ts;
-	struct sas_ha_struct *ha;
-	bool is_internal;
-	unsigned long flags;
-
-	if (!sas_dev)
-		return;
-
-	hisi_hba = sas_dev->hisi_hba;
-	dev = hisi_hba->dev;
-	device = sas_dev->sas_device;
-	spin_lock_irqsave(&sas_dev->lock, flags);
-	hisi_sas_dereg_device(hisi_hba, device);
-	list_for_each_entry_safe(slot, slot2, &sas_dev->list, entry) {
-		task = slot->task;
-		if (unlikely(!task || !task->lldd_task || !task->dev))
-			continue;
-
-		spin_lock_irqsave(&task->task_state_lock, flags);
-		if ((task->task_state_flags & SAS_TASK_STATE_ABORTED) ||
-		    (task->task_state_flags & SAS_TASK_STATE_DONE)) {
-			spin_unlock_irqrestore(&task->task_state_lock, flags);
-			dev_info(dev, "slot complete: iptt=%d task(%pK) already finished.\n",
-					slot->idx, task);
-			continue;
-		}
-
-		task->task_state_flags |= SAS_TASK_STATE_DONE;
-		spin_unlock_irqrestore(&task->task_state_lock, flags);
-
-		is_internal = slot->is_internal;
-		ts = &task->task_status;
-		device = task->dev;
-		ha = device->port->ha;
-
-		memset(ts, 0, sizeof(*ts));
-		ts->stat = SAS_ABORTED_TASK;
-		ts->resp = SAS_TASK_COMPLETE;
-
-		hisi_sas_slot_task_free(hisi_hba, task, slot, false);
-
-		if (!is_internal && (task->task_proto != SAS_PROTOCOL_SMP)) {
-			spin_lock_irqsave(&device->done_lock, flags);
-			if (test_bit(SAS_HA_FROZEN, &ha->state)) {
-				spin_unlock_irqrestore(&device->done_lock,
-					flags);
-				dev_info(dev, "slot complete: task(%pK) ignored\n ",
-						task);
-				continue;
-			}
-			spin_unlock_irqrestore(&device->done_lock, flags);
-		}
-
-		if (task->task_done)
-			task->task_done(task);
-	}
-	spin_unlock_irqrestore(&sas_dev->lock, flags);
-}
-EXPORT_SYMBOL_GPL(hisi_sas_complete_disk_io);
 
 bool hisi_sas_debugfs_enable = true;
 EXPORT_SYMBOL_GPL(hisi_sas_debugfs_enable);
