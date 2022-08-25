@@ -5132,10 +5132,10 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
 					if (XHCI_EXT_PORT_PSIV(xhci->port_caps[j].psi[i]) >= 5)
 						minor_rev = 1;
 				}
-				if (minor_rev != 1) {
-					hcd->speed = HCD_USB3;
-					hcd->self.root_hub->speed = USB_SPEED_SUPER;
-				}
+			}
+			if (minor_rev != 1) {
+				hcd->speed = HCD_USB3;
+				hcd->self.root_hub->speed = USB_SPEED_SUPER;
 			}
 		}
 
