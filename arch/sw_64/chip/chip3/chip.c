@@ -393,7 +393,6 @@ static void chip3_set_rc_piu(unsigned long node, unsigned long index)
 	/* set DMA offset value PCITODMA_OFFSET */
 	write_piu_ior0(node, index, EPDMABAR, PCITODMA_OFFSET);
 	if (IS_ENABLED(CONFIG_PCI_MSI)) {
-		write_piu_ior0(node, index, PIUCONFIG0, 0x38076);
 		write_piu_ior0(node, index, MSIADDR, MSIX_MSG_ADDR);
 		for (i = 0; i < 256; i++)
 			write_piu_ior0(node, index, MSICONFIG0 + (i << 7), 0);
