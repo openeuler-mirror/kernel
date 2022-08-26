@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .6.0
-%global pkg_release         .59
+%global maintenance_release .7.0
+%global pkg_release         .60
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,82 @@ fi
 %endif
 
 %changelog
+* Fri Aug 26 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.7.0.60
+- !82 Intel SPR: Adding uncore PMU support to openEuler-22.09
+- !60 scheduler BPF: preempt, pick next task, select core and samples v4
+- perf/x86/intel/uncore: Fix Intel SPR M3UPI event constraints
+- perf/x86/intel/uncore: Fix Intel SPR M2PCIE event constraints
+- perf/x86/intel/uncore: Fix Intel SPR IIO event constraints
+- perf/x86/intel/uncore: Fix Intel SPR CHA event constraints
+- perf/x86/intel/uncore: Fix invalid unit check
+- perf/x86/intel/uncore: Fix a kernel WARNING triggered by maxcpus=1
+- !56 openeuler_defconfig: enable CONFIG_BPF_SCHED for x86
+- samples: bpf: Add bpf sched pick task sample
+- sched: programmable: Add hook for pick next task
+- samples:bpf: Add samples for cfs select core
+- bpf:programmable: Add helper func to set cpus_ptr in task
+- sched: programmable: Add three hooks in select_task_rq_fair()
+- sched: programmable: Add lib for sched programmable
+- bpf:programmable: Add helper func to check cpu share cache
+- bpf:programmable: Add cpumask ops collection
+- sched: programmable: Add helper function for cpu topology.
+- bpf: sched: Add four helper functions to get cpu stat
+- sched: programmable: Add helpers to set tag of task or task_group
+- samples: bpf: Add bpf sched preempt sample program
+- samples/bpf: Update bpf loader for sched section names
+- sched: programmable: Add convenient helper functions to convert sched entity
+- sched: programmable: add bpf_sched_task_tag_of helper function
+- sched: programmable: add bpf_sched_tg_tag_of helper function
+- sched: programmable: Add user interface of task tag
+- sched: programmable: Add a tag for the task
+- sched: programmable: Add user interface of task group tag
+- sched: programmable: Add a tag for the task group
+- sched: programmable: Fix sched bpf hook cfs_check_preempt_tick
+- !81 Fix watchdog blocking reboot issue on ACPI WDAT watchdog enabled system
+- perf/x86/intel/uncore: Support IMC free-running counters on Sapphire Rapids server
+- perf/x86/intel/uncore: Support IIO free-running counters on Sapphire Rapids server
+- perf/x86/intel/uncore: Factor out snr_uncore_mmio_map()
+- perf/x86/intel/uncore: Add alias PMU name
+- perf/x86/intel/uncore: Add Sapphire Rapids server MDF support
+- perf/x86/intel/uncore: Add Sapphire Rapids server M3UPI support
+- perf/x86/intel/uncore: Add Sapphire Rapids server UPI support
+- perf/x86/intel/uncore: Add Sapphire Rapids server M2M support
+- perf/x86/intel/uncore: Add Sapphire Rapids server IMC support
+- perf/x86/intel/uncore: Add Sapphire Rapids server PCU support
+- perf/x86/intel/uncore: Add Sapphire Rapids server M2PCIe support
+- perf/x86/intel/uncore: Add Sapphire Rapids server IRP support
+- perf/x86/intel/uncore: Add Sapphire Rapids server IIO support
+- perf/x86/intel/uncore: Add Sapphire Rapids server CHA support
+- perf/x86/intel/uncore: Add Sapphire Rapids server framework
+- x86/cpu: Fix core name for Sapphire Rapids
+- x86/cpu: Resort and comment Intel models
+- perf/x86/intel/uncore: Generic support for the MMIO type of uncore blocks
+- perf/x86/intel/uncore: Generic support for the PCI type of uncore blocks
+- perf/x86/intel/uncore: Rename uncore_notifier to uncore_pci_sub_notifier
+- perf/x86/intel/uncore: Generic support for the MSR type of uncore blocks
+- perf/x86/intel/uncore: Parse uncore discovery tables
+- perf/x86/intel/uncore: With > 8 nodes, get pci bus die id from NUMA info
+- perf/x86/intel/uncore: Store the logical die id instead of the physical die id.
+- rbtree, timerqueue: Use rb_add_cached()
+- rbtree, rtmutex: Use rb_add_cached()
+- rbtree, uprobes: Use rbtree helpers
+- rbtree, perf: Use new rbtree helpers
+- rbtree, sched/deadline: Use rb_add_cached()
+- rbtree, sched/fair: Use rb_add_cached()
+- rbtree: Add generic add and find helpers
+- watchdog: wdat_wdt: Stop watchdog when uninstalling module
+- watchdog: wdat_wdt: Stop watchdog when rebooting the system
+- watchdog: wdat_wdt: Using the existing function to check parameter timeout
+- !77 [sync] PR-48: Fix kabi header file being repeatedly referenced by the same file
+- !75 Enable Intel SPR features in default kernel config for openEuler-22.09
+- Fix kabi header file being repeatedly referenced by the same file
+- Enable Intel AMX for default config
+- Enable default config for Intel NTB LTR vendor support for gen4 NTB
+- Enable Intel SPR HFI support for default config
+- Enable Intel PMT support for default config
+- Enable SGX virtualization in default config
+- openeuler_defconfig: enable CONFIG_BPF_SCHED for x86
+
 * Thu Aug 18 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.6.0.59
 - ascend agent smmu: an implementation of ARM SMMUv3 ATOS feature
 - mm: support pagecache limit
