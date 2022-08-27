@@ -24,12 +24,18 @@ static void get_stack_print_output(void *ctx, int cpu, void *data, __u32 size)
 {
 	bool good_kern_stack = false, good_user_stack = false;
 	const char *nonjit_func = "___bpf_prog_run";
-	struct get_stack_trace_t *e = data;
+	/* perfbuf-submitted data is 4-byte aligned, but we need 8-byte
+	 * alignment, so copy data into a local variable, for simplicity
+	 */
+	struct get_stack_trace_t e;
 	int i, num_stack;
 	static __u64 cnt;
 	struct ksym *ks;
 
 	cnt++;
+
+	memset(&e, 0, sizeof(e));
+	memcpy(&e, data, size <= sizeof(e) ? size : sizeof(e));
 
 	if (size < sizeof(struct get_stack_trace_t)) {
 		__u64 *raw_data = data;
@@ -57,19 +63,19 @@ static void get_stack_print_output(void *ctx, int cpu, void *data, __u32 size)
 			good_user_stack = true;
 		}
 	} else {
-		num_stack = e->kern_stack_size / sizeof(__u64);
+		num_stack = e.kern_stack_size / sizeof(__u64);
 		if (env.jit_enabled) {
 			good_kern_stack = num_stack > 0;
 		} else {
 			for (i = 0; i < num_stack; i++) {
-				ks = ksym_search(e->kern_stack[i]);
+				ks = ksym_search(e.kern_stack[i]);
 				if (ks && (strcmp(ks->name, nonjit_func) == 0)) {
 					good_kern_stack = true;
 					break;
 				}
 			}
 		}
-		if (e->user_stack_size > 0 && e->user_stack_buildid_size > 0)
+		if (e.user_stack_size > 0 && e.user_stack_buildid_size > 0)
 			good_user_stack = true;
 	}
 
@@ -121,12 +127,12 @@ void test_get_stack_raw_tp(void)
 		goto close_prog;
 
 	link = bpf_program__attach_raw_tracepoint(prog, "sys_enter");
-	if (CHECK(IS_ERR(link), "attach_raw_tp", "err %ld\n", PTR_ERR(link)))
+	if (!ASSERT_OK_PTR(link, "attach_raw_tp"))
 		goto close_prog;
 
 	pb_opts.sample_cb = get_stack_print_output;
 	pb = perf_buffer__new(bpf_map__fd(map), 8, &pb_opts);
-	if (CHECK(IS_ERR(pb), "perf_buf__new", "err %ld\n", PTR_ERR(pb)))
+	if (!ASSERT_OK_PTR(pb, "perf_buf__new"))
 		goto close_prog;
 
 	/* trigger some syscall action */
@@ -141,9 +147,7 @@ void test_get_stack_raw_tp(void)
 	}
 
 close_prog:
-	if (!IS_ERR_OR_NULL(link))
-		bpf_link__destroy(link);
-	if (!IS_ERR_OR_NULL(pb))
-		perf_buffer__free(pb);
+	bpf_link__destroy(link);
+	perf_buffer__free(pb);
 	bpf_object__close(obj);
 }

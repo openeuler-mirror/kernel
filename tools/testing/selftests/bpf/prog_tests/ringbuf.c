@@ -12,7 +12,7 @@
 #include <sys/sysinfo.h>
 #include <linux/perf_event.h>
 #include <linux/ring_buffer.h>
-#include "test_ringbuf.skel.h"
+#include "test_ringbuf.lskel.h"
 
 #define EDONE 7777
 
@@ -58,7 +58,7 @@ static int process_sample(void *ctx, void *data, size_t len)
 	}
 }
 
-static struct test_ringbuf *skel;
+static struct test_ringbuf_lskel *skel;
 static struct ring_buffer *ringbuf;
 
 static void trigger_samples()
@@ -87,20 +87,27 @@ void test_ringbuf(void)
 	pthread_t thread;
 	long bg_ret = -1;
 	int err, cnt;
+	int page_size = getpagesize();
 
-	skel = test_ringbuf__open_and_load();
-	if (CHECK(!skel, "skel_open_load", "skeleton open&load failed\n"))
+	skel = test_ringbuf_lskel__open();
+	if (CHECK(!skel, "skel_open", "skeleton open failed\n"))
 		return;
+
+	skel->maps.ringbuf.max_entries = page_size;
+
+	err = test_ringbuf_lskel__load(skel);
+	if (CHECK(err != 0, "skel_load", "skeleton load failed\n"))
+		goto cleanup;
 
 	/* only trigger BPF program for current process */
 	skel->bss->pid = getpid();
 
-	ringbuf = ring_buffer__new(bpf_map__fd(skel->maps.ringbuf),
+	ringbuf = ring_buffer__new(skel->maps.ringbuf.map_fd,
 				   process_sample, NULL, NULL);
 	if (CHECK(!ringbuf, "ringbuf_create", "failed to create ringbuf\n"))
 		goto cleanup;
 
-	err = test_ringbuf__attach(skel);
+	err = test_ringbuf_lskel__attach(skel);
 	if (CHECK(err, "skel_attach", "skeleton attachment failed: %d\n", err))
 		goto cleanup;
 
@@ -110,9 +117,9 @@ void test_ringbuf(void)
 	CHECK(skel->bss->avail_data != 3 * rec_sz,
 	      "err_avail_size", "exp %ld, got %ld\n",
 	      3L * rec_sz, skel->bss->avail_data);
-	CHECK(skel->bss->ring_size != 4096,
+	CHECK(skel->bss->ring_size != page_size,
 	      "err_ring_size", "exp %ld, got %ld\n",
-	      4096L, skel->bss->ring_size);
+	      (long)page_size, skel->bss->ring_size);
 	CHECK(skel->bss->cons_pos != 0,
 	      "err_cons_pos", "exp %ld, got %ld\n",
 	      0L, skel->bss->cons_pos);
@@ -238,8 +245,8 @@ void test_ringbuf(void)
 	CHECK(skel->bss->discarded != 1, "err_discarded", "exp %ld, got %ld\n",
 	      1L, skel->bss->discarded);
 
-	test_ringbuf__detach(skel);
+	test_ringbuf_lskel__detach(skel);
 cleanup:
 	ring_buffer__free(ringbuf);
-	test_ringbuf__destroy(skel);
+	test_ringbuf_lskel__destroy(skel);
 }

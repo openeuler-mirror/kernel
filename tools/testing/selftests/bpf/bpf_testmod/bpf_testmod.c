@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: GPL-2.0
+/* Copyright (c) 2020 Facebook */
+#include <linux/btf.h>
+#include <linux/btf_ids.h>
+#include <linux/error-injection.h>
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/percpu-defs.h>
+#include <linux/sysfs.h>
+#include <linux/tracepoint.h>
+#include "bpf_testmod.h"
+
+#define CREATE_TRACE_POINTS
+#include "bpf_testmod-events.h"
+
+DEFINE_PER_CPU(int, bpf_testmod_ksym_percpu) = 123;
+
+noinline void
+bpf_testmod_test_mod_kfunc(int i)
+{
+	*(int *)this_cpu_ptr(&bpf_testmod_ksym_percpu) = i;
+}
+
+noinline ssize_t
+bpf_testmod_test_read(struct file *file, struct kobject *kobj,
+		      struct bin_attribute *bin_attr,
+		      char *buf, loff_t off, size_t len)
+{
+	struct bpf_testmod_test_read_ctx ctx = {
+		.buf = buf,
+		.off = off,
+		.len = len,
+	};
+
+	trace_bpf_testmod_test_read(current, &ctx);
+
+	return -EIO; /* always fail */
+}
+EXPORT_SYMBOL(bpf_testmod_test_read);
+ALLOW_ERROR_INJECTION(bpf_testmod_test_read, ERRNO);
+
+static struct bin_attribute bin_attr_bpf_testmod_file __ro_after_init = {
+	.attr = { .name = "bpf_testmod", .mode = 0444, },
+	.read = bpf_testmod_test_read,
+};
+
+BTF_SET_START(bpf_testmod_kfunc_ids)
+BTF_ID(func, bpf_testmod_test_mod_kfunc)
+BTF_SET_END(bpf_testmod_kfunc_ids)
+
+static DEFINE_KFUNC_BTF_ID_SET(&bpf_testmod_kfunc_ids, bpf_testmod_kfunc_btf_set);
+
+static int bpf_testmod_init(void)
+{
+	int ret;
+
+	ret = sysfs_create_bin_file(kernel_kobj, &bin_attr_bpf_testmod_file);
+	if (ret)
+		return ret;
+	register_kfunc_btf_id_set(&prog_test_kfunc_list, &bpf_testmod_kfunc_btf_set);
+	return 0;
+}
+
+static void bpf_testmod_exit(void)
+{
+	unregister_kfunc_btf_id_set(&prog_test_kfunc_list, &bpf_testmod_kfunc_btf_set);
+	return sysfs_remove_bin_file(kernel_kobj, &bin_attr_bpf_testmod_file);
+}
+
+module_init(bpf_testmod_init);
+module_exit(bpf_testmod_exit);
+
+MODULE_AUTHOR("Andrii Nakryiko");
+MODULE_DESCRIPTION("BPF selftests module");
+MODULE_LICENSE("Dual BSD/GPL");
+

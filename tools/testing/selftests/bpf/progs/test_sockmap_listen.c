@@ -28,7 +28,7 @@ struct {
 	__type(value, unsigned int);
 } verdict_map SEC(".maps");
 
-static volatile bool test_sockmap; /* toggled by user-space */
+bool test_sockmap; /* toggled by user-space */
 
 SEC("sk_skb/stream_parser")
 int prog_skb_parser(struct __sk_buff *skb)

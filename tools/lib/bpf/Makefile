@@ -8,7 +8,8 @@ VERSION_SCRIPT := libbpf.map
 LIBBPF_VERSION := $(shell \
 	grep -oE '^LIBBPF_([0-9.]+)' $(VERSION_SCRIPT) | \
 	sort -rV | head -n1 | cut -d'_' -f2)
-LIBBPF_MAJOR_VERSION := $(firstword $(subst ., ,$(LIBBPF_VERSION)))
+LIBBPF_MAJOR_VERSION := $(word 1,$(subst ., ,$(LIBBPF_VERSION)))
+LIBBPF_MINOR_VERSION := $(word 2,$(subst ., ,$(LIBBPF_VERSION)))
 
 MAKEFLAGS += --no-print-directory
 
@@ -59,28 +60,8 @@ ifndef VERBOSE
   VERBOSE = 0
 endif
 
-FEATURE_USER = .libbpf
-FEATURE_TESTS = libelf zlib bpf
-FEATURE_DISPLAY = libelf zlib bpf
-
-INCLUDES = -I. -I$(srctree)/tools/include -I$(srctree)/tools/include/uapi
-FEATURE_CHECK_CFLAGS-bpf = $(INCLUDES)
-
-check_feat := 1
-NON_CHECK_FEAT_TARGETS := clean TAGS tags cscope help
-ifdef MAKECMDGOALS
-ifeq ($(filter-out $(NON_CHECK_FEAT_TARGETS),$(MAKECMDGOALS)),)
-  check_feat := 0
-endif
-endif
-
-ifeq ($(check_feat),1)
-ifeq ($(FEATURES_DUMP),)
-include $(srctree)/tools/build/Makefile.feature
-else
-include $(FEATURES_DUMP)
-endif
-endif
+INCLUDES = -I$(if $(OUTPUT),$(OUTPUT),.)				\
+	   -I$(srctree)/tools/include -I$(srctree)/tools/include/uapi
 
 export prefix libdir src obj
 
@@ -133,6 +114,7 @@ STATIC_OBJDIR	:= $(OUTPUT)staticobjs/
 BPF_IN_SHARED	:= $(SHARED_OBJDIR)libbpf-in.o
 BPF_IN_STATIC	:= $(STATIC_OBJDIR)libbpf-in.o
 BPF_HELPER_DEFS	:= $(OUTPUT)bpf_helper_defs.h
+BPF_GENERATED	:= $(BPF_HELPER_DEFS)
 
 LIB_TARGET	:= $(addprefix $(OUTPUT),$(LIB_TARGET))
 LIB_FILE	:= $(addprefix $(OUTPUT),$(LIB_FILE))
@@ -157,7 +139,7 @@ all: fixdep
 
 all_cmd: $(CMD_TARGETS) check
 
-$(BPF_IN_SHARED): force elfdep zdep bpfdep $(BPF_HELPER_DEFS)
+$(BPF_IN_SHARED): force $(BPF_GENERATED)
 	@(test -f ../../include/uapi/linux/bpf.h -a -f ../../../include/uapi/linux/bpf.h && ( \
 	(diff -B ../../include/uapi/linux/bpf.h ../../../include/uapi/linux/bpf.h >/dev/null) || \
 	echo "Warning: Kernel ABI header at 'tools/include/uapi/linux/bpf.h' differs from latest version at 'include/uapi/linux/bpf.h'" >&2 )) || true
@@ -175,7 +157,7 @@ $(BPF_IN_SHARED): force elfdep zdep bpfdep $(BPF_HELPER_DEFS)
 	echo "Warning: Kernel ABI header at 'tools/include/uapi/linux/if_xdp.h' differs from latest version at 'include/uapi/linux/if_xdp.h'" >&2 )) || true
 	$(Q)$(MAKE) $(build)=libbpf OUTPUT=$(SHARED_OBJDIR) CFLAGS="$(CFLAGS) $(SHLIB_FLAGS)"
 
-$(BPF_IN_STATIC): force elfdep zdep bpfdep $(BPF_HELPER_DEFS)
+$(BPF_IN_STATIC): force $(BPF_GENERATED)
 	$(Q)$(MAKE) $(build)=libbpf OUTPUT=$(STATIC_OBJDIR)
 
 $(BPF_HELPER_DEFS): $(srctree)/tools/include/uapi/linux/bpf.h
@@ -200,7 +182,7 @@ $(OUTPUT)libbpf.pc:
 		-e "s|@VERSION@|$(LIBBPF_VERSION)|" \
 		< libbpf.pc.template > $@
 
-check: check_abi
+check: check_abi check_version
 
 check_abi: $(OUTPUT)libbpf.so $(VERSION_SCRIPT)
 	@if [ "$(GLOBAL_SYM_COUNT)" != "$(VERSIONED_SYM_COUNT)" ]; then	 \
@@ -226,6 +208,21 @@ check_abi: $(OUTPUT)libbpf.so $(VERSION_SCRIPT)
 		exit 1;							 \
 	fi
 
+HDR_MAJ_VERSION := $(shell grep -oE '^\#define LIBBPF_MAJOR_VERSION ([0-9]+)$$' libbpf_version.h | cut -d' ' -f3)
+HDR_MIN_VERSION := $(shell grep -oE '^\#define LIBBPF_MINOR_VERSION ([0-9]+)$$' libbpf_version.h | cut -d' ' -f3)
+
+check_version: $(VERSION_SCRIPT) libbpf_version.h
+	@if [ "$(HDR_MAJ_VERSION)" != "$(LIBBPF_MAJOR_VERSION)" ]; then        \
+		echo "Error: libbpf major version mismatch detected: "	       \
+		     "'$(HDR_MAJ_VERSION)' != '$(LIBBPF_MAJOR_VERSION)'" >&2;  \
+		exit 1;							       \
+	fi
+	@if [ "$(HDR_MIN_VERSION)" != "$(LIBBPF_MINOR_VERSION)" ]; then	       \
+		echo "Error: libbpf minor version mismatch detected: "	       \
+		     "'$(HDR_MIN_VERSION)' != '$(LIBBPF_MINOR_VERSION)'" >&2;  \
+		exit 1;							       \
+	fi
+
 define do_install_mkdir
 	if [ ! -d '$(DESTDIR_SQ)$1' ]; then		\
 		$(INSTALL) -d -m 755 '$(DESTDIR_SQ)$1';	\
@@ -244,19 +241,24 @@ install_lib: all_cmd
 		$(call do_install_mkdir,$(libdir_SQ)); \
 		cp -fpR $(LIB_FILE) $(DESTDIR)$(libdir_SQ)
 
-install_headers: $(BPF_HELPER_DEFS)
-	$(call QUIET_INSTALL, headers) \
-		$(call do_install,bpf.h,$(prefix)/include/bpf,644); \
-		$(call do_install,libbpf.h,$(prefix)/include/bpf,644); \
-		$(call do_install,btf.h,$(prefix)/include/bpf,644); \
-		$(call do_install,libbpf_util.h,$(prefix)/include/bpf,644); \
-		$(call do_install,libbpf_common.h,$(prefix)/include/bpf,644); \
-		$(call do_install,xsk.h,$(prefix)/include/bpf,644); \
-		$(call do_install,bpf_helpers.h,$(prefix)/include/bpf,644); \
-		$(call do_install,$(BPF_HELPER_DEFS),$(prefix)/include/bpf,644); \
-		$(call do_install,bpf_tracing.h,$(prefix)/include/bpf,644); \
-		$(call do_install,bpf_endian.h,$(prefix)/include/bpf,644); \
-		$(call do_install,bpf_core_read.h,$(prefix)/include/bpf,644);
+SRC_HDRS := bpf.h libbpf.h btf.h libbpf_util.h libbpf_common.h libbpf_legacy.h xsk.h	\
+	    bpf_helpers.h bpf_tracing.h bpf_endian.h bpf_core_read.h	     \
+	    skel_internal.h libbpf_version.h
+GEN_HDRS := $(BPF_GENERATED)
+
+INSTALL_PFX := $(DESTDIR)$(prefix)/include/bpf
+INSTALL_SRC_HDRS := $(addprefix $(INSTALL_PFX)/, $(SRC_HDRS))
+INSTALL_GEN_HDRS := $(addprefix $(INSTALL_PFX)/, $(notdir $(GEN_HDRS)))
+
+$(INSTALL_SRC_HDRS): $(INSTALL_PFX)/%.h: %.h
+	$(call QUIET_INSTALL, $@) \
+		$(call do_install,$<,$(prefix)/include/bpf,644)
+
+$(INSTALL_GEN_HDRS): $(INSTALL_PFX)/%.h: $(OUTPUT)%.h
+	$(call QUIET_INSTALL, $@) \
+		$(call do_install,$<,$(prefix)/include/bpf,644)
+
+install_headers: $(BPF_GENERATED) $(INSTALL_SRC_HDRS) $(INSTALL_GEN_HDRS)
 
 install_pkgconfig: $(PC_FILE)
 	$(call QUIET_INSTALL, $(PC_FILE)) \
@@ -264,33 +266,15 @@ install_pkgconfig: $(PC_FILE)
 
 install: install_lib install_pkgconfig install_headers
 
-### Cleaning rules
-
-config-clean:
-	$(call QUIET_CLEAN, feature-detect)
-	$(Q)$(MAKE) -C $(srctree)/tools/build/feature/ clean >/dev/null
-
-clean: config-clean
+clean:
 	$(call QUIET_CLEAN, libbpf) $(RM) -rf $(CMD_TARGETS)		     \
-		*~ .*.d .*.cmd LIBBPF-CFLAGS $(BPF_HELPER_DEFS)		     \
+		*~ .*.d .*.cmd LIBBPF-CFLAGS $(BPF_GENERATED)		     \
 		$(SHARED_OBJDIR) $(STATIC_OBJDIR)			     \
 		$(addprefix $(OUTPUT),					     \
 			    *.o *.a *.so *.so.$(LIBBPF_MAJOR_VERSION) *.pc)
-	$(call QUIET_CLEAN, core-gen) $(RM) $(OUTPUT)FEATURE-DUMP.libbpf
 
-
-
-PHONY += force elfdep zdep bpfdep cscope tags
+PHONY += force cscope tags check check_abi check_version
 force:
-
-elfdep:
-	@if [ "$(feature-libelf)" != "1" ]; then echo "No libelf found"; exit 1 ; fi
-
-zdep:
-	@if [ "$(feature-zlib)" != "1" ]; then echo "No zlib found"; exit 1 ; fi
-
-bpfdep:
-	@if [ "$(feature-bpf)" != "1" ]; then echo "BPF API too old"; exit 1 ; fi
 
 cscope:
 	ls *.c *.h > cscope.files

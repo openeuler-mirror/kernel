@@ -74,11 +74,10 @@ static const struct bpf_map_ops * const bpf_map_types[] = {
  * copy_from_user() call. However, this is not a concern since this function is
  * meant to be a future-proofing of bits.
  */
-int bpf_check_uarg_tail_zero(void __user *uaddr,
+int bpf_check_uarg_tail_zero(bpfptr_t uaddr,
 			     size_t expected_size,
 			     size_t actual_size)
 {
-	unsigned char __user *addr = uaddr + expected_size;
 	int res;
 
 	if (unlikely(actual_size > PAGE_SIZE))	/* silly large */
@@ -87,7 +86,12 @@ int bpf_check_uarg_tail_zero(void __user *uaddr,
 	if (actual_size <= expected_size)
 		return 0;
 
-	res = check_zeroed_user(addr, actual_size - expected_size);
+	if (uaddr.is_kernel)
+		res = memchr_inv(uaddr.kernel + expected_size, 0,
+				 actual_size - expected_size) == NULL;
+	else
+		res = check_zeroed_user(uaddr.user + expected_size,
+					actual_size - expected_size);
 	if (res < 0)
 		return res;
 	return res ? 0 : -E2BIG;
@@ -864,6 +868,11 @@ static int map_create(union bpf_attr *attr)
 			err = PTR_ERR(btf);
 			goto free_map;
 		}
+		if (btf_is_kernel(btf)) {
+			btf_put(btf);
+			err = -EACCES;
+			goto free_map;
+		}
 		map->btf = btf;
 
 		if (attr->btf_value_type_id) {
@@ -1009,6 +1018,17 @@ static void *__bpf_copy_key(void __user *ukey, u64 key_size)
 	return NULL;
 }
 
+static void *___bpf_copy_key(bpfptr_t ukey, u64 key_size)
+{
+	if (key_size)
+		return memdup_bpfptr(ukey, key_size);
+
+	if (!bpfptr_is_null(ukey))
+		return ERR_PTR(-EINVAL);
+
+	return NULL;
+}
+
 /* last field in 'union bpf_attr' used by this command */
 #define BPF_MAP_LOOKUP_ELEM_LAST_FIELD flags
 
@@ -1079,10 +1099,10 @@ err_put:
 
 #define BPF_MAP_UPDATE_ELEM_LAST_FIELD flags
 
-static int map_update_elem(union bpf_attr *attr)
+static int map_update_elem(union bpf_attr *attr, bpfptr_t uattr)
 {
-	void __user *ukey = u64_to_user_ptr(attr->key);
-	void __user *uvalue = u64_to_user_ptr(attr->value);
+	bpfptr_t ukey = make_bpfptr(attr->key, uattr.is_kernel);
+	bpfptr_t uvalue = make_bpfptr(attr->value, uattr.is_kernel);
 	int ufd = attr->map_fd;
 	struct bpf_map *map;
 	void *key, *value;
@@ -1109,7 +1129,7 @@ static int map_update_elem(union bpf_attr *attr)
 		goto err_put;
 	}
 
-	key = __bpf_copy_key(ukey, map->key_size);
+	key = ___bpf_copy_key(ukey, map->key_size);
 	if (IS_ERR(key)) {
 		err = PTR_ERR(key);
 		goto err_put;
@@ -1129,7 +1149,7 @@ static int map_update_elem(union bpf_attr *attr)
 		goto free_key;
 
 	err = -EFAULT;
-	if (copy_from_user(value, uvalue, value_size) != 0)
+	if (copy_from_bpfptr(value, uvalue, value_size) != 0)
 		goto free_value;
 
 	err = bpf_map_update_value(map, f, key, value, attr->flags);
@@ -1716,6 +1736,8 @@ static int bpf_prog_alloc_id(struct bpf_prog *prog)
 
 void bpf_prog_free_id(struct bpf_prog *prog, bool do_idr_lock)
 {
+	unsigned long flags;
+
 	/* cBPF to eBPF migrations are currently not in the idr store.
 	 * Offloaded programs are removed from the store when their device
 	 * disappears - even if someone grabs an fd to them they are unusable,
@@ -1725,7 +1747,7 @@ void bpf_prog_free_id(struct bpf_prog *prog, bool do_idr_lock)
 		return;
 
 	if (do_idr_lock)
-		spin_lock_bh(&prog_idr_lock);
+		spin_lock_irqsave(&prog_idr_lock, flags);
 	else
 		__acquire(&prog_idr_lock);
 
@@ -1733,7 +1755,7 @@ void bpf_prog_free_id(struct bpf_prog *prog, bool do_idr_lock)
 	prog->aux->id = 0;
 
 	if (do_idr_lock)
-		spin_unlock_bh(&prog_idr_lock);
+		spin_unlock_irqrestore(&prog_idr_lock, flags);
 	else
 		__release(&prog_idr_lock);
 }
@@ -1753,7 +1775,11 @@ static void __bpf_prog_put_noref(struct bpf_prog *prog, bool deferred)
 {
 	bpf_prog_kallsyms_del_all(prog);
 	btf_put(prog->aux->btf);
-	bpf_prog_free_linfo(prog);
+	kvfree(prog->aux->jited_linfo);
+	kvfree(prog->aux->linfo);
+	kfree(prog->aux->kfunc_tab);
+	if (prog->aux->attach_btf)
+		btf_put(prog->aux->attach_btf);
 
 	if (deferred) {
 		if (prog->aux->sleepable)
@@ -1765,14 +1791,32 @@ static void __bpf_prog_put_noref(struct bpf_prog *prog, bool deferred)
 	}
 }
 
+static void bpf_prog_put_deferred(struct work_struct *work)
+{
+	struct bpf_prog_aux *aux;
+	struct bpf_prog *prog;
+
+	aux = container_of(work, struct bpf_prog_aux, work);
+	prog = aux->prog;
+	perf_event_bpf_event(prog, PERF_BPF_EVENT_PROG_UNLOAD, 0);
+	bpf_audit_prog(prog, BPF_AUDIT_UNLOAD);
+	__bpf_prog_put_noref(prog, true);
+}
+
 static void __bpf_prog_put(struct bpf_prog *prog, bool do_idr_lock)
 {
-	if (atomic64_dec_and_test(&prog->aux->refcnt)) {
-		perf_event_bpf_event(prog, PERF_BPF_EVENT_PROG_UNLOAD, 0);
-		bpf_audit_prog(prog, BPF_AUDIT_UNLOAD);
+	struct bpf_prog_aux *aux = prog->aux;
+
+	if (atomic64_dec_and_test(&aux->refcnt)) {
 		/* bpf_prog_free_id() must be called first */
 		bpf_prog_free_id(prog, do_idr_lock);
-		__bpf_prog_put_noref(prog, true);
+
+		if (in_irq() || irqs_disabled()) {
+			INIT_WORK(&aux->work, bpf_prog_put_deferred);
+			schedule_work(&aux->work);
+		} else {
+			bpf_prog_put_deferred(&aux->work);
+		}
 	}
 }
 
@@ -1793,25 +1837,28 @@ static int bpf_prog_release(struct inode *inode, struct file *filp)
 static void bpf_prog_get_stats(const struct bpf_prog *prog,
 			       struct bpf_prog_stats *stats)
 {
-	u64 nsecs = 0, cnt = 0;
+	u64 nsecs = 0, cnt = 0, misses = 0;
 	int cpu;
 
 	for_each_possible_cpu(cpu) {
 		const struct bpf_prog_stats *st;
 		unsigned int start;
-		u64 tnsecs, tcnt;
+		u64 tnsecs, tcnt, tmisses;
 
-		st = per_cpu_ptr(prog->aux->stats, cpu);
+		st = per_cpu_ptr(prog->stats, cpu);
 		do {
 			start = u64_stats_fetch_begin_irq(&st->syncp);
 			tnsecs = st->nsecs;
 			tcnt = st->cnt;
+			tmisses = st->misses;
 		} while (u64_stats_fetch_retry_irq(&st->syncp, start));
 		nsecs += tnsecs;
 		cnt += tcnt;
+		misses += tmisses;
 	}
 	stats->nsecs = nsecs;
 	stats->cnt = cnt;
+	stats->misses = misses;
 }
 
 #ifdef CONFIG_PROC_FS
@@ -1830,14 +1877,18 @@ static void bpf_prog_show_fdinfo(struct seq_file *m, struct file *filp)
 		   "memlock:\t%llu\n"
 		   "prog_id:\t%u\n"
 		   "run_time_ns:\t%llu\n"
-		   "run_cnt:\t%llu\n",
+		   "run_cnt:\t%llu\n"
+		   "recursion_misses:\t%llu\n"
+		   "verified_insns:\t%u\n",
 		   prog->type,
 		   prog->jited,
 		   prog_tag,
 		   prog->pages * 1ULL << PAGE_SHIFT,
 		   prog->aux->id,
 		   stats.nsecs,
-		   stats.cnt);
+		   stats.cnt,
+		   stats.misses,
+		   prog->aux->verified_insns);
 }
 #endif
 
@@ -1987,10 +2038,14 @@ static void bpf_prog_load_fixup_attach_type(union bpf_attr *attr)
 static int
 bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 			   enum bpf_attach_type expected_attach_type,
-			   u32 btf_id, u32 prog_fd)
+			   struct btf *attach_btf, u32 btf_id,
+			   struct bpf_prog *dst_prog)
 {
 	if (btf_id) {
 		if (btf_id > BTF_MAX_TYPE)
+			return -EINVAL;
+
+		if (!attach_btf && !dst_prog)
 			return -EINVAL;
 
 		switch (prog_type) {
@@ -2005,7 +2060,10 @@ bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 		}
 	}
 
-	if (prog_fd && prog_type != BPF_PROG_TYPE_TRACING &&
+	if (attach_btf && (!btf_id || dst_prog))
+		return -EINVAL;
+
+	if (dst_prog && prog_type != BPF_PROG_TYPE_TRACING &&
 	    prog_type != BPF_PROG_TYPE_EXT)
 		return -EINVAL;
 
@@ -2058,6 +2116,7 @@ bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 		if (expected_attach_type == BPF_SK_LOOKUP)
 			return 0;
 		return -EINVAL;
+	case BPF_PROG_TYPE_SYSCALL:
 	case BPF_PROG_TYPE_EXT:
 		if (expected_attach_type)
 			return -EINVAL;
@@ -2118,12 +2177,13 @@ static bool is_perfmon_prog_type(enum bpf_prog_type prog_type)
 }
 
 /* last field in 'union bpf_attr' used by this command */
-#define	BPF_PROG_LOAD_LAST_FIELD attach_prog_fd
+#define	BPF_PROG_LOAD_LAST_FIELD core_relo_rec_size
 
-static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
+static int bpf_prog_load(union bpf_attr *attr, bpfptr_t uattr)
 {
 	enum bpf_prog_type type = attr->prog_type;
-	struct bpf_prog *prog;
+	struct bpf_prog *prog, *dst_prog = NULL;
+	struct btf *attach_btf = NULL;
 	int err;
 	char license[128];
 	bool is_gpl;
@@ -2144,8 +2204,9 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 		return -EPERM;
 
 	/* copy eBPF program license from user space */
-	if (strncpy_from_user(license, u64_to_user_ptr(attr->license),
-			      sizeof(license) - 1) < 0)
+	if (strncpy_from_bpfptr(license,
+				make_bpfptr(attr->license, uattr.is_kernel),
+				sizeof(license) - 1) < 0)
 		return -EFAULT;
 	license[sizeof(license) - 1] = 0;
 
@@ -2165,30 +2226,56 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 	if (is_perfmon_prog_type(type) && !perfmon_capable())
 		return -EPERM;
 
+	/* attach_prog_fd/attach_btf_obj_fd can specify fd of either bpf_prog
+	 * or btf, we need to check which one it is
+	 */
+	if (attr->attach_prog_fd) {
+		dst_prog = bpf_prog_get(attr->attach_prog_fd);
+		if (IS_ERR(dst_prog)) {
+			dst_prog = NULL;
+			attach_btf = btf_get_by_fd(attr->attach_btf_obj_fd);
+			if (IS_ERR(attach_btf))
+				return -EINVAL;
+			if (!btf_is_kernel(attach_btf)) {
+				btf_put(attach_btf);
+				return -EINVAL;
+			}
+		}
+	} else if (attr->attach_btf_id) {
+		/* fall back to vmlinux BTF, if BTF type ID is specified */
+		attach_btf = bpf_get_btf_vmlinux();
+		if (IS_ERR(attach_btf))
+			return PTR_ERR(attach_btf);
+		if (!attach_btf)
+			return -EINVAL;
+		btf_get(attach_btf);
+	}
+
 	bpf_prog_load_fixup_attach_type(attr);
 	if (bpf_prog_load_check_attach(type, attr->expected_attach_type,
-				       attr->attach_btf_id,
-				       attr->attach_prog_fd))
+				       attach_btf, attr->attach_btf_id,
+				       dst_prog)) {
+		if (dst_prog)
+			bpf_prog_put(dst_prog);
+		if (attach_btf)
+			btf_put(attach_btf);
 		return -EINVAL;
+	}
 
 	/* plain bpf_prog allocation */
 	prog = bpf_prog_alloc(bpf_prog_size(attr->insn_cnt), GFP_USER);
-	if (!prog)
+	if (!prog) {
+		if (dst_prog)
+			bpf_prog_put(dst_prog);
+		if (attach_btf)
+			btf_put(attach_btf);
 		return -ENOMEM;
-
-	prog->expected_attach_type = attr->expected_attach_type;
-	prog->aux->attach_btf_id = attr->attach_btf_id;
-	if (attr->attach_prog_fd) {
-		struct bpf_prog *dst_prog;
-
-		dst_prog = bpf_prog_get(attr->attach_prog_fd);
-		if (IS_ERR(dst_prog)) {
-			err = PTR_ERR(dst_prog);
-			goto free_prog_nouncharge;
-		}
-		prog->aux->dst_prog = dst_prog;
 	}
 
+	prog->expected_attach_type = attr->expected_attach_type;
+	prog->aux->attach_btf = attach_btf;
+	prog->aux->attach_btf_id = attr->attach_btf_id;
+	prog->aux->dst_prog = dst_prog;
 	prog->aux->offload_requested = !!attr->prog_ifindex;
 	prog->aux->sleepable = attr->prog_flags & BPF_F_SLEEPABLE;
 
@@ -2203,8 +2290,9 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 	prog->len = attr->insn_cnt;
 
 	err = -EFAULT;
-	if (copy_from_user(prog->insns, u64_to_user_ptr(attr->insns),
-			   bpf_prog_insn_size(prog)) != 0)
+	if (copy_from_bpfptr(prog->insns,
+			     make_bpfptr(attr->insns, uattr.is_kernel),
+			     bpf_prog_insn_size(prog)) != 0)
 		goto free_prog;
 
 	prog->orig_prog = NULL;
@@ -2278,6 +2366,8 @@ free_prog:
 free_prog_sec:
 	security_bpf_prog_free(prog->aux);
 free_prog_nouncharge:
+	if (prog->aux->attach_btf)
+		btf_put(prog->aux->attach_btf);
 	bpf_prog_free(prog);
 	return err;
 }
@@ -2573,6 +2663,9 @@ static int bpf_tracing_link_fill_link_info(const struct bpf_link *link,
 		container_of(link, struct bpf_tracing_link, link);
 
 	info->tracing.attach_type = tr_link->attach_type;
+	bpf_trampoline_unpack_key(tr_link->trampoline->key,
+				  &info->tracing.target_obj_id,
+				  &info->tracing.target_btf_id);
 
 	return 0;
 }
@@ -2646,7 +2739,7 @@ static int bpf_tracing_prog_attach(struct bpf_prog *prog,
 			goto out_put_prog;
 		}
 
-		key = bpf_trampoline_compute_key(tgt_prog, btf_id);
+		key = bpf_trampoline_compute_key(tgt_prog, NULL, btf_id);
 	}
 
 	link = kzalloc(sizeof(*link), GFP_USER);
@@ -3441,7 +3534,7 @@ static int bpf_prog_get_info_by_fd(struct file *file,
 	u32 ulen;
 	int err;
 
-	err = bpf_check_uarg_tail_zero(uinfo, sizeof(info), info_len);
+	err = bpf_check_uarg_tail_zero(USER_BPFPTR(uinfo), sizeof(info), info_len);
 	if (err)
 		return err;
 	info_len = min_t(u32, sizeof(info), info_len);
@@ -3484,6 +3577,9 @@ static int bpf_prog_get_info_by_fd(struct file *file,
 	bpf_prog_get_stats(prog, &stats);
 	info.run_time_ns = stats.nsecs;
 	info.run_cnt = stats.cnt;
+	info.recursion_misses = stats.misses;
+
+	info.verified_insns = prog->aux->verified_insns;
 
 	if (!bpf_capable()) {
 		info.jited_prog_len = 0;
@@ -3631,7 +3727,7 @@ static int bpf_prog_get_info_by_fd(struct file *file,
 	}
 
 	if (prog->aux->btf)
-		info.btf_id = btf_id(prog->aux->btf);
+		info.btf_id = btf_obj_id(prog->aux->btf);
 
 	ulen = info.nr_func_info;
 	info.nr_func_info = prog->aux->func_info_cnt;
@@ -3719,7 +3815,7 @@ static int bpf_map_get_info_by_fd(struct file *file,
 	u32 info_len = attr->info.info_len;
 	int err;
 
-	err = bpf_check_uarg_tail_zero(uinfo, sizeof(info), info_len);
+	err = bpf_check_uarg_tail_zero(USER_BPFPTR(uinfo), sizeof(info), info_len);
 	if (err)
 		return err;
 	info_len = min_t(u32, sizeof(info), info_len);
@@ -3734,7 +3830,7 @@ static int bpf_map_get_info_by_fd(struct file *file,
 	memcpy(info.name, map->name, sizeof(map->name));
 
 	if (map->btf) {
-		info.btf_id = btf_id(map->btf);
+		info.btf_id = btf_obj_id(map->btf);
 		info.btf_key_type_id = map->btf_key_type_id;
 		info.btf_value_type_id = map->btf_value_type_id;
 	}
@@ -3762,7 +3858,7 @@ static int bpf_btf_get_info_by_fd(struct file *file,
 	u32 info_len = attr->info.info_len;
 	int err;
 
-	err = bpf_check_uarg_tail_zero(uinfo, sizeof(*uinfo), info_len);
+	err = bpf_check_uarg_tail_zero(USER_BPFPTR(uinfo), sizeof(*uinfo), info_len);
 	if (err)
 		return err;
 
@@ -3779,7 +3875,7 @@ static int bpf_link_get_info_by_fd(struct file *file,
 	u32 info_len = attr->info.info_len;
 	int err;
 
-	err = bpf_check_uarg_tail_zero(uinfo, sizeof(info), info_len);
+	err = bpf_check_uarg_tail_zero(USER_BPFPTR(uinfo), sizeof(info), info_len);
 	if (err)
 		return err;
 	info_len = min_t(u32, sizeof(info), info_len);
@@ -3842,7 +3938,7 @@ static int bpf_obj_get_info_by_fd(const union bpf_attr *attr,
 
 #define BPF_BTF_LOAD_LAST_FIELD btf_log_level
 
-static int bpf_btf_load(const union bpf_attr *attr)
+static int bpf_btf_load(const union bpf_attr *attr, bpfptr_t uattr)
 {
 	if (CHECK_ATTR(BPF_BTF_LOAD))
 		return -EINVAL;
@@ -3850,7 +3946,7 @@ static int bpf_btf_load(const union bpf_attr *attr)
 	if (!bpf_capable())
 		return -EPERM;
 
-	return btf_new_fd(attr);
+	return btf_new_fd(attr, uattr);
 }
 
 #define BPF_BTF_GET_FD_BY_ID_LAST_FIELD btf_id
@@ -4055,13 +4151,14 @@ err_put:
 	return err;
 }
 
-static int tracing_bpf_link_attach(const union bpf_attr *attr, struct bpf_prog *prog)
+static int tracing_bpf_link_attach(const union bpf_attr *attr, bpfptr_t uattr,
+				   struct bpf_prog *prog)
 {
 	if (attr->link_create.attach_type != prog->expected_attach_type)
 		return -EINVAL;
 
 	if (prog->expected_attach_type == BPF_TRACE_ITER)
-		return bpf_iter_link_attach(attr, prog);
+		return bpf_iter_link_attach(attr, uattr, prog);
 	else if (prog->type == BPF_PROG_TYPE_EXT)
 		return bpf_tracing_prog_attach(prog,
 					       attr->link_create.target_fd,
@@ -4070,7 +4167,7 @@ static int tracing_bpf_link_attach(const union bpf_attr *attr, struct bpf_prog *
 }
 
 #define BPF_LINK_CREATE_LAST_FIELD link_create.iter_info_len
-static int link_create(union bpf_attr *attr)
+static int link_create(union bpf_attr *attr, bpfptr_t uattr)
 {
 	enum bpf_prog_type ptype;
 	struct bpf_prog *prog;
@@ -4089,7 +4186,7 @@ static int link_create(union bpf_attr *attr)
 		goto out;
 
 	if (prog->type == BPF_PROG_TYPE_EXT) {
-		ret = tracing_bpf_link_attach(attr, prog);
+		ret = tracing_bpf_link_attach(attr, uattr, prog);
 		goto out;
 	}
 
@@ -4110,7 +4207,7 @@ static int link_create(union bpf_attr *attr)
 		ret = cgroup_bpf_link_attach(attr, prog);
 		break;
 	case BPF_PROG_TYPE_TRACING:
-		ret = tracing_bpf_link_attach(attr, prog);
+		ret = tracing_bpf_link_attach(attr, uattr, prog);
 		break;
 	case BPF_PROG_TYPE_FLOW_DISSECTOR:
 	case BPF_PROG_TYPE_SK_LOOKUP:
@@ -4398,7 +4495,7 @@ out_prog_put:
 	return ret;
 }
 
-SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size)
+static int __sys_bpf(int cmd, bpfptr_t uattr, unsigned int size)
 {
 	union bpf_attr attr;
 	int err;
@@ -4413,7 +4510,7 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
 
 	/* copy attributes from user space, may be less than sizeof(bpf_attr) */
 	memset(&attr, 0, sizeof(attr));
-	if (copy_from_user(&attr, uattr, size) != 0)
+	if (copy_from_bpfptr(&attr, uattr, size) != 0)
 		return -EFAULT;
 
 	err = security_bpf(cmd, &attr, size);
@@ -4428,7 +4525,7 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
 		err = map_lookup_elem(&attr);
 		break;
 	case BPF_MAP_UPDATE_ELEM:
-		err = map_update_elem(&attr);
+		err = map_update_elem(&attr, uattr);
 		break;
 	case BPF_MAP_DELETE_ELEM:
 		err = map_delete_elem(&attr);
@@ -4455,21 +4552,21 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
 		err = bpf_prog_detach(&attr);
 		break;
 	case BPF_PROG_QUERY:
-		err = bpf_prog_query(&attr, uattr);
+		err = bpf_prog_query(&attr, uattr.user);
 		break;
 	case BPF_PROG_TEST_RUN:
-		err = bpf_prog_test_run(&attr, uattr);
+		err = bpf_prog_test_run(&attr, uattr.user);
 		break;
 	case BPF_PROG_GET_NEXT_ID:
-		err = bpf_obj_get_next_id(&attr, uattr,
+		err = bpf_obj_get_next_id(&attr, uattr.user,
 					  &prog_idr, &prog_idr_lock);
 		break;
 	case BPF_MAP_GET_NEXT_ID:
-		err = bpf_obj_get_next_id(&attr, uattr,
+		err = bpf_obj_get_next_id(&attr, uattr.user,
 					  &map_idr, &map_idr_lock);
 		break;
 	case BPF_BTF_GET_NEXT_ID:
-		err = bpf_obj_get_next_id(&attr, uattr,
+		err = bpf_obj_get_next_id(&attr, uattr.user,
 					  &btf_idr, &btf_idr_lock);
 		break;
 	case BPF_PROG_GET_FD_BY_ID:
@@ -4479,38 +4576,38 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
 		err = bpf_map_get_fd_by_id(&attr);
 		break;
 	case BPF_OBJ_GET_INFO_BY_FD:
-		err = bpf_obj_get_info_by_fd(&attr, uattr);
+		err = bpf_obj_get_info_by_fd(&attr, uattr.user);
 		break;
 	case BPF_RAW_TRACEPOINT_OPEN:
 		err = bpf_raw_tracepoint_open(&attr);
 		break;
 	case BPF_BTF_LOAD:
-		err = bpf_btf_load(&attr);
+		err = bpf_btf_load(&attr, uattr);
 		break;
 	case BPF_BTF_GET_FD_BY_ID:
 		err = bpf_btf_get_fd_by_id(&attr);
 		break;
 	case BPF_TASK_FD_QUERY:
-		err = bpf_task_fd_query(&attr, uattr);
+		err = bpf_task_fd_query(&attr, uattr.user);
 		break;
 	case BPF_MAP_LOOKUP_AND_DELETE_ELEM:
 		err = map_lookup_and_delete_elem(&attr);
 		break;
 	case BPF_MAP_LOOKUP_BATCH:
-		err = bpf_map_do_batch(&attr, uattr, BPF_MAP_LOOKUP_BATCH);
+		err = bpf_map_do_batch(&attr, uattr.user, BPF_MAP_LOOKUP_BATCH);
 		break;
 	case BPF_MAP_LOOKUP_AND_DELETE_BATCH:
-		err = bpf_map_do_batch(&attr, uattr,
+		err = bpf_map_do_batch(&attr, uattr.user,
 				       BPF_MAP_LOOKUP_AND_DELETE_BATCH);
 		break;
 	case BPF_MAP_UPDATE_BATCH:
-		err = bpf_map_do_batch(&attr, uattr, BPF_MAP_UPDATE_BATCH);
+		err = bpf_map_do_batch(&attr, uattr.user, BPF_MAP_UPDATE_BATCH);
 		break;
 	case BPF_MAP_DELETE_BATCH:
-		err = bpf_map_do_batch(&attr, uattr, BPF_MAP_DELETE_BATCH);
+		err = bpf_map_do_batch(&attr, uattr.user, BPF_MAP_DELETE_BATCH);
 		break;
 	case BPF_LINK_CREATE:
-		err = link_create(&attr);
+		err = link_create(&attr, uattr);
 		break;
 	case BPF_LINK_UPDATE:
 		err = link_update(&attr);
@@ -4519,7 +4616,7 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
 		err = bpf_link_get_fd_by_id(&attr);
 		break;
 	case BPF_LINK_GET_NEXT_ID:
-		err = bpf_obj_get_next_id(&attr, uattr,
+		err = bpf_obj_get_next_id(&attr, uattr.user,
 					  &link_idr, &link_idr_lock);
 		break;
 	case BPF_ENABLE_STATS:
@@ -4541,3 +4638,121 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
 
 	return err;
 }
+
+SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size)
+{
+	return __sys_bpf(cmd, USER_BPFPTR(uattr), size);
+}
+
+static bool syscall_prog_is_valid_access(int off, int size,
+					 enum bpf_access_type type,
+					 const struct bpf_prog *prog,
+					 struct bpf_insn_access_aux *info)
+{
+	if (off < 0 || off >= U16_MAX)
+		return false;
+	if (off % size != 0)
+		return false;
+	return true;
+}
+
+BPF_CALL_3(bpf_sys_bpf, int, cmd, void *, attr, u32, attr_size)
+{
+	switch (cmd) {
+	case BPF_MAP_CREATE:
+	case BPF_MAP_UPDATE_ELEM:
+	case BPF_MAP_FREEZE:
+	case BPF_PROG_LOAD:
+	case BPF_BTF_LOAD:
+		break;
+	/* case BPF_PROG_TEST_RUN:
+	 * is not part of this list to prevent recursive test_run
+	 */
+	default:
+		return -EINVAL;
+	}
+	return __sys_bpf(cmd, KERNEL_BPFPTR(attr), attr_size);
+}
+
+const struct bpf_func_proto bpf_sys_bpf_proto = {
+	.func		= bpf_sys_bpf,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+	.arg2_type	= ARG_PTR_TO_MEM,
+	.arg3_type	= ARG_CONST_SIZE,
+};
+
+const struct bpf_func_proto * __weak
+tracing_prog_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+{
+	return bpf_base_func_proto(func_id);
+}
+
+BPF_CALL_1(bpf_sys_close, u32, fd)
+{
+	/* When bpf program calls this helper there should not be
+	 * an fdget() without matching completed fdput().
+	 * This helper is allowed in the following callchain only:
+	 * sys_bpf->prog_test_run->bpf_prog->bpf_sys_close
+	 */
+	return __close_fd(current->files, fd);
+}
+
+const struct bpf_func_proto bpf_sys_close_proto = {
+	.func		= bpf_sys_close,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+};
+
+BPF_CALL_4(bpf_kallsyms_lookup_name, const char *, name, int, name_sz, int, flags, u64 *, res)
+{
+	if (flags)
+		return -EINVAL;
+
+	if (name_sz <= 1 || name[name_sz - 1])
+		return -EINVAL;
+
+	if (!bpf_dump_raw_ok(current_cred()))
+		return -EPERM;
+
+	*res = kallsyms_lookup_name(name);
+	return *res ? 0 : -ENOENT;
+}
+
+const struct bpf_func_proto bpf_kallsyms_lookup_name_proto = {
+	.func		= bpf_kallsyms_lookup_name,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_MEM,
+	.arg2_type	= ARG_CONST_SIZE_OR_ZERO,
+	.arg3_type	= ARG_ANYTHING,
+	.arg4_type	= ARG_PTR_TO_LONG,
+};
+
+static const struct bpf_func_proto *
+syscall_prog_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+{
+	switch (func_id) {
+	case BPF_FUNC_sys_bpf:
+		return &bpf_sys_bpf_proto;
+	case BPF_FUNC_btf_find_by_name_kind:
+		return &bpf_btf_find_by_name_kind_proto;
+	case BPF_FUNC_sys_close:
+		return &bpf_sys_close_proto;
+	case BPF_FUNC_kallsyms_lookup_name:
+		return &bpf_kallsyms_lookup_name_proto;
+	default:
+		return tracing_prog_func_proto(func_id, prog);
+	}
+}
+
+const struct bpf_verifier_ops bpf_syscall_verifier_ops = {
+	.get_func_proto  = syscall_prog_func_proto,
+	.is_valid_access = syscall_prog_is_valid_access,
+};
+
+const struct bpf_prog_ops bpf_syscall_prog_ops = {
+	.test_run = bpf_prog_test_run_syscall,
+};

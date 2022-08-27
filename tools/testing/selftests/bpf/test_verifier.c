@@ -297,6 +297,78 @@ static void bpf_fill_scale(struct bpf_test *self)
 	}
 }
 
+static int bpf_fill_torturous_jumps_insn_1(struct bpf_insn *insn)
+{
+	unsigned int len = 259, hlen = 128;
+	int i;
+
+	insn[0] = BPF_EMIT_CALL(BPF_FUNC_get_prandom_u32);
+	for (i = 1; i <= hlen; i++) {
+		insn[i]        = BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, i, hlen);
+		insn[i + hlen] = BPF_JMP_A(hlen - i);
+	}
+	insn[len - 2] = BPF_MOV64_IMM(BPF_REG_0, 1);
+	insn[len - 1] = BPF_EXIT_INSN();
+
+	return len;
+}
+
+static int bpf_fill_torturous_jumps_insn_2(struct bpf_insn *insn)
+{
+	unsigned int len = 4100, jmp_off = 2048;
+	int i, j;
+
+	insn[0] = BPF_EMIT_CALL(BPF_FUNC_get_prandom_u32);
+	for (i = 1; i <= jmp_off; i++) {
+		insn[i] = BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, i, jmp_off);
+	}
+	insn[i++] = BPF_JMP_A(jmp_off);
+	for (; i <= jmp_off * 2 + 1; i+=16) {
+		for (j = 0; j < 16; j++) {
+			insn[i + j] = BPF_JMP_A(16 - j - 1);
+		}
+	}
+
+	insn[len - 2] = BPF_MOV64_IMM(BPF_REG_0, 2);
+	insn[len - 1] = BPF_EXIT_INSN();
+
+	return len;
+}
+
+static void bpf_fill_torturous_jumps(struct bpf_test *self)
+{
+	struct bpf_insn *insn = self->fill_insns;
+	int i = 0;
+
+	switch (self->retval) {
+	case 1:
+		self->prog_len = bpf_fill_torturous_jumps_insn_1(insn);
+		return;
+	case 2:
+		self->prog_len = bpf_fill_torturous_jumps_insn_2(insn);
+		return;
+	case 3:
+		/* main */
+		insn[i++] = BPF_RAW_INSN(BPF_JMP|BPF_CALL, 0, 1, 0, 4);
+		insn[i++] = BPF_RAW_INSN(BPF_JMP|BPF_CALL, 0, 1, 0, 262);
+		insn[i++] = BPF_ST_MEM(BPF_B, BPF_REG_10, -32, 0);
+		insn[i++] = BPF_MOV64_IMM(BPF_REG_0, 3);
+		insn[i++] = BPF_EXIT_INSN();
+
+		/* subprog 1 */
+		i += bpf_fill_torturous_jumps_insn_1(insn + i);
+
+		/* subprog 2 */
+		i += bpf_fill_torturous_jumps_insn_2(insn + i);
+
+		self->prog_len = i;
+		return;
+	default:
+		self->prog_len = 0;
+		break;
+	}
+}
+
 /* BPF_SK_LOOKUP contains 13 instructions, if you need to fix up maps */
 #define BPF_SK_LOOKUP(func)						\
 	/* struct bpf_sock_tuple tuple = {} */				\
@@ -885,19 +957,36 @@ static int do_prog_test_run(int fd_prog, bool unpriv, uint32_t expected_val,
 	__u8 tmp[TEST_DATA_LEN << 2];
 	__u32 size_tmp = sizeof(tmp);
 	uint32_t retval;
-	int err;
+	int err, saved_errno;
 
 	if (unpriv)
 		set_admin(true);
 	err = bpf_prog_test_run(fd_prog, 1, data, size_data,
 				tmp, &size_tmp, &retval, NULL);
+	saved_errno = errno;
+
 	if (unpriv)
 		set_admin(false);
-	if (err && errno != 524/*ENOTSUPP*/ && errno != EPERM) {
-		printf("Unexpected bpf_prog_test_run error ");
-		return err;
+
+	if (err) {
+		switch (saved_errno) {
+		case 524/*ENOTSUPP*/:
+			printf("Did not run the program (not supported) ");
+			return 0;
+		case EPERM:
+			if (unpriv) {
+				printf("Did not run the program (no permission) ");
+				return 0;
+			}
+			/* fallthrough; */
+		default:
+			printf("FAIL: Unexpected bpf_prog_test_run error (%s) ",
+				strerror(saved_errno));
+			return err;
+		}
 	}
-	if (!err && retval != expected_val &&
+
+	if (retval != expected_val &&
 	    expected_val != POINTER_VALUE) {
 		printf("FAIL retval %d != %d ", retval, expected_val);
 		return 1;
@@ -946,6 +1035,7 @@ static void do_test_single(struct bpf_test *test, bool unpriv,
 	int run_errs, run_successes;
 	int map_fds[MAX_NR_MAPS];
 	const char *expected_err;
+	int saved_errno;
 	int fixup_skips;
 	__u32 pflags;
 	int i, err;
@@ -1007,6 +1097,7 @@ static void do_test_single(struct bpf_test *test, bool unpriv,
 	}
 
 	fd_prog = bpf_load_program_xattr(&attr, bpf_vlog, sizeof(bpf_vlog));
+	saved_errno = errno;
 
 	/* BPF_PROG_TYPE_TRACING requires more setup and
 	 * bpf_probe_prog_type won't give correct answer
@@ -1023,7 +1114,7 @@ static void do_test_single(struct bpf_test *test, bool unpriv,
 	if (expected_ret == ACCEPT || expected_ret == VERBOSE_ACCEPT) {
 		if (fd_prog < 0) {
 			printf("FAIL\nFailed to load prog '%s'!\n",
-			       strerror(errno));
+			       strerror(saved_errno));
 			goto fail_log;
 		}
 #ifndef CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS

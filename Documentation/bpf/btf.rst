@@ -84,6 +84,8 @@ sequentially and type id is assigned to each recognized type starting from id
     #define BTF_KIND_FUNC_PROTO     13      /* Function Proto       */
     #define BTF_KIND_VAR            14      /* Variable     */
     #define BTF_KIND_DATASEC        15      /* Section      */
+    #define BTF_KIND_DECL_TAG       17      /* Decl Tag     */
+    #define BTF_KIND_TYPE_TAG       18      /* Type Tag     */
 
 Note that the type section encodes debug info, not just pure types.
 ``BTF_KIND_FUNC`` is not a type, and it represents a defined subprogram.
@@ -105,7 +107,7 @@ Each type contains the following common data::
          * "size" tells the size of the type it is describing.
          *
          * "type" is used by PTR, TYPEDEF, VOLATILE, CONST, RESTRICT,
-         * FUNC and FUNC_PROTO.
+         * FUNC, FUNC_PROTO, DECL_TAG and TYPE_TAG.
          * "type" is a type_id referring to another type.
          */
         union {
@@ -451,6 +453,42 @@ map definition.
   * ``type``: the type of the BTF_KIND_VAR variable
   * ``offset``: the in-section offset of the variable
   * ``size``: the size of the variable in bytes
+
+2.2.17 BTF_KIND_DECL_TAG
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+``struct btf_type`` encoding requirement:
+ * ``name_off``: offset to a non-empty string
+ * ``info.kind_flag``: 0
+ * ``info.kind``: BTF_KIND_DECL_TAG
+ * ``info.vlen``: 0
+ * ``type``: ``struct``, ``union``, ``func``, ``var`` or ``typedef``
+
+``btf_type`` is followed by ``struct btf_decl_tag``.::
+
+    struct btf_decl_tag {
+        __u32   component_idx;
+    };
+
+The ``name_off`` encodes btf_decl_tag attribute string.
+The ``type`` should be ``struct``, ``union``, ``func``, ``var`` or ``typedef``.
+For ``var`` or ``typedef`` type, ``btf_decl_tag.component_idx`` must be ``-1``.
+For the other three types, if the btf_decl_tag attribute is
+applied to the ``struct``, ``union`` or ``func`` itself,
+``btf_decl_tag.component_idx`` must be ``-1``. Otherwise,
+the attribute is applied to a ``struct``/``union`` member or
+a ``func`` argument, and ``btf_decl_tag.component_idx`` should be a
+valid index (starting from 0) pointing to a member or an argument.
+
+2.2.17 BTF_KIND_TYPE_TAG
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+``struct btf_type`` encoding requirement:
+ * ``name_off``: offset to a non-empty string
+ * ``info.kind_flag``: 0
+ * ``info.kind``: BTF_KIND_TYPE_TAG
+ * ``info.vlen``: 0
+ * ``type``: the type with ``btf_type_tag`` attribute
 
 3. BTF Kernel API
 *****************

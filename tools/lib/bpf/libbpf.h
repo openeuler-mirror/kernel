@@ -18,6 +18,7 @@
 #include <linux/bpf.h>
 
 #include "libbpf_common.h"
+#include "libbpf_legacy.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -82,19 +83,29 @@ struct bpf_object_open_opts {
 	 * Non-relocatable instructions are replaced with invalid ones to
 	 * prevent accidental errors.
 	 * */
+	LIBBPF_DEPRECATED_SINCE(0, 6, "field has no effect")
 	bool relaxed_core_relocs;
 	/* maps that set the 'pinning' attribute in their definition will have
 	 * their pin_path attribute set to a file in this directory, and be
 	 * auto-pinned to that path on load; defaults to "/sys/fs/bpf".
 	 */
 	const char *pin_root_path;
+
+	LIBBPF_DEPRECATED_SINCE(0, 7, "use bpf_program__set_attach_target() on each individual bpf_program")
 	__u32 attach_prog_fd;
 	/* Additional kernel config content that augments and overrides
 	 * system Kconfig for CONFIG_xxx externs.
 	 */
 	const char *kconfig;
+	/* Path to the custom BTF to be used for BPF CO-RE relocations.
+	 * This custom BTF completely replaces the use of vmlinux BTF
+	 * for the purpose of CO-RE relocations.
+	 * NOTE: any other BPF feature (e.g., fentry/fexit programs,
+	 * struct_ops, etc) will need actual kernel BTF at /sys/kernel/btf/vmlinux.
+	 */
+	const char *btf_custom_path;
 };
-#define bpf_object_open_opts__last_field kconfig
+#define bpf_object_open_opts__last_field btf_custom_path
 
 LIBBPF_API struct bpf_object *bpf_object__open(const char *path);
 LIBBPF_API struct bpf_object *
@@ -143,6 +154,7 @@ LIBBPF_API int bpf_object__unload(struct bpf_object *obj);
 
 LIBBPF_API const char *bpf_object__name(const struct bpf_object *obj);
 LIBBPF_API unsigned int bpf_object__kversion(const struct bpf_object *obj);
+LIBBPF_API int bpf_object__set_kversion(struct bpf_object *obj, __u32 kern_version);
 
 struct btf;
 LIBBPF_API struct btf *bpf_object__btf(const struct bpf_object *obj);
@@ -205,14 +217,51 @@ LIBBPF_API bool bpf_program__autoload(const struct bpf_program *prog);
 LIBBPF_API int bpf_program__set_autoload(struct bpf_program *prog, bool autoload);
 
 /* returns program size in bytes */
+LIBBPF_DEPRECATED_SINCE(0, 7, "use bpf_program__insn_cnt() instead")
 LIBBPF_API size_t bpf_program__size(const struct bpf_program *prog);
+
+struct bpf_insn;
+
+/**
+ * @brief **bpf_program__insns()** gives read-only access to BPF program's
+ * underlying BPF instructions.
+ * @param prog BPF program for which to return instructions
+ * @return a pointer to an array of BPF instructions that belong to the
+ * specified BPF program
+ *
+ * Returned pointer is always valid and not NULL. Number of `struct bpf_insn`
+ * pointed to can be fetched using **bpf_program__insn_cnt()** API.
+ *
+ * Keep in mind, libbpf can modify and append/delete BPF program's
+ * instructions as it processes BPF object file and prepares everything for
+ * uploading into the kernel. So depending on the point in BPF object
+ * lifetime, **bpf_program__insns()** can return different sets of
+ * instructions. As an example, during BPF object load phase BPF program
+ * instructions will be CO-RE-relocated, BPF subprograms instructions will be
+ * appended, ldimm64 instructions will have FDs embedded, etc. So instructions
+ * returned before **bpf_object__load()** and after it might be quite
+ * different.
+ */
+LIBBPF_API const struct bpf_insn *bpf_program__insns(const struct bpf_program *prog);
+/**
+ * @brief **bpf_program__insn_cnt()** returns number of `struct bpf_insn`'s
+ * that form specified BPF program.
+ * @param prog BPF program for which to return number of BPF instructions
+ *
+ * See **bpf_program__insns()** documentation for notes on how libbpf can
+ * change instructions and their count during different phases of
+ * **bpf_object** lifetime.
+ */
+LIBBPF_API size_t bpf_program__insn_cnt(const struct bpf_program *prog);
 
 LIBBPF_API int bpf_program__load(struct bpf_program *prog, char *license,
 				 __u32 kern_version);
 LIBBPF_API int bpf_program__fd(const struct bpf_program *prog);
+LIBBPF_DEPRECATED_SINCE(0, 7, "multi-instance bpf_program support is deprecated")
 LIBBPF_API int bpf_program__pin_instance(struct bpf_program *prog,
 					 const char *path,
 					 int instance);
+LIBBPF_DEPRECATED_SINCE(0, 7, "multi-instance bpf_program support is deprecated")
 LIBBPF_API int bpf_program__unpin_instance(struct bpf_program *prog,
 					   const char *path,
 					   int instance);
@@ -234,42 +283,42 @@ LIBBPF_API int bpf_link__detach(struct bpf_link *link);
 LIBBPF_API int bpf_link__destroy(struct bpf_link *link);
 
 LIBBPF_API struct bpf_link *
-bpf_program__attach(struct bpf_program *prog);
+bpf_program__attach(const struct bpf_program *prog);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_perf_event(struct bpf_program *prog, int pfd);
+bpf_program__attach_perf_event(const struct bpf_program *prog, int pfd);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_kprobe(struct bpf_program *prog, bool retprobe,
+bpf_program__attach_kprobe(const struct bpf_program *prog, bool retprobe,
 			   const char *func_name);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_uprobe(struct bpf_program *prog, bool retprobe,
+bpf_program__attach_uprobe(const struct bpf_program *prog, bool retprobe,
 			   pid_t pid, const char *binary_path,
 			   size_t func_offset);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_tracepoint(struct bpf_program *prog,
+bpf_program__attach_tracepoint(const struct bpf_program *prog,
 			       const char *tp_category,
 			       const char *tp_name);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_raw_tracepoint(struct bpf_program *prog,
+bpf_program__attach_raw_tracepoint(const struct bpf_program *prog,
 				   const char *tp_name);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_trace(struct bpf_program *prog);
+bpf_program__attach_trace(const struct bpf_program *prog);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_lsm(struct bpf_program *prog);
+bpf_program__attach_lsm(const struct bpf_program *prog);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_cgroup(struct bpf_program *prog, int cgroup_fd);
+bpf_program__attach_cgroup(const struct bpf_program *prog, int cgroup_fd);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_netns(struct bpf_program *prog, int netns_fd);
+bpf_program__attach_netns(const struct bpf_program *prog, int netns_fd);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_xdp(struct bpf_program *prog, int ifindex);
+bpf_program__attach_xdp(const struct bpf_program *prog, int ifindex);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_freplace(struct bpf_program *prog,
+bpf_program__attach_freplace(const struct bpf_program *prog,
 			     int target_fd, const char *attach_func_name);
 LIBBPF_API struct bpf_link *
-bpf_program__attach_sched(struct bpf_program *prog);
+bpf_program__attach_sched(const struct bpf_program *prog);
 
 struct bpf_map;
 
-LIBBPF_API struct bpf_link *bpf_map__attach_struct_ops(struct bpf_map *map);
+LIBBPF_API struct bpf_link *bpf_map__attach_struct_ops(const struct bpf_map *map);
 
 struct bpf_iter_attach_opts {
 	size_t sz; /* size of this struct for forward/backward compatibility */
@@ -279,10 +328,8 @@ struct bpf_iter_attach_opts {
 #define bpf_iter_attach_opts__last_field link_info_len
 
 LIBBPF_API struct bpf_link *
-bpf_program__attach_iter(struct bpf_program *prog,
+bpf_program__attach_iter(const struct bpf_program *prog,
 			 const struct bpf_iter_attach_opts *opts);
-
-struct bpf_insn;
 
 /*
  * Libbpf allows callers to adjust BPF programs before being loaded
@@ -312,7 +359,7 @@ struct bpf_insn;
  * one instance. In this case bpf_program__fd(prog) is equal to
  * bpf_program__nth_fd(prog, 0).
  */
-
+LIBBPF_DEPRECATED_SINCE(0, 7, "use bpf_program__insns() for getting bpf_program instructions")
 struct bpf_prog_prep_result {
 	/*
 	 * If not NULL, load new instruction array.
@@ -341,9 +388,11 @@ typedef int (*bpf_program_prep_t)(struct bpf_program *prog, int n,
 				  struct bpf_insn *insns, int insns_cnt,
 				  struct bpf_prog_prep_result *res);
 
+LIBBPF_DEPRECATED_SINCE(0, 7, "use bpf_program__insns() for getting bpf_program instructions")
 LIBBPF_API int bpf_program__set_prep(struct bpf_program *prog, int nr_instance,
 				     bpf_program_prep_t prep);
 
+LIBBPF_DEPRECATED_SINCE(0, 7, "multi-instance bpf_program support is deprecated")
 LIBBPF_API int bpf_program__nth_fd(const struct bpf_program *prog, int n);
 
 /*
@@ -364,12 +413,12 @@ LIBBPF_API int bpf_program__set_extension(struct bpf_program *prog);
 LIBBPF_API int bpf_program__set_sk_lookup(struct bpf_program *prog);
 LIBBPF_API int bpf_program__set_sched(struct bpf_program *prog);
 
-LIBBPF_API enum bpf_prog_type bpf_program__get_type(struct bpf_program *prog);
+LIBBPF_API enum bpf_prog_type bpf_program__get_type(const struct bpf_program *prog);
 LIBBPF_API void bpf_program__set_type(struct bpf_program *prog,
 				      enum bpf_prog_type type);
 
 LIBBPF_API enum bpf_attach_type
-bpf_program__get_expected_attach_type(struct bpf_program *prog);
+bpf_program__get_expected_attach_type(const struct bpf_program *prog);
 LIBBPF_API void
 bpf_program__set_expected_attach_type(struct bpf_program *prog,
 				      enum bpf_attach_type type);
@@ -474,6 +523,7 @@ LIBBPF_API int bpf_map__set_priv(struct bpf_map *map, void *priv,
 LIBBPF_API void *bpf_map__priv(const struct bpf_map *map);
 LIBBPF_API int bpf_map__set_initial_value(struct bpf_map *map,
 					  const void *data, size_t size);
+LIBBPF_API const void *bpf_map__initial_value(struct bpf_map *map, size_t *psize);
 LIBBPF_API bool bpf_map__is_offload_neutral(const struct bpf_map *map);
 LIBBPF_API bool bpf_map__is_internal(const struct bpf_map *map);
 LIBBPF_API int bpf_map__set_pin_path(struct bpf_map *map, const char *path);
@@ -483,6 +533,7 @@ LIBBPF_API int bpf_map__pin(struct bpf_map *map, const char *path);
 LIBBPF_API int bpf_map__unpin(struct bpf_map *map, const char *path);
 
 LIBBPF_API int bpf_map__set_inner_map_fd(struct bpf_map *map, int fd);
+LIBBPF_API struct bpf_map *bpf_map__inner_map(struct bpf_map *map);
 
 LIBBPF_API long libbpf_get_error(const void *ptr);
 
@@ -500,6 +551,7 @@ LIBBPF_API int bpf_prog_load_xattr(const struct bpf_prog_load_attr *attr,
 LIBBPF_API int bpf_prog_load(const char *file, enum bpf_prog_type type,
 			     struct bpf_object **pobj, int *prog_fd);
 
+/* XDP related API */
 struct xdp_link_info {
 	__u32 prog_id;
 	__u32 drv_prog_id;
@@ -521,6 +573,49 @@ LIBBPF_API int bpf_set_link_xdp_fd_opts(int ifindex, int fd, __u32 flags,
 LIBBPF_API int bpf_get_link_xdp_id(int ifindex, __u32 *prog_id, __u32 flags);
 LIBBPF_API int bpf_get_link_xdp_info(int ifindex, struct xdp_link_info *info,
 				     size_t info_size, __u32 flags);
+
+/* TC related API */
+enum bpf_tc_attach_point {
+	BPF_TC_INGRESS = 1 << 0,
+	BPF_TC_EGRESS  = 1 << 1,
+	BPF_TC_CUSTOM  = 1 << 2,
+};
+
+#define BPF_TC_PARENT(a, b) 	\
+	((((a) << 16) & 0xFFFF0000U) | ((b) & 0x0000FFFFU))
+
+enum bpf_tc_flags {
+	BPF_TC_F_REPLACE = 1 << 0,
+};
+
+struct bpf_tc_hook {
+	size_t sz;
+	int ifindex;
+	enum bpf_tc_attach_point attach_point;
+	__u32 parent;
+	size_t :0;
+};
+#define bpf_tc_hook__last_field parent
+
+struct bpf_tc_opts {
+	size_t sz;
+	int prog_fd;
+	__u32 flags;
+	__u32 prog_id;
+	__u32 handle;
+	__u32 priority;
+	size_t :0;
+};
+#define bpf_tc_opts__last_field priority
+
+LIBBPF_API int bpf_tc_hook_create(struct bpf_tc_hook *hook);
+LIBBPF_API int bpf_tc_hook_destroy(struct bpf_tc_hook *hook);
+LIBBPF_API int bpf_tc_attach(const struct bpf_tc_hook *hook,
+			     struct bpf_tc_opts *opts);
+LIBBPF_API int bpf_tc_detach(const struct bpf_tc_hook *hook,
+			     const struct bpf_tc_opts *opts);
+LIBBPF_API int bpf_tc_query(const struct bpf_tc_hook *hook,
+			    struct bpf_tc_opts *opts);
 
 /* Ring buffer APIs */
 struct ring_buffer;
@@ -735,7 +830,7 @@ struct bpf_object_skeleton {
 	size_t sz; /* size of this struct, for forward/backward compatibility */
 
 	const char *name;
-	void *data;
+	const void *data;
 	size_t data_sz;
 
 	struct bpf_object **obj;
@@ -757,11 +852,44 @@ LIBBPF_API int bpf_object__attach_skeleton(struct bpf_object_skeleton *s);
 LIBBPF_API void bpf_object__detach_skeleton(struct bpf_object_skeleton *s);
 LIBBPF_API void bpf_object__destroy_skeleton(struct bpf_object_skeleton *s);
 
+struct gen_loader_opts {
+	size_t sz; /* size of this struct, for forward/backward compatiblity */
+	const char *data;
+	const char *insns;
+	__u32 data_sz;
+	__u32 insns_sz;
+};
+
+#define gen_loader_opts__last_field insns_sz
+LIBBPF_API int bpf_object__gen_loader(struct bpf_object *obj,
+				      struct gen_loader_opts *opts);
+
 enum libbpf_tristate {
 	TRI_NO = 0,
 	TRI_YES = 1,
 	TRI_MODULE = 2,
 };
+
+struct bpf_linker_opts {
+	/* size of this struct, for forward/backward compatiblity */
+	size_t sz;
+};
+#define bpf_linker_opts__last_field sz
+
+struct bpf_linker_file_opts {
+	/* size of this struct, for forward/backward compatiblity */
+	size_t sz;
+};
+#define bpf_linker_file_opts__last_field sz
+
+struct bpf_linker;
+
+LIBBPF_API struct bpf_linker *bpf_linker__new(const char *filename, struct bpf_linker_opts *opts);
+LIBBPF_API int bpf_linker__add_file(struct bpf_linker *linker,
+				    const char *filename,
+				    const struct bpf_linker_file_opts *opts);
+LIBBPF_API int bpf_linker__finalize(struct bpf_linker *linker);
+LIBBPF_API void bpf_linker__free(struct bpf_linker *linker);
 
 #ifdef __cplusplus
 } /* extern "C" */
