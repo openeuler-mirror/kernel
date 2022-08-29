@@ -4858,8 +4858,12 @@ retry:
 			size_t page_size = huge_page_size(h);
 
 			ret = read_actual_file(page, vma, &off, page_size);
-			if (ret)
+			if (ret) {
+				put_page(page);
+				pr_err_ratelimited("enhanced hugetlb mmap: read file failed\n");
+				ret = vmf_error(ret);
 				goto out;
+			}
 		}
 #endif
 		__SetPageUptodate(page);

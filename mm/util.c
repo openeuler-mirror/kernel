@@ -24,6 +24,9 @@
 #include <linux/sizes.h>
 #include <linux/compat.h>
 #include <linux/share_pool.h>
+#ifdef CONFIG_ENHANCED_HUGETLB_MMAP
+#include <linux/perf_event.h>
+#endif
 
 #include <linux/uaccess.h>
 #include <linux/oom.h>
@@ -516,6 +519,7 @@ static unsigned long finish_hugetlb_mmap(unsigned long addr, struct file *actual
 	if (!vma)
 		return -EINVAL;
 	vma->vm_actual_file = get_file(actual_file);
+	perf_event_mmap(vma);
 
 	return addr;
 }
