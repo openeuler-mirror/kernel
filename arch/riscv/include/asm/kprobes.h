@@ -43,5 +43,36 @@ bool kprobe_single_step_handler(struct pt_regs *regs);
 void kretprobe_trampoline(void);
 void __kprobes *trampoline_probe_handler(struct pt_regs *regs);
 
+#ifdef CONFIG_OPTPROBES
+
+/* optinsn template addresses */
+extern __visible kprobe_opcode_t optprobe_template_entry[];
+extern __visible kprobe_opcode_t optprobe_template_val[];
+extern __visible kprobe_opcode_t optprobe_template_call[];
+extern __visible kprobe_opcode_t optprobe_template_store_epc[];
+extern __visible kprobe_opcode_t optprobe_template_end[];
+extern __visible kprobe_opcode_t optprobe_template_sub_sp[];
+extern __visible kprobe_opcode_t optprobe_template_add_sp[];
+extern __visible kprobe_opcode_t optprobe_template_restore_begin[];
+extern __visible kprobe_opcode_t optprobe_template_restore_orig_insn[];
+extern __visible kprobe_opcode_t optprobe_template_restore_end[];
+
+#define MAX_OPTINSN_SIZE				\
+		((unsigned long)optprobe_template_end -	\
+		 (unsigned long)optprobe_template_entry)
+
+#define MAX_COPIED_INSN 2
+#define MAX_OPTIMIZED_LENGTH  (MAX_COPIED_INSN * 4)
+#define JUMP_SIZE             MAX_OPTIMIZED_LENGTH
+
+struct arch_optimized_insn {
+	kprobe_opcode_t copied_insn[MAX_COPIED_INSN];
+	/* detour code buffer */
+	kprobe_opcode_t *insn;
+};
+
+#define RVI_INST_SIZE 4
+
+#endif /* CONFIG_OPTPROBES */
 #endif /* CONFIG_KPROBES */
 #endif /* _ASM_RISCV_KPROBES_H */

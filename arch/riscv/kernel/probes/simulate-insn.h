@@ -44,4 +44,29 @@ __RISCV_INSN_FUNCS(branch,	0x7f, 0x63);
 __RISCV_INSN_FUNCS(jal,		0x7f, 0x6f);
 __RISCV_INSN_FUNCS(jalr,	0x707f, 0x67);
 
+/* 0111011 && 0110011 */
+__RISCV_INSN_FUNCS(arith_rr, 0x77, 0x33);
+/* 0011011 && 0010011 */
+__RISCV_INSN_FUNCS(arith_ri, 0x77, 0x13);
+__RISCV_INSN_FUNCS(lui, 0x7f, 0x37);
+__RISCV_INSN_FUNCS(load, 0x7f, 0x03);
+__RISCV_INSN_FUNCS(store, 0x7f, 0x23);
+__RISCV_INSN_FUNCS(amo, 0x7f, 0x2f);
+
+#define branch_imm(opcode) \
+	(((((opcode) >>  8) & 0xf) <<  1) | \
+	 ((((opcode) >> 25) & 0x3f) << 5) | \
+	 ((((opcode) >>  7) & 0x1) << 11) | \
+	 ((((opcode) >> 31) & 0x1) << 12))
+
+#define branch_offset(opcode) \
+	sign_extend32((branch_imm(opcode)), 12)
+
+#define jal_imm(opcode) \
+	(((((opcode) >> 21) & 0x3ff) << 1) | \
+	 ((((opcode) >> 20) &  0x1) << 11) | \
+	 ((((opcode) >> 31) &  0x1) << 20))
+#define jal_offset(opcode) \
+	sign_extend32(jal_imm(opcode), 20)
+
 #endif /* _RISCV_KERNEL_PROBES_SIMULATE_INSN_H */
