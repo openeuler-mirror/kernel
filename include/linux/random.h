@@ -28,7 +28,7 @@ static inline void add_latent_entropy(void)
 static inline void add_latent_entropy(void) { }
 #endif
 
-void get_random_bytes(void *buf, size_t len);
+void get_random_bytes(void *buf, int len);
 size_t __must_check get_random_bytes_arch(void *buf, size_t len);
 u32 get_random_u32(void);
 u64 get_random_u64(void);
@@ -75,7 +75,7 @@ int unregister_random_ready_notifier(struct notifier_block *nb);
 static inline int get_random_bytes_wait(void *buf, size_t nbytes)
 {
 	int ret = wait_for_random_bytes();
-	get_random_bytes(buf, nbytes);
+	get_random_bytes(buf, (int) nbytes);
 	return ret;
 }
 
