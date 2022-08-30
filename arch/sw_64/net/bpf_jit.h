@@ -96,7 +96,7 @@
 #define SW64_BPF_FUNC_ALU_SEXTH		0x6B
 
 /* special instuction used in jit_fill_hole() */
-#define SW64_BPF_ILLEGAL_INSN	(0x1bff1000)	/* rd_f $31 */
+#define SW64_BPF_ILLEGAL_INSN	(0x1ff00000)	/* pri_ret/b	$31 */
 
 enum sw64_bpf_registers {
 	SW64_BPF_REG_V0		= 0,	/* keep return value */
