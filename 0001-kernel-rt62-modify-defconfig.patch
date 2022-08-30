@@ -29,7 +29,7 @@ index b8d554996..b84cc0bb1 100644
  CONFIG_MEMORY_RELIABLE=y
  
 diff --git a/arch/arm64/kernel/fpsimd.c b/arch/arm64/kernel/fpsimd.c
-index 6db1aa459..118da0f7c 100644
+index dbe196f38..da2413218 100644
 --- a/arch/arm64/kernel/fpsimd.c
 +++ b/arch/arm64/kernel/fpsimd.c
 @@ -244,7 +244,7 @@ static void *sve_free_atomic(struct task_struct *task)
@@ -51,7 +51,7 @@ index 6db1aa459..118da0f7c 100644
  
  static bool have_cpu_fpsimd_context(void)
 diff --git a/arch/x86/configs/openeuler_defconfig b/arch/x86/configs/openeuler_defconfig
-index 6abf47dab..4ea9f3d50 100644
+index c5a878851..1ed51d9f6 100644
 --- a/arch/x86/configs/openeuler_defconfig
 +++ b/arch/x86/configs/openeuler_defconfig
 @@ -88,9 +88,10 @@ CONFIG_NO_HZ=y
@@ -75,7 +75,7 @@ index 6abf47dab..4ea9f3d50 100644
  CONFIG_UID16=y
  CONFIG_MULTIUSER=y
  CONFIG_SGETMASK_SYSCALL=y
-@@ -724,7 +725,7 @@ CONFIG_KVM_COMPAT=y
+@@ -726,7 +727,7 @@ CONFIG_KVM_COMPAT=y
  CONFIG_HAVE_KVM_IRQ_BYPASS=y
  CONFIG_HAVE_KVM_NO_POLL=y
  CONFIG_KVM_XFER_TO_GUEST_WORK=y
@@ -83,7 +83,7 @@ index 6abf47dab..4ea9f3d50 100644
 +# CONFIG_VIRTUALIZATION is not set
  CONFIG_KVM=m
  CONFIG_KVM_INTEL=m
- CONFIG_KVM_AMD=m
+ CONFIG_X86_SGX_KVM=y
 diff --git a/arch/x86/include/asm/preempt.h b/arch/x86/include/asm/preempt.h
 index a3b73de27..dda9ec24f 100644
 --- a/arch/x86/include/asm/preempt.h
