@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2208.5.0
+%global hulkrelease 2208.6.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0164
+Release: %{hulkrelease}.0165
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,22 @@ fi
 %endif
 
 %changelog
+
+* Mon Aug 29 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2208.6.0.0165
+- tty: use new tty_insert_flip_string_and_push_buffer() in pty_write()
+- tty: extract tty_flip_buffer_commit() from tty_flip_buffer_push()
+- tty: drop tty_schedule_flip()
+- tty: the rest, stop using tty_schedule_flip()
+- tty: drivers/tty/, stop using tty_schedule_flip()
+- can: bcm/raw/isotp: use per module netdevice notifier
+- CIFS: Fix retry mid list corruption on reconnects
+- KVM: arm64: vgic-its: Change default outer cacheability for {PEND, PROP}BASER
+- xhci: Fix a logic issue when display Zhaoxin XHCI root hub speed
+- dm verity: set DM_TARGET_IMMUTABLE feature flag
+- scsi: hisi_sas: Add SATA_DISK_ERR bit handling for v3 hw
+- Revert "scsi: hisi_sas: Modify v3 HW I/O processing when SATA_DISK_ERR bit is set and NCQ Error occurs"
+- netfilter: nf_tables: do not allow RULE_ID to refer to another chain
+- netfilter: nf_tables: do not allow SET_ID to refer to another table
 
 * Mon Aug 22 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2208.5.0.0164
 - x86/speculation: Add LFENCE to RSB fill sequence
