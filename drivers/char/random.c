@@ -205,7 +205,7 @@ static void __cold process_random_ready_list(void)
  *
  * There are a few exported interfaces for use by other drivers:
  *
- *	void get_random_bytes(void *buf, size_t len)
+ *	void get_random_bytes(void *buf, int len)
  *	u32 get_random_u32()
  *	u64 get_random_u64()
  *	unsigned int get_random_int()
@@ -442,10 +442,10 @@ static void _get_random_bytes(void *buf, size_t len)
  * wait_for_random_bytes() should be called and return 0 at least once
  * at any point prior.
  */
-void get_random_bytes(void *buf, size_t len)
+void get_random_bytes(void *buf, int len)
 {
 	warn_unseeded_randomness();
-	_get_random_bytes(buf, len);
+	_get_random_bytes(buf, (size_t) len);
 }
 EXPORT_SYMBOL(get_random_bytes);
 
