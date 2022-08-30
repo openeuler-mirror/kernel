@@ -51,6 +51,7 @@
 #include <linux/sched/isolation.h>
 #include <linux/nmi.h>
 #include <linux/kvm_para.h>
+#include <linux/random.h>
 
 #include "workqueue_internal.h"
 
@@ -5061,6 +5062,9 @@ int workqueue_prepare_cpu(unsigned int cpu)
 {
 	struct worker_pool *pool;
 
+	/* put the random cpuhp callback here to workaround KABI change */
+	random_prepare_cpu(cpu);
+
 	for_each_cpu_worker_pool(pool, cpu) {
 		if (pool->nr_workers)
 			continue;
@@ -5094,6 +5098,10 @@ int workqueue_online_cpu(unsigned int cpu)
 		wq_update_unbound_numa(wq, cpu, true);
 
 	mutex_unlock(&wq_pool_mutex);
+
+	/* put the random cpuhp callback here to workaround KABI change */
+	random_online_cpu(cpu);
+
 	return 0;
 }
 
