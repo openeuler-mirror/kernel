@@ -1309,8 +1309,7 @@ void add_interrupt_randomness(int irq, int irq_flags)
 	}
 
 	if ((fast_pool->count < 64) &&
-	    !time_after(now, fast_pool->last + HZ) &&
-	    crng_ready())
+	    !time_after(now, fast_pool->last + HZ))
 		return;
 
 	r = &input_pool;
