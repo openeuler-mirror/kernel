@@ -14455,7 +14455,7 @@ index f00dd928f..40539bc43 100644
  
  static inline int
  rt_mutex_waiter_less(struct rt_mutex_waiter *left,
-@@ -267,6 +279,27 @@ rt_mutex_waiter_equal(struct rt_mutex_waiter *left,
+@@ -279,6 +279,27 @@ rt_mutex_waiter_equal(struct rt_mutex_waiter *left,
  	return 1;
  }
  
@@ -14465,24 +14465,24 @@ index f00dd928f..40539bc43 100644
 +static inline int
 +rt_mutex_steal(struct rt_mutex *lock, struct rt_mutex_waiter *waiter, int mode)
 +{
-+	struct rt_mutex_waiter *top_waiter = rt_mutex_top_waiter(lock);
++       struct rt_mutex_waiter *top_waiter = rt_mutex_top_waiter(lock);
 +
-+	if (waiter == top_waiter || rt_mutex_waiter_less(waiter, top_waiter))
-+		return 1;
++       if (waiter == top_waiter || rt_mutex_waiter_less(waiter, top_waiter))
++               return 1;
 +
-+	/*
-+	 * Note that RT tasks are excluded from lateral-steals
-+	 * to prevent the introduction of an unbounded latency.
-+	 */
-+	if (mode == STEAL_NORMAL || rt_task(waiter->task))
-+		return 0;
++       /*
++        * Note that RT tasks are excluded from lateral-steals
++        * to prevent the introduction of an unbounded latency.
++        */
++       if (mode == STEAL_NORMAL || rt_task(waiter->task))
++               return 0;
 +
-+	return rt_mutex_waiter_equal(waiter, top_waiter);
++       return rt_mutex_waiter_equal(waiter, top_waiter);
 +}
 +
- static void
- rt_mutex_enqueue(struct rt_mutex *lock, struct rt_mutex_waiter *waiter)
- {
+ #define __node_2_waiter(node) \
+ 	rb_entry((node), struct rt_mutex_waiter, tree_entry)
+ 
 @@ -371,6 +404,14 @@ static bool rt_mutex_cond_detect_deadlock(struct rt_mutex_waiter *waiter,
  	return debug_rt_mutex_detect_deadlock(waiter, chwalk);
  }
@@ -20613,14 +20613,14 @@ index 56be8d1c7..f437b4026 100644
  int wake_up_state(struct task_struct *p, unsigned int state)
  {
  	return try_to_wake_up(p, state, 0);
-@@ -3111,6 +3682,7 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
+@@ -3683,6 +3683,7 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
  	init_numa_balancing(clone_flags, p);
  #ifdef CONFIG_SMP
  	p->wake_entry.u_flags = CSD_TYPE_TTWU;
-+	p->migration_pending = NULL;
++	p->migration_pending = NULL;	
  #endif
- }
- 
+ #ifdef CONFIG_BPF_SCHED
+ 	p->tag		= 0;
 @@ -3316,6 +3888,9 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
  	p->on_cpu = 0;
  #endif

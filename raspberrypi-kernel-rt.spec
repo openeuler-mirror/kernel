@@ -2,13 +2,13 @@
 
 %global KernelVer %{version}-%{release}.raspi.%{_target_cpu}
 
-%global hulkrelease 106.6.0
+%global hulkrelease 106.7.0
 
 %global debug_package %{nil}
 
 Name:	 raspberrypi-kernel-rt
 Version: 5.10.0
-Release: %{hulkrelease}.rt62.9
+Release: %{hulkrelease}.rt62.10
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -170,6 +170,9 @@ install -m 644 /boot/dtb-%{KernelVer}/overlays/README /boot/overlays/
 /lib/modules/%{KernelVer}
 
 %changelog
+* Tue Aug 30 2022 zhangyuanhang <zhangyuanhang@kylinos.cn> - 5.10.0-106.7.0.10
+- - update preempt-rt patch for openEuler Raspberry 5.10.0-106.7.0
+
 * Fri Aug 19 2022 zhangyuanhang <zhangyuanhang@kylinos.cn> - 5.10.0-106.6.0.9
 - - add preempt-rt patch for openEuler Raspberry 5.10.0-106.6.0
 
