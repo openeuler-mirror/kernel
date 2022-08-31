@@ -4056,6 +4056,20 @@ union bpf_attr {
  *             Update tcp seq
  *     Return
  *             0 on success, or a negative error in case of failure.
+ *
+ * int bpf_xdp_store_bytes(struct xdp_buff *ctx, u32 offset, const void *from, u32 len)
+ *     Description
+ *             store *len* bytes from address *from* into xdp buffer *ctx*, at
+ *             *offset*
+ *     Return
+ *             0 on success, or a negative error in case of failure.
+ *
+ * int bpf_xdp_load_bytes(struct xdp_buff *ctx, u32 offset, void *to, u32 len)
+ *     Description
+ *             load *len* bytes to address *to* from xdp buffer *ctx*, at
+ *             *offset*
+ *     Return
+ *             0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4242,6 +4256,8 @@ union bpf_attr {
 	FN(sys_close),			\
 	FN(kallsyms_lookup_name),	\
 	FN(update_tcp_seq),		\
+	FN(xdp_store_bytes),		\
+	FN(xdp_load_bytes),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
