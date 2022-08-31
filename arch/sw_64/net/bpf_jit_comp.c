@@ -745,14 +745,23 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 		emit(SW64_BPF_SRA_REG(dst, src, dst), ctx);
 		break;
 	case BPF_ALU | BPF_AND | BPF_X:
+		emit(SW64_BPF_AND_REG(dst, src, dst), ctx);
+		emit(SW64_BPF_ZAP_IMM(dst, 0xf0, dst), ctx);
+		break;
 	case BPF_ALU64 | BPF_AND | BPF_X:
 		emit(SW64_BPF_AND_REG(dst, src, dst), ctx);
 		break;
 	case BPF_ALU | BPF_OR | BPF_X:
+		emit(SW64_BPF_BIS_REG(dst, src, dst), ctx);
+		emit(SW64_BPF_ZAP_IMM(dst, 0xf0, dst), ctx);
+		break;
 	case BPF_ALU64 | BPF_OR | BPF_X:
 		emit(SW64_BPF_BIS_REG(dst, src, dst), ctx);
 		break;
 	case BPF_ALU | BPF_XOR | BPF_X:
+		emit(SW64_BPF_XOR_REG(dst, src, dst), ctx);
+		emit(SW64_BPF_ZAP_IMM(dst, 0xf0, dst), ctx);
+		break;
 	case BPF_ALU64 | BPF_XOR | BPF_X:
 		emit(SW64_BPF_XOR_REG(dst, src, dst), ctx);
 		break;
@@ -936,6 +945,7 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 			emit_sw64_ldu32(tmp1, imm, ctx);
 			emit(SW64_BPF_AND_REG(dst, tmp1, dst), ctx);
 		}
+		emit(SW64_BPF_ZAP_IMM(dst, 0xf0, dst), ctx);
 		break;
 	case BPF_ALU64 | BPF_AND | BPF_K:
 		if (imm >= 0 && imm <= U8_MAX) {
@@ -952,6 +962,7 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 			emit_sw64_ldu32(tmp1, imm, ctx);
 			emit(SW64_BPF_BIS_REG(dst, tmp1, dst), ctx);
 		}
+		emit(SW64_BPF_ZAP_IMM(dst, 0xf0, dst), ctx);
 		break;
 	case BPF_ALU64 | BPF_OR | BPF_K:
 		if (imm >= 0 && imm <= U8_MAX) {
@@ -968,6 +979,7 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 			emit_sw64_ldu32(tmp1, imm, ctx);
 			emit(SW64_BPF_XOR_REG(dst, tmp1, dst), ctx);
 		}
+		emit(SW64_BPF_ZAP_IMM(dst, 0xf0, dst), ctx);
 		break;
 	case BPF_ALU64 | BPF_XOR | BPF_K:
 		if (imm >= 0 && imm <= U8_MAX) {
