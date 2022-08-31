@@ -57,6 +57,7 @@ tprogs-y += hbm
 tprogs-y += sched_preempt
 tprogs-y += sched_select_core
 tprogs-y += sched_pick_task
+tprogs-y := bmctool
 
 # Libbpf dependencies
 LIBBPF = $(TOOLS_PATH)/lib/bpf/libbpf.a
@@ -117,6 +118,7 @@ hbm-objs := bpf_load.o hbm.o $(CGROUP_HELPERS)
 sched_preempt-objs := sched_preempt_user.o
 sched_select_core-objs := sched_select_core_user.o
 sched_pick_task-objs := sched_pick_task_user.o
+bmctool-objs := bmc/tool.o
 
 # Tell kbuild to always build the programs
 always-y := $(tprogs-y)
@@ -181,6 +183,7 @@ always-y += xdpsock_kern.o
 always-y += sched_preempt_kern.o
 always-y += sched_select_core_kern.o
 always-y += sched_pick_task_kern.o
+always-y += bmc/bpf.o
 
 ifeq ($(ARCH), arm)
 # Strip all except -D__LINUX_ARM_ARCH__ option needed to handle linux
