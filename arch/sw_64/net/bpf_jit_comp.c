@@ -516,8 +516,8 @@ static void jit_fill_hole(void *area, unsigned int size)
 
 static int bpf2sw64_offset(int bpf_idx, s32 off, const struct jit_ctx *ctx)
 {
-	int from = ctx->insn_offset[bpf_idx];
-	int to = ctx->insn_offset[bpf_idx + off];
+	int from = ctx->insn_offset[bpf_idx + 1];
+	int to = ctx->insn_offset[bpf_idx + 1 + off];
 
 	if (ctx->image == NULL)
 		return 0;
@@ -1226,15 +1226,15 @@ static int build_body(struct jit_ctx *ctx)
 		const struct bpf_insn *insn = &prog->insnsi[i];
 		int ret;
 
+		if (ctx->image == NULL)
+			ctx->insn_offset[i] = ctx->idx;
 		ret = build_insn(insn, ctx);
 		if (ret < 0)
 			return ret;
-		if (ctx->image == NULL)
-			ctx->insn_offset[i] = ctx->idx;
 		while (ret > 0) {
 			i++;
 			if (ctx->image == NULL)
-				ctx->insn_offset[i] = ctx->idx;
+				ctx->insn_offset[i] = ctx->insn_offset[i - 1];
 			ret--;
 		}
 	}
@@ -1305,7 +1305,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 	memset(&ctx, 0, sizeof(ctx));
 	ctx.prog = prog;
 
-	ctx.insn_offset = kcalloc(prog->len, sizeof(int), GFP_KERNEL);
+	ctx.insn_offset = kcalloc(prog->len + 1, sizeof(int), GFP_KERNEL);
 	if (ctx.insn_offset == NULL) {
 		prog = orig_prog;
 		goto out_off;
@@ -1321,7 +1321,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 		goto out_off;
 	}
 
-	ctx.epilogue_offset = ctx.idx;
+	ctx.insn_offset[prog->len] = ctx.epilogue_offset = ctx.idx;
 	build_epilogue(&ctx);
 
 	/* Now we know the actual image size. */
