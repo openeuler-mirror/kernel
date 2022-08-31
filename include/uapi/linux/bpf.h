@@ -4050,6 +4050,12 @@ union bpf_attr {
  *		**-ENOENT** if symbol is not found.
  *
  *		**-EPERM** if caller does not have permission to obtain kernel address.
+ *
+ * int bpf_update_tcp_seq(struct xdp_buff *ctx, struct bpf_sock_tuple *tuple, u32 len, u32 netns_id, u64 flags)
+ *     Description
+ *             Update tcp seq
+ *     Return
+ *             0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4235,6 +4241,7 @@ union bpf_attr {
 	FN(btf_find_by_name_kind),	\
 	FN(sys_close),			\
 	FN(kallsyms_lookup_name),	\
+	FN(update_tcp_seq),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
@@ -4583,6 +4590,10 @@ struct bpf_sock_tuple {
 			__be16 dport;
 		} ipv6;
 	};
+
+	__be32 seq;
+	__be32 delta;
+	__be32 ack_seq;
 };
 
 struct bpf_xdp_sock {
