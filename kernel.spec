@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .7.0
-%global pkg_release         .60
+%global maintenance_release .8.0
+%global pkg_release         .61
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,8 @@ fi
 %endif
 
 %changelog
+* Tue Aug 30 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.8.0.61
+
 * Fri Aug 26 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.7.0.60
 - !82 Intel SPR: Adding uncore PMU support to openEuler-22.09
 - !60 scheduler BPF: preempt, pick next task, select core and samples v4
