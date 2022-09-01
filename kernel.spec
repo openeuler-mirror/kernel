@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       112
+%global devel_release       113
 %global maintenance_release .0.0
-%global pkg_release         .59
+%global pkg_release         .60
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,180 @@ fi
 %endif
 
 %changelog
+* Thu Sep 01 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-113.0.0.60
+- mm/huge_memory: remove outdated VM_WARN_ON_ONCE_PAGE from unmap_page()
+- ARM: 9203/1: kconfig: fix MODULE_PLTS for KASAN with KASAN_VMALLOC
+- ARM: 9202/1: kasan: support CONFIG_KASAN_VMALLOC
+- arm64: Kconfig: select KASAN_VMALLOC if KANSAN_GENERIC is enabled
+- net: fix sk_wmem_schedule() and sk_rmem_schedule() errors
+- KVM: arm64: Use generic KVM xfer to guest work function
+- entry: KVM: Allow use of generic KVM entry w/o full generic support
+- KVM: arm64: Record number of signal exits as a vCPU stat
+- dm thin: fix use-after-free crash in dm_sm_register_threshold_callback
+- Revert "NFS: Use of mapping_set_error() results in spurious errors"
+- random: Fix kabi change of get_random_bytes()
+- random: Fix kabi change due to enum cpuhp_state
+- ALSA: ctxfi: Add SB046x PCI ID
+- random: check for signals after page of pool writes
+- random: wire up fops->splice_{read,write}_iter()
+- random: convert to using fops->write_iter()
+- random: convert to using fops->read_iter()
+- random: unify batched entropy implementations
+- random: move randomize_page() into mm where it belongs
+- random: move initialization functions out of hot pages
+- random: make consistent use of buf and len
+- random: use proper return types on get_random_{int,long}_wait()
+- random: remove extern from functions in header
+- random: use static branch for crng_ready()
+- random: credit architectural init the exact amount
+- random: handle latent entropy and command line from random_init()
+- random: use proper jiffies comparison macro
+- random: remove ratelimiting for in-kernel unseeded randomness
+- random: move initialization out of reseeding hot path
+- random: avoid initializing twice in credit race
+- random: use symbolic constants for crng_init states
+- siphash: use one source of truth for siphash permutations
+- random: help compiler out with fast_mix() by using simpler arguments
+- random: do not use input pool from hard IRQs
+- random: order timer entropy functions below interrupt functions
+- random: do not pretend to handle premature next security model
+- random: use first 128 bits of input as fast init
+- random: do not use batches when !crng_ready()
+- random: insist on random_get_entropy() existing in order to simplify
+- xtensa: use fallback for random_get_entropy() instead of zero
+- sparc: use fallback for random_get_entropy() instead of zero
+- um: use fallback for random_get_entropy() instead of zero
+- x86/tsc: Use fallback for random_get_entropy() instead of zero
+- nios2: use fallback for random_get_entropy() instead of zero
+- arm: use fallback for random_get_entropy() instead of zero
+- mips: use fallback for random_get_entropy() instead of just c0 random
+- riscv: use fallback for random_get_entropy() instead of zero
+- m68k: use fallback for random_get_entropy() instead of zero
+- timekeeping: Add raw clock fallback for random_get_entropy()
+- powerpc: define get_cycles macro for arch-override
+- alpha: define get_cycles macro for arch-override
+- parisc: define get_cycles macro for arch-override
+- s390: define get_cycles macro for arch-override
+- ia64: define get_cycles macro for arch-override
+- init: call time_init() before rand_initialize()
+- random: fix sysctl documentation nits
+- random: document crng_fast_key_erasure() destination possibility
+- random: make random_get_entropy() return an unsigned long
+- random: allow partial reads if later user copies fail
+- random: check for signals every PAGE_SIZE chunk of /dev/[u]random
+- random: check for signal_pending() outside of need_resched() check
+- random: do not allow user to keep crng key around on stack
+- random: do not split fast init input in add_hwgenerator_randomness()
+- random: mix build-time latent entropy into pool at init
+- random: re-add removed comment about get_random_{u32,u64} reseeding
+- random: treat bootloader trust toggle the same way as cpu trust toggle
+- random: skip fast_init if hwrng provides large chunk of entropy
+- random: check for signal and try earlier when generating entropy
+- random: reseed more often immediately after booting
+- random: make consistent usage of crng_ready()
+- random: use SipHash as interrupt entropy accumulator
+- random: replace custom notifier chain with standard one
+- random: don't let 644 read-only sysctls be written to
+- random: give sysctl_random_min_urandom_seed a more sensible value
+- random: do crng pre-init loading in worker rather than irq
+- random: unify cycles_t and jiffies usage and types
+- random: cleanup UUID handling
+- random: only wake up writers after zap if threshold was passed
+- random: round-robin registers as ulong, not u32
+- random: clear fast pool, crng, and batches in cpuhp bring up
+- random: pull add_hwgenerator_randomness() declaration into random.h
+- random: check for crng_init == 0 in add_device_randomness()
+- random: unify early init crng load accounting
+- random: do not take pool spinlock at boot
+- random: defer fast pool mixing to worker
+- random: rewrite header introductory comment
+- random: group sysctl functions
+- random: group userspace read/write functions
+- random: group entropy collection functions
+- random: group entropy extraction functions
+- random: group crng functions
+- random: group initialization wait functions
+- random: remove whitespace and reorder includes
+- random: remove useless header comment
+- random: introduce drain_entropy() helper to declutter crng_reseed()
+- random: deobfuscate irq u32/u64 contributions
+- random: add proper SPDX header
+- random: remove unused tracepoints
+- random: remove ifdef'd out interrupt bench
+- random: tie batched entropy generation to base_crng generation
+- random: fix locking for crng_init in crng_reseed()
+- random: zero buffer after reading entropy from userspace
+- random: remove outdated INT_MAX >> 6 check in urandom_read()
+- random: make more consistent use of integer types
+- random: use hash function for crng_slow_load()
+- random: use simpler fast key erasure flow on per-cpu keys
+- random: absorb fast pool into input pool after fast load
+- random: do not xor RDRAND when writing into /dev/random
+- random: ensure early RDSEED goes through mixer on init
+- random: inline leaves of rand_initialize()
+- random: get rid of secondary crngs
+- random: use RDSEED instead of RDRAND in entropy extraction
+- random: fix locking in crng_fast_load()
+- random: remove batched entropy locking
+- random: remove use_input_pool parameter from crng_reseed()
+- random: make credit_entropy_bits() always safe
+- random: always wake up entropy writers after extraction
+- random: use linear min-entropy accumulation crediting
+- random: simplify entropy debiting
+- random: use computational hash for entropy extraction
+- random: only call crng_finalize_init() for primary_crng
+- random: access primary_pool directly rather than through pointer
+- random: continually use hwgenerator randomness
+- random: simplify arithmetic function flow in account()
+- random: selectively clang-format where it makes sense
+- random: access input_pool_data directly rather than through pointer
+- random: cleanup fractional entropy shift constants
+- random: prepend remaining pool constants with POOL_
+- random: de-duplicate INPUT_POOL constants
+- random: remove unused OUTPUT_POOL constants
+- random: rather than entropy_store abstraction, use global
+- random: remove unused extract_entropy() reserved argument
+- random: remove incomplete last_data logic
+- random: cleanup integer types
+- random: cleanup poolinfo abstraction
+- random: fix typo in comments
+- random: don't reset crng_init_cnt on urandom_read()
+- random: avoid superfluous call to RDRAND in CRNG extraction
+- random: early initialization of ChaCha constants
+- random: use IS_ENABLED(CONFIG_NUMA) instead of ifdefs
+- random: harmonize "crng init done" messages
+- random: mix bootloader randomness into pool
+- random: do not re-init if crng_reseed completes before primary init
+- random: do not sign extend bytes for rotation when mixing
+- random: use BLAKE2s instead of SHA1 in extraction
+- random: remove unused irq_flags argument from add_interrupt_randomness()
+- random: document add_hwgenerator_randomness() with other input functions
+- lib/crypto: blake2s: avoid indirect calls to compression function for Clang CFI
+- lib/crypto: sha1: re-roll loops to reduce code size
+- lib/crypto: blake2s: move hmac construction into wireguard
+- lib/crypto: blake2s: include as built-in
+- crypto: blake2s - include <linux/bug.h> instead of <asm/bug.h>
+- crypto: blake2s - adjust include guard naming
+- crypto: blake2s - add comment for blake2s_state fields
+- crypto: blake2s - optimize blake2s initialization
+- crypto: blake2s - share the "shash" API boilerplate code
+- crypto: blake2s - move update and final logic to internal/blake2s.h
+- crypto: blake2s - remove unneeded includes
+- crypto: x86/blake2s - define shash_alg structs using macros
+- crypto: blake2s - define shash_alg structs using macros
+- crypto: lib/blake2s - Move selftest prototype into header file
+- MAINTAINERS: add git tree for random.c
+- MAINTAINERS: co-maintain random.c
+- random: remove dead code left over from blocking pool
+- random: avoid arch_get_random_seed_long() when collecting IRQ randomness
+- ACPI: sysfs: Fix BERT error region memory mapping
+- ACPI: sysfs: Make sparse happy about address space in use
+- media: vim2m: initialize the media device earlier
+- media: vim2m: Register video device after setting up internals
+- KVM: x86: Properly handle APF vs disabled LAPIC situation
+- staging: rtl8723bs: prevent ->Ssid overflow in rtw_wx_set_scan()
+- Revert "alinux: random: speed up the initialization of module"
+
 * Wed Aug 17 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-112.0.0.59
 - mm: support pagecache limit
 - mm: support periodical memory reclaim
