@@ -6239,6 +6239,98 @@ static const struct bpf_func_proto bpf_xdp_sk_lookup_tcp_proto = {
 	.arg5_type      = ARG_ANYTHING,
 };
 
+/* If we update tp->rcv_nxt, also update tp->bytes_received */
+static void tcp_rcv_nxt_update(struct tcp_sock *tp, u32 seq)
+{
+	u32 delta = seq - tp->rcv_nxt;
+
+	sock_owned_by_me((struct sock *)tp);
+	tp->bytes_received += delta;
+	WRITE_ONCE(tp->rcv_nxt, seq);
+}
+
+BPF_CALL_5(bpf_xdp_update_tcp_seq, struct xdp_buff *, ctx,
+	   struct bpf_sock_tuple *, tuple, u32, len, u32, netns_id, u64, flags)
+{
+	struct net *caller_net = dev_net(ctx->rxq->dev);
+	int ifindex = ctx->rxq->dev->ifindex;
+	struct sock *sk;
+	struct tcp_sock *tp;
+
+	sk = __bpf_sk_lookup(NULL, tuple, len, caller_net,
+			     ifindex, IPPROTO_TCP, netns_id,
+			     flags);
+	if (!sk)
+		return -1;
+
+	tp = tcp_sk(sk);
+	tcp_rcv_nxt_update(tp, tuple->seq + tuple->delta);
+
+	WRITE_ONCE(tp->snd_nxt, tuple->ack_seq);
+	WRITE_ONCE(tp->copied_seq, tp->rcv_nxt);
+	WRITE_ONCE(tp->bytes_sent, tuple->ack_seq);
+	WRITE_ONCE(tp->bytes_acked, tuple->ack_seq);
+	WRITE_ONCE(tp->write_seq, tuple->ack_seq);
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_xdp_update_tcp_seq_proto = {
+	.func           = bpf_xdp_update_tcp_seq,
+	.gpl_only       = false,
+	.pkt_access     = true,
+	.ret_type       = RET_INTEGER,
+	.arg1_type      = ARG_PTR_TO_CTX,
+	.arg2_type      = ARG_PTR_TO_MEM,
+	.arg3_type      = ARG_CONST_SIZE,
+	.arg4_type      = ARG_ANYTHING,
+	.arg5_type      = ARG_ANYTHING,
+};
+
+BPF_CALL_4(bpf_xdp_store_bytes, struct xdp_buff *, xdp, u32, offset,
+	   const void *, from, u32, len)
+{
+	if (unlikely(offset > xdp->data_end - xdp->data ||
+		     len > xdp->data_end - xdp->data - offset))
+		return -EINVAL;
+
+	memmove(xdp->data + offset, from, len);
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_xdp_store_bytes_proto = {
+	.func		= bpf_xdp_store_bytes,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type	= ARG_ANYTHING,
+	.arg3_type	= ARG_ANYTHING,
+	.arg4_type	= ARG_ANYTHING,
+};
+
+BPF_CALL_4(bpf_xdp_load_bytes, struct xdp_buff *, xdp, u32, offset,
+	   void *, to, u32, len)
+{
+	if (unlikely(offset > xdp->data_end - xdp->data ||
+		     len > xdp->data_end - xdp->data - offset))
+		return -EINVAL;
+
+	memmove(to, xdp->data + offset, len);
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_xdp_load_bytes_proto = {
+	.func		= bpf_xdp_load_bytes,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type	= ARG_ANYTHING,
+	.arg3_type	= ARG_ANYTHING,
+	.arg4_type	= ARG_ANYTHING,
+};
+
 BPF_CALL_5(bpf_sock_addr_skc_lookup_tcp, struct bpf_sock_addr_kern *, ctx,
 	   struct bpf_sock_tuple *, tuple, u32, len, u64, netns_id, u64, flags)
 {
@@ -7317,6 +7409,8 @@ xdp_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_xdp_sk_lookup_udp_proto;
 	case BPF_FUNC_sk_lookup_tcp:
 		return &bpf_xdp_sk_lookup_tcp_proto;
+	case BPF_FUNC_update_tcp_seq:
+		return &bpf_xdp_update_tcp_seq_proto;
 	case BPF_FUNC_sk_release:
 		return &bpf_sk_release_proto;
 	case BPF_FUNC_skc_lookup_tcp:
@@ -7326,6 +7420,10 @@ xdp_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 	case BPF_FUNC_tcp_gen_syncookie:
 		return &bpf_tcp_gen_syncookie_proto;
 #endif
+	case BPF_FUNC_xdp_store_bytes:
+		return &bpf_xdp_store_bytes_proto;
+	case BPF_FUNC_xdp_load_bytes:
+		return &bpf_xdp_load_bytes_proto;
 	default:
 		return bpf_sk_base_func_proto(func_id);
 	}
