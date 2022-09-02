@@ -411,6 +411,7 @@ int kvm_arch_vcpu_reset(struct kvm_vcpu *vcpu)
 {
 	unsigned long addr = vcpu->kvm->arch.host_phys_addr;
 
+	hrtimer_cancel(&vcpu->arch.hrt);
 	vcpu->arch.vcb.whami = vcpu->vcpu_id;
 	vcpu->arch.vcb.vcpu_irq_disabled = 1;
 	vcpu->arch.pcpu_id = -1; /* force flush tlb for the first time */
