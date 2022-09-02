@@ -469,10 +469,6 @@ static inline struct rdt_resource *resctrl_inc(struct rdt_resource *res)
 	for_each_rdt_resource(r)					      \
 		if (r->alloc_enabled)
 
-#define for_each_mon_enabled_rdt_resource(r)				      \
-	for_each_rdt_resource(r)					      \
-		if (r->mon_enabled)
-
 /* CPUID.(EAX=10H, ECX=ResID=1).EAX */
 union cpuid_0x10_1_eax {
 	struct {
