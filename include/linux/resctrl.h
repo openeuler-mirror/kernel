@@ -161,5 +161,6 @@ struct rdt_resource {
  * This can be called from any CPU.
  */
 void resctrl_arch_reset_rmid_all(struct rdt_resource *r, struct rdt_domain *d);
+int resctrl_online_domain(struct rdt_resource *r, struct rdt_domain *d);
 
 #endif /* _RESCTRL_H */
