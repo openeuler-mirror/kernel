@@ -12,7 +12,7 @@
 
 %global KernelVer %{version}-%{release}.%{_target_cpu}
 
-%global hulkrelease 2208.6.0
+%global hulkrelease 2209.1.0
 
 %define with_patch 0
 
@@ -32,7 +32,7 @@
 
 Name:	 kernel
 Version: 4.19.90
-Release: %{hulkrelease}.0165
+Release: %{hulkrelease}.0166
 Summary: Linux Kernel
 License: GPLv2
 URL:	 http://www.kernel.org/
@@ -808,6 +808,14 @@ fi
 %endif
 
 %changelog
+
+* Mon Sep 05 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2209.1.0.0166
+- dm-thin: Resume failed in FAIL mode
+- tpm: fix reference counting for struct tpm_chip
+- af_key: Do not call xfrm_probe_algs in parallel
+- net: usb: ax88179_178a: Fix packet receiving
+- net: usb: ax88179_178a: Fix out-of-bounds accesses in RX fixup
+- net: usb: ax88179_178a: fix packet alignment padding
 
 * Mon Aug 29 2022 Laibin Qiu <qiulaibin@huawei.com> - 4.19.90-2208.6.0.0165
 - tty: use new tty_insert_flip_string_and_push_buffer() in pty_write()
