@@ -429,6 +429,11 @@ struct module {
 	/* Startup function. */
 	int (*init)(void);
 
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+	/* there is 8-byte hole on all platforms */
+	KABI_FILL_HOLE(unsigned int num_mc_exentries)
+#endif
+
 	/* Core layout: rbtree is accessed frequently, so keep together. */
 	struct module_layout core_layout __module_layout_align;
 	struct module_layout init_layout;
@@ -557,7 +562,13 @@ struct module {
 	struct error_injection_entry *ei_funcs;
 	unsigned int num_ei_funcs;
 #endif
+
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+	KABI_USE(1, struct exception_table_entry *mc_extable)
+#else
 	KABI_RESERVE(1)
+#endif
+
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

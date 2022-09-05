@@ -145,9 +145,33 @@ alternative_endif
 	.popsection
 	.endm
 
+/*
+ * Emit an entry into the machine check exception table
+ */
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+	.macro		_asm_mc_extable, from, to
+	.pushsection	__mc_ex_table, "a"
+	.align		3
+	.long		(\from - .), (\to - .)
+	.popsection
+	.endm
+#else
+	.macro		_asm_mc_extable, from, to
+	.endm
+#endif
+
 #define USER(l, x...)				\
 9999:	x;					\
-	_asm_extable	9999b, l
+	_asm_extable	9999b, l;		\
+	_asm_mc_extable	9999b, l
+
+#define USER_MC(l, x...)			\
+9999:	x;					\
+	_asm_mc_extable	9999b, l
+
+#define CPY_MC(l, x...)				\
+9999:   x;					\
+	_asm_mc_extable  9999b, l
 
 /*
  * Register aliases.

@@ -44,4 +44,5 @@ int arm64_bpf_fixup_exception(const struct exception_table_entry *ex,
 #endif /* !CONFIG_BPF_JIT */
 
 extern int fixup_exception(struct pt_regs *regs);
+extern int fixup_exception_mc(struct pt_regs *regs);
 #endif

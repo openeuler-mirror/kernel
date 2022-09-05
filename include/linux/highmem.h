@@ -341,6 +341,10 @@ static inline void copy_user_highpage(struct page *to, struct page *from,
 
 #endif
 
+#ifndef __HAVE_ARCH_COPY_USER_HIGHPAGE_MC
+#define copy_user_highpage_mc copy_user_highpage
+#endif
+
 #ifndef __HAVE_ARCH_COPY_HIGHPAGE
 
 static inline void copy_highpage(struct page *to, struct page *from)
@@ -354,6 +358,10 @@ static inline void copy_highpage(struct page *to, struct page *from)
 	kunmap_atomic(vfrom);
 }
 
+#endif
+
+#ifndef __HAVE_ARCH_COPY_HIGHPAGE_MC
+#define copy_highpage_mc copy_highpage
 #endif
 
 #ifndef __HAVE_ARCH_COPY_HUGEPAGES

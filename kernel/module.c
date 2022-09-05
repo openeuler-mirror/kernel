@@ -3455,6 +3455,11 @@ static int find_module_sections(struct module *mod, struct load_info *info)
 	mod->extable = section_objs(info, "__ex_table",
 				    sizeof(*mod->extable), &mod->num_exentries);
 
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+	mod->mc_extable = section_objs(info, "__mc_ex_table",
+				    sizeof(*mod->mc_extable), &mod->num_mc_exentries);
+#endif
+
 	if (section_addr(info, "__obsparm"))
 		pr_warn("%s: Ignoring obsolete parameters\n", mod->name);
 
@@ -3691,6 +3696,10 @@ static int post_relocation(struct module *mod, const struct load_info *info)
 {
 	/* Sort exception table now relocations are done. */
 	sort_extable(mod->extable, mod->extable + mod->num_exentries);
+
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+	sort_extable(mod->mc_extable, mod->mc_extable + mod->num_mc_exentries);
+#endif
 
 	/* Copy relocated percpu area over. */
 	percpu_modcopy(mod, (void *)info->sechdrs[info->index.pcpu].sh_addr,
@@ -4666,6 +4675,35 @@ out:
 	 */
 	return e;
 }
+
+#ifdef CONFIG_ARCH_HAS_MC_EXTABLE
+/* Given an address, look for it in the module machine check safe exception tables. */
+const struct exception_table_entry *search_module_mc_extables(unsigned long addr)
+{
+	const struct exception_table_entry *e = NULL;
+	struct module *mod;
+
+	preempt_disable();
+	mod = __module_address(addr);
+	if (!mod)
+		goto out;
+
+	if (!mod->num_mc_exentries)
+		goto out;
+
+	e = search_extable(mod->mc_extable,
+			   mod->num_mc_exentries,
+			   addr);
+out:
+	preempt_enable();
+
+	/*
+	 * Now, if we found one, we are running inside it now, hence
+	 * we cannot unload the module, hence no refcnt needed.
+	 */
+	return e;
+}
+#endif
 
 /*
  * is_module_address - is this address inside a module?

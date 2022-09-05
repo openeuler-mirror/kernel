@@ -2653,7 +2653,7 @@ static inline bool cow_user_page(struct page *dst, struct page *src,
 	unsigned long addr = vmf->address;
 
 	if (likely(src)) {
-		copy_user_highpage(dst, src, addr, vma);
+		copy_user_highpage_mc(dst, src, addr, vma);
 		return true;
 	}
 
