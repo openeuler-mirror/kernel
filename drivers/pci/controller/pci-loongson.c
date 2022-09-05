@@ -19,6 +19,12 @@
 #define DEV_PCIE_PORT_1	0x7a19
 #define DEV_PCIE_PORT_2	0x7a29
 
+#define DEV_PCIE_PORT_4 0x7a39
+#define DEV_PCIE_PORT_5 0x7a49
+#define DEV_PCIE_PORT_6 0x7a59
+#define DEV_PCIE_PORT_7 0x7a69
+
+
 #define DEV_LS2K_APB	0x7a02
 #define DEV_LS7A_GMAC	0x7a03
 #define DEV_LS7A_DC1	0x7a06
@@ -75,6 +81,20 @@ DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_LOONGSON,
 			DEV_LS7A_CONF, system_bus_quirk);
 DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_LOONGSON,
 			DEV_LS7A_LPC, system_bus_quirk);
+
+static void loongson_d3_quirk(struct pci_dev *pdev)
+{
+	pdev->dev_flags |= PCI_DEV_FLAGS_NO_D3;
+	pdev->no_d1d2 = 1;
+}
+DECLARE_PCI_FIXUP_ENABLE(PCI_VENDOR_ID_LOONGSON,
+			DEV_PCIE_PORT_4, loongson_d3_quirk);
+DECLARE_PCI_FIXUP_ENABLE(PCI_VENDOR_ID_LOONGSON,
+			DEV_PCIE_PORT_5, loongson_d3_quirk);
+DECLARE_PCI_FIXUP_ENABLE(PCI_VENDOR_ID_LOONGSON,
+			DEV_PCIE_PORT_6, loongson_d3_quirk);
+DECLARE_PCI_FIXUP_ENABLE(PCI_VENDOR_ID_LOONGSON,
+			DEV_PCIE_PORT_7, loongson_d3_quirk);
 
 static void loongson_mrrs_quirk(struct pci_dev *pdev)
 {
