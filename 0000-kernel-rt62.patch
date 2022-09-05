@@ -21734,6 +21734,19 @@ index e1c655f92..f230b1ac7 100644
  	raw_spin_lock_irq(&q->lock);
  	list_splice_init(&q->task_list, &tmp);
  	while (!list_empty(&tmp)) {
+diff --git a/kernel/sched/topology.c b/kernel/sched/topology.c
+index 9b4e3b25d..18e549ec5 100644
+--- a/kernel/sched/topology.c
++++ b/kernel/sched/topology.c
+@@ -528,7 +528,7 @@ static int init_rootdomain(struct root_domain *rd)
+ #ifdef HAVE_RT_PUSH_IPI
+ 	rd->rto_cpu = -1;
+ 	raw_spin_lock_init(&rd->rto_lock);
+-	init_irq_work(&rd->rto_push_work, rto_push_irq_work_func);
++	rd->rto_push_work = IRQ_WORK_INIT_HARD(rto_push_irq_work_func);
+ #endif
+ 
+ 	init_dl_bw(&rd->dl_bw);
 diff --git a/kernel/signal.c b/kernel/signal.c
 index 917b92c3b..877688b4b 100644
 --- a/kernel/signal.c
@@ -22942,10 +22955,10 @@ index 6bef482a1..855f2d8c9 100644
  
  		/*
 diff --git a/lib/Kconfig.debug b/lib/Kconfig.debug
-index 9b7461b48..54895af20 100644
+index cf1a8cefc..f0f8af7a8 100644
 --- a/lib/Kconfig.debug
 +++ b/lib/Kconfig.debug
-@@ -1366,7 +1366,7 @@ config DEBUG_ATOMIC_SLEEP
+@@ -1375,7 +1375,7 @@ config DEBUG_ATOMIC_SLEEP
  
  config DEBUG_LOCKING_API_SELFTESTS
  	bool "Locking API boot-time self-tests"
