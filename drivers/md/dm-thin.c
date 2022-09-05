@@ -3549,20 +3549,29 @@ static int pool_preresume(struct dm_target *ti)
 	 */
 	r = bind_control_target(pool, ti);
 	if (r)
-		return r;
+		goto out;
 
 	r = maybe_resize_data_dev(ti, &need_commit1);
 	if (r)
-		return r;
+		goto out;
 
 	r = maybe_resize_metadata_dev(ti, &need_commit2);
 	if (r)
-		return r;
+		goto out;
 
 	if (need_commit1 || need_commit2)
 		(void) commit(pool);
 
-	return 0;
+out:
+	/*
+	 * When thinpool is PM_FAIL, it cannot be rebuilt if
+	 * bio is in deferred list. Therefor need to return 0 and
+	 * call pool_resume() to flush IO.
+	 */
+	if (r && get_pool_mode(pool) == PM_FAIL)
+		r = 0;
+
+	return r;
 }
 
 static void pool_suspend_active_thins(struct pool *pool)
