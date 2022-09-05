@@ -59,6 +59,7 @@ struct jit_ctx {
 	int current_tmp_reg;
 	int epilogue_offset;
 	int *insn_offset;	// [bpf_insn_idx] = jited_insn_idx
+	int exentry_idx;
 	u32 *image;		// JITed instruction
 	u32 stack_size;
 };
@@ -514,6 +515,7 @@ static void jit_fill_hole(void *area, unsigned int size)
 	__constant_c_memset(area, c, size);
 }
 
+static int offset_to_epilogue(const struct jit_ctx *ctx);
 static int bpf2sw64_offset(int bpf_idx, s32 off, const struct jit_ctx *ctx)
 {
 	int from = ctx->insn_offset[bpf_idx + 1];
@@ -662,6 +664,39 @@ static int emit_bpf_tail_call(struct jit_ctx *ctx)
 	return 0;
 }
 
+/* For accesses to BTF pointers, add an entry to the exception table */
+static int add_exception_handler(const struct bpf_insn *insn,
+				 struct jit_ctx *ctx,
+				 int dst_reg)
+{
+	off_t offset;
+	unsigned long pc;
+	struct exception_table_entry *ex;
+
+	if (!ctx->image)
+		/* First pass */
+		return 0;
+
+	if (!ctx->prog->aux->extable || BPF_MODE(insn->code) != BPF_PROBE_MEM)
+		return 0;
+
+	if (WARN_ON_ONCE(ctx->exentry_idx >= ctx->prog->aux->num_exentries))
+		return -EINVAL;
+
+	ex = &ctx->prog->aux->extable[ctx->exentry_idx];
+	pc = (unsigned long)&ctx->image[ctx->idx - 1];
+
+	offset = (long)&ex->insn - pc;
+	ex->insn = offset;
+
+	ex->fixup.bits.nextinsn = sizeof(u32);
+	ex->fixup.bits.valreg = dst_reg;
+	ex->fixup.bits.errreg = SW64_BPF_REG_ZR;
+
+	ctx->exentry_idx++;
+	return 0;
+}
+
 /* JITs an eBPF instruction.
  * Returns:
  * 0  - successfully JITed an 8-byte eBPF instruction.
@@ -671,8 +706,8 @@ static int emit_bpf_tail_call(struct jit_ctx *ctx)
 static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 {
 	const u8 code = insn->code;
-	const u8 dst = bpf2sw64[insn->dst_reg];
-	const u8 src = bpf2sw64[insn->src_reg];
+	u8 dst = bpf2sw64[insn->dst_reg];
+	u8 src = bpf2sw64[insn->src_reg];
 	const u8 tmp1 __maybe_unused = get_tmp_reg(ctx);
 	const u8 tmp2 __maybe_unused = get_tmp_reg(ctx);
 	const s16 off = insn->off;
@@ -682,6 +717,7 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 	u64 func;
 	struct bpf_insn insn1;
 	u64 imm64;
+	int ret;
 
 	switch (code) {
 	case BPF_ALU | BPF_MOV | BPF_X:
@@ -1001,6 +1037,21 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 		}
 		break;
 
+	case BPF_JMP32 | BPF_JEQ | BPF_X:
+	case BPF_JMP32 | BPF_JGT | BPF_X:
+	case BPF_JMP32 | BPF_JLT | BPF_X:
+	case BPF_JMP32 | BPF_JGE | BPF_X:
+	case BPF_JMP32 | BPF_JLE | BPF_X:
+	case BPF_JMP32 | BPF_JNE | BPF_X:
+	case BPF_JMP32 | BPF_JSGT | BPF_X:
+	case BPF_JMP32 | BPF_JSLT | BPF_X:
+	case BPF_JMP32 | BPF_JSGE | BPF_X:
+	case BPF_JMP32 | BPF_JSLE | BPF_X:
+	case BPF_JMP32 | BPF_JSET | BPF_X:
+		emit(SW64_BPF_ADDW_REG(SW64_BPF_REG_ZR, src, tmp1), ctx);
+		src = tmp1;
+		emit(SW64_BPF_ADDW_REG(SW64_BPF_REG_ZR, dst, tmp2), ctx);
+		dst = tmp2;
 	case BPF_JMP | BPF_JEQ | BPF_X:
 	case BPF_JMP | BPF_JGT | BPF_X:
 	case BPF_JMP | BPF_JLT | BPF_X:
@@ -1058,6 +1109,19 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 		}
 		break;
 
+	case BPF_JMP32 | BPF_JEQ | BPF_K:
+	case BPF_JMP32 | BPF_JGT | BPF_K:
+	case BPF_JMP32 | BPF_JLT | BPF_K:
+	case BPF_JMP32 | BPF_JGE | BPF_K:
+	case BPF_JMP32 | BPF_JLE | BPF_K:
+	case BPF_JMP32 | BPF_JNE | BPF_K:
+	case BPF_JMP32 | BPF_JSGT | BPF_K:
+	case BPF_JMP32 | BPF_JSLT | BPF_K:
+	case BPF_JMP32 | BPF_JSGE | BPF_K:
+	case BPF_JMP32 | BPF_JSLE | BPF_K:
+	case BPF_JMP32 | BPF_JSET | BPF_K:
+		emit(SW64_BPF_ADDW_REG(SW64_BPF_REG_ZR, dst, tmp2), ctx);
+		dst = tmp2;
 	case BPF_JMP | BPF_JEQ | BPF_K:
 	case BPF_JMP | BPF_JGT | BPF_K:
 	case BPF_JMP | BPF_JLT | BPF_K:
@@ -1159,17 +1223,32 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 
 	/* LDX: dst = *(size *)(src + off) */
 	case BPF_LDX | BPF_MEM | BPF_W:
-		emit(SW64_BPF_LDW(dst, src, off), ctx);
-		emit(SW64_BPF_ZAP_IMM(dst, 0xf0, dst), ctx);
-		break;
 	case BPF_LDX | BPF_MEM | BPF_H:
-		emit(SW64_BPF_LDHU(dst, src, off), ctx);
-		break;
 	case BPF_LDX | BPF_MEM | BPF_B:
-		emit(SW64_BPF_LDBU(dst, src, off), ctx);
-		break;
 	case BPF_LDX | BPF_MEM | BPF_DW:
-		emit(SW64_BPF_LDL(dst, src, off), ctx);
+	case BPF_LDX | BPF_PROBE_MEM | BPF_DW:
+	case BPF_LDX | BPF_PROBE_MEM | BPF_W:
+	case BPF_LDX | BPF_PROBE_MEM | BPF_H:
+	case BPF_LDX | BPF_PROBE_MEM | BPF_B:
+		switch (BPF_SIZE(code)) {
+		case BPF_W:
+			emit(SW64_BPF_LDW(dst, src, off), ctx);
+			emit(SW64_BPF_ZAP_IMM(dst, 0xf0, dst), ctx);
+			break;
+		case BPF_H:
+			emit(SW64_BPF_LDHU(dst, src, off), ctx);
+			break;
+		case BPF_B:
+			emit(SW64_BPF_LDBU(dst, src, off), ctx);
+			break;
+		case BPF_DW:
+			emit(SW64_BPF_LDL(dst, src, off), ctx);
+			break;
+		}
+
+		ret = add_exception_handler(insn, ctx, dst);
+		if (ret)
+			return ret;
 		break;
 
 	/* ST: *(size *)(dst + off) = imm */
@@ -1263,6 +1342,9 @@ static int validate_code(struct jit_ctx *ctx)
 			return -1;
 	}
 
+	if (WARN_ON_ONCE(ctx->exentry_idx != ctx->prog->aux->num_exentries))
+		return -1;
+
 	return 0;
 }
 
@@ -1280,7 +1362,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 	bool tmp_blinded = false;
 	bool extra_pass = false;
 	struct jit_ctx ctx;
-	int image_size;
+	int image_size, prog_size, extable_size;
 	u8 *image_ptr;
 
 	if (!prog->jit_requested)
@@ -1311,7 +1393,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 		image_ptr = jit_data->image;
 		header = jit_data->header;
 		extra_pass = true;
-		image_size = sizeof(u32) * ctx.idx;
+		prog_size = sizeof(u32) * ctx.idx;
 		goto skip_init_ctx;
 	}
 	memset(&ctx, 0, sizeof(ctx));
@@ -1336,9 +1418,13 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 	ctx.insn_offset[prog->len] = ctx.epilogue_offset = ctx.idx;
 	build_epilogue(&ctx);
 
+	extable_size = prog->aux->num_exentries *
+		sizeof(struct exception_table_entry);
+
 	/* Now we know the actual image size. */
 	/* And we need extra 8 bytes for lock instructions alignment */
-	image_size = sizeof(u32) * ctx.idx + 8;
+	prog_size = sizeof(u32) * ctx.idx + 8;
+	image_size = prog_size + extable_size;
 	header = bpf_jit_binary_alloc(image_size, &image_ptr,
 				      sizeof(u32), jit_fill_hole);
 	if (header == NULL) {
@@ -1350,8 +1436,11 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 
 	/* lock instructions need 8-byte alignment */
 	ctx.image = (u32 *)(((unsigned long)image_ptr + 7) & (~7));
+	if (extable_size)
+		prog->aux->extable = (void *)image_ptr + prog_size;
 skip_init_ctx:
 	ctx.idx = 0;
+	ctx.exentry_idx = 0;
 
 	build_prologue(&ctx, was_classic);
 
@@ -1372,7 +1461,7 @@ skip_init_ctx:
 
 	/* And we're done. */
 	if (bpf_jit_enable > 1)
-		bpf_jit_dump(prog->len, image_size, 2, ctx.image);
+		bpf_jit_dump(prog->len, prog_size, 2, ctx.image);
 
 	bpf_flush_icache(header, ctx.image + ctx.idx);
 
@@ -1385,7 +1474,7 @@ skip_init_ctx:
 	}
 	prog->bpf_func = (void *)ctx.image;
 	prog->jited = 1;
-	prog->jited_len = image_size;
+	prog->jited_len = prog_size;
 	if (ctx.current_tmp_reg) {
 		pr_err("eBPF JIT %s[%d]: unreleased temporary regsters %d\n",
 				current->comm, current->pid, ctx.current_tmp_reg);
