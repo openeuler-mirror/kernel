@@ -33,9 +33,6 @@
 #include <linux/pgtable.h>
 #include <linux/kabi.h>
 
-/* added to mm.h to avoid every caller adding new header file */
-#include <linux/mem_reliable.h>
-
 struct mempolicy;
 struct anon_vma;
 struct anon_vma_chain;
@@ -3306,6 +3303,9 @@ static inline int seal_check_future_write(int seals, struct vm_area_struct *vma)
 
 	return 0;
 }
+
+/* added to mm.h to avoid every caller adding new header file */
+#include <linux/mem_reliable.h>
 
 #endif /* __KERNEL__ */
 #endif /* _LINUX_MM_H */

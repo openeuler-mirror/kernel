@@ -748,6 +748,7 @@ static void __collapse_huge_page_copy(pte_t *pte, struct page *page,
 		if (pte_none(pteval) || is_zero_pfn(pte_pfn(pteval))) {
 			clear_user_highpage(page, address);
 			add_mm_counter(vma->vm_mm, MM_ANONPAGES, 1);
+			reliable_page_counter(page, vma->vm_mm, 1);
 			if (is_zero_pfn(pte_pfn(pteval))) {
 				/*
 				 * ptl mostly unnecessary.
@@ -776,6 +777,7 @@ static void __collapse_huge_page_copy(pte_t *pte, struct page *page,
 			 * superfluous.
 			 */
 			pte_clear(vma->vm_mm, address, _pte);
+			reliable_page_counter(src_page, vma->vm_mm, -1);
 			page_remove_rmap(src_page, false);
 			spin_unlock(ptl);
 			free_page_and_swap_cache(src_page);
@@ -1057,7 +1059,8 @@ static bool __collapse_huge_page_swapin(struct mm_struct *mm,
 static void collapse_huge_page(struct mm_struct *mm,
 				   unsigned long address,
 				   struct page **hpage,
-				   int node, int referenced, int unmapped)
+				   int node, int referenced, int unmapped,
+				   bool reliable)
 {
 	LIST_HEAD(compound_pagelist);
 	pmd_t *pmd, _pmd;
@@ -1074,6 +1077,9 @@ static void collapse_huge_page(struct mm_struct *mm,
 
 	/* Only allocate from the target node */
 	gfp = alloc_hugepage_khugepaged_gfpmask() | __GFP_THISNODE;
+
+	if (reliable)
+		gfp |= GFP_RELIABLE;
 
 	/*
 	 * Before allocating the hugepage, release the mmap_lock read lock.
@@ -1198,6 +1204,7 @@ static void collapse_huge_page(struct mm_struct *mm,
 
 	spin_lock(pmd_ptl);
 	BUG_ON(!pmd_none(*pmd));
+	reliable_page_counter(new_page, vma->vm_mm, HPAGE_PMD_NR);
 	page_add_new_anon_rmap(new_page, vma, address, true);
 	lru_cache_add_inactive_or_unevictable(new_page, vma);
 	pgtable_trans_huge_deposit(mm, pmd, pgtable);
@@ -1234,6 +1241,7 @@ static int khugepaged_scan_pmd(struct mm_struct *mm,
 	spinlock_t *ptl;
 	int node = NUMA_NO_NODE, unmapped = 0;
 	bool writable = false;
+	bool reliable = false;
 
 	VM_BUG_ON(address & ~HPAGE_PMD_MASK);
 
@@ -1358,6 +1366,9 @@ static int khugepaged_scan_pmd(struct mm_struct *mm,
 		    page_is_young(page) || PageReferenced(page) ||
 		    mmu_notifier_test_young(vma->vm_mm, address))
 			referenced++;
+
+		if (page_reliable(page))
+			reliable = true;
 	}
 	if (!writable) {
 		result = SCAN_PAGE_RO;
@@ -1373,7 +1384,7 @@ out_unmap:
 		node = khugepaged_find_target_node();
 		/* collapse_huge_page will return with the mmap_lock released */
 		collapse_huge_page(mm, address, hpage, node,
-				referenced, unmapped);
+				referenced, unmapped, reliable);
 	}
 out:
 	trace_mm_khugepaged_scan_pmd(mm, page, writable, referenced,
@@ -1501,6 +1512,7 @@ void collapse_pte_mapped_thp(struct mm_struct *mm, unsigned long addr)
 		if (pte_none(*pte))
 			continue;
 		page = vm_normal_page(vma, addr, *pte);
+		reliable_page_counter(page, mm, -1);
 		page_remove_rmap(page, false);
 	}
 
@@ -1633,7 +1645,8 @@ static void retract_page_tables(struct address_space *mapping, pgoff_t pgoff)
  */
 static void collapse_file(struct mm_struct *mm,
 		struct file *file, pgoff_t start,
-		struct page **hpage, int node)
+		struct page **hpage, int node,
+		bool reliable)
 {
 	struct address_space *mapping = file->f_mapping;
 	gfp_t gfp;
@@ -1649,6 +1662,9 @@ static void collapse_file(struct mm_struct *mm,
 
 	/* Only allocate from the target node */
 	gfp = alloc_hugepage_khugepaged_gfpmask() | __GFP_THISNODE;
+
+	if (reliable)
+		gfp |= GFP_RELIABLE;
 
 	new_page = khugepaged_alloc_page(hpage, gfp, node);
 	if (!new_page) {
@@ -1898,6 +1914,8 @@ xa_unlocked:
 			ClearPageActive(page);
 			ClearPageUnevictable(page);
 			unlock_page(page);
+			if (is_shmem)
+				shmem_reliable_page_counter(page, -1);
 			put_page(page);
 			index++;
 		}
@@ -1908,8 +1926,10 @@ xa_unlocked:
 
 		SetPageUptodate(new_page);
 		page_ref_add(new_page, HPAGE_PMD_NR - 1);
-		if (is_shmem)
+		if (is_shmem) {
 			set_page_dirty(new_page);
+			shmem_reliable_page_counter(new_page, 1 << HPAGE_PMD_ORDER);
+		}
 		lru_cache_add(new_page);
 
 		/*
@@ -1977,6 +1997,7 @@ static void khugepaged_scan_file(struct mm_struct *mm,
 	int present, swap;
 	int node = NUMA_NO_NODE;
 	int result = SCAN_SUCCEED;
+	bool reliable = false;
 
 	present = 0;
 	swap = 0;
@@ -2029,6 +2050,9 @@ static void khugepaged_scan_file(struct mm_struct *mm,
 			xas_pause(&xas);
 			cond_resched_rcu();
 		}
+
+		if (page_reliable(page))
+			reliable = true;
 	}
 	rcu_read_unlock();
 
@@ -2037,7 +2061,7 @@ static void khugepaged_scan_file(struct mm_struct *mm,
 			result = SCAN_EXCEED_NONE_PTE;
 		} else {
 			node = khugepaged_find_target_node();
-			collapse_file(mm, file, start, hpage, node);
+			collapse_file(mm, file, start, hpage, node, reliable);
 		}
 	}
 

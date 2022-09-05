@@ -38,6 +38,7 @@ enum memblock_flags {
 	MEMBLOCK_MIRROR		= 0x2,	/* mirrored region */
 	MEMBLOCK_NOMAP		= 0x4,	/* don't add to kernel direct mapping */
 	MEMBLOCK_MEMMAP		= 0x8,	/* memmap reserved region */
+	MEMBLOCK_NOMIRROR	= 0x10,	/* alloc from non-mirrored region */
 };
 
 /**
@@ -410,6 +411,10 @@ void *memblock_alloc_try_nid_raw(phys_addr_t size, phys_addr_t align,
 void *memblock_alloc_try_nid(phys_addr_t size, phys_addr_t align,
 			     phys_addr_t min_addr, phys_addr_t max_addr,
 			     int nid);
+void *memblock_alloc_try_nid_raw_flags(phys_addr_t size, phys_addr_t align,
+				       phys_addr_t min_addr,
+				       phys_addr_t max_addr, int nid,
+				       enum memblock_flags flags);
 
 static inline void * __init memblock_alloc(phys_addr_t size,  phys_addr_t align)
 {

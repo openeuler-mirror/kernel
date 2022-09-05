@@ -4664,6 +4664,28 @@ check_retry_cpuset(int cpuset_mems_cookie, struct alloc_context *ac)
 	return false;
 }
 
+#ifdef CONFIG_MEMORY_RELIABLE
+static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
+						  struct alloc_context *ac)
+{
+	if (!reliable_allow_fb_enabled())
+		return;
+
+	if (gfp_mask & __GFP_NOFAIL)
+		return;
+
+	if ((ac->highest_zoneidx == ZONE_NORMAL) && (gfp_mask & GFP_RELIABLE)) {
+		ac->highest_zoneidx = gfp_zone(gfp_mask & ~GFP_RELIABLE);
+		ac->preferred_zoneref = first_zones_zonelist(
+			ac->zonelist, ac->highest_zoneidx, ac->nodemask);
+		return;
+	}
+}
+#else
+static inline void mem_reliable_fallback_slowpath(gfp_t gfp_mask,
+						  struct alloc_context *ac) {}
+#endif
+
 static inline struct page *
 __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 						struct alloc_context *ac)
@@ -4714,6 +4736,8 @@ retry_cpuset:
 
 	if (alloc_flags & ALLOC_KSWAPD)
 		wake_all_kswapds(order, gfp_mask, ac);
+
+	mem_reliable_fallback_slowpath(gfp_mask, ac);
 
 	/*
 	 * The adjusted alloc_flags might result in immediate success, so try
@@ -5144,11 +5168,112 @@ EXPORT_SYMBOL_GPL(__alloc_pages_bulk);
 
 static inline void prepare_before_alloc(gfp_t *gfp_mask)
 {
+	bool zone_movable;
+
 	if (!mem_reliable_is_enabled())
+		goto clear_flag;
+
+	/*
+	 * memory reliable only handle memory allocation from movable zone
+	 * (force alloc from non-movable zone or force alloc from movable
+	 * zone) to get total isolation.
+	 */
+	zone_movable = gfp_zone(*gfp_mask & ~GFP_RELIABLE) == ZONE_MOVABLE;
+	if (!zone_movable)
+		goto clear_flag;
+
+	if (!in_task())
 		return;
 
 	if ((current->flags & PF_RELIABLE) || is_global_init(current))
 		*gfp_mask |= GFP_RELIABLE;
+
+	return;
+clear_flag:
+	*gfp_mask &= ~GFP_RELIABLE;
+}
+
+static inline long mem_reliable_direct_reclaim(int nr_pages, struct alloc_context *ac)
+{
+	long nr_reclaimed = 0;
+
+	while (nr_reclaimed < nr_pages) {
+		/* try to free cache from reliable region */
+		long progress = __perform_reclaim(GFP_KERNEL, 0, ac);
+
+		nr_reclaimed += progress;
+		if (progress < SWAP_CLUSTER_MAX)
+			break;
+	}
+
+	return nr_reclaimed;
+}
+
+/*
+ * return true means memory allocation need retry and flag ___GFP_RELIABILITY
+ * must be cleared.
+ */
+static inline bool check_after_alloc(gfp_t *gfp, unsigned int order,
+				     int preferred_nid,
+				     struct alloc_context *ac,
+				     struct page **_page)
+{
+	int retry_times = MAX_RECLAIM_RETRIES;
+	int nr_pages;
+
+	if (!mem_reliable_is_enabled())
+		return false;
+
+	if (!(*gfp & GFP_RELIABLE))
+		return false;
+
+	if (!*_page)
+		goto out_retry;
+
+	if (*gfp & __GFP_NOFAIL || current->flags & PF_MEMALLOC)
+		goto out;
+
+	/* percpu counter is not initialized, ignore limit check */
+	if (!mem_reliable_counter_initialized())
+		goto out;
+
+limit_check:
+	/* user task is limited by task_reliable_limit */
+	if (!reliable_mem_limit_check(1 << order))
+		goto out_free_page;
+
+	goto out;
+
+out_free_page:
+	if (mem_reliable_should_reclaim() && retry_times--) {
+		nr_pages = mem_reliable_direct_reclaim(1 << order, ac);
+		if (nr_pages)
+			goto limit_check;
+	}
+
+	__free_pages(*_page, order);
+	*_page = NULL;
+
+out_retry:
+	if (reliable_allow_fb_enabled() || is_global_init(current)) {
+		*gfp &= ~GFP_RELIABLE;
+		return true;
+	}
+
+	if (*gfp & (__GFP_NORETRY | __GFP_RETRY_MAYFAIL | __GFP_THISNODE))
+		goto out;
+
+	/* Coredumps can quickly deplete all memory reserves */
+	if (current->flags & PF_DUMPCORE)
+		goto out;
+	/* The OOM killer will not help higher order allocs */
+	if (order > PAGE_ALLOC_COSTLY_ORDER)
+		goto out;
+
+	/* oom here */
+	mem_reliable_out_of_memory(*gfp, order, preferred_nid, ac->nodemask);
+out:
+	return false;
 }
 
 /*
@@ -5175,6 +5300,7 @@ struct page *__alloc_pages(gfp_t gfp, unsigned int order, int preferred_nid,
 
 	prepare_before_alloc(&gfp);
 
+retry:
 	alloc_gfp = gfp;
 	if (!prepare_alloc_pages(gfp, order, preferred_nid, nodemask, &ac,
 			&alloc_gfp, &alloc_flags))
@@ -5219,6 +5345,9 @@ out:
 		__free_pages(page, order);
 		page = NULL;
 	}
+
+	if (check_after_alloc(&gfp, order, preferred_nid, &ac, &page))
+		goto retry;
 
 	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype);
 
@@ -7525,10 +7654,11 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 	if (mirrored_kernelcore) {
 		bool mem_below_4gb_not_mirrored = false;
 		bool has_unmirrored_mem = false;
+		unsigned long mirrored_sz = 0;
 
 		for_each_mem_region(r) {
 			if (memblock_is_mirror(r)) {
-				add_reliable_mem_size(r->size);
+				mirrored_sz += r->size;
 				continue;
 			}
 
@@ -7550,7 +7680,8 @@ static void __init find_zone_movable_pfns_for_nodes(void)
 		if (mem_below_4gb_not_mirrored)
 			pr_warn("This configuration results in unmirrored kernel memory.\n");
 
-		mem_reliable_init(has_unmirrored_mem, zone_movable_pfn);
+		mem_reliable_init(has_unmirrored_mem, zone_movable_pfn,
+				  mirrored_sz);
 
 		goto out2;
 	}

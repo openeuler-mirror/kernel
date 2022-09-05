@@ -192,6 +192,7 @@ static void unaccount_page_cache_page(struct address_space *mapping,
 	__mod_lruvec_page_state(page, NR_FILE_PAGES, -nr);
 	if (PageSwapBacked(page)) {
 		__mod_lruvec_page_state(page, NR_SHMEM, -nr);
+		shmem_reliable_page_counter(page, -nr);
 		if (PageTransHuge(page))
 			__dec_node_page_state(page, NR_SHMEM_THPS);
 	} else if (PageTransHuge(page)) {
@@ -800,10 +801,14 @@ int replace_page_cache_page(struct page *old, struct page *new, gfp_t gfp_mask)
 		__dec_lruvec_page_state(old, NR_FILE_PAGES);
 	if (!PageHuge(new))
 		__inc_lruvec_page_state(new, NR_FILE_PAGES);
-	if (PageSwapBacked(old))
+	if (PageSwapBacked(old)) {
 		__dec_lruvec_page_state(old, NR_SHMEM);
-	if (PageSwapBacked(new))
+		shmem_reliable_page_counter(old, -1);
+	}
+	if (PageSwapBacked(new)) {
 		__inc_lruvec_page_state(new, NR_SHMEM);
+		shmem_reliable_page_counter(new, 1);
+	}
 	xas_unlock_irqrestore(&xas, flags);
 	if (freepage)
 		freepage(old);
