@@ -5291,8 +5291,9 @@ static ssize_t memory_reclaim(struct kernfs_open_file *of, char *buf,
 
 static int memcg_high_async_ratio_show(struct seq_file *m, void *v)
 {
-	return seq_puts_memcg_tunable(m,
-	       READ_ONCE(mem_cgroup_from_seq(m)->high_async_ratio));
+	seq_printf(m, "%d\n",
+		   READ_ONCE(mem_cgroup_from_seq(m)->high_async_ratio));
+	return 0;
 }
 
 static ssize_t memcg_high_async_ratio_write(struct kernfs_open_file *of,
