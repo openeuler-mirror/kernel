@@ -11,8 +11,8 @@
 %global upstream_version    5.10
 %global upstream_sublevel   0
 %global devel_release       106
-%global maintenance_release .8.0
-%global pkg_release         .61
+%global maintenance_release .9.0
+%global pkg_release         .62
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,77 @@ fi
 %endif
 
 %changelog
+* Tue Sep 06 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.9.0.62
+- bpf, cgroup: Fix kernel BUG in purge_effective_progs
+- bpf: Don't use tnum_range on array range checking for poke descriptors
+- configfs: fix a race in configfs_lookup()
+- configfs: fold configfs_attach_attr into configfs_lookup
+- configfs: simplify the configfs_dirent_is_ready
+- configfs: return -ENAMETOOLONG earlier in configfs_lookup
+- af_key: Do not call xfrm_probe_algs in parallel
+- tty: use new tty_insert_flip_string_and_push_buffer() in pty_write()
+- tty: extract tty_flip_buffer_commit() from tty_flip_buffer_push()
+- tty: drop tty_schedule_flip()
+- tty: the rest, stop using tty_schedule_flip()
+- tty: drivers/tty/, stop using tty_schedule_flip()
+- dm verity: set DM_TARGET_IMMUTABLE feature flag
+- pipe: Fix missing lock in pipe_resize_ring()
+- mm/huge_memory: remove outdated VM_WARN_ON_ONCE_PAGE from unmap_page()
+- ARM: 9203/1: kconfig: fix MODULE_PLTS for KASAN with KASAN_VMALLOC
+- ARM: 9202/1: kasan: support CONFIG_KASAN_VMALLOC
+- arm64: Kconfig: select KASAN_VMALLOC if KANSAN_GENERIC is enabled
+- net: fix sk_wmem_schedule() and sk_rmem_schedule() errors
+- KVM: arm64: Use generic KVM xfer to guest work function
+- entry: KVM: Allow use of generic KVM entry w/o full generic support
+- KVM: arm64: Record number of signal exits as a vCPU stat
+- dm thin: fix use-after-free crash in dm_sm_register_threshold_callback
+- Revert "NFS: Use of mapping_set_error() results in spurious errors"
+- !79 Add memory reliable features
+- !78 arm64: add machine checksafe support
+- !69 samples: bpf: Add sample BMC for Redis v5
+- samples: bpf: Add sample BMC for Redis
+- bpf: Add xdp load and store helpers
+- bpf: Add helper bpf_tcp_udpate_seq to synchronize tcp seq/ack
+- mm: Add sysctl to clear free list pages
+- mm/hugetlb: Hugetlb use non-mirrored memory if memory reliable is enabled
+- mm/memblock: Introduce ability to alloc memory from specify memory reigon
+- mm: Update reliable flag in memory allocaion for reliable task only in task context
+- proc: Count reliable memory usage of reliable tasks
+- mm: Add reliable_nr_page for accounting reliable memory
+- mm: Show debug info about memory reliable if oom occurs
+- mm: Introduce proc interface to disable memory reliable features
+- mm: Introduce reliable_debug=S to control shmem use mirrored memory
+- mm: Introduce shmem mirrored memory limit for memory reliable
+- shmem: Count and show reliable shmem info
+- mm: Introduce fallback mechanism for memory reliable
+- mm: Add reliable memory use limit for user tasks
+- mm: thp: Add memory reliable support for hugepaged collapse
+- mm: Add support for limiting the usage of reliable memory in pagecache
+- mm: add "ReliableFileCache" item in /proc/meminfo
+- proc/meminfo: Add "FileCache" item in /proc/meminfo
+- mm: Add cmdline for the reliable memory usage of page cache
+- mm: Add kernel param for memory reliable
+- mm: Clear GFP_RELIABLE if the conditions are not met
+- mm: Disable memory reliable when kdump is in progress
+- mm: Count reliable memory info based on zone info
+- mm: Refactor code in reliable_report_meminfo()
+- mm: Export mem_reliable_status() for checking memory reliable status
+- mm: Export static key mem_reliable
+- mm: Drop shmem reliable related log during startup
+- arm64/__mc_ex_table: fix compile error when CONFIG_ARCH_HAS_COPY_MC=n
+- arm64/__mc_ex_table: search_module_mc_extables should not use num_exentries
+- arm64: add machine check safe sysctl interface
+- arm64: add dump_user_range() to machine check safe
+- arm64: introduce copy_mc_to_kernel() implementation
+- arm64: add cow to machine check safe
+- arm64: get/put_user support machine check safe
+- arm64: copy_form/to_user support machine check safe
+- arm64: add support for machine check error safe
+- arm64: extable: add new extable type "__mc_ex_table"
+- uaccess: add generic fallback version of copy_mc_to_user()
+- Revert "arm64: config: enable CONFIG_ARM64_UCE_KERNEL_RECOVERY"
+- Revert "arm64: ras: copy_from_user scenario support uce kernel recovery"
+
 * Tue Aug 30 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.8.0.61
 
 * Fri Aug 26 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-106.7.0.60
