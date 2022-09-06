@@ -26,23 +26,11 @@ __start:
 	/* ... and find our stack ... */
 	ldi	$30, ASM_THREAD_SIZE($8)
 	/* ... and then we can clear bss data.  */
-	ldi	$2, __bss_start
-	ldi	$3, __bss_stop
-	/* 8 bytes alignment */
-1:	and	$2, 0x7, $1	# align check
-	bne	$1, 3f
-2:	subl	$3, $2, $1	# align clear
-	ble	$1, 4f
-	subl	$1, 0x8, $1
-	ble	$1, 3f
-	stl	$31, 0($2)
-	addl	$2, 8, $2
-	br	$31, 2b
-3:	stb	$31, 0($2)	# non align clear
-	addl	$2, 1, $2
-	subl	$3, $2, $1
-	bgt	$1, 1b
-4:# finish clear
+	ldi	$16, __bss_start
+	ldi	$18, __bss_stop
+	subl	$18, $16, $18
+	mov	$31, $17
+	call	$26, __constant_c_memset
 #ifdef CONFIG_RELOCATABLE
 	ldi	$30, -8($30)
 	stl	$29, 0($30)
