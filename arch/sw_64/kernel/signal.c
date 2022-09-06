@@ -261,7 +261,7 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 static int
 setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 {
-	unsigned long oldsp, r26, err = 0;
+	unsigned long oldsp, err = 0;
 	struct rt_sigframe __user *frame;
 
 	oldsp = rdusp();
@@ -283,13 +283,8 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	if (err)
 		return -EFAULT;
 
-	/* Set up to return from userspace.  If provided, use a stub
-	 * already in userspace.
-	 */
-	r26 = VDSO_SYMBOL(current->mm->context.vdso, rt_sigreturn);
-
 	/* "Return" to the handler */
-	regs->r26 = r26;
+	regs->r26 = VDSO_SYMBOL(current->mm->context.vdso, rt_sigreturn);
 	regs->r27 = regs->pc = (unsigned long) ksig->ka.sa.sa_handler;
 	regs->r16 = ksig->sig;                    /* a0: signal number */
 	if (ksig->ka.sa.sa_flags & SA_SIGINFO) {
