@@ -119,8 +119,8 @@ static bool do_memsw_account(void)
  */
 
 #define HIGH_ASYNC_RATIO_DEFAULT		0
-#define HIGH_ASYNC_RATIO_BASE			10
-#define HIGH_ASYNC_RATIO_GAP			1
+#define HIGH_ASYNC_RATIO_BASE			100
+#define HIGH_ASYNC_RATIO_GAP			10
 
 /*
  * Cgroups above their limits are maintained in a RB-Tree, independent of
@@ -2405,9 +2405,12 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
 static unsigned long get_reclaim_pages(struct mem_cgroup *memcg)
 {
 	unsigned long nr_pages = page_counter_read(&memcg->memory);
-	int ratio = READ_ONCE(memcg->high_async_ratio) - HIGH_ASYNC_RATIO_GAP;
-	unsigned long safe_pages = READ_ONCE(memcg->memory.high) * ratio /
-				   HIGH_ASYNC_RATIO_BASE;
+	int ratio = READ_ONCE(memcg->high_async_ratio);
+	unsigned long safe_pages;
+
+	ratio = ratio < HIGH_ASYNC_RATIO_GAP ? 0 : ratio - HIGH_ASYNC_RATIO_GAP;
+	safe_pages = READ_ONCE(memcg->memory.high) * ratio /
+		     HIGH_ASYNC_RATIO_BASE;
 
 	return (nr_pages > safe_pages) ? (nr_pages - safe_pages) :
 		MEMCG_CHARGE_BATCH;
