@@ -483,6 +483,9 @@ static struct dentry * configfs_lookup(struct inode *dir,
 	int found = 0;
 	int err;
 
+	if (dentry->d_name.len > NAME_MAX)
+		return ERR_PTR(-ENAMETOOLONG);
+
 	/*
 	 * Fake invisibility if dir belongs to a group/default groups hierarchy
 	 * being attached
@@ -513,8 +516,6 @@ static struct dentry * configfs_lookup(struct inode *dir,
 		 * If it doesn't exist and it isn't a NOT_PINNED item,
 		 * it must be negative.
 		 */
-		if (dentry->d_name.len > NAME_MAX)
-			return ERR_PTR(-ENAMETOOLONG);
 		d_add(dentry, NULL);
 		return NULL;
 	}
