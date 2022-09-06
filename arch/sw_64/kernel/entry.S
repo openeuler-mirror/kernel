@@ -403,7 +403,7 @@ __switch_to:
 	stl	$15, TASK_THREAD_S6($16)
 	/* Restore context from next->thread */
 	ldl	$26, TASK_THREAD_RA($17)
-	ldl     $30, TASK_THREAD_SP($17)
+	ldl	$30, TASK_THREAD_SP($17)
 	ldl	$9, TASK_THREAD_S0($17)
 	ldl	$10, TASK_THREAD_S1($17)
 	ldl	$11, TASK_THREAD_S2($17)
