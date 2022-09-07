@@ -123,4 +123,4 @@ static inline unsigned short from64to16(unsigned long x)
 	return out_v.us[0] + out_v.us[1];
 }
 
-#endif
+#endif /* _ASM_SW64_CHECKSUM_H */

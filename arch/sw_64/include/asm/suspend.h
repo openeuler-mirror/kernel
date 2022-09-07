@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _ASM_SW64_SLEEP_H
-#define _ASM_SW64_SLEEP_H
+#ifndef _ASM_SW64_SUSPEND_H
+#define _ASM_SW64_SUSPEND_H
 
 #include <asm/hmcall.h>
 #include <asm/ptrace.h>
@@ -45,4 +45,4 @@ struct processor_state {
 };
 
 extern void sw64_suspend_deep_sleep(struct processor_state *state);
-#endif /* _ASM_SW64_SLEEP_H */
+#endif /* _ASM_SW64_SUSPEND_H */

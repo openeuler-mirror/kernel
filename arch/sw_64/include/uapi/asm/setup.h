@@ -4,4 +4,4 @@
 
 #define COMMAND_LINE_SIZE   2048
 
-#endif
+#endif /* _UAPI_ASM_SW64_SETUP_H */

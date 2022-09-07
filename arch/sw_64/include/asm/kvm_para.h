@@ -23,4 +23,4 @@ static inline unsigned long kvm_hypercall3(unsigned long num,
 		: "$1", "$22", "$23", "$24", "$25");
 	return __r0;
 }
-#endif
+#endif /* _ASM_SW64_KVM_PARA_H */

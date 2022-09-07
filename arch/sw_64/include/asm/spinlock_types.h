@@ -5,4 +5,4 @@
 #include <asm-generic/qspinlock_types.h>
 #include <asm-generic/qrwlock_types.h>
 
-#endif
+#endif /* _ASM_SW64_SPINLOCK_TYPES_H */

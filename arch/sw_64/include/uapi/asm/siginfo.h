@@ -8,4 +8,4 @@
 #include <asm-generic/siginfo.h>
 
 
-#endif
+#endif /* _UAPI_ASM_SW64_SIGINFO_H */

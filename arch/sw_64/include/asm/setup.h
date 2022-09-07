@@ -43,4 +43,4 @@
 extern struct boot_params *sunway_boot_params;
 #endif
 
-#endif
+#endif /* _ASM_SW64_SETUP_H */

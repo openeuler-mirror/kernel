@@ -125,4 +125,4 @@
 
 #define EHWPOISON	139	/* Memory page has hardware error */
 
-#endif
+#endif /* _UAPI_ASM_SW64_ERRNO_H */

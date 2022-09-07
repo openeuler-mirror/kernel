@@ -61,4 +61,4 @@
 #define MAX_HWEVENTS			2
 #define PMC_COUNT_MASK			((1UL << 58) - 1)
 
-#endif
+#endif /* _ASM_SW64_WRPERFMON_H */

@@ -45,4 +45,4 @@ extern void handle_ipi(struct pt_regs *regs);
 extern void __init sw64_init_irq(void);
 extern irqreturn_t timer_interrupt(int irq, void *dev);
 
-#endif
+#endif /* _ASM_SW64_IRQ_IMPL_H */

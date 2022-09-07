@@ -6,4 +6,4 @@
 #define SYSCALL_ALIAS(alias, name)                                      \
 	asm(#alias " = " #name "\n\t.globl " #alias)
 
-#endif
+#endif /* _ASM_SW64_LINKAGE_H */

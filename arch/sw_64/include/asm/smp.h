@@ -178,4 +178,4 @@ static inline void send_ipi(int cpu, unsigned long type)
 
 #define reset_cpu(cpu)  send_ipi((cpu), II_RESET)
 
-#endif
+#endif /* _ASM_SW64_SMP_H */

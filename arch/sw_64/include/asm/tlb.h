@@ -15,4 +15,4 @@
 
 #define __pud_free_tlb(tlb, pud, address)	pud_free((tlb)->mm, pud)
 
-#endif
+#endif /* _ASM_SW64_TLB_H */

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _ASM_SW64_INIT_H
-#define _ASM_SW64_INIT_H
+#ifndef _ASM_SW64_SW64_INIT_H
+#define _ASM_SW64_SW64_INIT_H
 
 #include <linux/cpu.h>
 #include <linux/pci.h>
@@ -43,4 +43,4 @@ extern struct sw64_chip_init_ops *sw64_chip_init;
 
 DECLARE_PER_CPU(unsigned long, hard_node_id);
 
-#endif /* _ASM_SW64_INIT_H */
+#endif /* _ASM_SW64_SW64_INIT_H */
