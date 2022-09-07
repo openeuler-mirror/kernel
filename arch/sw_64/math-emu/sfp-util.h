@@ -1,4 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _SW64_MATH_EMU_SFP_UTIL_H
+#define _SW64_MATH_EMU_SFP_UTIL_H
+
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/types.h>
@@ -34,3 +37,5 @@ extern unsigned long __udiv_qrnnd(unsigned long *, unsigned long,
 #define __LITTLE_ENDIAN -1
 #endif
 #define __BYTE_ORDER __LITTLE_ENDIAN
+
+#endif /* _SW64_MATH_EMU_SFP_UTIL_H */

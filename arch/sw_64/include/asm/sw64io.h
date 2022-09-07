@@ -95,4 +95,4 @@ sw64_io_write(unsigned long node, unsigned long reg, unsigned long data)
 	addr = __va(SW64_IO_BASE(node) | reg);
 	writeq(data, addr);
 }
-#endif
+#endif /* _ASM_SW64_SW64IO_H */

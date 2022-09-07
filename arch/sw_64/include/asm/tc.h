@@ -13,4 +13,4 @@ static inline unsigned long rdtc(void)
 extern void tc_sync_clear(void);
 extern void tc_sync_ready(void *ignored);
 extern void tc_sync_set(void);
-#endif
+#endif /* _ASM_SW64_TC_H */

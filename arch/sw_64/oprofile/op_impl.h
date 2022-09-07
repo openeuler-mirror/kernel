@@ -53,4 +53,4 @@ struct op_axp_model {
 	unsigned char can_set_proc_mode;
 };
 
-#endif
+#endif /* _SW64_OPROFILE_OP_IMPL_H */

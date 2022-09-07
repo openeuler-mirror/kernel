@@ -31,4 +31,4 @@ struct sigcontext {
 };
 
 
-#endif
+#endif /* _UAPI_ASM_SW64_SIGCONTEXT_H */

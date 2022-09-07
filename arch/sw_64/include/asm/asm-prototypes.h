@@ -19,4 +19,4 @@ extern void __remlu(void);
 extern void __divwu(void);
 extern void __remwu(void);
 
-#endif
+#endif /* _ASM_SW64_ASM_PROTOTYPES_H */

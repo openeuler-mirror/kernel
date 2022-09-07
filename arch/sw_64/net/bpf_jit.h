@@ -18,8 +18,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _SW64_BPF_JIT_H
-#define _SW64_BPF_JIT_H
+#ifndef _SW64_NET_BPF_JIT_H
+#define _SW64_NET_BPF_JIT_H
 
 /* SW64 instruction field shift */
 #define SW64_BPF_OPCODE_OFFSET		26
@@ -365,4 +365,4 @@ enum sw64_bpf_registers {
 	sw64_bpf_gen_format_simple_alu_imm(SW64_BPF_OPCODE_ALU_IMM, \
 			ra, imm8, dst, SW64_BPF_FUNC_ALU_CMPULE)
 
-#endif /* _SW64_BPF_JIT_H */
+#endif /* _SW64_NET_BPF_JIT_H */

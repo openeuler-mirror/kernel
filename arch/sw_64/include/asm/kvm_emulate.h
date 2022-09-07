@@ -43,4 +43,4 @@ unsigned int interrupt_pending(struct kvm_vcpu *vcpu, bool *more);
 void clear_vcpu_irq(struct kvm_vcpu *vcpu);
 void inject_vcpu_irq(struct kvm_vcpu *vcpu, unsigned int irq);
 void try_deliver_interrupt(struct kvm_vcpu *vcpu, unsigned int irq, bool more);
-#endif
+#endif /* _ASM_SW64_KVM_EMULATE_H */

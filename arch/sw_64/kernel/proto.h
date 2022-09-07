@@ -19,4 +19,4 @@ extern void __init setup_sched_clock(void);
 extern void __init sw64_sched_clock_init(void);
 #endif
 
-#endif /* _SW64_PROTO_H */
+#endif /* _SW64_KERNEL_PROTO_H */

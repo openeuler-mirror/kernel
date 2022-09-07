@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 
-#ifndef _ASM_SW64_PERF_REGS_H
-#define _ASM_SW64_PERF_REGS_H
+#ifndef _UAPI_ASM_SW64_PERF_REGS_H
+#define _UAPI_ASM_SW64_PERF_REGS_H
 
 enum perf_event_sw64_regs {
 	PERF_REG_SW64_R0,
@@ -42,4 +42,4 @@ enum perf_event_sw64_regs {
 	PERF_REG_SW64_R18,
 	PERF_REG_SW64_MAX,
 };
-#endif /* _ASM_SW64_PERF_REGS_H */
+#endif /* _UAPI_ASM_SW64_PERF_REGS_H */

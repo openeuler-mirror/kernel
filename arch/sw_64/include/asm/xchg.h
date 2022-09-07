@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _ASM_SW64_XCHG_H
+#define _ASM_SW64_XCHG_H
+
 #ifndef _ASM_SW64_CMPXCHG_H
-#error Do not include xchg.h directly!
-#else
+#error Do not include xchg.h directly. Use cmpxchg.h
+#endif
 /*
  * xchg/xchg_local and cmpxchg/cmpxchg_local share the same code
  * except that local version do not have the expensive memory barrier.
@@ -325,4 +328,4 @@ static __always_inline unsigned long ____cmpxchg(, volatile void *ptr,
 	return old;
 }
 
-#endif
+#endif /* _ASM_SW64_XCHG_H */

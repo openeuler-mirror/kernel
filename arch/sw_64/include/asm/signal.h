@@ -21,4 +21,4 @@ struct odd_sigaction {
 };
 
 #include <asm/sigcontext.h>
-#endif
+#endif /* _ASM_SW64_SIGNAL_H */

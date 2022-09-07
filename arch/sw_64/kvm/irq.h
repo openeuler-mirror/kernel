@@ -3,10 +3,10 @@
  * irq.h: in kernel interrupt controller related definitions
  */
 
-#ifndef __IRQ_H
-#define __IRQ_H
+#ifndef _SW64_KVM_IRQ_H
+#define _SW64_KVM_IRQ_H
 static inline int irqchip_in_kernel(struct kvm *kvm)
 {
 	return 1;
 }
-#endif
+#endif /* _SW64_KVM_IRQ_H */

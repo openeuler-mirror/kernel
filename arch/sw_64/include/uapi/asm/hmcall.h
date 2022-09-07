@@ -14,4 +14,4 @@
 #define HMC_gentrap		0xAA
 #define HMC_wrperfmon		0xB0
 
-#endif
+#endif /* _UAPI_ASM_SW64_HMCALL_H */

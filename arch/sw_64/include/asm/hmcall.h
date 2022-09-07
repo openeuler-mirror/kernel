@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _ASM_SW64_HMC_H
-#define _ASM_SW64_HMC_H
+#ifndef _ASM_SW64_HMCALL_H
+#define _ASM_SW64_HMCALL_H
 
 /*
  * Common HMC-code
@@ -216,4 +216,4 @@ __CALL_HMC_W1(wrtp, unsigned long);
 #endif /* !__ASSEMBLY__ */
 #endif /* __KERNEL__ */
 
-#endif /* _ASM_SW64_HMC_H */
+#endif /* _ASM_SW64_HMCALL_H */

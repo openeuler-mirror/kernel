@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef RELOCS_H
-#define RELOCS_H
+#ifndef _SW64_TOOLS_RELOCS_H
+#define _SW64_TOOLS_RELOCS_H
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -68,4 +68,4 @@ enum symtype {
 
 void process(FILE *fp, int as_text, int as_bin,
 		int show_reloc_info, int keep_relocs);
-#endif /* RELOCS_H */
+#endif /* _SW64_TOOLS_RELOCS_H */

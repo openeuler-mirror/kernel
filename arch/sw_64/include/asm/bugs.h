@@ -6,4 +6,4 @@ static void check_bugs(void)
 {
 }
 
-#endif
+#endif /* _ASM_SW64_BUGS_H */

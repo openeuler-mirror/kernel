@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 
-#ifndef __ASM_SW64_JUMP_LABEL_H
-#define __ASM_SW64_JUMP_LABEL_H
+#ifndef _ASM_SW64_JUMP_LABEL_H
+#define _ASM_SW64_JUMP_LABEL_H
 
 #ifndef __ASSEMBLY__
 
@@ -47,4 +47,4 @@ struct jump_entry {
 };
 
 #endif /* __ASSEMBLY__ */
-#endif /* __ASM_SW64_JUMP_LABEL_H */
+#endif /* _ASM_SW64_JUMP_LABEL_H */
