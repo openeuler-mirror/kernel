@@ -26,6 +26,32 @@
 	.previous
 	.endm
 
+	.macro	EX_V insn, reg, src, offs
+	parse_v __insn, \insn
+	parse_v __offs, \offs
+	parse_r __src, \src
+	parse_vr __reg, \reg
+
+.ex\@:
+	.word __insn << 22 | __offs << 10 | __src << 5 | __reg
+	.section __ex_table,"a"
+	PTR	.ex\@, fault
+	.previous
+	.endm
+
+	.macro	EX_XV insn, reg, src, offs
+	parse_v __insn, \insn
+	parse_v __offs, \offs
+	parse_r __src, \src
+	parse_xr __reg, \reg
+
+.ex\@:
+	.word __insn << 22 | __offs << 10 | __src << 5 | __reg
+	.section __ex_table,"a"
+	PTR	.ex\@, fault
+	.previous
+	.endm
+
 	.macro sc_save_fp base
 	EX	fst.d	$f0,  \base, (0 * FPU_REG_WIDTH)
 	EX	fst.d	$f1,  \base, (1 * FPU_REG_WIDTH)
@@ -146,6 +172,146 @@
 	movgr2fcsr	fcsr0, \tmp0
 	.endm
 
+	.macro sc_save_lsx base
+	EX_V 0xb1 $vr0,  \base,	(0 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr1,  \base,	(1 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr2,  \base,	(2 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr3,  \base,	(3 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr4,  \base,	(4 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr5,  \base,	(5 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr6,  \base,	(6 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr7,  \base,	(7 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr8,  \base,	(8 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr9,  \base,	(9 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr10,  \base, (10 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr11,  \base, (11 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr12,  \base, (12 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr13,  \base, (13 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr14,  \base, (14 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr15,  \base, (15 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr16,  \base, (16 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr17,  \base, (17 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr18,  \base, (18 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr19,  \base, (19 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr20,  \base, (20 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr21,  \base, (21 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr22,  \base, (22 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr23,  \base, (23 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr24,  \base, (24 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr25,  \base, (25 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr26,  \base, (26 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr27,  \base, (27 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr28,  \base, (28 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr29,  \base, (29 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr30,  \base, (30 * LSX_REG_WIDTH)
+	EX_V 0xb1 $vr31,  \base, (31 * LSX_REG_WIDTH)
+	.endm
+
+	.macro sc_restore_lsx base
+	EX_V 0xb0 $vr0,  \base, (0 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr1,  \base, (1 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr2,  \base, (2 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr3,  \base, (3 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr4,  \base, (4 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr5,  \base, (5 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr6,  \base, (6 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr7,  \base, (7 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr8,  \base, (8 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr9,  \base, (9 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr10,  \base, (10 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr11,  \base, (11 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr12,  \base, (12 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr13,  \base, (13 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr14,  \base, (14 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr15,  \base, (15 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr16,  \base, (16 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr17,  \base, (17 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr18,  \base, (18 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr19,  \base, (19 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr20,  \base, (20 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr21,  \base, (21 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr22,  \base, (22 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr23,  \base, (23 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr24,  \base, (24 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr25,  \base, (25 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr26,  \base, (26 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr27,  \base, (27 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr28,  \base, (28 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr29,  \base, (29 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr30,  \base, (30 * LSX_REG_WIDTH)
+	EX_V 0xb0 $vr31,  \base, (31 * LSX_REG_WIDTH)
+	.endm
+
+	.macro sc_save_lasx base
+	EX_XV	0xb3 $xr0,  \base, (0 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr1,  \base, (1 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr2,  \base, (2 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr3,  \base, (3 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr4,  \base, (4 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr5,  \base, (5 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr6,  \base, (6 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr7,  \base, (7 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr8,  \base, (8 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr9,  \base, (9 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr10, \base, (10 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr11, \base, (11 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr12, \base, (12 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr13, \base, (13 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr14, \base, (14 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr15, \base, (15 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr16, \base, (16 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr17, \base, (17 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr18, \base, (18 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr19, \base, (19 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr20, \base, (20 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr21, \base, (21 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr22, \base, (22 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr23, \base, (23 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr24, \base, (24 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr25, \base, (25 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr26, \base, (26 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr27, \base, (27 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr28, \base, (28 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr29, \base, (29 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr30, \base, (30 * LASX_REG_WIDTH)
+	EX_XV	0xb3 $xr31, \base, (31 * LASX_REG_WIDTH)
+	.endm
+
+	.macro sc_restore_lasx base
+	EX_XV	0xb2 $xr0,  \base, (0 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr1,  \base, (1 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr2,  \base, (2 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr3,  \base, (3 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr4,  \base, (4 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr5,  \base, (5 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr6,  \base, (6 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr7,  \base, (7 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr8,  \base, (8 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr9,  \base, (9 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr10, \base, (10 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr11, \base, (11 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr12, \base, (12 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr13, \base, (13 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr14, \base, (14 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr15, \base, (15 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr16, \base, (16 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr17, \base, (17 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr18, \base, (18 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr19, \base, (19 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr20, \base, (20 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr21, \base, (21 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr22, \base, (22 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr23, \base, (23 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr24, \base, (24 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr25, \base, (25 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr26, \base, (26 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr27, \base, (27 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr28, \base, (28 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr29, \base, (29 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr30, \base, (30 * LASX_REG_WIDTH)
+	EX_XV	0xb2 $xr31, \base, (31 * LASX_REG_WIDTH)
+	.endm
+
 /*
  * Save a thread's fp context.
  */
@@ -166,6 +332,76 @@ SYM_FUNC_START(_restore_fp)
 	fpu_restore_cc		a0 t1 t2	# clobbers t1, t2
 	jr			ra
 SYM_FUNC_END(_restore_fp)
+
+#ifdef CONFIG_CPU_HAS_LSX
+
+/*
+ * Save a thread's LSX vector context.
+ */
+SYM_FUNC_START(_save_lsx)
+	lsx_save_all	a0 t1 t2
+	jirl zero, ra, 0
+SYM_FUNC_END(_save_lsx)
+EXPORT_SYMBOL(_save_lsx)
+
+/*
+ * Restore a thread's LSX vector context.
+ */
+SYM_FUNC_START(_restore_lsx)
+	lsx_restore_all	a0 t1 t2
+	jirl zero, ra, 0
+SYM_FUNC_END(_restore_lsx)
+
+SYM_FUNC_START(_save_lsx_upper)
+	lsx_save_all_upper a0 t0 t1
+	jirl zero, ra, 0
+SYM_FUNC_END(_save_lsx_upper)
+
+SYM_FUNC_START(_restore_lsx_upper)
+	lsx_restore_all_upper a0 t0 t1
+	jirl zero, ra, 0
+SYM_FUNC_END(_restore_lsx_upper)
+
+SYM_FUNC_START(_init_lsx_upper)
+	lsx_init_all_upper t1
+	jirl zero, ra, 0
+SYM_FUNC_END(_init_lsx_upper)
+#endif
+
+#ifdef CONFIG_CPU_HAS_LASX
+
+/*
+ * Save a thread's LASX vector context.
+ */
+SYM_FUNC_START(_save_lasx)
+	lasx_save_all	a0 t1 t2
+	jirl zero, ra, 0
+SYM_FUNC_END(_save_lasx)
+EXPORT_SYMBOL(_save_lasx)
+
+/*
+ * Restore a thread's LASX vector context.
+ */
+SYM_FUNC_START(_restore_lasx)
+	lasx_restore_all a0 t1 t2
+	jirl zero, ra, 0
+SYM_FUNC_END(_restore_lasx)
+
+SYM_FUNC_START(_save_lasx_upper)
+	lasx_save_all_upper a0 t0 t1
+	jirl zero, ra, 0
+SYM_FUNC_END(_save_lasx_upper)
+
+SYM_FUNC_START(_restore_lasx_upper)
+	lasx_restore_all_upper a0 t0 t1
+	jirl	zero, ra, 0
+SYM_FUNC_END(_restore_lasx_upper)
+
+SYM_FUNC_START(_init_lasx_upper)
+	lasx_init_all_upper t1
+	jirl	zero, ra, 0
+SYM_FUNC_END(_init_lasx_upper)
+#endif
 
 /*
  * Load the FPU with signalling NANS.  This bit pattern we're using has
@@ -244,6 +480,58 @@ SYM_FUNC_START(_restore_fp_context)
 	li.w		a0, 0				# success
 	jr		ra
 SYM_FUNC_END(_restore_fp_context)
+
+/*
+ * a0: fpregs
+ * a1: fcc
+ * a2: fcsr
+ */
+SYM_FUNC_START(_save_lsx_context)
+	sc_save_fcc a1, t0, t1
+	sc_save_fcsr a2, t0
+	sc_save_lsx a0
+	li.w	a0, 0					# success
+	jirl zero, ra, 0
+SYM_FUNC_END(_save_lsx_context)
+
+/*
+ * a0: fpregs
+ * a1: fcc
+ * a2: fcsr
+ */
+SYM_FUNC_START(_restore_lsx_context)
+	sc_restore_lsx a0
+	sc_restore_fcc a1, t1, t2
+	sc_restore_fcsr a2, t1
+	li.w	a0, 0					# success
+	jirl zero, ra, 0
+SYM_FUNC_END(_restore_lsx_context)
+
+/*
+ * a0: fpregs
+ * a1: fcc
+ * a2: fcsr
+ */
+SYM_FUNC_START(_save_lasx_context)
+	sc_save_fcc a1, t0, t1
+	sc_save_fcsr a2, t0
+	sc_save_lasx a0
+	li.w	a0, 0					# success
+	jirl zero, ra, 0
+SYM_FUNC_END(_save_lasx_context)
+
+/*
+ * a0: fpregs
+ * a1: fcc
+ * a2: fcsr
+ */
+SYM_FUNC_START(_restore_lasx_context)
+	sc_restore_lasx a0
+	sc_restore_fcc a1, t1, t2
+	sc_restore_fcsr a2, t1
+	li.w	a0, 0					# success
+	jirl zero, ra, 0
+SYM_FUNC_END(_restore_lasx_context)
 
 SYM_FUNC_START(fault)
 	li.w	a0, -EFAULT				# failure
