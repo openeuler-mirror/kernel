@@ -21,7 +21,7 @@ extern void efi_init(void);
 	__f(args);							\
 })
 
-#define	ARCH_EFI_IRQ_FLAGS_MASK		0x00000001
+#define ARCH_EFI_IRQ_FLAGS_MASK		0x00000001
 
 /* arch specific definitions used by the stub code */
 

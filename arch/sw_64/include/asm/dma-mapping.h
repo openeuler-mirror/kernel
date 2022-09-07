@@ -9,4 +9,4 @@ static inline const struct dma_map_ops *get_arch_dma_ops(struct bus_type *bus)
 	return dma_ops;
 }
 
-#endif	/* _ASM_SW64_DMA_MAPPING_H */
+#endif /* _ASM_SW64_DMA_MAPPING_H */

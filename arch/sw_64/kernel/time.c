@@ -60,7 +60,7 @@ void arch_irq_work_raise(void)
 	set_irq_work_pending_flag();
 }
 
-#else  /* CONFIG_IRQ_WORK */
+#else /* CONFIG_IRQ_WORK */
 
 #define test_irq_work_pending()      0
 #define clear_irq_work_pending()

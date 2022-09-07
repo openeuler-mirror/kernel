@@ -14,8 +14,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef	_ASM_SW64_INSN_H
-#define	_ASM_SW64_INSN_H
+#ifndef _ASM_SW64_INSN_H
+#define _ASM_SW64_INSN_H
 #include <linux/types.h>
 
 /* Register numbers */
@@ -28,7 +28,7 @@ enum {
 
 #define BR_MAX_DISP		0xfffff
 /* SW64 instructions are always 32 bits. */
-#define	SW64_INSN_SIZE		4
+#define SW64_INSN_SIZE		4
 
 #define ___SW64_RA(a)		(((a) & 0x1f) << 21)
 #define ___SW64_RB(b)		(((b) & 0x1f) << 16)
@@ -93,4 +93,4 @@ SW64_INSN(fbge,		0xf4000000, 0xfc000000);
 SW64_INSN(lldw,		0x20000000, 0xfc00f000);
 SW64_INSN(lldl,		0x20001000, 0xfc00f000);
 
-#endif	/* _ASM_SW64_INSN_H */
+#endif /* _ASM_SW64_INSN_H */

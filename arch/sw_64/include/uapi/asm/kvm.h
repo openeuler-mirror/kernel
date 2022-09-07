@@ -114,4 +114,4 @@ struct kvm_sync_regs {
 struct kvm_sregs {
 };
 
-#endif  /* _UAPI_ASM_SW64_KVM_H */
+#endif /* _UAPI_ASM_SW64_KVM_H */

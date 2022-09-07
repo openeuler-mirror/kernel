@@ -544,7 +544,7 @@ static inline void pmdp_set_wrprotect(struct mm_struct *mm,
 
 #define mk_pmd(page, prot)	pfn_pmd(page_to_pfn(page), (prot))
 
-#define  __HAVE_ARCH_PMDP_SET_ACCESS_FLAGS
+#define __HAVE_ARCH_PMDP_SET_ACCESS_FLAGS
 extern int pmdp_set_access_flags(struct vm_area_struct *vma,
 				 unsigned long address, pmd_t *pmdp,
 				 pmd_t entry, int dirty);

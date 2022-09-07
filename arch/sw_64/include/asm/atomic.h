@@ -336,7 +336,7 @@ ATOMIC_OPS(sub)
 #define atomic64_fetch_add_relaxed	atomic64_fetch_add_relaxed
 #define atomic64_fetch_sub_relaxed	atomic64_fetch_sub_relaxed
 
-#undef  ATOMIC_OPS
+#undef ATOMIC_OPS
 
 #define ATOMIC_OPS(op, asm)						\
 	ATOMIC_OP(op, asm)                                              \

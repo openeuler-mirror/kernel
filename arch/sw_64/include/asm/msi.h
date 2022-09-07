@@ -42,6 +42,6 @@ struct irq_alloc_info {
 	irq_hw_number_t         hwirq;
 };
 typedef struct irq_alloc_info msi_alloc_info_t;
-#endif	/* CONFIG_PCI_MSI_IRQ_DOMAIN */
-#endif	/* CONFIG_PCI_MSI */
-#endif	/* _ASM_SW64_MSI_H */
+#endif /* CONFIG_PCI_MSI_IRQ_DOMAIN */
+#endif /* CONFIG_PCI_MSI */
+#endif /* _ASM_SW64_MSI_H */

@@ -14,4 +14,4 @@ extern struct sw64_platform_ops *sw64_platform;
 
 extern struct sw64_platform_ops xuelang_ops;
 
-#endif  /* _ASM_SW64_PLATFORM_H */
+#endif /* _ASM_SW64_PLATFORM_H */

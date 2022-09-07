@@ -43,4 +43,4 @@ extern struct sw64_chip_init_ops *sw64_chip_init;
 
 DECLARE_PER_CPU(unsigned long, hard_node_id);
 
-#endif    /* _ASM_SW64_INIT_H */
+#endif /* _ASM_SW64_INIT_H */

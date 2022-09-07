@@ -30,6 +30,6 @@ static inline void  set_cpuid_to_node(int cpuid, s16 node)
 	__cpuid_to_node[cpuid] = node;
 }
 
-#endif	/* CONFIG_NUMA */
+#endif /* CONFIG_NUMA */
 
-#endif	/* _ASM_SW64_NUMA_H */
+#endif /* _ASM_SW64_NUMA_H */

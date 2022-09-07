@@ -13,14 +13,14 @@
 #define t6	$7
 #define t7	$8
 
-#define	s0	$9	/* saved-registers (callee-saved registers) */
-#define	s1	$10
-#define	s2	$11
-#define	s3	$12
-#define	s4	$13
-#define	s5	$14
-#define	s6	$15
-#define	fp	s6	/* frame-pointer (s6 in frame-less procedures) */
+#define s0	$9	/* saved-registers (callee-saved registers) */
+#define s1	$10
+#define s2	$11
+#define s3	$12
+#define s4	$13
+#define s5	$14
+#define s6	$15
+#define fp	s6	/* frame-pointer (s6 in frame-less procedures) */
 
 #define a0	$16	/* argument registers (caller-saved) */
 #define a1	$17

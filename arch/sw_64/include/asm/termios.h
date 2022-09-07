@@ -78,4 +78,4 @@
 #define kernel_termios_to_user_termios(u, k) \
 	copy_to_user(u, k, sizeof(struct termios))
 
-#endif	/* _ASM_SW64_TERMIOS_H */
+#endif /* _ASM_SW64_TERMIOS_H */
