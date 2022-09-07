@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _ASM_SW64_VCPU_H
-#define  _ASM_SW64_VCPU_H
+#define _ASM_SW64_VCPU_H
 
 #ifndef __ASSEMBLY__
 
@@ -43,5 +43,5 @@ struct vcpucb {
 	unsigned long vcpu_irq_vector;
 };
 
-#endif  /* __ASSEMBLY__ */
-#endif  /* _ASM_SW64_VCPU_H */
+#endif /* __ASSEMBLY__ */
+#endif /* _ASM_SW64_VCPU_H */

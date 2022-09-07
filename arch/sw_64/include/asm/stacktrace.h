@@ -69,4 +69,4 @@ static inline bool on_accessible_stack(struct task_struct *tsk,
 	return false;
 }
 
-#endif	/* _ASM_SW64_STACKTRACE_H */
+#endif /* _ASM_SW64_STACKTRACE_H */

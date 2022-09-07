@@ -4,7 +4,7 @@
  * with the PCI initialization routines.
  */
 #ifndef _SW64_KERNEL_PCI_IMPL_H
-#define	_SW64_KERNEL_PCI_IMPL_H
+#define _SW64_KERNEL_PCI_IMPL_H
 
 #include <asm/sw64io.h>
 

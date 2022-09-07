@@ -2,7 +2,7 @@
 #ifndef _ASM_SW64_PGTABLE_4LEVEL_H
 #define _ASM_SW64_PGTABLE_4LEVEL_H
 
-#ifdef	__KERNEL__
+#ifdef __KERNEL__
 #ifndef __ASSEMBLY__
 /*
  * These are used to make use of C type-checking..

@@ -87,73 +87,73 @@ struct ktermios {
 #define OFILL		00000100
 #define OFDEL		00000200
 #define NLDLY		00001400
-#define   NL0		00000000
-#define   NL1		00000400
-#define   NL2		00001000
-#define   NL3		00001400
+#define NL0		00000000
+#define NL1		00000400
+#define NL2		00001000
+#define NL3		00001400
 #define TABDLY		00006000
-#define   TAB0		00000000
-#define   TAB1		00002000
-#define   TAB2		00004000
-#define   TAB3		00006000
-#define	CRDLY		00030000
-#define   CR0		00000000
-#define   CR1		00010000
-#define   CR2		00020000
-#define   CR3		00030000
+#define TAB0		00000000
+#define TAB1		00002000
+#define TAB2		00004000
+#define TAB3		00006000
+#define CRDLY		00030000
+#define CR0		00000000
+#define CR1		00010000
+#define CR2		00020000
+#define CR3		00030000
 #define FFDLY		00040000
-#define   FF0		00000000
-#define   FF1		00040000
+#define FF0		00000000
+#define FF1		00040000
 #define BSDLY		00100000
-#define   BS0		00000000
-#define   BS1		00100000
+#define BS0		00000000
+#define BS1		00100000
 #define VTDLY		00200000
-#define   VT0		00000000
-#define   VT1		00200000
+#define VT0		00000000
+#define VT1		00200000
 #define XTABS		01000000	/* Hmm.. Linux/i386 considers this part of TABDLY.. */
 
 /* c_cflag bit meaning */
 #define CBAUD		0000037
-#define  B0		0000000		/* hang up */
-#define  B50		0000001
-#define  B75		0000002
-#define  B110		0000003
-#define  B134		0000004
-#define  B150		0000005
-#define  B200		0000006
-#define  B300		0000007
-#define  B600		0000010
-#define  B1200		0000011
-#define  B1800		0000012
-#define  B2400		0000013
-#define  B4800		0000014
-#define  B9600		0000015
-#define  B19200		0000016
-#define  B38400		0000017
+#define B0		0000000		/* hang up */
+#define B50		0000001
+#define B75		0000002
+#define B110		0000003
+#define B134		0000004
+#define B150		0000005
+#define B200		0000006
+#define B300		0000007
+#define B600		0000010
+#define B1200		0000011
+#define B1800		0000012
+#define B2400		0000013
+#define B4800		0000014
+#define B9600		0000015
+#define B19200		0000016
+#define B38400		0000017
 #define EXTA		B19200
 #define EXTB		B38400
 #define CBAUDEX		0000000
-#define  B57600		00020
-#define  B115200	00021
-#define  B230400	00022
-#define  B460800	00023
-#define  B500000	00024
-#define  B576000	00025
-#define  B921600	00026
-#define  B1000000	00027
-#define  B1152000	00030
-#define  B1500000	00031
-#define  B2000000	00032
-#define  B2500000	00033
-#define  B3000000	00034
-#define  B3500000	00035
-#define  B4000000	00036
+#define B57600		00020
+#define B115200	00021
+#define B230400	00022
+#define B460800	00023
+#define B500000	00024
+#define B576000	00025
+#define B921600	00026
+#define B1000000	00027
+#define B1152000	00030
+#define B1500000	00031
+#define B2000000	00032
+#define B2500000	00033
+#define B3000000	00034
+#define B3500000	00035
+#define B4000000	00036
 
 #define CSIZE		00001400
-#define   CS5		00000000
-#define   CS6		00000400
-#define   CS7		00001000
-#define   CS8		00001400
+#define CS5		00000000
+#define CS6		00000400
+#define CS7		00001000
+#define CS8		00001400
 
 #define CSTOPB		00002000
 #define CREAD		00004000
@@ -184,19 +184,19 @@ struct ktermios {
 #define EXTPROC		0x10000000
 
 /* Values for the ACTION argument to `tcflow'.  */
-#define	TCOOFF		0
-#define	TCOON		1
-#define	TCIOFF		2
-#define	TCION		3
+#define TCOOFF		0
+#define TCOON		1
+#define TCIOFF		2
+#define TCION		3
 
 /* Values for the QUEUE_SELECTOR argument to `tcflush'.  */
-#define	TCIFLUSH	0
-#define	TCOFLUSH	1
-#define	TCIOFLUSH	2
+#define TCIFLUSH	0
+#define TCOFLUSH	1
+#define TCIOFLUSH	2
 
 /* Values for the OPTIONAL_ACTIONS argument to `tcsetattr'.  */
-#define	TCSANOW		0
-#define	TCSADRAIN	1
-#define	TCSAFLUSH	2
+#define TCSANOW		0
+#define TCSADRAIN	1
+#define TCSAFLUSH	2
 
 #endif /* _UAPI_ASM_SW64_TERMBITS_H */

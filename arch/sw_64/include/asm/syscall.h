@@ -72,4 +72,4 @@ static inline int syscall_get_arch(struct task_struct *task)
 	return AUDIT_ARCH_SW64;
 }
 
-#endif  /* _ASM_SW64_SYSCALL_H */
+#endif /* _ASM_SW64_SYSCALL_H */

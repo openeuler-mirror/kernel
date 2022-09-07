@@ -785,7 +785,7 @@ setup_arch(char **cmdline_p)
 		strlcat(boot_command_line, " ", COMMAND_LINE_SIZE);
 		strlcat(boot_command_line, builtin_cmdline, COMMAND_LINE_SIZE);
 	}
-#endif	/* CMDLINE_EXTEND */
+#endif /* CMDLINE_EXTEND */
 #endif
 	if (IS_ENABLED(CONFIG_SW64_CHIP3_ASIC_DEBUG) &&
 			IS_ENABLED(CONFIG_SW64_CHIP3)) {
