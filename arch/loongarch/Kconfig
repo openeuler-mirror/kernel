@@ -75,6 +75,8 @@ config LOONGARCH
 	select GENERIC_SCHED_CLOCK
 	select GENERIC_SMP_IDLE_THREAD
 	select GENERIC_TIME_VSYSCALL
+	select CPU_SUPPORTS_LSX
+	select CPU_SUPPORTS_LASX
 	select GPIOLIB
 	select HAVE_ARCH_AUDITSYSCALL
 	select HAVE_ARCH_MMAP_RND_BITS if MMU
@@ -144,6 +146,36 @@ config CPU_HAS_FPU
 config CPU_HAS_PREFETCH
 	bool
 	default y
+
+config CPU_HAS_LSX
+	bool "Support for the Loongson SIMD Extension"
+	depends on CPU_SUPPORTS_LSX
+	depends on 64BIT
+	help
+	  Loongson SIMD Extension (LSX) introduces 128 bit wide vector registers
+	  and a set of SIMD instructions to operate on them. When this option
+	  is enabled the kernel will support allocating & switching LSX
+	  vector register contexts. If you know that your kernel will only be
+	  running on CPUs which do not support LSX or that your userland will
+	  not be making use of it then you may wish to say N here to reduce
+	  the size & complexity of your kernel.
+
+	  If unsure, say Y.
+
+config CPU_HAS_LASX
+	bool "Support for the Loongson Advanced SIMD Extension"
+	depends on CPU_SUPPORTS_LASX
+	depends on 64BIT && CPU_HAS_LSX
+	help
+	  Loongson Advanced SIMD Extension is 256 bit wide SIMD extension.
+
+	  If unsure, say Y.
+
+config CPU_SUPPORTS_LSX
+	bool
+
+config CPU_SUPPORTS_LASX
+	bool
 
 config GENERIC_CALIBRATE_DELAY
 	def_bool y
