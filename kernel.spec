@@ -10,9 +10,9 @@
 
 %global upstream_version    5.10
 %global upstream_sublevel   0
-%global devel_release       113
+%global devel_release       114
 %global maintenance_release .0.0
-%global pkg_release         .60
+%global pkg_release         .61
 
 %define with_debuginfo 1
 # Do not recompute the build-id of vmlinux in find-debuginfo.sh
@@ -879,6 +879,66 @@ fi
 %endif
 
 %changelog
+* Wed Sep 07 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-114.0.0.61
+- memcg: Fix the problem of cat memory.high_async_ratio
+- memcg: Modify memory.high_async_ratio changing scope
+- bpf, cgroup: Fix kernel BUG in purge_effective_progs
+- bpf: Don't use tnum_range on array range checking for poke descriptors
+- configfs: fix a race in configfs_lookup()
+- configfs: fold configfs_attach_attr into configfs_lookup
+- configfs: simplify the configfs_dirent_is_ready
+- configfs: return -ENAMETOOLONG earlier in configfs_lookup
+- af_key: Do not call xfrm_probe_algs in parallel
+- tty: use new tty_insert_flip_string_and_push_buffer() in pty_write()
+- tty: extract tty_flip_buffer_commit() from tty_flip_buffer_push()
+- tty: drop tty_schedule_flip()
+- tty: the rest, stop using tty_schedule_flip()
+- tty: drivers/tty/, stop using tty_schedule_flip()
+- pipe: fix kabi for poll_usage in struct pipe_inode_info
+- bpf: Enlarge offset check value to INT_MAX in bpf_skb_{load,store}_bytes
+- bpf: Fix potential array overflow in bpf_trampoline_get_progs()
+- NFSD: Fix possible sleep during nfsd4_release_lockowner()
+- NFS: Memory allocation failures are not server fatal errors
+- docs: submitting-patches: Fix crossref to 'The canonical patch format'
+- tpm: ibmvtpm: Correct the return value in tpm_ibmvtpm_probe()
+- tpm: Fix buffer access in tpm2_get_tpm_pt()
+- HID: multitouch: add quirks to enable Lenovo X12 trackpoint
+- HID: multitouch: Add support for Google Whiskers Touchpad
+- raid5: introduce MD_BROKEN
+- dm verity: set DM_TARGET_IMMUTABLE feature flag
+- dm stats: add cond_resched when looping over entries
+- dm crypt: make printing of the key constant-time
+- dm integrity: fix error code in dm_integrity_ctr()
+- ARM: dts: s5pv210: Correct interrupt name for bluetooth in Aries
+- Bluetooth: hci_qca: Use del_timer_sync() before freeing
+- zsmalloc: fix races between asynchronous zspage free and page migration
+- crypto: ecrdsa - Fix incorrect use of vli_cmp
+- crypto: caam - fix i.MX6SX entropy delay value
+- x86, kvm: use correct GFP flags for preemption disabled
+- x86/kvm: Alloc dummy async #PF token outside of raw spinlock
+- KVM: PPC: Book3S HV: fix incorrect NULL check on list iterator
+- netfilter: conntrack: re-fetch conntrack after insertion
+- crypto: drbg - make reseeding from get_random_bytes() synchronous
+- crypto: drbg - move dynamic ->reseed_threshold adjustments to __drbg_seed()
+- crypto: drbg - track whether DRBG was seeded with !rng_is_initialized()
+- crypto: drbg - prepare for more fine-grained tracking of seeding state
+- lib/crypto: add prompts back to crypto libraries
+- exfat: check if cluster num is valid
+- drm/i915: Fix -Wstringop-overflow warning in call to intel_read_wm_latency()
+- xfs: detect overflows in bmbt records
+- net: ipa: compute proper aggregation limit
+- assoc_array: Fix BUG_ON during garbage collect
+- cfg80211: set custom regdomain after wiphy registration
+- pipe: Fix missing lock in pipe_resize_ring()
+- pipe: make poll_usage boolean and annotate its access
+- drivers: i2c: thunderx: Allow driver to work with ACPI defined TWSI controllers
+- i2c: ismt: Provide a DMA buffer for Interrupt Cause Logging
+- net: ftgmac100: Disable hardware checksum on AST2600
+- nfc: pn533: Fix buggy cleanup order
+- net: af_key: check encryption module availability consistency
+- percpu_ref_init(): clean ->percpu_count_ref on failure
+- pinctrl: sunxi: fix f1c100s uart2 function
+
 * Thu Sep 01 2022 Zheng Zengkai <zhengzengkai@huawei.com> - 5.10.0-113.0.0.60
 - mm/huge_memory: remove outdated VM_WARN_ON_ONCE_PAGE from unmap_page()
 - ARM: 9203/1: kconfig: fix MODULE_PLTS for KASAN with KASAN_VMALLOC
