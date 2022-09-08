@@ -12,7 +12,7 @@
 
 static inline void flush_tlb_current(struct mm_struct *mm)
 {
-	unsigned long mmc, asn, ptbr, flags;
+	unsigned long mmc, asid, ptbr, flags;
 
 	local_irq_save(flags);
 
@@ -20,12 +20,12 @@ static inline void flush_tlb_current(struct mm_struct *mm)
 	mm->context.asid[smp_processor_id()] = mmc;
 
 	/*
-	 * Force a new ASN for a task. Note that there is no way to
-	 * write UPN only now, so call load_asn_ptbr here.
+	 * Force a new ASID for a task. Note that there is no way to
+	 * write UPN only now, so call load_asid_ptbr here.
 	 */
-	asn = mmc & HARDWARE_ASN_MASK;
+	asid = mmc & ASID_MASK;
 	ptbr = virt_to_pfn(mm->pgd);
-	load_asn_ptbr(asn, ptbr);
+	load_asid_ptbr(asid, ptbr);
 
 	local_irq_restore(flags);
 }

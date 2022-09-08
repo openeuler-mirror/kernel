@@ -17,7 +17,7 @@
 #define HMC_wrksp		0x0E
 #define HMC_mtinten		0x0F
 #define HMC_load_mm		0x11
-#define HMC_tbisasn		0x14
+#define HMC_tbisasid		0x14
 #define HMC_tbivpn		0x19
 #define HMC_ret			0x1A
 #define HMC_wrvpcr		0x29
@@ -167,7 +167,7 @@ __CALL_HMC_R0(whami, unsigned long);
 __CALL_HMC_RW1(rdio64, unsigned long, unsigned long);
 __CALL_HMC_RW1(rdio32, unsigned int, unsigned long);
 __CALL_HMC_W2(wrent, void*, unsigned long);
-__CALL_HMC_W2(tbisasn, unsigned long, unsigned long);
+__CALL_HMC_W2(tbisasid, unsigned long, unsigned long);
 __CALL_HMC_W1(wrkgp, unsigned long);
 __CALL_HMC_RW2(wrperfmon, unsigned long, unsigned long, unsigned long);
 __CALL_HMC_RW3(sendii, unsigned long, unsigned long, unsigned long, unsigned long);

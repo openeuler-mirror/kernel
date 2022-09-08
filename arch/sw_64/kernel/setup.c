@@ -143,7 +143,7 @@ EXPORT_SYMBOL(screen_info);
  */
 void store_cpu_data(int cpu)
 {
-	cpu_data[cpu].last_asn = ASN_FIRST_VERSION;
+	cpu_data[cpu].last_asid = ASID_FIRST_VERSION;
 }
 
 #ifdef CONFIG_KEXEC
