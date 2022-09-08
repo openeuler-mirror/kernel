@@ -8,13 +8,6 @@
 #include <asm/io.h>
 
 /*
- * Load a mm context. This is needed when we change the page
- * table pointer(CSR:PTBR) or when we update the ASID.
- *
- */
-#define load_asid_ptbr   load_mm
-
-/*
  * The maximum ASID's the processor supports.
  */
 
@@ -28,6 +21,13 @@
 #define ASID_FIRST_VERSION	(1UL << ASID_BITS)
 #define ASID_MASK		((1UL << ASID_BITS) - 1)
 
+#define cpu_asid(cpu, mm)	((mm)->context.asid[cpu] & ASID_MASK)
+
+static inline bool asid_valid(struct mm_struct *mm, unsigned int cpu)
+{
+	return !((mm->context.asid[cpu] ^ last_asid(cpu)) & ~ASID_MASK);
+}
+
 /*
  * NOTE! The way this is set up, the high bits of the "last_asid" (and
  * the "mm->context.asid[cpu]") are the ASID _version_ code. A version
@@ -39,18 +39,14 @@
  * new asid for any other processes the next time they want to run.
  */
 
-static inline unsigned long
-__get_new_mm_context(struct mm_struct *mm, long cpu)
+static inline void __get_new_mm_context(struct mm_struct *mm, long cpu)
 {
 	unsigned long asid = last_asid(cpu);
-	unsigned long next = asid + 1;
 
-	if ((asid & ASID_MASK) >= ASID_MASK) {
+	if (!(++asid & ASID_MASK))
 		tbivp();
-		next = (asid & ~ASID_MASK) + ASID_FIRST_VERSION;
-	}
-	last_asid(cpu) = next;
-	return next;
+	mm->context.asid[cpu] = last_asid(cpu) = asid;
+
 }
 
 static inline void
@@ -58,25 +54,21 @@ switch_mm_irqs_off(struct mm_struct *prev_mm, struct mm_struct *next_mm,
 		   struct task_struct *next)
 {
 	/* Check if our ASID is of an older version, and thus invalid. */
-	unsigned long asid, mmc, ptbr;
+	unsigned long asid, ptbr;
 	long cpu = smp_processor_id();
 
-	asid = last_asid(cpu);
-	mmc = next_mm->context.asid[cpu];
-	if ((mmc ^ asid) & ~ASID_MASK) {
-		/* Check if mmc and cpu asid is in the same version */
-		mmc = __get_new_mm_context(next_mm, cpu);
-		next_mm->context.asid[cpu] = mmc;
-	}
+	if (!asid_valid(next_mm, cpu))
+		__get_new_mm_context(next_mm, cpu);
 
 	/*
 	 * Update CSR:UPN and CSR:PTBR. Another thread may have allocated
 	 * a new mm->context[asid] (via flush_tlb_mm) without the ASID serial
 	 * number wrapping.  We have no way to detect when this is needed.
 	 */
-	asid = mmc & ASID_MASK;
+	asid = cpu_asid(cpu, next_mm);
 	ptbr = virt_to_pfn(next_mm->pgd);
-	load_asid_ptbr(asid, ptbr);
+	load_mm(asid, ptbr);
+	cpumask_set_cpu(cpu, mm_cpumask(next_mm));
 }
 
 #define switch_mm_irqs_off switch_mm_irqs_off

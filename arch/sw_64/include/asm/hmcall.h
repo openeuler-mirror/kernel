@@ -12,6 +12,7 @@
 #define HMC_cpuid		0x03
 #define HMC_sleepen		0x05
 #define HMC_rdksp		0x06
+#define HMC_wrasid		0x08
 #define HMC_rdptbr		0x0B
 #define HMC_wrptbr		0x0C
 #define HMC_wrksp		0x0E
@@ -157,8 +158,15 @@ __CALL_HMC_W1(wrusp, unsigned long);
 __CALL_HMC_R0(rdksp, unsigned long);
 __CALL_HMC_W1(wrksp, unsigned long);
 
+/*
+ * Load a mm context. This is needed when we change the page
+ * table pointer(CSR:PTBR) or when we update the ASID.
+ * load_mm(asid, ptbr)
+ *
+ */
 __CALL_HMC_W2(load_mm, unsigned long, unsigned long);
 
+__CALL_HMC_W1(wrasid, unsigned long);
 __CALL_HMC_R0(rdptbr, unsigned long);
 __CALL_HMC_W1(wrptbr, unsigned long);
 

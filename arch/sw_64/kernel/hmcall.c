@@ -38,11 +38,51 @@ static inline void fixup_wrtp(void)
 	entry[1] = 0x1ee00000;	/* pri_ret $23 */
 }
 
+static inline void fixup_tbiasid(void)
+{
+	unsigned int *entry = __va(HMCALL_ENTRY(tbisasid));
+
+	entry[0] = 0x18fffe47;	/* pri_rcsr p7, CSR__DTB_PCR*/
+	entry[1] = 0x4a05c905;	/* sll r16, CSR__DTB_PCR__UPN__S, p5 */
+	entry[2] = 0xf89f03ff;  /* ldi p4, CSR__DTB_PCR__UPN__M */
+	entry[3] = 0x4885c904;	/* sll p4, CSR__DTB_PCR__UPN__S, p4 */
+	entry[4] = 0x40e40724;	/* bic p7, p4, p4 */
+	entry[5] = 0x40850745;	/* bis p4, p5, p5 */
+	entry[6] = 0x18bfff47;	/* pri_wcsr p5, CSR__DTB_PCR */
+	entry[7] = 0x1a3fff46;	/* pri_wcsr r17, CSR__DTB_IS */
+	entry[8] = 0x18ffff47;	/* pri_wcsr p7, CSR__DTB_PCR */
+	entry[9] = 0x4a04e906;	/* sll r16, CSR__UPCR_UPN__UPN__S, p6 */
+	entry[10] = 0x189ffe22;	/* pri_rcsr p4, CSR__UPCR_UPN */
+	entry[11] = 0x18dfff22; /* pri_wcsr p6, CSR__UPCR_UPN */
+	entry[12] = 0x1a3fff06; /* pri_wcsr r17, CSR__ITB_IS */
+	entry[13] = 0x1bffff15; /* pri_wcsr r31, CSR__IC_FLUSH */
+	entry[14] = 0x189fff22; /* pri_wcsr p4, CSR__UPCR_UPN */
+	entry[15] = 0x1ef00000; /* pri_ret/b p23 */
+}
+
+static inline void fixup_wrasid(void)
+{
+	unsigned int *entry = __va(HMCALL_ENTRY(wrasid));
+
+	entry[0] = 0x18fffe47;	/* pri_rcsr p7, CSR__DTB_PCR*/
+	entry[1] = 0x4a05c905;	/* sll r16, CSR__DTB_PCR__UPN__S, p5 */
+	entry[2] = 0xf89f03ff;  /* ldi p4, CSR__DTB_PCR__UPN__M */
+	entry[3] = 0x4885c904;	/* sll p4, CSR__DTB_PCR__UPN__S, p4 */
+	entry[4] = 0x40e40724;	/* bic p7, p4, p4 */
+	entry[5] = 0x40850745;	/* bis p4, p5, p5 */
+	entry[6] = 0x18bfff47;	/* pri_wcsr p5, CSR__DTB_PCR */
+	entry[7] = 0x4a04e906;	/* sll r16, CSR__UPCR_UPN__UPN__S, p6 */
+	entry[8] = 0x18dfff22;	/* pri_wcsr p4, CSR__UPCR_UPN */
+	entry[9] = 0x1ef00000;	/* pri_ret/b p23 */
+}
+
 void __init fixup_hmcall(void)
 {
-#if defined(CONFIG_SUBARCH_C3A) || defined(CONFIG_SUBARCH_C3B)
+#if defined(CONFIG_SUBARCH_C3B)
 	fixup_rdtp();
 	fixup_wrtp();
+	fixup_tbiasid();
+	fixup_wrasid();
 #endif
 }
 
