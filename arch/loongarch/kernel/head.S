@@ -34,6 +34,7 @@ SYM_DATA(kernel_offset, .long kernel_offset - _text);
 
 	__REF
 
+.align	12
 SYM_CODE_START(kernel_entry)			# kernel entry point
 
 	/* Config direct window and set PG */
